@@ -31,12 +31,16 @@ const (
 	negOpLatencyKey          = "neg_operation_duration_seconds"
 	negOpEndpointsKey        = "neg_operation_endpoints"
 	lastSyncTimestampKey     = "sync_timestamp"
+	duplicateEndpointsKey    = "neg_sync_duplicate_endpoints"
 
 	resultSuccess = "success"
 	resultError   = "error"
 
 	GCProcess   = "GC"
 	SyncProcess = "Sync"
+
+	EPDup   = "DuplicateEndpoints"
+	EPTotal = "TotalEndpoints"
 )
 
 type syncType string
@@ -64,6 +68,11 @@ var (
 		"neg_type",                 //type of neg
 		"endpoint_calculator_mode", // type of endpoint calculator used
 		"result",                   // result of the sync
+	}
+
+	negDupEndpointsMetricsLabels = []string{
+		"neg_type", // type of neg
+		"ep_type",  // type of endpoints
 	}
 
 	NegOperationLatency = prometheus.NewHistogramVec(
@@ -125,6 +134,15 @@ var (
 			Help:      "The timestamp of the last execution of NEG controller sync loop.",
 		},
 	)
+
+	DuplicateEndpoints = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      duplicateEndpointsKey,
+			Help:      "Number of duplicate endpoints we have seen",
+		},
+		negDupEndpointsMetricsLabels,
+	)
 )
 
 var register sync.Once
@@ -137,6 +155,7 @@ func RegisterMetrics() {
 		prometheus.MustRegister(SyncerSyncLatency)
 		prometheus.MustRegister(LastSyncTimestamp)
 		prometheus.MustRegister(InitializationLatency)
+		prometheus.MustRegister(DuplicateEndpoints)
 	})
 }
 
@@ -164,6 +183,12 @@ func PublishNegManagerProcessMetrics(process string, err error, start time.Time)
 // PublishNegInitializationMetrics publishes collected metrics for time from request to initialization of NEG
 func PublishNegInitializationMetrics(latency time.Duration) {
 	InitializationLatency.Observe(latency.Seconds())
+}
+
+// PublishNegDuplicateEPMetrics publishes collected metrics for the number of duplciated endpoints
+func PublishNegDuplicateEPMetrics(negType string, dupCount, totalCount int) {
+	DuplicateEndpoints.WithLabelValues(negType, EPDup).Add(float64(dupCount))
+	DuplicateEndpoints.WithLabelValues(negType, EPTotal).Add(float64(totalCount))
 }
 
 func getResult(err error) string {

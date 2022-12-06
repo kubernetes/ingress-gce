@@ -1475,7 +1475,7 @@ func TestInvalidEndpointInfo(t *testing.T) {
 		expect         bool
 	}{
 		{
-			desc: "counts equal, endpointData has no duplicated endpoints",
+			desc: "counts equal, endpointData has no duplicate endpoints",
 			endpointsData: []negtypes.EndpointsData{
 				{
 					Meta: &metav1.ObjectMeta{
@@ -1547,7 +1547,7 @@ func TestInvalidEndpointInfo(t *testing.T) {
 			expect:         false,
 		},
 		{
-			desc: "counts equal, endpointData has duplicated endpoints",
+			desc: "counts equal, endpointData has duplicate endpoints",
 			endpointsData: []negtypes.EndpointsData{
 				{
 					Meta: &metav1.ObjectMeta{
@@ -1601,7 +1601,7 @@ func TestInvalidEndpointInfo(t *testing.T) {
 							NodeName:  &instance1,
 							Addresses: []string{testIP2},
 							Ready:     true,
-						}, // this is a duplicated endpoint
+						}, // this is a duplicate endpoint
 						{
 							TargetRef: &corev1.ObjectReference{
 								Namespace: testServiceNamespace,
@@ -1628,7 +1628,7 @@ func TestInvalidEndpointInfo(t *testing.T) {
 			expect:         false,
 		},
 		{
-			desc: "counts not equal, endpointData has no duplicated endpoints",
+			desc: "counts not equal, endpointData has no duplicate endpoints",
 			endpointsData: []negtypes.EndpointsData{
 				{
 					Meta: &metav1.ObjectMeta{
@@ -1691,7 +1691,7 @@ func TestInvalidEndpointInfo(t *testing.T) {
 			expect:         true,
 		},
 		{
-			desc: "counts not equal, endpointData has duplicated endpoints",
+			desc: "counts not equal, endpointData has duplicate endpoints",
 			endpointsData: []negtypes.EndpointsData{
 				{
 					Meta: &metav1.ObjectMeta{
@@ -1736,7 +1736,7 @@ func TestInvalidEndpointInfo(t *testing.T) {
 							NodeName:  &instance1,
 							Addresses: []string{testIP2},
 							Ready:     true,
-						}, // this is a duplicated endpoint
+						}, // this is a duplicate endpoint
 						{
 							TargetRef: &corev1.ObjectReference{
 								Namespace: testServiceNamespace,

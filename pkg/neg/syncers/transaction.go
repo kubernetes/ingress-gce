@@ -362,7 +362,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 // It returns true if any of the following checks fails:
 //
 //  1. The endpoint count from endpointData doesn't equal to the one from endpointPodMap:
-//     endpiontPodMap removes the duplicated endpoints, and dupCount stores the number of duplicated it removed
+//     endpiontPodMap removes the duplicate endpoints, and dupCount stores the number of duplicate it removed
 //     and we compare the endpoint counts with duplicates
 //  2. There is at least one endpoint in endpointData with missing nodeName
 //  3. The endpoint count from endpointData or the one from endpointPodMap is 0

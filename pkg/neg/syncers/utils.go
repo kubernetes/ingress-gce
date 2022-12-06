@@ -32,6 +32,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
@@ -218,16 +219,17 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 	return negRef, nil
 }
 
-// toZoneNetworkEndpointMap translates addresses in endpoints object and Istio:DestinationRule subset into zone and endpoints map, and also return the count for duplicated endpoints
+// toZoneNetworkEndpointMap translates addresses in endpoints object and Istio:DestinationRule subset into zone and endpoints map, and also return the count for duplicate endpoints
 func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.ZoneGetter, servicePortName string, podLister cache.Indexer, subsetLabels string, networkEndpointType negtypes.NetworkEndpointType) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, int, error) {
 	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
 	networkEndpointPodMap := negtypes.EndpointPodMap{}
-	dupCount := 0
+	dupCount, totalCount := 0, 0
 	if eds == nil {
 		klog.Errorf("Endpoint object is nil")
 		return zoneNetworkEndpointMap, networkEndpointPodMap, dupCount, nil
 	}
 	var foundMatchingPort bool
+
 	for _, ed := range eds {
 		matchPort := ""
 		// service spec allows target Port to be a named Port.
@@ -246,6 +248,8 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 		foundMatchingPort = true
 
 		for _, endpointAddress := range ed.Addresses {
+			totalCount += 1
+
 			// Apply the selector if Istio:DestinationRule subset labels provided.
 			if subsetLabels != "" {
 				if endpointAddress.TargetRef == nil || endpointAddress.TargetRef.Kind != "Pod" {
@@ -290,12 +294,17 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 					// increment the count for duplicated endpoint
 					if _, contains := networkEndpointPodMap[networkEndpoint]; contains {
 						dupCount += 1
+						existingPod, contains := networkEndpointPodMap[networkEndpoint]
+						if contains && existingPod.Name < endpointAddress.TargetRef.Name {
+							continue // if existing name is alphabetically lower than current one, continue and don't replace
+						}
 					}
 					networkEndpointPodMap[networkEndpoint] = types.NamespacedName{Namespace: endpointAddress.TargetRef.Namespace, Name: endpointAddress.TargetRef.Name}
 				}
 			}
 		}
 	}
+	metrics.PublishNegDuplicateEPMetrics(string(networkEndpointType), dupCount, totalCount)
 	if !foundMatchingPort {
 		klog.Errorf("Service port name %q was not found in the endpoints object %+v", servicePortName, eds)
 	}
