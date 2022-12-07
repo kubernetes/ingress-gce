@@ -18,6 +18,7 @@ package syncers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -244,7 +245,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 		}
 		endpointsData := negtypes.EndpointsDataFromEndpointSlices(endpointSlices)
 		targetMap, endpointPodMap, dupCount, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
-		if s.invalidEndpointInfo(endpointsData, endpointPodMap, dupCount) || s.isZoneMissing(targetMap) {
+		if !s.isValidEPField(err) || !s.isValidEndpointInfo(endpointsData, endpointPodMap, dupCount) {
 			s.setErrorState()
 		}
 		if err != nil {
@@ -358,67 +359,64 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 	return utilerrors.NewAggregate(errList)
 }
 
-// invalidEndpointInfo checks if endpoint information is correct.
-// It returns true if any of the following checks fails:
+// isValidEndpointInfo checks if endpoint information is correct.
+// It returns false if one of the two checks fails:
 //
 //  1. The endpoint count from endpointData doesn't equal to the one from endpointPodMap:
 //     endpiontPodMap removes the duplicated endpoints, and dupCount stores the number of duplicated it removed
 //     and we compare the endpoint counts with duplicates
-//  2. There is at least one endpoint in endpointData with missing nodeName
-//  3. The endpoint count from endpointData or the one from endpointPodMap is 0
-func (s *transactionSyncer) invalidEndpointInfo(eds []negtypes.EndpointsData, endpointPodMap negtypes.EndpointPodMap, dupCount int) bool {
+//  2. The endpoint count from endpointData or the one from endpointPodMap is 0
+func (s *transactionSyncer) isValidEndpointInfo(eds []negtypes.EndpointsData, endpointPodMap negtypes.EndpointPodMap, dupCount int) bool {
 	// Endpoint count from EndpointPodMap
 	countFromPodMap := len(endpointPodMap) + dupCount
 	if countFromPodMap == 0 {
 		s.logger.Info("Detected endpoint count from endpointPodMap going to zero", "endpointPodMap", endpointPodMap)
-		return true
+		return false
 	}
 
 	// Endpoint count from EndpointData
 	countFromEndpointData := 0
 	for _, ed := range eds {
 		countFromEndpointData += len(ed.Addresses)
-		for _, endpointAddress := range ed.Addresses {
-			nodeName := endpointAddress.NodeName
-			if nodeName == nil || len(*nodeName) == 0 {
-				s.logger.Info("Detected error when checking nodeName", "endpoint", endpointAddress, "endpointData", eds)
-				return true
-			}
-		}
 	}
 	if countFromEndpointData == 0 {
 		s.logger.Info("Detected endpoint count from endpointData going to zero", "endpointData", eds)
-		return true
+		return false
 	}
 
 	if countFromEndpointData != countFromPodMap {
 		s.logger.Info("Detected error when comparing endpoint counts", "endpointData", eds, "endpointPodMap", endpointPodMap, "dupCount", dupCount)
-		return true
+		return false
 	}
-	return false
+	return true
 }
 
-// isZoneMissing returns true if there is invalid(empty) zone in zoneNetworkEndpointMap
-func (s *transactionSyncer) isZoneMissing(zoneNetworkEndpointMap map[string]negtypes.NetworkEndpointSet) bool {
-	if _, isPresent := zoneNetworkEndpointMap[""]; isPresent {
-		s.logger.Info("Detected error when checking missing zone", "zoneNetworkEndpointMap", zoneNetworkEndpointMap)
-		return true
+// isValidEPField returns false if there is endpoint with missing zone or nodeName
+func (s *transactionSyncer) isValidEPField(err error) bool {
+	if errors.Is(err, ErrEPMissingNodeName) {
+		s.logger.Info("Detected unexpected error when checking missing nodeName", "error", err)
+		return false
 	}
-	return false
+	if errors.Is(err, ErrEPMissingZone) {
+		s.logger.Info("Detected unexpected error when checking missing zone", "error", err)
+		return false
+	}
+	return true
 }
 
-func (s *transactionSyncer) isInvalidEPBatch(err error, operation transactionOp, networkEndpoints []*composite.NetworkEndpoint) bool {
+// isValidEPBatch returns false if the error from endpoint batch response is due to bad request
+func (s *transactionSyncer) isValidEPBatch(err error, operation transactionOp, networkEndpoints []*composite.NetworkEndpoint) bool {
 	apiErr, ok := err.(*googleapi.Error)
 	if !ok {
 		s.logger.Info("Detected error when parsing batch request error", "operation", operation, "error", err)
-		return true
+		return false
 	}
 	errCode := apiErr.Code
 	if errCode == http.StatusBadRequest {
 		s.logger.Info("Detected error when sending endpoint batch information", "operation", operation, "errorCode", errCode)
-		return true
+		return false
 	}
-	return false
+	return true
 }
 
 // syncNetworkEndpoints spins off go routines to execute NEG operations
@@ -499,7 +497,7 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, zone stri
 		s.recordEvent(apiv1.EventTypeNormal, operation.String(), fmt.Sprintf("%s %d network endpoint(s) (NEG %q in zone %q)", operation.String(), len(networkEndpointMap), s.NegSyncerKey.NegName, zone))
 	} else {
 		s.recordEvent(apiv1.EventTypeWarning, operation.String()+"Failed", fmt.Sprintf("Failed to %s %d network endpoint(s) (NEG %q in zone %q): %v", operation.String(), len(networkEndpointMap), s.NegSyncerKey.NegName, zone, err))
-		if s.isInvalidEPBatch(err, operation, networkEndpoints) {
+		if !s.isValidEPBatch(err, operation, networkEndpoints) {
 			s.setErrorState()
 		}
 	}

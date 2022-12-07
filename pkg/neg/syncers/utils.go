@@ -17,6 +17,7 @@ limitations under the License.
 package syncers
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -45,6 +46,12 @@ const (
 	minRetryDelay = 5 * time.Second
 	maxRetryDelay = 600 * time.Second
 	separator     = "||"
+)
+
+var (
+	ErrEPMissingNodeName = errors.New("endpoint has empty nodeName field")
+	ErrNodeNotFound      = errors.New("failed to retrieve associated zone of node")
+	ErrEPMissingZone     = errors.New("endpoint has empty zone field")
 )
 
 // encodeEndpoint encodes ip and instance into a single string
@@ -257,9 +264,9 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 					continue
 				}
 			}
-			if endpointAddress.NodeName == nil {
+			if endpointAddress.NodeName == nil || len(*endpointAddress.NodeName) == 0 {
 				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated node. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
-				continue
+				return nil, nil, dupCount, ErrEPMissingNodeName
 			}
 			if endpointAddress.TargetRef == nil {
 				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated pod. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
@@ -267,7 +274,10 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 			}
 			zone, err := zoneGetter.GetZoneForNode(*endpointAddress.NodeName)
 			if err != nil {
-				return nil, nil, dupCount, fmt.Errorf("failed to retrieve associated zone of node %q: %w", *endpointAddress.NodeName, err)
+				return nil, nil, dupCount, ErrNodeNotFound
+			}
+			if zone == "" {
+				return nil, nil, dupCount, ErrEPMissingZone
 			}
 			if zoneNetworkEndpointMap[zone] == nil {
 				zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
