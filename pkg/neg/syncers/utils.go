@@ -33,6 +33,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
@@ -228,7 +229,8 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.ZoneGetter, servicePortName string, podLister cache.Indexer, subsetLabels string, networkEndpointType negtypes.NetworkEndpointType) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, int, error) {
 	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
 	networkEndpointPodMap := negtypes.EndpointPodMap{}
-	dupCount := 0
+	dupCount, missingNodeNameCount, missingPodCount, missingZoneCount, missingFieldCount, totalCount := 0, 0, 0, 0, 0, 0
+	missingZoneEP := false
 	if eds == nil {
 		klog.Errorf("Endpoint object is nil")
 		return zoneNetworkEndpointMap, networkEndpointPodMap, dupCount, nil
@@ -252,6 +254,8 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 		foundMatchingPort = true
 
 		for _, endpointAddress := range ed.Addresses {
+			totalCount += 1
+
 			// Apply the selector if Istio:DestinationRule subset labels provided.
 			if subsetLabels != "" {
 				if endpointAddress.TargetRef == nil || endpointAddress.TargetRef.Kind != "Pod" {
@@ -263,12 +267,19 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 					continue
 				}
 			}
+			skipped := false
 			if endpointAddress.NodeName == nil || len(*endpointAddress.NodeName) == 0 {
 				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated node. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
-				continue
+				skipped = true
+				missingNodeNameCount += 1
 			}
 			if endpointAddress.TargetRef == nil {
 				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated pod. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
+				skipped = true
+				missingPodCount += 1
+			}
+			if skipped {
+				missingFieldCount += 1
 				continue
 			}
 			zone, err := zoneGetter.GetZoneForNode(*endpointAddress.NodeName)
@@ -276,7 +287,14 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 				return nil, nil, dupCount, ErrNodeNotFound
 			}
 			if zone == "" {
-				return nil, nil, dupCount, ErrEPMissingZone
+				// TODO(cheungdavid): currently get zone from zoneGetter based on nodeName
+				// in the future, get zone information from ed.Zone
+				// and consolidate skipping endpoint logic
+				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated zone. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
+				missingZoneCount += 1
+				missingFieldCount += 1
+				missingZoneEP = true
+				continue
 			}
 			if zoneNetworkEndpointMap[zone] == nil {
 				zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
@@ -305,6 +323,7 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 			}
 		}
 	}
+	metrics.PublishNegMissingFieldEPMetrics(string(networkEndpointType), missingNodeNameCount, missingPodCount, missingZoneCount, missingFieldCount, totalCount)
 	if !foundMatchingPort {
 		klog.Errorf("Service port name %q was not found in the endpoints object %+v", servicePortName, eds)
 	}
@@ -312,7 +331,11 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 	if len(zoneNetworkEndpointMap) == 0 || len(networkEndpointPodMap) == 0 {
 		klog.V(3).Infof("Generated empty endpoint maps (zoneNetworkEndpointMap: %+v, networkEndpointPodMap: %v) from Endpoints object: %+v", zoneNetworkEndpointMap, networkEndpointPodMap, eds)
 	}
-	return zoneNetworkEndpointMap, networkEndpointPodMap, dupCount, nil
+	if missingZoneEP {
+		return zoneNetworkEndpointMap, networkEndpointPodMap, dupCount, ErrEPMissingZone
+	} else {
+		return zoneNetworkEndpointMap, networkEndpointPodMap, dupCount, nil
+	}
 }
 
 // retrieveExistingZoneNetworkEndpointMap lists existing network endpoints in the neg and return the zone and endpoints map

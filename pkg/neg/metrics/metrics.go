@@ -31,12 +31,19 @@ const (
 	negOpLatencyKey          = "neg_operation_duration_seconds"
 	negOpEndpointsKey        = "neg_operation_endpoints"
 	lastSyncTimestampKey     = "sync_timestamp"
+	missingFieldEndpointsKey = "neg_sync_missing_field_endpoints"
 
 	resultSuccess = "success"
 	resultError   = "error"
 
 	GCProcess   = "GC"
 	SyncProcess = "Sync"
+
+	EPMissingNodeName = "MissingNodeNameEndpoints"
+	EPMissingPod      = "MissingPodEndpoints"
+	EPMissingZone     = "MissingZoneEndpoints"
+	EPMissingField    = "MissingFieldEndpoints"
+	EPTotal           = "TotalEndpoints"
 )
 
 type syncType string
@@ -64,6 +71,11 @@ var (
 		"neg_type",                 //type of neg
 		"endpoint_calculator_mode", // type of endpoint calculator used
 		"result",                   // result of the sync
+	}
+
+	negMissingFieldEndpointsMetricsLabels = []string{
+		"neg_type", // type of neg
+		"ep_type",  // type of endpoints
 	}
 
 	NegOperationLatency = prometheus.NewHistogramVec(
@@ -125,6 +137,15 @@ var (
 			Help:      "The timestamp of the last execution of NEG controller sync loop.",
 		},
 	)
+
+	MissingFieldEndpoints = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      missingFieldEndpointsKey,
+			Help:      "Number of missing field endpoints during one sync",
+		},
+		negMissingFieldEndpointsMetricsLabels,
+	)
 )
 
 var register sync.Once
@@ -137,6 +158,7 @@ func RegisterMetrics() {
 		prometheus.MustRegister(SyncerSyncLatency)
 		prometheus.MustRegister(LastSyncTimestamp)
 		prometheus.MustRegister(InitializationLatency)
+		prometheus.MustRegister(MissingFieldEndpoints)
 	})
 }
 
@@ -164,6 +186,15 @@ func PublishNegManagerProcessMetrics(process string, err error, start time.Time)
 // PublishNegInitializationMetrics publishes collected metrics for time from request to initialization of NEG
 func PublishNegInitializationMetrics(latency time.Duration) {
 	InitializationLatency.Observe(latency.Seconds())
+}
+
+// PublishNegMissingFieldEPMetrics publishes collected metrics for the number of missing field endpoints
+func PublishNegMissingFieldEPMetrics(negType string, missingNodeNameCount, missingPodCount, missingZoneCount, missingFieldCount, totalCount int) {
+	MissingFieldEndpoints.WithLabelValues(negType, EPMissingNodeName).Set(float64(missingNodeNameCount))
+	MissingFieldEndpoints.WithLabelValues(negType, EPMissingPod).Set(float64(missingPodCount))
+	MissingFieldEndpoints.WithLabelValues(negType, EPMissingZone).Set(float64(missingZoneCount))
+	MissingFieldEndpoints.WithLabelValues(negType, EPMissingField).Set(float64(missingFieldCount))
+	MissingFieldEndpoints.WithLabelValues(negType, EPTotal).Set(float64(totalCount))
 }
 
 func getResult(err error) string {
