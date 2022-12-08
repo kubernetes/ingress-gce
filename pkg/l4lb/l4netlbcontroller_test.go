@@ -522,12 +522,20 @@ func TestProcessRBSServiceTypeTransition(t *testing.T) {
 		finalType v1.ServiceType
 	}{
 		{
-			desc:      "Change RBS to ClusterIP should delete RBS resources",
+			desc:      "Change from RBS to ClusterIP should delete RBS resources",
 			finalType: v1.ServiceTypeClusterIP,
 		},
 		{
-			desc:      "Change RBS to NodePort should delete RBS resources",
+			desc:      "Change from RBS to NodePort should delete RBS resources",
 			finalType: v1.ServiceTypeNodePort,
+		},
+		{
+			desc:      "Change from RBS to ExternalName should delete RBS resources",
+			finalType: v1.ServiceTypeExternalName,
+		},
+		{
+			desc:      "Change from RBS to empty (default) type should delete RBS resources",
+			finalType: "",
 		},
 	}
 
