@@ -127,7 +127,9 @@ func (lc *L4NetLBController) needsAddition(newSvc, oldSvc *v1.Service) bool {
 
 // needsDeletion return true if svc required deleting RBS based NetLB
 func (lc *L4NetLBController) needsDeletion(svc *v1.Service) bool {
-	if !lc.isRBSBasedService(svc) {
+	// Check if service has RBS related fields/resources
+	// this check differs from isRBSBasedService() func by checking also non load balancer type services
+	if !(lc.hasRBSAnnotation(svc) || utils.HasL4NetLBFinalizerV2(svc) || lc.hasRBSForwardingRule(svc)) {
 		return false
 	}
 	if svc.ObjectMeta.DeletionTimestamp != nil {
@@ -215,7 +217,7 @@ func (lc *L4NetLBController) needsUpdate(newSvc, oldSvc *v1.Service) bool {
 
 // shouldProcessUpdate checks if given service should be process by controller
 func (lc *L4NetLBController) shouldProcessService(newSvc, oldSvc *v1.Service) bool {
-	if !lc.isRBSBasedService(newSvc) {
+	if !(lc.isRBSBasedService(newSvc) || lc.isRBSBasedService(oldSvc)) {
 		return false
 	}
 	if lc.needsAddition(newSvc, oldSvc) || lc.needsUpdate(newSvc, oldSvc) || lc.needsDeletion(newSvc) {
@@ -237,10 +239,11 @@ func (lc *L4NetLBController) hasForwardingRuleAnnotation(svc *v1.Service, frName
 
 // isRBSBasedService checks if service has either RBS annotation, finalizer or RBSForwardingRule
 func (lc *L4NetLBController) isRBSBasedService(svc *v1.Service) bool {
+	// Check if the type=LoadBalancer, so we don't execute API calls o non-LB services
+	// this call is nil-safe
 	if !utils.IsLoadBalancerServiceType(svc) {
 		return false
 	}
-
 	return lc.hasRBSAnnotation(svc) || utils.HasL4NetLBFinalizerV2(svc) || lc.hasRBSForwardingRule(svc)
 }
 
