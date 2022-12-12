@@ -17,7 +17,6 @@ limitations under the License.
 package syncers
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -33,6 +32,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
@@ -46,11 +46,6 @@ const (
 	minRetryDelay = 5 * time.Second
 	maxRetryDelay = 600 * time.Second
 	separator     = "||"
-)
-
-var (
-	ErrNodeNotFound  = errors.New("failed to retrieve associated zone of node")
-	ErrEPMissingZone = errors.New("endpoint has empty zone field")
 )
 
 // encodeEndpoint encodes ip and instance into a single string
@@ -273,10 +268,10 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 			}
 			zone, err := zoneGetter.GetZoneForNode(*endpointAddress.NodeName)
 			if err != nil {
-				return nil, nil, dupCount, ErrNodeNotFound
+				return nil, nil, dupCount, metrics.ErrNodeNotFound
 			}
 			if zone == "" {
-				return nil, nil, dupCount, ErrEPMissingZone
+				return nil, nil, dupCount, metrics.ErrEPMissingZone
 			}
 			if zoneNetworkEndpointMap[zone] == nil {
 				zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()

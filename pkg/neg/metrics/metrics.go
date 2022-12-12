@@ -17,10 +17,25 @@ limitations under the License.
 package metrics
 
 import (
+	"errors"
 	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+)
+
+var (
+	ErrEPCountsDiffer         = errors.New("endpoint counts from endpointData and endpointPodMap differ")
+	ErrEPMissingNodeName      = errors.New("endpoint has empty nodeName")
+	ErrEPMissingZone          = errors.New("endpoint has empty zone")
+	ErrInvalidEPAttach        = errors.New("error in attach endpoint batch information")
+	ErrInvalidEPDetach        = errors.New("error in detach endpoint batch information")
+	ErrEPSEndpointCountZero   = errors.New("endpoint count from endpointData goes to zero")
+	ErrEPCalculationCountZero = errors.New("endpoint count from endpointPodMap goes to zero")
+	ErrNegNotFound            = errors.New("fail to retrieve associated NEG")
+	ErrCurrentEPNotFound      = errors.New("fail to retrieve current endpointPodMap")
+	ErrEPSNotFound            = errors.New("fail to retrieve endpoint slice")
+	ErrNodeNotFound           = errors.New("failed to retrieve associated zone of node")
 )
 
 const (
@@ -31,12 +46,28 @@ const (
 	negOpLatencyKey          = "neg_operation_duration_seconds"
 	negOpEndpointsKey        = "neg_operation_endpoints"
 	lastSyncTimestampKey     = "sync_timestamp"
+	syncResultKey            = "sync_result"
+	syncFrequencyKey         = "sync_frequency"
 
 	resultSuccess = "success"
 	resultError   = "error"
 
 	GCProcess   = "GC"
 	SyncProcess = "Sync"
+
+	ResultEPCountsDiffer         = "EPCountsDiffer"
+	ResultEPMissingNodeName      = "EPMissingNodeName"
+	ResultEPMissingZone          = "EPMissingZone"
+	ResultInvalidEPAttach        = "InvalidEPAttach"
+	ResultInvalidEPDetach        = "InvalidEPDetach"
+	ResultEPSEndpointCountZero   = "EPSEndpointCountZero"
+	ResultEPCalculationCountZero = "EPCalculationCountZero"
+	ResultNegNotFound            = "NegNotFound"
+	ResultCurrentEPNotFound      = "CurrentEPNotFound"
+	ResultEPSNotFound            = "EPSNotFound"
+	ResultNodeNotFound           = "NodeNotFound"
+	ResultOtherError             = "OtherError"
+	ResultSuccess                = "Success"
 )
 
 type syncType string
@@ -64,6 +95,12 @@ var (
 		"neg_type",                 //type of neg
 		"endpoint_calculator_mode", // type of endpoint calculator used
 		"result",                   // result of the sync
+	}
+
+	syncerResultLabels = []string{
+		"neg_type",                 // type of neg
+		"endpoint_calculator_mode", // type of endpoint calculator used
+		"result",                   // result of syncer, must be one of thirteen statuses defined above
 	}
 
 	NegOperationLatency = prometheus.NewHistogramVec(
@@ -125,6 +162,24 @@ var (
 			Help:      "The timestamp of the last execution of NEG controller sync loop.",
 		},
 	)
+
+	SyncerSyncResultCount = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      syncResultKey,
+			Help:      "Number of syncer syncs",
+		},
+		syncerResultLabels,
+	)
+
+	SyncerSyncFrequency = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      syncFrequencyKey,
+			Help:      "Sync Frequency of a NEG",
+			Buckets:   prometheus.ExponentialBuckets(1, 2, 13),
+		},
+	)
 )
 
 var register sync.Once
@@ -136,7 +191,9 @@ func RegisterMetrics() {
 		prometheus.MustRegister(ManagerProcessLatency)
 		prometheus.MustRegister(SyncerSyncLatency)
 		prometheus.MustRegister(LastSyncTimestamp)
+		prometheus.MustRegister(SyncerSyncResultCount)
 		prometheus.MustRegister(InitializationLatency)
+		prometheus.MustRegister(SyncerSyncFrequency)
 	})
 }
 
@@ -164,6 +221,45 @@ func PublishNegManagerProcessMetrics(process string, err error, start time.Time)
 // PublishNegInitializationMetrics publishes collected metrics for time from request to initialization of NEG
 func PublishNegInitializationMetrics(latency time.Duration) {
 	InitializationLatency.Observe(latency.Seconds())
+}
+
+// PublishNegErrorStateMetrics publishes collected metrics for the number of occurance of each error state
+func PublishNegErrorStateMetrics(negType, endpointCalculator string, err error) {
+	status := getSyncResult(err)
+	SyncerSyncResultCount.WithLabelValues(negType, endpointCalculator, status).Inc()
+}
+
+func PublishNegSyncFrequencyMetrics(negType, endpointCalculator string, period time.Duration) {
+	SyncerSyncFrequency.Observe(period.Seconds())
+}
+
+func getSyncResult(err error) string {
+	switch {
+	case errors.Is(err, ErrEPCountsDiffer):
+		return ResultEPCountsDiffer
+	case errors.Is(err, ErrEPMissingNodeName):
+		return ResultEPMissingNodeName
+	case errors.Is(err, ErrEPMissingZone):
+		return ResultEPMissingZone
+	case errors.Is(err, ErrInvalidEPAttach):
+		return ResultInvalidEPAttach
+	case errors.Is(err, ErrInvalidEPDetach):
+		return ResultInvalidEPDetach
+	case errors.Is(err, ErrEPSEndpointCountZero):
+		return ResultEPSEndpointCountZero
+	case errors.Is(err, ErrEPCalculationCountZero):
+		return ResultEPCalculationCountZero
+	case errors.Is(err, ErrCurrentEPNotFound):
+		return ResultCurrentEPNotFound
+	case errors.Is(err, ErrEPSNotFound):
+		return ResultEPSNotFound
+	case errors.Is(err, ErrNodeNotFound):
+		return ResultNodeNotFound
+	case err == nil:
+		return ResultSuccess
+	default:
+		return ResultOtherError
+	}
 }
 
 func getResult(err error) string {

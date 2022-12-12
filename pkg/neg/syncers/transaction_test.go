@@ -40,6 +40,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -1412,7 +1413,7 @@ func TestUnknownNodes(t *testing.T) {
 	}
 }
 
-func TestInvalidEndpointInfo(t *testing.T) {
+func TestCheckEndpointInfo(t *testing.T) {
 	t.Parallel()
 	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType, false, true)
 
@@ -1473,7 +1474,7 @@ func TestInvalidEndpointInfo(t *testing.T) {
 		endpointsData  []negtypes.EndpointsData
 		endpointPodMap map[negtypes.NetworkEndpoint]types.NamespacedName
 		dupCount       int
-		expect         bool
+		expect         error
 	}{
 		{
 			desc: "counts equal, endpointData has no duplicated endpoints",
@@ -1545,7 +1546,7 @@ func TestInvalidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       0,
-			expect:         false,
+			expect:         nil,
 		},
 		{
 			desc: "counts equal, endpointData has duplicated endpoints",
@@ -1626,7 +1627,7 @@ func TestInvalidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       1,
-			expect:         false,
+			expect:         nil,
 		},
 		{
 			desc: "counts not equal, endpointData has no duplicated endpoints",
@@ -1689,7 +1690,7 @@ func TestInvalidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       0,
-			expect:         true,
+			expect:         metrics.ErrEPCountsDiffer,
 		},
 		{
 			desc: "counts not equal, endpointData has duplicated endpoints",
@@ -1761,7 +1762,7 @@ func TestInvalidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       1,
-			expect:         true,
+			expect:         metrics.ErrEPCountsDiffer,
 		},
 		{
 			desc: "no missing nodeNames",
@@ -1833,7 +1834,7 @@ func TestInvalidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       0,
-			expect:         false,
+			expect:         nil,
 		},
 		{
 			desc: "at least one endpoint has nil nodeName ",
@@ -1905,7 +1906,7 @@ func TestInvalidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       0,
-			expect:         true,
+			expect:         metrics.ErrEPMissingNodeName,
 		},
 		{
 			desc: "at least one endpoint has empty nodeName",
@@ -1977,7 +1978,7 @@ func TestInvalidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       0,
-			expect:         false,
+			expect:         metrics.ErrEPMissingNodeName,
 		},
 		{
 			desc: "endpointData has zero endpoint",
@@ -2011,7 +2012,7 @@ func TestInvalidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       0,
-			expect:         true,
+			expect:         metrics.ErrEPDataCountZero,
 		},
 		{
 			desc: "endpointPodMap has zero endpoint",
@@ -2083,7 +2084,7 @@ func TestInvalidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: map[negtypes.NetworkEndpoint]types.NamespacedName{},
 			dupCount:       0,
-			expect:         true,
+			expect:         metrics.ErrEPPodMapCountZero,
 		},
 		{
 			desc: "endpointData and endpointPodMap both have zero endpoint",
@@ -2117,7 +2118,7 @@ func TestInvalidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: map[negtypes.NetworkEndpoint]types.NamespacedName{},
 			dupCount:       0,
-			expect:         true,
+			expect:         metrics.ErrEPPodMapCountZero, // PodMap count is check and returned first
 		},
 		{
 			desc: "endpointData and endpointPodMap both have non-zero endpoints",
@@ -2189,14 +2190,14 @@ func TestInvalidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       0,
-			expect:         false,
+			expect:         nil,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			if got := transactionSyncer.invalidEndpointInfo(tc.endpointsData, tc.endpointPodMap, tc.dupCount); got != tc.expect {
-				t.Errorf("invalidEndpointInfo() = %t,  expected %t", got, tc.expect)
+			if got := transactionSyncer.checkEndpointInfo(tc.endpointsData, tc.endpointPodMap, tc.dupCount); got != tc.expect {
+				t.Errorf("checkEndpointInfo() = %t, expected %t", got, tc.expect)
 			}
 		})
 	}
