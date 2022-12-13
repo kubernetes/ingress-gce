@@ -278,9 +278,9 @@ func (l4netlb *L4NetLB) GetFRName() string {
 
 func (l4netlb *L4NetLB) ensureNodesFirewall(name string, nodeNames []string, ipAddress string, portRanges []string, protocol string) *L4NetLBSyncResult {
 	start := time.Now()
-	klog.V(2).Infof("Ensuring nodes firewall %s for L4 NetLB Service, ipAddress: %s, protocol: %s, len(nodeNames): %v, portRanges: %v", name, l4netlb.Service.Namespace, l4netlb.Service.Name, ipAddress, protocol, len(nodeNames), portRanges)
+	klog.V(2).Infof("Ensuring nodes firewall %s for L4 NetLB Service %s/%s, ipAddress: %s, protocol: %s, len(nodeNames): %v, portRanges: %v", name, l4netlb.Service.Namespace, l4netlb.Service.Name, ipAddress, protocol, len(nodeNames), portRanges)
 	defer func() {
-		klog.V(2).Infof("Finished ensuring nodes firewall %s for L4 NetLB Service, time taken: %v", name, l4netlb.Service.Namespace, l4netlb.Service.Name, time.Since(start))
+		klog.V(2).Infof("Finished ensuring nodes firewall %s for L4 NetLB Service %s/%s, time taken: %v", name, l4netlb.Service.Namespace, l4netlb.Service.Name, time.Since(start))
 	}()
 
 	result := &L4NetLBSyncResult{}
