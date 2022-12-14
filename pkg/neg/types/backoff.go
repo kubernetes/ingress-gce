@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package syncers
+package types
 
 import (
 	"fmt"
@@ -26,8 +26,8 @@ import (
 
 var ErrRetriesExceeded = fmt.Errorf("maximum retry exceeded")
 
-// backoffHandler handles delays for back off retry
-type backoffHandler interface {
+// BackoffHandler handles delays for back off retry
+type BackoffHandler interface {
 	// NextRetryDelay returns the delay for next retry or error if maximum number of retries exceeded.
 	NextRetryDelay() (time.Duration, error)
 	// ResetRetryDelay resets the retry delay

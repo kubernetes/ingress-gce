@@ -54,7 +54,7 @@ type syncer struct {
 	// sync signal and retry handling
 	syncCh  chan interface{}
 	clock   clock.Clock
-	backoff backoffHandler
+	backoff negtypes.BackoffHandler
 
 	logger klog.Logger
 }
@@ -68,7 +68,7 @@ func newSyncer(negSyncerKey negtypes.NegSyncerKey, serviceLister cache.Indexer, 
 		stopped:       true,
 		shuttingDown:  false,
 		clock:         clock.RealClock{},
-		backoff:       NewExponentialBackendOffHandler(maxRetries, minRetryDelay, maxRetryDelay),
+		backoff:       negtypes.NewExponentialBackendOffHandler(maxRetries, minRetryDelay, maxRetryDelay),
 		logger:        logger,
 	}
 }
@@ -91,7 +91,7 @@ func (s *syncer) Start() error {
 			if err != nil {
 				delay, retryErr := s.backoff.NextRetryDelay()
 				retryMsg := ""
-				if retryErr == ErrRetriesExceeded {
+				if retryErr == negtypes.ErrRetriesExceeded {
 					retryMsg = "(will not retry)"
 				} else {
 					retryCh = s.clock.After(delay)

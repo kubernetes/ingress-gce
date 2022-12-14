@@ -74,6 +74,8 @@ type readinessReflector struct {
 	queue workqueue.RateLimitingInterface
 
 	logger klog.Logger
+
+	backoff negtypes.BackoffHandler
 }
 
 func NewReadinessReflector(kubeClient kubernetes.Interface, podLister cache.Indexer, negCloud negtypes.NetworkEndpointGroupCloud, lookup NegLookup, logger klog.Logger) Reflector {
@@ -93,6 +95,7 @@ func NewReadinessReflector(kubeClient kubernetes.Interface, podLister cache.Inde
 		eventRecorder:    recorder,
 		queue:            workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
 		logger:           logger,
+		backoff:          negtypes.NewExponentialBackendOffHandler(0, minRetryDelay, retryDelay),
 	}
 	poller := NewPoller(podLister, lookup, reflector, negCloud, logger)
 	reflector.poller = poller
@@ -257,12 +260,22 @@ func (r *readinessReflector) poll() {
 // pollNeg polls a NEG
 func (r *readinessReflector) pollNeg(key negMeta) {
 	r.logger.V(3).Info("Polling NEG", "neg", key.String())
-	retry, err := r.poller.Poll(key)
+	nextRetryDelayFunc := func() time.Duration {
+		nextRetryDelay, err := r.backoff.NextRetryDelay()
+		if err != nil {
+			r.logger.Error(err, "Failed to calculate next retry delay", "neg", key.String())
+			nextRetryDelay = retryDelay
+		}
+		return nextRetryDelay
+	}
+	retry, err := r.poller.Poll(key, nextRetryDelayFunc)
 	if err != nil {
 		r.logger.Error(err, "Failed to poll neg", "neg", key)
 	}
 	if retry {
 		r.poll()
+	} else {
+		r.backoff.ResetRetryDelay()
 	}
 }
 
