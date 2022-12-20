@@ -317,7 +317,7 @@ func (m *manager) remove(groupName string, names []string) error {
 
 // Sync nodes with the instances in the instance group.
 func (m *manager) Sync(nodes []string) (err error) {
-	klog.V(2).Infof("Syncing %d nodes", len(nodes))
+	klog.V(2).Infof("Syncing nodes %v", nodes)
 
 	defer func() {
 		// The node pool is only responsible for syncing nodes to instance
@@ -378,7 +378,7 @@ func (m *manager) Sync(nodes []string) (err error) {
 		start := time.Now()
 		if len(removeNodes) != 0 {
 			err = m.remove(igName, removeNodes)
-			klog.V(2).Infof("Remove(%q, _) = %v (took %s)", igName, err, time.Now().Sub(start))
+			klog.V(2).Infof("Remove(%q, _) = %v (took %s); nodes = %v", igName, err, time.Now().Sub(start), removeNodes)
 			if err != nil {
 				return err
 			}
@@ -387,7 +387,7 @@ func (m *manager) Sync(nodes []string) (err error) {
 		start = time.Now()
 		if len(addNodes) != 0 {
 			err = m.add(igName, addNodes)
-			klog.V(2).Infof("Add(%q, _) = %v (took %s)", igName, err, time.Now().Sub(start))
+			klog.V(2).Infof("Add(%q, _) = %v (took %s); nodes = %v", igName, err, time.Now().Sub(start), addNodes)
 			if err != nil {
 				return err
 			}
