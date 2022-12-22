@@ -18,6 +18,8 @@ package loadbalancers
 
 import (
 	"fmt"
+	"net/http"
+	"strings"
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
@@ -36,8 +38,13 @@ import (
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
-// maxL4ILBPorts is the maximum number of ports that can be specified in an L4 ILB Forwarding Rule
-const maxL4ILBPorts = 5
+const (
+	// maxL4ILBPorts is the maximum number of ports that can be specified in an L4 ILB Forwarding Rule
+	maxL4ILBPorts = 5
+	// addressAlreadyInUseMessage is the error message string returned by the compute API
+	// when creating a forwarding rule that uses a conflicting IP address.
+	addressAlreadyInUseMessage = "Specified IP address is in-use and would result in a conflict."
+)
 
 func (l7 *L7) checkHttpForwardingRule() (err error) {
 	if l7.tp == nil {
@@ -370,6 +377,9 @@ func (l4netlb *L4NetLB) ensureExternalForwardingRule(bsLink string) (*composite.
 	}
 	klog.V(2).Infof("ensureExternalForwardingRule: Creating/Recreating forwarding rule - %s", fr.Name)
 	if err = l4netlb.forwardingRules.Create(fr); err != nil {
+		if isAddressAlreadyInUseError(err) {
+			return nil, IPAddrUndefined, utils.NewIPConfigurationError(fr.IPAddress, addressAlreadyInUseMessage)
+		}
 		return nil, IPAddrUndefined, err
 	}
 	createdFr, err := l4netlb.forwardingRules.Get(fr.Name)
@@ -445,4 +455,8 @@ func l4lbIPToUse(svc *v1.Service, fwdRule *composite.ForwardingRule, requestedSu
 		return ""
 	}
 	return fwdRule.IPAddress
+}
+
+func isAddressAlreadyInUseError(err error) bool {
+	return utils.IsHTTPErrorCode(err, http.StatusBadRequest) && strings.Contains(err.Error(), addressAlreadyInUseMessage)
 }

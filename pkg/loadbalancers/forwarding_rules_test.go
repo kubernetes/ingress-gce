@@ -1,11 +1,22 @@
 package loadbalancers
 
 import (
+	"net/http"
 	"testing"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	compute "google.golang.org/api/compute/v1"
+	"google.golang.org/api/googleapi"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/forwardingrules"
+	"k8s.io/ingress-gce/pkg/test"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
@@ -226,4 +237,34 @@ func TestForwardingRulesEqual(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestL4CreateExternalForwardingRuleAddressAlreadyInUse(t *testing.T) {
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	targetIP := "1.1.1.1"
+	l4 := L4NetLB{
+		cloud:           fakeGCE,
+		forwardingRules: forwardingrules.New(fakeGCE, meta.VersionGA, meta.Regional),
+		Service: &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "testService", Namespace: "default", UID: types.UID("1")},
+			Spec: corev1.ServiceSpec{
+				Ports: []corev1.ServicePort{
+					{
+						Port: 8080,
+					},
+				},
+				Type:           "LoadBalancer",
+				LoadBalancerIP: targetIP,
+			},
+		},
+	}
+
+	addr := &compute.Address{Name: "my-important-address", Address: targetIP, AddressType: string(cloud.SchemeExternal)}
+	fakeGCE.ReserveRegionAddress(addr, fakeGCE.Region())
+	insertError := &googleapi.Error{Code: http.StatusBadRequest, Message: "Invalid value for field 'resource.IPAddress': '1.1.1.1'. Specified IP address is in-use and would result in a conflict., invalid"}
+	fakeGCE.Compute().(*cloud.MockGCE).MockForwardingRules.InsertHook = test.InsertForwardingRuleErrorHook(insertError)
+	_, _, err := l4.ensureExternalForwardingRule("link")
+
+	require.Error(t, err)
+	assert.True(t, utils.IsIPConfigurationError(err))
 }
