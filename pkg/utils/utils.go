@@ -110,6 +110,20 @@ func NewNetworkTierErr(resourceInErr, desired, received string) *NetworkTierErro
 	return &NetworkTierError{resource: resourceInErr, desiredNT: desired, receivedNT: received}
 }
 
+// IPConfigurationError is a struct to define error caused by User misconfiguration the Load Balancer IP.
+type IPConfigurationError struct {
+	ip     string
+	reason string
+}
+
+func (e *IPConfigurationError) Error() string {
+	return fmt.Sprintf("IP configuration error: \"%s\" %s", e.ip, e.reason)
+}
+
+func NewIPConfigurationError(ip, reason string) *IPConfigurationError {
+	return &IPConfigurationError{ip: ip, reason: reason}
+}
+
 // L4LBType indicates if L4 LoadBalancer is Internal or External
 type L4LBType int
 
@@ -198,11 +212,17 @@ func IsNetworkTierError(err error) bool {
 	return errors.As(err, &netTierError)
 }
 
+// IsIPConfigurationError checks if wrapped error is an IP configuration error.
+func IsIPConfigurationError(err error) bool {
+	var ipConfigError *IPConfigurationError
+	return errors.As(err, &ipConfigError)
+}
+
 // IsUserError checks if given error is cause by User.
-// Right now User Error might be cause by Network Tier misconfiguration
-// but this list might get longer.
+// Right now User Error might be caused by Network Tier misconfiguration
+// or specifying non-existent or already used IP address.
 func IsUserError(err error) bool {
-	return IsNetworkTierError(err)
+	return IsNetworkTierError(err) || IsIPConfigurationError(err)
 }
 
 // IsNotFoundError returns true if the resource does not exist
