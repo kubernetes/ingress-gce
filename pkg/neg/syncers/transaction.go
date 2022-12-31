@@ -31,6 +31,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
 	"k8s.io/ingress-gce/pkg/neg/backoff"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -545,7 +546,9 @@ func (s *transactionSyncer) commitTransaction(err error, networkEndpointMap map[
 	}
 
 	if needRetry {
-		if retryErr := s.retry.Retry(); retryErr != nil {
+		if utils.IsQuotaExceededError(err) {
+			s.syncer.Sync()
+		} else if retryErr := s.retry.Retry(); retryErr != nil {
 			s.recordEvent(apiv1.EventTypeWarning, "RetryFailed", fmt.Sprintf("Failed to retry NEG sync for %q: %v", s.NegSyncerKey.String(), retryErr))
 		}
 		return

@@ -30,6 +30,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/composite"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
 
@@ -40,7 +41,8 @@ const (
 	// GCE NEG API RPS quota is rate limited per every 100 seconds.
 	// Make this retry delay to match the rate limiting interval.
 	// More detail: https://cloud.google.com/compute/docs/api-rate-limits
-	retryDelay = 100 * time.Second
+	retryDelay    = 100 * time.Second
+	minRetryDelay = 5 * time.Second
 )
 
 // negMeta references a GCE NEG resource
@@ -145,7 +147,7 @@ func (p *poller) ScanForWork() []negMeta {
 
 // Poll polls a NEG and returns error plus whether retry is needed
 // This function is threadsafe.
-func (p *poller) Poll(key negMeta) (retry bool, err error) {
+func (p *poller) Poll(key negMeta, nextRetryDelayFunc func() time.Duration) (retry bool, err error) {
 	if !p.markPolling(key) {
 		p.logger.V(4).Info("NEG is already being polled or no longer needed to be polled.", "neg", key.Name, "negZone", key.Zone)
 		return true, nil
@@ -161,9 +163,10 @@ func (p *poller) Poll(key negMeta) (retry bool, err error) {
 		// This will effectively batch NEG health status updates for 100s. The pods added into NEG in this 100s will not be marked ready
 		// until the next status poll is executed. However, the pods are not marked as Ready and still passes the LB health check will
 		// serve LB traffic. The side effect during the delay period is the workload (depending on rollout strategy) might slow down rollout.
-		// TODO(freehan): enable exponential backoff.
-		p.logger.Error(err, "Failed to ListNetworkEndpoint in NEG. Retrying after some time.", "neg", key.String(), "retryDelay", retryDelay.String())
-		<-p.clock.After(retryDelay)
+		p.logger.Error(err, "Failed to ListNetworkEndpoints in NEG. Retrying after some time.", "neg", key.String())
+		if !utils.IsQuotaExceededError(err) {
+			<-p.clock.After(nextRetryDelayFunc())
+		}
 		return true, err
 	}
 

@@ -395,7 +395,7 @@ func TestPoll(t *testing.T) {
 				fakeClock.Step(retryDelay)
 			}()
 		}
-		retry, err := poller.Poll(key)
+		retry, err := poller.Poll(key, func() time.Duration { return retryDelay })
 		if expectErr && err == nil {
 			t.Errorf("For case %q, expect err, but got %v", desc, err)
 		} else if !expectErr && err != nil {

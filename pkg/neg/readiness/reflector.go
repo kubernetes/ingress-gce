@@ -32,6 +32,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/ingress-gce/pkg/neg/backoff"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
 	"k8s.io/klog/v2"
@@ -74,6 +75,8 @@ type readinessReflector struct {
 	queue workqueue.RateLimitingInterface
 
 	logger klog.Logger
+
+	backoff backoff.BackoffHandler
 }
 
 func NewReadinessReflector(kubeClient kubernetes.Interface, podLister cache.Indexer, negCloud negtypes.NetworkEndpointGroupCloud, lookup NegLookup, logger klog.Logger) Reflector {
@@ -93,6 +96,7 @@ func NewReadinessReflector(kubeClient kubernetes.Interface, podLister cache.Inde
 		eventRecorder:    recorder,
 		queue:            workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
 		logger:           logger,
+		backoff:          backoff.NewExponentialBackoffHandler(0, minRetryDelay, retryDelay),
 	}
 	poller := NewPoller(podLister, lookup, reflector, negCloud, logger)
 	reflector.poller = poller
@@ -257,12 +261,23 @@ func (r *readinessReflector) poll() {
 // pollNeg polls a NEG
 func (r *readinessReflector) pollNeg(key negMeta) {
 	r.logger.V(3).Info("Polling NEG", "neg", key.String())
-	retry, err := r.poller.Poll(key)
+	nextRetryDelayFunc := func() time.Duration {
+		nextRetryDelay, err := r.backoff.NextDelay()
+		r.logger.V(3).Info(fmt.Sprintf("Next retry delay is %.f seconds", nextRetryDelay.Seconds()))
+		if err != nil {
+			r.logger.Error(err, "Failed to calculate next retry delay")
+			nextRetryDelay = retryDelay
+		}
+		return nextRetryDelay
+	}
+	retry, err := r.poller.Poll(key, nextRetryDelayFunc)
 	if err != nil {
 		r.logger.Error(err, "Failed to poll neg", "neg", key)
 	}
 	if retry {
 		r.poll()
+	} else {
+		r.backoff.ResetDelay()
 	}
 }
 

@@ -27,6 +27,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/neg/backoff"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
 
@@ -90,13 +91,17 @@ func (s *syncer) Start() error {
 			retryCh := make(<-chan time.Time)
 			err := s.core.sync()
 			if err != nil {
-				delay, retryErr := s.backoff.NextDelay()
 				retryMsg := ""
-				if retryErr == backoff.ErrRetriesExceeded {
-					retryMsg = "(will not retry)"
-				} else {
-					retryCh = s.clock.After(delay)
+				if utils.IsQuotaExceededError(err) {
 					retryMsg = "(will retry)"
+				} else {
+					delay, retryErr := s.backoff.NextDelay()
+					if retryErr == backoff.ErrRetriesExceeded {
+						retryMsg = "(will not retry)"
+					} else {
+						retryCh = s.clock.After(delay)
+						retryMsg = "(will retry)"
+					}
 				}
 
 				if svc := getService(s.serviceLister, s.Namespace, s.Name); svc != nil {
