@@ -65,6 +65,12 @@ func InsertForwardingRuleHook(ctx context.Context, key *meta.Key, obj *compute.F
 	return false, nil
 }
 
+func InsertForwardingRuleErrorHook(err error) func(ctx context.Context, key *meta.Key, obj *compute.ForwardingRule, m *cloud.MockForwardingRules) (b bool, e error) {
+	return func(ctx context.Context, key *meta.Key, obj *compute.ForwardingRule, m *cloud.MockForwardingRules) (b bool, e error) {
+		return true, err
+	}
+}
+
 func DeleteForwardingRulesErrorHook(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules) (bool, error) {
 	return true, fmt.Errorf("DeleteForwardingRulesErrorHook")
 }
@@ -117,4 +123,8 @@ func InsertAddressErrorHook(ctx context.Context, key *meta.Key, obj *compute.Add
 
 func InsertAddressNetworkErrorHook(ctx context.Context, key *meta.Key, obj *compute.Address, m *cloud.MockAddresses) (bool, error) {
 	return true, &googleapi.Error{Code: http.StatusBadRequest, Message: "The network tier of external IP is STANDARD, that of Address must be the same."}
+}
+
+func InsertAddressNotAllocatedToProjectErrorHook(ctx context.Context, key *meta.Key, obj *compute.Address, m *cloud.MockAddresses) (bool, error) {
+	return true, &googleapi.Error{Code: http.StatusBadRequest, Message: "Specified IP address is not allocated to the project or does not belong to the specified scope."}
 }
