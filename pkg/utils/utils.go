@@ -218,11 +218,26 @@ func IsIPConfigurationError(err error) bool {
 	return errors.As(err, &ipConfigError)
 }
 
+// IsInvalidLoadBalancerSourceRangesSpecError checks if wrapped error is an InvalidLoadBalancerSourceRangesSpecError error.
+func IsInvalidLoadBalancerSourceRangesSpecError(err error) bool {
+	var invalidLoadBalancerSourceRangesSpecError *InvalidLoadBalancerSourceRangesSpecError
+	return errors.As(err, &invalidLoadBalancerSourceRangesSpecError)
+}
+
+// IsInvalidLoadBalancerSourceRangesAnnotationError checks if wrapped error is an InvalidLoadBalancerSourceRangesAnnotationError error.
+func IsInvalidLoadBalancerSourceRangesAnnotationError(err error) bool {
+	var invalidLoadBalancerSourceRangesAnnotationError *InvalidLoadBalancerSourceRangesAnnotationError
+	return errors.As(err, &invalidLoadBalancerSourceRangesAnnotationError)
+}
+
 // IsUserError checks if given error is cause by User.
 // Right now User Error might be caused by Network Tier misconfiguration
 // or specifying non-existent or already used IP address.
 func IsUserError(err error) bool {
-	return IsNetworkTierError(err) || IsIPConfigurationError(err)
+	return IsNetworkTierError(err) ||
+		IsIPConfigurationError(err) ||
+		IsInvalidLoadBalancerSourceRangesSpecError(err) ||
+		IsInvalidLoadBalancerSourceRangesAnnotationError(err)
 }
 
 // IsNotFoundError returns true if the resource does not exist
