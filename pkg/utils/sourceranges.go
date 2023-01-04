@@ -10,18 +10,43 @@ import (
 
 const (
 	allowAllIPv4Range = "0.0.0.0/0"
+	allowAllIPv6Range = "0::0/0"
 )
 
-func ServiceSourceRanges(service *v1.Service) ([]string, error) {
-	ipRanges, err := getAllSourceRanges(service)
+func IPv4ServiceSourceRanges(service *v1.Service) ([]string, error) {
+	allRanges, err := getAllSourceRanges(service)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(ipRanges) == 0 {
+	var ipv4Ranges []string
+	for _, ip := range allRanges {
+		if net.IsIPv4CIDR(ip) {
+			ipv4Ranges = append(ipv4Ranges, ip.String())
+		}
+	}
+	if len(ipv4Ranges) == 0 {
 		return []string{allowAllIPv4Range}, nil
 	}
-	return ipRanges.StringSlice(), nil
+	return ipv4Ranges, nil
+}
+
+func IPv6ServiceSourceRanges(service *v1.Service) ([]string, error) {
+	allRanges, err := getAllSourceRanges(service)
+	if err != nil {
+		return nil, err
+	}
+
+	var ipv6Ranges []string
+	for _, ip := range allRanges {
+		if net.IsIPv6CIDR(ip) {
+			ipv6Ranges = append(ipv6Ranges, ip.String())
+		}
+	}
+	if len(ipv6Ranges) == 0 {
+		return []string{allowAllIPv6Range}, nil
+	}
+	return ipv6Ranges, nil
 }
 
 func getAllSourceRanges(service *v1.Service) (net.IPNetSet, error) {
