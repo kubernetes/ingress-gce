@@ -69,6 +69,8 @@ type L4ILBServiceState struct {
 	EnabledCustomSubnet bool
 	// InSuccess specifies if the ILB service VIP is configured.
 	InSuccess bool
+	// IsUserError specifies if the error was caused by User misconfiguration.
+	IsUserError bool
 }
 
 // L4NetLBServiceState defines if network tier is premium and

@@ -55,12 +55,13 @@ func TestComputeL4ILBMetrics(t *testing.T) {
 				l4ILBCustomSubnet: 0,
 				l4ILBInSuccess:    0,
 				l4ILBInError:      0,
+				l4ILBInUserError:  0,
 			},
 		},
 		{
 			desc: "one l4 ilb service",
 			serviceStates: []L4ILBServiceState{
-				newL4ILBServiceState(disableGlobalAccess, disableCustomSubnet, isSuccess),
+				newL4ILBServiceState(disableGlobalAccess, disableCustomSubnet, isSuccess, noUserError),
 			},
 			expectL4ILBCount: map[feature]int{
 				l4ILBService:      1,
@@ -68,12 +69,13 @@ func TestComputeL4ILBMetrics(t *testing.T) {
 				l4ILBCustomSubnet: 0,
 				l4ILBInSuccess:    1,
 				l4ILBInError:      0,
+				l4ILBInUserError:  0,
 			},
 		},
 		{
 			desc: "l4 ilb service in error state",
 			serviceStates: []L4ILBServiceState{
-				newL4ILBServiceState(disableGlobalAccess, enableCustomSubnet, isError),
+				newL4ILBServiceState(disableGlobalAccess, enableCustomSubnet, isError, noUserError),
 			},
 			expectL4ILBCount: map[feature]int{
 				l4ILBService:      1,
@@ -81,12 +83,27 @@ func TestComputeL4ILBMetrics(t *testing.T) {
 				l4ILBCustomSubnet: 0,
 				l4ILBInSuccess:    0,
 				l4ILBInError:      1,
+				l4ILBInUserError:  0,
+			},
+		},
+		{
+			desc: "l4 ilb service in user error state",
+			serviceStates: []L4ILBServiceState{
+				newL4ILBServiceState(disableGlobalAccess, enableCustomSubnet, isError, isUserError),
+			},
+			expectL4ILBCount: map[feature]int{
+				l4ILBService:      1,
+				l4ILBGlobalAccess: 0,
+				l4ILBCustomSubnet: 0,
+				l4ILBInSuccess:    0,
+				l4ILBInError:      0,
+				l4ILBInUserError:  1,
 			},
 		},
 		{
 			desc: "global access for l4 ilb service enabled",
 			serviceStates: []L4ILBServiceState{
-				newL4ILBServiceState(enableGlobalAccess, disableCustomSubnet, isSuccess),
+				newL4ILBServiceState(enableGlobalAccess, disableCustomSubnet, isSuccess, noUserError),
 			},
 			expectL4ILBCount: map[feature]int{
 				l4ILBService:      1,
@@ -94,12 +111,13 @@ func TestComputeL4ILBMetrics(t *testing.T) {
 				l4ILBCustomSubnet: 0,
 				l4ILBInSuccess:    1,
 				l4ILBInError:      0,
+				l4ILBInUserError:  0,
 			},
 		},
 		{
 			desc: "custom subnet for l4 ilb service enabled",
 			serviceStates: []L4ILBServiceState{
-				newL4ILBServiceState(disableGlobalAccess, enableCustomSubnet, isSuccess),
+				newL4ILBServiceState(disableGlobalAccess, enableCustomSubnet, isSuccess, noUserError),
 			},
 			expectL4ILBCount: map[feature]int{
 				l4ILBService:      1,
@@ -107,12 +125,13 @@ func TestComputeL4ILBMetrics(t *testing.T) {
 				l4ILBCustomSubnet: 1,
 				l4ILBInSuccess:    1,
 				l4ILBInError:      0,
+				l4ILBInUserError:  0,
 			},
 		},
 		{
 			desc: "both global access and custom subnet for l4 ilb service enabled",
 			serviceStates: []L4ILBServiceState{
-				newL4ILBServiceState(enableGlobalAccess, enableCustomSubnet, isSuccess),
+				newL4ILBServiceState(enableGlobalAccess, enableCustomSubnet, isSuccess, noUserError),
 			},
 			expectL4ILBCount: map[feature]int{
 				l4ILBService:      1,
@@ -120,15 +139,16 @@ func TestComputeL4ILBMetrics(t *testing.T) {
 				l4ILBCustomSubnet: 1,
 				l4ILBInSuccess:    1,
 				l4ILBInError:      0,
+				l4ILBInUserError:  0,
 			},
 		},
 		{
 			desc: "many l4 ilb services",
 			serviceStates: []L4ILBServiceState{
-				newL4ILBServiceState(disableGlobalAccess, disableCustomSubnet, isSuccess),
-				newL4ILBServiceState(disableGlobalAccess, enableCustomSubnet, isSuccess),
-				newL4ILBServiceState(enableGlobalAccess, disableCustomSubnet, isSuccess),
-				newL4ILBServiceState(enableGlobalAccess, enableCustomSubnet, isSuccess),
+				newL4ILBServiceState(disableGlobalAccess, disableCustomSubnet, isSuccess, noUserError),
+				newL4ILBServiceState(disableGlobalAccess, enableCustomSubnet, isSuccess, noUserError),
+				newL4ILBServiceState(enableGlobalAccess, disableCustomSubnet, isSuccess, noUserError),
+				newL4ILBServiceState(enableGlobalAccess, enableCustomSubnet, isSuccess, noUserError),
 			},
 			expectL4ILBCount: map[feature]int{
 				l4ILBService:      4,
@@ -136,24 +156,27 @@ func TestComputeL4ILBMetrics(t *testing.T) {
 				l4ILBCustomSubnet: 2,
 				l4ILBInSuccess:    4,
 				l4ILBInError:      0,
+				l4ILBInUserError:  0,
 			},
 		},
 		{
 			desc: "many l4 ilb services with some in error state",
 			serviceStates: []L4ILBServiceState{
-				newL4ILBServiceState(disableGlobalAccess, disableCustomSubnet, isSuccess),
-				newL4ILBServiceState(disableGlobalAccess, enableCustomSubnet, isError),
-				newL4ILBServiceState(disableGlobalAccess, enableCustomSubnet, isSuccess),
-				newL4ILBServiceState(enableGlobalAccess, disableCustomSubnet, isSuccess),
-				newL4ILBServiceState(enableGlobalAccess, disableCustomSubnet, isError),
-				newL4ILBServiceState(enableGlobalAccess, enableCustomSubnet, isSuccess),
+				newL4ILBServiceState(disableGlobalAccess, disableCustomSubnet, isSuccess, noUserError),
+				newL4ILBServiceState(disableGlobalAccess, enableCustomSubnet, isError, noUserError),
+				newL4ILBServiceState(disableGlobalAccess, enableCustomSubnet, isSuccess, noUserError),
+				newL4ILBServiceState(enableGlobalAccess, disableCustomSubnet, isSuccess, noUserError),
+				newL4ILBServiceState(enableGlobalAccess, disableCustomSubnet, isError, noUserError),
+				newL4ILBServiceState(enableGlobalAccess, enableCustomSubnet, isSuccess, noUserError),
+				newL4ILBServiceState(enableGlobalAccess, enableCustomSubnet, isError, isUserError),
 			},
 			expectL4ILBCount: map[feature]int{
-				l4ILBService:      6,
+				l4ILBService:      7,
 				l4ILBGlobalAccess: 2,
 				l4ILBCustomSubnet: 2,
 				l4ILBInSuccess:    4,
 				l4ILBInError:      2,
+				l4ILBInUserError:  1,
 			},
 		},
 	} {
@@ -172,11 +195,12 @@ func TestComputeL4ILBMetrics(t *testing.T) {
 	}
 }
 
-func newL4ILBServiceState(globalAccess, customSubnet, inSuccess bool) L4ILBServiceState {
+func newL4ILBServiceState(globalAccess bool, customSubnet bool, inSuccess bool, isUserError bool) L4ILBServiceState {
 	return L4ILBServiceState{
 		EnabledGlobalAccess: globalAccess,
 		EnabledCustomSubnet: customSubnet,
 		InSuccess:           inSuccess,
+		IsUserError:         isUserError,
 	}
 }
 
