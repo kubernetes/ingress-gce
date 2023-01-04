@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/api/googleapi"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/utils"
 
@@ -101,6 +102,13 @@ func newFakeGCEWithInsertError() *gce.Cloud {
 	vals := gce.DefaultTestClusterValues()
 	fakeGCE := gce.NewFakeGCECloud(vals)
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = mock.InsertForwardingRulesInternalErrHook
+	return fakeGCE
+}
+
+func newFakeGCEWithUserInsertError() *gce.Cloud {
+	vals := gce.DefaultTestClusterValues()
+	fakeGCE := gce.NewFakeGCECloud(vals)
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = test.InsertForwardingRuleErrorHook(&googleapi.Error{Code: http.StatusConflict, Message: "IP_IN_USE_BY_ANOTHER_RESOURCE - IP '1.1.1.1' is already being used by another resource."})
 	return fakeGCE
 }
 
@@ -658,6 +666,24 @@ func TestProcessServiceOnError(t *testing.T) {
 		t.Errorf("Error getting L4 ILB error metrics err: %v", errMetrics)
 	}
 	prevMetrics.ValidateDiff(currMetrics, expectMetrics, t)
+}
+
+func TestProcessServiceOnUserError(t *testing.T) {
+	t.Parallel()
+	l4c := newServiceController(t, newFakeGCEWithUserInsertError())
+	newSvc := test.NewL4ILBService(false, 8080)
+	addILBService(l4c, newSvc)
+	addNEG(l4c, newSvc)
+	syncResult := l4c.processServiceCreateOrUpdate(newSvc)
+	if syncResult.Error == nil {
+		t.Fatalf("Failed to generate error when syncing service %s", newSvc.Name)
+	}
+	if !syncResult.MetricsState.IsUserError {
+		t.Errorf("syncResult.MetricsState.IsUserError should be true, got false")
+	}
+	if syncResult.MetricsState.InSuccess {
+		t.Errorf("syncResult.MetricsState.InSuccess should be false, got true")
+	}
 }
 
 func TestCreateDeleteDualStackService(t *testing.T) {
