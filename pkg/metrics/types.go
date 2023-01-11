@@ -71,6 +71,22 @@ type L4ILBServiceState struct {
 	InSuccess bool
 }
 
+type L4ILBDualStackServiceStateStatus string
+
+var StatusSuccess = L4ILBDualStackServiceStateStatus("Success")
+var StatusError = L4ILBDualStackServiceStateStatus("Error")
+
+// L4ILBDualStackServiceState defines ipFamilies, ipFamilyPolicy and status
+// of L4 ILB DualStack service
+type L4ILBDualStackServiceState struct {
+	// IPFamilies stores spec.ipFamilies of Service
+	IPFamilies string
+	// IPFamilyPolicy specifies spec.IPFamilyPolicy of Service
+	IPFamilyPolicy string
+	// Status specifies status of L4 ILB DualStack
+	Status L4ILBDualStackServiceStateStatus
+}
+
 // L4NetLBServiceState defines if network tier is premium and
 // if static ip address is managed bu controller
 // for an L4 NetLB service.

@@ -43,7 +43,7 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/frontendconfig"
 	"k8s.io/ingress-gce/pkg/healthchecks"
-	"k8s.io/ingress-gce/pkg/instances"
+	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/metrics"
@@ -77,7 +77,7 @@ type LoadBalancerController struct {
 	hasSynced func() bool
 
 	// Resource pools.
-	instancePool instances.NodePool
+	instancePool instancegroups.Manager
 	l7Pool       loadbalancers.LoadBalancerPool
 
 	// syncer implementation for backends
@@ -835,7 +835,7 @@ func (lbc *LoadBalancerController) ensureFinalizer(ing *v1.Ingress) (*v1.Ingress
 	return updatedIng, nil
 }
 
-// frontendGCAlgorithm returns the naming scheme using which frontend resources needs to be cleanedup.
+// frontendGCAlgorithm returns the naming scheme using which frontend resources needs to be cleaned-up.
 // This also returns a boolean to specify if we need to delete frontend resources.
 // GC path is
 // If ingress does not exist :   v1 frontends and all backends

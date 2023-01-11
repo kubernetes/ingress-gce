@@ -160,7 +160,6 @@ func ensureFirewall(svc *v1.Service, shared bool, params *FirewallParams, cloud 
 
 // EnsureL4LBFirewallForHc creates or updates firewall rule for shared or non-shared health check to nodes
 func EnsureL4LBFirewallForHc(svc *v1.Service, shared bool, params *FirewallParams, cloud *gce.Cloud, recorder record.EventRecorder) error {
-	params.SourceRanges = gce.L4LoadBalancerSrcRanges()
 	return ensureFirewall(svc, shared, params, cloud, recorder)
 }
 

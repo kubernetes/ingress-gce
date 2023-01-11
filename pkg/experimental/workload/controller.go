@@ -285,7 +285,7 @@ func (c *Controller) processService(key string) error {
 		return nil
 	}
 	wlSelector := labels.Set(service.Spec.Selector).AsSelectorPreValidated()
-	// TODO: Use selector instaed of name to select endpointslices
+	// TODO: Use selector instead of name to select endpointslices
 	// esSelector := labels.Set(map[string]string{
 	// 	discovery.LabelServiceName: service.Name,
 	// 	discovery.LabelManagedBy:   controllerName,
@@ -295,7 +295,7 @@ func (c *Controller) processService(key string) error {
 	// TODO: fix this
 	// SA: https://github.com/kubernetes/kubernetes/blob/bdb99c8e0954c6b2d4c40233ded94455a343af73/pkg/controller/endpointslice/reconciler.go#L58:22
 	subsets := []discovery.Endpoint{}
-	listMachedWorkload(c.workloadLister, namespace, wlSelector, func(workload *workloadv1a1.Workload) {
+	listMatchedWorkload(c.workloadLister, namespace, wlSelector, func(workload *workloadv1a1.Workload) {
 		subsets = append(subsets, workloadToEndpoint(workload, service))
 	})
 	// TODO: Consider Ready conditions of the workloads before putting them into the EndpointSlice.
@@ -403,7 +403,7 @@ func getEndpointPortsFromServicePorts(svcPorts []corev1.ServicePort) []discovery
 	return ret
 }
 
-func listMachedWorkload(
+func listMatchedWorkload(
 	lister cache.Indexer,
 	namespace string,
 	selector labels.Selector,

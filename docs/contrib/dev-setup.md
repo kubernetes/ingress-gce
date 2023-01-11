@@ -5,7 +5,7 @@ The below guide assumes you have installed the necessary binaries to run Golang.
 
 ## Get the code
 
-We suggest to follow the steps [here](https://github.com/kubernetes/community/blob/master/contributors/guide/github-workflow.md) to get your Github workflow started.
+We suggest to follow the steps [here](https://github.com/kubernetes/community/blob/master/contributors/guide/github-workflow.md) to get your GitHub workflow started.
 Those steps reference the main Kubernetes repository but the same steps apply for this repository.
 
 ## Unit tests

@@ -44,7 +44,7 @@ func computeNewAnnotationsIfNeeded(svc *v1.Service, newAnnotations map[string]st
 	return newObjectMeta
 }
 
-// mergeAnnotations merges the new set of l4lb resource annotations with the pre-existing service annotations.
+// mergeAnnotations merges the new set of l4lb resource annotations with the preexisting service annotations.
 // Existing L4 resource annotation values will be replaced with the values in the new map.
 // This function is used by External and Internal L4 LB controllers.
 func mergeAnnotations(existing, lbAnnotations map[string]string, keysToRemove []string) map[string]string {
@@ -65,7 +65,19 @@ func mergeAnnotations(existing, lbAnnotations map[string]string, keysToRemove []
 
 // updateL4ResourcesAnnotations this function checks if new annotations should be added to service and patch service metadata if needed.
 func updateL4ResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBAnnotations map[string]string) error {
+	klog.V(3).Infof("Updating annotations of service %s/%s", svc.Namespace, svc.Name)
 	newObjectMeta := computeNewAnnotationsIfNeeded(svc, newL4LBAnnotations, loadbalancers.L4LBResourceAnnotationKeys)
+	if newObjectMeta == nil {
+		klog.V(3).Infof("Service annotations not changed, skipping patch for service %s/%s", svc.Namespace, svc.Name)
+		return nil
+	}
+	klog.V(3).Infof("Patching annotations of service %v/%v", svc.Namespace, svc.Name)
+	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
+}
+
+// updateL4DualStackResourcesAnnotations this function checks if new annotations should be added to dual-stack service and patch service metadata if needed.
+func updateL4DualStackResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBAnnotations map[string]string) error {
+	newObjectMeta := computeNewAnnotationsIfNeeded(svc, newL4LBAnnotations, loadbalancers.L4DualStackResourceAnnotationKeys)
 	if newObjectMeta == nil {
 		return nil
 	}
@@ -96,7 +108,9 @@ func deleteAnnotation(ctx *context.ControllerContext, svc *v1.Service, annotatio
 
 // updateServiceStatus this faction checks if LoadBalancer status changed and patch service if needed.
 func updateServiceStatus(ctx *context.ControllerContext, svc *v1.Service, newStatus *v1.LoadBalancerStatus) error {
+	klog.V(2).Infof("Updating service status, service: %s/%s, new status: %+v", svc.Namespace, svc.Name, newStatus)
 	if helpers.LoadBalancerStatusEqual(&svc.Status.LoadBalancer, newStatus) {
+		klog.V(2).Infof("New and old statuses are equal, skipping patch. Service: %s/%s", svc.Namespace, svc.Name)
 		return nil
 	}
 	return patch.PatchServiceLoadBalancerStatus(ctx.KubeClient.CoreV1(), svc, *newStatus)

@@ -67,7 +67,7 @@ type NegSyncer interface {
 type NegSyncerManager interface {
 	// EnsureSyncer ensures corresponding syncers are started and stops any unnecessary syncer
 	// portMap is a map of ServicePort Port to TargetPort. Returns counts of successful Neg syncers
-	// and failed Neg sycner creations
+	// and failed Neg syncer creations
 	EnsureSyncers(namespace, name string, portMap PortInfoMap) (int, int, error)
 	// StopSyncer stops all syncers related to the service. This call is asynchronous. It will not wait for all syncers to stop.
 	StopSyncer(namespace, name string)
@@ -84,7 +84,7 @@ type NegSyncerManager interface {
 type NetworkEndpointsCalculator interface {
 	// CalculateEndpoints computes the NEG endpoints based on service endpoints and the current NEG state and returns a
 	// map of zone name to network endpoint set
-	CalculateEndpoints(eds []EndpointsData, currentMap map[string]NetworkEndpointSet) (map[string]NetworkEndpointSet, EndpointPodMap, error)
+	CalculateEndpoints(eds []EndpointsData, currentMap map[string]NetworkEndpointSet) (map[string]NetworkEndpointSet, EndpointPodMap, int, error)
 	// Mode indicates the mode that the EndpointsCalculator is operating in.
 	Mode() EndpointsCalculatorMode
 }

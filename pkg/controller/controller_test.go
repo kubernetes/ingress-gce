@@ -40,7 +40,7 @@ import (
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/flags"
-	"k8s.io/ingress-gce/pkg/instances"
+	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/translator"
@@ -61,7 +61,7 @@ func newLoadBalancerController() *LoadBalancerController {
 	kubeClient := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	fakeZL := &instances.FakeZoneLister{Zones: []string{fakeZone}}
+	fakeZL := &instancegroups.FakeZoneLister{Zones: []string{fakeZone}}
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockGlobalForwardingRules.InsertHook = loadbalancers.InsertGlobalForwardingRuleHook
 	namer := namer_util.NewNamer(clusterUID, "")
 
@@ -75,8 +75,8 @@ func newLoadBalancerController() *LoadBalancerController {
 	ctx := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, nil, nil, nil, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig)
 	lbc := NewLoadBalancerController(ctx, stopCh)
 	// TODO(rramkumar): Fix this so we don't have to override with our fake
-	lbc.instancePool = instances.NewNodePool(&instances.NodePoolConfig{
-		Cloud:      instances.NewEmptyFakeInstanceGroups(),
+	lbc.instancePool = instancegroups.NewManager(&instancegroups.ManagerConfig{
+		Cloud:      instancegroups.NewEmptyFakeInstanceGroups(),
 		Namer:      namer,
 		Recorders:  &test.FakeRecorderSource{},
 		BasePath:   utils.GetBasePath(fakeGCE),
@@ -216,7 +216,7 @@ func TestNEGOnlyIngress(t *testing.T) {
 	}
 }
 
-// TestIngressCreateDeleteFinalizer asserts that `sync` will will not return an
+// TestIngressCreateDeleteFinalizer asserts that `sync` will not return an
 // error for a good ingress config. It also tests garbage collection for
 // Ingresses that need to be deleted, and keep the ones that don't, depending
 // on whether Finalizer Adds and/or Removes are enabled.

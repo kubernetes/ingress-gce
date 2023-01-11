@@ -19,11 +19,13 @@ package syncers
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"google.golang.org/api/googleapi"
 	apiv1 "k8s.io/api/core/v1"
 	corev1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
@@ -93,6 +95,14 @@ type transactionSyncer struct {
 	enableEndpointSlices bool
 
 	logger klog.Logger
+
+	// inError indicates if the syncer is in any of 4 error scenarios
+	// 1. Endpoint counts from EPS is different from calculated endpoint list
+	// 2. EndpontSlice has missing or invalid data
+	// 3. Attach/Detach EP fails due to incorrect batch information
+	// 4. Endpoint count from EPS or calculated endpoint list is 0
+	// Need to grab syncLock first for any reads or writes based on this value
+	inError bool
 }
 
 func NewTransactionSyncer(
@@ -136,6 +146,7 @@ func NewTransactionSyncer(
 		svcNegClient:         svcNegClient,
 		customName:           customName,
 		enableEndpointSlices: enableEndpointSlices,
+		inError:              false,
 		logger:               logger,
 	}
 	// Syncer implements life cycle logic
@@ -184,6 +195,12 @@ func (s *transactionSyncer) syncInternal() error {
 }
 
 func (s *transactionSyncer) syncInternalImpl() error {
+	// TODO(cheungdavid): for now we reset the boolean so it is a no-op, but
+	// in the future, it will be used to trigger degraded mode if the syncer is in error state.
+	if s.inErrorState() {
+		s.resetErrorState()
+	}
+
 	if s.needInit || s.isZoneChange() {
 		if err := s.ensureNetworkEndpointGroups(); err != nil {
 			return err
@@ -210,6 +227,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 
 	var targetMap map[string]negtypes.NetworkEndpointSet
 	var endpointPodMap negtypes.EndpointPodMap
+	var dupCount int
 
 	if s.enableEndpointSlices {
 		slices, err := s.endpointSliceLister.ByIndex(endpointslices.EndpointSlicesByServiceIndex, endpointslices.FormatEndpointSlicesServiceKey(s.Namespace, s.Name))
@@ -225,7 +243,10 @@ func (s *transactionSyncer) syncInternalImpl() error {
 			endpointSlices[i] = slice.(*discovery.EndpointSlice)
 		}
 		endpointsData := negtypes.EndpointsDataFromEndpointSlices(endpointSlices)
-		targetMap, endpointPodMap, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
+		targetMap, endpointPodMap, dupCount, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
+		if s.invalidEndpointInfo(endpointsData, endpointPodMap, dupCount) || s.isZoneMissing(targetMap) {
+			s.setErrorState()
+		}
 		if err != nil {
 			return fmt.Errorf("endpoints calculation error in mode %q, err: %w", s.endpointsCalculator.Mode(), err)
 		}
@@ -246,7 +267,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 			return nil
 		}
 		endpointsData := negtypes.EndpointsDataFromEndpoints(ep.(*apiv1.Endpoints))
-		targetMap, endpointPodMap, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
+		targetMap, endpointPodMap, _, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
 		if err != nil {
 			return fmt.Errorf("endpoints calculation error in mode %q, err: %w", s.endpointsCalculator.Mode(), err)
 		}
@@ -279,6 +300,21 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	s.logEndpoints(removeEndpoints, "removing endpoint")
 
 	return s.syncNetworkEndpoints(addEndpoints, removeEndpoints)
+}
+
+// syncLock must already be acquired before execution
+func (s *transactionSyncer) inErrorState() bool {
+	return s.inError
+}
+
+// syncLock must already be acquired before execution
+func (s *transactionSyncer) setErrorState() {
+	s.inError = true
+}
+
+// syncLock must already be acquired before execution
+func (s *transactionSyncer) resetErrorState() {
+	s.inError = false
 }
 
 // ensureNetworkEndpointGroups ensures NEGs are created and configured correctly in the corresponding zones.
@@ -320,6 +356,69 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 
 	s.updateInitStatus(negObjRefs, errList)
 	return utilerrors.NewAggregate(errList)
+}
+
+// invalidEndpointInfo checks if endpoint information is correct.
+// It returns true if any of the following checks fails:
+//
+//  1. The endpoint count from endpointData doesn't equal to the one from endpointPodMap:
+//     endpiontPodMap removes the duplicated endpoints, and dupCount stores the number of duplicated it removed
+//     and we compare the endpoint counts with duplicates
+//  2. There is at least one endpoint in endpointData with missing nodeName
+//  3. The endpoint count from endpointData or the one from endpointPodMap is 0
+func (s *transactionSyncer) invalidEndpointInfo(eds []negtypes.EndpointsData, endpointPodMap negtypes.EndpointPodMap, dupCount int) bool {
+	// Endpoint count from EndpointPodMap
+	countFromPodMap := len(endpointPodMap) + dupCount
+	if countFromPodMap == 0 {
+		s.logger.Info("Detected endpoint count from endpointPodMap going to zero", "endpointPodMap", endpointPodMap)
+		return true
+	}
+
+	// Endpoint count from EndpointData
+	countFromEndpointData := 0
+	for _, ed := range eds {
+		countFromEndpointData += len(ed.Addresses)
+		for _, endpointAddress := range ed.Addresses {
+			nodeName := endpointAddress.NodeName
+			if nodeName == nil || len(*nodeName) == 0 {
+				s.logger.Info("Detected error when checking nodeName", "endpoint", endpointAddress, "endpointData", eds)
+				return true
+			}
+		}
+	}
+	if countFromEndpointData == 0 {
+		s.logger.Info("Detected endpoint count from endpointData going to zero", "endpointData", eds)
+		return true
+	}
+
+	if countFromEndpointData != countFromPodMap {
+		s.logger.Info("Detected error when comparing endpoint counts", "endpointData", eds, "endpointPodMap", endpointPodMap, "dupCount", dupCount)
+		return true
+	}
+	return false
+}
+
+// isZoneMissing returns true if there is invalid(empty) zone in zoneNetworkEndpointMap
+func (s *transactionSyncer) isZoneMissing(zoneNetworkEndpointMap map[string]negtypes.NetworkEndpointSet) bool {
+	if _, isPresent := zoneNetworkEndpointMap[""]; isPresent {
+		s.logger.Info("Detected error when checking missing zone", "zoneNetworkEndpointMap", zoneNetworkEndpointMap)
+		return true
+	}
+	return false
+}
+
+func (s *transactionSyncer) isInvalidEPBatch(err error, operation transactionOp, networkEndpoints []*composite.NetworkEndpoint) bool {
+	apiErr, ok := err.(*googleapi.Error)
+	if !ok {
+		s.logger.Info("Detected error when parsing batch request error", "operation", operation, "error", err)
+		return true
+	}
+	errCode := apiErr.Code
+	if errCode == http.StatusBadRequest {
+		s.logger.Info("Detected error when sending endpoint batch information", "operation", operation, "errorCode", errCode)
+		return true
+	}
+	return false
 }
 
 // syncNetworkEndpoints spins off go routines to execute NEG operations
@@ -400,6 +499,9 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, zone stri
 		s.recordEvent(apiv1.EventTypeNormal, operation.String(), fmt.Sprintf("%s %d network endpoint(s) (NEG %q in zone %q)", operation.String(), len(networkEndpointMap), s.NegSyncerKey.NegName, zone))
 	} else {
 		s.recordEvent(apiv1.EventTypeWarning, operation.String()+"Failed", fmt.Sprintf("Failed to %s %d network endpoint(s) (NEG %q in zone %q): %v", operation.String(), len(networkEndpointMap), s.NegSyncerKey.NegName, zone, err))
+		if s.isInvalidEPBatch(err, operation, networkEndpoints) {
+			s.setErrorState()
+		}
 	}
 
 	// WARNING: commitTransaction must be called at last for analyzing the operation result

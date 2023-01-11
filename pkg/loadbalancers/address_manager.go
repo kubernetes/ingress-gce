@@ -195,6 +195,9 @@ func (am *addressManager) ensureAddressReservation() (string, IPAddressType, err
 	// exists with the name, so it may belong to the user.
 	addr, err := am.svc.GetRegionAddressByIP(am.region, am.targetIP)
 	if err != nil {
+		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
+			return "", IPAddrUndefined, utils.NewIPConfigurationError(am.targetIP, "address not found. Check if the IP is valid and is reserved in your VPC.")
+		}
 		return "", IPAddrUndefined, fmt.Errorf("failed to get address by IP %q after reservation attempt, err: %q, reservation err: %q", am.targetIP, err, reserveErr)
 	}
 
@@ -221,7 +224,7 @@ func (am *addressManager) validateAddress(addr *compute.Address) error {
 		return fmt.Errorf("IP mismatch, expected %q, actual: %q", am.targetIP, addr.Address)
 	}
 	if addr.AddressType != string(am.addressType) {
-		return fmt.Errorf("address type mismatch, expected %q, actual: %q", am.addressType, addr.AddressType)
+		return utils.NewIPConfigurationError(am.targetIP, fmt.Sprintf("address type mismatch, expected %q, actual: %q", am.addressType, addr.AddressType))
 	}
 	if addr.NetworkTier != am.networkTier.ToGCEValue() {
 		return utils.NewNetworkTierErr(fmt.Sprintf("Static IP (%v)", am.name), am.networkTier.ToGCEValue(), addr.NetworkTier)

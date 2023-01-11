@@ -89,10 +89,16 @@ type L4ResourcesNamer interface {
 	L4ForwardingRule(namespace, name, protocol string) string
 	// L4Firewall returns the name of the firewall rule for the given service
 	L4Firewall(namespace, name string) string
+	// L4IPv6Firewall returns the name of the ipv6 firewall rule for the given service
+	L4IPv6Firewall(namespace, name string) string
 	// L4HealthCheck returns the names of the Healthcheck
 	L4HealthCheck(namespace, name string, shared bool) string
 	// L4HealthCheckFirewall returns the names of the Healthcheck Firewall
 	L4HealthCheckFirewall(namespace, name string, shared bool) string
+	// L4IPv6ForwardingRule returns the name of the IPv6 forwarding rule for the given service and protocol.
+	L4IPv6ForwardingRule(namespace, name, protocol string) string
+	// L4IPv6HealthCheckFirewall returns the name of the IPv6 L4 LB health check firewall rule.
+	L4IPv6HealthCheckFirewall(namespace, name string, shared bool) string
 	// IsNEG returns if the given name is a VM_IP_NEG name.
 	IsNEG(name string) bool
 }

@@ -84,6 +84,7 @@ var (
 		ResyncPeriod                     time.Duration
 		L4NetLBProvisionDeadline         time.Duration
 		NumL4Workers                     int
+		NumL4NetLBWorkers                int
 		NumIngressWorkers                int
 		RunIngressController             bool
 		RunL4Controller                  bool
@@ -108,6 +109,7 @@ var (
 		EnableTrafficScaling           bool
 		EnableEndpointSlices           bool
 		EnablePinhole                  bool
+		EnableL4ILBDualStack           bool
 		EnableMultipleIGs              bool
 		MaxIGSize                      int
 	}{
@@ -209,7 +211,9 @@ the pod secrets for creating a Kubernetes client.`)
 	flag.DurationVar(&F.L4NetLBProvisionDeadline, "l4-netlb-provision-deadline", 20*time.Minute,
 		`Deadline latency for L4 NetLB provisioning.`)
 	flag.IntVar(&F.NumL4Workers, "num-l4-workers", 5,
-		`Number of parallel L4 Service worker goroutines.`)
+		`Number of parallel L4 Internal Load Balancer Service worker goroutines.`)
+	flag.IntVar(&F.NumL4NetLBWorkers, "num-l4-net-workers", 5,
+		`Number of parallel L4 External Load Balancer Service worker goroutines.`)
 	flag.IntVar(&F.NumIngressWorkers, "num-ingress-workers", 1,
 		`Number of Ingress sync-queue worker goroutines.`)
 	flag.StringVar(&F.WatchNamespace, "watch-namespace", v1.NamespaceAll,
@@ -249,6 +253,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableTrafficScaling, "enable-traffic-scaling", false, "Enable support for Service {max-rate-per-endpoint, capacity-scaler}")
 	flag.BoolVar(&F.EnableEndpointSlices, "enable-endpoint-slices", false, "Enable using Endpoint Slices API instead of Endpoints API")
 	flag.BoolVar(&F.EnablePinhole, "enable-pinhole", false, "Enable Pinhole firewall feature")
+	flag.BoolVar(&F.EnableL4ILBDualStack, "enable-l4ilb-dual-stack", false, "Enable Dual-Stack handling for L4 Internal Load Balancers")
 	flag.BoolVar(&F.EnableMultipleIGs, "enable-multiple-igs", false, "Enable using multiple unmanaged instance groups")
 	flag.IntVar(&F.MaxIGSize, "max-ig-size", 1000, "Max number of instances in Instance Group")
 	flag.DurationVar(&F.MetricsExportInterval, "metrics-export-interval", 10*time.Minute, `Period for calculating and exporting metrics related to state of managed objects.`)

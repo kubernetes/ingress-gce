@@ -3,7 +3,7 @@
 ## validate
 
 `fuzzer validate` will validate the Ingress spec against the load balancer that
-was instatiated with the given spec.
+was instantiated with the given spec.
 
 Usage:
 

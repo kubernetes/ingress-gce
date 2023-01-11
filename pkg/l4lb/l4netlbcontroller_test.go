@@ -172,7 +172,7 @@ func checkBackendService(lc *L4NetLBController, svc *v1.Service) error {
 	igName := lc.namer.InstanceGroup()
 	for _, b := range bs.Backends {
 		if !strings.Contains(b.Group, igName) {
-			return fmt.Errorf("Backend Ingstance Group Link mismatch: %s != %s", igName, b.Group)
+			return fmt.Errorf("Backend Instance Group Link mismatch: %s != %s", igName, b.Group)
 		}
 	}
 	ig, err := lc.ctx.Cloud.GetInstanceGroup(igName, testGCEZone)
@@ -221,10 +221,10 @@ func buildContext(vals gce.TestClusterValues) *ingctx.ControllerContext {
 	namer := namer.NewNamer(clusterUID, "")
 
 	ctxConfig := ingctx.ControllerContextConfig{
-		Namespace:    v1.NamespaceAll,
-		ResyncPeriod: 1 * time.Minute,
-		NumL4Workers: 5,
-		MaxIGSize:    1000,
+		Namespace:         v1.NamespaceAll,
+		ResyncPeriod:      1 * time.Minute,
+		NumL4NetLBWorkers: 5,
+		MaxIGSize:         1000,
 	}
 	return ingctx.NewControllerContext(nil, kubeClient, nil, nil, nil, nil, nil, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig)
 }
@@ -240,7 +240,6 @@ func newL4NetLBServiceController() *L4NetLBController {
 	for _, n := range nodes {
 		ctx.NodeInformer.GetIndexer().Add(n)
 	}
-	healthchecksl4.Fake(ctx.Cloud, ctx)
 	return NewL4NetLBController(ctx, stopCh)
 }
 
@@ -271,7 +270,7 @@ func validateAnnotationsDeleted(svc *v1.Service) error {
 		}
 	}
 	if len(unexpectedKeys) != 0 {
-		return fmt.Errorf("Unexpeceted annotations: %v, Service annotations %v", unexpectedKeys, svc.Annotations)
+		return fmt.Errorf("Unexpected annotations: %v, Service annotations %v", unexpectedKeys, svc.Annotations)
 	}
 	return nil
 }
@@ -515,6 +514,73 @@ func TestProcessServiceDeletion(t *testing.T) {
 	}
 
 	deleteNetLBService(lc, svc)
+}
+
+func TestProcessRBSServiceTypeTransition(t *testing.T) {
+	testCases := []struct {
+		desc      string
+		finalType v1.ServiceType
+	}{
+		{
+			desc:      "Change from RBS to ClusterIP should delete RBS resources",
+			finalType: v1.ServiceTypeClusterIP,
+		},
+		{
+			desc:      "Change from RBS to NodePort should delete RBS resources",
+			finalType: v1.ServiceTypeNodePort,
+		},
+		{
+			desc:      "Change from RBS to ExternalName should delete RBS resources",
+			finalType: v1.ServiceTypeExternalName,
+		},
+		{
+			desc:      "Change from RBS to empty (default) type should delete RBS resources",
+			finalType: "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			svc, lc := createAndSyncNetLBSvc(t)
+			if lc.needsDeletion(svc) {
+				t.Errorf("Service should not be marked for deletion")
+			}
+
+			svc.Spec.Type = tc.finalType
+			updateNetLBService(lc, svc)
+			if !lc.needsDeletion(svc) {
+				t.Errorf("RBS after switching to %v should be marked for deletion", tc.finalType)
+			}
+
+			key, _ := common.KeyFunc(svc)
+			err := lc.sync(key)
+			if err != nil {
+				t.Errorf("Failed to sync service %s, err %v", svc.Name, err)
+			}
+			svc, err = lc.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
+			if err != nil {
+				t.Errorf("Failed to lookup service %s, err %v", svc.Name, err)
+			}
+			if len(svc.Status.LoadBalancer.Ingress) > 0 {
+				t.Errorf("Expected LoadBalancer status be deleted - %+v", svc.Status.LoadBalancer)
+			}
+			if common.HasGivenFinalizer(svc.ObjectMeta, common.NetLBFinalizerV2) {
+				t.Errorf("Unexpected LoadBalancer finalizer %v", svc.ObjectMeta.Finalizers)
+			}
+
+			if err = validateAnnotationsDeleted(svc); err != nil {
+				t.Errorf("RBS Service annotations have NOT been deleted. Error: %v", err)
+			}
+
+			igName := lc.namer.InstanceGroup()
+			_, err = lc.ctx.Cloud.GetInstanceGroup(igName, testGCEZone)
+			if !utils.IsNotFoundError(err) {
+				t.Errorf("Failed to delete Instance Group %v, err: %v", igName, err)
+			}
+
+			deleteNetLBService(lc, svc)
+		})
+	}
 }
 
 func TestServiceDeletionWhenInstanceGroupInUse(t *testing.T) {
@@ -868,16 +934,16 @@ func TestHealthCheckWhenExternalTrafficPolicyWasUpdated(t *testing.T) {
 	hcNameNonShared := lc.namer.L4HealthCheck(svc.Namespace, svc.Name, false)
 	err = updateAndAssertExternalTrafficPolicy(newSvc, lc, v1.ServiceExternalTrafficPolicyTypeLocal, hcNameNonShared)
 	if err != nil {
-		t.Errorf("Error asserthing nonshared health check %v", err)
+		t.Errorf("Error asserting nonshared health check %v", err)
 	}
 	// delete shared health check if is created, update service to Cluster and
 	// check that non-shared health check was created
 	hcNameShared := lc.namer.L4HealthCheck(svc.Namespace, svc.Name, true)
-	healthchecksl4.Fake(lc.ctx.Cloud, lc.ctx).DeleteHealthCheckWithFirewall(svc, lc.namer, true, meta.Regional, utils.XLB)
+	healthchecksl4.Fake(lc.ctx.Cloud, lc.ctx.Recorder(svc.Namespace)).DeleteHealthCheckWithFirewall(svc, lc.namer, true, meta.Regional, utils.XLB)
 	// Update ExternalTrafficPolicy to Cluster check if shared HC was created
 	err = updateAndAssertExternalTrafficPolicy(newSvc, lc, v1.ServiceExternalTrafficPolicyTypeCluster, hcNameShared)
 	if err != nil {
-		t.Errorf("Error asserthing shared health check %v", err)
+		t.Errorf("Error asserting shared health check %v", err)
 	}
 	newSvc.DeletionTimestamp = &metav1.Time{}
 	updateNetLBService(lc, newSvc)

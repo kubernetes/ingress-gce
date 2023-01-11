@@ -33,5 +33,5 @@ limitations under the License.
 //	  }
 //	}
 //
-// The Sandbox will handle resource isolation and reclaimation.
+// The Sandbox will handle resource isolation and reclamation.
 package e2e

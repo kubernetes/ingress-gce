@@ -406,3 +406,105 @@ func checkMetricsComputation(newMetrics *ControllerMetrics, expErrorCount, expSv
 	}
 	return nil
 }
+
+func TestComputeL4ILBDualStackMetrics(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		desc                      string
+		serviceStates             []L4ILBDualStackServiceState
+		expectL4ILBDualStackCount map[L4ILBDualStackServiceState]int
+	}{
+		{
+			desc:                      "empty input",
+			serviceStates:             []L4ILBDualStackServiceState{},
+			expectL4ILBDualStackCount: map[L4ILBDualStackServiceState]int{},
+		},
+		{
+			desc: "one l4 ilb dual-stack service",
+			serviceStates: []L4ILBDualStackServiceState{
+				newL4ILBDualStackServiceState("IPv4", "SingleStack", StatusSuccess),
+			},
+			expectL4ILBDualStackCount: map[L4ILBDualStackServiceState]int{
+				L4ILBDualStackServiceState{
+					"IPv4",
+					"SingleStack",
+					StatusSuccess,
+				}: 1,
+			},
+		},
+		{
+			desc: "l4 ilb dual-stack service in error state",
+			serviceStates: []L4ILBDualStackServiceState{
+				newL4ILBDualStackServiceState("IPv4", "SingleStack", StatusError),
+			},
+			expectL4ILBDualStackCount: map[L4ILBDualStackServiceState]int{
+				L4ILBDualStackServiceState{
+					"IPv4",
+					"SingleStack",
+					StatusError,
+				}: 1,
+			},
+		},
+		{
+			desc: "L4 ILB dual-stack service with IPv4,IPv6 Families",
+			serviceStates: []L4ILBDualStackServiceState{
+				newL4ILBDualStackServiceState("IPv4,IPv6", "RequireDualStack", StatusSuccess),
+			},
+			expectL4ILBDualStackCount: map[L4ILBDualStackServiceState]int{
+				L4ILBDualStackServiceState{
+					"IPv4,IPv6",
+					"RequireDualStack",
+					StatusSuccess,
+				}: 1,
+			},
+		},
+		{
+			desc: "many l4 ilb dual-stack services",
+			serviceStates: []L4ILBDualStackServiceState{
+				newL4ILBDualStackServiceState("IPv4,IPv6", "RequireDualStack", StatusSuccess),
+				newL4ILBDualStackServiceState("IPv4,IPv6", "RequireDualStack", StatusSuccess),
+				newL4ILBDualStackServiceState("IPv4", "SingleStack", StatusError),
+				newL4ILBDualStackServiceState("IPv6", "SingleStack", StatusSuccess),
+				newL4ILBDualStackServiceState("IPv6", "SingleStack", StatusSuccess),
+			},
+			expectL4ILBDualStackCount: map[L4ILBDualStackServiceState]int{
+				L4ILBDualStackServiceState{
+					"IPv4,IPv6",
+					"RequireDualStack",
+					StatusSuccess,
+				}: 2,
+				L4ILBDualStackServiceState{
+					"IPv4",
+					"SingleStack",
+					StatusError,
+				}: 1,
+				L4ILBDualStackServiceState{
+					"IPv6",
+					"SingleStack",
+					StatusSuccess,
+				}: 2,
+			},
+		},
+	} {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			newMetrics := FakeControllerMetrics()
+			for i, serviceState := range tc.serviceStates {
+				newMetrics.SetL4ILBDualStackService(fmt.Sprint(i), serviceState)
+			}
+			got := newMetrics.computeL4ILBDualStackMetrics()
+			if diff := cmp.Diff(tc.expectL4ILBDualStackCount, got); diff != "" {
+				t.Fatalf("Got diff for L4 ILB Dual-Stack service counts (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func newL4ILBDualStackServiceState(ipFamilies string, ipFamilyPolicy string, status L4ILBDualStackServiceStateStatus) L4ILBDualStackServiceState {
+	return L4ILBDualStackServiceState{
+		IPFamilies:     ipFamilies,
+		IPFamilyPolicy: ipFamilyPolicy,
+		Status:         status,
+	}
+}

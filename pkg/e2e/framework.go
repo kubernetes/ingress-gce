@@ -52,6 +52,7 @@ type Options struct {
 	Project             string
 	Region              string
 	Network             string
+	Subnet              string
 	Seed                int64
 	DestroySandboxes    bool
 	GceEndpointOverride string
@@ -103,6 +104,7 @@ func NewFramework(config *rest.Config, options Options) *Framework {
 		Project:              options.Project,
 		Region:               options.Region,
 		Network:              options.Network,
+		Subnet:               options.Subnet,
 		Cloud:                theCloud,
 		Rand:                 rand.New(rand.NewSource(options.Seed)),
 		destroySandboxes:     options.DestroySandboxes,
@@ -110,7 +112,7 @@ func NewFramework(config *rest.Config, options Options) *Framework {
 	}
 	f.statusManager = NewStatusManager(f)
 
-	// Preparing dynamic client if Istio:DestinationRule CRD exisits and matches the required version.
+	// Preparing dynamic client if Istio:DestinationRule CRD exists and matches the required version.
 	// The client is used by the ASM e2e tests.
 	destinationRuleCRD, err := f.crdClient.ApiextensionsV1().CustomResourceDefinitions().Get(context.TODO(), destinationRuleCRDName, metav1.GetOptions{})
 	if err != nil {
@@ -127,8 +129,8 @@ func NewFramework(config *rest.Config, options Options) *Framework {
 			if err != nil {
 				klog.Fatalf("Failed to create Dynamic client: %v", err)
 			}
-			destrinationGVR := schema.GroupVersionResource{Group: destinationRuleGroup, Version: destinationRuleAPIVersion, Resource: destinationRulePlural}
-			f.DestinationRuleClient = dynamicClient.Resource(destrinationGVR)
+			destinationGVR := schema.GroupVersionResource{Group: destinationRuleGroup, Version: destinationRuleAPIVersion, Resource: destinationRulePlural}
+			f.DestinationRuleClient = dynamicClient.Resource(destinationGVR)
 		}
 	}
 	return f
@@ -147,6 +149,7 @@ type Framework struct {
 	Project               string
 	Region                string
 	Network               string
+	Subnet                string
 	Cloud                 cloud.Cloud
 	Rand                  *rand.Rand
 	statusManager         *StatusManager

@@ -263,7 +263,7 @@ func TestCreateHTTPSILBLoadBalancer(t *testing.T) {
 	verifyHTTPSForwardingRuleAndProxyLinks(t, j, l7)
 }
 
-// Test case with HTTPS ILB Load balancer and AllowHttp set to true (not currently supported)
+// Test case with HTTPS ILB Load balancer and AllowHttp set to true
 // Ensure should throw an error
 func TestCreateHTTPSILBLoadBalancerAllowHTTP(t *testing.T) {
 	j := newTestJig(t)
@@ -280,6 +280,38 @@ func TestCreateHTTPSILBLoadBalancerAllowHTTP(t *testing.T) {
 
 	if _, err := j.pool.Ensure(lbInfo); err == nil {
 		t.Fatalf("j.pool.Ensure(%v) = nil, want err", lbInfo)
+	}
+}
+
+// Test case with HTTPS ILB Load balancer and AllowHttp set to true and static IP specified
+// Ensure no error thrown
+func TestCreateHTTPSILBLoadBalancerAllowHTTPSharedVIP(t *testing.T) {
+	j := newTestJig(t)
+
+	ipName := "test-ilb-static-ip"
+	ip := "10.1.2.3"
+	key, err := composite.CreateKey(j.fakeGCE, ipName, features.L7ILBScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = composite.CreateAddress(j.fakeGCE, key, &composite.Address{Name: ipName, Version: meta.VersionGA, Address: ip})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
+	lbInfo := &L7RuntimeInfo{
+		AllowHTTP:    true,
+		TLS:          []*translator.TLSCerts{createCert("key", "cert", "name")},
+		UrlMap:       gceUrlMap,
+		Ingress:      newILBIngress(),
+		StaticIPName: ipName,
+	}
+
+	if _, err := j.pool.Ensure(lbInfo); err != nil {
+		t.Fatalf("j.pool.Ensure(%v) = %v, want nil", lbInfo, err)
 	}
 }
 
@@ -607,7 +639,7 @@ func TestUpgradeToNewCertNames(t *testing.T) {
 	if _, err := j.pool.Ensure(lbInfo); err != nil {
 		t.Fatalf("pool.Ensure() = err %v", err)
 	}
-	// We expect to see only the new cert linked to the proxy and available in the load balancer.
+	// We expectEqual to see only the new cert linked to the proxy and available in the load balancer.
 	expectCerts := map[string]string{newCertName: tlsCert.Cert}
 	verifyCertAndProxyLink(expectCerts, expectCerts, j, t)
 }
@@ -921,7 +953,7 @@ func verifyCertAndProxyLink(expectCerts map[string]string, expectCertsProxy map[
 		}
 	}
 
-	// httpsproxy needs to contain only the certs in expectCerts, nothing more, nothing less
+	// https proxy needs to contain only the certs in expectCerts, nothing more, nothing less
 	key, err = composite.CreateKey(j.fakeGCE, j.feNamer.TargetProxy(namer_util.HTTPSProtocol), defaultScope)
 	if err != nil {
 		t.Fatal(err)
@@ -1801,7 +1833,7 @@ func TestResourceDeletionWithProtocol(t *testing.T) {
 
 			lb, err = j.pool.Ensure(lbInfo)
 			if tc.disableHTTP && tc.disableHTTPS {
-				// we expect an invalid ingress configuration error here.
+				// we expectEqual an invalid ingress configuration error here.
 				errMsg := errAllProtocolsDisabled.Error()
 				if err == nil || !strings.Contains(err.Error(), errMsg) {
 					t.Fatalf("pool.Ensure(%+v) = %v, want %s", lbInfo, err, errMsg)

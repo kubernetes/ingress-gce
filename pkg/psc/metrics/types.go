@@ -16,7 +16,7 @@ limitations under the License.
 
 package metrics
 
-// PSCState tracks service attachment and psc feautre usage
+// PSCState tracks service attachment and psc feature usage
 type PSCState struct {
 	// InSuccess specifies if the ServiceAttachment was successfully created
 	InSuccess bool

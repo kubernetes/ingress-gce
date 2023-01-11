@@ -413,7 +413,7 @@ func (c *Controller) garbageCollectServiceAttachments() {
 	}
 }
 
-// deleteServiceAttachment attemps to delete the GCE Service Attachment resource
+// deleteServiceAttachment attempts to delete the GCE Service Attachment resource
 // that corresponds to the provided CR. If successful, the finalizer on the CR
 // will be removed.
 func (c *Controller) deleteServiceAttachment(sa *sav1.ServiceAttachment) {
@@ -621,7 +621,7 @@ func (c *Controller) ensureSAFinalizerRemoved(cr *sav1.ServiceAttachment) error 
 // for a K8s Service
 func validateResourceReference(ref v1.TypedLocalObjectReference) error {
 	if ref.APIGroup != nil && *ref.APIGroup != "" {
-		return fmt.Errorf("invalid resource reference: %s, apiGroup must be emptry or nil", *ref.APIGroup)
+		return fmt.Errorf("invalid resource reference: %s, apiGroup must be empty or nil", *ref.APIGroup)
 	}
 
 	if strings.ToLower(ref.Kind) != svcKind {
@@ -638,7 +638,7 @@ func needsUpdate(existingSA, desiredSA *ga.ServiceAttachment) (bool, error) {
 	// be the same as the one that eventually gets stored on the GCE object. For example
 	// the controller takes the forwarding rule from the GA FR resource, however if the GCE
 	// SA uses the Beta FR resource the self links will be different though the resource is
-	// the same. The same is true for the subnets. Due to this discrepency the GCE SA cannot
+	// the same. The same is true for the subnets. Due to this discrepancy the GCE SA cannot
 	// be compared with a reflect.DeepEqual.
 
 	// The TargetService on the GCE Service Attachment is the self link to the URL of the producer

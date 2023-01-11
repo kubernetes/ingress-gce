@@ -21,7 +21,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/ingress-gce/pkg/instances"
+	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
@@ -63,14 +63,14 @@ const maxRPS = 1
 
 // instanceGroupLinker handles linking backends to InstanceGroup's.
 type instanceGroupLinker struct {
-	instancePool instances.NodePool
+	instancePool instancegroups.Manager
 	backendPool  Pool
 }
 
 // instanceGroupLinker is a Linker
 var _ Linker = (*instanceGroupLinker)(nil)
 
-func NewInstanceGroupLinker(instancePool instances.NodePool, backendPool Pool) Linker {
+func NewInstanceGroupLinker(instancePool instancegroups.Manager, backendPool Pool) Linker {
 	return &instanceGroupLinker{
 		instancePool: instancePool,
 		backendPool:  backendPool,
@@ -123,7 +123,7 @@ func (igl *instanceGroupLinker) Link(sp utils.ServicePort, groups []GroupKey) er
 	var errs []string
 	for _, bm := range []BalancingMode{Rate, Utilization} {
 		// Generate backends with given instance groups with a specific mode
-		newBackends := backendsForIGs(addIGs, bm, &sp)
+		newBackends := backendsForIGs(addIGs, bm)
 		be.Backends = append(originalIGBackends, newBackends...)
 
 		if err := igl.backendPool.Update(be); err != nil {
@@ -145,7 +145,7 @@ func (igl *instanceGroupLinker) Link(sp utils.ServicePort, groups []GroupKey) er
 	return fmt.Errorf("received errors when updating backend service: %v", strings.Join(errs, "\n"))
 }
 
-func backendsForIGs(igLinks []string, bm BalancingMode, sp *utils.ServicePort) []*composite.Backend {
+func backendsForIGs(igLinks []string, bm BalancingMode) []*composite.Backend {
 	var backends []*composite.Backend
 
 	for _, igLink := range igLinks {

@@ -77,7 +77,7 @@ func TestFewerNodes(t *testing.T) {
 	}
 }
 
-// Tests the case where there is unever distribution of nodes in various zones. The goal is to select as many nodes as
+// Tests the case where there is uneven distribution of nodes in various zones. The goal is to select as many nodes as
 // possible in all cases.
 func TestUnevenNodesInZones(t *testing.T) {
 	t.Parallel()

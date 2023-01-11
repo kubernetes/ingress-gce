@@ -65,7 +65,7 @@ func TestCreateOnlyConfigMap(t *testing.T) {
 	}
 }
 
-func TestFakeConfigMapVaule(t *testing.T) {
+func TestFakeConfigMapValue(t *testing.T) {
 	vault := NewFakeConfigMapVault(api.NamespaceSystem, "ingress-uid")
 	// Get value from an empty vault.
 	val, exists, err := vault.Get(UIDDataKey)

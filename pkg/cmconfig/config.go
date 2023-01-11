@@ -24,7 +24,7 @@ const (
 	asmSkipNamespaces = "asm-skip-namespaces"
 )
 
-// NewConfig returns a Conifg instances with default values.
+// NewConfig returns a Config instances with default values.
 func NewConfig() Config {
 	return Config{EnableASM: false, ASMServiceNEGSkipNamespaces: []string{"kube-system", "istio-system"}}
 }

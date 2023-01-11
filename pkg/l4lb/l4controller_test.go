@@ -23,8 +23,8 @@ import (
 	"testing"
 	"time"
 
-	"k8s.io/ingress-gce/pkg/healthchecksl4"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
+	"k8s.io/ingress-gce/pkg/utils"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -50,12 +50,19 @@ const (
 )
 
 var (
-	ilbAnnotationKeys = []string{
-		annotations.FirewallRuleKey,
+	ilbCommonAnnotationKeys = []string{
 		annotations.BackendServiceKey,
 		annotations.HealthcheckKey,
+	}
+	ilbIPv4AnnotationKeys = []string{
+		annotations.FirewallRuleKey,
 		annotations.TCPForwardingRuleKey,
 		annotations.FirewallRuleForHealthcheckKey,
+	}
+	ilbIPv6AnnotationKeys = []string{
+		annotations.FirewallRuleIPv6Key,
+		annotations.TCPForwardingRuleIPv6Key,
+		annotations.FirewallRuleForHealthcheckIPv6Key,
 	}
 )
 
@@ -80,7 +87,6 @@ func newServiceController(t *testing.T, fakeGCE *gce.Cloud) *L4Controller {
 	for _, n := range nodes {
 		ctx.NodeInformer.GetIndexer().Add(n)
 	}
-	healthchecksl4.Fake(ctx.Cloud, ctx)
 	return NewILBController(ctx, stopCh)
 }
 
@@ -129,6 +135,17 @@ func getKeyForSvc(svc *api_v1.Service, t *testing.T) string {
 	return key
 }
 
+func calculateExpectedAnnotationsKeys(svc *api_v1.Service) []string {
+	expectedAnnotations := ilbCommonAnnotationKeys
+	if utils.NeedsIPv4(svc) {
+		expectedAnnotations = append(expectedAnnotations, ilbIPv4AnnotationKeys...)
+	}
+	if utils.NeedsIPv6(svc) {
+		expectedAnnotations = append(expectedAnnotations, ilbIPv6AnnotationKeys...)
+	}
+	return expectedAnnotations
+}
+
 func verifyILBServiceProvisioned(t *testing.T, svc *api_v1.Service) {
 	t.Helper()
 
@@ -139,8 +156,9 @@ func verifyILBServiceProvisioned(t *testing.T, svc *api_v1.Service) {
 		t.Errorf("Invalid LoadBalancer status field in service - %+v", svc.Status.LoadBalancer)
 	}
 
+	expectedAnnotationsKeys := calculateExpectedAnnotationsKeys(svc)
 	var missingKeys []string
-	for _, key := range ilbAnnotationKeys {
+	for _, key := range expectedAnnotationsKeys {
 		if _, ok := svc.Annotations[key]; !ok {
 			missingKeys = append(missingKeys, key)
 		}
@@ -161,13 +179,14 @@ func verifyILBServiceNotProvisioned(t *testing.T, svc *api_v1.Service) {
 		t.Errorf("Expected LoadBalancer status to be empty, Got %v", svc.Status.LoadBalancer)
 	}
 
+	expectedAnnotationsKeys := calculateExpectedAnnotationsKeys(svc)
 	var missingKeys []string
-	for _, key := range ilbAnnotationKeys {
+	for _, key := range expectedAnnotationsKeys {
 		if _, ok := svc.Annotations[key]; !ok {
 			missingKeys = append(missingKeys, key)
 		}
 	}
-	if len(missingKeys) != len(ilbAnnotationKeys) {
+	if len(missingKeys) != len(expectedAnnotationsKeys) {
 		t.Errorf("Unexpected ILB annotations present, Got %v", svc.Annotations)
 	}
 }
@@ -618,6 +637,7 @@ func TestProcessServiceWithDelayedNEGAdd(t *testing.T) {
 }
 
 func TestProcessServiceOnError(t *testing.T) {
+	t.Parallel()
 	l4c := newServiceController(t, newFakeGCEWithInsertError())
 	prevMetrics, err := test.GetL4ILBErrorMetric()
 	if err != nil {
@@ -638,4 +658,87 @@ func TestProcessServiceOnError(t *testing.T) {
 		t.Errorf("Error getting L4 ILB error metrics err: %v", errMetrics)
 	}
 	prevMetrics.ValidateDiff(currMetrics, expectMetrics, t)
+}
+
+func TestCreateDeleteDualStackService(t *testing.T) {
+	testCases := []struct {
+		desc       string
+		ipFamilies []api_v1.IPFamily
+	}{
+		{
+			desc:       "Create and delete IPv4 ILB",
+			ipFamilies: []api_v1.IPFamily{api_v1.IPv4Protocol},
+		},
+		{
+			desc:       "Create and delete IPv4 IPv6 ILB",
+			ipFamilies: []api_v1.IPFamily{api_v1.IPv4Protocol, api_v1.IPv6Protocol},
+		},
+		{
+			desc:       "Create and delete IPv6 ILB",
+			ipFamilies: []api_v1.IPFamily{api_v1.IPv6Protocol},
+		},
+		{
+			desc:       "Create and delete IPv6 IPv4 ILB",
+			ipFamilies: []api_v1.IPFamily{api_v1.IPv6Protocol, api_v1.IPv4Protocol},
+		},
+		{
+			desc:       "Create and delete ILB with empty IP families",
+			ipFamilies: []api_v1.IPFamily{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			l4c := newServiceController(t, newFakeGCE())
+			l4c.enableDualStack = true
+			prevMetrics, err := test.GetL4ILBLatencyMetric()
+			if err != nil {
+				t.Errorf("Error getting L4 ILB latency metrics err: %v", err)
+			}
+			newSvc := test.NewL4ILBDualStackService(8080, api_v1.ProtocolTCP, tc.ipFamilies, api_v1.ServiceExternalTrafficPolicyTypeCluster)
+			addILBService(l4c, newSvc)
+			addNEG(l4c, newSvc)
+			err = l4c.sync(getKeyForSvc(newSvc, t))
+			if err != nil {
+				t.Errorf("Failed to sync newly added service %s, err %v", newSvc.Name, err)
+			}
+			// List the service and ensure that it contains the finalizer as well as Status field.
+			newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
+			if err != nil {
+				t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
+			}
+			verifyILBServiceProvisioned(t, newSvc)
+			currMetrics, metricErr := test.GetL4ILBLatencyMetric()
+			if metricErr != nil {
+				t.Errorf("Error getting L4 ILB latency metrics err: %v", metricErr)
+			}
+			prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{CreateCount: 1, UpperBoundSeconds: 1}, t)
+
+			// Remove the Internal LoadBalancer annotation, this should trigger a cleanup.
+			delete(newSvc.Annotations, gce.ServiceAnnotationLoadBalancerType)
+			updateILBService(l4c, newSvc)
+			err = l4c.sync(getKeyForSvc(newSvc, t))
+			if err != nil {
+				t.Errorf("Failed to sync updated service %s, err %v", newSvc.Name, err)
+			}
+
+			// List the service and ensure that it doesn't contain the finalizer as well as Status field.
+			newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
+			if err != nil {
+				t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
+			}
+			verifyILBServiceNotProvisioned(t, newSvc)
+			currMetrics, metricErr = test.GetL4ILBLatencyMetric()
+			if metricErr != nil {
+				t.Errorf("Error getting L4 ILB latency metrics err: %v", metricErr)
+			}
+			prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{CreateCount: 1, DeleteCount: 1, UpperBoundSeconds: 1}, t)
+			newSvc.DeletionTimestamp = &v1.Time{}
+			updateILBService(l4c, newSvc)
+			key, _ := common.KeyFunc(newSvc)
+			if err = l4c.sync(key); err != nil {
+				t.Errorf("Failed to sync deleted service %s, err %v", key, err)
+			}
+		})
+	}
 }

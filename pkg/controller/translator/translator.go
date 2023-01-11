@@ -322,7 +322,7 @@ func (t *Translator) TranslateIngress(ing *v1.Ingress, systemDefaultBackend util
 	return urlMap, errs
 }
 
-// validateAndGetPaths will validate the path based on the specifed path type and will return the
+// validateAndGetPaths will validate the path based on the specified path type and will return the
 // the path rules that should be used. If no path type is provided, the path type will be assumed
 // to be ImplementationSpecific. If a non existent path type is provided, an error will be returned.
 func validateAndGetPaths(path v1.HTTPIngressPath) ([]string, error) {
@@ -366,7 +366,7 @@ func validateAndModifyPrefixPathType(path v1.HTTPIngressPath) ([]string, error) 
 		return nil, fmt.Errorf("failed to validate prefix path type due to empty path")
 	}
 
-	// The Ingress spec defines Prefx path "/" as matching all paths
+	// The Ingress spec defines Prefix path "/" as matching all paths
 	if path.Path == "/" {
 		return []string{"/*"}, nil
 	}

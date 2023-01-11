@@ -110,7 +110,7 @@ func TestILB(t *testing.T) {
 			if err != nil {
 				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 			}
-			t.Logf("GCLB resources createdd (%s/%s)", s.Namespace, tc.ing.Name)
+			t.Logf("GCLB resources created (%s/%s)", s.Namespace, tc.ing.Name)
 
 			// Perform whitebox testing.
 			if len(ing.Status.LoadBalancer.Ingress) < 1 {
@@ -159,7 +159,7 @@ func TestILBStaticIP(t *testing.T) {
 			}
 		}
 
-		_, err := e2e.CreateEchoService(s, "service-1", nil)
+		_, err := e2e.CreateEchoService(s, "service-1", negAnnotation)
 		if err != nil {
 			t.Fatalf("e2e.CreateEchoService(s, service-1, nil) = _, %v; want _, nil", err)
 		}
@@ -191,9 +191,7 @@ func TestILBStaticIP(t *testing.T) {
 		var gclb *fuzz.GCLB
 		for i, testIng := range []*v1.Ingress{testIngDisabled, testIngEnabled, testIngDisabled} {
 			t.Run(fmt.Sprintf("Transition-%d", i), func(t *testing.T) {
-				newIng := ing.DeepCopy()
-				newIng.Spec = testIng.Spec
-				ing, err = crud.Patch(ing, newIng)
+				ing, err = e2e.EnsureIngress(s, testIng)
 				if err != nil {
 					t.Fatalf("error patching Ingress spec: %v", err)
 				}
@@ -221,7 +219,6 @@ func TestILBStaticIP(t *testing.T) {
 	})
 }
 
-// TODO(shance): Remove the SetAllowHttp() calls once L7-ILB supports sharing VIPs
 func TestILBHttps(t *testing.T) {
 	t.Parallel()
 
@@ -316,6 +313,155 @@ func TestILBHttps(t *testing.T) {
 				}
 			}
 			ing := tc.ingBuilder.Build()
+			ing.Namespace = s.Namespace // namespace depends on sandbox
+
+			t.Logf("Ingress = %s", ing.String())
+
+			_, err := e2e.CreateEchoService(s, serviceName, negAnnotation)
+			if err != nil {
+				t.Fatalf("error creating echo service: %v", err)
+			}
+			t.Logf("Echo service created (%s/%s)", s.Namespace, serviceName)
+
+			if _, err := crud.Create(ing); err != nil {
+				t.Fatalf("error creating Ingress spec: %v", err)
+			}
+			t.Logf("Ingress created (%s/%s)", s.Namespace, ing.Name)
+
+			ing, err = e2e.WaitForIngress(s, ing, nil, nil)
+			if err != nil {
+				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
+			}
+			t.Logf("GCLB resources created (%s/%s)", s.Namespace, ing.Name)
+
+			// Perform whitebox testing.
+			if len(ing.Status.LoadBalancer.Ingress) < 1 {
+				t.Fatalf("Ingress does not have an IP: %+v", ing.Status)
+			}
+
+			vip := ing.Status.LoadBalancer.Ingress[0].IP
+			t.Logf("Ingress %s/%s VIP = %s", s.Namespace, ing.Name, vip)
+			if !e2e.IsRfc1918Addr(vip) {
+				t.Fatalf("got %v, want RFC1918 address, ing: %v", vip, ing)
+			}
+
+			params := &fuzz.GCLBForVIPParams{VIP: vip, Region: Framework.Region, Network: Framework.Network, Validators: fuzz.FeatureValidators(features.All)}
+			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
+			if err != nil {
+				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
+			}
+
+			if err = e2e.CheckGCLB(gclb, tc.numForwardingRules, tc.numBackendServices); err != nil {
+				t.Error(err)
+			}
+
+			deleteOptions := &fuzz.GCLBDeleteOptions{
+				SkipDefaultBackend: false,
+			}
+			if err := e2e.WaitForIngressDeletion(context.Background(), gclb, s, ing, deleteOptions); err != nil {
+				t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing.Name, err)
+			}
+		})
+	}
+}
+
+// TestILBSharedVIP test the support of HTTPS and HTTP on the same LB when static IP is provided
+func TestILBSharedVIP(t *testing.T) {
+	t.Parallel()
+
+	// These names are useful when reading the debug logs
+	ingressPrefix := "ing2-"
+	serviceName := "svc-2"
+
+	port80 := v1.ServiceBackendPort{Number: 80}
+
+	for _, tc := range []struct {
+		desc       string
+		ingBuilder *fuzz.IngressBuilder
+		hosts      []string
+		certType   e2e.CertType
+
+		numForwardingRules int
+		numBackendServices int
+	}{
+		{
+			desc: "https ILB one path, pre-shared cert",
+			ingBuilder: fuzz.NewIngressBuilder("", ingressPrefix+"1", "").
+				AddPath("test.com", "/", serviceName, port80).
+				ConfigureForILB(),
+			numForwardingRules: 2,
+			numBackendServices: 2,
+			certType:           e2e.GCPCert,
+			hosts:              []string{"test.com"},
+		},
+		{
+			desc: "https ILB one path, tls",
+			ingBuilder: fuzz.NewIngressBuilder("", ingressPrefix+"2", "").
+				AddPath("test.com", "/", serviceName, port80).
+				ConfigureForILB(),
+			numForwardingRules: 2,
+			numBackendServices: 2,
+			certType:           e2e.K8sCert,
+			hosts:              []string{"test.com"},
+		},
+		{
+			desc: "https ILB multiple paths, pre-shared cert",
+			ingBuilder: fuzz.NewIngressBuilder("", ingressPrefix+"3", "").
+				AddPath("test.com", "/foo", serviceName, port80).
+				AddPath("baz.com", "/bar", serviceName, port80).
+				ConfigureForILB(),
+			numForwardingRules: 2,
+			numBackendServices: 2,
+			certType:           e2e.GCPCert,
+			hosts:              []string{"test.com", "baz.com"},
+		},
+		{
+			desc: "https ILB multiple paths, tls",
+			ingBuilder: fuzz.NewIngressBuilder("", ingressPrefix+"4", "").
+				AddPath("test.com", "/foo", serviceName, port80).
+				AddPath("baz.com", "/bar", serviceName, port80).
+				ConfigureForILB(),
+			numForwardingRules: 2,
+			numBackendServices: 2,
+			certType:           e2e.K8sCert,
+			hosts:              []string{"test.com", "baz.com"},
+		},
+	} {
+		tc := tc // Capture tc as we are running this in parallel.
+		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
+			t.Parallel()
+
+			addrName := fmt.Sprintf("test-addr-%s", s.Namespace)
+			if err := e2e.NewGCPAddress(s, addrName, Framework.Region); err != nil {
+				t.Fatalf("e2e.NewGCPAddress(..., %s) = %v, want nil", addrName, err)
+			}
+			defer e2e.DeleteGCPAddress(s, addrName, Framework.Region)
+
+			crud := adapter.IngressCRUD{C: Framework.Clientset}
+			if Framework.CreateILBSubnet {
+				if err := e2e.CreateILBSubnet(s); err != nil && err != e2e.ErrSubnetExists {
+					t.Fatalf("e2e.CreateILBSubnet(%+v) = %v", s, err)
+				}
+			}
+
+			for i, h := range tc.hosts {
+				name := fmt.Sprintf("cert%d--%s", i, s.Namespace)
+				cert, err := e2e.NewCert(name, h, tc.certType, true)
+				if err != nil {
+					t.Fatalf("Error initializing cert: %v", err)
+				}
+				if err := cert.Create(s); err != nil {
+					t.Fatalf("Error creating cert %s: %v", cert.Name, err)
+				}
+				defer cert.Delete(s)
+
+				if tc.certType == e2e.K8sCert {
+					tc.ingBuilder.AddTLS([]string{}, cert.Name)
+				} else {
+					tc.ingBuilder.AddPresharedCerts([]string{cert.Name})
+				}
+			}
+			ing := tc.ingBuilder.AddStaticIP(addrName, true).Build()
 			ing.Namespace = s.Namespace // namespace depends on sandbox
 
 			t.Logf("Ingress = %s", ing.String())
@@ -476,7 +622,7 @@ func TestILBUpdate(t *testing.T) {
 			if err != nil {
 				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 			}
-			t.Logf("GCLB resources createdd (%s/%s)", s.Namespace, tc.ing.Name)
+			t.Logf("GCLB resources created (%s/%s)", s.Namespace, tc.ing.Name)
 
 			// Perform whitebox testing.
 			if len(ing.Status.LoadBalancer.Ingress) < 1 {
@@ -511,7 +657,7 @@ func TestILBUpdate(t *testing.T) {
 			if err != nil {
 				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 			}
-			t.Logf("GCLB resources createdd (%s/%s)", s.Namespace, tc.ingUpdate.Name)
+			t.Logf("GCLB resources created (%s/%s)", s.Namespace, tc.ingUpdate.Name)
 
 			// Perform whitebox testing.
 			if len(ing.Status.LoadBalancer.Ingress) < 1 {
@@ -703,7 +849,7 @@ func TestILBShared(t *testing.T) {
 				if err != nil {
 					t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 				}
-				t.Logf("GCLB resources createdd (%s/%s)", s.Namespace, ing.Name)
+				t.Logf("GCLB resources created (%s/%s)", s.Namespace, ing.Name)
 
 				// Perform whitebox testing.
 				if len(ing.Status.LoadBalancer.Ingress) < 1 {

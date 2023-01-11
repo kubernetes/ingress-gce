@@ -138,6 +138,37 @@ func TestAddressManagerExternallyOwned(t *testing.T) {
 	testReleaseAddress(t, mgr, svc, testLBName, vals.Region)
 }
 
+// TestAddressManagerNonExisting tests the case where the address can't be reserved
+// automatically and was not reserved by the user (external address case).
+func TestAddressManagerNonExisting(t *testing.T) {
+	svc, err := fakeGCECloud(vals)
+	require.NoError(t, err)
+	targetIP := "1.1.1.1"
+
+	mgr := newAddressManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeExternal, cloud.NetworkTierPremium)
+
+	svc.Compute().(*cloud.MockGCE).MockAddresses.InsertHook = test.InsertAddressNotAllocatedToProjectErrorHook
+	_, _, err = mgr.HoldAddress()
+	require.Error(t, err)
+	assert.True(t, utils.IsIPConfigurationError(err))
+}
+
+// TestAddressManagerWrongTypeReserved tests the case where the address was reserved by the user but it is of the wrong type.
+func TestAddressManagerWrongTypeReserved(t *testing.T) {
+	svc, err := fakeGCECloud(vals)
+	require.NoError(t, err)
+	targetIP := "1.1.1.1"
+
+	addr := &compute.Address{Name: "my-important-address", Address: targetIP, AddressType: string(cloud.SchemeInternal)}
+	err = svc.ReserveRegionAddress(addr, vals.Region)
+
+	mgr := newAddressManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeExternal, cloud.NetworkTierPremium)
+
+	_, _, err = mgr.HoldAddress()
+	require.Error(t, err)
+	assert.True(t, utils.IsIPConfigurationError(err))
+}
+
 // TestAddressManagerExternallyOwnedWrongNetworkTier tests the case where the address exists but isn't
 // owned by the controller and it's network tier doesn't match expected.
 func TestAddressManagerExternallyOwnedWrongNetworkTier(t *testing.T) {

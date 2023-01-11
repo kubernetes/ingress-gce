@@ -105,7 +105,7 @@ func TestLocalGetEndpointSet(t *testing.T) {
 		ec := NewLocalL4ILBEndpointsCalculator(nodeLister, zoneGetter, svcKey, klog.TODO())
 		for _, tc := range testCases {
 			createNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeReadyStatusMap, transactionSyncer.nodeLister)
-			retSet, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
+			retSet, _, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
 			if err != nil {
 				t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
 			}
@@ -198,7 +198,7 @@ func TestClusterGetEndpointSet(t *testing.T) {
 	ec := NewClusterL4ILBEndpointsCalculator(nodeLister, zoneGetter, svcKey, klog.TODO())
 	for _, tc := range testCases {
 		createNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeReadyStatusMap, transactionSyncer.nodeLister)
-		retSet, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
+		retSet, _, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
 		if err != nil {
 			t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
 		}
@@ -257,7 +257,7 @@ func deleteNodes(t *testing.T, nodeNames []string, nodeIndexer cache.Indexer) {
 	for _, nodeName := range nodeNames {
 		node, exists, err := nodeIndexer.GetByKey(nodeName)
 		if err != nil || !exists {
-			t.Errorf("Could not lookuo node %q, err - %v", nodeName, err)
+			t.Errorf("Could not lookup node %q, err - %v", nodeName, err)
 			continue
 		}
 		if err := nodeIndexer.Delete(node); err != nil {

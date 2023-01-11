@@ -62,7 +62,7 @@ var (
 		meta.Regional: {FeatureL7ILB},
 	}
 
-	// All of these fields must be filled in to allow L7ILBVersions() to work
+	// All of these fields must be filled in for L7ILBVersions() to work
 	// TODO(shance) Remove this entirely
 	l7IlbVersions = *NewResourceVersions()
 )

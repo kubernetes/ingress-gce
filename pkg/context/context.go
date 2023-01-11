@@ -50,7 +50,7 @@ import (
 	informerfrontendconfig "k8s.io/ingress-gce/pkg/frontendconfig/client/informers/externalversions/frontendconfig/v1beta1"
 	ingparamsclient "k8s.io/ingress-gce/pkg/ingparams/client/clientset/versioned"
 	informeringparams "k8s.io/ingress-gce/pkg/ingparams/client/informers/externalversions/ingparams/v1beta1"
-	"k8s.io/ingress-gce/pkg/instances"
+	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/metrics"
 	serviceattachmentclient "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned"
 	informerserviceattachment "k8s.io/ingress-gce/pkg/serviceattachment/client/informers/externalversions/serviceattachment/v1"
@@ -117,15 +117,16 @@ type ControllerContext struct {
 	// controller logic and should only be used for providing additional information to the user.
 	RegionalCluster bool
 
-	InstancePool instances.NodePool
+	InstancePool instancegroups.Manager
 	Translator   *translator.Translator
 }
 
 // ControllerContextConfig encapsulates some settings that are tunable via command line flags.
 type ControllerContextConfig struct {
-	Namespace    string
-	ResyncPeriod time.Duration
-	NumL4Workers int
+	Namespace         string
+	ResyncPeriod      time.Duration
+	NumL4Workers      int
+	NumL4NetLBWorkers int
 	// DefaultBackendSvcPortID is the ServicePort for the system default backend.
 	DefaultBackendSvcPort utils.ServicePort
 	HealthCheckPath       string
@@ -135,6 +136,7 @@ type ControllerContextConfig struct {
 	ASMConfigMapName      string
 	EndpointSlicesEnabled bool
 	MaxIGSize             int
+	EnableL4ILBDualStack  bool
 }
 
 // NewControllerContext returns a new shared set of informers.
@@ -208,7 +210,7 @@ func NewControllerContext(
 		context.UseEndpointSlices,
 		context.KubeClient,
 	)
-	context.InstancePool = instances.NewNodePool(&instances.NodePoolConfig{
+	context.InstancePool = instancegroups.NewManager(&instancegroups.ManagerConfig{
 		Cloud:      context.Cloud,
 		Namer:      context.ClusterNamer,
 		Recorders:  context,
@@ -285,12 +287,12 @@ func (ctx *ControllerContext) initEnableASM() {
 	}
 
 	klog.V(2).Infof("The supported DestinationRule group version is %s in group %s. Need to update as istio API graduates.", destinationRuleAPIVersion, destinationRuleGroup)
-	destrinationGVR := schema.GroupVersionResource{Group: destinationRuleGroup, Version: destinationRuleAPIVersion, Resource: destinationRulePlural}
-	drDynamicInformer := dynamicinformer.NewFilteredDynamicInformer(dynamicClient, destrinationGVR, ctx.Namespace, ctx.ResyncPeriod,
+	destinationGVR := schema.GroupVersionResource{Group: destinationRuleGroup, Version: destinationRuleAPIVersion, Resource: destinationRulePlural}
+	drDynamicInformer := dynamicinformer.NewFilteredDynamicInformer(dynamicClient, destinationGVR, ctx.Namespace, ctx.ResyncPeriod,
 		cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc},
 		nil)
 	ctx.DestinationRuleInformer = drDynamicInformer.Informer()
-	ctx.DestinationRuleClient = dynamicClient.Resource(destrinationGVR)
+	ctx.DestinationRuleClient = dynamicClient.Resource(destinationGVR)
 	ctx.ASMConfigController.RecordEvent("Normal", "ASMModeOn", fmt.Sprintf("NEG controller is running in ASM Mode with Istio API: %s.", destinationRuleAPIVersion))
 	ctx.ASMConfigController.SetASMReadyTrue()
 }

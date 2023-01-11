@@ -1014,7 +1014,7 @@ func GetServiceAttachment(ctx context.Context, c cloud.Cloud, saURL string) (*Se
 	return &ServiceAttachment{GA: sa}, nil
 }
 
-// CheckServiceAttachmentDeletion verfies that the Service Attachment does not exist
+// CheckServiceAttachmentDeletion verifies that the Service Attachment does not exist
 func CheckServiceAttachmentDeletion(ctx context.Context, c cloud.Cloud, saURL string) (bool, error) {
 	resID, err := cloud.ParseResourceURL(saURL)
 	if err != nil {
@@ -1023,7 +1023,7 @@ func CheckServiceAttachmentDeletion(ctx context.Context, c cloud.Cloud, saURL st
 	}
 	_, err = c.ServiceAttachments().Get(ctx, resID.Key)
 	if e, ok := err.(*googleapi.Error); ok && e.Code == http.StatusNotFound {
-		klog.Infof("CheckServiceAttachmnetDeletion(), service attachment was successfully deleted")
+		klog.Infof("CheckServiceAttachmentDeletion(), service attachment was successfully deleted")
 		return true, nil
 	}
 	return false, err

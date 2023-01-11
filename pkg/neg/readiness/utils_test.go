@@ -100,7 +100,7 @@ func TestNegReadinessConditionStatus(t *testing.T) {
 	} {
 		condition, ok := NegReadinessConditionStatus(tc.pod)
 		if tc.expectCondition != condition {
-			t.Errorf("For test case %q, expect condiion %v, but got %v", tc.desc, tc.expectCondition, condition)
+			t.Errorf("For test case %q, expect condition %v, but got %v", tc.desc, tc.expectCondition, condition)
 		}
 
 		if tc.expectFound != ok {

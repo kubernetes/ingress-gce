@@ -81,7 +81,7 @@ func (s *syncer) Start() error {
 		return fmt.Errorf("NEG syncer for %s is shutting down. ", s.NegSyncerKey.String())
 	}
 
-	s.logger.V(2).Info("Starting NEG syncer for service port", "negSynckerKey", s.NegSyncerKey.String())
+	s.logger.V(2).Info("Starting NEG syncer for service port", "negSyncerKey", s.NegSyncerKey.String())
 	s.init()
 	go func() {
 		for {
@@ -90,16 +90,16 @@ func (s *syncer) Start() error {
 			err := s.core.sync()
 			if err != nil {
 				delay, retryErr := s.backoff.NextRetryDelay()
-				retryMesg := ""
+				retryMsg := ""
 				if retryErr == ErrRetriesExceeded {
-					retryMesg = "(will not retry)"
+					retryMsg = "(will not retry)"
 				} else {
 					retryCh = s.clock.After(delay)
-					retryMesg = "(will retry)"
+					retryMsg = "(will retry)"
 				}
 
 				if svc := getService(s.serviceLister, s.Namespace, s.Name); svc != nil {
-					s.recorder.Eventf(svc, apiv1.EventTypeWarning, "SyncNetworkEndpointGroupFailed", "Failed to sync NEG %q %s: %v", s.NegSyncerKey.NegName, retryMesg, err)
+					s.recorder.Eventf(svc, apiv1.EventTypeWarning, "SyncNetworkEndpointGroupFailed", "Failed to sync NEG %q %s: %v", s.NegSyncerKey.NegName, retryMsg, err)
 				}
 			} else {
 				s.backoff.ResetRetryDelay()
@@ -111,7 +111,7 @@ func (s *syncer) Start() error {
 					s.stateLock.Lock()
 					s.shuttingDown = false
 					s.stateLock.Unlock()
-					s.logger.V(2).Info("Stopping NEG syncer", "negSynckerKey", s.NegSyncerKey.String())
+					s.logger.V(2).Info("Stopping NEG syncer", "negSyncerKey", s.NegSyncerKey.String())
 					return
 				}
 			case <-retryCh:
@@ -133,7 +133,7 @@ func (s *syncer) Stop() {
 	s.stateLock.Lock()
 	defer s.stateLock.Unlock()
 	if !s.stopped {
-		s.logger.V(2).Info("Stopping NEG syncer for service port", "negSynckerKey", s.NegSyncerKey.String())
+		s.logger.V(2).Info("Stopping NEG syncer for service port", "negSyncerKey", s.NegSyncerKey.String())
 		s.stopped = true
 		s.shuttingDown = true
 		close(s.syncCh)
@@ -142,7 +142,7 @@ func (s *syncer) Stop() {
 
 func (s *syncer) Sync() bool {
 	if s.IsStopped() {
-		s.logger.Info("NEG syncer is already stopped.", "negSynckerKey", s.NegSyncerKey.String())
+		s.logger.Info("NEG syncer is already stopped.", "negSyncerKey", s.NegSyncerKey.String())
 		return false
 	}
 	select {

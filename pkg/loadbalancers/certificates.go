@@ -62,7 +62,7 @@ func (l7 *L7) checkSSLCert() error {
 func (l7 *L7) createSslCertificates(existingCerts, translatorCerts []*composite.SslCertificate) ([]*composite.SslCertificate, error) {
 	var result []*composite.SslCertificate
 
-	existingCertsMap := getMapfromCertList(existingCerts)
+	existingCertsMap := getMapFromCertList(existingCerts)
 
 	// mapping of currently configured certs
 	visitedCertMap := make(map[string]string)
@@ -126,7 +126,7 @@ func (l7 *L7) createSslCertificates(existingCerts, translatorCerts []*composite.
 	return result, nil
 }
 
-func getMapfromCertList(certs []*composite.SslCertificate) map[string]*composite.SslCertificate {
+func getMapFromCertList(certs []*composite.SslCertificate) map[string]*composite.SslCertificate {
 	if len(certs) == 0 {
 		return nil
 	}
@@ -200,7 +200,7 @@ func (l7 *L7) deleteOldSSLCerts() {
 	if len(l7.oldSSLCerts) == 0 {
 		return
 	}
-	certsMap := getMapfromCertList(l7.sslCerts)
+	certsMap := getMapFromCertList(l7.sslCerts)
 	for _, cert := range l7.oldSSLCerts {
 		if !l7.namer.IsCertNameForLB(cert.Name) && !l7.namer.IsLegacySSLCert(cert.Name) {
 			// retain cert if it is managed by GCE(non-ingress)
@@ -221,7 +221,7 @@ func (l7 *L7) deleteOldSSLCerts() {
 // Returns true if the input array of certs is identical to the certs in the L7 config.
 // Returns false if there is any mismatch
 func (l7 *L7) compareCerts(certLinks []string) bool {
-	certsMap := getMapfromCertList(l7.sslCerts)
+	certsMap := getMapFromCertList(l7.sslCerts)
 	if len(certLinks) != len(certsMap) {
 		klog.V(4).Infof("Loadbalancer has %d certs, target proxy has %d certs", len(certsMap), len(certLinks))
 		return false

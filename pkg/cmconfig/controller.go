@@ -16,7 +16,7 @@ import (
 )
 
 // ConfigMapConfigController is the ConfigMap based config controller.
-// If cmConfigModeEnabled set to true, it will load the config from configmap: configMapNamespace/configMapName and restart ingress controller if the config has any ligeal changes.
+// If cmConfigModeEnabled set to true, it will load the config from configmap: configMapNamespace/configMapName and restart ingress controller if the config has any illegal changes.
 // If cmConfigModeEnabled set to false, it will return the default values for the configs.
 type ConfigMapConfigController struct {
 	configMapNamespace     string
@@ -36,7 +36,7 @@ func NewConfigMapConfigController(kubeClient kubernetes.Interface, recorder reco
 		if errors.IsNotFound(err) {
 			klog.Infof("ConfigMapConfigController: Not found the configmap based config, using default config: %v", currentConfig)
 		} else {
-			klog.Warningf("ConfigMapConfigController failed to load config from api server, using the defualt config. Error: %v", err)
+			klog.Warningf("ConfigMapConfigController failed to load config from api server, using the default config. Error: %v", err)
 		}
 	} else {
 		if err := currentConfig.LoadValue(cm.Data); err != nil {
@@ -109,7 +109,7 @@ func (c *ConfigMapConfigController) RecordEvent(eventtype, reason, message strin
 	return true
 }
 
-// RegisterInformer regjister the configmap based config controller handler to the configapInformer which will watch the target
+// RegisterInformer register the configmap based config controller handler to the configMapInformer which will watch the target
 // configmap and send stop message to the stopCh if any valid change detected.
 func (c *ConfigMapConfigController) RegisterInformer(configMapInformer cache.SharedIndexInformer, cancel func()) {
 	configMapInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -146,7 +146,7 @@ func (c *ConfigMapConfigController) processItem(obj interface{}, cancel func()) 
 		if errors.IsNotFound(err) {
 			klog.Infof("ConfigMapConfigController: Not found the configmap based config, using default config: %v", config)
 		} else {
-			klog.Warningf("ConfigMapConfigController failed to load config from api server, using the defualt config. Error: %v", err)
+			klog.Warningf("ConfigMapConfigController failed to load config from api server, using the default config. Error: %v", err)
 		}
 	} else {
 		c.currentConfigMapObject = cm

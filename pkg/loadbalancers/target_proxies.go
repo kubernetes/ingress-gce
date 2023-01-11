@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	// Every target https proxy accepts upto 10 ssl certificates.
+	// Every target https proxy accepts up to 10 ssl certificates.
 	TargetProxyCertLimit = 10
 )
 

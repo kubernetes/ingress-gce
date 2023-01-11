@@ -61,7 +61,7 @@ const (
 	Create
 	// Update used to record updates in a sync pool.
 	Update
-	// Delete used to record deltions from a sync pool.
+	// Delete used to record deletions from a sync pool.
 	Delete
 	// AddInstances used to record a call to AddInstances.
 	AddInstances
@@ -108,6 +108,20 @@ func (e *NetworkTierError) Error() string {
 
 func NewNetworkTierErr(resourceInErr, desired, received string) *NetworkTierError {
 	return &NetworkTierError{resource: resourceInErr, desiredNT: desired, receivedNT: received}
+}
+
+// IPConfigurationError is a struct to define error caused by User misconfiguration the Load Balancer IP.
+type IPConfigurationError struct {
+	ip     string
+	reason string
+}
+
+func (e *IPConfigurationError) Error() string {
+	return fmt.Sprintf("IP configuration error: \"%s\" %s", e.ip, e.reason)
+}
+
+func NewIPConfigurationError(ip, reason string) *IPConfigurationError {
+	return &IPConfigurationError{ip: ip, reason: reason}
 }
 
 // L4LBType indicates if L4 LoadBalancer is Internal or External
@@ -198,11 +212,17 @@ func IsNetworkTierError(err error) bool {
 	return errors.As(err, &netTierError)
 }
 
+// IsIPConfigurationError checks if wrapped error is an IP configuration error.
+func IsIPConfigurationError(err error) bool {
+	var ipConfigError *IPConfigurationError
+	return errors.As(err, &ipConfigError)
+}
+
 // IsUserError checks if given error is cause by User.
-// Right now User Error might be cause by Network Tier misconfiguration
-// but this list might get longer.
+// Right now User Error might be caused by Network Tier misconfiguration
+// or specifying non-existent or already used IP address.
 func IsUserError(err error) bool {
-	return IsNetworkTierError(err)
+	return IsNetworkTierError(err) || IsIPConfigurationError(err)
 }
 
 // IsNotFoundError returns true if the resource does not exist
@@ -409,7 +429,7 @@ var (
 	CandidateNodesPredicate = func(node *api_v1.Node) bool {
 		return nodePredicateInternal(node, false, false)
 	}
-	// CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes selects all nodes except ones that are upgradind and/or have any exclude labels. This function tolerates unready nodes.
+	// CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes selects all nodes except ones that are upgrading and/or have any exclude labels. This function tolerates unready nodes.
 	// TODO(prameshj) - Once the kubernetes/kubernetes Predicate function includes Unready nodes and the GKE nodepool code sets exclude labels on upgrade, this can be replaced with CandidateNodesPredicate.
 	CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes = func(node *api_v1.Node) bool {
 		return nodePredicateInternal(node, true, true)
@@ -718,7 +738,7 @@ func LegacyForwardingRuleName(svc *api_v1.Service) string {
 }
 
 // L4LBResourceDescription stores the description fields for L4 ILB or NetLB resources.
-// This is useful to indetify which resources correspond to which L4 LB service.
+// This is useful to identify which resources correspond to which L4 LB service.
 type L4LBResourceDescription struct {
 	// ServiceName indicates the name of the service the resource is for.
 	ServiceName string `json:"networking.gke.io/service-name"`
@@ -754,6 +774,10 @@ func MakeL4LBServiceDescription(svcName, ip string, version meta.Version, shared
 		return (&L4LBResourceDescription{APIVersion: version, ResourceDescription: fmt.Sprintf(L4LBSharedResourcesDesc, lbType.ToString())}).Marshal()
 	}
 	return (&L4LBResourceDescription{ServiceName: svcName, ServiceIP: ip, APIVersion: version}).Marshal()
+}
+
+func MakeL4IPv6ForwardingRuleDescription(service *api_v1.Service) (string, error) {
+	return (&L4LBResourceDescription{ServiceName: ServiceKeyFunc(service.Namespace, service.Name)}).Marshal()
 }
 
 // NewStringPointer returns a pointer to the provided string literal
@@ -818,4 +842,17 @@ func GetServiceNodePort(service *api_v1.Service) int64 {
 		return 0
 	}
 	return int64(service.Spec.Ports[0].NodePort)
+}
+
+func AddIPToLBStatus(status *api_v1.LoadBalancerStatus, ips ...string) *api_v1.LoadBalancerStatus {
+	if status == nil {
+		status = &api_v1.LoadBalancerStatus{
+			Ingress: []api_v1.LoadBalancerIngress{},
+		}
+	}
+
+	for _, ip := range ips {
+		status.Ingress = append(status.Ingress, api_v1.LoadBalancerIngress{IP: ip})
+	}
+	return status
 }

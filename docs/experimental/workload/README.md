@@ -243,7 +243,7 @@ NAME                                          ADDRESSTYPE   PORTS   ENDPOINTS   
 workload-service-workload-controller.k8s.io   IPv4          80      10.168.15.209   91s
 ```
 
-# Toubleshooting
+# Troubleshooting
 
 ## Service Account Email
 

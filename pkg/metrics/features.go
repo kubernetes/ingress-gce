@@ -101,7 +101,7 @@ const (
 	customNamedNeg = feature("CustomNamedNEG")
 	// negInSuccess feature specifies that syncers were created for the Neg
 	negInSuccess = feature("NegInSuccess")
-	// negInError feature specifies that an error occuring in ensuring Neg Syncer
+	// negInError feature specifies that an error occurring in ensuring Neg Syncer
 	negInError = feature("NegInError")
 
 	l4ILBService      = feature("L4ILBService")
@@ -114,11 +114,11 @@ const (
 	l4ILBInError = feature("L4ILBInError")
 
 	l4NetLBService = feature("L4NetLBService")
-	// L4NetLBPremiumNetworkTier feature specifies that NetLB VIP is configured in Premium Network Tier.
+	// l4NetLBPremiumNetworkTier feature specifies that NetLB VIP is configured in Premium Network Tier.
 	l4NetLBPremiumNetworkTier = feature("L4NetLBPremiumNetworkTier")
-	// L4NetLBPremiumNetworkTier feature specifies that static IP Address is managed by controller.
+	// l4NetLBManagedStaticIP feature specifies that static IP Address is managed by controller.
 	l4NetLBManagedStaticIP = feature("L4NetLBManagedStaticIP")
-	// L4NetLBPremiumNetworkTier feature specifies number of all static IP Address managed by controller and by user.
+	// l4NetLBStaticIP feature specifies number of all static IP Address managed by controller and by user.
 	l4NetLBStaticIP = feature("L4NetLBStaticIP")
 	// l4NetLBInSuccess feature specifies that NetLB VIP is configured.
 	l4NetLBInSuccess = feature("L4NetLBInSuccess")

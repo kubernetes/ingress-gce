@@ -401,7 +401,7 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 		t.Fatalf("Failed to update service lister: %v", err)
 	}
 	if err = controller.processService(svcKey); err != nil {
-		t.Fatalf("Failed to process updated L4 ILB srvice: %v", err)
+		t.Fatalf("Failed to process updated L4 ILB service: %v", err)
 	}
 	expectedPortInfoMap = negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName,
 		controller.l4Namer, true)
@@ -1097,7 +1097,7 @@ func TestMergeCSMPortInfoMap(t *testing.T) {
 	defer controller.stop()
 	n1s1 := newTestServiceCus(t, controller, "namespace1", "service1", []int32{80, 90})
 	n2s1 := newTestServiceCus(t, controller, "namespace2", "service1", []int32{90})
-	ds1, usDr1 := newTestDestinationRule(t, controller, "namespac2", "test-destination-rule", "service1.namespace1", []string{"v1", "v2"})
+	ds1, usDr1 := newTestDestinationRule(t, controller, "name-space2", "test-destination-rule", "service1.namespace1", []string{"v1", "v2"})
 	if err := controller.destinationRuleLister.Add(usDr1); err != nil {
 		t.Fatal(err)
 	}
@@ -1354,7 +1354,7 @@ func TestEnqueueEndpoints(t *testing.T) {
 			if list := informer.GetIndexer().List(); len(list) != 1 {
 				t.Errorf("Got list - %v of size %d, want 1 element", list, len(list))
 			}
-			t.Logf("Checking for enqueue of endopoint create event")
+			t.Logf("Checking for enqueue of endpoint create event")
 			ensureEndpointEnqueue(t, tc.expectedKey, controller)
 		})
 	}
@@ -1513,7 +1513,7 @@ func validateDestinationRuleAnnotationWithPortInfoMap(t *testing.T, usdr *unstru
 }
 
 // validateServiceStateAnnotationWithPortNameMap validates all aspects of the service annotation
-// and also checks for custon names if specified in given portNameMap
+// and also checks for custom names if specified in given portNameMap
 func validateServiceStateAnnotationWithPortNameMap(t *testing.T, svc *apiv1.Service, svcPorts []int32, namer negtypes.NetworkEndpointGroupNamer, portNameMap map[int32]string) {
 
 	negStatus := validateServiceStateAnnotationExceptNames(t, svc, svcPorts)
@@ -1689,32 +1689,35 @@ func newTestIngress(name string) *networkingv1.Ingress {
 	}
 }
 
-var ports = []apiv1.ServicePort{
-	{
-		Port:       80,
-		TargetPort: intstr.FromInt(8080),
-	},
-	{
-		Port:       443,
-		TargetPort: intstr.FromString(testNamedPort),
-	},
-	{
-		Name:       testNamedPort,
-		Port:       8081,
-		TargetPort: intstr.FromInt(8081),
-	},
-	{
-		Port:       8888,
-		TargetPort: intstr.FromInt(8888),
-	},
-	{
-		Name:       testNamedPortWithNumber,
-		Port:       8881,
-		TargetPort: intstr.FromInt(8882),
-	},
+func servicePorts() []apiv1.ServicePort {
+	return []apiv1.ServicePort{
+		{
+			Port:       80,
+			TargetPort: intstr.FromInt(8080),
+		},
+		{
+			Port:       443,
+			TargetPort: intstr.FromString(testNamedPort),
+		},
+		{
+			Name:       testNamedPort,
+			Port:       8081,
+			TargetPort: intstr.FromInt(8081),
+		},
+		{
+			Port:       8888,
+			TargetPort: intstr.FromInt(8888),
+		},
+		{
+			Name:       testNamedPortWithNumber,
+			Port:       8881,
+			TargetPort: intstr.FromInt(8882),
+		},
+	}
 }
 
 func getTestSvcPortTuple(svcPort int32) negtypes.SvcPortTuple {
+	ports := servicePorts()
 	for _, port := range ports {
 		if port.Port == svcPort {
 			return negtypes.SvcPortTuple{
@@ -1756,6 +1759,7 @@ func newTestService(c *Controller, negIngress bool, negSvcPorts []int32) *apiv1.
 	}
 
 	// append additional ports if the service does not contain the service port
+	ports := servicePorts()
 	for _, port := range negSvcPorts {
 		exists := false
 
@@ -1812,6 +1816,7 @@ func newTestServiceCustomNamedNeg(c *Controller, negSvcPorts map[int32]string, i
 	}
 
 	// append additional ports if the service does not contain the service port
+	ports := servicePorts()
 	for port := range negSvcPorts {
 		exists := false
 

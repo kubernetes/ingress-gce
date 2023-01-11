@@ -147,7 +147,7 @@ func TestToRedirectUrlMap(t *testing.T) {
 			expect: nil,
 		},
 		{
-			desc:   "Disabled with with no response code set",
+			desc:   "Disabled with no response code set",
 			fc:     &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{RedirectToHttps: &frontendconfigv1beta1.HttpsRedirectConfig{Enabled: false}}},
 			expect: nil,
 		},

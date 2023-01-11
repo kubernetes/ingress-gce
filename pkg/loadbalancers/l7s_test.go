@@ -191,21 +191,21 @@ func TestGC(t *testing.T) {
 
 		err := l7sPool.GCv1(tc.ingressLBs)
 		if err != nil {
-			t.Errorf("For case %q, do not expect err: %v", tc.desc, err)
+			t.Errorf("For case %q, do not expectEqual err: %v", tc.desc, err)
 		}
 
 		// check if other LB are not deleted
 		for _, key := range otherKeys {
 			namer := otherFeNamerFactory.NamerForLoadBalancer(otherNamer.LoadBalancer(key))
 			if err := checkFakeLoadBalancer(cloud, namer, versions, defaultScope, true); err != nil {
-				t.Errorf("For case %q and key %q, do not expect err: %v", tc.desc, key, err)
+				t.Errorf("For case %q and key %q, do not expectEqual err: %v", tc.desc, key, err)
 			}
 		}
 
 		// check if the total number of url maps are expected
 		urlMaps, _ := l7sPool.cloud.ListURLMaps()
 		if len(urlMaps) != len(tc.expectLBs)+len(otherKeys) {
-			t.Errorf("For case %q, expect %d urlmaps, but got %d.", tc.desc, len(tc.expectLBs)+len(otherKeys), len(urlMaps))
+			t.Errorf("For case %q, expectEqual %d urlmaps, but got %d.", tc.desc, len(tc.expectLBs)+len(otherKeys), len(urlMaps))
 		}
 
 		// check if the ones that are expected to be GC is actually GCed.
@@ -213,7 +213,7 @@ func TestGC(t *testing.T) {
 		for _, key := range expectRemovedLBs.List() {
 			namer := namerFactory.NamerForLoadBalancer(v1NamerHelper.LoadBalancer(key))
 			if err := checkFakeLoadBalancer(cloud, namer, versions, defaultScope, false); err != nil {
-				t.Errorf("For case %q and key %q, do not expect err: %v", tc.desc, key, err)
+				t.Errorf("For case %q and key %q, do not expectEqual err: %v", tc.desc, key, err)
 			}
 		}
 
@@ -221,7 +221,7 @@ func TestGC(t *testing.T) {
 		for _, key := range tc.expectLBs {
 			namer := namerFactory.NamerForLoadBalancer(v1NamerHelper.LoadBalancer(key))
 			if err := checkFakeLoadBalancer(cloud, namer, versions, defaultScope, true); err != nil {
-				t.Errorf("For case %q and key %q, do not expect err: %v", tc.desc, key, err)
+				t.Errorf("For case %q and key %q, do not expectEqual err: %v", tc.desc, key, err)
 			}
 			removeFakeLoadBalancer(cloud, namer, versions, defaultScope)
 		}
@@ -253,21 +253,21 @@ func TestDoNotGCWantedLB(t *testing.T) {
 		createFakeLoadbalancer(l7sPool.cloud, namer, versions, defaultScope)
 		err := l7sPool.GCv1([]string{tc.key})
 		if err != nil {
-			t.Errorf("For case %q, do not expect err: %v", tc.desc, err)
+			t.Errorf("For case %q, do not expectEqual err: %v", tc.desc, err)
 		}
 
 		if err := checkFakeLoadBalancer(l7sPool.cloud, namer, versions, defaultScope, true); err != nil {
-			t.Errorf("For case %q, do not expect err: %v", tc.desc, err)
+			t.Errorf("For case %q, do not expectEqual err: %v", tc.desc, err)
 		}
 		urlMaps, _ := l7sPool.cloud.ListURLMaps()
 		if len(urlMaps) != 1+numOfExtraUrlMap {
-			t.Errorf("For case %q, expect %d urlmaps, but got %d.", tc.desc, 1+numOfExtraUrlMap, len(urlMaps))
+			t.Errorf("For case %q, expectEqual %d urlmaps, but got %d.", tc.desc, 1+numOfExtraUrlMap, len(urlMaps))
 		}
 		removeFakeLoadBalancer(l7sPool.cloud, namer, versions, defaultScope)
 	}
 }
 
-// This should not leak at all, but verfies existing behavior
+// This should not leak at all, but verifies existing behavior
 // TODO: remove this test after the GC resource leaking is fixed.
 func TestGCToLeakLB(t *testing.T) {
 	t.Parallel()
@@ -289,17 +289,17 @@ func TestGCToLeakLB(t *testing.T) {
 		createFakeLoadbalancer(l7sPool.cloud, namer, versions, defaultScope)
 		err := l7sPool.GCv1([]string{})
 		if err != nil {
-			t.Errorf("For case %q, do not expect err: %v", tc.desc, err)
+			t.Errorf("For case %q, do not expectEqual err: %v", tc.desc, err)
 		}
 
 		if len(tc.key) >= resourceLeakLimit {
 			if err := checkFakeLoadBalancer(l7sPool.cloud, namer, versions, defaultScope, true); err != nil {
-				t.Errorf("For case %q, do not expect err: %v", tc.desc, err)
+				t.Errorf("For case %q, do not expectEqual err: %v", tc.desc, err)
 			}
 			removeFakeLoadBalancer(l7sPool.cloud, namer, versions, defaultScope)
 		} else {
 			if err := checkFakeLoadBalancer(l7sPool.cloud, namer, versions, defaultScope, false); err != nil {
-				t.Errorf("For case %q, do not expect err: %v", tc.desc, err)
+				t.Errorf("For case %q, do not expectEqual err: %v", tc.desc, err)
 			}
 		}
 	}
@@ -668,7 +668,7 @@ func checkFakeLoadBalancer(cloud *gce.Cloud, namer namer_util.IngressFrontendNam
 		return err
 	}
 	if !expectPresent && (err == nil || err.(*googleapi.Error).Code != http.StatusNotFound) {
-		return fmt.Errorf("expect URLMap %q to not present: %v", key, err)
+		return fmt.Errorf("expectEqual URLMap %q to not present: %v", key, err)
 	}
 	return nil
 }
@@ -689,7 +689,7 @@ func checkFakeLoadBalancerWithProtocol(cloud *gce.Cloud, namer namer_util.Ingres
 		return err
 	}
 	if !expectPresent && (err == nil || err.(*googleapi.Error).Code != http.StatusNotFound) {
-		return fmt.Errorf("expect %s GlobalForwardingRule %q to not present: %v", protocol, key, err)
+		return fmt.Errorf("expectEqual %s GlobalForwardingRule %q to not present: %v", protocol, key, err)
 	}
 
 	key.Name = namer.TargetProxy(protocol)
@@ -702,7 +702,7 @@ func checkFakeLoadBalancerWithProtocol(cloud *gce.Cloud, namer namer_util.Ingres
 		return err
 	}
 	if !expectPresent && (err == nil || err.(*googleapi.Error).Code != http.StatusNotFound) {
-		return fmt.Errorf("expect Target%sProxy %q to not present: %v", protocol, key, err)
+		return fmt.Errorf("expectEqual Target%sProxy %q to not present: %v", protocol, key, err)
 	}
 	return nil
 }
