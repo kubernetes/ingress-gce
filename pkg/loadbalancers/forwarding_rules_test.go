@@ -17,6 +17,7 @@ import (
 	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
@@ -264,6 +265,37 @@ func TestL4CreateExternalForwardingRuleAddressAlreadyInUse(t *testing.T) {
 	insertError := &googleapi.Error{Code: http.StatusBadRequest, Message: "Invalid value for field 'resource.IPAddress': '1.1.1.1'. Specified IP address is in-use and would result in a conflict., invalid"}
 	fakeGCE.Compute().(*cloud.MockGCE).MockForwardingRules.InsertHook = test.InsertForwardingRuleErrorHook(insertError)
 	_, _, err := l4.ensureExternalForwardingRule("link")
+
+	require.Error(t, err)
+	assert.True(t, utils.IsIPConfigurationError(err))
+}
+
+func TestL4EnsureIPv4ForwardingRuleAddressAlreadyInUse(t *testing.T) {
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	targetIP := "1.1.1.1"
+	l4 := L4{
+		cloud:           fakeGCE,
+		forwardingRules: forwardingrules.New(fakeGCE, meta.VersionGA, meta.Regional),
+		namer:           namer.NewL4Namer("test", namer.NewNamer("testCluster", "testFirewall")),
+		Service: &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "testService", Namespace: "default", UID: types.UID("1")},
+			Spec: corev1.ServiceSpec{
+				Ports: []corev1.ServicePort{
+					{
+						Port: 8080,
+					},
+				},
+				Type:           "LoadBalancer",
+				LoadBalancerIP: targetIP,
+			},
+		},
+	}
+
+	addr := &compute.Address{Name: "my-important-address", Address: targetIP, AddressType: string(cloud.SchemeInternal)}
+	fakeGCE.ReserveRegionAddress(addr, fakeGCE.Region())
+	insertError := &googleapi.Error{Code: http.StatusConflict, Message: "IP_IN_USE_BY_ANOTHER_RESOURCE - IP '10.107.116.14' is already being used by another resource."}
+	fakeGCE.Compute().(*cloud.MockGCE).MockForwardingRules.InsertHook = test.InsertForwardingRuleErrorHook(insertError)
+	_, err := l4.ensureIPv4ForwardingRule("link", gce.ILBOptions{}, nil, "subnetworkX", "1.1.1.1")
 
 	require.Error(t, err)
 	assert.True(t, utils.IsIPConfigurationError(err))

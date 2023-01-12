@@ -41,9 +41,12 @@ import (
 const (
 	// maxL4ILBPorts is the maximum number of ports that can be specified in an L4 ILB Forwarding Rule
 	maxL4ILBPorts = 5
-	// addressAlreadyInUseMessage is the error message string returned by the compute API
-	// when creating a forwarding rule that uses a conflicting IP address.
-	addressAlreadyInUseMessage = "Specified IP address is in-use and would result in a conflict."
+	// addressAlreadyInUseMessageExternal is the error message string returned by the compute API
+	// when creating an external forwarding rule that uses a conflicting IP address.
+	addressAlreadyInUseMessageExternal = "Specified IP address is in-use and would result in a conflict."
+	// addressAlreadyInUseMessageInternal is the error message string returned by the compute API
+	// when creating an internal forwarding rule that uses a conflicting IP address.
+	addressAlreadyInUseMessageInternal = "IP_IN_USE_BY_ANOTHER_RESOURCE"
 )
 
 func (l7 *L7) checkHttpForwardingRule() (err error) {
@@ -265,6 +268,9 @@ func (l4 *L4) ensureIPv4ForwardingRule(bsLink string, options gce.ILBOptions, ex
 	}
 	klog.V(2).Infof("ensureIPv4ForwardingRule: Creating/Recreating forwarding rule - %s", fr.Name)
 	if err = l4.forwardingRules.Create(fr); err != nil {
+		if isAddressAlreadyInUseError(err) {
+			return nil, utils.NewIPConfigurationError(fr.IPAddress, err.Error())
+		}
 		return nil, err
 	}
 
@@ -378,7 +384,7 @@ func (l4netlb *L4NetLB) ensureExternalForwardingRule(bsLink string) (*composite.
 	klog.V(2).Infof("ensureExternalForwardingRule: Creating/Recreating forwarding rule - %s", fr.Name)
 	if err = l4netlb.forwardingRules.Create(fr); err != nil {
 		if isAddressAlreadyInUseError(err) {
-			return nil, IPAddrUndefined, utils.NewIPConfigurationError(fr.IPAddress, addressAlreadyInUseMessage)
+			return nil, IPAddrUndefined, utils.NewIPConfigurationError(fr.IPAddress, addressAlreadyInUseMessageExternal)
 		}
 		return nil, IPAddrUndefined, err
 	}
@@ -458,5 +464,9 @@ func l4lbIPToUse(svc *v1.Service, fwdRule *composite.ForwardingRule, requestedSu
 }
 
 func isAddressAlreadyInUseError(err error) bool {
-	return utils.IsHTTPErrorCode(err, http.StatusBadRequest) && strings.Contains(err.Error(), addressAlreadyInUseMessage)
+	// Bad request HTTP status (400) is returned for external Forwarding Rules.
+	alreadyInUseExternal := utils.IsHTTPErrorCode(err, http.StatusBadRequest) && strings.Contains(err.Error(), addressAlreadyInUseMessageExternal)
+	// Conflict HTTP status (409) is returned for internal Forwarding Rules.
+	alreadyInUseInternal := utils.IsHTTPErrorCode(err, http.StatusConflict) && strings.Contains(err.Error(), addressAlreadyInUseMessageInternal)
+	return alreadyInUseExternal || alreadyInUseInternal
 }
