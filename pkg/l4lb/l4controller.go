@@ -220,6 +220,9 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(key string, service *v1.Se
 	if syncResult.Error != nil {
 		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
 			"Error syncing load balancer: %v", syncResult.Error)
+		if utils.IsUserError(syncResult.Error) {
+			syncResult.MetricsState.IsUserError = true
+		}
 		return syncResult
 	}
 	if syncResult.Status == nil {

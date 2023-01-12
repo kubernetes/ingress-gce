@@ -112,6 +112,8 @@ const (
 	// l4ILBInInError feature specifies that an error had occurred while creating/
 	// updating GCE Load Balancer.
 	l4ILBInError = feature("L4ILBInError")
+	// l4ILBInUserError feature specifies that an error cause by User misconfiguration had occurred while creating/updating GCE Load Balancer.
+	l4ILBInUserError = feature("L4ILBInUserError")
 
 	l4NetLBService = feature("L4NetLBService")
 	// l4NetLBPremiumNetworkTier feature specifies that NetLB VIP is configured in Premium Network Tier.
