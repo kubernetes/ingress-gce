@@ -74,7 +74,7 @@ var (
 			Name: "number_of_l4_dual_stack_ilbs",
 			Help: "Number of L4 ILBs with DualStack enabled",
 		},
-		[]string{"ipFamilies", "ipFamilyPolicy", "status"},
+		[]string{"ip_families", "ip_family_policy", "status"},
 	)
 	l4NetLBCount = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -402,9 +402,9 @@ func (im *ControllerMetrics) export() {
 	klog.V(3).Infof("Exporting L4 ILB DualStack usage metrics: %#v", ilbDualStackCount)
 	for state, count := range ilbDualStackCount {
 		l4ILBDualStackCount.With(prometheus.Labels{
-			"ipFamilies":     state.IPFamilies,
-			"ipFamilyPolicy": state.IPFamilyPolicy,
-			"status":         string(state.Status),
+			"ip_families":      state.IPFamilies,
+			"ip_family_policy": state.IPFamilyPolicy,
+			"status":           string(state.Status),
 		}).Set(float64(count))
 	}
 	klog.V(3).Infof("L4 ILB DualStack usage metrics exported.")
