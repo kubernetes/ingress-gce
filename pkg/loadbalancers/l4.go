@@ -482,7 +482,7 @@ func (l4 *L4) ensureIPv4NodesFirewall(nodeNames []string, ipAddress string, resu
 	}()
 
 	// ensure firewalls
-	sourceRanges, err := helpers.GetLoadBalancerSourceRanges(l4.Service)
+	sourceRanges, err := utils.ServiceSourceRanges(l4.Service)
 	if err != nil {
 		result.Error = err
 		return
@@ -490,7 +490,7 @@ func (l4 *L4) ensureIPv4NodesFirewall(nodeNames []string, ipAddress string, resu
 	// Add firewall rule for ILB traffic to nodes
 	nodesFWRParams := firewalls.FirewallParams{
 		PortRanges:        portRanges,
-		SourceRanges:      sourceRanges.StringSlice(),
+		SourceRanges:      sourceRanges,
 		DestinationRanges: []string{ipAddress},
 		Protocol:          string(protocol),
 		Name:              firewallName,

@@ -331,11 +331,11 @@ func verifyNetLBNodesFirewall(l4netlb *L4NetLB, nodeNames []string) error {
 		return fmt.Errorf("failed to create description for resources, err %w", err)
 	}
 
-	sourceRanges, err := servicehelper.GetLoadBalancerSourceRanges(l4netlb.Service)
+	sourceRanges, err := utils.ServiceSourceRanges(l4netlb.Service)
 	if err != nil {
 		return fmt.Errorf("servicehelper.GetLoadBalancerSourceRanges(%+v) returned error %v, want nil", l4netlb.Service, err)
 	}
-	return verifyFirewall(l4netlb.cloud, nodeNames, fwName, fwDesc, sourceRanges.StringSlice())
+	return verifyFirewall(l4netlb.cloud, nodeNames, fwName, fwDesc, sourceRanges)
 }
 
 func verifyNetLBHealthCheckFirewall(l4netlb *L4NetLB, nodeNames []string) error {

@@ -284,7 +284,7 @@ func (l4netlb *L4NetLB) ensureNodesFirewall(name string, nodeNames []string, ipA
 	}()
 
 	result := &L4NetLBSyncResult{}
-	sourceRanges, err := helpers.GetLoadBalancerSourceRanges(l4netlb.Service)
+	sourceRanges, err := utils.ServiceSourceRanges(l4netlb.Service)
 	if err != nil {
 		result.Error = err
 		return result
@@ -293,7 +293,7 @@ func (l4netlb *L4NetLB) ensureNodesFirewall(name string, nodeNames []string, ipA
 	// Add firewall rule for L4 External LoadBalancer traffic to nodes
 	nodesFWRParams := firewalls.FirewallParams{
 		PortRanges:        portRanges,
-		SourceRanges:      sourceRanges.StringSlice(),
+		SourceRanges:      sourceRanges,
 		DestinationRanges: []string{ipAddress},
 		Protocol:          protocol,
 		Name:              name,

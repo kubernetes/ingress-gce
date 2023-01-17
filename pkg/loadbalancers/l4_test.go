@@ -2155,11 +2155,11 @@ func verifyILBIPv4NodesFirewall(l4 *L4, nodeNames []string) error {
 		return fmt.Errorf("failed to create description for resources, err %w", err)
 	}
 
-	sourceRanges, err := servicehelper.GetLoadBalancerSourceRanges(l4.Service)
+	sourceRanges, err := utils.ServiceSourceRanges(l4.Service)
 	if err != nil {
 		return fmt.Errorf("servicehelper.GetLoadBalancerSourceRanges(%+v) returned error %v, want nil", l4.Service, err)
 	}
-	return verifyFirewall(l4.cloud, nodeNames, fwName, fwDesc, sourceRanges.StringSlice())
+	return verifyFirewall(l4.cloud, nodeNames, fwName, fwDesc, sourceRanges)
 }
 
 func verifyILBIPv6NodesFirewall(l4 *L4, nodeNames []string) error {
