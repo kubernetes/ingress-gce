@@ -24,15 +24,15 @@ func TestServiceSourceRanges(t *testing.T) {
 		},
 		{
 			desc:                 "Should parse ranges from spec",
-			specRanges:           []string{"192.168.0.1/10", "132.8.0.1/8"},
-			expectedSourceRanges: []string{"192.128.0.0/10", "132.0.0.0/8"}, // only significant bits are left
+			specRanges:           []string{" 192.168.0.1/10", " 132.8.0.1/8 "},
+			expectedSourceRanges: []string{"192.128.0.0/10", "132.0.0.0/8"}, // only significant bits are left, spaces are trimmed
 		},
 		{
 			desc: "Should parse ranges from annotations, if no spec value",
 			annotations: map[string]string{
-				v1.AnnotationLoadBalancerSourceRangesKey: "192.168.0.1/10,132.8.0.1/8",
+				v1.AnnotationLoadBalancerSourceRangesKey: " 192.168.0.1/10 , 132.8.0.1/8 ",
 			},
-			expectedSourceRanges: []string{"192.128.0.0/10", "132.0.0.0/8"}, // only significant bits are left
+			expectedSourceRanges: []string{"192.128.0.0/10", "132.0.0.0/8"}, // only significant bits are left, spaces are trimmed
 		},
 		{
 			desc:       "Should ignore annotation if spec is present",

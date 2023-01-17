@@ -28,8 +28,10 @@ func getAllSourceRanges(service *v1.Service) (net.IPNetSet, error) {
 	// if SourceRange field is specified, ignore sourceRange annotation
 	if len(service.Spec.LoadBalancerSourceRanges) > 0 {
 		specs := service.Spec.LoadBalancerSourceRanges
+		for i, spec := range specs {
+			specs[i] = strings.TrimSpace(spec)
+		}
 		ipnets, err := net.ParseIPNets(specs...)
-
 		if err != nil {
 			return nil, NewInvalidSpecLoadBalancerSourceRangesError(specs, err)
 		}
@@ -40,8 +42,10 @@ func getAllSourceRanges(service *v1.Service) (net.IPNetSet, error) {
 	if !ok {
 		return nil, nil
 	}
-	val = strings.TrimSpace(val)
 	specs := strings.Split(val, ",")
+	for i, spec := range specs {
+		specs[i] = strings.TrimSpace(spec)
+	}
 	ipnets, err := net.ParseIPNets(specs...)
 	if err != nil {
 		return nil, NewInvalidLoadBalancerSourceRangesAnnotationError(val, err)
