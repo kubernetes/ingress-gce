@@ -76,6 +76,7 @@ type L4ILBServiceState struct {
 type L4ILBDualStackServiceStateStatus string
 
 var StatusSuccess = L4ILBDualStackServiceStateStatus("Success")
+var StatusUserError = L4ILBDualStackServiceStateStatus("UserError")
 var StatusError = L4ILBDualStackServiceStateStatus("Error")
 
 // L4ILBDualStackServiceState defines ipFamilies, ipFamilyPolicy and status

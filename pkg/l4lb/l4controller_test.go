@@ -25,6 +25,7 @@ import (
 
 	"google.golang.org/api/googleapi"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
+	"k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/ingress-gce/pkg/utils"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
@@ -109,6 +110,13 @@ func newFakeGCEWithUserInsertError() *gce.Cloud {
 	vals := gce.DefaultTestClusterValues()
 	fakeGCE := gce.NewFakeGCECloud(vals)
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = test.InsertForwardingRuleErrorHook(&googleapi.Error{Code: http.StatusConflict, Message: "IP_IN_USE_BY_ANOTHER_RESOURCE - IP '1.1.1.1' is already being used by another resource."})
+	return fakeGCE
+}
+
+func newFakeGCEWithUserNoIPv6SubnetError() *gce.Cloud {
+	vals := gce.DefaultTestClusterValues()
+	fakeGCE := gce.NewFakeGCECloud(vals)
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = test.InsertForwardingRuleErrorHook(&googleapi.Error{Code: http.StatusBadRequest, Message: "Subnetwork does not have an internal IPv6 IP space which is required for IPv6 L4 ILB forwarding rules."})
 	return fakeGCE
 }
 
@@ -766,5 +774,28 @@ func TestCreateDeleteDualStackService(t *testing.T) {
 				t.Errorf("Failed to sync deleted service %s, err %v", key, err)
 			}
 		})
+	}
+}
+
+func TestProcessDualStackServiceOnUserError(t *testing.T) {
+	t.Parallel()
+	l4c := newServiceController(t, newFakeGCEWithUserNoIPv6SubnetError())
+	l4c.enableDualStack = true
+
+	newSvc := test.NewL4ILBDualStackService(8080, api_v1.ProtocolTCP, []api_v1.IPFamily{api_v1.IPv4Protocol, api_v1.IPv6Protocol}, api_v1.ServiceExternalTrafficPolicyTypeCluster)
+	addILBService(l4c, newSvc)
+	addNEG(l4c, newSvc)
+	syncResult := l4c.processServiceCreateOrUpdate(newSvc)
+	if syncResult.Error == nil {
+		t.Fatalf("Failed to generate error when syncing service %s", newSvc.Name)
+	}
+	if !syncResult.MetricsState.IsUserError {
+		t.Errorf("syncResult.MetricsState.IsUserError should be true, got false")
+	}
+	if syncResult.MetricsState.InSuccess {
+		t.Errorf("syncResult.MetricsState.InSuccess should be false, got true")
+	}
+	if syncResult.DualStackMetricsState.Status != metrics.StatusUserError {
+		t.Errorf("syncResult.DualStackMetricsState.Status should be %s, got %s", metrics.StatusUserError, syncResult.DualStackMetricsState.Status)
 	}
 }

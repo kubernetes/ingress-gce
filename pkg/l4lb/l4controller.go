@@ -37,6 +37,7 @@ import (
 	"k8s.io/ingress-gce/pkg/forwardingrules"
 	l4metrics "k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
+	"k8s.io/ingress-gce/pkg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
@@ -233,6 +234,9 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service) *load
 			"Error syncing load balancer: %v", syncResult.Error)
 		if utils.IsUserError(syncResult.Error) {
 			syncResult.MetricsState.IsUserError = true
+			if l4c.enableDualStack {
+				syncResult.DualStackMetricsState.Status = metrics.StatusUserError
+			}
 		}
 		return syncResult
 	}
