@@ -19,16 +19,17 @@ package readiness
 import (
 	"context"
 	"fmt"
-	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
-	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
-	"google.golang.org/api/compute/v1"
-	"k8s.io/apimachinery/pkg/util/clock"
-	"k8s.io/legacy-cloud-providers/gce"
 	"net"
 	"reflect"
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
+	"google.golang.org/api/compute/v1"
+	"k8s.io/apimachinery/pkg/util/clock"
+	"k8s.io/legacy-cloud-providers/gce"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/apimachinery/pkg/types"
@@ -387,11 +388,15 @@ func TestPoll(t *testing.T) {
 		},
 	}
 
-	pollAndValidate := func(desc string, expectErr bool, expectRetry bool, expectPatchCount int, stepClock bool) {
+	pollAndValidate := func(desc string, expectErr bool, expectRetry bool, expectPatchCount int, stepClock bool, healthStatusDelay bool) {
 		if stepClock {
 			go func() {
 				time.Sleep(2 * time.Second)
-				fakeClock.Step(retryDelay)
+				delay := retryDelay
+				if healthStatusDelay {
+					delay = hcRetryDelay
+				}
+				fakeClock.Step(delay)
 			}()
 		}
 		retry, err := poller.Poll(key)
@@ -416,19 +421,19 @@ func TestPoll(t *testing.T) {
 		polling: true,
 	}
 
-	pollAndValidate(step, false, true, 0, false)
-	pollAndValidate(step, false, true, 0, false)
+	pollAndValidate(step, false, true, 0, false, false)
+	pollAndValidate(step, false, true, 0, false, false)
 
 	step = "unmark polling"
 	poller.pollMap[key].polling = false
-	pollAndValidate(step, true, true, 0, true)
-	pollAndValidate(step, true, true, 0, true)
+	pollAndValidate(step, true, true, 0, true, false)
+	pollAndValidate(step, true, true, 0, true, false)
 
 	step = "NEG exists, but with no endpoint"
 	// create NEG, but with no endpoint
 	negCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: negName, Zone: zone, Version: meta.VersionGA}, zone)
-	pollAndValidate(step, false, true, 0, false)
-	pollAndValidate(step, false, true, 0, false)
+	pollAndValidate(step, false, true, 0, true, true)
+	pollAndValidate(step, false, true, 0, true, true)
 
 	step = "NE added to the NEG, but NE health status is empty"
 	ne := &composite.NetworkEndpoint{
@@ -446,8 +451,8 @@ func TestPoll(t *testing.T) {
 		},
 	})
 
-	pollAndValidate(step, false, false, 1, false)
-	pollAndValidate(step, false, false, 2, false)
+	pollAndValidate(step, false, false, 1, false, false)
+	pollAndValidate(step, false, false, 2, false, false)
 	patcherTester.Eval(t, fmt.Sprintf("%v/%v", ns, podName), meta.ZonalKey(negName, zone), nil)
 
 	step = "NE health status is empty and there are other endpoint with health status in NEG"
@@ -458,8 +463,8 @@ func TestPoll(t *testing.T) {
 			Healths:         []*composite.HealthStatusForNetworkEndpoint{},
 		},
 	})
-	pollAndValidate(step, false, true, 2, false)
-	pollAndValidate(step, false, true, 2, false)
+	pollAndValidate(step, false, true, 2, true, true)
+	pollAndValidate(step, false, true, 2, true, true)
 
 	step = "NE has nonhealthy status"
 	negtypes.GetNetworkEndpointStore(negCloud).AddNetworkEndpointHealthStatus(*meta.ZonalKey(negName, zone), []negtypes.NetworkEndpointEntry{
@@ -475,8 +480,8 @@ func TestPoll(t *testing.T) {
 			},
 		},
 	})
-	pollAndValidate(step, false, true, 2, false)
-	pollAndValidate(step, false, true, 2, false)
+	pollAndValidate(step, false, true, 2, true, true)
+	pollAndValidate(step, false, true, 2, true, true)
 
 	step = "NE has nonhealthy status with irrelevant entry"
 	negtypes.GetNetworkEndpointStore(negCloud).AddNetworkEndpointHealthStatus(*meta.ZonalKey(negName, zone), []negtypes.NetworkEndpointEntry{
@@ -493,8 +498,8 @@ func TestPoll(t *testing.T) {
 			},
 		},
 	})
-	pollAndValidate(step, false, true, 2, false)
-	pollAndValidate(step, false, true, 2, false)
+	pollAndValidate(step, false, true, 2, true, true)
+	pollAndValidate(step, false, true, 2, true, true)
 
 	step = "NE has unsupported health"
 	negtypes.GetNetworkEndpointStore(negCloud).AddNetworkEndpointHealthStatus(*meta.ZonalKey(negName, zone), []negtypes.NetworkEndpointEntry{
@@ -510,8 +515,8 @@ func TestPoll(t *testing.T) {
 			},
 		},
 	})
-	pollAndValidate(step, false, false, 3, false)
-	pollAndValidate(step, false, false, 4, false)
+	pollAndValidate(step, false, false, 3, false, false)
+	pollAndValidate(step, false, false, 4, false, false)
 
 	step = "NE has healthy status"
 	bsName := "bar"
@@ -530,9 +535,9 @@ func TestPoll(t *testing.T) {
 		},
 		irrelevantEntry,
 	})
-	pollAndValidate(step, false, false, 5, false)
+	pollAndValidate(step, false, false, 5, false, false)
 	patcherTester.Eval(t, fmt.Sprintf("%v/%v", ns, podName), meta.ZonalKey(negName, zone), meta.GlobalKey(bsName))
-	pollAndValidate(step, false, false, 6, false)
+	pollAndValidate(step, false, false, 6, false, false)
 	patcherTester.Eval(t, fmt.Sprintf("%v/%v", ns, podName), meta.ZonalKey(negName, zone), meta.GlobalKey(bsName))
 
 	step = "ListNetworkEndpoint return error response"
@@ -542,8 +547,8 @@ func TestPoll(t *testing.T) {
 		return nil, fmt.Errorf("random error from GCE")
 	}
 	poller.negCloud = negtypes.NewAdapter(fakeGCE)
-	pollAndValidate(step, true, true, 6, true)
-	pollAndValidate(step, true, true, 6, true)
+	pollAndValidate(step, true, true, 6, true, false)
+	pollAndValidate(step, true, true, 6, true, false)
 }
 
 func TestProcessHealthStatus(t *testing.T) {
