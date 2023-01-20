@@ -331,7 +331,7 @@ func verifyNetLBNodesFirewall(l4netlb *L4NetLB, nodeNames []string) error {
 		return fmt.Errorf("failed to create description for resources, err %w", err)
 	}
 
-	sourceRanges, err := utils.ServiceSourceRanges(l4netlb.Service)
+	sourceRanges, err := utils.IPv4ServiceSourceRanges(l4netlb.Service)
 	if err != nil {
 		return fmt.Errorf("servicehelper.GetLoadBalancerSourceRanges(%+v) returned error %v, want nil", l4netlb.Service, err)
 	}

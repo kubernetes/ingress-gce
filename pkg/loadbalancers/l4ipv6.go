@@ -130,10 +130,16 @@ func (l4 *L4) ensureIPv6NodesFirewall(forwardingRule *composite.ForwardingRule, 
 		klog.V(2).Infof("Finished ensuring IPv6 nodes firewall %s for L4 ILB Service %s/%s, time taken: %v", l4.Service.Namespace, l4.Service.Name, firewallName, time.Since(start))
 	}()
 
+	// ensure firewalls
+	ipv6SourceRanges, err := utils.IPv6ServiceSourceRanges(l4.Service)
+	if err != nil {
+		result.Error = err
+		return
+	}
+
 	ipv6nodesFWRParams := firewalls.FirewallParams{
-		PortRanges: portRanges,
-		// TODO(panslava): support .spec.loadBalancerSourceRanges
-		SourceRanges:      []string{"0::0/0"},
+		PortRanges:        portRanges,
+		SourceRanges:      ipv6SourceRanges,
 		DestinationRanges: []string{forwardingRule.IPAddress},
 		Protocol:          string(protocol),
 		Name:              firewallName,
@@ -141,7 +147,7 @@ func (l4 *L4) ensureIPv6NodesFirewall(forwardingRule *composite.ForwardingRule, 
 		L4Type:            utils.ILB,
 	}
 
-	err := firewalls.EnsureL4LBFirewallForNodes(l4.Service, &ipv6nodesFWRParams, l4.cloud, l4.recorder)
+	err = firewalls.EnsureL4LBFirewallForNodes(l4.Service, &ipv6nodesFWRParams, l4.cloud, l4.recorder)
 	if err != nil {
 		result.GCEResourceInError = annotations.FirewallRuleIPv6Resource
 		result.Error = err

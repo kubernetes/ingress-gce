@@ -284,7 +284,7 @@ func (l4netlb *L4NetLB) ensureNodesFirewall(name string, nodeNames []string, ipA
 	}()
 
 	result := &L4NetLBSyncResult{}
-	sourceRanges, err := utils.ServiceSourceRanges(l4netlb.Service)
+	sourceRanges, err := utils.IPv4ServiceSourceRanges(l4netlb.Service)
 	if err != nil {
 		result.Error = err
 		return result
