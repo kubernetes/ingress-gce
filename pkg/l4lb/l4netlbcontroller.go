@@ -502,7 +502,6 @@ func (lc *L4NetLBController) ensureBackendLinking(service *v1.Service) error {
 	servicePort := utils.ServicePort{
 		ID:           portId,
 		BackendNamer: lc.namer,
-		NodePort:     utils.GetServiceNodePort(service),
 		L4RBSEnabled: true,
 	}
 
@@ -518,11 +517,14 @@ func (lc *L4NetLBController) ensureInstanceGroups(service *v1.Service, nodeNames
 		klog.V(2).Infof("Finished ensuring instance groups for L4 NetLB Service %s/%s, time taken: %v", service.Namespace, service.Name, time.Since(start))
 	}()
 
-	nodePorts := utils.GetNodePorts(service.Spec.Ports)
-	_, err := lc.instancePool.EnsureInstanceGroupsAndPorts(lc.ctx.ClusterNamer.InstanceGroup(), nodePorts)
+	// L4 NetLB does not use node ports, so we provide empty slice
+	var nodePorts []int64
+	igName := lc.ctx.ClusterNamer.InstanceGroup()
+	_, err := lc.instancePool.EnsureInstanceGroupsAndPorts(igName, nodePorts)
 	if err != nil {
-		return err
+		return fmt.Errorf("lc.instancePool.EnsureInstanceGroupsAndPorts(%s, %v) returned error %w", igName, nodePorts, err)
 	}
+
 	return lc.instancePool.Sync(nodeNames)
 }
 
