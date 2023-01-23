@@ -93,6 +93,7 @@ const (
 )
 
 var networkTierErrorRegexp = regexp.MustCompile(`The network tier of external IP is STANDARD|PREMIUM, that of Address must be the same.`)
+var subnetworkMissingIPv6ErrorRegexp = regexp.MustCompile("Subnetwork does not have an internal IPv6 IP space which is required for IPv6 L4 ILB forwarding rules.")
 
 // NetworkTierError is a struct to define error caused by User misconfiguration of Network Tier.
 type NetworkTierError struct {
@@ -201,6 +202,10 @@ func IsInUsedByError(err error) bool {
 	return strings.Contains(apiErr.Message, "being used by")
 }
 
+func IsSubnetworkMissingIPv6GCEError(err error) bool {
+	return subnetworkMissingIPv6ErrorRegexp.MatchString(err.Error())
+}
+
 // IsNetworkTierMismatchGCEError checks if error is a GCE network tier mismatch for external IP
 func IsNetworkTierMismatchGCEError(err error) bool {
 	return networkTierErrorRegexp.MatchString(err.Error())
@@ -237,7 +242,8 @@ func IsUserError(err error) bool {
 	return IsNetworkTierError(err) ||
 		IsIPConfigurationError(err) ||
 		IsInvalidLoadBalancerSourceRangesSpecError(err) ||
-		IsInvalidLoadBalancerSourceRangesAnnotationError(err)
+		IsInvalidLoadBalancerSourceRangesAnnotationError(err) ||
+		IsSubnetworkMissingIPv6GCEError(err)
 }
 
 // IsNotFoundError returns true if the resource does not exist
