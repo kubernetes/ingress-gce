@@ -50,7 +50,7 @@ type NegServiceState struct {
 }
 
 // VmIpNegType contains whether a GCE_VM_IP NEG is requesting for
-// local traffic (or service external policy set to local).
+// local traffic (or service external gcpFeatures set to local).
 type VmIpNegType struct {
 	trafficPolicyLocal bool
 }
@@ -136,4 +136,44 @@ type L4ILBMetricsCollector interface {
 	SetL4ILBService(svcKey string, state L4ILBServiceState)
 	// DeleteL4ILBService removes the given L4 ILB service key.
 	DeleteL4ILBService(svcKey string)
+}
+
+// ServiceL4ProtocolMetricState defines metric state related to the L4 protocol
+// related part of services.
+// {"type", "external_traffic_policy", "internal_traffic_policy", "session_affinity_config", "protocol", "number_of_ports"}
+type ServiceL4ProtocolMetricState struct {
+	Type                  string
+	ExternalTrafficPolicy string
+	InternalTrafficPolicy string
+	SessionAffinityConfig string
+	NumberOfPorts         string
+	Protocol              string
+}
+
+// ServiceIPStackMetricState defines metric state related to the IP stack of services.
+type ServiceIPStackMetricState struct {
+	Type                  string
+	ExternalTrafficPolicy string
+	InternalTrafficPolicy string
+	IPFamilies            string
+	IPFamilyPolicy        string
+	IsStaticIPv4          bool
+	IsStaticIPv6          bool
+}
+
+// ServiceGCPFeaturesMetricState defines metric state related to the GCP
+// specific features of services.
+type ServiceGCPFeaturesMetricState struct {
+	Type         string
+	NetworkTier  string
+	GlobalAccess bool
+	CustomSubnet bool
+}
+
+// serviceStatsState is a struct to be used as value in services map in the ControllerMetrics.
+type serviceStatsState struct {
+	ports       *ServiceL4ProtocolMetricState
+	ipStack     *ServiceIPStackMetricState
+	gcpFeatures *ServiceGCPFeaturesMetricState
+	lastSync    time.Time
 }

@@ -113,10 +113,11 @@ type ControllerContext struct {
 
 // ControllerContextConfig encapsulates some settings that are tunable via command line flags.
 type ControllerContextConfig struct {
-	Namespace         string
-	ResyncPeriod      time.Duration
-	NumL4Workers      int
-	NumL4NetLBWorkers int
+	Namespace               string
+	ResyncPeriod            time.Duration
+	NumL4Workers            int
+	NumL4NetLBWorkers       int
+	NumServiceMetricWorkers int
 	// DefaultBackendSvcPortID is the ServicePort for the system default backend.
 	DefaultBackendSvcPort utils.ServicePort
 	HealthCheckPath       string
@@ -152,7 +153,7 @@ func NewControllerContext(
 		ClusterNamer:            clusterNamer,
 		L4Namer:                 namer.NewL4Namer(string(kubeSystemUID), clusterNamer),
 		KubeSystemUID:           kubeSystemUID,
-		ControllerMetrics:       metrics.NewControllerMetrics(flags.F.MetricsExportInterval, flags.F.L4NetLBProvisionDeadline),
+		ControllerMetrics:       metrics.NewControllerMetrics(flags.F.MetricsExportInterval, flags.F.L4NetLBProvisionDeadline, config.ResyncPeriod),
 		ControllerContextConfig: config,
 		IngressInformer:         informernetworking.NewIngressInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		ServiceInformer:         informerv1.NewServiceInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),

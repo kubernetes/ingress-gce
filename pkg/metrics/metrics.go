@@ -19,11 +19,13 @@ package metrics
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	v1 "k8s.io/api/networking/v1"
+	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/apimachinery/pkg/util/wait"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	pscmetrics "k8s.io/ingress-gce/pkg/psc/metrics"
@@ -97,6 +99,28 @@ var (
 		},
 		[]string{label},
 	)
+	serviceL4ProtocolStatsCount = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "service_l4_protocol_stats",
+			Help: "Number of services broken down by various stats",
+		},
+		[]string{"type", "external_traffic_policy", "internal_traffic_policy", "session_affinity_config", "protocol", "number_of_ports"},
+	)
+	serviceIPStackStatsCount = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "service_ip_stack_stats",
+			Help: "Number of services broken down by various stats",
+		},
+		[]string{"type", "external_traffic_policy", "internal_traffic_policy", "ip_families", "ip_family_policy", "is_static_ip_v4", "is_static_ip_v6"},
+	)
+	serviceGCPFeaturesStatsCount = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "service_gcp_features_stats",
+			Help: "Number of services broken down by various stats",
+		},
+		[]string{"type", "network_tier", "global_access", "custom_subnet"},
+	)
+
 	componentVersion = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "component_version",
@@ -144,6 +168,11 @@ func init() {
 	prometheus.MustRegister(serviceAttachmentCount)
 	prometheus.MustRegister(serviceCount)
 
+	klog.V(3).Infof("Registering Service stats usage metrics %v", serviceL4ProtocolStatsCount)
+	prometheus.MustRegister(serviceL4ProtocolStatsCount)
+	prometheus.MustRegister(serviceIPStackStatsCount)
+	prometheus.MustRegister(serviceGCPFeaturesStatsCount)
+
 	klog.V(3).Infof("Registering Component Version metrics %v", componentVersion)
 	prometheus.MustRegister(componentVersion)
 	// Component version only needs to be recorded once
@@ -171,16 +200,23 @@ type ControllerMetrics struct {
 	pscMap map[string]pscmetrics.PSCState
 	// ServiceMap track the number of services in this cluster
 	serviceMap map[string]struct{}
+	// serviceStatsMap tracks extended stats for services in this cluster.
+	serviceStatsMap map[string]serviceStatsState
+	// Counters for the serviceStatsMap.
+	serviceStatsMetricCounts *serviceStatsMetricCounts
 	//TODO(kl52752) remove mutex and change map to sync.map
 	sync.Mutex
 	// duration between metrics exports
 	metricsInterval time.Duration
 	// Time during which the L4 NetLB service should be provision.
 	l4NetLBProvisionDeadline time.Duration
+	// resyncPeriod is the time between resyncs of the informers.
+	resyncPeriod time.Duration
+	clock        clock.Clock
 }
 
 // NewControllerMetrics initializes ControllerMetrics and starts a go routine to compute and export metrics periodically.
-func NewControllerMetrics(exportInterval, l4NetLBProvisionDeadline time.Duration) *ControllerMetrics {
+func NewControllerMetrics(exportInterval, l4NetLBProvisionDeadline, resyncPeriod time.Duration) *ControllerMetrics {
 	return &ControllerMetrics{
 		ingressMap:               make(map[string]IngressState),
 		negMap:                   make(map[string]NegServiceState),
@@ -189,14 +225,18 @@ func NewControllerMetrics(exportInterval, l4NetLBProvisionDeadline time.Duration
 		l4NetLBServiceMap:        make(map[string]L4NetLBServiceState),
 		pscMap:                   make(map[string]pscmetrics.PSCState),
 		serviceMap:               make(map[string]struct{}),
+		serviceStatsMap:          make(map[string]serviceStatsState),
+		serviceStatsMetricCounts: newServiceStatsMetricCounts(),
 		metricsInterval:          exportInterval,
 		l4NetLBProvisionDeadline: l4NetLBProvisionDeadline,
+		resyncPeriod:             resyncPeriod,
+		clock:                    clock.RealClock{},
 	}
 }
 
 // FakeControllerMetrics creates new ControllerMetrics with fixed 10 minutes metricsInterval, to be used in tests
 func FakeControllerMetrics() *ControllerMetrics {
-	return NewControllerMetrics(10*time.Minute, 20*time.Minute)
+	return NewControllerMetrics(10*time.Minute, 20*time.Minute, 1*time.Minute)
 }
 
 // servicePortKey defines a service port uniquely.
@@ -372,6 +412,39 @@ func (im *ControllerMetrics) DeleteService(serviceKey string) {
 	delete(im.serviceMap, serviceKey)
 }
 
+// SetServiceMetrics adds the service to the service stats map to be counted during metrics computation.
+func (im *ControllerMetrics) SetServiceMetrics(serviceKey string, l4Protocol ServiceL4ProtocolMetricState,
+	ipStack ServiceIPStackMetricState, gcpFeatures ServiceGCPFeaturesMetricState) {
+	im.Lock()
+	defer im.Unlock()
+
+	if im.serviceStatsMap == nil {
+		klog.Fatalf("Service Metrics failed to initialize correctly.")
+	}
+	im.serviceStatsMap[serviceKey] = serviceStatsState{
+		ports:       &l4Protocol,
+		ipStack:     &ipStack,
+		gcpFeatures: &gcpFeatures,
+		lastSync:    im.clock.Now(),
+	}
+}
+
+// GetServiceMetrics gets the service stats for a given service.
+func (im *ControllerMetrics) GetServiceMetrics(serviceKey string) (*ServiceL4ProtocolMetricState,
+	*ServiceIPStackMetricState, *ServiceGCPFeaturesMetricState) {
+	im.Lock()
+	defer im.Unlock()
+	stats := im.serviceStatsMap[serviceKey]
+	return stats.ports, stats.ipStack, stats.gcpFeatures
+}
+
+func (im *ControllerMetrics) DeleteServiceMetrics(serviceKey string) {
+	im.Lock()
+	defer im.Unlock()
+	klog.V(3).Infof("Deleting service 1 %s", serviceKey)
+	delete(im.serviceStatsMap, serviceKey)
+}
+
 // export computes and exports ingress usage metrics.
 func (im *ControllerMetrics) export() {
 	ingCount, svcPortCount := im.computeIngressMetrics()
@@ -428,7 +501,36 @@ func (im *ControllerMetrics) export() {
 		serviceCount.With(prometheus.Labels{label: feature.String()}).Set(float64(count))
 	}
 	klog.V(3).Infof("Exported Service Metrics: %#v", saCount)
-
+	im.computeServiceStatsMetrics()
+	for serviceStat, count := range im.serviceStatsMetricCounts.l4ProtocolState {
+		serviceL4ProtocolStatsCount.With(prometheus.Labels{
+			"type":                    serviceStat.Type,
+			"external_traffic_policy": serviceStat.ExternalTrafficPolicy,
+			"internal_traffic_policy": serviceStat.InternalTrafficPolicy,
+			"session_affinity_config": serviceStat.SessionAffinityConfig,
+			"protocol":                serviceStat.Protocol,
+			"number_of_ports":         serviceStat.NumberOfPorts,
+		}).Set(float64(count))
+	}
+	for serviceStat, count := range im.serviceStatsMetricCounts.ipStackState {
+		serviceIPStackStatsCount.With(prometheus.Labels{
+			"type":                    serviceStat.Type,
+			"external_traffic_policy": serviceStat.ExternalTrafficPolicy,
+			"internal_traffic_policy": serviceStat.InternalTrafficPolicy,
+			"ip_families":             serviceStat.IPFamilies,
+			"ip_family_policy":        serviceStat.IPFamilyPolicy,
+			"is_static_ip_v4":         strconv.FormatBool(serviceStat.IsStaticIPv4),
+			"is_static_ip_v6":         strconv.FormatBool(serviceStat.IsStaticIPv6),
+		}).Set(float64(count))
+	}
+	for serviceStat, count := range im.serviceStatsMetricCounts.gcpFeaturesState {
+		serviceGCPFeaturesStatsCount.With(prometheus.Labels{
+			"type":          serviceStat.Type,
+			"network_tier":  serviceStat.NetworkTier,
+			"global_access": strconv.FormatBool(serviceStat.GlobalAccess),
+			"custom_subnet": strconv.FormatBool(serviceStat.CustomSubnet),
+		}).Set(float64(count))
+	}
 }
 
 // computeIngressMetrics traverses all ingresses and computes,
@@ -644,6 +746,29 @@ func (im *ControllerMetrics) computeServiceMetrics() map[feature]int {
 	}
 }
 
+func (im *ControllerMetrics) isServiceDataStale(state *serviceStatsState) bool {
+	return im.clock.Since(state.lastSync) > 2*im.resyncPeriod
+}
+
+func (im *ControllerMetrics) computeServiceStatsMetrics() {
+	im.Lock()
+	defer im.Unlock()
+	start := im.clock.Now()
+	// reset the existing counters so that services that were deleted are reported as 0 (there would be stale values otherwise).
+	im.serviceStatsMetricCounts.zeroCounts()
+	for key, serviceState := range im.serviceStatsMap {
+		// remove data for services that does no longer have fresh data (could have been deleted and the delete event was missed).
+		if im.isServiceDataStale(&serviceState) {
+			delete(im.serviceStatsMap, key)
+		} else {
+			im.serviceStatsMetricCounts.l4ProtocolState[*serviceState.ports]++
+			im.serviceStatsMetricCounts.ipStackState[*serviceState.ipStack]++
+			im.serviceStatsMetricCounts.gcpFeaturesState[*serviceState.gcpFeatures]++
+		}
+	}
+	klog.V(3).Infof("computeServiceStatsMetrics() took %s", im.clock.Since(start).String())
+}
+
 // initializeCounts initializes feature count maps for ingress and service ports.
 // This is required in order to reset counts for features that do not exist now
 // but existed before.
@@ -723,4 +848,33 @@ func recordComponentVersion() {
 		v = version.Version
 	}
 	componentVersion.WithLabelValues(v).Set(versionValue)
+}
+
+// serviceStatsMetricCounts holds the data that is reported in the service state metrics.
+// Need to keep it between calculations so that we know which values should become 0 in case services are deleted or modified.
+type serviceStatsMetricCounts struct {
+	l4ProtocolState  map[ServiceL4ProtocolMetricState]int64
+	ipStackState     map[ServiceIPStackMetricState]int64
+	gcpFeaturesState map[ServiceGCPFeaturesMetricState]int64
+}
+
+func newServiceStatsMetricCounts() *serviceStatsMetricCounts {
+	return &serviceStatsMetricCounts{
+		l4ProtocolState:  make(map[ServiceL4ProtocolMetricState]int64),
+		ipStackState:     make(map[ServiceIPStackMetricState]int64),
+		gcpFeaturesState: make(map[ServiceGCPFeaturesMetricState]int64),
+	}
+}
+
+// zeroCounts sets counters for all values to 0.
+func (counts *serviceStatsMetricCounts) zeroCounts() {
+	for k := range counts.l4ProtocolState {
+		counts.l4ProtocolState[k] = 0
+	}
+	for k := range counts.ipStackState {
+		counts.ipStackState[k] = 0
+	}
+	for k := range counts.gcpFeaturesState {
+		counts.gcpFeaturesState[k] = 0
+	}
 }

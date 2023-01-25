@@ -312,7 +312,7 @@ func featuresForServicePort(sp utils.ServicePort) []feature {
 		klog.V(6).Infof("Session affinity %s is configured for service port %s", affinityType, svcPortKey)
 	}
 	if sp.BackendConfig.Spec.SecurityPolicy != nil {
-		klog.V(6).Infof("Security policy %s is configured for service port %s", sp.BackendConfig.Spec.SecurityPolicy, svcPortKey)
+		klog.V(6).Infof("Security gcpFeatures %s is configured for service port %s", sp.BackendConfig.Spec.SecurityPolicy, svcPortKey)
 		features = append(features, cloudArmor)
 	}
 	if sp.BackendConfig.Spec.TimeoutSec != nil {

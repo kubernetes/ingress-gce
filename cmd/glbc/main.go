@@ -31,6 +31,7 @@ import (
 	"k8s.io/ingress-gce/pkg/l4lb"
 	"k8s.io/ingress-gce/pkg/psc"
 	"k8s.io/ingress-gce/pkg/serviceattachment"
+	"k8s.io/ingress-gce/pkg/servicemetrics"
 	"k8s.io/ingress-gce/pkg/svcneg"
 	"k8s.io/klog/v2"
 
@@ -188,19 +189,20 @@ func main() {
 	cloud := app.NewGCEClient()
 	defaultBackendServicePort := app.DefaultBackendServicePort(kubeClient)
 	ctxConfig := ingctx.ControllerContextConfig{
-		Namespace:             flags.F.WatchNamespace,
-		ResyncPeriod:          flags.F.ResyncPeriod,
-		NumL4Workers:          flags.F.NumL4Workers,
-		NumL4NetLBWorkers:     flags.F.NumL4NetLBWorkers,
-		DefaultBackendSvcPort: defaultBackendServicePort,
-		HealthCheckPath:       flags.F.HealthCheckPath,
-		FrontendConfigEnabled: flags.F.EnableFrontendConfig,
-		EnableASMConfigMap:    flags.F.EnableASMConfigMapBasedConfig,
-		ASMConfigMapNamespace: flags.F.ASMConfigMapBasedConfigNamespace,
-		ASMConfigMapName:      flags.F.ASMConfigMapBasedConfigCMName,
-		EndpointSlicesEnabled: flags.F.EnableEndpointSlices,
-		MaxIGSize:             flags.F.MaxIGSize,
-		EnableL4ILBDualStack:  flags.F.EnableL4ILBDualStack,
+		Namespace:               flags.F.WatchNamespace,
+		ResyncPeriod:            flags.F.ResyncPeriod,
+		NumL4Workers:            flags.F.NumL4Workers,
+		NumL4NetLBWorkers:       flags.F.NumL4NetLBWorkers,
+		NumServiceMetricWorkers: flags.F.NumL4NetLBWorkers,
+		DefaultBackendSvcPort:   defaultBackendServicePort,
+		HealthCheckPath:         flags.F.HealthCheckPath,
+		FrontendConfigEnabled:   flags.F.EnableFrontendConfig,
+		EnableASMConfigMap:      flags.F.EnableASMConfigMapBasedConfig,
+		ASMConfigMapNamespace:   flags.F.ASMConfigMapBasedConfigNamespace,
+		ASMConfigMapName:        flags.F.ASMConfigMapBasedConfigCMName,
+		EndpointSlicesEnabled:   flags.F.EnableEndpointSlices,
+		MaxIGSize:               flags.F.MaxIGSize,
+		EnableL4ILBDualStack:    flags.F.EnableL4ILBDualStack,
 	}
 	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, svcNegClient, ingParamsClient, svcAttachmentClient, cloud, namer, kubeSystemUID, ctxConfig)
 	go app.RunHTTPServer(ctx.HealthCheck)
@@ -291,6 +293,12 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		pscController := psc.NewController(ctx)
 		go pscController.Run(stopCh)
 		klog.V(0).Infof("PSC Controller started")
+	}
+
+	if flags.F.EnableServiceMetrics {
+		metricsController := servicemetrics.NewController(ctx, stopCh)
+		go metricsController.Run()
+		klog.V(0).Infof("Service Metrics Controller started")
 	}
 
 	var zoneGetter negtypes.ZoneGetter

@@ -20,11 +20,13 @@ import (
 	"fmt"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	v1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
@@ -55,7 +57,7 @@ var (
 						AffinityCookieTtlSec: &testTTL,
 					},
 					SecurityPolicy: &backendconfigv1.SecurityPolicyConfig{
-						Name: "security-policy-1",
+						Name: "security-gcpFeatures-1",
 					},
 					ConnectionDraining: &backendconfigv1.ConnectionDrainingConfig{
 						DrainingTimeoutSec: testTTL,
@@ -598,7 +600,7 @@ var (
 			},
 			&frontendconfigv1beta1.FrontendConfig{
 				Spec: frontendconfigv1beta1.FrontendConfigSpec{
-					SslPolicy: utils.NewStringPointer("test-policy"),
+					SslPolicy: utils.NewStringPointer("test-gcpFeatures"),
 				},
 			},
 			[]feature{ingress, externalIngress, httpEnabled,
@@ -1062,7 +1064,7 @@ func TestComputeNegMetrics(t *testing.T) {
 			},
 		},
 		{
-			"vm primary ip neg in traffic policy cluster mode",
+			"vm primary ip neg in traffic gcpFeatures cluster mode",
 			[]NegServiceState{
 				newNegState(0, 0, 1, 0, 1, 0, &VmIpNegType{trafficPolicyLocal: false}),
 			},
@@ -1299,4 +1301,70 @@ func TestComputeServiceMetrics(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestComputeServiceStatsMetrics(t *testing.T) {
+	t.Parallel()
+	newMetrics := FakeControllerMetrics()
+	fakeClock := clock.NewFakeClock(time.Now())
+	newMetrics.clock = fakeClock
+	l4Protocol := ServiceL4ProtocolMetricState{"ClusterIP", "Cluster", "Cluster", "10800", "1", "TCP"}
+	ipStack := ServiceIPStackMetricState{"ClusterIP", "Cluster", "Cluster", "IPv4", "SingleStack", false, false}
+	ipStack2 := ServiceIPStackMetricState{"ClusterIP", "Cluster", "Cluster", "IPv4-IPv6", "PreferDualStack", false, false}
+	gcpFeatures := ServiceGCPFeaturesMetricState{"ClusterIP", "Standard", false, false}
+	gcpFeatures2 := ServiceGCPFeaturesMetricState{"ClusterIP", "Standard", true, false}
+	newMetrics.SetServiceMetrics("namespace/service", l4Protocol, ipStack, gcpFeatures)
+	newMetrics.SetServiceMetrics("namespace/service2", l4Protocol, ipStack2, gcpFeatures2)
+
+	newMetrics.computeServiceStatsMetrics()
+
+	l4ProtocolVal, ok := newMetrics.serviceStatsMetricCounts.l4ProtocolState[l4Protocol]
+	if !ok || l4ProtocolVal != 2 {
+		t.Errorf("l4Protocol metrics were missing or invalid, present=%t, value=%d", ok, l4ProtocolVal)
+	}
+	ipStackVal, ok := newMetrics.serviceStatsMetricCounts.ipStackState[ipStack]
+	if !ok || ipStackVal != 1 {
+		t.Errorf("IP stack metrics were missing or invalid, present=%t, value=%d", ok, ipStackVal)
+	}
+	ipStackVal2, ok := newMetrics.serviceStatsMetricCounts.ipStackState[ipStack2]
+	if !ok || ipStackVal2 != 1 {
+		t.Errorf("IP stack metrics were missing or invalid, present=%t, value=%d", ok, ipStackVal2)
+	}
+	gcpFeaturesVal, ok := newMetrics.serviceStatsMetricCounts.gcpFeaturesState[gcpFeatures]
+	if !ok || gcpFeaturesVal != 1 {
+		t.Errorf("l4Protocol metrics were missing or invalid, present=%t, value=%d", ok, gcpFeaturesVal)
+	}
+	gcpFeaturesVal2, ok := newMetrics.serviceStatsMetricCounts.gcpFeaturesState[gcpFeatures2]
+	if !ok || gcpFeaturesVal2 != 1 {
+		t.Errorf("l4Protocol metrics were missing or invalid, present=%t, value=%d", ok, gcpFeaturesVal2)
+	}
+
+}
+
+func TestComputeServiceStatsMetricsStaleService(t *testing.T) {
+	t.Parallel()
+	newMetrics := FakeControllerMetrics()
+	fakeClock := clock.NewFakeClock(time.Now())
+	newMetrics.clock = fakeClock
+	l4Protocol := ServiceL4ProtocolMetricState{"ClusterIP", "Cluster", "Cluster", "10800", "1", "TCP"}
+	ipStack := ServiceIPStackMetricState{"ClusterIP", "Cluster", "Cluster", "IPv4", "SingleStack", false, false}
+	gcpFeatures := ServiceGCPFeaturesMetricState{"ClusterIP", "Standard", false, false}
+	newMetrics.SetServiceMetrics("namespace/service", l4Protocol, ipStack, gcpFeatures)
+	// compute for the first time so that the service is calculated at least once.
+	newMetrics.computeServiceStatsMetrics()
+	// set time in the future so that the data for the service can be treated as 'stale'.
+	fakeClock.SetTime(time.Now().Add(3 * newMetrics.resyncPeriod))
+
+	newMetrics.computeServiceStatsMetrics()
+
+	if newMetrics.serviceStatsMetricCounts.l4ProtocolState[l4Protocol] != 0 {
+		t.Errorf("metrics for service should not be counted because it was stale, metrics=%+v", newMetrics.serviceStatsMetricCounts.l4ProtocolState)
+	}
+	if newMetrics.serviceStatsMetricCounts.ipStackState[ipStack] != 0 {
+		t.Errorf("metrics for service should not be counted because it was stale, metrics=%+v", newMetrics.serviceStatsMetricCounts.ipStackState)
+	}
+	if newMetrics.serviceStatsMetricCounts.gcpFeaturesState[gcpFeatures] != 0 {
+		t.Errorf("metrics for service should not be counted because it was stale, metrics=%+v", newMetrics.serviceStatsMetricCounts.gcpFeaturesState)
+	}
+
 }
