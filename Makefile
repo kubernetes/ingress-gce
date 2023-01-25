@@ -59,3 +59,10 @@ include build/rules.mk
 # TODO(rramkumar): Find a way not to use "latest" as the tag.
 push-e2e:
 	@$(MAKE) --no-print-directory containers push
+
+# update generated code
+generate:
+	hack/update-codegen.sh
+# run linters, ensure generated code, etc.
+verify:
+	hack/verify-all.sh
