@@ -1,6 +1,6 @@
-#!/bin/bash
-
-# Copyright 2017 The Kubernetes Authors.
+#!/bin/sh
+#
+# Copyright 2022 The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,30 +18,10 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-SCRIPT_ROOT=$(dirname "${BASH_SOURCE}")/..
-_tmp="$(mktemp -d -t "ingress-gce.XXXXXX")"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." &> /dev/null && pwd -P)"
+cd "${REPO_ROOT}"
 
-cleanup() {
- git worktree remove -f "${_tmp}"
-}
-
-trap "cleanup" EXIT SIGINT
-
-git worktree add -f -q "${_tmp}" HEAD
-cd "${_tmp}"
-
-# Update generated code
-hack/update-codegen.sh
-
-# Test for diffs
-diffs=$(git status --porcelain | wc -l)
-if [[ ${diffs} -gt 0 ]]; then
-  git status >&2
-  git diff >&2
-  echo "Generated files need to be updated" >&2
-  echo "Please run 'hack/update-codegen.sh'" >&2
-  exit 1
-fi
-
-echo "Generated files are up to date"
-echo
+hack/verify-gofmt.sh
+hack/verify-govet.sh
+hack/verify-lint.sh
+hack/verify-codegen.sh
