@@ -37,9 +37,6 @@ echo ""
 echo 'Output files will be generated in appropriate paths inside "${GOPATH}/src"'
 
 echo ""
-read -p "Press any key to continue..."
-
-echo ""
 echo "Installing dependencies..."
 
 # Go code dependencies tracked using https://github.com/golang/go/wiki/Modules#how-can-i-track-tool-dependencies-for-a-module
