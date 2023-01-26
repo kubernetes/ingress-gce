@@ -30,8 +30,11 @@ import (
 const (
 	syncerStatusLabel = "status"
 	syncResultLabel   = "result"
-	syncerStatusKey   = "syncer_status"
-	syncResultKey     = "sync_result"
+	epStateLabel      = "ep_state"
+
+	syncerStatusKey      = "syncer_status"
+	syncResultKey        = "sync_result"
+	syncEndpointStateKey = "neg_sync_endpoint_state"
 
 	EPSDup     = "EPSWithDuplicateEP"
 	EPSMissing = "EPSWithMissingEP"
@@ -56,10 +59,20 @@ var (
 		},
 		[]string{syncResultLabel},
 	)
+
+	syncEndpointState = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      syncEndpointStateKey,
+			Help:      "Current count of endpoints in different state",
+		},
+		[]string{epStateLabel},
+	)
 )
 
 type SyncerMetricsCollector interface {
 	UpdateSyncer(key negtypes.NegSyncerKey, err error)
+	SetSyncerEPMetrics(key negtypes.NegSyncerKey, epState *negtypes.SyncerEPStat)
 }
 
 type SyncerMetrics struct {
@@ -67,6 +80,8 @@ type SyncerMetrics struct {
 	syncerStatusMap map[negtypes.NegSyncerKey]syncerStatus
 	// countSinceLastExport tracks the count of errors occured since last export
 	countSinceLastExport map[syncError]int
+	// syncerEPStateMap is a map between syncer and SyncerEPState
+	syncerEPStateMap map[negtypes.NegSyncerKey]negtypes.EndpointState
 	// mu avoid race conditions and ensure correctness of metrics
 	mu sync.Mutex
 	// duration between metrics exports
@@ -79,7 +94,8 @@ func init() {
 	prometheus.MustRegister(syncerSyncResult)
 	klog.V(3).Infof("Registering syncer status metrics %v", syncerSyncerStatus)
 	prometheus.MustRegister(syncerSyncerStatus)
-
+	klog.V(3).Infof("Registering endpoint state metrics %v", syncEndpointState)
+	prometheus.MustRegister(syncEndpointState)
 }
 
 // NewNEGMetricsCollector initializes SyncerMetrics and starts a go routine to compute and export metrics periodically.
@@ -100,8 +116,9 @@ func NewNegMetricsCollector(exportInterval time.Duration) *SyncerMetrics {
 			ErrOtherError:             0,
 			Success:                   0,
 		},
-		syncerStatusMap: make(map[negtypes.NegSyncerKey]syncerStatus),
-		metricsInterval: exportInterval,
+		syncerStatusMap:  make(map[negtypes.NegSyncerKey]syncerStatus),
+		syncerEPStateMap: make(map[negtypes.NegSyncerKey]negtypes.EndpointState),
+		metricsInterval:  exportInterval,
 	}
 }
 
@@ -131,6 +148,15 @@ func (im *SyncerMetrics) UpdateSyncer(key negtypes.NegSyncerKey, err error) {
 	}
 }
 
+func (im *SyncerMetrics) SetSyncerEPMetrics(key negtypes.NegSyncerKey, endpointStat *negtypes.SyncerEPStat) {
+	im.mu.Lock()
+	defer im.mu.Unlock()
+	if im.syncerEPStateMap == nil {
+		klog.Fatalf("Syncer Metrics failed to initialize correctly, syncerEPStateMap: %v", im.syncerEPStateMap)
+	}
+	im.syncerEPStateMap[key] = endpointStat.EPState
+}
+
 func (im *SyncerMetrics) Run(stopCh <-chan struct{}) {
 	klog.V(3).Infof("Syncer Metrics initialized. Metrics will be exported at an interval of %v", im.metricsInterval)
 	// Compute and export metrics periodically.
@@ -144,6 +170,7 @@ func (im *SyncerMetrics) Run(stopCh <-chan struct{}) {
 // export exports syncer metrics.
 func (im *SyncerMetrics) export() {
 	statusCount, syncerCount := im.computeSyncerStatusMetrics()
+	epStateCount := im.computeSyncerEPStateMetrics()
 	klog.V(3).Infof("Exporting syncer status metrics. Syncer count: %d", syncerCount)
 	for syncerStatus, count := range statusCount {
 		syncerSyncerStatus.WithLabelValues(syncerStatus.String()).Set(float64(count))
@@ -153,6 +180,11 @@ func (im *SyncerMetrics) export() {
 	for syncError, increment := range im.countSinceLastExport {
 		syncerSyncResult.WithLabelValues(syncError.Reason).Add(float64(increment))
 		im.countSinceLastExport[syncError] = 0
+	}
+
+	klog.V(3).Infof("Exporting endpoint state metrics.")
+	for state, count := range epStateCount {
+		syncEndpointState.WithLabelValues(state.String()).Set(float64(count))
 	}
 }
 
@@ -180,4 +212,26 @@ func (im *SyncerMetrics) computeSyncerStatusMetrics() (map[syncerStatus]int, int
 		syncerCount += 1
 	}
 	return statusCount, syncerCount
+}
+
+func (im *SyncerMetrics) computeSyncerEPStateMetrics() map[negtypes.State]int {
+	im.mu.Lock()
+	defer im.mu.Unlock()
+	count := map[negtypes.State]int{
+		negtypes.EPMissingNodeName: 0,
+		negtypes.EPMissingPod:      0,
+		negtypes.EPMissingZone:     0,
+		negtypes.EPMissingField:    0,
+		negtypes.EPDuplicate:       0,
+		negtypes.EPTotal:           0,
+	}
+	for key, syncerEPState := range im.syncerEPStateMap {
+		klog.V(6).Infof("For syncer %s, it has EPMissingNodeName:%d, EPMissingPod:%d, EPMissingZone:%d, EPMissingField:%d, EPDuplicate:%d, EPTotal:%d",
+			key, negtypes.EPMissingNodeName, negtypes.EPMissingPod, negtypes.EPMissingZone, negtypes.EPMissingField, negtypes.EPDuplicate, negtypes.EPTotal)
+		for _, state := range negtypes.StateForEP() {
+			count[state] += syncerEPState[state]
+		}
+	}
+	klog.V(4).Info("Syncer endpoint state metrics computed.")
+	return count
 }
