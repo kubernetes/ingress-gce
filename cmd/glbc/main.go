@@ -329,6 +329,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		ctx.SvcNegInformer,
 		ctx.HasSynced,
 		ctx.ControllerMetrics,
+		ctx.SyncerMetrics,
 		ctx.L4Namer,
 		ctx.DefaultBackendSvcPort,
 		negtypes.NewAdapter(ctx.Cloud),

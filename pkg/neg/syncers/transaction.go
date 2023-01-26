@@ -204,7 +204,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 
 	if s.needInit || s.isZoneChange() {
 		if err := s.ensureNetworkEndpointGroups(); err != nil {
-			return err
+			return fmt.Errorf("%w, reason: %v", metrics.ErrNegNotFound, err)
 		}
 		s.needInit = false
 	}
@@ -217,7 +217,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 
 	currentMap, err := retrieveExistingZoneNetworkEndpointMap(s.NegSyncerKey.NegName, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode())
 	if err != nil {
-		return err
+		return fmt.Errorf("%w, reason: %v", metrics.ErrCurrentEPNotFound, err)
 	}
 	s.logStats(currentMap, "current NEG endpoints")
 
@@ -233,7 +233,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	if s.enableEndpointSlices {
 		slices, err := s.endpointSliceLister.ByIndex(endpointslices.EndpointSlicesByServiceIndex, endpointslices.FormatEndpointSlicesServiceKey(s.Namespace, s.Name))
 		if err != nil {
-			return err
+			return fmt.Errorf("%w, reason: %v", metrics.ErrEPSNotFound, err)
 		}
 		if len(slices) < 1 {
 			s.logger.Error(nil, "Endpoint slices for the service doesn't exist. Skipping NEG sync")
@@ -245,11 +245,16 @@ func (s *transactionSyncer) syncInternalImpl() error {
 		}
 		endpointsData := negtypes.EndpointsDataFromEndpointSlices(endpointSlices)
 		targetMap, endpointPodMap, dupCount, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
-		if !s.isValidEPField(err) || !s.isValidEndpointInfo(endpointsData, endpointPodMap, dupCount) {
-			s.setErrorState()
-		}
 		if err != nil {
-			return fmt.Errorf("endpoints calculation error in mode %q, err: %w", s.endpointsCalculator.Mode(), err)
+			if !s.isValidEPField(err) {
+				s.setErrorState()
+			}
+			return err
+		}
+		err = s.checkEndpointInfo(endpointsData, endpointPodMap, dupCount)
+		if err != nil {
+			s.setErrorState()
+			return err
 		}
 	} else {
 		ep, exists, err := s.endpointLister.Get(
@@ -359,19 +364,19 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 	return utilerrors.NewAggregate(errList)
 }
 
-// isValidEndpointInfo checks if endpoint information is correct.
-// It returns false if one of the two checks fails:
+// checkEndpointInfo checks if endpoint information is correct.
+// It returns error if any of the two checks fails:
 //
 //  1. The endpoint count from endpointData doesn't equal to the one from endpointPodMap:
 //     endpiontPodMap removes the duplicated endpoints, and dupCount stores the number of duplicated it removed
 //     and we compare the endpoint counts with duplicates
 //  2. The endpoint count from endpointData or the one from endpointPodMap is 0
-func (s *transactionSyncer) isValidEndpointInfo(eds []negtypes.EndpointsData, endpointPodMap negtypes.EndpointPodMap, dupCount int) bool {
+func (s *transactionSyncer) checkEndpointInfo(eds []negtypes.EndpointsData, endpointPodMap negtypes.EndpointPodMap, dupCount int) error {
 	// Endpoint count from EndpointPodMap
 	countFromPodMap := len(endpointPodMap) + dupCount
 	if countFromPodMap == 0 {
 		s.logger.Info("Detected endpoint count from endpointPodMap going to zero", "endpointPodMap", endpointPodMap)
-		return false
+		return fmt.Errorf("%w, reason: %v", metrics.ErrEPCalculationCountZero, "endpoint count from endpointPodMap cannot be zero")
 	}
 
 	// Endpoint count from EndpointData
@@ -381,23 +386,23 @@ func (s *transactionSyncer) isValidEndpointInfo(eds []negtypes.EndpointsData, en
 	}
 	if countFromEndpointData == 0 {
 		s.logger.Info("Detected endpoint count from endpointData going to zero", "endpointData", eds)
-		return false
+		return fmt.Errorf("%w, reason: %v", metrics.ErrEPSEndpointCountZero, "endpoint count from endpointData cannot be zero")
 	}
 
 	if countFromEndpointData != countFromPodMap {
 		s.logger.Info("Detected error when comparing endpoint counts", "endpointData", eds, "endpointPodMap", endpointPodMap, "dupCount", dupCount)
-		return false
+		return fmt.Errorf("%w, reason: %v", metrics.ErrEPCountsDiffer, "endpoint counts from endpointData and endpointPodMap differ")
 	}
-	return true
+	return nil
 }
 
 // isValidEPField returns false if there is endpoint with missing zone or nodeName
 func (s *transactionSyncer) isValidEPField(err error) bool {
-	if errors.Is(err, ErrEPMissingNodeName) {
+	if errors.Is(err, metrics.ErrEPMissingNodeName) {
 		s.logger.Info("Detected unexpected error when checking missing nodeName", "error", err)
 		return false
 	}
-	if errors.Is(err, ErrEPMissingZone) {
+	if errors.Is(err, metrics.ErrEPMissingZone) {
 		s.logger.Info("Detected unexpected error when checking missing zone", "error", err)
 		return false
 	}
@@ -408,7 +413,7 @@ func (s *transactionSyncer) isValidEPField(err error) bool {
 func (s *transactionSyncer) isValidEPBatch(err error, operation transactionOp, networkEndpoints []*composite.NetworkEndpoint) bool {
 	apiErr, ok := err.(*googleapi.Error)
 	if !ok {
-		s.logger.Info("Detected error when parsing batch request error", "operation", operation, "error", err)
+		s.logger.Info("Detected error when parsing batch response error", "operation", operation, "error", err)
 		return false
 	}
 	errCode := apiErr.Code
@@ -499,6 +504,12 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, zone stri
 		s.recordEvent(apiv1.EventTypeWarning, operation.String()+"Failed", fmt.Sprintf("Failed to %s %d network endpoint(s) (NEG %q in zone %q): %v", operation.String(), len(networkEndpointMap), s.NegSyncerKey.NegName, zone, err))
 		if !s.isValidEPBatch(err, operation, networkEndpoints) {
 			s.setErrorState()
+			if operation == attachOp {
+				err = fmt.Errorf("%w, reason: %v", metrics.ErrInvalidEPAttach, err)
+			}
+			if operation == detachOp {
+				err = fmt.Errorf("%w, reason: %v", metrics.ErrInvalidEPDetach, err)
+			}
 		}
 	}
 

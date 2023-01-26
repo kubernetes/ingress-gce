@@ -51,7 +51,8 @@ import (
 	ingparamsclient "k8s.io/ingress-gce/pkg/ingparams/client/clientset/versioned"
 	informeringparams "k8s.io/ingress-gce/pkg/ingparams/client/informers/externalversions/ingparams/v1beta1"
 	"k8s.io/ingress-gce/pkg/instancegroups"
-	"k8s.io/ingress-gce/pkg/metrics"
+	usageMetrics "k8s.io/ingress-gce/pkg/metrics"
+	syncMetrics "k8s.io/ingress-gce/pkg/neg/metrics"
 	serviceattachmentclient "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned"
 	informerserviceattachment "k8s.io/ingress-gce/pkg/serviceattachment/client/informers/externalversions/serviceattachment/v1"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
@@ -104,7 +105,8 @@ type ControllerContext struct {
 	IngParamsInformer       cache.SharedIndexInformer
 	SAInformer              cache.SharedIndexInformer
 
-	ControllerMetrics *metrics.ControllerMetrics
+	ControllerMetrics *usageMetrics.ControllerMetrics
+	SyncerMetrics     *syncMetrics.SyncerMetrics
 
 	hcLock       sync.Mutex
 	healthChecks map[string]func() error
@@ -162,7 +164,8 @@ func NewControllerContext(
 		ClusterNamer:            clusterNamer,
 		L4Namer:                 namer.NewL4Namer(string(kubeSystemUID), clusterNamer),
 		KubeSystemUID:           kubeSystemUID,
-		ControllerMetrics:       metrics.NewControllerMetrics(flags.F.MetricsExportInterval, flags.F.L4NetLBProvisionDeadline),
+		ControllerMetrics:       usageMetrics.NewControllerMetrics(flags.F.UsageMetricsExportInterval, flags.F.L4NetLBProvisionDeadline),
+		SyncerMetrics:           syncMetrics.NewNegMetricsCollector(flags.F.SyncMetricsExportInterval),
 		ControllerContextConfig: config,
 		IngressInformer:         informernetworking.NewIngressInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		ServiceInformer:         informerv1.NewServiceInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
@@ -429,6 +432,8 @@ func (ctx *ControllerContext) Start(stopCh chan struct{}) {
 	}
 	// Export ingress usage metrics.
 	go ctx.ControllerMetrics.Run(stopCh)
+	// Export syncer sync metrics
+	go ctx.SyncerMetrics.Run(stopCh)
 }
 
 // Ingresses returns the store of Ingresses.

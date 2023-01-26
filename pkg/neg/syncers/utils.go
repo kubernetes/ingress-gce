@@ -17,7 +17,6 @@ limitations under the License.
 package syncers
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -33,6 +32,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
+	metrics "k8s.io/ingress-gce/pkg/neg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
@@ -46,12 +46,6 @@ const (
 	minRetryDelay = 5 * time.Second
 	maxRetryDelay = 600 * time.Second
 	separator     = "||"
-)
-
-var (
-	ErrEPMissingNodeName = errors.New("endpoint has empty nodeName field")
-	ErrNodeNotFound      = errors.New("failed to retrieve associated zone of node")
-	ErrEPMissingZone     = errors.New("endpoint has empty zone field")
 )
 
 // encodeEndpoint encodes ip and instance into a single string
@@ -266,7 +260,7 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 			}
 			if endpointAddress.NodeName == nil || len(*endpointAddress.NodeName) == 0 {
 				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated node. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
-				return nil, nil, dupCount, ErrEPMissingNodeName
+				return nil, nil, dupCount, fmt.Errorf("%w, reason: %v", metrics.ErrEPMissingNodeName, "endpoint nodeName missing")
 			}
 			if endpointAddress.TargetRef == nil {
 				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated pod. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
@@ -274,10 +268,10 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 			}
 			zone, err := zoneGetter.GetZoneForNode(*endpointAddress.NodeName)
 			if err != nil {
-				return nil, nil, dupCount, ErrNodeNotFound
+				return nil, nil, dupCount, fmt.Errorf("%w, reason: %v", metrics.ErrNodeNotFound, err)
 			}
 			if zone == "" {
-				return nil, nil, dupCount, ErrEPMissingZone
+				return nil, nil, dupCount, fmt.Errorf("%w, reason: %v", metrics.ErrEPMissingZone, "endpoint zone cannot be empty string")
 			}
 			if zoneNetworkEndpointMap[zone] == nil {
 				zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()

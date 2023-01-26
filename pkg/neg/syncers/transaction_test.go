@@ -18,6 +18,7 @@ package syncers
 
 import (
 	context2 "context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -40,6 +41,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -1412,7 +1414,7 @@ func TestUnknownNodes(t *testing.T) {
 	}
 }
 
-func TestIsValidEndpointInfo(t *testing.T) {
+func TestCheckEndpointInfo(t *testing.T) {
 	t.Parallel()
 	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType, false, true)
 
@@ -1472,7 +1474,7 @@ func TestIsValidEndpointInfo(t *testing.T) {
 		endpointsData  []negtypes.EndpointsData
 		endpointPodMap map[negtypes.NetworkEndpoint]types.NamespacedName
 		dupCount       int
-		expect         bool
+		expect         error
 	}{
 		{
 			desc: "counts equal, endpointData has no duplicated endpoints",
@@ -1544,7 +1546,7 @@ func TestIsValidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       0,
-			expect:         true,
+			expect:         nil,
 		},
 		{
 			desc: "counts equal, endpointData has duplicated endpoints",
@@ -1625,7 +1627,7 @@ func TestIsValidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       1,
-			expect:         true,
+			expect:         nil,
 		},
 		{
 			desc: "counts not equal, endpointData has no duplicated endpoints",
@@ -1688,7 +1690,7 @@ func TestIsValidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       0,
-			expect:         false,
+			expect:         metrics.ErrEPCountsDiffer,
 		},
 		{
 			desc: "counts not equal, endpointData has duplicated endpoints",
@@ -1760,7 +1762,7 @@ func TestIsValidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       1,
-			expect:         false,
+			expect:         metrics.ErrEPCountsDiffer,
 		},
 		{
 			desc: "endpointData has zero endpoint",
@@ -1794,7 +1796,7 @@ func TestIsValidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       0,
-			expect:         false,
+			expect:         metrics.ErrEPSEndpointCountZero,
 		},
 		{
 			desc: "endpointPodMap has zero endpoint",
@@ -1866,7 +1868,7 @@ func TestIsValidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: map[negtypes.NetworkEndpoint]types.NamespacedName{},
 			dupCount:       0,
-			expect:         false,
+			expect:         metrics.ErrEPCalculationCountZero,
 		},
 		{
 			desc: "endpointData and endpointPodMap both have zero endpoint",
@@ -1900,7 +1902,7 @@ func TestIsValidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: map[negtypes.NetworkEndpoint]types.NamespacedName{},
 			dupCount:       0,
-			expect:         false,
+			expect:         metrics.ErrEPCalculationCountZero, // PodMap count is check and returned first
 		},
 		{
 			desc: "endpointData and endpointPodMap both have non-zero endpoints",
@@ -1972,14 +1974,14 @@ func TestIsValidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       0,
-			expect:         true,
+			expect:         nil,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			if got := transactionSyncer.isValidEndpointInfo(tc.endpointsData, tc.endpointPodMap, tc.dupCount); got != tc.expect {
-				t.Errorf("invalidEndpointInfo() = %t,  expected %t", got, tc.expect)
+			if got := transactionSyncer.checkEndpointInfo(tc.endpointsData, tc.endpointPodMap, tc.dupCount); !errors.Is(got, tc.expect) {
+				t.Errorf("checkEndpointInfo() = %t, expected %t", got, tc.expect)
 			}
 		})
 	}
@@ -2396,6 +2398,7 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 			svcPort, mode, klog.TODO()),
 		string(kubeSystemUID),
 		testContext.SvcNegClient,
+		metrics.FakeSyncerMetrics(),
 		customName,
 		enableEndpointSlices,
 		klog.TODO(),

@@ -45,7 +45,8 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/ingress-gce/pkg/annotations"
-	"k8s.io/ingress-gce/pkg/metrics"
+	usageMetrics "k8s.io/ingress-gce/pkg/metrics"
+	syncMetrics "k8s.io/ingress-gce/pkg/neg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -137,7 +138,8 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		drDynamicInformer.Informer(),
 		testContext.SvcNegInformer,
 		func() bool { return true },
-		metrics.FakeControllerMetrics(),
+		usageMetrics.FakeControllerMetrics(),
+		syncMetrics.FakeSyncerMetrics(),
 		testContext.L4Namer,
 		defaultBackend,
 		negtypes.NewAdapter(testContext.Cloud),
