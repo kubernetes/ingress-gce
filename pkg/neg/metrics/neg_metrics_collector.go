@@ -69,8 +69,22 @@ func init() {
 // NewNEGMetricsCollector initializes SyncerMetrics and starts a go routine to compute and export metrics periodically.
 func NewNegMetricsCollector(exportInterval time.Duration) *SyncerMetrics {
 	return &SyncerMetrics{
-		countSinceLastExport: make(map[syncError]int),
-		metricsInterval:      exportInterval,
+		countSinceLastExport: map[syncError]int{
+			ErrEPCountsDiffer:         0,
+			ErrEPMissingNodeName:      0,
+			ErrEPMissingZone:          0,
+			ErrInvalidEPAttach:        0,
+			ErrInvalidEPDetach:        0,
+			ErrEPSEndpointCountZero:   0,
+			ErrEPCalculationCountZero: 0,
+			ErrNegNotFound:            0,
+			ErrCurrentEPNotFound:      0,
+			ErrEPSNotFound:            0,
+			ErrNodeNotFound:           0,
+			ErrOtherError:             0,
+			Success:                   0,
+		},
+		metricsInterval: exportInterval,
 	}
 }
 
@@ -98,7 +112,6 @@ func (im *SyncerMetrics) Run(stopCh <-chan struct{}) {
 	klog.V(3).Infof("Syncer Metrics initialized. Metrics will be exported at an interval of %v", im.metricsInterval)
 	// Compute and export metrics periodically.
 	go func() {
-		// Wait for ingress states to be populated in the cache before computing metrics.
 		time.Sleep(im.metricsInterval)
 		wait.Until(im.export, im.metricsInterval, stopCh)
 	}()
