@@ -676,15 +676,6 @@ func GetProtocol(svcPorts []api_v1.ServicePort) api_v1.Protocol {
 	return svcPorts[0].Protocol
 }
 
-func GetNodePorts(svcPorts []api_v1.ServicePort) []int64 {
-	nodePorts := []int64{}
-	for _, p := range svcPorts {
-		nodePorts = append(nodePorts, int64(p.NodePort))
-	}
-
-	return nodePorts
-}
-
 func GetPorts(svcPorts []api_v1.ServicePort) []string {
 	ports := []string{}
 	for _, p := range svcPorts {

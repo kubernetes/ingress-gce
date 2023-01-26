@@ -1375,37 +1375,6 @@ func TestGetProtocol(t *testing.T) {
 	}
 }
 
-func TestGetNodePorts(t *testing.T) {
-	testCases := []struct {
-		ports             []api_v1.ServicePort
-		expectedNodePorts []int64
-		desc              string
-	}{
-		{
-			ports:             []api_v1.ServicePort{},
-			expectedNodePorts: []int64{},
-			desc:              "Empty ports should return empty node ports",
-		},
-		{
-			ports: []api_v1.ServicePort{
-				{NodePort: 80}, {NodePort: 81}, {NodePort: 3000},
-			},
-			expectedNodePorts: []int64{80, 81, 3000},
-			desc:              "Multiple ports",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.desc, func(t *testing.T) {
-			nodePorts := GetNodePorts(tc.ports)
-
-			if !reflect.DeepEqual(nodePorts, tc.expectedNodePorts) {
-				t.Errorf("GetNodePorts returned %v, not equal to expected node ports = %v", nodePorts, tc.expectedNodePorts)
-			}
-		})
-	}
-}
-
 func TestGetPorts(t *testing.T) {
 	testCases := []struct {
 		ports         []api_v1.ServicePort
