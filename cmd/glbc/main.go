@@ -317,7 +317,6 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	negController := neg.NewController(
 		ctx.KubeClient,
 		ctx.SvcNegClient,
-		ctx.DestinationRuleClient,
 		ctx.KubeSystemUID,
 		ctx.IngressInformer,
 		ctx.ServiceInformer,
@@ -325,7 +324,6 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		ctx.NodeInformer,
 		ctx.EndpointInformer,
 		ctx.EndpointSliceInformer,
-		ctx.DestinationRuleInformer,
 		ctx.SvcNegInformer,
 		ctx.HasSynced,
 		ctx.ControllerMetrics,

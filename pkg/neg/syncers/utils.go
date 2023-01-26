@@ -26,7 +26,6 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
@@ -225,8 +224,8 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 	return negRef, nil
 }
 
-// toZoneNetworkEndpointMap translates addresses in endpoints object and Istio:DestinationRule subset into zone and endpoints map, and also return the count for duplicated endpoints
-func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.ZoneGetter, servicePortName string, podLister cache.Indexer, subsetLabels string, networkEndpointType negtypes.NetworkEndpointType) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, int, error) {
+// toZoneNetworkEndpointMap translates addresses in endpoints object into zone and endpoints map, and also return the count for duplicated endpoints
+func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.ZoneGetter, servicePortName string, podLister cache.Indexer, networkEndpointType negtypes.NetworkEndpointType) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, int, error) {
 	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
 	networkEndpointPodMap := negtypes.EndpointPodMap{}
 	dupCount := 0
@@ -253,17 +252,6 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 		foundMatchingPort = true
 
 		for _, endpointAddress := range ed.Addresses {
-			// Apply the selector if Istio:DestinationRule subset labels provided.
-			if subsetLabels != "" {
-				if endpointAddress.TargetRef == nil || endpointAddress.TargetRef.Kind != "Pod" {
-					klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have a Pod as the TargetRef object. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
-					continue
-				}
-				// Skip if the endpoint's pod not matching the subset labels.
-				if !shouldPodBeInDestinationRuleSubset(podLister, endpointAddress.TargetRef.Namespace, endpointAddress.TargetRef.Name, subsetLabels) {
-					continue
-				}
-			}
 			if endpointAddress.NodeName == nil || len(*endpointAddress.NodeName) == 0 {
 				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated node. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
 				return nil, nil, dupCount, ErrEPMissingNodeName
@@ -414,32 +402,4 @@ func shouldPodBeInNeg(podLister cache.Indexer, namespace, name string) bool {
 		return false
 	}
 	return true
-}
-
-// shouldPodBeInDestinationRuleSubset return true if pod match the DestinationRule subset labels.
-func shouldPodBeInDestinationRuleSubset(podLister cache.Indexer, namespace, name string, subsetLabels string) bool {
-	if podLister == nil {
-		return false
-	}
-	key := keyFunc(namespace, name)
-	obj, exists, err := podLister.GetByKey(key)
-	if err != nil {
-		klog.Errorf("Failed to retrieve pod %s from pod lister: %v", key, err)
-		return false
-	}
-	if !exists {
-		return false
-	}
-	pod, ok := obj.(*v1.Pod)
-	if !ok {
-		klog.Errorf("Failed to convert obj %s to v1.Pod. The object type is %T", key, obj)
-		return false
-	}
-
-	selector, err := labels.Parse(subsetLabels)
-	if err != nil {
-		klog.Errorf("Failed to parse the subset selectors.")
-		return false
-	}
-	return selector.Matches(labels.Set(pod.Labels))
 }

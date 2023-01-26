@@ -166,17 +166,15 @@ type L7EndpointsCalculator struct {
 	zoneGetter          types.ZoneGetter
 	servicePortName     string
 	podLister           cache.Indexer
-	subsetLabels        string
 	networkEndpointType types.NetworkEndpointType
 	logger              klog.Logger
 }
 
-func NewL7EndpointsCalculator(zoneGetter types.ZoneGetter, podLister cache.Indexer, svcPortName, subsetLabels string, endpointType types.NetworkEndpointType, logger klog.Logger) *L7EndpointsCalculator {
+func NewL7EndpointsCalculator(zoneGetter types.ZoneGetter, podLister cache.Indexer, svcPortName string, endpointType types.NetworkEndpointType, logger klog.Logger) *L7EndpointsCalculator {
 	return &L7EndpointsCalculator{
 		zoneGetter:          zoneGetter,
 		servicePortName:     svcPortName,
 		podLister:           podLister,
-		subsetLabels:        subsetLabels,
 		networkEndpointType: endpointType,
 		logger:              logger.WithName("L7EndpointsCalculator"),
 	}
@@ -189,7 +187,7 @@ func (l *L7EndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
 func (l *L7EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, _ map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
-	return toZoneNetworkEndpointMap(eds, l.zoneGetter, l.servicePortName, l.podLister, l.subsetLabels, l.networkEndpointType)
+	return toZoneNetworkEndpointMap(eds, l.zoneGetter, l.servicePortName, l.podLister, l.networkEndpointType)
 }
 
 func nodeMapToString(nodeMap map[string][]*v1.Node) string {

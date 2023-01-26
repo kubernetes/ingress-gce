@@ -20,14 +20,11 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
-	"strings"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	istioV1alpha3 "istio.io/api/networking/v1alpha3"
 	apiv1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -116,13 +113,6 @@ type PortInfo struct {
 	// PortTuple is port tuple of a service.
 	PortTuple SvcPortTuple
 
-	// Subset name, subset is defined in Istio:DestinationRule, this is only used
-	// when --enable-csm=true.
-	Subset string
-
-	// Subset label, should set together with Subset.
-	SubsetLabels string
-
 	// NegName is the name of the NEG
 	NegName string
 	// ReadinessGate indicates if the NEG associated with the port has NEG readiness gate enabled
@@ -140,9 +130,6 @@ type PortInfo struct {
 type PortInfoMapKey struct {
 	// ServicePort is the service port
 	ServicePort int32
-
-	// Istio:DestinationRule Subset, only used when --enable-csm=true
-	Subset string
 }
 
 // PortInfoMap is a map of PortInfoMapKey:PortInfo
@@ -155,7 +142,7 @@ func NewPortInfoMap(namespace, name string, svcPortTupleSet SvcPortTupleSet, nam
 		if !ok {
 			negName = namer.NEG(namespace, name, svcPortTuple.Port)
 		}
-		ret[PortInfoMapKey{svcPortTuple.Port, ""}] = PortInfo{
+		ret[PortInfoMapKey{svcPortTuple.Port}] = PortInfo{
 			PortTuple:     svcPortTuple,
 			NegName:       negName,
 			ReadinessGate: readinessGate,
@@ -179,40 +166,13 @@ func NewPortInfoMapForVMIPNEG(namespace, name string, namer namer.L4ResourcesNam
 			mode = L4LocalMode
 		}
 		negName := namer.L4Backend(namespace, name)
-		ret[PortInfoMapKey{svcPortTuple.Port, ""}] = PortInfo{
+		ret[PortInfoMapKey{svcPortTuple.Port}] = PortInfo{
 			PortTuple:        svcPortTuple,
 			NegName:          negName,
 			EpCalculatorMode: mode,
 		}
 	}
 	return ret
-}
-
-// NewPortInfoMapWithDestinationRule create PortInfoMap based on a given DestinationRule.
-// Return error message if the DestinationRule contains duplicated subsets.
-func NewPortInfoMapWithDestinationRule(namespace, name string, svcPortTupleSet SvcPortTupleSet, namer NetworkEndpointGroupNamer, readinessGate bool,
-	destinationRule *istioV1alpha3.DestinationRule) (PortInfoMap, error) {
-	ret := PortInfoMap{}
-	var duplicateSubset []string
-	for _, subset := range destinationRule.Subsets {
-		for tuple := range svcPortTupleSet {
-			key := PortInfoMapKey{tuple.Port, subset.Name}
-			if _, ok := ret[key]; ok {
-				duplicateSubset = append(duplicateSubset, subset.Name)
-			}
-			ret[key] = PortInfo{
-				PortTuple:     tuple,
-				NegName:       namer.NEGWithSubset(namespace, name, subset.Name, tuple.Port),
-				ReadinessGate: readinessGate,
-				Subset:        subset.Name,
-				SubsetLabels:  labels.Set(subset.Labels).String(),
-			}
-		}
-	}
-	if len(duplicateSubset) != 0 {
-		return ret, fmt.Errorf("Duplicated subsets: %s", strings.Join(duplicateSubset, ", "))
-	}
-	return ret, nil
 }
 
 // Merge merges p2 into p1 PortInfoMap
@@ -232,9 +192,6 @@ func (p1 PortInfoMap) Merge(p2 PortInfoMap) error {
 			if existingPortInfo.NegName != portInfo.NegName {
 				return fmt.Errorf("for service port %v, NEG name in existing map is %q, but the merge map has %q", mapKey, existingPortInfo.NegName, portInfo.NegName)
 			}
-			if existingPortInfo.Subset != portInfo.Subset {
-				return fmt.Errorf("for service port %v, Subset name in existing map is %q, but the merge map has %q", mapKey, existingPortInfo.Subset, portInfo.Subset)
-			}
 			if existingPortInfo.EpCalculatorMode != portInfo.EpCalculatorMode {
 				return fmt.Errorf("For service port %v, Existing map has Calculator mode %v, but the merge map has %v", mapKey, existingPortInfo.EpCalculatorMode, portInfo.EpCalculatorMode)
 			}
@@ -245,8 +202,6 @@ func (p1 PortInfoMap) Merge(p2 PortInfoMap) error {
 		// Turn on the readiness gate if one of them is on
 		mergedInfo.ReadinessGate = mergedInfo.ReadinessGate || portInfo.ReadinessGate
 		mergedInfo.EpCalculatorMode = portInfo.EpCalculatorMode
-		mergedInfo.Subset = portInfo.Subset
-		mergedInfo.SubsetLabels = portInfo.SubsetLabels
 
 		p1[mapKey] = mergedInfo
 	}
@@ -272,18 +227,6 @@ func (p1 PortInfoMap) ToPortNegMap() annotations.PortNegMap {
 	ret := annotations.PortNegMap{}
 	for mapKey, portInfo := range p1 {
 		ret[strconv.Itoa(int(mapKey.ServicePort))] = portInfo.NegName
-	}
-	return ret
-}
-
-func (p1 PortInfoMap) ToPortSubsetNegMap() annotations.PortSubsetNegMap {
-	ret := annotations.PortSubsetNegMap{}
-	for mapKey, portInfo := range p1 {
-		if m, ok := ret[mapKey.Subset]; ok {
-			m[strconv.Itoa(int(mapKey.ServicePort))] = portInfo.NegName
-		} else {
-			ret[mapKey.Subset] = map[string]string{strconv.Itoa(int(mapKey.ServicePort)): portInfo.NegName}
-		}
 	}
 	return ret
 }
@@ -320,13 +263,6 @@ type NegSyncerKey struct {
 	// PortTuple is the port tuple of the service backing the NEG
 	PortTuple SvcPortTuple
 
-	// Subset name, subset is defined in Istio:DestinationRule, this is only used
-	// when --enable-csm=true.
-	Subset string
-
-	// Subset label, should set together with Subset.
-	SubsetLabels string
-
 	// NegType is the type of the network endpoints in this NEG.
 	NegType NetworkEndpointType
 
@@ -339,7 +275,7 @@ type NegSyncerKey struct {
 }
 
 func (key NegSyncerKey) String() string {
-	return fmt.Sprintf("%s/%s-%s-%s-%s-%s-%s", key.Namespace, key.Name, key.NegName, key.Subset, key.PortTuple.String(), string(key.NegType), key.EpCalculatorMode)
+	return fmt.Sprintf("%s/%s-%s-%s-%s-%s", key.Namespace, key.Name, key.NegName, key.PortTuple.String(), string(key.NegType), key.EpCalculatorMode)
 }
 
 // GetAPIVersion returns the compute API version to be used in order

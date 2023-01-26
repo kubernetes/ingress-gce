@@ -406,7 +406,7 @@ func (manager *syncerManager) ReadinessGateEnabled(syncerKey negtypes.NegSyncerK
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 	if v, ok := manager.svcPortMap[serviceKey{namespace: syncerKey.Namespace, name: syncerKey.Name}]; ok {
-		if info, ok := v[negtypes.PortInfoMapKey{ServicePort: syncerKey.PortTuple.Port, Subset: syncerKey.Subset}]; ok {
+		if info, ok := v[negtypes.PortInfoMapKey{ServicePort: syncerKey.PortTuple.Port}]; ok {
 			return info.ReadinessGate
 		}
 	}
@@ -778,8 +778,6 @@ func (manager *syncerManager) getSyncerKey(namespace, name string, servicePortKe
 		Name:             name,
 		NegName:          portInfo.NegName,
 		PortTuple:        portInfo.PortTuple,
-		Subset:           servicePortKey.Subset,
-		SubsetLabels:     portInfo.SubsetLabels,
 		NegType:          networkEndpointType,
 		EpCalculatorMode: calculatorMode,
 	}

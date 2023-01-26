@@ -170,7 +170,7 @@ func GetEndpointsCalculator(nodeLister, podLister cache.Indexer, zoneGetter negt
 		}
 	}
 	return NewL7EndpointsCalculator(zoneGetter, podLister, syncerKey.PortTuple.Name,
-		syncerKey.SubsetLabels, syncerKey.NegType, logger)
+		syncerKey.NegType, logger)
 }
 
 func (s *transactionSyncer) sync() error {
