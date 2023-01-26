@@ -28,8 +28,10 @@ import (
 )
 
 const (
-	syncResultLabel = "result"
-	syncResultKey   = "sync_result"
+	syncerStatusLabel = "status"
+	syncResultLabel   = "result"
+	syncerStatusKey   = "syncer_status"
+	syncResultKey     = "sync_result"
 
 	EPSDup     = "EPSWithDuplicateEP"
 	EPSMissing = "EPSWithMissingEP"
@@ -37,6 +39,15 @@ const (
 )
 
 var (
+	syncerSyncerStatus = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      syncerStatusKey,
+			Help:      "Current count of syncers in each status",
+		},
+		[]string{syncerStatusLabel},
+	)
+
 	syncerSyncResult = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Subsystem: negControllerSubsystem,
@@ -52,6 +63,8 @@ type SyncerMetricsCollector interface {
 }
 
 type SyncerMetrics struct {
+	// syncerStatusMap tracks the status of each syncer
+	syncerStatusMap map[negtypes.NegSyncerKey]syncerStatus
 	// countSinceLastExport tracks the count of errors occured since last export
 	countSinceLastExport map[syncError]int
 	// mu avoid race conditions and ensure correctness of metrics
@@ -64,6 +77,9 @@ type SyncerMetrics struct {
 func init() {
 	klog.V(3).Infof("Registering sync result metrics %v", syncerSyncResult)
 	prometheus.MustRegister(syncerSyncResult)
+	klog.V(3).Infof("Registering syncer status metrics %v", syncerSyncerStatus)
+	prometheus.MustRegister(syncerSyncerStatus)
+
 }
 
 // NewNEGMetricsCollector initializes SyncerMetrics and starts a go routine to compute and export metrics periodically.
@@ -84,6 +100,7 @@ func NewNegMetricsCollector(exportInterval time.Duration) *SyncerMetrics {
 			ErrOtherError:             0,
 			Success:                   0,
 		},
+		syncerStatusMap: make(map[negtypes.NegSyncerKey]syncerStatus),
 		metricsInterval: exportInterval,
 	}
 }
@@ -97,13 +114,19 @@ func FakeSyncerMetrics() *SyncerMetrics {
 func (im *SyncerMetrics) UpdateSyncer(key negtypes.NegSyncerKey, err error) {
 	im.mu.Lock()
 	defer im.mu.Unlock()
+	if im.syncerStatusMap == nil {
+		klog.Fatalf("Syncer Metrics failed to initialize correctly, syncerStatusMap: %v", im.syncerStatusMap)
+	}
 	if im.countSinceLastExport == nil {
 		klog.Fatalf("Syncer Metrics failed to initialize correctly, countSinceLastExport: %v", im.countSinceLastExport)
 	}
 	if err == nil {
+		im.syncerStatusMap[key] = syncerInSuccess
 		im.countSinceLastExport[Success] += 1
 	} else {
 		syncErr := errors.Unwrap(err).(syncError)
+		status := getSyncerStatus(syncErr)
+		im.syncerStatusMap[key] = status
 		im.countSinceLastExport[syncErr] += 1
 	}
 }
@@ -120,9 +143,41 @@ func (im *SyncerMetrics) Run(stopCh <-chan struct{}) {
 
 // export exports syncer metrics.
 func (im *SyncerMetrics) export() {
+	statusCount, syncerCount := im.computeSyncerStatusMetrics()
+	klog.V(3).Infof("Exporting syncer status metrics. Syncer count: %d", syncerCount)
+	for syncerStatus, count := range statusCount {
+		syncerSyncerStatus.WithLabelValues(syncerStatus.String()).Set(float64(count))
+	}
+
 	klog.V(3).Infof("Exporting sync result metrics.")
 	for syncError, increment := range im.countSinceLastExport {
 		syncerSyncResult.WithLabelValues(syncError.Reason).Add(float64(increment))
 		im.countSinceLastExport[syncError] = 0
 	}
+}
+
+func (im *SyncerMetrics) computeSyncerStatusMetrics() (map[syncerStatus]int, int) {
+	im.mu.Lock()
+	defer im.mu.Unlock()
+	statusCount := map[syncerStatus]int{
+		syncerEPCountsDiffer:         0,
+		syncerEPMissingNodeName:      0,
+		syncerEPMissingZone:          0,
+		syncerInvalidEPAttach:        0,
+		syncerInvalidEPDetach:        0,
+		syncerEPSEndpointCountZero:   0,
+		syncerEPCalculationCountZero: 0,
+		syncerNegNotFound:            0,
+		syncerCurrentEPNotFound:      0,
+		syncerEPSNotFound:            0,
+		syncerNodeNotFound:           0,
+		syncerOtherError:             0,
+		syncerInSuccess:              0,
+	}
+	syncerCount := 0
+	for _, syncerStatus := range im.syncerStatusMap {
+		statusCount[syncerStatus] += 1
+		syncerCount += 1
+	}
+	return statusCount, syncerCount
 }
