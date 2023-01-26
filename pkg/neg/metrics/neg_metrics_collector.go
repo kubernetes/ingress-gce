@@ -1,0 +1,115 @@
+/*
+Copyright 2018 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package metrics
+
+import (
+	"errors"
+	"sync"
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"k8s.io/apimachinery/pkg/util/wait"
+	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/klog/v2"
+)
+
+const (
+	syncResultLabel = "result"
+	syncResultKey   = "sync_result"
+
+	EPSDup     = "EPSWithDuplicateEP"
+	EPSMissing = "EPSWithMissingEP"
+	EPSTotal   = "TotalEPS"
+)
+
+var (
+	syncerSyncResult = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      syncResultKey,
+			Help:      "Current count for each sync error",
+		},
+		[]string{syncResultLabel},
+	)
+)
+
+type SyncerMetricsCollector interface {
+	UpdateSyncer(key negtypes.NegSyncerKey, err error)
+}
+
+type SyncerMetrics struct {
+	// countSinceLastExport tracks the count of errors occured since last export
+	countSinceLastExport map[syncError]int
+	// mu avoid race conditions and ensure correctness of metrics
+	mu sync.Mutex
+	// duration between metrics exports
+	metricsInterval time.Duration
+}
+
+// init registers ingress usage metrics.
+func init() {
+	klog.V(3).Infof("Registering sync result metrics %v", syncerSyncResult)
+	prometheus.MustRegister(syncerSyncResult)
+}
+
+// NewNEGMetricsCollector initializes SyncerMetrics and starts a go routine to compute and export metrics periodically.
+func NewNegMetricsCollector(exportInterval time.Duration) *SyncerMetrics {
+	return &SyncerMetrics{
+		countSinceLastExport: make(map[syncError]int),
+		metricsInterval:      exportInterval,
+	}
+}
+
+// FakeSyncerMetrics creates new NegMetricsCollector with fixed 5 second metricsInterval, to be used in tests
+func FakeSyncerMetrics() *SyncerMetrics {
+	return NewNegMetricsCollector(5 * time.Second)
+}
+
+// UpdateSyncer updates the count of sync results based on the result/error of sync
+func (im *SyncerMetrics) UpdateSyncer(key negtypes.NegSyncerKey, err error) {
+	im.mu.Lock()
+	defer im.mu.Unlock()
+	if im.countSinceLastExport == nil {
+		klog.Fatalf("Syncer Metrics failed to initialize correctly, countSinceLastExport: %v", im.countSinceLastExport)
+	}
+	if err == nil {
+		im.countSinceLastExport[Success] += 1
+	} else {
+		syncErr := errors.Unwrap(err).(syncError)
+		im.countSinceLastExport[syncErr] += 1
+	}
+}
+
+func (im *SyncerMetrics) Run(stopCh <-chan struct{}) {
+	klog.V(3).Infof("Syncer Metrics initialized. Metrics will be exported at an interval of %v", im.metricsInterval)
+	// Compute and export metrics periodically.
+	go func() {
+		// Wait for ingress states to be populated in the cache before computing metrics.
+		time.Sleep(im.metricsInterval)
+		wait.Until(im.export, im.metricsInterval, stopCh)
+	}()
+	<-stopCh
+}
+
+// export exports syncer metrics.
+func (im *SyncerMetrics) export() {
+	klog.V(3).Infof("Exporting sync result metrics.")
+	for syncError, increment := range im.countSinceLastExport {
+		syncerSyncResult.WithLabelValues(syncError.Reason).Add(float64(increment))
+		im.countSinceLastExport[syncError] = 0
+	}
+}
