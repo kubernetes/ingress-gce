@@ -68,168 +68,6 @@ var (
 	}
 )
 
-func newServiceController(t *testing.T, fakeGCE *gce.Cloud) *L4Controller {
-	kubeClient := fake.NewSimpleClientset()
-
-	vals := gce.DefaultTestClusterValues()
-	namer := namer.NewNamer(clusterUID, "")
-
-	stopCh := make(chan struct{})
-	ctxConfig := context.ControllerContextConfig{
-		Namespace:    api_v1.NamespaceAll,
-		ResyncPeriod: 1 * time.Minute,
-		NumL4Workers: 5,
-	}
-	ctx := context.NewControllerContext(nil, kubeClient, nil, nil, nil, nil, nil, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig)
-	// Add some nodes so that NEG linker kicks in during ILB creation.
-	nodes, err := test.CreateAndInsertNodes(ctx.Cloud, []string{"instance-1"}, vals.ZoneName)
-	if err != nil {
-		t.Errorf("Failed to add new nodes, err  %v", err)
-	}
-	for _, n := range nodes {
-		ctx.NodeInformer.GetIndexer().Add(n)
-	}
-	return NewILBController(ctx, stopCh)
-}
-
-func newFakeGCE() *gce.Cloud {
-	vals := gce.DefaultTestClusterValues()
-	fakeGCE := gce.NewFakeGCECloud(vals)
-	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = loadbalancers.InsertForwardingRuleHook
-	return fakeGCE
-}
-
-func newFakeGCEWithInsertError() *gce.Cloud {
-	vals := gce.DefaultTestClusterValues()
-	fakeGCE := gce.NewFakeGCECloud(vals)
-	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = mock.InsertForwardingRulesInternalErrHook
-	return fakeGCE
-}
-
-func newFakeGCEWithUserInsertError() *gce.Cloud {
-	vals := gce.DefaultTestClusterValues()
-	fakeGCE := gce.NewFakeGCECloud(vals)
-	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = test.InsertForwardingRuleErrorHook(&googleapi.Error{Code: http.StatusConflict, Message: "IP_IN_USE_BY_ANOTHER_RESOURCE - IP '1.1.1.1' is already being used by another resource."})
-	return fakeGCE
-}
-
-func newFakeGCEWithUserNoIPv6SubnetError() *gce.Cloud {
-	vals := gce.DefaultTestClusterValues()
-	fakeGCE := gce.NewFakeGCECloud(vals)
-	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = test.InsertForwardingRuleErrorHook(&googleapi.Error{Code: http.StatusBadRequest, Message: "Subnetwork does not have an internal IPv6 IP space which is required for IPv6 L4 ILB forwarding rules."})
-	return fakeGCE
-}
-
-func addILBService(l4c *L4Controller, svc *api_v1.Service) {
-	l4c.ctx.KubeClient.CoreV1().Services(svc.Namespace).Create(context2.TODO(), svc, v1.CreateOptions{})
-	l4c.ctx.ServiceInformer.GetIndexer().Add(svc)
-}
-
-func updateILBService(l4c *L4Controller, svc *api_v1.Service) {
-	l4c.ctx.KubeClient.CoreV1().Services(svc.Namespace).Update(context2.TODO(), svc, v1.UpdateOptions{})
-	l4c.ctx.ServiceInformer.GetIndexer().Update(svc)
-}
-
-func deleteILBService(l4c *L4Controller, svc *api_v1.Service) {
-	l4c.ctx.KubeClient.CoreV1().Services(svc.Namespace).Delete(context2.TODO(), svc.Name, v1.DeleteOptions{})
-	l4c.ctx.ServiceInformer.GetIndexer().Delete(svc)
-}
-
-func addNEG(l4c *L4Controller, svc *api_v1.Service) {
-	// Also create a fake NEG for this service since the sync code will try to link the backend service to NEG
-	negName := l4c.namer.L4Backend(svc.Namespace, svc.Name)
-	neg := &composite.NetworkEndpointGroup{Name: negName}
-	key := meta.ZonalKey(negName, testGCEZone)
-	composite.CreateNetworkEndpointGroup(l4c.ctx.Cloud, key, neg)
-}
-
-func getKeyForSvc(svc *api_v1.Service, t *testing.T) string {
-	key, err := common.KeyFunc(svc)
-	if err != nil {
-		t.Fatalf("Failed to get key for service %v, err : %v", svc, err)
-	}
-	return key
-}
-
-func calculateExpectedAnnotationsKeys(svc *api_v1.Service) []string {
-	expectedAnnotations := ilbCommonAnnotationKeys
-	if utils.NeedsIPv4(svc) {
-		expectedAnnotations = append(expectedAnnotations, ilbIPv4AnnotationKeys...)
-	}
-	if utils.NeedsIPv6(svc) {
-		expectedAnnotations = append(expectedAnnotations, ilbIPv6AnnotationKeys...)
-	}
-	return expectedAnnotations
-}
-
-func verifyILBServiceProvisioned(t *testing.T, svc *api_v1.Service) {
-	t.Helper()
-
-	if !common.HasGivenFinalizer(svc.ObjectMeta, common.ILBFinalizerV2) {
-		t.Errorf("ILB v2 finalizer is not found, expected to exist, svc %+v", svc)
-	}
-	if len(svc.Status.LoadBalancer.Ingress) == 0 || svc.Status.LoadBalancer.Ingress[0].IP == "" {
-		t.Errorf("Invalid LoadBalancer status field in service - %+v", svc.Status.LoadBalancer)
-	}
-
-	expectedAnnotationsKeys := calculateExpectedAnnotationsKeys(svc)
-	var missingKeys []string
-	for _, key := range expectedAnnotationsKeys {
-		if _, ok := svc.Annotations[key]; !ok {
-			missingKeys = append(missingKeys, key)
-		}
-	}
-	if len(missingKeys) > 0 {
-		t.Errorf("Cannot find annotations %v in ILB service, Got %v", missingKeys, svc.Annotations)
-	}
-}
-
-func verifyILBServiceNotProvisioned(t *testing.T, svc *api_v1.Service) {
-	t.Helper()
-
-	if common.HasGivenFinalizer(svc.ObjectMeta, common.ILBFinalizerV2) {
-		t.Errorf("ILB v2 finalizer should not exist on service %+v", svc)
-	}
-
-	if len(svc.Status.LoadBalancer.Ingress) > 0 {
-		t.Errorf("Expected LoadBalancer status to be empty, Got %v", svc.Status.LoadBalancer)
-	}
-
-	expectedAnnotationsKeys := calculateExpectedAnnotationsKeys(svc)
-	var missingKeys []string
-	for _, key := range expectedAnnotationsKeys {
-		if _, ok := svc.Annotations[key]; !ok {
-			missingKeys = append(missingKeys, key)
-		}
-	}
-	if len(missingKeys) != len(expectedAnnotationsKeys) {
-		t.Errorf("Unexpected ILB annotations present, Got %v", svc.Annotations)
-	}
-}
-
-func createLegacyForwardingRule(t *testing.T, svc *api_v1.Service, cloud *gce.Cloud, scheme string) {
-	t.Helper()
-	frName := cloudprovider.DefaultLoadBalancerName(svc)
-	key, err := composite.CreateKey(cloud, frName, meta.Regional)
-	if err != nil {
-		t.Errorf("Unexpected error when creating key - %v", err)
-	}
-	var ip string
-	if len(svc.Status.LoadBalancer.Ingress) > 0 {
-		ip = svc.Status.LoadBalancer.Ingress[0].IP
-	}
-	existingFwdRule := &composite.ForwardingRule{
-		Name:                frName,
-		IPAddress:           ip,
-		Ports:               []string{"123"},
-		IPProtocol:          "TCP",
-		LoadBalancingScheme: scheme,
-	}
-	if err = composite.CreateForwardingRule(cloud, key, existingFwdRule); err != nil {
-		t.Errorf("Failed to create fake forwarding rule %s, err %v", frName, err)
-	}
-}
-
 // TestProcessCreateOrUpdate verifies the processing loop in L4Controller.
 // This test adds a new service, then performs a valid update and then modifies the service type to External and ensures
 // that the status field is as expected in each case.
@@ -797,5 +635,167 @@ func TestProcessDualStackServiceOnUserError(t *testing.T) {
 	}
 	if syncResult.DualStackMetricsState.Status != metrics.StatusUserError {
 		t.Errorf("syncResult.DualStackMetricsState.Status should be %s, got %s", metrics.StatusUserError, syncResult.DualStackMetricsState.Status)
+	}
+}
+
+func newServiceController(t *testing.T, fakeGCE *gce.Cloud) *L4Controller {
+	kubeClient := fake.NewSimpleClientset()
+
+	vals := gce.DefaultTestClusterValues()
+	namer := namer.NewNamer(clusterUID, "")
+
+	stopCh := make(chan struct{})
+	ctxConfig := context.ControllerContextConfig{
+		Namespace:    api_v1.NamespaceAll,
+		ResyncPeriod: 1 * time.Minute,
+		NumL4Workers: 5,
+	}
+	ctx := context.NewControllerContext(nil, kubeClient, nil, nil, nil, nil, nil, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig)
+	// Add some nodes so that NEG linker kicks in during ILB creation.
+	nodes, err := test.CreateAndInsertNodes(ctx.Cloud, []string{"instance-1"}, vals.ZoneName)
+	if err != nil {
+		t.Errorf("Failed to add new nodes, err  %v", err)
+	}
+	for _, n := range nodes {
+		ctx.NodeInformer.GetIndexer().Add(n)
+	}
+	return NewILBController(ctx, stopCh)
+}
+
+func newFakeGCE() *gce.Cloud {
+	vals := gce.DefaultTestClusterValues()
+	fakeGCE := gce.NewFakeGCECloud(vals)
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = loadbalancers.InsertForwardingRuleHook
+	return fakeGCE
+}
+
+func newFakeGCEWithInsertError() *gce.Cloud {
+	vals := gce.DefaultTestClusterValues()
+	fakeGCE := gce.NewFakeGCECloud(vals)
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = mock.InsertForwardingRulesInternalErrHook
+	return fakeGCE
+}
+
+func newFakeGCEWithUserInsertError() *gce.Cloud {
+	vals := gce.DefaultTestClusterValues()
+	fakeGCE := gce.NewFakeGCECloud(vals)
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = test.InsertForwardingRuleErrorHook(&googleapi.Error{Code: http.StatusConflict, Message: "IP_IN_USE_BY_ANOTHER_RESOURCE - IP '1.1.1.1' is already being used by another resource."})
+	return fakeGCE
+}
+
+func newFakeGCEWithUserNoIPv6SubnetError() *gce.Cloud {
+	vals := gce.DefaultTestClusterValues()
+	fakeGCE := gce.NewFakeGCECloud(vals)
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = test.InsertForwardingRuleErrorHook(&googleapi.Error{Code: http.StatusBadRequest, Message: "Subnetwork does not have an internal IPv6 IP space which is required for IPv6 L4 ILB forwarding rules."})
+	return fakeGCE
+}
+
+func addILBService(l4c *L4Controller, svc *api_v1.Service) {
+	l4c.ctx.KubeClient.CoreV1().Services(svc.Namespace).Create(context2.TODO(), svc, v1.CreateOptions{})
+	l4c.ctx.ServiceInformer.GetIndexer().Add(svc)
+}
+
+func updateILBService(l4c *L4Controller, svc *api_v1.Service) {
+	l4c.ctx.KubeClient.CoreV1().Services(svc.Namespace).Update(context2.TODO(), svc, v1.UpdateOptions{})
+	l4c.ctx.ServiceInformer.GetIndexer().Update(svc)
+}
+
+func deleteILBService(l4c *L4Controller, svc *api_v1.Service) {
+	l4c.ctx.KubeClient.CoreV1().Services(svc.Namespace).Delete(context2.TODO(), svc.Name, v1.DeleteOptions{})
+	l4c.ctx.ServiceInformer.GetIndexer().Delete(svc)
+}
+
+func addNEG(l4c *L4Controller, svc *api_v1.Service) {
+	// Also create a fake NEG for this service since the sync code will try to link the backend service to NEG
+	negName := l4c.namer.L4Backend(svc.Namespace, svc.Name)
+	neg := &composite.NetworkEndpointGroup{Name: negName}
+	key := meta.ZonalKey(negName, testGCEZone)
+	composite.CreateNetworkEndpointGroup(l4c.ctx.Cloud, key, neg)
+}
+
+func getKeyForSvc(svc *api_v1.Service, t *testing.T) string {
+	key, err := common.KeyFunc(svc)
+	if err != nil {
+		t.Fatalf("Failed to get key for service %v, err : %v", svc, err)
+	}
+	return key
+}
+
+func calculateExpectedAnnotationsKeys(svc *api_v1.Service) []string {
+	expectedAnnotations := ilbCommonAnnotationKeys
+	if utils.NeedsIPv4(svc) {
+		expectedAnnotations = append(expectedAnnotations, ilbIPv4AnnotationKeys...)
+	}
+	if utils.NeedsIPv6(svc) {
+		expectedAnnotations = append(expectedAnnotations, ilbIPv6AnnotationKeys...)
+	}
+	return expectedAnnotations
+}
+
+func verifyILBServiceProvisioned(t *testing.T, svc *api_v1.Service) {
+	t.Helper()
+
+	if !common.HasGivenFinalizer(svc.ObjectMeta, common.ILBFinalizerV2) {
+		t.Errorf("ILB v2 finalizer is not found, expected to exist, svc %+v", svc)
+	}
+	if len(svc.Status.LoadBalancer.Ingress) == 0 || svc.Status.LoadBalancer.Ingress[0].IP == "" {
+		t.Errorf("Invalid LoadBalancer status field in service - %+v", svc.Status.LoadBalancer)
+	}
+
+	expectedAnnotationsKeys := calculateExpectedAnnotationsKeys(svc)
+	var missingKeys []string
+	for _, key := range expectedAnnotationsKeys {
+		if _, ok := svc.Annotations[key]; !ok {
+			missingKeys = append(missingKeys, key)
+		}
+	}
+	if len(missingKeys) > 0 {
+		t.Errorf("Cannot find annotations %v in ILB service, Got %v", missingKeys, svc.Annotations)
+	}
+}
+
+func verifyILBServiceNotProvisioned(t *testing.T, svc *api_v1.Service) {
+	t.Helper()
+
+	if common.HasGivenFinalizer(svc.ObjectMeta, common.ILBFinalizerV2) {
+		t.Errorf("ILB v2 finalizer should not exist on service %+v", svc)
+	}
+
+	if len(svc.Status.LoadBalancer.Ingress) > 0 {
+		t.Errorf("Expected LoadBalancer status to be empty, Got %v", svc.Status.LoadBalancer)
+	}
+
+	expectedAnnotationsKeys := calculateExpectedAnnotationsKeys(svc)
+	var missingKeys []string
+	for _, key := range expectedAnnotationsKeys {
+		if _, ok := svc.Annotations[key]; !ok {
+			missingKeys = append(missingKeys, key)
+		}
+	}
+	if len(missingKeys) != len(expectedAnnotationsKeys) {
+		t.Errorf("Unexpected ILB annotations present, Got %v", svc.Annotations)
+	}
+}
+
+func createLegacyForwardingRule(t *testing.T, svc *api_v1.Service, cloud *gce.Cloud, scheme string) {
+	t.Helper()
+	frName := cloudprovider.DefaultLoadBalancerName(svc)
+	key, err := composite.CreateKey(cloud, frName, meta.Regional)
+	if err != nil {
+		t.Errorf("Unexpected error when creating key - %v", err)
+	}
+	var ip string
+	if len(svc.Status.LoadBalancer.Ingress) > 0 {
+		ip = svc.Status.LoadBalancer.Ingress[0].IP
+	}
+	existingFwdRule := &composite.ForwardingRule{
+		Name:                frName,
+		IPAddress:           ip,
+		Ports:               []string{"123"},
+		IPProtocol:          "TCP",
+		LoadBalancingScheme: scheme,
+	}
+	if err = composite.CreateForwardingRule(cloud, key, existingFwdRule); err != nil {
+		t.Errorf("Failed to create fake forwarding rule %s, err %v", frName, err)
 	}
 }
