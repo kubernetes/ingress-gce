@@ -236,7 +236,6 @@ func (s *transactionSyncer) syncInternalImpl() error {
 
 	var targetMap map[string]negtypes.NetworkEndpointSet
 	var endpointPodMap negtypes.EndpointPodMap
-	var dupCount int
 
 	if s.enableEndpointSlices {
 		slices, err := s.endpointSliceLister.ByIndex(endpointslices.EndpointSlicesByServiceIndex, endpointslices.FormatEndpointSlicesServiceKey(s.Namespace, s.Name))
@@ -251,15 +250,17 @@ func (s *transactionSyncer) syncInternalImpl() error {
 		for i, slice := range slices {
 			endpointSlices[i] = slice.(*discovery.EndpointSlice)
 		}
+		var syncerEPStat *negtypes.SyncerEPStat
 		endpointsData := negtypes.EndpointsDataFromEndpointSlices(endpointSlices)
-		targetMap, endpointPodMap, dupCount, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
+		targetMap, endpointPodMap, syncerEPStat, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
+		s.syncCollector.SetSyncerEPMetrics(s.NegSyncerKey, syncerEPStat)
 		if err != nil {
 			if !s.isValidEPField(err) {
 				s.setErrorState()
 			}
 			return err
 		}
-		err = s.checkEndpointInfo(endpointsData, endpointPodMap, dupCount)
+		err = s.checkEndpointInfo(endpointsData, endpointPodMap, syncerEPStat.EPState[negtypes.EPDuplicate])
 		if err != nil {
 			s.setErrorState()
 			return err

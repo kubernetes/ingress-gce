@@ -35,12 +35,12 @@ func StateForEP() []State {
 	return []State{EPMissingNodeName, EPMissingPod, EPMissingZone, EPMissingField, EPDuplicate, EPTotal}
 }
 
-// SyncerEPStats contains endpoint and endpointslice status related to a syncer
+// SyncerEPStat contains endpoint and endpointslice status related to a syncer
 type SyncerEPStat struct {
 	EPState EndpointState
 }
 
-// SyncerEPState contains all endpoint state related to a syncer
+// EndpointState contains all endpoint state related to a syncer
 type EndpointState map[State]int
 
 func NewSyncerEPStat() *SyncerEPStat {
