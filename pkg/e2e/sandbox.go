@@ -18,6 +18,7 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"k8s.io/klog/v2"
@@ -43,6 +44,10 @@ type Sandbox struct {
 	destroyed bool
 	//Rand int that is used to generate the Namespace name
 	RandInt int64
+
+	// Additional namespaces used. Resources in this namespace will be
+	// deleted with Destroy()
+	AdditionalNamespaces []string
 }
 
 // Create the sandbox.
@@ -67,6 +72,23 @@ func (s *Sandbox) Create() error {
 	return nil
 }
 
+func (s *Sandbox) CreateAdditionalNamespace() (string, error) {
+	namespace := fmt.Sprintf("test-sandbox-%x", s.f.Rand.Int63())
+	ns := &v1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: namespace,
+		},
+	}
+	if _, err := s.f.Clientset.CoreV1().Namespaces().Create(context.TODO(), ns, metav1.CreateOptions{}); err != nil {
+		klog.Errorf("Error creating namespace %q: %v", namespace, err)
+		return "", err
+	}
+	klog.Infof("Created new namespace: %s", namespace)
+
+	s.AdditionalNamespaces = append(s.AdditionalNamespaces, namespace)
+	return namespace, nil
+}
+
 // IstioEnabled returns true if Istio is enabled for target cluster.
 func (s *Sandbox) IstioEnabled() bool {
 	return s.f.DestinationRuleClient != nil
@@ -83,8 +105,12 @@ func (s *Sandbox) Destroy() {
 		return
 	}
 
-	if err := s.f.Clientset.CoreV1().Namespaces().Delete(context.TODO(), s.Namespace, metav1.DeleteOptions{}); err != nil {
-		klog.Errorf("Error deleting namespace %q: %v", s.Namespace, err)
+	namespaces := append(s.AdditionalNamespaces, s.Namespace)
+
+	for _, n := range namespaces {
+		if err := s.f.Clientset.CoreV1().Namespaces().Delete(context.TODO(), n, metav1.DeleteOptions{}); err != nil {
+			klog.Errorf("Error deleting namespace %q: %v", s.Namespace, err)
+		}
 	}
 	s.destroyed = true
 }

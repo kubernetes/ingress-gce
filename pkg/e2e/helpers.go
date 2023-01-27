@@ -375,9 +375,14 @@ func WaitForEchoDeploymentStable(s *Sandbox, name string) error {
 	})
 }
 
-// WaitForNegStatus waits util the neg status on the service got to expected state.
-// if noPresentTest set to true, WaitForNegStatus makes sure no NEG annotation is added until timeout(5 mins).
+// WaitForNegStatus calls out to WaitForNegStatusWithNamespace using the sandbox's default namespace.
 func WaitForNegStatus(s *Sandbox, name string, expectSvcPorts []string, noPresentTest bool) (*annotations.NegStatus, error) {
+	return WaitForNegStatusWithNamespace(s, name, s.Namespace, expectSvcPorts, noPresentTest)
+}
+
+// WaitForNegStatus waits util the neg status on the service got to expected state.
+// if noPresentTest set to true, WaitForNegStatus makes sure no NEG annotation is added until timeout(2 mins).
+func WaitForNegStatusWithNamespace(s *Sandbox, name, namespace string, expectSvcPorts []string, noPresentTest bool) (*annotations.NegStatus, error) {
 	var ret annotations.NegStatus
 	var err error
 	timeout := gclbDeletionTimeout
@@ -385,13 +390,13 @@ func WaitForNegStatus(s *Sandbox, name string, expectSvcPorts []string, noPresen
 		timeout = 2 * time.Minute
 	}
 	err = wait.Poll(negPollInterval, timeout, func() (bool, error) {
-		svc, err := s.f.Clientset.CoreV1().Services(s.Namespace).Get(context.TODO(), name, metav1.GetOptions{})
+		svc, err := s.f.Clientset.CoreV1().Services(namespace).Get(context.TODO(), name, metav1.GetOptions{})
 		if svc == nil || err != nil {
-			return false, fmt.Errorf("failed to get service %s/%s: %v", s.Namespace, name, err)
+			return false, fmt.Errorf("failed to get service %s/%s: %v", namespace, name, err)
 		}
 		ret, err = CheckNegStatus(svc, expectSvcPorts)
 		if err != nil {
-			klog.Infof("WaitForNegStatus(%s/%s, %v) = %v", s.Namespace, name, expectSvcPorts, err)
+			klog.Infof("WaitForNegStatus(%s/%s, %v) = %v", namespace, name, expectSvcPorts, err)
 			return false, nil
 		}
 		return true, nil

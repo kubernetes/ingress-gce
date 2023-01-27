@@ -10,8 +10,10 @@ import (
 
 	istioV1alpha3 "istio.io/api/networking/v1alpha3"
 	apiv1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/e2e"
 )
 
@@ -283,5 +285,112 @@ func TestNoIstioASM(t *testing.T) {
 			t.Fatalf("Failed to validate asm-ready = false. Error: %s", err)
 		}
 
+	})
+}
+
+// TestGSMService affects all services in the cluster, so it can't run parallel with other tests.
+func TestGSMService(t *testing.T) {
+	Framework.RunWithSandbox("TestASMService", t, func(t *testing.T, s *e2e.Sandbox) {
+
+		// This test case will need two namespaces, one will be in asm-skip-namespaces.
+		skipNamespace, err := s.CreateAdditionalNamespace()
+		if err != nil {
+			t.Fatalf("failed to create additional namesapce: %s", err)
+		}
+
+		// Enable ASM mode
+		asmConfig := map[string]string{"enable-asm": "true",
+			"asm-skip-namespaces": "kube-system,istio-system," + skipNamespace}
+		if err := e2e.EnsureConfigMap(s, asmConfigNamespace, asmConfigName, asmConfig); err != nil {
+			t.Fatal(err)
+		}
+		ports := []int{80, 443}
+		svcName := "service"
+		svcSkipName := "service-skip"
+		var negsToBeDeleted []annotations.NegStatus
+		standaloneNEGAnnotation := &annotations.NegAnnotation{
+			Ingress: false,
+			ExposedPorts: map[int32]annotations.NegAttributes{
+				int32(443): {},
+				int32(80):  {},
+			},
+		}
+
+		// Create and validate DestinationRules level NEGs, NEG controller shouldn't create DestinationRules level NEGs for those services in the skip namespace.
+		for _, tc := range []struct {
+			desc           string
+			svcName        string
+			svcAnnotations map[string]string
+			namespace      string
+			//whether the test should test that the neg is present or not
+			notPresentTest bool
+		}{
+			{desc: "NEG Controller should create NEGs for all ports for a service by default",
+				svcName:        svcName,
+				namespace:      s.Namespace,
+				svcAnnotations: nil,
+				notPresentTest: false},
+			{desc: "NEG Controller shouldn't create NEGs for services without the neg annotation if it's in a skip namespace",
+				svcName:        svcSkipName,
+				namespace:      skipNamespace,
+				svcAnnotations: nil,
+				notPresentTest: true},
+			{desc: "NEG Controller should create NEGs for services with the neg annotation in a skip namespace",
+				svcName:   svcSkipName,
+				namespace: skipNamespace,
+				svcAnnotations: map[string]string{
+					annotations.NEGAnnotationKey: standaloneNEGAnnotation.String(),
+				},
+				notPresentTest: false},
+		} {
+			t.Logf("Running test case: %s", tc.desc)
+			sandbox := s
+
+			if _, err := e2e.EnsureEchoServiceWithNamespace(sandbox, tc.svcName, tc.namespace, tc.svcAnnotations, v1.ServiceTypeClusterIP, 3); err != nil {
+				t.Errorf("Failed to create service, Error: %s", err)
+			}
+
+			// Test the Service Annotations
+			negStatus, err := e2e.WaitForNegStatusWithNamespace(sandbox, tc.svcName, tc.namespace, []string{strconv.Itoa(int(ports[0])), strconv.Itoa(int(ports[1]))}, tc.notPresentTest)
+			if err != nil {
+				t.Fatalf("Failed to wait for Service NEGAnnotation, error: %s", err)
+			}
+			if negStatus != nil {
+				negsToBeDeleted = append(negsToBeDeleted, *negStatus)
+			}
+
+			if tc.notPresentTest {
+				if negStatus != nil {
+					t.Errorf("Service: %s/%s is in the ASM skip namespace, shouldn't have NEG Status. ASM Config: %v, NEGStatus got: %v",
+						tc.namespace, tc.svcName, asmConfig, negStatus)
+				}
+			} else {
+				ctx := context.Background()
+				for _, port := range ports {
+					if negName, ok := negStatus.NetworkEndpointGroups[strconv.Itoa(int(port))]; ok {
+						if err := e2e.WaitForNegs(ctx, Framework.Cloud, negName, negStatus.Zones, false, 3); err != nil {
+							t.Errorf("Failed to wait Negs, error: %s", err)
+						}
+					} else {
+						t.Fatalf("Service annotation doesn't contain the desired NEG status, want: %d, have: %v", port, negStatus.NetworkEndpointGroups)
+					}
+				}
+			}
+
+			if err := e2e.DeleteServiceWithNamespace(s, tc.svcName, tc.namespace); err != nil {
+				t.Errorf("Error: e2e.DeleteServiceWithNamespace %s/%s: %q", tc.namespace, tc.svcName, err)
+			}
+			t.Logf("GC service deleted (%s/%s)", s.Namespace, svcName)
+		}
+
+		//Ensure that all created NEGs are deleted
+		ctx := context.Background()
+		for _, negStatus := range negsToBeDeleted {
+			for _, port := range ports {
+				if err := e2e.WaitForStandaloneNegDeletion(ctx, s.ValidatorEnv.Cloud(), s, strconv.Itoa(int(port)), negStatus); err != nil {
+					t.Errorf("Error waiting for NEGDeletion: %v", err)
+				}
+			}
+		}
 	})
 }

@@ -100,21 +100,26 @@ func CreateEchoService(s *Sandbox, name string, annotations map[string]string) (
 // CreateEchoServiceWithOS creates the pod and service serving echoheaders
 // Todo: (shance) remove this and replace uses with EnsureEchoService()
 func CreateEchoServiceWithOS(s *Sandbox, name string, annotations map[string]string, os OS) (*v1.Service, error) {
-	return ensureEchoService(s, name, annotations, v1.ServiceTypeNodePort, 1, os)
+	return ensureEchoService(s, name, s.Namespace, annotations, v1.ServiceTypeNodePort, 1, os)
 }
 
 // EnsureEchoServiceOS ensures that the Echo service with the given description is set up for Linux or Windows OS.
 func EnsureEchoServiceOS(s *Sandbox, name string, annotations map[string]string, svcType v1.ServiceType, numReplicas int32, os OS) (*v1.Service, error) {
-	return ensureEchoService(s, name, annotations, svcType, numReplicas, os)
+	return ensureEchoService(s, name, s.Namespace, annotations, svcType, numReplicas, os)
 }
 
 // EnsureEchoService that the Echo service with the given description is set up
 func EnsureEchoService(s *Sandbox, name string, annotations map[string]string, svcType v1.ServiceType, numReplicas int32) (*v1.Service, error) {
-	return ensureEchoService(s, name, annotations, svcType, numReplicas, Linux)
+	return ensureEchoService(s, name, s.Namespace, annotations, svcType, numReplicas, Linux)
 }
 
-func ensureEchoService(s *Sandbox, name string, annotations map[string]string, svcType v1.ServiceType, numReplicas int32, os OS) (*v1.Service, error) {
-	if err := ensureEchoDeployment(s, name, numReplicas, NoopModify, os); err != nil {
+// EnsureEchoService that the Echo service with the given description is set up
+func EnsureEchoServiceWithNamespace(s *Sandbox, name, namespace string, annotations map[string]string, svcType v1.ServiceType, numReplicas int32) (*v1.Service, error) {
+	return ensureEchoService(s, name, namespace, annotations, svcType, numReplicas, Linux)
+}
+
+func ensureEchoService(s *Sandbox, name, ns string, annotations map[string]string, svcType v1.ServiceType, numReplicas int32, os OS) (*v1.Service, error) {
+	if err := ensureEchoDeployment(s, name, ns, numReplicas, NoopModify, os); err != nil {
 		return nil, err
 	}
 
@@ -142,10 +147,10 @@ func ensureEchoService(s *Sandbox, name string, annotations map[string]string, s
 			Type:     svcType,
 		},
 	}
-	svc, err := s.f.Clientset.CoreV1().Services(s.Namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	svc, err := s.f.Clientset.CoreV1().Services(ns).Get(context.TODO(), name, metav1.GetOptions{})
 
 	if svc == nil || err != nil {
-		if svc, err = s.f.Clientset.CoreV1().Services(s.Namespace).Create(context.TODO(), expectedSvc, metav1.CreateOptions{}); err != nil {
+		if svc, err = s.f.Clientset.CoreV1().Services(ns).Create(context.TODO(), expectedSvc, metav1.CreateOptions{}); err != nil {
 			return nil, err
 		}
 		return svc, err
@@ -157,7 +162,7 @@ func ensureEchoService(s *Sandbox, name string, annotations map[string]string, s
 		svc.Spec.Ports = expectedSvc.Spec.Ports
 		svc.Spec.Type = expectedSvc.Spec.Type
 
-		if svc, err := s.f.Clientset.CoreV1().Services(s.Namespace).Update(context.TODO(), svc, metav1.UpdateOptions{}); err != nil {
+		if svc, err := s.f.Clientset.CoreV1().Services(ns).Update(context.TODO(), svc, metav1.UpdateOptions{}); err != nil {
 			return nil, fmt.Errorf("svc: %v\nexpectedSvc: %v\nerr: %v", svc, expectedSvc, err)
 		}
 	}
@@ -169,17 +174,22 @@ func DeleteService(s *Sandbox, svcName string) error {
 	return s.f.Clientset.CoreV1().Services(s.Namespace).Delete(context.TODO(), svcName, metav1.DeleteOptions{})
 }
 
+// DeleteService deletes the K8s service
+func DeleteServiceWithNamespace(s *Sandbox, svcName, namespace string) error {
+	return s.f.Clientset.CoreV1().Services(namespace).Delete(context.TODO(), svcName, metav1.DeleteOptions{})
+}
+
 // EnsureEchoDeploymentOS ensures that the Echo deployment with the given description is set up for Linux or Windows OS.
 func EnsureEchoDeploymentOS(s *Sandbox, name string, numReplicas int32, modify func(deployment *apps.Deployment), os OS) error {
-	return ensureEchoDeployment(s, name, numReplicas, modify, os)
+	return ensureEchoDeployment(s, name, s.Namespace, numReplicas, modify, os)
 }
 
 // EnsureEchoDeployment ensures that the Echo deployment with the given description is set up
 func EnsureEchoDeployment(s *Sandbox, name string, numReplicas int32, modify func(deployment *apps.Deployment)) error {
-	return ensureEchoDeployment(s, name, numReplicas, modify, Linux)
+	return ensureEchoDeployment(s, name, s.Namespace, numReplicas, modify, Linux)
 }
 
-func ensureEchoDeployment(s *Sandbox, name string, numReplicas int32, modify func(deployment *apps.Deployment), os OS) error {
+func ensureEchoDeployment(s *Sandbox, name, namespace string, numReplicas int32, modify func(deployment *apps.Deployment), os OS) error {
 	image := echoheadersImage
 	var nodeSelector map[string]string
 	nodeSelector = map[string]string{"kubernetes.io/os": "linux"}
@@ -242,19 +252,19 @@ func ensureEchoDeployment(s *Sandbox, name string, numReplicas int32, modify fun
 	}
 	modify(deployment)
 
-	existingDeployment, err := s.f.Clientset.AppsV1().Deployments(s.Namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	existingDeployment, err := s.f.Clientset.AppsV1().Deployments(namespace).Get(context.TODO(), name, metav1.GetOptions{})
 	if existingDeployment == nil || err != nil {
-		if _, err = s.f.Clientset.AppsV1().Deployments(s.Namespace).Create(context.TODO(), deployment, metav1.CreateOptions{}); err != nil {
+		if _, err = s.f.Clientset.AppsV1().Deployments(namespace).Create(context.TODO(), deployment, metav1.CreateOptions{}); err != nil {
 			return err
 		}
 	} else {
-		if _, err = s.f.Clientset.AppsV1().Deployments(s.Namespace).Update(context.TODO(), deployment, metav1.UpdateOptions{}); err != nil {
+		if _, err = s.f.Clientset.AppsV1().Deployments(namespace).Update(context.TODO(), deployment, metav1.UpdateOptions{}); err != nil {
 			return err
 		}
 	}
 
 	deployment.Spec.Replicas = &numReplicas
-	if _, err = s.f.Clientset.AppsV1().Deployments(s.Namespace).Update(context.TODO(), deployment, metav1.UpdateOptions{}); err != nil {
+	if _, err = s.f.Clientset.AppsV1().Deployments(namespace).Update(context.TODO(), deployment, metav1.UpdateOptions{}); err != nil {
 		return fmt.Errorf("Error updating deployment scale: %v", err)
 	}
 	return nil
