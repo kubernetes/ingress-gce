@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"strings"
 	"time"
 
 	flag "github.com/spf13/pflag"
@@ -358,7 +359,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 
 	ctx.Start(stopCh)
 
-	if flags.F.RunInstanceGroupController {
+	if strings.ToLower(os.Getenv("EXPERIMENTAL_ONLY_FOR_TESTING_DISABLE_INSTANCE_GROUP_CONTROLLER")) != "true" {
 		igControllerParams := &instancegroups.ControllerConfig{
 			NodeInformer: ctx.NodeInformer,
 			IGManager:    ctx.InstancePool,
