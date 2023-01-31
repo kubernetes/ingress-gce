@@ -17,8 +17,13 @@ limitations under the License.
 package types
 
 import (
+	"fmt"
+	"time"
+
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/neg/throttling"
+	"k8s.io/klog/v2"
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
@@ -27,6 +32,14 @@ const (
 	aggregatedListZonalKeyPrefix = "zones"
 	// aggregatedListGlobalKey is the global key from AggregatedList
 	aggregatedListGlobalKey = "global"
+
+	requestGroupMinDelay = 1 * time.Second
+	requestGroupMaxDelay = 100 * time.Second
+
+	negServiceName         = "NetworkEndpointGroups"
+	listNetworkEndpoints   = "ListNetworkEndpoints"
+	attachNetworkEndpoints = "AttachNetworkEndpoints"
+	detachNetworkEndpoints = "DetachNetworkEndpoints"
 )
 
 // NewAdapter takes a Cloud and returns a NetworkEndpointGroupCloud.
@@ -111,4 +124,55 @@ func (a *cloudProviderAdapter) NetworkURL() string {
 // SubnetworkURL implements NetworkEndpointGroupCloud.
 func (a *cloudProviderAdapter) SubnetworkURL() string {
 	return a.subnetworkURL
+}
+
+type throttledCloudProviderAdapter struct {
+	NetworkEndpointGroupCloud
+	listNetworkEndpointsRequestGroup   throttling.RequestGroup[[]*composite.NetworkEndpointWithHealthStatus]
+	attachNetworkEndpointsRequestGroup throttling.RequestGroup[throttling.NoResponse]
+	detachNetworkEndpointsRequestGroup throttling.RequestGroup[throttling.NoResponse]
+	logger                             klog.Logger
+}
+
+func NewThrottledAdapter(g *gce.Cloud, enableNegDynamicThrottlingStrategy bool, rlSpecs []string, logger klog.Logger) NetworkEndpointGroupCloud {
+	logger = logger.WithName("ThrottledCloudProviderAdapter")
+	var listNetworkEndpointsRequestGroup throttling.RequestGroup[[]*composite.NetworkEndpointWithHealthStatus]
+	var attachNetworkEndpointsRequestGroup throttling.RequestGroup[throttling.NoResponse]
+	var detachNetworkEndpointsRequestGroup throttling.RequestGroup[throttling.NoResponse]
+	if enableNegDynamicThrottlingStrategy {
+		listNetworkEndpointsRequestGroup = throttling.NewDefaultRequestGroup[[]*composite.NetworkEndpointWithHealthStatus](requestGroupMinDelay, requestGroupMaxDelay, logger)
+		attachNetworkEndpointsRequestGroup = throttling.NewDefaultRequestGroup[throttling.NoResponse](requestGroupMinDelay, requestGroupMaxDelay, logger)
+		detachNetworkEndpointsRequestGroup = throttling.NewDefaultRequestGroup[throttling.NoResponse](requestGroupMinDelay, requestGroupMaxDelay, logger)
+	} else {
+		listNetworkEndpointsRequestGroup = throttling.NewQpsRequestGroup[[]*composite.NetworkEndpointWithHealthStatus](rlSpecs, fmt.Sprintf("%v.%v", negServiceName, listNetworkEndpoints), logger)
+		attachNetworkEndpointsRequestGroup = throttling.NewQpsRequestGroup[throttling.NoResponse](rlSpecs, fmt.Sprintf("%v.%v", negServiceName, attachNetworkEndpoints), logger)
+		detachNetworkEndpointsRequestGroup = throttling.NewQpsRequestGroup[throttling.NoResponse](rlSpecs, fmt.Sprintf("%v.%v", negServiceName, detachNetworkEndpoints), logger)
+	}
+	return &throttledCloudProviderAdapter{
+		NetworkEndpointGroupCloud:          NewAdapter(g),
+		listNetworkEndpointsRequestGroup:   listNetworkEndpointsRequestGroup,
+		attachNetworkEndpointsRequestGroup: attachNetworkEndpointsRequestGroup,
+		detachNetworkEndpointsRequestGroup: detachNetworkEndpointsRequestGroup,
+		logger:                             logger,
+	}
+}
+
+func (a *throttledCloudProviderAdapter) AttachNetworkEndpoints(name, zone string, endpoints []*composite.NetworkEndpoint, version meta.Version) error {
+	_, err := a.attachNetworkEndpointsRequestGroup.Run(func() (throttling.NoResponse, error) {
+		return nil, a.NetworkEndpointGroupCloud.AttachNetworkEndpoints(name, zone, endpoints, version)
+	}, version)
+	return err
+}
+
+func (a *throttledCloudProviderAdapter) DetachNetworkEndpoints(name, zone string, endpoints []*composite.NetworkEndpoint, version meta.Version) error {
+	_, err := a.detachNetworkEndpointsRequestGroup.Run(func() (throttling.NoResponse, error) {
+		return nil, a.NetworkEndpointGroupCloud.DetachNetworkEndpoints(name, zone, endpoints, version)
+	}, version)
+	return err
+}
+
+func (a *throttledCloudProviderAdapter) ListNetworkEndpoints(name, zone string, showHealthStatus bool, version meta.Version) ([]*composite.NetworkEndpointWithHealthStatus, error) {
+	return a.listNetworkEndpointsRequestGroup.Run(func() ([]*composite.NetworkEndpointWithHealthStatus, error) {
+		return a.NetworkEndpointGroupCloud.ListNetworkEndpoints(name, zone, showHealthStatus, version)
+	}, version)
 }

@@ -44,14 +44,14 @@ func TestGCERateLimiter(t *testing.T) {
 	}
 
 	for _, testCase := range validTestCases {
-		_, err := NewGCERateLimiter(testCase, time.Second)
+		_, err := NewGCERateLimiter(testCase, time.Second, false, false)
 		if err != nil {
 			t.Errorf("Did not expect an error for test case: %v", testCase)
 		}
 	}
 
 	for _, testCase := range invalidTestCases {
-		_, err := NewGCERateLimiter(testCase, time.Second)
+		_, err := NewGCERateLimiter(testCase, time.Second, false, false)
 		if err == nil {
 			t.Errorf("Expected an error for test case: %v", testCase)
 		}
@@ -65,7 +65,7 @@ func TestRateLimitScale(t *testing.T) {
 
 	flags.F.GCERateLimitScale = 2
 	const cfg = "ga.Addresses.Get,qps,1,5"
-	_, err := NewGCERateLimiter([]string{cfg}, time.Second)
+	_, err := NewGCERateLimiter([]string{cfg}, time.Second, false, false)
 	if err != nil {
 		t.Errorf("NewGCERateLimiter([]string{%q}, time.Second) = %v, want nil", cfg, err)
 	}

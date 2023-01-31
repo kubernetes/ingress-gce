@@ -100,7 +100,7 @@ func NewGCEClient() *gce.Cloud {
 		if err == nil {
 			cloud := provider.(*gce.Cloud)
 			// Configure GCE rate limiting
-			rl, err := ratelimit.NewGCERateLimiter(flags.F.GCERateLimit.Values(), flags.F.GCEOperationPollInterval)
+			rl, err := ratelimit.NewGCERateLimiter(flags.F.GCERateLimit.Values(), flags.F.GCEOperationPollInterval, flags.F.EnableNegThrottling, flags.F.EnableNegDynamicThrottlingStrategy)
 			if err != nil {
 				klog.Fatalf("Error configuring rate limiting: %v", err)
 			}

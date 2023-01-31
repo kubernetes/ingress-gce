@@ -36,13 +36,19 @@ type GCERateLimiter struct {
 	rateLimitImpls map[cloud.RateLimitKey]flowcontrol.RateLimiter
 	// Minimum polling interval for getting operations. Underlying operations rate limiter
 	// may increase the time.
-	operationPollInterval time.Duration
+	operationPollInterval              time.Duration
+	enableNegThrottling                bool
+	enableNegDynamicThrottlingStrategy bool
 }
 
 // NewGCERateLimiter parses the list of rate limiting specs passed in and
 // returns a properly configured cloud.RateLimiter implementation.
 // Expected format of specs: {"[version].[service].[operation],[type],[param1],[param2],..", "..."}
-func NewGCERateLimiter(specs []string, operationPollInterval time.Duration) (*GCERateLimiter, error) {
+func NewGCERateLimiter(
+	specs []string,
+	operationPollInterval time.Duration,
+	enableNegThrottling bool,
+	enableNegDynamicThrottlingStrategy bool) (*GCERateLimiter, error) {
 	rateLimitImpls := make(map[cloud.RateLimitKey]flowcontrol.RateLimiter)
 	// Within each specification, split on comma to get the operation,
 	// rate limiter type, and extra parameters.
@@ -68,8 +74,10 @@ func NewGCERateLimiter(specs []string, operationPollInterval time.Duration) (*GC
 		return nil, nil
 	}
 	return &GCERateLimiter{
-		rateLimitImpls:        rateLimitImpls,
-		operationPollInterval: operationPollInterval,
+		rateLimitImpls:                     rateLimitImpls,
+		operationPollInterval:              operationPollInterval,
+		enableNegThrottling:                enableNegThrottling,
+		enableNegDynamicThrottlingStrategy: enableNegDynamicThrottlingStrategy,
 	}, nil
 }
 
@@ -97,6 +105,11 @@ func (grl *GCERateLimiter) Accept(ctx context.Context, key *cloud.RateLimitKey) 
 			RateLimiter: rl,
 			Minimum:     grl.operationPollInterval,
 		}
+	}
+
+	if grl.enableNegThrottling && !grl.enableNegDynamicThrottlingStrategy && key.Service == "NetworkEndpointGroups" && strings.HasSuffix(key.Operation, "NetworkEndpoints") {
+		// This case should be handled by request groups
+		rl = &cloud.NopRateLimiter{}
 	}
 
 	return rl.Accept(ctx, key)

@@ -95,23 +95,25 @@ var (
 		MetricsExportInterval            time.Duration
 
 		// Feature flags should be named Enablexxx.
-		EnableASMConfigMapBasedConfig  bool
-		EnableBackendConfigHealthCheck bool
-		EnableDeleteUnusedFrontends    bool
-		EnableFrontendConfig           bool
-		EnableNonGCPMode               bool
-		EnableReadinessReflector       bool
-		EnableV2FrontendNamer          bool
-		FinalizerAdd                   bool // Should have been named Enablexxx.
-		FinalizerRemove                bool // Should have been named Enablexxx.
-		EnablePSC                      bool
-		EnableIngressGAFields          bool
-		EnableTrafficScaling           bool
-		EnableEndpointSlices           bool
-		EnablePinhole                  bool
-		EnableL4ILBDualStack           bool
-		EnableMultipleIGs              bool
-		MaxIGSize                      int
+		EnableASMConfigMapBasedConfig      bool
+		EnableBackendConfigHealthCheck     bool
+		EnableDeleteUnusedFrontends        bool
+		EnableFrontendConfig               bool
+		EnableNonGCPMode                   bool
+		EnableReadinessReflector           bool
+		EnableV2FrontendNamer              bool
+		FinalizerAdd                       bool // Should have been named Enablexxx.
+		FinalizerRemove                    bool // Should have been named Enablexxx.
+		EnablePSC                          bool
+		EnableIngressGAFields              bool
+		EnableTrafficScaling               bool
+		EnableEndpointSlices               bool
+		EnablePinhole                      bool
+		EnableL4ILBDualStack               bool
+		EnableMultipleIGs                  bool
+		EnableNegThrottling                bool
+		EnableNegDynamicThrottlingStrategy bool
+		MaxIGSize                          int
 	}{
 		GCERateLimitScale: 1.0,
 	}
@@ -255,6 +257,9 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnablePinhole, "enable-pinhole", false, "Enable Pinhole firewall feature")
 	flag.BoolVar(&F.EnableL4ILBDualStack, "enable-l4ilb-dual-stack", false, "Enable Dual-Stack handling for L4 Internal Load Balancers")
 	flag.BoolVar(&F.EnableMultipleIGs, "enable-multiple-igs", false, "Enable using multiple unmanaged instance groups")
+	flag.BoolVar(&F.EnableNegThrottling, "enable-neg-throttling", false, "Enable throttling for NEG GCE API calls. By default QPS throttling strategy will be used, which imitates GCE Rate Limiter behavior.")
+	flag.BoolVar(&F.EnableNegDynamicThrottlingStrategy, "enable-neg-dynamic-throttling-strategy", false, `Enable dynamic throttling strategy for NEG GCE API calls. It will be used together with GCE Rate Limiter, but qps value should be higher than without throttling.
+Should be used together with --enable-neg-throttling.`)
 	flag.IntVar(&F.MaxIGSize, "max-ig-size", 1000, "Max number of instances in Instance Group")
 	flag.DurationVar(&F.MetricsExportInterval, "metrics-export-interval", 10*time.Minute, `Period for calculating and exporting metrics related to state of managed objects.`)
 }
