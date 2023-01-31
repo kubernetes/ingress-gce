@@ -683,7 +683,7 @@ func TestSyncNegAnnotation(t *testing.T) {
 	controller := newTestController(fake.NewSimpleClientset())
 	defer controller.stop()
 	svcClient := controller.client.CoreV1().Services(testServiceNamespace)
-	newTestService(controller, false, []int32{})
+	svc := newTestService(controller, false, []int32{})
 	namespace := testServiceNamespace
 	name := testServiceName
 	namer := controller.namer
@@ -732,6 +732,7 @@ func TestSyncNegAnnotation(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
+			controller.serviceLister.Add(svc)
 			controller.syncNegStatusAnnotation(namespace, name, tc.previousPortMap)
 			svc, _ := svcClient.Get(context.TODO(), name, metav1.GetOptions{})
 
@@ -741,6 +742,10 @@ func TestSyncNegAnnotation(t *testing.T) {
 			}
 			validateServiceStateAnnotation(t, svc, oldSvcPorts, controller.namer)
 
+			// Mimic any Update calls to the API Server by manually updating the
+			// informer cache.
+			controller.serviceLister.Update(svc)
+
 			controller.syncNegStatusAnnotation(namespace, name, tc.portMap)
 			svc, _ = svcClient.Get(context.TODO(), name, metav1.GetOptions{})
 
@@ -749,6 +754,9 @@ func TestSyncNegAnnotation(t *testing.T) {
 				svcPorts = append(svcPorts, port.ServicePort)
 			}
 			validateServiceStateAnnotation(t, svc, svcPorts, controller.namer)
+
+			// Reset state of controller for the next test run.
+			controller.serviceLister.Delete(svc)
 		})
 	}
 }
