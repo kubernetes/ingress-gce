@@ -16,29 +16,30 @@ limitations under the License.
 
 package slice
 
-// ContainsString checks if a given slice of strings contains the provided string.
+// Contains checks if a given slice contains the provided element.
 // If a modifier func is provided, it is called with the slice item before the comparison.
-func ContainsString(slice []string, s string, modifier func(s string) string) bool {
+func Contains[T comparable](slice []T, elem T, modifier func(elem T) T) bool {
 	for _, item := range slice {
-		if item == s {
+		if item == elem {
 			return true
 		}
-		if modifier != nil && modifier(item) == s {
+		if modifier != nil && modifier(item) == elem {
 			return true
 		}
 	}
 	return false
 }
 
-// RemoveString returns a newly created []string that contains all items from slice that
-// are not equal to s and modifier(s) in case modifier func is provided.
-func RemoveString(slice []string, s string, modifier func(s string) string) []string {
-	newSlice := make([]string, 0)
+// Remove returns a newly created slice that contains all items from the initial
+// slice that are not equal to elem and modifier(item) in case modifier func is provided
+// where item is an item in the slice.
+func Remove[T comparable](slice []T, elem T, modifier func(elem T) T) []T {
+	newSlice := make([]T, 0)
 	for _, item := range slice {
-		if item == s {
+		if item == elem {
 			continue
 		}
-		if modifier != nil && modifier(item) == s {
+		if modifier != nil && modifier(item) == elem {
 			continue
 		}
 		newSlice = append(newSlice, item)

@@ -265,7 +265,7 @@ func validateXPNError(err error, op string, t *testing.T) {
 	// incorrectSourceRanges are those included for L4 LB but not L7 LB. These should not be present in the error
 	// message emitted for L7 LB.
 	for _, val := range expectedSourceRanges {
-		incorrectSourceRanges = slice.RemoveString(incorrectSourceRanges, val, nil)
+		incorrectSourceRanges = slice.Remove(incorrectSourceRanges, val, nil)
 	}
 	for _, val := range expectedSourceRanges {
 		if !strings.Contains(errString, val) {
