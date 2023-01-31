@@ -17,14 +17,12 @@ limitations under the License.
 package neg
 
 import (
-	"context"
 	"fmt"
 	"time"
 
 	apiv1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
 	v1 "k8s.io/api/networking/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -655,10 +653,17 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 	if err != nil {
 		return err
 	}
-	coreClient := c.client.CoreV1()
-	service, err := coreClient.Services(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	obj, exists, err := c.serviceLister.GetByKey(getServiceKey(namespace, name).Key())
 	if err != nil {
 		return err
+	}
+	if !exists {
+		// Service no longer exists so doesn't require any update.
+		return nil
+	}
+	service, ok := obj.(*apiv1.Service)
+	if !ok {
+		return fmt.Errorf("cannot convert obj to Service; obj=%T", obj)
 	}
 
 	// Remove NEG Status Annotation when no NEG is needed
@@ -667,7 +672,7 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 			newSvcObjectMeta := service.ObjectMeta.DeepCopy()
 			delete(newSvcObjectMeta.Annotations, annotations.NEGStatusKey)
 			c.logger.V(2).Info("Removing NEG status annotation from service", "service", klog.KRef(namespace, name))
-			return patch.PatchServiceObjectMetadata(coreClient, service, *newSvcObjectMeta)
+			return patch.PatchServiceObjectMetadata(c.client.CoreV1(), service, *newSvcObjectMeta)
 		}
 		// service doesn't have the expose NEG annotation and doesn't need update
 		return nil
@@ -689,7 +694,7 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 	}
 	newSvcObjectMeta.Annotations[annotations.NEGStatusKey] = annotation
 	c.logger.V(2).Info("Updating NEG visibility annotation on service", "annotation", annotation, "service", klog.KRef(namespace, name))
-	return patch.PatchServiceObjectMetadata(coreClient, service, *newSvcObjectMeta)
+	return patch.PatchServiceObjectMetadata(c.client.CoreV1(), service, *newSvcObjectMeta)
 }
 
 func (c *Controller) handleErr(err error, key interface{}) {
