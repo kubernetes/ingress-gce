@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package syncers
+package backoff
 
 import (
 	"fmt"
@@ -25,8 +25,8 @@ import (
 
 var ErrHandlerRetrying = fmt.Errorf("retry handler is retrying")
 
-// retryHandler encapsulates logic that handles retry
-type retryHandler interface {
+// RetryHandler encapsulates logic that handles retry
+type RetryHandler interface {
 	// Retry triggers retry
 	Retry() error
 	// Reset resets handler internals
@@ -43,13 +43,13 @@ type backoffRetryHandler struct {
 
 	// backoff delay handling
 	clock   clock.Clock
-	backoff backoffHandler
+	backoff BackoffHandler
 
 	// retryFunc called on retry
 	retryFunc func()
 }
 
-func NewDelayRetryHandler(retryFunc func(), backoff backoffHandler) *backoffRetryHandler {
+func NewDelayRetryHandler(retryFunc func(), backoff BackoffHandler) *backoffRetryHandler {
 	return &backoffRetryHandler{
 		retrying:  false,
 		clock:     clock.RealClock{},
@@ -68,7 +68,7 @@ func (h *backoffRetryHandler) Retry() error {
 		return ErrHandlerRetrying
 	}
 
-	delay, err := h.backoff.NextRetryDelay()
+	delay, err := h.backoff.NextDelay()
 	if err != nil {
 		return err
 	}
@@ -89,5 +89,5 @@ func (h *backoffRetryHandler) Retry() error {
 
 // Reset resets internal back off delay handler
 func (h *backoffRetryHandler) Reset() {
-	h.backoff.ResetRetryDelay()
+	h.backoff.ResetDelay()
 }

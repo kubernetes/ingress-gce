@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package syncers
+package backoff
 
 import (
 	"sync"
@@ -60,7 +60,7 @@ func verifyRetryHandler(t *testing.T, expectCount int, helper *retryHandlerTestH
 
 func TestBackoffRetryHandler_Retry(t *testing.T) {
 	helper := &retryHandlerTestHelper{}
-	handler := NewDelayRetryHandler(helper.incrementCount, NewExponentialBackendOffHandler(testMaxRetries, smallTestRetryDelay, testMaxRetryDelay))
+	handler := NewDelayRetryHandler(helper.incrementCount, NewExponentialBackoffHandler(testMaxRetries, smallTestRetryDelay, testMaxRetryDelay))
 	fakeClock := clock.NewFakeClock(time.Now())
 	handler.clock = fakeClock
 	delay := smallTestRetryDelay

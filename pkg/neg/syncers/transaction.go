@@ -30,6 +30,7 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	corev1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
+	"k8s.io/ingress-gce/pkg/neg/backoff"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -79,7 +80,7 @@ type transactionSyncer struct {
 	endpointsCalculator negtypes.NetworkEndpointsCalculator
 
 	// retry handles back off retry for NEG API operations
-	retry retryHandler
+	retry backoff.RetryHandler
 
 	// reflector handles NEG readiness gate and conditions for pods in NEG.
 	reflector readiness.Reflector
@@ -154,7 +155,7 @@ func NewTransactionSyncer(
 	syncer := newSyncer(negSyncerKey, serviceLister, recorder, ts, logger)
 	// transactionSyncer needs syncer interface for internals
 	ts.syncer = syncer
-	ts.retry = NewDelayRetryHandler(func() { syncer.Sync() }, NewExponentialBackendOffHandler(maxRetries, minRetryDelay, maxRetryDelay))
+	ts.retry = backoff.NewDelayRetryHandler(func() { syncer.Sync() }, backoff.NewExponentialBackoffHandler(maxRetries, minRetryDelay, maxRetryDelay))
 	return syncer
 }
 
