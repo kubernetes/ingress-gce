@@ -21,10 +21,10 @@ import (
 	"testing"
 )
 
-func TestContainsString(t *testing.T) {
+func TestContains(t *testing.T) {
 	src := []string{"aa", "bb", "cc"}
-	if !ContainsString(src, "bb", nil) {
-		t.Errorf("ContainsString didn't find the string as expected")
+	if !Contains(src, "bb", nil) {
+		t.Errorf("Contains didn't find the string as expected")
 	}
 
 	modifier := func(s string) string {
@@ -33,12 +33,12 @@ func TestContainsString(t *testing.T) {
 		}
 		return s
 	}
-	if !ContainsString(src, "ee", modifier) {
-		t.Errorf("ContainsString didn't find the string by modifier")
+	if !Contains(src, "ee", modifier) {
+		t.Errorf("Contains didn't find the string by modifier")
 	}
 }
 
-func TestRemoveString(t *testing.T) {
+func TestRemove(t *testing.T) {
 	modifier := func(s string) string {
 		if s == "ab" {
 			return "ee"
@@ -96,8 +96,8 @@ func TestRemoveString(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		if got := RemoveString(tt.input, tt.remove, tt.modifier); !reflect.DeepEqual(got, tt.want) {
-			t.Errorf("%v: RemoveString(%v, %q, %T) = %v WANT %v", tt.testName, tt.input, tt.remove, tt.modifier, got, tt.want)
+		if got := Remove(tt.input, tt.remove, tt.modifier); !reflect.DeepEqual(got, tt.want) {
+			t.Errorf("%v: Remove(%v, %q, %T) = %v WANT %v", tt.testName, tt.input, tt.remove, tt.modifier, got, tt.want)
 		}
 	}
 }

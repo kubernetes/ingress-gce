@@ -612,7 +612,7 @@ func (c *Controller) ensureSAFinalizer(saCR *sav1.ServiceAttachment) (*sav1.Serv
 // from the provided CR.
 func (c *Controller) ensureSAFinalizerRemoved(cr *sav1.ServiceAttachment) error {
 	updatedCR := cr.DeepCopy()
-	updatedCR.Finalizers = slice.RemoveString(updatedCR.Finalizers, ServiceAttachmentFinalizerKey, nil)
+	updatedCR.Finalizers = slice.Remove(updatedCR.Finalizers, ServiceAttachmentFinalizerKey, nil)
 	_, err := c.patchServiceAttachment(cr, updatedCR)
 	return err
 }

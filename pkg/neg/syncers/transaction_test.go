@@ -2394,7 +2394,7 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 		reflector,
 		GetEndpointsCalculator(testContext.NodeInformer.GetIndexer(), testContext.PodInformer.GetIndexer(), fakeZoneGetter,
 			svcPort, mode, klog.TODO()),
-		string(kubeSystemUID),
+		kubeSystemUID,
 		testContext.SvcNegClient,
 		customName,
 		enableEndpointSlices,

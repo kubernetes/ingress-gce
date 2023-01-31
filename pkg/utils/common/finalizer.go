@@ -62,7 +62,7 @@ func HasFinalizer(m meta_v1.ObjectMeta) bool {
 
 // HasGivenFinalizer is true if the passed in meta has the specified finalizer.
 func HasGivenFinalizer(m meta_v1.ObjectMeta, key string) bool {
-	return slice.ContainsString(m.Finalizers, key, nil)
+	return slice.Contains(m.Finalizers, key, nil)
 }
 
 // EnsureFinalizer ensures that the specified finalizer exists on given Ingress.
@@ -87,7 +87,7 @@ func needToAddFinalizer(m meta_v1.ObjectMeta, key string) bool {
 func EnsureDeleteFinalizer(ing *v1.Ingress, ingClient client.IngressInterface, finalizerKey string) error {
 	if HasGivenFinalizer(ing.ObjectMeta, finalizerKey) {
 		updatedObjectMeta := ing.ObjectMeta.DeepCopy()
-		updatedObjectMeta.Finalizers = slice.RemoveString(updatedObjectMeta.Finalizers, finalizerKey, nil)
+		updatedObjectMeta.Finalizers = slice.Remove(updatedObjectMeta.Finalizers, finalizerKey, nil)
 		if _, err := PatchIngressObjectMetadata(ingClient, ing, *updatedObjectMeta); err != nil {
 			return fmt.Errorf("error patching Ingress %s/%s: %v", ing.Namespace, ing.Name, err)
 		}
@@ -118,7 +118,7 @@ func EnsureDeleteServiceFinalizer(service *corev1.Service, key string, kubeClien
 
 	// Make a copy of object metadata so we don't mutate the shared informer cache.
 	updatedObjectMeta := service.ObjectMeta.DeepCopy()
-	updatedObjectMeta.Finalizers = slice.RemoveString(updatedObjectMeta.Finalizers, key, nil)
+	updatedObjectMeta.Finalizers = slice.Remove(updatedObjectMeta.Finalizers, key, nil)
 
 	klog.V(2).Infof("Removing finalizer from service %s/%s", service.Namespace, service.Name)
 	return patch.PatchServiceObjectMetadata(kubeClient.CoreV1(), service, *updatedObjectMeta)
