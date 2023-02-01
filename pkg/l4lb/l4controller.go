@@ -482,6 +482,11 @@ func (l4c *L4Controller) needsUpdate(oldService *v1.Service, newService *v1.Serv
 			oldService.Spec.HealthCheckNodePort, newService.Spec.HealthCheckNodePort)
 		return true
 	}
+	if l4c.enableDualStack && !reflect.DeepEqual(oldService.Spec.IPFamilies, newService.Spec.IPFamilies) {
+		recorder.Eventf(newService, v1.EventTypeNormal, "IPFamilies", "%v -> %v",
+			oldService.Spec.IPFamilies, newService.Spec.IPFamilies)
+		return true
+	}
 	return false
 }
 

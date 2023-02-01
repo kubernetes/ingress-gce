@@ -638,6 +638,89 @@ func TestProcessDualStackServiceOnUserError(t *testing.T) {
 	}
 }
 
+func TestProcessUpdateILBIPFamilies(t *testing.T) {
+	testCases := []struct {
+		desc              string
+		initialIPFamilies []api_v1.IPFamily
+		finalIPFamilies   []api_v1.IPFamily
+		shouldUpdate      bool
+	}{
+		{
+			desc:              "Should update ILB on ipv4 -> ipv4, ipv6",
+			initialIPFamilies: []api_v1.IPFamily{api_v1.IPv4Protocol},
+			finalIPFamilies:   []api_v1.IPFamily{api_v1.IPv4Protocol, api_v1.IPv6Protocol},
+			shouldUpdate:      true,
+		},
+		{
+			desc:              "Should update ILB on ipv4, ipv6 -> ipv4",
+			initialIPFamilies: []api_v1.IPFamily{api_v1.IPv4Protocol, api_v1.IPv6Protocol},
+			finalIPFamilies:   []api_v1.IPFamily{api_v1.IPv4Protocol},
+			shouldUpdate:      true,
+		},
+		{
+			desc:              "Should update ILB on ipv6 -> ipv6, ipv4",
+			initialIPFamilies: []api_v1.IPFamily{api_v1.IPv6Protocol},
+			finalIPFamilies:   []api_v1.IPFamily{api_v1.IPv6Protocol, api_v1.IPv4Protocol},
+			shouldUpdate:      true,
+		},
+		{
+			desc:              "Should update ILB on ipv6, ipv4 -> ipv6",
+			initialIPFamilies: []api_v1.IPFamily{api_v1.IPv6Protocol, api_v1.IPv4Protocol},
+			finalIPFamilies:   []api_v1.IPFamily{api_v1.IPv6Protocol},
+			shouldUpdate:      true,
+		},
+		{
+			desc:              "Should not update ILB on same IP families update",
+			initialIPFamilies: []api_v1.IPFamily{api_v1.IPv6Protocol, api_v1.IPv4Protocol},
+			finalIPFamilies:   []api_v1.IPFamily{api_v1.IPv6Protocol, api_v1.IPv4Protocol},
+			shouldUpdate:      false,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			l4c := newServiceController(t, newFakeGCE())
+			l4c.enableDualStack = true
+			svc := test.NewL4ILBDualStackService(8080, api_v1.ProtocolTCP, tc.initialIPFamilies, api_v1.ServiceExternalTrafficPolicyTypeCluster)
+			addILBService(l4c, svc)
+			addNEG(l4c, svc)
+			err := l4c.sync(getKeyForSvc(svc, t))
+			if err != nil {
+				t.Errorf("Failed to sync newly added service %s, err %v", svc.Name, err)
+			}
+
+			svc, err = l4c.client.CoreV1().Services(svc.Namespace).Get(context2.TODO(), svc.Name, v1.GetOptions{})
+			if err != nil {
+				t.Errorf("Failed to lookup service %s, err: %v", svc.Name, err)
+			}
+			verifyILBServiceProvisioned(t, svc)
+
+			newSvc := svc.DeepCopy()
+			newSvc.Spec.IPFamilies = tc.finalIPFamilies
+			updateILBService(l4c, newSvc)
+
+			needsUpdate := l4c.needsUpdate(svc, newSvc)
+			if needsUpdate != tc.shouldUpdate {
+				t.Errorf("Service %v needsUpdate = %t, expected %t", newSvc, needsUpdate, tc.shouldUpdate)
+			}
+
+			err = l4c.sync(getKeyForSvc(newSvc, t))
+			if err != nil {
+				t.Errorf("Failed to sync newly updated service %s, err %v", newSvc.Name, err)
+			}
+			// List the service and ensure that the status field is updated.
+			newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
+			if err != nil {
+				t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
+			}
+			verifyILBServiceProvisioned(t, newSvc)
+		})
+	}
+}
+
 func newServiceController(t *testing.T, fakeGCE *gce.Cloud) *L4Controller {
 	kubeClient := fake.NewSimpleClientset()
 
@@ -738,8 +821,20 @@ func verifyILBServiceProvisioned(t *testing.T, svc *api_v1.Service) {
 	if !common.HasGivenFinalizer(svc.ObjectMeta, common.ILBFinalizerV2) {
 		t.Errorf("ILB v2 finalizer is not found, expected to exist, svc %+v", svc)
 	}
-	if len(svc.Status.LoadBalancer.Ingress) == 0 || svc.Status.LoadBalancer.Ingress[0].IP == "" {
-		t.Errorf("Invalid LoadBalancer status field in service - %+v", svc.Status.LoadBalancer)
+
+	ingressIPs := svc.Status.LoadBalancer.Ingress
+	expectedIPsLen := len(svc.Spec.IPFamilies)
+	// non dualstack tests do not set IPFamilies,
+	if expectedIPsLen == 0 {
+		expectedIPsLen = 1
+	}
+	if len(ingressIPs) != expectedIPsLen {
+		t.Errorf("Expected len(ingressIPs) = %d, got %d", expectedIPsLen, len(ingressIPs))
+	}
+	for _, ingress := range ingressIPs {
+		if ingress.IP == "" {
+			t.Errorf("Ingress VIP not assigned to service")
+		}
 	}
 
 	expectedAnnotationsKeys := calculateExpectedAnnotationsKeys(svc)
