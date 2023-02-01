@@ -18,6 +18,7 @@ package syncers
 
 import (
 	context2 "context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -40,6 +41,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -1412,7 +1414,7 @@ func TestUnknownNodes(t *testing.T) {
 	}
 }
 
-func TestIsValidEndpointInfo(t *testing.T) {
+func TestCheckEndpointInfo(t *testing.T) {
 	t.Parallel()
 	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType, false, true)
 
@@ -1472,7 +1474,7 @@ func TestIsValidEndpointInfo(t *testing.T) {
 		endpointsData  []negtypes.EndpointsData
 		endpointPodMap map[negtypes.NetworkEndpoint]types.NamespacedName
 		dupCount       int
-		expect         bool
+		expect         *negtypes.NegSyncResult
 	}{
 		{
 			desc: "counts equal, endpointData has no duplicated endpoints",
@@ -1544,7 +1546,7 @@ func TestIsValidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       0,
-			expect:         true,
+			expect:         negtypes.NewNegSyncResult(nil, negtypes.ResultSuccess),
 		},
 		{
 			desc: "counts equal, endpointData has duplicated endpoints",
@@ -1625,7 +1627,7 @@ func TestIsValidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       1,
-			expect:         true,
+			expect:         negtypes.NewNegSyncResult(nil, negtypes.ResultSuccess),
 		},
 		{
 			desc: "counts not equal, endpointData has no duplicated endpoints",
@@ -1688,7 +1690,7 @@ func TestIsValidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       0,
-			expect:         false,
+			expect:         negtypes.NewNegSyncResult(negtypes.ErrEPCountsDiffer, negtypes.ResultEPCountsDiffer),
 		},
 		{
 			desc: "counts not equal, endpointData has duplicated endpoints",
@@ -1760,7 +1762,7 @@ func TestIsValidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       1,
-			expect:         false,
+			expect:         negtypes.NewNegSyncResult(negtypes.ErrEPCountsDiffer, negtypes.ResultEPCountsDiffer),
 		},
 		{
 			desc: "endpointData has zero endpoint",
@@ -1794,7 +1796,7 @@ func TestIsValidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       0,
-			expect:         false,
+			expect:         negtypes.NewNegSyncResult(negtypes.ErrEPSEndpointCountZero, negtypes.ResultEPSEndpointCountZero),
 		},
 		{
 			desc: "endpointPodMap has zero endpoint",
@@ -1866,7 +1868,7 @@ func TestIsValidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: map[negtypes.NetworkEndpoint]types.NamespacedName{},
 			dupCount:       0,
-			expect:         false,
+			expect:         negtypes.NewNegSyncResult(negtypes.ErrEPCalculationCountZero, negtypes.ResultEPCalculationCountZero),
 		},
 		{
 			desc: "endpointData and endpointPodMap both have zero endpoint",
@@ -1900,7 +1902,7 @@ func TestIsValidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: map[negtypes.NetworkEndpoint]types.NamespacedName{},
 			dupCount:       0,
-			expect:         false,
+			expect:         negtypes.NewNegSyncResult(negtypes.ErrEPCalculationCountZero, negtypes.ResultEPCalculationCountZero), // PodMap count is check and returned first
 		},
 		{
 			desc: "endpointData and endpointPodMap both have non-zero endpoints",
@@ -1972,20 +1974,20 @@ func TestIsValidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       0,
-			expect:         true,
+			expect:         negtypes.NewNegSyncResult(nil, negtypes.ResultSuccess),
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			if got := transactionSyncer.isValidEndpointInfo(tc.endpointsData, tc.endpointPodMap, tc.dupCount); got != tc.expect {
-				t.Errorf("invalidEndpointInfo() = %t,  expected %t", got, tc.expect)
+			if got := transactionSyncer.checkEndpointInfo(tc.endpointsData, tc.endpointPodMap, tc.dupCount); !errors.Is(got.Error, tc.expect.Error) || got.Result != tc.expect.Result {
+				t.Errorf("checkEndpointInfo() = %v, expected %v", got, tc.expect)
 			}
 		})
 	}
 }
 
-func TestIsValidEPField(t *testing.T) {
+func TestCheckValidEPField(t *testing.T) {
 	t.Parallel()
 	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType, false, true)
 
@@ -2014,7 +2016,7 @@ func TestIsValidEPField(t *testing.T) {
 	testCases := []struct {
 		desc          string
 		endpointsData []negtypes.EndpointsData
-		expect        bool
+		expect        *negtypes.NegSyncResult
 	}{
 		{
 			desc: "no missing zone or nodeName",
@@ -2084,7 +2086,7 @@ func TestIsValidEPField(t *testing.T) {
 					},
 				},
 			},
-			expect: true,
+			expect: negtypes.NewNegSyncResult(nil, negtypes.ResultSuccess),
 		},
 		{
 			desc: "contains one missing nodeName",
@@ -2154,7 +2156,7 @@ func TestIsValidEPField(t *testing.T) {
 					},
 				},
 			},
-			expect: false,
+			expect: negtypes.NewNegSyncResult(negtypes.ErrEPMissingNodeName, negtypes.ResultEPMissingNodeName),
 		},
 		{
 			desc: "contains one empty nodeName",
@@ -2224,7 +2226,7 @@ func TestIsValidEPField(t *testing.T) {
 					},
 				},
 			},
-			expect: false,
+			expect: negtypes.NewNegSyncResult(negtypes.ErrEPMissingNodeName, negtypes.ResultEPMissingNodeName),
 		},
 		{
 			desc: "contains one missing zone",
@@ -2294,14 +2296,14 @@ func TestIsValidEPField(t *testing.T) {
 					},
 				},
 			},
-			expect: false,
+			expect: negtypes.NewNegSyncResult(negtypes.ErrEPMissingZone, negtypes.ResultEPMissingZone),
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			_, _, _, err := transactionSyncer.endpointsCalculator.CalculateEndpoints(tc.endpointsData, nil)
-			if got := transactionSyncer.isValidEPField(err); got != tc.expect {
-				t.Errorf("isValidEPField() = %t, expected %t, err: %v, ", got, tc.expect, err)
+			if got := transactionSyncer.checkValidEPField(err); !errors.Is(got.Error, tc.expect.Error) || got.Result != tc.expect.Result {
+				t.Errorf("checkValidEPField() = %v, expected %v", got.Error, tc.expect)
 			}
 		})
 	}
@@ -2396,6 +2398,7 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 			svcPort, mode, klog.TODO()),
 		string(kubeSystemUID),
 		testContext.SvcNegClient,
+		metrics.FakeSyncerMetrics(),
 		customName,
 		enableEndpointSlices,
 		klog.TODO(),

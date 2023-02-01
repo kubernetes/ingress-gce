@@ -104,6 +104,9 @@ type transactionSyncer struct {
 	// 4. Endpoint count from EPS or calculated endpoint list is 0
 	// Need to grab syncLock first for any reads or writes based on this value
 	inError bool
+
+	// syncCollector collect sync related metrics
+	syncCollector metrics.SyncerMetricsCollector
 }
 
 func NewTransactionSyncer(
@@ -121,6 +124,7 @@ func NewTransactionSyncer(
 	epc negtypes.NetworkEndpointsCalculator,
 	kubeSystemUID string,
 	svcNegClient svcnegclient.Interface,
+	syncerMetrics *metrics.SyncerMetrics,
 	customName bool,
 	enableEndpointSlices bool,
 	log klog.Logger) negtypes.NegSyncer {
@@ -145,6 +149,7 @@ func NewTransactionSyncer(
 		reflector:            reflector,
 		kubeSystemUID:        kubeSystemUID,
 		svcNegClient:         svcNegClient,
+		syncCollector:        syncerMetrics,
 		customName:           customName,
 		enableEndpointSlices: enableEndpointSlices,
 		inError:              false,
@@ -188,14 +193,17 @@ func (s *transactionSyncer) syncInternal() error {
 	defer s.syncLock.Unlock()
 
 	start := time.Now()
-	err := s.syncInternalImpl()
+	result := s.syncInternalImpl()
 
-	s.updateStatus(err)
-	metrics.PublishNegSyncMetrics(string(s.NegSyncerKey.NegType), string(s.endpointsCalculator.Mode()), err, start)
-	return err
+	s.updateStatus(result.Error)
+	metrics.PublishNegSyncMetrics(string(s.NegSyncerKey.NegType), string(s.endpointsCalculator.Mode()), result.Error, start)
+	if s.enableEndpointSlices {
+		s.syncCollector.UpdateSyncer(s.NegSyncerKey, result)
+	}
+	return result.Error
 }
 
-func (s *transactionSyncer) syncInternalImpl() error {
+func (s *transactionSyncer) syncInternalImpl() *negtypes.NegSyncResult {
 	// TODO(cheungdavid): for now we reset the boolean so it is a no-op, but
 	// in the future, it will be used to trigger degraded mode if the syncer is in error state.
 	if s.inErrorState() {
@@ -204,20 +212,20 @@ func (s *transactionSyncer) syncInternalImpl() error {
 
 	if s.needInit || s.isZoneChange() {
 		if err := s.ensureNetworkEndpointGroups(); err != nil {
-			return err
+			return negtypes.NewNegSyncResult(err, negtypes.ResultNegNotFound)
 		}
 		s.needInit = false
 	}
 
 	if s.syncer.IsStopped() || s.syncer.IsShuttingDown() {
 		s.logger.V(3).Info("Skip syncing NEG", "negSyncerKey", s.NegSyncerKey.String())
-		return nil
+		return negtypes.NewNegSyncResult(nil, negtypes.ResultSuccess)
 	}
 	s.logger.V(2).Info("Sync NEG", "negSyncerKey", s.NegSyncerKey.String(), "endpointsCalculatorMode", s.endpointsCalculator.Mode())
 
 	currentMap, err := retrieveExistingZoneNetworkEndpointMap(s.NegSyncerKey.NegName, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode())
 	if err != nil {
-		return err
+		return negtypes.NewNegSyncResult(err, negtypes.ResultCurrentEPNotFound)
 	}
 	s.logStats(currentMap, "current NEG endpoints")
 
@@ -233,11 +241,11 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	if s.enableEndpointSlices {
 		slices, err := s.endpointSliceLister.ByIndex(endpointslices.EndpointSlicesByServiceIndex, endpointslices.FormatEndpointSlicesServiceKey(s.Namespace, s.Name))
 		if err != nil {
-			return err
+			return negtypes.NewNegSyncResult(err, negtypes.ResultEPSNotFound)
 		}
 		if len(slices) < 1 {
 			s.logger.Error(nil, "Endpoint slices for the service doesn't exist. Skipping NEG sync")
-			return nil
+			return negtypes.NewNegSyncResult(nil, negtypes.ResultSuccess)
 		}
 		endpointSlices := make([]*discovery.EndpointSlice, len(slices))
 		for i, slice := range slices {
@@ -245,11 +253,17 @@ func (s *transactionSyncer) syncInternalImpl() error {
 		}
 		endpointsData := negtypes.EndpointsDataFromEndpointSlices(endpointSlices)
 		targetMap, endpointPodMap, dupCount, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
-		if !s.isValidEPField(err) || !s.isValidEndpointInfo(endpointsData, endpointPodMap, dupCount) {
+		syncResult := s.checkValidEPField(err)
+		if syncResult.Result == negtypes.ResultEPMissingNodeName || syncResult.Result == negtypes.ResultEPMissingZone {
 			s.setErrorState()
 		}
-		if err != nil {
-			return fmt.Errorf("endpoints calculation error in mode %q, err: %w", s.endpointsCalculator.Mode(), err)
+		if syncResult.Error != nil {
+			return syncResult
+		}
+		syncResult = s.checkEndpointInfo(endpointsData, endpointPodMap, dupCount)
+		if syncResult.Error != nil {
+			s.setErrorState()
+			return syncResult
 		}
 	} else {
 		ep, exists, err := s.endpointLister.Get(
@@ -261,16 +275,16 @@ func (s *transactionSyncer) syncInternalImpl() error {
 			},
 		)
 		if err != nil {
-			return err
+			return negtypes.NewNegSyncResult(err, negtypes.ResultOtherError)
 		}
 		if !exists {
 			s.logger.Info("Endpoint does not exist. Skipping NEG sync", "endpoint", klog.KRef(s.Namespace, s.Name))
-			return nil
+			return negtypes.NewNegSyncResult(nil, negtypes.ResultSuccess)
 		}
 		endpointsData := negtypes.EndpointsDataFromEndpoints(ep.(*apiv1.Endpoints))
 		targetMap, endpointPodMap, _, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
 		if err != nil {
-			return fmt.Errorf("endpoints calculation error in mode %q, err: %w", s.endpointsCalculator.Mode(), err)
+			return negtypes.NewNegSyncResult(fmt.Errorf("endpoints calculation error in mode %q, err: %w", s.endpointsCalculator.Mode(), err), negtypes.ResultOtherError)
 		}
 	}
 
@@ -295,12 +309,17 @@ func (s *transactionSyncer) syncInternalImpl() error {
 
 	if len(addEndpoints) == 0 && len(removeEndpoints) == 0 {
 		s.logger.V(3).Info("No endpoint change. Skip syncing NEG. ", s.Namespace, s.Name)
-		return nil
+		return negtypes.NewNegSyncResult(nil, negtypes.ResultSuccess)
 	}
 	s.logEndpoints(addEndpoints, "adding endpoint")
 	s.logEndpoints(removeEndpoints, "removing endpoint")
 
-	return s.syncNetworkEndpoints(addEndpoints, removeEndpoints)
+	err = s.syncNetworkEndpoints(addEndpoints, removeEndpoints)
+	if err != nil {
+		return negtypes.NewNegSyncResult(err, negtypes.ResultOtherError)
+	} else {
+		return negtypes.NewNegSyncResult(nil, negtypes.ResultSuccess)
+	}
 }
 
 // syncLock must already be acquired before execution
@@ -359,19 +378,19 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 	return utilerrors.NewAggregate(errList)
 }
 
-// isValidEndpointInfo checks if endpoint information is correct.
-// It returns false if one of the two checks fails:
+// checkEndpointInfo checks if endpoint information is correct.
+// It returns NegSyncResult with error and corresponding reason if any of the two checks fails:
 //
 //  1. The endpoint count from endpointData doesn't equal to the one from endpointPodMap:
 //     endpiontPodMap removes the duplicated endpoints, and dupCount stores the number of duplicated it removed
 //     and we compare the endpoint counts with duplicates
 //  2. The endpoint count from endpointData or the one from endpointPodMap is 0
-func (s *transactionSyncer) isValidEndpointInfo(eds []negtypes.EndpointsData, endpointPodMap negtypes.EndpointPodMap, dupCount int) bool {
+func (s *transactionSyncer) checkEndpointInfo(eds []negtypes.EndpointsData, endpointPodMap negtypes.EndpointPodMap, dupCount int) *negtypes.NegSyncResult {
 	// Endpoint count from EndpointPodMap
 	countFromPodMap := len(endpointPodMap) + dupCount
 	if countFromPodMap == 0 {
 		s.logger.Info("Detected endpoint count from endpointPodMap going to zero", "endpointPodMap", endpointPodMap)
-		return false
+		return negtypes.NewNegSyncResult(negtypes.ErrEPCalculationCountZero, negtypes.ResultEPCalculationCountZero)
 	}
 
 	// Endpoint count from EndpointData
@@ -381,34 +400,42 @@ func (s *transactionSyncer) isValidEndpointInfo(eds []negtypes.EndpointsData, en
 	}
 	if countFromEndpointData == 0 {
 		s.logger.Info("Detected endpoint count from endpointData going to zero", "endpointData", eds)
-		return false
+		return negtypes.NewNegSyncResult(negtypes.ErrEPSEndpointCountZero, negtypes.ResultEPSEndpointCountZero)
 	}
 
 	if countFromEndpointData != countFromPodMap {
 		s.logger.Info("Detected error when comparing endpoint counts", "endpointData", eds, "endpointPodMap", endpointPodMap, "dupCount", dupCount)
-		return false
+		return negtypes.NewNegSyncResult(negtypes.ErrEPCountsDiffer, negtypes.ResultEPCountsDiffer)
 	}
-	return true
+	return negtypes.NewNegSyncResult(nil, negtypes.ResultSuccess)
 }
 
-// isValidEPField returns false if there is endpoint with missing zone or nodeName
-func (s *transactionSyncer) isValidEPField(err error) bool {
-	if errors.Is(err, ErrEPMissingNodeName) {
+// checkValidEPField checks the error from endpoint calculation and return the corresponding syncResult
+func (s *transactionSyncer) checkValidEPField(err error) *negtypes.NegSyncResult {
+	if errors.Is(err, negtypes.ErrEPMissingNodeName) {
 		s.logger.Info("Detected unexpected error when checking missing nodeName", "error", err)
-		return false
+		return negtypes.NewNegSyncResult(err, negtypes.ResultEPMissingNodeName)
 	}
-	if errors.Is(err, ErrEPMissingZone) {
+	if errors.Is(err, negtypes.ErrEPMissingZone) {
 		s.logger.Info("Detected unexpected error when checking missing zone", "error", err)
-		return false
+		return negtypes.NewNegSyncResult(err, negtypes.ResultEPMissingZone)
 	}
-	return true
+	if errors.Is(err, negtypes.ErrNodeNotFound) {
+		return negtypes.NewNegSyncResult(err, negtypes.ResultNodeNotFound)
+	}
+	if err != nil {
+		return negtypes.NewNegSyncResult(err, negtypes.ResultOtherError)
+	} else {
+		return negtypes.NewNegSyncResult(nil, negtypes.ResultSuccess)
+
+	}
 }
 
 // isValidEPBatch returns false if the error from endpoint batch response is due to bad request
 func (s *transactionSyncer) isValidEPBatch(err error, operation transactionOp, networkEndpoints []*composite.NetworkEndpoint) bool {
 	apiErr, ok := err.(*googleapi.Error)
 	if !ok {
-		s.logger.Info("Detected error when parsing batch request error", "operation", operation, "error", err)
+		s.logger.Info("Detected error when parsing batch response error", "operation", operation, "error", err)
 		return false
 	}
 	errCode := apiErr.Code
@@ -499,6 +526,14 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, zone stri
 		s.recordEvent(apiv1.EventTypeWarning, operation.String()+"Failed", fmt.Sprintf("Failed to %s %d network endpoint(s) (NEG %q in zone %q): %v", operation.String(), len(networkEndpointMap), s.NegSyncerKey.NegName, zone, err))
 		if !s.isValidEPBatch(err, operation, networkEndpoints) {
 			s.setErrorState()
+			var syncResult *negtypes.NegSyncResult
+			if operation == attachOp {
+				syncResult = negtypes.NewNegSyncResult(err, negtypes.ResultInvalidEPAttach)
+			}
+			if operation == detachOp {
+				syncResult = negtypes.NewNegSyncResult(err, negtypes.ResultInvalidEPDetach)
+			}
+			s.syncCollector.UpdateSyncer(s.NegSyncerKey, syncResult)
 		}
 	}
 
