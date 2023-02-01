@@ -710,6 +710,7 @@ func (s *transactionSyncer) updateStatus(syncErr error) {
 	if _, _, exists := findCondition(neg.Status.Conditions, negv1beta1.Initialized); !exists {
 		s.needInit = true
 	}
+	metrics.PublishNegSyncerStalenessMetrics(ts.Sub(neg.Status.LastSyncTime.Time))
 
 	ensureCondition(neg, getSyncedCondition(syncErr))
 	neg.Status.LastSyncTime = ts
