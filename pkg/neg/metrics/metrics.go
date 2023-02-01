@@ -139,6 +139,8 @@ func RegisterMetrics() {
 		prometheus.MustRegister(SyncerSyncLatency)
 		prometheus.MustRegister(LastSyncTimestamp)
 		prometheus.MustRegister(InitializationLatency)
+
+		RegisterSyncerMetrics()
 	})
 }
 
