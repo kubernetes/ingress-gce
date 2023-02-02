@@ -26,15 +26,27 @@ const (
 	EPMissingField    = State("endpointMissingField")
 	EPDuplicate       = State("endpointDuplicate")
 	EPTotal           = State("endpointTotal")
+
+	EPSWithMissingNodeName = State("endpointsliceWithMissingNodeNameEP")
+	EPSWithMissingPod      = State("endpointsliceWithMissingPodEP")
+	EPSWithMissingZone     = State("endpointsliceWithMissingZoneEP")
+	EPSWithMissingField    = State("endpointsliceWithMissingFieldEP")
+	EPSWithDuplicate       = State("endpointsliceWithDuplicateEP")
+	EPSTotal               = State("endpointsliceTotal")
 )
 
 func StateForEP() []State {
 	return []State{EPMissingNodeName, EPMissingPod, EPMissingZone, EPMissingField, EPDuplicate, EPTotal}
 }
 
+func StateForEPS() []State {
+	return []State{EPSWithMissingNodeName, EPSWithMissingPod, EPSWithMissingZone, EPSWithMissingField, EPSWithDuplicate, EPSTotal}
+}
+
 // SyncerEPStat contains endpoint and endpointslice status related to a syncer
 type SyncerEPStat struct {
-	EndpointStateCount StateCountMap
+	EndpointStateCount      StateCountMap
+	EndpointSliceStateCount StateCountMap
 }
 
 // StateCountMap collect the count of instances in different states
@@ -42,6 +54,7 @@ type StateCountMap map[State]int
 
 func NewSyncerEPStat() *SyncerEPStat {
 	return &SyncerEPStat{
-		EndpointStateCount: make(map[State]int),
+		EndpointStateCount:      make(map[State]int),
+		EndpointSliceStateCount: make(map[State]int),
 	}
 }
