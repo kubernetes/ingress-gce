@@ -236,7 +236,6 @@ func (s *transactionSyncer) syncInternalImpl() *negtypes.NegSyncResult {
 
 	var targetMap map[string]negtypes.NetworkEndpointSet
 	var endpointPodMap negtypes.EndpointPodMap
-	var dupCount int
 
 	if s.enableEndpointSlices {
 		slices, err := s.endpointSliceLister.ByIndex(endpointslices.EndpointSlicesByServiceIndex, endpointslices.FormatEndpointSlicesServiceKey(s.Namespace, s.Name))
@@ -251,8 +250,10 @@ func (s *transactionSyncer) syncInternalImpl() *negtypes.NegSyncResult {
 		for i, slice := range slices {
 			endpointSlices[i] = slice.(*discovery.EndpointSlice)
 		}
+		var syncerEPStat *negtypes.SyncerEPStat
 		endpointsData := negtypes.EndpointsDataFromEndpointSlices(endpointSlices)
-		targetMap, endpointPodMap, dupCount, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
+		targetMap, endpointPodMap, syncerEPStat, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
+		s.syncCollector.SetSyncerEPMetrics(s.NegSyncerKey, syncerEPStat)
 		syncResult := s.checkValidEPField(err)
 		if syncResult.Result == negtypes.ResultEPMissingNodeName || syncResult.Result == negtypes.ResultEPMissingZone {
 			s.setErrorState()
@@ -260,7 +261,7 @@ func (s *transactionSyncer) syncInternalImpl() *negtypes.NegSyncResult {
 		if syncResult.Error != nil {
 			return syncResult
 		}
-		syncResult = s.checkEndpointInfo(endpointsData, endpointPodMap, dupCount)
+		syncResult = s.checkEndpointInfo(endpointsData, endpointPodMap, syncerEPStat.EndpointStateCount[negtypes.EPDuplicate])
 		if syncResult.Error != nil {
 			s.setErrorState()
 			return syncResult
@@ -382,7 +383,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 // It returns NegSyncResult with error and corresponding reason if any of the two checks fails:
 //
 //  1. The endpoint count from endpointData doesn't equal to the one from endpointPodMap:
-//     endpiontPodMap removes the duplicated endpoints, and dupCount stores the number of duplicated it removed
+//     endpointPodMap removes the duplicate endpoints, and dupCount stores the number of duplicate it removed
 //     and we compare the endpoint counts with duplicates
 //  2. The endpoint count from endpointData or the one from endpointPodMap is 0
 func (s *transactionSyncer) checkEndpointInfo(eds []negtypes.EndpointsData, endpointPodMap negtypes.EndpointPodMap, dupCount int) *negtypes.NegSyncResult {
