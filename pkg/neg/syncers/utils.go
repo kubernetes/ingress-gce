@@ -225,7 +225,7 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 	networkEndpointPodMap := negtypes.EndpointPodMap{}
 	var returnErr error
 	syncerEPStat := negtypes.NewSyncerEPStat()
-	epState := syncerEPStat.EndpointStateCount
+	epCount, epsCount := syncerEPStat.EndpointStateCount, syncerEPStat.EndpointSliceStateCount
 	if eds == nil {
 		klog.Errorf("Endpoint object is nil")
 		return zoneNetworkEndpointMap, networkEndpointPodMap, syncerEPStat, nil
@@ -248,8 +248,10 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 		}
 		foundMatchingPort = true
 
+		epsCount[negtypes.EPSTotal] += 1
+		epsState := make(map[negtypes.State]bool)
 		for _, endpointAddress := range ed.Addresses {
-			epState[negtypes.EPTotal] += 1
+			epCount[negtypes.EPTotal] += 1
 			// Apply the selector if Istio:DestinationRule subset labels provided.
 			if subsetLabels != "" {
 				if endpointAddress.TargetRef == nil || endpointAddress.TargetRef.Kind != "Pod" {
@@ -261,36 +263,38 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 					continue
 				}
 			}
-			missingField := false
+			epMissingField := false
 			if endpointAddress.TargetRef == nil {
-				epState[negtypes.EPMissingPod] += 1
-				missingField = true
+				epCount[negtypes.EPMissingPod] += 1
+				epsState[negtypes.EPSWithMissingPod] = true
+				epMissingField, epsState[negtypes.EPSWithMissingField] = true, true
 				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated pod. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
 			}
 			// If endpoint doesn't have nodeName
 			if endpointAddress.NodeName == nil || len(*endpointAddress.NodeName) == 0 {
-				epState[negtypes.EPMissingNodeName] += 1
-				missingField = true
+				epCount[negtypes.EPMissingNodeName] += 1
+				epMissingField, epsState[negtypes.EPSWithMissingField] = true, true
 				// prioritize error state errors over nodeNotFound
 				if returnErr == nil || errors.Is(returnErr, negtypes.ErrNodeNotFound) {
 					returnErr = negtypes.ErrEPMissingNodeName
 				}
-				if missingField {
-					epState[negtypes.EPMissingField] += 1
+				if epMissingField {
+					epCount[negtypes.EPMissingField] += 1
 					continue
 				}
 			}
 			// Get zone if nodeName is not empty
 			zone, err := zoneGetter.GetZoneForNode(*endpointAddress.NodeName)
 			if zone == "" {
-				epState[negtypes.EPMissingZone] += 1
-				missingField = true
+				epCount[negtypes.EPMissingZone] += 1
+				epsState[negtypes.EPSWithMissingZone] = true
+				epMissingField, epsState[negtypes.EPSWithMissingField] = true, true
 				if returnErr == nil || errors.Is(returnErr, negtypes.ErrNodeNotFound) {
 					returnErr = negtypes.ErrEPMissingZone
 				}
 			}
-			if missingField {
-				epState[negtypes.EPMissingField] += 1
+			if epMissingField {
+				epCount[negtypes.EPMissingField] += 1
 				continue
 			}
 			if err != nil && returnErr == nil {
@@ -318,7 +322,8 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 
 					// increment the count for duplicate endpoint
 					if _, contains := networkEndpointPodMap[networkEndpoint]; contains {
-						epState[negtypes.EPDuplicate] += 1
+						epCount[negtypes.EPDuplicate] += 1
+						epsState[negtypes.EPSWithDuplicate] = true
 						existingPod, contains := networkEndpointPodMap[networkEndpoint]
 						if contains && existingPod.Name < endpointAddress.TargetRef.Name {
 							continue // if existing name is alphabetically lower than current one, continue and don't replace
@@ -328,7 +333,13 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 				}
 			}
 		}
+		for state, exist := range epsState {
+			if exist {
+				epsCount[state] += 1
+			}
+		}
 	}
+
 	if !foundMatchingPort {
 		klog.Errorf("Service port name %q was not found in the endpoints object %+v", servicePortName, eds)
 	}
