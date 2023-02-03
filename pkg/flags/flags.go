@@ -206,7 +206,7 @@ values.`)
 the pod secrets for creating a Kubernetes client.`)
 	flag.StringVar(&F.KubeConfigFile, "kubeconfig", "",
 		`Path to kubeconfig file with authorization and master location information.`)
-	flag.DurationVar(&F.ResyncPeriod, "sync-period", 30*time.Second,
+	flag.DurationVar(&F.ResyncPeriod, "sync-period", 10*time.Minute,
 		`Relist and confirm cloud resources this often.`)
 	flag.DurationVar(&F.L4NetLBProvisionDeadline, "l4-netlb-provision-deadline", 20*time.Minute,
 		`Deadline latency for L4 NetLB provisioning.`)
