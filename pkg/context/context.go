@@ -14,20 +14,12 @@ limitations under the License.
 package context
 
 import (
-	context2 "context"
-	"fmt"
 	"sync"
 	"time"
 
 	apiv1 "k8s.io/api/core/v1"
-	apiextensionsclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
-	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/dynamic/dynamicinformer"
 	informers "k8s.io/client-go/informers"
 	informerv1 "k8s.io/client-go/informers/core/v1"
 	discoveryinformer "k8s.io/client-go/informers/discovery/v1"
@@ -73,11 +65,10 @@ const (
 
 // ControllerContext holds the state needed for the execution of the controller.
 type ControllerContext struct {
-	KubeConfig            *rest.Config
-	KubeClient            kubernetes.Interface
-	SvcNegClient          svcnegclient.Interface
-	DestinationRuleClient dynamic.NamespaceableResourceInterface
-	SAClient              serviceattachmentclient.Interface
+	KubeConfig   *rest.Config
+	KubeClient   kubernetes.Interface
+	SvcNegClient svcnegclient.Interface
+	SAClient     serviceattachmentclient.Interface
 
 	Cloud *gce.Cloud
 
@@ -88,21 +79,20 @@ type ControllerContext struct {
 	ControllerContextConfig
 	ASMConfigController *cmconfig.ConfigMapConfigController
 
-	IngressInformer         cache.SharedIndexInformer
-	ServiceInformer         cache.SharedIndexInformer
-	BackendConfigInformer   cache.SharedIndexInformer
-	FrontendConfigInformer  cache.SharedIndexInformer
-	PodInformer             cache.SharedIndexInformer
-	NodeInformer            cache.SharedIndexInformer
-	EndpointInformer        cache.SharedIndexInformer
-	EndpointSliceInformer   cache.SharedIndexInformer
-	UseEndpointSlices       bool
-	DestinationRuleInformer cache.SharedIndexInformer
-	ConfigMapInformer       cache.SharedIndexInformer
-	SvcNegInformer          cache.SharedIndexInformer
-	IngClassInformer        cache.SharedIndexInformer
-	IngParamsInformer       cache.SharedIndexInformer
-	SAInformer              cache.SharedIndexInformer
+	IngressInformer        cache.SharedIndexInformer
+	ServiceInformer        cache.SharedIndexInformer
+	BackendConfigInformer  cache.SharedIndexInformer
+	FrontendConfigInformer cache.SharedIndexInformer
+	PodInformer            cache.SharedIndexInformer
+	NodeInformer           cache.SharedIndexInformer
+	EndpointInformer       cache.SharedIndexInformer
+	EndpointSliceInformer  cache.SharedIndexInformer
+	UseEndpointSlices      bool
+	ConfigMapInformer      cache.SharedIndexInformer
+	SvcNegInformer         cache.SharedIndexInformer
+	IngClassInformer       cache.SharedIndexInformer
+	IngParamsInformer      cache.SharedIndexInformer
+	SAInformer             cache.SharedIndexInformer
 
 	ControllerMetrics *metrics.ControllerMetrics
 
@@ -243,57 +233,9 @@ func (ctx *ControllerContext) Init() {
 }
 
 func (ctx *ControllerContext) initEnableASM() {
-	const (
-		destinationRuleGroup      = "networking.istio.io"
-		destinationRuleAPIVersion = "v1alpha3"
-		destinationRulePlural     = "destinationrules"
-		// This must match the spec fields below, and be in the form: <plural>.<group>
-		destinationRuleCRDName = "destinationrules.networking.istio.io"
-	)
-
 	klog.V(0).Infof("ASM mode is enabled from ConfigMap")
 
-	apiextensionClient, err := apiextensionsclientset.NewForConfig(ctx.KubeConfig)
-	if err != nil {
-		msg := fmt.Sprintf("Failed to create ApiextensionClient for DestinationRule, disabling ASM Mode, error: %s", err)
-		ctx.ASMConfigController.RecordEvent("Warning", "FailedValidateDestinationRuleCRD", msg)
-		ctx.ASMConfigController.DisableASM()
-		return
-	}
-	destinationRuleCRD, err := apiextensionClient.ApiextensionsV1().CustomResourceDefinitions().Get(context2.TODO(), destinationRuleCRDName, metav1.GetOptions{})
-	if err != nil {
-		if errors.IsNotFound(err) {
-			ctx.ASMConfigController.RecordEvent("Warning", "FailedValidateDestinationRuleCRD", "Cannot find DestinationRule CRD, disabling ASM Mode, please check Istio setup.")
-		} else {
-			ctx.ASMConfigController.RecordEvent("Warning", "FailedValidateDestinationRuleCRD", fmt.Sprintf("Failed to load DestinationRule CRD, disabling the ASM Mode, please check Istio setup. Error: %s", err))
-		}
-		ctx.ASMConfigController.DisableASM()
-		return
-	}
-	if destinationRuleCRD.Spec.Versions[0].Name != destinationRuleAPIVersion {
-		ctx.ASMConfigController.RecordEvent("Warning", "FailedValidateDestinationRuleCRD", fmt.Sprintf("Only Support Istio API: %s, but found %s, disabling the ASM Mode, please check Istio setup.",
-			destinationRuleAPIVersion, destinationRuleCRD.Spec.Versions[0].Name))
-		ctx.ASMConfigController.DisableASM()
-		return
-	}
-
-	dynamicClient, err := dynamic.NewForConfig(ctx.KubeConfig)
-	if err != nil {
-		msg := fmt.Sprintf("Failed to create kubernetes dynamic client, disabling ASM Mode, please retry. Error: %v", err)
-		klog.Error(msg)
-		ctx.ASMConfigController.RecordEvent("Warning", "FailedCreateDynamicClient", msg)
-		ctx.ASMConfigController.DisableASM()
-		return
-	}
-
-	klog.V(2).Infof("The supported DestinationRule group version is %s in group %s. Need to update as istio API graduates.", destinationRuleAPIVersion, destinationRuleGroup)
-	destinationGVR := schema.GroupVersionResource{Group: destinationRuleGroup, Version: destinationRuleAPIVersion, Resource: destinationRulePlural}
-	drDynamicInformer := dynamicinformer.NewFilteredDynamicInformer(dynamicClient, destinationGVR, ctx.Namespace, ctx.ResyncPeriod,
-		cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc},
-		nil)
-	ctx.DestinationRuleInformer = drDynamicInformer.Informer()
-	ctx.DestinationRuleClient = dynamicClient.Resource(destinationGVR)
-	ctx.ASMConfigController.RecordEvent("Normal", "ASMModeOn", fmt.Sprintf("NEG controller is running in ASM Mode with Istio API: %s.", destinationRuleAPIVersion))
+	ctx.ASMConfigController.RecordEvent("Normal", "ASMModeOn", "NEG controller is running in ASM Mode")
 	ctx.ASMConfigController.SetASMReadyTrue()
 }
 
@@ -318,10 +260,6 @@ func (ctx *ControllerContext) HasSynced() bool {
 
 	if ctx.FrontendConfigInformer != nil {
 		funcs = append(funcs, ctx.FrontendConfigInformer.HasSynced)
-	}
-
-	if ctx.DestinationRuleInformer != nil {
-		funcs = append(funcs, ctx.DestinationRuleInformer.HasSynced)
 	}
 
 	if ctx.ConfigMapInformer != nil {
@@ -408,9 +346,6 @@ func (ctx *ControllerContext) Start(stopCh chan struct{}) {
 	}
 	if ctx.FrontendConfigInformer != nil {
 		go ctx.FrontendConfigInformer.Run(stopCh)
-	}
-	if ctx.DestinationRuleInformer != nil {
-		go ctx.DestinationRuleInformer.Run(stopCh)
 	}
 	if ctx.EnableASMConfigMap && ctx.ConfigMapInformer != nil {
 		go ctx.ConfigMapInformer.Run(stopCh)

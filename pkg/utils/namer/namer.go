@@ -80,11 +80,6 @@ const (
 	// - 8 (truncated cluster id) - 8 (suffix hash) - 4 (hyphen connector) = 38
 	maxNEGDescriptiveLabel = 38
 
-	// maxNEGDescriptiveLabelASM is the max length for namespace, name,
-	// port and DestinationRule subset for neg name. It use one more hyphen
-	// connector compared to maxNEGDescriptiveLabel
-	maxNEGDescriptiveLabelASM = maxNEGDescriptiveLabel - 1
-
 	// schemaVersionV1 is the version 1 naming scheme for NEG
 	schemaVersionV1 = "1"
 )
@@ -446,28 +441,6 @@ func (n *Namer) NEG(namespace, name string, port int32) string {
 	truncName := truncFields[1]
 	truncPort := truncFields[2]
 	return fmt.Sprintf("%s-%s-%s-%s-%s", n.negPrefix(), truncNamespace, truncName, truncPort, negSuffix(n.shortUID(), namespace, name, portStr, ""))
-}
-
-// NEGWithSubset returns the gce neg name based on the service namespace, name
-// target port and Istio:DestinationRule subset. NEG naming convention:
-//
-//	{prefix}{version}-{clusterid}-{namespace}-{name}-{service port}-{destination rule subset}-{hash}
-//
-// Output name is at most 63 characters. NEG tries to keep as much
-// information as possible.
-//
-// WARNING: Controllers depend on the naming pattern to get the list
-// of all NEGs associated with the current cluster. Any modifications
-// must be backward compatible.
-func (n *Namer) NEGWithSubset(namespace, name, subset string, port int32) string {
-	portStr := fmt.Sprintf("%v", port)
-	truncFields := TrimFieldsEvenly(maxNEGDescriptiveLabelASM, namespace, name, portStr, subset)
-	truncNamespace := truncFields[0]
-	truncName := truncFields[1]
-	truncPort := truncFields[2]
-	truncSubset := truncFields[3]
-
-	return fmt.Sprintf("%s-%s-%s-%s-%s-%s", n.negPrefix(), truncNamespace, truncName, truncPort, truncSubset, negSuffix(n.shortUID(), namespace, name, portStr, subset))
 }
 
 // IsNEG returns true if the name is a NEG owned by this cluster.

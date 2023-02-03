@@ -21,18 +21,14 @@ import (
 	"fmt"
 	"time"
 
-	istioV1alpha3 "istio.io/api/networking/v1alpha3"
 	apiv1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
 	v1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	apimachinerytypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	unversionedcore "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -76,8 +72,6 @@ type Controller struct {
 	serviceLister               cache.Indexer
 	client                      kubernetes.Interface
 	defaultBackendService       utils.ServicePort
-	destinationRuleLister       cache.Indexer
-	destinationRuleClient       dynamic.NamespaceableResourceInterface
 	enableASM                   bool
 	asmServiceNEGSkipNamespaces []string
 
@@ -87,9 +81,6 @@ type Controller struct {
 	endpointQueue workqueue.RateLimitingInterface
 	// nodeQueue takes node name as work item.
 	nodeQueue workqueue.RateLimitingInterface
-
-	// destinationRuleQueue takes Istio DestinationRule key as work item. DestinationRule key with format "namespace/name"
-	destinationRuleQueue workqueue.RateLimitingInterface
 
 	// syncTracker tracks the latest time that service and endpoint changes are processed
 	syncTracker utils.TimeTracker
@@ -112,7 +103,6 @@ type Controller struct {
 func NewController(
 	kubeClient kubernetes.Interface,
 	svcNegClient svcnegclient.Interface,
-	destinationRuleClient dynamic.NamespaceableResourceInterface,
 	kubeSystemUID types.UID,
 	ingressInformer cache.SharedIndexInformer,
 	serviceInformer cache.SharedIndexInformer,
@@ -120,7 +110,6 @@ func NewController(
 	nodeInformer cache.SharedIndexInformer,
 	endpointInformer cache.SharedIndexInformer,
 	endpointSliceInformer cache.SharedIndexInformer,
-	destinationRuleInformer cache.SharedIndexInformer,
 	svcNegInformer cache.SharedIndexInformer,
 	hasSynced func() bool,
 	controllerMetrics *usage.ControllerMetrics,
@@ -319,15 +308,6 @@ func NewController(
 	if enableAsm {
 		negController.enableASM = enableAsm
 		negController.asmServiceNEGSkipNamespaces = asmServiceNEGSkipNamespaces
-		negController.destinationRuleLister = destinationRuleInformer.GetIndexer()
-		destinationRuleInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc:    negController.enqueueDestinationRule,
-			DeleteFunc: negController.enqueueDestinationRule,
-			UpdateFunc: func(old, cur interface{}) {
-				negController.enqueueDestinationRule(cur)
-			},
-		})
-		negController.destinationRuleClient = destinationRuleClient
 	}
 	return negController
 }
@@ -484,30 +464,29 @@ func (c *Controller) processService(key string) error {
 		return err
 	}
 	negUsage.StandaloneNeg = len(svcPortInfoMap) - negUsage.IngressNeg
-	csmSVCPortInfoMap, destinationRulesPortInfoMap, err := c.getCSMPortInfoMap(namespace, name, service)
-	if err != nil {
-		return err
-	}
-	negUsage.AsmNeg = len(csmSVCPortInfoMap) + len(destinationRulesPortInfoMap)
 
-	// merges csmSVCPortInfoMap, because eventually those NEG will sync with the service annotation.
-	// merges destinationRulesPortInfoMap later, because we only want them sync with the DestinationRule annotation.
-	if err := svcPortInfoMap.Merge(csmSVCPortInfoMap); err != nil {
-		return fmt.Errorf("failed to merge CSM service PortInfoMap: %v, error: %w", csmSVCPortInfoMap, err)
+	if c.enableASM {
+		csmSVCPortInfoMap, err := c.getCSMPortInfoMap(namespace, name, service)
+		if err != nil {
+			return err
+		}
+		negUsage.AsmNeg = len(csmSVCPortInfoMap)
+
+		// merges csmSVCPortInfoMap, because eventually those NEG will sync with the service annotation.
+		if err := svcPortInfoMap.Merge(csmSVCPortInfoMap); err != nil {
+			return fmt.Errorf("failed to merge CSM service PortInfoMap: %v, error: %w", csmSVCPortInfoMap, err)
+		}
 	}
+
 	if c.runL4 {
 		if err := c.mergeVmIpNEGsPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap, &negUsage); err != nil {
 			return err
 		}
 	}
-	if len(svcPortInfoMap) != 0 || len(destinationRulesPortInfoMap) != 0 {
+	if len(svcPortInfoMap) != 0 {
 		c.logger.V(2).Info("Syncing service", "service", key)
 		if err = c.syncNegStatusAnnotation(namespace, name, svcPortInfoMap); err != nil {
 			return err
-		}
-		// Merge destinationRule related NEG after the Service NEGStatus Sync, we don't want DR related NEG status go into service.
-		if err := svcPortInfoMap.Merge(destinationRulesPortInfoMap); err != nil {
-			return fmt.Errorf("failed to merge service ports referenced by Istio:DestinationRule (%v): %w", destinationRulesPortInfoMap, err)
 		}
 		negUsage.SuccessfulNeg, negUsage.ErrorNeg, err = c.manager.EnsureSyncers(namespace, name, svcPortInfoMap)
 		c.collector.SetNegService(key, negUsage)
@@ -651,40 +630,22 @@ func (c *Controller) mergeDefaultBackendServicePortInfoMap(key string, service *
 	return scanIngress(utils.IsGCEIngress)
 }
 
-// getCSMPortInfoMap gets the PortInfoMap for service and DestinationRules.
-// If enableCSM = true, the controller will create NEGs for every port/subsets combinations for the DestinationRules.
-// It will also create NEGs for all the ports of the service that referred by the DestinationRules.
-func (c *Controller) getCSMPortInfoMap(namespace, name string, service *apiv1.Service) (negtypes.PortInfoMap, negtypes.PortInfoMap, error) {
-	destinationRulesPortInfoMap := make(negtypes.PortInfoMap)
+// getCSMPortInfoMap returns the PortInfoMap used when ASM is enabled. The controller will create NEGs for every port of the service
+// NOTE: The output of this function should only be used when enableASM = true.
+func (c *Controller) getCSMPortInfoMap(namespace, name string, service *apiv1.Service) (negtypes.PortInfoMap, error) {
 	servicePortInfoMap := make(negtypes.PortInfoMap)
-	if c.enableASM {
-		// Find all destination rules that using this service.
-		destinationRules := getDestinationRulesFromStore(c.destinationRuleLister, service, c.logger)
-		// Fill all service ports into portinfomap
-		servicePorts := gatherPortMappingFromService(service)
-		for namespacedName, destinationRule := range destinationRules {
-			destinationRulePortInfoMap, err := negtypes.NewPortInfoMapWithDestinationRule(namespace, name, servicePorts, c.namer, false, destinationRule)
-			if err != nil {
-				c.logger.Error(err, "DestinationRule contains duplicated subset, creating NEGs for the newer ones.", "destinationRule", namespacedName.Name)
-			}
-			if err := destinationRulesPortInfoMap.Merge(destinationRulePortInfoMap); err != nil {
-				return servicePortInfoMap, destinationRulesPortInfoMap, fmt.Errorf("failed to merge service ports referenced by Istio:DestinationRule (%v): %w", destinationRulePortInfoMap, err)
-			}
-			if err = c.syncDestinationRuleNegStatusAnnotation(namespacedName.Namespace, namespacedName.Name, destinationRulePortInfoMap); err != nil {
-				return servicePortInfoMap, destinationRulesPortInfoMap, err
-			}
-		}
-		// Create NEGs for every ports of the services.
-		if service.Spec.Selector == nil || len(service.Spec.Selector) == 0 {
-			c.logger.Info("Skip NEG creation for services that with no selector", "service", klog.KRef(namespace, name))
-		} else if contains(c.asmServiceNEGSkipNamespaces, namespace) {
-			c.logger.Info("Skip NEG creation for services in namespace", "namespace", namespace)
-		} else {
-			servicePortInfoMap = negtypes.NewPortInfoMap(namespace, name, servicePorts, c.namer, false, nil)
-		}
-		return servicePortInfoMap, destinationRulesPortInfoMap, nil
+	// Fill all service ports into portinfomap
+	servicePorts := gatherPortMappingFromService(service)
+
+	// Create NEGs for every port of the services.
+	if service.Spec.Selector == nil || len(service.Spec.Selector) == 0 {
+		c.logger.Info("Skip NEG creation for services that with no selector", "service", klog.KRef(namespace, name))
+	} else if contains(c.asmServiceNEGSkipNamespaces, namespace) {
+		c.logger.Info("Skip NEG creation for services in namespace", "namespace", namespace)
+	} else {
+		servicePortInfoMap = negtypes.NewPortInfoMap(namespace, name, servicePorts, c.namer, false, nil)
 	}
-	return servicePortInfoMap, destinationRulesPortInfoMap, nil
+	return servicePortInfoMap, nil
 }
 
 // syncNegStatusAnnotation syncs the neg status annotation
@@ -729,48 +690,6 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 	newSvcObjectMeta.Annotations[annotations.NEGStatusKey] = annotation
 	c.logger.V(2).Info("Updating NEG visibility annotation on service", "annotation", annotation, "service", klog.KRef(namespace, name))
 	return patch.PatchServiceObjectMetadata(coreClient, service, *newSvcObjectMeta)
-}
-
-// syncDestinationRuleNegStatusAnnotation syncs the destinationrule related neg status annotation
-func (c *Controller) syncDestinationRuleNegStatusAnnotation(namespace, destinationRuleName string, portmap negtypes.PortInfoMap) error {
-	zones, err := c.zoneGetter.ListZones(negtypes.NodePredicateForEndpointCalculatorMode(portmap.EndpointsCalculatorMode()))
-	if err != nil {
-		return err
-	}
-	dsClient := c.destinationRuleClient.Namespace(namespace)
-	destinationRule, err := dsClient.Get(context.TODO(), destinationRuleName, metav1.GetOptions{})
-	drAnnotations := destinationRule.GetAnnotations()
-	if drAnnotations == nil {
-		drAnnotations = make(map[string]string)
-	}
-	if len(portmap) == 0 {
-		delete(drAnnotations, annotations.NEGStatusKey)
-		c.logger.V(2).Info("Removing NEG status annotation from DestinationRule", "namespace", namespace, "destinationRule", destinationRule)
-	} else {
-		negStatus := annotations.NewDestinationRuleNegStatus(zones, portmap.ToPortSubsetNegMap())
-		negStatuAnnotation, err := negStatus.Marshal()
-		if err != nil {
-			return err
-		}
-		drAnnotations[annotations.NEGStatusKey] = negStatuAnnotation
-
-		existingAnnotation, ok := destinationRule.GetAnnotations()[annotations.NEGStatusKey]
-		if ok && existingAnnotation == drAnnotations[annotations.NEGStatusKey] {
-			return nil
-		}
-	}
-	newDestinationRule := destinationRule.DeepCopy()
-	newDestinationRule.SetAnnotations(drAnnotations)
-	// Get the diff, we only need the Object meta diff.
-	patchBytes, err := patch.StrategicMergePatchBytes(destinationRule, newDestinationRule, struct {
-		metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
-	}{})
-	if err != nil {
-		return err
-	}
-	c.logger.V(2).Info("Updating NEG visibility annotation on Istio:DestinationRule", "annotation", string(patchBytes), "namespace", namespace, "destinationRuleName", destinationRuleName)
-	_, err = dsClient.Patch(context.TODO(), destinationRuleName, apimachinerytypes.MergePatchType, patchBytes, metav1.PatchOptions{})
-	return err
 }
 
 func (c *Controller) handleErr(err error, key interface{}) {
@@ -854,22 +773,6 @@ func (c *Controller) enqueueIngressServices(ing *v1.Ingress) {
 	}
 }
 
-// enqueueDestinationRule will enqueue the service used by obj.
-func (c *Controller) enqueueDestinationRule(obj interface{}) {
-	drus, ok := obj.(*unstructured.Unstructured)
-	if !ok {
-		c.logger.Error(nil, "Failed to convert informer object to Unstructured object")
-		return
-	}
-	targetServiceNamespace, drHost, _, err := castToDestinationRule(drus)
-	if err != nil {
-		c.logger.Error(nil, "Failed to convert informer object to DestinationRule")
-		return
-	}
-	svcKey := utils.ServiceKeyFunc(targetServiceNamespace, drHost)
-	c.enqueueService(cache.ExplicitKey(svcKey))
-}
-
 func (c *Controller) gc() {
 	if err := c.manager.GC(); err != nil {
 		c.logger.Error(err, "NEG controller garbage collection failed")
@@ -937,7 +840,7 @@ func getIngressServicesFromStore(store cache.Store, svc *apiv1.Service) (ings []
 }
 
 // gatherPortMappingFromService returns PortMapping for all ports of the service.
-// Mapping all ports since Istio DestinationRule is using all ports.
+// GSM uses all ports
 func gatherPortMappingFromService(svc *apiv1.Service) negtypes.SvcPortTupleSet {
 	svcPortTupleSet := make(negtypes.SvcPortTupleSet)
 	for _, svcPort := range svc.Spec.Ports {
@@ -948,24 +851,4 @@ func gatherPortMappingFromService(svc *apiv1.Service) negtypes.SvcPortTupleSet {
 		})
 	}
 	return svcPortTupleSet
-}
-
-// getDestinationRulesFromStore returns all DestinationRules that referring service svc.
-// Please notice that a DestinationRule can point to a service in a different namespace.
-func getDestinationRulesFromStore(store cache.Store, svc *apiv1.Service, logger klog.Logger) (drs map[apimachinerytypes.NamespacedName]*istioV1alpha3.DestinationRule) {
-	drs = make(map[apimachinerytypes.NamespacedName]*istioV1alpha3.DestinationRule)
-	for _, obj := range store.List() {
-		drUnstructured := obj.(*unstructured.Unstructured)
-		targetServiceNamespace, drHost, dr, err := castToDestinationRule(drUnstructured)
-		if err != nil {
-			logger.Error(err, "Failed to cast Unstructured DestinationRule to DestinationRule")
-			continue
-		}
-
-		if targetServiceNamespace == svc.Namespace && drHost == svc.Name {
-			// We want to return DestinationRule namespace but not the target service namespace.
-			drs[apimachinerytypes.NamespacedName{Namespace: drUnstructured.GetNamespace(), Name: drUnstructured.GetName()}] = dr
-		}
-	}
-	return
 }
