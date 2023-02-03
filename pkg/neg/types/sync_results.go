@@ -13,6 +13,38 @@ limitations under the License.
 
 package types
 
+import "errors"
+
+var (
+	ResultEPCountsDiffer = "EPCountsDiffer"
+	ErrEPCountsDiffer    = errors.New("endpoint counts from endpointData and endpointPodMap differ")
+
+	ResultEPMissingNodeName = "EPMissingNodeName"
+	ErrEPMissingNodeName    = errors.New("endpoint has empty nodeName field")
+
+	ResultNodeNotFound = "NodeNotFound"
+	ErrNodeNotFound    = errors.New("failed to retrieve associated zone of node")
+
+	ResultEPMissingZone = "EPMissingZone"
+	ErrEPMissingZone    = errors.New("endpoint has empty zone field")
+
+	ResultEPSEndpointCountZero = "EPSEndpointCountZero"
+	ErrEPSEndpointCountZero    = errors.New("endpoint count from endpointData cannot be zero")
+
+	ResultEPCalculationCountZero = "EPCalculationCountZero"
+	ErrEPCalculationCountZero    = errors.New("endpoint count from endpointPodMap cannot be zero")
+
+	// these results have their own errors
+	ResultInvalidEPAttach   = "InvalidEPAttach"
+	ResultInvalidEPDetach   = "InvalidEPDetach"
+	ResultNegNotFound       = "NegNotFound"
+	ResultCurrentEPNotFound = "CurrentEPNotFound"
+	ResultEPSNotFound       = "EPSNotFound"
+	ResultOtherError        = "OtherError"
+	ResultInProgress        = "InProgress"
+	ResultSuccess           = "Success"
+)
+
 type NegSyncResult struct {
 	Error  error
 	Result string
