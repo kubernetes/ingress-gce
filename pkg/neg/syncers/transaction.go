@@ -104,6 +104,9 @@ type transactionSyncer struct {
 	// 4. Endpoint count from EPS or calculated endpoint list is 0
 	// Need to grab syncLock first for any reads or writes based on this value
 	inError bool
+
+	// syncCollector collect sync related metrics
+	syncCollector metrics.SyncerMetricsCollector
 }
 
 func NewTransactionSyncer(
@@ -121,6 +124,7 @@ func NewTransactionSyncer(
 	epc negtypes.NetworkEndpointsCalculator,
 	kubeSystemUID string,
 	svcNegClient svcnegclient.Interface,
+	syncerMetrics *metrics.SyncerMetrics,
 	customName bool,
 	enableEndpointSlices bool,
 	log klog.Logger) negtypes.NegSyncer {
@@ -145,6 +149,7 @@ func NewTransactionSyncer(
 		reflector:            reflector,
 		kubeSystemUID:        kubeSystemUID,
 		svcNegClient:         svcNegClient,
+		syncCollector:        syncerMetrics,
 		customName:           customName,
 		enableEndpointSlices: enableEndpointSlices,
 		inError:              false,
