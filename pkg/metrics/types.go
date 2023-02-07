@@ -73,21 +73,21 @@ type L4ILBServiceState struct {
 	IsUserError bool
 }
 
-type L4ILBDualStackServiceStateStatus string
+type L4DualStackServiceStatus string
 
-const StatusSuccess = L4ILBDualStackServiceStateStatus("Success")
-const StatusUserError = L4ILBDualStackServiceStateStatus("UserError")
-const StatusError = L4ILBDualStackServiceStateStatus("Error")
+const StatusSuccess = L4DualStackServiceStatus("Success")
+const StatusUserError = L4DualStackServiceStatus("UserError")
+const StatusError = L4DualStackServiceStatus("Error")
 
-// L4ILBDualStackServiceState defines ipFamilies, ipFamilyPolicy and status
+// L4DualStackServiceState defines ipFamilies, ipFamilyPolicy and status
 // of L4 ILB DualStack service
-type L4ILBDualStackServiceState struct {
+type L4DualStackServiceState struct {
 	// IPFamilies stores spec.ipFamilies of Service
 	IPFamilies string
 	// IPFamilyPolicy specifies spec.IPFamilyPolicy of Service
 	IPFamilyPolicy string
-	// Status specifies status of L4 ILB DualStack
-	Status L4ILBDualStackServiceStateStatus
+	// Status specifies status of L4 DualStack Service
+	Status L4DualStackServiceStatus
 }
 
 // L4NetLBServiceState defines if network tier is premium and

@@ -57,22 +57,25 @@ type L4NetLB struct {
 // L4NetLBSyncResult contains information about the outcome of an L4 NetLB sync. It stores the list of resource name annotations,
 // sync error, the GCE resource that hit the error along with the error type, metrics and more fields.
 type L4NetLBSyncResult struct {
-	Annotations        map[string]string
-	Error              error
-	GCEResourceInError string
-	Status             *corev1.LoadBalancerStatus
-	MetricsState       metrics.L4NetLBServiceState
-	SyncType           string
-	StartTime          time.Time
+	Annotations           map[string]string
+	Error                 error
+	GCEResourceInError    string
+	Status                *corev1.LoadBalancerStatus
+	MetricsState          metrics.L4NetLBServiceState
+	DualStackMetricsState metrics.L4DualStackServiceState
+	SyncType              string
+	StartTime             time.Time
 }
 
-func NewL4SyncResult(syncType string) *L4NetLBSyncResult {
+func NewL4SyncResult(syncType string, svc *corev1.Service) *L4NetLBSyncResult {
+	startTime := time.Now()
 	result := &L4NetLBSyncResult{
-		Annotations: make(map[string]string),
-		StartTime:   time.Now(),
-		SyncType:    syncType,
+		Annotations:           make(map[string]string),
+		StartTime:             startTime,
+		SyncType:              syncType,
+		MetricsState:          metrics.InitL4NetLBServiceState(&startTime),
+		DualStackMetricsState: metrics.InitServiceDualStackMetricsState(svc),
 	}
-	result.MetricsState = metrics.InitL4NetLBServiceState(&result.StartTime)
 	return result
 }
 
@@ -80,6 +83,7 @@ func NewL4SyncResult(syncType string) *L4NetLBSyncResult {
 func (r *L4NetLBSyncResult) SetMetricsForSuccessfulServiceSync() {
 	r.MetricsState.FirstSyncErrorTime = nil
 	r.MetricsState.InSuccess = true
+	r.DualStackMetricsState.Status = metrics.StatusSuccess
 }
 
 type L4NetLBParams struct {
@@ -117,7 +121,7 @@ func (l4netlb *L4NetLB) createKey(name string) (*meta.Key, error) {
 // It returns a LoadBalancerStatus with the updated ForwardingRule IP address.
 // This function does not link instances to Backend Service.
 func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) *L4NetLBSyncResult {
-	result := NewL4SyncResult(SyncTypeCreate)
+	result := NewL4SyncResult(SyncTypeCreate, svc)
 	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
 	if len(svc.Status.LoadBalancer.Ingress) > 0 {
 		result.SyncType = SyncTypeUpdate
@@ -281,7 +285,7 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 // EnsureLoadBalancerDeleted performs a cleanup of all GCE resources for the given loadbalancer service.
 // It is health check, firewall rules and backend service
 func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *L4NetLBSyncResult {
-	result := NewL4SyncResult(SyncTypeDelete)
+	result := NewL4SyncResult(SyncTypeDelete, svc)
 	l4netlb.Service = svc
 
 	l4netlb.deleteIPv4ResourcesOnDelete(result)

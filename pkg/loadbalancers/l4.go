@@ -65,7 +65,7 @@ type L4ILBSyncResult struct {
 	GCEResourceInError    string
 	Status                *corev1.LoadBalancerStatus
 	MetricsState          metrics.L4ILBServiceState
-	DualStackMetricsState metrics.L4ILBDualStackServiceState
+	DualStackMetricsState metrics.L4DualStackServiceState
 	SyncType              string
 	StartTime             time.Time
 }
@@ -287,7 +287,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		Annotations:           make(map[string]string),
 		StartTime:             time.Now(),
 		SyncType:              SyncTypeCreate,
-		DualStackMetricsState: l4.getInitialDualStackMetricsState(),
+		DualStackMetricsState: metrics.InitServiceDualStackMetricsState(svc),
 	}
 
 	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
@@ -532,26 +532,6 @@ func (l4 *L4) hasAnnotation(annotationKey string) bool {
 		return true
 	}
 	return false
-}
-
-func (l4 *L4) getInitialDualStackMetricsState() metrics.L4ILBDualStackServiceState {
-	// Always init stats with error, and update with Success when service was provisioned
-	state := metrics.L4ILBDualStackServiceState{
-		Status: metrics.StatusError,
-	}
-
-	var ipFamiliesStrings []string
-	for _, ipFamily := range l4.Service.Spec.IPFamilies {
-		ipFamiliesStrings = append(ipFamiliesStrings, string(ipFamily))
-	}
-	state.IPFamilies = strings.Join(ipFamiliesStrings, ",")
-
-	state.IPFamilyPolicy = ""
-	if l4.Service.Spec.IPFamilyPolicy != nil {
-		state.IPFamilyPolicy = string(*l4.Service.Spec.IPFamilyPolicy)
-	}
-
-	return state
 }
 
 func (l4 *L4) getOldForwardingRule() (*composite.ForwardingRule, error) {

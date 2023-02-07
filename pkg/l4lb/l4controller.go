@@ -500,7 +500,7 @@ func (l4c *L4Controller) publishMetrics(result *loadbalancers.L4ILBSyncResult, n
 		klog.V(6).Infof("Internal L4 Loadbalancer for Service %s ensured, updating its state %v in metrics cache", namespacedName, result.MetricsState)
 		l4c.ctx.ControllerMetrics.SetL4ILBService(namespacedName, result.MetricsState)
 		if l4c.enableDualStack {
-			klog.V(6).Infof("Internal L4 DualStack Loadbalancer for Service %s ensured, updating its state %v in metrics cache", namespacedName, result.MetricsState)
+			klog.V(6).Infof("Internal L4 DualStack Loadbalancer for Service %s ensured, updating its state %v in metrics cache", namespacedName, result.DualStackMetricsState)
 			l4c.ctx.ControllerMetrics.SetL4ILBDualStackService(namespacedName, result.DualStackMetricsState)
 		}
 		l4metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime)
