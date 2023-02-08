@@ -734,6 +734,39 @@ var (
 			[]utils.ServicePort{},
 			nil,
 		},
+		{
+			"sslpolicy for L7-ILB with user specified static ip",
+			&v1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: defaultNamespace,
+					Name:      "ingress18",
+					Annotations: map[string]string{
+						annotations.RegionalStaticIPNameKey: "user-spec-static-ip",
+						ingressClassKey:                     "gce-internal",
+					},
+				},
+				Spec: v1.IngressSpec{
+					DefaultBackend: &v1.IngressBackend{
+						Service: &v1.IngressServiceBackend{
+							Name: "dummy-service",
+							Port: v1.ServiceBackendPort{
+								Number: int32(80),
+							},
+						},
+					},
+					Rules: []v1.IngressRule{},
+				},
+			},
+			&frontendconfigv1beta1.FrontendConfig{
+				Spec: frontendconfigv1beta1.FrontendConfigSpec{
+					SslPolicy: utils.NewStringPointer("test-policy"),
+				},
+			},
+			[]feature{ingress, internalIngress, httpEnabled,
+				specifiedStaticRegionalIP, sslPolicy},
+			[]utils.ServicePort{},
+			nil,
+		},
 	}
 )
 

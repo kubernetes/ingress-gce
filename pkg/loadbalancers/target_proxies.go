@@ -36,9 +36,11 @@ const (
 func (l7 *L7) checkProxy() (err error) {
 	// Get UrlMap Name, could be the url map or the redirect url map
 	// TODO(shance): move to translator
+	isL7ILB := utils.IsGCEL7ILBIngress(l7.runtimeInfo.Ingress)
+
 	var umName string
 	if flags.F.EnableFrontendConfig {
-		if l7.redirectUm != nil && l7.runtimeInfo.FrontendConfig.Spec.RedirectToHttps != nil && l7.runtimeInfo.FrontendConfig.Spec.RedirectToHttps.Enabled {
+		if !isL7ILB && l7.redirectUm != nil && l7.runtimeInfo.FrontendConfig.Spec.RedirectToHttps != nil && l7.runtimeInfo.FrontendConfig.Spec.RedirectToHttps.Enabled {
 			umName = l7.redirectUm.Name
 		} else {
 			umName = l7.um.Name
@@ -52,7 +54,6 @@ func (l7 *L7) checkProxy() (err error) {
 		return err
 	}
 
-	isL7ILB := utils.IsGCEL7ILBIngress(l7.runtimeInfo.Ingress)
 	tr := translator.NewTranslator(isL7ILB, l7.namer)
 
 	description, err := l7.description()

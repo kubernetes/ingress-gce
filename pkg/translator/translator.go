@@ -322,7 +322,7 @@ func (t *Translator) ToCompositeTargetHttpsProxy(env *Env, description string, v
 	}
 	var sslPolicySet bool
 	if flags.F.EnableFrontendConfig {
-		sslPolicy, err := sslPolicyLink(env)
+		sslPolicy, err := sslPolicyLink(env, t.IsL7ILB)
 		if err != nil {
 			return nil, sslPolicySet, err
 		}
@@ -377,7 +377,7 @@ func (t *Translator) ToCompositeSSLCertificates(env *Env, tlsName string, tls []
 // 1) policy is nil -> this returns nil
 // 2) policy is an empty string -> this returns an empty string
 // 3) policy is non-empty -> this constructs the resource path and returns it
-func sslPolicyLink(env *Env) (*string, error) {
+func sslPolicyLink(env *Env, isL7ILB bool) (*string, error) {
 	var link string
 
 	if env.FrontendConfig == nil {
@@ -392,13 +392,24 @@ func sslPolicyLink(env *Env) (*string, error) {
 		return &link, nil
 	}
 
-	resourceID := cloud.ResourceID{
-		Resource: "sslPolicies",
-		Key:      meta.GlobalKey(*policyName),
-	}
+	resourceID := setResourceID(env, policyName, isL7ILB)
 	resID := resourceID.ResourcePath()
 
 	return &resID, nil
+}
+
+func setResourceID(env *Env, policyName *string, isL7ILB bool) cloud.ResourceID {
+	if isL7ILB {
+		return cloud.ResourceID{
+			Resource: "sslPolicies",
+			Key:      meta.RegionalKey(*policyName, env.Region),
+		}
+	}
+
+	return cloud.ResourceID{
+		Resource: "sslPolicies",
+		Key:      meta.GlobalKey(*policyName),
+	}
 }
 
 // TODO(shance): find a way to unexport this

@@ -248,7 +248,12 @@ func featuresForIngress(ing *v1.Ingress, fc *frontendconfigv1beta1.FrontendConfi
 			features = append(features, sslPolicy)
 		}
 		if fc.Spec.RedirectToHttps != nil && fc.Spec.RedirectToHttps.Enabled {
-			features = append(features, httpsRedirects)
+			if val, ok := ingAnnotations[annotations.IngressClassKey]; !ok {
+				features = append(features, httpsRedirects)
+				if ok && val != annotations.GceL7ILBIngressClass {
+					features = append(features, httpsRedirects)
+				}
+			}
 		}
 	}
 

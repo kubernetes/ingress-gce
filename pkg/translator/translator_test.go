@@ -704,9 +704,11 @@ func TestToCompositeSSLCertificates(t *testing.T) {
 func TestSslPolicyLink(t *testing.T) {
 	t.Parallel()
 	testCases := []struct {
-		desc string
-		fc   *frontendconfigv1beta1.FrontendConfig
-		want *string
+		desc    string
+		fc      *frontendconfigv1beta1.FrontendConfig
+		isL7ILB bool
+		region  string
+		want    *string
 	}{
 		{
 			desc: "Empty frontendconfig",
@@ -728,12 +730,19 @@ func TestSslPolicyLink(t *testing.T) {
 			fc:   &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: utils.NewStringPointer("")}},
 			want: utils.NewStringPointer(""),
 		},
+		{
+			desc:    "frontendconfig for L7-ILB with regional ssl policy",
+			fc:      &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: utils.NewStringPointer("regional-test-policy")}},
+			isL7ILB: true,
+			region:  "fake-region",
+			want:    utils.NewStringPointer("regions/fake-region/sslPolicies/regional-test-policy"),
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			env := &Env{FrontendConfig: tc.fc}
-			result, err := sslPolicyLink(env)
+			env := &Env{FrontendConfig: tc.fc, Region: tc.region}
+			result, err := sslPolicyLink(env, tc.isL7ILB)
 			if err != nil {
 				t.Errorf("sslPolicyLink() = %v, want nil", err)
 			}

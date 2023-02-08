@@ -122,28 +122,14 @@ func SetSslPolicyForTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetH
 	switch targetHttpsProxy.Version {
 	case meta.VersionAlpha:
 		ref := &computealpha.SslPolicyReference{SslPolicy: SslPolicyLink}
-		switch key.Type() {
-		case meta.Regional:
-			return fmt.Errorf("SetSslPolicy() is not supported for regional Target Https Proxies")
-		default:
-			return mc.Observe(gceCloud.Compute().AlphaTargetHttpsProxies().SetSslPolicy(ctx, key, ref))
-		}
+		return mc.Observe(gceCloud.Compute().AlphaTargetHttpsProxies().SetSslPolicy(ctx, key, ref))
 	case meta.VersionBeta:
 		ref := &computebeta.SslPolicyReference{SslPolicy: SslPolicyLink}
-		switch key.Type() {
-		case meta.Regional:
-			return fmt.Errorf("SetSslPolicy() is not supported for regional Target Https Proxies")
-		default:
-			return mc.Observe(gceCloud.Compute().BetaTargetHttpsProxies().SetSslPolicy(ctx, key, ref))
-		}
+		return mc.Observe(gceCloud.Compute().BetaTargetHttpsProxies().SetSslPolicy(ctx, key, ref))
+
 	default:
 		ref := &compute.SslPolicyReference{SslPolicy: SslPolicyLink}
-		switch key.Type() {
-		case meta.Regional:
-			return fmt.Errorf("SetSslPolicy() is not supported for regional Target Https Proxies")
-		default:
-			return mc.Observe(gceCloud.Compute().TargetHttpsProxies().SetSslPolicy(ctx, key, ref))
-		}
+		return mc.Observe(gceCloud.Compute().TargetHttpsProxies().SetSslPolicy(ctx, key, ref))
 	}
 }
 
