@@ -74,7 +74,7 @@ func (l7s *L7s) Ensure(ri *L7RuntimeInfo) (*L7, error) {
 	}
 
 	if err := lb.edgeHop(); err != nil {
-		return nil, fmt.Errorf("loadbalancer %v configuration faild: %v", lb.String(), err)
+		return nil, fmt.Errorf("loadbalancer %v configuration failed: %v", lb.String(), err)
 	}
 	return lb, nil
 }
