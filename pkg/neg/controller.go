@@ -694,10 +694,17 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 	if err != nil {
 		return err
 	}
-	coreClient := c.client.CoreV1()
-	service, err := coreClient.Services(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	obj, exists, err := c.serviceLister.GetByKey(getServiceKey(namespace, name).Key())
 	if err != nil {
 		return err
+	}
+	if !exists {
+		// Service no longer exists so doesn't require any update.
+		return nil
+	}
+	service, ok := obj.(*apiv1.Service)
+	if !ok {
+		return fmt.Errorf("cannot convert obj to Service; obj=%T", obj)
 	}
 
 	// Remove NEG Status Annotation when no NEG is needed
@@ -706,12 +713,11 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 			newSvcObjectMeta := service.ObjectMeta.DeepCopy()
 			delete(newSvcObjectMeta.Annotations, annotations.NEGStatusKey)
 			c.logger.V(2).Info("Removing NEG status annotation from service", "service", klog.KRef(namespace, name))
-			return patch.PatchServiceObjectMetadata(coreClient, service, *newSvcObjectMeta)
+			return patch.PatchServiceObjectMetadata(c.client.CoreV1(), service, *newSvcObjectMeta)
 		}
 		// service doesn't have the expose NEG annotation and doesn't need update
 		return nil
 	}
-
 	negStatus := annotations.NewNegStatus(zones, portMap.ToPortNegMap())
 	annotation, err := negStatus.Marshal()
 	if err != nil {
@@ -728,7 +734,7 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 	}
 	newSvcObjectMeta.Annotations[annotations.NEGStatusKey] = annotation
 	c.logger.V(2).Info("Updating NEG visibility annotation on service", "annotation", annotation, "service", klog.KRef(namespace, name))
-	return patch.PatchServiceObjectMetadata(coreClient, service, *newSvcObjectMeta)
+	return patch.PatchServiceObjectMetadata(c.client.CoreV1(), service, *newSvcObjectMeta)
 }
 
 // syncDestinationRuleNegStatusAnnotation syncs the destinationrule related neg status annotation
