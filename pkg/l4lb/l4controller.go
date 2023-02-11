@@ -47,8 +47,9 @@ import (
 
 const (
 	// The max tolerated delay between update being enqueued and sync being invoked.
-	enqueueToSyncDelayThreshold = 15 * time.Minute
-	l4ILBControllerName         = "l4-ilb-subsetting-controller"
+	enqueueToSyncDelayThreshold  = 15 * time.Minute
+	l4ILBControllerName          = "l4-ilb-subsetting-controller"
+	l4ILBDualStackControllerName = "l4-ilb-dualstack-controller"
 )
 
 // L4Controller manages the create/update delete of all L4 Internal LoadBalancer services.
@@ -150,11 +151,16 @@ func (l4c *L4Controller) checkHealth() error {
 	// if lastEnqueue time is more than 30 minutes before the last sync time, the controller is falling behind.
 	// This indicates that the controller was stuck handling a previous update, or sync function did not get invoked.
 	syncTimeLatest := lastEnqueueTime.Add(enqueueToSyncDelayThreshold)
+	controllerHealth := l4metrics.ControllerHealthyStatus
 	if lastSyncTime.After(syncTimeLatest) {
 		msg := fmt.Sprintf("L4 ILB Sync happened at time %v - %v after enqueue time, threshold is %v", lastSyncTime, lastSyncTime.Sub(lastEnqueueTime), enqueueToSyncDelayThreshold)
 		// Log here, context/http handler do no log the error.
 		klog.Error(msg)
 		l4metrics.PublishL4FailedHealthCheckCount(l4ILBControllerName)
+		controllerHealth = l4metrics.ControllerUnhealthyStatus
+	}
+	if l4c.enableDualStack {
+		l4metrics.PublishL4ControllerHealthCheckStatus(l4ILBDualStackControllerName, controllerHealth)
 	}
 	return nil
 }

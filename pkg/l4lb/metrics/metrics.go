@@ -32,6 +32,7 @@ const (
 	L4netlbErrorMetricName                         = "l4_netlb_sync_error_count"
 	L4netlbLegacyToRBSMigrationPreventedMetricName = "l4_netlb_legacy_to_rbs_migration_prevented_count"
 	l4failedHealthCheckName                        = "l4_failed_healthcheck_count"
+	l4ControllerHealthCheckName                    = "l4_controller_healthcheck"
 )
 
 var (
@@ -91,6 +92,13 @@ var (
 		},
 		[]string{"controller_name"},
 	)
+	l4ControllerHealthCheck = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: l4ControllerHealthCheckName,
+			Help: "Count l4 controller healthcheck",
+		},
+		[]string{"controller_name", "status"},
+	)
 	l4NetLBLegacyToRBSPrevented = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: L4netlbLegacyToRBSMigrationPreventedMetricName,
@@ -108,6 +116,8 @@ func init() {
 	prometheus.MustRegister(l4NetLBSyncLatency, l4NetLBSyncErrorCount)
 	klog.V(3).Infof("Registering L4 healthcheck failures count metric: %v", l4FailedHealthCheckCount)
 	prometheus.MustRegister(l4FailedHealthCheckCount)
+	klog.V(3).Infof("Registering L4 controller healthcheck metric: %v", l4ControllerHealthCheck)
+	prometheus.MustRegister(l4ControllerHealthCheck)
 }
 
 // PublishILBSyncMetrics exports metrics related to the L4 ILB sync.
@@ -146,6 +156,16 @@ func PublishL4NetLBSyncError(syncType, gceResource, errType string, startTime ti
 // PublishL4FailedHealthCheckCount observers failed health check from controller.
 func PublishL4FailedHealthCheckCount(controllerName string) {
 	l4FailedHealthCheckCount.WithLabelValues(controllerName).Inc()
+}
+
+type L4ControllerHealthCheckStatus string
+
+const ControllerHealthyStatus = L4ControllerHealthCheckStatus("Healthy")
+const ControllerUnhealthyStatus = L4ControllerHealthCheckStatus("Unhealthy")
+
+// PublishL4ControllerHealthCheckStatus stores health state of the controller.
+func PublishL4ControllerHealthCheckStatus(controllerName string, status L4ControllerHealthCheckStatus) {
+	l4ControllerHealthCheck.WithLabelValues(controllerName, string(status)).Inc()
 }
 
 // IncreaseL4NetLBLegacyToRBSMigrationAttempts increases l4NetLBLegacyToRBSPrevented metric for stopped migration

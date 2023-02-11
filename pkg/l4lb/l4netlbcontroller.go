@@ -42,7 +42,10 @@ import (
 	"k8s.io/klog/v2"
 )
 
-const l4NetLBControllerName = "l4netlb-controller"
+const (
+	l4NetLBControllerName          = "l4netlb-controller"
+	l4NetLBDualStackControllerName = "l4netlb-dualstack-controller"
+)
 
 type L4NetLBController struct {
 	ctx           *context.ControllerContext
@@ -354,11 +357,16 @@ func (lc *L4NetLBController) checkHealth() error {
 	// if lastEnqueue time is more than 15 minutes before the last sync time, the controller is falling behind.
 	// This indicates that the controller was stuck handling a previous update, or sync function did not get invoked.
 	syncTimeLatest := lastEnqueueTime.Add(enqueueToSyncDelayThreshold)
+	controllerHealth := metrics.ControllerHealthyStatus
 	if lastSyncTime.After(syncTimeLatest) {
 		msg := fmt.Sprintf("L4 External LoadBalancer Sync happened at time %v - %v after enqueue time, threshold is %v", lastSyncTime, lastSyncTime.Sub(lastEnqueueTime), enqueueToSyncDelayThreshold)
 		// Log here, context/http handler do no log the error.
 		klog.Error(msg)
 		metrics.PublishL4FailedHealthCheckCount(l4NetLBControllerName)
+		controllerHealth = metrics.ControllerUnhealthyStatus
+	}
+	if lc.enableDualStack {
+		metrics.PublishL4ControllerHealthCheckStatus(l4NetLBDualStackControllerName, controllerHealth)
 	}
 	return nil
 }
