@@ -9,6 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apimachinerytypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
+	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/utils/patch"
@@ -23,13 +24,13 @@ type ConfigMapConfigController struct {
 	configMapName          string
 	currentConfig          *Config
 	currentConfigMapObject *v1.ConfigMap
+	configMapLister        corelisters.ConfigMapLister
 	kubeClient             kubernetes.Interface
 	recorder               record.EventRecorder
 }
 
 // NewConfigMapConfigController creates a new ConfigMapConfigController, it will load the config from the target configmap
 func NewConfigMapConfigController(kubeClient kubernetes.Interface, recorder record.EventRecorder, configMapNamespace, configMapName string) *ConfigMapConfigController {
-
 	currentConfig := NewConfig()
 	cm, err := kubeClient.CoreV1().ConfigMaps(configMapNamespace).Get(context.TODO(), configMapName, metav1.GetOptions{})
 	if err != nil {
@@ -112,6 +113,7 @@ func (c *ConfigMapConfigController) RecordEvent(eventtype, reason, message strin
 // RegisterInformer register the configmap based config controller handler to the configMapInformer which will watch the target
 // configmap and send stop message to the stopCh if any valid change detected.
 func (c *ConfigMapConfigController) RegisterInformer(configMapInformer cache.SharedIndexInformer, cancel func()) {
+	c.configMapLister = corelisters.NewConfigMapLister(configMapInformer.GetIndexer())
 	configMapInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			c.processItem(obj, cancel)
@@ -141,7 +143,7 @@ func (c *ConfigMapConfigController) processItem(obj interface{}, cancel func()) 
 	}
 
 	config := NewConfig()
-	cm, err := c.kubeClient.CoreV1().ConfigMaps(c.configMapNamespace).Get(context.TODO(), c.configMapName, metav1.GetOptions{})
+	cm, err := c.configMapLister.ConfigMaps(c.configMapNamespace).Get(c.configMapName)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			klog.Infof("ConfigMapConfigController: Not found the configmap based config, using default config: %v", config)
