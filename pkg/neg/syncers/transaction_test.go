@@ -40,6 +40,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -2396,6 +2397,7 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 			svcPort, mode, klog.TODO()),
 		string(kubeSystemUID),
 		testContext.SvcNegClient,
+		metrics.FakeSyncerMetrics(),
 		customName,
 		enableEndpointSlices,
 		klog.TODO(),

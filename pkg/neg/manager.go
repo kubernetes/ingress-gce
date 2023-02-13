@@ -81,6 +81,9 @@ type syncerManager struct {
 	// syncerMap stores the NEG syncer
 	// key consists of service namespace, name and targetPort. Value is the corresponding syncer.
 	syncerMap map[negtypes.NegSyncerKey]negtypes.NegSyncer
+	// syncCollector collect sync related metrics
+	syncerMetrics *metrics.SyncerMetrics
+
 	// reflector handles NEG readiness gate and conditions for pods in NEG.
 	reflector readiness.Reflector
 	//svcNegClient handles lifecycle operations for NEG CRs
@@ -114,6 +117,7 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 	endpointSliceLister cache.Indexer,
 	nodeLister cache.Indexer,
 	svcNegLister cache.Indexer,
+	syncerMetrics *metrics.SyncerMetrics,
 	enableNonGcpMode bool,
 	enableEndpointSlices bool,
 	logger klog.Logger) *syncerManager {
@@ -135,6 +139,7 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 		svcNegLister:         svcNegLister,
 		svcPortMap:           make(map[serviceKey]negtypes.PortInfoMap),
 		syncerMap:            make(map[negtypes.NegSyncerKey]negtypes.NegSyncer),
+		syncerMetrics:        syncerMetrics,
 		svcNegClient:         svcNegClient,
 		kubeSystemUID:        kubeSystemUID,
 		enableNonGcpMode:     enableNonGcpMode,
@@ -227,6 +232,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				epc,
 				string(manager.kubeSystemUID),
 				manager.svcNegClient,
+				manager.syncerMetrics,
 				!manager.namer.IsNEG(portInfo.NegName),
 				manager.enableEndpointSlices,
 				manager.logger,
