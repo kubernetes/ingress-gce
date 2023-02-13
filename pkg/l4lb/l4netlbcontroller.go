@@ -19,6 +19,7 @@ package l4lb
 import (
 	"fmt"
 	"reflect"
+	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -428,6 +429,12 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 		return nil
 	}
 
+	startTime := time.Now()
+	klog.Infof("Syncing L4 NetLB RBS service %s/%s", service.Namespace, service.Name)
+	defer func() {
+		klog.Infof("Finished syncing L4 NetLB RBS service %s/%s, time taken: %v", service.Namespace, service.Name, time.Since(startTime))
+	}()
+
 	if err := common.EnsureServiceFinalizer(service, common.NetLBFinalizerV2, lc.ctx.KubeClient); err != nil {
 		return &loadbalancers.L4NetLBSyncResult{Error: fmt.Errorf("Failed to attach L4 External LoadBalancer finalizer to service %s/%s, err %w", service.Namespace, service.Name, err)}
 	}
@@ -479,6 +486,11 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 }
 
 func (lc *L4NetLBController) ensureBackendLinking(service *v1.Service) error {
+	start := time.Now()
+	klog.V(2).Infof("Linking backend service with instance groups for service %s/%s", service.Namespace, service.Name)
+	defer func() {
+		klog.V(2).Infof("Finished linking backend service with instance groups for service %s/%s, time taken: %v", service.Namespace, service.Name, time.Since(start))
+	}()
 	zones, err := lc.translator.ListZones(utils.CandidateNodesPredicate)
 	if err != nil {
 		return err
@@ -489,7 +501,6 @@ func (lc *L4NetLBController) ensureBackendLinking(service *v1.Service) error {
 	servicePort := utils.ServicePort{
 		ID:           portId,
 		BackendNamer: lc.namer,
-		NodePort:     utils.GetServiceNodePort(service),
 		L4RBSEnabled: true,
 	}
 
@@ -499,16 +510,30 @@ func (lc *L4NetLBController) ensureBackendLinking(service *v1.Service) error {
 func (lc *L4NetLBController) ensureInstanceGroups(service *v1.Service, nodeNames []string) error {
 	// TODO(kl52752) Move instance creation and deletion logic to NodeController
 	// to avoid race condition between controllers
-	nodePorts := utils.GetNodePorts(service.Spec.Ports)
-	_, err := lc.instancePool.EnsureInstanceGroupsAndPorts(lc.ctx.ClusterNamer.InstanceGroup(), nodePorts)
+	start := time.Now()
+	klog.V(2).Infof("Ensuring instance groups for L4 NetLB Service %s/%s, len(nodeNames): %v", service.Namespace, service.Name, len(nodeNames))
+	defer func() {
+		klog.V(2).Infof("Finished ensuring instance groups for L4 NetLB Service %s/%s, time taken: %v", service.Namespace, service.Name, time.Since(start))
+	}()
+
+	// L4 NetLB does not use node ports, so we provide empty slice
+	var nodePorts []int64
+	igName := lc.ctx.ClusterNamer.InstanceGroup()
+	_, err := lc.instancePool.EnsureInstanceGroupsAndPorts(igName, nodePorts)
 	if err != nil {
-		return err
+		return fmt.Errorf("lc.instancePool.EnsureInstanceGroupsAndPorts(%s, %v) returned error %w", igName, nodePorts, err)
 	}
+
 	return lc.instancePool.Sync(nodeNames)
 }
 
 // garbageCollectRBSNetLB cleans-up all gce resources related to service and removes NetLB finalizer
 func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service) *loadbalancers.L4NetLBSyncResult {
+	startTime := time.Now()
+	klog.Infof("Deleting L4 NetLB RBS service %s/%s", svc.Namespace, svc.Name)
+	defer func() {
+		klog.Infof("Finished deleting L4 NetLB service %s/%s, time taken: %v", svc.Namespace, svc.Name, time.Since(startTime))
+	}()
 	l4NetLBParams := &loadbalancers.L4NetLBParams{
 		Service:  svc,
 		Cloud:    lc.ctx.Cloud,

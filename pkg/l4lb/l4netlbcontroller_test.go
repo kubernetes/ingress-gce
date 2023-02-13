@@ -650,18 +650,16 @@ func TestProcessServiceCreationFailed(t *testing.T) {
 		addMockFunc   func(*cloud.MockGCE)
 		expectedError string
 	}{{addMockFunc: func(c *cloud.MockGCE) { c.MockInstanceGroups.GetHook = test.GetErrorInstanceGroupHook },
-		expectedError: "GetErrorInstanceGroupHook"},
+		expectedError: "lc.instancePool.EnsureInstanceGroupsAndPorts(k8s-ig--aaaaa, []) returned error GetErrorInstanceGroupHook"},
 		{addMockFunc: func(c *cloud.MockGCE) { c.MockInstanceGroups.ListHook = test.ListErrorHook },
 			expectedError: "ListErrorHook"},
 		{addMockFunc: func(c *cloud.MockGCE) { c.MockInstanceGroups.InsertHook = test.InsertErrorHook },
-			expectedError: "InsertErrorHook"},
+			expectedError: "lc.instancePool.EnsureInstanceGroupsAndPorts(k8s-ig--aaaaa, []) returned error InsertErrorHook"},
 
 		{addMockFunc: func(c *cloud.MockGCE) { c.MockInstanceGroups.AddInstancesHook = test.AddInstancesErrorHook },
 			expectedError: "AddInstances: [AddInstancesErrorHook]"},
 		{addMockFunc: func(c *cloud.MockGCE) { c.MockInstanceGroups.ListInstancesHook = test.ListInstancesWithErrorHook },
 			expectedError: "ListInstancesWithErrorHook"},
-		{addMockFunc: func(c *cloud.MockGCE) { c.MockInstanceGroups.SetNamedPortsHook = test.SetNamedPortsErrorHook },
-			expectedError: "SetNamedPortsErrorHook"},
 	} {
 		lc := newL4NetLBServiceController()
 		param.addMockFunc((lc.ctx.Cloud.Compute().(*cloud.MockGCE)))
