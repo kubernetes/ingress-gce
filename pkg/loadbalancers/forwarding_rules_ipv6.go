@@ -32,12 +32,13 @@ import (
 )
 
 func (l4 *L4) ensureIPv6ForwardingRule(bsLink string, options gce.ILBOptions) (*composite.ForwardingRule, error) {
+	start := time.Now()
+
 	expectedIPv6FwdRule, err := l4.buildExpectedIPv6ForwardingRule(bsLink, options)
 	if err != nil {
 		return nil, fmt.Errorf("l4.buildExpectedIPv6ForwardingRule(%s, %v) returned error %w, want nil", bsLink, options, err)
 	}
 
-	start := time.Now()
 	klog.V(2).Infof("Ensuring internal ipv6 forwarding rule %s for L4 ILB Service %s/%s, backend service link: %s", expectedIPv6FwdRule.Name, l4.Service.Namespace, l4.Service.Name, bsLink)
 	defer func() {
 		klog.V(2).Infof("Finished ensuring internal ipv6 forwarding rule %s for L4 ILB Service %s/%s, time taken: %v", expectedIPv6FwdRule.Name, l4.Service.Namespace, l4.Service.Name, time.Since(start))
@@ -128,10 +129,17 @@ func (l4 *L4) deleteChangedIPv6ForwardingRule(existingFwdRule *composite.Forward
 }
 
 func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.ForwardingRule, error) {
+	start := time.Now()
+
 	expectedIPv6FwdRule, err := l4netlb.buildExpectedIPv6ForwardingRule(bsLink)
 	if err != nil {
 		return nil, fmt.Errorf("l4netlb.buildExpectedIPv6ForwardingRule(%s) returned error %w, want nil", bsLink, err)
 	}
+
+	klog.V(2).Infof("Ensuring external ipv6 forwarding rule %s for L4 NetLB Service %s/%s, backend service link: %s", expectedIPv6FwdRule.Name, l4netlb.Service.Namespace, l4netlb.Service.Name, bsLink)
+	defer func() {
+		klog.V(2).Infof("Finished ensuring external ipv6 forwarding rule %s for L4 NetLB Service %s/%s, time taken: %v", expectedIPv6FwdRule.Name, l4netlb.Service.Namespace, l4netlb.Service.Name, time.Since(start))
+	}()
 
 	existingIPv6FwdRule, err := l4netlb.forwardingRules.Get(expectedIPv6FwdRule.Name)
 	if err != nil {

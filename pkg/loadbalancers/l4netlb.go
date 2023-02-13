@@ -355,9 +355,10 @@ func (l4netlb *L4NetLB) deleteIPv4ResourcesAnnotationBased(result *L4NetLBSyncRe
 }
 
 func (l4netlb *L4NetLB) deleteIPv4ForwardingRule() error {
+	start := time.Now()
+
 	frName := l4netlb.frName()
 
-	start := time.Now()
 	klog.V(2).Infof("Deleting IPv4 external forwarding rule %s for L4 NetLB Service %s/%s", frName, l4netlb.Service.Namespace, l4netlb.Service.Name)
 	defer func() {
 		klog.V(2).Infof("Finished deleting IPv4 external forwarding rule %s for L4 NetLB Service %s/%s, time taken: %v", frName, l4netlb.Service.Namespace, l4netlb.Service.Name, time.Since(start))
@@ -379,9 +380,10 @@ func (l4netlb *L4NetLB) deleteIPv4Address() error {
 }
 
 func (l4netlb *L4NetLB) deleteIPv4NodesFirewall() error {
+	start := time.Now()
+
 	firewallName := l4netlb.namer.L4Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)
 
-	start := time.Now()
 	klog.V(2).Infof("Deleting IPv4 nodes firewall %s for L4 NetLB Service %s/%s", firewallName, l4netlb.Service.Namespace, l4netlb.Service.Name)
 	defer func() {
 		klog.V(2).Infof("Finished deleting IPv4 nodes firewall %s for L4 NetLB Service %s/%s, time taken: %v", firewallName, l4netlb.Service.Namespace, l4netlb.Service.Name, time.Since(start))

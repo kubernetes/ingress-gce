@@ -156,9 +156,10 @@ func (l4 *L4) ensureIPv6NodesFirewall(forwardingRule *composite.ForwardingRule, 
 }
 
 func (l4 *L4) deleteIPv6ForwardingRule() error {
+	start := time.Now()
+
 	ipv6FrName := l4.getIPv6FRName()
 
-	start := time.Now()
 	klog.V(2).Infof("Deleting IPv6 forwarding rule %s for L4 ILB Service %s/%s", ipv6FrName, l4.Service.Namespace, l4.Service.Name)
 	defer func() {
 		klog.V(2).Infof("Finished deleting IPv6 forwarding rule %s for L4 ILB Service %s/%s, time taken: %v", ipv6FrName, l4.Service.Namespace, l4.Service.Name, time.Since(start))

@@ -207,11 +207,12 @@ func (l7 *L7) getEffectiveIP() (string, bool, error) {
 // ensureIPv4ForwardingRule creates a forwarding rule with the given name, if it does not exist. It updates the existing
 // forwarding rule if needed.
 func (l4 *L4) ensureIPv4ForwardingRule(bsLink string, options gce.ILBOptions, existingFwdRule *composite.ForwardingRule, subnetworkURL, ipToUse string) (*composite.ForwardingRule, error) {
+	start := time.Now()
+
 	// version used for creating the existing forwarding rule.
 	version := meta.VersionGA
 	frName := l4.GetFRName()
 
-	start := time.Now()
 	klog.V(2).Infof("Ensuring internal forwarding rule %s for L4 ILB Service %s/%s, backend service link: %s", frName, l4.Service.Namespace, l4.Service.Name, bsLink)
 	defer func() {
 		klog.V(2).Infof("Finished ensuring internal forwarding rule %s for L4 ILB Service %s/%s, time taken: %v", frName, l4.Service.Namespace, l4.Service.Name, time.Since(start))

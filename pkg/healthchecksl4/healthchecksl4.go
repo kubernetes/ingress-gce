@@ -208,9 +208,10 @@ func (l4hc *l4HealthChecks) ensureHealthCheck(hcName string, svcName types.Names
 // L4 ILB and L4 NetLB Services with ExternalTrafficPolicy=Cluster use the same firewall
 // rule at global scope.
 func (l4hc *l4HealthChecks) ensureIPv4Firewall(svc *corev1.Service, namer namer.L4ResourcesNamer, hcPort int32, isSharedHC bool, nodeNames []string, hcResult *EnsureHealthCheckResult) {
+	start := time.Now()
+
 	hcFwName := namer.L4HealthCheckFirewall(svc.Namespace, svc.Name, isSharedHC)
 
-	start := time.Now()
 	klog.V(2).Infof("Ensuring IPv4 Firewall for health check %s for service %s/%s, health check port %d, shared health check: %t, len(nodeNames): %d", hcFwName, svc.Namespace, svc.Name, hcPort, isSharedHC, len(nodeNames))
 	defer func() {
 		klog.V(2).Infof("Finished ensuring IPv4 firewall for health check %s for service %s/%s, time taken %v", hcFwName, svc.Namespace, svc.Name, time.Since(start))
@@ -302,9 +303,10 @@ func (l4hc *l4HealthChecks) deleteHealthCheckWithDualStackFirewalls(svc *corev1.
 }
 
 func (l4hc *l4HealthChecks) deleteHealthCheck(svc *corev1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType) (bool, error) {
+	start := time.Now()
+
 	hcName := namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
 
-	start := time.Now()
 	klog.V(3).Infof("Deleting L4 healthcheck %s for service %s/%s, shared: %v, scope: %v", hcName, svc.Namespace, svc.Name, sharedHC, scope)
 	defer func() {
 		klog.V(3).Infof("Finished deleting L4 healthcheck %s for service %s/%s, time taken: %v", hcName, svc.Namespace, svc.Name, time.Since(start))
@@ -337,10 +339,11 @@ func (l4hc *l4HealthChecks) deleteIPv4HealthCheckFirewall(svc *corev1.Service, n
 }
 
 func (l4hc *l4HealthChecks) deleteIPv6HealthCheckFirewall(svc *corev1.Service, namer namer.L4ResourcesNamer, isSharedHC bool, l4type utils.L4LBType) (string, error) {
+	start := time.Now()
+
 	hcName := namer.L4HealthCheck(svc.Namespace, svc.Name, isSharedHC)
 	ipv6hcFwName := namer.L4IPv6HealthCheckFirewall(svc.Namespace, svc.Name, isSharedHC)
 
-	start := time.Now()
 	klog.V(3).Infof("Deleting IPv6 Firewall %s for health check %s", ipv6hcFwName, hcName)
 	defer func() {
 		klog.V(3).Infof("Finished deleting IPv6 Firewall %s for health check %s, time taken: %v", ipv6hcFwName, hcName, time.Since(start))
