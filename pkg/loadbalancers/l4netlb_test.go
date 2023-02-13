@@ -363,7 +363,7 @@ func TestEnsureExternalDualStackLoadBalancer(t *testing.T) {
 
 			fakeGCE := getFakeGCECloud(vals)
 
-			svc := test.NewL4NetLBRBSDualStackService(8080, v1.ProtocolTCP, tc.ipFamilies, tc.trafficPolicy)
+			svc := test.NewL4NetLBRBSDualStackService(v1.ProtocolTCP, tc.ipFamilies, tc.trafficPolicy)
 
 			l4NetLBParams := &L4NetLBParams{
 				Service:          svc,
@@ -400,12 +400,8 @@ func TestEnsureExternalDualStackLoadBalancer(t *testing.T) {
 // - Protocol
 // - IPFamilies
 // for dual-stack service. In total 400 combinations
-func TestDualStackNetLBLoadBalancerTransitions(t *testing.T) {
+func TestDualStackNetLBTransitions(t *testing.T) {
 	t.Parallel()
-	nodeNames := []string{"test-node-1"}
-	vals := gce.DefaultTestClusterValues()
-
-	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 
 	trafficPolicyStates := []v1.ServiceExternalTrafficPolicyType{v1.ServiceExternalTrafficPolicyTypeLocal, v1.ServiceExternalTrafficPolicyTypeCluster}
 	protocols := []v1.Protocol{v1.ProtocolTCP, v1.ProtocolUDP}
@@ -417,76 +413,32 @@ func TestDualStackNetLBLoadBalancerTransitions(t *testing.T) {
 		{},
 	}
 
+	type testCase struct {
+		desc                 string
+		initialIPFamily      []v1.IPFamily
+		finalIPFamily        []v1.IPFamily
+		initialTrafficPolicy v1.ServiceExternalTrafficPolicyType
+		finalTrafficPolicy   v1.ServiceExternalTrafficPolicyType
+		initialProtocol      v1.Protocol
+		finalProtocol        v1.Protocol
+	}
+
+	var testCases []testCase
+
 	for _, initialIPFamily := range ipFamiliesStates {
 		for _, finalIPFamily := range ipFamiliesStates {
 			for _, initialTrafficPolicy := range trafficPolicyStates {
 				for _, finalTrafficPolicy := range trafficPolicyStates {
 					for _, initialProtocol := range protocols {
 						for _, finalProtocol := range protocols {
-							initialIPFamily := initialIPFamily
-							finalIPFamily := finalIPFamily
-							initialTrafficPolicy := initialTrafficPolicy
-							finalTrafficPolicy := finalTrafficPolicy
-							initialProtocol := initialProtocol
-							finalProtocol := finalProtocol
-
-							var stringInitialIPFamily []string
-							for _, f := range initialIPFamily {
-								stringInitialIPFamily = append(stringInitialIPFamily, string(f))
-							}
-
-							var stringFinalIPFamily []string
-							for _, f := range finalIPFamily {
-								stringFinalIPFamily = append(stringFinalIPFamily, string(f))
-							}
-							desc := struct {
-								fromIPFamily      string
-								toIPFamily        string
-								fromTrafficPolicy string
-								toTrafficPolicy   string
-								fromProtocol      string
-								toProtocol        string
-							}{
-								strings.Join(stringInitialIPFamily, ","),
-								strings.Join(stringFinalIPFamily, ","),
-								string(initialTrafficPolicy),
-								string(finalTrafficPolicy),
-								string(initialProtocol),
-								string(finalProtocol),
-							}
-
-							t.Run(fmt.Sprintf("+%v", desc), func(t *testing.T) {
-								t.Parallel()
-
-								fakeGCE := getFakeGCECloud(vals)
-
-								svc := test.NewL4NetLBRBSDualStackService(8080, initialProtocol, initialIPFamily, initialTrafficPolicy)
-								l4NetLBParams := &L4NetLBParams{
-									Service:          svc,
-									Cloud:            fakeGCE,
-									Namer:            namer,
-									Recorder:         record.NewFakeRecorder(100),
-									DualStackEnabled: true,
-								}
-								l4NetLB := NewL4NetLB(l4NetLBParams)
-								l4NetLB.healthChecks = healthchecksl4.Fake(fakeGCE, l4NetLBParams.Recorder)
-
-								if _, err := test.CreateAndInsertNodes(l4NetLB.cloud, nodeNames, vals.ZoneName); err != nil {
-									t.Errorf("Unexpected error when adding nodes %v", err)
-								}
-
-								result := l4NetLB.EnsureFrontend(nodeNames, svc)
-								if result.Error != nil {
-									t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
-								}
-								if len(result.Status.Ingress) == 0 {
-									t.Errorf("Got empty loadBalancer status using handler %v", l4NetLB)
-								}
-								l4NetLB.Service.Annotations = result.Annotations
-								assertDualStackNetLBResources(t, l4NetLB, nodeNames)
-
-								l4NetLB.EnsureLoadBalancerDeleted(l4NetLB.Service)
-								assertDualStackNetLBResourcesDeleted(t, l4NetLB)
+							testCases = append(testCases, testCase{
+								desc:                 dualStackNetLBTransitionTestDesc(initialIPFamily, finalIPFamily, initialTrafficPolicy, finalTrafficPolicy, initialProtocol, finalProtocol),
+								initialIPFamily:      initialIPFamily,
+								finalIPFamily:        finalIPFamily,
+								initialTrafficPolicy: initialTrafficPolicy,
+								finalTrafficPolicy:   finalTrafficPolicy,
+								initialProtocol:      initialProtocol,
+								finalProtocol:        finalProtocol,
 							})
 						}
 					}
@@ -494,72 +446,19 @@ func TestDualStackNetLBLoadBalancerTransitions(t *testing.T) {
 			}
 		}
 	}
-}
-
-func TestDualStackNetLBCleansOnlyAnnotationResources(t *testing.T) {
-	t.Parallel()
-	nodeNames := []string{"test-node-1"}
-	vals := gce.DefaultTestClusterValues()
-
-	testCases := []struct {
-		desc                      string
-		ipFamiliesStates          [2][]v1.IPFamily
-		annotationsToDelete       []string
-		verifyResourcesNotDeleted func(l4netlb *L4NetLB) error
-	}{
-		{
-			desc:                "Should not delete IPv6 resources if they not exist in annotation",
-			ipFamiliesStates:    [2][]v1.IPFamily{{v1.IPv4Protocol, v1.IPv6Protocol}, {v1.IPv4Protocol}},
-			annotationsToDelete: []string{annotations.TCPForwardingRuleIPv6Key, annotations.FirewallRuleIPv6Key, annotations.FirewallRuleForHealthcheckIPv6Key},
-			verifyResourcesNotDeleted: func(l4netlb *L4NetLB) error {
-				// Verify IPv6 Firewall was not deleted
-				ipv6FWName := l4netlb.namer.L4IPv6Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)
-				err := verifyFirewallNotExists(l4netlb.cloud, ipv6FWName)
-				if err == nil {
-					return fmt.Errorf("firewall rule %s was deleted, expected not", ipv6FWName)
-				}
-
-				// Verify IPv6 Forwarding Rule was not deleted
-				ipv6FRName := l4netlb.ipv6FRName()
-				err = verifyForwardingRuleNotExists(l4netlb.cloud, ipv6FRName)
-				if err == nil {
-					return fmt.Errorf("forwarding rule %s was deleted, expected not", ipv6FRName)
-				}
-				return nil
-			},
-		},
-		{
-			desc:                "Should not delete IPv4 resources if they not exist in annotation",
-			ipFamiliesStates:    [2][]v1.IPFamily{{v1.IPv6Protocol, v1.IPv4Protocol}, {v1.IPv6Protocol}},
-			annotationsToDelete: []string{annotations.TCPForwardingRuleKey, annotations.FirewallRuleKey, annotations.FirewallRuleForHealthcheckKey},
-			verifyResourcesNotDeleted: func(l4netlb *L4NetLB) error {
-				// Verify IPv6 Firewall was not deleted
-				backendServiceName := l4netlb.namer.L4Backend(l4netlb.Service.Namespace, l4netlb.Service.Name)
-				err := verifyFirewallNotExists(l4netlb.cloud, backendServiceName)
-				if err == nil {
-					return fmt.Errorf("firewall rule %s was deleted, expected not", backendServiceName)
-				}
-
-				// Verify IPv6 Forwarding Rule was not deleted
-				ipv4FRName := l4netlb.frName()
-				err = verifyForwardingRuleNotExists(l4netlb.cloud, ipv4FRName)
-				if err == nil {
-					return fmt.Errorf("forwarding rule %s was deleted, expected not", ipv4FRName)
-				}
-				return nil
-			},
-		},
-	}
 
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 
+			nodeNames := []string{"test-node-1"}
+			vals := gce.DefaultTestClusterValues()
+
 			namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 			fakeGCE := getFakeGCECloud(vals)
 
-			svc := test.NewL4NetLBRBSService(8080)
+			svc := test.NewL4NetLBRBSDualStackService(tc.initialProtocol, tc.initialIPFamily, tc.initialTrafficPolicy)
 			l4NetLBParams := &L4NetLBParams{
 				Service:          svc,
 				Cloud:            fakeGCE,
@@ -574,31 +473,158 @@ func TestDualStackNetLBCleansOnlyAnnotationResources(t *testing.T) {
 				t.Errorf("Unexpected error when adding nodes %v", err)
 			}
 
-			svc.Spec.IPFamilies = tc.ipFamiliesStates[0]
 			result := l4NetLB.EnsureFrontend(nodeNames, svc)
 			svc.Annotations = result.Annotations
 			assertDualStackNetLBResources(t, l4NetLB, nodeNames)
 
-			// Delete resources annotation
-			for _, annotationToDelete := range tc.annotationsToDelete {
-				delete(svc.Annotations, annotationToDelete)
-			}
-			svc.Spec.IPFamilies = tc.ipFamiliesStates[1]
+			finalSvc := test.NewL4NetLBRBSDualStackService(tc.finalProtocol, tc.finalIPFamily, tc.finalTrafficPolicy)
+			finalSvc.Annotations = svc.Annotations
+			l4NetLB.Service = finalSvc
 
-			// Run new sync. Controller should not delete resources, if they don't exist in annotation
 			result = l4NetLB.EnsureFrontend(nodeNames, svc)
-			svc.Annotations = result.Annotations
-
-			err := tc.verifyResourcesNotDeleted(l4NetLB)
-			if err != nil {
-				t.Errorf("tc.verifyResourcesNotDeleted(_) returned error %v, want nil", err)
-			}
+			finalSvc.Annotations = result.Annotations
+			assertDualStackNetLBResources(t, l4NetLB, nodeNames)
 
 			l4NetLB.EnsureLoadBalancerDeleted(l4NetLB.Service)
-			// After complete deletion, IPv6 and IPv4 resources should be cleaned up, even if the were leaked
 			assertDualStackNetLBResourcesDeleted(t, l4NetLB)
 		})
 	}
+}
+
+func dualStackNetLBTransitionTestDesc(initialIPFamily []v1.IPFamily, finalIPFamily []v1.IPFamily, initialTrafficPolicy v1.ServiceExternalTrafficPolicyType, finalTrafficPolicy v1.ServiceExternalTrafficPolicyType, initialProtocol v1.Protocol, finalProtocol v1.Protocol) string {
+	var stringInitialIPFamily []string
+	for _, f := range initialIPFamily {
+		stringInitialIPFamily = append(stringInitialIPFamily, string(f))
+	}
+
+	var stringFinalIPFamily []string
+	for _, f := range finalIPFamily {
+		stringFinalIPFamily = append(stringFinalIPFamily, string(f))
+	}
+	fromIPFamily := strings.Join(stringInitialIPFamily, ",")
+	toIPFamily := strings.Join(stringFinalIPFamily, ",")
+	fromTrafficPolicy := string(initialTrafficPolicy)
+	toTrafficPolicy := string(finalTrafficPolicy)
+	fromProtocol := string(initialProtocol)
+	toProtocol := string(finalProtocol)
+
+	return fmt.Sprintf("IP family: %s->%s, Traffic Policy: %s->%s, Protocol: %s->%s,", fromIPFamily, toIPFamily, fromTrafficPolicy, toTrafficPolicy, fromProtocol, toProtocol)
+}
+
+func TestDualStackNetLBSyncIgnoresNoAnnotationIPv6Resources(t *testing.T) {
+	t.Parallel()
+	nodeNames := []string{"test-node-1"}
+	vals := gce.DefaultTestClusterValues()
+
+	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+	fakeGCE := getFakeGCECloud(vals)
+
+	svc := test.NewL4NetLBRBSService(8080)
+	l4NetLBParams := &L4NetLBParams{
+		Service:          svc,
+		Cloud:            fakeGCE,
+		Namer:            namer,
+		Recorder:         record.NewFakeRecorder(100),
+		DualStackEnabled: true,
+	}
+	l4NetLB := NewL4NetLB(l4NetLBParams)
+	l4NetLB.healthChecks = healthchecksl4.Fake(fakeGCE, l4NetLBParams.Recorder)
+
+	if _, err := test.CreateAndInsertNodes(l4NetLB.cloud, nodeNames, vals.ZoneName); err != nil {
+		t.Errorf("Unexpected error when adding nodes %v", err)
+	}
+
+	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol}
+	result := l4NetLB.EnsureFrontend(nodeNames, svc)
+	svc.Annotations = result.Annotations
+	assertDualStackNetLBResources(t, l4NetLB, nodeNames)
+
+	// Delete IPv4 resources annotation
+	annotationsToDelete := []string{annotations.TCPForwardingRuleIPv6Key, annotations.FirewallRuleIPv6Key, annotations.FirewallRuleForHealthcheckIPv6Key}
+	for _, annotationToDelete := range annotationsToDelete {
+		delete(svc.Annotations, annotationToDelete)
+	}
+	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol}
+
+	// Run new sync. Controller should not delete resources, if they don't exist in annotation
+	result = l4NetLB.EnsureFrontend(nodeNames, svc)
+	svc.Annotations = result.Annotations
+
+	// Verify IPv4 Firewall was not deleted
+	ipv6FWName := l4NetLB.namer.L4IPv6Firewall(l4NetLB.Service.Namespace, l4NetLB.Service.Name)
+	err := verifyFirewallNotExists(l4NetLB.cloud, ipv6FWName)
+	if err == nil {
+		t.Errorf("firewall rule %s was deleted, expected not", ipv6FWName)
+	}
+
+	// Verify IPv6 Forwarding Rule was not deleted
+	ipv6FRName := l4NetLB.ipv6FRName()
+	err = verifyForwardingRuleNotExists(l4NetLB.cloud, ipv6FRName)
+	if err == nil {
+		t.Errorf("forwarding rule %s was deleted, expected not", ipv6FRName)
+	}
+
+	l4NetLB.EnsureLoadBalancerDeleted(l4NetLB.Service)
+	// After complete deletion, IPv6 and IPv4 resources should be cleaned up, even if the were leaked
+	assertDualStackNetLBResourcesDeleted(t, l4NetLB)
+}
+
+func TestDualStackNetLBSyncIgnoresNoAnnotationIPv4Resources(t *testing.T) {
+	t.Parallel()
+	nodeNames := []string{"test-node-1"}
+	vals := gce.DefaultTestClusterValues()
+
+	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+	fakeGCE := getFakeGCECloud(vals)
+
+	svc := test.NewL4NetLBRBSService(8080)
+	l4NetLBParams := &L4NetLBParams{
+		Service:          svc,
+		Cloud:            fakeGCE,
+		Namer:            namer,
+		Recorder:         record.NewFakeRecorder(100),
+		DualStackEnabled: true,
+	}
+	l4NetLB := NewL4NetLB(l4NetLBParams)
+	l4NetLB.healthChecks = healthchecksl4.Fake(fakeGCE, l4NetLBParams.Recorder)
+
+	if _, err := test.CreateAndInsertNodes(l4NetLB.cloud, nodeNames, vals.ZoneName); err != nil {
+		t.Errorf("Unexpected error when adding nodes %v", err)
+	}
+
+	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
+	result := l4NetLB.EnsureFrontend(nodeNames, svc)
+	svc.Annotations = result.Annotations
+	assertDualStackNetLBResources(t, l4NetLB, nodeNames)
+
+	// Delete IPv4 resources annotation
+	annotationsToDelete := []string{annotations.TCPForwardingRuleKey, annotations.FirewallRuleKey, annotations.FirewallRuleForHealthcheckKey}
+	for _, annotationToDelete := range annotationsToDelete {
+		delete(svc.Annotations, annotationToDelete)
+	}
+	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol}
+
+	// Run new sync. Controller should not delete resources, if they don't exist in annotation
+	result = l4NetLB.EnsureFrontend(nodeNames, svc)
+	svc.Annotations = result.Annotations
+
+	// Verify IPv4 Firewall was not deleted
+	fwName := l4NetLB.namer.L4Backend(l4NetLB.Service.Namespace, l4NetLB.Service.Name)
+	err := verifyFirewallNotExists(l4NetLB.cloud, fwName)
+	if err == nil {
+		t.Errorf("firewall rule %s was deleted, expected not", fwName)
+	}
+
+	// Verify IPv4 Forwarding Rule was not deleted
+	ipv4FRName := l4NetLB.frName()
+	err = verifyForwardingRuleNotExists(l4NetLB.cloud, ipv4FRName)
+	if err == nil {
+		t.Errorf("forwarding rule %s was deleted, expected not", ipv4FRName)
+	}
+
+	l4NetLB.EnsureLoadBalancerDeleted(l4NetLB.Service)
+	// After complete deletion, IPv6 and IPv4 resources should be cleaned up, even if the were leaked
+	assertDualStackNetLBResourcesDeleted(t, l4NetLB)
 }
 
 func ensureLoadBalancer(port int, vals gce.TestClusterValues, fakeGCE *gce.Cloud, t *testing.T) (*v1.Service, *L4NetLB) {
@@ -849,11 +875,11 @@ func verifyNetLBIPv4NodesFirewall(l4netlb *L4NetLB, nodeNames []string) error {
 		return fmt.Errorf("failed to create description for resources, err %w", err)
 	}
 
-	sourceRanges, err := servicehelper.GetLoadBalancerSourceRanges(l4netlb.Service)
+	sourceRanges, err := utils.IPv4ServiceSourceRanges(l4netlb.Service)
 	if err != nil {
 		return fmt.Errorf("servicehelper.GetLoadBalancerSourceRanges(%+v) returned error %v, want nil", l4netlb.Service, err)
 	}
-	return verifyFirewall(l4netlb.cloud, nodeNames, fwName, fwDesc, sourceRanges.StringSlice())
+	return verifyFirewall(l4netlb.cloud, nodeNames, fwName, fwDesc, sourceRanges)
 }
 
 func verifyNetLBIPv6NodesFirewall(l4netlb *L4NetLB, nodeNames []string) error {
@@ -864,7 +890,11 @@ func verifyNetLBIPv6NodesFirewall(l4netlb *L4NetLB, nodeNames []string) error {
 		return fmt.Errorf("failed to create description for resources, err %w", err)
 	}
 
-	return verifyFirewall(l4netlb.cloud, nodeNames, ipv6FirewallName, fwDesc, []string{"0::0/0"})
+	sourceRanges, err := utils.IPv6ServiceSourceRanges(l4netlb.Service)
+	if err != nil {
+		return fmt.Errorf("servicehelper.GetLoadBalancerSourceRanges(%+v) returned error %v, want nil", l4netlb.Service, err)
+	}
+	return verifyFirewall(l4netlb.cloud, nodeNames, ipv6FirewallName, fwDesc, sourceRanges)
 }
 
 func verifyNetLBIPv4HealthCheckFirewall(l4netlb *L4NetLB, nodeNames []string) error {
