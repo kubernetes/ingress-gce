@@ -22,7 +22,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
-	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -52,12 +51,14 @@ func (l4netlb *L4NetLB) ensureIPv6Resources(syncResult *L4NetLBSyncResult, nodeN
 		syncResult.Annotations[annotations.UDPForwardingRuleIPv6Key] = ipv6fr.Name
 	}
 
-	l4netlb.ensureIPv6NodesFirewall(ipv6fr, nodeNames, syncResult)
+	// Google Cloud creates ipv6 forwarding rules with IPAddress in CIDR form. We will take only first address
+	trimmedIPv6Address := strings.Split(ipv6fr.IPAddress, "/")[0]
+
+	l4netlb.ensureIPv6NodesFirewall(trimmedIPv6Address, nodeNames, syncResult)
 	if syncResult.Error != nil {
 		return
 	}
 
-	trimmedIPv6Address := strings.Split(ipv6fr.IPAddress, "/")[0]
 	syncResult.Status = utils.AddIPToLBStatus(syncResult.Status, trimmedIPv6Address)
 }
 
@@ -101,7 +102,7 @@ func (l4netlb *L4NetLB) ipv6FRName() string {
 	return namer.GetSuffixedName(l4netlb.frName(), ipv6Suffix)
 }
 
-func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(forwardingRule *composite.ForwardingRule, nodeNames []string, syncResult *L4NetLBSyncResult) {
+func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipAddress string, nodeNames []string, syncResult *L4NetLBSyncResult) {
 	start := time.Now()
 
 	firewallName := l4netlb.namer.L4IPv6Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)
@@ -109,7 +110,7 @@ func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(forwardingRule *composite.Forwar
 	portRanges := utils.GetServicePortRanges(svcPorts)
 	protocol := utils.GetProtocol(svcPorts)
 
-	klog.V(2).Infof("Ensuring IPv6 nodes firewall %s for L4 ILB Service %s/%s, ipAddress: %s, protocol: %s, len(nodeNames): %v, portRanges: %v", firewallName, l4netlb.Service.Namespace, l4netlb.Service.Name, forwardingRule.IPAddress, protocol, len(nodeNames), portRanges)
+	klog.V(2).Infof("Ensuring IPv6 nodes firewall %s for L4 ILB Service %s/%s, ipAddress: %s, protocol: %s, len(nodeNames): %v, portRanges: %v", firewallName, l4netlb.Service.Namespace, l4netlb.Service.Name, ipAddress, protocol, len(nodeNames), portRanges)
 	defer func() {
 		klog.V(2).Infof("Finished ensuring IPv6 nodes firewall %s for L4 ILB Service %s/%s, time taken: %v", l4netlb.Service.Namespace, l4netlb.Service.Name, firewallName, time.Since(start))
 	}()
@@ -124,7 +125,7 @@ func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(forwardingRule *composite.Forwar
 	ipv6nodesFWRParams := firewalls.FirewallParams{
 		PortRanges:        portRanges,
 		SourceRanges:      ipv6SourceRanges,
-		DestinationRanges: []string{forwardingRule.IPAddress},
+		DestinationRanges: []string{ipAddress},
 		Protocol:          string(protocol),
 		Name:              firewallName,
 		NodeNames:         nodeNames,
