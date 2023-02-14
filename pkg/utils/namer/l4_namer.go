@@ -79,7 +79,7 @@ func (namer *L4Namer) L4Firewall(namespace, name string) string {
 //
 // Output name is at most 63 characters.
 func (namer *L4Namer) L4IPv6Firewall(namespace, name string) string {
-	return getSuffixedName(namer.L4Backend(namespace, name), "-"+ipv6Suffix)
+	return GetSuffixedName(namer.L4Backend(namespace, name), "-"+ipv6Suffix)
 }
 
 // L4ForwardingRule returns the name of the L4 forwarding rule name based on the service namespace, name and protocol.
@@ -125,7 +125,7 @@ func (namer *L4Namer) L4HealthCheckFirewall(namespace, name string, shared bool)
 //
 // Output name is at most 63 characters.
 func (namer *L4Namer) L4IPv6ForwardingRule(namespace, name, protocol string) string {
-	return getSuffixedName(namer.L4ForwardingRule(namespace, name, protocol), "-"+ipv6Suffix)
+	return GetSuffixedName(namer.L4ForwardingRule(namespace, name, protocol), "-"+ipv6Suffix)
 }
 
 // L4IPv6HealthCheckFirewall returns the name of the IPv6 L4 LB health check firewall rule.
@@ -152,14 +152,14 @@ func (n *L4Namer) getClusterSuffix(namespace, name string) string {
 // hcFirewallName generates the firewall name for the given healthcheck.
 // It ensures that the name is at most 63 chars long.
 func (n *L4Namer) hcFirewallName(hcName, suffix string) string {
-	return getSuffixedName(hcName, firewallHcSuffix+suffix)
+	return GetSuffixedName(hcName, firewallHcSuffix+suffix)
 }
 
 func getTrimmedNamespacedName(namespace, name string, maxLength int) string {
 	return strings.Join(TrimFieldsEvenly(maxLength, namespace, name), "-")
 }
 
-func getSuffixedName(name string, suffix string) string {
+func GetSuffixedName(name string, suffix string) string {
 	return ensureSpaceForSuffix(name, suffix) + suffix
 }
 
