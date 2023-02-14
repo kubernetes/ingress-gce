@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -259,6 +260,10 @@ func (s *transactionSyncer) syncInternalImpl() error {
 
 		}
 		if s.inErrorState() {
+			targetMap, endpointPodMap, err = s.computeTargetMapDegradedMode(endpointSlices, s.NegSyncerKey.PortTuple.Name, s.NegSyncerKey.NegType)
+			if err != nil {
+				return err
+			}
 			s.resetErrorState()
 		} else {
 			targetMap, endpointPodMap, err = s.computeTargetMap(endpointSlices)
@@ -332,6 +337,44 @@ func (s *transactionSyncer) computeTargetMap(endpointSlices []*discovery.Endpoin
 		return nil, nil, fmt.Errorf("endpoints calculation error in mode %q, err: %w", s.endpointsCalculator.Mode(), err)
 	}
 	return targetMap, endpointPodMap, err
+}
+
+// computeTargetMapDegradedMode does endpoint calculation differently
+// to fix the error in NEG controller and return the desire map
+func (s *transactionSyncer) computeTargetMapDegradedMode(slices []*discovery.EndpointSlice, servicePortName string, endpointType negtypes.NetworkEndpointType) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, error) {
+	var targetMap map[string]negtypes.NetworkEndpointSet
+	var endpointPodMap negtypes.EndpointPodMap
+	var err error
+
+	for _, slice := range slices {
+		// if it is a custom endpoint slice, don't include it
+		// so it won't block the neg api call from succeeding
+		if val, ok := slice.ObjectMeta.Labels[discovery.LabelManagedBy]; !ok || val != "endpointslice-controller.k8s.io" {
+			continue
+		}
+		matchPort := ""
+		for _, port := range slice.Ports {
+			if *port.Name == servicePortName {
+				matchPort = strconv.Itoa(int(*port.Port))
+				break
+			}
+		}
+		if len(matchPort) == 0 {
+			continue
+		}
+
+		for _, ep := range slice.Endpoints {
+			if ep.TargetRef == nil {
+				continue
+			}
+			s.validateAndAddEndpoints(ep, matchPort, endpointType, targetMap, endpointPodMap)
+		}
+	}
+	return targetMap, endpointPodMap, err
+}
+
+// validateAndAddEndpoints fills in missing information and creates network endpoint for each endpoint addresss
+func (s *transactionSyncer) validateAndAddEndpoints(ep discovery.Endpoint, matchPort string, endpointType negtypes.NetworkEndpointType, targetMap map[string]negtypes.NetworkEndpointSet, endpointPodMap negtypes.EndpointPodMap) {
 }
 
 // syncLock must already be acquired before execution
