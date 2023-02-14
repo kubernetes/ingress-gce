@@ -18,6 +18,7 @@ package syncers
 
 import (
 	context2 "context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -1474,6 +1475,7 @@ func TestIsValidEndpointInfo(t *testing.T) {
 		endpointPodMap map[negtypes.NetworkEndpoint]types.NamespacedName
 		dupCount       int
 		expect         bool
+		expectedReason string
 	}{
 		{
 			desc: "counts equal, endpointData has no duplicated endpoints",
@@ -1546,6 +1548,7 @@ func TestIsValidEndpointInfo(t *testing.T) {
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       0,
 			expect:         true,
+			expectedReason: negtypes.ResultSuccess,
 		},
 		{
 			desc: "counts equal, endpointData has duplicated endpoints",
@@ -1627,6 +1630,7 @@ func TestIsValidEndpointInfo(t *testing.T) {
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       1,
 			expect:         true,
+			expectedReason: negtypes.ResultSuccess,
 		},
 		{
 			desc: "counts not equal, endpointData has no duplicated endpoints",
@@ -1690,6 +1694,7 @@ func TestIsValidEndpointInfo(t *testing.T) {
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       0,
 			expect:         false,
+			expectedReason: negtypes.ResultEPCountsDiffer,
 		},
 		{
 			desc: "counts not equal, endpointData has duplicated endpoints",
@@ -1762,6 +1767,7 @@ func TestIsValidEndpointInfo(t *testing.T) {
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       1,
 			expect:         false,
+			expectedReason: negtypes.ResultEPCountsDiffer,
 		},
 		{
 			desc: "endpointData has zero endpoint",
@@ -1796,6 +1802,7 @@ func TestIsValidEndpointInfo(t *testing.T) {
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       0,
 			expect:         false,
+			expectedReason: negtypes.ResultEPSEndpointCountZero,
 		},
 		{
 			desc: "endpointPodMap has zero endpoint",
@@ -1868,6 +1875,7 @@ func TestIsValidEndpointInfo(t *testing.T) {
 			endpointPodMap: map[negtypes.NetworkEndpoint]types.NamespacedName{},
 			dupCount:       0,
 			expect:         false,
+			expectedReason: negtypes.ResultEPCalculationCountZero,
 		},
 		{
 			desc: "endpointData and endpointPodMap both have zero endpoint",
@@ -1902,6 +1910,7 @@ func TestIsValidEndpointInfo(t *testing.T) {
 			endpointPodMap: map[negtypes.NetworkEndpoint]types.NamespacedName{},
 			dupCount:       0,
 			expect:         false,
+			expectedReason: negtypes.ResultEPCalculationCountZero,
 		},
 		{
 			desc: "endpointData and endpointPodMap both have non-zero endpoints",
@@ -1974,12 +1983,13 @@ func TestIsValidEndpointInfo(t *testing.T) {
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       0,
 			expect:         true,
+			expectedReason: negtypes.ResultSuccess,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			if got := transactionSyncer.isValidEndpointInfo(tc.endpointsData, tc.endpointPodMap, tc.dupCount); got != tc.expect {
+			if got, reason := transactionSyncer.isValidEndpointInfo(tc.endpointsData, tc.endpointPodMap, tc.dupCount); got != tc.expect && reason != tc.expectedReason {
 				t.Errorf("invalidEndpointInfo() = %t,  expected %t", got, tc.expect)
 			}
 		})
@@ -2013,9 +2023,10 @@ func TestIsValidEPField(t *testing.T) {
 	}
 
 	testCases := []struct {
-		desc          string
-		endpointsData []negtypes.EndpointsData
-		expect        bool
+		desc           string
+		endpointsData  []negtypes.EndpointsData
+		expect         bool
+		expectedReason string
 	}{
 		{
 			desc: "no missing zone or nodeName",
@@ -2085,7 +2096,8 @@ func TestIsValidEPField(t *testing.T) {
 					},
 				},
 			},
-			expect: true,
+			expect:         true,
+			expectedReason: negtypes.ResultSuccess,
 		},
 		{
 			desc: "contains one missing nodeName",
@@ -2155,7 +2167,8 @@ func TestIsValidEPField(t *testing.T) {
 					},
 				},
 			},
-			expect: false,
+			expect:         false,
+			expectedReason: negtypes.ResultEPMissingNodeName,
 		},
 		{
 			desc: "contains one empty nodeName",
@@ -2225,7 +2238,8 @@ func TestIsValidEPField(t *testing.T) {
 					},
 				},
 			},
-			expect: false,
+			expect:         false,
+			expectedReason: negtypes.ResultEPMissingNodeName,
 		},
 		{
 			desc: "contains one missing zone",
@@ -2295,13 +2309,14 @@ func TestIsValidEPField(t *testing.T) {
 					},
 				},
 			},
-			expect: false,
+			expect:         false,
+			expectedReason: negtypes.ResultEPMissingZone,
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			_, _, _, err := transactionSyncer.endpointsCalculator.CalculateEndpoints(tc.endpointsData, nil)
-			if got := transactionSyncer.isValidEPField(err); got != tc.expect {
+			if got, reason := transactionSyncer.isValidEPField(err); got != tc.expect && reason != tc.expectedReason {
 				t.Errorf("isValidEPField() = %t, expected %t, err: %v, ", got, tc.expect, err)
 			}
 		})
@@ -2316,18 +2331,31 @@ func TestIsValidEPBatch(t *testing.T) {
 
 	testCases := []struct {
 		desc           string
-		HttpStatusCode int
+		APIResponse    error
 		expect         bool
+		expectedReason string
 	}{
 		{
-			desc:           "NEG API call server error, status code 500",
-			HttpStatusCode: http.StatusOK,
+			desc: "NEG API call server error, status code 500",
+			APIResponse: &googleapi.Error{
+				Code: http.StatusOK,
+			},
 			expect:         true,
+			expectedReason: negtypes.ResultSuccess,
 		},
 		{
-			desc:           "NEG API call request error, status code 400",
-			HttpStatusCode: http.StatusBadRequest,
+			desc: "NEG API call request error, status code 400",
+			APIResponse: &googleapi.Error{
+				Code: http.StatusBadRequest,
+			},
 			expect:         false,
+			expectedReason: negtypes.ResultInvalidEPAttach,
+		},
+		{
+			desc:           "NEG API call invalid response",
+			APIResponse:    errors.New("non googleapi error"),
+			expect:         false,
+			expectedReason: negtypes.ResultInvalidAPIResponse,
 		},
 	}
 
@@ -2335,14 +2363,12 @@ func TestIsValidEPBatch(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
 			mockGCE.MockNetworkEndpointGroups.AttachNetworkEndpointsHook = func(ctx context2.Context, key *meta.Key, arg0 *compute.NetworkEndpointGroupsAttachEndpointsRequest, neg *cloud.MockNetworkEndpointGroups) error {
-				return &googleapi.Error{
-					Code: tc.HttpStatusCode,
-				}
+				return tc.APIResponse
 			}
 			_, transactionSyncer := newTestTransactionSyncer(fakeCloud, negtypes.VmIpPortEndpointType, false, true)
 
 			err := transactionSyncer.cloud.AttachNetworkEndpoints(transactionSyncer.NegSyncerKey.NegName, zone, networkEndpoints, transactionSyncer.NegSyncerKey.GetAPIVersion())
-			if got := transactionSyncer.isValidEPBatch(err, attachOp, networkEndpoints); got != tc.expect {
+			if got, reason := transactionSyncer.isValidEPBatch(err, attachOp, networkEndpoints); got != tc.expect && reason != tc.expectedReason {
 				t.Errorf("isInvalidEPBatch() = %t, expected %t", got, tc.expect)
 			}
 		})

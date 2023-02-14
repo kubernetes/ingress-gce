@@ -97,16 +97,18 @@ type transactionSyncer struct {
 
 	logger klog.Logger
 
-	// inError indicates if the syncer is in any of 4 error scenarios
+	// errorState indicates if the syncer is in any of 4 error scenarios
 	// 1. Endpoint counts from EPS is different from calculated endpoint list
 	// 2. EndpontSlice has missing or invalid data
 	// 3. Attach/Detach EP fails due to incorrect batch information
 	// 4. Endpoint count from EPS or calculated endpoint list is 0
 	// Need to grab syncLock first for any reads or writes based on this value
-	inError bool
+	errorState string
 
 	// syncCollector collect sync related metrics
 	syncCollector metrics.SyncerMetricsCollector
+
+	wg sync.WaitGroup
 }
 
 func NewTransactionSyncer(
@@ -152,7 +154,7 @@ func NewTransactionSyncer(
 		syncCollector:        syncerMetrics,
 		customName:           customName,
 		enableEndpointSlices: enableEndpointSlices,
-		inError:              false,
+		errorState:           "",
 		logger:               logger,
 	}
 	// Syncer implements life cycle logic
@@ -267,8 +269,11 @@ func (s *transactionSyncer) syncInternalImpl() error {
 		}
 		endpointsData := negtypes.EndpointsDataFromEndpointSlices(endpointSlices)
 		targetMap, endpointPodMap, dupCount, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
-		if !s.isValidEPField(err) || !s.isValidEndpointInfo(endpointsData, endpointPodMap, dupCount) {
-			s.setErrorState()
+		if valid, reason := s.isValidEPField(err); !valid {
+			s.setErrorState(reason)
+		}
+		if valid, reason := s.isValidEndpointInfo(endpointsData, endpointPodMap, dupCount); !valid {
+			s.setErrorState(reason)
 		}
 		if err != nil {
 			return fmt.Errorf("endpoints calculation error in mode %q, err: %w", s.endpointsCalculator.Mode(), err)
@@ -327,17 +332,17 @@ func (s *transactionSyncer) syncInternalImpl() error {
 
 // syncLock must already be acquired before execution
 func (s *transactionSyncer) inErrorState() bool {
-	return s.inError
+	return s.errorState != ""
 }
 
 // syncLock must already be acquired before execution
-func (s *transactionSyncer) setErrorState() {
-	s.inError = true
+func (s *transactionSyncer) setErrorState(errorState string) {
+	s.errorState = errorState
 }
 
 // syncLock must already be acquired before execution
 func (s *transactionSyncer) resetErrorState() {
-	s.inError = false
+	s.errorState = ""
 }
 
 // ensureNetworkEndpointGroups ensures NEGs are created and configured correctly in the corresponding zones.
@@ -382,18 +387,18 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 }
 
 // isValidEndpointInfo checks if endpoint information is correct.
-// It returns false if one of the two checks fails:
+// It returns false and the corresponding reason if one of the two checks fails:
 //
 //  1. The endpoint count from endpointData doesn't equal to the one from endpointPodMap:
 //     endpiontPodMap removes the duplicated endpoints, and dupCount stores the number of duplicated it removed
 //     and we compare the endpoint counts with duplicates
 //  2. The endpoint count from endpointData or the one from endpointPodMap is 0
-func (s *transactionSyncer) isValidEndpointInfo(eds []negtypes.EndpointsData, endpointPodMap negtypes.EndpointPodMap, dupCount int) bool {
+func (s *transactionSyncer) isValidEndpointInfo(eds []negtypes.EndpointsData, endpointPodMap negtypes.EndpointPodMap, dupCount int) (bool, string) {
 	// Endpoint count from EndpointPodMap
 	countFromPodMap := len(endpointPodMap) + dupCount
 	if countFromPodMap == 0 {
 		s.logger.Info("Detected endpoint count from endpointPodMap going to zero", "endpointPodMap", endpointPodMap)
-		return false
+		return false, negtypes.ResultEPCalculationCountZero
 	}
 
 	// Endpoint count from EndpointData
@@ -403,42 +408,47 @@ func (s *transactionSyncer) isValidEndpointInfo(eds []negtypes.EndpointsData, en
 	}
 	if countFromEndpointData == 0 {
 		s.logger.Info("Detected endpoint count from endpointData going to zero", "endpointData", eds)
-		return false
+		return false, negtypes.ResultEPSEndpointCountZero
 	}
 
 	if countFromEndpointData != countFromPodMap {
 		s.logger.Info("Detected error when comparing endpoint counts", "endpointData", eds, "endpointPodMap", endpointPodMap, "dupCount", dupCount)
-		return false
+		return false, negtypes.ResultEPCountsDiffer
 	}
-	return true
+	return true, negtypes.ResultSuccess
 }
 
-// isValidEPField returns false if there is endpoint with missing zone or nodeName
-func (s *transactionSyncer) isValidEPField(err error) bool {
+// isValidEPField returns false and the corresponding reason if there is endpoint with missing zone or nodeName
+func (s *transactionSyncer) isValidEPField(err error) (bool, string) {
 	if errors.Is(err, ErrEPMissingNodeName) {
 		s.logger.Info("Detected unexpected error when checking missing nodeName", "error", err)
-		return false
+		return false, negtypes.ResultEPMissingNodeName
 	}
 	if errors.Is(err, ErrEPMissingZone) {
 		s.logger.Info("Detected unexpected error when checking missing zone", "error", err)
-		return false
+		return false, negtypes.ResultEPMissingZone
 	}
-	return true
+	return true, negtypes.ResultSuccess
 }
 
-// isValidEPBatch returns false if the error from endpoint batch response is due to bad request
-func (s *transactionSyncer) isValidEPBatch(err error, operation transactionOp, networkEndpoints []*composite.NetworkEndpoint) bool {
+// isValidEPBatch returns false and the corresponding reason if the error from endpoint batch response is due to bad request
+func (s *transactionSyncer) isValidEPBatch(err error, operation transactionOp, networkEndpoints []*composite.NetworkEndpoint) (bool, string) {
 	apiErr, ok := err.(*googleapi.Error)
 	if !ok {
-		s.logger.Info("Detected error when parsing batch request error", "operation", operation, "error", err)
-		return false
+		s.logger.Info("Detected error when parsing batch response error", "operation", operation, "error", err)
+		return false, negtypes.ResultInvalidAPIResponse
 	}
 	errCode := apiErr.Code
 	if errCode == http.StatusBadRequest {
 		s.logger.Info("Detected error when sending endpoint batch information", "operation", operation, "errorCode", errCode)
-		return false
+		if operation == attachOp {
+			return false, negtypes.ResultInvalidEPAttach
+		}
+		if operation == detachOp {
+			return false, negtypes.ResultInvalidEPDetach
+		}
 	}
-	return true
+	return true, negtypes.ResultSuccess
 }
 
 // syncNetworkEndpoints spins off go routines to execute NEG operations
@@ -482,18 +492,26 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 	if err := syncFunc(removeEndpoints, detachOp); err != nil {
 		return err
 	}
+	go s.collectSyncResult()
 	return nil
+}
+
+// collectSyncResult collects the result of the sync and emits the metrics for sync result
+func (s *transactionSyncer) collectSyncResult() {
+	s.wg.Wait()
 }
 
 // attachNetworkEndpoints creates go routine to run operations for attaching network endpoints
 func (s *transactionSyncer) attachNetworkEndpoints(zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
 	s.logger.V(2).Info("Attaching endpoints to NEG.", "countOfEndpointsBeingAttached", len(networkEndpointMap), "negSyncerKey", s.NegSyncerKey.String(), "zone", zone)
+	s.wg.Add(1)
 	go s.operationInternal(attachOp, zone, networkEndpointMap)
 }
 
 // detachNetworkEndpoints creates go routine to run operations for detaching network endpoints
 func (s *transactionSyncer) detachNetworkEndpoints(zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
 	s.logger.V(2).Info("Detaching endpoints from NEG.", "countOfEndpointsBeingDetached", len(networkEndpointMap), "negSyncerKey", s.NegSyncerKey.String(), "zone", zone)
+	s.wg.Add(1)
 	go s.operationInternal(detachOp, zone, networkEndpointMap)
 }
 
@@ -501,6 +519,7 @@ func (s *transactionSyncer) detachNetworkEndpoints(zone string, networkEndpointM
 // It will record events when operations are completed
 // If error occurs or any transaction entry requires reconciliation, it will trigger resync
 func (s *transactionSyncer) operationInternal(operation transactionOp, zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
+	defer s.wg.Done()
 	var err error
 	start := time.Now()
 	networkEndpoints := []*composite.NetworkEndpoint{}
@@ -519,8 +538,10 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, zone stri
 		s.recordEvent(apiv1.EventTypeNormal, operation.String(), fmt.Sprintf("%s %d network endpoint(s) (NEG %q in zone %q)", operation.String(), len(networkEndpointMap), s.NegSyncerKey.NegName, zone))
 	} else {
 		s.recordEvent(apiv1.EventTypeWarning, operation.String()+"Failed", fmt.Sprintf("Failed to %s %d network endpoint(s) (NEG %q in zone %q): %v", operation.String(), len(networkEndpointMap), s.NegSyncerKey.NegName, zone, err))
-		if !s.isValidEPBatch(err, operation, networkEndpoints) {
-			s.setErrorState()
+		if valid, reason := s.isValidEPBatch(err, operation, networkEndpoints); !valid {
+			s.syncLock.Lock()
+			defer s.syncLock.Unlock()
+			s.setErrorState(reason)
 		}
 	}
 
