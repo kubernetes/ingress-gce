@@ -340,6 +340,10 @@ func EndpointsDataFromEndpoints(ep *apiv1.Endpoints) []EndpointsData {
 func EndpointsDataFromEndpointSlices(slices []*discovery.EndpointSlice) []EndpointsData {
 	result := make([]EndpointsData, 0, len(slices))
 	for _, slice := range slices {
+		if slice.AddressType != discovery.AddressTypeIPv4 {
+			// Neg Controller can only attach IPv4 endpoints
+			continue
+		}
 		ports := make([]PortData, 0)
 		addresses := make([]AddressData, 0)
 		for _, port := range slice.Ports {
