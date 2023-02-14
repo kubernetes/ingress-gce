@@ -201,12 +201,6 @@ func (s *transactionSyncer) syncInternal() error {
 }
 
 func (s *transactionSyncer) syncInternalImpl() error {
-	// TODO(cheungdavid): for now we reset the boolean so it is a no-op, but
-	// in the future, it will be used to trigger degraded mode if the syncer is in error state.
-	if s.inErrorState() {
-		s.resetErrorState()
-	}
-
 	if s.needInit || s.isZoneChange() {
 		if err := s.ensureNetworkEndpointGroups(); err != nil {
 			return err
@@ -233,7 +227,6 @@ func (s *transactionSyncer) syncInternalImpl() error {
 
 	var targetMap map[string]negtypes.NetworkEndpointSet
 	var endpointPodMap negtypes.EndpointPodMap
-	var dupCount int
 
 	if s.enableEndpointSlices {
 		slices, err := s.endpointSliceLister.ByIndex(endpointslices.EndpointSlicesByServiceIndex, endpointslices.FormatEndpointSlicesServiceKey(s.Namespace, s.Name))
@@ -265,16 +258,13 @@ func (s *transactionSyncer) syncInternalImpl() error {
 			s.logger.V(3).Info("Endpoint slice syncs", "Namespace", endpointslice.Namespace, "Name", endpointslice.Name, "staleness", epsStaleness)
 
 		}
-		endpointsData := negtypes.EndpointsDataFromEndpointSlices(endpointSlices)
-		targetMap, endpointPodMap, dupCount, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
-		if valid, reason := s.isValidEPField(err); !valid {
-			s.setErrorState(reason)
-		}
-		if valid, reason := s.isValidEndpointInfo(endpointsData, endpointPodMap, dupCount); !valid {
-			s.setErrorState(reason)
-		}
-		if err != nil {
-			return fmt.Errorf("endpoints calculation error in mode %q, err: %w", s.endpointsCalculator.Mode(), err)
+		if s.inErrorState() {
+			s.resetErrorState()
+		} else {
+			targetMap, endpointPodMap, err = s.computeTargetMap(endpointSlices)
+			if err != nil {
+				return err
+			}
 		}
 	} else {
 		ep, exists, err := s.endpointLister.Get(
@@ -326,6 +316,22 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	s.logEndpoints(removeEndpoints, "removing endpoint")
 
 	return s.syncNetworkEndpoints(addEndpoints, removeEndpoints)
+}
+
+// computeTargetMap retrieve endpoint slices and compute the desire map
+func (s *transactionSyncer) computeTargetMap(endpointSlices []*discovery.EndpointSlice) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, error) {
+	endpointsData := negtypes.EndpointsDataFromEndpointSlices(endpointSlices)
+	targetMap, endpointPodMap, dupCount, err := s.endpointsCalculator.CalculateEndpoints(endpointsData, nil)
+	if valid, reason := s.isValidEPField(err); !valid {
+		s.setErrorState(reason)
+	}
+	if valid, reason := s.isValidEndpointInfo(endpointsData, endpointPodMap, dupCount); !valid {
+		s.setErrorState(reason)
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("endpoints calculation error in mode %q, err: %w", s.endpointsCalculator.Mode(), err)
+	}
+	return targetMap, endpointPodMap, err
 }
 
 // syncLock must already be acquired before execution
