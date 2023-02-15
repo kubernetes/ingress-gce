@@ -441,35 +441,6 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 
 func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 	t.Parallel()
-	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType, false)
-	podLister := transactionSyncer.podLister
-
-	// add all pods in default endpoint into podLister
-	for i := 1; i <= 12; i++ {
-		podLister.Add(&v1.Pod{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: testServiceNamespace,
-				Name:      fmt.Sprintf("pod%v", i),
-			},
-		})
-	}
-	// pod6 is deleted
-	podLister.Update(&v1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace:         testServiceNamespace,
-			Name:              "pod6",
-			DeletionTimestamp: &metav1.Time{},
-		},
-	})
-
-	podLister.Update(&v1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace:         testServiceNamespace,
-			Name:              "pod12",
-			DeletionTimestamp: &metav1.Time{},
-		},
-	})
-
 	zoneGetter := negtypes.NewFakeZoneGetter()
 	testCases := []struct {
 		desc                string
@@ -492,8 +463,9 @@ func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
 					networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"),
 					networkEndpointFromEncodedEndpoint("10.100.1.2||instance1||80"),
-					networkEndpointFromEncodedEndpoint("10.100.2.1||instance2||80"),
-					networkEndpointFromEncodedEndpoint("10.100.1.3||instance1||80")),
+					networkEndpointFromEncodedEndpoint("10.100.1.3||instance1||80"),
+					networkEndpointFromEncodedEndpoint("10.100.1.4||instance1||80"),
+					networkEndpointFromEncodedEndpoint("10.100.2.1||instance2||80")),
 				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
 					networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80")),
 			},
@@ -503,6 +475,7 @@ func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 				networkEndpointFromEncodedEndpoint("10.100.2.1||instance2||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod3"},
 				networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod4"},
 				networkEndpointFromEncodedEndpoint("10.100.1.3||instance1||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod5"},
+				networkEndpointFromEncodedEndpoint("10.100.1.4||instance1||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod6"},
 			},
 			networkEndpointType: negtypes.VmIpPortEndpointType,
 		},
@@ -516,7 +489,8 @@ func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 					networkEndpointFromEncodedEndpoint("10.100.4.1||instance4||81"),
 					networkEndpointFromEncodedEndpoint("10.100.3.2||instance3||8081"),
 					networkEndpointFromEncodedEndpoint("10.100.4.2||instance4||8081"),
-					networkEndpointFromEncodedEndpoint("10.100.4.3||instance4||81")),
+					networkEndpointFromEncodedEndpoint("10.100.4.3||instance4||81"),
+					networkEndpointFromEncodedEndpoint("10.100.4.4||instance4||8081")),
 			},
 			expectMap: negtypes.EndpointPodMap{
 				networkEndpointFromEncodedEndpoint("10.100.2.2||instance2||81"):   types.NamespacedName{Namespace: testServiceNamespace, Name: "pod7"},
@@ -524,6 +498,7 @@ func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 				networkEndpointFromEncodedEndpoint("10.100.4.3||instance4||81"):   types.NamespacedName{Namespace: testServiceNamespace, Name: "pod9"},
 				networkEndpointFromEncodedEndpoint("10.100.3.2||instance3||8081"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod10"},
 				networkEndpointFromEncodedEndpoint("10.100.4.2||instance4||8081"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod11"},
+				networkEndpointFromEncodedEndpoint("10.100.4.4||instance4||8081"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod12"},
 			},
 			networkEndpointType: negtypes.VmIpPortEndpointType,
 		},
@@ -534,8 +509,9 @@ func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
 					networkEndpointFromEncodedEndpoint("10.100.1.1||||80"),
 					networkEndpointFromEncodedEndpoint("10.100.1.2||||80"),
-					networkEndpointFromEncodedEndpoint("10.100.2.1||||80"),
-					networkEndpointFromEncodedEndpoint("10.100.1.3||||80")),
+					networkEndpointFromEncodedEndpoint("10.100.1.3||||80"),
+					networkEndpointFromEncodedEndpoint("10.100.1.4||||80"),
+					networkEndpointFromEncodedEndpoint("10.100.2.1||||80")),
 				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
 					networkEndpointFromEncodedEndpoint("10.100.3.1||||80")),
 			},
@@ -545,13 +521,14 @@ func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 				networkEndpointFromEncodedEndpoint("10.100.2.1||||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod3"},
 				networkEndpointFromEncodedEndpoint("10.100.3.1||||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod4"},
 				networkEndpointFromEncodedEndpoint("10.100.1.3||||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod5"},
+				networkEndpointFromEncodedEndpoint("10.100.1.4||||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod6"},
 			},
 			networkEndpointType: negtypes.NonGCPPrivateEndpointType,
 		},
 	}
 
 	for _, tc := range testCases {
-		retSet, retMap, _, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()), zoneGetter, tc.portName, podLister, tc.networkEndpointType)
+		retSet, retMap, _, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()), zoneGetter, tc.portName, tc.networkEndpointType)
 		if err != nil {
 			t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
 		}
@@ -879,82 +856,6 @@ func TestMakeEndpointBatch(t *testing.T) {
 					}
 				}
 			}
-		}
-	}
-}
-
-func TestShouldPodBeInNeg(t *testing.T) {
-	t.Parallel()
-
-	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType, false)
-
-	podLister := transactionSyncer.podLister
-
-	namespace1 := "ns1"
-	namespace2 := "ns2"
-	name1 := "n1"
-	name2 := "n2"
-
-	podLister.Add(&v1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace1,
-			Name:      name1,
-		},
-	})
-
-	// deleted pod
-	podLister.Add(&v1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace:         namespace1,
-			Name:              name2,
-			DeletionTimestamp: &metav1.Time{},
-		},
-	})
-
-	podLister.Add(&v1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace2,
-			Name:      name2,
-		},
-	})
-
-	for _, tc := range []struct {
-		desc      string
-		namespace string
-		name      string
-		expect    bool
-	}{
-		{
-			desc: "empty input",
-		},
-		{
-			desc:      "non exists pod",
-			namespace: "non exists",
-			name:      "non exists",
-			expect:    false,
-		},
-		{
-			desc:      "pod exists and not deleted",
-			namespace: namespace1,
-			name:      name1,
-			expect:    true,
-		},
-		{
-			desc:      "pod exists and deleted",
-			namespace: namespace1,
-			name:      name2,
-			expect:    false,
-		},
-		{
-			desc:      "pod exists and not deleted 2",
-			namespace: namespace2,
-			name:      name2,
-			expect:    true,
-		},
-	} {
-		ret := shouldPodBeInNeg(podLister, tc.namespace, tc.name)
-		if ret != tc.expect {
-			t.Errorf("For test case %q, endpointSets output = %+v, but got %+v", tc.desc, tc.expect, ret)
 		}
 	}
 }

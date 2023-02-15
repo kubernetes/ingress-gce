@@ -24,7 +24,6 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	apiv1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
@@ -218,7 +217,7 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 }
 
 // toZoneNetworkEndpointMap translates addresses in endpoints object into zone and endpoints map, and also return the count for duplicated endpoints
-func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.ZoneGetter, servicePortName string, podLister cache.Indexer, networkEndpointType negtypes.NetworkEndpointType) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, int, error) {
+func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.ZoneGetter, servicePortName string, networkEndpointType negtypes.NetworkEndpointType) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, int, error) {
 	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
 	networkEndpointPodMap := negtypes.EndpointPodMap{}
 	dupCount := 0
@@ -264,12 +263,12 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 				zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
 			}
 
-			// TODO: This check and EndpointsData.Ready field may be deleted once Endpoints support is removed.
-			// The purpose of this check is to handle endpoints in terminating state.
-			// The Endpoints API doesn't have terminating field. Terminating endpoints are marked as not ready.
-			// This check support this case. For not ready endpoints it checks if the endpoint is not yet ready or terminating.
-			// The EndpointSlices API has terminating field which solves this problem.
-			if endpointAddress.Ready || shouldPodBeInNeg(podLister, endpointAddress.TargetRef.Namespace, endpointAddress.TargetRef.Name) {
+			// Only consider endpoints that are Ready.
+			// TODO: In order to consider Terminating endpoints, the AddressData type should add a new field to
+			// carry this information based on the EndpointSlices Conditions Terminating = true and Serving = true.
+			// Terminating endpoints should only be used with ExternalTrafficPolicy = Local and if there are any
+			// other Ready endpoint in the same node.
+			if endpointAddress.Ready {
 				for _, address := range endpointAddress.Addresses {
 					networkEndpoint := negtypes.NetworkEndpoint{IP: address, Port: matchPort, Node: *endpointAddress.NodeName}
 					if networkEndpointType == negtypes.NonGCPPrivateEndpointType {
@@ -364,35 +363,4 @@ func makeEndpointBatch(endpoints negtypes.NetworkEndpointSet, negType negtypes.N
 		}
 	}
 	return endpointBatch, nil
-}
-
-func keyFunc(namespace, name string) string {
-	return fmt.Sprintf("%s/%s", namespace, name)
-}
-
-// shouldPodBeInNeg returns true if pod is not in graceful termination state
-func shouldPodBeInNeg(podLister cache.Indexer, namespace, name string) bool {
-	if podLister == nil {
-		return false
-	}
-	key := keyFunc(namespace, name)
-	obj, exists, err := podLister.GetByKey(key)
-	if err != nil {
-		klog.Errorf("Failed to retrieve pod %s from pod lister: %v", key, err)
-		return false
-	}
-	if !exists {
-		return false
-	}
-	pod, ok := obj.(*v1.Pod)
-	if !ok {
-		klog.Errorf("Failed to convert obj %s to v1.Pod. The object type is %T", key, obj)
-		return false
-	}
-
-	// if pod has DeletionTimestamp, that means pod is in graceful termination state.
-	if pod.DeletionTimestamp != nil {
-		return false
-	}
-	return true
 }
