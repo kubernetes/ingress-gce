@@ -638,6 +638,32 @@ func TestProcessDualStackServiceOnUserError(t *testing.T) {
 	}
 }
 
+func TestDualStackILBStatusForErrorSync(t *testing.T) {
+	l4c := newServiceController(t, newFakeGCEWithUserNoIPv6SubnetError())
+	l4c.enableDualStack = true
+	(l4c.ctx.Cloud.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = mock.InsertForwardingRulesInternalErrHook
+
+	newSvc := test.NewL4ILBDualStackService(8080, api_v1.ProtocolTCP, []api_v1.IPFamily{api_v1.IPv4Protocol, api_v1.IPv6Protocol}, api_v1.ServiceExternalTrafficPolicyTypeCluster)
+	addILBService(l4c, newSvc)
+	addNEG(l4c, newSvc)
+	syncResult := l4c.processServiceCreateOrUpdate(newSvc)
+	if syncResult.Error == nil {
+		t.Fatalf("Failed to generate error when syncing service %s", newSvc.Name)
+	}
+	if syncResult.MetricsState.IsUserError {
+		t.Errorf("syncResult.MetricsState.IsUserError should be false, got true")
+	}
+	if syncResult.MetricsState.InSuccess {
+		t.Errorf("syncResult.MetricsState.InSuccess should be false, got true")
+	}
+	if syncResult.DualStackMetricsState.Status != metrics.StatusError {
+		t.Errorf("syncResult.DualStackMetricsState.Status should be %s, got %s", metrics.StatusError, syncResult.DualStackMetricsState.Status)
+	}
+	if syncResult.DualStackMetricsState.FirstSyncErrorTime == nil {
+		t.Fatalf("Metric status FirstSyncErrorTime for service %s/%s mismatch, expected: not nil, received: nil", newSvc.Namespace, newSvc.Name)
+	}
+}
+
 func TestProcessUpdateILBIPFamilies(t *testing.T) {
 	testCases := []struct {
 		desc              string

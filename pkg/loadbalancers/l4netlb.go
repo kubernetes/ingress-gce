@@ -74,7 +74,7 @@ func NewL4SyncResult(syncType string, svc *corev1.Service) *L4NetLBSyncResult {
 		StartTime:             startTime,
 		SyncType:              syncType,
 		MetricsState:          metrics.InitL4NetLBServiceState(&startTime),
-		DualStackMetricsState: metrics.InitServiceDualStackMetricsState(svc),
+		DualStackMetricsState: metrics.InitServiceDualStackMetricsState(svc, &startTime),
 	}
 	return result
 }
