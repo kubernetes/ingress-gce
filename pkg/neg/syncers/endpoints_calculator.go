@@ -77,6 +77,10 @@ func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(eds []types.Endpoints
 				l.logger.V(2).Info("Address inside Endpoints does not have an associated pod. Skipping", "address", addr.Addresses, "endpoints", klog.KRef(ed.Meta.Namespace, ed.Meta.Name))
 				continue
 			}
+			if !addr.Ready {
+				l.logger.V(2).Info("Address inside Endpoints is not ready. Skipping", "address", addr.Addresses, "endpoints", klog.KRef(ed.Meta.Namespace, ed.Meta.Name))
+				continue
+			}
 			numEndpoints++
 			if processedNodes.Has(*addr.NodeName) {
 				continue

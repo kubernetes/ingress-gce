@@ -1346,6 +1346,7 @@ func getTestEndpointSlices(name, namespace string) []*discovery.EndpointSlice {
 	instance2 := negtypes.TestInstance2
 	instance3 := negtypes.TestInstance3
 	instance4 := negtypes.TestInstance4
+	instance5 := negtypes.TestInstance5
 	notReady := false
 	emptyNamedPort := ""
 	testNamedPort := testNamedPort
@@ -1455,6 +1456,15 @@ func getTestEndpointSlices(name, namespace string) []*discovery.EndpointSlice {
 					TargetRef: &v1.ObjectReference{
 						Namespace: namespace,
 						Name:      "pod9",
+					},
+					Conditions: discovery.EndpointConditions{Ready: &notReady},
+				},
+				{
+					Addresses: []string{"10.100.4.5"},
+					NodeName:  &instance5,
+					TargetRef: &v1.ObjectReference{
+						Namespace: namespace,
+						Name:      "pod10",
 					},
 					Conditions: discovery.EndpointConditions{Ready: &notReady},
 				},
