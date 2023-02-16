@@ -32,6 +32,7 @@ import (
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	corev1 "k8s.io/api/core/v1"
+	discovery "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -2373,6 +2374,312 @@ func TestIsValidEPBatch(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidateAndAddEndpoints(t *testing.T) {
+	t.Parallel()
+	enableEndpointSlices := true
+	matchPort := strconv.Itoa(int(80))
+	emptyNodeName := ""
+	instance1 := negtypes.TestInstance1
+	endpointMap := map[string]negtypes.NetworkEndpointSet{
+		negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+			networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80")),
+	}
+	podMap := negtypes.EndpointPodMap{
+		networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"): types.NamespacedName{Namespace: testNamespace, Name: "pod1"},
+	}
+
+	_, ts := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType, false, enableEndpointSlices)
+	podLister := ts.podLister
+	addPodsToLister(podLister)
+
+	testCases := []struct {
+		desc                string
+		ep                  discovery.Endpoint
+		endpointType        negtypes.NetworkEndpointType
+		expectedEndpointMap map[string]negtypes.NetworkEndpointSet
+		expectedPodMap      negtypes.EndpointPodMap
+	}{
+		{
+			desc: "endpoint with nodeName",
+			ep: discovery.Endpoint{
+				Addresses: []string{"10.100.1.1"},
+				NodeName:  &instance1,
+				TargetRef: &corev1.ObjectReference{
+					Namespace: testNamespace,
+					Name:      "pod1",
+				},
+			},
+			endpointType:        negtypes.VmIpPortEndpointType,
+			expectedEndpointMap: endpointMap,
+			expectedPodMap:      podMap,
+		},
+		{
+			desc: "endpoint without nodeName",
+			ep: discovery.Endpoint{
+				Addresses: []string{"10.100.1.1"},
+				NodeName:  nil,
+				TargetRef: &corev1.ObjectReference{
+					Namespace: testNamespace,
+					Name:      "pod1",
+				},
+			},
+			endpointType:        negtypes.VmIpPortEndpointType,
+			expectedEndpointMap: endpointMap,
+			expectedPodMap:      podMap,
+		},
+		{
+			desc: "endpoint with empty nodeName",
+			ep: discovery.Endpoint{
+				Addresses: []string{"10.100.1.1"},
+				NodeName:  &emptyNodeName,
+				TargetRef: &corev1.ObjectReference{
+					Namespace: testNamespace,
+					Name:      "pod1",
+				},
+			},
+			endpointType:        negtypes.VmIpPortEndpointType,
+			expectedEndpointMap: endpointMap,
+			expectedPodMap:      podMap,
+		},
+		{
+			desc: "Non-GCP network endpoint",
+			ep: discovery.Endpoint{
+				Addresses: []string{"10.100.1.1"},
+				NodeName:  &emptyNodeName,
+				TargetRef: &corev1.ObjectReference{
+					Namespace: testNamespace,
+					Name:      "pod1",
+				},
+			},
+			endpointType: negtypes.NonGCPPrivateEndpointType,
+			expectedEndpointMap: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+					networkEndpointFromEncodedEndpoint("10.100.1.1||||80")),
+			},
+			expectedPodMap: negtypes.EndpointPodMap{
+				networkEndpointFromEncodedEndpoint("10.100.1.1||||80"): types.NamespacedName{Namespace: testNamespace, Name: "pod1"}},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			targetMap := map[string]negtypes.NetworkEndpointSet{}
+			endpointPodMap := negtypes.EndpointPodMap{}
+			ts.ValidateAndAddEndpoints(tc.ep, matchPort, tc.endpointType, targetMap, endpointPodMap)
+
+			if !reflect.DeepEqual(targetMap, tc.expectedEndpointMap) {
+				t.Errorf("degraded mode endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", targetMap, tc.expectedEndpointMap)
+			}
+			if !reflect.DeepEqual(endpointPodMap, tc.expectedPodMap) {
+				t.Errorf("degraded mode endpoint map is not calculated correctly:\ngot %+v,\n expected %+v", endpointPodMap, tc.expectedPodMap)
+			}
+		})
+	}
+}
+
+func TestComputeTargetMapDegradedMode(t *testing.T) {
+	t.Parallel()
+	enableEndpointSlices := true
+	_, ts := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType, false, enableEndpointSlices)
+	podLister := ts.podLister
+	addPodsToLister(podLister)
+
+	managedByController := "endpointslice-controller.k8s.io"
+	managedByUser := "foo"
+	testNonExistPort := "non-exists"
+	testEmptyNamedPort := ""
+	testNamedPort := "named-Port"
+
+	testCases := []struct {
+		desc                string
+		portName            string
+		managedByLabel      string
+		expectedEndpointMap map[string]negtypes.NetworkEndpointSet
+		expectedPodMap      negtypes.EndpointPodMap
+		networkEndpointType negtypes.NetworkEndpointType
+	}{
+		{
+			desc:                "non exist target port",
+			portName:            testNonExistPort,
+			managedByLabel:      managedByController,
+			expectedEndpointMap: map[string]negtypes.NetworkEndpointSet{},
+			expectedPodMap:      negtypes.EndpointPodMap{},
+			networkEndpointType: negtypes.VmIpPortEndpointType,
+		},
+		{
+			desc:           "empty named port, no custom endpoint slice",
+			portName:       testEmptyNamedPort,
+			managedByLabel: managedByController,
+			expectedEndpointMap: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+					networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"),
+					networkEndpointFromEncodedEndpoint("10.100.1.2||instance1||80"),
+					networkEndpointFromEncodedEndpoint("10.100.2.1||instance2||80"),
+					networkEndpointFromEncodedEndpoint("10.100.1.3||instance1||80"),
+					networkEndpointFromEncodedEndpoint("10.100.1.4||instance1||80")),
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
+					networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80")),
+			},
+			expectedPodMap: negtypes.EndpointPodMap{
+				networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"): types.NamespacedName{Namespace: testNamespace, Name: "pod1"},
+				networkEndpointFromEncodedEndpoint("10.100.1.2||instance1||80"): types.NamespacedName{Namespace: testNamespace, Name: "pod2"},
+				networkEndpointFromEncodedEndpoint("10.100.2.1||instance2||80"): types.NamespacedName{Namespace: testNamespace, Name: "pod3"},
+				networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80"): types.NamespacedName{Namespace: testNamespace, Name: "pod4"},
+				networkEndpointFromEncodedEndpoint("10.100.1.3||instance1||80"): types.NamespacedName{Namespace: testNamespace, Name: "pod5"},
+				networkEndpointFromEncodedEndpoint("10.100.1.4||instance1||80"): types.NamespacedName{Namespace: testNamespace, Name: "pod6"},
+			},
+			networkEndpointType: negtypes.VmIpPortEndpointType,
+		},
+		{
+			desc:           "named target port, contains one custom eps",
+			portName:       testNamedPort,
+			managedByLabel: managedByUser, // this is a custom endpoint slice
+			expectedEndpointMap: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+					networkEndpointFromEncodedEndpoint("10.100.2.2||instance2||81")),
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
+					networkEndpointFromEncodedEndpoint("10.100.4.1||instance4||81"),
+					networkEndpointFromEncodedEndpoint("10.100.4.3||instance4||81")),
+			},
+			expectedPodMap: negtypes.EndpointPodMap{
+				networkEndpointFromEncodedEndpoint("10.100.2.2||instance2||81"): types.NamespacedName{Namespace: testNamespace, Name: "pod7"},
+				networkEndpointFromEncodedEndpoint("10.100.4.1||instance4||81"): types.NamespacedName{Namespace: testNamespace, Name: "pod8"},
+				networkEndpointFromEncodedEndpoint("10.100.4.3||instance4||81"): types.NamespacedName{Namespace: testNamespace, Name: "pod9"},
+			},
+			networkEndpointType: negtypes.VmIpPortEndpointType,
+		},
+		{
+			desc:           "named target port, no custom endpoint slice",
+			portName:       testNamedPort,
+			managedByLabel: managedByController,
+			expectedEndpointMap: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+					networkEndpointFromEncodedEndpoint("10.100.2.2||instance2||81")),
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
+					networkEndpointFromEncodedEndpoint("10.100.4.1||instance4||81"),
+					networkEndpointFromEncodedEndpoint("10.100.3.2||instance3||8081"),
+					networkEndpointFromEncodedEndpoint("10.100.4.2||instance4||8081"),
+					networkEndpointFromEncodedEndpoint("10.100.4.3||instance4||81"),
+					networkEndpointFromEncodedEndpoint("10.100.4.4||instance4||8081")),
+			},
+			expectedPodMap: negtypes.EndpointPodMap{
+				networkEndpointFromEncodedEndpoint("10.100.2.2||instance2||81"):   types.NamespacedName{Namespace: testNamespace, Name: "pod7"},
+				networkEndpointFromEncodedEndpoint("10.100.4.1||instance4||81"):   types.NamespacedName{Namespace: testNamespace, Name: "pod8"},
+				networkEndpointFromEncodedEndpoint("10.100.4.3||instance4||81"):   types.NamespacedName{Namespace: testNamespace, Name: "pod9"},
+				networkEndpointFromEncodedEndpoint("10.100.3.2||instance3||8081"): types.NamespacedName{Namespace: testNamespace, Name: "pod10"},
+				networkEndpointFromEncodedEndpoint("10.100.4.2||instance4||8081"): types.NamespacedName{Namespace: testNamespace, Name: "pod11"},
+				networkEndpointFromEncodedEndpoint("10.100.4.4||instance4||8081"): types.NamespacedName{Namespace: testNamespace, Name: "pod12"},
+			},
+			networkEndpointType: negtypes.VmIpPortEndpointType,
+		},
+		{
+			desc:           "Non-GCP network endpoints, no custom endpoint slice",
+			portName:       testEmptyNamedPort,
+			managedByLabel: managedByController,
+			expectedEndpointMap: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+					networkEndpointFromEncodedEndpoint("10.100.1.1||||80"),
+					networkEndpointFromEncodedEndpoint("10.100.1.2||||80"),
+					networkEndpointFromEncodedEndpoint("10.100.2.1||||80"),
+					networkEndpointFromEncodedEndpoint("10.100.1.3||||80"),
+					networkEndpointFromEncodedEndpoint("10.100.1.4||||80")),
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
+					networkEndpointFromEncodedEndpoint("10.100.3.1||||80")),
+			},
+			expectedPodMap: negtypes.EndpointPodMap{
+				networkEndpointFromEncodedEndpoint("10.100.1.1||||80"): types.NamespacedName{Namespace: testNamespace, Name: "pod1"},
+				networkEndpointFromEncodedEndpoint("10.100.1.2||||80"): types.NamespacedName{Namespace: testNamespace, Name: "pod2"},
+				networkEndpointFromEncodedEndpoint("10.100.2.1||||80"): types.NamespacedName{Namespace: testNamespace, Name: "pod3"},
+				networkEndpointFromEncodedEndpoint("10.100.3.1||||80"): types.NamespacedName{Namespace: testNamespace, Name: "pod4"},
+				networkEndpointFromEncodedEndpoint("10.100.1.3||||80"): types.NamespacedName{Namespace: testNamespace, Name: "pod5"},
+				networkEndpointFromEncodedEndpoint("10.100.1.4||||80"): types.NamespacedName{Namespace: testNamespace, Name: "pod6"},
+			},
+			networkEndpointType: negtypes.NonGCPPrivateEndpointType,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			testEndpointSlices := getTestEndpointSlices(testService, testNamespace)
+			testEndpointSlices[2].ObjectMeta.Labels[discovery.LabelManagedBy] = tc.managedByLabel
+			// check if custom endpoint slice is filtered out
+			targetMap, endpointPodMap, err := ts.computeTargetMapDegradedMode(testEndpointSlices, tc.portName, tc.networkEndpointType)
+			if err != nil {
+				t.Errorf("expected error=nil, but got %v", err)
+			}
+
+			if !reflect.DeepEqual(targetMap, tc.expectedEndpointMap) {
+				t.Errorf("degraded mode endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", targetMap, tc.expectedEndpointMap)
+			}
+			if !reflect.DeepEqual(endpointPodMap, tc.expectedPodMap) {
+				t.Errorf("degraded mode endpoint map is not calculated correctly:\ngot %+v,\n expected %+v", endpointPodMap, tc.expectedPodMap)
+			}
+		})
+	}
+
+}
+
+func addPodsToLister(podLister cache.Indexer) {
+	// add all pods in default endpoint into podLister
+	for i := 1; i <= 6; i++ {
+		podLister.Add(&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: testNamespace,
+				Name:      fmt.Sprintf("pod%v", i),
+			},
+			Spec: corev1.PodSpec{
+				NodeName: testInstance1,
+			},
+		})
+	}
+	for i := 7; i <= 12; i++ {
+		podLister.Add(&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: testNamespace,
+				Name:      fmt.Sprintf("pod%v", i),
+			},
+			Spec: corev1.PodSpec{
+				NodeName: testInstance4,
+			},
+		})
+	}
+
+	podLister.Update(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testNamespace,
+			Name:      "pod3",
+		},
+		Spec: corev1.PodSpec{
+			NodeName: testInstance2,
+		},
+	})
+	podLister.Update(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testNamespace,
+			Name:      "pod4",
+		},
+		Spec: corev1.PodSpec{
+			NodeName: testInstance3,
+		},
+	})
+	podLister.Update(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testNamespace,
+			Name:      "pod7",
+		},
+		Spec: corev1.PodSpec{
+			NodeName: testInstance2,
+		},
+	})
+	podLister.Update(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testNamespace,
+			Name:      "pod10",
+		},
+		Spec: corev1.PodSpec{
+			NodeName: testInstance3,
+		},
+	})
 }
 
 func newL4ILBTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, mode negtypes.EndpointsCalculatorMode, enableEndpointSlices bool) (negtypes.NegSyncer, *transactionSyncer) {

@@ -342,8 +342,8 @@ func (s *transactionSyncer) computeTargetMap(endpointSlices []*discovery.Endpoin
 // computeTargetMapDegradedMode does endpoint calculation differently
 // to fix the error in NEG controller and return the desire map
 func (s *transactionSyncer) computeTargetMapDegradedMode(slices []*discovery.EndpointSlice, servicePortName string, endpointType negtypes.NetworkEndpointType) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, error) {
-	var targetMap map[string]negtypes.NetworkEndpointSet
-	var endpointPodMap negtypes.EndpointPodMap
+	targetMap := map[string]negtypes.NetworkEndpointSet{}
+	endpointPodMap := negtypes.EndpointPodMap{}
 	var err error
 
 	for _, slice := range slices {
@@ -367,14 +367,40 @@ func (s *transactionSyncer) computeTargetMapDegradedMode(slices []*discovery.End
 			if ep.TargetRef == nil {
 				continue
 			}
-			s.validateAndAddEndpoints(ep, matchPort, endpointType, targetMap, endpointPodMap)
+			s.ValidateAndAddEndpoints(ep, matchPort, endpointType, targetMap, endpointPodMap)
 		}
 	}
 	return targetMap, endpointPodMap, err
 }
 
 // validateAndAddEndpoints fills in missing information and creates network endpoint for each endpoint addresss
-func (s *transactionSyncer) validateAndAddEndpoints(ep discovery.Endpoint, matchPort string, endpointType negtypes.NetworkEndpointType, targetMap map[string]negtypes.NetworkEndpointSet, endpointPodMap negtypes.EndpointPodMap) {
+func (s *transactionSyncer) ValidateAndAddEndpoints(ep discovery.Endpoint, matchPort string, endpointType negtypes.NetworkEndpointType, targetMap map[string]negtypes.NetworkEndpointSet, endpointPodMap negtypes.EndpointPodMap) {
+	for _, address := range ep.Addresses {
+		key := keyFunc(ep.TargetRef.Namespace, ep.TargetRef.Name)
+		obj, exists, err := s.podLister.GetByKey(key)
+		if err != nil || !exists {
+			continue
+		}
+		pod, ok := obj.(*apiv1.Pod)
+		if !ok {
+			continue
+		}
+		nodeName := pod.Spec.NodeName
+		zone, err := s.zoneGetter.GetZoneForNode(nodeName)
+		if err != nil {
+			continue
+		}
+		if endpointType == negtypes.NonGCPPrivateEndpointType {
+			// Non-GCP network endpoints don't have associated nodes.
+			nodeName = ""
+		}
+		networkEndpoint := negtypes.NetworkEndpoint{IP: address, Port: matchPort, Node: nodeName}
+		if targetMap[zone] == nil {
+			targetMap[zone] = negtypes.NewNetworkEndpointSet()
+		}
+		targetMap[zone].Insert(networkEndpoint)
+		endpointPodMap[networkEndpoint] = types.NamespacedName{Namespace: ep.TargetRef.Namespace, Name: ep.TargetRef.Name}
+	}
 }
 
 // syncLock must already be acquired before execution

@@ -1353,6 +1353,7 @@ func getTestEndpointSlices(name, namespace string) []*discovery.EndpointSlice {
 	port81 := int32(81)
 	port8081 := int32(8081)
 	protocolTCP := v1.ProtocolTCP
+	managedByController := "endpointslice-controller.k8s.io"
 	return []*discovery.EndpointSlice{
 		{
 			ObjectMeta: metav1.ObjectMeta{
@@ -1360,6 +1361,7 @@ func getTestEndpointSlices(name, namespace string) []*discovery.EndpointSlice {
 				Namespace: namespace,
 				Labels: map[string]string{
 					discovery.LabelServiceName: name,
+					discovery.LabelManagedBy:   managedByController,
 				},
 			},
 			AddressType: "IPv4",
@@ -1429,6 +1431,7 @@ func getTestEndpointSlices(name, namespace string) []*discovery.EndpointSlice {
 				Namespace: namespace,
 				Labels: map[string]string{
 					discovery.LabelServiceName: name,
+					discovery.LabelManagedBy:   managedByController,
 				},
 			},
 			AddressType: "IPv4",
@@ -1473,6 +1476,7 @@ func getTestEndpointSlices(name, namespace string) []*discovery.EndpointSlice {
 				Namespace: namespace,
 				Labels: map[string]string{
 					discovery.LabelServiceName: name,
+					discovery.LabelManagedBy:   managedByController,
 				},
 			},
 			AddressType: "IPv4",
