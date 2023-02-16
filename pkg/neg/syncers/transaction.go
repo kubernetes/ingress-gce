@@ -245,8 +245,25 @@ func (s *transactionSyncer) syncInternalImpl() error {
 			return nil
 		}
 		endpointSlices := make([]*discovery.EndpointSlice, len(slices))
+		negCR, err := getNegFromStore(s.svcNegLister, s.Namespace, s.NegSyncerKey.NegName)
 		for i, slice := range slices {
-			endpointSlices[i] = slice.(*discovery.EndpointSlice)
+			endpointslice := slice.(*discovery.EndpointSlice)
+			endpointSlices[i] = endpointslice
+			if err != nil {
+				s.logger.Error(err, "unable to retrieve neg from the store", "neg", klog.KRef(s.Namespace, s.NegName))
+				continue
+			}
+			lastSyncTimestamp := negCR.Status.LastSyncTime
+			epsCreationTimestamp := endpointslice.ObjectMeta.CreationTimestamp
+
+			epsStaleness := time.Since(lastSyncTimestamp.Time)
+			// if this endpoint slice is newly created/created after last sync
+			if lastSyncTimestamp.Before(&epsCreationTimestamp) {
+				epsStaleness = time.Since(epsCreationTimestamp.Time)
+			}
+			metrics.PublishNegEPSStalenessMetrics(epsStaleness)
+			s.logger.V(3).Info("Endpoint slice syncs", "Namespace", endpointslice.Namespace, "Name", endpointslice.Name, "staleness", epsStaleness)
+
 		}
 		endpointsData := negtypes.EndpointsDataFromEndpointSlices(endpointSlices)
 		targetMap, endpointPodMap, dupCount, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)

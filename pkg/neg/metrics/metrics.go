@@ -32,6 +32,7 @@ const (
 	negOpEndpointsKey        = "neg_operation_endpoints"
 	lastSyncTimestampKey     = "sync_timestamp"
 	syncerStalenessKey       = "syncer_staleness"
+	epsStalenessKey          = "endpointslice_staleness"
 
 	resultSuccess = "success"
 	resultError   = "error"
@@ -135,6 +136,15 @@ var (
 			Subsystem: negControllerSubsystem,
 			Name:      syncerStalenessKey,
 			Help:      "The duration of a syncer since it last syncs",
+		},
+	)
+
+	// EPSStaleness tracks for every endpoint slice, how long since it was last processed
+	EPSStaleness = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      epsStalenessKey,
+			Help:      "The duration for an endpoint slice since it was last processed by syncer",
 			// custom buckets - [1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s(~4min), 512s(~8min), 1024s(~17min), 2048 (~34min), 4096(~68min), 8192(~136min), +Inf]
 			Buckets: prometheus.ExponentialBuckets(1, 2, 14),
 		},
@@ -152,6 +162,7 @@ func RegisterMetrics() {
 		prometheus.MustRegister(LastSyncTimestamp)
 		prometheus.MustRegister(InitializationLatency)
 		prometheus.MustRegister(SyncerStaleness)
+		prometheus.MustRegister(EPSStaleness)
 
 		RegisterSyncerMetrics()
 	})
@@ -185,6 +196,10 @@ func PublishNegInitializationMetrics(latency time.Duration) {
 
 func PublishNegSyncerStalenessMetrics(syncerStaleness time.Duration) {
 	SyncerStaleness.Observe(syncerStaleness.Seconds())
+}
+
+func PublishNegEPSStalenessMetrics(epsStaleness time.Duration) {
+	EPSStaleness.Observe(epsStaleness.Seconds())
 }
 
 func getResult(err error) string {
