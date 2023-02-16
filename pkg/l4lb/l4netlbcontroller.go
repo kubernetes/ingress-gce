@@ -633,20 +633,20 @@ func (lc *L4NetLBController) publishMetrics(result *loadbalancers.L4NetLBSyncRes
 	namespacedName := types.NamespacedName{Name: name, Namespace: namespace}.String()
 	switch result.SyncType {
 	case loadbalancers.SyncTypeCreate, loadbalancers.SyncTypeUpdate:
-		klog.V(4).Infof("External L4 Loadbalancer for Service %s ensured, updating its state %v in metrics cache", namespacedName, result.MetricsState)
+		klog.V(2).Infof("External L4 Loadbalancer for Service %s ensured, updating its state %v in metrics cache", namespacedName, result.MetricsState)
 		lc.ctx.ControllerMetrics.SetL4NetLBService(namespacedName, result.MetricsState)
 		if lc.enableDualStack {
-			klog.V(6).Infof("External L4 DualStack Loadbalancer for Service %s ensured, updating its state %v in metrics cache", namespacedName, result.DualStackMetricsState)
+			klog.V(2).Infof("External L4 DualStack Loadbalancer for Service %s ensured, updating its state %v in metrics cache", namespacedName, result.DualStackMetricsState)
 			lc.ctx.ControllerMetrics.SetL4NetLBDualStackService(namespacedName, result.DualStackMetricsState)
 		}
 		lc.publishSyncMetrics(result)
 	case loadbalancers.SyncTypeDelete:
 		// if service is successfully deleted, remove it from cache
 		if result.Error == nil {
-			klog.V(4).Infof("External L4 Loadbalancer for Service %s deleted, removing its state from metrics cache", namespacedName)
+			klog.V(2).Infof("External L4 Loadbalancer for Service %s deleted, removing its state from metrics cache", namespacedName)
 			lc.ctx.ControllerMetrics.DeleteL4NetLBService(namespacedName)
 			if lc.enableDualStack {
-				klog.V(6).Infof("External L4 Loadbalancer for Service %s deleted, removing its state from metrics cache", namespacedName)
+				klog.V(2).Infof("External L4 Loadbalancer for Service %s deleted, removing its state from metrics cache", namespacedName)
 				lc.ctx.ControllerMetrics.DeleteL4NetLBDualStackService(namespacedName)
 			}
 		}
