@@ -91,6 +91,9 @@ func (sm *SyncerMetrics) export() {
 
 // UpdateSyncer update the status of corresponding syncer based on the syncResult.
 func (sm *SyncerMetrics) UpdateSyncer(key negtypes.NegSyncerKey, syncResult *negtypes.NegSyncResult) {
+	if syncResult.Result == negtypes.ResultInProgress {
+		return
+	}
 	syncerSyncResult.WithLabelValues(syncResult.Result).Inc()
 
 	sm.mu.Lock()
