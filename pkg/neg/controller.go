@@ -111,7 +111,6 @@ func NewController(
 	serviceInformer cache.SharedIndexInformer,
 	podInformer cache.SharedIndexInformer,
 	nodeInformer cache.SharedIndexInformer,
-	endpointInformer cache.SharedIndexInformer,
 	endpointSliceInformer cache.SharedIndexInformer,
 	svcNegInformer cache.SharedIndexInformer,
 	hasSynced func() bool,
@@ -129,7 +128,6 @@ func NewController(
 	enableNonGcpMode bool,
 	enableAsm bool,
 	asmServiceNEGSkipNamespaces []string,
-	enableEndpointSlices bool,
 	logger klog.Logger,
 ) *Controller {
 	logger = logger.WithName("NEGController")
@@ -153,13 +151,6 @@ func NewController(
 	recorder := eventBroadcaster.NewRecorder(negScheme,
 		apiv1.EventSource{Component: "neg-controller"})
 
-	var endpointIndexer, endpointSliceIndexer cache.Indexer
-	if enableEndpointSlices {
-		endpointSliceIndexer = endpointSliceInformer.GetIndexer()
-	} else {
-		endpointIndexer = endpointInformer.GetIndexer()
-	}
-
 	syncerMetrics := metrics.NewNegMetricsCollector(flags.F.NegMetricsExportInterval, logger)
 	manager := newSyncerManager(
 		namer,
@@ -170,13 +161,11 @@ func NewController(
 		kubeSystemUID,
 		podInformer.GetIndexer(),
 		serviceInformer.GetIndexer(),
-		endpointIndexer,
-		endpointSliceIndexer,
+		endpointSliceInformer.GetIndexer(),
 		nodeInformer.GetIndexer(),
 		svcNegInformer.GetIndexer(),
 		syncerMetrics,
 		enableNonGcpMode,
-		enableEndpointSlices,
 		logger)
 
 	var reflector readiness.Reflector
@@ -269,24 +258,13 @@ func NewController(
 			negController.enqueueService(cur)
 		},
 	})
-	if enableEndpointSlices {
-		endpointSliceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc:    negController.enqueueEndpointSlice,
-			DeleteFunc: negController.enqueueEndpointSlice,
-			UpdateFunc: func(old, cur interface{}) {
-				negController.enqueueEndpointSlice(cur)
-			},
-		})
-	} else {
-		endpointInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc:    negController.enqueueEndpoint,
-			DeleteFunc: negController.enqueueEndpoint,
-			UpdateFunc: func(old, cur interface{}) {
-				negController.enqueueEndpoint(cur)
-			},
-		})
-	}
-
+	endpointSliceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    negController.enqueueEndpointSlice,
+		DeleteFunc: negController.enqueueEndpointSlice,
+		UpdateFunc: func(old, cur interface{}) {
+			negController.enqueueEndpointSlice(cur)
+		},
+	})
 	nodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			node := obj.(*apiv1.Node)
@@ -720,16 +698,6 @@ func (c *Controller) handleErr(err error, key interface{}) {
 		c.recorder.Eventf(service.(*apiv1.Service), apiv1.EventTypeWarning, "ProcessServiceFailed", msg)
 	}
 	c.serviceQueue.AddRateLimited(key)
-}
-
-func (c *Controller) enqueueEndpoint(obj interface{}) {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
-	if err != nil {
-		c.logger.Error(err, "Failed to generate endpoint key")
-		return
-	}
-	c.logger.V(3).Info("Adding Endpoints to endpointQueue for processing", "endpoints", key)
-	c.endpointQueue.Add(key)
 }
 
 func (c *Controller) enqueueEndpointSlice(obj interface{}) {

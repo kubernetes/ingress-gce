@@ -63,18 +63,14 @@ func NewTranslator(serviceInformer cache.SharedIndexInformer,
 	backendConfigInformer cache.SharedIndexInformer,
 	nodeInformer cache.SharedIndexInformer,
 	podInformer cache.SharedIndexInformer,
-	endpointInformer cache.SharedIndexInformer,
 	endpointSliceInformer cache.SharedIndexInformer,
-	useEndpointSlices bool,
 	kubeClient kubernetes.Interface) *Translator {
 	return &Translator{
 		serviceInformer,
 		backendConfigInformer,
 		nodeInformer,
 		podInformer,
-		endpointInformer,
 		endpointSliceInformer,
-		useEndpointSlices,
 		kubeClient,
 	}
 }
@@ -85,9 +81,7 @@ type Translator struct {
 	BackendConfigInformer cache.SharedIndexInformer
 	NodeInformer          cache.SharedIndexInformer
 	PodInformer           cache.SharedIndexInformer
-	EndpointInformer      cache.SharedIndexInformer
 	EndpointSliceInformer cache.SharedIndexInformer
-	UseEndpointSlices     bool
 	KubeClient            kubernetes.Interface
 }
 
@@ -492,11 +486,7 @@ func (t *Translator) GatherEndpointPorts(svcPorts []utils.ServicePort) []string 
 			if p.TargetPort.Type == intstr.Int {
 				endpointPorts = []int{p.TargetPort.IntValue()}
 			} else {
-				if t.UseEndpointSlices {
-					endpointPorts = listEndpointTargetPortsFromEndpointSlices(t.EndpointSliceInformer.GetIndexer(), p.ID.Service.Namespace, p.ID.Service.Name, p.PortName)
-				} else {
-					endpointPorts = listEndpointTargetPortsFromEndpoints(t.EndpointInformer.GetIndexer(), p.ID.Service.Namespace, p.ID.Service.Name, p.PortName)
-				}
+				endpointPorts = listEndpointTargetPortsFromEndpointSlices(t.EndpointSliceInformer.GetIndexer(), p.ID.Service.Namespace, p.ID.Service.Name, p.PortName)
 			}
 			for _, ep := range endpointPorts {
 				portMap[int64(ep)] = true
@@ -603,37 +593,6 @@ func listEndpointTargetPortsFromEndpointSlices(indexer cache.Indexer, namespace,
 		for _, port := range slice.Ports {
 			if port.Protocol != nil && *port.Protocol == api_v1.ProtocolTCP && port.Name != nil && *port.Name == svcPortName && port.Port != nil {
 				ret = append(ret, int(*port.Port))
-			}
-		}
-	}
-	return ret
-}
-
-// finds the actual target port behind named target port, the name of the target port is the same as service port name
-func listEndpointTargetPortsFromEndpoints(indexer cache.Indexer, namespace, name, svcPortName string) []int {
-	ep, exists, err := indexer.Get(
-		&api_v1.Endpoints{
-			ObjectMeta: meta_v1.ObjectMeta{
-				Name:      name,
-				Namespace: namespace,
-			},
-		},
-	)
-
-	if !exists {
-		klog.Errorf("Endpoint object %v/%v does not exist.", namespace, name)
-		return []int{}
-	}
-	if err != nil {
-		klog.Errorf("Failed to retrieve endpoint object %v/%v: %v", namespace, name, err)
-		return []int{}
-	}
-
-	ret := []int{}
-	for _, subset := range ep.(*api_v1.Endpoints).Subsets {
-		for _, port := range subset.Ports {
-			if port.Protocol == api_v1.ProtocolTCP && port.Name == svcPortName {
-				ret = append(ret, int(port.Port))
 			}
 		}
 	}

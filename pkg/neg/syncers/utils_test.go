@@ -441,7 +441,7 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 
 func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 	t.Parallel()
-	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType, false, false)
+	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType, false)
 	podLister := transactionSyncer.podLister
 
 	// add all pods in default endpoint into podLister
@@ -551,7 +551,7 @@ func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		retSet, retMap, _, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpoints(getDefaultEndpoint()), zoneGetter, tc.portName, podLister, tc.networkEndpointType)
+		retSet, retMap, _, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()), zoneGetter, tc.portName, podLister, tc.networkEndpointType)
 		if err != nil {
 			t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
 		}
@@ -886,7 +886,7 @@ func TestMakeEndpointBatch(t *testing.T) {
 func TestShouldPodBeInNeg(t *testing.T) {
 	t.Parallel()
 
-	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType, false, false)
+	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType, false)
 
 	podLister := transactionSyncer.podLister
 
@@ -1512,158 +1512,4 @@ func getTestEndpointSlices(name, namespace string) []*discovery.EndpointSlice {
 			},
 		},
 	}
-}
-
-func getTestEndpoint(name, namespace string) *v1.Endpoints {
-	instance1 := negtypes.TestInstance1
-	instance2 := negtypes.TestInstance2
-	instance3 := negtypes.TestInstance3
-	instance4 := negtypes.TestInstance4
-	return &v1.Endpoints{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-		Subsets: []v1.EndpointSubset{
-			{
-				Addresses: []v1.EndpointAddress{
-					{
-						IP:       "10.100.1.1",
-						NodeName: &instance1,
-						TargetRef: &v1.ObjectReference{
-							Namespace: namespace,
-							Name:      "pod1",
-						},
-					},
-					{
-						IP:       "10.100.1.2",
-						NodeName: &instance1,
-						TargetRef: &v1.ObjectReference{
-							Namespace: namespace,
-							Name:      "pod2",
-						},
-					},
-					{
-						IP:       "10.100.2.1",
-						NodeName: &instance2,
-						TargetRef: &v1.ObjectReference{
-							Namespace: namespace,
-							Name:      "pod3",
-						},
-					},
-					{
-						IP:       "10.100.3.1",
-						NodeName: &instance3,
-						TargetRef: &v1.ObjectReference{
-							Namespace: namespace,
-							Name:      "pod4",
-						},
-					},
-				},
-				NotReadyAddresses: []v1.EndpointAddress{
-					{
-						IP:       "10.100.1.3",
-						NodeName: &instance1,
-						TargetRef: &v1.ObjectReference{
-							Namespace: namespace,
-							Name:      "pod5",
-						},
-					},
-					{
-						IP:       "10.100.1.4",
-						NodeName: &instance1,
-						TargetRef: &v1.ObjectReference{
-							Namespace: namespace,
-							Name:      "pod6",
-						},
-					},
-				},
-				Ports: []v1.EndpointPort{
-					{
-						Name:     "",
-						Port:     int32(80),
-						Protocol: v1.ProtocolTCP,
-					},
-				},
-			},
-			{
-				Addresses: []v1.EndpointAddress{
-					{
-						IP:       "10.100.2.2",
-						NodeName: &instance2,
-						TargetRef: &v1.ObjectReference{
-							Namespace: namespace,
-							Name:      "pod7",
-						},
-					},
-					{
-						IP:       "10.100.4.1",
-						NodeName: &instance4,
-						TargetRef: &v1.ObjectReference{
-							Namespace: namespace,
-							Name:      "pod8",
-						},
-					},
-				},
-				NotReadyAddresses: []v1.EndpointAddress{
-					{
-						IP:       "10.100.4.3",
-						NodeName: &instance4,
-						TargetRef: &v1.ObjectReference{
-							Namespace: namespace,
-							Name:      "pod9",
-						},
-					},
-				},
-				Ports: []v1.EndpointPort{
-					{
-						Name:     testNamedPort,
-						Port:     int32(81),
-						Protocol: v1.ProtocolTCP,
-					},
-				},
-			},
-			{
-				Addresses: []v1.EndpointAddress{
-					{
-						IP:       "10.100.3.2",
-						NodeName: &instance3,
-						TargetRef: &v1.ObjectReference{
-							Namespace: namespace,
-							Name:      "pod10",
-						},
-					},
-					{
-						IP:       "10.100.4.2",
-						NodeName: &instance4,
-						TargetRef: &v1.ObjectReference{
-							Namespace: namespace,
-							Name:      "pod11",
-						},
-					},
-				},
-				NotReadyAddresses: []v1.EndpointAddress{
-					{
-						IP:       "10.100.4.4",
-						NodeName: &instance4,
-						TargetRef: &v1.ObjectReference{
-							Namespace: namespace,
-							Name:      "pod12",
-						},
-					},
-				},
-				Ports: []v1.EndpointPort{
-					{
-						Name:     testNamedPort,
-						Port:     int32(8081),
-						Protocol: v1.ProtocolTCP,
-					},
-				},
-			},
-		},
-	}
-}
-
-func getDefaultEndpoint() *v1.Endpoints {
-	return getTestEndpoint(testServiceName, testServiceNamespace)
 }
