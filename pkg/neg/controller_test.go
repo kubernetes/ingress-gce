@@ -109,7 +109,7 @@ var (
 	}
 )
 
-func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, testContext *negtypes.TestContext, runL4, enableEndpointSlices bool, enableASM bool) *Controller {
+func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, testContext *negtypes.TestContext, runL4 bool, enableASM bool) *Controller {
 	if enableASM {
 		kubeClient.CoreV1().ConfigMaps("kube-system").Create(context.TODO(), &apiv1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "ingress-controller-config-test"}, Data: map[string]string{"enable-asm": "true"}}, metav1.CreateOptions{})
 	}
@@ -121,7 +121,6 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		testContext.ServiceInformer,
 		testContext.PodInformer,
 		testContext.NodeInformer,
-		testContext.EndpointInformer,
 		testContext.EndpointSliceInformer,
 		testContext.SvcNegInformer,
 		func() bool { return true },
@@ -140,17 +139,16 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		false,     //enableNonGcpMode
 		enableASM, //enableAsm
 		[]string{},
-		enableEndpointSlices,
 		klog.TODO(),
 	)
 }
 func newTestControllerWithASM(kubeClient kubernetes.Interface) *Controller {
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-	return newTestControllerWithParamsAndContext(kubeClient, testContext, false, false, true)
+	return newTestControllerWithParamsAndContext(kubeClient, testContext, false, true)
 }
 func newTestController(kubeClient kubernetes.Interface) *Controller {
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-	return newTestControllerWithParamsAndContext(kubeClient, testContext, false, false, false)
+	return newTestControllerWithParamsAndContext(kubeClient, testContext, false, false)
 }
 
 func TestIsHealthy(t *testing.T) {
@@ -161,17 +159,13 @@ func TestIsHealthy(t *testing.T) {
 		desc                 string
 	}{
 		{
-			enableEndpointSlices: false,
-			desc:                 "Controller with endpoint slices disabled",
-		},
-		{
 			enableEndpointSlices: true,
 			desc:                 "Controller with endpoint slices enabled",
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			controller := newTestControllerWithParamsAndContext(kubeClient, testContext, false, tc.enableEndpointSlices, false)
+			controller := newTestControllerWithParamsAndContext(kubeClient, testContext, false, false)
 			defer controller.stop()
 
 			err := controller.IsHealthy()
@@ -339,7 +333,7 @@ func TestEnableNEGServiceWithIngress(t *testing.T) {
 func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 	kubeClient := fake.NewSimpleClientset()
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-	controller := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false, false)
+	controller := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false)
 	manager := controller.manager.(*syncerManager)
 	// L4 ILB NEGs will be created in zones with ready and unready nodes. Zones with upgrading nodes will be skipped.
 	expectZones := []string{negtypes.TestZone1, negtypes.TestZone2, negtypes.TestZone3}
@@ -414,7 +408,7 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 func TestEnqueueNodeWithILBSubsetting(t *testing.T) {
 	kubeClient := fake.NewSimpleClientset()
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-	controller := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false, false)
+	controller := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false)
 	stopChan := make(chan struct{}, 1)
 	// start the informer directly, without starting the entire controller.
 	go testContext.NodeInformer.Run(stopChan)
@@ -1192,25 +1186,12 @@ func TestEnqueueEndpoints(t *testing.T) {
 	t.Parallel()
 	testCases := []struct {
 		desc          string
-		useSlices     bool
 		endpoints     *v1.Endpoints
 		endpointSlice *discovery.EndpointSlice
 		expectedKey   string
 	}{
 		{
-			desc:      "Enqueue endpoint",
-			useSlices: false,
-			endpoints: &v1.Endpoints{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      service,
-					Namespace: namespace,
-				},
-			},
-			expectedKey: fmt.Sprintf("%s/%s", namespace, service),
-		},
-		{
-			desc:      "Enqueue endpoint slices",
-			useSlices: true,
+			desc: "Enqueue endpoint slices",
 			endpointSlice: &discovery.EndpointSlice{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      service + "-1",
@@ -1221,8 +1202,7 @@ func TestEnqueueEndpoints(t *testing.T) {
 			expectedKey: fmt.Sprintf("%s/%s", namespace, service),
 		},
 		{
-			desc:      "Enqueue malformed endpoint slices",
-			useSlices: true,
+			desc: "Enqueue malformed endpoint slices",
 			endpointSlice: &discovery.EndpointSlice{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      service + "-1",
@@ -1237,35 +1217,22 @@ func TestEnqueueEndpoints(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			kubeClient := fake.NewSimpleClientset()
 			testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-			controller := newTestControllerWithParamsAndContext(kubeClient, testContext, false, tc.useSlices, false)
+			controller := newTestControllerWithParamsAndContext(kubeClient, testContext, false, false)
 			stopChan := make(chan struct{}, 1)
 			// start the informer directly, without starting the entire controller.
-			if tc.useSlices {
-				go testContext.EndpointSliceInformer.Run(stopChan)
-			} else {
-				go testContext.EndpointInformer.Run(stopChan)
-			}
+			go testContext.EndpointSliceInformer.Run(stopChan)
 			defer func() {
 				stopChan <- struct{}{}
 				controller.stop()
 			}()
 			ctx := context.Background()
 			var informer cache.SharedIndexInformer
-			if tc.useSlices {
-				endpointSliceClient := controller.client.DiscoveryV1().EndpointSlices(namespace)
-				_, err := endpointSliceClient.Create(ctx, tc.endpointSlice, metav1.CreateOptions{})
-				if err != nil {
-					t.Fatalf("Failed to create test endpoint slice, error - %v", err)
-				}
-				informer = testContext.EndpointSliceInformer
-			} else {
-				endpointsClient := controller.client.CoreV1().Endpoints(namespace)
-				_, err := endpointsClient.Create(ctx, tc.endpoints, metav1.CreateOptions{})
-				if err != nil {
-					t.Fatalf("Failed to create test endpoint, error - %v", err)
-				}
-				informer = testContext.EndpointInformer
+			endpointSliceClient := controller.client.DiscoveryV1().EndpointSlices(namespace)
+			_, err := endpointSliceClient.Create(ctx, tc.endpointSlice, metav1.CreateOptions{})
+			if err != nil {
+				t.Fatalf("Failed to create test endpoint slice, error - %v", err)
 			}
+			informer = testContext.EndpointSliceInformer
 			time.Sleep(5 * time.Second)
 			if list := informer.GetIndexer().List(); len(list) != 1 {
 				t.Errorf("Got list - %v of size %d, want 1 element", list, len(list))

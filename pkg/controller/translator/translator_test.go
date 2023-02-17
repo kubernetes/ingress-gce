@@ -63,10 +63,10 @@ var (
 )
 
 func fakeTranslator() *Translator {
-	return configuredFakeTranslator(false)
+	return configuredFakeTranslator()
 }
 
-func configuredFakeTranslator(useEndpointSlices bool) *Translator {
+func configuredFakeTranslator() *Translator {
 	client := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	namespace := apiv1.NamespaceAll
@@ -76,22 +76,14 @@ func configuredFakeTranslator(useEndpointSlices bool) *Translator {
 	BackendConfigInformer := informerbackendconfig.NewBackendConfigInformer(backendConfigClient, namespace, resyncPeriod, utils.NewNamespaceIndexer())
 	PodInformer := informerv1.NewPodInformer(client, namespace, resyncPeriod, utils.NewNamespaceIndexer())
 	NodeInformer := informerv1.NewNodeInformer(client, resyncPeriod, utils.NewNamespaceIndexer())
-	var EndpointSliceInformer cache.SharedIndexInformer
-	var EndpointInformer cache.SharedIndexInformer
-	if useEndpointSlices {
-		EndpointSliceInformer = discoveryinformer.NewEndpointSliceInformer(client, namespace, 0,
-			cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc, endpointslices.EndpointSlicesByServiceIndex: endpointslices.EndpointSlicesByServiceFunc})
-	} else {
-		EndpointInformer = informerv1.NewEndpointsInformer(client, namespace, 0, utils.NewNamespaceIndexer())
-	}
+	EndpointSliceInformer := discoveryinformer.NewEndpointSliceInformer(client, namespace, 0,
+		cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc, endpointslices.EndpointSlicesByServiceIndex: endpointslices.EndpointSlicesByServiceFunc})
 	return NewTranslator(
 		ServiceInformer,
 		BackendConfigInformer,
 		NodeInformer,
 		PodInformer,
-		EndpointInformer,
 		EndpointSliceInformer,
-		useEndpointSlices,
 		client,
 	)
 }
@@ -933,25 +925,16 @@ func TestGatherEndpointPorts(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			for _, useSlices := range []bool{false, true} {
-				translator := configuredFakeTranslator(useSlices)
-				// Add endpoints or endpoint slices to informers.
-				if useSlices {
-					endpointSliceLister := translator.EndpointSliceInformer.GetIndexer()
-					for _, slice := range tc.endpointSlices {
-						endpointSliceLister.Add(slice)
-					}
-				} else {
-					endpointLister := translator.EndpointInformer.GetIndexer()
-					for _, ep := range tc.endpoints {
-						endpointLister.Add(ep)
-					}
-				}
+			translator := configuredFakeTranslator()
+			// Add endpoints or endpoint slices to informers.
+			endpointSliceLister := translator.EndpointSliceInformer.GetIndexer()
+			for _, slice := range tc.endpointSlices {
+				endpointSliceLister.Add(slice)
+			}
 
-				gotPorts := translator.GatherEndpointPorts(tc.svcPorts)
-				if !sets.NewString(gotPorts...).Equal(sets.NewString(tc.expectedPorts...)) {
-					t.Errorf("GatherEndpointPorts() = %v, expected %v (using slices: %v)", gotPorts, tc.expectedPorts, useSlices)
-				}
+			gotPorts := translator.GatherEndpointPorts(tc.svcPorts)
+			if !sets.NewString(gotPorts...).Equal(sets.NewString(tc.expectedPorts...)) {
+				t.Errorf("GatherEndpointPorts() = %v, expected %v", gotPorts, tc.expectedPorts)
 			}
 		})
 	}
