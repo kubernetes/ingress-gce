@@ -153,11 +153,15 @@ func (l4c *L4Controller) checkHealth() error {
 	syncTimeLatest := lastEnqueueTime.Add(enqueueToSyncDelayThreshold)
 	controllerHealth := l4metrics.ControllerHealthyStatus
 	if lastSyncTime.After(syncTimeLatest) {
-		msg := fmt.Sprintf("L4 ILB Sync happened at time %v - %v after enqueue time, threshold is %v", lastSyncTime, lastSyncTime.Sub(lastEnqueueTime), enqueueToSyncDelayThreshold)
+		msg := fmt.Sprintf("L4 ILB Sync happened at time %v, %v after enqueue time, last enqueue time %v, threshold is %v", lastSyncTime, lastSyncTime.Sub(lastEnqueueTime), lastEnqueueTime, enqueueToSyncDelayThreshold)
 		// Log here, context/http handler do no log the error.
 		klog.Error(msg)
 		l4metrics.PublishL4FailedHealthCheckCount(l4ILBControllerName)
 		controllerHealth = l4metrics.ControllerUnhealthyStatus
+		// Reset trackers. Otherwise, if there is nothing in the queue then it will report the FailedHealthCheckCount every time the checkHealth is called
+		// If checkHealth returned error (as it is meant to) then container would be restarted and trackers would be reset either
+		l4c.enqueueTracker.Track()
+		l4c.syncTracker.Track()
 	}
 	if l4c.enableDualStack {
 		l4metrics.PublishL4ControllerHealthCheckStatus(l4ILBDualStackControllerName, controllerHealth)
