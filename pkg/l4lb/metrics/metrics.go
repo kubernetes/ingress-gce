@@ -27,8 +27,10 @@ const (
 	statusSuccess                                  = "success"
 	statusError                                    = "error"
 	L4ilbLatencyMetricName                         = "l4_ilb_sync_duration_seconds"
+	L4ILBDualStackLatencyMetricName                = "l4_ilb_dualstack_sync_duration_seconds"
 	L4ilbErrorMetricName                           = "l4_ilb_sync_error_count"
 	L4netlbLatencyMetricName                       = "l4_netlb_sync_duration_seconds"
+	L4NetLBDualStackLatencyMetricName              = "l4_netlb_dualstack_sync_duration_seconds"
 	L4netlbErrorMetricName                         = "l4_netlb_sync_error_count"
 	L4netlbLegacyToRBSMigrationPreventedMetricName = "l4_netlb_legacy_to_rbs_migration_prevented_count"
 	l4failedHealthCheckName                        = "l4_failed_healthcheck_count"
@@ -40,7 +42,8 @@ var (
 		"sync_result", // result of the sync
 		"sync_type",   // whether this is a new service, update or delete
 	}
-	l4LBSyncErrorMetricLabels = []string{
+	l4LBDualStackSyncLatencyMetricsLabels = append(l4LBSyncLatencyMetricsLabels, "ip_families")
+	l4LBSyncErrorMetricLabels             = []string{
 		"sync_type",    // whether this is a new service, update or delete
 		"gce_resource", // The GCE resource whose update caused the error
 		// max number of values for error_type = 18 k8s error reasons + 60 http status errors.
@@ -57,6 +60,14 @@ var (
 		},
 		l4LBSyncLatencyMetricsLabels,
 	)
+	l4ILBDualStackSyncLatency = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    L4ILBDualStackLatencyMetricName,
+			Help:    "Latency of an L4 ILB DualStack Sync",
+			Buckets: prometheus.ExponentialBuckets(0.5, 2, 12),
+		},
+		l4LBDualStackSyncLatencyMetricsLabels,
+	)
 	l4ILBSyncErrorCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: L4ilbErrorMetricName,
@@ -64,7 +75,7 @@ var (
 		},
 		l4LBSyncErrorMetricLabels,
 	)
-	// l4ILBSyncLatency is a metric that represents the time spent processing L4NetLB service.
+	// l4NetLBSyncLatency is a metric that represents the time spent processing L4NetLB service.
 	// The metric is labeled with synchronization type and its result.
 	l4NetLBSyncLatency = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -75,6 +86,14 @@ var (
 			Buckets: prometheus.ExponentialBuckets(0.9375, 2, 12),
 		},
 		l4LBSyncLatencyMetricsLabels,
+	)
+	l4NetLBDualStackSyncLatency = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    L4NetLBDualStackLatencyMetricName,
+			Help:    "Latency of an L4 NetB DualStack Sync",
+			Buckets: prometheus.ExponentialBuckets(0.5, 2, 12),
+		},
+		l4LBDualStackSyncLatencyMetricsLabels,
 	)
 	// l4NetLBSyncErrorCount is a metric that counts number of L4NetLB services in Error state.
 	// The metric is labeled with synchronization type, the type of error and the name of gce resource that is in error.
@@ -112,8 +131,12 @@ var (
 func init() {
 	klog.V(3).Infof("Registering L4 ILB controller metrics %v, %v", l4ILBSyncLatency, l4ILBSyncErrorCount)
 	prometheus.MustRegister(l4ILBSyncLatency, l4ILBSyncErrorCount)
+	klog.V(3).Infof("Registering L4 ILB DualStack controller metrics %v", l4ILBDualStackSyncLatency)
+	prometheus.MustRegister(l4ILBDualStackSyncLatency)
 	klog.V(3).Infof("Registering L4 NetLB controller metrics %v, %v", l4NetLBSyncLatency, l4NetLBSyncErrorCount)
 	prometheus.MustRegister(l4NetLBSyncLatency, l4NetLBSyncErrorCount)
+	klog.V(3).Infof("Registering L4 NetLB DualStack controller metrics %v", l4NetLBDualStackSyncLatency)
+	prometheus.MustRegister(l4NetLBDualStackSyncLatency)
 	klog.V(3).Infof("Registering L4 healthcheck failures count metric: %v", l4FailedHealthCheckCount)
 	prometheus.MustRegister(l4FailedHealthCheckCount)
 	klog.V(3).Infof("Registering L4 controller healthcheck metric: %v", l4ControllerHealthCheck)
@@ -137,6 +160,15 @@ func publishL4ILBSyncLatency(success bool, syncType string, startTime time.Time)
 	l4ILBSyncLatency.WithLabelValues(status, syncType).Observe(time.Since(startTime).Seconds())
 }
 
+// PublishL4ILBDualStackSyncLatency exports the given sync latency datapoint.
+func PublishL4ILBDualStackSyncLatency(success bool, syncType, ipFamilies string, startTime time.Time) {
+	status := statusSuccess
+	if !success {
+		status = statusError
+	}
+	l4ILBDualStackSyncLatency.WithLabelValues(status, syncType, ipFamilies).Observe(time.Since(startTime).Seconds())
+}
+
 // publishL4ILBSyncLatency exports the given sync latency datapoint.
 func publishL4ILBSyncErrorCount(syncType, gceResource, errorType string) {
 	l4ILBSyncErrorCount.WithLabelValues(syncType, gceResource, errorType).Inc()
@@ -145,6 +177,15 @@ func publishL4ILBSyncErrorCount(syncType, gceResource, errorType string) {
 // PublishL4NetLBSyncSuccess exports latency metrics for L4 NetLB service after successful sync.
 func PublishL4NetLBSyncSuccess(syncType string, startTime time.Time) {
 	l4NetLBSyncLatency.WithLabelValues(statusSuccess, syncType).Observe(time.Since(startTime).Seconds())
+}
+
+// PublishL4NetLBDualStackSyncLatency exports the given sync latency datapoint.
+func PublishL4NetLBDualStackSyncLatency(success bool, syncType, ipFamilies string, startTime time.Time) {
+	status := statusSuccess
+	if !success {
+		status = statusError
+	}
+	l4NetLBDualStackSyncLatency.WithLabelValues(status, syncType, ipFamilies).Observe(time.Since(startTime).Seconds())
 }
 
 // PublishL4NetLBSyncError exports latency and error count metrics for L4 NetLB after error sync.

@@ -674,4 +674,7 @@ func (lc *L4NetLBController) publishSyncMetrics(result *loadbalancers.L4NetLBSyn
 		return
 	}
 	metrics.PublishL4NetLBSyncError(result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime)
+	if lc.enableDualStack {
+		metrics.PublishL4NetLBDualStackSyncLatency(result.Error == nil, result.SyncType, result.DualStackMetricsState.IPFamilies, result.StartTime)
+	}
 }
