@@ -35,14 +35,15 @@ var (
 	ErrEPCalculationCountZero    = errors.New("endpoint count from endpointPodMap cannot be zero")
 
 	// these results have their own errors
-	ResultInvalidEPAttach   = "InvalidEPAttach"
-	ResultInvalidEPDetach   = "InvalidEPDetach"
-	ResultNegNotFound       = "NegNotFound"
-	ResultCurrentEPNotFound = "CurrentEPNotFound"
-	ResultEPSNotFound       = "EPSNotFound"
-	ResultOtherError        = "OtherError"
-	ResultInProgress        = "InProgress"
-	ResultSuccess           = "Success"
+	ResultInvalidAPIResponse = "InvalidAPIResponse"
+	ResultInvalidEPAttach    = "InvalidEPAttach"
+	ResultInvalidEPDetach    = "InvalidEPDetach"
+	ResultNegNotFound        = "NegNotFound"
+	ResultCurrentEPNotFound  = "CurrentEPNotFound"
+	ResultEPSNotFound        = "EPSNotFound"
+	ResultOtherError         = "OtherError"
+	ResultInProgress         = "InProgress"
+	ResultSuccess            = "Success"
 )
 
 type NegSyncResult struct {
