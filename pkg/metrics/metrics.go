@@ -39,7 +39,8 @@ const (
 	// Env variable for ingress version
 	versionVar = "INGRESS_VERSION"
 	// Dummy float so we can used bool based timeseries
-	versionValue = 1.0
+	versionValue                 = 1.0
+	persistentErrorThresholdTime = 20 * time.Minute
 )
 
 var (
@@ -308,6 +309,12 @@ func (im *ControllerMetrics) SetL4ILBDualStackService(svcKey string, state L4Dua
 	if im.l4ILBDualStackServiceMap == nil {
 		klog.Fatalf("L4 ILB DualStack Metrics failed to initialize correctly.")
 	}
+	if state.Status == StatusError {
+		if previousState, ok := im.l4ILBDualStackServiceMap[svcKey]; ok && previousState.FirstSyncErrorTime != nil {
+			// If service is in Error state and retry timestamp was set then do not update it.
+			state.FirstSyncErrorTime = previousState.FirstSyncErrorTime
+		}
+	}
 	im.l4ILBDualStackServiceMap[svcKey] = state
 }
 
@@ -352,6 +359,13 @@ func (im *ControllerMetrics) SetL4NetLBDualStackService(svcKey string, state L4D
 
 	if im.l4NetLBDualStackServiceMap == nil {
 		klog.Fatalf("L4 NetLB DualStack Metrics failed to initialize correctly.")
+	}
+
+	if state.Status == StatusError {
+		if previousState, ok := im.l4NetLBDualStackServiceMap[svcKey]; ok && previousState.FirstSyncErrorTime != nil {
+			// If service is in Error state and retry timestamp was set then do not update it.
+			state.FirstSyncErrorTime = previousState.FirstSyncErrorTime
+		}
 	}
 	im.l4NetLBDualStackServiceMap[svcKey] = state
 }
@@ -613,15 +627,20 @@ func (im *ControllerMetrics) computeL4ILBMetrics() map[feature]int {
 }
 
 // computeL4ILBDualStackMetrics aggregates L4 ILB DualStack metrics in the cache.
-func (im *ControllerMetrics) computeL4ILBDualStackMetrics() map[L4DualStackServiceState]int {
+func (im *ControllerMetrics) computeL4ILBDualStackMetrics() map[L4DualStackServiceLabels]int {
 	im.Lock()
 	defer im.Unlock()
 	klog.V(4).Infof("Computing L4 DualStack ILB usage metrics from service state map: %#v", im.l4ILBDualStackServiceMap)
-	counts := map[L4DualStackServiceState]int{}
+	counts := map[L4DualStackServiceLabels]int{}
 
 	for key, state := range im.l4ILBDualStackServiceMap {
 		klog.V(6).Infof("ILB Service %s has IPFamilies: %v, IPFamilyPolicy: %t, Status: %v", key, state.IPFamilies, state.IPFamilyPolicy, state.Status)
-		counts[state]++
+		if state.Status == StatusError &&
+			state.FirstSyncErrorTime != nil &&
+			time.Since(*state.FirstSyncErrorTime) >= persistentErrorThresholdTime {
+			state.Status = StatusPersistentError
+		}
+		counts[state.L4DualStackServiceLabels]++
 	}
 	klog.V(4).Info("L4 ILB usage metrics computed.")
 	return counts
@@ -643,7 +662,7 @@ func (im *ControllerMetrics) computeL4NetLBMetrics() netLBFeatureCount {
 			continue
 		}
 		if !state.InSuccess {
-			if time.Since(*state.FirstSyncErrorTime) > im.l4NetLBProvisionDeadline {
+			if time.Since(*state.FirstSyncErrorTime) >= im.l4NetLBProvisionDeadline {
 				counts.inError++
 			}
 			// Skip counting other features if the service is in error state.
@@ -662,15 +681,20 @@ func (im *ControllerMetrics) computeL4NetLBMetrics() netLBFeatureCount {
 }
 
 // computeL4NetLBDualStackMetrics aggregates L4 NetLB DualStack metrics in the cache.
-func (im *ControllerMetrics) computeL4NetLBDualStackMetrics() map[L4DualStackServiceState]int {
+func (im *ControllerMetrics) computeL4NetLBDualStackMetrics() map[L4DualStackServiceLabels]int {
 	im.Lock()
 	defer im.Unlock()
 	klog.V(4).Infof("Computing L4 DualStack NetLB usage metrics from service state map: %#v", im.l4NetLBDualStackServiceMap)
-	counts := map[L4DualStackServiceState]int{}
+	counts := map[L4DualStackServiceLabels]int{}
 
 	for key, state := range im.l4NetLBDualStackServiceMap {
 		klog.V(6).Infof("NetLB Service %s has IPFamilies: %v, IPFamilyPolicy: %t, Status: %v", key, state.IPFamilies, state.IPFamilyPolicy, state.Status)
-		counts[state]++
+		if state.Status == StatusError &&
+			state.FirstSyncErrorTime != nil &&
+			time.Since(*state.FirstSyncErrorTime) >= persistentErrorThresholdTime {
+			state.Status = StatusPersistentError
+		}
+		counts[state.L4DualStackServiceLabels]++
 	}
 	klog.V(4).Info("L4 NetLB usage metrics computed.")
 	return counts
@@ -785,7 +809,7 @@ func recordComponentVersion() {
 	componentVersion.WithLabelValues(v).Set(versionValue)
 }
 
-func InitServiceDualStackMetricsState(svc *corev1.Service) L4DualStackServiceState {
+func InitServiceDualStackMetricsState(svc *corev1.Service, startTime *time.Time) L4DualStackServiceState {
 	state := L4DualStackServiceState{}
 
 	var ipFamiliesStrings []string
@@ -801,5 +825,6 @@ func InitServiceDualStackMetricsState(svc *corev1.Service) L4DualStackServiceSta
 
 	// Always init status with error, and update with Success when service was provisioned
 	state.Status = StatusError
+	state.FirstSyncErrorTime = startTime
 	return state
 }

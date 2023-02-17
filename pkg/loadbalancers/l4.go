@@ -283,11 +283,12 @@ func (l4 *L4) getFRNameWithProtocol(protocol string) string {
 func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service) *L4ILBSyncResult {
 	l4.Service = svc
 
+	startTime := time.Now()
 	result := &L4ILBSyncResult{
 		Annotations:           make(map[string]string),
-		StartTime:             time.Now(),
+		StartTime:             startTime,
 		SyncType:              SyncTypeCreate,
-		DualStackMetricsState: metrics.InitServiceDualStackMetricsState(svc),
+		DualStackMetricsState: metrics.InitServiceDualStackMetricsState(svc, &startTime),
 	}
 
 	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
@@ -388,6 +389,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	}
 	if l4.enableDualStack {
 		result.DualStackMetricsState.Status = metrics.StatusSuccess
+		result.DualStackMetricsState.FirstSyncErrorTime = nil
 	}
 	return result
 }

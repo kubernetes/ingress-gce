@@ -78,10 +78,11 @@ type L4DualStackServiceStatus string
 const StatusSuccess = L4DualStackServiceStatus("Success")
 const StatusUserError = L4DualStackServiceStatus("UserError")
 const StatusError = L4DualStackServiceStatus("Error")
+const StatusPersistentError = L4DualStackServiceStatus("PersistentError")
 
-// L4DualStackServiceState defines ipFamilies, ipFamilyPolicy and status
-// of L4 ILB DualStack service
-type L4DualStackServiceState struct {
+// L4DualStackServiceLabels defines ipFamilies, ipFamilyPolicy and status
+// of L4 DualStack service
+type L4DualStackServiceLabels struct {
 	// IPFamilies stores spec.ipFamilies of Service
 	IPFamilies string
 	// IPFamilyPolicy specifies spec.IPFamilyPolicy of Service
@@ -90,8 +91,16 @@ type L4DualStackServiceState struct {
 	Status L4DualStackServiceStatus
 }
 
+// L4DualStackServiceState defines ipFamilies, ipFamilyPolicy, status and tracks
+// FirstSyncErrorTime of L4 DualStack service
+type L4DualStackServiceState struct {
+	L4DualStackServiceLabels
+	// FirstSyncErrorTime specifies the time timestamp when the service sync ended up with error for the first time.
+	FirstSyncErrorTime *time.Time
+}
+
 // L4NetLBServiceState defines if network tier is premium and
-// if static ip address is managed bu controller
+// if static ip address is managed by controller
 // for an L4 NetLB service.
 type L4NetLBServiceState struct {
 	// IsManagedIP specifies if Static IP is managed by controller.
