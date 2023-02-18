@@ -38,7 +38,10 @@ func (l7 *L7) checkProxy() (err error) {
 	// TODO(shance): move to translator
 	var umName string
 	if flags.F.EnableFrontendConfig {
-		if l7.redirectUm != nil && l7.runtimeInfo.FrontendConfig.Spec.RedirectToHttps != nil && l7.runtimeInfo.FrontendConfig.Spec.RedirectToHttps.Enabled {
+		if l7.redirectUm != nil &&
+			l7.runtimeInfo.FrontendConfig != nil &&
+			l7.runtimeInfo.FrontendConfig.Spec.RedirectToHttps != nil &&
+			l7.runtimeInfo.FrontendConfig.Spec.RedirectToHttps.Enabled {
 			umName = l7.redirectUm.Name
 		} else {
 			umName = l7.um.Name
