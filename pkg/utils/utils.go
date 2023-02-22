@@ -668,6 +668,22 @@ func GetPortRanges(ports []int) (ranges []string) {
 	return ranges
 }
 
+func HasMultipleProtocols(svcPorts []api_v1.ServicePort) bool {
+	if len(svcPorts) == 0 {
+		return false
+	}
+
+	firstProtocol := svcPorts[0].Protocol
+	for _, port := range svcPorts[1:] {
+		if port.Protocol != firstProtocol {
+			return true
+		}
+	}
+	return false
+}
+
+// TODO: This assumption is no longer true since 1.24, LoadBalancer Services may have multiple protocols
+// Ref: https://github.com/kubernetes/enhancements/blob/master/keps/sig-network/1435-mixed-protocol-lb
 func GetProtocol(svcPorts []api_v1.ServicePort) api_v1.Protocol {
 	if len(svcPorts) == 0 {
 		return api_v1.ProtocolTCP

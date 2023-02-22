@@ -232,6 +232,10 @@ func (lc *L4NetLBController) shouldProcessService(newSvc, oldSvc *v1.Service) bo
 	if !(lc.isRBSBasedService(newSvc) || lc.isRBSBasedService(oldSvc)) {
 		return false
 	}
+	if utils.HasMultipleProtocols(newSvc.Spec.Ports) {
+		klog.Warningf("Ignoring update for service %s:%s using different ports protocols", newSvc.Namespace, newSvc.Name)
+		return false
+	}
 	if lc.needsAddition(newSvc, oldSvc) || lc.needsUpdate(newSvc, oldSvc) || lc.needsDeletion(newSvc) {
 		return true
 	}

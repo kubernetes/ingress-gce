@@ -1535,3 +1535,94 @@ func TestAddIPToLBStatus(t *testing.T) {
 		})
 	}
 }
+
+func TestHasMultipleProtocols(t *testing.T) {
+	tests := []struct {
+		name        string
+		annotations map[string]string
+		ports       []api_v1.ServicePort
+		want        bool
+	}{
+		{
+			name:        "TCP",
+			annotations: make(map[string]string),
+			ports: []api_v1.ServicePort{
+				{
+					Protocol: api_v1.ProtocolTCP,
+					Port:     int32(8080),
+				},
+			},
+			want: false,
+		},
+		{
+			name:        "UDP",
+			annotations: map[string]string{annotations.RBSAnnotationKey: "enabled"},
+			ports: []api_v1.ServicePort{
+				{
+					Protocol: api_v1.ProtocolUDP,
+					Port:     int32(8080),
+				},
+			},
+			want: false,
+		},
+		{
+			name:        "TCP and UDP",
+			annotations: map[string]string{annotations.RBSAnnotationKey: "enabled"},
+			ports: []api_v1.ServicePort{
+				{
+					Protocol: api_v1.ProtocolUDP,
+					Port:     int32(53),
+				},
+				{
+					Protocol: api_v1.ProtocolTCP,
+					Port:     int32(53),
+				},
+			},
+			want: true,
+		},
+		{
+			name:        "TCP",
+			annotations: make(map[string]string),
+			ports: []api_v1.ServicePort{
+				{
+					Name:     "port80",
+					Protocol: api_v1.ProtocolTCP,
+					Port:     int32(80),
+				},
+				{
+					Name:     "port8080",
+					Protocol: api_v1.ProtocolTCP,
+					Port:     int32(8080),
+				},
+			},
+			want: false,
+		},
+		{
+			name:        "UDP",
+			annotations: map[string]string{annotations.RBSAnnotationKey: "enabled"},
+			ports: []api_v1.ServicePort{
+				{
+					Name:     "port80",
+					Protocol: api_v1.ProtocolUDP,
+					Port:     int32(80),
+				},
+				{
+					Name:     "port8080",
+					Protocol: api_v1.ProtocolUDP,
+					Port:     int32(8080),
+				},
+			},
+			want: false,
+		},
+	}
+	for _, test := range tests {
+		tt := test
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := HasMultipleProtocols(tt.ports)
+			if tt.want != got {
+				t.Errorf("wanted %v got %v", tt.want, got)
+			}
+		})
+	}
+}

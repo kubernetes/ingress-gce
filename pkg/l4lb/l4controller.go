@@ -192,6 +192,10 @@ func (l4c *L4Controller) shouldProcessService(service *v1.Service) bool {
 		klog.Warningf("Ignoring update for service %s:%s managed by service controller", service.Namespace, service.Name)
 		return false
 	}
+	if utils.HasMultipleProtocols(service.Spec.Ports) {
+		klog.Warningf("Ignoring update for service %s:%s using different ports protocols", service.Namespace, service.Name)
+		return false
+	}
 	frName := utils.LegacyForwardingRuleName(service)
 	// Processing should continue if an external forwarding rule exists. This can happen if the service is transitioning from External to Internal.
 	// The external forwarding rule might not be deleted by the time this controller starts processing the service.
