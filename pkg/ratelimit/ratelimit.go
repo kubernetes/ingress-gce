@@ -27,6 +27,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/client-go/util/flowcontrol"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/ratelimit/metrics"
 	"k8s.io/klog/v2"
 )
 
@@ -37,6 +38,10 @@ type GCERateLimiter struct {
 	// Minimum polling interval for getting operations. Underlying operations rate limiter
 	// may increase the time.
 	operationPollInterval time.Duration
+}
+
+func init() {
+	metrics.RegisterMetrics()
 }
 
 // NewGCERateLimiter parses the list of rate limiting specs passed in and
@@ -99,7 +104,10 @@ func (grl *GCERateLimiter) Accept(ctx context.Context, key *cloud.RateLimitKey) 
 		}
 	}
 
-	return rl.Accept(ctx, key)
+	start := time.Now()
+	err := rl.Accept(ctx, key)
+	metrics.PublishRateLimiterMetrics(fmt.Sprintf("%s.%s.%s", key.Version, key.Service, key.Operation), start)
+	return err
 }
 
 // rateLimitImpl returns the flowcontrol.RateLimiter implementation
