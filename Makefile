@@ -50,7 +50,7 @@ CONTAINER_PREFIX ?= ingress-gce
 VERSION ?= $(shell git describe --tags --always --dirty)
 
 # Set to 1 to print more verbose output from the build.
-VERBOSE ?= 0
+VERBOSE ?= 1
 
 # Include standard build rules.
 include build/rules.mk
