@@ -27,11 +27,16 @@ import (
 
 type SyncerMetricsCollector interface {
 	UpdateSyncer(key negtypes.NegSyncerKey, result *negtypes.NegSyncResult)
+	SetSyncerEPMetrics(key negtypes.NegSyncerKey, epState *negtypes.SyncerEPStat)
 }
 
 type SyncerMetrics struct {
 	// syncerStatusMap tracks the status of each syncer
 	syncerStatusMap map[negtypes.NegSyncerKey]string
+	// syncerEndpointStateMap is a map between syncer and endpoint state counts
+	syncerEndpointStateMap map[negtypes.NegSyncerKey]negtypes.StateCountMap
+	// syncerEPSStateMap is a map between syncer and endpoint slice state counts
+	syncerEPSStateMap map[negtypes.NegSyncerKey]negtypes.StateCountMap
 	// mu avoid race conditions and ensure correctness of metrics
 	mu sync.Mutex
 	// duration between metrics exports
@@ -43,9 +48,11 @@ type SyncerMetrics struct {
 // NewNEGMetricsCollector initializes SyncerMetrics and starts a go routine to compute and export metrics periodically.
 func NewNegMetricsCollector(exportInterval time.Duration, logger klog.Logger) *SyncerMetrics {
 	return &SyncerMetrics{
-		syncerStatusMap: make(map[negtypes.NegSyncerKey]string),
-		metricsInterval: exportInterval,
-		logger:          logger.WithName("NegMetricsCollector"),
+		syncerStatusMap:        make(map[negtypes.NegSyncerKey]string),
+		syncerEndpointStateMap: make(map[negtypes.NegSyncerKey]negtypes.StateCountMap),
+		syncerEPSStateMap:      make(map[negtypes.NegSyncerKey]negtypes.StateCountMap),
+		metricsInterval:        exportInterval,
+		logger:                 logger.WithName("NegMetricsCollector"),
 	}
 }
 
@@ -81,4 +88,21 @@ func (sm *SyncerMetrics) UpdateSyncer(key negtypes.NegSyncerKey, syncResult *neg
 		sm.logger.V(3).Info("Syncer Metrics failed to initialize correctly, reinitializing syncerStatusMap: %v", sm.syncerStatusMap)
 	}
 	sm.syncerStatusMap[key] = syncResult.Result
+}
+
+// SetSyncerEPMetrics update the endpoint count based on the endpointStat
+func (sm *SyncerMetrics) SetSyncerEPMetrics(key negtypes.NegSyncerKey, endpointStat *negtypes.SyncerEPStat) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	if sm.syncerEndpointStateMap == nil {
+		sm.syncerEndpointStateMap = make(map[negtypes.NegSyncerKey]negtypes.StateCountMap)
+		sm.logger.V(3).Info("Syncer Metrics failed to initialize correctly, reinitializing syncerEPStateMap: %v", sm.syncerEndpointStateMap)
+	}
+	sm.syncerEndpointStateMap[key] = endpointStat.EndpointStateCount
+
+	if sm.syncerEPSStateMap == nil {
+		sm.syncerEPSStateMap = make(map[negtypes.NegSyncerKey]negtypes.StateCountMap)
+		sm.logger.V(3).Info("Syncer Metrics failed to initialize correctly, reinitializing syncerEPSStateMap: %v", sm.syncerEPSStateMap)
+	}
+	sm.syncerEPSStateMap[key] = endpointStat.EndpointSliceStateCount
 }
