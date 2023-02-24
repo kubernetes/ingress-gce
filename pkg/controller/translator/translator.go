@@ -457,7 +457,7 @@ func (t *Translator) getHTTPProbe(svc api_v1.Service, targetPort intstr.IntOrStr
 				if (targetPort.Type == intstr.Int && targetPort.IntVal == p.ContainerPort) ||
 					(targetPort.Type == intstr.String && targetPort.StrVal == p.Name) {
 
-					readinessProbePort := c.ReadinessProbe.Handler.HTTPGet.Port
+					readinessProbePort := c.ReadinessProbe.ProbeHandler.HTTPGet.Port
 					switch readinessProbePort.Type {
 					case intstr.Int:
 						if readinessProbePort.IntVal == p.ContainerPort {
@@ -470,7 +470,7 @@ func (t *Translator) getHTTPProbe(svc api_v1.Service, targetPort intstr.IntOrStr
 					}
 
 					klog.Infof("%v: found matching targetPort on container %v, but not on readinessProbe (%+v)",
-						logStr, c.Name, c.ReadinessProbe.Handler.HTTPGet.Port)
+						logStr, c.Name, c.ReadinessProbe.ProbeHandler.HTTPGet.Port)
 				}
 			}
 		}
@@ -514,9 +514,9 @@ func (t *Translator) GatherEndpointPorts(svcPorts []utils.ServicePort) []string 
 // - an HTTPGet probe, as opposed to a tcp or exec probe
 // - has no special host or headers fields, except for possibly an HTTP Host header
 func isSimpleHTTPProbe(probe *api_v1.Probe) bool {
-	return (probe != nil && probe.Handler.HTTPGet != nil && probe.Handler.HTTPGet.Host == "" &&
-		(len(probe.Handler.HTTPGet.HTTPHeaders) == 0 ||
-			(len(probe.Handler.HTTPGet.HTTPHeaders) == 1 && probe.Handler.HTTPGet.HTTPHeaders[0].Name == "Host")))
+	return (probe != nil && probe.ProbeHandler.HTTPGet != nil && probe.ProbeHandler.HTTPGet.Host == "" &&
+		(len(probe.ProbeHandler.HTTPGet.HTTPHeaders) == 0 ||
+			(len(probe.ProbeHandler.HTTPGet.HTTPHeaders) == 1 && probe.ProbeHandler.HTTPGet.HTTPHeaders[0].Name == "Host")))
 }
 
 // getProbeScheme returns the Kubernetes API URL scheme corresponding to the

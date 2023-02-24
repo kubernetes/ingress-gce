@@ -13,7 +13,9 @@ issues:
     - path: _test\.go
       linters:
         - errcheck
-
+    - linters:
+        - errcheck
+      text: "AddEventHandler"
 linters-settings:
   errcheck:
     exclude-functions:

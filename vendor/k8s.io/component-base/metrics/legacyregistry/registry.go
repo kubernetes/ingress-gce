@@ -20,6 +20,7 @@ import (
 	"net/http"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"k8s.io/component-base/metrics"
@@ -44,16 +45,14 @@ var (
 )
 
 func init() {
-	RawMustRegister(prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}))
-	RawMustRegister(prometheus.NewGoCollector())
+	RawMustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+	RawMustRegister(collectors.NewGoCollector(collectors.WithGoCollectorRuntimeMetrics(collectors.MetricsAll)))
+	defaultRegistry.RegisterMetaMetrics()
 }
 
 // Handler returns an HTTP handler for the DefaultGatherer. It is
 // already instrumented with InstrumentHandler (using "prometheus" as handler
 // name).
-//
-// Deprecated: Please note the issues described in the doc comment of
-// InstrumentHandler. You might want to consider using promhttp.Handler instead.
 func Handler() http.Handler {
 	return promhttp.InstrumentMetricHandler(prometheus.DefaultRegisterer, promhttp.HandlerFor(defaultRegistry, promhttp.HandlerOpts{}))
 }

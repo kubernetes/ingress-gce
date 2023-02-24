@@ -123,7 +123,7 @@ var (
 	defaultNamer      = namer.NewNamer("uid1", "fw1")
 	defaultBackendSvc = types.NamespacedName{Namespace: "system", Name: "default"}
 	existingProbe     = &api_v1.Probe{
-		Handler: api_v1.Handler{
+		ProbeHandler: api_v1.ProbeHandler{
 			HTTPGet: &api_v1.HTTPGetAction{
 				Scheme: api_v1.URISchemeHTTPS,
 				Path:   "/my-special-path",
