@@ -296,11 +296,11 @@ func DefaultILBHealthCheck(protocol annotations.AppProtocol) *HealthCheck {
 // TODO: what if the port changes?
 // TODO: does not handle protocol?
 func ApplyProbeSettingsToHC(p *v1.Probe, hc *HealthCheck) {
-	if p.Handler.HTTPGet == nil {
+	if p.ProbeHandler.HTTPGet == nil {
 		return
 	}
 
-	healthPath := p.Handler.HTTPGet.Path
+	healthPath := p.ProbeHandler.HTTPGet.Path
 	// GCE requires a leading "/" for health check urls.
 	if !strings.HasPrefix(healthPath, "/") {
 		healthPath = "/" + healthPath
@@ -308,8 +308,8 @@ func ApplyProbeSettingsToHC(p *v1.Probe, hc *HealthCheck) {
 	hc.RequestPath = healthPath
 
 	// Extract host from HTTP headers
-	host := p.Handler.HTTPGet.Host
-	for _, header := range p.Handler.HTTPGet.HTTPHeaders {
+	host := p.ProbeHandler.HTTPGet.Host
+	for _, header := range p.ProbeHandler.HTTPGet.HTTPHeaders {
 		if header.Name == "Host" {
 			host = header.Value
 			break

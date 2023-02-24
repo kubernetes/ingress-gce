@@ -777,7 +777,7 @@ func TestIngressTagging(t *testing.T) {
 					DefaultBackend: &defaultBackend,
 				})
 			if tc.vipExists {
-				ing.Status.LoadBalancer.Ingress = []api_v1.LoadBalancerIngress{{IP: "0.0.0.0"}}
+				ing.Status.LoadBalancer.Ingress = []networkingv1.IngressLoadBalancerIngress{{IP: "0.0.0.0"}}
 			}
 			addIngress(lbc, ing)
 			// Create URL map if enabled.

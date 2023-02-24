@@ -27,15 +27,14 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
-	"google.golang.org/api/compute/v1"
-	"k8s.io/apimachinery/pkg/util/clock"
-	"k8s.io/legacy-cloud-providers/gce"
-
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/ingress-gce/pkg/composite"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/legacy-cloud-providers/gce"
+	clocktesting "k8s.io/utils/clock/testing"
 )
 
 type testPatcher struct {
@@ -354,7 +353,7 @@ func TestPoll(t *testing.T) {
 	t.Parallel()
 
 	poller := newFakePoller()
-	fakeClock := clock.NewFakeClock(time.Now())
+	fakeClock := clocktesting.NewFakeClock(time.Now())
 	poller.clock = fakeClock
 	patcherTester := poller.patcher.(*testPatcher)
 	negCloud := poller.negCloud
