@@ -34,16 +34,22 @@ var (
 	ResultEPCalculationCountZero = "EPCalculationCountZero"
 	ErrEPCalculationCountZero    = errors.New("endpoint count from endpointPodMap cannot be zero")
 
-	// these results have their own errors
 	ResultInvalidAPIResponse = "InvalidAPIResponse"
-	ResultInvalidEPAttach    = "InvalidEPAttach"
-	ResultInvalidEPDetach    = "InvalidEPDetach"
-	ResultNegNotFound        = "NegNotFound"
-	ResultCurrentEPNotFound  = "CurrentEPNotFound"
-	ResultEPSNotFound        = "EPSNotFound"
-	ResultOtherError         = "OtherError"
-	ResultInProgress         = "InProgress"
-	ResultSuccess            = "Success"
+	ErrInvalidAPIResponse    = errors.New("received response error doesn't match googleapi.Error type")
+
+	ResultInvalidEPAttach = "InvalidEPAttach"
+	ErrInvalidEPAttach    = errors.New("endpoint information for attach operation is incorrect")
+
+	ResultInvalidEPDetach = "InvalidEPDetach"
+	ErrInvalidEPDetach    = errors.New("endpoint information for detach operation is incorrect")
+
+	// these results have their own errors
+	ResultNegNotFound       = "NegNotFound"
+	ResultCurrentEPNotFound = "CurrentEPNotFound"
+	ResultEPSNotFound       = "EPSNotFound"
+	ResultOtherError        = "OtherError"
+	ResultInProgress        = "InProgress"
+	ResultSuccess           = "Success"
 )
 
 type NegSyncResult struct {
