@@ -160,6 +160,7 @@ push: $(PUSH_BUILDSTAMPS) images-push
 ifeq (,$(findstring gcr.io,$(REGISTRY)))
 	@docker push $$(head -n 1 $<) $(VERBOSE_OUTPUT)
 else
+	@gcloud auth configure-docker --quiet
 	@gcloud docker -- push $$(head -n 1 $<) $(VERBOSE_OUTPUT)
 endif
 	@cat $< > $@
