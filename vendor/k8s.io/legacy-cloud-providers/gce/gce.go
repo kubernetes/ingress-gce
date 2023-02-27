@@ -1,4 +1,3 @@
-//go:build !providerless
 // +build !providerless
 
 /*
@@ -167,9 +166,6 @@ type Cloud struct {
 	s *cloud.Service
 
 	metricsCollector loadbalancerMetricsCollector
-
-	// the compute API endpoint with the `projects/` element.
-	projectsBasePath string
 }
 
 // ConfigGlobal is the in memory representation of the gce.conf config data
@@ -435,16 +431,14 @@ func CreateGCECloud(config *CloudConfig) (*Cloud, error) {
 	}
 	serviceAlpha.UserAgent = userAgent
 
+	// Expect override api endpoint to always be v1 api and follows the same pattern as prod.
+	// Generate alpha and beta api endpoints based on override v1 api endpoint.
+	// For example,
+	// staging API endpoint: https://www.googleapis.com/compute/staging_v1/
 	if config.APIEndpoint != "" {
-		if strings.HasSuffix(service.BasePath, "/projects/") {
-			service.BasePath = getProjectsBasePath(config.APIEndpoint)
-			serviceBeta.BasePath = getProjectsBasePath(strings.Replace(config.APIEndpoint, "v1", "beta", -1))
-			serviceAlpha.BasePath = getProjectsBasePath(strings.Replace(config.APIEndpoint, "v1", "alpha", -1))
-		} else {
-			service.BasePath = config.APIEndpoint
-			serviceBeta.BasePath = strings.Replace(config.APIEndpoint, "v1", "beta", -1)
-			serviceAlpha.BasePath = strings.Replace(config.APIEndpoint, "v1", "alpha", -1)
-		}
+		service.BasePath = fmt.Sprintf("%sprojects/", config.APIEndpoint)
+		serviceBeta.BasePath = fmt.Sprintf("%sprojects/", strings.Replace(config.APIEndpoint, "v1", "beta", -1))
+		serviceAlpha.BasePath = fmt.Sprintf("%sprojects/", strings.Replace(config.APIEndpoint, "v1", "alpha", -1))
 	}
 
 	containerService, err := container.NewService(context.Background(), option.WithTokenSource(config.TokenSource))
@@ -530,7 +524,6 @@ func CreateGCECloud(config *CloudConfig) (*Cloud, error) {
 		AlphaFeatureGate:         config.AlphaFeatureGate,
 		nodeZones:                map[string]sets.String{},
 		metricsCollector:         newLoadBalancerMetrics(),
-		projectsBasePath:         getProjectsBasePath(service.BasePath),
 	}
 
 	gce.manager = &gceServiceManager{gce}
@@ -800,18 +793,6 @@ func (g *Cloud) HasClusterID() bool {
 	return true
 }
 
-// getProjectsBasePath returns the compute API endpoint with the `projects/` element.
-// The suffix must be added when generating compute resource urls.
-func getProjectsBasePath(basePath string) string {
-	if !strings.HasSuffix(basePath, "/") {
-		basePath += "/"
-	}
-	if !strings.HasSuffix(basePath, "/projects/") {
-		basePath += "projects/"
-	}
-	return basePath
-}
-
 // Project IDs cannot have a digit for the first characeter. If the id contains a digit,
 // then it must be a project number.
 func isProjectNumber(idOrNumber string) bool {
@@ -955,7 +936,7 @@ func newOauthClient(tokenSource oauth2.TokenSource) (*http.Client, error) {
 func (manager *gceServiceManager) getProjectsAPIEndpoint() string {
 	projectsAPIEndpoint := gceComputeAPIEndpoint + "projects/"
 	if manager.gce.service != nil {
-		projectsAPIEndpoint = manager.gce.projectsBasePath
+		projectsAPIEndpoint = manager.gce.service.BasePath
 	}
 
 	return projectsAPIEndpoint

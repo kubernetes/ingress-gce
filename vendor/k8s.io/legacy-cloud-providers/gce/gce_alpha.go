@@ -1,4 +1,3 @@
-//go:build !providerless
 // +build !providerless
 
 /*
@@ -23,10 +22,9 @@ const (
 	// AlphaFeatureILBSubsets allows InternalLoadBalancer services to include a subset
 	// of cluster nodes as backends instead of all nodes.
 	AlphaFeatureILBSubsets = "ILBSubsets"
-
-	// AlphaFeatureSkipIGsManagement enabled L4 Regional Backend Services and
-	// disables instance group management in service controller
-	AlphaFeatureSkipIGsManagement = "SkipIGsManagement"
+	// AlphaFeatureILBCustomSubnet allows InternalLoadBalancer services to specify a
+	// network subnet to allocate ip addresses from.
+	AlphaFeatureILBCustomSubnet = "ILBCustomSubnet"
 )
 
 // AlphaFeatureGate contains a mapping of alpha features to whether they are enabled

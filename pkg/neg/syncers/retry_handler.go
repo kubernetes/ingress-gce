@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"sync"
 
-	"k8s.io/utils/clock"
+	"k8s.io/apimachinery/pkg/util/clock"
 )
 
 var ErrHandlerRetrying = fmt.Errorf("retry handler is retrying")

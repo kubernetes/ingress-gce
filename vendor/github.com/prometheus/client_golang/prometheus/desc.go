@@ -20,10 +20,7 @@ import (
 	"strings"
 
 	"github.com/cespare/xxhash/v2"
-
-	"github.com/prometheus/client_golang/prometheus/internal"
-
-	//nolint:staticcheck // Ignore SA1019. Need to keep deprecated package for compatibility.
+	//lint:ignore SA1019 Need to keep deprecated package for compatibility.
 	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/common/model"
 
@@ -54,7 +51,7 @@ type Desc struct {
 	// constLabelPairs contains precalculated DTO label pairs based on
 	// the constant labels.
 	constLabelPairs []*dto.LabelPair
-	// variableLabels contains names of labels for which the metric
+	// VariableLabels contains names of labels for which the metric
 	// maintains variable values.
 	variableLabels []string
 	// id is a hash of the values of the ConstLabels and fqName. This
@@ -157,7 +154,7 @@ func NewDesc(fqName, help string, variableLabels []string, constLabels Labels) *
 			Value: proto.String(v),
 		})
 	}
-	sort.Sort(internal.LabelPairSorter(d.constLabelPairs))
+	sort.Sort(labelPairSorter(d.constLabelPairs))
 	return d
 }
 

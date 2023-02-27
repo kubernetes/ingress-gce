@@ -25,15 +25,14 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
+	"io/ioutil"
 	"math/big"
 	"net"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"k8s.io/client-go/util/keyutil"
-	netutils "k8s.io/utils/net"
 )
 
 const duration365d = time.Hour * 24 * 365
@@ -101,9 +100,9 @@ func GenerateSelfSignedCertKeyWithFixtures(host string, alternateIPs []net.IP, a
 	certFixturePath := filepath.Join(fixtureDirectory, baseName+".crt")
 	keyFixturePath := filepath.Join(fixtureDirectory, baseName+".key")
 	if len(fixtureDirectory) > 0 {
-		cert, err := os.ReadFile(certFixturePath)
+		cert, err := ioutil.ReadFile(certFixturePath)
 		if err == nil {
-			key, err := os.ReadFile(keyFixturePath)
+			key, err := ioutil.ReadFile(keyFixturePath)
 			if err == nil {
 				return cert, key, nil
 			}
@@ -158,7 +157,7 @@ func GenerateSelfSignedCertKeyWithFixtures(host string, alternateIPs []net.IP, a
 		BasicConstraintsValid: true,
 	}
 
-	if ip := netutils.ParseIPSloppy(host); ip != nil {
+	if ip := net.ParseIP(host); ip != nil {
 		template.IPAddresses = append(template.IPAddresses, ip)
 	} else {
 		template.DNSNames = append(template.DNSNames, host)
@@ -188,10 +187,10 @@ func GenerateSelfSignedCertKeyWithFixtures(host string, alternateIPs []net.IP, a
 	}
 
 	if len(fixtureDirectory) > 0 {
-		if err := os.WriteFile(certFixturePath, certBuffer.Bytes(), 0644); err != nil {
+		if err := ioutil.WriteFile(certFixturePath, certBuffer.Bytes(), 0644); err != nil {
 			return nil, nil, fmt.Errorf("failed to write cert fixture to %s: %v", certFixturePath, err)
 		}
-		if err := os.WriteFile(keyFixturePath, keyBuffer.Bytes(), 0644); err != nil {
+		if err := ioutil.WriteFile(keyFixturePath, keyBuffer.Bytes(), 0644); err != nil {
 			return nil, nil, fmt.Errorf("failed to write key fixture to %s: %v", certFixturePath, err)
 		}
 	}

@@ -170,8 +170,8 @@ func NewIngressBuilder(ns, name, vip string) *IngressBuilder {
 	}
 	if vip != "" {
 		ing.Status = networkingv1.IngressStatus{
-			LoadBalancer: networkingv1.IngressLoadBalancerStatus{
-				Ingress: []networkingv1.IngressLoadBalancerIngress{
+			LoadBalancer: v1.LoadBalancerStatus{
+				Ingress: []v1.LoadBalancerIngress{
 					{IP: "127.0.0.1"},
 				},
 			},

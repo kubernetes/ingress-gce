@@ -21,7 +21,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/blang/semver/v4"
+	"github.com/blang/semver"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 
@@ -30,37 +30,10 @@ import (
 )
 
 var (
-	showHiddenOnce      sync.Once
-	disabledMetricsLock sync.RWMutex
-	showHidden          atomic.Bool
-	registries          []*kubeRegistry // stores all registries created by NewKubeRegistry()
-	registriesLock      sync.RWMutex
-	disabledMetrics     = map[string]struct{}{}
-
-	registeredMetrics = NewCounterVec(
-		&CounterOpts{
-			Name:           "registered_metric_total",
-			Help:           "The count of registered metrics broken by stability level and deprecation version.",
-			StabilityLevel: ALPHA,
-		},
-		[]string{"stability_level", "deprecated_version"},
-	)
-
-	disabledMetricsTotal = NewCounter(
-		&CounterOpts{
-			Name:           "disabled_metric_total",
-			Help:           "The count of disabled metrics.",
-			StabilityLevel: ALPHA,
-		},
-	)
-
-	hiddenMetricsTotal = NewCounter(
-		&CounterOpts{
-			Name:           "hidden_metric_total",
-			Help:           "The count of hidden metrics.",
-			StabilityLevel: ALPHA,
-		},
-	)
+	showHiddenOnce sync.Once
+	showHidden     atomic.Value
+	registries     []*kubeRegistry // stores all registries created by NewKubeRegistry()
+	registriesLock sync.RWMutex
 )
 
 // shouldHide be used to check if a specific metric with deprecated version should be hidden
@@ -88,13 +61,6 @@ func ValidateShowHiddenMetricsVersion(v string) []error {
 	return nil
 }
 
-func SetDisabledMetric(name string) {
-	disabledMetricsLock.Lock()
-	defer disabledMetricsLock.Unlock()
-	disabledMetrics[name] = struct{}{}
-	disabledMetricsTotal.Inc()
-}
-
 // SetShowHidden will enable showing hidden metrics. This will no-opt
 // after the initial call
 func SetShowHidden() {
@@ -113,7 +79,7 @@ func SetShowHidden() {
 // is enabled. While the primary usecase for this is internal (to determine
 // registration behavior) this can also be used to introspect
 func ShouldShowHidden() bool {
-	return showHidden.Load()
+	return showHidden.Load() != nil && showHidden.Load().(bool)
 }
 
 // Registerable is an interface for a collector metric which we
@@ -155,12 +121,6 @@ type KubeRegistry interface {
 	// Reset invokes the Reset() function on all items in the registry
 	// which are added as resettables.
 	Reset()
-	// RegisterMetaMetrics registers metrics about the number of registered metrics.
-	RegisterMetaMetrics()
-	// Registerer exposes the underlying prometheus registerer
-	Registerer() prometheus.Registerer
-	// Gatherer exposes the underlying prometheus gatherer
-	Gatherer() prometheus.Gatherer
 }
 
 // kubeRegistry is a wrapper around a prometheus registry-type object. Upon initialization
@@ -190,16 +150,6 @@ func (kr *kubeRegistry) Register(c Registerable) error {
 
 	kr.trackHiddenCollector(c)
 	return nil
-}
-
-// Registerer exposes the underlying prometheus.Registerer
-func (kr *kubeRegistry) Registerer() prometheus.Registerer {
-	return kr.PromRegistry
-}
-
-// Gatherer exposes the underlying prometheus.Gatherer
-func (kr *kubeRegistry) Gatherer() prometheus.Gatherer {
-	return kr.PromRegistry
 }
 
 // MustRegister works like Register but registers any number of
@@ -292,7 +242,6 @@ func (kr *kubeRegistry) trackHiddenCollector(c Registerable) {
 	defer kr.hiddenCollectorsLock.Unlock()
 
 	kr.hiddenCollectors[c.FQName()] = c
-	hiddenMetricsTotal.Inc()
 }
 
 // trackStableCollectors stores all custom collectors.
@@ -317,7 +266,7 @@ func (kr *kubeRegistry) enableHiddenCollectors() {
 		cs = append(cs, c)
 	}
 
-	kr.hiddenCollectors = make(map[string]Registerable)
+	kr.hiddenCollectors = nil
 	kr.hiddenCollectorsLock.Unlock()
 	kr.MustRegister(cs...)
 }
@@ -372,14 +321,9 @@ func newKubeRegistry(v apimachineryversion.Info) *kubeRegistry {
 	return r
 }
 
-// NewKubeRegistry creates a new vanilla Registry
+// NewKubeRegistry creates a new vanilla Registry without any Collectors
+// pre-registered.
 func NewKubeRegistry() KubeRegistry {
 	r := newKubeRegistry(BuildVersion())
 	return r
-}
-
-func (r *kubeRegistry) RegisterMetaMetrics() {
-	r.MustRegister(registeredMetrics)
-	r.MustRegister(disabledMetricsTotal)
-	r.MustRegister(hiddenMetricsTotal)
 }

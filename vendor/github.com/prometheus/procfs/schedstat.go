@@ -40,7 +40,7 @@ type Schedstat struct {
 	CPUs []*SchedstatCPU
 }
 
-// SchedstatCPU contains the values from one "cpu<N>" line.
+// SchedstatCPU contains the values from one "cpu<N>" line
 type SchedstatCPU struct {
 	CPUNum string
 
@@ -49,14 +49,14 @@ type SchedstatCPU struct {
 	RunTimeslices      uint64
 }
 
-// ProcSchedstat contains the values from `/proc/<pid>/schedstat`.
+// ProcSchedstat contains the values from /proc/<pid>/schedstat
 type ProcSchedstat struct {
 	RunningNanoseconds uint64
 	WaitingNanoseconds uint64
 	RunTimeslices      uint64
 }
 
-// Schedstat reads data from `/proc/schedstat`.
+// Schedstat reads data from /proc/schedstat
 func (fs FS) Schedstat() (*Schedstat, error) {
 	file, err := os.Open(fs.proc.Path("schedstat"))
 	if err != nil {
@@ -95,27 +95,24 @@ func (fs FS) Schedstat() (*Schedstat, error) {
 	return stats, nil
 }
 
-func parseProcSchedstat(contents string) (ProcSchedstat, error) {
-	var (
-		stats ProcSchedstat
-		err   error
-	)
+func parseProcSchedstat(contents string) (stats ProcSchedstat, err error) {
 	match := procLineRE.FindStringSubmatch(contents)
 
 	if match != nil {
 		stats.RunningNanoseconds, err = strconv.ParseUint(match[1], 10, 64)
 		if err != nil {
-			return stats, err
+			return
 		}
 
 		stats.WaitingNanoseconds, err = strconv.ParseUint(match[2], 10, 64)
 		if err != nil {
-			return stats, err
+			return
 		}
 
 		stats.RunTimeslices, err = strconv.ParseUint(match[3], 10, 64)
-		return stats, err
+		return
 	}
 
-	return stats, errors.New("could not parse schedstat")
+	err = errors.New("could not parse schedstat")
+	return
 }

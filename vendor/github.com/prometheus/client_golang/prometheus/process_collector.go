@@ -15,10 +15,7 @@ package prometheus
 
 import (
 	"errors"
-	"fmt"
 	"os"
-	"strconv"
-	"strings"
 )
 
 type processCollector struct {
@@ -53,10 +50,16 @@ type ProcessCollectorOpts struct {
 	ReportErrors bool
 }
 
-// NewProcessCollector is the obsolete version of collectors.NewProcessCollector.
-// See there for documentation.
+// NewProcessCollector returns a collector which exports the current state of
+// process metrics including CPU, memory and file descriptor usage as well as
+// the process start time. The detailed behavior is defined by the provided
+// ProcessCollectorOpts. The zero value of ProcessCollectorOpts creates a
+// collector for the current process with an empty namespace string and no error
+// reporting.
 //
-// Deprecated: Use collectors.NewProcessCollector instead.
+// The collector only works on operating systems with a Linux-style proc
+// filesystem and on Microsoft Windows. On other operating systems, it will not
+// collect any metrics.
 func NewProcessCollector(opts ProcessCollectorOpts) Collector {
 	ns := ""
 	if len(opts.Namespace) > 0 {
@@ -103,7 +106,8 @@ func NewProcessCollector(opts ProcessCollectorOpts) Collector {
 	}
 
 	if opts.PidFn == nil {
-		c.pidFn = getPIDFn()
+		pid := os.Getpid()
+		c.pidFn = func() (int, error) { return pid, nil }
 	} else {
 		c.pidFn = opts.PidFn
 	}
@@ -144,21 +148,4 @@ func (c *processCollector) reportError(ch chan<- Metric, desc *Desc, err error) 
 		desc = NewInvalidDesc(err)
 	}
 	ch <- NewInvalidMetric(desc, err)
-}
-
-// NewPidFileFn returns a function that retrieves a pid from the specified file.
-// It is meant to be used for the PidFn field in ProcessCollectorOpts.
-func NewPidFileFn(pidFilePath string) func() (int, error) {
-	return func() (int, error) {
-		content, err := os.ReadFile(pidFilePath)
-		if err != nil {
-			return 0, fmt.Errorf("can't read pid file %q: %w", pidFilePath, err)
-		}
-		pid, err := strconv.Atoi(strings.TrimSpace(string(content)))
-		if err != nil {
-			return 0, fmt.Errorf("can't parse pid file %q: %w", pidFilePath, err)
-		}
-
-		return pid, nil
-	}
 }
