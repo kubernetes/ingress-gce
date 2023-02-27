@@ -253,7 +253,6 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.StringVar(&F.GKEClusterHash, "gke-cluster-hash", "", "The cluster hash of the GKE cluster this Ingress Controller will be interacting with")
 	flag.StringVar(&F.GKEClusterType, "gke-cluster-type", "ZONAL", "The cluster type of the GKE cluster this Ingress Controller will be interacting with")
 	flag.BoolVar(&F.EnableTrafficScaling, "enable-traffic-scaling", false, "Enable support for Service {max-rate-per-endpoint, capacity-scaler}")
-	flag.BoolVar(&F.EnableEndpointSlices, "enable-endpoint-slices", false, "Enable using Endpoint Slices API instead of Endpoints API")
 	flag.BoolVar(&F.EnablePinhole, "enable-pinhole", false, "Enable Pinhole firewall feature")
 	flag.BoolVar(&F.EnableL4ILBDualStack, "enable-l4ilb-dual-stack", false, "Enable Dual-Stack handling for L4 Internal Load Balancers")
 	flag.BoolVar(&F.EnableL4NetLBDualStack, "enable-l4netlb-dual-stack", false, "Enable Dual-Stack handling for L4 External Load Balancers")

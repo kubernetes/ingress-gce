@@ -88,13 +88,11 @@ func NewTestSyncerManager(kubeClient kubernetes.Interface) (*syncerManager, *gce
 		testContext.KubeSystemUID,
 		testContext.PodInformer.GetIndexer(),
 		testContext.ServiceInformer.GetIndexer(),
-		testContext.EndpointInformer.GetIndexer(),
 		testContext.EndpointSliceInformer.GetIndexer(),
 		testContext.NodeInformer.GetIndexer(),
 		testContext.SvcNegInformer.GetIndexer(),
 		metrics.FakeSyncerMetrics(),
 		false, //enableNonGcpMode
-		false, //enableEndpointSlices
 		klog.TODO(),
 	)
 	return manager, testContext.Cloud

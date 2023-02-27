@@ -198,7 +198,6 @@ func main() {
 		EnableASMConfigMap:     flags.F.EnableASMConfigMapBasedConfig,
 		ASMConfigMapNamespace:  flags.F.ASMConfigMapBasedConfigNamespace,
 		ASMConfigMapName:       flags.F.ASMConfigMapBasedConfigCMName,
-		EndpointSlicesEnabled:  flags.F.EnableEndpointSlices,
 		MaxIGSize:              flags.F.MaxIGSize,
 		EnableL4ILBDualStack:   flags.F.EnableL4ILBDualStack,
 		EnableL4NetLBDualStack: flags.F.EnableL4NetLBDualStack,
@@ -323,7 +322,6 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		ctx.ServiceInformer,
 		ctx.PodInformer,
 		ctx.NodeInformer,
-		ctx.EndpointInformer,
 		ctx.EndpointSliceInformer,
 		ctx.SvcNegInformer,
 		ctx.HasSynced,
@@ -341,7 +339,6 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		flags.F.EnableNonGCPMode,
 		enableAsm,
 		asmServiceNEGSkipNamespaces,
-		flags.F.EnableEndpointSlices,
 		klog.TODO(), // TODO(#1761): Replace this with a top level logger configuration once one is available.
 	)
 
