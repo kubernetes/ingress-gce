@@ -107,7 +107,7 @@ func (c *Controller) Shutdown() {
 func (c *Controller) sync(key string) error {
 	start := time.Now()
 	klog.V(4).Infof("Instance groups controller: Start processing %s", key)
-	defer klog.V(4).Infof("Instance groups controller: Processing key %s took %v", time.Since(start))
+	defer klog.V(4).Infof("Instance groups controller: Processing key %s took %v", key, time.Since(start))
 
 	nodeNames, err := utils.GetReadyNodeNames(listers.NewNodeLister(c.lister))
 	if err != nil {
