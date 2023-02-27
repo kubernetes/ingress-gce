@@ -263,26 +263,19 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 				zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
 			}
 
-			// Only consider endpoints that are Ready.
-			// TODO: In order to consider Terminating endpoints, the AddressData type should add a new field to
-			// carry this information based on the EndpointSlices Conditions Terminating = true and Serving = true.
-			// Terminating endpoints should only be used with ExternalTrafficPolicy = Local and if there are any
-			// other Ready endpoint in the same node.
-			if endpointAddress.Ready {
-				for _, address := range endpointAddress.Addresses {
-					networkEndpoint := negtypes.NetworkEndpoint{IP: address, Port: matchPort, Node: *endpointAddress.NodeName}
-					if networkEndpointType == negtypes.NonGCPPrivateEndpointType {
-						// Non-GCP network endpoints don't have associated nodes.
-						networkEndpoint.Node = ""
-					}
-					zoneNetworkEndpointMap[zone].Insert(networkEndpoint)
-
-					// increment the count for duplicated endpoint
-					if _, contains := networkEndpointPodMap[networkEndpoint]; contains {
-						dupCount += 1
-					}
-					networkEndpointPodMap[networkEndpoint] = types.NamespacedName{Namespace: endpointAddress.TargetRef.Namespace, Name: endpointAddress.TargetRef.Name}
+			for _, address := range endpointAddress.Addresses {
+				networkEndpoint := negtypes.NetworkEndpoint{IP: address, Port: matchPort, Node: *endpointAddress.NodeName}
+				if networkEndpointType == negtypes.NonGCPPrivateEndpointType {
+					// Non-GCP network endpoints don't have associated nodes.
+					networkEndpoint.Node = ""
 				}
+				zoneNetworkEndpointMap[zone].Insert(networkEndpoint)
+
+				// increment the count for duplicated endpoint
+				if _, contains := networkEndpointPodMap[networkEndpoint]; contains {
+					dupCount += 1
+				}
+				networkEndpointPodMap[networkEndpoint] = types.NamespacedName{Namespace: endpointAddress.TargetRef.Namespace, Name: endpointAddress.TargetRef.Name}
 			}
 		}
 	}
