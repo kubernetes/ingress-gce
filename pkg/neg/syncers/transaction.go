@@ -266,9 +266,12 @@ func (s *transactionSyncer) syncInternalImpl() *negtypes.NegSyncResult {
 		s.setErrorState(result.Result)
 		return result
 	}
-	if valid, result := s.CheckEndpointInfo(endpointsData, endpointPodMap, dupCount); !valid {
-		s.setErrorState(result.Result)
-		return result
+	// skip CheckEndpointInfo for calculators that don't return endpointPodMap data.
+	if s.endpointsCalculator.UsesPodEndpoints() {
+		if valid, result := s.CheckEndpointInfo(endpointsData, endpointPodMap, dupCount); !valid {
+			s.setErrorState(result.Result)
+			return result
+		}
 	}
 	if err != nil {
 		return negtypes.NewNegSyncResult(fmt.Errorf("endpoints calculation error in mode %q, err: %w", s.endpointsCalculator.Mode(), err), negtypes.ResultOtherError)

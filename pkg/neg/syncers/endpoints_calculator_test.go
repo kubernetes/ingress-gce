@@ -207,6 +207,29 @@ func TestClusterGetEndpointSet(t *testing.T) {
 	}
 }
 
+func TestClusterL4EndpointsCalculatorUsesPodEndpoints(t *testing.T) {
+	ec := &ClusterL4ILBEndpointsCalculator{}
+
+	if ec.UsesPodEndpoints() {
+		t.Errorf("ClusterL4EndpointsCalculator should not use PodEndpoints but UsesPodEndpoints() returned true")
+	}
+}
+
+func TestLocalL4EndpointsCalculatorUsesPodEndpoints(t *testing.T) {
+	ec := &LocalL4ILBEndpointsCalculator{}
+
+	if ec.UsesPodEndpoints() {
+		t.Errorf("LocalL4ILBEndpointsCalculator should not use PodEndpoints but UsesPodEndpoints() returned true")
+	}
+}
+
+func TestL7EndpointsCalculatorUsesPodEndpoints(t *testing.T) {
+	ec := &L7EndpointsCalculator{}
+
+	if !ec.UsesPodEndpoints() {
+		t.Errorf("L7EndpointsCalculator should use PodEndpoints but UsesPodEndpoints() returned false")
+	}
+}
 func createNodes(t *testing.T, nodeNames []string, nodeLabels map[string]map[string]string, nodeReadyStatus map[string]v1.ConditionStatus, nodeIndexer cache.Indexer) {
 	t.Helper()
 	for i, nodeName := range nodeNames {

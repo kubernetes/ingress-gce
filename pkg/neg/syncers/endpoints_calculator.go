@@ -109,6 +109,12 @@ func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(eds []types.Endpoints
 	return subsetMap, nil, 0, err
 }
 
+// UsesPodEndpoints Indicates if the calculator is calculating pod endpoints in addition to network endpoints.
+// It returns false for LocalL4ILBEndpointsCalculator since it does not calculate the pod endpoint map.
+func (l *LocalL4ILBEndpointsCalculator) UsesPodEndpoints() bool {
+	return false
+}
+
 // ClusterL4ILBEndpointGetter implements the NetworkEndpointsCalculator interface.
 // It exposes methods to calculate Network endpoints for GCE_VM_IP NEGs when the service
 // uses "ExternalTrafficPolicy: Cluster" mode This is the default mode.
@@ -161,6 +167,13 @@ func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpoints(_ []types.Endpoints
 	return subsetMap, nil, 0, err
 }
 
+// UsesPodEndpoints Indicates if the calculator is calculating pod endpoints in addition to network endpoints.
+// It returns false for ClusterL4ILBEndpointsCalculator since it does not calculate the pod endpoint map.
+// ClusterL4ILBEndpointsCalculator does not even look at pod data from EndpointSlices in fact.
+func (l *ClusterL4ILBEndpointsCalculator) UsesPodEndpoints() bool {
+	return false
+}
+
 // L7EndpointsCalculator implements methods to calculate Network endpoints for VM_IP_PORT NEGs
 type L7EndpointsCalculator struct {
 	zoneGetter          types.ZoneGetter
@@ -188,6 +201,12 @@ func (l *L7EndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
 func (l *L7EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, _ map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
 	return toZoneNetworkEndpointMap(eds, l.zoneGetter, l.servicePortName, l.networkEndpointType)
+}
+
+// UsesPodEndpoints Indicates if the calculator is calculating pod endpoints in addition to network endpoints.
+// It returns true for L7 since it calculates the pod endpoint map.
+func (l *L7EndpointsCalculator) UsesPodEndpoints() bool {
+	return true
 }
 
 func nodeMapToString(nodeMap map[string][]*v1.Node) string {
