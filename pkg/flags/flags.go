@@ -108,7 +108,6 @@ var (
 		EnablePSC                      bool
 		EnableIngressGAFields          bool
 		EnableTrafficScaling           bool
-		EnableEndpointSlices           bool
 		EnablePinhole                  bool
 		EnableL4ILBDualStack           bool
 		EnableL4NetLBDualStack         bool
