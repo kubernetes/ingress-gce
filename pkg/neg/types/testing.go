@@ -40,6 +40,7 @@ const (
 	resyncPeriod  = 1 * time.Second
 	kubeSystemUID = "kube-system-uid"
 	clusterID     = "clusterid"
+	numGCWorkers  = 5
 )
 
 // TestContext provides controller context for testing
@@ -61,6 +62,7 @@ type TestContext struct {
 
 	KubeSystemUID types.UID
 	ResyncPeriod  time.Duration
+	NumGCWorkers  int
 }
 
 func NewTestContext() *TestContext {
@@ -91,5 +93,6 @@ func NewTestContextWithKubeClient(kubeClient kubernetes.Interface) *TestContext 
 		SvcNegInformer:        informersvcneg.NewServiceNetworkEndpointGroupInformer(negClient, namespace, resyncPeriod, utils.NewNamespaceIndexer()),
 		KubeSystemUID:         kubeSystemUID,
 		ResyncPeriod:          resyncPeriod,
+		NumGCWorkers:          numGCWorkers,
 	}
 }

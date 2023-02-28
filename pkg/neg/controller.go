@@ -122,6 +122,7 @@ func NewController(
 	namer negtypes.NetworkEndpointGroupNamer,
 	resyncPeriod time.Duration,
 	gcPeriod time.Duration,
+	numGCWorkers int,
 	enableReadinessReflector bool,
 	runIngress bool,
 	runL4Controller bool,
@@ -166,6 +167,7 @@ func NewController(
 		svcNegInformer.GetIndexer(),
 		syncerMetrics,
 		enableNonGcpMode,
+		numGCWorkers,
 		logger)
 
 	var reflector readiness.Reflector
