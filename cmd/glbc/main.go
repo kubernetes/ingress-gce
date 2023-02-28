@@ -188,19 +188,19 @@ func main() {
 	cloud := app.NewGCEClient()
 	defaultBackendServicePort := app.DefaultBackendServicePort(kubeClient)
 	ctxConfig := ingctx.ControllerContextConfig{
-		Namespace:             flags.F.WatchNamespace,
-		ResyncPeriod:          flags.F.ResyncPeriod,
-		NumL4Workers:          flags.F.NumL4Workers,
-		NumL4NetLBWorkers:     flags.F.NumL4NetLBWorkers,
-		DefaultBackendSvcPort: defaultBackendServicePort,
-		HealthCheckPath:       flags.F.HealthCheckPath,
-		FrontendConfigEnabled: flags.F.EnableFrontendConfig,
-		EnableASMConfigMap:    flags.F.EnableASMConfigMapBasedConfig,
-		ASMConfigMapNamespace: flags.F.ASMConfigMapBasedConfigNamespace,
-		ASMConfigMapName:      flags.F.ASMConfigMapBasedConfigCMName,
-		EndpointSlicesEnabled: flags.F.EnableEndpointSlices,
-		MaxIGSize:             flags.F.MaxIGSize,
-		EnableL4ILBDualStack:  flags.F.EnableL4ILBDualStack,
+		Namespace:              flags.F.WatchNamespace,
+		ResyncPeriod:           flags.F.ResyncPeriod,
+		NumL4Workers:           flags.F.NumL4Workers,
+		NumL4NetLBWorkers:      flags.F.NumL4NetLBWorkers,
+		DefaultBackendSvcPort:  defaultBackendServicePort,
+		HealthCheckPath:        flags.F.HealthCheckPath,
+		FrontendConfigEnabled:  flags.F.EnableFrontendConfig,
+		EnableASMConfigMap:     flags.F.EnableASMConfigMapBasedConfig,
+		ASMConfigMapNamespace:  flags.F.ASMConfigMapBasedConfigNamespace,
+		ASMConfigMapName:       flags.F.ASMConfigMapBasedConfigCMName,
+		MaxIGSize:              flags.F.MaxIGSize,
+		EnableL4ILBDualStack:   flags.F.EnableL4ILBDualStack,
+		EnableL4NetLBDualStack: flags.F.EnableL4NetLBDualStack,
 	}
 	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, svcNegClient, ingParamsClient, svcAttachmentClient, cloud, namer, kubeSystemUID, ctxConfig)
 	go app.RunHTTPServer(ctx.HealthCheck)
@@ -322,7 +322,6 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		ctx.ServiceInformer,
 		ctx.PodInformer,
 		ctx.NodeInformer,
-		ctx.EndpointInformer,
 		ctx.EndpointSliceInformer,
 		ctx.SvcNegInformer,
 		ctx.HasSynced,
@@ -340,7 +339,6 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		flags.F.EnableNonGCPMode,
 		enableAsm,
 		asmServiceNEGSkipNamespaces,
-		flags.F.EnableEndpointSlices,
 		klog.TODO(), // TODO(#1761): Replace this with a top level logger configuration once one is available.
 	)
 

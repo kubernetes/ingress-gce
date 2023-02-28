@@ -32,12 +32,13 @@ import (
 )
 
 func (l4 *L4) ensureIPv6ForwardingRule(bsLink string, options gce.ILBOptions) (*composite.ForwardingRule, error) {
+	start := time.Now()
+
 	expectedIPv6FwdRule, err := l4.buildExpectedIPv6ForwardingRule(bsLink, options)
 	if err != nil {
 		return nil, fmt.Errorf("l4.buildExpectedIPv6ForwardingRule(%s, %v) returned error %w, want nil", bsLink, options, err)
 	}
 
-	start := time.Now()
 	klog.V(2).Infof("Ensuring internal ipv6 forwarding rule %s for L4 ILB Service %s/%s, backend service link: %s", expectedIPv6FwdRule.Name, l4.Service.Namespace, l4.Service.Name, bsLink)
 	defer func() {
 		klog.V(2).Infof("Finished ensuring internal ipv6 forwarding rule %s for L4 ILB Service %s/%s, time taken: %v", expectedIPv6FwdRule.Name, l4.Service.Namespace, l4.Service.Name, time.Since(start))
@@ -124,6 +125,86 @@ func (l4 *L4) deleteChangedIPv6ForwardingRule(existingFwdRule *composite.Forward
 		return err
 	}
 	l4.recorder.Eventf(l4.Service, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %q deleted", existingFwdRule.Name)
+	return nil
+}
+
+func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.ForwardingRule, error) {
+	start := time.Now()
+
+	expectedIPv6FwdRule, err := l4netlb.buildExpectedIPv6ForwardingRule(bsLink)
+	if err != nil {
+		return nil, fmt.Errorf("l4netlb.buildExpectedIPv6ForwardingRule(%s) returned error %w, want nil", bsLink, err)
+	}
+
+	klog.V(2).Infof("Ensuring external ipv6 forwarding rule %s for L4 NetLB Service %s/%s, backend service link: %s", expectedIPv6FwdRule.Name, l4netlb.Service.Namespace, l4netlb.Service.Name, bsLink)
+	defer func() {
+		klog.V(2).Infof("Finished ensuring external ipv6 forwarding rule %s for L4 NetLB Service %s/%s, time taken: %v", expectedIPv6FwdRule.Name, l4netlb.Service.Namespace, l4netlb.Service.Name, time.Since(start))
+	}()
+
+	existingIPv6FwdRule, err := l4netlb.forwardingRules.Get(expectedIPv6FwdRule.Name)
+	if err != nil {
+		return nil, fmt.Errorf("l4netlb.forwardingRules.GetForwardingRule(%s) returned error %w, want nil", expectedIPv6FwdRule.Name, err)
+	}
+
+	if existingIPv6FwdRule != nil {
+		equal, err := EqualIPv6ForwardingRules(existingIPv6FwdRule, expectedIPv6FwdRule)
+		if err != nil {
+			return existingIPv6FwdRule, err
+		}
+		if equal {
+			klog.V(2).Infof("ensureIPv6ForwardingRule: Skipping update of unchanged ipv6 forwarding rule - %s", expectedIPv6FwdRule.Name)
+			return existingIPv6FwdRule, nil
+		}
+		err = l4netlb.deleteChangedIPv6ForwardingRule(existingIPv6FwdRule, expectedIPv6FwdRule)
+		if err != nil {
+			return nil, err
+		}
+	}
+	klog.V(2).Infof("ensureIPv6ForwardingRule: Creating/Recreating forwarding rule - %s", expectedIPv6FwdRule.Name)
+	err = l4netlb.forwardingRules.Create(expectedIPv6FwdRule)
+	if err != nil {
+		return nil, err
+	}
+
+	createdFr, err := l4netlb.forwardingRules.Get(expectedIPv6FwdRule.Name)
+	return createdFr, err
+}
+
+func (l4netlb *L4NetLB) buildExpectedIPv6ForwardingRule(bsLink string) (*composite.ForwardingRule, error) {
+	frName := l4netlb.ipv6FRName()
+
+	frDesc, err := utils.MakeL4IPv6ForwardingRuleDescription(l4netlb.Service)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute description for forwarding rule %s, err: %w", frName, err)
+	}
+
+	svcPorts := l4netlb.Service.Spec.Ports
+	portRange, protocol := utils.MinMaxPortRangeAndProtocol(svcPorts)
+
+	fr := &composite.ForwardingRule{
+		Name:                frName,
+		Description:         frDesc,
+		IPProtocol:          protocol,
+		PortRange:           portRange,
+		LoadBalancingScheme: string(cloud.SchemeExternal),
+		BackendService:      bsLink,
+		IpVersion:           "IPV6",
+		NetworkTier:         cloud.NetworkTierPremium.ToGCEValue(),
+		Subnetwork:          l4netlb.cloud.SubnetworkURL(),
+	}
+
+	return fr, nil
+}
+
+func (l4netlb *L4NetLB) deleteChangedIPv6ForwardingRule(existingFwdRule *composite.ForwardingRule, expectedFwdRule *composite.ForwardingRule) error {
+	frDiff := cmp.Diff(existingFwdRule, expectedFwdRule, cmpopts.IgnoreFields(composite.ForwardingRule{}, "IPAddress"))
+	klog.V(2).Infof("IPv6 External forwarding rule changed - Existing - %+v\n, New - %+v\n, Diff(-existing, +new) - %s\n. Deleting existing ipv6 forwarding rule.", existingFwdRule, expectedFwdRule, frDiff)
+
+	err := l4netlb.forwardingRules.Delete(existingFwdRule.Name)
+	if err != nil {
+		return err
+	}
+	l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeNormal, events.SyncIngress, "External ForwardingRule %q deleted", existingFwdRule.Name)
 	return nil
 }
 

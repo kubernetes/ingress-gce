@@ -19,6 +19,7 @@ package l4lb
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
@@ -41,7 +42,10 @@ import (
 	"k8s.io/klog/v2"
 )
 
-const l4NetLBControllerName = "l4netlb-controller"
+const (
+	l4NetLBControllerName          = "l4netlb-controller"
+	l4NetLBDualStackControllerName = "l4netlb-dualstack-controller"
+)
 
 type L4NetLBController struct {
 	ctx           *context.ControllerContext
@@ -61,6 +65,7 @@ type L4NetLBController struct {
 	instancePool    instancegroups.Manager
 	igLinker        *backends.RegionalInstanceGroupLinker
 	forwardingRules ForwardingRulesGetter
+	enableDualStack bool
 }
 
 // NewL4NetLBController creates a controller for l4 external loadbalancer.
@@ -84,6 +89,7 @@ func NewL4NetLBController(
 		instancePool:    ctx.InstancePool,
 		igLinker:        backends.NewRegionalInstanceGroupLinker(ctx.InstancePool, backendPool),
 		forwardingRules: forwardingrules.New(ctx.Cloud, meta.VersionGA, meta.Regional),
+		enableDualStack: ctx.EnableL4NetLBDualStack,
 	}
 	l4netLBc.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("l4netLB", "services", ctx.NumL4NetLBWorkers, l4netLBc.sync)
 
@@ -211,6 +217,11 @@ func (lc *L4NetLBController) needsUpdate(newSvc, oldSvc *v1.Service) bool {
 	if oldSvc.Spec.HealthCheckNodePort != newSvc.Spec.HealthCheckNodePort {
 		recorder.Eventf(newSvc, v1.EventTypeNormal, "HealthCheckNodePort", "%v -> %v",
 			oldSvc.Spec.HealthCheckNodePort, newSvc.Spec.HealthCheckNodePort)
+		return true
+	}
+	if lc.enableDualStack && !reflect.DeepEqual(oldSvc.Spec.IPFamilies, newSvc.Spec.IPFamilies) {
+		recorder.Eventf(newSvc, v1.EventTypeNormal, "IPFamilies", "%v -> %v",
+			oldSvc.Spec.IPFamilies, newSvc.Spec.IPFamilies)
 		return true
 	}
 	return false
@@ -346,11 +357,20 @@ func (lc *L4NetLBController) checkHealth() error {
 	// if lastEnqueue time is more than 15 minutes before the last sync time, the controller is falling behind.
 	// This indicates that the controller was stuck handling a previous update, or sync function did not get invoked.
 	syncTimeLatest := lastEnqueueTime.Add(enqueueToSyncDelayThreshold)
+	controllerHealth := metrics.ControllerHealthyStatus
 	if lastSyncTime.After(syncTimeLatest) {
-		msg := fmt.Sprintf("L4 External LoadBalancer Sync happened at time %v - %v after enqueue time, threshold is %v", lastSyncTime, lastSyncTime.Sub(lastEnqueueTime), enqueueToSyncDelayThreshold)
+		msg := fmt.Sprintf("L4 NetLB Sync happened at time %v, %v after enqueue time, last enqueue time %v, threshold is %v", lastSyncTime, lastSyncTime.Sub(lastEnqueueTime), lastEnqueueTime, enqueueToSyncDelayThreshold)
 		// Log here, context/http handler do no log the error.
 		klog.Error(msg)
 		metrics.PublishL4FailedHealthCheckCount(l4NetLBControllerName)
+		controllerHealth = metrics.ControllerUnhealthyStatus
+		// Reset trackers. Otherwise, if there is nothing in the queue then it will report the FailedHealthCheckCount every time the checkHealth is called
+		// If checkHealth returned error (as it is meant to) then container would be restarted and trackers would be reset either
+		lc.enqueueTracker.Track()
+		lc.syncTracker.Track()
+	}
+	if lc.enableDualStack {
+		metrics.PublishL4ControllerHealthCheckStatus(l4NetLBDualStackControllerName, controllerHealth)
 	}
 	return nil
 }
@@ -417,10 +437,11 @@ func (lc *L4NetLBController) sync(key string) error {
 // Returns an error if processing the service update failed.
 func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4NetLBSyncResult {
 	l4NetLBParams := &loadbalancers.L4NetLBParams{
-		Service:  service,
-		Cloud:    lc.ctx.Cloud,
-		Namer:    lc.namer,
-		Recorder: lc.ctx.Recorder(service.Namespace),
+		Service:          service,
+		Cloud:            lc.ctx.Cloud,
+		Namer:            lc.namer,
+		Recorder:         lc.ctx.Recorder(service.Namespace),
+		DualStackEnabled: lc.enableDualStack,
 	}
 	l4netlb := loadbalancers.NewL4NetLB(l4NetLBParams)
 	// check again that rbs is enabled.
@@ -473,16 +494,37 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 		syncResult.Error = err
 		return syncResult
 	}
-	lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeNormal, "SyncLoadBalancerSuccessful",
-		"Successfully ensured L4 External LoadBalancer resources")
-	if err = updateL4ResourcesAnnotations(lc.ctx, service, syncResult.Annotations); err != nil {
-		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
-			"Failed to update annotations for load balancer, err: %v", err)
-		syncResult.Error = fmt.Errorf("failed to set resource annotations, err: %w", err)
-		return syncResult
+	if lc.enableDualStack {
+		lc.emitEnsuredDualStackEvent(service)
+
+		if err = updateL4DualStackResourcesAnnotations(lc.ctx, service, syncResult.Annotations); err != nil {
+			lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
+				"Failed to update annotations for load balancer, err: %v", err)
+			syncResult.Error = fmt.Errorf("failed to set resource annotations, err: %w", err)
+			return syncResult
+		}
+	} else {
+		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeNormal, "SyncLoadBalancerSuccessful",
+			"Successfully ensured L4 External LoadBalancer resources")
+
+		if err = updateL4ResourcesAnnotations(lc.ctx, service, syncResult.Annotations); err != nil {
+			lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
+				"Failed to update annotations for load balancer, err: %v", err)
+			syncResult.Error = fmt.Errorf("failed to set resource annotations, err: %w", err)
+			return syncResult
+		}
 	}
 	syncResult.SetMetricsForSuccessfulServiceSync()
 	return syncResult
+}
+
+func (lc *L4NetLBController) emitEnsuredDualStackEvent(service *v1.Service) {
+	var ipFamilies []string
+	for _, ipFamily := range service.Spec.IPFamilies {
+		ipFamilies = append(ipFamilies, string(ipFamily))
+	}
+	lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeNormal, "SyncLoadBalancerSuccessful",
+		"Successfully ensured %v External LoadBalancer resources", strings.Join(ipFamilies, " "))
 }
 
 func (lc *L4NetLBController) ensureBackendLinking(service *v1.Service) error {
@@ -537,10 +579,11 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service)
 	}()
 
 	l4NetLBParams := &loadbalancers.L4NetLBParams{
-		Service:  svc,
-		Cloud:    lc.ctx.Cloud,
-		Namer:    lc.namer,
-		Recorder: lc.ctx.Recorder(svc.Namespace),
+		Service:          svc,
+		Cloud:            lc.ctx.Cloud,
+		Namer:            lc.namer,
+		Recorder:         lc.ctx.Recorder(svc.Namespace),
+		DualStackEnabled: lc.enableDualStack,
 	}
 	l4netLB := loadbalancers.NewL4NetLB(l4NetLBParams)
 	lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer",
@@ -577,11 +620,20 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service)
 	}
 
 	// IMPORTANT: Remove LB annotations from the Service LAST, cause changing service fields are emitted as service update to other controllers
-	if err := deleteL4RBSAnnotations(lc.ctx, svc); err != nil {
-		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
-			"Error removing resource annotations: %v: %v", err)
-		result.Error = fmt.Errorf("Failed to reset resource annotations, err: %w", err)
-		return result
+	if lc.enableDualStack {
+		if err := deleteL4RBSDualStackAnnotations(lc.ctx, svc); err != nil {
+			lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
+				"Error removing Dual Stack resource annotations: %v: %v", err)
+			result.Error = fmt.Errorf("failed to reset Dual Stack resource annotations, err: %w", err)
+			return result
+		}
+	} else {
+		if err := deleteL4RBSAnnotations(lc.ctx, svc); err != nil {
+			lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
+				"Error removing resource annotations: %v: %v", err)
+			result.Error = fmt.Errorf("failed to reset resource annotations, err: %w", err)
+			return result
+		}
 	}
 
 	lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletedLoadBalancer", "Deleted L4 External LoadBalancer")
@@ -593,14 +645,22 @@ func (lc *L4NetLBController) publishMetrics(result *loadbalancers.L4NetLBSyncRes
 	namespacedName := types.NamespacedName{Name: name, Namespace: namespace}.String()
 	switch result.SyncType {
 	case loadbalancers.SyncTypeCreate, loadbalancers.SyncTypeUpdate:
-		klog.V(4).Infof("External L4 Loadbalancer for Service %s ensured, updating its state %v in metrics cache", namespacedName, result.MetricsState)
+		klog.V(2).Infof("External L4 Loadbalancer for Service %s ensured, updating its state %v in metrics cache", namespacedName, result.MetricsState)
 		lc.ctx.ControllerMetrics.SetL4NetLBService(namespacedName, result.MetricsState)
+		if lc.enableDualStack {
+			klog.V(2).Infof("External L4 DualStack Loadbalancer for Service %s ensured, updating its state %v in metrics cache", namespacedName, result.DualStackMetricsState)
+			lc.ctx.ControllerMetrics.SetL4NetLBDualStackService(namespacedName, result.DualStackMetricsState)
+		}
 		lc.publishSyncMetrics(result)
 	case loadbalancers.SyncTypeDelete:
 		// if service is successfully deleted, remove it from cache
 		if result.Error == nil {
-			klog.V(4).Infof("External L4 Loadbalancer for Service %s deleted, removing its state from metrics cache", namespacedName)
+			klog.V(2).Infof("External L4 Loadbalancer for Service %s deleted, removing its state from metrics cache", namespacedName)
 			lc.ctx.ControllerMetrics.DeleteL4NetLBService(namespacedName)
+			if lc.enableDualStack {
+				klog.V(2).Infof("External L4 Loadbalancer for Service %s deleted, removing its state from metrics cache", namespacedName)
+				lc.ctx.ControllerMetrics.DeleteL4NetLBDualStackService(namespacedName)
+			}
 		}
 		lc.publishSyncMetrics(result)
 	default:
@@ -614,4 +674,7 @@ func (lc *L4NetLBController) publishSyncMetrics(result *loadbalancers.L4NetLBSyn
 		return
 	}
 	metrics.PublishL4NetLBSyncError(result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime)
+	if lc.enableDualStack {
+		metrics.PublishL4NetLBDualStackSyncLatency(result.Error == nil, result.SyncType, result.DualStackMetricsState.IPFamilies, result.StartTime)
+	}
 }

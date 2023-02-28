@@ -314,32 +314,15 @@ type AddressData struct {
 	Ready     bool
 }
 
-// Converts API Endpoints to the EndpointsData abstraction.
-// All endpoints are converted, not ready addresses are converted with Ready=false.
-func EndpointsDataFromEndpoints(ep *apiv1.Endpoints) []EndpointsData {
-	result := make([]EndpointsData, 0, len(ep.Subsets))
-	for _, subset := range ep.Subsets {
-		ports := make([]PortData, 0)
-		addresses := make([]AddressData, 0)
-		for _, port := range subset.Ports {
-			ports = append(ports, PortData{Name: port.Name, Port: port.Port})
-		}
-		for _, addr := range subset.Addresses {
-			addresses = append(addresses, AddressData{TargetRef: addr.TargetRef, NodeName: addr.NodeName, Addresses: []string{addr.IP}, Ready: true})
-		}
-		for _, addr := range subset.NotReadyAddresses {
-			addresses = append(addresses, AddressData{TargetRef: addr.TargetRef, NodeName: addr.NodeName, Addresses: []string{addr.IP}, Ready: false})
-		}
-		result = append(result, EndpointsData{Meta: &ep.ObjectMeta, Ports: ports, Addresses: addresses})
-	}
-	return result
-}
-
 // Converts API EndpointSlice list to the EndpointsData abstraction.
 // Terminating endpoints are ignored.
 func EndpointsDataFromEndpointSlices(slices []*discovery.EndpointSlice) []EndpointsData {
 	result := make([]EndpointsData, 0, len(slices))
 	for _, slice := range slices {
+		if slice.AddressType != discovery.AddressTypeIPv4 {
+			// Neg Controller can only attach IPv4 endpoints
+			continue
+		}
 		ports := make([]PortData, 0)
 		addresses := make([]AddressData, 0)
 		for _, port := range slice.Ports {

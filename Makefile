@@ -42,7 +42,7 @@ ARCH ?= amd64
 ALL_ARCH := amd64
 
 # Image to use for building.
-BUILD_IMAGE ?= golang:1.18-alpine
+BUILD_IMAGE ?= golang:1.20
 # Containers will be named: $(CONTAINER_PREFIX)-$(BINARY)-$(ARCH):$(VERSION).
 CONTAINER_PREFIX ?= ingress-gce
 
@@ -50,7 +50,7 @@ CONTAINER_PREFIX ?= ingress-gce
 VERSION ?= $(shell git describe --tags --always --dirty)
 
 # Set to 1 to print more verbose output from the build.
-VERBOSE ?= 0
+VERBOSE ?= 1
 
 # Include standard build rules.
 include build/rules.mk

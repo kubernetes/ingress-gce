@@ -17,14 +17,12 @@ limitations under the License.
 package neg
 
 import (
-	"context"
 	"fmt"
 	"time"
 
 	apiv1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
 	v1 "k8s.io/api/networking/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -39,8 +37,10 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	svcnegv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/controller/translator"
-	usage "k8s.io/ingress-gce/pkg/metrics"
+	"k8s.io/ingress-gce/pkg/flags"
+	usageMetrics "k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
+	syncMetrics "k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
@@ -90,8 +90,11 @@ type Controller struct {
 	// reflector handles NEG readiness gate and conditions for pods in NEG.
 	reflector readiness.Reflector
 
-	// collector collects NEG usage metrics
-	collector usage.NegMetricsCollector
+	// usageCollector collects NEG usage metrics
+	usageCollector usageMetrics.NegMetricsCollector
+
+	// syncerMetrics collects NEG controller metrics
+	syncerMetrics *syncMetrics.SyncerMetrics
 
 	// runL4 indicates whether to run NEG controller that processes L4 ILB services
 	runL4 bool
@@ -108,11 +111,10 @@ func NewController(
 	serviceInformer cache.SharedIndexInformer,
 	podInformer cache.SharedIndexInformer,
 	nodeInformer cache.SharedIndexInformer,
-	endpointInformer cache.SharedIndexInformer,
 	endpointSliceInformer cache.SharedIndexInformer,
 	svcNegInformer cache.SharedIndexInformer,
 	hasSynced func() bool,
-	controllerMetrics *usage.ControllerMetrics,
+	controllerMetrics *usageMetrics.ControllerMetrics,
 	l4Namer namer2.L4ResourcesNamer,
 	defaultBackendService utils.ServicePort,
 	cloud negtypes.NetworkEndpointGroupCloud,
@@ -126,7 +128,6 @@ func NewController(
 	enableNonGcpMode bool,
 	enableAsm bool,
 	asmServiceNEGSkipNamespaces []string,
-	enableEndpointSlices bool,
 	logger klog.Logger,
 ) *Controller {
 	logger = logger.WithName("NEGController")
@@ -150,13 +151,7 @@ func NewController(
 	recorder := eventBroadcaster.NewRecorder(negScheme,
 		apiv1.EventSource{Component: "neg-controller"})
 
-	var endpointIndexer, endpointSliceIndexer cache.Indexer
-	if enableEndpointSlices {
-		endpointSliceIndexer = endpointSliceInformer.GetIndexer()
-	} else {
-		endpointIndexer = endpointInformer.GetIndexer()
-	}
-
+	syncerMetrics := metrics.NewNegMetricsCollector(flags.F.NegMetricsExportInterval, logger)
 	manager := newSyncerManager(
 		namer,
 		recorder,
@@ -166,12 +161,11 @@ func NewController(
 		kubeSystemUID,
 		podInformer.GetIndexer(),
 		serviceInformer.GetIndexer(),
-		endpointIndexer,
-		endpointSliceIndexer,
+		endpointSliceInformer.GetIndexer(),
 		nodeInformer.GetIndexer(),
 		svcNegInformer.GetIndexer(),
+		syncerMetrics,
 		enableNonGcpMode,
-		enableEndpointSlices,
 		logger)
 
 	var reflector readiness.Reflector
@@ -201,12 +195,13 @@ func NewController(
 		hasSynced:             hasSynced,
 		ingressLister:         ingressInformer.GetIndexer(),
 		serviceLister:         serviceInformer.GetIndexer(),
-		serviceQueue:          workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
-		endpointQueue:         workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
-		nodeQueue:             workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
+		serviceQueue:          workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_service_queue"),
+		endpointQueue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_endpoint_queue"),
+		nodeQueue:             workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_node_queue"),
 		syncTracker:           utils.NewTimeTracker(),
 		reflector:             reflector,
-		collector:             controllerMetrics,
+		usageCollector:        controllerMetrics,
+		syncerMetrics:         syncerMetrics,
 		runL4:                 runL4Controller,
 		logger:                logger,
 	}
@@ -263,24 +258,13 @@ func NewController(
 			negController.enqueueService(cur)
 		},
 	})
-	if enableEndpointSlices {
-		endpointSliceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc:    negController.enqueueEndpointSlice,
-			DeleteFunc: negController.enqueueEndpointSlice,
-			UpdateFunc: func(old, cur interface{}) {
-				negController.enqueueEndpointSlice(cur)
-			},
-		})
-	} else {
-		endpointInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc:    negController.enqueueEndpoint,
-			DeleteFunc: negController.enqueueEndpoint,
-			UpdateFunc: func(old, cur interface{}) {
-				negController.enqueueEndpoint(cur)
-			},
-		})
-	}
-
+	endpointSliceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    negController.enqueueEndpointSlice,
+		DeleteFunc: negController.enqueueEndpointSlice,
+		UpdateFunc: func(old, cur interface{}) {
+			negController.enqueueEndpointSlice(cur)
+		},
+	})
 	nodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			node := obj.(*apiv1.Node)
@@ -334,6 +318,7 @@ func (c *Controller) Run(stopCh <-chan struct{}) {
 		wait.Until(c.gc, c.gcPeriod, stopCh)
 	}()
 	go c.reflector.Run(stopCh)
+	go c.syncerMetrics.Run(stopCh)
 	<-stopCh
 }
 
@@ -442,7 +427,7 @@ func (c *Controller) processService(key string) error {
 		return err
 	}
 	if !exists {
-		c.collector.DeleteNegService(key)
+		c.usageCollector.DeleteNegService(key)
 		c.manager.StopSyncer(namespace, name)
 		return nil
 	}
@@ -450,7 +435,7 @@ func (c *Controller) processService(key string) error {
 	if service == nil {
 		return fmt.Errorf("cannot convert to Service (%T)", obj)
 	}
-	negUsage := usage.NegServiceState{}
+	negUsage := usageMetrics.NegServiceState{}
 	svcPortInfoMap := make(negtypes.PortInfoMap)
 	if err := c.mergeDefaultBackendServicePortInfoMap(key, service, svcPortInfoMap); err != nil {
 		return err
@@ -489,12 +474,12 @@ func (c *Controller) processService(key string) error {
 			return err
 		}
 		negUsage.SuccessfulNeg, negUsage.ErrorNeg, err = c.manager.EnsureSyncers(namespace, name, svcPortInfoMap)
-		c.collector.SetNegService(key, negUsage)
+		c.usageCollector.SetNegService(key, negUsage)
 		return err
 	}
 	// do not need Neg
 	c.logger.V(3).Info("Service does not need any NEG. Skipping", "service", key)
-	c.collector.DeleteNegService(key)
+	c.usageCollector.DeleteNegService(key)
 	// neg annotation is not found or NEG is not enabled
 	c.manager.StopSyncer(namespace, name)
 
@@ -526,7 +511,7 @@ func (c *Controller) mergeIngressPortInfo(service *apiv1.Service, name types.Nam
 }
 
 // mergeStandaloneNEGsPortInfo merge Standalone NEG PortInfo into portInfoMap
-func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap, negUsage *usage.NegServiceState) error {
+func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap, negUsage *usageMetrics.NegServiceState) error {
 	negAnnotation, foundNEGAnnotation, err := annotations.FromService(service).NEGAnnotation()
 	if err != nil {
 		return err
@@ -566,7 +551,7 @@ func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name ty
 }
 
 // mergeVmIpNEGsPortInfo merges the PortInfo for ILB services using GCE_VM_IP NEGs into portInfoMap
-func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap, negUsage *usage.NegServiceState) error {
+func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap, negUsage *usageMetrics.NegServiceState) error {
 	if wantsILB, _ := annotations.WantsL4ILB(service); !wantsILB {
 		return nil
 	}
@@ -580,7 +565,7 @@ func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.Na
 
 	onlyLocal := helpers.RequestsOnlyLocalTraffic(service)
 	// Update usage metrics.
-	negUsage.VmIpNeg = usage.NewVmIpNegType(onlyLocal)
+	negUsage.VmIpNeg = usageMetrics.NewVmIpNegType(onlyLocal)
 
 	return portInfoMap.Merge(negtypes.NewPortInfoMapForVMIPNEG(name.Namespace, name.Name, c.l4Namer, onlyLocal))
 }
@@ -655,10 +640,17 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 	if err != nil {
 		return err
 	}
-	coreClient := c.client.CoreV1()
-	service, err := coreClient.Services(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	obj, exists, err := c.serviceLister.GetByKey(getServiceKey(namespace, name).Key())
 	if err != nil {
 		return err
+	}
+	if !exists {
+		// Service no longer exists so doesn't require any update.
+		return nil
+	}
+	service, ok := obj.(*apiv1.Service)
+	if !ok {
+		return fmt.Errorf("cannot convert obj to Service; obj=%T", obj)
 	}
 
 	// Remove NEG Status Annotation when no NEG is needed
@@ -667,7 +659,7 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 			newSvcObjectMeta := service.ObjectMeta.DeepCopy()
 			delete(newSvcObjectMeta.Annotations, annotations.NEGStatusKey)
 			c.logger.V(2).Info("Removing NEG status annotation from service", "service", klog.KRef(namespace, name))
-			return patch.PatchServiceObjectMetadata(coreClient, service, *newSvcObjectMeta)
+			return patch.PatchServiceObjectMetadata(c.client.CoreV1(), service, *newSvcObjectMeta)
 		}
 		// service doesn't have the expose NEG annotation and doesn't need update
 		return nil
@@ -689,7 +681,7 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 	}
 	newSvcObjectMeta.Annotations[annotations.NEGStatusKey] = annotation
 	c.logger.V(2).Info("Updating NEG visibility annotation on service", "annotation", annotation, "service", klog.KRef(namespace, name))
-	return patch.PatchServiceObjectMetadata(coreClient, service, *newSvcObjectMeta)
+	return patch.PatchServiceObjectMetadata(c.client.CoreV1(), service, *newSvcObjectMeta)
 }
 
 func (c *Controller) handleErr(err error, key interface{}) {
@@ -706,16 +698,6 @@ func (c *Controller) handleErr(err error, key interface{}) {
 		c.recorder.Eventf(service.(*apiv1.Service), apiv1.EventTypeWarning, "ProcessServiceFailed", msg)
 	}
 	c.serviceQueue.AddRateLimited(key)
-}
-
-func (c *Controller) enqueueEndpoint(obj interface{}) {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
-	if err != nil {
-		c.logger.Error(err, "Failed to generate endpoint key")
-		return
-	}
-	c.logger.V(3).Info("Adding Endpoints to endpointQueue for processing", "endpoints", key)
-	c.endpointQueue.Add(key)
 }
 
 func (c *Controller) enqueueEndpointSlice(obj interface{}) {

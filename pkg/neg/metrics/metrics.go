@@ -31,6 +31,8 @@ const (
 	negOpLatencyKey          = "neg_operation_duration_seconds"
 	negOpEndpointsKey        = "neg_operation_endpoints"
 	lastSyncTimestampKey     = "sync_timestamp"
+	syncerStalenessKey       = "syncer_staleness"
+	epsStalenessKey          = "endpointslice_staleness"
 
 	resultSuccess = "success"
 	resultError   = "error"
@@ -127,6 +129,26 @@ var (
 			Help:      "The timestamp of the last execution of NEG controller sync loop.",
 		},
 	)
+
+	// SyncerStaleness tracks for every syncer, how long since the syncer last syncs
+	SyncerStaleness = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      syncerStalenessKey,
+			Help:      "The duration of a syncer since it last syncs",
+		},
+	)
+
+	// EPSStaleness tracks for every endpoint slice, how long since it was last processed
+	EPSStaleness = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      epsStalenessKey,
+			Help:      "The duration for an endpoint slice since it was last processed by syncer",
+			// custom buckets - [1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s(~4min), 512s(~8min), 1024s(~17min), 2048 (~34min), 4096(~68min), 8192(~136min), +Inf]
+			Buckets: prometheus.ExponentialBuckets(1, 2, 14),
+		},
+	)
 )
 
 var register sync.Once
@@ -139,6 +161,10 @@ func RegisterMetrics() {
 		prometheus.MustRegister(SyncerSyncLatency)
 		prometheus.MustRegister(LastSyncTimestamp)
 		prometheus.MustRegister(InitializationLatency)
+		prometheus.MustRegister(SyncerStaleness)
+		prometheus.MustRegister(EPSStaleness)
+
+		RegisterSyncerMetrics()
 	})
 }
 
@@ -166,6 +192,14 @@ func PublishNegManagerProcessMetrics(process string, err error, start time.Time)
 // PublishNegInitializationMetrics publishes collected metrics for time from request to initialization of NEG
 func PublishNegInitializationMetrics(latency time.Duration) {
 	InitializationLatency.Observe(latency.Seconds())
+}
+
+func PublishNegSyncerStalenessMetrics(syncerStaleness time.Duration) {
+	SyncerStaleness.Observe(syncerStaleness.Seconds())
+}
+
+func PublishNegEPSStalenessMetrics(epsStaleness time.Duration) {
+	EPSStaleness.Observe(epsStaleness.Seconds())
 }
 
 func getResult(err error) string {

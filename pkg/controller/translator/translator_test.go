@@ -63,10 +63,10 @@ var (
 )
 
 func fakeTranslator() *Translator {
-	return configuredFakeTranslator(false)
+	return configuredFakeTranslator()
 }
 
-func configuredFakeTranslator(useEndpointSlices bool) *Translator {
+func configuredFakeTranslator() *Translator {
 	client := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	namespace := apiv1.NamespaceAll
@@ -76,22 +76,14 @@ func configuredFakeTranslator(useEndpointSlices bool) *Translator {
 	BackendConfigInformer := informerbackendconfig.NewBackendConfigInformer(backendConfigClient, namespace, resyncPeriod, utils.NewNamespaceIndexer())
 	PodInformer := informerv1.NewPodInformer(client, namespace, resyncPeriod, utils.NewNamespaceIndexer())
 	NodeInformer := informerv1.NewNodeInformer(client, resyncPeriod, utils.NewNamespaceIndexer())
-	var EndpointSliceInformer cache.SharedIndexInformer
-	var EndpointInformer cache.SharedIndexInformer
-	if useEndpointSlices {
-		EndpointSliceInformer = discoveryinformer.NewEndpointSliceInformer(client, namespace, 0,
-			cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc, endpointslices.EndpointSlicesByServiceIndex: endpointslices.EndpointSlicesByServiceFunc})
-	} else {
-		EndpointInformer = informerv1.NewEndpointsInformer(client, namespace, 0, utils.NewNamespaceIndexer())
-	}
+	EndpointSliceInformer := discoveryinformer.NewEndpointSliceInformer(client, namespace, 0,
+		cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc, endpointslices.EndpointSlicesByServiceIndex: endpointslices.EndpointSlicesByServiceFunc})
 	return NewTranslator(
 		ServiceInformer,
 		BackendConfigInformer,
 		NodeInformer,
 		PodInformer,
-		EndpointInformer,
 		EndpointSliceInformer,
-		useEndpointSlices,
 		client,
 	)
 }
@@ -495,7 +487,7 @@ func TestGetProbeNamedPort(t *testing.T) {
 	}
 	for _, pod := range makePods(nodePortToHealthCheck, apiv1.NamespaceDefault) {
 		pod.Spec.Containers[0].Ports[0].Name = "test"
-		pod.Spec.Containers[0].ReadinessProbe.Handler.HTTPGet.Port = intstr.IntOrString{Type: intstr.String, StrVal: "test"}
+		pod.Spec.Containers[0].ReadinessProbe.ProbeHandler.HTTPGet.Port = intstr.IntOrString{Type: intstr.String, StrVal: "test"}
 		translator.PodInformer.GetIndexer().Add(pod)
 	}
 	for p, exp := range nodePortToHealthCheck {
@@ -526,7 +518,7 @@ func TestGetProbeCrossNamespace(t *testing.T) {
 				{
 					Ports: []apiv1.ContainerPort{{ContainerPort: 80}},
 					ReadinessProbe: &apiv1.Probe{
-						Handler: apiv1.Handler{
+						ProbeHandler: apiv1.ProbeHandler{
 							HTTPGet: &apiv1.HTTPGetAction{
 								Scheme: apiv1.URISchemeHTTP,
 								Path:   "/badpath",
@@ -550,7 +542,7 @@ func TestGetProbeCrossNamespace(t *testing.T) {
 	}
 	for _, pod := range makePods(nodePortToHealthCheck, apiv1.NamespaceDefault) {
 		pod.Spec.Containers[0].Ports[0].Name = "test"
-		pod.Spec.Containers[0].ReadinessProbe.Handler.HTTPGet.Port = intstr.IntOrString{Type: intstr.String, StrVal: "test"}
+		pod.Spec.Containers[0].ReadinessProbe.ProbeHandler.HTTPGet.Port = intstr.IntOrString{Type: intstr.String, StrVal: "test"}
 		translator.PodInformer.GetIndexer().Add(pod)
 	}
 
@@ -774,7 +766,7 @@ func makePods(nodePortToHealthCheck map[utils.ServicePort]string, ns string) []*
 					{
 						Ports: []apiv1.ContainerPort{{Name: "test", ContainerPort: 80}},
 						ReadinessProbe: &apiv1.Probe{
-							Handler: apiv1.Handler{
+							ProbeHandler: apiv1.ProbeHandler{
 								HTTPGet: &apiv1.HTTPGetAction{
 									Scheme: getProbeScheme(np.Protocol),
 									Path:   u,
@@ -822,7 +814,7 @@ func makeServices(nodePortToHealthCheck map[utils.ServicePort]string, ns string)
 }
 
 func getProbePath(p *apiv1.Probe) string {
-	return p.Handler.HTTPGet.Path
+	return p.ProbeHandler.HTTPGet.Path
 }
 
 func TestGatherEndpointPorts(t *testing.T) {
@@ -933,25 +925,16 @@ func TestGatherEndpointPorts(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			for _, useSlices := range []bool{false, true} {
-				translator := configuredFakeTranslator(useSlices)
-				// Add endpoints or endpoint slices to informers.
-				if useSlices {
-					endpointSliceLister := translator.EndpointSliceInformer.GetIndexer()
-					for _, slice := range tc.endpointSlices {
-						endpointSliceLister.Add(slice)
-					}
-				} else {
-					endpointLister := translator.EndpointInformer.GetIndexer()
-					for _, ep := range tc.endpoints {
-						endpointLister.Add(ep)
-					}
-				}
+			translator := configuredFakeTranslator()
+			// Add endpoints or endpoint slices to informers.
+			endpointSliceLister := translator.EndpointSliceInformer.GetIndexer()
+			for _, slice := range tc.endpointSlices {
+				endpointSliceLister.Add(slice)
+			}
 
-				gotPorts := translator.GatherEndpointPorts(tc.svcPorts)
-				if !sets.NewString(gotPorts...).Equal(sets.NewString(tc.expectedPorts...)) {
-					t.Errorf("GatherEndpointPorts() = %v, expected %v (using slices: %v)", gotPorts, tc.expectedPorts, useSlices)
-				}
+			gotPorts := translator.GatherEndpointPorts(tc.svcPorts)
+			if !sets.NewString(gotPorts...).Equal(sets.NewString(tc.expectedPorts...)) {
+				t.Errorf("GatherEndpointPorts() = %v, expected %v", gotPorts, tc.expectedPorts)
 			}
 		})
 	}

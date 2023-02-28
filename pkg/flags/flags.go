@@ -47,7 +47,7 @@ const (
 	DefaultRetryPeriod = 2 * time.Second
 
 	// DefaultResourceLock is the type of resource used for the lock object.
-	DefaultResourceLock = resourcelock.ConfigMapsResourceLock
+	DefaultResourceLock = resourcelock.ConfigMapsLeasesResourceLock
 
 	// DefaultLockObjectNamespace is the namespace which owns the lock object.
 	DefaultLockObjectNamespace string = "kube-system"
@@ -93,6 +93,7 @@ var (
 		WatchNamespace                   string
 		LeaderElection                   LeaderElectionConfiguration
 		MetricsExportInterval            time.Duration
+		NegMetricsExportInterval         time.Duration
 
 		// Feature flags should be named Enablexxx.
 		EnableASMConfigMapBasedConfig  bool
@@ -107,9 +108,9 @@ var (
 		EnablePSC                      bool
 		EnableIngressGAFields          bool
 		EnableTrafficScaling           bool
-		EnableEndpointSlices           bool
 		EnablePinhole                  bool
 		EnableL4ILBDualStack           bool
+		EnableL4NetLBDualStack         bool
 		EnableMultipleIGs              bool
 		MaxIGSize                      int
 	}{
@@ -251,12 +252,13 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.StringVar(&F.GKEClusterHash, "gke-cluster-hash", "", "The cluster hash of the GKE cluster this Ingress Controller will be interacting with")
 	flag.StringVar(&F.GKEClusterType, "gke-cluster-type", "ZONAL", "The cluster type of the GKE cluster this Ingress Controller will be interacting with")
 	flag.BoolVar(&F.EnableTrafficScaling, "enable-traffic-scaling", false, "Enable support for Service {max-rate-per-endpoint, capacity-scaler}")
-	flag.BoolVar(&F.EnableEndpointSlices, "enable-endpoint-slices", false, "Enable using Endpoint Slices API instead of Endpoints API")
 	flag.BoolVar(&F.EnablePinhole, "enable-pinhole", false, "Enable Pinhole firewall feature")
 	flag.BoolVar(&F.EnableL4ILBDualStack, "enable-l4ilb-dual-stack", false, "Enable Dual-Stack handling for L4 Internal Load Balancers")
+	flag.BoolVar(&F.EnableL4NetLBDualStack, "enable-l4netlb-dual-stack", false, "Enable Dual-Stack handling for L4 External Load Balancers")
 	flag.BoolVar(&F.EnableMultipleIGs, "enable-multiple-igs", false, "Enable using multiple unmanaged instance groups")
 	flag.IntVar(&F.MaxIGSize, "max-ig-size", 1000, "Max number of instances in Instance Group")
 	flag.DurationVar(&F.MetricsExportInterval, "metrics-export-interval", 10*time.Minute, `Period for calculating and exporting metrics related to state of managed objects.`)
+	flag.DurationVar(&F.NegMetricsExportInterval, "neg-metrics-export-interval", 5*time.Second, `Period for calculating and exporting internal neg controller metrics, not usage.`)
 }
 
 type RateLimitSpecs struct {

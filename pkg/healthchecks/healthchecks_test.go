@@ -510,7 +510,7 @@ func TestApplyProbeSettingsToHC(t *testing.T) {
 			desc: "override path",
 			probe: &api_v1.Probe{
 				TimeoutSeconds: 1234,
-				Handler: api_v1.Handler{
+				ProbeHandler: api_v1.ProbeHandler{
 					HTTPGet: &api_v1.HTTPGetAction{Path: "/override"},
 				},
 			},
@@ -520,7 +520,7 @@ func TestApplyProbeSettingsToHC(t *testing.T) {
 			desc: "override host",
 			probe: &api_v1.Probe{
 				TimeoutSeconds: 1234,
-				Handler: api_v1.Handler{
+				ProbeHandler: api_v1.ProbeHandler{
 					HTTPGet: &api_v1.HTTPGetAction{Host: "foo.com"},
 				},
 			},
@@ -530,7 +530,7 @@ func TestApplyProbeSettingsToHC(t *testing.T) {
 			desc: "override host (via header)",
 			probe: &api_v1.Probe{
 				TimeoutSeconds: 1234,
-				Handler: api_v1.Handler{
+				ProbeHandler: api_v1.ProbeHandler{
 					HTTPGet: &api_v1.HTTPGetAction{
 						HTTPHeaders: []api_v1.HTTPHeader{{Name: "Host", Value: "foo.com"}},
 					},
@@ -543,7 +543,7 @@ func TestApplyProbeSettingsToHC(t *testing.T) {
 			desc: "ignore port",
 			probe: &api_v1.Probe{
 				TimeoutSeconds: 1234,
-				Handler: api_v1.Handler{
+				ProbeHandler: api_v1.ProbeHandler{
 					HTTPGet: &api_v1.HTTPGetAction{Port: intstr.FromInt(3000)},
 				},
 			},
@@ -554,7 +554,7 @@ func TestApplyProbeSettingsToHC(t *testing.T) {
 			probe: &api_v1.Probe{
 				TimeoutSeconds: 50,
 				PeriodSeconds:  100,
-				Handler: api_v1.Handler{
+				ProbeHandler: api_v1.ProbeHandler{
 					HTTPGet: &api_v1.HTTPGetAction{Port: intstr.FromInt(3000)},
 				},
 			},
@@ -566,7 +566,7 @@ func TestApplyProbeSettingsToHC(t *testing.T) {
 			probe: &api_v1.Probe{
 				TimeoutSeconds: 50,
 				PeriodSeconds:  100,
-				Handler: api_v1.Handler{
+				ProbeHandler: api_v1.ProbeHandler{
 					HTTPGet: &api_v1.HTTPGetAction{Port: intstr.FromInt(3000)},
 				},
 			},
@@ -898,7 +898,7 @@ func TestSyncServicePort(t *testing.T) {
 		desc: "create probe",
 		sp:   testSPs["HTTP-80-reg-nil"],
 		probe: &v1.Probe{
-			Handler: v1.Handler{
+			ProbeHandler: api_v1.ProbeHandler{
 				HTTPGet: &v1.HTTPGetAction{Path: "/foo", Host: "foo.com"},
 			},
 			PeriodSeconds:  1,
@@ -917,7 +917,7 @@ func TestSyncServicePort(t *testing.T) {
 		desc: "create probe neg",
 		sp:   testSPs["HTTP-80-neg-nil"],
 		probe: &v1.Probe{
-			Handler: v1.Handler{
+			ProbeHandler: api_v1.ProbeHandler{
 				HTTPGet: &v1.HTTPGetAction{Path: "/foo", Host: "foo.com"},
 			},
 			PeriodSeconds:  1234,
@@ -937,7 +937,7 @@ func TestSyncServicePort(t *testing.T) {
 		sp:       testSPs["HTTP-80-ilb-nil"],
 		regional: true,
 		probe: &v1.Probe{
-			Handler: v1.Handler{
+			ProbeHandler: api_v1.ProbeHandler{
 				HTTPGet: &v1.HTTPGetAction{Path: "/foo", Host: "foo.com"},
 			},
 			PeriodSeconds:  1234,
@@ -1007,7 +1007,7 @@ func TestSyncServicePort(t *testing.T) {
 		desc: "create probe and backendconfig",
 		sp:   testSPs["HTTP-80-reg-bc"],
 		probe: &v1.Probe{
-			Handler: v1.Handler{
+			ProbeHandler: api_v1.ProbeHandler{
 				HTTPGet: &v1.HTTPGetAction{Path: "/bar", Host: "foo.com"},
 			},
 			PeriodSeconds:  1,
@@ -1185,7 +1185,7 @@ func TestSyncServicePort(t *testing.T) {
 		setup: fixture.setupExistingHCFunc(chc),
 		sp:    testSPs["HTTP-80-reg-nil"],
 		probe: &v1.Probe{
-			Handler: v1.Handler{
+			ProbeHandler: api_v1.ProbeHandler{
 				HTTPGet: &v1.HTTPGetAction{Path: "/foo", Host: "foo.com"},
 			},
 			PeriodSeconds:  1,

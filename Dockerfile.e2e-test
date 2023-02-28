@@ -12,12 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM debian:9
+# Check End of Life Date wiki.debian.org/DebianReleases
+# and replace with a new one if needed
+FROM debian:11
 
 ADD bin/ARG_ARCH/ARG_BIN /ARG_BIN
+ARG CLOUD_SDK_VERSION="416.0.0-0"
+ENV CLOUD_SDK_VERSION=$CLOUD_SDK_VERSION
 
 COPY cmd/e2e-test/run.sh /run.sh
-RUN apt-get update && apt-get install -y curl python
-RUN curl https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-206.0.0-linux-x86_64.tar.gz | tar -zxf -
+
+# Download Google Cloud GPG and install google-cloud-cli
+# See recommended instructions:
+# cloud.google.com/sdk/docs/install#installation_instructions
+RUN apt-get update && \
+  apt-get install -y curl python apt-transport-https ca-certificates gnupg && \
+  echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] \
+  http://packages.cloud.google.com/apt cloud-sdk main" | \
+  tee -a /etc/apt/sources.list.d/google-cloud-sdk.list && \
+  curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | \
+  apt-key --keyring /usr/share/keyrings/cloud.google.gpg  add - && \
+  apt-get update -y && apt-get install google-cloud-cli=$CLOUD_SDK_VERSION -y
 
 ENTRYPOINT ["/run.sh"]

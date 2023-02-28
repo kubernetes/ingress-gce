@@ -435,121 +435,6 @@ func TestCustomNamedNegs(t *testing.T) {
 	}
 }
 
-func TestEndpointsDataFromEndpoints(t *testing.T) {
-	t.Parallel()
-	instance1 := TestInstance1
-	instance2 := TestInstance2
-	instance4 := TestInstance4
-	testServiceName := "service"
-	testServiceNamespace := "namespace"
-	testNamedPort := "port1"
-	endpoints := &v1.Endpoints{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      testServiceName,
-			Namespace: testServiceNamespace,
-		},
-		Subsets: []v1.EndpointSubset{
-			{
-				Addresses: []v1.EndpointAddress{
-					{
-						IP:       "10.100.1.1",
-						NodeName: &instance1,
-						TargetRef: &v1.ObjectReference{
-							Namespace: testServiceNamespace,
-							Name:      "pod1",
-						},
-					},
-					{
-						IP:       "10.100.1.2",
-						NodeName: &instance1,
-						TargetRef: &v1.ObjectReference{
-							Namespace: testServiceNamespace,
-							Name:      "pod2",
-						},
-					},
-				},
-				NotReadyAddresses: []v1.EndpointAddress{
-					{
-						IP:       "10.100.1.3",
-						NodeName: &instance1,
-						TargetRef: &v1.ObjectReference{
-							Namespace: testServiceNamespace,
-							Name:      "pod5",
-						},
-					},
-					{
-						IP:       "10.100.1.4",
-						NodeName: &instance1,
-						TargetRef: &v1.ObjectReference{
-							Namespace: testServiceNamespace,
-							Name:      "pod6",
-						},
-					},
-				},
-				Ports: []v1.EndpointPort{
-					{
-						Name:     "",
-						Port:     int32(80),
-						Protocol: v1.ProtocolTCP,
-					},
-				},
-			},
-			{
-				Addresses: []v1.EndpointAddress{
-					{
-						IP:       "10.100.2.2",
-						NodeName: &instance2,
-						TargetRef: &v1.ObjectReference{
-							Namespace: testServiceNamespace,
-							Name:      "pod7",
-						},
-					},
-					{
-						IP:       "10.100.4.1",
-						NodeName: &instance4,
-						TargetRef: &v1.ObjectReference{
-							Namespace: testServiceNamespace,
-							Name:      "pod8",
-						},
-					},
-				},
-				NotReadyAddresses: []v1.EndpointAddress{
-					{
-						IP:       "10.100.4.3",
-						NodeName: &instance4,
-						TargetRef: &v1.ObjectReference{
-							Namespace: testServiceNamespace,
-							Name:      "pod9",
-						},
-					},
-				},
-				Ports: []v1.EndpointPort{
-					{
-						Name:     testNamedPort,
-						Port:     int32(81),
-						Protocol: v1.ProtocolTCP,
-					},
-				},
-			},
-		},
-	}
-	endpointsData := EndpointsDataFromEndpoints(endpoints)
-
-	if len(endpointsData) != 2 {
-		t.Errorf("Expected the same number of endpoints subsets and endpoints data, got %d endpoints data for 2 subsets", len(endpointsData))
-	}
-	for i, subset := range endpoints.Subsets {
-		for j, port := range subset.Ports {
-			ValidatePortData(endpointsData[i].Ports[j], port.Port, port.Name, t)
-		}
-		ValidateAddressDataForEndpointsAddresses(endpointsData[i].Addresses, subset.Addresses, true, t)
-		ValidateAddressDataForEndpointsAddresses(endpointsData[i].Addresses, subset.NotReadyAddresses, false, t)
-		if len(endpointsData[i].Addresses) != len(subset.Addresses)+len(subset.NotReadyAddresses) {
-			t.Errorf("Unexpected len of endpointsData addresses, got %d, expected %d", len(endpointsData[i].Addresses), len(subset.Addresses)+len(subset.NotReadyAddresses))
-		}
-	}
-}
-
 func TestEndpointsDataFromEndpointSlices(t *testing.T) {
 	t.Parallel()
 	instance1 := TestInstance1
@@ -665,6 +550,47 @@ func TestEndpointsDataFromEndpointSlices(t *testing.T) {
 				},
 			},
 		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      testServiceName + "-2",
+				Namespace: testServiceNamespace,
+			},
+			AddressType: discovery.AddressTypeIPv6,
+			Endpoints: []discovery.Endpoint{
+				{
+					Addresses: []string{"aa:aa:aa:aa:aa:aa"},
+					NodeName:  &instance2,
+					TargetRef: &v1.ObjectReference{
+						Namespace: testServiceNamespace,
+						Name:      "pod7",
+					},
+				},
+				{
+					Addresses: []string{"aa:aa:aa:aa:aa:ab"},
+					NodeName:  &instance4,
+					TargetRef: &v1.ObjectReference{
+						Namespace: testServiceNamespace,
+						Name:      "pod8",
+					},
+				},
+				{
+					Addresses: []string{"aa:aa:aa:aa:aa:ac"},
+					NodeName:  &instance4,
+					TargetRef: &v1.ObjectReference{
+						Namespace: testServiceNamespace,
+						Name:      "pod9",
+					},
+					Conditions: discovery.EndpointConditions{Ready: &notReady},
+				},
+			},
+			Ports: []discovery.EndpointPort{
+				{
+					Name:     &testNamedPort,
+					Port:     &port81,
+					Protocol: &protocolTCP,
+				},
+			},
+		},
 	}
 
 	endpointsData := EndpointsDataFromEndpointSlices(endpointSlices)
@@ -672,7 +598,11 @@ func TestEndpointsDataFromEndpointSlices(t *testing.T) {
 	if len(endpointsData) != 2 {
 		t.Errorf("Expected the same number of endpoints subsets and endpoints data, got %d endpoints data for 2 subsets", len(endpointsData))
 	}
+	// This test expects that all the valid EPS are at the beginning
 	for i, slice := range endpointSlices {
+		if slice.AddressType != discovery.AddressTypeIPv4 {
+			continue
+		}
 		for j, port := range slice.Ports {
 			ValidatePortData(endpointsData[i].Ports[j], *port.Port, *port.Name, t)
 		}

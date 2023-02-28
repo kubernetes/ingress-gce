@@ -1,3 +1,4 @@
+//go:build !providerless
 // +build !providerless
 
 /*
@@ -45,7 +46,7 @@ var (
 		"version", // API version.
 	}
 
-	apiMetrics = registerAPIMetrics(metricLabels...)
+	apiMetrics = registerAPIMetrics()
 )
 
 type metricContext struct {
@@ -83,7 +84,7 @@ func newGenericMetricContext(prefix, request, region, zone, version string) *met
 }
 
 // registerApiMetrics adds metrics definitions for a category of API calls.
-func registerAPIMetrics(attributes ...string) *apiCallMetrics {
+func registerAPIMetrics() *apiCallMetrics {
 	metrics := &apiCallMetrics{
 		latency: metrics.NewHistogramVec(
 			&metrics.HistogramOpts{
@@ -91,7 +92,7 @@ func registerAPIMetrics(attributes ...string) *apiCallMetrics {
 				Help:           "Latency of a GCE API call",
 				StabilityLevel: metrics.ALPHA,
 			},
-			attributes,
+			metricLabels,
 		),
 		errors: metrics.NewCounterVec(
 			&metrics.CounterOpts{
@@ -99,7 +100,7 @@ func registerAPIMetrics(attributes ...string) *apiCallMetrics {
 				Help:           "Number of errors for an API call",
 				StabilityLevel: metrics.ALPHA,
 			},
-			attributes,
+			metricLabels,
 		),
 	}
 

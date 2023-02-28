@@ -43,3 +43,4 @@ var l4IPv6AnnotationKeys = []string{
 	annotations.UDPForwardingRuleIPv6Key,
 }
 var L4DualStackResourceAnnotationKeys = append(L4LBResourceAnnotationKeys, l4IPv6AnnotationKeys...)
+var L4DualStackResourceRBSAnnotationKeys = append(L4DualStackResourceAnnotationKeys, annotations.RBSAnnotationKey)

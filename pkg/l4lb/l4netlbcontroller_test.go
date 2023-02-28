@@ -62,12 +62,19 @@ const (
 )
 
 var (
-	serviceAnnotationKeys = []string{
-		annotations.FirewallRuleKey,
+	netLBCommonAnnotationKeys = []string{
 		annotations.BackendServiceKey,
 		annotations.HealthcheckKey,
+	}
+	netLBIPv4AnnotationKeys = []string{
+		annotations.FirewallRuleKey,
 		annotations.TCPForwardingRuleKey,
 		annotations.FirewallRuleForHealthcheckKey,
+	}
+	netLBIPv6AnnotationKeys = []string{
+		annotations.FirewallRuleIPv6Key,
+		annotations.TCPForwardingRuleIPv6Key,
+		annotations.FirewallRuleForHealthcheckIPv6Key,
 	}
 )
 
@@ -155,7 +162,6 @@ func createAndSyncLegacyNetLBSvc(t *testing.T) (svc *v1.Service, lc *L4NetLBCont
 }
 
 func checkBackendService(lc *L4NetLBController, svc *v1.Service) error {
-
 	backendServiceLink, bs, err := getBackend(lc, svc)
 	if err != nil {
 		return fmt.Errorf("Failed to fetch backend service, err %v", err)
@@ -249,9 +255,22 @@ func validateNetLBSvcStatus(svc *v1.Service, t *testing.T) {
 	}
 }
 
+func calculateNetLBExpectedAnnotationsKeys(svc *v1.Service) []string {
+	expectedAnnotations := netLBCommonAnnotationKeys
+	if utils.NeedsIPv4(svc) {
+		expectedAnnotations = append(expectedAnnotations, netLBIPv4AnnotationKeys...)
+	}
+	if utils.NeedsIPv6(svc) {
+		expectedAnnotations = append(expectedAnnotations, netLBIPv6AnnotationKeys...)
+	}
+	return expectedAnnotations
+}
+
 func validateAnnotations(svc *v1.Service) error {
-	missingKeys := []string{}
-	for _, key := range serviceAnnotationKeys {
+	expectedAnnotationsKeys := calculateNetLBExpectedAnnotationsKeys(svc)
+
+	var missingKeys []string
+	for _, key := range expectedAnnotationsKeys {
 		if _, ok := svc.Annotations[key]; !ok {
 			missingKeys = append(missingKeys, key)
 		}
@@ -263,8 +282,10 @@ func validateAnnotations(svc *v1.Service) error {
 }
 
 func validateAnnotationsDeleted(svc *v1.Service) error {
-	unexpectedKeys := []string{}
-	for _, key := range serviceAnnotationKeys {
+	expectedAnnotationsKeys := calculateNetLBExpectedAnnotationsKeys(svc)
+
+	var unexpectedKeys []string
+	for _, key := range expectedAnnotationsKeys {
 		if _, exists := svc.Annotations[key]; exists {
 			unexpectedKeys = append(unexpectedKeys, key)
 		}
@@ -1185,8 +1206,66 @@ func TestShouldProcessService(t *testing.T) {
 	} {
 		result := l4netController.shouldProcessService(testCase.newSvc, testCase.oldSvc)
 		if result != testCase.shouldProcess {
-			t.Errorf("Old service %v. New service %v. Expected shouldProcess: %t, got: %t", testCase.oldSvc, testCase.newSvc, testCase.shouldProcess, result)
+			t.Errorf("Old service %v. New service %v. Expected needsUpdate: %t, got: %t", testCase.oldSvc, testCase.newSvc, testCase.shouldProcess, result)
 		}
+	}
+}
+
+func TestDualStackServiceNeedsUpdate(t *testing.T) {
+	testCases := []struct {
+		desc              string
+		initialIPFamilies []v1.IPFamily
+		finalIPFamilies   []v1.IPFamily
+		needsUpdate       bool
+	}{
+		{
+			desc:              "Should update NetLB on ipv4 -> ipv4, ipv6",
+			initialIPFamilies: []v1.IPFamily{v1.IPv4Protocol},
+			finalIPFamilies:   []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+			needsUpdate:       true,
+		},
+		{
+			desc:              "Should update NetLB on ipv4, ipv6 -> ipv4",
+			initialIPFamilies: []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+			finalIPFamilies:   []v1.IPFamily{v1.IPv4Protocol},
+			needsUpdate:       true,
+		},
+		{
+			desc:              "Should update NetLB on ipv6 -> ipv6, ipv4",
+			initialIPFamilies: []v1.IPFamily{v1.IPv6Protocol},
+			finalIPFamilies:   []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol},
+			needsUpdate:       true,
+		},
+		{
+			desc:              "Should update NetLB on ipv6, ipv4 -> ipv6",
+			initialIPFamilies: []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol},
+			finalIPFamilies:   []v1.IPFamily{v1.IPv6Protocol},
+			needsUpdate:       true,
+		},
+		{
+			desc:              "Should not update NetLB on same IP families update",
+			initialIPFamilies: []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol},
+			finalIPFamilies:   []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol},
+			needsUpdate:       false,
+		},
+	}
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			controller := newL4NetLBServiceController()
+			controller.enableDualStack = true
+			oldSvc := test.NewL4NetLBRBSService(8080)
+			oldSvc.Spec.IPFamilies = tc.initialIPFamilies
+			newSvc := test.NewL4NetLBRBSService(8080)
+			newSvc.Spec.IPFamilies = tc.finalIPFamilies
+
+			result := controller.needsUpdate(oldSvc, newSvc)
+			if result != tc.needsUpdate {
+				t.Errorf("Old service %v. New service %v. Expected needsUpdate: %t, got: %t", oldSvc, newSvc, tc.needsUpdate, result)
+			}
+		})
 	}
 }
 
@@ -1325,6 +1404,77 @@ func TestIsRBSBasedServiceForNonLoadBalancersType(t *testing.T) {
 			if controller.isRBSBasedService(svc) {
 				t.Errorf("isRBSBasedService(%v) = true, want false", svc)
 			}
+		})
+	}
+}
+
+func TestCreateDeleteDualStackNetLBService(t *testing.T) {
+	testCases := []struct {
+		desc       string
+		ipFamilies []v1.IPFamily
+	}{
+		{
+			desc:       "Create and delete IPv4 NetLB",
+			ipFamilies: []v1.IPFamily{v1.IPv4Protocol},
+		},
+		{
+			desc:       "Create and delete IPv4 IPv6 NetLB",
+			ipFamilies: []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+		},
+		{
+			desc:       "Create and delete IPv6 NetLB",
+			ipFamilies: []v1.IPFamily{v1.IPv6Protocol},
+		},
+		{
+			desc:       "Create and delete IPv6 IPv4 NetLB",
+			ipFamilies: []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol},
+		},
+		{
+			desc:       "Create and delete NetLB with empty IP families",
+			ipFamilies: []v1.IPFamily{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			controller := newL4NetLBServiceController()
+			controller.enableDualStack = true
+			svc := test.NewL4NetLBRBSService(8080)
+			svc.Spec.IPFamilies = tc.ipFamilies
+			addNetLBService(controller, svc)
+
+			prevMetrics, err := test.GetL4NetLBLatencyMetric()
+			if err != nil {
+				t.Errorf("Error getting L4 NetLB latency metrics err: %v", err)
+			}
+			if prevMetrics == nil {
+				t.Fatalf("Cannot get prometheus metrics for L4NetLB latency")
+			}
+
+			key, _ := common.KeyFunc(svc)
+			err = controller.sync(key)
+			if err != nil {
+				t.Errorf("Failed to sync newly added service %s, err %v", svc.Name, err)
+			}
+			svc, err = controller.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
+			if err != nil {
+				t.Errorf("Failed to lookup service %s, err %v", svc.Name, err)
+			}
+
+			expectedIngressLength := len(tc.ipFamilies)
+			// For empty IP Families we should provide ipv4 address
+			if expectedIngressLength == 0 {
+				expectedIngressLength = 1
+			}
+			if len(svc.Status.LoadBalancer.Ingress) != expectedIngressLength {
+				t.Errorf("expectedIngressLength = %d, got %d", expectedIngressLength, len(svc.Status.LoadBalancer.Ingress))
+			}
+
+			err = validateAnnotations(svc)
+			if err != nil {
+				t.Errorf("validateAnnotations(%+v) returned error %v, want nil", svc, err)
+			}
+			deleteNetLBService(controller, svc)
 		})
 	}
 }
