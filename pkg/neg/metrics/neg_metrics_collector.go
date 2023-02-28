@@ -20,25 +20,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/apimachinery/pkg/util/wait"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/klog/v2"
-)
-
-var (
-	syncResultLabel = "result"
-	syncResultKey   = "sync_result"
-
-	// syncerSyncResult tracks the count for each sync result
-	syncerSyncResult = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Subsystem: negControllerSubsystem,
-			Name:      syncResultKey,
-			Help:      "Current count for each sync result",
-		},
-		[]string{syncResultLabel},
-	)
 )
 
 type SyncerMetricsCollector interface {
@@ -79,7 +63,6 @@ func FakeSyncerMetrics() *SyncerMetrics {
 
 // RegisterSyncerMetrics registers syncer related metrics
 func RegisterSyncerMetrics() {
-	prometheus.MustRegister(syncerSyncResult)
 }
 
 func (sm *SyncerMetrics) Run(stopCh <-chan struct{}) {
@@ -98,11 +81,6 @@ func (sm *SyncerMetrics) export() {
 
 // UpdateSyncer update the status of corresponding syncer based on the syncResult.
 func (sm *SyncerMetrics) UpdateSyncer(key negtypes.NegSyncerKey, syncResult *negtypes.NegSyncResult) {
-	if syncResult.Result == negtypes.ResultInProgress {
-		return
-	}
-	syncerSyncResult.WithLabelValues(syncResult.Result).Inc()
-
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	if sm.syncerStatusMap == nil {
