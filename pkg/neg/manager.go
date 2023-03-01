@@ -27,7 +27,6 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -674,17 +673,17 @@ func (manager *syncerManager) ensureSvcNegCR(svcKey serviceKey, portInfo negtype
 		},
 	}
 
-	negCR, err := manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Get(context.Background(), portInfo.NegName, metav1.GetOptions{})
+	obj, exists, err = manager.svcNegLister.GetByKey(fmt.Sprintf("%s/%s", svcKey.namespace, portInfo.NegName))
 	if err != nil {
-		if !apierrors.IsNotFound(err) {
-			return fmt.Errorf("Error retrieving existing negs: %s", err)
-		}
-
+		return fmt.Errorf("Error retrieving existing negs: %s", err)
+	}
+	if !exists {
 		// Neg does not exist so create it
 		_, err = manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Create(context.Background(), &newCR, metav1.CreateOptions{})
 		manager.logger.V(2).Info("Created ServiceNetworkEndpointGroup CR for neg", "svcneg", klog.KRef(svcKey.namespace, portInfo.NegName))
 		return err
 	}
+	negCR := obj.(*negv1beta1.ServiceNetworkEndpointGroup)
 
 	needUpdate, err := ensureNegCRLabels(negCR, labels, manager.logger)
 	if err != nil {
