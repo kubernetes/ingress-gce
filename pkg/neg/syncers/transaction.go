@@ -388,11 +388,11 @@ func (s *transactionSyncer) isValidEndpointInfo(eds []negtypes.EndpointsData, en
 
 // isValidEPField returns false and the corresponding reason if there is endpoint with missing zone or nodeName
 func (s *transactionSyncer) isValidEPField(err error) (bool, string) {
-	if errors.Is(err, ErrEPMissingNodeName) {
+	if errors.Is(err, negtypes.ErrEPMissingNodeName) {
 		s.logger.Info("Detected unexpected error when checking missing nodeName", "error", err)
 		return false, negtypes.ResultEPMissingNodeName
 	}
-	if errors.Is(err, ErrEPMissingZone) {
+	if errors.Is(err, negtypes.ErrEPMissingZone) {
 		s.logger.Info("Detected unexpected error when checking missing zone", "error", err)
 		return false, negtypes.ResultEPMissingZone
 	}
