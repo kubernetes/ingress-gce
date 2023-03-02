@@ -109,6 +109,11 @@ func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(eds []types.Endpoints
 	return subsetMap, nil, 0, err
 }
 
+func (l *LocalL4ILBEndpointsCalculator) ValidateEndpoints(endpointData []types.EndpointsData, endpointPodMap types.EndpointPodMap, dupCount int) error {
+	// this should be a no-op for now
+	return nil
+}
+
 // ClusterL4ILBEndpointGetter implements the NetworkEndpointsCalculator interface.
 // It exposes methods to calculate Network endpoints for GCE_VM_IP NEGs when the service
 // uses "ExternalTrafficPolicy: Cluster" mode This is the default mode.
@@ -161,6 +166,11 @@ func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpoints(_ []types.Endpoints
 	return subsetMap, nil, 0, err
 }
 
+func (l *ClusterL4ILBEndpointsCalculator) ValidateEndpoints(endpointData []types.EndpointsData, endpointPodMap types.EndpointPodMap, dupCount int) error {
+	// this should be a no-op for now
+	return nil
+}
+
 // L7EndpointsCalculator implements methods to calculate Network endpoints for VM_IP_PORT NEGs
 type L7EndpointsCalculator struct {
 	zoneGetter          types.ZoneGetter
@@ -196,4 +206,35 @@ func nodeMapToString(nodeMap map[string][]*v1.Node) string {
 		str = append(str, fmt.Sprintf("Zone %s: %d nodes", zone, len(nodeList)))
 	}
 	return strings.Join(str, ",")
+}
+
+// ValidateEndpoints checks if endpoint information is correct.
+//
+//	For L7 Endpoint Calculator, it returns error if one of the two checks fails:
+//	1. The endpoint count from endpointData doesn't equal to the one from endpointPodMap:
+//	   endpiontPodMap removes the duplicated endpoints, and dupCount stores the number of duplicated it removed
+//	   and we compare the endpoint counts with duplicates
+//	2. The endpoint count from endpointData or the one from endpointPodMap is 0
+func (l *L7EndpointsCalculator) ValidateEndpoints(endpointData []types.EndpointsData, endpointPodMap types.EndpointPodMap, dupCount int) error {
+	// Endpoint count from EndpointPodMap
+	countFromPodMap := len(endpointPodMap) + dupCount
+	if countFromPodMap == 0 {
+		l.logger.Info("Detected endpoint count from endpointPodMap going to zero", "endpointPodMap", endpointPodMap)
+		return types.ErrEPCalculationCountZero
+	}
+	// Endpoint count from EndpointData
+	countFromEndpointData := 0
+	for _, ed := range endpointData {
+		countFromEndpointData += len(ed.Addresses)
+	}
+	if countFromEndpointData == 0 {
+		l.logger.Info("Detected endpoint count from endpointData going to zero", "endpointData", endpointData)
+		return types.ErrEPSEndpointCountZero
+	}
+
+	if countFromEndpointData != countFromPodMap {
+		l.logger.Info("Detected error when comparing endpoint counts", "endpointData", endpointData, "endpointPodMap", endpointPodMap, "dupCount", dupCount)
+		return types.ErrEPCountsDiffer
+	}
+	return nil
 }

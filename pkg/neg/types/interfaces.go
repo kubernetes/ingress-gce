@@ -86,4 +86,6 @@ type NetworkEndpointsCalculator interface {
 	CalculateEndpoints(eds []EndpointsData, currentMap map[string]NetworkEndpointSet) (map[string]NetworkEndpointSet, EndpointPodMap, int, error)
 	// Mode indicates the mode that the EndpointsCalculator is operating in.
 	Mode() EndpointsCalculatorMode
+	// ValidateEndpoints validates the NEG endpoint information is correct
+	ValidateEndpoints(endpointData []EndpointsData, endpointPodMap EndpointPodMap, dupCount int) error
 }
