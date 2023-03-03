@@ -42,7 +42,7 @@ ARCH ?= amd64
 ALL_ARCH := amd64
 
 # Image to use for building.
-BUILD_IMAGE ?= golang:1.18-alpine
+BUILD_IMAGE ?= golang:1.20
 # Containers will be named: $(CONTAINER_PREFIX)-$(BINARY)-$(ARCH):$(VERSION).
 CONTAINER_PREFIX ?= ingress-gce
 
@@ -50,7 +50,19 @@ CONTAINER_PREFIX ?= ingress-gce
 VERSION ?= $(shell git describe --tags --always --dirty)
 
 # Set to 1 to print more verbose output from the build.
-VERBOSE ?= 0
+VERBOSE ?= 1
 
 # Include standard build rules.
 include build/rules.mk
+
+# Additional rule to build an image of glbc for e2e testing.
+# TODO(rramkumar): Find a way not to use "latest" as the tag.
+push-e2e:
+	@$(MAKE) --no-print-directory containers push
+
+# update generated code
+generate:
+	hack/update-codegen.sh
+# run linters, ensure generated code, etc.
+verify:
+	hack/verify-all.sh

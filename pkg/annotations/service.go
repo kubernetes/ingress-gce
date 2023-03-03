@@ -23,7 +23,6 @@ import (
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/legacy-cloud-providers/gce"
 )
 
 const (
@@ -228,8 +227,8 @@ func WantsL4ILB(service *v1.Service) (bool, string) {
 	if service.Spec.Type != v1.ServiceTypeLoadBalancer {
 		return false, fmt.Sprintf("Type : %s", service.Spec.Type)
 	}
-	ltype := gce.GetLoadBalancerAnnotationType(service)
-	if ltype == gce.LBTypeInternal {
+	ltype := GetLoadBalancerAnnotationType(service)
+	if ltype == LBTypeInternal {
 		return true, fmt.Sprintf("Type : %s, LBType : %s", service.Spec.Type, ltype)
 	}
 	return false, fmt.Sprintf("Type : %s, LBType : %s", service.Spec.Type, ltype)
@@ -243,8 +242,8 @@ func WantsL4NetLB(service *v1.Service) (bool, string) {
 	if service.Spec.Type != v1.ServiceTypeLoadBalancer {
 		return false, fmt.Sprintf("Type : %s", service.Spec.Type)
 	}
-	ltype := gce.GetLoadBalancerAnnotationType(service)
-	return ltype != gce.LBTypeInternal, fmt.Sprintf("Type : %s, LBType : %s", service.Spec.Type, ltype)
+	ltype := GetLoadBalancerAnnotationType(service)
+	return ltype != LBTypeInternal, fmt.Sprintf("Type : %s, LBType : %s", service.Spec.Type, ltype)
 }
 
 // OnlyStatusAnnotationsChanged returns true if the only annotation change between the 2 services is the NEG or ILB

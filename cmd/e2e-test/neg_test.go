@@ -33,6 +33,14 @@ import (
 )
 
 func TestNEG(t *testing.T) {
+	testNEGOS(t, e2e.Linux)
+}
+
+func TestWindowsNEG(t *testing.T) {
+	testNEGOS(t, e2e.Windows)
+}
+
+func testNEGOS(t *testing.T, os e2e.OS) {
 	t.Parallel()
 	const (
 		numForwardingRules = 1
@@ -94,8 +102,8 @@ func TestNEG(t *testing.T) {
 			ctx := context.Background()
 
 			for name, attr := range tc.services {
-				_, err := e2e.EnsureEchoService(s, name, map[string]string{
-					annotations.NEGAnnotationKey: attr.annotations.String()}, attr.svcType, replicas)
+				_, err := e2e.EnsureEchoServiceOS(s, name, map[string]string{
+					annotations.NEGAnnotationKey: attr.annotations.String()}, attr.svcType, replicas, os)
 				if err != nil {
 					t.Fatalf("error ensuring echo service: %v", err)
 				}
@@ -138,6 +146,14 @@ func TestNEG(t *testing.T) {
 }
 
 func TestNEGTransition(t *testing.T) {
+	testNEGTransitionOS(t, e2e.Linux)
+}
+
+func TestWindowsNEGTransition(t *testing.T) {
+	testNEGTransitionOS(t, e2e.Windows)
+}
+
+func testNEGTransitionOS(t *testing.T, os e2e.OS) {
 	t.Parallel()
 
 	port80 := networkingv1.ServiceBackendPort{Number: 80}
@@ -185,7 +201,7 @@ func TestNEGTransition(t *testing.T) {
 					svcAnnotations[annotations.NEGAnnotationKey] = tc.annotations.String()
 				}
 				// First create the echo service, we will be adapting it throughout the basic tests
-				_, err := e2e.EnsureEchoService(s, "service-1", svcAnnotations, v1.ServiceTypeNodePort, 1)
+				_, err := e2e.EnsureEchoServiceOS(s, "service-1", svcAnnotations, v1.ServiceTypeNodePort, 1, os)
 
 				if err != nil {
 					t.Fatalf("error ensuring echo service: %v", err)
@@ -237,6 +253,14 @@ func TestNEGTransition(t *testing.T) {
 }
 
 func TestNEGSyncEndpoints(t *testing.T) {
+	testNEGSyncEndpoints(t, e2e.Linux)
+}
+
+func TestWindowsNEGSyncEndpoints(t *testing.T) {
+	testNEGSyncEndpoints(t, e2e.Windows)
+}
+
+func testNEGSyncEndpoints(t *testing.T, os e2e.OS) {
 	t.Parallel()
 
 	port80 := networkingv1.ServiceBackendPort{Number: 80}
@@ -288,7 +312,7 @@ func TestNEGSyncEndpoints(t *testing.T) {
 			ctx := context.Background()
 
 			svcAnnotations := map[string]string{annotations.NEGAnnotationKey: tc.annotations.String()}
-			_, err := e2e.EnsureEchoService(s, svcName, svcAnnotations, v1.ServiceTypeClusterIP, 0)
+			_, err := e2e.EnsureEchoServiceOS(s, svcName, svcAnnotations, v1.ServiceTypeClusterIP, 0, os)
 
 			if err != nil {
 				t.Fatalf("error ensuring echo service: %v", err)
@@ -306,7 +330,7 @@ func TestNEGSyncEndpoints(t *testing.T) {
 				// However, the anti affinity rule may not fully solve this problem in the case where there
 				// is no capacity left in all nodes in a zone. Hence, it may still cause all pods to be scheduled into
 				// other zones. A pod started later may get scheduled to a zone when capacity freed up.
-				if err := e2e.EnsureEchoDeployment(s, svcName, replicas, e2e.SpreadPodAcrossZones); err != nil {
+				if err := e2e.EnsureEchoDeploymentOS(s, svcName, replicas, e2e.SpreadPodAcrossZones, os); err != nil {
 					t.Fatalf("error ensuring echo deployment: %v", err)
 				}
 

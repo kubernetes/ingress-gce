@@ -17,6 +17,7 @@ limitations under the License.
 package syncers
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -24,8 +25,6 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	apiv1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
@@ -45,6 +44,12 @@ const (
 	minRetryDelay = 5 * time.Second
 	maxRetryDelay = 600 * time.Second
 	separator     = "||"
+)
+
+var (
+	ErrEPMissingNodeName = errors.New("endpoint has empty nodeName field")
+	ErrNodeNotFound      = errors.New("failed to retrieve associated zone of node")
+	ErrEPMissingZone     = errors.New("endpoint has empty zone field")
 )
 
 // encodeEndpoint encodes ip and instance into a single string
@@ -218,8 +223,8 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 	return negRef, nil
 }
 
-// toZoneNetworkEndpointMap translates addresses in endpoints object and Istio:DestinationRule subset into zone and endpoints map, and also return the count for duplicated endpoints
-func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.ZoneGetter, servicePortName string, podLister cache.Indexer, subsetLabels string, networkEndpointType negtypes.NetworkEndpointType) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, int, error) {
+// toZoneNetworkEndpointMap translates addresses in endpoints object into zone and endpoints map, and also return the count for duplicated endpoints
+func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.ZoneGetter, servicePortName string, networkEndpointType negtypes.NetworkEndpointType) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, int, error) {
 	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
 	networkEndpointPodMap := negtypes.EndpointPodMap{}
 	dupCount := 0
@@ -246,20 +251,9 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 		foundMatchingPort = true
 
 		for _, endpointAddress := range ed.Addresses {
-			// Apply the selector if Istio:DestinationRule subset labels provided.
-			if subsetLabels != "" {
-				if endpointAddress.TargetRef == nil || endpointAddress.TargetRef.Kind != "Pod" {
-					klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have a Pod as the TargetRef object. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
-					continue
-				}
-				// Skip if the endpoint's pod not matching the subset labels.
-				if !shouldPodBeInDestinationRuleSubset(podLister, endpointAddress.TargetRef.Namespace, endpointAddress.TargetRef.Name, subsetLabels) {
-					continue
-				}
-			}
-			if endpointAddress.NodeName == nil {
+			if endpointAddress.NodeName == nil || len(*endpointAddress.NodeName) == 0 {
 				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated node. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
-				continue
+				return nil, nil, dupCount, ErrEPMissingNodeName
 			}
 			if endpointAddress.TargetRef == nil {
 				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated pod. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
@@ -267,32 +261,28 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 			}
 			zone, err := zoneGetter.GetZoneForNode(*endpointAddress.NodeName)
 			if err != nil {
-				return nil, nil, dupCount, fmt.Errorf("failed to retrieve associated zone of node %q: %w", *endpointAddress.NodeName, err)
+				return nil, nil, dupCount, ErrNodeNotFound
+			}
+			if zone == "" {
+				return nil, nil, dupCount, ErrEPMissingZone
 			}
 			if zoneNetworkEndpointMap[zone] == nil {
 				zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
 			}
 
-			// TODO: This check and EndpointsData.Ready field may be deleted once Endpoints support is removed.
-			// The purpose of this check is to handle endpoints in terminating state.
-			// The Endpoints API doesn't have terminating field. Terminating endpoints are marked as not ready.
-			// This check support this case. For not ready endpoints it checks if the endpoint is not yet ready or terminating.
-			// The EndpointSlices API has terminating field which solves this problem.
-			if endpointAddress.Ready || shouldPodBeInNeg(podLister, endpointAddress.TargetRef.Namespace, endpointAddress.TargetRef.Name) {
-				for _, address := range endpointAddress.Addresses {
-					networkEndpoint := negtypes.NetworkEndpoint{IP: address, Port: matchPort, Node: *endpointAddress.NodeName}
-					if networkEndpointType == negtypes.NonGCPPrivateEndpointType {
-						// Non-GCP network endpoints don't have associated nodes.
-						networkEndpoint.Node = ""
-					}
-					zoneNetworkEndpointMap[zone].Insert(networkEndpoint)
-
-					// increment the count for duplicated endpoint
-					if _, contains := networkEndpointPodMap[networkEndpoint]; contains {
-						dupCount += 1
-					}
-					networkEndpointPodMap[networkEndpoint] = types.NamespacedName{Namespace: endpointAddress.TargetRef.Namespace, Name: endpointAddress.TargetRef.Name}
+			for _, address := range endpointAddress.Addresses {
+				networkEndpoint := negtypes.NetworkEndpoint{IP: address, Port: matchPort, Node: *endpointAddress.NodeName}
+				if networkEndpointType == negtypes.NonGCPPrivateEndpointType {
+					// Non-GCP network endpoints don't have associated nodes.
+					networkEndpoint.Node = ""
 				}
+				zoneNetworkEndpointMap[zone].Insert(networkEndpoint)
+
+				// increment the count for duplicated endpoint
+				if _, contains := networkEndpointPodMap[networkEndpoint]; contains {
+					dupCount += 1
+				}
+				networkEndpointPodMap[networkEndpoint] = types.NamespacedName{Namespace: endpointAddress.TargetRef.Namespace, Name: endpointAddress.TargetRef.Name}
 			}
 		}
 	}
@@ -373,63 +363,4 @@ func makeEndpointBatch(endpoints negtypes.NetworkEndpointSet, negType negtypes.N
 		}
 	}
 	return endpointBatch, nil
-}
-
-func keyFunc(namespace, name string) string {
-	return fmt.Sprintf("%s/%s", namespace, name)
-}
-
-// shouldPodBeInNeg returns true if pod is not in graceful termination state
-func shouldPodBeInNeg(podLister cache.Indexer, namespace, name string) bool {
-	if podLister == nil {
-		return false
-	}
-	key := keyFunc(namespace, name)
-	obj, exists, err := podLister.GetByKey(key)
-	if err != nil {
-		klog.Errorf("Failed to retrieve pod %s from pod lister: %v", key, err)
-		return false
-	}
-	if !exists {
-		return false
-	}
-	pod, ok := obj.(*v1.Pod)
-	if !ok {
-		klog.Errorf("Failed to convert obj %s to v1.Pod. The object type is %T", key, obj)
-		return false
-	}
-
-	// if pod has DeletionTimestamp, that means pod is in graceful termination state.
-	if pod.DeletionTimestamp != nil {
-		return false
-	}
-	return true
-}
-
-// shouldPodBeInDestinationRuleSubset return true if pod match the DestinationRule subset labels.
-func shouldPodBeInDestinationRuleSubset(podLister cache.Indexer, namespace, name string, subsetLabels string) bool {
-	if podLister == nil {
-		return false
-	}
-	key := keyFunc(namespace, name)
-	obj, exists, err := podLister.GetByKey(key)
-	if err != nil {
-		klog.Errorf("Failed to retrieve pod %s from pod lister: %v", key, err)
-		return false
-	}
-	if !exists {
-		return false
-	}
-	pod, ok := obj.(*v1.Pod)
-	if !ok {
-		klog.Errorf("Failed to convert obj %s to v1.Pod. The object type is %T", key, obj)
-		return false
-	}
-
-	selector, err := labels.Parse(subsetLabels)
-	if err != nil {
-		klog.Errorf("Failed to parse the subset selectors.")
-		return false
-	}
-	return selector.Matches(labels.Set(pod.Labels))
 }

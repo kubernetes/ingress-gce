@@ -37,6 +37,7 @@ import (
 	"k8s.io/ingress-gce/pkg/forwardingrules"
 	l4metrics "k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
+	"k8s.io/ingress-gce/pkg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
@@ -46,8 +47,9 @@ import (
 
 const (
 	// The max tolerated delay between update being enqueued and sync being invoked.
-	enqueueToSyncDelayThreshold = 15 * time.Minute
-	l4ILBControllerName         = "l4-ilb-subsetting-controller"
+	enqueueToSyncDelayThreshold  = 15 * time.Minute
+	l4ILBControllerName          = "l4-ilb-subsetting-controller"
+	l4ILBDualStackControllerName = "l4-ilb-dualstack-controller"
 )
 
 // L4Controller manages the create/update delete of all L4 Internal LoadBalancer services.
@@ -149,11 +151,20 @@ func (l4c *L4Controller) checkHealth() error {
 	// if lastEnqueue time is more than 30 minutes before the last sync time, the controller is falling behind.
 	// This indicates that the controller was stuck handling a previous update, or sync function did not get invoked.
 	syncTimeLatest := lastEnqueueTime.Add(enqueueToSyncDelayThreshold)
+	controllerHealth := l4metrics.ControllerHealthyStatus
 	if lastSyncTime.After(syncTimeLatest) {
-		msg := fmt.Sprintf("L4 ILB Sync happened at time %v - %v after enqueue time, threshold is %v", lastSyncTime, lastSyncTime.Sub(lastEnqueueTime), enqueueToSyncDelayThreshold)
+		msg := fmt.Sprintf("L4 ILB Sync happened at time %v, %v after enqueue time, last enqueue time %v, threshold is %v", lastSyncTime, lastSyncTime.Sub(lastEnqueueTime), lastEnqueueTime, enqueueToSyncDelayThreshold)
 		// Log here, context/http handler do no log the error.
 		klog.Error(msg)
 		l4metrics.PublishL4FailedHealthCheckCount(l4ILBControllerName)
+		controllerHealth = l4metrics.ControllerUnhealthyStatus
+		// Reset trackers. Otherwise, if there is nothing in the queue then it will report the FailedHealthCheckCount every time the checkHealth is called
+		// If checkHealth returned error (as it is meant to) then container would be restarted and trackers would be reset either
+		l4c.enqueueTracker.Track()
+		l4c.syncTracker.Track()
+	}
+	if l4c.enableDualStack {
+		l4metrics.PublishL4ControllerHealthCheckStatus(l4ILBDualStackControllerName, controllerHealth)
 	}
 	return nil
 }
@@ -231,6 +242,12 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service) *load
 	if syncResult.Error != nil {
 		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
 			"Error syncing load balancer: %v", syncResult.Error)
+		if utils.IsUserError(syncResult.Error) {
+			syncResult.MetricsState.IsUserError = true
+			if l4c.enableDualStack {
+				syncResult.DualStackMetricsState.Status = metrics.StatusUserError
+			}
+		}
 		return syncResult
 	}
 	if syncResult.Status == nil {
@@ -475,6 +492,11 @@ func (l4c *L4Controller) needsUpdate(oldService *v1.Service, newService *v1.Serv
 			oldService.Spec.HealthCheckNodePort, newService.Spec.HealthCheckNodePort)
 		return true
 	}
+	if l4c.enableDualStack && !reflect.DeepEqual(oldService.Spec.IPFamilies, newService.Spec.IPFamilies) {
+		recorder.Eventf(newService, v1.EventTypeNormal, "IPFamilies", "%v -> %v",
+			oldService.Spec.IPFamilies, newService.Spec.IPFamilies)
+		return true
+	}
 	return false
 }
 
@@ -485,25 +507,29 @@ func (l4c *L4Controller) publishMetrics(result *loadbalancers.L4ILBSyncResult, n
 	}
 	switch result.SyncType {
 	case loadbalancers.SyncTypeCreate, loadbalancers.SyncTypeUpdate:
-		klog.V(6).Infof("Internal L4 Loadbalancer for Service %s ensured, updating its state %v in metrics cache", namespacedName, result.MetricsState)
+		klog.V(2).Infof("Internal L4 Loadbalancer for Service %s ensured, updating its state %v in metrics cache", namespacedName, result.MetricsState)
 		l4c.ctx.ControllerMetrics.SetL4ILBService(namespacedName, result.MetricsState)
-		if l4c.enableDualStack {
-			klog.V(6).Infof("Internal L4 DualStack Loadbalancer for Service %s ensured, updating its state %v in metrics cache", namespacedName, result.MetricsState)
-			l4c.ctx.ControllerMetrics.SetL4ILBDualStackService(namespacedName, result.DualStackMetricsState)
-		}
 		l4metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime)
+		if l4c.enableDualStack {
+			klog.V(2).Infof("Internal L4 DualStack Loadbalancer for Service %s ensured, updating its state %v in metrics cache", namespacedName, result.DualStackMetricsState)
+			l4c.ctx.ControllerMetrics.SetL4ILBDualStackService(namespacedName, result.DualStackMetricsState)
+			l4metrics.PublishL4ILBDualStackSyncLatency(result.Error == nil, result.SyncType, result.DualStackMetricsState.IPFamilies, result.StartTime)
+		}
 
 	case loadbalancers.SyncTypeDelete:
 		// if service is successfully deleted, remove it from cache
 		if result.Error == nil {
-			klog.V(6).Infof("Internal L4 Loadbalancer for Service %s deleted, removing its state from metrics cache", namespacedName)
+			klog.V(2).Infof("Internal L4 Loadbalancer for Service %s deleted, removing its state from metrics cache", namespacedName)
 			l4c.ctx.ControllerMetrics.DeleteL4ILBService(namespacedName)
 			if l4c.enableDualStack {
-				klog.V(6).Infof("Internal L4 Loadbalancer for Service %s deleted, removing its state from metrics cache", namespacedName)
+				klog.V(2).Infof("Internal L4 DualStack LoadBalancer for Service %s deleted, removing its state from metrics cache", namespacedName)
 				l4c.ctx.ControllerMetrics.DeleteL4ILBDualStackService(namespacedName)
 			}
 		}
 		l4metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime)
+		if l4c.enableDualStack {
+			l4metrics.PublishL4ILBDualStackSyncLatency(result.Error == nil, result.SyncType, result.DualStackMetricsState.IPFamilies, result.StartTime)
+		}
 	default:
 		klog.Warningf("Unknown sync type %q, skipping metrics", result.SyncType)
 	}

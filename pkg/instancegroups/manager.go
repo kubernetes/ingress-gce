@@ -124,7 +124,7 @@ func (m *manager) ensureInstanceGroupAndPorts(name, zone string, ports []int64) 
 			return nil, err
 		}
 	} else {
-		klog.V(5).Infof("Instance group %v/%v already exists.", zone, name)
+		klog.V(2).Infof("Instance group %v/%v already exists.", zone, name)
 	}
 
 	// Build map of existing ports

@@ -874,15 +874,15 @@ func TestHasVIP(t *testing.T) {
 		},
 		{"empty load-balancer status", &networkingv1.Ingress{
 			Status: networkingv1.IngressStatus{
-				LoadBalancer: api_v1.LoadBalancerStatus{},
+				LoadBalancer: networkingv1.IngressLoadBalancerStatus{},
 			},
 		},
 			false,
 		},
 		{"empty load-balancer ingress", &networkingv1.Ingress{
 			Status: networkingv1.IngressStatus{
-				LoadBalancer: api_v1.LoadBalancerStatus{
-					Ingress: []api_v1.LoadBalancerIngress{},
+				LoadBalancer: networkingv1.IngressLoadBalancerStatus{
+					Ingress: []networkingv1.IngressLoadBalancerIngress{},
 				},
 			},
 		},
@@ -890,8 +890,8 @@ func TestHasVIP(t *testing.T) {
 		},
 		{"empty IP", &networkingv1.Ingress{
 			Status: networkingv1.IngressStatus{
-				LoadBalancer: api_v1.LoadBalancerStatus{
-					Ingress: []api_v1.LoadBalancerIngress{
+				LoadBalancer: networkingv1.IngressLoadBalancerStatus{
+					Ingress: []networkingv1.IngressLoadBalancerIngress{
 						{IP: ""},
 					},
 				},
@@ -901,8 +901,8 @@ func TestHasVIP(t *testing.T) {
 		},
 		{"valid IP", &networkingv1.Ingress{
 			Status: networkingv1.IngressStatus{
-				LoadBalancer: api_v1.LoadBalancerStatus{
-					Ingress: []api_v1.LoadBalancerIngress{
+				LoadBalancer: networkingv1.IngressLoadBalancerStatus{
+					Ingress: []networkingv1.IngressLoadBalancerIngress{
 						{IP: "0.0.0.0"},
 					},
 				},
@@ -912,8 +912,8 @@ func TestHasVIP(t *testing.T) {
 		},
 		{"random", &networkingv1.Ingress{
 			Status: networkingv1.IngressStatus{
-				LoadBalancer: api_v1.LoadBalancerStatus{
-					Ingress: []api_v1.LoadBalancerIngress{
+				LoadBalancer: networkingv1.IngressLoadBalancerStatus{
+					Ingress: []networkingv1.IngressLoadBalancerIngress{
 						{IP: "xxxxxx"},
 					},
 				},
@@ -1370,37 +1370,6 @@ func TestGetProtocol(t *testing.T) {
 
 			if protocol != tc.expectedProtocol {
 				t.Errorf("GetProtocol returned %v, not equal to expected protocol = %v", protocol, tc.expectedProtocol)
-			}
-		})
-	}
-}
-
-func TestGetNodePorts(t *testing.T) {
-	testCases := []struct {
-		ports             []api_v1.ServicePort
-		expectedNodePorts []int64
-		desc              string
-	}{
-		{
-			ports:             []api_v1.ServicePort{},
-			expectedNodePorts: []int64{},
-			desc:              "Empty ports should return empty node ports",
-		},
-		{
-			ports: []api_v1.ServicePort{
-				{NodePort: 80}, {NodePort: 81}, {NodePort: 3000},
-			},
-			expectedNodePorts: []int64{80, 81, 3000},
-			desc:              "Multiple ports",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.desc, func(t *testing.T) {
-			nodePorts := GetNodePorts(tc.ports)
-
-			if !reflect.DeepEqual(nodePorts, tc.expectedNodePorts) {
-				t.Errorf("GetNodePorts returned %v, not equal to expected node ports = %v", nodePorts, tc.expectedNodePorts)
 			}
 		})
 	}

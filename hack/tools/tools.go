@@ -18,4 +18,7 @@ package tools
 import (
 	// linting tools
 	_ "github.com/golangci/golangci-lint/cmd/golangci-lint"
+
+	// Dependencies for update-codegen.sh
+	_ "k8s.io/kube-openapi/cmd/openapi-gen"
 )

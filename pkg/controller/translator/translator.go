@@ -63,18 +63,14 @@ func NewTranslator(serviceInformer cache.SharedIndexInformer,
 	backendConfigInformer cache.SharedIndexInformer,
 	nodeInformer cache.SharedIndexInformer,
 	podInformer cache.SharedIndexInformer,
-	endpointInformer cache.SharedIndexInformer,
 	endpointSliceInformer cache.SharedIndexInformer,
-	useEndpointSlices bool,
 	kubeClient kubernetes.Interface) *Translator {
 	return &Translator{
 		serviceInformer,
 		backendConfigInformer,
 		nodeInformer,
 		podInformer,
-		endpointInformer,
 		endpointSliceInformer,
-		useEndpointSlices,
 		kubeClient,
 	}
 }
@@ -85,9 +81,7 @@ type Translator struct {
 	BackendConfigInformer cache.SharedIndexInformer
 	NodeInformer          cache.SharedIndexInformer
 	PodInformer           cache.SharedIndexInformer
-	EndpointInformer      cache.SharedIndexInformer
 	EndpointSliceInformer cache.SharedIndexInformer
-	UseEndpointSlices     bool
 	KubeClient            kubernetes.Interface
 }
 
@@ -457,7 +451,7 @@ func (t *Translator) getHTTPProbe(svc api_v1.Service, targetPort intstr.IntOrStr
 				if (targetPort.Type == intstr.Int && targetPort.IntVal == p.ContainerPort) ||
 					(targetPort.Type == intstr.String && targetPort.StrVal == p.Name) {
 
-					readinessProbePort := c.ReadinessProbe.Handler.HTTPGet.Port
+					readinessProbePort := c.ReadinessProbe.ProbeHandler.HTTPGet.Port
 					switch readinessProbePort.Type {
 					case intstr.Int:
 						if readinessProbePort.IntVal == p.ContainerPort {
@@ -470,7 +464,7 @@ func (t *Translator) getHTTPProbe(svc api_v1.Service, targetPort intstr.IntOrStr
 					}
 
 					klog.Infof("%v: found matching targetPort on container %v, but not on readinessProbe (%+v)",
-						logStr, c.Name, c.ReadinessProbe.Handler.HTTPGet.Port)
+						logStr, c.Name, c.ReadinessProbe.ProbeHandler.HTTPGet.Port)
 				}
 			}
 		}
@@ -492,11 +486,7 @@ func (t *Translator) GatherEndpointPorts(svcPorts []utils.ServicePort) []string 
 			if p.TargetPort.Type == intstr.Int {
 				endpointPorts = []int{p.TargetPort.IntValue()}
 			} else {
-				if t.UseEndpointSlices {
-					endpointPorts = listEndpointTargetPortsFromEndpointSlices(t.EndpointSliceInformer.GetIndexer(), p.ID.Service.Namespace, p.ID.Service.Name, p.PortName)
-				} else {
-					endpointPorts = listEndpointTargetPortsFromEndpoints(t.EndpointInformer.GetIndexer(), p.ID.Service.Namespace, p.ID.Service.Name, p.PortName)
-				}
+				endpointPorts = listEndpointTargetPortsFromEndpointSlices(t.EndpointSliceInformer.GetIndexer(), p.ID.Service.Namespace, p.ID.Service.Name, p.PortName)
 			}
 			for _, ep := range endpointPorts {
 				portMap[int64(ep)] = true
@@ -514,9 +504,9 @@ func (t *Translator) GatherEndpointPorts(svcPorts []utils.ServicePort) []string 
 // - an HTTPGet probe, as opposed to a tcp or exec probe
 // - has no special host or headers fields, except for possibly an HTTP Host header
 func isSimpleHTTPProbe(probe *api_v1.Probe) bool {
-	return (probe != nil && probe.Handler.HTTPGet != nil && probe.Handler.HTTPGet.Host == "" &&
-		(len(probe.Handler.HTTPGet.HTTPHeaders) == 0 ||
-			(len(probe.Handler.HTTPGet.HTTPHeaders) == 1 && probe.Handler.HTTPGet.HTTPHeaders[0].Name == "Host")))
+	return (probe != nil && probe.ProbeHandler.HTTPGet != nil && probe.ProbeHandler.HTTPGet.Host == "" &&
+		(len(probe.ProbeHandler.HTTPGet.HTTPHeaders) == 0 ||
+			(len(probe.ProbeHandler.HTTPGet.HTTPHeaders) == 1 && probe.ProbeHandler.HTTPGet.HTTPHeaders[0].Name == "Host")))
 }
 
 // getProbeScheme returns the Kubernetes API URL scheme corresponding to the
@@ -603,37 +593,6 @@ func listEndpointTargetPortsFromEndpointSlices(indexer cache.Indexer, namespace,
 		for _, port := range slice.Ports {
 			if port.Protocol != nil && *port.Protocol == api_v1.ProtocolTCP && port.Name != nil && *port.Name == svcPortName && port.Port != nil {
 				ret = append(ret, int(*port.Port))
-			}
-		}
-	}
-	return ret
-}
-
-// finds the actual target port behind named target port, the name of the target port is the same as service port name
-func listEndpointTargetPortsFromEndpoints(indexer cache.Indexer, namespace, name, svcPortName string) []int {
-	ep, exists, err := indexer.Get(
-		&api_v1.Endpoints{
-			ObjectMeta: meta_v1.ObjectMeta{
-				Name:      name,
-				Namespace: namespace,
-			},
-		},
-	)
-
-	if !exists {
-		klog.Errorf("Endpoint object %v/%v does not exist.", namespace, name)
-		return []int{}
-	}
-	if err != nil {
-		klog.Errorf("Failed to retrieve endpoint object %v/%v: %v", namespace, name, err)
-		return []int{}
-	}
-
-	ret := []int{}
-	for _, subset := range ep.(*api_v1.Endpoints).Subsets {
-		for _, port := range subset.Ports {
-			if port.Protocol == api_v1.ProtocolTCP && port.Name == svcPortName {
-				ret = append(ret, int(port.Port))
 			}
 		}
 	}

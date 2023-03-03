@@ -27,7 +27,6 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -68,7 +67,6 @@ type syncerManager struct {
 	nodeLister          cache.Indexer
 	podLister           cache.Indexer
 	serviceLister       cache.Indexer
-	endpointLister      cache.Indexer
 	endpointSliceLister cache.Indexer
 	svcNegLister        cache.Indexer
 
@@ -81,6 +79,9 @@ type syncerManager struct {
 	// syncerMap stores the NEG syncer
 	// key consists of service namespace, name and targetPort. Value is the corresponding syncer.
 	syncerMap map[negtypes.NegSyncerKey]negtypes.NegSyncer
+	// syncCollector collect sync related metrics
+	syncerMetrics *metrics.SyncerMetrics
+
 	// reflector handles NEG readiness gate and conditions for pods in NEG.
 	reflector readiness.Reflector
 	//svcNegClient handles lifecycle operations for NEG CRs
@@ -91,8 +92,7 @@ type syncerManager struct {
 
 	// enableNonGcpMode indicates whether nonGcpMode have been enabled
 	// This will make all NEGs created by NEG controller to be NON_GCP_PRIVATE_IP_PORT type.
-	enableNonGcpMode     bool
-	enableEndpointSlices bool
+	enableNonGcpMode bool
 
 	logger klog.Logger
 
@@ -110,12 +110,11 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 	kubeSystemUID types.UID,
 	podLister cache.Indexer,
 	serviceLister cache.Indexer,
-	endpointLister cache.Indexer,
 	endpointSliceLister cache.Indexer,
 	nodeLister cache.Indexer,
 	svcNegLister cache.Indexer,
+	syncerMetrics *metrics.SyncerMetrics,
 	enableNonGcpMode bool,
-	enableEndpointSlices bool,
 	logger klog.Logger) *syncerManager {
 
 	var vmIpZoneMap, vmIpPortZoneMap map[string]struct{}
@@ -123,25 +122,24 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 	updateZoneMap(&vmIpPortZoneMap, negtypes.NodePredicateForNetworkEndpointType(negtypes.VmIpPortEndpointType), zoneGetter, logger)
 
 	return &syncerManager{
-		namer:                namer,
-		recorder:             recorder,
-		cloud:                cloud,
-		zoneGetter:           zoneGetter,
-		nodeLister:           nodeLister,
-		podLister:            podLister,
-		serviceLister:        serviceLister,
-		endpointLister:       endpointLister,
-		endpointSliceLister:  endpointSliceLister,
-		svcNegLister:         svcNegLister,
-		svcPortMap:           make(map[serviceKey]negtypes.PortInfoMap),
-		syncerMap:            make(map[negtypes.NegSyncerKey]negtypes.NegSyncer),
-		svcNegClient:         svcNegClient,
-		kubeSystemUID:        kubeSystemUID,
-		enableNonGcpMode:     enableNonGcpMode,
-		enableEndpointSlices: enableEndpointSlices,
-		logger:               logger,
-		vmIpZoneMap:          vmIpZoneMap,
-		vmIpPortZoneMap:      vmIpPortZoneMap,
+		namer:               namer,
+		recorder:            recorder,
+		cloud:               cloud,
+		zoneGetter:          zoneGetter,
+		nodeLister:          nodeLister,
+		podLister:           podLister,
+		serviceLister:       serviceLister,
+		endpointSliceLister: endpointSliceLister,
+		svcNegLister:        svcNegLister,
+		svcPortMap:          make(map[serviceKey]negtypes.PortInfoMap),
+		syncerMap:           make(map[negtypes.NegSyncerKey]negtypes.NegSyncer),
+		syncerMetrics:       syncerMetrics,
+		svcNegClient:        svcNegClient,
+		kubeSystemUID:       kubeSystemUID,
+		enableNonGcpMode:    enableNonGcpMode,
+		logger:              logger,
+		vmIpZoneMap:         vmIpZoneMap,
+		vmIpPortZoneMap:     vmIpPortZoneMap,
 	}
 }
 
@@ -219,7 +217,6 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				manager.zoneGetter,
 				manager.podLister,
 				manager.serviceLister,
-				manager.endpointLister,
 				manager.endpointSliceLister,
 				manager.nodeLister,
 				manager.svcNegLister,
@@ -227,8 +224,8 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				epc,
 				string(manager.kubeSystemUID),
 				manager.svcNegClient,
+				manager.syncerMetrics,
 				!manager.namer.IsNEG(portInfo.NegName),
-				manager.enableEndpointSlices,
 				manager.logger,
 			)
 			manager.syncerMap[syncerKey] = syncer
@@ -406,7 +403,7 @@ func (manager *syncerManager) ReadinessGateEnabled(syncerKey negtypes.NegSyncerK
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 	if v, ok := manager.svcPortMap[serviceKey{namespace: syncerKey.Namespace, name: syncerKey.Name}]; ok {
-		if info, ok := v[negtypes.PortInfoMapKey{ServicePort: syncerKey.PortTuple.Port, Subset: syncerKey.Subset}]; ok {
+		if info, ok := v[negtypes.PortInfoMapKey{ServicePort: syncerKey.PortTuple.Port}]; ok {
 			return info.ReadinessGate
 		}
 	}
@@ -676,17 +673,17 @@ func (manager *syncerManager) ensureSvcNegCR(svcKey serviceKey, portInfo negtype
 		},
 	}
 
-	negCR, err := manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Get(context.Background(), portInfo.NegName, metav1.GetOptions{})
+	obj, exists, err = manager.svcNegLister.GetByKey(fmt.Sprintf("%s/%s", svcKey.namespace, portInfo.NegName))
 	if err != nil {
-		if !apierrors.IsNotFound(err) {
-			return fmt.Errorf("Error retrieving existing negs: %s", err)
-		}
-
+		return fmt.Errorf("Error retrieving existing negs: %s", err)
+	}
+	if !exists {
 		// Neg does not exist so create it
 		_, err = manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Create(context.Background(), &newCR, metav1.CreateOptions{})
 		manager.logger.V(2).Info("Created ServiceNetworkEndpointGroup CR for neg", "svcneg", klog.KRef(svcKey.namespace, portInfo.NegName))
 		return err
 	}
+	negCR := obj.(*negv1beta1.ServiceNetworkEndpointGroup)
 
 	needUpdate, err := ensureNegCRLabels(negCR, labels, manager.logger)
 	if err != nil {
@@ -778,8 +775,6 @@ func (manager *syncerManager) getSyncerKey(namespace, name string, servicePortKe
 		Name:             name,
 		NegName:          portInfo.NegName,
 		PortTuple:        portInfo.PortTuple,
-		Subset:           servicePortKey.Subset,
-		SubsetLabels:     portInfo.SubsetLabels,
 		NegType:          networkEndpointType,
 		EpCalculatorMode: calculatorMode,
 	}

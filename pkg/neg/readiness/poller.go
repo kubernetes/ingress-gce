@@ -22,8 +22,6 @@ import (
 	"sync"
 	"time"
 
-	"k8s.io/apimachinery/pkg/util/clock"
-
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/apimachinery/pkg/types"
@@ -32,6 +30,7 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/clock"
 )
 
 const (
@@ -41,7 +40,8 @@ const (
 	// GCE NEG API RPS quota is rate limited per every 100 seconds.
 	// Make this retry delay to match the rate limiting interval.
 	// More detail: https://cloud.google.com/compute/docs/api-rate-limits
-	retryDelay = 100 * time.Second
+	retryDelay   = 100 * time.Second
+	hcRetryDelay = time.Second
 )
 
 // negMeta references a GCE NEG resource
@@ -253,6 +253,10 @@ func (p *poller) processHealthStatus(key negMeta, healthStatuses []*composite.Ne
 		if patchCount < len(target.endpointMap) {
 			retry = true
 		}
+	}
+
+	if retry {
+		<-p.clock.After(hcRetryDelay)
 	}
 
 	// If we didn't patch all of the endpoints, we must keep polling for health status

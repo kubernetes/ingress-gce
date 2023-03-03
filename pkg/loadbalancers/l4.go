@@ -65,7 +65,7 @@ type L4ILBSyncResult struct {
 	GCEResourceInError    string
 	Status                *corev1.LoadBalancerStatus
 	MetricsState          metrics.L4ILBServiceState
-	DualStackMetricsState metrics.L4ILBDualStackServiceState
+	DualStackMetricsState metrics.L4DualStackServiceState
 	SyncType              string
 	StartTime             time.Time
 }
@@ -217,9 +217,10 @@ func (l4 *L4) deleteIPv4ResourcesAnnotationBased(result *L4ILBSyncResult, should
 }
 
 func (l4 *L4) deleteIPv4ForwardingRule() error {
+	start := time.Now()
+
 	frName := l4.GetFRName()
 
-	start := time.Now()
 	klog.Infof("Deleting IPv4 forwarding rule %s for L4 ILB Service %s/%s", frName, l4.Service.Namespace, l4.Service.Name)
 	defer func() {
 		klog.Infof("Finished deleting IPv4 forwarding rule %s for L4 ILB Service %s/%s, time taken: %v", frName, l4.Service.Namespace, l4.Service.Name, time.Since(start))
@@ -241,9 +242,10 @@ func (l4 *L4) deleteIPv4Address() error {
 }
 
 func (l4 *L4) deleteIPv4NodesFirewall() error {
+	start := time.Now()
+
 	firewallName := l4.namer.L4Firewall(l4.Service.Namespace, l4.Service.Name)
 
-	start := time.Now()
 	klog.Infof("Deleting IPv4 nodes firewall %s for L4 ILB Service %s/%s", firewallName, l4.Service.Namespace, l4.Service.Name)
 	defer func() {
 		klog.Infof("Finished deleting IPv4 nodes firewall %s for L4 ILB Service %s/%s, time taken: %v", firewallName, l4.Service.Namespace, l4.Service.Name, time.Since(start))
@@ -281,11 +283,12 @@ func (l4 *L4) getFRNameWithProtocol(protocol string) string {
 func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service) *L4ILBSyncResult {
 	l4.Service = svc
 
+	startTime := time.Now()
 	result := &L4ILBSyncResult{
 		Annotations:           make(map[string]string),
-		StartTime:             time.Now(),
+		StartTime:             startTime,
 		SyncType:              SyncTypeCreate,
-		DualStackMetricsState: l4.getInitialDualStackMetricsState(),
+		DualStackMetricsState: metrics.InitServiceDualStackMetricsState(svc, &startTime),
 	}
 
 	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
@@ -386,6 +389,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	}
 	if l4.enableDualStack {
 		result.DualStackMetricsState.Status = metrics.StatusSuccess
+		result.DualStackMetricsState.FirstSyncErrorTime = nil
 	}
 	return result
 }
@@ -482,7 +486,7 @@ func (l4 *L4) ensureIPv4NodesFirewall(nodeNames []string, ipAddress string, resu
 	}()
 
 	// ensure firewalls
-	sourceRanges, err := helpers.GetLoadBalancerSourceRanges(l4.Service)
+	ipv4SourceRanges, err := utils.IPv4ServiceSourceRanges(l4.Service)
 	if err != nil {
 		result.Error = err
 		return
@@ -490,7 +494,7 @@ func (l4 *L4) ensureIPv4NodesFirewall(nodeNames []string, ipAddress string, resu
 	// Add firewall rule for ILB traffic to nodes
 	nodesFWRParams := firewalls.FirewallParams{
 		PortRanges:        portRanges,
-		SourceRanges:      sourceRanges.StringSlice(),
+		SourceRanges:      ipv4SourceRanges,
 		DestinationRanges: []string{ipAddress},
 		Protocol:          string(protocol),
 		Name:              firewallName,
@@ -530,26 +534,6 @@ func (l4 *L4) hasAnnotation(annotationKey string) bool {
 		return true
 	}
 	return false
-}
-
-func (l4 *L4) getInitialDualStackMetricsState() metrics.L4ILBDualStackServiceState {
-	// Always init stats with error, and update with Success when service was provisioned
-	state := metrics.L4ILBDualStackServiceState{
-		Status: metrics.StatusError,
-	}
-
-	var ipFamiliesStrings []string
-	for _, ipFamily := range l4.Service.Spec.IPFamilies {
-		ipFamiliesStrings = append(ipFamiliesStrings, string(ipFamily))
-	}
-	state.IPFamilies = strings.Join(ipFamiliesStrings, ",")
-
-	state.IPFamilyPolicy = ""
-	if l4.Service.Spec.IPFamilyPolicy != nil {
-		state.IPFamilyPolicy = string(*l4.Service.Spec.IPFamilyPolicy)
-	}
-
-	return state
 }
 
 func (l4 *L4) getOldForwardingRule() (*composite.ForwardingRule, error) {

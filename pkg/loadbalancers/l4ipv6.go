@@ -22,7 +22,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
-	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
@@ -48,13 +47,15 @@ func (l4 *L4) ensureIPv6Resources(syncResult *L4ILBSyncResult, nodeNames []strin
 		syncResult.Annotations[annotations.UDPForwardingRuleIPv6Key] = ipv6fr.Name
 	}
 
-	l4.ensureIPv6NodesFirewall(ipv6fr, nodeNames, syncResult)
+	// Google Cloud creates ipv6 forwarding rules with IPAddress in CIDR form. We will take only first address
+	trimmedIPv6Address := strings.Split(ipv6fr.IPAddress, "/")[0]
+
+	l4.ensureIPv6NodesFirewall(trimmedIPv6Address, nodeNames, syncResult)
 	if syncResult.Error != nil {
 		klog.Errorf("ensureIPv6Resources: Failed to ensure ipv6 nodes firewall for L4 ILB - %v", err)
 		return
 	}
 
-	trimmedIPv6Address := strings.Split(ipv6fr.IPAddress, "/")[0]
 	syncResult.Status = utils.AddIPToLBStatus(syncResult.Status, trimmedIPv6Address)
 }
 
@@ -83,7 +84,6 @@ func (l4 *L4) deleteIPv6ResourcesOnDelete(syncResult *L4ILBSyncResult) {
 // if resource exists in Service annotation, if shouldIgnoreAnnotations not set to true
 // IPv6 Specific resources:
 // - IPv6 Forwarding Rule
-// - IPv6 Address
 // - IPv6 Firewall
 // This function does not delete Backend Service and Health Check, because they are shared between IPv4 and IPv6.
 // IPv6 Firewall Rule for Health Check also will not be deleted here, and will be left till the Service Deletion.
@@ -116,7 +116,7 @@ func (l4 *L4) getIPv6FRNameWithProtocol(protocol string) string {
 	return l4.namer.L4IPv6ForwardingRule(l4.Service.Namespace, l4.Service.Name, strings.ToLower(protocol))
 }
 
-func (l4 *L4) ensureIPv6NodesFirewall(forwardingRule *composite.ForwardingRule, nodeNames []string, result *L4ILBSyncResult) {
+func (l4 *L4) ensureIPv6NodesFirewall(ipAddress string, nodeNames []string, result *L4ILBSyncResult) {
 	start := time.Now()
 
 	firewallName := l4.namer.L4IPv6Firewall(l4.Service.Namespace, l4.Service.Name)
@@ -125,23 +125,29 @@ func (l4 *L4) ensureIPv6NodesFirewall(forwardingRule *composite.ForwardingRule, 
 	portRanges := utils.GetServicePortRanges(svcPorts)
 	protocol := utils.GetProtocol(svcPorts)
 
-	klog.V(2).Infof("Ensuring IPv6 nodes firewall %s for L4 ILB Service %s/%s, ipAddress: %s, protocol: %s, len(nodeNames): %v, portRanges: %v", firewallName, l4.Service.Namespace, l4.Service.Name, forwardingRule.IPAddress, protocol, len(nodeNames), portRanges)
+	klog.V(2).Infof("Ensuring IPv6 nodes firewall %s for L4 ILB Service %s/%s, ipAddress: %s, protocol: %s, len(nodeNames): %v, portRanges: %v", firewallName, l4.Service.Namespace, l4.Service.Name, ipAddress, protocol, len(nodeNames), portRanges)
 	defer func() {
 		klog.V(2).Infof("Finished ensuring IPv6 nodes firewall %s for L4 ILB Service %s/%s, time taken: %v", l4.Service.Namespace, l4.Service.Name, firewallName, time.Since(start))
 	}()
 
+	// ensure firewalls
+	ipv6SourceRanges, err := utils.IPv6ServiceSourceRanges(l4.Service)
+	if err != nil {
+		result.Error = err
+		return
+	}
+
 	ipv6nodesFWRParams := firewalls.FirewallParams{
-		PortRanges: portRanges,
-		// TODO(panslava): support .spec.loadBalancerSourceRanges
-		SourceRanges:      []string{"0::0/0"},
-		DestinationRanges: []string{forwardingRule.IPAddress},
+		PortRanges:        portRanges,
+		SourceRanges:      ipv6SourceRanges,
+		DestinationRanges: []string{ipAddress},
 		Protocol:          string(protocol),
 		Name:              firewallName,
 		NodeNames:         nodeNames,
 		L4Type:            utils.ILB,
 	}
 
-	err := firewalls.EnsureL4LBFirewallForNodes(l4.Service, &ipv6nodesFWRParams, l4.cloud, l4.recorder)
+	err = firewalls.EnsureL4LBFirewallForNodes(l4.Service, &ipv6nodesFWRParams, l4.cloud, l4.recorder)
 	if err != nil {
 		result.GCEResourceInError = annotations.FirewallRuleIPv6Resource
 		result.Error = err
@@ -151,9 +157,10 @@ func (l4 *L4) ensureIPv6NodesFirewall(forwardingRule *composite.ForwardingRule, 
 }
 
 func (l4 *L4) deleteIPv6ForwardingRule() error {
+	start := time.Now()
+
 	ipv6FrName := l4.getIPv6FRName()
 
-	start := time.Now()
 	klog.V(2).Infof("Deleting IPv6 forwarding rule %s for L4 ILB Service %s/%s", ipv6FrName, l4.Service.Namespace, l4.Service.Name)
 	defer func() {
 		klog.V(2).Infof("Finished deleting IPv6 forwarding rule %s for L4 ILB Service %s/%s, time taken: %v", ipv6FrName, l4.Service.Namespace, l4.Service.Name, time.Since(start))

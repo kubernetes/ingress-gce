@@ -93,6 +93,7 @@ const (
 )
 
 var networkTierErrorRegexp = regexp.MustCompile(`The network tier of external IP is STANDARD|PREMIUM, that of Address must be the same.`)
+var subnetworkMissingIPv6ErrorRegexp = regexp.MustCompile("Subnetwork does not have an internal IPv6 IP space which is required for IPv6 L4 ILB forwarding rules.")
 
 // NetworkTierError is a struct to define error caused by User misconfiguration of Network Tier.
 type NetworkTierError struct {
@@ -108,6 +109,20 @@ func (e *NetworkTierError) Error() string {
 
 func NewNetworkTierErr(resourceInErr, desired, received string) *NetworkTierError {
 	return &NetworkTierError{resource: resourceInErr, desiredNT: desired, receivedNT: received}
+}
+
+// IPConfigurationError is a struct to define error caused by User misconfiguration the Load Balancer IP.
+type IPConfigurationError struct {
+	ip     string
+	reason string
+}
+
+func (e *IPConfigurationError) Error() string {
+	return fmt.Sprintf("IP configuration error: \"%s\" %s", e.ip, e.reason)
+}
+
+func NewIPConfigurationError(ip, reason string) *IPConfigurationError {
+	return &IPConfigurationError{ip: ip, reason: reason}
 }
 
 // L4LBType indicates if L4 LoadBalancer is Internal or External
@@ -187,6 +202,10 @@ func IsInUsedByError(err error) bool {
 	return strings.Contains(apiErr.Message, "being used by")
 }
 
+func IsSubnetworkMissingIPv6GCEError(err error) bool {
+	return subnetworkMissingIPv6ErrorRegexp.MatchString(err.Error())
+}
+
 // IsNetworkTierMismatchGCEError checks if error is a GCE network tier mismatch for external IP
 func IsNetworkTierMismatchGCEError(err error) bool {
 	return networkTierErrorRegexp.MatchString(err.Error())
@@ -198,11 +217,33 @@ func IsNetworkTierError(err error) bool {
 	return errors.As(err, &netTierError)
 }
 
+// IsIPConfigurationError checks if wrapped error is an IP configuration error.
+func IsIPConfigurationError(err error) bool {
+	var ipConfigError *IPConfigurationError
+	return errors.As(err, &ipConfigError)
+}
+
+// IsInvalidLoadBalancerSourceRangesSpecError checks if wrapped error is an InvalidLoadBalancerSourceRangesSpecError error.
+func IsInvalidLoadBalancerSourceRangesSpecError(err error) bool {
+	var invalidLoadBalancerSourceRangesSpecError *InvalidLoadBalancerSourceRangesSpecError
+	return errors.As(err, &invalidLoadBalancerSourceRangesSpecError)
+}
+
+// IsInvalidLoadBalancerSourceRangesAnnotationError checks if wrapped error is an InvalidLoadBalancerSourceRangesAnnotationError error.
+func IsInvalidLoadBalancerSourceRangesAnnotationError(err error) bool {
+	var invalidLoadBalancerSourceRangesAnnotationError *InvalidLoadBalancerSourceRangesAnnotationError
+	return errors.As(err, &invalidLoadBalancerSourceRangesAnnotationError)
+}
+
 // IsUserError checks if given error is cause by User.
-// Right now User Error might be cause by Network Tier misconfiguration
-// but this list might get longer.
+// Right now User Error might be caused by Network Tier misconfiguration
+// or specifying non-existent or already used IP address.
 func IsUserError(err error) bool {
-	return IsNetworkTierError(err)
+	return IsNetworkTierError(err) ||
+		IsIPConfigurationError(err) ||
+		IsInvalidLoadBalancerSourceRangesSpecError(err) ||
+		IsInvalidLoadBalancerSourceRangesAnnotationError(err) ||
+		IsSubnetworkMissingIPv6GCEError(err)
 }
 
 // IsNotFoundError returns true if the resource does not exist
@@ -633,15 +674,6 @@ func GetProtocol(svcPorts []api_v1.ServicePort) api_v1.Protocol {
 	}
 
 	return svcPorts[0].Protocol
-}
-
-func GetNodePorts(svcPorts []api_v1.ServicePort) []int64 {
-	nodePorts := []int64{}
-	for _, p := range svcPorts {
-		nodePorts = append(nodePorts, int64(p.NodePort))
-	}
-
-	return nodePorts
 }
 
 func GetPorts(svcPorts []api_v1.ServicePort) []string {

@@ -21,7 +21,6 @@ import (
 	"reflect"
 	"testing"
 
-	istioV1alpha3 "istio.io/api/networking/v1alpha3"
 	v1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,22 +34,8 @@ func (*negNamer) NEG(namespace, name string, svcPort int32) string {
 	return fmt.Sprintf("%v-%v-%v", namespace, name, svcPort)
 }
 
-func (*negNamer) NEGWithSubset(namespace, name, subset string, svcPort int32) string {
-	return fmt.Sprintf("%v-%v-%v-%v", namespace, name, subset, svcPort)
-}
-
 func (*negNamer) IsNEG(name string) bool {
 	return false
-}
-
-func createDestinationRule(host string, subsets ...string) *istioV1alpha3.DestinationRule {
-	ds := istioV1alpha3.DestinationRule{
-		Host: host,
-	}
-	for _, subset := range subsets {
-		ds.Subsets = append(ds.Subsets, &istioV1alpha3.Subset{Name: subset})
-	}
-	return &ds
 }
 
 func TestPortInfoMapMerge(t *testing.T) {
@@ -111,7 +96,7 @@ func TestPortInfoMapMerge(t *testing.T) {
 			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}), namer, true, nil),
 			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "3000"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false, nil),
 			PortInfoMap{
-				PortInfoMapKey{80, ""}: PortInfo{
+				PortInfoMapKey{80}: PortInfo{
 					PortTuple: SvcPortTuple{
 						Port:       80,
 						TargetPort: "3000",
@@ -119,7 +104,7 @@ func TestPortInfoMapMerge(t *testing.T) {
 					NegName:       namer.NEG(namespace, name, 80),
 					ReadinessGate: true,
 				},
-				PortInfoMapKey{5000, ""}: PortInfo{
+				PortInfoMapKey{5000}: PortInfo{
 					PortTuple: SvcPortTuple{
 						Port:       5000,
 						TargetPort: "6000",
@@ -127,7 +112,7 @@ func TestPortInfoMapMerge(t *testing.T) {
 					NegName:       namer.NEG(namespace, name, 5000),
 					ReadinessGate: true,
 				},
-				PortInfoMapKey{8080, ""}: PortInfo{
+				PortInfoMapKey{8080}: PortInfo{
 					PortTuple: SvcPortTuple{
 						Port:       8080,
 						TargetPort: "9000",
@@ -143,7 +128,7 @@ func TestPortInfoMapMerge(t *testing.T) {
 			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, Name: "foo", TargetPort: "3000"}, SvcPortTuple{Port: 5000, Name: "bar", TargetPort: "6000"}), namer, true, nil),
 			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, Name: "foo", TargetPort: "3000"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false, nil),
 			PortInfoMap{
-				PortInfoMapKey{80, ""}: PortInfo{
+				PortInfoMapKey{80}: PortInfo{
 					PortTuple: SvcPortTuple{
 						Port:       80,
 						Name:       "foo",
@@ -152,7 +137,7 @@ func TestPortInfoMapMerge(t *testing.T) {
 					NegName:       namer.NEG(namespace, name, 80),
 					ReadinessGate: true,
 				},
-				PortInfoMapKey{5000, ""}: PortInfo{
+				PortInfoMapKey{5000}: PortInfo{
 					PortTuple: SvcPortTuple{
 						Port:       5000,
 						Name:       "bar",
@@ -161,58 +146,12 @@ func TestPortInfoMapMerge(t *testing.T) {
 					NegName:       namer.NEG(namespace, name, 5000),
 					ReadinessGate: true,
 				},
-				PortInfoMapKey{8080, ""}: PortInfo{
+				PortInfoMapKey{8080}: PortInfo{
 					PortTuple: SvcPortTuple{
 						Port:       8080,
 						TargetPort: "9000",
 					},
 					NegName:       namer.NEG(namespace, name, 8080),
-					ReadinessGate: false,
-				},
-			},
-			false,
-		},
-		{
-			"union of two non-empty maps with overlapping service port and difference in readiness gate configurations with destination rule subsets",
-			helperNewPortInfoMapWithDestinationRule(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "3000"}), namer, true,
-				createDestinationRule(name, "v1", "v2")),
-			helperNewPortInfoMapWithDestinationRule(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "3000"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false,
-				createDestinationRule(name, "v3")),
-			PortInfoMap{
-				PortInfoMapKey{80, "v1"}: PortInfo{
-					PortTuple: SvcPortTuple{
-						Port:       80,
-						TargetPort: "3000",
-					},
-					Subset:        "v1",
-					NegName:       namer.NEGWithSubset(namespace, name, "v1", 80),
-					ReadinessGate: true,
-				},
-				PortInfoMapKey{80, "v2"}: PortInfo{
-					PortTuple: SvcPortTuple{
-						Port:       80,
-						TargetPort: "3000",
-					},
-					Subset:        "v2",
-					NegName:       namer.NEGWithSubset(namespace, name, "v2", 80),
-					ReadinessGate: true,
-				},
-				PortInfoMapKey{80, "v3"}: PortInfo{
-					PortTuple: SvcPortTuple{
-						Port:       80,
-						TargetPort: "3000",
-					},
-					Subset:        "v3",
-					NegName:       namer.NEGWithSubset(namespace, name, "v3", 80),
-					ReadinessGate: false,
-				},
-				PortInfoMapKey{8080, "v3"}: PortInfo{
-					PortTuple: SvcPortTuple{
-						Port:       8080,
-						TargetPort: "9000",
-					},
-					Subset:        "v3",
-					NegName:       namer.NEGWithSubset(namespace, name, "v3", 8080),
 					ReadinessGate: false,
 				},
 			},
@@ -259,12 +198,6 @@ func TestPortInfoMapMerge(t *testing.T) {
 			}
 		})
 	}
-}
-
-func helperNewPortInfoMapWithDestinationRule(namespace, name string, tuples SvcPortTupleSet, namer NetworkEndpointGroupNamer, readinessGate bool,
-	destinationRule *istioV1alpha3.DestinationRule) PortInfoMap {
-	rsl, _ := NewPortInfoMapWithDestinationRule(namespace, name, tuples, namer, readinessGate, destinationRule)
-	return rsl
 }
 
 func TestPortInfoMapDifference(t *testing.T) {
@@ -376,17 +309,17 @@ func TestPortInfoMapToPortNegMap(t *testing.T) {
 		},
 		{
 			desc:             "1 port",
-			portInfoMap:      PortInfoMap{PortInfoMapKey{80, ""}: PortInfo{NegName: "neg1"}},
+			portInfoMap:      PortInfoMap{PortInfoMapKey{80}: PortInfo{NegName: "neg1"}},
 			expectPortNegMap: annotations.PortNegMap{"80": "neg1"},
 		},
 		{
 			desc:             "2 ports",
-			portInfoMap:      PortInfoMap{PortInfoMapKey{80, ""}: PortInfo{NegName: "neg1"}, PortInfoMapKey{8080, ""}: PortInfo{NegName: "neg2"}},
+			portInfoMap:      PortInfoMap{PortInfoMapKey{80}: PortInfo{NegName: "neg1"}, PortInfoMapKey{8080}: PortInfo{NegName: "neg2"}},
 			expectPortNegMap: annotations.PortNegMap{"80": "neg1", "8080": "neg2"},
 		},
 		{
 			desc:             "3 ports",
-			portInfoMap:      PortInfoMap{PortInfoMapKey{80, ""}: PortInfo{NegName: "neg1"}, PortInfoMapKey{443, ""}: PortInfo{NegName: "neg2"}, PortInfoMapKey{8080, ""}: PortInfo{NegName: "neg3"}},
+			portInfoMap:      PortInfoMap{PortInfoMapKey{80}: PortInfo{NegName: "neg1"}, PortInfoMapKey{443}: PortInfo{NegName: "neg2"}, PortInfoMapKey{8080}: PortInfo{NegName: "neg3"}},
 			expectPortNegMap: annotations.PortNegMap{"80": "neg1", "443": "neg2", "8080": "neg3"},
 		},
 	} {
@@ -468,8 +401,8 @@ func TestCustomNamedNegs(t *testing.T) {
 			desc:          "no custom named negs",
 			svcPortTuples: NewSvcPortTupleSet(svcPortTuple1, svcPortTuple2),
 			expectedPortInfoMap: PortInfoMap{
-				PortInfoMapKey{port1, ""}: PortInfo{PortTuple: svcPortTuple1, NegName: namer.NEG(svcNamespace, svcName, port1), ReadinessGate: false},
-				PortInfoMapKey{port2, ""}: PortInfo{PortTuple: svcPortTuple2, NegName: namer.NEG(svcNamespace, svcName, port2), ReadinessGate: false},
+				PortInfoMapKey{port1}: PortInfo{PortTuple: svcPortTuple1, NegName: namer.NEG(svcNamespace, svcName, port1), ReadinessGate: false},
+				PortInfoMapKey{port2}: PortInfo{PortTuple: svcPortTuple2, NegName: namer.NEG(svcNamespace, svcName, port2), ReadinessGate: false},
 			},
 		},
 		{
@@ -477,8 +410,8 @@ func TestCustomNamedNegs(t *testing.T) {
 			svcPortTuples:   NewSvcPortTupleSet(svcPortTuple1, svcPortTuple2),
 			customNamedNegs: map[SvcPortTuple]string{svcPortTuple1: negName1, svcPortTuple2: negName2},
 			expectedPortInfoMap: PortInfoMap{
-				PortInfoMapKey{port1, ""}: PortInfo{PortTuple: svcPortTuple1, NegName: negName1, ReadinessGate: false},
-				PortInfoMapKey{port2, ""}: PortInfo{PortTuple: svcPortTuple2, NegName: negName2, ReadinessGate: false},
+				PortInfoMapKey{port1}: PortInfo{PortTuple: svcPortTuple1, NegName: negName1, ReadinessGate: false},
+				PortInfoMapKey{port2}: PortInfo{PortTuple: svcPortTuple2, NegName: negName2, ReadinessGate: false},
 			},
 		},
 		{
@@ -486,8 +419,8 @@ func TestCustomNamedNegs(t *testing.T) {
 			svcPortTuples:   NewSvcPortTupleSet(svcPortTuple1, svcPortTuple2),
 			customNamedNegs: map[SvcPortTuple]string{svcPortTuple1: negName1},
 			expectedPortInfoMap: PortInfoMap{
-				PortInfoMapKey{port1, ""}: PortInfo{PortTuple: svcPortTuple1, NegName: negName1, ReadinessGate: false},
-				PortInfoMapKey{port2, ""}: PortInfo{PortTuple: svcPortTuple2, NegName: namer.NEG(svcNamespace, svcName, port2), ReadinessGate: false},
+				PortInfoMapKey{port1}: PortInfo{PortTuple: svcPortTuple1, NegName: negName1, ReadinessGate: false},
+				PortInfoMapKey{port2}: PortInfo{PortTuple: svcPortTuple2, NegName: namer.NEG(svcNamespace, svcName, port2), ReadinessGate: false},
 			},
 		},
 	}
@@ -499,121 +432,6 @@ func TestCustomNamedNegs(t *testing.T) {
 				t.Errorf("Expected portInfoMap to equal: %v; got: %v", tc.expectedPortInfoMap, result)
 			}
 		})
-	}
-}
-
-func TestEndpointsDataFromEndpoints(t *testing.T) {
-	t.Parallel()
-	instance1 := TestInstance1
-	instance2 := TestInstance2
-	instance4 := TestInstance4
-	testServiceName := "service"
-	testServiceNamespace := "namespace"
-	testNamedPort := "port1"
-	endpoints := &v1.Endpoints{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      testServiceName,
-			Namespace: testServiceNamespace,
-		},
-		Subsets: []v1.EndpointSubset{
-			{
-				Addresses: []v1.EndpointAddress{
-					{
-						IP:       "10.100.1.1",
-						NodeName: &instance1,
-						TargetRef: &v1.ObjectReference{
-							Namespace: testServiceNamespace,
-							Name:      "pod1",
-						},
-					},
-					{
-						IP:       "10.100.1.2",
-						NodeName: &instance1,
-						TargetRef: &v1.ObjectReference{
-							Namespace: testServiceNamespace,
-							Name:      "pod2",
-						},
-					},
-				},
-				NotReadyAddresses: []v1.EndpointAddress{
-					{
-						IP:       "10.100.1.3",
-						NodeName: &instance1,
-						TargetRef: &v1.ObjectReference{
-							Namespace: testServiceNamespace,
-							Name:      "pod5",
-						},
-					},
-					{
-						IP:       "10.100.1.4",
-						NodeName: &instance1,
-						TargetRef: &v1.ObjectReference{
-							Namespace: testServiceNamespace,
-							Name:      "pod6",
-						},
-					},
-				},
-				Ports: []v1.EndpointPort{
-					{
-						Name:     "",
-						Port:     int32(80),
-						Protocol: v1.ProtocolTCP,
-					},
-				},
-			},
-			{
-				Addresses: []v1.EndpointAddress{
-					{
-						IP:       "10.100.2.2",
-						NodeName: &instance2,
-						TargetRef: &v1.ObjectReference{
-							Namespace: testServiceNamespace,
-							Name:      "pod7",
-						},
-					},
-					{
-						IP:       "10.100.4.1",
-						NodeName: &instance4,
-						TargetRef: &v1.ObjectReference{
-							Namespace: testServiceNamespace,
-							Name:      "pod8",
-						},
-					},
-				},
-				NotReadyAddresses: []v1.EndpointAddress{
-					{
-						IP:       "10.100.4.3",
-						NodeName: &instance4,
-						TargetRef: &v1.ObjectReference{
-							Namespace: testServiceNamespace,
-							Name:      "pod9",
-						},
-					},
-				},
-				Ports: []v1.EndpointPort{
-					{
-						Name:     testNamedPort,
-						Port:     int32(81),
-						Protocol: v1.ProtocolTCP,
-					},
-				},
-			},
-		},
-	}
-	endpointsData := EndpointsDataFromEndpoints(endpoints)
-
-	if len(endpointsData) != 2 {
-		t.Errorf("Expected the same number of endpoints subsets and endpoints data, got %d endpoints data for 2 subsets", len(endpointsData))
-	}
-	for i, subset := range endpoints.Subsets {
-		for j, port := range subset.Ports {
-			ValidatePortData(endpointsData[i].Ports[j], port.Port, port.Name, t)
-		}
-		ValidateAddressDataForEndpointsAddresses(endpointsData[i].Addresses, subset.Addresses, true, t)
-		ValidateAddressDataForEndpointsAddresses(endpointsData[i].Addresses, subset.NotReadyAddresses, false, t)
-		if len(endpointsData[i].Addresses) != len(subset.Addresses)+len(subset.NotReadyAddresses) {
-			t.Errorf("Unexpected len of endpointsData addresses, got %d, expected %d", len(endpointsData[i].Addresses), len(subset.Addresses)+len(subset.NotReadyAddresses))
-		}
 	}
 }
 
@@ -732,6 +550,47 @@ func TestEndpointsDataFromEndpointSlices(t *testing.T) {
 				},
 			},
 		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      testServiceName + "-2",
+				Namespace: testServiceNamespace,
+			},
+			AddressType: discovery.AddressTypeIPv6,
+			Endpoints: []discovery.Endpoint{
+				{
+					Addresses: []string{"aa:aa:aa:aa:aa:aa"},
+					NodeName:  &instance2,
+					TargetRef: &v1.ObjectReference{
+						Namespace: testServiceNamespace,
+						Name:      "pod7",
+					},
+				},
+				{
+					Addresses: []string{"aa:aa:aa:aa:aa:ab"},
+					NodeName:  &instance4,
+					TargetRef: &v1.ObjectReference{
+						Namespace: testServiceNamespace,
+						Name:      "pod8",
+					},
+				},
+				{
+					Addresses: []string{"aa:aa:aa:aa:aa:ac"},
+					NodeName:  &instance4,
+					TargetRef: &v1.ObjectReference{
+						Namespace: testServiceNamespace,
+						Name:      "pod9",
+					},
+					Conditions: discovery.EndpointConditions{Ready: &notReady},
+				},
+			},
+			Ports: []discovery.EndpointPort{
+				{
+					Name:     &testNamedPort,
+					Port:     &port81,
+					Protocol: &protocolTCP,
+				},
+			},
+		},
 	}
 
 	endpointsData := EndpointsDataFromEndpointSlices(endpointSlices)
@@ -739,7 +598,11 @@ func TestEndpointsDataFromEndpointSlices(t *testing.T) {
 	if len(endpointsData) != 2 {
 		t.Errorf("Expected the same number of endpoints subsets and endpoints data, got %d endpoints data for 2 subsets", len(endpointsData))
 	}
+	// This test expects that all the valid EPS are at the beginning
 	for i, slice := range endpointSlices {
+		if slice.AddressType != discovery.AddressTypeIPv4 {
+			continue
+		}
 		for j, port := range slice.Ports {
 			ValidatePortData(endpointsData[i].Ports[j], *port.Port, *port.Name, t)
 		}

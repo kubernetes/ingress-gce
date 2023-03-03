@@ -19,30 +19,29 @@ set -o nounset
 set -o pipefail
 
 SCRIPT_ROOT=$(dirname "${BASH_SOURCE}")/..
-
-DIFFROOT="${SCRIPT_ROOT}/pkg"
-TMP_DIFFROOT="${SCRIPT_ROOT}/_tmp/pkg"
-_tmp="${SCRIPT_ROOT}/_tmp"
+_tmp="$(mktemp -d -t "ingress-gce.XXXXXX")"
 
 cleanup() {
-  rm -rf "${_tmp}"
+ git worktree remove -f "${_tmp}"
 }
+
 trap "cleanup" EXIT SIGINT
 
-cleanup
+git worktree add -f -q "${_tmp}" HEAD
+cd "${_tmp}"
 
-mkdir -p "${TMP_DIFFROOT}"
-cp -a "${DIFFROOT}"/* "${TMP_DIFFROOT}"
+# Update generated code
+hack/update-codegen.sh
 
-"${SCRIPT_ROOT}/hack/update-codegen.sh"
-echo "diffing ${DIFFROOT} against freshly generated codegen"
-ret=0
-diff -Naupr "${DIFFROOT}" "${TMP_DIFFROOT}" || ret=$?
-cp -a "${TMP_DIFFROOT}"/* "${DIFFROOT}"
-if [[ $ret -eq 0 ]]
-then
-  echo "${DIFFROOT} up to date."
-else
-  echo "${DIFFROOT} is out of date. Please run hack/update-codegen.sh"
+# Test for diffs
+diffs=$(git status --porcelain | wc -l)
+if [[ ${diffs} -gt 0 ]]; then
+  git status >&2
+  git diff >&2
+  echo "Generated files need to be updated" >&2
+  echo "Please run 'hack/update-codegen.sh'" >&2
   exit 1
 fi
+
+echo "Generated files are up to date"
+echo
