@@ -238,7 +238,7 @@ func (l4hc *l4HealthChecks) ensureIPv6Firewall(svc *corev1.Service, namer namer.
 	ipv6HCFWName := namer.L4IPv6HealthCheckFirewall(svc.Namespace, svc.Name, isSharedHC)
 
 	start := time.Now()
-	klog.V(2).Infof("Ensuring IPv6 Firewall %s for health check for service %s/%s, health check port %s, shared health check: %t, len(nodeNames): %d", ipv6HCFWName, svc.Namespace, svc.Name, hcPort, isSharedHC, len(nodeNames))
+	klog.V(2).Infof("Ensuring IPv6 Firewall %s for health check for service %s/%s, health check port %d, shared health check: %t, len(nodeNames): %d", ipv6HCFWName, svc.Namespace, svc.Name, hcPort, isSharedHC, len(nodeNames))
 	defer func() {
 		klog.V(2).Infof("Finished ensuring IPv6 firewall %s for service %s/%s, time taken %v", ipv6HCFWName, svc.Namespace, svc.Name, time.Since(start))
 	}()
