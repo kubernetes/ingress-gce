@@ -296,6 +296,46 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 	return zoneNetworkEndpointMap, networkEndpointPodMap, dupCount, nil
 }
 
+// validateAndAddEndpoints fills in missing information and creates network endpoint for each endpoint addresss
+func ValidateAndAddEndpoints(ep negtypes.AddressData, zoneGetter negtypes.ZoneGetter, podLister cache.Indexer, matchPort string, endpointType negtypes.NetworkEndpointType, targetMap map[string]negtypes.NetworkEndpointSet, endpointPodMap negtypes.EndpointPodMap) {
+	for _, address := range ep.Addresses {
+		fmt.Println(address)
+		key := fmt.Sprintf("%s/%s", ep.TargetRef.Namespace, ep.TargetRef.Name)
+		obj, exists, err := podLister.GetByKey(key)
+		if err != nil || !exists {
+			continue
+		}
+		pod, ok := obj.(*apiv1.Pod)
+		if !ok {
+			continue
+		}
+		nodeName := pod.Spec.NodeName
+		zone, err := zoneGetter.GetZoneForNode(nodeName)
+		if err != nil {
+			continue
+		}
+
+		if endpointType == negtypes.NonGCPPrivateEndpointType {
+			// Non-GCP network endpoints don't have associated nodes.
+			nodeName = ""
+		}
+		networkEndpoint := negtypes.NetworkEndpoint{IP: address, Port: matchPort, Node: nodeName}
+		if targetMap[zone] == nil {
+			targetMap[zone] = negtypes.NewNetworkEndpointSet()
+		}
+		if !validatePod(pod) {
+			continue
+		}
+		targetMap[zone].Insert(networkEndpoint)
+		endpointPodMap[networkEndpoint] = types.NamespacedName{Namespace: ep.TargetRef.Namespace, Name: ep.TargetRef.Name}
+	}
+}
+
+// validatePod checks if this pod is a valid pod resource
+func validatePod(pod *apiv1.Pod) bool {
+	return true
+}
+
 // retrieveExistingZoneNetworkEndpointMap lists existing network endpoints in the neg and return the zone and endpoints map
 func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter negtypes.ZoneGetter, cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, mode negtypes.EndpointsCalculatorMode) (map[string]negtypes.NetworkEndpointSet, error) {
 	// Include zones that have non-candidate nodes currently. It is possible that NEGs were created in those zones previously and the endpoints now became non-candidates.

@@ -25,11 +25,13 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/tools/cache"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
@@ -1190,6 +1192,176 @@ func TestNEGRecreate(t *testing.T) {
 	}
 }
 
+func TestValidateAndAddEndpoints(t *testing.T) {
+	t.Parallel()
+	matchPort := strconv.Itoa(int(80))
+	emptyNodeName := ""
+	ready := true
+	instance1 := negtypes.TestInstance1
+	endpointMap := map[string]negtypes.NetworkEndpointSet{
+		negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+			networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80")),
+	}
+	podMap := negtypes.EndpointPodMap{
+		networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"): types.NamespacedName{Namespace: testNamespace, Name: "pod1"},
+	}
+
+	fakeZoneGetter := negtypes.NewFakeZoneGetter()
+	podLister := negtypes.NewTestContext().PodInformer.GetIndexer()
+	addPodsToLister(podLister)
+
+	testCases := []struct {
+		desc                string
+		ep                  negtypes.AddressData
+		endpointType        negtypes.NetworkEndpointType
+		expectedEndpointMap map[string]negtypes.NetworkEndpointSet
+		expectedPodMap      negtypes.EndpointPodMap
+	}{
+		{
+			desc: "endpoint with nodeName",
+			ep: negtypes.AddressData{
+				Addresses: []string{"10.100.1.1"},
+				NodeName:  &instance1,
+				TargetRef: &corev1.ObjectReference{
+					Namespace: testNamespace,
+					Name:      "pod1",
+				},
+				Ready: ready,
+			},
+			endpointType:        negtypes.VmIpPortEndpointType,
+			expectedEndpointMap: endpointMap,
+			expectedPodMap:      podMap,
+		},
+		{
+			desc: "endpoint without nodeName",
+			ep: negtypes.AddressData{
+				Addresses: []string{"10.100.1.1"},
+				NodeName:  nil,
+				TargetRef: &corev1.ObjectReference{
+					Namespace: testNamespace,
+					Name:      "pod1",
+				},
+				Ready: ready,
+			},
+			endpointType:        negtypes.VmIpPortEndpointType,
+			expectedEndpointMap: endpointMap,
+			expectedPodMap:      podMap,
+		},
+		{
+			desc: "endpoint with empty nodeName",
+			ep: negtypes.AddressData{
+				Addresses: []string{"10.100.1.1"},
+				NodeName:  &emptyNodeName,
+				TargetRef: &corev1.ObjectReference{
+					Namespace: testNamespace,
+					Name:      "pod1",
+				},
+				Ready: ready,
+			},
+			endpointType:        negtypes.VmIpPortEndpointType,
+			expectedEndpointMap: endpointMap,
+			expectedPodMap:      podMap,
+		},
+		{
+			desc: "Non-GCP network endpoint",
+			ep: negtypes.AddressData{
+				TargetRef: &corev1.ObjectReference{
+					Namespace: testNamespace,
+					Name:      "pod1",
+				},
+				NodeName:  &emptyNodeName,
+				Addresses: []string{"10.100.1.1"},
+				Ready:     ready,
+			},
+
+			endpointType: negtypes.NonGCPPrivateEndpointType,
+			expectedEndpointMap: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+					networkEndpointFromEncodedEndpoint("10.100.1.1||||80")),
+			},
+			expectedPodMap: negtypes.EndpointPodMap{
+				networkEndpointFromEncodedEndpoint("10.100.1.1||||80"): types.NamespacedName{Namespace: testNamespace, Name: "pod1"}},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			targetMap := map[string]negtypes.NetworkEndpointSet{}
+			endpointPodMap := negtypes.EndpointPodMap{}
+			ValidateAndAddEndpoints(tc.ep, fakeZoneGetter, podLister, matchPort, tc.endpointType, targetMap, endpointPodMap)
+
+			if !reflect.DeepEqual(targetMap, tc.expectedEndpointMap) {
+				t.Errorf("degraded mode endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", targetMap, tc.expectedEndpointMap)
+			}
+			if !reflect.DeepEqual(endpointPodMap, tc.expectedPodMap) {
+				t.Errorf("degraded mode endpoint map is not calculated correctly:\ngot %+v,\n expected %+v", endpointPodMap, tc.expectedPodMap)
+			}
+		})
+	}
+}
+
+func addPodsToLister(podLister cache.Indexer) {
+	// add all pods in default endpoint into podLister
+	for i := 1; i <= 6; i++ {
+		podLister.Add(&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: testNamespace,
+				Name:      fmt.Sprintf("pod%v", i),
+			},
+			Spec: corev1.PodSpec{
+				NodeName: testInstance1,
+			},
+		})
+	}
+	for i := 7; i <= 12; i++ {
+		podLister.Add(&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: testNamespace,
+				Name:      fmt.Sprintf("pod%v", i),
+			},
+			Spec: corev1.PodSpec{
+				NodeName: testInstance4,
+			},
+		})
+	}
+
+	podLister.Update(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testNamespace,
+			Name:      "pod3",
+		},
+		Spec: corev1.PodSpec{
+			NodeName: testInstance2,
+		},
+	})
+	podLister.Update(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testNamespace,
+			Name:      "pod4",
+		},
+		Spec: corev1.PodSpec{
+			NodeName: testInstance3,
+		},
+	})
+	podLister.Update(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testNamespace,
+			Name:      "pod7",
+		},
+		Spec: corev1.PodSpec{
+			NodeName: testInstance2,
+		},
+	})
+	podLister.Update(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testNamespace,
+			Name:      "pod10",
+		},
+		Spec: corev1.PodSpec{
+			NodeName: testInstance3,
+		},
+	})
+}
+
 // numToIP converts the given number to an IP address.
 // assumes that the input is smaller than 2^32.
 func numToIP(input int) string {
@@ -1250,6 +1422,7 @@ func getTestEndpointSlices(name, namespace string) []*discovery.EndpointSlice {
 	notReady := false
 	emptyNamedPort := ""
 	testNamedPort := testNamedPort
+	managedByController := "endpointslice-controller.k8s.io"
 	port80 := int32(80)
 	port81 := int32(81)
 	port8081 := int32(8081)
@@ -1261,6 +1434,7 @@ func getTestEndpointSlices(name, namespace string) []*discovery.EndpointSlice {
 				Namespace: namespace,
 				Labels: map[string]string{
 					discovery.LabelServiceName: name,
+					discovery.LabelManagedBy:   managedByController,
 				},
 			},
 			AddressType: "IPv4",
@@ -1330,6 +1504,7 @@ func getTestEndpointSlices(name, namespace string) []*discovery.EndpointSlice {
 				Namespace: namespace,
 				Labels: map[string]string{
 					discovery.LabelServiceName: name,
+					discovery.LabelManagedBy:   managedByController,
 				},
 			},
 			AddressType: "IPv4",
