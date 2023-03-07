@@ -104,7 +104,7 @@ For other options, see the `--help` output.
 
 Can speed things up if you've already pushed an image (or want to use a specific
 version) with `--image-url PATH` (eg,
-`--image-url k8s.gcr.io/ingress-gce-glbc-amd64:v1.5.2`). Can also set the `REGISTRY`
+`--image-url registry.k8s.io/ingress-gce-glbc-amd64:v1.5.2`). Can also set the `REGISTRY`
 env var to provide a custom place to push your image to if it's not the same project
 as your cluster is in. The tags pushed to will be that of the
 `git describe --tags --always --dirty` command. If the `VERSION` env var is set, that
