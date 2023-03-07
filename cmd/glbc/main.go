@@ -44,6 +44,7 @@ import (
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/client-go/tools/record"
 	firewallcrclient "k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned"
+	networkclient "k8s.io/cloud-provider-gcp/crd/client/network/clientset/versioned"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 	ingparamsclient "k8s.io/ingress-gce/pkg/ingparams/client/clientset/versioned"
@@ -168,6 +169,14 @@ func main() {
 		}
 	}
 
+	var networkClient networkclient.Interface
+	if flags.F.EnableMultiNetworking {
+		networkClient, err = networkclient.NewForConfig(kubeConfig)
+		if err != nil {
+			klog.Fatalf("Failed to create Network client: %v", err)
+		}
+	}
+
 	ingClassEnabled := flags.F.EnableIngressGAFields && app.IngressClassEnabled(kubeClient)
 	var ingParamsClient ingparamsclient.Interface
 	if ingClassEnabled {
@@ -213,7 +222,7 @@ func main() {
 		EnableL4ILBDualStack:   flags.F.EnableL4ILBDualStack,
 		EnableL4NetLBDualStack: flags.F.EnableL4NetLBDualStack,
 	}
-	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, ingParamsClient, svcAttachmentClient, cloud, namer, kubeSystemUID, ctxConfig)
+	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, ingParamsClient, svcAttachmentClient, networkClient, cloud, namer, kubeSystemUID, ctxConfig)
 	go app.RunHTTPServer(ctx.HealthCheck)
 
 	if !flags.F.LeaderElection.LeaderElect {
