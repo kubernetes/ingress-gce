@@ -250,7 +250,7 @@ spec:
       terminationGracePeriodSeconds: 60
       containers:
       - name: default-http-backend
-        image: k8s.gcr.io/defaultbackend:1.5
+        image: registry.k8s.io/defaultbackend:1.5
         volumeMounts:
         - mountPath: /etc/kubernetes
           name: kubeconfig
