@@ -31,6 +31,7 @@ import (
 	"k8s.io/ingress-gce/pkg/l4lb"
 	"k8s.io/ingress-gce/pkg/psc"
 	"k8s.io/ingress-gce/pkg/serviceattachment"
+	"k8s.io/ingress-gce/pkg/servicemetrics"
 	"k8s.io/ingress-gce/pkg/svcneg"
 	"k8s.io/klog/v2"
 
@@ -291,6 +292,12 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		pscController := psc.NewController(ctx)
 		go pscController.Run(stopCh)
 		klog.V(0).Infof("PSC Controller started")
+	}
+
+	if flags.F.EnableServiceMetrics {
+		metricsController := servicemetrics.NewController(ctx, flags.F.MetricsExportInterval, stopCh)
+		go metricsController.Run()
+		klog.V(0).Infof("Service Metrics Controller started")
 	}
 
 	var zoneGetter negtypes.ZoneGetter
