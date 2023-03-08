@@ -80,6 +80,7 @@ var (
 		IngressClass                     string
 		KubeConfigFile                   string
 		NegGCPeriod                      time.Duration
+		NumNegGCWorkers                  int
 		NodePortRanges                   PortRanges
 		ResyncPeriod                     time.Duration
 		L4NetLBProvisionDeadline         time.Duration
@@ -233,6 +234,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.StringVar(&F.LeaderElection.LockObjectName, "lock-object-name", F.LeaderElection.LockObjectName, "Define the name of the lock object.")
 	flag.DurationVar(&F.NegGCPeriod, "neg-gc-period", 120*time.Second,
 		`Relist and garbage collect NEGs this often.`)
+	flag.IntVar(&F.NumNegGCWorkers, "num-neg-gc-workers", 10, "Number of goroutines created by NEG garbage collector. This value controls the maximum number of concurrent calls made to the GCE NEG Delete API.")
 	flag.BoolVar(&F.EnableReadinessReflector, "enable-readiness-reflector", true, "Enable NEG Readiness Reflector")
 	flag.BoolVar(&F.FinalizerAdd, "enable-finalizer-add",
 		F.FinalizerAdd, "Enable adding Finalizer to Ingress.")

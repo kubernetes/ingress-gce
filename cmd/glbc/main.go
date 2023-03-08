@@ -340,6 +340,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		ctx.ClusterNamer,
 		flags.F.ResyncPeriod,
 		flags.F.NegGCPeriod,
+		flags.F.NumNegGCWorkers,
 		flags.F.EnableReadinessReflector,
 		flags.F.RunIngressController,
 		flags.F.RunL4Controller,
