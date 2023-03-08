@@ -296,6 +296,72 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 	return zoneNetworkEndpointMap, networkEndpointPodMap, dupCount, nil
 }
 
+func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGetter negtypes.ZoneGetter, podLister cache.Indexer, servicePortName string, networkEndpointType negtypes.NetworkEndpointType) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, int, error) {
+	targetMap := map[string]negtypes.NetworkEndpointSet{}
+	endpointPodMap := negtypes.EndpointPodMap{}
+	var dupCount int
+	for _, ed := range eds {
+		matchPort := ""
+		for _, port := range ed.Ports {
+			if port.Name == servicePortName {
+				matchPort = strconv.Itoa(int(port.Port))
+				break
+			}
+		}
+		if len(matchPort) == 0 {
+			continue
+		}
+		for _, endpointAddress := range ed.Addresses {
+			if endpointAddress.TargetRef == nil {
+				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated pod. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
+				continue
+			}
+			dupCount += validateAndAddEndpoints(endpointAddress, zoneGetter, podLister, matchPort, networkEndpointType, targetMap, endpointPodMap)
+		}
+	}
+	return targetMap, endpointPodMap, dupCount, nil
+}
+
+// validateAndAddEndpoints fills in missing information and creates network endpoint for each endpoint addresss
+func validateAndAddEndpoints(ep negtypes.AddressData, zoneGetter negtypes.ZoneGetter, podLister cache.Indexer, matchPort string, endpointType negtypes.NetworkEndpointType, targetMap map[string]negtypes.NetworkEndpointSet, endpointPodMap negtypes.EndpointPodMap) int {
+	var dupCount int
+	for _, address := range ep.Addresses {
+		key := fmt.Sprintf("%s/%s", ep.TargetRef.Namespace, ep.TargetRef.Name)
+		obj, exists, err := podLister.GetByKey(key)
+		if err != nil || !exists {
+			klog.V(2).Infof("Endpoint %q does not correspond to an existing pod. Skipping", address)
+			continue
+		}
+		pod, ok := obj.(*apiv1.Pod)
+		if !ok {
+			klog.V(2).Infof("Endpoint %q does not correspond to a valid pod resource. Skipping", address)
+			continue
+		}
+		nodeName := pod.Spec.NodeName
+		zone, err := zoneGetter.GetZoneForNode(nodeName)
+		if err != nil {
+			klog.V(2).Infof("Endpoint %q does not have valid zone information. Skipping", address)
+			continue
+		}
+
+		if endpointType == negtypes.NonGCPPrivateEndpointType {
+			// Non-GCP network endpoints don't have associated nodes.
+			nodeName = ""
+		}
+		networkEndpoint := negtypes.NetworkEndpoint{IP: address, Port: matchPort, Node: nodeName}
+		if targetMap[zone] == nil {
+			targetMap[zone] = negtypes.NewNetworkEndpointSet()
+		}
+		targetMap[zone].Insert(networkEndpoint)
+		// increment the count for duplicated endpoint
+		if _, contains := endpointPodMap[networkEndpoint]; contains {
+			dupCount += 1
+		}
+		endpointPodMap[networkEndpoint] = types.NamespacedName{Namespace: ep.TargetRef.Namespace, Name: ep.TargetRef.Name}
+	}
+	return dupCount
+}
+
 // retrieveExistingZoneNetworkEndpointMap lists existing network endpoints in the neg and return the zone and endpoints map
 func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter negtypes.ZoneGetter, cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, mode negtypes.EndpointsCalculatorMode) (map[string]negtypes.NetworkEndpointSet, error) {
 	// Include zones that have non-candidate nodes currently. It is possible that NEGs were created in those zones previously and the endpoints now became non-candidates.
