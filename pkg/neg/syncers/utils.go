@@ -245,7 +245,7 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 
 		for _, endpointAddress := range ed.Addresses {
 			if endpointAddress.NodeName == nil || len(*endpointAddress.NodeName) == 0 {
-				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated node. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
+				klog.V(2).Infof("Detected unexpected error when checking missing nodeName. Endpoint %q in Endpoints %s/%s does not have an associated node. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
 				return nil, nil, dupCount, negtypes.ErrEPMissingNodeName
 			}
 			if endpointAddress.TargetRef == nil {
@@ -257,6 +257,7 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 				return nil, nil, dupCount, negtypes.ErrNodeNotFound
 			}
 			if zone == "" {
+				klog.V(2).Info("Detected unexpected error when checking missing zone")
 				return nil, nil, dupCount, negtypes.ErrEPMissingZone
 			}
 			if zoneNetworkEndpointMap[zone] == nil {

@@ -15,33 +15,16 @@ package types
 
 import "errors"
 
-var (
-	ResultEPCountsDiffer = "EPCountsDiffer"
-	ErrEPCountsDiffer    = errors.New("endpoint counts from endpointData and endpointPodMap differ")
-
-	ResultEPMissingNodeName = "EPMissingNodeName"
-	ErrEPMissingNodeName    = errors.New("endpoint has empty nodeName field")
-
-	ResultNodeNotFound = "NodeNotFound"
-	ErrNodeNotFound    = errors.New("failed to retrieve associated zone of node")
-
-	ResultEPMissingZone = "EPMissingZone"
-	ErrEPMissingZone    = errors.New("endpoint has empty zone field")
-
-	ResultEPSEndpointCountZero = "EPSEndpointCountZero"
-	ErrEPSEndpointCountZero    = errors.New("endpoint count from endpointData cannot be zero")
-
+const (
+	ResultEPCountsDiffer         = "EPCountsDiffer"
+	ResultEPMissingNodeName      = "EPMissingNodeName"
+	ResultNodeNotFound           = "NodeNotFound"
+	ResultEPMissingZone          = "EPMissingZone"
+	ResultEPSEndpointCountZero   = "EPSEndpointCountZero"
 	ResultEPCalculationCountZero = "EPCalculationCountZero"
-	ErrEPCalculationCountZero    = errors.New("endpoint count from endpointPodMap cannot be zero")
-
-	ResultInvalidAPIResponse = "InvalidAPIResponse"
-	ErrInvalidAPIResponse    = errors.New("received response error doesn't match googleapi.Error type")
-
-	ResultInvalidEPAttach = "InvalidEPAttach"
-	ErrInvalidEPAttach    = errors.New("endpoint information for attach operation is incorrect")
-
-	ResultInvalidEPDetach = "InvalidEPDetach"
-	ErrInvalidEPDetach    = errors.New("endpoint information for detach operation is incorrect")
+	ResultInvalidAPIResponse     = "InvalidAPIResponse"
+	ResultInvalidEPAttach        = "InvalidEPAttach"
+	ResultInvalidEPDetach        = "InvalidEPDetach"
 
 	// these results have their own errors
 	ResultNegNotFound       = "NegNotFound"
@@ -50,6 +33,30 @@ var (
 	ResultOtherError        = "OtherError"
 	ResultInProgress        = "InProgress"
 	ResultSuccess           = "Success"
+)
+
+var (
+	ErrEPCountsDiffer         = errors.New("endpoint counts from endpointData and endpointPodMap differ")
+	ErrEPMissingNodeName      = errors.New("endpoint has empty nodeName field")
+	ErrNodeNotFound           = errors.New("failed to retrieve associated zone of node")
+	ErrEPMissingZone          = errors.New("endpoint has empty zone field")
+	ErrEPSEndpointCountZero   = errors.New("endpoint count from endpointData cannot be zero")
+	ErrEPCalculationCountZero = errors.New("endpoint count from endpointPodMap cannot be zero")
+	ErrInvalidAPIResponse     = errors.New("received response error doesn't match googleapi.Error type")
+	ErrInvalidEPAttach        = errors.New("endpoint information for attach operation is incorrect")
+	ErrInvalidEPDetach        = errors.New("endpoint information for detach operation is incorrect")
+
+	// use this map for conversion between errors and sync results
+	ErrorStateResult = map[error]string{
+		ErrEPMissingNodeName:      ResultEPMissingNodeName,
+		ErrEPMissingZone:          ResultEPMissingZone,
+		ErrEPCalculationCountZero: ResultEPCalculationCountZero,
+		ErrEPSEndpointCountZero:   ResultEPSEndpointCountZero,
+		ErrEPCountsDiffer:         ResultEPCountsDiffer,
+		ErrInvalidAPIResponse:     ResultInvalidAPIResponse,
+		ErrInvalidEPAttach:        ResultInvalidEPAttach,
+		ErrInvalidEPDetach:        ResultInvalidEPDetach,
+	}
 )
 
 type NegSyncResult struct {
