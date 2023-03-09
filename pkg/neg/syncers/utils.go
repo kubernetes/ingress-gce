@@ -328,6 +328,10 @@ func validateAndAddEndpoints(ep negtypes.AddressData, zoneGetter negtypes.ZoneGe
 		}
 		pod, ok := obj.(*apiv1.Pod)
 		if !ok {
+			klog.V(2).Infof("Endpoint %q does not correspond to a pod object. Skipping", address)
+			continue
+		}
+		if !validatePod(pod) {
 			klog.V(2).Infof("Endpoint %q does not correspond to a valid pod resource. Skipping", address)
 			continue
 		}
@@ -354,6 +358,19 @@ func validateAndAddEndpoints(ep negtypes.AddressData, zoneGetter negtypes.ZoneGe
 		endpointPodMap[networkEndpoint] = types.NamespacedName{Namespace: ep.TargetRef.Namespace, Name: ep.TargetRef.Name}
 	}
 	return dupCount
+}
+
+// validatePod checks if this pod is a valid pod resource
+// it returns false if the pod:
+// 1. is in terminal state
+func validatePod(pod *apiv1.Pod) bool {
+	// Terminal Pod means a pod is in PodFailed or PodSucceeded phase
+	phase := pod.Status.Phase
+	if phase == apiv1.PodFailed || phase == apiv1.PodSucceeded {
+		klog.V(2).Info("Pod %s/%s is a terminal pod with status %v, skipping", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name, phase)
+		return false
+	}
+	return true
 }
 
 // retrieveExistingZoneNetworkEndpointMap lists existing network endpoints in the neg and return the zone and endpoints map
