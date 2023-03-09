@@ -347,6 +347,11 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 
 // getErrorStateReason returns the reason of the error state based returned error
 func (s *transactionSyncer) getErrorStateReason(err error) string {
+	// these errors only occurs on NEG creation
+	// they are not related to endpoint sync, and they are also not relevant error state reason
+	if _, ok := err.(utilerrors.Aggregate); ok {
+		return ""
+	}
 	if result, contains := negtypes.ErrorStateResult[err]; contains {
 		return result
 	}
