@@ -740,12 +740,3 @@ func CheckIfAddressIsPresentInData(addressData []AddressData, ready bool, addres
 	}
 	return false
 }
-
-func ValidateAddressDataForEndpointsAddresses(addressData []AddressData, addresses []v1.EndpointAddress, ready bool, t *testing.T) {
-	for _, addr := range addresses {
-		found := CheckIfAddressIsPresentInData(addressData, ready, addr.IP, addr.TargetRef, addr.NodeName)
-		if !found {
-			t.Errorf("Endpoint address %v couldn't be found in Address Data %v", addr, addressData)
-		}
-	}
-}
