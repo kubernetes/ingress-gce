@@ -140,6 +140,7 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		false,     //enableNonGcpMode
 		enableASM, //enableAsm
 		[]string{},
+		negtypes.PodLabelPropagationConfig{},
 		klog.TODO(),
 	)
 }
