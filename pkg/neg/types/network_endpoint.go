@@ -22,9 +22,10 @@ import (
 
 // NetworkEndpoint contains the essential information for each network endpoint in a NEG
 type NetworkEndpoint struct {
-	IP   string
-	Port string
-	Node string
+	IP          string
+	Port        string
+	Node        string
+	Annotations string
 }
 
 // NetworkEndpointSet is a set of NetworkEndpoints, implemented via map[NetworkEndpoint]struct{} for minimal memory consumption.
