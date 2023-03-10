@@ -217,6 +217,7 @@ func (hc *HealthCheck) UpdateFromBackendConfig(c *backendconfigv1.HealthCheckCon
 		// This override is necessary regardless of type
 		hc.PortSpecification = "USE_FIXED_PORT"
 	}
+	hc.Description = "Kubernetes L7 health check generated with BackendConfig CRD."
 }
 
 // DefaultHealthCheck simply returns the default health check.
@@ -327,4 +328,7 @@ func ApplyProbeSettingsToHC(p *v1.Probe, hc *HealthCheck) {
 	}
 
 	hc.Description = "Kubernetes L7 health check generated with readiness probe settings."
+
+	hc.HealthyThreshold = int64(p.SuccessThreshold)
+	hc.UnhealthyThreshold = int64(p.FailureThreshold)
 }

@@ -116,14 +116,9 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, bchcc *backendconfigv1.H
 		return "", err
 	}
 
-	// First, merge in the configuration from the existing healthcheck to cover
-	// the case where the user has changed healthcheck settings outside of
-	// GKE.
-	premergeHC := hc
-	hc = mergeUserSettings(existingHC, hc)
 	klog.V(3).Infof("Existing HC = %+v", existingHC)
-	klog.V(3).Infof("HC before merge = %+v", premergeHC)
-	klog.V(3).Infof("Resulting HC = %+v", hc)
+	klog.V(3).Infof("   Draft HC = %+v", hc)
+	klog.V(3).Infof("bchcc=%+v", bchcc)
 
 	// Then, BackendConfig will override any fields that are explicitly set.
 	if bchcc != nil {
@@ -131,10 +126,12 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, bchcc *backendconfigv1.H
 		hc.UpdateFromBackendConfig(bchcc)
 	}
 
-	changes := calculateDiff(existingHC, hc, bchcc)
+	changes := calculateDiff(existingHC, hc)
 	if changes.hasDiff() {
 		klog.V(2).Infof("Health check %q needs update (%s)", existingHC.Name, changes)
+		klog.V(3).Infof(" Pending HC = %+v", hc)
 		err := h.update(hc)
+		klog.V(3).Infof(" Updated HC = %+v", existingHC)
 		if err != nil {
 			klog.Errorf("Health check %q update error: %v", existingHC.Name, err)
 		}
