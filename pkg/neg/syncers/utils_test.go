@@ -1196,8 +1196,18 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 	t.Parallel()
 
 	fakeZoneGetter := negtypes.NewFakeZoneGetter()
-	podLister := negtypes.NewTestContext().PodInformer.GetIndexer()
+	testContext := negtypes.NewTestContext()
+	podLister := testContext.PodInformer.GetIndexer()
 	addPodsToLister(podLister)
+
+	nodeLister := testContext.NodeInformer.GetIndexer()
+	for i := 1; i <= 4; i++ {
+		nodeLister.Add(&corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: fmt.Sprintf("instance%v", i),
+			},
+		})
+	}
 
 	testNonExistPort := "non-exists"
 	testEmptyNamedPort := ""
@@ -1291,7 +1301,7 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			testEndpointSlices := getTestEndpointSlices(testService, testNamespace)
 
-			targetMap, endpointPodMap, _, err := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(testEndpointSlices), fakeZoneGetter, podLister, tc.portName, tc.networkEndpointType)
+			targetMap, endpointPodMap, _, err := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(testEndpointSlices), fakeZoneGetter, podLister, nodeLister, tc.portName, tc.networkEndpointType)
 			if err != nil {
 				t.Errorf("expected error=nil, but got %v", err)
 			}
@@ -1321,8 +1331,16 @@ func TestValidateAndAddEndpoints(t *testing.T) {
 	}
 
 	fakeZoneGetter := negtypes.NewFakeZoneGetter()
-	podLister := negtypes.NewTestContext().PodInformer.GetIndexer()
+	testContext := negtypes.NewTestContext()
+	podLister := testContext.PodInformer.GetIndexer()
 	addPodsToLister(podLister)
+
+	nodeLister := testContext.NodeInformer.GetIndexer()
+	nodeLister.Add(&corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: instance1,
+		},
+	})
 
 	testCases := []struct {
 		desc                string
@@ -1347,7 +1365,7 @@ func TestValidateAndAddEndpoints(t *testing.T) {
 			expectedPodMap:      podMap,
 		},
 		{
-			desc: "endpoint without nodeName",
+			desc: "endpoint without nodeName, nodeName should be filled",
 			ep: negtypes.AddressData{
 				Addresses: []string{"10.100.1.1"},
 				NodeName:  nil,
@@ -1362,7 +1380,7 @@ func TestValidateAndAddEndpoints(t *testing.T) {
 			expectedPodMap:      podMap,
 		},
 		{
-			desc: "endpoint with empty nodeName",
+			desc: "endpoint with empty nodeName, nodeName should be filled",
 			ep: negtypes.AddressData{
 				Addresses: []string{"10.100.1.1"},
 				NodeName:  &emptyNodeName,
@@ -1401,7 +1419,7 @@ func TestValidateAndAddEndpoints(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			targetMap := map[string]negtypes.NetworkEndpointSet{}
 			endpointPodMap := negtypes.EndpointPodMap{}
-			validateAndAddEndpoints(tc.ep, fakeZoneGetter, podLister, matchPort, tc.endpointType, targetMap, endpointPodMap)
+			validateAndAddEndpoints(tc.ep, fakeZoneGetter, podLister, nodeLister, matchPort, tc.endpointType, targetMap, endpointPodMap)
 
 			if !reflect.DeepEqual(targetMap, tc.expectedEndpointMap) {
 				t.Errorf("degraded mode endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", targetMap, tc.expectedEndpointMap)
@@ -1416,6 +1434,15 @@ func TestValidateAndAddEndpoints(t *testing.T) {
 func TestValidatePod(t *testing.T) {
 	t.Parallel()
 
+	instance1 := negtypes.TestInstance1
+	testNodeNonExistent := "node-non-existent"
+	testContext := negtypes.NewTestContext()
+	nodeLister := testContext.NodeInformer.GetIndexer()
+	nodeLister.Add(&corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: instance1,
+		},
+	})
 	testCases := []struct {
 		desc   string
 		pod    *v1.Pod
@@ -1431,6 +1458,9 @@ func TestValidatePod(t *testing.T) {
 				Status: v1.PodStatus{
 					Phase: v1.PodRunning,
 				},
+				Spec: corev1.PodSpec{
+					NodeName: instance1,
+				},
 			},
 			expect: true,
 		},
@@ -1443,6 +1473,9 @@ func TestValidatePod(t *testing.T) {
 				},
 				Status: v1.PodStatus{
 					Phase: v1.PodFailed,
+				},
+				Spec: corev1.PodSpec{
+					NodeName: instance1,
 				},
 			},
 			expect: false,
@@ -1457,13 +1490,32 @@ func TestValidatePod(t *testing.T) {
 				Status: v1.PodStatus{
 					Phase: v1.PodSucceeded,
 				},
+				Spec: corev1.PodSpec{
+					NodeName: instance1,
+				},
+			},
+			expect: false,
+		},
+		{
+			desc: "a pod from non-existent node",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testNamespace,
+					Name:      "pod4",
+				},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodRunning,
+				},
+				Spec: corev1.PodSpec{
+					NodeName: testNodeNonExistent,
+				},
 			},
 			expect: false,
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			if got := validatePod(tc.pod); got != tc.expect {
+			if got := validatePod(tc.pod, nodeLister); got != tc.expect {
 				t.Errorf("validatePod() = %t, expected %t", got, tc.expect)
 			}
 		})
