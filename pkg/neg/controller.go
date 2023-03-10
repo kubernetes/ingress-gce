@@ -129,6 +129,7 @@ func NewController(
 	enableNonGcpMode bool,
 	enableAsm bool,
 	asmServiceNEGSkipNamespaces []string,
+	lpConfig negtypes.PodLabelPropagationConfig,
 	logger klog.Logger,
 ) *Controller {
 	logger = logger.WithName("NEGController")
@@ -168,6 +169,7 @@ func NewController(
 		syncerMetrics,
 		enableNonGcpMode,
 		numGCWorkers,
+		lpConfig,
 		logger)
 
 	var reflector readiness.Reflector

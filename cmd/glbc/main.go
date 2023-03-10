@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"os"
@@ -320,6 +321,14 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		enableAsm = cmconfig.EnableASM
 		asmServiceNEGSkipNamespaces = cmconfig.ASMServiceNEGSkipNamespaces
 	}
+
+	lpConfig := negtypes.PodLabelPropagationConfig{}
+	if flags.F.EnableNEGLabelPropagation {
+		lpConfigEnvVar := os.Getenv("LABEL_PROPAGATION_CONFIG")
+		if err := json.Unmarshal([]byte(lpConfigEnvVar), &lpConfig); err != nil {
+			klog.Errorf("Failed tp retrieve pod label propagation config: %v", err)
+		}
+	}
 	// TODO: Refactor NEG to use cloud mocks so ctx.Cloud can be referenced within NewController.
 	negController := neg.NewController(
 		ctx.KubeClient,
@@ -347,6 +356,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		flags.F.EnableNonGCPMode,
 		enableAsm,
 		asmServiceNEGSkipNamespaces,
+		lpConfig,
 		klog.TODO(), // TODO(#1761): Replace this with a top level logger configuration once one is available.
 	)
 
