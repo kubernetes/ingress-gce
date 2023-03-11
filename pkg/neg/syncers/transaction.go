@@ -30,6 +30,7 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	corev1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -104,6 +105,9 @@ type transactionSyncer struct {
 
 	// syncCollector collect sync related metrics
 	syncCollector metrics.SyncerMetricsCollector
+
+	// enableDegradedMode indicates whether we do endpoint calculation using degraded mode procedures
+	enableDegradedMode bool
 }
 
 func NewTransactionSyncer(
@@ -147,6 +151,7 @@ func NewTransactionSyncer(
 		customName:          customName,
 		errorState:          "",
 		logger:              logger,
+		enableDegradedMode:  flags.F.EnableDegradedMode,
 	}
 	// Syncer implements life cycle logic
 	syncer := newSyncer(negSyncerKey, serviceLister, recorder, ts, logger)
