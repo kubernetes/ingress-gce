@@ -81,8 +81,9 @@ type OAuthClientCredentials struct {
 // CDNConfig contains configuration for CDN-enabled backends.
 // +k8s:openapi-gen=true
 type CDNConfig struct {
-	Enabled     bool            `json:"enabled"`
-	CachePolicy *CacheKeyPolicy `json:"cachePolicy,omitempty"`
+	Enabled         bool            `json:"enabled"`
+	CachePolicy     *CacheKeyPolicy `json:"cachePolicy,omitempty"`
+	CompressionMode *string         `json:"compressionMode,omitempty"`
 }
 
 // CacheKeyPolicy contains configuration for how requests to a CDN-enabled backend are cached.

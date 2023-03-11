@@ -97,6 +97,7 @@ type CDNConfig struct {
 	ServeWhileStale             *int64                        `json:"serveWhileStale,omitempty"`
 	SignedUrlCacheMaxAgeSec     *int64                        `json:"signedUrlCacheMaxAgeSec,omitempty"`
 	SignedUrlKeys               []*SignedUrlKey               `json:"signedUrlKeys,omitempty"`
+	CompressionMode             *string                       `json:"compressionMode,omitempty"`
 }
 
 // BypassCacheOnRequestHeader contains configuration for how requests containing specific request
