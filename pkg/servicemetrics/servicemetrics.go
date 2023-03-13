@@ -2,9 +2,10 @@ package servicemetrics
 
 import (
 	"fmt"
-	"k8s.io/utils/net"
 	"strconv"
 	"time"
+
+	"k8s.io/utils/net"
 
 	"github.com/prometheus/client_golang/prometheus"
 	v1 "k8s.io/api/core/v1"
@@ -165,6 +166,7 @@ type serviceGCPFeaturesMetricState struct {
 }
 
 func (c *Controller) export() {
+	start := time.Now()
 	serviceLister := c.serviceInformer.GetIndexer()
 	allServices, err := listers.NewServiceLister(serviceLister).List(labels.Everything())
 	if err != nil {
@@ -175,6 +177,7 @@ func (c *Controller) export() {
 	l4ProtocolState, ipStackState, gcpFeaturesState := calculateMetrics(allServices)
 
 	updatePrometheusMetrics(l4ProtocolState, ipStackState, gcpFeaturesState)
+	klog.Infof("Exported service metrics in %v ms", time.Since(start).Microseconds())
 }
 
 func calculateMetrics(services []*v1.Service) (map[serviceL4ProtocolMetricState]int64, map[serviceIPStackMetricState]int64, map[serviceGCPFeaturesMetricState]int64) {
