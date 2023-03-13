@@ -25,6 +25,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	apiv1 "k8s.io/api/core/v1"
+	discovery "k8s.io/api/discovery/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
@@ -251,6 +252,10 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 		foundMatchingPort = true
 
 		for _, endpointAddress := range ed.Addresses {
+			if endpointAddress.AddressType != discovery.AddressTypeIPv4 {
+				klog.Infof("Skipping non IPv4 address: %q, in endpoint slice %s/%s", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
+				continue
+			}
 			if endpointAddress.NodeName == nil || len(*endpointAddress.NodeName) == 0 {
 				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated node. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
 				return nil, nil, dupCount, ErrEPMissingNodeName

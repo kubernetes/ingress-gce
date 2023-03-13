@@ -595,20 +595,18 @@ func TestEndpointsDataFromEndpointSlices(t *testing.T) {
 
 	endpointsData := EndpointsDataFromEndpointSlices(endpointSlices)
 
-	if len(endpointsData) != 2 {
-		t.Errorf("Expected the same number of endpoints subsets and endpoints data, got %d endpoints data for 2 subsets", len(endpointsData))
+	if len(endpointsData) != 3 {
+		t.Errorf("Expected the same number of endpoints subsets and endpoints data, got %d endpoints data for 3 subsets", len(endpointsData))
 	}
 	// This test expects that all the valid EPS are at the beginning
 	for i, slice := range endpointSlices {
-		if slice.AddressType != discovery.AddressTypeIPv4 {
-			continue
-		}
+		addressType := slice.AddressType
 		for j, port := range slice.Ports {
 			ValidatePortData(endpointsData[i].Ports[j], *port.Port, *port.Name, t)
 		}
 		terminatingEndpointsNumber := 0
 		for _, endpoint := range slice.Endpoints {
-			found := CheckIfAddressIsPresentInData(endpointsData[i].Addresses, endpoint.Conditions.Ready == nil || *endpoint.Conditions.Ready, endpoint.Addresses[0], endpoint.TargetRef, endpoint.NodeName)
+			found := CheckIfAddressIsPresentInData(endpointsData[i].Addresses, endpoint.Conditions.Ready == nil || *endpoint.Conditions.Ready, endpoint.Addresses[0], endpoint.TargetRef, endpoint.NodeName, addressType)
 			if endpoint.Conditions.Terminating != nil && *endpoint.Conditions.Terminating {
 				terminatingEndpointsNumber++
 				if found {
@@ -732,9 +730,9 @@ func ValidatePortData(portData PortData, port int32, name string, t *testing.T) 
 	}
 }
 
-func CheckIfAddressIsPresentInData(addressData []AddressData, ready bool, address string, targetRef *v1.ObjectReference, nodeName *string) bool {
+func CheckIfAddressIsPresentInData(addressData []AddressData, ready bool, address string, targetRef *v1.ObjectReference, nodeName *string, addressType discovery.AddressType) bool {
 	for _, data := range addressData {
-		if data.Ready == ready && len(data.Addresses) == 1 && data.Addresses[0] == address && data.TargetRef == targetRef && data.NodeName == nodeName {
+		if data.Ready == ready && len(data.Addresses) == 1 && data.Addresses[0] == address && data.TargetRef == targetRef && data.NodeName == nodeName && data.AddressType == addressType {
 			return true
 		}
 	}

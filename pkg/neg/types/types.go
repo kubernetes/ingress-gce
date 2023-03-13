@@ -308,10 +308,11 @@ type PortData struct {
 }
 
 type AddressData struct {
-	TargetRef *apiv1.ObjectReference
-	NodeName  *string
-	Addresses []string
-	Ready     bool
+	TargetRef   *apiv1.ObjectReference
+	NodeName    *string
+	Addresses   []string
+	Ready       bool
+	AddressType discovery.AddressType
 }
 
 // Converts API EndpointSlice list to the EndpointsData abstraction.
@@ -319,10 +320,6 @@ type AddressData struct {
 func EndpointsDataFromEndpointSlices(slices []*discovery.EndpointSlice) []EndpointsData {
 	result := make([]EndpointsData, 0, len(slices))
 	for _, slice := range slices {
-		if slice.AddressType != discovery.AddressTypeIPv4 {
-			// Neg Controller can only attach IPv4 endpoints
-			continue
-		}
 		ports := make([]PortData, 0)
 		addresses := make([]AddressData, 0)
 		for _, port := range slice.Ports {
@@ -343,7 +340,7 @@ func EndpointsDataFromEndpointSlices(slices []*discovery.EndpointSlice) []Endpoi
 				nodeNameFromTopology := ep.DeprecatedTopology[apiv1.LabelHostname]
 				nodeName = &nodeNameFromTopology
 			}
-			addresses = append(addresses, AddressData{TargetRef: ep.TargetRef, NodeName: nodeName, Addresses: ep.Addresses, Ready: ready})
+			addresses = append(addresses, AddressData{TargetRef: ep.TargetRef, NodeName: nodeName, Addresses: ep.Addresses, Ready: ready, AddressType: slice.AddressType})
 		}
 		result = append(result, EndpointsData{Meta: &slice.ObjectMeta, Ports: ports, Addresses: addresses})
 	}
