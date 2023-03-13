@@ -334,8 +334,8 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) *lo
 	if l4c.enableDualStack {
 		if err := updateL4DualStackResourcesAnnotations(l4c.ctx, svc, nil); err != nil {
 			l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
-				"Error resetting resource annotations for load balancer: %v", err)
-			result.Error = fmt.Errorf("failed to reset resource annotations, err: %w", err)
+				"Error resetting DualStack resource annotations for load balancer: %v", err)
+			result.Error = fmt.Errorf("failed to reset DualStack resource annotations, err: %w", err)
 			return result
 		}
 	} else {
