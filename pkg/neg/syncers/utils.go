@@ -290,7 +290,9 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 	return zoneNetworkEndpointMap, networkEndpointPodMap, dupCount, nil
 }
 
-func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGetter negtypes.ZoneGetter, podLister cache.Indexer, servicePortName string, networkEndpointType negtypes.NetworkEndpointType) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, int, error) {
+func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGetter negtypes.ZoneGetter,
+	podLister, nodeLister cache.Indexer, servicePortName string,
+	networkEndpointType negtypes.NetworkEndpointType) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, int, error) {
 	targetMap := map[string]negtypes.NetworkEndpointSet{}
 	endpointPodMap := negtypes.EndpointPodMap{}
 	var dupCount int
@@ -310,14 +312,14 @@ func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGett
 				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated pod. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
 				continue
 			}
-			dupCount += validateAndAddEndpoints(endpointAddress, zoneGetter, podLister, matchPort, networkEndpointType, targetMap, endpointPodMap)
+			dupCount += validateAndAddEndpoints(endpointAddress, zoneGetter, podLister, nodeLister, matchPort, networkEndpointType, targetMap, endpointPodMap)
 		}
 	}
 	return targetMap, endpointPodMap, dupCount, nil
 }
 
 // validateAndAddEndpoints fills in missing information and creates network endpoint for each endpoint addresss
-func validateAndAddEndpoints(ep negtypes.AddressData, zoneGetter negtypes.ZoneGetter, podLister cache.Indexer, matchPort string, endpointType negtypes.NetworkEndpointType, targetMap map[string]negtypes.NetworkEndpointSet, endpointPodMap negtypes.EndpointPodMap) int {
+func validateAndAddEndpoints(ep negtypes.AddressData, zoneGetter negtypes.ZoneGetter, podLister, nodeLister cache.Indexer, matchPort string, endpointType negtypes.NetworkEndpointType, targetMap map[string]negtypes.NetworkEndpointSet, endpointPodMap negtypes.EndpointPodMap) int {
 	var dupCount int
 	for _, address := range ep.Addresses {
 		key := fmt.Sprintf("%s/%s", ep.TargetRef.Namespace, ep.TargetRef.Name)
@@ -331,7 +333,7 @@ func validateAndAddEndpoints(ep negtypes.AddressData, zoneGetter negtypes.ZoneGe
 			klog.V(2).Infof("Endpoint %q does not correspond to a pod object. Skipping", address)
 			continue
 		}
-		if !validatePod(pod) {
+		if !validatePod(pod, nodeLister) {
 			klog.V(2).Infof("Endpoint %q does not correspond to a valid pod resource. Skipping", address)
 			continue
 		}
@@ -363,11 +365,22 @@ func validateAndAddEndpoints(ep negtypes.AddressData, zoneGetter negtypes.ZoneGe
 // validatePod checks if this pod is a valid pod resource
 // it returns false if the pod:
 // 1. is in terminal state
-func validatePod(pod *apiv1.Pod) bool {
+// 2. corresponds to a non-existent node
+func validatePod(pod *apiv1.Pod, nodeLister cache.Indexer) bool {
 	// Terminal Pod means a pod is in PodFailed or PodSucceeded phase
 	phase := pod.Status.Phase
 	if phase == apiv1.PodFailed || phase == apiv1.PodSucceeded {
 		klog.V(2).Info("Pod %s/%s is a terminal pod with status %v, skipping", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name, phase)
+		return false
+	}
+	obj, exists, err := nodeLister.GetByKey(pod.Spec.NodeName)
+	if err != nil || !exists {
+		klog.V(2).Info("Pod %s/%s corresponds to a non-existing node %s, skipping", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name, pod.Spec.NodeName)
+		return false
+	}
+	_, isNode := obj.(*apiv1.Node)
+	if !isNode {
+		klog.V(2).Info("Pod %s/%s does not correspond to a valid node resource, skipping", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name)
 		return false
 	}
 	return true
