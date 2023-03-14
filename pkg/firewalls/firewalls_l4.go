@@ -25,6 +25,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
@@ -39,6 +40,7 @@ type FirewallParams struct {
 	NodeNames         []string
 	Protocol          string
 	L4Type            utils.L4LBType
+	Network           network.NetworkInfo
 }
 
 func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParams, sharedRule bool) error {
@@ -59,7 +61,7 @@ func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParam
 	expectedFw := &compute.Firewall{
 		Name:         params.Name,
 		Description:  fwDesc,
-		Network:      cloud.NetworkURL(),
+		Network:      params.Network.NetworkURL,
 		SourceRanges: params.SourceRanges,
 		TargetTags:   nodeTags,
 		Allowed: []*compute.FirewallAllowed{

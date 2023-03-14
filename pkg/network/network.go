@@ -40,12 +40,12 @@ const (
 // secondary networks information for multi-networked services in the future.
 func ServiceNetwork(service *apiv1.Service, networkLister, gkeNetworkParamSetLister cache.Indexer, cloudProvider cloudNetworkProvider, logger klog.Logger) (*NetworkInfo, error) {
 	if networkLister == nil || gkeNetworkParamSetLister == nil {
-		return defaultNetwork(cloudProvider), nil
+		return DefaultNetwork(cloudProvider), nil
 	}
 	logger.Info("Network lookup for service", "service", service.Name, "namespace", service.Namespace)
 	networkName, ok := service.Spec.Selector[networkSelector]
 	if !ok || networkName == "" || networkName == networkv1.DefaultPodNetworkName {
-		return defaultNetwork(cloudProvider), nil
+		return DefaultNetwork(cloudProvider), nil
 	}
 	obj, exists, err := networkLister.GetByKey(networkName)
 	if err != nil {
@@ -89,7 +89,7 @@ func ServiceNetwork(service *apiv1.Service, networkLister, gkeNetworkParamSetLis
 	}, nil
 }
 
-func defaultNetwork(cloudProvider cloudNetworkProvider) *NetworkInfo {
+func DefaultNetwork(cloudProvider cloudNetworkProvider) *NetworkInfo {
 	return &NetworkInfo{
 		IsDefault:     true,
 		K8sNetwork:    networkv1.DefaultPodNetworkName,

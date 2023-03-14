@@ -25,6 +25,7 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
@@ -284,7 +285,7 @@ func (b *Backends) DeleteSignedUrlKey(be *composite.BackendService, keyName stri
 }
 
 // EnsureL4BackendService creates or updates the backend service with the given name.
-func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinity, scheme string, nm types.NamespacedName) (*composite.BackendService, error) {
+func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinity, scheme string, nm types.NamespacedName, network network.NetworkInfo) (*composite.BackendService, error) {
 	start := time.Now()
 	klog.V(2).Infof("EnsureL4BackendService(%v, %v, %v): started", name, scheme, protocol)
 	defer func() {
@@ -312,6 +313,9 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 		HealthChecks:        []string{hcLink},
 		SessionAffinity:     utils.TranslateAffinityType(sessionAffinity),
 		LoadBalancingScheme: scheme,
+	}
+	if !network.IsDefault {
+		expectedBS.Network = network.NetworkURL
 	}
 	if protocol == string(api_v1.ProtocolTCP) {
 		expectedBS.ConnectionDraining = &composite.ConnectionDraining{DrainingTimeoutSec: DefaultConnectionDrainingTimeoutSeconds}
@@ -362,5 +366,6 @@ func backendSvcEqual(a, b *composite.BackendService) bool {
 		a.Description == b.Description &&
 		a.SessionAffinity == b.SessionAffinity &&
 		a.LoadBalancingScheme == b.LoadBalancingScheme &&
-		utils.EqualStringSets(a.HealthChecks, b.HealthChecks)
+		utils.EqualStringSets(a.HealthChecks, b.HealthChecks) &&
+		a.Network == b.Network
 }

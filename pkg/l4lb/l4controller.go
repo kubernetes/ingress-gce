@@ -39,6 +39,7 @@ import (
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -56,12 +57,14 @@ const (
 type L4Controller struct {
 	ctx *context.ControllerContext
 	// kubeClient, needed for attaching finalizer
-	client        kubernetes.Interface
-	svcQueue      utils.TaskQueue
-	numWorkers    int
-	serviceLister cache.Indexer
-	nodeLister    listers.NodeLister
-	stopCh        chan struct{}
+	client                   kubernetes.Interface
+	svcQueue                 utils.TaskQueue
+	numWorkers               int
+	serviceLister            cache.Indexer
+	nodeLister               listers.NodeLister
+	networkLister            cache.Indexer
+	gkeNetworkParamSetLister cache.Indexer
+	stopCh                   chan struct{}
 	// needed for listing the zones in the cluster.
 	translator *translator.Translator
 	// needed for linking the NEG with the backend service for each ILB service.
@@ -99,6 +102,13 @@ func NewILBController(ctx *context.ControllerContext, stopCh chan struct{}) *L4C
 	l4c.NegLinker = backends.NewNEGLinker(l4c.backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer())
 
 	l4c.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("l4", "services", l4c.numWorkers, l4c.sync)
+
+	if ctx.NetworkInformer != nil {
+		l4c.networkLister = ctx.NetworkInformer.GetIndexer()
+	}
+	if ctx.GKENetworkParamsInformer != nil {
+		l4c.gkeNetworkParamSetLister = ctx.GKENetworkParamsInformer.GetIndexer()
+	}
 
 	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
@@ -227,6 +237,10 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service) *load
 	if err != nil {
 		return &loadbalancers.L4ILBSyncResult{Error: err}
 	}
+	network, err := network.ServiceNetwork(service, l4c.networkLister, l4c.gkeNetworkParamSetLister, l4c.ctx.Cloud, klog.TODO())
+	if err != nil {
+		return &loadbalancers.L4ILBSyncResult{Error: err}
+	}
 	// Use the same function for both create and updates. If controller crashes and restarts,
 	// all existing services will show up as Service Adds.
 	l4ilbParams := &loadbalancers.L4ILBParams{
@@ -235,6 +249,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service) *load
 		Namer:            l4c.namer,
 		Recorder:         l4c.ctx.Recorder(service.Namespace),
 		DualStackEnabled: l4c.enableDualStack,
+		Network:          *network,
 	}
 	l4 := loadbalancers.NewL4Handler(l4ilbParams)
 	syncResult := l4.EnsureInternalLoadBalancer(nodeNames, service)

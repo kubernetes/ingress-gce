@@ -36,6 +36,7 @@ import (
 	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
+	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -442,6 +443,7 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 		Namer:            lc.namer,
 		Recorder:         lc.ctx.Recorder(service.Namespace),
 		DualStackEnabled: lc.enableDualStack,
+		NetworkInfo:      *network.DefaultNetwork(lc.ctx.Cloud),
 	}
 	l4netlb := loadbalancers.NewL4NetLB(l4NetLBParams)
 	// check again that rbs is enabled.
@@ -584,6 +586,7 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service)
 		Namer:            lc.namer,
 		Recorder:         lc.ctx.Recorder(svc.Namespace),
 		DualStackEnabled: lc.enableDualStack,
+		NetworkInfo:      *network.DefaultNetwork(lc.ctx.Cloud),
 	}
 	l4netLB := loadbalancers.NewL4NetLB(l4NetLBParams)
 	lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer",
