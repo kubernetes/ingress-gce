@@ -770,6 +770,7 @@ func (*syncSPFixture) hc() *compute.HealthCheck {
 			Port:        80,
 			RequestPath: "/",
 		},
+		Description: translator.DescriptionForDefaultHealthChecks,
 	}
 }
 
@@ -809,6 +810,7 @@ func (*syncSPFixture) neg() *compute.HealthCheck {
 			PortSpecification: "USE_SERVING_PORT",
 			RequestPath:       "/",
 		},
+		Description: translator.DescriptionForDefaultNEGHealthChecks,
 	}
 }
 
@@ -816,6 +818,7 @@ func (f *syncSPFixture) ilb() *compute.HealthCheck {
 	h := f.neg()
 	h.Region = "us-central1"
 	h.SelfLink = ilbSelfLink
+	h.Description = translator.DescriptionForDefaultILBHealthChecks
 	return h
 }
 
@@ -894,6 +897,7 @@ func TestSyncServicePort(t *testing.T) {
 	chc.HttpHealthCheck.Host = "foo.com"
 	chc.CheckIntervalSec = 61
 	chc.TimeoutSec = 1234
+	chc.Description = translator.DescriptionForHealthChecksFromReadinessProbe
 	cases = append(cases, &tc{
 		desc: "create probe",
 		sp:   testSPs["HTTP-80-reg-nil"],
@@ -913,6 +917,7 @@ func TestSyncServicePort(t *testing.T) {
 	chc.HttpHealthCheck.Host = "foo.com"
 	chc.CheckIntervalSec = 1234
 	chc.TimeoutSec = 5678
+	chc.Description = translator.DescriptionForHealthChecksFromReadinessProbe
 	cases = append(cases, &tc{
 		desc: "create probe neg",
 		sp:   testSPs["HTTP-80-neg-nil"],
@@ -932,6 +937,7 @@ func TestSyncServicePort(t *testing.T) {
 	chc.HttpHealthCheck.Host = "foo.com"
 	chc.CheckIntervalSec = 1234
 	chc.TimeoutSec = 5678
+	chc.Description = translator.DescriptionForHealthChecksFromReadinessProbe
 	cases = append(cases, &tc{
 		desc:     "create probe ilb",
 		sp:       testSPs["HTTP-80-ilb-nil"],
@@ -949,6 +955,7 @@ func TestSyncServicePort(t *testing.T) {
 	// BackendConfig
 	chc = fixture.hc()
 	chc.HttpHealthCheck.RequestPath = "/foo"
+	chc.Description = translator.DescriptionForHealthChecksFromBackendConfig
 	cases = append(cases, &tc{desc: "create backendconfig", sp: testSPs["HTTP-80-reg-bc"], wantComputeHC: chc})
 
 	// BackendConfig all
@@ -961,6 +968,7 @@ func TestSyncServicePort(t *testing.T) {
 	chc.HttpHealthCheck.Port = 1234
 	// PortSpecification is set by the controller
 	chc.HttpHealthCheck.PortSpecification = "USE_FIXED_PORT"
+	chc.Description = translator.DescriptionForHealthChecksFromBackendConfig
 	cases = append(cases, &tc{desc: "create backendconfig all", sp: testSPs["HTTP-80-reg-bcall"], wantComputeHC: chc})
 
 	i64 := func(i int64) *int64 { return &i }
@@ -970,6 +978,7 @@ func TestSyncServicePort(t *testing.T) {
 	chc.HttpHealthCheck.Port = 1234
 	// PortSpecification is set by the controller
 	chc.HttpHealthCheck.PortSpecification = "USE_FIXED_PORT"
+	chc.Description = translator.DescriptionForHealthChecksFromBackendConfig
 	sp := utils.ServicePort{
 		NodePort:      80,
 		Protocol:      annotations.ProtocolHTTP,
@@ -981,6 +990,7 @@ func TestSyncServicePort(t *testing.T) {
 	// BackendConfig neg
 	chc = fixture.neg()
 	chc.HttpHealthCheck.RequestPath = "/foo"
+	chc.Description = translator.DescriptionForHealthChecksFromBackendConfig
 	cases = append(cases, &tc{
 		desc:          "create backendconfig neg",
 		sp:            testSPs["HTTP-80-neg-bc"],
@@ -990,6 +1000,7 @@ func TestSyncServicePort(t *testing.T) {
 	// BackendConfig ilb
 	chc = fixture.ilb()
 	chc.HttpHealthCheck.RequestPath = "/foo"
+	chc.Description = translator.DescriptionForHealthChecksFromBackendConfig
 	cases = append(cases, &tc{
 		desc:          "create backendconfig ilb",
 		sp:            testSPs["HTTP-80-ilb-bc"],
@@ -1003,6 +1014,7 @@ func TestSyncServicePort(t *testing.T) {
 	chc.HttpHealthCheck.Host = "foo.com"
 	chc.CheckIntervalSec = 61
 	chc.TimeoutSec = 1234
+	chc.Description = translator.DescriptionForHealthChecksFromBackendConfig
 	cases = append(cases, &tc{
 		desc: "create probe and backendconfig",
 		sp:   testSPs["HTTP-80-reg-bc"],
@@ -1149,6 +1161,7 @@ func TestSyncServicePort(t *testing.T) {
 	wantCHC = fixture.hc()
 	wantCHC.HttpHealthCheck.RequestPath = "/foo" // from bc
 	wantCHC.CheckIntervalSec = 1234              // same
+	wantCHC.Description = translator.DescriptionForHealthChecksFromBackendConfig
 	cases = append(cases, &tc{
 		desc:          "update preserve and backendconfig (path)",
 		sp:            testSPs["HTTP-80-reg-bc"],
@@ -1168,6 +1181,7 @@ func TestSyncServicePort(t *testing.T) {
 	wantCHC.TimeoutSec = 1234
 	wantCHC.HttpHealthCheck.Port = 1234
 	wantCHC.HttpHealthCheck.PortSpecification = "USE_FIXED_PORT"
+	wantCHC.Description = translator.DescriptionForHealthChecksFromBackendConfig
 	cases = append(cases, &tc{
 		desc:          "update preserve backendconfig all",
 		setup:         fixture.setupExistingHCFunc(chc),
@@ -1234,10 +1248,9 @@ func TestSyncServicePort(t *testing.T) {
 				}
 
 				gotHC := computeHCs[0]
-				// Filter out fields that are hard to deal with in the mock and
+				// Filter out SelfLink because it is hard to deal with in the mock and
 				// test cases.
 				filter := func(hc *compute.HealthCheck) {
-					hc.Description = ""
 					hc.SelfLink = ""
 				}
 				filter(gotHC)
