@@ -132,6 +132,7 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		testContext.NegNamer,
 		testContext.ResyncPeriod,
 		testContext.ResyncPeriod,
+		testContext.NumGCWorkers,
 		// TODO(freehan): enable readiness reflector for unit tests
 		false,     // enableReadinessReflector
 		true,      // runIngress
