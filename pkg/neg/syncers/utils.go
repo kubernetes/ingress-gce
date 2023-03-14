@@ -272,9 +272,12 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 				}
 				zoneNetworkEndpointMap[zone].Insert(networkEndpoint)
 
-				// increment the count for duplicated endpoint
-				if _, contains := networkEndpointPodMap[networkEndpoint]; contains {
+				// increment the count for duplicate endpoint
+				if existingPod, contains := networkEndpointPodMap[networkEndpoint]; contains {
 					dupCount += 1
+					if existingPod.Name < endpointAddress.TargetRef.Name {
+						continue // if existing name is alphabetically lower than current one, continue and don't replace
+					}
 				}
 				networkEndpointPodMap[networkEndpoint] = types.NamespacedName{Namespace: endpointAddress.TargetRef.Namespace, Name: endpointAddress.TargetRef.Name}
 			}
