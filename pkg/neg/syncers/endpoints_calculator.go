@@ -187,7 +187,7 @@ func (l *L7EndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
 func (l *L7EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, _ map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
-	return toZoneNetworkEndpointMap(eds, l.zoneGetter, l.servicePortName, l.podLister, l.networkEndpointType)
+	return toZoneNetworkEndpointMap(eds, l.zoneGetter, l.servicePortName, l.networkEndpointType)
 }
 
 func nodeMapToString(nodeMap map[string][]*v1.Node) string {

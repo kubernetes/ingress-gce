@@ -85,9 +85,7 @@ type ControllerContext struct {
 	FrontendConfigInformer cache.SharedIndexInformer
 	PodInformer            cache.SharedIndexInformer
 	NodeInformer           cache.SharedIndexInformer
-	EndpointInformer       cache.SharedIndexInformer
 	EndpointSliceInformer  cache.SharedIndexInformer
-	UseEndpointSlices      bool
 	ConfigMapInformer      cache.SharedIndexInformer
 	SvcNegInformer         cache.SharedIndexInformer
 	IngClassInformer       cache.SharedIndexInformer
@@ -124,7 +122,6 @@ type ControllerContextConfig struct {
 	EnableASMConfigMap     bool
 	ASMConfigMapNamespace  string
 	ASMConfigMapName       string
-	EndpointSlicesEnabled  bool
 	MaxIGSize              int
 	EnableL4ILBDualStack   bool
 	EnableL4NetLBDualStack bool
@@ -180,25 +177,18 @@ func NewControllerContext(
 		context.RegionalCluster = true
 	}
 
-	context.UseEndpointSlices = config.EndpointSlicesEnabled
-	// Do not trigger periodic resync on Endpoints or EndpointSlices object.
+	// Do not trigger periodic resync on EndpointSlices object.
 	// This aims improve NEG controller performance by avoiding unnecessary NEG sync that triggers for each NEG syncer.
 	// As periodic resync may temporary starve NEG API ratelimit quota.
-	if config.EndpointSlicesEnabled {
-		context.EndpointSliceInformer = discoveryinformer.NewEndpointSliceInformer(kubeClient, config.Namespace, 0,
-			cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc, endpointslices.EndpointSlicesByServiceIndex: endpointslices.EndpointSlicesByServiceFunc})
-	} else {
-		context.EndpointInformer = informerv1.NewEndpointsInformer(kubeClient, config.Namespace, 0, utils.NewNamespaceIndexer())
-	}
+	context.EndpointSliceInformer = discoveryinformer.NewEndpointSliceInformer(kubeClient, config.Namespace, 0,
+		cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc, endpointslices.EndpointSlicesByServiceIndex: endpointslices.EndpointSlicesByServiceFunc})
 
 	context.Translator = translator.NewTranslator(
 		context.ServiceInformer,
 		context.BackendConfigInformer,
 		context.NodeInformer,
 		context.PodInformer,
-		context.EndpointInformer,
 		context.EndpointSliceInformer,
-		context.UseEndpointSlices,
 		context.KubeClient,
 	)
 	context.InstancePool = instancegroups.NewManager(&instancegroups.ManagerConfig{
@@ -249,14 +239,7 @@ func (ctx *ControllerContext) HasSynced() bool {
 		ctx.PodInformer.HasSynced,
 		ctx.NodeInformer.HasSynced,
 		ctx.SvcNegInformer.HasSynced,
-	}
-
-	if ctx.EndpointInformer != nil {
-		funcs = append(funcs, ctx.EndpointInformer.HasSynced)
-	}
-
-	if ctx.EndpointSliceInformer != nil {
-		funcs = append(funcs, ctx.EndpointSliceInformer.HasSynced)
+		ctx.EndpointSliceInformer.HasSynced,
 	}
 
 	if ctx.FrontendConfigInformer != nil {
@@ -336,12 +319,8 @@ func (ctx *ControllerContext) Start(stopCh chan struct{}) {
 	go ctx.ServiceInformer.Run(stopCh)
 	go ctx.PodInformer.Run(stopCh)
 	go ctx.NodeInformer.Run(stopCh)
-	if ctx.EndpointInformer != nil {
-		go ctx.EndpointInformer.Run(stopCh)
-	}
-	if ctx.EndpointSliceInformer != nil {
-		go ctx.EndpointSliceInformer.Run(stopCh)
-	}
+	go ctx.EndpointSliceInformer.Run(stopCh)
+
 	if ctx.BackendConfigInformer != nil {
 		go ctx.BackendConfigInformer.Run(stopCh)
 	}
