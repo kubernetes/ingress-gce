@@ -1413,6 +1413,63 @@ func TestValidateAndAddEndpoints(t *testing.T) {
 	}
 }
 
+func TestValidatePod(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		desc   string
+		pod    *v1.Pod
+		expect bool
+	}{
+		{
+			desc: "a valid pod with phase running",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testNamespace,
+					Name:      "pod1",
+				},
+				Status: v1.PodStatus{
+					Phase: v1.PodRunning,
+				},
+			},
+			expect: true,
+		},
+		{
+			desc: "a terminal pod with phase failed",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testNamespace,
+					Name:      "pod2",
+				},
+				Status: v1.PodStatus{
+					Phase: v1.PodFailed,
+				},
+			},
+			expect: false,
+		},
+		{
+			desc: "a terminal pod with phase succeeded",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testNamespace,
+					Name:      "pod3",
+				},
+				Status: v1.PodStatus{
+					Phase: v1.PodSucceeded,
+				},
+			},
+			expect: false,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			if got := validatePod(tc.pod); got != tc.expect {
+				t.Errorf("validatePod() = %t, expected %t", got, tc.expect)
+			}
+		})
+	}
+}
+
 func addPodsToLister(podLister cache.Indexer) {
 	// add all pods in default endpoint into podLister
 	for i := 1; i <= 6; i++ {
@@ -1420,6 +1477,9 @@ func addPodsToLister(podLister cache.Indexer) {
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: testNamespace,
 				Name:      fmt.Sprintf("pod%v", i),
+			},
+			Status: corev1.PodStatus{
+				Phase: v1.PodRunning,
 			},
 			Spec: corev1.PodSpec{
 				NodeName: testInstance1,
@@ -1432,6 +1492,9 @@ func addPodsToLister(podLister cache.Indexer) {
 				Namespace: testNamespace,
 				Name:      fmt.Sprintf("pod%v", i),
 			},
+			Status: corev1.PodStatus{
+				Phase: v1.PodRunning,
+			},
 			Spec: corev1.PodSpec{
 				NodeName: testInstance4,
 			},
@@ -1443,6 +1506,9 @@ func addPodsToLister(podLister cache.Indexer) {
 			Namespace: testNamespace,
 			Name:      "pod3",
 		},
+		Status: corev1.PodStatus{
+			Phase: v1.PodRunning,
+		},
 		Spec: corev1.PodSpec{
 			NodeName: testInstance2,
 		},
@@ -1451,6 +1517,9 @@ func addPodsToLister(podLister cache.Indexer) {
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: testNamespace,
 			Name:      "pod4",
+		},
+		Status: corev1.PodStatus{
+			Phase: v1.PodRunning,
 		},
 		Spec: corev1.PodSpec{
 			NodeName: testInstance3,
@@ -1461,6 +1530,9 @@ func addPodsToLister(podLister cache.Indexer) {
 			Namespace: testNamespace,
 			Name:      "pod7",
 		},
+		Status: corev1.PodStatus{
+			Phase: v1.PodRunning,
+		},
 		Spec: corev1.PodSpec{
 			NodeName: testInstance2,
 		},
@@ -1469,6 +1541,9 @@ func addPodsToLister(podLister cache.Indexer) {
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: testNamespace,
 			Name:      "pod10",
+		},
+		Status: corev1.PodStatus{
+			Phase: v1.PodRunning,
 		},
 		Spec: corev1.PodSpec{
 			NodeName: testInstance3,
