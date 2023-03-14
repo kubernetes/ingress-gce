@@ -28,6 +28,7 @@ import (
 	"k8s.io/client-go/util/flowcontrol"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/ratelimit/metrics"
+	"k8s.io/ingress-gce/pkg/utils/slice"
 	"k8s.io/klog/v2"
 )
 
@@ -134,6 +135,9 @@ func constructRateLimitKey(param string) (cloud.RateLimitKey, error) {
 	}
 	// TODO(rramkumar): Add another layer of validation here?
 	version := meta.Version(params[0])
+	if !slice.Contains(meta.AllVersions, version, nil) {
+		return retVal, fmt.Errorf("the specified version is unknown")
+	}
 	service := params[1]
 	operation := params[2]
 	retVal = cloud.RateLimitKey{
