@@ -1496,7 +1496,7 @@ func TestList(t *testing.T) {
 	expected := []string{"k8s-um-namespace1-test--uid1", "k8s-um-old-l7--uid1"}
 
 	for _, name := range expected {
-		if !slice.ContainsString(umNames, name, nil) {
+		if !slice.Contains(umNames, name, nil) {
 			t.Fatalf("j.pool.List(%q, %q) returned names %v, want %v", key, defaultVersion, umNames, expected)
 		}
 	}

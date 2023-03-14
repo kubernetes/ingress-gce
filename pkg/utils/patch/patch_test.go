@@ -149,7 +149,7 @@ func TestPatchServiceObjectMetadata(t *testing.T) {
 			svc:  newTestService("ns5", "delete-finalizer-svc"),
 			newMetaFunc: func(svc *apiv1.Service) *apiv1.Service {
 				ret := svc.DeepCopy()
-				ret.Finalizers = slice.RemoveString(ret.Finalizers, testFinalizer, nil)
+				ret.Finalizers = slice.Remove(ret.Finalizers, testFinalizer, nil)
 				return ret
 			},
 		},
@@ -167,7 +167,7 @@ func TestPatchServiceObjectMetadata(t *testing.T) {
 			svc:  newTestService("ns7", "delete-annotation-and-finalizer-svc"),
 			newMetaFunc: func(svc *apiv1.Service) *apiv1.Service {
 				ret := svc.DeepCopy()
-				ret.Finalizers = slice.RemoveString(ret.Finalizers, testFinalizer, nil)
+				ret.Finalizers = slice.Remove(ret.Finalizers, testFinalizer, nil)
 				delete(ret.Annotations, testAnnotationKey)
 				return ret
 			},

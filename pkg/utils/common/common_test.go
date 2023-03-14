@@ -73,7 +73,7 @@ func TestPatchIngressObjectMetadata(t *testing.T) {
 			ing:  newTestIngress("ns5", "delete-finalizer-ing"),
 			newMetaFunc: func(ing *v1.Ingress) *v1.Ingress {
 				ret := ing.DeepCopy()
-				ret.Finalizers = slice.RemoveString(ret.Finalizers, testFinalizer, nil)
+				ret.Finalizers = slice.Remove(ret.Finalizers, testFinalizer, nil)
 				return ret
 			},
 		},
