@@ -54,16 +54,16 @@ var (
 		Subsystem: workQueueSubsystem,
 		Name:      queueLatencyKey,
 		Help:      "Time item remains in the workqueue before processing (seconds).",
-		// custom buckets - [1.75s,3.06s, 5.35s, 9.37s, 16.41s, 28.72s, 50.26s, 87.96s(1,5min), 153.93s(2,5min), 269.38s(4,5min),	471.43s(~8min), 825s(~14), 1443.75s(~24min), 2526.57s(~42min), 4421.51s(~73min), 7737.64s(~129min), 13540.87s(225min), +Inf]
-		Buckets: prometheus.ExponentialBuckets(1, 1.75, 18),
+		// custom buckets - [0.005s, 0.01s, 0.1s, 0.25s, 0.5s, 1s, 1.75s, 3.06s, 5.35s, 9.37s, 16.41s, 28.72s, 50.26s, 87.96s(1.5min), 153.93s(2.5min), 269.38s(4.5min), 471.43s(~8min), 825s(~14), 1443.75s(~24min), 2526.57s(~42min), 4421.51s(~73min), 7737.64s(~129min), 13540.87s(225min), +Inf]
+		Buckets: append([]float64{0.005, 0.01, 0.1, 0.25, 0.5}, prometheus.ExponentialBuckets(1, 1.75, 18)...),
 	}, []string{nameLabel})
 
 	workDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Subsystem: workQueueSubsystem,
 		Name:      workDurationKey,
 		Help:      "Time item takes to reconcile after dequeuing from the workqueue (seconds).",
-		// custom buckets - [1.75s,3.06s, 5.35s, 9.37s, 16.41s, 28.72s, 50.26s, 87.96s(1,5min), 153.93s(2,5min), 269.38s(4,5min),	471.43s(~8min), 825s(~14), 1443.75s(~24min), 2526.57s(~42min), 4421.51s(~73min), 7737.64s(~129min), 13540.87s(225min), +Inf]
-		Buckets: prometheus.ExponentialBuckets(1, 1.75, 18),
+		// custom buckets - [0.005s, 0.01s, 0.1s, 0.25s, 0.5s, 1s, 1.75s, 3.06s, 5.35s, 9.37s, 16.41s, 28.72s, 50.26s, 87.96s(1.5min), 153.93s(2.5min), 269.38s(4.5min), 471.43s(~8min), 825s(~14), 1443.75s(~24min), 2526.57s(~42min), 4421.51s(~73min), 7737.64s(~129min), 13540.87s(225min), +Inf]
+		Buckets: append([]float64{0.005, 0.01, 0.1, 0.25, 0.5}, prometheus.ExponentialBuckets(1, 1.75, 18)...),
 	}, []string{nameLabel})
 
 	unfinished = prometheus.NewGaugeVec(prometheus.GaugeOpts{
