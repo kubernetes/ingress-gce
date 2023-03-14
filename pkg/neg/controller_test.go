@@ -386,6 +386,7 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 	if err = controller.serviceLister.Update(svc); err != nil {
 		t.Fatalf("Failed to update service lister: %v", err)
 	}
+	rebuildSvcNegCache(t, manager, manager.svcNegClient, testServiceNamespace)
 	if err = controller.processService(svcKey); err != nil {
 		t.Fatalf("Failed to process updated L4 ILB service: %v", err)
 	}

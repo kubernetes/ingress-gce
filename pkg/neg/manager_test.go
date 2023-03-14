@@ -248,6 +248,7 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 		} else {
 			if tc.expectEnsureError {
 				if err := wait.Poll(time.Second, 10*time.Second, func() (bool, error) {
+					rebuildSvcNegCache(t, manager, manager.svcNegClient, tc.namespace)
 					if _, _, err := manager.EnsureSyncers(tc.namespace, tc.name, tc.portInfoMap); err != nil {
 						return false, nil
 					}
@@ -257,6 +258,7 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 				}
 			} else {
 				// Expect EnsureSyncers returns successfully immediately
+				rebuildSvcNegCache(t, manager, manager.svcNegClient, tc.namespace)
 				if _, _, err := manager.EnsureSyncers(tc.namespace, tc.name, tc.portInfoMap); err != nil {
 					t.Errorf("For case %q, failed to ensure syncer %s/%s-%v: %v", tc.desc, tc.namespace, tc.name, tc.portInfoMap, err)
 				}
@@ -780,6 +782,7 @@ func TestNegCRCreations(t *testing.T) {
 		t.Errorf("expect service key %q to be registered", svcKey.Key())
 	}
 
+	rebuildSvcNegCache(t, manager, svcNegClient, svcNamespace)
 	// Second call of EnsureSyncers shouldn't cause any changes or errors
 	if _, _, err := manager.EnsureSyncers(svcNamespace, svcName, expectedPortInfoMap); err != nil {
 		t.Errorf("failed to ensure syncer after creating %s/%s-%v: %v", svcNamespace, svcName, expectedPortInfoMap, err)
@@ -803,10 +806,12 @@ func TestNegCRCreations(t *testing.T) {
 		}
 	}
 
+	rebuildSvcNegCache(t, manager, svcNegClient, svcNamespace)
 	// EnsureSyncers should recreate the deleted CRs
 	if _, _, err := manager.EnsureSyncers(svcNamespace, svcName, expectedPortInfoMap); err != nil {
 		t.Errorf("failed to ensure syncer after creating %s/%s-%v: %v", svcNamespace, svcName, expectedPortInfoMap, err)
 	}
+	rebuildSvcNegCache(t, manager, svcNegClient, svcNamespace)
 
 	for _, expectedInfo := range expectedPortInfoMap {
 		neg, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Get(context2.TODO(), expectedInfo.NegName, metav1.GetOptions{})
@@ -989,6 +994,7 @@ func TestNegCRDuplicateCreations(t *testing.T) {
 				map[negtypes.SvcPortTuple]string{svcTuple1: customNegName},
 			)
 
+			rebuildSvcNegCache(t, manager, manager.svcNegClient, namespace)
 			_, _, err := manager.EnsureSyncers(namespace, svc1.Name, portInfoMap)
 			if tc.expectErr && err == nil {
 				t.Errorf("expected error when ensuring syncer %s/%s %+v", namespace, svc1.Name, portInfoMap)
@@ -1820,4 +1826,11 @@ func populateSvcNegCache(t *testing.T, manager *syncerManager, svcNegClient svcn
 		negCR := cr
 		manager.svcNegLister.Add(&negCR)
 	}
+}
+
+// rebuildSvcNegCache will clear the the manager's svcNeg cache and repopulate
+// it with items from the provided `namespace` using the `svcNegClient`
+func rebuildSvcNegCache(t *testing.T, manager *syncerManager, svcNegClient svcnegclient.Interface, namespace string) {
+	manager.svcNegLister.Replace([]any{}, "")
+	populateSvcNegCache(t, manager, svcNegClient, namespace)
 }
