@@ -72,7 +72,10 @@ func calculateDiff(old, new *translator.HealthCheck, c *backendconfigv1.HealthCh
 	if c.Port != nil && old.Port != new.Port {
 		changes.add("Port", strconv.FormatInt(old.Port, 10), strconv.FormatInt(new.Port, 10))
 	}
-	if old.Description != new.Description {
+
+	// Don't update Description if there are no other changes.
+	// In the past, Description was not always updated, and we want to avoid triggering other changes just to correct incorrect Descriptions.
+	if changes.hasDiff() && old.Description != new.Description {
 		changes.add("Description", old.Description, new.Description)
 	}
 
