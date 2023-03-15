@@ -531,7 +531,7 @@ func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 
 	// TODO(songrx1997): Add endpoint annotations for the test after calculation code is in
 	for _, tc := range testCases {
-		retSet, retMap, _, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()), zoneGetter, tc.portName, tc.networkEndpointType, negtypes.PodLabelPropagationConfig{})
+		retSet, retMap, _, _, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()), zoneGetter, tc.portName, tc.networkEndpointType, negtypes.PodLabelPropagationConfig{})
 		if err != nil {
 			t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
 		}
@@ -827,7 +827,7 @@ func TestMakeEndpointBatch(t *testing.T) {
 	for _, negType := range []negtypes.NetworkEndpointType{negtypes.VmIpPortEndpointType, negtypes.VmIpEndpointType} {
 		for _, tc := range testCases {
 			endpointSet, endpointMap := genTestEndpoints(tc.endpointNum, negType)
-			out, err := makeEndpointBatch(endpointSet, negType)
+			out, err := makeEndpointBatch(endpointSet, negType, negtypes.EndpointAnnotationMap{})
 
 			if err != nil {
 				t.Errorf("Expect err = nil, but got %v", err)

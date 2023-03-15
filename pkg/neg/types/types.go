@@ -375,3 +375,6 @@ type Label struct {
 	ShortKey          string
 	MaxLabelSizeBytes int
 }
+
+// EndpointAnnotationMap is a map from network endpoint to endpoint annotations.
+type EndpointAnnotationMap map[NetworkEndpoint]map[string]string

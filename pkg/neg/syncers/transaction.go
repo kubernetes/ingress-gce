@@ -227,6 +227,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 
 	var targetMap map[string]negtypes.NetworkEndpointSet
 	var endpointPodMap negtypes.EndpointPodMap
+	var endpointAnnotationMap negtypes.EndpointAnnotationMap
 	var dupCount int
 
 	slices, err := s.endpointSliceLister.ByIndex(endpointslices.EndpointSlicesByServiceIndex, endpointslices.FormatEndpointSlicesServiceKey(s.Namespace, s.Name))
@@ -259,7 +260,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 
 	}
 	endpointsData := negtypes.EndpointsDataFromEndpointSlices(endpointSlices)
-	targetMap, endpointPodMap, dupCount, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
+	targetMap, endpointPodMap, endpointAnnotationMap, dupCount, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
 	if err != nil {
 		s.setErrorState(s.getErrorStateReason(err))
 		return fmt.Errorf("endpoints calculation error in mode %q, err: %w", s.endpointsCalculator.Mode(), err)
@@ -296,7 +297,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	s.logEndpoints(addEndpoints, "adding endpoint")
 	s.logEndpoints(removeEndpoints, "removing endpoint")
 
-	return s.syncNetworkEndpoints(addEndpoints, removeEndpoints)
+	return s.syncNetworkEndpoints(addEndpoints, removeEndpoints, endpointAnnotationMap)
 }
 
 // syncLock must already be acquired before execution
@@ -384,7 +385,7 @@ func (s *transactionSyncer) ValidateEndpointBatch(err error, operation transacti
 }
 
 // syncNetworkEndpoints spins off go routines to execute NEG operations
-func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints map[string]negtypes.NetworkEndpointSet) error {
+func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints map[string]negtypes.NetworkEndpointSet, endpointsAnnotationMap negtypes.EndpointAnnotationMap) error {
 	var wg sync.WaitGroup
 
 	syncFunc := func(endpointMap map[string]negtypes.NetworkEndpointSet, operation transactionOp) error {
@@ -394,7 +395,7 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 				continue
 			}
 
-			batch, err := makeEndpointBatch(endpointSet, s.NegType)
+			batch, err := makeEndpointBatch(endpointSet, s.NegType, endpointsAnnotationMap)
 			if err != nil {
 				return err
 			}

@@ -218,13 +218,14 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 }
 
 // toZoneNetworkEndpointMap translates addresses in endpoints object into zone and endpoints map, and also return the count for duplicated endpoints
-func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.ZoneGetter, servicePortName string, networkEndpointType negtypes.NetworkEndpointType, lpConfig negtypes.PodLabelPropagationConfig) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, int, error) {
+func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.ZoneGetter, servicePortName string, networkEndpointType negtypes.NetworkEndpointType, lpConfig negtypes.PodLabelPropagationConfig) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, negtypes.EndpointAnnotationMap, int, error) {
 	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
 	networkEndpointPodMap := negtypes.EndpointPodMap{}
+	networkEndpointAnnotationMap := negtypes.EndpointAnnotationMap{}
 	dupCount := 0
 	if eds == nil {
 		klog.Errorf("Endpoint object is nil")
-		return zoneNetworkEndpointMap, networkEndpointPodMap, dupCount, nil
+		return zoneNetworkEndpointMap, networkEndpointPodMap, networkEndpointAnnotationMap, dupCount, nil
 	}
 	var foundMatchingPort bool
 	for _, ed := range eds {
@@ -251,7 +252,7 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 			}
 			if endpointAddress.NodeName == nil || len(*endpointAddress.NodeName) == 0 {
 				klog.V(2).Infof("Detected unexpected error when checking missing nodeName. Endpoint %q in Endpoints %s/%s does not have an associated node. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
-				return nil, nil, dupCount, negtypes.ErrEPMissingNodeName
+				return nil, nil, nil, dupCount, negtypes.ErrEPMissingNodeName
 			}
 			if endpointAddress.TargetRef == nil {
 				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated pod. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
@@ -259,11 +260,11 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 			}
 			zone, err := zoneGetter.GetZoneForNode(*endpointAddress.NodeName)
 			if err != nil {
-				return nil, nil, dupCount, negtypes.ErrNodeNotFound
+				return nil, nil, nil, dupCount, negtypes.ErrNodeNotFound
 			}
 			if zone == "" {
 				klog.V(2).Info("Detected unexpected error when checking missing zone")
-				return nil, nil, dupCount, negtypes.ErrEPMissingZone
+				return nil, nil, nil, dupCount, negtypes.ErrEPMissingZone
 			}
 			if zoneNetworkEndpointMap[zone] == nil {
 				zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
@@ -295,7 +296,7 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 	if len(zoneNetworkEndpointMap) == 0 || len(networkEndpointPodMap) == 0 {
 		klog.V(3).Infof("Generated empty endpoint maps (zoneNetworkEndpointMap: %+v, networkEndpointPodMap: %v) from Endpoints object: %+v", zoneNetworkEndpointMap, networkEndpointPodMap, eds)
 	}
-	return zoneNetworkEndpointMap, networkEndpointPodMap, dupCount, nil
+	return zoneNetworkEndpointMap, networkEndpointPodMap, networkEndpointAnnotationMap, dupCount, nil
 }
 
 func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGetter negtypes.ZoneGetter,
@@ -439,7 +440,7 @@ func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter negtypes.
 
 // makeEndpointBatch return a batch of endpoint from the input and remove the endpoints from input set
 // The return map has the encoded endpoint as key and GCE network endpoint object as value
-func makeEndpointBatch(endpoints negtypes.NetworkEndpointSet, negType negtypes.NetworkEndpointType) (map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, error) {
+func makeEndpointBatch(endpoints negtypes.NetworkEndpointSet, negType negtypes.NetworkEndpointType, endpointAnnotationMap negtypes.EndpointAnnotationMap) (map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, error) {
 	endpointBatch := map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint{}
 
 	for i := 0; i < MAX_NETWORK_ENDPOINTS_PER_BATCH; i++ {

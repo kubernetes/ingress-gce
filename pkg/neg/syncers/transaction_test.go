@@ -201,7 +201,7 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 		}
 
 		for _, tc := range testCases {
-			err := transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, tc.removeEndpoints)
+			err := transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, tc.removeEndpoints, negtypes.EndpointAnnotationMap{})
 			if err != nil {
 				t.Errorf("For case %q, syncNetworkEndpoints() got %v, want nil", tc.desc, err)
 			}
@@ -1492,7 +1492,7 @@ func unionEndpointMap(m1, m2 negtypes.EndpointPodMap) negtypes.EndpointPodMap {
 }
 
 func generateEndpointBatch(endpointSet negtypes.NetworkEndpointSet) map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint {
-	ret, _ := makeEndpointBatch(endpointSet, negtypes.VmIpPortEndpointType)
+	ret, _ := makeEndpointBatch(endpointSet, negtypes.VmIpPortEndpointType, negtypes.EndpointAnnotationMap{})
 	return ret
 }
 
