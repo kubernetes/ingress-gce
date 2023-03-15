@@ -65,6 +65,12 @@ const (
 	// used for health checking.
 	useServingPortSpecification = "USE_SERVING_PORT"
 
+	DescriptionForDefaultHealthChecks            = "Default kubernetes L7 Loadbalancing health check."
+	DescriptionForDefaultNEGHealthChecks         = "Default kubernetes L7 Loadbalancing health check for NEG."
+	DescriptionForDefaultILBHealthChecks         = "Default kubernetes L7 Loadbalancing health check for ILB."
+	DescriptionForHealthChecksFromReadinessProbe = "Kubernetes L7 health check generated with readiness probe settings."
+	DescriptionForHealthChecksFromBackendConfig  = "Kubernetes L7 health check generated with BackendConfig CRD."
+
 	// TODO: revendor the GCE API go client so that this error will not be hit.
 	newHealthCheckErrorMessageTemplate = "the %v health check configuration on the existing health check %v is nil. " +
 		"This is usually caused by an application protocol change on the k8s service spec. " +
@@ -217,6 +223,8 @@ func (hc *HealthCheck) UpdateFromBackendConfig(c *backendconfigv1.HealthCheckCon
 		// This override is necessary regardless of type
 		hc.PortSpecification = "USE_FIXED_PORT"
 	}
+
+	hc.Description = DescriptionForHealthChecksFromBackendConfig
 }
 
 // DefaultHealthCheck simply returns the default health check.
@@ -231,7 +239,7 @@ func DefaultHealthCheck(port int64, protocol annotations.AppProtocol) *HealthChe
 		HealthyThreshold: defaultHealthyThreshold,
 		// Number of healthchecks to fail before the vm is deemed unhealthy.
 		UnhealthyThreshold: defaultUnhealthyThreshold,
-		Description:        "Default kubernetes L7 Loadbalancing health check.",
+		Description:        DescriptionForDefaultHealthChecks,
 		Type:               string(protocol),
 	}
 	return &HealthCheck{
@@ -255,7 +263,7 @@ func DefaultNEGHealthCheck(protocol annotations.AppProtocol) *HealthCheck {
 		HealthyThreshold: defaultHealthyThreshold,
 		// Number of healthchecks to fail before the vm is deemed unhealthy.
 		UnhealthyThreshold: defaultNEGUnhealthyThreshold,
-		Description:        "Default kubernetes L7 Loadbalancing health check for NEG.",
+		Description:        DescriptionForDefaultNEGHealthChecks,
 		Type:               string(protocol),
 	}
 	return &HealthCheck{
@@ -278,7 +286,7 @@ func DefaultILBHealthCheck(protocol annotations.AppProtocol) *HealthCheck {
 		HealthyThreshold: defaultHealthyThreshold,
 		// Number of healthchecks to fail before the vm is deemed unhealthy.
 		UnhealthyThreshold: defaultNEGUnhealthyThreshold,
-		Description:        "Default kubernetes L7 Loadbalancing health check for ILB.",
+		Description:        DescriptionForDefaultILBHealthChecks,
 		Type:               string(protocol),
 	}
 
@@ -326,5 +334,5 @@ func ApplyProbeSettingsToHC(p *v1.Probe, hc *HealthCheck) {
 		hc.CheckIntervalSec = int64(p.PeriodSeconds) + int64(defaultHealthCheckInterval.Seconds())
 	}
 
-	hc.Description = "Kubernetes L7 health check generated with readiness probe settings."
+	hc.Description = DescriptionForHealthChecksFromReadinessProbe
 }
