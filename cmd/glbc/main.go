@@ -355,6 +355,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		flags.F.RunL4Controller,
 		flags.F.EnableNonGCPMode,
 		enableAsm,
+		flags.F.EnableDegradedMode,
 		asmServiceNEGSkipNamespaces,
 		lpConfig,
 		klog.TODO(), // TODO(#1761): Replace this with a top level logger configuration once one is available.

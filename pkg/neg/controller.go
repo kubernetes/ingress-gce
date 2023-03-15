@@ -128,6 +128,7 @@ func NewController(
 	runL4Controller bool,
 	enableNonGcpMode bool,
 	enableAsm bool,
+	enableDegradedMode bool,
 	asmServiceNEGSkipNamespaces []string,
 	lpConfig negtypes.PodLabelPropagationConfig,
 	logger klog.Logger,
@@ -168,6 +169,7 @@ func NewController(
 		svcNegInformer.GetIndexer(),
 		syncerMetrics,
 		enableNonGcpMode,
+		enableDegradedMode,
 		numGCWorkers,
 		lpConfig,
 		logger)

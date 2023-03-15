@@ -30,7 +30,6 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	corev1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
-	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -105,9 +104,6 @@ type transactionSyncer struct {
 
 	// syncCollector collect sync related metrics
 	syncCollector metrics.SyncerMetricsCollector
-
-	// enableDegradedMode indicates whether we do endpoint calculation using degraded mode procedures
-	enableDegradedMode bool
 }
 
 func NewTransactionSyncer(
@@ -151,7 +147,6 @@ func NewTransactionSyncer(
 		customName:          customName,
 		errorState:          "",
 		logger:              logger,
-		enableDegradedMode:  flags.F.EnableDegradedMode,
 	}
 	// Syncer implements life cycle logic
 	syncer := newSyncer(negSyncerKey, serviceLister, recorder, ts, logger)
@@ -161,7 +156,7 @@ func NewTransactionSyncer(
 	return syncer
 }
 
-func GetEndpointsCalculator(nodeLister, podLister cache.Indexer, zoneGetter negtypes.ZoneGetter, syncerKey negtypes.NegSyncerKey, mode negtypes.EndpointsCalculatorMode, logger klog.Logger, lpConfig negtypes.PodLabelPropagationConfig) negtypes.NetworkEndpointsCalculator {
+func GetEndpointsCalculator(nodeLister, podLister, serviceLister cache.Indexer, zoneGetter negtypes.ZoneGetter, syncerKey negtypes.NegSyncerKey, mode negtypes.EndpointsCalculatorMode, enableDegradedMode bool, logger klog.Logger, lpConfig negtypes.PodLabelPropagationConfig) negtypes.NetworkEndpointsCalculator {
 	serviceKey := strings.Join([]string{syncerKey.Name, syncerKey.Namespace}, "/")
 	if syncerKey.NegType == negtypes.VmIpEndpointType {
 		nodeLister := listers.NewNodeLister(nodeLister)
@@ -172,8 +167,8 @@ func GetEndpointsCalculator(nodeLister, podLister cache.Indexer, zoneGetter negt
 			return NewClusterL4ILBEndpointsCalculator(nodeLister, zoneGetter, serviceKey, logger)
 		}
 	}
-	return NewL7EndpointsCalculator(zoneGetter, podLister, syncerKey.PortTuple.Name,
-		syncerKey.NegType, logger, lpConfig)
+	return NewL7EndpointsCalculator(zoneGetter, podLister, nodeLister, serviceLister, syncerKey.PortTuple.Name,
+		syncerKey.NegType, enableDegradedMode, logger, lpConfig)
 }
 
 func (s *transactionSyncer) sync() error {
@@ -260,15 +255,18 @@ func (s *transactionSyncer) syncInternalImpl() error {
 
 	}
 	endpointsData := negtypes.EndpointsDataFromEndpointSlices(endpointSlices)
-	targetMap, endpointPodMap, dupCount, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
+	targetMap, endpointPodMap, dupCount, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap, s.inErrorState())
 	if err != nil {
 		return err
 	}
 	err = s.endpointsCalculator.ValidateEndpoints(endpointsData, endpointPodMap, dupCount)
-	if err != nil {
-		// TODO(cheungdavid): return error from ValidateEndpoint after degraded mode is implemented
-		// for now we don't return error so it won't break the sync
-		s.setErrorState(s.getErrorStateReason(err))
+	// we only validate calculated endpoint in normal mode
+	// since we filter invalid endpoints in degraded mode, so the counts won't match
+	if !s.inErrorState() {
+		err = s.endpointsCalculator.ValidateEndpoints(endpointsData, endpointPodMap, dupCount)
+		if err != nil {
+			return err
+		}
 	}
 	s.logStats(targetMap, "desired NEG endpoints")
 
