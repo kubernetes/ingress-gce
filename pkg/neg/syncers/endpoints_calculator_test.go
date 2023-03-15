@@ -106,7 +106,7 @@ func TestLocalGetEndpointSet(t *testing.T) {
 	ec := NewLocalL4ILBEndpointsCalculator(nodeLister, zoneGetter, svcKey, klog.TODO())
 	for _, tc := range testCases {
 		createNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeReadyStatusMap, transactionSyncer.nodeLister)
-		retSet, _, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
+		retSet, _, _, err := ec.CalculateEndpoints(tc.endpointsData, nil, false)
 		if err != nil {
 			t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
 		}
@@ -198,7 +198,7 @@ func TestClusterGetEndpointSet(t *testing.T) {
 	ec := NewClusterL4ILBEndpointsCalculator(nodeLister, zoneGetter, svcKey, klog.TODO())
 	for _, tc := range testCases {
 		createNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeReadyStatusMap, transactionSyncer.nodeLister)
-		retSet, _, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
+		retSet, _, _, err := ec.CalculateEndpoints(tc.endpointsData, nil, false)
 		if err != nil {
 			t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
 		}
@@ -232,10 +232,11 @@ func TestValidateEndpoints(t *testing.T) {
 	zoneGetter := negtypes.NewFakeZoneGetter()
 	testContext := negtypes.NewTestContext()
 	podLister := testContext.PodInformer.GetIndexer()
-	nodeLister := listers.NewNodeLister(testContext.NodeInformer.GetIndexer())
-	L7EndpointsCalculator := NewL7EndpointsCalculator(zoneGetter, podLister, testPortName, negtypes.VmIpPortEndpointType, klog.TODO(), negtypes.PodLabelPropagationConfig{})
-	L4LocalEndpointCalculator := NewLocalL4ILBEndpointsCalculator(nodeLister, zoneGetter, svcKey, klog.TODO())
-	L4ClusterEndpointCalculator := NewClusterL4ILBEndpointsCalculator(nodeLister, zoneGetter, svcKey, klog.TODO())
+	nodeLister := testContext.NodeInformer.GetIndexer()
+	serviceLister := testContext.ServiceInformer.GetIndexer()
+	L7EndpointsCalculator := NewL7EndpointsCalculator(zoneGetter, podLister, nodeLister, serviceLister, testPortName, negtypes.VmIpPortEndpointType, false, klog.TODO(), negtypes.PodLabelPropagationConfig{})
+	L4LocalEndpointCalculator := NewLocalL4ILBEndpointsCalculator(listers.NewNodeLister(nodeLister), zoneGetter, svcKey, klog.TODO())
+	L4ClusterEndpointCalculator := NewClusterL4ILBEndpointsCalculator(listers.NewNodeLister(nodeLister), zoneGetter, svcKey, klog.TODO())
 
 	testEndpointPodMap := map[negtypes.NetworkEndpoint]types.NamespacedName{
 		{
@@ -811,6 +812,128 @@ func TestValidateEndpoints(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			if got := tc.ec.ValidateEndpoints(tc.endpointsData, tc.endpointPodMap, tc.dupCount); !errors.Is(got, tc.expect) {
 				t.Errorf("ValidateEndpoints() = %t,  expected %t", got, tc.expect)
+			}
+		})
+	}
+}
+
+// TestEnableDegradedMode verifies if DegradedMode has been correctly enabled for L7 endpoint calculator
+func TestEnableDegradedMode(t *testing.T) {
+	t.Parallel()
+
+	testPortName := ""
+	zoneGetter := negtypes.NewFakeZoneGetter()
+	testContext := negtypes.NewTestContext()
+	podLister := testContext.PodInformer.GetIndexer()
+	nodeLister := testContext.NodeInformer.GetIndexer()
+	serviceLister := testContext.ServiceInformer.GetIndexer()
+	addPodsToLister(podLister)
+
+	for i := 1; i <= 4; i++ {
+		nodeLister.Add(&v1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: fmt.Sprintf("instance%v", i),
+			},
+		})
+	}
+
+	validEndpointData := negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices())
+	invalidEndpointData := negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices())
+	invalidEndpointData[0].Addresses[0].NodeName = nil
+
+	endpointSets := map[string]negtypes.NetworkEndpointSet{
+		negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+			networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"),
+			networkEndpointFromEncodedEndpoint("10.100.1.2||instance1||80"),
+			networkEndpointFromEncodedEndpoint("10.100.1.3||instance1||80"),
+			networkEndpointFromEncodedEndpoint("10.100.1.4||instance1||80"),
+			networkEndpointFromEncodedEndpoint("10.100.2.1||instance2||80")),
+		negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
+			networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80")),
+	}
+	endpointMap := negtypes.EndpointPodMap{
+		networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod1"},
+		networkEndpointFromEncodedEndpoint("10.100.1.2||instance1||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod2"},
+		networkEndpointFromEncodedEndpoint("10.100.2.1||instance2||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod3"},
+		networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod4"},
+		networkEndpointFromEncodedEndpoint("10.100.1.3||instance1||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod5"},
+		networkEndpointFromEncodedEndpoint("10.100.1.4||instance1||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod6"},
+	}
+	testCases := []struct {
+		desc         string
+		ec           negtypes.NetworkEndpointsCalculator
+		endpointData []negtypes.EndpointsData
+		inErrorState bool
+		expectedSets map[string]negtypes.NetworkEndpointSet
+		expectedMap  negtypes.EndpointPodMap
+		expectErr    error
+	}{
+		{
+			desc:         "disable degraded mode, not in error state, using valid endpoint",
+			ec:           NewL7EndpointsCalculator(zoneGetter, podLister, nodeLister, serviceLister, testPortName, negtypes.VmIpPortEndpointType, false, klog.TODO(), negtypes.PodLabelPropagationConfig{}),
+			endpointData: validEndpointData,
+			inErrorState: true,
+			expectedSets: endpointSets,
+			expectedMap:  endpointMap,
+			expectErr:    nil,
+		},
+		{
+			desc:         "disable degraded mode, not in error state, using invalid endpoint",
+			ec:           NewL7EndpointsCalculator(zoneGetter, podLister, nodeLister, serviceLister, testPortName, negtypes.VmIpPortEndpointType, false, klog.TODO(), negtypes.PodLabelPropagationConfig{}),
+			endpointData: invalidEndpointData,
+			inErrorState: false,
+			expectedSets: nil,
+			expectedMap:  nil,
+			expectErr:    negtypes.ErrEPNodeMissing,
+		},
+		{
+			desc:         "disable degraded mode, in error state, using invalid endpoint",
+			ec:           NewL7EndpointsCalculator(zoneGetter, podLister, nodeLister, serviceLister, testPortName, negtypes.VmIpPortEndpointType, false, klog.TODO(), negtypes.PodLabelPropagationConfig{}),
+			endpointData: invalidEndpointData,
+			inErrorState: true,
+			expectedSets: nil,
+			expectedMap:  nil,
+			expectErr:    negtypes.ErrEPNodeMissing,
+		},
+		{
+			desc:         "enable degraded mode, not in error state, using valid endpoint",
+			ec:           NewL7EndpointsCalculator(zoneGetter, podLister, nodeLister, serviceLister, testPortName, negtypes.VmIpPortEndpointType, true, klog.TODO(), negtypes.PodLabelPropagationConfig{}),
+			endpointData: validEndpointData,
+			inErrorState: false,
+			expectedSets: endpointSets,
+			expectedMap:  endpointMap,
+			expectErr:    nil,
+		},
+		{
+			desc:         "enable degraded mode, not in error state, using invalid endpoint",
+			ec:           NewL7EndpointsCalculator(zoneGetter, podLister, nodeLister, serviceLister, testPortName, negtypes.VmIpPortEndpointType, true, klog.TODO(), negtypes.PodLabelPropagationConfig{}),
+			endpointData: invalidEndpointData,
+			inErrorState: false,
+			expectedSets: nil,
+			expectedMap:  nil,
+			expectErr:    negtypes.ErrEPNodeMissing,
+		},
+		{
+			desc:         "enable degraded mode, in error state, using invalid endpoint",
+			ec:           NewL7EndpointsCalculator(zoneGetter, podLister, nodeLister, serviceLister, testPortName, negtypes.VmIpPortEndpointType, true, klog.TODO(), negtypes.PodLabelPropagationConfig{}),
+			endpointData: invalidEndpointData,
+			inErrorState: true,
+			expectedSets: endpointSets,
+			expectedMap:  endpointMap,
+			expectErr:    nil,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			retSet, retMap, _, err := tc.ec.CalculateEndpoints(tc.endpointData, nil, tc.inErrorState)
+			if !reflect.DeepEqual(retSet, tc.expectedSets) {
+				t.Errorf("For case %q, expecting endpoint set %v, but got %v.", tc.desc, tc.expectedSets, retSet)
+			}
+			if !reflect.DeepEqual(retMap, tc.expectedMap) {
+				t.Errorf("For case %q, expecting endpoint map %v, but got %v.", tc.desc, tc.expectedMap, retMap)
+			}
+			if !errors.Is(err, tc.expectErr) {
+				t.Errorf("For case %q, expect error %v, but got %v.", tc.desc, tc.expectErr, err)
 			}
 		})
 	}

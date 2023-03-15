@@ -315,6 +315,13 @@ type AddressData struct {
 	AddressType discovery.AddressType
 }
 
+type ZoneNetworkEndpointMapResult struct {
+	NetworkEndpointSet map[string]NetworkEndpointSet
+	EndpointPodMap     EndpointPodMap
+	DupCount           int
+	Err                error
+}
+
 // Converts API EndpointSlice list to the EndpointsData abstraction.
 // Terminating endpoints are ignored.
 func EndpointsDataFromEndpointSlices(slices []*discovery.EndpointSlice) []EndpointsData {

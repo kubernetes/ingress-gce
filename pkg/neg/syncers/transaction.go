@@ -18,7 +18,6 @@ package syncers
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -30,7 +29,6 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	corev1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
-	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -101,13 +99,10 @@ type transactionSyncer struct {
 	// 3. Attach/Detach EP fails due to incorrect batch information
 	// 4. Endpoint count from EPS or calculated endpoint list is 0
 	// Need to grab syncLock first for any reads or writes based on this value
-	errorState string
+	errorState error
 
 	// syncCollector collect sync related metrics
 	syncCollector metrics.SyncerMetricsCollector
-
-	// enableDegradedMode indicates whether we do endpoint calculation using degraded mode procedures
-	enableDegradedMode bool
 }
 
 func NewTransactionSyncer(
@@ -149,9 +144,8 @@ func NewTransactionSyncer(
 		svcNegClient:        svcNegClient,
 		syncCollector:       syncerMetrics,
 		customName:          customName,
-		errorState:          "",
+		errorState:          nil,
 		logger:              logger,
-		enableDegradedMode:  flags.F.EnableDegradedMode,
 	}
 	// Syncer implements life cycle logic
 	syncer := newSyncer(negSyncerKey, serviceLister, recorder, ts, logger)
@@ -161,7 +155,7 @@ func NewTransactionSyncer(
 	return syncer
 }
 
-func GetEndpointsCalculator(nodeLister, podLister cache.Indexer, zoneGetter negtypes.ZoneGetter, syncerKey negtypes.NegSyncerKey, mode negtypes.EndpointsCalculatorMode, logger klog.Logger, lpConfig negtypes.PodLabelPropagationConfig) negtypes.NetworkEndpointsCalculator {
+func GetEndpointsCalculator(nodeLister, podLister, serviceLister cache.Indexer, zoneGetter negtypes.ZoneGetter, syncerKey negtypes.NegSyncerKey, mode negtypes.EndpointsCalculatorMode, enableDegradedMode bool, logger klog.Logger, lpConfig negtypes.PodLabelPropagationConfig) negtypes.NetworkEndpointsCalculator {
 	serviceKey := strings.Join([]string{syncerKey.Name, syncerKey.Namespace}, "/")
 	if syncerKey.NegType == negtypes.VmIpEndpointType {
 		nodeLister := listers.NewNodeLister(nodeLister)
@@ -172,8 +166,8 @@ func GetEndpointsCalculator(nodeLister, podLister cache.Indexer, zoneGetter negt
 			return NewClusterL4ILBEndpointsCalculator(nodeLister, zoneGetter, serviceKey, logger)
 		}
 	}
-	return NewL7EndpointsCalculator(zoneGetter, podLister, syncerKey.PortTuple.Name,
-		syncerKey.NegType, logger, lpConfig)
+	return NewL7EndpointsCalculator(zoneGetter, podLister, nodeLister, serviceLister, syncerKey.PortTuple.Name,
+		syncerKey.NegType, enableDegradedMode, logger, lpConfig)
 }
 
 func (s *transactionSyncer) sync() error {
@@ -194,7 +188,7 @@ func (s *transactionSyncer) syncInternal() error {
 	err := s.syncInternalImpl()
 	if err != nil {
 		s.logger.V(3).Info("Setting error state", "err", err, "errorState", s.getErrorStateReason(err))
-		s.setErrorState(s.getErrorStateReason(err))
+		s.setErrorState(err)
 	}
 	s.updateStatus(err)
 	metrics.PublishNegSyncMetrics(string(s.NegSyncerKey.NegType), string(s.endpointsCalculator.Mode()), err, start)
@@ -260,15 +254,18 @@ func (s *transactionSyncer) syncInternalImpl() error {
 
 	}
 	endpointsData := negtypes.EndpointsDataFromEndpointSlices(endpointSlices)
-	targetMap, endpointPodMap, dupCount, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
+	targetMap, endpointPodMap, dupCount, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap, s.inErrorState())
 	if err != nil {
 		return err
 	}
 	err = s.endpointsCalculator.ValidateEndpoints(endpointsData, endpointPodMap, dupCount)
-	if err != nil {
-		// TODO(cheungdavid): return error from ValidateEndpoint after degraded mode is implemented
-		// for now we don't return error so it won't break the sync
-		s.setErrorState(s.getErrorStateReason(err))
+	// we only validate calculated endpoint in normal mode
+	// since we filter invalid endpoints in degraded mode, so the counts won't match
+	if !s.inErrorState() {
+		err = s.endpointsCalculator.ValidateEndpoints(endpointsData, endpointPodMap, dupCount)
+		if err != nil {
+			return err
+		}
 	}
 	s.logStats(targetMap, "desired NEG endpoints")
 
@@ -301,11 +298,11 @@ func (s *transactionSyncer) syncInternalImpl() error {
 
 // syncLock must already be acquired before execution
 func (s *transactionSyncer) inErrorState() bool {
-	return s.errorState != ""
+	return s.errorState != nil
 }
 
 // syncLock must already be acquired before execution
-func (s *transactionSyncer) setErrorState(errorState string) {
+func (s *transactionSyncer) setErrorState(errorState error) {
 	s.errorState = errorState
 }
 
@@ -437,19 +434,11 @@ func (s *transactionSyncer) collectSyncResult(wg *sync.WaitGroup) {
 	defer s.syncLock.Unlock()
 
 	var syncResult *negtypes.NegSyncResult
-	switch s.errorState {
-	case "":
+	if s.inErrorState() {
 		syncResult = negtypes.NewNegSyncResult(nil, negtypes.ResultSuccess)
-	case negtypes.ResultInvalidAPIResponse:
-		syncResult = negtypes.NewNegSyncResult(negtypes.ErrInvalidAPIResponse, negtypes.ResultInvalidAPIResponse)
-	case negtypes.ResultInvalidEPAttach:
-		syncResult = negtypes.NewNegSyncResult(negtypes.ErrInvalidEPAttach, negtypes.ResultInvalidEPAttach)
-	case negtypes.ResultInvalidEPDetach:
-		syncResult = negtypes.NewNegSyncResult(negtypes.ErrInvalidEPDetach, negtypes.ResultInvalidEPDetach)
-	default:
-		syncResult = negtypes.NewNegSyncResult(errors.New("Unknown error state value"), negtypes.ResultOtherError)
+	} else {
+		syncResult = negtypes.NewNegSyncResult(s.errorState, s.getErrorStateReason(s.errorState))
 	}
-
 	s.syncCollector.UpdateSyncer(s.NegSyncerKey, syncResult)
 }
 
@@ -494,7 +483,7 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, zone stri
 		if endpointBatchErr != nil {
 			s.syncLock.Lock()
 			s.logger.V(3).Info("Setting error state", "errorState", s.getErrorStateReason(endpointBatchErr))
-			s.setErrorState(s.getErrorStateReason(endpointBatchErr))
+			s.setErrorState(endpointBatchErr)
 			s.syncLock.Unlock()
 		}
 	}

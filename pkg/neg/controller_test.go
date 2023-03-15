@@ -139,6 +139,7 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		runL4,     //runL4Controller
 		false,     //enableNonGcpMode
 		enableASM, //enableAsm
+		false,     // enableDegradedMode
 		[]string{},
 		negtypes.PodLabelPropagationConfig{},
 		klog.TODO(),

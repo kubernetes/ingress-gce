@@ -49,6 +49,7 @@ var (
 	ErrInvalidAPIResponse     = errors.New("received response error doesn't match googleapi.Error type")
 	ErrInvalidEPAttach        = errors.New("endpoint information for attach operation is incorrect")
 	ErrInvalidEPDetach        = errors.New("endpoint information for detach operation is incorrect")
+	ErrTypeAssertionToPod     = errors.New("type assertion to pod failed")
 
 	// use this map for conversion between errors and sync results
 	ErrorStateResult = map[error]string{

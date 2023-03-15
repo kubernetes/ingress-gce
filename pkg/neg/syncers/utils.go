@@ -217,14 +217,27 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 	return negRef, nil
 }
 
-// toZoneNetworkEndpointMap translates addresses in endpoints object into zone and endpoints map, and also return the count for duplicated endpoints
-func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, podLister cache.Indexer, zoneGetter negtypes.ZoneGetter, servicePortName string, networkEndpointType negtypes.NetworkEndpointType, lpConfig negtypes.PodLabelPropagationConfig) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, int, error) {
+// toZoneNetworkEndpointMap translates addresses in endpoints object into zone and endpoints map,
+// and also return the count for duplicated endpoints
+func toZoneNetworkEndpointMap(
+	eds []negtypes.EndpointsData,
+	podLister cache.Indexer,
+	zoneGetter negtypes.ZoneGetter,
+	servicePortName string,
+	networkEndpointType negtypes.NetworkEndpointType,
+	lpConfig negtypes.PodLabelPropagationConfig,
+) negtypes.ZoneNetworkEndpointMapResult {
 	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
 	networkEndpointPodMap := negtypes.EndpointPodMap{}
 	dupCount := 0
 	if eds == nil {
 		klog.Errorf("Endpoint object is nil")
-		return zoneNetworkEndpointMap, networkEndpointPodMap, dupCount, nil
+		return negtypes.ZoneNetworkEndpointMapResult{
+			NetworkEndpointSet: zoneNetworkEndpointMap,
+			EndpointPodMap:     networkEndpointPodMap,
+			DupCount:           dupCount,
+			Err:                nil,
+		}
 	}
 	var foundMatchingPort bool
 	for _, ed := range eds {
@@ -250,32 +263,63 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, podLister cache.Inde
 				continue
 			}
 			if endpointAddress.NodeName == nil || len(*endpointAddress.NodeName) == 0 {
-				klog.V(2).Infof("Detected unexpected error when checking missing nodeName. Endpoint %q in Endpoints %s/%s does not have an associated node. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
-				return nil, nil, dupCount, negtypes.ErrEPNodeMissing
+				klog.Errorf("Detected unexpected error when checking missing nodeName. Endpoint %q in Endpoints %s/%s does not have an associated node.", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
+				return negtypes.ZoneNetworkEndpointMapResult{
+					NetworkEndpointSet: nil,
+					EndpointPodMap:     nil,
+					DupCount:           dupCount,
+					Err:                negtypes.ErrEPNodeMissing,
+				}
 			}
 			if endpointAddress.TargetRef == nil {
-				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated pod. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
-				return nil, nil, dupCount, negtypes.ErrEPPodMissing
+				klog.Errorf("Detected unexpected error when checking missing pod. Endpoint %q in Endpoints %s/%s does not have an associated pod.", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
+				return negtypes.ZoneNetworkEndpointMapResult{
+					NetworkEndpointSet: nil,
+					EndpointPodMap:     nil,
+					DupCount:           dupCount,
+					Err:                negtypes.ErrEPPodMissing,
+				}
 			}
 			zone, err := zoneGetter.GetZoneForNode(*endpointAddress.NodeName)
 			if err != nil {
-				return nil, nil, dupCount, negtypes.ErrEPNodeNotFound
+				klog.Errorf("Detected unexpected error when checking zone. Endpoint %q in Endpoints %s/%s does not correspond to an existing node.", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
+				return negtypes.ZoneNetworkEndpointMapResult{
+					NetworkEndpointSet: nil,
+					EndpointPodMap:     nil,
+					DupCount:           dupCount,
+					Err:                negtypes.ErrEPNodeNotFound,
+				}
 			}
 			if zone == "" {
-				klog.V(2).Info("Detected unexpected error when checking zone")
-				return nil, nil, dupCount, negtypes.ErrEPZoneMissing
+				klog.Errorf("Detected unexpected error when checking zone. Endpoint %q in Endpoints %s/%s does not have an associated zone.", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
+				return negtypes.ZoneNetworkEndpointMapResult{
+					NetworkEndpointSet: nil,
+					EndpointPodMap:     nil,
+					DupCount:           dupCount,
+					Err:                negtypes.ErrEPZoneMissing,
+				}
 			}
 
 			key := fmt.Sprintf("%s/%s", endpointAddress.TargetRef.Namespace, endpointAddress.TargetRef.Name)
 			obj, exists, err := podLister.GetByKey(key)
 			if err != nil || !exists {
-				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not correspond to an existing pod. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
-				return nil, nil, dupCount, negtypes.ErrEPPodNotFound
+				klog.Errorf("Detected unexpected error when checking pod. Endpoint %q in Endpoints %s/%s does not correspond to an existing pod.", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
+				return negtypes.ZoneNetworkEndpointMapResult{
+					NetworkEndpointSet: nil,
+					EndpointPodMap:     nil,
+					DupCount:           dupCount,
+					Err:                negtypes.ErrEPPodNotFound,
+				}
 			}
 			_, ok := obj.(*apiv1.Pod)
 			if !ok {
-				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not correspond to an existing pod. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
-				return nil, nil, dupCount, negtypes.ErrEPPodNotFound
+				klog.Errorf("Detected unexpected error when checking pod. Couldn't convert obj to *Pod for Endpoint %q in Endpoints %s/%s: got %T ", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, obj)
+				return negtypes.ZoneNetworkEndpointMapResult{
+					NetworkEndpointSet: nil,
+					EndpointPodMap:     nil,
+					DupCount:           dupCount,
+					Err:                negtypes.ErrTypeAssertionToPod,
+				}
 			}
 			if zoneNetworkEndpointMap[zone] == nil {
 				zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
@@ -307,14 +351,23 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, podLister cache.Inde
 	if len(zoneNetworkEndpointMap) == 0 || len(networkEndpointPodMap) == 0 {
 		klog.V(3).Infof("Generated empty endpoint maps (zoneNetworkEndpointMap: %+v, networkEndpointPodMap: %v) from Endpoints object: %+v", zoneNetworkEndpointMap, networkEndpointPodMap, eds)
 	}
-	return zoneNetworkEndpointMap, networkEndpointPodMap, dupCount, nil
+	return negtypes.ZoneNetworkEndpointMapResult{
+		NetworkEndpointSet: zoneNetworkEndpointMap,
+		EndpointPodMap:     networkEndpointPodMap,
+		DupCount:           dupCount,
+		Err:                nil,
+	}
 }
 
-func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGetter negtypes.ZoneGetter,
-	podLister, nodeLister cache.Indexer, servicePortName string,
-	networkEndpointType negtypes.NetworkEndpointType) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, int, error) {
-	targetMap := map[string]negtypes.NetworkEndpointSet{}
-	endpointPodMap := negtypes.EndpointPodMap{}
+func toZoneNetworkEndpointMapDegradedMode(
+	eds []negtypes.EndpointsData,
+	zoneGetter negtypes.ZoneGetter,
+	podLister, nodeLister cache.Indexer,
+	servicePortName string,
+	networkEndpointType negtypes.NetworkEndpointType,
+) negtypes.ZoneNetworkEndpointMapResult {
+	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
+	networkEndpointPodMap := negtypes.EndpointPodMap{}
 	var dupCount int
 	for _, ed := range eds {
 		matchPort := ""
@@ -336,14 +389,27 @@ func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGett
 				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated pod. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
 				continue
 			}
-			dupCount += validateAndAddEndpoints(endpointAddress, zoneGetter, podLister, nodeLister, matchPort, networkEndpointType, targetMap, endpointPodMap)
+			dupCount += validateAndAddEndpoints(endpointAddress, zoneGetter, podLister, nodeLister, matchPort, networkEndpointType, zoneNetworkEndpointMap, networkEndpointPodMap)
 		}
 	}
-	return targetMap, endpointPodMap, dupCount, nil
+	return negtypes.ZoneNetworkEndpointMapResult{
+		NetworkEndpointSet: zoneNetworkEndpointMap,
+		EndpointPodMap:     networkEndpointPodMap,
+		DupCount:           dupCount,
+		Err:                nil,
+	}
 }
 
 // validateAndAddEndpoints fills in missing information and creates network endpoint for each endpoint addresss
-func validateAndAddEndpoints(ep negtypes.AddressData, zoneGetter negtypes.ZoneGetter, podLister, nodeLister cache.Indexer, matchPort string, endpointType negtypes.NetworkEndpointType, targetMap map[string]negtypes.NetworkEndpointSet, endpointPodMap negtypes.EndpointPodMap) int {
+func validateAndAddEndpoints(
+	ep negtypes.AddressData,
+	zoneGetter negtypes.ZoneGetter,
+	podLister, nodeLister cache.Indexer,
+	matchPort string,
+	endpointType negtypes.NetworkEndpointType,
+	zoneNetworkEndpointMap map[string]negtypes.NetworkEndpointSet,
+	networkEndpointPodMap negtypes.EndpointPodMap,
+) int {
 	var dupCount int
 	for _, address := range ep.Addresses {
 		key := fmt.Sprintf("%s/%s", ep.TargetRef.Namespace, ep.TargetRef.Name)
@@ -373,15 +439,18 @@ func validateAndAddEndpoints(ep negtypes.AddressData, zoneGetter negtypes.ZoneGe
 			nodeName = ""
 		}
 		networkEndpoint := negtypes.NetworkEndpoint{IP: address, Port: matchPort, Node: nodeName}
-		if targetMap[zone] == nil {
-			targetMap[zone] = negtypes.NewNetworkEndpointSet()
+		if zoneNetworkEndpointMap[zone] == nil {
+			zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
 		}
-		targetMap[zone].Insert(networkEndpoint)
+		zoneNetworkEndpointMap[zone].Insert(networkEndpoint)
 		// increment the count for duplicated endpoint
-		if _, contains := endpointPodMap[networkEndpoint]; contains {
+		if existingPod, contains := networkEndpointPodMap[networkEndpoint]; contains {
 			dupCount += 1
+			if existingPod.Name < ep.TargetRef.Name {
+				continue // if existing name is alphabetically lower than current one, continue and don't replace
+			}
 		}
-		endpointPodMap[networkEndpoint] = types.NamespacedName{Namespace: ep.TargetRef.Namespace, Name: ep.TargetRef.Name}
+		networkEndpointPodMap[networkEndpoint] = types.NamespacedName{Namespace: ep.TargetRef.Namespace, Name: ep.TargetRef.Name}
 	}
 	return dupCount
 }

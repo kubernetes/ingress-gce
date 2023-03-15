@@ -535,17 +535,17 @@ func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 
 	// TODO(songrx1997): Add endpoint annotations for the test after calculation code is in
 	for _, tc := range testCases {
-		retSet, retMap, _, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()), podLister, zoneGetter, tc.portName, tc.networkEndpointType, negtypes.PodLabelPropagationConfig{})
-		if err != nil {
-			t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
+		result := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()), podLister, zoneGetter, tc.portName, tc.networkEndpointType, negtypes.PodLabelPropagationConfig{})
+		if result.Err != nil {
+			t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, result.Err)
 		}
 
-		if !reflect.DeepEqual(retSet, tc.endpointSets) {
-			t.Errorf("For case %q, expecting endpoint set %v, but got %v.", tc.desc, tc.endpointSets, retSet)
+		if !reflect.DeepEqual(result.NetworkEndpointSet, tc.endpointSets) {
+			t.Errorf("For case %q, expecting endpoint set %v, but got %v.", tc.desc, tc.endpointSets, result.NetworkEndpointSet)
 		}
 
-		if !reflect.DeepEqual(retMap, tc.expectMap) {
-			t.Errorf("For case %q, expecting endpoint map %v, but got %v.", tc.desc, tc.expectMap, retMap)
+		if !reflect.DeepEqual(result.EndpointPodMap, tc.expectMap) {
+			t.Errorf("For case %q, expecting endpoint map %v, but got %v.", tc.desc, tc.expectMap, result.EndpointPodMap)
 		}
 	}
 }
@@ -894,15 +894,16 @@ func TestValidateEndpointFields(t *testing.T) {
 
 	// TODO(songrx1997): Add endpoint annotations for the test after calculation code is in
 	for _, tc := range testCases {
-		retSet, retMap, _, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlice), podLister, zoneGetter, tc.portName, negtypes.VmIpPortEndpointType, negtypes.PodLabelPropagationConfig{})
-		if !errors.Is(err, tc.expectErr) {
-			t.Errorf("For case %q, expect %v error, but got %v.", tc.desc, tc.expectErr, err)
+		result := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlice), podLister, zoneGetter, tc.portName, negtypes.VmIpPortEndpointType, negtypes.PodLabelPropagationConfig{})
+
+		if !errors.Is(result.Err, tc.expectErr) {
+			t.Errorf("For case %q, expect %v error, but got %v.", tc.desc, tc.expectErr, result.Err)
 		}
-		if !reflect.DeepEqual(retSet, tc.expectSets) {
-			t.Errorf("For case %q, expecting endpoint set %v, but got %v.", tc.desc, tc.expectSets, retSet)
+		if !reflect.DeepEqual(result.NetworkEndpointSet, tc.expectSets) {
+			t.Errorf("For case %q, expecting endpoint set %v, but got %v.", tc.desc, tc.expectSets, result.NetworkEndpointSet)
 		}
-		if !reflect.DeepEqual(retMap, tc.expectMap) {
-			t.Errorf("For case %q, expecting endpoint map %v, but got %v.", tc.desc, tc.expectMap, retMap)
+		if !reflect.DeepEqual(result.EndpointPodMap, tc.expectMap) {
+			t.Errorf("For case %q, expecting endpoint map %v, but got %v.", tc.desc, tc.expectMap, result.EndpointPodMap)
 		}
 	}
 }
@@ -1663,16 +1664,16 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			testEndpointSlices := getDefaultEndpointSlices()
 
-			targetMap, endpointPodMap, _, err := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(testEndpointSlices), fakeZoneGetter, podLister, nodeLister, tc.portName, tc.networkEndpointType)
-			if err != nil {
-				t.Errorf("expected error=nil, but got %v", err)
+			result := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(testEndpointSlices), fakeZoneGetter, podLister, nodeLister, tc.portName, tc.networkEndpointType)
+			if result.Err != nil {
+				t.Errorf("expected error=nil, but got %v", result.Err)
 			}
 
-			if !reflect.DeepEqual(targetMap, tc.expectedEndpointMap) {
-				t.Errorf("degraded mode endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", targetMap, tc.expectedEndpointMap)
+			if !reflect.DeepEqual(result.NetworkEndpointSet, tc.expectedEndpointMap) {
+				t.Errorf("degraded mode endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", result.NetworkEndpointSet, tc.expectedEndpointMap)
 			}
-			if !reflect.DeepEqual(endpointPodMap, tc.expectedPodMap) {
-				t.Errorf("degraded mode endpoint map is not calculated correctly:\ngot %+v,\n expected %+v", endpointPodMap, tc.expectedPodMap)
+			if !reflect.DeepEqual(result.EndpointPodMap, tc.expectedPodMap) {
+				t.Errorf("degraded mode endpoint map is not calculated correctly:\ngot %+v,\n expected %+v", result.EndpointPodMap, tc.expectedPodMap)
 			}
 		})
 	}
@@ -1695,7 +1696,18 @@ func TestValidateAndAddEndpoints(t *testing.T) {
 	fakeZoneGetter := negtypes.NewFakeZoneGetter()
 	testContext := negtypes.NewTestContext()
 	podLister := testContext.PodInformer.GetIndexer()
-	addPodsToLister(podLister)
+	podLister.Add(&v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testServiceNamespace,
+			Name:      "pod1",
+		},
+		Spec: v1.PodSpec{
+			NodeName: testInstance1,
+		},
+		Status: v1.PodStatus{
+			Phase: v1.PodRunning,
+		},
+	})
 
 	nodeLister := testContext.NodeInformer.GetIndexer()
 	nodeLister.Add(&corev1.Node{
