@@ -97,27 +97,28 @@ var (
 		NegMetricsExportInterval         time.Duration
 
 		// Feature flags should be named Enablexxx.
-		EnableASMConfigMapBasedConfig  bool
-		EnableBackendConfigHealthCheck bool
-		EnableDeleteUnusedFrontends    bool
-		EnableFrontendConfig           bool
-		EnableNonGCPMode               bool
-		EnableReadinessReflector       bool
-		EnableV2FrontendNamer          bool
-		FinalizerAdd                   bool // Should have been named Enablexxx.
-		FinalizerRemove                bool // Should have been named Enablexxx.
-		EnablePSC                      bool
-		EnableIngressGAFields          bool
-		EnableTrafficScaling           bool
-		EnableTransparentHealthChecks  bool
-		EnablePinhole                  bool
-		EnableL4ILBDualStack           bool
-		EnableL4NetLBDualStack         bool
-		EnableMultipleIGs              bool
-		EnableServiceMetrics           bool
-		EnableNEGLabelPropagation      bool
-		MaxIGSize                      int
-		EnableDegradedMode             bool
+		EnableASMConfigMapBasedConfig            bool
+		EnableBackendConfigHealthCheck           bool
+		EnableDeleteUnusedFrontends              bool
+		EnableFrontendConfig                     bool
+		EnableNonGCPMode                         bool
+		EnableReadinessReflector                 bool
+		EnableV2FrontendNamer                    bool
+		FinalizerAdd                             bool // Should have been named Enablexxx.
+		FinalizerRemove                          bool // Should have been named Enablexxx.
+		EnablePSC                                bool
+		EnableIngressGAFields                    bool
+		EnableTrafficScaling                     bool
+		EnableTransparentHealthChecks            bool
+		EnableUpdateCustomHealthCheckDescription bool
+		EnablePinhole                            bool
+		EnableL4ILBDualStack                     bool
+		EnableL4NetLBDualStack                   bool
+		EnableMultipleIGs                        bool
+		EnableServiceMetrics                     bool
+		EnableNEGLabelPropagation                bool
+		MaxIGSize                                int
+		EnableDegradedMode                       bool
 	}{
 		GCERateLimitScale: 1.0,
 	}
@@ -260,6 +261,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.StringVar(&F.GKEClusterType, "gke-cluster-type", "ZONAL", "The cluster type of the GKE cluster this Ingress Controller will be interacting with")
 	flag.BoolVar(&F.EnableTrafficScaling, "enable-traffic-scaling", false, "Enable support for Service {max-rate-per-endpoint, capacity-scaler}")
 	flag.BoolVar(&F.EnableTransparentHealthChecks, "enable-transparent-health-checks", false, "Enable Transparent Health Checks.")
+	flag.BoolVar(&F.EnableUpdateCustomHealthCheckDescription, "enable-update-hc-description", false, "Update health check Description when it is customized with BackendConfig CRD.")
 	flag.BoolVar(&F.EnablePinhole, "enable-pinhole", false, "Enable Pinhole firewall feature")
 	flag.BoolVar(&F.EnableL4ILBDualStack, "enable-l4ilb-dual-stack", false, "Enable Dual-Stack handling for L4 Internal Load Balancers")
 	flag.BoolVar(&F.EnableL4NetLBDualStack, "enable-l4netlb-dual-stack", false, "Enable Dual-Stack handling for L4 External Load Balancers")

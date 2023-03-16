@@ -35,6 +35,7 @@ func (c *fieldDiffs) add(field, oldv, newv string) {
 }
 func (c *fieldDiffs) String() string { return strings.Join(c.f, ", ") }
 func (c *fieldDiffs) hasDiff() bool  { return len(c.f) > 0 }
+func (c *fieldDiffs) size() int64    { return int64(len(c.f)) }
 
 func calculateDiff(old, new *translator.HealthCheck, c *backendconfigv1.HealthCheckConfig) *fieldDiffs {
 	var changes fieldDiffs
@@ -73,6 +74,7 @@ func calculateDiff(old, new *translator.HealthCheck, c *backendconfigv1.HealthCh
 		changes.add("Port", strconv.FormatInt(old.Port, 10), strconv.FormatInt(new.Port, 10))
 	}
 	if old.Description != new.Description {
+		// TODO(DamianSawicki): Emit an event.
 		changes.add("Description", old.Description, new.Description)
 	}
 
