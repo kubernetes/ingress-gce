@@ -128,6 +128,7 @@ func NewController(
 	runIngress bool,
 	runL4Controller bool,
 	enableNonGcpMode bool,
+	enableDualStackNEG bool,
 	enableAsm bool,
 	asmServiceNEGSkipNamespaces []string,
 	lpConfig labels.PodLabelPropagationConfig,
@@ -169,6 +170,7 @@ func NewController(
 		svcNegInformer.GetIndexer(),
 		syncerMetrics,
 		enableNonGcpMode,
+		enableDualStackNEG,
 		numGCWorkers,
 		lpConfig,
 		logger)

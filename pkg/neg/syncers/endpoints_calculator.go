@@ -177,15 +177,17 @@ type L7EndpointsCalculator struct {
 	servicePortName     string
 	podLister           cache.Indexer
 	networkEndpointType types.NetworkEndpointType
+	enableDualStackNEG  bool
 	logger              klog.Logger
 }
 
-func NewL7EndpointsCalculator(zoneGetter types.ZoneGetter, podLister cache.Indexer, svcPortName string, endpointType types.NetworkEndpointType, logger klog.Logger) *L7EndpointsCalculator {
+func NewL7EndpointsCalculator(zoneGetter types.ZoneGetter, podLister cache.Indexer, svcPortName string, endpointType types.NetworkEndpointType, logger klog.Logger, enableDualStackNEG bool) *L7EndpointsCalculator {
 	return &L7EndpointsCalculator{
 		zoneGetter:          zoneGetter,
 		servicePortName:     svcPortName,
 		podLister:           podLister,
 		networkEndpointType: endpointType,
+		enableDualStackNEG:  enableDualStackNEG,
 		logger:              logger.WithName("L7EndpointsCalculator"),
 	}
 }

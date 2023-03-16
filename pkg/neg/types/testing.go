@@ -60,9 +60,10 @@ type TestContext struct {
 	EndpointSliceInformer cache.SharedIndexInformer
 	SvcNegInformer        cache.SharedIndexInformer
 
-	KubeSystemUID types.UID
-	ResyncPeriod  time.Duration
-	NumGCWorkers  int
+	KubeSystemUID      types.UID
+	ResyncPeriod       time.Duration
+	NumGCWorkers       int
+	EnableDualStackNEG bool
 }
 
 func NewTestContext() *TestContext {
@@ -94,5 +95,6 @@ func NewTestContextWithKubeClient(kubeClient kubernetes.Interface) *TestContext 
 		KubeSystemUID:         kubeSystemUID,
 		ResyncPeriod:          resyncPeriod,
 		NumGCWorkers:          numGCWorkers,
+		EnableDualStackNEG:    false,
 	}
 }

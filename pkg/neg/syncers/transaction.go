@@ -112,6 +112,10 @@ type transactionSyncer struct {
 
 	// podLabelPropagationConfig configures the pod label to be propagated to NEG endpoints
 	podLabelPropagationConfig labels.PodLabelPropagationConfig
+
+	// enableDualStackNEG indicates if IPv6 endpoints should be considered while
+	// reconciling NEGs.
+	enableDualStackNEG bool
 }
 
 func NewTransactionSyncer(
@@ -131,7 +135,8 @@ func NewTransactionSyncer(
 	syncerMetrics *metrics.SyncerMetrics,
 	customName bool,
 	log klog.Logger,
-	lpConfig labels.PodLabelPropagationConfig) negtypes.NegSyncer {
+	lpConfig labels.PodLabelPropagationConfig,
+	enableDualStackNEG bool) negtypes.NegSyncer {
 
 	logger := log.WithName("Syncer").WithValues("service", klog.KRef(negSyncerKey.Namespace, negSyncerKey.Name), "negName", negSyncerKey.NegName)
 
@@ -158,6 +163,7 @@ func NewTransactionSyncer(
 		logger:                    logger,
 		enableDegradedMode:        flags.F.EnableDegradedMode,
 		podLabelPropagationConfig: lpConfig,
+		enableDualStackNEG:        enableDualStackNEG,
 	}
 	// Syncer implements life cycle logic
 	syncer := newSyncer(negSyncerKey, serviceLister, recorder, ts, logger)
@@ -167,7 +173,7 @@ func NewTransactionSyncer(
 	return syncer
 }
 
-func GetEndpointsCalculator(nodeLister, podLister cache.Indexer, zoneGetter negtypes.ZoneGetter, syncerKey negtypes.NegSyncerKey, mode negtypes.EndpointsCalculatorMode, logger klog.Logger) negtypes.NetworkEndpointsCalculator {
+func GetEndpointsCalculator(nodeLister, podLister cache.Indexer, zoneGetter negtypes.ZoneGetter, syncerKey negtypes.NegSyncerKey, mode negtypes.EndpointsCalculatorMode, logger klog.Logger, enableDualStackNEG bool) negtypes.NetworkEndpointsCalculator {
 	serviceKey := strings.Join([]string{syncerKey.Name, syncerKey.Namespace}, "/")
 	if syncerKey.NegType == negtypes.VmIpEndpointType {
 		nodeLister := listers.NewNodeLister(nodeLister)
@@ -178,8 +184,14 @@ func GetEndpointsCalculator(nodeLister, podLister cache.Indexer, zoneGetter negt
 			return NewClusterL4ILBEndpointsCalculator(nodeLister, zoneGetter, serviceKey, logger)
 		}
 	}
-	return NewL7EndpointsCalculator(zoneGetter, podLister, syncerKey.PortTuple.Name,
-		syncerKey.NegType, logger)
+	return NewL7EndpointsCalculator(
+		zoneGetter,
+		podLister,
+		syncerKey.PortTuple.Name,
+		syncerKey.NegType,
+		logger,
+		enableDualStackNEG,
+	)
 }
 
 func (s *transactionSyncer) sync() error {

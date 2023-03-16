@@ -135,10 +135,11 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		testContext.ResyncPeriod,
 		testContext.NumGCWorkers,
 		// TODO(freehan): enable readiness reflector for unit tests
-		false,     // enableReadinessReflector
-		true,      // runIngress
-		runL4,     //runL4Controller
-		false,     //enableNonGcpMode
+		false, // enableReadinessReflector
+		true,  // runIngress
+		runL4, //runL4Controller
+		false, //enableNonGcpMode
+		testContext.EnableDualStackNEG,
 		enableASM, //enableAsm
 		[]string{},
 		labels.PodLabelPropagationConfig{},
