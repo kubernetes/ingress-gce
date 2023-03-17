@@ -1825,5 +1825,49 @@ func getTestEndpointSlices(name, namespace string) []*discovery.EndpointSlice {
 				},
 			},
 		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name + "-4",
+				Namespace: namespace,
+				Labels: map[string]string{
+					discovery.LabelServiceName: name,
+				},
+			},
+			AddressType: discovery.AddressTypeIPv6,
+			Endpoints: []discovery.Endpoint{
+				{
+					Addresses: []string{"aa:aa"},
+					NodeName:  &instance3,
+					TargetRef: &v1.ObjectReference{
+						Namespace: namespace,
+						Name:      "pod10",
+					},
+				},
+				{
+					Addresses: []string{"aa:ab"},
+					NodeName:  &instance4,
+					TargetRef: &v1.ObjectReference{
+						Namespace: namespace,
+						Name:      "pod11",
+					},
+				},
+				{
+					Addresses: []string{"aa:ac"},
+					NodeName:  &instance4,
+					TargetRef: &v1.ObjectReference{
+						Namespace: namespace,
+						Name:      "pod12",
+					},
+					Conditions: discovery.EndpointConditions{Ready: &notReady},
+				},
+			},
+			Ports: []discovery.EndpointPort{
+				{
+					Name:     &emptyNamedPort,
+					Port:     &port80,
+					Protocol: &protocolTCP,
+				},
+			},
+		},
 	}
 }
