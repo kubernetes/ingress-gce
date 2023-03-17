@@ -105,6 +105,9 @@ type syncerManager struct {
 	// for their respective NEG types. zone maps are protected by the mu mutex.
 	vmIpZoneMap     map[string]struct{}
 	vmIpPortZoneMap map[string]struct{}
+
+	// lpConfig configures the pod label to be propagated to NEG endpoints.
+	lpConfig negtypes.PodLabelPropagationConfig
 }
 
 func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
@@ -121,6 +124,7 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 	syncerMetrics *metrics.SyncerMetrics,
 	enableNonGcpMode bool,
 	numGCWorkers int,
+	lpConfig negtypes.PodLabelPropagationConfig,
 	logger klog.Logger) *syncerManager {
 
 	var vmIpZoneMap, vmIpPortZoneMap map[string]struct{}
@@ -147,6 +151,7 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 		logger:              logger,
 		vmIpZoneMap:         vmIpZoneMap,
 		vmIpPortZoneMap:     vmIpPortZoneMap,
+		lpConfig:            lpConfig,
 	}
 }
 
@@ -216,7 +221,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 
 			// determine the implementation that calculates NEG endpoints on each sync.
 			epc := negsyncer.GetEndpointsCalculator(manager.nodeLister, manager.podLister, manager.zoneGetter,
-				syncerKey, portInfo.EpCalculatorMode, manager.logger.WithValues("service", klog.KRef(syncerKey.Namespace, syncerKey.Name), "negName", syncerKey.NegName))
+				syncerKey, portInfo.EpCalculatorMode, manager.logger.WithValues("service", klog.KRef(syncerKey.Namespace, syncerKey.Name), "negName", syncerKey.NegName), manager.lpConfig)
 			syncer = negsyncer.NewTransactionSyncer(
 				syncerKey,
 				manager.recorder,
