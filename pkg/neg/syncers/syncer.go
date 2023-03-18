@@ -54,7 +54,7 @@ type syncer struct {
 	// sync signal and retry handling
 	syncCh  chan interface{}
 	clock   clock.Clock
-	backoff backoffHandler
+	backoff BackoffHandler
 
 	logger klog.Logger
 }
@@ -68,7 +68,7 @@ func newSyncer(negSyncerKey negtypes.NegSyncerKey, serviceLister cache.Indexer, 
 		stopped:       true,
 		shuttingDown:  false,
 		clock:         clock.RealClock{},
-		backoff:       NewExponentialBackendOffHandler(maxRetries, minRetryDelay, maxRetryDelay),
+		backoff:       NewExponentialBackoffHandler(maxRetries, minRetryDelay, maxRetryDelay),
 		logger:        logger,
 	}
 }
@@ -89,7 +89,7 @@ func (s *syncer) Start() error {
 			retryCh := make(<-chan time.Time)
 			err := s.core.sync()
 			if err != nil {
-				delay, retryErr := s.backoff.NextRetryDelay()
+				delay, retryErr := s.backoff.NextDelay()
 				retryMsg := ""
 				if retryErr == ErrRetriesExceeded {
 					retryMsg = "(will not retry)"
@@ -102,7 +102,7 @@ func (s *syncer) Start() error {
 					s.recorder.Eventf(svc, apiv1.EventTypeWarning, "SyncNetworkEndpointGroupFailed", "Failed to sync NEG %q %s: %v", s.NegSyncerKey.NegName, retryMsg, err)
 				}
 			} else {
-				s.backoff.ResetRetryDelay()
+				s.backoff.ResetDelay()
 			}
 
 			select {

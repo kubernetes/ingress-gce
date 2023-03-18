@@ -79,7 +79,7 @@ type transactionSyncer struct {
 	endpointsCalculator negtypes.NetworkEndpointsCalculator
 
 	// retry handles back off retry for NEG API operations
-	retry retryHandler
+	retry RetryHandler
 
 	// reflector handles NEG readiness gate and conditions for pods in NEG.
 	reflector readiness.Reflector
@@ -157,7 +157,7 @@ func NewTransactionSyncer(
 	syncer := newSyncer(negSyncerKey, serviceLister, recorder, ts, logger)
 	// transactionSyncer needs syncer interface for internals
 	ts.syncer = syncer
-	ts.retry = NewDelayRetryHandler(func() { syncer.Sync() }, NewExponentialBackendOffHandler(maxRetries, minRetryDelay, maxRetryDelay))
+	ts.retry = NewDelayRetryHandler(func() { syncer.Sync() }, NewExponentialBackoffHandler(maxRetries, minRetryDelay, maxRetryDelay))
 	return syncer
 }
 

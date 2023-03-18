@@ -27,39 +27,84 @@ const (
 	testMaxRetryDelay = 5 * time.Minute
 )
 
-func TestExponentialBackendOffHandler(t *testing.T) {
-	handler := NewExponentialBackendOffHandler(testRetry, testMinRetryDelay, testMaxRetryDelay)
-	expectDelay := testMinRetryDelay
+func verifyError(t *testing.T, err, expectedErr error) {
+	if err != expectedErr {
+		t.Errorf("Expect error to be %v, but got %v", expectedErr, err)
+	}
+}
 
+func verifyExactDelay(t *testing.T, delay, expectedDelay time.Duration) {
+	if delay != expectedDelay {
+		t.Errorf("Expect retry delay = %v, but got %v", expectedDelay, delay)
+	}
+}
+
+func verifyIntervalDelay(t *testing.T, delay, expectedMinDelay, expectedMaxDelay time.Duration) {
+	if delay < expectedMinDelay || delay > expectedMaxDelay {
+		t.Errorf("Expect retry delay between %v and %v, but got %v", expectedMinDelay, expectedMaxDelay, delay)
+	}
+}
+
+func verifyIncreasedDelay(t *testing.T, delay, initialDelay time.Duration) {
+	expectedMaxDelay := initialDelay * 2
+	if expectedMaxDelay > testMaxRetryDelay {
+		expectedMaxDelay = testMaxRetryDelay
+	}
+	verifyIntervalDelay(t, delay, initialDelay, expectedMaxDelay)
+}
+
+func verifyDecreasedDelay(t *testing.T, delay, initialDelay time.Duration) {
+	expectedMinDelay := initialDelay / 2
+	if expectedMinDelay < testMinRetryDelay {
+		expectedMinDelay = testMinRetryDelay
+	}
+	verifyIntervalDelay(t, delay, expectedMinDelay, initialDelay)
+}
+
+func verifyMaxRetries(t *testing.T, initialDelay time.Duration, handler BackoffHandler) time.Duration {
+	expectDelay := initialDelay
 	for i := 0; i < testRetry; i++ {
-		delay, err := handler.NextRetryDelay()
-		if err != nil {
-			t.Errorf("Expect error to be nil, but got %v", err)
-		}
+		delay, err := handler.NextDelay()
+		verifyError(t, err, nil)
+		verifyIncreasedDelay(t, delay, expectDelay)
+		expectDelay = delay
+	}
+	_, err := handler.NextDelay()
+	verifyError(t, err, ErrRetriesExceeded)
+	return expectDelay
+}
 
-		if !(delay >= expectDelay && delay <= 2*expectDelay) {
-			t.Errorf("Expect retry delay >= %v and delay <= %v, but got %v", expectDelay, 2*expectDelay, delay)
-		}
+func TestExponentialBackoffHandler(t *testing.T) {
+	t.Parallel()
 
-		if delay > testMaxRetryDelay {
-			t.Errorf("Expect delay to be <= %v, but got %v", testMaxRetryDelay, delay)
-		}
+	handler := NewExponentialBackoffHandler(testRetry, testMinRetryDelay, testMaxRetryDelay)
+	verifyMaxRetries(t, testMinRetryDelay, handler)
+	handler.ResetDelay()
+
+	delay, err := handler.NextDelay()
+	verifyError(t, err, nil)
+	verifyExactDelay(t, delay, testMinRetryDelay)
+}
+
+func TestExponentialBackoffHandlerDecreaseDelay(t *testing.T) {
+	t.Parallel()
+
+	handler := NewExponentialBackoffHandler(testRetry, testMinRetryDelay, testMaxRetryDelay)
+	expectDelay := verifyMaxRetries(t, testMinRetryDelay, handler)
+
+	delay := handler.DecreaseDelay()
+	verifyDecreasedDelay(t, delay, expectDelay)
+	verifyMaxRetries(t, delay, handler)
+
+	for expectDelay != testMinRetryDelay {
+		delay = handler.DecreaseDelay()
+		verifyDecreasedDelay(t, delay, expectDelay)
 		expectDelay = delay
 	}
 
-	_, err := handler.NextRetryDelay()
-	if err != ErrRetriesExceeded {
-		t.Errorf("Expect error to be %v, but got %v", ErrRetriesExceeded, err)
-	}
-
-	handler.ResetRetryDelay()
-
-	delay, err := handler.NextRetryDelay()
-	if err != nil {
-		t.Errorf("Expect error to be nil, but got %v", err)
-	}
-
-	if testMinRetryDelay != delay {
-		t.Errorf("Expect retry delay = %v, but got %v", expectDelay, delay)
+	// second iteration is to check that the delay won't go back up to min delay
+	for i := 0; i < 2; i++ {
+		delay = handler.DecreaseDelay()
+		verifyExactDelay(t, delay, time.Duration(0))
 	}
 }
