@@ -385,7 +385,7 @@ func validatePod(pod *apiv1.Pod, nodeLister cache.Indexer) bool {
 		klog.V(2).Info("Pod %s/%s is a terminal pod with status %v, skipping", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name, phase)
 		return false
 	}
-	obj, exists, err := nodeLister.GetByKey(pod.Spec.NodeName)
+	obj, exists, err := nodeLister.GetByKey(fmt.Sprintf("%s/%s", pod.ObjectMeta.Namespace, pod.Spec.NodeName))
 	if err != nil || !exists {
 		klog.V(2).Info("Pod %s/%s corresponds to a non-existing node %s, skipping", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name, pod.Spec.NodeName)
 		return false

@@ -1205,7 +1205,8 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 	for i := 1; i <= 4; i++ {
 		nodeLister.Add(&corev1.Node{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: fmt.Sprintf("instance%v", i),
+				Namespace: testNamespace,
+				Name:      fmt.Sprintf("instance%v", i),
 			},
 		})
 	}
@@ -1339,7 +1340,8 @@ func TestValidateAndAddEndpoints(t *testing.T) {
 	nodeLister := testContext.NodeInformer.GetIndexer()
 	nodeLister.Add(&corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: instance1,
+			Namespace: testNamespace,
+			Name:      instance1,
 		},
 	})
 
@@ -1441,7 +1443,8 @@ func TestValidatePod(t *testing.T) {
 	nodeLister := testContext.NodeInformer.GetIndexer()
 	nodeLister.Add(&corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: instance1,
+			Namespace: testNamespace,
+			Name:      instance1,
 		},
 	})
 	testCases := []struct {
