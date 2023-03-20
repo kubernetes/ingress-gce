@@ -218,7 +218,7 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 }
 
 // toZoneNetworkEndpointMap translates addresses in endpoints object into zone and endpoints map, and also return the count for duplicated endpoints
-func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.ZoneGetter, servicePortName string, networkEndpointType negtypes.NetworkEndpointType, lpConfig negtypes.PodLabelPropagationConfig) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, int, error) {
+func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, podLister cache.Indexer, zoneGetter negtypes.ZoneGetter, servicePortName string, networkEndpointType negtypes.NetworkEndpointType, lpConfig negtypes.PodLabelPropagationConfig) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, int, error) {
 	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
 	networkEndpointPodMap := negtypes.EndpointPodMap{}
 	dupCount := 0
@@ -251,19 +251,31 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 			}
 			if endpointAddress.NodeName == nil || len(*endpointAddress.NodeName) == 0 {
 				klog.V(2).Infof("Detected unexpected error when checking missing nodeName. Endpoint %q in Endpoints %s/%s does not have an associated node. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
-				return nil, nil, dupCount, negtypes.ErrEPMissingNodeName
+				return nil, nil, dupCount, negtypes.ErrEPNodeMissing
 			}
 			if endpointAddress.TargetRef == nil {
 				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated pod. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
-				continue
+				return nil, nil, dupCount, negtypes.ErrEPPodMissing
 			}
 			zone, err := zoneGetter.GetZoneForNode(*endpointAddress.NodeName)
 			if err != nil {
-				return nil, nil, dupCount, negtypes.ErrNodeNotFound
+				return nil, nil, dupCount, negtypes.ErrEPNodeNotFound
 			}
 			if zone == "" {
-				klog.V(2).Info("Detected unexpected error when checking missing zone")
-				return nil, nil, dupCount, negtypes.ErrEPMissingZone
+				klog.V(2).Info("Detected unexpected error when checking zone")
+				return nil, nil, dupCount, negtypes.ErrEPZoneMissing
+			}
+
+			key := fmt.Sprintf("%s/%s", endpointAddress.TargetRef.Namespace, endpointAddress.TargetRef.Name)
+			obj, exists, err := podLister.GetByKey(key)
+			if err != nil || !exists {
+				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not correspond to an existing pod. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
+				return nil, nil, dupCount, negtypes.ErrEPPodNotFound
+			}
+			_, ok := obj.(*apiv1.Pod)
+			if !ok {
+				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not correspond to an existing pod. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
+				return nil, nil, dupCount, negtypes.ErrEPPodNotFound
 			}
 			if zoneNetworkEndpointMap[zone] == nil {
 				zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
