@@ -623,14 +623,14 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service)
 	if lc.enableDualStack {
 		if err := deleteL4RBSDualStackAnnotations(lc.ctx, svc); err != nil {
 			lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
-				"Error removing Dual Stack resource annotations: %v: %v", err)
+				"Error removing Dual Stack resource annotations: %v", err)
 			result.Error = fmt.Errorf("failed to reset Dual Stack resource annotations, err: %w", err)
 			return result
 		}
 	} else {
 		if err := deleteL4RBSAnnotations(lc.ctx, svc); err != nil {
 			lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
-				"Error removing resource annotations: %v: %v", err)
+				"Error removing resource annotations: %v", err)
 			result.Error = fmt.Errorf("failed to reset resource annotations, err: %w", err)
 			return result
 		}
@@ -669,12 +669,12 @@ func (lc *L4NetLBController) publishMetrics(result *loadbalancers.L4NetLBSyncRes
 }
 
 func (lc *L4NetLBController) publishSyncMetrics(result *loadbalancers.L4NetLBSyncResult) {
+	if lc.enableDualStack {
+		metrics.PublishL4NetLBDualStackSyncLatency(result.Error == nil, result.SyncType, result.DualStackMetricsState.IPFamilies, result.StartTime)
+	}
 	if result.Error == nil {
 		metrics.PublishL4NetLBSyncSuccess(result.SyncType, result.StartTime)
 		return
 	}
 	metrics.PublishL4NetLBSyncError(result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime)
-	if lc.enableDualStack {
-		metrics.PublishL4NetLBDualStackSyncLatency(result.Error == nil, result.SyncType, result.DualStackMetricsState.IPFamilies, result.StartTime)
-	}
 }
