@@ -17,9 +17,9 @@ import "errors"
 
 const (
 	ResultEPCountsDiffer         = "EPCountsDiffer"
-	ResultEPMissingNodeName      = "EPMissingNodeName"
-	ResultNodeNotFound           = "NodeNotFound"
-	ResultEPMissingZone          = "EPMissingZone"
+	ResultEPInvalidNodeName      = "EPInvalidNodeName"
+	ResultEPInvalidPod           = "EPInvalidPod"
+	ResultEPInvalidZone          = "EPInvalidZone"
 	ResultEPSEndpointCountZero   = "EPSEndpointCountZero"
 	ResultEPCalculationCountZero = "EPCalculationCountZero"
 	ResultInvalidAPIResponse     = "InvalidAPIResponse"
@@ -37,9 +37,9 @@ const (
 
 var (
 	ErrEPCountsDiffer         = errors.New("endpoint counts from endpointData and endpointPodMap differ")
-	ErrEPMissingNodeName      = errors.New("endpoint has empty nodeName field")
-	ErrNodeNotFound           = errors.New("failed to retrieve associated zone of node")
-	ErrEPMissingZone          = errors.New("endpoint has empty zone field")
+	ErrEPInvalidNodeName      = errors.New("endpoint has invalid nodeName field")
+	ErrEPInvalidPod           = errors.New("endpoint has invalid pod field")
+	ErrEPInvalidZone          = errors.New("endpoint has invalid zone field")
 	ErrEPSEndpointCountZero   = errors.New("endpoint count from endpointData cannot be zero")
 	ErrEPCalculationCountZero = errors.New("endpoint count from endpointPodMap cannot be zero")
 	ErrInvalidAPIResponse     = errors.New("received response error doesn't match googleapi.Error type")
@@ -48,8 +48,9 @@ var (
 
 	// use this map for conversion between errors and sync results
 	ErrorStateResult = map[error]string{
-		ErrEPMissingNodeName:      ResultEPMissingNodeName,
-		ErrEPMissingZone:          ResultEPMissingZone,
+		ErrEPInvalidNodeName:      ResultEPInvalidNodeName,
+		ErrEPInvalidPod:           ResultEPInvalidPod,
+		ErrEPInvalidZone:          ResultEPInvalidZone,
 		ErrEPCalculationCountZero: ResultEPCalculationCountZero,
 		ErrEPSEndpointCountZero:   ResultEPSEndpointCountZero,
 		ErrEPCountsDiffer:         ResultEPCountsDiffer,
