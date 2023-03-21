@@ -285,6 +285,14 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	addEndpoints, removeEndpoints := calculateNetworkEndpointDifference(targetMap, currentMap)
 	// Calculate Pods that are already in the NEG
 	_, committedEndpoints := calculateNetworkEndpointDifference(addEndpoints, targetMap)
+
+	if s.enableDualStackNEG {
+		// Identification of migration endpoints should happen before we filter out
+		// the transaction endpoints. Not doing so could result in an attempt to
+		// attach an endpoint which is still undergoing detachment-due-to-migration.
+		findAndFilterMigrationEndpoints(addEndpoints, removeEndpoints)
+	}
+
 	// Filter out the endpoints with existing transaction
 	// This mostly happens when transaction entry require reconciliation but the transaction is still progress
 	// e.g. endpoint A is in the process of adding to NEG N, and the new desire state is not to have A in N.
