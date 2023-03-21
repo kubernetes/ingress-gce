@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	_ "sync"
 	"time"
 
 	flag "github.com/spf13/pflag"
