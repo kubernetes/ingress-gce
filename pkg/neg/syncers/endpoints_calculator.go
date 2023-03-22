@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
@@ -210,6 +211,23 @@ func (l *L7EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, _ 
 	}
 	degradedModeEndpointSet, degradedModeEndpointMap, degradedModeDupCount, degradedModeErr := toZoneNetworkEndpointMapDegradedMode(eds, l.zoneGetter, l.podLister, l.nodeLister, l.servicePortName, l.networkEndpointType)
 	legacyEndpointSet, legacyEndpointMap, dupCount, err := toZoneNetworkEndpointMap(eds, l.podLister, l.zoneGetter, l.servicePortName, l.networkEndpointType, l.lpConfig)
+
+	// if there is error in legacy calculation, legacyEndpointSet will be empty
+	if err == nil {
+		// missingSet are missing endpoints found from degraded mode calculations
+		// additionalSet are additional endpoints found from degraded mode calcuations
+		missingSet, additionalSet := calculateNetworkEndpointDifference(legacyEndpointSet, degradedModeEndpointSet)
+		missingEndpoints := 0
+		for _, val := range missingSet {
+			missingEndpoints += len(val)
+		}
+		metrics.PublishDegradedModeCorrectnessMetrics(missingEndpoints, metrics.MissingEndpoints)
+		additionalEndpoints := 0
+		for _, val := range additionalSet {
+			additionalEndpoints += len(val)
+		}
+		metrics.PublishDegradedModeCorrectnessMetrics(additionalEndpoints, metrics.AdditionalEndpoints)
+	}
 
 	if inErrorState {
 		return degradedModeEndpointSet, degradedModeEndpointMap, degradedModeDupCount, degradedModeErr
