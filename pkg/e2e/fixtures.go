@@ -100,21 +100,25 @@ func CreateEchoService(s *Sandbox, name string, annotations map[string]string) (
 // CreateEchoServiceWithOS creates the pod and service serving echoheaders
 // Todo: (shance) remove this and replace uses with EnsureEchoService()
 func CreateEchoServiceWithOS(s *Sandbox, name string, annotations map[string]string, os OS) (*v1.Service, error) {
-	return ensureEchoService(s, name, annotations, v1.ServiceTypeNodePort, 1, os)
+	return ensureEchoService(s, name, annotations, v1.ServiceTypeNodePort, 1, os, map[string]string{})
 }
 
 // EnsureEchoServiceOS ensures that the Echo service with the given description is set up for Linux or Windows OS.
 func EnsureEchoServiceOS(s *Sandbox, name string, annotations map[string]string, svcType v1.ServiceType, numReplicas int32, os OS) (*v1.Service, error) {
-	return ensureEchoService(s, name, annotations, svcType, numReplicas, os)
+	return ensureEchoService(s, name, annotations, svcType, numReplicas, os, map[string]string{})
+}
+
+func EnsureEchoServiceWithPodLabels(s *Sandbox, name string, annotations map[string]string, svcType v1.ServiceType, numReplicas int32, podLabels map[string]string) (*v1.Service, error) {
+	return ensureEchoService(s, name, annotations, svcType, numReplicas, Linux, podLabels)
 }
 
 // EnsureEchoService that the Echo service with the given description is set up
 func EnsureEchoService(s *Sandbox, name string, annotations map[string]string, svcType v1.ServiceType, numReplicas int32) (*v1.Service, error) {
-	return ensureEchoService(s, name, annotations, svcType, numReplicas, Linux)
+	return ensureEchoService(s, name, annotations, svcType, numReplicas, Linux, map[string]string{})
 }
 
-func ensureEchoService(s *Sandbox, name string, annotations map[string]string, svcType v1.ServiceType, numReplicas int32, os OS) (*v1.Service, error) {
-	if err := ensureEchoDeployment(s, name, numReplicas, NoopModify, os); err != nil {
+func ensureEchoService(s *Sandbox, name string, annotations map[string]string, svcType v1.ServiceType, numReplicas int32, os OS, podLabels map[string]string) (*v1.Service, error) {
+	if err := ensureEchoDeployment(s, name, numReplicas, NoopModify, os, podLabels); err != nil {
 		return nil, err
 	}
 
@@ -171,16 +175,24 @@ func DeleteService(s *Sandbox, svcName string) error {
 
 // EnsureEchoDeploymentOS ensures that the Echo deployment with the given description is set up for Linux or Windows OS.
 func EnsureEchoDeploymentOS(s *Sandbox, name string, numReplicas int32, modify func(deployment *apps.Deployment), os OS) error {
-	return ensureEchoDeployment(s, name, numReplicas, modify, os)
+	return ensureEchoDeployment(s, name, numReplicas, modify, os, map[string]string{})
 }
 
 // EnsureEchoDeployment ensures that the Echo deployment with the given description is set up
 func EnsureEchoDeployment(s *Sandbox, name string, numReplicas int32, modify func(deployment *apps.Deployment)) error {
-	return ensureEchoDeployment(s, name, numReplicas, modify, Linux)
+	return ensureEchoDeployment(s, name, numReplicas, modify, Linux, map[string]string{})
 }
 
-func ensureEchoDeployment(s *Sandbox, name string, numReplicas int32, modify func(deployment *apps.Deployment), os OS) error {
+func ensureEchoDeployment(s *Sandbox, name string, numReplicas int32, modify func(deployment *apps.Deployment), os OS, podLabels map[string]string) error {
 	image := echoheadersImage
+
+	// Make a copy of podLabels to avoid changing the original value.
+	podLabelCopied := make(map[string]string)
+	for key, val := range podLabels {
+		podLabelCopied[key] = val
+	}
+	podLabelCopied["app"] = name
+
 	var nodeSelector map[string]string
 	nodeSelector = map[string]string{"kubernetes.io/os": "linux"}
 	if os == Windows {
@@ -190,7 +202,7 @@ func ensureEchoDeployment(s *Sandbox, name string, numReplicas int32, modify fun
 	podTemplate := v1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   name,
-			Labels: map[string]string{"app": name},
+			Labels: podLabelCopied,
 		},
 		Spec: v1.PodSpec{
 			NodeSelector: nodeSelector,
