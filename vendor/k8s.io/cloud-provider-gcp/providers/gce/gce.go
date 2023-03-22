@@ -94,6 +94,12 @@ var _ cloudprovider.Zones = (*Cloud)(nil)
 var _ cloudprovider.PVLabeler = (*Cloud)(nil)
 var _ cloudprovider.Clusters = (*Cloud)(nil)
 
+type StackType string
+
+const NetworkStackDualStack StackType = "IPV4_IPV6"
+const NetworkStackIPV4 StackType = "IPV4"
+const NetworkStackIPV6 StackType = "IPV6"
+
 // Cloud is an implementation of Interface, LoadBalancer and Instances for Google Compute Engine.
 type Cloud struct {
 	// ClusterID contains functionality for getting (and initializing) the ingress-uid. Call Cloud.Initialize()
@@ -170,6 +176,9 @@ type Cloud struct {
 
 	// the compute API endpoint with the `projects/` element.
 	projectsBasePath string
+	// stackType indicates whether the cluster is a single stack IPv4, single
+	// stack IPv6 or a dual stack cluster
+	stackType StackType
 }
 
 // ConfigGlobal is the in memory representation of the gce.conf config data
@@ -184,6 +193,7 @@ type ConfigGlobal struct {
 	NetworkProjectID string `gcfg:"network-project-id"`
 	NetworkName      string `gcfg:"network-name"`
 	SubnetworkName   string `gcfg:"subnetwork-name"`
+	StackType        string `gcfg:"stack-type"`
 	// DEPRECATED: Do not rely on this value as it may be incorrect.
 	// SecondaryRangeName is the name of the secondary range to allocate IP
 	// aliases. The secondary range must be present on the subnetwork the
@@ -239,6 +249,7 @@ type CloudConfig struct {
 	TokenSource        oauth2.TokenSource
 	UseMetadataServer  bool
 	AlphaFeatureGate   *AlphaFeatureGate
+	StackType          string
 }
 
 func init() {
@@ -396,6 +407,10 @@ func generateCloudConfig(configFile *ConfigFile) (cloudConfig *CloudConfig, err 
 		cloudConfig.SecondaryRangeName = configFile.Global.SecondaryRangeName
 	}
 
+	if configFile != nil {
+		cloudConfig.StackType = configFile.Global.StackType
+	}
+
 	return cloudConfig, err
 }
 
@@ -531,6 +546,7 @@ func CreateGCECloud(config *CloudConfig) (*Cloud, error) {
 		nodeZones:                map[string]sets.String{},
 		metricsCollector:         newLoadBalancerMetrics(),
 		projectsBasePath:         getProjectsBasePath(service.BasePath),
+		stackType:                StackType(config.StackType),
 	}
 
 	gce.manager = &gceServiceManager{gce}
