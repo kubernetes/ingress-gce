@@ -27,12 +27,12 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/cloud-provider-gcp/providers/gce"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	negfake "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
 	informersvcneg "k8s.io/ingress-gce/pkg/svcneg/client/informers/externalversions/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
-	"k8s.io/legacy-cloud-providers/gce"
 )
 
 const (

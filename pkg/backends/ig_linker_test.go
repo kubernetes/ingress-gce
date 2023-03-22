@@ -27,13 +27,13 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
+	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/legacy-cloud-providers/gce"
 )
 
 const defaultZone = "zone-a"

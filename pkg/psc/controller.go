@@ -37,6 +37,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	cloudprovider "k8s.io/cloud-provider"
+	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
 	sav1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -50,7 +51,6 @@ import (
 	sautils "k8s.io/ingress-gce/pkg/utils/serviceattachment"
 	"k8s.io/ingress-gce/pkg/utils/slice"
 	"k8s.io/klog/v2"
-	"k8s.io/legacy-cloud-providers/gce"
 )
 
 func init() {

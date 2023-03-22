@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"net/http"
 
+	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/legacy-cloud-providers/gce"
 
 	compute "google.golang.org/api/compute/v1"
 

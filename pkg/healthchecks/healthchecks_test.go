@@ -34,6 +34,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -43,7 +44,6 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
-	"k8s.io/legacy-cloud-providers/gce"
 )
 
 var (

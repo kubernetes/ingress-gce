@@ -34,6 +34,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
 	cloudprovider "k8s.io/cloud-provider"
+	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
 	sav1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -43,7 +44,6 @@ import (
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	sautils "k8s.io/ingress-gce/pkg/utils/serviceattachment"
-	"k8s.io/legacy-cloud-providers/gce"
 	utilpointer "k8s.io/utils/pointer"
 )
 

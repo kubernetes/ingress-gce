@@ -6,9 +6,9 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/utils/common"
-	"k8s.io/legacy-cloud-providers/gce"
 	"testing"
 )
 

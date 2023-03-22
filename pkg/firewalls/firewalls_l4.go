@@ -23,10 +23,10 @@ import (
 	"google.golang.org/api/compute/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
-	"k8s.io/legacy-cloud-providers/gce"
 )
 
 // FirewallParams holds all data needed to create firewall for L4 LB

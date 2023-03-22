@@ -25,8 +25,8 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/klog/v2"
-	"k8s.io/legacy-cloud-providers/gce"
 )
 
 var ErrSubnetNotFound = errors.New("active subnet not found")

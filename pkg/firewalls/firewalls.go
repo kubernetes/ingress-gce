@@ -23,10 +23,10 @@ import (
 
 	"google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/utils"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
-	"k8s.io/legacy-cloud-providers/gce"
 	netset "k8s.io/utils/net"
 )
 

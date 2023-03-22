@@ -36,11 +36,11 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/cloud-provider-gcp/providers/gce"
 	servicehelper "k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/test"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
-	"k8s.io/legacy-cloud-providers/gce"
 )
 
 const (

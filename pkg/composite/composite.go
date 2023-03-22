@@ -25,9 +25,9 @@ import (
 	computealpha "google.golang.org/api/compute/v0.alpha"
 	computebeta "google.golang.org/api/compute/v0.beta"
 	"google.golang.org/api/compute/v1"
+	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite/metrics"
 	"k8s.io/klog/v2"
-	"k8s.io/legacy-cloud-providers/gce"
 )
 
 // SetUrlMapForTargetHttpsProxy() sets the UrlMap for a target https proxy

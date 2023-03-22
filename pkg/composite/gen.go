@@ -28,9 +28,9 @@ import (
 	computebeta "google.golang.org/api/compute/v0.beta"
 	compute "google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
+	"k8s.io/cloud-provider-gcp/providers/gce"
 	compositemetrics "k8s.io/ingress-gce/pkg/composite/metrics"
 	"k8s.io/klog/v2"
-	"k8s.io/legacy-cloud-providers/gce"
 )
 
 // Address is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
