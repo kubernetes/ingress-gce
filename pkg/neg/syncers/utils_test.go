@@ -17,6 +17,7 @@ limitations under the License.
 package syncers
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"reflect"
@@ -444,6 +445,9 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 	t.Parallel()
 	zoneGetter := negtypes.NewFakeZoneGetter()
+	podLister := negtypes.NewTestContext().PodInformer.GetIndexer()
+	addPodsToLister(podLister)
+
 	testCases := []struct {
 		desc                string
 		portName            string
@@ -531,7 +535,7 @@ func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 
 	// TODO(songrx1997): Add endpoint annotations for the test after calculation code is in
 	for _, tc := range testCases {
-		retSet, retMap, _, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()), zoneGetter, tc.portName, tc.networkEndpointType, negtypes.PodLabelPropagationConfig{})
+		retSet, retMap, _, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()), podLister, zoneGetter, tc.portName, tc.networkEndpointType, negtypes.PodLabelPropagationConfig{})
 		if err != nil {
 			t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
 		}
@@ -540,6 +544,363 @@ func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 			t.Errorf("For case %q, expecting endpoint set %v, but got %v.", tc.desc, tc.endpointSets, retSet)
 		}
 
+		if !reflect.DeepEqual(retMap, tc.expectMap) {
+			t.Errorf("For case %q, expecting endpoint map %v, but got %v.", tc.desc, tc.expectMap, retMap)
+		}
+	}
+}
+
+// TestValidateEndpointFields validates if toZoneNetworkEndpointMap
+// returns correct type of error with invalid endpoint information
+func TestValidateEndpointFields(t *testing.T) {
+	t.Parallel()
+	zoneGetter := negtypes.NewFakeZoneGetter()
+	podLister := negtypes.NewTestContext().PodInformer.GetIndexer()
+	addPodsToLister(podLister)
+
+	instance1 := negtypes.TestInstance1
+	instance3 := negtypes.TestInstance3
+	instanceNotExist := "non-existent-node"
+	emptyZoneInstance := "empty-zone-instance"
+	zoneGetter.AddZone("", emptyZoneInstance)
+
+	emptyNamedPort := ""
+	emptyNodeName := ""
+	port80 := int32(80)
+	protocolTCP := v1.ProtocolTCP
+
+	testCases := []struct {
+		desc              string
+		portName          string
+		testEndpointSlice []*discovery.EndpointSlice
+		expectSets        map[string]negtypes.NetworkEndpointSet
+		expectMap         negtypes.EndpointPodMap
+		expectErr         error
+	}{
+		{
+			desc:     "endpoints no missing or invalid fields",
+			portName: "",
+			testEndpointSlice: []*discovery.EndpointSlice{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testServiceName + "-1",
+						Namespace: testServiceNamespace,
+						Labels: map[string]string{
+							discovery.LabelServiceName: testServiceName,
+						},
+					},
+					AddressType: "IPv4",
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"10.100.1.1"},
+							NodeName:  &instance1,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod1",
+							},
+						},
+						{
+							Addresses: []string{"10.100.3.1"},
+							NodeName:  &instance3,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod4",
+							},
+						},
+					},
+					Ports: []discovery.EndpointPort{
+						{
+							Name:     &emptyNamedPort,
+							Port:     &port80,
+							Protocol: &protocolTCP,
+						},
+					},
+				},
+			},
+			expectSets: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+					networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80")),
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
+					networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80")),
+			},
+			expectMap: negtypes.EndpointPodMap{
+				networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod1"},
+				networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod4"},
+			},
+			expectErr: nil,
+		},
+		{
+			desc:     "include one endpoint that has missing nodeName",
+			portName: "",
+			testEndpointSlice: []*discovery.EndpointSlice{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testServiceName + "-1",
+						Namespace: testServiceNamespace,
+						Labels: map[string]string{
+							discovery.LabelServiceName: testServiceName,
+						},
+					},
+					AddressType: "IPv4",
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"10.100.1.1"},
+							NodeName:  nil, // endpoint with missing nodeName
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod1",
+							},
+						},
+						{
+							Addresses: []string{"10.100.3.1"},
+							NodeName:  &instance3,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod4",
+							},
+						},
+					},
+					Ports: []discovery.EndpointPort{
+						{
+							Name:     &emptyNamedPort,
+							Port:     &port80,
+							Protocol: &protocolTCP,
+						},
+					},
+				},
+			},
+			expectSets: nil,
+			expectMap:  nil,
+			expectErr:  negtypes.ErrEPNodeMissing,
+		},
+		{
+			desc:     "include one endpoint that has empty nodeName",
+			portName: "",
+			testEndpointSlice: []*discovery.EndpointSlice{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testServiceName + "-1",
+						Namespace: testServiceNamespace,
+						Labels: map[string]string{
+							discovery.LabelServiceName: testServiceName,
+						},
+					},
+					AddressType: "IPv4",
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"10.100.1.1"},
+							NodeName:  &emptyNodeName,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod1",
+							},
+						},
+						{
+							Addresses: []string{"10.100.3.1"},
+							NodeName:  &instance3,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod4",
+							},
+						},
+					},
+					Ports: []discovery.EndpointPort{
+						{
+							Name:     &emptyNamedPort,
+							Port:     &port80,
+							Protocol: &protocolTCP,
+						},
+					},
+				},
+			},
+			expectSets: nil,
+			expectMap:  nil,
+			expectErr:  negtypes.ErrEPNodeMissing,
+		},
+		{
+			desc:     "include one endpoint that has missing pod",
+			portName: "",
+			testEndpointSlice: []*discovery.EndpointSlice{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testServiceName + "-1",
+						Namespace: testServiceNamespace,
+						Labels: map[string]string{
+							discovery.LabelServiceName: testServiceName,
+						},
+					},
+					AddressType: "IPv4",
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"10.100.1.1"},
+							NodeName:  &instance1,
+							TargetRef: nil,
+						},
+						{
+							Addresses: []string{"10.100.3.1"},
+							NodeName:  &instance3,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod4",
+							},
+						},
+					},
+					Ports: []discovery.EndpointPort{
+						{
+							Name:     &emptyNamedPort,
+							Port:     &port80,
+							Protocol: &protocolTCP,
+						},
+					},
+				},
+			},
+			expectSets: nil,
+			expectMap:  nil,
+			expectErr:  negtypes.ErrEPPodMissing,
+		},
+		{
+			desc:     "include one endpoint that does correspond to an existing pod",
+			portName: "",
+			testEndpointSlice: []*discovery.EndpointSlice{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testServiceName + "-1",
+						Namespace: testServiceNamespace,
+						Labels: map[string]string{
+							discovery.LabelServiceName: testServiceName,
+						},
+					},
+					AddressType: "IPv4",
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"10.100.1.1"},
+							NodeName:  &instance1,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "foo", // this is a non-existing pod
+							},
+						},
+						{
+							Addresses: []string{"10.100.3.1"},
+							NodeName:  &instance3,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod4",
+							},
+						},
+					},
+					Ports: []discovery.EndpointPort{
+						{
+							Name:     &emptyNamedPort,
+							Port:     &port80,
+							Protocol: &protocolTCP,
+						},
+					},
+				},
+			},
+			expectSets: nil,
+			expectMap:  nil,
+			expectErr:  negtypes.ErrEPPodNotFound,
+		},
+		{
+			desc:     "include one endpoint that does correspond to an existing node",
+			portName: "",
+			testEndpointSlice: []*discovery.EndpointSlice{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testServiceName + "-1",
+						Namespace: testServiceNamespace,
+						Labels: map[string]string{
+							discovery.LabelServiceName: testServiceName,
+						},
+					},
+					AddressType: "IPv4",
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"10.100.1.1"},
+							NodeName:  &instanceNotExist,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod1",
+							},
+						},
+						{
+							Addresses: []string{"10.100.3.1"},
+							NodeName:  &instance3,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod4",
+							},
+						},
+					},
+					Ports: []discovery.EndpointPort{
+						{
+							Name:     &emptyNamedPort,
+							Port:     &port80,
+							Protocol: &protocolTCP,
+						},
+					},
+				},
+			},
+			expectSets: nil,
+			expectMap:  nil,
+			expectErr:  negtypes.ErrEPNodeNotFound,
+		},
+		{
+			desc:     "include one endpoint that corresponds to an empty zone",
+			portName: "",
+			testEndpointSlice: []*discovery.EndpointSlice{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testServiceName + "-1",
+						Namespace: testServiceNamespace,
+						Labels: map[string]string{
+							discovery.LabelServiceName: testServiceName,
+						},
+					},
+					AddressType: "IPv4",
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"10.100.1.1"},
+							NodeName:  &emptyZoneInstance,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod1",
+							},
+						},
+						{
+							Addresses: []string{"10.100.3.1"},
+							NodeName:  &instance3,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod4",
+							},
+						},
+					},
+					Ports: []discovery.EndpointPort{
+						{
+							Name:     &emptyNamedPort,
+							Port:     &port80,
+							Protocol: &protocolTCP,
+						},
+					},
+				},
+			},
+			expectSets: nil,
+			expectMap:  nil,
+			expectErr:  negtypes.ErrEPZoneMissing,
+		},
+	}
+
+	// TODO(songrx1997): Add endpoint annotations for the test after calculation code is in
+	for _, tc := range testCases {
+		retSet, retMap, _, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlice), podLister, zoneGetter, tc.portName, negtypes.VmIpPortEndpointType, negtypes.PodLabelPropagationConfig{})
+		if !errors.Is(err, tc.expectErr) {
+			t.Errorf("For case %q, expect %v error, but got %v.", tc.desc, tc.expectErr, err)
+		}
+		if !reflect.DeepEqual(retSet, tc.expectSets) {
+			t.Errorf("For case %q, expecting endpoint set %v, but got %v.", tc.desc, tc.expectSets, retSet)
+		}
 		if !reflect.DeepEqual(retMap, tc.expectMap) {
 			t.Errorf("For case %q, expecting endpoint map %v, but got %v.", tc.desc, tc.expectMap, retMap)
 		}
@@ -1242,12 +1603,12 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 					networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80")),
 			},
 			expectedPodMap: negtypes.EndpointPodMap{
-				networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"): types.NamespacedName{Namespace: testNamespace, Name: "pod1"},
-				networkEndpointFromEncodedEndpoint("10.100.1.2||instance1||80"): types.NamespacedName{Namespace: testNamespace, Name: "pod2"},
-				networkEndpointFromEncodedEndpoint("10.100.2.1||instance2||80"): types.NamespacedName{Namespace: testNamespace, Name: "pod3"},
-				networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80"): types.NamespacedName{Namespace: testNamespace, Name: "pod4"},
-				networkEndpointFromEncodedEndpoint("10.100.1.3||instance1||80"): types.NamespacedName{Namespace: testNamespace, Name: "pod5"},
-				networkEndpointFromEncodedEndpoint("10.100.1.4||instance1||80"): types.NamespacedName{Namespace: testNamespace, Name: "pod6"},
+				networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod1"},
+				networkEndpointFromEncodedEndpoint("10.100.1.2||instance1||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod2"},
+				networkEndpointFromEncodedEndpoint("10.100.2.1||instance2||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod3"},
+				networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod4"},
+				networkEndpointFromEncodedEndpoint("10.100.1.3||instance1||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod5"},
+				networkEndpointFromEncodedEndpoint("10.100.1.4||instance1||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod6"},
 			},
 			networkEndpointType: negtypes.VmIpPortEndpointType,
 		},
@@ -1265,12 +1626,12 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 					networkEndpointFromEncodedEndpoint("10.100.4.4||instance4||8081")),
 			},
 			expectedPodMap: negtypes.EndpointPodMap{
-				networkEndpointFromEncodedEndpoint("10.100.2.2||instance2||81"):   types.NamespacedName{Namespace: testNamespace, Name: "pod7"},
-				networkEndpointFromEncodedEndpoint("10.100.4.1||instance4||81"):   types.NamespacedName{Namespace: testNamespace, Name: "pod8"},
-				networkEndpointFromEncodedEndpoint("10.100.4.3||instance4||81"):   types.NamespacedName{Namespace: testNamespace, Name: "pod9"},
-				networkEndpointFromEncodedEndpoint("10.100.3.2||instance3||8081"): types.NamespacedName{Namespace: testNamespace, Name: "pod10"},
-				networkEndpointFromEncodedEndpoint("10.100.4.2||instance4||8081"): types.NamespacedName{Namespace: testNamespace, Name: "pod11"},
-				networkEndpointFromEncodedEndpoint("10.100.4.4||instance4||8081"): types.NamespacedName{Namespace: testNamespace, Name: "pod12"},
+				networkEndpointFromEncodedEndpoint("10.100.2.2||instance2||81"):   types.NamespacedName{Namespace: testServiceNamespace, Name: "pod7"},
+				networkEndpointFromEncodedEndpoint("10.100.4.1||instance4||81"):   types.NamespacedName{Namespace: testServiceNamespace, Name: "pod8"},
+				networkEndpointFromEncodedEndpoint("10.100.4.3||instance4||81"):   types.NamespacedName{Namespace: testServiceNamespace, Name: "pod9"},
+				networkEndpointFromEncodedEndpoint("10.100.3.2||instance3||8081"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod10"},
+				networkEndpointFromEncodedEndpoint("10.100.4.2||instance4||8081"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod11"},
+				networkEndpointFromEncodedEndpoint("10.100.4.4||instance4||8081"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod12"},
 			},
 			networkEndpointType: negtypes.VmIpPortEndpointType,
 		},
@@ -1288,19 +1649,19 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 					networkEndpointFromEncodedEndpoint("10.100.3.1||||80")),
 			},
 			expectedPodMap: negtypes.EndpointPodMap{
-				networkEndpointFromEncodedEndpoint("10.100.1.1||||80"): types.NamespacedName{Namespace: testNamespace, Name: "pod1"},
-				networkEndpointFromEncodedEndpoint("10.100.1.2||||80"): types.NamespacedName{Namespace: testNamespace, Name: "pod2"},
-				networkEndpointFromEncodedEndpoint("10.100.2.1||||80"): types.NamespacedName{Namespace: testNamespace, Name: "pod3"},
-				networkEndpointFromEncodedEndpoint("10.100.3.1||||80"): types.NamespacedName{Namespace: testNamespace, Name: "pod4"},
-				networkEndpointFromEncodedEndpoint("10.100.1.3||||80"): types.NamespacedName{Namespace: testNamespace, Name: "pod5"},
-				networkEndpointFromEncodedEndpoint("10.100.1.4||||80"): types.NamespacedName{Namespace: testNamespace, Name: "pod6"},
+				networkEndpointFromEncodedEndpoint("10.100.1.1||||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod1"},
+				networkEndpointFromEncodedEndpoint("10.100.1.2||||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod2"},
+				networkEndpointFromEncodedEndpoint("10.100.2.1||||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod3"},
+				networkEndpointFromEncodedEndpoint("10.100.3.1||||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod4"},
+				networkEndpointFromEncodedEndpoint("10.100.1.3||||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod5"},
+				networkEndpointFromEncodedEndpoint("10.100.1.4||||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod6"},
 			},
 			networkEndpointType: negtypes.NonGCPPrivateEndpointType,
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			testEndpointSlices := getTestEndpointSlices(testService, testNamespace)
+			testEndpointSlices := getDefaultEndpointSlices()
 
 			targetMap, endpointPodMap, _, err := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(testEndpointSlices), fakeZoneGetter, podLister, nodeLister, tc.portName, tc.networkEndpointType)
 			if err != nil {
@@ -1328,7 +1689,7 @@ func TestValidateAndAddEndpoints(t *testing.T) {
 			networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80")),
 	}
 	podMap := negtypes.EndpointPodMap{
-		networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"): types.NamespacedName{Namespace: testNamespace, Name: "pod1"},
+		networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod1"},
 	}
 
 	fakeZoneGetter := negtypes.NewFakeZoneGetter()
@@ -1356,7 +1717,7 @@ func TestValidateAndAddEndpoints(t *testing.T) {
 				Addresses: []string{"10.100.1.1"},
 				NodeName:  &instance1,
 				TargetRef: &corev1.ObjectReference{
-					Namespace: testNamespace,
+					Namespace: testServiceNamespace,
 					Name:      "pod1",
 				},
 				Ready: ready,
@@ -1371,7 +1732,7 @@ func TestValidateAndAddEndpoints(t *testing.T) {
 				Addresses: []string{"10.100.1.1"},
 				NodeName:  nil,
 				TargetRef: &corev1.ObjectReference{
-					Namespace: testNamespace,
+					Namespace: testServiceNamespace,
 					Name:      "pod1",
 				},
 				Ready: ready,
@@ -1386,7 +1747,7 @@ func TestValidateAndAddEndpoints(t *testing.T) {
 				Addresses: []string{"10.100.1.1"},
 				NodeName:  &emptyNodeName,
 				TargetRef: &corev1.ObjectReference{
-					Namespace: testNamespace,
+					Namespace: testServiceNamespace,
 					Name:      "pod1",
 				},
 				Ready: ready,
@@ -1399,7 +1760,7 @@ func TestValidateAndAddEndpoints(t *testing.T) {
 			desc: "Non-GCP network endpoint",
 			ep: negtypes.AddressData{
 				TargetRef: &corev1.ObjectReference{
-					Namespace: testNamespace,
+					Namespace: testServiceNamespace,
 					Name:      "pod1",
 				},
 				NodeName:  &emptyNodeName,
@@ -1413,7 +1774,7 @@ func TestValidateAndAddEndpoints(t *testing.T) {
 					networkEndpointFromEncodedEndpoint("10.100.1.1||||80")),
 			},
 			expectedPodMap: negtypes.EndpointPodMap{
-				networkEndpointFromEncodedEndpoint("10.100.1.1||||80"): types.NamespacedName{Namespace: testNamespace, Name: "pod1"}},
+				networkEndpointFromEncodedEndpoint("10.100.1.1||||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod1"}},
 		},
 	}
 	for _, tc := range testCases {
@@ -1453,7 +1814,7 @@ func TestValidatePod(t *testing.T) {
 			desc: "a valid pod with phase running",
 			pod: &v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Namespace: testNamespace,
+					Namespace: testServiceNamespace,
 					Name:      "pod1",
 				},
 				Status: v1.PodStatus{
@@ -1469,7 +1830,7 @@ func TestValidatePod(t *testing.T) {
 			desc: "a terminal pod with phase failed",
 			pod: &v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Namespace: testNamespace,
+					Namespace: testServiceNamespace,
 					Name:      "pod2",
 				},
 				Status: v1.PodStatus{
@@ -1485,7 +1846,7 @@ func TestValidatePod(t *testing.T) {
 			desc: "a terminal pod with phase succeeded",
 			pod: &v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Namespace: testNamespace,
+					Namespace: testServiceNamespace,
 					Name:      "pod3",
 				},
 				Status: v1.PodStatus{
@@ -1501,7 +1862,7 @@ func TestValidatePod(t *testing.T) {
 			desc: "a pod from non-existent node",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Namespace: testNamespace,
+					Namespace: testServiceNamespace,
 					Name:      "pod4",
 				},
 				Status: corev1.PodStatus{
@@ -1528,7 +1889,7 @@ func addPodsToLister(podLister cache.Indexer) {
 	for i := 1; i <= 6; i++ {
 		podLister.Add(&corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
-				Namespace: testNamespace,
+				Namespace: testServiceNamespace,
 				Name:      fmt.Sprintf("pod%v", i),
 			},
 			Status: corev1.PodStatus{
@@ -1542,7 +1903,7 @@ func addPodsToLister(podLister cache.Indexer) {
 	for i := 7; i <= 12; i++ {
 		podLister.Add(&corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
-				Namespace: testNamespace,
+				Namespace: testServiceNamespace,
 				Name:      fmt.Sprintf("pod%v", i),
 			},
 			Status: corev1.PodStatus{
@@ -1556,7 +1917,7 @@ func addPodsToLister(podLister cache.Indexer) {
 
 	podLister.Update(&corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: testNamespace,
+			Namespace: testServiceNamespace,
 			Name:      "pod3",
 		},
 		Status: corev1.PodStatus{
@@ -1568,7 +1929,7 @@ func addPodsToLister(podLister cache.Indexer) {
 	})
 	podLister.Update(&corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: testNamespace,
+			Namespace: testServiceNamespace,
 			Name:      "pod4",
 		},
 		Status: corev1.PodStatus{
@@ -1580,7 +1941,7 @@ func addPodsToLister(podLister cache.Indexer) {
 	})
 	podLister.Update(&corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: testNamespace,
+			Namespace: testServiceNamespace,
 			Name:      "pod7",
 		},
 		Status: corev1.PodStatus{
@@ -1592,7 +1953,7 @@ func addPodsToLister(podLister cache.Indexer) {
 	})
 	podLister.Update(&corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: testNamespace,
+			Namespace: testServiceNamespace,
 			Name:      "pod10",
 		},
 		Status: corev1.PodStatus{

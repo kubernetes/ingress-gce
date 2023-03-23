@@ -17,9 +17,11 @@ import "errors"
 
 const (
 	ResultEPCountsDiffer         = "EPCountsDiffer"
-	ResultEPMissingNodeName      = "EPMissingNodeName"
-	ResultNodeNotFound           = "NodeNotFound"
-	ResultEPMissingZone          = "EPMissingZone"
+	ResultEPNodeMissing          = "EPNodeMissing"
+	ResultEPNodeNotFound         = "EPNodeNotFound"
+	ResultEPPodMissing           = "EPPodMissing"
+	ResultEPPodNotFound          = "EPPodNotFound"
+	ResultEPZoneMissing          = "EPZoneMissing"
 	ResultEPSEndpointCountZero   = "EPSEndpointCountZero"
 	ResultEPCalculationCountZero = "EPCalculationCountZero"
 	ResultInvalidAPIResponse     = "InvalidAPIResponse"
@@ -37,9 +39,11 @@ const (
 
 var (
 	ErrEPCountsDiffer         = errors.New("endpoint counts from endpointData and endpointPodMap differ")
-	ErrEPMissingNodeName      = errors.New("endpoint has empty nodeName field")
-	ErrNodeNotFound           = errors.New("failed to retrieve associated zone of node")
-	ErrEPMissingZone          = errors.New("endpoint has empty zone field")
+	ErrEPNodeMissing          = errors.New("endpoint has missing nodeName field")
+	ErrEPNodeNotFound         = errors.New("endpoint corresponds to an non-existing node")
+	ErrEPPodMissing           = errors.New("endpoint has missing pod field")
+	ErrEPPodNotFound          = errors.New("endpoint corresponds to an non-existing pod")
+	ErrEPZoneMissing          = errors.New("endpoint has missing zone field")
 	ErrEPSEndpointCountZero   = errors.New("endpoint count from endpointData cannot be zero")
 	ErrEPCalculationCountZero = errors.New("endpoint count from endpointPodMap cannot be zero")
 	ErrInvalidAPIResponse     = errors.New("received response error doesn't match googleapi.Error type")
@@ -48,8 +52,11 @@ var (
 
 	// use this map for conversion between errors and sync results
 	ErrorStateResult = map[error]string{
-		ErrEPMissingNodeName:      ResultEPMissingNodeName,
-		ErrEPMissingZone:          ResultEPMissingZone,
+		ErrEPNodeMissing:          ResultEPNodeMissing,
+		ErrEPNodeNotFound:         ResultEPNodeNotFound,
+		ErrEPPodMissing:           ResultEPPodMissing,
+		ErrEPPodNotFound:          ResultEPPodNotFound,
+		ErrEPZoneMissing:          ResultEPZoneMissing,
 		ErrEPCalculationCountZero: ResultEPCalculationCountZero,
 		ErrEPSEndpointCountZero:   ResultEPSEndpointCountZero,
 		ErrEPCountsDiffer:         ResultEPCountsDiffer,
