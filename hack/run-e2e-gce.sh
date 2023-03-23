@@ -155,7 +155,7 @@ EOF
   --extract=ci/latest \
   --gcp-project="${GCP_PROJECT}" \
   --gcp-zone=us-west1-b \
-  --ginkgo-parallel=1 \
+  --ginkgo-parallel=10 \
   --provider=gce \
-  '--test_args=--ginkgo.focus=\[Feature:Ingress\]|\[Feature:NEG\]' \
+  '--test_args=--ginkgo.focus=Loadbalancing --ginkgo.skip=\[Serial\]|IngressClass' \
   --timeout=320m
