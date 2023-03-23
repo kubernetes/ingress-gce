@@ -110,6 +110,9 @@ func (grl *GCERateLimiter) Accept(ctx context.Context, key *cloud.RateLimitKey) 
 	return err
 }
 
+// Observe is a no-op func to satisfy cloud.RateLimiter
+func (grl *GCERateLimiter) Observe(context.Context, error, *cloud.RateLimitKey) {}
+
 // rateLimitImpl returns the flowcontrol.RateLimiter implementation
 // associated with the passed in key.
 func (grl *GCERateLimiter) rateLimitImpl(key *cloud.RateLimitKey) flowcontrol.RateLimiter {
