@@ -18,8 +18,10 @@ package syncers
 
 import (
 	context2 "context"
+	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"reflect"
 	"strconv"
 	"testing"
@@ -27,6 +29,8 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"google.golang.org/api/compute/v1"
+	"google.golang.org/api/googleapi"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -1385,6 +1389,66 @@ func TestUnknownNodes(t *testing.T) {
 
 	if !reflect.DeepEqual(expectedEndpoints, out) {
 		t.Errorf("endpoints were modified after syncInternal:\ngot %+v,\n expected %+v", out, expectedEndpoints)
+	}
+}
+
+func TestValidateEndpointBatch(t *testing.T) {
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	fakeCloud := negtypes.NewAdapter(fakeGCE)
+	zone := "us-central1-a"
+	networkEndpoints := []*composite.NetworkEndpoint{}
+
+	testCases := []struct {
+		desc              string
+		returnError       error
+		endpointOperation transactionOp
+		expect            error
+	}{
+		{
+			desc:              "Not googleapi error",
+			returnError:       errors.New("Not googleapi.Error"),
+			endpointOperation: attachOp,
+			expect:            negtypes.ErrInvalidAPIResponse,
+		},
+		{
+			desc: "Server error, status code 500",
+			returnError: &googleapi.Error{
+				Code: http.StatusInternalServerError,
+			},
+			endpointOperation: attachOp,
+			expect:            nil,
+		},
+		{
+			desc: "Invalid endpoint batch for endpoint attach, status code 400",
+			returnError: &googleapi.Error{
+				Code: http.StatusBadRequest,
+			},
+			endpointOperation: attachOp,
+			expect:            negtypes.ErrInvalidEPAttach,
+		},
+		{
+			desc: "Invalid endpoint batch for endpoint detach, status code 400",
+			returnError: &googleapi.Error{
+				Code: http.StatusBadRequest,
+			},
+			endpointOperation: detachOp,
+			expect:            negtypes.ErrInvalidEPDetach,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
+			mockGCE.MockNetworkEndpointGroups.AttachNetworkEndpointsHook = func(ctx context2.Context, key *meta.Key, arg0 *compute.NetworkEndpointGroupsAttachEndpointsRequest, neg *cloud.MockNetworkEndpointGroups) error {
+				return tc.returnError
+			}
+			_, transactionSyncer := newTestTransactionSyncer(fakeCloud, negtypes.VmIpPortEndpointType, false)
+
+			err := transactionSyncer.cloud.AttachNetworkEndpoints(transactionSyncer.NegSyncerKey.NegName, zone, networkEndpoints, transactionSyncer.NegSyncerKey.GetAPIVersion())
+			if got := transactionSyncer.ValidateEndpointBatch(err, tc.endpointOperation); !errors.Is(got, tc.expect) {
+				t.Errorf("ValidateEndpointBatch() = %t, expected %t", got, tc.expect)
+			}
+		})
 	}
 }
 
