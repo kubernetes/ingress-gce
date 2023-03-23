@@ -152,7 +152,7 @@ EOF
   --env=GCE_ALPHA_FEATURES=NetworkEndpointGroup \
   --env=KUBE_GCE_ENABLE_IP_ALIASES=true \
   --extract=ci/latest \
-  --gcp-project-type=ingress-project \
+  --gcp-project="${GCP_PROJECT}" \
   --gcp-zone=us-west1-b \
   --ginkgo-parallel=10 \
   --provider=gce \
