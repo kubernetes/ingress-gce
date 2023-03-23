@@ -18,6 +18,7 @@ package syncers
 
 import (
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -357,6 +358,11 @@ func validateAndAddEndpoints(ep negtypes.AddressData, zoneGetter negtypes.ZoneGe
 			klog.V(2).Infof("Endpoint %q does not correspond to a pod object. Skipping", address)
 			continue
 		}
+		// endpoint address should match to the IP of its pod
+		if !podContainsEndpointAddress(address, pod) {
+			klog.V(2).Infof("Endpoint %q does not have an address %v that matches to the IP(s) of its pod")
+			continue
+		}
 		if !validatePod(pod, nodeLister) {
 			klog.V(2).Infof("Endpoint %q does not correspond to a valid pod resource. Skipping", address)
 			continue
@@ -390,6 +396,7 @@ func validateAndAddEndpoints(ep negtypes.AddressData, zoneGetter negtypes.ZoneGe
 // it returns false if the pod:
 // 1. is in terminal state
 // 2. corresponds to a non-existent node
+// 3. have an IP that matches to a podIP, but is outside of the node's allocated IP range
 func validatePod(pod *apiv1.Pod, nodeLister cache.Indexer) bool {
 	// Terminal Pod means a pod is in PodFailed or PodSucceeded phase
 	phase := pod.Status.Phase
@@ -402,12 +409,54 @@ func validatePod(pod *apiv1.Pod, nodeLister cache.Indexer) bool {
 		klog.V(2).Info("Pod %s/%s corresponds to a non-existing node %s, skipping", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name, pod.Spec.NodeName)
 		return false
 	}
-	_, isNode := obj.(*apiv1.Node)
+	node, isNode := obj.(*apiv1.Node)
 	if !isNode {
 		klog.V(2).Info("Pod %s/%s does not correspond to a valid node resource, skipping", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name)
 		return false
 	}
+	if !nodeContainsPodIP(node, pod) {
+		klog.V(2).Info("Pod %s/%s has an IP %v that is outside of the node's allocated IP range(s) %v, skipping", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name, pod.Status.PodIP, node.Spec.PodCIDRs)
+		return false
+	}
 	return true
+}
+
+// podContainsEndpointAddress checks the pod's existing PodIP(s)
+// and return true if the given endpoint address matches one of them
+func podContainsEndpointAddress(endpointAddr string, pod *apiv1.Pod) bool {
+	// a pod can have at most two PodIPs, one for ipv4 and one for ipv6
+	for _, podIP := range pod.Status.PodIPs {
+		if endpointAddr == podIP.IP {
+			return true
+		}
+	}
+	return false
+}
+
+// nodeContainsPodIP checks the node's existing PodCIDR(s)
+// and return true if the given podIP is within one of the ranges
+func nodeContainsPodIP(node *apiv1.Node, pod *apiv1.Pod) bool {
+	if node == nil || pod == nil {
+		return false
+	}
+	ipnets := []*net.IPNet{}
+	// a node can have at most two PodCIDRs, one for ipv4 and one for ipv6
+	for _, podCIDR := range node.Spec.PodCIDRs {
+		podCIDR = strings.TrimSpace(podCIDR)
+		_, ipnet, err := net.ParseCIDR(podCIDR)
+		if err != nil {
+			// swallow errors for CIDRs that are invalid
+			continue
+		}
+		ipnets = append(ipnets, ipnet)
+	}
+	podIP := net.ParseIP(pod.Status.PodIP)
+	for _, net := range ipnets {
+		if net.Contains(podIP) {
+			return true
+		}
+	}
+	return false
 }
 
 // retrieveExistingZoneNetworkEndpointMap lists existing network endpoints in the neg and return the zone and endpoints map

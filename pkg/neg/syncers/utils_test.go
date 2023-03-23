@@ -26,7 +26,6 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -446,7 +445,8 @@ func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 	t.Parallel()
 	zoneGetter := negtypes.NewFakeZoneGetter()
 	podLister := negtypes.NewTestContext().PodInformer.GetIndexer()
-	addPodsToLister(podLister)
+	testEndpointSlices := getDefaultEndpointSlices()
+	addPodsToLister(podLister, testEndpointSlices)
 
 	testCases := []struct {
 		desc                string
@@ -535,7 +535,7 @@ func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 
 	// TODO(songrx1997): Add endpoint annotations for the test after calculation code is in
 	for _, tc := range testCases {
-		retSet, retMap, _, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()), podLister, zoneGetter, tc.portName, tc.networkEndpointType, negtypes.PodLabelPropagationConfig{})
+		retSet, retMap, _, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(testEndpointSlices), podLister, zoneGetter, tc.portName, tc.networkEndpointType, negtypes.PodLabelPropagationConfig{})
 		if err != nil {
 			t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
 		}
@@ -556,7 +556,7 @@ func TestValidateEndpointFields(t *testing.T) {
 	t.Parallel()
 	zoneGetter := negtypes.NewFakeZoneGetter()
 	podLister := negtypes.NewTestContext().PodInformer.GetIndexer()
-	addPodsToLister(podLister)
+	addPodsToLister(podLister, getDefaultEndpointSlices())
 
 	instance1 := negtypes.TestInstance1
 	instance3 := negtypes.TestInstance3
@@ -1560,13 +1560,18 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 	fakeZoneGetter := negtypes.NewFakeZoneGetter()
 	testContext := negtypes.NewTestContext()
 	podLister := testContext.PodInformer.GetIndexer()
-	addPodsToLister(podLister)
+	testEndpointSlices := getDefaultEndpointSlices()
+	addPodsToLister(podLister, testEndpointSlices)
 
 	nodeLister := testContext.NodeInformer.GetIndexer()
 	for i := 1; i <= 4; i++ {
-		nodeLister.Add(&corev1.Node{
+		nodeLister.Add(&v1.Node{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: fmt.Sprintf("instance%v", i),
+			},
+			Spec: v1.NodeSpec{
+				PodCIDR:  fmt.Sprintf("10.100.%v.0/24", i),
+				PodCIDRs: []string{fmt.Sprintf("200%v:db8::/48", i), fmt.Sprintf("10.100.%v.0/24", i)},
 			},
 		})
 	}
@@ -1661,7 +1666,6 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			testEndpointSlices := getDefaultEndpointSlices()
 
 			targetMap, endpointPodMap, _, err := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(testEndpointSlices), fakeZoneGetter, podLister, nodeLister, tc.portName, tc.networkEndpointType)
 			if err != nil {
@@ -1705,13 +1709,22 @@ func TestValidateAndAddEndpoints(t *testing.T) {
 		},
 		Status: v1.PodStatus{
 			Phase: v1.PodRunning,
+			PodIP: "10.100.1.1",
+			PodIPs: []v1.PodIP{
+				{IP: "10.100.1.1"},
+				{IP: "2001:db8::2:1"},
+			},
 		},
 	})
 
 	nodeLister := testContext.NodeInformer.GetIndexer()
-	nodeLister.Add(&corev1.Node{
+	nodeLister.Add(&v1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: instance1,
+		},
+		Spec: v1.NodeSpec{
+			PodCIDR:  "10.100.1.0/24",
+			PodCIDRs: []string{"2001:db8::/48", "10.100.1.0/24"},
 		},
 	})
 
@@ -1723,11 +1736,11 @@ func TestValidateAndAddEndpoints(t *testing.T) {
 		expectedPodMap      negtypes.EndpointPodMap
 	}{
 		{
-			desc: "endpoint with nodeName",
+			desc: "valid endpoint with IPv4 address",
 			ep: negtypes.AddressData{
 				Addresses: []string{"10.100.1.1"},
 				NodeName:  &instance1,
-				TargetRef: &corev1.ObjectReference{
+				TargetRef: &v1.ObjectReference{
 					Namespace: testServiceNamespace,
 					Name:      "pod1",
 				},
@@ -1738,11 +1751,31 @@ func TestValidateAndAddEndpoints(t *testing.T) {
 			expectedPodMap:      podMap,
 		},
 		{
+			desc: "valid endpoint with IPv6 address",
+			ep: negtypes.AddressData{
+				Addresses: []string{"2001:db8::2:1"},
+				NodeName:  &instance1,
+				TargetRef: &v1.ObjectReference{
+					Namespace: testServiceNamespace,
+					Name:      "pod1",
+				},
+				Ready: ready,
+			},
+			endpointType: negtypes.VmIpPortEndpointType,
+			expectedEndpointMap: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+					networkEndpointFromEncodedEndpoint("2001:db8::2:1||instance1||80")),
+			},
+			expectedPodMap: negtypes.EndpointPodMap{
+				networkEndpointFromEncodedEndpoint("2001:db8::2:1||instance1||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod1"},
+			},
+		},
+		{
 			desc: "endpoint without nodeName, nodeName should be filled",
 			ep: negtypes.AddressData{
 				Addresses: []string{"10.100.1.1"},
 				NodeName:  nil,
-				TargetRef: &corev1.ObjectReference{
+				TargetRef: &v1.ObjectReference{
 					Namespace: testServiceNamespace,
 					Name:      "pod1",
 				},
@@ -1757,7 +1790,7 @@ func TestValidateAndAddEndpoints(t *testing.T) {
 			ep: negtypes.AddressData{
 				Addresses: []string{"10.100.1.1"},
 				NodeName:  &emptyNodeName,
-				TargetRef: &corev1.ObjectReference{
+				TargetRef: &v1.ObjectReference{
 					Namespace: testServiceNamespace,
 					Name:      "pod1",
 				},
@@ -1768,9 +1801,39 @@ func TestValidateAndAddEndpoints(t *testing.T) {
 			expectedPodMap:      podMap,
 		},
 		{
+			desc: "endpoint with IPv4 IP address doesn't correspond to any podIP(s)",
+			ep: negtypes.AddressData{
+				Addresses: []string{"10.100.1.2"},
+				NodeName:  &instance1,
+				TargetRef: &v1.ObjectReference{
+					Namespace: testServiceNamespace,
+					Name:      "pod1",
+				},
+				Ready: ready,
+			},
+			endpointType:        negtypes.VmIpPortEndpointType,
+			expectedEndpointMap: map[string]negtypes.NetworkEndpointSet{},
+			expectedPodMap:      negtypes.EndpointPodMap{},
+		},
+		{
+			desc: "endpoint with IPv6 IP address doesn't correspond to any podIP(s)",
+			ep: negtypes.AddressData{
+				Addresses: []string{"2001:db8::2:2"},
+				NodeName:  &instance1,
+				TargetRef: &v1.ObjectReference{
+					Namespace: testServiceNamespace,
+					Name:      "pod1",
+				},
+				Ready: ready,
+			},
+			endpointType:        negtypes.VmIpPortEndpointType,
+			expectedEndpointMap: map[string]negtypes.NetworkEndpointSet{},
+			expectedPodMap:      negtypes.EndpointPodMap{},
+		},
+		{
 			desc: "Non-GCP network endpoint",
 			ep: negtypes.AddressData{
-				TargetRef: &corev1.ObjectReference{
+				TargetRef: &v1.ObjectReference{
 					Namespace: testServiceNamespace,
 					Name:      "pod1",
 				},
@@ -1811,9 +1874,16 @@ func TestValidatePod(t *testing.T) {
 	testNodeNonExistent := "node-non-existent"
 	testContext := negtypes.NewTestContext()
 	nodeLister := testContext.NodeInformer.GetIndexer()
-	nodeLister.Add(&corev1.Node{
+	testPodIPv4 := "10.100.1.1"
+	testPodIPv6 := "2001:db8::2:1"
+
+	nodeLister.Add(&v1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: instance1,
+		},
+		Spec: v1.NodeSpec{
+			PodCIDR:  "10.100.1.0/24",
+			PodCIDRs: []string{"2001:db8::/48", "10.100.1.0/24"},
 		},
 	})
 	testCases := []struct {
@@ -1822,7 +1892,7 @@ func TestValidatePod(t *testing.T) {
 		expect bool
 	}{
 		{
-			desc: "a valid pod with phase running",
+			desc: "a valid pod with IPv4 address and phase running",
 			pod: &v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: testServiceNamespace,
@@ -1830,8 +1900,26 @@ func TestValidatePod(t *testing.T) {
 				},
 				Status: v1.PodStatus{
 					Phase: v1.PodRunning,
+					PodIP: testPodIPv4,
 				},
-				Spec: corev1.PodSpec{
+				Spec: v1.PodSpec{
+					NodeName: instance1,
+				},
+			},
+			expect: true,
+		},
+		{
+			desc: "a valid pod with IPv6 address and phase running",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testServiceNamespace,
+					Name:      "pod2",
+				},
+				Status: v1.PodStatus{
+					Phase: v1.PodRunning,
+					PodIP: testPodIPv6,
+				},
+				Spec: v1.PodSpec{
 					NodeName: instance1,
 				},
 			},
@@ -1842,12 +1930,13 @@ func TestValidatePod(t *testing.T) {
 			pod: &v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: testServiceNamespace,
-					Name:      "pod2",
+					Name:      "pod3",
 				},
 				Status: v1.PodStatus{
 					Phase: v1.PodFailed,
+					PodIP: testPodIPv4,
 				},
-				Spec: corev1.PodSpec{
+				Spec: v1.PodSpec{
 					NodeName: instance1,
 				},
 			},
@@ -1858,12 +1947,13 @@ func TestValidatePod(t *testing.T) {
 			pod: &v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: testServiceNamespace,
-					Name:      "pod3",
+					Name:      "pod4",
 				},
 				Status: v1.PodStatus{
 					Phase: v1.PodSucceeded,
+					PodIP: testPodIPv4,
 				},
-				Spec: corev1.PodSpec{
+				Spec: v1.PodSpec{
 					NodeName: instance1,
 				},
 			},
@@ -1871,16 +1961,51 @@ func TestValidatePod(t *testing.T) {
 		},
 		{
 			desc: "a pod from non-existent node",
-			pod: &corev1.Pod{
+			pod: &v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: testServiceNamespace,
-					Name:      "pod4",
+					Name:      "pod5",
 				},
-				Status: corev1.PodStatus{
-					Phase: corev1.PodRunning,
+				Status: v1.PodStatus{
+					Phase: v1.PodRunning,
+					PodIP: testPodIPv4,
 				},
-				Spec: corev1.PodSpec{
+				Spec: v1.PodSpec{
 					NodeName: testNodeNonExistent,
+				},
+			},
+			expect: false,
+		},
+		{
+			desc: "a pod with IPv4 IP adress outside of the node's allocated pod range",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testServiceNamespace,
+					Name:      "pod6",
+				},
+				Status: v1.PodStatus{
+					Phase: v1.PodRunning,
+					PodIP: "10.101.1.1",
+				},
+				Spec: v1.PodSpec{
+					NodeName: instance1,
+				},
+			},
+			expect: false,
+		},
+		{
+			desc: "a pod with IPv6 IP address outside of the node's allocated pod range",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testServiceNamespace,
+					Name:      "pod7",
+				},
+				Status: v1.PodStatus{
+					Phase: v1.PodRunning,
+					PodIP: "2001:db9::2:1",
+				},
+				Spec: v1.PodSpec{
+					NodeName: instance1,
 				},
 			},
 			expect: false,
@@ -1895,85 +2020,38 @@ func TestValidatePod(t *testing.T) {
 	}
 }
 
-func addPodsToLister(podLister cache.Indexer) {
-	// add all pods in default endpoint into podLister
-	for i := 1; i <= 6; i++ {
-		podLister.Add(&corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: testServiceNamespace,
-				Name:      fmt.Sprintf("pod%v", i),
-			},
-			Status: corev1.PodStatus{
-				Phase: v1.PodRunning,
-			},
-			Spec: corev1.PodSpec{
-				NodeName: testInstance1,
-			},
-		})
-	}
-	for i := 7; i <= 12; i++ {
-		podLister.Add(&corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: testServiceNamespace,
-				Name:      fmt.Sprintf("pod%v", i),
-			},
-			Status: corev1.PodStatus{
-				Phase: v1.PodRunning,
-			},
-			Spec: corev1.PodSpec{
-				NodeName: testInstance4,
-			},
-		})
-	}
+func addPodsToLister(podLister cache.Indexer, endpointSlices []*discovery.EndpointSlice) {
+	for _, eps := range endpointSlices {
+		addressType := eps.AddressType
+		for _, ep := range eps.Endpoints {
+			podNamespace := ep.TargetRef.Namespace
+			podName := ep.TargetRef.Name
+			for _, addr := range ep.Addresses {
+				addresses := []v1.PodIP{{IP: addr}}
+				if addressType == discovery.AddressTypeIPv4 {
+					addresses = append(addresses, v1.PodIP{IP: "2001:db8::68"})
+				}
+				if addressType == discovery.AddressTypeIPv6 {
+					addresses = append(addresses, v1.PodIP{IP: "10.100.1.1"})
+				}
 
-	podLister.Update(&corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: testServiceNamespace,
-			Name:      "pod3",
-		},
-		Status: corev1.PodStatus{
-			Phase: v1.PodRunning,
-		},
-		Spec: corev1.PodSpec{
-			NodeName: testInstance2,
-		},
-	})
-	podLister.Update(&corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: testServiceNamespace,
-			Name:      "pod4",
-		},
-		Status: corev1.PodStatus{
-			Phase: v1.PodRunning,
-		},
-		Spec: corev1.PodSpec{
-			NodeName: testInstance3,
-		},
-	})
-	podLister.Update(&corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: testServiceNamespace,
-			Name:      "pod7",
-		},
-		Status: corev1.PodStatus{
-			Phase: v1.PodRunning,
-		},
-		Spec: corev1.PodSpec{
-			NodeName: testInstance2,
-		},
-	})
-	podLister.Update(&corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: testServiceNamespace,
-			Name:      "pod10",
-		},
-		Status: corev1.PodStatus{
-			Phase: v1.PodRunning,
-		},
-		Spec: corev1.PodSpec{
-			NodeName: testInstance3,
-		},
-	})
+				podLister.Add(&v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: podNamespace,
+						Name:      podName,
+					},
+					Spec: v1.PodSpec{
+						NodeName: *ep.NodeName,
+					},
+					Status: v1.PodStatus{
+						Phase:  v1.PodRunning,
+						PodIP:  addr,
+						PodIPs: addresses,
+					},
+				})
+			}
+		}
+	}
 }
 
 // numToIP converts the given number to an IP address.
@@ -2213,7 +2291,7 @@ func getTestEndpointSlices(name, namespace string) []*discovery.EndpointSlice {
 					NodeName:  &instance3,
 					TargetRef: &v1.ObjectReference{
 						Namespace: namespace,
-						Name:      "pod10",
+						Name:      "pod13",
 					},
 				},
 				{
@@ -2221,7 +2299,7 @@ func getTestEndpointSlices(name, namespace string) []*discovery.EndpointSlice {
 					NodeName:  &instance4,
 					TargetRef: &v1.ObjectReference{
 						Namespace: namespace,
-						Name:      "pod11",
+						Name:      "pod14",
 					},
 				},
 				{
@@ -2229,7 +2307,7 @@ func getTestEndpointSlices(name, namespace string) []*discovery.EndpointSlice {
 					NodeName:  &instance4,
 					TargetRef: &v1.ObjectReference{
 						Namespace: namespace,
-						Name:      "pod12",
+						Name:      "pod15",
 					},
 					Conditions: discovery.EndpointConditions{Ready: &notReady},
 				},

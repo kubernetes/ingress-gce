@@ -827,18 +827,23 @@ func TestEnableDegradedMode(t *testing.T) {
 	podLister := testContext.PodInformer.GetIndexer()
 	nodeLister := testContext.NodeInformer.GetIndexer()
 	serviceLister := testContext.ServiceInformer.GetIndexer()
-	addPodsToLister(podLister)
+	testEndpointSlices := getDefaultEndpointSlices()
+	addPodsToLister(podLister, testEndpointSlices)
 
 	for i := 1; i <= 4; i++ {
 		nodeLister.Add(&v1.Node{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: fmt.Sprintf("instance%v", i),
 			},
+			Spec: v1.NodeSpec{
+				PodCIDR:  fmt.Sprintf("10.100.%v.0/24", i),
+				PodCIDRs: []string{fmt.Sprintf("200%v:db8::/48", i), fmt.Sprintf("10.100.%v.0/24", i)},
+			},
 		})
 	}
 
-	validEndpointData := negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices())
-	invalidEndpointData := negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices())
+	validEndpointData := negtypes.EndpointsDataFromEndpointSlices(testEndpointSlices)
+	invalidEndpointData := negtypes.EndpointsDataFromEndpointSlices(testEndpointSlices)
 	invalidEndpointData[0].Addresses[0].NodeName = nil
 
 	endpointSets := map[string]negtypes.NetworkEndpointSet{
