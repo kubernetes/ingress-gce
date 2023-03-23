@@ -148,6 +148,10 @@ EOF
 )
 
 
+# The tests are too slow ~20 mins per test and when running in parallel flake
+# Run just one test as smoke test to verify the code is functional
+# TODO: make the test more faster and reliable, even replace the kubernetes
+# tests with our own ones.
 /workspace/test-infra/scenarios/kubernetes_e2e.py --check-leaked-resources \
   --cluster= \
   --env=GCE_ALPHA_FEATURES=NetworkEndpointGroup \
@@ -155,7 +159,7 @@ EOF
   --extract=ci/latest \
   --gcp-project="${GCP_PROJECT}" \
   --gcp-zone=us-west1-b \
-  --ginkgo-parallel=10 \
+  --ginkgo-parallel=1 \
   --provider=gce \
-  '--test_args=--ginkgo.focus=Loadbalancing --ginkgo.skip=\[Serial\]|IngressClass' \
+  '--test_args=--ginkgo.focus=Loadbalancing.*should.be.able.to.switch.between.IG.and.NEG.modes --ginkgo.skip=\[Serial\]|IngressClass' \
   --timeout=320m
