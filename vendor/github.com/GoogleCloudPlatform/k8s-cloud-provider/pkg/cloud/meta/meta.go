@@ -140,6 +140,7 @@ var AllServices = []*ServiceInfo{
 		keyType:     Global,
 		serviceType: reflect.TypeOf(&beta.BackendServicesService{}),
 		additionalMethods: []string{
+			"Patch",
 			"Update",
 			"SetSecurityPolicy",
 			"AddSignedUrlKey",
@@ -155,6 +156,7 @@ var AllServices = []*ServiceInfo{
 		keyType:     Global,
 		serviceType: reflect.TypeOf(&alpha.BackendServicesService{}),
 		additionalMethods: []string{
+			"Patch",
 			"Update",
 			"SetSecurityPolicy",
 			"AddSignedUrlKey",
@@ -171,6 +173,7 @@ var AllServices = []*ServiceInfo{
 		serviceType: reflect.TypeOf(&ga.RegionBackendServicesService{}),
 		additionalMethods: []string{
 			"GetHealth",
+			"Patch",
 			"Update",
 		},
 	},
@@ -183,6 +186,7 @@ var AllServices = []*ServiceInfo{
 		serviceType: reflect.TypeOf(&alpha.RegionBackendServicesService{}),
 		additionalMethods: []string{
 			"GetHealth",
+			"Patch",
 			"Update",
 		},
 	},
@@ -195,6 +199,7 @@ var AllServices = []*ServiceInfo{
 		serviceType: reflect.TypeOf(&beta.RegionBackendServicesService{}),
 		additionalMethods: []string{
 			"GetHealth",
+			"Patch",
 			"Update",
 		},
 	},

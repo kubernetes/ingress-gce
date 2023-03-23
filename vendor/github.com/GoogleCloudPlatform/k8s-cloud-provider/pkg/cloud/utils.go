@@ -24,11 +24,19 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 )
 
-const (
+var (
 	gaPrefix    = "https://www.googleapis.com/compute/v1"
 	alphaPrefix = "https://www.googleapis.com/compute/alpha"
 	betaPrefix  = "https://www.googleapis.com/compute/beta"
 )
+
+// SetAPIDomain sets the root of the URL for the API. The default domain is
+// "https://www.googleapis.com".
+func SetAPIDomain(domain string) {
+	gaPrefix = domain + "/compute/v1"
+	alphaPrefix = domain + "/compute/alpha"
+	betaPrefix = domain + "/compute/beta"
+}
 
 // ResourceID identifies a GCE resource as parsed from compute resource URL.
 type ResourceID struct {
