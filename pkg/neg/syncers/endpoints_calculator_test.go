@@ -842,6 +842,18 @@ func TestEnableDegradedMode(t *testing.T) {
 		})
 	}
 
+	serviceLister.Add(&v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testServiceNamespace,
+			Name:      testServiceName,
+		},
+		Spec: v1.ServiceSpec{
+			Selector: map[string]string{
+				"run": "foo",
+			},
+		},
+	})
+
 	validEndpointData := negtypes.EndpointsDataFromEndpointSlices(testEndpointSlices)
 	invalidEndpointData := negtypes.EndpointsDataFromEndpointSlices(testEndpointSlices)
 	invalidEndpointData[0].Addresses[0].NodeName = nil

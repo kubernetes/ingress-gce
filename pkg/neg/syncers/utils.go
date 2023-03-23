@@ -312,7 +312,7 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, podLister cache.Inde
 }
 
 func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGetter negtypes.ZoneGetter,
-	podLister, nodeLister cache.Indexer, servicePortName string,
+	podLister, nodeLister, serviceLister cache.Indexer, servicePortName string,
 	networkEndpointType negtypes.NetworkEndpointType) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, int, error) {
 	targetMap := map[string]negtypes.NetworkEndpointSet{}
 	endpointPodMap := negtypes.EndpointPodMap{}
@@ -328,6 +328,8 @@ func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGett
 		if len(matchPort) == 0 {
 			continue
 		}
+		serviceName := ed.Meta.Labels[discovery.LabelServiceName]
+		isCustomEPS := ed.Meta.Labels[discovery.LabelManagedBy] != "endpointslice-controller.k8s.io"
 		for _, endpointAddress := range ed.Addresses {
 			if endpointAddress.AddressType != discovery.AddressTypeIPv4 {
 				klog.Infof("Skipping non IPv4 address in degraded mode: %q, in endpoint slice %s/%s", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
@@ -337,14 +339,19 @@ func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGett
 				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated pod. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
 				continue
 			}
-			dupCount += validateAndAddEndpoints(endpointAddress, zoneGetter, podLister, nodeLister, matchPort, networkEndpointType, targetMap, endpointPodMap)
+			dupCount += validateAndAddEndpoints(endpointAddress, zoneGetter, podLister, nodeLister,
+				serviceLister, matchPort, serviceName, networkEndpointType, targetMap, endpointPodMap, isCustomEPS)
 		}
 	}
 	return targetMap, endpointPodMap, dupCount, nil
 }
 
 // validateAndAddEndpoints fills in missing information and creates network endpoint for each endpoint addresss
-func validateAndAddEndpoints(ep negtypes.AddressData, zoneGetter negtypes.ZoneGetter, podLister, nodeLister cache.Indexer, matchPort string, endpointType negtypes.NetworkEndpointType, targetMap map[string]negtypes.NetworkEndpointSet, endpointPodMap negtypes.EndpointPodMap) int {
+func validateAndAddEndpoints(ep negtypes.AddressData, zoneGetter negtypes.ZoneGetter,
+	podLister, nodeLister, serviceLister cache.Indexer,
+	matchPort string, serviceName string, endpointType negtypes.NetworkEndpointType,
+	targetMap map[string]negtypes.NetworkEndpointSet,
+	endpointPodMap negtypes.EndpointPodMap, isCustomEPS bool) int {
 	var dupCount int
 	for _, address := range ep.Addresses {
 		key := fmt.Sprintf("%s/%s", ep.TargetRef.Namespace, ep.TargetRef.Name)
@@ -363,7 +370,7 @@ func validateAndAddEndpoints(ep negtypes.AddressData, zoneGetter negtypes.ZoneGe
 			klog.V(2).Infof("Endpoint %q does not have an address %v that matches to the IP(s) of its pod")
 			continue
 		}
-		if !validatePod(pod, nodeLister) {
+		if !validatePod(pod, nodeLister, serviceLister, serviceName, isCustomEPS) {
 			klog.V(2).Infof("Endpoint %q does not correspond to a valid pod resource. Skipping", address)
 			continue
 		}
@@ -397,8 +404,8 @@ func validateAndAddEndpoints(ep negtypes.AddressData, zoneGetter negtypes.ZoneGe
 // 1. is in terminal state
 // 2. corresponds to a non-existent node
 // 3. have an IP that matches to a podIP, but is outside of the node's allocated IP range
-func validatePod(pod *apiv1.Pod, nodeLister cache.Indexer) bool {
-	// Terminal Pod means a pod is in PodFailed or PodSucceeded phase
+// 4. does not belong to the service in question
+func validatePod(pod *apiv1.Pod, nodeLister, serviceLister cache.Indexer, serviceName string, isCustomEPS bool) bool { // Terminal Pod means a pod is in PodFailed or PodSucceeded phase
 	phase := pod.Status.Phase
 	if phase == apiv1.PodFailed || phase == apiv1.PodSucceeded {
 		klog.V(2).Info("Pod %s/%s is a terminal pod with status %v, skipping", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name, phase)
@@ -416,6 +423,19 @@ func validatePod(pod *apiv1.Pod, nodeLister cache.Indexer) bool {
 	}
 	if !nodeContainsPodIP(node, pod) {
 		klog.V(2).Info("Pod %s/%s has an IP %v that is outside of the node's allocated IP range(s) %v, skipping", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name, pod.Status.PodIP, node.Spec.PodCIDRs)
+		return false
+	}
+
+	service := getService(serviceLister, pod.ObjectMeta.Namespace, serviceName)
+	if service == nil {
+		klog.V(2).Info("Endpoint does not correspond to an existing service %s, skipping", serviceName)
+		return false
+	}
+	if isCustomEPS {
+		return true
+	}
+	if !podBelongsToService(pod, service) {
+		klog.V(2).Info("Pod %s/%s labels %v does not match service %s/%s selector %v", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name, pod.Labels, service.Namespace, service.Name, service.Spec.Selector)
 		return false
 	}
 	return true
@@ -457,6 +477,17 @@ func nodeContainsPodIP(node *apiv1.Node, pod *apiv1.Pod) bool {
 		}
 	}
 	return false
+}
+
+func podBelongsToService(pod *apiv1.Pod, service *apiv1.Service) bool {
+	podLabels := pod.ObjectMeta.Labels
+	serviceLabels := service.Spec.Selector
+	for key, val1 := range serviceLabels {
+		if val2, contains := podLabels[key]; !contains || val1 != val2 {
+			return false
+		}
+	}
+	return true
 }
 
 // retrieveExistingZoneNetworkEndpointMap lists existing network endpoints in the neg and return the zone and endpoints map

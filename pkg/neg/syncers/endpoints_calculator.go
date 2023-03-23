@@ -208,7 +208,7 @@ func (l *L7EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, _ 
 	if !l.enableDegradedMode {
 		return toZoneNetworkEndpointMap(eds, l.podLister, l.zoneGetter, l.servicePortName, l.networkEndpointType, l.lpConfig)
 	}
-	degradedModeEndpointSet, degradedModeEndpointMap, degradedModeDupCount, degradedModeErr := toZoneNetworkEndpointMapDegradedMode(eds, l.zoneGetter, l.podLister, l.nodeLister, l.servicePortName, l.networkEndpointType)
+	degradedModeEndpointSet, degradedModeEndpointMap, degradedModeDupCount, degradedModeErr := toZoneNetworkEndpointMapDegradedMode(eds, l.zoneGetter, l.podLister, l.nodeLister, l.serviceLister, l.servicePortName, l.networkEndpointType)
 	legacyEndpointSet, legacyEndpointMap, dupCount, err := toZoneNetworkEndpointMap(eds, l.podLister, l.zoneGetter, l.servicePortName, l.networkEndpointType, l.lpConfig)
 
 	if inErrorState {
