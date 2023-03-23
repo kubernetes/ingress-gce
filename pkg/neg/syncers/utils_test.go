@@ -1695,7 +1695,18 @@ func TestValidateAndAddEndpoints(t *testing.T) {
 	fakeZoneGetter := negtypes.NewFakeZoneGetter()
 	testContext := negtypes.NewTestContext()
 	podLister := testContext.PodInformer.GetIndexer()
-	addPodsToLister(podLister)
+	podLister.Add(&v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testServiceNamespace,
+			Name:      "pod1",
+		},
+		Spec: v1.PodSpec{
+			NodeName: testInstance1,
+		},
+		Status: v1.PodStatus{
+			Phase: v1.PodRunning,
+		},
+	})
 
 	nodeLister := testContext.NodeInformer.GetIndexer()
 	nodeLister.Add(&corev1.Node{

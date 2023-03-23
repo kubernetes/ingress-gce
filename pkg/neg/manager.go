@@ -108,6 +108,9 @@ type syncerManager struct {
 
 	// lpConfig configures the pod label to be propagated to NEG endpoints.
 	lpConfig negtypes.PodLabelPropagationConfig
+
+	// enableDegradedMode indicates whether endpoints are calculated using degraded mode procedures
+	enableDegradedMode bool
 }
 
 func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
@@ -123,6 +126,7 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 	svcNegLister cache.Indexer,
 	syncerMetrics *metrics.SyncerMetrics,
 	enableNonGcpMode bool,
+	enableDegradedMode bool,
 	numGCWorkers int,
 	lpConfig negtypes.PodLabelPropagationConfig,
 	logger klog.Logger) *syncerManager {
@@ -152,6 +156,7 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 		vmIpZoneMap:         vmIpZoneMap,
 		vmIpPortZoneMap:     vmIpPortZoneMap,
 		lpConfig:            lpConfig,
+		enableDegradedMode:  enableDegradedMode,
 	}
 }
 
@@ -220,8 +225,8 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 			}
 
 			// determine the implementation that calculates NEG endpoints on each sync.
-			epc := negsyncer.GetEndpointsCalculator(manager.nodeLister, manager.podLister, manager.zoneGetter,
-				syncerKey, portInfo.EpCalculatorMode, manager.logger.WithValues("service", klog.KRef(syncerKey.Namespace, syncerKey.Name), "negName", syncerKey.NegName), manager.lpConfig)
+			epc := negsyncer.GetEndpointsCalculator(manager.nodeLister, manager.podLister, manager.serviceLister, manager.zoneGetter,
+				syncerKey, portInfo.EpCalculatorMode, manager.enableDegradedMode, manager.logger.WithValues("service", klog.KRef(syncerKey.Namespace, syncerKey.Name), "negName", syncerKey.NegName), manager.lpConfig)
 			syncer = negsyncer.NewTransactionSyncer(
 				syncerKey,
 				manager.recorder,

@@ -61,7 +61,7 @@ func (l *LocalL4ILBEndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 }
 
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
-func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
+func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet, _ bool) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
 	// List all nodes where the service endpoints are running. Get a subset of the desired count.
 	zoneNodeMap := make(map[string][]*v1.Node)
 	processedNodes := sets.String{}
@@ -147,7 +147,7 @@ func (l *ClusterL4ILBEndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 }
 
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
-func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpoints(_ []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
+func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpoints(_ []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet, _ bool) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
 	// In this mode, any of the cluster nodes can be part of the subset, whether or not a matching pod runs on it.
 	nodes, _ := utils.ListWithPredicate(l.nodeLister, utils.CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes)
 
@@ -176,18 +176,24 @@ type L7EndpointsCalculator struct {
 	zoneGetter          types.ZoneGetter
 	servicePortName     string
 	podLister           cache.Indexer
+	nodeLister          cache.Indexer
+	serviceLister       cache.Indexer
 	networkEndpointType types.NetworkEndpointType
 	lpConfig            types.PodLabelPropagationConfig
+	enableDegradedMode  bool
 	logger              klog.Logger
 }
 
-func NewL7EndpointsCalculator(zoneGetter types.ZoneGetter, podLister cache.Indexer, svcPortName string, endpointType types.NetworkEndpointType, logger klog.Logger, lpConfig types.PodLabelPropagationConfig) *L7EndpointsCalculator {
+func NewL7EndpointsCalculator(zoneGetter types.ZoneGetter, podLister, nodeLister, serviceLister cache.Indexer, svcPortName string, endpointType types.NetworkEndpointType, enableDegradedMode bool, logger klog.Logger, lpConfig types.PodLabelPropagationConfig) *L7EndpointsCalculator {
 	return &L7EndpointsCalculator{
 		zoneGetter:          zoneGetter,
 		servicePortName:     svcPortName,
 		podLister:           podLister,
+		nodeLister:          nodeLister,
+		serviceLister:       serviceLister,
 		networkEndpointType: endpointType,
 		lpConfig:            lpConfig,
+		enableDegradedMode:  enableDegradedMode,
 		logger:              logger.WithName("L7EndpointsCalculator"),
 	}
 }
@@ -198,8 +204,17 @@ func (l *L7EndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 }
 
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
-func (l *L7EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, _ map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
-	return toZoneNetworkEndpointMap(eds, l.podLister, l.zoneGetter, l.servicePortName, l.networkEndpointType, l.lpConfig)
+func (l *L7EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, _ map[string]types.NetworkEndpointSet, inErrorState bool) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
+	if !l.enableDegradedMode {
+		return toZoneNetworkEndpointMap(eds, l.podLister, l.zoneGetter, l.servicePortName, l.networkEndpointType, l.lpConfig)
+	}
+	degradedModeEndpointSet, degradedModeEndpointMap, degradedModeDupCount, degradedModeErr := toZoneNetworkEndpointMapDegradedMode(eds, l.zoneGetter, l.podLister, l.nodeLister, l.servicePortName, l.networkEndpointType)
+	legacyEndpointSet, legacyEndpointMap, dupCount, err := toZoneNetworkEndpointMap(eds, l.podLister, l.zoneGetter, l.servicePortName, l.networkEndpointType, l.lpConfig)
+
+	if inErrorState {
+		return degradedModeEndpointSet, degradedModeEndpointMap, degradedModeDupCount, degradedModeErr
+	}
+	return legacyEndpointSet, legacyEndpointMap, dupCount, err
 }
 
 func nodeMapToString(nodeMap map[string][]*v1.Node) string {
