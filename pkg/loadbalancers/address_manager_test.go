@@ -27,7 +27,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	compute "google.golang.org/api/compute/v1"
-	"k8s.io/legacy-cloud-providers/gce"
+	"k8s.io/cloud-provider-gcp/providers/gce"
 )
 
 const testSvcName = "my-service"

@@ -18,8 +18,8 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite/metrics"
-	"k8s.io/legacy-cloud-providers/gce"
 )
 
 // firewallAdapter is a temporary shim to consolidate accesses to

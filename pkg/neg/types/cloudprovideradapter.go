@@ -18,8 +18,8 @@ package types
 
 import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/legacy-cloud-providers/gce"
 )
 
 const (

@@ -20,8 +20,8 @@ import (
 	"testing"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/e2e"
-	"k8s.io/legacy-cloud-providers/gce"
 )
 
 var (

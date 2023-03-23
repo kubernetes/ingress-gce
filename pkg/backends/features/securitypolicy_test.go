@@ -26,7 +26,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/compute/v1"
-	"k8s.io/legacy-cloud-providers/gce"
+	"k8s.io/cloud-provider-gcp/providers/gce"
 
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/composite"

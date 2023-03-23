@@ -23,7 +23,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	"k8s.io/legacy-cloud-providers/gce"
+	"k8s.io/cloud-provider-gcp/providers/gce"
 )
 
 // CreateKey is a helper function for creating a meta.Key when interacting with the
