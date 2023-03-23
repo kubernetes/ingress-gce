@@ -41,6 +41,7 @@ sleep 2 # Wait for proxy to start up
 ${GLBC} \
     --apiserver-host=http://localhost:${PORT} \
     --running-in-cluster=false \
+    --enable-label-propagation=true \
     --logtostderr --v=${V} \
     --config-file-path=${GCECONF} \
     "${@}" \

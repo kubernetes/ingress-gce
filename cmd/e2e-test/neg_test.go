@@ -778,3 +778,99 @@ func TestNegDisruptive(t *testing.T) {
 		}
 	})
 }
+
+func TestLabelPropagation(t *testing.T) {
+	t.Parallel()
+
+	svcName := "label-propagation-service"
+
+	for _, tc := range []struct {
+		desc              string
+		podLabels         map[string]string
+		expectAnnotations map[string]string
+	}{
+		{
+			desc:              "no labels on the pod",
+			podLabels:         map[string]string{},
+			expectAnnotations: nil,
+		},
+		{
+			desc: "tlsMode with value istio",
+			podLabels: map[string]string{
+				"security.istio.io/tlsMode": "istio",
+			},
+			expectAnnotations: map[string]string{
+				"itls": "istio",
+			},
+		},
+		{
+			desc: "tlsMode with value disabled",
+			podLabels: map[string]string{
+				"security.istio.io/tlsMode": "disabled",
+			},
+			expectAnnotations: map[string]string{
+				"itls": "disabled",
+			},
+		},
+		{
+			desc: "truncated label value",
+			podLabels: map[string]string{
+				"security.istio.io/tlsMode": "something-very-loooooooooong",
+			},
+			expectAnnotations: map[string]string{
+				"itls": "something-very-loooooooooo",
+			},
+		},
+		{
+			desc: "invalid label key",
+			podLabels: map[string]string{
+				"security.istio.io/something-else": "istio",
+			},
+			expectAnnotations: nil,
+		},
+	} {
+		tc := tc // Capture tc as we are running this in parallel.
+		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
+			t.Parallel()
+			ctx := context.Background()
+
+			annotation := annotations.NegAnnotation{
+				Ingress: false,
+				ExposedPorts: map[int32]annotations.NegAttributes{
+					int32(443): {},
+					int32(80):  {},
+				},
+			}
+
+			svcAnnotations := map[string]string{annotations.NEGAnnotationKey: annotation.String()}
+			_, err := e2e.EnsureEchoServiceWithPodLabels(s, svcName, svcAnnotations, v1.ServiceTypeClusterIP, 3, tc.podLabels)
+
+			if err != nil {
+				t.Fatalf("Error ensuring echo service: %v", err)
+			}
+			t.Logf("Echo service ensured (%s/%s)", s.Namespace, svcName)
+
+			if err := e2e.WaitForEchoDeploymentStable(s, svcName); err != nil {
+				t.Fatalf("Echo deployment failed to become stable: %v", err)
+			}
+
+			negStatus, err := e2e.WaitForNegStatus(s, svcName, []string{"80", "443"}, false)
+			if err != nil {
+				t.Fatalf("Error waiting for NEG status to update: %v", err)
+			}
+
+			for _, negName := range negStatus.NetworkEndpointGroups {
+				e2e.WaitForNegs(ctx, Framework.Cloud, negName, negStatus.Zones, false, 3)
+			}
+			for _, negName := range negStatus.NetworkEndpointGroups {
+				negs, err := fuzz.NetworkEndpointsInNegs(ctx, Framework.Cloud, negName, negStatus.Zones)
+				if err != nil {
+					t.Fatalf("Failed to retrieve NEG %s: %v", negName, err)
+				}
+				if err := e2e.CheckNegAnnotations(negs, tc.expectAnnotations); err != nil {
+					t.Errorf("Check Neg Annotations failed: %v", err)
+				}
+			}
+		})
+	}
+}
