@@ -131,7 +131,15 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, bchcc *backendconfigv1.H
 		hc.UpdateFromBackendConfig(bchcc)
 	}
 
-	changes := calculateDiff(existingHC, hc, bchcc)
+	filter := func(hc *translator.HealthCheck) *translator.HealthCheck {
+		var ans = *hc // Shallow copy.
+		if !flags.F.EnableUpdateCustomHealthCheckDescription {
+			ans.Description = ""
+		}
+		return &ans
+	}
+
+	changes := calculateDiff(filter(existingHC), filter(hc), bchcc)
 	if changes.hasDiff() {
 		klog.V(2).Infof("Health check %q needs update (%s)", existingHC.Name, changes)
 		err := h.update(hc)

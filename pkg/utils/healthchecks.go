@@ -56,6 +56,14 @@ func BetaToAlphaHealthCheck(hc *computebeta.HealthCheck) (*computealpha.HealthCh
 	return ret, err
 }
 
+func DeepCopyComputeHealthCheck(src *compute.HealthCheck) *compute.HealthCheck {
+	dst := &compute.HealthCheck{}
+	if err := copyViaJSON(dst, src); err != nil {
+		panic(err)
+	}
+	return dst
+}
+
 type jsonConvertable interface {
 	MarshalJSON() ([]byte, error)
 }

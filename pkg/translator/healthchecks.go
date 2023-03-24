@@ -29,6 +29,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
@@ -223,8 +224,9 @@ func (hc *HealthCheck) UpdateFromBackendConfig(c *backendconfigv1.HealthCheckCon
 		// This override is necessary regardless of type
 		hc.PortSpecification = "USE_FIXED_PORT"
 	}
-
-	hc.Description = DescriptionForHealthChecksFromBackendConfig
+	if flags.F.EnableUpdateCustomHealthCheckDescription {
+		hc.Description = DescriptionForHealthChecksFromBackendConfig
+	}
 }
 
 // DefaultHealthCheck simply returns the default health check.

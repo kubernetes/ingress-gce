@@ -429,6 +429,96 @@ func TestHealthCheckUpdate(t *testing.T) {
 	}
 }
 
+func getSingletonHealthcheck(t *testing.T, c *gce.Cloud) *compute.HealthCheck {
+	t.Helper()
+	// Verify the health check exists
+	var computeHCs []*compute.HealthCheck
+	computeHCs, _ = c.Compute().HealthChecks().List(context.Background(), nil)
+	if len(computeHCs) != 1 {
+		t.Fatalf("Got %d healthchecks, want 1\n%s", len(computeHCs), pretty.Sprint(computeHCs))
+	}
+	return utils.DeepCopyComputeHealthCheck(computeHCs[0]) // Make a copy to avoid reading an overwritten version later.
+}
+
+// Test changing the value of the flag EnableUpdateCustomHealthCheckDescription from false to true.
+func TestRolloutUpdateCustomHCDescription(t *testing.T) {
+	// No parallel() because we modify the value of the flags EnableBackendConfigHealthCheck and EnableUpdateCustomHealthCheckDescription.
+	oldEnableBC := flags.F.EnableBackendConfigHealthCheck
+	oldUpdateDescription := flags.F.EnableUpdateCustomHealthCheckDescription
+	flags.F.EnableBackendConfigHealthCheck = true
+	// Start with EnableUpdateCustomHealthCheckDescription = false.
+	flags.F.EnableUpdateCustomHealthCheckDescription = false
+	defer func() {
+		flags.F.EnableBackendConfigHealthCheck = oldEnableBC
+		flags.F.EnableUpdateCustomHealthCheckDescription = oldUpdateDescription
+	}()
+
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+
+	var (
+		defaultSP       *utils.ServicePort = testSPs["HTTP-80-reg-nil"]
+		backendConfigSP *utils.ServicePort = testSPs["HTTP-80-reg-bc"]
+	)
+
+	// Add Hooks
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockHealthChecks.UpdateHook = mock.UpdateHealthCheckHook
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaHealthChecks.UpdateHook = mock.UpdateAlphaHealthCheckHook
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockBetaHealthChecks.UpdateHook = mock.UpdateBetaHealthCheckHook
+
+	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc)
+
+	_, err := healthChecks.SyncServicePort(defaultSP, nil)
+	if err != nil {
+		t.Fatalf("unexpected err while syncing healthcheck, err %v", err)
+	}
+
+	outputDefaultHC := getSingletonHealthcheck(t, fakeGCE)
+
+	if outputDefaultHC.Description != translator.DescriptionForDefaultHealthChecks {
+		t.Fatalf("incorrect Description, is: \"%v\", want: \"%v\"",
+			outputDefaultHC.Description, translator.DescriptionForDefaultHealthChecks)
+	}
+
+	_, err = healthChecks.SyncServicePort(backendConfigSP, nil)
+	if err != nil {
+		t.Fatalf("unexpected err while syncing healthcheck, err %v", err)
+	}
+
+	outputBCHC := getSingletonHealthcheck(t, fakeGCE)
+
+	// Verify that BackendConfig overwrites only the specified values.
+	// In particular, with the flag set to false, the Description does not get overwritten.
+	outputDefaultHC.HttpHealthCheck.RequestPath = *backendConfigSP.BackendConfig.Spec.HealthCheck.RequestPath
+	if !reflect.DeepEqual(outputBCHC, outputDefaultHC) {
+		t.Fatalf("Compute healthcheck is:\n%s, want:\n%s", pretty.Sprint(outputBCHC), pretty.Sprint(outputDefaultHC))
+	}
+
+	// Modify the flag and see what happens.
+	flags.F.EnableUpdateCustomHealthCheckDescription = true
+
+	_, err = healthChecks.SyncServicePort(backendConfigSP, nil)
+	if err != nil {
+		t.Fatalf("unexpected err while syncing healthcheck, err %v", err)
+	}
+
+	outputBCHCWithFlag := getSingletonHealthcheck(t, fakeGCE)
+
+	if outputBCHCWithFlag.Description != translator.DescriptionForHealthChecksFromBackendConfig {
+		t.Fatalf("incorrect Description, is: \"%v\", want: \"%v\"",
+			outputBCHCWithFlag.Description, translator.DescriptionForHealthChecksFromBackendConfig)
+	}
+
+	// Verify that only the Description is modified after rollout.
+	filter := func(hc *compute.HealthCheck) {
+		hc.Description = ""
+	}
+	filter(outputBCHC)
+	filter(outputBCHCWithFlag)
+	if !reflect.DeepEqual(outputBCHC, outputBCHCWithFlag) {
+		t.Fatalf("Compute healthcheck is:\n%s, want:\n%s", pretty.Sprint(outputBCHC), pretty.Sprint(outputBCHCWithFlag))
+	}
+}
+
 func TestVersion(t *testing.T) {
 	t.Parallel()
 	testCases := []struct {
@@ -609,6 +699,7 @@ func TestCalculateDiff(t *testing.T) {
 		old, new *translator.HealthCheck
 		c        *backendconfigv1.HealthCheckConfig
 		hasDiff  bool
+		diffSize *int64
 	}
 	cases := []tc{
 		{
@@ -718,6 +809,17 @@ func TestCalculateDiff(t *testing.T) {
 	})
 
 	newHC = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+	newHC.Description = translator.DescriptionForHealthChecksFromBackendConfig
+	cases = append(cases, tc{
+		desc:     "hc with empty backendconfig and appropriate Description is a diff",
+		old:      translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		new:      newHC,
+		c:        &backendconfigv1.HealthCheckConfig{},
+		hasDiff:  true,
+		diffSize: i64(1),
+	})
+
+	newHC = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP)
 	newHC.TimeoutSec = 1000
 	newHC.RequestPath = "/foo"
 	cases = append(cases, tc{
@@ -744,6 +846,9 @@ func TestCalculateDiff(t *testing.T) {
 			t.Logf("\nold=%+v\nnew=%+v\ndiffs = %s", tc.old, tc.new, diffs)
 			if diffs.hasDiff() != tc.hasDiff {
 				t.Errorf("calculateDiff(%+v, %+v, %+v) = %s; hasDiff = %t, want %t", tc.old, tc.new, tc.c, diffs, diffs.hasDiff(), tc.hasDiff)
+			}
+			if tc.diffSize != nil && diffs.size() != *tc.diffSize {
+				t.Errorf("calculateDiff(%+v, %+v, %+v) = %s; size = %v, want %v", tc.old, tc.new, tc.c, diffs, diffs.size(), *tc.diffSize)
 			}
 		})
 	}
@@ -865,10 +970,14 @@ func setupMockUpdate(mock *cloud.MockGCE) {
 }
 
 func TestSyncServicePort(t *testing.T) {
-	// No parallel().
-	oldEnable := flags.F.EnableBackendConfigHealthCheck
+	// No parallel() because we modify the value of the flags EnableBackendConfigHealthCheck and EnableUpdateCustomHealthCheckDescription.
+	oldEnableBC := flags.F.EnableBackendConfigHealthCheck
+	oldUpdateDescription := flags.F.EnableUpdateCustomHealthCheckDescription
 	flags.F.EnableBackendConfigHealthCheck = true
-	defer func() { flags.F.EnableBackendConfigHealthCheck = oldEnable }()
+	defer func() {
+		flags.F.EnableBackendConfigHealthCheck = oldEnableBC
+		flags.F.EnableUpdateCustomHealthCheckDescription = oldUpdateDescription
+	}()
 
 	type tc struct {
 		desc     string
@@ -877,9 +986,10 @@ func TestSyncServicePort(t *testing.T) {
 		probe    *v1.Probe
 		regional bool
 
-		wantSelfLink  string
-		wantErr       bool
-		wantComputeHC *compute.HealthCheck
+		wantSelfLink        string
+		wantErr             bool
+		wantComputeHC       *compute.HealthCheck
+		updateHCDescription bool
 	}
 	fixture := syncSPFixture{}
 
@@ -1215,7 +1325,14 @@ func TestSyncServicePort(t *testing.T) {
 	// settings.
 
 	for _, tc := range cases {
+		tc.updateHCDescription = true
+		tc.desc = tc.desc + " with updateHCDescription"
+		cases = append(cases, tc)
+	}
+
+	for _, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
+			flags.F.EnableUpdateCustomHealthCheckDescription = tc.updateHCDescription
 			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 
 			mock := fakeGCE.Compute().(*cloud.MockGCE)
@@ -1252,6 +1369,9 @@ func TestSyncServicePort(t *testing.T) {
 				// test cases.
 				filter := func(hc *compute.HealthCheck) {
 					hc.SelfLink = ""
+					if !tc.updateHCDescription {
+						hc.Description = ""
+					}
 				}
 				filter(gotHC)
 				filter(tc.wantComputeHC)
