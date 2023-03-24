@@ -1535,3 +1535,43 @@ func TestAddIPToLBStatus(t *testing.T) {
 		})
 	}
 }
+
+func TestGetDomainFromGABasePath(t *testing.T) {
+	testCases := []struct {
+		desc     string
+		basePath string
+		want     string
+	}{
+		{
+			desc: "empty string",
+		},
+		{
+			desc:     "compute.googleapis.com path",
+			basePath: "https://www.compute.googleapis.com/compute/v1",
+			want:     "https://www.compute.googleapis.com",
+		},
+		{
+			desc:     "arbitary path",
+			basePath: "mycompute.mydomain.com/mypath/compute/v1",
+			want:     "mycompute.mydomain.com/mypath",
+		},
+		{
+			desc:     "arbitary path with trailing /",
+			basePath: "mycompute.mydomain.com/mypath/compute/v1/",
+			want:     "mycompute.mydomain.com/mypath",
+		},
+		{
+			desc:     "arbitary path without /v1 -- should return same string",
+			basePath: "mycompute.mydomain.com/mypath/compute",
+			want:     "mycompute.mydomain.com/mypath/compute",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			if got := GetDomainFromGABasePath(tc.basePath); got != tc.want {
+				t.Errorf("GetDomainFromGABasePath(%s) = %s, want %s", tc.basePath, got, tc.want)
+			}
+		})
+	}
+}
