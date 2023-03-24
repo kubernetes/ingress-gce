@@ -22,7 +22,7 @@ set -o xtrace
 # acquires a project from boskos
 acquire_project() {
     local project=""
-    local project_type="gce-project"
+    local project_type="ingress-project"
 
     boskos_response=$(curl -X POST "http://boskos.test-pods.svc.cluster.local/acquire?type=${project_type}&state=free&dest=busy&owner=${JOB_NAME}")
 
