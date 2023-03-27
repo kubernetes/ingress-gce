@@ -282,7 +282,7 @@ func (m *manager) add(groupName string, names []string) error {
 	events.GlobalEventf(m.recorder, core.EventTypeNormal, events.AddNodes, "Adding %s to InstanceGroup %q", events.TruncatedStringList(names), groupName)
 	var errs []error
 	for zone, nodeNames := range m.splitNodesByZone(names) {
-		klog.V(1).Infof("Adding nodes %v to %v in zone %v", nodeNames, groupName, zone)
+		klog.V(1).Infof("Adding %d nodes to %v in zone %v", len(nodeNames), groupName, zone)
 		if err := m.cloud.AddInstancesToInstanceGroup(groupName, zone, m.getInstanceReferences(zone, nodeNames)); err != nil {
 			errs = append(errs, err)
 		}
@@ -301,7 +301,7 @@ func (m *manager) remove(groupName string, names []string) error {
 	events.GlobalEventf(m.recorder, core.EventTypeNormal, events.RemoveNodes, "Removing %s from InstanceGroup %q", events.TruncatedStringList(names), groupName)
 	var errs []error
 	for zone, nodeNames := range m.splitNodesByZone(names) {
-		klog.V(1).Infof("Removing nodes %v from %v in zone %v", nodeNames, groupName, zone)
+		klog.V(1).Infof("Removing %d nodes from %v in zone %v", len(nodeNames), groupName, zone)
 		if err := m.cloud.RemoveInstancesFromInstanceGroup(groupName, zone, m.getInstanceReferences(zone, nodeNames)); err != nil {
 			errs = append(errs, err)
 		}
