@@ -129,6 +129,25 @@ func (b *Backends) Update(be *composite.BackendService) error {
 	return nil
 }
 
+// Patch implements Pool.
+func (b *Backends) Patch(be *composite.BackendService) error {
+	// Ensure the backend service has the proper version before updating.
+	be.Version = features.VersionFromDescription(be.Description)
+	scope, err := composite.ScopeFromSelfLink(be.SelfLink)
+	if err != nil {
+		return err
+	}
+
+	key, err := composite.CreateKey(b.cloud, be.Name, scope)
+	if err != nil {
+		return err
+	}
+	if err := composite.PatchBackendService(b.cloud, key, be); err != nil {
+		return err
+	}
+	return nil
+}
+
 // Get implements Pool.
 func (b *Backends) Get(name string, version meta.Version, scope meta.KeyType) (*composite.BackendService, error) {
 	key, err := composite.CreateKey(b.cloud, name, scope)
