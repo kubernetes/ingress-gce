@@ -179,6 +179,23 @@ func TestForwardingRulesEqual(t *testing.T) {
 		},
 	}
 
+	frPortRange1 := &composite.ForwardingRule{
+		Name:                "tcp-fwd-rule",
+		IPAddress:           "10.0.0.0",
+		PortRange:           "2-3",
+		IPProtocol:          "TCP",
+		LoadBalancingScheme: string(cloud.SchemeInternal),
+		BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+	}
+	frPortRange2 := &composite.ForwardingRule{
+		Name:                "tcp-fwd-rule",
+		IPAddress:           "10.0.0.0",
+		PortRange:           "1-2",
+		IPProtocol:          "TCP",
+		LoadBalancingScheme: string(cloud.SchemeInternal),
+		BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+	}
+
 	for _, tc := range []struct {
 		desc       string
 		oldFwdRule *composite.ForwardingRule
@@ -225,6 +242,12 @@ func TestForwardingRulesEqual(t *testing.T) {
 			desc:       "network tier mismatch",
 			oldFwdRule: fwdRules[6],
 			newFwdRule: fwdRules[7],
+			expect:     false,
+		},
+		{
+			desc:       "same forwarding rule, different port ranges",
+			oldFwdRule: frPortRange1,
+			newFwdRule: frPortRange2,
 			expect:     false,
 		},
 	} {
