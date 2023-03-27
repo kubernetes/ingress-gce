@@ -69,6 +69,25 @@ var NoUpdate = sets.NewString(
 	"SignedUrlKey",
 )
 
+// Services in NoPatch will not have a Patch() method generated for them.
+var NoPatch = sets.NewString(
+	"Address",
+	"ForwardingRule",
+	"HealthCheck",
+	"HealthStatusForNetworkEndpoint",
+	"UrlMap",
+	"TargetHttpProxy",
+	"TargetHttpsProxy",
+	"SslCertificate",
+	"NetworkEndpointGroup",
+	"NetworkEndpoint",
+	"NetworkEndpointWithHealthStatus",
+	"NetworkEndpointGroupsAttachEndpointsRequest",
+	"NetworkEndpointGroupsDetachEndpointsRequest",
+	"NetworkEndpointGroupsListEndpointsRequest",
+	"SignedUrlKey",
+)
+
 // Services in NoCRUD will not have Create, Get, Delete, Update, methods generated for them
 var NoCRUD = sets.NewString(
 	"HealthStatusForNetworkEndpoint",
@@ -156,6 +175,11 @@ func (apiService *ApiService) IsMainService() bool {
 // HasUpdate() returns true if the service name is *not* in the NoUpdate() list
 func (apiService *ApiService) HasUpdate() bool {
 	return !NoUpdate.Has(apiService.Name)
+}
+
+// HasPatch() returns true if the service name is *not* in the NoPatch() list
+func (apiService *ApiService) HasPatch() bool {
+	return !NoPatch.Has(apiService.Name)
 }
 
 // HasCRUD() returns true if the service name is *not* in the NoCRUD() list
