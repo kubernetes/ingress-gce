@@ -59,7 +59,12 @@ metadata:
 spec:
   containers:
   - name: ingress-e2e
-    image: gcr.io/k8s-ingress-image-push/ingress-gce-e2e-test-amd64:master
+    image: gcr.io/k8s-ingress-image-push/ingress-gce-e2e-test:master
     imagePullPolicy: Always
   restartPolicy: Never
   serviceAccount: ingress-e2e-test
+  tolerations:
+  - key: kubernetes.io/arch
+    operator: Equal
+    value: arm64
+    effect: NoSchedule
