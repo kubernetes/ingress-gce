@@ -113,7 +113,7 @@ func (s *backendSyncer) ensureBackendService(sp utils.ServicePort) error {
 	}
 
 	if needUpdate {
-		if err := s.backendPool.Update(be); err != nil {
+		if err := s.backendPool.Patch(be); err != nil {
 			return err
 		}
 	}
