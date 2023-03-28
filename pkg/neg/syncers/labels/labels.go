@@ -16,6 +16,10 @@ limitations under the License.
 
 package labels
 
+import (
+	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+)
+
 // PodLabelPropagationConfig contains a list of configurations for labels to be propagated to GCE network endpoints.
 type PodLabelPropagationConfig struct {
 	Labels []Label
@@ -27,3 +31,9 @@ type Label struct {
 	ShortKey          string
 	MaxLabelSizeBytes int
 }
+
+// PodLabelMap is a map of pod label key, label values.
+type PodLabelMap map[string]string
+
+// EndpointPodLabelMap is a map of network endpoint, endpoint annotations.
+type EndpointPodLabelMap map[negtypes.NetworkEndpoint]PodLabelMap
