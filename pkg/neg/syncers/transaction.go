@@ -161,7 +161,7 @@ func NewTransactionSyncer(
 	return syncer
 }
 
-func GetEndpointsCalculator(nodeLister, podLister cache.Indexer, zoneGetter negtypes.ZoneGetter, syncerKey negtypes.NegSyncerKey, mode negtypes.EndpointsCalculatorMode, logger klog.Logger, lpConfig negtypes.PodLabelPropagationConfig) negtypes.NetworkEndpointsCalculator {
+func GetEndpointsCalculator(nodeLister, podLister cache.Indexer, zoneGetter negtypes.ZoneGetter, syncerKey negtypes.NegSyncerKey, mode negtypes.EndpointsCalculatorMode, logger klog.Logger) negtypes.NetworkEndpointsCalculator {
 	serviceKey := strings.Join([]string{syncerKey.Name, syncerKey.Namespace}, "/")
 	if syncerKey.NegType == negtypes.VmIpEndpointType {
 		nodeLister := listers.NewNodeLister(nodeLister)
@@ -173,7 +173,7 @@ func GetEndpointsCalculator(nodeLister, podLister cache.Indexer, zoneGetter negt
 		}
 	}
 	return NewL7EndpointsCalculator(zoneGetter, podLister, syncerKey.PortTuple.Name,
-		syncerKey.NegType, logger, lpConfig)
+		syncerKey.NegType, logger)
 }
 
 func (s *transactionSyncer) sync() error {

@@ -221,7 +221,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 
 			// determine the implementation that calculates NEG endpoints on each sync.
 			epc := negsyncer.GetEndpointsCalculator(manager.nodeLister, manager.podLister, manager.zoneGetter,
-				syncerKey, portInfo.EpCalculatorMode, manager.logger.WithValues("service", klog.KRef(syncerKey.Namespace, syncerKey.Name), "negName", syncerKey.NegName), manager.lpConfig)
+				syncerKey, portInfo.EpCalculatorMode, manager.logger.WithValues("service", klog.KRef(syncerKey.Namespace, syncerKey.Name), "negName", syncerKey.NegName))
 			syncer = negsyncer.NewTransactionSyncer(
 				syncerKey,
 				manager.recorder,

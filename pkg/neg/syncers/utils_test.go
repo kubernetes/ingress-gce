@@ -529,9 +529,8 @@ func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 		},
 	}
 
-	// TODO(songrx1997): Add endpoint annotations for the test after calculation code is in
 	for _, tc := range testCases {
-		retSet, retMap, _, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()), zoneGetter, tc.portName, tc.networkEndpointType, negtypes.PodLabelPropagationConfig{})
+		retSet, retMap, _, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()), zoneGetter, tc.portName, tc.networkEndpointType)
 		if err != nil {
 			t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
 		}
