@@ -1437,6 +1437,7 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 		metrics.FakeSyncerMetrics(),
 		customName,
 		klog.TODO(),
+		negtypes.PodLabelPropagationConfig{},
 	)
 	transactionSyncer := negsyncer.(*syncer).core.(*transactionSyncer)
 	indexers := map[string]cache.IndexFunc{

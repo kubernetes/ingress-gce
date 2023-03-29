@@ -239,6 +239,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				manager.syncerMetrics,
 				!manager.namer.IsNEG(portInfo.NegName),
 				manager.logger,
+				manager.lpConfig,
 			)
 			manager.syncerMap[syncerKey] = syncer
 		}
