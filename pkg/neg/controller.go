@@ -42,6 +42,7 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/metrics"
 	syncMetrics "k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
+	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -129,7 +130,7 @@ func NewController(
 	enableNonGcpMode bool,
 	enableAsm bool,
 	asmServiceNEGSkipNamespaces []string,
-	lpConfig negtypes.PodLabelPropagationConfig,
+	lpConfig labels.PodLabelPropagationConfig,
 	logger klog.Logger,
 ) *Controller {
 	logger = logger.WithName("NEGController")

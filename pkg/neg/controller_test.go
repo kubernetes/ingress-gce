@@ -41,6 +41,7 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/metrics"
+	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -140,7 +141,7 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		false,     //enableNonGcpMode
 		enableASM, //enableAsm
 		[]string{},
-		negtypes.PodLabelPropagationConfig{},
+		labels.PodLabelPropagationConfig{},
 		klog.TODO(),
 	)
 }

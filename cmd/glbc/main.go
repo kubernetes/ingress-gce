@@ -54,6 +54,7 @@ import (
 	ingctx "k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller"
 	"k8s.io/ingress-gce/pkg/neg"
+	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 
 	"k8s.io/ingress-gce/cmd/glbc/app"
@@ -332,7 +333,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		asmServiceNEGSkipNamespaces = cmconfig.ASMServiceNEGSkipNamespaces
 	}
 
-	lpConfig := negtypes.PodLabelPropagationConfig{}
+	lpConfig := labels.PodLabelPropagationConfig{}
 	if flags.F.EnableNEGLabelPropagation {
 		lpConfigEnvVar := os.Getenv("LABEL_PROPAGATION_CONFIG")
 		if err := json.Unmarshal([]byte(lpConfigEnvVar), &lpConfig); err != nil {
