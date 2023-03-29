@@ -29,6 +29,13 @@ import (
 	compute "google.golang.org/api/compute/v1"
 )
 
+func TestAWSV4Signature(t *testing.T) {
+	compositeType := reflect.TypeOf(AWSV4Signature{})
+	alphaType := reflect.TypeOf(computealpha.AWSV4Signature{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
 func TestAddress(t *testing.T) {
 	// Use reflection to verify that our composite type contains all the
 	// same fields as the alpha type.
@@ -1053,6 +1060,14 @@ func TestNetworkEndpointGroupCloudRun(t *testing.T) {
 func TestNetworkEndpointGroupLbNetworkEndpointGroup(t *testing.T) {
 	compositeType := reflect.TypeOf(NetworkEndpointGroupLbNetworkEndpointGroup{})
 	alphaType := reflect.TypeOf(computealpha.NetworkEndpointGroupLbNetworkEndpointGroup{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNetworkEndpointGroupPscData(t *testing.T) {
+	compositeType := reflect.TypeOf(NetworkEndpointGroupPscData{})
+	alphaType := reflect.TypeOf(computealpha.NetworkEndpointGroupPscData{})
 	if err := typeEquality(compositeType, alphaType, true); err != nil {
 		t.Fatal(err)
 	}
