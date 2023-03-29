@@ -39,6 +39,7 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negsyncer "k8s.io/ingress-gce/pkg/neg/syncers"
+	podlabels "k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -107,7 +108,7 @@ type syncerManager struct {
 	vmIpPortZoneMap map[string]struct{}
 
 	// lpConfig configures the pod label to be propagated to NEG endpoints.
-	lpConfig negtypes.PodLabelPropagationConfig
+	lpConfig podlabels.PodLabelPropagationConfig
 }
 
 func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
@@ -124,7 +125,7 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 	syncerMetrics *metrics.SyncerMetrics,
 	enableNonGcpMode bool,
 	numGCWorkers int,
-	lpConfig negtypes.PodLabelPropagationConfig,
+	lpConfig podlabels.PodLabelPropagationConfig,
 	logger klog.Logger) *syncerManager {
 
 	var vmIpZoneMap, vmIpPortZoneMap map[string]struct{}

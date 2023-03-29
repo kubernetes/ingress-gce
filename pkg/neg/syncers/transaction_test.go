@@ -40,6 +40,7 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
+	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
@@ -1437,7 +1438,7 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 		metrics.FakeSyncerMetrics(),
 		customName,
 		klog.TODO(),
-		negtypes.PodLabelPropagationConfig{},
+		labels.PodLabelPropagationConfig{},
 	)
 	transactionSyncer := negsyncer.(*syncer).core.(*transactionSyncer)
 	indexers := map[string]cache.IndexFunc{

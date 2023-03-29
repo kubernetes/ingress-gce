@@ -44,6 +44,7 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
+	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils/patch"
@@ -110,7 +111,7 @@ type transactionSyncer struct {
 	enableDegradedMode bool
 
 	// podLabelPropagationConfig configures the pod label to be propagated to NEG endpoints
-	podLabelPropagationConfig negtypes.PodLabelPropagationConfig
+	podLabelPropagationConfig labels.PodLabelPropagationConfig
 }
 
 func NewTransactionSyncer(
@@ -130,7 +131,7 @@ func NewTransactionSyncer(
 	syncerMetrics *metrics.SyncerMetrics,
 	customName bool,
 	log klog.Logger,
-	lpConfig negtypes.PodLabelPropagationConfig) negtypes.NegSyncer {
+	lpConfig labels.PodLabelPropagationConfig) negtypes.NegSyncer {
 
 	logger := log.WithName("Syncer").WithValues("service", klog.KRef(negSyncerKey.Namespace, negSyncerKey.Name), "negName", negSyncerKey.NegName)
 
