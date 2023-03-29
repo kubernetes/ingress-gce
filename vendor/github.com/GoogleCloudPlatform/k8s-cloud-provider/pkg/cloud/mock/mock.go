@@ -433,7 +433,7 @@ func UpdateAlphaFirewallHook(ctx context.Context, key *meta.Key, obj *alpha.Fire
 
 // UpdateBetaFirewallHook defines the hook for updating a beta Firewall. It replaces the
 // object with the same key in the mock with the updated object.
-func UpdateBetaFirewallHook(ctx context.Context, key *meta.Key, obj *ga.Firewall, m *cloud.MockBetaFirewalls) error {
+func UpdateBetaFirewallHook(ctx context.Context, key *meta.Key, obj *beta.Firewall, m *cloud.MockBetaFirewalls) error {
 	_, err := m.Get(ctx, key)
 	if err != nil {
 		return err

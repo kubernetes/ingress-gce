@@ -104,7 +104,7 @@ func (i *ServiceInfo) ObjectListUsableType() string {
 	return fmt.Sprintf("%v.Usable%vAggregatedList", i.version, i.Service)
 }
 
-// FQObjectType is fully qualified name of the object (e.g. compute.Instance).
+// FQListUsableObjectType is fully qualified name of the object (e.g. compute.Instance).
 func (i *ServiceInfo) FQListUsableObjectType() string {
 	return fmt.Sprintf("%v.Usable%v", i.Version(), i.Object)
 }
@@ -231,6 +231,7 @@ func (i *ServiceInfo) AggregatedListField() string {
 	return i.aggregatedListField
 }
 
+// ListUsable is true if ListUsable is set.
 func (i *ServiceInfo) ListUsable() bool {
 	return i.options&ListUsable != 0
 }
