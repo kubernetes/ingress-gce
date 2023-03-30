@@ -510,8 +510,8 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, zone stri
 		s.recordEvent(apiv1.EventTypeWarning, operation.String()+"Failed", fmt.Sprintf("Failed to %s %d network endpoint(s) (NEG %q in zone %q): %v", operation.String(), len(networkEndpointMap), s.NegSyncerKey.NegName, zone, err))
 		if valid, reason := s.isValidEPBatch(err, operation, networkEndpoints); !valid {
 			s.syncLock.Lock()
-			defer s.syncLock.Unlock()
 			s.setErrorState(reason)
+			s.syncLock.Unlock()
 		}
 	}
 
