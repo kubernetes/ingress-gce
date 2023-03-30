@@ -19,6 +19,7 @@ package cloud
 import (
 	"context"
 	"fmt"
+	"time"
 
 	alpha "google.golang.org/api/compute/v0.alpha"
 	beta "google.golang.org/api/compute/v0.beta"
@@ -79,28 +80,29 @@ func (s *Service) WaitForCompletion(ctx context.Context, genericOp interface{}) 
 // If an error occurs retrieving the operation, the loop will continue until the context is done.
 // This is to prevent a transient error from bubbling up to controller-level logic.
 func (s *Service) pollOperation(ctx context.Context, op operation) error {
+	start := time.Now()
 	var pollCount int
 	for {
 		// Check if context has been cancelled. Note that ctx.Done() must be checked before
 		// returning ctx.Err().
 		select {
 		case <-ctx.Done():
-			klog.V(5).Infof("op.pollOperation(%v, %v) not completed, poll count = %d, ctx.Err = %v", ctx, op, pollCount, ctx.Err())
+			klog.V(5).Infof("op.pollOperation(%v, %v) not completed, poll count = %d, ctx.Err = %v (%v elapsed)", ctx, op, pollCount, ctx.Err(), time.Now().Sub(start))
 			return ctx.Err()
 		default:
 			// ctx is not canceled, continue immediately
 		}
 
 		pollCount++
-		klog.V(5).Infof("op.isDone(%v) waiting; op = %v, poll count = %d", ctx, op, pollCount)
+		klog.V(5).Infof("op.isDone(%v) waiting; op = %v, poll count = %d (%v elapsed)", ctx, op, pollCount, time.Now().Sub(start))
 		s.RateLimiter.Accept(ctx, op.rateLimitKey())
 		switch done, err := op.isDone(ctx); {
 		case err != nil:
-			klog.V(5).Infof("op.isDone(%v) error; op = %v, poll count = %d, err = %v, retrying", ctx, op, pollCount, err)
+			klog.V(5).Infof("op.isDone(%v) error; op = %v, poll count = %d, err = %v, retrying (%v elapsed)", ctx, op, pollCount, err, time.Now().Sub(start))
 			s.RateLimiter.Observe(ctx, err, op.rateLimitKey())
 			return err
 		case done:
-			klog.V(5).Infof("op.isDone(%v) complete; op = %v, poll count = %d, op.err = %v", ctx, op, pollCount, op.error())
+			klog.V(5).Infof("op.isDone(%v) complete; op = %v, poll count = %d, op.err = %v (%v elapsed)", ctx, op, pollCount, op.error(), time.Now().Sub(start))
 			s.RateLimiter.Observe(ctx, op.error(), op.rateLimitKey())
 			return op.error()
 		}
