@@ -254,8 +254,14 @@ func (s *server) notFoundHandler() http.HandlerFunc {
 // If URL path does not contain a valid status code, returns 404 (NotFound).
 func (s *server) statusCodeHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// path: "/statuscode/500" -> p: "500"
+		// path: "/statuscode/500/foo/" -> p: "500/foo/" -> p: "500"
 		p := strings.TrimPrefix(r.URL.Path, statusCodePrefix)
 		code, err := strconv.Atoi(p)
+		slashIndex := strings.Index(p, "/")
+		if slashIndex != -1 {
+			p = p[:slashIndex]
+		}
 		if err != nil {
 			w.WriteHeader(http.StatusNotFound)
 			fmt.Fprintf(w, "response 404, service rules for [ %s ] non-existent, [ %s ] cannot be converted into status code \n", r.URL.Path, p)
