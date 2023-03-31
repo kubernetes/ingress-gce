@@ -3,7 +3,7 @@ module k8s.io/ingress-gce
 go 1.18
 
 require (
-	github.com/GoogleCloudPlatform/k8s-cloud-provider v1.20.0
+	github.com/GoogleCloudPlatform/k8s-cloud-provider v1.22.0
 	github.com/google/go-cmp v0.5.8
 	github.com/kr/pretty v0.2.0
 	github.com/prometheus/client_golang v1.7.1
