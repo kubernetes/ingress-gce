@@ -20,11 +20,10 @@ import (
 	"context"
 	"fmt"
 
-	"k8s.io/klog/v2"
-
 	alpha "google.golang.org/api/compute/v0.alpha"
 	beta "google.golang.org/api/compute/v0.beta"
 	ga "google.golang.org/api/compute/v1"
+	"k8s.io/klog/v2"
 )
 
 // Service is the top-level adapter for all of the different compute API
@@ -86,7 +85,7 @@ func (s *Service) pollOperation(ctx context.Context, op operation) error {
 		// returning ctx.Err().
 		select {
 		case <-ctx.Done():
-      klog.V(5).Infof("op.pollOperation(%v, %v) not completed, poll count = %d, ctx.Err = %v", ctx, op, pollCount, ctx.Err())
+			klog.V(5).Infof("op.pollOperation(%v, %v) not completed, poll count = %d, ctx.Err = %v", ctx, op, pollCount, ctx.Err())
 			return ctx.Err()
 		default:
 			// ctx is not canceled, continue immediately
@@ -98,9 +97,11 @@ func (s *Service) pollOperation(ctx context.Context, op operation) error {
 		switch done, err := op.isDone(ctx); {
 		case err != nil:
 			klog.V(5).Infof("op.isDone(%v) error; op = %v, poll count = %d, err = %v, retrying", ctx, op, pollCount, err)
+			s.RateLimiter.Observe(ctx, err, op.rateLimitKey())
 			return err
 		case done:
-                        klog.V(5).Infof("op.isDone(%v) complete; op = %v, poll count = %d, op.err = %v", ctx, op, pollCount, op.error())
+			klog.V(5).Infof("op.isDone(%v) complete; op = %v, poll count = %d, op.err = %v", ctx, op, pollCount, op.error())
+			s.RateLimiter.Observe(ctx, op.error(), op.rateLimitKey())
 			return op.error()
 		}
 	}
