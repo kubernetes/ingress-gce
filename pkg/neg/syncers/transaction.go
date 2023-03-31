@@ -199,6 +199,7 @@ func (s *transactionSyncer) syncInternal() error {
 	start := time.Now()
 	err := s.syncInternalImpl()
 	if err != nil {
+		s.logger.V(3).Info("Updating error state", "error state", s.getErrorStateReason(err))
 		s.setErrorState(s.getErrorStateReason(err))
 	}
 	s.updateStatus(err)
@@ -267,8 +268,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	endpointsData := negtypes.EndpointsDataFromEndpointSlices(endpointSlices)
 	targetMap, endpointPodMap, dupCount, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
 	if err != nil {
-		s.setErrorState(s.getErrorStateReason(err))
-		return fmt.Errorf("endpoints calculation error in mode %q, err: %w", s.endpointsCalculator.Mode(), err)
+		return err
 	}
 	err = s.endpointsCalculator.ValidateEndpoints(endpointsData, endpointPodMap, dupCount)
 	if err != nil {
