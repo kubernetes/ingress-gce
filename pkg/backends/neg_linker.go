@@ -167,13 +167,15 @@ func diffBackends(old, new []*composite.Backend) *backendDiff {
 
 	oldMap := map[string]*composite.Backend{}
 	for _, be := range old {
-		d.old.Insert(be.Group)
-		oldMap[be.Group] = be
+		beGroup := relativeResourceNameWithDefault(be.Group)
+		d.old.Insert(beGroup)
+		oldMap[beGroup] = be
 	}
 	for _, be := range new {
-		d.new.Insert(be.Group)
+		beGroup := relativeResourceNameWithDefault(be.Group)
+		d.new.Insert(beGroup)
 
-		if oldBe, ok := oldMap[be.Group]; ok {
+		if oldBe, ok := oldMap[beGroup]; ok {
 			// Note: if you are comparing a value that has a non-zero default
 			// value (e.g. CapacityScaler is 1.0), you will need to set that
 			// value when creating a new Backend to avoid a false positive when
@@ -183,7 +185,7 @@ func diffBackends(old, new []*composite.Backend) *backendDiff {
 				changed = changed || oldBe.MaxRatePerEndpoint != be.MaxRatePerEndpoint
 				changed = changed || oldBe.CapacityScaler != be.CapacityScaler
 				if changed {
-					d.changed.Insert(be.Group)
+					d.changed.Insert(beGroup)
 				}
 			}
 		}
@@ -263,4 +265,16 @@ func getNegUrlFromSvcneg(key string, zone string, svcNegLister cache.Indexer) (s
 		}
 	}
 	return "", false
+}
+
+// relativeResourceNameWithDefault will attempt to return a RelativeResourceName
+// for the provided `selfLink`. In case of a faiure, it will return the
+// `selfLink` itself.
+func relativeResourceNameWithDefault(selfLink string) string {
+	result, err := utils.RelativeResourceName(selfLink)
+	if err != nil {
+		klog.Warningf("Unable to parse resource name from selfLink %q", selfLink)
+		return selfLink
+	}
+	return result
 }

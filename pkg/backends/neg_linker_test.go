@@ -292,6 +292,18 @@ func TestDiffBackends(t *testing.T) {
 			isEqual: true,
 		},
 		{
+			name: "same but different api version",
+			old: []*composite.Backend{
+				{Group: "https://www.googleapis.com/compute/beta/projects/project-name/zones/us-central1-c/networkEndpointGroups/k8s1-neg-name-1"},
+				{Group: "https://www.googleapis.com/compute/v1/projects/project-name/zones/us-central1-c/networkEndpointGroups/k8s1-neg-name-2"},
+			},
+			new: []*composite.Backend{
+				{Group: "https://www.googleapis.com/compute/v1/projects/project-name/zones/us-central1-c/networkEndpointGroups/k8s1-neg-name-1"},
+				{Group: "https://www.googleapis.com/compute/beta/projects/project-name/zones/us-central1-c/networkEndpointGroups/k8s1-neg-name-2"},
+			},
+			isEqual: true,
+		},
+		{
 			name:  "add backend",
 			old:   []*composite.Backend{{Group: "a"}},
 			new:   []*composite.Backend{{Group: "b"}, {Group: "a"}},
