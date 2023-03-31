@@ -4174,6 +4174,53 @@ func UpdateBackendService(gceCloud *gce.Cloud, key *meta.Key, backendService *Ba
 	}
 }
 
+func PatchBackendService(gceCloud *gce.Cloud, key *meta.Key, backendService *BackendService) error {
+	ctx, cancel := cloudprovider.ContextWithCallTimeout()
+	defer cancel()
+	mc := compositemetrics.NewMetricContext("BackendService", "patch", key.Region, key.Zone, string(backendService.Version))
+	switch backendService.Version {
+	case meta.VersionAlpha:
+		alpha, err := backendService.ToAlpha()
+		if err != nil {
+			return err
+		}
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Patching alpha region BackendService %v", alpha.Name)
+			return mc.Observe(gceCloud.Compute().AlphaRegionBackendServices().Patch(ctx, key, alpha))
+		default:
+			klog.V(3).Infof("Patching alpha BackendService %v", alpha.Name)
+			return mc.Observe(gceCloud.Compute().AlphaBackendServices().Patch(ctx, key, alpha))
+		}
+	case meta.VersionBeta:
+		beta, err := backendService.ToBeta()
+		if err != nil {
+			return err
+		}
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Patching beta region BackendService %v", beta.Name)
+			return mc.Observe(gceCloud.Compute().BetaRegionBackendServices().Patch(ctx, key, beta))
+		default:
+			klog.V(3).Infof("Patching beta BackendService %v", beta.Name)
+			return mc.Observe(gceCloud.Compute().BetaBackendServices().Patch(ctx, key, beta))
+		}
+	default:
+		ga, err := backendService.ToGA()
+		if err != nil {
+			return err
+		}
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Patching ga region BackendService %v", ga.Name)
+			return mc.Observe(gceCloud.Compute().RegionBackendServices().Patch(ctx, key, ga))
+		default:
+			klog.V(3).Infof("Patching ga BackendService %v", ga.Name)
+			return mc.Observe(gceCloud.Compute().BackendServices().Patch(ctx, key, ga))
+		}
+	}
+}
+
 func DeleteBackendService(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) error {
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
