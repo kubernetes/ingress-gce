@@ -499,8 +499,8 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, zone stri
 		endpointBatchErr := s.ValidateEndpointBatch(err, operation)
 		if endpointBatchErr != nil {
 			s.syncLock.Lock()
-			defer s.syncLock.Unlock()
 			s.setErrorState(s.getErrorStateReason(endpointBatchErr))
+			s.syncLock.Unlock()
 		}
 	}
 
