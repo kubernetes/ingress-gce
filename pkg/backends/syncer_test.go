@@ -154,9 +154,6 @@ func newTestSyncer(fakeGCE *gce.Cloud) *backendSyncer {
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaBackendServices.UpdateHook = mock.UpdateAlphaBackendServiceHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockBetaBackendServices.UpdateHook = mock.UpdateBetaBackendServiceHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.UpdateHook = mock.UpdateBackendServiceHook
-	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaBackendServices.PatchHook = mock.UpdateAlphaBackendServiceHook
-	(fakeGCE.Compute().(*cloud.MockGCE)).MockBetaBackendServices.PatchHook = mock.UpdateBetaBackendServiceHook
-	(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.PatchHook = mock.UpdateBackendServiceHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockHealthChecks.UpdateHook = mock.UpdateHealthCheckHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaHealthChecks.UpdateHook = mock.UpdateAlphaHealthCheckHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaRegionHealthChecks.UpdateHook = mock.UpdateAlphaRegionHealthCheckHook
