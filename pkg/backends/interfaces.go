@@ -39,8 +39,6 @@ type Pool interface {
 	Create(sp utils.ServicePort, hcLink string) (*composite.BackendService, error)
 	// Update a BackendService given the composite type.
 	Update(be *composite.BackendService) error
-	// Patch a BackendService given the composite type.
-	Patch(be *composite.BackendService) error
 	// Delete a BackendService given its name.
 	Delete(name string, version meta.Version, scope meta.KeyType) error
 	// Get the health of a BackendService given its name.
