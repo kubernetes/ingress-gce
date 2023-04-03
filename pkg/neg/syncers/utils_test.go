@@ -1214,9 +1214,9 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 	testNonExistPort := "non-exists"
 	testEmptyNamedPort := ""
 	testNamedPort := "named-Port"
-
 	testCases := []struct {
 		desc                string
+		testEndpointSlices  []*discovery.EndpointSlice
 		portName            string
 		expectedEndpointMap map[string]negtypes.NetworkEndpointSet
 		expectedPodMap      negtypes.EndpointPodMap
@@ -1224,14 +1224,16 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 	}{
 		{
 			desc:                "non exist target port",
+			testEndpointSlices:  getDefaultEndpointSlices(),
 			portName:            testNonExistPort,
 			expectedEndpointMap: map[string]negtypes.NetworkEndpointSet{},
 			expectedPodMap:      negtypes.EndpointPodMap{},
 			networkEndpointType: negtypes.VmIpPortEndpointType,
 		},
 		{
-			desc:     "empty named port",
-			portName: testEmptyNamedPort,
+			desc:               "empty named port",
+			testEndpointSlices: getDefaultEndpointSlices(),
+			portName:           testEmptyNamedPort,
 			expectedEndpointMap: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
 					networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"),
@@ -1253,8 +1255,9 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 			networkEndpointType: negtypes.VmIpPortEndpointType,
 		},
 		{
-			desc:     "named target port",
-			portName: testNamedPort,
+			desc:               "named target port",
+			testEndpointSlices: getDefaultEndpointSlices(),
+			portName:           testNamedPort,
 			expectedEndpointMap: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
 					networkEndpointFromEncodedEndpoint("10.100.2.2||instance2||81")),
@@ -1276,8 +1279,9 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 			networkEndpointType: negtypes.VmIpPortEndpointType,
 		},
 		{
-			desc:     "Non-GCP network endpoints",
-			portName: testEmptyNamedPort,
+			desc:               "Non-GCP network endpoints",
+			testEndpointSlices: getDefaultEndpointSlices(),
+			portName:           testEmptyNamedPort,
 			expectedEndpointMap: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
 					networkEndpointFromEncodedEndpoint("10.100.1.1||||80"),
@@ -1301,37 +1305,24 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			testEndpointSlices := getDefaultEndpointSlices()
-
-			targetMap, endpointPodMap, _, err := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(testEndpointSlices), fakeZoneGetter, podLister, nodeLister, tc.portName, tc.networkEndpointType)
-			if err != nil {
-				t.Errorf("expected error=nil, but got %v", err)
+			result := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, tc.portName, tc.networkEndpointType)
+			if !reflect.DeepEqual(result.NetworkEndpointSet, tc.expectedEndpointMap) {
+				t.Errorf("degraded mode endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", result.NetworkEndpointSet, tc.expectedEndpointMap)
 			}
-
-			if !reflect.DeepEqual(targetMap, tc.expectedEndpointMap) {
-				t.Errorf("degraded mode endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", targetMap, tc.expectedEndpointMap)
-			}
-			if !reflect.DeepEqual(endpointPodMap, tc.expectedPodMap) {
-				t.Errorf("degraded mode endpoint map is not calculated correctly:\ngot %+v,\n expected %+v", endpointPodMap, tc.expectedPodMap)
+			if !reflect.DeepEqual(result.EndpointPodMap, tc.expectedPodMap) {
+				t.Errorf("degraded mode endpoint map is not calculated correctly:\ngot %+v,\n expected %+v", result.EndpointPodMap, tc.expectedPodMap)
 			}
 		})
 	}
 }
 
-func TestValidateAndAddEndpoints(t *testing.T) {
+func TestDegradedModeValidateEndpointInfo(t *testing.T) {
 	t.Parallel()
-	matchPort := strconv.Itoa(int(80))
+	emptyNamedPort := ""
 	emptyNodeName := ""
-	ready := true
+	port80 := int32(80)
+	protocolTCP := v1.ProtocolTCP
 	instance1 := negtypes.TestInstance1
-	endpointMap := map[string]negtypes.NetworkEndpointSet{
-		negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
-			networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80")),
-	}
-	podMap := negtypes.EndpointPodMap{
-		networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod1"},
-	}
-
 	fakeZoneGetter := negtypes.NewFakeZoneGetter()
 	testContext := negtypes.NewTestContext()
 	podLister := testContext.PodInformer.GetIndexer()
@@ -1344,38 +1335,62 @@ func TestValidateAndAddEndpoints(t *testing.T) {
 		},
 	})
 
+	endpointMap := map[string]negtypes.NetworkEndpointSet{
+		negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+			networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"),
+			networkEndpointFromEncodedEndpoint("10.100.1.2||instance1||80"),
+		),
+	}
+	podMap := negtypes.EndpointPodMap{
+		networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod1"},
+		networkEndpointFromEncodedEndpoint("10.100.1.2||instance1||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod2"},
+	}
+
 	testCases := []struct {
 		desc                string
-		ep                  negtypes.AddressData
+		testEndpointSlices  []*discovery.EndpointSlice
 		endpointType        negtypes.NetworkEndpointType
 		expectedEndpointMap map[string]negtypes.NetworkEndpointSet
 		expectedPodMap      negtypes.EndpointPodMap
 	}{
 		{
-			desc: "endpoint with nodeName",
-			ep: negtypes.AddressData{
-				Addresses: []string{"10.100.1.1"},
-				NodeName:  &instance1,
-				TargetRef: &corev1.ObjectReference{
-					Namespace: testServiceNamespace,
-					Name:      "pod1",
-				},
-				Ready: ready,
-			},
-			endpointType:        negtypes.VmIpPortEndpointType,
-			expectedEndpointMap: endpointMap,
-			expectedPodMap:      podMap,
-		},
-		{
 			desc: "endpoint without nodeName, nodeName should be filled",
-			ep: negtypes.AddressData{
-				Addresses: []string{"10.100.1.1"},
-				NodeName:  nil,
-				TargetRef: &corev1.ObjectReference{
-					Namespace: testServiceNamespace,
-					Name:      "pod1",
+			testEndpointSlices: []*discovery.EndpointSlice{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testServiceName + "-1",
+						Namespace: testServiceNamespace,
+						Labels: map[string]string{
+							discovery.LabelServiceName: testServiceName,
+						},
+					},
+					AddressType: "IPv4",
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"10.100.1.1"},
+							NodeName:  nil,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod1",
+							},
+						},
+						{
+							Addresses: []string{"10.100.1.2"},
+							NodeName:  &instance1,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod2",
+							},
+						},
+					},
+					Ports: []discovery.EndpointPort{
+						{
+							Name:     &emptyNamedPort,
+							Port:     &port80,
+							Protocol: &protocolTCP,
+						},
+					},
 				},
-				Ready: ready,
 			},
 			endpointType:        negtypes.VmIpPortEndpointType,
 			expectedEndpointMap: endpointMap,
@@ -1383,51 +1398,56 @@ func TestValidateAndAddEndpoints(t *testing.T) {
 		},
 		{
 			desc: "endpoint with empty nodeName, nodeName should be filled",
-			ep: negtypes.AddressData{
-				Addresses: []string{"10.100.1.1"},
-				NodeName:  &emptyNodeName,
-				TargetRef: &corev1.ObjectReference{
-					Namespace: testServiceNamespace,
-					Name:      "pod1",
+			testEndpointSlices: []*discovery.EndpointSlice{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testServiceName + "-1",
+						Namespace: testServiceNamespace,
+						Labels: map[string]string{
+							discovery.LabelServiceName: testServiceName,
+						},
+					},
+					AddressType: "IPv4",
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"10.100.1.1"},
+							NodeName:  &emptyNodeName,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod1",
+							},
+						},
+						{
+							Addresses: []string{"10.100.1.2"},
+							NodeName:  &instance1,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod2",
+							},
+						},
+					},
+					Ports: []discovery.EndpointPort{
+						{
+							Name:     &emptyNamedPort,
+							Port:     &port80,
+							Protocol: &protocolTCP,
+						},
+					},
 				},
-				Ready: ready,
 			},
 			endpointType:        negtypes.VmIpPortEndpointType,
 			expectedEndpointMap: endpointMap,
 			expectedPodMap:      podMap,
 		},
-		{
-			desc: "Non-GCP network endpoint",
-			ep: negtypes.AddressData{
-				TargetRef: &corev1.ObjectReference{
-					Namespace: testServiceNamespace,
-					Name:      "pod1",
-				},
-				NodeName:  &emptyNodeName,
-				Addresses: []string{"10.100.1.1"},
-				Ready:     ready,
-			},
-
-			endpointType: negtypes.NonGCPPrivateEndpointType,
-			expectedEndpointMap: map[string]negtypes.NetworkEndpointSet{
-				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
-					networkEndpointFromEncodedEndpoint("10.100.1.1||||80")),
-			},
-			expectedPodMap: negtypes.EndpointPodMap{
-				networkEndpointFromEncodedEndpoint("10.100.1.1||||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod1"}},
-		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			targetMap := map[string]negtypes.NetworkEndpointSet{}
-			endpointPodMap := negtypes.EndpointPodMap{}
-			validateAndAddEndpoints(tc.ep, fakeZoneGetter, podLister, nodeLister, matchPort, tc.endpointType, targetMap, endpointPodMap)
-
-			if !reflect.DeepEqual(targetMap, tc.expectedEndpointMap) {
-				t.Errorf("degraded mode endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", targetMap, tc.expectedEndpointMap)
+			result := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, emptyNamedPort, tc.endpointType)
+			if !reflect.DeepEqual(result.NetworkEndpointSet, tc.expectedEndpointMap) {
+				t.Errorf("degraded mode endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", result.NetworkEndpointSet, tc.expectedEndpointMap)
 			}
-			if !reflect.DeepEqual(endpointPodMap, tc.expectedPodMap) {
-				t.Errorf("degraded mode endpoint map is not calculated correctly:\ngot %+v,\n expected %+v", endpointPodMap, tc.expectedPodMap)
+			if !reflect.DeepEqual(result.EndpointPodMap, tc.expectedPodMap) {
+				t.Errorf("degraded mode endpoint map is not calculated correctly:\ngot %+v,\n expected %+v", result.EndpointPodMap, tc.expectedPodMap)
 			}
 		})
 	}

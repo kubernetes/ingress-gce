@@ -31,6 +31,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/flags"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
@@ -277,6 +278,14 @@ func toZoneNetworkEndpointMap(
 			// pod is used for label propagation
 			_, getPodErr := getEndpointPod(endpointAddress, podLister)
 			if getPodErr != nil {
+				if flags.F.EnableDegradedMode {
+					klog.Errorf("Detected unexpected error when getting pod, err: %v", getPodErr)
+					return ZoneNetworkEndpointMapResult{
+						NetworkEndpointSet: nil,
+						EndpointPodMap:     nil,
+						DupCount:           dupCount,
+					}, getPodErr // when degraded mode is enabled, we want to trigger degraded mode so return the error
+				}
 				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated pod. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
 				continue
 			}
@@ -356,12 +365,15 @@ func getEndpointPod(
 	return pod, nil
 }
 
-func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGetter negtypes.ZoneGetter,
-	podLister, nodeLister cache.Indexer, servicePortName string,
-	networkEndpointType negtypes.NetworkEndpointType) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, int, error) {
-	targetMap := map[string]negtypes.NetworkEndpointSet{}
-	endpointPodMap := negtypes.EndpointPodMap{}
-	var dupCount int
+func toZoneNetworkEndpointMapDegradedMode(
+	eds []negtypes.EndpointsData,
+	zoneGetter negtypes.ZoneGetter,
+	podLister, nodeLister cache.Indexer,
+	servicePortName string,
+	networkEndpointType negtypes.NetworkEndpointType,
+) ZoneNetworkEndpointMapResult {
+	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
+	networkEndpointPodMap := negtypes.EndpointPodMap{}
 	for _, ed := range eds {
 		matchPort := ""
 		for _, port := range ed.Ports {
@@ -378,58 +390,47 @@ func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGett
 				klog.Infof("Skipping non IPv4 address in degraded mode: %q, in endpoint slice %s/%s", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
 				continue
 			}
-			if endpointAddress.TargetRef == nil {
-				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated pod. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
+			pod, getPodErr := getEndpointPod(endpointAddress, podLister)
+			if getPodErr != nil {
+				klog.Errorf("Endpoint %q in Endpoints %s/%s receives error when getting pod, err: %v, skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, getPodErr)
 				continue
 			}
-			dupCount += validateAndAddEndpoints(endpointAddress, zoneGetter, podLister, nodeLister, matchPort, networkEndpointType, targetMap, endpointPodMap)
+			if !validatePod(pod, nodeLister) {
+				klog.Errorf("Endpoint %q in Endpoints %s/%s correponds to an invalid pod: %v, skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, getPodErr)
+				continue
+			}
+			nodeName := pod.Spec.NodeName
+			zone, err := zoneGetter.GetZoneForNode(nodeName)
+			if err != nil {
+				klog.V(2).Infof("For endpoint %q in pod %q, its corresponding node %q does not have valid zone information, skipping", endpointAddress.Addresses, pod.ObjectMeta.Name, nodeName)
+				continue
+			}
+			if zoneNetworkEndpointMap[zone] == nil {
+				zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
+			}
+			for _, address := range endpointAddress.Addresses {
+				networkEndpoint := negtypes.NetworkEndpoint{IP: address, Port: matchPort, Node: nodeName}
+				if networkEndpointType == negtypes.NonGCPPrivateEndpointType {
+					// Non-GCP network endpoints don't have associated nodes.
+					networkEndpoint.Node = ""
+				}
+				zoneNetworkEndpointMap[zone].Insert(networkEndpoint)
+
+				if existingPod, contains := networkEndpointPodMap[networkEndpoint]; contains {
+					// if existing name is alphabetically lower than current one, continue and don't replace
+					if existingPod.Name < endpointAddress.TargetRef.Name {
+						klog.Infof("Found duplicate endpoints for %q, save the pod information from the alphabetically higher pod", address)
+						continue
+					}
+				}
+				networkEndpointPodMap[networkEndpoint] = types.NamespacedName{Namespace: endpointAddress.TargetRef.Namespace, Name: endpointAddress.TargetRef.Name}
+			}
 		}
 	}
-	return targetMap, endpointPodMap, dupCount, nil
-}
-
-// validateAndAddEndpoints fills in missing information and creates network endpoint for each endpoint addresss
-func validateAndAddEndpoints(ep negtypes.AddressData, zoneGetter negtypes.ZoneGetter, podLister, nodeLister cache.Indexer, matchPort string, endpointType negtypes.NetworkEndpointType, targetMap map[string]negtypes.NetworkEndpointSet, endpointPodMap negtypes.EndpointPodMap) int {
-	var dupCount int
-	for _, address := range ep.Addresses {
-		key := fmt.Sprintf("%s/%s", ep.TargetRef.Namespace, ep.TargetRef.Name)
-		obj, exists, err := podLister.GetByKey(key)
-		if err != nil || !exists {
-			klog.V(2).Infof("Endpoint %q does not correspond to an existing pod. Skipping", address)
-			continue
-		}
-		pod, ok := obj.(*apiv1.Pod)
-		if !ok {
-			klog.V(2).Infof("Endpoint %q does not correspond to a pod object. Skipping", address)
-			continue
-		}
-		if !validatePod(pod, nodeLister) {
-			klog.V(2).Infof("Endpoint %q does not correspond to a valid pod resource. Skipping", address)
-			continue
-		}
-		nodeName := pod.Spec.NodeName
-		zone, err := zoneGetter.GetZoneForNode(nodeName)
-		if err != nil {
-			klog.V(2).Infof("Endpoint %q does not have valid zone information. Skipping", address)
-			continue
-		}
-
-		if endpointType == negtypes.NonGCPPrivateEndpointType {
-			// Non-GCP network endpoints don't have associated nodes.
-			nodeName = ""
-		}
-		networkEndpoint := negtypes.NetworkEndpoint{IP: address, Port: matchPort, Node: nodeName}
-		if targetMap[zone] == nil {
-			targetMap[zone] = negtypes.NewNetworkEndpointSet()
-		}
-		targetMap[zone].Insert(networkEndpoint)
-		// increment the count for duplicated endpoint
-		if _, contains := endpointPodMap[networkEndpoint]; contains {
-			dupCount += 1
-		}
-		endpointPodMap[networkEndpoint] = types.NamespacedName{Namespace: ep.TargetRef.Namespace, Name: ep.TargetRef.Name}
+	return ZoneNetworkEndpointMapResult{
+		NetworkEndpointSet: zoneNetworkEndpointMap,
+		EndpointPodMap:     networkEndpointPodMap,
 	}
-	return dupCount
 }
 
 // validatePod checks if this pod is a valid pod resource
@@ -440,17 +441,17 @@ func validatePod(pod *apiv1.Pod, nodeLister cache.Indexer) bool {
 	// Terminal Pod means a pod is in PodFailed or PodSucceeded phase
 	phase := pod.Status.Phase
 	if phase == apiv1.PodFailed || phase == apiv1.PodSucceeded {
-		klog.V(2).Info("Pod %s/%s is a terminal pod with status %v, skipping", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name, phase)
+		klog.V(2).Infof("Pod %s/%s is a terminal pod with status %v, skipping", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name, phase)
 		return false
 	}
 	obj, exists, err := nodeLister.GetByKey(pod.Spec.NodeName)
 	if err != nil || !exists {
-		klog.V(2).Info("Pod %s/%s corresponds to a non-existing node %s, skipping", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name, pod.Spec.NodeName)
+		klog.V(2).Infof("Pod %s/%s corresponds to a non-existing node %s, skipping", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name, pod.Spec.NodeName)
 		return false
 	}
 	_, isNode := obj.(*apiv1.Node)
 	if !isNode {
-		klog.V(2).Info("Pod %s/%s does not correspond to a valid node resource, skipping", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name)
+		klog.V(2).Infof("Pod %s/%s does not correspond to a valid node resource, skipping", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name)
 		return false
 	}
 	return true

@@ -109,6 +109,12 @@ func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(eds []types.Endpoints
 	return subsetMap, nil, 0, err
 }
 
+func (l *LocalL4ILBEndpointsCalculator) CalculateEndpointsDegradedMode(_ []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
+	// this should be the same as CalculateEndpoints for L4 ec
+	subsetMap, _, _, err := l.CalculateEndpoints(nil, currentMap)
+	return subsetMap, nil, err
+}
+
 func (l *LocalL4ILBEndpointsCalculator) ValidateEndpoints(endpointData []types.EndpointsData, endpointPodMap types.EndpointPodMap, dupCount int) error {
 	// this should be a no-op for now
 	return nil
@@ -166,6 +172,12 @@ func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpoints(_ []types.Endpoints
 	return subsetMap, nil, 0, err
 }
 
+func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpointsDegradedMode(_ []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
+	// this should be the same as CalculateEndpoints for L4 ec
+	subsetMap, _, _, err := l.CalculateEndpoints(nil, currentMap)
+	return subsetMap, nil, err
+}
+
 func (l *ClusterL4ILBEndpointsCalculator) ValidateEndpoints(endpointData []types.EndpointsData, endpointPodMap types.EndpointPodMap, dupCount int) error {
 	// this should be a no-op for now
 	return nil
@@ -176,16 +188,18 @@ type L7EndpointsCalculator struct {
 	zoneGetter          types.ZoneGetter
 	servicePortName     string
 	podLister           cache.Indexer
+	nodeLister          cache.Indexer
 	networkEndpointType types.NetworkEndpointType
 	enableDualStackNEG  bool
 	logger              klog.Logger
 }
 
-func NewL7EndpointsCalculator(zoneGetter types.ZoneGetter, podLister cache.Indexer, svcPortName string, endpointType types.NetworkEndpointType, logger klog.Logger, enableDualStackNEG bool) *L7EndpointsCalculator {
+func NewL7EndpointsCalculator(zoneGetter types.ZoneGetter, podLister, nodeLister cache.Indexer, svcPortName string, endpointType types.NetworkEndpointType, logger klog.Logger, enableDualStackNEG bool) *L7EndpointsCalculator {
 	return &L7EndpointsCalculator{
 		zoneGetter:          zoneGetter,
 		servicePortName:     svcPortName,
 		podLister:           podLister,
+		nodeLister:          nodeLister,
 		networkEndpointType: endpointType,
 		enableDualStackNEG:  enableDualStackNEG,
 		logger:              logger.WithName("L7EndpointsCalculator"),
@@ -201,6 +215,12 @@ func (l *L7EndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 func (l *L7EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, _ map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
 	result, err := toZoneNetworkEndpointMap(eds, l.zoneGetter, l.podLister, l.servicePortName, l.networkEndpointType)
 	return result.NetworkEndpointSet, result.EndpointPodMap, result.DupCount, err
+}
+
+// CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
+func (l *L7EndpointsCalculator) CalculateEndpointsDegradedMode(eds []types.EndpointsData, _ map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
+	result := toZoneNetworkEndpointMapDegradedMode(eds, l.zoneGetter, l.podLister, l.nodeLister, l.servicePortName, l.networkEndpointType)
+	return result.NetworkEndpointSet, result.EndpointPodMap, nil
 }
 
 func nodeMapToString(nodeMap map[string][]*v1.Node) string {

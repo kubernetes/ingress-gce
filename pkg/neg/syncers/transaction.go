@@ -186,6 +186,7 @@ func GetEndpointsCalculator(nodeLister, podLister cache.Indexer, zoneGetter negt
 	return NewL7EndpointsCalculator(
 		zoneGetter,
 		podLister,
+		nodeLister,
 		syncerKey.PortTuple.Name,
 		syncerKey.NegType,
 		logger,
@@ -257,8 +258,26 @@ func (s *transactionSyncer) syncInternalImpl() error {
 
 	endpointsData := negtypes.EndpointsDataFromEndpointSlices(endpointSlices)
 	targetMap, endpointPodMap, err = s.getEndpointsCalculation(endpointsData, currentMap)
-	if err != nil {
+
+	if !s.enableDegradedMode && err != nil {
 		return err
+	} else if s.enableDegradedMode {
+		if !s.inErrorState() && err != nil {
+			return err // if we encounter an error, we will return and run the next sync in degraded mode
+		}
+		degradedTargetMap, degradedPodMap, degradedModeErr := s.endpointsCalculator.CalculateEndpointsDegradedMode(endpointsData, currentMap)
+		if degradedModeErr != nil {
+			return degradedModeErr
+		}
+		notInDegraded, onlyInDegraded := calculateNetworkEndpointDifference(targetMap, degradedTargetMap)
+		if s.inErrorState() {
+			targetMap = degradedTargetMap
+			endpointPodMap = degradedPodMap
+			if len(notInDegraded) == 0 && len(onlyInDegraded) == 0 {
+				s.resetErrorState()
+			}
+		}
+		// TODO(cheungdavid): in the else branch, publish metrics if we don't encounter error and we are not in error state
 	}
 	s.logStats(targetMap, "desired NEG endpoints")
 
