@@ -46,14 +46,20 @@ type DualStackMigrator struct {
 //  1. Remove all migration-endpoints, irrespective of whether the migrator is
 //     paused or not.
 //  2. If the migrator is not currently paused, it will also start the
-//     detachment of a subset of migration-endpoints.
+//     detachment of a subset of migration-endpoints from a single zone.
+//
+// The returned string represents the zone for which detachment was started. An
+// empty return value signifies that detachment was not started (which is the
+// case when there were no migration-endpoints to begin with, or the migrator
+// was paused.)
 //
 // Refer the comment on [DualStackMigrator] for further details and
 // terminologies.
-func (d *DualStackMigrator) Filter(addEndpoints, removeEndpoints, committedEndpoints map[string]types.NetworkEndpointSet) {
+func (d *DualStackMigrator) Filter(addEndpoints, removeEndpoints, committedEndpoints map[string]types.NetworkEndpointSet) string {
 	if !d.enableDualStackNEG {
-		return
+		return ""
 	}
+	return ""
 }
 
 // Pause will prevent any subsequent Filter() invocations from starting
@@ -68,15 +74,6 @@ func (d *DualStackMigrator) Pause() {
 	if !d.enableDualStackNEG {
 		return
 	}
-}
-
-// IsPaused returns whether the migrator is paused or not.
-func (d *DualStackMigrator) IsPaused() bool {
-	if !d.enableDualStackNEG {
-		return true
-	}
-	// TODO(gauravkghildiyal): Returns true until implemented.
-	return true
 }
 
 // Continue will unpause the migration. It expects an error as input which

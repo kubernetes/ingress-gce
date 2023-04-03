@@ -296,7 +296,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	// Filtering of migration endpoints should happen before we filter out
 	// the transaction endpoints. Not doing so could result in an attempt to
 	// attach an endpoint which is still undergoing detachment-due-to-migration.
-	s.dsMigrator.Filter(addEndpoints, removeEndpoints, committedEndpoints)
+	migrationZone := s.dsMigrator.Filter(addEndpoints, removeEndpoints, committedEndpoints)
 
 	// Filter out the endpoints with existing transaction
 	// This mostly happens when transaction entry require reconciliation but the transaction is still progress
@@ -318,7 +318,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	s.logEndpoints(addEndpoints, "adding endpoint")
 	s.logEndpoints(removeEndpoints, "removing endpoint")
 
-	return s.syncNetworkEndpoints(addEndpoints, removeEndpoints)
+	return s.syncNetworkEndpoints(addEndpoints, removeEndpoints, migrationZone)
 }
 
 // syncLock must already be acquired before execution
@@ -406,7 +406,7 @@ func (s *transactionSyncer) ValidateEndpointBatch(err error, operation transacti
 }
 
 // syncNetworkEndpoints spins off go routines to execute NEG operations
-func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints map[string]negtypes.NetworkEndpointSet) error {
+func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints map[string]negtypes.NetworkEndpointSet, migrationZone string) error {
 	var wg sync.WaitGroup
 
 	syncFunc := func(endpointMap map[string]negtypes.NetworkEndpointSet, operation transactionOp) error {
@@ -443,15 +443,13 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 			if operation == detachOp {
 				wg.Add(1)
 
-				hasMigrationDetachments := false
-				if !s.dsMigrator.IsPaused() {
+				if zone == migrationZone {
 					s.dsMigrator.Pause()
-					hasMigrationDetachments = true
 				}
 
 				go func() {
 					defer wg.Done()
-					_ = s.detachNetworkEndpoints(zone, batch, hasMigrationDetachments)
+					_ = s.detachNetworkEndpoints(zone, batch, zone == migrationZone)
 				}()
 			}
 		}

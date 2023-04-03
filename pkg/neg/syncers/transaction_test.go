@@ -202,7 +202,9 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 		}
 
 		for _, tc := range testCases {
-			err := transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, tc.removeEndpoints)
+			// TODO(gauravkghildiyal): Update tests when we have a finalized the API
+			// and concrete implementation of the [DualStackMigrator].
+			err := transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, tc.removeEndpoints, "")
 			if err != nil {
 				t.Errorf("For case %q, syncNetworkEndpoints() got %v, want nil", tc.desc, err)
 			}
