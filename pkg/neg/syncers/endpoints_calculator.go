@@ -199,7 +199,8 @@ func (l *L7EndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
 func (l *L7EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, _ map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
-	return toZoneNetworkEndpointMap(eds, l.zoneGetter, l.servicePortName, l.networkEndpointType)
+	result, err := toZoneNetworkEndpointMap(eds, l.zoneGetter, l.podLister, l.servicePortName, l.networkEndpointType)
+	return result.NetworkEndpointSet, result.EndpointPodMap, result.DupCount, err
 }
 
 func nodeMapToString(nodeMap map[string][]*v1.Node) string {
@@ -235,7 +236,7 @@ func (l *L7EndpointsCalculator) ValidateEndpoints(endpointData []types.Endpoints
 	}
 
 	if countFromEndpointData != countFromPodMap {
-		l.logger.Info("Detected error when comparing endpoint counts", "endpointData", endpointData, "endpointPodMap", endpointPodMap, "dupCount", dupCount)
+		l.logger.Info("Detected error when comparing endpoint counts", "countFromEndpointData", countFromEndpointData, "countFromPodMap", countFromPodMap, "endpointData", endpointData, "endpointPodMap", endpointPodMap, "dupCount", dupCount)
 		return types.ErrEPCountsDiffer
 	}
 	return nil

@@ -444,6 +444,8 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 	t.Parallel()
 	zoneGetter := negtypes.NewFakeZoneGetter()
+	podLister := negtypes.NewTestContext().PodInformer.GetIndexer()
+	addPodsToLister(podLister)
 	testCases := []struct {
 		desc                string
 		portName            string
@@ -530,17 +532,17 @@ func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		retSet, retMap, _, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()), zoneGetter, tc.portName, tc.networkEndpointType)
+		result, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()), zoneGetter, podLister, tc.portName, tc.networkEndpointType)
 		if err != nil {
 			t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
 		}
 
-		if !reflect.DeepEqual(retSet, tc.endpointSets) {
-			t.Errorf("For case %q, expecting endpoint set %v, but got %v.", tc.desc, tc.endpointSets, retSet)
+		if !reflect.DeepEqual(result.NetworkEndpointSet, tc.endpointSets) {
+			t.Errorf("For case %q, expecting endpoint set %v, but got %v.", tc.desc, tc.endpointSets, result.NetworkEndpointSet)
 		}
 
-		if !reflect.DeepEqual(retMap, tc.expectMap) {
-			t.Errorf("For case %q, expecting endpoint map %v, but got %v.", tc.desc, tc.expectMap, retMap)
+		if !reflect.DeepEqual(result.EndpointPodMap, tc.expectMap) {
+			t.Errorf("For case %q, expecting endpoint map %v, but got %v.", tc.desc, tc.expectMap, result.EndpointPodMap)
 		}
 	}
 }

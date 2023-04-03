@@ -18,7 +18,6 @@ package syncers
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -245,8 +244,6 @@ func (s *transactionSyncer) syncInternalImpl() error {
 
 	var targetMap map[string]negtypes.NetworkEndpointSet
 	var endpointPodMap negtypes.EndpointPodMap
-	var dupCount int
-
 	slices, err := s.endpointSliceLister.ByIndex(endpointslices.EndpointSlicesByServiceIndex, endpointslices.FormatEndpointSlicesServiceKey(s.Namespace, s.Name))
 	if err != nil {
 		return err
@@ -255,37 +252,13 @@ func (s *transactionSyncer) syncInternalImpl() error {
 		s.logger.Error(nil, "Endpoint slices for the service doesn't exist. Skipping NEG sync")
 		return nil
 	}
-	endpointSlices := make([]*discovery.EndpointSlice, len(slices))
-	negCR, err := getNegFromStore(s.svcNegLister, s.Namespace, s.NegSyncerKey.NegName)
-	for i, slice := range slices {
-		endpointslice := slice.(*discovery.EndpointSlice)
-		endpointSlices[i] = endpointslice
-		if err != nil {
-			s.logger.Error(err, "unable to retrieve neg from the store", "neg", klog.KRef(s.Namespace, s.NegName))
-			continue
-		}
-		lastSyncTimestamp := negCR.Status.LastSyncTime
-		epsCreationTimestamp := endpointslice.ObjectMeta.CreationTimestamp
+	endpointSlices := convertUntypedToEPS(slices)
+	s.computeEPSStaleness(endpointSlices)
 
-		epsStaleness := time.Since(lastSyncTimestamp.Time)
-		// if this endpoint slice is newly created/created after last sync
-		if lastSyncTimestamp.Before(&epsCreationTimestamp) {
-			epsStaleness = time.Since(epsCreationTimestamp.Time)
-		}
-		metrics.PublishNegEPSStalenessMetrics(epsStaleness)
-		s.logger.V(3).Info("Endpoint slice syncs", "Namespace", endpointslice.Namespace, "Name", endpointslice.Name, "staleness", epsStaleness)
-
-	}
 	endpointsData := negtypes.EndpointsDataFromEndpointSlices(endpointSlices)
-	targetMap, endpointPodMap, dupCount, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
+	targetMap, endpointPodMap, err = s.getEndpointsCalculation(endpointsData, currentMap)
 	if err != nil {
 		return err
-	}
-	err = s.endpointsCalculator.ValidateEndpoints(endpointsData, endpointPodMap, dupCount)
-	if err != nil {
-		// TODO(cheungdavid): return error from ValidateEndpoint after degraded mode is implemented
-		// for now we don't return error so it won't break the sync
-		s.setErrorState(s.getErrorStateReason(err))
 	}
 	s.logStats(targetMap, "desired NEG endpoints")
 
@@ -316,6 +289,23 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	return s.syncNetworkEndpoints(addEndpoints, removeEndpoints)
 }
 
+func (s *transactionSyncer) getEndpointsCalculation(
+	endpointsData []negtypes.EndpointsData,
+	currentMap map[string]negtypes.NetworkEndpointSet,
+) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, error) {
+	targetMap, endpointPodMap, dupCount, err := s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
+	if err != nil {
+		return nil, nil, err
+	}
+	if s.enableDegradedMode {
+		err = s.endpointsCalculator.ValidateEndpoints(endpointsData, endpointPodMap, dupCount)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	return targetMap, endpointPodMap, nil
+}
+
 // syncLock must already be acquired before execution
 func (s *transactionSyncer) inErrorState() bool {
 	return s.errorState != ""
@@ -324,6 +314,11 @@ func (s *transactionSyncer) inErrorState() bool {
 // syncLock must already be acquired before execution
 func (s *transactionSyncer) setErrorState(errorState string) {
 	s.errorState = errorState
+}
+
+// syncLock must already be acquired before execution
+func (s *transactionSyncer) resetErrorState() {
+	s.errorState = ""
 }
 
 // ensureNetworkEndpointGroups ensures NEGs are created and configured correctly in the corresponding zones.
@@ -375,7 +370,7 @@ func (s *transactionSyncer) getErrorStateReason(err error) string {
 		return ""
 	}
 	if result, contains := negtypes.ErrorStateResult[err]; contains {
-		return result
+		return string(result)
 	}
 	return ""
 }
@@ -402,8 +397,6 @@ func (s *transactionSyncer) ValidateEndpointBatch(err error, operation transacti
 
 // syncNetworkEndpoints spins off go routines to execute NEG operations
 func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints map[string]negtypes.NetworkEndpointSet) error {
-	var wg sync.WaitGroup
-
 	syncFunc := func(endpointMap map[string]negtypes.NetworkEndpointSet, operation transactionOp) error {
 		for zone, endpointSet := range endpointMap {
 			if endpointSet.Len() == 0 {
@@ -427,10 +420,10 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 			}
 
 			if operation == attachOp {
-				s.attachNetworkEndpoints(zone, batch, &wg)
+				s.attachNetworkEndpoints(zone, batch)
 			}
 			if operation == detachOp {
-				s.detachNetworkEndpoints(zone, batch, &wg)
+				s.detachNetworkEndpoints(zone, batch)
 			}
 		}
 		return nil
@@ -443,52 +436,25 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 	if err := syncFunc(removeEndpoints, detachOp); err != nil {
 		return err
 	}
-	go s.collectSyncResult(&wg)
 	return nil
 }
 
-// collectSyncResult collects the result of the sync and emits the metrics for sync result
-func (s *transactionSyncer) collectSyncResult(wg *sync.WaitGroup) {
-	wg.Wait()
-	s.syncLock.Lock()
-	defer s.syncLock.Unlock()
-
-	var syncResult *negtypes.NegSyncResult
-	switch s.errorState {
-	case "":
-		syncResult = negtypes.NewNegSyncResult(nil, negtypes.ResultSuccess)
-	case negtypes.ResultInvalidAPIResponse:
-		syncResult = negtypes.NewNegSyncResult(negtypes.ErrInvalidAPIResponse, negtypes.ResultInvalidAPIResponse)
-	case negtypes.ResultInvalidEPAttach:
-		syncResult = negtypes.NewNegSyncResult(negtypes.ErrInvalidEPAttach, negtypes.ResultInvalidEPAttach)
-	case negtypes.ResultInvalidEPDetach:
-		syncResult = negtypes.NewNegSyncResult(negtypes.ErrInvalidEPDetach, negtypes.ResultInvalidEPDetach)
-	default:
-		syncResult = negtypes.NewNegSyncResult(errors.New("Unknown error state value"), negtypes.ResultOtherError)
-	}
-
-	s.syncCollector.UpdateSyncer(s.NegSyncerKey, syncResult)
-}
-
 // attachNetworkEndpoints creates go routine to run operations for attaching network endpoints
-func (s *transactionSyncer) attachNetworkEndpoints(zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, wg *sync.WaitGroup) {
+func (s *transactionSyncer) attachNetworkEndpoints(zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
 	s.logger.V(2).Info("Attaching endpoints to NEG.", "countOfEndpointsBeingAttached", len(networkEndpointMap), "negSyncerKey", s.NegSyncerKey.String(), "zone", zone)
-	wg.Add(1)
-	go s.operationInternal(attachOp, zone, networkEndpointMap, wg)
+	go s.operationInternal(attachOp, zone, networkEndpointMap)
 }
 
 // detachNetworkEndpoints creates go routine to run operations for detaching network endpoints
-func (s *transactionSyncer) detachNetworkEndpoints(zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, wg *sync.WaitGroup) {
+func (s *transactionSyncer) detachNetworkEndpoints(zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
 	s.logger.V(2).Info("Detaching endpoints from NEG.", "countOfEndpointsBeingDetached", len(networkEndpointMap), "negSyncerKey", s.NegSyncerKey.String(), "zone", zone)
-	wg.Add(1)
-	go s.operationInternal(detachOp, zone, networkEndpointMap, wg)
+	go s.operationInternal(detachOp, zone, networkEndpointMap)
 }
 
 // operationInternal executes NEG API call and commits the transactions
 // It will record events when operations are completed
 // If error occurs or any transaction entry requires reconciliation, it will trigger resync
-func (s *transactionSyncer) operationInternal(operation transactionOp, zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, wg *sync.WaitGroup) {
-	defer wg.Done()
+func (s *transactionSyncer) operationInternal(operation transactionOp, zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
 	var err error
 	start := time.Now()
 	networkEndpoints := []*composite.NetworkEndpoint{}
@@ -730,6 +696,35 @@ func (s *transactionSyncer) updateStatus(syncErr error) {
 	_, err = patchNegStatus(s.svcNegClient, origNeg.Status, neg.Status, s.Namespace, s.NegSyncerKey.NegName)
 	if err != nil {
 		s.logger.Error(err, "Error updating Neg CR")
+	}
+}
+
+func convertUntypedToEPS(endpointSliceUntyped []interface{}) []*discovery.EndpointSlice {
+	endpointSlices := make([]*discovery.EndpointSlice, len(endpointSliceUntyped))
+	for i, slice := range endpointSliceUntyped {
+		endpointslice := slice.(*discovery.EndpointSlice)
+		endpointSlices[i] = endpointslice
+	}
+	return endpointSlices
+}
+
+func (s *transactionSyncer) computeEPSStaleness(endpointSlices []*discovery.EndpointSlice) {
+	negCR, err := getNegFromStore(s.svcNegLister, s.Namespace, s.NegSyncerKey.NegName)
+	if err != nil {
+		s.logger.Error(err, "unable to retrieve neg from the store", "neg", klog.KRef(s.Namespace, s.NegName))
+		return
+	}
+	lastSyncTimestamp := negCR.Status.LastSyncTime
+	for _, endpointSlice := range endpointSlices {
+		epsCreationTimestamp := endpointSlice.ObjectMeta.CreationTimestamp
+
+		epsStaleness := time.Since(lastSyncTimestamp.Time)
+		// if this endpoint slice is newly created/created after last sync
+		if lastSyncTimestamp.Before(&epsCreationTimestamp) {
+			epsStaleness = time.Since(epsCreationTimestamp.Time)
+		}
+		metrics.PublishNegEPSStalenessMetrics(epsStaleness)
+		s.logger.V(3).Info("Endpoint slice syncs", "Namespace", endpointSlice.Namespace, "Name", endpointSlice.Name, "staleness", epsStaleness)
 	}
 }
 
