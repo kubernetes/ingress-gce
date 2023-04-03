@@ -392,7 +392,7 @@ func (c *Controller) processServiceAttachment(key string) error {
 // resource has successfully been deleted, the finalizer is removed from the service attachment
 // cr.
 func (c *Controller) garbageCollectServiceAttachments() {
-	klog.V(2).Infof("Staring Service Attachment Garbage Collection")
+	klog.V(2).Infof("Starting Service Attachment Garbage Collection")
 	defer func() {
 		klog.V(2).Infof("Finished Service Attachment Garbage Collection")
 		metrics.PublishLastProcessTimestampMetrics(metrics.GCProcess)
