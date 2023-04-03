@@ -295,6 +295,12 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	// filter out the endpoints that are in transaction
 	filterEndpointByTransaction(committedEndpoints, s.transactions, s.logger)
 
+	var endpointPodLabelMap labels.EndpointPodLabelMap
+	// Only fetch label from pod for L7 endpoints
+	if flags.F.EnableNEGLabelPropagation && s.NegType == negtypes.VmIpPortEndpointType {
+		endpointPodLabelMap = getEndpointPodLabelMap(addEndpoints, endpointPodMap, s.podLister, s.podLabelPropagationConfig, s.recorder, s.logger)
+	}
+
 	if s.needCommit() {
 		s.commitPods(committedEndpoints, endpointPodMap)
 	}
@@ -306,7 +312,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	s.logEndpoints(addEndpoints, "adding endpoint")
 	s.logEndpoints(removeEndpoints, "removing endpoint")
 
-	return s.syncNetworkEndpoints(addEndpoints, removeEndpoints)
+	return s.syncNetworkEndpoints(addEndpoints, removeEndpoints, endpointPodLabelMap)
 }
 
 func (s *transactionSyncer) getEndpointsCalculation(
@@ -416,7 +422,7 @@ func (s *transactionSyncer) ValidateEndpointBatch(err error, operation transacti
 }
 
 // syncNetworkEndpoints spins off go routines to execute NEG operations
-func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints map[string]negtypes.NetworkEndpointSet) error {
+func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints map[string]negtypes.NetworkEndpointSet, endpointPodLabelMap labels.EndpointPodLabelMap) error {
 	syncFunc := func(endpointMap map[string]negtypes.NetworkEndpointSet, operation transactionOp) error {
 		for zone, endpointSet := range endpointMap {
 			if endpointSet.Len() == 0 {
@@ -424,7 +430,7 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 				continue
 			}
 
-			batch, err := makeEndpointBatch(endpointSet, s.NegType)
+			batch, err := makeEndpointBatch(endpointSet, s.NegType, endpointPodLabelMap)
 			if err != nil {
 				return err
 			}
