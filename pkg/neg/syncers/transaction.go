@@ -28,6 +28,7 @@ import (
 	"google.golang.org/api/googleapi"
 	apiv1 "k8s.io/api/core/v1"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
@@ -836,4 +837,30 @@ func findCondition(conditions []negv1beta1.Condition, conditionType string) (neg
 	}
 
 	return negv1beta1.Condition{}, -1, false
+}
+
+// getEndpointPodLabelMap goes through all the endpoints to be attached and fetches the labels from the endpoint pods.
+func getEndpointPodLabelMap(endpoints map[string]negtypes.NetworkEndpointSet, endpointPodMap negtypes.EndpointPodMap, podLister cache.Store, lpConfig labels.PodLabelPropagationConfig, recorder record.EventRecorder, logger klog.Logger) labels.EndpointPodLabelMap {
+	endpointPodLabelMap := labels.EndpointPodLabelMap{}
+	for _, endpointSet := range endpoints {
+		for endpoint := range endpointSet {
+			key := fmt.Sprintf("%s/%s", endpointPodMap[endpoint].Namespace, endpointPodMap[endpoint].Name)
+			obj, ok, err := podLister.GetByKey(key)
+			if err != nil || !ok {
+				logger.Error(err, "getEndpointPodLabelMap: error getting pod", "pod", key, "exist", ok)
+				continue
+			}
+			pod, ok := obj.(*v1.Pod)
+			if !ok {
+				logger.Error(nil, "expected type *v1.Pod", "pod", key, "type", fmt.Sprintf("%T", obj))
+				continue
+			}
+			labelMap, err := labels.GetPodLabelMap(pod, lpConfig)
+			if err != nil {
+				recorder.Eventf(pod, apiv1.EventTypeWarning, "LabelsExceededLimit", "Label Propagation Error: %v", err)
+			}
+			endpointPodLabelMap[endpoint] = labelMap
+		}
+	}
+	return endpointPodLabelMap
 }
