@@ -25,6 +25,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
@@ -441,109 +442,117 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 	}
 }
 
-func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
+func TestToZoneNetworkEndpointMap(t *testing.T) {
 	t.Parallel()
 	zoneGetter := negtypes.NewFakeZoneGetter()
 	podLister := negtypes.NewTestContext().PodInformer.GetIndexer()
 	addPodsToLister(podLister)
 	testCases := []struct {
-		desc                string
-		portName            string
-		endpointSets        map[string]negtypes.NetworkEndpointSet
-		expectMap           negtypes.EndpointPodMap
-		networkEndpointType negtypes.NetworkEndpointType
+		desc                       string
+		portName                   string
+		wantZoneNetworkEndpointMap map[string]negtypes.NetworkEndpointSet
+		wantNetworkEndpointPodMap  negtypes.EndpointPodMap
+		networkEndpointType        negtypes.NetworkEndpointType
 	}{
 		{
-			desc:                "non exist target port",
-			portName:            "non-exists",
-			endpointSets:        map[string]negtypes.NetworkEndpointSet{},
-			expectMap:           negtypes.EndpointPodMap{},
-			networkEndpointType: negtypes.VmIpPortEndpointType,
+			desc:                       "target port does not exist",
+			portName:                   "non-exists",
+			wantZoneNetworkEndpointMap: map[string]negtypes.NetworkEndpointSet{},
+			wantNetworkEndpointPodMap:  negtypes.EndpointPodMap{},
+			networkEndpointType:        negtypes.VmIpPortEndpointType,
 		},
 		{
-			desc:     "target port number",
+			desc:     "default service port name",
 			portName: "",
-			endpointSets: map[string]negtypes.NetworkEndpointSet{
-				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
-					networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"),
-					networkEndpointFromEncodedEndpoint("10.100.1.2||instance1||80"),
-					networkEndpointFromEncodedEndpoint("10.100.1.3||instance1||80"),
-					networkEndpointFromEncodedEndpoint("10.100.1.4||instance1||80"),
-					networkEndpointFromEncodedEndpoint("10.100.2.1||instance2||80")),
-				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
-					networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80")),
+			wantZoneNetworkEndpointMap: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "10.100.1.1", Node: "instance1", Port: "80"},
+					{IP: "10.100.1.2", Node: "instance1", Port: "80"},
+					{IP: "10.100.1.3", Node: "instance1", Port: "80"},
+					{IP: "10.100.1.4", Node: "instance1", Port: "80"},
+					{IP: "10.100.2.1", Node: "instance2", Port: "80"},
+				}...),
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "10.100.3.1", Node: "instance3", Port: "80"},
+				}...),
 			},
-			expectMap: negtypes.EndpointPodMap{
-				networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod1"},
-				networkEndpointFromEncodedEndpoint("10.100.1.2||instance1||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod2"},
-				networkEndpointFromEncodedEndpoint("10.100.2.1||instance2||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod3"},
-				networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod4"},
-				networkEndpointFromEncodedEndpoint("10.100.1.3||instance1||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod5"},
-				networkEndpointFromEncodedEndpoint("10.100.1.4||instance1||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod6"},
+			wantNetworkEndpointPodMap: negtypes.EndpointPodMap{
+				{IP: "10.100.1.1", Node: "instance1", Port: "80"}: {Namespace: testServiceNamespace, Name: "pod1"},
+				{IP: "10.100.1.2", Node: "instance1", Port: "80"}: {Namespace: testServiceNamespace, Name: "pod2"},
+				{IP: "10.100.2.1", Node: "instance2", Port: "80"}: {Namespace: testServiceNamespace, Name: "pod3"},
+				{IP: "10.100.3.1", Node: "instance3", Port: "80"}: {Namespace: testServiceNamespace, Name: "pod4"},
+				{IP: "10.100.1.3", Node: "instance1", Port: "80"}: {Namespace: testServiceNamespace, Name: "pod5"},
+				{IP: "10.100.1.4", Node: "instance1", Port: "80"}: {Namespace: testServiceNamespace, Name: "pod6"},
 			},
 			networkEndpointType: negtypes.VmIpPortEndpointType,
 		},
 		{
-			desc:     "named target port",
+			desc:     "explicitly named service port",
 			portName: testNamedPort,
-			endpointSets: map[string]negtypes.NetworkEndpointSet{
-				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
-					networkEndpointFromEncodedEndpoint("10.100.2.2||instance2||81")),
-				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
-					networkEndpointFromEncodedEndpoint("10.100.4.1||instance4||81"),
-					networkEndpointFromEncodedEndpoint("10.100.3.2||instance3||8081"),
-					networkEndpointFromEncodedEndpoint("10.100.4.2||instance4||8081"),
-					networkEndpointFromEncodedEndpoint("10.100.4.3||instance4||81"),
-					networkEndpointFromEncodedEndpoint("10.100.4.4||instance4||8081")),
+			wantZoneNetworkEndpointMap: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "10.100.2.2", Node: "instance2", Port: "81"},
+				}...),
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "10.100.4.1", Node: "instance4", Port: "81"},
+					{IP: "10.100.3.2", Node: "instance3", Port: "8081"},
+					{IP: "10.100.4.2", Node: "instance4", Port: "8081"},
+					{IP: "10.100.4.3", Node: "instance4", Port: "81"},
+					{IP: "10.100.4.4", Node: "instance4", Port: "8081"},
+				}...),
 			},
-			expectMap: negtypes.EndpointPodMap{
-				networkEndpointFromEncodedEndpoint("10.100.2.2||instance2||81"):   types.NamespacedName{Namespace: testServiceNamespace, Name: "pod7"},
-				networkEndpointFromEncodedEndpoint("10.100.4.1||instance4||81"):   types.NamespacedName{Namespace: testServiceNamespace, Name: "pod8"},
-				networkEndpointFromEncodedEndpoint("10.100.4.3||instance4||81"):   types.NamespacedName{Namespace: testServiceNamespace, Name: "pod9"},
-				networkEndpointFromEncodedEndpoint("10.100.3.2||instance3||8081"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod10"},
-				networkEndpointFromEncodedEndpoint("10.100.4.2||instance4||8081"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod11"},
-				networkEndpointFromEncodedEndpoint("10.100.4.4||instance4||8081"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod12"},
+			wantNetworkEndpointPodMap: negtypes.EndpointPodMap{
+				{IP: "10.100.2.2", Node: "instance2", Port: "81"}:   {Namespace: testServiceNamespace, Name: "pod7"},
+				{IP: "10.100.4.1", Node: "instance4", Port: "81"}:   {Namespace: testServiceNamespace, Name: "pod8"},
+				{IP: "10.100.4.3", Node: "instance4", Port: "81"}:   {Namespace: testServiceNamespace, Name: "pod9"},
+				{IP: "10.100.3.2", Node: "instance3", Port: "8081"}: {Namespace: testServiceNamespace, Name: "pod10"},
+				{IP: "10.100.4.2", Node: "instance4", Port: "8081"}: {Namespace: testServiceNamespace, Name: "pod11"},
+				{IP: "10.100.4.4", Node: "instance4", Port: "8081"}: {Namespace: testServiceNamespace, Name: "pod12"},
 			},
 			networkEndpointType: negtypes.VmIpPortEndpointType,
 		},
 		{
-			desc:     "Non-GCP network endpoints",
+			desc:     "non GCP network endpoints",
 			portName: "",
-			endpointSets: map[string]negtypes.NetworkEndpointSet{
-				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
-					networkEndpointFromEncodedEndpoint("10.100.1.1||||80"),
-					networkEndpointFromEncodedEndpoint("10.100.1.2||||80"),
-					networkEndpointFromEncodedEndpoint("10.100.1.3||||80"),
-					networkEndpointFromEncodedEndpoint("10.100.1.4||||80"),
-					networkEndpointFromEncodedEndpoint("10.100.2.1||||80")),
-				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
-					networkEndpointFromEncodedEndpoint("10.100.3.1||||80")),
+			wantZoneNetworkEndpointMap: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "10.100.1.1", Port: "80"},
+					{IP: "10.100.1.2", Port: "80"},
+					{IP: "10.100.1.3", Port: "80"},
+					{IP: "10.100.1.4", Port: "80"},
+					{IP: "10.100.2.1", Port: "80"},
+				}...),
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "10.100.3.1", Port: "80"},
+				}...),
 			},
-			expectMap: negtypes.EndpointPodMap{
-				networkEndpointFromEncodedEndpoint("10.100.1.1||||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod1"},
-				networkEndpointFromEncodedEndpoint("10.100.1.2||||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod2"},
-				networkEndpointFromEncodedEndpoint("10.100.2.1||||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod3"},
-				networkEndpointFromEncodedEndpoint("10.100.3.1||||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod4"},
-				networkEndpointFromEncodedEndpoint("10.100.1.3||||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod5"},
-				networkEndpointFromEncodedEndpoint("10.100.1.4||||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod6"},
+			wantNetworkEndpointPodMap: negtypes.EndpointPodMap{
+				{IP: "10.100.1.1", Port: "80"}: {Namespace: testServiceNamespace, Name: "pod1"},
+				{IP: "10.100.1.2", Port: "80"}: {Namespace: testServiceNamespace, Name: "pod2"},
+				{IP: "10.100.2.1", Port: "80"}: {Namespace: testServiceNamespace, Name: "pod3"},
+				{IP: "10.100.3.1", Port: "80"}: {Namespace: testServiceNamespace, Name: "pod4"},
+				{IP: "10.100.1.3", Port: "80"}: {Namespace: testServiceNamespace, Name: "pod5"},
+				{IP: "10.100.1.4", Port: "80"}: {Namespace: testServiceNamespace, Name: "pod6"},
 			},
 			networkEndpointType: negtypes.NonGCPPrivateEndpointType,
 		},
 	}
 
 	for _, tc := range testCases {
-		result, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()), zoneGetter, podLister, tc.portName, tc.networkEndpointType)
-		if err != nil {
-			t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
-		}
+		t.Run(tc.desc, func(t *testing.T) {
+			gotResult, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()), zoneGetter, podLister, tc.portName, tc.networkEndpointType)
+			if err != nil {
+				t.Errorf("toZoneNetworkEndpointMap() = err %v, want no error", err)
+			}
 
-		if !reflect.DeepEqual(result.NetworkEndpointSet, tc.endpointSets) {
-			t.Errorf("For case %q, expecting endpoint set %v, but got %v.", tc.desc, tc.endpointSets, result.NetworkEndpointSet)
-		}
-
-		if !reflect.DeepEqual(result.EndpointPodMap, tc.expectMap) {
-			t.Errorf("For case %q, expecting endpoint map %v, but got %v.", tc.desc, tc.expectMap, result.EndpointPodMap)
-		}
+			zoneNetworkEndpointMap, networkEndpointPodMap := gotResult.NetworkEndpointSet, gotResult.EndpointPodMap
+			if diff := cmp.Diff(tc.wantZoneNetworkEndpointMap, zoneNetworkEndpointMap); diff != "" {
+				t.Errorf("toZoneNetworkEndpointMap() returned unexpected diff for zoneNetworkEndpointMap (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.wantNetworkEndpointPodMap, networkEndpointPodMap); diff != "" {
+				t.Errorf("toZoneNetworkEndpointMap() returned unexpected diff for networkEndpointPodMap (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -1858,7 +1867,7 @@ func getTestEndpointSlices(name, namespace string) []*discovery.EndpointSlice {
 			AddressType: discovery.AddressTypeIPv6,
 			Endpoints: []discovery.Endpoint{
 				{
-					Addresses: []string{"aa:aa"},
+					Addresses: []string{"a:b::1"},
 					NodeName:  &instance3,
 					TargetRef: &v1.ObjectReference{
 						Namespace: namespace,
@@ -1866,7 +1875,7 @@ func getTestEndpointSlices(name, namespace string) []*discovery.EndpointSlice {
 					},
 				},
 				{
-					Addresses: []string{"aa:ab"},
+					Addresses: []string{"a:b::2"},
 					NodeName:  &instance4,
 					TargetRef: &v1.ObjectReference{
 						Namespace: namespace,
@@ -1874,7 +1883,7 @@ func getTestEndpointSlices(name, namespace string) []*discovery.EndpointSlice {
 					},
 				},
 				{
-					Addresses: []string{"aa:ac"},
+					Addresses: []string{"a:b::3"},
 					NodeName:  &instance4,
 					TargetRef: &v1.ObjectReference{
 						Namespace: namespace,
