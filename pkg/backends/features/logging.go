@@ -32,7 +32,7 @@ func EnsureLogging(sp utils.ServicePort, be *composite.BackendService) bool {
 		return false
 	}
 	svcKey := fmt.Sprintf("%s/%s", sp.ID.Service.Namespace, sp.ID.Service.Name)
-	if be.LogConfig != nil && !be.LogConfig.Enable && !sp.BackendConfig.Spec.Logging.Enable {
+	if be.LogConfig != nil && !be.LogConfig.Enable && !sp.BackendConfig.Spec.Logging.Enable && be.LogConfig.SampleRate == 0.0 {
 		klog.V(3).Infof("Logging continues to stay disabled for service %s (port %d), skipping update", svcKey, sp.Port)
 		return false
 	}
@@ -44,8 +44,7 @@ func EnsureLogging(sp utils.ServicePort, be *composite.BackendService) bool {
 		}
 	}
 	ensureBackendServiceLogConfig(sp, be)
-	if existingLogConfig == nil || existingLogConfig.Enable != be.LogConfig.Enable ||
-		existingLogConfig.SampleRate != be.LogConfig.SampleRate {
+	if existingLogConfig == nil || existingLogConfig.Enable != be.LogConfig.Enable || existingLogConfig.SampleRate != be.LogConfig.SampleRate {
 		klog.V(2).Infof("Updated Logging settings for service %s (port %d) to (Enable: %t, SampleRate: %f)", svcKey, sp.Port, be.LogConfig.Enable, be.LogConfig.SampleRate)
 		return true
 	}
@@ -61,8 +60,9 @@ func ensureBackendServiceLogConfig(sp utils.ServicePort, be *composite.BackendSe
 		be.LogConfig = &composite.BackendServiceLogConfig{}
 	}
 	be.LogConfig.Enable = sp.BackendConfig.Spec.Logging.Enable
-	// Ignore sample rate if logging is not enabled.
+	// SampleRate should be set to 0.0 if logging is not enabled.
 	if !sp.BackendConfig.Spec.Logging.Enable {
+		be.LogConfig.SampleRate = 0.0
 		return
 	}
 	// Existing sample rate is retained if not specified.
