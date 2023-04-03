@@ -233,7 +233,7 @@ func TestValidateEndpoints(t *testing.T) {
 	testContext := negtypes.NewTestContext()
 	podLister := testContext.PodInformer.GetIndexer()
 	nodeLister := listers.NewNodeLister(testContext.NodeInformer.GetIndexer())
-	L7EndpointsCalculator := NewL7EndpointsCalculator(zoneGetter, podLister, testPortName, negtypes.VmIpPortEndpointType, klog.TODO())
+	L7EndpointsCalculator := NewL7EndpointsCalculator(zoneGetter, podLister, testPortName, negtypes.VmIpPortEndpointType, klog.TODO(), testContext.EnableDualStackNEG)
 	L4LocalEndpointCalculator := NewLocalL4ILBEndpointsCalculator(nodeLister, zoneGetter, svcKey, klog.TODO())
 	L4ClusterEndpointCalculator := NewClusterL4ILBEndpointsCalculator(nodeLister, zoneGetter, svcKey, klog.TODO())
 

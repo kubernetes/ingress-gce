@@ -365,6 +365,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		flags.F.RunIngressController,
 		flags.F.RunL4Controller,
 		flags.F.EnableNonGCPMode,
+		flags.F.EnableDualStackNEG,
 		enableAsm,
 		asmServiceNEGSkipNamespaces,
 		lpConfig,

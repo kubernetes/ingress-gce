@@ -95,6 +95,10 @@ type syncerManager struct {
 	// This will make all NEGs created by NEG controller to be NON_GCP_PRIVATE_IP_PORT type.
 	enableNonGcpMode bool
 
+	// enableDualStackNEG indicates if IPv6 endpoints should be considered while
+	// reconciling NEGs.
+	enableDualStackNEG bool
+
 	// Number of goroutines created for NEG garbage collection. This value
 	// controls the maximum number of concurrent calls that can be made to the GCE
 	// NEG Delete API.
@@ -124,6 +128,7 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 	svcNegLister cache.Indexer,
 	syncerMetrics *metrics.SyncerMetrics,
 	enableNonGcpMode bool,
+	enableDualStackNEG bool,
 	numGCWorkers int,
 	lpConfig podlabels.PodLabelPropagationConfig,
 	logger klog.Logger) *syncerManager {
@@ -148,6 +153,7 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 		svcNegClient:        svcNegClient,
 		kubeSystemUID:       kubeSystemUID,
 		enableNonGcpMode:    enableNonGcpMode,
+		enableDualStackNEG:  enableDualStackNEG,
 		numGCWorkers:        numGCWorkers,
 		logger:              logger,
 		vmIpZoneMap:         vmIpZoneMap,
@@ -221,8 +227,15 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 			}
 
 			// determine the implementation that calculates NEG endpoints on each sync.
-			epc := negsyncer.GetEndpointsCalculator(manager.nodeLister, manager.podLister, manager.zoneGetter,
-				syncerKey, portInfo.EpCalculatorMode, manager.logger.WithValues("service", klog.KRef(syncerKey.Namespace, syncerKey.Name), "negName", syncerKey.NegName))
+			epc := negsyncer.GetEndpointsCalculator(
+				manager.nodeLister,
+				manager.podLister,
+				manager.zoneGetter,
+				syncerKey,
+				portInfo.EpCalculatorMode,
+				manager.logger.WithValues("service", klog.KRef(syncerKey.Namespace, syncerKey.Name), "negName", syncerKey.NegName),
+				manager.enableDualStackNEG,
+			)
 			syncer = negsyncer.NewTransactionSyncer(
 				syncerKey,
 				manager.recorder,
@@ -241,6 +254,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				!manager.namer.IsNEG(portInfo.NegName),
 				manager.logger,
 				manager.lpConfig,
+				manager.enableDualStackNEG,
 			)
 			manager.syncerMap[syncerKey] = syncer
 		}
