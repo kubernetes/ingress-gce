@@ -23,6 +23,7 @@ import (
 // NetworkEndpoint contains the essential information for each network endpoint in a NEG
 type NetworkEndpoint struct {
 	IP   string
+	IPv6 string
 	Port string
 	Node string
 }

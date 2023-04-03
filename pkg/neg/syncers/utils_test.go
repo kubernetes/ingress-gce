@@ -453,6 +453,7 @@ func TestToZoneNetworkEndpointMap(t *testing.T) {
 		wantZoneNetworkEndpointMap map[string]negtypes.NetworkEndpointSet
 		wantNetworkEndpointPodMap  negtypes.EndpointPodMap
 		networkEndpointType        negtypes.NetworkEndpointType
+		enableDualStackNEG         bool
 	}{
 		{
 			desc:                       "target port does not exist",
@@ -512,6 +513,32 @@ func TestToZoneNetworkEndpointMap(t *testing.T) {
 			networkEndpointType: negtypes.VmIpPortEndpointType,
 		},
 		{
+			desc:     "dual stack enabled with explicitly named service ports",
+			portName: testNamedPort,
+			wantZoneNetworkEndpointMap: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "10.100.2.2", Node: "instance2", Port: "81"},
+				}...),
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "10.100.4.1", Node: "instance4", Port: "81"},
+					{IP: "10.100.3.2", IPv6: "a:b::1", Node: "instance3", Port: "8081"},
+					{IP: "10.100.4.2", IPv6: "a:b::2", Node: "instance4", Port: "8081"},
+					{IP: "10.100.4.3", Node: "instance4", Port: "81"},
+					{IP: "10.100.4.4", IPv6: "a:b::3", Node: "instance4", Port: "8081"},
+				}...),
+			},
+			wantNetworkEndpointPodMap: negtypes.EndpointPodMap{
+				{IP: "10.100.2.2", Node: "instance2", Port: "81"}:                   {Namespace: testServiceNamespace, Name: "pod7"},
+				{IP: "10.100.4.1", Node: "instance4", Port: "81"}:                   {Namespace: testServiceNamespace, Name: "pod8"},
+				{IP: "10.100.4.3", Node: "instance4", Port: "81"}:                   {Namespace: testServiceNamespace, Name: "pod9"},
+				{IP: "10.100.3.2", IPv6: "a:b::1", Node: "instance3", Port: "8081"}: {Namespace: testServiceNamespace, Name: "pod10"},
+				{IP: "10.100.4.2", IPv6: "a:b::2", Node: "instance4", Port: "8081"}: {Namespace: testServiceNamespace, Name: "pod11"},
+				{IP: "10.100.4.4", IPv6: "a:b::3", Node: "instance4", Port: "8081"}: {Namespace: testServiceNamespace, Name: "pod12"},
+			},
+			networkEndpointType: negtypes.VmIpPortEndpointType,
+			enableDualStackNEG:  true,
+		},
+		{
 			desc:     "non GCP network endpoints",
 			portName: "",
 			wantZoneNetworkEndpointMap: map[string]negtypes.NetworkEndpointSet{
@@ -540,7 +567,7 @@ func TestToZoneNetworkEndpointMap(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			gotResult, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()), zoneGetter, podLister, tc.portName, tc.networkEndpointType)
+			gotResult, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()), zoneGetter, podLister, tc.portName, tc.networkEndpointType, tc.enableDualStackNEG)
 			if err != nil {
 				t.Errorf("toZoneNetworkEndpointMap() = err %v, want no error", err)
 			}
@@ -551,6 +578,117 @@ func TestToZoneNetworkEndpointMap(t *testing.T) {
 			}
 			if diff := cmp.Diff(tc.wantNetworkEndpointPodMap, networkEndpointPodMap); diff != "" {
 				t.Errorf("toZoneNetworkEndpointMap() returned unexpected diff for networkEndpointPodMap (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestIpsForPod(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		desc  string
+		input []negtypes.EndpointsData
+		want  map[types.NamespacedName]negtypes.NetworkEndpoint
+	}{
+		{
+			desc: "normal",
+			input: negtypes.EndpointsDataFromEndpointSlices([]*discovery.EndpointSlice{
+				{
+					AddressType: discovery.AddressTypeIPv4,
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"10.0.0.1"},
+							TargetRef: &v1.ObjectReference{Namespace: "ns", Name: "pod1"},
+						},
+					},
+				},
+				{
+					AddressType: discovery.AddressTypeIPv4,
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"10.0.0.2"},
+							TargetRef: &v1.ObjectReference{Namespace: "ns", Name: "pod2"},
+						},
+					},
+				},
+				{
+					AddressType: discovery.AddressTypeIPv6,
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"a:b::1"},
+							TargetRef: &v1.ObjectReference{Namespace: "ns", Name: "pod1"},
+						},
+						{
+							Addresses: []string{"a:b::2"},
+							TargetRef: &v1.ObjectReference{Namespace: "ns", Name: "pod2"},
+						},
+					},
+				},
+			}),
+			want: map[types.NamespacedName]negtypes.NetworkEndpoint{
+				{Namespace: "ns", Name: "pod1"}: {IP: "10.0.0.1", IPv6: "a:b::1"},
+				{Namespace: "ns", Name: "pod2"}: {IP: "10.0.0.2", IPv6: "a:b::2"},
+			},
+		},
+		{
+			desc: "should skip endpoints without any address or target",
+			input: negtypes.EndpointsDataFromEndpointSlices([]*discovery.EndpointSlice{
+				{
+					AddressType: discovery.AddressTypeIPv4,
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"10.0.0.1"},
+							TargetRef: &v1.ObjectReference{Namespace: "ns", Name: "pod1"},
+						},
+						{
+							// Endpoint without any address.
+							TargetRef: &v1.ObjectReference{Namespace: "ns", Name: "pod2"},
+						},
+						{
+							// Endpoint without any target.
+							Addresses: []string{"10.0.0.2"},
+						},
+					},
+				},
+			}),
+			want: map[types.NamespacedName]negtypes.NetworkEndpoint{
+				{Namespace: "ns", Name: "pod1"}: {IP: "10.0.0.1"},
+			},
+		},
+		{
+			desc: "should ignore additional addresses in the same endpoint",
+			input: negtypes.EndpointsDataFromEndpointSlices([]*discovery.EndpointSlice{
+				{
+					AddressType: discovery.AddressTypeIPv4,
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"10.0.0.1", "10.0.0.2"}, // More than 1 address.
+							TargetRef: &v1.ObjectReference{Namespace: "ns", Name: "pod1"},
+						},
+					},
+				},
+				{
+					AddressType: discovery.AddressTypeIPv6,
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"a:b::1", "a:b::2", "a:b::3"}, // More than 1 address.
+							TargetRef: &v1.ObjectReference{Namespace: "ns", Name: "pod1"},
+						},
+					},
+				},
+			}),
+			want: map[types.NamespacedName]negtypes.NetworkEndpoint{
+				{Namespace: "ns", Name: "pod1"}: {IP: "10.0.0.1", IPv6: "a:b::1"},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := ipsForPod(tc.input)
+
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("ipsForPods(tc.input) returned unexpected diff (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -1547,7 +1685,47 @@ func TestValidatePod(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			if got := validatePod(tc.pod, nodeLister); got != tc.expect {
-				t.Errorf("validatePod() = %t, expected %t", got, tc.expect)
+				t.Errorf("validatePod() = %t, expected %t\n", got, tc.expect)
+			}
+		})
+	}
+}
+
+func TestParseIPAddress(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		desc  string
+		input string
+		want  string
+	}{
+		{
+			desc:  "normal IPv4",
+			input: "10.0.0.1",
+			want:  "10.0.0.1",
+		},
+		{
+			desc:  "normal IPv6",
+			input: "a::b",
+			want:  "a::b",
+		},
+		{
+			desc:  "empty address",
+			input: "",
+			want:  "",
+		},
+		{
+			desc:  "invalid IP address",
+			input: "random string",
+			want:  "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := parseIPAddress(tc.input)
+			if got != tc.want {
+				t.Errorf("parseIPAddress(%v)=%q; want=%q", tc.input, got, tc.want)
 			}
 		})
 	}
