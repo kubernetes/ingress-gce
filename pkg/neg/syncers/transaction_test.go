@@ -28,6 +28,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -40,6 +41,7 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
@@ -202,7 +204,7 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 		}
 
 		for _, tc := range testCases {
-			err := transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, tc.removeEndpoints)
+			err := transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, tc.removeEndpoints, labels.EndpointPodLabelMap{})
 			if err != nil {
 				t.Errorf("For case %q, syncNetworkEndpoints() got %v, want nil", tc.desc, err)
 			}
@@ -236,6 +238,169 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 		transactionSyncer.cloud.DeleteNetworkEndpointGroup(transactionSyncer.NegName, negtypes.TestZone3, transactionSyncer.NegSyncerKey.GetAPIVersion())
 		transactionSyncer.cloud.DeleteNetworkEndpointGroup(transactionSyncer.NegName, negtypes.TestZone4, transactionSyncer.NegSyncerKey.GetAPIVersion())
 	}
+}
+
+func TestSyncNetworkEndpointLabel(t *testing.T) {
+
+	var (
+		l7EndpointSet1 = generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
+		l7EndpointSet2 = generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
+		l7EndpointSet3 = generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
+		l7EndpointSet4 = generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")
+		l4EndpointSet1 = generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "")
+		l4EndpointSet2 = generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "")
+		l4EndpointSet3 = generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "")
+		l4EndpointSet4 = generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, "")
+	)
+
+	oldFlag := flags.F.EnableNEGLabelPropagation
+	defer func() { flags.F.EnableNEGLabelPropagation = oldFlag }()
+
+	testCases := []struct {
+		desc                    string
+		labelPropagationEnabled bool
+		negType                 negtypes.NetworkEndpointType
+		addEndpoints            map[string]negtypes.NetworkEndpointSet
+		endpointPodLabelMap     labels.EndpointPodLabelMap
+		expectedNEAnnotation    labels.PodLabelMap
+	}{
+		{
+			"empty input",
+			true,
+			negtypes.VmIpPortEndpointType,
+			map[string]negtypes.NetworkEndpointSet{},
+			labels.EndpointPodLabelMap{},
+			nil,
+		},
+		{
+			"add L4 endpoints with label map populated",
+			true,
+			negtypes.VmIpEndpointType,
+			map[string]negtypes.NetworkEndpointSet{
+				testZone1: negtypes.NewNetworkEndpointSet().Union(l4EndpointSet1).Union(l4EndpointSet2),
+				testZone2: negtypes.NewNetworkEndpointSet().Union(l4EndpointSet3).Union(l4EndpointSet4),
+			},
+			generateEndpointPodLabelMap(
+				map[string]negtypes.NetworkEndpointSet{
+					testZone1: negtypes.NewNetworkEndpointSet().Union(l4EndpointSet1).Union(l4EndpointSet2),
+					testZone2: negtypes.NewNetworkEndpointSet().Union(l4EndpointSet3).Union(l4EndpointSet4),
+				},
+				labels.PodLabelMap{
+					"label1": "value1",
+					"label2": "value2",
+				},
+			),
+			nil,
+		},
+		{
+			"add L4 endpoints with empty label map",
+			true,
+			negtypes.VmIpEndpointType,
+			map[string]negtypes.NetworkEndpointSet{
+				testZone1: negtypes.NewNetworkEndpointSet().Union(l4EndpointSet1).Union(l4EndpointSet2),
+				testZone2: negtypes.NewNetworkEndpointSet().Union(l4EndpointSet3).Union(l4EndpointSet4),
+			},
+			generateEndpointPodLabelMap(
+				map[string]negtypes.NetworkEndpointSet{
+					testZone1: negtypes.NewNetworkEndpointSet().Union(l4EndpointSet1).Union(l4EndpointSet2),
+					testZone2: negtypes.NewNetworkEndpointSet().Union(l4EndpointSet3).Union(l4EndpointSet4),
+				},
+				labels.PodLabelMap{},
+			),
+			nil,
+		},
+		{
+			"add L7 endpoints label map populated",
+			true,
+			negtypes.VmIpPortEndpointType,
+			map[string]negtypes.NetworkEndpointSet{
+				testZone1: negtypes.NewNetworkEndpointSet().Union(l7EndpointSet1).Union(l7EndpointSet2),
+				testZone2: negtypes.NewNetworkEndpointSet().Union(l7EndpointSet3).Union(l7EndpointSet4),
+			},
+			generateEndpointPodLabelMap(
+				map[string]negtypes.NetworkEndpointSet{
+					testZone1: negtypes.NewNetworkEndpointSet().Union(l7EndpointSet1).Union(l7EndpointSet2),
+					testZone2: negtypes.NewNetworkEndpointSet().Union(l7EndpointSet3).Union(l7EndpointSet4),
+				},
+				labels.PodLabelMap{
+					"label1": "value1",
+					"label2": "value2",
+				},
+			),
+			labels.PodLabelMap{
+				"label1": "value1",
+				"label2": "value2",
+			},
+		},
+		{
+			"add L7 endpoints with empty label map",
+			true,
+			negtypes.VmIpPortEndpointType,
+			map[string]negtypes.NetworkEndpointSet{
+				testZone1: negtypes.NewNetworkEndpointSet().Union(l7EndpointSet1).Union(l7EndpointSet2),
+				testZone2: negtypes.NewNetworkEndpointSet().Union(l7EndpointSet3).Union(l7EndpointSet4),
+			},
+			generateEndpointPodLabelMap(
+				map[string]negtypes.NetworkEndpointSet{
+					testZone1: negtypes.NewNetworkEndpointSet().Union(l7EndpointSet1).Union(l7EndpointSet2),
+					testZone2: negtypes.NewNetworkEndpointSet().Union(l7EndpointSet3).Union(l7EndpointSet4),
+				},
+				labels.PodLabelMap{},
+			),
+			nil,
+		},
+		{
+			"add L7 endpoints label map populated, but EnableNEGLabelPropagation flag disabled",
+			false,
+			negtypes.VmIpPortEndpointType,
+			map[string]negtypes.NetworkEndpointSet{
+				testZone1: negtypes.NewNetworkEndpointSet().Union(l7EndpointSet1).Union(l7EndpointSet2),
+				testZone2: negtypes.NewNetworkEndpointSet().Union(l7EndpointSet3).Union(l7EndpointSet4),
+			},
+			generateEndpointPodLabelMap(
+				map[string]negtypes.NetworkEndpointSet{
+					testZone1: negtypes.NewNetworkEndpointSet().Union(l7EndpointSet1).Union(l7EndpointSet2),
+					testZone2: negtypes.NewNetworkEndpointSet().Union(l7EndpointSet3).Union(l7EndpointSet4),
+				},
+				labels.PodLabelMap{
+					"label1": "value1",
+					"label2": "value2",
+				},
+			),
+			nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		flags.F.EnableNEGLabelPropagation = tc.labelPropagationEnabled
+		fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+		negtypes.MockNetworkEndpointAPIs(fakeGCE)
+		fakeCloud := negtypes.NewAdapter(fakeGCE)
+		_, transactionSyncer := newTestTransactionSyncer(fakeCloud, tc.negType, false)
+		if err := transactionSyncer.ensureNetworkEndpointGroups(); err != nil {
+			t.Errorf("Expect error == nil, but got %v", err)
+		}
+		err := transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, map[string]negtypes.NetworkEndpointSet{}, tc.endpointPodLabelMap)
+		if err != nil {
+			t.Errorf("For case %q, syncNetworkEndpoints() got %v, want nil", tc.desc, err)
+		}
+		if err := waitForTransactions(transactionSyncer); err != nil {
+			t.Errorf("For case %q, waitForTransactions() got %v, want nil", tc.desc, err)
+		}
+
+		for zone := range tc.addEndpoints {
+			list, err := fakeCloud.ListNetworkEndpoints(transactionSyncer.NegSyncerKey.NegName, zone, false, transactionSyncer.NegSyncerKey.GetAPIVersion())
+			if err != nil {
+				t.Errorf("For case %q, ListNetworkEndpoints() got %v, want nil", tc.desc, err)
+			}
+			for _, ep := range list {
+				if fmt.Sprint(ep.NetworkEndpoint.Annotations) != fmt.Sprint(tc.expectedNEAnnotation) {
+					t.Errorf("For case %s, endpoint annotation got %v, want %v", tc.desc, ep.NetworkEndpoint.Annotations, tc.expectedNEAnnotation)
+				}
+			}
+		}
+	}
+
 }
 
 func TestCommitTransaction(t *testing.T) {
@@ -272,7 +437,7 @@ func TestCommitTransaction(t *testing.T) {
 		{
 			"attach 10 endpoints on 1 instance successfully",
 			nil,
-			generateEndpointBatch(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
+			generateEndpointBatch(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080"), labels.EndpointPodLabelMap{}),
 			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp}, net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
@@ -286,7 +451,7 @@ func TestCommitTransaction(t *testing.T) {
 		{
 			"detach 20 endpoints on 2 instances successfully",
 			nil,
-			generateEndpointBatch(negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080"))),
+			generateEndpointBatch(negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")), labels.EndpointPodLabelMap{}),
 			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: detachOp}, net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
@@ -301,7 +466,7 @@ func TestCommitTransaction(t *testing.T) {
 		{
 			"attach 20 endpoints on 2 instances successfully with unrelated 10 entries in the transaction table",
 			nil,
-			generateEndpointBatch(negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080"))),
+			generateEndpointBatch(negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")), labels.EndpointPodLabelMap{}),
 			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp}, net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
@@ -339,7 +504,7 @@ func TestCommitTransaction(t *testing.T) {
 		{
 			"error and retry #2",
 			fmt.Errorf("dummy error"),
-			generateEndpointBatch(negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080"))),
+			generateEndpointBatch(negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")), labels.EndpointPodLabelMap{}),
 			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp}, net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
@@ -359,7 +524,7 @@ func TestCommitTransaction(t *testing.T) {
 		{
 			"detach 20 endpoints on 2 instance but missing transaction entries on 1 instance",
 			nil,
-			generateEndpointBatch(negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080"))),
+			generateEndpointBatch(negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")), labels.EndpointPodLabelMap{}),
 			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: detachOp}, net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
@@ -373,7 +538,7 @@ func TestCommitTransaction(t *testing.T) {
 		{
 			"detach 20 endpoints on 2 instance but 10 endpoints needs reconcile",
 			nil,
-			generateEndpointBatch(negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080"))),
+			generateEndpointBatch(negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")), labels.EndpointPodLabelMap{}),
 			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: detachOp}, net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
@@ -1627,6 +1792,123 @@ func TestEnableDegradedMode(t *testing.T) {
 		})
 	}
 }
+func TestGetEndpointPodLabelMap(t *testing.T) {
+	testContext := negtypes.NewTestContext()
+	podLister := testContext.PodInformer.GetIndexer()
+	for i := 1; i <= 10; i++ {
+		podLister.Add(&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: testServiceNamespace,
+				Name:      fmt.Sprintf("pod-%s-%d", testInstance1, i),
+				Labels: map[string]string{
+					"foo-key": "foo",
+					"bar-key": "bar",
+				},
+			},
+		})
+	}
+	for i := 1; i <= 10; i++ {
+		podLister.Add(&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: testServiceNamespace,
+				Name:      fmt.Sprintf("pod-%s-%d", testInstance2, i),
+				Labels: map[string]string{
+					"foo-key": "foo",
+					"bar-key": "bar",
+				},
+			},
+		})
+	}
+
+	lpConfig := labels.PodLabelPropagationConfig{
+		Labels: []labels.Label{
+			{
+				Key:               "foo-key",
+				MaxLabelSizeBytes: 30,
+			},
+			{
+				Key:               "bar-key",
+				MaxLabelSizeBytes: 30,
+			},
+		},
+	}
+
+	var (
+		endpointSet1, endpointPodMap1 = generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
+		endpointSet2, endpointPodMap2 = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
+		endpointSet3, endpointPodMap3 = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
+	)
+
+	for _, tc := range []struct {
+		desc   string
+		input  func() (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap)
+		expect func() labels.EndpointPodLabelMap
+	}{
+		{
+			desc: "empty inputs",
+			input: func() (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
+				return map[string]negtypes.NetworkEndpointSet{}, negtypes.EndpointPodMap{}
+			},
+			expect: func() labels.EndpointPodLabelMap {
+				return labels.EndpointPodLabelMap{}
+			},
+		},
+		{
+			desc: "Add endpoints in diferent zones",
+			input: func() (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
+				retSet := map[string]negtypes.NetworkEndpointSet{
+					testZone1: negtypes.NewNetworkEndpointSet().Union(endpointSet1),
+					testZone2: negtypes.NewNetworkEndpointSet().Union(endpointSet2),
+				}
+				retMap := negtypes.EndpointPodMap{}
+				retMap = unionEndpointMap(retMap, endpointPodMap1)
+				retMap = unionEndpointMap(retMap, endpointPodMap2)
+				return retSet, retMap
+			},
+			expect: func() labels.EndpointPodLabelMap {
+				endpointSet := map[string]negtypes.NetworkEndpointSet{
+					testZone1: negtypes.NewNetworkEndpointSet().Union(endpointSet1),
+					testZone2: negtypes.NewNetworkEndpointSet().Union(endpointSet2),
+				}
+				return generateEndpointPodLabelMap(endpointSet, labels.PodLabelMap{
+					"foo-key": "foo",
+					"bar-key": "bar",
+				})
+			},
+		},
+		{
+			desc: "Add endpoints in diferent zones with pod not found",
+			input: func() (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
+				retSet := map[string]negtypes.NetworkEndpointSet{
+					testZone1: negtypes.NewNetworkEndpointSet().Union(endpointSet1),
+					testZone2: negtypes.NewNetworkEndpointSet().Union(endpointSet2).Union(endpointSet3),
+				}
+				retMap := negtypes.EndpointPodMap{}
+				retMap = unionEndpointMap(retMap, endpointPodMap1)
+				retMap = unionEndpointMap(retMap, endpointPodMap2)
+				retMap = unionEndpointMap(retMap, endpointPodMap3)
+				return retSet, retMap
+			},
+			expect: func() labels.EndpointPodLabelMap {
+				endpointSet := map[string]negtypes.NetworkEndpointSet{
+					testZone1: negtypes.NewNetworkEndpointSet().Union(endpointSet1),
+					testZone2: negtypes.NewNetworkEndpointSet().Union(endpointSet2),
+				}
+				return generateEndpointPodLabelMap(endpointSet, labels.PodLabelMap{
+					"foo-key": "foo",
+					"bar-key": "bar",
+				})
+			},
+		},
+	} {
+		endpoints, endpointPodMap := tc.input()
+		expectMap := tc.expect()
+		endpointPodLabelMap := getEndpointPodLabelMap(endpoints, endpointPodMap, podLister, lpConfig, nil, klog.TODO())
+		if diff := cmp.Diff(endpointPodLabelMap, expectMap); diff != "" {
+			t.Errorf("For test case %s: got endpointPodLabelMap %+v, want %+v, diff %s", tc.desc, endpointPodLabelMap, expectMap, diff)
+		}
+	}
+}
 
 func newL4ILBTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, mode negtypes.EndpointsCalculatorMode) (negtypes.NegSyncer, *transactionSyncer) {
 	negsyncer, ts := newTestTransactionSyncer(fakeGCE, negtypes.VmIpEndpointType, false)
@@ -1725,6 +2007,16 @@ func generateEndpointSetAndMap(initialIp net.IP, num int, instance string, targe
 	return retSet, retMap
 }
 
+func generateEndpointPodLabelMap(endpointSet map[string]negtypes.NetworkEndpointSet, podLabelMap labels.PodLabelMap) labels.EndpointPodLabelMap {
+	endpointPodLabelMap := labels.EndpointPodLabelMap{}
+	for _, endpoints := range endpointSet {
+		for endpoint := range endpoints {
+			endpointPodLabelMap[endpoint] = podLabelMap
+		}
+	}
+	return endpointPodLabelMap
+}
+
 func unionEndpointMap(m1, m2 negtypes.EndpointPodMap) negtypes.EndpointPodMap {
 	for k, v := range m2 {
 		m1[k] = v
@@ -1732,8 +2024,8 @@ func unionEndpointMap(m1, m2 negtypes.EndpointPodMap) negtypes.EndpointPodMap {
 	return m1
 }
 
-func generateEndpointBatch(endpointSet negtypes.NetworkEndpointSet) map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint {
-	ret, _ := makeEndpointBatch(endpointSet, negtypes.VmIpPortEndpointType)
+func generateEndpointBatch(endpointSet negtypes.NetworkEndpointSet, endpointPodLabelMap labels.EndpointPodLabelMap) map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint {
+	ret, _ := makeEndpointBatch(endpointSet, negtypes.VmIpPortEndpointType, endpointPodLabelMap)
 	return ret
 }
 
