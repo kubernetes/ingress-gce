@@ -60,16 +60,14 @@ func (linker *RegionalInstanceGroupLinker) Link(sp utils.ServicePort, projectID 
 		return nil
 	}
 
-	var newBackends []*composite.Backend
 	for _, igLink := range addIGs {
 		b := &composite.Backend{
 			Group: igLink,
 		}
-		newBackends = append(newBackends, b)
+		bs.Backends = append(bs.Backends, b)
 	}
 
-	bs.Backends = newBackends
-	klog.V(3).Infof("Update Backend %s, with %d backends.", sp.BackendName(), len(addIGs))
+	klog.V(3).Infof("Update Backend %s, with %d added backends (total %d).", sp.BackendName(), len(addIGs), len(bs.Backends))
 	if err := linker.backendPool.Update(bs); err != nil {
 		return fmt.Errorf("updating backend service %s for IG failed, err:%w", sp.BackendName(), err)
 	}
