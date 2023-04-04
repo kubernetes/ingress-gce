@@ -42,6 +42,7 @@ import (
 	"google.golang.org/api/compute/v1"
 	apps "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -142,8 +143,9 @@ func ensureEchoService(s *Sandbox, name string, annotations map[string]string, s
 					TargetPort: intstr.FromInt(8443),
 				},
 			},
-			Selector: map[string]string{"app": name},
-			Type:     svcType,
+			Selector:   map[string]string{"app": name},
+			Type:       svcType,
+			IPFamilies: []v1.IPFamily{v1.IPv4Protocol},
 		},
 	}
 	svc, err := s.f.Clientset.CoreV1().Services(s.Namespace).Get(context.TODO(), name, metav1.GetOptions{})
@@ -575,4 +577,66 @@ func EnsureServiceAttachment(s *Sandbox, saName, svcName, subnetName string) (*s
 // DeleteServiceAttachment ensures a ServiceAttachment resource
 func DeleteServiceAttachment(s *Sandbox, saName string) error {
 	return s.f.SAClient.Delete(s.Namespace, saName)
+}
+
+// EnsureCustomEndpointSlice ensures that a custom endpoint slice with the
+// given modification is set up. The endpoint slice uses the given list of pods
+// as endpoints.
+func EnsureCustomEndpointSlice(s *Sandbox, svc *v1.Service, name string, pods []v1.Pod, modify func(endpointslice *discoveryv1.EndpointSlice)) (*discoveryv1.EndpointSlice, error) {
+	endpointSlice := &discoveryv1.EndpointSlice{
+		AddressType: discoveryv1.AddressType(svc.Spec.IPFamilies[0]),
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: s.Namespace,
+			Labels: map[string]string{
+				discoveryv1.LabelServiceName: svc.Name,
+				discoveryv1.LabelManagedBy:   "foo", // This is a custom endpoint slice.
+			},
+		},
+	}
+	for _, port := range svc.Spec.Ports {
+		port := port
+		endpointPort := discoveryv1.EndpointPort{
+			Name:     &port.Name,
+			Port:     &port.TargetPort.IntVal,
+			Protocol: &port.Protocol,
+		}
+		endpointSlice.Ports = append(endpointSlice.Ports, endpointPort)
+	}
+
+	for _, pod := range pods {
+		endpoint := discoveryv1.Endpoint{
+			Addresses: []string{pod.Status.PodIP},
+			NodeName:  &pod.Spec.NodeName,
+			TargetRef: &v1.ObjectReference{
+				Kind:      "Pod",
+				Namespace: s.Namespace,
+				Name:      pod.Name,
+				UID:       pod.ObjectMeta.UID,
+			},
+		}
+		endpointSlice.Endpoints = append(endpointSlice.Endpoints, endpoint)
+	}
+
+	modify(endpointSlice)
+	// Create the custom endpoint slice if it is doesn't exist.
+	existingEPS, err := s.f.Clientset.DiscoveryV1().EndpointSlices(s.Namespace).Get(context.TODO(), endpointSlice.ObjectMeta.Name, metav1.GetOptions{})
+	if err != nil || existingEPS == nil {
+		return s.f.Clientset.DiscoveryV1().EndpointSlices(s.Namespace).Create(context.TODO(), endpointSlice, metav1.CreateOptions{})
+	}
+
+	// Address type should immutable after creation.
+	if existingEPS.AddressType != endpointSlice.AddressType {
+		return nil, fmt.Errorf("endpointSlice %s:%s addressType cannot be modified (existing=%q, new=%q)", existingEPS.Namespace, existingEPS.Name, existingEPS.AddressType, endpointSlice.AddressType)
+	}
+	if !reflect.DeepEqual(existingEPS.Endpoints, endpointSlice.Endpoints) ||
+		!reflect.DeepEqual(existingEPS.Ports, endpointSlice.Ports) {
+		return s.f.Clientset.DiscoveryV1().EndpointSlices(s.Namespace).Update(context.TODO(), endpointSlice, metav1.UpdateOptions{})
+	}
+	return existingEPS, nil
+}
+
+// ListPods lists all pods in the sandbox namespace.
+func ListPods(s *Sandbox) (*v1.PodList, error) {
+	return s.f.Clientset.CoreV1().Pods(s.Namespace).List(context.TODO(), metav1.ListOptions{})
 }

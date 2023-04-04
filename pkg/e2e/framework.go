@@ -139,7 +139,7 @@ func NewFramework(config *rest.Config, options Options) *Framework {
 // Framework is the end-to-end test framework.
 type Framework struct {
 	RestConfig            *rest.Config
-	Clientset             *kubernetes.Clientset
+	Clientset             kubernetes.Interface
 	DestinationRuleClient dynamic.NamespaceableResourceInterface
 	crdClient             *apiextensionsclient.Clientset
 	BackendConfigClient   *backendconfigclient.Clientset
