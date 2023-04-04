@@ -1558,6 +1558,19 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 			},
 		})
 	}
+	testLabels := map[string]string{
+		"run": "foo",
+	}
+	serviceLister := testContext.ServiceInformer.GetIndexer()
+	serviceLister.Add(&v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testServiceNamespace,
+			Name:      testServiceName,
+		},
+		Spec: v1.ServiceSpec{
+			Selector: testLabels,
+		},
+	})
 
 	testNonExistPort := "non-exists"
 	testEmptyNamedPort := ""
@@ -1653,7 +1666,7 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			result := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, tc.portName, tc.networkEndpointType, false)
+			result := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, serviceLister, tc.portName, tc.networkEndpointType, false)
 			if !reflect.DeepEqual(result.NetworkEndpointSet, tc.expectedEndpointMap) {
 				t.Errorf("degraded mode endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", result.NetworkEndpointSet, tc.expectedEndpointMap)
 			}
@@ -1708,6 +1721,20 @@ func TestDegradedModeValidateEndpointInfo(t *testing.T) {
 		},
 	})
 
+	testLabels := map[string]string{
+		"run": "foo",
+	}
+	serviceLister := testContext.ServiceInformer.GetIndexer()
+	serviceLister.Add(&v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testServiceNamespace,
+			Name:      testServiceName,
+		},
+		Spec: v1.ServiceSpec{
+			Selector: testLabels,
+		},
+	})
+
 	endpointMap := map[string]negtypes.NetworkEndpointSet{
 		negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
 			negtypes.NetworkEndpoint{IP: "10.100.1.1", Node: instance1, Port: "80"},
@@ -1735,6 +1762,7 @@ func TestDegradedModeValidateEndpointInfo(t *testing.T) {
 						Namespace: testServiceNamespace,
 						Labels: map[string]string{
 							discovery.LabelServiceName: testServiceName,
+							discovery.LabelManagedBy:   managedByEPSControllerValue,
 						},
 					},
 					AddressType: "IPv4",
@@ -1778,6 +1806,7 @@ func TestDegradedModeValidateEndpointInfo(t *testing.T) {
 						Namespace: testServiceNamespace,
 						Labels: map[string]string{
 							discovery.LabelServiceName: testServiceName,
+							discovery.LabelManagedBy:   managedByEPSControllerValue,
 						},
 					},
 					AddressType: "IPv4",
@@ -1821,6 +1850,7 @@ func TestDegradedModeValidateEndpointInfo(t *testing.T) {
 						Namespace: testServiceNamespace,
 						Labels: map[string]string{
 							discovery.LabelServiceName: testServiceName,
+							discovery.LabelManagedBy:   managedByEPSControllerValue,
 						},
 					},
 					AddressType: "IPv4",
@@ -1968,7 +1998,7 @@ func TestDegradedModeValidateEndpointInfo(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			result := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, emptyNamedPort, tc.endpointType, true)
+			result := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, serviceLister, emptyNamedPort, tc.endpointType, true)
 			if !reflect.DeepEqual(result.NetworkEndpointSet, tc.expectedEndpointMap) {
 				t.Errorf("degraded mode endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", result.NetworkEndpointSet, tc.expectedEndpointMap)
 			}
@@ -1999,11 +2029,29 @@ func TestValidatePod(t *testing.T) {
 	testPodIPv4OutOfRange := "10.101.1.1"
 	testPodIPv6 := "2001:db8::2:1"
 	testPodIPv6OutOfRange := "2001:db9::2:1"
-
+	testLabels1 := map[string]string{
+		"run": "foo",
+	}
+	testLabels2 := map[string]string{
+		"run": "bar",
+	}
+	serviceLister := testContext.ServiceInformer.GetIndexer()
+	serviceLister.Add(&v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testServiceNamespace,
+			Name:      testServiceName,
+		},
+		Spec: v1.ServiceSpec{
+			Selector: testLabels1,
+		},
+	})
+	testServiceNameNotFound := "foo"
 	testCases := []struct {
 		desc            string
 		pod             *v1.Pod
 		networkEndpoint negtypes.NetworkEndpoint
+		serviceName     string
+		isCustomEPS     bool
 		expectErr       error
 	}{
 		{
@@ -2012,6 +2060,7 @@ func TestValidatePod(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: testServiceNamespace,
 					Name:      "pod1",
+					Labels:    testLabels1,
 				},
 				Status: v1.PodStatus{
 					Phase: v1.PodRunning,
@@ -2021,6 +2070,8 @@ func TestValidatePod(t *testing.T) {
 				},
 			},
 			networkEndpoint: negtypes.NetworkEndpoint{IP: testPodIPv4},
+			serviceName:     testServiceName,
+			isCustomEPS:     false,
 			expectErr:       nil,
 		},
 		{
@@ -2029,6 +2080,7 @@ func TestValidatePod(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: testServiceNamespace,
 					Name:      "pod2",
+					Labels:    testLabels1,
 				},
 				Status: v1.PodStatus{
 					Phase: v1.PodRunning,
@@ -2038,6 +2090,8 @@ func TestValidatePod(t *testing.T) {
 				},
 			},
 			networkEndpoint: negtypes.NetworkEndpoint{IP: testPodIPv6},
+			serviceName:     testServiceName,
+			isCustomEPS:     false,
 			expectErr:       nil,
 		},
 		{
@@ -2046,6 +2100,7 @@ func TestValidatePod(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: testServiceNamespace,
 					Name:      "pod3",
+					Labels:    testLabels1,
 				},
 				Status: v1.PodStatus{
 					Phase: v1.PodFailed,
@@ -2055,6 +2110,8 @@ func TestValidatePod(t *testing.T) {
 				},
 			},
 			networkEndpoint: negtypes.NetworkEndpoint{IP: testPodIPv4},
+			serviceName:     testServiceName,
+			isCustomEPS:     false,
 			expectErr:       negtypes.ErrEPPodTerminal,
 		},
 		{
@@ -2063,6 +2120,7 @@ func TestValidatePod(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: testServiceNamespace,
 					Name:      "pod4",
+					Labels:    testLabels1,
 				},
 				Status: v1.PodStatus{
 					Phase: v1.PodSucceeded,
@@ -2072,6 +2130,8 @@ func TestValidatePod(t *testing.T) {
 				},
 			},
 			networkEndpoint: negtypes.NetworkEndpoint{IP: testPodIPv4},
+			serviceName:     testServiceName,
+			isCustomEPS:     false,
 			expectErr:       negtypes.ErrEPPodTerminal,
 		},
 		{
@@ -2080,6 +2140,7 @@ func TestValidatePod(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: testServiceNamespace,
 					Name:      "pod5",
+					Labels:    testLabels1,
 				},
 				Status: v1.PodStatus{
 					Phase: v1.PodRunning,
@@ -2089,6 +2150,8 @@ func TestValidatePod(t *testing.T) {
 				},
 			},
 			networkEndpoint: negtypes.NetworkEndpoint{IP: testPodIPv4},
+			serviceName:     testServiceName,
+			isCustomEPS:     false,
 			expectErr:       negtypes.ErrEPNodeNotFound,
 		},
 		{
@@ -2097,6 +2160,7 @@ func TestValidatePod(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: testServiceNamespace,
 					Name:      "pod6",
+					Labels:    testLabels1,
 				},
 				Status: v1.PodStatus{
 					Phase: v1.PodRunning,
@@ -2106,6 +2170,8 @@ func TestValidatePod(t *testing.T) {
 				},
 			},
 			networkEndpoint: negtypes.NetworkEndpoint{IP: testPodIPv4OutOfRange},
+			serviceName:     testServiceName,
+			isCustomEPS:     false,
 			expectErr:       negtypes.ErrEPIPOutOfPodCIDR,
 		},
 		{
@@ -2114,6 +2180,7 @@ func TestValidatePod(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: testServiceNamespace,
 					Name:      "pod7",
+					Labels:    testLabels1,
 				},
 				Status: v1.PodStatus{
 					Phase: v1.PodRunning,
@@ -2123,6 +2190,8 @@ func TestValidatePod(t *testing.T) {
 				},
 			},
 			networkEndpoint: negtypes.NetworkEndpoint{IP: testPodIPv6OutOfRange},
+			serviceName:     testServiceName,
+			isCustomEPS:     false,
 			expectErr:       negtypes.ErrEPIPOutOfPodCIDR,
 		},
 		{
@@ -2131,6 +2200,7 @@ func TestValidatePod(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: testServiceNamespace,
 					Name:      "pod8",
+					Labels:    testLabels1,
 				},
 				Status: v1.PodStatus{
 					Phase: v1.PodRunning,
@@ -2140,6 +2210,8 @@ func TestValidatePod(t *testing.T) {
 				},
 			},
 			networkEndpoint: negtypes.NetworkEndpoint{IP: testPodIPv4, IPv6: testPodIPv6},
+			serviceName:     testServiceName,
+			isCustomEPS:     false,
 			expectErr:       nil,
 		},
 		{
@@ -2148,6 +2220,7 @@ func TestValidatePod(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: testServiceNamespace,
 					Name:      "pod9",
+					Labels:    testLabels1,
 				},
 				Status: v1.PodStatus{
 					Phase: v1.PodRunning,
@@ -2157,6 +2230,8 @@ func TestValidatePod(t *testing.T) {
 				},
 			},
 			networkEndpoint: negtypes.NetworkEndpoint{IP: testPodIPv4OutOfRange, IPv6: testPodIPv6},
+			serviceName:     testServiceName,
+			isCustomEPS:     false,
 			expectErr:       negtypes.ErrEPIPOutOfPodCIDR,
 		},
 		{
@@ -2165,6 +2240,7 @@ func TestValidatePod(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: testServiceNamespace,
 					Name:      "pod10",
+					Labels:    testLabels1,
 				},
 				Status: v1.PodStatus{
 					Phase: v1.PodRunning,
@@ -2174,6 +2250,8 @@ func TestValidatePod(t *testing.T) {
 				},
 			},
 			networkEndpoint: negtypes.NetworkEndpoint{IP: testPodIPv4, IPv6: testPodIPv6OutOfRange},
+			serviceName:     testServiceName,
+			isCustomEPS:     false,
 			expectErr:       negtypes.ErrEPIPOutOfPodCIDR,
 		},
 		{
@@ -2182,6 +2260,7 @@ func TestValidatePod(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: testServiceNamespace,
 					Name:      "pod11",
+					Labels:    testLabels1,
 				},
 				Status: v1.PodStatus{
 					Phase: v1.PodRunning,
@@ -2191,13 +2270,74 @@ func TestValidatePod(t *testing.T) {
 				},
 			},
 			networkEndpoint: negtypes.NetworkEndpoint{IP: testPodIPv4, IPv6: ""},
+			serviceName:     testServiceName,
+			isCustomEPS:     false,
+			expectErr:       nil,
+		},
+		{
+			desc: "a pod with non-existing service name",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testServiceNamespace,
+					Name:      "pod12",
+					Labels:    testLabels1,
+				},
+				Status: v1.PodStatus{
+					Phase: v1.PodRunning,
+				},
+				Spec: v1.PodSpec{
+					NodeName: instance1,
+				},
+			},
+			networkEndpoint: negtypes.NetworkEndpoint{IP: testPodIPv4},
+			serviceName:     testServiceNameNotFound,
+			isCustomEPS:     false,
+			expectErr:       negtypes.ErrEPServiceNotFound,
+		},
+		{
+			desc: "a pod referenced by a non-custom endpoint slice, with labels not matching to service's label selector",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testServiceNamespace,
+					Name:      "pod13",
+					Labels:    testLabels2,
+				},
+				Status: v1.PodStatus{
+					Phase: v1.PodRunning,
+				},
+				Spec: v1.PodSpec{
+					NodeName: instance1,
+				},
+			},
+			networkEndpoint: negtypes.NetworkEndpoint{IP: testPodIPv4},
+			serviceName:     testServiceName,
+			isCustomEPS:     false,
+			expectErr:       negtypes.ErrEPPodLabelMismatch,
+		},
+		{
+			desc: "a pod referenced by a custom endpoint slice, with labels not matching to service's label selector",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testServiceNamespace,
+					Name:      "pod14",
+					Labels:    testLabels2,
+				},
+				Status: v1.PodStatus{
+					Phase: v1.PodRunning,
+				},
+				Spec: v1.PodSpec{
+					NodeName: instance1,
+				},
+			},
+			networkEndpoint: negtypes.NetworkEndpoint{IP: testPodIPv4},
+			serviceName:     testServiceName,
+			isCustomEPS:     true, // for custom endpoint slice, we won't check the pod's labels
 			expectErr:       nil,
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-
-			if got := validatePod(tc.pod, nodeLister, tc.networkEndpoint); !errors.Is(got, tc.expectErr) {
+			if got := validatePod(tc.pod, nodeLister, serviceLister, tc.networkEndpoint, tc.serviceName, tc.isCustomEPS); !errors.Is(got, tc.expectErr) {
 				t.Errorf("validatePod() = %t, expected %t\n", got, tc.expectErr)
 			}
 		})
@@ -2247,6 +2387,9 @@ func TestParseIPAddress(t *testing.T) {
 // addPodsToLister takes endpoints from endpointSlices
 // and add pods to podLister based on endpoints' IPs and pod mapping.
 func addPodsToLister(podLister cache.Indexer, endpointSlices []*discovery.EndpointSlice) {
+	testLabels := map[string]string{
+		"run": "foo",
+	}
 	// collect both ipv4 and ipv6 IP address for pods
 	podToIPs := make(map[string][]v1.PodIP)
 	podToNodeName := make(map[string]string)
@@ -2267,6 +2410,7 @@ func addPodsToLister(podLister cache.Indexer, endpointSlices []*discovery.Endpoi
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: podNamespace,
 				Name:      podName,
+				Labels:    testLabels,
 			},
 			Spec: v1.PodSpec{
 				NodeName: podToNodeName[pod],
@@ -2361,6 +2505,7 @@ func getTestEndpointSlices(name, namespace string) []*discovery.EndpointSlice {
 				Namespace: namespace,
 				Labels: map[string]string{
 					discovery.LabelServiceName: name,
+					discovery.LabelManagedBy:   managedByEPSControllerValue,
 				},
 			},
 			AddressType: "IPv4",
@@ -2430,6 +2575,7 @@ func getTestEndpointSlices(name, namespace string) []*discovery.EndpointSlice {
 				Namespace: namespace,
 				Labels: map[string]string{
 					discovery.LabelServiceName: name,
+					discovery.LabelManagedBy:   managedByEPSControllerValue,
 				},
 			},
 			AddressType: "IPv4",
@@ -2474,6 +2620,7 @@ func getTestEndpointSlices(name, namespace string) []*discovery.EndpointSlice {
 				Namespace: namespace,
 				Labels: map[string]string{
 					discovery.LabelServiceName: name,
+					discovery.LabelManagedBy:   managedByEPSControllerValue,
 				},
 			},
 			AddressType: "IPv4",
@@ -2518,6 +2665,7 @@ func getTestEndpointSlices(name, namespace string) []*discovery.EndpointSlice {
 				Namespace: namespace,
 				Labels: map[string]string{
 					discovery.LabelServiceName: name,
+					discovery.LabelManagedBy:   managedByEPSControllerValue,
 				},
 			},
 			AddressType: discovery.AddressTypeIPv6,
