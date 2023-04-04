@@ -17,6 +17,8 @@ limitations under the License.
 package labels
 
 import (
+	"errors"
+
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 )
 
@@ -37,3 +39,8 @@ type PodLabelMap map[string]string
 
 // EndpointPodLabelMap is a map of network endpoint, endpoint annotations.
 type EndpointPodLabelMap map[negtypes.NetworkEndpoint]PodLabelMap
+
+var (
+	ErrLabelTruncated        = errors.New("label is truncated")
+	ErrLabelTruncationFailed = errors.New("failed to truncate label")
+)
