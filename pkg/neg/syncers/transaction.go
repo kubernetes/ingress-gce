@@ -220,16 +220,15 @@ func (s *transactionSyncer) syncInternal() error {
 }
 
 func (s *transactionSyncer) syncInternalImpl() error {
+	if s.syncer.IsStopped() || s.syncer.IsShuttingDown() {
+		s.logger.V(3).Info("Skip syncing NEG", "negSyncerKey", s.NegSyncerKey.String())
+		return nil
+	}
 	if s.needInit || s.isZoneChange() {
 		if err := s.ensureNetworkEndpointGroups(); err != nil {
 			return err
 		}
 		s.needInit = false
-	}
-
-	if s.syncer.IsStopped() || s.syncer.IsShuttingDown() {
-		s.logger.V(3).Info("Skip syncing NEG", "negSyncerKey", s.NegSyncerKey.String())
-		return nil
 	}
 	s.logger.V(2).Info("Sync NEG", "negSyncerKey", s.NegSyncerKey.String(), "endpointsCalculatorMode", s.endpointsCalculator.Mode())
 
