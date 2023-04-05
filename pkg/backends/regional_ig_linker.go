@@ -51,13 +51,27 @@ func (linker *RegionalInstanceGroupLinker) Link(sp utils.ServicePort, projectID 
 	if err != nil {
 		return err
 	}
-	addIGs, err := getInstanceGroupsToAdd(bs, igLinks)
+	addIGs, removeIGs, err := getInstanceGroupsToAddAndRemove(bs, igLinks)
 	if err != nil {
 		return err
 	}
-	if len(addIGs) == 0 {
-		klog.V(3).Infof("No backends to add for %s, skipping update.", sp.BackendName())
+	if len(addIGs) == 0 && len(removeIGs) == 0 {
+		klog.V(3).Infof("No backends to add or remove for %s, skipping update.", sp.BackendName())
 		return nil
+	}
+
+	if len(removeIGs) != 0 {
+		var backendsWithoutRemoved []*composite.Backend
+		for _, b := range bs.Backends {
+			path, err := utils.RelativeResourceName(b.Group)
+			if err != nil {
+				return err
+			}
+			if !removeIGs.Has(path) {
+				backendsWithoutRemoved = append(backendsWithoutRemoved, b)
+			}
+		}
+		bs.Backends = backendsWithoutRemoved
 	}
 
 	for _, igLink := range addIGs {
