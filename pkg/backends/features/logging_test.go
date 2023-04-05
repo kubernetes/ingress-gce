@@ -102,10 +102,30 @@ func TestEnsureLogging(t *testing.T) {
 			be: &composite.BackendService{
 				LogConfig: &composite.BackendServiceLogConfig{
 					Enable:     false,
-					SampleRate: 1.0,
+					SampleRate: 0.0,
 				},
 			},
 			expectUpdate: false,
+		},
+		{
+			desc: "logging remains disabled but has incorrect sample rate, update needed",
+			sp: utils.ServicePort{
+				BackendConfig: &backendconfigv1.BackendConfig{
+					Spec: backendconfigv1.BackendConfigSpec{
+						Logging: &backendconfigv1.LogConfig{
+							Enable:     false,
+							SampleRate: testutils.Float64ToPtr(0.4),
+						},
+					},
+				},
+			},
+			be: &composite.BackendService{
+				LogConfig: &composite.BackendServiceLogConfig{
+					Enable:     false,
+					SampleRate: 0.7,
+				},
+			},
+			expectUpdate: true,
 		},
 		{
 			desc: "no existing settings, update needed",
@@ -272,7 +292,28 @@ func TestEnsureBackendServiceLogConfig(t *testing.T) {
 			},
 		},
 		{
-			desc: "logging stays disabled, sample rate retained",
+			desc: "logging is disabled, sample rate defaults to 0.0",
+			sp: utils.ServicePort{
+				BackendConfig: &backendconfigv1.BackendConfig{
+					Spec: backendconfigv1.BackendConfigSpec{
+						Logging: &backendconfigv1.LogConfig{
+							Enable:     false,
+							SampleRate: testutils.Float64ToPtr(0.5),
+						},
+					},
+				},
+			},
+			logConfig: &composite.BackendServiceLogConfig{
+				Enable:     true,
+				SampleRate: 0.4,
+			},
+			expectLogConfig: &composite.BackendServiceLogConfig{
+				Enable:     false,
+				SampleRate: 0.0,
+			},
+		},
+		{
+			desc: "logging stays disabled, sample rate defaults to 0.0",
 			sp: utils.ServicePort{
 				BackendConfig: &backendconfigv1.BackendConfig{
 					Spec: backendconfigv1.BackendConfigSpec{
@@ -289,7 +330,7 @@ func TestEnsureBackendServiceLogConfig(t *testing.T) {
 			},
 			expectLogConfig: &composite.BackendServiceLogConfig{
 				Enable:     false,
-				SampleRate: 0.4,
+				SampleRate: 0.0,
 			},
 		},
 		{
