@@ -96,7 +96,7 @@ func (igl *instanceGroupLinker) Link(sp utils.ServicePort, groups []GroupKey) er
 		return err
 	}
 
-	addIGs, err := getInstanceGroupsToAdd(be, igLinks)
+	addIGs, _, err := getInstanceGroupsToAddAndRemove(be, igLinks)
 	if err != nil {
 		return err
 	}
@@ -167,12 +167,12 @@ func backendsForIGs(igLinks []string, bm BalancingMode) []*composite.Backend {
 	return backends
 }
 
-func getInstanceGroupsToAdd(be *composite.BackendService, igLinks []string) ([]string, error) {
+func getInstanceGroupsToAddAndRemove(be *composite.BackendService, igLinks []string) ([]string, sets.String, error) {
 	existingIGs := sets.String{}
 	for _, existingBe := range be.Backends {
 		path, err := utils.RelativeResourceName(existingBe.Group)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse instance group: %w", err)
+			return nil, nil, fmt.Errorf("failed to parse instance group: %w", err)
 		}
 		existingIGs.Insert(path)
 	}
@@ -181,15 +181,16 @@ func getInstanceGroupsToAdd(be *composite.BackendService, igLinks []string) ([]s
 	for _, igLink := range igLinks {
 		path, err := utils.RelativeResourceName(igLink)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse instance group: %w", err)
+			return nil, nil, fmt.Errorf("failed to parse instance group: %w", err)
 		}
 		wantIGs.Insert(path)
 	}
 
 	missingIGs := wantIGs.Difference(existingIGs)
-	if missingIGs.Len() > 0 {
+	removeIGs := existingIGs.Difference(wantIGs)
+	if missingIGs.Len() > 0 || removeIGs.Len() > 0 {
 		klog.V(2).Infof("Backend service %q has instance groups %+v, want %+v",
 			be.Name, existingIGs.List(), wantIGs.List())
 	}
-	return missingIGs.List(), nil
+	return missingIGs.List(), removeIGs, nil
 }
