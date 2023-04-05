@@ -328,12 +328,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	// In NonGCP mode, use the zone specified in gce.conf directly.
 	// This overrides the zone/fault-domain label on nodes for NEG controller.
 	if flags.F.EnableNonGCPMode {
-		zone, err := ctx.Cloud.GetZone(context.Background())
-		if err != nil {
-			klog.Errorf("Failed to retrieve zone information from Cloud provider: %v; Please check if local-zone is specified in gce.conf.", err)
-		} else {
-			zoneGetter = negtypes.NewSimpleZoneGetter(zone.FailureDomain)
-		}
+		zoneGetter = negtypes.NewSimpleZoneGetter(ctx.Cloud.LocalZone())
 	}
 
 	enableAsm := false

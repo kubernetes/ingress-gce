@@ -32,6 +32,7 @@ import (
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/healthcheck"
 	"k8s.io/klog/v2"
 )
 
@@ -45,13 +46,27 @@ type HealthChecks struct {
 	defaultBackendSvc types.NamespacedName
 	recorderGetter    RecorderGetter
 	serviceGetter     ServiceGetter
+	clusterInfo       healthcheck.ClusterInfo
 }
 
 // NewHealthChecker creates a new health checker.
 // cloud: the cloud object implementing SingleHealthCheck.
 // defaultHealthCheckPath: is the HTTP path to use for health checks.
 func NewHealthChecker(cloud HealthCheckProvider, healthCheckPath string, defaultBackendSvc types.NamespacedName, recorderGetter RecorderGetter, serviceGetter ServiceGetter) *HealthChecks {
-	return &HealthChecks{cloud, healthCheckPath, defaultBackendSvc, recorderGetter, serviceGetter}
+	ci := generateClusterInfo(cloud.(*gce.Cloud))
+	return &HealthChecks{cloud, healthCheckPath, defaultBackendSvc, recorderGetter, serviceGetter, ci}
+}
+
+func generateClusterInfo(gceCloud *gce.Cloud) healthcheck.ClusterInfo {
+	var location string
+	regionalCluster := gceCloud.Regional()
+	if regionalCluster {
+		location = gceCloud.Region()
+	} else {
+		location = gceCloud.LocalZone()
+	}
+	name := flags.F.GKEClusterName
+	return healthcheck.ClusterInfo{Name: name, Location: location, Regional: regionalCluster}
 }
 
 // new returns a *HealthCheck with default settings and specified port/protocol
@@ -70,6 +85,7 @@ func (h *HealthChecks) new(sp utils.ServicePort) *translator.HealthCheck {
 	hc.Port = sp.NodePort
 	hc.RequestPath = h.pathFromSvcPort(sp)
 	hc.Service = h.getService(sp)
+	hc.SetHealthcheckInfo(h.generateHealthcheckInfo(sp, hc.ForILB))
 	return hc
 }
 
@@ -92,6 +108,19 @@ func (h *HealthChecks) mainService(sp utils.ServicePort) types.NamespacedName {
 		service = sp.ID.Service
 	}
 	return service
+}
+
+func (h *HealthChecks) generateHealthcheckInfo(sp utils.ServicePort, iLB bool) healthcheck.HealthcheckInfo {
+	serviceInfo := healthcheck.ServiceInfo(h.defaultBackendSvc)
+	if sp.ID.Service.Name != "" {
+		serviceInfo = healthcheck.ServiceInfo(sp.ID.Service)
+	}
+
+	return healthcheck.HealthcheckInfo{
+		ClusterInfo:       h.clusterInfo,
+		ServiceInfo:       serviceInfo,
+		HealthcheckConfig: healthcheck.DefaultHC,
+	}
 }
 
 // SyncServicePort implements HealthChecker.
