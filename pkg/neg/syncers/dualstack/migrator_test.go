@@ -1,10 +1,14 @@
 package dualstack
 
 import (
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/klog/v2"
 )
 
 func TestFilter(t *testing.T) {
@@ -75,6 +79,152 @@ func TestFilter(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPause(t *testing.T) {
+	addEndpoints := map[string]types.NetworkEndpointSet{
+		"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+			{IP: "a", IPv6: "A"}, // migrating
+			{IP: "b"},
+			{IP: "c", IPv6: "C"},
+			{IP: "d"}, // migrating
+		}...),
+	}
+	removeEndpoints := map[string]types.NetworkEndpointSet{
+		"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+			{IP: "a"}, // migrating
+			{IP: "e", IPv6: "E"},
+			{IP: "d", IPv6: "D"}, // migrating
+		}...),
+	}
+
+	migrator := newMigratorForTest(true)
+
+	// Ensure that before calling pause, Filter() is working as expected and is
+	// starting migration-detachments.
+	clonedAddEndpoints := cloneZoneNetworkEndpointsMap(addEndpoints)
+	clonedRemoveEndpoints := cloneZoneNetworkEndpointsMap(removeEndpoints)
+	migrator.Filter(clonedAddEndpoints, clonedRemoveEndpoints, map[string]types.NetworkEndpointSet{})
+	possibleMigrationDetachments := []types.NetworkEndpoint{
+		{IP: "a"},            // migrating
+		{IP: "d", IPv6: "D"}, // migrating
+	}
+	if !clonedRemoveEndpoints["zone1"].HasAny(possibleMigrationDetachments...) {
+		t.Fatalf("Precondition to verify the behaviour of Pause() not satisfied; Filter() should start migration-detachments; got removeEndpoints=%+v; want non-empty union with %+v", clonedRemoveEndpoints, possibleMigrationDetachments)
+	}
+
+	// We should be able to Pause multiple times without interleaving with
+	// Continue(). An incorrect implementation of Pause could result in subsequent
+	// Pause calls blocking the caller, in which case this unit test will never
+	// complete.
+	migrator.Pause()
+	migrator.Pause()
+	migrator.Pause()
+
+	// The effect of Pause() is observed by verifying that Filter() does not start
+	// any migration-detachments when paused.
+	migrator.Filter(addEndpoints, removeEndpoints, map[string]types.NetworkEndpointSet{})
+	wantRemoveEndpoints := map[string]types.NetworkEndpointSet{
+		"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+			// Since we don't expect any migration-detachments, this set should be
+			// missing all migration endpoints.
+			{IP: "e", IPv6: "E"},
+		}...),
+	}
+
+	if diff := cmp.Diff(wantRemoveEndpoints, removeEndpoints); diff != "" {
+		t.Errorf("Unexpected diff in removeEndpoints; Pause() not stopping Filter from starting detachment; (-want +got):\n%s", diff)
+	}
+}
+
+func TestContinue_InputError(t *testing.T) {
+	syncable := &fakeSyncable{}
+	migrator := &Migrator{
+		enableDualStack:       true,
+		paused:                true,
+		migrationWaitDuration: 5 * time.Second,
+		syncer:                syncable,
+	}
+
+	migrator.Continue(errors.New("random error"))
+
+	if migrator.isPaused() {
+		t.Errorf("Continue(err) didn't unpause the migrator; want migrator to be unpaused before Continue(err) returns")
+	}
+	if syncable.syncCount != 0 {
+		t.Errorf("Continue(err) triggered sync %v times; want no syncs triggered", syncable.syncCount)
+	}
+}
+
+func TestContinue_NoInputError(t *testing.T) {
+	t.Parallel()
+
+	syncable := &fakeSyncable{}
+	migrator := &Migrator{
+		enableDualStack:       true,
+		paused:                true,
+		migrationWaitDuration: 10 * time.Millisecond,
+		syncer:                syncable,
+		logger:                klog.Background(),
+	}
+
+	migrator.Continue(nil)
+
+	if !migrator.isPaused() {
+		t.Errorf("Continue(nil) most likely unpaused the migrator before returning; want migrator to be unpaused after %v", migrator.migrationWaitDuration)
+	}
+
+	// Sleep until we can expect a sync.
+	time.Sleep(migrator.migrationWaitDuration)
+
+	if err := wait.PollImmediate(1*time.Second, migrator.migrationWaitDuration, func() (done bool, err error) {
+		if syncable.syncCount == 0 {
+			return false, nil
+		}
+		if migrator.isPaused() {
+			return false, errors.New("Continue(nil) triggered sync before unpausing; want unpause to happen before triggering sync")
+		}
+		return true, nil
+	}); err != nil {
+		if err == wait.ErrWaitTimeout {
+			t.Errorf("Continue(nil) didn't trigger a sync even after waiting for %v; want sync to be triggered shortly after %v", 2*migrator.migrationWaitDuration, migrator.migrationWaitDuration)
+		} else {
+			t.Error(err)
+		}
+	}
+}
+
+func TestContinue_NoInputError_MultipleInvocationsShouldSyncOnce(t *testing.T) {
+	t.Parallel()
+
+	syncable := &fakeSyncable{}
+	migrator := &Migrator{
+		enableDualStack:       true,
+		paused:                true,
+		migrationWaitDuration: 10 * time.Millisecond,
+		syncer:                syncable,
+		logger:                klog.Background(),
+	}
+
+	for i := 0; i < 10; i++ {
+		go migrator.Continue(nil)
+	}
+
+	// We wait for 3x time to ensure that if multiple Continues attempted to
+	// resync, atleast one of those go routines finished.
+	time.Sleep(3 * migrator.migrationWaitDuration)
+	if syncable.syncCount != 1 {
+		t.Errorf("Continue(nil) triggered %v syncs; want exactly 1 sync", syncable.syncCount)
+	}
+}
+
+type fakeSyncable struct {
+	syncCount int
+}
+
+func (f *fakeSyncable) Sync() bool {
+	f.syncCount++
+	return true
 }
 
 func TestFindAndFilterMigrationEndpoints(t *testing.T) {
@@ -324,4 +474,8 @@ func cloneZoneNetworkEndpointsMap(m map[string]types.NetworkEndpointSet) map[str
 		clone[zone] = types.NewNetworkEndpointSet(endpointSet.List()...)
 	}
 	return clone
+}
+
+func newMigratorForTest(enableDualStackNEG bool) *Migrator {
+	return NewMigrator(enableDualStackNEG, &fakeSyncable{}, klog.Background())
 }
