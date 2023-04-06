@@ -87,7 +87,7 @@ func (sm *SyncerMetrics) UpdateSyncer(key negtypes.NegSyncerKey, syncResult *neg
 		sm.syncerStatusMap = make(map[negtypes.NegSyncerKey]string)
 		sm.logger.V(3).Info("Syncer Metrics failed to initialize correctly, reinitializing syncerStatusMap: %v", sm.syncerStatusMap)
 	}
-	sm.syncerStatusMap[key] = syncResult.Result
+	sm.syncerStatusMap[key] = string(syncResult.Result)
 }
 
 // SetSyncerEPMetrics update the endpoint count based on the endpointStat

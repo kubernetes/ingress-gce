@@ -15,56 +15,68 @@ package types
 
 import "errors"
 
+type Result string
+
 const (
-	ResultEPCountsDiffer         = "EPCountsDiffer"
-	ResultEPMissingNodeName      = "EPMissingNodeName"
-	ResultNodeNotFound           = "NodeNotFound"
-	ResultEPMissingZone          = "EPMissingZone"
-	ResultEPSEndpointCountZero   = "EPSEndpointCountZero"
-	ResultEPCalculationCountZero = "EPCalculationCountZero"
-	ResultInvalidAPIResponse     = "InvalidAPIResponse"
-	ResultInvalidEPAttach        = "InvalidEPAttach"
-	ResultInvalidEPDetach        = "InvalidEPDetach"
+	ResultEPCountsDiffer           = Result("EPCountsDiffer")
+	ResultEPNodeMissing            = Result("EPNodeMissing")
+	ResultEPNodeNotFound           = Result("EPNodeNotFound")
+	ResultEPPodMissing             = Result("EPPodMissing")
+	ResultEPPodNotFound            = Result("EPPodNotFound")
+	ResultEPPodTypeAssertionFailed = Result("EPPodTypeAssertionFailed")
+	ResultEPZoneMissing            = Result("EPZoneMissing")
+	ResultEPSEndpointCountZero     = Result("EPSEndpointCountZero")
+	ResultEPCalculationCountZero   = Result("EPCalculationCountZero")
+	ResultInvalidAPIResponse       = Result("InvalidAPIResponse")
+	ResultInvalidEPAttach          = Result("InvalidEPAttach")
+	ResultInvalidEPDetach          = Result("InvalidEPDetach")
 
 	// these results have their own errors
-	ResultNegNotFound       = "NegNotFound"
-	ResultCurrentEPNotFound = "CurrentEPNotFound"
-	ResultEPSNotFound       = "EPSNotFound"
-	ResultOtherError        = "OtherError"
-	ResultInProgress        = "InProgress"
-	ResultSuccess           = "Success"
+	ResultNegNotFound          = Result("NegNotFound")
+	ResultCurrentNegEPNotFound = Result("CurrentNegEPNotFound")
+	ResultEPSNotFound          = Result("EPSNotFound")
+	ResultOtherError           = Result("OtherError")
+	ResultInProgress           = Result("InProgress")
+	ResultSuccess              = Result("Success")
 )
 
 var (
-	ErrEPCountsDiffer         = errors.New("endpoint counts from endpointData and endpointPodMap differ")
-	ErrEPMissingNodeName      = errors.New("endpoint has empty nodeName field")
-	ErrNodeNotFound           = errors.New("failed to retrieve associated zone of node")
-	ErrEPMissingZone          = errors.New("endpoint has empty zone field")
-	ErrEPSEndpointCountZero   = errors.New("endpoint count from endpointData cannot be zero")
-	ErrEPCalculationCountZero = errors.New("endpoint count from endpointPodMap cannot be zero")
-	ErrInvalidAPIResponse     = errors.New("received response error doesn't match googleapi.Error type")
-	ErrInvalidEPAttach        = errors.New("endpoint information for attach operation is incorrect")
-	ErrInvalidEPDetach        = errors.New("endpoint information for detach operation is incorrect")
+	ErrEPCountsDiffer           = errors.New("endpoint counts from endpointData and endpointPodMap differ")
+	ErrEPNodeMissing            = errors.New("endpoint has missing nodeName field")
+	ErrEPNodeNotFound           = errors.New("endpoint corresponds to an non-existing node")
+	ErrEPPodMissing             = errors.New("endpoint has missing pod field")
+	ErrEPPodNotFound            = errors.New("endpoint corresponds to an non-existing pod")
+	ErrEPPodTypeAssertionFailed = errors.New("endpoint corresponds to an object that fails pod type assertion")
+	ErrEPZoneMissing            = errors.New("endpoint has missing zone field")
+	ErrEPSEndpointCountZero     = errors.New("endpoint count from endpointData cannot be zero")
+	ErrEPCalculationCountZero   = errors.New("endpoint count from endpointPodMap cannot be zero")
+	ErrInvalidAPIResponse       = errors.New("received response error doesn't match googleapi.Error type")
+	ErrInvalidEPAttach          = errors.New("endpoint information for attach operation is incorrect")
+	ErrInvalidEPDetach          = errors.New("endpoint information for detach operation is incorrect")
 
 	// use this map for conversion between errors and sync results
-	ErrorStateResult = map[error]string{
-		ErrEPMissingNodeName:      ResultEPMissingNodeName,
-		ErrEPMissingZone:          ResultEPMissingZone,
-		ErrEPCalculationCountZero: ResultEPCalculationCountZero,
-		ErrEPSEndpointCountZero:   ResultEPSEndpointCountZero,
-		ErrEPCountsDiffer:         ResultEPCountsDiffer,
-		ErrInvalidAPIResponse:     ResultInvalidAPIResponse,
-		ErrInvalidEPAttach:        ResultInvalidEPAttach,
-		ErrInvalidEPDetach:        ResultInvalidEPDetach,
+	ErrorStateResult = map[error]Result{
+		ErrEPNodeMissing:            ResultEPNodeMissing,
+		ErrEPNodeNotFound:           ResultEPNodeNotFound,
+		ErrEPPodMissing:             ResultEPPodMissing,
+		ErrEPPodNotFound:            ResultEPPodNotFound,
+		ErrEPPodTypeAssertionFailed: ResultEPPodTypeAssertionFailed,
+		ErrEPZoneMissing:            ResultEPZoneMissing,
+		ErrEPCalculationCountZero:   ResultEPCalculationCountZero,
+		ErrEPSEndpointCountZero:     ResultEPSEndpointCountZero,
+		ErrEPCountsDiffer:           ResultEPCountsDiffer,
+		ErrInvalidAPIResponse:       ResultInvalidAPIResponse,
+		ErrInvalidEPAttach:          ResultInvalidEPAttach,
+		ErrInvalidEPDetach:          ResultInvalidEPDetach,
 	}
 )
 
 type NegSyncResult struct {
 	Error  error
-	Result string
+	Result Result
 }
 
-func NewNegSyncResult(err error, result string) *NegSyncResult {
+func NewNegSyncResult(err error, result Result) *NegSyncResult {
 	return &NegSyncResult{
 		Error:  err,
 		Result: result,

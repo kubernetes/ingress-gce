@@ -18,6 +18,7 @@ package syncers
 
 import (
 	context2 "context"
+	"errors"
 	"fmt"
 	"net"
 	"reflect"
@@ -28,6 +29,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	corev1 "k8s.io/api/core/v1"
+	discovery "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -59,8 +61,6 @@ const (
 	testInstance4 = "instance4"
 	testInstance5 = "instance5"
 	testInstance6 = "instance6"
-	testNamespace = "ns"
-	testService   = "svc"
 )
 
 func TestTransactionSyncNetworkEndpoints(t *testing.T) {
@@ -900,8 +900,8 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 			negExists: true,
 			negDesc: utils.NegDescription{
 				ClusterUID:  kubeSystemUID,
-				Namespace:   testNamespace,
-				ServiceName: testService,
+				Namespace:   testServiceNamespace,
+				ServiceName: testServiceName,
 				Port:        "80",
 			}.String(),
 			crStatusPopulated: true,
@@ -919,8 +919,8 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 			negExists: true,
 			negDesc: utils.NegDescription{
 				ClusterUID:  kubeSystemUID,
-				Namespace:   testNamespace,
-				ServiceName: testService,
+				Namespace:   testServiceNamespace,
+				ServiceName: testServiceName,
 				Port:        "80",
 			}.String(),
 			crStatusPopulated: false,
@@ -931,8 +931,8 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 			negExists: true,
 			negDesc: utils.NegDescription{
 				ClusterUID:  "cluster-2",
-				Namespace:   testNamespace,
-				ServiceName: testService,
+				Namespace:   testServiceNamespace,
+				ServiceName: testServiceName,
 				Port:        "80",
 			}.String(),
 			crStatusPopulated: false,
@@ -944,7 +944,7 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 			negDesc: utils.NegDescription{
 				ClusterUID:  kubeSystemUID,
 				Namespace:   "namespace-2",
-				ServiceName: testService,
+				ServiceName: testServiceName,
 				Port:        "80",
 			}.String(),
 			crStatusPopulated: false,
@@ -955,7 +955,7 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 			negExists: true,
 			negDesc: utils.NegDescription{
 				ClusterUID:  kubeSystemUID,
-				Namespace:   testNamespace,
+				Namespace:   testServiceNamespace,
 				ServiceName: "service-2",
 				Port:        "80",
 			}.String(),
@@ -967,8 +967,8 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 			negExists: true,
 			negDesc: utils.NegDescription{
 				ClusterUID:  kubeSystemUID,
-				Namespace:   testNamespace,
-				ServiceName: testService,
+				Namespace:   testServiceNamespace,
+				ServiceName: testServiceName,
 				Port:        "81",
 			}.String(),
 			crStatusPopulated: false,
@@ -980,8 +980,8 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 			// Cause error by having a conflicting neg description
 			negDesc: utils.NegDescription{
 				ClusterUID:  kubeSystemUID,
-				Namespace:   testNamespace,
-				ServiceName: testService,
+				Namespace:   testServiceNamespace,
+				ServiceName: testServiceName,
 				Port:        "81",
 			}.String(),
 			crStatusPopulated: true,
@@ -1022,7 +1022,7 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 			creationTS := v1.Date(2020, time.July, 23, 0, 0, 0, 0, time.UTC)
 			//Create NEG CR for Syncer to update status on
 			origCR := createNegCR(testNegName, creationTS, tc.crStatusPopulated, tc.crStatusPopulated, refs)
-			neg, err := negClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testNamespace).Create(context2.Background(), origCR, v1.CreateOptions{})
+			neg, err := negClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Create(context2.Background(), origCR, v1.CreateOptions{})
 			if err != nil {
 				t.Errorf("Failed to create test NEG CR: %s", err)
 			}
@@ -1035,7 +1035,7 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 				t.Errorf("Expected error, but got none")
 			}
 
-			negCR, err := negClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testNamespace).Get(context2.Background(), testNegName, v1.GetOptions{})
+			negCR, err := negClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Get(context2.Background(), testNegName, v1.GetOptions{})
 			if err != nil {
 				t.Errorf("Failed to get NEG from neg client: %s", err)
 			}
@@ -1080,7 +1080,7 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 			}
 		})
 
-		negClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testNamespace).Delete(context2.TODO(), testNegName, v1.DeleteOptions{})
+		negClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Delete(context2.TODO(), testNegName, v1.DeleteOptions{})
 
 		syncer.cloud.DeleteNetworkEndpointGroup(testNegName, negtypes.TestZone1, syncer.NegSyncerKey.GetAPIVersion())
 		syncer.cloud.DeleteNetworkEndpointGroup(testNegName, negtypes.TestZone2, syncer.NegSyncerKey.GetAPIVersion())
@@ -1186,7 +1186,7 @@ func TestUpdateStatus(t *testing.T) {
 				// Since timestamp gets truncated to the second, there is a chance that the timestamps will be the same as LastTransitionTime or LastSyncTime so use creation TS from an earlier date
 				creationTS := v1.Date(2020, time.July, 23, 0, 0, 0, 0, time.UTC)
 				origCR := createNegCR(testNegName, creationTS, tc.populateConditions[negv1beta1.Initialized], tc.populateConditions[negv1beta1.Synced], tc.negRefs)
-				origCR, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testNamespace).Create(context2.Background(), origCR, v1.CreateOptions{})
+				origCR, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Create(context2.Background(), origCR, v1.CreateOptions{})
 				if err != nil {
 					t.Errorf("Failed to create test NEG CR: %s", err)
 				}
@@ -1194,7 +1194,7 @@ func TestUpdateStatus(t *testing.T) {
 
 				syncer.updateStatus(syncErr)
 
-				negCR, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testNamespace).Get(context2.Background(), testNegName, v1.GetOptions{})
+				negCR, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Get(context2.Background(), testNegName, v1.GetOptions{})
 				if err != nil {
 					t.Errorf("Failed to create test NEG CR: %s", err)
 				}
@@ -1307,7 +1307,7 @@ func TestUnknownNodes(t *testing.T) {
 	testIP3 := "10.100.2.1"
 	testPort := int64(80)
 
-	testEndpointSlices := getTestEndpointSlices(testService, testNamespace)
+	testEndpointSlices := getDefaultEndpointSlices()
 	testEndpointSlices[0].Endpoints[0].NodeName = utilpointer.StringPtr("unknown-node")
 	testEndpointMap := map[string]*composite.NetworkEndpoint{
 		negtypes.TestZone1: &composite.NetworkEndpoint{
@@ -1344,7 +1344,7 @@ func TestUnknownNodes(t *testing.T) {
 	neg := &negv1beta1.ServiceNetworkEndpointGroup{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      testNegName,
-			Namespace: testNamespace,
+			Namespace: testServiceNamespace,
 		},
 		Status: negv1beta1.ServiceNetworkEndpointGroupStatus{
 			NetworkEndpointGroups: objRefs,
@@ -1389,6 +1389,245 @@ func TestUnknownNodes(t *testing.T) {
 	}
 }
 
+// TestEnableDegradedMode verifies if DegradedMode has been correctly enabled for L7 endpoint calculator
+func TestEnableDegradedMode(t *testing.T) {
+	t.Parallel()
+	zoneGetter := negtypes.NewFakeZoneGetter()
+	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
+	testSubnetwork := cloud.ResourcePath("subnetwork", &meta.Key{Name: "test-subnetwork"})
+	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
+
+	testIP1 := "10.100.1.1"
+	testIP2 := "10.100.1.2"
+	testIP3 := "10.100.2.1"
+	testPort := int64(80)
+
+	// only include matching port endpoints so we won't encounter error when validatingEndpoints
+	invalidEndpointSlices := getDefaultEndpointSlices()[:1]
+	invalidEndpointSlices[0].Endpoints[0].NodeName = nil
+	validEndpointSlice := getDefaultEndpointSlices()[:1]
+	testEndpointMap := map[string]*composite.NetworkEndpoint{
+		negtypes.TestZone1: {
+			Instance:  negtypes.TestInstance1,
+			IpAddress: testIP1,
+			Port:      testPort,
+		},
+		negtypes.TestZone2: {
+			Instance:  negtypes.TestInstance3,
+			IpAddress: testIP2,
+			Port:      testPort,
+		},
+		negtypes.TestZone4: {
+			Instance:  negtypes.TestUpgradeInstance1,
+			IpAddress: testIP3,
+			Port:      testPort,
+		},
+	}
+
+	initialEndpoints := map[string]negtypes.NetworkEndpointSet{
+		negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+			networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"),
+		),
+		negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
+			networkEndpointFromEncodedEndpoint("10.100.1.2||instance3||80"),
+		),
+		negtypes.TestZone4: negtypes.NewNetworkEndpointSet(
+			networkEndpointFromEncodedEndpoint("10.100.2.1||upgrade-instance1||80"),
+		),
+	}
+
+	updatedEndpoints := map[string]negtypes.NetworkEndpointSet{
+		negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+			networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"),
+			networkEndpointFromEncodedEndpoint("10.100.1.2||instance1||80"),
+			networkEndpointFromEncodedEndpoint("10.100.2.1||instance2||80"),
+			networkEndpointFromEncodedEndpoint("10.100.1.3||instance1||80"),
+			networkEndpointFromEncodedEndpoint("10.100.1.4||instance1||80")),
+		negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
+			networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80")),
+		negtypes.TestZone4: negtypes.NewNetworkEndpointSet(),
+	}
+
+	testCases := []struct {
+		desc                 string
+		modify               func(ts *transactionSyncer)
+		negName              string // to distinguish endpoints in differnt NEGs
+		testEndpointSlices   []*discovery.EndpointSlice
+		expectedEndpoints    map[string]negtypes.NetworkEndpointSet
+		expectedInErrorState bool
+		expectErr            error
+	}{
+		{
+			desc: "enable degraded mode, not error state, include invalid endpoint that would trigger error state",
+			modify: func(ts *transactionSyncer) {
+				ts.enableDegradedMode = true
+				ts.resetErrorState()
+			},
+			negName:              "neg-1",
+			testEndpointSlices:   invalidEndpointSlices,
+			expectedEndpoints:    initialEndpoints,
+			expectedInErrorState: true,
+			expectErr:            negtypes.ErrEPNodeMissing,
+		},
+		{
+			desc: "enable degraded mode, in error state, include invalid endpoints that would trigger error state",
+			modify: func(ts *transactionSyncer) {
+				ts.enableDegradedMode = true
+				ts.setErrorState(string(negtypes.ResultEPNodeMissing))
+			},
+			negName:              "neg-2",
+			testEndpointSlices:   invalidEndpointSlices,
+			expectedEndpoints:    updatedEndpoints,
+			expectedInErrorState: true,
+			expectErr:            nil,
+		},
+		{
+			desc: "enable degraded mode, not error state, no invalid endpoints",
+			modify: func(ts *transactionSyncer) {
+				ts.enableDegradedMode = true
+				ts.resetErrorState()
+			},
+			negName:              "neg-3",
+			testEndpointSlices:   validEndpointSlice,
+			expectedEndpoints:    updatedEndpoints,
+			expectedInErrorState: false,
+			expectErr:            nil,
+		},
+		{
+			desc: "enable degraded mode, in error state, no invalid endpoints",
+			modify: func(ts *transactionSyncer) {
+				ts.enableDegradedMode = true
+				ts.setErrorState(string(negtypes.ResultEPNodeMissing))
+			},
+			negName:              "neg-4",
+			testEndpointSlices:   validEndpointSlice,
+			expectedEndpoints:    updatedEndpoints,
+			expectedInErrorState: false, // we should reset error state
+			expectErr:            nil,
+		},
+		{
+			desc: "disable degraded mode, not error state, include invalid endpoints that would trigger error state",
+			modify: func(ts *transactionSyncer) {
+				ts.enableDegradedMode = false
+				ts.resetErrorState()
+			},
+			negName:              "neg-5",
+			testEndpointSlices:   invalidEndpointSlices,
+			expectedEndpoints:    initialEndpoints,
+			expectedInErrorState: true,
+			expectErr:            negtypes.ErrEPNodeMissing,
+		},
+		{
+			desc: "disable degraded mode, and in error state, include invalid endpoints that would trigger error state",
+			modify: func(ts *transactionSyncer) {
+				ts.enableDegradedMode = false
+				ts.setErrorState(string(negtypes.ResultEPNodeMissing))
+			},
+			negName:              "neg-6",
+			testEndpointSlices:   invalidEndpointSlices,
+			expectedEndpoints:    initialEndpoints,
+			expectedInErrorState: true,
+			expectErr:            negtypes.ErrEPNodeMissing,
+		},
+		{
+			desc: "disable degraded mode, and not error state, no invalid endpoints",
+			modify: func(ts *transactionSyncer) {
+				ts.enableDegradedMode = false
+				ts.resetErrorState()
+			},
+			negName:              "neg-7",
+			testEndpointSlices:   validEndpointSlice,
+			expectedEndpoints:    updatedEndpoints,
+			expectedInErrorState: false,
+			expectErr:            nil,
+		},
+		{
+			desc: "disable degraded mode, and in error state, no invalid endpoints",
+			modify: func(ts *transactionSyncer) {
+				ts.enableDegradedMode = false
+				ts.setErrorState(string(negtypes.ResultEPNodeMissing))
+			},
+			negName:              "neg-8",
+			testEndpointSlices:   validEndpointSlice,
+			expectedEndpoints:    updatedEndpoints,
+			expectedInErrorState: true, // if degraded mode is disabled, we don't reset error state, but we won't have different behaviors based on error state either
+			expectErr:            nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			// Create initial NetworkEndpointGroups in cloud
+			var objRefs []negv1beta1.NegObjectReference
+			for zone, endpoint := range testEndpointMap {
+				fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: tc.negName, Version: meta.VersionGA}, zone)
+				fakeCloud.AttachNetworkEndpoints(tc.negName, zone, []*composite.NetworkEndpoint{endpoint}, meta.VersionGA)
+				neg, err := fakeCloud.GetNetworkEndpointGroup(tc.negName, zone, meta.VersionGA)
+				if err != nil {
+					t.Fatalf("failed to get neg from fake cloud: %s", err)
+				}
+				objRefs = append(objRefs, negv1beta1.NegObjectReference{SelfLink: neg.SelfLink})
+			}
+			neg := &negv1beta1.ServiceNetworkEndpointGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      tc.negName,
+					Namespace: testServiceNamespace,
+				},
+				Status: negv1beta1.ServiceNetworkEndpointGroupStatus{
+					NetworkEndpointGroups: objRefs,
+				},
+			}
+			_, s := newTestTransactionSyncer(fakeCloud, negtypes.VmIpPortEndpointType, false)
+			s.NegSyncerKey.NegName = tc.negName
+			s.needInit = false
+			addPodsToLister(s.podLister)
+			for i := 1; i <= 4; i++ {
+				s.nodeLister.Add(&corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: fmt.Sprintf("instance%v", i),
+					},
+				})
+			}
+			for _, eps := range tc.testEndpointSlices {
+				s.endpointSliceLister.Add(eps)
+			}
+			s.svcNegLister.Add(neg)
+			// mark syncer as started without starting the syncer routine
+			(s.syncer.(*syncer)).stopped = false
+			tc.modify(s)
+
+			out, err := retrieveExistingZoneNetworkEndpointMap(tc.negName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode)
+			if err != nil {
+				t.Errorf("errored retrieving existing network endpoints")
+			}
+			if !reflect.DeepEqual(initialEndpoints, out) {
+				t.Errorf("endpoints should not be changed before sync:\ngot %+v,\n expected %+v", out, tc.expectedEndpoints)
+			}
+
+			err = s.syncInternal()
+			if !errors.Is(err, tc.expectErr) {
+				t.Errorf("syncInternal returned %v, expected %v", err, tc.expectErr)
+			}
+			if s.inErrorState() != tc.expectedInErrorState {
+				t.Errorf("after syncInternal, error state is %v, expected to be %v", s.inErrorState(), tc.expectedInErrorState)
+			}
+			err = wait.PollImmediate(time.Second, 3*time.Second, func() (bool, error) {
+				out, err = retrieveExistingZoneNetworkEndpointMap(tc.negName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode)
+				if err != nil {
+					return false, err
+				}
+				if !reflect.DeepEqual(tc.expectedEndpoints, out) {
+					return false, err
+				}
+				return true, nil
+			})
+			if err != nil {
+				t.Errorf("endpoints are different from expected:\ngot %+v,\n expected %+v", out, tc.expectedEndpoints)
+			}
+		})
+	}
+}
+
 func newL4ILBTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, mode negtypes.EndpointsCalculatorMode) (negtypes.NegSyncer, *transactionSyncer) {
 	negsyncer, ts := newTestTransactionSyncer(fakeGCE, negtypes.VmIpEndpointType, false)
 	ts.endpointsCalculator = GetEndpointsCalculator(ts.nodeLister, ts.podLister, ts.zoneGetter, ts.NegSyncerKey, mode, klog.TODO(), ts.enableDualStackNEG)
@@ -1398,8 +1637,8 @@ func newL4ILBTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, m
 func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negType negtypes.NetworkEndpointType, customName bool) (negtypes.NegSyncer, *transactionSyncer) {
 	testContext := negtypes.NewTestContext()
 	svcPort := negtypes.NegSyncerKey{
-		Namespace: testNamespace,
-		Name:      testService,
+		Namespace: testServiceNamespace,
+		Name:      testServiceName,
 		NegType:   negType,
 		PortTuple: negtypes.SvcPortTuple{
 			Port:       80,
@@ -1481,7 +1720,7 @@ func generateEndpointSetAndMap(initialIp net.IP, num int, instance string, targe
 
 		endpoint := negtypes.NetworkEndpoint{IP: ip.String(), Node: instance, Port: targetPort}
 		retSet.Insert(endpoint)
-		retMap[endpoint] = types.NamespacedName{Namespace: testNamespace, Name: fmt.Sprintf("pod-%s-%d", instance, i)}
+		retMap[endpoint] = types.NamespacedName{Namespace: testServiceNamespace, Name: fmt.Sprintf("pod-%s-%d", instance, i)}
 	}
 	return retSet, retMap
 }
@@ -1656,7 +1895,7 @@ func createNegCR(testNegName string, creationTS metav1.Time, populateInitialized
 	neg := &negv1beta1.ServiceNetworkEndpointGroup{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:              testNegName,
-			Namespace:         testNamespace,
+			Namespace:         testServiceNamespace,
 			CreationTimestamp: creationTS,
 		},
 	}
