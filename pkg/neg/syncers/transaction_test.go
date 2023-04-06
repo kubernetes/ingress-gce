@@ -59,8 +59,6 @@ const (
 	testInstance4 = "instance4"
 	testInstance5 = "instance5"
 	testInstance6 = "instance6"
-	testNamespace = "ns"
-	testService   = "svc"
 )
 
 func TestTransactionSyncNetworkEndpoints(t *testing.T) {
@@ -900,8 +898,8 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 			negExists: true,
 			negDesc: utils.NegDescription{
 				ClusterUID:  kubeSystemUID,
-				Namespace:   testNamespace,
-				ServiceName: testService,
+				Namespace:   testServiceNamespace,
+				ServiceName: testServiceName,
 				Port:        "80",
 			}.String(),
 			crStatusPopulated: true,
@@ -919,8 +917,8 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 			negExists: true,
 			negDesc: utils.NegDescription{
 				ClusterUID:  kubeSystemUID,
-				Namespace:   testNamespace,
-				ServiceName: testService,
+				Namespace:   testServiceNamespace,
+				ServiceName: testServiceName,
 				Port:        "80",
 			}.String(),
 			crStatusPopulated: false,
@@ -931,8 +929,8 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 			negExists: true,
 			negDesc: utils.NegDescription{
 				ClusterUID:  "cluster-2",
-				Namespace:   testNamespace,
-				ServiceName: testService,
+				Namespace:   testServiceNamespace,
+				ServiceName: testServiceName,
 				Port:        "80",
 			}.String(),
 			crStatusPopulated: false,
@@ -944,7 +942,7 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 			negDesc: utils.NegDescription{
 				ClusterUID:  kubeSystemUID,
 				Namespace:   "namespace-2",
-				ServiceName: testService,
+				ServiceName: testServiceName,
 				Port:        "80",
 			}.String(),
 			crStatusPopulated: false,
@@ -955,7 +953,7 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 			negExists: true,
 			negDesc: utils.NegDescription{
 				ClusterUID:  kubeSystemUID,
-				Namespace:   testNamespace,
+				Namespace:   testServiceNamespace,
 				ServiceName: "service-2",
 				Port:        "80",
 			}.String(),
@@ -967,8 +965,8 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 			negExists: true,
 			negDesc: utils.NegDescription{
 				ClusterUID:  kubeSystemUID,
-				Namespace:   testNamespace,
-				ServiceName: testService,
+				Namespace:   testServiceNamespace,
+				ServiceName: testServiceName,
 				Port:        "81",
 			}.String(),
 			crStatusPopulated: false,
@@ -980,8 +978,8 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 			// Cause error by having a conflicting neg description
 			negDesc: utils.NegDescription{
 				ClusterUID:  kubeSystemUID,
-				Namespace:   testNamespace,
-				ServiceName: testService,
+				Namespace:   testServiceNamespace,
+				ServiceName: testServiceName,
 				Port:        "81",
 			}.String(),
 			crStatusPopulated: true,
@@ -1022,7 +1020,7 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 			creationTS := v1.Date(2020, time.July, 23, 0, 0, 0, 0, time.UTC)
 			//Create NEG CR for Syncer to update status on
 			origCR := createNegCR(testNegName, creationTS, tc.crStatusPopulated, tc.crStatusPopulated, refs)
-			neg, err := negClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testNamespace).Create(context2.Background(), origCR, v1.CreateOptions{})
+			neg, err := negClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Create(context2.Background(), origCR, v1.CreateOptions{})
 			if err != nil {
 				t.Errorf("Failed to create test NEG CR: %s", err)
 			}
@@ -1035,7 +1033,7 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 				t.Errorf("Expected error, but got none")
 			}
 
-			negCR, err := negClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testNamespace).Get(context2.Background(), testNegName, v1.GetOptions{})
+			negCR, err := negClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Get(context2.Background(), testNegName, v1.GetOptions{})
 			if err != nil {
 				t.Errorf("Failed to get NEG from neg client: %s", err)
 			}
@@ -1080,7 +1078,7 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 			}
 		})
 
-		negClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testNamespace).Delete(context2.TODO(), testNegName, v1.DeleteOptions{})
+		negClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Delete(context2.TODO(), testNegName, v1.DeleteOptions{})
 
 		syncer.cloud.DeleteNetworkEndpointGroup(testNegName, negtypes.TestZone1, syncer.NegSyncerKey.GetAPIVersion())
 		syncer.cloud.DeleteNetworkEndpointGroup(testNegName, negtypes.TestZone2, syncer.NegSyncerKey.GetAPIVersion())
@@ -1186,7 +1184,7 @@ func TestUpdateStatus(t *testing.T) {
 				// Since timestamp gets truncated to the second, there is a chance that the timestamps will be the same as LastTransitionTime or LastSyncTime so use creation TS from an earlier date
 				creationTS := v1.Date(2020, time.July, 23, 0, 0, 0, 0, time.UTC)
 				origCR := createNegCR(testNegName, creationTS, tc.populateConditions[negv1beta1.Initialized], tc.populateConditions[negv1beta1.Synced], tc.negRefs)
-				origCR, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testNamespace).Create(context2.Background(), origCR, v1.CreateOptions{})
+				origCR, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Create(context2.Background(), origCR, v1.CreateOptions{})
 				if err != nil {
 					t.Errorf("Failed to create test NEG CR: %s", err)
 				}
@@ -1194,7 +1192,7 @@ func TestUpdateStatus(t *testing.T) {
 
 				syncer.updateStatus(syncErr)
 
-				negCR, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testNamespace).Get(context2.Background(), testNegName, v1.GetOptions{})
+				negCR, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Get(context2.Background(), testNegName, v1.GetOptions{})
 				if err != nil {
 					t.Errorf("Failed to create test NEG CR: %s", err)
 				}
@@ -1307,7 +1305,7 @@ func TestUnknownNodes(t *testing.T) {
 	testIP3 := "10.100.2.1"
 	testPort := int64(80)
 
-	testEndpointSlices := getTestEndpointSlices(testService, testNamespace)
+	testEndpointSlices := getDefaultEndpointSlices()
 	testEndpointSlices[0].Endpoints[0].NodeName = utilpointer.StringPtr("unknown-node")
 	testEndpointMap := map[string]*composite.NetworkEndpoint{
 		negtypes.TestZone1: &composite.NetworkEndpoint{
@@ -1344,7 +1342,7 @@ func TestUnknownNodes(t *testing.T) {
 	neg := &negv1beta1.ServiceNetworkEndpointGroup{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      testNegName,
-			Namespace: testNamespace,
+			Namespace: testServiceNamespace,
 		},
 		Status: negv1beta1.ServiceNetworkEndpointGroupStatus{
 			NetworkEndpointGroups: objRefs,
@@ -1398,8 +1396,8 @@ func newL4ILBTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, m
 func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negType negtypes.NetworkEndpointType, customName bool) (negtypes.NegSyncer, *transactionSyncer) {
 	testContext := negtypes.NewTestContext()
 	svcPort := negtypes.NegSyncerKey{
-		Namespace: testNamespace,
-		Name:      testService,
+		Namespace: testServiceNamespace,
+		Name:      testServiceName,
 		NegType:   negType,
 		PortTuple: negtypes.SvcPortTuple{
 			Port:       80,
@@ -1481,7 +1479,7 @@ func generateEndpointSetAndMap(initialIp net.IP, num int, instance string, targe
 
 		endpoint := negtypes.NetworkEndpoint{IP: ip.String(), Node: instance, Port: targetPort}
 		retSet.Insert(endpoint)
-		retMap[endpoint] = types.NamespacedName{Namespace: testNamespace, Name: fmt.Sprintf("pod-%s-%d", instance, i)}
+		retMap[endpoint] = types.NamespacedName{Namespace: testServiceNamespace, Name: fmt.Sprintf("pod-%s-%d", instance, i)}
 	}
 	return retSet, retMap
 }
@@ -1656,7 +1654,7 @@ func createNegCR(testNegName string, creationTS metav1.Time, populateInitialized
 	neg := &negv1beta1.ServiceNetworkEndpointGroup{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:              testNegName,
-			Namespace:         testNamespace,
+			Namespace:         testServiceNamespace,
 			CreationTimestamp: creationTS,
 		},
 	}
