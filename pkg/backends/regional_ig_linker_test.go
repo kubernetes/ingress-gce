@@ -181,6 +181,50 @@ func TestRegionalUpdateLinkWithNewBackends(t *testing.T) {
 	}
 }
 
+func TestRegionalUpdateLinkWithRemovedBackends(t *testing.T) {
+	t.Parallel()
+	fakeGCE := gce.NewFakeGCECloud(linkerTestClusterValues())
+	clusterID, _ := fakeGCE.ClusterID.GetID()
+	l4Namer := namer.NewL4Namer("uid1", namer.NewNamer(clusterID, ""))
+	sp := utils.ServicePort{NodePort: 8080, BackendNamer: l4Namer}
+	fakeBackendPool := NewPool(fakeGCE, l4Namer)
+	linker := newTestRegionalIgLinker(fakeGCE, fakeBackendPool, l4Namer)
+	if _, err := linker.instancePool.EnsureInstanceGroupsAndPorts(l4Namer.InstanceGroup(), []int64{sp.NodePort}); err != nil {
+		t.Fatalf("Unexpected error when ensuring IG for ServicePort %+v: %v", sp, err)
+	}
+	createBackendService(t, sp, fakeBackendPool)
+
+	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{usCentral1AZone, usCentral1CZone}); err != nil {
+		t.Fatalf("Unexpected error in Link(_). Error: %v", err)
+	}
+
+	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{usCentral1AZone}); err != nil {
+		t.Fatalf("Unexpected error in Link(_). Error: %v", err)
+	}
+	be, err := fakeGCE.GetRegionBackendService(sp.BackendName(), fakeGCE.Region())
+	if err != nil {
+		t.Fatalf("Get Regional Backend Service failed %v", err)
+	}
+	var backendGroups []string
+	for _, b := range be.Backends {
+		backendGroups = append(backendGroups, b.Group)
+	}
+	if len(be.Backends) != 1 {
+		t.Errorf("Expected that Backends are updated with the added zone with len=1 but got=%+v", strings.Join(backendGroups, ", "))
+	}
+
+	igA, _ := linker.instancePool.Get(sp.IGName(), usCentral1AZone)
+	expectedLinkA, _ := utils.RelativeResourceName(igA.SelfLink)
+	igC, _ := linker.instancePool.Get(sp.IGName(), usCentral1CZone)
+	expectedLinkC, _ := utils.RelativeResourceName(igC.SelfLink)
+	if !slice.ContainsString(backendGroups, expectedLinkA, nil) {
+		t.Errorf("expected that BackendService backend contains %v, got=%v", expectedLinkA, backendGroups)
+	}
+	if slice.ContainsString(backendGroups, expectedLinkC, nil) {
+		t.Errorf("expected that BackendService backend does not contain %v, got=%v", expectedLinkC, backendGroups)
+	}
+}
+
 func createBackendService(t *testing.T, sp utils.ServicePort, backendPool *Backends) {
 	t.Helper()
 	namespacedName := types.NamespacedName{Name: "service.Name", Namespace: "service.Namespace"}
