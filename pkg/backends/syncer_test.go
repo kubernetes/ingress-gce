@@ -137,7 +137,7 @@ var (
 )
 
 func newTestSyncer(fakeGCE *gce.Cloud) *backendSyncer {
-	fakeHealthChecks := healthchecks.NewHealthChecker(fakeGCE, "/", defaultBackendSvc)
+	fakeHealthChecks := healthchecks.NewHealthChecker(fakeGCE, "/", defaultBackendSvc, healthchecks.NewFakeRecorderGetter(0), healthchecks.NewFakeServiceGetter())
 
 	fakeBackendPool := NewPool(fakeGCE, defaultNamer)
 

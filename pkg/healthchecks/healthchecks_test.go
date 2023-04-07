@@ -21,7 +21,9 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -111,7 +113,7 @@ func init() {
 
 func TestHealthCheckAdd(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc)
+	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter())
 
 	sp := &utils.ServicePort{NodePort: 80, Protocol: annotations.ProtocolHTTP, NEGEnabled: false, BackendNamer: testNamer}
 	_, err := healthChecks.SyncServicePort(sp, nil)
@@ -149,7 +151,7 @@ func TestHealthCheckAdd(t *testing.T) {
 
 func TestHealthCheckAddExisting(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc)
+	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter())
 
 	// HTTP
 	// Manually insert a health check
@@ -221,7 +223,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 
 func TestHealthCheckDelete(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc)
+	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter())
 
 	// Create HTTP HC for 1234
 	hc := translator.DefaultHealthCheck(1234, annotations.ProtocolHTTP)
@@ -251,7 +253,7 @@ func TestHealthCheckDelete(t *testing.T) {
 
 func TestHTTP2HealthCheckDelete(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc)
+	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter())
 
 	// Create HTTP2 HC for 1234
 	hc := translator.DefaultHealthCheck(1234, annotations.ProtocolHTTP2)
@@ -278,7 +280,7 @@ func TestHTTP2HealthCheckDelete(t *testing.T) {
 
 func TestRegionalHealthCheckDelete(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc)
+	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter())
 
 	hc := healthChecks.new(
 		utils.ServicePort{
@@ -330,7 +332,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaHealthChecks.UpdateHook = mock.UpdateAlphaHealthCheckHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockBetaHealthChecks.UpdateHook = mock.UpdateBetaHealthCheckHook
 
-	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc)
+	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter())
 
 	// HTTP
 	// Manually insert a health check
@@ -465,7 +467,8 @@ func TestRolloutUpdateCustomHCDescription(t *testing.T) {
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaHealthChecks.UpdateHook = mock.UpdateAlphaHealthCheckHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockBetaHealthChecks.UpdateHook = mock.UpdateBetaHealthCheckHook
 
-	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc)
+	fakeSingletonRecorderGetter := NewFakeSingletonRecorderGetter(1)
+	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, fakeSingletonRecorderGetter, NewFakeServiceGetter())
 
 	_, err := healthChecks.SyncServicePort(defaultSP, nil)
 	if err != nil {
@@ -517,6 +520,17 @@ func TestRolloutUpdateCustomHCDescription(t *testing.T) {
 	if !reflect.DeepEqual(outputBCHC, outputBCHCWithFlag) {
 		t.Fatalf("Compute healthcheck is:\n%s, want:\n%s", pretty.Sprint(outputBCHC), pretty.Sprint(outputBCHCWithFlag))
 	}
+
+	fakeRecorder := fakeSingletonRecorderGetter.FakeRecorder()
+	select {
+	case output := <-fakeRecorder.Events:
+		if !strings.HasPrefix(output, "Normal HealthcheckDescriptionUpdate") {
+			t.Fatalf("Incorrect event emitted on healthcheck update: %s.", output)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatalf("Timeout when expecting Event.")
+	}
+
 }
 
 func TestVersion(t *testing.T) {
@@ -1342,7 +1356,7 @@ func TestSyncServicePort(t *testing.T) {
 				tc.setup(mock)
 			}
 
-			hcs := NewHealthChecker(fakeGCE, "/", defaultBackendSvc)
+			hcs := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter())
 
 			gotSelfLink, err := hcs.SyncServicePort(tc.sp, tc.probe)
 			if gotErr := err != nil; gotErr != tc.wantErr {
