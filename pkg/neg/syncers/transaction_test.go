@@ -17,10 +17,12 @@ limitations under the License.
 package syncers
 
 import (
+	"context"
 	context2 "context"
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"reflect"
 	"strconv"
 	"testing"
@@ -29,6 +31,8 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/api/compute/v1"
+	"google.golang.org/api/googleapi"
 	corev1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -1558,9 +1562,22 @@ func TestUnknownNodes(t *testing.T) {
 func TestEnableDegradedMode(t *testing.T) {
 	t.Parallel()
 	zoneGetter := negtypes.NewFakeZoneGetter()
-	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
-	testSubnetwork := cloud.ResourcePath("subnetwork", &meta.Key{Name: "test-subnetwork"})
-	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	negtypes.MockNetworkEndpointAPIs(fakeGCE)
+	fakeCloud := negtypes.NewAdapter(fakeGCE)
+	mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
+	ipOutOfRange := "1.1.1.1"
+	mockGCE.MockNetworkEndpointGroups.AttachNetworkEndpointsHook = func(ctx context.Context, key *meta.Key, obj *compute.NetworkEndpointGroupsAttachEndpointsRequest, m *cloud.MockNetworkEndpointGroups) error {
+		for _, newEP := range obj.NetworkEndpoints {
+			if newEP.IpAddress == ipOutOfRange {
+				return &googleapi.Error{
+					Code:    http.StatusBadRequest,
+					Message: fmt.Sprintf("Specified IP address %v doesn't belong to the (sub)network or the instance", newEP.IpAddress),
+				}
+			}
+		}
+		return negtypes.MockAttachNetworkEndpointsHook(ctx, key, obj, m)
+	}
 
 	testIP1 := "10.100.1.1"
 	testIP2 := "10.100.1.2"
@@ -1568,8 +1585,10 @@ func TestEnableDegradedMode(t *testing.T) {
 	testPort := int64(80)
 
 	// only include matching port endpoints so we won't encounter error when validatingEndpoints
-	invalidEndpointSlices := getDefaultEndpointSlices()[:1]
-	invalidEndpointSlices[0].Endpoints[0].NodeName = nil
+	nodeMissingEndpointSlices := getDefaultEndpointSlices()[:1]
+	nodeMissingEndpointSlices[0].Endpoints[0].NodeName = nil
+	ipOutOfCIDREndpointSlices := getDefaultEndpointSlices()[:1]
+	ipOutOfCIDREndpointSlices[0].Endpoints[3].Addresses = []string{ipOutOfRange}
 	validEndpointSlice := getDefaultEndpointSlices()[:1]
 	testEndpointMap := map[string]*composite.NetworkEndpoint{
 		negtypes.TestZone1: {
@@ -1601,7 +1620,7 @@ func TestEnableDegradedMode(t *testing.T) {
 		),
 	}
 
-	updatedEndpoints := map[string]negtypes.NetworkEndpointSet{
+	updateSucceedEndpoints := map[string]negtypes.NetworkEndpointSet{
 		negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
 			networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"),
 			networkEndpointFromEncodedEndpoint("10.100.1.2||instance1||80"),
@@ -1610,6 +1629,17 @@ func TestEnableDegradedMode(t *testing.T) {
 			networkEndpointFromEncodedEndpoint("10.100.1.4||instance1||80")),
 		negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
 			networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80")),
+		negtypes.TestZone4: negtypes.NewNetworkEndpointSet(),
+	}
+
+	updateFailedEndpoints := map[string]negtypes.NetworkEndpointSet{
+		negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+			networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"),
+			networkEndpointFromEncodedEndpoint("10.100.1.2||instance1||80"),
+			networkEndpointFromEncodedEndpoint("10.100.2.1||instance2||80"),
+			networkEndpointFromEncodedEndpoint("10.100.1.3||instance1||80"),
+			networkEndpointFromEncodedEndpoint("10.100.1.4||instance1||80")),
+		negtypes.TestZone2: negtypes.NewNetworkEndpointSet(),
 		negtypes.TestZone4: negtypes.NewNetworkEndpointSet(),
 	}
 
@@ -1623,26 +1653,26 @@ func TestEnableDegradedMode(t *testing.T) {
 		expectErr            error
 	}{
 		{
-			desc: "enable degraded mode, not error state, include invalid endpoint that would trigger error state",
+			desc: "enable degraded mode, not error state, include invalid endpoints that would trigger error state before API calls",
 			modify: func(ts *transactionSyncer) {
 				ts.enableDegradedMode = true
 				ts.resetErrorState()
 			},
 			negName:              "neg-1",
-			testEndpointSlices:   invalidEndpointSlices,
+			testEndpointSlices:   nodeMissingEndpointSlices,
 			expectedEndpoints:    initialEndpoints,
 			expectedInErrorState: true,
 			expectErr:            negtypes.ErrEPNodeMissing,
 		},
 		{
-			desc: "enable degraded mode, in error state, include invalid endpoints that would trigger error state",
+			desc: "enable degraded mode, in error state, include invalid endpoints that would trigger error state before API calls",
 			modify: func(ts *transactionSyncer) {
 				ts.enableDegradedMode = true
-				ts.setErrorState(string(negtypes.ResultEPNodeMissing))
+				ts.setErrorState()
 			},
 			negName:              "neg-2",
-			testEndpointSlices:   invalidEndpointSlices,
-			expectedEndpoints:    updatedEndpoints,
+			testEndpointSlices:   nodeMissingEndpointSlices,
+			expectedEndpoints:    updateSucceedEndpoints,
 			expectedInErrorState: true,
 			expectErr:            nil,
 		},
@@ -1654,7 +1684,7 @@ func TestEnableDegradedMode(t *testing.T) {
 			},
 			negName:              "neg-3",
 			testEndpointSlices:   validEndpointSlice,
-			expectedEndpoints:    updatedEndpoints,
+			expectedEndpoints:    updateSucceedEndpoints,
 			expectedInErrorState: false,
 			expectErr:            nil,
 		},
@@ -1662,34 +1692,34 @@ func TestEnableDegradedMode(t *testing.T) {
 			desc: "enable degraded mode, in error state, no invalid endpoints",
 			modify: func(ts *transactionSyncer) {
 				ts.enableDegradedMode = true
-				ts.setErrorState(string(negtypes.ResultEPNodeMissing))
+				ts.setErrorState()
 			},
 			negName:              "neg-4",
 			testEndpointSlices:   validEndpointSlice,
-			expectedEndpoints:    updatedEndpoints,
+			expectedEndpoints:    updateSucceedEndpoints,
 			expectedInErrorState: false, // we should reset error state
 			expectErr:            nil,
 		},
 		{
-			desc: "disable degraded mode, not error state, include invalid endpoints that would trigger error state",
+			desc: "disable degraded mode, not error state, include invalid endpoints that would trigger error state before API calls",
 			modify: func(ts *transactionSyncer) {
 				ts.enableDegradedMode = false
 				ts.resetErrorState()
 			},
 			negName:              "neg-5",
-			testEndpointSlices:   invalidEndpointSlices,
+			testEndpointSlices:   nodeMissingEndpointSlices,
 			expectedEndpoints:    initialEndpoints,
 			expectedInErrorState: true,
 			expectErr:            negtypes.ErrEPNodeMissing,
 		},
 		{
-			desc: "disable degraded mode, and in error state, include invalid endpoints that would trigger error state",
+			desc: "disable degraded mode, and in error state, include invalid endpoints that would trigger error state before API calls",
 			modify: func(ts *transactionSyncer) {
 				ts.enableDegradedMode = false
-				ts.setErrorState(string(negtypes.ResultEPNodeMissing))
+				ts.setErrorState()
 			},
 			negName:              "neg-6",
-			testEndpointSlices:   invalidEndpointSlices,
+			testEndpointSlices:   nodeMissingEndpointSlices,
 			expectedEndpoints:    initialEndpoints,
 			expectedInErrorState: true,
 			expectErr:            negtypes.ErrEPNodeMissing,
@@ -1702,7 +1732,7 @@ func TestEnableDegradedMode(t *testing.T) {
 			},
 			negName:              "neg-7",
 			testEndpointSlices:   validEndpointSlice,
-			expectedEndpoints:    updatedEndpoints,
+			expectedEndpoints:    updateSucceedEndpoints,
 			expectedInErrorState: false,
 			expectErr:            nil,
 		},
@@ -1710,12 +1740,36 @@ func TestEnableDegradedMode(t *testing.T) {
 			desc: "disable degraded mode, and in error state, no invalid endpoints",
 			modify: func(ts *transactionSyncer) {
 				ts.enableDegradedMode = false
-				ts.setErrorState(string(negtypes.ResultEPNodeMissing))
+				ts.setErrorState()
 			},
 			negName:              "neg-8",
 			testEndpointSlices:   validEndpointSlice,
-			expectedEndpoints:    updatedEndpoints,
+			expectedEndpoints:    updateSucceedEndpoints,
 			expectedInErrorState: true, // if degraded mode is disabled, we don't reset error state, but we won't have different behaviors based on error state either
+			expectErr:            nil,
+		},
+		{
+			desc: "enable degraded mode, and not in error state, include invalid endpoints that would trigger error state after API calls",
+			modify: func(ts *transactionSyncer) {
+				ts.enableDegradedMode = true
+				ts.resetErrorState()
+			},
+			negName:              "neg-9",
+			testEndpointSlices:   ipOutOfCIDREndpointSlices,
+			expectedEndpoints:    updateFailedEndpoints,
+			expectedInErrorState: true,
+			expectErr:            nil,
+		},
+		{
+			desc: "disable degraded mode, and not in error state, include invalid endpoints that would trigger error state after API calls",
+			modify: func(ts *transactionSyncer) {
+				ts.enableDegradedMode = false
+				ts.resetErrorState()
+			},
+			negName:              "neg-10",
+			testEndpointSlices:   ipOutOfCIDREndpointSlices,
+			expectedEndpoints:    updateFailedEndpoints,
+			expectedInErrorState: true,
 			expectErr:            nil,
 		},
 	}
@@ -1773,9 +1827,6 @@ func TestEnableDegradedMode(t *testing.T) {
 			if !errors.Is(err, tc.expectErr) {
 				t.Errorf("syncInternal returned %v, expected %v", err, tc.expectErr)
 			}
-			if s.inErrorState() != tc.expectedInErrorState {
-				t.Errorf("after syncInternal, error state is %v, expected to be %v", s.inErrorState(), tc.expectedInErrorState)
-			}
 			err = wait.PollImmediate(time.Second, 3*time.Second, func() (bool, error) {
 				out, _, err = retrieveExistingZoneNetworkEndpointMap(tc.negName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode)
 				if err != nil {
@@ -1786,6 +1837,9 @@ func TestEnableDegradedMode(t *testing.T) {
 				}
 				return true, nil
 			})
+			if s.inErrorState() != tc.expectedInErrorState {
+				t.Errorf("after syncInternal, error state is %v, expected to be %v", s.inErrorState(), tc.expectedInErrorState)
+			}
 			if err != nil {
 				t.Errorf("endpoints are different from expected:\ngot %+v,\n expected %+v", out, tc.expectedEndpoints)
 			}

@@ -102,10 +102,10 @@ type transactionSyncer struct {
 	// 3. Attach/Detach EP fails due to incorrect batch information
 	// 4. Endpoint count from EPS or calculated endpoint list is 0
 	// Need to grab syncLock first for any reads or writes based on this value
-	errorState string
+	errorState bool
 
-	// syncCollector collect sync related metrics
-	syncCollector metrics.SyncerMetricsCollector
+	// syncMetricsCollector collect sync related metrics
+	syncMetricsCollector metrics.SyncerMetricsCollector
 
 	// enableDegradedMode indicates whether we do endpoint calculation using degraded mode procedures
 	enableDegradedMode bool
@@ -157,9 +157,9 @@ func NewTransactionSyncer(
 		reflector:                 reflector,
 		kubeSystemUID:             kubeSystemUID,
 		svcNegClient:              svcNegClient,
-		syncCollector:             syncerMetrics,
+		syncMetricsCollector:      syncerMetrics,
 		customName:                customName,
-		errorState:                "",
+		errorState:                false,
 		logger:                    logger,
 		enableDegradedMode:        flags.F.EnableDegradedMode,
 		podLabelPropagationConfig: lpConfig,
@@ -212,11 +212,14 @@ func (s *transactionSyncer) syncInternal() error {
 	start := time.Now()
 	err := s.syncInternalImpl()
 	if err != nil {
-		s.logger.V(3).Info("Updating error state", "error state", s.getErrorStateReason(err))
-		s.setErrorState(s.getErrorStateReason(err))
+		if syncErr := negtypes.ClassifyError(err); syncErr.IsErrorState {
+			s.logger.V(3).Info("Updating error state", "error state", syncErr.Reason)
+			s.setErrorState()
+		}
 	}
 	s.updateStatus(err)
 	metrics.PublishNegSyncMetrics(string(s.NegSyncerKey.NegType), string(s.endpointsCalculator.Mode()), err, start)
+	s.syncMetricsCollector.UpdateSyncerStatusInMetrics(s.NegSyncerKey, err)
 	return err
 }
 
@@ -227,7 +230,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	}
 	if s.needInit || s.isZoneChange() {
 		if err := s.ensureNetworkEndpointGroups(); err != nil {
-			return err
+			return fmt.Errorf("%w: %v", negtypes.ErrNegNotFound, err)
 		}
 		s.needInit = false
 	}
@@ -235,7 +238,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 
 	currentMap, currentPodLabelMap, err := retrieveExistingZoneNetworkEndpointMap(s.NegSyncerKey.NegName, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode())
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %v", negtypes.ErrCurrentNegEPNotFound, err)
 	}
 	s.logStats(currentMap, "current NEG endpoints")
 
@@ -248,7 +251,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	var endpointPodMap negtypes.EndpointPodMap
 	slices, err := s.endpointSliceLister.ByIndex(endpointslices.EndpointSlicesByServiceIndex, endpointslices.FormatEndpointSlicesServiceKey(s.Namespace, s.Name))
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %v", negtypes.ErrEPSNotFound, err)
 	}
 	if len(slices) < 1 {
 		s.logger.Error(nil, "Endpoint slices for the service doesn't exist. Skipping NEG sync")
@@ -315,7 +318,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 		publishAnnotationSizeMetrics(addEndpoints, endpointPodLabelMap)
 	}
 
-	s.syncCollector.SetLabelPropagationStats(s.NegSyncerKey, collectLabelStats(currentPodLabelMap, endpointPodLabelMap, targetMap))
+	s.syncMetricsCollector.SetLabelPropagationStats(s.NegSyncerKey, collectLabelStats(currentPodLabelMap, endpointPodLabelMap, targetMap))
 
 	if s.needCommit() {
 		s.commitPods(committedEndpoints, endpointPodMap)
@@ -350,17 +353,17 @@ func (s *transactionSyncer) getEndpointsCalculation(
 
 // syncLock must already be acquired before execution
 func (s *transactionSyncer) inErrorState() bool {
-	return s.errorState != ""
+	return s.errorState
 }
 
 // syncLock must already be acquired before execution
-func (s *transactionSyncer) setErrorState(errorState string) {
-	s.errorState = errorState
+func (s *transactionSyncer) setErrorState() {
+	s.errorState = true
 }
 
 // syncLock must already be acquired before execution
 func (s *transactionSyncer) resetErrorState() {
-	s.errorState = ""
+	s.errorState = false
 }
 
 // ensureNetworkEndpointGroups ensures NEGs are created and configured correctly in the corresponding zones.
@@ -402,39 +405,6 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 
 	s.updateInitStatus(negObjRefs, errList)
 	return utilerrors.NewAggregate(errList)
-}
-
-// getErrorStateReason returns the reason of the error state based returned error
-func (s *transactionSyncer) getErrorStateReason(err error) string {
-	// these errors only occurs on NEG creation
-	// they are not related to endpoint sync, and they are also not relevant error state reason
-	if _, ok := err.(utilerrors.Aggregate); ok {
-		return ""
-	}
-	if result, contains := negtypes.ErrorStateResult[err]; contains {
-		return string(result)
-	}
-	return ""
-}
-
-// ValidEndpointBatch parse the error from endpoint batch response to NEG sync errors
-func (s *transactionSyncer) ValidateEndpointBatch(err error, operation transactionOp) error {
-	apiErr, ok := err.(*googleapi.Error)
-	if !ok {
-		s.logger.Info("Detected error when parsing batch response error", "operation", operation, "error", err)
-		return negtypes.ErrInvalidAPIResponse
-	}
-	errCode := apiErr.Code
-	if errCode == http.StatusBadRequest {
-		s.logger.Info("Detected error when sending endpoint batch information", "operation", operation, "errorCode", errCode)
-		if operation == attachOp {
-			return negtypes.ErrInvalidEPAttach
-		}
-		if operation == detachOp {
-			return negtypes.ErrInvalidEPDetach
-		}
-	}
-	return nil
 }
 
 // syncNetworkEndpoints spins off go routines to execute NEG operations
@@ -513,12 +483,19 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, zone stri
 
 	if err == nil {
 		s.recordEvent(apiv1.EventTypeNormal, operation.String(), fmt.Sprintf("%s %d network endpoint(s) (NEG %q in zone %q)", operation.String(), len(networkEndpointMap), s.NegSyncerKey.NegName, zone))
+		s.syncMetricsCollector.UpdateSyncerStatusInMetrics(s.NegSyncerKey, nil)
 	} else {
 		s.recordEvent(apiv1.EventTypeWarning, operation.String()+"Failed", fmt.Sprintf("Failed to %s %d network endpoint(s) (NEG %q in zone %q): %v", operation.String(), len(networkEndpointMap), s.NegSyncerKey.NegName, zone, err))
-		endpointBatchErr := s.ValidateEndpointBatch(err, operation)
-		if endpointBatchErr != nil {
+		err := checkEndpointBatchErr(err, operation)
+		syncErr := negtypes.ClassifyError(err)
+		s.syncMetricsCollector.UpdateSyncerStatusInMetrics(s.NegSyncerKey, syncErr)
+		// If the API call fails for invalid endpoint update request in any goroutine,
+		// we would set error state and retry. For successful calls, we won't update
+		// error state, so its value won't be overwritten within API call go routines.
+		if syncErr.IsErrorState {
+			s.logger.V(3).Info("Updating error state", "error state", syncErr.Reason)
 			s.syncLock.Lock()
-			s.setErrorState(s.getErrorStateReason(endpointBatchErr))
+			s.setErrorState()
 			s.syncLock.Unlock()
 		}
 	}
@@ -526,6 +503,26 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, zone stri
 	// WARNING: commitTransaction must be called at last for analyzing the operation result
 	s.commitTransaction(err, networkEndpointMap)
 	metrics.PublishNegOperationMetrics(operation.String(), string(s.NegSyncerKey.NegType), string(s.NegSyncerKey.GetAPIVersion()), err, len(networkEndpointMap), start)
+}
+
+// checkEndpointBatchErr checks the error from endpoint batch response
+// it returns an error-state error if NEG API error is due to bad endpoint batch request
+// otherwise, it returns the error unmodified
+func checkEndpointBatchErr(err error, operation transactionOp) error {
+	apiErr, ok := err.(*googleapi.Error)
+	if !ok {
+		return fmt.Errorf("%w: %v", negtypes.ErrInvalidAPIResponse, err)
+	}
+	errCode := apiErr.Code
+	if errCode == http.StatusBadRequest {
+		if operation == attachOp {
+			return fmt.Errorf("%w: %v", negtypes.ErrInvalidEPAttach, err)
+		}
+		if operation == detachOp {
+			return fmt.Errorf("%w: %v", negtypes.ErrInvalidEPDetach, err)
+		}
+	}
+	return err
 }
 
 func (s *transactionSyncer) recordEvent(eventType, reason, eventDesc string) {
