@@ -18,6 +18,7 @@ package syncers
 
 import (
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -225,15 +226,10 @@ type ZoneNetworkEndpointMapResult struct {
 }
 
 // toZoneNetworkEndpointMap translates addresses in endpoints object into zone and endpoints map, and also return the count for duplicated endpoints
-func toZoneNetworkEndpointMap(
-	eds []negtypes.EndpointsData,
-	zoneGetter negtypes.ZoneGetter,
-	podLister cache.Indexer,
-	servicePortName string,
-	networkEndpointType negtypes.NetworkEndpointType,
-) (ZoneNetworkEndpointMapResult, error) {
+func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.ZoneGetter, podLister cache.Indexer, servicePortName string, networkEndpointType negtypes.NetworkEndpointType, enableDualStackNEG bool) (ZoneNetworkEndpointMapResult, error) {
 	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
 	networkEndpointPodMap := negtypes.EndpointPodMap{}
+	ipsForPod := ipsForPod(eds)
 	dupCount := 0
 	if eds == nil {
 		klog.Errorf("Endpoint object is nil")
@@ -262,7 +258,7 @@ func toZoneNetworkEndpointMap(
 		foundMatchingPort = true
 
 		for _, endpointAddress := range ed.Addresses {
-			if endpointAddress.AddressType != discovery.AddressTypeIPv4 {
+			if !enableDualStackNEG && endpointAddress.AddressType != discovery.AddressTypeIPv4 {
 				klog.Infof("Skipping non IPv4 address: %q, in endpoint slice %s/%s", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
 				continue
 			}
@@ -293,24 +289,28 @@ func toZoneNetworkEndpointMap(
 				zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
 			}
 
-			for _, address := range endpointAddress.Addresses {
-				networkEndpoint := negtypes.NetworkEndpoint{IP: address, Port: matchPort, Node: *endpointAddress.NodeName}
-				if networkEndpointType == negtypes.NonGCPPrivateEndpointType {
-					// Non-GCP network endpoints don't have associated nodes.
-					networkEndpoint.Node = ""
-				}
-				zoneNetworkEndpointMap[zone].Insert(networkEndpoint)
-
-				// if existing name is alphabetically lower than current one, continue and don't replace
-				if existingPod, contains := networkEndpointPodMap[networkEndpoint]; contains {
-					dupCount += 1
-					if existingPod.Name < endpointAddress.TargetRef.Name {
-						klog.Infof("Found duplicate endpoints for %q, save the pod information from the alphabetically higher pod", address)
-						continue
-					}
-				}
-				networkEndpointPodMap[networkEndpoint] = types.NamespacedName{Namespace: endpointAddress.TargetRef.Namespace, Name: endpointAddress.TargetRef.Name}
+			podIPs := ipsForPod[types.NamespacedName{Namespace: endpointAddress.TargetRef.Namespace, Name: endpointAddress.TargetRef.Name}]
+			networkEndpoint := negtypes.NetworkEndpoint{IP: podIPs.IP, Port: matchPort, Node: *endpointAddress.NodeName}
+			if enableDualStackNEG {
+				// Convert all addresses to a standard form as per rfc5952 to prevent
+				// accidental diffs resulting from different formats.
+				networkEndpoint.IPv6 = parseIPAddress(podIPs.IPv6)
 			}
+			if networkEndpointType == negtypes.NonGCPPrivateEndpointType {
+				// Non-GCP network endpoints don't have associated nodes.
+				networkEndpoint.Node = ""
+			}
+			zoneNetworkEndpointMap[zone].Insert(networkEndpoint)
+
+			// if existing name is alphabetically lower than current one, continue and don't replace
+			if existingPod, contains := networkEndpointPodMap[networkEndpoint]; contains {
+				dupCount += 1
+				if existingPod.Name < endpointAddress.TargetRef.Name {
+					klog.Infof("Found duplicate endpoints for %v, save the pod information from the alphabetically higher pod", networkEndpoint)
+					continue // if existing name is alphabetically lower than current one, continue and don't replace
+				}
+			}
+			networkEndpointPodMap[networkEndpoint] = types.NamespacedName{Namespace: endpointAddress.TargetRef.Namespace, Name: endpointAddress.TargetRef.Name}
 		}
 	}
 	if !foundMatchingPort {
@@ -457,6 +457,32 @@ func validatePod(pod *apiv1.Pod, nodeLister cache.Indexer) bool {
 	return true
 }
 
+// ipsForPod will return a mapping of pods to their IPv4 and IPv6 addresses.
+func ipsForPod(eds []negtypes.EndpointsData) map[types.NamespacedName]negtypes.NetworkEndpoint {
+	result := make(map[types.NamespacedName]negtypes.NetworkEndpoint)
+	for _, ed := range eds {
+		for _, address := range ed.Addresses {
+			if address.TargetRef == nil || len(address.Addresses) < 1 {
+				continue
+			}
+			podNN := types.NamespacedName{Namespace: address.TargetRef.Namespace, Name: address.TargetRef.Name}
+			ne := result[podNN]
+			if address.AddressType == discovery.AddressTypeIPv4 {
+				// See the discussion in https://issue.k8s.io/106267 regarding why it is
+				// valid if we just pick the first IP.
+				ne.IP = address.Addresses[0]
+			}
+			if address.AddressType == discovery.AddressTypeIPv6 {
+				// See the discussion in https://issue.k8s.io/106267 regarding why it is
+				// valid if we just pick the first IP.
+				ne.IPv6 = address.Addresses[0]
+			}
+			result[podNN] = ne
+		}
+	}
+	return result
+}
+
 // retrieveExistingZoneNetworkEndpointMap lists existing network endpoints in the neg and return the zone and endpoints map
 func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter negtypes.ZoneGetter, cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, mode negtypes.EndpointsCalculatorMode) (map[string]negtypes.NetworkEndpointSet, error) {
 	// Include zones that have non-candidate nodes currently. It is possible that NEGs were created in those zones previously and the endpoints now became non-candidates.
@@ -524,4 +550,14 @@ func makeEndpointBatch(endpoints negtypes.NetworkEndpointSet, negType negtypes.N
 		}
 	}
 	return endpointBatch, nil
+}
+
+// parseIPAddress is used to normalize the given IPv4 or IPv6 address. If the
+// address is invalid, an empty string is returned.
+func parseIPAddress(address string) string {
+	result := net.ParseIP(address).String()
+	if result == "<nil>" {
+		return ""
+	}
+	return result
 }
