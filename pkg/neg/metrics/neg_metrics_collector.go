@@ -37,6 +37,8 @@ type SyncerMetrics struct {
 	syncerEndpointStateMap map[negtypes.NegSyncerKey]negtypes.StateCountMap
 	// syncerEPSStateMap is a map between syncer and endpoint slice state counts
 	syncerEPSStateMap map[negtypes.NegSyncerKey]negtypes.StateCountMap
+	// syncerLabelProagationStats is a map between syncer and label propagation stats.
+	syncerLabelProagationStats map[negtypes.NegSyncerKey]LabelPropagationStats
 	// mu avoid race conditions and ensure correctness of metrics
 	mu sync.Mutex
 	// duration between metrics exports
