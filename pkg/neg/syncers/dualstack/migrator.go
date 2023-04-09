@@ -17,6 +17,7 @@ limitations under the License.
 package dualstack
 
 import (
+	"math"
 	"sync"
 	"time"
 
@@ -27,6 +28,16 @@ import (
 const (
 	// Default time to wait between two successive migration-detachments.
 	defaultMigrationWaitDuration = 1 * time.Minute
+	// Default threshold used to determine if it has been too long since the last
+	// successful detachment.
+	defaultPreviousDetachThreshold = 5 * time.Minute
+	// Default multiplication factor used to decide the maximum number of
+	// endpoints which the migrator can attempt to migrate in each Filter
+	// invocation.
+	defaultFractionOfMigratingEndpoints float64 = 0.1
+	// Default multiplication factor used to decide if there are too many pending
+	// NEG attach operations.
+	defaultFractionForPendingAttachmentThreshold float64 = 0.5
 )
 
 // Migrator exposes functions to control the migration of single-stack
@@ -44,25 +55,33 @@ const (
 //
 // An endpoint is said to be a migration-endpoint if its current state is
 // single-stack but desired state is dual-stack (and vice versa.)
-//
-// TODO(gauravkghildiyal): Add details about the heuristics as we go on
-// implementing.
 type Migrator struct {
 	// Setting this to false will make all exported functions a no-op.
 	enableDualStack bool
 	// The NEG syncer which will be synced when Continue gets called.
 	syncer syncable
 
-	// mu protects paused and continueInProgress.
+	// mu protects paused, continueInProgress and previousDetach.
 	mu sync.Mutex
 	// Identifies whether the migrator is paused.
 	paused bool
 	// Identifies if some async operation triggered by Continue is still in
 	// progress.
 	continueInProgress bool
+	// The most recent time when Continue was invoked for a successful detachment.
+	previousDetach time.Time
 
 	// Time to wait between two successive migration-detachments.
 	migrationWaitDuration time.Duration
+	// Threshold used to determine if it has been too long since the
+	// last successful detachment.
+	previousDetachThreshold time.Duration
+	// Multiplication factor used to decide the maximum number of endpoints which
+	// the migrator can attempt to migrate in each Filter invocation.
+	fractionOfMigratingEndpoints float64
+	// Multiplication factor used to decide if there are too many pending NEG
+	// attach operations.
+	fractionForPendingAttachmentThreshold float64
 
 	logger klog.Logger
 }
@@ -73,10 +92,13 @@ type syncable interface {
 
 func NewMigrator(enableDualStackNEG bool, syncer syncable, logger klog.Logger) *Migrator {
 	return &Migrator{
-		enableDualStack:       enableDualStackNEG,
-		syncer:                syncer,
-		migrationWaitDuration: defaultMigrationWaitDuration,
-		logger:                logger.WithName("DualStackMigrator"),
+		enableDualStack:                       enableDualStackNEG,
+		syncer:                                syncer,
+		migrationWaitDuration:                 defaultMigrationWaitDuration,
+		previousDetachThreshold:               defaultPreviousDetachThreshold,
+		fractionOfMigratingEndpoints:          defaultFractionOfMigratingEndpoints,
+		fractionForPendingAttachmentThreshold: defaultFractionForPendingAttachmentThreshold,
+		logger:                                logger.WithName("DualStackMigrator"),
 	}
 }
 
@@ -91,9 +113,6 @@ func NewMigrator(enableDualStackNEG bool, syncer syncable, logger klog.Logger) *
 // empty return value signifies that detachment was not started (which is the
 // case when there were no migration-endpoints to begin with, or the migrator
 // was paused.)
-//
-// Refer the comment on [Migrator] for further details and
-// terminologies.
 func (d *Migrator) Filter(addEndpoints, removeEndpoints, committedEndpoints map[string]types.NetworkEndpointSet) string {
 	if !d.enableDualStack {
 		return ""
@@ -101,19 +120,14 @@ func (d *Migrator) Filter(addEndpoints, removeEndpoints, committedEndpoints map[
 
 	_, migrationEndpointsInRemoveSet := findAndFilterMigrationEndpoints(addEndpoints, removeEndpoints)
 
-	if d.isPaused() {
+	migrationCount := endpointsCount(migrationEndpointsInRemoveSet)
+	paused := d.isPaused()
+	if migrationCount == 0 || paused {
+		d.logger.V(2).Info("Not starting migration detachments", "migrationCount", migrationCount, "paused", paused)
 		return ""
 	}
 
-	// TODO(gauravkghildiyal): Implement rate limited migration-detachment.
-	for zone, endpointSet := range migrationEndpointsInRemoveSet {
-		if endpointSet.Len() != 0 {
-			removeEndpoints[zone] = removeEndpoints[zone].Union(endpointSet)
-			return zone
-		}
-	}
-
-	return ""
+	return d.calculateMigrationEndpointsToDetach(addEndpoints, removeEndpoints, committedEndpoints, migrationEndpointsInRemoveSet)
 }
 
 // Pause will prevent any subsequent Filter() invocations from starting
@@ -168,6 +182,7 @@ func (d *Migrator) Continue(err error) {
 	// NEG Detach succeeded; unpause after migrationWaitDuration and trigger
 	// resync.
 	d.continueInProgress = true
+	d.previousDetach = time.Now()
 	go func() {
 		time.Sleep(d.migrationWaitDuration)
 
@@ -185,6 +200,83 @@ func (d *Migrator) isPaused() bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.paused
+}
+
+// calculateMigrationEndpointsToDetach will move a subset of migrationEndpoints
+// to removeEndpoints so that they can be detached. The number of endpoints to
+// move will be determined using the following heuritic:
+//
+//  1. The desired number of endpoints which can be moved is:
+//
+//     fractionOfMigratingEndpoints * count(committedEndpoints + migrationEndpoints)
+//
+//  2. All endpoints being moved will be from the same zone.
+//
+//  3. If all zones have less than the desired number of endpoints, then all
+//     endpoints from the largest zone will be moved.
+//
+//  4. No endpoints will be moved if there are many endpoints waiting to be
+//     attached (as determined by the manyEndpointsWaitingToBeAttached()
+//     function) AND the previous successful detach was quite recent (as
+//     determined by the tooLongSincePreviousDetach() function)
+func (d *Migrator) calculateMigrationEndpointsToDetach(addEndpoints, removeEndpoints, committedEndpoints, migrationEndpoints map[string]types.NetworkEndpointSet) string {
+	addCount := endpointsCount(addEndpoints)
+	committedCount := endpointsCount(committedEndpoints)
+	migrationCount := endpointsCount(migrationEndpoints)
+
+	if d.manyEndpointsWaitingToBeAttached(addCount, committedCount, migrationCount) && !d.tooLongSincePreviousDetach() {
+		d.logger.V(1).Info("Not starting migration detachments; Too many attachments are pending and the threshold for forceful detach hasn't been reached.",
+			"addCount", addCount, "committedCount", committedCount, "migrationCount", migrationCount, "fractionForPendingAttachmentThreshold", d.fractionForPendingAttachmentThreshold,
+			"previousDetach", d.previousDetach, "previousDetachThreshold", d.previousDetachThreshold)
+		return ""
+	}
+
+	// Find the zone which has the maximum number of migration-endpoints.
+	zone, maxZoneEndpointCount := "", 0
+	for curZone, endpointSet := range migrationEndpoints {
+		if endpointSet.Len() > maxZoneEndpointCount {
+			maxZoneEndpointCount = endpointSet.Len()
+			zone = curZone
+		}
+	}
+	if zone == "" {
+		return ""
+	}
+
+	currentlyMigratingCount := int(math.Ceil(float64(committedCount+migrationCount) * d.fractionOfMigratingEndpoints))
+	if currentlyMigratingCount > maxZoneEndpointCount {
+		currentlyMigratingCount = maxZoneEndpointCount
+	}
+	d.logger.V(2).Info("Result of migration heuristic calculations", "currentlyMigratingCount", currentlyMigratingCount, "totalMigrationCount", migrationCount)
+
+	if removeEndpoints[zone] == nil {
+		removeEndpoints[zone] = types.NewNetworkEndpointSet()
+	}
+	for i := 0; i < currentlyMigratingCount; i++ {
+		endpoint, ok := migrationEndpoints[zone].PopAny()
+		if !ok {
+			break
+		}
+		removeEndpoints[zone].Insert(endpoint)
+	}
+
+	return zone
+}
+
+// Returns true if there are many endpoints waiting to be attached.
+//
+// Refer the implementation below to get the exact heuristic being used to
+// determine this.
+func (d *Migrator) manyEndpointsWaitingToBeAttached(addCount, committedCount, migrationCount int) bool {
+	return addCount >= int(math.Ceil(float64(committedCount+migrationCount)*d.fractionForPendingAttachmentThreshold))
+}
+
+// Returns true if the time since the last successful detach exceeds the
+// previousDetachThreshold
+func (d *Migrator) tooLongSincePreviousDetach() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return time.Since(d.previousDetach) >= d.previousDetachThreshold
 }
 
 // findAndFilterMigrationEndpoints will filter out the migration endpoints from
@@ -257,4 +349,12 @@ func moveEndpoint(e types.NetworkEndpoint, source, dest map[string]types.Network
 		return true
 	}
 	return false
+}
+
+func endpointsCount(endpointSets map[string]types.NetworkEndpointSet) int {
+	var count int
+	for _, endpointSet := range endpointSets {
+		count += endpointSet.Len()
+	}
+	return count
 }
