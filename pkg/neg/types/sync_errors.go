@@ -32,6 +32,8 @@ const (
 	ReasonInvalidAPIResponse        = Reason("InvalidAPIResponse")
 	ReasonInvalidEPAttach           = Reason("InvalidEPAttach")
 	ReasonInvalidEPDetach           = Reason("InvalidEPDetach")
+	ReasonEPIPNotFromPod            = Reason("EPIPNotFromPod")
+	ReasonEPIPOutOfPodCIDR          = Reason("EPIPOutOfPodCIDR")
 
 	// these are for non error-state error
 	ReasonNegNotFound          = Reason("NegNotFound")
@@ -112,6 +114,17 @@ var (
 		Reason:       ReasonInvalidEPDetach,
 		IsErrorState: true,
 	}
+	ErrEPIPNotFromPod = NegSyncError{
+		Err:          errors.New("endpoint has an IP that does not correspond to its pod"),
+		Reason:       ReasonEPIPNotFromPod,
+		IsErrorState: true,
+	}
+	ErrEPIPOutOfPodCIDR = NegSyncError{
+		Err:          errors.New("endpoint corresponds to a pod with IP out of PodCIDR range"),
+		Reason:       ReasonEPIPOutOfPodCIDR,
+		IsErrorState: true,
+	}
+
 	ErrNegNotFound = NegSyncError{
 		Err:          errors.New("failed to get NEG for service"),
 		Reason:       ReasonNegNotFound,

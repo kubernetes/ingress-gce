@@ -1803,11 +1803,15 @@ func TestEnableDegradedMode(t *testing.T) {
 			_, s := newTestTransactionSyncer(fakeCloud, negtypes.VmIpPortEndpointType, false)
 			s.NegSyncerKey.NegName = tc.negName
 			s.needInit = false
-			addPodsToLister(s.podLister)
+			addPodsToLister(s.podLister, getDefaultEndpointSlices())
 			for i := 1; i <= 4; i++ {
 				s.nodeLister.Add(&corev1.Node{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: fmt.Sprintf("instance%v", i),
+					},
+					Spec: corev1.NodeSpec{
+						PodCIDR:  fmt.Sprintf("10.100.%v.0/24", i),
+						PodCIDRs: []string{fmt.Sprintf("200%v:db8::/48", i), fmt.Sprintf("10.100.%v.0/24", i)},
 					},
 				})
 			}
