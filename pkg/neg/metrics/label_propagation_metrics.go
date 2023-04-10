@@ -50,6 +50,8 @@ var (
 			Subsystem: negControllerSubsystem,
 			Name:      labelNumber,
 			Help:      "The number of labels per endpoint",
+			// custom buckets - [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, +Inf]
+			Buckets: prometheus.ExponentialBuckets(1, 2, 13),
 		},
 	)
 
@@ -57,7 +59,9 @@ var (
 		prometheus.HistogramOpts{
 			Subsystem: negControllerSubsystem,
 			Name:      annotationSize,
-			Help:      "The size of endpoint annotations per endpoint",
+			Help:      "The size in byte of endpoint annotations per endpoint",
+			// custom buckets - [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, +Inf]
+			Buckets: prometheus.ExponentialBuckets(1, 2, 13),
 		},
 	)
 
@@ -81,4 +85,15 @@ type LabelPropagationStats struct {
 type LabelPropagationMetrics struct {
 	EndpointsWithAnnotation int
 	NumberOfEndpoints       int
+}
+
+// PublishLabelPropagationError publishes error occured during label propagation.
+func PublishLabelPropagationError(errType string) {
+	LabelPropagationError.WithLabelValues(errType).Inc()
+}
+
+// PublishAnnotationMetrics publishes collected metrics for endpoint annotations.
+func PublishAnnotationMetrics(annotationSize int, labelNumber int) {
+	AnnotationSize.Observe(float64(annotationSize))
+	LabelNumber.Observe(float64(labelNumber))
 }

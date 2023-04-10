@@ -108,3 +108,16 @@ func (sm *SyncerMetrics) SetSyncerEPMetrics(key negtypes.NegSyncerKey, endpointS
 	}
 	sm.syncerEPSStateMap[key] = endpointStat.EndpointSliceStateCount
 }
+
+// computeLabelMetrics aggregates label propagation metrics.
+func (sm *SyncerMetrics) computeLabelMetrics() LabelPropagationMetrics {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	lpMetrics := LabelPropagationMetrics{}
+	for _, stats := range sm.syncerLabelProagationStats {
+		lpMetrics.EndpointsWithAnnotation += stats.EndpointsWithAnnotation
+		lpMetrics.NumberOfEndpoints += stats.NumberOfEndpoints
+	}
+	return lpMetrics
+}
