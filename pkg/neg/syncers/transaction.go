@@ -274,6 +274,9 @@ func (s *transactionSyncer) syncInternalImpl() error {
 			return degradedModeErr
 		}
 		notInDegraded, onlyInDegraded := calculateNetworkEndpointDifference(targetMap, degradedTargetMap)
+		if err == nil { // we collect metrics when the normal calculation doesn't run into error
+			computeDegradedModeCorrectness(notInDegraded, onlyInDegraded, string(s.NegSyncerKey.NegType))
+		}
 		if s.inErrorState() {
 			targetMap = degradedTargetMap
 			endpointPodMap = degradedPodMap
@@ -281,7 +284,6 @@ func (s *transactionSyncer) syncInternalImpl() error {
 				s.resetErrorState()
 			}
 		}
-		// TODO(cheungdavid): in the else branch, publish metrics if we don't encounter error and we are not in error state
 	}
 	s.logStats(targetMap, "desired NEG endpoints")
 
@@ -765,6 +767,20 @@ func (s *transactionSyncer) computeEPSStaleness(endpointSlices []*discovery.Endp
 		metrics.PublishNegEPSStalenessMetrics(epsStaleness)
 		s.logger.V(3).Info("Endpoint slice syncs", "Namespace", endpointSlice.Namespace, "Name", endpointSlice.Name, "staleness", epsStaleness)
 	}
+}
+
+// computeDegradedModeCorrectness computes degraded mode correctness metrics based on the difference between degraded mode and normal calculation
+func computeDegradedModeCorrectness(notInDegraded, onlyInDegraded map[string]negtypes.NetworkEndpointSet, negType string) {
+	notInDegradedEndpoints := 0
+	for _, val := range notInDegraded {
+		notInDegradedEndpoints += len(val)
+	}
+	metrics.PublishDegradedModeCorrectnessMetrics(notInDegradedEndpoints, metrics.NotInDegradedEndpoints, negType)
+	onlyInDegradedEndpoints := 0
+	for _, val := range onlyInDegraded {
+		onlyInDegradedEndpoints += len(val)
+	}
+	metrics.PublishDegradedModeCorrectnessMetrics(onlyInDegradedEndpoints, metrics.OnlyInDegradedEndpoints, negType)
 }
 
 // getNegFromStore returns the neg associated with the provided namespace and neg name if it exists otherwise throws an error
