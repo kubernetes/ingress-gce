@@ -371,15 +371,11 @@ func getEndpointPod(
 
 // toZoneNetworkEndpointMap translates addresses in endpoints object into zone and endpoints map, and also return the count for duplicated endpoints
 // we will not raise error in degraded mode for misconfigured endpoints, instead they will be filtered directly
-func toZoneNetworkEndpointMapDegradedMode(
-	eds []negtypes.EndpointsData,
-	zoneGetter negtypes.ZoneGetter,
-	podLister, nodeLister cache.Indexer,
-	servicePortName string,
-	networkEndpointType negtypes.NetworkEndpointType,
-) ZoneNetworkEndpointMapResult {
+func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGetter negtypes.ZoneGetter, podLister, nodeLister cache.Indexer, servicePortName string, networkEndpointType negtypes.NetworkEndpointType, enableDualStackNEG bool) ZoneNetworkEndpointMapResult {
 	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
 	networkEndpointPodMap := negtypes.EndpointPodMap{}
+	dupCount := 0
+	ipsForPod := ipsForPod(eds)
 	for _, ed := range eds {
 		matchPort := ""
 		for _, port := range ed.Ports {
@@ -392,7 +388,7 @@ func toZoneNetworkEndpointMapDegradedMode(
 			continue
 		}
 		for _, endpointAddress := range ed.Addresses {
-			if endpointAddress.AddressType != discovery.AddressTypeIPv4 {
+			if !enableDualStackNEG && endpointAddress.AddressType != discovery.AddressTypeIPv4 {
 				klog.Infof("Skipping non IPv4 address in degraded mode: %q, in endpoint slice %s/%s", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
 				continue
 			}
@@ -414,23 +410,34 @@ func toZoneNetworkEndpointMapDegradedMode(
 			if zoneNetworkEndpointMap[zone] == nil {
 				zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
 			}
-			for _, address := range endpointAddress.Addresses {
-				networkEndpoint := negtypes.NetworkEndpoint{IP: address, Port: matchPort, Node: nodeName}
-				if networkEndpointType == negtypes.NonGCPPrivateEndpointType {
-					// Non-GCP network endpoints don't have associated nodes.
-					networkEndpoint.Node = ""
-				}
-				zoneNetworkEndpointMap[zone].Insert(networkEndpoint)
 
-				if existingPod, contains := networkEndpointPodMap[networkEndpoint]; contains {
-					// if existing name is alphabetically lower than current one, continue and don't replace
-					if existingPod.Name < endpointAddress.TargetRef.Name {
-						klog.Infof("Found duplicate endpoints for %q, save the pod information from the alphabetically higher pod", address)
-						continue
-					}
-				}
-				networkEndpointPodMap[networkEndpoint] = types.NamespacedName{Namespace: endpointAddress.TargetRef.Namespace, Name: endpointAddress.TargetRef.Name}
+			podIPs := ipsForPod[types.NamespacedName{Namespace: endpointAddress.TargetRef.Namespace, Name: endpointAddress.TargetRef.Name}]
+			// TODO(cheungdavid): Remove this validation when single stack ipv6 endpoint is supported
+			if parseIPAddress(podIPs.IP) == "" {
+				klog.Errorf("For endpoint %q in pod %q, it has an invalid IPv4 address, err: %v, skipping", endpointAddress.Addresses, pod.ObjectMeta.Name, negtypes.ErrEPIPNotFromPod)
+				continue
 			}
+			networkEndpoint := negtypes.NetworkEndpoint{IP: podIPs.IP, Port: matchPort, Node: nodeName}
+			if enableDualStackNEG {
+				// Convert all addresses to a standard form as per rfc5952 to prevent
+				// accidental diffs resulting from different formats.
+				networkEndpoint.IPv6 = parseIPAddress(podIPs.IPv6)
+			}
+			if networkEndpointType == negtypes.NonGCPPrivateEndpointType {
+				// Non-GCP network endpoints don't have associated nodes.
+				networkEndpoint.Node = ""
+			}
+			zoneNetworkEndpointMap[zone].Insert(networkEndpoint)
+
+			// if existing name is alphabetically lower than current one, continue and don't replace
+			if existingPod, contains := networkEndpointPodMap[networkEndpoint]; contains {
+				dupCount += 1
+				if existingPod.Name < endpointAddress.TargetRef.Name {
+					klog.Infof("Found duplicate endpoints for %v, save the pod information from the alphabetically higher pod", networkEndpoint)
+					continue // if existing name is alphabetically lower than current one, continue and don't replace
+				}
+			}
+			networkEndpointPodMap[networkEndpoint] = types.NamespacedName{Namespace: endpointAddress.TargetRef.Namespace, Name: endpointAddress.TargetRef.Name}
 		}
 	}
 	return ZoneNetworkEndpointMapResult{
