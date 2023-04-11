@@ -99,6 +99,81 @@ func calculateNetworkEndpointDifference(targetMap, currentMap map[string]negtype
 	return addSet, removeSet
 }
 
+// findAndFilterMigrationEndpoints will filter out the migration endpoints from
+// the `addEndpoints` and `removeEndpoints` sets. The passed sets will get
+// modified. The returned value will be two endpoints sets which will contain
+// the values that were filtered out from the `addEndpoints` and
+// `removeEndpoints` sets respectively.
+//
+// TODO(gauravkghildiyal): This function should be moved alongside
+// DualStackMigrator once that gets merged.
+func findAndFilterMigrationEndpoints(addEndpoints, removeEndpoints map[string]negtypes.NetworkEndpointSet) (map[string]negtypes.NetworkEndpointSet, map[string]negtypes.NetworkEndpointSet) {
+	allEndpoints := make(map[string]negtypes.NetworkEndpointSet)
+	for zone, endpointSet := range addEndpoints {
+		allEndpoints[zone] = allEndpoints[zone].Union(endpointSet)
+	}
+	for zone, endpointSet := range removeEndpoints {
+		allEndpoints[zone] = allEndpoints[zone].Union(endpointSet)
+	}
+
+	migrationEndpointsInAddSet := make(map[string]negtypes.NetworkEndpointSet)
+	migrationEndpointsInRemoveSet := make(map[string]negtypes.NetworkEndpointSet)
+	for zone, endpointSet := range allEndpoints {
+		for endpoint := range endpointSet {
+			if endpoint.IP == "" || endpoint.IPv6 == "" {
+				// Endpoint is not dual-stack so continue.
+				continue
+			}
+
+			// At this point, we know that `endpoint` is a dual-stack endpoint. An
+			// endpoint can be identified as migrating if the IPs from the dual-stack
+			// endpoint exist as individual single-stack endpoint inside
+			// `addEndpoints` or `removeEndpoints`.
+
+			// Construct single-stack endpoint corresponding to the dual-stack
+			// endpoint. Their existence will determine if an endpoint is migrating.
+			ipv4Only := endpoint
+			ipv4Only.IPv6 = ""
+			ipv6Only := endpoint
+			ipv6Only.IP = ""
+
+			isMigrating := false
+			// Check if endpoint is migrating from dual-stack to single-stack.
+			isMigrating = isMigrating || moveEndpoint(ipv4Only, addEndpoints, migrationEndpointsInAddSet, zone)
+			isMigrating = isMigrating || moveEndpoint(ipv6Only, addEndpoints, migrationEndpointsInAddSet, zone)
+			// Check if endpoint is migrating from single-stack to dual-stack.
+			isMigrating = isMigrating || moveEndpoint(ipv4Only, removeEndpoints, migrationEndpointsInRemoveSet, zone)
+			isMigrating = isMigrating || moveEndpoint(ipv6Only, removeEndpoints, migrationEndpointsInRemoveSet, zone)
+
+			if isMigrating {
+				moveEndpoint(endpoint, addEndpoints, migrationEndpointsInAddSet, zone)
+				moveEndpoint(endpoint, removeEndpoints, migrationEndpointsInRemoveSet, zone)
+			}
+		}
+	}
+
+	return migrationEndpointsInAddSet, migrationEndpointsInRemoveSet
+}
+
+// moveEndpoint deletes endpoint `e` from `source[zone]` and adds it to
+// `dest[zone]`. If the move was successful, `true` is returned. A return value
+// of `false` denotes that nothing was moved and no input variable were
+// modified.
+func moveEndpoint(e negtypes.NetworkEndpoint, source, dest map[string]negtypes.NetworkEndpointSet, zone string) bool {
+	if source == nil || dest == nil {
+		return false
+	}
+	if source[zone].Has(e) {
+		source[zone].Delete(e)
+		if dest[zone] == nil {
+			dest[zone] = negtypes.NewNetworkEndpointSet()
+		}
+		dest[zone].Insert(e)
+		return true
+	}
+	return false
+}
+
 // getService retrieves service object from serviceLister based on the input Namespace and Name
 func getService(serviceLister cache.Indexer, namespace, name string) *apiv1.Service {
 	if serviceLister == nil {

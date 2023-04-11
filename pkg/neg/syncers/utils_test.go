@@ -300,6 +300,251 @@ func TestNetworkEndpointCalculateDifference(t *testing.T) {
 	}
 }
 
+func TestFindAndFilterMigrationEndpoints(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name                              string
+		addEndpoints                      map[string]negtypes.NetworkEndpointSet
+		removeEndpoints                   map[string]negtypes.NetworkEndpointSet
+		wantMigrationEndpointsInAddSet    map[string]negtypes.NetworkEndpointSet
+		wantMigrationEndpointsInRemoveSet map[string]negtypes.NetworkEndpointSet
+	}{
+		{
+			name: "detect multiple migrating endpoints",
+			addEndpoints: map[string]negtypes.NetworkEndpointSet{
+				"zone1": negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "a", IPv6: "A"}, // migrating
+					{IP: "b"},
+					{IP: "c", IPv6: "C"},
+					{IP: "d"}, // migrating
+				}...),
+				"zone2": negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "e", IPv6: "E"}, // migrating
+				}...),
+			},
+			removeEndpoints: map[string]negtypes.NetworkEndpointSet{
+				"zone1": negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "a"}, // migrating
+					{IP: "f", IPv6: "F"},
+					{IP: "d", IPv6: "D"}, // migrating
+				}...),
+				"zone2": negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IPv6: "E"}, // migrating
+				}...),
+			},
+			wantMigrationEndpointsInAddSet: map[string]negtypes.NetworkEndpointSet{
+				"zone1": negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "a", IPv6: "A"},
+					{IP: "d"},
+				}...),
+				"zone2": negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "e", IPv6: "E"},
+				}...),
+			},
+			wantMigrationEndpointsInRemoveSet: map[string]negtypes.NetworkEndpointSet{
+				"zone1": negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "a"},
+					{IP: "d", IPv6: "D"},
+				}...),
+				"zone2": negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IPv6: "E"},
+				}...),
+			},
+		},
+		{
+			name: "partial IP change without stack change is not considered migrating",
+			addEndpoints: map[string]negtypes.NetworkEndpointSet{
+				"zone1": negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "a", IPv6: "A"},
+				}...),
+			},
+			removeEndpoints: map[string]negtypes.NetworkEndpointSet{
+				"zone1": negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "a", Port: "B"},
+				}...),
+			},
+			wantMigrationEndpointsInAddSet:    map[string]negtypes.NetworkEndpointSet{},
+			wantMigrationEndpointsInRemoveSet: map[string]negtypes.NetworkEndpointSet{},
+		},
+		{
+			name: "difference in port or node is not considered migrating",
+			addEndpoints: map[string]negtypes.NetworkEndpointSet{
+				"zone1": negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "a", IPv6: "A", Port: "80"},
+					{IP: "b", Node: "node2"},
+				}...),
+			},
+			removeEndpoints: map[string]negtypes.NetworkEndpointSet{
+				"zone1": negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "a", Port: "81"},
+					{IP: "b", IPv6: "B", Node: "node1"},
+				}...),
+			},
+			wantMigrationEndpointsInAddSet:    map[string]negtypes.NetworkEndpointSet{},
+			wantMigrationEndpointsInRemoveSet: map[string]negtypes.NetworkEndpointSet{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			gotMigrationEndpointsInAddSet, gotMigrationEndpointsInRemoveSet := findAndFilterMigrationEndpoints(tc.addEndpoints, tc.removeEndpoints)
+
+			if diff := cmp.Diff(tc.wantMigrationEndpointsInAddSet, gotMigrationEndpointsInAddSet); diff != "" {
+				t.Errorf("findAndFilterMigrationEndpoints(tc.addEndpoints, tc.removeEndpoints) returned unexpected diff for migrationEndpointsInAddSet (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.wantMigrationEndpointsInRemoveSet, gotMigrationEndpointsInRemoveSet); diff != "" {
+				t.Errorf("findAndFilterMigrationEndpoints(tc.addEndpoints, tc.removeEndpoints) returned unexpected diff for migrationEndpointsInRemoveSet (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestMoveEndpoint(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name        string
+		endpoint    negtypes.NetworkEndpoint
+		inputSource map[string]negtypes.NetworkEndpointSet
+		inputDest   map[string]negtypes.NetworkEndpointSet
+		wantSource  map[string]negtypes.NetworkEndpointSet
+		wantDest    map[string]negtypes.NetworkEndpointSet
+		zone        string
+		wantSuccess bool
+	}{
+		{
+			name:     "completely valid input, shoud successfully move",
+			endpoint: negtypes.NetworkEndpoint{IP: "a", IPv6: "A"},
+			inputSource: map[string]negtypes.NetworkEndpointSet{
+				"zone1": negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "a", IPv6: "A"},
+					{IP: "b", IPv6: "B"},
+				}...),
+			},
+			inputDest: map[string]negtypes.NetworkEndpointSet{
+				"zone1": negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "c", IPv6: "C"},
+				}...),
+			},
+			wantSource: map[string]negtypes.NetworkEndpointSet{
+				"zone1": negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "b", IPv6: "B"},
+				}...),
+			},
+			wantDest: map[string]negtypes.NetworkEndpointSet{
+				"zone1": negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "a", IPv6: "A"},
+					{IP: "c", IPv6: "C"},
+				}...),
+			},
+			zone:        "zone1",
+			wantSuccess: true,
+		},
+		{
+			name:     "zone does not exist in source",
+			endpoint: negtypes.NetworkEndpoint{IP: "a", IPv6: "A"},
+			inputSource: map[string]negtypes.NetworkEndpointSet{
+				"zone1": negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "a", IPv6: "A"},
+				}...),
+			},
+			inputDest: map[string]negtypes.NetworkEndpointSet{
+				"zone3": negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "c", IPv6: "C"},
+				}...),
+			},
+			wantSource: map[string]negtypes.NetworkEndpointSet{
+				"zone1": negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "a", IPv6: "A"},
+				}...),
+			},
+			wantDest: map[string]negtypes.NetworkEndpointSet{
+				"zone3": negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "c", IPv6: "C"},
+				}...),
+			},
+			zone: "zone3",
+		},
+		{
+			name:     "zone does not exist in destination, shoud successfully move",
+			endpoint: negtypes.NetworkEndpoint{IP: "a", IPv6: "A"},
+			inputSource: map[string]negtypes.NetworkEndpointSet{
+				"zone1": negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "a", IPv6: "A"},
+					{IP: "b", IPv6: "B"},
+				}...),
+			},
+			inputDest: map[string]negtypes.NetworkEndpointSet{
+				"zone2": negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "c", IPv6: "C"},
+				}...),
+			},
+			wantSource: map[string]negtypes.NetworkEndpointSet{
+				"zone1": negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "b", IPv6: "B"},
+				}...),
+			},
+			wantDest: map[string]negtypes.NetworkEndpointSet{
+				"zone1": negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "a", IPv6: "A"},
+				}...),
+				"zone2": negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "c", IPv6: "C"},
+				}...),
+			},
+			zone:        "zone1",
+			wantSuccess: true,
+		},
+		{
+			name:     "source is nil",
+			endpoint: negtypes.NetworkEndpoint{IP: "a", IPv6: "A"},
+			inputDest: map[string]negtypes.NetworkEndpointSet{
+				"zone3": negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "c", IPv6: "C"},
+				}...),
+			},
+			wantDest: map[string]negtypes.NetworkEndpointSet{
+				"zone3": negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "c", IPv6: "C"},
+				}...),
+			},
+			zone: "zone3",
+		},
+		{
+			name:     "destination is nil",
+			endpoint: negtypes.NetworkEndpoint{IP: "a", IPv6: "A"},
+			inputSource: map[string]negtypes.NetworkEndpointSet{
+				"zone3": negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "c", IPv6: "C"},
+				}...),
+			},
+			wantSource: map[string]negtypes.NetworkEndpointSet{
+				"zone3": negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+					{IP: "c", IPv6: "C"},
+				}...),
+			},
+			zone: "zone3",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			gotSuccess := moveEndpoint(tc.endpoint, tc.inputSource, tc.inputDest, tc.zone)
+
+			if gotSuccess != tc.wantSuccess {
+				t.Errorf("moveEndpoint(%v, ...) = %v, want = %v", tc.endpoint, gotSuccess, tc.wantSuccess)
+			}
+			if diff := cmp.Diff(tc.wantSource, tc.inputSource); diff != "" {
+				t.Errorf("moveEndpoint(%v, ...) returned unexpected diff for source (-want +got):\n%s", tc.endpoint, diff)
+			}
+			if diff := cmp.Diff(tc.wantDest, tc.inputDest); diff != "" {
+				t.Errorf("moveEndpoint(%v, ...) returned unexpected diff for destination (-want +got):\n%s", tc.endpoint, diff)
+			}
+		})
+	}
+}
+
 func TestEnsureNetworkEndpointGroup(t *testing.T) {
 	var (
 		testZone             = "test-zone"
