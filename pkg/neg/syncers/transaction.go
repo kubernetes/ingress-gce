@@ -290,7 +290,12 @@ func (s *transactionSyncer) syncInternalImpl() error {
 		// Identification of migration endpoints should happen before we filter out
 		// the transaction endpoints. Not doing so could result in an attempt to
 		// attach an endpoint which is still undergoing detachment-due-to-migration.
-		findAndFilterMigrationEndpoints(addEndpoints, removeEndpoints)
+		_, migratingEndpointsInRemoveSet := findAndFilterMigrationEndpoints(addEndpoints, removeEndpoints)
+
+		// TODO(gauravkghildiyal): Implement rate limited migration-detachment.
+		for zone, endpointSet := range migratingEndpointsInRemoveSet {
+			removeEndpoints[zone] = removeEndpoints[zone].Union(endpointSet)
+		}
 	}
 
 	// Filter out the endpoints with existing transaction
