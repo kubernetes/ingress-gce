@@ -33,6 +33,7 @@ import (
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
@@ -599,7 +600,7 @@ func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter negtypes.
 
 // makeEndpointBatch return a batch of endpoint from the input and remove the endpoints from input set
 // The return map has the encoded endpoint as key and GCE network endpoint object as value
-func makeEndpointBatch(endpoints negtypes.NetworkEndpointSet, negType negtypes.NetworkEndpointType) (map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, error) {
+func makeEndpointBatch(endpoints negtypes.NetworkEndpointSet, negType negtypes.NetworkEndpointType, endpointPodLabelMap labels.EndpointPodLabelMap) (map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, error) {
 	endpointBatch := map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint{}
 
 	for i := 0; i < MAX_NETWORK_ENDPOINTS_PER_BATCH; i++ {
@@ -617,11 +618,20 @@ func makeEndpointBatch(endpoints negtypes.NetworkEndpointSet, negType negtypes.N
 			if err != nil {
 				return nil, fmt.Errorf("failed to decode endpoint port %v: %w", networkEndpoint, err)
 			}
-			endpointBatch[networkEndpoint] = &composite.NetworkEndpoint{
+			cloudNetworkEndpoint := &composite.NetworkEndpoint{
 				Instance:  networkEndpoint.Node,
 				IpAddress: networkEndpoint.IP,
 				Port:      int64(portNum),
 			}
+			if flags.F.EnableNEGLabelPropagation {
+				annotations, ok := endpointPodLabelMap[networkEndpoint]
+				if !ok {
+					klog.Errorf("Can not find annotations for endpoint %v from endpointPodLabelMap: %v", networkEndpoint, err)
+				} else {
+					cloudNetworkEndpoint.Annotations = annotations
+				}
+			}
+			endpointBatch[networkEndpoint] = cloudNetworkEndpoint
 		}
 	}
 	return endpointBatch, nil

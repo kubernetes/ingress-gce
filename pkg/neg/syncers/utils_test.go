@@ -36,6 +36,8 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -1186,41 +1188,83 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 }
 
 func TestMakeEndpointBatch(t *testing.T) {
+	oldFlag := flags.F.EnableNEGLabelPropagation
+	defer func() { flags.F.EnableNEGLabelPropagation = oldFlag }()
+
 	testCases := []struct {
-		desc        string
-		endpointNum int
-		leftOverNum int
+		desc                 string
+		labelPropagationFlag bool
+		endpointNum          int
+		leftOverNum          int
 	}{
 		{
 			"input with zero endpoints",
+			false,
 			0,
 			0,
 		},
 		{
 			"input with 1 endpoints",
+			false,
 			1,
 			0,
 		},
 		{
 			"input with 500 endpoints",
+			false,
 			500,
 			0,
 		},
 		{
 			"input with 501 endpoints",
+			false,
 			501,
 			1,
 		},
 		{
 			"input with 1000 endpoints",
+			false,
+			1000,
+			500,
+		},
+		{
+			"input with zero endpoints with label propagation",
+			true,
+			0,
+			0,
+		},
+		{
+			"input with 1 endpoints with label propagation",
+			true,
+			1,
+			0,
+		},
+		{
+			"input with 500 endpoints with label propagation",
+			true,
+			500,
+			0,
+		},
+		{
+			"input with 501 endpoints with label propagation",
+			true,
+			501,
+			1,
+		},
+		{
+			"input with 1000 endpoints with label propagation",
+			true,
 			1000,
 			500,
 		},
 	}
 	for _, negType := range []negtypes.NetworkEndpointType{negtypes.VmIpPortEndpointType, negtypes.VmIpEndpointType} {
 		for _, tc := range testCases {
-			endpointSet, endpointMap := genTestEndpoints(tc.endpointNum, negType)
-			out, err := makeEndpointBatch(endpointSet, negType)
+			flags.F.EnableNEGLabelPropagation = tc.labelPropagationFlag
+
+			endpointSet, endpointMap, endpointPodLabelMap := genTestEndpoints(tc.endpointNum, negType, flags.F.EnableNEGLabelPropagation)
+
+			out, err := makeEndpointBatch(endpointSet, negType, endpointPodLabelMap)
 
 			if err != nil {
 				t.Errorf("Expect err = nil, but got %v", err)
@@ -2070,12 +2114,17 @@ func numToIP(input int) string {
 	return net.IP(ip).String()
 }
 
-func genTestEndpoints(num int, epType negtypes.NetworkEndpointType) (negtypes.NetworkEndpointSet, map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
+func genTestEndpoints(num int, epType negtypes.NetworkEndpointType, lpFlag bool) (negtypes.NetworkEndpointSet, map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, labels.EndpointPodLabelMap) {
 	endpointSet := negtypes.NewNetworkEndpointSet()
 	endpointMap := map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint{}
+	endpointPodLabelMap := labels.EndpointPodLabelMap{}
 	ip := "1.2.3.4"
 	instance := "instance"
 	port := 0
+	annotations := map[string]string{
+		"label1": "value1",
+		"label2": "value2",
+	}
 	for count := 0; count < num; count++ {
 		switch epType {
 		case negtypes.VmIpEndpointType:
@@ -2090,14 +2139,19 @@ func genTestEndpoints(num int, epType negtypes.NetworkEndpointType) (negtypes.Ne
 			port++
 			key := negtypes.NetworkEndpoint{IP: ip, Node: instance, Port: strconv.Itoa(port)}
 			endpointSet.Insert(key)
-			endpointMap[key] = &composite.NetworkEndpoint{
+			endpointPodLabelMap[key] = annotations
+			networkEndpoint := &composite.NetworkEndpoint{
 				IpAddress: ip,
 				Instance:  instance,
 				Port:      int64(port),
 			}
+			if lpFlag {
+				networkEndpoint.Annotations = annotations
+			}
+			endpointMap[key] = networkEndpoint
 		}
 	}
-	return endpointSet, endpointMap
+	return endpointSet, endpointMap, endpointPodLabelMap
 }
 
 func networkEndpointFromEncodedEndpoint(encodedEndpoint string) negtypes.NetworkEndpoint {
