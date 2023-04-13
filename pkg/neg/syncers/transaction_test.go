@@ -1532,7 +1532,7 @@ func TestUnknownNodes(t *testing.T) {
 	}
 
 	// Check that unknown zone did not cause endpoints to be removed
-	out, err := retrieveExistingZoneNetworkEndpointMap(testNegName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode)
+	out, _, err := retrieveExistingZoneNetworkEndpointMap(testNegName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode)
 	if err != nil {
 		t.Errorf("errored retrieving existing network endpoints")
 	}
@@ -1761,7 +1761,7 @@ func TestEnableDegradedMode(t *testing.T) {
 			(s.syncer.(*syncer)).stopped = false
 			tc.modify(s)
 
-			out, err := retrieveExistingZoneNetworkEndpointMap(tc.negName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode)
+			out, _, err := retrieveExistingZoneNetworkEndpointMap(tc.negName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode)
 			if err != nil {
 				t.Errorf("errored retrieving existing network endpoints")
 			}
@@ -1777,7 +1777,7 @@ func TestEnableDegradedMode(t *testing.T) {
 				t.Errorf("after syncInternal, error state is %v, expected to be %v", s.inErrorState(), tc.expectedInErrorState)
 			}
 			err = wait.PollImmediate(time.Second, 3*time.Second, func() (bool, error) {
-				out, err = retrieveExistingZoneNetworkEndpointMap(tc.negName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode)
+				out, _, err = retrieveExistingZoneNetworkEndpointMap(tc.negName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode)
 				if err != nil {
 					return false, err
 				}
@@ -1906,6 +1906,109 @@ func TestGetEndpointPodLabelMap(t *testing.T) {
 		endpointPodLabelMap := getEndpointPodLabelMap(endpoints, endpointPodMap, podLister, lpConfig, nil, klog.TODO())
 		if diff := cmp.Diff(endpointPodLabelMap, expectMap); diff != "" {
 			t.Errorf("For test case %s: got endpointPodLabelMap %+v, want %+v, diff %s", tc.desc, endpointPodLabelMap, expectMap, diff)
+		}
+	}
+}
+
+func TestCollectLabelStats(t *testing.T) {
+	t.Parallel()
+
+	testIP1 := "1.2.3.4"
+	testIP2 := "1.2.3.5"
+	testIP3 := "1.2.3.6"
+	testIP4 := "1.2.3.7"
+	testPort := int64(80)
+	endpoint1 := negtypes.NetworkEndpoint{IP: testIP1, Node: negtypes.TestInstance1, Port: strconv.Itoa(int(testPort))}
+	endpoint2 := negtypes.NetworkEndpoint{IP: testIP2, Node: negtypes.TestInstance2, Port: strconv.Itoa(int(testPort))}
+	endpoint3 := negtypes.NetworkEndpoint{IP: testIP3, Node: negtypes.TestInstance3, Port: strconv.Itoa(int(testPort))}
+	endpoint4 := negtypes.NetworkEndpoint{IP: testIP4, Node: negtypes.TestInstance4, Port: strconv.Itoa(int(testPort))}
+
+	for _, tc := range []struct {
+		desc              string
+		curLabelMap       labels.EndpointPodLabelMap
+		addLabelMap       labels.EndpointPodLabelMap
+		targetEndpointMap map[string]negtypes.NetworkEndpointSet
+		expect            metrics.LabelPropagationStats
+	}{
+		{
+			desc:              "Empty inputs",
+			curLabelMap:       labels.EndpointPodLabelMap{},
+			addLabelMap:       labels.EndpointPodLabelMap{},
+			targetEndpointMap: map[string]negtypes.NetworkEndpointSet{},
+			expect: metrics.LabelPropagationStats{
+				EndpointsWithAnnotation: 0,
+				NumberOfEndpoints:       0,
+			},
+		},
+		{
+			desc: "No new endpoints to be added",
+			curLabelMap: labels.EndpointPodLabelMap{
+				endpoint1: labels.PodLabelMap{
+					"foo": "bar",
+				},
+			},
+			addLabelMap: labels.EndpointPodLabelMap{},
+			targetEndpointMap: map[string]negtypes.NetworkEndpointSet{
+				testZone1: negtypes.NewNetworkEndpointSet(
+					endpoint1,
+					endpoint2,
+				),
+			},
+			expect: metrics.LabelPropagationStats{
+				EndpointsWithAnnotation: 1,
+				NumberOfEndpoints:       2,
+			},
+		},
+		{
+			desc: "Some endpoints to be added",
+			curLabelMap: labels.EndpointPodLabelMap{
+				endpoint1: labels.PodLabelMap{
+					"foo": "bar",
+				},
+			},
+			addLabelMap: labels.EndpointPodLabelMap{
+				endpoint3: labels.PodLabelMap{
+					"foo": "bar",
+				},
+			},
+			targetEndpointMap: map[string]negtypes.NetworkEndpointSet{
+				testZone1: negtypes.NewNetworkEndpointSet(
+					endpoint1,
+					endpoint2,
+				),
+				testZone2: negtypes.NewNetworkEndpointSet(
+					endpoint3,
+					endpoint4,
+				),
+			},
+			expect: metrics.LabelPropagationStats{
+				EndpointsWithAnnotation: 2,
+				NumberOfEndpoints:       4,
+			},
+		},
+		{
+			desc:        "Only newly added endpoints",
+			curLabelMap: labels.EndpointPodLabelMap{},
+			addLabelMap: labels.EndpointPodLabelMap{
+				endpoint3: labels.PodLabelMap{
+					"foo": "bar",
+				},
+			},
+			targetEndpointMap: map[string]negtypes.NetworkEndpointSet{
+				testZone2: negtypes.NewNetworkEndpointSet(
+					endpoint3,
+					endpoint4,
+				),
+			},
+			expect: metrics.LabelPropagationStats{
+				EndpointsWithAnnotation: 1,
+				NumberOfEndpoints:       2,
+			},
+		},
+	} {
+		out := collectLabelStats(tc.curLabelMap, tc.addLabelMap, tc.targetEndpointMap)
+		if diff := cmp.Diff(out, tc.expect); diff != "" {
+			t.Errorf("For test case %s: (-want +got): \n%s", tc.desc, diff)
 		}
 	}
 }

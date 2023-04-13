@@ -955,12 +955,21 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 	testIP7 := "1.2.3.10"
 	testPort := int64(80)
 
+	endpoint1 := negtypes.NetworkEndpoint{IP: testIP1, Node: negtypes.TestInstance1, Port: strconv.Itoa(int(testPort))}
+	endpoint2 := negtypes.NetworkEndpoint{IP: testIP2, Node: negtypes.TestInstance2, Port: strconv.Itoa(int(testPort))}
+	endpoint3 := negtypes.NetworkEndpoint{IP: testIP3, Node: negtypes.TestInstance3, Port: strconv.Itoa(int(testPort))}
+	endpoint4 := negtypes.NetworkEndpoint{IP: testIP4, Node: negtypes.TestInstance4, Port: strconv.Itoa(int(testPort))}
+	endpoint5 := negtypes.NetworkEndpoint{IP: testIP5, Node: negtypes.TestUnreadyInstance1, Port: strconv.Itoa(int(testPort))}
+	endpoint6 := negtypes.NetworkEndpoint{IP: testIP6, Node: negtypes.TestUpgradeInstance1, Port: strconv.Itoa(int(testPort))}
+	endpoint7 := negtypes.NetworkEndpoint{IP: testIP7, Node: negtypes.TestUpgradeInstance2, Port: strconv.Itoa(int(testPort))}
+
 	testCases := []struct {
-		desc      string
-		mutate    func(cloud negtypes.NetworkEndpointGroupCloud)
-		mode      negtypes.EndpointsCalculatorMode
-		expect    map[string]negtypes.NetworkEndpointSet
-		expectErr bool
+		desc                string
+		mutate              func(cloud negtypes.NetworkEndpointGroupCloud)
+		mode                negtypes.EndpointsCalculatorMode
+		expect              map[string]negtypes.NetworkEndpointSet
+		expectAnnotationMap labels.EndpointPodLabelMap
+		expectErr           bool
 	}{
 		{
 			desc:      "neg does not exist",
@@ -992,7 +1001,8 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(),
 				negtypes.TestZone4: negtypes.NewNetworkEndpointSet(),
 			},
-			expectErr: false,
+			expectAnnotationMap: labels.EndpointPodLabelMap{},
+			expectErr:           false,
 		},
 		{
 			desc: "one empty and two non-empty negs",
@@ -1002,13 +1012,21 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 						Instance:  negtypes.TestInstance1,
 						IpAddress: testIP1,
 						Port:      testPort,
+						Annotations: map[string]string{
+							"foo": "bar",
+						},
 					},
 				}, meta.VersionGA)
 			},
 			expect: map[string]negtypes.NetworkEndpointSet{
-				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: testIP1, Node: negtypes.TestInstance1, Port: strconv.Itoa(int(testPort))}),
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(endpoint1),
 				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(),
 				negtypes.TestZone4: negtypes.NewNetworkEndpointSet(),
+			},
+			expectAnnotationMap: labels.EndpointPodLabelMap{
+				endpoint1: labels.PodLabelMap{
+					"foo": "bar",
+				},
 			},
 			expectErr: false,
 		},
@@ -1020,16 +1038,27 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 						Instance:  negtypes.TestInstance2,
 						IpAddress: testIP2,
 						Port:      testPort,
+						Annotations: map[string]string{
+							"foo": "bar",
+						},
 					},
 				}, meta.VersionGA)
 			},
 			expect: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
-					negtypes.NetworkEndpoint{IP: testIP1, Node: negtypes.TestInstance1, Port: strconv.Itoa(int(testPort))},
-					negtypes.NetworkEndpoint{IP: testIP2, Node: negtypes.TestInstance2, Port: strconv.Itoa(int(testPort))},
+					endpoint1,
+					endpoint2,
 				),
 				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(),
 				negtypes.TestZone4: negtypes.NewNetworkEndpointSet(),
+			},
+			expectAnnotationMap: labels.EndpointPodLabelMap{
+				endpoint1: labels.PodLabelMap{
+					"foo": "bar",
+				},
+				endpoint2: labels.PodLabelMap{
+					"foo": "bar",
+				},
 			},
 			expectErr: false,
 		},
@@ -1041,29 +1070,49 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 						Instance:  negtypes.TestInstance3,
 						IpAddress: testIP3,
 						Port:      testPort,
+						Annotations: map[string]string{
+							"foo": "bar",
+						},
 					},
 					{
 						Instance:  negtypes.TestInstance4,
 						IpAddress: testIP4,
 						Port:      testPort,
+						Annotations: map[string]string{
+							"foo": "bar",
+						},
 					},
 				}, meta.VersionGA)
 			},
 			expect: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
-					negtypes.NetworkEndpoint{IP: testIP1, Node: negtypes.TestInstance1, Port: strconv.Itoa(int(testPort))},
-					negtypes.NetworkEndpoint{IP: testIP2, Node: negtypes.TestInstance2, Port: strconv.Itoa(int(testPort))},
+					endpoint1,
+					endpoint2,
 				),
 				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
-					negtypes.NetworkEndpoint{IP: testIP3, Node: negtypes.TestInstance3, Port: strconv.Itoa(int(testPort))},
-					negtypes.NetworkEndpoint{IP: testIP4, Node: negtypes.TestInstance4, Port: strconv.Itoa(int(testPort))},
+					endpoint3,
+					endpoint4,
 				),
 				negtypes.TestZone4: negtypes.NewNetworkEndpointSet(),
+			},
+			expectAnnotationMap: labels.EndpointPodLabelMap{
+				endpoint1: labels.PodLabelMap{
+					"foo": "bar",
+				},
+				endpoint2: labels.PodLabelMap{
+					"foo": "bar",
+				},
+				endpoint3: labels.PodLabelMap{
+					"foo": "bar",
+				},
+				endpoint4: labels.PodLabelMap{
+					"foo": "bar",
+				},
 			},
 			expectErr: false,
 		},
 		{
-			desc: "all 3 negs with multiple endpoints",
+			desc: "all 3 negs with multiple endpoints, endpoint6 and endpoint7 with no pod label",
 			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
 				cloud.AttachNetworkEndpoints(testNegName, negtypes.TestZone4, []*composite.NetworkEndpoint{
 					{
@@ -1080,17 +1129,33 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 			},
 			expect: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
-					negtypes.NetworkEndpoint{IP: testIP1, Node: negtypes.TestInstance1, Port: strconv.Itoa(int(testPort))},
-					negtypes.NetworkEndpoint{IP: testIP2, Node: negtypes.TestInstance2, Port: strconv.Itoa(int(testPort))},
+					endpoint1,
+					endpoint2,
 				),
 				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
-					negtypes.NetworkEndpoint{IP: testIP3, Node: negtypes.TestInstance3, Port: strconv.Itoa(int(testPort))},
-					negtypes.NetworkEndpoint{IP: testIP4, Node: negtypes.TestInstance4, Port: strconv.Itoa(int(testPort))},
+					endpoint3,
+					endpoint4,
 				),
 				negtypes.TestZone4: negtypes.NewNetworkEndpointSet(
-					negtypes.NetworkEndpoint{IP: testIP6, Node: negtypes.TestUpgradeInstance1, Port: strconv.Itoa(int(testPort))},
-					negtypes.NetworkEndpoint{IP: testIP7, Node: negtypes.TestUpgradeInstance2, Port: strconv.Itoa(int(testPort))},
+					endpoint6,
+					endpoint7,
 				),
+			},
+			expectAnnotationMap: labels.EndpointPodLabelMap{
+				endpoint1: labels.PodLabelMap{
+					"foo": "bar",
+				},
+				endpoint2: labels.PodLabelMap{
+					"foo": "bar",
+				},
+				endpoint3: labels.PodLabelMap{
+					"foo": "bar",
+				},
+				endpoint4: labels.PodLabelMap{
+					"foo": "bar",
+				},
+				endpoint6: nil,
+				endpoint7: nil,
 			},
 			expectErr: false,
 		},
@@ -1107,17 +1172,33 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 			},
 			expect: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
-					negtypes.NetworkEndpoint{IP: testIP1, Node: negtypes.TestInstance1, Port: strconv.Itoa(int(testPort))},
-					negtypes.NetworkEndpoint{IP: testIP2, Node: negtypes.TestInstance2, Port: strconv.Itoa(int(testPort))},
+					endpoint1,
+					endpoint2,
 				),
 				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
-					negtypes.NetworkEndpoint{IP: testIP3, Node: negtypes.TestInstance3, Port: strconv.Itoa(int(testPort))},
-					negtypes.NetworkEndpoint{IP: testIP4, Node: negtypes.TestInstance4, Port: strconv.Itoa(int(testPort))},
+					endpoint3,
+					endpoint4,
 				),
 				negtypes.TestZone4: negtypes.NewNetworkEndpointSet(
-					negtypes.NetworkEndpoint{IP: testIP6, Node: negtypes.TestUpgradeInstance1, Port: strconv.Itoa(int(testPort))},
-					negtypes.NetworkEndpoint{IP: testIP7, Node: negtypes.TestUpgradeInstance2, Port: strconv.Itoa(int(testPort))},
+					endpoint6,
+					endpoint7,
 				),
+			},
+			expectAnnotationMap: labels.EndpointPodLabelMap{
+				endpoint1: labels.PodLabelMap{
+					"foo": "bar",
+				},
+				endpoint2: labels.PodLabelMap{
+					"foo": "bar",
+				},
+				endpoint3: labels.PodLabelMap{
+					"foo": "bar",
+				},
+				endpoint4: labels.PodLabelMap{
+					"foo": "bar",
+				},
+				endpoint6: nil,
+				endpoint7: nil,
 			},
 			expectErr: false,
 		},
@@ -1138,20 +1219,37 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 			expect: map[string]negtypes.NetworkEndpointSet{
 				// NEGs in zone1, zone2 and zone4 are created from previous test case.
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
-					negtypes.NetworkEndpoint{IP: testIP1, Node: negtypes.TestInstance1, Port: strconv.Itoa(int(testPort))},
-					negtypes.NetworkEndpoint{IP: testIP2, Node: negtypes.TestInstance2, Port: strconv.Itoa(int(testPort))},
+					endpoint1,
+					endpoint2,
 				),
 				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
-					negtypes.NetworkEndpoint{IP: testIP3, Node: negtypes.TestInstance3, Port: strconv.Itoa(int(testPort))},
-					negtypes.NetworkEndpoint{IP: testIP4, Node: negtypes.TestInstance4, Port: strconv.Itoa(int(testPort))},
+					endpoint3,
+					endpoint4,
 				),
 				negtypes.TestZone3: negtypes.NewNetworkEndpointSet(
-					negtypes.NetworkEndpoint{IP: testIP5, Node: negtypes.TestUnreadyInstance1, Port: strconv.Itoa(int(testPort))},
+					endpoint5,
 				),
 				negtypes.TestZone4: negtypes.NewNetworkEndpointSet(
-					negtypes.NetworkEndpoint{IP: testIP6, Node: negtypes.TestUpgradeInstance1, Port: strconv.Itoa(int(testPort))},
-					negtypes.NetworkEndpoint{IP: testIP7, Node: negtypes.TestUpgradeInstance2, Port: strconv.Itoa(int(testPort))},
+					endpoint6,
+					endpoint7,
 				),
+			},
+			expectAnnotationMap: labels.EndpointPodLabelMap{
+				endpoint1: labels.PodLabelMap{
+					"foo": "bar",
+				},
+				endpoint2: labels.PodLabelMap{
+					"foo": "bar",
+				},
+				endpoint3: labels.PodLabelMap{
+					"foo": "bar",
+				},
+				endpoint4: labels.PodLabelMap{
+					"foo": "bar",
+				},
+				endpoint5: nil,
+				endpoint6: nil,
+				endpoint7: nil,
 			},
 			expectErr: false,
 		},
@@ -1167,7 +1265,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 	for _, tc := range testCases {
 		tc.mutate(negCloud)
 		// tc.mode of "" will result in the default node predicate being selected, which is ok for this test.
-		out, err := retrieveExistingZoneNetworkEndpointMap(negName, zoneGetter, negCloud, meta.VersionGA, tc.mode)
+		endpointSets, annotationMap, err := retrieveExistingZoneNetworkEndpointMap(negName, zoneGetter, negCloud, meta.VersionGA, tc.mode)
 
 		if tc.expectErr {
 			if err == nil {
@@ -1180,8 +1278,11 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 		}
 
 		if !tc.expectErr {
-			if !reflect.DeepEqual(out, tc.expect) {
-				t.Errorf("For test case %q, endpointSets output = %+v, but want %+v", tc.desc, tc.expect, out)
+			if diff := cmp.Diff(endpointSets, tc.expect); diff != "" {
+				t.Errorf("For test case %q, (-want +got):\n%s", tc.desc, diff)
+			}
+			if diff := cmp.Diff(annotationMap, tc.expectAnnotationMap); diff != "" {
+				t.Errorf("For test case %q, (-want +got):\n%s", tc.desc, diff)
 			}
 		}
 	}

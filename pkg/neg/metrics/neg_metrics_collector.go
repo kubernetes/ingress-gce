@@ -28,6 +28,7 @@ import (
 type SyncerMetricsCollector interface {
 	UpdateSyncer(key negtypes.NegSyncerKey, result *negtypes.NegSyncResult)
 	SetSyncerEPMetrics(key negtypes.NegSyncerKey, epState *negtypes.SyncerEPStat)
+	SetLabelPropagationStats(key negtypes.NegSyncerKey, labelstatLabelPropagationStats LabelPropagationStats)
 }
 
 type SyncerMetrics struct {
@@ -50,11 +51,12 @@ type SyncerMetrics struct {
 // NewNEGMetricsCollector initializes SyncerMetrics and starts a go routine to compute and export metrics periodically.
 func NewNegMetricsCollector(exportInterval time.Duration, logger klog.Logger) *SyncerMetrics {
 	return &SyncerMetrics{
-		syncerStatusMap:        make(map[negtypes.NegSyncerKey]string),
-		syncerEndpointStateMap: make(map[negtypes.NegSyncerKey]negtypes.StateCountMap),
-		syncerEPSStateMap:      make(map[negtypes.NegSyncerKey]negtypes.StateCountMap),
-		metricsInterval:        exportInterval,
-		logger:                 logger.WithName("NegMetricsCollector"),
+		syncerStatusMap:            make(map[negtypes.NegSyncerKey]string),
+		syncerEndpointStateMap:     make(map[negtypes.NegSyncerKey]negtypes.StateCountMap),
+		syncerEPSStateMap:          make(map[negtypes.NegSyncerKey]negtypes.StateCountMap),
+		syncerLabelProagationStats: make(map[negtypes.NegSyncerKey]LabelPropagationStats),
+		metricsInterval:            exportInterval,
+		logger:                     logger.WithName("NegMetricsCollector"),
 	}
 }
 
@@ -79,6 +81,10 @@ func (sm *SyncerMetrics) Run(stopCh <-chan struct{}) {
 
 // export exports syncer metrics.
 func (sm *SyncerMetrics) export() {
+	lpMetrics := sm.computeLabelMetrics()
+	NumberOfEndpoints.WithLabelValues(totalEndpoints).Set(float64(lpMetrics.NumberOfEndpoints))
+	NumberOfEndpoints.WithLabelValues(epWithAnnotation).Set(float64(lpMetrics.EndpointsWithAnnotation))
+	sm.logger.V(3).Info("Exporting syncer related metrics", "Number of Endpoints", lpMetrics.NumberOfEndpoints)
 }
 
 // UpdateSyncer update the status of corresponding syncer based on the syncResult.
@@ -107,6 +113,16 @@ func (sm *SyncerMetrics) SetSyncerEPMetrics(key negtypes.NegSyncerKey, endpointS
 		sm.logger.V(3).Info("Syncer Metrics failed to initialize correctly, reinitializing syncerEPSStateMap: %v", sm.syncerEPSStateMap)
 	}
 	sm.syncerEPSStateMap[key] = endpointStat.EndpointSliceStateCount
+}
+
+func (sm *SyncerMetrics) SetLabelPropagationStats(key negtypes.NegSyncerKey, labelstatLabelPropagationStats LabelPropagationStats) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	if sm.syncerLabelProagationStats == nil {
+		sm.syncerLabelProagationStats = make(map[negtypes.NegSyncerKey]LabelPropagationStats)
+		sm.logger.V(3).Info("Syncer Metrics failed to initialize correctly, reinitializing syncerLabelProagationStats")
+	}
+	sm.syncerLabelProagationStats[key] = labelstatLabelPropagationStats
 }
 
 // computeLabelMetrics aggregates label propagation metrics.

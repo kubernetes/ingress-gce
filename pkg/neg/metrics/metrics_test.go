@@ -90,7 +90,7 @@ func TestComputeLabelMetrics(t *testing.T) {
 		collector.syncerLabelProagationStats = tc.syncerLabelProagationStats
 		out := collector.computeLabelMetrics()
 		if diff := cmp.Diff(out, tc.expect); diff != "" {
-			t.Errorf("For test case %s, got %+v, want %+v, diff: %s", tc.desc, out, tc.expect, diff)
+			t.Errorf("For test case %s,  (-want +got):\n%s", tc.desc, diff)
 		}
 	}
 }
