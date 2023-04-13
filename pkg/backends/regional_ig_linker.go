@@ -51,25 +51,37 @@ func (linker *RegionalInstanceGroupLinker) Link(sp utils.ServicePort, projectID 
 	if err != nil {
 		return err
 	}
-	addIGs, err := getInstanceGroupsToAdd(bs, igLinks)
+	addIGs, removeIGs, err := getInstanceGroupsToAddAndRemove(bs, igLinks)
 	if err != nil {
 		return err
 	}
-	if len(addIGs) == 0 {
-		klog.V(3).Infof("No backends to add for %s, skipping update.", sp.BackendName())
+	if len(addIGs) == 0 && len(removeIGs) == 0 {
+		klog.V(3).Infof("No backends to add or remove for %s, skipping update.", sp.BackendName())
 		return nil
 	}
 
-	var newBackends []*composite.Backend
+	if len(removeIGs) != 0 {
+		var backendsWithoutRemoved []*composite.Backend
+		for _, b := range bs.Backends {
+			path, err := utils.RelativeResourceName(b.Group)
+			if err != nil {
+				return err
+			}
+			if !removeIGs.Has(path) {
+				backendsWithoutRemoved = append(backendsWithoutRemoved, b)
+			}
+		}
+		bs.Backends = backendsWithoutRemoved
+	}
+
 	for _, igLink := range addIGs {
 		b := &composite.Backend{
 			Group: igLink,
 		}
-		newBackends = append(newBackends, b)
+		bs.Backends = append(bs.Backends, b)
 	}
 
-	bs.Backends = newBackends
-	klog.V(3).Infof("Update Backend %s, with %d backends.", sp.BackendName(), len(addIGs))
+	klog.V(3).Infof("Update Backend %s, with %d added backends (total %d).", sp.BackendName(), len(addIGs), len(bs.Backends))
 	if err := linker.backendPool.Update(bs); err != nil {
 		return fmt.Errorf("updating backend service %s for IG failed, err:%w", sp.BackendName(), err)
 	}
