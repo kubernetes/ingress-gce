@@ -179,7 +179,7 @@ func NewTransactionSyncer(
 	// transactionSyncer needs syncer interface for internals
 	ts.syncer = syncer
 	ts.retry = NewDelayRetryHandler(func() { syncer.Sync() }, NewExponentialBackendOffHandler(maxRetries, minRetryDelay, maxRetryDelay))
-	ts.dsMigrator = dualstack.NewMigrator(enableDualStackNEG, syncer, logger)
+	ts.dsMigrator = dualstack.NewMigrator(enableDualStackNEG, syncer, negSyncerKey, syncerMetrics, logger)
 	return syncer
 }
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/klog/v2"
 )
@@ -773,5 +774,5 @@ func cloneZoneNetworkEndpointsMap(m map[string]types.NetworkEndpointSet) map[str
 }
 
 func newMigratorForTest(enableDualStackNEG bool) *Migrator {
-	return NewMigrator(enableDualStackNEG, &fakeSyncable{}, klog.Background())
+	return NewMigrator(enableDualStackNEG, &fakeSyncable{}, types.NegSyncerKey{}, metrics.FakeSyncerMetrics(), klog.Background())
 }
