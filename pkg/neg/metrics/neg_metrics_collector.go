@@ -37,6 +37,8 @@ type SyncerMetrics struct {
 	syncerEndpointStateMap map[negtypes.NegSyncerKey]negtypes.StateCountMap
 	// syncerEPSStateMap is a map between syncer and endpoint slice state counts
 	syncerEPSStateMap map[negtypes.NegSyncerKey]negtypes.StateCountMap
+	// syncerLabelProagationStats is a map between syncer and label propagation stats.
+	syncerLabelProagationStats map[negtypes.NegSyncerKey]LabelPropagationStats
 	// mu avoid race conditions and ensure correctness of metrics
 	mu sync.Mutex
 	// duration between metrics exports
@@ -105,4 +107,17 @@ func (sm *SyncerMetrics) SetSyncerEPMetrics(key negtypes.NegSyncerKey, endpointS
 		sm.logger.V(3).Info("Syncer Metrics failed to initialize correctly, reinitializing syncerEPSStateMap: %v", sm.syncerEPSStateMap)
 	}
 	sm.syncerEPSStateMap[key] = endpointStat.EndpointSliceStateCount
+}
+
+// computeLabelMetrics aggregates label propagation metrics.
+func (sm *SyncerMetrics) computeLabelMetrics() LabelPropagationMetrics {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	lpMetrics := LabelPropagationMetrics{}
+	for _, stats := range sm.syncerLabelProagationStats {
+		lpMetrics.EndpointsWithAnnotation += stats.EndpointsWithAnnotation
+		lpMetrics.NumberOfEndpoints += stats.NumberOfEndpoints
+	}
+	return lpMetrics
 }
