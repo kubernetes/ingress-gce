@@ -43,6 +43,12 @@ const (
 
 	NotInDegradedEndpoints  = "not_in_degraded_endpoints"
 	OnlyInDegradedEndpoints = "only_in_degraded_endpoints"
+
+	// Classification of endpoints within a NEG.
+	ipv4EndpointType      = "IPv4"
+	ipv6EndpointType      = "IPv6"
+	dualStackEndpointType = "DualStack"
+	migrationEndpointType = "Migration"
 )
 
 type syncType string
@@ -169,6 +175,42 @@ var (
 		},
 		degradedModeCorrectnessLabels,
 	)
+
+	DualStackMigrationFinishedDurations = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      "dual_stack_migration_finished_durations_seconds",
+			Help:      "Time taken to migrate all endpoints within all NEGs for a service port",
+			// Buckets ~= [1s, 1.85s, 3.42s, 6s, 11s, 21s, 40s, 1m14s, 2m17s, 4m13s, 7m49s, 14m28s, 26m47s, 49m33s, 1h31m40s, 2h49m35s, 5h13m45s, 9h40m27s, +Inf]
+			Buckets: prometheus.ExponentialBuckets(1, 1.85, 18),
+		},
+	)
+
+	// A zero value for this metric means that there are no ongoing migrations.
+	DualStackMigrationLongestUnfinishedDuration = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      "dual_stack_migration_longest_unfinished_duration_seconds",
+			Help:      "Longest time elapsed since a migration was started which hasn't yet completed",
+		},
+	)
+
+	DualStackMigrationServiceCount = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      "dual_stack_migration_service_count",
+			Help:      "Number of Services which have migration endpoints",
+		},
+	)
+
+	SyncerCountByEndpointType = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      "syncer_count_by_endpoint_type",
+			Help:      "Number of Syncers managing NEGs containing endpoint of a particular kind",
+		},
+		[]string{"endpoint_type"},
+	)
 )
 
 var register sync.Once
@@ -188,6 +230,10 @@ func RegisterMetrics() {
 		prometheus.MustRegister(LabelNumber)
 		prometheus.MustRegister(AnnotationSize)
 		prometheus.MustRegister(DegradeModeCorrectness)
+		prometheus.MustRegister(DualStackMigrationFinishedDurations)
+		prometheus.MustRegister(DualStackMigrationLongestUnfinishedDuration)
+		prometheus.MustRegister(DualStackMigrationServiceCount)
+		prometheus.MustRegister(SyncerCountByEndpointType)
 
 		RegisterSyncerMetrics()
 	})
