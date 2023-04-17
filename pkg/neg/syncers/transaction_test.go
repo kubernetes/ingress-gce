@@ -1830,16 +1830,19 @@ func TestEnableDegradedMode(t *testing.T) {
 			err = wait.PollImmediate(time.Second, 3*time.Second, func() (bool, error) {
 				out, _, err = retrieveExistingZoneNetworkEndpointMap(tc.negName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode)
 				if err != nil {
-					return false, err
+					return false, nil
 				}
 				if !reflect.DeepEqual(tc.expectedEndpoints, out) {
-					return false, err
+					return false, nil
+				}
+				s.syncLock.Lock()
+				errorState := s.inErrorState()
+				s.syncLock.Unlock()
+				if errorState != tc.expectedInErrorState {
+					return false, nil
 				}
 				return true, nil
 			})
-			if s.inErrorState() != tc.expectedInErrorState {
-				t.Errorf("after syncInternal, error state is %v, expected to be %v", s.inErrorState(), tc.expectedInErrorState)
-			}
 			if err != nil {
 				t.Errorf("endpoints are different from expected:\ngot %+v,\n expected %+v", out, tc.expectedEndpoints)
 			}
