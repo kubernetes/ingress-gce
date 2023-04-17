@@ -93,7 +93,7 @@ func (sm *SyncerMetrics) UpdateSyncer(key negtypes.NegSyncerKey, syncResult *neg
 	defer sm.mu.Unlock()
 	if sm.syncerStatusMap == nil {
 		sm.syncerStatusMap = make(map[negtypes.NegSyncerKey]string)
-		sm.logger.V(3).Info("Syncer Metrics failed to initialize correctly, reinitializing syncerStatusMap: %v", sm.syncerStatusMap)
+		sm.logger.V(3).Info("Syncer Metrics failed to initialize correctly, reinitializing syncerStatusMap")
 	}
 	sm.syncerStatusMap[key] = string(syncResult.Result)
 }
@@ -104,13 +104,13 @@ func (sm *SyncerMetrics) SetSyncerEPMetrics(key negtypes.NegSyncerKey, endpointS
 	defer sm.mu.Unlock()
 	if sm.syncerEndpointStateMap == nil {
 		sm.syncerEndpointStateMap = make(map[negtypes.NegSyncerKey]negtypes.StateCountMap)
-		sm.logger.V(3).Info("Syncer Metrics failed to initialize correctly, reinitializing syncerEPStateMap: %v", sm.syncerEndpointStateMap)
+		sm.logger.V(3).Info("Syncer Metrics failed to initialize correctly, reinitializing syncerEPStateMap")
 	}
 	sm.syncerEndpointStateMap[key] = endpointStat.EndpointStateCount
 
 	if sm.syncerEPSStateMap == nil {
 		sm.syncerEPSStateMap = make(map[negtypes.NegSyncerKey]negtypes.StateCountMap)
-		sm.logger.V(3).Info("Syncer Metrics failed to initialize correctly, reinitializing syncerEPSStateMap: %v", sm.syncerEPSStateMap)
+		sm.logger.V(3).Info("Syncer Metrics failed to initialize correctly, reinitializing syncerEPSStateMap")
 	}
 	sm.syncerEPSStateMap[key] = endpointStat.EndpointSliceStateCount
 }
