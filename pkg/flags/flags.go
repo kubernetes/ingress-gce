@@ -120,6 +120,8 @@ var (
 		MaxIGSize                                int
 		EnableDegradedMode                       bool
 		EnableDualStackNEG                       bool
+		EnableFirewallCR                         bool
+		DisableFWEnforcement                     bool
 	}{
 		GCERateLimitScale: 1.0,
 	}
@@ -273,6 +275,8 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableDegradedMode, "enable-degraded-mode", false, `Enable endpoint calculation using degraded mode procedures`)
 	flag.BoolVar(&F.EnableNEGLabelPropagation, "enable-label-propagation", false, "Enable NEG endpoint label propagation")
 	flag.BoolVar(&F.EnableDualStackNEG, "enable-dual-stack-neg", false, `Enable support for Dual-Stack NEGs within the NEG Controller`)
+	flag.BoolVar(&F.EnableFirewallCR, "enable-firewall-cr", false, "Enable generating firewall CR")
+	flag.BoolVar(&F.DisableFWEnforcement, "disable-fw-enforcement", false, "Disable Ingress contrller to enforce the firewall ruless. If set to true, Ingress Controller stops creating GCE firewall rules. We can only enable this if enable-firewall-cr sets to true.")
 }
 
 type RateLimitSpecs struct {

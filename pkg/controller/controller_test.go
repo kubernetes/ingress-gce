@@ -72,7 +72,7 @@ func newLoadBalancerController() *LoadBalancerController {
 		DefaultBackendSvcPort: test.DefaultBeSvcPort,
 		HealthCheckPath:       "/",
 	}
-	ctx := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, nil, nil, nil, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig)
+	ctx := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, nil, nil, nil, nil, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig)
 	lbc := NewLoadBalancerController(ctx, stopCh)
 	// TODO(rramkumar): Fix this so we don't have to override with our fake
 	lbc.instancePool = instancegroups.NewManager(&instancegroups.ManagerConfig{
@@ -682,7 +682,7 @@ func TestMCIngressIG(t *testing.T) {
 func TestToRuntimeInfoCerts(t *testing.T) {
 	lbc := newLoadBalancerController()
 	secretsMap := map[string]*api_v1.Secret{
-		"tlsCert": &api_v1.Secret{
+		"tlsCert": {
 			ObjectMeta: meta_v1.ObjectMeta{
 				Name: "tlsCert",
 			},

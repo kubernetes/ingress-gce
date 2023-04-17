@@ -232,7 +232,7 @@ func buildContext(vals gce.TestClusterValues) *ingctx.ControllerContext {
 		NumL4NetLBWorkers: 5,
 		MaxIGSize:         1000,
 	}
-	return ingctx.NewControllerContext(nil, kubeClient, nil, nil, nil, nil, nil, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig)
+	return ingctx.NewControllerContext(nil, kubeClient, nil, nil, nil, nil, nil, nil, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig)
 }
 
 func newL4NetLBServiceController() *L4NetLBController {

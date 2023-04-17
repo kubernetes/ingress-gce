@@ -64,15 +64,38 @@ func NewFirewallPool(cloud Firewall, namer *namer_util.Namer, l7SrcRanges []stri
 
 // Sync firewall rules with the cloud.
 func (fr *FirewallRules) Sync(nodeNames, additionalPorts, additionalRanges []string, allowNodePort bool) error {
-	klog.V(4).Infof("Sync %d nodes", len(nodeNames))
+	klog.V(4).Infof("Sync(%v)", nodeNames)
 	name := fr.namer.FirewallRule()
 	existingFirewall, _ := fr.cloud.GetFirewall(name)
+
+	expectedFirewall, err := fr.buildExpectedFW(nodeNames, additionalPorts, additionalRanges, allowNodePort)
+	if err != nil {
+		return err
+	}
+
+	if existingFirewall == nil {
+		klog.V(3).Infof("Creating firewall rule %q", name)
+		return fr.createFirewall(expectedFirewall)
+	}
+
+	// Early return if an update is not required.
+	if equal(expectedFirewall, existingFirewall) {
+		klog.V(4).Info("Firewall does not need update of ports or source ranges")
+		return nil
+	}
+
+	klog.V(3).Infof("Updating firewall rule %q", name)
+	return fr.updateFirewall(expectedFirewall)
+}
+
+func (fr *FirewallRules) buildExpectedFW(nodeNames, additionalPorts, additionalRanges []string, allowNodePort bool) (*compute.Firewall, error) {
+	name := fr.namer.FirewallRule()
 
 	// Retrieve list of target tags from node names. This may be configured in
 	// gce.conf or computed by the GCE cloudprovider package.
 	targetTags, err := fr.cloud.GetNodeTags(nodeNames)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	sort.Strings(targetTags)
 
@@ -100,20 +123,7 @@ func (fr *FirewallRules) Sync(nodeNames, additionalPorts, additionalRanges []str
 		},
 		TargetTags: targetTags,
 	}
-
-	if existingFirewall == nil {
-		klog.V(3).Infof("Creating firewall rule %q", name)
-		return fr.createFirewall(expectedFirewall)
-	}
-
-	// Early return if an update is not required.
-	if equal(expectedFirewall, existingFirewall) {
-		klog.V(4).Info("Firewall does not need update of ports or source ranges")
-		return nil
-	}
-
-	klog.V(3).Infof("Updating firewall rule %q", name)
-	return fr.updateFirewall(expectedFirewall)
+	return expectedFirewall, nil
 }
 
 // GC deletes the firewall rule.

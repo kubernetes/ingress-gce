@@ -4,6 +4,7 @@ go 1.19
 
 require (
 	github.com/GoogleCloudPlatform/k8s-cloud-provider v1.23.0
+	github.com/go-openapi/jsonpointer v0.19.5 // indirect
 	github.com/google/go-cmp v0.5.9
 	github.com/kr/pretty v0.2.0
 	github.com/prometheus/client_golang v1.14.0
@@ -36,7 +37,6 @@ require (
 	github.com/emicklei/go-restful/v3 v3.9.0 // indirect
 	github.com/evanphx/json-patch v4.12.0+incompatible // indirect
 	github.com/go-logr/logr v1.2.3 // indirect
-	github.com/go-openapi/jsonpointer v0.19.5 // indirect
 	github.com/go-openapi/jsonreference v0.20.0 // indirect
 	github.com/go-openapi/swag v0.19.14 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
@@ -76,6 +76,7 @@ require (
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
+	k8s.io/cloud-provider-gcp/crd v0.0.0-20230411231432-6ab330834e4e // indirect
 	sigs.k8s.io/json v0.0.0-20220713155537-f223a00ba0e2 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
 	sigs.k8s.io/yaml v1.3.0 // indirect
