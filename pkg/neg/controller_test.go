@@ -43,6 +43,7 @@ import (
 	"k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/ingress-gce/pkg/network"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
@@ -107,6 +108,10 @@ var (
 				},
 			},
 		},
+	}
+
+	defaultNetwork = &network.NetworkInfo{
+		K8sNetwork: "default",
 	}
 )
 
@@ -372,8 +377,7 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Service was not created.(*apiv1.Service) successfully, err: %v", err)
 	}
-	expectedPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName,
-		controller.l4Namer, false)
+	expectedPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, false, defaultNetwork)
 	// There will be only one entry in the map
 	for key, val := range expectedPortInfoMap {
 		prevSyncerKey = manager.getSyncerKey(testServiceNamespace, testServiceName, key, val)
@@ -394,8 +398,7 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 	if err = controller.processService(svcKey); err != nil {
 		t.Fatalf("Failed to process updated L4 ILB service: %v", err)
 	}
-	expectedPortInfoMap = negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName,
-		controller.l4Namer, true)
+	expectedPortInfoMap = negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, defaultNetwork)
 	// There will be only one entry in the map
 	for key, val := range expectedPortInfoMap {
 		updatedSyncerKey = manager.getSyncerKey(testServiceNamespace, testServiceName, key, val)
@@ -687,39 +690,39 @@ func TestSyncNegAnnotation(t *testing.T) {
 	}{
 		{
 			desc:    "apply new annotation with no previous annotation",
-			portMap: negtypes.NewPortInfoMap(namespace, name, negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Port: 80, TargetPort: "named_port"}, negtypes.SvcPortTuple{Port: 443, TargetPort: "other_port"}), namer, false, nil),
+			portMap: negtypes.NewPortInfoMap(namespace, name, negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Port: 80, TargetPort: "named_port"}, negtypes.SvcPortTuple{Port: 443, TargetPort: "other_port"}), namer, false, nil, defaultNetwork),
 		},
 		{
 			desc:            "same annotation applied twice",
-			previousPortMap: negtypes.NewPortInfoMap(namespace, name, negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Port: 80, TargetPort: "named_port"}, negtypes.SvcPortTuple{Port: 4040, TargetPort: "other_port"}), namer, false, nil),
-			portMap:         negtypes.NewPortInfoMap(namespace, name, negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Port: 80, TargetPort: "named_port"}, negtypes.SvcPortTuple{Port: 4040, TargetPort: "other_port"}), namer, false, nil),
+			previousPortMap: negtypes.NewPortInfoMap(namespace, name, negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Port: 80, TargetPort: "named_port"}, negtypes.SvcPortTuple{Port: 4040, TargetPort: "other_port"}), namer, false, nil, defaultNetwork),
+			portMap:         negtypes.NewPortInfoMap(namespace, name, negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Port: 80, TargetPort: "named_port"}, negtypes.SvcPortTuple{Port: 4040, TargetPort: "other_port"}), namer, false, nil, defaultNetwork),
 		},
 		{
 			desc:            "apply new annotation and override previous annotation",
-			previousPortMap: negtypes.NewPortInfoMap(namespace, name, negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Port: 80, TargetPort: "named_port"}, negtypes.SvcPortTuple{Port: 4040, TargetPort: "other_port"}), namer, false, nil),
-			portMap:         negtypes.NewPortInfoMap(namespace, name, negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Port: 3000, TargetPort: "6000"}, negtypes.SvcPortTuple{Port: 4000, TargetPort: "8000"}), namer, false, nil),
+			previousPortMap: negtypes.NewPortInfoMap(namespace, name, negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Port: 80, TargetPort: "named_port"}, negtypes.SvcPortTuple{Port: 4040, TargetPort: "other_port"}), namer, false, nil, defaultNetwork),
+			portMap:         negtypes.NewPortInfoMap(namespace, name, negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Port: 3000, TargetPort: "6000"}, negtypes.SvcPortTuple{Port: 4000, TargetPort: "8000"}), namer, false, nil, defaultNetwork),
 		},
 		{
 			desc:            "remove previous annotation",
-			previousPortMap: negtypes.NewPortInfoMap(namespace, name, negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Port: 80, TargetPort: "named_port"}, negtypes.SvcPortTuple{Port: 4040, TargetPort: "other_port"}), namer, false, nil),
+			previousPortMap: negtypes.NewPortInfoMap(namespace, name, negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Port: 80, TargetPort: "named_port"}, negtypes.SvcPortTuple{Port: 4040, TargetPort: "other_port"}), namer, false, nil, defaultNetwork),
 		},
 		{
 			desc: "remove annotation with no previous annotation",
 		},
 		{
 			desc:            "readiness gate makes no difference 1",
-			previousPortMap: negtypes.NewPortInfoMap(namespace, name, negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Port: 80, TargetPort: "named_port"}, negtypes.SvcPortTuple{Port: 4040, TargetPort: "other_port"}), namer, false, nil),
-			portMap:         negtypes.NewPortInfoMap(namespace, name, negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Port: 3000, TargetPort: "6000"}, negtypes.SvcPortTuple{Port: 4000, TargetPort: "8000"}), namer, true, nil),
+			previousPortMap: negtypes.NewPortInfoMap(namespace, name, negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Port: 80, TargetPort: "named_port"}, negtypes.SvcPortTuple{Port: 4040, TargetPort: "other_port"}), namer, false, nil, defaultNetwork),
+			portMap:         negtypes.NewPortInfoMap(namespace, name, negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Port: 3000, TargetPort: "6000"}, negtypes.SvcPortTuple{Port: 4000, TargetPort: "8000"}), namer, true, nil, defaultNetwork),
 		},
 		{
 			desc:            "readiness gate makes no difference 2",
-			previousPortMap: negtypes.NewPortInfoMap(namespace, name, negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Port: 80, TargetPort: "named_port"}, negtypes.SvcPortTuple{Port: 4040, TargetPort: "other_port"}), namer, true, nil),
-			portMap:         negtypes.NewPortInfoMap(namespace, name, negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Port: 80, TargetPort: "named_port"}, negtypes.SvcPortTuple{Port: 4040, TargetPort: "other_port"}), namer, false, nil),
+			previousPortMap: negtypes.NewPortInfoMap(namespace, name, negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Port: 80, TargetPort: "named_port"}, negtypes.SvcPortTuple{Port: 4040, TargetPort: "other_port"}), namer, true, nil, defaultNetwork),
+			portMap:         negtypes.NewPortInfoMap(namespace, name, negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Port: 80, TargetPort: "named_port"}, negtypes.SvcPortTuple{Port: 4040, TargetPort: "other_port"}), namer, false, nil, defaultNetwork),
 		},
 		{
 			desc:            "no difference with port name",
-			previousPortMap: negtypes.NewPortInfoMap(namespace, name, negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Port: 80, TargetPort: "named_port"}, negtypes.SvcPortTuple{Port: 4040, TargetPort: "other_port"}), namer, true, nil),
-			portMap:         negtypes.NewPortInfoMap(namespace, name, negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Port: 80, Name: "foo", TargetPort: "named_port"}, negtypes.SvcPortTuple{Port: 4040, Name: "bar", TargetPort: "other_port"}), namer, false, nil),
+			previousPortMap: negtypes.NewPortInfoMap(namespace, name, negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Port: 80, TargetPort: "named_port"}, negtypes.SvcPortTuple{Port: 4040, TargetPort: "other_port"}), namer, true, nil, defaultNetwork),
+			portMap:         negtypes.NewPortInfoMap(namespace, name, negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Port: 80, Name: "foo", TargetPort: "named_port"}, negtypes.SvcPortTuple{Port: 4040, Name: "bar", TargetPort: "other_port"}), namer, false, nil, defaultNetwork),
 		},
 	}
 
@@ -798,14 +801,7 @@ func TestDefaultBackendServicePortInfoMapForL7ILB(t *testing.T) {
 			forIlb:                           true,
 			defaultOverride:                  true,
 			defaultBackendServiceServicePort: defaultBackend,
-			want: negtypes.NewPortInfoMap(
-				defaultBackend.ID.Service.Namespace,
-				defaultBackend.ID.Service.Name,
-				negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Name: "http", Port: 80, TargetPort: defaultBackend.TargetPort.String()}),
-				controller.namer,
-				false,
-				nil,
-			),
+			want:                             negtypes.NewPortInfoMap(defaultBackend.ID.Service.Namespace, defaultBackend.ID.Service.Name, negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Name: "http", Port: 80, TargetPort: defaultBackend.TargetPort.String()}), controller.namer, false, nil, defaultNetwork),
 		},
 		{
 			desc:            "User default backend with different port",
@@ -823,14 +819,7 @@ func TestDefaultBackendServicePortInfoMapForL7ILB(t *testing.T) {
 				Port:       80,
 				TargetPort: intstr.FromInt(8888),
 			},
-			want: negtypes.NewPortInfoMap(
-				testServiceNamespace,
-				"newDefaultBackend",
-				negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Name: "80", Port: 80, TargetPort: "8888"}),
-				controller.namer,
-				false,
-				nil,
-			),
+			want: negtypes.NewPortInfoMap(testServiceNamespace, "newDefaultBackend", negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Name: "80", Port: 80, TargetPort: "8888"}), controller.namer, false, nil, defaultNetwork),
 		},
 	}
 	for _, tc := range testCases {
@@ -857,7 +846,7 @@ func TestDefaultBackendServicePortInfoMapForL7ILB(t *testing.T) {
 				t.Fatal(err)
 			}
 			result := make(negtypes.PortInfoMap)
-			controller.mergeDefaultBackendServicePortInfoMap(controller.defaultBackendService.ID.Service.String(), defaultBackendService, result)
+			controller.mergeDefaultBackendServicePortInfoMap(controller.defaultBackendService.ID.Service.String(), defaultBackendService, result, defaultNetwork)
 			if !reflect.DeepEqual(tc.want, result) {
 				t.Fatalf("got %+v, want %+v", result, tc.want)
 			}
@@ -870,14 +859,7 @@ func TestMergeDefaultBackendServicePortInfoMap(t *testing.T) {
 	controller.defaultBackendService = defaultBackend
 	newTestService(controller, false, []int32{})
 	defaultBackendServiceKey := defaultBackend.ID.Service.String()
-	expectPortMap := negtypes.NewPortInfoMap(
-		defaultBackend.ID.Service.Namespace,
-		defaultBackend.ID.Service.Name,
-		negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Name: "http", Port: 80, TargetPort: defaultBackend.TargetPort.String()}),
-		controller.namer,
-		false,
-		nil,
-	)
+	expectPortMap := negtypes.NewPortInfoMap(defaultBackend.ID.Service.Namespace, defaultBackend.ID.Service.Name, negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Name: "http", Port: 80, TargetPort: defaultBackend.TargetPort.String()}), controller.namer, false, nil, defaultNetwork)
 	expectEmptyPortmap := make(negtypes.PortInfoMap)
 
 	for _, tc := range []struct {
@@ -971,7 +953,7 @@ func TestMergeDefaultBackendServicePortInfoMap(t *testing.T) {
 			}
 
 			portMap := make(negtypes.PortInfoMap)
-			if err := controller.mergeDefaultBackendServicePortInfoMap(defaultBackendServiceKey, tc.defaultService, portMap); err != nil {
+			if err := controller.mergeDefaultBackendServicePortInfoMap(defaultBackendServiceKey, tc.defaultService, portMap, defaultNetwork); err != nil {
 				t.Errorf("for test case %q, expect err == nil; but got %v", tc.desc, err)
 			}
 
@@ -992,14 +974,7 @@ func TestEnableASM(t *testing.T) {
 	controller := newTestControllerWithASM(fake.NewSimpleClientset())
 	defer controller.stop()
 	testSvc := newTestServiceCus(t, controller, "namespace1", "service1", []int32{80, 90})
-	wantSvcPortMap := negtypes.NewPortInfoMap(
-		"namespace1",
-		"service1",
-		negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Name: "port80", Port: 80, TargetPort: "80"}, negtypes.SvcPortTuple{Name: "port90", Port: 90, TargetPort: "90"}),
-		controller.namer,
-		false,
-		nil,
-	)
+	wantSvcPortMap := negtypes.NewPortInfoMap("namespace1", "service1", negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Name: "port80", Port: 80, TargetPort: "80"}, negtypes.SvcPortTuple{Name: "port90", Port: 90, TargetPort: "90"}), controller.namer, false, nil, defaultNetwork)
 
 	svcKey := utils.ServiceKeyFunc(testSvc.GetNamespace(), testSvc.GetName())
 
@@ -1039,39 +1014,25 @@ func TestMergeCSMPortInfoMap(t *testing.T) {
 		wantSvcPortMap negtypes.PortInfoMap
 	}{
 		{
-			desc:         "controller should create NEGs for services and destinationrules",
-			srvNamespace: "namespace1",
-			srvName:      "service1",
-			service:      n1s1,
-			wantSvcPortMap: negtypes.NewPortInfoMap(
-				"namespace1",
-				"service1",
-				negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Name: "port80", Port: 80, TargetPort: "80"}, negtypes.SvcPortTuple{Name: "port90", Port: 90, TargetPort: "90"}),
-				controller.namer,
-				false,
-				nil,
-			),
+			desc:           "controller should create NEGs for services and destinationrules",
+			srvNamespace:   "namespace1",
+			srvName:        "service1",
+			service:        n1s1,
+			wantSvcPortMap: negtypes.NewPortInfoMap("namespace1", "service1", negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Name: "port80", Port: 80, TargetPort: "80"}, negtypes.SvcPortTuple{Name: "port90", Port: 90, TargetPort: "90"}), controller.namer, false, nil, defaultNetwork),
 		},
 		{
-			desc:         "controller should create NEGs for services",
-			srvNamespace: "namespace2",
-			srvName:      "service1",
-			service:      n2s1,
-			wantSvcPortMap: negtypes.NewPortInfoMap(
-				"namespace2",
-				"service1",
-				negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Name: "port90", Port: 90, TargetPort: "90"}),
-				controller.namer,
-				false,
-				nil,
-			),
+			desc:           "controller should create NEGs for services",
+			srvNamespace:   "namespace2",
+			srvName:        "service1",
+			service:        n2s1,
+			wantSvcPortMap: negtypes.NewPortInfoMap("namespace2", "service1", negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Name: "port90", Port: 90, TargetPort: "90"}), controller.namer, false, nil, defaultNetwork),
 		},
 	}
 
 	for _, tc := range testcases {
 		t.Run(tc.desc, func(t *testing.T) {
 			portInfoMap := make(negtypes.PortInfoMap)
-			portInfoMap, err := controller.getCSMPortInfoMap(tc.srvNamespace, tc.srvName, tc.service)
+			portInfoMap, err := controller.getCSMPortInfoMap(tc.srvNamespace, tc.srvName, tc.service, defaultNetwork)
 			if err != nil {
 				t.Fatalf("Failed to run mergeCSMPortInfoMap: %v", err)
 			}

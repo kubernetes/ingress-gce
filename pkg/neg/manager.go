@@ -255,6 +255,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				manager.logger,
 				manager.lpConfig,
 				manager.enableDualStackNEG,
+				portInfo.NetworkInfo,
 			)
 			manager.syncerMap[syncerKey] = syncer
 		}

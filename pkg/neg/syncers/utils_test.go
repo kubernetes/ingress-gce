@@ -40,6 +40,7 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -321,7 +322,9 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 		enableNonGCPMode    bool
 		networkEndpointType negtypes.NetworkEndpointType
 		expectedSubnetwork  string
+		expectedNetwork     string
 		apiVersion          meta.Version
+		networkInfo         network.NetworkInfo
 	}{
 		{
 			description:         "Create NEG of type GCE_VM_IP_PORT",
@@ -371,77 +374,107 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 			expectedSubnetwork:  testSubnetwork,
 			apiVersion:          meta.VersionAlpha,
 		},
+		{
+			description:         "Create NEG of type GCE_VM_IP_PORT in alternate network",
+			negName:             "gcp-neg",
+			enableNonGCPMode:    false,
+			networkEndpointType: negtypes.VmIpPortEndpointType,
+			expectedNetwork:     cloud.ResourcePath("network", &meta.Key{Name: "other-network"}),
+			expectedSubnetwork:  cloud.ResourcePath("subnetwork", &meta.Key{Zone: testZone, Name: "other-subnet"}),
+			apiVersion:          meta.VersionGA,
+			networkInfo: network.NetworkInfo{
+				IsNonDefault:  true,
+				K8sNetwork:    "other-network",
+				NetworkURL:    cloud.ResourcePath("network", &meta.Key{Name: "other-network"}),
+				SubnetworkURL: cloud.ResourcePath("subnetwork", &meta.Key{Zone: testZone, Name: "other-subnet"}),
+			},
+		},
 	}
 	for _, tc := range testCases {
-		fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
-		_, err := ensureNetworkEndpointGroup(
-			testServiceNameSpace,
-			testServiceName,
-			tc.negName,
-			testZone,
-			testNamedPort,
-			testKubesystemUID,
-			testPort,
-			tc.networkEndpointType,
-			fakeCloud,
-			nil,
-			nil,
-			tc.apiVersion,
-			false,
-		)
-		if err != nil {
-			t.Errorf("unexpected error: %s", err)
-		}
+		t.Run(tc.description, func(t *testing.T) {
+			fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
+			if !tc.networkInfo.IsNonDefault {
+				tc.networkInfo.NetworkURL = fakeCloud.NetworkURL()
+				tc.networkInfo.SubnetworkURL = fakeCloud.SubnetworkURL()
+			}
+			_, err := ensureNetworkEndpointGroup(
+				testServiceNameSpace,
+				testServiceName,
+				tc.negName,
+				testZone,
+				testNamedPort,
+				testKubesystemUID,
+				testPort,
+				tc.networkEndpointType,
+				fakeCloud,
+				nil,
+				nil,
+				tc.apiVersion,
+				false,
+				tc.networkInfo,
+			)
+			if err != nil {
+				t.Errorf("unexpected error: %s", err)
+			}
 
-		neg, err := fakeCloud.GetNetworkEndpointGroup(tc.negName, testZone, tc.apiVersion)
-		if err != nil {
-			t.Errorf("Failed to retrieve NEG %q: %v", tc.negName, err)
-		}
+			neg, err := fakeCloud.GetNetworkEndpointGroup(tc.negName, testZone, tc.apiVersion)
+			if err != nil {
+				t.Errorf("Failed to retrieve NEG %q: %v", tc.negName, err)
+			}
 
-		if neg.NetworkEndpointType != string(tc.networkEndpointType) {
-			t.Errorf("Unexpected NetworkEndpointType, expecting %q but got %q", tc.networkEndpointType, neg.NetworkEndpointType)
-		}
+			if neg.NetworkEndpointType != string(tc.networkEndpointType) {
+				t.Errorf("Unexpected NetworkEndpointType, expecting %q but got %q", tc.networkEndpointType, neg.NetworkEndpointType)
+			}
 
-		if neg.Subnetwork != tc.expectedSubnetwork {
-			t.Errorf("Unexpected Subnetwork, expecting %q but got %q", tc.expectedSubnetwork, neg.Subnetwork)
-		}
+			if neg.Subnetwork != tc.expectedSubnetwork {
+				t.Errorf("Unexpected Subnetwork, expecting %q but got %q", tc.expectedSubnetwork, neg.Subnetwork)
+			}
 
-		expectedNegDesc := utils.NegDescription{
-			ClusterUID:  testKubesystemUID,
-			Namespace:   testServiceNamespace,
-			ServiceName: testServiceName,
-			Port:        testPort,
-		}
+			if tc.expectedNetwork == "" {
+				tc.expectedNetwork = testNetwork
+			}
+			if neg.Network != tc.expectedNetwork {
+				t.Errorf("Unexpected Network, expecting %q but got %q", tc.expectedNetwork, neg.Network)
+			}
 
-		actualNegDesc, err := utils.NegDescriptionFromString(neg.Description)
-		if err != nil {
-			t.Errorf("Invalid neg description: %s", err)
-		}
+			expectedNegDesc := utils.NegDescription{
+				ClusterUID:  testKubesystemUID,
+				Namespace:   testServiceNamespace,
+				ServiceName: testServiceName,
+				Port:        testPort,
+			}
 
-		if !reflect.DeepEqual(*actualNegDesc, expectedNegDesc) {
-			t.Errorf("Unexpected neg description: %s, expected %s", neg.Description, expectedNegDesc.String())
-		}
+			actualNegDesc, err := utils.NegDescriptionFromString(neg.Description)
+			if err != nil {
+				t.Errorf("Invalid neg description: %s", err)
+			}
 
-		// Call ensureNetworkEndpointGroup with the same NEG.
-		_, err = ensureNetworkEndpointGroup(
-			testServiceNameSpace,
-			testServiceName,
-			tc.negName,
-			testZone,
-			testNamedPort,
-			testKubesystemUID,
-			testPort,
-			tc.networkEndpointType,
-			fakeCloud,
-			nil,
-			nil,
-			tc.apiVersion,
-			false,
-		)
+			if !reflect.DeepEqual(*actualNegDesc, expectedNegDesc) {
+				t.Errorf("Unexpected neg description: %s, expected %s", neg.Description, expectedNegDesc.String())
+			}
 
-		if err != nil {
-			t.Errorf("Unexpected error when called with duplicated NEG: %v", err)
-		}
+			// Call ensureNetworkEndpointGroup with the same NEG.
+			_, err = ensureNetworkEndpointGroup(
+				testServiceNameSpace,
+				testServiceName,
+				tc.negName,
+				testZone,
+				testNamedPort,
+				testKubesystemUID,
+				testPort,
+				tc.networkEndpointType,
+				fakeCloud,
+				nil,
+				nil,
+				tc.apiVersion,
+				false,
+				tc.networkInfo,
+			)
+
+			if err != nil {
+				t.Errorf("Unexpected error when called with duplicated NEG: %v", err)
+			}
+		})
 	}
 }
 
@@ -1171,6 +1204,10 @@ func TestNameUniqueness(t *testing.T) {
 		negName              = "test-neg"
 		apiVersion           = meta.VersionGA
 		networkEndpointType  = negtypes.VmIpPortEndpointType
+		networkInfo          = network.NetworkInfo{
+			NetworkURL:    testNetwork,
+			SubnetworkURL: testSubnetwork,
+		}
 	)
 	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
 	_, err := ensureNetworkEndpointGroup(
@@ -1187,6 +1224,7 @@ func TestNameUniqueness(t *testing.T) {
 		nil,
 		apiVersion,
 		false,
+		networkInfo,
 	)
 	if err != nil {
 		t.Errorf("Errored while ensuring network endpoint groups: %s", err)
@@ -1216,6 +1254,7 @@ func TestNameUniqueness(t *testing.T) {
 		nil,
 		apiVersion,
 		false,
+		networkInfo,
 	)
 
 	if err == nil {
@@ -1236,6 +1275,10 @@ func TestNegObjectCrd(t *testing.T) {
 		testPort             = "80"
 		negName              = "test-neg"
 		apiVersion           = meta.VersionGA
+		networkInfo          = network.NetworkInfo{
+			NetworkURL:    testNetwork,
+			SubnetworkURL: testSubnetwork,
+		}
 	)
 
 	for _, networkEndpointType := range []negtypes.NetworkEndpointType{
@@ -1258,6 +1301,7 @@ func TestNegObjectCrd(t *testing.T) {
 			nil,
 			apiVersion,
 			false,
+			networkInfo,
 		)
 		if err != nil {
 			t.Errorf("Errored while ensuring network endpoint groups: %s", err)
@@ -1298,6 +1342,7 @@ func TestNegObjectCrd(t *testing.T) {
 			nil,
 			apiVersion,
 			false,
+			networkInfo,
 		)
 
 		if err != nil {
@@ -1325,6 +1370,10 @@ func TestNEGRecreate(t *testing.T) {
 		testPort             = "80"
 		negName              = "test-neg"
 		apiVersion           = meta.VersionGA
+		networkInfo          = network.NetworkInfo{
+			NetworkURL:    testNetwork,
+			SubnetworkURL: testSubnetwork,
+		}
 	)
 
 	matchingNegDesc := utils.NegDescription{
@@ -1463,6 +1512,7 @@ func TestNEGRecreate(t *testing.T) {
 			nil,
 			apiVersion,
 			tc.customName,
+			networkInfo,
 		)
 		if !tc.expectError && err != nil {
 			t.Errorf("TestCase: %s, Errored while ensuring network endpoint groups: %s", tc.desc, err)

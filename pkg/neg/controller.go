@@ -44,6 +44,7 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/ingress-gce/pkg/network"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
@@ -67,6 +68,7 @@ type Controller struct {
 	namer        negtypes.NetworkEndpointGroupNamer
 	l4Namer      namer2.L4ResourcesNamer
 	zoneGetter   negtypes.ZoneGetter
+	cloud        negtypes.NetworkEndpointGroupCloud
 
 	hasSynced                   func() bool
 	ingressLister               cache.Indexer
@@ -196,6 +198,7 @@ func NewController(
 		gcPeriod:              gcPeriod,
 		recorder:              recorder,
 		zoneGetter:            zoneGetter,
+		cloud:                 cloud,
 		namer:                 namer,
 		l4Namer:               l4Namer,
 		defaultBackendService: defaultBackendService,
@@ -444,21 +447,25 @@ func (c *Controller) processService(key string) error {
 	}
 	negUsage := usageMetrics.NegServiceState{}
 	svcPortInfoMap := make(negtypes.PortInfoMap)
-	if err := c.mergeDefaultBackendServicePortInfoMap(key, service, svcPortInfoMap); err != nil {
+	networkInfo, err := network.ServiceNetwork(service, c.cloud)
+	if err != nil {
+		return err
+	}
+	if err := c.mergeDefaultBackendServicePortInfoMap(key, service, svcPortInfoMap, networkInfo); err != nil {
 		return err
 	}
 	negUsage.IngressNeg = len(svcPortInfoMap)
-	if err := c.mergeIngressPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap); err != nil {
+	if err := c.mergeIngressPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap, networkInfo); err != nil {
 		return err
 	}
 	negUsage.IngressNeg = len(svcPortInfoMap)
-	if err := c.mergeStandaloneNEGsPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap, &negUsage); err != nil {
+	if err := c.mergeStandaloneNEGsPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap, &negUsage, networkInfo); err != nil {
 		return err
 	}
 	negUsage.StandaloneNeg = len(svcPortInfoMap) - negUsage.IngressNeg
 
 	if c.enableASM {
-		csmSVCPortInfoMap, err := c.getCSMPortInfoMap(namespace, name, service)
+		csmSVCPortInfoMap, err := c.getCSMPortInfoMap(namespace, name, service, networkInfo)
 		if err != nil {
 			return err
 		}
@@ -471,7 +478,7 @@ func (c *Controller) processService(key string) error {
 	}
 
 	if c.runL4 {
-		if err := c.mergeVmIpNEGsPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap, &negUsage); err != nil {
+		if err := c.mergeVmIpNEGsPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap, &negUsage, networkInfo); err != nil {
 			return err
 		}
 	}
@@ -495,7 +502,7 @@ func (c *Controller) processService(key string) error {
 }
 
 // mergeIngressPortInfo merges Ingress PortInfo into portInfoMap if the service has Enable Ingress annotation.
-func (c *Controller) mergeIngressPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap) error {
+func (c *Controller) mergeIngressPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap, networkInfo *network.NetworkInfo) error {
 	negAnnotation, foundNEGAnnotation, err := annotations.FromService(service).NEGAnnotation()
 	if err != nil {
 		return err
@@ -509,7 +516,7 @@ func (c *Controller) mergeIngressPortInfo(service *apiv1.Service, name types.Nam
 		// Only service ports referenced by ingress are synced for NEG
 		ings := getIngressServicesFromStore(c.ingressLister, service)
 		ingressSvcPortTuples := gatherPortMappingUsedByIngress(ings, service, c.logger)
-		ingressPortInfoMap := negtypes.NewPortInfoMap(name.Namespace, name.Name, ingressSvcPortTuples, c.namer, true, nil)
+		ingressPortInfoMap := negtypes.NewPortInfoMap(name.Namespace, name.Name, ingressSvcPortTuples, c.namer, true, nil, networkInfo)
 		if err := portInfoMap.Merge(ingressPortInfoMap); err != nil {
 			return fmt.Errorf("failed to merge service ports referenced by ingress (%v): %w", ingressPortInfoMap, err)
 		}
@@ -518,7 +525,7 @@ func (c *Controller) mergeIngressPortInfo(service *apiv1.Service, name types.Nam
 }
 
 // mergeStandaloneNEGsPortInfo merge Standalone NEG PortInfo into portInfoMap
-func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap, negUsage *usageMetrics.NegServiceState) error {
+func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap, negUsage *usageMetrics.NegServiceState, networkInfo *network.NetworkInfo) error {
 	negAnnotation, foundNEGAnnotation, err := annotations.FromService(service).NEGAnnotation()
 	if err != nil {
 		return err
@@ -549,7 +556,7 @@ func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name ty
 		}
 		negUsage.CustomNamedNeg = len(customNames)
 
-		if err := portInfoMap.Merge(negtypes.NewPortInfoMap(name.Namespace, name.Name, exposedNegSvcPort, c.namer /*readinessGate*/, true, customNames)); err != nil {
+		if err := portInfoMap.Merge(negtypes.NewPortInfoMap(name.Namespace, name.Name, exposedNegSvcPort, c.namer, true, customNames, networkInfo)); err != nil {
 			return fmt.Errorf("failed to merge service ports exposed as standalone NEGs (%v) into ingress referenced service ports (%v): %w", exposedNegSvcPort, portInfoMap, err)
 		}
 	}
@@ -558,7 +565,7 @@ func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name ty
 }
 
 // mergeVmIpNEGsPortInfo merges the PortInfo for ILB services using GCE_VM_IP NEGs into portInfoMap
-func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap, negUsage *usageMetrics.NegServiceState) error {
+func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap, negUsage *usageMetrics.NegServiceState, networkInfo *network.NetworkInfo) error {
 	if wantsILB, _ := annotations.WantsL4ILB(service); !wantsILB {
 		return nil
 	}
@@ -574,7 +581,7 @@ func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.Na
 	// Update usage metrics.
 	negUsage.VmIpNeg = usageMetrics.NewVmIpNegType(onlyLocal)
 
-	return portInfoMap.Merge(negtypes.NewPortInfoMapForVMIPNEG(name.Namespace, name.Name, c.l4Namer, onlyLocal))
+	return portInfoMap.Merge(negtypes.NewPortInfoMapForVMIPNEG(name.Namespace, name.Name, c.l4Namer, onlyLocal, networkInfo))
 }
 
 // mergeDefaultBackendServicePortInfoMap merge the PortInfoMap for the default backend service into portInfoMap
@@ -582,7 +589,7 @@ func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.Na
 // in the ingress spec.  It is either inferred and then managed by the controller, or
 // it is passed to the controller via a command line flag.
 // Additionally, supporting NEGs for default backends is only for L7-ILB
-func (c *Controller) mergeDefaultBackendServicePortInfoMap(key string, service *apiv1.Service, portInfoMap negtypes.PortInfoMap) error {
+func (c *Controller) mergeDefaultBackendServicePortInfoMap(key string, service *apiv1.Service, portInfoMap negtypes.PortInfoMap, networkInfo *network.NetworkInfo) error {
 	if c.defaultBackendService.ID.Service.String() != key {
 		return nil
 	}
@@ -597,7 +604,7 @@ func (c *Controller) mergeDefaultBackendServicePortInfoMap(key string, service *
 					Port:       c.defaultBackendService.Port,
 					TargetPort: c.defaultBackendService.TargetPort.String(),
 				})
-				defaultServicePortInfoMap := negtypes.NewPortInfoMap(c.defaultBackendService.ID.Service.Namespace, c.defaultBackendService.ID.Service.Name, svcPortTupleSet, c.namer, false, nil)
+				defaultServicePortInfoMap := negtypes.NewPortInfoMap(c.defaultBackendService.ID.Service.Namespace, c.defaultBackendService.ID.Service.Name, svcPortTupleSet, c.namer, false, nil, networkInfo)
 				return portInfoMap.Merge(defaultServicePortInfoMap)
 			}
 		}
@@ -624,7 +631,7 @@ func (c *Controller) mergeDefaultBackendServicePortInfoMap(key string, service *
 
 // getCSMPortInfoMap returns the PortInfoMap used when ASM is enabled. The controller will create NEGs for every port of the service
 // NOTE: The output of this function should only be used when enableASM = true.
-func (c *Controller) getCSMPortInfoMap(namespace, name string, service *apiv1.Service) (negtypes.PortInfoMap, error) {
+func (c *Controller) getCSMPortInfoMap(namespace, name string, service *apiv1.Service, networkInfo *network.NetworkInfo) (negtypes.PortInfoMap, error) {
 	servicePortInfoMap := make(negtypes.PortInfoMap)
 	// Fill all service ports into portinfomap
 	servicePorts := gatherPortMappingFromService(service)
@@ -635,7 +642,7 @@ func (c *Controller) getCSMPortInfoMap(namespace, name string, service *apiv1.Se
 	} else if contains(c.asmServiceNEGSkipNamespaces, namespace) {
 		c.logger.Info("Skip NEG creation for services in namespace", "namespace", namespace)
 	} else {
-		servicePortInfoMap = negtypes.NewPortInfoMap(namespace, name, servicePorts, c.namer, false, nil)
+		servicePortInfoMap = negtypes.NewPortInfoMap(namespace, name, servicePorts, c.namer, false, nil, networkInfo)
 	}
 	return servicePortInfoMap, nil
 }
