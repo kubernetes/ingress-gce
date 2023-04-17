@@ -26,14 +26,16 @@ import (
 )
 
 type SyncerMetricsCollector interface {
-	UpdateSyncer(key negtypes.NegSyncerKey, result *negtypes.NegSyncResult)
+	// UpdateSyncerStatusInMetrics update the status of corresponding syncer based on the sync error
+	UpdateSyncerStatusInMetrics(key negtypes.NegSyncerKey, err error)
+
 	SetSyncerEPMetrics(key negtypes.NegSyncerKey, epState *negtypes.SyncerEPStat)
 	SetLabelPropagationStats(key negtypes.NegSyncerKey, labelstatLabelPropagationStats LabelPropagationStats)
 }
 
 type SyncerMetrics struct {
 	// syncerStatusMap tracks the status of each syncer
-	syncerStatusMap map[negtypes.NegSyncerKey]string
+	syncerStatusMap map[negtypes.NegSyncerKey]negtypes.Reason
 	// syncerEndpointStateMap is a map between syncer and endpoint state counts
 	syncerEndpointStateMap map[negtypes.NegSyncerKey]negtypes.StateCountMap
 	// syncerEPSStateMap is a map between syncer and endpoint slice state counts
@@ -51,7 +53,7 @@ type SyncerMetrics struct {
 // NewNEGMetricsCollector initializes SyncerMetrics and starts a go routine to compute and export metrics periodically.
 func NewNegMetricsCollector(exportInterval time.Duration, logger klog.Logger) *SyncerMetrics {
 	return &SyncerMetrics{
-		syncerStatusMap:            make(map[negtypes.NegSyncerKey]string),
+		syncerStatusMap:            make(map[negtypes.NegSyncerKey]negtypes.Reason),
 		syncerEndpointStateMap:     make(map[negtypes.NegSyncerKey]negtypes.StateCountMap),
 		syncerEPSStateMap:          make(map[negtypes.NegSyncerKey]negtypes.StateCountMap),
 		syncerLabelProagationStats: make(map[negtypes.NegSyncerKey]LabelPropagationStats),
@@ -87,15 +89,20 @@ func (sm *SyncerMetrics) export() {
 	sm.logger.V(3).Info("Exporting syncer related metrics", "Number of Endpoints", lpMetrics.NumberOfEndpoints)
 }
 
-// UpdateSyncer update the status of corresponding syncer based on the syncResult.
-func (sm *SyncerMetrics) UpdateSyncer(key negtypes.NegSyncerKey, syncResult *negtypes.NegSyncResult) {
+// UpdateSyncerStatusInMetrics update the status of syncer based on the error
+func (sm *SyncerMetrics) UpdateSyncerStatusInMetrics(key negtypes.NegSyncerKey, err error) {
+	reason := negtypes.ReasonSuccess
+	if err != nil {
+		syncErr := negtypes.ClassifyError(err)
+		reason = syncErr.Reason
+	}
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	if sm.syncerStatusMap == nil {
-		sm.syncerStatusMap = make(map[negtypes.NegSyncerKey]string)
-		sm.logger.V(3).Info("Syncer Metrics failed to initialize correctly, reinitializing syncerStatusMap")
+		sm.syncerStatusMap = make(map[negtypes.NegSyncerKey]negtypes.Reason)
+		sm.logger.V(3).Info("Syncer Metrics failed to initialize correctly, reinitializing syncerStatusMap: %v", sm.syncerStatusMap)
 	}
-	sm.syncerStatusMap[key] = string(syncResult.Result)
+	sm.syncerStatusMap[key] = reason
 }
 
 // SetSyncerEPMetrics update the endpoint count based on the endpointStat

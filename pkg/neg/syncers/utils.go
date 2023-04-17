@@ -342,10 +342,11 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 			if getZoneErr != nil {
 				klog.Errorf("Detected unexpected error when getting zone, err: %v", getZoneErr)
 				return ZoneNetworkEndpointMapResult{
-					NetworkEndpointSet: nil,
-					EndpointPodMap:     nil,
-					DupCount:           dupCount,
-				}, getZoneErr
+						NetworkEndpointSet: nil,
+						EndpointPodMap:     nil,
+						DupCount:           dupCount,
+					},
+					fmt.Errorf("Unexpected error when getting zone for Endpoint %q in Endpoints %s/%s: %w", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, getZoneErr)
 			}
 			// pod is used for label propagation
 			_, getPodErr := getEndpointPod(endpointAddress, podLister)
@@ -353,10 +354,11 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 				if flags.F.EnableDegradedMode {
 					klog.Errorf("Detected unexpected error when getting pod, err: %v", getPodErr)
 					return ZoneNetworkEndpointMapResult{
-						NetworkEndpointSet: nil,
-						EndpointPodMap:     nil,
-						DupCount:           dupCount,
-					}, getPodErr // when degraded mode is enabled, we want to trigger degraded mode so return the error
+							NetworkEndpointSet: nil,
+							EndpointPodMap:     nil,
+							DupCount:           dupCount,
+						}, // when degraded mode is enabled, we want to trigger degraded mode so return the error
+						fmt.Errorf("Unexpected error when getting pod for Endpoint %q in Endpoints %s/%s: %w", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, getPodErr)
 				}
 				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated pod. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
 				continue
@@ -413,10 +415,10 @@ func getEndpointZone(
 	}
 	zone, err := zoneGetter.GetZoneForNode(*endpointAddress.NodeName)
 	if err != nil {
-		return zone, negtypes.ErrEPNodeNotFound
+		return zone, fmt.Errorf("%w: %v", negtypes.ErrEPNodeNotFound, err)
 	}
 	if zone == "" {
-		return zone, negtypes.ErrEPZoneMissing
+		return zone, fmt.Errorf("%w: zone is missing for node %v", negtypes.ErrEPZoneMissing, *endpointAddress.NodeName)
 	}
 	return zone, nil
 }
@@ -441,6 +443,8 @@ func getEndpointPod(
 	return pod, nil
 }
 
+// toZoneNetworkEndpointMap translates addresses in endpoints object into zone and endpoints map, and also return the count for duplicated endpoints
+// we will not raise error in degraded mode for misconfigured endpoints, instead they will be filtered directly
 func toZoneNetworkEndpointMapDegradedMode(
 	eds []negtypes.EndpointsData,
 	zoneGetter negtypes.ZoneGetter,
