@@ -628,8 +628,8 @@ k8s.io/cloud-provider-gcp/crd v0.0.0-20230227183622-3f1543249ff5 h1:xMNJz+8qU0Kk
 k8s.io/cloud-provider-gcp/crd v0.0.0-20230227183622-3f1543249ff5/go.mod h1:YDxdayH9Du6f2XUhZiRfM2B0vsJ9b7qbrmI2J2dd89Y=
 k8s.io/cloud-provider-gcp/crd v0.0.0-20230411231432-6ab330834e4e h1:MtQR9NbmkvuotfNK3MbZRjF13quIXWZ4624yYvy4biw=
 k8s.io/cloud-provider-gcp/crd v0.0.0-20230411231432-6ab330834e4e/go.mod h1:A//VRRwQBcvAI20bbCc5jmxMSegf/DqxDI7XVK9oyYo=
-k8s.io/cloud-provider-gcp/providers v0.26.3-0.20230322202223-f7280f55e36f h1:XPbo07vZ+h1xiGFIAN+gmlGm6G8zrZyhf/Xb6jNerTk=
-k8s.io/cloud-provider-gcp/providers v0.26.3-0.20230322202223-f7280f55e36f/go.mod h1:dDBqOcDqYsqo7ZM7yuX+6Xg9WiyEPYk1Q9m2oHrnePo=
+k8s.io/cloud-provider-gcp/providers v0.26.3-0.20230414153241-658d4df496a9 h1:u6Vv7TkVd34+nO6kB79CLWa0OW/QgBdWEI38og04S/k=
+k8s.io/cloud-provider-gcp/providers v0.26.3-0.20230414153241-658d4df496a9/go.mod h1:dDBqOcDqYsqo7ZM7yuX+6Xg9WiyEPYk1Q9m2oHrnePo=
 k8s.io/component-base v0.26.2 h1:IfWgCGUDzrD6wLLgXEstJKYZKAFS2kO+rBRi0p3LqcI=
 k8s.io/component-base v0.26.2/go.mod h1:DxbuIe9M3IZPRxPIzhch2m1eT7uFrSBJUBuVCQEBivs=
 k8s.io/klog/v2 v2.80.1 h1:atnLQ121W371wYYFawwYx1aEY2eUfs4l3J72wtgAwV4=
