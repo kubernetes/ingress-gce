@@ -18,18 +18,20 @@ import "errors"
 type Reason string
 
 const (
-	ReasonEPCountsDiffer           = Reason("EPCountsDiffer")
-	ReasonEPNodeMissing            = Reason("EPNodeMissing")
-	ReasonEPNodeNotFound           = Reason("EPNodeNotFound")
-	ReasonEPPodMissing             = Reason("EPPodMissing")
-	ReasonEPPodNotFound            = Reason("EPPodNotFound")
-	ReasonEPPodTypeAssertionFailed = Reason("EPPodTypeAssertionFailed")
-	ReasonEPZoneMissing            = Reason("EPZoneMissing")
-	ReasonEPSEndpointCountZero     = Reason("EPSEndpointCountZero")
-	ReasonEPCalculationCountZero   = Reason("EPCalculationCountZero")
-	ReasonInvalidAPIResponse       = Reason("InvalidAPIResponse")
-	ReasonInvalidEPAttach          = Reason("InvalidEPAttach")
-	ReasonInvalidEPDetach          = Reason("InvalidEPDetach")
+	ReasonEPCountsDiffer            = Reason("EPCountsDiffer")
+	ReasonEPNodeMissing             = Reason("EPNodeMissing")
+	ReasonEPNodeNotFound            = Reason("EPNodeNotFound")
+	ReasonEPNodeTypeAssertionFailed = Reason("EPNodeTypeAssertionFailed")
+	ReasonEPPodMissing              = Reason("EPPodMissing")
+	ReasonEPPodNotFound             = Reason("EPPodNotFound")
+	ReasonEPPodTypeAssertionFailed  = Reason("EPPodTypeAssertionFailed")
+	ReasonEPPodTerminal             = Reason("EPPodTerminal")
+	ReasonEPZoneMissing             = Reason("EPZoneMissing")
+	ReasonEPSEndpointCountZero      = Reason("EPSEndpointCountZero")
+	ReasonEPCalculationCountZero    = Reason("EPCalculationCountZero")
+	ReasonInvalidAPIResponse        = Reason("InvalidAPIResponse")
+	ReasonInvalidEPAttach           = Reason("InvalidEPAttach")
+	ReasonInvalidEPDetach           = Reason("InvalidEPDetach")
 
 	// these are for non error-state error
 	ReasonNegNotFound          = Reason("NegNotFound")
@@ -55,6 +57,11 @@ var (
 		Reason:       ReasonEPNodeNotFound,
 		IsErrorState: true,
 	}
+	ErrEPNodeTypeAssertionFailed = NegSyncError{
+		Err:          errors.New("endpoint corresponds to an object that fails node type assertion"),
+		Reason:       ReasonEPNodeTypeAssertionFailed,
+		IsErrorState: true,
+	}
 	ErrEPPodMissing = NegSyncError{
 		Err:          errors.New("endpoint has missing pod field"),
 		Reason:       ReasonEPPodMissing,
@@ -68,6 +75,11 @@ var (
 	ErrEPPodTypeAssertionFailed = NegSyncError{
 		Err:          errors.New("endpoint corresponds to an object that fails pod type assertion"),
 		Reason:       ReasonEPPodTypeAssertionFailed,
+		IsErrorState: true,
+	}
+	ErrEPPodTerminal = NegSyncError{
+		Err:          errors.New("endpoint corresponds to a terminal pod"),
+		Reason:       ReasonEPPodTerminal,
 		IsErrorState: true,
 	}
 	ErrEPZoneMissing = NegSyncError{

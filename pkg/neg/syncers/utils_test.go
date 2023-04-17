@@ -17,6 +17,7 @@ limitations under the License.
 package syncers
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"reflect"
@@ -2003,9 +2004,9 @@ func TestValidatePod(t *testing.T) {
 		},
 	})
 	testCases := []struct {
-		desc   string
-		pod    *v1.Pod
-		expect bool
+		desc      string
+		pod       *v1.Pod
+		expectErr error
 	}{
 		{
 			desc: "a valid pod with phase running",
@@ -2021,7 +2022,7 @@ func TestValidatePod(t *testing.T) {
 					NodeName: instance1,
 				},
 			},
-			expect: true,
+			expectErr: nil,
 		},
 		{
 			desc: "a terminal pod with phase failed",
@@ -2037,7 +2038,7 @@ func TestValidatePod(t *testing.T) {
 					NodeName: instance1,
 				},
 			},
-			expect: false,
+			expectErr: negtypes.ErrEPPodTerminal,
 		},
 		{
 			desc: "a terminal pod with phase succeeded",
@@ -2053,7 +2054,7 @@ func TestValidatePod(t *testing.T) {
 					NodeName: instance1,
 				},
 			},
-			expect: false,
+			expectErr: negtypes.ErrEPPodTerminal,
 		},
 		{
 			desc: "a pod from non-existent node",
@@ -2069,13 +2070,13 @@ func TestValidatePod(t *testing.T) {
 					NodeName: testNodeNonExistent,
 				},
 			},
-			expect: false,
+			expectErr: negtypes.ErrEPNodeNotFound,
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			if got := validatePod(tc.pod, nodeLister); got != tc.expect {
-				t.Errorf("validatePod() = %t, expected %t\n", got, tc.expect)
+			if got := validatePod(tc.pod, nodeLister); !errors.Is(got, tc.expectErr) {
+				t.Errorf("validatePod() = %t, expected %t\n", got, tc.expectErr)
 			}
 		})
 	}

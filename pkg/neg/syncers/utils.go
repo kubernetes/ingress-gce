@@ -415,7 +415,7 @@ func getEndpointZone(
 	}
 	zone, err := zoneGetter.GetZoneForNode(*endpointAddress.NodeName)
 	if err != nil {
-		return zone, fmt.Errorf("%w: %v", negtypes.ErrEPNodeNotFound, err)
+		return zone, fmt.Errorf("%w: %v", negtypes.ErrEPZoneMissing, err)
 	}
 	if zone == "" {
 		return zone, fmt.Errorf("%w: zone is missing for node %v", negtypes.ErrEPZoneMissing, *endpointAddress.NodeName)
@@ -475,14 +475,14 @@ func toZoneNetworkEndpointMapDegradedMode(
 				klog.Errorf("Endpoint %q in Endpoints %s/%s receives error when getting pod, err: %v, skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, getPodErr)
 				continue
 			}
-			if !validatePod(pod, nodeLister) {
-				klog.Errorf("Endpoint %q in Endpoints %s/%s correponds to an invalid pod: %v, skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, getPodErr)
+			if err := validatePod(pod, nodeLister); err != nil {
+				klog.Errorf("Endpoint %q in Endpoints %s/%s correponds to an invalid pod: %v, skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, err)
 				continue
 			}
 			nodeName := pod.Spec.NodeName
 			zone, err := zoneGetter.GetZoneForNode(nodeName)
 			if err != nil {
-				klog.V(2).Infof("For endpoint %q in pod %q, its corresponding node %q does not have valid zone information, skipping", endpointAddress.Addresses, pod.ObjectMeta.Name, nodeName)
+				klog.Errorf("For endpoint %q in pod %q, its corresponding node %q does not have valid zone information, skipping", endpointAddress.Addresses, pod.ObjectMeta.Name, nodeName)
 				continue
 			}
 			if zoneNetworkEndpointMap[zone] == nil {
@@ -514,27 +514,24 @@ func toZoneNetworkEndpointMapDegradedMode(
 }
 
 // validatePod checks if this pod is a valid pod resource
-// it returns false if the pod:
+// it returns error if the pod:
 // 1. is in terminal state
 // 2. corresponds to a non-existent node
-func validatePod(pod *apiv1.Pod, nodeLister cache.Indexer) bool {
+func validatePod(pod *apiv1.Pod, nodeLister cache.Indexer) error {
 	// Terminal Pod means a pod is in PodFailed or PodSucceeded phase
 	phase := pod.Status.Phase
 	if phase == apiv1.PodFailed || phase == apiv1.PodSucceeded {
-		klog.V(2).Infof("Pod %s/%s is a terminal pod with status %v, skipping", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name, phase)
-		return false
+		return negtypes.ErrEPPodTerminal
 	}
 	obj, exists, err := nodeLister.GetByKey(pod.Spec.NodeName)
 	if err != nil || !exists {
-		klog.V(2).Infof("Pod %s/%s corresponds to a non-existing node %s, skipping", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name, pod.Spec.NodeName)
-		return false
+		return negtypes.ErrEPNodeNotFound
 	}
 	_, isNode := obj.(*apiv1.Node)
 	if !isNode {
-		klog.V(2).Infof("Pod %s/%s does not correspond to a valid node resource, skipping", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name)
-		return false
+		return negtypes.ErrEPNodeTypeAssertionFailed
 	}
-	return true
+	return nil
 }
 
 // ipsForPod will return a mapping of pods to their IPv4 and IPv6 addresses.
