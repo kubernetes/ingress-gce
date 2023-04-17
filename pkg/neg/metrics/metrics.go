@@ -163,6 +163,10 @@ func RegisterMetrics() {
 		prometheus.MustRegister(InitializationLatency)
 		prometheus.MustRegister(SyncerStaleness)
 		prometheus.MustRegister(EPSStaleness)
+		prometheus.MustRegister(NumberOfEndpoints)
+		prometheus.MustRegister(LabelPropagationError)
+		prometheus.MustRegister(LabelNumber)
+		prometheus.MustRegister(AnnotationSize)
 
 		RegisterSyncerMetrics()
 	})

@@ -233,7 +233,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	}
 	s.logger.V(2).Info("Sync NEG", "negSyncerKey", s.NegSyncerKey.String(), "endpointsCalculatorMode", s.endpointsCalculator.Mode())
 
-	currentMap, err := retrieveExistingZoneNetworkEndpointMap(s.NegSyncerKey.NegName, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode())
+	currentMap, currentPodLabelMap, err := retrieveExistingZoneNetworkEndpointMap(s.NegSyncerKey.NegName, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode())
 	if err != nil {
 		return err
 	}
@@ -312,7 +312,10 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	// Only fetch label from pod for L7 endpoints
 	if flags.F.EnableNEGLabelPropagation && s.NegType == negtypes.VmIpPortEndpointType {
 		endpointPodLabelMap = getEndpointPodLabelMap(addEndpoints, endpointPodMap, s.podLister, s.podLabelPropagationConfig, s.recorder, s.logger)
+		publishAnnotationSizeMetrics(addEndpoints, endpointPodLabelMap)
 	}
+
+	s.syncCollector.SetLabelPropagationStats(s.NegSyncerKey, collectLabelStats(currentPodLabelMap, endpointPodLabelMap, targetMap))
 
 	if s.needCommit() {
 		s.commitPods(committedEndpoints, endpointPodMap)
@@ -866,11 +869,13 @@ func getEndpointPodLabelMap(endpoints map[string]negtypes.NetworkEndpointSet, en
 			key := fmt.Sprintf("%s/%s", endpointPodMap[endpoint].Namespace, endpointPodMap[endpoint].Name)
 			obj, ok, err := podLister.GetByKey(key)
 			if err != nil || !ok {
+				metrics.PublishLabelPropagationError(labels.OtherError)
 				logger.Error(err, "getEndpointPodLabelMap: error getting pod", "pod", key, "exist", ok)
 				continue
 			}
 			pod, ok := obj.(*v1.Pod)
 			if !ok {
+				metrics.PublishLabelPropagationError(labels.OtherError)
 				logger.Error(nil, "expected type *v1.Pod", "pod", key, "type", fmt.Sprintf("%T", obj))
 				continue
 			}
@@ -882,4 +887,29 @@ func getEndpointPodLabelMap(endpoints map[string]negtypes.NetworkEndpointSet, en
 		}
 	}
 	return endpointPodLabelMap
+}
+
+// publishAnnotationSizeMetrics goes through all the endpoints to be attached
+// and publish annotation size metrics.
+func publishAnnotationSizeMetrics(endpoints map[string]negtypes.NetworkEndpointSet, endpointPodLabelMap labels.EndpointPodLabelMap) {
+	for _, endpointSet := range endpoints {
+		for endpoint := range endpointSet {
+			labelMap := endpointPodLabelMap[endpoint]
+			metrics.PublishAnnotationMetrics(labels.GetPodLabelMapSize(labelMap), len(labelMap))
+		}
+	}
+}
+
+// collectLabelStats calculate the number of endpoints and the number of endpoints with annotations.
+func collectLabelStats(currentPodLabelMap, addPodLabelMap labels.EndpointPodLabelMap, targetEndpointMap map[string]negtypes.NetworkEndpointSet) metrics.LabelPropagationStats {
+	labelPropagationStats := metrics.LabelPropagationStats{}
+	for _, endpointSet := range targetEndpointMap {
+		for endpoint := range endpointSet {
+			labelPropagationStats.NumberOfEndpoints += 1
+			if currentPodLabelMap[endpoint] != nil || addPodLabelMap[endpoint] != nil {
+				labelPropagationStats.EndpointsWithAnnotation += 1
+			}
+		}
+	}
+	return labelPropagationStats
 }

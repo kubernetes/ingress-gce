@@ -560,21 +560,22 @@ func ipsForPod(eds []negtypes.EndpointsData) map[types.NamespacedName]negtypes.N
 }
 
 // retrieveExistingZoneNetworkEndpointMap lists existing network endpoints in the neg and return the zone and endpoints map
-func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter negtypes.ZoneGetter, cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, mode negtypes.EndpointsCalculatorMode) (map[string]negtypes.NetworkEndpointSet, error) {
+func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter negtypes.ZoneGetter, cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, mode negtypes.EndpointsCalculatorMode) (map[string]negtypes.NetworkEndpointSet, labels.EndpointPodLabelMap, error) {
 	// Include zones that have non-candidate nodes currently. It is possible that NEGs were created in those zones previously and the endpoints now became non-candidates.
 	// Endpoints in those NEGs now need to be removed. This mostly applies to VM_IP_NEGs where the endpoints are nodes.
 	zones, err := zoneGetter.ListZones(utils.AllNodesPredicate)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	candidateNodeZones, err := zoneGetter.ListZones(negtypes.NodePredicateForEndpointCalculatorMode(mode))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	candidateZonesMap := sets.NewString(candidateNodeZones...)
 
 	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
+	endpointPodLabelMap := labels.EndpointPodLabelMap{}
 	for _, zone := range zones {
 		networkEndpointsWithHealthStatus, err := cloud.ListNetworkEndpoints(negName, zone, false, version)
 		if err != nil {
@@ -584,7 +585,7 @@ func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter negtypes.
 				klog.Infof("Ignoring NotFound error for NEG %q in zone %q", negName, zone)
 				continue
 			}
-			return nil, fmt.Errorf("Failed to lookup NEG in zone %q, candidate zones %v, err - %v", zone, candidateZonesMap, err)
+			return nil, nil, fmt.Errorf("Failed to lookup NEG in zone %q, candidate zones %v, err - %v", zone, candidateZonesMap, err)
 		}
 		zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
 		for _, ne := range networkEndpointsWithHealthStatus {
@@ -593,9 +594,10 @@ func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter negtypes.
 				newNE.Port = strconv.FormatInt(ne.NetworkEndpoint.Port, 10)
 			}
 			zoneNetworkEndpointMap[zone].Insert(newNE)
+			endpointPodLabelMap[newNE] = ne.NetworkEndpoint.Annotations
 		}
 	}
-	return zoneNetworkEndpointMap, nil
+	return zoneNetworkEndpointMap, endpointPodLabelMap, nil
 }
 
 // makeEndpointBatch return a batch of endpoint from the input and remove the endpoints from input set

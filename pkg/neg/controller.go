@@ -325,6 +325,7 @@ func (c *Controller) Run(stopCh <-chan struct{}) {
 		wait.Until(c.gc, c.gcPeriod, stopCh)
 	}()
 	go c.reflector.Run(stopCh)
+	go c.syncerMetrics.Run(stopCh)
 	<-stopCh
 }
 

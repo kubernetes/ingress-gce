@@ -25,6 +25,8 @@ const (
 	annotationSize    = "annotation_size_per_endpoint"
 	labelErrorNumber  = "label_propagation_error_count"
 	numberOfEndpoints = "number_of_endpoints"
+	epWithAnnotation  = "with_annotation"
+	totalEndpoints    = "total"
 )
 
 var (
@@ -33,7 +35,7 @@ var (
 	}
 
 	endpointAnnotationLabels = []string{
-		"with_annotation",
+		"feature",
 	}
 
 	NumberOfEndpoints = prometheus.NewGaugeVec(
