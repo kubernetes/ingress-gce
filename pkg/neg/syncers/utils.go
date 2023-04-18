@@ -487,7 +487,7 @@ func ipsForPod(eds []negtypes.EndpointsData) map[types.NamespacedName]negtypes.N
 }
 
 // retrieveExistingZoneNetworkEndpointMap lists existing network endpoints in the neg and return the zone and endpoints map
-func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter negtypes.ZoneGetter, cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, mode negtypes.EndpointsCalculatorMode) (map[string]negtypes.NetworkEndpointSet, labels.EndpointPodLabelMap, error) {
+func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter negtypes.ZoneGetter, cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, mode negtypes.EndpointsCalculatorMode, enableDualStackNEG bool) (map[string]negtypes.NetworkEndpointSet, labels.EndpointPodLabelMap, error) {
 	// Include zones that have non-candidate nodes currently. It is possible that NEGs were created in those zones previously and the endpoints now became non-candidates.
 	// Endpoints in those NEGs now need to be removed. This mostly applies to VM_IP_NEGs where the endpoints are nodes.
 	zones, err := zoneGetter.ListZones(utils.AllNodesPredicate)
@@ -520,6 +520,9 @@ func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter negtypes.
 			if ne.NetworkEndpoint.Port != 0 {
 				newNE.Port = strconv.FormatInt(ne.NetworkEndpoint.Port, 10)
 			}
+			if enableDualStackNEG {
+				newNE.IPv6 = ne.NetworkEndpoint.Ipv6Address
+			}
 			zoneNetworkEndpointMap[zone].Insert(newNE)
 			endpointPodLabelMap[newNE] = ne.NetworkEndpoint.Annotations
 		}
@@ -548,9 +551,10 @@ func makeEndpointBatch(endpoints negtypes.NetworkEndpointSet, negType negtypes.N
 				return nil, fmt.Errorf("failed to decode endpoint port %v: %w", networkEndpoint, err)
 			}
 			cloudNetworkEndpoint := &composite.NetworkEndpoint{
-				Instance:  networkEndpoint.Node,
-				IpAddress: networkEndpoint.IP,
-				Port:      int64(portNum),
+				Instance:    networkEndpoint.Node,
+				IpAddress:   networkEndpoint.IP,
+				Ipv6Address: networkEndpoint.IPv6,
+				Port:        int64(portNum),
 			}
 			if flags.F.EnableNEGLabelPropagation {
 				annotations, ok := endpointPodLabelMap[networkEndpoint]
