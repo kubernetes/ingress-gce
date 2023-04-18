@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -287,6 +288,21 @@ func (key NegSyncerKey) String() string {
 // GetAPIVersion returns the compute API version to be used in order
 // to create the negType specified in the given NegSyncerKey.
 func (key NegSyncerKey) GetAPIVersion() meta.Version {
+	if flags.F.EnableDualStackNEG {
+		// This condition can be removed when we're getting rid of the feature flag
+		// or when GCE meta.VersionGA API supports the IPv6 fields.
+		//
+		// As an exception, it's easier here to access the global flag value and not
+		// plumb it into the NegSyncerKey. Generally, code within the NEG controller
+		// tires to avoid accessing global flag values to aid with scenarios in unit
+		// testing -- in this case though, the actual differentiator between Alpha
+		// and other versions is NOT something that can (or rather should) be
+		// covered within unit tests.
+		//
+		// TODO(gauravkghildiyal): Start using Beta APIs once they have the
+		// necessary changes.
+		return meta.VersionAlpha
+	}
 	switch key.NegType {
 	case NonGCPPrivateEndpointType:
 		return meta.VersionAlpha
