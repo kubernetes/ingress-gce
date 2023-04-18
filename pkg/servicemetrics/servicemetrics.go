@@ -177,7 +177,7 @@ func (c *Controller) export() {
 	l4ProtocolState, ipStackState, gcpFeaturesState := calculateMetrics(allServices)
 
 	updatePrometheusMetrics(l4ProtocolState, ipStackState, gcpFeaturesState)
-	klog.Infof("Exported service metrics in %v ms", time.Since(start).Microseconds())
+	klog.Infof("Exported service metrics in %s", time.Since(start))
 }
 
 func calculateMetrics(services []*v1.Service) (map[serviceL4ProtocolMetricState]int64, map[serviceIPStackMetricState]int64, map[serviceGCPFeaturesMetricState]int64) {
