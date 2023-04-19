@@ -47,14 +47,15 @@ type HealthChecks struct {
 	recorderGetter    RecorderGetter
 	serviceGetter     ServiceGetter
 	clusterInfo       healthcheck.ClusterInfo
+	thcFlagEnabled    bool
 }
 
 // NewHealthChecker creates a new health checker.
 // cloud: the cloud object implementing SingleHealthCheck.
 // defaultHealthCheckPath: is the HTTP path to use for health checks.
-func NewHealthChecker(cloud HealthCheckProvider, healthCheckPath string, defaultBackendSvc types.NamespacedName, recorderGetter RecorderGetter, serviceGetter ServiceGetter) *HealthChecks {
+func NewHealthChecker(cloud HealthCheckProvider, healthCheckPath string, defaultBackendSvc types.NamespacedName, recorderGetter RecorderGetter, serviceGetter ServiceGetter, enableTHC bool) *HealthChecks {
 	ci := generateClusterInfo(cloud.(*gce.Cloud))
-	return &HealthChecks{cloud, healthCheckPath, defaultBackendSvc, recorderGetter, serviceGetter, ci}
+	return &HealthChecks{cloud, healthCheckPath, defaultBackendSvc, recorderGetter, serviceGetter, ci, enableTHC}
 }
 
 func generateClusterInfo(gceCloud *gce.Cloud) healthcheck.ClusterInfo {
@@ -125,6 +126,8 @@ func (h *HealthChecks) generateHealthcheckInfo(sp utils.ServicePort, iLB bool) h
 
 // SyncServicePort implements HealthChecker.
 func (h *HealthChecks) SyncServicePort(sp *utils.ServicePort, probe *v1.Probe) (string, error) {
+	klog.Infof("SyncServicePort: ID=%v, NodePort=%v, Port=%v, PortName=%v, THCEnabled=%v.", sp.ID, sp.NodePort, sp.Port, sp.PortName, sp.THCEnabled)
+
 	hc := h.new(*sp)
 	if probe != nil {
 		klog.V(2).Infof("Applying httpGet settings of readinessProbe to health check on port %+v", sp)
@@ -135,15 +138,22 @@ func (h *HealthChecks) SyncServicePort(sp *utils.ServicePort, probe *v1.Probe) (
 		bchcc = sp.BackendConfig.Spec.HealthCheck
 		klog.V(2).Infof("ServicePort (%v) has BackendConfig health check override (%+s)", sp.ID, formatBackendConfigHC(bchcc))
 	}
+	thcEnabled := false
 	if bchcc != nil {
 		klog.V(2).Infof("ServicePort %v has BackendConfig healthcheck override", sp.ID)
+	} else {
+		thcEnabled = h.thcFlagEnabled && sp.THCEnabled
+		if thcEnabled {
+			klog.V(2).Infof("ServicePort %v has Transparent Health Checks enabled", sp.ID)
+		}
 	}
-	return h.sync(hc, bchcc)
+	return h.sync(hc, bchcc, thcEnabled)
 }
 
 // sync retrieves a health check based on port, checks type and settings and updates/creates if necessary.
 // sync is only called by the backends.Add func - it's not a pool like other resources.
-func (h *HealthChecks) sync(hc *translator.HealthCheck, bchcc *backendconfigv1.HealthCheckConfig) (string, error) {
+// We assume that bchcc cannot be non-nil and thcEnabled be true simultaneously.
+func (h *HealthChecks) sync(hc *translator.HealthCheck, bchcc *backendconfigv1.HealthCheckConfig, thcEnabled bool) (string, error) {
 	var scope meta.KeyType
 	// TODO(shance): find a way to remove this
 	if hc.ForILB {
@@ -155,7 +165,7 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, bchcc *backendconfigv1.H
 	existingHC, err := h.Get(hc.Name, hc.Version(), scope)
 	if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 		klog.V(2).Infof("Health check %q does not exist, creating (hc=%+v, bchcc=%+v)", hc.Name, hc, bchcc)
-		if err = h.create(hc, bchcc); err != nil {
+		if err = h.create(hc, bchcc, thcEnabled); err != nil {
 			klog.Errorf("Health check %q creation error: %v", hc.Name, err)
 			return "", err
 		}
@@ -182,6 +192,14 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, bchcc *backendconfigv1.H
 	if bchcc != nil {
 		// BackendConfig healthcheck settings always take precedence.
 		hc.UpdateFromBackendConfig(bchcc)
+		if thcEnabled {
+			klog.Warningf("BackendConfig exists and thcEnabled simultaneously for %v. Ignoring transparent health check.", hc.Name)
+		}
+	} else {
+		// When enabled, Transparent Health Check defaults override general defaults, readiness probe settings, and existing HC.
+		if thcEnabled {
+			hc.ApplyTHCSettings()
+		}
 	}
 
 	filter := func(hc *translator.HealthCheck) *translator.HealthCheck {
@@ -192,7 +210,7 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, bchcc *backendconfigv1.H
 		return &ans
 	}
 
-	changes := calculateDiff(filter(existingHC), filter(hc), bchcc)
+	changes := calculateDiff(filter(existingHC), filter(hc), bchcc, thcEnabled)
 	if changes.hasDiff() {
 		klog.V(2).Infof("Health check %q needs update (%s)", existingHC.Name, changes)
 		if flags.F.EnableUpdateCustomHealthCheckDescription && changes.size() == 1 && changes.has("Description") {
@@ -242,7 +260,10 @@ func (h *HealthChecks) createILB(hc *translator.HealthCheck) error {
 	return nil
 }
 
-func (h *HealthChecks) create(hc *translator.HealthCheck, bchcc *backendconfigv1.HealthCheckConfig) error {
+func (h *HealthChecks) create(hc *translator.HealthCheck, bchcc *backendconfigv1.HealthCheckConfig, thcEnabled bool) error {
+	if thcEnabled {
+		hc.ApplyTHCSettings()
+	}
 	if bchcc != nil {
 		// BackendConfig healthcheck settings always take precedence.
 		hc.UpdateFromBackendConfig(bchcc)

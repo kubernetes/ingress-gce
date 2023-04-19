@@ -60,6 +60,16 @@ const (
 	// defaultNEGTimeout defines the timeout of each probe for NEG
 	defaultNEGTimeout = 15 * time.Second
 
+	// Similar defaults as above, but for Transparent Health Checks.
+	defaultTHCCheckInterval      = 5 * time.Second
+	defaultTHCTimeout            = 5 * time.Second
+	defaultTHCUnhealthyThreshold = defaultUnhealthyThreshold
+	defaultTHCHealthyThreshold   = 1
+	defaultTHCType               = string(annotations.ProtocolHTTP)
+	defaultTHCPortSpecification  = "USE_FIXED_PORT"
+	defaultTHCPort               = 7877
+	defaultTHCRequestPath        = "/api/podhealth"
+
 	// useServingPortSpecification is a constant for GCE API.
 	// USE_SERVING_PORT: For NetworkEndpointGroup, the port specified for
 	// each network endpoint is used for health checking. For other
@@ -72,6 +82,7 @@ const (
 	DescriptionForDefaultILBHealthChecks         = "Default kubernetes L7 Loadbalancing health check for ILB."
 	DescriptionForHealthChecksFromReadinessProbe = "Kubernetes L7 health check generated with readiness probe settings."
 	DescriptionForHealthChecksFromBackendConfig  = "Kubernetes L7 health check generated with BackendConfig CRD."
+	DescriptionForTransparentHealthChecks        = "Kubernetes L7 transparent health check."
 
 	// TODO: revendor the GCE API go client so that this error will not be hit.
 	newHealthCheckErrorMessageTemplate = "the %v health check configuration on the existing health check %v is nil. " +
@@ -213,6 +224,18 @@ func (hc *HealthCheck) Version() meta.Version {
 		return meta.VersionBeta
 	}
 	return meta.VersionGA
+}
+
+func (hc *HealthCheck) ApplyTHCSettings() {
+	hc.CheckIntervalSec = int64(defaultTHCCheckInterval.Seconds())
+	hc.TimeoutSec = int64(defaultTHCTimeout.Seconds())
+	hc.UnhealthyThreshold = defaultTHCUnhealthyThreshold
+	hc.HealthyThreshold = defaultTHCHealthyThreshold
+	hc.Type = defaultTHCType
+	hc.Description = DescriptionForTransparentHealthChecks
+	hc.PortSpecification = defaultTHCPortSpecification
+	hc.Port = defaultTHCPort
+	hc.RequestPath = defaultTHCRequestPath
 }
 
 func (hc *HealthCheck) UpdateFromBackendConfig(c *backendconfigv1.HealthCheckConfig) {

@@ -53,6 +53,7 @@ type ServicePort struct {
 	VMIPNEGEnabled bool
 	L4RBSEnabled   bool
 	L7ILBEnabled   bool
+	THCEnabled     bool
 	BackendConfig  *backendconfigv1.BackendConfig
 	BackendNamer   namer.BackendNamer
 	// Traffic policy fields that apply if non-nil.

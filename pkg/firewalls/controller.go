@@ -190,7 +190,7 @@ func NewFirewallController(
 func (fwc *FirewallController) ToSvcPorts(ings []*v1.Ingress) []utils.ServicePort {
 	var knownPorts []utils.ServicePort
 	for _, ing := range ings {
-		urlMap, _ := fwc.translator.TranslateIngress(ing, fwc.ctx.DefaultBackendSvcPort.ID, fwc.ctx.ClusterNamer)
+		urlMap, _ := fwc.translator.TranslateIngress(ing, fwc.ctx.DefaultBackendSvcPort.ID, fwc.ctx.ClusterNamer, fwc.ctx)
 		knownPorts = append(knownPorts, urlMap.AllServicePorts()...)
 	}
 	return knownPorts

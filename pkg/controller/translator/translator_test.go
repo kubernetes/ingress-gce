@@ -40,6 +40,7 @@ import (
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	informerbackendconfig "k8s.io/ingress-gce/pkg/backendconfig/client/informers/externalversions/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
@@ -204,7 +205,7 @@ func TestTranslateIngress(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
-			gotGCEURLMap, gotErrs := translator.TranslateIngress(tc.ing, defaultBackend.ID, defaultNamer)
+			gotGCEURLMap, gotErrs := translator.TranslateIngress(tc.ing, defaultBackend.ID, defaultNamer, healthchecks.NewFakeRecorderGetter(0))
 			if len(gotErrs) != tc.wantErrCount {
 				t.Errorf("%s: TranslateIngress() = _, %+v, want %v errs", tc.desc, gotErrs, tc.wantErrCount)
 			}
@@ -349,7 +350,7 @@ func TestGetServicePort(t *testing.T) {
 			svcLister.Add(svc)
 			tc.id.Service = svcName
 
-			port, gotErr := translator.getServicePort(tc.id, &tc.params, defaultNamer)
+			port, gotErr := translator.getServicePort(tc.id, &tc.params, defaultNamer, healthchecks.NewFakeRecorderGetter(0))
 			if (gotErr != nil) != tc.wantErr {
 				t.Errorf("translator.getServicePort(%+v) = _, %v, want err? %v", tc.id, gotErr, tc.wantErr)
 			}
@@ -440,7 +441,7 @@ func TestGetServicePortWithBackendConfigEnabled(t *testing.T) {
 			svcLister.Add(svc)
 			backendConfigLister.Add(backendConfig)
 
-			port, gotErr := translator.getServicePort(tc.id, &tc.params, defaultNamer)
+			port, gotErr := translator.getServicePort(tc.id, &tc.params, defaultNamer, healthchecks.NewFakeRecorderGetter(0))
 			if (gotErr != nil) != tc.wantErr {
 				t.Errorf("%s: translator.getServicePort(%+v) = _, %v, want err? %v", tc.desc, tc.id, gotErr, tc.wantErr)
 			}
@@ -735,7 +736,7 @@ func TestPathValidation(t *testing.T) {
 		}
 		expectedGCEURLMap.HostRules = []utils.HostRule{{Hostname: hostname, Paths: expectedPathRules}}
 
-		gotGCEURLMap, gotErrs := translator.TranslateIngress(ing, defaultBackend.ID, defaultNamer)
+		gotGCEURLMap, gotErrs := translator.TranslateIngress(ing, defaultBackend.ID, defaultNamer, healthchecks.NewFakeRecorderGetter(0))
 		if tc.expectValid && len(gotErrs) > 0 {
 			t.Fatalf("%s: TranslateIngress() = _, %+v, want no errs", tc.desc, gotErrs)
 		} else if !tc.expectValid && len(gotErrs) == 0 {

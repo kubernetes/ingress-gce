@@ -17,8 +17,10 @@ limitations under the License.
 package translator
 
 import (
+	"reflect"
 	"testing"
 
+	"github.com/kr/pretty"
 	computealpha "google.golang.org/api/compute/v0.alpha"
 	"k8s.io/ingress-gce/pkg/annotations"
 )
@@ -82,5 +84,29 @@ func TestMerge(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestApplyTHCSettings(t *testing.T) {
+	hc := &HealthCheck{HealthCheck: computealpha.HealthCheck{Type: "HTTP"}}
+	wantHC := &HealthCheck{
+		HealthCheck: computealpha.HealthCheck{
+			CheckIntervalSec:   5,
+			TimeoutSec:         5,
+			UnhealthyThreshold: 10,
+			HealthyThreshold:   1,
+			Type:               "HTTP",
+			Description:        "Kubernetes L7 transparent health check.",
+		},
+		HTTPHealthCheck: computealpha.HTTPHealthCheck{
+			Port:              7877,
+			PortSpecification: "USE_FIXED_PORT",
+			RequestPath:       "/api/podhealth",
+		},
+	}
+
+	hc.ApplyTHCSettings()
+	if !reflect.DeepEqual(hc, wantHC) {
+		t.Fatalf("Translate healthcheck is:\n%s, want:\n%s", pretty.Sprint(hc), pretty.Sprint(wantHC))
 	}
 }

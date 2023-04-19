@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/test"
@@ -42,7 +43,7 @@ type Jig struct {
 }
 
 func newTestJig(fakeGCE *gce.Cloud) *Jig {
-	fakeHealthChecks := healthchecks.NewHealthChecker(fakeGCE, "/", defaultBackendSvc, healthchecks.NewFakeRecorderGetter(0), healthchecks.NewFakeServiceGetter())
+	fakeHealthChecks := healthchecks.NewHealthChecker(fakeGCE, "/", defaultBackendSvc, healthchecks.NewFakeRecorderGetter(0), healthchecks.NewFakeServiceGetter(), flags.F.EnableTransparentHealthChecks)
 	fakeBackendPool := NewPool(fakeGCE, defaultNamer)
 
 	fakeIGs := instancegroups.NewEmptyFakeInstanceGroups()

@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 	"k8s.io/klog/v2"
 
@@ -199,9 +200,24 @@ func (t *Translator) maybeEnableBackendConfig(sp *utils.ServicePort, svc *api_v1
 	return nil
 }
 
+// manageEnableTHC sets the THCEnabled for the service port as true or false depending on whether
+// Transparent Health Checks should be enabled.
+func (t *Translator) manageEnableTHC(sp *utils.ServicePort, svc *api_v1.Service, recorderGetter healthchecks.RecorderGetter) {
+	THCEnabled, err := annotations.FromService(svc).ShouldEnableTHC()
+	if err != nil {
+		message := fmt.Sprintf("Parsing THC annotation failed: %+v.", err)
+		if flags.F.EnableTransparentHealthChecks {
+			recorderGetter.Recorder(sp.ID.Service.Namespace).Event(svc, api_v1.EventTypeWarning, "THCAnnotationParsingFailed", message)
+		}
+		klog.Warning(message)
+	}
+	klog.Infof("Is THC enabled for the sevice %v with service port (%v, %v)? %v", svc.Name, sp.Port, sp.PortName, THCEnabled)
+	sp.THCEnabled = THCEnabled
+}
+
 // getServicePort looks in the svc store for a matching service:port,
 // and returns the nodeport.
-func (t *Translator) getServicePort(id utils.ServicePortID, params *getServicePortParams, namer namer_util.BackendNamer) (*utils.ServicePort, error) {
+func (t *Translator) getServicePort(id utils.ServicePortID, params *getServicePortParams, namer namer_util.BackendNamer, recorderGetter healthchecks.RecorderGetter) (*utils.ServicePort, error) {
 	svc, err := t.getCachedService(id)
 	if err != nil {
 		return nil, err
@@ -243,11 +259,13 @@ func (t *Translator) getServicePort(id utils.ServicePortID, params *getServicePo
 		return svcPort, err
 	}
 
+	t.manageEnableTHC(svcPort, svc, recorderGetter)
+
 	return svcPort, nil
 }
 
 // TranslateIngress converts an Ingress into our internal UrlMap representation.
-func (t *Translator) TranslateIngress(ing *v1.Ingress, systemDefaultBackend utils.ServicePortID, namer namer_util.BackendNamer) (*utils.GCEURLMap, []error) {
+func (t *Translator) TranslateIngress(ing *v1.Ingress, systemDefaultBackend utils.ServicePortID, namer namer_util.BackendNamer, recorderGetter healthchecks.RecorderGetter) (*utils.GCEURLMap, []error) {
 	var errs []error
 	urlMap := utils.NewGCEURLMap()
 
@@ -267,7 +285,7 @@ func (t *Translator) TranslateIngress(ing *v1.Ingress, systemDefaultBackend util
 				errs = append(errs, err)
 				continue
 			}
-			svcPort, err := t.getServicePort(svcPortID, params, namer)
+			svcPort, err := t.getServicePort(svcPortID, params, namer, recorderGetter)
 			if err != nil {
 				errs = append(errs, err)
 			}
@@ -303,7 +321,7 @@ func (t *Translator) TranslateIngress(ing *v1.Ingress, systemDefaultBackend util
 			errs = append(errs, err)
 			return urlMap, errs
 		}
-		svcPort, err := t.getServicePort(svcPortID, params, namer)
+		svcPort, err := t.getServicePort(svcPortID, params, namer, recorderGetter)
 		if err == nil {
 			urlMap.DefaultBackend = svcPort
 			return urlMap, errs
@@ -313,7 +331,7 @@ func (t *Translator) TranslateIngress(ing *v1.Ingress, systemDefaultBackend util
 		return urlMap, errs
 	}
 
-	svcPort, err := t.getServicePort(systemDefaultBackend, params, namer)
+	svcPort, err := t.getServicePort(systemDefaultBackend, params, namer, recorderGetter)
 	if err == nil {
 		urlMap.DefaultBackend = svcPort
 		return urlMap, errs
