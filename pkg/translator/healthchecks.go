@@ -90,6 +90,8 @@ type HealthCheck struct {
 	// compute struct back.
 	computealpha.HTTPHealthCheck
 	computealpha.HealthCheck
+
+	Service *v1.Service
 }
 
 // NewHealthCheck creates a HealthCheck which abstracts nested structs away

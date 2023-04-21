@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	listers "k8s.io/client-go/listers/core/v1"
@@ -107,6 +108,12 @@ func (t *Translator) getCachedService(id utils.ServicePortID) (*api_v1.Service, 
 		return nil, fmt.Errorf("cannot convert to Service (%T)", svc)
 	}
 	return svc, nil
+}
+
+// GetService Implements ServiceGetter interface.
+func (t *Translator) GetService(namespace, name string) (*api_v1.Service, error) {
+	dummyServicePort := utils.ServicePortID{Service: types.NamespacedName{Namespace: namespace, Name: name}}
+	return t.getCachedService(dummyServicePort)
 }
 
 // maybeEnableNEG enables NEG on the service port if necessary

@@ -43,13 +43,15 @@ type HealthChecks struct {
 	// This is a workaround which allows us to not have to maintain
 	// a separate health checker for the default backend.
 	defaultBackendSvc types.NamespacedName
+	recorderGetter    RecorderGetter
+	serviceGetter     ServiceGetter
 }
 
 // NewHealthChecker creates a new health checker.
 // cloud: the cloud object implementing SingleHealthCheck.
 // defaultHealthCheckPath: is the HTTP path to use for health checks.
-func NewHealthChecker(cloud HealthCheckProvider, healthCheckPath string, defaultBackendSvc types.NamespacedName) *HealthChecks {
-	return &HealthChecks{cloud, healthCheckPath, defaultBackendSvc}
+func NewHealthChecker(cloud HealthCheckProvider, healthCheckPath string, defaultBackendSvc types.NamespacedName, recorderGetter RecorderGetter, serviceGetter ServiceGetter) *HealthChecks {
+	return &HealthChecks{cloud, healthCheckPath, defaultBackendSvc, recorderGetter, serviceGetter}
 }
 
 // new returns a *HealthCheck with default settings and specified port/protocol
@@ -67,7 +69,29 @@ func (h *HealthChecks) new(sp utils.ServicePort) *translator.HealthCheck {
 	hc.Name = sp.BackendName()
 	hc.Port = sp.NodePort
 	hc.RequestPath = h.pathFromSvcPort(sp)
+	hc.Service = h.getService(sp)
 	return hc
+}
+
+func (h *HealthChecks) getService(sp utils.ServicePort) *v1.Service {
+	if !flags.F.EnableUpdateCustomHealthCheckDescription {
+		return nil
+	}
+	namespacedName := h.mainService(sp)
+	var err error
+	service, err := h.serviceGetter.GetService(namespacedName.Namespace, namespacedName.Name)
+	if err != nil {
+		klog.Warningf("Service %s/%s needed for emitting an event not found (we'll log instead): %v.", namespacedName.Namespace, namespacedName.Name, err)
+	}
+	return service
+}
+
+func (h *HealthChecks) mainService(sp utils.ServicePort) types.NamespacedName {
+	service := h.defaultBackendSvc
+	if sp.ID.Service.Name != "" {
+		service = sp.ID.Service
+	}
+	return service
 }
 
 // SyncServicePort implements HealthChecker.
@@ -142,6 +166,15 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, bchcc *backendconfigv1.H
 	changes := calculateDiff(filter(existingHC), filter(hc), bchcc)
 	if changes.hasDiff() {
 		klog.V(2).Infof("Health check %q needs update (%s)", existingHC.Name, changes)
+		if flags.F.EnableUpdateCustomHealthCheckDescription && changes.size() == 1 && changes.has("Description") {
+			message := fmt.Sprintf("Healthcheck will be updated and the only field updated is Description.\nOld: %+v\nNew: %+v\nDiff: %+v", existingHC, hc, changes)
+			if hc.Service != nil {
+				h.recorderGetter.Recorder(hc.Service.Namespace).Event(
+					hc.Service, v1.EventTypeNormal, "HealthcheckDescriptionUpdate", message)
+			} else {
+				klog.Info(message)
+			}
+		}
 		err := h.update(hc)
 		if err != nil {
 			klog.Errorf("Health check %q update error: %v", existingHC.Name, err)

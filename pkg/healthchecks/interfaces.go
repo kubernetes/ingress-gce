@@ -22,6 +22,7 @@ import (
 	computebeta "google.golang.org/api/compute/v0.beta"
 	"google.golang.org/api/compute/v1"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -55,4 +56,13 @@ type HealthChecker interface {
 	SyncServicePort(sp *utils.ServicePort, probe *v1.Probe) (string, error)
 	Delete(name string, scope meta.KeyType) error
 	Get(name string, version meta.Version, scope meta.KeyType) (*translator.HealthCheck, error)
+}
+
+// ServiceGetter is an interface to retrieve Kubernetes Services.
+type ServiceGetter interface {
+	GetService(namespace, name string) (*v1.Service, error)
+}
+
+type RecorderGetter interface {
+	Recorder(ns string) record.EventRecorder
 }
