@@ -208,7 +208,10 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 		}
 
 		for _, tc := range testCases {
-			err := transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, tc.removeEndpoints, labels.EndpointPodLabelMap{})
+			// TODO(gauravkghildiyal): When the DualStack Migrator is fully
+			// implemented, check if we need to cover scenarios where `migrationZone`
+			// is not empty.
+			err := transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, tc.removeEndpoints, labels.EndpointPodLabelMap{}, "")
 			if err != nil {
 				t.Errorf("For case %q, syncNetworkEndpoints() got %v, want nil", tc.desc, err)
 			}
@@ -384,7 +387,7 @@ func TestSyncNetworkEndpointLabel(t *testing.T) {
 		if err := transactionSyncer.ensureNetworkEndpointGroups(); err != nil {
 			t.Errorf("Expect error == nil, but got %v", err)
 		}
-		err := transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, map[string]negtypes.NetworkEndpointSet{}, tc.endpointPodLabelMap)
+		err := transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, map[string]negtypes.NetworkEndpointSet{}, tc.endpointPodLabelMap, "")
 		if err != nil {
 			t.Errorf("For case %q, syncNetworkEndpoints() got %v, want nil", tc.desc, err)
 		}
@@ -2072,7 +2075,7 @@ func TestCollectLabelStats(t *testing.T) {
 
 func newL4ILBTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, mode negtypes.EndpointsCalculatorMode) (negtypes.NegSyncer, *transactionSyncer) {
 	negsyncer, ts := newTestTransactionSyncer(fakeGCE, negtypes.VmIpEndpointType, false)
-	ts.endpointsCalculator = GetEndpointsCalculator(ts.nodeLister, ts.podLister, ts.zoneGetter, ts.NegSyncerKey, mode, klog.TODO(), ts.enableDualStackNEG)
+	ts.endpointsCalculator = GetEndpointsCalculator(ts.nodeLister, ts.podLister, ts.zoneGetter, ts.NegSyncerKey, mode, klog.TODO(), false)
 	return negsyncer, ts
 }
 

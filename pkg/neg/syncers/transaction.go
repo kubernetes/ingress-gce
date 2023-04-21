@@ -44,6 +44,7 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
+	"k8s.io/ingress-gce/pkg/neg/syncers/dualstack"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
@@ -113,9 +114,7 @@ type transactionSyncer struct {
 	// podLabelPropagationConfig configures the pod label to be propagated to NEG endpoints
 	podLabelPropagationConfig labels.PodLabelPropagationConfig
 
-	// enableDualStackNEG indicates if IPv6 endpoints should be considered while
-	// reconciling NEGs.
-	enableDualStackNEG bool
+	dsMigrator *dualstack.Migrator
 }
 
 func NewTransactionSyncer(
@@ -163,7 +162,7 @@ func NewTransactionSyncer(
 		logger:                    logger,
 		enableDegradedMode:        flags.F.EnableDegradedMode,
 		podLabelPropagationConfig: lpConfig,
-		enableDualStackNEG:        enableDualStackNEG,
+		dsMigrator:                dualstack.NewMigrator(enableDualStackNEG),
 	}
 	// Syncer implements life cycle logic
 	syncer := newSyncer(negSyncerKey, serviceLister, recorder, ts, logger)
@@ -290,17 +289,10 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	// Calculate Pods that are already in the NEG
 	_, committedEndpoints := calculateNetworkEndpointDifference(addEndpoints, targetMap)
 
-	if s.enableDualStackNEG {
-		// Identification of migration endpoints should happen before we filter out
-		// the transaction endpoints. Not doing so could result in an attempt to
-		// attach an endpoint which is still undergoing detachment-due-to-migration.
-		_, migratingEndpointsInRemoveSet := findAndFilterMigrationEndpoints(addEndpoints, removeEndpoints)
-
-		// TODO(gauravkghildiyal): Implement rate limited migration-detachment.
-		for zone, endpointSet := range migratingEndpointsInRemoveSet {
-			removeEndpoints[zone] = removeEndpoints[zone].Union(endpointSet)
-		}
-	}
+	// Filtering of migration endpoints should happen before we filter out
+	// the transaction endpoints. Not doing so could result in an attempt to
+	// attach an endpoint which is still undergoing detachment-due-to-migration.
+	migrationZone := s.dsMigrator.Filter(addEndpoints, removeEndpoints, committedEndpoints)
 
 	// Filter out the endpoints with existing transaction
 	// This mostly happens when transaction entry require reconciliation but the transaction is still progress
@@ -331,7 +323,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	s.logEndpoints(addEndpoints, "adding endpoint")
 	s.logEndpoints(removeEndpoints, "removing endpoint")
 
-	return s.syncNetworkEndpoints(addEndpoints, removeEndpoints, endpointPodLabelMap)
+	return s.syncNetworkEndpoints(addEndpoints, removeEndpoints, endpointPodLabelMap, migrationZone)
 }
 
 func (s *transactionSyncer) getEndpointsCalculation(
@@ -408,9 +400,10 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 }
 
 // syncNetworkEndpoints spins off go routines to execute NEG operations
-func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints map[string]negtypes.NetworkEndpointSet, endpointPodLabelMap labels.EndpointPodLabelMap) error {
+func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints map[string]negtypes.NetworkEndpointSet, endpointPodLabelMap labels.EndpointPodLabelMap, migrationZone string) error {
 	syncFunc := func(endpointMap map[string]negtypes.NetworkEndpointSet, operation transactionOp) error {
 		for zone, endpointSet := range endpointMap {
+			zone := zone
 			if endpointSet.Len() == 0 {
 				s.logger.V(2).Info("0 endpoints in the endpoint list. Skipping operation", "operation", attachOp, "negSyncerKey", s.NegSyncerKey.String(), "zone", zone)
 				continue
@@ -432,10 +425,15 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 			}
 
 			if operation == attachOp {
-				s.attachNetworkEndpoints(zone, batch)
+				go s.attachNetworkEndpoints(zone, batch)
 			}
 			if operation == detachOp {
-				s.detachNetworkEndpoints(zone, batch)
+				if zone == migrationZone {
+					// Prevent any further migration-detachments from starting while one
+					// is already in progress.
+					s.dsMigrator.Pause()
+				}
+				go s.detachNetworkEndpoints(zone, batch, zone == migrationZone)
 			}
 		}
 		return nil
@@ -451,22 +449,34 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 	return nil
 }
 
-// attachNetworkEndpoints creates go routine to run operations for attaching network endpoints
+// attachNetworkEndpoints runs operation for attaching network endpoints.
 func (s *transactionSyncer) attachNetworkEndpoints(zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
 	s.logger.V(2).Info("Attaching endpoints to NEG.", "countOfEndpointsBeingAttached", len(networkEndpointMap), "negSyncerKey", s.NegSyncerKey.String(), "zone", zone)
-	go s.operationInternal(attachOp, zone, networkEndpointMap)
+	err := s.operationInternal(attachOp, zone, networkEndpointMap)
+
+	// WARNING: commitTransaction must be called at last for analyzing the operation result
+	s.commitTransaction(err, networkEndpointMap)
 }
 
-// detachNetworkEndpoints creates go routine to run operations for detaching network endpoints
-func (s *transactionSyncer) detachNetworkEndpoints(zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
+// detachNetworkEndpoints runs operation for detaching network endpoints.
+func (s *transactionSyncer) detachNetworkEndpoints(zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, hasMigrationDetachments bool) {
 	s.logger.V(2).Info("Detaching endpoints from NEG.", "countOfEndpointsBeingDetached", len(networkEndpointMap), "negSyncerKey", s.NegSyncerKey.String(), "zone", zone)
-	go s.operationInternal(detachOp, zone, networkEndpointMap)
+	err := s.operationInternal(detachOp, zone, networkEndpointMap)
+
+	if hasMigrationDetachments {
+		// Unpause the migration since the ongoing migration-detachments have
+		// concluded.
+		s.dsMigrator.Continue(err)
+	}
+
+	// WARNING: commitTransaction must be called at last for analyzing the operation result
+	s.commitTransaction(err, networkEndpointMap)
 }
 
 // operationInternal executes NEG API call and commits the transactions
 // It will record events when operations are completed
 // If error occurs or any transaction entry requires reconciliation, it will trigger resync
-func (s *transactionSyncer) operationInternal(operation transactionOp, zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
+func (s *transactionSyncer) operationInternal(operation transactionOp, zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) error {
 	var err error
 	start := time.Now()
 	networkEndpoints := []*composite.NetworkEndpoint{}
@@ -500,9 +510,8 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, zone stri
 		}
 	}
 
-	// WARNING: commitTransaction must be called at last for analyzing the operation result
-	s.commitTransaction(err, networkEndpointMap)
 	metrics.PublishNegOperationMetrics(operation.String(), string(s.NegSyncerKey.NegType), string(s.NegSyncerKey.GetAPIVersion()), err, len(networkEndpointMap), start)
+	return err
 }
 
 // checkEndpointBatchErr checks the error from endpoint batch response
