@@ -30,6 +30,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"github.com/google/go-cmp/cmp"
 	apps "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -577,6 +578,23 @@ func CheckNegs(negs map[meta.Key]*fuzz.NetworkEndpoints, expectHealthy bool, exp
 		return fmt.Errorf("NEGs (%v) have a total %v of endpoints, want %v", strings.Join(negNames, "/"), count, expectCount)
 	}
 
+	return utilerrors.NewAggregate(errs)
+}
+
+// CheckNegAnnotations checks if the network endpoints in the NEGs has the expected annotations
+func CheckNegAnnotations(negs map[meta.Key]*fuzz.NetworkEndpoints, expectAnnotations map[string]string) error {
+	var (
+		errs     []error
+		negNames []string
+	)
+	for key, neg := range negs {
+		negNames = append(negNames, key.String())
+		for _, ep := range neg.Endpoints {
+			if diff := cmp.Diff(expectAnnotations, ep.NetworkEndpoint.Annotations); diff != "" {
+				errs = append(errs, fmt.Errorf("unexpected annotation for endpoint: %+v (-want +got): \n%s", ep.NetworkEndpoint, diff))
+			}
+		}
+	}
 	return utilerrors.NewAggregate(errs)
 }
 
