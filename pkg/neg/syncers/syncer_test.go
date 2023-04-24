@@ -18,6 +18,7 @@ package syncers
 
 import (
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -63,10 +64,13 @@ type syncerTester struct {
 	// blockSync is true, then sync function is blocked on channel
 	blockSync bool
 	ch        chan interface{}
+	mu        sync.Mutex
 }
 
 // sync sleeps for 3 seconds
 func (t *syncerTester) sync() error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.syncCount += 1
 	if t.syncError {
 		return fmt.Errorf("sync error")
@@ -128,7 +132,9 @@ func TestStartAndStopNoopSyncer(t *testing.T) {
 	}
 
 	// blocks sync function
+	syncerTester.mu.Lock()
 	syncerTester.blockSync = true
+	syncerTester.mu.Unlock()
 	syncerTester.syncer.Stop()
 	if !syncerTester.syncer.IsShuttingDown() {
 		// assume syncer needs 5 second for sync
@@ -166,7 +172,9 @@ func TestStartAndStopNoopSyncer(t *testing.T) {
 func TestRetryOnSyncError(t *testing.T) {
 	maxRetry := 3
 	syncerTester := newSyncerTester()
+	syncerTester.mu.Lock()
 	syncerTester.syncError = true
+	syncerTester.mu.Unlock()
 	if err := syncerTester.syncer.Start(); err != nil {
 		t.Fatalf("Failed to start syncer: %v", err)
 	}
@@ -174,12 +182,18 @@ func TestRetryOnSyncError(t *testing.T) {
 
 	if err := wait.PollImmediate(time.Second, 5*time.Second, func() (bool, error) {
 		// In 5 seconds, syncer should be able to retry 3 times.
-		return syncerTester.syncCount == maxRetry+1, nil
+		syncerTester.mu.Lock()
+		syncCount := syncerTester.syncCount
+		syncerTester.mu.Unlock()
+		return syncCount == maxRetry+1, nil
 	}); err != nil {
 		t.Errorf("Syncer failed to retry and record error: %v", err)
 	}
 
-	if syncerTester.syncCount != maxRetry+1 {
-		t.Errorf("Expect sync count to be %v, but got %v", maxRetry+1, syncerTester.syncCount)
+	syncerTester.mu.Lock()
+	syncCount := syncerTester.syncCount
+	syncerTester.mu.Unlock()
+	if syncCount != maxRetry+1 {
+		t.Errorf("Expect sync count to be %v, but got %v", maxRetry+1, syncCount)
 	}
 }
