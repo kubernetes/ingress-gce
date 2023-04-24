@@ -31,6 +31,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -115,6 +116,10 @@ type transactionSyncer struct {
 	podLabelPropagationConfig labels.PodLabelPropagationConfig
 
 	dsMigrator *dualstack.Migrator
+
+	// networkInfo contains the network information to use in GCP resources (VPC URL, Subnetwork URL).
+	// and the k8s network name (can be used in endpoints calculation).
+	networkInfo network.NetworkInfo
 }
 
 func NewTransactionSyncer(
@@ -135,7 +140,9 @@ func NewTransactionSyncer(
 	customName bool,
 	log klog.Logger,
 	lpConfig labels.PodLabelPropagationConfig,
-	enableDualStackNEG bool) negtypes.NegSyncer {
+	enableDualStackNEG bool,
+	networkInfo network.NetworkInfo,
+) negtypes.NegSyncer {
 
 	logger := log.WithName("Syncer").WithValues("service", klog.KRef(negSyncerKey.Namespace, negSyncerKey.Name), "negName", negSyncerKey.NegName)
 
@@ -163,6 +170,7 @@ func NewTransactionSyncer(
 		enableDegradedMode:        flags.F.EnableDegradedMode,
 		podLabelPropagationConfig: lpConfig,
 		dsMigrator:                dualstack.NewMigrator(enableDualStackNEG),
+		networkInfo:               networkInfo,
 	}
 	// Syncer implements life cycle logic
 	syncer := newSyncer(negSyncerKey, serviceLister, recorder, ts, logger)
@@ -385,6 +393,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 			s.recorder,
 			s.NegSyncerKey.GetAPIVersion(),
 			s.customName,
+			s.networkInfo,
 		)
 		if err != nil {
 			errList = append(errList, err)

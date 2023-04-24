@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 )
@@ -124,6 +125,8 @@ type PortInfo struct {
 	// This is applicable in GCE_VM_IP NEGs where the endpoints are the nodes instead of pods.
 	// L7 NEGs will have either "" or L7Mode.
 	EpCalculatorMode EndpointsCalculatorMode
+	// NetworkInfo specifies the network (K8s and VPC) and subnetwork the service port belongs to.
+	NetworkInfo network.NetworkInfo
 }
 
 // PortInfoMapKey is the Key of PortInfoMap
@@ -135,7 +138,7 @@ type PortInfoMapKey struct {
 // PortInfoMap is a map of PortInfoMapKey:PortInfo
 type PortInfoMap map[PortInfoMapKey]PortInfo
 
-func NewPortInfoMap(namespace, name string, svcPortTupleSet SvcPortTupleSet, namer NetworkEndpointGroupNamer, readinessGate bool, customNegNames map[SvcPortTuple]string) PortInfoMap {
+func NewPortInfoMap(namespace, name string, svcPortTupleSet SvcPortTupleSet, namer NetworkEndpointGroupNamer, readinessGate bool, customNegNames map[SvcPortTuple]string, networkInfo *network.NetworkInfo) PortInfoMap {
 	ret := PortInfoMap{}
 	for svcPortTuple := range svcPortTupleSet {
 		negName, ok := customNegNames[svcPortTuple]
@@ -146,6 +149,7 @@ func NewPortInfoMap(namespace, name string, svcPortTupleSet SvcPortTupleSet, nam
 			PortTuple:     svcPortTuple,
 			NegName:       negName,
 			ReadinessGate: readinessGate,
+			NetworkInfo:   *networkInfo,
 		}
 	}
 	return ret
@@ -153,7 +157,7 @@ func NewPortInfoMap(namespace, name string, svcPortTupleSet SvcPortTupleSet, nam
 
 // NewPortInfoMapForVMIPNEG creates PortInfoMap with empty port tuple. Since VM_IP NEGs target
 // the node instead of the pod, there is no port info to be stored.
-func NewPortInfoMapForVMIPNEG(namespace, name string, namer namer.L4ResourcesNamer, local bool) PortInfoMap {
+func NewPortInfoMapForVMIPNEG(namespace, name string, namer namer.L4ResourcesNamer, local bool, networkInfo *network.NetworkInfo) PortInfoMap {
 	ret := PortInfoMap{}
 	svcPortSet := make(SvcPortTupleSet)
 	svcPortSet.Insert(
@@ -170,6 +174,7 @@ func NewPortInfoMapForVMIPNEG(namespace, name string, namer namer.L4ResourcesNam
 			PortTuple:        svcPortTuple,
 			NegName:          negName,
 			EpCalculatorMode: mode,
+			NetworkInfo:      *networkInfo,
 		}
 	}
 	return ret
@@ -202,6 +207,7 @@ func (p1 PortInfoMap) Merge(p2 PortInfoMap) error {
 		// Turn on the readiness gate if one of them is on
 		mergedInfo.ReadinessGate = mergedInfo.ReadinessGate || portInfo.ReadinessGate
 		mergedInfo.EpCalculatorMode = portInfo.EpCalculatorMode
+		mergedInfo.NetworkInfo = portInfo.NetworkInfo
 
 		p1[mapKey] = mergedInfo
 	}

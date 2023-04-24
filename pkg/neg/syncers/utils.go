@@ -35,6 +35,7 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
@@ -116,7 +117,7 @@ func getService(serviceLister cache.Indexer, namespace, name string) *apiv1.Serv
 }
 
 // ensureNetworkEndpointGroup ensures corresponding NEG is configured correctly in the specified zone.
-func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negServicePortName, kubeSystemUID, port string, networkEndpointType negtypes.NetworkEndpointType, cloud negtypes.NetworkEndpointGroupCloud, serviceLister cache.Indexer, recorder record.EventRecorder, version meta.Version, customName bool) (negv1beta1.NegObjectReference, error) {
+func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negServicePortName, kubeSystemUID, port string, networkEndpointType negtypes.NetworkEndpointType, cloud negtypes.NetworkEndpointGroupCloud, serviceLister cache.Indexer, recorder record.EventRecorder, version meta.Version, customName bool, networkInfo network.NetworkInfo) (negv1beta1.NegObjectReference, error) {
 	var negRef negv1beta1.NegObjectReference
 	neg, err := cloud.GetNetworkEndpointGroup(negName, zone, version)
 	if err != nil {
@@ -149,8 +150,8 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 		if networkEndpointType != negtypes.NonGCPPrivateEndpointType &&
 			// Only perform the following checks when the NEGs are not Non-GCP NEGs.
 			// Non-GCP NEGs do not have associated network and subnetwork.
-			(!utils.EqualResourceIDs(neg.Network, cloud.NetworkURL()) ||
-				!utils.EqualResourceIDs(neg.Subnetwork, cloud.SubnetworkURL())) {
+			(!utils.EqualResourceIDs(neg.Network, networkInfo.NetworkURL) ||
+				!utils.EqualResourceIDs(neg.Subnetwork, networkInfo.SubnetworkURL)) {
 
 			needToCreate = true
 			klog.V(2).Infof("NEG %q in %q does not match network and subnetwork of the cluster. Deleting NEG.", negName, zone)
@@ -173,7 +174,7 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 		case negtypes.NonGCPPrivateEndpointType:
 			subnetwork = ""
 		default:
-			subnetwork = cloud.SubnetworkURL()
+			subnetwork = networkInfo.SubnetworkURL
 		}
 
 		desc := ""
@@ -189,7 +190,7 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 			Version:             version,
 			Name:                negName,
 			NetworkEndpointType: string(networkEndpointType),
-			Network:             cloud.NetworkURL(),
+			Network:             networkInfo.NetworkURL,
 			Subnetwork:          subnetwork,
 			Description:         desc,
 		}, zone)
