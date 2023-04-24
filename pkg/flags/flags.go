@@ -117,6 +117,7 @@ var (
 		EnableMultipleIGs                        bool
 		EnableServiceMetrics                     bool
 		EnableNEGLabelPropagation                bool
+		EnableMultiNetworking                    bool
 		MaxIGSize                                int
 		EnableDegradedMode                       bool
 		EnableDualStackNEG                       bool
@@ -269,6 +270,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableL4ILBDualStack, "enable-l4ilb-dual-stack", false, "Enable Dual-Stack handling for L4 Internal Load Balancers")
 	flag.BoolVar(&F.EnableL4NetLBDualStack, "enable-l4netlb-dual-stack", false, "Enable Dual-Stack handling for L4 External Load Balancers")
 	flag.BoolVar(&F.EnableMultipleIGs, "enable-multiple-igs", false, "Enable using multiple unmanaged instance groups")
+	flag.BoolVar(&F.EnableMultiNetworking, "enable-multi-networking", false, "Enable support for multi-networking L4 load balancers.")
 	flag.IntVar(&F.MaxIGSize, "max-ig-size", 1000, "Max number of instances in Instance Group")
 	flag.DurationVar(&F.MetricsExportInterval, "metrics-export-interval", 10*time.Minute, `Period for calculating and exporting metrics related to state of managed objects.`)
 	flag.DurationVar(&F.NegMetricsExportInterval, "neg-metrics-export-interval", 5*time.Second, `Period for calculating and exporting internal neg controller metrics, not usage.`)

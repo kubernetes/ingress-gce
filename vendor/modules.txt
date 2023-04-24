@@ -805,6 +805,17 @@ k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned/typed/gcpfi
 k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/informers/externalversions/gcpfirewall/v1beta1
 k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/informers/externalversions/internalinterfaces
 k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/listers/gcpfirewall/v1beta1
+k8s.io/cloud-provider-gcp/crd/apis/network/v1
+k8s.io/cloud-provider-gcp/crd/apis/network/v1alpha1
+k8s.io/cloud-provider-gcp/crd/client/network/clientset/versioned
+k8s.io/cloud-provider-gcp/crd/client/network/clientset/versioned/scheme
+k8s.io/cloud-provider-gcp/crd/client/network/clientset/versioned/typed/network/v1
+k8s.io/cloud-provider-gcp/crd/client/network/clientset/versioned/typed/network/v1alpha1
+k8s.io/cloud-provider-gcp/crd/client/network/informers/externalversions/internalinterfaces
+k8s.io/cloud-provider-gcp/crd/client/network/informers/externalversions/network/v1
+k8s.io/cloud-provider-gcp/crd/client/network/informers/externalversions/network/v1alpha1
+k8s.io/cloud-provider-gcp/crd/client/network/listers/network/v1
+k8s.io/cloud-provider-gcp/crd/client/network/listers/network/v1alpha1
 # k8s.io/cloud-provider-gcp/providers v0.26.3-0.20230322202223-f7280f55e36f
 ## explicit; go 1.19
 k8s.io/cloud-provider-gcp/providers/gce

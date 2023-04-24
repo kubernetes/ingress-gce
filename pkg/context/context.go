@@ -32,6 +32,9 @@ import (
 	"k8s.io/client-go/tools/record"
 	firewallclient "k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned"
 	informerfirewall "k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/informers/externalversions/gcpfirewall/v1beta1"
+	networkclient "k8s.io/cloud-provider-gcp/crd/client/network/clientset/versioned"
+	informernetwork "k8s.io/cloud-provider-gcp/crd/client/network/informers/externalversions/network/v1"
+	informergkenetworkparamset "k8s.io/cloud-provider-gcp/crd/client/network/informers/externalversions/network/v1alpha1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	sav1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1"
 	sav1beta1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1"
@@ -82,19 +85,21 @@ type ControllerContext struct {
 	ControllerContextConfig
 	ASMConfigController *cmconfig.ConfigMapConfigController
 
-	IngressInformer        cache.SharedIndexInformer
-	ServiceInformer        cache.SharedIndexInformer
-	BackendConfigInformer  cache.SharedIndexInformer
-	FrontendConfigInformer cache.SharedIndexInformer
-	PodInformer            cache.SharedIndexInformer
-	NodeInformer           cache.SharedIndexInformer
-	EndpointSliceInformer  cache.SharedIndexInformer
-	ConfigMapInformer      cache.SharedIndexInformer
-	SvcNegInformer         cache.SharedIndexInformer
-	IngClassInformer       cache.SharedIndexInformer
-	IngParamsInformer      cache.SharedIndexInformer
-	SAInformer             cache.SharedIndexInformer
-	FirewallInformer       cache.SharedIndexInformer
+	IngressInformer          cache.SharedIndexInformer
+	ServiceInformer          cache.SharedIndexInformer
+	BackendConfigInformer    cache.SharedIndexInformer
+	FrontendConfigInformer   cache.SharedIndexInformer
+	PodInformer              cache.SharedIndexInformer
+	NodeInformer             cache.SharedIndexInformer
+	EndpointSliceInformer    cache.SharedIndexInformer
+	ConfigMapInformer        cache.SharedIndexInformer
+	SvcNegInformer           cache.SharedIndexInformer
+	IngClassInformer         cache.SharedIndexInformer
+	IngParamsInformer        cache.SharedIndexInformer
+	SAInformer               cache.SharedIndexInformer
+	FirewallInformer         cache.SharedIndexInformer
+	NetworkInformer          cache.SharedIndexInformer
+	GKENetworkParamsInformer cache.SharedIndexInformer
 
 	ControllerMetrics *metrics.ControllerMetrics
 
@@ -141,6 +146,7 @@ func NewControllerContext(
 	svcnegClient svcnegclient.Interface,
 	ingParamsClient ingparamsclient.Interface,
 	saClient serviceattachmentclient.Interface,
+	networkClient networkclient.Interface,
 	cloud *gce.Cloud,
 	clusterNamer *namer.Namer,
 	kubeSystemUID types.UID,
@@ -180,6 +186,11 @@ func NewControllerContext(
 
 	if saClient != nil {
 		context.SAInformer = informerserviceattachment.NewServiceAttachmentInformer(saClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
+	}
+
+	if networkClient != nil {
+		context.NetworkInformer = informernetwork.NewNetworkInformer(networkClient, config.ResyncPeriod, utils.NewNamespaceIndexer())
+		context.GKENetworkParamsInformer = informergkenetworkparamset.NewGKENetworkParamSetInformer(networkClient, config.ResyncPeriod, utils.NewNamespaceIndexer())
 	}
 
 	if flags.F.GKEClusterType == ClusterTypeRegional {
@@ -270,6 +281,12 @@ func (ctx *ControllerContext) HasSynced() bool {
 	if ctx.SAInformer != nil {
 		funcs = append(funcs, ctx.SAInformer.HasSynced)
 	}
+	if ctx.NetworkInformer != nil {
+		funcs = append(funcs, ctx.NetworkInformer.HasSynced)
+	}
+	if ctx.GKENetworkParamsInformer != nil {
+		funcs = append(funcs, ctx.GKENetworkParamsInformer.HasSynced)
+	}
 
 	if ctx.FirewallInformer != nil {
 		funcs = append(funcs, ctx.FirewallInformer.HasSynced)
@@ -357,6 +374,12 @@ func (ctx *ControllerContext) Start(stopCh chan struct{}) {
 	}
 	if ctx.SAInformer != nil {
 		go ctx.SAInformer.Run(stopCh)
+	}
+	if ctx.NetworkInformer != nil {
+		go ctx.NetworkInformer.Run(stopCh)
+	}
+	if ctx.GKENetworkParamsInformer != nil {
+		go ctx.GKENetworkParamsInformer.Run(stopCh)
 	}
 	// Export ingress usage metrics.
 	go ctx.ControllerMetrics.Run(stopCh)
