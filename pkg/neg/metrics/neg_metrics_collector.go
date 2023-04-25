@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/apimachinery/pkg/util/wait"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/klog/v2"
@@ -69,6 +70,8 @@ func FakeSyncerMetrics() *SyncerMetrics {
 
 // RegisterSyncerMetrics registers syncer related metrics
 func RegisterSyncerMetrics() {
+	prometheus.MustRegister(syncerSyncResult)
+	prometheus.MustRegister(syncerSyncerState)
 }
 
 func (sm *SyncerMetrics) Run(stopCh <-chan struct{}) {
@@ -86,7 +89,11 @@ func (sm *SyncerMetrics) export() {
 	lpMetrics := sm.computeLabelMetrics()
 	NumberOfEndpoints.WithLabelValues(totalEndpoints).Set(float64(lpMetrics.NumberOfEndpoints))
 	NumberOfEndpoints.WithLabelValues(epWithAnnotation).Set(float64(lpMetrics.EndpointsWithAnnotation))
-	sm.logger.V(3).Info("Exporting syncer related metrics", "Number of Endpoints", lpMetrics.NumberOfEndpoints)
+
+	stateCount, syncerCount := sm.computeSyncerStateMetrics()
+	PublishSyncerStateMetrics(stateCount)
+
+	sm.logger.V(3).Info("Exporting syncer related metrics", "Syncer count", syncerCount, "Number of Endpoints", lpMetrics.NumberOfEndpoints)
 }
 
 // UpdateSyncerStatusInMetrics update the status of syncer based on the error
@@ -96,6 +103,7 @@ func (sm *SyncerMetrics) UpdateSyncerStatusInMetrics(key negtypes.NegSyncerKey, 
 		syncErr := negtypes.ClassifyError(err)
 		reason = syncErr.Reason
 	}
+	syncerSyncResult.WithLabelValues(string(reason)).Inc()
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	if sm.syncerStatusMap == nil {
@@ -143,4 +151,17 @@ func (sm *SyncerMetrics) computeLabelMetrics() LabelPropagationMetrics {
 		lpMetrics.NumberOfEndpoints += stats.NumberOfEndpoints
 	}
 	return lpMetrics
+}
+
+func (sm *SyncerMetrics) computeSyncerStateMetrics() (*syncerStateCount, int) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	stateCount := &syncerStateCount{}
+	syncerCount := 0
+	for _, syncerState := range sm.syncerStatusMap {
+		stateCount.inc(syncerState)
+		syncerCount++
+	}
+	return stateCount, syncerCount
 }
