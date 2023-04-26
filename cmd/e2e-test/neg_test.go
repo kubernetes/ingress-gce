@@ -813,12 +813,13 @@ func TestLabelPropagation(t *testing.T) {
 			},
 		},
 		{
+			// Only support a total label size of 15 for security.istio.io/tlsMode
 			desc: "truncated label value",
 			podLabels: map[string]string{
-				"security.istio.io/tlsMode": "something-very-loooooooooong",
+				"security.istio.io/tlsMode": "something-very-long",
 			},
 			expectAnnotations: map[string]string{
-				"itls": "something-very-loooooooooo",
+				"itls": "something-v",
 			},
 		},
 		{
