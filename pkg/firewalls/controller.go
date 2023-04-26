@@ -37,6 +37,7 @@ import (
 	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
+	pkg_translator "k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
@@ -255,10 +256,8 @@ func (fwc *FirewallController) sync(key string) error {
 	}
 
 	var additionalPorts []string
-	if flags.F.EnableBackendConfigHealthCheck {
-		hcPorts := fwc.getCustomHealthCheckPorts(gceSvcPorts)
-		additionalPorts = append(additionalPorts, hcPorts...)
-	}
+	hcPorts := fwc.getCustomHealthCheckPorts(gceSvcPorts)
+	additionalPorts = append(additionalPorts, hcPorts...)
 	additionalPorts = append(additionalPorts, negPorts...)
 
 	// Ensure firewall rule for the cluster and pass any NEG endpoint ports.
@@ -301,10 +300,15 @@ func (fwc *FirewallController) ilbFirewallSrcRange(gceIngresses []*v1.Ingress) (
 func (fwc *FirewallController) getCustomHealthCheckPorts(svcPorts []utils.ServicePort) []string {
 	var result []string
 
-	for _, svcPort := range svcPorts {
-		if svcPort.BackendConfig != nil && svcPort.BackendConfig.Spec.HealthCheck != nil && svcPort.BackendConfig.Spec.HealthCheck.Port != nil {
-			result = append(result, strconv.FormatInt(*svcPort.BackendConfig.Spec.HealthCheck.Port, 10))
+	if flags.F.EnableBackendConfigHealthCheck {
+		for _, svcPort := range svcPorts {
+			if svcPort.BackendConfig != nil && svcPort.BackendConfig.Spec.HealthCheck != nil && svcPort.BackendConfig.Spec.HealthCheck.Port != nil {
+				result = append(result, strconv.FormatInt(*svcPort.BackendConfig.Spec.HealthCheck.Port, 10))
+			}
 		}
+	}
+	if flags.F.EnableTransparentHealthChecks {
+		result = append(result, strconv.FormatInt(pkg_translator.THCPort, 10))
 	}
 
 	return result

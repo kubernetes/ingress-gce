@@ -30,6 +30,7 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	v1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
+	"k8s.io/ingress-gce/pkg/flags"
 	test "k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
@@ -108,12 +109,20 @@ func TestFirewallCreateDelete(t *testing.T) {
 }
 
 func TestGetCustomHealthCheckPorts(t *testing.T) {
-	t.Parallel()
+	// No t.Parallel().
+	oldBCHC := flags.F.EnableBackendConfigHealthCheck
+	oldTHC := flags.F.EnableTransparentHealthChecks
+	flags.F.EnableBackendConfigHealthCheck = true
+	defer func() {
+		flags.F.EnableBackendConfigHealthCheck = oldBCHC
+		flags.F.EnableTransparentHealthChecks = oldTHC
+	}()
 
 	testCases := []struct {
-		desc     string
-		svcPorts []utils.ServicePort
-		expect   []string
+		desc      string
+		svcPorts  []utils.ServicePort
+		enableTHC bool
+		expect    []string
 	}{
 		{
 			desc:     "One service port with custom port",
@@ -127,13 +136,26 @@ func TestGetCustomHealthCheckPorts(t *testing.T) {
 			expect: []string{"8000", "9000"},
 		},
 		{
+			desc: "Two service ports with custom port THC enabled",
+			svcPorts: []utils.ServicePort{utils.ServicePort{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: utils.NewInt64Pointer(8000)}}}},
+				utils.ServicePort{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: utils.NewInt64Pointer(9000)}}}}},
+			enableTHC: true,
+			expect:    []string{"8000", "9000", "7877"},
+		},
+		{
 			desc:   "No service ports",
 			expect: nil,
+		},
+		{
+			desc:      "No service ports THC enabled",
+			enableTHC: true,
+			expect:    []string{"7877"},
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
+			flags.F.EnableTransparentHealthChecks = tc.enableTHC
 			fwc := newFirewallController()
 			result := fwc.getCustomHealthCheckPorts(tc.svcPorts)
 			if diff := cmp.Diff(tc.expect, result); diff != "" {
