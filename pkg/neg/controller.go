@@ -445,6 +445,10 @@ func (c *Controller) processService(key string) error {
 	if service == nil {
 		return fmt.Errorf("cannot convert to Service (%T)", obj)
 	}
+	// TODO(cheungdavid): Remove this validation when single stack ipv6 endpoint is supported
+	if service.Spec.Type != apiv1.ServiceTypeLoadBalancer && isSingleStackIPv6Service(service) {
+		return fmt.Errorf("NEG is not supported for ipv6 only service (%T)", service)
+	}
 	negUsage := usageMetrics.NegServiceState{}
 	svcPortInfoMap := make(negtypes.PortInfoMap)
 	networkInfo, err := network.ServiceNetwork(service, c.cloud)
@@ -847,4 +851,15 @@ func gatherPortMappingFromService(svc *apiv1.Service) negtypes.SvcPortTupleSet {
 		})
 	}
 	return svcPortTupleSet
+}
+
+// isSingleStackIPv6Service returns true if the given service is a single stack ipv6 service
+func isSingleStackIPv6Service(service *apiv1.Service) bool {
+	if service.Spec.IPFamilyPolicy != nil && *service.Spec.IPFamilyPolicy != apiv1.IPFamilyPolicySingleStack {
+		return false
+	}
+	if len(service.Spec.IPFamilies) == 1 && service.Spec.IPFamilies[0] == apiv1.IPv6Protocol {
+		return true
+	}
+	return false
 }
