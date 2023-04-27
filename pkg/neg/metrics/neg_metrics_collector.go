@@ -113,7 +113,6 @@ func (sm *SyncerMetrics) UpdateSyncerStatusInMetrics(key negtypes.NegSyncerKey, 
 	sm.syncerStatusMap[key] = reason
 }
 
-// SetSyncerEPMetrics update the endpoint count based on the endpointStat
 func (sm *SyncerMetrics) SetSyncerEPMetrics(key negtypes.NegSyncerKey, endpointStat *negtypes.SyncerEPStat) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()

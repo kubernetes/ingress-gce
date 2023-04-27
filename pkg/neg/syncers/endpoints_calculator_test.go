@@ -28,6 +28,7 @@ import (
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/cloud-provider-gcp/providers/gce"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
@@ -228,13 +229,24 @@ func TestValidateEndpoints(t *testing.T) {
 	testPodName3 := "pod3"
 	testPodName4 := "pod4"
 	svcKey := fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace)
+	svcPort := negtypes.NegSyncerKey{
+		Namespace: testServiceNamespace,
+		Name:      testServiceName,
+		NegType:   negtypes.VmIpPortEndpointType,
+		PortTuple: negtypes.SvcPortTuple{
+			Port:       80,
+			TargetPort: "8080",
+			Name:       testPortName,
+		},
+		NegName: testNegName,
+	}
 
 	zoneGetter := negtypes.NewFakeZoneGetter()
 	testContext := negtypes.NewTestContext()
 	podLister := testContext.PodInformer.GetIndexer()
 	nodeLister := testContext.NodeInformer.GetIndexer()
 	serviceLister := testContext.ServiceInformer.GetIndexer()
-	L7EndpointsCalculator := NewL7EndpointsCalculator(zoneGetter, podLister, nodeLister, serviceLister, testPortName, negtypes.VmIpPortEndpointType, klog.TODO(), testContext.EnableDualStackNEG)
+	L7EndpointsCalculator := NewL7EndpointsCalculator(zoneGetter, podLister, nodeLister, serviceLister, svcPort, klog.TODO(), testContext.EnableDualStackNEG, metrics.FakeSyncerMetrics())
 	L4LocalEndpointCalculator := NewLocalL4ILBEndpointsCalculator(listers.NewNodeLister(nodeLister), zoneGetter, svcKey, klog.TODO())
 	L4ClusterEndpointCalculator := NewClusterL4ILBEndpointsCalculator(listers.NewNodeLister(nodeLister), zoneGetter, svcKey, klog.TODO())
 
