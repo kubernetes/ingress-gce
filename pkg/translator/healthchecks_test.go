@@ -87,8 +87,7 @@ func TestMerge(t *testing.T) {
 	}
 }
 
-func TestApplyTHCSettings(t *testing.T) {
-	hc := &HealthCheck{HealthCheck: computealpha.HealthCheck{Type: "HTTP"}}
+func TestTHCHealthCheck(t *testing.T) {
 	wantHC := &HealthCheck{
 		HealthCheck: computealpha.HealthCheck{
 			CheckIntervalSec:   5,
@@ -105,7 +104,7 @@ func TestApplyTHCSettings(t *testing.T) {
 		},
 	}
 
-	hc.ApplyTHCSettings()
+	hc := THCHealthCheck()
 	if !reflect.DeepEqual(hc, wantHC) {
 		t.Fatalf("Translate healthcheck is:\n%s, want:\n%s", pretty.Sprint(hc), pretty.Sprint(wantHC))
 	}

@@ -61,14 +61,13 @@ const (
 	defaultNEGTimeout = 15 * time.Second
 
 	// Similar defaults as above, but for Transparent Health Checks.
-	defaultTHCCheckInterval      = 5 * time.Second
-	defaultTHCTimeout            = 5 * time.Second
-	defaultTHCUnhealthyThreshold = defaultUnhealthyThreshold
-	defaultTHCHealthyThreshold   = 1
-	defaultTHCType               = string(annotations.ProtocolHTTP)
-	defaultTHCPortSpecification  = "USE_FIXED_PORT"
-	defaultTHCPort               = 7877
-	defaultTHCRequestPath        = "/api/podhealth"
+	thcCheckInterval     = 5 * time.Second
+	thcTimeout           = 5 * time.Second
+	thcHealthyThreshold  = 1
+	thcType              = string(annotations.ProtocolHTTP)
+	thcPortSpecification = "USE_FIXED_PORT"
+	THCPort              = 7877
+	thcRequestPath       = "/api/podhealth"
 
 	// useServingPortSpecification is a constant for GCE API.
 	// USE_SERVING_PORT: For NetworkEndpointGroup, the port specified for
@@ -226,16 +225,19 @@ func (hc *HealthCheck) Version() meta.Version {
 	return meta.VersionGA
 }
 
-func (hc *HealthCheck) ApplyTHCSettings() {
-	hc.CheckIntervalSec = int64(defaultTHCCheckInterval.Seconds())
-	hc.TimeoutSec = int64(defaultTHCTimeout.Seconds())
-	hc.UnhealthyThreshold = defaultTHCUnhealthyThreshold
-	hc.HealthyThreshold = defaultTHCHealthyThreshold
-	hc.Type = defaultTHCType
-	hc.Description = DescriptionForTransparentHealthChecks
-	hc.PortSpecification = defaultTHCPortSpecification
-	hc.Port = defaultTHCPort
-	hc.RequestPath = defaultTHCRequestPath
+// THCHealthCheck returns the transparent health check.
+func THCHealthCheck() *HealthCheck {
+	hc := HealthCheck{}
+	hc.CheckIntervalSec = int64(thcCheckInterval.Seconds())
+	hc.TimeoutSec = int64(thcTimeout.Seconds())
+	hc.UnhealthyThreshold = defaultUnhealthyThreshold
+	hc.HealthyThreshold = thcHealthyThreshold
+	hc.Type = thcType
+	hc.Description = DescriptionForTransparentHealthChecks //TODO(DamianSawicki): JSONify.
+	hc.PortSpecification = thcPortSpecification
+	hc.Port = THCPort
+	hc.RequestPath = thcRequestPath
+	return &hc
 }
 
 func (hc *HealthCheck) UpdateFromBackendConfig(c *backendconfigv1.HealthCheckConfig) {

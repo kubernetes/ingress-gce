@@ -628,7 +628,7 @@ func (lbc *LoadBalancerController) sync(key string) error {
 	}
 
 	// Bootstrap state for GCP sync.
-	urlMap, errs := lbc.Translator.TranslateIngress(ing, lbc.ctx.DefaultBackendSvcPort.ID, lbc.ctx.ClusterNamer, lbc.ctx)
+	urlMap, errs := lbc.Translator.TranslateIngress(ing, lbc.ctx.DefaultBackendSvcPort.ID, lbc.ctx.ClusterNamer)
 
 	if errs != nil {
 		msg := fmt.Errorf("invalid ingress spec: %v", utils.JoinErrs(errs))
@@ -776,7 +776,7 @@ func updateAnnotations(client kubernetes.Interface, ing *v1.Ingress, newAnnotati
 func (lbc *LoadBalancerController) ToSvcPorts(ings []*v1.Ingress) []utils.ServicePort {
 	var knownPorts []utils.ServicePort
 	for _, ing := range ings {
-		urlMap, _ := lbc.Translator.TranslateIngress(ing, lbc.ctx.DefaultBackendSvcPort.ID, lbc.ctx.ClusterNamer, lbc.ctx)
+		urlMap, _ := lbc.Translator.TranslateIngress(ing, lbc.ctx.DefaultBackendSvcPort.ID, lbc.ctx.ClusterNamer)
 		knownPorts = append(knownPorts, urlMap.AllServicePorts()...)
 	}
 	return knownPorts

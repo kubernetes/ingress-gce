@@ -86,6 +86,8 @@ func configuredFakeTranslator() *Translator {
 		PodInformer,
 		EndpointSliceInformer,
 		client,
+		false,
+		healthchecks.NewFakeRecorderGetter(0),
 	)
 }
 
@@ -205,7 +207,7 @@ func TestTranslateIngress(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
-			gotGCEURLMap, gotErrs := translator.TranslateIngress(tc.ing, defaultBackend.ID, defaultNamer, healthchecks.NewFakeRecorderGetter(0))
+			gotGCEURLMap, gotErrs := translator.TranslateIngress(tc.ing, defaultBackend.ID, defaultNamer)
 			if len(gotErrs) != tc.wantErrCount {
 				t.Errorf("%s: TranslateIngress() = _, %+v, want %v errs", tc.desc, gotErrs, tc.wantErrCount)
 			}
@@ -350,7 +352,7 @@ func TestGetServicePort(t *testing.T) {
 			svcLister.Add(svc)
 			tc.id.Service = svcName
 
-			port, gotErr := translator.getServicePort(tc.id, &tc.params, defaultNamer, healthchecks.NewFakeRecorderGetter(0))
+			port, gotErr := translator.getServicePort(tc.id, &tc.params, defaultNamer)
 			if (gotErr != nil) != tc.wantErr {
 				t.Errorf("translator.getServicePort(%+v) = _, %v, want err? %v", tc.id, gotErr, tc.wantErr)
 			}
@@ -441,7 +443,7 @@ func TestGetServicePortWithBackendConfigEnabled(t *testing.T) {
 			svcLister.Add(svc)
 			backendConfigLister.Add(backendConfig)
 
-			port, gotErr := translator.getServicePort(tc.id, &tc.params, defaultNamer, healthchecks.NewFakeRecorderGetter(0))
+			port, gotErr := translator.getServicePort(tc.id, &tc.params, defaultNamer)
 			if (gotErr != nil) != tc.wantErr {
 				t.Errorf("%s: translator.getServicePort(%+v) = _, %v, want err? %v", tc.desc, tc.id, gotErr, tc.wantErr)
 			}
@@ -736,7 +738,7 @@ func TestPathValidation(t *testing.T) {
 		}
 		expectedGCEURLMap.HostRules = []utils.HostRule{{Hostname: hostname, Paths: expectedPathRules}}
 
-		gotGCEURLMap, gotErrs := translator.TranslateIngress(ing, defaultBackend.ID, defaultNamer, healthchecks.NewFakeRecorderGetter(0))
+		gotGCEURLMap, gotErrs := translator.TranslateIngress(ing, defaultBackend.ID, defaultNamer)
 		if tc.expectValid && len(gotErrs) > 0 {
 			t.Fatalf("%s: TranslateIngress() = _, %+v, want no errs", tc.desc, gotErrs)
 		} else if !tc.expectValid && len(gotErrs) == 0 {

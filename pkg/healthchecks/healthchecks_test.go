@@ -329,7 +329,7 @@ func TestRegionalHealthCheckDelete(t *testing.T) {
 	)
 	hcName := testNamer.NEG("ns2", "svc2", 80)
 
-	if err := healthChecks.create(hc, nil, false); err != nil {
+	if err := healthChecks.create(hc, nil); err != nil {
 		t.Fatalf("healthchecks.Create(%q) = %v, want nil", hc.Name, err)
 	}
 
@@ -499,6 +499,9 @@ func TestEnableTHC(t *testing.T) {
 	wantHC.Port = 7877
 	wantHC.PortSpecification = "USE_FIXED_PORT"
 
+	oldName := hc.Name
+	hc = translator.THCHealthCheck()
+	hc.Name = oldName
 	// Enable Transparent Health Checks
 	_, err = healthChecks.sync(hc, nil, true)
 	if err != nil {
@@ -1014,7 +1017,7 @@ func (*syncSPFixture) thc() *compute.HealthCheck {
 			Port:              7877,
 			RequestPath:       "/api/podhealth",
 		},
-		Description: translator.DescriptionForTransparentHealthChecks,
+		Description: translator.DescriptionForTransparentHealthChecks, //TODO(DamianSawicki): JSONify.
 	}
 }
 
@@ -1400,18 +1403,6 @@ func TestSyncServicePort(t *testing.T) {
 		wantComputeHC: fixture.thc(),
 		enableTHC:     true,
 	})
-	cases = append(cases, &tc{
-		desc:          "update http to thc with flag disabled",
-		setup:         fixture.setupExistingHCFunc(fixture.hc()),
-		sp:            testSPs["HTTP-80-reg-nil-thc"],
-		wantComputeHC: fixture.hc(),
-	})
-	cases = append(cases, &tc{
-		desc:          "update http to https thc with flag disabled",
-		setup:         fixture.setupExistingHCFunc(fixture.hc()),
-		sp:            testSPs["HTTPS-80-reg-nil-thc"],
-		wantComputeHC: fixture.hcs(),
-	})
 
 	// Preserve user settings.
 	chc = fixture.hc()
@@ -1421,17 +1412,6 @@ func TestSyncServicePort(t *testing.T) {
 		desc:          "update preserve",
 		setup:         fixture.setupExistingHCFunc(chc),
 		sp:            testSPs["HTTP-80-reg-nil-nothc"],
-		wantComputeHC: chc,
-	})
-
-	// Preserve user settings despite thc annotation when flag disabled.
-	chc = fixture.hc()
-	chc.HttpHealthCheck.RequestPath = "/user-path"
-	chc.CheckIntervalSec = 1234
-	cases = append(cases, &tc{
-		desc:          "update preserve",
-		setup:         fixture.setupExistingHCFunc(chc),
-		sp:            testSPs["HTTP-80-reg-nil-thc"],
 		wantComputeHC: chc,
 	})
 
