@@ -48,6 +48,10 @@ const (
 	minRetryDelay = 5 * time.Second
 	maxRetryDelay = 600 * time.Second
 	separator     = "||"
+
+	// managedByEPSControllerValue is a unique value used with LabelManagedBy to indicate
+	// the EndpointSlice is managed by the endpoint slice controller.
+	managedByEPSControllerValue = "endpointslice-controller.k8s.io"
 )
 
 // encodeEndpoint encodes ip and instance into a single string
@@ -371,7 +375,7 @@ func getEndpointPod(
 
 // toZoneNetworkEndpointMap translates addresses in endpoints object into zone and endpoints map, and also return the count for duplicated endpoints
 // we will not raise error in degraded mode for misconfigured endpoints, instead they will be filtered directly
-func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGetter negtypes.ZoneGetter, podLister, nodeLister cache.Indexer, servicePortName string, networkEndpointType negtypes.NetworkEndpointType, enableDualStackNEG bool) ZoneNetworkEndpointMapResult {
+func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGetter negtypes.ZoneGetter, podLister, nodeLister, serviceLister cache.Indexer, servicePortName string, networkEndpointType negtypes.NetworkEndpointType, enableDualStackNEG bool) ZoneNetworkEndpointMapResult {
 	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
 	networkEndpointPodMap := negtypes.EndpointPodMap{}
 	dupCount := 0
@@ -387,6 +391,8 @@ func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGett
 		if len(matchPort) == 0 {
 			continue
 		}
+		serviceName := ed.Meta.Labels[discovery.LabelServiceName]
+		isCustomEPS := ed.Meta.Labels[discovery.LabelManagedBy] != managedByEPSControllerValue
 		for _, endpointAddress := range ed.Addresses {
 			if !enableDualStackNEG && endpointAddress.AddressType != discovery.AddressTypeIPv4 {
 				klog.Infof("Skipping non IPv4 address in degraded mode: %q, in endpoint slice %s/%s", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
@@ -424,7 +430,7 @@ func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGett
 				klog.Errorf("Endpoint %q in Endpoints %s/%s has IP(s) not match to its pod %s: %w, skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, pod.Name, err)
 				continue
 			}
-			if err := validatePod(pod, nodeLister, networkEndpoint); err != nil {
+			if err := validatePod(pod, nodeLister, serviceLister, networkEndpoint, serviceName, isCustomEPS); err != nil {
 				klog.Errorf("Endpoint %q in Endpoints %s/%s correponds to an invalid pod: %v, skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, err)
 				continue
 			}
@@ -457,7 +463,8 @@ func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGett
 // 1. is in terminal state
 // 2. corresponds to a non-existent node
 // 3. have an IP that matches to a podIP, but is outside of the node's allocated IP range
-func validatePod(pod *apiv1.Pod, nodeLister cache.Indexer, networkEndpoint negtypes.NetworkEndpoint) error {
+// 4. has labels not matching to its service's label selector
+func validatePod(pod *apiv1.Pod, nodeLister, serviceLister cache.Indexer, networkEndpoint negtypes.NetworkEndpoint, serviceName string, isCustomEPS bool) error {
 	// Terminal Pod means a pod is in PodFailed or PodSucceeded phase
 	phase := pod.Status.Phase
 	if phase == apiv1.PodFailed || phase == apiv1.PodSucceeded {
@@ -472,6 +479,16 @@ func validatePod(pod *apiv1.Pod, nodeLister cache.Indexer, networkEndpoint negty
 		return negtypes.ErrEPNodeTypeAssertionFailed
 	}
 	if err = nodeContainsPodIP(node, networkEndpoint); err != nil {
+		return err
+	}
+	service := getService(serviceLister, pod.ObjectMeta.Namespace, serviceName)
+	if service == nil {
+		return negtypes.ErrEPServiceNotFound
+	}
+	if isCustomEPS {
+		return nil
+	}
+	if err = podBelongsToService(pod, service); err != nil {
 		return err
 	}
 	return nil
@@ -559,6 +576,19 @@ func nodeContainsPodIP(node *apiv1.Node, networkEndpoint negtypes.NetworkEndpoin
 	}
 	if matching != len(podIPs) {
 		return fmt.Errorf("%w: podIP(s) used by endpoint %v not match to the node's PodCIDR range(s)", negtypes.ErrEPIPOutOfPodCIDR, podIPs)
+	}
+	return nil
+}
+
+// podBelongsToService checks the pod's labels
+// and return error if any label specified in the service's label selector is not in the pod's labels
+func podBelongsToService(pod *apiv1.Pod, service *apiv1.Service) error {
+	podLabels := pod.ObjectMeta.Labels
+	serviceLabels := service.Spec.Selector
+	for key, val1 := range serviceLabels {
+		if val2, contains := podLabels[key]; !contains || val1 != val2 {
+			return fmt.Errorf("%w: pod %s/%s has labels not match to its service %s/%s's label selector", negtypes.ErrEPPodLabelMismatch, pod.Namespace, pod.Name, service.Namespace, service.Name)
+		}
 	}
 	return nil
 }
