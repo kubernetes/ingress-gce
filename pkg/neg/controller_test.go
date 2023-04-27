@@ -1209,6 +1209,112 @@ func TestEnqueueEndpoints(t *testing.T) {
 	}
 }
 
+func TestServiceIPFamilies(t *testing.T) {
+	t.Parallel()
+	singleStack := apiv1.IPFamilyPolicySingleStack
+	preferDualStack := apiv1.IPFamilyPolicyPreferDualStack
+	requireDualStack := apiv1.IPFamilyPolicyRequireDualStack
+	testCases := []struct {
+		desc           string
+		serviceType    v1.ServiceType
+		ipFamilies     []v1.IPFamily
+		ipFamilyPolicy *apiv1.IPFamilyPolicy
+		expectNil      bool
+	}{
+		{
+			desc:           "ipv6 only service with l7 load balancer, ipFamilyPolicy is singleStack",
+			serviceType:    v1.ServiceTypeClusterIP,
+			ipFamilies:     []v1.IPFamily{v1.IPv6Protocol},
+			ipFamilyPolicy: &singleStack,
+			expectNil:      false,
+		},
+		{
+			desc:           "ipv4 only service with l7 load balancer, ipFamilyPolicy is singleStack",
+			serviceType:    v1.ServiceTypeClusterIP,
+			ipFamilies:     []v1.IPFamily{v1.IPv4Protocol},
+			ipFamilyPolicy: &singleStack,
+			expectNil:      true,
+		},
+		{
+			desc:           "ipv4 service with l7 load balancer, ipFamilyPolicy is preferDualStack",
+			serviceType:    v1.ServiceTypeClusterIP,
+			ipFamilies:     []v1.IPFamily{v1.IPv4Protocol},
+			ipFamilyPolicy: &preferDualStack,
+			expectNil:      true,
+		},
+		{
+			desc:           "dual stack service with l7 load balancer, ipFamilyPolicy is preferDualStack",
+			serviceType:    v1.ServiceTypeClusterIP,
+			ipFamilies:     []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+			ipFamilyPolicy: &preferDualStack,
+			expectNil:      true,
+		},
+		{
+			desc:           "dual stack service with l7 load balancer, ipFamilyPolicy is requiredDualStack",
+			serviceType:    v1.ServiceTypeClusterIP,
+			ipFamilies:     []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+			ipFamilyPolicy: &requireDualStack,
+			expectNil:      true,
+		},
+		{
+			desc:           "ipv6 only service with l4 load balancer, ipFamilyPolicy is singleStack",
+			serviceType:    v1.ServiceTypeLoadBalancer,
+			ipFamilies:     []v1.IPFamily{v1.IPv6Protocol},
+			ipFamilyPolicy: &singleStack, // single stack ipv6 is supported for l4 load balancer
+			expectNil:      true,
+		},
+		{
+			desc:           "ipv4 only service with l4 load balancer, ipFamilyPolicy is singleStack",
+			serviceType:    v1.ServiceTypeLoadBalancer,
+			ipFamilies:     []v1.IPFamily{v1.IPv4Protocol},
+			ipFamilyPolicy: &singleStack,
+			expectNil:      true,
+		},
+		{
+			desc:           "ipv4 only service with l4 load balancer, ipFamilyPolicy is preferDualStack",
+			serviceType:    v1.ServiceTypeLoadBalancer,
+			ipFamilies:     []v1.IPFamily{v1.IPv4Protocol},
+			ipFamilyPolicy: &preferDualStack,
+			expectNil:      true,
+		},
+		{
+			desc:           "dual stack service with l4 load balancer, ipFamilyPolicy is preferDualStack",
+			serviceType:    v1.ServiceTypeLoadBalancer,
+			ipFamilies:     []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+			ipFamilyPolicy: &preferDualStack,
+			expectNil:      true,
+		},
+		{
+			desc:           "dual stack service with l4 load balancer, ipFamilyPolicy is requireDualStack",
+			serviceType:    v1.ServiceTypeLoadBalancer,
+			ipFamilies:     []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+			ipFamilyPolicy: &requireDualStack,
+			expectNil:      true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			controller := newTestController(fake.NewSimpleClientset())
+			defer controller.stop()
+			testService := newTestService(controller, false, []int32{})
+			testService.Spec.Type = tc.serviceType
+			testService.Spec.IPFamilies = tc.ipFamilies
+			testService.Spec.IPFamilyPolicy = tc.ipFamilyPolicy
+			controller.serviceLister.Add(testService)
+			controller.ingressLister.Add(newTestIngress(testServiceName))
+			svcKey := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
+			err := controller.processService(svcKey)
+			if tc.expectNil && err != nil {
+				t.Fatalf("Expecting nil when processing type %v service with ipFamily %v, got error %v", tc.serviceType, tc.ipFamilies, err)
+			}
+			if !tc.expectNil && err == nil {
+				t.Fatalf("Expecting error when processing type %v service with ipFamily %v, got nil", tc.serviceType, tc.ipFamilies)
+			}
+		})
+	}
+
+}
+
 func getEvent(eventChan chan string, queue *workqueue.RateLimitingInterface) {
 	item, quit := (*queue).Get()
 	if quit {
