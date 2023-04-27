@@ -128,11 +128,7 @@ func NewController(ctx *context.ControllerContext) *Controller {
 	if controller.regionalCluster {
 		controller.clusterLoc = controller.cloud.Region()
 	} else {
-		zone, err := controller.cloud.GetZone(context2.Background())
-		if err != nil {
-			klog.Errorf("Failed to retrieve zone information from cloud provider: %q", err)
-		}
-		controller.clusterLoc = zone.FailureDomain
+		controller.clusterLoc = controller.cloud.LocalZone()
 	}
 
 	ctx.SAInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{

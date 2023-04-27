@@ -32,6 +32,7 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/healthcheck"
 	"k8s.io/klog/v2"
 )
 
@@ -91,7 +92,19 @@ type HealthCheck struct {
 	computealpha.HTTPHealthCheck
 	computealpha.HealthCheck
 
-	Service *v1.Service
+	Service         *v1.Service
+	healthcheckInfo healthcheck.HealthcheckInfo
+}
+
+func (hc *HealthCheck) SetHealthcheckInfo(i healthcheck.HealthcheckInfo) {
+	hc.healthcheckInfo = i
+	hc.reconcileHCDescription()
+}
+
+func (hc *HealthCheck) reconcileHCDescription() {
+	if flags.F.EnableUpdateCustomHealthCheckDescription && hc.healthcheckInfo.HealthcheckConfig == healthcheck.BackendConfigHC {
+		hc.Description = hc.healthcheckInfo.GenerateHealthcheckDescription()
+	}
 }
 
 // NewHealthCheck creates a HealthCheck which abstracts nested structs away
@@ -226,9 +239,8 @@ func (hc *HealthCheck) UpdateFromBackendConfig(c *backendconfigv1.HealthCheckCon
 		// This override is necessary regardless of type
 		hc.PortSpecification = "USE_FIXED_PORT"
 	}
-	if flags.F.EnableUpdateCustomHealthCheckDescription {
-		hc.Description = DescriptionForHealthChecksFromBackendConfig
-	}
+	hc.healthcheckInfo.HealthcheckConfig = healthcheck.BackendConfigHC
+	hc.reconcileHCDescription()
 }
 
 // DefaultHealthCheck simply returns the default health check.
@@ -339,4 +351,6 @@ func ApplyProbeSettingsToHC(p *v1.Probe, hc *HealthCheck) {
 	}
 
 	hc.Description = DescriptionForHealthChecksFromReadinessProbe
+	hc.healthcheckInfo.HealthcheckConfig = healthcheck.ReadinessProbeHC
+	hc.reconcileHCDescription()
 }

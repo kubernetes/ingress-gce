@@ -18,6 +18,7 @@ package healthchecks
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -44,6 +45,7 @@ import (
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/healthcheck"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
 )
@@ -444,18 +446,28 @@ func getSingletonHealthcheck(t *testing.T, c *gce.Cloud) *compute.HealthCheck {
 
 // Test changing the value of the flag EnableUpdateCustomHealthCheckDescription from false to true.
 func TestRolloutUpdateCustomHCDescription(t *testing.T) {
-	// No parallel() because we modify the value of the flags EnableBackendConfigHealthCheck and EnableUpdateCustomHealthCheckDescription.
+	// No parallel() because we modify the value of the flags:
+	// - EnableBackendConfigHealthCheck,
+	// - EnableUpdateCustomHealthCheckDescription,
+	// - GKEClusterName.
+
+	testClusterValues := gce.DefaultTestClusterValues()
+
 	oldEnableBC := flags.F.EnableBackendConfigHealthCheck
 	oldUpdateDescription := flags.F.EnableUpdateCustomHealthCheckDescription
+	oldGKEClusterName := flags.F.GKEClusterName
 	flags.F.EnableBackendConfigHealthCheck = true
 	// Start with EnableUpdateCustomHealthCheckDescription = false.
 	flags.F.EnableUpdateCustomHealthCheckDescription = false
+	flags.F.GKEClusterName = testClusterValues.ClusterName
 	defer func() {
 		flags.F.EnableBackendConfigHealthCheck = oldEnableBC
 		flags.F.EnableUpdateCustomHealthCheckDescription = oldUpdateDescription
+		flags.F.GKEClusterName = oldGKEClusterName
 	}()
 
-	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	testClusterValues.Regional = true
+	fakeGCE := gce.NewFakeGCECloud(testClusterValues)
 
 	var (
 		defaultSP       *utils.ServicePort = testSPs["HTTP-80-reg-nil"]
@@ -506,9 +518,20 @@ func TestRolloutUpdateCustomHCDescription(t *testing.T) {
 
 	outputBCHCWithFlag := getSingletonHealthcheck(t, fakeGCE)
 
-	if outputBCHCWithFlag.Description != translator.DescriptionForHealthChecksFromBackendConfig {
+	wantDesc := healthcheck.HealthcheckDesc{
+		K8sCluster:  fmt.Sprintf("/locations/%s/clusters/%s", gce.DefaultTestClusterValues().Region, gce.DefaultTestClusterValues().ClusterName),
+		K8sResource: fmt.Sprintf("/namespaces/%s/services/%s", defaultBackendSvc.Namespace, defaultBackendSvc.Name),
+		Config:      "BackendConfig",
+	}
+	bytes, err := json.MarshalIndent(wantDesc, "", "    ")
+	if err != nil {
+		t.Fatalf("Error while generating the wantDesc JSON.")
+	}
+	wantDescription := string(bytes)
+
+	if outputBCHCWithFlag.Description != wantDescription {
 		t.Fatalf("incorrect Description, is: \"%v\", want: \"%v\"",
-			outputBCHCWithFlag.Description, translator.DescriptionForHealthChecksFromBackendConfig)
+			outputBCHCWithFlag.Description, wantDescription)
 	}
 
 	// Verify that only the Description is modified after rollout.
@@ -984,21 +1007,28 @@ func setupMockUpdate(mock *cloud.MockGCE) {
 }
 
 func TestSyncServicePort(t *testing.T) {
-	// No parallel() because we modify the value of the flags EnableBackendConfigHealthCheck and EnableUpdateCustomHealthCheckDescription.
+	// No parallel() because we modify the value of the flags:
+	// - EnableBackendConfigHealthCheck,
+	// - EnableUpdateCustomHealthCheckDescription,
+	// - GKEClusterName.	oldEnableBC := flags.F.EnableBackendConfigHealthCheck
 	oldEnableBC := flags.F.EnableBackendConfigHealthCheck
-	oldUpdateDescription := flags.F.EnableUpdateCustomHealthCheckDescription
 	flags.F.EnableBackendConfigHealthCheck = true
+	oldUpdateDescription := flags.F.EnableUpdateCustomHealthCheckDescription
+	oldGKEClusterName := flags.F.GKEClusterName
+	flags.F.GKEClusterName = gce.DefaultTestClusterValues().ClusterName
 	defer func() {
 		flags.F.EnableBackendConfigHealthCheck = oldEnableBC
 		flags.F.EnableUpdateCustomHealthCheckDescription = oldUpdateDescription
+		flags.F.GKEClusterName = oldGKEClusterName
 	}()
 
 	type tc struct {
-		desc     string
-		setup    func(*cloud.MockGCE)
-		sp       *utils.ServicePort
-		probe    *v1.Probe
-		regional bool
+		desc            string
+		setup           func(*cloud.MockGCE)
+		sp              *utils.ServicePort
+		probe           *v1.Probe
+		regional        bool
+		regionalCluster bool
 
 		wantSelfLink        string
 		wantErr             bool
@@ -1130,6 +1160,18 @@ func TestSyncServicePort(t *testing.T) {
 		sp:            testSPs["HTTP-80-ilb-bc"],
 		regional:      true,
 		wantComputeHC: chc,
+	})
+
+	// BackendConfig ilb, regional cluster
+	chc = fixture.ilb()
+	chc.HttpHealthCheck.RequestPath = "/foo"
+	chc.Description = translator.DescriptionForHealthChecksFromBackendConfig
+	cases = append(cases, &tc{
+		desc:            "create backendconfig ilb regional cluster",
+		sp:              testSPs["HTTP-80-ilb-bc"],
+		regional:        true,
+		regionalCluster: true,
+		wantComputeHC:   chc,
 	})
 
 	// Probe and BackendConfig override
@@ -1339,15 +1381,38 @@ func TestSyncServicePort(t *testing.T) {
 	// settings.
 
 	for _, tc := range cases {
+		tc := *tc
 		tc.updateHCDescription = true
 		tc.desc = tc.desc + " with updateHCDescription"
-		cases = append(cases, tc)
+		copyOfWant := *tc.wantComputeHC
+		if tc.sp.BackendConfig != nil {
+			var wantLocation string
+			if tc.regionalCluster {
+				wantLocation = gce.DefaultTestClusterValues().Region
+			} else {
+				wantLocation = gce.DefaultTestClusterValues().ZoneName
+			}
+			wantDesc := healthcheck.HealthcheckDesc{
+				K8sCluster:  fmt.Sprintf("/locations/%s/clusters/%s", wantLocation, gce.DefaultTestClusterValues().ClusterName),
+				K8sResource: fmt.Sprintf("/namespaces/%s/services/%s", defaultBackendSvc.Namespace, defaultBackendSvc.Name),
+				Config:      "BackendConfig",
+			}
+			bytes, err := json.MarshalIndent(wantDesc, "", "    ")
+			if err != nil {
+				t.Fatalf("Error while generating the wantDesc JSON.")
+			}
+			copyOfWant.Description = string(bytes)
+		}
+		tc.wantComputeHC = &copyOfWant
+		cases = append(cases, &tc)
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
 			flags.F.EnableUpdateCustomHealthCheckDescription = tc.updateHCDescription
-			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+			testClusterValues := gce.DefaultTestClusterValues()
+			testClusterValues.Regional = tc.regionalCluster
+			fakeGCE := gce.NewFakeGCECloud(testClusterValues)
 
 			mock := fakeGCE.Compute().(*cloud.MockGCE)
 			setupMockUpdate(mock)
@@ -1378,20 +1443,20 @@ func TestSyncServicePort(t *testing.T) {
 					t.Fatalf("Got %d healthchecks, want 1\n%s", len(computeHCs), pretty.Sprint(computeHCs))
 				}
 
-				gotHC := computeHCs[0]
 				// Filter out SelfLink because it is hard to deal with in the mock and
 				// test cases.
-				filter := func(hc *compute.HealthCheck) {
+				filter := func(hc compute.HealthCheck) compute.HealthCheck {
 					hc.SelfLink = ""
 					if !tc.updateHCDescription {
 						hc.Description = ""
 					}
+					return hc
 				}
-				filter(gotHC)
-				filter(tc.wantComputeHC)
+				gotHC := filter(*computeHCs[0])
+				wantHC := filter(*tc.wantComputeHC)
 
-				if !reflect.DeepEqual(gotHC, tc.wantComputeHC) {
-					t.Fatalf("Compute healthcheck is:\n%s, want:\n%s", pretty.Sprint(gotHC), pretty.Sprint(tc.wantComputeHC))
+				if !reflect.DeepEqual(gotHC, wantHC) {
+					t.Fatalf("Compute healthcheck is:\n%s, want:\n%s", pretty.Sprint(gotHC), pretty.Sprint(wantHC))
 				}
 			}
 

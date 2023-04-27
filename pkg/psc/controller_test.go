@@ -301,11 +301,8 @@ func TestServiceAttachmentCreation(t *testing.T) {
 					t.Errorf("%s", err)
 				}
 
-				zone, err := fakeCloud.GetZone(context2.TODO())
-				if err != nil {
-					t.Errorf("failed to get zone %q", err)
-				}
-				desc := sautils.NewServiceAttachmentDesc(testNamespace, saName, ClusterName, zone.FailureDomain, false)
+				zone := fakeCloud.LocalZone()
+				desc := sautils.NewServiceAttachmentDesc(testNamespace, saName, ClusterName, zone, false)
 
 				expectedSA := &ga.ServiceAttachment{
 					ConnectionPreference: tc.connectionPreference,

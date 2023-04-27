@@ -816,7 +816,7 @@ k8s.io/cloud-provider-gcp/crd/client/network/informers/externalversions/network/
 k8s.io/cloud-provider-gcp/crd/client/network/informers/externalversions/network/v1alpha1
 k8s.io/cloud-provider-gcp/crd/client/network/listers/network/v1
 k8s.io/cloud-provider-gcp/crd/client/network/listers/network/v1alpha1
-# k8s.io/cloud-provider-gcp/providers v0.26.3-0.20230322202223-f7280f55e36f
+# k8s.io/cloud-provider-gcp/providers v0.26.3-0.20230414153241-658d4df496a9
 ## explicit; go 1.19
 k8s.io/cloud-provider-gcp/providers/gce
 # k8s.io/component-base v0.26.2
