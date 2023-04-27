@@ -371,15 +371,11 @@ func getEndpointPod(
 
 // toZoneNetworkEndpointMap translates addresses in endpoints object into zone and endpoints map, and also return the count for duplicated endpoints
 // we will not raise error in degraded mode for misconfigured endpoints, instead they will be filtered directly
-func toZoneNetworkEndpointMapDegradedMode(
-	eds []negtypes.EndpointsData,
-	zoneGetter negtypes.ZoneGetter,
-	podLister, nodeLister cache.Indexer,
-	servicePortName string,
-	networkEndpointType negtypes.NetworkEndpointType,
-) ZoneNetworkEndpointMapResult {
+func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGetter negtypes.ZoneGetter, podLister, nodeLister cache.Indexer, servicePortName string, networkEndpointType negtypes.NetworkEndpointType, enableDualStackNEG bool) ZoneNetworkEndpointMapResult {
 	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
 	networkEndpointPodMap := negtypes.EndpointPodMap{}
+	dupCount := 0
+	ipsForPod := ipsForPod(eds)
 	for _, ed := range eds {
 		matchPort := ""
 		for _, port := range ed.Ports {
@@ -392,17 +388,13 @@ func toZoneNetworkEndpointMapDegradedMode(
 			continue
 		}
 		for _, endpointAddress := range ed.Addresses {
-			if endpointAddress.AddressType != discovery.AddressTypeIPv4 {
+			if !enableDualStackNEG && endpointAddress.AddressType != discovery.AddressTypeIPv4 {
 				klog.Infof("Skipping non IPv4 address in degraded mode: %q, in endpoint slice %s/%s", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
 				continue
 			}
 			pod, getPodErr := getEndpointPod(endpointAddress, podLister)
 			if getPodErr != nil {
 				klog.Errorf("Endpoint %q in Endpoints %s/%s receives error when getting pod, err: %v, skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, getPodErr)
-				continue
-			}
-			if err := validatePod(pod, nodeLister); err != nil {
-				klog.Errorf("Endpoint %q in Endpoints %s/%s correponds to an invalid pod: %v, skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, err)
 				continue
 			}
 			nodeName := pod.Spec.NodeName
@@ -414,25 +406,46 @@ func toZoneNetworkEndpointMapDegradedMode(
 			if zoneNetworkEndpointMap[zone] == nil {
 				zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
 			}
-			for _, address := range endpointAddress.Addresses {
-				networkEndpoint := negtypes.NetworkEndpoint{IP: address, Port: matchPort, Node: nodeName}
-				if networkEndpointType == negtypes.NonGCPPrivateEndpointType {
-					// Non-GCP network endpoints don't have associated nodes.
-					networkEndpoint.Node = ""
-				}
-				zoneNetworkEndpointMap[zone].Insert(networkEndpoint)
 
-				if existingPod, contains := networkEndpointPodMap[networkEndpoint]; contains {
-					// if existing name is alphabetically lower than current one, continue and don't replace
-					if existingPod.Name < endpointAddress.TargetRef.Name {
-						klog.Infof("Found duplicate endpoints for %q, save the pod information from the alphabetically higher pod", address)
-						continue
-					}
-				}
-				networkEndpointPodMap[networkEndpoint] = types.NamespacedName{Namespace: endpointAddress.TargetRef.Namespace, Name: endpointAddress.TargetRef.Name}
+			podIPs := ipsForPod[types.NamespacedName{Namespace: endpointAddress.TargetRef.Namespace, Name: endpointAddress.TargetRef.Name}]
+			// TODO(cheungdavid): Remove this validation when single stack ipv6 endpoint is supported
+			if parseIPAddress(podIPs.IP) == "" {
+				klog.Errorf("For endpoint %q in pod %q, it has an invalid IPv4 address, err: %v, skipping", endpointAddress.Addresses, pod.ObjectMeta.Name, negtypes.ErrEPIPNotFromPod)
+				continue
 			}
+			networkEndpoint := negtypes.NetworkEndpoint{IP: podIPs.IP, Port: matchPort, Node: nodeName}
+			if enableDualStackNEG {
+				// Convert all addresses to a standard form as per rfc5952 to prevent
+				// accidental diffs resulting from different formats.
+				networkEndpoint.IPv6 = parseIPAddress(podIPs.IPv6)
+			}
+			// endpoint address should match to the IP of its pod
+			if err = podContainsEndpointAddress(networkEndpoint, pod); err != nil {
+				klog.Errorf("Endpoint %q in Endpoints %s/%s has IP(s) not match to its pod %s: %w, skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, pod.Name, err)
+				continue
+			}
+			if err := validatePod(pod, nodeLister, networkEndpoint); err != nil {
+				klog.Errorf("Endpoint %q in Endpoints %s/%s correponds to an invalid pod: %v, skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, err)
+				continue
+			}
+			if networkEndpointType == negtypes.NonGCPPrivateEndpointType {
+				// Non-GCP network endpoints don't have associated nodes.
+				networkEndpoint.Node = ""
+			}
+			zoneNetworkEndpointMap[zone].Insert(networkEndpoint)
+
+			// if existing name is alphabetically lower than current one, continue and don't replace
+			if existingPod, contains := networkEndpointPodMap[networkEndpoint]; contains {
+				dupCount += 1
+				if existingPod.Name < endpointAddress.TargetRef.Name {
+					klog.Infof("Found duplicate endpoints for %v, save the pod information from the alphabetically higher pod", networkEndpoint)
+					continue // if existing name is alphabetically lower than current one, continue and don't replace
+				}
+			}
+			networkEndpointPodMap[networkEndpoint] = types.NamespacedName{Namespace: endpointAddress.TargetRef.Namespace, Name: endpointAddress.TargetRef.Name}
 		}
 	}
+
 	return ZoneNetworkEndpointMapResult{
 		NetworkEndpointSet: zoneNetworkEndpointMap,
 		EndpointPodMap:     networkEndpointPodMap,
@@ -443,7 +456,8 @@ func toZoneNetworkEndpointMapDegradedMode(
 // it returns error if the pod:
 // 1. is in terminal state
 // 2. corresponds to a non-existent node
-func validatePod(pod *apiv1.Pod, nodeLister cache.Indexer) error {
+// 3. have an IP that matches to a podIP, but is outside of the node's allocated IP range
+func validatePod(pod *apiv1.Pod, nodeLister cache.Indexer, networkEndpoint negtypes.NetworkEndpoint) error {
 	// Terminal Pod means a pod is in PodFailed or PodSucceeded phase
 	phase := pod.Status.Phase
 	if phase == apiv1.PodFailed || phase == apiv1.PodSucceeded {
@@ -453,9 +467,12 @@ func validatePod(pod *apiv1.Pod, nodeLister cache.Indexer) error {
 	if err != nil || !exists {
 		return negtypes.ErrEPNodeNotFound
 	}
-	_, isNode := obj.(*apiv1.Node)
-	if !isNode {
+	node, ok := obj.(*apiv1.Node)
+	if !ok {
 		return negtypes.ErrEPNodeTypeAssertionFailed
+	}
+	if err = nodeContainsPodIP(node, networkEndpoint); err != nil {
+		return err
 	}
 	return nil
 }
@@ -484,6 +501,66 @@ func ipsForPod(eds []negtypes.EndpointsData) map[types.NamespacedName]negtypes.N
 		}
 	}
 	return result
+}
+
+// podContainsEndpointAddress checks the pod's existing PodIP(s)
+// and return error if the given endpoint's IP address does not any of them.
+// If this is a dual stack endpoint, we would validate both IPs
+func podContainsEndpointAddress(networkEndpoint negtypes.NetworkEndpoint, pod *apiv1.Pod) error {
+	// TODO(cheungdavid): update ipv4 check when single stack ipv6 is supported
+	endpointIPs := []string{networkEndpoint.IP}
+	if networkEndpoint.IPv6 != "" {
+		endpointIPs = append(endpointIPs, networkEndpoint.IPv6)
+	}
+
+	matching := 0
+	for _, endpointIP := range endpointIPs {
+		// a pod can have at most two PodIPs, one for ipv4 and one for ipv6
+		for _, podIP := range pod.Status.PodIPs {
+			if endpointIP == podIP.IP {
+				matching += 1
+			}
+		}
+	}
+	if matching != len(endpointIPs) {
+		return fmt.Errorf("%w: endpoint %v has IP(s) not match to its pod's IP(s)", negtypes.ErrEPIPNotFromPod, endpointIPs)
+	}
+	return nil
+}
+
+// nodeContainsPodIP checks the node's existing PodCIDR(s),
+// and return error if the pod IP used by the endpoint is not within one of the podCIDR ranges.
+// If this is a dual stack endpoint, we would validate both pod IPs
+func nodeContainsPodIP(node *apiv1.Node, networkEndpoint negtypes.NetworkEndpoint) error {
+	ipnets := []*net.IPNet{}
+	// a node can have at most two PodCIDRs, one for ipv4 and one for ipv6
+	for _, podCIDR := range node.Spec.PodCIDRs {
+		podCIDR = strings.TrimSpace(podCIDR)
+		_, ipnet, err := net.ParseCIDR(podCIDR)
+		if err != nil {
+			// swallow errors for CIDRs that are invalid
+			continue
+		}
+		ipnets = append(ipnets, ipnet)
+	}
+	podIPs := []net.IP{net.ParseIP(networkEndpoint.IP)}
+	if networkEndpoint.IPv6 != "" {
+		podIPs = append(podIPs, net.ParseIP(networkEndpoint.IPv6))
+	}
+
+	matching := 0
+	for _, podIP := range podIPs {
+		for _, net := range ipnets {
+			if net.Contains(podIP) {
+				matching += 1
+				break
+			}
+		}
+	}
+	if matching != len(podIPs) {
+		return fmt.Errorf("%w: podIP(s) used by endpoint %v not match to the node's PodCIDR range(s)", negtypes.ErrEPIPOutOfPodCIDR, podIPs)
+	}
+	return nil
 }
 
 // retrieveExistingZoneNetworkEndpointMap lists existing network endpoints in the neg and return the zone and endpoints map
