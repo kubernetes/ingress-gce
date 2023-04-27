@@ -32,6 +32,7 @@ const (
 	ReasonInvalidAPIResponse        = Reason("InvalidAPIResponse")
 	ReasonInvalidEPAttach           = Reason("InvalidEPAttach")
 	ReasonInvalidEPDetach           = Reason("InvalidEPDetach")
+	ReasonEPIPInvalid               = Reason("EPIPInvalid")
 	ReasonEPIPNotFromPod            = Reason("EPIPNotFromPod")
 	ReasonEPIPOutOfPodCIDR          = Reason("EPIPOutOfPodCIDR")
 	ReasonEPServiceNotFound         = Reason("EPServiceNotFound")
@@ -114,6 +115,11 @@ var (
 	ErrInvalidEPDetach = NegSyncError{
 		Err:          errors.New("endpoint information for detach operation is incorrect"),
 		Reason:       ReasonInvalidEPDetach,
+		IsErrorState: true,
+	}
+	ErrEPIPInvalid = NegSyncError{
+		Err:          errors.New("endpoint has an invalid IP address"),
+		Reason:       ReasonEPIPInvalid,
 		IsErrorState: true,
 	}
 	ErrEPIPNotFromPod = NegSyncError{

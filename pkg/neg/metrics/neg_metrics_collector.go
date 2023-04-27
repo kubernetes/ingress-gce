@@ -37,10 +37,10 @@ type SyncerMetricsCollector interface {
 type SyncerMetrics struct {
 	// syncerStatusMap tracks the status of each syncer
 	syncerStatusMap map[negtypes.NegSyncerKey]negtypes.Reason
-	// syncerEndpointStateMap is a map between syncer and endpoint state counts
+	// syncerEndpointStateMap is a map between syncer and endpoint state counts.
 	syncerEndpointStateMap map[negtypes.NegSyncerKey]negtypes.StateCountMap
-	// syncerEPSStateMap is a map between syncer and endpoint slice state counts
-	syncerEPSStateMap map[negtypes.NegSyncerKey]negtypes.StateCountMap
+	// syncerEndpointSliceStateMap is a map between syncer and endpoint slice state counts.
+	syncerEndpointSliceStateMap map[negtypes.NegSyncerKey]negtypes.StateCountMap
 	// syncerLabelProagationStats is a map between syncer and label propagation stats.
 	syncerLabelProagationStats map[negtypes.NegSyncerKey]LabelPropagationStats
 	// mu avoid race conditions and ensure correctness of metrics
@@ -54,12 +54,12 @@ type SyncerMetrics struct {
 // NewNEGMetricsCollector initializes SyncerMetrics and starts a go routine to compute and export metrics periodically.
 func NewNegMetricsCollector(exportInterval time.Duration, logger klog.Logger) *SyncerMetrics {
 	return &SyncerMetrics{
-		syncerStatusMap:            make(map[negtypes.NegSyncerKey]negtypes.Reason),
-		syncerEndpointStateMap:     make(map[negtypes.NegSyncerKey]negtypes.StateCountMap),
-		syncerEPSStateMap:          make(map[negtypes.NegSyncerKey]negtypes.StateCountMap),
-		syncerLabelProagationStats: make(map[negtypes.NegSyncerKey]LabelPropagationStats),
-		metricsInterval:            exportInterval,
-		logger:                     logger.WithName("NegMetricsCollector"),
+		syncerStatusMap:             make(map[negtypes.NegSyncerKey]negtypes.Reason),
+		syncerEndpointStateMap:      make(map[negtypes.NegSyncerKey]negtypes.StateCountMap),
+		syncerEndpointSliceStateMap: make(map[negtypes.NegSyncerKey]negtypes.StateCountMap),
+		syncerLabelProagationStats:  make(map[negtypes.NegSyncerKey]LabelPropagationStats),
+		metricsInterval:             exportInterval,
+		logger:                      logger.WithName("NegMetricsCollector"),
 	}
 }
 
@@ -72,6 +72,8 @@ func FakeSyncerMetrics() *SyncerMetrics {
 func RegisterSyncerMetrics() {
 	prometheus.MustRegister(syncerSyncResult)
 	prometheus.MustRegister(syncerSyncerState)
+	prometheus.MustRegister(syncerEndpointState)
+	prometheus.MustRegister(syncerEndpointSliceState)
 }
 
 func (sm *SyncerMetrics) Run(stopCh <-chan struct{}) {
@@ -92,6 +94,14 @@ func (sm *SyncerMetrics) export() {
 
 	stateCount, syncerCount := sm.computeSyncerStateMetrics()
 	PublishSyncerStateMetrics(stateCount)
+
+	epStateCount, epsStateCount := sm.computeEndpointStateMetrics(false)
+	for state, count := range epStateCount {
+		syncerEndpointState.WithLabelValues(string(state)).Set(float64(count))
+	}
+	for state, count := range epsStateCount {
+		syncerEndpointSliceState.WithLabelValues(string(state)).Set(float64(count))
+	}
 
 	sm.logger.V(3).Info("Exporting syncer related metrics", "Syncer count", syncerCount, "Number of Endpoints", lpMetrics.NumberOfEndpoints)
 }
@@ -114,19 +124,20 @@ func (sm *SyncerMetrics) UpdateSyncerStatusInMetrics(key negtypes.NegSyncerKey, 
 }
 
 func (sm *SyncerMetrics) UpdateSyncerEPMetrics(key negtypes.NegSyncerKey, endpointCount, endpointSliceCount negtypes.StateCountMap) {
+	sm.logger.V(3).Info("Updating syncer endpoint", "syncerKey", key)
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	if sm.syncerEndpointStateMap == nil {
 		sm.syncerEndpointStateMap = make(map[negtypes.NegSyncerKey]negtypes.StateCountMap)
-		sm.logger.V(3).Info("Syncer Metrics failed to initialize correctly, reinitializing syncerEPStateMap")
+		sm.logger.V(3).Info("Syncer Metrics failed to initialize correctly, reinitializing syncerEndpointStateMap")
 	}
 	sm.syncerEndpointStateMap[key] = endpointCount
 
-	if sm.syncerEPSStateMap == nil {
-		sm.syncerEPSStateMap = make(map[negtypes.NegSyncerKey]negtypes.StateCountMap)
-		sm.logger.V(3).Info("Syncer Metrics failed to initialize correctly, reinitializing syncerEPSStateMap")
+	if sm.syncerEndpointSliceStateMap == nil {
+		sm.syncerEndpointSliceStateMap = make(map[negtypes.NegSyncerKey]negtypes.StateCountMap)
+		sm.logger.V(3).Info("Syncer Metrics failed to initialize correctly, reinitializing syncerEndpointSliceStateMap")
 	}
-	sm.syncerEPSStateMap[key] = endpointSliceCount
+	sm.syncerEndpointSliceStateMap[key] = endpointSliceCount
 }
 
 func (sm *SyncerMetrics) SetLabelPropagationStats(key negtypes.NegSyncerKey, labelstatLabelPropagationStats LabelPropagationStats) {
@@ -144,7 +155,7 @@ func (sm *SyncerMetrics) DeleteSyncer(key negtypes.NegSyncerKey) {
 	defer sm.mu.Unlock()
 	delete(sm.syncerStatusMap, key)
 	delete(sm.syncerEndpointStateMap, key)
-	delete(sm.syncerEPSStateMap, key)
+	delete(sm.syncerEndpointSliceStateMap, key)
 	delete(sm.syncerLabelProagationStats, key)
 }
 
@@ -172,4 +183,25 @@ func (sm *SyncerMetrics) computeSyncerStateMetrics() (*syncerStateCount, int) {
 		syncerCount++
 	}
 	return stateCount, syncerCount
+}
+
+// computeSyncerEndpointStateMetrics aggregates endpoint and endpoint slice counts from all syncers
+func (sm *SyncerMetrics) computeEndpointStateMetrics(forDegradedMode bool) (negtypes.StateCountMap, negtypes.StateCountMap) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	epCounts := negtypes.StateCountMap{}
+	epsCounts := negtypes.StateCountMap{}
+	// collect count from each syncer
+	for _, epCount := range sm.syncerEndpointStateMap {
+		for _, state := range negtypes.StatesForEndpointMetrics() {
+			epCounts[state] += epCount[state]
+		}
+	}
+	for _, epsCount := range sm.syncerEndpointSliceStateMap {
+		for _, state := range negtypes.StatesForEndpointMetrics() {
+			epsCounts[state] += epsCount[state]
+		}
+	}
+	return epCounts, epsCounts
 }

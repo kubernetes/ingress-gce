@@ -19,24 +19,18 @@ package types
 type State string
 
 const (
-	NodeMissing            = State("NodeMissing")
-	PodMissing             = State("PodMissing")
-	PodNotFound            = State("PodNotFound")
-	PodTypeAssertionFailed = State("PodTypeAssertionFailed")
-	ZoneMissing            = State("ZoneMissing")
-	InvalidField           = State("InvalidField")
-	Duplicate              = State("Duplicate")
-	Total                  = State("Total")
-
-	// these states are for degraded mode only
-	NodeNotFound            = State("NodeNotFound")
-	NodeTypeAssertionFailed = State("NodeTypeAssertionFailed")
-	PodTerminal             = State("PodTerminal")
-	PodLabelMismatch        = State("PodLabelMismatch")
-	IPInvalid               = State("IPInvalid")
-	IPNotFromPod            = State("IPNotFromPod")
-	IPOutOfPodCIDR          = State("IPOutOfPodCIDR")
-	ServiceNotFound         = State("ServiceNotFound")
+	PodInvalid       = State("PodInvalid")
+	PodTerminal      = State("PodTerminal")
+	PodLabelMismatch = State("PodLabelMismatch")
+	NodeMissing      = State("NodeMissing")
+	NodeNotFound     = State("NodeNotFound")
+	ZoneMissing      = State("ZoneMissing")
+	IPInvalid        = State("IPInvalid")
+	IPNotFromPod     = State("IPNotFromPod")
+	IPOutOfPodCIDR   = State("IPOutOfPodCIDR")
+	OtherError       = State("OtherError")
+	Duplicate        = State("Duplicate")
+	Total            = State("Total")
 )
 
 // StateCountMap collect the count of instances in different states
@@ -44,6 +38,6 @@ type StateCountMap map[State]int
 
 // StatesForEndpointMetrics gets all states for endpoint and endpoint slice
 func StatesForEndpointMetrics() []State {
-	return []State{NodeMissing, PodMissing, PodNotFound, PodTypeAssertionFailed, ZoneMissing, InvalidField, Duplicate, Total,
-		NodeNotFound, NodeTypeAssertionFailed, PodTerminal, PodLabelMismatch, IPNotFromPod, IPOutOfPodCIDR, ServiceNotFound}
+	return []State{PodInvalid, PodTerminal, PodLabelMismatch, NodeMissing, NodeNotFound,
+		ZoneMissing, IPInvalid, IPNotFromPod, IPOutOfPodCIDR, OtherError, Duplicate, Total}
 }
