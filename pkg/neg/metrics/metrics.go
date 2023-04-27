@@ -24,21 +24,25 @@ import (
 )
 
 const (
-	negControllerSubsystem   = "neg_controller"
-	syncerLatencyKey         = "syncer_sync_duration_seconds"
-	managerProcessLatencyKey = "manager_process_duration_seconds"
-	initLatencyKey           = "neg_initialization_duration_seconds"
-	negOpLatencyKey          = "neg_operation_duration_seconds"
-	negOpEndpointsKey        = "neg_operation_endpoints"
-	lastSyncTimestampKey     = "sync_timestamp"
-	syncerStalenessKey       = "syncer_staleness"
-	epsStalenessKey          = "endpointslice_staleness"
+	negControllerSubsystem     = "neg_controller"
+	syncerLatencyKey           = "syncer_sync_duration_seconds"
+	managerProcessLatencyKey   = "manager_process_duration_seconds"
+	initLatencyKey             = "neg_initialization_duration_seconds"
+	negOpLatencyKey            = "neg_operation_duration_seconds"
+	negOpEndpointsKey          = "neg_operation_endpoints"
+	lastSyncTimestampKey       = "sync_timestamp"
+	syncerStalenessKey         = "syncer_staleness"
+	epsStalenessKey            = "endpointslice_staleness"
+	degradedModeCorrectnessKey = "degraded_mode_correctness"
 
 	resultSuccess = "success"
 	resultError   = "error"
 
 	GCProcess   = "GC"
 	SyncProcess = "Sync"
+
+	NotInDegradedEndpoints  = "not_in_degraded_endpoints"
+	OnlyInDegradedEndpoints = "only_in_degraded_endpoints"
 )
 
 type syncType string
@@ -66,6 +70,11 @@ var (
 		"neg_type",                 //type of neg
 		"endpoint_calculator_mode", // type of endpoint calculator used
 		"result",                   // result of the sync
+	}
+
+	degradedModeCorrectnessLabels = []string{
+		"neg_type",      // type of neg
+		"endpoint_type", // type of endpoint
 	}
 
 	NegOperationLatency = prometheus.NewHistogramVec(
@@ -149,6 +158,17 @@ var (
 			Buckets: prometheus.ExponentialBuckets(1, 2, 14),
 		},
 	)
+
+	DegradeModeCorrectness = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      degradedModeCorrectnessKey,
+			Help:      "Number of endpoints differed between current endpoint calculation and degraded mode calculation",
+			// custom buckets - [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, +Inf]
+			Buckets: prometheus.ExponentialBuckets(1, 2, 20),
+		},
+		degradedModeCorrectnessLabels,
+	)
 )
 
 var register sync.Once
@@ -167,6 +187,7 @@ func RegisterMetrics() {
 		prometheus.MustRegister(LabelPropagationError)
 		prometheus.MustRegister(LabelNumber)
 		prometheus.MustRegister(AnnotationSize)
+		prometheus.MustRegister(DegradeModeCorrectness)
 
 		RegisterSyncerMetrics()
 	})
@@ -204,6 +225,12 @@ func PublishNegSyncerStalenessMetrics(syncerStaleness time.Duration) {
 
 func PublishNegEPSStalenessMetrics(epsStaleness time.Duration) {
 	EPSStaleness.Observe(epsStaleness.Seconds())
+}
+
+// PublishDegradedModeCorrectnessMetrics publishes collected metrics
+// of the correctness of degraded mode calculations compared with the current one
+func PublishDegradedModeCorrectnessMetrics(count int, endpointType string, negType string) {
+	DegradeModeCorrectness.WithLabelValues(negType, endpointType).Observe(float64(count))
 }
 
 func getResult(err error) string {
