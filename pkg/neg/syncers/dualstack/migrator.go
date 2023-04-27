@@ -17,12 +17,15 @@ limitations under the License.
 package dualstack
 
 import (
+	"sync"
 	"time"
 
 	"k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/klog/v2"
 )
 
 const (
+	// Default time to wait between two successive migration-detachments.
 	defaultMigrationWaitDuration = 1 * time.Minute
 )
 
@@ -47,10 +50,34 @@ const (
 type Migrator struct {
 	// Setting this to false will make all exported functions a no-op.
 	enableDualStack bool
+	// The NEG syncer which will be synced when Continue gets called.
+	syncer syncable
+
+	// mu protects paused and continueInProgress.
+	mu sync.Mutex
+	// Identifies whether the migrator is paused.
+	paused bool
+	// Identifies if some async operation triggered by Continue is still in
+	// progress.
+	continueInProgress bool
+
+	// Time to wait between two successive migration-detachments.
+	migrationWaitDuration time.Duration
+
+	logger klog.Logger
 }
 
-func NewMigrator(enableDualStack bool) *Migrator {
-	return &Migrator{enableDualStack: enableDualStack}
+type syncable interface {
+	Sync() bool
+}
+
+func NewMigrator(enableDualStackNEG bool, syncer syncable, logger klog.Logger) *Migrator {
+	return &Migrator{
+		enableDualStack:       enableDualStackNEG,
+		syncer:                syncer,
+		migrationWaitDuration: defaultMigrationWaitDuration,
+		logger:                logger.WithName("DualStackMigrator"),
+	}
 }
 
 // Filter will modify the `addEndpoints` and `removeEndpoints` in TWO DISTINCT
@@ -74,6 +101,10 @@ func (d *Migrator) Filter(addEndpoints, removeEndpoints, committedEndpoints map[
 
 	_, migrationEndpointsInRemoveSet := findAndFilterMigrationEndpoints(addEndpoints, removeEndpoints)
 
+	if d.isPaused() {
+		return ""
+	}
+
 	// TODO(gauravkghildiyal): Implement rate limited migration-detachment.
 	for zone, endpointSet := range migrationEndpointsInRemoveSet {
 		if endpointSet.Len() != 0 {
@@ -94,9 +125,12 @@ func (d *Migrator) Filter(addEndpoints, removeEndpoints, committedEndpoints map[
 // Pause is usually paired with a Continue() invocation once the NEG-endpoint
 // detach operation completes.
 func (d *Migrator) Pause() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	if !d.enableDualStack {
 		return
 	}
+	d.paused = true
 }
 
 // Continue will unpause the migration. It expects an error as input which
@@ -113,9 +147,44 @@ func (d *Migrator) Pause() {
 //     completion of the timer. If Continue is invoked multiple times, only the
 //     first continue will trigger a resync.
 func (d *Migrator) Continue(err error) {
-	if !d.enableDualStack {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	// Do nothing if any of the following is true:
+	//  1. dualStackNEG is not enabled.
+	//  2. We are not paused.
+	//  3. Another continue is already running for this instance.
+	if !d.enableDualStack || !d.paused || d.continueInProgress {
+		d.logger.V(1).Info("Continue() returning early", "migrator.enableDualStack", d.enableDualStack, "migrator.paused", d.paused, "migrator.continueInProgress", d.continueInProgress)
 		return
 	}
+
+	if err != nil {
+		// NEG Detach failed; unpause immediately.
+		d.paused = false
+		return
+	}
+
+	// NEG Detach succeeded; unpause after migrationWaitDuration and trigger
+	// resync.
+	d.continueInProgress = true
+	go func() {
+		time.Sleep(d.migrationWaitDuration)
+
+		d.mu.Lock()
+		d.paused = false
+		d.continueInProgress = false
+		d.mu.Unlock()
+
+		d.logger.V(2).Info("Triggering sync")
+		d.syncer.Sync()
+	}()
+}
+
+func (d *Migrator) isPaused() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.paused
 }
 
 // findAndFilterMigrationEndpoints will filter out the migration endpoints from
