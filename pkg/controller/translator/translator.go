@@ -229,6 +229,13 @@ func (t *Translator) manageEnableTHC(sp *utils.ServicePort, svc *api_v1.Service)
 		t.recorderGetter.Recorder(sp.ID.Service.Namespace).Event(svc, api_v1.EventTypeWarning, "THCAnnotationParsingFailed", message)
 		klog.Warning(message)
 	}
+
+	if THCEnabled && !sp.NEGEnabled {
+		message := "THC annotation present, but NEG is disabled. Will not enable Transparent Health Checks."
+		t.recorderGetter.Recorder(sp.ID.Service.Namespace).Event(svc, api_v1.EventTypeWarning, "THCAnnotationWithoutNEG", message)
+		klog.Warning(message)
+		THCEnabled = false
+	}
 }
 
 // getServicePort looks in the svc store for a matching service:port,

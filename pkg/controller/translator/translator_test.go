@@ -1183,12 +1183,13 @@ func TestManageEnableTHC(t *testing.T) {
 	}
 
 	type tc struct {
-		name      string
-		sp        *utils.ServicePort
-		svc       *apiv1.Service
-		enableTHC bool
-		want      *utils.ServicePort
-		wantEvent bool
+		name        string
+		sp          *utils.ServicePort
+		svc         *apiv1.Service
+		enableTHC   bool
+		want        *utils.ServicePort
+		wantEvent   bool
+		eventPrefix string
 	}
 
 	const (
@@ -1213,49 +1214,59 @@ func TestManageEnableTHC(t *testing.T) {
 		},
 		{
 			name:      "annotation",
-			sp:        &utils.ServicePort{},
+			sp:        &utils.ServicePort{NEGEnabled: true},
 			svc:       newService(map[string]string{thcLabel: thcValue}),
 			enableTHC: true,
-			want:      &utils.ServicePort{THCEnabled: true},
+			want:      &utils.ServicePort{NEGEnabled: true, THCEnabled: true},
 		},
 		{
 			name:      "annotation flag disabled",
-			sp:        &utils.ServicePort{THCEnabled: true},
+			sp:        &utils.ServicePort{NEGEnabled: true, THCEnabled: true},
 			svc:       newService(map[string]string{thcLabel: thcValue}),
 			enableTHC: false,
-			want:      &utils.ServicePort{THCEnabled: false},
+			want:      &utils.ServicePort{NEGEnabled: true, THCEnabled: false},
+		},
+		{
+			name:        "annotation NEG disabled",
+			sp:          &utils.ServicePort{THCEnabled: true},
+			svc:         newService(map[string]string{thcLabel: thcValue}),
+			enableTHC:   true,
+			want:        &utils.ServicePort{THCEnabled: false},
+			wantEvent:   true,
+			eventPrefix: "Warning THCAnnotationWithoutNEG THC annotation present, but NEG is disabled. Will not enable Transparent Health Checks.",
 		},
 		{
 			name:      "wrong annotation flag disabled",
-			sp:        &utils.ServicePort{THCEnabled: true},
+			sp:        &utils.ServicePort{NEGEnabled: true, THCEnabled: true},
 			svc:       newService(map[string]string{thcLabel: "random text"}),
 			enableTHC: false,
-			want:      &utils.ServicePort{THCEnabled: false},
+			want:      &utils.ServicePort{NEGEnabled: true, THCEnabled: false},
 		},
 		{
-			name:      "wrong annotation",
-			sp:        &utils.ServicePort{THCEnabled: true},
-			svc:       newService(map[string]string{thcLabel: "random text"}),
-			enableTHC: true,
-			want:      &utils.ServicePort{THCEnabled: false},
-			wantEvent: true,
+			name:        "wrong annotation",
+			sp:          &utils.ServicePort{NEGEnabled: true, THCEnabled: true},
+			svc:         newService(map[string]string{thcLabel: "random text"}),
+			enableTHC:   true,
+			want:        &utils.ServicePort{NEGEnabled: true, THCEnabled: false},
+			wantEvent:   true,
+			eventPrefix: "Warning THCAnnotationParsingFailed Parsing THC annotation failed",
 		},
 		{
 			name:      "annotation empty backendconfig",
-			sp:        &utils.ServicePort{BackendConfig: &backendconfig.BackendConfig{}, THCEnabled: false},
+			sp:        &utils.ServicePort{BackendConfig: &backendconfig.BackendConfig{}, NEGEnabled: true, THCEnabled: false},
 			svc:       newService(map[string]string{thcLabel: thcValue}),
 			enableTHC: true,
-			want:      &utils.ServicePort{BackendConfig: &backendconfig.BackendConfig{}, THCEnabled: true},
+			want:      &utils.ServicePort{BackendConfig: &backendconfig.BackendConfig{}, NEGEnabled: true, THCEnabled: true},
 		},
 	}
 	BC := &backendconfig.BackendConfig{}
 	BC.Spec.HealthCheck = &backendconfig.HealthCheckConfig{}
 	testCases = append(testCases, &tc{
 		name:      "annotation backendconfig",
-		sp:        &utils.ServicePort{BackendConfig: BC, THCEnabled: true},
+		sp:        &utils.ServicePort{BackendConfig: BC, NEGEnabled: true, THCEnabled: true},
 		svc:       newService(map[string]string{thcLabel: thcValue}),
 		enableTHC: true,
-		want:      &utils.ServicePort{BackendConfig: BC, THCEnabled: false},
+		want:      &utils.ServicePort{BackendConfig: BC, NEGEnabled: true, THCEnabled: false},
 	})
 
 	for _, tc := range testCases {
@@ -1278,7 +1289,7 @@ func TestManageEnableTHC(t *testing.T) {
 				fakeRecorder := fakeSingletonRecorderGetter.FakeRecorder()
 				select {
 				case output := <-fakeRecorder.Events:
-					if !strings.HasPrefix(output, "Warning THCAnnotationParsingFailed Parsing THC annotation failed") {
+					if !strings.HasPrefix(output, tc.eventPrefix) {
 						t.Fatalf("Incorrect event emitted: %s.", output)
 					}
 				case <-time.After(10 * time.Second):
