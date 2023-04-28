@@ -109,6 +109,9 @@ func init() {
 						}
 						if thc {
 							sp.THCEnabled = true
+							if mode == "reg" { // No THC without NEG.
+								continue
+							}
 						}
 						testSPs[fmt.Sprintf("%s-%s-%s-%s-%s", p, npk, mode, bck, thck)] = sp
 					}
@@ -1006,7 +1009,7 @@ func (*syncSPFixture) hc() *compute.HealthCheck {
 
 func (*syncSPFixture) thc() *compute.HealthCheck {
 	return &compute.HealthCheck{
-		Name:               "k8s-be-80--uid1",
+		Name:               "k8s1-uid1---0-56ff9a48",
 		CheckIntervalSec:   5,
 		HealthyThreshold:   1,
 		TimeoutSec:         5,
@@ -1039,12 +1042,7 @@ func (f *syncSPFixture) toS(h *compute.HealthCheck) *compute.HealthCheck {
 	return h
 }
 
-func toNeg(h *compute.HealthCheck) {
-	h.Name = "k8s1-uid1---0-56ff9a48"
-}
-
 func toIlb(h *compute.HealthCheck) {
-	toNeg(h)
 	h.Region = "us-central1"
 	h.SelfLink = ilbSelfLink
 }
@@ -1184,18 +1182,8 @@ func TestSyncServicePort(t *testing.T) {
 		wantComputeHC: chc,
 	})
 
-	// Transparent Health Check
-	chc = fixture.thc()
-	cases = append(cases, &tc{
-		desc:          "create thc",
-		sp:            testSPs["HTTP-80-reg-nil-thc"],
-		enableTHC:     true,
-		wantComputeHC: chc,
-	})
-
 	// Transparent Health Check (NEG)
 	chc = fixture.thc()
-	toNeg(chc)
 	cases = append(cases, &tc{
 		desc:          "create thc neg",
 		sp:            testSPs["HTTP-80-neg-nil-thc"],
@@ -1218,7 +1206,7 @@ func TestSyncServicePort(t *testing.T) {
 	chc = fixture.thc()
 	cases = append(cases, &tc{
 		desc: "create thc prob",
-		sp:   testSPs["HTTP-80-reg-nil-thc"],
+		sp:   testSPs["HTTP-80-neg-nil-thc"],
 		probe: &v1.Probe{
 			ProbeHandler: api_v1.ProbeHandler{
 				HTTPGet: &v1.HTTPGetAction{Path: "/foo", Host: "foo.com"},
@@ -1431,24 +1419,20 @@ func TestSyncServicePort(t *testing.T) {
 		wantComputeHC: fixture.ilbs(),
 	})
 	cases = append(cases, &tc{
-		desc:          "update http to thc",
-		setup:         fixture.setupExistingHCFunc(fixture.hc()),
-		sp:            testSPs["HTTP-80-reg-nil-thc"],
+		desc:          "update neg to thc",
+		setup:         fixture.setupExistingHCFunc(fixture.neg()),
+		sp:            testSPs["HTTP-80-neg-nil-thc"],
 		wantComputeHC: fixture.thc(),
 		enableTHC:     true,
 	})
+	w := fixture.thc()
+	toIlb(w)
 	cases = append(cases, &tc{
-		desc:          "update https to thc",
-		setup:         fixture.setupExistingHCFunc(fixture.hcs()),
-		sp:            testSPs["HTTP-80-reg-nil-thc"],
-		wantComputeHC: fixture.thc(),
-		enableTHC:     true,
-	})
-	cases = append(cases, &tc{
-		desc:          "update http2 to thc",
-		setup:         fixture.setupExistingHCFunc(fixture.hc2()),
-		sp:            testSPs["HTTP-80-reg-nil-thc"],
-		wantComputeHC: fixture.thc(),
+		desc:          "update ilb to thc",
+		setup:         fixture.setupExistingHCFunc(fixture.ilb()),
+		sp:            testSPs["HTTP-80-ilb-nil-thc"],
+		regional:      true,
+		wantComputeHC: w,
 		enableTHC:     true,
 	})
 
@@ -1542,7 +1526,7 @@ func TestSyncServicePort(t *testing.T) {
 	})
 
 	// Override all settings from thc.
-	chc = fixture.hc()
+	chc = fixture.neg()
 	chc.HttpHealthCheck.RequestPath = "/user-path"
 	chc.CheckIntervalSec = 5678
 	chc.CheckIntervalSec = 5678
@@ -1554,7 +1538,7 @@ func TestSyncServicePort(t *testing.T) {
 	cases = append(cases, &tc{
 		desc:          "update preserve thc",
 		setup:         fixture.setupExistingHCFunc(chc),
-		sp:            testSPs["HTTP-80-reg-nil-thc"],
+		sp:            testSPs["HTTP-80-neg-nil-thc"],
 		wantComputeHC: fixture.thc(),
 		enableTHC:     true,
 	})
