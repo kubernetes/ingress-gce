@@ -268,7 +268,7 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 				klog.Infof("Skipping non IPv4 address: %q, in endpoint slice %s/%s", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
 				continue
 			}
-			zone, getZoneErr := getEndpointZone(endpointAddress, zoneGetter)
+			zone, _, getZoneErr := getEndpointZone(endpointAddress, zoneGetter)
 			if getZoneErr != nil {
 				klog.Errorf("Detected unexpected error when getting zone, err: %v", getZoneErr)
 				return ZoneNetworkEndpointMapResult{
@@ -279,7 +279,7 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 					fmt.Errorf("Unexpected error when getting zone for Endpoint %q in Endpoints %s/%s: %w", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, getZoneErr)
 			}
 			// pod is used for label propagation
-			_, getPodErr := getEndpointPod(endpointAddress, podLister)
+			_, _, getPodErr := getEndpointPod(endpointAddress, podLister)
 			if getPodErr != nil {
 				if flags.F.EnableDegradedMode {
 					klog.Errorf("Detected unexpected error when getting pod, err: %v", getPodErr)
@@ -335,42 +335,47 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 	}, nil
 }
 
+type getZoneStat struct {
+	nodeMissing int
+	zoneMissing int
+}
+
 // getEndpointZone use an endpoint's node information to get its corresponding zone
-func getEndpointZone(
-	endpointAddress negtypes.AddressData,
-	zoneGetter negtypes.ZoneGetter,
-) (string, error) {
+func getEndpointZone(endpointAddress negtypes.AddressData, zoneGetter negtypes.ZoneGetter) (string, getZoneStat, error) {
 	if endpointAddress.NodeName == nil || len(*endpointAddress.NodeName) == 0 {
-		return "", negtypes.ErrEPNodeMissing
+		return "", getZoneStat{nodeMissing: 1}, negtypes.ErrEPNodeMissing
 	}
 	zone, err := zoneGetter.GetZoneForNode(*endpointAddress.NodeName)
 	if err != nil {
-		return zone, fmt.Errorf("%w: %v", negtypes.ErrEPZoneMissing, err)
+		return zone, getZoneStat{zoneMissing: 1}, fmt.Errorf("%w: %v", negtypes.ErrEPZoneMissing, err)
 	}
 	if zone == "" {
-		return zone, fmt.Errorf("%w: zone is missing for node %v", negtypes.ErrEPZoneMissing, *endpointAddress.NodeName)
+		return zone, getZoneStat{zoneMissing: 1}, fmt.Errorf("%w: zone is missing for node %v", negtypes.ErrEPZoneMissing, *endpointAddress.NodeName)
 	}
-	return zone, nil
+	return zone, getZoneStat{}, nil
+}
+
+type getPodStat struct {
+	podMissing             int
+	podNotFound            int
+	podTypeAssertionFailed int
 }
 
 // getEndpointPod use an endpoint's pod information to get its corresponding pod object
-func getEndpointPod(
-	endpointAddress negtypes.AddressData,
-	podLister cache.Indexer,
-) (*apiv1.Pod, error) {
+func getEndpointPod(endpointAddress negtypes.AddressData, podLister cache.Indexer) (*apiv1.Pod, getPodStat, error) {
 	if endpointAddress.TargetRef == nil {
-		return nil, negtypes.ErrEPPodMissing
+		return nil, getPodStat{podMissing: 1}, negtypes.ErrEPPodMissing
 	}
 	key := fmt.Sprintf("%s/%s", endpointAddress.TargetRef.Namespace, endpointAddress.TargetRef.Name)
 	obj, exists, err := podLister.GetByKey(key)
 	if err != nil || !exists {
-		return nil, negtypes.ErrEPPodNotFound
+		return nil, getPodStat{podNotFound: 1}, negtypes.ErrEPPodNotFound
 	}
 	pod, ok := obj.(*apiv1.Pod)
 	if !ok {
-		return nil, negtypes.ErrEPPodTypeAssertionFailed
+		return nil, getPodStat{podTypeAssertionFailed: 1}, negtypes.ErrEPPodTypeAssertionFailed
 	}
-	return pod, nil
+	return pod, getPodStat{}, nil
 }
 
 // toZoneNetworkEndpointMap translates addresses in endpoints object into zone and endpoints map, and also return the count for duplicated endpoints
@@ -398,7 +403,7 @@ func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGett
 				klog.Infof("Skipping non IPv4 address in degraded mode: %q, in endpoint slice %s/%s", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
 				continue
 			}
-			pod, getPodErr := getEndpointPod(endpointAddress, podLister)
+			pod, _, getPodErr := getEndpointPod(endpointAddress, podLister)
 			if getPodErr != nil {
 				klog.Errorf("Endpoint %q in Endpoints %s/%s receives error when getting pod, err: %v, skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, getPodErr)
 				continue
