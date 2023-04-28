@@ -21,9 +21,11 @@ import (
 	"fmt"
 	"io/ioutil"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/kr/pretty"
 	apiv1 "k8s.io/api/core/v1"
 	discoveryapi "k8s.io/api/discovery/v1"
 	v1 "k8s.io/api/networking/v1"
@@ -1160,6 +1162,128 @@ func TestSetTrafficScaling(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, *tc.want) {
 				t.Errorf("setTrafficScaling(_, %+v); got %+v, want %+v", tc.svc, got, *tc.want)
+			}
+		})
+	}
+}
+
+func TestManageEnableTHC(t *testing.T) {
+	// No t.Parallel()
+
+	oldFlag := flags.F.EnableBackendConfigHealthCheck
+	flags.F.EnableBackendConfigHealthCheck = true
+	defer func() {
+		flags.F.EnableBackendConfigHealthCheck = oldFlag
+	}()
+
+	newService := func(ann map[string]string) *apiv1.Service {
+		return &apiv1.Service{
+			ObjectMeta: metav1.ObjectMeta{Annotations: ann},
+		}
+	}
+
+	type tc struct {
+		name      string
+		sp        *utils.ServicePort
+		svc       *apiv1.Service
+		enableTHC bool
+		want      *utils.ServicePort
+		wantEvent bool
+	}
+
+	const (
+		thcLabel = "networking.gke.io/transparent-health-checker"
+		thcValue = `{"enabled":true}`
+	)
+
+	testCases := []*tc{
+		{
+			name:      "no settings flag disabled",
+			sp:        &utils.ServicePort{THCEnabled: true},
+			svc:       newService(map[string]string{}),
+			enableTHC: false,
+			want:      &utils.ServicePort{THCEnabled: false},
+		},
+		{
+			name:      "no settings",
+			sp:        &utils.ServicePort{THCEnabled: true},
+			svc:       newService(map[string]string{}),
+			enableTHC: true,
+			want:      &utils.ServicePort{THCEnabled: false},
+		},
+		{
+			name:      "annotation",
+			sp:        &utils.ServicePort{},
+			svc:       newService(map[string]string{thcLabel: thcValue}),
+			enableTHC: true,
+			want:      &utils.ServicePort{THCEnabled: true},
+		},
+		{
+			name:      "annotation flag disabled",
+			sp:        &utils.ServicePort{THCEnabled: true},
+			svc:       newService(map[string]string{thcLabel: thcValue}),
+			enableTHC: false,
+			want:      &utils.ServicePort{THCEnabled: false},
+		},
+		{
+			name:      "wrong annotation flag disabled",
+			sp:        &utils.ServicePort{THCEnabled: true},
+			svc:       newService(map[string]string{thcLabel: "random text"}),
+			enableTHC: false,
+			want:      &utils.ServicePort{THCEnabled: false},
+		},
+		{
+			name:      "wrong annotation",
+			sp:        &utils.ServicePort{THCEnabled: true},
+			svc:       newService(map[string]string{thcLabel: "random text"}),
+			enableTHC: true,
+			want:      &utils.ServicePort{THCEnabled: false},
+			wantEvent: true,
+		},
+		{
+			name:      "annotation empty backendconfig",
+			sp:        &utils.ServicePort{BackendConfig: &backendconfig.BackendConfig{}, THCEnabled: false},
+			svc:       newService(map[string]string{thcLabel: thcValue}),
+			enableTHC: true,
+			want:      &utils.ServicePort{BackendConfig: &backendconfig.BackendConfig{}, THCEnabled: true},
+		},
+	}
+	BC := &backendconfig.BackendConfig{}
+	BC.Spec.HealthCheck = &backendconfig.HealthCheckConfig{}
+	testCases = append(testCases, &tc{
+		name:      "annotation backendconfig",
+		sp:        &utils.ServicePort{BackendConfig: BC, THCEnabled: true},
+		svc:       newService(map[string]string{thcLabel: thcValue}),
+		enableTHC: true,
+		want:      &utils.ServicePort{BackendConfig: BC, THCEnabled: false},
+	})
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			translator := fakeTranslator()
+			bufferSize := 0
+			if tc.wantEvent {
+				bufferSize = 1
+			}
+			fakeSingletonRecorderGetter := healthchecks.NewFakeSingletonRecorderGetter(bufferSize)
+			translator.recorderGetter = fakeSingletonRecorderGetter
+			translator.enableTHC = tc.enableTHC
+			sp := *tc.sp
+
+			translator.manageEnableTHC(&sp, tc.svc)
+			if !reflect.DeepEqual(&sp, tc.want) {
+				t.Errorf("manageEnableTHC, %s\ngot %s,\nwant %s", tc.name, pretty.Sprint(&sp), pretty.Sprint(tc.want))
+			}
+			if tc.wantEvent {
+				fakeRecorder := fakeSingletonRecorderGetter.FakeRecorder()
+				select {
+				case output := <-fakeRecorder.Events:
+					if !strings.HasPrefix(output, "Warning THCAnnotationParsingFailed Parsing THC annotation failed") {
+						t.Fatalf("Incorrect event emitted: %s.", output)
+					}
+				case <-time.After(10 * time.Second):
+					t.Fatalf("Timeout when expecting Event.")
+				}
 			}
 		})
 	}

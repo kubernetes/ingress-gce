@@ -500,7 +500,8 @@ func TestEnableTHC(t *testing.T) {
 	wantHC.PortSpecification = "USE_FIXED_PORT"
 
 	oldName := hc.Name
-	hc = translator.THCHealthCheck()
+	hc = &translator.HealthCheck{}
+	translator.OverwriteWithTHC(hc)
 	hc.Name = oldName
 	// Enable Transparent Health Checks
 	_, err = healthChecks.sync(hc, nil, true)
@@ -1038,6 +1039,16 @@ func (f *syncSPFixture) toS(h *compute.HealthCheck) *compute.HealthCheck {
 	return h
 }
 
+func toNeg(h *compute.HealthCheck) {
+	h.Name = "k8s1-uid1---0-56ff9a48"
+}
+
+func toIlb(h *compute.HealthCheck) {
+	toNeg(h)
+	h.Region = "us-central1"
+	h.SelfLink = ilbSelfLink
+}
+
 func (f *syncSPFixture) to2(h *compute.HealthCheck) *compute.HealthCheck {
 	h.Type = "HTTP2"
 	c := (compute.HTTP2HealthCheck)(*h.HttpHealthCheck)
@@ -1178,6 +1189,43 @@ func TestSyncServicePort(t *testing.T) {
 	cases = append(cases, &tc{
 		desc:          "create thc",
 		sp:            testSPs["HTTP-80-reg-nil-thc"],
+		enableTHC:     true,
+		wantComputeHC: chc,
+	})
+
+	// Transparent Health Check (NEG)
+	chc = fixture.thc()
+	toNeg(chc)
+	cases = append(cases, &tc{
+		desc:          "create thc neg",
+		sp:            testSPs["HTTP-80-neg-nil-thc"],
+		enableTHC:     true,
+		wantComputeHC: chc,
+	})
+
+	// Transparent Health Check (ILB)
+	chc = fixture.thc()
+	toIlb(chc)
+	cases = append(cases, &tc{
+		desc:          "create thc ilb",
+		sp:            testSPs["HTTP-80-ilb-nil-thc"],
+		enableTHC:     true,
+		regional:      true,
+		wantComputeHC: chc,
+	})
+
+	// Probe ignored with THC
+	chc = fixture.thc()
+	cases = append(cases, &tc{
+		desc: "create thc prob",
+		sp:   testSPs["HTTP-80-reg-nil-thc"],
+		probe: &v1.Probe{
+			ProbeHandler: api_v1.ProbeHandler{
+				HTTPGet: &v1.HTTPGetAction{Path: "/foo", Host: "foo.com"},
+			},
+			PeriodSeconds:  1234,
+			TimeoutSeconds: 5678,
+		},
 		enableTHC:     true,
 		wantComputeHC: chc,
 	})

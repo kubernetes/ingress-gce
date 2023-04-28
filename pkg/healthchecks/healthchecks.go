@@ -85,7 +85,7 @@ func (h *HealthChecks) new(sp utils.ServicePort) *translator.HealthCheck {
 	hc.Port = sp.NodePort
 	hc.RequestPath = h.pathFromSvcPort(sp)
 	if sp.THCEnabled {
-		hc = translator.THCHealthCheck()
+		translator.OverwriteWithTHC(hc)
 	}
 	hc.Name = sp.BackendName()
 	hc.Service = h.getService(sp)

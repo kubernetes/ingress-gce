@@ -87,7 +87,7 @@ func TestMerge(t *testing.T) {
 	}
 }
 
-func TestTHCHealthCheck(t *testing.T) {
+func TestOverwriteWithTHC(t *testing.T) {
 	wantHC := &HealthCheck{
 		HealthCheck: computealpha.HealthCheck{
 			CheckIntervalSec:   5,
@@ -104,7 +104,8 @@ func TestTHCHealthCheck(t *testing.T) {
 		},
 	}
 
-	hc := THCHealthCheck()
+	hc := &HealthCheck{}
+	OverwriteWithTHC(hc)
 	if !reflect.DeepEqual(hc, wantHC) {
 		t.Fatalf("Translate healthcheck is:\n%s, want:\n%s", pretty.Sprint(hc), pretty.Sprint(wantHC))
 	}

@@ -225,9 +225,8 @@ func (hc *HealthCheck) Version() meta.Version {
 	return meta.VersionGA
 }
 
-// THCHealthCheck returns the transparent health check.
-func THCHealthCheck() *HealthCheck {
-	hc := HealthCheck{}
+// OverwriteWithTHC applies the standard values for Transparent Health Checks.
+func OverwriteWithTHC(hc *HealthCheck) {
 	hc.CheckIntervalSec = int64(thcCheckInterval.Seconds())
 	hc.TimeoutSec = int64(thcTimeout.Seconds())
 	hc.UnhealthyThreshold = defaultUnhealthyThreshold
@@ -237,7 +236,6 @@ func THCHealthCheck() *HealthCheck {
 	hc.PortSpecification = thcPortSpecification
 	hc.Port = THCPort
 	hc.RequestPath = thcRequestPath
-	return &hc
 }
 
 func (hc *HealthCheck) UpdateFromBackendConfig(c *backendconfigv1.HealthCheckConfig) {
