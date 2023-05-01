@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"reflect"
 	"strconv"
 	"testing"
 	"time"
@@ -28,6 +27,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/cloud-provider-gcp/providers/gce"
@@ -54,15 +54,15 @@ func (p *testPatcher) syncPod(pod string, negKey, bsKey *meta.Key) error {
 
 func (p *testPatcher) Eval(t *testing.T, pod string, negKey, bsKey *meta.Key) {
 	if p.lastPod != pod {
-		t.Errorf("expect pod = %q, but got %q", pod, p.lastPod)
+		t.Errorf("got pod=%q; want=%q", p.lastPod, pod)
 	}
 
-	if !reflect.DeepEqual(p.lastNegKey, negKey) {
-		t.Errorf("expect neg key = %v, but got %v", negKey, p.lastNegKey)
+	if diff := cmp.Diff(negKey, p.lastNegKey); diff != "" {
+		t.Errorf("diff found in expected NEG; (-want +got):\n%s", diff)
 	}
 
-	if !reflect.DeepEqual(p.lastBsKey, bsKey) {
-		t.Errorf("expect backend service key = %v, but got %v", bsKey, p.lastBsKey)
+	if diff := cmp.Diff(bsKey, p.lastBsKey); diff != "" {
+		t.Errorf("diff found in expected BackendService; (-want +got):\n%s", diff)
 	}
 }
 
@@ -550,7 +550,7 @@ func TestPoll(t *testing.T) {
 	pollAndValidate(step, true, true, 6, true, false)
 }
 
-func TestProcessHealthStatus(t *testing.T) {
+func TestProcessHealthStatus_shouldNotCrashWhenMissingKeyFromPollMap(t *testing.T) {
 	t.Parallel()
 	poller := newFakePoller()
 
@@ -562,12 +562,155 @@ func TestProcessHealthStatus(t *testing.T) {
 	}
 	res := []*composite.NetworkEndpointWithHealthStatus{}
 
-	// processHealthStatus should not crash when pollMap does not have corresponding key.
+	// processHealthStatus should not crash when pollMap does not have
+	// corresponding key.
 	retry, err := poller.processHealthStatus(key, res)
 	if retry != false {
 		t.Errorf("expect retry == false, but got %v", retry)
 	}
 	if err != nil {
 		t.Errorf("expect err == nil, but got %v", err)
+	}
+}
+
+func TestProcessHealthStatus_dualStackNEGs(t *testing.T) {
+	bsName := "bsName1"
+	backendServiceURL := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/foo/global/backendServices/%v", bsName)
+	namespace := "ns1"
+	podName := "podName1"
+
+	networkEndpoint := func(ipv4Address, ipv6Address string) negtypes.NetworkEndpoint {
+		return negtypes.NetworkEndpoint{IP: ipv4Address, IPv6: ipv6Address, Port: "0"}
+	}
+
+	testCases := []struct {
+		desc                      string
+		healthStatus              *composite.NetworkEndpointWithHealthStatus
+		endpointPodMap            negtypes.EndpointPodMap
+		shouldUpdateReadinessGate bool
+		enableDualStackNEG        bool
+	}{
+		{
+			desc: "IPv6 endpoint should be ignored when enableDualStackNEG is false",
+			healthStatus: &composite.NetworkEndpointWithHealthStatus{
+				NetworkEndpoint: &composite.NetworkEndpoint{IpAddress: "10.0.0.1", Ipv6Address: "a::b"},
+				Healths: []*composite.HealthStatusForNetworkEndpoint{{
+					BackendService:  &composite.BackendServiceReference{BackendService: backendServiceURL},
+					HealthState:     healthyState,
+					Ipv6HealthState: healthyState,
+				}},
+			},
+			endpointPodMap: negtypes.EndpointPodMap{
+				// This endpoint isn't an exact match of the endpoint in health status
+				// but should still get updated since IPv6 endpoint should get ignored.
+				networkEndpoint("10.0.0.1", ""): {Namespace: namespace, Name: podName},
+			},
+			shouldUpdateReadinessGate: true,
+			enableDualStackNEG:        false,
+		},
+		{
+			desc: "only IPv6 endpoint healthy, but enableDualStackNEG is false so readiness gate should not update",
+			healthStatus: &composite.NetworkEndpointWithHealthStatus{
+				NetworkEndpoint: &composite.NetworkEndpoint{IpAddress: "10.0.0.1"},
+				Healths: []*composite.HealthStatusForNetworkEndpoint{{
+					Ipv6HealthState: healthyState, // Only IPv6 healthy.
+				}},
+			},
+			endpointPodMap: negtypes.EndpointPodMap{
+				networkEndpoint("10.0.0.1", ""): {Namespace: namespace, Name: podName},
+			},
+			shouldUpdateReadinessGate: false,
+			enableDualStackNEG:        false,
+		},
+		{
+			desc: "no readiness gate updated since no pod found matching endpoint",
+			healthStatus: &composite.NetworkEndpointWithHealthStatus{
+				NetworkEndpoint: &composite.NetworkEndpoint{IpAddress: "10.0.0.1", Ipv6Address: "a::b"},
+				Healths: []*composite.HealthStatusForNetworkEndpoint{{
+					HealthState:     healthyState,
+					Ipv6HealthState: healthyState,
+				}},
+			},
+			endpointPodMap: negtypes.EndpointPodMap{
+				// This endpoint isn't an exact match of the endpoint in health status
+				// and hence there should be no update.
+				networkEndpoint("10.0.0.1", ""): {Namespace: namespace, Name: podName},
+			},
+			shouldUpdateReadinessGate: false,
+			enableDualStackNEG:        true,
+		},
+		{
+			desc: "both IPv4 and IPv6 healthy, readiness gate should get updated",
+			healthStatus: &composite.NetworkEndpointWithHealthStatus{
+				NetworkEndpoint: &composite.NetworkEndpoint{IpAddress: "10.0.0.1", Ipv6Address: "a::b"},
+				Healths: []*composite.HealthStatusForNetworkEndpoint{{
+					// Both IPv4 and IPv6 healthy.
+					HealthState:     healthyState,
+					Ipv6HealthState: healthyState,
+				}},
+			},
+			endpointPodMap: negtypes.EndpointPodMap{
+				networkEndpoint("10.0.0.1", "a::b"): {Namespace: namespace, Name: podName},
+			},
+			shouldUpdateReadinessGate: true,
+			enableDualStackNEG:        true,
+		},
+		{
+			desc: "only IPv4 healthy, readiness gate should get updated",
+			healthStatus: &composite.NetworkEndpointWithHealthStatus{
+				NetworkEndpoint: &composite.NetworkEndpoint{IpAddress: "10.0.0.1", Ipv6Address: "a::b"},
+				Healths: []*composite.HealthStatusForNetworkEndpoint{{
+					HealthState: healthyState, // Only IPv4 healthy.
+				}},
+			},
+			endpointPodMap: negtypes.EndpointPodMap{
+				networkEndpoint("10.0.0.1", "a::b"): {Namespace: namespace, Name: podName},
+			},
+			shouldUpdateReadinessGate: true,
+			enableDualStackNEG:        true,
+		},
+		{
+			desc: "only IPv6 healthy, readiness gate should get updated",
+			healthStatus: &composite.NetworkEndpointWithHealthStatus{
+				NetworkEndpoint: &composite.NetworkEndpoint{IpAddress: "10.0.0.1", Ipv6Address: "a::b"},
+				Healths: []*composite.HealthStatusForNetworkEndpoint{{
+					Ipv6HealthState: healthyState, // Only IPv6 healthy.
+				}},
+			},
+			endpointPodMap: negtypes.EndpointPodMap{
+				networkEndpoint("10.0.0.1", "a::b"): {Namespace: namespace, Name: podName},
+			},
+			shouldUpdateReadinessGate: true,
+			enableDualStackNEG:        true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			neg := negMeta{SyncerKey: negtypes.NegSyncerKey{}, Name: "negName", Zone: "zone1"}
+
+			// Set common fields shared by all input values in testCases.
+			tc.healthStatus.Healths[0].BackendService = &composite.BackendServiceReference{BackendService: backendServiceURL}
+
+			poller := newFakePoller()
+			poller.pollMap[neg] = &pollTarget{
+				endpointMap: tc.endpointPodMap,
+				polling:     true,
+			}
+			poller.enableDualStackNEG = tc.enableDualStackNEG
+
+			poller.processHealthStatus(neg, []*composite.NetworkEndpointWithHealthStatus{tc.healthStatus})
+
+			patcher := poller.patcher.(*testPatcher)
+			if !tc.shouldUpdateReadinessGate && patcher.count > 0 {
+				t.Errorf("Readiness gates updated for %v; want no readiness gate updated", patcher.lastPod)
+			}
+			if tc.shouldUpdateReadinessGate && patcher.count == 0 {
+				t.Errorf("No readiness gate updated; want readiness gates for %v to get updated", keyFunc(namespace, podName))
+			}
+			if tc.shouldUpdateReadinessGate && patcher.count > 0 {
+				patcher.Eval(t, keyFunc(namespace, podName), meta.ZonalKey(neg.Name, neg.Zone), meta.GlobalKey(bsName))
+			}
+		})
 	}
 }

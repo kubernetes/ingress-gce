@@ -86,20 +86,24 @@ type poller struct {
 	patcher   podStatusPatcher
 	negCloud  negtypes.NetworkEndpointGroupCloud
 
+	// Enables support for Dual-Stack NEGs within the NEG Controller.
+	enableDualStackNEG bool
+
 	clock clock.Clock
 
 	logger klog.Logger
 }
 
-func NewPoller(podLister cache.Indexer, lookup NegLookup, patcher podStatusPatcher, negCloud negtypes.NetworkEndpointGroupCloud, logger klog.Logger) *poller {
+func NewPoller(podLister cache.Indexer, lookup NegLookup, patcher podStatusPatcher, negCloud negtypes.NetworkEndpointGroupCloud, enableDualStackNEG bool, logger klog.Logger) *poller {
 	return &poller{
-		pollMap:   make(map[negMeta]*pollTarget),
-		podLister: podLister,
-		lookup:    lookup,
-		patcher:   patcher,
-		negCloud:  negCloud,
-		clock:     clock.RealClock{},
-		logger:    logger.WithName("Poller"),
+		pollMap:            make(map[negMeta]*pollTarget),
+		podLister:          podLister,
+		lookup:             lookup,
+		patcher:            patcher,
+		negCloud:           negCloud,
+		enableDualStackNEG: enableDualStackNEG,
+		clock:              clock.RealClock{},
+		logger:             logger.WithName("Poller"),
 	}
 }
 
@@ -175,12 +179,17 @@ func (p *poller) Poll(key negMeta) (retry bool, err error) {
 	return
 }
 
-// processHealthStatus updates Pod readiness gates based on the input health status response.
+// processHealthStatus processes the healthStatuses of the NEG endpoints and
+// updates the [readiness gates] of the pods.
 //
-// We update the pod (using the patcher) when:
-// 1. if the endpoint considered healthy with one of the backend service health check
-// 2. if the NEG is not associated with any health checks
-// It returns true if retry is needed.
+// We update the pod (using the patcher) in ANY of the following cases:
+//  1. If the endpoint is considered healthy by ANY GCE Backend Service.
+//  2. If the endpoint belongs to a NEG which is not associated with any GCE
+//     Backend Service.
+//
+// True is returned if retry is needed.
+//
+// [readiness gates]: https://cloud.google.com/kubernetes-engine/docs/concepts/container-native-load-balancing#pod_readiness
 func (p *poller) processHealthStatus(key negMeta, healthStatuses []*composite.NetworkEndpointWithHealthStatus) (bool, error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
@@ -217,6 +226,9 @@ func (p *poller) processHealthStatus(key negMeta, healthStatuses []*composite.Ne
 			Port: strconv.FormatInt(healthStatus.NetworkEndpoint.Port, 10),
 			Node: healthStatus.NetworkEndpoint.Instance,
 		}
+		if p.enableDualStackNEG {
+			ne.IPv6 = healthStatus.NetworkEndpoint.Ipv6Address
+		}
 
 		podName, ok := p.getPod(key, ne)
 		if !ok {
@@ -224,7 +236,7 @@ func (p *poller) processHealthStatus(key negMeta, healthStatuses []*composite.Ne
 			continue
 		}
 
-		bsKey := getHealthyBackendService(healthStatus, p.logger)
+		bsKey := getHealthyBackendService(healthStatus, p.enableDualStackNEG, p.logger)
 		if bsKey == nil {
 			unhealthyPods = append(unhealthyPods, podName)
 			continue
@@ -263,8 +275,10 @@ func (p *poller) processHealthStatus(key negMeta, healthStatuses []*composite.Ne
 	return retry, utilerrors.NewAggregate(errList)
 }
 
-// getHealthyBackendService returns one of the first backend service key where the endpoint is considered healthy.
-func getHealthyBackendService(healthStatus *composite.NetworkEndpointWithHealthStatus, logger klog.Logger) *meta.Key {
+// getHealthyBackendService returns one of the first backend service key where
+// the endpoint is considered healthy. An endpoint is considered healthy if
+// either the IPv4 OR IPv6 endpoint's healthstatus reports HEALTHY.
+func getHealthyBackendService(healthStatus *composite.NetworkEndpointWithHealthStatus, enableDualStackNEG bool, logger klog.Logger) *meta.Key {
 	for _, hs := range healthStatus.Healths {
 		if hs == nil {
 			logger.Error(nil, "Health status is nil in health status of network endpoint", "healthStatus", healthStatus)
@@ -275,7 +289,7 @@ func getHealthyBackendService(healthStatus *composite.NetworkEndpointWithHealthS
 			continue
 		}
 
-		if hs.HealthState == healthyState {
+		if hs.HealthState == healthyState || (enableDualStackNEG && hs.Ipv6HealthState == healthyState) {
 			id, err := cloud.ParseResourceURL(hs.BackendService.BackendService)
 			if err != nil {
 				logger.Error(err, "Failed to parse backend service reference from a Network Endpoint health status", "healthStatus", healthStatus)

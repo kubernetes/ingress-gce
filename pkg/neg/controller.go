@@ -184,6 +184,7 @@ func NewController(
 			podInformer.GetIndexer(),
 			cloud,
 			manager,
+			enableDualStackNEG,
 			logger,
 		)
 	} else {

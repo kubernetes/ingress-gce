@@ -76,7 +76,7 @@ type readinessReflector struct {
 	logger klog.Logger
 }
 
-func NewReadinessReflector(kubeClient kubernetes.Interface, podLister cache.Indexer, negCloud negtypes.NetworkEndpointGroupCloud, lookup NegLookup, logger klog.Logger) Reflector {
+func NewReadinessReflector(kubeClient kubernetes.Interface, podLister cache.Indexer, negCloud negtypes.NetworkEndpointGroupCloud, lookup NegLookup, enableDualStackNEG bool, logger klog.Logger) Reflector {
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartLogging(klog.Infof)
 	broadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
@@ -94,7 +94,7 @@ func NewReadinessReflector(kubeClient kubernetes.Interface, podLister cache.Inde
 		queue:            workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
 		logger:           logger,
 	}
-	poller := NewPoller(podLister, lookup, reflector, negCloud, logger)
+	poller := NewPoller(podLister, lookup, reflector, negCloud, enableDualStackNEG, logger)
 	reflector.poller = poller
 	return reflector
 }
