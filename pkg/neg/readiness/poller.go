@@ -168,7 +168,11 @@ func (p *poller) Poll(key negMeta) (retry bool, err error) {
 		return true, err
 	}
 
-	return p.processHealthStatus(key, res)
+	retry, err = p.processHealthStatus(key, res)
+	if retry {
+		<-p.clock.After(hcRetryDelay)
+	}
+	return
 }
 
 // processHealthStatus updates Pod readiness gates based on the input health status response.
@@ -253,10 +257,6 @@ func (p *poller) processHealthStatus(key negMeta, healthStatuses []*composite.Ne
 		if patchCount < len(target.endpointMap) {
 			retry = true
 		}
-	}
-
-	if retry {
-		<-p.clock.After(hcRetryDelay)
 	}
 
 	// If we didn't patch all of the endpoints, we must keep polling for health status
