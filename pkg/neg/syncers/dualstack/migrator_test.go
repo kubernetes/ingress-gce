@@ -298,6 +298,14 @@ func (f *fakeSyncable) Sync() bool {
 	return true
 }
 
+type fakeErrorStateChecker struct {
+	errorState bool
+}
+
+func (f *fakeErrorStateChecker) InErrorState() bool {
+	return f.errorState
+}
+
 func TestContinue_NoInputError_ShouldChangeTimeSincePreviousDetach(t *testing.T) {
 	t.Parallel()
 
@@ -378,8 +386,8 @@ func TestCalculateMigrationEndpointsToDetach(t *testing.T) {
 			wantCurrentlyMigratingCount: 2,
 		},
 		{
-			// If there are many endpoints waiting to be attached and the most recent
-			// migration was not too long ago, then we will not start any new
+			// If there are many endpoints waiting to be attached AND the most recent
+			// migration was NOT too long ago, then we will not start any new
 			// detachments since we wait for the pending attaches to complete
 			desc: "many endpoints are waiting to be attached AND previous migration was quite recent",
 			addEndpoints: map[string]types.NetworkEndpointSet{
@@ -406,10 +414,39 @@ func TestCalculateMigrationEndpointsToDetach(t *testing.T) {
 			wantCurrentlyMigratingCount: 0,
 		},
 		{
-			// If there are many endpoints waiting to be attached but the most recent
-			// migration was too long ago, then we don't want to keep waiting
-			// indefinitely for the next detach and we proceed with the detachments.
-			desc: "many endpoints are waiting to be attached BUT previous migration was too long ago",
+			// If there are many endpoints waiting to be attached AND the most recent
+			// migration was too long ago BUT we are in error state, then we will not
+			// start any new detachments since we wait to get out of error state.
+			desc: "many endpoints are waiting to be attached AND previous migration was too long ago BUT in error state",
+			addEndpoints: map[string]types.NetworkEndpointSet{
+				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+					{IP: "1"}, {IP: "2"}, {IP: "3"}, {IP: "4"}, {IP: "5"},
+				}...),
+			},
+			removeEndpoints: map[string]types.NetworkEndpointSet{},
+			committedEndpoints: map[string]types.NetworkEndpointSet{
+				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+					{IP: "6"},
+				}...),
+			},
+			migrationEndpoints: map[string]types.NetworkEndpointSet{
+				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+					{IP: "7"},
+				}...),
+			},
+			migrator: func() *Migrator {
+				m := newMigratorForTest(true)
+				m.errorStateChecker.(*fakeErrorStateChecker).errorState = true
+				return m
+			}(),
+			wantCurrentlyMigratingCount: 0,
+		},
+		{
+			// If there are many endpoints waiting to be attached BUT the most recent
+			// migration was too long ago AND we are not in error state, then we don't
+			// want to keep waiting indefinitely for the next detach and we proceed
+			// with the detachments.
+			desc: "many endpoints are waiting to be attached BUT previous migration was too long ago AND not in error state",
 			addEndpoints: map[string]types.NetworkEndpointSet{
 				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "1"}, {IP: "2"}, {IP: "3"}, {IP: "4"}, {IP: "5"},
@@ -774,5 +811,5 @@ func cloneZoneNetworkEndpointsMap(m map[string]types.NetworkEndpointSet) map[str
 }
 
 func newMigratorForTest(enableDualStackNEG bool) *Migrator {
-	return NewMigrator(enableDualStackNEG, &fakeSyncable{}, types.NegSyncerKey{}, metrics.FakeSyncerMetrics(), klog.Background())
+	return NewMigrator(enableDualStackNEG, &fakeSyncable{}, types.NegSyncerKey{}, metrics.FakeSyncerMetrics(), &fakeErrorStateChecker{}, klog.Background())
 }
