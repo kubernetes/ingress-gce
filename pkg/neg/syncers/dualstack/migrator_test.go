@@ -23,8 +23,78 @@ func TestFilter(t *testing.T) {
 		wantMigrationZone   bool
 	}{
 		{
+			desc: "paused migrator should only filter migration endpoints and not start detachment",
+			migrator: func() *Migrator {
+				m := newMigratorForTest(true)
+				m.Pause()
+				return m
+			}(),
+			addEndpoints: map[string]types.NetworkEndpointSet{
+				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+					{IP: "a", IPv6: "A"}, // migrating
+					{IP: "b"},
+				}...),
+			},
+			removeEndpoints: map[string]types.NetworkEndpointSet{
+				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+					{IP: "a"}, // migrating
+					{IP: "c", IPv6: "C"},
+				}...),
+			},
+			committedEndpoints: map[string]types.NetworkEndpointSet{
+				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+					{IPv6: "D"},
+				}...),
+			},
+			wantAddEndpoints: map[string]types.NetworkEndpointSet{
+				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+					{IP: "b"},
+				}...),
+			},
+			wantRemoveEndpoints: map[string]types.NetworkEndpointSet{
+				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+					// Migration-endpoints were filtered out but no new migration
+					// detachment was started.
+					{IP: "c", IPv6: "C"},
+				}...),
+			},
+		},
+		{
+			desc:     "unpaused migrator should filter migration endpoints AND also start detachment",
+			migrator: newMigratorForTest(true),
+			addEndpoints: map[string]types.NetworkEndpointSet{
+				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+					{IP: "a", IPv6: "A"}, // migrating
+					{IP: "b"},
+				}...),
+			},
+			removeEndpoints: map[string]types.NetworkEndpointSet{
+				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+					{IP: "a"}, // migrating
+					{IP: "c", IPv6: "C"},
+				}...),
+			},
+			committedEndpoints: map[string]types.NetworkEndpointSet{
+				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+					{IPv6: "D"},
+				}...),
+			},
+			wantAddEndpoints: map[string]types.NetworkEndpointSet{
+				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+					{IP: "b"},
+				}...),
+			},
+			wantRemoveEndpoints: map[string]types.NetworkEndpointSet{
+				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+					{IP: "a"}, // Migration detachment started.
+					{IP: "c", IPv6: "C"},
+				}...),
+			},
+			wantMigrationZone: true,
+		},
+		{
 			desc:     "migrator should do nothing if enableDualStack is false",
-			migrator: &Migrator{enableDualStack: false},
+			migrator: newMigratorForTest(false),
 			addEndpoints: map[string]types.NetworkEndpointSet{
 				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "a", IPv6: "A"}, // migrating
@@ -225,6 +295,232 @@ type fakeSyncable struct {
 func (f *fakeSyncable) Sync() bool {
 	f.syncCount++
 	return true
+}
+
+func TestContinue_NoInputError_ShouldChangeTimeSincePreviousDetach(t *testing.T) {
+	t.Parallel()
+
+	syncable := &fakeSyncable{}
+
+	migrator := &Migrator{
+		enableDualStack:         true,
+		paused:                  true,
+		previousDetachThreshold: 20 * time.Millisecond,
+		syncer:                  syncable,
+		logger:                  klog.Background(),
+	}
+
+	// Ensure that before Continue, tooLongSincePreviousDetach() returns true.
+	if !migrator.tooLongSincePreviousDetach() {
+		t.Fatalf("Precondition failed; tooLongSincePreviousDetach() = 'false'; want 'true' before calling Continue.")
+	}
+
+	migrator.Continue(nil)
+
+	// Ensure that immediately after calling Continue,
+	// tooLongSincePreviousDetach() returns false.
+	if migrator.tooLongSincePreviousDetach() {
+		t.Errorf("tooLongSincePreviousDetach() = 'true'; want 'false' immediately after calling Continue()")
+	}
+
+	// Ensure that previousDetachThreshold time after calling Continue,
+	// tooLongSincePreviousDetach() returns true.
+	time.Sleep(migrator.previousDetachThreshold)
+	if !migrator.tooLongSincePreviousDetach() {
+		t.Errorf("Precondition not met; tooLongSincePreviousDetach() = 'false'; want 'true' after previousDetachThreshold time has elapsed")
+	}
+}
+
+func TestCalculateMigrationEndpointsToDetach(t *testing.T) {
+	testCases := []struct {
+		desc                        string
+		addEndpoints                map[string]types.NetworkEndpointSet
+		removeEndpoints             map[string]types.NetworkEndpointSet
+		committedEndpoints          map[string]types.NetworkEndpointSet
+		migrationEndpoints          map[string]types.NetworkEndpointSet
+		migrator                    *Migrator
+		wantCurrentlyMigratingCount int
+	}{
+		{
+			desc:            "less than or equal to 10 (committed + migration) endpoints should only detach 1 at a time",
+			addEndpoints:    map[string]types.NetworkEndpointSet{},
+			removeEndpoints: map[string]types.NetworkEndpointSet{},
+			committedEndpoints: map[string]types.NetworkEndpointSet{
+				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+					{IP: "1"}, {IP: "2"}, {IP: "3"}, {IP: "4"}, {IP: "5"},
+				}...),
+			},
+			migrationEndpoints: map[string]types.NetworkEndpointSet{
+				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+					{IP: "6"}, {IP: "7"}, {IP: "8"}, {IP: "9"}, {IP: "10"},
+				}...),
+			},
+			migrator:                    newMigratorForTest(true),
+			wantCurrentlyMigratingCount: 1,
+		},
+		{
+			desc:            "more than 10 (committed + migration) endpoints can detach more than 1 at a time",
+			addEndpoints:    map[string]types.NetworkEndpointSet{},
+			removeEndpoints: map[string]types.NetworkEndpointSet{},
+			committedEndpoints: map[string]types.NetworkEndpointSet{
+				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+					{IP: "1"}, {IP: "2"}, {IP: "3"}, {IP: "4"}, {IP: "5"},
+				}...),
+			},
+			migrationEndpoints: map[string]types.NetworkEndpointSet{
+				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+					{IP: "6"}, {IP: "7"}, {IP: "8"}, {IP: "9"}, {IP: "10"},
+					{IP: "11"},
+				}...),
+			},
+			migrator:                    newMigratorForTest(true),
+			wantCurrentlyMigratingCount: 2,
+		},
+		{
+			// If there are many endpoints waiting to be attached and the most recent
+			// migration was not too long ago, then we will not start any new
+			// detachments since we wait for the pending attaches to complete
+			desc: "many endpoints are waiting to be attached AND previous migration was quite recent",
+			addEndpoints: map[string]types.NetworkEndpointSet{
+				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+					{IP: "1"}, {IP: "2"}, {IP: "3"}, {IP: "4"}, {IP: "5"},
+				}...),
+			},
+			removeEndpoints: map[string]types.NetworkEndpointSet{},
+			committedEndpoints: map[string]types.NetworkEndpointSet{
+				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+					{IP: "6"},
+				}...),
+			},
+			migrationEndpoints: map[string]types.NetworkEndpointSet{
+				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+					{IP: "7"},
+				}...),
+			},
+			migrator: func() *Migrator {
+				m := newMigratorForTest(true)
+				m.previousDetach = time.Now().Add(30 * time.Minute) // Future time.
+				return m
+			}(),
+			wantCurrentlyMigratingCount: 0,
+		},
+		{
+			// If there are many endpoints waiting to be attached but the most recent
+			// migration was too long ago, then we don't want to keep waiting
+			// indefinitely for the next detach and we proceed with the detachments.
+			desc: "many endpoints are waiting to be attached BUT previous migration was too long ago",
+			addEndpoints: map[string]types.NetworkEndpointSet{
+				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+					{IP: "1"}, {IP: "2"}, {IP: "3"}, {IP: "4"}, {IP: "5"},
+				}...),
+			},
+			removeEndpoints: map[string]types.NetworkEndpointSet{},
+			committedEndpoints: map[string]types.NetworkEndpointSet{
+				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+					{IP: "6"},
+				}...),
+			},
+			migrationEndpoints: map[string]types.NetworkEndpointSet{
+				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+					{IP: "7"},
+				}...),
+			},
+			migrator:                    newMigratorForTest(true),
+			wantCurrentlyMigratingCount: 1,
+		},
+		{
+			desc: "no detachments started since nothing to migrate",
+			addEndpoints: map[string]types.NetworkEndpointSet{
+				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+					{IP: "1"},
+				}...),
+			},
+			removeEndpoints: map[string]types.NetworkEndpointSet{
+				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+					{IP: "2"},
+				}...),
+			},
+			committedEndpoints: map[string]types.NetworkEndpointSet{
+				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+					{IP: "3"}, {IP: "4"}, {IP: "5"}, {IP: "6"},
+				}...),
+			},
+			migrationEndpoints:          map[string]types.NetworkEndpointSet{},
+			migrator:                    newMigratorForTest(true),
+			wantCurrentlyMigratingCount: 0,
+		},
+		{
+			// If our calculations suggest that the number of endpoints to migrate is
+			// more than the number of endpoints in any single zone, we should not
+			// include endpoints from multiple zones.
+			desc:            "endpoints from multiple zones should not be detached at once",
+			addEndpoints:    map[string]types.NetworkEndpointSet{},
+			removeEndpoints: map[string]types.NetworkEndpointSet{},
+			committedEndpoints: map[string]types.NetworkEndpointSet{
+				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+					{IP: "1"}, {IP: "2"}, {IP: "3"}, {IP: "4"},
+				}...),
+				"zone2": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+					{IP: "5"}, {IP: "6"}, {IP: "7"}, {IP: "8"},
+				}...),
+			},
+			migrationEndpoints: map[string]types.NetworkEndpointSet{
+				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+					{IP: "9"}, {IP: "10"},
+				}...),
+				"zone2": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+					{IP: "11"}, {IP: "12"},
+				}...),
+			},
+			migrator:                    newMigratorForTest(true),
+			wantCurrentlyMigratingCount: 2,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			clonedAddEndpoints := cloneZoneNetworkEndpointsMap(tc.addEndpoints)
+			clonedRemoveEndpoints := cloneZoneNetworkEndpointsMap(tc.removeEndpoints)
+			clonedCommittedEndpoints := cloneZoneNetworkEndpointsMap(tc.committedEndpoints)
+			clonedMigrationEndpoints := cloneZoneNetworkEndpointsMap(tc.migrationEndpoints)
+
+			migrationZone := tc.migrator.calculateMigrationEndpointsToDetach(tc.addEndpoints, tc.removeEndpoints, tc.committedEndpoints, tc.migrationEndpoints)
+
+			if tc.wantCurrentlyMigratingCount > 0 && migrationZone == "" {
+				t.Fatalf("calculateMigrationEndpointsToDetach(...) returned empty zone which means no migration detachment was started; want %v endpoints to undergo detachment", tc.wantCurrentlyMigratingCount)
+			}
+
+			// Ensure that we didn't modify the addEndpoints and committedEndpoints.
+			if diff := cmp.Diff(clonedAddEndpoints, tc.addEndpoints); diff != "" {
+				t.Errorf("Unexpected diff in addEndpoints; calculateMigrationEndpointsToDetach(...) should not modify addEndpoints; (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(clonedCommittedEndpoints, tc.committedEndpoints); diff != "" {
+				t.Errorf("Unexpected diff in committedEndpoints; calculateMigrationEndpointsToDetach(...) should not modify committedEndpoints; (-want +got):\n%s", diff)
+			}
+
+			// Ensure that the correct number of endpoints were removed from
+			// "migrationEndpoints" and added to "removeEndpoints".
+			if gotCurrentlyMigratingCount := endpointsCount(clonedMigrationEndpoints) - endpointsCount(tc.migrationEndpoints); gotCurrentlyMigratingCount != tc.wantCurrentlyMigratingCount {
+				t.Errorf("Unexpected number of endpoints removed from migrationEndpoints set; got removed count = %v; want = %v", gotCurrentlyMigratingCount, tc.wantCurrentlyMigratingCount)
+			}
+			if gotCurrentlyMigratingCount := endpointsCount(tc.removeEndpoints) - endpointsCount(clonedRemoveEndpoints); gotCurrentlyMigratingCount != tc.wantCurrentlyMigratingCount {
+				t.Errorf("Unexpected number of endpoints added to removeEndpoints set; got newly added count = %v; want = %v", gotCurrentlyMigratingCount, tc.wantCurrentlyMigratingCount)
+			}
+
+			// Ensure that only the endpoints from the migrationZone were modified.
+			removedMigrationEndpoints := clonedMigrationEndpoints[migrationZone].Difference(tc.migrationEndpoints[migrationZone])
+			if gotCurrentlyMigratingCount := removedMigrationEndpoints.Len(); gotCurrentlyMigratingCount != tc.wantCurrentlyMigratingCount {
+				t.Errorf("Unexpected number of endpoints removed from migrationEndpoints[%v] set; got removed count = %v; want = %v", migrationZone, gotCurrentlyMigratingCount, tc.wantCurrentlyMigratingCount)
+			}
+
+			// Ensure that all the endpoints removed from migrationEndpoints were
+			// added to the removeEndpoints.
+			newlyAddedEndpointsWithinRemoveSet := tc.removeEndpoints[migrationZone].Difference(clonedRemoveEndpoints[migrationZone])
+			if diff := cmp.Diff(removedMigrationEndpoints, newlyAddedEndpointsWithinRemoveSet); diff != "" {
+				t.Errorf("Unexpected diff between the endpoints removed from migrationEndpoints[%v] and endpoints added to removeEndpoints[%v] (-want +got):\n%s", migrationZone, migrationZone, diff)
+			}
+		})
+	}
 }
 
 func TestFindAndFilterMigrationEndpoints(t *testing.T) {
