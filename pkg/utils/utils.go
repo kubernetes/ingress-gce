@@ -268,6 +268,40 @@ func GetErrorType(err error) string {
 	return ""
 }
 
+// IsGCEServerError returns true if the error is GCE server error
+func IsGCEServerError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var gerr *googleapi.Error
+	if !errors.As(err, &gerr) {
+		return false
+	}
+	for {
+		if apiErr, ok := err.(*googleapi.Error); ok {
+			return apiErr.Code >= http.StatusInternalServerError
+		}
+		err = errors.Unwrap(err)
+	}
+}
+
+// IsK8sServerError returns true if the error is K8s server error
+func IsK8sServerError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var k8serr *k8serrors.StatusError
+	if !errors.As(err, &k8serr) {
+		return false
+	}
+	for {
+		if apiErr, ok := err.(*k8serrors.StatusError); ok {
+			return apiErr.ErrStatus.Code >= http.StatusInternalServerError
+		}
+		err = errors.Unwrap(err)
+	}
+}
+
 // PrettyJson marshals an object in a human-friendly format.
 func PrettyJson(data interface{}) (string, error) {
 	buffer := new(bytes.Buffer)

@@ -573,6 +573,7 @@ func (s *transactionSyncer) commitTransaction(err error, networkEndpointMap map[
 		// This is to prevent if the NEG object is deleted or misconfigured by user
 		s.needInit = true
 		needRetry = true
+		metrics.PublishNegControllerErrorCountMetrics(err, false)
 	}
 
 	for networkEndpoint := range networkEndpointMap {
@@ -588,6 +589,7 @@ func (s *transactionSyncer) commitTransaction(err error, networkEndpointMap map[
 	if needRetry {
 		if retryErr := s.retry.Retry(); retryErr != nil {
 			s.recordEvent(apiv1.EventTypeWarning, "RetryFailed", fmt.Sprintf("Failed to retry NEG sync for %q: %v", s.NegSyncerKey.String(), retryErr))
+			metrics.PublishNegControllerErrorCountMetrics(retryErr, false)
 		}
 		return
 	}
@@ -624,6 +626,7 @@ func (s *transactionSyncer) isZoneChange() bool {
 	negCR, err := getNegFromStore(s.svcNegLister, s.Namespace, s.NegSyncerKey.NegName)
 	if err != nil {
 		s.logger.Error(err, "unable to retrieve neg from the store", "neg", klog.KRef(s.Namespace, s.NegName))
+		metrics.PublishNegControllerErrorCountMetrics(err, true)
 		return false
 	}
 
@@ -632,6 +635,7 @@ func (s *transactionSyncer) isZoneChange() bool {
 		id, err := cloud.ParseResourceURL(ref.SelfLink)
 		if err != nil {
 			s.logger.Error(err, "unable to parse selflink", "selfLink", ref.SelfLink)
+			metrics.PublishNegControllerErrorCountMetrics(err, true)
 			continue
 		}
 		existingZones.Insert(id.Key.Zone)
@@ -640,6 +644,7 @@ func (s *transactionSyncer) isZoneChange() bool {
 	zones, err := s.zoneGetter.ListZones(negtypes.NodePredicateForEndpointCalculatorMode(s.EpCalculatorMode))
 	if err != nil {
 		s.logger.Error(err, "unable to list zones")
+		metrics.PublishNegControllerErrorCountMetrics(err, true)
 		return false
 	}
 	currZones := sets.NewString(zones...)
@@ -712,6 +717,7 @@ func (s *transactionSyncer) updateInitStatus(negObjRefs []negv1beta1.NegObjectRe
 	origNeg, err := getNegFromStore(s.svcNegLister, s.Namespace, s.NegSyncerKey.NegName)
 	if err != nil {
 		s.logger.Error(err, "Error updating init status for neg, failed to get neg from store.")
+		metrics.PublishNegControllerErrorCountMetrics(err, true)
 		return
 	}
 
@@ -728,6 +734,7 @@ func (s *transactionSyncer) updateInitStatus(negObjRefs []negv1beta1.NegObjectRe
 	_, err = patchNegStatus(s.svcNegClient, origNeg.Status, neg.Status, s.Namespace, s.NegSyncerKey.NegName)
 	if err != nil {
 		s.logger.Error(err, "Error updating Neg CR")
+		metrics.PublishNegControllerErrorCountMetrics(err, true)
 	}
 }
 
@@ -739,6 +746,7 @@ func (s *transactionSyncer) updateStatus(syncErr error) {
 	origNeg, err := getNegFromStore(s.svcNegLister, s.Namespace, s.NegSyncerKey.NegName)
 	if err != nil {
 		s.logger.Error(err, "Error updating status for neg, failed to get neg from store")
+		metrics.PublishNegControllerErrorCountMetrics(err, true)
 		return
 	}
 	neg := origNeg.DeepCopy()
@@ -759,6 +767,7 @@ func (s *transactionSyncer) updateStatus(syncErr error) {
 	_, err = patchNegStatus(s.svcNegClient, origNeg.Status, neg.Status, s.Namespace, s.NegSyncerKey.NegName)
 	if err != nil {
 		s.logger.Error(err, "Error updating Neg CR")
+		metrics.PublishNegControllerErrorCountMetrics(err, true)
 	}
 }
 
@@ -775,6 +784,7 @@ func (s *transactionSyncer) computeEPSStaleness(endpointSlices []*discovery.Endp
 	negCR, err := getNegFromStore(s.svcNegLister, s.Namespace, s.NegSyncerKey.NegName)
 	if err != nil {
 		s.logger.Error(err, "unable to retrieve neg from the store", "neg", klog.KRef(s.Namespace, s.NegName))
+		metrics.PublishNegControllerErrorCountMetrics(err, true)
 		return
 	}
 	lastSyncTimestamp := negCR.Status.LastSyncTime
@@ -906,6 +916,7 @@ func getEndpointPodLabelMap(endpoints map[string]negtypes.NetworkEndpointSet, en
 			if err != nil || !ok {
 				metrics.PublishLabelPropagationError(labels.OtherError)
 				logger.Error(err, "getEndpointPodLabelMap: error getting pod", "pod", key, "exist", ok)
+				metrics.PublishNegControllerErrorCountMetrics(err, true)
 				continue
 			}
 			pod, ok := obj.(*v1.Pod)
@@ -917,6 +928,7 @@ func getEndpointPodLabelMap(endpoints map[string]negtypes.NetworkEndpointSet, en
 			labelMap, err := labels.GetPodLabelMap(pod, lpConfig)
 			if err != nil {
 				recorder.Eventf(pod, apiv1.EventTypeWarning, "LabelsExceededLimit", "Label Propagation Error: %v", err)
+				metrics.PublishNegControllerErrorCountMetrics(err, true)
 			}
 			endpointPodLabelMap[endpoint] = labelMap
 		}

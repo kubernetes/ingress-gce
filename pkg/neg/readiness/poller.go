@@ -28,6 +28,7 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
@@ -173,6 +174,7 @@ func (p *poller) Poll(key negMeta) (retry bool, err error) {
 	}
 
 	retry, err = p.processHealthStatus(key, res)
+	metrics.PublishNegControllerErrorCountMetrics(err, true)
 	if retry {
 		<-p.clock.After(hcRetryDelay)
 	}
@@ -293,6 +295,7 @@ func getHealthyBackendService(healthStatus *composite.NetworkEndpointWithHealthS
 			id, err := cloud.ParseResourceURL(hs.BackendService.BackendService)
 			if err != nil {
 				logger.Error(err, "Failed to parse backend service reference from a Network Endpoint health status", "healthStatus", healthStatus)
+				metrics.PublishNegControllerErrorCountMetrics(err, true)
 				continue
 			}
 			if id != nil {

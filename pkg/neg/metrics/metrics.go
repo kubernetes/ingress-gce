@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"k8s.io/ingress-gce/pkg/utils"
 )
 
 const (
@@ -49,6 +50,12 @@ const (
 	ipv6EndpointType      = "IPv6"
 	dualStackEndpointType = "DualStack"
 	migrationEndpointType = "Migration"
+
+	gceServerError = "GCE_server_error"
+	k8sServerError = "K8s_server_error"
+	ignoredError   = "ignored_error"
+	otherError     = "other_error"
+	totalNegError  = "total_neg_error"
 )
 
 type syncType string
@@ -211,6 +218,17 @@ var (
 		},
 		[]string{"endpoint_type"},
 	)
+
+	// NegControllerErrorCount tracks the count of server errors(GCE/K8s) and
+	// all errors from NEG controller.
+	NegControllerErrorCount = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      "error_count",
+			Help:      "Counts of server errors and NEG controller errors.",
+		},
+		[]string{"error_type"},
+	)
 )
 
 var register sync.Once
@@ -234,6 +252,7 @@ func RegisterMetrics() {
 		prometheus.MustRegister(DualStackMigrationLongestUnfinishedDuration)
 		prometheus.MustRegister(DualStackMigrationServiceCount)
 		prometheus.MustRegister(SyncerCountByEndpointType)
+		prometheus.MustRegister(NegControllerErrorCount)
 
 		RegisterSyncerMetrics()
 	})
@@ -279,9 +298,32 @@ func PublishDegradedModeCorrectnessMetrics(count int, endpointType string, negTy
 	DegradeModeCorrectness.WithLabelValues(negType, endpointType).Observe(float64(count))
 }
 
+// PublishNegControllerErrorCountMetrics publishes collected metrics
+// for neg controller errors.
+func PublishNegControllerErrorCountMetrics(err error, isIgnored bool) {
+	if err == nil {
+		return
+	}
+	NegControllerErrorCount.WithLabelValues(totalNegError).Inc()
+	NegControllerErrorCount.WithLabelValues(getErrorLabel(err, isIgnored)).Inc()
+}
+
 func getResult(err error) string {
 	if err != nil {
 		return resultError
 	}
 	return resultSuccess
+}
+
+func getErrorLabel(err error, isIgnored bool) string {
+	if isIgnored {
+		return ignoredError
+	}
+	if utils.IsGCEServerError(err) {
+		return gceServerError
+	}
+	if utils.IsK8sServerError(err) {
+		return k8sServerError
+	}
+	return otherError
 }
