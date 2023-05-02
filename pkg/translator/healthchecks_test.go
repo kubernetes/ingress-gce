@@ -23,6 +23,7 @@ import (
 	"github.com/kr/pretty"
 	computealpha "google.golang.org/api/compute/v0.alpha"
 	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/utils/healthcheck"
 )
 
 func TestMerge(t *testing.T) {
@@ -89,6 +90,7 @@ func TestMerge(t *testing.T) {
 
 func TestOverwriteWithTHC(t *testing.T) {
 	wantHC := &HealthCheck{
+		ForNEG: true,
 		HealthCheck: computealpha.HealthCheck{
 			CheckIntervalSec:   5,
 			TimeoutSec:         5,
@@ -102,9 +104,14 @@ func TestOverwriteWithTHC(t *testing.T) {
 			PortSpecification: "USE_FIXED_PORT",
 			RequestPath:       "/api/podhealth",
 		},
+		healthcheckInfo: healthcheck.HealthcheckInfo{
+			HealthcheckConfig: healthcheck.TransparentHC,
+		},
 	}
 
-	hc := &HealthCheck{}
+	hc := &HealthCheck{
+		ForNEG: true,
+	}
 	OverwriteWithTHC(hc)
 	if !reflect.DeepEqual(hc, wantHC) {
 		t.Fatalf("Translate healthcheck is:\n%s, want:\n%s", pretty.Sprint(hc), pretty.Sprint(wantHC))

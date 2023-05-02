@@ -1021,7 +1021,7 @@ func (*syncSPFixture) thc() *compute.HealthCheck {
 			Port:              7877,
 			RequestPath:       "/api/podhealth",
 		},
-		Description: translator.DescriptionForTransparentHealthChecks, //TODO(DamianSawicki): JSONify.
+		Description: translator.DescriptionForTransparentHealthChecks,
 	}
 }
 
@@ -1200,6 +1200,18 @@ func TestSyncServicePort(t *testing.T) {
 		enableTHC:     true,
 		regional:      true,
 		wantComputeHC: chc,
+	})
+
+	// Transparent Health Check (ILB), regional cluster
+	chc = fixture.thc()
+	toIlb(chc)
+	cases = append(cases, &tc{
+		desc:            "create thc ilb regional cluster",
+		sp:              testSPs["HTTP-80-ilb-nil-thc"],
+		enableTHC:       true,
+		regional:        true,
+		regionalCluster: true,
+		wantComputeHC:   chc,
 	})
 
 	// Probe ignored with THC
@@ -1435,6 +1447,15 @@ func TestSyncServicePort(t *testing.T) {
 		wantComputeHC: w,
 		enableTHC:     true,
 	})
+	cases = append(cases, &tc{
+		desc:            "update ilb to thc regional cluster",
+		setup:           fixture.setupExistingHCFunc(fixture.ilb()),
+		sp:              testSPs["HTTP-80-ilb-nil-thc"],
+		regional:        true,
+		regionalCluster: true,
+		wantComputeHC:   w,
+		enableTHC:       true,
+	})
 
 	// Preserve user settings.
 	chc = fixture.hc()
@@ -1573,7 +1594,11 @@ func TestSyncServicePort(t *testing.T) {
 		tc.updateHCDescription = true
 		tc.desc = tc.desc + " with updateHCDescription"
 		copyOfWant := *tc.wantComputeHC
-		if tc.sp.BackendConfig != nil {
+		if tc.sp.BackendConfig != nil || tc.sp.THCEnabled == true {
+			config := healthcheck.TransparentHC
+			if tc.sp.BackendConfig != nil {
+				config = healthcheck.BackendConfigHC
+			}
 			var wantLocation string
 			if tc.regionalCluster {
 				wantLocation = gce.DefaultTestClusterValues().Region
@@ -1583,7 +1608,7 @@ func TestSyncServicePort(t *testing.T) {
 			wantDesc := healthcheck.HealthcheckDesc{
 				K8sCluster:  fmt.Sprintf("/locations/%s/clusters/%s", wantLocation, gce.DefaultTestClusterValues().ClusterName),
 				K8sResource: fmt.Sprintf("/namespaces/%s/services/%s", defaultBackendSvc.Namespace, defaultBackendSvc.Name),
-				Config:      "BackendConfig",
+				Config:      config,
 			}
 			bytes, err := json.MarshalIndent(wantDesc, "", "    ")
 			if err != nil {

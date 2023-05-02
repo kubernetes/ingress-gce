@@ -39,6 +39,7 @@ const (
 	DefaultHC        HealthcheckConfig = "Default"
 	ReadinessProbeHC HealthcheckConfig = "ReadinessProbe"
 	BackendConfigHC  HealthcheckConfig = "BackendConfig"
+	TransparentHC    HealthcheckConfig = "TransparentHC"
 )
 
 type HealthcheckInfo struct {

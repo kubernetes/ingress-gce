@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"golang.org/x/exp/slices"
 	computealpha "google.golang.org/api/compute/v0.alpha"
 	computebeta "google.golang.org/api/compute/v0.beta"
 	"google.golang.org/api/compute/v1"
@@ -106,13 +107,15 @@ type HealthCheck struct {
 	healthcheckInfo healthcheck.HealthcheckInfo
 }
 
-func (hc *HealthCheck) SetHealthcheckInfo(i healthcheck.HealthcheckInfo) {
-	hc.healthcheckInfo = i
+func (hc *HealthCheck) SetHealthcheckInfo(ci healthcheck.ClusterInfo, si healthcheck.ServiceInfo) {
+	hc.healthcheckInfo.ClusterInfo = ci
+	hc.healthcheckInfo.ServiceInfo = si
 	hc.reconcileHCDescription()
 }
 
 func (hc *HealthCheck) reconcileHCDescription() {
-	if flags.F.EnableUpdateCustomHealthCheckDescription && hc.healthcheckInfo.HealthcheckConfig == healthcheck.BackendConfigHC {
+	if flags.F.EnableUpdateCustomHealthCheckDescription &&
+		slices.Contains([]healthcheck.HealthcheckConfig{healthcheck.BackendConfigHC, healthcheck.TransparentHC}, hc.healthcheckInfo.HealthcheckConfig) {
 		hc.Description = hc.healthcheckInfo.GenerateHealthcheckDescription()
 	}
 }
@@ -236,6 +239,8 @@ func OverwriteWithTHC(hc *HealthCheck) {
 	hc.PortSpecification = thcPortSpecification
 	hc.Port = THCPort
 	hc.RequestPath = thcRequestPath
+	hc.healthcheckInfo.HealthcheckConfig = healthcheck.TransparentHC
+	hc.reconcileHCDescription()
 }
 
 func (hc *HealthCheck) UpdateFromBackendConfig(c *backendconfigv1.HealthCheckConfig) {
