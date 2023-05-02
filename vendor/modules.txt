@@ -180,6 +180,10 @@ go.opencensus.io/trace
 go.opencensus.io/trace/internal
 go.opencensus.io/trace/propagation
 go.opencensus.io/trace/tracestate
+# golang.org/x/exp v0.0.0-20230425010034-47ecfdc1ba53
+## explicit; go 1.20
+golang.org/x/exp/constraints
+golang.org/x/exp/slices
 # golang.org/x/net v0.8.0
 ## explicit; go 1.17
 golang.org/x/net/context
@@ -198,9 +202,6 @@ golang.org/x/oauth2/google/internal/externalaccount
 golang.org/x/oauth2/internal
 golang.org/x/oauth2/jws
 golang.org/x/oauth2/jwt
-# golang.org/x/sync v0.1.0
-## explicit
-golang.org/x/sync/errgroup
 # golang.org/x/sys v0.6.0
 ## explicit; go 1.17
 golang.org/x/sys/internal/unsafeheader
@@ -797,6 +798,8 @@ k8s.io/cloud-provider/volume/helpers
 # k8s.io/cloud-provider-gcp/crd v0.0.0-20230411231432-6ab330834e4e
 ## explicit; go 1.19
 k8s.io/cloud-provider-gcp/crd/apis/gcpfirewall/v1beta1
+k8s.io/cloud-provider-gcp/crd/apis/network/v1
+k8s.io/cloud-provider-gcp/crd/apis/network/v1alpha1
 k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned
 k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned/fake
 k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned/scheme
@@ -805,8 +808,6 @@ k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned/typed/gcpfi
 k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/informers/externalversions/gcpfirewall/v1beta1
 k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/informers/externalversions/internalinterfaces
 k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/listers/gcpfirewall/v1beta1
-k8s.io/cloud-provider-gcp/crd/apis/network/v1
-k8s.io/cloud-provider-gcp/crd/apis/network/v1alpha1
 k8s.io/cloud-provider-gcp/crd/client/network/clientset/versioned
 k8s.io/cloud-provider-gcp/crd/client/network/clientset/versioned/scheme
 k8s.io/cloud-provider-gcp/crd/client/network/clientset/versioned/typed/network/v1

@@ -22,6 +22,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -136,6 +137,13 @@ func (in *GKENetworkParamSetStatus) DeepCopyInto(out *GKENetworkParamSetStatus) 
 		in, out := &in.PodCIDRs, &out.PodCIDRs
 		*out = new(NetworkRanges)
 		(*in).DeepCopyInto(*out)
+	}
+	if in.Conditions != nil {
+		in, out := &in.Conditions, &out.Conditions
+		*out = make([]v1.Condition, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
 	}
 }
 

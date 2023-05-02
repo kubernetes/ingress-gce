@@ -160,7 +160,10 @@ type Route struct {
 }
 
 // NetworkStatus contains the status information related to the network.
-type NetworkStatus struct{}
+type NetworkStatus struct {
+	// Conditions is a field representing the current conditions of the Network.
+	Conditions []metav1.Condition `json:"conditions"`
+}
 
 // NodeInterfaceMatcher defines criteria to find the matching interface on host networking.
 type NodeInterfaceMatcher struct {
