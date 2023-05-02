@@ -1167,7 +1167,7 @@ func TestSetTrafficScaling(t *testing.T) {
 	}
 }
 
-func TestManageEnableTHC(t *testing.T) {
+func TestSetEnableTHC(t *testing.T) {
 	// No t.Parallel()
 
 	oldFlag := flags.F.EnableBackendConfigHealthCheck
@@ -1193,7 +1193,7 @@ func TestManageEnableTHC(t *testing.T) {
 	}
 
 	const (
-		thcLabel = "networking.gke.io/transparent-health-checker"
+		thcLabel = annotations.THCAnnotationKey
 		thcValue = `{"enabled":true}`
 	)
 
@@ -1236,14 +1236,14 @@ func TestManageEnableTHC(t *testing.T) {
 			eventPrefix: "Warning THCAnnotationWithoutNEG THC annotation present, but NEG is disabled. Will not enable Transparent Health Checks.",
 		},
 		{
-			name:      "wrong annotation flag disabled",
+			name:      "invalid annotation flag disabled",
 			sp:        &utils.ServicePort{NEGEnabled: true, THCEnabled: true},
 			svc:       newService(map[string]string{thcLabel: "random text"}),
 			enableTHC: false,
 			want:      &utils.ServicePort{NEGEnabled: true, THCEnabled: false},
 		},
 		{
-			name:        "wrong annotation",
+			name:        "invalid annotation",
 			sp:          &utils.ServicePort{NEGEnabled: true, THCEnabled: true},
 			svc:         newService(map[string]string{thcLabel: "random text"}),
 			enableTHC:   true,
@@ -1281,9 +1281,9 @@ func TestManageEnableTHC(t *testing.T) {
 			translator.enableTHC = tc.enableTHC
 			sp := *tc.sp
 
-			translator.manageEnableTHC(&sp, tc.svc)
+			translator.setEnableTHC(&sp, tc.svc)
 			if !reflect.DeepEqual(&sp, tc.want) {
-				t.Errorf("manageEnableTHC, %s\ngot %s,\nwant %s", tc.name, pretty.Sprint(&sp), pretty.Sprint(tc.want))
+				t.Errorf("setEnableTHC, %s\ngot %s,\nwant %s", tc.name, pretty.Sprint(&sp), pretty.Sprint(tc.want))
 			}
 			if tc.wantEvent {
 				fakeRecorder := fakeSingletonRecorderGetter.FakeRecorder()

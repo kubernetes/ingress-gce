@@ -206,9 +206,9 @@ func (t *Translator) maybeEnableBackendConfig(sp *utils.ServicePort, svc *api_v1
 	return nil
 }
 
-// manageEnableTHC sets the THCEnabled for the service port as true or false depending on whether
+// setEnableTHC sets the THCEnabled for the service port as true or false depending on whether
 // Transparent Health Checks should be enabled.
-func (t *Translator) manageEnableTHC(sp *utils.ServicePort, svc *api_v1.Service) {
+func (t *Translator) setEnableTHC(sp *utils.ServicePort, svc *api_v1.Service) {
 	THCEnabled := false
 	defer func() {
 		klog.Infof("Is THC enabled for the sevice %v with service port (%v, %v)? %v", svc.Name, sp.Port, sp.PortName, THCEnabled)
@@ -282,7 +282,7 @@ func (t *Translator) getServicePort(id utils.ServicePortID, params *getServicePo
 		return svcPort, err
 	}
 
-	t.manageEnableTHC(svcPort, svc)
+	t.setEnableTHC(svcPort, svc)
 
 	return svcPort, nil
 }

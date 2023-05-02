@@ -47,7 +47,7 @@ type HealthChecks struct {
 	recorderGetter    RecorderGetter
 	serviceGetter     ServiceGetter
 	clusterInfo       healthcheck.ClusterInfo
-	thcFlagEnabled    bool
+	thcEnabled        bool
 }
 
 // NewHealthChecker creates a new health checker.
@@ -129,8 +129,8 @@ func (h *HealthChecks) generateHealthcheckInfo(sp utils.ServicePort, iLB bool) h
 
 // SyncServicePort implements HealthChecker.
 func (h *HealthChecks) SyncServicePort(sp *utils.ServicePort, probe *v1.Probe) (string, error) {
-	klog.Infof("SyncServicePort: sp.ID=%v, sp.NodePort=%v, sp.Port=%v, sp.PortName=%v, sp.THCEnabled=%v, h.thcFlagEnabled=%v.", sp.ID, sp.NodePort, sp.Port, sp.PortName, sp.THCEnabled, h.thcFlagEnabled)
-	if !h.thcFlagEnabled && sp.THCEnabled {
+	klog.Infof("SyncServicePort: sp.ID=%v, sp.NodePort=%v, sp.Port=%v, sp.PortName=%v, sp.THCEnabled=%v, h.thcEnabled=%v.", sp.ID, sp.NodePort, sp.Port, sp.PortName, sp.THCEnabled, h.thcEnabled)
+	if !h.thcEnabled && sp.THCEnabled {
 		klog.Warningf("THC flag disabled for HealthChecks, but ServicePort %v has Transparent Health Checks enabled. Disabling.", sp.ID)
 		sp.THCEnabled = false
 	}

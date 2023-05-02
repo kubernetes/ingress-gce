@@ -314,7 +314,7 @@ var (
 	ErrBackendConfigInvalidJSON       = errors.New("BackendConfig annotation is invalid json")
 	ErrBackendConfigAnnotationMissing = errors.New("BackendConfig annotation is missing")
 	ErrNEGAnnotationInvalid           = errors.New("NEG annotation is invalid.")
-	ErrTHCAnnotationInvalid           = errors.New("the annotation for Transparent Health Checker is invalid")
+	ErrTHCAnnotationInvalid           = errors.New("THC annotation is invalid")
 )
 
 // NEGAnnotation returns true if NEG annotation is found.
