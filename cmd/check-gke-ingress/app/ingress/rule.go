@@ -18,6 +18,7 @@ package ingress
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -25,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/ingress-gce/cmd/check-gke-ingress/app/report"
+	"k8s.io/ingress-gce/pkg/annotations"
 )
 
 func CheckServiceExistence(namespace, name string, client clientset.Interface) (*corev1.Service, string, string) {
@@ -36,4 +38,29 @@ func CheckServiceExistence(namespace, name string, client clientset.Interface) (
 		return nil, report.Failed, fmt.Sprintf("Failed to get service %s/%s: %v", namespace, name, err)
 	}
 	return svc, report.Passed, fmt.Sprintf("Service %s/%s found", namespace, name)
+}
+
+func CheckBackendConfigAnnotation(svc *corev1.Service) (*annotations.BackendConfigs, string, string) {
+	val, ok := getBackendConfigAnnotation(svc)
+	if !ok {
+		return nil, report.Skipped, fmt.Sprintf("Service %s/%s does not have backendconfig annotation", svc.Namespace, svc.Name)
+	}
+	beConfigs := &annotations.BackendConfigs{}
+	if err := json.Unmarshal([]byte(val), beConfigs); err != nil {
+		return nil, report.Failed, fmt.Sprintf("BackendConfig annotation is invalid in service %s/%s", svc.Namespace, svc.Name)
+	}
+	if beConfigs.Default == "" && beConfigs.Ports == nil {
+		return nil, report.Failed, fmt.Sprintf("BackendConfig annotation is missing both `default` and `ports` field in service %s/%s", svc.Namespace, svc.Name)
+	}
+	return beConfigs, report.Passed, fmt.Sprintf("BackendConfig annotation is valid in service %s/%s", svc.Namespace, svc.Name)
+}
+
+func getBackendConfigAnnotation(svc *corev1.Service) (string, bool) {
+	for _, bcKey := range []string{annotations.BackendConfigKey, annotations.BetaBackendConfigKey} {
+		val, ok := svc.Annotations[bcKey]
+		if ok {
+			return val, ok
+		}
+	}
+	return "", false
 }
