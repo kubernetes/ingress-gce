@@ -61,10 +61,3 @@ func JsonReport(report *Report) (string, error) {
 	}
 	return string(jsonRaw), nil
 }
-
-// SupportedOutputs returns a string list of output formats supported by this package
-func SupportedOutputs() []string {
-	return []string{
-		JSONOutput,
-	}
-}
