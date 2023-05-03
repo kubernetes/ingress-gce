@@ -472,6 +472,7 @@ func (manager *syncerManager) garbageCollectSyncer() {
 	for key, syncer := range manager.syncerMap {
 		if syncer.IsStopped() && !syncer.IsShuttingDown() {
 			delete(manager.syncerMap, key)
+			manager.syncerMetrics.DeleteSyncer(key)
 		}
 	}
 }

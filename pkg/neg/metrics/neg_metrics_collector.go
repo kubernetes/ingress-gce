@@ -140,6 +140,15 @@ func (sm *SyncerMetrics) SetLabelPropagationStats(key negtypes.NegSyncerKey, lab
 	sm.syncerLabelProagationStats[key] = labelstatLabelPropagationStats
 }
 
+func (sm *SyncerMetrics) DeleteSyncer(key negtypes.NegSyncerKey) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	delete(sm.syncerStatusMap, key)
+	delete(sm.syncerEndpointStateMap, key)
+	delete(sm.syncerEPSStateMap, key)
+	delete(sm.syncerLabelProagationStats, key)
+}
+
 // computeLabelMetrics aggregates label propagation metrics.
 func (sm *SyncerMetrics) computeLabelMetrics() LabelPropagationMetrics {
 	sm.mu.Lock()
