@@ -2,6 +2,7 @@ package dualstack
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -149,6 +150,200 @@ func TestFilter(t *testing.T) {
 			}
 			if diff := cmp.Diff(tc.committedEndpoints, gotCommittedEndpoints); diff != "" {
 				t.Errorf("Filter() returned unexpected diff in committedEndpoints; want no diff; (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestFilter_FunctionalTest attempts to test the overall functioning of the
+// Filter() method. It will perform the following sequence of actions:
+//
+//  1. Generate some dual-stack endpoints and their single-stack counterparts
+//     which when passed to the Filter() method result in starting migration.
+//  2. Use the value returned by the Filter() method to imitate NEG
+//     attach/detach operations.
+//  3. Invoke Filter() multiple times and then redo step 2 each time.
+//
+// Pass or failure of the tests will depend on:
+//   - whether the desired number of endpoints got detached
+//   - and, whether the endpoints got detached within the stipulated number of
+//     Filter() invocations.
+func TestFilter_FunctionalTest(t *testing.T) {
+	testCases := []struct {
+		desc     string
+		migrator *Migrator
+		// The number of endpoints that are initially in the NEG. The test will
+		// generate these many number of endpoints.
+		initialNEGEndpointsCount int
+		// The number of zones among which the initial number of endpoints are
+		// distributed. The test will distribute the generated endpoints among these
+		// many zones.
+		zonesCount int
+		// The number of times Filter() should be invoked. This imitates the number
+		// of times Sync() for the parent syncer would get called. This value MAY
+		// need to be reconfigured in the tests if the value of
+		// defaultFractionOfMigratingEndpoints changes significantly.
+		syncCount int
+		// attachSucceeds denotes whether the test should imitate a successful NEG
+		// attach operation.
+		attachSucceeds bool
+		// errorState configures the value returned by the errorStateChecker. True
+		// means that we are in error state.
+		errorState bool
+		// wantAllDetached tells whether all endpoints should be expected to get
+		// detached from the NEG.
+		wantAllDetached bool
+	}{
+		{
+			desc:                     "attaches are succeeding, all endpoint should get detached",
+			migrator:                 newMigratorForTest(t, true),
+			initialNEGEndpointsCount: 10,
+			zonesCount:               3,
+			syncCount:                10,
+			attachSucceeds:           true,
+			errorState:               false,
+			wantAllDetached:          true,
+		},
+		{
+			desc:                     "many attaches pending due to churn BUT we are not in degraded mode, all endpoints will get detached after enough syncs",
+			migrator:                 newMigratorForTest(t, true),
+			initialNEGEndpointsCount: 10,
+			zonesCount:               3,
+			syncCount:                50,    // relatively large sync count
+			attachSucceeds:           false, // Many attaches pending because of churn is imitated by failing attach operations.
+			errorState:               false,
+			wantAllDetached:          true,
+		},
+		{
+			desc:                     "attach is failing AND we are in degraded mode, all endpoints will NOT get detached even after many syncs",
+			migrator:                 newMigratorForTest(t, true),
+			initialNEGEndpointsCount: 10,
+			zonesCount:               3,
+			syncCount:                50, // relatively large sync count
+			attachSucceeds:           false,
+			errorState:               true,
+			wantAllDetached:          false,
+		},
+		{
+			desc:                     "attach is succeeding BUT we are in degraded mode (for another reason), all endpoints WILL get detached NORMALLY",
+			migrator:                 newMigratorForTest(t, true),
+			initialNEGEndpointsCount: 10,
+			zonesCount:               3,
+			syncCount:                10,
+			attachSucceeds:           true,
+			errorState:               true,
+			wantAllDetached:          true,
+		},
+		{
+			desc:                     "larger number of endpoints and zones, attaches are succeeding, all endpoint should get detached",
+			migrator:                 newMigratorForTest(t, true),
+			initialNEGEndpointsCount: 1000,
+			zonesCount:               10,
+			syncCount:                30,
+			attachSucceeds:           true,
+			errorState:               false,
+			wantAllDetached:          true,
+		},
+		{
+			desc:                     "50 endpoints and 50 zones, should require 50 syncs to detach all endpoints",
+			migrator:                 newMigratorForTest(t, true),
+			initialNEGEndpointsCount: 50,
+			zonesCount:               50,
+			syncCount:                50,
+			attachSucceeds:           true,
+			errorState:               false,
+			wantAllDetached:          true,
+		},
+		{
+			desc:                     "50 endpoints and 50 zones, all endpoints should NOT get detached if syncs are less than 50",
+			migrator:                 newMigratorForTest(t, true),
+			initialNEGEndpointsCount: 50,
+			zonesCount:               50,
+			syncCount:                49,
+			attachSucceeds:           true,
+			errorState:               false,
+			wantAllDetached:          false,
+		},
+	}
+
+	// doNEGAttachDetach will imitate NEG Attach and Detach operations. It will
+	// perform the attachment of filteredAddEndpoints and detachment of
+	// filteredRemoveEndpoints.
+	//
+	// If shouldAttach is false, no attachments will be done.
+	doNEGAttachDetach := func(addEndpoints, removeEndpoints, committedEndpoints, filteredAddEndpoints, filteredRemoveEndpoints map[string]types.NetworkEndpointSet, shouldAttach bool) {
+		// Endpoints are detachment by deleting them from the removeEndpoints set.
+		for zone, endpointSet := range filteredRemoveEndpoints {
+			removeEndpoints[zone].Delete(endpointSet.List()...)
+		}
+		if !shouldAttach {
+			return
+		}
+		// Endpoints are attached by first deleting them from addEndpoints set and
+		// then adding them to the committedEndpoints.
+		for zone, endpointSet := range filteredAddEndpoints {
+			addEndpoints[zone].Delete(endpointSet.List()...)
+			committedEndpoints[zone].Insert(endpointSet.List()...)
+		}
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			/////////////////////////////////////////////////////////////////////////
+			// Step 1: Generate endpoints to be used as input.
+			/////////////////////////////////////////////////////////////////////////
+
+			addEndpoints := make(map[string]types.NetworkEndpointSet)       // Contains dual-stack endpoints which are to be added to the NEG.
+			removeEndpoints := make(map[string]types.NetworkEndpointSet)    // Contains single-stack endpoints which are to be removed from the NEG.
+			committedEndpoints := make(map[string]types.NetworkEndpointSet) // Initially empty.
+			for i := 0; i < tc.initialNEGEndpointsCount; i++ {
+				zone := fmt.Sprintf("zone-%v", i%tc.zonesCount)
+				ipv4 := fmt.Sprintf("ipv4-%v", 2*i+1)
+				ipv6 := fmt.Sprintf("ipv6-%v", 2*i+2)
+				if addEndpoints[zone] == nil {
+					addEndpoints[zone] = types.NewNetworkEndpointSet()
+					removeEndpoints[zone] = types.NewNetworkEndpointSet()
+					committedEndpoints[zone] = types.NewNetworkEndpointSet()
+				}
+				addEndpoints[zone].Insert(types.NetworkEndpoint{IP: ipv4, IPv6: ipv6})
+				removeEndpoints[zone].Insert(types.NetworkEndpoint{IP: ipv4})
+			}
+
+			tc.migrator.errorStateChecker.(*fakeErrorStateChecker).errorState = tc.errorState
+
+			/////////////////////////////////////////////////////////////////////////
+			// Step 2: Invoke Filter(), followed by NEG attach/detach multiple times.
+			/////////////////////////////////////////////////////////////////////////
+
+			for i := 0; i < tc.syncCount; i++ {
+				filteredAddEndpoints := cloneZoneNetworkEndpointsMap(addEndpoints)
+				filteredRemoveEndpoints := cloneZoneNetworkEndpointsMap(removeEndpoints)
+
+				migrationZone := tc.migrator.Filter(filteredAddEndpoints, filteredRemoveEndpoints, committedEndpoints)
+
+				doNEGAttachDetach(addEndpoints, removeEndpoints, committedEndpoints, filteredAddEndpoints, filteredRemoveEndpoints, tc.attachSucceeds)
+				fakeClock := tc.migrator.clock.(*clocktesting.FakeClock)
+				if migrationZone != "" {
+					// Update the time of the last successful detach.
+					tc.migrator.previousDetach = fakeClock.Now()
+				}
+				// Move the clock ahead by some time.
+				fakeClock.Step(tc.migrator.migrationWaitDuration)
+				t.Logf("fakeClock: Time.Now()=%v", fakeClock.Now())
+			}
+
+			/////////////////////////////////////////////////////////////////////////
+			// Step 3: Verify the number of endpoints detached.
+			/////////////////////////////////////////////////////////////////////////
+
+			if tc.wantAllDetached {
+				if count := endpointsCount(removeEndpoints); count != 0 {
+					t.Errorf("Got %v endpoints still remaining in removeEndpoints after %v Filter() invocations; want 0 endpoints remaining", count, tc.syncCount)
+				}
+			} else {
+				if count := endpointsCount(removeEndpoints); count == 0 {
+					t.Errorf("Got all %v endpoints removed from removeEndpoints after %v Filter() invocations; want non-zero endpoints still remaining in removeEndpoints", tc.initialNEGEndpointsCount, tc.syncCount)
+				}
 			}
 		})
 	}
