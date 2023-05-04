@@ -60,6 +60,15 @@ const (
 	// defaultNEGTimeout defines the timeout of each probe for NEG
 	defaultNEGTimeout = 15 * time.Second
 
+	// Similar defaults as above, but for Transparent Health Checks.
+	thcCheckInterval     = 5 * time.Second
+	thcTimeout           = 5 * time.Second
+	thcHealthyThreshold  = 1
+	thcType              = string(annotations.ProtocolHTTP)
+	thcPortSpecification = "USE_FIXED_PORT"
+	THCPort              = 7877
+	thcRequestPath       = "/api/podhealth"
+
 	// useServingPortSpecification is a constant for GCE API.
 	// USE_SERVING_PORT: For NetworkEndpointGroup, the port specified for
 	// each network endpoint is used for health checking. For other
@@ -72,6 +81,7 @@ const (
 	DescriptionForDefaultILBHealthChecks         = "Default kubernetes L7 Loadbalancing health check for ILB."
 	DescriptionForHealthChecksFromReadinessProbe = "Kubernetes L7 health check generated with readiness probe settings."
 	DescriptionForHealthChecksFromBackendConfig  = "Kubernetes L7 health check generated with BackendConfig CRD."
+	DescriptionForTransparentHealthChecks        = "Kubernetes L7 transparent health check."
 
 	// TODO: revendor the GCE API go client so that this error will not be hit.
 	newHealthCheckErrorMessageTemplate = "the %v health check configuration on the existing health check %v is nil. " +
@@ -213,6 +223,19 @@ func (hc *HealthCheck) Version() meta.Version {
 		return meta.VersionBeta
 	}
 	return meta.VersionGA
+}
+
+// OverwriteWithTHC applies the standard values for Transparent Health Checks.
+func OverwriteWithTHC(hc *HealthCheck) {
+	hc.CheckIntervalSec = int64(thcCheckInterval.Seconds())
+	hc.TimeoutSec = int64(thcTimeout.Seconds())
+	hc.UnhealthyThreshold = defaultUnhealthyThreshold
+	hc.HealthyThreshold = thcHealthyThreshold
+	hc.Type = thcType
+	hc.Description = DescriptionForTransparentHealthChecks //TODO(DamianSawicki): JSONify.
+	hc.PortSpecification = thcPortSpecification
+	hc.Port = THCPort
+	hc.RequestPath = thcRequestPath
 }
 
 func (hc *HealthCheck) UpdateFromBackendConfig(c *backendconfigv1.HealthCheckConfig) {

@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 	"k8s.io/klog/v2"
 
@@ -65,7 +66,9 @@ func NewTranslator(serviceInformer cache.SharedIndexInformer,
 	nodeInformer cache.SharedIndexInformer,
 	podInformer cache.SharedIndexInformer,
 	endpointSliceInformer cache.SharedIndexInformer,
-	kubeClient kubernetes.Interface) *Translator {
+	kubeClient kubernetes.Interface,
+	enableTHC bool,
+	recorderGetter healthchecks.RecorderGetter) *Translator {
 	return &Translator{
 		serviceInformer,
 		backendConfigInformer,
@@ -73,6 +76,8 @@ func NewTranslator(serviceInformer cache.SharedIndexInformer,
 		podInformer,
 		endpointSliceInformer,
 		kubeClient,
+		enableTHC,
+		recorderGetter,
 	}
 }
 
@@ -84,6 +89,8 @@ type Translator struct {
 	PodInformer           cache.SharedIndexInformer
 	EndpointSliceInformer cache.SharedIndexInformer
 	KubeClient            kubernetes.Interface
+	enableTHC             bool
+	recorderGetter        healthchecks.RecorderGetter
 }
 
 func (t *Translator) getCachedService(id utils.ServicePortID) (*api_v1.Service, error) {
@@ -199,6 +206,38 @@ func (t *Translator) maybeEnableBackendConfig(sp *utils.ServicePort, svc *api_v1
 	return nil
 }
 
+// setEnableTHC sets the THCEnabled for the service port as true or false depending on whether
+// Transparent Health Checks should be enabled.
+func (t *Translator) setEnableTHC(sp *utils.ServicePort, svc *api_v1.Service) {
+	THCEnabled := false
+	defer func() {
+		klog.Infof("Is THC enabled for the sevice %v with service port (%v, %v)? %v", svc.Name, sp.Port, sp.PortName, THCEnabled)
+		sp.THCEnabled = THCEnabled
+	}()
+
+	if !t.enableTHC {
+		return
+	}
+
+	if flags.F.EnableBackendConfigHealthCheck && sp.BackendConfig != nil && sp.BackendConfig.Spec.HealthCheck != nil {
+		return
+	}
+
+	THCEnabled, err := annotations.FromService(svc).ShouldEnableTHC()
+	if err != nil {
+		message := fmt.Sprintf("Parsing THC annotation failed: %+v.", err)
+		t.recorderGetter.Recorder(sp.ID.Service.Namespace).Event(svc, api_v1.EventTypeWarning, "THCAnnotationParsingFailed", message)
+		klog.Warning(message)
+	}
+
+	if THCEnabled && !sp.NEGEnabled {
+		message := "THC annotation present, but NEG is disabled. Will not enable Transparent Health Checks."
+		t.recorderGetter.Recorder(sp.ID.Service.Namespace).Event(svc, api_v1.EventTypeWarning, "THCAnnotationWithoutNEG", message)
+		klog.Warning(message)
+		THCEnabled = false
+	}
+}
+
 // getServicePort looks in the svc store for a matching service:port,
 // and returns the nodeport.
 func (t *Translator) getServicePort(id utils.ServicePortID, params *getServicePortParams, namer namer_util.BackendNamer) (*utils.ServicePort, error) {
@@ -242,6 +281,8 @@ func (t *Translator) getServicePort(id utils.ServicePortID, params *getServicePo
 	if err := t.maybeEnableBackendConfig(svcPort, svc, port); err != nil {
 		return svcPort, err
 	}
+
+	t.setEnableTHC(svcPort, svc)
 
 	return svcPort, nil
 }

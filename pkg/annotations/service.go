@@ -65,6 +65,9 @@ const (
 	// The valid values are "Standard" and "Premium" (default, if unspecified).
 	NetworkTierAnnotationKey = "cloud.google.com/network-tier"
 
+	// THCAnnotationKey is the boolean annotation key to enable Transparent Health Checks.
+	THCAnnotationKey = "networking.gke.io/transparent-health-checker"
+
 	// ProtocolHTTP protocol for a service
 	ProtocolHTTP AppProtocol = "HTTP"
 	// ProtocolHTTPS protocol for a service
@@ -136,6 +139,12 @@ type NegAnnotation struct {
 	// ExposedPorts maps ServicePort to attributes of the NEG that should be
 	// associated with the ServicePort.
 	ExposedPorts map[int32]NegAttributes `json:"exposed_ports,omitempty"`
+}
+
+// THCAnnotation is the format of the annotation associated with the THCAnnotationKey key.
+type THCAnnotation struct {
+	// "enabled" indicates whether to enable the Transparent Health Checks feature.
+	Enabled bool `json:"enabled,omitempty"`
 }
 
 // NegAttributes houses the attributes of the NEGs that are associated with the
@@ -305,6 +314,7 @@ var (
 	ErrBackendConfigInvalidJSON       = errors.New("BackendConfig annotation is invalid json")
 	ErrBackendConfigAnnotationMissing = errors.New("BackendConfig annotation is missing")
 	ErrNEGAnnotationInvalid           = errors.New("NEG annotation is invalid.")
+	ErrTHCAnnotationInvalid           = errors.New("THC annotation is invalid")
 )
 
 // NEGAnnotation returns true if NEG annotation is found.
@@ -322,6 +332,21 @@ func (svc *Service) NEGAnnotation() (*NegAnnotation, bool, error) {
 	}
 
 	return &res, true, nil
+}
+
+// ShouldEnableTHC returns true if a THC annotation is found and its value is true.
+func (svc *Service) ShouldEnableTHC() (bool, error) {
+	var res THCAnnotation
+	annotation, ok := svc.v[THCAnnotationKey]
+	if !ok {
+		return false, nil
+	}
+
+	if err := json.Unmarshal([]byte(annotation), &res); err != nil {
+		return false, ErrTHCAnnotationInvalid
+	}
+
+	return res.Enabled, nil
 }
 
 func (svc *Service) NEGStatus() (*NegStatus, bool, error) {

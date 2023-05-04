@@ -21,9 +21,11 @@ import (
 	"fmt"
 	"io/ioutil"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/kr/pretty"
 	apiv1 "k8s.io/api/core/v1"
 	discoveryapi "k8s.io/api/discovery/v1"
 	v1 "k8s.io/api/networking/v1"
@@ -40,6 +42,7 @@ import (
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	informerbackendconfig "k8s.io/ingress-gce/pkg/backendconfig/client/informers/externalversions/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
@@ -85,6 +88,8 @@ func configuredFakeTranslator() *Translator {
 		PodInformer,
 		EndpointSliceInformer,
 		client,
+		false,
+		healthchecks.NewFakeRecorderGetter(0),
 	)
 }
 
@@ -1157,6 +1162,139 @@ func TestSetTrafficScaling(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, *tc.want) {
 				t.Errorf("setTrafficScaling(_, %+v); got %+v, want %+v", tc.svc, got, *tc.want)
+			}
+		})
+	}
+}
+
+func TestSetEnableTHC(t *testing.T) {
+	// No t.Parallel()
+
+	oldFlag := flags.F.EnableBackendConfigHealthCheck
+	flags.F.EnableBackendConfigHealthCheck = true
+	defer func() {
+		flags.F.EnableBackendConfigHealthCheck = oldFlag
+	}()
+
+	newService := func(ann map[string]string) *apiv1.Service {
+		return &apiv1.Service{
+			ObjectMeta: metav1.ObjectMeta{Annotations: ann},
+		}
+	}
+
+	type tc struct {
+		name        string
+		sp          *utils.ServicePort
+		svc         *apiv1.Service
+		enableTHC   bool
+		want        *utils.ServicePort
+		wantEvent   bool
+		eventPrefix string
+	}
+
+	const (
+		thcLabel = annotations.THCAnnotationKey
+		thcValue = `{"enabled":true}`
+	)
+
+	testCases := []*tc{
+		{
+			name:      "no settings flag disabled",
+			sp:        &utils.ServicePort{THCEnabled: true},
+			svc:       newService(map[string]string{}),
+			enableTHC: false,
+			want:      &utils.ServicePort{THCEnabled: false},
+		},
+		{
+			name:      "no settings",
+			sp:        &utils.ServicePort{THCEnabled: true},
+			svc:       newService(map[string]string{}),
+			enableTHC: true,
+			want:      &utils.ServicePort{THCEnabled: false},
+		},
+		{
+			name:      "annotation",
+			sp:        &utils.ServicePort{NEGEnabled: true},
+			svc:       newService(map[string]string{thcLabel: thcValue}),
+			enableTHC: true,
+			want:      &utils.ServicePort{NEGEnabled: true, THCEnabled: true},
+		},
+		{
+			name:      "annotation flag disabled",
+			sp:        &utils.ServicePort{NEGEnabled: true, THCEnabled: true},
+			svc:       newService(map[string]string{thcLabel: thcValue}),
+			enableTHC: false,
+			want:      &utils.ServicePort{NEGEnabled: true, THCEnabled: false},
+		},
+		{
+			name:        "annotation NEG disabled",
+			sp:          &utils.ServicePort{THCEnabled: true},
+			svc:         newService(map[string]string{thcLabel: thcValue}),
+			enableTHC:   true,
+			want:        &utils.ServicePort{THCEnabled: false},
+			wantEvent:   true,
+			eventPrefix: "Warning THCAnnotationWithoutNEG THC annotation present, but NEG is disabled. Will not enable Transparent Health Checks.",
+		},
+		{
+			name:      "invalid annotation flag disabled",
+			sp:        &utils.ServicePort{NEGEnabled: true, THCEnabled: true},
+			svc:       newService(map[string]string{thcLabel: "random text"}),
+			enableTHC: false,
+			want:      &utils.ServicePort{NEGEnabled: true, THCEnabled: false},
+		},
+		{
+			name:        "invalid annotation",
+			sp:          &utils.ServicePort{NEGEnabled: true, THCEnabled: true},
+			svc:         newService(map[string]string{thcLabel: "random text"}),
+			enableTHC:   true,
+			want:        &utils.ServicePort{NEGEnabled: true, THCEnabled: false},
+			wantEvent:   true,
+			eventPrefix: "Warning THCAnnotationParsingFailed Parsing THC annotation failed",
+		},
+		{
+			name:      "annotation empty backendconfig",
+			sp:        &utils.ServicePort{BackendConfig: &backendconfig.BackendConfig{}, NEGEnabled: true, THCEnabled: false},
+			svc:       newService(map[string]string{thcLabel: thcValue}),
+			enableTHC: true,
+			want:      &utils.ServicePort{BackendConfig: &backendconfig.BackendConfig{}, NEGEnabled: true, THCEnabled: true},
+		},
+	}
+	BC := &backendconfig.BackendConfig{}
+	BC.Spec.HealthCheck = &backendconfig.HealthCheckConfig{}
+	testCases = append(testCases, &tc{
+		name:      "annotation backendconfig",
+		sp:        &utils.ServicePort{BackendConfig: BC, NEGEnabled: true, THCEnabled: true},
+		svc:       newService(map[string]string{thcLabel: thcValue}),
+		enableTHC: true,
+		want:      &utils.ServicePort{BackendConfig: BC, NEGEnabled: true, THCEnabled: false},
+	})
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			translator := fakeTranslator()
+			bufferSize := 0
+			if tc.wantEvent {
+				bufferSize = 1
+			}
+			fakeSingletonRecorderGetter := healthchecks.NewFakeSingletonRecorderGetter(bufferSize)
+			translator.recorderGetter = fakeSingletonRecorderGetter
+			translator.enableTHC = tc.enableTHC
+			sp := *tc.sp
+
+			translator.setEnableTHC(&sp, tc.svc)
+			if !reflect.DeepEqual(&sp, tc.want) {
+				t.Errorf("setEnableTHC, %s\ngot %s,\nwant %s", tc.name, pretty.Sprint(&sp), pretty.Sprint(tc.want))
+			}
+			if tc.wantEvent {
+				fakeRecorder := fakeSingletonRecorderGetter.FakeRecorder()
+				select {
+				case output := <-fakeRecorder.Events:
+					if !strings.HasPrefix(output, tc.eventPrefix) {
+						t.Fatalf("Incorrect event emitted: %s.", output)
+					}
+				case <-time.After(10 * time.Second):
+					t.Fatalf("Timeout when expecting Event.")
+				}
 			}
 		})
 	}
