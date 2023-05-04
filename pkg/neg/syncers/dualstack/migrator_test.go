@@ -10,6 +10,7 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/klog/v2"
+	"k8s.io/klog/v2/ktesting"
 )
 
 func TestFilter(t *testing.T) {
@@ -26,7 +27,7 @@ func TestFilter(t *testing.T) {
 		{
 			desc: "paused migrator should only filter migration endpoints and not start detachment",
 			migrator: func() *Migrator {
-				m := newMigratorForTest(true)
+				m := newMigratorForTest(t, true)
 				m.Pause()
 				return m
 			}(),
@@ -62,7 +63,7 @@ func TestFilter(t *testing.T) {
 		},
 		{
 			desc:     "unpaused migrator should filter migration endpoints AND also start detachment",
-			migrator: newMigratorForTest(true),
+			migrator: newMigratorForTest(t, true),
 			addEndpoints: map[string]types.NetworkEndpointSet{
 				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "a", IPv6: "A"}, // migrating
@@ -95,7 +96,7 @@ func TestFilter(t *testing.T) {
 		},
 		{
 			desc:     "migrator should do nothing if enableDualStack is false",
-			migrator: newMigratorForTest(false),
+			migrator: newMigratorForTest(t, false),
 			addEndpoints: map[string]types.NetworkEndpointSet{
 				"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "a", IPv6: "A"}, // migrating
@@ -169,7 +170,7 @@ func TestPause(t *testing.T) {
 		}...),
 	}
 
-	migrator := newMigratorForTest(true)
+	migrator := newMigratorForTest(t, true)
 
 	// Ensure that before calling pause, Filter() is working as expected and is
 	// starting migration-detachments.
@@ -364,7 +365,7 @@ func TestCalculateMigrationEndpointsToDetach(t *testing.T) {
 					{IP: "6"}, {IP: "7"}, {IP: "8"}, {IP: "9"}, {IP: "10"},
 				}...),
 			},
-			migrator:                    newMigratorForTest(true),
+			migrator:                    newMigratorForTest(t, true),
 			wantCurrentlyMigratingCount: 1,
 		},
 		{
@@ -382,7 +383,7 @@ func TestCalculateMigrationEndpointsToDetach(t *testing.T) {
 					{IP: "11"},
 				}...),
 			},
-			migrator:                    newMigratorForTest(true),
+			migrator:                    newMigratorForTest(t, true),
 			wantCurrentlyMigratingCount: 2,
 		},
 		{
@@ -407,7 +408,7 @@ func TestCalculateMigrationEndpointsToDetach(t *testing.T) {
 				}...),
 			},
 			migrator: func() *Migrator {
-				m := newMigratorForTest(true)
+				m := newMigratorForTest(t, true)
 				m.previousDetach = time.Now().Add(30 * time.Minute) // Future time.
 				return m
 			}(),
@@ -435,7 +436,7 @@ func TestCalculateMigrationEndpointsToDetach(t *testing.T) {
 				}...),
 			},
 			migrator: func() *Migrator {
-				m := newMigratorForTest(true)
+				m := newMigratorForTest(t, true)
 				m.errorStateChecker.(*fakeErrorStateChecker).errorState = true
 				return m
 			}(),
@@ -463,7 +464,7 @@ func TestCalculateMigrationEndpointsToDetach(t *testing.T) {
 					{IP: "7"},
 				}...),
 			},
-			migrator:                    newMigratorForTest(true),
+			migrator:                    newMigratorForTest(t, true),
 			wantCurrentlyMigratingCount: 1,
 		},
 		{
@@ -484,7 +485,7 @@ func TestCalculateMigrationEndpointsToDetach(t *testing.T) {
 				}...),
 			},
 			migrationEndpoints:          map[string]types.NetworkEndpointSet{},
-			migrator:                    newMigratorForTest(true),
+			migrator:                    newMigratorForTest(t, true),
 			wantCurrentlyMigratingCount: 0,
 		},
 		{
@@ -510,7 +511,7 @@ func TestCalculateMigrationEndpointsToDetach(t *testing.T) {
 					{IP: "11"}, {IP: "12"},
 				}...),
 			},
-			migrator:                    newMigratorForTest(true),
+			migrator:                    newMigratorForTest(t, true),
 			wantCurrentlyMigratingCount: 2,
 		},
 	}
@@ -810,6 +811,7 @@ func cloneZoneNetworkEndpointsMap(m map[string]types.NetworkEndpointSet) map[str
 	return clone
 }
 
-func newMigratorForTest(enableDualStackNEG bool) *Migrator {
-	return NewMigrator(enableDualStackNEG, &fakeSyncable{}, types.NegSyncerKey{}, metrics.FakeSyncerMetrics(), &fakeErrorStateChecker{}, klog.Background())
+func newMigratorForTest(t *testing.T, enableDualStackNEG bool) *Migrator {
+	logger, _ := ktesting.NewTestContext(t)
+	return NewMigrator(enableDualStackNEG, &fakeSyncable{}, types.NegSyncerKey{}, metrics.FakeSyncerMetrics(), &fakeErrorStateChecker{}, logger)
 }
