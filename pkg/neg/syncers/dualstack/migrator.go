@@ -23,6 +23,7 @@ import (
 
 	"k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/clock"
 )
 
 const (
@@ -90,6 +91,7 @@ type Migrator struct {
 	// attach operations.
 	fractionForPendingAttachmentThreshold float64
 
+	clock  clock.Clock
 	logger klog.Logger
 }
 
@@ -116,6 +118,7 @@ func NewMigrator(enableDualStackNEG bool, syncer syncable, syncerKey types.NegSy
 		previousDetachThreshold:               defaultPreviousDetachThreshold,
 		fractionOfMigratingEndpoints:          defaultFractionOfMigratingEndpoints,
 		fractionForPendingAttachmentThreshold: defaultFractionForPendingAttachmentThreshold,
+		clock:                                 clock.RealClock{},
 		logger:                                logger.WithName("DualStackMigrator"),
 	}
 }
@@ -202,9 +205,9 @@ func (d *Migrator) Continue(err error) {
 	// NEG Detach succeeded; unpause after migrationWaitDuration and trigger
 	// resync.
 	d.continueInProgress = true
-	d.previousDetach = time.Now()
+	d.previousDetach = d.clock.Now()
 	go func() {
-		time.Sleep(d.migrationWaitDuration)
+		d.clock.Sleep(d.migrationWaitDuration)
 
 		d.mu.Lock()
 		d.paused = false
@@ -303,7 +306,7 @@ func (d *Migrator) manyEndpointsWaitingToBeAttached(addCount, committedCount, mi
 func (d *Migrator) tooLongSincePreviousDetach() bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	return time.Since(d.previousDetach) >= d.previousDetachThreshold
+	return d.clock.Since(d.previousDetach) >= d.previousDetachThreshold
 }
 
 // findAndFilterMigrationEndpoints will filter out the migration endpoints from

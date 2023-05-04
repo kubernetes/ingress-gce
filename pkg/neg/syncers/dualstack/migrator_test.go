@@ -9,8 +9,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/types"
-	"k8s.io/klog/v2"
 	"k8s.io/klog/v2/ktesting"
+	"k8s.io/utils/clock"
+	clocktesting "k8s.io/utils/clock/testing"
 )
 
 func TestFilter(t *testing.T) {
@@ -210,13 +211,9 @@ func TestPause(t *testing.T) {
 }
 
 func TestContinue_InputError(t *testing.T) {
-	syncable := &fakeSyncable{}
-	migrator := &Migrator{
-		enableDualStack:       true,
-		paused:                true,
-		migrationWaitDuration: 5 * time.Second,
-		syncer:                syncable,
-	}
+	migrator := newMigratorForTest(t, true)
+	migrator.paused = true
+	syncable := migrator.syncer.(*fakeSyncable)
 
 	migrator.Continue(errors.New("random error"))
 
@@ -231,14 +228,11 @@ func TestContinue_InputError(t *testing.T) {
 func TestContinue_NoInputError(t *testing.T) {
 	t.Parallel()
 
-	syncable := &fakeSyncable{}
-	migrator := &Migrator{
-		enableDualStack:       true,
-		paused:                true,
-		migrationWaitDuration: 10 * time.Millisecond,
-		syncer:                syncable,
-		logger:                klog.Background(),
-	}
+	migrator := newMigratorForTest(t, true)
+	migrator.paused = true
+	migrator.clock = clock.RealClock{} // This test needs to run with a real clock.
+	migrator.migrationWaitDuration = 10 * time.Millisecond
+	syncable := migrator.syncer.(*fakeSyncable)
 
 	migrator.Continue(nil)
 
@@ -249,7 +243,7 @@ func TestContinue_NoInputError(t *testing.T) {
 	// Sleep until we can expect a sync.
 	time.Sleep(migrator.migrationWaitDuration)
 
-	if err := wait.PollImmediate(1*time.Second, migrator.migrationWaitDuration, func() (done bool, err error) {
+	if err := wait.PollImmediate(migrator.migrationWaitDuration/10, migrator.migrationWaitDuration, func() (done bool, err error) {
 		if syncable.syncCount == 0 {
 			return false, nil
 		}
@@ -269,22 +263,17 @@ func TestContinue_NoInputError(t *testing.T) {
 func TestContinue_NoInputError_MultipleInvocationsShouldSyncOnce(t *testing.T) {
 	t.Parallel()
 
-	syncable := &fakeSyncable{}
-	migrator := &Migrator{
-		enableDualStack:       true,
-		paused:                true,
-		migrationWaitDuration: 10 * time.Millisecond,
-		syncer:                syncable,
-		logger:                klog.Background(),
-	}
+	migrator := newMigratorForTest(t, true)
+	migrator.paused = true
+	syncable := migrator.syncer.(*fakeSyncable)
 
 	for i := 0; i < 10; i++ {
 		go migrator.Continue(nil)
 	}
 
-	// We wait for 3x time to ensure that if multiple Continues attempted to
+	// We wait for some time to ensure that if multiple Continues attempted to
 	// resync, atleast one of those go routines finished.
-	time.Sleep(3 * migrator.migrationWaitDuration)
+	time.Sleep(10 * time.Millisecond)
 	if syncable.syncCount != 1 {
 		t.Errorf("Continue(nil) triggered %v syncs; want exactly 1 sync", syncable.syncCount)
 	}
@@ -310,15 +299,10 @@ func (f *fakeErrorStateChecker) InErrorState() bool {
 func TestContinue_NoInputError_ShouldChangeTimeSincePreviousDetach(t *testing.T) {
 	t.Parallel()
 
-	syncable := &fakeSyncable{}
-
-	migrator := &Migrator{
-		enableDualStack:         true,
-		paused:                  true,
-		previousDetachThreshold: 20 * time.Millisecond,
-		syncer:                  syncable,
-		logger:                  klog.Background(),
-	}
+	migrator := newMigratorForTest(t, true)
+	migrator.paused = true
+	migrator.clock = clock.RealClock{} // This test needs to run with a real clock.
+	migrator.previousDetachThreshold = 20 * time.Millisecond
 
 	// Ensure that before Continue, tooLongSincePreviousDetach() returns true.
 	if !migrator.tooLongSincePreviousDetach() {
@@ -813,5 +797,7 @@ func cloneZoneNetworkEndpointsMap(m map[string]types.NetworkEndpointSet) map[str
 
 func newMigratorForTest(t *testing.T, enableDualStackNEG bool) *Migrator {
 	logger, _ := ktesting.NewTestContext(t)
-	return NewMigrator(enableDualStackNEG, &fakeSyncable{}, types.NegSyncerKey{}, metrics.FakeSyncerMetrics(), &fakeErrorStateChecker{}, logger)
+	m := NewMigrator(enableDualStackNEG, &fakeSyncable{}, types.NegSyncerKey{}, metrics.FakeSyncerMetrics(), &fakeErrorStateChecker{}, logger)
+	m.clock = clocktesting.NewFakeClock(time.Now())
+	return m
 }
