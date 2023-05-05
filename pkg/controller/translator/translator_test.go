@@ -1170,12 +1170,6 @@ func TestSetTrafficScaling(t *testing.T) {
 func TestSetEnableTHC(t *testing.T) {
 	// No t.Parallel()
 
-	oldFlag := flags.F.EnableBackendConfigHealthCheck
-	flags.F.EnableBackendConfigHealthCheck = true
-	defer func() {
-		flags.F.EnableBackendConfigHealthCheck = oldFlag
-	}()
-
 	newService := func(ann map[string]string) *apiv1.Service {
 		return &apiv1.Service{
 			ObjectMeta: metav1.ObjectMeta{Annotations: ann},

@@ -219,7 +219,7 @@ func (t *Translator) setEnableTHC(sp *utils.ServicePort, svc *api_v1.Service) {
 		return
 	}
 
-	if flags.F.EnableBackendConfigHealthCheck && sp.BackendConfig != nil && sp.BackendConfig.Spec.HealthCheck != nil {
+	if sp.BackendConfig != nil && sp.BackendConfig.Spec.HealthCheck != nil {
 		return
 	}
 
