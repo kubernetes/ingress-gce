@@ -20,8 +20,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/ingress-gce/cmd/check-gke-ingress/app/report"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -183,6 +185,83 @@ func TestCheckBackendConfigExistence(t *testing.T) {
 		_, res, _ := CheckBackendConfigExistence(tc.namespace, tc.name, "svc-1", client)
 		if res != tc.expect {
 			t.Errorf("For test case %q, expect check result = %s, but got %s", tc.desc, tc.expect, res)
+		}
+	}
+}
+
+func TestCheckHealthCheckConfig(t *testing.T) {
+
+	thirtyVar := int64(30)
+	twentyVar := int64(20)
+	for _, tc := range []struct {
+		desc   string
+		spec   beconfigv1.BackendConfigSpec
+		expect string
+	}{
+		{
+			desc: "TimeoutSec equals to CheckIntervalSec",
+			spec: beconfigv1.BackendConfigSpec{
+				HealthCheck: &beconfigv1.HealthCheckConfig{
+					CheckIntervalSec: &thirtyVar,
+					TimeoutSec:       &thirtyVar,
+				},
+			},
+			expect: report.Passed,
+		},
+		{
+			desc: "TimeoutSec smaller than CheckIntervalSec",
+			spec: beconfigv1.BackendConfigSpec{
+				HealthCheck: &beconfigv1.HealthCheckConfig{
+					CheckIntervalSec: &thirtyVar,
+					TimeoutSec:       &twentyVar,
+				},
+			},
+			expect: report.Passed,
+		},
+		{
+			desc: "TimeoutSec larger than CheckIntervalSec",
+			spec: beconfigv1.BackendConfigSpec{
+				HealthCheck: &beconfigv1.HealthCheckConfig{
+					CheckIntervalSec: &twentyVar,
+					TimeoutSec:       &thirtyVar,
+				},
+			},
+			expect: report.Failed,
+		},
+		{
+			desc:   "No healthCheck specified",
+			spec:   beconfigv1.BackendConfigSpec{},
+			expect: report.Skipped,
+		},
+		{
+			desc: "TimeoutSec not specified",
+			spec: beconfigv1.BackendConfigSpec{
+				HealthCheck: &beconfigv1.HealthCheckConfig{
+					CheckIntervalSec: &twentyVar,
+				},
+			},
+			expect: report.Skipped,
+		},
+		{
+			desc: "CheckIntervalSec not specified",
+			spec: beconfigv1.BackendConfigSpec{
+				HealthCheck: &beconfigv1.HealthCheckConfig{
+					TimeoutSec: &twentyVar,
+				},
+			},
+			expect: report.Skipped,
+		},
+	} {
+		beconfig := beconfigv1.BackendConfig{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "test",
+				Name:      "foo-beconfig",
+			},
+			Spec: tc.spec,
+		}
+		res, _ := CheckHealthCheckTimeout(&beconfig, "")
+		if diff := cmp.Diff(tc.expect, res); diff != "" {
+			t.Errorf("For test case %s,  (-want +got):\n%s", tc.desc, diff)
 		}
 	}
 }
