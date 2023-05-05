@@ -23,13 +23,29 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	kubeconfig  string
+	kubecontext string
+	namespace   string
+)
+
 var rootCmd = &cobra.Command{
 	Use:   "kubectl check-gke-ingress",
 	Short: "kubectl check-gke-ingress is a kubectl tool to check the correctness of ingress and ingress related resources.",
 	Long:  "kubectl check-gke-ingress is a kubectl tool to check the correctness of ingress and ingress related resources.",
 	Run: func(cmd *cobra.Command, args []string) {
+		if err := cmd.ParseFlags(args); err != nil {
+			fmt.Fprintf(os.Stderr, "Error parsing flags: %v", err)
+			os.Exit(1)
+		}
 		fmt.Println("Starting check-gke-ingress")
 	},
+}
+
+func init() {
+	rootCmd.PersistentFlags().StringVarP(&kubeconfig, "kubeconfig", "k", "", "path to the kubeconfig file for Kubernetes config")
+	rootCmd.PersistentFlags().StringVarP(&kubecontext, "context", "c", "", "context to use for Kubernetes config")
+	rootCmd.PersistentFlags().StringVarP(&namespace, "namespace", "n", "", "only check resources from this namespace")
 }
 
 // Execute is the primary entrypoint for this CLI
