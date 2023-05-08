@@ -538,21 +538,17 @@ func getSingletonHealthcheck(t *testing.T, c *gce.Cloud) *compute.HealthCheck {
 // Test changing the value of the flag EnableUpdateCustomHealthCheckDescription from false to true.
 func TestRolloutUpdateCustomHCDescription(t *testing.T) {
 	// No parallel() because we modify the value of the flags:
-	// - EnableBackendConfigHealthCheck,
 	// - EnableUpdateCustomHealthCheckDescription,
 	// - GKEClusterName.
 
 	testClusterValues := gce.DefaultTestClusterValues()
 
-	oldEnableBC := flags.F.EnableBackendConfigHealthCheck
 	oldUpdateDescription := flags.F.EnableUpdateCustomHealthCheckDescription
 	oldGKEClusterName := flags.F.GKEClusterName
-	flags.F.EnableBackendConfigHealthCheck = true
 	// Start with EnableUpdateCustomHealthCheckDescription = false.
 	flags.F.EnableUpdateCustomHealthCheckDescription = false
 	flags.F.GKEClusterName = testClusterValues.ClusterName
 	defer func() {
-		flags.F.EnableBackendConfigHealthCheck = oldEnableBC
 		flags.F.EnableUpdateCustomHealthCheckDescription = oldUpdateDescription
 		flags.F.GKEClusterName = oldGKEClusterName
 	}()
@@ -1124,16 +1120,12 @@ func setupMockUpdate(mock *cloud.MockGCE) {
 
 func TestSyncServicePort(t *testing.T) {
 	// No parallel() because we modify the value of the flags:
-	// - EnableBackendConfigHealthCheck,
 	// - EnableUpdateCustomHealthCheckDescription,
-	// - GKEClusterName.	oldEnableBC := flags.F.EnableBackendConfigHealthCheck
-	oldEnableBC := flags.F.EnableBackendConfigHealthCheck
-	flags.F.EnableBackendConfigHealthCheck = true
+	// - GKEClusterName.
 	oldUpdateDescription := flags.F.EnableUpdateCustomHealthCheckDescription
 	oldGKEClusterName := flags.F.GKEClusterName
 	flags.F.GKEClusterName = gce.DefaultTestClusterValues().ClusterName
 	defer func() {
-		flags.F.EnableBackendConfigHealthCheck = oldEnableBC
 		flags.F.EnableUpdateCustomHealthCheckDescription = oldUpdateDescription
 		flags.F.GKEClusterName = oldGKEClusterName
 	}()

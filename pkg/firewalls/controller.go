@@ -300,11 +300,9 @@ func (fwc *FirewallController) ilbFirewallSrcRange(gceIngresses []*v1.Ingress) (
 func (fwc *FirewallController) getCustomHealthCheckPorts(svcPorts []utils.ServicePort) []string {
 	var result []string
 
-	if flags.F.EnableBackendConfigHealthCheck {
-		for _, svcPort := range svcPorts {
-			if svcPort.BackendConfig != nil && svcPort.BackendConfig.Spec.HealthCheck != nil && svcPort.BackendConfig.Spec.HealthCheck.Port != nil {
-				result = append(result, strconv.FormatInt(*svcPort.BackendConfig.Spec.HealthCheck.Port, 10))
-			}
+	for _, svcPort := range svcPorts {
+		if svcPort.BackendConfig != nil && svcPort.BackendConfig.Spec.HealthCheck != nil && svcPort.BackendConfig.Spec.HealthCheck.Port != nil {
+			result = append(result, strconv.FormatInt(*svcPort.BackendConfig.Spec.HealthCheck.Port, 10))
 		}
 	}
 	if flags.F.EnableTransparentHealthChecks {

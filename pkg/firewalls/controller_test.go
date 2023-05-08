@@ -110,11 +110,8 @@ func TestFirewallCreateDelete(t *testing.T) {
 
 func TestGetCustomHealthCheckPorts(t *testing.T) {
 	// No t.Parallel().
-	oldBCHC := flags.F.EnableBackendConfigHealthCheck
 	oldTHC := flags.F.EnableTransparentHealthChecks
-	flags.F.EnableBackendConfigHealthCheck = true
 	defer func() {
-		flags.F.EnableBackendConfigHealthCheck = oldBCHC
 		flags.F.EnableTransparentHealthChecks = oldTHC
 	}()
 
