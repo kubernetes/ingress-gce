@@ -89,7 +89,7 @@ func (h *HealthChecks) new(sp utils.ServicePort) *translator.HealthCheck {
 	}
 	hc.Name = sp.BackendName()
 	hc.Service = h.getService(sp)
-	hc.SetHealthcheckInfo(h.generateHealthcheckInfo(sp, hc.ForILB))
+	hc.SetHealthcheckInfo(h.clusterInfo, h.generateServiceInfo(sp, hc.ForILB))
 	return hc
 }
 
@@ -114,17 +114,13 @@ func (h *HealthChecks) mainService(sp utils.ServicePort) types.NamespacedName {
 	return service
 }
 
-func (h *HealthChecks) generateHealthcheckInfo(sp utils.ServicePort, iLB bool) healthcheck.HealthcheckInfo {
+func (h *HealthChecks) generateServiceInfo(sp utils.ServicePort, iLB bool) healthcheck.ServiceInfo {
 	serviceInfo := healthcheck.ServiceInfo(h.defaultBackendSvc)
 	if sp.ID.Service.Name != "" {
 		serviceInfo = healthcheck.ServiceInfo(sp.ID.Service)
 	}
 
-	return healthcheck.HealthcheckInfo{
-		ClusterInfo:       h.clusterInfo,
-		ServiceInfo:       serviceInfo,
-		HealthcheckConfig: healthcheck.DefaultHC,
-	}
+	return serviceInfo
 }
 
 // SyncServicePort implements HealthChecker.
