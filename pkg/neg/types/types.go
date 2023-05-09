@@ -298,10 +298,7 @@ func (key NegSyncerKey) GetAPIVersion() meta.Version {
 		// testing -- in this case though, the actual differentiator between Alpha
 		// and other versions is NOT something that can (or rather should) be
 		// covered within unit tests.
-		//
-		// TODO(gauravkghildiyal): Start using Beta APIs once they have the
-		// necessary changes.
-		return meta.VersionAlpha
+		return meta.VersionBeta
 	}
 	switch key.NegType {
 	case NonGCPPrivateEndpointType:
