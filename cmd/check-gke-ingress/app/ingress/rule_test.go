@@ -23,7 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
-	"k8s.io/ingress-gce/cmd/gke-diagnoser/app/report"
+	"k8s.io/ingress-gce/cmd/check-gke-ingress/app/report"
 )
 
 func TestCheckServiceExistence(t *testing.T) {

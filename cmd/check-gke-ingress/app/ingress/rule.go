@@ -24,7 +24,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
-	"k8s.io/ingress-gce/cmd/gke-diagnoser/app/report"
+	"k8s.io/ingress-gce/cmd/check-gke-ingress/app/report"
 )
 
 func CheckServiceExistence(namespace, name string, client clientset.Interface) (*corev1.Service, string, string) {

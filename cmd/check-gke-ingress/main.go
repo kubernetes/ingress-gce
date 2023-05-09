@@ -17,7 +17,7 @@ limitations under the License.
 package main
 
 import (
-	cmd "k8s.io/ingress-gce/cmd/gke-diagnoser/app/command"
+	cmd "k8s.io/ingress-gce/cmd/check-gke-ingress/app/command"
 )
 
 func main() {
