@@ -20,32 +20,24 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-const (
-	endpointState      = "endpoint_state"
-	endpointSliceState = "endpoint_slice_state"
-
-	endpointStateKey      = "neg_sync_endpoint_state"
-	endpointSliceStateKey = "neg_sync_endpoint_slice_state"
-)
-
 var (
 	// syncerEndpointState tracks the count of endpoints in different states
 	syncerEndpointState = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Subsystem: negControllerSubsystem,
-			Name:      endpointStateKey,
+			Name:      "syncer_endpoint_state",
 			Help:      "Current count of endpoints in each state",
 		},
-		[]string{endpointState},
+		[]string{"state"},
 	)
 
 	// syncerEndpointSliceState tracks the count of endpoint slices in different states
 	syncerEndpointSliceState = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Subsystem: negControllerSubsystem,
-			Name:      endpointSliceStateKey,
+			Name:      "syncer_endpoint_slice_state",
 			Help:      "Current count of endpoint slices in each state",
 		},
-		[]string{endpointSliceState},
+		[]string{"state"},
 	)
 )

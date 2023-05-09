@@ -25,9 +25,6 @@ const (
 	syncResultLabel = "result"
 	syncResultKey   = "sync_result"
 
-	syncerStateLabel = "state"
-	syncerStateKey   = "syncer_state"
-
 	EPCountsDiffer           = "EndpointCountsDiffer"
 	EPNodeMissing            = "EndpointNodeMissing"
 	EPNodeNotFound           = "EndpointNodeNotFound"
@@ -58,14 +55,14 @@ var (
 		[]string{syncResultLabel},
 	)
 
-	// syncerSyncerState tracks the count of syncer in different states
-	syncerSyncerState = prometheus.NewGaugeVec(
+	// syncerState tracks the count of syncer in different states
+	syncerState = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Subsystem: negControllerSubsystem,
-			Name:      syncerStateKey,
+			Name:      "syncer_state",
 			Help:      "Current count of syncers in each state",
 		},
-		[]string{syncerStateLabel},
+		[]string{"state"},
 	)
 )
 
@@ -127,21 +124,21 @@ func (sc *syncerStateCount) inc(reason negtypes.Reason) {
 }
 
 func PublishSyncerStateMetrics(stateCount *syncerStateCount) {
-	syncerSyncerState.WithLabelValues(EPCountsDiffer).Set(float64(stateCount.epCountsDiffer))
-	syncerSyncerState.WithLabelValues(EPNodeMissing).Set(float64(stateCount.epNodeMissing))
-	syncerSyncerState.WithLabelValues(EPNodeNotFound).Set(float64(stateCount.epNodeNotFound))
-	syncerSyncerState.WithLabelValues(EPPodMissing).Set(float64(stateCount.epPodMissing))
-	syncerSyncerState.WithLabelValues(EPPodNotFound).Set(float64(stateCount.epPodNotFound))
-	syncerSyncerState.WithLabelValues(EPPodTypeAssertionFailed).Set(float64(stateCount.epPodTypeAssertionFailed))
-	syncerSyncerState.WithLabelValues(EPZoneMissing).Set(float64(stateCount.epZoneMissing))
-	syncerSyncerState.WithLabelValues(EPSEndpointCountZero).Set(float64(stateCount.epsEndpointCountZero))
-	syncerSyncerState.WithLabelValues(EPCalculationCountZero).Set(float64(stateCount.epCalculationCountZero))
-	syncerSyncerState.WithLabelValues(InvalidAPIResponse).Set(float64(stateCount.invalidAPIResponse))
-	syncerSyncerState.WithLabelValues(InvalidEPAttach).Set(float64(stateCount.invalidEPAttach))
-	syncerSyncerState.WithLabelValues(InvalidEPDetach).Set(float64(stateCount.invalidEPDetach))
-	syncerSyncerState.WithLabelValues(NegNotFound).Set(float64(stateCount.negNotFound))
-	syncerSyncerState.WithLabelValues(CurrentNegEPNotFound).Set(float64(stateCount.currentNegEPNotFound))
-	syncerSyncerState.WithLabelValues(EPSNotFound).Set(float64(stateCount.epsNotFound))
-	syncerSyncerState.WithLabelValues(OtherError).Set(float64(stateCount.otherError))
-	syncerSyncerState.WithLabelValues(Success).Set(float64(stateCount.success))
+	syncerState.WithLabelValues(EPCountsDiffer).Set(float64(stateCount.epCountsDiffer))
+	syncerState.WithLabelValues(EPNodeMissing).Set(float64(stateCount.epNodeMissing))
+	syncerState.WithLabelValues(EPNodeNotFound).Set(float64(stateCount.epNodeNotFound))
+	syncerState.WithLabelValues(EPPodMissing).Set(float64(stateCount.epPodMissing))
+	syncerState.WithLabelValues(EPPodNotFound).Set(float64(stateCount.epPodNotFound))
+	syncerState.WithLabelValues(EPPodTypeAssertionFailed).Set(float64(stateCount.epPodTypeAssertionFailed))
+	syncerState.WithLabelValues(EPZoneMissing).Set(float64(stateCount.epZoneMissing))
+	syncerState.WithLabelValues(EPSEndpointCountZero).Set(float64(stateCount.epsEndpointCountZero))
+	syncerState.WithLabelValues(EPCalculationCountZero).Set(float64(stateCount.epCalculationCountZero))
+	syncerState.WithLabelValues(InvalidAPIResponse).Set(float64(stateCount.invalidAPIResponse))
+	syncerState.WithLabelValues(InvalidEPAttach).Set(float64(stateCount.invalidEPAttach))
+	syncerState.WithLabelValues(InvalidEPDetach).Set(float64(stateCount.invalidEPDetach))
+	syncerState.WithLabelValues(NegNotFound).Set(float64(stateCount.negNotFound))
+	syncerState.WithLabelValues(CurrentNegEPNotFound).Set(float64(stateCount.currentNegEPNotFound))
+	syncerState.WithLabelValues(EPSNotFound).Set(float64(stateCount.epsNotFound))
+	syncerState.WithLabelValues(OtherError).Set(float64(stateCount.otherError))
+	syncerState.WithLabelValues(Success).Set(float64(stateCount.success))
 }
