@@ -24,6 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/ingress-gce/cmd/check-gke-ingress/app/report"
+	"k8s.io/ingress-gce/pkg/annotations"
 )
 
 func TestCheckServiceExistence(t *testing.T) {
@@ -66,6 +67,73 @@ func TestCheckServiceExistence(t *testing.T) {
 		},
 	} {
 		_, res, _ := CheckServiceExistence(tc.namespace, tc.name, client)
+		if res != tc.expect {
+			t.Errorf("For test case %q, expect check result = %s, but got %s", tc.desc, tc.expect, res)
+		}
+	}
+}
+
+func TestCheckBackendConfigAnnotation(t *testing.T) {
+	for _, tc := range []struct {
+		desc   string
+		svc    corev1.Service
+		expect string
+	}{
+		{
+			desc:   "empty input",
+			expect: report.Skipped,
+		},
+		{
+			desc: "service without beconfig annotation",
+			svc: corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-1",
+					Namespace: "test",
+				},
+			},
+			expect: report.Skipped,
+		},
+		{
+			desc: "service with beconfig annotation",
+			svc: corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-1",
+					Namespace: "test",
+					Annotations: map[string]string{
+						annotations.BackendConfigKey: `{"ports": {"port1": "beconfig"}}`,
+					},
+				},
+			},
+			expect: report.Passed,
+		},
+		{
+			desc: "service with malformed default field in beconfig annotation",
+			svc: corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-1",
+					Namespace: "test",
+					Annotations: map[string]string{
+						annotations.BackendConfigKey: `{"default": {"port1": "beconfig"}}`,
+					},
+				},
+			},
+			expect: report.Failed,
+		},
+		{
+			desc: "service with malformed ports field in beconfig annotation",
+			svc: corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-1",
+					Namespace: "test",
+					Annotations: map[string]string{
+						annotations.BackendConfigKey: `{"port1": "beconfig1", "port2": "beconfig2"}`,
+					},
+				},
+			},
+			expect: report.Failed,
+		},
+	} {
+		_, res, _ := CheckBackendConfigAnnotation(&tc.svc)
 		if res != tc.expect {
 			t.Errorf("For test case %q, expect check result = %s, but got %s", tc.desc, tc.expect, res)
 		}
