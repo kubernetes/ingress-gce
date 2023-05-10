@@ -235,7 +235,7 @@ func OverwriteWithTHC(hc *HealthCheck) {
 	hc.UnhealthyThreshold = defaultUnhealthyThreshold
 	hc.HealthyThreshold = thcHealthyThreshold
 	hc.Type = thcType
-	hc.Description = DescriptionForTransparentHealthChecks //TODO(DamianSawicki): JSONify.
+	hc.Description = DescriptionForTransparentHealthChecks
 	hc.PortSpecification = thcPortSpecification
 	hc.Port = THCPort
 	hc.RequestPath = thcRequestPath
