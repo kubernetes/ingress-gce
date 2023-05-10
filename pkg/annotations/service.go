@@ -334,8 +334,8 @@ func (svc *Service) NEGAnnotation() (*NegAnnotation, bool, error) {
 	return &res, true, nil
 }
 
-// ShouldEnableTHC returns true if a THC annotation is found and its value is true.
-func (svc *Service) ShouldEnableTHC() (bool, error) {
+// IsThcAnnotated returns true if a THC annotation is found and its value is true.
+func (svc *Service) IsThcAnnotated() (bool, error) {
 	var res THCAnnotation
 	annotation, ok := svc.v[THCAnnotationKey]
 	if !ok {

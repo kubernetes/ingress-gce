@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
@@ -209,7 +208,7 @@ func TestTranslateIngress(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
-			gotGCEURLMap, gotErrs := translator.TranslateIngress(tc.ing, defaultBackend.ID, defaultNamer)
+			gotGCEURLMap, gotErrs, _ := translator.TranslateIngress(tc.ing, defaultBackend.ID, defaultNamer)
 			if len(gotErrs) != tc.wantErrCount {
 				t.Errorf("%s: TranslateIngress() = _, %+v, want %v errs", tc.desc, gotErrs, tc.wantErrCount)
 			}
@@ -232,6 +231,7 @@ func TestGetServicePort(t *testing.T) {
 		wantPort    bool
 		params      getServicePortParams
 		wantedPort  apiv1.ServicePort
+		wantWarning bool
 	}{
 		{
 			desc: "clusterIP service",
@@ -342,6 +342,21 @@ func TestGetServicePort(t *testing.T) {
 			wantPort:   true,
 			wantedPort: apiv1.ServicePort{Name: "https", Port: 443, TargetPort: intstr.FromString("pod-https")},
 		},
+		{
+			annotations: map[string]string{annotations.THCAnnotationKey: `{"enabled":true}`},
+			desc:        "correct port spec THC annotation",
+			spec: apiv1.ServiceSpec{
+				Type: apiv1.ServiceTypeNodePort,
+				Ports: []apiv1.ServicePort{
+					{Name: "http", Port: 80, NodePort: 123, TargetPort: intstr.FromString("podport")},
+				},
+			},
+			id:          utils.ServicePortID{Port: v1.ServiceBackendPort{Number: 80}},
+			wantErr:     false,
+			wantPort:    true,
+			wantedPort:  apiv1.ServicePort{Name: "http", Port: 80, NodePort: 123, TargetPort: intstr.FromString("podport")},
+			wantWarning: true,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
@@ -354,7 +369,7 @@ func TestGetServicePort(t *testing.T) {
 			svcLister.Add(svc)
 			tc.id.Service = svcName
 
-			port, gotErr := translator.getServicePort(tc.id, &tc.params, defaultNamer)
+			port, gotErr, warning := translator.getServicePort(tc.id, &tc.params, defaultNamer)
 			if (gotErr != nil) != tc.wantErr {
 				t.Errorf("translator.getServicePort(%+v) = _, %v, want err? %v", tc.id, gotErr, tc.wantErr)
 			}
@@ -374,6 +389,9 @@ func TestGetServicePort(t *testing.T) {
 				if port.TargetPort != tc.wantedPort.TargetPort {
 					t.Errorf("Expected port.TargetPort %v, got %v", port.TargetPort, tc.wantedPort.TargetPort)
 				}
+			}
+			if tc.wantWarning && !warning {
+				t.Errorf("Expected warning %v, got warning %v.", tc.wantWarning, warning)
 			}
 		})
 	}
@@ -445,7 +463,7 @@ func TestGetServicePortWithBackendConfigEnabled(t *testing.T) {
 			svcLister.Add(svc)
 			backendConfigLister.Add(backendConfig)
 
-			port, gotErr := translator.getServicePort(tc.id, &tc.params, defaultNamer)
+			port, gotErr, _ := translator.getServicePort(tc.id, &tc.params, defaultNamer)
 			if (gotErr != nil) != tc.wantErr {
 				t.Errorf("%s: translator.getServicePort(%+v) = _, %v, want err? %v", tc.desc, tc.id, gotErr, tc.wantErr)
 			}
@@ -740,7 +758,7 @@ func TestPathValidation(t *testing.T) {
 		}
 		expectedGCEURLMap.HostRules = []utils.HostRule{{Hostname: hostname, Paths: expectedPathRules}}
 
-		gotGCEURLMap, gotErrs := translator.TranslateIngress(ing, defaultBackend.ID, defaultNamer)
+		gotGCEURLMap, gotErrs, _ := translator.TranslateIngress(ing, defaultBackend.ID, defaultNamer)
 		if tc.expectValid && len(gotErrs) > 0 {
 			t.Fatalf("%s: TranslateIngress() = _, %+v, want no errs", tc.desc, gotErrs)
 		} else if !tc.expectValid && len(gotErrs) == 0 {
@@ -1167,8 +1185,8 @@ func TestSetTrafficScaling(t *testing.T) {
 	}
 }
 
-func TestSetEnableTHC(t *testing.T) {
-	// No t.Parallel()
+func TestSetThcOptInOnSvc(t *testing.T) {
+	t.Parallel()
 
 	newService := func(ann map[string]string) *apiv1.Service {
 		return &apiv1.Service{
@@ -1177,13 +1195,11 @@ func TestSetEnableTHC(t *testing.T) {
 	}
 
 	type tc struct {
-		name        string
-		sp          *utils.ServicePort
-		svc         *apiv1.Service
-		enableTHC   bool
-		want        *utils.ServicePort
-		wantEvent   bool
-		eventPrefix string
+		name      string
+		sp        *utils.ServicePort
+		svc       *apiv1.Service
+		enableTHC bool
+		want      *utils.ServicePort
 	}
 
 	const (
@@ -1194,101 +1210,118 @@ func TestSetEnableTHC(t *testing.T) {
 	testCases := []*tc{
 		{
 			name:      "no settings flag disabled",
-			sp:        &utils.ServicePort{THCEnabled: true},
+			sp:        &utils.ServicePort{THCConfiguration: utils.THCConfiguration{THCOptInOnSvc: true}},
 			svc:       newService(map[string]string{}),
 			enableTHC: false,
-			want:      &utils.ServicePort{THCEnabled: false},
+			want:      &utils.ServicePort{THCConfiguration: utils.THCConfiguration{THCOptInOnSvc: false}},
 		},
 		{
 			name:      "no settings",
-			sp:        &utils.ServicePort{THCEnabled: true},
+			sp:        &utils.ServicePort{THCConfiguration: utils.THCConfiguration{THCOptInOnSvc: true}},
 			svc:       newService(map[string]string{}),
 			enableTHC: true,
-			want:      &utils.ServicePort{THCEnabled: false},
+			want:      &utils.ServicePort{THCConfiguration: utils.THCConfiguration{THCOptInOnSvc: false}},
 		},
 		{
 			name:      "annotation",
 			sp:        &utils.ServicePort{NEGEnabled: true},
 			svc:       newService(map[string]string{thcLabel: thcValue}),
 			enableTHC: true,
-			want:      &utils.ServicePort{NEGEnabled: true, THCEnabled: true},
+			want: &utils.ServicePort{NEGEnabled: true, THCConfiguration: utils.THCConfiguration{
+				THCOptInOnSvc: true,
+				THCEvents:     utils.THCEvents{THCConfigured: true},
+			}},
 		},
 		{
 			name:      "annotation flag disabled",
-			sp:        &utils.ServicePort{NEGEnabled: true, THCEnabled: true},
+			sp:        &utils.ServicePort{NEGEnabled: true, THCConfiguration: utils.THCConfiguration{THCOptInOnSvc: true}},
 			svc:       newService(map[string]string{thcLabel: thcValue}),
 			enableTHC: false,
-			want:      &utils.ServicePort{NEGEnabled: true, THCEnabled: false},
+			want: &utils.ServicePort{NEGEnabled: true, THCConfiguration: utils.THCConfiguration{
+				THCOptInOnSvc: false,
+				THCEvents:     utils.THCEvents{THCAnnotationWithoutFlag: true},
+			}},
 		},
 		{
-			name:        "annotation NEG disabled",
-			sp:          &utils.ServicePort{THCEnabled: true},
-			svc:         newService(map[string]string{thcLabel: thcValue}),
-			enableTHC:   true,
-			want:        &utils.ServicePort{THCEnabled: false},
-			wantEvent:   true,
-			eventPrefix: "Warning THCAnnotationWithoutNEG THC annotation present, but NEG is disabled. Will not enable Transparent Health Checks.",
+			name:      "annotation NEG disabled",
+			sp:        &utils.ServicePort{THCConfiguration: utils.THCConfiguration{THCOptInOnSvc: true}},
+			svc:       newService(map[string]string{thcLabel: thcValue}),
+			enableTHC: true,
+			want: &utils.ServicePort{THCConfiguration: utils.THCConfiguration{
+				THCOptInOnSvc: false,
+				THCEvents:     utils.THCEvents{THCAnnotationWithoutNEG: true},
+			}},
 		},
 		{
 			name:      "invalid annotation flag disabled",
-			sp:        &utils.ServicePort{NEGEnabled: true, THCEnabled: true},
+			sp:        &utils.ServicePort{NEGEnabled: true, THCConfiguration: utils.THCConfiguration{THCOptInOnSvc: true}},
 			svc:       newService(map[string]string{thcLabel: "random text"}),
 			enableTHC: false,
-			want:      &utils.ServicePort{NEGEnabled: true, THCEnabled: false},
+			want:      &utils.ServicePort{NEGEnabled: true, THCConfiguration: utils.THCConfiguration{THCOptInOnSvc: false}},
 		},
 		{
-			name:        "invalid annotation",
-			sp:          &utils.ServicePort{NEGEnabled: true, THCEnabled: true},
-			svc:         newService(map[string]string{thcLabel: "random text"}),
-			enableTHC:   true,
-			want:        &utils.ServicePort{NEGEnabled: true, THCEnabled: false},
-			wantEvent:   true,
-			eventPrefix: "Warning THCAnnotationParsingFailed Parsing THC annotation failed",
+			name: "invalid annotation",
+			sp: &utils.ServicePort{
+				NEGEnabled:       true,
+				THCConfiguration: utils.THCConfiguration{THCOptInOnSvc: true},
+			},
+			svc:       newService(map[string]string{thcLabel: "random text"}),
+			enableTHC: true,
+			want: &utils.ServicePort{
+				NEGEnabled:       true,
+				THCConfiguration: utils.THCConfiguration{THCOptInOnSvc: false},
+			},
 		},
 		{
-			name:      "annotation empty backendconfig",
-			sp:        &utils.ServicePort{BackendConfig: &backendconfig.BackendConfig{}, NEGEnabled: true, THCEnabled: false},
+			name: "annotation empty backendconfig",
+			sp: &utils.ServicePort{
+				BackendConfig:    &backendconfig.BackendConfig{},
+				NEGEnabled:       true,
+				THCConfiguration: utils.THCConfiguration{THCOptInOnSvc: false},
+			},
 			svc:       newService(map[string]string{thcLabel: thcValue}),
 			enableTHC: true,
-			want:      &utils.ServicePort{BackendConfig: &backendconfig.BackendConfig{}, NEGEnabled: true, THCEnabled: true},
+			want: &utils.ServicePort{
+				BackendConfig: &backendconfig.BackendConfig{},
+				NEGEnabled:    true,
+				THCConfiguration: utils.THCConfiguration{
+					THCOptInOnSvc: true,
+					THCEvents:     utils.THCEvents{THCConfigured: true},
+				},
+			},
 		},
 	}
 	BC := &backendconfig.BackendConfig{}
 	BC.Spec.HealthCheck = &backendconfig.HealthCheckConfig{}
 	testCases = append(testCases, &tc{
-		name:      "annotation backendconfig",
-		sp:        &utils.ServicePort{BackendConfig: BC, NEGEnabled: true, THCEnabled: true},
+		name: "annotation backendconfig",
+		sp: &utils.ServicePort{
+			BackendConfig:    BC,
+			NEGEnabled:       true,
+			THCConfiguration: utils.THCConfiguration{THCOptInOnSvc: true},
+		},
 		svc:       newService(map[string]string{thcLabel: thcValue}),
 		enableTHC: true,
-		want:      &utils.ServicePort{BackendConfig: BC, NEGEnabled: true, THCEnabled: false},
+		want: &utils.ServicePort{
+			BackendConfig: BC,
+			NEGEnabled:    true,
+			THCConfiguration: utils.THCConfiguration{
+				THCOptInOnSvc: false,
+				THCEvents:     utils.THCEvents{BackendConfigOverridesTHC: true},
+			},
+		},
 	})
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			translator := fakeTranslator()
-			bufferSize := 0
-			if tc.wantEvent {
-				bufferSize = 1
-			}
-			fakeSingletonRecorderGetter := healthchecks.NewFakeSingletonRecorderGetter(bufferSize)
-			translator.recorderGetter = fakeSingletonRecorderGetter
+			translator.recorderGetter = healthchecks.NewFakeRecorderGetter(0)
 			translator.enableTHC = tc.enableTHC
 			sp := *tc.sp
 
-			translator.setEnableTHC(&sp, tc.svc)
+			translator.setThcOptInOnSvc(&sp, tc.svc)
 			if !reflect.DeepEqual(&sp, tc.want) {
-				t.Errorf("setEnableTHC, %s\ngot %s,\nwant %s", tc.name, pretty.Sprint(&sp), pretty.Sprint(tc.want))
-			}
-			if tc.wantEvent {
-				fakeRecorder := fakeSingletonRecorderGetter.FakeRecorder()
-				select {
-				case output := <-fakeRecorder.Events:
-					if !strings.HasPrefix(output, tc.eventPrefix) {
-						t.Fatalf("Incorrect event emitted: %s.", output)
-					}
-				case <-time.After(10 * time.Second):
-					t.Fatalf("Timeout when expecting Event.")
-				}
+				t.Errorf("setThcOptInOnSvc, %s\ngot %s,\nwant %s", tc.name, pretty.Sprint(&sp), pretty.Sprint(tc.want))
 			}
 		})
 	}

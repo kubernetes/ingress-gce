@@ -206,50 +206,67 @@ func (t *Translator) maybeEnableBackendConfig(sp *utils.ServicePort, svc *api_v1
 	return nil
 }
 
-// setEnableTHC sets the THCEnabled for the service port as true or false depending on whether
+// setThcOptInOnSvc sets the THCOptInOnSvc for the service port as true or false depending on whether
 // Transparent Health Checks should be enabled.
-func (t *Translator) setEnableTHC(sp *utils.ServicePort, svc *api_v1.Service) {
-	THCEnabled := false
-	defer func() {
-		klog.Infof("Is THC enabled for the sevice %v with service port (%v, %v)? %v", svc.Name, sp.Port, sp.PortName, THCEnabled)
-		sp.THCEnabled = THCEnabled
-	}()
-
-	if !t.enableTHC {
-		return
-	}
-
-	if sp.BackendConfig != nil && sp.BackendConfig.Spec.HealthCheck != nil {
-		return
-	}
-
-	THCEnabled, err := annotations.FromService(svc).ShouldEnableTHC()
+func (t *Translator) setThcOptInOnSvc(sp *utils.ServicePort, svc *api_v1.Service) (flagWarning bool) {
+	thcOptIn, err := annotations.FromService(svc).IsThcAnnotated()
 	if err != nil {
-		message := fmt.Sprintf("Parsing THC annotation failed: %+v.", err)
-		t.recorderGetter.Recorder(sp.ID.Service.Namespace).Event(svc, api_v1.EventTypeWarning, "THCAnnotationParsingFailed", message)
-		klog.Warning(message)
+		klog.Warningf("Parsing THC annotation failed: %+v.", err)
+	}
+	if !thcOptIn {
+		sp.THCConfiguration.THCOptInOnSvc = false
+		klog.Infof("THCOptInOnSvc=%v for the sevice %v with service port (%v, %v).", sp.THCConfiguration.THCOptInOnSvc, svc.Name, sp.Port, sp.PortName)
+		return
 	}
 
-	if THCEnabled && !sp.NEGEnabled {
-		message := "THC annotation present, but NEG is disabled. Will not enable Transparent Health Checks."
-		t.recorderGetter.Recorder(sp.ID.Service.Namespace).Event(svc, api_v1.EventTypeWarning, "THCAnnotationWithoutNEG", message)
-		klog.Warning(message)
-		THCEnabled = false
+	// Feature flag for Transparent Health Checks not set.
+	if !t.enableTHC {
+		sp.THCConfiguration.THCEvents.THCAnnotationWithoutFlag = true
+		flagWarning = true
+
+		sp.THCConfiguration.THCOptInOnSvc = false
+		klog.Infof("THCOptInOnSvc=%v for the sevice %v with service port (%v, %v).", sp.THCConfiguration.THCOptInOnSvc, svc.Name, sp.Port, sp.PortName)
+		return
 	}
+
+	// There is a BackendConfig detailing the health check configuration for the service.
+	if sp.BackendConfig != nil && sp.BackendConfig.Spec.HealthCheck != nil {
+		sp.THCConfiguration.THCEvents.BackendConfigOverridesTHC = true
+
+		sp.THCConfiguration.THCOptInOnSvc = false
+		klog.Infof("THCOptInOnSvc=%v for the sevice %v with service port (%v, %v).", sp.THCConfiguration.THCOptInOnSvc, svc.Name, sp.Port, sp.PortName)
+		return
+	}
+
+	// THC works only with NEGs (not Instance Groups) and this is not a Service with NEG enabled.
+	if !sp.NEGEnabled {
+		sp.THCConfiguration.THCEvents.THCAnnotationWithoutNEG = true
+
+		sp.THCConfiguration.THCOptInOnSvc = false
+		klog.Infof("THCOptInOnSvc=%v for the sevice %v with service port (%v, %v).", sp.THCConfiguration.THCOptInOnSvc, svc.Name, sp.Port, sp.PortName)
+		return
+	}
+
+	sp.THCConfiguration.THCEvents.THCConfigured = true
+
+	sp.THCConfiguration.THCOptInOnSvc = true
+	klog.Infof("THCOptInOnSvc=%v for the sevice %v with service port (%v, %v).", sp.THCConfiguration.THCOptInOnSvc, svc.Name, sp.Port, sp.PortName)
+	return
 }
 
 // getServicePort looks in the svc store for a matching service:port,
 // and returns the nodeport.
-func (t *Translator) getServicePort(id utils.ServicePortID, params *getServicePortParams, namer namer_util.BackendNamer) (*utils.ServicePort, error) {
+// The returned bool indicates whether there is a warning being returned or not.
+func (t *Translator) getServicePort(id utils.ServicePortID, params *getServicePortParams, namer namer_util.BackendNamer) (*utils.ServicePort, error, bool) {
 	svc, err := t.getCachedService(id)
 	if err != nil {
-		return nil, err
+		return nil, err, false
 	}
 
 	port := ServicePort(*svc, id.Port)
 	if port == nil {
 		// This is a fatal error.
-		return nil, errors.ErrSvcPortNotFound{ServicePortID: id}
+		return nil, errors.ErrSvcPortNotFound{ServicePortID: id}, false
 	}
 
 	// We periodically add information to the ServicePort to ensure that we
@@ -265,31 +282,33 @@ func (t *Translator) getServicePort(id utils.ServicePortID, params *getServicePo
 	}
 
 	if err := maybeEnableNEG(svcPort, svc); err != nil {
-		return nil, err
+		return nil, err, false
 	}
 
 	if err := setAppProtocol(svcPort, svc, port); err != nil {
-		return svcPort, err
+		return svcPort, err, false
 	}
 
 	if flags.F.EnableTrafficScaling {
 		if err := setTrafficScaling(svcPort, svc); err != nil {
-			return nil, err
+			return nil, err, false
 		}
 	}
 
 	if err := t.maybeEnableBackendConfig(svcPort, svc, port); err != nil {
-		return svcPort, err
+		return svcPort, err, false
 	}
 
-	t.setEnableTHC(svcPort, svc)
+	flagWarning := t.setThcOptInOnSvc(svcPort, svc)
 
-	return svcPort, nil
+	return svcPort, nil, flagWarning
 }
 
 // TranslateIngress converts an Ingress into our internal UrlMap representation.
-func (t *Translator) TranslateIngress(ing *v1.Ingress, systemDefaultBackend utils.ServicePortID, namer namer_util.BackendNamer) (*utils.GCEURLMap, []error) {
+// The returned bool is for warnings (there is one type of warnings currently possible).
+func (t *Translator) TranslateIngress(ing *v1.Ingress, systemDefaultBackend utils.ServicePortID, namer namer_util.BackendNamer) (*utils.GCEURLMap, []error, bool) {
 	var errs []error
+	var warnings bool
 	urlMap := utils.NewGCEURLMap()
 
 	params := &getServicePortParams{}
@@ -308,7 +327,8 @@ func (t *Translator) TranslateIngress(ing *v1.Ingress, systemDefaultBackend util
 				errs = append(errs, err)
 				continue
 			}
-			svcPort, err := t.getServicePort(svcPortID, params, namer)
+			svcPort, err, warning := t.getServicePort(svcPortID, params, namer)
+			warnings = warnings || warning
 			if err != nil {
 				errs = append(errs, err)
 			}
@@ -342,26 +362,28 @@ func (t *Translator) TranslateIngress(ing *v1.Ingress, systemDefaultBackend util
 		svcPortID, err := utils.BackendToServicePortID(*ing.Spec.DefaultBackend, ing.Namespace)
 		if err != nil {
 			errs = append(errs, err)
-			return urlMap, errs
+			return urlMap, errs, warnings
 		}
-		svcPort, err := t.getServicePort(svcPortID, params, namer)
+		svcPort, err, warning := t.getServicePort(svcPortID, params, namer)
+		warnings = warnings || warning
 		if err == nil {
 			urlMap.DefaultBackend = svcPort
-			return urlMap, errs
+			return urlMap, errs, warnings
 		}
 
 		errs = append(errs, err)
-		return urlMap, errs
+		return urlMap, errs, warnings
 	}
 
-	svcPort, err := t.getServicePort(systemDefaultBackend, params, namer)
+	svcPort, err, warning := t.getServicePort(systemDefaultBackend, params, namer)
+	warnings = warnings || warning
 	if err == nil {
 		urlMap.DefaultBackend = svcPort
-		return urlMap, errs
+		return urlMap, errs, warnings
 	}
 
 	errs = append(errs, fmt.Errorf("failed to retrieve the system default backend service %q with port %q: %v", systemDefaultBackend.Service.String(), systemDefaultBackend.Port.String(), err))
-	return urlMap, errs
+	return urlMap, errs, warnings
 }
 
 // validateAndGetPaths will validate the path based on the specified path type and will return the

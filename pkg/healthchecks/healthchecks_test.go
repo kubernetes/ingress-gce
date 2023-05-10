@@ -108,7 +108,7 @@ func init() {
 							}
 						}
 						if thc {
-							sp.THCEnabled = true
+							sp.THCConfiguration.THCOptInOnSvc = true
 							if mode == "reg" { // No THC without NEG.
 								continue
 							}
@@ -158,7 +158,7 @@ func TestHealthCheckAdd(t *testing.T) {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
 
-	sp = &utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP, NEGEnabled: false, BackendNamer: testNamer, THCEnabled: true}
+	sp = &utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP, NEGEnabled: false, BackendNamer: testNamer, THCConfiguration: utils.THCConfiguration{THCOptInOnSvc: true}}
 	_, err = healthChecks.SyncServicePort(sp, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -198,7 +198,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 	}
 
 	// Enable Transparent Health Checks
-	sp = &utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP, NEGEnabled: false, BackendNamer: testNamer, THCEnabled: true}
+	sp = &utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP, NEGEnabled: false, BackendNamer: testNamer, THCConfiguration: utils.THCConfiguration{THCOptInOnSvc: true}}
 	_, err = healthChecks.SyncServicePort(sp, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -386,7 +386,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 
 	// Change to HTTPS
 	hc.Type = string(annotations.ProtocolHTTPS)
-	_, err = healthChecks.sync(hc, nil, false)
+	_, err = healthChecks.sync(hc, nil, utils.THCConfiguration{})
 	if err != nil {
 		t.Fatalf("unexpected err while syncing healthcheck, err %v", err)
 	}
@@ -404,7 +404,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 
 	// Change to HTTP2
 	hc.Type = string(annotations.ProtocolHTTP2)
-	_, err = healthChecks.sync(hc, nil, false)
+	_, err = healthChecks.sync(hc, nil, utils.THCConfiguration{})
 	if err != nil {
 		t.Fatalf("unexpected err while syncing healthcheck, err %v", err)
 	}
@@ -423,7 +423,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	// Change to NEG Health Check
 	hc.ForNEG = true
 	hc.PortSpecification = "USE_SERVING_PORT"
-	_, err = healthChecks.sync(hc, nil, false)
+	_, err = healthChecks.sync(hc, nil, utils.THCConfiguration{})
 
 	if err != nil {
 		t.Fatalf("unexpected err while syncing healthcheck, err %v", err)
@@ -444,7 +444,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	hc.Port = 3000
 	hc.PortSpecification = ""
 
-	_, err = healthChecks.sync(hc, nil, false)
+	_, err = healthChecks.sync(hc, nil, utils.THCConfiguration{})
 	if err != nil {
 		t.Fatalf("unexpected err while syncing healthcheck, err %v", err)
 	}
@@ -507,7 +507,7 @@ func TestEnableTHC(t *testing.T) {
 	translator.OverwriteWithTHC(hc)
 	hc.Name = oldName
 	// Enable Transparent Health Checks
-	_, err = healthChecks.sync(hc, nil, true)
+	_, err = healthChecks.sync(hc, nil, utils.THCConfiguration{THCOptInOnSvc: true})
 	if err != nil {
 		t.Fatalf("unexpected err while syncing healthcheck, err %v", err)
 	}
@@ -533,6 +533,67 @@ func getSingletonHealthcheck(t *testing.T, c *gce.Cloud) *compute.HealthCheck {
 		t.Fatalf("Got %d healthchecks, want 1\n%s", len(computeHCs), pretty.Sprint(computeHCs))
 	}
 	return utils.DeepCopyComputeHealthCheck(computeHCs[0]) // Make a copy to avoid reading an overwritten version later.
+}
+
+func TestNotifyAboutTHC(t *testing.T) {
+	t.Parallel()
+
+	testClusterValues := gce.DefaultTestClusterValues()
+	fakeGCE := gce.NewFakeGCECloud(testClusterValues)
+
+	fakeSingletonRecorderGetter := NewFakeSingletonRecorderGetter(10)
+	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, fakeSingletonRecorderGetter, NewFakeServiceGetter(), false)
+
+	hc := translator.DefaultHealthCheck(3000, annotations.ProtocolHTTP)
+	hc.Service = &v1.Service{}
+
+	type tc = struct {
+		wantTexts []string
+		events    utils.THCEvents
+	}
+
+	testCases := []tc{
+		{
+			wantTexts: []string{"Normal THCConfigured Transparent Health Check successfully configured."},
+			events:    utils.THCEvents{THCConfigured: true},
+		},
+		{
+			wantTexts: []string{"Warning BackendConfigOverridesTHC Both THC and BackendConfig annotations present and the BackendConfig has spec.healthCheck. The THC annotation will be ignored."},
+			events:    utils.THCEvents{BackendConfigOverridesTHC: true},
+		},
+		{
+			wantTexts: []string{"Warning THCAnnotationWithoutFlag THC annotation present, but the Transparent Health Checks feature is not enabled."},
+			events:    utils.THCEvents{THCAnnotationWithoutFlag: true},
+		},
+		{
+			wantTexts: []string{"Warning THCAnnotationWithoutFlag THC annotation present, but the Transparent Health Checks feature is not enabled."},
+			events:    utils.THCEvents{THCAnnotationWithoutFlag: true},
+		},
+		{
+			wantTexts: []string{"Warning THCAnnotationWithoutNEG THC annotation present, but NEG is disabled. Will not enable Transparent Health Checks."},
+			events:    utils.THCEvents{THCAnnotationWithoutNEG: true},
+		},
+	}
+
+	fakeRecorder := fakeSingletonRecorderGetter.FakeRecorder()
+	for _, tc := range testCases {
+		healthChecks.notifyAboutTHC(hc, tc.events)
+		for _, wantText := range tc.wantTexts {
+			select {
+			case output := <-fakeRecorder.Events:
+				if output != wantText {
+					t.Errorf("Incorrect event emitted on healthcheck update: %s.", output)
+				}
+			case <-time.After(10 * time.Second):
+				t.Fatalf("Timeout when expecting Event.")
+			}
+		}
+		select {
+		case output := <-fakeRecorder.Events:
+			t.Fatalf("Unexpected event: %s", output)
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
 }
 
 // Test changing the value of the flag EnableUpdateCustomHealthCheckDescription from false to true.
@@ -1586,7 +1647,7 @@ func TestSyncServicePort(t *testing.T) {
 		tc.updateHCDescription = true
 		tc.desc = tc.desc + " with updateHCDescription"
 		copyOfWant := *tc.wantComputeHC
-		if tc.sp.BackendConfig != nil || tc.sp.THCEnabled == true {
+		if tc.sp.BackendConfig != nil || tc.sp.THCConfiguration.THCOptInOnSvc == true {
 			config := healthcheck.TransparentHC
 			if tc.sp.BackendConfig != nil {
 				config = healthcheck.BackendConfigHC
