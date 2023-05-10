@@ -25,6 +25,8 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/ingress-gce/cmd/check-gke-ingress/app/report"
 	"k8s.io/ingress-gce/pkg/annotations"
+	beconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
+	fakebeconfig "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 )
 
 func TestCheckServiceExistence(t *testing.T) {
@@ -134,6 +136,51 @@ func TestCheckBackendConfigAnnotation(t *testing.T) {
 		},
 	} {
 		_, res, _ := CheckBackendConfigAnnotation(&tc.svc)
+		if res != tc.expect {
+			t.Errorf("For test case %q, expect check result = %s, but got %s", tc.desc, tc.expect, res)
+		}
+	}
+}
+
+func TestCheckBackendConfigExistence(t *testing.T) {
+	client := fakebeconfig.NewSimpleClientset()
+	client.CloudV1().BackendConfigs("test").Create(context.TODO(), &beconfigv1.BackendConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "test",
+			Name:      "foo-beconfig",
+		},
+	}, metav1.CreateOptions{})
+
+	for _, tc := range []struct {
+		desc      string
+		namespace string
+		name      string
+		expect    string
+	}{
+		{
+			desc:   "empty input",
+			expect: report.Failed,
+		},
+		{
+			desc:      "correct namespace and correct name",
+			namespace: "test",
+			name:      "foo-beconfig",
+			expect:    report.Passed,
+		},
+		{
+			desc:      "correct namespace and wrong name",
+			namespace: "test",
+			name:      "bar-beconfig",
+			expect:    report.Failed,
+		},
+		{
+			desc:      "wrong namespace and correct name",
+			namespace: "namespace2",
+			name:      "foo-beconfig",
+			expect:    report.Failed,
+		},
+	} {
+		_, res, _ := CheckBackendConfigExistence(tc.namespace, tc.name, "svc-1", client)
 		if res != tc.expect {
 			t.Errorf("For test case %q, expect check result = %s, but got %s", tc.desc, tc.expect, res)
 		}

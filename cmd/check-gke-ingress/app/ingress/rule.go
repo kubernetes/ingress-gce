@@ -27,6 +27,8 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/ingress-gce/cmd/check-gke-ingress/app/report"
 	"k8s.io/ingress-gce/pkg/annotations"
+	beconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
+	beconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 )
 
 func CheckServiceExistence(namespace, name string, client clientset.Interface) (*corev1.Service, string, string) {
@@ -63,4 +65,15 @@ func getBackendConfigAnnotation(svc *corev1.Service) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+func CheckBackendConfigExistence(ns string, beConfigName string, svcName string, client beconfigclient.Interface) (*beconfigv1.BackendConfig, string, string) {
+	beConfig, err := client.CloudV1().BackendConfigs(ns).Get(context.TODO(), beConfigName, metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, report.Failed, fmt.Sprintf("BackendConfig %s/%s in service %s/%s does not exist", ns, beConfigName, ns, svcName)
+		}
+		return nil, report.Failed, fmt.Sprintf("Failed to get backendConfig %s/%s in service %s/%s", ns, beConfigName, ns, svcName)
+	}
+	return beConfig, report.Passed, fmt.Sprintf("BackendConfig %s/%s in service %s/%s found", ns, beConfigName, ns, svcName)
 }
