@@ -17,7 +17,7 @@ steps:
   args: 
   - -c
   - |
-    VERBOSE="${VERBOSE}" make all-build
+    make all-build
 - name: gcr.io/k8s-staging-test-infra/gcb-docker-gcloud:v20230206-8160eea68e
   id: push-images
   waitFor: ["build-binaries"]
