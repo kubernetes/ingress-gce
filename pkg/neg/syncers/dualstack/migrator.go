@@ -60,6 +60,10 @@ type Migrator struct {
 	enableDualStack bool
 	// The NEG syncer which will be synced when Continue gets called.
 	syncer syncable
+	// The unique identifier of the syncer which is using this Migrator.
+	syncerKey types.NegSyncerKey
+	// metricsCollector is used for exporting metrics.
+	metricsCollector MetricsCollector
 
 	// mu protects paused, continueInProgress and previousDetach.
 	mu sync.Mutex
@@ -90,10 +94,16 @@ type syncable interface {
 	Sync() bool
 }
 
-func NewMigrator(enableDualStackNEG bool, syncer syncable, logger klog.Logger) *Migrator {
+type MetricsCollector interface {
+	CollectDualStackMigrationMetrics(key types.NegSyncerKey, committedEndpoints map[string]types.NetworkEndpointSet, migrationCount int)
+}
+
+func NewMigrator(enableDualStackNEG bool, syncer syncable, syncerKey types.NegSyncerKey, metricsCollector MetricsCollector, logger klog.Logger) *Migrator {
 	return &Migrator{
 		enableDualStack:                       enableDualStackNEG,
 		syncer:                                syncer,
+		syncerKey:                             syncerKey,
+		metricsCollector:                      metricsCollector,
 		migrationWaitDuration:                 defaultMigrationWaitDuration,
 		previousDetachThreshold:               defaultPreviousDetachThreshold,
 		fractionOfMigratingEndpoints:          defaultFractionOfMigratingEndpoints,
@@ -119,8 +129,10 @@ func (d *Migrator) Filter(addEndpoints, removeEndpoints, committedEndpoints map[
 	}
 
 	_, migrationEndpointsInRemoveSet := findAndFilterMigrationEndpoints(addEndpoints, removeEndpoints)
-
 	migrationCount := endpointsCount(migrationEndpointsInRemoveSet)
+
+	d.metricsCollector.CollectDualStackMigrationMetrics(d.syncerKey, committedEndpoints, migrationCount)
+
 	paused := d.isPaused()
 	if migrationCount == 0 || paused {
 		d.logger.V(2).Info("Not starting migration detachments", "migrationCount", migrationCount, "paused", paused)
