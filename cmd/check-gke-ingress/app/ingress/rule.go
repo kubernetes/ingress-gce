@@ -22,6 +22,7 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
@@ -81,6 +82,13 @@ func CheckHealthCheckTimeout(beConfig *beconfigv1.BackendConfig, svcName string)
 		return report.Failed, fmt.Sprintf("BackendConfig %s/%s in service %s/%s has healthcheck timeoutSec greater than checkIntervalSec", beConfig.Namespace, beConfig.Name, beConfig.Namespace, svcName)
 	}
 	return report.Passed, fmt.Sprintf("BackendConfig %s/%s in service %s/%s healthcheck configuration is valid", beConfig.Namespace, beConfig.Name, beConfig.Namespace, svcName)
+}
+
+func CheckIngressRule(ingressRule *networkingv1.IngressRule) (*networkingv1.HTTPIngressRuleValue, string, string) {
+	if ingressRule.HTTP == nil {
+		return nil, report.Failed, "IngressRule has no field `http`"
+	}
+	return ingressRule.HTTP, report.Passed, "IngressRule has field `http`"
 }
 
 // CheckFrontendConfigExistence checks whether a FrontendConfig exists.

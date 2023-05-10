@@ -22,6 +22,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"k8s.io/client-go/kubernetes/fake"
@@ -309,6 +310,43 @@ func TestCheckFrontendConfigExistence(t *testing.T) {
 		_, res, _ := CheckFrontendConfigExistence(tc.namespace, tc.name, client)
 		if res != tc.expect {
 			t.Errorf("For test case %q, expect check result = %s, but got %s", tc.desc, tc.expect, res)
+		}
+	}
+}
+
+func TestCheckIngressRule(t *testing.T) {
+
+	for _, tc := range []struct {
+		desc        string
+		ingressRule networkingv1.IngressRule
+		expect      string
+	}{
+		{
+			desc: "Ingress rule with http field",
+			ingressRule: networkingv1.IngressRule{
+				IngressRuleValue: networkingv1.IngressRuleValue{
+					HTTP: &networkingv1.HTTPIngressRuleValue{
+						Paths: []networkingv1.HTTPIngressPath{
+							{
+								Path: "/*",
+							},
+						},
+					},
+				},
+			},
+			expect: report.Passed,
+		},
+		{
+			desc: "Ingress rule without http field",
+			ingressRule: networkingv1.IngressRule{
+				IngressRuleValue: networkingv1.IngressRuleValue{},
+			},
+			expect: report.Failed,
+		},
+	} {
+		_, res, _ := CheckIngressRule(&tc.ingressRule)
+		if diff := cmp.Diff(tc.expect, res); diff != "" {
+			t.Errorf("For test case %s,  (-want +got):\n%s", tc.desc, diff)
 		}
 	}
 }
