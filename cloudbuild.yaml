@@ -10,14 +10,13 @@ steps:
   env:
   - DOCKER_CLI_EXPERIMENTAL=enabled
   - VERSION=$_PULL_BASE_REF
-  - ALL_ARCH="amd64 arm64"
   - VERBOSE=1
   - HOME=/root
   - USER=root
   args: 
   - -c
   - |
-    VERBOSE="${VERBOSE}" make all-build
+    make all-build ALL_ARCH="amd64 arm64"
 - name: gcr.io/k8s-staging-test-infra/gcb-docker-gcloud:v20230206-8160eea68e
   id: push-images
   waitFor: ["build-binaries"]
@@ -26,14 +25,13 @@ steps:
   - DOCKER_CLI_EXPERIMENTAL=enabled
   - REGISTRY="gcr.io/k8s-ingress-image-push"
   - VERSION=$_PULL_BASE_REF
-  - ALL_ARCH="amd64 arm64"
   - VERBOSE=1
   - HOME=/root
   - USER=root
   args:
   - -c
   - |
-    make all-push ALL_ARCH="${ALL_ARCH}"
+    make all-push ALL_ARCH="amd64 arm64"
 substitutions:
   _GIT_TAG: "12345"
   _PULL_BASE_REF: "main"
