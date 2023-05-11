@@ -527,3 +527,66 @@ func TestCheckL7ILBFrontendConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckL7ILBNegAnnotation(t *testing.T) {
+	for _, tc := range []struct {
+		desc   string
+		svc    corev1.Service
+		expect string
+	}{
+		{
+			desc: "Service without NEG annotation",
+			svc: corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-1",
+					Namespace: "test",
+				},
+			},
+			expect: report.Failed,
+		},
+		{
+			desc: "Service with invalid NEG annotation json",
+			svc: corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-1",
+					Namespace: "test",
+					Annotations: map[string]string{
+						annotations.NEGAnnotationKey: `{"ingress": true,}`,
+					},
+				},
+			},
+			expect: report.Failed,
+		},
+		{
+			desc: "Service with NEG annotation which does not have ingress key",
+			svc: corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-1",
+					Namespace: "test",
+					Annotations: map[string]string{
+						annotations.NEGAnnotationKey: `{"exposed_ports": {"80":{"name": "neg1"}}}`,
+					},
+				},
+			},
+			expect: report.Failed,
+		},
+		{
+			desc: "Service with correct NEG annotation",
+			svc: corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-1",
+					Namespace: "test",
+					Annotations: map[string]string{
+						annotations.NEGAnnotationKey: `{"ingress": true}`,
+					},
+				},
+			},
+			expect: report.Passed,
+		},
+	} {
+		res, _ := CheckL7ILBNegAnnotation(&tc.svc)
+		if res != tc.expect {
+			t.Errorf("For test case %q, expect check result = %s, but got %s", tc.desc, tc.expect, res)
+		}
+	}
+}
