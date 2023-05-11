@@ -144,6 +144,18 @@ func CheckAppProtocolAnnotation(svc *corev1.Service) (string, string) {
 	return report.Passed, fmt.Sprintf("AppProtocol annotation is valid in service %s/%s", svc.Namespace, svc.Name)
 }
 
+// CheckL7ILBFrontendConfig checks whether an internal ingress has a
+// frontendConfig. It will fail if an internal ingress has a frontendConfig.
+func CheckL7ILBFrontendConfig(ing *networkingv1.Ingress) (string, string) {
+	if !isL7ILB(ing) {
+		return report.Skipped, fmt.Sprintf("Ingress %s/%s is not for L7 internal load balancing", ing.Namespace, ing.Name)
+	}
+	if _, ok := getFrontendConfigAnnotation(ing); ok {
+		return report.Failed, fmt.Sprintf("Ingress %s/%s for L7 internal load balancing has a frontendConfig annotation", ing.Namespace, ing.Name)
+	}
+	return report.Passed, fmt.Sprintf("Ingress %s/%s for L7 internal load balancing does not have a frontendConfig annotation", ing.Namespace, ing.Name)
+}
+
 // getBackendConfigAnnotation gets the BackendConfig annotation from a service.
 func getBackendConfigAnnotation(svc *corev1.Service) (string, bool) {
 	for _, bcKey := range []string{annotations.BackendConfigKey, annotations.BetaBackendConfigKey} {
@@ -164,4 +176,26 @@ func getAppProtocolsAnnotation(svc *corev1.Service) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// isL7ILB whether an ingress is for internal load balancing.
+func isL7ILB(ing *networkingv1.Ingress) bool {
+	val, ok := ing.Annotations[annotations.IngressClassKey]
+	if !ok {
+		return false
+	}
+	if val != annotations.GceL7ILBIngressClass {
+		return false
+	}
+	return true
+}
+
+// getFrontendConfigAnnotation gets the frontendConfig annotation from an
+// ingress object.
+func getFrontendConfigAnnotation(ing *networkingv1.Ingress) (string, bool) {
+	val, ok := ing.ObjectMeta.Annotations[annotations.FrontendConfigKey]
+	if !ok {
+		return "", false
+	}
+	return val, true
 }
