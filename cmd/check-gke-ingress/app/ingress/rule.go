@@ -28,7 +28,9 @@ import (
 	"k8s.io/ingress-gce/cmd/check-gke-ingress/app/report"
 	"k8s.io/ingress-gce/pkg/annotations"
 	beconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
+	feconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	beconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
+	feconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 )
 
 func CheckServiceExistence(namespace, name string, client clientset.Interface) (*corev1.Service, string, string) {
@@ -81,6 +83,19 @@ func CheckHealthCheckTimeout(beConfig *beconfigv1.BackendConfig, svcName string)
 	return report.Passed, fmt.Sprintf("BackendConfig %s/%s in service %s/%s healthcheck configuration is valid", beConfig.Namespace, beConfig.Name, beConfig.Namespace, svcName)
 }
 
+// CheckFrontendConfigExistence checks whether a FrontendConfig exists.
+func CheckFrontendConfigExistence(namespace, name string, client feconfigclient.Interface) (*feconfigv1beta1.FrontendConfig, string, string) {
+	feConfig, err := client.NetworkingV1beta1().FrontendConfigs(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, report.Failed, fmt.Sprintf("FrontendConfig %s/%s does not exist", namespace, name)
+		}
+		return nil, report.Failed, fmt.Sprintf("Failed to get frontendConfig %s/%s", namespace, name)
+	}
+	return feConfig, report.Passed, fmt.Sprintf("FrontendConfig %s/%s found", namespace, name)
+}
+
+// getBackendConfigAnnotation gets the BackendConfig annotation from a service.
 func getBackendConfigAnnotation(svc *corev1.Service) (string, bool) {
 	for _, bcKey := range []string{annotations.BackendConfigKey, annotations.BetaBackendConfigKey} {
 		val, ok := svc.Annotations[bcKey]

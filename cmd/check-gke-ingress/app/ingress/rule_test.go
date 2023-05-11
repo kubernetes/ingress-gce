@@ -28,7 +28,9 @@ import (
 	"k8s.io/ingress-gce/cmd/check-gke-ingress/app/report"
 	"k8s.io/ingress-gce/pkg/annotations"
 	beconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
+	feconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	fakebeconfig "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
+	fakefeconfig "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned/fake"
 )
 
 func TestCheckServiceExistence(t *testing.T) {
@@ -262,6 +264,51 @@ func TestCheckHealthCheckConfig(t *testing.T) {
 		res, _ := CheckHealthCheckTimeout(&beconfig, "")
 		if diff := cmp.Diff(tc.expect, res); diff != "" {
 			t.Errorf("For test case %s,  (-want +got):\n%s", tc.desc, diff)
+		}
+	}
+}
+
+func TestCheckFrontendConfigExistence(t *testing.T) {
+	client := fakefeconfig.NewSimpleClientset()
+	client.NetworkingV1beta1().FrontendConfigs("test").Create(context.TODO(), &feconfigv1beta1.FrontendConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "test",
+			Name:      "foo-feconfig",
+		},
+	}, metav1.CreateOptions{})
+
+	for _, tc := range []struct {
+		desc      string
+		namespace string
+		name      string
+		expect    string
+	}{
+		{
+			desc:   "empty input",
+			expect: report.Failed,
+		},
+		{
+			desc:      "correct namespace and correct name",
+			namespace: "test",
+			name:      "foo-feconfig",
+			expect:    report.Passed,
+		},
+		{
+			desc:      "correct namespace and wrong name",
+			namespace: "test",
+			name:      "bar-feconfig",
+			expect:    report.Failed,
+		},
+		{
+			desc:      "wrong namespace and correct name",
+			namespace: "namespace2",
+			name:      "foo-feconfig",
+			expect:    report.Failed,
+		},
+	} {
+		_, res, _ := CheckFrontendConfigExistence(tc.namespace, tc.name, client)
+		if res != tc.expect {
+			t.Errorf("For test case %q, expect check result = %s, but got %s", tc.desc, tc.expect, res)
 		}
 	}
 }
