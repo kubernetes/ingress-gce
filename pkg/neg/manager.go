@@ -237,6 +237,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				manager.logger.WithValues("service", klog.KRef(syncerKey.Namespace, syncerKey.Name), "negName", syncerKey.NegName),
 				manager.enableDualStackNEG,
 				manager.syncerMetrics,
+				&portInfo.NetworkInfo,
 			)
 			syncer = negsyncer.NewTransactionSyncer(
 				syncerKey,

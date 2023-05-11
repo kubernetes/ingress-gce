@@ -27,6 +27,7 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/types"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
@@ -45,15 +46,17 @@ type LocalL4ILBEndpointsCalculator struct {
 	subsetSizeLimit int
 	svcId           string
 	logger          klog.Logger
+	networkInfo     *network.NetworkInfo
 }
 
-func NewLocalL4ILBEndpointsCalculator(nodeLister listers.NodeLister, zoneGetter types.ZoneGetter, svcId string, logger klog.Logger) *LocalL4ILBEndpointsCalculator {
+func NewLocalL4ILBEndpointsCalculator(nodeLister listers.NodeLister, zoneGetter types.ZoneGetter, svcId string, logger klog.Logger, networkInfo *network.NetworkInfo) *LocalL4ILBEndpointsCalculator {
 	return &LocalL4ILBEndpointsCalculator{
 		nodeLister:      nodeLister,
 		zoneGetter:      zoneGetter,
 		subsetSizeLimit: maxSubsetSizeLocal,
 		svcId:           svcId,
 		logger:          logger.WithName("LocalL4ILBEndpointsCalculator"),
+		networkInfo:     networkInfo,
 	}
 }
 
@@ -93,6 +96,10 @@ func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(eds []types.Endpoints
 				l.logger.Info("Dropping Node from subset since it is not a valid LB candidate", "nodeName", node.Name)
 				continue
 			}
+			if !l.networkInfo.IsNodeConnected(node) {
+				l.logger.Info("Node not connected to service network", "nodeName", node.Name, "network", l.networkInfo.K8sNetwork)
+				continue
+			}
 			zone, err := l.zoneGetter.GetZoneForNode(node.Name)
 			if err != nil {
 				l.logger.Error(err, "Unable to find zone for node, skipping", "nodeName", node.Name)
@@ -107,7 +114,7 @@ func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(eds []types.Endpoints
 	}
 	// Compute the networkEndpoints, with total endpoints count <= l.subsetSizeLimit
 	klog.V(2).Infof("Got zoneNodeMap as input for service", "zoneNodeMap", nodeMapToString(zoneNodeMap), "serviceID", l.svcId)
-	subsetMap, err := getSubsetPerZone(zoneNodeMap, l.subsetSizeLimit, l.svcId, currentMap, l.logger)
+	subsetMap, err := getSubsetPerZone(zoneNodeMap, l.subsetSizeLimit, l.svcId, currentMap, l.logger, l.networkInfo)
 	return subsetMap, nil, 0, err
 }
 
@@ -135,18 +142,21 @@ type ClusterL4ILBEndpointsCalculator struct {
 	// subsetSizeLimit is the max value of the subset size in this mode.
 	subsetSizeLimit int
 	// svcId is the unique identifier for the service, that is used as a salt when hashing nodenames.
-	svcId string
+	svcId       string
+	networkInfo *network.NetworkInfo
 
 	logger klog.Logger
 }
 
-func NewClusterL4ILBEndpointsCalculator(nodeLister listers.NodeLister, zoneGetter types.ZoneGetter, svcId string, logger klog.Logger) *ClusterL4ILBEndpointsCalculator {
+func NewClusterL4ILBEndpointsCalculator(nodeLister listers.NodeLister, zoneGetter types.ZoneGetter, svcId string, logger klog.Logger, networkInfo *network.NetworkInfo) *ClusterL4ILBEndpointsCalculator {
 	return &ClusterL4ILBEndpointsCalculator{
 		nodeLister:      nodeLister,
 		zoneGetter:      zoneGetter,
 		subsetSizeLimit: maxSubsetSizeDefault,
 		svcId:           svcId,
-		logger:          logger.WithName("ClusterL4ILBEndpointsCalculator")}
+		logger:          logger.WithName("ClusterL4ILBEndpointsCalculator"),
+		networkInfo:     networkInfo,
+	}
 }
 
 // Mode indicates the mode that the EndpointsCalculator is operating in.
@@ -161,6 +171,10 @@ func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpoints(_ []types.Endpoints
 
 	zoneNodeMap := make(map[string][]*v1.Node)
 	for _, node := range nodes {
+		if !l.networkInfo.IsNodeConnected(node) {
+			l.logger.Info("Node not connected to service network", "nodeName", node.Name, "network", l.networkInfo.K8sNetwork)
+			continue
+		}
 		zone, err := l.zoneGetter.GetZoneForNode(node.Name)
 		if err != nil {
 			l.logger.Error(err, "Unable to find zone for node skipping", "nodeName", node.Name)
@@ -170,7 +184,7 @@ func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpoints(_ []types.Endpoints
 	}
 	klog.V(2).Infof("Got zoneNodeMap as input for service", "zoneNodeMap", nodeMapToString(zoneNodeMap), "serviceID", l.svcId)
 	// Compute the networkEndpoints, with total endpoints <= l.subsetSizeLimit.
-	subsetMap, err := getSubsetPerZone(zoneNodeMap, l.subsetSizeLimit, l.svcId, currentMap, l.logger)
+	subsetMap, err := getSubsetPerZone(zoneNodeMap, l.subsetSizeLimit, l.svcId, currentMap, l.logger, l.networkInfo)
 	return subsetMap, nil, 0, err
 }
 

@@ -111,6 +111,7 @@ var (
 	}
 
 	defaultNetwork = &network.NetworkInfo{
+		IsDefault:  true,
 		K8sNetwork: "default",
 	}
 )
@@ -129,6 +130,8 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		testContext.NodeInformer,
 		testContext.EndpointSliceInformer,
 		testContext.SvcNegInformer,
+		testContext.NetworkInformer,
+		testContext.GKENetworkParamSetInformer,
 		func() bool { return true },
 		metrics.FakeControllerMetrics(),
 		testContext.L4Namer,

@@ -264,3 +264,11 @@ func (f *FakeNetworkEndpointGroupCloud) NetworkURL() string {
 func (f *FakeNetworkEndpointGroupCloud) SubnetworkURL() string {
 	return f.Subnetwork
 }
+
+func (f *FakeNetworkEndpointGroupCloud) NetworkProjectID() string {
+	return "test-network-project-id"
+}
+
+func (f *FakeNetworkEndpointGroupCloud) Region() string {
+	return "test-region"
+}

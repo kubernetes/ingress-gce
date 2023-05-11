@@ -357,6 +357,8 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		ctx.NodeInformer,
 		ctx.EndpointSliceInformer,
 		ctx.SvcNegInformer,
+		ctx.NetworkInformer,
+		ctx.GKENetworkParamsInformer,
 		ctx.HasSynced,
 		ctx.ControllerMetrics,
 		ctx.L4Namer,

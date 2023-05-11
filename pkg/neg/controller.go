@@ -73,6 +73,8 @@ type Controller struct {
 	hasSynced                   func() bool
 	ingressLister               cache.Indexer
 	serviceLister               cache.Indexer
+	networkLister               cache.Indexer
+	gkeNetworkParamSetLister    cache.Indexer
 	client                      kubernetes.Interface
 	defaultBackendService       utils.ServicePort
 	enableASM                   bool
@@ -116,6 +118,8 @@ func NewController(
 	nodeInformer cache.SharedIndexInformer,
 	endpointSliceInformer cache.SharedIndexInformer,
 	svcNegInformer cache.SharedIndexInformer,
+	networkInformer cache.SharedIndexInformer,
+	gkeNetworkParamSetInformer cache.SharedIndexInformer,
 	hasSynced func() bool,
 	controllerMetrics *usageMetrics.ControllerMetrics,
 	l4Namer namer2.L4ResourcesNamer,
@@ -192,29 +196,39 @@ func NewController(
 	}
 	manager.reflector = reflector
 
+	var networkIndexer cache.Indexer
+	if networkInformer != nil {
+		networkIndexer = networkInformer.GetIndexer()
+	}
+	var gkeNetworkParamSetIndexer cache.Indexer
+	if gkeNetworkParamSetInformer != nil {
+		gkeNetworkParamSetIndexer = gkeNetworkParamSetInformer.GetIndexer()
+	}
 	negController := &Controller{
-		client:                kubeClient,
-		manager:               manager,
-		resyncPeriod:          resyncPeriod,
-		gcPeriod:              gcPeriod,
-		recorder:              recorder,
-		zoneGetter:            zoneGetter,
-		cloud:                 cloud,
-		namer:                 namer,
-		l4Namer:               l4Namer,
-		defaultBackendService: defaultBackendService,
-		hasSynced:             hasSynced,
-		ingressLister:         ingressInformer.GetIndexer(),
-		serviceLister:         serviceInformer.GetIndexer(),
-		serviceQueue:          workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_service_queue"),
-		endpointQueue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_endpoint_queue"),
-		nodeQueue:             workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_node_queue"),
-		syncTracker:           utils.NewTimeTracker(),
-		reflector:             reflector,
-		usageCollector:        controllerMetrics,
-		syncerMetrics:         syncerMetrics,
-		runL4:                 runL4Controller,
-		logger:                logger,
+		client:                   kubeClient,
+		manager:                  manager,
+		resyncPeriod:             resyncPeriod,
+		gcPeriod:                 gcPeriod,
+		recorder:                 recorder,
+		zoneGetter:               zoneGetter,
+		cloud:                    cloud,
+		namer:                    namer,
+		l4Namer:                  l4Namer,
+		defaultBackendService:    defaultBackendService,
+		hasSynced:                hasSynced,
+		ingressLister:            ingressInformer.GetIndexer(),
+		serviceLister:            serviceInformer.GetIndexer(),
+		networkLister:            networkIndexer,
+		gkeNetworkParamSetLister: gkeNetworkParamSetIndexer,
+		serviceQueue:             workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_service_queue"),
+		endpointQueue:            workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_endpoint_queue"),
+		nodeQueue:                workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_node_queue"),
+		syncTracker:              utils.NewTimeTracker(),
+		reflector:                reflector,
+		usageCollector:           controllerMetrics,
+		syncerMetrics:            syncerMetrics,
+		runL4:                    runL4Controller,
+		logger:                   logger,
 	}
 	if runIngress {
 		ingressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -452,7 +466,7 @@ func (c *Controller) processService(key string) error {
 	}
 	negUsage := usageMetrics.NegServiceState{}
 	svcPortInfoMap := make(negtypes.PortInfoMap)
-	networkInfo, err := network.ServiceNetwork(service, c.cloud)
+	networkInfo, err := network.ServiceNetwork(service, c.networkLister, c.gkeNetworkParamSetLister, c.cloud, c.logger)
 	if err != nil {
 		return err
 	}
