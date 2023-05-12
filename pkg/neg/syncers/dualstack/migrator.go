@@ -64,6 +64,9 @@ type Migrator struct {
 	syncerKey types.NegSyncerKey
 	// metricsCollector is used for exporting metrics.
 	metricsCollector MetricsCollector
+	// errorStateChecker is used to check if the the transactionSyncer is in error
+	// state.
+	errorStateChecker errorStateChecker
 
 	// mu protects paused, continueInProgress and previousDetach.
 	mu sync.Mutex
@@ -94,16 +97,21 @@ type syncable interface {
 	Sync() bool
 }
 
+type errorStateChecker interface {
+	InErrorState() bool
+}
+
 type MetricsCollector interface {
 	CollectDualStackMigrationMetrics(key types.NegSyncerKey, committedEndpoints map[string]types.NetworkEndpointSet, migrationCount int)
 }
 
-func NewMigrator(enableDualStackNEG bool, syncer syncable, syncerKey types.NegSyncerKey, metricsCollector MetricsCollector, logger klog.Logger) *Migrator {
+func NewMigrator(enableDualStackNEG bool, syncer syncable, syncerKey types.NegSyncerKey, metricsCollector MetricsCollector, errorStateChecker errorStateChecker, logger klog.Logger) *Migrator {
 	return &Migrator{
 		enableDualStack:                       enableDualStackNEG,
 		syncer:                                syncer,
 		syncerKey:                             syncerKey,
 		metricsCollector:                      metricsCollector,
+		errorStateChecker:                     errorStateChecker,
 		migrationWaitDuration:                 defaultMigrationWaitDuration,
 		previousDetachThreshold:               defaultPreviousDetachThreshold,
 		fractionOfMigratingEndpoints:          defaultFractionOfMigratingEndpoints,
@@ -227,19 +235,26 @@ func (d *Migrator) isPaused() bool {
 //  3. If all zones have less than the desired number of endpoints, then all
 //     endpoints from the largest zone will be moved.
 //
-//  4. No endpoints will be moved if there are many endpoints waiting to be
+//  4. No endpoints will be moved if (1) there are many endpoints waiting to be
 //     attached (as determined by the manyEndpointsWaitingToBeAttached()
-//     function) AND the previous successful detach was quite recent (as
-//     determined by the tooLongSincePreviousDetach() function)
+//     function) AND (2) we are in degraded mode OR the previous successful
+//     detach was quite recent (as determined by the
+//     tooLongSincePreviousDetach() function)
 func (d *Migrator) calculateMigrationEndpointsToDetach(addEndpoints, removeEndpoints, committedEndpoints, migrationEndpoints map[string]types.NetworkEndpointSet) string {
 	addCount := endpointsCount(addEndpoints)
 	committedCount := endpointsCount(committedEndpoints)
 	migrationCount := endpointsCount(migrationEndpoints)
 
-	if d.manyEndpointsWaitingToBeAttached(addCount, committedCount, migrationCount) && !d.tooLongSincePreviousDetach() {
+	if d.manyEndpointsWaitingToBeAttached(addCount, committedCount, migrationCount) && (d.errorStateChecker.InErrorState() || !d.tooLongSincePreviousDetach()) {
 		d.logger.V(1).Info("Not starting migration detachments; Too many attachments are pending and the threshold for forceful detach hasn't been reached.",
-			"addCount", addCount, "committedCount", committedCount, "migrationCount", migrationCount, "fractionForPendingAttachmentThreshold", d.fractionForPendingAttachmentThreshold,
-			"previousDetach", d.previousDetach, "previousDetachThreshold", d.previousDetachThreshold)
+			"addCount", addCount,
+			"committedCount", committedCount,
+			"migrationCount", migrationCount,
+			"fractionForPendingAttachmentThreshold", d.fractionForPendingAttachmentThreshold,
+			"inErrorState", d.errorStateChecker.InErrorState(),
+			"previousDetach", d.previousDetach,
+			"previousDetachThreshold", d.previousDetachThreshold,
+		)
 		return ""
 	}
 

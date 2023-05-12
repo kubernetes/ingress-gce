@@ -179,7 +179,7 @@ func NewTransactionSyncer(
 	// transactionSyncer needs syncer interface for internals
 	ts.syncer = syncer
 	ts.retry = NewDelayRetryHandler(func() { syncer.Sync() }, NewExponentialBackendOffHandler(maxRetries, minRetryDelay, maxRetryDelay))
-	ts.dsMigrator = dualstack.NewMigrator(enableDualStackNEG, syncer, negSyncerKey, syncerMetrics, logger)
+	ts.dsMigrator = dualstack.NewMigrator(enableDualStackNEG, syncer, negSyncerKey, syncerMetrics, ts, logger)
 	return syncer
 }
 
@@ -360,6 +360,11 @@ func (s *transactionSyncer) getEndpointsCalculation(
 // syncLock must already be acquired before execution
 func (s *transactionSyncer) inErrorState() bool {
 	return s.errorState
+}
+
+// InErrorState is a wrapper for exporting inErrorState().
+func (s *transactionSyncer) InErrorState() bool {
+	return s.inErrorState()
 }
 
 // syncLock must already be acquired before execution
