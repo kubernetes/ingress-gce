@@ -14,30 +14,12 @@
 
 # Check End of Life Date wiki.debian.org/DebianReleases
 # and replace with a new one if needed
-FROM debian:11
+# debian_component_based google-cloud-cli image supports arm64/amd64 architectures
+# and has curl, gcloud, and ca-certificated preinstalled
+FROM gcr.io/google.com/cloudsdktool/google-cloud-cli:debian_component_based
 
 #ARG_ARCH & ARG_BIN are replaces with sed in build/rules.mk
 ADD bin/ARG_ARCH/ARG_BIN /ARG_BIN
-
-ARG CLOUD_SDK_VERSION="416.0.0"
-ENV CLOUD_SDK_VERSION=$CLOUD_SDK_VERSION
-ENV PATH /google-cloud-sdk/bin:$PATH
-
 COPY cmd/e2e-test/run.sh /run.sh
-
-# Get architecture for gcloud cli installation
-RUN if [ "ARG_ARCH" = "amd64" ]; \
-  then echo -n "x86_64" > /tmp/arch; \
-  else echo -n "arm" > /tmp/arch; fi;
-
-# Download Google Cloud GPG and install google-cloud-cli
-# See recommended instructions:
-# cloud.google.com/sdk/docs/install#installation_instructions
-RUN ARCH=`cat /tmp/arch` && \
-  apt-get update && \
-  apt-get install -y curl python apt-transport-https ca-certificates gnupg && \
-  curl -O https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-${CLOUD_SDK_VERSION}-linux-${ARCH}.tar.gz && \
-  tar xvf google-cloud-cli-${CLOUD_SDK_VERSION}-linux-${ARCH}.tar.gz && \
-  rm google-cloud-cli-${CLOUD_SDK_VERSION}-linux-${ARCH}.tar.gz 
 
 ENTRYPOINT ["/run.sh"]
