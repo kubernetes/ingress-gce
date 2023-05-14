@@ -13,7 +13,7 @@ require (
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.8.1
 	golang.org/x/oauth2 v0.6.0
-	google.golang.org/api v0.114.0
+	google.golang.org/api v0.122.0
 	istio.io/api v0.0.0-20190809125725-591cf32c1d0e
 	k8s.io/api v0.26.2
 	k8s.io/apiextensions-apiserver v0.26.1
