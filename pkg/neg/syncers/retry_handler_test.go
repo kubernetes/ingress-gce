@@ -60,9 +60,13 @@ func verifyRetryHandler(t *testing.T, expectCount int, helper *retryHandlerTestH
 
 func TestBackoffRetryHandler_Retry(t *testing.T) {
 	helper := &retryHandlerTestHelper{}
-	handler := NewDelayRetryHandler(helper.incrementCount, NewExponentialBackendOffHandler(testMaxRetries, smallTestRetryDelay, testMaxRetryDelay))
 	fakeClock := clocktesting.NewFakeClock(time.Now())
-	handler.clock = fakeClock
+	handler := &backoffRetryHandler{
+		retrying:  false,
+		clock:     fakeClock,
+		backoff:   NewExponentialBackoffHandler(testMaxRetries, smallTestRetryDelay, testMaxRetryDelay),
+		retryFunc: helper.incrementCount,
+	}
 	delay := smallTestRetryDelay
 
 	// Trigger 2 Retries and endpointSets one actual retry happens
