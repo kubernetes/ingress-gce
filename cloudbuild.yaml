@@ -13,6 +13,7 @@ steps:
   - VERBOSE=1
   - HOME=/root
   - USER=root
+  - GIT_COMMIT=e3901cd625d222a367c7bc27ee11fd5e105199c6
   args: 
   - -c
   - |
@@ -23,11 +24,12 @@ steps:
   entrypoint: bash
   env:
   - DOCKER_CLI_EXPERIMENTAL=enabled
-  - REGISTRY="gcr.io/k8s-ingress-image-push"
+  - REGISTRY="gcr.io/elinka-gke-dev"
   - VERSION=$_PULL_BASE_REF
   - VERBOSE=1
   - HOME=/root
   - USER=root
+  - GIT_COMMIT=e3901cd625d222a367c7bc27ee11fd5e105199c6
   args:
   - -c
   - |

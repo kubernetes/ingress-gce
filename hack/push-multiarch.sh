@@ -26,8 +26,8 @@ make build ALL_ARCH="${ALL_ARCH}" BINARIES="${BINARIES}"
 
 # To create cross compiled images
 echo "setting up docker buildx.."
-docker buildx install
-docker buildx create --use
+#docker buildx install
+#docker buildx create --driver-opt image=moby/buildkit:master
 
 for binary in ${BINARIES}
 do
@@ -38,8 +38,8 @@ do
         echo "building & pushing a docker image for ${binary} (${arch}).."
         # creates arch dependant dockerfiles for every binary
         sed                                     \
-            -e 's|ARG_ARCH|${arch}|g' \
-            -e 's|ARG_BIN|${binary}|g' \
+            -e "s|ARG_ARCH|${arch}|g" \
+            -e "s|ARG_BIN|${binary}|g" \
             Dockerfile.${binary} > .dockerfile-${arch}.${binary}
 
         # buildx builds and pushes images for any arch
@@ -47,12 +47,12 @@ do
         docker buildx build --platform=linux/$arch \
             -f .dockerfile-${arch}.${binary} \
             -t ${IMAGE_NAME}:${VERSION} --push .
-        docker pull ${IMAGE_NAME}:${VERSION}
+	docker manifest create --amend ${MULTIARCH_IMAGE}:${VERSION}  ${IMAGE_NAME}:${VERSION}
+	docker manifest annotate --arch $arch ${MULTIARCH_IMAGE}:${VERSION} ${IMAGE_NAME}:${VERSION}
         DOCKER_PARAMETERS="$DOCKER_PARAMETERS ${IMAGE_NAME}:${VERSION}"
     done
 
     echo "creating a multiatch manifest (${MULTIARCH_IMAGE}) from a list of images.."
-    docker buildx imagetools create -t "${MULTIARCH_IMAGE}:${VERSION}" ${DOCKER_PARAMETERS}
-
+    docker manifest push ${MULTIARCH_IMAGE}:${VERSION}
     echo "done, a result image: ${MULTIARCH_IMAGE}:${VERSION}." 
 done
