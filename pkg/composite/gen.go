@@ -447,6 +447,9 @@ type BackendService struct {
 	// This field is only allowed when the loadBalancingScheme of the
 	// backend service is INTERNAL_SELF_MANAGED.
 	MaxStreamDuration *Duration `json:"maxStreamDuration,omitempty"`
+	// Deployment metadata associated with the resource to be set by a GKE
+	// hub controller and read by the backend RCTH
+	Metadatas map[string]string `json:"metadatas,omitempty"`
 	// Name of the resource. Provided by the client when the resource is
 	// created. The name must be 1-63 characters long, and comply with
 	// RFC1035. Specifically, the name must be 1-63 characters long and
@@ -1277,10 +1280,11 @@ type ForwardingRule struct {
 	Name string `json:"name,omitempty"`
 	// This field is not used for external load balancing. For Internal
 	// TCP/UDP Load Balancing, this field identifies the network that the
-	// load balanced IP should belong to for this Forwarding Rule. If this
-	// field is not specified, the default network will be used. For Private
-	// Service Connect forwarding rules that forward traffic to Google APIs,
-	// a network must be provided.
+	// load balanced IP should belong to for this Forwarding Rule. If the
+	// subnetwork is specified, the network of the subnetwork will be used.
+	// If neither subnetwork nor this field is specified, the default
+	// network will be used. For Private Service Connect forwarding rules
+	// that forward traffic to Google APIs, a network must be provided.
 	Network string `json:"network,omitempty"`
 	// This signifies the networking tier used for configuring this load
 	// balancer and can only take the following values: PREMIUM, STANDARD.
@@ -3345,6 +3349,14 @@ type TargetHttpProxy struct {
 	// https://networkservices.googleapis.com/v1alpha1/projects/project/locations/ locationhttpFilters/httpFilter Only filters that handle outbound connection and stream events may be specified. These filters work in conjunction with a default set of HTTP filters that may already be configured by Traffic Director. Traffic Director will determine the final location of these filters within xDS configuration based on the name of the HTTP filter. If Traffic Director positions multiple filters at the same location, those filters will be in the same order as specified in this list. httpFilters only applies for loadbalancers with loadBalancingScheme set to INTERNAL_SELF_MANAGED. See ForwardingRule for more
 	// details.
 	HttpFilters []string `json:"httpFilters,omitempty"`
+	// Specifies how long to keep a connection open, after completing a
+	// response, while there is no matching traffic (in seconds). If an HTTP
+	// keep-alive is not specified, a default value (610 seconds) will be
+	// used. For Global external HTTP(S) load balancer, the minimum allowed
+	// value is 5 seconds and the maximum allowed value is 1200 seconds. For
+	// Global external HTTP(S) load balancer (classic), this option is not
+	// available publicly.
+	HttpKeepAliveTimeoutSec int64 `json:"httpKeepAliveTimeoutSec,omitempty"`
 	// [Output Only] The unique identifier for the resource. This identifier
 	// is defined by the server.
 	Id uint64 `json:"id,omitempty,string"`
@@ -3409,7 +3421,9 @@ type TargetHttpsProxy struct {
 	AuthorizationPolicy string `json:"authorizationPolicy,omitempty"`
 	// URL of a certificate map that identifies a certificate map associated
 	// with the given target proxy. This field can only be set for global
-	// target proxies. If set, sslCertificates will be ignored.
+	// target proxies. If set, sslCertificates will be ignored. Accepted
+	// format is //certificatemanager.googleapis.com/projects/{project
+	// }/locations/{location}/certificateMaps/{resourceName}.
 	CertificateMap string `json:"certificateMap,omitempty"`
 	// [Output Only] Creation timestamp in RFC3339 text format.
 	CreationTimestamp string `json:"creationTimestamp,omitempty"`
@@ -3429,6 +3443,14 @@ type TargetHttpsProxy struct {
 	// https://networkservices.googleapis.com/beta/projects/project/locations/ locationhttpFilters/httpFilter Only filters that handle outbound connection and stream events may be specified. These filters work in conjunction with a default set of HTTP filters that may already be configured by Traffic Director. Traffic Director will determine the final location of these filters within xDS configuration based on the name of the HTTP filter. If Traffic Director positions multiple filters at the same location, those filters will be in the same order as specified in this list. httpFilters only applies for loadbalancers with loadBalancingScheme set to INTERNAL_SELF_MANAGED. See ForwardingRule for more
 	// details.
 	HttpFilters []string `json:"httpFilters,omitempty"`
+	// Specifies how long to keep a connection open, after completing a
+	// response, while there is no matching traffic (in seconds). If an HTTP
+	// keep-alive is not specified, a default value (610 seconds) will be
+	// used. For Global external HTTP(S) load balancer, the minimum allowed
+	// value is 5 seconds and the maximum allowed value is 1200 seconds. For
+	// Global external HTTP(S) load balancer (classic), this option is not
+	// available publicly.
+	HttpKeepAliveTimeoutSec int64 `json:"httpKeepAliveTimeoutSec,omitempty"`
 	// [Output Only] The unique identifier for the resource. This identifier
 	// is defined by the server.
 	Id uint64 `json:"id,omitempty,string"`
@@ -3473,8 +3495,11 @@ type TargetHttpsProxy struct {
 	// resource that describes how the proxy should authenticate inbound
 	// traffic. serverTlsPolicy only applies to a global TargetHttpsProxy
 	// attached to globalForwardingRules with the loadBalancingScheme set to
-	// INTERNAL_SELF_MANAGED. If left blank, communications are not
-	// encrypted. Note: This field currently has no impact.
+	// INTERNAL_SELF_MANAGED or EXTERNAL or EXTERNAL_MANAGED. For details
+	// which ServerTlsPolicy resources are accepted with
+	// INTERNAL_SELF_MANAGED and which with EXTERNAL, EXTERNAL_MANAGED
+	// loadBalancingScheme consult ServerTlsPolicy documentation. If left
+	// blank, communications are not encrypted.
 	ServerTlsPolicy string `json:"serverTlsPolicy,omitempty"`
 	// URLs to SslCertificate resources that are used to authenticate
 	// connections between users and the load balancer. At least one SSL
