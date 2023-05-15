@@ -57,16 +57,6 @@ func CheckBackendConfigAnnotation(svc *corev1.Service) (*annotations.BackendConf
 	return beConfigs, report.Passed, fmt.Sprintf("BackendConfig annotation is valid in service %s/%s", svc.Namespace, svc.Name)
 }
 
-func getBackendConfigAnnotation(svc *corev1.Service) (string, bool) {
-	for _, bcKey := range []string{annotations.BackendConfigKey, annotations.BetaBackendConfigKey} {
-		val, ok := svc.Annotations[bcKey]
-		if ok {
-			return val, ok
-		}
-	}
-	return "", false
-}
-
 func CheckBackendConfigExistence(ns string, beConfigName string, svcName string, client beconfigclient.Interface) (*beconfigv1.BackendConfig, string, string) {
 	beConfig, err := client.CloudV1().BackendConfigs(ns).Get(context.TODO(), beConfigName, metav1.GetOptions{})
 	if err != nil {
@@ -76,4 +66,27 @@ func CheckBackendConfigExistence(ns string, beConfigName string, svcName string,
 		return nil, report.Failed, fmt.Sprintf("Failed to get backendConfig %s/%s in service %s/%s", ns, beConfigName, ns, svcName)
 	}
 	return beConfig, report.Passed, fmt.Sprintf("BackendConfig %s/%s in service %s/%s found", ns, beConfigName, ns, svcName)
+}
+
+func CheckHealthCheckTimeout(beConfig *beconfigv1.BackendConfig, svcName string) (string, string) {
+	if beConfig.Spec.HealthCheck == nil {
+		return report.Skipped, fmt.Sprintf("BackendConfig %s/%s in service %s/%s  does not have healthcheck specified", beConfig.Namespace, beConfig.Name, beConfig.Namespace, svcName)
+	}
+	if beConfig.Spec.HealthCheck.TimeoutSec == nil || beConfig.Spec.HealthCheck.CheckIntervalSec == nil {
+		return report.Skipped, fmt.Sprintf("BackendConfig %s/%s in service %s/%s does not have timeoutSec or checkIntervalSec specified", beConfig.Namespace, beConfig.Name, beConfig.Namespace, svcName)
+	}
+	if *beConfig.Spec.HealthCheck.TimeoutSec > *beConfig.Spec.HealthCheck.CheckIntervalSec {
+		return report.Failed, fmt.Sprintf("BackendConfig %s/%s in service %s/%s has healthcheck timeoutSec greater than checkIntervalSec", beConfig.Namespace, beConfig.Name, beConfig.Namespace, svcName)
+	}
+	return report.Passed, fmt.Sprintf("BackendConfig %s/%s in service %s/%s healthcheck configuration is valid", beConfig.Namespace, beConfig.Name, beConfig.Namespace, svcName)
+}
+
+func getBackendConfigAnnotation(svc *corev1.Service) (string, bool) {
+	for _, bcKey := range []string{annotations.BackendConfigKey, annotations.BetaBackendConfigKey} {
+		val, ok := svc.Annotations[bcKey]
+		if ok {
+			return val, ok
+		}
+	}
+	return "", false
 }
