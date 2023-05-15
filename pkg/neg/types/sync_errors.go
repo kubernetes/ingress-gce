@@ -186,13 +186,7 @@ func ClassifyError(err error) NegSyncError {
 			IsErrorState: false,
 		}
 	}
-	// unwrap error till we get NegSyncError, so we can check error state
-	for {
-		if syncErr, ok := err.(NegSyncError); ok {
-			return syncErr
-		}
-		err = errors.Unwrap(err)
-	}
+	return syncErrType
 }
 
 // ListErrorStates lists all error-state reasons.
