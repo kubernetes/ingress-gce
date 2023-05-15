@@ -24,6 +24,7 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/ingress-gce/pkg/backoff"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/klog/v2"
@@ -55,7 +56,7 @@ type syncer struct {
 	// sync signal and retry handling
 	syncCh  chan interface{}
 	clock   clock.Clock
-	backoff BackoffHandler
+	backoff backoff.BackoffHandler
 
 	logger klog.Logger
 }
@@ -69,7 +70,7 @@ func newSyncer(negSyncerKey negtypes.NegSyncerKey, serviceLister cache.Indexer, 
 		stopped:       true,
 		shuttingDown:  false,
 		clock:         clock.RealClock{},
-		backoff:       NewExponentialBackoffHandler(maxRetries, minRetryDelay, maxRetryDelay),
+		backoff:       backoff.NewExponentialBackoffHandler(maxRetries, minRetryDelay, maxRetryDelay),
 		logger:        logger,
 	}
 }
@@ -93,7 +94,7 @@ func (s *syncer) Start() error {
 				metrics.PublishNegControllerErrorCountMetrics(err, false)
 				delay, retryErr := s.backoff.NextDelay()
 				retryMsg := ""
-				if retryErr == ErrRetriesExceeded {
+				if retryErr == backoff.ErrRetriesExceeded {
 					retryMsg = "(will not retry)"
 				} else {
 					retryCh = s.clock.After(delay)
