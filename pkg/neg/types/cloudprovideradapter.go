@@ -112,3 +112,11 @@ func (a *cloudProviderAdapter) NetworkURL() string {
 func (a *cloudProviderAdapter) SubnetworkURL() string {
 	return a.subnetworkURL
 }
+
+func (a *cloudProviderAdapter) NetworkProjectID() string {
+	return a.c.NetworkProjectID()
+}
+
+func (a *cloudProviderAdapter) Region() string {
+	return a.c.Region()
+}

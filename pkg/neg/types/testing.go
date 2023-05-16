@@ -27,6 +27,9 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
+	netfake "k8s.io/cloud-provider-gcp/crd/client/network/clientset/versioned/fake"
+	informernetwork "k8s.io/cloud-provider-gcp/crd/client/network/informers/externalversions/network/v1"
+	informergkenetworkparamset "k8s.io/cloud-provider-gcp/crd/client/network/informers/externalversions/network/v1alpha1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	negfake "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
@@ -52,13 +55,15 @@ type TestContext struct {
 	NegNamer NetworkEndpointGroupNamer
 	L4Namer  namer.L4ResourcesNamer
 
-	IngressInformer       cache.SharedIndexInformer
-	PodInformer           cache.SharedIndexInformer
-	ServiceInformer       cache.SharedIndexInformer
-	NodeInformer          cache.SharedIndexInformer
-	EndpointInformer      cache.SharedIndexInformer
-	EndpointSliceInformer cache.SharedIndexInformer
-	SvcNegInformer        cache.SharedIndexInformer
+	IngressInformer            cache.SharedIndexInformer
+	PodInformer                cache.SharedIndexInformer
+	ServiceInformer            cache.SharedIndexInformer
+	NodeInformer               cache.SharedIndexInformer
+	EndpointInformer           cache.SharedIndexInformer
+	EndpointSliceInformer      cache.SharedIndexInformer
+	SvcNegInformer             cache.SharedIndexInformer
+	NetworkInformer            cache.SharedIndexInformer
+	GKENetworkParamSetInformer cache.SharedIndexInformer
 
 	KubeSystemUID      types.UID
 	ResyncPeriod       time.Duration
@@ -73,6 +78,7 @@ func NewTestContext() *TestContext {
 
 func NewTestContextWithKubeClient(kubeClient kubernetes.Interface) *TestContext {
 	negClient := negfake.NewSimpleClientset()
+	networkClient := netfake.NewSimpleClientset()
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	MockNetworkEndpointAPIs(fakeGCE)
 
@@ -80,21 +86,23 @@ func NewTestContextWithKubeClient(kubeClient kubernetes.Interface) *TestContext 
 	l4namer := namer.NewL4Namer(kubeSystemUID, clusterNamer)
 
 	return &TestContext{
-		KubeClient:            kubeClient,
-		SvcNegClient:          negClient,
-		Cloud:                 fakeGCE,
-		NegNamer:              clusterNamer,
-		L4Namer:               l4namer,
-		IngressInformer:       informernetworking.NewIngressInformer(kubeClient, namespace, resyncPeriod, utils.NewNamespaceIndexer()),
-		PodInformer:           informerv1.NewPodInformer(kubeClient, namespace, resyncPeriod, utils.NewNamespaceIndexer()),
-		ServiceInformer:       informerv1.NewServiceInformer(kubeClient, namespace, resyncPeriod, utils.NewNamespaceIndexer()),
-		EndpointInformer:      informerv1.NewEndpointsInformer(kubeClient, namespace, resyncPeriod, utils.NewNamespaceIndexer()),
-		EndpointSliceInformer: discoveryinformer.NewEndpointSliceInformer(kubeClient, namespace, resyncPeriod, utils.NewNamespaceIndexer()),
-		NodeInformer:          informerv1.NewNodeInformer(kubeClient, resyncPeriod, utils.NewNamespaceIndexer()),
-		SvcNegInformer:        informersvcneg.NewServiceNetworkEndpointGroupInformer(negClient, namespace, resyncPeriod, utils.NewNamespaceIndexer()),
-		KubeSystemUID:         kubeSystemUID,
-		ResyncPeriod:          resyncPeriod,
-		NumGCWorkers:          numGCWorkers,
-		EnableDualStackNEG:    false,
+		KubeClient:                 kubeClient,
+		SvcNegClient:               negClient,
+		Cloud:                      fakeGCE,
+		NegNamer:                   clusterNamer,
+		L4Namer:                    l4namer,
+		IngressInformer:            informernetworking.NewIngressInformer(kubeClient, namespace, resyncPeriod, utils.NewNamespaceIndexer()),
+		PodInformer:                informerv1.NewPodInformer(kubeClient, namespace, resyncPeriod, utils.NewNamespaceIndexer()),
+		ServiceInformer:            informerv1.NewServiceInformer(kubeClient, namespace, resyncPeriod, utils.NewNamespaceIndexer()),
+		EndpointInformer:           informerv1.NewEndpointsInformer(kubeClient, namespace, resyncPeriod, utils.NewNamespaceIndexer()),
+		EndpointSliceInformer:      discoveryinformer.NewEndpointSliceInformer(kubeClient, namespace, resyncPeriod, utils.NewNamespaceIndexer()),
+		NodeInformer:               informerv1.NewNodeInformer(kubeClient, resyncPeriod, utils.NewNamespaceIndexer()),
+		SvcNegInformer:             informersvcneg.NewServiceNetworkEndpointGroupInformer(negClient, namespace, resyncPeriod, utils.NewNamespaceIndexer()),
+		NetworkInformer:            informernetwork.NewNetworkInformer(networkClient, resyncPeriod, utils.NewNamespaceIndexer()),
+		GKENetworkParamSetInformer: informergkenetworkparamset.NewGKENetworkParamSetInformer(networkClient, resyncPeriod, utils.NewNamespaceIndexer()),
+		KubeSystemUID:              kubeSystemUID,
+		ResyncPeriod:               resyncPeriod,
+		NumGCWorkers:               numGCWorkers,
+		EnableDualStackNEG:         false,
 	}
 }

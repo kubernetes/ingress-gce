@@ -24,6 +24,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
@@ -158,7 +159,7 @@ func sortZones(nodesPerZone map[string][]*v1.Node) []ZoneInfo {
 //	Since the number of nodes will keep increasing in successive zones due to the sorting, even if fewer nodes were
 //	present in some zones, more nodes will be picked from other nodes, taking the total subset size to the given limit
 //	whenever possible.
-func getSubsetPerZone(nodesPerZone map[string][]*v1.Node, totalLimit int, svcID string, currentMap map[string]negtypes.NetworkEndpointSet, logger klog.Logger) (map[string]negtypes.NetworkEndpointSet, error) {
+func getSubsetPerZone(nodesPerZone map[string][]*v1.Node, totalLimit int, svcID string, currentMap map[string]negtypes.NetworkEndpointSet, logger klog.Logger, networkInfo *network.NetworkInfo) (map[string]negtypes.NetworkEndpointSet, error) {
 	result := make(map[string]negtypes.NetworkEndpointSet)
 	var currentList []negtypes.NetworkEndpoint
 
@@ -182,7 +183,13 @@ func getSubsetPerZone(nodesPerZone map[string][]*v1.Node, totalLimit int, svcID 
 		}
 		subset := pickSubsetsMinRemovals(nodesPerZone[zone.Name], svcID, subsetSize, currentList)
 		for _, node := range subset {
-			result[zone.Name].Insert(negtypes.NetworkEndpoint{Node: node.Name, IP: utils.GetNodePrimaryIP(node)})
+			var ip string
+			if !networkInfo.IsDefault {
+				ip = network.GetNodeIPForNetwork(node, networkInfo.K8sNetwork)
+			} else {
+				ip = utils.GetNodePrimaryIP(node)
+			}
+			result[zone.Name].Insert(negtypes.NetworkEndpoint{Node: node.Name, IP: ip})
 		}
 		totalLimit -= len(subset)
 		zonesRemaining--

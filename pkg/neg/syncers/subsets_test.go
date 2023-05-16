@@ -21,7 +21,9 @@ import (
 	"strings"
 	"testing"
 
+	networkv1 "k8s.io/cloud-provider-gcp/crd/apis/network/v1"
 	"k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/klog/v2"
 
 	v1 "k8s.io/api/core/v1"
@@ -189,7 +191,7 @@ func TestUnevenNodesInZones(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
-		subsetMap, err := getSubsetPerZone(tc.nodesMap, tc.subsetLimit, tc.svcKey, nil, klog.TODO())
+		subsetMap, err := getSubsetPerZone(tc.nodesMap, tc.subsetLimit, tc.svcKey, nil, klog.TODO(), &network.NetworkInfo{})
 		if err != nil {
 			t.Errorf("Failed to get subset for test '%s', err %v", tc.description, err)
 		}
@@ -211,12 +213,105 @@ func TestUnevenNodesInZones(t *testing.T) {
 	}
 }
 
+func TestGetSubsetPerZoneMultinetwork(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		description   string
+		nodesMap      map[string][]*v1.Node
+		svcKey        string
+		expectedCount int
+		// expectEmpty indicates that some zones can have empty subsets
+		expectEmpty      bool
+		networkInfo      network.NetworkInfo
+		expectedNodesMap map[string]map[string]string
+	}{
+		{
+			description: "Default network, gets primary interface",
+			nodesMap: map[string][]*v1.Node{
+				"zone1": {makeNodeWithNetwork(t, "n1_1", map[string]string{"net1": "172.168.1.1"}), makeNodeWithNetwork(t, "n1_2", map[string]string{"net1": "172.168.1.2", "net2": "192.168.1.2"})},
+				"zone2": {makeNodeWithNetwork(t, "n2_1", map[string]string{"net1": "172.168.2.1"}), makeNodeWithNetwork(t, "n2_2", map[string]string{"net1": "172.168.2.2"})},
+				"zone3": {makeNodeWithNetwork(t, "n3_1", map[string]string{"net1": "172.168.3.1", "net2": "192.168.3.1"})},
+			},
+			svcKey: "svc123",
+			// empty IPs since test can't get the primary IP
+			expectedNodesMap: map[string]map[string]string{
+				"zone1": {"n1_1": "", "n1_2": ""},
+				"zone2": {"n2_1": "", "n2_2": ""},
+				"zone3": {"n3_1": ""},
+			},
+		},
+		{
+			description: "non-default network IPs",
+			nodesMap: map[string][]*v1.Node{
+				"zone1": {makeNodeWithNetwork(t, "n1_1", map[string]string{"net1": "172.168.1.1"}), makeNodeWithNetwork(t, "n1_2", map[string]string{"net2": "192.168.1.2", "net1": "172.168.1.2"})},
+				"zone2": {makeNodeWithNetwork(t, "n2_1", map[string]string{"net1": "172.168.2.1"}), makeNodeWithNetwork(t, "n2_2", map[string]string{"net1": "172.168.2.2"})},
+				"zone3": {makeNodeWithNetwork(t, "n3_1", map[string]string{"net1": "172.168.3.1", "net2": "192.168.3.1"})},
+			},
+			svcKey: "svc123",
+			networkInfo: network.NetworkInfo{
+				IsDefault:  false,
+				K8sNetwork: "net1",
+			},
+			expectedNodesMap: map[string]map[string]string{
+				"zone1": {"n1_1": "172.168.1.1", "n1_2": "172.168.1.2"},
+				"zone2": {"n2_1": "172.168.2.1", "n2_2": "172.168.2.2"},
+				"zone3": {"n3_1": "172.168.3.1"},
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.description, func(t *testing.T) {
+			subsetMap, err := getSubsetPerZone(tc.nodesMap, maxSubsetSizeLocal, tc.svcKey, nil, klog.TODO(), &tc.networkInfo)
+			if err != nil {
+				t.Errorf("Failed to get subset for test '%s', err %v", tc.description, err)
+			}
+			for zone, wantNodesAndIPs := range tc.expectedNodesMap {
+
+				for node, ip := range wantNodesAndIPs {
+					if (!subsetMap[zone].Has(types.NetworkEndpoint{Node: node, IP: ip})) {
+						t.Errorf("node %s in zone %s was supposed to have IP %s but got zone endpoints %+v", node, zone, ip, subsetMap[zone])
+					}
+				}
+			}
+		})
+	}
+}
+
 func makeNodes(startIndex, count int) []*v1.Node {
 	nodes := []*v1.Node{}
 	for i := startIndex; i < startIndex+count; i++ {
 		nodes = append(nodes, &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("node%d", i)}})
 	}
 	return nodes
+}
+
+// makeNodeWithNetwork creates a node with multi-networking annotations
+// networksAndIPs param should contain a map of network names to the IPs of the interface
+// of that network.
+func makeNodeWithNetwork(t *testing.T, name string, networksAndIPs map[string]string) *v1.Node {
+	t.Helper()
+	node := &v1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        name,
+			Annotations: map[string]string{},
+		},
+	}
+	var northInterfaces networkv1.NorthInterfacesAnnotation
+	for netName, ip := range networksAndIPs {
+		northInterfaces = append(northInterfaces, networkv1.NorthInterface{
+			Network:   netName,
+			IpAddress: ip,
+		})
+
+	}
+	if len(northInterfaces) > 0 {
+		annotation, err := networkv1.MarshalNorthInterfacesAnnotation(northInterfaces)
+		if err != nil {
+			t.Errorf("could not create node annotations")
+		}
+		node.ObjectMeta.Annotations[networkv1.NorthInterfacesAnnotationKey] = annotation
+	}
+	return node
 }
 
 func TestNoRemovals(t *testing.T) {

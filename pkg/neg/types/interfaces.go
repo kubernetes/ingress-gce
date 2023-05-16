@@ -40,6 +40,8 @@ type NetworkEndpointGroupCloud interface {
 	ListNetworkEndpoints(name, zone string, showHealthStatus bool, version meta.Version) ([]*composite.NetworkEndpointWithHealthStatus, error)
 	NetworkURL() string
 	SubnetworkURL() string
+	NetworkProjectID() string
+	Region() string
 }
 
 // NetworkEndpointGroupNamer is an interface for generating network endpoint group name.

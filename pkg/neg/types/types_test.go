@@ -44,6 +44,7 @@ func TestPortInfoMapMerge(t *testing.T) {
 	namespace := "namespace"
 	name := "name"
 	defaultNetwork := &network.NetworkInfo{
+		IsDefault:     true,
 		NetworkURL:    "defaultNetwork",
 		SubnetworkURL: "defaultSubnetwork",
 	}
@@ -216,6 +217,7 @@ func TestPortInfoMapDifference(t *testing.T) {
 	namespace := "namespace"
 	name := "name"
 	defaultNetwork := &network.NetworkInfo{
+		IsDefault:     true,
 		NetworkURL:    "defaultNetwork",
 		SubnetworkURL: "defaultSubnetwork",
 	}
@@ -299,9 +301,9 @@ func TestPortInfoMapDifference(t *testing.T) {
 		},
 		{
 			"difference of two non-empty maps with different network",
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}), namer, false, nil, &network.NetworkInfo{IsNonDefault: true, NetworkURL: "nonDefault", SubnetworkURL: "nonDefault"}),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}), namer, false, nil, &network.NetworkInfo{IsDefault: false, NetworkURL: "nonDefault", SubnetworkURL: "nonDefault"}),
 			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}), namer, false, nil, defaultNetwork),
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}), namer, false, nil, &network.NetworkInfo{IsNonDefault: true, NetworkURL: "nonDefault", SubnetworkURL: "nonDefault"}),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}), namer, false, nil, &network.NetworkInfo{IsDefault: false, NetworkURL: "nonDefault", SubnetworkURL: "nonDefault"}),
 		},
 	}
 
@@ -358,6 +360,7 @@ func TestNegsWithReadinessGate(t *testing.T) {
 	namespace := "namespace"
 	name := "name"
 	defaultNetwork := &network.NetworkInfo{
+		IsDefault:     true,
 		NetworkURL:    "defaultNetwork",
 		SubnetworkURL: "defaultSubnetwork",
 	}
@@ -416,6 +419,7 @@ func TestCustomNamedNegs(t *testing.T) {
 		svcPortTuple1  = SvcPortTuple{Port: port1, TargetPort: targetPort1}
 		svcPortTuple2  = SvcPortTuple{Port: port2, TargetPort: targetPort2}
 		defaultNetwork = &network.NetworkInfo{
+			IsDefault:     true,
 			NetworkURL:    "defaultNetwork",
 			SubnetworkURL: "defaultSubnetwork",
 		}
@@ -707,6 +711,7 @@ func TestEndpointsDataFromEndpointSlicesNodeNameFromTopology(t *testing.T) {
 func TestEndpointsCalculatorMode(t *testing.T) {
 	testContext := NewTestContext()
 	defaultNetwork := &network.NetworkInfo{
+		IsDefault:     true,
 		NetworkURL:    "defaultNetwork",
 		SubnetworkURL: "defaultSubnetwork",
 	}

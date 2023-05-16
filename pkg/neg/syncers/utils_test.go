@@ -314,6 +314,7 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 		testSubnetwork       = cloud.ResourcePath("subnetwork", &meta.Key{Zone: testZone, Name: "test-subnetwork"})
 		testKubesystemUID    = "kube-system-uid"
 		testPort             = "80"
+		defaultNetwork       = network.NetworkInfo{IsDefault: true, K8sNetwork: "default"}
 	)
 
 	testCases := []struct {
@@ -333,6 +334,7 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 			networkEndpointType: negtypes.VmIpPortEndpointType,
 			expectedSubnetwork:  testSubnetwork,
 			apiVersion:          meta.VersionGA,
+			networkInfo:         defaultNetwork,
 		},
 		{
 			description:         "Create NEG of type NON_GCP_PRIVATE_IP_PORT",
@@ -341,6 +343,7 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 			networkEndpointType: negtypes.NonGCPPrivateEndpointType,
 			expectedSubnetwork:  "",
 			apiVersion:          meta.VersionGA,
+			networkInfo:         defaultNetwork,
 		},
 		{
 			description:         "Create NEG of type GCE_VM_IP",
@@ -349,6 +352,7 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 			networkEndpointType: negtypes.VmIpEndpointType,
 			expectedSubnetwork:  testSubnetwork,
 			apiVersion:          meta.VersionAlpha,
+			networkInfo:         defaultNetwork,
 		},
 		{
 			description:         "Create NEG of type GCE_VM_IP_PORT with Neg CRD",
@@ -357,6 +361,7 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 			networkEndpointType: negtypes.VmIpPortEndpointType,
 			expectedSubnetwork:  testSubnetwork,
 			apiVersion:          meta.VersionGA,
+			networkInfo:         defaultNetwork,
 		},
 		{
 			description:         "Create NEG of type NON_GCP_PRIVATE_IP_PORT with Neg CRD",
@@ -365,6 +370,7 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 			networkEndpointType: negtypes.NonGCPPrivateEndpointType,
 			expectedSubnetwork:  "",
 			apiVersion:          meta.VersionGA,
+			networkInfo:         defaultNetwork,
 		},
 		{
 			description:         "Create NEG of type GCE_VM_IP with Neg CRD",
@@ -373,6 +379,7 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 			networkEndpointType: negtypes.VmIpEndpointType,
 			expectedSubnetwork:  testSubnetwork,
 			apiVersion:          meta.VersionAlpha,
+			networkInfo:         defaultNetwork,
 		},
 		{
 			description:         "Create NEG of type GCE_VM_IP_PORT in alternate network",
@@ -383,7 +390,7 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 			expectedSubnetwork:  cloud.ResourcePath("subnetwork", &meta.Key{Zone: testZone, Name: "other-subnet"}),
 			apiVersion:          meta.VersionGA,
 			networkInfo: network.NetworkInfo{
-				IsNonDefault:  true,
+				IsDefault:     false,
 				K8sNetwork:    "other-network",
 				NetworkURL:    cloud.ResourcePath("network", &meta.Key{Name: "other-network"}),
 				SubnetworkURL: cloud.ResourcePath("subnetwork", &meta.Key{Zone: testZone, Name: "other-subnet"}),
@@ -393,7 +400,7 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.description, func(t *testing.T) {
 			fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
-			if !tc.networkInfo.IsNonDefault {
+			if tc.networkInfo.IsDefault {
 				tc.networkInfo.NetworkURL = fakeCloud.NetworkURL()
 				tc.networkInfo.SubnetworkURL = fakeCloud.SubnetworkURL()
 			}
