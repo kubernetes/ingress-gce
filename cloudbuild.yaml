@@ -5,25 +5,11 @@ options:
   machineType: E2_HIGHCPU_8
 steps:
 - name: gcr.io/k8s-staging-test-infra/gcb-docker-gcloud:v20230206-8160eea68e
-  id: build-binaries
-  entrypoint: bash
-  env:
-  - DOCKER_CLI_EXPERIMENTAL=enabled
-  - VERSION=$_PULL_BASE_REF
-  - VERBOSE=1
-  - HOME=/root
-  - USER=root
-  args: 
-  - -c
-  - |
-    make all-build ALL_ARCH="amd64 arm64"
-- name: gcr.io/k8s-staging-test-infra/gcb-docker-gcloud:v20230206-8160eea68e
   id: push-images
-  waitFor: ["build-binaries"]
   entrypoint: bash
   env:
   - DOCKER_CLI_EXPERIMENTAL=enabled
-  - REGISTRY="gcr.io/k8s-ingress-image-push"
+  - REGISTRY=gcr.io/k8s-ingress-image-push
   - VERSION=$_PULL_BASE_REF
   - VERBOSE=1
   - HOME=/root
@@ -31,7 +17,28 @@ steps:
   args:
   - -c
   - |
-    make all-push ALL_ARCH="amd64 arm64"
+    # Build and push every image except e2e-test 
+    make all-push ALL_ARCH="amd64 arm64" \
+      CONTAINER_BINARIES="glbc 404-server 404-server-with-metrics echo fuzzer"
+- name: gcr.io/k8s-staging-test-infra/gcb-docker-gcloud:v20230206-8160eea68e
+  id: push-e2e-test-image
+  entrypoint: bash
+  env:
+  - DOCKER_CLI_EXPERIMENTAL=enabled
+  - REGISTRY=gcr.io/k8s-ingress-image-push
+  - VERSION=$_PULL_BASE_REF
+  - VERBOSE=1
+  - HOME=/root
+  - USER=root
+  - BINARIES=e2e-test
+  args:
+  - -c
+  - |
+    # Build and push e2e-test image 
+    # This image is built separately because it has
+    # additional dependencies (curl, gcloud-cli), and
+    # requires `docker buildx` for multiarch building process
+    ./hack/push-multiarch.sh
 substitutions:
   _GIT_TAG: "12345"
   _PULL_BASE_REF: "main"
