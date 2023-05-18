@@ -17,12 +17,15 @@ limitations under the License.
 package types
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
+	"k8s.io/ingress-gce/pkg/utils"
 )
 
 const (
@@ -30,15 +33,15 @@ const (
 	aggregatedListZonalKeyPrefix = "zones"
 	// aggregatedListGlobalKey is the global key from AggregatedList
 	aggregatedListGlobalKey = "global"
+	negServiceName          = "NetworkEndpointGroups"
+	listNetworkEndpoints    = "ListNetworkEndpoints"
+	attachNetworkEndpoints  = "AttachNetworkEndpoints"
+	detachNetworkEndpoints  = "DetachNetworkEndpoints"
 )
 
 // NewAdapter takes a Cloud and returns a NetworkEndpointGroupCloud.
 func NewAdapter(g *gce.Cloud) NetworkEndpointGroupCloud {
-	return &cloudProviderAdapter{
-		c:             g,
-		networkURL:    g.NetworkURL(),
-		subnetworkURL: g.SubnetworkURL(),
-	}
+	return NewAdapterWithNetwork(g, g.NetworkURL(), g.SubnetworkURL())
 }
 
 func NewAdapterWithNetwork(g *gce.Cloud, network, subnetwork string) NetworkEndpointGroupCloud {
@@ -49,12 +52,28 @@ func NewAdapterWithNetwork(g *gce.Cloud, network, subnetwork string) NetworkEndp
 	}
 }
 
+// NewAdapterWithRateLimitSpecs takes a cloud and rate limit specs and returns a NetworkEndpointGroupCloud.
+func NewAdapterWithRateLimitSpecs(g *gce.Cloud, specs []string) NetworkEndpointGroupCloud {
+	strategyKeys := make(map[string]struct{})
+	for _, spec := range specs {
+		params := strings.Split(spec, ",")
+		strategyKeys[params[0]] = struct{}{}
+	}
+	return &cloudProviderAdapter{
+		c:             g,
+		networkURL:    g.NetworkURL(),
+		subnetworkURL: g.SubnetworkURL(),
+		strategyKeys:  strategyKeys,
+	}
+}
+
 // cloudProviderAdapter is a temporary shim to consolidate accesses to
 // Cloud and push them outside of this package.
 type cloudProviderAdapter struct {
 	c             *gce.Cloud
 	networkURL    string
 	subnetworkURL string
+	strategyKeys  map[string]struct{}
 }
 
 // GetNetworkEndpointGroup implements NetworkEndpointGroupCloud.
@@ -105,6 +124,10 @@ func (a cloudProviderAdapter) AttachNetworkEndpoints(name, zone string, endpoint
 	start := time.Now()
 	err := composite.AttachNetworkEndpoints(a.c, meta.ZonalKey(name, zone), version, req)
 	metrics.PublishGCERequestCountMetrics(start, metrics.AttachNERequest, err)
+	_, strategyUsed := a.strategyKeys[fmt.Sprintf("%s.%s.%s", version, negServiceName, attachNetworkEndpoints)]
+	if utils.IsQuotaExceededError(err) && strategyUsed {
+		err = &StrategyQuotaError{Err: err}
+	}
 	return err
 }
 
@@ -114,6 +137,10 @@ func (a *cloudProviderAdapter) DetachNetworkEndpoints(name, zone string, endpoin
 	start := time.Now()
 	err := composite.DetachNetworkEndpoints(a.c, meta.ZonalKey(name, zone), version, req)
 	metrics.PublishGCERequestCountMetrics(start, metrics.DetachNERequest, err)
+	_, strategyUsed := a.strategyKeys[fmt.Sprintf("%s.%s.%s", version, negServiceName, detachNetworkEndpoints)]
+	if utils.IsQuotaExceededError(err) && strategyUsed {
+		err = &StrategyQuotaError{Err: err}
+	}
 	return err
 }
 
@@ -128,6 +155,10 @@ func (a *cloudProviderAdapter) ListNetworkEndpoints(name, zone string, showHealt
 	req := &composite.NetworkEndpointGroupsListEndpointsRequest{HealthStatus: healthStatus}
 	start := time.Now()
 	networkEndpoints, err := composite.ListNetworkEndpoints(a.c, meta.ZonalKey(name, zone), version, req)
+	_, strategyUsed := a.strategyKeys[fmt.Sprintf("%s.%s.%s", version, negServiceName, listNetworkEndpoints)]
+	if utils.IsQuotaExceededError(err) && strategyUsed {
+		err = &StrategyQuotaError{Err: err}
+	}
 	metrics.PublishGCERequestCountMetrics(start, metricLabel, err)
 	return networkEndpoints, err
 }
