@@ -53,12 +53,16 @@ type strategyRateLimiter struct {
 	clock clock.Clock
 }
 
-// Accept blocks for the delay provided by the throttling.Strategy or until context.Done(). Key is ignored.
-func (rl *strategyRateLimiter) Accept(ctx context.Context, _ *cloud.RateLimitKey) error {
+// Accept blocks for the delay provided by the throttling.Strategy or until context.Done(), key is used for exporting metrics.
+func (rl *strategyRateLimiter) Accept(ctx context.Context, key *cloud.RateLimitKey) error {
+	lockStartTime := rl.clock.Now()
 	rl.lock.Lock()
 	defer rl.lock.Unlock()
+	lockLatency := rl.clock.Since(lockStartTime)
+	usedDelay := rl.strategy.Delay()
+	metrics.PublishStrategyMetrics(rateLimitKeyToString(key), usedDelay, lockLatency)
 	select {
-	case <-rl.clock.After(rl.strategy.Delay()):
+	case <-rl.clock.After(usedDelay):
 		break
 	case <-ctx.Done():
 		return ctx.Err()
@@ -127,7 +131,9 @@ func NewGCERateLimiter(specs []string, operationPollInterval time.Duration) (*GC
 // Then it looks up the associated flowcontrol.RateLimiter (if exists) and waits on it.
 func (grl *GCERateLimiter) Accept(ctx context.Context, key *cloud.RateLimitKey) error {
 	if strategyRL := grl.strategyRLs[rateLimitKeyWithoutProject(key)]; strategyRL != nil {
+		start := time.Now()
 		err := strategyRL.Accept(ctx, key)
+		metrics.PublishStrategyRateLimiterLatencyMetrics(rateLimitKeyToString(key), start)
 		if err != nil {
 			return err
 		}
@@ -157,15 +163,20 @@ func (grl *GCERateLimiter) Accept(ctx context.Context, key *cloud.RateLimitKey) 
 
 	start := time.Now()
 	err := rl.Accept(ctx, key)
-	metrics.PublishRateLimiterMetrics(fmt.Sprintf("%s.%s.%s", key.Version, key.Service, key.Operation), start)
+	metrics.PublishRateLimiterMetrics(rateLimitKeyToString(key), start)
 	return err
 }
 
 // Observe looks up the associated strategyRateLimiter (if exists) and passes an error there to observe.
 func (grl *GCERateLimiter) Observe(ctx context.Context, err error, key *cloud.RateLimitKey) {
+	metrics.PublishErrorRateLimiterMetrics(rateLimitKeyToString(key), err)
 	if rl := grl.strategyRLs[rateLimitKeyWithoutProject(key)]; rl != nil {
 		rl.Observe(ctx, err, key)
 	}
+}
+
+func rateLimitKeyToString(key *cloud.RateLimitKey) string {
+	return fmt.Sprintf("%s.%s.%s", key.Version, key.Service, key.Operation)
 }
 
 // rateLimitKeyWithoutProject returns a copy without ProjectID
