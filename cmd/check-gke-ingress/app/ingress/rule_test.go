@@ -393,3 +393,83 @@ func TestCheckRuleHostOverwrite(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckAppProtocolAnnotation(t *testing.T) {
+	for _, tc := range []struct {
+		desc   string
+		svc    corev1.Service
+		expect string
+	}{
+		{
+			desc:   "empty input",
+			expect: report.Skipped,
+		},
+		{
+			desc: "service without AppProtocol annotation",
+			svc: corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-1",
+					Namespace: "test",
+				},
+			},
+			expect: report.Skipped,
+		},
+		{
+			desc: "service with valid AppProtocol annotation",
+			svc: corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-1",
+					Namespace: "test",
+					Annotations: map[string]string{
+						annotations.GoogleServiceApplicationProtocolKey: `{"port1": "HTTP", "port2": "HTTPS"}`,
+					},
+				},
+			},
+			expect: report.Passed,
+		},
+		{
+			desc: "service with invalid AppProtocol annotation format",
+			svc: corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-1",
+					Namespace: "test",
+					Annotations: map[string]string{
+						annotations.GoogleServiceApplicationProtocolKey: `{"port1": ["HTTP", "port2", "HTTPS"]}`,
+					},
+				},
+			},
+			expect: report.Failed,
+		},
+		{
+			desc: "service with invalid malformed AppProtocol annotation",
+			svc: corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-1",
+					Namespace: "test",
+					Annotations: map[string]string{
+						annotations.GoogleServiceApplicationProtocolKey: "{port1: HTTP, port2: HTTPS}",
+					},
+				},
+			},
+			expect: report.Failed,
+		},
+		{
+			desc: "service with invalid AppProtocol annotation value",
+			svc: corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-1",
+					Namespace: "test",
+					Annotations: map[string]string{
+						annotations.GoogleServiceApplicationProtocolKey: `{"port1": "HTTP", "port2": "HTTP3"}`,
+					},
+				},
+			},
+			expect: report.Failed,
+		},
+	} {
+		res, _ := CheckAppProtocolAnnotation(&tc.svc)
+		if res != tc.expect {
+			t.Errorf("For test case %q, expect check result = %s, but got %s", tc.desc, tc.expect, res)
+		}
+	}
+}
