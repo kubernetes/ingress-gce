@@ -17,6 +17,10 @@ set -o errexit
 set -o nounset
 set -o pipefail
 set -o xtrace
+
+# docker buildx is in /root/.docker/cli-plugins/docker-buildx
+HOME=/root
+
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd ${REPO_ROOT}
 
@@ -40,27 +44,14 @@ docker buildx create --use
 
 for binary in ${BINARIES}
 do
-    MULTIARCH_IMAGE="${REGISTRY}/ingress-gce-${binary}"
-    MANIFEST_PARAMETERS=""
-    for arch in ${ALL_ARCH}
-    do
-        echo "building  pushing a docker image for $binary and $arch.."
-        # creates arch dependant dockerfiles for every binary
-        sed                                     \
-            -e "s|ARG_ARCH|${arch}|g" \
-            -e "s|ARG_BIN|${binary}|g" \
-            "Dockerfile.${binary}" > ".dockerfile-${arch}.${binary}"
-
-        # buildx builds and pushes images for any arch
-        IMAGE_NAME="${REGISTRY}/ingress-gce-${binary}-$arch"
-        docker buildx build --platform=linux/$arch \
-            -f ".dockerfile-${arch}.${binary}" \
-            -t "${IMAGE_NAME}:${VERSION}" --push .
-        MANIFEST_PARAMETERS="$MANIFEST_PARAMETERS ${IMAGE_NAME}:${VERSION}"
-    done
-
-    echo "creating a multiatch manifest $MULTIARCH_IMAGE from a list of images.."
-    docker manifest create ${MULTIARCH_IMAGE}:${VERSION} ${MANIFEST_PARAMETERS}
-    docker manifest push ${MULTIARCH_IMAGE}:${VERSION}
-    echo "done, pushed $MULTIARCH_IMAGE:$VERSION image"
+    # "arm64 amd64" ---> "linux/arm64,linux/amd64" 
+    PLATFORMS="linux/$(echo ${ALL_ARCH} | sed 's~ ~,linux/~g')"
+    echo "docker buildx platform parameters: ${PLATFORMS}"
+    MULTIARCH_IMAGE="${REGISTRY}/ingress-gce-${binary}:${VERSION}"
+    echo "building ${MULTIARCH_IMAGE} image.."
+    docker buildx build --push  \
+        --platform ${PLATFORMS}  \
+        --tag  ${MULTIARCH_IMAGE} \
+        -f Dockerfile.${binary} .
+    echo "done, pushed $MULTIARCH_IMAGE image"
 done

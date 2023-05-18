@@ -38,7 +38,8 @@ steps:
     # This image is built separately because it has
     # additional dependencies (curl, gcloud-cli), and
     # requires `docker buildx` for multiarch building process
-    ./hack/push-multiarch.sh
+    gcloud auth configure-docker  \
+    && ./hack/push-multiarch.sh
 substitutions:
   _GIT_TAG: "12345"
   _PULL_BASE_REF: "main"
