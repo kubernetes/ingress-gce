@@ -63,10 +63,10 @@ func mergeAnnotations(existing, lbAnnotations map[string]string, keysToRemove []
 	return existing
 }
 
-// updateL4ResourcesAnnotations this function checks if new annotations should be added to service and patch service metadata if needed.
+// updateL4ResourcesAnnotations checks if new annotations should be added to service and patch service metadata if needed.
 func updateL4ResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBAnnotations map[string]string) error {
 	klog.V(3).Infof("Updating annotations of service %s/%s", svc.Namespace, svc.Name)
-	newObjectMeta := computeNewAnnotationsIfNeeded(svc, newL4LBAnnotations, loadbalancers.L4LBResourceAnnotationKeys)
+	newObjectMeta := computeNewAnnotationsIfNeeded(svc, newL4LBAnnotations, loadbalancers.L4ResourceAnnotationKeys)
 	if newObjectMeta == nil {
 		klog.V(3).Infof("Service annotations not changed, skipping patch for service %s/%s", svc.Namespace, svc.Name)
 		return nil
@@ -75,33 +75,13 @@ func updateL4ResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Servic
 	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
 }
 
-// updateL4DualStackResourcesAnnotations this function checks if new annotations should be added to dual-stack service and patch service metadata if needed.
+// updateL4DualStackResourcesAnnotations checks if new annotations should be added to dual-stack service and patch service metadata if needed.
 func updateL4DualStackResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBAnnotations map[string]string) error {
 	newObjectMeta := computeNewAnnotationsIfNeeded(svc, newL4LBAnnotations, loadbalancers.L4DualStackResourceAnnotationKeys)
 	if newObjectMeta == nil {
 		return nil
 	}
 	klog.V(3).Infof("Patching annotations of service %v/%v", svc.Namespace, svc.Name)
-	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
-}
-
-// deleteL4RBSAnnotations deletes all annotations which could be added by L4 ELB RBS controller
-func deleteL4RBSAnnotations(ctx *context.ControllerContext, svc *v1.Service) error {
-	newObjectMeta := computeNewAnnotationsIfNeeded(svc, nil, loadbalancers.L4RBSAnnotations)
-	if newObjectMeta == nil {
-		return nil
-	}
-	klog.V(3).Infof("Deleting all annotations for L4 ELB RBS service %v/%v", svc.Namespace, svc.Name)
-	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
-}
-
-// deleteL4RBSDualStackAnnotations deletes all annotations which could be added by L4 ELB RBS controller
-func deleteL4RBSDualStackAnnotations(ctx *context.ControllerContext, svc *v1.Service) error {
-	newObjectMeta := computeNewAnnotationsIfNeeded(svc, nil, loadbalancers.L4DualStackResourceRBSAnnotationKeys)
-	if newObjectMeta == nil {
-		return nil
-	}
-	klog.V(3).Infof("Deleting all DualStack annotations for L4 ELB RBS service %v/%v", svc.Namespace, svc.Name)
 	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
 }
 

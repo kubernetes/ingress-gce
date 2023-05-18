@@ -25,7 +25,7 @@ const (
 	SyncTypeDelete = "delete"
 )
 
-var L4LBResourceAnnotationKeys = []string{
+var L4ResourceAnnotationKeys = []string{
 	annotations.BackendServiceKey,
 	annotations.TCPForwardingRuleKey,
 	annotations.UDPForwardingRuleKey,
@@ -34,13 +34,10 @@ var L4LBResourceAnnotationKeys = []string{
 	annotations.FirewallRuleForHealthcheckKey,
 }
 
-var L4RBSAnnotations = append(L4LBResourceAnnotationKeys, annotations.RBSAnnotationKey)
-
-var l4IPv6AnnotationKeys = []string{
+var l4IPv6ResourceAnnotationKeys = []string{
 	annotations.FirewallRuleIPv6Key,
 	annotations.FirewallRuleForHealthcheckIPv6Key,
 	annotations.TCPForwardingRuleIPv6Key,
 	annotations.UDPForwardingRuleIPv6Key,
 }
-var L4DualStackResourceAnnotationKeys = append(L4LBResourceAnnotationKeys, l4IPv6AnnotationKeys...)
-var L4DualStackResourceRBSAnnotationKeys = append(L4DualStackResourceAnnotationKeys, annotations.RBSAnnotationKey)
+var L4DualStackResourceAnnotationKeys = append(L4ResourceAnnotationKeys, l4IPv6ResourceAnnotationKeys...)

@@ -1271,41 +1271,45 @@ func TestDualStackServiceNeedsUpdate(t *testing.T) {
 
 func TestPreventTargetPoolToRBSMigration(t *testing.T) {
 	testCases := []struct {
-		desc                         string
-		frHook                       getForwardingRuleHook
-		finalizer                    string
-		expectRBSAnnotationAfterSync bool
+		desc                            string
+		frHook                          getForwardingRuleHook
+		finalizer                       string
+		expectV2NetLBFinalizerAfterSync bool
 	}{
 		{
-			desc:                         "Should remove annotation from target pool service",
-			frHook:                       test.GetLegacyForwardingRule,
-			expectRBSAnnotationAfterSync: false,
+			desc:                            "Should not add finalizer to target pool service",
+			frHook:                          test.GetLegacyForwardingRule,
+			expectV2NetLBFinalizerAfterSync: false,
 		},
 		{
-			desc:                         "Should remove annotation from target pool service with RBS finalizer",
-			frHook:                       test.GetLegacyForwardingRule,
-			finalizer:                    common.NetLBFinalizerV2,
-			expectRBSAnnotationAfterSync: false,
+			desc:                            "Should remove finalizer from target pool service with RBS finalizer",
+			frHook:                          test.GetLegacyForwardingRule,
+			finalizer:                       common.NetLBFinalizerV2,
+			expectV2NetLBFinalizerAfterSync: false,
 		},
 		{
-			desc:                         "Should not remove annotation from RBS based service",
-			frHook:                       test.GetRBSForwardingRule,
-			expectRBSAnnotationAfterSync: true,
+			desc:      "Should not remove finalizer from RBS based service",
+			finalizer: common.NetLBFinalizerV2,
+
+			frHook:                          test.GetRBSForwardingRule,
+			expectV2NetLBFinalizerAfterSync: true,
 		},
 		{
-			desc:                         "Should not remove annotation from RBS service without forwarding rule",
-			expectRBSAnnotationAfterSync: true,
+			desc:                            "Should not remove finalizer from RBS service without forwarding rule",
+			finalizer:                       common.NetLBFinalizerV2,
+			expectV2NetLBFinalizerAfterSync: true,
 		},
 	}
 
 	for _, testCase := range testCases {
 		t.Run(testCase.desc, func(t *testing.T) {
 			svc := test.NewL4NetLBRBSServiceMultiplePorts("test", []int32{30234})
+			svc.ObjectMeta.Finalizers = []string{testCase.finalizer}
+
 			controller := newL4NetLBServiceController()
 
 			controller.ctx.Cloud.Compute().(*cloud.MockGCE).MockForwardingRules.GetHook = testCase.frHook
 			addNetLBService(controller, svc)
-			svc.ObjectMeta.Finalizers = []string{testCase.finalizer}
 
 			key, err := common.KeyFunc(svc)
 			if err != nil {
@@ -1321,15 +1325,15 @@ func TestPreventTargetPoolToRBSMigration(t *testing.T) {
 			if err != nil {
 				t.Fatalf("controller.ctx.KubeClient.CoreV1().Services(%s).Get(_, %s, _) returned error %v, want nil", svc.Namespace, svc.Name, err)
 			}
-			hasRBSAnnotation := controller.hasRBSAnnotation(resultSvc)
-			if hasRBSAnnotation != testCase.expectRBSAnnotationAfterSync {
-				t.Errorf("After preventLegacyServiceHandling, hasRBSAnnotation = %t, testCase.expectRBSAnnotationAfterSync = %t, want equal", hasRBSAnnotation, testCase.expectRBSAnnotationAfterSync)
+			hasV2Finalizer := utils.HasL4NetLBFinalizerV2(resultSvc)
+			if hasV2Finalizer != testCase.expectV2NetLBFinalizerAfterSync {
+				t.Errorf("After preventLegacyServiceHandling, hasV2Finalizer = %t, testCase.expectV2NetLBFinalizerAfterSync = %t, want equal", hasV2Finalizer, testCase.expectV2NetLBFinalizerAfterSync)
 			}
 
 			// test that whole sync process is skipped
 			svc2 := test.NewL4NetLBRBSServiceMultiplePorts("test-2", []int32{30234})
-			addNetLBService(controller, svc2)
 			svc2.ObjectMeta.Finalizers = []string{testCase.finalizer}
+			addNetLBService(controller, svc2)
 
 			key, err = common.KeyFunc(svc2)
 			if err != nil {
@@ -1345,9 +1349,9 @@ func TestPreventTargetPoolToRBSMigration(t *testing.T) {
 			if err != nil {
 				t.Fatalf("controller.ctx.KubeClient.CoreV1().Services(%s).Get(_, %s, _) returned error %v, want nil", svc2.Namespace, svc2.Name, err)
 			}
-			hasRBSAnnotation = controller.hasRBSAnnotation(resultSvc)
-			if hasRBSAnnotation != testCase.expectRBSAnnotationAfterSync {
-				t.Errorf("After sync, hasRBSAnnotation = %t, testCase.expectRBSAnnotationAfterSync = %t, want equal", hasRBSAnnotation, testCase.expectRBSAnnotationAfterSync)
+			hasV2Finalizer = utils.HasL4NetLBFinalizerV2(resultSvc)
+			if hasV2Finalizer != testCase.expectV2NetLBFinalizerAfterSync {
+				t.Errorf("After sync, hasV2NetLBFinalizer = %t, testCase.expectV2NetLBFinalizerAfterSync = %t, want equal", hasV2Finalizer, testCase.expectV2NetLBFinalizerAfterSync)
 			}
 		})
 	}
