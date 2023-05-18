@@ -122,3 +122,17 @@ issue.
 If you have issues with the controller after the script execution and you do not
 know what it causing it, invoke the script in its cleanup mode. The is a quick
 and simple way of going back to how everything was before.
+
+## Script stuck on "Waiting for old GLBC service and pod to be removed..."
+
+This is usually the case when turning off HTTPLoadBalancing in the cluster does
+not delete the resources for the default-http-backend. This can be easily
+resolved by manually deleting them:
+
+```
+# Delete the service for the default-http-backend.
+kubectl delete svc -n kube-system default-http-backend
+
+# Delete the deployment for the default-http-backend.
+kubectl delete deploy -n kube-system l7-default-backend
+```
