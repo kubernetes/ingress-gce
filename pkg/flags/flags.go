@@ -201,7 +201,21 @@ Use the flag more than once to rate limit more than one call. If you do not
 specify this flag, the default is to rate limit Operations.Get for all versions.
 If you do specify this flag one or more times, this default will be overwritten.
 If you want to still use the default, simply specify it along with your other
-values.`)
+values.
+Also dynamic throttling strategy is supported in this flag. Example usage:
+--gce-ratelimit=ga.NetworkEndpointGroups.ListNetworkEndpoints,strategy,dynamic,10ms,5s,5,2,5,5s,30s
+(use dynamic throttling strategy for ga.NetworkEndpointGroups.ListNetworkEndpoints
+with the following parameters:
+minimum delay = 10ms
+maximum delay = 5s
+number of quota errors before increasing the delay = 5
+number of requests without quota errors before decreasing the delay = 2
+number of requests without quota errors before resetting the delay = 5
+the amount of time without any requests before decreasing the delay = 5s
+the amount of time without any requests before resetting the delay = 30s
+Dynamic throttling can be combined with QPS rate limiter for one API, in that
+case dynamic throttling is used first, and then the QPS rate limiter introduces
+additional delay if needed.`)
 	flag.Float64Var(&F.GCERateLimitScale, "gce-ratelimit-scale", 1.0,
 		`Optional, scales rate limit options by a constant factor.
 1.0 is no multiplier. 5.0 means increase all rate and capacity by 5x.`)
