@@ -113,6 +113,18 @@ func CheckFrontendConfigExistence(namespace, name string, client feconfigclient.
 	return feConfig, report.Passed, fmt.Sprintf("FrontendConfig %s/%s found", namespace, name)
 }
 
+// CheckRuleHostOverwrite checks whether hosts of ingress rules are unique.
+func CheckRuleHostOverwrite(rules []networkingv1.IngressRule) (string, string) {
+	hostSet := make(map[string]struct{})
+	for _, rule := range rules {
+		if _, ok := hostSet[rule.Host]; ok {
+			return report.Failed, fmt.Sprintf("Ingress rules have identical host: %s", rule.Host)
+		}
+		hostSet[rule.Host] = struct{}{}
+	}
+	return report.Passed, fmt.Sprintf("Ingress rule hosts are unique")
+}
+
 // getBackendConfigAnnotation gets the BackendConfig annotation from a service.
 func getBackendConfigAnnotation(svc *corev1.Service) (string, bool) {
 	for _, bcKey := range []string{annotations.BackendConfigKey, annotations.BetaBackendConfigKey} {

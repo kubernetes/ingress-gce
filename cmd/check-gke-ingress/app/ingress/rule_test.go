@@ -350,3 +350,46 @@ func TestCheckIngressRule(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckRuleHostOverwrite(t *testing.T) {
+	for _, tc := range []struct {
+		desc   string
+		rules  []networkingv1.IngressRule
+		expect string
+	}{
+		{
+			desc:   "Empty rules",
+			rules:  []networkingv1.IngressRule{},
+			expect: report.Passed,
+		},
+		{
+			desc: "Rules with identical host",
+			rules: []networkingv1.IngressRule{
+				{
+					Host: "foo.bar.com",
+				},
+				{
+					Host: "foo.bar.com",
+				},
+			},
+			expect: report.Failed,
+		},
+		{
+			desc: "Rules with unique hosts",
+			rules: []networkingv1.IngressRule{
+				{
+					Host: "foo.bar.com",
+				},
+				{
+					Host: "abc.xyz.com",
+				},
+			},
+			expect: report.Passed,
+		},
+	} {
+		res, _ := CheckRuleHostOverwrite(tc.rules)
+		if res != tc.expect {
+			t.Errorf("For test case %q, expect check result = %s, but got %s", tc.desc, tc.expect, res)
+		}
+	}
+}
