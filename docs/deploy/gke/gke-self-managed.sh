@@ -121,7 +121,7 @@ function cleanup() {
   run_maybe_dry kubectl delete clusterrolebinding one-binding-to-rule-them-all
   run_maybe_dry kubectl delete -f ../resources/rbac.yaml
   run_maybe_dry kubectl delete configmap gce-config -n kube-system
-  run_maybe_dry gcloud projects remove-iam-policy-binding ${GCLOUD_EXTRA_FLAGS} ${PROJECT_ID} \
+  run_maybe_dry gcloud projects remove-iam-policy-binding ${GCLOUD_EXTRA_FLAGS} ${PROJECT_ID} --condition=None \
     --member serviceAccount:glbc-service-account@${PROJECT_ID}.iam.gserviceaccount.com \
     --role roles/compute.admin
   run_maybe_dry gcloud iam service-accounts delete ${GCLOUD_EXTRA_FLAGS} glbc-service-account@${PROJECT_ID}.iam.gserviceaccount.com
@@ -332,7 +332,7 @@ run_maybe_dry gcloud iam service-accounts create glbc-service-account ${GCLOUD_E
 [[ $? -eq 0 ]] || error_exit "Error-bot: Issue creating a GCP service account. ${PERMISSION_ISSUE} ${CLEANUP_HELP}"
 
 # Give the GCP service account the appropriate roles.
-run_maybe_dry gcloud projects add-iam-policy-binding ${GCLOUD_EXTRA_FLAGS} ${PROJECT_ID} \
+run_maybe_dry gcloud projects add-iam-policy-binding ${GCLOUD_EXTRA_FLAGS} ${PROJECT_ID} --condition=None \
   --member serviceAccount:glbc-service-account@${PROJECT_ID}.iam.gserviceaccount.com \
   --role roles/compute.admin
 [[ $? -eq 0 ]] || error_exit "Error-bot: Issue creating IAM role binding for service account. ${PERMISSION_ISSUE} ${CLEANUP_HELP}"
