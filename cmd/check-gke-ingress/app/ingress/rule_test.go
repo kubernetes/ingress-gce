@@ -473,3 +473,57 @@ func TestCheckAppProtocolAnnotation(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckL7ILBFrontendConfig(t *testing.T) {
+	for _, tc := range []struct {
+		desc    string
+		ingress networkingv1.Ingress
+		expect  string
+	}{
+		{
+			desc: "Not internal ingress",
+			ingress: networkingv1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "ingress-1",
+					Annotations: map[string]string{
+						annotations.FrontendConfigKey: "feconfig",
+					},
+				},
+			},
+			expect: report.Skipped,
+		},
+		{
+			desc: "Internal ingress with feconfig",
+			ingress: networkingv1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "ingress-1",
+					Annotations: map[string]string{
+						annotations.FrontendConfigKey: "feconfig",
+						annotations.IngressClassKey:   annotations.GceL7ILBIngressClass,
+					},
+				},
+			},
+			expect: report.Failed,
+		},
+		{
+			desc: "Internal ingress without feconfig",
+			ingress: networkingv1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "ingress-1",
+					Annotations: map[string]string{
+						annotations.IngressClassKey: annotations.GceL7ILBIngressClass,
+					},
+				},
+			},
+			expect: report.Passed,
+		},
+	} {
+		res, _ := CheckL7ILBFrontendConfig(&tc.ingress)
+		if res != tc.expect {
+			t.Errorf("For test case %q, expect check result = %s, but got %s", tc.desc, tc.expect, res)
+		}
+	}
+}
