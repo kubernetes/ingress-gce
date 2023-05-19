@@ -125,12 +125,42 @@ func CheckRuleHostOverwrite(rules []networkingv1.IngressRule) (string, string) {
 	return report.Passed, fmt.Sprintf("Ingress rule hosts are unique")
 }
 
+// CheckAppProtocolAnnotation check whether the protocal annotation specified
+// in a service is in valid format and with valid protocols.
+func CheckAppProtocolAnnotation(svc *corev1.Service) (string, string) {
+	val, ok := getAppProtocolsAnnotation(svc)
+	if !ok {
+		return report.Skipped, fmt.Sprintf("Service %s/%s does not have AppProtocolAnnotation", svc.Namespace, svc.Name)
+	}
+	var portToProtocols map[string]annotations.AppProtocol
+	if err := json.Unmarshal([]byte(val), &portToProtocols); err != nil {
+		return report.Failed, fmt.Sprintf("AppProtocol annotation is in invalid format in service %s/%s", svc.Namespace, svc.Name)
+	}
+	for _, protocol := range portToProtocols {
+		if protocol != annotations.ProtocolHTTP && protocol != annotations.ProtocolHTTPS && protocol != annotations.ProtocolHTTP2 {
+			return report.Failed, fmt.Sprintf("Invalid port application protocol in service %s/%s: %v, must be one of [`HTTP`,`HTTPS`,`HTTP2`]", svc.Namespace, svc.Name, protocol)
+		}
+	}
+	return report.Passed, fmt.Sprintf("AppProtocol annotation is valid in service %s/%s", svc.Namespace, svc.Name)
+}
+
 // getBackendConfigAnnotation gets the BackendConfig annotation from a service.
 func getBackendConfigAnnotation(svc *corev1.Service) (string, bool) {
 	for _, bcKey := range []string{annotations.BackendConfigKey, annotations.BetaBackendConfigKey} {
 		val, ok := svc.Annotations[bcKey]
 		if ok {
 			return val, ok
+		}
+	}
+	return "", false
+}
+
+// getAppProtocolsAnnotation gets the AppProtocols annotation from a service.
+func getAppProtocolsAnnotation(svc *corev1.Service) (string, bool) {
+	for _, key := range []string{annotations.ServiceApplicationProtocolKey, annotations.GoogleServiceApplicationProtocolKey} {
+		val, ok := svc.Annotations[key]
+		if ok {
+			return val, true
 		}
 	}
 	return "", false
