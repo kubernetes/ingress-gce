@@ -346,6 +346,7 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) *lo
 			return result
 		}
 	}
+
 	if err := common.EnsureDeleteServiceFinalizer(svc, common.ILBFinalizerV2, l4c.ctx.KubeClient); err != nil {
 		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancerFailed",
 			"Error removing finalizer from load balancer: %v", err)
