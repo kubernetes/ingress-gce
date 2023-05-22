@@ -195,10 +195,10 @@ func calculateMetrics(services []*v1.Service) (map[serviceL4ProtocolMetricState]
 }
 
 func updatePrometheusMetrics(l4ProtocolState map[serviceL4ProtocolMetricState]int64, ipStackState map[serviceIPStackMetricState]int64, gcpFeaturesState map[serviceGCPFeaturesMetricState]int64) {
-	serviceL4ProtocolStatsCount.Reset()
-	serviceIPStackStatsCount.Reset()
-	serviceGCPFeaturesStatsCount.Reset()
 
+	// reset gauges to zero just before updating the vale
+	// otherwise we never update gauge value from 1 to 0, when the last service of certain labels set is deleted
+	serviceL4ProtocolStatsCount.Reset()
 	for serviceStat, count := range l4ProtocolState {
 		serviceL4ProtocolStatsCount.With(prometheus.Labels{
 			labelType:                  serviceStat.Type,
@@ -210,6 +210,7 @@ func updatePrometheusMetrics(l4ProtocolState map[serviceL4ProtocolMetricState]in
 		}).Set(float64(count))
 	}
 
+	serviceIPStackStatsCount.Reset()
 	for serviceStat, count := range ipStackState {
 		serviceIPStackStatsCount.With(prometheus.Labels{
 			labelType:                  serviceStat.Type,
@@ -222,6 +223,7 @@ func updatePrometheusMetrics(l4ProtocolState map[serviceL4ProtocolMetricState]in
 		}).Set(float64(count))
 	}
 
+	serviceGCPFeaturesStatsCount.Reset()
 	for serviceStat, count := range gcpFeaturesState {
 		serviceGCPFeaturesStatsCount.With(prometheus.Labels{
 			labelType:         serviceStat.Type,
