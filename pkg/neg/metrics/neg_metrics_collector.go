@@ -111,7 +111,7 @@ func (sm *SyncerMetrics) export() {
 	stateCount, syncerCount := sm.computeSyncerStateMetrics()
 	PublishSyncerStateMetrics(stateCount)
 
-	epStateCount, epsStateCount := sm.computeEndpointStateMetrics(false)
+	epStateCount, epsStateCount, epCount, epsCount := sm.computeEndpointStateMetrics()
 	for state, count := range epStateCount {
 		syncerEndpointState.WithLabelValues(string(state)).Set(float64(count))
 	}
@@ -119,7 +119,11 @@ func (sm *SyncerMetrics) export() {
 		syncerEndpointSliceState.WithLabelValues(string(state)).Set(float64(count))
 	}
 
-	sm.logger.V(3).Info("Exporting syncer related metrics", "Syncer count", syncerCount, "Number of Endpoints", lpMetrics.NumberOfEndpoints)
+	sm.logger.V(3).Info("Exporting syncer related metrics", "Syncer count", syncerCount,
+		"Network Endpoint Count", lpMetrics.NumberOfEndpoints,
+		"Endpoint Count From EPS", epCount,
+		"Endpoint Slice Count", epsCount,
+	)
 
 	finishedDurations, longestUnfinishedDurations := sm.computeDualStackMigrationDurations()
 	for _, duration := range finishedDurations {
@@ -222,24 +226,27 @@ func (sm *SyncerMetrics) computeSyncerStateMetrics() (*syncerStateCount, int) {
 }
 
 // computeSyncerEndpointStateMetrics aggregates endpoint and endpoint slice counts from all syncers
-func (sm *SyncerMetrics) computeEndpointStateMetrics(forDegradedMode bool) (negtypes.StateCountMap, negtypes.StateCountMap) {
+func (sm *SyncerMetrics) computeEndpointStateMetrics() (negtypes.StateCountMap, negtypes.StateCountMap, int, int) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
-	epCounts := negtypes.StateCountMap{}
-	epsCounts := negtypes.StateCountMap{}
+	var epCount, epsCount int
+	epStateCount := negtypes.StateCountMap{}
+	epsStateCount := negtypes.StateCountMap{}
 	// collect count from each syncer
-	for _, epCount := range sm.syncerEndpointStateMap {
+	for _, epState := range sm.syncerEndpointStateMap {
 		for _, state := range negtypes.StatesForEndpointMetrics() {
-			epCounts[state] += epCount[state]
+			epStateCount[state] += epState[state]
+			epCount += epState[state]
 		}
 	}
-	for _, epsCount := range sm.syncerEndpointSliceStateMap {
+	for _, epsState := range sm.syncerEndpointSliceStateMap {
 		for _, state := range negtypes.StatesForEndpointMetrics() {
-			epsCounts[state] += epsCount[state]
+			epsStateCount[state] += epsState[state]
+			epsCount += epsState[state]
 		}
 	}
-	return epCounts, epsCounts
+	return epStateCount, epsStateCount, epCount, epsCount
 }
 
 // CollectDualStackMigrationMetrics will be used by dualstack.Migrator to export
