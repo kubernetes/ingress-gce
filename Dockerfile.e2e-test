@@ -18,8 +18,8 @@
 # and has curl, gcloud, and ca-certificated preinstalled
 FROM gcr.io/google.com/cloudsdktool/google-cloud-cli:debian_component_based
 
-#ARG_ARCH & ARG_BIN are replaces with sed in build/rules.mk
-ADD bin/ARG_ARCH/ARG_BIN /ARG_BIN
+ARG TARGETARCH
+ADD bin/${TARGETARCH}/e2e-test /e2e-test
 COPY cmd/e2e-test/run.sh /run.sh
 
 ENTRYPOINT ["/run.sh"]
