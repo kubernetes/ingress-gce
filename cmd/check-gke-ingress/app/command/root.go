@@ -21,6 +21,9 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"k8s.io/ingress-gce/cmd/check-gke-ingress/app/ingress"
+	"k8s.io/ingress-gce/cmd/check-gke-ingress/app/kube"
+	"k8s.io/ingress-gce/cmd/check-gke-ingress/app/report"
 )
 
 var (
@@ -38,7 +41,20 @@ var rootCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Error parsing flags: %v", err)
 			os.Exit(1)
 		}
-		fmt.Println("Starting check-gke-ingress")
+		client, err := kube.NewClientSet(kubecontext, kubeconfig)
+		beconfigClient, err := kube.NewBackendConfigClientSet(kubecontext, kubeconfig)
+		feConfigClient, err := kube.NewFrontendConfigClientSet(kubecontext, kubeconfig)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error connecting to Kubernetes: %v", err)
+			os.Exit(1)
+		}
+		output := ingress.CheckAllIngresses(namespace, client, beconfigClient, feConfigClient)
+		res, err := report.JsonReport(&output)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error processing results: %v", err)
+			os.Exit(1)
+		}
+		fmt.Print(res)
 	},
 }
 
