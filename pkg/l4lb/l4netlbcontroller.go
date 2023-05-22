@@ -134,14 +134,15 @@ func (lc *L4NetLBController) needsAddition(newSvc, oldSvc *v1.Service) bool {
 
 // needsDeletion return true if svc required deleting RBS based NetLB
 func (lc *L4NetLBController) needsDeletion(svc *v1.Service) bool {
-	// Check if service has RBS related fields/resources
-	// this check differs from isRBSBasedService() func by checking also non load balancer type services
-	if !(lc.hasRBSAnnotation(svc) || utils.HasL4NetLBFinalizerV2(svc) || lc.hasRBSForwardingRule(svc)) {
+	// Check if service was provisioned by RBS controller before -- if it has rbs finalizer or rbs forwarding rule
+	if !utils.HasL4NetLBFinalizerV2(svc) && !lc.hasRBSForwardingRule(svc) {
 		return false
 	}
+	// handles service deletion
 	if svc.ObjectMeta.DeletionTimestamp != nil {
 		return true
 	}
+	// handles NetLB to ILB migration
 	needsNetLB, _ := annotations.WantsL4NetLB(svc)
 	return !needsNetLB
 }
@@ -229,7 +230,7 @@ func (lc *L4NetLBController) needsUpdate(newSvc, oldSvc *v1.Service) bool {
 
 // shouldProcessService checks if given service should be process by controller
 func (lc *L4NetLBController) shouldProcessService(newSvc, oldSvc *v1.Service) bool {
-	if !(lc.isRBSBasedService(newSvc) || lc.isRBSBasedService(oldSvc)) {
+	if !lc.isRBSBasedService(newSvc) && !lc.isRBSBasedService(oldSvc) {
 		return false
 	}
 	if lc.needsAddition(newSvc, oldSvc) || lc.needsUpdate(newSvc, oldSvc) || lc.needsDeletion(newSvc) {
@@ -621,14 +622,14 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service)
 
 	// IMPORTANT: Remove LB annotations from the Service LAST, cause changing service fields are emitted as service update to other controllers
 	if lc.enableDualStack {
-		if err := deleteL4RBSDualStackAnnotations(lc.ctx, svc); err != nil {
+		if err := updateL4DualStackResourcesAnnotations(lc.ctx, svc, nil); err != nil {
 			lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 				"Error removing Dual Stack resource annotations: %v", err)
 			result.Error = fmt.Errorf("failed to reset Dual Stack resource annotations, err: %w", err)
 			return result
 		}
 	} else {
-		if err := deleteL4RBSAnnotations(lc.ctx, svc); err != nil {
+		if err := updateL4ResourcesAnnotations(lc.ctx, svc, nil); err != nil {
 			lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 				"Error removing resource annotations: %v", err)
 			result.Error = fmt.Errorf("failed to reset resource annotations, err: %w", err)
