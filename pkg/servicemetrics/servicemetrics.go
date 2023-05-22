@@ -195,6 +195,10 @@ func calculateMetrics(services []*v1.Service) (map[serviceL4ProtocolMetricState]
 }
 
 func updatePrometheusMetrics(l4ProtocolState map[serviceL4ProtocolMetricState]int64, ipStackState map[serviceIPStackMetricState]int64, gcpFeaturesState map[serviceGCPFeaturesMetricState]int64) {
+	serviceL4ProtocolStatsCount.Reset()
+	serviceIPStackStatsCount.Reset()
+	serviceGCPFeaturesStatsCount.Reset()
+
 	for serviceStat, count := range l4ProtocolState {
 		serviceL4ProtocolStatsCount.With(prometheus.Labels{
 			labelType:                  serviceStat.Type,
