@@ -26,7 +26,7 @@ const (
 
 // IngressCRUD wraps basic CRUD to allow use of old and new APIs.
 type IngressCRUD struct {
-	C *kubernetes.Clientset
+	C kubernetes.Interface
 }
 
 // Get Ingress resource.

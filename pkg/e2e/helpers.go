@@ -58,6 +58,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/klog/v2"
 	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/strings/slices"
 )
 
 const (
@@ -1121,4 +1122,30 @@ func Truncate(key string) string {
 		return fmt.Sprintf("%v%v", key[:62], "0")
 	}
 	return key
+}
+
+// CheckNEGEndpointIPs checks if the input NEG only contains the expected endpoint IPs.
+func CheckNEGEndpointIPs(ctx context.Context, c cloud.Cloud, negName string, zones []string, expectToContainEndpoints []string) error {
+	return wait.Poll(negPollInterval, negPollTimeout, func() (bool, error) {
+		negs, err := fuzz.NetworkEndpointsInNegs(ctx, c, negName, zones)
+		if err != nil {
+			klog.Infof("CheckNEGEndpointIPs(%q, %v) failed to retrieve NEGs: %v", negName, zones, err)
+			return false, nil
+		}
+		var existingEndpoints []string
+		for _, neg := range negs {
+			for _, networkEndpoint := range neg.Endpoints {
+				existingEndpoints = append(existingEndpoints, networkEndpoint.NetworkEndpoint.IpAddress)
+			}
+		}
+		if len(expectToContainEndpoints) != len(existingEndpoints) {
+			return false, nil
+		}
+		for _, addr := range expectToContainEndpoints {
+			if !slices.Contains(existingEndpoints, addr) {
+				return false, nil
+			}
+		}
+		return true, nil
+	})
 }
