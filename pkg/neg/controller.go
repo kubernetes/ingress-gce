@@ -153,10 +153,12 @@ func NewController(
 	err := scheme.AddToScheme(negScheme)
 	if err != nil {
 		logger.Error(err, "Errored adding default scheme to event recorder")
+		metrics.PublishNegControllerErrorCountMetrics(err, true)
 	}
 	err = svcnegv1beta1.AddToScheme(negScheme)
 	if err != nil {
 		logger.Error(err, "Errored adding NEG CRD scheme to event recorder")
+		metrics.PublishNegControllerErrorCountMetrics(err, true)
 	}
 	recorder := eventBroadcaster.NewRecorder(negScheme,
 		apiv1.EventSource{Component: "neg-controller"})
@@ -415,6 +417,7 @@ func (c *Controller) processEndpoint(key string) {
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		c.logger.Error(err, "Failed to split endpoint namespaced key", "key", key)
+		metrics.PublishNegControllerErrorCountMetrics(err, true)
 		return
 	}
 	c.manager.Sync(namespace, name)
@@ -430,6 +433,7 @@ func (c *Controller) serviceWorker() {
 			defer c.serviceQueue.Done(key)
 			err := c.processService(key.(string))
 			c.handleErr(err, key)
+			metrics.PublishNegControllerErrorCountMetrics(err, false)
 		}()
 	}
 }
@@ -727,6 +731,7 @@ func (c *Controller) handleErr(err error, key interface{}) {
 	c.logger.Error(nil, msg)
 	if service, exists, err := c.serviceLister.GetByKey(key.(string)); err != nil {
 		c.logger.Error(err, "Failed to retrieve service from store", "service", key.(string))
+		metrics.PublishNegControllerErrorCountMetrics(err, true)
 	} else if exists {
 		c.recorder.Eventf(service.(*apiv1.Service), apiv1.EventTypeWarning, "ProcessServiceFailed", msg)
 	}
@@ -749,6 +754,7 @@ func (c *Controller) enqueueEndpointSlice(obj interface{}) {
 	key, err := endpointslices.EndpointSlicesServiceKey(endpointSlice)
 	if err != nil {
 		c.logger.Error(err, "Failed to find a service label inside endpoint slice", "endpointSlice", klog.KObj(endpointSlice))
+		metrics.PublishNegControllerErrorCountMetrics(err, true)
 		return
 	}
 	c.logger.V(3).Info("Adding EndpointSlice to endpointQueue for processing", "endpointSlice", key)
@@ -759,6 +765,7 @@ func (c *Controller) enqueueNode(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
 		c.logger.Error(err, "Failed to generate node key")
+		metrics.PublishNegControllerErrorCountMetrics(err, true)
 		return
 	}
 	c.logger.V(3).Info("Adding Node to nodeQueue for processing", "node", key)
@@ -769,6 +776,7 @@ func (c *Controller) enqueueService(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
 		c.logger.Error(err, "Failed to generate service key")
+		metrics.PublishNegControllerErrorCountMetrics(err, true)
 		return
 	}
 	c.logger.V(3).Info("Adding Service to serviceQueue for processing", "service", key)
@@ -791,6 +799,7 @@ func (c *Controller) enqueueIngressServices(ing *v1.Ingress) {
 func (c *Controller) gc() {
 	if err := c.manager.GC(); err != nil {
 		c.logger.Error(err, "NEG controller garbage collection failed")
+		metrics.PublishNegControllerErrorCountMetrics(err, true)
 	}
 }
 

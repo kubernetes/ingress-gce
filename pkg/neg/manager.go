@@ -350,6 +350,7 @@ func updateZoneMap(existingZoneMap *map[string]struct{}, candidateNodePredicate 
 	zones, err := zoneGetter.ListZones(candidateNodePredicate)
 	if err != nil {
 		logger.Error(err, "Unable to list zones")
+		metrics.PublishNegControllerErrorCountMetrics(err, true)
 		return false
 	}
 
@@ -408,6 +409,7 @@ func (manager *syncerManager) ReadinessGateEnabledNegs(namespace string, podLabe
 		obj, exists, err := manager.serviceLister.GetByKey(svcKey.Key())
 		if err != nil {
 			manager.logger.Error(err, "Failed to retrieve service from store", "service", svcKey.Key())
+			metrics.PublishNegControllerErrorCountMetrics(err, true)
 			continue
 		}
 
@@ -683,6 +685,7 @@ func (manager *syncerManager) ensureDeleteNetworkEndpointGroup(name, zone string
 	if err != nil {
 		if utils.IsNotFoundError(err) || utils.IsHTTPErrorCode(err, http.StatusBadRequest) {
 			manager.logger.V(2).Info("Ignoring error when querying for neg during GC", "negName", name, "zone", zone, "err", err)
+			metrics.PublishNegControllerErrorCountMetrics(err, true)
 			return nil
 		}
 		return err

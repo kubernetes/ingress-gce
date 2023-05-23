@@ -24,6 +24,7 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
@@ -89,6 +90,7 @@ func (s *syncer) Start() error {
 			retryCh := make(<-chan time.Time)
 			err := s.core.sync()
 			if err != nil {
+				metrics.PublishNegControllerErrorCountMetrics(err, false)
 				delay, retryErr := s.backoff.NextRetryDelay()
 				retryMsg := ""
 				if retryErr == ErrRetriesExceeded {

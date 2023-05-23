@@ -31,6 +31,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
 	"k8s.io/klog/v2"
@@ -225,6 +226,7 @@ func (r *readinessReflector) SyncPod(pod *v1.Pod) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(pod)
 	if err != nil {
 		r.logger.Error(err, "Failed to generate pod key")
+		metrics.PublishNegControllerErrorCountMetrics(err, true)
 		return
 	}
 
@@ -260,6 +262,7 @@ func (r *readinessReflector) pollNeg(key negMeta) {
 	retry, err := r.poller.Poll(key)
 	if err != nil {
 		r.logger.Error(err, "Failed to poll neg", "neg", key)
+		metrics.PublishNegControllerErrorCountMetrics(err, true)
 	}
 	if retry {
 		r.poll()

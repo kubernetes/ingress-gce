@@ -90,6 +90,7 @@ func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(eds []types.Endpoints
 			node, err := l.nodeLister.Get(*addr.NodeName)
 			if err != nil {
 				l.logger.Error(err, "failed to retrieve node object", "nodeName", *addr.NodeName)
+				metrics.PublishNegControllerErrorCountMetrics(err, true)
 				continue
 			}
 			if ok := candidateNodeCheck(node); !ok {
@@ -103,6 +104,7 @@ func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(eds []types.Endpoints
 			zone, err := l.zoneGetter.GetZoneForNode(node.Name)
 			if err != nil {
 				l.logger.Error(err, "Unable to find zone for node, skipping", "nodeName", node.Name)
+				metrics.PublishNegControllerErrorCountMetrics(err, true)
 				continue
 			}
 			zoneNodeMap[zone] = append(zoneNodeMap[zone], node)
@@ -178,6 +180,7 @@ func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpoints(_ []types.Endpoints
 		zone, err := l.zoneGetter.GetZoneForNode(node.Name)
 		if err != nil {
 			l.logger.Error(err, "Unable to find zone for node skipping", "nodeName", node.Name)
+			metrics.PublishNegControllerErrorCountMetrics(err, true)
 			continue
 		}
 		zoneNodeMap[zone] = append(zoneNodeMap[zone], node)

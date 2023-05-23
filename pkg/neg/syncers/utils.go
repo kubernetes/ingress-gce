@@ -33,6 +33,7 @@ import (
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
@@ -116,6 +117,7 @@ func getService(serviceLister cache.Indexer, namespace, name string) *apiv1.Serv
 	}
 	if err != nil {
 		klog.Errorf("Failed to retrieve service %s/%s from store: %v", namespace, name, err)
+		metrics.PublishNegControllerErrorCountMetrics(err, true)
 	}
 	return nil
 }
@@ -130,6 +132,7 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 			return negRef, err
 		}
 		klog.V(4).Infof("Neg %q in zone %q was not found: %s", negName, zone, err)
+		metrics.PublishNegControllerErrorCountMetrics(err, true)
 	}
 
 	needToCreate := false
@@ -419,6 +422,7 @@ func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGett
 			pod, getPodStat, getPodErr := getEndpointPod(endpointAddress, podLister)
 			if getPodErr != nil {
 				klog.Errorf("Endpoint %q in Endpoints %s/%s receives error when getting pod: %v, skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, getPodErr)
+				metrics.PublishNegControllerErrorCountMetrics(getPodErr, true)
 				for state, count := range getPodStat {
 					localEPCount[state] += count
 				}
@@ -433,6 +437,7 @@ func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGett
 			zone, getZoneErr := zoneGetter.GetZoneForNode(nodeName)
 			if getZoneErr != nil {
 				klog.Errorf("For endpoint %q in pod %q, its corresponding node %q does not have valid zone information: %w, skipping", endpointAddress.Addresses, pod.ObjectMeta.Name, nodeName, getZoneErr)
+				metrics.PublishNegControllerErrorCountMetrics(getZoneErr, true)
 				localEPCount[negtypes.ZoneMissing]++
 				continue
 			}
@@ -457,12 +462,14 @@ func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGett
 			checkIPErr := podContainsEndpointAddress(networkEndpoint, pod)
 			if checkIPErr != nil {
 				klog.Errorf("Endpoint %q in Endpoints %s/%s has IP(s) not match to its pod %s: %w, skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, pod.Name, checkIPErr)
+				metrics.PublishNegControllerErrorCountMetrics(checkIPErr, true)
 				localEPCount[negtypes.IPNotFromPod] += 1
 				continue
 			}
 			validatePodStat, validateErr := validatePod(pod, nodeLister, serviceLister, networkEndpoint, serviceName, isCustomEPS)
 			if validateErr != nil {
 				klog.Errorf("Endpoint %q in Endpoints %s/%s correponds to an invalid pod: %v, skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, validateErr)
+				metrics.PublishNegControllerErrorCountMetrics(validateErr, true)
 				for state, count := range validatePodStat {
 					localEPCount[state] += count
 				}
@@ -600,6 +607,7 @@ func nodeContainsPodIP(node *apiv1.Node, networkEndpoint negtypes.NetworkEndpoin
 		_, ipnet, err := net.ParseCIDR(podCIDR)
 		if err != nil {
 			// swallow errors for CIDRs that are invalid
+			metrics.PublishNegControllerErrorCountMetrics(err, true)
 			continue
 		}
 		ipnets = append(ipnets, ipnet)
@@ -661,6 +669,7 @@ func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter negtypes.
 			// NEG not found in a candidate zone is an error.
 			if utils.IsNotFoundError(err) && !candidateZonesMap.Has(zone) {
 				klog.Infof("Ignoring NotFound error for NEG %q in zone %q", negName, zone)
+				metrics.PublishNegControllerErrorCountMetrics(err, true)
 				continue
 			}
 			return nil, nil, fmt.Errorf("Failed to lookup NEG in zone %q, candidate zones %v, err - %v", zone, candidateZonesMap, err)

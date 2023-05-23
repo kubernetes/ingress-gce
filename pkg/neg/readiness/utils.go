@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
 	"k8s.io/ingress-gce/pkg/utils/patch"
@@ -136,6 +137,7 @@ func removeIrrelevantEndpoints(endpointMap negtypes.EndpointPodMap, podLister ca
 		pod, exists, err := getPodFromStore(podLister, namespacedName.Namespace, namespacedName.Name)
 		if err != nil {
 			klog.Warningf("Failed to retrieve pod %q from store: %v", namespacedName.String(), err)
+			metrics.PublishNegControllerErrorCountMetrics(err, true)
 		}
 		if err == nil && exists && needToProcess(pod) {
 			continue
