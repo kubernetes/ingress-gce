@@ -156,6 +156,23 @@ func CheckL7ILBFrontendConfig(ing *networkingv1.Ingress) (string, string) {
 	return report.Passed, fmt.Sprintf("Ingress %s/%s for L7 internal load balancing does not have a frontendConfig annotation", ing.Namespace, ing.Name)
 }
 
+// CheckL7ILBNegAnnotation check whether a service which belongs to an internal
+// ingress has a correct NEG annotation.
+func CheckL7ILBNegAnnotation(svc *corev1.Service) (string, string) {
+	val, ok := getNegAnnotation(svc)
+	if !ok {
+		return report.Failed, fmt.Sprintf("No Neg annotation found in service %s/%s for internal HTTP(S) load balancing", svc.Namespace, svc.Name)
+	}
+	var res annotations.NegAnnotation
+	if err := json.Unmarshal([]byte(val), &res); err != nil {
+		return report.Failed, fmt.Sprintf("Invalid Neg annotation found in service %s/%s for internal HTTP(S) load balancing", svc.Namespace, svc.Name)
+	}
+	if !res.Ingress {
+		return report.Failed, fmt.Sprintf("Neg annotation ingress field is not true in service %s/%s for internal HTTP(S) load balancing", svc.Namespace, svc.Name)
+	}
+	return report.Passed, fmt.Sprintf("Neg annotation is set correctly in service %s/%s for internal HTTP(S) load balancing", svc.Namespace, svc.Name)
+}
+
 // getBackendConfigAnnotation gets the BackendConfig annotation from a service.
 func getBackendConfigAnnotation(svc *corev1.Service) (string, bool) {
 	for _, bcKey := range []string{annotations.BackendConfigKey, annotations.BetaBackendConfigKey} {
@@ -194,6 +211,15 @@ func isL7ILB(ing *networkingv1.Ingress) bool {
 // ingress object.
 func getFrontendConfigAnnotation(ing *networkingv1.Ingress) (string, bool) {
 	val, ok := ing.ObjectMeta.Annotations[annotations.FrontendConfigKey]
+	if !ok {
+		return "", false
+	}
+	return val, true
+}
+
+// getNegAnnotation gets the NEG annotation from a service object.
+func getNegAnnotation(svc *corev1.Service) (string, bool) {
+	val, ok := svc.Annotations[annotations.NEGAnnotationKey]
 	if !ok {
 		return "", false
 	}
