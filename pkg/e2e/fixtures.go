@@ -53,7 +53,8 @@ import (
 )
 
 const (
-	echoheadersImage        = "gcr.io/k8s-ingress-image-push/ingress-gce-echo-amd64:master"
+	echoheadersImage = "gcr.io/k8s-ingress-image-push/ingress-gce-echo:master"
+	// Keep amd64 only for windows as long it doesn't support arm architecture
 	echoheadersImageWindows = "gcr.io/gke-windows-testing/ingress-gce-echo-amd64-windows:master"
 	porterPort              = 80
 	ILBSubnetPurpose        = "INTERNAL_HTTPS_LOAD_BALANCER"
