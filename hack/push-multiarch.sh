@@ -47,11 +47,20 @@ do
     # "arm64 amd64" ---> "linux/arm64,linux/amd64" 
     PLATFORMS="linux/$(echo ${ALL_ARCH} | sed 's~ ~,linux/~g')"
     echo "docker buildx platform parameters: ${PLATFORMS}"
+
     MULTIARCH_IMAGE="${REGISTRY}/ingress-gce-${binary}:${VERSION}"
     echo "building ${MULTIARCH_IMAGE} image.."
     docker buildx build --push  \
         --platform ${PLATFORMS}  \
         --tag  ${MULTIARCH_IMAGE} \
         -f Dockerfile.${binary} .
-    echo "done, pushed $MULTIARCH_IMAGE image"
+    echo "pushed $MULTIARCH_IMAGE image"
+
+    for arch in ${ALL_ARCH}
+    do
+        ARCH_SPECIFIC_IMAGE="${REGISTRY}/ingress-gce-${binary}-${arch}:${VERSION}"
+        docker tag ${MULTIARCH_IMAGE} ${ARCH_SPECIFIC_IMAGE}
+        docker push ${ARCH_SPECIFIC_IMAGE}
+        echo "pushed $ARCH_SPECIFIC_IMAGE image"
+    done
 done
