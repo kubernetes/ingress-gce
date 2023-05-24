@@ -42,6 +42,9 @@ echo "setting up docker buildx.."
 docker buildx install
 docker buildx create --use
 
+# Download crane cli
+curl -sL "https://github.com/google/go-containerregistry/releases/download/v0.15.2/go-containerregistry_$(uname -s)_$(uname -m).tar.gz" | tar xvzf - krane
+
 for binary in ${BINARIES}
 do
     # "arm64 amd64" ---> "linux/arm64,linux/amd64" 
@@ -54,4 +57,12 @@ do
         --tag  ${MULTIARCH_IMAGE} \
         -f Dockerfile.${binary} .
     echo "done, pushed $MULTIARCH_IMAGE image"
+
+    # Tag arch specific images for the legacy registries
+    for arch in ${ALL_ARCH}
+    do
+        # krane is a variation of crane that supports k8s auth
+        ./krane copy --platform linux/${arch} ${MULTIARCH_IMAGE} ${REGISTRY}/ingress-gce-${binary}-${arch}:${VERSION}
+    done
+    echo "images are copied to arch specific registries"
 done
