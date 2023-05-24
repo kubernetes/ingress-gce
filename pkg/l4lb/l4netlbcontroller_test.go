@@ -1275,29 +1275,33 @@ func TestPreventTargetPoolToRBSMigration(t *testing.T) {
 		frHook                          getForwardingRuleHook
 		finalizer                       string
 		expectV2NetLBFinalizerAfterSync bool
+		expectRBSAnnotationAfterSync    bool
 	}{
 		{
-			desc:                            "Should not add finalizer to target pool service",
+			desc:                            "Should not add finalizer and RBS annotation to target pool service",
 			frHook:                          test.GetLegacyForwardingRule,
 			expectV2NetLBFinalizerAfterSync: false,
+			expectRBSAnnotationAfterSync:    false,
 		},
 		{
-			desc:                            "Should remove finalizer from target pool service with RBS finalizer",
+			desc:                            "Should remove finalizer and RBS annotation from target pool service with RBS finalizer. Covers race on creation",
 			frHook:                          test.GetLegacyForwardingRule,
 			finalizer:                       common.NetLBFinalizerV2,
 			expectV2NetLBFinalizerAfterSync: false,
+			expectRBSAnnotationAfterSync:    false,
 		},
 		{
-			desc:      "Should not remove finalizer from RBS based service",
-			finalizer: common.NetLBFinalizerV2,
-
+			desc:                            "Should not remove finalizer and RBS annotation from RBS based service",
+			finalizer:                       common.NetLBFinalizerV2,
 			frHook:                          test.GetRBSForwardingRule,
 			expectV2NetLBFinalizerAfterSync: true,
+			expectRBSAnnotationAfterSync:    true,
 		},
 		{
-			desc:                            "Should not remove finalizer from RBS service without forwarding rule",
+			desc:                            "Should not remove finalizer and RBS annotation from RBS service without forwarding rule",
 			finalizer:                       common.NetLBFinalizerV2,
 			expectV2NetLBFinalizerAfterSync: true,
+			expectRBSAnnotationAfterSync:    true,
 		},
 	}
 
@@ -1307,8 +1311,8 @@ func TestPreventTargetPoolToRBSMigration(t *testing.T) {
 			svc.ObjectMeta.Finalizers = []string{testCase.finalizer}
 
 			controller := newL4NetLBServiceController()
-
 			controller.ctx.Cloud.Compute().(*cloud.MockGCE).MockForwardingRules.GetHook = testCase.frHook
+
 			addNetLBService(controller, svc)
 
 			key, err := common.KeyFunc(svc)
@@ -1328,6 +1332,10 @@ func TestPreventTargetPoolToRBSMigration(t *testing.T) {
 			hasV2Finalizer := utils.HasL4NetLBFinalizerV2(resultSvc)
 			if hasV2Finalizer != testCase.expectV2NetLBFinalizerAfterSync {
 				t.Errorf("After preventLegacyServiceHandling, hasV2Finalizer = %t, testCase.expectV2NetLBFinalizerAfterSync = %t, want equal", hasV2Finalizer, testCase.expectV2NetLBFinalizerAfterSync)
+			}
+			hasRBSAnnotation := controller.hasRBSAnnotation(resultSvc)
+			if hasRBSAnnotation != testCase.expectRBSAnnotationAfterSync {
+				t.Errorf("After preventLegacyServiceHandling, hasRBSAnnotation = %t, testCase.expectRBSAnnotationAfterSync = %t, want equal", hasRBSAnnotation, testCase.expectRBSAnnotationAfterSync)
 			}
 
 			// test that whole sync process is skipped
@@ -1352,6 +1360,10 @@ func TestPreventTargetPoolToRBSMigration(t *testing.T) {
 			hasV2Finalizer = utils.HasL4NetLBFinalizerV2(resultSvc)
 			if hasV2Finalizer != testCase.expectV2NetLBFinalizerAfterSync {
 				t.Errorf("After sync, hasV2NetLBFinalizer = %t, testCase.expectV2NetLBFinalizerAfterSync = %t, want equal", hasV2Finalizer, testCase.expectV2NetLBFinalizerAfterSync)
+			}
+			hasRBSAnnotation = controller.hasRBSAnnotation(resultSvc)
+			if hasRBSAnnotation != testCase.expectRBSAnnotationAfterSync {
+				t.Errorf("After sync, hasRBSAnnotation = %t, testCase.expectRBSAnnotationAfterSync = %t, want equal", hasRBSAnnotation, testCase.expectRBSAnnotationAfterSync)
 			}
 		})
 	}

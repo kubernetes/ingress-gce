@@ -316,7 +316,7 @@ func (lc *L4NetLBController) preventTargetPoolRaceWithRBSOnCreation(service *v1.
 			"Failed to clean RBS resources for load balancer with target pool, err: %v", result.Error)
 		return result.Error
 	}
-	return nil
+	return lc.deleteRBSAnnotation(service)
 }
 
 func (lc *L4NetLBController) preventExistingTargetPoolToRBSMigration(service *v1.Service) error {
