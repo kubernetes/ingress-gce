@@ -159,17 +159,17 @@ func CheckBackendConfigAnnotation(c *ServiceChecker) (string, string, string) {
 	}
 	val, ok := getBackendConfigAnnotation(c.service)
 	if !ok {
-		return BackendConfigAnnotationCheck, report.Skipped, fmt.Sprintf("Service %s/%s does not have backendconfig annotation", c.service.Namespace, c.service.Name)
+		return BackendConfigAnnotationCheck, report.Skipped, fmt.Sprintf("Service %s/%s does not have backendconfig annotation", c.namespace, c.name)
 	}
 	beConfigs := &annotations.BackendConfigs{}
 	if err := json.Unmarshal([]byte(val), beConfigs); err != nil {
-		return BackendConfigAnnotationCheck, report.Failed, fmt.Sprintf("BackendConfig annotation is invalid in service %s/%s", c.service.Namespace, c.service.Name)
+		return BackendConfigAnnotationCheck, report.Failed, fmt.Sprintf("BackendConfig annotation is invalid in service %s/%s", c.namespace, c.name)
 	}
 	if beConfigs.Default == "" && beConfigs.Ports == nil {
-		return BackendConfigAnnotationCheck, report.Failed, fmt.Sprintf("BackendConfig annotation is missing both `default` and `ports` field in service %s/%s", c.service.Namespace, c.service.Name)
+		return BackendConfigAnnotationCheck, report.Failed, fmt.Sprintf("BackendConfig annotation is missing both `default` and `ports` field in service %s/%s", c.namespace, c.name)
 	}
 	c.beConfigs = beConfigs
-	return BackendConfigAnnotationCheck, report.Passed, fmt.Sprintf("BackendConfig annotation is valid in service %s/%s", c.service.Namespace, c.service.Name)
+	return BackendConfigAnnotationCheck, report.Passed, fmt.Sprintf("BackendConfig annotation is valid in service %s/%s", c.namespace, c.name)
 }
 
 // CheckAppProtocolAnnotation check whether the protocal annotation specified
@@ -180,38 +180,41 @@ func CheckAppProtocolAnnotation(c *ServiceChecker) (string, string, string) {
 	}
 	val, ok := getAppProtocolsAnnotation(c.service)
 	if !ok {
-		return AppProtocolAnnotationCheck, report.Skipped, fmt.Sprintf("Service %s/%s does not have AppProtocolAnnotation", c.service.Namespace, c.service.Name)
+		return AppProtocolAnnotationCheck, report.Skipped, fmt.Sprintf("Service %s/%s does not have AppProtocolAnnotation", c.namespace, c.name)
 	}
 	var portToProtocols map[string]annotations.AppProtocol
 	if err := json.Unmarshal([]byte(val), &portToProtocols); err != nil {
-		return AppProtocolAnnotationCheck, report.Failed, fmt.Sprintf("AppProtocol annotation is in invalid format in service %s/%s", c.service.Namespace, c.service.Name)
+		return AppProtocolAnnotationCheck, report.Failed, fmt.Sprintf("AppProtocol annotation is in invalid format in service %s/%s", c.namespace, c.name)
 	}
 	for _, protocol := range portToProtocols {
 		if protocol != annotations.ProtocolHTTP && protocol != annotations.ProtocolHTTPS && protocol != annotations.ProtocolHTTP2 {
-			return AppProtocolAnnotationCheck, report.Failed, fmt.Sprintf("Invalid port application protocol in service %s/%s: %v, must be one of [`HTTP`,`HTTPS`,`HTTP2`]", c.service.Namespace, c.service.Name, protocol)
+			return AppProtocolAnnotationCheck, report.Failed, fmt.Sprintf("Invalid port application protocol in service %s/%s: %v, must be one of [`HTTP`,`HTTPS`,`HTTP2`]", c.namespace, c.name, protocol)
 		}
 	}
-	return AppProtocolAnnotationCheck, report.Passed, fmt.Sprintf("AppProtocol annotation is valid in service %s/%s", c.service.Namespace, c.service.Name)
+	return AppProtocolAnnotationCheck, report.Passed, fmt.Sprintf("AppProtocol annotation is valid in service %s/%s", c.namespace, c.name)
 }
 
 // CheckL7ILBNegAnnotation check whether a service which belongs to an internal
 // ingress has a correct NEG annotation.
 func CheckL7ILBNegAnnotation(c *ServiceChecker) (string, string, string) {
+	if c.service == nil {
+		return L7ILBNegAnnotationCheck, report.Skipped, fmt.Sprintf("Service %s/%s does not exist", c.namespace, c.name)
+	}
 	if !c.isL7ILB {
-		return L7ILBNegAnnotationCheck, report.Skipped, fmt.Sprintf("Service %s/%s is not referenced by an internal ingress", c.service.Namespace, c.service.Name)
+		return L7ILBNegAnnotationCheck, report.Skipped, fmt.Sprintf("Service %s/%s is not referenced by an internal ingress", c.namespace, c.name)
 	}
 	val, ok := getNegAnnotation(c.service)
 	if !ok {
-		return L7ILBNegAnnotationCheck, report.Failed, fmt.Sprintf("No Neg annotation found in service %s/%s for internal HTTP(S) load balancing", c.service.Namespace, c.service.Name)
+		return L7ILBNegAnnotationCheck, report.Failed, fmt.Sprintf("No Neg annotation found in service %s/%s for internal HTTP(S) load balancing", c.namespace, c.name)
 	}
 	var res annotations.NegAnnotation
 	if err := json.Unmarshal([]byte(val), &res); err != nil {
-		return L7ILBNegAnnotationCheck, report.Failed, fmt.Sprintf("Invalid Neg annotation found in service %s/%s for internal HTTP(S) load balancing", c.service.Namespace, c.service.Name)
+		return L7ILBNegAnnotationCheck, report.Failed, fmt.Sprintf("Invalid Neg annotation found in service %s/%s for internal HTTP(S) load balancing", c.namespace, c.name)
 	}
 	if !res.Ingress {
-		return L7ILBNegAnnotationCheck, report.Failed, fmt.Sprintf("Neg annotation ingress field is not true in service %s/%s for internal HTTP(S) load balancing", c.service.Namespace, c.service.Name)
+		return L7ILBNegAnnotationCheck, report.Failed, fmt.Sprintf("Neg annotation ingress field is not true in service %s/%s for internal HTTP(S) load balancing", c.namespace, c.name)
 	}
-	return L7ILBNegAnnotationCheck, report.Passed, fmt.Sprintf("Neg annotation is set correctly in service %s/%s for internal HTTP(S) load balancing", c.service.Namespace, c.service.Name)
+	return L7ILBNegAnnotationCheck, report.Passed, fmt.Sprintf("Neg annotation is set correctly in service %s/%s for internal HTTP(S) load balancing", c.namespace, c.name)
 }
 
 // CheckBackendConfigExistence checks whether a BackendConfig exists.
