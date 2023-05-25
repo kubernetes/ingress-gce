@@ -46,6 +46,7 @@ func TestCheckServiceExistence(t *testing.T) {
 
 	for _, tc := range []struct {
 		desc      string
+		checker   ServiceChecker
 		namespace string
 		name      string
 		expect    string
@@ -73,7 +74,12 @@ func TestCheckServiceExistence(t *testing.T) {
 			expect:    report.Failed,
 		},
 	} {
-		_, res, _ := CheckServiceExistence(tc.namespace, tc.name, client)
+		checker := &ServiceChecker{
+			client:    client,
+			namespace: tc.namespace,
+			name:      tc.name,
+		}
+		_, res, _ := CheckServiceExistence(checker)
 		if res != tc.expect {
 			t.Errorf("For test case %q, expect check result = %s, but got %s", tc.desc, tc.expect, res)
 		}
@@ -140,7 +146,10 @@ func TestCheckBackendConfigAnnotation(t *testing.T) {
 			expect: report.Failed,
 		},
 	} {
-		_, res, _ := CheckBackendConfigAnnotation(&tc.svc)
+		checker := &ServiceChecker{
+			service: &tc.svc,
+		}
+		_, res, _ := CheckBackendConfigAnnotation(checker)
 		if res != tc.expect {
 			t.Errorf("For test case %q, expect check result = %s, but got %s", tc.desc, tc.expect, res)
 		}
@@ -185,7 +194,12 @@ func TestCheckBackendConfigExistence(t *testing.T) {
 			expect:    report.Failed,
 		},
 	} {
-		_, res, _ := CheckBackendConfigExistence(tc.namespace, tc.name, "svc-1", client)
+		checker := &BackendConfigChecker{
+			namespace: tc.namespace,
+			name:      tc.name,
+			client:    client,
+		}
+		_, res, _ := CheckBackendConfigExistence(checker)
 		if res != tc.expect {
 			t.Errorf("For test case %q, expect check result = %s, but got %s", tc.desc, tc.expect, res)
 		}
@@ -193,7 +207,6 @@ func TestCheckBackendConfigExistence(t *testing.T) {
 }
 
 func TestCheckHealthCheckConfig(t *testing.T) {
-
 	thirtyVar := int64(30)
 	twentyVar := int64(20)
 	for _, tc := range []struct {
@@ -262,7 +275,10 @@ func TestCheckHealthCheckConfig(t *testing.T) {
 			},
 			Spec: tc.spec,
 		}
-		res, _ := CheckHealthCheckTimeout(&beconfig, "")
+		checker := &BackendConfigChecker{
+			beConfig: &beconfig,
+		}
+		_, res, _ := CheckHealthCheckTimeout(checker)
 		if diff := cmp.Diff(tc.expect, res); diff != "" {
 			t.Errorf("For test case %s,  (-want +got):\n%s", tc.desc, diff)
 		}
@@ -307,7 +323,12 @@ func TestCheckFrontendConfigExistence(t *testing.T) {
 			expect:    report.Failed,
 		},
 	} {
-		_, res, _ := CheckFrontendConfigExistence(tc.namespace, tc.name, client)
+		checker := &FrontendConfigChecker{
+			namespace: tc.namespace,
+			name:      tc.name,
+			client:    client,
+		}
+		_, res, _ := CheckFrontendConfigExistence(checker)
 		if res != tc.expect {
 			t.Errorf("For test case %q, expect check result = %s, but got %s", tc.desc, tc.expect, res)
 		}
@@ -344,7 +365,16 @@ func TestCheckIngressRule(t *testing.T) {
 			expect: report.Failed,
 		},
 	} {
-		_, res, _ := CheckIngressRule(&tc.ingressRule)
+		checker := &IngressChecker{
+			ingress: &networkingv1.Ingress{
+				Spec: networkingv1.IngressSpec{
+					Rules: []networkingv1.IngressRule{
+						tc.ingressRule,
+					},
+				},
+			},
+		}
+		_, res, _ := CheckIngressRule(checker)
 		if diff := cmp.Diff(tc.expect, res); diff != "" {
 			t.Errorf("For test case %s,  (-want +got):\n%s", tc.desc, diff)
 		}
@@ -387,7 +417,14 @@ func TestCheckRuleHostOverwrite(t *testing.T) {
 			expect: report.Passed,
 		},
 	} {
-		res, _ := CheckRuleHostOverwrite(tc.rules)
+		checker := &IngressChecker{
+			ingress: &networkingv1.Ingress{
+				Spec: networkingv1.IngressSpec{
+					Rules: tc.rules,
+				},
+			},
+		}
+		_, res, _ := CheckRuleHostOverwrite(checker)
 		if res != tc.expect {
 			t.Errorf("For test case %q, expect check result = %s, but got %s", tc.desc, tc.expect, res)
 		}
@@ -467,7 +504,10 @@ func TestCheckAppProtocolAnnotation(t *testing.T) {
 			expect: report.Failed,
 		},
 	} {
-		res, _ := CheckAppProtocolAnnotation(&tc.svc)
+		checker := &ServiceChecker{
+			service: &tc.svc,
+		}
+		_, res, _ := CheckAppProtocolAnnotation(checker)
 		if res != tc.expect {
 			t.Errorf("For test case %q, expect check result = %s, but got %s", tc.desc, tc.expect, res)
 		}
@@ -521,7 +561,10 @@ func TestCheckL7ILBFrontendConfig(t *testing.T) {
 			expect: report.Passed,
 		},
 	} {
-		res, _ := CheckL7ILBFrontendConfig(&tc.ingress)
+		checker := &IngressChecker{
+			ingress: &tc.ingress,
+		}
+		_, res, _ := CheckL7ILBFrontendConfig(checker)
 		if res != tc.expect {
 			t.Errorf("For test case %q, expect check result = %s, but got %s", tc.desc, tc.expect, res)
 		}
@@ -584,9 +627,116 @@ func TestCheckL7ILBNegAnnotation(t *testing.T) {
 			expect: report.Passed,
 		},
 	} {
-		res, _ := CheckL7ILBNegAnnotation(&tc.svc)
+		checker := &ServiceChecker{
+			service: &tc.svc,
+			isL7ILB: true,
+		}
+		_, res, _ := CheckL7ILBNegAnnotation(checker)
 		if res != tc.expect {
 			t.Errorf("For test case %q, expect check result = %s, but got %s", tc.desc, tc.expect, res)
+		}
+	}
+}
+
+// TestCheckAllIngresses tests whether all the checks are triggered.
+func TestCheckAllIngresses(t *testing.T) {
+
+	client := fake.NewSimpleClientset()
+	beClient := fakebeconfig.NewSimpleClientset()
+	feClient := fakefeconfig.NewSimpleClientset()
+
+	ingress1 := networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "ingress1",
+			Namespace: "test",
+			Annotations: map[string]string{
+				annotations.IngressClassKey:   annotations.GceL7ILBIngressClass,
+				annotations.FrontendConfigKey: "feConfig-1",
+			},
+		},
+		Spec: networkingv1.IngressSpec{
+			DefaultBackend: &networkingv1.IngressBackend{
+				Service: &networkingv1.IngressServiceBackend{
+					Name: "svc-1",
+				},
+			},
+		},
+	}
+	ingress2 := networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "ingress2",
+			Namespace: "test",
+			Annotations: map[string]string{
+				annotations.IngressClassKey: annotations.GceL7ILBIngressClass,
+			},
+		},
+		Spec: networkingv1.IngressSpec{
+			Rules: []networkingv1.IngressRule{
+				{
+					Host: "abc.xyz",
+					IngressRuleValue: networkingv1.IngressRuleValue{
+						HTTP: &networkingv1.HTTPIngressRuleValue{
+							Paths: []networkingv1.HTTPIngressPath{
+								{
+									Path: "/*",
+									Backend: networkingv1.IngressBackend{
+										Service: &networkingv1.IngressServiceBackend{
+											Name: "svc-1",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Host: "abc.xyz",
+				},
+			},
+		},
+	}
+	client.NetworkingV1().Ingresses("test").Create(context.TODO(), &ingress1, metav1.CreateOptions{})
+	client.NetworkingV1().Ingresses("test").Create(context.TODO(), &ingress2, metav1.CreateOptions{})
+
+	serivce1 := corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc-1",
+			Namespace: "test",
+			Annotations: map[string]string{
+				annotations.BackendConfigKey: `{"default": "beconfig1"}`,
+			},
+		},
+	}
+	client.CoreV1().Services("test").Create(context.TODO(), &serivce1, metav1.CreateOptions{})
+
+	beClient.CloudV1().BackendConfigs("test").Create(context.TODO(), &beconfigv1.BackendConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "test",
+			Name:      "beconfig1",
+		},
+	}, metav1.CreateOptions{})
+	report := CheckAllIngresses("test", client, beClient, feClient)
+	checkSet := make(map[string]struct{})
+	for _, resource := range report.Resources {
+		for _, check := range resource.Checks {
+			checkSet[check.Name] = struct{}{}
+		}
+	}
+
+	for _, check := range []string{
+		ServiceExistenceCheck,
+		BackendConfigAnnotationCheck,
+		BackendConfigExistenceCheck,
+		HealthCheckTimeoutCheck,
+		IngressRuleCheck,
+		FrontendConfigExistenceCheck,
+		RuleHostOverwriteCheck,
+		AppProtocolAnnotationCheck,
+		L7ILBFrontendConfigCheck,
+		L7ILBNegAnnotationCheck,
+	} {
+		if _, ok := checkSet[check]; !ok {
+			t.Errorf("Missing check %s in CheckAllIngresses", check)
 		}
 	}
 }
