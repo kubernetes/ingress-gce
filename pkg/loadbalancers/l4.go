@@ -35,6 +35,7 @@ import (
 	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/healthchecksl4"
 	"k8s.io/ingress-gce/pkg/metrics"
+	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
@@ -55,6 +56,7 @@ type L4 struct {
 	forwardingRules ForwardingRulesProvider
 	healthChecks    healthchecksl4.L4HealthChecks
 	enableDualStack bool
+	network         network.NetworkInfo
 }
 
 // L4ILBSyncResult contains information about the outcome of an L4 ILB sync. It stores the list of resource name annotations,
@@ -76,6 +78,7 @@ type L4ILBParams struct {
 	Namer            namer.L4ResourcesNamer
 	Recorder         record.EventRecorder
 	DualStackEnabled bool
+	Network          network.NetworkInfo
 }
 
 // NewL4Handler creates a new L4Handler for the given L4 service.
@@ -87,9 +90,10 @@ func NewL4Handler(params *L4ILBParams) *L4 {
 		namer:           params.Namer,
 		recorder:        params.Recorder,
 		Service:         params.Service,
-		healthChecks:    healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder),
+		healthChecks:    healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder, params.Network),
 		forwardingRules: forwardingrules.New(params.Cloud, meta.VersionGA, scope),
 		enableDualStack: params.DualStackEnabled,
+		network:         params.Network,
 	}
 	l4.NamespacedName = types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace}
 	l4.backendPool = backends.NewPool(l4.cloud, l4.namer)
@@ -360,7 +364,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	}
 
 	// ensure backend service
-	bs, err := l4.backendPool.EnsureL4BackendService(bsName, hcLink, string(protocol), string(l4.Service.Spec.SessionAffinity), string(cloud.SchemeInternal), l4.NamespacedName)
+	bs, err := l4.backendPool.EnsureL4BackendService(bsName, hcLink, string(protocol), string(l4.Service.Spec.SessionAffinity), string(cloud.SchemeInternal), l4.NamespacedName, l4.network)
 	if err != nil {
 		result.GCEResourceInError = annotations.BackendServiceResource
 		result.Error = err
@@ -518,7 +522,7 @@ func (l4 *L4) getServiceSubnetworkURL(options gce.ILBOptions) (string, error) {
 	if options.SubnetName != "" {
 		return l4.getSubnetworkURLByName(options.SubnetName)
 	}
-	return l4.cloud.SubnetworkURL(), nil
+	return l4.network.SubnetworkURL, nil
 }
 
 func (l4 *L4) getSubnetworkURLByName(subnetName string) (string, error) {

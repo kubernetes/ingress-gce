@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/instancegroups"
+	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -229,7 +230,10 @@ func createBackendService(t *testing.T, sp utils.ServicePort, backendPool *Backe
 	t.Helper()
 	namespacedName := types.NamespacedName{Name: "service.Name", Namespace: "service.Namespace"}
 	protocol := string(apiv1.ProtocolTCP)
-	if _, err := backendPool.EnsureL4BackendService(sp.BackendName(), hcLink, protocol, string(apiv1.ServiceAffinityNone), string(cloud.SchemeExternal), namespacedName); err != nil {
+	serviceAffinityNone := string(apiv1.ServiceAffinityNone)
+	schemeExternal := string(cloud.SchemeExternal)
+	defaultNetworkInfo := network.NetworkInfo{IsDefault: true}
+	if _, err := backendPool.EnsureL4BackendService(sp.BackendName(), hcLink, protocol, serviceAffinityNone, schemeExternal, namespacedName, defaultNetworkInfo); err != nil {
 		t.Fatalf("Error creating backend service %v", err)
 	}
 }

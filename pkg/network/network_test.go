@@ -78,7 +78,7 @@ func TestServiceNetwork(t *testing.T) {
 					},
 				},
 			},
-			want: defaultNetwork(cloud),
+			want: DefaultNetwork(cloud),
 		},
 		{
 			desc: "service with empty network selector",
@@ -90,7 +90,7 @@ func TestServiceNetwork(t *testing.T) {
 					},
 				},
 			},
-			want: defaultNetwork(cloud),
+			want: DefaultNetwork(cloud),
 		},
 		{
 			desc: "service with network selector for the default network",
@@ -102,7 +102,7 @@ func TestServiceNetwork(t *testing.T) {
 					},
 				},
 			},
-			want: defaultNetwork(cloud),
+			want: DefaultNetwork(cloud),
 		},
 		{
 			desc:    "network not defined",

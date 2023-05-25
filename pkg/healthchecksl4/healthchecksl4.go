@@ -32,6 +32,7 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/healthchecksprovider"
+	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
@@ -62,14 +63,16 @@ type l4HealthChecks struct {
 	hcProvider          healthChecksProvider
 	cloud               *gce.Cloud
 	recorder            record.EventRecorder
+	network             network.NetworkInfo
 }
 
-func NewL4HealthChecks(cloud *gce.Cloud, recorder record.EventRecorder) *l4HealthChecks {
+func NewL4HealthChecks(cloud *gce.Cloud, recorder record.EventRecorder, network network.NetworkInfo) *l4HealthChecks {
 	return &l4HealthChecks{
 		sharedResourcesLock: sharedLock,
 		cloud:               cloud,
 		recorder:            recorder,
 		hcProvider:          healthchecksprovider.NewHealthChecks(cloud, meta.VersionGA),
+		network:             network,
 	}
 }
 
@@ -223,6 +226,7 @@ func (l4hc *l4HealthChecks) ensureIPv4Firewall(svc *corev1.Service, namer namer.
 		Protocol:     string(corev1.ProtocolTCP),
 		Name:         hcFwName,
 		NodeNames:    nodeNames,
+		Network:      l4hc.network,
 	}
 	err := firewalls.EnsureL4LBFirewallForHc(svc, isSharedHC, &hcFWRParams, l4hc.cloud, l4hc.recorder)
 	if err != nil {
@@ -249,6 +253,7 @@ func (l4hc *l4HealthChecks) ensureIPv6Firewall(svc *corev1.Service, namer namer.
 		Protocol:     string(corev1.ProtocolTCP),
 		Name:         ipv6HCFWName,
 		NodeNames:    nodeNames,
+		Network:      l4hc.network,
 	}
 	err := firewalls.EnsureL4LBFirewallForHc(svc, isSharedHC, &hcFWRParams, l4hc.cloud, l4hc.recorder)
 	if err != nil {

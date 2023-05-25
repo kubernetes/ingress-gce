@@ -236,7 +236,7 @@ func (l4 *L4) ensureIPv4ForwardingRule(bsLink string, options gce.ILBOptions, ex
 		IPProtocol:          string(protocol),
 		LoadBalancingScheme: string(cloud.SchemeInternal),
 		Subnetwork:          subnetworkURL,
-		Network:             l4.cloud.NetworkURL(),
+		Network:             l4.network.NetworkURL,
 		NetworkTier:         cloud.NetworkTierDefault.ToGCEValue(),
 		Version:             version,
 		BackendService:      bsLink,
@@ -427,8 +427,13 @@ func Equal(fr1, fr2 *composite.ForwardingRule) (bool, error) {
 		id1.Equal(id2) &&
 		fr1.AllowGlobalAccess == fr2.AllowGlobalAccess &&
 		fr1.AllPorts == fr2.AllPorts &&
-		fr1.Subnetwork == fr2.Subnetwork &&
+		equalResourcePaths(fr1.Subnetwork, fr2.Subnetwork) &&
+		equalResourcePaths(fr1.Network, fr2.Network) &&
 		fr1.NetworkTier == fr2.NetworkTier, nil
+}
+
+func equalResourcePaths(rp1, rp2 string) bool {
+	return rp1 == rp2 || utils.EqualResourceIDs(rp1, rp2)
 }
 
 // l4lbIPToUse determines which IP address needs to be used in the ForwardingRule. If an IP has been

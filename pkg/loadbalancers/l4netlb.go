@@ -34,6 +34,7 @@ import (
 	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/healthchecksl4"
 	"k8s.io/ingress-gce/pkg/metrics"
+	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
@@ -92,6 +93,7 @@ type L4NetLBParams struct {
 	Namer            namer.L4ResourcesNamer
 	Recorder         record.EventRecorder
 	DualStackEnabled bool
+	NetworkInfo      network.NetworkInfo
 }
 
 // NewL4NetLB creates a new Handler for the given L4NetLB service.
@@ -104,7 +106,7 @@ func NewL4NetLB(params *L4NetLBParams) *L4NetLB {
 		Service:         params.Service,
 		NamespacedName:  types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace},
 		backendPool:     backends.NewPool(params.Cloud, params.Namer),
-		healthChecks:    healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder),
+		healthChecks:    healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder, params.NetworkInfo),
 		forwardingRules: forwardingrules.New(params.Cloud, meta.VersionGA, meta.Regional),
 		enableDualStack: params.DualStackEnabled,
 	}
@@ -192,7 +194,7 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 	bsName := l4netlb.namer.L4Backend(l4netlb.Service.Namespace, l4netlb.Service.Name)
 	servicePorts := l4netlb.Service.Spec.Ports
 	protocol := utils.GetProtocol(servicePorts)
-	bs, err := l4netlb.backendPool.EnsureL4BackendService(bsName, hcLink, string(protocol), string(l4netlb.Service.Spec.SessionAffinity), string(cloud.SchemeExternal), l4netlb.NamespacedName)
+	bs, err := l4netlb.backendPool.EnsureL4BackendService(bsName, hcLink, string(protocol), string(l4netlb.Service.Spec.SessionAffinity), string(cloud.SchemeExternal), l4netlb.NamespacedName, *network.DefaultNetwork(l4netlb.cloud))
 	if err != nil {
 		syncResult.GCEResourceInError = annotations.BackendServiceResource
 		syncResult.Error = fmt.Errorf("Failed to ensure backend service %s - %w", bsName, err)
