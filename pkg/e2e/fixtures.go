@@ -245,6 +245,14 @@ func ensureEchoDeployment(s *Sandbox, name string, numReplicas int32, modify fun
 					},
 				},
 			},
+			Tolerations: []v1.Toleration{
+				{
+					Key:      "kubernetes.io/arch",
+					Operator: "Equal",
+					Value:    "arm64",
+					Effect:   "NoSchedule",
+				},
+			},
 		},
 	}
 	deployment := &apps.Deployment{
