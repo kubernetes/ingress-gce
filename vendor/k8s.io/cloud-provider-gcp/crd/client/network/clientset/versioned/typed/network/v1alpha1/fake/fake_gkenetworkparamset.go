@@ -110,7 +110,7 @@ func (c *FakeGKENetworkParamSets) UpdateStatus(ctx context.Context, gKENetworkPa
 // Delete takes name of the gKENetworkParamSet and deletes it. Returns an error if one occurs.
 func (c *FakeGKENetworkParamSets) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(gkenetworkparamsetsResource, name), &v1alpha1.GKENetworkParamSet{})
+		Invokes(testing.NewRootDeleteActionWithOptions(gkenetworkparamsetsResource, name, opts), &v1alpha1.GKENetworkParamSet{})
 	return err
 }
 
