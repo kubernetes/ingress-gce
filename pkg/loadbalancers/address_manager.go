@@ -18,12 +18,12 @@ package loadbalancers
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 
+	compute "google.golang.org/api/compute/v1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/utils"
-
-	compute "google.golang.org/api/compute/v1"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"k8s.io/klog/v2"
@@ -38,6 +38,21 @@ const (
 	IPAddrUnmanaged
 )
 
+// IPVersion represents compute.Address IpVersion field
+type IPVersion = string
+
+const (
+	IPv4Version IPVersion = "IPV4"
+	IPv6Version IPVersion = "IPV6"
+	// IPv6LBAddressPrefixLength used for reserving IPv6 addresses.
+	// Google Cloud reserves not a single IPv6 address, but a /96 range.
+	// At the moment, no other ranges are supported
+	IPv6LBAddressPrefixLength = 96
+	// IPv6EndpointTypeNetLB is a value on Address.Ipv6EndpointType used specify
+	// that IPv6 address will be used for NetLB. Required for new IPv6 NetLB address creation.
+	IPv6EndpointTypeNetLB = "NETLB"
+)
+
 // Original file in https://github.com/kubernetes/legacy-cloud-providers/blob/6aa80146c33550e908aed072618bd7f9998837f6/gce/gce_address_manager.go
 type addressManager struct {
 	logPrefix   string
@@ -50,9 +65,17 @@ type addressManager struct {
 	subnetURL   string
 	tryRelease  bool
 	networkTier cloud.NetworkTier
+	ipVersion   IPVersion
 }
 
-func newAddressManager(svc gce.CloudAddressService, serviceName, region, subnetURL, name, targetIP string, addressType cloud.LbScheme, networkTier cloud.NetworkTier) *addressManager {
+func newAddressManager(svc gce.CloudAddressService, serviceName, region, subnetURL, name, targetIP string, addressType cloud.LbScheme, networkTier cloud.NetworkTier, ipVersion IPVersion) *addressManager {
+	if targetIP != "" {
+		// Store address in normalized format.
+		// This is required for IPv6 addresses, to be able to filter by exact address,
+		// because filtering is happening by regexp and google cloud stores address in the shortest form.
+		targetIP = net.ParseIP(targetIP).String()
+	}
+	// We don't have verification that targetIP matches IPVersion, we will rely on Google cloud API verification
 	return &addressManager{
 		svc:         svc,
 		logPrefix:   fmt.Sprintf("AddressManager(%q)", name),
@@ -64,6 +87,7 @@ func newAddressManager(svc gce.CloudAddressService, serviceName, region, subnetU
 		tryRelease:  true,
 		subnetURL:   subnetURL,
 		networkTier: networkTier,
+		ipVersion:   ipVersion,
 	}
 }
 
@@ -148,6 +172,29 @@ func (am *addressManager) ensureAddressReservation() (string, IPAddressType, err
 		newAddr.NetworkTier = am.networkTier.ToGCEValue()
 	}
 
+	// This block mitigates inconsistencies in the gcloud API, as revealed through experimentation.
+	if am.ipVersion == IPv6Version {
+		// Empty targetIP covers reserving new static address.
+		if am.targetIP == "" {
+			// The IpVersion should be set to IPv6 only when creating a new IPv6 address.
+			// Setting it to IPv4 or setting it while promoting an existing load balancer IPv6 address to static can cause errors.
+			newAddr.IpVersion = IPv6Version
+			if am.addressType == cloud.SchemeExternal {
+				// Ipv6EndpointType is required only when creating a new external IPv6 address.
+				newAddr.Ipv6EndpointType = IPv6EndpointTypeNetLB
+			}
+		} else {
+			// Non-empty targetIP covers promoting existent load-balancer IP to static one.
+
+			// PrefixLength is only required when converting an existing IPv6 load balancer address to a static one.
+			newAddr.PrefixLength = IPv6LBAddressPrefixLength
+			if am.addressType == cloud.SchemeExternal {
+				// Specifying a Subnetwork will return error when promoting an existing external IPv6 forwarding rule IP to static.
+				newAddr.Subnetwork = ""
+			}
+		}
+	}
+
 	reserveErr := am.svc.ReserveRegionAddress(newAddr, am.region)
 	if reserveErr == nil {
 		if newAddr.Address != "" {
@@ -165,6 +212,8 @@ func (am *addressManager) ensureAddressReservation() (string, IPAddressType, err
 		return addr.Address, IPAddrManaged, nil
 	}
 
+	klog.V(2).Infof("Address reserve error: %v", reserveErr)
+
 	if utils.IsNetworkTierMismatchGCEError(reserveErr) {
 		receivedNetworkTier := cloud.NetworkTierPremium
 		if receivedNetworkTier == am.networkTier {
@@ -178,10 +227,13 @@ func (am *addressManager) ensureAddressReservation() (string, IPAddressType, err
 		return "", IPAddrUndefined, networkTierError
 	}
 
-	if !utils.IsHTTPErrorCode(reserveErr, http.StatusConflict) && !utils.IsHTTPErrorCode(reserveErr, http.StatusBadRequest) {
+	if !utils.IsHTTPErrorCode(reserveErr, http.StatusConflict) &&
+		!utils.IsHTTPErrorCode(reserveErr, http.StatusBadRequest) &&
+		!utils.IsHTTPErrorCode(reserveErr, http.StatusPreconditionFailed) {
 		// If the IP is already reserved:
 		//    by an internal address: a StatusConflict is returned
 		//    by an external address: a BadRequest is returned
+		//    by an external IPv6 address: a 412 Precondition not met error is returned
 		return "", IPAddrUndefined, reserveErr
 	}
 
@@ -220,7 +272,7 @@ func (am *addressManager) ensureAddressReservation() (string, IPAddressType, err
 }
 
 func (am *addressManager) validateAddress(addr *compute.Address) error {
-	if am.targetIP != "" && am.targetIP != addr.Address {
+	if am.targetIP != "" && !IsSameIP(am.targetIP, addr.Address) {
 		return fmt.Errorf("IP mismatch, expected %q, actual: %q", am.targetIP, addr.Address)
 	}
 	if addr.AddressType != string(am.addressType) {
@@ -230,6 +282,16 @@ func (am *addressManager) validateAddress(addr *compute.Address) error {
 		return utils.NewNetworkTierErr(fmt.Sprintf("Static IP (%v)", am.name), am.networkTier.ToGCEValue(), addr.NetworkTier)
 	}
 	return nil
+}
+
+func IsSameIP(ip1 string, ip2 string) bool {
+	parsedIP1 := net.ParseIP(ip1)
+	parsedIP2 := net.ParseIP(ip2)
+	if parsedIP1 == nil || parsedIP2 == nil {
+		return false
+	}
+
+	return parsedIP1.Equal(parsedIP2)
 }
 
 func (am *addressManager) isManagedAddress(addr *compute.Address) bool {

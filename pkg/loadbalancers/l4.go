@@ -309,56 +309,87 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 
 	options := l4.getILBOptions()
 	subnetworkURL, err := l4.getServiceSubnetworkURL(options)
+
+	bsName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
+	existingBS, err := l4.backendPool.Get(bsName, meta.VersionGA, l4.scope)
+	if utils.IgnoreHTTPNotFound(err) != nil {
+		klog.Errorf("Failed to lookup existing backend service, ignoring err: %v", err)
+	}
+
 	// Reserve existing IP address before making any changes
-	var existingFR *composite.ForwardingRule
+	var existingIPv4FR *composite.ForwardingRule
 	var ipv4ToUse string
 	if !l4.enableDualStack || utils.NeedsIPv4(l4.Service) {
-		existingFR, err = l4.getOldForwardingRule()
-		ipv4ToUse = l4lbIPToUse(l4.Service, existingFR, subnetworkURL)
+		existingIPv4FR, err = l4.getOldIPv4ForwardingRule(existingBS)
+		ipv4ToUse = l4lbIPToUse(l4.Service, existingIPv4FR, subnetworkURL)
 		expectedFRName := l4.GetFRName()
 		if !l4.cloud.IsLegacyNetwork() {
 			nm := types.NamespacedName{Namespace: l4.Service.Namespace, Name: l4.Service.Name}.String()
 			// ILB can be created only in Premium Tier
-			addrMgr := newAddressManager(l4.cloud, nm, l4.cloud.Region(), subnetworkURL, expectedFRName, ipv4ToUse, cloud.SchemeInternal, cloud.NetworkTierPremium)
+			addrMgr := newAddressManager(l4.cloud, nm, l4.cloud.Region(), subnetworkURL, expectedFRName, ipv4ToUse, cloud.SchemeInternal, cloud.NetworkTierPremium, IPv4Version)
 			ipv4ToUse, _, err = addrMgr.HoldAddress()
 			if err != nil {
 				result.Error = fmt.Errorf("EnsureInternalLoadBalancer error: addrMgr.HoldAddress() returned error %w", err)
 				return result
 			}
-			klog.V(2).Infof("EnsureInternalLoadBalancer(%v): reserved IP %q", nm, ipv4ToUse)
+			klog.V(2).Infof("EnsureInternalLoadBalancer(%v): reserved IPv4 address %q", nm, ipv4ToUse)
 			defer func() {
 				// Release the address that was reserved, in all cases. If the forwarding rule was successfully created,
 				// the ephemeral IP is not needed anymore. If it was not created, the address should be released to prevent leaks.
 				if err := addrMgr.ReleaseAddress(); err != nil {
-					klog.Errorf("EnsureInternalLoadBalancer: failed to release address reservation, possibly causing an orphan: %v", err)
+					klog.Errorf("EnsureInternalLoadBalancer: failed to release IPv4 address reservation, possibly causing an orphan: %v", err)
 				}
 			}()
 		}
 	}
 
-	// if Service protocol changed, we must delete forwarding rule before changing backend service,
-	// otherwise, on updating backend service, google cloud api will return error
-	bsName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
+	// Reserve existing IPv6 address before making any changes
+	var existingIPv6FR *composite.ForwardingRule
+	var ipv6ToUse string
+	if l4.enableDualStack && utils.NeedsIPv6(l4.Service) {
+		existingIPv6FR, err = l4.getOldIPv6ForwardingRule(existingBS)
+		ipv6ToUse = ipv6IPToUse(existingIPv6FR, subnetworkURL)
+		expectedIPv6FRName := l4.getIPv6FRName()
+		if !l4.cloud.IsLegacyNetwork() {
+			nm := types.NamespacedName{Namespace: l4.Service.Namespace, Name: l4.Service.Name}.String()
+			// ILB can be created only in Premium Tier
+			ipv6AddrMgr := newAddressManager(l4.cloud, nm, l4.cloud.Region(), subnetworkURL, expectedIPv6FRName, ipv6ToUse, cloud.SchemeInternal, cloud.NetworkTierPremium, IPv6Version)
+			ipv6ToUse, _, err = ipv6AddrMgr.HoldAddress()
+			if err != nil {
+				result.Error = fmt.Errorf("EnsureInternalLoadBalancer error: ipv6AddrMgr.HoldAddress() returned error %w", err)
+				return result
+			}
+			klog.V(2).Infof("EnsureInternalLoadBalancer(%v): reserved IPv6 address %q", nm, ipv6ToUse)
+			defer func() {
+				// Release the address that was reserved, in all cases. If the forwarding rule was successfully created,
+				// the ephemeral IP is not needed anymore. If it was not created, the address should be released to prevent leaks.
+				if err := ipv6AddrMgr.ReleaseAddress(); err != nil {
+					klog.Errorf("EnsureInternalLoadBalancer: failed to release IPv6 address reservation, possibly causing an orphan: %v", err)
+				}
+			}()
+		}
+	}
+
 	servicePorts := l4.Service.Spec.Ports
 	protocol := utils.GetProtocol(servicePorts)
-	existingBS, err := l4.backendPool.Get(bsName, meta.VersionGA, l4.scope)
-	if utils.IgnoreHTTPNotFound(err) != nil {
-		klog.Errorf("Failed to lookup existing backend service, ignoring err: %v", err)
-	}
+
+	// if Service protocol changed, we must delete forwarding rule before changing backend service,
+	// otherwise, on updating backend service, google cloud api will return error
 	if existingBS != nil && existingBS.Protocol != string(protocol) {
-		if existingFR != nil {
-			err = l4.forwardingRules.Delete(existingFR.Name)
+		klog.Infof("Protocol changed from %q to %q for service %s", existingBS.Protocol, string(protocol), l4.NamespacedName)
+		if existingIPv4FR != nil {
+			// Delete ipv4 forwarding rule if it exists
+			err = l4.forwardingRules.Delete(existingIPv4FR.Name)
 			if err != nil {
-				klog.Errorf("Failed to delete forwarding rule %s, err %v", existingFR.Name, err)
+				klog.Errorf("Failed to delete forwarding rule %s, err %v", existingIPv4FR.Name, err)
 			}
 		}
 
-		if l4.enableDualStack {
+		if l4.enableDualStack && existingIPv6FR != nil {
 			// Delete ipv6 forwarding rule if it exists
-			oldIPv6FrName := l4.getIPv6FRNameWithProtocol(existingBS.Protocol)
-			err = l4.forwardingRules.Delete(oldIPv6FrName)
+			err = l4.forwardingRules.Delete(existingIPv6FR.Name)
 			if err != nil {
-				klog.Errorf("Failed to delete ipv6 forwarding rule %s, err %v", oldIPv6FrName, err)
+				klog.Errorf("Failed to delete ipv6 forwarding rule %s, err %v", existingIPv6FR.Name, err)
 			}
 		}
 	}
@@ -373,9 +404,9 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	result.Annotations[annotations.BackendServiceKey] = bsName
 
 	if l4.enableDualStack {
-		l4.ensureDualStackResources(result, nodeNames, options, bs, existingFR, subnetworkURL, ipv4ToUse)
+		l4.ensureDualStackResources(result, nodeNames, options, bs, existingIPv4FR, existingIPv6FR, subnetworkURL, ipv4ToUse, ipv6ToUse)
 	} else {
-		l4.ensureIPv4Resources(result, nodeNames, options, bs, existingFR, subnetworkURL, ipv4ToUse)
+		l4.ensureIPv4Resources(result, nodeNames, options, bs, existingIPv4FR, subnetworkURL, ipv4ToUse)
 	}
 	if result.Error != nil {
 		return result
@@ -437,14 +468,14 @@ func (l4 *L4) provideIPv4HealthChecks(nodeNames []string, result *L4ILBSyncResul
 	return hcResult.HCLink
 }
 
-func (l4 *L4) ensureDualStackResources(result *L4ILBSyncResult, nodeNames []string, options gce.ILBOptions, bs *composite.BackendService, existingFR *composite.ForwardingRule, subnetworkURL, ipToUse string) {
+func (l4 *L4) ensureDualStackResources(result *L4ILBSyncResult, nodeNames []string, options gce.ILBOptions, bs *composite.BackendService, existingIPv4FwdRule, existingIPv6FwdRule *composite.ForwardingRule, subnetworkURL, ipv4ToUse, ipv6ToUse string) {
 	if utils.NeedsIPv4(l4.Service) {
-		l4.ensureIPv4Resources(result, nodeNames, options, bs, existingFR, subnetworkURL, ipToUse)
+		l4.ensureIPv4Resources(result, nodeNames, options, bs, existingIPv4FwdRule, subnetworkURL, ipv4ToUse)
 	} else {
 		l4.deleteIPv4ResourcesOnSync(result)
 	}
 	if utils.NeedsIPv6(l4.Service) {
-		l4.ensureIPv6Resources(result, nodeNames, options, bs.SelfLink)
+		l4.ensureIPv6Resources(result, nodeNames, options, bs.SelfLink, existingIPv6FwdRule, ipv6ToUse)
 	} else {
 		l4.deleteIPv6ResourcesOnSync(result)
 	}
@@ -541,23 +572,14 @@ func (l4 *L4) hasAnnotation(annotationKey string) bool {
 	return false
 }
 
-func (l4 *L4) getOldForwardingRule() (*composite.ForwardingRule, error) {
-	bsName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
-	// Check if protocol has changed for this service. In this case, forwarding rule has different protocol and name
-	existingBS, err := l4.backendPool.Get(bsName, meta.VersionGA, l4.scope)
-	err = utils.IgnoreHTTPNotFound(err)
-	if err != nil {
-		klog.Errorf("Failed to lookup existing backend service, ignoring err: %v", err)
-	}
-
+func (l4 *L4) getOldIPv4ForwardingRule(existingBS *composite.BackendService) (*composite.ForwardingRule, error) {
 	servicePorts := l4.Service.Spec.Ports
 	protocol := utils.GetProtocol(servicePorts)
+
+	oldFRName := l4.GetFRName()
 	if existingBS != nil && existingBS.Protocol != string(protocol) {
-		klog.Infof("Protocol changed from %q to %q for service %s", existingBS.Protocol, string(protocol), l4.NamespacedName)
-		// Delete forwarding rule if it exists
-		oldProtocolFRRName := l4.getFRNameWithProtocol(existingBS.Protocol)
-		return l4.forwardingRules.Get(oldProtocolFRRName)
+		oldFRName = l4.getFRNameWithProtocol(existingBS.Protocol)
 	}
 
-	return l4.forwardingRules.Get(l4.GetFRName())
+	return l4.forwardingRules.Get(oldFRName)
 }

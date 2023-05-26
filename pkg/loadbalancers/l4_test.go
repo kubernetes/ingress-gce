@@ -19,6 +19,7 @@ limitations under the License.
 import (
 	"context"
 	"fmt"
+	"net"
 	"reflect"
 	"strings"
 	"testing"
@@ -1399,12 +1400,9 @@ func TestDualStackInternalLoadBalancerModifyProtocol(t *testing.T) {
 				if err != nil {
 					return false, err
 				}
-				// we don't reserve addresses for IPv6 forwarding rules
-				if fr.IpVersion == IPVersionIPv6 {
-					return false, nil
-				}
 
-				addr, err := l4.cloud.GetRegionAddressByIP(fr.Region, fr.IPAddress)
+				ipv6Address := net.ParseIP(fr.IPAddress).String()
+				addr, err := l4.cloud.GetRegionAddressByIP(fr.Region, ipv6Address)
 				if utils.IgnoreHTTPNotFound(err) != nil {
 					return true, err
 				}

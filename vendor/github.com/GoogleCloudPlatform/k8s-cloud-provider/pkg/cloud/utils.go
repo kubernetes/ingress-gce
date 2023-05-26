@@ -49,17 +49,45 @@ type ResourceID struct {
 func (r *ResourceID) Equal(other *ResourceID) bool {
 	switch {
 	case r == nil && other == nil:
-	  return true
+		return true
 	case r == nil || other == nil:
-	  return false
+		return false
 	case r.ProjectID != other.ProjectID || r.Resource != other.Resource:
-	  return false
+		return false
 	case r.Key != nil && other.Key != nil:
-	  return *r.Key == *other.Key
+		return *r.Key == *other.Key
 	case r.Key == nil && other.Key == nil:
-	  return true
+		return true
 	default:
-	  return false
+		return false
+	}
+}
+
+// ResourceMapKey is a flat ResourceID that can be used as a key in maps.
+type ResourceMapKey struct {
+	ProjectID string
+	Resource  string
+	Name      string
+	Zone      string
+	Region    string
+}
+
+func (rk ResourceMapKey) ToID() *ResourceID {
+	return &ResourceID{
+		ProjectID: rk.ProjectID,
+		Resource:  rk.Resource,
+		Key:       &meta.Key{Name: rk.Name, Zone: rk.Zone, Region: rk.Region},
+	}
+}
+
+// MapKey returns a flat key that can be used for referencing in maps.
+func (r *ResourceID) MapKey() ResourceMapKey {
+	return ResourceMapKey{
+		ProjectID: r.ProjectID,
+		Resource:  r.Resource,
+		Name:      r.Key.Name,
+		Zone:      r.Key.Zone,
+		Region:    r.Key.Region,
 	}
 }
 
@@ -78,18 +106,28 @@ func (r *ResourceID) SelfLink(ver meta.Version) string {
 	return SelfLink(ver, r.ProjectID, r.Resource, r.Key)
 }
 
+func (r *ResourceID) String() string {
+	switch r.Key.Type() {
+	case meta.Zonal:
+		return fmt.Sprintf("%s:%s/%s/%s", r.Resource, r.ProjectID, r.Key.Zone, r.Key.Name)
+	case meta.Regional:
+		return fmt.Sprintf("%s:%s/%s/%s", r.Resource, r.ProjectID, r.Key.Region, r.Key.Name)
+	}
+	return fmt.Sprintf("%s:%s/%s", r.Resource, r.ProjectID, r.Key.Name)
+}
+
 // ParseResourceURL parses resource URLs of the following formats:
 //
-//   global/<res>/<name>
-//   regions/<region>/<res>/<name>
-//   zones/<zone>/<res>/<name>
-//   projects/<proj>
-//   projects/<proj>/global/<res>/<name>
-//   projects/<proj>/regions/<region>/<res>/<name>
-//   projects/<proj>/zones/<zone>/<res>/<name>
-//   [https://www.googleapis.com/compute/<ver>]/projects/<proj>/global/<res>/<name>
-//   [https://www.googleapis.com/compute/<ver>]/projects/<proj>/regions/<region>/<res>/<name>
-//   [https://www.googleapis.com/compute/<ver>]/projects/<proj>/zones/<zone>/<res>/<name>
+//	global/<res>/<name>
+//	regions/<region>/<res>/<name>
+//	zones/<zone>/<res>/<name>
+//	projects/<proj>
+//	projects/<proj>/global/<res>/<name>
+//	projects/<proj>/regions/<region>/<res>/<name>
+//	projects/<proj>/zones/<zone>/<res>/<name>
+//	[https://www.googleapis.com/compute/<ver>]/projects/<proj>/global/<res>/<name>
+//	[https://www.googleapis.com/compute/<ver>]/projects/<proj>/regions/<region>/<res>/<name>
+//	[https://www.googleapis.com/compute/<ver>]/projects/<proj>/zones/<zone>/<res>/<name>
 func ParseResourceURL(url string) (*ResourceID, error) {
 	errNotValid := fmt.Errorf("%q is not a valid resource URL", url)
 
