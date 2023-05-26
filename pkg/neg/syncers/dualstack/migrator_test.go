@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/ingress-gce/pkg/neg/metrics"
+	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/klog/v2/ktesting"
 	"k8s.io/utils/clock"
@@ -992,7 +992,7 @@ func cloneZoneNetworkEndpointsMap(m map[string]types.NetworkEndpointSet) map[str
 
 func newMigratorForTest(t *testing.T, enableDualStackNEG bool) *Migrator {
 	logger, _ := ktesting.NewTestContext(t)
-	m := NewMigrator(enableDualStackNEG, &fakeSyncable{}, types.NegSyncerKey{}, metrics.FakeSyncerMetrics(), &fakeErrorStateChecker{}, logger)
+	m := NewMigrator(enableDualStackNEG, &fakeSyncable{}, types.NegSyncerKey{}, metricscollector.FakeSyncerMetrics(), &fakeErrorStateChecker{}, logger)
 	m.clock = clocktesting.NewFakeClock(time.Now())
 	return m
 }

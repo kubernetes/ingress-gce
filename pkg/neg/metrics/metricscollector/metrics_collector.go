@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package metrics
+package metricscollector
 
 import (
 	"fmt"
@@ -28,6 +28,23 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
 )
+
+var register sync.Once
+
+// RegisterSyncerMetrics registers syncer related metrics
+func RegisterMetrics() {
+	register.Do(func() {
+		prometheus.MustRegister(syncerState)
+		prometheus.MustRegister(syncerEndpointState)
+		prometheus.MustRegister(syncerEndpointSliceState)
+		prometheus.MustRegister(NumberOfEndpoints)
+		prometheus.MustRegister(DualStackMigrationFinishedDurations)
+		prometheus.MustRegister(DualStackMigrationLongestUnfinishedDuration)
+		prometheus.MustRegister(DualStackMigrationServiceCount)
+		prometheus.MustRegister(SyncerCountByEndpointType)
+		prometheus.MustRegister(syncerSyncResult)
+	})
+}
 
 type SyncerMetricsCollector interface {
 	// UpdateSyncerStatusInMetrics update the status of corresponding syncer based on the sync error
@@ -82,19 +99,6 @@ func NewNegMetricsCollector(exportInterval time.Duration, logger klog.Logger) *S
 // FakeSyncerMetrics creates new NegMetricsCollector with fixed 5 second metricsInterval, to be used in tests
 func FakeSyncerMetrics() *SyncerMetrics {
 	return NewNegMetricsCollector(5*time.Second, klog.TODO())
-}
-
-// RegisterSyncerMetrics registers syncer related metrics
-func RegisterSyncerMetrics() {
-	prometheus.MustRegister(syncerState)
-	prometheus.MustRegister(syncerEndpointState)
-	prometheus.MustRegister(syncerEndpointSliceState)
-	prometheus.MustRegister(NumberOfEndpoints)
-	prometheus.MustRegister(DualStackMigrationFinishedDurations)
-	prometheus.MustRegister(DualStackMigrationLongestUnfinishedDuration)
-	prometheus.MustRegister(DualStackMigrationServiceCount)
-	prometheus.MustRegister(SyncerCountByEndpointType)
-	prometheus.MustRegister(syncerSyncResult)
 }
 
 func (sm *SyncerMetrics) Run(stopCh <-chan struct{}) {

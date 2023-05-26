@@ -218,8 +218,6 @@ func RegisterMetrics() {
 		prometheus.MustRegister(AnnotationSize)
 		prometheus.MustRegister(DegradeModeCorrectness)
 		prometheus.MustRegister(NegControllerErrorCount)
-
-		RegisterSyncerMetrics()
 	})
 }
 

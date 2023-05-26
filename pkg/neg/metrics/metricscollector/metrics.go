@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package metrics
+package metricscollector
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
@@ -22,6 +22,9 @@ import (
 )
 
 const (
+	negControllerSubsystem = "neg_controller"
+
+	// Label Values for Syncer Sync Result Metrics
 	EPCountsDiffer           = "EndpointCountsDiffer"
 	EPNodeMissing            = "EndpointNodeMissing"
 	EPNodeNotFound           = "EndpointNodeNotFound"
