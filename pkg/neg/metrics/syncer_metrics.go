@@ -22,9 +22,6 @@ import (
 )
 
 const (
-	syncResultLabel = "result"
-	syncResultKey   = "sync_result"
-
 	EPCountsDiffer           = "EndpointCountsDiffer"
 	EPNodeMissing            = "EndpointNodeMissing"
 	EPNodeNotFound           = "EndpointNodeNotFound"
@@ -49,10 +46,10 @@ var (
 	syncerSyncResult = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Subsystem: negControllerSubsystem,
-			Name:      syncResultKey,
+			Name:      "sync_result",
 			Help:      "Current count for each sync result",
 		},
-		[]string{syncResultLabel},
+		[]string{"result"},
 	)
 
 	// syncerState tracks the count of syncer in different states

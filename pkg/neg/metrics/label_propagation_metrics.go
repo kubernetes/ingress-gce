@@ -21,36 +21,24 @@ import (
 )
 
 const (
-	labelNumber       = "label_number_per_endpoint"
-	annotationSize    = "annotation_size_per_endpoint"
-	labelErrorNumber  = "label_propagation_error_count"
-	numberOfEndpoints = "number_of_endpoints"
-	epWithAnnotation  = "with_annotation"
-	totalEndpoints    = "total"
+	epWithAnnotation = "with_annotation"
+	totalEndpoints   = "total"
 )
 
 var (
-	labelPropagationErrorLabels = []string{
-		"error_type",
-	}
-
-	endpointAnnotationLabels = []string{
-		"feature",
-	}
-
 	NumberOfEndpoints = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Subsystem: negControllerSubsystem,
-			Name:      numberOfEndpoints,
+			Name:      "number_of_endpoints",
 			Help:      "The total number of endpoints",
 		},
-		endpointAnnotationLabels,
+		[]string{"feature"},
 	)
 
 	LabelNumber = prometheus.NewHistogram(
 		prometheus.HistogramOpts{
 			Subsystem: negControllerSubsystem,
-			Name:      labelNumber,
+			Name:      "label_number_per_endpoint",
 			Help:      "The number of labels per endpoint",
 			// custom buckets - [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, +Inf]
 			Buckets: prometheus.ExponentialBuckets(1, 2, 13),
@@ -60,7 +48,7 @@ var (
 	AnnotationSize = prometheus.NewHistogram(
 		prometheus.HistogramOpts{
 			Subsystem: negControllerSubsystem,
-			Name:      annotationSize,
+			Name:      "annotation_size_per_endpoint",
 			Help:      "The size in byte of endpoint annotations per endpoint",
 			// custom buckets - [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, +Inf]
 			Buckets: prometheus.ExponentialBuckets(1, 2, 13),
@@ -70,10 +58,10 @@ var (
 	LabelPropagationError = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Subsystem: negControllerSubsystem,
-			Name:      labelErrorNumber,
+			Name:      "label_propagation_error_count",
 			Help:      "the number of errors occurred for label propagation",
 		},
-		labelPropagationErrorLabels,
+		[]string{"error_type"},
 	)
 )
 

@@ -25,16 +25,7 @@ import (
 )
 
 const (
-	negControllerSubsystem     = "neg_controller"
-	syncerLatencyKey           = "syncer_sync_duration_seconds"
-	managerProcessLatencyKey   = "manager_process_duration_seconds"
-	initLatencyKey             = "neg_initialization_duration_seconds"
-	negOpLatencyKey            = "neg_operation_duration_seconds"
-	negOpEndpointsKey          = "neg_operation_endpoints"
-	lastSyncTimestampKey       = "sync_timestamp"
-	syncerStalenessKey         = "syncer_staleness"
-	epsStalenessKey            = "endpointslice_staleness"
-	degradedModeCorrectnessKey = "degraded_mode_correctness"
+	negControllerSubsystem = "neg_controller"
 
 	resultSuccess = "success"
 	resultError   = "error"
@@ -61,83 +52,70 @@ const (
 type syncType string
 
 var (
-	negOpLatencyMetricsLabels = []string{
-		"operation",   // endpoint operation
-		"neg_type",    // type of neg
-		"api_version", // GCE API version
-		"result",      // result of the sync
-	}
-
-	negOpEndpointsMetricsLabels = []string{
-		"operation", // endpoint operation
-		"neg_type",  // type of neg
-		"result",    // result of the sync
-	}
-
-	negProcessMetricsLabels = []string{
-		"process", // type of manager process loop
-		"result",  // result of the process
-	}
-
-	syncerMetricsLabels = []string{
-		"neg_type",                 //type of neg
-		"endpoint_calculator_mode", // type of endpoint calculator used
-		"result",                   // result of the sync
-	}
-
-	degradedModeCorrectnessLabels = []string{
-		"neg_type",      // type of neg
-		"endpoint_type", // type of endpoint
-	}
-
 	NegOperationLatency = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Subsystem: negControllerSubsystem,
-			Name:      negOpLatencyKey,
+			Name:      "neg_operation_duration_seconds",
 			Help:      "Latency of a NEG Operation",
 			// custom buckets - [1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s(~4min), 512s(~8min), 1024s(~17min), 2048 (~34min), 4096(~68min), +Inf]
 			Buckets: prometheus.ExponentialBuckets(1, 2, 13),
 		},
-		negOpLatencyMetricsLabels,
+		[]string{
+			"operation",   // endpoint operation
+			"neg_type",    // type of neg
+			"api_version", // GCE API version
+			"result",      // result of the sync
+		},
 	)
 
 	NegOperationEndpoints = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Subsystem: negControllerSubsystem,
-			Name:      negOpEndpointsKey,
+			Name:      "neg_operation_endpoints",
 			Help:      "Number of Endpoints during an NEG Operation",
 			// custom buckets - [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, +Inf]
 			Buckets: prometheus.ExponentialBuckets(1, 2, 13),
 		},
-		negOpEndpointsMetricsLabels,
+		[]string{
+			"operation", // endpoint operation
+			"neg_type",  // type of neg
+			"result",    // result of the sync
+		},
 	)
 
 	SyncerSyncLatency = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Subsystem: negControllerSubsystem,
-			Name:      syncerLatencyKey,
+			Name:      "syncer_sync_duration_seconds",
 			Help:      "Sync latency for NEG Syncer",
 			// custom buckets - [1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s(~4min), 512s(~8min), 1024s(~17min), 2048 (~34min), 4096(~68min), +Inf]
 			Buckets: prometheus.ExponentialBuckets(1, 2, 13),
 		},
-		syncerMetricsLabels,
+		[]string{
+			"neg_type",                 //type of neg
+			"endpoint_calculator_mode", // type of endpoint calculator used
+			"result",                   // result of the sync
+		},
 	)
 
 	ManagerProcessLatency = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Subsystem: negControllerSubsystem,
-			Name:      managerProcessLatencyKey,
+			Name:      "manager_process_duration_seconds",
 			Help:      "Process latency for NEG Manager",
 			// custom buckets - [1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s(~4min), 512s(~8min), 1024s(~17min), 2048 (~34min), 4096(~68min), +Inf]
 			Buckets: prometheus.ExponentialBuckets(1, 2, 13),
 		},
-		negProcessMetricsLabels,
+		[]string{
+			"process", // type of manager process loop
+			"result",  // result of the process
+		},
 	)
 
 	InitializationLatency = prometheus.NewHistogram(
 		prometheus.HistogramOpts{
 			Subsystem: negControllerSubsystem,
-			Name:      initLatencyKey,
+			Name:      "neg_initialization_duration_seconds",
 			Help:      "Initialization latency of a NEG",
 			// custom buckets - [1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s(~4min), 512s(~8min), 1024s(~17min), 2048 (~34min), 4096(~68min), +Inf]
 			Buckets: prometheus.ExponentialBuckets(1, 2, 13),
@@ -147,7 +125,7 @@ var (
 	LastSyncTimestamp = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Subsystem: negControllerSubsystem,
-			Name:      lastSyncTimestampKey,
+			Name:      "sync_timestamp",
 			Help:      "The timestamp of the last execution of NEG controller sync loop.",
 		},
 	)
@@ -156,7 +134,7 @@ var (
 	SyncerStaleness = prometheus.NewHistogram(
 		prometheus.HistogramOpts{
 			Subsystem: negControllerSubsystem,
-			Name:      syncerStalenessKey,
+			Name:      "syncer_staleness",
 			Help:      "The duration of a syncer since it last syncs",
 			// custom buckets - [1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s(~4min), 512s(~8min), 1024s(~17min), 2048 (~34min), 4096(~68min), 8192(~136min), +Inf]
 			Buckets: prometheus.ExponentialBuckets(1, 2, 14),
@@ -167,7 +145,7 @@ var (
 	EPSStaleness = prometheus.NewHistogram(
 		prometheus.HistogramOpts{
 			Subsystem: negControllerSubsystem,
-			Name:      epsStalenessKey,
+			Name:      "endpointslice_staleness",
 			Help:      "The duration for an endpoint slice since it was last processed by syncer",
 			// custom buckets - [1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s(~4min), 512s(~8min), 1024s(~17min), 2048 (~34min), 4096(~68min), 8192(~136min), +Inf]
 			Buckets: prometheus.ExponentialBuckets(1, 2, 14),
@@ -177,12 +155,15 @@ var (
 	DegradeModeCorrectness = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Subsystem: negControllerSubsystem,
-			Name:      degradedModeCorrectnessKey,
+			Name:      "degraded_mode_correctness",
 			Help:      "Number of endpoints differed between current endpoint calculation and degraded mode calculation",
 			// custom buckets - [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, +Inf]
 			Buckets: prometheus.ExponentialBuckets(1, 2, 20),
 		},
-		degradedModeCorrectnessLabels,
+		[]string{
+			"neg_type",      // type of neg
+			"endpoint_type", // type of endpoint
+		},
 	)
 
 	DualStackMigrationFinishedDurations = prometheus.NewHistogram(
