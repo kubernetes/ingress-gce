@@ -8,6 +8,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"k8s.io/ingress-gce/pkg/neg/types"
+	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
 )
 
@@ -216,6 +218,76 @@ func TestComputeDualStackMigrationCounts(t *testing.T) {
 	}
 	if gotMigrationServicesCount != wantMigrationServicesCount {
 		t.Errorf("computeDualStackMigrationCounts() returned migrationServicesCount=%v: want=%v", gotMigrationServicesCount, wantMigrationServicesCount)
+	}
+}
+
+func TestComputeLabelMetrics(t *testing.T) {
+	collector := NewNegMetricsCollector(10*time.Second, klog.TODO())
+	syncer1 := negtypes.NegSyncerKey{
+		Namespace:        "ns1",
+		Name:             "svc-1",
+		NegName:          "neg-1",
+		NegType:          negtypes.VmIpPortEndpointType,
+		EpCalculatorMode: negtypes.L7Mode,
+	}
+	syncer2 := negtypes.NegSyncerKey{
+		Namespace:        "ns1",
+		Name:             "svc-2",
+		NegName:          "neg-2",
+		NegType:          negtypes.VmIpPortEndpointType,
+		EpCalculatorMode: negtypes.L7Mode,
+	}
+	for _, tc := range []struct {
+		desc                       string
+		syncerLabelProagationStats map[negtypes.NegSyncerKey]LabelPropagationStats
+		expect                     LabelPropagationMetrics
+	}{
+		{
+			desc: "Empty Data",
+			syncerLabelProagationStats: map[negtypes.NegSyncerKey]LabelPropagationStats{
+				syncer1: {},
+			},
+			expect: LabelPropagationMetrics{
+				EndpointsWithAnnotation: 0,
+				NumberOfEndpoints:       0,
+			},
+		},
+		{
+			desc: "All endpoints have annotations",
+			syncerLabelProagationStats: map[negtypes.NegSyncerKey]LabelPropagationStats{
+				syncer1: {
+					EndpointsWithAnnotation: 10,
+					NumberOfEndpoints:       10,
+				},
+			},
+			expect: LabelPropagationMetrics{
+				EndpointsWithAnnotation: 10,
+				NumberOfEndpoints:       10,
+			},
+		},
+		{
+			desc: "Test with 2 syncers",
+			syncerLabelProagationStats: map[negtypes.NegSyncerKey]LabelPropagationStats{
+				syncer1: {
+					EndpointsWithAnnotation: 10,
+					NumberOfEndpoints:       10,
+				},
+				syncer2: {
+					EndpointsWithAnnotation: 5,
+					NumberOfEndpoints:       10,
+				},
+			},
+			expect: LabelPropagationMetrics{
+				EndpointsWithAnnotation: 15,
+				NumberOfEndpoints:       20,
+			},
+		},
+	} {
+		collector.syncerLabelProagationStats = tc.syncerLabelProagationStats
+		out := collector.computeLabelMetrics()
+		if diff := cmp.Diff(out, tc.expect); diff != "" {
+			t.Errorf("For test case %s,  (-want +got):\n%s", tc.desc, diff)
+		}
 	}
 }
 

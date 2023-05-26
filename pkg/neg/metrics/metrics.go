@@ -36,12 +36,6 @@ const (
 	NotInDegradedEndpoints  = "not_in_degraded_endpoints"
 	OnlyInDegradedEndpoints = "only_in_degraded_endpoints"
 
-	// Classification of endpoints within a NEG.
-	ipv4EndpointType      = "IPv4"
-	ipv6EndpointType      = "IPv6"
-	dualStackEndpointType = "DualStack"
-	migrationEndpointType = "Migration"
-
 	gceServerError = "GCE_server_error"
 	k8sServerError = "K8s_server_error"
 	ignoredError   = "ignored_error"
@@ -166,42 +160,6 @@ var (
 		},
 	)
 
-	DualStackMigrationFinishedDurations = prometheus.NewHistogram(
-		prometheus.HistogramOpts{
-			Subsystem: negControllerSubsystem,
-			Name:      "dual_stack_migration_finished_durations_seconds",
-			Help:      "Time taken to migrate all endpoints within all NEGs for a service port",
-			// Buckets ~= [1s, 1.85s, 3.42s, 6s, 11s, 21s, 40s, 1m14s, 2m17s, 4m13s, 7m49s, 14m28s, 26m47s, 49m33s, 1h31m40s, 2h49m35s, 5h13m45s, 9h40m27s, +Inf]
-			Buckets: prometheus.ExponentialBuckets(1, 1.85, 18),
-		},
-	)
-
-	// A zero value for this metric means that there are no ongoing migrations.
-	DualStackMigrationLongestUnfinishedDuration = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Subsystem: negControllerSubsystem,
-			Name:      "dual_stack_migration_longest_unfinished_duration_seconds",
-			Help:      "Longest time elapsed since a migration was started which hasn't yet completed",
-		},
-	)
-
-	DualStackMigrationServiceCount = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Subsystem: negControllerSubsystem,
-			Name:      "dual_stack_migration_service_count",
-			Help:      "Number of Services which have migration endpoints",
-		},
-	)
-
-	SyncerCountByEndpointType = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Subsystem: negControllerSubsystem,
-			Name:      "syncer_count_by_endpoint_type",
-			Help:      "Number of Syncers managing NEGs containing endpoint of a particular kind",
-		},
-		[]string{"endpoint_type"},
-	)
-
 	// NegControllerErrorCount tracks the count of server errors(GCE/K8s) and
 	// all errors from NEG controller.
 	NegControllerErrorCount = prometheus.NewCounterVec(
@@ -209,6 +167,35 @@ var (
 			Subsystem: negControllerSubsystem,
 			Name:      "error_count",
 			Help:      "Counts of server errors and NEG controller errors.",
+		},
+		[]string{"error_type"},
+	)
+
+	LabelNumber = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      "label_number_per_endpoint",
+			Help:      "The number of labels per endpoint",
+			// custom buckets - [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, +Inf]
+			Buckets: prometheus.ExponentialBuckets(1, 2, 13),
+		},
+	)
+
+	AnnotationSize = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      "annotation_size_per_endpoint",
+			Help:      "The size in byte of endpoint annotations per endpoint",
+			// custom buckets - [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, +Inf]
+			Buckets: prometheus.ExponentialBuckets(1, 2, 13),
+		},
+	)
+
+	LabelPropagationError = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      "label_propagation_error_count",
+			Help:      "the number of errors occurred for label propagation",
 		},
 		[]string{"error_type"},
 	)
@@ -226,15 +213,10 @@ func RegisterMetrics() {
 		prometheus.MustRegister(InitializationLatency)
 		prometheus.MustRegister(SyncerStaleness)
 		prometheus.MustRegister(EPSStaleness)
-		prometheus.MustRegister(NumberOfEndpoints)
 		prometheus.MustRegister(LabelPropagationError)
 		prometheus.MustRegister(LabelNumber)
 		prometheus.MustRegister(AnnotationSize)
 		prometheus.MustRegister(DegradeModeCorrectness)
-		prometheus.MustRegister(DualStackMigrationFinishedDurations)
-		prometheus.MustRegister(DualStackMigrationLongestUnfinishedDuration)
-		prometheus.MustRegister(DualStackMigrationServiceCount)
-		prometheus.MustRegister(SyncerCountByEndpointType)
 		prometheus.MustRegister(NegControllerErrorCount)
 
 		RegisterSyncerMetrics()
@@ -289,6 +271,17 @@ func PublishNegControllerErrorCountMetrics(err error, isIgnored bool) {
 	}
 	NegControllerErrorCount.WithLabelValues(totalNegError).Inc()
 	NegControllerErrorCount.WithLabelValues(getErrorLabel(err, isIgnored)).Inc()
+}
+
+// PublishLabelPropagationError publishes error occured during label propagation.
+func PublishLabelPropagationError(errType string) {
+	LabelPropagationError.WithLabelValues(errType).Inc()
+}
+
+// PublishAnnotationMetrics publishes collected metrics for endpoint annotations.
+func PublishAnnotationMetrics(annotationSize int, labelNumber int) {
+	AnnotationSize.Observe(float64(annotationSize))
+	LabelNumber.Observe(float64(labelNumber))
 }
 
 func getResult(err error) string {
