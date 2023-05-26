@@ -117,7 +117,7 @@ func (c *FakeNetworkInterfaces) UpdateStatus(ctx context.Context, networkInterfa
 // Delete takes name of the networkInterface and deletes it. Returns an error if one occurs.
 func (c *FakeNetworkInterfaces) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewDeleteAction(networkinterfacesResource, c.ns, name), &networkv1.NetworkInterface{})
+		Invokes(testing.NewDeleteActionWithOptions(networkinterfacesResource, c.ns, name, opts), &networkv1.NetworkInterface{})
 
 	return err
 }

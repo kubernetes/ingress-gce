@@ -840,9 +840,12 @@ k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/informers/externalversions/gcpf
 k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/informers/externalversions/internalinterfaces
 k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/listers/gcpfirewall/v1beta1
 k8s.io/cloud-provider-gcp/crd/client/network/clientset/versioned
+k8s.io/cloud-provider-gcp/crd/client/network/clientset/versioned/fake
 k8s.io/cloud-provider-gcp/crd/client/network/clientset/versioned/scheme
 k8s.io/cloud-provider-gcp/crd/client/network/clientset/versioned/typed/network/v1
+k8s.io/cloud-provider-gcp/crd/client/network/clientset/versioned/typed/network/v1/fake
 k8s.io/cloud-provider-gcp/crd/client/network/clientset/versioned/typed/network/v1alpha1
+k8s.io/cloud-provider-gcp/crd/client/network/clientset/versioned/typed/network/v1alpha1/fake
 k8s.io/cloud-provider-gcp/crd/client/network/informers/externalversions/internalinterfaces
 k8s.io/cloud-provider-gcp/crd/client/network/informers/externalversions/network/v1
 k8s.io/cloud-provider-gcp/crd/client/network/informers/externalversions/network/v1alpha1

@@ -1,6 +1,6 @@
 #!/bin/bash
-#
-# Copyright 2022 The Kubernetes Authors.
+
+# Copyright 2023 The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,11 +18,30 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." &> /dev/null && pwd -P)"
-cd "${REPO_ROOT}"
+SCRIPT_ROOT=$(dirname "${BASH_SOURCE}")/..
+_tmp="$(mktemp -d -t "ingress-gce.XXXXXX")"
 
-hack/verify-gofmt.sh
-hack/verify-govet.sh
-hack/verify-lint.sh
-hack/verify-codegen.sh
-hack/verify-vendor.sh
+cleanup() {
+ git worktree remove -f "${_tmp}"
+}
+
+trap "cleanup" EXIT SIGINT
+
+git worktree add -f -q "${_tmp}" HEAD
+cd "${_tmp}"
+
+# Update Vendor 
+go mod vendor
+
+# Test for diffs
+diffs=$(git status --porcelain | wc -l)
+if [[ ${diffs} -gt 0 ]]; then
+  git status >&2
+  git diff >&2
+  echo "Vendor directory needs to be updated" >&2
+  echo "Please run 'go mod vendor'" >&2
+  exit 1
+fi
+
+echo "Vendor directory is up to date"
+echo
