@@ -258,22 +258,11 @@ func (lc *L4NetLBController) isRBSBasedService(svc *v1.Service) bool {
 	if !utils.IsLoadBalancerServiceType(svc) {
 		return false
 	}
-	return lc.hasRBSAnnotation(svc) || utils.HasL4NetLBFinalizerV2(svc) || lc.hasRBSForwardingRule(svc)
-}
-
-func (lc *L4NetLBController) hasRBSAnnotation(service *v1.Service) bool {
-	if service == nil {
-		return false
-	}
-
-	if val, ok := service.Annotations[annotations.RBSAnnotationKey]; ok && val == annotations.RBSEnabled {
-		return true
-	}
-	return false
+	return annotations.HasRBSAnnotation(svc) || utils.HasL4NetLBFinalizerV2(svc) || lc.hasRBSForwardingRule(svc)
 }
 
 func (lc *L4NetLBController) preventLegacyServiceHandling(service *v1.Service, key string) (bool, error) {
-	if lc.hasRBSAnnotation(service) && lc.hasTargetPoolForwardingRule(service) {
+	if annotations.HasRBSAnnotation(service) && lc.hasTargetPoolForwardingRule(service) {
 		if utils.HasL4NetLBFinalizerV2(service) {
 			// If we found that RBS finalizer was attached to service, it means that RBS controller
 			// had a race condition on Service creation with Legacy Controller.

@@ -346,6 +346,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 			klog.Errorf("Failed tp retrieve pod label propagation config: %v", err)
 		}
 	}
+	enableNEGsForNetLB := flags.F.RunL4NetLBController && flags.F.EnableMultiNetworking
 	// TODO: Refactor NEG to use cloud mocks so ctx.Cloud can be referenced within NewController.
 	negController := neg.NewController(
 		ctx.KubeClient,
@@ -371,7 +372,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		flags.F.NumNegGCWorkers,
 		flags.F.EnableReadinessReflector,
 		flags.F.RunIngressController,
-		flags.F.RunL4Controller,
+		flags.F.RunL4Controller || enableNEGsForNetLB,
 		flags.F.EnableNonGCPMode,
 		flags.F.EnableDualStackNEG,
 		enableAsm,

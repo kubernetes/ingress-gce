@@ -102,7 +102,7 @@ type Controller struct {
 	// syncerMetrics collects NEG controller metrics
 	syncerMetrics *syncMetrics.SyncerMetrics
 
-	// runL4 indicates whether to run NEG controller that processes L4 ILB services
+	// runL4 indicates whether to run NEG controller that processes L4 services
 	runL4 bool
 
 	logger klog.Logger
@@ -588,13 +588,16 @@ func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name ty
 	return nil
 }
 
-// mergeVmIpNEGsPortInfo merges the PortInfo for ILB services using GCE_VM_IP NEGs into portInfoMap
+// mergeVmIpNEGsPortInfo merges the PortInfo for ILB and multinet NetLB services using GCE_VM_IP NEGs into portInfoMap
 func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap, negUsage *usageMetrics.NegServiceState, networkInfo *network.NetworkInfo) error {
-	if wantsILB, _ := annotations.WantsL4ILB(service); !wantsILB {
+	wantsILB, _ := annotations.WantsL4ILB(service)
+	wantsNetLB, _ := annotations.WantsL4NetLB(service)
+	needsNEGForNetLB := wantsNetLB && !networkInfo.IsDefault && annotations.HasRBSAnnotation(service)
+	if !wantsILB && !needsNEGForNetLB {
 		return nil
 	}
 	// Only process ILB services after L4 controller has marked it with v2 finalizer.
-	if !utils.IsSubsettingL4ILBService(service) {
+	if wantsILB && !utils.IsSubsettingL4ILBService(service) {
 		msg := fmt.Sprintf("Ignoring ILB Service %s, namespace %s as it does not have the v2 finalizer", service.Name, service.Namespace)
 		c.logger.Info(msg)
 		c.recorder.Eventf(service, apiv1.EventTypeWarning, "ProcessServiceSkipped", msg)

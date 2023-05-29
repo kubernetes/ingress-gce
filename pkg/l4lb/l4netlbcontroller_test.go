@@ -1333,7 +1333,7 @@ func TestPreventTargetPoolToRBSMigration(t *testing.T) {
 			if hasV2Finalizer != testCase.expectV2NetLBFinalizerAfterSync {
 				t.Errorf("After preventLegacyServiceHandling, hasV2Finalizer = %t, testCase.expectV2NetLBFinalizerAfterSync = %t, want equal", hasV2Finalizer, testCase.expectV2NetLBFinalizerAfterSync)
 			}
-			hasRBSAnnotation := controller.hasRBSAnnotation(resultSvc)
+			hasRBSAnnotation := annotations.HasRBSAnnotation(resultSvc)
 			if hasRBSAnnotation != testCase.expectRBSAnnotationAfterSync {
 				t.Errorf("After preventLegacyServiceHandling, hasRBSAnnotation = %t, testCase.expectRBSAnnotationAfterSync = %t, want equal", hasRBSAnnotation, testCase.expectRBSAnnotationAfterSync)
 			}
@@ -1361,7 +1361,7 @@ func TestPreventTargetPoolToRBSMigration(t *testing.T) {
 			if hasV2Finalizer != testCase.expectV2NetLBFinalizerAfterSync {
 				t.Errorf("After sync, hasV2NetLBFinalizer = %t, testCase.expectV2NetLBFinalizerAfterSync = %t, want equal", hasV2Finalizer, testCase.expectV2NetLBFinalizerAfterSync)
 			}
-			hasRBSAnnotation = controller.hasRBSAnnotation(resultSvc)
+			hasRBSAnnotation = annotations.HasRBSAnnotation(resultSvc)
 			if hasRBSAnnotation != testCase.expectRBSAnnotationAfterSync {
 				t.Errorf("After sync, hasRBSAnnotation = %t, testCase.expectRBSAnnotationAfterSync = %t, want equal", hasRBSAnnotation, testCase.expectRBSAnnotationAfterSync)
 			}

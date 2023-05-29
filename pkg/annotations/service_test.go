@@ -629,3 +629,46 @@ func TestOnlyStatusAnnotationsChanged(t *testing.T) {
 		})
 	}
 }
+
+func TestRBSAnnotation(t *testing.T) {
+	for _, tc := range []struct {
+		desc string
+		svc  *v1.Service
+		want bool
+	}{
+		{
+			desc: "RBS annotation not specified",
+			svc:  &v1.Service{},
+			want: false,
+		},
+		{
+			desc: "RBS annotation enabled",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						RBSAnnotationKey: RBSEnabled,
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			desc: "RBS annotation present but not with enabled value",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						RBSAnnotationKey: "otherValue",
+					},
+				},
+			},
+			want: false,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := HasRBSAnnotation(tc.svc)
+			if tc.want != got {
+				t.Errorf("output of HasRBSAnnotaiton differed, want=%v, got=%v", tc.want, got)
+			}
+		})
+	}
+}

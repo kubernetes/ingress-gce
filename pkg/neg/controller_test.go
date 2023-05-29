@@ -38,6 +38,8 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
+	networkv1 "k8s.io/cloud-provider-gcp/crd/apis/network/v1"
+	gkenetworkparamsetv1alpha1 "k8s.io/cloud-provider-gcp/crd/apis/network/v1alpha1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/metrics"
@@ -1318,6 +1320,66 @@ func TestServiceIPFamilies(t *testing.T) {
 
 }
 
+// TestEnableNEGServiceWithL4NetLB tests L4 NetLB service with NEGs enabled (only for multinetworked services).
+func TestEnableNEGServiceWithL4NetLB(t *testing.T) {
+	kubeClient := fake.NewSimpleClientset()
+	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
+	controller := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false)
+	manager := controller.manager.(*syncerManager)
+	// L4 ILB NEGs will be created in zones with ready and unready nodes. Zones with upgrading nodes will be skipped.
+	expectZones := []string{negtypes.TestZone1, negtypes.TestZone2, negtypes.TestZone3}
+	defer controller.stop()
+	var prevSyncerKey negtypes.NegSyncerKey
+	t.Logf("Creating L4 NetLB service with ExternalTrafficPolicy:Cluster")
+	err := controller.networkLister.Add(&networkv1.Network{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "blue-net",
+		},
+		Spec: networkv1.NetworkSpec{
+			Type: "L3",
+			ParametersRef: &networkv1.NetworkParametersReference{
+				Group: gkenetworkparamsetv1alpha1.GroupName,
+				Kind:  "gkenetworkparamset",
+				Name:  "blue-net-paramset",
+			},
+		},
+	})
+	controller.gkeNetworkParamSetLister.Add(&gkenetworkparamsetv1alpha1.GKENetworkParamSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "blue-net-paramset"},
+		Spec: gkenetworkparamsetv1alpha1.GKENetworkParamSetSpec{
+			VPC:       "blue-vpc",
+			VPCSubnet: "blue-subnet",
+		},
+	})
+	testSvc := newTestRBSMultinetService(controller, true, 80)
+	controller.serviceLister.Add(testSvc)
+	svcClient := controller.client.CoreV1().Services(testServiceNamespace)
+	svcKey := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
+	err = controller.processService(svcKey)
+	if err != nil {
+		t.Fatalf("Failed to process service: %v", err)
+	}
+	svc, err := svcClient.Get(context.TODO(), testServiceName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Service was not created.(*apiv1.Service) successfully, err: %v", err)
+	}
+	networkInfo, _ := network.ServiceNetwork(testSvc, controller.networkLister, controller.gkeNetworkParamSetLister, controller.cloud, klog.TODO())
+	expectedPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, networkInfo)
+	// There will be only one entry in the map
+	for key, val := range expectedPortInfoMap {
+		prevSyncerKey = manager.getSyncerKey(testServiceNamespace, testServiceName, key, val)
+	}
+	ValidateSyncerByKey(t, controller, 1, prevSyncerKey, false)
+	validateSyncerManagerWithPortInfoMap(t, controller, testServiceNamespace, testServiceName, expectedPortInfoMap)
+	validateServiceAnnotationWithPortInfoMap(t, svc, expectedPortInfoMap, expectZones)
+
+	time.Sleep(1 * time.Second)
+	controller.manager.(*syncerManager).GC()
+	// check the port info map after all stale syncers have been deleted.
+	validateSyncerManagerWithPortInfoMap(t, controller, testServiceNamespace, testServiceName, expectedPortInfoMap)
+	validateServiceAnnotationWithPortInfoMap(t, svc, expectedPortInfoMap, expectZones)
+}
+
 func getEvent(eventChan chan string, queue *workqueue.RateLimitingInterface) {
 	item, quit := (*queue).Get()
 	if quit {
@@ -1677,6 +1739,29 @@ func newTestILBService(c *Controller, onlyLocal bool, port int) *apiv1.Service {
 			Ports: []apiv1.ServicePort{
 				{Name: "testport", Port: int32(port)},
 			},
+		},
+	}
+	if onlyLocal {
+		svc.Spec.ExternalTrafficPolicy = apiv1.ServiceExternalTrafficPolicyTypeLocal
+	}
+
+	c.client.CoreV1().Services(testServiceNamespace).Create(context.TODO(), svc, metav1.CreateOptions{})
+	return svc
+}
+
+func newTestRBSMultinetService(c *Controller, onlyLocal bool, port int) *apiv1.Service {
+	svc := &apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        testServiceName,
+			Namespace:   testServiceNamespace,
+			Annotations: map[string]string{annotations.RBSAnnotationKey: annotations.RBSEnabled},
+		},
+		Spec: apiv1.ServiceSpec{
+			Type: apiv1.ServiceTypeLoadBalancer,
+			Ports: []apiv1.ServicePort{
+				{Name: "testport", Port: int32(port)},
+			},
+			Selector: map[string]string{networkv1.NetworkAnnotationKey: "blue-net"},
 		},
 	}
 	if onlyLocal {
