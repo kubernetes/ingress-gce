@@ -44,6 +44,7 @@ import (
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
+	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	"k8s.io/ingress-gce/pkg/neg/syncers/dualstack"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
@@ -107,7 +108,7 @@ type transactionSyncer struct {
 	errorState bool
 
 	// syncMetricsCollector collect sync related metrics
-	syncMetricsCollector metrics.SyncerMetricsCollector
+	syncMetricsCollector metricscollector.SyncerMetricsCollector
 
 	// enableDegradedMode indicates whether we do endpoint calculation using degraded mode procedures
 	enableDegradedMode bool
@@ -138,7 +139,7 @@ func NewTransactionSyncer(
 	epc negtypes.NetworkEndpointsCalculator,
 	kubeSystemUID string,
 	svcNegClient svcnegclient.Interface,
-	syncerMetrics *metrics.SyncerMetrics,
+	syncerMetrics *metricscollector.SyncerMetrics,
 	customName bool,
 	log klog.Logger,
 	lpConfig labels.PodLabelPropagationConfig,
@@ -183,7 +184,7 @@ func NewTransactionSyncer(
 	return syncer
 }
 
-func GetEndpointsCalculator(podLister, nodeLister, serviceLister cache.Indexer, zoneGetter negtypes.ZoneGetter, syncerKey negtypes.NegSyncerKey, mode negtypes.EndpointsCalculatorMode, logger klog.Logger, enableDualStackNEG bool, syncMetricsCollector *metrics.SyncerMetrics, networkInfo *network.NetworkInfo) negtypes.NetworkEndpointsCalculator {
+func GetEndpointsCalculator(podLister, nodeLister, serviceLister cache.Indexer, zoneGetter negtypes.ZoneGetter, syncerKey negtypes.NegSyncerKey, mode negtypes.EndpointsCalculatorMode, logger klog.Logger, enableDualStackNEG bool, syncMetricsCollector *metricscollector.SyncerMetrics, networkInfo *network.NetworkInfo) negtypes.NetworkEndpointsCalculator {
 	serviceKey := strings.Join([]string{syncerKey.Name, syncerKey.Namespace}, "/")
 	if syncerKey.NegType == negtypes.VmIpEndpointType {
 		nodeLister := listers.NewNodeLister(nodeLister)
@@ -953,8 +954,8 @@ func publishAnnotationSizeMetrics(endpoints map[string]negtypes.NetworkEndpointS
 }
 
 // collectLabelStats calculate the number of endpoints and the number of endpoints with annotations.
-func collectLabelStats(currentPodLabelMap, addPodLabelMap labels.EndpointPodLabelMap, targetEndpointMap map[string]negtypes.NetworkEndpointSet) metrics.LabelPropagationStats {
-	labelPropagationStats := metrics.LabelPropagationStats{}
+func collectLabelStats(currentPodLabelMap, addPodLabelMap labels.EndpointPodLabelMap, targetEndpointMap map[string]negtypes.NetworkEndpointSet) metricscollector.LabelPropagationStats {
+	labelPropagationStats := metricscollector.LabelPropagationStats{}
 	for _, endpointSet := range targetEndpointMap {
 		for endpoint := range endpointSet {
 			labelPropagationStats.NumberOfEndpoints += 1

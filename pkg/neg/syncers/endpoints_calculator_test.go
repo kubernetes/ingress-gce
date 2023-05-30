@@ -30,7 +30,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	networkv1 "k8s.io/cloud-provider-gcp/crd/apis/network/v1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
-	"k8s.io/ingress-gce/pkg/neg/metrics"
+	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -314,7 +314,7 @@ func TestValidateEndpoints(t *testing.T) {
 	podLister := testContext.PodInformer.GetIndexer()
 	nodeLister := testContext.NodeInformer.GetIndexer()
 	serviceLister := testContext.ServiceInformer.GetIndexer()
-	L7EndpointsCalculator := NewL7EndpointsCalculator(zoneGetter, podLister, nodeLister, serviceLister, svcPort, klog.TODO(), testContext.EnableDualStackNEG, metrics.FakeSyncerMetrics())
+	L7EndpointsCalculator := NewL7EndpointsCalculator(zoneGetter, podLister, nodeLister, serviceLister, svcPort, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics())
 	L4LocalEndpointCalculator := NewLocalL4ILBEndpointsCalculator(listers.NewNodeLister(nodeLister), zoneGetter, svcKey, klog.TODO(), &network.NetworkInfo{})
 	L4ClusterEndpointCalculator := NewClusterL4ILBEndpointsCalculator(listers.NewNodeLister(nodeLister), zoneGetter, svcKey, klog.TODO(), &network.NetworkInfo{})
 

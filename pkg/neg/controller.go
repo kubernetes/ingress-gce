@@ -40,7 +40,7 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 	usageMetrics "k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
-	syncMetrics "k8s.io/ingress-gce/pkg/neg/metrics"
+	syncMetrics "k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
@@ -56,6 +56,7 @@ import (
 func init() {
 	// register prometheus metrics
 	metrics.RegisterMetrics()
+	syncMetrics.RegisterMetrics()
 }
 
 // Controller is network endpoint group controller.
@@ -163,7 +164,7 @@ func NewController(
 	recorder := eventBroadcaster.NewRecorder(negScheme,
 		apiv1.EventSource{Component: "neg-controller"})
 
-	syncerMetrics := metrics.NewNegMetricsCollector(flags.F.NegMetricsExportInterval, logger)
+	syncerMetrics := syncMetrics.NewNegMetricsCollector(flags.F.NegMetricsExportInterval, logger)
 	manager := newSyncerManager(
 		namer,
 		recorder,

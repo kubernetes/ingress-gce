@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package metrics
+package metricscollector
 
 import (
 	"fmt"
@@ -28,6 +28,23 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
 )
+
+var register sync.Once
+
+// RegisterSyncerMetrics registers syncer related metrics
+func RegisterMetrics() {
+	register.Do(func() {
+		prometheus.MustRegister(syncerState)
+		prometheus.MustRegister(syncerEndpointState)
+		prometheus.MustRegister(syncerEndpointSliceState)
+		prometheus.MustRegister(NumberOfEndpoints)
+		prometheus.MustRegister(DualStackMigrationFinishedDurations)
+		prometheus.MustRegister(DualStackMigrationLongestUnfinishedDuration)
+		prometheus.MustRegister(DualStackMigrationServiceCount)
+		prometheus.MustRegister(SyncerCountByEndpointType)
+		prometheus.MustRegister(syncerSyncResult)
+	})
+}
 
 type SyncerMetricsCollector interface {
 	// UpdateSyncerStatusInMetrics update the status of corresponding syncer based on the sync error
@@ -82,14 +99,6 @@ func NewNegMetricsCollector(exportInterval time.Duration, logger klog.Logger) *S
 // FakeSyncerMetrics creates new NegMetricsCollector with fixed 5 second metricsInterval, to be used in tests
 func FakeSyncerMetrics() *SyncerMetrics {
 	return NewNegMetricsCollector(5*time.Second, klog.TODO())
-}
-
-// RegisterSyncerMetrics registers syncer related metrics
-func RegisterSyncerMetrics() {
-	prometheus.MustRegister(syncerSyncResult)
-	prometheus.MustRegister(syncerState)
-	prometheus.MustRegister(syncerEndpointState)
-	prometheus.MustRegister(syncerEndpointSliceState)
 }
 
 func (sm *SyncerMetrics) Run(stopCh <-chan struct{}) {
@@ -372,4 +381,24 @@ func (sm *SyncerMetrics) computeDualStackMigrationCounts() (map[string]int, int,
 		}
 	}
 	return syncerCountByEndpointType, migrationEndpointCount, migrationServices.Len()
+}
+
+func PublishSyncerStateMetrics(stateCount *syncerStateCount) {
+	syncerState.WithLabelValues(EPCountsDiffer).Set(float64(stateCount.epCountsDiffer))
+	syncerState.WithLabelValues(EPNodeMissing).Set(float64(stateCount.epNodeMissing))
+	syncerState.WithLabelValues(EPNodeNotFound).Set(float64(stateCount.epNodeNotFound))
+	syncerState.WithLabelValues(EPPodMissing).Set(float64(stateCount.epPodMissing))
+	syncerState.WithLabelValues(EPPodNotFound).Set(float64(stateCount.epPodNotFound))
+	syncerState.WithLabelValues(EPPodTypeAssertionFailed).Set(float64(stateCount.epPodTypeAssertionFailed))
+	syncerState.WithLabelValues(EPZoneMissing).Set(float64(stateCount.epZoneMissing))
+	syncerState.WithLabelValues(EPSEndpointCountZero).Set(float64(stateCount.epsEndpointCountZero))
+	syncerState.WithLabelValues(EPCalculationCountZero).Set(float64(stateCount.epCalculationCountZero))
+	syncerState.WithLabelValues(InvalidAPIResponse).Set(float64(stateCount.invalidAPIResponse))
+	syncerState.WithLabelValues(InvalidEPAttach).Set(float64(stateCount.invalidEPAttach))
+	syncerState.WithLabelValues(InvalidEPDetach).Set(float64(stateCount.invalidEPDetach))
+	syncerState.WithLabelValues(NegNotFound).Set(float64(stateCount.negNotFound))
+	syncerState.WithLabelValues(CurrentNegEPNotFound).Set(float64(stateCount.currentNegEPNotFound))
+	syncerState.WithLabelValues(EPSNotFound).Set(float64(stateCount.epsNotFound))
+	syncerState.WithLabelValues(OtherError).Set(float64(stateCount.otherError))
+	syncerState.WithLabelValues(Success).Set(float64(stateCount.success))
 }

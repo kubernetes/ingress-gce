@@ -25,16 +25,7 @@ import (
 )
 
 const (
-	negControllerSubsystem     = "neg_controller"
-	syncerLatencyKey           = "syncer_sync_duration_seconds"
-	managerProcessLatencyKey   = "manager_process_duration_seconds"
-	initLatencyKey             = "neg_initialization_duration_seconds"
-	negOpLatencyKey            = "neg_operation_duration_seconds"
-	negOpEndpointsKey          = "neg_operation_endpoints"
-	lastSyncTimestampKey       = "sync_timestamp"
-	syncerStalenessKey         = "syncer_staleness"
-	epsStalenessKey            = "endpointslice_staleness"
-	degradedModeCorrectnessKey = "degraded_mode_correctness"
+	negControllerSubsystem = "neg_controller"
 
 	resultSuccess = "success"
 	resultError   = "error"
@@ -44,12 +35,6 @@ const (
 
 	NotInDegradedEndpoints  = "not_in_degraded_endpoints"
 	OnlyInDegradedEndpoints = "only_in_degraded_endpoints"
-
-	// Classification of endpoints within a NEG.
-	ipv4EndpointType      = "IPv4"
-	ipv6EndpointType      = "IPv6"
-	dualStackEndpointType = "DualStack"
-	migrationEndpointType = "Migration"
 
 	gceServerError = "GCE_server_error"
 	k8sServerError = "K8s_server_error"
@@ -61,83 +46,70 @@ const (
 type syncType string
 
 var (
-	negOpLatencyMetricsLabels = []string{
-		"operation",   // endpoint operation
-		"neg_type",    // type of neg
-		"api_version", // GCE API version
-		"result",      // result of the sync
-	}
-
-	negOpEndpointsMetricsLabels = []string{
-		"operation", // endpoint operation
-		"neg_type",  // type of neg
-		"result",    // result of the sync
-	}
-
-	negProcessMetricsLabels = []string{
-		"process", // type of manager process loop
-		"result",  // result of the process
-	}
-
-	syncerMetricsLabels = []string{
-		"neg_type",                 //type of neg
-		"endpoint_calculator_mode", // type of endpoint calculator used
-		"result",                   // result of the sync
-	}
-
-	degradedModeCorrectnessLabels = []string{
-		"neg_type",      // type of neg
-		"endpoint_type", // type of endpoint
-	}
-
 	NegOperationLatency = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Subsystem: negControllerSubsystem,
-			Name:      negOpLatencyKey,
+			Name:      "neg_operation_duration_seconds",
 			Help:      "Latency of a NEG Operation",
 			// custom buckets - [1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s(~4min), 512s(~8min), 1024s(~17min), 2048 (~34min), 4096(~68min), +Inf]
 			Buckets: prometheus.ExponentialBuckets(1, 2, 13),
 		},
-		negOpLatencyMetricsLabels,
+		[]string{
+			"operation",   // endpoint operation
+			"neg_type",    // type of neg
+			"api_version", // GCE API version
+			"result",      // result of the sync
+		},
 	)
 
 	NegOperationEndpoints = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Subsystem: negControllerSubsystem,
-			Name:      negOpEndpointsKey,
+			Name:      "neg_operation_endpoints",
 			Help:      "Number of Endpoints during an NEG Operation",
 			// custom buckets - [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, +Inf]
 			Buckets: prometheus.ExponentialBuckets(1, 2, 13),
 		},
-		negOpEndpointsMetricsLabels,
+		[]string{
+			"operation", // endpoint operation
+			"neg_type",  // type of neg
+			"result",    // result of the sync
+		},
 	)
 
 	SyncerSyncLatency = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Subsystem: negControllerSubsystem,
-			Name:      syncerLatencyKey,
+			Name:      "syncer_sync_duration_seconds",
 			Help:      "Sync latency for NEG Syncer",
 			// custom buckets - [1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s(~4min), 512s(~8min), 1024s(~17min), 2048 (~34min), 4096(~68min), +Inf]
 			Buckets: prometheus.ExponentialBuckets(1, 2, 13),
 		},
-		syncerMetricsLabels,
+		[]string{
+			"neg_type",                 //type of neg
+			"endpoint_calculator_mode", // type of endpoint calculator used
+			"result",                   // result of the sync
+		},
 	)
 
 	ManagerProcessLatency = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Subsystem: negControllerSubsystem,
-			Name:      managerProcessLatencyKey,
+			Name:      "manager_process_duration_seconds",
 			Help:      "Process latency for NEG Manager",
 			// custom buckets - [1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s(~4min), 512s(~8min), 1024s(~17min), 2048 (~34min), 4096(~68min), +Inf]
 			Buckets: prometheus.ExponentialBuckets(1, 2, 13),
 		},
-		negProcessMetricsLabels,
+		[]string{
+			"process", // type of manager process loop
+			"result",  // result of the process
+		},
 	)
 
 	InitializationLatency = prometheus.NewHistogram(
 		prometheus.HistogramOpts{
 			Subsystem: negControllerSubsystem,
-			Name:      initLatencyKey,
+			Name:      "neg_initialization_duration_seconds",
 			Help:      "Initialization latency of a NEG",
 			// custom buckets - [1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s(~4min), 512s(~8min), 1024s(~17min), 2048 (~34min), 4096(~68min), +Inf]
 			Buckets: prometheus.ExponentialBuckets(1, 2, 13),
@@ -147,7 +119,7 @@ var (
 	LastSyncTimestamp = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Subsystem: negControllerSubsystem,
-			Name:      lastSyncTimestampKey,
+			Name:      "sync_timestamp",
 			Help:      "The timestamp of the last execution of NEG controller sync loop.",
 		},
 	)
@@ -156,7 +128,7 @@ var (
 	SyncerStaleness = prometheus.NewHistogram(
 		prometheus.HistogramOpts{
 			Subsystem: negControllerSubsystem,
-			Name:      syncerStalenessKey,
+			Name:      "syncer_staleness",
 			Help:      "The duration of a syncer since it last syncs",
 			// custom buckets - [1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s(~4min), 512s(~8min), 1024s(~17min), 2048 (~34min), 4096(~68min), 8192(~136min), +Inf]
 			Buckets: prometheus.ExponentialBuckets(1, 2, 14),
@@ -167,7 +139,7 @@ var (
 	EPSStaleness = prometheus.NewHistogram(
 		prometheus.HistogramOpts{
 			Subsystem: negControllerSubsystem,
-			Name:      epsStalenessKey,
+			Name:      "endpointslice_staleness",
 			Help:      "The duration for an endpoint slice since it was last processed by syncer",
 			// custom buckets - [1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s(~4min), 512s(~8min), 1024s(~17min), 2048 (~34min), 4096(~68min), 8192(~136min), +Inf]
 			Buckets: prometheus.ExponentialBuckets(1, 2, 14),
@@ -177,48 +149,15 @@ var (
 	DegradeModeCorrectness = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Subsystem: negControllerSubsystem,
-			Name:      degradedModeCorrectnessKey,
+			Name:      "degraded_mode_correctness",
 			Help:      "Number of endpoints differed between current endpoint calculation and degraded mode calculation",
 			// custom buckets - [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, +Inf]
 			Buckets: prometheus.ExponentialBuckets(1, 2, 20),
 		},
-		degradedModeCorrectnessLabels,
-	)
-
-	DualStackMigrationFinishedDurations = prometheus.NewHistogram(
-		prometheus.HistogramOpts{
-			Subsystem: negControllerSubsystem,
-			Name:      "dual_stack_migration_finished_durations_seconds",
-			Help:      "Time taken to migrate all endpoints within all NEGs for a service port",
-			// Buckets ~= [1s, 1.85s, 3.42s, 6s, 11s, 21s, 40s, 1m14s, 2m17s, 4m13s, 7m49s, 14m28s, 26m47s, 49m33s, 1h31m40s, 2h49m35s, 5h13m45s, 9h40m27s, +Inf]
-			Buckets: prometheus.ExponentialBuckets(1, 1.85, 18),
+		[]string{
+			"neg_type",      // type of neg
+			"endpoint_type", // type of endpoint
 		},
-	)
-
-	// A zero value for this metric means that there are no ongoing migrations.
-	DualStackMigrationLongestUnfinishedDuration = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Subsystem: negControllerSubsystem,
-			Name:      "dual_stack_migration_longest_unfinished_duration_seconds",
-			Help:      "Longest time elapsed since a migration was started which hasn't yet completed",
-		},
-	)
-
-	DualStackMigrationServiceCount = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Subsystem: negControllerSubsystem,
-			Name:      "dual_stack_migration_service_count",
-			Help:      "Number of Services which have migration endpoints",
-		},
-	)
-
-	SyncerCountByEndpointType = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Subsystem: negControllerSubsystem,
-			Name:      "syncer_count_by_endpoint_type",
-			Help:      "Number of Syncers managing NEGs containing endpoint of a particular kind",
-		},
-		[]string{"endpoint_type"},
 	)
 
 	// NegControllerErrorCount tracks the count of server errors(GCE/K8s) and
@@ -228,6 +167,35 @@ var (
 			Subsystem: negControllerSubsystem,
 			Name:      "error_count",
 			Help:      "Counts of server errors and NEG controller errors.",
+		},
+		[]string{"error_type"},
+	)
+
+	LabelNumber = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      "label_number_per_endpoint",
+			Help:      "The number of labels per endpoint",
+			// custom buckets - [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, +Inf]
+			Buckets: prometheus.ExponentialBuckets(1, 2, 13),
+		},
+	)
+
+	AnnotationSize = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      "annotation_size_per_endpoint",
+			Help:      "The size in byte of endpoint annotations per endpoint",
+			// custom buckets - [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, +Inf]
+			Buckets: prometheus.ExponentialBuckets(1, 2, 13),
+		},
+	)
+
+	LabelPropagationError = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      "label_propagation_error_count",
+			Help:      "the number of errors occurred for label propagation",
 		},
 		[]string{"error_type"},
 	)
@@ -245,18 +213,11 @@ func RegisterMetrics() {
 		prometheus.MustRegister(InitializationLatency)
 		prometheus.MustRegister(SyncerStaleness)
 		prometheus.MustRegister(EPSStaleness)
-		prometheus.MustRegister(NumberOfEndpoints)
 		prometheus.MustRegister(LabelPropagationError)
 		prometheus.MustRegister(LabelNumber)
 		prometheus.MustRegister(AnnotationSize)
 		prometheus.MustRegister(DegradeModeCorrectness)
-		prometheus.MustRegister(DualStackMigrationFinishedDurations)
-		prometheus.MustRegister(DualStackMigrationLongestUnfinishedDuration)
-		prometheus.MustRegister(DualStackMigrationServiceCount)
-		prometheus.MustRegister(SyncerCountByEndpointType)
 		prometheus.MustRegister(NegControllerErrorCount)
-
-		RegisterSyncerMetrics()
 	})
 }
 
@@ -308,6 +269,17 @@ func PublishNegControllerErrorCountMetrics(err error, isIgnored bool) {
 	}
 	NegControllerErrorCount.WithLabelValues(totalNegError).Inc()
 	NegControllerErrorCount.WithLabelValues(getErrorLabel(err, isIgnored)).Inc()
+}
+
+// PublishLabelPropagationError publishes error occured during label propagation.
+func PublishLabelPropagationError(errType string) {
+	LabelPropagationError.WithLabelValues(errType).Inc()
+}
+
+// PublishAnnotationMetrics publishes collected metrics for endpoint annotations.
+func PublishAnnotationMetrics(annotationSize int, labelNumber int) {
+	AnnotationSize.Observe(float64(annotationSize))
+	LabelNumber.Observe(float64(labelNumber))
 }
 
 func getResult(err error) string {

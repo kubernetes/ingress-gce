@@ -25,6 +25,7 @@ import (
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
+	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/types"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
@@ -213,10 +214,10 @@ type L7EndpointsCalculator struct {
 	networkEndpointType  types.NetworkEndpointType
 	enableDualStackNEG   bool
 	logger               klog.Logger
-	syncMetricsCollector *metrics.SyncerMetrics
+	syncMetricsCollector *metricscollector.SyncerMetrics
 }
 
-func NewL7EndpointsCalculator(zoneGetter types.ZoneGetter, podLister, nodeLister, serviceLister cache.Indexer, syncerKey types.NegSyncerKey, logger klog.Logger, enableDualStackNEG bool, syncMetricsCollector *metrics.SyncerMetrics) *L7EndpointsCalculator {
+func NewL7EndpointsCalculator(zoneGetter types.ZoneGetter, podLister, nodeLister, serviceLister cache.Indexer, syncerKey types.NegSyncerKey, logger klog.Logger, enableDualStackNEG bool, syncMetricsCollector *metricscollector.SyncerMetrics) *L7EndpointsCalculator {
 	return &L7EndpointsCalculator{
 		zoneGetter:           zoneGetter,
 		servicePortName:      syncerKey.PortTuple.Name,

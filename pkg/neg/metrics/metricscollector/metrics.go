@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package metrics
+package metricscollector
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
@@ -22,9 +22,9 @@ import (
 )
 
 const (
-	syncResultLabel = "result"
-	syncResultKey   = "sync_result"
+	negControllerSubsystem = "neg_controller"
 
+	// Label Values for Syncer Sync Result Metrics
 	EPCountsDiffer           = "EndpointCountsDiffer"
 	EPNodeMissing            = "EndpointNodeMissing"
 	EPNodeNotFound           = "EndpointNodeNotFound"
@@ -42,19 +42,19 @@ const (
 	EPSNotFound              = "EndpointSliceNotFound"
 	OtherError               = "OtherError"
 	Success                  = "Success"
+
+	// Label values for Label Propagation Metrics
+	epWithAnnotation = "with_annotation"
+	totalEndpoints   = "total"
+
+	// Classification of endpoints within a NEG.
+	ipv4EndpointType      = "IPv4"
+	ipv6EndpointType      = "IPv6"
+	dualStackEndpointType = "DualStack"
+	migrationEndpointType = "Migration"
 )
 
 var (
-	// syncerSyncResult tracks the count for each sync result
-	syncerSyncResult = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Subsystem: negControllerSubsystem,
-			Name:      syncResultKey,
-			Help:      "Current count for each sync result",
-		},
-		[]string{syncResultLabel},
-	)
-
 	// syncerState tracks the count of syncer in different states
 	syncerState = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -63,6 +63,81 @@ var (
 			Help:      "Current count of syncers in each state",
 		},
 		[]string{"state"},
+	)
+
+	// syncerEndpointState tracks the count of endpoints in different states
+	syncerEndpointState = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      "syncer_endpoint_state",
+			Help:      "Current count of endpoints in each state",
+		},
+		[]string{"state"},
+	)
+
+	// syncerEndpointSliceState tracks the count of endpoint slices in different states
+	syncerEndpointSliceState = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      "syncer_endpoint_slice_state",
+			Help:      "Current count of endpoint slices in each state",
+		},
+		[]string{"state"},
+	)
+
+	NumberOfEndpoints = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      "number_of_endpoints",
+			Help:      "The total number of endpoints",
+		},
+		[]string{"feature"},
+	)
+
+	DualStackMigrationFinishedDurations = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      "dual_stack_migration_finished_durations_seconds",
+			Help:      "Time taken to migrate all endpoints within all NEGs for a service port",
+			// Buckets ~= [1s, 1.85s, 3.42s, 6s, 11s, 21s, 40s, 1m14s, 2m17s, 4m13s, 7m49s, 14m28s, 26m47s, 49m33s, 1h31m40s, 2h49m35s, 5h13m45s, 9h40m27s, +Inf]
+			Buckets: prometheus.ExponentialBuckets(1, 1.85, 18),
+		},
+	)
+
+	// A zero value for this metric means that there are no ongoing migrations.
+	DualStackMigrationLongestUnfinishedDuration = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      "dual_stack_migration_longest_unfinished_duration_seconds",
+			Help:      "Longest time elapsed since a migration was started which hasn't yet completed",
+		},
+	)
+
+	SyncerCountByEndpointType = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      "syncer_count_by_endpoint_type",
+			Help:      "Number of Syncers managing NEGs containing endpoint of a particular kind",
+		},
+		[]string{"endpoint_type"},
+	)
+
+	DualStackMigrationServiceCount = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      "dual_stack_migration_service_count",
+			Help:      "Number of Services which have migration endpoints",
+		},
+	)
+
+	// syncerSyncResult tracks the count for each sync result
+	syncerSyncResult = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      "sync_result",
+			Help:      "Current count for each sync result",
+		},
+		[]string{"result"},
 	)
 )
 
@@ -84,6 +159,18 @@ type syncerStateCount struct {
 	epsNotFound              int
 	otherError               int
 	success                  int
+}
+
+// LabelPropagationStat contains stats related to label propagation.
+type LabelPropagationStats struct {
+	EndpointsWithAnnotation int
+	NumberOfEndpoints       int
+}
+
+// LabelPropagationMetrics contains aggregated label propagation related metrics.
+type LabelPropagationMetrics struct {
+	EndpointsWithAnnotation int
+	NumberOfEndpoints       int
 }
 
 func (sc *syncerStateCount) inc(reason negtypes.Reason) {
@@ -121,24 +208,4 @@ func (sc *syncerStateCount) inc(reason negtypes.Reason) {
 	case negtypes.ReasonSuccess:
 		sc.success++
 	}
-}
-
-func PublishSyncerStateMetrics(stateCount *syncerStateCount) {
-	syncerState.WithLabelValues(EPCountsDiffer).Set(float64(stateCount.epCountsDiffer))
-	syncerState.WithLabelValues(EPNodeMissing).Set(float64(stateCount.epNodeMissing))
-	syncerState.WithLabelValues(EPNodeNotFound).Set(float64(stateCount.epNodeNotFound))
-	syncerState.WithLabelValues(EPPodMissing).Set(float64(stateCount.epPodMissing))
-	syncerState.WithLabelValues(EPPodNotFound).Set(float64(stateCount.epPodNotFound))
-	syncerState.WithLabelValues(EPPodTypeAssertionFailed).Set(float64(stateCount.epPodTypeAssertionFailed))
-	syncerState.WithLabelValues(EPZoneMissing).Set(float64(stateCount.epZoneMissing))
-	syncerState.WithLabelValues(EPSEndpointCountZero).Set(float64(stateCount.epsEndpointCountZero))
-	syncerState.WithLabelValues(EPCalculationCountZero).Set(float64(stateCount.epCalculationCountZero))
-	syncerState.WithLabelValues(InvalidAPIResponse).Set(float64(stateCount.invalidAPIResponse))
-	syncerState.WithLabelValues(InvalidEPAttach).Set(float64(stateCount.invalidEPAttach))
-	syncerState.WithLabelValues(InvalidEPDetach).Set(float64(stateCount.invalidEPDetach))
-	syncerState.WithLabelValues(NegNotFound).Set(float64(stateCount.negNotFound))
-	syncerState.WithLabelValues(CurrentNegEPNotFound).Set(float64(stateCount.currentNegEPNotFound))
-	syncerState.WithLabelValues(EPSNotFound).Set(float64(stateCount.epsNotFound))
-	syncerState.WithLabelValues(OtherError).Set(float64(stateCount.otherError))
-	syncerState.WithLabelValues(Success).Set(float64(stateCount.success))
 }
