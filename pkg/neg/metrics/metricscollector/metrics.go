@@ -55,14 +55,14 @@ const (
 )
 
 var (
-	// syncerState tracks the count of syncer in different states
-	syncerState = prometheus.NewGaugeVec(
+	// SyncerCountBySyncResult tracks the count of syncer in different states
+	SyncerCountBySyncResult = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Subsystem: negControllerSubsystem,
-			Name:      "syncer_state",
+			Name:      "syncer_count",
 			Help:      "Current count of syncers in each state",
 		},
-		[]string{"state"},
+		[]string{"last_sync_result", "in_error_state"},
 	)
 
 	// syncerEndpointState tracks the count of endpoints in different states
@@ -141,25 +141,12 @@ var (
 	)
 )
 
-type syncerStateCount struct {
-	epCountsDiffer           int
-	epNodeMissing            int
-	epNodeNotFound           int
-	epPodMissing             int
-	epPodNotFound            int
-	epPodTypeAssertionFailed int
-	epZoneMissing            int
-	epsEndpointCountZero     int
-	epCalculationCountZero   int
-	invalidAPIResponse       int
-	invalidEPAttach          int
-	invalidEPDetach          int
-	negNotFound              int
-	currentNegEPNotFound     int
-	epsNotFound              int
-	otherError               int
-	success                  int
+type syncerState struct {
+	lastSyncResult negtypes.Reason
+	inErrorState   bool
 }
+
+type syncerStateCount map[syncerState]int
 
 // LabelPropagationStat contains stats related to label propagation.
 type LabelPropagationStats struct {
@@ -171,41 +158,4 @@ type LabelPropagationStats struct {
 type LabelPropagationMetrics struct {
 	EndpointsWithAnnotation int
 	NumberOfEndpoints       int
-}
-
-func (sc *syncerStateCount) inc(reason negtypes.Reason) {
-	switch reason {
-	case negtypes.ReasonEPCountsDiffer:
-		sc.epCountsDiffer++
-	case negtypes.ReasonEPNodeMissing:
-		sc.epNodeMissing++
-	case negtypes.ReasonEPNodeNotFound:
-		sc.epNodeNotFound++
-	case negtypes.ReasonEPPodMissing:
-		sc.epPodMissing++
-	case negtypes.ReasonEPPodNotFound:
-		sc.epPodNotFound++
-	case negtypes.ReasonEPPodTypeAssertionFailed:
-		sc.epPodTypeAssertionFailed++
-	case negtypes.ReasonEPZoneMissing:
-		sc.epZoneMissing++
-	case negtypes.ReasonEPSEndpointCountZero:
-		sc.epsEndpointCountZero++
-	case negtypes.ReasonInvalidAPIResponse:
-		sc.invalidAPIResponse++
-	case negtypes.ReasonInvalidEPAttach:
-		sc.invalidEPAttach++
-	case negtypes.ReasonInvalidEPDetach:
-		sc.invalidEPDetach++
-	case negtypes.ReasonNegNotFound:
-		sc.negNotFound++
-	case negtypes.ReasonCurrentNegEPNotFound:
-		sc.currentNegEPNotFound++
-	case negtypes.ReasonEPSNotFound:
-		sc.epsNotFound++
-	case negtypes.ReasonOtherError:
-		sc.otherError++
-	case negtypes.ReasonSuccess:
-		sc.success++
-	}
 }

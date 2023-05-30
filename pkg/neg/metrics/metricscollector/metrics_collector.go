@@ -18,6 +18,7 @@ package metricscollector
 
 import (
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -34,7 +35,7 @@ var register sync.Once
 // RegisterSyncerMetrics registers syncer related metrics
 func RegisterMetrics() {
 	register.Do(func() {
-		prometheus.MustRegister(syncerState)
+		prometheus.MustRegister(SyncerCountBySyncResult)
 		prometheus.MustRegister(syncerEndpointState)
 		prometheus.MustRegister(syncerEndpointSliceState)
 		prometheus.MustRegister(NumberOfEndpoints)
@@ -48,7 +49,7 @@ func RegisterMetrics() {
 
 type SyncerMetricsCollector interface {
 	// UpdateSyncerStatusInMetrics update the status of corresponding syncer based on the sync error
-	UpdateSyncerStatusInMetrics(key negtypes.NegSyncerKey, err error)
+	UpdateSyncerStatusInMetrics(key negtypes.NegSyncerKey, err error, inErrorState bool)
 	// UpdateSyncerEPMetrics update the endpoint and endpointSlice count for the given syncer
 	UpdateSyncerEPMetrics(key negtypes.NegSyncerKey, endpointCount, endpointSliceCount negtypes.StateCountMap)
 	SetLabelPropagationStats(key negtypes.NegSyncerKey, labelstatLabelPropagationStats LabelPropagationStats)
@@ -61,7 +62,7 @@ type SyncerMetrics struct {
 
 	mu sync.Mutex
 	// syncerStateMap tracks the status of each syncer
-	syncerStateMap map[negtypes.NegSyncerKey]negtypes.Reason
+	syncerStateMap map[negtypes.NegSyncerKey]syncerState
 	// syncerEndpointStateMap is a map between syncer and endpoint state counts.
 	syncerEndpointStateMap map[negtypes.NegSyncerKey]negtypes.StateCountMap
 	// syncerEndpointSliceStateMap is a map between syncer and endpoint slice state counts.
@@ -83,7 +84,7 @@ type SyncerMetrics struct {
 // NewNEGMetricsCollector initializes SyncerMetrics and starts a go routine to compute and export metrics periodically.
 func NewNegMetricsCollector(exportInterval time.Duration, logger klog.Logger) *SyncerMetrics {
 	return &SyncerMetrics{
-		syncerStateMap:              make(map[negtypes.NegSyncerKey]negtypes.Reason),
+		syncerStateMap:              make(map[negtypes.NegSyncerKey]syncerState),
 		syncerEndpointStateMap:      make(map[negtypes.NegSyncerKey]negtypes.StateCountMap),
 		syncerEndpointSliceStateMap: make(map[negtypes.NegSyncerKey]negtypes.StateCountMap),
 		syncerLabelProagationStats:  make(map[negtypes.NegSyncerKey]LabelPropagationStats),
@@ -151,7 +152,7 @@ func (sm *SyncerMetrics) export() {
 }
 
 // UpdateSyncerStatusInMetrics update the status of syncer based on the error
-func (sm *SyncerMetrics) UpdateSyncerStatusInMetrics(key negtypes.NegSyncerKey, err error) {
+func (sm *SyncerMetrics) UpdateSyncerStatusInMetrics(key negtypes.NegSyncerKey, err error, inErrorState bool) {
 	reason := negtypes.ReasonSuccess
 	if err != nil {
 		syncErr := negtypes.ClassifyError(err)
@@ -161,10 +162,10 @@ func (sm *SyncerMetrics) UpdateSyncerStatusInMetrics(key negtypes.NegSyncerKey, 
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	if sm.syncerStateMap == nil {
-		sm.syncerStateMap = make(map[negtypes.NegSyncerKey]negtypes.Reason)
-		sm.logger.V(3).Info("Syncer Metrics failed to initialize correctly, reinitializing syncerStatusMap: %v", sm.syncerStateMap)
+		sm.syncerStateMap = make(map[negtypes.NegSyncerKey]syncerState)
+		sm.logger.V(3).Info("Syncer Metrics failed to initialize correctly, reinitializing syncerStateMap: %v", sm.syncerStateMap)
 	}
-	sm.syncerStateMap[key] = reason
+	sm.syncerStateMap[key] = syncerState{lastSyncResult: reason, inErrorState: inErrorState}
 }
 
 func (sm *SyncerMetrics) UpdateSyncerEPMetrics(key negtypes.NegSyncerKey, endpointCount, endpointSliceCount negtypes.StateCountMap) {
@@ -221,14 +222,14 @@ func (sm *SyncerMetrics) computeLabelMetrics() LabelPropagationMetrics {
 	return lpMetrics
 }
 
-func (sm *SyncerMetrics) computeSyncerStateMetrics() (*syncerStateCount, int) {
+func (sm *SyncerMetrics) computeSyncerStateMetrics() (syncerStateCount, int) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
-	stateCount := &syncerStateCount{}
+	stateCount := make(syncerStateCount)
 	syncerCount := 0
 	for _, syncerState := range sm.syncerStateMap {
-		stateCount.inc(syncerState)
+		stateCount[syncerState] += 1
 		syncerCount++
 	}
 	return stateCount, syncerCount
@@ -383,22 +384,8 @@ func (sm *SyncerMetrics) computeDualStackMigrationCounts() (map[string]int, int,
 	return syncerCountByEndpointType, migrationEndpointCount, migrationServices.Len()
 }
 
-func PublishSyncerStateMetrics(stateCount *syncerStateCount) {
-	syncerState.WithLabelValues(EPCountsDiffer).Set(float64(stateCount.epCountsDiffer))
-	syncerState.WithLabelValues(EPNodeMissing).Set(float64(stateCount.epNodeMissing))
-	syncerState.WithLabelValues(EPNodeNotFound).Set(float64(stateCount.epNodeNotFound))
-	syncerState.WithLabelValues(EPPodMissing).Set(float64(stateCount.epPodMissing))
-	syncerState.WithLabelValues(EPPodNotFound).Set(float64(stateCount.epPodNotFound))
-	syncerState.WithLabelValues(EPPodTypeAssertionFailed).Set(float64(stateCount.epPodTypeAssertionFailed))
-	syncerState.WithLabelValues(EPZoneMissing).Set(float64(stateCount.epZoneMissing))
-	syncerState.WithLabelValues(EPSEndpointCountZero).Set(float64(stateCount.epsEndpointCountZero))
-	syncerState.WithLabelValues(EPCalculationCountZero).Set(float64(stateCount.epCalculationCountZero))
-	syncerState.WithLabelValues(InvalidAPIResponse).Set(float64(stateCount.invalidAPIResponse))
-	syncerState.WithLabelValues(InvalidEPAttach).Set(float64(stateCount.invalidEPAttach))
-	syncerState.WithLabelValues(InvalidEPDetach).Set(float64(stateCount.invalidEPDetach))
-	syncerState.WithLabelValues(NegNotFound).Set(float64(stateCount.negNotFound))
-	syncerState.WithLabelValues(CurrentNegEPNotFound).Set(float64(stateCount.currentNegEPNotFound))
-	syncerState.WithLabelValues(EPSNotFound).Set(float64(stateCount.epsNotFound))
-	syncerState.WithLabelValues(OtherError).Set(float64(stateCount.otherError))
-	syncerState.WithLabelValues(Success).Set(float64(stateCount.success))
+func PublishSyncerStateMetrics(stateCount syncerStateCount) {
+	for state, count := range stateCount {
+		SyncerCountBySyncResult.WithLabelValues(string(state.lastSyncResult), strconv.FormatBool(state.inErrorState)).Set(float64(count))
+	}
 }
