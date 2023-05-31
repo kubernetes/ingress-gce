@@ -645,6 +645,9 @@ func TestCheckAllIngresses(t *testing.T) {
 	beClient := fakebeconfig.NewSimpleClientset()
 	feClient := fakefeconfig.NewSimpleClientset()
 
+	thirtyVar := int64(30)
+	twentyVar := int64(20)
+
 	ingress1 := networkingv1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "ingress1",
@@ -667,7 +670,7 @@ func TestCheckAllIngresses(t *testing.T) {
 			Name:      "ingress2",
 			Namespace: "test",
 			Annotations: map[string]string{
-				annotations.IngressClassKey: annotations.GceL7ILBIngressClass,
+				annotations.FrontendConfigKey: "feConfig-2",
 			},
 		},
 		Spec: networkingv1.IngressSpec{
@@ -681,7 +684,7 @@ func TestCheckAllIngresses(t *testing.T) {
 									Path: "/*",
 									Backend: networkingv1.IngressBackend{
 										Service: &networkingv1.IngressServiceBackend{
-											Name: "svc-1",
+											Name: "svc-2",
 										},
 									},
 								},
@@ -698,16 +701,26 @@ func TestCheckAllIngresses(t *testing.T) {
 	client.NetworkingV1().Ingresses("test").Create(context.TODO(), &ingress1, metav1.CreateOptions{})
 	client.NetworkingV1().Ingresses("test").Create(context.TODO(), &ingress2, metav1.CreateOptions{})
 
-	serivce1 := corev1.Service{
+	client.CoreV1().Services("test").Create(context.TODO(), &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "svc-1",
 			Namespace: "test",
 			Annotations: map[string]string{
-				annotations.BackendConfigKey: `{"default": "beconfig1"}`,
+				annotations.BackendConfigKey:              `{"default": "beconfig1"}`,
+				annotations.ServiceApplicationProtocolKey: `{"8443":"HTTP3","8080":"HTTP"}`,
 			},
 		},
-	}
-	client.CoreV1().Services("test").Create(context.TODO(), &serivce1, metav1.CreateOptions{})
+	}, metav1.CreateOptions{})
+
+	client.CoreV1().Services("test").Create(context.TODO(), &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc-2",
+			Namespace: "test",
+			Annotations: map[string]string{
+				annotations.BackendConfigKey: `{"default": "beconfig2"}`,
+			},
+		},
+	}, metav1.CreateOptions{})
 
 	beClient.CloudV1().BackendConfigs("test").Create(context.TODO(), &beconfigv1.BackendConfig{
 		ObjectMeta: metav1.ObjectMeta{
@@ -715,9 +728,30 @@ func TestCheckAllIngresses(t *testing.T) {
 			Name:      "beconfig1",
 		},
 	}, metav1.CreateOptions{})
-	report := CheckAllIngresses("test", client, beClient, feClient)
+
+	beClient.CloudV1().BackendConfigs("test").Create(context.TODO(), &beconfigv1.BackendConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "test",
+			Name:      "beconfig2",
+		},
+		Spec: beconfigv1.BackendConfigSpec{
+			HealthCheck: &beconfigv1.HealthCheckConfig{
+				CheckIntervalSec: &twentyVar,
+				TimeoutSec:       &thirtyVar,
+			},
+		},
+	}, metav1.CreateOptions{})
+
+	feClient.NetworkingV1beta1().FrontendConfigs("test").Create(context.TODO(), &feconfigv1beta1.FrontendConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "test",
+			Name:      "feConfig-2",
+		},
+	}, metav1.CreateOptions{})
+
+	result := CheckAllIngresses("test", client, beClient, feClient)
 	checkSet := make(map[string]struct{})
-	for _, resource := range report.Resources {
+	for _, resource := range result.Resources {
 		for _, check := range resource.Checks {
 			checkSet[check.Name] = struct{}{}
 		}
@@ -737,6 +771,52 @@ func TestCheckAllIngresses(t *testing.T) {
 	} {
 		if _, ok := checkSet[check]; !ok {
 			t.Errorf("Missing check %s in CheckAllIngresses", check)
+		}
+	}
+
+	expect := report.Report{
+		Resources: []*report.Resource{
+			{
+				Kind:      "Ingress",
+				Namespace: "test",
+				Name:      "ingress1",
+				Checks: []*report.Check{
+					{Name: "IngressRuleCheck", Result: "PASSED"},
+					{Name: "L7ILBFrontendConfigCheck", Result: "FAILED"},
+					{Name: "RuleHostOverwriteCheck", Result: "PASSED"},
+					{Name: "FrontendConfigExistenceCheck", Result: "FAILED"},
+					{Name: "ServiceExistenceCheck", Result: "PASSED"},
+					{Name: "BackendConfigAnnotationCheck", Result: "PASSED"},
+					{Name: "AppProtocolAnnotationCheck", Result: "FAILED"},
+					{Name: "L7ILBNegAnnotationCheck", Result: "FAILED"},
+					{Name: "BackendConfigExistenceCheck", Result: "PASSED"},
+					{Name: "HealthCheckTimeoutCheck", Result: "SKIPPED"},
+				},
+			},
+			{
+				Kind:      "Ingress",
+				Namespace: "test",
+				Name:      "ingress2",
+				Checks: []*report.Check{
+					{Name: "IngressRuleCheck", Result: "FAILED"},
+					{Name: "L7ILBFrontendConfigCheck", Result: "SKIPPED"},
+					{Name: "RuleHostOverwriteCheck", Result: "FAILED"},
+					{Name: "FrontendConfigExistenceCheck", Result: "PASSED"},
+					{Name: "ServiceExistenceCheck", Result: "PASSED"},
+					{Name: "BackendConfigAnnotationCheck", Result: "PASSED"},
+					{Name: "AppProtocolAnnotationCheck", Result: "SKIPPED"},
+					{Name: "L7ILBNegAnnotationCheck", Result: "SKIPPED"},
+					{Name: "BackendConfigExistenceCheck", Result: "PASSED"},
+					{Name: "HealthCheckTimeoutCheck", Result: "FAILED"},
+				},
+			},
+		},
+	}
+	for i, resource := range result.Resources {
+		for j, check := range resource.Checks {
+			if diff := cmp.Diff(expect.Resources[i].Checks[j].Result, check.Result); diff != "" {
+				t.Errorf("For ingress check %s for ingress %s/%s, (-want +got):\n%s", check.Name, resource.Namespace, resource.Name, diff)
+			}
 		}
 	}
 }
