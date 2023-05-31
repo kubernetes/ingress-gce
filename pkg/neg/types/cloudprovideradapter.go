@@ -17,9 +17,12 @@ limitations under the License.
 package types
 
 import (
+	"time"
+
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
 )
 
 const (
@@ -56,51 +59,77 @@ type cloudProviderAdapter struct {
 
 // GetNetworkEndpointGroup implements NetworkEndpointGroupCloud.
 func (a *cloudProviderAdapter) GetNetworkEndpointGroup(name string, zone string, version meta.Version) (*composite.NetworkEndpointGroup, error) {
-	return composite.GetNetworkEndpointGroup(a.c, meta.ZonalKey(name, zone), version)
+	start := time.Now()
+	neg, err := composite.GetNetworkEndpointGroup(a.c, meta.ZonalKey(name, zone), version)
+	metrics.PublishGCERequestCountMetrics(start, metrics.GetRequest, err)
+	return neg, err
 
 }
 
 // ListNetworkEndpointGroup implements NetworkEndpointGroupCloud.
 func (a *cloudProviderAdapter) ListNetworkEndpointGroup(zone string, version meta.Version) ([]*composite.NetworkEndpointGroup, error) {
-	return composite.ListNetworkEndpointGroups(a.c, meta.ZonalKey("", zone), version)
+	start := time.Now()
+	negs, err := composite.ListNetworkEndpointGroups(a.c, meta.ZonalKey("", zone), version)
+	metrics.PublishGCERequestCountMetrics(start, metrics.ListRequest, err)
+	return negs, err
 }
 
 // AggregatedListNetworkEndpointGroup returns a map of zone -> endpoint group.
 func (a *cloudProviderAdapter) AggregatedListNetworkEndpointGroup(version meta.Version) (map[*meta.Key]*composite.NetworkEndpointGroup, error) {
+	start := time.Now()
 	// TODO: filter for the region the cluster is in.
-	return composite.AggregatedListNetworkEndpointGroup(a.c, version)
+	negs, err := composite.AggregatedListNetworkEndpointGroup(a.c, version)
+	metrics.PublishGCERequestCountMetrics(start, metrics.AggregatedListRequest, err)
+	return negs, err
 }
 
 // CreateNetworkEndpointGroup implements NetworkEndpointGroupCloud.
 func (a *cloudProviderAdapter) CreateNetworkEndpointGroup(neg *composite.NetworkEndpointGroup, zone string) error {
-	return composite.CreateNetworkEndpointGroup(a.c, meta.ZonalKey(neg.Name, zone), neg)
+	start := time.Now()
+	err := composite.CreateNetworkEndpointGroup(a.c, meta.ZonalKey(neg.Name, zone), neg)
+	metrics.PublishGCERequestCountMetrics(start, metrics.CreateRequest, err)
+	return err
 }
 
 // DeleteNetworkEndpointGroup implements NetworkEndpointGroupCloud.
 func (a *cloudProviderAdapter) DeleteNetworkEndpointGroup(name string, zone string, version meta.Version) error {
-	return composite.DeleteNetworkEndpointGroup(a.c, meta.ZonalKey(name, zone), version)
+	start := time.Now()
+	err := composite.DeleteNetworkEndpointGroup(a.c, meta.ZonalKey(name, zone), version)
+	metrics.PublishGCERequestCountMetrics(start, metrics.DeleteRequest, err)
+	return err
 }
 
 // AttachNetworkEndpoints implements NetworkEndpointGroupCloud.
 func (a cloudProviderAdapter) AttachNetworkEndpoints(name, zone string, endpoints []*composite.NetworkEndpoint, version meta.Version) error {
 	req := &composite.NetworkEndpointGroupsAttachEndpointsRequest{NetworkEndpoints: endpoints}
-	return composite.AttachNetworkEndpoints(a.c, meta.ZonalKey(name, zone), version, req)
+	start := time.Now()
+	err := composite.AttachNetworkEndpoints(a.c, meta.ZonalKey(name, zone), version, req)
+	metrics.PublishGCERequestCountMetrics(start, metrics.AttachNERequest, err)
+	return err
 }
 
 // DetachNetworkEndpoints implements NetworkEndpointGroupCloud.
 func (a *cloudProviderAdapter) DetachNetworkEndpoints(name, zone string, endpoints []*composite.NetworkEndpoint, version meta.Version) error {
 	req := &composite.NetworkEndpointGroupsDetachEndpointsRequest{NetworkEndpoints: endpoints}
-	return composite.DetachNetworkEndpoints(a.c, meta.ZonalKey(name, zone), version, req)
+	start := time.Now()
+	err := composite.DetachNetworkEndpoints(a.c, meta.ZonalKey(name, zone), version, req)
+	metrics.PublishGCERequestCountMetrics(start, metrics.DetachNERequest, err)
+	return err
 }
 
 // ListNetworkEndpoints implements NetworkEndpointGroupCloud.
 func (a *cloudProviderAdapter) ListNetworkEndpoints(name, zone string, showHealthStatus bool, version meta.Version) ([]*composite.NetworkEndpointWithHealthStatus, error) {
 	healthStatus := "SKIP"
+	metricLabel := metrics.ListNERequest
 	if showHealthStatus {
 		healthStatus = "SHOW"
+		metricLabel = metrics.ListNEHealthRequest
 	}
 	req := &composite.NetworkEndpointGroupsListEndpointsRequest{HealthStatus: healthStatus}
-	return composite.ListNetworkEndpoints(a.c, meta.ZonalKey(name, zone), version, req)
+	start := time.Now()
+	networkEndpoints, err := composite.ListNetworkEndpoints(a.c, meta.ZonalKey(name, zone), version, req)
+	metrics.PublishGCERequestCountMetrics(start, metricLabel, err)
+	return networkEndpoints, err
 }
 
 // NetworkURL implements NetworkEndpointGroupCloud.
