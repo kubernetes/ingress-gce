@@ -16,6 +16,7 @@ limitations under the License.
 package loadbalancers
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"strings"
@@ -399,7 +400,7 @@ func TestEnsureExternalDualStackLoadBalancer(t *testing.T) {
 // - ServiceExternalTrafficPolicy
 // - Protocol
 // - IPFamilies
-// for dual-stack service. In total 400 combinations
+// for dual-stack service. In total 400 combinations.
 func TestDualStackNetLBTransitions(t *testing.T) {
 	t.Parallel()
 
@@ -457,6 +458,7 @@ func TestDualStackNetLBTransitions(t *testing.T) {
 
 			namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 			fakeGCE := getFakeGCECloud(vals)
+			c := fakeGCE.Compute().(*cloud.MockGCE)
 
 			svc := test.NewL4NetLBRBSDualStackService(tc.initialProtocol, tc.initialIPFamily, tc.initialTrafficPolicy)
 			l4NetLBParams := &L4NetLBParams{
@@ -468,6 +470,28 @@ func TestDualStackNetLBTransitions(t *testing.T) {
 			}
 			l4NetLB := NewL4NetLB(l4NetLBParams)
 			l4NetLB.healthChecks = healthchecksl4.Fake(fakeGCE, l4NetLBParams.Recorder)
+
+			// Before deleting forwarding rule, check, that the address was reserved
+			c.MockForwardingRules.DeleteHook = func(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules) (bool, error) {
+				fr, err := c.MockForwardingRules.Get(ctx, key)
+				// if forwarding rule not exists, don't need to check if address reserved
+				if utils.IsNotFoundError(err) {
+					return false, nil
+				}
+				if err != nil {
+					return false, err
+				}
+
+				addr, err := l4NetLB.cloud.GetRegionAddressByIP(fr.Region, fr.IPAddress)
+				if utils.IgnoreHTTPNotFound(err) != nil {
+					return true, err
+				}
+				if addr == nil || utils.IsNotFoundError(err) {
+					t.Errorf("Address not reserved before deleting forwarding rule +%v", fr)
+				}
+
+				return false, nil
+			}
 
 			if _, err := test.CreateAndInsertNodes(l4NetLB.cloud, nodeNames, vals.ZoneName); err != nil {
 				t.Errorf(
@@ -486,6 +510,7 @@ func TestDualStackNetLBTransitions(t *testing.T) {
 			finalSvc.Annotations = result.Annotations
 			assertDualStackNetLBResources(t, l4NetLB, nodeNames)
 
+			c.MockForwardingRules.DeleteHook = nil
 			l4NetLB.EnsureLoadBalancerDeleted(l4NetLB.Service)
 			assertDualStackNetLBResourcesDeleted(t, l4NetLB)
 		})
@@ -694,6 +719,75 @@ func TestEnsureIPv6ExternalLoadBalancerCustomSubnet(t *testing.T) {
 	if result.Error != nil {
 		t.Errorf("Unexpected error deleting loadbalancer - err %v", result.Error)
 	}
+	assertDualStackNetLBResourcesDeleted(t, l4NetLB)
+}
+
+// TestDualStackNetLBModifyProtocol verifies modifying protocol for DualStack NetLB Service.
+// This is specifically useful to verify that address was reserved before recreating forwarding rule.
+func TestDualStackNetLBModifyProtocol(t *testing.T) {
+	t.Parallel()
+
+	initialProtocol := v1.ProtocolTCP
+	finalProtocol := v1.ProtocolUDP
+	nodeNames := []string{"test-node-1"}
+	vals := gce.DefaultTestClusterValues()
+
+	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+	fakeGCE := getFakeGCECloud(vals)
+	c := fakeGCE.Compute().(*cloud.MockGCE)
+
+	svc := test.NewL4NetLBRBSDualStackService(initialProtocol, []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol}, v1.ServiceExternalTrafficPolicyTypeCluster)
+	l4NetLBParams := &L4NetLBParams{
+		Service:          svc,
+		Cloud:            fakeGCE,
+		Namer:            namer,
+		Recorder:         record.NewFakeRecorder(100),
+		DualStackEnabled: true,
+	}
+	l4NetLB := NewL4NetLB(l4NetLBParams)
+	l4NetLB.healthChecks = healthchecksl4.Fake(fakeGCE, l4NetLBParams.Recorder)
+
+	// Before deleting forwarding rule, check, that the address was reserved
+	c.MockForwardingRules.DeleteHook = func(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules) (bool, error) {
+		fr, err := c.MockForwardingRules.Get(ctx, key)
+		// if forwarding rule not exists, don't need to check if address reserved
+		if utils.IsNotFoundError(err) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+
+		addr, err := l4NetLB.cloud.GetRegionAddressByIP(fr.Region, fr.IPAddress)
+		if utils.IgnoreHTTPNotFound(err) != nil {
+			return true, err
+		}
+		if addr == nil || utils.IsNotFoundError(err) {
+			t.Errorf("Address not reserved before deleting forwarding rule +%v", fr)
+		}
+
+		return false, nil
+	}
+
+	if _, err := test.CreateAndInsertNodes(l4NetLB.cloud, nodeNames, vals.ZoneName); err != nil {
+		t.Errorf(
+			"Unexpected error when adding nodes %v", err)
+	}
+
+	result := l4NetLB.EnsureFrontend(nodeNames, svc)
+	svc.Annotations = result.Annotations
+	assertDualStackNetLBResources(t, l4NetLB, nodeNames)
+
+	finalSvc := test.NewL4NetLBRBSDualStackService(finalProtocol, []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol}, v1.ServiceExternalTrafficPolicyTypeCluster)
+	finalSvc.Annotations = svc.Annotations
+	l4NetLB.Service = finalSvc
+
+	result = l4NetLB.EnsureFrontend(nodeNames, svc)
+	finalSvc.Annotations = result.Annotations
+	assertDualStackNetLBResources(t, l4NetLB, nodeNames)
+
+	c.MockForwardingRules.DeleteHook = nil
+	l4NetLB.EnsureLoadBalancerDeleted(l4NetLB.Service)
 	assertDualStackNetLBResourcesDeleted(t, l4NetLB)
 }
 

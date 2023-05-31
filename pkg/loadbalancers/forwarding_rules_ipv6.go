@@ -26,6 +26,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -134,19 +135,47 @@ func (l4 *L4) deleteChangedIPv6ForwardingRule(existingFwdRule *composite.Forward
 func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.ForwardingRule, error) {
 	start := time.Now()
 
-	expectedIPv6FwdRule, err := l4netlb.buildExpectedIPv6ForwardingRule(bsLink)
-	if err != nil {
-		return nil, fmt.Errorf("l4netlb.buildExpectedIPv6ForwardingRule(%s) returned error %w, want nil", bsLink, err)
-	}
-
-	klog.V(2).Infof("Ensuring external ipv6 forwarding rule %s for L4 NetLB Service %s/%s, backend service link: %s", expectedIPv6FwdRule.Name, l4netlb.Service.Namespace, l4netlb.Service.Name, bsLink)
+	klog.V(2).Infof("Ensuring external ipv6 forwarding rule for L4 NetLB Service %s/%s, backend service link: %s", l4netlb.Service.Namespace, l4netlb.Service.Name, bsLink)
 	defer func() {
-		klog.V(2).Infof("Finished ensuring external ipv6 forwarding rule %s for L4 NetLB Service %s/%s, time taken: %v", expectedIPv6FwdRule.Name, l4netlb.Service.Namespace, l4netlb.Service.Name, time.Since(start))
+		klog.V(2).Infof("Finished ensuring external ipv6 forwarding rule for L4 NetLB Service %s/%s, time taken: %v", l4netlb.Service.Namespace, l4netlb.Service.Name, time.Since(start))
 	}()
 
-	existingIPv6FwdRule, err := l4netlb.forwardingRules.Get(expectedIPv6FwdRule.Name)
+	expectedIPv6FrName := l4netlb.ipv6FRName()
+	existingIPv6FwdRule, err := l4netlb.forwardingRules.Get(expectedIPv6FrName)
 	if err != nil {
-		return nil, fmt.Errorf("l4netlb.forwardingRules.GetForwardingRule(%s) returned error %w, want nil", expectedIPv6FwdRule.Name, err)
+		klog.Errorf("l4netlb.forwardingRules.Get(%s) returned error %v", expectedIPv6FrName, err)
+		return nil, err
+	}
+
+	subnetworkURL, err := l4netlb.IPv6ForwardingRuleSubnet()
+	if err != nil {
+		return nil, fmt.Errorf("error getting ipv6 forwarding rule subnet: %w", err)
+	}
+
+	// Determine IP which will be used for this LB. If no forwarding rule has been established
+	// or specified in the Service spec, then requestedIP = "".
+	ipv6AddrToUse := ipv6AddressToUse(existingIPv6FwdRule, subnetworkURL)
+	if !l4netlb.cloud.IsLegacyNetwork() {
+		nm := types.NamespacedName{Namespace: l4netlb.Service.Namespace, Name: l4netlb.Service.Name}.String()
+		addrMgr := newAddressManager(l4netlb.cloud, nm, l4netlb.cloud.Region(), subnetworkURL, expectedIPv6FrName, ipv6AddrToUse, cloud.SchemeExternal, cloud.NetworkTierPremium, IPv6Version)
+
+		ipv6AddrToUse, _, err = addrMgr.HoldAddress()
+		if err != nil {
+			return nil, err
+		}
+		klog.V(2).Infof("ensureIPv6ForwardingRule(%v): reserved IP %q for the forwarding rule %s", nm, ipv6AddrToUse, expectedIPv6FrName)
+		defer func() {
+			// Release the address that was reserved, in all cases. If the forwarding rule was successfully created,
+			// the ephemeral IP is not needed anymore. If it was not created, the address should be released to prevent leaks.
+			if err := addrMgr.ReleaseAddress(); err != nil {
+				klog.Errorf("ensureIPv6ForwardingRule: failed to release address reservation, possibly causing an orphan: %v", err)
+			}
+		}()
+	}
+
+	expectedIPv6FwdRule, err := l4netlb.buildExpectedIPv6ForwardingRule(bsLink, ipv6AddrToUse, subnetworkURL)
+	if err != nil {
+		return nil, fmt.Errorf("l4netlb.buildExpectedIPv6ForwardingRule(%s) returned error %w, want nil", bsLink, err)
 	}
 
 	if existingIPv6FwdRule != nil {
@@ -173,7 +202,7 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 	return createdFr, err
 }
 
-func (l4netlb *L4NetLB) buildExpectedIPv6ForwardingRule(bsLink string) (*composite.ForwardingRule, error) {
+func (l4netlb *L4NetLB) buildExpectedIPv6ForwardingRule(bsLink, ipv6AddressToUse, subnetworkURL string) (*composite.ForwardingRule, error) {
 	frName := l4netlb.ipv6FRName()
 
 	frDesc, err := utils.MakeL4IPv6ForwardingRuleDescription(l4netlb.Service)
@@ -183,20 +212,17 @@ func (l4netlb *L4NetLB) buildExpectedIPv6ForwardingRule(bsLink string) (*composi
 
 	svcPorts := l4netlb.Service.Spec.Ports
 	portRange, protocol := utils.MinMaxPortRangeAndProtocol(svcPorts)
-	subnetURL, err := l4netlb.IPv6ForwardingRuleSubnet()
-	if err != nil {
-		return nil, fmt.Errorf("error getting ipv6 forwarding rule subnet: %w", err)
-	}
 	fr := &composite.ForwardingRule{
 		Name:                frName,
 		Description:         frDesc,
+		IPAddress:           ipv6AddressToUse,
 		IPProtocol:          protocol,
 		PortRange:           portRange,
 		LoadBalancingScheme: string(cloud.SchemeExternal),
 		BackendService:      bsLink,
 		IpVersion:           IPVersionIPv6,
 		NetworkTier:         cloud.NetworkTierPremium.ToGCEValue(),
-		Subnetwork:          subnetURL,
+		Subnetwork:          subnetworkURL,
 	}
 
 	return fr, nil
