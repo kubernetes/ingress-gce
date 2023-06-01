@@ -436,7 +436,7 @@ func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGett
 			}
 			zone, getZoneErr := zoneGetter.GetZoneForNode(nodeName)
 			if getZoneErr != nil {
-				klog.Errorf("For endpoint %q in pod %q, its corresponding node %q does not have valid zone information: %w, skipping", endpointAddress.Addresses, pod.ObjectMeta.Name, nodeName, getZoneErr)
+				klog.Errorf("For endpoint %q in pod %q, its corresponding node %q does not have valid zone information: %v, skipping", endpointAddress.Addresses, pod.ObjectMeta.Name, nodeName, getZoneErr)
 				metrics.PublishNegControllerErrorCountMetrics(getZoneErr, true)
 				localEPCount[negtypes.ZoneMissing]++
 				continue
@@ -461,7 +461,7 @@ func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGett
 			// endpoint address should match to the IP of its pod
 			checkIPErr := podContainsEndpointAddress(networkEndpoint, pod)
 			if checkIPErr != nil {
-				klog.Errorf("Endpoint %q in Endpoints %s/%s has IP(s) not match to its pod %s: %w, skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, pod.Name, checkIPErr)
+				klog.Errorf("Endpoint %q in Endpoints %s/%s has IP(s) not match to its pod %s: %v, skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, pod.Name, checkIPErr)
 				metrics.PublishNegControllerErrorCountMetrics(checkIPErr, true)
 				localEPCount[negtypes.IPNotFromPod] += 1
 				continue
