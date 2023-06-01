@@ -738,6 +738,363 @@ func TestIpsForPod(t *testing.T) {
 	}
 }
 
+// TestValidateEndpointFields validates if toZoneNetworkEndpointMap
+// returns correct type of error with invalid endpoint information
+func TestValidateEndpointFields(t *testing.T) {
+	t.Parallel()
+	zoneGetter := negtypes.NewFakeZoneGetter()
+	podLister := negtypes.NewTestContext().PodInformer.GetIndexer()
+	addPodsToLister(podLister, getDefaultEndpointSlices())
+
+	instance1 := negtypes.TestInstance1
+	instance3 := negtypes.TestInstance3
+	instanceNotExist := "non-existent-node"
+	emptyZoneInstance := "empty-zone-instance"
+	zoneGetter.AddZone("", emptyZoneInstance)
+
+	emptyNamedPort := ""
+	emptyNodeName := ""
+	port80 := int32(80)
+	protocolTCP := v1.ProtocolTCP
+
+	testCases := []struct {
+		desc              string
+		testEndpointSlice []*discovery.EndpointSlice
+		expectSets        map[string]negtypes.NetworkEndpointSet
+		expectMap         negtypes.EndpointPodMap
+		expectErr         error
+	}{
+		{
+			desc: "endpoints no missing or invalid fields",
+			testEndpointSlice: []*discovery.EndpointSlice{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testServiceName + "-1",
+						Namespace: testServiceNamespace,
+						Labels: map[string]string{
+							discovery.LabelServiceName: testServiceName,
+						},
+					},
+					AddressType: "IPv4",
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"10.100.1.1"},
+							NodeName:  &instance1,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod1",
+							},
+						},
+						{
+							Addresses: []string{"10.100.3.1"},
+							NodeName:  &instance3,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod4",
+							},
+						},
+					},
+					Ports: []discovery.EndpointPort{
+						{
+							Name:     &emptyNamedPort,
+							Port:     &port80,
+							Protocol: &protocolTCP,
+						},
+					},
+				},
+			},
+			expectSets: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+					networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80")),
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
+					networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80")),
+			},
+			expectMap: negtypes.EndpointPodMap{
+				networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod1"},
+				networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod4"},
+			},
+			expectErr: nil,
+		},
+		{
+			desc: "include one endpoint that has missing nodeName",
+			testEndpointSlice: []*discovery.EndpointSlice{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testServiceName + "-1",
+						Namespace: testServiceNamespace,
+						Labels: map[string]string{
+							discovery.LabelServiceName: testServiceName,
+						},
+					},
+					AddressType: "IPv4",
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"10.100.1.1"},
+							NodeName:  nil, // endpoint with missing nodeName
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod1",
+							},
+						},
+						{
+							Addresses: []string{"10.100.3.1"},
+							NodeName:  &instance3,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod4",
+							},
+						},
+					},
+					Ports: []discovery.EndpointPort{
+						{
+							Name:     &emptyNamedPort,
+							Port:     &port80,
+							Protocol: &protocolTCP,
+						},
+					},
+				},
+			},
+			expectSets: nil,
+			expectMap:  nil,
+			expectErr:  negtypes.ErrEPNodeMissing,
+		},
+		{
+			desc: "include one endpoint that has empty nodeName",
+			testEndpointSlice: []*discovery.EndpointSlice{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testServiceName + "-1",
+						Namespace: testServiceNamespace,
+						Labels: map[string]string{
+							discovery.LabelServiceName: testServiceName,
+						},
+					},
+					AddressType: "IPv4",
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"10.100.1.1"},
+							NodeName:  &emptyNodeName,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod1",
+							},
+						},
+						{
+							Addresses: []string{"10.100.3.1"},
+							NodeName:  &instance3,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod4",
+							},
+						},
+					},
+					Ports: []discovery.EndpointPort{
+						{
+							Name:     &emptyNamedPort,
+							Port:     &port80,
+							Protocol: &protocolTCP,
+						},
+					},
+				},
+			},
+			expectSets: nil,
+			expectMap:  nil,
+			expectErr:  negtypes.ErrEPNodeMissing,
+		},
+		{
+			desc: "include one endpoint that has missing pod",
+			testEndpointSlice: []*discovery.EndpointSlice{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testServiceName + "-1",
+						Namespace: testServiceNamespace,
+						Labels: map[string]string{
+							discovery.LabelServiceName: testServiceName,
+						},
+					},
+					AddressType: "IPv4",
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"10.100.1.1"},
+							NodeName:  &instance1,
+							TargetRef: nil,
+						},
+						{
+							Addresses: []string{"10.100.3.1"},
+							NodeName:  &instance3,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod4",
+							},
+						},
+					},
+					Ports: []discovery.EndpointPort{
+						{
+							Name:     &emptyNamedPort,
+							Port:     &port80,
+							Protocol: &protocolTCP,
+						},
+					},
+				},
+			},
+			expectSets: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
+					networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80")),
+			},
+			expectMap: negtypes.EndpointPodMap{
+				networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod4"},
+			},
+			expectErr: nil,
+		},
+		{
+			desc: "include one endpoint that does not correspond to an existing pod",
+			testEndpointSlice: []*discovery.EndpointSlice{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testServiceName + "-1",
+						Namespace: testServiceNamespace,
+						Labels: map[string]string{
+							discovery.LabelServiceName: testServiceName,
+						},
+					},
+					AddressType: "IPv4",
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"10.100.1.1"},
+							NodeName:  &instance1,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "foo", // this is a non-existing pod
+							},
+						},
+						{
+							Addresses: []string{"10.100.3.1"},
+							NodeName:  &instance3,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod4",
+							},
+						},
+					},
+					Ports: []discovery.EndpointPort{
+						{
+							Name:     &emptyNamedPort,
+							Port:     &port80,
+							Protocol: &protocolTCP,
+						},
+					},
+				},
+			},
+			expectSets: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
+					networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80")),
+			},
+			expectMap: negtypes.EndpointPodMap{
+				networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod4"},
+			},
+			expectErr: nil,
+		},
+		{
+			desc: "include one endpoint that does not correspond to an existing node",
+			testEndpointSlice: []*discovery.EndpointSlice{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testServiceName + "-1",
+						Namespace: testServiceNamespace,
+						Labels: map[string]string{
+							discovery.LabelServiceName: testServiceName,
+						},
+					},
+					AddressType: "IPv4",
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"10.100.1.1"},
+							NodeName:  &instanceNotExist,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod1",
+							},
+						},
+						{
+							Addresses: []string{"10.100.3.1"},
+							NodeName:  &instance3,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod4",
+							},
+						},
+					},
+					Ports: []discovery.EndpointPort{
+						{
+							Name:     &emptyNamedPort,
+							Port:     &port80,
+							Protocol: &protocolTCP,
+						},
+					},
+				},
+			},
+			expectSets: nil,
+			expectMap:  nil,
+			expectErr:  negtypes.ErrEPNodeMissing,
+		},
+		{
+			desc: "include one endpoint that corresponds to an empty zone",
+			testEndpointSlice: []*discovery.EndpointSlice{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testServiceName + "-1",
+						Namespace: testServiceNamespace,
+						Labels: map[string]string{
+							discovery.LabelServiceName: testServiceName,
+						},
+					},
+					AddressType: "IPv4",
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"10.100.1.1"},
+							NodeName:  &emptyZoneInstance,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod1",
+							},
+						},
+						{
+							Addresses: []string{"10.100.3.1"},
+							NodeName:  &instance3,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod4",
+							},
+						},
+					},
+					Ports: []discovery.EndpointPort{
+						{
+							Name:     &emptyNamedPort,
+							Port:     &port80,
+							Protocol: &protocolTCP,
+						},
+					},
+				},
+			},
+			expectSets: nil,
+			expectMap:  nil,
+			expectErr:  negtypes.ErrEPZoneMissing,
+		},
+	}
+	for _, tc := range testCases {
+		result, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlice), zoneGetter, podLister, "", negtypes.VmIpPortEndpointType, false)
+		if !errors.Is(err, tc.expectErr) {
+			t.Errorf("For case %q, expect %v error, but got %v.", tc.desc, tc.expectErr, err)
+		}
+		if !reflect.DeepEqual(result.NetworkEndpointSet, tc.expectSets) {
+			t.Errorf("For case %q, expecting endpoint set %v, but got %v.", tc.desc, tc.expectSets, result.NetworkEndpointSet)
+		}
+		if !reflect.DeepEqual(result.EndpointPodMap, tc.expectMap) {
+			t.Errorf("For case %q, expecting endpoint map %v, but got %v.", tc.desc, tc.expectMap, result.EndpointPodMap)
+		}
+	}
+}
+
 func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 	zoneGetter := negtypes.NewFakeZoneGetter()
 	negCloud := negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
