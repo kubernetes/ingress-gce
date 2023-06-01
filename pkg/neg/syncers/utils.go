@@ -359,8 +359,8 @@ func getEndpointZone(endpointAddress negtypes.AddressData, zoneGetter negtypes.Z
 	}
 	zone, err := zoneGetter.GetZoneForNode(*endpointAddress.NodeName)
 	if err != nil {
-		count[negtypes.ZoneMissing]++
-		return zone, count, fmt.Errorf("%w: %v", negtypes.ErrEPZoneMissing, err)
+		count[negtypes.NodeNotFound]++
+		return zone, count, fmt.Errorf("%w: %v", negtypes.ErrEPNodeNotFound, err)
 	}
 	if zone == "" {
 		count[negtypes.ZoneMissing]++
@@ -438,7 +438,7 @@ func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGett
 			if getZoneErr != nil {
 				klog.Errorf("For endpoint %q in pod %q, its corresponding node %q does not have valid zone information: %v, skipping", endpointAddress.Addresses, pod.ObjectMeta.Name, nodeName, getZoneErr)
 				metrics.PublishNegControllerErrorCountMetrics(getZoneErr, true)
-				localEPCount[negtypes.ZoneMissing]++
+				localEPCount[negtypes.NodeNotFound]++
 				continue
 			}
 			if zoneNetworkEndpointMap[zone] == nil {
