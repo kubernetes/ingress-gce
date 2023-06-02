@@ -19,12 +19,10 @@ package metrics
 import (
 	"fmt"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
@@ -71,20 +69,6 @@ var (
 			Help: "Number of L4 ILBs",
 		},
 		[]string{label},
-	)
-	l4ILBDualStackCount = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "number_of_l4_dual_stack_ilbs",
-			Help: "Number of L4 ILBs with DualStack enabled",
-		},
-		[]string{"ip_families", "ip_family_policy", "status"},
-	)
-	l4NetLBDualStackCount = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "number_of_l4_dual_stack_netlbs",
-			Help: "Number of L4 NetLBs with DualStack enabled",
-		},
-		[]string{"ip_families", "ip_family_policy", "status"},
 	)
 	l4NetLBCount = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -301,31 +285,6 @@ func (im *ControllerMetrics) DeleteL4ILBService(svcKey string) {
 	delete(im.l4ILBServiceMap, svcKey)
 }
 
-// SetL4ILBDualStackService implements L4ILBMetricsCollector.
-func (im *ControllerMetrics) SetL4ILBDualStackService(svcKey string, state L4DualStackServiceState) {
-	im.Lock()
-	defer im.Unlock()
-
-	if im.l4ILBDualStackServiceMap == nil {
-		klog.Fatalf("L4 ILB DualStack Metrics failed to initialize correctly.")
-	}
-	if state.Status == StatusError {
-		if previousState, ok := im.l4ILBDualStackServiceMap[svcKey]; ok && previousState.FirstSyncErrorTime != nil {
-			// If service is in Error state and retry timestamp was set then do not update it.
-			state.FirstSyncErrorTime = previousState.FirstSyncErrorTime
-		}
-	}
-	im.l4ILBDualStackServiceMap[svcKey] = state
-}
-
-// DeleteL4ILBDualStackService implements L4ILBMetricsCollector.
-func (im *ControllerMetrics) DeleteL4ILBDualStackService(svcKey string) {
-	im.Lock()
-	defer im.Unlock()
-
-	delete(im.l4ILBDualStackServiceMap, svcKey)
-}
-
 // SetL4NetLBService adds metric state for given service to map.
 func (im *ControllerMetrics) SetL4NetLBService(svcKey string, state L4NetLBServiceState) {
 	im.Lock()
@@ -350,32 +309,6 @@ func (im *ControllerMetrics) DeleteL4NetLBService(svcKey string) {
 	defer im.Unlock()
 
 	delete(im.l4NetLBServiceMap, svcKey)
-}
-
-// SetL4NetLBDualStackService implements L4NetLBMetricsCollector.
-func (im *ControllerMetrics) SetL4NetLBDualStackService(svcKey string, state L4DualStackServiceState) {
-	im.Lock()
-	defer im.Unlock()
-
-	if im.l4NetLBDualStackServiceMap == nil {
-		klog.Fatalf("L4 NetLB DualStack Metrics failed to initialize correctly.")
-	}
-
-	if state.Status == StatusError {
-		if previousState, ok := im.l4NetLBDualStackServiceMap[svcKey]; ok && previousState.FirstSyncErrorTime != nil {
-			// If service is in Error state and retry timestamp was set then do not update it.
-			state.FirstSyncErrorTime = previousState.FirstSyncErrorTime
-		}
-	}
-	im.l4NetLBDualStackServiceMap[svcKey] = state
-}
-
-// DeleteL4NetLBDualStackService implements L4NetLBMetricsCollector.
-func (im *ControllerMetrics) DeleteL4NetLBDualStackService(svcKey string) {
-	im.Lock()
-	defer im.Unlock()
-
-	delete(im.l4NetLBDualStackServiceMap, svcKey)
 }
 
 // SetServiceAttachment adds sa state to the map to be counted during metrics computation.
@@ -446,33 +379,13 @@ func (im *ControllerMetrics) export() {
 	}
 	klog.V(3).Infof("L4 ILB usage metrics exported.")
 
-	ilbDualStackCount := im.computeL4ILBDualStackMetrics()
-	klog.V(3).Infof("Exporting L4 ILB DualStack usage metrics: %#v", ilbDualStackCount)
-	for state, count := range ilbDualStackCount {
-		l4ILBDualStackCount.With(prometheus.Labels{
-			"ip_families":      state.IPFamilies,
-			"ip_family_policy": state.IPFamilyPolicy,
-			"status":           string(state.Status),
-		}).Set(float64(count))
-	}
-	klog.V(3).Infof("L4 ILB DualStack usage metrics exported.")
-
 	netlbCount := im.computeL4NetLBMetrics()
 	klog.V(3).Infof("Exporting L4 NetLB usage metrics: %#v", netlbCount)
 	netlbCount.record()
-
 	klog.V(3).Infof("L4 NetLB usage metrics exported.")
 
-	netlbDualStackCount := im.computeL4NetLBDualStackMetrics()
-	klog.V(3).Infof("Exporting L4 NetLB DualStack usage metrics: %#v", netlbDualStackCount)
-	for state, count := range netlbDualStackCount {
-		l4NetLBDualStackCount.With(prometheus.Labels{
-			"ip_families":      state.IPFamilies,
-			"ip_family_policy": state.IPFamilyPolicy,
-			"status":           string(state.Status),
-		}).Set(float64(count))
-	}
-	klog.V(3).Infof("L4 Netlb DualStack usage metrics exported.")
+	im.exportL4ILBDualStackMetrics()
+	im.exportL4NetLBDualStackMetrics()
 
 	saCount := im.computePSCMetrics()
 	klog.V(3).Infof("Exporting PSC Usage Metrics: %#v", saCount)
@@ -626,26 +539,6 @@ func (im *ControllerMetrics) computeL4ILBMetrics() map[feature]int {
 	return counts
 }
 
-// computeL4ILBDualStackMetrics aggregates L4 ILB DualStack metrics in the cache.
-func (im *ControllerMetrics) computeL4ILBDualStackMetrics() map[L4DualStackServiceLabels]int {
-	im.Lock()
-	defer im.Unlock()
-	klog.V(4).Infof("Computing L4 DualStack ILB usage metrics from service state map: %#v", im.l4ILBDualStackServiceMap)
-	counts := map[L4DualStackServiceLabels]int{}
-
-	for key, state := range im.l4ILBDualStackServiceMap {
-		klog.V(6).Infof("ILB Service %s has IPFamilies: %v, IPFamilyPolicy: %t, Status: %v", key, state.IPFamilies, state.IPFamilyPolicy, state.Status)
-		if state.Status == StatusError &&
-			state.FirstSyncErrorTime != nil &&
-			time.Since(*state.FirstSyncErrorTime) >= persistentErrorThresholdTime {
-			state.Status = StatusPersistentError
-		}
-		counts[state.L4DualStackServiceLabels]++
-	}
-	klog.V(4).Info("L4 ILB usage metrics computed.")
-	return counts
-}
-
 // computeL4NetLBMetrics aggregates L4 NetLB metrics in the cache.
 func (im *ControllerMetrics) computeL4NetLBMetrics() netLBFeatureCount {
 	im.Lock()
@@ -675,26 +568,6 @@ func (im *ControllerMetrics) computeL4NetLBMetrics() netLBFeatureCount {
 		if state.IsPremiumTier {
 			counts.premiumNetworkTier++
 		}
-	}
-	klog.V(4).Info("L4 NetLB usage metrics computed.")
-	return counts
-}
-
-// computeL4NetLBDualStackMetrics aggregates L4 NetLB DualStack metrics in the cache.
-func (im *ControllerMetrics) computeL4NetLBDualStackMetrics() map[L4DualStackServiceLabels]int {
-	im.Lock()
-	defer im.Unlock()
-	klog.V(4).Infof("Computing L4 DualStack NetLB usage metrics from service state map: %#v", im.l4NetLBDualStackServiceMap)
-	counts := map[L4DualStackServiceLabels]int{}
-
-	for key, state := range im.l4NetLBDualStackServiceMap {
-		klog.V(6).Infof("NetLB Service %s has IPFamilies: %v, IPFamilyPolicy: %t, Status: %v", key, state.IPFamilies, state.IPFamilyPolicy, state.Status)
-		if state.Status == StatusError &&
-			state.FirstSyncErrorTime != nil &&
-			time.Since(*state.FirstSyncErrorTime) >= persistentErrorThresholdTime {
-			state.Status = StatusPersistentError
-		}
-		counts[state.L4DualStackServiceLabels]++
 	}
 	klog.V(4).Info("L4 NetLB usage metrics computed.")
 	return counts
@@ -807,24 +680,4 @@ func recordComponentVersion() {
 		v = version.Version
 	}
 	componentVersion.WithLabelValues(v).Set(versionValue)
-}
-
-func InitServiceDualStackMetricsState(svc *corev1.Service, startTime *time.Time) L4DualStackServiceState {
-	state := L4DualStackServiceState{}
-
-	var ipFamiliesStrings []string
-	for _, ipFamily := range svc.Spec.IPFamilies {
-		ipFamiliesStrings = append(ipFamiliesStrings, string(ipFamily))
-	}
-	state.IPFamilies = strings.Join(ipFamiliesStrings, ",")
-
-	state.IPFamilyPolicy = ""
-	if svc.Spec.IPFamilyPolicy != nil {
-		state.IPFamilyPolicy = string(*svc.Spec.IPFamilyPolicy)
-	}
-
-	// Always init status with error, and update with Success when service was provisioned
-	state.Status = StatusError
-	state.FirstSyncErrorTime = startTime
-	return state
 }
