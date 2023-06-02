@@ -30,6 +30,9 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
+	"github.com/google/go-cmp/cmp"
+	computebeta "google.golang.org/api/compute/v0.beta"
+	compute "google.golang.org/api/compute/v1"
 	ga "google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	v1 "k8s.io/api/core/v1"
@@ -38,13 +41,18 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
+	networkv1 "k8s.io/cloud-provider-gcp/crd/apis/network/v1"
+	gkenetworkparamsetv1alpha1 "k8s.io/cloud-provider-gcp/crd/apis/network/v1alpha1"
+	netfake "k8s.io/cloud-provider-gcp/crd/client/network/clientset/versioned/fake"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/composite"
 	ingctx "k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/healthchecksl4"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
+	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
@@ -162,18 +170,9 @@ func createAndSyncLegacyNetLBSvc(t *testing.T) (svc *v1.Service, lc *L4NetLBCont
 }
 
 func checkBackendService(lc *L4NetLBController, svc *v1.Service) error {
-	backendServiceLink, bs, err := getBackend(lc, svc)
+	bs, err := checkBackendServiceCommon(lc, svc)
 	if err != nil {
-		return fmt.Errorf("Failed to fetch backend service, err %v", err)
-	}
-	if bs.SelfLink != backendServiceLink {
-		return fmt.Errorf("Backend Service SelfLink mismatch: %s != %s", bs.SelfLink, backendServiceLink)
-	}
-	if bs.LoadBalancingScheme != string(cloud.SchemeExternal) {
-		return fmt.Errorf("Load Balancing Scheme mismatch: EXTERNAL != %s", bs.LoadBalancingScheme)
-	}
-	if len(bs.Backends) == 0 {
-		return fmt.Errorf("Error no backends in BackendService")
+		return err
 	}
 	igName := lc.namer.InstanceGroup()
 	for _, b := range bs.Backends {
@@ -189,6 +188,45 @@ func checkBackendService(lc *L4NetLBController, svc *v1.Service) error {
 		return fmt.Errorf("Instance Group does not exist")
 	}
 	return nil
+}
+
+func checkBackendServiceWithNEG(lc *L4NetLBController, svc *v1.Service) error {
+	bs, err := checkBackendServiceCommon(lc, svc)
+	if err != nil {
+		return err
+	}
+	negName := lc.namer.L4Backend(svc.Namespace, svc.Name)
+	for _, b := range bs.Backends {
+		if !strings.Contains(b.Group, negName) {
+			return fmt.Errorf("Backend NEG Link mismatch: %s != %s", negName, b.Group)
+		}
+	}
+	neg, err := lc.ctx.Cloud.GetNetworkEndpointGroup(negName, testGCEZone)
+	if err != nil {
+		return fmt.Errorf("Error getting NEG, err %v", err)
+	}
+	if neg == nil {
+		return fmt.Errorf("NEG does not exist")
+	}
+	return nil
+}
+
+// checkBackendServiceCommon verifies attributes common to InstanceGroup and NEG backed BackendServices.
+func checkBackendServiceCommon(lc *L4NetLBController, svc *v1.Service) (*composite.BackendService, error) {
+	backendServiceLink, bs, err := getBackend(lc, svc)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to fetch backend service, err %v", err)
+	}
+	if bs.SelfLink != backendServiceLink {
+		return nil, fmt.Errorf("Backend Service SelfLink mismatch: %s != %s", bs.SelfLink, backendServiceLink)
+	}
+	if bs.LoadBalancingScheme != string(cloud.SchemeExternal) {
+		return nil, fmt.Errorf("Load Balancing Scheme mismatch: EXTERNAL != %s", bs.LoadBalancingScheme)
+	}
+	if len(bs.Backends) == 0 {
+		return nil, fmt.Errorf("Error no backends in BackendService")
+	}
+	return bs, nil
 }
 
 func updateRegionBackendServiceWithLockHook(ctx context.Context, key *meta.Key, obj *ga.BackendService, m *cloud.MockRegionBackendServices) error {
@@ -224,6 +262,8 @@ func getFakeGCECloud(vals gce.TestClusterValues) *gce.Cloud {
 func buildContext(vals gce.TestClusterValues) *ingctx.ControllerContext {
 	fakeGCE := getFakeGCECloud(vals)
 	kubeClient := fake.NewSimpleClientset()
+	networkClient := netfake.NewSimpleClientset()
+
 	namer := namer.NewNamer(clusterUID, "")
 
 	ctxConfig := ingctx.ControllerContextConfig{
@@ -232,7 +272,7 @@ func buildContext(vals gce.TestClusterValues) *ingctx.ControllerContext {
 		NumL4NetLBWorkers: 5,
 		MaxIGSize:         1000,
 	}
-	return ingctx.NewControllerContext(nil, kubeClient, nil, nil, nil, nil, nil, nil, nil, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig)
+	return ingctx.NewControllerContext(nil, kubeClient, nil, nil, nil, nil, nil, nil, networkClient, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig)
 }
 
 func newL4NetLBServiceController() *L4NetLBController {
@@ -430,6 +470,76 @@ func TestProcessServiceCreate(t *testing.T) {
 
 	validateNetLBSvcStatus(svc, t)
 	if err := checkBackendService(lc, svc); err != nil {
+		t.Errorf("UnexpectedError %v", err)
+	}
+	if err := validateAnnotations(svc); err != nil {
+		t.Errorf("%v", err)
+	}
+	deleteNetLBService(lc, svc)
+}
+
+func TestProcessMultinetServiceCreate(t *testing.T) {
+	lc := newL4NetLBServiceController()
+
+	net := &networkv1.Network{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "secondary-network",
+		},
+		Spec: networkv1.NetworkSpec{
+			Type: "L3",
+			ParametersRef: &networkv1.NetworkParametersReference{
+				Group: gkenetworkparamsetv1alpha1.GroupName,
+				Kind:  "GKENetworkParamSet",
+				Name:  "secondary-network-params",
+			},
+		},
+	}
+	lc.networkLister.Add(net)
+	gkeParamSet := &gkenetworkparamsetv1alpha1.GKENetworkParamSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "secondary-network-params",
+		},
+		Spec: gkenetworkparamsetv1alpha1.GKENetworkParamSetSpec{
+			VPC:       "vpc",
+			VPCSubnet: "subnet",
+		},
+	}
+	lc.gkeNetworkParamSetLister.Add(gkeParamSet)
+
+	svc := test.NewL4NetLBRBSService(8080)
+	// create the NEG that would be created by the NEG controller.
+	neg := &computebeta.NetworkEndpointGroup{
+		Name: lc.namer.L4Backend(svc.Namespace, svc.Name),
+	}
+	lc.ctx.Cloud.CreateNetworkEndpointGroup(neg, "us-central1-b")
+
+	svc.Spec.Selector = make(map[string]string)
+	svc.Spec.Selector[networkv1.NetworkAnnotationKey] = "secondary-network"
+	addNetLBService(lc, svc)
+	prevMetrics, err := test.GetL4NetLBLatencyMetric()
+	if err != nil {
+		t.Errorf("Error getting L4 NetLB latency metrics err: %v", err)
+	}
+	if prevMetrics == nil {
+		t.Fatalf("Cannot get prometheus metrics for L4NetLB latency")
+	}
+	key, _ := common.KeyFunc(svc)
+	err = lc.sync(key)
+	if err != nil {
+		t.Errorf("Failed to sync newly added service %s, err %v", svc.Name, err)
+	}
+	svc, err = lc.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err %v", svc.Name, err)
+	}
+	currMetrics, metricErr := test.GetL4NetLBLatencyMetric()
+	if metricErr != nil {
+		t.Errorf("Error getting L4 NetLB latency metrics err: %v", metricErr)
+	}
+	prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{CreateCount: 1, UpperBoundSeconds: 1}, t)
+
+	validateNetLBSvcStatus(svc, t)
+	if err := checkBackendServiceWithNEG(lc, svc); err != nil {
 		t.Errorf("UnexpectedError %v", err)
 	}
 	if err := validateAnnotations(svc); err != nil {
@@ -1492,5 +1602,70 @@ func TestCreateDeleteDualStackNetLBService(t *testing.T) {
 			}
 			deleteNetLBService(controller, svc)
 		})
+	}
+}
+
+// fakeNEGLinker is a fake to be used in tests in place of the NEGLinker.
+type fakeNEGLinker struct {
+	called bool
+	sp     utils.ServicePort
+	groups []backends.GroupKey
+}
+
+func (l *fakeNEGLinker) Link(sp utils.ServicePort, groups []backends.GroupKey) error {
+	l.called = true
+	l.sp = sp
+	l.groups = groups
+	return nil
+}
+
+func TestEnsureBackendLinkingWithNEGs(t *testing.T) {
+	controller := newL4NetLBServiceController()
+	linker := &fakeNEGLinker{}
+	controller.negLinker = linker
+	svc := test.NewL4NetLBRBSService(8080)
+
+	networkInfo := &network.NetworkInfo{IsDefault: false}
+	err := controller.ensureBackendLinking(svc, networkInfo)
+	if err != nil {
+		t.Fatalf("ensureBackendLinking() failed, err=%v", err)
+	}
+	namespacedName := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}
+	spID := utils.ServicePortID{Service: namespacedName}
+
+	if diff := cmp.Diff(linker.sp.ID, spID); diff != "" {
+		t.Errorf("ServicePort.ID mismatch (-want +got):\n%s", diff)
+	}
+
+	if !linker.sp.L4RBSEnabled {
+		t.Errorf("RBS was not enabled in the Service Port, got=%+v", linker.sp)
+	}
+
+	if !linker.sp.VMIPNEGEnabled {
+		t.Errorf("VMIPNEGEnabled was not enabled in the Service Port, got=%+v", linker.sp)
+	}
+}
+
+func TestEnsureBackendLinkingWithInstanceGroups(t *testing.T) {
+	controller := newL4NetLBServiceController()
+	svc := test.NewL4NetLBRBSService(8080)
+	// set the fake NEG linker just to verify that it's not used in this scenario.
+	negLinker := &fakeNEGLinker{}
+	controller.negLinker = negLinker
+
+	backendService := &compute.BackendService{Name: controller.namer.L4Backend(svc.Namespace, svc.Name)}
+	err := controller.ctx.Cloud.CreateRegionBackendService(backendService, "us-central1")
+	if err != nil {
+		t.Fatalf("CreateRegionBackendService() failed, err=%v", err)
+	}
+
+	networkInfo := &network.NetworkInfo{IsDefault: true}
+	err = controller.ensureBackendLinking(svc, networkInfo)
+	if err != nil {
+		t.Fatalf("ensureBackendLinking() failed, err=%v", err)
+	}
+
+	if negLinker.called {
+		t.Errorf("IG linking should not use NEG linker")
 	}
 }

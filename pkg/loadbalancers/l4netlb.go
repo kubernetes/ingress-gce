@@ -53,6 +53,7 @@ type L4NetLB struct {
 	healthChecks    healthchecksl4.L4HealthChecks
 	forwardingRules ForwardingRulesProvider
 	enableDualStack bool
+	networkInfo     network.NetworkInfo
 }
 
 // L4NetLBSyncResult contains information about the outcome of an L4 NetLB sync. It stores the list of resource name annotations,
@@ -109,6 +110,7 @@ func NewL4NetLB(params *L4NetLBParams) *L4NetLB {
 		healthChecks:    healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder, params.NetworkInfo),
 		forwardingRules: forwardingrules.New(params.Cloud, meta.VersionGA, meta.Regional),
 		enableDualStack: params.DualStackEnabled,
+		networkInfo:     params.NetworkInfo,
 	}
 	return l4netlb
 }
@@ -266,7 +268,6 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 	}
 
 	// Add firewall rule for L4 External LoadBalancer traffic to nodes
-	defaultNetwork := network.DefaultNetwork(l4netlb.cloud)
 	nodesFWRParams := firewalls.FirewallParams{
 		PortRanges:        portRanges,
 		SourceRanges:      sourceRanges,
@@ -275,7 +276,7 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 		Name:              firewallName,
 		IP:                l4netlb.Service.Spec.LoadBalancerIP,
 		NodeNames:         nodeNames,
-		Network:           *defaultNetwork,
+		Network:           l4netlb.networkInfo,
 	}
 	result.Error = firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, &nodesFWRParams, l4netlb.cloud, l4netlb.recorder)
 	if result.Error != nil {

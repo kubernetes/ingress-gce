@@ -36,6 +36,7 @@ import (
 	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
+	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
@@ -49,11 +50,13 @@ const (
 )
 
 type L4NetLBController struct {
-	ctx           *context.ControllerContext
-	svcQueue      utils.TaskQueue
-	serviceLister cache.Indexer
-	nodeLister    listers.NodeLister
-	stopCh        chan struct{}
+	ctx                      *context.ControllerContext
+	svcQueue                 utils.TaskQueue
+	serviceLister            cache.Indexer
+	nodeLister               listers.NodeLister
+	networkLister            cache.Indexer
+	gkeNetworkParamSetLister cache.Indexer
+	stopCh                   chan struct{}
 
 	translator *translator.Translator
 	namer      namer.L4ResourcesNamer
@@ -65,6 +68,7 @@ type L4NetLBController struct {
 	backendPool     *backends.Backends
 	instancePool    instancegroups.Manager
 	igLinker        *backends.RegionalInstanceGroupLinker
+	negLinker       backends.Linker
 	forwardingRules ForwardingRulesGetter
 	enableDualStack bool
 }
@@ -92,6 +96,13 @@ func NewL4NetLBController(
 		forwardingRules: forwardingrules.New(ctx.Cloud, meta.VersionGA, meta.Regional),
 		enableDualStack: ctx.EnableL4NetLBDualStack,
 	}
+	if ctx.NetworkInformer != nil {
+		l4netLBc.networkLister = ctx.NetworkInformer.GetIndexer()
+	}
+	if ctx.GKENetworkParamsInformer != nil {
+		l4netLBc.gkeNetworkParamSetLister = ctx.GKENetworkParamsInformer.GetIndexer()
+	}
+	l4netLBc.negLinker = backends.NewNEGLinker(l4netLBc.backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer())
 	l4netLBc.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("l4netLB", "services", ctx.NumL4NetLBWorkers, l4netLBc.sync)
 
 	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -427,26 +438,31 @@ func (lc *L4NetLBController) sync(key string) error {
 // syncInternal ensures load balancer resources for the given service, as needed.
 // Returns an error if processing the service update failed.
 func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4NetLBSyncResult {
+	// check again that rbs is enabled.
+	if !lc.isRBSBasedService(service) {
+		klog.Infof("Skipping syncInternal. Service %s does not have RBS enabled", service.Name)
+		return nil
+	}
+	networkInfo, err := network.ServiceNetwork(service, lc.networkLister, lc.gkeNetworkParamSetLister, lc.ctx.Cloud, klog.TODO())
+	if err != nil {
+		klog.Errorf("Failed to get network for service %s/%s, err: %v", service.Namespace, service.Name, err)
+		return &loadbalancers.L4NetLBSyncResult{Error: err}
+	}
+	startTime := time.Now()
+	klog.Infof("Syncing L4 NetLB RBS service %s/%s", service.Namespace, service.Name)
+	defer func() {
+		klog.Infof("Finished syncing L4 NetLB RBS service %s/%s, time taken: %v", service.Namespace, service.Name, time.Since(startTime))
+	}()
+
 	l4NetLBParams := &loadbalancers.L4NetLBParams{
 		Service:          service,
 		Cloud:            lc.ctx.Cloud,
 		Namer:            lc.namer,
 		Recorder:         lc.ctx.Recorder(service.Namespace),
 		DualStackEnabled: lc.enableDualStack,
-		NetworkInfo:      *network.DefaultNetwork(lc.ctx.Cloud),
+		NetworkInfo:      *networkInfo,
 	}
 	l4netlb := loadbalancers.NewL4NetLB(l4NetLBParams)
-	// check again that rbs is enabled.
-	if !lc.isRBSBasedService(service) {
-		klog.Infof("Skipping syncInternal. Service %s does not have RBS enabled", service.Name)
-		return nil
-	}
-
-	startTime := time.Now()
-	klog.Infof("Syncing L4 NetLB RBS service %s/%s", service.Namespace, service.Name)
-	defer func() {
-		klog.Infof("Finished syncing L4 NetLB RBS service %s/%s, time taken: %v", service.Namespace, service.Name, time.Since(startTime))
-	}()
 
 	if err := common.EnsureServiceFinalizer(service, common.NetLBFinalizerV2, lc.ctx.KubeClient); err != nil {
 		return &loadbalancers.L4NetLBSyncResult{Error: fmt.Errorf("Failed to attach L4 External LoadBalancer finalizer to service %s/%s, err %w", service.Namespace, service.Name, err)}
@@ -457,10 +473,12 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 		return &loadbalancers.L4NetLBSyncResult{Error: err}
 	}
 
-	if err := lc.ensureInstanceGroups(service, nodeNames); err != nil {
-		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncInstanceGroupsFailed",
-			"Error syncing instance group, err: %v", err)
-		return &loadbalancers.L4NetLBSyncResult{Error: err}
+	if networkInfo.IsDefault {
+		if err := lc.ensureInstanceGroups(service, nodeNames); err != nil {
+			lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncInstanceGroupsFailed",
+				"Error syncing instance group, err: %v", err)
+			return &loadbalancers.L4NetLBSyncResult{Error: err}
+		}
 	}
 
 	// Use the same function for both create and updates. If controller crashes and restarts,
@@ -472,7 +490,7 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 		return syncResult
 	}
 
-	if err = lc.ensureBackendLinking(service); err != nil {
+	if err = lc.ensureBackendLinking(service, networkInfo); err != nil {
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
 			"Error linking instance groups to backend service, err: %v", err)
 		syncResult.Error = err
@@ -519,11 +537,12 @@ func (lc *L4NetLBController) emitEnsuredDualStackEvent(service *v1.Service) {
 		"Successfully ensured %v External LoadBalancer resources", strings.Join(ipFamilies, " "))
 }
 
-func (lc *L4NetLBController) ensureBackendLinking(service *v1.Service) error {
+func (lc *L4NetLBController) ensureBackendLinking(service *v1.Service, networkInfo *network.NetworkInfo) error {
 	start := time.Now()
-	klog.V(2).Infof("Linking backend service with instance groups for service %s/%s", service.Namespace, service.Name)
+
+	klog.V(2).Infof("Linking backends to backend service for k8s service %s/%s", service.Namespace, service.Name)
 	defer func() {
-		klog.V(2).Infof("Finished linking backend service with instance groups for service %s/%s, time taken: %v", service.Namespace, service.Name, time.Since(start))
+		klog.V(2).Infof("Finished linking backends to backend service for k8s service %s/%s, time taken: %v", service.Namespace, service.Name, time.Since(start))
 	}()
 
 	zones, err := lc.translator.ListZones(utils.CandidateNodesPredicate)
@@ -538,8 +557,20 @@ func (lc *L4NetLBController) ensureBackendLinking(service *v1.Service) error {
 		BackendNamer: lc.namer,
 		L4RBSEnabled: true,
 	}
-
-	return lc.igLinker.Link(servicePort, lc.ctx.Cloud.ProjectID(), zones)
+	// NEG backends should only be used for multinetwork services on the non default network.
+	linkWithNEGs := !networkInfo.IsDefault
+	if linkWithNEGs {
+		klog.V(2).Infof("Linking backend service with NEGs for service %s/%s in network %s", service.Namespace, service.Name, networkInfo.K8sNetwork)
+		servicePort.VMIPNEGEnabled = true
+		var groupKeys []backends.GroupKey
+		for _, zone := range zones {
+			groupKeys = append(groupKeys, backends.GroupKey{Zone: zone})
+		}
+		return lc.negLinker.Link(servicePort, groupKeys)
+	} else {
+		klog.V(2).Infof("Linking backend service with Instance Groups for service %s/%s (uses default network)", service.Namespace, service.Name)
+		return lc.igLinker.Link(servicePort, lc.ctx.Cloud.ProjectID(), zones)
+	}
 }
 
 func (lc *L4NetLBController) ensureInstanceGroups(service *v1.Service, nodeNames []string) error {
