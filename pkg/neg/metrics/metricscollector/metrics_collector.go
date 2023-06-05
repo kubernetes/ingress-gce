@@ -385,7 +385,10 @@ func (sm *SyncerMetrics) computeDualStackMigrationCounts() (map[string]int, int,
 }
 
 func PublishSyncerStateMetrics(stateCount syncerStateCount) {
-	for state, count := range stateCount {
-		SyncerCountBySyncResult.WithLabelValues(string(state.lastSyncResult), strconv.FormatBool(state.inErrorState)).Set(float64(count))
+	// Iterate to initialize all possible syncer state values.
+	for _, syncerState := range listAllSyncerStates() {
+		SyncerCountBySyncResult.WithLabelValues(
+			string(syncerState.lastSyncResult), strconv.FormatBool(syncerState.inErrorState)).
+			Set(float64(stateCount[syncerState]))
 	}
 }

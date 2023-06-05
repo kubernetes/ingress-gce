@@ -194,3 +194,19 @@ func ClassifyError(err error) NegSyncError {
 		err = errors.Unwrap(err)
 	}
 }
+
+// ListErrorStates lists all error-state reasons.
+func ListErrorStates() []Reason {
+	return []Reason{ReasonEPCountsDiffer, ReasonEPNodeMissing, ReasonEPNodeNotFound,
+		ReasonEPNodeTypeAssertionFailed, ReasonEPPodMissing, ReasonEPPodNotFound,
+		ReasonEPPodTypeAssertionFailed, ReasonEPPodTerminal, ReasonEPZoneMissing,
+		ReasonEPSEndpointCountZero, ReasonEPCalculationCountZero, ReasonInvalidAPIResponse,
+		ReasonInvalidEPAttach, ReasonInvalidEPDetach, ReasonEPIPInvalid, ReasonEPIPNotFromPod,
+		ReasonEPIPOutOfPodCIDR, ReasonEPServiceNotFound, ReasonEPPodLabelMismatch}
+}
+
+// ListErrorStates lists all non error-state reasons.
+func ListNonErrorStates() []Reason {
+	return []Reason{ReasonNegNotFound, ReasonCurrentNegEPNotFound,
+		ReasonEPSNotFound, ReasonOtherError, ReasonSuccess}
+}

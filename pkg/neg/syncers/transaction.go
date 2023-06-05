@@ -519,7 +519,6 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, zone stri
 		s.recordEvent(apiv1.EventTypeWarning, operation.String()+"Failed", fmt.Sprintf("Failed to %s %d network endpoint(s) (NEG %q in zone %q): %v", operation.String(), len(networkEndpointMap), s.NegSyncerKey.NegName, zone, err))
 		err := checkEndpointBatchErr(err, operation)
 		syncErr := negtypes.ClassifyError(err)
-		s.syncMetricsCollector.UpdateSyncerStatusInMetrics(s.NegSyncerKey, syncErr, s.inErrorState())
 		// If the API call fails for invalid endpoint update request in any goroutine,
 		// we would set error state and retry. For successful calls, we won't update
 		// error state, so its value won't be overwritten within API call go routines.
@@ -529,6 +528,7 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, zone stri
 			s.setErrorState()
 			s.syncLock.Unlock()
 		}
+		s.syncMetricsCollector.UpdateSyncerStatusInMetrics(s.NegSyncerKey, syncErr, s.inErrorState())
 	}
 
 	metrics.PublishNegOperationMetrics(operation.String(), string(s.NegSyncerKey.NegType), string(s.NegSyncerKey.GetAPIVersion()), err, len(networkEndpointMap), start)
