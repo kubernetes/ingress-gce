@@ -266,6 +266,7 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 	}
 
 	// Add firewall rule for L4 External LoadBalancer traffic to nodes
+	defaultNetwork := network.DefaultNetwork(l4netlb.cloud)
 	nodesFWRParams := firewalls.FirewallParams{
 		PortRanges:        portRanges,
 		SourceRanges:      sourceRanges,
@@ -274,6 +275,7 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 		Name:              firewallName,
 		IP:                l4netlb.Service.Spec.LoadBalancerIP,
 		NodeNames:         nodeNames,
+		Network:           *defaultNetwork,
 	}
 	result.Error = firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, &nodesFWRParams, l4netlb.cloud, l4netlb.recorder)
 	if result.Error != nil {

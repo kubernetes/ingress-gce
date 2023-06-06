@@ -504,6 +504,7 @@ func (l4 *L4) ensureIPv4NodesFirewall(nodeNames []string, ipAddress string, resu
 		Name:              firewallName,
 		NodeNames:         nodeNames,
 		L4Type:            utils.ILB,
+		Network:           l4.network,
 	}
 
 	err = firewalls.EnsureL4LBFirewallForNodes(l4.Service, &nodesFWRParams, l4.cloud, l4.recorder)
