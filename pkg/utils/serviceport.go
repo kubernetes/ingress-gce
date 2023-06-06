@@ -37,6 +37,19 @@ func (id ServicePortID) String() string {
 	return fmt.Sprintf("%v/%v", id.Service.String(), id.Port.String())
 }
 
+// THCEvents stores information relevant for emitting Events when THC is configured or misconfigured.
+type THCEvents struct {
+	THCConfigured             bool
+	BackendConfigOverridesTHC bool
+	THCAnnotationWithoutFlag  bool
+	THCAnnotationWithoutNEG   bool
+}
+
+type THCConfiguration struct {
+	THCOptInOnSvc bool
+	THCEvents     THCEvents
+}
+
 // ServicePort maintains configuration for a single backend.
 type ServicePort struct {
 	// Ingress backend-specified service name and port
@@ -46,16 +59,16 @@ type ServicePort struct {
 	// Numerical port of the Service, retrieved from the Service
 	Port int32
 	// Name of the port of the Service, retrieved from the Service
-	PortName       string
-	Protocol       annotations.AppProtocol
-	TargetPort     intstr.IntOrString
-	NEGEnabled     bool
-	VMIPNEGEnabled bool
-	L4RBSEnabled   bool
-	L7ILBEnabled   bool
-	THCEnabled     bool
-	BackendConfig  *backendconfigv1.BackendConfig
-	BackendNamer   namer.BackendNamer
+	PortName         string
+	Protocol         annotations.AppProtocol
+	TargetPort       intstr.IntOrString
+	NEGEnabled       bool
+	VMIPNEGEnabled   bool
+	L4RBSEnabled     bool
+	L7ILBEnabled     bool
+	THCConfiguration THCConfiguration
+	BackendConfig    *backendconfigv1.BackendConfig
+	BackendNamer     namer.BackendNamer
 	// Traffic policy fields that apply if non-nil.
 	MaxRatePerEndpoint *float64
 	CapacityScaler     *float64

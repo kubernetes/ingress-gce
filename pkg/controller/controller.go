@@ -628,12 +628,17 @@ func (lbc *LoadBalancerController) sync(key string) error {
 	}
 
 	// Bootstrap state for GCP sync.
-	urlMap, errs := lbc.Translator.TranslateIngress(ing, lbc.ctx.DefaultBackendSvcPort.ID, lbc.ctx.ClusterNamer)
+	urlMap, errs, warnings := lbc.Translator.TranslateIngress(ing, lbc.ctx.DefaultBackendSvcPort.ID, lbc.ctx.ClusterNamer)
 
 	if errs != nil {
 		msg := fmt.Errorf("invalid ingress spec: %v", utils.JoinErrs(errs))
 		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, events.TranslateIngress, "Translation failed: %v", msg)
 		return msg
+	}
+
+	if warnings {
+		msg := "THC annotation is present for at least one Service, but the Transparent Health Checks feature is not enabled."
+		lbc.ctx.Recorder(ing.Namespace).Event(ing, apiv1.EventTypeWarning, "THCAnnotationWithoutFlag", msg)
 	}
 
 	// Sync GCP resources.
@@ -776,7 +781,7 @@ func updateAnnotations(client kubernetes.Interface, ing *v1.Ingress, newAnnotati
 func (lbc *LoadBalancerController) ToSvcPorts(ings []*v1.Ingress) []utils.ServicePort {
 	var knownPorts []utils.ServicePort
 	for _, ing := range ings {
-		urlMap, _ := lbc.Translator.TranslateIngress(ing, lbc.ctx.DefaultBackendSvcPort.ID, lbc.ctx.ClusterNamer)
+		urlMap, _, _ := lbc.Translator.TranslateIngress(ing, lbc.ctx.DefaultBackendSvcPort.ID, lbc.ctx.ClusterNamer)
 		knownPorts = append(knownPorts, urlMap.AllServicePorts()...)
 	}
 	return knownPorts

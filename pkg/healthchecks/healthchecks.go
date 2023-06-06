@@ -84,7 +84,7 @@ func (h *HealthChecks) new(sp utils.ServicePort) *translator.HealthCheck {
 	// TODO: rename backend-service and health-check to not use port as key
 	hc.Port = sp.NodePort
 	hc.RequestPath = h.pathFromSvcPort(sp)
-	if sp.THCEnabled {
+	if sp.THCConfiguration.THCOptInOnSvc {
 		translator.OverwriteWithTHC(hc)
 	}
 	hc.Name = sp.BackendName()
@@ -125,16 +125,17 @@ func (h *HealthChecks) generateServiceInfo(sp utils.ServicePort, iLB bool) healt
 
 // SyncServicePort implements HealthChecker.
 func (h *HealthChecks) SyncServicePort(sp *utils.ServicePort, probe *v1.Probe) (string, error) {
-	klog.Infof("SyncServicePort: sp.ID=%v, sp.NodePort=%v, sp.Port=%v, sp.PortName=%v, sp.THCEnabled=%v, h.thcEnabled=%v.", sp.ID, sp.NodePort, sp.Port, sp.PortName, sp.THCEnabled, h.thcEnabled)
-	if !h.thcEnabled && sp.THCEnabled {
+	klog.Infof("SyncServicePort: sp.ID=%v, sp.NodePort=%v, sp.Port=%v, sp.PortName=%v, sp.THCConfiguration.THCOptInOnSvc=%v, h.thcEnabled=%v.", sp.ID, sp.NodePort, sp.Port, sp.PortName, sp.THCConfiguration.THCOptInOnSvc, h.thcEnabled)
+	if !h.thcEnabled && sp.THCConfiguration.THCOptInOnSvc {
 		klog.Warningf("THC flag disabled for HealthChecks, but ServicePort %v has Transparent Health Checks enabled. Disabling.", sp.ID)
-		sp.THCEnabled = false
+		sp.THCConfiguration.THCOptInOnSvc = false
 	}
+	defer func() { sp.THCConfiguration.THCEvents = utils.THCEvents{} }()
 
 	hc := h.new(*sp)
-	if sp.THCEnabled {
+	if sp.THCConfiguration.THCOptInOnSvc {
 		klog.V(2).Infof("ServicePort %v has Transparent Health Checks enabled", sp.ID)
-		return h.sync(hc, nil, sp.THCEnabled)
+		return h.sync(hc, nil, sp.THCConfiguration)
 	}
 	if probe != nil {
 		klog.V(2).Infof("Applying httpGet settings of readinessProbe to health check on port %+v", sp)
@@ -148,16 +149,46 @@ func (h *HealthChecks) SyncServicePort(sp *utils.ServicePort, probe *v1.Probe) (
 	if bchcc != nil {
 		klog.V(2).Infof("ServicePort %v has BackendConfig healthcheck override", sp.ID)
 	}
-	return h.sync(hc, bchcc, sp.THCEnabled)
+	return h.sync(hc, bchcc, sp.THCConfiguration)
+}
+
+// notifyAboutTHC emits Events about successful or attempted THC configuration.
+// Currently called on creation or update of a health check.
+func (h *HealthChecks) notifyAboutTHC(hc *translator.HealthCheck, thcEvents utils.THCEvents) {
+	if thcEvents.THCConfigured {
+		message := "Transparent Health Check successfully configured."
+		h.recorderGetter.Recorder(hc.Service.Namespace).Event(
+			hc.Service, v1.EventTypeNormal, "THCConfigured", message)
+		klog.Infof("%s Health check name: %s.", message, hc.Name)
+	}
+	if thcEvents.BackendConfigOverridesTHC {
+		message := "Both THC and BackendConfig annotations present and the BackendConfig has spec.healthCheck. The THC annotation will be ignored."
+		h.recorderGetter.Recorder(hc.Service.Namespace).Event(
+			hc.Service, v1.EventTypeWarning, "BackendConfigOverridesTHC", message)
+		klog.Warningf("%s Health check name: %s.", message, hc.Name)
+	}
+	if thcEvents.THCAnnotationWithoutFlag {
+		message := "THC annotation present, but the Transparent Health Checks feature is not enabled."
+		h.recorderGetter.Recorder(hc.Service.Namespace).Event(
+			hc.Service, v1.EventTypeWarning, "THCAnnotationWithoutFlag", message)
+		klog.Warningf("%s Health check name: %s.", message, hc.Name)
+	}
+	if thcEvents.THCAnnotationWithoutNEG {
+		message := "THC annotation present, but NEG is disabled. Will not enable Transparent Health Checks."
+		h.recorderGetter.Recorder(hc.Service.Namespace).Event(
+			hc.Service, v1.EventTypeWarning, "THCAnnotationWithoutNEG", message)
+		klog.Warningf("%s Health check name: %s.", message, hc.Name)
+	}
+
 }
 
 // sync retrieves a health check based on port, checks type and settings and updates/creates if necessary.
 // sync is only called by the backends.Add func - it's not a pool like other resources.
-// We assume that bchcc cannot be non-nil and thcEnabled be true simultaneously.
-func (h *HealthChecks) sync(hc *translator.HealthCheck, bchcc *backendconfigv1.HealthCheckConfig, thcEnabled bool) (string, error) {
-	if bchcc != nil && thcEnabled {
-		klog.Warningf("BackendConfig exists and thcEnabled simultaneously for %v. Ignoring transparent health check.", hc.Name)
-		thcEnabled = false
+// We assume that bchcc cannot be non-nil and thcOptIn be true simultaneously.
+func (h *HealthChecks) sync(hc *translator.HealthCheck, bchcc *backendconfigv1.HealthCheckConfig, thcConf utils.THCConfiguration) (string, error) {
+	if bchcc != nil && thcConf.THCOptInOnSvc {
+		klog.Warningf("BackendConfig exists and thcOptIn true simultaneously for %v. Ignoring transparent health check.", hc.Name)
+		thcConf.THCOptInOnSvc = false
 	}
 
 	var scope meta.KeyType
@@ -175,6 +206,7 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, bchcc *backendconfigv1.H
 			klog.Errorf("Health check %q creation error: %v", hc.Name, err)
 			return "", err
 		}
+		h.notifyAboutTHC(hc, thcConf.THCEvents)
 		// TODO(bowei) -- we don't need to fetch the self-link here as it is
 		// returned as part of the GCE call.
 		selfLink, err := h.getHealthCheckLink(hc.Name, hc.Version(), scope)
@@ -188,7 +220,7 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, bchcc *backendconfigv1.H
 	// First, merge in the configuration from the existing healthcheck to cover
 	// the case where the user has changed healthcheck settings outside of
 	// GKE.
-	if !thcEnabled {
+	if !thcConf.THCOptInOnSvc {
 		premergeHC := hc
 		hc = mergeUserSettings(existingHC, hc)
 		klog.V(3).Infof("Existing HC = %+v", existingHC)
@@ -210,7 +242,7 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, bchcc *backendconfigv1.H
 		return &ans
 	}
 
-	changes := calculateDiff(filter(existingHC), filter(hc), bchcc, thcEnabled)
+	changes := calculateDiff(filter(existingHC), filter(hc), bchcc, thcConf.THCOptInOnSvc)
 	if changes.hasDiff() {
 		klog.V(2).Infof("Health check %q needs update (%s)", existingHC.Name, changes)
 		if flags.F.EnableUpdateCustomHealthCheckDescription && changes.size() == 1 && changes.has("Description") {
@@ -226,6 +258,7 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, bchcc *backendconfigv1.H
 		if err != nil {
 			klog.Errorf("Health check %q update error: %v", existingHC.Name, err)
 		}
+		h.notifyAboutTHC(hc, thcConf.THCEvents)
 		return existingHC.SelfLink, err
 	}
 
