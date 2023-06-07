@@ -118,7 +118,7 @@ func CheckL7ILBFrontendConfig(c *IngressChecker) (string, string, string) {
 		return L7ILBFrontendConfigCheck, report.Skipped, fmt.Sprintf("Ingress %s/%s is not for L7 internal load balancing", c.ingress.Namespace, c.ingress.Name)
 	}
 	if _, ok := getFrontendConfigAnnotation(c.ingress); ok {
-		return L7ILBFrontendConfigCheck, report.Failed, fmt.Sprintf("Ingress %s/%s for L7 internal load balancing has a frontendConfig annotation", c.ingress.Namespace, c.ingress.Name)
+		return L7ILBFrontendConfigCheck, report.Failed, fmt.Sprintf("Ingress %s/%s for L7 internal load balancing has a frontendConfig annotation, frontendConfig can only be used with external ingresses", c.ingress.Namespace, c.ingress.Name)
 	}
 	return L7ILBFrontendConfigCheck, report.Passed, fmt.Sprintf("Ingress %s/%s for L7 internal load balancing does not have a frontendConfig annotation", c.ingress.Namespace, c.ingress.Name)
 }
@@ -205,7 +205,7 @@ func CheckL7ILBNegAnnotation(c *ServiceChecker) (string, string, string) {
 	}
 	val, ok := getNegAnnotation(c.service)
 	if !ok {
-		return L7ILBNegAnnotationCheck, report.Failed, fmt.Sprintf("No Neg annotation found in service %s/%s for internal HTTP(S) load balancing", c.namespace, c.name)
+		return L7ILBNegAnnotationCheck, report.Failed, fmt.Sprintf("No Neg annotation found in service %s/%s for internal HTTP(S) load balancing, internal ingress requires Neg as backends", c.namespace, c.name)
 	}
 	var res annotations.NegAnnotation
 	if err := json.Unmarshal([]byte(val), &res); err != nil {
