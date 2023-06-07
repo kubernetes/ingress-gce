@@ -1035,7 +1035,7 @@ func TestValidateEndpointFields(t *testing.T) {
 			},
 			expectSets: nil,
 			expectMap:  nil,
-			expectErr:  negtypes.ErrEPNodeMissing,
+			expectErr:  negtypes.ErrEPNodeNotFound,
 		},
 		{
 			desc: "include one endpoint that corresponds to an empty zone",
