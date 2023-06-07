@@ -462,7 +462,10 @@ func (manager *syncerManager) ensureDeleteSvcNegCR(namespace, negName string) er
 	neg := obj.(*negv1beta1.ServiceNetworkEndpointGroup)
 
 	if neg.GetDeletionTimestamp().IsZero() {
-		if err = manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(namespace).Delete(context.Background(), negName, metav1.DeleteOptions{}); err != nil {
+		start := time.Now()
+		err = manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(namespace).Delete(context.Background(), negName, metav1.DeleteOptions{})
+		metrics.PublishK8sRequestCountMetrics(start, metrics.DeleteRequest, err)
+		if err != nil {
 			return fmt.Errorf("errored while deleting neg cr %s/%s: %w", negName, namespace, err)
 		}
 		manager.logger.V(2).Info("Deleted neg cr", "svcneg", klog.KRef(namespace, negName))
@@ -753,7 +756,9 @@ func (manager *syncerManager) ensureSvcNegCR(svcKey serviceKey, portInfo negtype
 	}
 	if !exists {
 		// Neg does not exist so create it
+		start := time.Now()
 		_, err = manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Create(context.Background(), &newCR, metav1.CreateOptions{})
+		metrics.PublishK8sRequestCountMetrics(start, metrics.CreateRequest, err)
 		manager.logger.V(2).Info("Created ServiceNetworkEndpointGroup CR for neg", "svcneg", klog.KRef(svcKey.namespace, portInfo.NegName))
 		return err
 	}
@@ -767,7 +772,9 @@ func (manager *syncerManager) ensureSvcNegCR(svcKey serviceKey, portInfo negtype
 	needUpdate = ensureNegCROwnerRef(negCR, newCR.OwnerReferences) || needUpdate
 
 	if needUpdate {
+		start := time.Now()
 		_, err = manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Update(context.Background(), negCR, metav1.UpdateOptions{})
+		metrics.PublishK8sRequestCountMetrics(start, metrics.UpdateRequest, err)
 		return err
 	}
 	return nil
@@ -817,7 +824,10 @@ func deleteSvcNegCR(svcNegClient svcnegclient.Interface, negCR *negv1beta1.Servi
 	// If CR does not have a deletion timestamp, delete
 	if negCR.GetDeletionTimestamp().IsZero() {
 		logger.V(2).Info("Deleting ServiceNetworkEndpointGroup CR", "svcneg", klog.KRef(negCR.Namespace, negCR.Name))
-		return svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(negCR.Namespace).Delete(context.Background(), negCR.Name, metav1.DeleteOptions{})
+		start := time.Now()
+		err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(negCR.Namespace).Delete(context.Background(), negCR.Name, metav1.DeleteOptions{})
+		metrics.PublishK8sRequestCountMetrics(start, metrics.DeleteRequest, err)
+		return err
 	}
 	return nil
 }
@@ -828,8 +838,10 @@ func patchNegStatus(svcNegClient svcnegclient.Interface, oldNeg, newNeg negv1bet
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare patch bytes: %s", err)
 	}
-
-	return svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(oldNeg.Namespace).Patch(context.Background(), oldNeg.Name, types.MergePatchType, patchBytes, metav1.PatchOptions{})
+	start := time.Now()
+	neg, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(oldNeg.Namespace).Patch(context.Background(), oldNeg.Name, types.MergePatchType, patchBytes, metav1.PatchOptions{})
+	metrics.PublishK8sRequestCountMetrics(start, metrics.PatchRequest, err)
+	return neg, err
 }
 
 // getSyncerKey encodes a service namespace, name, service port and targetPort into a string key
