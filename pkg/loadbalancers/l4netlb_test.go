@@ -380,6 +380,52 @@ func TestEnsureExternalDualStackLoadBalancer(t *testing.T) {
 	}
 }
 
+func TestEnsureDualStackNetLBNetworkTierChange(t *testing.T) {
+	t.Parallel()
+	nodeNames := []string{"test-node-1"}
+
+	ipFamilies := []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
+	svc := test.NewL4NetLBRBSDualStackService(v1.ProtocolTCP, ipFamilies, v1.ServiceExternalTrafficPolicyTypeCluster)
+	svc.Annotations[annotations.NetworkTierAnnotationKey] = "Standard"
+	l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
+
+	// Ensure dualstack load balancer with Standard Network Tier and verify it synced successfully.
+	result := l4NetLB.EnsureFrontend(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+	}
+	if len(result.Status.Ingress) == 0 {
+		t.Errorf("Got empty loadBalancer status using handler %v", l4NetLB)
+	}
+	l4NetLB.Service.Annotations = result.Annotations
+	l4NetLB.Service.Annotations[annotations.NetworkTierAnnotationKey] = "Standard"
+	assertDualStackNetLBResources(t, l4NetLB, nodeNames)
+
+	// Change network Tier to Premium, and trigger sync.
+	svc.Annotations[annotations.NetworkTierAnnotationKey] = "Premium"
+	result = l4NetLB.EnsureFrontend(nodeNames, svc)
+	if result.Error == nil {
+		// This is buggy existing behaviour. Switching Network Tier (even before DualStack),
+		// returns error on the first sync. However, after that it immediately resyncs,
+		// and successfully provides the service. This bug was reported and should be fixed
+		// but in separate PR.
+		t.Errorf("Expected error on the first sync after switching network tier, got %v", result.Error)
+	}
+	result = l4NetLB.EnsureFrontend(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+	}
+	if len(result.Status.Ingress) == 0 {
+		t.Errorf("Got empty loadBalancer status using handler %v", l4NetLB)
+	}
+	l4NetLB.Service.Annotations = result.Annotations
+	svc.Annotations[annotations.NetworkTierAnnotationKey] = "Premium"
+	assertDualStackNetLBResources(t, l4NetLB, nodeNames)
+
+	l4NetLB.EnsureLoadBalancerDeleted(l4NetLB.Service)
+	assertDualStackNetLBResourcesDeleted(t, l4NetLB)
+}
+
 // This is exhaustive test that checks for all possible transitions of
 // - ServiceExternalTrafficPolicy
 // - Protocol
@@ -1247,6 +1293,11 @@ func verifyNetLBForwardingRule(l4netlb *L4NetLB, frName string, backendServiceLi
 		return fmt.Errorf("unexpected backend service link '%s' for forwarding rule, expected '%s'", fwdRule.BackendService, backendServiceLink)
 	}
 
+	serviceNetTier, _ := utils.GetNetworkTier(l4netlb.Service)
+	if fwdRule.NetworkTier != serviceNetTier.ToGCEValue() {
+		return fmt.Errorf("unexpected network tier '%s' for forwarding rule, expected '%s'", fwdRule.NetworkTier, serviceNetTier.ToGCEValue())
+	}
+
 	addr, err := l4netlb.cloud.GetRegionAddress(frName, l4netlb.cloud.Region())
 	if err == nil || addr != nil {
 		return fmt.Errorf("expected error when looking up ephemeral address, got %v", addr)
@@ -1340,6 +1391,9 @@ func buildExpectedNetLBAnnotations(l4netlb *L4NetLB) map[string]string {
 	}
 	if val, ok := l4netlb.Service.Annotations[annotations.CustomSubnetAnnotationKey]; ok {
 		expectedAnnotations[annotations.CustomSubnetAnnotationKey] = val
+	}
+	if val, ok := l4netlb.Service.Annotations[annotations.NetworkTierAnnotationKey]; ok {
+		expectedAnnotations[annotations.NetworkTierAnnotationKey] = val
 	}
 	return expectedAnnotations
 }
