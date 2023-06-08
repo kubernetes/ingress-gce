@@ -842,7 +842,10 @@ func patchNegStatus(svcNegClient svcnegclient.Interface, oldStatus, newStatus ne
 		return nil, fmt.Errorf("failed to prepare patch bytes: %w", err)
 	}
 
-	return svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(namespace).Patch(context.Background(), negName, types.MergePatchType, patchBytes, metav1.PatchOptions{})
+	start := time.Now()
+	neg, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(namespace).Patch(context.Background(), negName, types.MergePatchType, patchBytes, metav1.PatchOptions{})
+	metrics.PublishK8sRequestCountMetrics(start, metrics.DeleteRequest, err)
+	return neg, err
 }
 
 // ensureCondition will update the condition on the neg object if necessary

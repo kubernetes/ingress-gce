@@ -19,6 +19,7 @@ package readiness
 import (
 	"context"
 	"fmt"
+	"time"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -105,7 +106,9 @@ func SetNegReadinessConditionStatus(pod *v1.Pod, condition v1.PodCondition) {
 
 // patchPodStatus patches pod status with given patchBytes
 func patchPodStatus(c clientset.Interface, namespace, name string, patchBytes []byte) (*v1.Pod, []byte, error) {
+	start := time.Now()
 	updatedPod, err := c.CoreV1().Pods(namespace).Patch(context.TODO(), name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{}, "status")
+	metrics.PublishK8sRequestCountMetrics(start, metrics.PatchRequest, err)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to patch status %q for pod %q/%q: %v", patchBytes, namespace, name, err)
 	}
