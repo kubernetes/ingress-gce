@@ -80,16 +80,19 @@ func CheckAllIngresses(namespace string, client kubernetes.Interface, beconfigCl
 			addCheckResult(ingressRes, checkName, msg, res)
 		}
 
-		// FrontendConfig related checks
-		feconfigChecker := &FrontendConfigChecker{
-			client:    feConfigClient,
-			namespace: ingress.Namespace,
-			name:      ingress.Name,
-		}
+		feConfigName, ok := getFrontendConfigAnnotation(&ingress)
+		if ok {
+			// FrontendConfig related checks
+			feconfigChecker := &FrontendConfigChecker{
+				client:    feConfigClient,
+				namespace: ingress.Namespace,
+				name:      feConfigName,
+			}
 
-		for _, check := range feconfigChecks {
-			checkName, res, msg := check(feconfigChecker)
-			addCheckResult(ingressRes, checkName, msg, res)
+			for _, check := range feconfigChecks {
+				checkName, res, msg := check(feconfigChecker)
+				addCheckResult(ingressRes, checkName, msg, res)
+			}
 		}
 
 		// Get the names of the services referenced by the ingress.
