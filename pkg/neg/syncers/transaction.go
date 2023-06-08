@@ -225,7 +225,7 @@ func (s *transactionSyncer) syncInternal() error {
 	err := s.syncInternalImpl()
 	if err != nil {
 		if syncErr := negtypes.ClassifyError(err); syncErr.IsErrorState {
-			s.logger.V(3).Info("Updating error state", "error state", syncErr.Reason)
+			s.logger.Info("Updating error state", "error state", syncErr.Reason)
 			s.setErrorState()
 		}
 	}
@@ -523,8 +523,9 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, zone stri
 		// we would set error state and retry. For successful calls, we won't update
 		// error state, so its value won't be overwritten within API call go routines.
 		if syncErr.IsErrorState {
-			s.logger.V(3).Info("Updating error state", "error state", syncErr.Reason)
+			s.logger.Error(err, "Detected unexpected error when checking endpoint update response", "operation", operation)
 			s.syncLock.Lock()
+			s.logger.Info("Updating error state", "error state", syncErr.Reason)
 			s.setErrorState()
 			s.syncLock.Unlock()
 		}

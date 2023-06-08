@@ -1869,6 +1869,57 @@ func TestEnableDegradedMode(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckEndpointBatchErr(t *testing.T) {
+	requestError := &googleapi.Error{
+		Code: http.StatusBadRequest,
+	}
+	serverError := &googleapi.Error{
+		Code: http.StatusInternalServerError,
+	}
+
+	testCases := []struct {
+		desc              string
+		err               error
+		endpointOperation transactionOp
+		expectErr         error
+	}{
+		{
+			desc:              "Not googleapi error",
+			err:               errors.New("Not googleapi.Error"),
+			endpointOperation: attachOp,
+			expectErr:         negtypes.ErrInvalidAPIResponse,
+		},
+		{
+			desc:              "Server error, status code 500",
+			err:               serverError,
+			endpointOperation: attachOp,
+			expectErr:         serverError,
+		},
+		{
+			desc:              "Invalid endpoint batch for endpoint attach, status code 400",
+			err:               requestError,
+			endpointOperation: attachOp,
+			expectErr:         negtypes.ErrInvalidEPAttach,
+		},
+		{
+			desc:              "Invalid endpoint batch for endpoint detach, status code 400",
+			err:               requestError,
+			endpointOperation: detachOp,
+			expectErr:         negtypes.ErrInvalidEPDetach,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			endpointBatchErr := checkEndpointBatchErr(tc.err, tc.endpointOperation)
+			if !errors.Is(endpointBatchErr, tc.expectErr) {
+				t.Errorf("checkEndpointBatchErr() = %t, expected %t", endpointBatchErr, tc.expectErr)
+			}
+		})
+	}
+}
+
 func TestGetEndpointPodLabelMap(t *testing.T) {
 	testContext := negtypes.NewTestContext()
 	podLister := testContext.PodInformer.GetIndexer()
