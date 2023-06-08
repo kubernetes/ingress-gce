@@ -153,7 +153,11 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 
 	// Determine IP which will be used for this LB. If no forwarding rule has been established
 	// or specified in the Service spec, then requestedIP = "".
-	ipv6AddrToUse := ipv6AddressToUse(existingIPv6FwdRule, subnetworkURL)
+	ipv6AddrToUse, err := ipv6AddressToUse(l4netlb.cloud, l4netlb.Service, existingIPv6FwdRule, subnetworkURL)
+	if err != nil {
+		klog.Errorf("ipv6AddressToUse for service %s/%s returned error %v", l4netlb.Service.Namespace, l4netlb.Service.Name, err)
+		return nil, err
+	}
 	if !l4netlb.cloud.IsLegacyNetwork() {
 		nm := types.NamespacedName{Namespace: l4netlb.Service.Namespace, Name: l4netlb.Service.Name}.String()
 		addrMgr := newAddressManager(l4netlb.cloud, nm, l4netlb.cloud.Region(), subnetworkURL, expectedIPv6FrName, ipv6AddrToUse, cloud.SchemeExternal, cloud.NetworkTierPremium, IPv6Version)
@@ -266,16 +270,30 @@ func EqualIPv6ForwardingRules(fr1, fr2 *composite.ForwardingRule) (bool, error) 
 		fr1.NetworkTier == fr2.NetworkTier, nil
 }
 
-func ipv6AddressToUse(ipv6FwdRule *composite.ForwardingRule, requestedSubnet string) string {
+func ipv6AddressToUse(cloud *gce.Cloud, svc *corev1.Service, ipv6FwdRule *composite.ForwardingRule, requestedSubnet string) (string, error) {
+	// Get value from new annotation which support both IPv4 and IPv6
+	ipv6AddressFromAnnotation, err := annotations.FromService(svc).IPv6AddressAnnotation(cloud)
+	if err != nil {
+		return "", err
+	}
+	if ipv6AddressFromAnnotation != "" {
+		// Google Cloud stores ipv6 addresses in CIDR form,
+		// but to create static address you need to specify address without range
+		return ipv6AddressWithoutRange(ipv6AddressFromAnnotation), nil
+	}
 	if ipv6FwdRule == nil {
-		return ""
+		return "", nil
 	}
 	if requestedSubnet != ipv6FwdRule.Subnetwork {
 		// reset ip address since subnet is being changed.
-		return ""
+		return "", nil
 	}
 
 	// Google Cloud creates ipv6 forwarding rules with IPAddress in CIDR form,
 	// but to create static address you need to specify address without range
-	return strings.Split(ipv6FwdRule.IPAddress, "/")[0]
+	return ipv6AddressWithoutRange(ipv6FwdRule.IPAddress), nil
+}
+
+func ipv6AddressWithoutRange(ipv6Address string) string {
+	return strings.Split(ipv6Address, "/")[0]
 }

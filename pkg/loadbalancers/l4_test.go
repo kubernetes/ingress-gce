@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -1980,6 +1981,100 @@ func TestILBUserErrorOnExternalIPv6Subnet(t *testing.T) {
 	result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
 	if !utils.IsUserError(result.Error) {
 		t.Errorf("Expected to get user error if external IPv6 subnet specified for internal IPv6 service, got %v", result.Error)
+	}
+}
+func TestDualStackILBStaticIPAnnotation(t *testing.T) {
+	t.Parallel()
+	nodeNames := []string{"test-node-1"}
+
+	ipv4Address := &compute.Address{
+		Name:        "ipv4-address",
+		Address:     "111.111.111.111",
+		AddressType: "INTERNAL",
+	}
+	ipv6Address := &compute.Address{
+		Name:        "ipv6-address",
+		Address:     "2::2/80",
+		IpVersion:   "IPV6",
+		AddressType: "INTERNAL",
+	}
+
+	testCases := []struct {
+		desc                    string
+		staticAnnotationVal     string
+		addressesToReserve      []*compute.Address
+		expectedLoadBalancerIPs []string
+	}{
+		{
+			desc:                    "2 Reserved addresses",
+			staticAnnotationVal:     "ipv4-address,ipv6-address",
+			addressesToReserve:      []*compute.Address{ipv4Address, ipv6Address},
+			expectedLoadBalancerIPs: []string{"111.111.111.111", "2::2"},
+		},
+		{
+			desc:                    "Addresses in annotation, but not reserved",
+			staticAnnotationVal:     "ipv4-address,ipv6-address",
+			addressesToReserve:      []*compute.Address{},
+			expectedLoadBalancerIPs: []string{"random", "random"},
+		},
+		{
+			desc:                    "1 Reserved address, 1 random",
+			staticAnnotationVal:     "ipv6-address",
+			addressesToReserve:      []*compute.Address{ipv6Address},
+			expectedLoadBalancerIPs: []string{"random", "2::2"},
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			svc := test.NewL4ILBService(false, 8080)
+			l4, err := setupILBDualStackTestService(svc, nodeNames)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			for _, addr := range tc.addressesToReserve {
+				err := l4.cloud.ReserveRegionAddress(addr, l4.cloud.Region())
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			svc.Annotations[annotations.StaticL4AddressesAnnotationKey] = tc.staticAnnotationVal
+
+			svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
+			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			if result.Error != nil {
+				t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+			}
+			svc.Annotations = result.Annotations
+			assertDualStackILBResources(t, l4, nodeNames)
+
+			var gotIPs []string
+			for _, ip := range result.Status.Ingress {
+				gotIPs = append(gotIPs, ip.IP)
+			}
+			sort.Strings(gotIPs)
+			for i, expectedIP := range tc.expectedLoadBalancerIPs {
+				if expectedIP != "random" && expectedIP != gotIPs[i] {
+					t.Errorf("Expected to get IP %s, got %s", expectedIP, gotIPs[i])
+				}
+			}
+			// Delete the loadbalancer
+			result = l4.EnsureInternalLoadBalancerDeleted(svc)
+			if result.Error != nil {
+				t.Errorf("Unexpected error deleting loadbalancer - err %v", result.Error)
+			}
+			assertDualStackILBResourcesDeleted(t, l4)
+
+			// Verify user reserved addresses were not deleted
+			for _, addr := range tc.addressesToReserve {
+				cloudAddr, err := l4.cloud.GetRegionAddress(addr.Name, l4.cloud.Region())
+				if err != nil || cloudAddr == nil {
+					t.Errorf("Reserved address should exist after service deletion. Got addr: %v, err: %v", cloudAddr, err)
+				}
+			}
+		})
 	}
 }
 
