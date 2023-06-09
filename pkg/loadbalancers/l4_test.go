@@ -1700,6 +1700,110 @@ func TestEnsureInternalDualStackLoadBalancer(t *testing.T) {
 	}
 }
 
+func TestEnsureIPv4Firewall4Nodes(t *testing.T) {
+	t.Parallel()
+	fakeGCE := getFakeGCECloud(gce.DefaultTestClusterValues())
+	nodeNames := []string{"test-node-1"}
+	// create a test VM so that target tags can be found
+	createVMInstanceWithTag(t, fakeGCE, "test-node-1", "test-node-1")
+
+	svc := test.NewL4ILBService(false, 8080)
+	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+
+	networkURL := "testNet"
+	l4ilbParams := &L4ILBParams{
+		Service:  svc,
+		Cloud:    fakeGCE,
+		Namer:    namer,
+		Recorder: record.NewFakeRecorder(100),
+		Network:  network.NetworkInfo{NetworkURL: networkURL, SubnetworkURL: "testSubnet"},
+	}
+	l4 := NewL4Handler(l4ilbParams)
+	syncResult := &L4ILBSyncResult{
+		Annotations: make(map[string]string),
+	}
+
+	l4.ensureIPv4NodesFirewall(nodeNames, "10.0.0.7", syncResult)
+	if syncResult.Error != nil {
+		t.Fatalf("ensureIPv4NodesFirewall() error %+v", syncResult)
+	}
+
+	firewallName := l4.namer.L4Firewall(l4.Service.Namespace, l4.Service.Name)
+	firewall, err := fakeGCE.GetFirewall(firewallName)
+	if err != nil {
+		t.Fatalf("GetFirewall error %v", err)
+	}
+	if firewall.Name != firewallName {
+		t.Errorf("Firewall.Name invalid, want=%s, got=%s", firewallName, firewall.Name)
+	}
+	if firewall.Network != networkURL {
+		t.Errorf("Firewall.Network invalid, want=%s, got=%s", networkURL, firewall.Network)
+	}
+	if len(firewall.Allowed) != 1 {
+		t.Errorf("Firewall.Allowed len unexpected, want=1, got=%d", len(firewall.Allowed))
+	}
+	expectedAllowed := &compute.FirewallAllowed{
+		Ports:      []string{"8080"},
+		IPProtocol: "tcp",
+	}
+	allowed := firewall.Allowed[0]
+	if diff := cmp.Diff(expectedAllowed, allowed); diff != "" {
+		t.Errorf("Firewall.Allowed invalid,  (-want +got):\n%s", diff)
+	}
+}
+
+func TestEnsureIPv6Firewall4Nodes(t *testing.T) {
+	t.Parallel()
+
+	fakeGCE := getFakeGCECloud(gce.DefaultTestClusterValues())
+	// create a test VM so that target tags can be found
+	createVMInstanceWithTag(t, fakeGCE, "test-node-1", "test-node-1")
+	nodeNames := []string{"test-node-1"}
+
+	svc := test.NewL4ILBService(false, 8080)
+	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+
+	networkURL := "testNet"
+	l4ilbParams := &L4ILBParams{
+		Service:  svc,
+		Cloud:    fakeGCE,
+		Namer:    namer,
+		Recorder: record.NewFakeRecorder(100),
+		Network:  network.NetworkInfo{NetworkURL: networkURL, SubnetworkURL: "testSubnet"},
+	}
+	l4 := NewL4Handler(l4ilbParams)
+	syncResult := &L4ILBSyncResult{
+		Annotations: make(map[string]string),
+	}
+
+	l4.ensureIPv6NodesFirewall("2001:db8::ff00:42:8329", nodeNames, syncResult)
+	if syncResult.Error != nil {
+		t.Fatalf("ensureIPv6NodesFirewall() error %+v", syncResult)
+	}
+	firewallName := l4.namer.L4IPv6Firewall(l4.Service.Namespace, l4.Service.Name)
+	firewall, err := fakeGCE.GetFirewall(firewallName)
+	if err != nil {
+		t.Fatalf("GetFirewall error %v", err)
+	}
+	if firewall.Name != firewallName {
+		t.Errorf("Firewall.Name invalid, want=%s, got=%s", firewallName, firewall.Name)
+	}
+	if firewall.Network != networkURL {
+		t.Errorf("Firewall.Network invalid, want=%s, got=%s", networkURL, firewall.Network)
+	}
+	if len(firewall.Allowed) != 1 {
+		t.Errorf("Firewall.Allowed len unexpected, want=1, got=%d", len(firewall.Allowed))
+	}
+	expectedAllowed := &compute.FirewallAllowed{
+		Ports:      []string{"8080"},
+		IPProtocol: "tcp",
+	}
+	allowed := firewall.Allowed[0]
+	if diff := cmp.Diff(expectedAllowed, allowed); diff != "" {
+		t.Errorf("Firewall.Allowed invalid,  (-want +got):\n%s", diff)
+	}
+}
+
 // This is exhaustive test that checks for all possible transitions of
 // - ServiceExternalTrafficPolicy
 // - Protocol
@@ -2379,4 +2483,19 @@ func verifyILBIPv6ResourcesDeletedOnSync(l4 *L4) error {
 	}
 
 	return nil
+}
+
+func createVMInstanceWithTag(t *testing.T, fakeGCE *gce.Cloud, name, tag string) {
+	err := fakeGCE.Compute().Instances().Insert(context.Background(),
+		meta.ZonalKey(tag, "us-central1-b"),
+		&compute.Instance{
+			Name: name,
+			Zone: "us-central1-b",
+			Tags: &compute.Tags{
+				Items: []string{tag},
+			},
+		})
+	if err != nil {
+		t.Errorf("failed to create instance err=%v", err)
+	}
 }
