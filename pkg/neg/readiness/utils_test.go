@@ -19,15 +19,16 @@ package readiness
 import (
 	"context"
 	"fmt"
-	"k8s.io/api/core/v1"
+	"net"
+	"reflect"
+	"testing"
+
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
-	"net"
-	"reflect"
-	"testing"
 )
 
 const (
@@ -272,7 +273,7 @@ func TestPatchPodStatus(t *testing.T) {
 		{
 			"no change",
 			func(input v1.PodStatus) v1.PodStatus { return input },
-			[]byte(fmt.Sprintf(`{}`)),
+			[]byte(`{}`),
 		},
 		{
 			"message change",
@@ -280,7 +281,7 @@ func TestPatchPodStatus(t *testing.T) {
 				input.Message = "random message"
 				return input
 			},
-			[]byte(fmt.Sprintf(`{"status":{"message":"random message"}}`)),
+			[]byte(`{"status":{"message":"random message"}}`),
 		},
 		{
 			"pod condition change",
@@ -288,7 +289,7 @@ func TestPatchPodStatus(t *testing.T) {
 				input.Conditions[0].Status = v1.ConditionFalse
 				return input
 			},
-			[]byte(fmt.Sprintf(`{"status":{"$setElementOrder/conditions":[{"type":"Ready"},{"type":"PodScheduled"}],"conditions":[{"status":"False","type":"Ready"}]}}`)),
+			[]byte(`{"status":{"$setElementOrder/conditions":[{"type":"Ready"},{"type":"PodScheduled"}],"conditions":[{"status":"False","type":"Ready"}]}}`),
 		},
 		{
 			"additional init container condition",
@@ -301,7 +302,7 @@ func TestPatchPodStatus(t *testing.T) {
 				}
 				return input
 			},
-			[]byte(fmt.Sprintf(`{"status":{"initContainerStatuses":[{"image":"","imageID":"","lastState":{},"name":"init-container","ready":true,"restartCount":0,"state":{}}]}}`)),
+			[]byte(`{"status":{"initContainerStatuses":[{"image":"","imageID":"","lastState":{},"name":"init-container","ready":true,"restartCount":0,"state":{}}]}}`),
 		},
 	}
 	for _, tc := range testCases {
