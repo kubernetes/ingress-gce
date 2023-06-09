@@ -349,7 +349,7 @@ func mergeWithGlobalCounts(localEPCount, globalEPCount, globalEPSCount negtypes.
 	}
 }
 
-// getEndpointZone use an endpoint's node information to get its corresponding zone
+// getEndpointZone use an endpoint's nodeName to get its corresponding zone
 func getEndpointZone(endpointAddress negtypes.AddressData, zoneGetter negtypes.ZoneGetter) (string, negtypes.StateCountMap, error) {
 	count := make(negtypes.StateCountMap)
 	if endpointAddress.NodeName == nil || len(*endpointAddress.NodeName) == 0 {
@@ -369,7 +369,7 @@ func getEndpointZone(endpointAddress negtypes.AddressData, zoneGetter negtypes.Z
 	return zone, count, nil
 }
 
-// getEndpointPod use an endpoint's pod information to get its corresponding pod object
+// getEndpointPod use an endpoint's pod name and namespace to get its corresponding pod object
 func getEndpointPod(endpointAddress negtypes.AddressData, podLister cache.Indexer) (*apiv1.Pod, negtypes.StateCountMap, error) {
 	count := make(negtypes.StateCountMap)
 	if endpointAddress.TargetRef == nil {
@@ -461,7 +461,7 @@ func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGett
 			// endpoint address should match to the IP of its pod
 			checkIPErr := podContainsEndpointAddress(networkEndpoint, pod)
 			if checkIPErr != nil {
-				klog.Errorf("Endpoint %q in Endpoints %s/%s has IP(s) not match to its pod %s: %v, skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, pod.Name, checkIPErr)
+				klog.Errorf("Endpoint %q in Endpoints %s/%s has at least one IP that not match to its pod %s: %v, skipping", networkEndpoint.IP, ed.Meta.Namespace, ed.Meta.Name, pod.Name, checkIPErr)
 				metrics.PublishNegControllerErrorCountMetrics(checkIPErr, true)
 				localEPCount[negtypes.IPNotFromPod] += 1
 				continue
@@ -571,9 +571,9 @@ func ipsForPod(eds []negtypes.EndpointsData) map[types.NamespacedName]negtypes.N
 	return result
 }
 
-// podContainsEndpointAddress checks the pod's existing PodIP(s)
-// and return error if the given endpoint's IP address does not any of them.
-// If this is a dual stack endpoint, we would validate both IPs
+// podContainsEndpointAddress checks if the given endpoint's IP
+// matches one of the pod's IPs, and return if it doesn't.
+// If this is a dual stack endpoint, we would validate both IPs.
 func podContainsEndpointAddress(networkEndpoint negtypes.NetworkEndpoint, pod *apiv1.Pod) error {
 	// TODO(cheungdavid): update ipv4 check when single stack ipv6 is supported
 	endpointIPs := []string{networkEndpoint.IP}
@@ -591,7 +591,7 @@ func podContainsEndpointAddress(networkEndpoint negtypes.NetworkEndpoint, pod *a
 		}
 	}
 	if matching != len(endpointIPs) {
-		return fmt.Errorf("%w: endpoint %v has IP(s) not match to its pod's IP(s)", negtypes.ErrEPIPNotFromPod, endpointIPs)
+		return fmt.Errorf("%w: endpoint has at least one IP %v that does not match its pod's IP(s)", negtypes.ErrEPIPNotFromPod, endpointIPs)
 	}
 	return nil
 }
