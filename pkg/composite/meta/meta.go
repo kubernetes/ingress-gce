@@ -17,7 +17,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"regexp"
 	"sort"
@@ -215,7 +215,7 @@ func populateApiServices() {
 	}
 	defer apiFile.Close()
 
-	byteValue, err := ioutil.ReadAll(apiFile)
+	byteValue, err := io.ReadAll(apiFile)
 	if err != nil {
 		panic(err)
 	}

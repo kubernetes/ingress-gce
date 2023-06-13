@@ -18,7 +18,7 @@ package app
 
 import (
 	"bytes"
-	"io/ioutil"
+	"io"
 	"testing"
 )
 
@@ -28,7 +28,7 @@ func TestGenerateConfigReaderFunc(t *testing.T) {
 	expectedConfig := []byte{'g', 'l', 'b', 'c'}
 	configReaderFunc := generateConfigReaderFunc(expectedConfig)
 	for i := 0; i < 10; i++ {
-		config, err := ioutil.ReadAll(configReaderFunc())
+		config, err := io.ReadAll(configReaderFunc())
 		if err != nil {
 			t.Fatalf("Error while reading config: %v", err)
 		}

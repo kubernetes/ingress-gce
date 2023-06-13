@@ -20,7 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"reflect"
@@ -511,7 +511,7 @@ func CheckEchoServerResponse(vip string) (app.ResponseBody, error) {
 	if resp.StatusCode != 200 {
 		return body, fmt.Errorf("GET %q got status code %d, want 200", url, resp.StatusCode)
 	}
-	bytes, err := ioutil.ReadAll(resp.Body)
+	bytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return body, fmt.Errorf("failed to read response from GET %q : %v", url, err)
 	}

@@ -20,7 +20,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -394,7 +394,7 @@ func (v *IngressValidator) checkPath(ctx context.Context, scheme, host, path str
 	}
 
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		klog.Infof("Ingress %s/%s reading body: %v", v.ing.Namespace, v.ing.Name, err)
 		return err

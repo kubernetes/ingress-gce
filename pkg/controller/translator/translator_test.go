@@ -19,7 +19,7 @@ package translator
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -1045,9 +1045,9 @@ func createEndpointSlice(serviceName string, sliceSuffix string, portName string
 func ingressFromFile(t *testing.T, filename string) *v1.Ingress {
 	t.Helper()
 
-	data, err := ioutil.ReadFile("testdata/" + filename)
+	data, err := os.ReadFile("testdata/" + filename)
 	if err != nil {
-		t.Fatalf("ioutil.ReadFile(%q) = %v", filename, err)
+		t.Fatalf("os.ReadFile(%q) = %v", filename, err)
 	}
 	ing, err := test.DecodeIngress(data)
 	if err != nil {
@@ -1057,9 +1057,9 @@ func ingressFromFile(t *testing.T, filename string) *v1.Ingress {
 }
 
 func gceURLMapFromFile(t *testing.T, filename string) *utils.GCEURLMap {
-	data, err := ioutil.ReadFile("testdata/" + filename)
+	data, err := os.ReadFile("testdata/" + filename)
 	if err != nil {
-		t.Fatalf("ioutil.ReadFile(%q) = %v", filename, err)
+		t.Fatalf("os.ReadFile(%q) = %v", filename, err)
 	}
 	v := &utils.GCEURLMap{}
 	if err := json.Unmarshal(data, v); err != nil {

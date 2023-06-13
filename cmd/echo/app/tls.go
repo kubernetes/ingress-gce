@@ -23,8 +23,8 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
-	"io/ioutil"
 	"math/big"
+	"os"
 	"time"
 
 	"k8s.io/klog/v2"
@@ -37,21 +37,21 @@ func createCert() (certFilePath string, keyFilepath string) {
 		klog.Fatal(err)
 	}
 
-	tmpCert, err := ioutil.TempFile("", "server.crt")
+	tmpCert, err := os.CreateTemp("", "server.crt")
 	if err != nil {
 		klog.Fatal(err)
 	}
 
-	tmpKey, err := ioutil.TempFile("", "server.key")
+	tmpKey, err := os.CreateTemp("", "server.key")
 	if err != nil {
 		klog.Fatal(err)
 	}
 
-	if err := ioutil.WriteFile(tmpCert.Name(), cert, 0644); err != nil {
+	if err := os.WriteFile(tmpCert.Name(), cert, 0644); err != nil {
 		klog.Fatal(err)
 	}
 
-	if err := ioutil.WriteFile(tmpKey.Name(), key, 0644); err != nil {
+	if err := os.WriteFile(tmpKey.Name(), key, 0644); err != nil {
 		klog.Fatal(err)
 	}
 
