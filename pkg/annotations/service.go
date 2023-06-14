@@ -255,6 +255,18 @@ func WantsL4NetLB(service *v1.Service) (bool, string) {
 	return ltype != LBTypeInternal, fmt.Sprintf("Type : %s, LBType : %s", service.Spec.Type, ltype)
 }
 
+// HasRBSAnnotation checks if the given service has the RBS annotation.
+func HasRBSAnnotation(service *v1.Service) bool {
+	if service == nil {
+		return false
+	}
+
+	if val, ok := service.Annotations[RBSAnnotationKey]; ok && val == RBSEnabled {
+		return true
+	}
+	return false
+}
+
 // OnlyStatusAnnotationsChanged returns true if the only annotation change between the 2 services is the NEG or ILB
 // resources annotations.
 // Note : This assumes that the annotations in old and new service are different. If they are identical, this will
