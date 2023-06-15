@@ -17,7 +17,6 @@ limitations under the License.
 package loadbalancers
 
 import (
-	"k8s.io/ingress-gce/pkg/network"
 	"strings"
 	"time"
 
@@ -123,7 +122,6 @@ func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipAddress string, nodeNames []st
 		return
 	}
 
-	defaultNetwork := network.DefaultNetwork(l4netlb.cloud)
 	ipv6nodesFWRParams := firewalls.FirewallParams{
 		PortRanges:        portRanges,
 		SourceRanges:      ipv6SourceRanges,
@@ -132,7 +130,7 @@ func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipAddress string, nodeNames []st
 		Name:              firewallName,
 		NodeNames:         nodeNames,
 		L4Type:            utils.XLB,
-		Network:           *defaultNetwork,
+		Network:           l4netlb.networkInfo,
 	}
 
 	err = firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, &ipv6nodesFWRParams, l4netlb.cloud, l4netlb.recorder)
