@@ -43,7 +43,8 @@ func (s *ServiceStore) Get(c *api_v1.Service) (*api_v1.Service, bool, error) {
 	if item == nil {
 		return nil, exists, err
 	}
-	return item.(*api_v1.Service), exists, err
+	svc := item.(*api_v1.Service)
+	return svc.DeepCopy(), exists, err
 }
 
 // GetByKey implements Store.
@@ -52,7 +53,8 @@ func (s *ServiceStore) GetByKey(key string) (*api_v1.Service, bool, error) {
 	if item == nil {
 		return nil, exists, err
 	}
-	return item.(*api_v1.Service), exists, err
+	svc := item.(*api_v1.Service)
+	return svc.DeepCopy(), exists, err
 }
 
 // Resync implements Store.
