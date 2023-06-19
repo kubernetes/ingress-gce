@@ -162,14 +162,18 @@ func (p *poller) Poll(key negMeta) (retry bool, err error) {
 	// TODO(freehan): filter the NEs that are in interest once the API supports it
 	res, err := p.negCloud.ListNetworkEndpoints(key.Name, key.Zone /*showHealthStatus*/, true, key.SyncerKey.GetAPIVersion())
 	if err != nil {
-		// On receiving GCE API error, do not retry immediately. This is to prevent the reflector to overwhelm the GCE NEG API when
-		// rate limiting is in effect. This will prevent readiness reflector to overwhelm the GCE NEG API and cause NEG syncers to backoff.
-		// This will effectively batch NEG health status updates for 100s. The pods added into NEG in this 100s will not be marked ready
-		// until the next status poll is executed. However, the pods are not marked as Ready and still passes the LB health check will
-		// serve LB traffic. The side effect during the delay period is the workload (depending on rollout strategy) might slow down rollout.
-		// TODO(freehan): enable exponential backoff.
-		p.logger.Error(err, "Failed to ListNetworkEndpoint in NEG. Retrying after some time.", "neg", key.String(), "retryDelay", retryDelay.String())
-		<-p.clock.After(retryDelay)
+		if negtypes.IsStrategyQuotaError(err) {
+			p.logger.V(4).Error(err, "Failed to ListNetworkEndpoints in NEG", "neg", key.String())
+		} else {
+			// On receiving GCE API error, do not retry immediately. This is to prevent the reflector to overwhelm the GCE NEG API when
+			// rate limiting is in effect. This will prevent readiness reflector to overwhelm the GCE NEG API and cause NEG syncers to backoff.
+			// This will effectively batch NEG health status updates for 100s. The pods added into NEG in this 100s will not be marked ready
+			// until the next status poll is executed. However, the pods are not marked as Ready and still passes the LB health check will
+			// serve LB traffic. The side effect during the delay period is the workload (depending on rollout strategy) might slow down rollout.
+			// TODO(freehan): enable exponential backoff.
+			p.logger.Error(err, "Failed to ListNetworkEndpoints in NEG. Retrying after some time.", "neg", key.String(), "retryDelay", retryDelay.String())
+			<-p.clock.After(retryDelay)
+		}
 		return true, err
 	}
 

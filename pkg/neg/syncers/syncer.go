@@ -92,7 +92,10 @@ func (s *syncer) Start() error {
 			err := s.core.sync()
 			if err != nil {
 				metrics.PublishNegControllerErrorCountMetrics(err, false)
-				delay, retryErr := s.backoff.NextDelay()
+				delay, retryErr := time.Duration(0), error(nil)
+				if !negtypes.IsStrategyQuotaError(err) {
+					delay, retryErr = s.backoff.NextDelay()
+				}
 				retryMsg := ""
 				if retryErr == backoff.ErrRetriesExceeded {
 					retryMsg = "(will not retry)"

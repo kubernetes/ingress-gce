@@ -251,7 +251,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 
 	currentMap, currentPodLabelMap, err := retrieveExistingZoneNetworkEndpointMap(s.NegSyncerKey.NegName, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode(), s.enableDualStackNEG)
 	if err != nil {
-		return fmt.Errorf("%w: %v", negtypes.ErrCurrentNegEPNotFound, err)
+		return fmt.Errorf("%w: %w", negtypes.ErrCurrentNegEPNotFound, err)
 	}
 	s.logStats(currentMap, "current NEG endpoints")
 
@@ -595,9 +595,13 @@ func (s *transactionSyncer) commitTransaction(err error, networkEndpointMap map[
 	}
 
 	if needRetry {
-		if retryErr := s.retry.Retry(); retryErr != nil {
-			s.recordEvent(apiv1.EventTypeWarning, "RetryFailed", fmt.Sprintf("Failed to retry NEG sync for %q: %v", s.NegSyncerKey.String(), retryErr))
-			metrics.PublishNegControllerErrorCountMetrics(retryErr, false)
+		if negtypes.IsStrategyQuotaError(err) {
+			s.syncer.Sync()
+		} else {
+			if retryErr := s.retry.Retry(); retryErr != nil {
+				s.recordEvent(apiv1.EventTypeWarning, "RetryFailed", fmt.Sprintf("Failed to retry NEG sync for %q: %v", s.NegSyncerKey.String(), retryErr))
+				metrics.PublishNegControllerErrorCountMetrics(retryErr, false)
+			}
 		}
 		return
 	}
