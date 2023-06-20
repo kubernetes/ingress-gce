@@ -278,18 +278,18 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 			globalEPCount[negtypes.Total] += 1
 			zone, _, getZoneErr := getEndpointZone(endpointAddress, zoneGetter)
 			if getZoneErr != nil {
-				klog.Errorf("Detected unexpected error when getting zone: %v", getZoneErr)
-				return ZoneNetworkEndpointMapResult{}, fmt.Errorf("Unexpected error when getting zone for Endpoint %q in Endpoints %s/%s: %w", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, getZoneErr)
+				klog.Errorf("Detected unexpected error when getting zone for endpoint %q in endpoint slice %s/%s: %v", getZoneErr, endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
+				return ZoneNetworkEndpointMapResult{}, fmt.Errorf("unexpected error when getting zone for endpoint %q in endpoint slice %s/%s: %w", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, getZoneErr)
 			}
 
 			_, _, getPodErr := getEndpointPod(endpointAddress, podLister)
 			if getPodErr != nil {
 				if flags.F.EnableDegradedMode {
-					klog.Errorf("Detected unexpected error when getting pod: %v", getPodErr)
+					klog.Errorf("Detected unexpected error when getting pod for endpoint %q in endpoint slice %s/%s: %v", getPodErr, endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
 					// when degraded mode is enabled, we want to trigger degraded mode so return the error
-					return ZoneNetworkEndpointMapResult{}, fmt.Errorf("Unexpected error when getting pod for Endpoint %q in Endpoints %s/%s: %w", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, getPodErr)
+					return ZoneNetworkEndpointMapResult{}, fmt.Errorf("unexpected error when getting pod for endpoint %q in endpoint slice %s/%s: %w", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, getPodErr)
 				}
-				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated pod. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
+				klog.V(2).Infof("Endpoint %q in endpoint slice %s/%s does not have an associated pod. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
 				continue
 			}
 			if zoneNetworkEndpointMap[zone] == nil {
@@ -313,7 +313,7 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 			if existingPod, contains := networkEndpointPodMap[networkEndpoint]; contains {
 				localEPCount[negtypes.Duplicate] += 1
 				if existingPod.Name < endpointAddress.TargetRef.Name {
-					klog.Infof("Found duplicate endpoints for %v, save the pod information from the alphabetically higher pod", networkEndpoint)
+					klog.Infof("Found duplicate endpoints [%v, %v] when processing endpoint slice %s/%s, save the pod information from the alphabetically higher pod", networkEndpoint.IP, networkEndpoint.IPv6, ed.Meta.Namespace, ed.Meta.Name)
 					continue // if existing name is alphabetically lower than current one, continue and don't replace
 				}
 			}
@@ -421,7 +421,7 @@ func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGett
 			globalEPCount[negtypes.Total] += 1
 			pod, getPodStat, getPodErr := getEndpointPod(endpointAddress, podLister)
 			if getPodErr != nil {
-				klog.Errorf("Endpoint %q in Endpoints %s/%s receives error when getting pod: %v, skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, getPodErr)
+				klog.Errorf("Endpoint %q in endpoint slice %s/%s receives error when getting pod: %v, skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, getPodErr)
 				metrics.PublishNegControllerErrorCountMetrics(getPodErr, true)
 				for state, count := range getPodStat {
 					localEPCount[state] += count
@@ -430,13 +430,13 @@ func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGett
 			}
 			nodeName := pod.Spec.NodeName
 			if nodeName == "" {
-				klog.Errorf("For endpoint %q, its corresponding pod %s does not have valid nodeName: %v, skipping", endpointAddress.Addresses, pod.Name, negtypes.ErrEPNodeMissing)
+				klog.Errorf("For endpoint %q in endpoint slice %s/%s, its corresponding pod %s does not have valid nodeName: %v, skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, pod.Name, negtypes.ErrEPNodeMissing)
 				localEPCount[negtypes.NodeMissing]++
 				continue
 			}
 			zone, getZoneErr := zoneGetter.GetZoneForNode(nodeName)
 			if getZoneErr != nil {
-				klog.Errorf("For endpoint %q in pod %q, its corresponding node %q does not have valid zone information: %v, skipping", endpointAddress.Addresses, pod.ObjectMeta.Name, nodeName, getZoneErr)
+				klog.Errorf("For endpoint %q in endpoint slice %s/%s, its corresponding node %q does not have valid zone information: %v, skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, nodeName, getZoneErr)
 				metrics.PublishNegControllerErrorCountMetrics(getZoneErr, true)
 				localEPCount[negtypes.NodeNotFound]++
 				continue
@@ -448,7 +448,7 @@ func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGett
 			podIPs := ipsForPod[types.NamespacedName{Namespace: endpointAddress.TargetRef.Namespace, Name: endpointAddress.TargetRef.Name}]
 			// TODO(cheungdavid): Remove this validation when single stack ipv6 endpoint is supported
 			if parseIPAddress(podIPs.IP) == "" {
-				klog.Errorf("For endpoint %q in pod %q, it has an invalid IPv4 address: %v, skipping", endpointAddress.Addresses, pod.ObjectMeta.Name, negtypes.ErrEPIPInvalid)
+				klog.Errorf("For endpoint %q in endpoint slice %s/%s, it has an invalid IPv4 address: %v, skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, pod.ObjectMeta.Name, negtypes.ErrEPIPInvalid)
 				localEPCount[negtypes.IPInvalid]++
 				continue
 			}
@@ -461,14 +461,14 @@ func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGett
 			// endpoint address should match to the IP of its pod
 			checkIPErr := podContainsEndpointAddress(networkEndpoint, pod)
 			if checkIPErr != nil {
-				klog.Errorf("Endpoint %q in Endpoints %s/%s has at least one IP that not match to its pod %s: %v, skipping", networkEndpoint.IP, ed.Meta.Namespace, ed.Meta.Name, pod.Name, checkIPErr)
+				klog.Errorf("Endpoint %q in endpoint slice %s/%s has at least one IP that not match to its pod %s: %v, skipping", networkEndpoint.IP, ed.Meta.Namespace, ed.Meta.Name, pod.Name, checkIPErr)
 				metrics.PublishNegControllerErrorCountMetrics(checkIPErr, true)
 				localEPCount[negtypes.IPNotFromPod] += 1
 				continue
 			}
 			validatePodStat, validateErr := validatePod(pod, nodeLister, serviceLister, networkEndpoint, serviceName, isCustomEPS)
 			if validateErr != nil {
-				klog.Errorf("Endpoint %q in Endpoints %s/%s correponds to an invalid pod: %v, skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, validateErr)
+				klog.Errorf("Endpoint %q in endpoint slice %s/%s correponds to an invalid pod: %v, skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, validateErr)
 				metrics.PublishNegControllerErrorCountMetrics(validateErr, true)
 				for state, count := range validatePodStat {
 					localEPCount[state] += count
@@ -485,7 +485,7 @@ func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGett
 			if existingPod, contains := networkEndpointPodMap[networkEndpoint]; contains {
 				localEPCount[negtypes.Duplicate] += 1
 				if existingPod.Name < endpointAddress.TargetRef.Name {
-					klog.Infof("Found duplicate endpoints for %v, save the pod information from the alphabetically higher pod", networkEndpoint)
+					klog.Infof("Found duplicate endpoints [%v, %v] when processing endpoint slice %s/%s, save the pod information from the alphabetically higher pod", networkEndpoint.IP, networkEndpoint.IPv6, ed.Meta.Namespace, ed.Meta.Name)
 					continue // if existing name is alphabetically lower than current one, continue and don't replace
 				}
 			}

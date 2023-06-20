@@ -226,7 +226,7 @@ func (s *transactionSyncer) syncInternal() error {
 	err := s.syncInternalImpl()
 	if err != nil {
 		if syncErr := negtypes.ClassifyError(err); syncErr.IsErrorState {
-			s.logger.Info("Updating error state", "error state", syncErr.Reason)
+			s.logger.Info("Setting error state", "error state", syncErr.Reason)
 			s.setErrorState()
 		}
 	}
@@ -294,6 +294,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 			targetMap = degradedTargetMap
 			endpointPodMap = degradedPodMap
 			if len(notInDegraded) == 0 && len(onlyInDegraded) == 0 {
+				s.logger.Info("Resetting error state")
 				s.resetErrorState()
 			}
 		}
@@ -526,7 +527,7 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, zone stri
 		if syncErr.IsErrorState {
 			s.logger.Error(err, "Detected unexpected error when checking endpoint update response", "operation", operation)
 			s.syncLock.Lock()
-			s.logger.Info("Updating error state", "error state", syncErr.Reason)
+			s.logger.Info("Setting error state", "error state", syncErr.Reason)
 			s.setErrorState()
 			s.syncLock.Unlock()
 		}
