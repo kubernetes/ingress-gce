@@ -1398,7 +1398,7 @@ func TestDualStackInternalLoadBalancerModifyProtocol(t *testing.T) {
 					return false, err
 				}
 				// we don't reserve addresses for IPv6 forwarding rules
-				if fr.IpVersion == "IPV6" {
+				if fr.IpVersion == IPVersionIPv6 {
 					return false, nil
 				}
 

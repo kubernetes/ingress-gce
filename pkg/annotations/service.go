@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/cloud-provider-gcp/providers/gce"
 )
 
 const (
@@ -121,6 +122,9 @@ const (
 	// TODO(slavik): import this from gce_annotations when it will be merged in k8s
 	RBSAnnotationKey = "cloud.google.com/l4-rbs"
 	RBSEnabled       = "enabled"
+	// CustomSubnetAnnotationKey is the new way to specify custom subnet both for ILB and NetLB (only for IPv6)
+	// Replaces networking.gke.io/internal-load-balancer-subnet with backward compatibility.
+	CustomSubnetAnnotationKey = "networking.gke.io/load-balancer-subnet"
 )
 
 // NegAnnotation is the format of the annotation associated with the
@@ -410,4 +414,26 @@ func (svc *Service) getBackendConfigAnnotation() (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// GetExternalLoadBalancerAnnotationSubnet returns the configured subnet to assign LoadBalancer IP from.
+// Currently useful only for IPv6 External LoadBalancers.
+func (svc *Service) GetExternalLoadBalancerAnnotationSubnet() string {
+	if val, exists := svc.v[CustomSubnetAnnotationKey]; exists {
+		return val
+	}
+	return ""
+}
+
+// GetInternalLoadBalancerAnnotationSubnet returns the configured subnet to assign LoadBalancer IP from.
+func (svc *Service) GetInternalLoadBalancerAnnotationSubnet() string {
+	// At first try new annotation
+	if val, exists := svc.v[CustomSubnetAnnotationKey]; exists {
+		return val
+	}
+	// Fallback to old ILB annotation
+	if val, exists := svc.v[gce.ServiceAnnotationILBSubnet]; exists {
+		return val
+	}
+	return ""
 }

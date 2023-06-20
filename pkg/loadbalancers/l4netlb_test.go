@@ -627,6 +627,75 @@ func TestDualStackNetLBSyncIgnoresNoAnnotationIPv4Resources(t *testing.T) {
 	assertDualStackNetLBResourcesDeleted(t, l4NetLB)
 }
 
+func TestEnsureIPv6ExternalLoadBalancerCustomSubnet(t *testing.T) {
+	t.Parallel()
+	nodeNames := []string{"test-node-1"}
+	vals := gce.DefaultTestClusterValues()
+
+	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+	fakeGCE := getFakeGCECloud(vals)
+
+	svc := test.NewL4NetLBRBSService(8080)
+	l4NetLBParams := &L4NetLBParams{
+		Service:          svc,
+		Cloud:            fakeGCE,
+		Namer:            namer,
+		Recorder:         record.NewFakeRecorder(100),
+		DualStackEnabled: true,
+	}
+	l4NetLB := NewL4NetLB(l4NetLBParams)
+	l4NetLB.healthChecks = healthchecksl4.Fake(fakeGCE, l4NetLBParams.Recorder)
+
+	if _, err := test.CreateAndInsertNodes(l4NetLB.cloud, nodeNames, vals.ZoneName); err != nil {
+		t.Errorf("Unexpected error when adding nodes %v", err)
+	}
+
+	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
+
+	result := l4NetLB.EnsureFrontend(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+	}
+	svc.Annotations = result.Annotations
+	assertDualStackNetLBResources(t, l4NetLB, nodeNames)
+
+	// add custom subnet annotation
+	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "test-subnet"
+	result = l4NetLB.EnsureFrontend(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+	}
+	svc.Annotations = result.Annotations
+	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "test-subnet"
+	assertDualStackNetLBResources(t, l4NetLB, nodeNames)
+
+	// Change to a different subnet
+	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "another-subnet"
+	result = l4NetLB.EnsureFrontend(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+	}
+	svc.Annotations = result.Annotations
+	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "another-subnet"
+	assertDualStackNetLBResources(t, l4NetLB, nodeNames)
+
+	// remove the annotation - NetLB should revert to default subnet.
+	delete(svc.Annotations, annotations.CustomSubnetAnnotationKey)
+	result = l4NetLB.EnsureFrontend(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+	}
+	svc.Annotations = result.Annotations
+	assertDualStackNetLBResources(t, l4NetLB, nodeNames)
+
+	// Delete the loadbalancer
+	result = l4NetLB.EnsureLoadBalancerDeleted(svc)
+	if result.Error != nil {
+		t.Errorf("Unexpected error deleting loadbalancer - err %v", result.Error)
+	}
+	assertDualStackNetLBResourcesDeleted(t, l4NetLB)
+}
+
 func ensureLoadBalancer(port int, vals gce.TestClusterValues, fakeGCE *gce.Cloud, t *testing.T) (*v1.Service, *L4NetLB) {
 	svc := test.NewL4NetLBRBSService(port)
 	namer := namer_util.NewL4Namer(kubeSystemUID, namer_util.NewNamer(vals.ClusterName, "cluster-fw"))
@@ -1009,6 +1078,20 @@ func verifyNetLBForwardingRule(l4netlb *L4NetLB, frName string, backendServiceLi
 	if err == nil || addr != nil {
 		return fmt.Errorf("expected error when looking up ephemeral address, got %v", addr)
 	}
+
+	// IPv4 Forwarding Rule should not have subnet
+	expectedSubnet := ""
+	// IPv6 Forwarding Rule should have subnet
+	if fwdRule.IpVersion == IPVersionIPv6 {
+		expectedSubnet, err = l4netlb.IPv6ForwardingRuleSubnet()
+		if err != nil {
+			return fmt.Errorf("l4netlb.IPv6ForwardingRuleSubnet() returned error %w", err)
+		}
+	}
+	if !strings.HasSuffix(fwdRule.Subnetwork, expectedSubnet) {
+		return fmt.Errorf("fwdRule.Subnetwork = %s, expectedSubnet = %s. Exepected suffixes to match", fwdRule.Subnetwork, expectedSubnet)
+	}
+
 	return nil
 }
 
@@ -1090,6 +1173,9 @@ func buildExpectedNetLBAnnotations(l4netlb *L4NetLB) map[string]string {
 		} else {
 			expectedAnnotations[annotations.UDPForwardingRuleIPv6Key] = ipv6FRName
 		}
+	}
+	if val, ok := l4netlb.Service.Annotations[annotations.CustomSubnetAnnotationKey]; ok {
+		expectedAnnotations[annotations.CustomSubnetAnnotationKey] = val
 	}
 	return expectedAnnotations
 }
