@@ -174,7 +174,7 @@ func (se NegSyncError) Error() string {
 	return se.Err.Error()
 }
 
-// ClassifyError takes a non-nil error and checks if this error is an NegSyncError
+// ClassifyError takes an error and checks if this error is a NegSyncError
 // if so, it unwraps and returns the NegSyncError,
 // else it would wrap it as a NegSyncError with ReasonOtherError and IsErrorState set to false
 func ClassifyError(err error) NegSyncError {
@@ -186,13 +186,7 @@ func ClassifyError(err error) NegSyncError {
 			IsErrorState: false,
 		}
 	}
-	// unwrap error till we get NegSyncError, so we can check error state
-	for {
-		if syncErr, ok := err.(NegSyncError); ok {
-			return syncErr
-		}
-		err = errors.Unwrap(err)
-	}
+	return syncErrType
 }
 
 // ListErrorStates lists all error-state reasons.
@@ -209,4 +203,20 @@ func ListErrorStates() []Reason {
 func ListNonErrorStates() []Reason {
 	return []Reason{ReasonNegNotFound, ReasonCurrentNegEPNotFound,
 		ReasonEPSNotFound, ReasonOtherError, ReasonSuccess}
+}
+
+// StrategyQuotaError indicates that a quota error was a result of a request using throttling.Strategy.
+type StrategyQuotaError struct {
+	Err error
+}
+
+func (e StrategyQuotaError) Error() string {
+	return e.Err.Error()
+}
+
+// IsStrategyQuotaError takes an error and checks if this error is a StrategyQuotaError
+func IsStrategyQuotaError(err error) bool {
+	var quotaErr StrategyQuotaError
+	var quotaErrPointer *StrategyQuotaError
+	return errors.As(err, &quotaErr) || errors.As(err, &quotaErrPointer)
 }

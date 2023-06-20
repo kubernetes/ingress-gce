@@ -24,6 +24,7 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/ingress-gce/pkg/backoff"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/klog/v2"
@@ -55,7 +56,7 @@ type syncer struct {
 	// sync signal and retry handling
 	syncCh  chan interface{}
 	clock   clock.Clock
-	backoff backoffHandler
+	backoff backoff.BackoffHandler
 
 	logger klog.Logger
 }
@@ -69,7 +70,7 @@ func newSyncer(negSyncerKey negtypes.NegSyncerKey, serviceLister cache.Indexer, 
 		stopped:       true,
 		shuttingDown:  false,
 		clock:         clock.RealClock{},
-		backoff:       NewExponentialBackendOffHandler(maxRetries, minRetryDelay, maxRetryDelay),
+		backoff:       backoff.NewExponentialBackoffHandler(maxRetries, minRetryDelay, maxRetryDelay),
 		logger:        logger,
 	}
 }
@@ -91,9 +92,12 @@ func (s *syncer) Start() error {
 			err := s.core.sync()
 			if err != nil {
 				metrics.PublishNegControllerErrorCountMetrics(err, false)
-				delay, retryErr := s.backoff.NextRetryDelay()
+				delay, retryErr := time.Duration(0), error(nil)
+				if !negtypes.IsStrategyQuotaError(err) {
+					delay, retryErr = s.backoff.NextDelay()
+				}
 				retryMsg := ""
-				if retryErr == ErrRetriesExceeded {
+				if retryErr == backoff.ErrRetriesExceeded {
 					retryMsg = "(will not retry)"
 				} else {
 					retryCh = s.clock.After(delay)
@@ -104,7 +108,7 @@ func (s *syncer) Start() error {
 					s.recorder.Eventf(svc, apiv1.EventTypeWarning, "SyncNetworkEndpointGroupFailed", "Failed to sync NEG %q %s: %v", s.NegSyncerKey.NegName, retryMsg, err)
 				}
 			} else {
-				s.backoff.ResetRetryDelay()
+				s.backoff.ResetDelay()
 			}
 
 			select {

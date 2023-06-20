@@ -21,23 +21,58 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"golang.org/x/exp/slices"
 	"k8s.io/client-go/util/flowcontrol"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/ratelimit/metrics"
+	"k8s.io/ingress-gce/pkg/throttling"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/clock"
 )
 
 // GCERateLimiter implements cloud.RateLimiter
 type GCERateLimiter struct {
 	// Map a RateLimitKey to its rate limiter implementation.
 	rateLimitImpls map[cloud.RateLimitKey]flowcontrol.RateLimiter
+	strategyRLs    map[cloud.RateLimitKey]*strategyRateLimiter
 	// Minimum polling interval for getting operations. Underlying operations rate limiter
 	// may increase the time.
 	operationPollInterval time.Duration
+}
+
+// strategyRateLimiter implements cloud.RateLimiter and uses underlying throttling.Strategy
+type strategyRateLimiter struct {
+	lock     sync.Mutex
+	strategy throttling.Strategy
+
+	clock clock.Clock
+}
+
+// Accept blocks for the delay provided by the throttling.Strategy or until context.Done(), key is used for exporting metrics.
+func (rl *strategyRateLimiter) Accept(ctx context.Context, key *cloud.RateLimitKey) error {
+	lockStartTime := rl.clock.Now()
+	rl.lock.Lock()
+	defer rl.lock.Unlock()
+	lockLatency := rl.clock.Since(lockStartTime)
+	usedDelay := rl.strategy.Delay()
+	metrics.PublishStrategyMetrics(rateLimitKeyToString(key), usedDelay, lockLatency)
+	select {
+	case <-rl.clock.After(usedDelay):
+		break
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return nil
+}
+
+// Observe passes an error further to the throttling.Strategy. Key is ignored.
+func (rl *strategyRateLimiter) Observe(_ context.Context, err error, _ *cloud.RateLimitKey) {
+	rl.strategy.Observe(err)
 }
 
 func init() {
@@ -49,12 +84,13 @@ func init() {
 // Expected format of specs: {"[version].[service].[operation],[type],[param1],[param2],..", "..."}
 func NewGCERateLimiter(specs []string, operationPollInterval time.Duration) (*GCERateLimiter, error) {
 	rateLimitImpls := make(map[cloud.RateLimitKey]flowcontrol.RateLimiter)
+	strategyRLs := make(map[cloud.RateLimitKey]*strategyRateLimiter)
 	// Within each specification, split on comma to get the operation,
 	// rate limiter type, and extra parameters.
 	for _, spec := range specs {
 		params := strings.Split(spec, ",")
 		if len(params) < 2 {
-			return nil, fmt.Errorf("must at least specify operation and rate limiter type.")
+			return nil, fmt.Errorf("must at least specify operation and rate limiter type")
 		}
 		// params[0] should consist of the operation to rate limit.
 		key, err := constructRateLimitKey(params[0])
@@ -62,28 +98,49 @@ func NewGCERateLimiter(specs []string, operationPollInterval time.Duration) (*GC
 			return nil, err
 		}
 		// params[1:] should consist of the rate limiter type and extra params.
-		impl, err := constructRateLimitImpl(params[0], params[1:])
-		if err != nil {
-			return nil, err
+		if params[1] == "strategy" {
+			impl, err := constructStrategy(params[2:])
+			if err != nil {
+				return nil, err
+			}
+			strategyRLs[key] = &strategyRateLimiter{
+				strategy: impl,
+				clock:    clock.RealClock{},
+			}
+			klog.Infof("Configured strategy for: %v", key)
+		} else {
+			impl, err := constructRateLimitImpl(params[1:])
+			if err != nil {
+				return nil, err
+			}
+			rateLimitImpls[key] = impl
+			klog.Infof("Configured rate limiting for: %v, scale = %f", key, flags.F.GCERateLimitScale)
 		}
-		rateLimitImpls[key] = impl
-		klog.Infof("Configured rate limiting for: %v, scale = %f", key, flags.F.GCERateLimitScale)
 	}
-	if len(rateLimitImpls) == 0 {
+	if len(rateLimitImpls) == 0 && len(strategyRLs) == 0 {
 		return nil, nil
 	}
 	return &GCERateLimiter{
 		rateLimitImpls:        rateLimitImpls,
+		strategyRLs:           strategyRLs,
 		operationPollInterval: operationPollInterval,
 	}, nil
 }
 
-// Accept looks up the associated flowcontrol.RateLimiter (if exists) and waits on it.
+// Accept looks up the associated strategyRateLimiter (if exists) and waits on it.
+// Then it looks up the associated flowcontrol.RateLimiter (if exists) and waits on it.
 func (grl *GCERateLimiter) Accept(ctx context.Context, key *cloud.RateLimitKey) error {
-	var rl cloud.RateLimiter
+	if strategyRL := grl.strategyRLs[rateLimitKeyWithoutProject(key)]; strategyRL != nil {
+		start := time.Now()
+		err := strategyRL.Accept(ctx, key)
+		metrics.PublishStrategyRateLimiterLatencyMetrics(rateLimitKeyToString(key), start)
+		if err != nil {
+			return err
+		}
+	}
 
-	impl := grl.rateLimitImpl(key)
-	if impl != nil {
+	var rl cloud.RateLimiter
+	if impl := grl.rateLimitImpls[rateLimitKeyWithoutProject(key)]; impl != nil {
 		// Wrap the flowcontrol.RateLimiter with a AcceptRateLimiter and handle context.
 		rl = &cloud.AcceptRateLimiter{Acceptor: impl}
 	} else {
@@ -106,26 +163,33 @@ func (grl *GCERateLimiter) Accept(ctx context.Context, key *cloud.RateLimitKey) 
 
 	start := time.Now()
 	err := rl.Accept(ctx, key)
-	metrics.PublishRateLimiterMetrics(fmt.Sprintf("%s.%s.%s", key.Version, key.Service, key.Operation), start)
+	metrics.PublishRateLimiterMetrics(rateLimitKeyToString(key), start)
 	return err
 }
 
-// Observe is a no-op func to satisfy cloud.RateLimiter
-func (grl *GCERateLimiter) Observe(context.Context, error, *cloud.RateLimitKey) {}
+// Observe looks up the associated strategyRateLimiter (if exists) and passes an error there to observe.
+func (grl *GCERateLimiter) Observe(ctx context.Context, err error, key *cloud.RateLimitKey) {
+	metrics.PublishErrorRateLimiterMetrics(rateLimitKeyToString(key), err)
+	if rl := grl.strategyRLs[rateLimitKeyWithoutProject(key)]; rl != nil {
+		rl.Observe(ctx, err, key)
+	}
+}
 
-// rateLimitImpl returns the flowcontrol.RateLimiter implementation
-// associated with the passed in key.
-func (grl *GCERateLimiter) rateLimitImpl(key *cloud.RateLimitKey) flowcontrol.RateLimiter {
-	// Since the passed in key will have the ProjectID field filled in, we need to
-	// create a copy which does not, so that retrieving the rate limiter implementation
-	// through the map works as expected.
-	keyCopy := cloud.RateLimitKey{
+func rateLimitKeyToString(key *cloud.RateLimitKey) string {
+	return fmt.Sprintf("%s.%s.%s", key.Version, key.Service, key.Operation)
+}
+
+// rateLimitKeyWithoutProject returns a copy without ProjectID
+// Since the passed in key will have the ProjectID field filled in, we need to
+// create a copy which does not, so that retrieving the rate limiter implementation
+// through the map works as expected.
+func rateLimitKeyWithoutProject(key *cloud.RateLimitKey) cloud.RateLimitKey {
+	return cloud.RateLimitKey{
 		ProjectID: "",
 		Operation: key.Operation,
 		Version:   key.Version,
 		Service:   key.Service,
 	}
-	return grl.rateLimitImpls[keyCopy]
 }
 
 // Expected format of param is [version].[service].[operation]
@@ -135,8 +199,10 @@ func constructRateLimitKey(param string) (cloud.RateLimitKey, error) {
 	if len(params) != 3 {
 		return retVal, fmt.Errorf("must specify rate limit in [version].[service].[operation] format: %v", param)
 	}
-	// TODO(rramkumar): Add another layer of validation here?
 	version := meta.Version(params[0])
+	if !slices.Contains(meta.AllVersions, version) {
+		return retVal, fmt.Errorf("must specify supported version, got %v", params[0])
+	}
 	service := params[1]
 	operation := params[2]
 	retVal = cloud.RateLimitKey{
@@ -150,8 +216,7 @@ func constructRateLimitKey(param string) (cloud.RateLimitKey, error) {
 
 // constructRateLimitImpl parses the slice and returns a flowcontrol.RateLimiter
 // Expected format is [type],[param1],[param2],...
-// `key` is used for logging.
-func constructRateLimitImpl(key string, params []string) (flowcontrol.RateLimiter, error) {
+func constructRateLimitImpl(params []string) (flowcontrol.RateLimiter, error) {
 	// For now, only the "qps" type is supported.
 	rlType := params[0]
 	implArgs := params[1:]
@@ -161,11 +226,11 @@ func constructRateLimitImpl(key string, params []string) (flowcontrol.RateLimite
 		}
 		qps, err := strconv.ParseFloat(implArgs[0], 32)
 		if err != nil || qps <= 0 {
-			return nil, fmt.Errorf("invalid argument for rate limiter type %v. Either %v is not a float or not greater than 0.", rlType, implArgs[0])
+			return nil, fmt.Errorf("invalid argument for rate limiter type %v, either %v is not a float or not greater than 0", rlType, implArgs[0])
 		}
 		burst, err := strconv.Atoi(implArgs[1])
 		if err != nil {
-			return nil, fmt.Errorf("invalid argument for rate limiter type %v. Expected %v to be a int.", rlType, implArgs[1])
+			return nil, fmt.Errorf("invalid argument for rate limiter type %v, expected %v to be an int", rlType, implArgs[1])
 		}
 		if flags.F.GCERateLimitScale <= 1.0 {
 			klog.Infof("GCERateLimitScale <= 1.0 (is %f), not adjusting rate limits", flags.F.GCERateLimitScale)
@@ -180,4 +245,46 @@ func constructRateLimitImpl(key string, params []string) (flowcontrol.RateLimite
 		return tokenBucket, nil
 	}
 	return nil, fmt.Errorf("invalid rate limiter type provided: %v", rlType)
+}
+
+// constructStrategy parses the slice and returns a throttling.Strategy
+// Expected format is [type],[param1],[param2],...
+func constructStrategy(params []string) (throttling.Strategy, error) {
+	strategyType := params[0]
+	implArgs := params[1:]
+	if strategyType == "dynamic" {
+		if len(implArgs) != 7 {
+			return nil, fmt.Errorf("invalid number of args for strategy type %v. Expected %d, Got %d", strategyType, 2, len(implArgs))
+		}
+		minDelay, err := time.ParseDuration(implArgs[0])
+		if err != nil {
+			return nil, fmt.Errorf("invalid argument for strategy type %v, could not parse minDelay=%q: %v", strategyType, implArgs[0], err)
+		}
+		maxDelay, err := time.ParseDuration(implArgs[1])
+		if err != nil {
+			return nil, fmt.Errorf("invalid argument for strategy type %v, could not parse maxDelay=%q: %v", strategyType, implArgs[1], err)
+		}
+		errorsBeforeIncreasingDelay, err := strconv.Atoi(implArgs[2])
+		if err != nil {
+			return nil, fmt.Errorf("invalid argument for strategy type %v, expected errorsBeforeIncreasingDelay=%q to be an int: %v", strategyType, implArgs[2], err)
+		}
+		successesBeforeDecreasingDelay, err := strconv.Atoi(implArgs[3])
+		if err != nil {
+			return nil, fmt.Errorf("invalid argument for strategy type %v, expected successesBeforeDecreasingDelay=%q to be an int: %v", strategyType, implArgs[3], err)
+		}
+		successesBeforeResettingDelay, err := strconv.Atoi(implArgs[4])
+		if err != nil {
+			return nil, fmt.Errorf("invalid argument for strategy type %v, expected successesBeforeResettingDelay=%q to be an int: %v", strategyType, implArgs[4], err)
+		}
+		noRequestsTimeoutBeforeDecreasingDelay, err := time.ParseDuration(implArgs[5])
+		if err != nil {
+			return nil, fmt.Errorf("invalid argument for strategy type %v, could not parse noRequestsTimeoutBeforeDecreasingDelay=%q: %v", strategyType, implArgs[5], err)
+		}
+		noRequestsTimeoutBeforeResettingDelay, err := time.ParseDuration(implArgs[6])
+		if err != nil {
+			return nil, fmt.Errorf("invalid argument for strategy type %v, could not parse noRequestsTimeoutBeforeResettingDelay=%q: %v", strategyType, implArgs[6], err)
+		}
+		return throttling.NewDynamicStrategy(minDelay, maxDelay, errorsBeforeIncreasingDelay, successesBeforeDecreasingDelay, successesBeforeResettingDelay, noRequestsTimeoutBeforeDecreasingDelay, noRequestsTimeoutBeforeResettingDelay, clock.RealClock{})
+	}
+	return nil, fmt.Errorf("invalid strategy type provided: %v", strategyType)
 }

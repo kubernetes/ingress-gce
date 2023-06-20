@@ -1020,18 +1020,57 @@ func TestIsHTTPErrorCode(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
+		desc string
 		err  error
 		code int
 		want bool
 	}{
-		{nil, 400, false},
-		{errors.New("xxx"), 400, false},
-		{&googleapi.Error{Code: 200}, 400, false},
-		{&googleapi.Error{Code: 400}, 400, true},
+		{"nil error", nil, 400, false},
+		{"Random error", errors.New("xxx"), 400, false},
+		{"Error with code 200", &googleapi.Error{Code: 200}, 400, false},
+		{"Error with code 400", &googleapi.Error{Code: 400}, 400, true},
+		{"Wrapped error with code 200", fmt.Errorf("%w", &googleapi.Error{Code: 200}), 400, false},
+		{"Wrapped error with code 400", fmt.Errorf("%w", &googleapi.Error{Code: 400}), 400, true},
 	} {
 		got := IsHTTPErrorCode(tc.err, tc.code)
 		if got != tc.want {
 			t.Errorf("IsHTTPErrorCode(%v, %d) = %t; want %t", tc.err, tc.code, got, tc.want)
+		}
+	}
+}
+
+func TestIsQuotaExceededError(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		desc string
+		err  error
+		want bool
+	}{
+		{"nil error", nil, false},
+		{"Random error", errors.New("xxx"), false},
+		{"Error with code 200", &googleapi.Error{Code: 200}, false},
+		{"Error with code 429", &googleapi.Error{Code: 429}, true},
+		{"Wrapped error with code 200", fmt.Errorf("%w", &googleapi.Error{Code: 200}), false},
+		{"Wrapped error with code 429", fmt.Errorf("%w", &googleapi.Error{Code: 429}), true},
+		{"Error with code 403 and reason rateLimitExceeded", &googleapi.Error{
+			Code:    403,
+			Message: "Quota exceeded",
+			Errors: []googleapi.ErrorItem{{
+				Reason: gceRateLimitExceeded,
+			}},
+		}, true},
+		{"Wrapped error with code 403 and reason rateLimitExceeded", fmt.Errorf("%w", &googleapi.Error{
+			Code:    403,
+			Message: "Quota exceeded",
+			Errors: []googleapi.ErrorItem{{
+				Reason: gceRateLimitExceeded,
+			}},
+		}), true},
+	} {
+		got := IsQuotaExceededError(tc.err)
+		if got != tc.want {
+			t.Errorf("IsQuotaExceededError(%v) = %t; want %t", tc.err, got, tc.want)
 		}
 	}
 }

@@ -51,6 +51,16 @@ func TestClassifyError(t *testing.T) {
 			expectSyncErr: ErrEPNodeMissing,
 		},
 		{
+			desc:          "an error that wraps a NegSyncError and another error",
+			err:           fmt.Errorf("%w: %w", ErrEPNodeMissing, errors.New("additional context")),
+			expectSyncErr: ErrEPNodeMissing,
+		},
+		{
+			desc:          "an error that wraps another error and a NegSyncError",
+			err:           fmt.Errorf("%w: %w", errors.New("additional context"), ErrEPNodeMissing),
+			expectSyncErr: ErrEPNodeMissing,
+		},
+		{
 			desc: "an error that wraps a non NegSyncError",
 			err:  nonNegSyncErrorWrapped,
 			expectSyncErr: NegSyncError{

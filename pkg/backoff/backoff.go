@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package syncers
+package backoff
 
 import (
 	"fmt"
@@ -26,17 +26,19 @@ import (
 
 var ErrRetriesExceeded = fmt.Errorf("maximum retry exceeded")
 
-// backoffHandler handles delays for back off retry
-type backoffHandler interface {
-	// NextRetryDelay returns the delay for next retry or error if maximum number of retries exceeded.
-	NextRetryDelay() (time.Duration, error)
-	// ResetRetryDelay resets the retry delay
-	ResetRetryDelay()
+// BackoffHandler handles delays for back off retry
+type BackoffHandler interface {
+	// NextDelay returns the delay for next retry or error if maximum number of retries exceeded.
+	NextDelay() (time.Duration, error)
+	// ResetDelay resets the retry delay
+	ResetDelay()
+	// DecreaseDelay returns the decreased delay for next retry
+	DecreaseDelay() time.Duration
 }
 
-// exponentialBackOffHandler is a backoff handler that returns retry delays semi-exponentially with random jitter within boundary.
-// exponentialBackOffHandler returns ErrRetriesExceeded when maximum number of retries has reached.
-type exponentialBackOffHandler struct {
+// exponentialBackoffHandler is a backoff handler that returns retry delays semi-exponentially with random jitter within boundary.
+// exponentialBackoffHandler returns ErrRetriesExceeded when maximum number of retries has reached.
+type exponentialBackoffHandler struct {
 	lock           sync.Mutex
 	lastRetryDelay time.Duration
 	retryCount     int
@@ -45,8 +47,8 @@ type exponentialBackOffHandler struct {
 	maxRetryDelay  time.Duration
 }
 
-func NewExponentialBackendOffHandler(maxRetries int, minRetryDelay, maxRetryDelay time.Duration) *exponentialBackOffHandler {
-	return &exponentialBackOffHandler{
+func NewExponentialBackoffHandler(maxRetries int, minRetryDelay, maxRetryDelay time.Duration) BackoffHandler {
+	return &exponentialBackoffHandler{
 		lastRetryDelay: time.Duration(0),
 		retryCount:     0,
 		maxRetries:     maxRetries,
@@ -55,8 +57,8 @@ func NewExponentialBackendOffHandler(maxRetries int, minRetryDelay, maxRetryDela
 	}
 }
 
-// NextRetryDelay returns the next back off delay for retry.
-func (handler *exponentialBackOffHandler) NextRetryDelay() (time.Duration, error) {
+// NextDelay returns the next back off delay for retry.
+func (handler *exponentialBackoffHandler) NextDelay() (time.Duration, error) {
 	handler.lock.Lock()
 	defer handler.lock.Unlock()
 	handler.retryCount += 1
@@ -72,10 +74,26 @@ func (handler *exponentialBackOffHandler) NextRetryDelay() (time.Duration, error
 	return handler.lastRetryDelay, nil
 }
 
-// ResetRetryDelay resets the retry delay.
-func (handler *exponentialBackOffHandler) ResetRetryDelay() {
+// ResetDelay resets the retry delay.
+func (handler *exponentialBackoffHandler) ResetDelay() {
 	handler.lock.Lock()
 	defer handler.lock.Unlock()
 	handler.retryCount = 0
 	handler.lastRetryDelay = time.Duration(0)
+}
+
+// DecreaseDelay returns the decreased delay for next retry.
+func (handler *exponentialBackoffHandler) DecreaseDelay() time.Duration {
+	handler.lock.Lock()
+	defer handler.lock.Unlock()
+	handler.retryCount = 0
+	if handler.lastRetryDelay <= handler.minRetryDelay {
+		handler.lastRetryDelay = time.Duration(0)
+	} else {
+		handler.lastRetryDelay = handler.lastRetryDelay*2 - wait.Jitter(handler.lastRetryDelay, 0.5)
+		if handler.lastRetryDelay < handler.minRetryDelay {
+			handler.lastRetryDelay = handler.minRetryDelay
+		}
+	}
+	return handler.lastRetryDelay
 }

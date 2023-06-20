@@ -364,7 +364,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		ctx.ControllerMetrics,
 		ctx.L4Namer,
 		ctx.DefaultBackendSvcPort,
-		negtypes.NewAdapter(ctx.Cloud),
+		negtypes.NewAdapterWithRateLimitSpecs(ctx.Cloud, flags.F.GCERateLimit.Values()),
 		zoneGetter,
 		ctx.ClusterNamer,
 		flags.F.ResyncPeriod,
