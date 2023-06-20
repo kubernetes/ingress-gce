@@ -345,14 +345,32 @@ func PublishAnnotationMetrics(annotationSize int, labelNumber int) {
 
 // PublishGCERequestCountMetrics publishes collected metrics for GCE Request Counts
 func PublishGCERequestCountMetrics(start time.Time, requestType string, err error) {
-	result := getResult(err)
+	var result string
+	if err == nil {
+		result = resultSuccess
+	} else {
+		if utils.IsGCEServerError(err) {
+			result = gceServerError
+		} else {
+			result = otherError
+		}
+	}
 	GCERequestLatency.WithLabelValues(requestType, result).Observe(time.Since(start).Seconds())
 	GCERequestCount.WithLabelValues(requestType, result).Inc()
 }
 
 // PublishK8sRequestCountMetrics publishes collected metrics for K8s Request Counts
 func PublishK8sRequestCountMetrics(start time.Time, requestType string, err error) {
-	result := getResult(err)
+	var result string
+	if err == nil {
+		result = resultSuccess
+	} else {
+		if utils.IsK8sServerError(err) {
+			result = k8sServerError
+		} else {
+			result = otherError
+		}
+	}
 	K8sRequestLatency.WithLabelValues(requestType, result).Observe(time.Since(start).Seconds())
 	K8sRequestCount.WithLabelValues(requestType, result).Inc()
 }
