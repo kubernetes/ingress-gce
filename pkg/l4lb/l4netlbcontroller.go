@@ -24,6 +24,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"github.com/google/go-cmp/cmp"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	listers "k8s.io/client-go/listers/core/v1"
@@ -65,12 +66,13 @@ type L4NetLBController struct {
 	// syncTracker tracks the latest time an enqueued service was synced
 	syncTracker utils.TimeTracker
 
-	backendPool     *backends.Backends
-	instancePool    instancegroups.Manager
-	igLinker        *backends.RegionalInstanceGroupLinker
-	negLinker       backends.Linker
-	forwardingRules ForwardingRulesGetter
-	enableDualStack bool
+	backendPool                   *backends.Backends
+	instancePool                  instancegroups.Manager
+	igLinker                      *backends.RegionalInstanceGroupLinker
+	negLinker                     backends.Linker
+	forwardingRules               ForwardingRulesGetter
+	enableDualStack               bool
+	enableL4StrongSessionAffinity bool
 }
 
 // NewL4NetLBController creates a controller for l4 external loadbalancer.
@@ -84,17 +86,18 @@ func NewL4NetLBController(
 
 	backendPool := backends.NewPool(ctx.Cloud, ctx.L4Namer)
 	l4netLBc := &L4NetLBController{
-		ctx:             ctx,
-		serviceLister:   ctx.ServiceInformer.GetIndexer(),
-		nodeLister:      listers.NewNodeLister(ctx.NodeInformer.GetIndexer()),
-		stopCh:          stopCh,
-		translator:      ctx.Translator,
-		backendPool:     backendPool,
-		namer:           ctx.L4Namer,
-		instancePool:    ctx.InstancePool,
-		igLinker:        backends.NewRegionalInstanceGroupLinker(ctx.InstancePool, backendPool),
-		forwardingRules: forwardingrules.New(ctx.Cloud, meta.VersionGA, meta.Regional),
-		enableDualStack: ctx.EnableL4NetLBDualStack,
+		ctx:                           ctx,
+		serviceLister:                 ctx.ServiceInformer.GetIndexer(),
+		nodeLister:                    listers.NewNodeLister(ctx.NodeInformer.GetIndexer()),
+		stopCh:                        stopCh,
+		translator:                    ctx.Translator,
+		backendPool:                   backendPool,
+		namer:                         ctx.L4Namer,
+		instancePool:                  ctx.InstancePool,
+		igLinker:                      backends.NewRegionalInstanceGroupLinker(ctx.InstancePool, backendPool),
+		forwardingRules:               forwardingrules.New(ctx.Cloud, meta.VersionGA, meta.Regional),
+		enableDualStack:               ctx.EnableL4NetLBDualStack,
+		enableL4StrongSessionAffinity: ctx.EnableL4StrongSessionAffinity,
 	}
 	if ctx.NetworkInformer != nil {
 		l4netLBc.networkLister = ctx.NetworkInformer.GetIndexer()
@@ -184,22 +187,28 @@ func (lc *L4NetLBController) needsUpdate(newSvc, oldSvc *v1.Service) bool {
 		// Ignore any other changes if both the previous and new service do not need L4 External LB.
 		return false
 	}
+
 	if !reflect.DeepEqual(oldSvc.Spec.LoadBalancerSourceRanges, newSvc.Spec.LoadBalancerSourceRanges) {
 		recorder.Eventf(newSvc, v1.EventTypeNormal, "LoadBalancerSourceRanges", "%v -> %v",
 			oldSvc.Spec.LoadBalancerSourceRanges, newSvc.Spec.LoadBalancerSourceRanges)
 		return true
 	}
 
-	if !portsEqualForLBService(oldSvc, newSvc) || oldSvc.Spec.SessionAffinity != newSvc.Spec.SessionAffinity {
-		recorder.Eventf(newSvc, v1.EventTypeNormal, "Ports/SessionAffinity", "Ports %v, SessionAffinity %v -> Ports %v, SessionAffinity  %v",
-			oldSvc.Spec.Ports, oldSvc.Spec.SessionAffinity, newSvc.Spec.Ports, newSvc.Spec.SessionAffinity)
+	if !portsEqualForLBService(oldSvc, newSvc) {
+		recorder.Eventf(newSvc, v1.EventTypeNormal, "Ports", "%v -> %v", oldSvc.Spec.Ports, newSvc.Spec.Ports)
 		return true
 	}
-	if !reflect.DeepEqual(oldSvc.Spec.SessionAffinityConfig, newSvc.Spec.SessionAffinityConfig) {
-		recorder.Eventf(newSvc, v1.EventTypeNormal, "SessionAffinityConfig", "%v -> %v",
-			oldSvc.Spec.SessionAffinityConfig, newSvc.Spec.SessionAffinityConfig)
+
+	if diff := cmp.Diff(oldSvc.Spec.SessionAffinity, newSvc.Spec.SessionAffinity); diff != "" {
+		recorder.Eventf(newSvc, v1.EventTypeNormal, "SessionAffinity", "%v -> %v", oldSvc.Spec.SessionAffinity, newSvc.Spec.SessionAffinity)
 		return true
 	}
+
+	if diff := cmp.Diff(oldSvc.Spec.SessionAffinityConfig, newSvc.Spec.SessionAffinityConfig); diff != "" {
+		recorder.Eventf(newSvc, v1.EventTypeNormal, "SessionAffinityConfig", "old -> new %s", diff)
+		return true
+	}
+
 	if oldSvc.Spec.LoadBalancerIP != newSvc.Spec.LoadBalancerIP {
 		recorder.Eventf(newSvc, v1.EventTypeNormal, "LoadbalancerIP", "%v -> %v",
 			oldSvc.Spec.LoadBalancerIP, newSvc.Spec.LoadBalancerIP)
@@ -443,6 +452,7 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 		klog.Infof("Skipping syncInternal. Service %s does not have RBS enabled", service.Name)
 		return nil
 	}
+
 	networkInfo, err := network.ServiceNetwork(service, lc.networkLister, lc.gkeNetworkParamSetLister, lc.ctx.Cloud, klog.TODO())
 	if err != nil {
 		klog.Errorf("Failed to get network for service %s/%s, err: %v", service.Namespace, service.Name, err)
@@ -455,12 +465,13 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 	}()
 
 	l4NetLBParams := &loadbalancers.L4NetLBParams{
-		Service:          service,
-		Cloud:            lc.ctx.Cloud,
-		Namer:            lc.namer,
-		Recorder:         lc.ctx.Recorder(service.Namespace),
-		DualStackEnabled: lc.enableDualStack,
-		NetworkInfo:      *networkInfo,
+		Service:                      service,
+		Cloud:                        lc.ctx.Cloud,
+		Namer:                        lc.namer,
+		Recorder:                     lc.ctx.Recorder(service.Namespace),
+		DualStackEnabled:             lc.enableDualStack,
+		StrongSessionAffinityEnabled: lc.enableL4StrongSessionAffinity,
+		NetworkInfo:                  *networkInfo,
 	}
 	l4netlb := loadbalancers.NewL4NetLB(l4NetLBParams)
 

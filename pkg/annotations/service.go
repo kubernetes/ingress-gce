@@ -120,8 +120,10 @@ const (
 	FirewallForHealthcheckIPv6Resource = FirewallRuleForHealthcheckKey + IPv6Suffix
 	AddressResource                    = "address"
 	// TODO(slavik): import this from gce_annotations when it will be merged in k8s
-	RBSAnnotationKey = "cloud.google.com/l4-rbs"
-	RBSEnabled       = "enabled"
+	RBSAnnotationKey                   = "cloud.google.com/l4-rbs"
+	RBSEnabled                         = "enabled"
+	StrongSessionAffinityAnnotationKey = "networking.gke.io/l4-strong-session-affinity"
+	StrongSessionAffinityEnabled       = "enabled"
 	// CustomSubnetAnnotationKey is the new way to specify custom subnet both for ILB and NetLB (only for IPv6)
 	// Replaces networking.gke.io/internal-load-balancer-subnet with backward compatibility.
 	CustomSubnetAnnotationKey = "networking.gke.io/load-balancer-subnet"
@@ -266,6 +268,18 @@ func HasRBSAnnotation(service *v1.Service) bool {
 	}
 
 	if val, ok := service.Annotations[RBSAnnotationKey]; ok && val == RBSEnabled {
+		return true
+	}
+	return false
+}
+
+// HasStrongSessionAffinityAnnotation checks if the given service has the strong session affinity annotation.
+func HasStrongSessionAffinityAnnotation(service *v1.Service) bool {
+	if service == nil {
+		return false
+	}
+
+	if val, ok := service.Annotations[StrongSessionAffinityAnnotationKey]; ok && val == StrongSessionAffinityEnabled {
 		return true
 	}
 	return false

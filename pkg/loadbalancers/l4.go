@@ -429,7 +429,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	}
 
 	// ensure backend service
-	bs, err := l4.backendPool.EnsureL4BackendService(bsName, hcLink, string(protocol), string(l4.Service.Spec.SessionAffinity), string(cloud.SchemeInternal), l4.NamespacedName, l4.network)
+	bs, err := l4.backendPool.EnsureL4BackendService(bsName, hcLink, string(protocol), string(l4.Service.Spec.SessionAffinity), string(cloud.SchemeInternal), l4.NamespacedName, l4.network, &composite.BackendServiceConnectionTrackingPolicy{})
 	if err != nil {
 		result.GCEResourceInError = annotations.BackendServiceResource
 		result.Error = err

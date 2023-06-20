@@ -209,19 +209,20 @@ func main() {
 	cloud := app.NewGCEClient()
 	defaultBackendServicePort := app.DefaultBackendServicePort(kubeClient)
 	ctxConfig := ingctx.ControllerContextConfig{
-		Namespace:              flags.F.WatchNamespace,
-		ResyncPeriod:           flags.F.ResyncPeriod,
-		NumL4Workers:           flags.F.NumL4Workers,
-		NumL4NetLBWorkers:      flags.F.NumL4NetLBWorkers,
-		DefaultBackendSvcPort:  defaultBackendServicePort,
-		HealthCheckPath:        flags.F.HealthCheckPath,
-		FrontendConfigEnabled:  flags.F.EnableFrontendConfig,
-		EnableASMConfigMap:     flags.F.EnableASMConfigMapBasedConfig,
-		ASMConfigMapNamespace:  flags.F.ASMConfigMapBasedConfigNamespace,
-		ASMConfigMapName:       flags.F.ASMConfigMapBasedConfigCMName,
-		MaxIGSize:              flags.F.MaxIGSize,
-		EnableL4ILBDualStack:   flags.F.EnableL4ILBDualStack,
-		EnableL4NetLBDualStack: flags.F.EnableL4NetLBDualStack,
+		Namespace:                     flags.F.WatchNamespace,
+		ResyncPeriod:                  flags.F.ResyncPeriod,
+		NumL4Workers:                  flags.F.NumL4Workers,
+		NumL4NetLBWorkers:             flags.F.NumL4NetLBWorkers,
+		DefaultBackendSvcPort:         defaultBackendServicePort,
+		HealthCheckPath:               flags.F.HealthCheckPath,
+		FrontendConfigEnabled:         flags.F.EnableFrontendConfig,
+		EnableASMConfigMap:            flags.F.EnableASMConfigMapBasedConfig,
+		ASMConfigMapNamespace:         flags.F.ASMConfigMapBasedConfigNamespace,
+		ASMConfigMapName:              flags.F.ASMConfigMapBasedConfigCMName,
+		MaxIGSize:                     flags.F.MaxIGSize,
+		EnableL4ILBDualStack:          flags.F.EnableL4ILBDualStack,
+		EnableL4NetLBDualStack:        flags.F.EnableL4NetLBDualStack,
+		EnableL4StrongSessionAffinity: flags.F.EnableL4StrongSessionAffinity,
 	}
 	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, ingParamsClient, svcAttachmentClient, networkClient, cloud, namer, kubeSystemUID, ctxConfig)
 	go app.RunHTTPServer(ctx.HealthCheck)

@@ -25,6 +25,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
+	"github.com/golang/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
 	ga "google.golang.org/api/compute/v1"
 	v1 "k8s.io/api/core/v1"
@@ -762,6 +763,106 @@ func mustSetupNetLBTestHandler(t *testing.T, svc *v1.Service, nodeNames []string
 	// Create cluster subnet. Mock GCE uses subnet with empty string name.
 	test.MustCreateDualStackClusterSubnet(t, l4NetLB.cloud, subnetExternalIPv6AccessType)
 	return l4NetLB
+}
+
+func TestCheckStrongSessionAffinityRequirements(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		desc                        string
+		enableStrongSessionAffinity bool
+		serviceAnnotations          map[string]string
+		sessionAffinityType         v1.ServiceAffinity
+		sessionAffinityConfig       *v1.SessionAffinityConfig
+		expectError                 bool
+	}{
+		{
+			desc:                        "strong session affinity wasn't specified",
+			enableStrongSessionAffinity: false,
+			serviceAnnotations:          make(map[string]string),
+			sessionAffinityConfig:       &v1.SessionAffinityConfig{},
+			expectError:                 false,
+		},
+		{
+			desc:                        "strong session affinity doesn't have required flag",
+			enableStrongSessionAffinity: false,
+			serviceAnnotations: map[string]string{
+				annotations.StrongSessionAffinityAnnotationKey: annotations.StrongSessionAffinityEnabled,
+			},
+			sessionAffinityType:   v1.ServiceAffinityClientIP,
+			sessionAffinityConfig: &v1.SessionAffinityConfig{},
+			expectError:           true,
+		},
+		{
+			desc:                        "strong session affinity was enabled on cluster but not on service annotation",
+			enableStrongSessionAffinity: true,
+			serviceAnnotations:          make(map[string]string),
+			sessionAffinityType:         v1.ServiceAffinityClientIP,
+			sessionAffinityConfig:       &v1.SessionAffinityConfig{},
+			expectError:                 false,
+		},
+		{
+			desc:                        "strong session affinity has wrong ServiceAffinity type",
+			enableStrongSessionAffinity: true,
+			serviceAnnotations: map[string]string{
+				annotations.StrongSessionAffinityAnnotationKey: annotations.StrongSessionAffinityEnabled,
+			},
+			sessionAffinityType:   v1.ServiceAffinityNone,
+			sessionAffinityConfig: &v1.SessionAffinityConfig{ClientIP: &v1.ClientIPConfig{TimeoutSeconds: proto.Int32(MinStrongSessionAffinityIdleTimeout)}},
+			expectError:           true,
+		},
+		{
+			desc:                        "strong session affinity has wrong timeout type",
+			enableStrongSessionAffinity: true,
+			serviceAnnotations: map[string]string{
+				annotations.StrongSessionAffinityAnnotationKey: annotations.StrongSessionAffinityEnabled,
+			},
+			sessionAffinityType:   v1.ServiceAffinityClientIP,
+			sessionAffinityConfig: &v1.SessionAffinityConfig{ClientIP: &v1.ClientIPConfig{TimeoutSeconds: proto.Int32(MaxSessionAffinityIdleTimeout + 1)}},
+			expectError:           true,
+		},
+		{
+			desc:                        "strong session affinity has empty ClientIPConfig",
+			enableStrongSessionAffinity: true,
+			serviceAnnotations: map[string]string{
+				annotations.StrongSessionAffinityAnnotationKey: annotations.StrongSessionAffinityEnabled,
+			},
+			sessionAffinityType:   v1.ServiceAffinityClientIP,
+			sessionAffinityConfig: &v1.SessionAffinityConfig{ClientIP: &v1.ClientIPConfig{}},
+			expectError:           true,
+		},
+		{
+			desc:                        "strong session affinity set up is correct",
+			enableStrongSessionAffinity: true,
+			serviceAnnotations: map[string]string{
+				annotations.StrongSessionAffinityAnnotationKey: annotations.StrongSessionAffinityEnabled,
+			},
+			sessionAffinityType:   v1.ServiceAffinityClientIP,
+			sessionAffinityConfig: &v1.SessionAffinityConfig{ClientIP: &v1.ClientIPConfig{TimeoutSeconds: proto.Int32(MinStrongSessionAffinityIdleTimeout)}},
+			expectError:           false,
+		},
+	}
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			service := test.NewL4NetLBRBSService(8080)
+			for key, val := range tc.serviceAnnotations {
+				service.Annotations[key] = val
+			}
+			service.Spec.SessionAffinity = tc.sessionAffinityType
+			service.Spec.SessionAffinityConfig = tc.sessionAffinityConfig
+			l4netlb := NewL4NetLB(&L4NetLBParams{
+				Service:                      service,
+				StrongSessionAffinityEnabled: tc.enableStrongSessionAffinity,
+			})
+
+			err := l4netlb.checkStrongSessionAffinityRequirements()
+			if tc.expectError != (err != nil) {
+				t.Errorf("checkStrongSessionAffinityRequirements returned (%v) but WasErrorExpected=%v", err, tc.expectError)
+			}
+		})
+	}
 }
 
 func ensureLoadBalancer(port int, vals gce.TestClusterValues, fakeGCE *gce.Cloud, t *testing.T) (*v1.Service, *L4NetLB) {

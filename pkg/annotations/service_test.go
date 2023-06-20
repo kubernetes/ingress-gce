@@ -21,7 +21,7 @@ import (
 	"reflect"
 	"testing"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -668,6 +668,49 @@ func TestRBSAnnotation(t *testing.T) {
 			got := HasRBSAnnotation(tc.svc)
 			if tc.want != got {
 				t.Errorf("output of HasRBSAnnotaiton differed, want=%v, got=%v", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestHasStrongSessionAffinityAnnotation(t *testing.T) {
+	for _, tc := range []struct {
+		desc string
+		svc  *v1.Service
+		want bool
+	}{
+		{
+			desc: "Strong Session Affinity annotation was not specified",
+			svc:  &v1.Service{},
+			want: false,
+		},
+		{
+			desc: "Strong Session Affinity annotation was correctly specified",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						StrongSessionAffinityAnnotationKey: StrongSessionAffinityEnabled,
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			desc: "Strong Session Affinity annotation has wrong value",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						StrongSessionAffinityAnnotationKey: "otherValue",
+					},
+				},
+			},
+			want: false,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := HasStrongSessionAffinityAnnotation(tc.svc)
+			if tc.want != got {
+				t.Errorf("output of HasStrongSessionAffinityAnnotation differed, want=%v, got=%v", tc.want, got)
 			}
 		})
 	}
