@@ -470,7 +470,8 @@ func TestDualStackNetLBTransitions(t *testing.T) {
 			l4NetLB.healthChecks = healthchecksl4.Fake(fakeGCE, l4NetLBParams.Recorder)
 
 			if _, err := test.CreateAndInsertNodes(l4NetLB.cloud, nodeNames, vals.ZoneName); err != nil {
-				t.Errorf("Unexpected error when adding nodes %v", err)
+				t.Errorf(
+					"Unexpected error when adding nodes %v", err)
 			}
 
 			result := l4NetLB.EnsureFrontend(nodeNames, svc)
@@ -624,6 +625,75 @@ func TestDualStackNetLBSyncIgnoresNoAnnotationIPv4Resources(t *testing.T) {
 
 	l4NetLB.EnsureLoadBalancerDeleted(l4NetLB.Service)
 	// After complete deletion, IPv6 and IPv4 resources should be cleaned up, even if the were leaked
+	assertDualStackNetLBResourcesDeleted(t, l4NetLB)
+}
+
+func TestEnsureIPv6ExternalLoadBalancerCustomSubnet(t *testing.T) {
+	t.Parallel()
+	nodeNames := []string{"test-node-1"}
+	vals := gce.DefaultTestClusterValues()
+
+	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+	fakeGCE := getFakeGCECloud(vals)
+
+	svc := test.NewL4NetLBRBSService(8080)
+	l4NetLBParams := &L4NetLBParams{
+		Service:          svc,
+		Cloud:            fakeGCE,
+		Namer:            namer,
+		Recorder:         record.NewFakeRecorder(100),
+		DualStackEnabled: true,
+	}
+	l4NetLB := NewL4NetLB(l4NetLBParams)
+	l4NetLB.healthChecks = healthchecksl4.Fake(fakeGCE, l4NetLBParams.Recorder)
+
+	if _, err := test.CreateAndInsertNodes(l4NetLB.cloud, nodeNames, vals.ZoneName); err != nil {
+		t.Errorf("Unexpected error when adding nodes %v", err)
+	}
+
+	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
+
+	result := l4NetLB.EnsureFrontend(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+	}
+	svc.Annotations = result.Annotations
+	assertDualStackNetLBResourcesWithCustomIPv6Subnet(t, l4NetLB, nodeNames, l4NetLB.cloud.SubnetworkURL())
+
+	// add custom subnet annotation
+	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "test-subnet"
+	result = l4NetLB.EnsureFrontend(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+	}
+	svc.Annotations = result.Annotations
+	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "test-subnet"
+	assertDualStackNetLBResourcesWithCustomIPv6Subnet(t, l4NetLB, nodeNames, "test-subnet")
+
+	// Change to a different subnet
+	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "another-subnet"
+	result = l4NetLB.EnsureFrontend(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+	}
+	svc.Annotations = result.Annotations
+	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "another-subnet"
+	assertDualStackNetLBResourcesWithCustomIPv6Subnet(t, l4NetLB, nodeNames, "another-subnet")
+
+	// remove the annotation - NetLB should revert to default subnet.
+	delete(svc.Annotations, annotations.CustomSubnetAnnotationKey)
+	result = l4NetLB.EnsureFrontend(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+	}
+	svc.Annotations = result.Annotations
+	assertDualStackNetLBResourcesWithCustomIPv6Subnet(t, l4NetLB, nodeNames, l4NetLB.cloud.SubnetworkURL())
+
+	// Delete the loadbalancer
+	result = l4NetLB.EnsureLoadBalancerDeleted(svc)
+	if result.Error != nil {
+		t.Errorf("Unexpected error deleting loadbalancer - err %v", result.Error)
+	}
 	assertDualStackNetLBResourcesDeleted(t, l4NetLB)
 }
 
@@ -803,8 +873,12 @@ func assertNetLBResources(t *testing.T, l4NetLB *L4NetLB, nodeNames []string) {
 		t.Errorf("Expected annotations %v, got %v, diff %v", expectedAnnotations, l4NetLB.Service.Annotations, diff)
 	}
 }
-
 func assertDualStackNetLBResources(t *testing.T, l4NetLB *L4NetLB, nodeNames []string) {
+	t.Helper()
+	assertDualStackNetLBResourcesWithCustomIPv6Subnet(t, l4NetLB, nodeNames, l4NetLB.cloud.SubnetworkURL())
+}
+
+func assertDualStackNetLBResourcesWithCustomIPv6Subnet(t *testing.T, l4NetLB *L4NetLB, nodeNames []string, expectedIPv6Subnet string) {
 	t.Helper()
 
 	// Check that HealthCheck is created
@@ -840,7 +914,7 @@ func assertDualStackNetLBResources(t *testing.T, l4NetLB *L4NetLB, nodeNames []s
 		}
 	}
 	if utils.NeedsIPv6(l4NetLB.Service) {
-		err = verifyNetLBIPv6ForwardingRule(l4NetLB, backendService.SelfLink)
+		err = verifyNetLBIPv6ForwardingRule(l4NetLB, backendService.SelfLink, expectedIPv6Subnet)
 		if err != nil {
 			t.Errorf("verifyNetLBIPv6ForwardingRule(_, %s) returned error %v, want nil", backendService.SelfLink, err)
 		}
@@ -976,15 +1050,15 @@ func getAndVerifyNetLBBackendService(l4netlb *L4NetLB, healthCheck *composite.He
 
 func verifyNetLBIPv4ForwardingRule(l4netlb *L4NetLB, backendServiceLink string) error {
 	frName := l4netlb.frName()
-	return verifyNetLBForwardingRule(l4netlb, frName, backendServiceLink)
+	return verifyNetLBForwardingRule(l4netlb, frName, backendServiceLink, "")
 }
 
-func verifyNetLBIPv6ForwardingRule(l4netlb *L4NetLB, backendServiceLink string) error {
+func verifyNetLBIPv6ForwardingRule(l4netlb *L4NetLB, backendServiceLink string, expectedSubnet string) error {
 	ipv6FrName := l4netlb.ipv6FRName()
-	return verifyNetLBForwardingRule(l4netlb, ipv6FrName, backendServiceLink)
+	return verifyNetLBForwardingRule(l4netlb, ipv6FrName, backendServiceLink, expectedSubnet)
 }
 
-func verifyNetLBForwardingRule(l4netlb *L4NetLB, frName string, backendServiceLink string) error {
+func verifyNetLBForwardingRule(l4netlb *L4NetLB, frName string, backendServiceLink string, expectedSubnet string) error {
 	fwdRule, err := composite.GetForwardingRule(l4netlb.cloud, meta.RegionalKey(frName, l4netlb.cloud.Region()), meta.VersionGA)
 	if err != nil {
 		return fmt.Errorf("failed to fetch forwarding rule %s - err %w", frName, err)
@@ -1009,6 +1083,11 @@ func verifyNetLBForwardingRule(l4netlb *L4NetLB, frName string, backendServiceLi
 	if err == nil || addr != nil {
 		return fmt.Errorf("expected error when looking up ephemeral address, got %v", addr)
 	}
+
+	if !strings.HasSuffix(fwdRule.Subnetwork, expectedSubnet) {
+		return fmt.Errorf("fwdRule.Subnetwork = %s, expectedSubnet = %s. Exepected suffixes to match", fwdRule.Subnetwork, expectedSubnet)
+	}
+
 	return nil
 }
 
@@ -1090,6 +1169,9 @@ func buildExpectedNetLBAnnotations(l4netlb *L4NetLB) map[string]string {
 		} else {
 			expectedAnnotations[annotations.UDPForwardingRuleIPv6Key] = ipv6FRName
 		}
+	}
+	if val, ok := l4netlb.Service.Annotations[annotations.CustomSubnetAnnotationKey]; ok {
+		expectedAnnotations[annotations.CustomSubnetAnnotationKey] = val
 	}
 	return expectedAnnotations
 }

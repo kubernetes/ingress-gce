@@ -115,7 +115,7 @@ func (l4 *L4) getILBOptions() gce.ILBOptions {
 	}
 
 	return gce.ILBOptions{AllowGlobalAccess: gce.GetLoadBalancerAnnotationAllowGlobalAccess(l4.Service),
-		SubnetName: gce.GetLoadBalancerAnnotationSubnet(l4.Service)}
+		SubnetName: annotations.FromService(l4.Service).GetInternalLoadBalancerAnnotationSubnet()}
 }
 
 // EnsureInternalLoadBalancerDeleted performs a cleanup of all GCE resources for the given loadbalancer service.

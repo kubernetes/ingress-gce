@@ -1053,7 +1053,7 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
-	assertILBResources(t, l4, nodeNames, result.Annotations)
+	assertILBResourcesWithCustomSubnet(t, l4, nodeNames, result.Annotations, l4.cloud.SubnetworkURL())
 
 	frName := l4.GetFRName()
 	fwdRule, err := composite.GetForwardingRule(l4.cloud, meta.RegionalKey(frName, l4.cloud.Region()), meta.VersionGA)
@@ -1075,16 +1075,9 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
-	assertILBResources(t, l4, nodeNames, result.Annotations)
+	assertILBResourcesWithCustomSubnet(t, l4, nodeNames, result.Annotations, "test-subnet")
 	if result.Status.Ingress[0].IP != requestedIP {
 		t.Fatalf("Reserved IP %s not propagated, Got '%s'", requestedIP, result.Status.Ingress[0].IP)
-	}
-	fwdRule, err = composite.GetForwardingRule(l4.cloud, meta.RegionalKey(frName, l4.cloud.Region()), meta.VersionGA)
-	if err != nil || fwdRule == nil {
-		t.Errorf("Unexpected error looking up forwarding rule - err %v", err)
-	}
-	if !strings.HasSuffix(fwdRule.Subnetwork, "test-subnet") {
-		t.Errorf("Unexpected subnet value '%s' in ILB ForwardingRule, expected 'test-subnet'", fwdRule.Subnetwork)
 	}
 
 	// Change to a different subnet
@@ -1096,24 +1089,33 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
-	assertILBResources(t, l4, nodeNames, result.Annotations)
+	assertILBResourcesWithCustomSubnet(t, l4, nodeNames, result.Annotations, "another-subnet")
 	if result.Status.Ingress[0].IP != requestedIP {
 		t.Errorf("Reserved IP %s not propagated, Got %s", requestedIP, result.Status.Ingress[0].IP)
 	}
-	fwdRule, err = composite.GetForwardingRule(l4.cloud, meta.RegionalKey(frName, l4.cloud.Region()), meta.VersionGA)
-	if err != nil || fwdRule == nil {
-		t.Errorf("Unexpected error looking up forwarding rule - err %v", err)
-	}
-	if !strings.HasSuffix(fwdRule.Subnetwork, "another-subnet") {
-		t.Errorf("Unexpected subnet value' %s' in ILB ForwardingRule, expected 'another-subnet'", fwdRule.Subnetwork)
-	}
-	// remove the annotation - ILB should revert to default subnet.
-	delete(svc.Annotations, gce.ServiceAnnotationILBSubnet)
+
+	// Verify new annotation "networking.gke.io/load-balancer-subnet" works and get prioritized.
+	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "even-one-more-subnet"
 	result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
-	assertILBResources(t, l4, nodeNames, result.Annotations)
+	if len(result.Status.Ingress) == 0 {
+		t.Errorf("Got empty loadBalancer status using handler %v", l4)
+	}
+	assertILBResourcesWithCustomSubnet(t, l4, nodeNames, result.Annotations, "even-one-more-subnet")
+	if result.Status.Ingress[0].IP != requestedIP {
+		t.Errorf("Reserved IP %s not propagated, Got %s", requestedIP, result.Status.Ingress[0].IP)
+	}
+
+	// remove both annotations - ILB should revert to default subnet.
+	delete(svc.Annotations, gce.ServiceAnnotationILBSubnet)
+	delete(svc.Annotations, annotations.CustomSubnetAnnotationKey)
+	result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+	}
+	assertILBResourcesWithCustomSubnet(t, l4, nodeNames, result.Annotations, l4.cloud.SubnetworkURL())
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
@@ -1398,7 +1400,7 @@ func TestDualStackInternalLoadBalancerModifyProtocol(t *testing.T) {
 					return false, err
 				}
 				// we don't reserve addresses for IPv6 forwarding rules
-				if fr.IpVersion == "IPV6" {
+				if fr.IpVersion == IPVersionIPv6 {
 					return false, nil
 				}
 
@@ -2037,6 +2039,11 @@ func TestDualStackILBSyncIgnoresNoAnnotationIPv4Resources(t *testing.T) {
 
 func assertILBResources(t *testing.T, l4 *L4, nodeNames []string, resourceAnnotations map[string]string) {
 	t.Helper()
+	assertILBResourcesWithCustomSubnet(t, l4, nodeNames, resourceAnnotations, l4.cloud.SubnetworkURL())
+}
+
+func assertILBResourcesWithCustomSubnet(t *testing.T, l4 *L4, nodeNames []string, resourceAnnotations map[string]string, expectedSubnet string) {
+	t.Helper()
 
 	err := verifyILBIPv4NodesFirewall(l4, nodeNames)
 	if err != nil {
@@ -2058,7 +2065,7 @@ func assertILBResources(t *testing.T, l4 *L4, nodeNames []string, resourceAnnota
 		t.Errorf("getAndVerifyILBBackendService(_, %v) returned error %v, want nil", healthCheck, err)
 	}
 
-	err = verifyILBIPv4ForwardingRule(l4, backendService.SelfLink)
+	err = verifyILBIPv4ForwardingRule(l4, backendService.SelfLink, expectedSubnet)
 	if err != nil {
 		t.Errorf("getAndVerifyILBForwardingRule(_, %s) returned error %v, want nil", backendService.SelfLink, err)
 	}
@@ -2072,6 +2079,12 @@ func assertILBResources(t *testing.T, l4 *L4, nodeNames []string, resourceAnnota
 func assertDualStackILBResources(t *testing.T, l4 *L4, nodeNames []string) {
 	t.Helper()
 
+	assertDualStackILBResourcesWithCustomSubnet(t, l4, nodeNames, l4.cloud.SubnetworkURL())
+}
+
+func assertDualStackILBResourcesWithCustomSubnet(t *testing.T, l4 *L4, nodeNames []string, expectedSubnet string) {
+	t.Helper()
+
 	healthCheck, err := getAndVerifyILBHealthCheck(l4)
 	if err != nil {
 		t.Errorf("getAndVerifyHealthCheck(_) returned error %v, want nil", err)
@@ -2083,7 +2096,7 @@ func assertDualStackILBResources(t *testing.T, l4 *L4, nodeNames []string) {
 	}
 
 	if utils.NeedsIPv4(l4.Service) {
-		err = verifyILBIPv4ForwardingRule(l4, backendService.SelfLink)
+		err = verifyILBIPv4ForwardingRule(l4, backendService.SelfLink, expectedSubnet)
 		if err != nil {
 			t.Errorf("verifyILBIPv4ForwardingRule(_, %s) returned error %v, want nil", backendService.SelfLink, err)
 		}
@@ -2104,7 +2117,7 @@ func assertDualStackILBResources(t *testing.T, l4 *L4, nodeNames []string) {
 		}
 	}
 	if utils.NeedsIPv6(l4.Service) {
-		err = verifyILBIPv6ForwardingRule(l4, backendService.SelfLink)
+		err = verifyILBIPv6ForwardingRule(l4, backendService.SelfLink, expectedSubnet)
 		if err != nil {
 			t.Errorf("verifyILBIPv6ForwardingRule(_, %s) returned error %v, want nil", backendService.SelfLink, err)
 		}
@@ -2227,17 +2240,17 @@ func getAndVerifyILBBackendService(l4 *L4, healthCheck *composite.HealthCheck) (
 	return bs, nil
 }
 
-func verifyILBIPv4ForwardingRule(l4 *L4, backendServiceLink string) error {
+func verifyILBIPv4ForwardingRule(l4 *L4, backendServiceLink, expectedSubnet string) error {
 	frName := l4.GetFRName()
-	return verifyILBForwardingRule(l4, frName, backendServiceLink)
+	return verifyILBForwardingRule(l4, frName, backendServiceLink, expectedSubnet)
 }
 
-func verifyILBIPv6ForwardingRule(l4 *L4, backendServiceLink string) error {
+func verifyILBIPv6ForwardingRule(l4 *L4, backendServiceLink, expectedSubnet string) error {
 	ipv6FrName := l4.getIPv6FRName()
-	return verifyILBForwardingRule(l4, ipv6FrName, backendServiceLink)
+	return verifyILBForwardingRule(l4, ipv6FrName, backendServiceLink, expectedSubnet)
 }
 
-func verifyILBForwardingRule(l4 *L4, frName string, backendServiceLink string) error {
+func verifyILBForwardingRule(l4 *L4, frName, backendServiceLink, expectedSubnet string) error {
 	fwdRule, err := composite.GetForwardingRule(l4.cloud, meta.RegionalKey(frName, l4.cloud.Region()), meta.VersionGA)
 	if err != nil {
 		return fmt.Errorf("failed to fetch forwarding rule %s - err %w", frName, err)
@@ -2258,16 +2271,9 @@ func verifyILBForwardingRule(l4 *L4, frName string, backendServiceLink string) e
 		return fmt.Errorf("unexpected backend service link '%s' for forwarding rule, expected '%s'", fwdRule.BackendService, backendServiceLink)
 	}
 
-	subnet := l4.Service.Annotations[gce.ServiceAnnotationILBSubnet]
-	if subnet == "" {
-		subnet = l4.cloud.SubnetworkURL()
-	} else {
-		key := meta.RegionalKey(subnet, l4.cloud.Region())
-		subnet = cloud.SelfLink(meta.VersionGA, l4.cloud.ProjectID(), "subnetworks", key)
-	}
-	if fwdRule.Subnetwork != subnet {
+	if !strings.HasSuffix(fwdRule.Subnetwork, expectedSubnet) {
 		return fmt.Errorf("unexpected subnetwork %q in forwarding rule, expected %q",
-			fwdRule.Subnetwork, subnet)
+			fwdRule.Subnetwork, expectedSubnet)
 	}
 
 	addr, err := l4.cloud.GetRegionAddress(frName, l4.cloud.Region())
