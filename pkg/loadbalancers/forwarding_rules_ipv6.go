@@ -38,12 +38,12 @@ const (
 	IPVersionIPv6 = "IPV6"
 )
 
-func (l4 *L4) ensureIPv6ForwardingRule(bsLink string, options gce.ILBOptions, existingIPv6FwdRule *composite.ForwardingRule, ipv6ToUse string) (*composite.ForwardingRule, error) {
+func (l4 *L4) ensureIPv6ForwardingRule(bsLink string, options gce.ILBOptions, existingIPv6FwdRule *composite.ForwardingRule, ipv6AddressToUse string) (*composite.ForwardingRule, error) {
 	start := time.Now()
 
-	expectedIPv6FwdRule, err := l4.buildExpectedIPv6ForwardingRule(bsLink, options, ipv6ToUse)
+	expectedIPv6FwdRule, err := l4.buildExpectedIPv6ForwardingRule(bsLink, options, ipv6AddressToUse)
 	if err != nil {
-		return nil, fmt.Errorf("l4.buildExpectedIPv6ForwardingRule(%s, %v, %s) returned error %w, want nil", bsLink, options, ipv6ToUse, err)
+		return nil, fmt.Errorf("l4.buildExpectedIPv6ForwardingRule(%s, %v, %s) returned error %w, want nil", bsLink, options, ipv6AddressToUse, err)
 	}
 
 	klog.V(2).Infof("Ensuring internal ipv6 forwarding rule %s for L4 ILB Service %s/%s, backend service link: %s", expectedIPv6FwdRule.Name, l4.Service.Namespace, l4.Service.Name, bsLink)
@@ -76,7 +76,7 @@ func (l4 *L4) ensureIPv6ForwardingRule(bsLink string, options gce.ILBOptions, ex
 	return createdFr, err
 }
 
-func (l4 *L4) buildExpectedIPv6ForwardingRule(bsLink string, options gce.ILBOptions, ipv6ToUse string) (*composite.ForwardingRule, error) {
+func (l4 *L4) buildExpectedIPv6ForwardingRule(bsLink string, options gce.ILBOptions, ipv6AddressToUse string) (*composite.ForwardingRule, error) {
 	frName := l4.getIPv6FRName()
 
 	frDesc, err := utils.MakeL4IPv6ForwardingRuleDescription(l4.Service)
@@ -100,7 +100,7 @@ func (l4 *L4) buildExpectedIPv6ForwardingRule(bsLink string, options gce.ILBOpti
 	fr := &composite.ForwardingRule{
 		Name:                frName,
 		Description:         frDesc,
-		IPAddress:           ipv6ToUse,
+		IPAddress:           ipv6AddressToUse,
 		IPProtocol:          string(protocol),
 		Ports:               ports,
 		LoadBalancingScheme: string(cloud.SchemeInternal),
@@ -246,7 +246,7 @@ func EqualIPv6ForwardingRules(fr1, fr2 *composite.ForwardingRule) (bool, error) 
 		fr1.NetworkTier == fr2.NetworkTier, nil
 }
 
-func ipv6IPToUse(ipv6FwdRule *composite.ForwardingRule, requestedSubnet string) string {
+func ipv6AddressToUse(ipv6FwdRule *composite.ForwardingRule, requestedSubnet string) string {
 	if ipv6FwdRule == nil {
 		return ""
 	}

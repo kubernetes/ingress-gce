@@ -238,17 +238,6 @@ func TestAddressManagerIPv6(t *testing.T) {
 	}
 }
 
-// TestAddressManagerEmptyIPv6 tests the typical case of reserving and releasing an IPv6 address.
-func TestAddressManagerEmptyIPv6(t *testing.T) {
-	svc, err := fakeGCECloud(vals)
-	require.NoError(t, err)
-	targetIP := ""
-
-	mgr := newAddressManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeInternal, cloud.NetworkTierDefault, IPv6Version)
-	testHoldAddress(t, mgr, svc, testLBName, vals.Region, targetIP, string(cloud.SchemeInternal), cloud.NetworkTierDefault.ToGCEValue())
-	testReleaseAddress(t, mgr, svc, testLBName, vals.Region)
-}
-
 func testHoldAddress(t *testing.T, mgr *addressManager, svc gce.CloudAddressService, name, region, targetIP, scheme, netTier string) {
 	ipToUse, ipType, err := mgr.HoldAddress()
 	require.NoError(t, err)

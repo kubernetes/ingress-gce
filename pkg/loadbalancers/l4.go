@@ -318,21 +318,21 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 
 	// Reserve existing IP address before making any changes
 	var existingIPv4FR *composite.ForwardingRule
-	var ipv4ToUse string
+	var ipv4AddressToUse string
 	if !l4.enableDualStack || utils.NeedsIPv4(l4.Service) {
 		existingIPv4FR, err = l4.getOldIPv4ForwardingRule(existingBS)
-		ipv4ToUse = l4lbIPToUse(l4.Service, existingIPv4FR, subnetworkURL)
+		ipv4AddressToUse = l4lbIPToUse(l4.Service, existingIPv4FR, subnetworkURL)
 		expectedFRName := l4.GetFRName()
 		if !l4.cloud.IsLegacyNetwork() {
 			nm := types.NamespacedName{Namespace: l4.Service.Namespace, Name: l4.Service.Name}.String()
 			// ILB can be created only in Premium Tier
-			addrMgr := newAddressManager(l4.cloud, nm, l4.cloud.Region(), subnetworkURL, expectedFRName, ipv4ToUse, cloud.SchemeInternal, cloud.NetworkTierPremium, IPv4Version)
-			ipv4ToUse, _, err = addrMgr.HoldAddress()
+			addrMgr := newAddressManager(l4.cloud, nm, l4.cloud.Region(), subnetworkURL, expectedFRName, ipv4AddressToUse, cloud.SchemeInternal, cloud.NetworkTierPremium, IPv4Version)
+			ipv4AddressToUse, _, err = addrMgr.HoldAddress()
 			if err != nil {
 				result.Error = fmt.Errorf("EnsureInternalLoadBalancer error: addrMgr.HoldAddress() returned error %w", err)
 				return result
 			}
-			klog.V(2).Infof("EnsureInternalLoadBalancer(%v): reserved IPv4 address %q", nm, ipv4ToUse)
+			klog.V(2).Infof("EnsureInternalLoadBalancer(%v): reserved IPv4 address %q", nm, ipv4AddressToUse)
 			defer func() {
 				// Release the address that was reserved, in all cases. If the forwarding rule was successfully created,
 				// the ephemeral IP is not needed anymore. If it was not created, the address should be released to prevent leaks.
@@ -345,21 +345,21 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 
 	// Reserve existing IPv6 address before making any changes
 	var existingIPv6FR *composite.ForwardingRule
-	var ipv6ToUse string
+	var ipv6AddrToUse string
 	if l4.enableDualStack && utils.NeedsIPv6(l4.Service) {
 		existingIPv6FR, err = l4.getOldIPv6ForwardingRule(existingBS)
-		ipv6ToUse = ipv6IPToUse(existingIPv6FR, subnetworkURL)
+		ipv6AddrToUse = ipv6AddressToUse(existingIPv6FR, subnetworkURL)
 		expectedIPv6FRName := l4.getIPv6FRName()
 		if !l4.cloud.IsLegacyNetwork() {
 			nm := types.NamespacedName{Namespace: l4.Service.Namespace, Name: l4.Service.Name}.String()
 			// ILB can be created only in Premium Tier
-			ipv6AddrMgr := newAddressManager(l4.cloud, nm, l4.cloud.Region(), subnetworkURL, expectedIPv6FRName, ipv6ToUse, cloud.SchemeInternal, cloud.NetworkTierPremium, IPv6Version)
-			ipv6ToUse, _, err = ipv6AddrMgr.HoldAddress()
+			ipv6AddrMgr := newAddressManager(l4.cloud, nm, l4.cloud.Region(), subnetworkURL, expectedIPv6FRName, ipv6AddrToUse, cloud.SchemeInternal, cloud.NetworkTierPremium, IPv6Version)
+			ipv6AddrToUse, _, err = ipv6AddrMgr.HoldAddress()
 			if err != nil {
 				result.Error = fmt.Errorf("EnsureInternalLoadBalancer error: ipv6AddrMgr.HoldAddress() returned error %w", err)
 				return result
 			}
-			klog.V(2).Infof("EnsureInternalLoadBalancer(%v): reserved IPv6 address %q", nm, ipv6ToUse)
+			klog.V(2).Infof("EnsureInternalLoadBalancer(%v): reserved IPv6 address %q", nm, ipv6AddrToUse)
 			defer func() {
 				// Release the address that was reserved, in all cases. If the forwarding rule was successfully created,
 				// the ephemeral IP is not needed anymore. If it was not created, the address should be released to prevent leaks.
@@ -404,9 +404,9 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	result.Annotations[annotations.BackendServiceKey] = bsName
 
 	if l4.enableDualStack {
-		l4.ensureDualStackResources(result, nodeNames, options, bs, existingIPv4FR, existingIPv6FR, subnetworkURL, ipv4ToUse, ipv6ToUse)
+		l4.ensureDualStackResources(result, nodeNames, options, bs, existingIPv4FR, existingIPv6FR, subnetworkURL, ipv4AddressToUse, ipv6AddrToUse)
 	} else {
-		l4.ensureIPv4Resources(result, nodeNames, options, bs, existingIPv4FR, subnetworkURL, ipv4ToUse)
+		l4.ensureIPv4Resources(result, nodeNames, options, bs, existingIPv4FR, subnetworkURL, ipv4AddressToUse)
 	}
 	if result.Error != nil {
 		return result
@@ -468,14 +468,14 @@ func (l4 *L4) provideIPv4HealthChecks(nodeNames []string, result *L4ILBSyncResul
 	return hcResult.HCLink
 }
 
-func (l4 *L4) ensureDualStackResources(result *L4ILBSyncResult, nodeNames []string, options gce.ILBOptions, bs *composite.BackendService, existingIPv4FwdRule, existingIPv6FwdRule *composite.ForwardingRule, subnetworkURL, ipv4ToUse, ipv6ToUse string) {
+func (l4 *L4) ensureDualStackResources(result *L4ILBSyncResult, nodeNames []string, options gce.ILBOptions, bs *composite.BackendService, existingIPv4FwdRule, existingIPv6FwdRule *composite.ForwardingRule, subnetworkURL, ipv4AddressToUse, ipv6AddressToUse string) {
 	if utils.NeedsIPv4(l4.Service) {
-		l4.ensureIPv4Resources(result, nodeNames, options, bs, existingIPv4FwdRule, subnetworkURL, ipv4ToUse)
+		l4.ensureIPv4Resources(result, nodeNames, options, bs, existingIPv4FwdRule, subnetworkURL, ipv4AddressToUse)
 	} else {
 		l4.deleteIPv4ResourcesOnSync(result)
 	}
 	if utils.NeedsIPv6(l4.Service) {
-		l4.ensureIPv6Resources(result, nodeNames, options, bs.SelfLink, existingIPv6FwdRule, ipv6ToUse)
+		l4.ensureIPv6Resources(result, nodeNames, options, bs.SelfLink, existingIPv6FwdRule, ipv6AddressToUse)
 	} else {
 		l4.deleteIPv6ResourcesOnSync(result)
 	}
@@ -572,6 +572,9 @@ func (l4 *L4) hasAnnotation(annotationKey string) bool {
 	return false
 }
 
+// getOldIPv4ForwardingRule returns old IPv4 forwarding rule, with checking backend service protocol, if it exists.
+// This is useful when switching protocols of the service,
+// because forwarding rule name depends on the protocol, and we need to get forwarding rule from the old protocol name.
 func (l4 *L4) getOldIPv4ForwardingRule(existingBS *composite.BackendService) (*composite.ForwardingRule, error) {
 	servicePorts := l4.Service.Spec.Ports
 	protocol := utils.GetProtocol(servicePorts)
