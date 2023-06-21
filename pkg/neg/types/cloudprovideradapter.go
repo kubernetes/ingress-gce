@@ -57,7 +57,9 @@ func NewAdapterWithRateLimitSpecs(g *gce.Cloud, specs []string) NetworkEndpointG
 	strategyKeys := make(map[string]struct{})
 	for _, spec := range specs {
 		params := strings.Split(spec, ",")
-		strategyKeys[params[0]] = struct{}{}
+		if params[1] == "strategy" {
+			strategyKeys[params[0]] = struct{}{}
+		}
 	}
 	return &cloudProviderAdapter{
 		c:             g,
