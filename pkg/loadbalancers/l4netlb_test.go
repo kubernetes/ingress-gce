@@ -470,7 +470,8 @@ func TestDualStackNetLBTransitions(t *testing.T) {
 			l4NetLB.healthChecks = healthchecksl4.Fake(fakeGCE, l4NetLBParams.Recorder)
 
 			if _, err := test.CreateAndInsertNodes(l4NetLB.cloud, nodeNames, vals.ZoneName); err != nil {
-				t.Errorf("Unexpected error when adding nodes %v", err)
+				t.Errorf(
+					"Unexpected error when adding nodes %v", err)
 			}
 
 			result := l4NetLB.EnsureFrontend(nodeNames, svc)
@@ -657,7 +658,7 @@ func TestEnsureIPv6ExternalLoadBalancerCustomSubnet(t *testing.T) {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
 	svc.Annotations = result.Annotations
-	assertDualStackNetLBResources(t, l4NetLB, nodeNames)
+	assertDualStackNetLBResourcesWithCustomIPv6Subnet(t, l4NetLB, nodeNames, l4NetLB.cloud.SubnetworkURL())
 
 	// add custom subnet annotation
 	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "test-subnet"
@@ -667,7 +668,7 @@ func TestEnsureIPv6ExternalLoadBalancerCustomSubnet(t *testing.T) {
 	}
 	svc.Annotations = result.Annotations
 	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "test-subnet"
-	assertDualStackNetLBResources(t, l4NetLB, nodeNames)
+	assertDualStackNetLBResourcesWithCustomIPv6Subnet(t, l4NetLB, nodeNames, "test-subnet")
 
 	// Change to a different subnet
 	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "another-subnet"
@@ -677,7 +678,7 @@ func TestEnsureIPv6ExternalLoadBalancerCustomSubnet(t *testing.T) {
 	}
 	svc.Annotations = result.Annotations
 	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "another-subnet"
-	assertDualStackNetLBResources(t, l4NetLB, nodeNames)
+	assertDualStackNetLBResourcesWithCustomIPv6Subnet(t, l4NetLB, nodeNames, "another-subnet")
 
 	// remove the annotation - NetLB should revert to default subnet.
 	delete(svc.Annotations, annotations.CustomSubnetAnnotationKey)
@@ -686,7 +687,7 @@ func TestEnsureIPv6ExternalLoadBalancerCustomSubnet(t *testing.T) {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
 	svc.Annotations = result.Annotations
-	assertDualStackNetLBResources(t, l4NetLB, nodeNames)
+	assertDualStackNetLBResourcesWithCustomIPv6Subnet(t, l4NetLB, nodeNames, l4NetLB.cloud.SubnetworkURL())
 
 	// Delete the loadbalancer
 	result = l4NetLB.EnsureLoadBalancerDeleted(svc)
@@ -872,8 +873,12 @@ func assertNetLBResources(t *testing.T, l4NetLB *L4NetLB, nodeNames []string) {
 		t.Errorf("Expected annotations %v, got %v, diff %v", expectedAnnotations, l4NetLB.Service.Annotations, diff)
 	}
 }
-
 func assertDualStackNetLBResources(t *testing.T, l4NetLB *L4NetLB, nodeNames []string) {
+	t.Helper()
+	assertDualStackNetLBResourcesWithCustomIPv6Subnet(t, l4NetLB, nodeNames, l4NetLB.cloud.SubnetworkURL())
+}
+
+func assertDualStackNetLBResourcesWithCustomIPv6Subnet(t *testing.T, l4NetLB *L4NetLB, nodeNames []string, expectedIPv6Subnet string) {
 	t.Helper()
 
 	// Check that HealthCheck is created
@@ -909,7 +914,7 @@ func assertDualStackNetLBResources(t *testing.T, l4NetLB *L4NetLB, nodeNames []s
 		}
 	}
 	if utils.NeedsIPv6(l4NetLB.Service) {
-		err = verifyNetLBIPv6ForwardingRule(l4NetLB, backendService.SelfLink)
+		err = verifyNetLBIPv6ForwardingRule(l4NetLB, backendService.SelfLink, expectedIPv6Subnet)
 		if err != nil {
 			t.Errorf("verifyNetLBIPv6ForwardingRule(_, %s) returned error %v, want nil", backendService.SelfLink, err)
 		}
@@ -1045,15 +1050,15 @@ func getAndVerifyNetLBBackendService(l4netlb *L4NetLB, healthCheck *composite.He
 
 func verifyNetLBIPv4ForwardingRule(l4netlb *L4NetLB, backendServiceLink string) error {
 	frName := l4netlb.frName()
-	return verifyNetLBForwardingRule(l4netlb, frName, backendServiceLink)
+	return verifyNetLBForwardingRule(l4netlb, frName, backendServiceLink, "")
 }
 
-func verifyNetLBIPv6ForwardingRule(l4netlb *L4NetLB, backendServiceLink string) error {
+func verifyNetLBIPv6ForwardingRule(l4netlb *L4NetLB, backendServiceLink string, expectedSubnet string) error {
 	ipv6FrName := l4netlb.ipv6FRName()
-	return verifyNetLBForwardingRule(l4netlb, ipv6FrName, backendServiceLink)
+	return verifyNetLBForwardingRule(l4netlb, ipv6FrName, backendServiceLink, expectedSubnet)
 }
 
-func verifyNetLBForwardingRule(l4netlb *L4NetLB, frName string, backendServiceLink string) error {
+func verifyNetLBForwardingRule(l4netlb *L4NetLB, frName string, backendServiceLink string, expectedSubnet string) error {
 	fwdRule, err := composite.GetForwardingRule(l4netlb.cloud, meta.RegionalKey(frName, l4netlb.cloud.Region()), meta.VersionGA)
 	if err != nil {
 		return fmt.Errorf("failed to fetch forwarding rule %s - err %w", frName, err)
@@ -1079,15 +1084,6 @@ func verifyNetLBForwardingRule(l4netlb *L4NetLB, frName string, backendServiceLi
 		return fmt.Errorf("expected error when looking up ephemeral address, got %v", addr)
 	}
 
-	// IPv4 Forwarding Rule should not have subnet
-	expectedSubnet := ""
-	// IPv6 Forwarding Rule should have subnet
-	if fwdRule.IpVersion == IPVersionIPv6 {
-		expectedSubnet, err = l4netlb.IPv6ForwardingRuleSubnet()
-		if err != nil {
-			return fmt.Errorf("l4netlb.IPv6ForwardingRuleSubnet() returned error %w", err)
-		}
-	}
 	if !strings.HasSuffix(fwdRule.Subnetwork, expectedSubnet) {
 		return fmt.Errorf("fwdRule.Subnetwork = %s, expectedSubnet = %s. Exepected suffixes to match", fwdRule.Subnetwork, expectedSubnet)
 	}
