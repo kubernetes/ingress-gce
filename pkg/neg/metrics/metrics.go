@@ -383,14 +383,14 @@ func getResult(err error) string {
 }
 
 func getErrorLabel(err error, isIgnored bool) string {
-	if isIgnored {
-		return ignoredError
-	}
 	if utils.IsGCEServerError(err) {
 		return gceServerError
 	}
 	if utils.IsK8sServerError(err) {
 		return k8sServerError
+	}
+	if isIgnored {
+		return ignoredError
 	}
 	return otherError
 }
