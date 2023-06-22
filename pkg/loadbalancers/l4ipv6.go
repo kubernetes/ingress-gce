@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
@@ -32,8 +33,8 @@ import (
 // - IPv6 Forwarding Rule
 // - IPv6 Firewall
 // it also adds IPv6 address to LB status
-func (l4 *L4) ensureIPv6Resources(syncResult *L4ILBSyncResult, nodeNames []string, options gce.ILBOptions, bsLink string) {
-	ipv6fr, err := l4.ensureIPv6ForwardingRule(bsLink, options)
+func (l4 *L4) ensureIPv6Resources(syncResult *L4ILBSyncResult, nodeNames []string, options gce.ILBOptions, bsLink string, existingIPv6FwdRule *composite.ForwardingRule, ipv6AddressToUse string) {
+	ipv6fr, err := l4.ensureIPv6ForwardingRule(bsLink, options, existingIPv6FwdRule, ipv6AddressToUse)
 	if err != nil {
 		klog.Errorf("ensureIPv6Resources: Failed to ensure ipv6 forwarding rule - %v", err)
 		syncResult.GCEResourceInError = annotations.ForwardingRuleIPv6Resource
@@ -180,4 +181,19 @@ func (l4 *L4) deleteIPv6NodesFirewall() error {
 	}()
 
 	return l4.deleteFirewall(ipv6FirewallName)
+}
+
+// getOldIPv6ForwardingRule returns old IPv6 forwarding rule, with checking backend service protocol, if it exists.
+// This is useful when switching protocols of the service,
+// because forwarding rule name depends on the protocol, and we need to get forwarding rule from the old protocol name.
+func (l4 *L4) getOldIPv6ForwardingRule(existingBS *composite.BackendService) (*composite.ForwardingRule, error) {
+	servicePorts := l4.Service.Spec.Ports
+	protocol := utils.GetProtocol(servicePorts)
+
+	oldIPv6FRName := l4.getIPv6FRName()
+	if existingBS != nil && existingBS.Protocol != string(protocol) {
+		oldIPv6FRName = l4.getIPv6FRNameWithProtocol(existingBS.Protocol)
+	}
+
+	return l4.forwardingRules.Get(oldIPv6FRName)
 }

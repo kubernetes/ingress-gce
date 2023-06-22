@@ -18,6 +18,7 @@ package loadbalancers
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
@@ -37,23 +38,18 @@ const (
 	IPVersionIPv6 = "IPV6"
 )
 
-func (l4 *L4) ensureIPv6ForwardingRule(bsLink string, options gce.ILBOptions) (*composite.ForwardingRule, error) {
+func (l4 *L4) ensureIPv6ForwardingRule(bsLink string, options gce.ILBOptions, existingIPv6FwdRule *composite.ForwardingRule, ipv6AddressToUse string) (*composite.ForwardingRule, error) {
 	start := time.Now()
 
-	expectedIPv6FwdRule, err := l4.buildExpectedIPv6ForwardingRule(bsLink, options)
+	expectedIPv6FwdRule, err := l4.buildExpectedIPv6ForwardingRule(bsLink, options, ipv6AddressToUse)
 	if err != nil {
-		return nil, fmt.Errorf("l4.buildExpectedIPv6ForwardingRule(%s, %v) returned error %w, want nil", bsLink, options, err)
+		return nil, fmt.Errorf("l4.buildExpectedIPv6ForwardingRule(%s, %v, %s) returned error %w, want nil", bsLink, options, ipv6AddressToUse, err)
 	}
 
 	klog.V(2).Infof("Ensuring internal ipv6 forwarding rule %s for L4 ILB Service %s/%s, backend service link: %s", expectedIPv6FwdRule.Name, l4.Service.Namespace, l4.Service.Name, bsLink)
 	defer func() {
 		klog.V(2).Infof("Finished ensuring internal ipv6 forwarding rule %s for L4 ILB Service %s/%s, time taken: %v", expectedIPv6FwdRule.Name, l4.Service.Namespace, l4.Service.Name, time.Since(start))
 	}()
-
-	existingIPv6FwdRule, err := l4.forwardingRules.Get(expectedIPv6FwdRule.Name)
-	if err != nil {
-		return nil, fmt.Errorf("l4.forwardingRules.GetForwardingRule(%s) returned error %w, want nil", expectedIPv6FwdRule.Name, err)
-	}
 
 	if existingIPv6FwdRule != nil {
 		equal, err := EqualIPv6ForwardingRules(existingIPv6FwdRule, expectedIPv6FwdRule)
@@ -80,7 +76,7 @@ func (l4 *L4) ensureIPv6ForwardingRule(bsLink string, options gce.ILBOptions) (*
 	return createdFr, err
 }
 
-func (l4 *L4) buildExpectedIPv6ForwardingRule(bsLink string, options gce.ILBOptions) (*composite.ForwardingRule, error) {
+func (l4 *L4) buildExpectedIPv6ForwardingRule(bsLink string, options gce.ILBOptions, ipv6AddressToUse string) (*composite.ForwardingRule, error) {
 	frName := l4.getIPv6FRName()
 
 	frDesc, err := utils.MakeL4IPv6ForwardingRuleDescription(l4.Service)
@@ -104,6 +100,7 @@ func (l4 *L4) buildExpectedIPv6ForwardingRule(bsLink string, options gce.ILBOpti
 	fr := &composite.ForwardingRule{
 		Name:                frName,
 		Description:         frDesc,
+		IPAddress:           ipv6AddressToUse,
 		IPProtocol:          string(protocol),
 		Ports:               ports,
 		LoadBalancingScheme: string(cloud.SchemeInternal),
@@ -247,4 +244,18 @@ func EqualIPv6ForwardingRules(fr1, fr2 *composite.ForwardingRule) (bool, error) 
 		fr1.AllPorts == fr2.AllPorts &&
 		fr1.Subnetwork == fr2.Subnetwork &&
 		fr1.NetworkTier == fr2.NetworkTier, nil
+}
+
+func ipv6AddressToUse(ipv6FwdRule *composite.ForwardingRule, requestedSubnet string) string {
+	if ipv6FwdRule == nil {
+		return ""
+	}
+	if requestedSubnet != ipv6FwdRule.Subnetwork {
+		// reset ip address since subnet is being changed.
+		return ""
+	}
+
+	// Google Cloud creates ipv6 forwarding rules with IPAddress in CIDR form,
+	// but to create static address you need to specify address without range
+	return strings.Split(ipv6FwdRule.IPAddress, "/")[0]
 }

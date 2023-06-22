@@ -32,7 +32,9 @@ type CallObserver interface {
 	End(ctx context.Context, key *RateLimitKey, err error)
 }
 
-var callObserverContextKey = &struct{}{}
+type contextKey string
+
+var callObserverContextKey = contextKey("call observer")
 
 // WithCallObserver adds a CallObserver that will be called on the
 // operation being called.
@@ -54,7 +56,7 @@ func callObserverStart(ctx context.Context, key *CallContextKey) {
 	}
 	co, ok := obj.(CallObserver)
 	if !ok {
-		panic(fmt.Sprintf("expected CallObserver, got %T", co))
+		panic(fmt.Sprintf("expected CallObserver, got %T", obj))
 	}
 	co.Start(ctx, key)
 }
@@ -66,7 +68,7 @@ func callObserverEnd(ctx context.Context, key *CallContextKey, err error) {
 	}
 	co, ok := obj.(CallObserver)
 	if !ok {
-		panic(fmt.Sprintf("expected CallObserver, got %T", co))
+		panic(fmt.Sprintf("expected CallObserver, got %T", obj))
 	}
 	co.End(ctx, key, err)
 }

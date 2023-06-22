@@ -18,7 +18,8 @@ limitations under the License.
 // These methods are used to override the mock objects' methods in order to
 // intercept the standard processing and to add custom logic for test purposes.
 //
-//  // Example usage:
+//	// Example usage:
+//
 // cloud := cloud.NewMockGCE()
 // cloud.MockTargetPools.AddInstanceHook = mock.AddInstanceHook
 package mock
@@ -245,7 +246,12 @@ func convertAndInsertAlphaAddress(key *meta.Key, obj gceObject, mAddrs map[meta.
 	}
 
 	if addr.Address == "" {
-		addr.Address = fmt.Sprintf("1.2.3.%d", addressAttrs.IPCounter)
+		if addr.IpVersion == "IPV6" {
+			addr.Address = fmt.Sprintf("1111:2222:3333:4444:5555:%d:0:0", addressAttrs.IPCounter)
+			addr.PrefixLength = 96
+		} else {
+			addr.Address = fmt.Sprintf("1.2.3.%d", addressAttrs.IPCounter)
+		}
 		addressAttrs.IPCounter++
 	}
 
@@ -1037,7 +1043,6 @@ func SetSslPolicyBetaTargetHTTPSProxyHook(ctx context.Context, key *meta.Key, re
 	tp.SslPolicy = ref.SslPolicy
 	return nil
 }
-
 
 // InsertFirewallsUnauthorizedErrHook mocks firewall insertion. A forbidden error will be thrown as return.
 func InsertFirewallsUnauthorizedErrHook(ctx context.Context, key *meta.Key, obj *ga.Firewall, m *cloud.MockFirewalls) (bool, error) {
