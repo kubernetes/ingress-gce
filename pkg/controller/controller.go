@@ -114,7 +114,10 @@ func NewLoadBalancerController(
 		Interface: ctx.KubeClient.CoreV1().Events(""),
 	})
 
-	healthChecker := healthchecks.NewHealthChecker(ctx.Cloud, ctx.HealthCheckPath, ctx.DefaultBackendSvcPort.ID.Service, ctx, ctx.Translator, flags.F.EnableTransparentHealthChecks)
+	healthChecker := healthchecks.NewHealthChecker(ctx.Cloud, ctx.HealthCheckPath, ctx.DefaultBackendSvcPort.ID.Service, ctx, ctx.Translator, healthchecks.HealthcheckFlags{
+		EnableTHC: flags.F.EnableTransparentHealthChecks,
+		EnableRecalculationOnBackendConfigRemoval: flags.F.EnableRecalculateUHCOnBCRemoval,
+	})
 	backendPool := backends.NewPool(ctx.Cloud, ctx.ClusterNamer)
 
 	lbc := LoadBalancerController{

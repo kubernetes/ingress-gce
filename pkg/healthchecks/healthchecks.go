@@ -48,15 +48,28 @@ type HealthChecks struct {
 	recorderGetter    RecorderGetter
 	serviceGetter     ServiceGetter
 	clusterInfo       healthcheck.ClusterInfo
-	thcEnabled        bool
+	healthcheckFlags  HealthcheckFlags
+}
+
+type HealthcheckFlags struct {
+	EnableTHC                                 bool
+	EnableRecalculationOnBackendConfigRemoval bool
 }
 
 // NewHealthChecker creates a new health checker.
 // cloud: the cloud object implementing SingleHealthCheck.
 // defaultHealthCheckPath: is the HTTP path to use for health checks.
-func NewHealthChecker(cloud HealthCheckProvider, healthCheckPath string, defaultBackendSvc types.NamespacedName, recorderGetter RecorderGetter, serviceGetter ServiceGetter, enableTHC bool) *HealthChecks {
+func NewHealthChecker(cloud HealthCheckProvider, healthCheckPath string, defaultBackendSvc types.NamespacedName, recorderGetter RecorderGetter, serviceGetter ServiceGetter, flags HealthcheckFlags) *HealthChecks {
 	ci := generateClusterInfo(cloud.(*gce.Cloud))
-	return &HealthChecks{cloud, healthCheckPath, defaultBackendSvc, recorderGetter, serviceGetter, ci, enableTHC}
+	return &HealthChecks{
+		cloud:             cloud,
+		path:              healthCheckPath,
+		defaultBackendSvc: defaultBackendSvc,
+		recorderGetter:    recorderGetter,
+		serviceGetter:     serviceGetter,
+		clusterInfo:       ci,
+		healthcheckFlags:  flags,
+	}
 }
 
 func generateClusterInfo(gceCloud *gce.Cloud) healthcheck.ClusterInfo {
@@ -126,8 +139,8 @@ func (h *HealthChecks) generateServiceInfo(sp utils.ServicePort, iLB bool) healt
 
 // SyncServicePort implements HealthChecker.
 func (h *HealthChecks) SyncServicePort(sp *utils.ServicePort, probe *v1.Probe) (string, error) {
-	klog.Infof("SyncServicePort: sp.ID=%v, sp.NodePort=%v, sp.Port=%v, sp.PortName=%v, sp.THCConfiguration.THCOptInOnSvc=%v, h.thcEnabled=%v.", sp.ID, sp.NodePort, sp.Port, sp.PortName, sp.THCConfiguration.THCOptInOnSvc, h.thcEnabled)
-	if !h.thcEnabled && sp.THCConfiguration.THCOptInOnSvc {
+	klog.Infof("SyncServicePort: sp.ID=%v, sp.NodePort=%v, sp.Port=%v, sp.PortName=%v, sp.THCConfiguration.THCOptInOnSvc=%v, h.thcEnabled=%v.", sp.ID, sp.NodePort, sp.Port, sp.PortName, sp.THCConfiguration.THCOptInOnSvc, h.healthcheckFlags.EnableTHC)
+	if !h.healthcheckFlags.EnableTHC && sp.THCConfiguration.THCOptInOnSvc {
 		klog.Warningf("THC flag disabled for HealthChecks, but ServicePort %v has Transparent Health Checks enabled. Disabling.", sp.ID)
 		sp.THCConfiguration.THCOptInOnSvc = false
 	}
@@ -183,6 +196,37 @@ func (h *HealthChecks) emitTHCEvents(hc *translator.HealthCheck, thcEvents utils
 
 }
 
+func (h *HealthChecks) isBackendConfigRemoved(hc *translator.HealthCheck, bchcc *backendconfigv1.HealthCheckConfig) bool {
+	if !h.healthcheckFlags.EnableRecalculationOnBackendConfigRemoval {
+		return false
+	}
+	hcDesc := &healthcheck.HealthcheckDesc{}
+	if err := json.Unmarshal([]byte(hc.Description), hcDesc); err != nil {
+		klog.V(3).Infof("Health check description is not JSONified: %s", hc.Description)
+		return false
+	}
+	// The existing HC is configured with a BackendConfig, but there's no BackendConfig now.
+	if hcDesc.Config == healthcheck.BackendConfigHC && bchcc == nil {
+		return true
+	}
+	return false
+}
+
+func (h *HealthChecks) isTHCRemoved(hc *translator.HealthCheck, thcOptIn bool) bool {
+	// This is not behind a feature flag because it should work in particular at the time of disabling the flag EnableTransparentHealthChecks.
+	hcDesc := &healthcheck.HealthcheckDesc{}
+	if err := json.Unmarshal([]byte(hc.Description), hcDesc); err != nil {
+		klog.V(3).Infof("Health check description is not JSONified: %s", hc.Description)
+		return false
+	}
+	// The existing HC is configured via Transparent Health Checks, but the annotation has been removed.
+	return hcDesc.Config == healthcheck.TransparentHC && !thcOptIn
+}
+
+func (h *HealthChecks) shouldRecalculateHC(existingHC *translator.HealthCheck, backendConfigHCConfig *backendconfigv1.HealthCheckConfig, thcConf utils.THCConfiguration) bool {
+	return thcConf.THCOptInOnSvc || h.isBackendConfigRemoved(existingHC, backendConfigHCConfig) || h.isTHCRemoved(existingHC, thcConf.THCOptInOnSvc)
+}
+
 // sync retrieves a health check based on port, checks type and settings and updates/creates if necessary.
 // sync is only called by the backends.Add func - it's not a pool like other resources.
 // We assume that backendConfigHCConfig cannot be non-nil and thcOptIn be true simultaneously.
@@ -218,33 +262,36 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, backendConfigHCConfig *b
 		return "", err
 	}
 
-	// First, merge in the configuration from the existing healthcheck to cover
-	// the case where the user has changed healthcheck settings outside of
-	// GKE.
-	if !thcConf.THCOptInOnSvc {
+	// Do not merge the existing settings and perform the full diff in calculateDiff.
+	recalculate := h.shouldRecalculateHC(existingHC, backendConfigHCConfig, thcConf)
+
+	if !recalculate {
+		// Merge in the configuration from the existing healthcheck to cover
+		// the case where the user has changed healthcheck settings outside of
+		// GKE.
 		premergeHC := hc
 		hc = mergeUserSettings(existingHC, hc)
 		klog.V(3).Infof("Existing HC = %+v", existingHC)
 		klog.V(3).Infof("HC before merge = %+v", premergeHC)
 		klog.V(3).Infof("Resulting HC = %+v", hc)
+	}
 
-		// Then, BackendConfig will override any fields that are explicitly set.
-		if backendConfigHCConfig != nil {
-			// BackendConfig healthcheck settings always take precedence.
-			hc.UpdateFromBackendConfig(backendConfigHCConfig)
-		}
+	// Then, BackendConfig will override any fields that are explicitly set.
+	if backendConfigHCConfig != nil {
+		// BackendConfig healthcheck settings always take precedence.
+		hc.UpdateFromBackendConfig(backendConfigHCConfig)
 	}
 
 	filter := func(hc *translator.HealthCheck) *translator.HealthCheck {
 		var ans = *hc // Shallow copy.
-		if !flags.F.EnableUpdateCustomHealthCheckDescription {
+		if !recalculate && !flags.F.EnableUpdateCustomHealthCheckDescription {
 			ans.Description = ""
 		}
 		return &ans
 	}
 
-	changes := calculateDiff(filter(existingHC), filter(hc), backendConfigHCConfig, thcConf.THCOptInOnSvc)
-	// The use of 'descriptionUpdate' guarantees that when BackendConfig is removed, the health check Description is
+	changes := calculateDiff(filter(existingHC), filter(hc), backendConfigHCConfig, recalculate)
+	// The use of 'descriptionOnlyUpdate' guarantees that when BackendConfig is removed, the health check Description is
 	// updated accordingly even if changes.hasDiff() is false. The purpose is for the Description to accurately reflect
 	// the existence of a backendconfigv1.HealthCheckConfig for the service. This is temporary, see
 	// https://github.com/kubernetes/ingress-gce/pull/2181 for details.
@@ -274,11 +321,18 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, backendConfigHCConfig *b
 
 func (h *HealthChecks) isDescriptionOnlyUpdateNeeded(changes *fieldDiffs, existingHC *translator.HealthCheck, backendConfigHCConfig *backendconfigv1.HealthCheckConfig) bool {
 	if flags.F.EnableUpdateCustomHealthCheckDescription {
-		// BackendConfig exists, but it had wrong description.
+		// BackendConfig exists, but the health check has had a wrong description.
 		if changes.size() == 1 && changes.has("Description") {
 			return true
 		}
 
+		if h.healthcheckFlags.EnableRecalculationOnBackendConfigRemoval {
+			// Further down, true is only returned on BackendConfig removal with changes.size() == 0, which never happens when
+			// EnableRecalculationOnBackendConfigRemoval is enabled. The present 'if' exists to make it clear that after
+			// EnableRecalculationOnBackendConfigRemoval is successfully rolled out, the ramaining part of the function
+			// can be removed.
+			return false
+		}
 		desc := &healthcheck.HealthcheckDesc{}
 		err := json.Unmarshal([]byte(existingHC.Description), desc)
 		if err != nil {

@@ -123,7 +123,7 @@ func init() {
 
 func TestHealthCheckAdd(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), false)
+	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), HealthcheckFlags{})
 
 	sp := &utils.ServicePort{NodePort: 80, Protocol: annotations.ProtocolHTTP, NEGEnabled: false, BackendNamer: testNamer}
 	_, err := healthChecks.SyncServicePort(sp, nil)
@@ -172,7 +172,7 @@ func TestHealthCheckAdd(t *testing.T) {
 
 func TestHealthCheckAddExisting(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), false)
+	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), HealthcheckFlags{})
 
 	// HTTP
 	// Manually insert a health check
@@ -256,7 +256,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 
 func TestHealthCheckDelete(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), false)
+	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), HealthcheckFlags{})
 
 	// Create HTTP HC for 1234
 	hc := translator.DefaultHealthCheck(1234, annotations.ProtocolHTTP)
@@ -286,7 +286,7 @@ func TestHealthCheckDelete(t *testing.T) {
 
 func TestHTTP2HealthCheckDelete(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), false)
+	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), HealthcheckFlags{})
 
 	// Create HTTP2 HC for 1234
 	hc := translator.DefaultHealthCheck(1234, annotations.ProtocolHTTP2)
@@ -313,7 +313,7 @@ func TestHTTP2HealthCheckDelete(t *testing.T) {
 
 func TestRegionalHealthCheckDelete(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), false)
+	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), HealthcheckFlags{})
 
 	hc := healthChecks.new(
 		utils.ServicePort{
@@ -365,7 +365,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaHealthChecks.UpdateHook = mock.UpdateAlphaHealthCheckHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockBetaHealthChecks.UpdateHook = mock.UpdateBetaHealthCheckHook
 
-	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), false)
+	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), HealthcheckFlags{})
 
 	// HTTP
 	// Manually insert a health check
@@ -472,7 +472,7 @@ func TestEnableTHC(t *testing.T) {
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaHealthChecks.UpdateHook = mock.UpdateAlphaHealthCheckHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockBetaHealthChecks.UpdateHook = mock.UpdateBetaHealthCheckHook
 
-	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), false)
+	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), HealthcheckFlags{})
 
 	// HTTP
 	// Manually insert a health check
@@ -497,7 +497,7 @@ func TestEnableTHC(t *testing.T) {
 	wantHC.UnhealthyThreshold = 10
 	wantHC.HealthyThreshold = 1
 	wantHC.Type = "HTTP"
-	wantHC.Description = "Kubernetes L7 transparent health check."
+	wantHC.Description = (&healthcheck.HealthcheckInfo{HealthcheckConfig: healthcheck.TransparentHC}).GenerateHealthcheckDescription()
 	wantHC.RequestPath = "/api/podhealth"
 	wantHC.Port = 7877
 	wantHC.PortSpecification = "USE_FIXED_PORT"
@@ -542,7 +542,7 @@ func TestEmitTHCEvents(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(testClusterValues)
 
 	fakeSingletonRecorderGetter := NewFakeSingletonRecorderGetter(10)
-	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, fakeSingletonRecorderGetter, NewFakeServiceGetter(), false)
+	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, fakeSingletonRecorderGetter, NewFakeServiceGetter(), HealthcheckFlags{})
 
 	hc := translator.DefaultHealthCheck(3000, annotations.ProtocolHTTP)
 	hc.Service = &v1.Service{}
@@ -628,7 +628,7 @@ func TestRolloutUpdateCustomHCDescription(t *testing.T) {
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockBetaHealthChecks.UpdateHook = mock.UpdateBetaHealthCheckHook
 
 	fakeSingletonRecorderGetter := NewFakeSingletonRecorderGetter(1)
-	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, fakeSingletonRecorderGetter, NewFakeServiceGetter(), false)
+	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, fakeSingletonRecorderGetter, NewFakeServiceGetter(), HealthcheckFlags{})
 
 	_, err := healthChecks.SyncServicePort(defaultSP, nil)
 	if err != nil {
@@ -1072,13 +1072,13 @@ func (*syncSPFixture) thc() *compute.HealthCheck {
 		TimeoutSec:         5,
 		Type:               "HTTP",
 		UnhealthyThreshold: 10,
-		SelfLink:           regSelfLink,
+		SelfLink:           negSelfLink,
 		HttpHealthCheck: &compute.HTTPHealthCheck{
 			PortSpecification: "USE_FIXED_PORT",
 			Port:              7877,
 			RequestPath:       "/api/podhealth",
 		},
-		Description: translator.DescriptionForTransparentHealthChecks,
+		Description: jsonDescription(healthcheck.TransparentHC, false),
 	}
 }
 
@@ -1098,6 +1098,43 @@ func (*syncSPFixture) bchc() *compute.HealthCheck {
 		},
 		Description: (&healthcheck.HealthcheckInfo{HealthcheckConfig: healthcheck.BackendConfigHC}).GenerateHealthcheckDescription(),
 	}
+}
+
+func hcFromBC(bchcc *backendconfigv1.HealthCheckConfig, neg bool, json bool) *compute.HealthCheck {
+	fixture := syncSPFixture{}
+	hc := fixture.hc()
+	if neg {
+		hc = fixture.neg()
+	}
+	if bchcc == nil {
+		return hc
+	}
+	if bchcc.CheckIntervalSec != nil {
+		hc.CheckIntervalSec = *bchcc.CheckIntervalSec
+	}
+	if bchcc.HealthyThreshold != nil {
+		hc.HealthyThreshold = *bchcc.HealthyThreshold
+	}
+	if bchcc.TimeoutSec != nil {
+		hc.TimeoutSec = *bchcc.TimeoutSec
+	}
+	if bchcc.Type != nil {
+		hc.Type = *bchcc.Type
+	}
+	if bchcc.UnhealthyThreshold != nil {
+		hc.UnhealthyThreshold = *bchcc.UnhealthyThreshold
+	}
+	if bchcc.Port != nil {
+		hc.HttpHealthCheck.Port = *bchcc.Port
+		hc.HttpHealthCheck.PortSpecification = "USE_FIXED_PORT"
+	}
+	if bchcc.RequestPath != nil {
+		hc.HttpHealthCheck.RequestPath = *bchcc.RequestPath
+	}
+	if json {
+		hc.Description = jsonDescription(healthcheck.BackendConfigHC, false)
+	}
+	return hc
 }
 
 func (f *syncSPFixture) hcs() *compute.HealthCheck  { return f.toS(f.hc()) }
@@ -1222,6 +1259,7 @@ func TestSyncServicePort(t *testing.T) {
 		wantComputeHC       *compute.HealthCheck
 		updateHCDescription bool
 		enableTHC           bool
+		recalc              bool
 	}
 	fixture := syncSPFixture{}
 
@@ -1670,25 +1708,21 @@ func TestSyncServicePort(t *testing.T) {
 			if tc.sp.BackendConfig != nil {
 				config = healthcheck.BackendConfigHC
 			}
-			var wantLocation string
-			if tc.regionalCluster {
-				wantLocation = gce.DefaultTestClusterValues().Region
-			} else {
-				wantLocation = gce.DefaultTestClusterValues().ZoneName
-			}
-			wantDesc := healthcheck.HealthcheckDesc{
-				K8sCluster:  fmt.Sprintf("/locations/%s/clusters/%s", wantLocation, gce.DefaultTestClusterValues().ClusterName),
-				K8sResource: fmt.Sprintf("/namespaces/%s/services/%s", defaultBackendSvc.Namespace, defaultBackendSvc.Name),
-				Config:      config,
-			}
-			bytes, err := json.MarshalIndent(wantDesc, "", "    ")
-			if err != nil {
-				t.Fatalf("Error while generating the wantDesc JSON.")
-			}
-			copyOfWant.Description = string(bytes)
+			copyOfWant.Description = jsonDescription(config, tc.regionalCluster)
 		}
 		tc.wantComputeHC = &copyOfWant
 		cases = append(cases, &tc)
+	}
+
+	for _, tc := range cases {
+		if tc.updateHCDescription {
+			tc := *tc
+			tc.recalc = true
+			tc.desc = tc.desc + " and recalc"
+			copyOfWant := *tc.wantComputeHC
+			tc.wantComputeHC = &copyOfWant
+			cases = append(cases, &tc)
+		}
 	}
 
 	for _, tc := range cases {
@@ -1705,7 +1739,10 @@ func TestSyncServicePort(t *testing.T) {
 				tc.setup(mock)
 			}
 
-			hcs := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), tc.enableTHC)
+			hcs := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), HealthcheckFlags{
+				EnableTHC: tc.enableTHC,
+				EnableRecalculationOnBackendConfigRemoval: tc.recalc,
+			})
 
 			gotSelfLink, err := hcs.SyncServicePort(tc.sp, tc.probe)
 			if gotErr := err != nil; gotErr != tc.wantErr {
@@ -1765,24 +1802,52 @@ func TestSyncServicePort(t *testing.T) {
 	}
 }
 
-func TestBackendConfigRemoval(t *testing.T) {
+func jsonDescription(config healthcheck.HealthcheckConfig, regionalCluster bool) string {
+	var wantLocation string
+	if regionalCluster {
+		wantLocation = gce.DefaultTestClusterValues().Region
+	} else {
+		wantLocation = gce.DefaultTestClusterValues().ZoneName
+	}
+	wantDesc := healthcheck.HealthcheckDesc{
+		K8sCluster:  fmt.Sprintf("/locations/%s/clusters/%s", wantLocation, gce.DefaultTestClusterValues().ClusterName),
+		K8sResource: fmt.Sprintf("/namespaces/%s/services/%s", defaultBackendSvc.Namespace, defaultBackendSvc.Name),
+		Config:      config,
+	}
+	bytes, err := json.MarshalIndent(wantDesc, "", "    ")
+	if err != nil {
+		klog.Fatal("Error while generating the wantDesc JSON.")
+	}
+	return string(bytes)
+}
+
+// TestCustomHealthcheckRemoval tests recalculation of health check parameters on removal of
+// BackendConfig and TransparentHealthCheck (THC) annotations. Depending on the flags, Description
+// update or full racalculation may happen on removal of BackendConfig. Full recalculation
+// happens on THC removal.
+func TestCustomHealthcheckRemoval(t *testing.T) {
 	// No parallel() because we modify the value of the flags:
 	// - EnableUpdateCustomHealthCheckDescription.
+	// – GKEClusterName
 	oldUpdateDescription := flags.F.EnableUpdateCustomHealthCheckDescription
+	oldGKEClusterName := flags.F.GKEClusterName
 	defer func() {
 		flags.F.EnableUpdateCustomHealthCheckDescription = oldUpdateDescription
+		flags.F.GKEClusterName = oldGKEClusterName
 	}()
+	flags.F.GKEClusterName = gce.DefaultTestClusterValues().ClusterName
 
 	type tc struct {
 		desc                string
 		setup               func(*cloud.MockGCE)
-		sp                  *utils.ServicePort
+		sp                  utils.ServicePort
 		probe               *v1.Probe
 		wantSelfLink        string
 		wantErr             bool
 		wantComputeHC       *compute.HealthCheck
 		updateHCDescription bool
 		enableTHC           bool
+		recalc              bool
 		expectedEvent       int
 		wantEventPrefix     string
 	}
@@ -1790,28 +1855,28 @@ func TestBackendConfigRemoval(t *testing.T) {
 
 	var cases []*tc
 
-	// Don't recalculate health check on BackendConfig removal (legacy behaviour, to be changed), but update Description.
+	// Don't recalculate health check on BackendConfig removal (legacy behaviour, recalc == false), but update Description.
 	chc := fixture.bchc()
 	wantCHC := fixture.bchc()
 	wantCHC.Description = translator.DescriptionForDefaultHealthChecks
 	cases = append(cases, &tc{
 		desc:                "not recalculate to default on bc removal",
 		setup:               fixture.setupExistingHCFunc(chc),
-		sp:                  testSPs["HTTP-80-reg-nil-nothc"],
+		sp:                  *testSPs["HTTP-80-reg-nil-nothc"],
 		wantComputeHC:       wantCHC,
 		updateHCDescription: true,
 		expectedEvent:       1,
 		wantEventPrefix:     "Normal HealthcheckDescriptionUpdate Healthcheck will be updated and the only field updated is Description",
 	})
 
-	// Don't recalculate health check on BackendConfig removal (legacy behaviour, to be changed), but update Description.
+	// Don't recalculate health check on BackendConfig removal (legacy behaviour, recalc == false), but update Description.
 	chc = fixture.bchc()
 	wantCHC = fixture.bchc()
 	wantCHC.Description = translator.DescriptionForHealthChecksFromReadinessProbe
 	cases = append(cases, &tc{
 		desc:  "not recalculate to rp on bc removal",
 		setup: fixture.setupExistingHCFunc(chc),
-		sp:    testSPs["HTTP-80-reg-nil-nothc"],
+		sp:    *testSPs["HTTP-80-reg-nil-nothc"],
 		probe: &v1.Probe{
 			ProbeHandler: api_v1.ProbeHandler{
 				HTTPGet: &v1.HTTPGetAction{Path: "/foo", Host: "foo.com"},
@@ -1823,6 +1888,155 @@ func TestBackendConfigRemoval(t *testing.T) {
 		updateHCDescription: true,
 		expectedEvent:       1,
 		wantEventPrefix:     "Normal HealthcheckDescriptionUpdate Healthcheck will be updated and the only field updated is Description",
+	})
+
+	// Update hc from BackendConfig with only interval specified to Default.
+	chc = fixture.hc()
+	chc.CheckIntervalSec = 17
+	chc.Description = (&healthcheck.HealthcheckInfo{HealthcheckConfig: healthcheck.BackendConfigHC}).GenerateHealthcheckDescription()
+	wantCHC = fixture.hc()
+	cases = append(cases, &tc{
+		desc:                "update hc from BackendConfig to Default",
+		setup:               fixture.setupExistingHCFunc(chc),
+		sp:                  *testSPs["HTTP-80-reg-nil-nothc"],
+		wantComputeHC:       wantCHC,
+		updateHCDescription: true,
+		recalc:              true,
+	})
+
+	// Update hc from BackendConfig to NEG.
+	chc = fixture.neg()
+	chc.CheckIntervalSec = 17
+	chc.Description = (&healthcheck.HealthcheckInfo{HealthcheckConfig: healthcheck.BackendConfigHC}).GenerateHealthcheckDescription()
+	wantCHC = fixture.neg()
+	cases = append(cases, &tc{
+		desc:                "update hc from BackendConfig to NEG",
+		setup:               fixture.setupExistingHCFunc(chc),
+		sp:                  *testSPs["HTTP-80-neg-nil-nothc"],
+		wantComputeHC:       wantCHC,
+		updateHCDescription: true,
+		recalc:              true,
+	})
+
+	// Update hc from BackendConfig to ReadinessProbe.
+	chc = fixture.neg()
+	chc.Description = (&healthcheck.HealthcheckInfo{HealthcheckConfig: healthcheck.BackendConfigHC}).GenerateHealthcheckDescription()
+	wantCHC = fixture.neg()
+	wantCHC.HttpHealthCheck.RequestPath = "/foo"
+	wantCHC.HttpHealthCheck.Host = "foo.com"
+	wantCHC.CheckIntervalSec = 1234
+	wantCHC.TimeoutSec = 5678
+	wantCHC.Description = translator.DescriptionForHealthChecksFromReadinessProbe
+	cases = append(cases, &tc{
+		desc:  "update hc from BackendConfig to ReadinessProbe",
+		setup: fixture.setupExistingHCFunc(chc),
+		sp:    *testSPs["HTTP-80-neg-nil-nothc"],
+		probe: &v1.Probe{
+			ProbeHandler: api_v1.ProbeHandler{
+				HTTPGet: &v1.HTTPGetAction{Path: "/foo", Host: "foo.com"},
+			},
+			PeriodSeconds:  1234,
+			TimeoutSeconds: 5678,
+		},
+		wantComputeHC:       wantCHC,
+		updateHCDescription: true,
+		recalc:              true,
+	})
+
+	// Update hc from THC to NEG.
+	chc = fixture.thc()
+	wantCHC = fixture.neg()
+	cases = append(cases, &tc{
+		desc:          "update hc from THC to NEG",
+		setup:         fixture.setupExistingHCFunc(chc),
+		sp:            *testSPs["HTTP-80-neg-nil-nothc"],
+		wantComputeHC: wantCHC,
+		enableTHC:     true,
+	})
+
+	// Update hc from THC to NEG on THC flag disablement. In practise, this is covered by the previous case
+	// "update hc from THC to NEG", because it should never happen that utils.ServicePort has
+	// THCConfiguration.THCOptInOnSvc == true despite the flag enableTHC disabled.
+	chc = fixture.thc()
+	wantCHC = fixture.neg()
+	cases = append(cases, &tc{
+		desc:          "update hc from THC to NEG on THC flag disablement",
+		setup:         fixture.setupExistingHCFunc(chc),
+		sp:            *testSPs["HTTP-80-neg-nil-thc"],
+		wantComputeHC: wantCHC,
+		enableTHC:     false,
+	})
+
+	// Update hc from THC to ReadinessProbe.
+	chc = fixture.thc()
+	wantCHC = fixture.neg()
+	wantCHC.HttpHealthCheck.RequestPath = "/foo"
+	wantCHC.HttpHealthCheck.Host = "foo.com"
+	wantCHC.CheckIntervalSec = 1234
+	wantCHC.TimeoutSec = 5678
+	wantCHC.Description = translator.DescriptionForHealthChecksFromReadinessProbe
+	cases = append(cases, &tc{
+		desc:  "update hc from THC to ReadinessProbe",
+		setup: fixture.setupExistingHCFunc(chc),
+		sp:    *testSPs["HTTP-80-neg-nil-nothc"],
+		probe: &v1.Probe{
+			ProbeHandler: api_v1.ProbeHandler{
+				HTTPGet: &v1.HTTPGetAction{Path: "/foo", Host: "foo.com"},
+			},
+			PeriodSeconds:  1234,
+			TimeoutSeconds: 5678,
+		},
+		wantComputeHC: wantCHC,
+	})
+
+	// Update hc from THC to BackendConfig, where JSON is not enabled for BC.
+	chc = fixture.thc()
+	json := false
+	wantCHC = hcFromBC(testSPs["HTTP-80-neg-bcall-nothc"].BackendConfig.Spec.HealthCheck, true, json)
+	cases = append(cases, &tc{
+		desc:                "update hc from THC to BackendConfig without JSON",
+		setup:               fixture.setupExistingHCFunc(chc),
+		sp:                  *testSPs["HTTP-80-neg-bcall-nothc"],
+		wantComputeHC:       wantCHC,
+		updateHCDescription: json,
+	})
+
+	// Update hc from THC to BackendConfig.
+	chc = fixture.thc()
+	json = true
+	wantCHC = hcFromBC(testSPs["HTTP-80-neg-bcall-nothc"].BackendConfig.Spec.HealthCheck, true, json)
+	cases = append(cases, &tc{
+		desc:                "update hc from THC to BackendConfig",
+		setup:               fixture.setupExistingHCFunc(chc),
+		sp:                  *testSPs["HTTP-80-neg-bcall-nothc"],
+		wantComputeHC:       wantCHC,
+		updateHCDescription: json,
+	})
+
+	// Update hc from BackendConfig (with JSON) to THC.
+	json = true
+	chc = hcFromBC(testSPs["HTTP-80-neg-bcall-nothc"].BackendConfig.Spec.HealthCheck, true, json)
+	wantCHC = fixture.thc()
+	cases = append(cases, &tc{
+		desc:                "update hc from JSON BC to THC",
+		setup:               fixture.setupExistingHCFunc(chc),
+		sp:                  *testSPs["HTTP-80-neg-nil-thc"],
+		wantComputeHC:       wantCHC,
+		updateHCDescription: json,
+		enableTHC:           true,
+	})
+
+	// Update hc from BackendConfig (without JSON!) to THC.
+	json = false
+	chc = hcFromBC(testSPs["HTTP-80-neg-bcall-nothc"].BackendConfig.Spec.HealthCheck, true, json)
+	wantCHC = fixture.thc()
+	cases = append(cases, &tc{
+		desc:                "update hc from plain-text BC to THC",
+		setup:               fixture.setupExistingHCFunc(chc),
+		sp:                  *testSPs["HTTP-80-neg-nil-thc"],
+		wantComputeHC:       wantCHC,
+		updateHCDescription: json,
+		enableTHC:           true,
 	})
 
 	for _, tc := range cases {
@@ -1837,9 +2051,12 @@ func TestBackendConfigRemoval(t *testing.T) {
 			tc.setup(mock)
 
 			fakeSingletonRecorderGetter := NewFakeSingletonRecorderGetter(tc.expectedEvent)
-			hcs := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, fakeSingletonRecorderGetter, NewFakeServiceGetter(), tc.enableTHC)
+			hcs := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, fakeSingletonRecorderGetter, NewFakeServiceGetter(), HealthcheckFlags{
+				EnableTHC: tc.enableTHC,
+				EnableRecalculationOnBackendConfigRemoval: tc.recalc,
+			})
 
-			gotSelfLink, err := hcs.SyncServicePort(tc.sp, tc.probe)
+			gotSelfLink, err := hcs.SyncServicePort(&tc.sp, tc.probe)
 			if gotErr := err != nil; gotErr != tc.wantErr {
 				t.Errorf("hcs.SyncServicePort(tc.sp, tc.probe) = _, %v; gotErr = %t, want %t\nsp = %s\nprobe = %s", err, gotErr, tc.wantErr, pretty.Sprint(tc.sp), pretty.Sprint(tc.probe))
 			}
@@ -1855,13 +2072,10 @@ func TestBackendConfigRemoval(t *testing.T) {
 					t.Fatalf("Got %d healthchecks, want 1\n%s", len(computeHCs), pretty.Sprint(computeHCs))
 				}
 
-				// Filter out SelfLink (because it is hard to deal with in the mock and
-				// test cases) and Description if the flag EnableUpdateCustomHealthCheckDescription is disabled.
+				// Filter out SelfLink because it is hard to deal with in the mock and
+				// test cases.
 				filter := func(hc compute.HealthCheck) compute.HealthCheck {
 					hc.SelfLink = ""
-					if !tc.updateHCDescription {
-						hc.Description = ""
-					}
 					return hc
 				}
 				gotHC := filter(*computeHCs[0])
@@ -1881,7 +2095,7 @@ func TestBackendConfigRemoval(t *testing.T) {
 				return nil
 			}
 
-			gotSelfLink, err = hcs.SyncServicePort(tc.sp, tc.probe)
+			gotSelfLink, err = hcs.SyncServicePort(&tc.sp, tc.probe)
 			if gotErr := err != nil; gotErr != tc.wantErr {
 				t.Errorf("hcs.SyncServicePort(tc.sp, tc.probe) = %v; gotErr = %t, want %t\nsp = %s\nprobe = %s", err, gotErr, tc.wantErr, pretty.Sprint(tc.sp), pretty.Sprint(tc.probe))
 			}
@@ -1906,6 +2120,130 @@ func TestBackendConfigRemoval(t *testing.T) {
 				case output := <-fakeRecorder.Events:
 					t.Fatalf("Unexpected event: %s", output)
 				case <-time.After(100 * time.Millisecond):
+				}
+			}
+		})
+	}
+}
+
+func replaceDescription(hc *translator.HealthCheck, new string) *translator.HealthCheck {
+	hc.Description = new
+	return hc
+}
+
+func TestIsBackendConfigRemoved(t *testing.T) {
+	t.Parallel()
+
+	testClusterValues := gce.DefaultTestClusterValues()
+	fakeGCE := gce.NewFakeGCECloud(testClusterValues)
+
+	healthcheckers := map[string]*HealthChecks{
+		"recalc-disabled": NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), HealthcheckFlags{}),
+		"recalc-enabled":  NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), HealthcheckFlags{EnableRecalculationOnBackendConfigRemoval: true}),
+	}
+
+	healthcheckDescriptionsBefore := map[string]string{
+		"default": translator.DescriptionForDefaultHealthChecks,
+		"ILB":     translator.DescriptionForDefaultILBHealthChecks,
+		"NEG":     translator.DescriptionForDefaultNEGHealthChecks,
+		"RP":      translator.DescriptionForHealthChecksFromReadinessProbe,
+		"BC":      (&healthcheck.HealthcheckInfo{HealthcheckConfig: healthcheck.BackendConfigHC}).GenerateHealthcheckDescription(),
+		"THC":     (&healthcheck.HealthcheckInfo{HealthcheckConfig: healthcheck.TransparentHC}).GenerateHealthcheckDescription(),
+	}
+
+	bcAfter := map[string]*backendconfigv1.HealthCheckConfig{
+		"no-BC": nil,
+		"BC":    {},
+	}
+
+	type testCase struct {
+		desc          string
+		healthchecker *HealthChecks
+		hc            *translator.HealthCheck
+		bchcc         *backendconfigv1.HealthCheckConfig
+		want          bool
+	}
+
+	testCases := []testCase{}
+
+	for healthcheckerKey, healthcheckerValue := range healthcheckers {
+		for beforeKey, beforeValue := range healthcheckDescriptionsBefore {
+			for afterKey, afterValue := range bcAfter {
+				newCase := testCase{
+					desc:          fmt.Sprintf("%s %s to %s", healthcheckerKey, beforeKey, afterKey),
+					healthchecker: healthcheckerValue,
+					hc:            replaceDescription(translator.DefaultHealthCheck(3000, annotations.ProtocolHTTP), beforeValue),
+					bchcc:         afterValue,
+					want:          healthcheckerKey == "recalc-enabled" && beforeKey == "BC" && afterKey == "no-BC",
+				}
+				testCases = append(testCases, newCase)
+			}
+		}
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := tc.healthchecker.isBackendConfigRemoved(tc.hc, tc.bchcc)
+			if got != tc.want {
+				t.Errorf("healthchecker.isBackendConfigRemoved(%v, %v): got=%v, want=%v", tc.hc, tc.bchcc, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsTHCRemoved(t *testing.T) {
+	t.Parallel()
+
+	testClusterValues := gce.DefaultTestClusterValues()
+	fakeGCE := gce.NewFakeGCECloud(testClusterValues)
+
+	healthcheckerFlags := []HealthcheckFlags{}
+
+	for _, recalc := range []bool{true, false} {
+		for _, thc := range []bool{true, false} {
+			healthcheckerFlags = append(healthcheckerFlags, HealthcheckFlags{EnableTHC: thc, EnableRecalculationOnBackendConfigRemoval: recalc})
+		}
+	}
+
+	healthcheckBefore := map[string]string{
+		"default": translator.DescriptionForDefaultHealthChecks,
+		"ILB":     translator.DescriptionForDefaultILBHealthChecks,
+		"NEG":     translator.DescriptionForDefaultNEGHealthChecks,
+		"RP":      translator.DescriptionForHealthChecksFromReadinessProbe,
+		"BC":      (&healthcheck.HealthcheckInfo{HealthcheckConfig: healthcheck.BackendConfigHC}).GenerateHealthcheckDescription(),
+		"THC":     (&healthcheck.HealthcheckInfo{HealthcheckConfig: healthcheck.TransparentHC}).GenerateHealthcheckDescription(),
+	}
+
+	thcAfter := map[string]bool{"THC": true, "NO-THC": false}
+
+	type testCase struct {
+		desc          string
+		hc            *translator.HealthCheck
+		thcOptInOnSvc bool
+		want          bool
+	}
+
+	testCases := []testCase{}
+
+	for beforeKey, beforeValue := range healthcheckBefore {
+		for afterKey, afterValue := range thcAfter {
+			newCase := testCase{
+				desc:          fmt.Sprintf("%s to %s", beforeKey, afterKey),
+				hc:            replaceDescription(translator.DefaultHealthCheck(3000, annotations.ProtocolHTTP), beforeValue),
+				thcOptInOnSvc: afterValue,
+				want:          beforeKey == "THC" && afterKey == "NO-THC",
+			}
+			testCases = append(testCases, newCase)
+		}
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			for _, flags := range healthcheckerFlags {
+				healthchecker := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), flags)
+				got := healthchecker.isTHCRemoved(tc.hc, tc.thcOptInOnSvc)
+				if got != tc.want {
+					t.Errorf("healthchecker.isTHCRemoved(%v, %v) with flags=%+v: got=%v, want=%v", tc.hc, tc.thcOptInOnSvc, flags, got, tc.want)
 				}
 			}
 		})

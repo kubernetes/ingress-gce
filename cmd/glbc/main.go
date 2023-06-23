@@ -70,6 +70,7 @@ func main() {
 	flags.Register()
 	rand.Seed(time.Now().UTC().UnixNano())
 	flag.Parse()
+	flags.Validate()
 
 	if flags.F.Version {
 		fmt.Printf("Controller version: %s\n", version.Version)

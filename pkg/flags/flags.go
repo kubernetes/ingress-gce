@@ -29,6 +29,7 @@ import (
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/component-base/config"
 	leaderelectionconfig "k8s.io/component-base/config/options"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -109,6 +110,7 @@ var (
 		EnablePSC                                bool
 		EnableIngressGAFields                    bool
 		EnableTrafficScaling                     bool
+		EnableRecalculateUHCOnBCRemoval          bool
 		EnableTransparentHealthChecks            bool
 		EnableUpdateCustomHealthCheckDescription bool
 		EnablePinhole                            bool
@@ -280,6 +282,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableTrafficScaling, "enable-traffic-scaling", false, "Enable support for Service {max-rate-per-endpoint, capacity-scaler}")
 	flag.BoolVar(&F.EnableTransparentHealthChecks, "enable-transparent-health-checks", false, "Enable Transparent Health Checks.")
 	flag.BoolVar(&F.EnableUpdateCustomHealthCheckDescription, "enable-update-hc-description", false, "Update health check Description when it is customized with BackendConfig CRD.")
+	flag.BoolVar(&F.EnableRecalculateUHCOnBCRemoval, "enable-recalculate-uhc-on-backendconfig-removal", false, "Recalculate health check parameters when BackendConfig is removed from service. This flag cannot be used without --enable-update-hc-description.")
 	flag.BoolVar(&F.EnablePinhole, "enable-pinhole", false, "Enable Pinhole firewall feature")
 	flag.BoolVar(&F.EnableL4ILBDualStack, "enable-l4ilb-dual-stack", false, "Enable Dual-Stack handling for L4 Internal Load Balancers")
 	flag.BoolVar(&F.EnableL4NetLBDualStack, "enable-l4netlb-dual-stack", false, "Enable Dual-Stack handling for L4 External Load Balancers")
@@ -293,6 +296,12 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableDualStackNEG, "enable-dual-stack-neg", false, `Enable support for Dual-Stack NEGs within the NEG Controller`)
 	flag.BoolVar(&F.EnableFirewallCR, "enable-firewall-cr", false, "Enable generating firewall CR")
 	flag.BoolVar(&F.DisableFWEnforcement, "disable-fw-enforcement", false, "Disable Ingress contrller to enforce the firewall ruless. If set to true, Ingress Controller stops creating GCE firewall rules. We can only enable this if enable-firewall-cr sets to true.")
+}
+
+func Validate() {
+	if F.EnableRecalculateUHCOnBCRemoval && !F.EnableUpdateCustomHealthCheckDescription {
+		klog.Fatalf("The flag --enable-recalculate-uhc-on-backendconfig-removal cannot be used without --enable-update-hc-description.")
+	}
 }
 
 type RateLimitSpecs struct {

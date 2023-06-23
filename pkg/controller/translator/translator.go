@@ -70,14 +70,14 @@ func NewTranslator(serviceInformer cache.SharedIndexInformer,
 	enableTHC bool,
 	recorderGetter healthchecks.RecorderGetter) *Translator {
 	return &Translator{
-		serviceInformer,
-		backendConfigInformer,
-		nodeInformer,
-		podInformer,
-		endpointSliceInformer,
-		kubeClient,
-		enableTHC,
-		recorderGetter,
+		ServiceInformer:       serviceInformer,
+		BackendConfigInformer: backendConfigInformer,
+		NodeInformer:          nodeInformer,
+		PodInformer:           podInformer,
+		EndpointSliceInformer: endpointSliceInformer,
+		KubeClient:            kubeClient,
+		enableTHC:             enableTHC,
+		recorderGetter:        recorderGetter,
 	}
 }
 
