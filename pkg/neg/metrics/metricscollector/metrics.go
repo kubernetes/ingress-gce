@@ -155,21 +155,6 @@ type syncerState struct {
 	inErrorState   bool
 }
 
-// listAllSyncerStates lists all possible states for syncers.
-func listAllSyncerStates() []syncerState {
-	var syncerStates []syncerState
-	// For error state errors, we should expect the syncer also in error state.
-	for _, state := range negtypes.ListErrorStates() {
-		syncerStates = append(syncerStates, syncerState{lastSyncResult: state, inErrorState: true})
-	}
-
-	for _, state := range negtypes.ListNonErrorStates() {
-		syncerStates = append(syncerStates, syncerState{lastSyncResult: state, inErrorState: true})
-		syncerStates = append(syncerStates, syncerState{lastSyncResult: state, inErrorState: false})
-	}
-	return syncerStates
-}
-
 type syncerStateCount map[syncerState]int
 
 // LabelPropagationStat contains stats related to label propagation.

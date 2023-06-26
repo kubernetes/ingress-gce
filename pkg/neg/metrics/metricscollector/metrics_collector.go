@@ -130,7 +130,11 @@ func (sm *SyncerMetrics) export() {
 	NumberOfEndpoints.WithLabelValues(epWithAnnotation).Set(float64(lpMetrics.EndpointsWithAnnotation))
 
 	stateCount, syncerCount := sm.computeSyncerStateMetrics()
-	PublishSyncerStateMetrics(stateCount)
+	//Reset metric so non-existent keys are now 0
+	SyncerCountBySyncResult.Reset()
+	for syncerState, count := range stateCount {
+		SyncerCountBySyncResult.WithLabelValues(string(syncerState.lastSyncResult), strconv.FormatBool(syncerState.inErrorState)).Set(float64(count))
+	}
 
 	epStateCount, epsStateCount, epCount, epsCount := sm.computeEndpointStateMetrics()
 	for state, count := range epStateCount {
@@ -425,13 +429,4 @@ func (sm *SyncerMetrics) computeNegCounts() map[negLocTypeKey]int {
 	}
 
 	return negCountByLocation
-}
-
-func PublishSyncerStateMetrics(stateCount syncerStateCount) {
-	// Iterate to initialize all possible syncer state values.
-	for _, syncerState := range listAllSyncerStates() {
-		SyncerCountBySyncResult.WithLabelValues(
-			string(syncerState.lastSyncResult), strconv.FormatBool(syncerState.inErrorState)).
-			Set(float64(stateCount[syncerState]))
-	}
 }
