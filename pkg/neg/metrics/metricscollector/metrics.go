@@ -139,6 +139,15 @@ var (
 		},
 		[]string{"result"},
 	)
+
+	negsManagedCount = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      "managed_neg_count",
+			Help:      "Number of NEGs the Neg Controller Manages",
+		},
+		[]string{"location", "endpoint_type"},
+	)
 )
 
 type syncerState struct {
