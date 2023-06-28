@@ -638,9 +638,8 @@ func TestCheckL7ILBNegAnnotation(t *testing.T) {
 	}
 }
 
-// TestCheckAllIngresses tests whether all the checks are triggered.
-func TestCheckAllIngresses(t *testing.T) {
-
+// TestCheckFunctions tests CheckAllIngresses and CheckIngress.
+func TestCheckFunctions(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	beClient := fakebeconfig.NewSimpleClientset()
 	feClient := fakefeconfig.NewSimpleClientset()
@@ -749,11 +748,107 @@ func TestCheckAllIngresses(t *testing.T) {
 		},
 	}, metav1.CreateOptions{})
 
-	result := CheckAllIngresses("test", client, beClient, feClient)
 	checkSet := make(map[string]struct{})
-	for _, resource := range result.Resources {
-		for _, check := range resource.Checks {
-			checkSet[check.Name] = struct{}{}
+
+	for _, tc := range []struct {
+		desc        string
+		namespace   string
+		ingressName string
+		expect      report.Report
+	}{
+		{
+			desc:        "No ingress name specified",
+			namespace:   "test",
+			ingressName: "",
+			expect: report.Report{
+				Resources: []*report.Resource{
+					{
+						Kind:      "Ingress",
+						Namespace: "test",
+						Name:      "ingress1",
+						Checks: []*report.Check{
+							{Name: "IngressRuleCheck", Result: "PASSED"},
+							{Name: "L7ILBFrontendConfigCheck", Result: "FAILED"},
+							{Name: "RuleHostOverwriteCheck", Result: "PASSED"},
+							{Name: "FrontenådConfigExistenceCheck", Result: "FAILED"},
+							{Name: "ServiceExistenceCheck", Result: "PASSED"},
+							{Name: "BackendConfigAnnotationCheck", Result: "PASSED"},
+							{Name: "AppProtocolAnnotationCheck", Result: "FAILED"},
+							{Name: "L7ILBNegAnnotationCheck", Result: "FAILED"},
+							{Name: "BackendConfigExistenceCheck", Result: "PASSED"},
+							{Name: "HealthCheckTimeoutCheck", Result: "SKIPPED"},
+						},
+					},
+					{
+						Kind:      "Ingress",
+						Namespace: "test",
+						Name:      "ingress2",
+						Checks: []*report.Check{
+							{Name: "IngressRuleCheck", Result: "FAILED"},
+							{Name: "L7ILBFrontendConfigCheck", Result: "SKIPPED"},
+							{Name: "RuleHostOverwriteCheck", Result: "FAILED"},
+							{Name: "FrontendConfigExistenceCheck", Result: "PASSED"},
+							{Name: "ServiceExistenceCheck", Result: "PASSED"},
+							{Name: "BackendConfigAnnotationCheck", Result: "PASSED"},
+							{Name: "AppProtocolAnnotationCheck", Result: "SKIPPED"},
+							{Name: "L7ILBNegAnnotationCheck", Result: "SKIPPED"},
+							{Name: "BackendConfigExistenceCheck", Result: "PASSED"},
+							{Name: "HealthCheckTimeoutCheck", Result: "FAILED"},
+						},
+					},
+				},
+			},
+		},
+		{
+			desc:        "namespace and ingress name specified",
+			namespace:   "test",
+			ingressName: "ingress2",
+			expect: report.Report{
+				Resources: []*report.Resource{
+					{
+						Kind:      "Ingress",
+						Namespace: "test",
+						Name:      "ingress2",
+						Checks: []*report.Check{
+							{Name: "IngressRuleCheck", Result: "FAILED"},
+							{Name: "L7ILBFrontendConfigCheck", Result: "SKIPPED"},
+							{Name: "RuleHostOverwriteCheck", Result: "FAILED"},
+							{Name: "FrontendConfigExistenceCheck", Result: "PASSED"},
+							{Name: "ServiceExistenceCheck", Result: "PASSED"},
+							{Name: "BackendConfigAnnotationCheck", Result: "PASSED"},
+							{Name: "AppProtocolAnnotationCheck", Result: "SKIPPED"},
+							{Name: "L7ILBNegAnnotationCheck", Result: "SKIPPED"},
+							{Name: "BackendConfigExistenceCheck", Result: "PASSED"},
+							{Name: "HealthCheckTimeoutCheck", Result: "FAILED"},
+						},
+					},
+				},
+			},
+		},
+	} {
+		var result report.Report
+		if tc.ingressName == "" {
+			result = CheckAllIngresses(tc.namespace, client, beClient, feClient)
+		} else {
+			result = CheckIngress(tc.ingressName, tc.namespace, client, beClient, feClient)
+		}
+
+		for _, resource := range result.Resources {
+			for _, check := range resource.Checks {
+				checkSet[check.Name] = struct{}{}
+			}
+		}
+
+		if len(tc.expect.Resources) != len(result.Resources) {
+			t.Errorf("The number of ingress to be checked is not correct, want: %d, got: %d", len(tc.expect.Resources), len(result.Resources))
+		}
+
+		for i, resource := range result.Resources {
+			for j, check := range resource.Checks {
+				if diff := cmp.Diff(tc.expect.Resources[i].Checks[j].Result, check.Result); diff != "" {
+					t.Errorf("For ingress check %s for ingress %s/%s, (-want +got):\n%s", check.Name, resource.Namespace, resource.Name, diff)
+				}
+			}
 		}
 	}
 
@@ -770,53 +865,7 @@ func TestCheckAllIngresses(t *testing.T) {
 		L7ILBNegAnnotationCheck,
 	} {
 		if _, ok := checkSet[check]; !ok {
-			t.Errorf("Missing check %s in CheckAllIngresses", check)
-		}
-	}
-
-	expect := report.Report{
-		Resources: []*report.Resource{
-			{
-				Kind:      "Ingress",
-				Namespace: "test",
-				Name:      "ingress1",
-				Checks: []*report.Check{
-					{Name: "IngressRuleCheck", Result: "PASSED"},
-					{Name: "L7ILBFrontendConfigCheck", Result: "FAILED"},
-					{Name: "RuleHostOverwriteCheck", Result: "PASSED"},
-					{Name: "FrontendConfigExistenceCheck", Result: "FAILED"},
-					{Name: "ServiceExistenceCheck", Result: "PASSED"},
-					{Name: "BackendConfigAnnotationCheck", Result: "PASSED"},
-					{Name: "AppProtocolAnnotationCheck", Result: "FAILED"},
-					{Name: "L7ILBNegAnnotationCheck", Result: "FAILED"},
-					{Name: "BackendConfigExistenceCheck", Result: "PASSED"},
-					{Name: "HealthCheckTimeoutCheck", Result: "SKIPPED"},
-				},
-			},
-			{
-				Kind:      "Ingress",
-				Namespace: "test",
-				Name:      "ingress2",
-				Checks: []*report.Check{
-					{Name: "IngressRuleCheck", Result: "FAILED"},
-					{Name: "L7ILBFrontendConfigCheck", Result: "SKIPPED"},
-					{Name: "RuleHostOverwriteCheck", Result: "FAILED"},
-					{Name: "FrontendConfigExistenceCheck", Result: "PASSED"},
-					{Name: "ServiceExistenceCheck", Result: "PASSED"},
-					{Name: "BackendConfigAnnotationCheck", Result: "PASSED"},
-					{Name: "AppProtocolAnnotationCheck", Result: "SKIPPED"},
-					{Name: "L7ILBNegAnnotationCheck", Result: "SKIPPED"},
-					{Name: "BackendConfigExistenceCheck", Result: "PASSED"},
-					{Name: "HealthCheckTimeoutCheck", Result: "FAILED"},
-				},
-			},
-		},
-	}
-	for i, resource := range result.Resources {
-		for j, check := range resource.Checks {
-			if diff := cmp.Diff(expect.Resources[i].Checks[j].Result, check.Result); diff != "" {
-				t.Errorf("For ingress check %s for ingress %s/%s, (-want +got):\n%s", check.Name, resource.Namespace, resource.Name, diff)
-			}
+			t.Errorf("Missing check %s in check functions", check)
 		}
 	}
 }

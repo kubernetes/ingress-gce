@@ -48,7 +48,14 @@ var rootCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Error connecting to Kubernetes: %v", err)
 			os.Exit(1)
 		}
-		output := ingress.CheckAllIngresses(namespace, client, beconfigClient, feConfigClient)
+
+		var output report.Report
+		if len(args) == 0 {
+			output = ingress.CheckAllIngresses(namespace, client, beconfigClient, feConfigClient)
+		} else {
+			output = ingress.CheckIngress(args[0], namespace, client, beconfigClient, feConfigClient)
+		}
+
 		res, err := report.JsonReport(&output)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error processing results: %v", err)
