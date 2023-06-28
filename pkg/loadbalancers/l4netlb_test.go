@@ -320,9 +320,6 @@ func TestEnsureNetLBFirewallDestinations(t *testing.T) {
 func TestEnsureExternalDualStackLoadBalancer(t *testing.T) {
 	t.Parallel()
 	nodeNames := []string{"test-node-1"}
-	vals := gce.DefaultTestClusterValues()
-
-	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 
 	testCases := []struct {
 		ipFamilies    []v1.IPFamily
@@ -362,22 +359,10 @@ func TestEnsureExternalDualStackLoadBalancer(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 
-			fakeGCE := getFakeGCECloud(vals)
-
 			svc := test.NewL4NetLBRBSDualStackService(v1.ProtocolTCP, tc.ipFamilies, tc.trafficPolicy)
-
-			l4NetLBParams := &L4NetLBParams{
-				Service:          svc,
-				Cloud:            fakeGCE,
-				Namer:            namer,
-				Recorder:         record.NewFakeRecorder(100),
-				DualStackEnabled: true,
-			}
-			l4NetLB := NewL4NetLB(l4NetLBParams)
-			l4NetLB.healthChecks = healthchecksl4.Fake(fakeGCE, l4NetLBParams.Recorder)
-
-			if _, err := test.CreateAndInsertNodes(l4NetLB.cloud, nodeNames, vals.ZoneName); err != nil {
-				t.Errorf("Unexpected error when adding nodes %v", err)
+			l4NetLB, err := setupNetLBDualStackTestService(svc, nodeNames)
+			if err != nil {
+				t.Fatal(err)
 			}
 
 			result := l4NetLB.EnsureFrontend(nodeNames, svc)
@@ -454,30 +439,13 @@ func TestDualStackNetLBTransitions(t *testing.T) {
 			t.Parallel()
 
 			nodeNames := []string{"test-node-1"}
-			vals := gce.DefaultTestClusterValues()
-
-			namer := namer_util.NewL4Namer(kubeSystemUID, nil)
-			fakeGCE := getFakeGCECloud(vals)
-			c := fakeGCE.Compute().(*cloud.MockGCE)
 
 			svc := test.NewL4NetLBRBSDualStackService(tc.initialProtocol, tc.initialIPFamily, tc.initialTrafficPolicy)
-			l4NetLBParams := &L4NetLBParams{
-				Service:          svc,
-				Cloud:            fakeGCE,
-				Namer:            namer,
-				Recorder:         record.NewFakeRecorder(100),
-				DualStackEnabled: true,
+			l4NetLB, err := setupNetLBDualStackTestService(svc, nodeNames)
+			if err != nil {
+				t.Fatal(err)
 			}
-			l4NetLB := NewL4NetLB(l4NetLBParams)
-			l4NetLB.healthChecks = healthchecksl4.Fake(fakeGCE, l4NetLBParams.Recorder)
-
-			// Before deleting forwarding rule, check, that the address was reserved
-			c.MockForwardingRules.DeleteHook = assertAddressOldReservedHook(t, c, fakeGCE)
-
-			if _, err := test.CreateAndInsertNodes(l4NetLB.cloud, nodeNames, vals.ZoneName); err != nil {
-				t.Errorf(
-					"Unexpected error when adding nodes %v", err)
-			}
+			l4NetLB.cloud.Compute().(*cloud.MockGCE).MockForwardingRules.DeleteHook = assertAddressOldReservedHook(t, l4NetLB.cloud)
 
 			result := l4NetLB.EnsureFrontend(nodeNames, svc)
 			svc.Annotations = result.Annotations
@@ -491,7 +459,7 @@ func TestDualStackNetLBTransitions(t *testing.T) {
 			finalSvc.Annotations = result.Annotations
 			assertDualStackNetLBResources(t, l4NetLB, nodeNames)
 
-			c.MockForwardingRules.DeleteHook = nil
+			l4NetLB.cloud.Compute().(*cloud.MockGCE).MockForwardingRules.DeleteHook = nil
 			l4NetLB.EnsureLoadBalancerDeleted(l4NetLB.Service)
 			assertDualStackNetLBResourcesDeleted(t, l4NetLB)
 		})
@@ -521,27 +489,14 @@ func dualStackNetLBTransitionTestDesc(initialIPFamily []v1.IPFamily, finalIPFami
 func TestDualStackNetLBSyncIgnoresNoAnnotationIPv6Resources(t *testing.T) {
 	t.Parallel()
 	nodeNames := []string{"test-node-1"}
-	vals := gce.DefaultTestClusterValues()
-
-	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
-	fakeGCE := getFakeGCECloud(vals)
 
 	svc := test.NewL4NetLBRBSService(8080)
-	l4NetLBParams := &L4NetLBParams{
-		Service:          svc,
-		Cloud:            fakeGCE,
-		Namer:            namer,
-		Recorder:         record.NewFakeRecorder(100),
-		DualStackEnabled: true,
-	}
-	l4NetLB := NewL4NetLB(l4NetLBParams)
-	l4NetLB.healthChecks = healthchecksl4.Fake(fakeGCE, l4NetLBParams.Recorder)
-
-	if _, err := test.CreateAndInsertNodes(l4NetLB.cloud, nodeNames, vals.ZoneName); err != nil {
-		t.Errorf("Unexpected error when adding nodes %v", err)
-	}
-
 	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol}
+	l4NetLB, err := setupNetLBDualStackTestService(svc, nodeNames)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	result := l4NetLB.EnsureFrontend(nodeNames, svc)
 	svc.Annotations = result.Annotations
 	assertDualStackNetLBResources(t, l4NetLB, nodeNames)
@@ -559,7 +514,7 @@ func TestDualStackNetLBSyncIgnoresNoAnnotationIPv6Resources(t *testing.T) {
 
 	// Verify IPv4 Firewall was not deleted
 	ipv6FWName := l4NetLB.namer.L4IPv6Firewall(l4NetLB.Service.Namespace, l4NetLB.Service.Name)
-	err := verifyFirewallNotExists(l4NetLB.cloud, ipv6FWName)
+	err = verifyFirewallNotExists(l4NetLB.cloud, ipv6FWName)
 	if err == nil {
 		t.Errorf("firewall rule %s was deleted, expected not", ipv6FWName)
 	}
@@ -579,27 +534,14 @@ func TestDualStackNetLBSyncIgnoresNoAnnotationIPv6Resources(t *testing.T) {
 func TestDualStackNetLBSyncIgnoresNoAnnotationIPv4Resources(t *testing.T) {
 	t.Parallel()
 	nodeNames := []string{"test-node-1"}
-	vals := gce.DefaultTestClusterValues()
-
-	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
-	fakeGCE := getFakeGCECloud(vals)
 
 	svc := test.NewL4NetLBRBSService(8080)
-	l4NetLBParams := &L4NetLBParams{
-		Service:          svc,
-		Cloud:            fakeGCE,
-		Namer:            namer,
-		Recorder:         record.NewFakeRecorder(100),
-		DualStackEnabled: true,
-	}
-	l4NetLB := NewL4NetLB(l4NetLBParams)
-	l4NetLB.healthChecks = healthchecksl4.Fake(fakeGCE, l4NetLBParams.Recorder)
-
-	if _, err := test.CreateAndInsertNodes(l4NetLB.cloud, nodeNames, vals.ZoneName); err != nil {
-		t.Errorf("Unexpected error when adding nodes %v", err)
-	}
-
 	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
+	l4NetLB, err := setupNetLBDualStackTestService(svc, nodeNames)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	result := l4NetLB.EnsureFrontend(nodeNames, svc)
 	svc.Annotations = result.Annotations
 	assertDualStackNetLBResources(t, l4NetLB, nodeNames)
@@ -617,7 +559,7 @@ func TestDualStackNetLBSyncIgnoresNoAnnotationIPv4Resources(t *testing.T) {
 
 	// Verify IPv4 Firewall was not deleted
 	fwName := l4NetLB.namer.L4Backend(l4NetLB.Service.Namespace, l4NetLB.Service.Name)
-	err := verifyFirewallNotExists(l4NetLB.cloud, fwName)
+	err = verifyFirewallNotExists(l4NetLB.cloud, fwName)
 	if err == nil {
 		t.Errorf("firewall rule %s was deleted, expected not", fwName)
 	}
@@ -637,27 +579,13 @@ func TestDualStackNetLBSyncIgnoresNoAnnotationIPv4Resources(t *testing.T) {
 func TestEnsureIPv6ExternalLoadBalancerCustomSubnet(t *testing.T) {
 	t.Parallel()
 	nodeNames := []string{"test-node-1"}
-	vals := gce.DefaultTestClusterValues()
-
-	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
-	fakeGCE := getFakeGCECloud(vals)
 
 	svc := test.NewL4NetLBRBSService(8080)
-	l4NetLBParams := &L4NetLBParams{
-		Service:          svc,
-		Cloud:            fakeGCE,
-		Namer:            namer,
-		Recorder:         record.NewFakeRecorder(100),
-		DualStackEnabled: true,
-	}
-	l4NetLB := NewL4NetLB(l4NetLBParams)
-	l4NetLB.healthChecks = healthchecksl4.Fake(fakeGCE, l4NetLBParams.Recorder)
-
-	if _, err := test.CreateAndInsertNodes(l4NetLB.cloud, nodeNames, vals.ZoneName); err != nil {
-		t.Errorf("Unexpected error when adding nodes %v", err)
-	}
-
 	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
+	l4NetLB, err := setupNetLBDualStackTestService(svc, nodeNames)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	result := l4NetLB.EnsureFrontend(nodeNames, svc)
 	if result.Error != nil {
@@ -701,6 +629,28 @@ func TestEnsureIPv6ExternalLoadBalancerCustomSubnet(t *testing.T) {
 		t.Errorf("Unexpected error deleting loadbalancer - err %v", result.Error)
 	}
 	assertDualStackNetLBResourcesDeleted(t, l4NetLB)
+}
+
+func setupNetLBDualStackTestService(svc *v1.Service, nodeNames []string) (*L4NetLB, error) {
+	vals := gce.DefaultTestClusterValues()
+	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+	fakeGCE := getFakeGCECloud(vals)
+
+	l4NetLBParams := &L4NetLBParams{
+		Service:          svc,
+		Cloud:            fakeGCE,
+		Namer:            namer,
+		Recorder:         record.NewFakeRecorder(100),
+		DualStackEnabled: true,
+	}
+	l4NetLB := NewL4NetLB(l4NetLBParams)
+	l4NetLB.healthChecks = healthchecksl4.Fake(fakeGCE, l4NetLBParams.Recorder)
+
+	if _, err := test.CreateAndInsertNodes(l4NetLB.cloud, nodeNames, vals.ZoneName); err != nil {
+		return nil, fmt.Errorf("unexpected error when adding nodes %w", err)
+	}
+
+	return l4NetLB, nil
 }
 
 func ensureLoadBalancer(port int, vals gce.TestClusterValues, fakeGCE *gce.Cloud, t *testing.T) (*v1.Service, *L4NetLB) {
@@ -1223,7 +1173,8 @@ func checkMetrics(m metrics.L4NetLBServiceState, isManaged, isPremium, isUserErr
 	return nil
 }
 
-func assertAddressOldReservedHook(t *testing.T, mockGCE *cloud.MockGCE, gceCloud *gce.Cloud) func(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules) (bool, error) {
+func assertAddressOldReservedHook(t *testing.T, gceCloud *gce.Cloud) func(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules) (bool, error) {
+	mockGCE := gceCloud.Compute().(*cloud.MockGCE)
 	return func(ctx context.Context, key *meta.Key, _ *cloud.MockForwardingRules) (bool, error) {
 		fr, err := mockGCE.MockForwardingRules.Get(ctx, key)
 		// if forwarding rule not exists, don't need to check if address reserved
