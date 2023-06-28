@@ -532,7 +532,7 @@ func TestGetProbeCrossNamespace(t *testing.T) {
 			// path is different. If this pod was created in the same ns, it
 			// would become the health check.
 			Labels:            map[string]string{"app-3001": "test"},
-			Name:              fmt.Sprintf("test-pod-new-ns"),
+			Name:              "test-pod-new-ns",
 			Namespace:         "new-ns",
 			CreationTimestamp: metav1.NewTime(firstPodCreationTime.Add(-time.Duration(time.Hour))),
 		},

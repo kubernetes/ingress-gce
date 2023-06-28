@@ -249,7 +249,7 @@ func TestFrontendResourceDeletion(t *testing.T) {
 			t.Logf("Echo service created (%s/%s)", s.Namespace, svcName)
 
 			// Create SSL certificate.
-			certName := fmt.Sprintf("cert-1")
+			certName := "cert-1"
 			cert, err := e2e.NewCert(certName, host, e2e.K8sCert, false)
 			if err != nil {
 				t.Fatalf("e2e.NewCert(%q, %q, _, %t) = %v, want nil", certName, host, false, err)

@@ -178,7 +178,7 @@ func (r *readinessReflector) syncPod(podKey string, neg, backendService *meta.Ke
 func (r *readinessReflector) getExpectedNegCondition(pod *v1.Pod, neg, backendService *meta.Key) v1.PodCondition {
 	expectedCondition := v1.PodCondition{Type: shared.NegReadinessGate}
 	if pod == nil {
-		expectedCondition.Message = fmt.Sprintf("Unknown status for unknown pod.")
+		expectedCondition.Message = "Unknown status for unknown pod."
 		return expectedCondition
 	}
 

@@ -132,7 +132,7 @@ func CheckRuleHostOverwrite(c *IngressChecker) (string, string, string) {
 		}
 		hostSet[rule.Host] = struct{}{}
 	}
-	return RuleHostOverwriteCheck, report.Passed, fmt.Sprintf("Ingress rule hosts are unique")
+	return RuleHostOverwriteCheck, report.Passed, "Ingress rule hosts are unique"
 }
 
 // CheckServiceExistence checks whether a service exists.
