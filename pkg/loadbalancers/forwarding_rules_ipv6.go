@@ -22,13 +22,11 @@ import (
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
-	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/cloud-provider-gcp/providers/gce"
-	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -148,7 +146,7 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 		return nil, err
 	}
 
-	subnetworkURL, err := l4netlb.IPv6ForwardingRuleSubnet()
+	subnetworkURL, err := l4netlb.ipv6SubnetURL()
 	if err != nil {
 		return nil, fmt.Errorf("error getting ipv6 forwarding rule subnet: %w", err)
 	}
@@ -235,19 +233,6 @@ func (l4netlb *L4NetLB) buildExpectedIPv6ForwardingRule(bsLink, ipv6AddressToUse
 	}
 
 	return fr, nil
-}
-
-func (l4netlb *L4NetLB) IPv6ForwardingRuleSubnet() (string, error) {
-	// at first, try to get subnet from annotation
-	if subnetName := annotations.FromService(l4netlb.Service).GetExternalLoadBalancerAnnotationSubnet(); subnetName != "" {
-		subnetKey, err := l4netlb.createKey(subnetName)
-		if err != nil {
-			return "", err
-		}
-		return cloud.SelfLink(meta.VersionGA, l4netlb.cloud.NetworkProjectID(), "subnetworks", subnetKey), nil
-	}
-	// if no subnet in annotation, use cluster subnet
-	return l4netlb.cloud.SubnetworkURL(), nil
 }
 
 func (l4netlb *L4NetLB) deleteChangedIPv6ForwardingRule(existingFwdRule *composite.ForwardingRule, expectedFwdRule *composite.ForwardingRule) error {

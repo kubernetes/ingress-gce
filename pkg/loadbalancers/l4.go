@@ -41,6 +41,10 @@ import (
 	"k8s.io/klog/v2"
 )
 
+const (
+	subnetInternalIPv6AccessType = "INTERNAL"
+)
+
 // Many of the functions in this file are re-implemented from gce_loadbalancer_internal.go
 // L4 handles the resource creation/deletion/update for a given L4 ILB service.
 type L4 struct {
@@ -282,6 +286,19 @@ func (l4 *L4) getFRNameWithProtocol(protocol string) string {
 	return l4.namer.L4ForwardingRule(l4.Service.Namespace, l4.Service.Name, strings.ToLower(protocol))
 }
 
+func (l4 *L4) subnetName() string {
+	// At first check custom subnet annotation.
+	customSubnetName := annotations.FromService(l4.Service).GetInternalLoadBalancerAnnotationSubnet()
+	if customSubnetName != "" {
+		return customSubnetName
+	}
+
+	// If no custom subnet in annotation -- use cluster subnet.
+	clusterSubnetURL := l4.cloud.SubnetworkURL()
+	splitURL := strings.Split(clusterSubnetURL, "/")
+	return splitURL[len(splitURL)-1]
+}
+
 // EnsureInternalLoadBalancer ensures that all GCE resources for the given loadbalancer service have
 // been created. It returns a LoadBalancerStatus with the updated ForwardingRule IP address.
 func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service) *L4ILBSyncResult {
@@ -300,6 +317,21 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	// But this is still the easiest way to identify create vs update in the common case.
 	if len(svc.Status.LoadBalancer.Ingress) > 0 {
 		result.SyncType = SyncTypeUpdate
+	}
+
+	// If service requires IPv6 LoadBalancer -- verify that Subnet with Internal IPv6 ranges is used.
+	if l4.enableDualStack && utils.NeedsIPv6(l4.Service) {
+		subnetName := l4.subnetName()
+		hasIPv6SubnetRange, err := utils.SubnetHasIPv6Range(l4.cloud, subnetName, subnetInternalIPv6AccessType)
+		if err != nil {
+			result.Error = err
+			return result
+		}
+		if !hasIPv6SubnetRange {
+			klog.Infof("Subnet %s for IPv6 Service %s/%s does not have internal IPv6 ranges", subnetName, l4.Service.Namespace, l4.Service.Name)
+			result.Error = utils.NewUserError(fmt.Errorf("subnet %s does not have internal IPv6 ranges, required for IPv6 Service", subnetName))
+			return result
+		}
 	}
 
 	hcLink := l4.provideHealthChecks(nodeNames, result)

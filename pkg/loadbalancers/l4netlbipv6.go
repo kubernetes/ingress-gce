@@ -20,6 +20,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/firewalls"
@@ -29,7 +31,8 @@ import (
 )
 
 const (
-	ipv6Suffix = "-ipv6"
+	ipv6Suffix                   = "-ipv6"
+	subnetExternalIPv6AccessType = "EXTERNAL"
 )
 
 // ensureIPv6Resources creates resources specific to IPv6 L4 NetLB Load Balancers:
@@ -175,4 +178,30 @@ func (l4netlb *L4NetLB) deleteIPv6NodesFirewall(syncResult *L4NetLBSyncResult) {
 		syncResult.GCEResourceInError = annotations.FirewallRuleIPv6Resource
 		syncResult.Error = err
 	}
+}
+
+func (l4netlb *L4NetLB) ipv6SubnetURL() (string, error) {
+	// at first, try to get subnet from annotation
+	if subnetName := annotations.FromService(l4netlb.Service).GetExternalLoadBalancerAnnotationSubnet(); subnetName != "" {
+		subnetKey, err := l4netlb.createKey(subnetName)
+		if err != nil {
+			return "", err
+		}
+		return cloud.SelfLink(meta.VersionGA, l4netlb.cloud.NetworkProjectID(), "subnetworks", subnetKey), nil
+	}
+	// if no subnet in annotation, use cluster subnet
+	return l4netlb.cloud.SubnetworkURL(), nil
+}
+
+func (l4netlb *L4NetLB) ipv6SubnetName() string {
+	// At first check custom subnet annotation.
+	customSubnetName := annotations.FromService(l4netlb.Service).GetExternalLoadBalancerAnnotationSubnet()
+	if customSubnetName != "" {
+		return customSubnetName
+	}
+
+	// If no custom subnet in annotation -- use cluster subnet.
+	clusterSubnetURL := l4netlb.cloud.SubnetworkURL()
+	splitURL := strings.Split(clusterSubnetURL, "/")
+	return splitURL[len(splitURL)-1]
 }

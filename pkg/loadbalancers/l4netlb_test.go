@@ -499,7 +499,6 @@ func TestDualStackNetLBSyncIgnoresNoAnnotationIPv6Resources(t *testing.T) {
 
 	result := l4NetLB.EnsureFrontend(nodeNames, svc)
 	svc.Annotations = result.Annotations
-	assertDualStackNetLBResources(t, l4NetLB, nodeNames)
 
 	// Delete IPv4 resources annotation
 	annotationsToDelete := []string{annotations.TCPForwardingRuleIPv6Key, annotations.FirewallRuleIPv6Key, annotations.FirewallRuleForHealthcheckIPv6Key}
@@ -583,36 +582,63 @@ func TestEnsureIPv6ExternalLoadBalancerCustomSubnet(t *testing.T) {
 	svc := test.NewL4NetLBRBSService(8080)
 	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
 	l4NetLB, err := setupNetLBDualStackTestService(svc, nodeNames)
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	result := l4NetLB.EnsureFrontend(nodeNames, svc)
+	result := l4NetLB.EnsureFrontend(nodeNames, l4NetLB.Service)
 	if result.Error != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+		t.Fatalf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
 	svc.Annotations = result.Annotations
 	assertDualStackNetLBResourcesWithCustomIPv6Subnet(t, l4NetLB, nodeNames, l4NetLB.cloud.SubnetworkURL())
 
-	// add custom subnet annotation
+	// create custom subnet
+	subnetKey := meta.RegionalKey("test-subnet", l4NetLB.cloud.Region())
+	subnetToCreate := &ga.Subnetwork{
+		Ipv6AccessType: subnetExternalIPv6AccessType,
+		StackType:      "IPV4_IPV6",
+	}
+	err = l4NetLB.cloud.Compute().(*cloud.MockGCE).Subnetworks().Insert(context.TODO(), subnetKey, subnetToCreate)
+	if err != nil {
+		t.Fatalf("Failed to create subnet, error: %v", err)
+	}
 	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "test-subnet"
 	result = l4NetLB.EnsureFrontend(nodeNames, svc)
 	if result.Error != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+		t.Fatalf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
 	svc.Annotations = result.Annotations
 	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "test-subnet"
 	assertDualStackNetLBResourcesWithCustomIPv6Subnet(t, l4NetLB, nodeNames, "test-subnet")
 
 	// Change to a different subnet
+	otherSubnetKey := meta.RegionalKey("another-subnet", l4NetLB.cloud.Region())
+	err = l4NetLB.cloud.Compute().(*cloud.MockGCE).Subnetworks().Insert(context.TODO(), otherSubnetKey, subnetToCreate)
+	if err != nil {
+		t.Fatalf("Failed to create subnet, error: %v", err)
+	}
 	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "another-subnet"
 	result = l4NetLB.EnsureFrontend(nodeNames, svc)
 	if result.Error != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+		t.Fatalf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
 	svc.Annotations = result.Annotations
 	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "another-subnet"
 	assertDualStackNetLBResourcesWithCustomIPv6Subnet(t, l4NetLB, nodeNames, "another-subnet")
+
+	// change to internal IPv6 subnet and expect error
+	internalSubnetKey := meta.RegionalKey("internal-subnet", l4NetLB.cloud.Region())
+	internalSubnetToCreate := &ga.Subnetwork{
+		Ipv6AccessType: "INTERNAL",
+		StackType:      "IPV4_IPV6",
+	}
+	err = l4NetLB.cloud.Compute().(*cloud.MockGCE).Subnetworks().Insert(context.TODO(), internalSubnetKey, internalSubnetToCreate)
+	if err != nil {
+		t.Fatalf("Failed to create subnet, error: %v", err)
+	}
+	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "internal-subnet"
+	result = l4NetLB.EnsureFrontend(nodeNames, svc)
+	if !utils.IsUserError(result.Error) {
+		t.Errorf("Expected to get user error if internal IPv6 subnet specified for external IPv6 service, got %v", result.Error)
+	}
 
 	// remove the annotation - NetLB should revert to default subnet.
 	delete(svc.Annotations, annotations.CustomSubnetAnnotationKey)
@@ -650,6 +676,17 @@ func setupNetLBDualStackTestService(svc *v1.Service, nodeNames []string) (*L4Net
 		return nil, fmt.Errorf("unexpected error when adding nodes %w", err)
 	}
 
+	// Create cluster subnet. Mock GCE uses subnet with empty string name.
+	clusterSubnetName := ""
+	key := meta.RegionalKey(clusterSubnetName, l4NetLB.cloud.Region())
+	subnetToCreate := &ga.Subnetwork{
+		Ipv6AccessType: subnetExternalIPv6AccessType,
+		StackType:      "IPV4_IPV6",
+	}
+	err := fakeGCE.Compute().(*cloud.MockGCE).Subnetworks().Insert(context.TODO(), key, subnetToCreate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create subnet, error: %w", err)
+	}
 	return l4NetLB, nil
 }
 

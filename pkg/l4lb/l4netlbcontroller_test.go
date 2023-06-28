@@ -1569,6 +1569,18 @@ func TestCreateDeleteDualStackNetLBService(t *testing.T) {
 			svc.Spec.IPFamilies = tc.ipFamilies
 			addNetLBService(controller, svc)
 
+			// Create cluster subnet with Internal IPV6 range. Mock GCE uses subnet with empty string name.
+			clusterSubnetName := ""
+			subnetKey := meta.RegionalKey(clusterSubnetName, controller.ctx.Cloud.Region())
+			subnetToCreate := &compute.Subnetwork{
+				Ipv6AccessType: "EXTERNAL",
+				StackType:      "IPV4_IPV6",
+			}
+			err := controller.ctx.Cloud.Compute().(*cloud.MockGCE).Subnetworks().Insert(context.TODO(), subnetKey, subnetToCreate)
+			if err != nil {
+				t.Fatal(err)
+			}
+
 			prevMetrics, err := test.GetL4NetLBLatencyMetric()
 			if err != nil {
 				t.Errorf("Error getting L4 NetLB latency metrics err: %v", err)

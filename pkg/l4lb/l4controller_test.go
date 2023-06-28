@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/metrics"
@@ -568,6 +569,18 @@ func TestCreateDeleteDualStackService(t *testing.T) {
 				t.Errorf("Error getting L4 ILB latency metrics err: %v", err)
 			}
 			newSvc := test.NewL4ILBDualStackService(8080, api_v1.ProtocolTCP, tc.ipFamilies, api_v1.ServiceExternalTrafficPolicyTypeCluster)
+
+			// Create cluster subnet with Internal IPV6 range. Mock GCE uses subnet with empty string name.
+			clusterSubnetName := ""
+			subnetKey := meta.RegionalKey(clusterSubnetName, l4c.ctx.Cloud.Region())
+			subnetToCreate := &compute.Subnetwork{
+				Ipv6AccessType: "INTERNAL",
+				StackType:      "IPV4_IPV6",
+			}
+			err = l4c.ctx.Cloud.Compute().(*cloud.MockGCE).Subnetworks().Insert(context2.TODO(), subnetKey, subnetToCreate)
+			if err != nil {
+				t.Fatal(err)
+			}
 			addILBService(l4c, newSvc)
 			addNEG(l4c, newSvc)
 			err = l4c.sync(getKeyForSvc(newSvc, t))
@@ -617,8 +630,20 @@ func TestCreateDeleteDualStackService(t *testing.T) {
 
 func TestProcessDualStackServiceOnUserError(t *testing.T) {
 	t.Parallel()
-	l4c := newServiceController(t, newFakeGCEWithUserNoIPv6SubnetError())
+	l4c := newServiceController(t, newFakeGCE())
 	l4c.enableDualStack = true
+
+	// Create cluster subnet with External IPV6 range. Mock GCE uses subnet with empty string name.
+	clusterSubnetName := ""
+	subnetKey := meta.RegionalKey(clusterSubnetName, l4c.ctx.Cloud.Region())
+	subnetToCreate := &compute.Subnetwork{
+		Ipv6AccessType: "EXTERNAL",
+		StackType:      "IPV4_IPV6",
+	}
+	err := l4c.ctx.Cloud.Compute().(*cloud.MockGCE).Subnetworks().Insert(context2.TODO(), subnetKey, subnetToCreate)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	newSvc := test.NewL4ILBDualStackService(8080, api_v1.ProtocolTCP, []api_v1.IPFamily{api_v1.IPv4Protocol, api_v1.IPv6Protocol}, api_v1.ServiceExternalTrafficPolicyTypeCluster)
 	addILBService(l4c, newSvc)
@@ -639,7 +664,7 @@ func TestProcessDualStackServiceOnUserError(t *testing.T) {
 }
 
 func TestDualStackILBStatusForErrorSync(t *testing.T) {
-	l4c := newServiceController(t, newFakeGCEWithUserNoIPv6SubnetError())
+	l4c := newServiceController(t, newFakeGCE())
 	l4c.enableDualStack = true
 	(l4c.ctx.Cloud.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = mock.InsertForwardingRulesInternalErrHook
 
@@ -710,10 +735,23 @@ func TestProcessUpdateILBIPFamilies(t *testing.T) {
 
 			l4c := newServiceController(t, newFakeGCE())
 			l4c.enableDualStack = true
+
+			// Create cluster subnet with Internal IPV6 range. Mock GCE uses subnet with empty string name.
+			clusterSubnetName := ""
+			subnetKey := meta.RegionalKey(clusterSubnetName, l4c.ctx.Cloud.Region())
+			subnetToCreate := &compute.Subnetwork{
+				Ipv6AccessType: "INTERNAL",
+				StackType:      "IPV4_IPV6",
+			}
+			err := l4c.ctx.Cloud.Compute().(*cloud.MockGCE).Subnetworks().Insert(context2.TODO(), subnetKey, subnetToCreate)
+			if err != nil {
+				t.Fatal(err)
+			}
+
 			svc := test.NewL4ILBDualStackService(8080, api_v1.ProtocolTCP, tc.initialIPFamilies, api_v1.ServiceExternalTrafficPolicyTypeCluster)
 			addILBService(l4c, svc)
 			addNEG(l4c, svc)
-			err := l4c.sync(getKeyForSvc(svc, t))
+			err = l4c.sync(getKeyForSvc(svc, t))
 			if err != nil {
 				t.Errorf("Failed to sync newly added service %s, err %v", svc.Name, err)
 			}
@@ -789,13 +827,6 @@ func newFakeGCEWithUserInsertError() *gce.Cloud {
 	vals := gce.DefaultTestClusterValues()
 	fakeGCE := gce.NewFakeGCECloud(vals)
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = test.InsertForwardingRuleErrorHook(&googleapi.Error{Code: http.StatusConflict, Message: "IP_IN_USE_BY_ANOTHER_RESOURCE - IP '1.1.1.1' is already being used by another resource."})
-	return fakeGCE
-}
-
-func newFakeGCEWithUserNoIPv6SubnetError() *gce.Cloud {
-	vals := gce.DefaultTestClusterValues()
-	fakeGCE := gce.NewFakeGCECloud(vals)
-	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = test.InsertForwardingRuleErrorHook(&googleapi.Error{Code: http.StatusBadRequest, Message: "Subnetwork does not have an internal IPv6 IP space which is required for IPv6 L4 ILB forwarding rules."})
 	return fakeGCE
 }
 

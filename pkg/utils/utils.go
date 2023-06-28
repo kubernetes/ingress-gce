@@ -90,10 +90,10 @@ const (
 	// exclude from load balancers created by a cloud provider. This label is deprecated and will
 	// be removed in 1.18.
 	LabelAlphaNodeRoleExcludeBalancer = "alpha.service-controller.kubernetes.io/exclude-balancer"
+	DualStackSubnetStackType          = "IPV4_IPV6"
 )
 
 var networkTierErrorRegexp = regexp.MustCompile(`The network tier of external IP is STANDARD|PREMIUM, that of Address must be the same.`)
-var subnetworkMissingIPv6ErrorRegexp = regexp.MustCompile("Subnetwork does not have an internal IPv6 IP space which is required for IPv6 L4 ILB forwarding rules.")
 
 // NetworkTierError is a struct to define error caused by User misconfiguration of Network Tier.
 type NetworkTierError struct {
@@ -200,10 +200,6 @@ func IsInUsedByError(err error) bool {
 	return strings.Contains(apiErr.Message, "being used by")
 }
 
-func IsSubnetworkMissingIPv6GCEError(err error) bool {
-	return subnetworkMissingIPv6ErrorRegexp.MatchString(err.Error())
-}
-
 // IsNetworkTierMismatchGCEError checks if error is a GCE network tier mismatch for external IP
 func IsNetworkTierMismatchGCEError(err error) bool {
 	return networkTierErrorRegexp.MatchString(err.Error())
@@ -237,11 +233,25 @@ func IsInvalidLoadBalancerSourceRangesAnnotationError(err error) bool {
 // Right now User Error might be caused by Network Tier misconfiguration
 // or specifying non-existent or already used IP address.
 func IsUserError(err error) bool {
+	var userError *UserError
 	return IsNetworkTierError(err) ||
 		IsIPConfigurationError(err) ||
 		IsInvalidLoadBalancerSourceRangesSpecError(err) ||
 		IsInvalidLoadBalancerSourceRangesAnnotationError(err) ||
-		IsSubnetworkMissingIPv6GCEError(err)
+		errors.As(err, &userError)
+}
+
+// UserError is a struct to define error caused by User misconfiguration.
+type UserError struct {
+	err error
+}
+
+func (e *UserError) Error() string {
+	return e.err.Error()
+}
+
+func NewUserError(err error) *UserError {
+	return &UserError{err}
 }
 
 // IsNotFoundError returns true if the resource does not exist
@@ -918,4 +928,12 @@ func AddIPToLBStatus(status *api_v1.LoadBalancerStatus, ips ...string) *api_v1.L
 		status.Ingress = append(status.Ingress, api_v1.LoadBalancerIngress{IP: ip})
 	}
 	return status
+}
+
+func SubnetHasIPv6Range(cloud *gce.Cloud, subnetName, ipv6AccessType string) (bool, error) {
+	subnet, err := cloud.GetSubnetwork(cloud.Region(), subnetName)
+	if err != nil {
+		return false, fmt.Errorf("failed getting subnet: %w", err)
+	}
+	return subnet.StackType == DualStackSubnetStackType && subnet.Ipv6AccessType == ipv6AccessType, nil
 }

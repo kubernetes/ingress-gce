@@ -1972,7 +1972,19 @@ func setupILBDualStackTestService(svc *v1.Service, nodeNames []string) (*L4, err
 	l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
 
 	if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
-		return nil, fmt.Errorf("Unexpected error when adding nodes %v", err)
+		return nil, fmt.Errorf("unexpected error when adding nodes %v", err)
+	}
+
+	// Create cluster subnet with Internal IPV6 range. Mock GCE uses subnet with empty string name.
+	clusterSubnetName := ""
+	key := meta.RegionalKey(clusterSubnetName, l4.cloud.Region())
+	subnetToCreate := &compute.Subnetwork{
+		Ipv6AccessType: subnetInternalIPv6AccessType,
+		StackType:      "IPV4_IPV6",
+	}
+	err := fakeGCE.Compute().(*cloud.MockGCE).Subnetworks().Insert(context.TODO(), key, subnetToCreate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create subnet, error: %w", err)
 	}
 	return l4, nil
 }
