@@ -17,6 +17,7 @@ limitations under the License.
 package healthchecks
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -152,9 +153,9 @@ func (h *HealthChecks) SyncServicePort(sp *utils.ServicePort, probe *v1.Probe) (
 	return h.sync(hc, bchcc, sp.THCConfiguration)
 }
 
-// notifyAboutTHC emits Events about successful or attempted THC configuration.
+// emitTHCEvents emits Events about successful or attempted THC configuration.
 // Currently called on creation or update of a health check.
-func (h *HealthChecks) notifyAboutTHC(hc *translator.HealthCheck, thcEvents utils.THCEvents) {
+func (h *HealthChecks) emitTHCEvents(hc *translator.HealthCheck, thcEvents utils.THCEvents) {
 	if thcEvents.THCConfigured {
 		message := "Transparent Health Check successfully configured."
 		h.recorderGetter.Recorder(hc.Service.Namespace).Event(
@@ -184,9 +185,9 @@ func (h *HealthChecks) notifyAboutTHC(hc *translator.HealthCheck, thcEvents util
 
 // sync retrieves a health check based on port, checks type and settings and updates/creates if necessary.
 // sync is only called by the backends.Add func - it's not a pool like other resources.
-// We assume that bchcc cannot be non-nil and thcOptIn be true simultaneously.
-func (h *HealthChecks) sync(hc *translator.HealthCheck, bchcc *backendconfigv1.HealthCheckConfig, thcConf utils.THCConfiguration) (string, error) {
-	if bchcc != nil && thcConf.THCOptInOnSvc {
+// We assume that backendConfigHCConfig cannot be non-nil and thcOptIn be true simultaneously.
+func (h *HealthChecks) sync(hc *translator.HealthCheck, backendConfigHCConfig *backendconfigv1.HealthCheckConfig, thcConf utils.THCConfiguration) (string, error) {
+	if backendConfigHCConfig != nil && thcConf.THCOptInOnSvc {
 		klog.Warningf("BackendConfig exists and thcOptIn true simultaneously for %v. Ignoring transparent health check.", hc.Name)
 		thcConf.THCOptInOnSvc = false
 	}
@@ -201,12 +202,12 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, bchcc *backendconfigv1.H
 
 	existingHC, err := h.Get(hc.Name, hc.Version(), scope)
 	if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
-		klog.V(2).Infof("Health check %q does not exist, creating (hc=%+v, bchcc=%+v)", hc.Name, hc, bchcc)
-		if err = h.create(hc, bchcc); err != nil {
+		klog.V(2).Infof("Health check %q does not exist, creating (hc=%+v, backendConfigHCConfig=%+v)", hc.Name, hc, backendConfigHCConfig)
+		if err = h.create(hc, backendConfigHCConfig); err != nil {
 			klog.Errorf("Health check %q creation error: %v", hc.Name, err)
 			return "", err
 		}
-		h.notifyAboutTHC(hc, thcConf.THCEvents)
+		h.emitTHCEvents(hc, thcConf.THCEvents)
 		// TODO(bowei) -- we don't need to fetch the self-link here as it is
 		// returned as part of the GCE call.
 		selfLink, err := h.getHealthCheckLink(hc.Name, hc.Version(), scope)
@@ -228,9 +229,9 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, bchcc *backendconfigv1.H
 		klog.V(3).Infof("Resulting HC = %+v", hc)
 
 		// Then, BackendConfig will override any fields that are explicitly set.
-		if bchcc != nil {
+		if backendConfigHCConfig != nil {
 			// BackendConfig healthcheck settings always take precedence.
-			hc.UpdateFromBackendConfig(bchcc)
+			hc.UpdateFromBackendConfig(backendConfigHCConfig)
 		}
 	}
 
@@ -242,7 +243,7 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, bchcc *backendconfigv1.H
 		return &ans
 	}
 
-	changes := calculateDiff(filter(existingHC), filter(hc), bchcc, thcConf.THCOptInOnSvc)
+	changes := calculateDiff(filter(existingHC), filter(hc), backendConfigHCConfig, thcConf.THCOptInOnSvc)
 	if changes.hasDiff() {
 		klog.V(2).Infof("Health check %q needs update (%s)", existingHC.Name, changes)
 		if flags.F.EnableUpdateCustomHealthCheckDescription && changes.size() == 1 && changes.has("Description") {
@@ -258,8 +259,37 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, bchcc *backendconfigv1.H
 		if err != nil {
 			klog.Errorf("Health check %q update error: %v", existingHC.Name, err)
 		}
-		h.notifyAboutTHC(hc, thcConf.THCEvents)
+		h.emitTHCEvents(hc, thcConf.THCEvents)
 		return existingHC.SelfLink, err
+	}
+
+	// The content of the following 'if' guarantees that when BackendConfig is removed, the health check Description is updated accordingly
+	// even if changes.hasDiff() above is false. No other health check field is modified. The purpose is for the Description to accurately
+	// reflect the existence of a backendconfigv1.HealthCheckConfig for the service. This is temporary, see
+	// https://github.com/kubernetes/ingress-gce/pull/2181 for details.
+	if flags.F.EnableUpdateCustomHealthCheckDescription {
+		desc := &healthcheck.HealthcheckDesc{}
+		err := json.Unmarshal([]byte(existingHC.Description), desc)
+		if err != nil {
+			klog.V(3).Info("Description for healthcheck %s is not a JSON (probably a plain-text description): %s.", existingHC.Name, existingHC.Description)
+		} else {
+			if desc.Config == healthcheck.BackendConfigHC && backendConfigHCConfig == nil {
+				newHC := *existingHC
+				newHC.Description = hc.Description // Update description only.
+				message := fmt.Sprintf("Health check %q needs Description update: %s -> %s", existingHC.Name, existingHC.Description, newHC.Description)
+				klog.Info(message)
+				if hc.Service != nil {
+					h.recorderGetter.Recorder(hc.Service.Namespace).Event(
+						hc.Service, v1.EventTypeNormal, "HealthcheckDescriptionUpdate", message)
+				}
+				err = h.update(&newHC)
+				if err != nil {
+					klog.Errorf("Health check %q update error: %v", existingHC.Name, err)
+				}
+				h.emitTHCEvents(hc, thcConf.THCEvents)
+				return existingHC.SelfLink, err
+			}
+		}
 	}
 
 	klog.V(2).Infof("Health check %q already exists and needs no update", hc.Name)

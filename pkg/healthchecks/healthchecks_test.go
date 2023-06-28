@@ -535,7 +535,7 @@ func getSingletonHealthcheck(t *testing.T, c *gce.Cloud) *compute.HealthCheck {
 	return utils.DeepCopyComputeHealthCheck(computeHCs[0]) // Make a copy to avoid reading an overwritten version later.
 }
 
-func TestNotifyAboutTHC(t *testing.T) {
+func TestEmitTHCEvents(t *testing.T) {
 	t.Parallel()
 
 	testClusterValues := gce.DefaultTestClusterValues()
@@ -577,7 +577,7 @@ func TestNotifyAboutTHC(t *testing.T) {
 
 	fakeRecorder := fakeSingletonRecorderGetter.FakeRecorder()
 	for _, tc := range testCases {
-		healthChecks.notifyAboutTHC(hc, tc.events)
+		healthChecks.emitTHCEvents(hc, tc.events)
 		for _, wantText := range tc.wantTexts {
 			select {
 			case output := <-fakeRecorder.Events:
@@ -1079,6 +1079,24 @@ func (*syncSPFixture) thc() *compute.HealthCheck {
 			RequestPath:       "/api/podhealth",
 		},
 		Description: translator.DescriptionForTransparentHealthChecks,
+	}
+}
+
+func (*syncSPFixture) bchc() *compute.HealthCheck {
+	return &compute.HealthCheck{
+		Name:               "k8s-be-80--uid1",
+		CheckIntervalSec:   61,
+		HealthyThreshold:   1,
+		TimeoutSec:         1234,
+		Type:               "HTTP",
+		UnhealthyThreshold: 10,
+		SelfLink:           regSelfLink,
+		HttpHealthCheck: &compute.HTTPHealthCheck{
+			Port:        80,
+			RequestPath: "/foo",
+			Host:        "foo.com",
+		},
+		Description: (&healthcheck.HealthcheckInfo{HealthcheckConfig: healthcheck.BackendConfigHC}).GenerateHealthcheckDescription(),
 	}
 }
 
@@ -1709,8 +1727,8 @@ func TestSyncServicePort(t *testing.T) {
 					t.Fatalf("Got %d healthchecks, want 1\n%s", len(computeHCs), pretty.Sprint(computeHCs))
 				}
 
-				// Filter out SelfLink because it is hard to deal with in the mock and
-				// test cases.
+				// Filter out SelfLink (because it is hard to deal with in the mock and
+				// test cases) and Description if the flag EnableUpdateCustomHealthCheckDescription is disabled.
 				filter := func(hc compute.HealthCheck) compute.HealthCheck {
 					hc.SelfLink = ""
 					if !tc.updateHCDescription {
@@ -1743,6 +1761,153 @@ func TestSyncServicePort(t *testing.T) {
 				t.Errorf("hcs.SyncServicePort(tc.sp, tc.probe) = %q, _; want = %q", gotSelfLink, tc.wantSelfLink)
 			}
 			verify()
+		})
+	}
+}
+
+func TestBackendConfigRemoval(t *testing.T) {
+	// No parallel() because we modify the value of the flags:
+	// - EnableUpdateCustomHealthCheckDescription.
+	oldUpdateDescription := flags.F.EnableUpdateCustomHealthCheckDescription
+	defer func() {
+		flags.F.EnableUpdateCustomHealthCheckDescription = oldUpdateDescription
+	}()
+
+	type tc struct {
+		desc                string
+		setup               func(*cloud.MockGCE)
+		sp                  *utils.ServicePort
+		probe               *v1.Probe
+		wantSelfLink        string
+		wantErr             bool
+		wantComputeHC       *compute.HealthCheck
+		updateHCDescription bool
+		enableTHC           bool
+		expectedEvent       int
+		wantEventPrefix     string
+	}
+	fixture := syncSPFixture{}
+
+	var cases []*tc
+
+	// Don't recalculate health check on BackendConfig removal (legacy behaviour, to be changed), but update Description.
+	chc := fixture.bchc()
+	wantCHC := fixture.bchc()
+	wantCHC.Description = translator.DescriptionForDefaultHealthChecks
+	cases = append(cases, &tc{
+		desc:                "not recalculate to default on bc removal",
+		setup:               fixture.setupExistingHCFunc(chc),
+		sp:                  testSPs["HTTP-80-reg-nil-nothc"],
+		wantComputeHC:       wantCHC,
+		updateHCDescription: true,
+		expectedEvent:       1,
+		wantEventPrefix:     fmt.Sprintf("Normal HealthcheckDescriptionUpdate Health check \"%s\" needs Description update", chc.Name),
+	})
+
+	// Don't recalculate health check on BackendConfig removal (legacy behaviour, to be changed), but update Description.
+	chc = fixture.bchc()
+	wantCHC = fixture.bchc()
+	wantCHC.Description = translator.DescriptionForHealthChecksFromReadinessProbe
+	cases = append(cases, &tc{
+		desc:  "not recalculate to rp on bc removal",
+		setup: fixture.setupExistingHCFunc(chc),
+		sp:    testSPs["HTTP-80-reg-nil-nothc"],
+		probe: &v1.Probe{
+			ProbeHandler: api_v1.ProbeHandler{
+				HTTPGet: &v1.HTTPGetAction{Path: "/foo", Host: "foo.com"},
+			},
+			PeriodSeconds:  1,
+			TimeoutSeconds: 1234,
+		},
+		wantComputeHC:       wantCHC,
+		updateHCDescription: true,
+		expectedEvent:       1,
+		wantEventPrefix:     fmt.Sprintf("Normal HealthcheckDescriptionUpdate Health check \"%s\" needs Description update", chc.Name),
+	})
+
+	for _, tc := range cases {
+		t.Run(tc.desc, func(t *testing.T) {
+			flags.F.EnableUpdateCustomHealthCheckDescription = tc.updateHCDescription
+			testClusterValues := gce.DefaultTestClusterValues()
+			fakeGCE := gce.NewFakeGCECloud(testClusterValues)
+
+			mock := fakeGCE.Compute().(*cloud.MockGCE)
+			setupMockUpdate(mock)
+
+			tc.setup(mock)
+
+			fakeSingletonRecorderGetter := NewFakeSingletonRecorderGetter(tc.expectedEvent)
+			hcs := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, fakeSingletonRecorderGetter, NewFakeServiceGetter(), tc.enableTHC)
+
+			gotSelfLink, err := hcs.SyncServicePort(tc.sp, tc.probe)
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Errorf("hcs.SyncServicePort(tc.sp, tc.probe) = _, %v; gotErr = %t, want %t\nsp = %s\nprobe = %s", err, gotErr, tc.wantErr, pretty.Sprint(tc.sp), pretty.Sprint(tc.probe))
+			}
+			if tc.wantSelfLink != "" && gotSelfLink != tc.wantSelfLink {
+				t.Errorf("hcs.SyncServicePort(tc.sp, tc.probe) = %q, _; want = %q", gotSelfLink, tc.wantSelfLink)
+			}
+
+			verify := func() {
+				t.Helper()
+				var computeHCs []*compute.HealthCheck
+				computeHCs, _ = fakeGCE.Compute().HealthChecks().List(context.Background(), nil)
+				if len(computeHCs) != 1 {
+					t.Fatalf("Got %d healthchecks, want 1\n%s", len(computeHCs), pretty.Sprint(computeHCs))
+				}
+
+				// Filter out SelfLink (because it is hard to deal with in the mock and
+				// test cases) and Description if the flag EnableUpdateCustomHealthCheckDescription is disabled.
+				filter := func(hc compute.HealthCheck) compute.HealthCheck {
+					hc.SelfLink = ""
+					if !tc.updateHCDescription {
+						hc.Description = ""
+					}
+					return hc
+				}
+				gotHC := filter(*computeHCs[0])
+				wantHC := filter(*tc.wantComputeHC)
+
+				if !reflect.DeepEqual(gotHC, wantHC) {
+					t.Fatalf("Compute healthcheck is:\n%s, want:\n%s", pretty.Sprint(gotHC), pretty.Sprint(wantHC))
+				}
+			}
+
+			verify()
+
+			// Check that resync should not have an effect and does not issue
+			// an update to GCE. Hook Update() to fail.
+			mock.MockHealthChecks.UpdateHook = func(context.Context, *meta.Key, *compute.HealthCheck, *cloud.MockHealthChecks) error {
+				t.Fatalf("resync should not result in an update")
+				return nil
+			}
+
+			gotSelfLink, err = hcs.SyncServicePort(tc.sp, tc.probe)
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Errorf("hcs.SyncServicePort(tc.sp, tc.probe) = %v; gotErr = %t, want %t\nsp = %s\nprobe = %s", err, gotErr, tc.wantErr, pretty.Sprint(tc.sp), pretty.Sprint(tc.probe))
+			}
+			if tc.wantSelfLink != "" && gotSelfLink != tc.wantSelfLink {
+				t.Errorf("hcs.SyncServicePort(tc.sp, tc.probe) = %q, _; want = %q", gotSelfLink, tc.wantSelfLink)
+			}
+			verify()
+
+			if tc.expectedEvent > 0 {
+				fakeRecorder := fakeSingletonRecorderGetter.FakeRecorder()
+				for i := 0; i < tc.expectedEvent; i++ {
+					select {
+					case output := <-fakeRecorder.Events:
+						if !strings.HasPrefix(output, tc.wantEventPrefix) {
+							t.Errorf("Incorrect event emitted on healthcheck update: \"%s\".", output)
+						}
+					case <-time.After(10 * time.Second):
+						t.Fatalf("Timeout when expecting Event.")
+					}
+				}
+				select {
+				case output := <-fakeRecorder.Events:
+					t.Fatalf("Unexpected event: %s", output)
+				case <-time.After(100 * time.Millisecond):
+				}
+			}
 		})
 	}
 }
