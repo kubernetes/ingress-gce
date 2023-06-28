@@ -16,6 +16,7 @@ limitations under the License.
 package loadbalancers
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"strings"
@@ -399,7 +400,7 @@ func TestEnsureExternalDualStackLoadBalancer(t *testing.T) {
 // - ServiceExternalTrafficPolicy
 // - Protocol
 // - IPFamilies
-// for dual-stack service. In total 400 combinations
+// for dual-stack service. In total 400 combinations.
 func TestDualStackNetLBTransitions(t *testing.T) {
 	t.Parallel()
 
@@ -457,6 +458,7 @@ func TestDualStackNetLBTransitions(t *testing.T) {
 
 			namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 			fakeGCE := getFakeGCECloud(vals)
+			c := fakeGCE.Compute().(*cloud.MockGCE)
 
 			svc := test.NewL4NetLBRBSDualStackService(tc.initialProtocol, tc.initialIPFamily, tc.initialTrafficPolicy)
 			l4NetLBParams := &L4NetLBParams{
@@ -468,6 +470,9 @@ func TestDualStackNetLBTransitions(t *testing.T) {
 			}
 			l4NetLB := NewL4NetLB(l4NetLBParams)
 			l4NetLB.healthChecks = healthchecksl4.Fake(fakeGCE, l4NetLBParams.Recorder)
+
+			// Before deleting forwarding rule, check, that the address was reserved
+			c.MockForwardingRules.DeleteHook = assertAddressOldReservedHook(t, c, fakeGCE)
 
 			if _, err := test.CreateAndInsertNodes(l4NetLB.cloud, nodeNames, vals.ZoneName); err != nil {
 				t.Errorf(
@@ -486,6 +491,7 @@ func TestDualStackNetLBTransitions(t *testing.T) {
 			finalSvc.Annotations = result.Annotations
 			assertDualStackNetLBResources(t, l4NetLB, nodeNames)
 
+			c.MockForwardingRules.DeleteHook = nil
 			l4NetLB.EnsureLoadBalancerDeleted(l4NetLB.Service)
 			assertDualStackNetLBResourcesDeleted(t, l4NetLB)
 		})
@@ -1215,4 +1221,27 @@ func checkMetrics(m metrics.L4NetLBServiceState, isManaged, isPremium, isUserErr
 		return fmt.Errorf("L4 NetLB metric is user error should be %v", isUserError)
 	}
 	return nil
+}
+
+func assertAddressOldReservedHook(t *testing.T, mockGCE *cloud.MockGCE, gceCloud *gce.Cloud) func(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules) (bool, error) {
+	return func(ctx context.Context, key *meta.Key, _ *cloud.MockForwardingRules) (bool, error) {
+		fr, err := mockGCE.MockForwardingRules.Get(ctx, key)
+		// if forwarding rule not exists, don't need to check if address reserved
+		if utils.IsNotFoundError(err) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+
+		addr, err := gceCloud.GetRegionAddressByIP(fr.Region, fr.IPAddress)
+		if utils.IgnoreHTTPNotFound(err) != nil {
+			return true, err
+		}
+		if addr == nil || utils.IsNotFoundError(err) {
+			t.Errorf("Address not reserved before deleting forwarding rule +%v", fr)
+		}
+
+		return false, nil
+	}
 }
