@@ -139,26 +139,20 @@ var (
 		},
 		[]string{"result"},
 	)
+
+	negsManagedCount = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      "managed_neg_count",
+			Help:      "Number of NEGs the Neg Controller Manages",
+		},
+		[]string{"location", "endpoint_type"},
+	)
 )
 
 type syncerState struct {
 	lastSyncResult negtypes.Reason
 	inErrorState   bool
-}
-
-// listAllSyncerStates lists all possible states for syncers.
-func listAllSyncerStates() []syncerState {
-	var syncerStates []syncerState
-	// For error state errors, we should expect the syncer also in error state.
-	for _, state := range negtypes.ListErrorStates() {
-		syncerStates = append(syncerStates, syncerState{lastSyncResult: state, inErrorState: true})
-	}
-
-	for _, state := range negtypes.ListNonErrorStates() {
-		syncerStates = append(syncerStates, syncerState{lastSyncResult: state, inErrorState: true})
-		syncerStates = append(syncerStates, syncerState{lastSyncResult: state, inErrorState: false})
-	}
-	return syncerStates
 }
 
 type syncerStateCount map[syncerState]int

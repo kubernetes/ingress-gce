@@ -189,22 +189,6 @@ func ClassifyError(err error) NegSyncError {
 	return syncErrType
 }
 
-// ListErrorStates lists all error-state reasons.
-func ListErrorStates() []Reason {
-	return []Reason{ReasonEPCountsDiffer, ReasonEPNodeMissing, ReasonEPNodeNotFound,
-		ReasonEPNodeTypeAssertionFailed, ReasonEPPodMissing, ReasonEPPodNotFound,
-		ReasonEPPodTypeAssertionFailed, ReasonEPPodTerminal, ReasonEPZoneMissing,
-		ReasonEPSEndpointCountZero, ReasonEPCalculationCountZero, ReasonInvalidAPIResponse,
-		ReasonInvalidEPAttach, ReasonInvalidEPDetach, ReasonEPIPInvalid, ReasonEPIPNotFromPod,
-		ReasonEPIPOutOfPodCIDR, ReasonEPServiceNotFound, ReasonEPPodLabelMismatch}
-}
-
-// ListErrorStates lists all non error-state reasons.
-func ListNonErrorStates() []Reason {
-	return []Reason{ReasonNegNotFound, ReasonCurrentNegEPNotFound,
-		ReasonEPSNotFound, ReasonOtherError, ReasonSuccess}
-}
-
 // StrategyQuotaError indicates that a quota error was a result of a request using throttling.Strategy.
 type StrategyQuotaError struct {
 	Err error
