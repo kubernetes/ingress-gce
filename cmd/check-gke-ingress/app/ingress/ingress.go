@@ -23,6 +23,7 @@ import (
 	"reflect"
 	"runtime"
 
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/ingress-gce/cmd/check-gke-ingress/app/report"
@@ -31,14 +32,26 @@ import (
 )
 
 func CheckAllIngresses(namespace string, client kubernetes.Interface, beconfigClient beconfigclient.Interface, feConfigClient feconfigclient.Interface) report.Report {
-	output := report.Report{
-		Resources: []*report.Resource{},
-	}
-
 	ingressList, err := client.NetworkingV1().Ingresses(namespace).List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error listing ingresses: %v", err)
 		os.Exit(1)
+	}
+	return RunChecks(ingressList.Items, client, beconfigClient, feConfigClient)
+}
+
+func CheckIngress(ingressName, namespace string, client kubernetes.Interface, beconfigClient beconfigclient.Interface, feConfigClient feconfigclient.Interface) report.Report {
+	ingress, err := client.NetworkingV1().Ingresses(namespace).Get(context.TODO(), ingressName, metav1.GetOptions{})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error getting ingress %s/%s: %v", namespace, ingressName, err)
+		os.Exit(1)
+	}
+	return RunChecks([]networkingv1.Ingress{*ingress}, client, beconfigClient, feConfigClient)
+}
+
+func RunChecks(ingresses []networkingv1.Ingress, client kubernetes.Interface, beconfigClient beconfigclient.Interface, feConfigClient feconfigclient.Interface) report.Report {
+	output := report.Report{
+		Resources: []*report.Resource{},
 	}
 
 	ingressChecks := []ingressCheckFunc{
@@ -61,7 +74,7 @@ func CheckAllIngresses(namespace string, client kubernetes.Interface, beconfigCl
 		CheckHealthCheckTimeout,
 	}
 
-	for _, ingress := range ingressList.Items {
+	for _, ingress := range ingresses {
 
 		// Ingress related checks
 		ingressRes := &report.Resource{
