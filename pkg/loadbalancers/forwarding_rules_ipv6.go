@@ -37,6 +37,7 @@ import (
 
 const (
 	IPVersionIPv6 = "IPV6"
+	prefix96range = "/96"
 )
 
 func (l4 *L4) ensureIPv6ForwardingRule(bsLink string, options gce.ILBOptions, existingIPv6FwdRule *composite.ForwardingRule, ipv6AddressToUse string) (*composite.ForwardingRule, error) {
@@ -208,6 +209,14 @@ func (l4netlb *L4NetLB) buildExpectedIPv6ForwardingRule(bsLink, ipv6AddressToUse
 	frDesc, err := utils.MakeL4IPv6ForwardingRuleDescription(l4netlb.Service)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute description for forwarding rule %s, err: %w", frName, err)
+	}
+
+	// ipv6AddressToUse will be returned from address manager without /96 prefix.
+	// for creating external IPv6 forwarding rule, address has to be specified with /96 prefix, or API will return error.
+	// This applies only to IPv6 External Forwarding rules,
+	// there is no such requirement for internal IPv6 forwarding rules.
+	if ipv6AddressToUse != "" && !strings.HasSuffix(ipv6AddressToUse, prefix96range) {
+		ipv6AddressToUse += prefix96range
 	}
 
 	svcPorts := l4netlb.Service.Spec.Ports
