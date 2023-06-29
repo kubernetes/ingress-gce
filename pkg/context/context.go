@@ -14,10 +14,12 @@ limitations under the License.
 package context
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
 	apiv1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	informers "k8s.io/client-go/informers"
@@ -232,7 +234,13 @@ func (ctx *ControllerContext) Init() {
 	if ctx.EnableASMConfigMap {
 		klog.Infof("ASMConfigMap is enabled")
 
-		informerFactory := informers.NewSharedInformerFactoryWithOptions(ctx.KubeClient, ctx.ResyncPeriod, informers.WithNamespace(ctx.ASMConfigMapNamespace))
+		informerFactory := informers.NewSharedInformerFactoryWithOptions(
+			ctx.KubeClient,
+			ctx.ResyncPeriod,
+			informers.WithNamespace(ctx.ASMConfigMapNamespace),
+			informers.WithTweakListOptions(func(listOptions *metav1.ListOptions) {
+				listOptions.FieldSelector = fmt.Sprintf("metadata.name=%s", ctx.ASMConfigMapName)
+			}))
 		ctx.ConfigMapInformer = informerFactory.Core().V1().ConfigMaps().Informer()
 		ctx.ASMConfigController = cmconfig.NewConfigMapConfigController(ctx.KubeClient, ctx.Recorder(ctx.ASMConfigMapNamespace), ctx.ASMConfigMapNamespace, ctx.ASMConfigMapName)
 
