@@ -110,6 +110,7 @@ $(GO_BINARIES): build-dirs
 	    $(BUILD_IMAGE)                                                     \
 	    /bin/sh -c "                                                       \
 		ARCH=$(ARCH)                                                   \
+		OS=$(OS)                                                       \
 	        VERSION=$(VERSION)                                             \
 	        PKG=$(PKG)                                                     \
 		TARGET=$@                                                      \

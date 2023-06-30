@@ -2,19 +2,54 @@
 
 check-gke-ingress is a CLI to inspect ingress misconfiguration in GKE clusters.
 
-## Build and run
+## Build and install
 
-Build a binary for check-gke-ingress using `go build`
+### Install with makefile
+Before this, you will need to have docker installed and docker daemon started. Also, you will need to know your machine archtecture.
+You can learn your machine architecture using `uname -m`, and find the corresponding GOARCH value [here](https://gist.github.com/asukakenji/f15ba7e588ac42795f421b48b8aede63#goarch-values). 
+
+For linux machine:
+```
+make build CONTAINER_BINARIES="check-gke-ingress" ARCH=<your-arch>
+sudo chmod +x bin/<your-arch>/check-gke-ingress
+sudo mv bin/<your-arch>/check-gke-ingress /usr/local/bin
+```
+
+For Macbook:
+```
+sudo make build OS="darwin" CONTAINER_BINARIES="check-gke-ingress" ARCH=<your-arch>
+sudo chmod +x .go/bin/darwin_<your-arch>/check-gke-ingress
+sudo mv .go/bin/darwin_<your-arch>/check-gke-ingress /usr/local/bin
+```
+
+### Install with go build
+Before this, you will need to have Go installed.
 
 ```
-cd cmd/check-gke-ingress 
+cd cmd/check-gke-ingress
 go build
-./check-gke-ingress
+sudo chmod +x check-gke-ingress
+sudo mv check-gke-ingress /usr/local/bin
 ```
 
 ## Usage
 
-By default, check-gke-ingress will inspect all ingresses of the GKE cluster in current kubectl config.
+### Prerequisites
+
+Before running the binary, make sure you have your gcloud and GKE cluster authenticated: 
+
+```
+gcloud auth application-default login
+gcloud container clusters get-credentials name-of-your-cluster
+```
+
+### Check all ingress
+
+You can run the command after installation
+```
+check-gke-ingress
+```
+By default, `check-gke-ingress` will inspect all ingresses of the GKE cluster in current kubectl config.
 It will print all check results in json format like this:
 ```
 {
@@ -68,21 +103,19 @@ It will print all check results in json format like this:
 `name` is the name of the kubernetes resource being inspected.  
 `checks` is the list of checks on the resource.   
 
-### Prerequisites
-
-Before running the binary, make sure you have your gcloud and GKE cluster authenticated: 
-
+### Check a specific ingress
+To inspect a specific ingress, you can add the ingress name you want to check as an argument and specify the namespace of that ingress:
 ```
-gcloud auth application-default login
-gcloud container clusters get-credentials name-of-your-cluster
+check-gke-ingress <your-ingress-name> --namespace <your-namespace>
 ```
+The output will be the same as checking all ingresses.
 
 ### Flags
 
 ```
---kubeconfig string         kubeconfig file to use for Kubernetes config
---context string            context to use for Kubernetes config
---namespace string          only include pods from this namespace
+-k, --kubeconfig string         kubeconfig file to use for Kubernetes config
+-c, --context string            context to use for Kubernetes config
+-n, --namespace string          only include pods from this namespace
 ```
 
 ## Development
