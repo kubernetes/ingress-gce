@@ -35,8 +35,9 @@ import (
 	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/instancegroups"
-	"k8s.io/ingress-gce/pkg/l4lb/metrics"
+	l4metrics "k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
+	"k8s.io/ingress-gce/pkg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -319,7 +320,7 @@ func (lc *L4NetLBController) preventTargetPoolRaceWithRBSOnCreation(service *v1.
 	lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "TargetPoolRaceWithRBS",
 		"Target Pool found on provisioned RBS service. Deleting RBS resources")
 
-	metrics.IncreaseL4NetLBTargetPoolRaceWithRBS()
+	l4metrics.IncreaseL4NetLBTargetPoolRaceWithRBS()
 	result := lc.garbageCollectRBSNetLB(key, service)
 	if result.Error != nil {
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "CleanRBSResourcesForLegacyService",
@@ -332,7 +333,7 @@ func (lc *L4NetLBController) preventTargetPoolRaceWithRBSOnCreation(service *v1.
 func (lc *L4NetLBController) preventExistingTargetPoolToRBSMigration(service *v1.Service) error {
 	lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "CanNotMigrateTargetPoolToRBS",
 		"RBS annotation was attached to the Legacy Target Pool service. Migration is not supported. Removing annotation")
-	metrics.IncreaseL4NetLBLegacyToRBSMigrationAttempts()
+	l4metrics.IncreaseL4NetLBLegacyToRBSMigrationAttempts()
 
 	return lc.deleteRBSAnnotation(service)
 }
@@ -368,20 +369,20 @@ func (lc *L4NetLBController) checkHealth() error {
 	// if lastEnqueue time is more than 15 minutes before the last sync time, the controller is falling behind.
 	// This indicates that the controller was stuck handling a previous update, or sync function did not get invoked.
 	syncTimeLatest := lastEnqueueTime.Add(enqueueToSyncDelayThreshold)
-	controllerHealth := metrics.ControllerHealthyStatus
+	controllerHealth := l4metrics.ControllerHealthyStatus
 	if lastSyncTime.After(syncTimeLatest) {
 		msg := fmt.Sprintf("L4 NetLB Sync happened at time %v, %v after enqueue time, last enqueue time %v, threshold is %v", lastSyncTime, lastSyncTime.Sub(lastEnqueueTime), lastEnqueueTime, enqueueToSyncDelayThreshold)
 		// Log here, context/http handler do no log the error.
 		klog.Error(msg)
-		metrics.PublishL4FailedHealthCheckCount(l4NetLBControllerName)
-		controllerHealth = metrics.ControllerUnhealthyStatus
+		l4metrics.PublishL4FailedHealthCheckCount(l4NetLBControllerName)
+		controllerHealth = l4metrics.ControllerUnhealthyStatus
 		// Reset trackers. Otherwise, if there is nothing in the queue then it will report the FailedHealthCheckCount every time the checkHealth is called
 		// If checkHealth returned error (as it is meant to) then container would be restarted and trackers would be reset either
 		lc.enqueueTracker.Track()
 		lc.syncTracker.Track()
 	}
 	if lc.enableDualStack {
-		metrics.PublishL4ControllerHealthCheckStatus(l4NetLBDualStackControllerName, controllerHealth)
+		l4metrics.PublishL4ControllerHealthCheckStatus(l4NetLBDualStackControllerName, controllerHealth)
 	}
 	return nil
 }
@@ -498,6 +499,12 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 	if syncResult.Error != nil {
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
 			"Error ensuring Resource for L4 External LoadBalancer, err: %v", syncResult.Error)
+		if utils.IsUserError(syncResult.Error) {
+			syncResult.MetricsState.IsUserError = true
+			if lc.enableDualStack {
+				syncResult.DualStackMetricsState.Status = metrics.StatusUserError
+			}
+		}
 		return syncResult
 	}
 
@@ -706,11 +713,11 @@ func (lc *L4NetLBController) publishMetrics(result *loadbalancers.L4NetLBSyncRes
 
 func (lc *L4NetLBController) publishSyncMetrics(result *loadbalancers.L4NetLBSyncResult) {
 	if lc.enableDualStack {
-		metrics.PublishL4NetLBDualStackSyncLatency(result.Error == nil, result.SyncType, result.DualStackMetricsState.IPFamilies, result.StartTime)
+		l4metrics.PublishL4NetLBDualStackSyncLatency(result.Error == nil, result.SyncType, result.DualStackMetricsState.IPFamilies, result.StartTime)
 	}
 	if result.Error == nil {
-		metrics.PublishL4NetLBSyncSuccess(result.SyncType, result.StartTime)
+		l4metrics.PublishL4NetLBSyncSuccess(result.SyncType, result.StartTime)
 		return
 	}
-	metrics.PublishL4NetLBSyncError(result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime)
+	l4metrics.PublishL4NetLBSyncError(result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime)
 }
