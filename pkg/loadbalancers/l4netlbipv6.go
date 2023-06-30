@@ -110,9 +110,9 @@ func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipAddress string, nodeNames []st
 	portRanges := utils.GetServicePortRanges(svcPorts)
 	protocol := utils.GetProtocol(svcPorts)
 
-	klog.V(2).Infof("Ensuring IPv6 nodes firewall %s for L4 ILB Service %s/%s, ipAddress: %s, protocol: %s, len(nodeNames): %v, portRanges: %v", firewallName, l4netlb.Service.Namespace, l4netlb.Service.Name, ipAddress, protocol, len(nodeNames), portRanges)
+	klog.V(2).Infof("Ensuring IPv6 nodes firewall %s for L4 NetLB Service %s/%s, ipAddress: %s, protocol: %s, len(nodeNames): %v, portRanges: %v", firewallName, l4netlb.Service.Namespace, l4netlb.Service.Name, ipAddress, protocol, len(nodeNames), portRanges)
 	defer func() {
-		klog.V(2).Infof("Finished ensuring IPv6 nodes firewall %s for L4 ILB Service %s/%s, time taken: %v", l4netlb.Service.Namespace, l4netlb.Service.Name, firewallName, time.Since(start))
+		klog.V(2).Infof("Finished ensuring IPv6 nodes firewall %s for L4 NetLB Service %s/%s, time taken: %v", l4netlb.Service.Namespace, l4netlb.Service.Name, firewallName, time.Since(start))
 	}()
 
 	// ensure firewalls
