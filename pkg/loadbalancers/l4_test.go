@@ -1318,9 +1318,6 @@ func TestEnsureInternalLoadBalancerModifyProtocol(t *testing.T) {
 
 func TestDualStackInternalLoadBalancerModifyProtocol(t *testing.T) {
 	t.Parallel()
-
-	vals := gce.DefaultTestClusterValues()
-	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 	nodeNames := []string{"test-node-1"}
 
 	testCases := []struct {
@@ -1354,28 +1351,20 @@ func TestDualStackInternalLoadBalancerModifyProtocol(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 
-			fakeGCE := getFakeGCECloud(vals)
-
 			svc := test.NewL4ILBDualStackService(8080, v1.ProtocolTCP, tc.ipFamilies, v1.ServiceExternalTrafficPolicyTypeCluster)
-
-			l4ilbParams := &L4ILBParams{
-				Service:          svc,
-				Cloud:            fakeGCE,
-				Namer:            namer,
-				Recorder:         record.NewFakeRecorder(100),
-				DualStackEnabled: true,
+			l4, err := setupILBDualStackTestService(svc, nodeNames)
+			if err != nil {
+				t.Fatal(err)
 			}
-			l4 := NewL4Handler(l4ilbParams)
-			l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
 
 			// This function simulates the error where backend service protocol cannot be changed
 			// before deleting the forwarding rule.
-			c := fakeGCE.Compute().(*cloud.MockGCE)
+			c := l4.cloud.Compute().(*cloud.MockGCE)
 			c.MockRegionBackendServices.UpdateHook = func(ctx context.Context, key *meta.Key, bs *compute.BackendService, m *cloud.MockRegionBackendServices) error {
 				// Check FR names with both protocols to make sure there is no leak or incorrect update.
 				frNames := []string{l4.getFRNameWithProtocol("TCP"), l4.getFRNameWithProtocol("UDP"), l4.getIPv6FRNameWithProtocol("TCP"), l4.getIPv6FRNameWithProtocol("UDP")}
 				for _, name := range frNames {
-					key, err := composite.CreateKey(fakeGCE, name, meta.Regional)
+					key, err := composite.CreateKey(l4.cloud, name, meta.Regional)
 					if err != nil {
 						return fmt.Errorf("unexpected error when creating key - %v", err)
 					}
@@ -1442,9 +1431,6 @@ func TestDualStackInternalLoadBalancerModifyProtocol(t *testing.T) {
 
 func TestDualStackInternalLoadBalancerModifyPorts(t *testing.T) {
 	t.Parallel()
-
-	vals := gce.DefaultTestClusterValues()
-	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 	nodeNames := []string{"test-node-1"}
 
 	testCases := []struct {
@@ -1478,22 +1464,10 @@ func TestDualStackInternalLoadBalancerModifyPorts(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 
-			fakeGCE := getFakeGCECloud(vals)
-
 			svc := test.NewL4ILBDualStackService(8080, v1.ProtocolTCP, tc.ipFamilies, v1.ServiceExternalTrafficPolicyTypeCluster)
-
-			l4ilbParams := &L4ILBParams{
-				Service:          svc,
-				Cloud:            fakeGCE,
-				Namer:            namer,
-				Recorder:         record.NewFakeRecorder(100),
-				DualStackEnabled: true,
-			}
-			l4 := NewL4Handler(l4ilbParams)
-			l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
-
-			if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
-				t.Errorf("Unexpected error when adding nodes %v", err)
+			l4, err := setupILBDualStackTestService(svc, nodeNames)
+			if err != nil {
+				t.Fatal(err)
 			}
 
 			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
@@ -1624,9 +1598,6 @@ func TestEnsureInternalLoadBalancerAllPorts(t *testing.T) {
 func TestEnsureInternalDualStackLoadBalancer(t *testing.T) {
 	t.Parallel()
 	nodeNames := []string{"test-node-1"}
-	vals := gce.DefaultTestClusterValues()
-
-	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 
 	testCases := []struct {
 		desc          string
@@ -1666,22 +1637,10 @@ func TestEnsureInternalDualStackLoadBalancer(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 
-			fakeGCE := getFakeGCECloud(vals)
-
 			svc := test.NewL4ILBDualStackService(8080, v1.ProtocolTCP, tc.ipFamilies, tc.trafficPolicy)
-
-			l4ilbParams := &L4ILBParams{
-				Service:          svc,
-				Cloud:            fakeGCE,
-				Namer:            namer,
-				Recorder:         record.NewFakeRecorder(100),
-				DualStackEnabled: true,
-			}
-			l4 := NewL4Handler(l4ilbParams)
-			l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
-
-			if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
-				t.Errorf("Unexpected error when adding nodes %v", err)
+			l4, err := setupILBDualStackTestService(svc, nodeNames)
+			if err != nil {
+				t.Fatal(err)
 			}
 
 			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
@@ -1862,24 +1821,11 @@ func TestDualStackILBTransitions(t *testing.T) {
 			t.Parallel()
 
 			nodeNames := []string{"test-node-1"}
-			vals := gce.DefaultTestClusterValues()
-
-			namer := namer_util.NewL4Namer(kubeSystemUID, nil)
-			fakeGCE := getFakeGCECloud(vals)
-
 			svc := test.NewL4ILBDualStackService(8080, tc.initialProtocol, tc.initialIPFamily, tc.initialTrafficPolicy)
-			l4ilbParams := &L4ILBParams{
-				Service:          svc,
-				Cloud:            fakeGCE,
-				Namer:            namer,
-				Recorder:         record.NewFakeRecorder(100),
-				DualStackEnabled: true,
-			}
-			l4 := NewL4Handler(l4ilbParams)
-			l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
 
-			if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
-				t.Errorf("Unexpected error when adding nodes %v", err)
+			l4, err := setupILBDualStackTestService(svc, nodeNames)
+			if err != nil {
+				t.Fatal(err)
 			}
 
 			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
@@ -1923,24 +1869,11 @@ func dualStackILBTransitionTestDesc(initialIPFamily []v1.IPFamily, finalIPFamily
 func TestDualStackILBSyncIgnoresNoAnnotationIPv6Resources(t *testing.T) {
 	t.Parallel()
 	nodeNames := []string{"test-node-1"}
-	vals := gce.DefaultTestClusterValues()
-
-	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
-	fakeGCE := getFakeGCECloud(vals)
-
 	svc := test.NewL4ILBService(false, 8080)
-	l4ilbParams := &L4ILBParams{
-		Service:          svc,
-		Cloud:            fakeGCE,
-		Namer:            namer,
-		Recorder:         record.NewFakeRecorder(100),
-		DualStackEnabled: true,
-	}
-	l4 := NewL4Handler(l4ilbParams)
-	l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
 
-	if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
-		t.Errorf("Unexpected error when adding nodes %v", err)
+	l4, err := setupILBDualStackTestService(svc, nodeNames)
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol}
@@ -1960,7 +1893,7 @@ func TestDualStackILBSyncIgnoresNoAnnotationIPv6Resources(t *testing.T) {
 	svc.Annotations = result.Annotations
 
 	ipv6FWName := l4.namer.L4IPv6Firewall(l4.Service.Namespace, l4.Service.Name)
-	err := verifyFirewallNotExists(l4.cloud, ipv6FWName)
+	err = verifyFirewallNotExists(l4.cloud, ipv6FWName)
 	if err == nil {
 		t.Errorf("firewall rule %s was deleted, expected not", ipv6FWName)
 	}
@@ -1980,24 +1913,11 @@ func TestDualStackILBSyncIgnoresNoAnnotationIPv6Resources(t *testing.T) {
 func TestDualStackILBSyncIgnoresNoAnnotationIPv4Resources(t *testing.T) {
 	t.Parallel()
 	nodeNames := []string{"test-node-1"}
-	vals := gce.DefaultTestClusterValues()
-
-	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
-	fakeGCE := getFakeGCECloud(vals)
-
 	svc := test.NewL4ILBService(false, 8080)
-	l4ilbParams := &L4ILBParams{
-		Service:          svc,
-		Cloud:            fakeGCE,
-		Namer:            namer,
-		Recorder:         record.NewFakeRecorder(100),
-		DualStackEnabled: true,
-	}
-	l4 := NewL4Handler(l4ilbParams)
-	l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
 
-	if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
-		t.Errorf("Unexpected error when adding nodes %v", err)
+	l4, err := setupILBDualStackTestService(svc, nodeNames)
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
@@ -2018,7 +1938,7 @@ func TestDualStackILBSyncIgnoresNoAnnotationIPv4Resources(t *testing.T) {
 
 	// Verify IPv6 Firewall was not deleted
 	backendServiceName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
-	err := verifyFirewallNotExists(l4.cloud, backendServiceName)
+	err = verifyFirewallNotExists(l4.cloud, backendServiceName)
 	if err == nil {
 		t.Errorf("firewall rule %s was deleted, expected not", backendServiceName)
 	}
@@ -2033,6 +1953,28 @@ func TestDualStackILBSyncIgnoresNoAnnotationIPv4Resources(t *testing.T) {
 	l4.EnsureInternalLoadBalancerDeleted(l4.Service)
 	// After complete deletion, IPv6 and IPv4 resources should be cleaned up, even if the were leaked
 	assertDualStackILBResourcesDeleted(t, l4)
+}
+
+func setupILBDualStackTestService(svc *v1.Service, nodeNames []string) (*L4, error) {
+	vals := gce.DefaultTestClusterValues()
+
+	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+	fakeGCE := getFakeGCECloud(vals)
+
+	l4ilbParams := &L4ILBParams{
+		Service:          svc,
+		Cloud:            fakeGCE,
+		Namer:            namer,
+		Recorder:         record.NewFakeRecorder(100),
+		DualStackEnabled: true,
+	}
+	l4 := NewL4Handler(l4ilbParams)
+	l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
+
+	if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
+		return nil, fmt.Errorf("Unexpected error when adding nodes %v", err)
+	}
+	return l4, nil
 }
 
 func assertILBResources(t *testing.T, l4 *L4, nodeNames []string, resourceAnnotations map[string]string) {
