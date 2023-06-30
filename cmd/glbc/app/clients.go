@@ -19,7 +19,6 @@ package app
 import (
 	"bytes"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"time"
@@ -79,7 +78,7 @@ func NewGCEClient() *gce.Cloud {
 		}
 		defer config.Close()
 
-		allConfig, err := ioutil.ReadAll(config)
+		allConfig, err := io.ReadAll(config)
 		if err != nil {
 			klog.Fatalf("Error while reading config (%q): %v", flags.F.ConfigFilePath, err)
 		}
