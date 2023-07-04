@@ -1801,7 +1801,7 @@ func TestBackendConfigRemoval(t *testing.T) {
 		wantComputeHC:       wantCHC,
 		updateHCDescription: true,
 		expectedEvent:       1,
-		wantEventPrefix:     fmt.Sprintf("Normal HealthcheckDescriptionUpdate Health check \"%s\" needs Description update", chc.Name),
+		wantEventPrefix:     "Normal HealthcheckDescriptionUpdate Healthcheck will be updated and the only field updated is Description",
 	})
 
 	// Don't recalculate health check on BackendConfig removal (legacy behaviour, to be changed), but update Description.
@@ -1822,7 +1822,7 @@ func TestBackendConfigRemoval(t *testing.T) {
 		wantComputeHC:       wantCHC,
 		updateHCDescription: true,
 		expectedEvent:       1,
-		wantEventPrefix:     fmt.Sprintf("Normal HealthcheckDescriptionUpdate Health check \"%s\" needs Description update", chc.Name),
+		wantEventPrefix:     "Normal HealthcheckDescriptionUpdate Healthcheck will be updated and the only field updated is Description",
 	})
 
 	for _, tc := range cases {

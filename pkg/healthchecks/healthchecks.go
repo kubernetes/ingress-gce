@@ -244,10 +244,15 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, backendConfigHCConfig *b
 	}
 
 	changes := calculateDiff(filter(existingHC), filter(hc), backendConfigHCConfig, thcConf.THCOptInOnSvc)
-	if changes.hasDiff() {
+	// The use of 'descriptionUpdate' guarantees that when BackendConfig is removed, the health check Description is
+	// updated accordingly even if changes.hasDiff() is false. The purpose is for the Description to accurately reflect
+	// the existence of a backendconfigv1.HealthCheckConfig for the service. This is temporary, see
+	// https://github.com/kubernetes/ingress-gce/pull/2181 for details.
+	descriptionOnlyUpdate := h.isDescriptionOnlyUpdateNeeded(changes, existingHC, backendConfigHCConfig)
+	if changes.hasDiff() || descriptionOnlyUpdate {
 		klog.V(2).Infof("Health check %q needs update (%s)", existingHC.Name, changes)
-		if flags.F.EnableUpdateCustomHealthCheckDescription && changes.size() == 1 && changes.has("Description") {
-			message := fmt.Sprintf("Healthcheck will be updated and the only field updated is Description.\nOld: %+v\nNew: %+v\nDiff: %+v", existingHC, hc, changes)
+		if descriptionOnlyUpdate {
+			message := fmt.Sprintf("Healthcheck will be updated and the only field updated is Description.\nOld: %+v\nNew: %+v\n", existingHC, hc)
 			if hc.Service != nil {
 				h.recorderGetter.Recorder(hc.Service.Namespace).Event(
 					hc.Service, v1.EventTypeNormal, "HealthcheckDescriptionUpdate", message)
@@ -263,37 +268,29 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, backendConfigHCConfig *b
 		return existingHC.SelfLink, err
 	}
 
-	// The content of the following 'if' guarantees that when BackendConfig is removed, the health check Description is updated accordingly
-	// even if changes.hasDiff() above is false. No other health check field is modified. The purpose is for the Description to accurately
-	// reflect the existence of a backendconfigv1.HealthCheckConfig for the service. This is temporary, see
-	// https://github.com/kubernetes/ingress-gce/pull/2181 for details.
+	klog.V(2).Infof("Health check %q already exists and needs no update", hc.Name)
+	return existingHC.SelfLink, nil
+}
+
+func (h *HealthChecks) isDescriptionOnlyUpdateNeeded(changes *fieldDiffs, existingHC *translator.HealthCheck, backendConfigHCConfig *backendconfigv1.HealthCheckConfig) bool {
 	if flags.F.EnableUpdateCustomHealthCheckDescription {
+		// BackendConfig exists, but it had wrong description.
+		if changes.size() == 1 && changes.has("Description") {
+			return true
+		}
+
 		desc := &healthcheck.HealthcheckDesc{}
 		err := json.Unmarshal([]byte(existingHC.Description), desc)
 		if err != nil {
 			klog.V(3).Info("Description for healthcheck %s is not a JSON (probably a plain-text description): %s.", existingHC.Name, existingHC.Description)
-		} else {
-			if desc.Config == healthcheck.BackendConfigHC && backendConfigHCConfig == nil {
-				newHC := *existingHC
-				newHC.Description = hc.Description // Update description only.
-				message := fmt.Sprintf("Health check %q needs Description update: %s -> %s", existingHC.Name, existingHC.Description, newHC.Description)
-				klog.Info(message)
-				if hc.Service != nil {
-					h.recorderGetter.Recorder(hc.Service.Namespace).Event(
-						hc.Service, v1.EventTypeNormal, "HealthcheckDescriptionUpdate", message)
-				}
-				err = h.update(&newHC)
-				if err != nil {
-					klog.Errorf("Health check %q update error: %v", existingHC.Name, err)
-				}
-				h.emitTHCEvents(hc, thcConf.THCEvents)
-				return existingHC.SelfLink, err
-			}
+			return false
+		}
+		// BackendConfig existed and has been removed now + no other changes to healthcheck are needed.
+		if changes.size() == 0 && desc.Config == healthcheck.BackendConfigHC && backendConfigHCConfig == nil {
+			return true
 		}
 	}
-
-	klog.V(2).Infof("Health check %q already exists and needs no update", hc.Name)
-	return existingHC.SelfLink, nil
+	return false
 }
 
 // TODO(shance): merge with existing hc code
