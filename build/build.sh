@@ -38,6 +38,7 @@ fi
 
 export CGO_ENABLED=0
 export GOARCH="${ARCH}"
+export GOOS="${OS}"
 if [ $GOARCH == "amd64" ]; then
     export GOBIN="$GOPATH/bin/linux_amd64"
 fi

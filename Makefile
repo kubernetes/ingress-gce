@@ -40,6 +40,7 @@ GIT_COMMIT := $(shell git rev-parse HEAD)
 REGISTRY ?= gcr.io/k8s-image-staging
 
 ARCH ?= amd64
+OS ?= linux
 ALL_ARCH := amd64
 
 # Image to use for building.
