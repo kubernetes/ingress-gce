@@ -506,7 +506,7 @@ func TestEnableTHC(t *testing.T) {
 
 	oldName := hc.Name
 	hc = &translator.HealthCheck{}
-	healthChecks.overwriteWithTHC(hc)
+	translator.OverwriteWithTHC(hc, thcPort)
 	hc.Name = oldName
 	// Enable Transparent Health Checks
 	_, err = healthChecks.sync(hc, nil, utils.THCConfiguration{THCOptInOnSvc: true})
@@ -2214,40 +2214,6 @@ func TestIsTHCRemoved(t *testing.T) {
 				t.Errorf("isTHCRemoved(%v, %v): got=%v, want=%v", tc.hcDesc, tc.thcOptInOnSvc, got, tc.want)
 			}
 		})
-	}
-}
-
-func TestOverwriteWithTHC(t *testing.T) {
-	const thcPort int64 = 1207
-	wantHC := &translator.HealthCheck{
-		ForNEG: true,
-		HealthCheck: computealpha.HealthCheck{
-			CheckIntervalSec:   5,
-			TimeoutSec:         5,
-			UnhealthyThreshold: 10,
-			HealthyThreshold:   1,
-			Type:               "HTTP",
-			Description:        (&healthcheck.HealthcheckInfo{HealthcheckConfig: healthcheck.TransparentHC}).GenerateHealthcheckDescription(),
-		},
-		HTTPHealthCheck: computealpha.HTTPHealthCheck{
-			Port:              thcPort,
-			PortSpecification: "USE_FIXED_PORT",
-			RequestPath:       "/api/podhealth",
-		},
-		HealthcheckInfo: healthcheck.HealthcheckInfo{
-			HealthcheckConfig: healthcheck.TransparentHC,
-		},
-	}
-
-	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), HealthcheckFlags{EnableTHC: true, THCPort: thcPort})
-
-	hc := &translator.HealthCheck{
-		ForNEG: true,
-	}
-	healthChecks.overwriteWithTHC(hc)
-	if !reflect.DeepEqual(hc, wantHC) {
-		t.Fatalf("Translate healthcheck is:\n%s, want:\n%s", pretty.Sprint(hc), pretty.Sprint(wantHC))
 	}
 }
 

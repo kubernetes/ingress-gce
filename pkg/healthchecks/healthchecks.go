@@ -21,14 +21,12 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	computealpha "google.golang.org/api/compute/v0.alpha"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/cloud-provider-gcp/providers/gce"
-	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
@@ -37,19 +35,6 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/healthcheck"
 	"k8s.io/klog/v2"
-)
-
-const (
-	// Similar defaults as above, but for Transparent Health Checks.
-	thcCheckInterval      = 5 * time.Second
-	thcTimeout            = 5 * time.Second
-	thcHealthyThreshold   = 1
-	thcUnhealthyThreshold = 10
-	thcType               = string(annotations.ProtocolHTTP)
-	thcPortSpecification  = "USE_FIXED_PORT"
-	thcPort               = 7877
-	defaultTHCPort        = 7877
-	thcRequestPath        = "/api/podhealth"
 )
 
 // HealthChecks manages health checks.
@@ -115,7 +100,7 @@ func (h *HealthChecks) new(sp utils.ServicePort) *translator.HealthCheck {
 	hc.Port = sp.NodePort
 	hc.RequestPath = h.pathFromSvcPort(sp)
 	if sp.THCConfiguration.THCOptInOnSvc {
-		h.overwriteWithTHC(hc)
+		translator.OverwriteWithTHC(hc, h.healthcheckFlags.THCPort)
 	}
 	hc.Name = sp.BackendName()
 	hc.Service = h.getService(sp)
@@ -618,18 +603,4 @@ func formatBackendConfigHC(b *backendconfigv1.HealthCheckConfig) string {
 		ret = append(ret, fmt.Sprintf("requestPath=%q", *b.RequestPath))
 	}
 	return strings.Join(ret, ", ")
-}
-
-// overwriteWithTHC applies the standard values for Transparent Health Checks.
-func (h *HealthChecks) overwriteWithTHC(hc *translator.HealthCheck) {
-	hc.CheckIntervalSec = int64(thcCheckInterval.Seconds())
-	hc.TimeoutSec = int64(thcTimeout.Seconds())
-	hc.UnhealthyThreshold = thcUnhealthyThreshold
-	hc.HealthyThreshold = thcHealthyThreshold
-	hc.Type = thcType
-	hc.PortSpecification = thcPortSpecification
-	hc.Port = int64(h.healthcheckFlags.THCPort)
-	hc.RequestPath = thcRequestPath
-	hc.HealthcheckInfo.HealthcheckConfig = healthcheck.TransparentHC
-	hc.ReconcileHCDescription()
 }

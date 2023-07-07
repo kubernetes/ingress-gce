@@ -60,6 +60,14 @@ const (
 	// defaultNEGTimeout defines the timeout of each probe for NEG
 	defaultNEGTimeout = 15 * time.Second
 
+	// Similar defaults as above, but for Transparent Health Checks.
+	thcCheckInterval     = 5 * time.Second
+	thcTimeout           = 5 * time.Second
+	thcHealthyThreshold  = 1
+	thcType              = string(annotations.ProtocolHTTP)
+	thcPortSpecification = "USE_FIXED_PORT"
+	thcRequestPath       = "/api/podhealth"
+
 	// useServingPortSpecification is a constant for GCE API.
 	// USE_SERVING_PORT: For NetworkEndpointGroup, the port specified for
 	// each network endpoint is used for health checking. For other
@@ -94,18 +102,18 @@ type HealthCheck struct {
 	computealpha.HealthCheck
 
 	Service         *v1.Service
-	HealthcheckInfo healthcheck.HealthcheckInfo
+	healthcheckInfo healthcheck.HealthcheckInfo
 }
 
 func (hc *HealthCheck) SetHealthcheckInfo(ci healthcheck.ClusterInfo, si healthcheck.ServiceInfo) {
-	hc.HealthcheckInfo.ClusterInfo = ci
-	hc.HealthcheckInfo.ServiceInfo = si
-	hc.ReconcileHCDescription()
+	hc.healthcheckInfo.ClusterInfo = ci
+	hc.healthcheckInfo.ServiceInfo = si
+	hc.reconcileHCDescription()
 }
 
-func (hc *HealthCheck) ReconcileHCDescription() {
-	if (flags.F.EnableUpdateCustomHealthCheckDescription && hc.HealthcheckInfo.HealthcheckConfig == healthcheck.BackendConfigHC) || hc.HealthcheckInfo.HealthcheckConfig == healthcheck.TransparentHC {
-		hc.Description = hc.HealthcheckInfo.GenerateHealthcheckDescription()
+func (hc *HealthCheck) reconcileHCDescription() {
+	if (flags.F.EnableUpdateCustomHealthCheckDescription && hc.healthcheckInfo.HealthcheckConfig == healthcheck.BackendConfigHC) || hc.healthcheckInfo.HealthcheckConfig == healthcheck.TransparentHC {
+		hc.Description = hc.healthcheckInfo.GenerateHealthcheckDescription()
 	}
 }
 
@@ -217,6 +225,21 @@ func (hc *HealthCheck) Version() meta.Version {
 	return meta.VersionGA
 }
 
+// OverwriteWithTHC applies the standard values for Transparent Health Checks.
+func OverwriteWithTHC(hc *HealthCheck, port int64) {
+	hc.CheckIntervalSec = int64(thcCheckInterval.Seconds())
+	hc.TimeoutSec = int64(thcTimeout.Seconds())
+	hc.UnhealthyThreshold = defaultUnhealthyThreshold
+	hc.HealthyThreshold = thcHealthyThreshold
+	hc.Type = thcType
+	hc.Description = DescriptionForTransparentHealthChecks
+	hc.PortSpecification = thcPortSpecification
+	hc.Port = port
+	hc.RequestPath = thcRequestPath
+	hc.healthcheckInfo.HealthcheckConfig = healthcheck.TransparentHC
+	hc.reconcileHCDescription()
+}
+
 func (hc *HealthCheck) UpdateFromBackendConfig(c *backendconfigv1.HealthCheckConfig) {
 	if c.CheckIntervalSec != nil {
 		hc.CheckIntervalSec = *c.CheckIntervalSec
@@ -241,8 +264,8 @@ func (hc *HealthCheck) UpdateFromBackendConfig(c *backendconfigv1.HealthCheckCon
 		// This override is necessary regardless of type
 		hc.PortSpecification = "USE_FIXED_PORT"
 	}
-	hc.HealthcheckInfo.HealthcheckConfig = healthcheck.BackendConfigHC
-	hc.ReconcileHCDescription()
+	hc.healthcheckInfo.HealthcheckConfig = healthcheck.BackendConfigHC
+	hc.reconcileHCDescription()
 }
 
 // DefaultHealthCheck simply returns the default health check.
@@ -353,6 +376,6 @@ func ApplyProbeSettingsToHC(p *v1.Probe, hc *HealthCheck) {
 	}
 
 	hc.Description = DescriptionForHealthChecksFromReadinessProbe
-	hc.HealthcheckInfo.HealthcheckConfig = healthcheck.ReadinessProbeHC
-	hc.ReconcileHCDescription()
+	hc.healthcheckInfo.HealthcheckConfig = healthcheck.ReadinessProbeHC
+	hc.reconcileHCDescription()
 }
