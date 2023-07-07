@@ -37,7 +37,6 @@ import (
 	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
-	pkg_translator "k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
@@ -306,7 +305,7 @@ func (fwc *FirewallController) getCustomHealthCheckPorts(svcPorts []utils.Servic
 		}
 	}
 	if flags.F.EnableTransparentHealthChecks {
-		result = append(result, strconv.FormatInt(pkg_translator.THCPort, 10))
+		result = append(result, strconv.FormatInt(int64(flags.F.THCPort), 10))
 	}
 
 	return result

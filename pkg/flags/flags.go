@@ -77,6 +77,7 @@ var (
 		GKEClusterType                   string
 		HealthCheckPath                  string
 		HealthzPort                      int
+		THCPort                          int
 		InCluster                        bool
 		IngressClass                     string
 		KubeConfigFile                   string
@@ -283,6 +284,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableTransparentHealthChecks, "enable-transparent-health-checks", false, "Enable Transparent Health Checks.")
 	flag.BoolVar(&F.EnableUpdateCustomHealthCheckDescription, "enable-update-hc-description", false, "Update health check Description when it is customized with BackendConfig CRD.")
 	flag.BoolVar(&F.EnableRecalculateUHCOnBCRemoval, "enable-recalculate-uhc-on-backendconfig-removal", false, "Recalculate health check parameters when BackendConfig is removed from service. This flag cannot be used without --enable-update-hc-description.")
+	flag.IntVar(&F.THCPort, "transparent-health-checks-port", 7877, "The port for Transparent Health Checks. It must be aligned with Transparent Health Check controller server. This flag only works when --enable-transparent-health-checks is enabled.")
 	flag.BoolVar(&F.EnablePinhole, "enable-pinhole", false, "Enable Pinhole firewall feature")
 	flag.BoolVar(&F.EnableL4ILBDualStack, "enable-l4ilb-dual-stack", false, "Enable Dual-Stack handling for L4 Internal Load Balancers")
 	flag.BoolVar(&F.EnableL4NetLBDualStack, "enable-l4netlb-dual-stack", false, "Enable Dual-Stack handling for L4 External Load Balancers")
@@ -301,6 +303,11 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 func Validate() {
 	if F.EnableRecalculateUHCOnBCRemoval && !F.EnableUpdateCustomHealthCheckDescription {
 		klog.Fatalf("The flag --enable-recalculate-uhc-on-backendconfig-removal cannot be used without --enable-update-hc-description.")
+	}
+
+	// There is no information available whether --transparent-health-checks-port is set, but it is certainly set if F.THCPort stores a non-default value.
+	if F.THCPort != 7877 && !F.EnableTransparentHealthChecks {
+		klog.Fatalf("The flag --transparent-health-checks-port cannot be used without --enable-transparent-health-checks.")
 	}
 }
 

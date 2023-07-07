@@ -18,6 +18,7 @@ package firewalls
 
 import (
 	context2 "context"
+	"strconv"
 	"testing"
 	"time"
 
@@ -111,9 +112,13 @@ func TestFirewallCreateDelete(t *testing.T) {
 func TestGetCustomHealthCheckPorts(t *testing.T) {
 	// No t.Parallel().
 	oldTHC := flags.F.EnableTransparentHealthChecks
+	oldTHCPort := flags.F.THCPort
 	defer func() {
 		flags.F.EnableTransparentHealthChecks = oldTHC
+		flags.F.THCPort = oldTHCPort
 	}()
+	const thcPort = 5678
+	flags.F.THCPort = thcPort
 
 	testCases := []struct {
 		desc      string
@@ -137,7 +142,7 @@ func TestGetCustomHealthCheckPorts(t *testing.T) {
 			svcPorts: []utils.ServicePort{utils.ServicePort{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: utils.NewInt64Pointer(8000)}}}},
 				utils.ServicePort{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: utils.NewInt64Pointer(9000)}}}}},
 			enableTHC: true,
-			expect:    []string{"8000", "9000", "7877"},
+			expect:    []string{"8000", "9000", strconv.FormatInt(thcPort, 10)},
 		},
 		{
 			desc:   "No service ports",
@@ -146,7 +151,7 @@ func TestGetCustomHealthCheckPorts(t *testing.T) {
 		{
 			desc:      "No service ports THC enabled",
 			enableTHC: true,
-			expect:    []string{"7877"},
+			expect:    []string{strconv.FormatInt(thcPort, 10)},
 		},
 	}
 
