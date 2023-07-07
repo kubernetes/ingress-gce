@@ -15,7 +15,7 @@ const (
 	// StaticL4AddressesAnnotationKey is new annotation key to specify static IPs (by name) for the services.
 	// Supports both IPv4 and IPv6
 	StaticL4AddressesAnnotationKey           = "networking.gke.io/load-balancer-ip-addresses"
-	maxAddressesNumber                       = 2
+	maxNumberOfAddresses                     = 2
 	IPv4Version                    IPVersion = "IPV4"
 	IPv6Version                    IPVersion = "IPV6"
 )
@@ -41,17 +41,17 @@ func ipAddressFromAnnotation(svc *Service, cloud *gce.Cloud, ipVersion string) (
 		return "", nil
 	}
 
-	addresses := strings.Split(annotationVal, ",")
+	addressNames := strings.Split(annotationVal, ",")
 
 	// Truncated to 2 values (this is technically maximum, 1 IPv4 and 1 IPv6 address)
 	// to not make too many API calls.
-	if len(addresses) > maxAddressesNumber {
-		addresses = addresses[:maxAddressesNumber]
+	if len(addressNames) > maxNumberOfAddresses {
+		addressNames = addressNames[:maxNumberOfAddresses]
 	}
 
-	for _, address := range addresses {
-		trimmedAddress := strings.TrimSpace(address)
-		cloudAddress, err := cloud.GetRegionAddress(trimmedAddress, cloud.Region())
+	for _, addressName := range addressNames {
+		trimmedAddressName := strings.TrimSpace(addressName)
+		cloudAddress, err := cloud.GetRegionAddress(trimmedAddressName, cloud.Region())
 		if err != nil {
 			if isNotFoundError(err) {
 				continue

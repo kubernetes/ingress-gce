@@ -98,13 +98,9 @@ func TestAddressFromAnnotation(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 
-			svc := &v1.Service{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{
-						StaticL4AddressesAnnotationKey: tc.annotationVal,
-					},
-				},
-			}
+			svc := newServiceWithStaticAddressAnnotation(tc.annotationVal)
+
+			// Reserve existing addresses.
 			fakeGCE := gce.NewFakeGCECloud(vals)
 			for i := range tc.reservedAddresses {
 				err := fakeGCE.ReserveRegionAddress(&tc.reservedAddresses[i], fakeGCE.Region())
@@ -113,6 +109,7 @@ func TestAddressFromAnnotation(t *testing.T) {
 				}
 			}
 
+			// Verify getting expected IPv4 address from annotation.
 			ipv4Addr, err := FromService(svc).IPv4AddressAnnotation(fakeGCE)
 			if err != nil {
 				t.Fatalf("IPv4AddressAnnotation(..., %s) returned error %v", tc.annotationVal, err)
@@ -121,6 +118,7 @@ func TestAddressFromAnnotation(t *testing.T) {
 				t.Errorf("IPv4AddressAnnotation(..., %s) returned %s, not equal to expected = %s", tc.annotationVal, ipv4Addr, tc.wantIPv4Address)
 			}
 
+			// Verify getting expected IPv6 address from annotation.
 			ipv6Addr, err := FromService(svc).IPv6AddressAnnotation(fakeGCE)
 			if err != nil {
 				t.Fatalf("IPv6AddressAnnotation(..., %s) returned error %v", tc.annotationVal, err)
@@ -128,9 +126,16 @@ func TestAddressFromAnnotation(t *testing.T) {
 			if ipv6Addr != tc.wantIPv6Address {
 				t.Errorf("IPv6AddressAnnotation(..., %s) returned %s, not equal to expected = %s", tc.annotationVal, ipv6Addr, tc.wantIPv6Address)
 			}
-			if ipv6Addr != tc.wantIPv6Address {
-				t.Errorf("IPv6AddressAnnotation(..., %s) returned %s, not equal to expected = %s", tc.annotationVal, ipv6Addr, tc.wantIPv6Address)
-			}
 		})
+	}
+}
+
+func newServiceWithStaticAddressAnnotation(annotationVal string) *v1.Service {
+	return &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: map[string]string{
+				StaticL4AddressesAnnotationKey: annotationVal,
+			},
+		},
 	}
 }

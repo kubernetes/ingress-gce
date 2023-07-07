@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"net"
 	"reflect"
-	"sort"
 	"strings"
 	"testing"
 
@@ -33,6 +32,7 @@ import (
 	"k8s.io/ingress-gce/pkg/healthchecksl4"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/utils/strings/slices"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -1353,10 +1353,7 @@ func TestDualStackInternalLoadBalancerModifyProtocol(t *testing.T) {
 			t.Parallel()
 
 			svc := test.NewL4ILBDualStackService(8080, v1.ProtocolTCP, tc.ipFamilies, v1.ServiceExternalTrafficPolicyTypeCluster)
-			l4, err := setupILBDualStackTestService(svc, nodeNames)
-			if err != nil {
-				t.Fatal(err)
-			}
+			l4 := mustSetupILBTestHandler(t, svc, nodeNames)
 
 			// This function simulates the error where backend service protocol cannot be changed
 			// before deleting the forwarding rule.
@@ -1466,10 +1463,7 @@ func TestDualStackInternalLoadBalancerModifyPorts(t *testing.T) {
 			t.Parallel()
 
 			svc := test.NewL4ILBDualStackService(8080, v1.ProtocolTCP, tc.ipFamilies, v1.ServiceExternalTrafficPolicyTypeCluster)
-			l4, err := setupILBDualStackTestService(svc, nodeNames)
-			if err != nil {
-				t.Fatal(err)
-			}
+			l4 := mustSetupILBTestHandler(t, svc, nodeNames)
 
 			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
 			if result.Error != nil {
@@ -1639,10 +1633,7 @@ func TestEnsureInternalDualStackLoadBalancer(t *testing.T) {
 			t.Parallel()
 
 			svc := test.NewL4ILBDualStackService(8080, v1.ProtocolTCP, tc.ipFamilies, tc.trafficPolicy)
-			l4, err := setupILBDualStackTestService(svc, nodeNames)
-			if err != nil {
-				t.Fatal(err)
-			}
+			l4 := mustSetupILBTestHandler(t, svc, nodeNames)
 
 			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
 			if result.Error != nil {
@@ -1824,10 +1815,7 @@ func TestDualStackILBTransitions(t *testing.T) {
 			nodeNames := []string{"test-node-1"}
 			svc := test.NewL4ILBDualStackService(8080, tc.initialProtocol, tc.initialIPFamily, tc.initialTrafficPolicy)
 
-			l4, err := setupILBDualStackTestService(svc, nodeNames)
-			if err != nil {
-				t.Fatal(err)
-			}
+			l4 := mustSetupILBTestHandler(t, svc, nodeNames)
 
 			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
 			svc.Annotations = result.Annotations
@@ -1872,10 +1860,7 @@ func TestDualStackILBSyncIgnoresNoAnnotationIPv6Resources(t *testing.T) {
 	nodeNames := []string{"test-node-1"}
 	svc := test.NewL4ILBService(false, 8080)
 
-	l4, err := setupILBDualStackTestService(svc, nodeNames)
-	if err != nil {
-		t.Fatal(err)
-	}
+	l4 := mustSetupILBTestHandler(t, svc, nodeNames)
 
 	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol}
 	result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
@@ -1894,7 +1879,7 @@ func TestDualStackILBSyncIgnoresNoAnnotationIPv6Resources(t *testing.T) {
 	svc.Annotations = result.Annotations
 
 	ipv6FWName := l4.namer.L4IPv6Firewall(l4.Service.Namespace, l4.Service.Name)
-	err = verifyFirewallNotExists(l4.cloud, ipv6FWName)
+	err := verifyFirewallNotExists(l4.cloud, ipv6FWName)
 	if err == nil {
 		t.Errorf("firewall rule %s was deleted, expected not", ipv6FWName)
 	}
@@ -1916,10 +1901,7 @@ func TestDualStackILBSyncIgnoresNoAnnotationIPv4Resources(t *testing.T) {
 	nodeNames := []string{"test-node-1"}
 	svc := test.NewL4ILBService(false, 8080)
 
-	l4, err := setupILBDualStackTestService(svc, nodeNames)
-	if err != nil {
-		t.Fatal(err)
-	}
+	l4 := mustSetupILBTestHandler(t, svc, nodeNames)
 
 	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
 	result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
@@ -1939,7 +1921,7 @@ func TestDualStackILBSyncIgnoresNoAnnotationIPv4Resources(t *testing.T) {
 
 	// Verify IPv6 Firewall was not deleted
 	backendServiceName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
-	err = verifyFirewallNotExists(l4.cloud, backendServiceName)
+	err := verifyFirewallNotExists(l4.cloud, backendServiceName)
 	if err == nil {
 		t.Errorf("firewall rule %s was deleted, expected not", backendServiceName)
 	}
@@ -1960,10 +1942,7 @@ func TestILBUserErrorOnExternalIPv6Subnet(t *testing.T) {
 	nodeNames := []string{"test-node-1"}
 	svc := test.NewL4ILBService(false, 8080)
 
-	l4, err := setupILBDualStackTestService(svc, nodeNames)
-	if err != nil {
-		t.Fatal(err)
-	}
+	l4 := mustSetupILBTestHandler(t, svc, nodeNames)
 
 	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
 	// change to internal IPv6 subnet and expect error
@@ -1973,7 +1952,7 @@ func TestILBUserErrorOnExternalIPv6Subnet(t *testing.T) {
 		Ipv6AccessType: "EXTERNAL",
 		StackType:      "IPV4_IPV6",
 	}
-	err = l4.cloud.Compute().(*cloud.MockGCE).Subnetworks().Insert(context.TODO(), externalSubnetKey, externalSubnetToCreate)
+	err := l4.cloud.Compute().(*cloud.MockGCE).Subnetworks().Insert(context.TODO(), externalSubnetKey, externalSubnetToCreate)
 	if err != nil {
 		t.Fatalf("Failed to create subnet, error: %v", err)
 	}
@@ -2000,28 +1979,28 @@ func TestDualStackILBStaticIPAnnotation(t *testing.T) {
 	}
 
 	testCases := []struct {
-		desc                    string
-		staticAnnotationVal     string
-		addressesToReserve      []*compute.Address
-		expectedLoadBalancerIPs []string
+		desc                          string
+		staticAnnotationVal           string
+		addressesToReserve            []*compute.Address
+		expectedStaticLoadBalancerIPs []string
 	}{
 		{
-			desc:                    "2 Reserved addresses",
-			staticAnnotationVal:     "ipv4-address,ipv6-address",
-			addressesToReserve:      []*compute.Address{ipv4Address, ipv6Address},
-			expectedLoadBalancerIPs: []string{"111.111.111.111", "2::2"},
+			desc:                          "2 Reserved addresses",
+			staticAnnotationVal:           "ipv4-address,ipv6-address",
+			addressesToReserve:            []*compute.Address{ipv4Address, ipv6Address},
+			expectedStaticLoadBalancerIPs: []string{"111.111.111.111", "2::2"},
 		},
 		{
-			desc:                    "Addresses in annotation, but not reserved",
-			staticAnnotationVal:     "ipv4-address,ipv6-address",
-			addressesToReserve:      []*compute.Address{},
-			expectedLoadBalancerIPs: []string{"random", "random"},
+			desc:                          "Addresses in annotation, but not reserved",
+			staticAnnotationVal:           "ipv4-address,ipv6-address",
+			addressesToReserve:            []*compute.Address{},
+			expectedStaticLoadBalancerIPs: []string{},
 		},
 		{
-			desc:                    "1 Reserved address, 1 random",
-			staticAnnotationVal:     "ipv6-address",
-			addressesToReserve:      []*compute.Address{ipv6Address},
-			expectedLoadBalancerIPs: []string{"random", "2::2"},
+			desc:                          "1 Reserved address, 1 random",
+			staticAnnotationVal:           "ipv6-address",
+			addressesToReserve:            []*compute.Address{ipv6Address},
+			expectedStaticLoadBalancerIPs: []string{"2::2"},
 		},
 	}
 
@@ -2029,10 +2008,7 @@ func TestDualStackILBStaticIPAnnotation(t *testing.T) {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			svc := test.NewL4ILBService(false, 8080)
-			l4, err := setupILBDualStackTestService(svc, nodeNames)
-			if err != nil {
-				t.Fatal(err)
-			}
+			l4 := mustSetupILBTestHandler(t, svc, nodeNames)
 
 			for _, addr := range tc.addressesToReserve {
 				err := l4.cloud.ReserveRegionAddress(addr, l4.cloud.Region())
@@ -2054,12 +2030,15 @@ func TestDualStackILBStaticIPAnnotation(t *testing.T) {
 			for _, ip := range result.Status.Ingress {
 				gotIPs = append(gotIPs, ip.IP)
 			}
-			sort.Strings(gotIPs)
-			for i, expectedIP := range tc.expectedLoadBalancerIPs {
-				if expectedIP != "random" && expectedIP != gotIPs[i] {
-					t.Errorf("Expected to get IP %s, got %s", expectedIP, gotIPs[i])
+			if len(gotIPs) != 2 {
+				t.Errorf("Expected to get 2 addresses for RequireDualStack Service, got %v", gotIPs)
+			}
+			for _, expectedAddr := range tc.expectedStaticLoadBalancerIPs {
+				if !slices.Contains(gotIPs, expectedAddr) {
+					t.Errorf("Expected to find static address %s in load balancer IPs, got %v", expectedAddr, gotIPs)
 				}
 			}
+
 			// Delete the loadbalancer
 			result = l4.EnsureInternalLoadBalancerDeleted(svc)
 			if result.Error != nil {
@@ -2078,7 +2057,7 @@ func TestDualStackILBStaticIPAnnotation(t *testing.T) {
 	}
 }
 
-func setupILBDualStackTestService(svc *v1.Service, nodeNames []string) (*L4, error) {
+func mustSetupILBTestHandler(t *testing.T, svc *v1.Service, nodeNames []string) *L4 {
 	vals := gce.DefaultTestClusterValues()
 
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
@@ -2095,7 +2074,7 @@ func setupILBDualStackTestService(svc *v1.Service, nodeNames []string) (*L4, err
 	l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
 
 	if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
-		return nil, fmt.Errorf("unexpected error when adding nodes %v", err)
+		t.Fatalf("Unexpected error when adding nodes %v", err)
 	}
 
 	// Create cluster subnet with Internal IPV6 range. Mock GCE uses subnet with empty string name.
@@ -2107,9 +2086,9 @@ func setupILBDualStackTestService(svc *v1.Service, nodeNames []string) (*L4, err
 	}
 	err := fakeGCE.Compute().(*cloud.MockGCE).Subnetworks().Insert(context.TODO(), key, subnetToCreate)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create subnet, error: %w", err)
+		t.Fatalf("failed to create subnet %v, error: %v", subnetToCreate, err)
 	}
-	return l4, nil
+	return l4
 }
 
 func assertILBResources(t *testing.T, l4 *L4, nodeNames []string, resourceAnnotations map[string]string) {

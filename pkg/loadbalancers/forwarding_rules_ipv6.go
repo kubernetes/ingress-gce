@@ -27,6 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/cloud-provider-gcp/providers/gce"
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -270,6 +271,12 @@ func EqualIPv6ForwardingRules(fr1, fr2 *composite.ForwardingRule) (bool, error) 
 		fr1.NetworkTier == fr2.NetworkTier, nil
 }
 
+// ipv6AddrToUse determines which IPv4 address needs to be used in the ForwardingRule,
+// address evaluated in the following order:
+//
+//  1. Use static addresses annotation "networking.gke.io/load-balancer-ip-addresses".
+//  2. Use existing forwarding rule IP. If subnetwork was changed (or no existing IP),
+//     reset the IP (by returning empty string).
 func ipv6AddressToUse(cloud *gce.Cloud, svc *corev1.Service, ipv6FwdRule *composite.ForwardingRule, requestedSubnet string) (string, error) {
 	// Get value from new annotation which support both IPv4 and IPv6
 	ipv6AddressFromAnnotation, err := annotations.FromService(svc).IPv6AddressAnnotation(cloud)

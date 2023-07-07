@@ -19,7 +19,6 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	"sort"
 	"strings"
 	"testing"
 
@@ -41,6 +40,7 @@ import (
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/utils/strings/slices"
 )
 
 const (
@@ -361,7 +361,7 @@ func TestEnsureExternalDualStackLoadBalancer(t *testing.T) {
 			t.Parallel()
 
 			svc := test.NewL4NetLBRBSDualStackService(v1.ProtocolTCP, tc.ipFamilies, tc.trafficPolicy)
-			l4NetLB := mustSetupNetLBDualStackTestService(t, svc, nodeNames)
+			l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
 
 			result := l4NetLB.EnsureFrontend(nodeNames, svc)
 			if result.Error != nil {
@@ -439,7 +439,8 @@ func TestDualStackNetLBTransitions(t *testing.T) {
 			nodeNames := []string{"test-node-1"}
 
 			svc := test.NewL4NetLBRBSDualStackService(tc.initialProtocol, tc.initialIPFamily, tc.initialTrafficPolicy)
-			l4NetLB := mustSetupNetLBDualStackTestService(t, svc, nodeNames)
+			l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
+
 			l4NetLB.cloud.Compute().(*cloud.MockGCE).MockForwardingRules.DeleteHook = assertAddressOldReservedHook(t, l4NetLB.cloud)
 
 			result := l4NetLB.EnsureFrontend(nodeNames, svc)
@@ -487,7 +488,7 @@ func TestDualStackNetLBSyncIgnoresNoAnnotationIPv6Resources(t *testing.T) {
 
 	svc := test.NewL4NetLBRBSService(8080)
 	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol}
-	l4NetLB := mustSetupNetLBDualStackTestService(t, svc, nodeNames)
+	l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
 
 	result := l4NetLB.EnsureFrontend(nodeNames, svc)
 	svc.Annotations = result.Annotations
@@ -528,7 +529,7 @@ func TestDualStackNetLBSyncIgnoresNoAnnotationIPv4Resources(t *testing.T) {
 
 	svc := test.NewL4NetLBRBSService(8080)
 	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
-	l4NetLB := mustSetupNetLBDualStackTestService(t, svc, nodeNames)
+	l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
 
 	result := l4NetLB.EnsureFrontend(nodeNames, svc)
 	svc.Annotations = result.Annotations
@@ -570,7 +571,7 @@ func TestEnsureIPv6ExternalLoadBalancerCustomSubnet(t *testing.T) {
 
 	svc := test.NewL4NetLBRBSService(8080)
 	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
-	l4NetLB := mustSetupNetLBDualStackTestService(t, svc, nodeNames)
+	l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
 
 	result := l4NetLB.EnsureFrontend(nodeNames, l4NetLB.Service)
 	if result.Error != nil {
@@ -660,28 +661,28 @@ func TestDualStackNetLBStaticIPAnnotation(t *testing.T) {
 	}
 
 	testCases := []struct {
-		desc                    string
-		staticAnnotationVal     string
-		addressesToReserve      []*ga.Address
-		expectedLoadBalancerIPs []string
+		desc                          string
+		staticAnnotationVal           string
+		addressesToReserve            []*ga.Address
+		expectedStaticLoadBalancerIPs []string
 	}{
 		{
-			desc:                    "2 Reserved addresses",
-			staticAnnotationVal:     "ipv4-address,ipv6-address",
-			addressesToReserve:      []*ga.Address{ipv4Address, ipv6Address},
-			expectedLoadBalancerIPs: []string{"111.111.111.111", "2::2"},
+			desc:                          "2 Reserved addresses",
+			staticAnnotationVal:           "ipv4-address,ipv6-address",
+			addressesToReserve:            []*ga.Address{ipv4Address, ipv6Address},
+			expectedStaticLoadBalancerIPs: []string{"111.111.111.111", "2::2"},
 		},
 		{
-			desc:                    "Addresses in annotation, but not reserved",
-			staticAnnotationVal:     "ipv4-address,ipv6-address",
-			addressesToReserve:      []*ga.Address{},
-			expectedLoadBalancerIPs: []string{"random", "random"},
+			desc:                          "Addresses in annotation, but not reserved",
+			staticAnnotationVal:           "ipv4-address,ipv6-address",
+			addressesToReserve:            []*ga.Address{},
+			expectedStaticLoadBalancerIPs: []string{},
 		},
 		{
-			desc:                    "1 Reserved address, 1 random",
-			staticAnnotationVal:     "ipv6-address",
-			addressesToReserve:      []*ga.Address{ipv6Address},
-			expectedLoadBalancerIPs: []string{"random", "2::2"},
+			desc:                          "1 Reserved address, 1 random",
+			staticAnnotationVal:           "ipv6-address",
+			addressesToReserve:            []*ga.Address{ipv6Address},
+			expectedStaticLoadBalancerIPs: []string{"2::2"},
 		},
 	}
 
@@ -689,7 +690,7 @@ func TestDualStackNetLBStaticIPAnnotation(t *testing.T) {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			svc := test.NewL4NetLBRBSService(8080)
-			l4NetLB := mustSetupNetLBDualStackTestService(t, svc, nodeNames)
+			l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
 
 			for _, addr := range tc.addressesToReserve {
 				err := l4NetLB.cloud.ReserveRegionAddress(addr, l4NetLB.cloud.Region())
@@ -711,10 +712,12 @@ func TestDualStackNetLBStaticIPAnnotation(t *testing.T) {
 			for _, ip := range result.Status.Ingress {
 				gotIPs = append(gotIPs, ip.IP)
 			}
-			sort.Strings(gotIPs)
-			for i, expectedIP := range tc.expectedLoadBalancerIPs {
-				if expectedIP != "random" && expectedIP != gotIPs[i] {
-					t.Errorf("Expected to get IP %s, got %s", expectedIP, gotIPs[i])
+			if len(gotIPs) != 2 {
+				t.Errorf("Expected to get 2 addresses for RequireDualStack Service, got %v", gotIPs)
+			}
+			for _, expectedAddr := range tc.expectedStaticLoadBalancerIPs {
+				if !slices.Contains(gotIPs, expectedAddr) {
+					t.Errorf("Expected to find static address %s in load balancer IPs, got %v", expectedAddr, gotIPs)
 				}
 			}
 			// Delete the loadbalancer
@@ -735,7 +738,7 @@ func TestDualStackNetLBStaticIPAnnotation(t *testing.T) {
 	}
 }
 
-func mustSetupNetLBDualStackTestService(t *testing.T, svc *v1.Service, nodeNames []string) *L4NetLB {
+func mustSetupNetLBTestHandler(t *testing.T, svc *v1.Service, nodeNames []string) *L4NetLB {
 	t.Helper()
 
 	vals := gce.DefaultTestClusterValues()
