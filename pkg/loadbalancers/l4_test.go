@@ -1955,6 +1955,34 @@ func TestDualStackILBSyncIgnoresNoAnnotationIPv4Resources(t *testing.T) {
 	assertDualStackILBResourcesDeleted(t, l4)
 }
 
+func TestILBUserErrorOnExternalIPv6Subnet(t *testing.T) {
+	nodeNames := []string{"test-node-1"}
+	svc := test.NewL4ILBService(false, 8080)
+
+	l4, err := setupILBDualStackTestService(svc, nodeNames)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
+	// change to internal IPv6 subnet and expect error
+	externalSubnetName := "external-subnet"
+	externalSubnetKey := meta.RegionalKey(externalSubnetName, l4.cloud.Region())
+	externalSubnetToCreate := &compute.Subnetwork{
+		Ipv6AccessType: "EXTERNAL",
+		StackType:      "IPV4_IPV6",
+	}
+	err = l4.cloud.Compute().(*cloud.MockGCE).Subnetworks().Insert(context.TODO(), externalSubnetKey, externalSubnetToCreate)
+	if err != nil {
+		t.Fatalf("Failed to create subnet, error: %v", err)
+	}
+	svc.Annotations[annotations.CustomSubnetAnnotationKey] = externalSubnetName
+	result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	if !utils.IsUserError(result.Error) {
+		t.Errorf("Expected to get user error if external IPv6 subnet specified for internal IPv6 service, got %v", result.Error)
+	}
+}
+
 func setupILBDualStackTestService(svc *v1.Service, nodeNames []string) (*L4, error) {
 	vals := gce.DefaultTestClusterValues()
 

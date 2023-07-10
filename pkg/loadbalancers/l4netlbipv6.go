@@ -17,6 +17,7 @@ limitations under the License.
 package loadbalancers
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -204,4 +205,18 @@ func (l4netlb *L4NetLB) ipv6SubnetName() string {
 	clusterSubnetURL := l4netlb.cloud.SubnetworkURL()
 	splitURL := strings.Split(clusterSubnetURL, "/")
 	return splitURL[len(splitURL)-1]
+}
+
+func (l4netlb *L4NetLB) serviceSubnetHasExternalIPv6Range() error {
+	subnetName := l4netlb.ipv6SubnetName()
+	hasIPv6SubnetRange, err := utils.SubnetHasIPv6Range(l4netlb.cloud, subnetName, subnetExternalIPv6AccessType)
+	if err != nil {
+		return err
+	}
+	if !hasIPv6SubnetRange {
+		// We don't need to emit custom event, because errors are already emitted to the user as events.
+		klog.Infof("Subnet %s for IPv6 Service %s/%s does not have external IPv6 ranges", subnetName, l4netlb.Service.Namespace, l4netlb.Service.Name)
+		return utils.NewUserError(fmt.Errorf("subnet %s does not have external IPv6 ranges, required for IPv6 Service", subnetName))
+	}
+	return nil
 }

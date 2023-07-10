@@ -23,7 +23,6 @@ import (
 	"testing"
 	"time"
 
-	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/metrics"
@@ -570,17 +569,7 @@ func TestCreateDeleteDualStackService(t *testing.T) {
 			}
 			newSvc := test.NewL4ILBDualStackService(8080, api_v1.ProtocolTCP, tc.ipFamilies, api_v1.ServiceExternalTrafficPolicyTypeCluster)
 
-			// Create cluster subnet with Internal IPV6 range. Mock GCE uses subnet with empty string name.
-			clusterSubnetName := ""
-			subnetKey := meta.RegionalKey(clusterSubnetName, l4c.ctx.Cloud.Region())
-			subnetToCreate := &compute.Subnetwork{
-				Ipv6AccessType: "INTERNAL",
-				StackType:      "IPV4_IPV6",
-			}
-			err = l4c.ctx.Cloud.Compute().(*cloud.MockGCE).Subnetworks().Insert(context2.TODO(), subnetKey, subnetToCreate)
-			if err != nil {
-				t.Fatal(err)
-			}
+			test.MustCreateDualStackClusterSubnet(t, l4c.ctx.Cloud, "INTERNAL")
 			addILBService(l4c, newSvc)
 			addNEG(l4c, newSvc)
 			err = l4c.sync(getKeyForSvc(newSvc, t))
@@ -633,17 +622,8 @@ func TestProcessDualStackServiceOnUserError(t *testing.T) {
 	l4c := newServiceController(t, newFakeGCE())
 	l4c.enableDualStack = true
 
-	// Create cluster subnet with External IPV6 range. Mock GCE uses subnet with empty string name.
-	clusterSubnetName := ""
-	subnetKey := meta.RegionalKey(clusterSubnetName, l4c.ctx.Cloud.Region())
-	subnetToCreate := &compute.Subnetwork{
-		Ipv6AccessType: "EXTERNAL",
-		StackType:      "IPV4_IPV6",
-	}
-	err := l4c.ctx.Cloud.Compute().(*cloud.MockGCE).Subnetworks().Insert(context2.TODO(), subnetKey, subnetToCreate)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// Create cluster subnet with EXTERNAL ipv6 access type to trigger user error.
+	test.MustCreateDualStackClusterSubnet(t, l4c.ctx.Cloud, "EXTERNAL")
 
 	newSvc := test.NewL4ILBDualStackService(8080, api_v1.ProtocolTCP, []api_v1.IPFamily{api_v1.IPv4Protocol, api_v1.IPv6Protocol}, api_v1.ServiceExternalTrafficPolicyTypeCluster)
 	addILBService(l4c, newSvc)
@@ -736,22 +716,12 @@ func TestProcessUpdateILBIPFamilies(t *testing.T) {
 			l4c := newServiceController(t, newFakeGCE())
 			l4c.enableDualStack = true
 
-			// Create cluster subnet with Internal IPV6 range. Mock GCE uses subnet with empty string name.
-			clusterSubnetName := ""
-			subnetKey := meta.RegionalKey(clusterSubnetName, l4c.ctx.Cloud.Region())
-			subnetToCreate := &compute.Subnetwork{
-				Ipv6AccessType: "INTERNAL",
-				StackType:      "IPV4_IPV6",
-			}
-			err := l4c.ctx.Cloud.Compute().(*cloud.MockGCE).Subnetworks().Insert(context2.TODO(), subnetKey, subnetToCreate)
-			if err != nil {
-				t.Fatal(err)
-			}
+			test.MustCreateDualStackClusterSubnet(t, l4c.ctx.Cloud, "INTERNAL")
 
 			svc := test.NewL4ILBDualStackService(8080, api_v1.ProtocolTCP, tc.initialIPFamilies, api_v1.ServiceExternalTrafficPolicyTypeCluster)
 			addILBService(l4c, svc)
 			addNEG(l4c, svc)
-			err = l4c.sync(getKeyForSvc(svc, t))
+			err := l4c.sync(getKeyForSvc(svc, t))
 			if err != nil {
 				t.Errorf("Failed to sync newly added service %s, err %v", svc.Name, err)
 			}

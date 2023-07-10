@@ -321,15 +321,9 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 
 	// If service requires IPv6 LoadBalancer -- verify that Subnet with Internal IPv6 ranges is used.
 	if l4.enableDualStack && utils.NeedsIPv6(l4.Service) {
-		subnetName := l4.subnetName()
-		hasIPv6SubnetRange, err := utils.SubnetHasIPv6Range(l4.cloud, subnetName, subnetInternalIPv6AccessType)
+		err := l4.serviceSubnetHasInternalIPv6Range()
 		if err != nil {
 			result.Error = err
-			return result
-		}
-		if !hasIPv6SubnetRange {
-			klog.Infof("Subnet %s for IPv6 Service %s/%s does not have internal IPv6 ranges", subnetName, l4.Service.Namespace, l4.Service.Name)
-			result.Error = utils.NewUserError(fmt.Errorf("subnet %s does not have internal IPv6 ranges, required for IPv6 Service", subnetName))
 			return result
 		}
 	}
