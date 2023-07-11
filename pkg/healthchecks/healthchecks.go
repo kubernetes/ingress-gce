@@ -196,35 +196,28 @@ func (h *HealthChecks) emitTHCEvents(hc *translator.HealthCheck, thcEvents utils
 
 }
 
-func (h *HealthChecks) isBackendConfigRemoved(hc *translator.HealthCheck, bchcc *backendconfigv1.HealthCheckConfig) bool {
-	if !h.healthcheckFlags.EnableRecalculationOnBackendConfigRemoval {
-		return false
-	}
-	hcDesc := &healthcheck.HealthcheckDesc{}
-	if err := json.Unmarshal([]byte(hc.Description), hcDesc); err != nil {
-		klog.V(3).Infof("Health check description is not JSONified: %s", hc.Description)
-		return false
-	}
+func isBackendConfigRemoved(hcDesc *healthcheck.HealthcheckDesc, bchcc *backendconfigv1.HealthCheckConfig) bool {
+	// The flag EnableRecalculationOnBackendConfigRemoval should be tested separately:
+	// this function only is only for removal detection, not to decide on healthcheck recalculation.
+
 	// The existing HC is configured with a BackendConfig, but there's no BackendConfig now.
-	if hcDesc.Config == healthcheck.BackendConfigHC && bchcc == nil {
-		return true
-	}
-	return false
+	return hcDesc != nil && hcDesc.Config == healthcheck.BackendConfigHC && bchcc == nil
 }
 
-func (h *HealthChecks) isTHCRemoved(hc *translator.HealthCheck, thcOptIn bool) bool {
+func isTHCRemoved(hcDesc *healthcheck.HealthcheckDesc, thcOptIn bool) bool {
 	// This is not behind a feature flag because it should work in particular at the time of disabling the flag EnableTransparentHealthChecks.
-	hcDesc := &healthcheck.HealthcheckDesc{}
-	if err := json.Unmarshal([]byte(hc.Description), hcDesc); err != nil {
-		klog.V(3).Infof("Health check description is not JSONified: %s", hc.Description)
-		return false
-	}
+
 	// The existing HC is configured via Transparent Health Checks, but the annotation has been removed.
-	return hcDesc.Config == healthcheck.TransparentHC && !thcOptIn
+	return hcDesc != nil && hcDesc.Config == healthcheck.TransparentHC && !thcOptIn
 }
 
 func (h *HealthChecks) shouldRecalculateHC(existingHC *translator.HealthCheck, backendConfigHCConfig *backendconfigv1.HealthCheckConfig, thcConf utils.THCConfiguration) bool {
-	return thcConf.THCOptInOnSvc || h.isBackendConfigRemoved(existingHC, backendConfigHCConfig) || h.isTHCRemoved(existingHC, thcConf.THCOptInOnSvc)
+	hcDesc := &healthcheck.HealthcheckDesc{}
+	if err := json.Unmarshal([]byte(existingHC.Description), hcDesc); err != nil {
+		klog.V(3).Infof("Health check description is not JSONified: %s", existingHC.Description)
+		hcDesc = nil
+	}
+	return thcConf.THCOptInOnSvc || (h.healthcheckFlags.EnableRecalculationOnBackendConfigRemoval && isBackendConfigRemoved(hcDesc, backendConfigHCConfig)) || isTHCRemoved(hcDesc, thcConf.THCOptInOnSvc)
 }
 
 // sync retrieves a health check based on port, checks type and settings and updates/creates if necessary.

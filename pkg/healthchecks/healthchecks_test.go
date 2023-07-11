@@ -2126,29 +2126,13 @@ func TestCustomHealthcheckRemoval(t *testing.T) {
 	}
 }
 
-func replaceDescription(hc *translator.HealthCheck, new string) *translator.HealthCheck {
-	hc.Description = new
-	return hc
-}
-
 func TestIsBackendConfigRemoved(t *testing.T) {
 	t.Parallel()
 
-	testClusterValues := gce.DefaultTestClusterValues()
-	fakeGCE := gce.NewFakeGCECloud(testClusterValues)
-
-	healthcheckers := map[string]*HealthChecks{
-		"recalc-disabled": NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), HealthcheckFlags{}),
-		"recalc-enabled":  NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), HealthcheckFlags{EnableRecalculationOnBackendConfigRemoval: true}),
-	}
-
-	healthcheckDescriptionsBefore := map[string]string{
-		"default": translator.DescriptionForDefaultHealthChecks,
-		"ILB":     translator.DescriptionForDefaultILBHealthChecks,
-		"NEG":     translator.DescriptionForDefaultNEGHealthChecks,
-		"RP":      translator.DescriptionForHealthChecksFromReadinessProbe,
-		"BC":      (&healthcheck.HealthcheckInfo{HealthcheckConfig: healthcheck.BackendConfigHC}).GenerateHealthcheckDescription(),
-		"THC":     (&healthcheck.HealthcheckInfo{HealthcheckConfig: healthcheck.TransparentHC}).GenerateHealthcheckDescription(),
+	healthcheckDescBefore := map[string]*healthcheck.HealthcheckDesc{
+		"non-JSON": nil,
+		"BC":       {Config: healthcheck.BackendConfigHC},
+		"THC":      {Config: healthcheck.TransparentHC},
 	}
 
 	bcAfter := map[string]*backendconfigv1.HealthCheckConfig{
@@ -2157,35 +2141,31 @@ func TestIsBackendConfigRemoved(t *testing.T) {
 	}
 
 	type testCase struct {
-		desc          string
-		healthchecker *HealthChecks
-		hc            *translator.HealthCheck
-		bchcc         *backendconfigv1.HealthCheckConfig
-		want          bool
+		desc   string
+		hcDesc *healthcheck.HealthcheckDesc
+		bchcc  *backendconfigv1.HealthCheckConfig
+		want   bool
 	}
 
 	testCases := []testCase{}
 
-	for healthcheckerKey, healthcheckerValue := range healthcheckers {
-		for beforeKey, beforeValue := range healthcheckDescriptionsBefore {
-			for afterKey, afterValue := range bcAfter {
-				newCase := testCase{
-					desc:          fmt.Sprintf("%s %s to %s", healthcheckerKey, beforeKey, afterKey),
-					healthchecker: healthcheckerValue,
-					hc:            replaceDescription(translator.DefaultHealthCheck(3000, annotations.ProtocolHTTP), beforeValue),
-					bchcc:         afterValue,
-					want:          healthcheckerKey == "recalc-enabled" && beforeKey == "BC" && afterKey == "no-BC",
-				}
-				testCases = append(testCases, newCase)
+	for beforeKey, beforeValue := range healthcheckDescBefore {
+		for afterKey, afterValue := range bcAfter {
+			newCase := testCase{
+				desc:   fmt.Sprintf("%s to %s", beforeKey, afterKey),
+				hcDesc: beforeValue,
+				bchcc:  afterValue,
+				want:   beforeKey == "BC" && afterKey == "no-BC",
 			}
+			testCases = append(testCases, newCase)
 		}
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			got := tc.healthchecker.isBackendConfigRemoved(tc.hc, tc.bchcc)
+			got := isBackendConfigRemoved(tc.hcDesc, tc.bchcc)
 			if got != tc.want {
-				t.Errorf("healthchecker.isBackendConfigRemoved(%v, %v): got=%v, want=%v", tc.hc, tc.bchcc, got, tc.want)
+				t.Errorf("healthchecker.isBackendConfigRemoved(%v, %v): got=%v, want=%v", tc.hcDesc, tc.bchcc, got, tc.want)
 			}
 		})
 	}
@@ -2194,42 +2174,28 @@ func TestIsBackendConfigRemoved(t *testing.T) {
 func TestIsTHCRemoved(t *testing.T) {
 	t.Parallel()
 
-	testClusterValues := gce.DefaultTestClusterValues()
-	fakeGCE := gce.NewFakeGCECloud(testClusterValues)
-
-	healthcheckerFlags := []HealthcheckFlags{}
-
-	for _, recalc := range []bool{true, false} {
-		for _, thc := range []bool{true, false} {
-			healthcheckerFlags = append(healthcheckerFlags, HealthcheckFlags{EnableTHC: thc, EnableRecalculationOnBackendConfigRemoval: recalc})
-		}
-	}
-
-	healthcheckBefore := map[string]string{
-		"default": translator.DescriptionForDefaultHealthChecks,
-		"ILB":     translator.DescriptionForDefaultILBHealthChecks,
-		"NEG":     translator.DescriptionForDefaultNEGHealthChecks,
-		"RP":      translator.DescriptionForHealthChecksFromReadinessProbe,
-		"BC":      (&healthcheck.HealthcheckInfo{HealthcheckConfig: healthcheck.BackendConfigHC}).GenerateHealthcheckDescription(),
-		"THC":     (&healthcheck.HealthcheckInfo{HealthcheckConfig: healthcheck.TransparentHC}).GenerateHealthcheckDescription(),
+	healthcheckDescBefore := map[string]*healthcheck.HealthcheckDesc{
+		"non-JSON": nil,
+		"BC":       {Config: healthcheck.BackendConfigHC},
+		"THC":      {Config: healthcheck.TransparentHC},
 	}
 
 	thcAfter := map[string]bool{"THC": true, "NO-THC": false}
 
 	type testCase struct {
 		desc          string
-		hc            *translator.HealthCheck
+		hcDesc        *healthcheck.HealthcheckDesc
 		thcOptInOnSvc bool
 		want          bool
 	}
 
 	testCases := []testCase{}
 
-	for beforeKey, beforeValue := range healthcheckBefore {
+	for beforeKey, beforeValue := range healthcheckDescBefore {
 		for afterKey, afterValue := range thcAfter {
 			newCase := testCase{
 				desc:          fmt.Sprintf("%s to %s", beforeKey, afterKey),
-				hc:            replaceDescription(translator.DefaultHealthCheck(3000, annotations.ProtocolHTTP), beforeValue),
+				hcDesc:        beforeValue,
 				thcOptInOnSvc: afterValue,
 				want:          beforeKey == "THC" && afterKey == "NO-THC",
 			}
@@ -2239,12 +2205,9 @@ func TestIsTHCRemoved(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			for _, flags := range healthcheckerFlags {
-				healthchecker := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), flags)
-				got := healthchecker.isTHCRemoved(tc.hc, tc.thcOptInOnSvc)
-				if got != tc.want {
-					t.Errorf("healthchecker.isTHCRemoved(%v, %v) with flags=%+v: got=%v, want=%v", tc.hc, tc.thcOptInOnSvc, flags, got, tc.want)
-				}
+			got := isTHCRemoved(tc.hcDesc, tc.thcOptInOnSvc)
+			if got != tc.want {
+				t.Errorf("isTHCRemoved(%v, %v): got=%v, want=%v", tc.hcDesc, tc.thcOptInOnSvc, got, tc.want)
 			}
 		})
 	}

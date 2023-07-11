@@ -45,7 +45,7 @@ func (c *fieldDiffs) String() string { return strings.Join(c.f, ", ") }
 func (c *fieldDiffs) hasDiff() bool  { return len(c.f) > 0 }
 func (c *fieldDiffs) size() int64    { return int64(len(c.f)) }
 
-func calculateDiff(old, new *translator.HealthCheck, c *backendconfigv1.HealthCheckConfig, fullDiff bool) *fieldDiffs {
+func calculateDiff(old, new *translator.HealthCheck, c *backendconfigv1.HealthCheckConfig, fullDiffOnRecalculation bool) *fieldDiffs {
 	var changes fieldDiffs
 
 	if old.Protocol() != new.Protocol() {
@@ -57,28 +57,28 @@ func calculateDiff(old, new *translator.HealthCheck, c *backendconfigv1.HealthCh
 
 	// TODO(bowei): why don't we check Port, timeout etc.
 
-	if c == nil && !fullDiff {
+	if c == nil && !fullDiffOnRecalculation {
 		return &changes
 	}
 
 	// This code assumes that the changes wrt to `c` has been applied to `new`.
-	if (fullDiff || c.CheckIntervalSec != nil) && old.CheckIntervalSec != new.CheckIntervalSec {
+	if (fullDiffOnRecalculation || c.CheckIntervalSec != nil) && old.CheckIntervalSec != new.CheckIntervalSec {
 		changes.add("CheckIntervalSec", strconv.FormatInt(old.CheckIntervalSec, 10), strconv.FormatInt(new.CheckIntervalSec, 10))
 	}
-	if (fullDiff || c.TimeoutSec != nil) && old.TimeoutSec != new.TimeoutSec {
+	if (fullDiffOnRecalculation || c.TimeoutSec != nil) && old.TimeoutSec != new.TimeoutSec {
 		changes.add("TimeoutSec", strconv.FormatInt(old.TimeoutSec, 10), strconv.FormatInt(new.TimeoutSec, 10))
 	}
-	if (fullDiff || c.HealthyThreshold != nil) && old.HealthyThreshold != new.HealthyThreshold {
+	if (fullDiffOnRecalculation || c.HealthyThreshold != nil) && old.HealthyThreshold != new.HealthyThreshold {
 		changes.add("HeathyThreshold", strconv.FormatInt(old.HealthyThreshold, 10), strconv.FormatInt(new.HealthyThreshold, 10))
 	}
-	if (fullDiff || c.UnhealthyThreshold != nil) && old.UnhealthyThreshold != new.UnhealthyThreshold {
+	if (fullDiffOnRecalculation || c.UnhealthyThreshold != nil) && old.UnhealthyThreshold != new.UnhealthyThreshold {
 		changes.add("UnhealthyThreshold", strconv.FormatInt(old.UnhealthyThreshold, 10), strconv.FormatInt(new.UnhealthyThreshold, 10))
 	}
 	// c.Type is handled by Protocol above.
-	if (fullDiff || c.RequestPath != nil) && old.RequestPath != new.RequestPath {
+	if (fullDiffOnRecalculation || c.RequestPath != nil) && old.RequestPath != new.RequestPath {
 		changes.add("RequestPath", old.RequestPath, new.RequestPath)
 	}
-	if (fullDiff || c.Port != nil) && old.Port != new.Port {
+	if (fullDiffOnRecalculation || c.Port != nil) && old.Port != new.Port {
 		changes.add("Port", strconv.FormatInt(old.Port, 10), strconv.FormatInt(new.Port, 10))
 	}
 	if old.Description != new.Description {
