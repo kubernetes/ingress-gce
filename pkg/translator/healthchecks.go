@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	"golang.org/x/exp/slices"
 	computealpha "google.golang.org/api/compute/v0.alpha"
 	computebeta "google.golang.org/api/compute/v0.beta"
 	"google.golang.org/api/compute/v1"
@@ -114,8 +113,7 @@ func (hc *HealthCheck) SetHealthcheckInfo(ci healthcheck.ClusterInfo, si healthc
 }
 
 func (hc *HealthCheck) reconcileHCDescription() {
-	if flags.F.EnableUpdateCustomHealthCheckDescription &&
-		slices.Contains([]healthcheck.HealthcheckConfig{healthcheck.BackendConfigHC, healthcheck.TransparentHC}, hc.healthcheckInfo.HealthcheckConfig) {
+	if (flags.F.EnableUpdateCustomHealthCheckDescription && hc.healthcheckInfo.HealthcheckConfig == healthcheck.BackendConfigHC) || hc.healthcheckInfo.HealthcheckConfig == healthcheck.TransparentHC {
 		hc.Description = hc.healthcheckInfo.GenerateHealthcheckDescription()
 	}
 }

@@ -43,7 +43,10 @@ type Jig struct {
 }
 
 func newTestJig(fakeGCE *gce.Cloud) *Jig {
-	fakeHealthChecks := healthchecks.NewHealthChecker(fakeGCE, "/", defaultBackendSvc, healthchecks.NewFakeRecorderGetter(0), healthchecks.NewFakeServiceGetter(), flags.F.EnableTransparentHealthChecks)
+	fakeHealthChecks := healthchecks.NewHealthChecker(fakeGCE, "/", defaultBackendSvc, healthchecks.NewFakeRecorderGetter(0), healthchecks.NewFakeServiceGetter(), healthchecks.HealthcheckFlags{
+		EnableTHC: flags.F.EnableTransparentHealthChecks,
+		EnableRecalculationOnBackendConfigRemoval: flags.F.EnableRecalculateUHCOnBCRemoval,
+	})
 	fakeBackendPool := NewPool(fakeGCE, defaultNamer)
 
 	fakeIGs := instancegroups.NewEmptyFakeInstanceGroups()

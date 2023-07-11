@@ -97,7 +97,7 @@ func TestOverwriteWithTHC(t *testing.T) {
 			UnhealthyThreshold: 10,
 			HealthyThreshold:   1,
 			Type:               "HTTP",
-			Description:        "Kubernetes L7 transparent health check.",
+			Description:        (&healthcheck.HealthcheckInfo{HealthcheckConfig: healthcheck.TransparentHC}).GenerateHealthcheckDescription(),
 		},
 		HTTPHealthCheck: computealpha.HTTPHealthCheck{
 			Port:              7877,
