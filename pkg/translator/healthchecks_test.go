@@ -112,7 +112,7 @@ func TestOverwriteWithTHC(t *testing.T) {
 	hc := &HealthCheck{
 		ForNEG: true,
 	}
-	OverwriteWithTHC(hc)
+	OverwriteWithTHC(hc, 7877)
 	if !reflect.DeepEqual(hc, wantHC) {
 		t.Fatalf("Translate healthcheck is:\n%s, want:\n%s", pretty.Sprint(hc), pretty.Sprint(wantHC))
 	}

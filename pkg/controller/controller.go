@@ -117,6 +117,7 @@ func NewLoadBalancerController(
 	healthChecker := healthchecks.NewHealthChecker(ctx.Cloud, ctx.HealthCheckPath, ctx.DefaultBackendSvcPort.ID.Service, ctx, ctx.Translator, healthchecks.HealthcheckFlags{
 		EnableTHC: flags.F.EnableTransparentHealthChecks,
 		EnableRecalculationOnBackendConfigRemoval: flags.F.EnableRecalculateUHCOnBCRemoval,
+		THCPort: int64(flags.F.THCPort),
 	})
 	backendPool := backends.NewPool(ctx.Cloud, ctx.ClusterNamer)
 

@@ -66,7 +66,6 @@ const (
 	thcHealthyThreshold  = 1
 	thcType              = string(annotations.ProtocolHTTP)
 	thcPortSpecification = "USE_FIXED_PORT"
-	THCPort              = 7877
 	thcRequestPath       = "/api/podhealth"
 
 	// useServingPortSpecification is a constant for GCE API.
@@ -227,7 +226,7 @@ func (hc *HealthCheck) Version() meta.Version {
 }
 
 // OverwriteWithTHC applies the standard values for Transparent Health Checks.
-func OverwriteWithTHC(hc *HealthCheck) {
+func OverwriteWithTHC(hc *HealthCheck, port int64) {
 	hc.CheckIntervalSec = int64(thcCheckInterval.Seconds())
 	hc.TimeoutSec = int64(thcTimeout.Seconds())
 	hc.UnhealthyThreshold = defaultUnhealthyThreshold
@@ -235,7 +234,7 @@ func OverwriteWithTHC(hc *HealthCheck) {
 	hc.Type = thcType
 	hc.Description = DescriptionForTransparentHealthChecks
 	hc.PortSpecification = thcPortSpecification
-	hc.Port = THCPort
+	hc.Port = port
 	hc.RequestPath = thcRequestPath
 	hc.healthcheckInfo.HealthcheckConfig = healthcheck.TransparentHC
 	hc.reconcileHCDescription()

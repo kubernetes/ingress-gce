@@ -467,12 +467,14 @@ func TestHealthCheckUpdate(t *testing.T) {
 func TestEnableTHC(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 
+	const thcPort int64 = 5678
+
 	// Add Hooks
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockHealthChecks.UpdateHook = mock.UpdateHealthCheckHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaHealthChecks.UpdateHook = mock.UpdateAlphaHealthCheckHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockBetaHealthChecks.UpdateHook = mock.UpdateBetaHealthCheckHook
 
-	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), HealthcheckFlags{})
+	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), HealthcheckFlags{EnableTHC: true, THCPort: thcPort})
 
 	// HTTP
 	// Manually insert a health check
@@ -499,12 +501,12 @@ func TestEnableTHC(t *testing.T) {
 	wantHC.Type = "HTTP"
 	wantHC.Description = (&healthcheck.HealthcheckInfo{HealthcheckConfig: healthcheck.TransparentHC}).GenerateHealthcheckDescription()
 	wantHC.RequestPath = "/api/podhealth"
-	wantHC.Port = 7877
+	wantHC.Port = thcPort
 	wantHC.PortSpecification = "USE_FIXED_PORT"
 
 	oldName := hc.Name
 	hc = &translator.HealthCheck{}
-	translator.OverwriteWithTHC(hc)
+	translator.OverwriteWithTHC(hc, thcPort)
 	hc.Name = oldName
 	// Enable Transparent Health Checks
 	_, err = healthChecks.sync(hc, nil, utils.THCConfiguration{THCOptInOnSvc: true})
@@ -1742,6 +1744,7 @@ func TestSyncServicePort(t *testing.T) {
 			hcs := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), HealthcheckFlags{
 				EnableTHC: tc.enableTHC,
 				EnableRecalculationOnBackendConfigRemoval: tc.recalc,
+				THCPort: 7877,
 			})
 
 			gotSelfLink, err := hcs.SyncServicePort(tc.sp, tc.probe)
@@ -2054,6 +2057,7 @@ func TestCustomHealthcheckRemoval(t *testing.T) {
 			hcs := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, fakeSingletonRecorderGetter, NewFakeServiceGetter(), HealthcheckFlags{
 				EnableTHC: tc.enableTHC,
 				EnableRecalculationOnBackendConfigRemoval: tc.recalc,
+				THCPort: 7877,
 			})
 
 			gotSelfLink, err := hcs.SyncServicePort(&tc.sp, tc.probe)

@@ -54,6 +54,7 @@ type HealthChecks struct {
 type HealthcheckFlags struct {
 	EnableTHC                                 bool
 	EnableRecalculationOnBackendConfigRemoval bool
+	THCPort                                   int64
 }
 
 // NewHealthChecker creates a new health checker.
@@ -99,7 +100,7 @@ func (h *HealthChecks) new(sp utils.ServicePort) *translator.HealthCheck {
 	hc.Port = sp.NodePort
 	hc.RequestPath = h.pathFromSvcPort(sp)
 	if sp.THCConfiguration.THCOptInOnSvc {
-		translator.OverwriteWithTHC(hc)
+		translator.OverwriteWithTHC(hc, h.healthcheckFlags.THCPort)
 	}
 	hc.Name = sp.BackendName()
 	hc.Service = h.getService(sp)
