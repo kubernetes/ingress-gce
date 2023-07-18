@@ -1,6 +1,7 @@
 package test
 
 import (
+	context2 "context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -538,4 +539,23 @@ func InstancesListToNameSet(instancesList []*compute.InstanceWithNamedPorts) (se
 		instancesSet.Insert(parsedInstanceURL.Key.Name)
 	}
 	return instancesSet, nil
+}
+
+func MustCreateDualStackClusterSubnet(t *testing.T, gcecloud *gce.Cloud, ipv6AccessType string) {
+	t.Helper()
+	// Mock GCE uses subnet with empty string name.
+	MustCreateDualStackSubnet(t, gcecloud, "", ipv6AccessType)
+}
+func MustCreateDualStackSubnet(t *testing.T, gcecloud *gce.Cloud, subnetName, ipv6AccessType string) {
+	t.Helper()
+
+	subnetKey := meta.RegionalKey(subnetName, gcecloud.Region())
+	subnetToCreate := &compute.Subnetwork{
+		Ipv6AccessType: ipv6AccessType,
+		StackType:      "IPV4_IPV6",
+	}
+	err := gcecloud.Compute().(*cloud.MockGCE).Subnetworks().Insert(context2.TODO(), subnetKey, subnetToCreate)
+	if err != nil {
+		t.Fatal(err)
+	}
 }

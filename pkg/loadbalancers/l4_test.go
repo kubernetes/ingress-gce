@@ -1955,6 +1955,34 @@ func TestDualStackILBSyncIgnoresNoAnnotationIPv4Resources(t *testing.T) {
 	assertDualStackILBResourcesDeleted(t, l4)
 }
 
+func TestILBUserErrorOnExternalIPv6Subnet(t *testing.T) {
+	nodeNames := []string{"test-node-1"}
+	svc := test.NewL4ILBService(false, 8080)
+
+	l4, err := setupILBDualStackTestService(svc, nodeNames)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
+	// change to internal IPv6 subnet and expect error
+	externalSubnetName := "external-subnet"
+	externalSubnetKey := meta.RegionalKey(externalSubnetName, l4.cloud.Region())
+	externalSubnetToCreate := &compute.Subnetwork{
+		Ipv6AccessType: "EXTERNAL",
+		StackType:      "IPV4_IPV6",
+	}
+	err = l4.cloud.Compute().(*cloud.MockGCE).Subnetworks().Insert(context.TODO(), externalSubnetKey, externalSubnetToCreate)
+	if err != nil {
+		t.Fatalf("Failed to create subnet, error: %v", err)
+	}
+	svc.Annotations[annotations.CustomSubnetAnnotationKey] = externalSubnetName
+	result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	if !utils.IsUserError(result.Error) {
+		t.Errorf("Expected to get user error if external IPv6 subnet specified for internal IPv6 service, got %v", result.Error)
+	}
+}
+
 func setupILBDualStackTestService(svc *v1.Service, nodeNames []string) (*L4, error) {
 	vals := gce.DefaultTestClusterValues()
 
@@ -1972,7 +2000,19 @@ func setupILBDualStackTestService(svc *v1.Service, nodeNames []string) (*L4, err
 	l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
 
 	if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
-		return nil, fmt.Errorf("Unexpected error when adding nodes %v", err)
+		return nil, fmt.Errorf("unexpected error when adding nodes %v", err)
+	}
+
+	// Create cluster subnet with Internal IPV6 range. Mock GCE uses subnet with empty string name.
+	clusterSubnetName := ""
+	key := meta.RegionalKey(clusterSubnetName, l4.cloud.Region())
+	subnetToCreate := &compute.Subnetwork{
+		Ipv6AccessType: subnetInternalIPv6AccessType,
+		StackType:      "IPV4_IPV6",
+	}
+	err := fakeGCE.Compute().(*cloud.MockGCE).Subnetworks().Insert(context.TODO(), key, subnetToCreate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create subnet, error: %w", err)
 	}
 	return l4, nil
 }

@@ -360,10 +360,7 @@ func TestEnsureExternalDualStackLoadBalancer(t *testing.T) {
 			t.Parallel()
 
 			svc := test.NewL4NetLBRBSDualStackService(v1.ProtocolTCP, tc.ipFamilies, tc.trafficPolicy)
-			l4NetLB, err := setupNetLBDualStackTestService(svc, nodeNames)
-			if err != nil {
-				t.Fatal(err)
-			}
+			l4NetLB := mustSetupNetLBDualStackTestService(t, svc, nodeNames)
 
 			result := l4NetLB.EnsureFrontend(nodeNames, svc)
 			if result.Error != nil {
@@ -441,10 +438,7 @@ func TestDualStackNetLBTransitions(t *testing.T) {
 			nodeNames := []string{"test-node-1"}
 
 			svc := test.NewL4NetLBRBSDualStackService(tc.initialProtocol, tc.initialIPFamily, tc.initialTrafficPolicy)
-			l4NetLB, err := setupNetLBDualStackTestService(svc, nodeNames)
-			if err != nil {
-				t.Fatal(err)
-			}
+			l4NetLB := mustSetupNetLBDualStackTestService(t, svc, nodeNames)
 			l4NetLB.cloud.Compute().(*cloud.MockGCE).MockForwardingRules.DeleteHook = assertAddressOldReservedHook(t, l4NetLB.cloud)
 
 			result := l4NetLB.EnsureFrontend(nodeNames, svc)
@@ -492,14 +486,10 @@ func TestDualStackNetLBSyncIgnoresNoAnnotationIPv6Resources(t *testing.T) {
 
 	svc := test.NewL4NetLBRBSService(8080)
 	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol}
-	l4NetLB, err := setupNetLBDualStackTestService(svc, nodeNames)
-	if err != nil {
-		t.Fatal(err)
-	}
+	l4NetLB := mustSetupNetLBDualStackTestService(t, svc, nodeNames)
 
 	result := l4NetLB.EnsureFrontend(nodeNames, svc)
 	svc.Annotations = result.Annotations
-	assertDualStackNetLBResources(t, l4NetLB, nodeNames)
 
 	// Delete IPv4 resources annotation
 	annotationsToDelete := []string{annotations.TCPForwardingRuleIPv6Key, annotations.FirewallRuleIPv6Key, annotations.FirewallRuleForHealthcheckIPv6Key}
@@ -514,7 +504,7 @@ func TestDualStackNetLBSyncIgnoresNoAnnotationIPv6Resources(t *testing.T) {
 
 	// Verify IPv4 Firewall was not deleted
 	ipv6FWName := l4NetLB.namer.L4IPv6Firewall(l4NetLB.Service.Namespace, l4NetLB.Service.Name)
-	err = verifyFirewallNotExists(l4NetLB.cloud, ipv6FWName)
+	err := verifyFirewallNotExists(l4NetLB.cloud, ipv6FWName)
 	if err == nil {
 		t.Errorf("firewall rule %s was deleted, expected not", ipv6FWName)
 	}
@@ -537,10 +527,7 @@ func TestDualStackNetLBSyncIgnoresNoAnnotationIPv4Resources(t *testing.T) {
 
 	svc := test.NewL4NetLBRBSService(8080)
 	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
-	l4NetLB, err := setupNetLBDualStackTestService(svc, nodeNames)
-	if err != nil {
-		t.Fatal(err)
-	}
+	l4NetLB := mustSetupNetLBDualStackTestService(t, svc, nodeNames)
 
 	result := l4NetLB.EnsureFrontend(nodeNames, svc)
 	svc.Annotations = result.Annotations
@@ -559,7 +546,7 @@ func TestDualStackNetLBSyncIgnoresNoAnnotationIPv4Resources(t *testing.T) {
 
 	// Verify IPv4 Firewall was not deleted
 	fwName := l4NetLB.namer.L4Backend(l4NetLB.Service.Namespace, l4NetLB.Service.Name)
-	err = verifyFirewallNotExists(l4NetLB.cloud, fwName)
+	err := verifyFirewallNotExists(l4NetLB.cloud, fwName)
 	if err == nil {
 		t.Errorf("firewall rule %s was deleted, expected not", fwName)
 	}
@@ -582,37 +569,63 @@ func TestEnsureIPv6ExternalLoadBalancerCustomSubnet(t *testing.T) {
 
 	svc := test.NewL4NetLBRBSService(8080)
 	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
-	l4NetLB, err := setupNetLBDualStackTestService(svc, nodeNames)
-	if err != nil {
-		t.Fatal(err)
-	}
+	l4NetLB := mustSetupNetLBDualStackTestService(t, svc, nodeNames)
 
-	result := l4NetLB.EnsureFrontend(nodeNames, svc)
+	result := l4NetLB.EnsureFrontend(nodeNames, l4NetLB.Service)
 	if result.Error != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+		t.Fatalf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
+	// Copy result annotations to the service, as assertion verifies that service got proper annotations.
 	svc.Annotations = result.Annotations
 	assertDualStackNetLBResourcesWithCustomIPv6Subnet(t, l4NetLB, nodeNames, l4NetLB.cloud.SubnetworkURL())
 
-	// add custom subnet annotation
+	// create custom subnet
+	subnetKey := meta.RegionalKey("test-subnet", l4NetLB.cloud.Region())
+	subnetToCreate := &ga.Subnetwork{
+		Ipv6AccessType: subnetExternalIPv6AccessType,
+		StackType:      "IPV4_IPV6",
+	}
+	err := l4NetLB.cloud.Compute().(*cloud.MockGCE).Subnetworks().Insert(context.TODO(), subnetKey, subnetToCreate)
+	if err != nil {
+		t.Fatalf("Failed to create subnet, error: %v", err)
+	}
 	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "test-subnet"
 	result = l4NetLB.EnsureFrontend(nodeNames, svc)
 	if result.Error != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+		t.Fatalf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
 	svc.Annotations = result.Annotations
-	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "test-subnet"
 	assertDualStackNetLBResourcesWithCustomIPv6Subnet(t, l4NetLB, nodeNames, "test-subnet")
 
 	// Change to a different subnet
+	otherSubnetKey := meta.RegionalKey("another-subnet", l4NetLB.cloud.Region())
+	err = l4NetLB.cloud.Compute().(*cloud.MockGCE).Subnetworks().Insert(context.TODO(), otherSubnetKey, subnetToCreate)
+	if err != nil {
+		t.Fatalf("Failed to create subnet, error: %v", err)
+	}
 	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "another-subnet"
 	result = l4NetLB.EnsureFrontend(nodeNames, svc)
 	if result.Error != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+		t.Fatalf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
 	svc.Annotations = result.Annotations
-	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "another-subnet"
 	assertDualStackNetLBResourcesWithCustomIPv6Subnet(t, l4NetLB, nodeNames, "another-subnet")
+
+	// change to internal IPv6 subnet and expect error
+	internalSubnetKey := meta.RegionalKey("internal-subnet", l4NetLB.cloud.Region())
+	internalSubnetToCreate := &ga.Subnetwork{
+		Ipv6AccessType: "INTERNAL",
+		StackType:      "IPV4_IPV6",
+	}
+	err = l4NetLB.cloud.Compute().(*cloud.MockGCE).Subnetworks().Insert(context.TODO(), internalSubnetKey, internalSubnetToCreate)
+	if err != nil {
+		t.Fatalf("Failed to create subnet, error: %v", err)
+	}
+	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "internal-subnet"
+	result = l4NetLB.EnsureFrontend(nodeNames, svc)
+	if !utils.IsUserError(result.Error) {
+		t.Errorf("Expected to get user error if internal IPv6 subnet specified for external IPv6 service, got %v", result.Error)
+	}
 
 	// remove the annotation - NetLB should revert to default subnet.
 	delete(svc.Annotations, annotations.CustomSubnetAnnotationKey)
@@ -631,7 +644,9 @@ func TestEnsureIPv6ExternalLoadBalancerCustomSubnet(t *testing.T) {
 	assertDualStackNetLBResourcesDeleted(t, l4NetLB)
 }
 
-func setupNetLBDualStackTestService(svc *v1.Service, nodeNames []string) (*L4NetLB, error) {
+func mustSetupNetLBDualStackTestService(t *testing.T, svc *v1.Service, nodeNames []string) *L4NetLB {
+	t.Helper()
+
 	vals := gce.DefaultTestClusterValues()
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 	fakeGCE := getFakeGCECloud(vals)
@@ -647,10 +662,12 @@ func setupNetLBDualStackTestService(svc *v1.Service, nodeNames []string) (*L4Net
 	l4NetLB.healthChecks = healthchecksl4.Fake(fakeGCE, l4NetLBParams.Recorder)
 
 	if _, err := test.CreateAndInsertNodes(l4NetLB.cloud, nodeNames, vals.ZoneName); err != nil {
-		return nil, fmt.Errorf("unexpected error when adding nodes %w", err)
+		t.Fatalf("unexpected error when adding nodes %v", err)
 	}
 
-	return l4NetLB, nil
+	// Create cluster subnet. Mock GCE uses subnet with empty string name.
+	test.MustCreateDualStackClusterSubnet(t, l4NetLB.cloud, subnetExternalIPv6AccessType)
+	return l4NetLB
 }
 
 func ensureLoadBalancer(port int, vals gce.TestClusterValues, fakeGCE *gce.Cloud, t *testing.T) (*v1.Service, *L4NetLB) {

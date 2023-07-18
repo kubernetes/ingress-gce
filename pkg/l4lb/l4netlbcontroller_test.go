@@ -1569,6 +1569,8 @@ func TestCreateDeleteDualStackNetLBService(t *testing.T) {
 			svc.Spec.IPFamilies = tc.ipFamilies
 			addNetLBService(controller, svc)
 
+			test.MustCreateDualStackClusterSubnet(t, controller.ctx.Cloud, "EXTERNAL")
+
 			prevMetrics, err := test.GetL4NetLBLatencyMetric()
 			if err != nil {
 				t.Errorf("Error getting L4 NetLB latency metrics err: %v", err)

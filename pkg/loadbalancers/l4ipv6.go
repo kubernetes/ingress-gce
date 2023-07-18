@@ -17,6 +17,7 @@ limitations under the License.
 package loadbalancers
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -196,4 +197,18 @@ func (l4 *L4) getOldIPv6ForwardingRule(existingBS *composite.BackendService) (*c
 	}
 
 	return l4.forwardingRules.Get(oldIPv6FRName)
+}
+
+func (l4 *L4) serviceSubnetHasInternalIPv6Range() error {
+	subnetName := l4.subnetName()
+	hasIPv6SubnetRange, err := utils.SubnetHasIPv6Range(l4.cloud, subnetName, subnetInternalIPv6AccessType)
+	if err != nil {
+		return err
+	}
+	if !hasIPv6SubnetRange {
+		// We don't need to emit custom event, because errors are already emitted to the user as events.
+		klog.Infof("Subnet %s for IPv6 Service %s/%s does not have internal IPv6 ranges", subnetName, l4.Service.Namespace, l4.Service.Name)
+		return utils.NewUserError(fmt.Errorf("subnet %s does not have internal IPv6 ranges, required for IPv6 Service", subnetName))
+	}
+	return nil
 }
