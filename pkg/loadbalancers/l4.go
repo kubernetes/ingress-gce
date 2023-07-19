@@ -347,7 +347,11 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	var ipv4AddressToUse string
 	if !l4.enableDualStack || utils.NeedsIPv4(l4.Service) {
 		existingIPv4FR, err = l4.getOldIPv4ForwardingRule(existingBS)
-		ipv4AddressToUse = l4lbIPToUse(l4.Service, existingIPv4FR, subnetworkURL)
+		ipv4AddressToUse, err = ipv4AddrToUse(l4.cloud, l4.recorder, l4.Service, existingIPv4FR, subnetworkURL)
+		if err != nil {
+			result.Error = fmt.Errorf("EnsureInternalLoadBalancer error: ipv4AddrToUse returned error: %w", err)
+			return result
+		}
 		expectedFRName := l4.GetFRName()
 		if !l4.cloud.IsLegacyNetwork() {
 			nm := types.NamespacedName{Namespace: l4.Service.Namespace, Name: l4.Service.Name}.String()
@@ -374,7 +378,11 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	var ipv6AddrToUse string
 	if l4.enableDualStack && utils.NeedsIPv6(l4.Service) {
 		existingIPv6FR, err = l4.getOldIPv6ForwardingRule(existingBS)
-		ipv6AddrToUse = ipv6AddressToUse(existingIPv6FR, subnetworkURL)
+		ipv6AddrToUse, err = ipv6AddressToUse(l4.cloud, l4.Service, existingIPv6FR, subnetworkURL)
+		if err != nil {
+			result.Error = fmt.Errorf("EnsureInternalLoadBalancer error: ipv6IPToUse returned error: %w", err)
+			return result
+		}
 		expectedIPv6FRName := l4.getIPv6FRName()
 		if !l4.cloud.IsLegacyNetwork() {
 			nm := types.NamespacedName{Namespace: l4.Service.Namespace, Name: l4.Service.Name}.String()

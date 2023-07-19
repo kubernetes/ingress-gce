@@ -28,6 +28,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -306,7 +307,11 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 
 	// Determine IP which will be used for this LB. If no forwarding rule has been established
 	// or specified in the Service spec, then requestedIP = "".
-	ipToUse := l4lbIPToUse(l4netlb.Service, existingFwdRule, "")
+	ipToUse, err := ipv4AddrToUse(l4netlb.cloud, l4netlb.recorder, l4netlb.Service, existingFwdRule, "")
+	if err != nil {
+		klog.Errorf("ipv4AddrToUse for service %s/%s returned error %v", l4netlb.Service.Namespace, l4netlb.Service.Name, err)
+		return nil, IPAddrUndefined, err
+	}
 	klog.V(2).Infof("ensureIPv4ForwardingRule(%s): LoadBalancer IP %s", frName, ipToUse)
 
 	netTier, isFromAnnotation := utils.GetNetworkTier(l4netlb.Service)
@@ -436,21 +441,37 @@ func equalResourcePaths(rp1, rp2 string) bool {
 	return rp1 == rp2 || utils.EqualResourceIDs(rp1, rp2)
 }
 
-// l4lbIPToUse determines which IP address needs to be used in the ForwardingRule. If an IP has been
-// specified by the user, that is used. If there is an existing ForwardingRule, the ip address from
-// that is reused. In case a subnetwork change is requested, the existing ForwardingRule IP is ignored.
-func l4lbIPToUse(svc *v1.Service, fwdRule *composite.ForwardingRule, requestedSubnet string) string {
+// ipv4AddrToUse determines which IPv4 address needs to be used in the ForwardingRule,
+// address evaluated in the following order:
+//
+//  1. Use static addresses annotation "networking.gke.io/load-balancer-ip-addresses".
+//  2. Use .Spec.LoadBalancerIP (old field, was deprecated).
+//  3. Use existing forwarding rule IP. If subnetwork was changed (or no existing IP),
+//     reset the IP (by returning empty string).
+func ipv4AddrToUse(cloud *gce.Cloud, recorder record.EventRecorder, svc *v1.Service, fwdRule *composite.ForwardingRule, requestedSubnet string) (string, error) {
+	// Get value from new annotation which support both IPv4 and IPv6
+	ipv4FromAnnotation, err := annotations.FromService(svc).IPv4AddressAnnotation(cloud)
+	if err != nil {
+		return "", err
+	}
+	if ipv4FromAnnotation != "" {
+		if svc.Spec.LoadBalancerIP != "" {
+			recorder.Event(svc, v1.EventTypeNormal, "MixedStaticIP", "Found both .Spec.LoadBalancerIP and \"networking.gke.io/load-balancer-ip-addresses\" annotation. Consider using annotation only.")
+		}
+		return ipv4FromAnnotation, nil
+		// if no value from annotation (for example, annotation has only IPv6 addresses) -- continue
+	}
 	if svc.Spec.LoadBalancerIP != "" {
-		return svc.Spec.LoadBalancerIP
+		return svc.Spec.LoadBalancerIP, nil
 	}
 	if fwdRule == nil {
-		return ""
+		return "", nil
 	}
 	if requestedSubnet != fwdRule.Subnetwork {
 		// reset ip address since subnet is being changed.
-		return ""
+		return "", nil
 	}
-	return fwdRule.IPAddress
+	return fwdRule.IPAddress, nil
 }
 
 func isAddressAlreadyInUseError(err error) bool {
