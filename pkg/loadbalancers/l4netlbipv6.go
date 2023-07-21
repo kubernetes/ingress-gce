@@ -216,7 +216,9 @@ func (l4netlb *L4NetLB) serviceSubnetHasExternalIPv6Range() error {
 	if !hasIPv6SubnetRange {
 		// We don't need to emit custom event, because errors are already emitted to the user as events.
 		klog.Infof("Subnet %s for IPv6 Service %s/%s does not have external IPv6 ranges", subnetName, l4netlb.Service.Namespace, l4netlb.Service.Name)
-		return utils.NewUserError(fmt.Errorf("subnet %s does not have external IPv6 ranges, required for IPv6 Service", subnetName))
+		return utils.NewUserError(
+			fmt.Errorf(
+				"subnet %s does not have external IPv6 ranges, required for an external IPv6 Service. You can specify an external IPv6 subnet using the \"%s\" annotation on the Service", annotations.CustomSubnetAnnotationKey, subnetName))
 	}
 	return nil
 }
