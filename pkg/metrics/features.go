@@ -88,6 +88,9 @@ const (
 	customRequestHeaders      = feature("CustomRequestHeaders")
 	customHealthChecks        = feature("CustomHealthChecks")
 
+	// Transparent Health Checks feature
+	transparentHealthChecks = feature("TransparentHC")
+
 	// FrontendConfig Features
 	sslPolicy      = feature("SSLPolicy")
 	httpsRedirects = feature("HTTPSRedirects")
@@ -282,6 +285,10 @@ func featuresForServicePort(sp utils.ServicePort) []feature {
 	if sp.NEGEnabled {
 		klog.V(6).Infof("NEG is enabled for service port %s", svcPortKey)
 		features = append(features, neg)
+	}
+	if sp.THCConfiguration.THCOptInOnSvc {
+		klog.V(6).Infof("Transparent Health Checks configured for service port %s.", svcPortKey)
+		features = append(features, transparentHealthChecks)
 	}
 	if sp.BackendConfig == nil {
 		klog.V(4).Infof("Features for Service port %s: %v", svcPortKey, features)
