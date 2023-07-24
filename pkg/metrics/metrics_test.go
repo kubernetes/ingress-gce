@@ -126,6 +126,18 @@ var (
 				},
 			},
 		},
+		// ServicePort with THC
+		{
+			ID: utils.ServicePortID{
+				Service: types.NamespacedName{
+					Name:      "service-with-thc",
+					Namespace: defaultNamespace,
+				},
+				Port: v1.ServiceBackendPort{Number: 80},
+			},
+			NEGEnabled:       true,
+			THCConfiguration: utils.THCConfiguration{THCOptInOnSvc: true},
+		},
 	}
 	ingressStates = []struct {
 		desc             string
@@ -734,6 +746,42 @@ var (
 			[]utils.ServicePort{},
 			nil,
 		},
+		{
+			"path rule for service port with thc",
+			&v1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: defaultNamespace,
+					Name:      "ingress19",
+				},
+				Spec: v1.IngressSpec{
+					Rules: []v1.IngressRule{
+						{
+							IngressRuleValue: v1.IngressRuleValue{
+								HTTP: &v1.HTTPIngressRuleValue{
+									Paths: []v1.HTTPIngressPath{
+										{
+											Path: "/foo",
+											Backend: v1.IngressBackend{
+												Service: &v1.IngressServiceBackend{
+													Name: "service-with-thc",
+													Port: v1.ServiceBackendPort{
+														Number: int32(80),
+													},
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			nil,
+			[]feature{ingress, externalIngress, httpEnabled, pathBasedRouting},
+			[]utils.ServicePort{testServicePorts[4]},
+			[]feature{servicePort, externalServicePort, neg, transparentHealthChecks},
+		},
 	}
 )
 
@@ -884,7 +932,7 @@ func TestComputeIngressMetrics(t *testing.T) {
 			},
 		},
 		{
-			"frontend and backend features",
+			"frontend and backend features with thc",
 			[]IngressState{
 				NewIngressState(ingressStates[2].ing, nil, ingressStates[2].svcPorts),
 				NewIngressState(ingressStates[4].ing, nil, ingressStates[4].svcPorts),
@@ -892,6 +940,7 @@ func TestComputeIngressMetrics(t *testing.T) {
 				NewIngressState(ingressStates[8].ing, nil, ingressStates[8].svcPorts),
 				NewIngressState(ingressStates[10].ing, nil, ingressStates[10].svcPorts),
 				NewIngressState(ingressStates[12].ing, nil, ingressStates[12].svcPorts),
+				NewIngressState(ingressStates[19].ing, nil, ingressStates[19].svcPorts),
 			},
 			map[feature]int{
 				backendConnectionDraining: 4,
@@ -903,15 +952,15 @@ func TestComputeIngressMetrics(t *testing.T) {
 				cookieAffinity:            4,
 				customRequestHeaders:      1,
 				customHealthChecks:        4,
-				externalIngress:           6,
-				httpEnabled:               6,
+				externalIngress:           7,
+				httpEnabled:               7,
 				hostBasedRouting:          1,
-				ingress:                   6,
+				ingress:                   7,
 				internalIngress:           0,
 				managedCertsForTLS:        1,
 				managedStaticGlobalIP:     1,
-				neg:                       1,
-				pathBasedRouting:          1,
+				neg:                       2,
+				pathBasedRouting:          2,
 				preSharedCertsForTLS:      3,
 				secretBasedCertsForTLS:    0,
 				specifiedStaticGlobalIP:   0,
@@ -929,10 +978,11 @@ func TestComputeIngressMetrics(t *testing.T) {
 				cookieAffinity:            1,
 				customRequestHeaders:      1,
 				internalServicePort:       0,
-				servicePort:               2,
-				externalServicePort:       2,
-				neg:                       1,
+				servicePort:               3,
+				externalServicePort:       3,
+				neg:                       2,
 				customHealthChecks:        1,
+				transparentHealthChecks:   1,
 			},
 		},
 		{

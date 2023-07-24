@@ -665,9 +665,10 @@ func updateIngressCount(ingCount map[feature]int, features map[feature]bool) {
 // not to the ingress that references this service-port.
 func isServiceFeature(ftr feature) bool {
 	serviceFeatures := map[feature]bool{
-		servicePort:         true,
-		externalServicePort: true,
-		internalServicePort: true,
+		servicePort:             true,
+		externalServicePort:     true,
+		internalServicePort:     true,
+		transparentHealthChecks: true,
 	}
 	return serviceFeatures[ftr]
 }
