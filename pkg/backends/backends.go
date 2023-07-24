@@ -33,6 +33,9 @@ import (
 
 const (
 	DefaultConnectionDrainingTimeoutSeconds = 30
+	DefaultTrackingMode                     = "PER_CONNECTION"
+	PerSessionTrackingMode                  = "PER_SESSION" // the only one supported with strong session affinity
+
 )
 
 // Backends handles CRUD operations for backends.
@@ -285,7 +288,7 @@ func (b *Backends) DeleteSignedUrlKey(be *composite.BackendService, keyName stri
 }
 
 // EnsureL4BackendService creates or updates the backend service with the given name.
-func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinity, scheme string, nm types.NamespacedName, network network.NetworkInfo) (*composite.BackendService, error) {
+func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinity, scheme string, nm types.NamespacedName, network network.NetworkInfo, connectionTrackingPolicy *composite.BackendServiceConnectionTrackingPolicy) (*composite.BackendService, error) {
 	start := time.Now()
 	klog.V(2).Infof("EnsureL4BackendService(%v, %v, %v): started", name, scheme, protocol)
 	defer func() {
@@ -307,12 +310,13 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 			name, err)
 	}
 	expectedBS := &composite.BackendService{
-		Name:                name,
-		Protocol:            protocol,
-		Description:         desc,
-		HealthChecks:        []string{hcLink},
-		SessionAffinity:     utils.TranslateAffinityType(sessionAffinity),
-		LoadBalancingScheme: scheme,
+		Name:                     name,
+		Protocol:                 protocol,
+		Description:              desc,
+		HealthChecks:             []string{hcLink},
+		SessionAffinity:          utils.TranslateAffinityType(sessionAffinity),
+		LoadBalancingScheme:      scheme,
+		ConnectionTrackingPolicy: connectionTrackingPolicy,
 	}
 	if !network.IsDefault {
 		expectedBS.Network = network.NetworkURL

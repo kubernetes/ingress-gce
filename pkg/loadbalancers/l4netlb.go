@@ -40,6 +40,15 @@ import (
 	"k8s.io/klog/v2"
 )
 
+const (
+	StrongSessionAffinityFeatureName    = "EnableStrongAffinity"
+	MinStrongSessionAffinityIdleTimeout = int32(60) // 60 seconds
+	// MaxSessionAffinityIdleTimeout is 16 hours if Strong Session Affinity is configured
+	// and Connection Tracking is less than 5-tuple (i.e. Session Affinity is
+	// CLIENT_IP or CLIENT_IP_PROTO and Tracking Mode is PER_SESSION).
+	MaxSessionAffinityIdleTimeout = int32(16 * 60 * 60)
+)
+
 // L4NetLB handles the resource creation/deletion/update for a given L4 External LoadBalancer service.
 type L4NetLB struct {
 	cloud       *gce.Cloud
@@ -53,7 +62,9 @@ type L4NetLB struct {
 	healthChecks    healthchecksl4.L4HealthChecks
 	forwardingRules ForwardingRulesProvider
 	enableDualStack bool
-	networkInfo     network.NetworkInfo
+	// represents if `enable strong session affinity` flag was set
+	enableStrongSessionAffinity bool
+	networkInfo                 network.NetworkInfo
 }
 
 // L4NetLBSyncResult contains information about the outcome of an L4 NetLB sync. It stores the list of resource name annotations,
@@ -89,28 +100,30 @@ func (r *L4NetLBSyncResult) SetMetricsForSuccessfulServiceSync() {
 }
 
 type L4NetLBParams struct {
-	Service          *corev1.Service
-	Cloud            *gce.Cloud
-	Namer            namer.L4ResourcesNamer
-	Recorder         record.EventRecorder
-	DualStackEnabled bool
-	NetworkInfo      network.NetworkInfo
+	Service                      *corev1.Service
+	Cloud                        *gce.Cloud
+	Namer                        namer.L4ResourcesNamer
+	Recorder                     record.EventRecorder
+	DualStackEnabled             bool
+	StrongSessionAffinityEnabled bool
+	NetworkInfo                  network.NetworkInfo
 }
 
 // NewL4NetLB creates a new Handler for the given L4NetLB service.
 func NewL4NetLB(params *L4NetLBParams) *L4NetLB {
 	l4netlb := &L4NetLB{
-		cloud:           params.Cloud,
-		scope:           meta.Regional,
-		namer:           params.Namer,
-		recorder:        params.Recorder,
-		Service:         params.Service,
-		NamespacedName:  types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace},
-		backendPool:     backends.NewPool(params.Cloud, params.Namer),
-		healthChecks:    healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder, params.NetworkInfo),
-		forwardingRules: forwardingrules.New(params.Cloud, meta.VersionGA, meta.Regional),
-		enableDualStack: params.DualStackEnabled,
-		networkInfo:     params.NetworkInfo,
+		cloud:                       params.Cloud,
+		scope:                       meta.Regional,
+		namer:                       params.Namer,
+		recorder:                    params.Recorder,
+		Service:                     params.Service,
+		NamespacedName:              types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace},
+		backendPool:                 backends.NewPool(params.Cloud, params.Namer),
+		healthChecks:                healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder, params.NetworkInfo),
+		forwardingRules:             forwardingrules.New(params.Cloud, meta.VersionGA, meta.Regional),
+		enableDualStack:             params.DualStackEnabled,
+		enableStrongSessionAffinity: params.StrongSessionAffinityEnabled,
+		networkInfo:                 params.NetworkInfo,
 	}
 	return l4netlb
 }
@@ -118,6 +131,46 @@ func NewL4NetLB(params *L4NetLBParams) *L4NetLB {
 // createKey generates a meta.Key for a given GCE resource name.
 func (l4netlb *L4NetLB) createKey(name string) (*meta.Key, error) {
 	return composite.CreateKey(l4netlb.cloud, name, l4netlb.scope)
+}
+
+// isSessionAffinityConfigEmpty checks if Session Affinity Config doesn't have:
+//   - ClientIP or
+//   - ClientIP.TimeoutSeconds specified
+func isSessionAffinityConfigEmpty(sessionAffinityConfig *corev1.SessionAffinityConfig) bool {
+	return sessionAffinityConfig.ClientIP == nil || sessionAffinityConfig.ClientIP.TimeoutSeconds == nil
+}
+
+// checkStrongSessionAffinityRequirements returns an error if Strong Session Affinity (SSA) was enabled:
+//   - in non-RBS based service;
+//   - without a SSA flag;
+//   - with anything else than ExternalTrafficPolicy=Local
+//   - with anything else than v1.ServiceAffinityClientIP
+//     passes silently if the SSA annotation wasn't enabled
+func (l4netlb *L4NetLB) checkStrongSessionAffinityRequirements() *utils.UserError {
+	if !annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service) {
+		return nil
+	}
+	// there is no strong session affinity flag but annotation was added
+	if !l4netlb.enableStrongSessionAffinity {
+		err := fmt.Errorf("strong session affinity set on service but not yet enabled on the cluster")
+		return utils.NewUserError(err)
+	}
+	if l4netlb.Service.Spec.SessionAffinity != corev1.ServiceAffinityClientIP {
+		err := fmt.Errorf("strong session affinity is supported only with ServiceType=%s for Service %s", corev1.ServiceAffinityClientIP, l4netlb.Service.Name)
+		return utils.NewUserError(err)
+	}
+	// Don't use the config if it's empty
+	if isSessionAffinityConfigEmpty(l4netlb.Service.Spec.SessionAffinityConfig) {
+		err := fmt.Errorf("session affinity config was not set as required for strong session affinity")
+		return utils.NewUserError(err)
+	}
+	idleTimeout := *l4netlb.Service.Spec.SessionAffinityConfig.ClientIP.TimeoutSeconds
+	// idle idleTimeout is not supported
+	if idleTimeout < MinStrongSessionAffinityIdleTimeout || idleTimeout > MaxSessionAffinityIdleTimeout {
+		err := fmt.Errorf("session affinity config has an unsupported idleTimeout (%d). It should be in [%d, %d]", idleTimeout, MinStrongSessionAffinityIdleTimeout, MaxSessionAffinityIdleTimeout)
+		return utils.NewUserError(err)
+	}
+	return nil
 }
 
 // EnsureFrontend ensures that all frontend resources for the given loadbalancer service have
@@ -133,6 +186,15 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 	klog.V(3).Infof("EnsureFrontend started for service %s/%s, len(nodeNames) = %d, SyncType: %s", svc.Namespace, svc.Name, len(nodeNames), result.SyncType)
 
 	l4netlb.Service = svc
+
+	// if service requires strong session affinity, check requirements
+	if l4netlb.enableStrongSessionAffinity {
+		if err := l4netlb.checkStrongSessionAffinityRequirements(); err != nil {
+			result.Error = err
+			result.MetricsState.IsUserError = utils.IsUserError(err)
+			return result
+		}
+	}
 
 	// If service requires IPv6 LoadBalancer -- verify that Subnet with External IPv6 ranges is used.
 	if l4netlb.enableDualStack && utils.NeedsIPv6(svc) {
@@ -201,14 +263,40 @@ func (l4netlb *L4NetLB) provideIPv4HealthChecks(nodeNames []string, result *L4Ne
 	return hcResult.HCLink
 }
 
+// connectionTrackingPolicy returns BackendServiceConnectionTrafficPolicy
+// based on StrongSessionAffinity and IdleTimeoutSec
+func (l4netlb *L4NetLB) connectionTrackingPolicy() (*composite.BackendServiceConnectionTrackingPolicy, error) {
+	connectionTrackingPolicy := composite.BackendServiceConnectionTrackingPolicy{}
+	connectionTrackingPolicy.EnableStrongAffinity = annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service)
+	if connectionTrackingPolicy.EnableStrongAffinity {
+		connectionTrackingPolicy.TrackingMode = backends.PerSessionTrackingMode
+		// TODO(code-elinka): Uncomment as soon as we can set up the TimeoutSeconds freely
+		//connectionTrackingPolicy.IdleTimeoutSec = idleTimeout
+	}
+	return &connectionTrackingPolicy, nil
+}
+
 func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcLink string) string {
 	bsName := l4netlb.namer.L4Backend(l4netlb.Service.Namespace, l4netlb.Service.Name)
 	servicePorts := l4netlb.Service.Spec.Ports
 	protocol := utils.GetProtocol(servicePorts)
-	bs, err := l4netlb.backendPool.EnsureL4BackendService(bsName, hcLink, string(protocol), string(l4netlb.Service.Spec.SessionAffinity), string(cloud.SchemeExternal), l4netlb.NamespacedName, *network.DefaultNetwork(l4netlb.cloud))
+
+	connectionTrackingPolicy, err := l4netlb.connectionTrackingPolicy()
 	if err != nil {
 		syncResult.GCEResourceInError = annotations.BackendServiceResource
-		syncResult.Error = fmt.Errorf("Failed to ensure backend service %s - %w", bsName, err)
+		syncResult.Error = err
+	}
+	var bs *composite.BackendService
+	bs, err = l4netlb.backendPool.EnsureL4BackendService(bsName, hcLink, string(protocol), string(l4netlb.Service.Spec.SessionAffinity), string(cloud.SchemeExternal), l4netlb.NamespacedName, *network.DefaultNetwork(l4netlb.cloud), connectionTrackingPolicy)
+	if err != nil {
+		if utils.IsUnsupportedFeatureError(err, StrongSessionAffinityFeatureName) {
+			syncResult.GCEResourceInError = annotations.BackendServiceResource
+			syncResult.Error = utils.NewUserError(err)
+			syncResult.MetricsState.IsUserError = true
+		} else {
+			syncResult.GCEResourceInError = annotations.BackendServiceResource
+			syncResult.Error = fmt.Errorf("failed to ensure backend service %s - %w", bsName, err)
+		}
 		return ""
 	}
 	syncResult.Annotations[annotations.BackendServiceKey] = bsName
@@ -235,9 +323,9 @@ func (l4netlb *L4NetLB) ensureIPv4Resources(result *L4NetLBSyncResult, nodeNames
 	fr, ipAddrType, err := l4netlb.ensureIPv4ForwardingRule(bsLink)
 	if err != nil {
 		// User can misconfigure the forwarding rule if Network Tier will not match service level Network Tier.
-		result.MetricsState.IsUserError = utils.IsUserError(err)
 		result.GCEResourceInError = annotations.ForwardingRuleResource
 		result.Error = fmt.Errorf("failed to ensure forwarding rule - %w", err)
+		result.MetricsState.IsUserError = utils.IsUserError(err)
 		return
 	}
 	if fr.IPProtocol == string(corev1.ProtocolTCP) {

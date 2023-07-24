@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
-	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -67,6 +66,9 @@ const (
 	testServiceNamespace = "default"
 	hcNodePort           = int32(10111)
 	userAddrName         = "UserStaticAddress"
+
+	shortSessionAffinityIdleTimeout = int32(20)     // 20 sec could be used for regular Session Affinity
+	longSessionAffinityIdleTimeout  = int32(2 * 60) // 2 min or 120 sec for Strong Session Affinity
 )
 
 var (
@@ -100,8 +102,14 @@ func getPorts() []v1.ServicePort {
 		{Name: "port2", Port: 8082, Protocol: "TCP", NodePort: 30323}}
 }
 
-func getSessionAffinityConfig() *v1.SessionAffinityConfig {
-	timeoutSec := int32(10)
+func getStrongSessionAffinityAnnotations() map[string]string {
+	return map[string]string{
+		annotations.StrongSessionAffinityAnnotationKey: annotations.StrongSessionAffinityEnabled,
+		annotations.RBSAnnotationKey:                   annotations.RBSEnabled,
+	}
+}
+
+func getSessionAffinityConfig(timeoutSec int32) *v1.SessionAffinityConfig {
 	return &v1.SessionAffinityConfig{ClientIP: &v1.ClientIPConfig{TimeoutSeconds: &timeoutSec}}
 }
 
@@ -902,10 +910,12 @@ func TestServiceStatusForSuccessSync(t *testing.T) {
 
 func TestProcessServiceUpdate(t *testing.T) {
 	for _, param := range []struct {
+		Desc        string
 		Update      func(*v1.Service)
 		CheckResult func(*L4NetLBController, *v1.Service) error
 	}{
 		{
+			Desc:   "Keep Service Affinity type equal to None",
 			Update: func(s *v1.Service) { s.Spec.SessionAffinity = v1.ServiceAffinityNone },
 			CheckResult: func(l4netController *L4NetLBController, svc *v1.Service) error {
 				_, bs, err := getBackend(l4netController, svc)
@@ -919,6 +929,7 @@ func TestProcessServiceUpdate(t *testing.T) {
 			},
 		},
 		{
+			Desc:   "Update Source Rangers in LB Service",
 			Update: func(s *v1.Service) { s.Spec.LoadBalancerSourceRanges = getLoadBalancerSourceRanges() },
 			CheckResult: func(l4netController *L4NetLBController, svc *v1.Service) error {
 				if len(svc.Spec.Ports) == 0 {
@@ -932,22 +943,26 @@ func TestProcessServiceUpdate(t *testing.T) {
 				expectedRange := getLoadBalancerSourceRanges()
 				sort.Strings(expectedRange)
 				sort.Strings(fw.SourceRanges)
-				if !reflect.DeepEqual(fw.SourceRanges, expectedRange) {
+				if diff := cmp.Diff(fw.SourceRanges, expectedRange); diff != "" {
 					return fmt.Errorf("SourceRanges mismatch: %v != %v", fw.SourceRanges, expectedRange)
 				}
 				return nil
 			},
 		},
 		{
-			Update: func(s *v1.Service) { s.Spec.SessionAffinityConfig = getSessionAffinityConfig() },
+			Desc: "Update service with Session Affinity Config only",
+			Update: func(s *v1.Service) {
+				s.Spec.SessionAffinityConfig = getSessionAffinityConfig(shortSessionAffinityIdleTimeout)
+			},
 			CheckResult: func(l4netController *L4NetLBController, svc *v1.Service) error {
-				if !reflect.DeepEqual(svc.Spec.SessionAffinityConfig, getSessionAffinityConfig()) {
-					return fmt.Errorf("SessionAffinityConfig mismatch %v != %v", svc.Spec.SessionAffinityConfig, getSessionAffinityConfig())
+				if diff := cmp.Diff(svc.Spec.SessionAffinityConfig, getSessionAffinityConfig(shortSessionAffinityIdleTimeout)); diff != "" {
+					return fmt.Errorf("SessionAffinityConfig mismatch: %s", diff)
 				}
 				return nil
 			},
 		},
 		{
+			Desc:   "Change External Traffic Policy Type to Local",
 			Update: func(s *v1.Service) { s.Spec.ExternalTrafficPolicy = v1.ServiceExternalTrafficPolicyTypeLocal },
 			CheckResult: func(l4netController *L4NetLBController, svc *v1.Service) error {
 				if svc.Spec.ExternalTrafficPolicy != v1.ServiceExternalTrafficPolicyTypeLocal {
@@ -957,6 +972,7 @@ func TestProcessServiceUpdate(t *testing.T) {
 			},
 		},
 		{
+			Desc:   "Update Legacy LoadBalancerIP parameter of the service",
 			Update: func(s *v1.Service) { s.Spec.LoadBalancerIP = loadBalancerIP },
 			CheckResult: func(lc *L4NetLBController, svc *v1.Service) error {
 				frName := utils.LegacyForwardingRuleName(svc)
@@ -974,6 +990,7 @@ func TestProcessServiceUpdate(t *testing.T) {
 			},
 		},
 		{
+			Desc:   "Update service with a new list of ExternalIPs",
 			Update: func(s *v1.Service) { s.Spec.ExternalIPs = getExternalIPS() },
 			CheckResult: func(l4netController *L4NetLBController, svc *v1.Service) error {
 				expectedIPs := getExternalIPS()
@@ -986,6 +1003,7 @@ func TestProcessServiceUpdate(t *testing.T) {
 			},
 		},
 		{
+			Desc:   "Update service with new list of ports",
 			Update: func(s *v1.Service) { s.Spec.Ports = getPorts() },
 			CheckResult: func(l4netController *L4NetLBController, svc *v1.Service) error {
 				expectedPorts := getPorts()
@@ -998,6 +1016,7 @@ func TestProcessServiceUpdate(t *testing.T) {
 			},
 		},
 		{
+			Desc:   "Change Healthcheck Node Port for the service",
 			Update: func(s *v1.Service) { s.Spec.HealthCheckNodePort = hcNodePort },
 			CheckResult: func(l4netController *L4NetLBController, svc *v1.Service) error {
 				if svc.Spec.HealthCheckNodePort != hcNodePort {
@@ -1007,6 +1026,7 @@ func TestProcessServiceUpdate(t *testing.T) {
 			},
 		},
 		{
+			Desc:   "Update service with new (fake) annotations",
 			Update: func(s *v1.Service) { s.Annotations = getAnnotations() },
 			CheckResult: func(l4netController *L4NetLBController, svc *v1.Service) error {
 				expAddedAnnotations := getAnnotations()
@@ -1019,37 +1039,39 @@ func TestProcessServiceUpdate(t *testing.T) {
 			},
 		},
 	} {
-		svc, l4netController := createAndSyncNetLBSvc(t)
-		(l4netController.ctx.Cloud.Compute().(*cloud.MockGCE)).MockFirewalls.PatchHook = mock.UpdateFirewallHook
-		(l4netController.ctx.Cloud.Compute().(*cloud.MockGCE)).MockRegionBackendServices.UpdateHook = mock.UpdateRegionBackendServiceHook
-		newSvc, err := l4netController.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
-		if err != nil {
-			t.Errorf("Failed to lookup service %s, err: %v", svc.Name, err)
-		}
+		t.Run(param.Desc, func(t *testing.T) {
+			svc, l4netController := createAndSyncNetLBSvc(t)
+			l4netController.ctx.EnableL4StrongSessionAffinity = true
+			(l4netController.ctx.Cloud.Compute().(*cloud.MockGCE)).MockFirewalls.PatchHook = mock.UpdateFirewallHook
+			(l4netController.ctx.Cloud.Compute().(*cloud.MockGCE)).MockRegionBackendServices.UpdateHook = mock.UpdateRegionBackendServiceHook
+			newSvc, err := l4netController.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
+			if err != nil {
+				t.Errorf("Failed to lookup service %s, err: %v", svc.Name, err)
+			}
 
-		param.Update(newSvc)
-		updateNetLBService(l4netController, newSvc)
+			param.Update(newSvc)
+			updateNetLBService(l4netController, newSvc)
 
-		if !l4netController.needsUpdate(svc, newSvc) {
-			t.Errorf("Service should be marked for update")
-		}
+			if !l4netController.needsUpdate(svc, newSvc) {
+				t.Errorf("Service should be marked for update")
+			}
 
-		key, _ := common.KeyFunc(newSvc)
-		err = l4netController.sync(key)
-		if err != nil {
-			t.Errorf("Failed to sync newly added service %s, err %v", svc.Name, err)
-		}
-		newSvc, err = l4netController.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
-		if err != nil {
-			t.Errorf("Failed to lookup service %s, err: %v", svc.Name, err)
-		}
+			key, _ := common.KeyFunc(newSvc)
+			err = l4netController.sync(key)
+			if err != nil {
+				t.Errorf("Failed to sync newly added service %s, err %v", svc.Name, err)
+			}
+			newSvc, err = l4netController.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
+			if err != nil {
+				t.Errorf("Failed to lookup service %s, err: %v", svc.Name, err)
+			}
 
-		if err = param.CheckResult(l4netController, newSvc); err != nil {
-			t.Errorf("Error Checking Update: %v", err)
-		}
-		deleteNetLBService(l4netController, svc)
+			if err = param.CheckResult(l4netController, newSvc); err != nil {
+				t.Errorf("Error Checking Update: %v", err)
+			}
+			deleteNetLBService(l4netController, svc)
+		})
 	}
-
 }
 
 func TestHealthCheckWhenExternalTrafficPolicyWasUpdated(t *testing.T) {
@@ -1319,6 +1341,45 @@ func TestShouldProcessService(t *testing.T) {
 			t.Errorf("Old service %v. New service %v. Expected needsUpdate: %t, got: %t", testCase.oldSvc, testCase.newSvc, testCase.shouldProcess, result)
 		}
 	}
+}
+
+func TestStrongSessionAffinityServiceUpdate(t *testing.T) {
+	// setup an original service
+	svc, l4netController := createAndSyncNetLBSvc(t)
+	l4netController.ctx.EnableL4StrongSessionAffinity = true
+
+	// update service objects
+	newSvc, _ := l4netController.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
+	newSvc.Spec.SessionAffinity = v1.ServiceAffinityClientIP
+	newSvc.Spec.SessionAffinityConfig = getSessionAffinityConfig(longSessionAffinityIdleTimeout)
+	newSvc.Annotations = getStrongSessionAffinityAnnotations()
+
+	// update in indexer
+	updateNetLBService(l4netController, newSvc)
+
+	// trigger sync
+	if !l4netController.needsUpdate(svc, newSvc) {
+		t.Errorf("Service should be marked for update")
+	}
+	key, _ := common.KeyFunc(newSvc)
+	l4netController.sync(key)
+
+	svcAfterUpdate, _ := l4netController.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
+
+	// make sure changed specs are present after the sync
+	if diff := cmp.Diff(svcAfterUpdate.Spec.SessionAffinity, v1.ServiceAffinityClientIP); diff != "" {
+		t.Errorf("SessionAffinity type mismatch, got and expected: %s", diff)
+	}
+	if diff := cmp.Diff(svcAfterUpdate.Spec.SessionAffinityConfig, getSessionAffinityConfig(longSessionAffinityIdleTimeout)); diff != "" {
+		t.Errorf("ServiceAffinityConfig mismatch, got and expected: %s", diff)
+	}
+	expAddedAnnotations := getStrongSessionAffinityAnnotations()
+	for name, value := range expAddedAnnotations {
+		if svcAfterUpdate.Annotations[name] != value {
+			t.Errorf("Annotation got %v != expected %v", svcAfterUpdate.Annotations[name], value)
+		}
+	}
+	deleteNetLBService(l4netController, svcAfterUpdate)
 }
 
 func TestDualStackServiceNeedsUpdate(t *testing.T) {

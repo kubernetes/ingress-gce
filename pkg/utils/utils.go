@@ -937,3 +937,20 @@ func SubnetHasIPv6Range(cloud *gce.Cloud, subnetName, ipv6AccessType string) (bo
 	}
 	return subnet.StackType == DualStackSubnetStackType && subnet.Ipv6AccessType == ipv6AccessType, nil
 }
+
+// IsUnsupportedFeatureError returns true if the error has 400 number,
+// and has information that `featureName` isn't supported
+//
+//	ex: ```Error 400: Invalid value for field
+//	resource.connectionTrackingPolicy.enableStrongAffinity': 'true'.
+//	EnableStrongAffinity is not supported., invalid```
+func IsUnsupportedFeatureError(err error, featureName string) bool {
+	if err == nil {
+		return false
+	}
+	isUnsupported := strings.Contains(err.Error(), "is not supported") && IsHTTPErrorCode(err, http.StatusBadRequest)
+	if strings.Contains(err.Error(), featureName) && isUnsupported {
+		return true
+	}
+	return false
+}

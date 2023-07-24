@@ -1574,3 +1574,63 @@ func TestAddIPToLBStatus(t *testing.T) {
 		})
 	}
 }
+
+func TestIsUnsupportedFeatureError(t *testing.T) {
+	testCases := []struct {
+		desc                string
+		featureName         string
+		errorMessage        string
+		errorCode           int
+		expectedReturnValue bool
+	}{
+		{
+			desc:                "empty error",
+			featureName:         "randomFeature",
+			errorMessage:        "",
+			errorCode:           200,
+			expectedReturnValue: false,
+		},
+		{
+			desc:                "wrong error code",
+			featureName:         "randomFeature",
+			errorMessage:        "randomFeature is not supported",
+			errorCode:           200,
+			expectedReturnValue: false,
+		},
+		{
+			desc:                "wrong error message",
+			featureName:         "randomFeature",
+			errorMessage:        "randomFeature abc",
+			errorCode:           400,
+			expectedReturnValue: false,
+		},
+		{
+			desc:                "wrong feature name",
+			featureName:         "newFeature",
+			errorMessage:        "randomFeature is not supported",
+			errorCode:           400,
+			expectedReturnValue: false,
+		},
+		{
+			desc:                "feature is not supported",
+			featureName:         "enableStrongAffinity",
+			errorMessage:        "Invalid value for field 'resource.connectionTrackingPolicy.enableStrongAffinity': 'true'. EnableStrongAffinity is not supported., invalid",
+			errorCode:           400,
+			expectedReturnValue: true,
+		},
+	}
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			err := googleapi.Error{
+				Message: tc.errorMessage,
+				Code:    tc.errorCode,
+			}
+			if IsUnsupportedFeatureError(&err, tc.featureName) != tc.expectedReturnValue {
+				t.Errorf("IsUnsupportedFeatureError returned unexpected result: %v, expectations: %v for error: %v", IsUnsupportedFeatureError(&err, tc.featureName), tc.expectedReturnValue, err)
+			}
+		})
+	}
+}

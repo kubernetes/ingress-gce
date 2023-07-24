@@ -23,6 +23,7 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/cloud-provider-gcp/providers/gce"
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/test"
@@ -233,7 +234,7 @@ func createBackendService(t *testing.T, sp utils.ServicePort, backendPool *Backe
 	serviceAffinityNone := string(apiv1.ServiceAffinityNone)
 	schemeExternal := string(cloud.SchemeExternal)
 	defaultNetworkInfo := network.NetworkInfo{IsDefault: true}
-	if _, err := backendPool.EnsureL4BackendService(sp.BackendName(), hcLink, protocol, serviceAffinityNone, schemeExternal, namespacedName, defaultNetworkInfo); err != nil {
+	if _, err := backendPool.EnsureL4BackendService(sp.BackendName(), hcLink, protocol, serviceAffinityNone, schemeExternal, namespacedName, defaultNetworkInfo, &composite.BackendServiceConnectionTrackingPolicy{}); err != nil {
 		t.Fatalf("Error creating backend service %v", err)
 	}
 }
