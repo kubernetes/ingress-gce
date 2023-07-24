@@ -121,7 +121,7 @@ func (netlbCount *netLBFeatureCount) record() {
 }
 
 // init registers ingress usage metrics.
-func init() {
+func Init() {
 	klog.V(3).Infof("Registering Ingress usage metrics %v and %v, NEG usage metrics %v", ingressCount, servicePortCount, networkEndpointGroupCount)
 	prometheus.MustRegister(ingressCount, servicePortCount, networkEndpointGroupCount)
 
@@ -218,6 +218,7 @@ func (spk servicePortKey) string() string {
 }
 
 func (im *ControllerMetrics) Run(stopCh <-chan struct{}) {
+	Init()
 	klog.V(3).Infof("Ingress Metrics initialized. Metrics will be exported at an interval of %v", im.metricsInterval)
 	// Compute and export metrics periodically.
 	go func() {
