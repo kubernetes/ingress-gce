@@ -325,6 +325,7 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) *lo
 		Namer:            l4c.namer,
 		Recorder:         l4c.ctx.Recorder(svc.Namespace),
 		DualStackEnabled: l4c.enableDualStack,
+		NetworkResolver:  l4c.networkResolver,
 	}
 	l4 := loadbalancers.NewL4Handler(l4ilbParams)
 	l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer", "Deleting load balancer for %s", key)
@@ -528,6 +529,9 @@ func (l4c *L4Controller) publishMetrics(result *loadbalancers.L4ILBSyncResult, n
 			l4c.ctx.ControllerMetrics.SetL4ILBDualStackService(namespacedName, result.DualStackMetricsState)
 			l4metrics.PublishL4ILBDualStackSyncLatency(result.Error == nil, result.SyncType, result.DualStackMetricsState.IPFamilies, result.StartTime)
 		}
+		if result.MetricsState.IsMultinet {
+			l4metrics.PublishL4ILBMultiNetSyncLatency(result.Error == nil, result.SyncType, result.StartTime)
+		}
 
 	case loadbalancers.SyncTypeDelete:
 		// if service is successfully deleted, remove it from cache
@@ -542,6 +546,9 @@ func (l4c *L4Controller) publishMetrics(result *loadbalancers.L4ILBSyncResult, n
 		l4metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime)
 		if l4c.enableDualStack {
 			l4metrics.PublishL4ILBDualStackSyncLatency(result.Error == nil, result.SyncType, result.DualStackMetricsState.IPFamilies, result.StartTime)
+		}
+		if result.MetricsState.IsMultinet {
+			l4metrics.PublishL4ILBMultiNetSyncLatency(result.Error == nil, result.SyncType, result.StartTime)
 		}
 	default:
 		klog.Warningf("Unknown sync type %q, skipping metrics", result.SyncType)

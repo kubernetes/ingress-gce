@@ -94,11 +94,17 @@ func init() {
 	klog.V(3).Infof("Registering L4 ILB usage metrics %v", l4ILBCount)
 	prometheus.MustRegister(l4ILBCount)
 
+	klog.V(3).Infof("Registering L4 ILB metrics %v", l4ILBs)
+	prometheus.MustRegister(l4ILBs)
+
 	klog.V(3).Infof("Registering L4 ILB Dual Stack usage metrics %v", l4ILBDualStackCount)
 	prometheus.MustRegister(l4ILBDualStackCount)
 
 	klog.V(3).Infof("Registering L4 NetLB usage metrics %v", l4NetLBCount)
 	prometheus.MustRegister(l4NetLBCount)
+
+	klog.V(3).Infof("Registering L4 NetLB metrics %v", l4NetLBs)
+	prometheus.MustRegister(l4NetLBs)
 
 	klog.V(3).Infof("Registering L4 NetLB Dual Stack usage metrics %v", l4NetLBDualStackCount)
 	prometheus.MustRegister(l4NetLBDualStackCount)

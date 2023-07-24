@@ -634,7 +634,7 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service)
 		Namer:            lc.namer,
 		Recorder:         lc.ctx.Recorder(svc.Namespace),
 		DualStackEnabled: lc.enableDualStack,
-		NetworkResolver:  network.NewFakeResolver(network.DefaultNetwork(lc.ctx.Cloud)),
+		NetworkResolver:  lc.networkResolver,
 	}
 	l4netLB := loadbalancers.NewL4NetLB(l4NetLBParams)
 	lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer",
@@ -723,6 +723,9 @@ func (lc *L4NetLBController) publishMetrics(result *loadbalancers.L4NetLBSyncRes
 func (lc *L4NetLBController) publishSyncMetrics(result *loadbalancers.L4NetLBSyncResult) {
 	if lc.enableDualStack {
 		l4metrics.PublishL4NetLBDualStackSyncLatency(result.Error == nil, result.SyncType, result.DualStackMetricsState.IPFamilies, result.StartTime)
+	}
+	if result.MetricsState.IsMultinet {
+		l4metrics.PublishL4NetLBMultiNetSyncLatency(result.Error == nil, result.SyncType, result.StartTime)
 	}
 	if result.Error == nil {
 		l4metrics.PublishL4NetLBSyncSuccess(result.SyncType, result.StartTime)

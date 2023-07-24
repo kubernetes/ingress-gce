@@ -17,11 +17,17 @@ limitations under the License.
 package metrics
 
 import (
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/klog/v2"
+)
+
+const (
+	l4LabelStatus   = "status"
+	l4LabelMutlinet = "multinet"
 )
 
 var (
@@ -38,6 +44,22 @@ var (
 			Help: "Number of L4 NetLBs",
 		},
 		[]string{label},
+	)
+
+	l4ILBs = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "l4_ilbs",
+			Help: "Metric about ILBs",
+		},
+		[]string{l4LabelStatus, l4LabelMutlinet},
+	)
+
+	l4NetLBs = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "l4_netlbs",
+			Help: "Metric about NetLBs",
+		},
+		[]string{l4LabelStatus, l4LabelMutlinet},
 	)
 )
 
@@ -80,6 +102,14 @@ func newL4ontrollerMetrics(l4NetLBProvisionDeadline time.Duration) *l4Controller
 	}
 }
 
+func InitL4ILBServiceState(startTime *time.Time) L4ILBServiceState {
+	state := L4ILBServiceState{}
+
+	// Always init status with error, and update with Success when service was provisioned
+	state.FirstSyncErrorTime = startTime
+	return state
+}
+
 // SetL4ILBService implements L4ILBMetricsCollector.
 func (im *ControllerMetrics) SetL4ILBService(svcKey string, state L4ILBServiceState) {
 	im.Lock()
@@ -87,6 +117,11 @@ func (im *ControllerMetrics) SetL4ILBService(svcKey string, state L4ILBServiceSt
 
 	if im.l4ControllerMetrics.l4ILBServiceMap == nil {
 		klog.Fatalf("Ingress Metrics failed to initialize correctly.")
+	}
+	if !state.InSuccess {
+		if previousState, ok := im.l4ControllerMetrics.l4ILBServiceMap[svcKey]; ok && previousState.FirstSyncErrorTime != nil {
+			state.FirstSyncErrorTime = previousState.FirstSyncErrorTime
+		}
 	}
 	im.l4ControllerMetrics.l4ILBServiceMap[svcKey] = state
 }
@@ -125,8 +160,8 @@ func (im *ControllerMetrics) DeleteL4NetLBService(svcKey string) {
 	delete(im.l4ControllerMetrics.l4NetLBServiceMap, svcKey)
 }
 
-// computeL4ILBMetrics aggregates L4 ILB metrics in the cache.
-func (l4 *l4ControllerMetrics) computeL4ILBMetrics() map[feature]int {
+// computeL4ILBFeatureMetrics aggregates L4 ILB metrics in the cache.
+func (l4 *l4ControllerMetrics) computeL4ILBFeatureMetrics() map[feature]int {
 	l4.Lock()
 	defer l4.Unlock()
 	klog.V(4).Infof("Computing L4 ILB usage metrics from service state map: %#v", l4.l4ILBServiceMap)
@@ -163,8 +198,8 @@ func (l4 *l4ControllerMetrics) computeL4ILBMetrics() map[feature]int {
 	return counts
 }
 
-// computeL4NetLBMetrics aggregates L4 NetLB metrics in the cache.
-func (l4 *l4ControllerMetrics) computeL4NetLBMetrics() netLBFeatureCount {
+// computeL4NetLBFeatureMetrics aggregates L4 NetLB metrics in the cache.
+func (l4 *l4ControllerMetrics) computeL4NetLBFeatureMetrics() netLBFeatureCount {
 	l4.Lock()
 	defer l4.Unlock()
 	klog.V(4).Infof("Computing L4 NetLB usage metrics from service state map: %#v", l4.l4NetLBServiceMap)
@@ -198,15 +233,83 @@ func (l4 *l4ControllerMetrics) computeL4NetLBMetrics() netLBFeatureCount {
 }
 
 func (l4 *l4ControllerMetrics) export() {
-	ilbCount := l4.computeL4ILBMetrics()
+	ilbCount := l4.computeL4ILBFeatureMetrics()
 	klog.V(3).Infof("Exporting L4 ILB usage metrics: %#v", ilbCount)
 	for feature, count := range ilbCount {
 		l4ILBCount.With(prometheus.Labels{label: feature.String()}).Set(float64(count))
 	}
 	klog.V(3).Infof("L4 ILB usage metrics exported.")
 
-	netlbCount := l4.computeL4NetLBMetrics()
+	netlbCount := l4.computeL4NetLBFeatureMetrics()
 	klog.V(3).Infof("Exporting L4 NetLB usage metrics: %#v", netlbCount)
 	netlbCount.record()
 	klog.V(3).Infof("L4 NetLB usage metrics exported.")
+
+	l4.exportL4ILBsMetrics()
+	l4.exportL4NetLBsMetrics()
+}
+
+func (l4 *l4ControllerMetrics) exportL4ILBsMetrics() {
+	counts := l4.computeL4ILBMetrics()
+	l4ILBs.Reset()
+	for labels, count := range counts {
+		l4ILBs.With(prometheus.Labels{
+			l4LabelStatus:   string(labels.Status),
+			l4LabelMutlinet: strconv.FormatBool(labels.IsMultinet),
+		}).Set(float64(count))
+	}
+}
+
+func (l4 *l4ControllerMetrics) computeL4ILBMetrics() map[L4ILBServiceLabels]int64 {
+	counts := make(map[L4ILBServiceLabels]int64)
+	l4.Lock()
+	defer l4.Unlock()
+	klog.V(3).Infof("computeL4ILBMetrics %+v", l4.l4ILBServiceMap)
+	for _, svcState := range l4.l4ILBServiceMap {
+		labels := L4ILBServiceLabels{
+			IsMultinet: svcState.IsMultinet,
+			Status:     convertStatusFlagsToStatus(svcState.InSuccess, svcState.IsUserError, svcState.FirstSyncErrorTime),
+		}
+		counts[labels] += 1
+	}
+	klog.V(3).Infof("done computeL4ILBMetrics %+v", counts)
+	return counts
+}
+
+func (l4 *l4ControllerMetrics) exportL4NetLBsMetrics() {
+	counts := l4.computeL4NetLBsMetrics()
+	l4NetLBs.Reset()
+	for labels, count := range counts {
+		l4NetLBs.With(prometheus.Labels{
+			l4LabelStatus:   string(labels.Status),
+			l4LabelMutlinet: strconv.FormatBool(labels.IsMultinet),
+		}).Set(float64(count))
+	}
+}
+
+func (l4 *l4ControllerMetrics) computeL4NetLBsMetrics() map[L4NetLBServiceLabels]int64 {
+	counts := make(map[L4NetLBServiceLabels]int64)
+	l4.Lock()
+	defer l4.Unlock()
+	for _, svcState := range l4.l4NetLBServiceMap {
+		labels := L4NetLBServiceLabels{
+			IsMultinet: svcState.IsMultinet,
+			Status:     convertStatusFlagsToStatus(svcState.InSuccess, svcState.IsUserError, svcState.FirstSyncErrorTime),
+		}
+		counts[labels] += 1
+	}
+	return counts
+}
+
+func convertStatusFlagsToStatus(inSuccess, isUserError bool, firstSyncErrorTime *time.Time) L4ServiceStatus {
+
+	if inSuccess {
+		return StatusSuccess
+	} else if isUserError {
+		return StatusUserError
+	} else if !inSuccess && firstSyncErrorTime != nil && time.Since(*firstSyncErrorTime) >= persistentErrorThresholdTime {
+		return StatusPersistentError
+	} else {
+		return StatusError
+	}
 }

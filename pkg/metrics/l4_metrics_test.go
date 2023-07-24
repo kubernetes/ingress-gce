@@ -39,7 +39,7 @@ const (
 	disableCustomSubnet = false
 )
 
-func TestComputeL4ILBMetrics(t *testing.T) {
+func TestComputeL4ILBFeatureMetrics(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		desc             string
@@ -187,7 +187,7 @@ func TestComputeL4ILBMetrics(t *testing.T) {
 			for i, serviceState := range tc.serviceStates {
 				newMetrics.SetL4ILBService(fmt.Sprint(i), serviceState)
 			}
-			got := newMetrics.l4ControllerMetrics.computeL4ILBMetrics()
+			got := newMetrics.l4ControllerMetrics.computeL4ILBFeatureMetrics()
 			if diff := cmp.Diff(tc.expectL4ILBCount, got); diff != "" {
 				t.Fatalf("Got diff for L4 ILB service counts (-want +got):\n%s", diff)
 			}
@@ -204,7 +204,7 @@ func newL4ILBServiceState(globalAccess bool, customSubnet bool, inSuccess bool, 
 	}
 }
 
-func TestComputeL4NetLBMetrics(t *testing.T) {
+func TestComputeL4NetLBFeatureMetrics(t *testing.T) {
 	t.Parallel()
 
 	currTime := time.Now()
@@ -371,7 +371,7 @@ func TestComputeL4NetLBMetrics(t *testing.T) {
 			for i, serviceState := range tc.serviceStates {
 				newMetrics.SetL4NetLBService(fmt.Sprint(i), serviceState)
 			}
-			got := newMetrics.l4ControllerMetrics.computeL4NetLBMetrics()
+			got := newMetrics.l4ControllerMetrics.computeL4NetLBFeatureMetrics()
 			if diff := cmp.Diff(tc.expectL4NetLBCount, got, cmp.AllowUnexported(netLBFeatureCount{})); diff != "" {
 				t.Fatalf("Got diff for L4 NetLB service counts (-want +got):\n%s", diff)
 			}
@@ -421,7 +421,7 @@ func TestRetryPeriodForL4NetLBServices(t *testing.T) {
 }
 
 func checkMetricsComputation(newMetrics *ControllerMetrics, expErrorCount, expSvcCount int) error {
-	got := newMetrics.l4ControllerMetrics.computeL4NetLBMetrics()
+	got := newMetrics.l4ControllerMetrics.computeL4NetLBFeatureMetrics()
 	if got.inError != expErrorCount {
 		return fmt.Errorf("Error count mismatch expected: %v got: %v", expErrorCount, got.inError)
 	}
@@ -429,4 +429,225 @@ func checkMetricsComputation(newMetrics *ControllerMetrics, expErrorCount, expSv
 		return fmt.Errorf("Service count mismatch expected: %v got: %v", expSvcCount, got.service)
 	}
 	return nil
+}
+
+func TestComputeL4NetLBsMetrics(t *testing.T) {
+	currTime := time.Now()
+	beforePersistentErrorThresholdTime := currTime.Add(-1*persistentErrorThresholdTime - time.Minute)
+	serviceStates := []L4NetLBServiceState{
+		{
+			IsMultinet:  false,
+			InSuccess:   false,
+			IsUserError: false,
+		},
+		{
+			IsMultinet:  true,
+			InSuccess:   false,
+			IsUserError: false,
+		},
+		{
+			IsMultinet:  true,
+			InSuccess:   false,
+			IsUserError: true,
+		},
+		{
+			IsMultinet:  false,
+			InSuccess:   true,
+			IsUserError: false,
+		},
+		{
+			IsPremiumTier: true,
+			IsMultinet:    false,
+			InSuccess:     true,
+			IsUserError:   false,
+		},
+		{
+			IsMultinet:         false,
+			InSuccess:          false,
+			IsUserError:        false,
+			FirstSyncErrorTime: &beforePersistentErrorThresholdTime,
+		},
+	}
+	want := map[L4NetLBServiceLabels]int64{
+		L4NetLBServiceLabels{
+			IsMultinet: false,
+			Status:     StatusError,
+		}: 1,
+		L4NetLBServiceLabels{
+			IsMultinet: true,
+			Status:     StatusError,
+		}: 1,
+		L4NetLBServiceLabels{
+			IsMultinet: true,
+			Status:     StatusUserError,
+		}: 1,
+		L4NetLBServiceLabels{
+			IsMultinet: false,
+			Status:     StatusSuccess,
+		}: 2,
+		L4NetLBServiceLabels{
+			IsMultinet: false,
+			Status:     StatusPersistentError,
+		}: 1,
+	}
+	newMetrics := FakeControllerMetrics()
+	for i, state := range serviceStates {
+		newMetrics.SetL4NetLBService(fmt.Sprintf("svc%d", i), state)
+	}
+
+	metrics := newMetrics.l4ControllerMetrics.computeL4NetLBsMetrics()
+
+	for wantLabels, wantCount := range want {
+		count, ok := metrics[wantLabels]
+		if !ok {
+			t.Errorf("wanted labels %+v with count %d but they weren't present", wantLabels, wantCount)
+		} else if count != wantCount {
+			t.Errorf("wanted labels %+v with count %d but the count was %d", wantLabels, wantCount, count)
+		}
+		delete(metrics, wantLabels)
+	}
+	if len(metrics) > 0 {
+		t.Errorf("there are metrics that were unexpected: %+v", metrics)
+	}
+}
+
+func TestComputeL4ILBsMetrics(t *testing.T) {
+	currTime := time.Now()
+	beforePersistentErrorThresholdTime := currTime.Add(-1*persistentErrorThresholdTime - time.Minute)
+	serviceStates := []L4ILBServiceState{
+		{
+			IsMultinet:  false,
+			InSuccess:   false,
+			IsUserError: false,
+		},
+		{
+			IsMultinet:  true,
+			InSuccess:   false,
+			IsUserError: false,
+		},
+		{
+			IsMultinet:  true,
+			InSuccess:   false,
+			IsUserError: true,
+		},
+		{
+			IsMultinet:  false,
+			InSuccess:   true,
+			IsUserError: false,
+		},
+		{
+			EnabledCustomSubnet: true,
+			IsMultinet:          false,
+			InSuccess:           true,
+			IsUserError:         false,
+		},
+		{
+			IsMultinet:         false,
+			InSuccess:          false,
+			IsUserError:        false,
+			FirstSyncErrorTime: &beforePersistentErrorThresholdTime,
+		},
+	}
+	want := map[L4ILBServiceLabels]int64{
+		L4ILBServiceLabels{
+			IsMultinet: false,
+			Status:     StatusError,
+		}: 1,
+		L4ILBServiceLabels{
+			IsMultinet: true,
+			Status:     StatusError,
+		}: 1,
+		L4ILBServiceLabels{
+			IsMultinet: true,
+			Status:     StatusUserError,
+		}: 1,
+		L4ILBServiceLabels{
+			IsMultinet: false,
+			Status:     StatusSuccess,
+		}: 2,
+		L4ILBServiceLabels{
+			IsMultinet: false,
+			Status:     StatusPersistentError,
+		}: 1,
+	}
+	newMetrics := FakeControllerMetrics()
+	for i, state := range serviceStates {
+		newMetrics.SetL4ILBService(fmt.Sprintf("svc%d", i), state)
+	}
+
+	metrics := newMetrics.l4ControllerMetrics.computeL4ILBMetrics()
+
+	for wantLabels, wantCount := range want {
+		count, ok := metrics[wantLabels]
+		if !ok {
+			t.Errorf("wanted labels %+v with count %d but they weren't present", wantLabels, wantCount)
+		} else if count != wantCount {
+			t.Errorf("wanted labels %+v with count %d but the count was %d", wantLabels, wantCount, count)
+		}
+		delete(metrics, wantLabels)
+	}
+	if len(metrics) > 0 {
+		t.Errorf("there are metrics that were unexpected: %+v", metrics)
+	}
+}
+
+func TestSetL4ILBService(t *testing.T) {
+	metricsController := FakeControllerMetrics()
+	currentTime := time.Now()
+	previousTime := currentTime.Add(-2 * time.Minute)
+	svcID := "svc1"
+	metricsController.SetL4ILBService(svcID, L4ILBServiceState{
+		IsMultinet:          true,
+		EnabledGlobalAccess: false,
+		FirstSyncErrorTime:  &previousTime,
+	})
+	metricsController.SetL4ILBService(svcID, L4ILBServiceState{
+		IsMultinet:          false,
+		EnabledGlobalAccess: true,
+		FirstSyncErrorTime:  &currentTime,
+	})
+
+	state, ok := metricsController.l4ControllerMetrics.l4ILBServiceMap[svcID]
+	if !ok {
+		t.Fatalf("expected state was not set, got state: %+v", metricsController.l4ControllerMetrics.l4ILBServiceMap)
+	}
+	// check that data was updated apart from the FirstSyncErrorTime.
+	want := L4ILBServiceState{
+		IsMultinet:          false,
+		EnabledGlobalAccess: true,
+		FirstSyncErrorTime:  &previousTime,
+	}
+	if diff := cmp.Diff(want, state); diff != "" {
+		t.Errorf("SetL4ILBService(), diff(-tc.want +got) = %s", diff)
+	}
+}
+
+func TestSetL4NetLBService(t *testing.T) {
+	metricsController := FakeControllerMetrics()
+	currentTime := time.Now()
+	previousTime := currentTime.Add(-2 * time.Minute)
+	svcID := "svc1"
+	metricsController.SetL4NetLBService(svcID, L4NetLBServiceState{
+		IsManagedIP:        true,
+		FirstSyncErrorTime: &previousTime,
+	})
+	metricsController.SetL4NetLBService(svcID, L4NetLBServiceState{
+		IsManagedIP:        false,
+		IsMultinet:         false,
+		FirstSyncErrorTime: &currentTime,
+	})
+
+	state, ok := metricsController.l4ControllerMetrics.l4NetLBServiceMap[svcID]
+	if !ok {
+		t.Fatalf("expected state was not set, got state: %+v", metricsController.l4ControllerMetrics.l4NetLBServiceMap)
+	}
+	// check that data was updated apart from the FirstSyncErrorTime.
+	want := L4NetLBServiceState{
+		IsManagedIP:        false,
+		IsMultinet:         false,
+		FirstSyncErrorTime: &previousTime,
+	}
+	if diff := cmp.Diff(want, state); diff != "" {
+		t.Errorf("SetL4NetLBService(_), diff(-tc.want +got) = %s", diff)
+	}
 }

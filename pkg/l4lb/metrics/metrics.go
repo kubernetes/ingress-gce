@@ -28,9 +28,11 @@ const (
 	statusError                                    = "error"
 	L4ilbLatencyMetricName                         = "l4_ilb_sync_duration_seconds"
 	L4ILBDualStackLatencyMetricName                = "l4_ilb_dualstack_sync_duration_seconds"
+	L4ILBMultiNetLatencyMetricName                 = "l4_ilb_multinet_sync_duration_seconds"
 	L4ilbErrorMetricName                           = "l4_ilb_sync_error_count"
 	L4netlbLatencyMetricName                       = "l4_netlb_sync_duration_seconds"
 	L4NetLBDualStackLatencyMetricName              = "l4_netlb_dualstack_sync_duration_seconds"
+	L4NetLBMultiNetLatencyMetricName               = "l4_netlb_multinet_sync_duration_seconds"
 	L4netlbErrorMetricName                         = "l4_netlb_sync_error_count"
 	L4netlbLegacyToRBSMigrationPreventedMetricName = "l4_netlb_legacy_to_rbs_migration_prevented_count"
 	l4failedHealthCheckName                        = "l4_failed_healthcheck_count"
@@ -67,6 +69,23 @@ var (
 			Buckets: prometheus.ExponentialBuckets(0.5, 2, 12),
 		},
 		l4LBDualStackSyncLatencyMetricsLabels,
+	)
+
+	l4ILBMultiNetSyncLatency = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    L4ILBMultiNetLatencyMetricName,
+			Help:    "Latency of an L4 ILB Multinet Sync",
+			Buckets: prometheus.ExponentialBuckets(0.5, 2, 12),
+		},
+		l4LBSyncLatencyMetricsLabels,
+	)
+	l4NetLBMultiNetSyncLatency = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    L4NetLBMultiNetLatencyMetricName,
+			Help:    "Latency of an L4 NetLB Multinet Sync",
+			Buckets: prometheus.ExponentialBuckets(0.5, 2, 12),
+		},
+		l4LBSyncLatencyMetricsLabels,
 	)
 	l4ILBSyncErrorCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -137,6 +156,10 @@ func init() {
 	prometheus.MustRegister(l4NetLBSyncLatency, l4NetLBSyncErrorCount)
 	klog.V(3).Infof("Registering L4 NetLB DualStack controller metrics %v", l4NetLBDualStackSyncLatency)
 	prometheus.MustRegister(l4NetLBDualStackSyncLatency)
+	klog.V(3).Infof("Registering L4 ILB MultiNet controller metrics %v", l4ILBMultiNetSyncLatency)
+	prometheus.MustRegister(l4ILBMultiNetSyncLatency)
+	klog.V(3).Infof("Registering L4 NetLB MultiNet controller metrics %v", l4ILBMultiNetSyncLatency)
+	prometheus.MustRegister(l4NetLBMultiNetSyncLatency)
 	klog.V(3).Infof("Registering L4 healthcheck failures count metric: %v", l4FailedHealthCheckCount)
 	prometheus.MustRegister(l4FailedHealthCheckCount)
 	klog.V(3).Infof("Registering L4 controller healthcheck metric: %v", l4ControllerHealthCheck)
@@ -167,6 +190,24 @@ func PublishL4ILBDualStackSyncLatency(success bool, syncType, ipFamilies string,
 		status = statusError
 	}
 	l4ILBDualStackSyncLatency.WithLabelValues(status, syncType, ipFamilies).Observe(time.Since(startTime).Seconds())
+}
+
+// PublishL4ILBMultiNetSyncLatency exports the given sync latency datapoint.
+func PublishL4ILBMultiNetSyncLatency(success bool, syncType string, startTime time.Time) {
+	status := statusSuccess
+	if !success {
+		status = statusError
+	}
+	l4ILBMultiNetSyncLatency.WithLabelValues(status, syncType).Observe(time.Since(startTime).Seconds())
+}
+
+// PublishL4NetLBMultiNetSyncLatency exports the given sync latency datapoint.
+func PublishL4NetLBMultiNetSyncLatency(success bool, syncType string, startTime time.Time) {
+	status := statusSuccess
+	if !success {
+		status = statusError
+	}
+	l4NetLBMultiNetSyncLatency.WithLabelValues(status, syncType).Observe(time.Since(startTime).Seconds())
 }
 
 // publishL4ILBSyncLatency exports the given sync latency datapoint.
