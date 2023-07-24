@@ -187,7 +187,7 @@ func TestComputeL4ILBMetrics(t *testing.T) {
 			for i, serviceState := range tc.serviceStates {
 				newMetrics.SetL4ILBService(fmt.Sprint(i), serviceState)
 			}
-			got := newMetrics.computeL4ILBMetrics()
+			got := newMetrics.l4ControllerMetrics.computeL4ILBMetrics()
 			if diff := cmp.Diff(tc.expectL4ILBCount, got); diff != "" {
 				t.Fatalf("Got diff for L4 ILB service counts (-want +got):\n%s", diff)
 			}
@@ -371,7 +371,7 @@ func TestComputeL4NetLBMetrics(t *testing.T) {
 			for i, serviceState := range tc.serviceStates {
 				newMetrics.SetL4NetLBService(fmt.Sprint(i), serviceState)
 			}
-			got := newMetrics.computeL4NetLBMetrics()
+			got := newMetrics.l4ControllerMetrics.computeL4NetLBMetrics()
 			if diff := cmp.Diff(tc.expectL4NetLBCount, got, cmp.AllowUnexported(netLBFeatureCount{})); diff != "" {
 				t.Fatalf("Got diff for L4 NetLB service counts (-want +got):\n%s", diff)
 			}
@@ -406,7 +406,7 @@ func TestRetryPeriodForL4NetLBServices(t *testing.T) {
 	}
 	errorState.FirstSyncErrorTime = &before5min
 	newMetrics.SetL4NetLBService(svcName1, errorState)
-	state, ok := newMetrics.l4NetLBServiceMap[svcName1]
+	state, ok := newMetrics.l4ControllerMetrics.l4NetLBServiceMap[svcName1]
 	if !ok {
 		t.Fatalf("state should be set")
 	}
@@ -421,7 +421,7 @@ func TestRetryPeriodForL4NetLBServices(t *testing.T) {
 }
 
 func checkMetricsComputation(newMetrics *ControllerMetrics, expErrorCount, expSvcCount int) error {
-	got := newMetrics.computeL4NetLBMetrics()
+	got := newMetrics.l4ControllerMetrics.computeL4NetLBMetrics()
 	if got.inError != expErrorCount {
 		return fmt.Errorf("Error count mismatch expected: %v got: %v", expErrorCount, got.inError)
 	}
