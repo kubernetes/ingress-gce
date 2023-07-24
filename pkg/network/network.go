@@ -25,6 +25,7 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 	networkv1 "k8s.io/cloud-provider-gcp/crd/apis/network/v1"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
 
@@ -51,7 +52,7 @@ func ServiceNetwork(service *apiv1.Service, networkLister, gkeNetworkParamSetLis
 		return nil, err
 	}
 	if !exists {
-		return nil, fmt.Errorf("network %s does not exist", networkName)
+		return nil, utils.NewUserError(fmt.Errorf("network %s does not exist", networkName))
 	}
 	network := obj.(*networkv1.Network)
 	if network == nil {
@@ -60,17 +61,17 @@ func ServiceNetwork(service *apiv1.Service, networkLister, gkeNetworkParamSetLis
 	logger.Info("Found network for service", "network", network.Name, "service", service.Name, "namespace", service.Namespace)
 	parametersRef := network.Spec.ParametersRef
 	if !refersGKENetworkParamSet(parametersRef) {
-		return nil, fmt.Errorf("network.Spec.ParametersRef does not refer a GKENetworkParamSet resource")
+		return nil, utils.NewUserError(fmt.Errorf("network.Spec.ParametersRef does not refer a GKENetworkParamSet resource"))
 	}
 	if parametersRef.Namespace != nil {
-		return nil, fmt.Errorf("network.Spec.ParametersRef.namespace must not be set for GKENetworkParamSet reference as it is a cluster scope resource")
+		return nil, utils.NewUserError(fmt.Errorf("network.Spec.ParametersRef.namespace must not be set for GKENetworkParamSet reference as it is a cluster scope resource"))
 	}
 	gkeParamsObj, exists, err := gkeNetworkParamSetLister.GetByKey(parametersRef.Name)
 	if err != nil {
 		return nil, err
 	}
 	if !exists {
-		return nil, fmt.Errorf("GKENetworkParamSet %s was not found", parametersRef.Name)
+		return nil, utils.NewUserError(fmt.Errorf("GKENetworkParamSet %s was not found", parametersRef.Name))
 	}
 	gkeNetworkParamSet := gkeParamsObj.(*networkv1.GKENetworkParamSet)
 	if network == nil {
@@ -86,6 +87,14 @@ func ServiceNetwork(service *apiv1.Service, networkLister, gkeNetworkParamSetLis
 		NetworkURL:    netURL,
 		SubnetworkURL: subnetURL,
 	}, nil
+}
+
+func HasMultiNetSelector(service *apiv1.Service) bool {
+	networkName, ok := service.Spec.Selector[networkSelector]
+	if !ok || networkName == "" || networkName == networkv1.DefaultPodNetworkName {
+		return false
+	}
+	return true
 }
 
 func DefaultNetwork(cloudProvider cloudNetworkProvider) *NetworkInfo {

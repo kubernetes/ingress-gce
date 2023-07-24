@@ -456,7 +456,12 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 	networkInfo, err := network.ServiceNetwork(service, lc.networkLister, lc.gkeNetworkParamSetLister, lc.ctx.Cloud, klog.TODO())
 	if err != nil {
 		klog.Errorf("Failed to get network for service %s/%s, err: %v", service.Namespace, service.Name, err)
-		return &loadbalancers.L4NetLBSyncResult{Error: err}
+		result := loadbalancers.NewL4SyncResult(loadbalancers.SyncTypeCreate, service)
+		result.MetricsState.IsUserError = utils.IsUserError(err)
+		result.MetricsState.IsMultinet = network.HasMultiNetSelector(service)
+		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
+			"Error ensuring Resource for L4 External LoadBalancer, err: %v", err)
+		return result
 	}
 	startTime := time.Now()
 	klog.Infof("Syncing L4 NetLB RBS service %s/%s", service.Namespace, service.Name)
@@ -707,6 +712,9 @@ func (lc *L4NetLBController) publishMetrics(result *loadbalancers.L4NetLBSyncRes
 func (lc *L4NetLBController) publishSyncMetrics(result *loadbalancers.L4NetLBSyncResult) {
 	if lc.enableDualStack {
 		metrics.PublishL4NetLBDualStackSyncLatency(result.Error == nil, result.SyncType, result.DualStackMetricsState.IPFamilies, result.StartTime)
+	}
+	if result.MetricsState.IsMultinet {
+		metrics.PublishL4NetLBMultiNetSyncLatency(result.Error == nil, result.SyncType, result.StartTime)
 	}
 	if result.Error == nil {
 		metrics.PublishL4NetLBSyncSuccess(result.SyncType, result.StartTime)

@@ -76,6 +76,24 @@ type L4ILBSyncResult struct {
 	StartTime             time.Time
 }
 
+func NewL4ILBSyncResult(svc *corev1.Service, startTime time.Time) *L4ILBSyncResult {
+	result := &L4ILBSyncResult{
+		Annotations:           make(map[string]string),
+		StartTime:             startTime,
+		SyncType:              SyncTypeCreate,
+		DualStackMetricsState: metrics.InitServiceDualStackMetricsState(svc, &startTime),
+		MetricsState:          metrics.InitL4ILBServiceState(&startTime),
+	}
+
+	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
+	// This will also cover cases where an external LB is updated to an ILB, which is technically a create for ILB.
+	// But this is still the easiest way to identify create vs update in the common case.
+	if len(svc.Status.LoadBalancer.Ingress) > 0 {
+		result.SyncType = SyncTypeUpdate
+	}
+	return result
+}
+
 type L4ILBParams struct {
 	Service          *corev1.Service
 	Cloud            *gce.Cloud
@@ -126,6 +144,8 @@ func (l4 *L4) getILBOptions() gce.ILBOptions {
 func (l4 *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4ILBSyncResult {
 	klog.V(2).Infof("EnsureInternalLoadBalancerDeleted(%s): deleting L4 ILB LoadBalancer resources", l4.NamespacedName.String())
 	result := &L4ILBSyncResult{SyncType: SyncTypeDelete, StartTime: time.Now()}
+
+	result.MetricsState.IsMultinet = network.HasMultiNetSelector(svc)
 
 	l4.deleteIPv4ResourcesOnDelete(result)
 	if l4.enableDualStack {
@@ -305,19 +325,8 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	l4.Service = svc
 
 	startTime := time.Now()
-	result := &L4ILBSyncResult{
-		Annotations:           make(map[string]string),
-		StartTime:             startTime,
-		SyncType:              SyncTypeCreate,
-		DualStackMetricsState: metrics.InitServiceDualStackMetricsState(svc, &startTime),
-	}
-
-	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
-	// This will also cover cases where an external LB is updated to an ILB, which is technically a create for ILB.
-	// But this is still the easiest way to identify create vs update in the common case.
-	if len(svc.Status.LoadBalancer.Ingress) > 0 {
-		result.SyncType = SyncTypeUpdate
-	}
+	result := NewL4ILBSyncResult(svc, startTime)
+	result.MetricsState.IsMultinet = !l4.network.IsDefault
 
 	// If service requires IPv6 LoadBalancer -- verify that Subnet with Internal IPv6 ranges is used.
 	if l4.enableDualStack && utils.NeedsIPv6(l4.Service) {

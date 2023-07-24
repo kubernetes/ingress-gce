@@ -259,7 +259,7 @@ func TestRetryPeriodForL4NetLBDualStackServices(t *testing.T) {
 	}
 }
 
-func newL4DualStackServiceState(ipFamilies string, ipFamilyPolicy string, status L4DualStackServiceStatus, firstSyncErrorTime *time.Time) L4DualStackServiceState {
+func newL4DualStackServiceState(ipFamilies string, ipFamilyPolicy string, status L4ServiceStatus, firstSyncErrorTime *time.Time) L4DualStackServiceState {
 	return L4DualStackServiceState{
 		L4DualStackServiceLabels: L4DualStackServiceLabels{
 			IPFamilies:     ipFamilies,

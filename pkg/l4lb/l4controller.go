@@ -237,9 +237,16 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service) *load
 	if err != nil {
 		return &loadbalancers.L4ILBSyncResult{Error: err}
 	}
-	network, err := network.ServiceNetwork(service, l4c.networkLister, l4c.gkeNetworkParamSetLister, l4c.ctx.Cloud, klog.TODO())
+	serviceNetwork, err := network.ServiceNetwork(service, l4c.networkLister, l4c.gkeNetworkParamSetLister, l4c.ctx.Cloud, klog.TODO())
 	if err != nil {
-		return &loadbalancers.L4ILBSyncResult{Error: err}
+		result := loadbalancers.NewL4ILBSyncResult(service, startTime)
+		result.Error = err
+		result.SyncType = loadbalancers.SyncTypeCreate
+		result.MetricsState.IsUserError = utils.IsUserError(err)
+		result.MetricsState.IsMultinet = network.HasMultiNetSelector(service)
+		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
+			"Error syncing load balancer: %v", result.Error)
+		return result
 	}
 	// Use the same function for both create and updates. If controller crashes and restarts,
 	// all existing services will show up as Service Adds.
@@ -249,7 +256,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service) *load
 		Namer:            l4c.namer,
 		Recorder:         l4c.ctx.Recorder(service.Namespace),
 		DualStackEnabled: l4c.enableDualStack,
-		Network:          *network,
+		Network:          *serviceNetwork,
 	}
 	l4 := loadbalancers.NewL4Handler(l4ilbParams)
 	syncResult := l4.EnsureInternalLoadBalancer(nodeNames, service)
@@ -531,6 +538,9 @@ func (l4c *L4Controller) publishMetrics(result *loadbalancers.L4ILBSyncResult, n
 			l4c.ctx.ControllerMetrics.SetL4ILBDualStackService(namespacedName, result.DualStackMetricsState)
 			l4metrics.PublishL4ILBDualStackSyncLatency(result.Error == nil, result.SyncType, result.DualStackMetricsState.IPFamilies, result.StartTime)
 		}
+		if result.MetricsState.IsMultinet {
+			l4metrics.PublishL4ILBMultiNetSyncLatency(result.Error == nil, result.SyncType, result.StartTime)
+		}
 
 	case loadbalancers.SyncTypeDelete:
 		// if service is successfully deleted, remove it from cache
@@ -545,6 +555,9 @@ func (l4c *L4Controller) publishMetrics(result *loadbalancers.L4ILBSyncResult, n
 		l4metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime)
 		if l4c.enableDualStack {
 			l4metrics.PublishL4ILBDualStackSyncLatency(result.Error == nil, result.SyncType, result.DualStackMetricsState.IPFamilies, result.StartTime)
+		}
+		if result.MetricsState.IsMultinet {
+			l4metrics.PublishL4ILBMultiNetSyncLatency(result.Error == nil, result.SyncType, result.StartTime)
 		}
 	default:
 		klog.Warningf("Unknown sync type %q, skipping metrics", result.SyncType)

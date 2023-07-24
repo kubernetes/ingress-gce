@@ -71,14 +71,26 @@ type L4ILBServiceState struct {
 	InSuccess bool
 	// IsUserError specifies if the error was caused by User misconfiguration.
 	IsUserError bool
+	// IsMultinet
+	IsMultinet bool
+	// FirstSyncErrorTime specifies the time timestamp when the service sync ended up with error for the first time.
+	FirstSyncErrorTime *time.Time
 }
 
-type L4DualStackServiceStatus string
+// L4ILBServiceLabels defines the labels used by the L4 ILB metric.
+type L4ILBServiceLabels struct {
+	// IsMultinet
+	IsMultinet bool
+	// Status specifies the status of the service.
+	Status L4ServiceStatus
+}
 
-const StatusSuccess = L4DualStackServiceStatus("Success")
-const StatusUserError = L4DualStackServiceStatus("UserError")
-const StatusError = L4DualStackServiceStatus("Error")
-const StatusPersistentError = L4DualStackServiceStatus("PersistentError")
+type L4ServiceStatus string
+
+const StatusSuccess = L4ServiceStatus("Success")
+const StatusUserError = L4ServiceStatus("UserError")
+const StatusError = L4ServiceStatus("Error")
+const StatusPersistentError = L4ServiceStatus("PersistentError")
 
 // L4DualStackServiceLabels defines ipFamilies, ipFamilyPolicy and status
 // of L4 DualStack service
@@ -88,7 +100,7 @@ type L4DualStackServiceLabels struct {
 	// IPFamilyPolicy specifies spec.IPFamilyPolicy of Service
 	IPFamilyPolicy string
 	// Status specifies status of L4 DualStack Service
-	Status L4DualStackServiceStatus
+	Status L4ServiceStatus
 }
 
 // L4DualStackServiceState defines ipFamilies, ipFamilyPolicy, status and tracks
@@ -107,12 +119,22 @@ type L4NetLBServiceState struct {
 	IsManagedIP bool
 	// IsPremiumTier specifies if network tier for forwarding rule is premium.
 	IsPremiumTier bool
+	// IsMultinet
+	IsMultinet bool
 	// InSuccess specifies if the NetLB service VIP is configured.
 	InSuccess bool
 	// IsUserError specifies if the error was caused by User misconfiguration.
 	IsUserError bool
 	// FirstSyncErrorTime specifies the time timestamp when the service sync ended up with error for the first time.
 	FirstSyncErrorTime *time.Time
+}
+
+// L4NetLBServiceLabels defines the labels used by the L4 NetLB metric.
+type L4NetLBServiceLabels struct {
+	// IsMultinet
+	IsMultinet bool
+	// Status specifies the status of the service.
+	Status L4ServiceStatus
 }
 
 // InitL4NetLBServiceState sets FirstSyncErrorTime
