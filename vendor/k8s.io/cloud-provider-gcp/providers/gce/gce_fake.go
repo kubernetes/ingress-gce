@@ -38,6 +38,7 @@ type TestClusterValues struct {
 	ClusterName       string
 	OnXPN             bool
 	Regional          bool
+	NetworkURL        string
 }
 
 // DefaultTestClusterValues Creates a reasonable set of default cluster values
@@ -82,6 +83,7 @@ func NewFakeGCECloud(vals TestClusterValues) *Cloud {
 		metricsCollector: newLoadBalancerMetrics(),
 		projectsBasePath: getProjectsBasePath(service.BasePath),
 		regional:         vals.Regional,
+		networkURL:       vals.NetworkURL,
 	}
 	c := cloud.NewMockGCE(&gceProjectRouter{gce})
 	gce.c = c
