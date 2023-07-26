@@ -270,8 +270,7 @@ func (l4netlb *L4NetLB) connectionTrackingPolicy() (*composite.BackendServiceCon
 	connectionTrackingPolicy.EnableStrongAffinity = annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service)
 	if connectionTrackingPolicy.EnableStrongAffinity {
 		connectionTrackingPolicy.TrackingMode = backends.PerSessionTrackingMode
-		// TODO(code-elinka): Uncomment as soon as we can set up the TimeoutSeconds freely
-		//connectionTrackingPolicy.IdleTimeoutSec = idleTimeout
+		connectionTrackingPolicy.IdleTimeoutSec = int64(*l4netlb.Service.Spec.SessionAffinityConfig.ClientIP.TimeoutSeconds)
 	}
 	return &connectionTrackingPolicy, nil
 }
