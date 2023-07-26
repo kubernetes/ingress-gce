@@ -152,6 +152,7 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		enableASM, //enableAsm
 		[]string{},
 		labels.PodLabelPropagationConfig{},
+		true,
 		klog.TODO(),
 	)
 }
@@ -1330,31 +1331,18 @@ func TestEnableNEGServiceWithL4NetLB(t *testing.T) {
 	defer controller.stop()
 	var prevSyncerKey negtypes.NegSyncerKey
 	t.Logf("Creating L4 NetLB service with ExternalTrafficPolicy:Cluster")
-	err := controller.networkLister.Add(&networkv1.Network{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "blue-net",
-		},
-		Spec: networkv1.NetworkSpec{
-			Type: "L3",
-			ParametersRef: &networkv1.NetworkParametersReference{
-				Group: networkv1.GroupName,
-				Kind:  "gkenetworkparamset",
-				Name:  "blue-net-paramset",
-			},
-		},
-	})
-	controller.gkeNetworkParamSetLister.Add(&networkv1.GKENetworkParamSet{
-		ObjectMeta: metav1.ObjectMeta{Name: "blue-net-paramset"},
-		Spec: networkv1.GKENetworkParamSetSpec{
-			VPC:       "blue-vpc",
-			VPCSubnet: "blue-subnet",
-		},
-	})
+	networkInfo := &network.NetworkInfo{
+		IsDefault:     false,
+		K8sNetwork:    "blue-net",
+		NetworkURL:    "blue-vpc",
+		SubnetworkURL: "blue-subnet",
+	}
+	controller.networkResolver = network.NewFakeResolver(networkInfo)
 	testSvc := newTestRBSMultinetService(controller, true, 80)
 	controller.serviceLister.Add(testSvc)
 	svcClient := controller.client.CoreV1().Services(testServiceNamespace)
 	svcKey := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
-	err = controller.processService(svcKey)
+	err := controller.processService(svcKey)
 	if err != nil {
 		t.Fatalf("Failed to process service: %v", err)
 	}
@@ -1362,7 +1350,6 @@ func TestEnableNEGServiceWithL4NetLB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Service was not created.(*apiv1.Service) successfully, err: %v", err)
 	}
-	networkInfo, _ := network.ServiceNetwork(testSvc, controller.networkLister, controller.gkeNetworkParamSetLister, controller.cloud, klog.TODO())
 	expectedPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, networkInfo)
 	// There will be only one entry in the map
 	for key, val := range expectedPortInfoMap {

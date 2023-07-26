@@ -61,6 +61,7 @@ type L4 struct {
 	healthChecks    healthchecksl4.L4HealthChecks
 	enableDualStack bool
 	network         network.NetworkInfo
+	networkResolver network.Resolver
 }
 
 // L4ILBSyncResult contains information about the outcome of an L4 ILB sync. It stores the list of resource name annotations,
@@ -82,7 +83,7 @@ type L4ILBParams struct {
 	Namer            namer.L4ResourcesNamer
 	Recorder         record.EventRecorder
 	DualStackEnabled bool
-	Network          network.NetworkInfo
+	NetworkResolver  network.Resolver
 }
 
 // NewL4Handler creates a new L4Handler for the given L4 service.
@@ -94,10 +95,10 @@ func NewL4Handler(params *L4ILBParams) *L4 {
 		namer:           params.Namer,
 		recorder:        params.Recorder,
 		Service:         params.Service,
-		healthChecks:    healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder, params.Network),
+		healthChecks:    healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder),
 		forwardingRules: forwardingrules.New(params.Cloud, meta.VersionGA, scope),
 		enableDualStack: params.DualStackEnabled,
-		network:         params.Network,
+		networkResolver: params.NetworkResolver,
 	}
 	l4.NamespacedName = types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace}
 	l4.backendPool = backends.NewPool(l4.cloud, l4.namer)
@@ -319,6 +320,13 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		result.SyncType = SyncTypeUpdate
 	}
 
+	svcNetwork, err := l4.networkResolver.ServiceNetwork(svc)
+	if err != nil {
+		result.Error = err
+		return result
+	}
+	l4.network = *svcNetwork
+
 	// If service requires IPv6 LoadBalancer -- verify that Subnet with Internal IPv6 ranges is used.
 	if l4.enableDualStack && utils.NeedsIPv6(l4.Service) {
 		err := l4.serviceSubnetHasInternalIPv6Range()
@@ -472,7 +480,7 @@ func (l4 *L4) provideHealthChecks(nodeNames []string, result *L4ILBSyncResult) s
 
 func (l4 *L4) provideDualStackHealthChecks(nodeNames []string, result *L4ILBSyncResult) string {
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(l4.Service)
-	hcResult := l4.healthChecks.EnsureHealthCheckWithDualStackFirewalls(l4.Service, l4.namer, sharedHC, meta.Global, utils.ILB, nodeNames, utils.NeedsIPv4(l4.Service), utils.NeedsIPv6(l4.Service))
+	hcResult := l4.healthChecks.EnsureHealthCheckWithDualStackFirewalls(l4.Service, l4.namer, sharedHC, meta.Global, utils.ILB, nodeNames, utils.NeedsIPv4(l4.Service), utils.NeedsIPv6(l4.Service), l4.network)
 	if hcResult.Err != nil {
 		result.GCEResourceInError = hcResult.GceResourceInError
 		result.Error = hcResult.Err
@@ -491,7 +499,7 @@ func (l4 *L4) provideDualStackHealthChecks(nodeNames []string, result *L4ILBSync
 
 func (l4 *L4) provideIPv4HealthChecks(nodeNames []string, result *L4ILBSyncResult) string {
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(l4.Service)
-	hcResult := l4.healthChecks.EnsureHealthCheckWithFirewall(l4.Service, l4.namer, sharedHC, meta.Global, utils.ILB, nodeNames)
+	hcResult := l4.healthChecks.EnsureHealthCheckWithFirewall(l4.Service, l4.namer, sharedHC, meta.Global, utils.ILB, nodeNames, l4.network)
 	if hcResult.Err != nil {
 		result.GCEResourceInError = hcResult.GceResourceInError
 		result.Error = hcResult.Err

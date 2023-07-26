@@ -55,7 +55,7 @@ func verifyAddressNotExists(cloud *gce.Cloud, addressName string) error {
 	return nil
 }
 
-func verifyFirewall(cloud *gce.Cloud, nodeNames []string, firewallName, expectedDescription string, expectedSourceRanges []string) error {
+func verifyFirewall(cloud *gce.Cloud, nodeNames []string, firewallName, expectedDescription string, expectedSourceRanges []string, expectedNetworkURL string) error {
 	firewall, err := cloud.GetFirewall(firewallName)
 	if err != nil {
 		return fmt.Errorf("failed to fetch firewall rule %q - err %w", firewallName, err)
@@ -70,6 +70,9 @@ func verifyFirewall(cloud *gce.Cloud, nodeNames []string, firewallName, expected
 	}
 	if firewall.Description != expectedDescription {
 		return fmt.Errorf("unexpected description in firewall %q - Expected %s, Got %s", firewallName, expectedDescription, firewall.Description)
+	}
+	if firewall.Network != expectedNetworkURL {
+		return fmt.Errorf("unexpected Network in firewall %q - Expected %s, Got %s", firewallName, expectedNetworkURL, firewall.Network)
 	}
 	return nil
 }

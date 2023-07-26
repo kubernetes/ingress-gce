@@ -62,20 +62,19 @@ func init() {
 // Controller is network endpoint group controller.
 // It determines whether NEG for a service port is needed, then signals NegSyncerManager to sync it.
 type Controller struct {
-	manager      negtypes.NegSyncerManager
-	resyncPeriod time.Duration
-	gcPeriod     time.Duration
-	recorder     record.EventRecorder
-	namer        negtypes.NetworkEndpointGroupNamer
-	l4Namer      namer2.L4ResourcesNamer
-	zoneGetter   negtypes.ZoneGetter
-	cloud        negtypes.NetworkEndpointGroupCloud
+	manager         negtypes.NegSyncerManager
+	resyncPeriod    time.Duration
+	gcPeriod        time.Duration
+	recorder        record.EventRecorder
+	namer           negtypes.NetworkEndpointGroupNamer
+	l4Namer         namer2.L4ResourcesNamer
+	zoneGetter      negtypes.ZoneGetter
+	cloud           negtypes.NetworkEndpointGroupCloud
+	networkResolver network.Resolver
 
 	hasSynced                   func() bool
 	ingressLister               cache.Indexer
 	serviceLister               cache.Indexer
-	networkLister               cache.Indexer
-	gkeNetworkParamSetLister    cache.Indexer
 	client                      kubernetes.Interface
 	defaultBackendService       utils.ServicePort
 	enableASM                   bool
@@ -139,6 +138,7 @@ func NewController(
 	enableAsm bool,
 	asmServiceNEGSkipNamespaces []string,
 	lpConfig labels.PodLabelPropagationConfig,
+	enableMultiNetworking bool,
 	logger klog.Logger,
 ) *Controller {
 	logger = logger.WithName("NEGController")
@@ -208,30 +208,29 @@ func NewController(
 		gkeNetworkParamSetIndexer = gkeNetworkParamSetInformer.GetIndexer()
 	}
 	negController := &Controller{
-		client:                   kubeClient,
-		manager:                  manager,
-		resyncPeriod:             resyncPeriod,
-		gcPeriod:                 gcPeriod,
-		recorder:                 recorder,
-		zoneGetter:               zoneGetter,
-		cloud:                    cloud,
-		namer:                    namer,
-		l4Namer:                  l4Namer,
-		defaultBackendService:    defaultBackendService,
-		hasSynced:                hasSynced,
-		ingressLister:            ingressInformer.GetIndexer(),
-		serviceLister:            serviceInformer.GetIndexer(),
-		networkLister:            networkIndexer,
-		gkeNetworkParamSetLister: gkeNetworkParamSetIndexer,
-		serviceQueue:             workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_service_queue"),
-		endpointQueue:            workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_endpoint_queue"),
-		nodeQueue:                workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_node_queue"),
-		syncTracker:              utils.NewTimeTracker(),
-		reflector:                reflector,
-		usageCollector:           controllerMetrics,
-		syncerMetrics:            syncerMetrics,
-		runL4:                    runL4Controller,
-		logger:                   logger,
+		client:                kubeClient,
+		manager:               manager,
+		resyncPeriod:          resyncPeriod,
+		gcPeriod:              gcPeriod,
+		recorder:              recorder,
+		zoneGetter:            zoneGetter,
+		cloud:                 cloud,
+		namer:                 namer,
+		l4Namer:               l4Namer,
+		defaultBackendService: defaultBackendService,
+		hasSynced:             hasSynced,
+		ingressLister:         ingressInformer.GetIndexer(),
+		serviceLister:         serviceInformer.GetIndexer(),
+		networkResolver:       network.NewNetworksResolver(networkIndexer, gkeNetworkParamSetIndexer, cloud, enableMultiNetworking, logger),
+		serviceQueue:          workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_service_queue"),
+		endpointQueue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_endpoint_queue"),
+		nodeQueue:             workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_node_queue"),
+		syncTracker:           utils.NewTimeTracker(),
+		reflector:             reflector,
+		usageCollector:        controllerMetrics,
+		syncerMetrics:         syncerMetrics,
+		runL4:                 runL4Controller,
+		logger:                logger,
 	}
 	if runIngress {
 		ingressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -471,7 +470,7 @@ func (c *Controller) processService(key string) error {
 	}
 	negUsage := usageMetrics.NegServiceState{}
 	svcPortInfoMap := make(negtypes.PortInfoMap)
-	networkInfo, err := network.ServiceNetwork(service, c.networkLister, c.gkeNetworkParamSetLister, c.cloud, c.logger)
+	networkInfo, err := c.networkResolver.ServiceNetwork(service)
 	if err != nil {
 		return err
 	}
