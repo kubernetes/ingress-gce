@@ -78,7 +78,7 @@ func TestEnsureSecurityPolicy(t *testing.T) {
 			expectSetCall: true,
 		},
 		{
-			desc: "unset-policy-empty-policy-string",
+			desc: "remove policy with empty string policy name",
 			currentBackendService: &composite.BackendService{
 				Scope:          meta.Global,
 				SecurityPolicy: "https://www.googleapis.com/compute/projects/test-project/global/securityPolicies/policy-1",
@@ -90,15 +90,6 @@ func TestEnsureSecurityPolicy(t *testing.T) {
 					},
 				},
 			},
-			expectSetCall: true,
-		},
-		{
-			desc: "unset-policy-no-specified-policy",
-			currentBackendService: &composite.BackendService{
-				Scope:          meta.Global,
-				SecurityPolicy: "https://www.googleapis.com/compute/projects/test-project/global/securityPolicies/policy-1",
-			},
-			desiredConfig: &backendconfigv1.BackendConfig{},
 			expectSetCall: true,
 		},
 		{
@@ -116,9 +107,20 @@ func TestEnsureSecurityPolicy(t *testing.T) {
 			},
 		},
 		{
-			desc:                  "empty-policy",
+			desc:                  "nil policy should have no effect with policy not configured",
 			currentBackendService: &composite.BackendService{Scope: meta.Global},
 			desiredConfig:         &backendconfigv1.BackendConfig{},
+		},
+		// This is intentional that nil policy have no effect on current security policy.
+		// Please be careful on this.
+		{
+			desc: "nil policy should have no effect with policy configured",
+			currentBackendService: &composite.BackendService{
+				Scope:          meta.Global,
+				SecurityPolicy: "https://www.googleapis.com/compute/projects/test-project/global/securityPolicies/policy-1",
+			},
+			desiredConfig: &backendconfigv1.BackendConfig{},
+			expectSetCall: false,
 		},
 		{
 			desc: "regional backend service",
@@ -134,13 +136,6 @@ func TestEnsureSecurityPolicy(t *testing.T) {
 			},
 			expectSetCall: false,
 			expectError:   true,
-		},
-		{
-			desc:                  "regional backend service with no specified security policy",
-			currentBackendService: &composite.BackendService{Scope: meta.Regional},
-			desiredConfig:         &backendconfigv1.BackendConfig{},
-			expectSetCall:         false,
-			expectError:           false,
 		},
 	}
 
