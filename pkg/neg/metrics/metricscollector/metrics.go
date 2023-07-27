@@ -24,25 +24,6 @@ import (
 const (
 	negControllerSubsystem = "neg_controller"
 
-	// Label Values for Syncer Sync Result Metrics
-	EPCountsDiffer           = "EndpointCountsDiffer"
-	EPNodeMissing            = "EndpointNodeMissing"
-	EPNodeNotFound           = "EndpointNodeNotFound"
-	EPPodMissing             = "EndpointPodMissing"
-	EPPodNotFound            = "EndpointPodNotFound"
-	EPPodTypeAssertionFailed = "EndpointPodTypeAssertionFailed"
-	EPZoneMissing            = "EndpointZoneMissing"
-	EPSEndpointCountZero     = "EndpointSliceEndpointCountZero"
-	EPCalculationCountZero   = "EndpointCalculationCountZero"
-	InvalidAPIResponse       = "InvalidAPIResponse"
-	InvalidEPAttach          = "InvalidEndpointAttach"
-	InvalidEPDetach          = "InvalidEndpointDetach"
-	NegNotFound              = "NetworkEndpointGroupNotFound"
-	CurrentNegEPNotFound     = "CurrentNEGEndpointNotFound"
-	EPSNotFound              = "EndpointSliceNotFound"
-	OtherError               = "OtherError"
-	Success                  = "Success"
-
 	// Label values for Label Propagation Metrics
 	epWithAnnotation = "with_annotation"
 	totalEndpoints   = "total"
