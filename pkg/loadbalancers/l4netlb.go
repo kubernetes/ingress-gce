@@ -281,15 +281,18 @@ func (l4netlb *L4NetLB) provideIPv4HealthChecks(nodeNames []string, result *L4Ne
 	return hcResult.HCLink
 }
 
-// connectionTrackingPolicy returns BackendServiceConnectionTrafficPolicy
+// connectionTrackingPolicy returns BackendServiceConnectionTrackingPolicy
 // based on StrongSessionAffinity and IdleTimeoutSec
 func (l4netlb *L4NetLB) connectionTrackingPolicy() (*composite.BackendServiceConnectionTrackingPolicy, error) {
-	connectionTrackingPolicy := composite.BackendServiceConnectionTrackingPolicy{}
-	connectionTrackingPolicy.EnableStrongAffinity = annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service)
-	if connectionTrackingPolicy.EnableStrongAffinity {
-		connectionTrackingPolicy.TrackingMode = backends.PerSessionTrackingMode
-		connectionTrackingPolicy.IdleTimeoutSec = int64(*l4netlb.Service.Spec.SessionAffinityConfig.ClientIP.TimeoutSeconds)
+	if !l4netlb.enableStrongSessionAffinity || !annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service) {
+		return nil, nil
 	}
+	connectionTrackingPolicy := composite.BackendServiceConnectionTrackingPolicy{}
+	connectionTrackingPolicy.EnableStrongAffinity = true
+	connectionTrackingPolicy.TrackingMode = backends.PerSessionTrackingMode
+	// verified l4netlb.Service.Spec.SessionAffinityConfig is not null in
+	// checkStrongSessionAffinityRequirements()
+	connectionTrackingPolicy.IdleTimeoutSec = int64(*l4netlb.Service.Spec.SessionAffinityConfig.ClientIP.TimeoutSeconds)
 	return &connectionTrackingPolicy, nil
 }
 

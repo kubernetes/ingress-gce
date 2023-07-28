@@ -33,7 +33,7 @@ import (
 
 const (
 	DefaultConnectionDrainingTimeoutSeconds = 30
-	DefaultTrackingMode                     = "PER_CONNECTION"
+	defaultTrackingMode                     = "PER_CONNECTION"
 	PerSessionTrackingMode                  = "PER_SESSION" // the only one supported with strong session affinity
 
 )
@@ -365,11 +365,24 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 // this timeout and no other backendService parameters change, the backend
 // service will not be updated. The list of backends is not checked either,
 // since that is handled by the neg-linker.
+// The list of backends is not checked, since that is handled by the neg-linker.
 func backendSvcEqual(a, b *composite.BackendService) bool {
 	return a.Protocol == b.Protocol &&
 		a.Description == b.Description &&
 		a.SessionAffinity == b.SessionAffinity &&
+		connectionTrackingPolicyEqual(a.ConnectionTrackingPolicy, b.ConnectionTrackingPolicy) &&
 		a.LoadBalancingScheme == b.LoadBalancingScheme &&
 		utils.EqualStringSets(a.HealthChecks, b.HealthChecks) &&
 		a.Network == b.Network
+}
+
+// connectionTrackingPolicyEqual returns true if both elements are equal
+// and return false if at least one parameter is different
+func connectionTrackingPolicyEqual(a, b *composite.BackendServiceConnectionTrackingPolicy) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.TrackingMode == b.TrackingMode &&
+		a.EnableStrongAffinity == b.EnableStrongAffinity &&
+		a.IdleTimeoutSec == b.IdleTimeoutSec
 }
