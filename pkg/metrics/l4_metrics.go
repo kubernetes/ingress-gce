@@ -28,6 +28,8 @@ import (
 const (
 	l4LabelStatus   = "status"
 	l4LabelMutlinet = "multinet"
+
+	l4LabelStrongSessionAffinity = "strong_session_affinity"
 )
 
 var (
@@ -51,7 +53,7 @@ var (
 			Name: "l4_ilbs",
 			Help: "Metric about ILBs",
 		},
-		[]string{l4LabelStatus, l4LabelMutlinet},
+		[]string{l4LabelStatus, l4LabelMutlinet, l4LabelStrongSessionAffinity},
 	)
 
 	l4NetLBs = prometheus.NewGaugeVec(
@@ -59,7 +61,7 @@ var (
 			Name: "l4_netlbs",
 			Help: "Metric about NetLBs",
 		},
-		[]string{l4LabelStatus, l4LabelMutlinet},
+		[]string{l4LabelStatus, l4LabelMutlinet, l4LabelStrongSessionAffinity},
 	)
 )
 
@@ -281,8 +283,9 @@ func (l4 *l4ControllerMetrics) exportL4NetLBsMetrics() {
 	l4NetLBs.Reset()
 	for labels, count := range counts {
 		l4NetLBs.With(prometheus.Labels{
-			l4LabelStatus:   string(labels.Status),
-			l4LabelMutlinet: strconv.FormatBool(labels.IsMultinet),
+			l4LabelStatus:                string(labels.Status),
+			l4LabelMutlinet:              strconv.FormatBool(labels.IsMultinet),
+			l4LabelStrongSessionAffinity: strconv.FormatBool(labels.EnabledStrongSessionAffinity),
 		}).Set(float64(count))
 	}
 }
@@ -293,8 +296,9 @@ func (l4 *l4ControllerMetrics) computeL4NetLBsMetrics() map[L4NetLBServiceLabels
 	defer l4.Unlock()
 	for _, svcState := range l4.l4NetLBServiceMap {
 		labels := L4NetLBServiceLabels{
-			IsMultinet: svcState.IsMultinet,
-			Status:     convertStatusFlagsToStatus(svcState.InSuccess, svcState.IsUserError, svcState.FirstSyncErrorTime),
+			IsMultinet:                   svcState.IsMultinet,
+			EnabledStrongSessionAffinity: svcState.EnabledStrongSessionAffinity,
+			Status:                       convertStatusFlagsToStatus(svcState.InSuccess, svcState.IsUserError, svcState.FirstSyncErrorTime),
 		}
 		counts[labels] += 1
 	}

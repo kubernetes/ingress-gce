@@ -190,6 +190,7 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 
 	// if service requires strong session affinity, check requirements
 	if l4netlb.enableStrongSessionAffinity {
+		result.MetricsState.EnabledStrongSessionAffinity = annotations.HasStrongSessionAffinityAnnotation(svc)
 		if err := l4netlb.checkStrongSessionAffinityRequirements(); err != nil {
 			result.Error = err
 			result.MetricsState.IsUserError = utils.IsUserError(err)

@@ -121,6 +121,9 @@ type L4NetLBServiceState struct {
 	IsPremiumTier bool
 	// IsMultinet
 	IsMultinet bool
+	// EnabledStrongSessionAffinity specifies if the Strong Session Affinity feature
+	// was enabled
+	EnabledStrongSessionAffinity bool
 	// InSuccess specifies if the NetLB service VIP is configured.
 	InSuccess bool
 	// IsUserError specifies if the error was caused by User misconfiguration.
@@ -133,6 +136,9 @@ type L4NetLBServiceState struct {
 type L4NetLBServiceLabels struct {
 	// IsMultinet
 	IsMultinet bool
+	// EnabledStrongSessionAffinity sets true if
+	// the Strong Session Affinity feature was enabled
+	EnabledStrongSessionAffinity bool
 	// Status specifies the status of the service.
 	Status L4ServiceStatus
 }
