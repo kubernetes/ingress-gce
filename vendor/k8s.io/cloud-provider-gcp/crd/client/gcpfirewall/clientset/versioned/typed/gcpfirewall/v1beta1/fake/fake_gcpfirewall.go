@@ -23,7 +23,6 @@ import (
 
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
-	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
@@ -35,9 +34,9 @@ type FakeGCPFirewalls struct {
 	Fake *FakeNetworkingV1beta1
 }
 
-var gcpfirewallsResource = schema.GroupVersionResource{Group: "networking.gke.io", Version: "v1beta1", Resource: "gcpfirewalls"}
+var gcpfirewallsResource = v1beta1.SchemeGroupVersion.WithResource("gcpfirewalls")
 
-var gcpfirewallsKind = schema.GroupVersionKind{Group: "networking.gke.io", Version: "v1beta1", Kind: "GCPFirewall"}
+var gcpfirewallsKind = v1beta1.SchemeGroupVersion.WithKind("GCPFirewall")
 
 // Get takes name of the gCPFirewall, and returns the corresponding gCPFirewall object, and an error if there is any.
 func (c *FakeGCPFirewalls) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1beta1.GCPFirewall, err error) {

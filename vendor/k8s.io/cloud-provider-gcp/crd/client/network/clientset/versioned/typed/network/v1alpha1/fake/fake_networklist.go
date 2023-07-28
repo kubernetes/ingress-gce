@@ -22,7 +22,6 @@ import (
 	"context"
 
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	testing "k8s.io/client-go/testing"
 	v1alpha1 "k8s.io/cloud-provider-gcp/crd/apis/network/v1alpha1"
 )
@@ -32,9 +31,9 @@ type FakeNetworkLists struct {
 	Fake *FakeNetworkingV1alpha1
 }
 
-var networklistsResource = schema.GroupVersionResource{Group: "networking.gke.io", Version: "v1alpha1", Resource: "networklists"}
+var networklistsResource = v1alpha1.SchemeGroupVersion.WithResource("networklists")
 
-var networklistsKind = schema.GroupVersionKind{Group: "networking.gke.io", Version: "v1alpha1", Kind: "NetworkList"}
+var networklistsKind = v1alpha1.SchemeGroupVersion.WithKind("NetworkList")
 
 // Get takes name of the networkList, and returns the corresponding networkList object, and an error if there is any.
 func (c *FakeNetworkLists) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.NetworkList, err error) {

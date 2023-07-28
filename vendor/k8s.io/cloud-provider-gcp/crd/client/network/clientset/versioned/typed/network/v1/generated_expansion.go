@@ -18,6 +18,10 @@ limitations under the License.
 
 package v1
 
+type GKENetworkParamSetExpansion interface{}
+
+type GKENetworkParamSetListExpansion interface{}
+
 type NetworkExpansion interface{}
 
 type NetworkInterfaceExpansion interface{}

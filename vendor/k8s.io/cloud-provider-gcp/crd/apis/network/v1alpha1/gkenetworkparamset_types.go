@@ -7,7 +7,6 @@ import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster
-// +kubebuilder:storageversion
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // GKENetworkParamSet represent GKE specific parameters for the network.
@@ -71,7 +70,21 @@ type GKENetworkParamSetStatus struct {
 	PodCIDRs *NetworkRanges `json:"podCIDRs,omitempty"`
 
 	// Conditions is a field representing the current conditions of the GKENetworkParamSet.
-	Conditions []metav1.Condition `json:"conditions"`
+	//
+	// Known condition types are:
+	//
+	// * "Ready"
+	//
+	// +optional
+	// +patchMergeKey=type
+	// +patchStrategy=merge
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
+
+	// NetworkName specifies which Network object is currently referencing this GKENetworkParamSet
+	// +optional
+	NetworkName string `json:"networkName"`
 }
 
 // +genclient

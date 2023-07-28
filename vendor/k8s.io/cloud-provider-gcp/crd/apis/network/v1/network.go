@@ -17,3 +17,12 @@ func DefaultNetworkIfEmpty(s string) string {
 func IsDefaultNetwork(networkName string) bool {
 	return networkName == DefaultNetworkName || networkName == DefaultPodNetworkName
 }
+
+// InUse is true if the network is referenced by NetworkInterface or Pod objects.
+func (n *Network) InUse() bool {
+	if n.Annotations == nil {
+		return false
+	}
+	val, ok := n.Annotations[NetworkInUseAnnotationKey]
+	return ok && val == NetworkInUseAnnotationValTrue
+}

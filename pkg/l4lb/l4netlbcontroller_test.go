@@ -41,7 +41,6 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	networkv1 "k8s.io/cloud-provider-gcp/crd/apis/network/v1"
-	gkenetworkparamsetv1alpha1 "k8s.io/cloud-provider-gcp/crd/apis/network/v1alpha1"
 	netfake "k8s.io/cloud-provider-gcp/crd/client/network/clientset/versioned/fake"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/cloud-provider/service/helpers"
@@ -496,18 +495,18 @@ func TestProcessMultinetServiceCreate(t *testing.T) {
 		Spec: networkv1.NetworkSpec{
 			Type: "L3",
 			ParametersRef: &networkv1.NetworkParametersReference{
-				Group: gkenetworkparamsetv1alpha1.GroupName,
+				Group: networkv1.GroupName,
 				Kind:  "GKENetworkParamSet",
 				Name:  "secondary-network-params",
 			},
 		},
 	}
 	lc.networkLister.Add(net)
-	gkeParamSet := &gkenetworkparamsetv1alpha1.GKENetworkParamSet{
+	gkeParamSet := &networkv1.GKENetworkParamSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "secondary-network-params",
 		},
-		Spec: gkenetworkparamsetv1alpha1.GKENetworkParamSetSpec{
+		Spec: networkv1.GKENetworkParamSetSpec{
 			VPC:       "vpc",
 			VPCSubnet: "subnet",
 		},

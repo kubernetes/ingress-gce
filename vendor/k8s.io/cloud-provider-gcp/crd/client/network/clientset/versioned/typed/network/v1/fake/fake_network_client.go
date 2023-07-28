@@ -28,6 +28,14 @@ type FakeNetworkingV1 struct {
 	*testing.Fake
 }
 
+func (c *FakeNetworkingV1) GKENetworkParamSets() v1.GKENetworkParamSetInterface {
+	return &FakeGKENetworkParamSets{c}
+}
+
+func (c *FakeNetworkingV1) GKENetworkParamSetLists() v1.GKENetworkParamSetListInterface {
+	return &FakeGKENetworkParamSetLists{c}
+}
+
 func (c *FakeNetworkingV1) Networks() v1.NetworkInterface {
 	return &FakeNetworks{c}
 }

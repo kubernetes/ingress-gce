@@ -36,7 +36,6 @@ import (
 	informerfirewall "k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/informers/externalversions/gcpfirewall/v1beta1"
 	networkclient "k8s.io/cloud-provider-gcp/crd/client/network/clientset/versioned"
 	informernetwork "k8s.io/cloud-provider-gcp/crd/client/network/informers/externalversions/network/v1"
-	informergkenetworkparamset "k8s.io/cloud-provider-gcp/crd/client/network/informers/externalversions/network/v1alpha1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	sav1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1"
 	sav1beta1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1"
@@ -193,7 +192,7 @@ func NewControllerContext(
 
 	if networkClient != nil {
 		context.NetworkInformer = informernetwork.NewNetworkInformer(networkClient, config.ResyncPeriod, utils.NewNamespaceIndexer())
-		context.GKENetworkParamsInformer = informergkenetworkparamset.NewGKENetworkParamSetInformer(networkClient, config.ResyncPeriod, utils.NewNamespaceIndexer())
+		context.GKENetworkParamsInformer = informernetwork.NewGKENetworkParamSetInformer(networkClient, config.ResyncPeriod, utils.NewNamespaceIndexer())
 	}
 
 	if flags.F.GKEClusterType == ClusterTypeRegional {
