@@ -474,6 +474,9 @@ func initializeCounts() (map[feature]int, map[feature]int) {
 			neg:                       0,
 			cloudCDN:                  0,
 			cloudArmor:                0,
+			cloudArmorSet:             0,
+			cloudArmorEmpty:           0,
+			cloudArmorNil:             0,
 			cloudIAP:                  0,
 			backendTimeout:            0,
 			backendConnectionDraining: 0,
@@ -505,6 +508,9 @@ func isServiceFeature(ftr feature) bool {
 		externalServicePort:     true,
 		internalServicePort:     true,
 		transparentHealthChecks: true,
+		cloudArmorEmpty:         true,
+		cloudArmorNil:           true,
+		cloudArmorSet:           true,
 	}
 	return serviceFeatures[ftr]
 }

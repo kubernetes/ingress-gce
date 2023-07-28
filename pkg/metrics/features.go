@@ -80,6 +80,9 @@ const (
 	// BackendConfig Features
 	cloudCDN                  = feature("CloudCDN")
 	cloudArmor                = feature("CloudArmor")
+	cloudArmorSet             = feature("CloudArmorSet")
+	cloudArmorEmpty           = feature("CloudArmorEmptyString")
+	cloudArmorNil             = feature("CloudArmorNil")
 	cloudIAP                  = feature("CloudIAP")
 	backendTimeout            = feature("BackendTimeout")
 	backendConnectionDraining = feature("BackendConnectionDraining")
@@ -318,10 +321,27 @@ func featuresForServicePort(sp utils.ServicePort) []feature {
 		}
 		klog.V(6).Infof("Session affinity %s is configured for service port %s", affinityType, svcPortKey)
 	}
+
 	if sp.BackendConfig.Spec.SecurityPolicy != nil {
 		klog.V(6).Infof("Security policy %s is configured for service port %s", sp.BackendConfig.Spec.SecurityPolicy, svcPortKey)
 		features = append(features, cloudArmor)
 	}
+
+	// Detailed metrics about cloud armor.
+	if sp.BackendConfig.Spec.SecurityPolicy != nil {
+		var caFeature feature
+		if sp.BackendConfig.Spec.SecurityPolicy.Name == "" {
+			caFeature = cloudArmorEmpty
+		} else {
+			caFeature = cloudArmorSet
+		}
+		features = append(features, caFeature)
+		klog.V(6).Infof("Security policy %s is configured for service port %s (%s)", sp.BackendConfig.Spec.SecurityPolicy, svcPortKey, caFeature)
+	} else {
+		features = append(features, cloudArmorNil)
+		klog.V(6).Infof("Security policy is configured to nil for service port %s (%s)", sp.BackendConfig.Spec.SecurityPolicy, svcPortKey)
+	}
+
 	if sp.BackendConfig.Spec.TimeoutSec != nil {
 		klog.V(6).Infof("Backend timeout(%v secs) is configured for service port %s", sp.BackendConfig.Spec.TimeoutSec, svcPortKey)
 		features = append(features, backendTimeout)
