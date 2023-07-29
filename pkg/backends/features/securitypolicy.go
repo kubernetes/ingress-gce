@@ -31,30 +31,52 @@ import (
 // EnsureSecurityPolicy ensures the security policy link on backend service.
 // TODO(mrhohn): Emit event when attach/detach security policy to backend service.
 func EnsureSecurityPolicy(cloud *gce.Cloud, sp utils.ServicePort, be *composite.BackendService) error {
-	var desiredPolicyName string
-	if sp.BackendConfig.Spec.SecurityPolicy != nil {
-		desiredPolicyName = sp.BackendConfig.Spec.SecurityPolicy.Name
-	} else {
-		desiredPolicyName = ""
+	// It is too dangerous to remove user's security policy that may have been
+	// configured via the UI or gcloud directly rather than via Kubernetes.
+	// Treat nil security policy -> ignored
+	// Treat empty string security policy name -> remove
+	if sp.BackendConfig.Spec.SecurityPolicy == nil {
+		klog.V(2).Infof("Ignoring nil Security Policy on backend service %s (%s:%s)", be.Name, sp.ID.Service.String(), sp.ID.Port.String())
+		return nil
+	}
+
+	if be.Scope != meta.Global {
+		err := fmt.Errorf("cloud armor security policies not supported for %s backend service %s", be.Scope, be.Name)
+		klog.Errorf("EnsureSecurityPolicy() = %v", err)
+		return err
 	}
 
 	existingPolicyName, err := utils.KeyName(be.SecurityPolicy)
 	// The parser returns error for empty values.
 	if be.SecurityPolicy != "" && err != nil {
+		err := fmt.Errorf("failed to parse existing security policy name %q: %v", existingPolicyName, err)
+		klog.Errorf("EnsureSecurityPolicy() = %v", err)
 		return err
 	}
 
+	desiredPolicyName := sp.BackendConfig.Spec.SecurityPolicy.Name
+	klog.V(2).Infof("Current security policy: %q, desired security policy: %q", existingPolicyName, desiredPolicyName)
 	if existingPolicyName == desiredPolicyName {
+		klog.V(2).Infof("SecurityPolicy on backend service is not changed %s (%s:%s): %q", be.Name, sp.ID.Service.String(), sp.ID.Port.String(), desiredPolicyName)
 		return nil
 	}
 
-	if be.Scope != meta.Global {
-		return fmt.Errorf("cloud armor security policies not supported for %s backend service %s", be.Scope, be.Name)
+	if desiredPolicyName != "" {
+		klog.V(2).Infof("Set security policy in backend service %s (%s:%s) from %q to %q", be.Name, sp.ID.Service.String(), sp.ID.Port.String(), existingPolicyName, desiredPolicyName)
+		if err := composite.SetSecurityPolicy(cloud, be, desiredPolicyName); err != nil {
+			err := fmt.Errorf("failed to set security policy from %q to %q for backend service %s (%s:%s): %v", existingPolicyName, desiredPolicyName, be.Name, sp.ID.Service.String(), sp.ID.Port.String(), err)
+			klog.Errorf("SetSecurityPolicy() = %v", err)
+			return err
+		}
+		klog.V(2).Infof("Successfully set security policy in backend service %s (%s:%s) from %q to %q", be.Name, sp.ID.Service.String(), sp.ID.Port.String(), existingPolicyName, desiredPolicyName)
+		return nil
 	}
-
-	klog.V(2).Infof("Set security policy in backend service %s (%s:%s) to %q", be.Name, sp.ID.Service.String(), sp.ID.Port.String(), desiredPolicyName)
+	klog.V(2).Infof("Removing security policy %q in backend service %s (%s:%s)", existingPolicyName, be.Name, sp.ID.Service.String(), sp.ID.Port.String())
 	if err := composite.SetSecurityPolicy(cloud, be, desiredPolicyName); err != nil {
-		return fmt.Errorf("failed to set security policy %q for backend service %s (%s:%s): %v", desiredPolicyName, be.Name, sp.ID.Service.String(), sp.ID.Port.String(), err)
+		err := fmt.Errorf("failed to remove security policy %q for backend service %s (%s:%s): %v", existingPolicyName, be.Name, sp.ID.Service.String(), sp.ID.Port.String(), err)
+		klog.Errorf("SetSecurityPolicy() = %v", err)
+		return err
 	}
+	klog.V(2).Infof("Successfully removed security policy %q in backend service %s (%s:%s)", existingPolicyName, be.Name, sp.ID.Service.String(), sp.ID.Port.String())
 	return nil
 }
