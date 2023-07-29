@@ -138,6 +138,34 @@ var (
 			NEGEnabled:       true,
 			THCConfiguration: utils.THCConfiguration{THCOptInOnSvc: true},
 		},
+		{
+			ID: utils.ServicePortID{
+				Service: types.NamespacedName{
+					Name:      "service-with-empty-security-policy",
+					Namespace: defaultNamespace,
+				},
+				Port: v1.ServiceBackendPort{Number: 80},
+			},
+			BackendConfig: &backendconfigv1.BackendConfig{
+				Spec: backendconfigv1.BackendConfigSpec{
+					SecurityPolicy: &backendconfigv1.SecurityPolicyConfig{
+						Name: "",
+					},
+				},
+			},
+		},
+		{
+			ID: utils.ServicePortID{
+				Service: types.NamespacedName{
+					Name:      "service-with-no-security-policy",
+					Namespace: defaultNamespace,
+				},
+				Port: v1.ServiceBackendPort{Number: 80},
+			},
+			BackendConfig: &backendconfigv1.BackendConfig{
+				Spec: backendconfigv1.BackendConfigSpec{},
+			},
+		},
 	}
 	ingressStates = []struct {
 		desc             string
@@ -198,7 +226,7 @@ var (
 			[]feature{ingress, externalIngress, httpEnabled},
 			[]utils.ServicePort{testServicePorts[0]},
 			[]feature{servicePort, externalServicePort, cloudCDN,
-				cookieAffinity, cloudArmor, backendConnectionDraining, customHealthChecks},
+				cookieAffinity, cloudArmor, cloudArmorSet, backendConnectionDraining, customHealthChecks},
 		},
 		{
 			"host rule only",
@@ -257,7 +285,7 @@ var (
 				hostBasedRouting, pathBasedRouting},
 			[]utils.ServicePort{testServicePorts[1]},
 			[]feature{servicePort, externalServicePort, neg, cloudIAP,
-				clientIPAffinity, backendTimeout, customRequestHeaders},
+				clientIPAffinity, cloudArmorNil, backendTimeout, customRequestHeaders},
 		},
 		{
 			"default backend and host rule",
@@ -304,8 +332,8 @@ var (
 				hostBasedRouting, pathBasedRouting},
 			testServicePorts[:2],
 			[]feature{servicePort, externalServicePort, cloudCDN,
-				cookieAffinity, cloudArmor, backendConnectionDraining, customHealthChecks, neg, cloudIAP,
-				clientIPAffinity, backendTimeout, customRequestHeaders},
+				cookieAffinity, cloudArmor, cloudArmorSet, backendConnectionDraining, customHealthChecks, neg, cloudIAP,
+				clientIPAffinity, cloudArmorNil, backendTimeout, customRequestHeaders},
 		},
 		{
 			"tls termination with pre-shared certs",
@@ -335,7 +363,7 @@ var (
 				tlsTermination, preSharedCertsForTLS},
 			[]utils.ServicePort{testServicePorts[0]},
 			[]feature{servicePort, externalServicePort, cloudCDN,
-				cookieAffinity, cloudArmor, backendConnectionDraining, customHealthChecks},
+				cookieAffinity, cloudArmor, cloudArmorSet, backendConnectionDraining, customHealthChecks},
 		},
 		{
 			"tls termination with google managed certs",
@@ -365,7 +393,7 @@ var (
 				tlsTermination, managedCertsForTLS},
 			[]utils.ServicePort{testServicePorts[0]},
 			[]feature{servicePort, externalServicePort, cloudCDN,
-				cookieAffinity, cloudArmor, backendConnectionDraining, customHealthChecks},
+				cookieAffinity, cloudArmor, cloudArmorSet, backendConnectionDraining, customHealthChecks},
 		},
 		{
 			"tls termination with pre-shared and google managed certs",
@@ -396,7 +424,7 @@ var (
 				tlsTermination, preSharedCertsForTLS, managedCertsForTLS},
 			[]utils.ServicePort{testServicePorts[0]},
 			[]feature{servicePort, externalServicePort, cloudCDN,
-				cookieAffinity, cloudArmor, backendConnectionDraining, customHealthChecks},
+				cookieAffinity, cloudArmor, cloudArmorSet, backendConnectionDraining, customHealthChecks},
 		},
 		{
 			"tls termination with pre-shared and secret based certs",
@@ -445,7 +473,7 @@ var (
 				pathBasedRouting, tlsTermination, preSharedCertsForTLS, secretBasedCertsForTLS},
 			[]utils.ServicePort{testServicePorts[1]},
 			[]feature{servicePort, externalServicePort, neg, cloudIAP,
-				clientIPAffinity, backendTimeout, customRequestHeaders},
+				clientIPAffinity, cloudArmorNil, backendTimeout, customRequestHeaders},
 		},
 		{
 			"global static ip",
@@ -476,7 +504,7 @@ var (
 				tlsTermination, preSharedCertsForTLS, staticGlobalIP, managedStaticGlobalIP},
 			[]utils.ServicePort{testServicePorts[0]},
 			[]feature{servicePort, externalServicePort, cloudCDN,
-				cookieAffinity, cloudArmor, backendConnectionDraining, customHealthChecks},
+				cookieAffinity, cloudArmor, cloudArmorSet, backendConnectionDraining, customHealthChecks},
 		},
 		{
 			"default backend, host rule for internal load-balancer",
@@ -527,7 +555,7 @@ var (
 				hostBasedRouting, pathBasedRouting},
 			[]utils.ServicePort{testServicePorts[2], testServicePorts[3]},
 			[]feature{servicePort, internalServicePort, neg, cloudIAP,
-				cookieAffinity, backendConnectionDraining},
+				cookieAffinity, cloudArmorNil, backendConnectionDraining},
 		},
 		{
 			"non-existent pre-shared cert",
@@ -782,6 +810,54 @@ var (
 			[]utils.ServicePort{testServicePorts[4]},
 			[]feature{servicePort, externalServicePort, neg, transparentHealthChecks},
 		},
+		{
+			"backend with empty security policy",
+			&v1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: defaultNamespace,
+					Name:      "ingress20",
+				},
+				Spec: v1.IngressSpec{
+					DefaultBackend: &v1.IngressBackend{
+						Service: &v1.IngressServiceBackend{
+							Name: "service-with-empty-security-policy",
+							Port: v1.ServiceBackendPort{
+								Number: int32(80),
+							},
+						},
+					},
+					Rules: []v1.IngressRule{},
+				},
+			},
+			nil,
+			[]feature{ingress, externalIngress, httpEnabled},
+			[]utils.ServicePort{testServicePorts[5]},
+			[]feature{servicePort, externalServicePort, cloudArmor, cloudArmorEmpty},
+		},
+		{
+			"backend with no security policy",
+			&v1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: defaultNamespace,
+					Name:      "ingress21",
+				},
+				Spec: v1.IngressSpec{
+					DefaultBackend: &v1.IngressBackend{
+						Service: &v1.IngressServiceBackend{
+							Name: "service-with-no-security-policy",
+							Port: v1.ServiceBackendPort{
+								Number: int32(80),
+							},
+						},
+					},
+					Rules: []v1.IngressRule{},
+				},
+			},
+			nil,
+			[]feature{ingress, externalIngress, httpEnabled},
+			[]utils.ServicePort{testServicePorts[6]},
+			[]feature{servicePort, externalServicePort, cloudArmorNil},
+		},
 	}
 )
 
@@ -872,6 +948,9 @@ func TestComputeIngressMetrics(t *testing.T) {
 				backendTimeout:            0,
 				clientIPAffinity:          0,
 				cloudArmor:                0,
+				cloudArmorSet:             0,
+				cloudArmorEmpty:           0,
+				cloudArmorNil:             0,
 				cloudCDN:                  0,
 				cloudIAP:                  0,
 				cookieAffinity:            0,
@@ -921,6 +1000,9 @@ func TestComputeIngressMetrics(t *testing.T) {
 				backendTimeout:            0,
 				clientIPAffinity:          0,
 				cloudArmor:                0,
+				cloudArmorSet:             0,
+				cloudArmorEmpty:           0,
+				cloudArmorNil:             1,
 				cloudCDN:                  0,
 				cloudIAP:                  1,
 				cookieAffinity:            1,
@@ -973,6 +1055,9 @@ func TestComputeIngressMetrics(t *testing.T) {
 				backendTimeout:            1,
 				clientIPAffinity:          1,
 				cloudArmor:                1,
+				cloudArmorSet:             1,
+				cloudArmorEmpty:           0,
+				cloudArmorNil:             1,
 				cloudCDN:                  1,
 				cloudIAP:                  1,
 				cookieAffinity:            1,
@@ -1005,21 +1090,22 @@ func TestComputeIngressMetrics(t *testing.T) {
 				NewIngressState(ingressStates[14].ing, ingressStates[14].fc, ingressStates[14].svcPorts),
 				NewIngressState(ingressStates[15].ing, nil, ingressStates[15].svcPorts),
 				NewIngressState(ingressStates[16].ing, ingressStates[16].fc, ingressStates[16].svcPorts),
+				NewIngressState(ingressStates[20].ing, nil, ingressStates[20].svcPorts),
 			},
 			map[feature]int{
 				backendConnectionDraining: 7,
 				backendTimeout:            3,
 				clientIPAffinity:          3,
-				cloudArmor:                6,
+				cloudArmor:                7,
 				cloudCDN:                  6,
 				cloudIAP:                  4,
 				cookieAffinity:            7,
 				customRequestHeaders:      3,
 				customHealthChecks:        6,
-				externalIngress:           15,
-				httpEnabled:               16,
+				externalIngress:           16,
+				httpEnabled:               17,
 				hostBasedRouting:          5,
-				ingress:                   17,
+				ingress:                   18,
 				internalIngress:           2,
 				managedCertsForTLS:        2,
 				managedStaticGlobalIP:     1,
@@ -1038,15 +1124,18 @@ func TestComputeIngressMetrics(t *testing.T) {
 				backendConnectionDraining: 2,
 				backendTimeout:            1,
 				clientIPAffinity:          1,
-				cloudArmor:                1,
+				cloudArmor:                2,
+				cloudArmorSet:             1,
+				cloudArmorEmpty:           1,
+				cloudArmorNil:             2,
 				cloudCDN:                  1,
 				cloudIAP:                  2,
 				cookieAffinity:            2,
 				customRequestHeaders:      1,
 				customHealthChecks:        1,
 				internalServicePort:       2,
-				servicePort:               4,
-				externalServicePort:       2,
+				servicePort:               5,
+				externalServicePort:       3,
 				neg:                       3,
 			},
 		},
