@@ -783,7 +783,7 @@ var (
 			},
 			nil,
 			[]feature{ingress, externalIngress, httpEnabled},
-			[]utils.ServicePort{testServicePorts[5]},
+			[]utils.ServicePort{testServicePorts[4]},
 			[]feature{servicePort, externalServicePort, cloudArmor, cloudArmorEmpty},
 		},
 		{
@@ -807,7 +807,7 @@ var (
 			},
 			nil,
 			[]feature{ingress, externalIngress, httpEnabled},
-			[]utils.ServicePort{testServicePorts[6]},
+			[]utils.ServicePort{testServicePorts[5]},
 			[]feature{servicePort, externalServicePort, cloudArmorNil},
 		},
 	}
@@ -845,6 +845,7 @@ func TestFeaturesForServicePort(t *testing.T) {
 				}
 			}
 			if diff := cmp.Diff(tc.backendFeatures, gotBackendFeatures); diff != "" {
+				t.Fatalf("Got diff for backend features (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -1045,7 +1046,7 @@ func TestComputeIngressMetrics(t *testing.T) {
 				backendConnectionDraining: 7,
 				backendTimeout:            3,
 				clientIPAffinity:          3,
-				cloudArmor:                7,
+				cloudArmor:                6,
 				cloudCDN:                  6,
 				cloudIAP:                  4,
 				cookieAffinity:            7,
@@ -1073,10 +1074,10 @@ func TestComputeIngressMetrics(t *testing.T) {
 				backendConnectionDraining: 2,
 				backendTimeout:            1,
 				clientIPAffinity:          1,
-				cloudArmor:                2,
+				cloudArmor:                1,
 				cloudArmorSet:             1,
-				cloudArmorEmpty:           1,
-				cloudArmorNil:             2,
+				cloudArmorEmpty:           0,
+				cloudArmorNil:             3,
 				cloudCDN:                  1,
 				cloudIAP:                  2,
 				cookieAffinity:            2,
