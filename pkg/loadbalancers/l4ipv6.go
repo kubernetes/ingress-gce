@@ -208,7 +208,9 @@ func (l4 *L4) serviceSubnetHasInternalIPv6Range() error {
 	if !hasIPv6SubnetRange {
 		// We don't need to emit custom event, because errors are already emitted to the user as events.
 		klog.Infof("Subnet %s for IPv6 Service %s/%s does not have internal IPv6 ranges", subnetName, l4.Service.Namespace, l4.Service.Name)
-		return utils.NewUserError(fmt.Errorf("subnet %s does not have internal IPv6 ranges, required for IPv6 Service", subnetName))
+		return utils.NewUserError(
+			fmt.Errorf(
+				"subnet %s does not have internal IPv6 ranges, required for an internal IPv6 Service. You can specify an internal IPv6 subnet using the \"%s\" annotation on the Service", annotations.CustomSubnetAnnotationKey, subnetName))
 	}
 	return nil
 }
