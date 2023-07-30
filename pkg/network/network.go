@@ -25,12 +25,11 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 	networkv1 "k8s.io/cloud-provider-gcp/crd/apis/network/v1"
-	gkenetworkparamsetv1alpha1 "k8s.io/cloud-provider-gcp/crd/apis/network/v1alpha1"
 	"k8s.io/klog/v2"
 )
 
 const (
-	networkingGKEGroup     = gkenetworkparamsetv1alpha1.GroupName
+	networkingGKEGroup     = networkv1.GroupName
 	gkeNetworkParamSetKind = "gkenetworkparamset"
 	networkSelector        = networkv1.NetworkAnnotationKey
 )
@@ -73,7 +72,7 @@ func ServiceNetwork(service *apiv1.Service, networkLister, gkeNetworkParamSetLis
 	if !exists {
 		return nil, fmt.Errorf("GKENetworkParamSet %s was not found", parametersRef.Name)
 	}
-	gkeNetworkParamSet := gkeParamsObj.(*gkenetworkparamsetv1alpha1.GKENetworkParamSet)
+	gkeNetworkParamSet := gkeParamsObj.(*networkv1.GKENetworkParamSet)
 	if network == nil {
 		return nil, fmt.Errorf("cannot convert to GKENetworkParamSet (%T)", gkeParamsObj)
 	}

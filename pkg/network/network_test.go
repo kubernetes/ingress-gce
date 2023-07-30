@@ -27,7 +27,6 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	networkv1 "k8s.io/cloud-provider-gcp/crd/apis/network/v1"
-	gkenetworkparamsetv1alpha1 "k8s.io/cloud-provider-gcp/crd/apis/network/v1alpha1"
 	netfake "k8s.io/cloud-provider-gcp/crd/client/network/clientset/versioned/fake"
 	informernetwork "k8s.io/cloud-provider-gcp/crd/client/network/informers/externalversions/network/v1"
 	informergkenetworkparamset "k8s.io/cloud-provider-gcp/crd/client/network/informers/externalversions/network/v1alpha1"
@@ -51,7 +50,7 @@ func TestServiceNetwork(t *testing.T) {
 	cases := []struct {
 		desc               string
 		network            *networkv1.Network
-		gkeNetworkParamSet *gkenetworkparamsetv1alpha1.GKENetworkParamSet
+		gkeNetworkParamSet *networkv1.GKENetworkParamSet
 		service            *apiv1.Service
 		want               *NetworkInfo
 		wantErr            string
@@ -455,12 +454,12 @@ func northInterfacesAnnotation(t *testing.T, annotation networkv1.NorthInterface
 	return annotationString
 }
 
-func testGKENetworkParamSet(name, vpc, subnet string) *gkenetworkparamsetv1alpha1.GKENetworkParamSet {
-	return &gkenetworkparamsetv1alpha1.GKENetworkParamSet{
+func testGKENetworkParamSet(name, vpc, subnet string) *networkv1.GKENetworkParamSet {
+	return &networkv1.GKENetworkParamSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 		},
-		Spec: gkenetworkparamsetv1alpha1.GKENetworkParamSetSpec{
+		Spec: networkv1.GKENetworkParamSetSpec{
 			VPC:       vpc,
 			VPCSubnet: subnet,
 		},

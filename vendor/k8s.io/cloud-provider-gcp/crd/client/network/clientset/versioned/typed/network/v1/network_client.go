@@ -28,6 +28,8 @@ import (
 
 type NetworkingV1Interface interface {
 	RESTClient() rest.Interface
+	GKENetworkParamSetsGetter
+	GKENetworkParamSetListsGetter
 	NetworksGetter
 	NetworkInterfacesGetter
 	NetworkInterfaceListsGetter
@@ -37,6 +39,14 @@ type NetworkingV1Interface interface {
 // NetworkingV1Client is used to interact with features provided by the networking.gke.io group.
 type NetworkingV1Client struct {
 	restClient rest.Interface
+}
+
+func (c *NetworkingV1Client) GKENetworkParamSets() GKENetworkParamSetInterface {
+	return newGKENetworkParamSets(c)
+}
+
+func (c *NetworkingV1Client) GKENetworkParamSetLists() GKENetworkParamSetListInterface {
+	return newGKENetworkParamSetLists(c)
 }
 
 func (c *NetworkingV1Client) Networks() NetworkInterface {

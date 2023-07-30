@@ -18,6 +18,10 @@ limitations under the License.
 
 package v1
 
+// GKENetworkParamSetListerExpansion allows custom methods to be added to
+// GKENetworkParamSetLister.
+type GKENetworkParamSetListerExpansion interface{}
+
 // NetworkListerExpansion allows custom methods to be added to
 // NetworkLister.
 type NetworkListerExpansion interface{}

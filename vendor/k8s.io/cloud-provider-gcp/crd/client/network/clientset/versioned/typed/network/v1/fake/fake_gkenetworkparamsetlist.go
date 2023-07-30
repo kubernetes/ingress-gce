@@ -26,23 +26,21 @@ import (
 	v1 "k8s.io/cloud-provider-gcp/crd/apis/network/v1"
 )
 
-// FakeNetworkInterfaceLists implements NetworkInterfaceListInterface
-type FakeNetworkInterfaceLists struct {
+// FakeGKENetworkParamSetLists implements GKENetworkParamSetListInterface
+type FakeGKENetworkParamSetLists struct {
 	Fake *FakeNetworkingV1
-	ns   string
 }
 
-var networkinterfacelistsResource = v1.SchemeGroupVersion.WithResource("networkinterfacelists")
+var gkenetworkparamsetlistsResource = v1.SchemeGroupVersion.WithResource("gkenetworkparamsetlists")
 
-var networkinterfacelistsKind = v1.SchemeGroupVersion.WithKind("NetworkInterfaceList")
+var gkenetworkparamsetlistsKind = v1.SchemeGroupVersion.WithKind("GKENetworkParamSetList")
 
-// Get takes name of the networkInterfaceList, and returns the corresponding networkInterfaceList object, and an error if there is any.
-func (c *FakeNetworkInterfaceLists) Get(ctx context.Context, name string, options metav1.GetOptions) (result *v1.NetworkInterfaceList, err error) {
+// Get takes name of the gKENetworkParamSetList, and returns the corresponding gKENetworkParamSetList object, and an error if there is any.
+func (c *FakeGKENetworkParamSetLists) Get(ctx context.Context, name string, options metav1.GetOptions) (result *v1.GKENetworkParamSetList, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewGetAction(networkinterfacelistsResource, c.ns, name), &v1.NetworkInterfaceList{})
-
+		Invokes(testing.NewRootGetAction(gkenetworkparamsetlistsResource, name), &v1.GKENetworkParamSetList{})
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1.NetworkInterfaceList), err
+	return obj.(*v1.GKENetworkParamSetList), err
 }

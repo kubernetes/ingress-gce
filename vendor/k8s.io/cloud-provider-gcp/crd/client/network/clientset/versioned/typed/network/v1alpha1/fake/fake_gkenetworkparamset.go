@@ -23,7 +23,6 @@ import (
 
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
-	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
@@ -35,9 +34,9 @@ type FakeGKENetworkParamSets struct {
 	Fake *FakeNetworkingV1alpha1
 }
 
-var gkenetworkparamsetsResource = schema.GroupVersionResource{Group: "networking.gke.io", Version: "v1alpha1", Resource: "gkenetworkparamsets"}
+var gkenetworkparamsetsResource = v1alpha1.SchemeGroupVersion.WithResource("gkenetworkparamsets")
 
-var gkenetworkparamsetsKind = schema.GroupVersionKind{Group: "networking.gke.io", Version: "v1alpha1", Kind: "GKENetworkParamSet"}
+var gkenetworkparamsetsKind = v1alpha1.SchemeGroupVersion.WithKind("GKENetworkParamSet")
 
 // Get takes name of the gKENetworkParamSet, and returns the corresponding gKENetworkParamSet object, and an error if there is any.
 func (c *FakeGKENetworkParamSets) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.GKENetworkParamSet, err error) {

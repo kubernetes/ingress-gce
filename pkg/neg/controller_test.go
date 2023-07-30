@@ -39,7 +39,6 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 	networkv1 "k8s.io/cloud-provider-gcp/crd/apis/network/v1"
-	gkenetworkparamsetv1alpha1 "k8s.io/cloud-provider-gcp/crd/apis/network/v1alpha1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/metrics"
@@ -1338,15 +1337,15 @@ func TestEnableNEGServiceWithL4NetLB(t *testing.T) {
 		Spec: networkv1.NetworkSpec{
 			Type: "L3",
 			ParametersRef: &networkv1.NetworkParametersReference{
-				Group: gkenetworkparamsetv1alpha1.GroupName,
+				Group: networkv1.GroupName,
 				Kind:  "gkenetworkparamset",
 				Name:  "blue-net-paramset",
 			},
 		},
 	})
-	controller.gkeNetworkParamSetLister.Add(&gkenetworkparamsetv1alpha1.GKENetworkParamSet{
+	controller.gkeNetworkParamSetLister.Add(&networkv1.GKENetworkParamSet{
 		ObjectMeta: metav1.ObjectMeta{Name: "blue-net-paramset"},
-		Spec: gkenetworkparamsetv1alpha1.GKENetworkParamSetSpec{
+		Spec: networkv1.GKENetworkParamSetSpec{
 			VPC:       "blue-vpc",
 			VPCSubnet: "blue-subnet",
 		},
