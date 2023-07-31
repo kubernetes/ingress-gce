@@ -25,6 +25,7 @@ import (
 
 	computebeta "google.golang.org/api/compute/v0.beta"
 	v1 "k8s.io/api/networking/v1"
+	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
@@ -258,6 +259,210 @@ func TestSecurityPolicyTransition(t *testing.T) {
 
 		if err := e2e.WaitForIngressDeletion(ctx, gclb, s, ing, deleteOptions); err != nil {
 			t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing.Name, err)
+		}
+	})
+}
+
+func TestNilSecurityPolicy(t *testing.T) {
+	ctx := context.Background()
+	t.Parallel()
+
+	Framework.RunWithSandbox("Nil Security Policy", t, func(t *testing.T, s *e2e.Sandbox) {
+		policies := []*computebeta.SecurityPolicy{
+			buildPolicyAllowAll(fmt.Sprintf("enable-test-allow-all-%s", s.Namespace)),
+		}
+		defer func() {
+			if err := cleanupSecurityPolicies(ctx, t, Framework.Cloud, policies); err != nil {
+				t.Errorf("cleanupSecurityPolicies(...) =  %v, want nil", err)
+			}
+		}()
+		policies, err := createSecurityPolicies(ctx, t, Framework.Cloud, policies)
+		if err != nil {
+			t.Fatalf("createSecurityPolicies(...) = _, %v, want _, nil", err)
+		}
+		// Re-assign to get the populated self-link.
+		testSecurityPolicy := policies[0]
+
+		testBackendConfigAnnotation := map[string]string{
+			annotations.BetaBackendConfigKey: `{"default":"backendconfig-1"}`,
+		}
+		testSvc, err := e2e.CreateEchoService(s, "service-1", testBackendConfigAnnotation)
+		if err != nil {
+			t.Fatalf("e2e.CreateEchoService(s, service-1, %q) = _, %v, want _, nil", testBackendConfigAnnotation, err)
+		}
+
+		testBackendConfig := fuzz.NewBackendConfigBuilder(s.Namespace, "backendconfig-1").SetSecurityPolicy(testSecurityPolicy.Name).Build()
+		bcCRUD := adapter.BackendConfigCRUD{C: Framework.BackendConfigClient}
+		testBackendConfig, err = bcCRUD.Create(testBackendConfig)
+		if err != nil {
+			t.Fatalf("Error creating test backend config: %v", err)
+		}
+		t.Logf("Backend config %s/%s created", s.Namespace, testBackendConfig.Name)
+
+		port80 := v1.ServiceBackendPort{Number: 80}
+		testIng := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
+			DefaultBackend("service-1", port80).
+			AddPath("test.com", "/", "service-1", port80).
+			Build()
+		crud := adapter.IngressCRUD{C: Framework.Clientset}
+		testIng, err = crud.Create(testIng)
+		if err != nil {
+			t.Fatalf("error creating Ingress spec: %v", err)
+		}
+		t.Logf("Ingress %s/%s created", s.Namespace, testIng.Name)
+
+		t.Logf("Checking on relevant backend service whether security policy is properly attached")
+
+		testIng, err = e2e.WaitForIngress(s, testIng, nil, nil)
+		if err != nil {
+			t.Fatalf("e2e.WaitForIngress(s, %q) = _, %v; want _, nil", testIng.Name, err)
+		}
+		if len(testIng.Status.LoadBalancer.Ingress) < 1 {
+			t.Fatalf("Ingress does not have an IP: %+v", testIng.Status)
+		}
+
+		vip := testIng.Status.LoadBalancer.Ingress[0].IP
+		params := &fuzz.GCLBForVIPParams{VIP: vip, Validators: fuzz.FeatureValidators([]fuzz.Feature{features.SecurityPolicy})}
+		gclb, err := fuzz.GCLBForVIP(ctx, Framework.Cloud, params)
+		if err != nil {
+			t.Fatalf("fuzz.GCLBForVIP(..., %q, %q) = _, %v; want _, nil", vip, features.SecurityPolicy, err)
+		}
+
+		if err := verifySecurityPolicy(t, gclb, s.Namespace, testSvc.Name, testSecurityPolicy.SelfLink); err != nil {
+			t.Errorf("verifySecurityPolicy(..., %q, %q, %q) = %v, want nil", s.Namespace, testSvc.Name, testSecurityPolicy.SelfLink, err)
+		}
+
+		// Remove the security policy in backend service.
+		testBackendConfig, err = bcCRUD.Get(s.Namespace, "backendconfig-1")
+		if err != nil {
+			t.Fatalf("Error getting test backend config: %v", err)
+		}
+		testBackendConfig.Spec.SecurityPolicy = nil
+		testBackendConfig, err = bcCRUD.Update(testBackendConfig)
+		if err != nil {
+			t.Fatalf("Error updating test backend config: %v", err)
+		}
+		t.Logf("Backend config %s/%s updated", s.Namespace, testBackendConfig.Name)
+
+		// Wait for backend config Reconciliation.
+		time.Sleep(transitionPollTimeout)
+
+		// Verify current backend status.
+		gclb, err = fuzz.GCLBForVIP(ctx, Framework.Cloud, params)
+		if err := verifySecurityPolicy(t, gclb, s.Namespace, testSvc.Name, testSecurityPolicy.SelfLink); err != nil {
+			t.Errorf("verifySecurityPolicy(..., %q, %q, %q) = %v, want nil", s.Namespace, testSvc.Name, testSecurityPolicy.SelfLink, err)
+		}
+
+		t.Logf("Cleaning up test")
+
+		if err := e2e.WaitForIngressDeletion(ctx, gclb, s, testIng, deleteOptions); err != nil {
+			t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", testIng.Name, err)
+		}
+	})
+}
+
+func TestDisableSecurityPolicy(t *testing.T) {
+	ctx := context.Background()
+	t.Parallel()
+
+	Framework.RunWithSandbox("Security Policy Disable", t, func(t *testing.T, s *e2e.Sandbox) {
+		policies := []*computebeta.SecurityPolicy{
+			buildPolicyAllowAll(fmt.Sprintf("enable-test-allow-all-%s", s.Namespace)),
+		}
+		defer func() {
+			if err := cleanupSecurityPolicies(ctx, t, Framework.Cloud, policies); err != nil {
+				t.Errorf("cleanupSecurityPolicies(...) =  %v, want nil", err)
+			}
+		}()
+		policies, err := createSecurityPolicies(ctx, t, Framework.Cloud, policies)
+		if err != nil {
+			t.Fatalf("createSecurityPolicies(...) = _, %v, want _, nil", err)
+		}
+		// Re-assign to get the populated self-link.
+		testSecurityPolicy := policies[0]
+
+		testBackendConfigAnnotation := map[string]string{
+			annotations.BetaBackendConfigKey: `{"default":"backendconfig-1"}`,
+		}
+		testSvc, err := e2e.CreateEchoService(s, "service-1", testBackendConfigAnnotation)
+		if err != nil {
+			t.Fatalf("e2e.CreateEchoService(s, service-1, %q) = _, %v, want _, nil", testBackendConfigAnnotation, err)
+		}
+
+		testBackendConfig := fuzz.NewBackendConfigBuilder(s.Namespace, "backendconfig-1").SetSecurityPolicy(testSecurityPolicy.Name).Build()
+		bcCRUD := adapter.BackendConfigCRUD{C: Framework.BackendConfigClient}
+		testBackendConfig, err = bcCRUD.Create(testBackendConfig)
+		if err != nil {
+			t.Fatalf("Error creating test backend config: %v", err)
+		}
+		t.Logf("Backend config %s/%s created", s.Namespace, testBackendConfig.Name)
+
+		port80 := v1.ServiceBackendPort{Number: 80}
+		testIng := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
+			DefaultBackend("service-1", port80).
+			AddPath("test.com", "/", "service-1", port80).
+			Build()
+		crud := adapter.IngressCRUD{C: Framework.Clientset}
+		testIng, err = crud.Create(testIng)
+		if err != nil {
+			t.Fatalf("error creating Ingress spec: %v", err)
+		}
+		t.Logf("Ingress %s/%s created", s.Namespace, testIng.Name)
+
+		t.Logf("Checking on relevant backend service whether security policy is properly attached")
+
+		testIng, err = e2e.WaitForIngress(s, testIng, nil, nil)
+		if err != nil {
+			t.Fatalf("e2e.WaitForIngress(s, %q) = _, %v; want _, nil", testIng.Name, err)
+		}
+		if len(testIng.Status.LoadBalancer.Ingress) < 1 {
+			t.Fatalf("Ingress does not have an IP: %+v", testIng.Status)
+		}
+
+		vip := testIng.Status.LoadBalancer.Ingress[0].IP
+		params := &fuzz.GCLBForVIPParams{VIP: vip, Validators: fuzz.FeatureValidators([]fuzz.Feature{features.SecurityPolicy})}
+		gclb, err := fuzz.GCLBForVIP(ctx, Framework.Cloud, params)
+		if err != nil {
+			t.Fatalf("fuzz.GCLBForVIP(..., %q, %q) = _, %v; want _, nil", vip, features.SecurityPolicy, err)
+		}
+
+		if err := verifySecurityPolicy(t, gclb, s.Namespace, testSvc.Name, testSecurityPolicy.SelfLink); err != nil {
+			t.Errorf("verifySecurityPolicy(..., %q, %q, %q) = %v, want nil", s.Namespace, testSvc.Name, testSecurityPolicy.SelfLink, err)
+		}
+
+		// Set security policy name to "".
+		testBackendConfig, err = bcCRUD.Get(s.Namespace, "backendconfig-1")
+		if err != nil {
+			t.Fatalf("Error getting test backend config: %v", err)
+		}
+		testBackendConfig.Spec.SecurityPolicy = &backendconfig.SecurityPolicyConfig{Name: ""}
+		testBackendConfig, err = bcCRUD.Update(testBackendConfig)
+		if err != nil {
+			t.Fatalf("Error updating test backend config: %v", err)
+		}
+		t.Logf("Backend config %s/%s updated", s.Namespace, testBackendConfig.Name)
+
+		// Wait until the backends get updated.
+		if err := wait.Poll(policyUpdateInterval, policyUpdateTimeout, func() (bool, error) {
+			params := &fuzz.GCLBForVIPParams{VIP: vip, Validators: fuzz.FeatureValidators(features.All)}
+			gclb, err = fuzz.GCLBForVIP(ctx, Framework.Cloud, params)
+			if err != nil {
+				t.Fatalf("fuzz.GCLBForVIP(..., %q, %q) = _, %v; want _, nil", vip, features.SecurityPolicy, err)
+			}
+
+			if err := verifySecurityPolicy(t, gclb, s.Namespace, testSvc.Name, ""); err != nil {
+				t.Logf("verifySecurityPolicy(..., %q, %q, %q) = %v, want nil", s.Namespace, testSvc.Name, "", err)
+				return false, nil
+			}
+			return true, nil
+		}); err != nil {
+			t.Errorf("Failed to wait for security policy updated: %v", err)
+		}
+
+		t.Logf("Cleaning up test")
+
+		if err := e2e.WaitForIngressDeletion(ctx, gclb, s, testIng, deleteOptions); err != nil {
+			t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", testIng.Name, err)
 		}
 	})
 }
