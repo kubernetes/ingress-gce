@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -50,6 +51,8 @@ const (
 // TODO Uncomment after https://github.com/kubernetes/kubernetes/pull/87667 is available in vendor.
 // eventMsgFirewallChange = "XPN Firewall change required by network admin"
 )
+
+var noInternalIPv6InSubnetError = regexp.MustCompile("subnet [a-z]([-a-z0-9]*[a-z0-9])? does not have internal IPv6 ranges, required for an internal IPv6 Service. You can specify an internal IPv6 subnet using the \"networking.gke.io/load-balancer-subnet\" annotation on the Service")
 
 func getFakeGCECloud(vals gce.TestClusterValues) *gce.Cloud {
 	fakeGCE := gce.NewFakeGCECloud(vals)
@@ -1136,6 +1139,63 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 	assertILBResourcesDeleted(t, l4)
 }
 
+func TestDualStackILBBadCustomSubnet(t *testing.T) {
+	t.Parallel()
+	nodeNames := []string{"test-node-1"}
+
+	testCases := []struct {
+		desc                 string
+		subnetStackType      string
+		subnetIpv6AccessType string
+	}{
+		{
+			desc:            "Should return error on ipv4 subnet",
+			subnetStackType: "IPV4",
+		},
+		{
+			desc:                 "Should return error on external ipv6 subnet",
+			subnetIpv6AccessType: subnetExternalIPv6AccessType,
+			subnetStackType:      "IPV4_IPV6",
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			ipFamilies := []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol}
+			svc := test.NewL4ILBDualStackService(8080, v1.ProtocolTCP, ipFamilies, v1.ServiceExternalTrafficPolicyTypeCluster)
+			l4 := mustSetupILBTestHandler(t, svc, nodeNames)
+
+			customBadSubnetName := "bad-subnet"
+			key := meta.RegionalKey(customBadSubnetName, l4.cloud.Region())
+			subnetToCreate := &compute.Subnetwork{
+				Ipv6AccessType: tc.subnetIpv6AccessType,
+				StackType:      tc.subnetStackType,
+			}
+			err := l4.cloud.Compute().(*cloud.MockGCE).Subnetworks().Insert(context.TODO(), key, subnetToCreate)
+			if err != nil {
+				t.Fatalf("failed to create subnet %v, error: %v", subnetToCreate, err)
+			}
+
+			svc.Annotations[annotations.CustomSubnetAnnotationKey] = customBadSubnetName
+
+			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			if result.Error == nil {
+				t.Fatalf("Expected error ensuring internal dualstack loadbalancer in bad subnet, got: %v", result.Error)
+			}
+			if !utils.IsUserError(result.Error) {
+				t.Errorf("Expected to get user error if external IPv6 subnet specified for internal IPv6 service, got %v", result.Error)
+			}
+			if !noInternalIPv6InSubnetError.MatchString(result.Error.Error()) {
+				t.Errorf("Expected error to match %v regexp, got %v", noInternalIPv6InSubnetError.String(), result.Error)
+			}
+		})
+	}
+}
+
 func TestEnsureInternalFirewallPortRanges(t *testing.T) {
 	vals := gce.DefaultTestClusterValues()
 	fakeGCE := getFakeGCECloud(vals)
@@ -1938,30 +1998,6 @@ func TestDualStackILBSyncIgnoresNoAnnotationIPv4Resources(t *testing.T) {
 	assertDualStackILBResourcesDeleted(t, l4)
 }
 
-func TestILBUserErrorOnExternalIPv6Subnet(t *testing.T) {
-	nodeNames := []string{"test-node-1"}
-	svc := test.NewL4ILBService(false, 8080)
-
-	l4 := mustSetupILBTestHandler(t, svc, nodeNames)
-
-	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
-	// change to internal IPv6 subnet and expect error
-	externalSubnetName := "external-subnet"
-	externalSubnetKey := meta.RegionalKey(externalSubnetName, l4.cloud.Region())
-	externalSubnetToCreate := &compute.Subnetwork{
-		Ipv6AccessType: "EXTERNAL",
-		StackType:      "IPV4_IPV6",
-	}
-	err := l4.cloud.Compute().(*cloud.MockGCE).Subnetworks().Insert(context.TODO(), externalSubnetKey, externalSubnetToCreate)
-	if err != nil {
-		t.Fatalf("Failed to create subnet, error: %v", err)
-	}
-	svc.Annotations[annotations.CustomSubnetAnnotationKey] = externalSubnetName
-	result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
-	if !utils.IsUserError(result.Error) {
-		t.Errorf("Expected to get user error if external IPv6 subnet specified for internal IPv6 service, got %v", result.Error)
-	}
-}
 func TestDualStackILBStaticIPAnnotation(t *testing.T) {
 	t.Parallel()
 	nodeNames := []string{"test-node-1"}

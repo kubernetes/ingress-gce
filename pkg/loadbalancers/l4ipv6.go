@@ -210,7 +210,7 @@ func (l4 *L4) serviceSubnetHasInternalIPv6Range() error {
 		klog.Infof("Subnet %s for IPv6 Service %s/%s does not have internal IPv6 ranges", subnetName, l4.Service.Namespace, l4.Service.Name)
 		return utils.NewUserError(
 			fmt.Errorf(
-				"subnet %s does not have internal IPv6 ranges, required for an internal IPv6 Service. You can specify an internal IPv6 subnet using the \"%s\" annotation on the Service", annotations.CustomSubnetAnnotationKey, subnetName))
+				"subnet %s does not have internal IPv6 ranges, required for an internal IPv6 Service. You can specify an internal IPv6 subnet using the \"%s\" annotation on the Service", subnetName, annotations.CustomSubnetAnnotationKey))
 	}
 	return nil
 }
