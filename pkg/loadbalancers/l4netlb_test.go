@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -48,6 +49,8 @@ const (
 	usersIP        = "35.10.211.60"
 	usersIPPremium = "35.10.211.70"
 )
+
+var noExternalIPv6InSubnetError = regexp.MustCompile("subnet [a-z]([-a-z0-9]*[a-z0-9])? does not have external IPv6 ranges, required for an external IPv6 Service. You can specify an external IPv6 subnet using the \"networking.gke.io/load-balancer-subnet\" annotation on the Service")
 
 func TestEnsureL4NetLoadBalancer(t *testing.T) {
 	t.Parallel()
@@ -566,6 +569,11 @@ func TestDualStackNetLBSyncIgnoresNoAnnotationIPv4Resources(t *testing.T) {
 	assertDualStackNetLBResourcesDeleted(t, l4NetLB)
 }
 
+// TestEnsureIPv6ExternalLoadBalancerCustomSubnet verifies custom subnet work with IPv6 NetLB:
+//  1. Creates Service on cluster default subnet.
+//  2. Creates custom "test-subnet" and specifies it in Service Annotation and verifies sync works properly.
+//  3. Creates another subnet, puts it in annotation and verifies sync switches to it.
+//  4. Removes custom subnet annotation and verifies syncing moves LB back to default subnet.
 func TestEnsureIPv6ExternalLoadBalancerCustomSubnet(t *testing.T) {
 	t.Parallel()
 	nodeNames := []string{"test-node-1"}
@@ -614,22 +622,6 @@ func TestEnsureIPv6ExternalLoadBalancerCustomSubnet(t *testing.T) {
 	svc.Annotations = result.Annotations
 	assertDualStackNetLBResourcesWithCustomIPv6Subnet(t, l4NetLB, nodeNames, "another-subnet")
 
-	// change to internal IPv6 subnet and expect error
-	internalSubnetKey := meta.RegionalKey("internal-subnet", l4NetLB.cloud.Region())
-	internalSubnetToCreate := &ga.Subnetwork{
-		Ipv6AccessType: "INTERNAL",
-		StackType:      "IPV4_IPV6",
-	}
-	err = l4NetLB.cloud.Compute().(*cloud.MockGCE).Subnetworks().Insert(context.TODO(), internalSubnetKey, internalSubnetToCreate)
-	if err != nil {
-		t.Fatalf("Failed to create subnet, error: %v", err)
-	}
-	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "internal-subnet"
-	result = l4NetLB.EnsureFrontend(nodeNames, svc)
-	if !utils.IsUserError(result.Error) {
-		t.Errorf("Expected to get user error if internal IPv6 subnet specified for external IPv6 service, got %v", result.Error)
-	}
-
 	// remove the annotation - NetLB should revert to default subnet.
 	delete(svc.Annotations, annotations.CustomSubnetAnnotationKey)
 	result = l4NetLB.EnsureFrontend(nodeNames, svc)
@@ -645,6 +637,63 @@ func TestEnsureIPv6ExternalLoadBalancerCustomSubnet(t *testing.T) {
 		t.Errorf("Unexpected error deleting loadbalancer - err %v", result.Error)
 	}
 	assertDualStackNetLBResourcesDeleted(t, l4NetLB)
+}
+
+func TestDualStackNetLBBadCustomSubnet(t *testing.T) {
+	t.Parallel()
+	nodeNames := []string{"test-node-1"}
+
+	testCases := []struct {
+		desc                 string
+		subnetStackType      string
+		subnetIpv6AccessType string
+	}{
+		{
+			desc:            "Should return error on ipv4 subnet",
+			subnetStackType: "IPV4",
+		},
+		{
+			desc:                 "Should return error on internal ipv6 subnet",
+			subnetIpv6AccessType: subnetInternalIPv6AccessType,
+			subnetStackType:      "IPV4_IPV6",
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			svc := test.NewL4NetLBRBSService(8080)
+			svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
+			l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
+
+			customBadSubnetName := "bad-subnet"
+			key := meta.RegionalKey(customBadSubnetName, l4NetLB.cloud.Region())
+			subnetToCreate := &ga.Subnetwork{
+				Ipv6AccessType: tc.subnetIpv6AccessType,
+				StackType:      tc.subnetStackType,
+			}
+			err := l4NetLB.cloud.Compute().(*cloud.MockGCE).Subnetworks().Insert(context.TODO(), key, subnetToCreate)
+			if err != nil {
+				t.Fatalf("failed to create subnet %v, error: %v", subnetToCreate, err)
+			}
+
+			svc.Annotations[annotations.CustomSubnetAnnotationKey] = customBadSubnetName
+
+			result := l4NetLB.EnsureFrontend(nodeNames, svc)
+			if result.Error == nil {
+				t.Fatalf("Expected error ensuring external dualstack loadbalancer in bad subnet, got: %v", result.Error)
+			}
+			if !utils.IsUserError(result.Error) {
+				t.Errorf("Expected to get user error if internal IPv6 subnet specified for external IPv6 service, got %v", result.Error)
+			}
+			if !noExternalIPv6InSubnetError.MatchString(result.Error.Error()) {
+				t.Errorf("Expected error to match %v regexp, got %v", noExternalIPv6InSubnetError.String(), result.Error)
+			}
+		})
+	}
 }
 
 func TestDualStackNetLBStaticIPAnnotation(t *testing.T) {

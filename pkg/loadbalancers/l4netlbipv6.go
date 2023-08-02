@@ -218,7 +218,7 @@ func (l4netlb *L4NetLB) serviceSubnetHasExternalIPv6Range() error {
 		klog.Infof("Subnet %s for IPv6 Service %s/%s does not have external IPv6 ranges", subnetName, l4netlb.Service.Namespace, l4netlb.Service.Name)
 		return utils.NewUserError(
 			fmt.Errorf(
-				"subnet %s does not have external IPv6 ranges, required for an external IPv6 Service. You can specify an external IPv6 subnet using the \"%s\" annotation on the Service", annotations.CustomSubnetAnnotationKey, subnetName))
+				"subnet %s does not have external IPv6 ranges, required for an external IPv6 Service. You can specify an external IPv6 subnet using the \"%s\" annotation on the Service", subnetName, annotations.CustomSubnetAnnotationKey))
 	}
 	return nil
 }
