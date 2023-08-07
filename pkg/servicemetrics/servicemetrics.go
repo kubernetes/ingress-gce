@@ -3,6 +3,7 @@ package servicemetrics
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"k8s.io/utils/net"
@@ -322,10 +323,11 @@ func getProtocol(ports []v1.ServicePort) string {
 }
 
 func getIPFamilies(families []v1.IPFamily) string {
-	if len(families) == 2 {
-		return fmt.Sprintf("%s-%s", string(families[0]), string(families[1]))
+	var ipFamiliesStrings []string
+	for _, ipFamily := range families {
+		ipFamiliesStrings = append(ipFamiliesStrings, string(ipFamily))
 	}
-	return string(families[0])
+	return strings.Join(ipFamiliesStrings, "-")
 }
 
 func getIPFamilyPolicy(policyType *v1.IPFamilyPolicyType) string {
