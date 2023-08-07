@@ -1,6 +1,8 @@
 package servicemetrics
 
 import (
+	"testing"
+
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/google/go-cmp/cmp"
 	apiv1 "k8s.io/api/core/v1"
@@ -9,7 +11,6 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/utils/common"
-	"testing"
 )
 
 func TestMetricsFromService(t *testing.T) {
@@ -462,6 +463,11 @@ func TestGetIPFamilies(t *testing.T) {
 			desc:     "IPv4-IPv6",
 			families: []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
 			want:     "IPv4-IPv6",
+		},
+		{
+			desc:     "empty array",
+			families: []v1.IPFamily{},
+			want:     "",
 		},
 	}
 	for _, tc := range cases {
