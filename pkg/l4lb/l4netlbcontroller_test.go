@@ -50,6 +50,7 @@ import (
 	ingctx "k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/healthchecksl4"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
+	"k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -1664,6 +1665,31 @@ func TestCreateDeleteDualStackNetLBService(t *testing.T) {
 			}
 			deleteNetLBService(controller, svc)
 		})
+	}
+}
+func TestProcessDualStackNetLBServiceOnUserError(t *testing.T) {
+	t.Parallel()
+	controller := newL4NetLBServiceController()
+	controller.enableDualStack = true
+	svc := test.NewL4NetLBRBSService(8080)
+	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
+	addNetLBService(controller, svc)
+
+	// Create cluster subnet with INTERNAL ipv6 access type to trigger user error.
+	test.MustCreateDualStackClusterSubnet(t, controller.ctx.Cloud, "INTERNAL")
+
+	syncResult := controller.syncInternal(svc)
+	if syncResult.Error == nil {
+		t.Fatalf("Failed to generate error when syncing service %s", svc.Name)
+	}
+	if !syncResult.MetricsState.IsUserError {
+		t.Errorf("syncResult.MetricsState.IsUserError should be true, got false")
+	}
+	if syncResult.MetricsState.InSuccess {
+		t.Errorf("syncResult.MetricsState.InSuccess should be false, got true")
+	}
+	if syncResult.DualStackMetricsState.Status != metrics.StatusUserError {
+		t.Errorf("syncResult.DualStackMetricsState.Status should be %s, got %s", metrics.StatusUserError, syncResult.DualStackMetricsState.Status)
 	}
 }
 
