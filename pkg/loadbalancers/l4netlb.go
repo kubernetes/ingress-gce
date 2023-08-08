@@ -75,33 +75,34 @@ type L4NetLB struct {
 // L4NetLBSyncResult contains information about the outcome of an L4 NetLB sync. It stores the list of resource name annotations,
 // sync error, the GCE resource that hit the error along with the error type, metrics and more fields.
 type L4NetLBSyncResult struct {
-	Annotations           map[string]string
-	Error                 error
-	GCEResourceInError    string
-	Status                *corev1.LoadBalancerStatus
-	MetricsState          metrics.L4NetLBServiceState
-	DualStackMetricsState metrics.L4DualStackServiceState
-	SyncType              string
-	StartTime             time.Time
+	Annotations        map[string]string
+	Error              error
+	GCEResourceInError string
+	Status             *corev1.LoadBalancerStatus
+	MetricsLegacyState metrics.L4NetLBServiceLegacyState
+	MetricsState       metrics.L4ServiceState
+	SyncType           string
+	StartTime          time.Time
 }
 
-func NewL4SyncResult(syncType string, svc *corev1.Service) *L4NetLBSyncResult {
+func NewL4SyncResult(syncType string, svc *corev1.Service, isMultinet bool) *L4NetLBSyncResult {
 	startTime := time.Now()
 	result := &L4NetLBSyncResult{
-		Annotations:           make(map[string]string),
-		StartTime:             startTime,
-		SyncType:              syncType,
-		MetricsState:          metrics.InitL4NetLBServiceState(&startTime),
-		DualStackMetricsState: metrics.InitServiceDualStackMetricsState(svc, &startTime),
+		Annotations:        make(map[string]string),
+		StartTime:          startTime,
+		SyncType:           syncType,
+		MetricsLegacyState: metrics.InitL4NetLBServiceLegacyState(&startTime),
+		MetricsState:       metrics.InitServiceMetricsState(svc, &startTime, isMultinet),
 	}
 	return result
 }
 
 // SetMetricsForSuccessfulServiceSync should be call after successful sync.
 func (r *L4NetLBSyncResult) SetMetricsForSuccessfulServiceSync() {
+	r.MetricsLegacyState.FirstSyncErrorTime = nil
+	r.MetricsLegacyState.InSuccess = true
 	r.MetricsState.FirstSyncErrorTime = nil
-	r.MetricsState.InSuccess = true
-	r.DualStackMetricsState.Status = metrics.StatusSuccess
+	r.MetricsState.Status = metrics.StatusSuccess
 }
 
 type L4NetLBParams struct {
@@ -183,7 +184,8 @@ func (l4netlb *L4NetLB) checkStrongSessionAffinityRequirements() *utils.UserErro
 // It returns a LoadBalancerStatus with the updated ForwardingRule IP address.
 // This function does not link instances to Backend Service.
 func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) *L4NetLBSyncResult {
-	result := NewL4SyncResult(SyncTypeCreate, svc)
+	isMultinetService := l4netlb.networkResolver.IsMultinetService(svc)
+	result := NewL4SyncResult(SyncTypeCreate, svc, isMultinetService)
 	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
 	if len(svc.Status.LoadBalancer.Ingress) > 0 {
 		result.SyncType = SyncTypeUpdate
@@ -197,10 +199,10 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 		klog.Errorf("Failed to get network for service %s/%s, err: %v", svc.Namespace, svc.Name, err)
 		result.Error = err
 		isUserError := utils.IsUserError(err)
-		result.MetricsState.IsUserError = isUserError
-		result.DualStackMetricsState.Status = metrics.StatusError
+		result.MetricsLegacyState.IsUserError = isUserError
+		result.MetricsState.Status = metrics.StatusError
 		if isUserError {
-			result.DualStackMetricsState.Status = metrics.StatusUserError
+			result.MetricsState.Status = metrics.StatusUserError
 		}
 		return result
 	}
@@ -209,7 +211,7 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 	if l4netlb.enableStrongSessionAffinity {
 		if err := l4netlb.checkStrongSessionAffinityRequirements(); err != nil {
 			result.Error = err
-			result.MetricsState.IsUserError = utils.IsUserError(err)
+			result.MetricsLegacyState.IsUserError = utils.IsUserError(err)
 			return result
 		}
 	}
@@ -310,7 +312,7 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 			syncResult.GCEResourceInError = annotations.BackendServiceResource
 			l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeWarning, strongSessionAffinityFeatureName, strongSessionAffinityConditionedSupportMsg)
 			syncResult.Error = utils.NewUserError(err)
-			syncResult.MetricsState.IsUserError = true
+			syncResult.MetricsLegacyState.IsUserError = true
 		} else { // another problem with BackendServiceResource
 			syncResult.GCEResourceInError = annotations.BackendServiceResource
 			syncResult.Error = fmt.Errorf("failed to ensure backend service %s - %w", bsName, err)
@@ -343,7 +345,7 @@ func (l4netlb *L4NetLB) ensureIPv4Resources(result *L4NetLBSyncResult, nodeNames
 		// User can misconfigure the forwarding rule if Network Tier will not match service level Network Tier.
 		result.GCEResourceInError = annotations.ForwardingRuleResource
 		result.Error = fmt.Errorf("failed to ensure forwarding rule - %w", err)
-		result.MetricsState.IsUserError = utils.IsUserError(err)
+		result.MetricsLegacyState.IsUserError = utils.IsUserError(err)
 		return
 	}
 	if fr.IPProtocol == string(corev1.ProtocolTCP) {
@@ -351,8 +353,8 @@ func (l4netlb *L4NetLB) ensureIPv4Resources(result *L4NetLBSyncResult, nodeNames
 	} else {
 		result.Annotations[annotations.UDPForwardingRuleKey] = fr.Name
 	}
-	result.MetricsState.IsManagedIP = ipAddrType == IPAddrManaged
-	result.MetricsState.IsPremiumTier = fr.NetworkTier == cloud.NetworkTierPremium.ToGCEValue()
+	result.MetricsLegacyState.IsManagedIP = ipAddrType == IPAddrManaged
+	result.MetricsLegacyState.IsPremiumTier = fr.NetworkTier == cloud.NetworkTierPremium.ToGCEValue()
 
 	l4netlb.ensureIPv4NodesFirewall(nodeNames, fr.IPAddress, result)
 	if result.Error != nil {
@@ -405,7 +407,8 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 // EnsureLoadBalancerDeleted performs a cleanup of all GCE resources for the given loadbalancer service.
 // It is health check, firewall rules and backend service
 func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *L4NetLBSyncResult {
-	result := NewL4SyncResult(SyncTypeDelete, svc)
+	isMultinetService := l4netlb.networkResolver.IsMultinetService(svc)
+	result := NewL4SyncResult(SyncTypeDelete, svc, isMultinetService)
 	l4netlb.Service = svc
 
 	l4netlb.deleteIPv4ResourcesOnDelete(result)

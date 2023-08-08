@@ -255,9 +255,9 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service) *load
 		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
 			"Error syncing load balancer: %v", syncResult.Error)
 		if utils.IsUserError(syncResult.Error) {
-			syncResult.MetricsState.IsUserError = true
+			syncResult.MetricsLegacyState.IsUserError = true
 			if l4c.enableDualStack {
-				syncResult.DualStackMetricsState.Status = metrics.StatusUserError
+				syncResult.MetricsState.Status = metrics.StatusUserError
 			}
 		}
 		return syncResult
@@ -325,6 +325,7 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) *lo
 		Namer:            l4c.namer,
 		Recorder:         l4c.ctx.Recorder(svc.Namespace),
 		DualStackEnabled: l4c.enableDualStack,
+		NetworkResolver:  l4c.networkResolver,
 	}
 	l4 := loadbalancers.NewL4Handler(l4ilbParams)
 	l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer", "Deleting load balancer for %s", key)
@@ -520,28 +521,25 @@ func (l4c *L4Controller) publishMetrics(result *loadbalancers.L4ILBSyncResult, n
 	}
 	switch result.SyncType {
 	case loadbalancers.SyncTypeCreate, loadbalancers.SyncTypeUpdate:
-		klog.V(2).Infof("Internal L4 Loadbalancer for Service %s ensured, updating its state %v in metrics cache", namespacedName, result.MetricsState)
+		klog.V(2).Infof("Internal L4 Loadbalancer for Service %s ensured, updating its state %v in metrics cache", namespacedName, result.MetricsLegacyState)
+		l4c.ctx.ControllerMetrics.SetL4ILBServiceForLegacyMetric(namespacedName, result.MetricsLegacyState)
 		l4c.ctx.ControllerMetrics.SetL4ILBService(namespacedName, result.MetricsState)
 		l4metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime)
 		if l4c.enableDualStack {
-			klog.V(2).Infof("Internal L4 DualStack Loadbalancer for Service %s ensured, updating its state %v in metrics cache", namespacedName, result.DualStackMetricsState)
-			l4c.ctx.ControllerMetrics.SetL4ILBDualStackService(namespacedName, result.DualStackMetricsState)
-			l4metrics.PublishL4ILBDualStackSyncLatency(result.Error == nil, result.SyncType, result.DualStackMetricsState.IPFamilies, result.StartTime)
+			klog.V(2).Infof("Internal L4 DualStack Loadbalancer for Service %s ensured, updating its state %v in metrics cache", namespacedName, result.MetricsState)
+			l4metrics.PublishL4ILBDualStackSyncLatency(result.Error == nil, result.SyncType, result.MetricsState.IPFamilies, result.StartTime)
 		}
 
 	case loadbalancers.SyncTypeDelete:
 		// if service is successfully deleted, remove it from cache
 		if result.Error == nil {
 			klog.V(2).Infof("Internal L4 Loadbalancer for Service %s deleted, removing its state from metrics cache", namespacedName)
+			l4c.ctx.ControllerMetrics.DeleteL4ILBServiceForLegacyMetric(namespacedName)
 			l4c.ctx.ControllerMetrics.DeleteL4ILBService(namespacedName)
-			if l4c.enableDualStack {
-				klog.V(2).Infof("Internal L4 DualStack LoadBalancer for Service %s deleted, removing its state from metrics cache", namespacedName)
-				l4c.ctx.ControllerMetrics.DeleteL4ILBDualStackService(namespacedName)
-			}
 		}
 		l4metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime)
 		if l4c.enableDualStack {
-			l4metrics.PublishL4ILBDualStackSyncLatency(result.Error == nil, result.SyncType, result.DualStackMetricsState.IPFamilies, result.StartTime)
+			l4metrics.PublishL4ILBDualStackSyncLatency(result.Error == nil, result.SyncType, result.MetricsState.IPFamilies, result.StartTime)
 		}
 	default:
 		klog.Warningf("Unknown sync type %q, skipping metrics", result.SyncType)

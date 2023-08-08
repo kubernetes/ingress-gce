@@ -503,10 +503,8 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
 			"Error ensuring Resource for L4 External LoadBalancer, err: %v", syncResult.Error)
 		if utils.IsUserError(syncResult.Error) {
-			syncResult.MetricsState.IsUserError = true
-			if lc.enableDualStack {
-				syncResult.DualStackMetricsState.Status = metrics.StatusUserError
-			}
+			syncResult.MetricsLegacyState.IsUserError = true
+			syncResult.MetricsState.Status = metrics.StatusUserError
 		}
 		return syncResult
 	}
@@ -634,7 +632,7 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service)
 		Namer:            lc.namer,
 		Recorder:         lc.ctx.Recorder(svc.Namespace),
 		DualStackEnabled: lc.enableDualStack,
-		NetworkResolver:  network.NewFakeResolver(network.DefaultNetwork(lc.ctx.Cloud)),
+		NetworkResolver:  lc.networkResolver,
 	}
 	l4netLB := loadbalancers.NewL4NetLB(l4NetLBParams)
 	lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer",
@@ -697,22 +695,16 @@ func (lc *L4NetLBController) publishMetrics(result *loadbalancers.L4NetLBSyncRes
 	namespacedName := types.NamespacedName{Name: name, Namespace: namespace}.String()
 	switch result.SyncType {
 	case loadbalancers.SyncTypeCreate, loadbalancers.SyncTypeUpdate:
-		klog.V(2).Infof("External L4 Loadbalancer for Service %s ensured, updating its state %v in metrics cache", namespacedName, result.MetricsState)
+		klog.V(2).Infof("External L4 Loadbalancer for Service %s ensured, updating its state (%v, legacy=%v) in metrics cache", namespacedName, result.MetricsState, result.MetricsLegacyState)
+		lc.ctx.ControllerMetrics.SetL4NetLBServiceForLegacyMetric(namespacedName, result.MetricsLegacyState)
 		lc.ctx.ControllerMetrics.SetL4NetLBService(namespacedName, result.MetricsState)
-		if lc.enableDualStack {
-			klog.V(2).Infof("External L4 DualStack Loadbalancer for Service %s ensured, updating its state %v in metrics cache", namespacedName, result.DualStackMetricsState)
-			lc.ctx.ControllerMetrics.SetL4NetLBDualStackService(namespacedName, result.DualStackMetricsState)
-		}
 		lc.publishSyncMetrics(result)
 	case loadbalancers.SyncTypeDelete:
 		// if service is successfully deleted, remove it from cache
 		if result.Error == nil {
 			klog.V(2).Infof("External L4 Loadbalancer for Service %s deleted, removing its state from metrics cache", namespacedName)
+			lc.ctx.ControllerMetrics.DeleteL4NetLBServiceForLegacyMetric(namespacedName)
 			lc.ctx.ControllerMetrics.DeleteL4NetLBService(namespacedName)
-			if lc.enableDualStack {
-				klog.V(2).Infof("External L4 Loadbalancer for Service %s deleted, removing its state from metrics cache", namespacedName)
-				lc.ctx.ControllerMetrics.DeleteL4NetLBDualStackService(namespacedName)
-			}
 		}
 		lc.publishSyncMetrics(result)
 	default:
@@ -722,7 +714,7 @@ func (lc *L4NetLBController) publishMetrics(result *loadbalancers.L4NetLBSyncRes
 
 func (lc *L4NetLBController) publishSyncMetrics(result *loadbalancers.L4NetLBSyncResult) {
 	if lc.enableDualStack {
-		l4metrics.PublishL4NetLBDualStackSyncLatency(result.Error == nil, result.SyncType, result.DualStackMetricsState.IPFamilies, result.StartTime)
+		l4metrics.PublishL4NetLBDualStackSyncLatency(result.Error == nil, result.SyncType, result.MetricsState.IPFamilies, result.StartTime)
 	}
 	if result.Error == nil {
 		l4metrics.PublishL4NetLBSyncSuccess(result.SyncType, result.StartTime)

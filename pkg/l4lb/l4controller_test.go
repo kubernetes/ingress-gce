@@ -524,11 +524,11 @@ func TestProcessServiceOnUserError(t *testing.T) {
 	if syncResult.Error == nil {
 		t.Fatalf("Failed to generate error when syncing service %s", newSvc.Name)
 	}
-	if !syncResult.MetricsState.IsUserError {
-		t.Errorf("syncResult.MetricsState.IsUserError should be true, got false")
+	if !syncResult.MetricsLegacyState.IsUserError {
+		t.Errorf("syncResult.MetricsLegacyState.IsUserError should be true, got false")
 	}
-	if syncResult.MetricsState.InSuccess {
-		t.Errorf("syncResult.MetricsState.InSuccess should be false, got true")
+	if syncResult.MetricsLegacyState.InSuccess {
+		t.Errorf("syncResult.MetricsLegacyState.InSuccess should be false, got true")
 	}
 }
 
@@ -632,14 +632,14 @@ func TestProcessDualStackServiceOnUserError(t *testing.T) {
 	if syncResult.Error == nil {
 		t.Fatalf("Failed to generate error when syncing service %s", newSvc.Name)
 	}
-	if !syncResult.MetricsState.IsUserError {
-		t.Errorf("syncResult.MetricsState.IsUserError should be true, got false")
+	if !syncResult.MetricsLegacyState.IsUserError {
+		t.Errorf("syncResult.MetricsLegacyState.IsUserError should be true, got false")
 	}
-	if syncResult.MetricsState.InSuccess {
-		t.Errorf("syncResult.MetricsState.InSuccess should be false, got true")
+	if syncResult.MetricsLegacyState.InSuccess {
+		t.Errorf("syncResult.MetricsLegacyState.InSuccess should be false, got true")
 	}
-	if syncResult.DualStackMetricsState.Status != metrics.StatusUserError {
-		t.Errorf("syncResult.DualStackMetricsState.Status should be %s, got %s", metrics.StatusUserError, syncResult.DualStackMetricsState.Status)
+	if syncResult.MetricsState.Status != metrics.StatusUserError {
+		t.Errorf("syncResult.MetricsLegacyState.Status should be %s, got %s", metrics.StatusUserError, syncResult.MetricsState.Status)
 	}
 }
 
@@ -655,16 +655,16 @@ func TestDualStackILBStatusForErrorSync(t *testing.T) {
 	if syncResult.Error == nil {
 		t.Fatalf("Failed to generate error when syncing service %s", newSvc.Name)
 	}
-	if syncResult.MetricsState.IsUserError {
-		t.Errorf("syncResult.MetricsState.IsUserError should be false, got true")
+	if syncResult.MetricsLegacyState.IsUserError {
+		t.Errorf("syncResult.MetricsLegacyState.IsUserError should be false, got true")
 	}
-	if syncResult.MetricsState.InSuccess {
-		t.Errorf("syncResult.MetricsState.InSuccess should be false, got true")
+	if syncResult.MetricsLegacyState.InSuccess {
+		t.Errorf("syncResult.MetricsLegacyState.InSuccess should be false, got true")
 	}
-	if syncResult.DualStackMetricsState.Status != metrics.StatusError {
-		t.Errorf("syncResult.DualStackMetricsState.Status should be %s, got %s", metrics.StatusError, syncResult.DualStackMetricsState.Status)
+	if syncResult.MetricsState.Status != metrics.StatusError {
+		t.Errorf("syncResult.MetricsLegacyState.Status should be %s, got %s", metrics.StatusError, syncResult.MetricsState.Status)
 	}
-	if syncResult.DualStackMetricsState.FirstSyncErrorTime == nil {
+	if syncResult.MetricsState.FirstSyncErrorTime == nil {
 		t.Fatalf("Metric status FirstSyncErrorTime for service %s/%s mismatch, expected: not nil, received: nil", newSvc.Namespace, newSvc.Name)
 	}
 }
