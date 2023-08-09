@@ -489,30 +489,12 @@ func TestProcessServiceCreate(t *testing.T) {
 func TestProcessMultinetServiceCreate(t *testing.T) {
 	lc := newL4NetLBServiceController()
 
-	net := &networkv1.Network{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "secondary-network",
-		},
-		Spec: networkv1.NetworkSpec{
-			Type: "L3",
-			ParametersRef: &networkv1.NetworkParametersReference{
-				Group: networkv1.GroupName,
-				Kind:  "GKENetworkParamSet",
-				Name:  "secondary-network-params",
-			},
-		},
-	}
-	lc.networkLister.Add(net)
-	gkeParamSet := &networkv1.GKENetworkParamSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "secondary-network-params",
-		},
-		Spec: networkv1.GKENetworkParamSetSpec{
-			VPC:       "vpc",
-			VPCSubnet: "subnet",
-		},
-	}
-	lc.gkeNetworkParamSetLister.Add(gkeParamSet)
+	lc.networkResolver = network.NewFakeResolver(&network.NetworkInfo{
+		IsDefault:     false,
+		K8sNetwork:    "secondary-network",
+		NetworkURL:    "vpcURL",
+		SubnetworkURL: "subnetURL",
+	})
 
 	svc := test.NewL4NetLBRBSService(8080)
 	// create the NEG that would be created by the NEG controller.
@@ -1713,8 +1695,7 @@ func TestEnsureBackendLinkingWithNEGs(t *testing.T) {
 	controller.negLinker = linker
 	svc := test.NewL4NetLBRBSService(8080)
 
-	networkInfo := &network.NetworkInfo{IsDefault: false}
-	err := controller.ensureBackendLinking(svc, networkInfo)
+	err := controller.ensureBackendLinking(svc, negLink)
 	if err != nil {
 		t.Fatalf("ensureBackendLinking() failed, err=%v", err)
 	}
@@ -1747,8 +1728,7 @@ func TestEnsureBackendLinkingWithInstanceGroups(t *testing.T) {
 		t.Fatalf("CreateRegionBackendService() failed, err=%v", err)
 	}
 
-	networkInfo := &network.NetworkInfo{IsDefault: true}
-	err = controller.ensureBackendLinking(svc, networkInfo)
+	err = controller.ensureBackendLinking(svc, instanceGroupLink)
 	if err != nil {
 		t.Fatalf("ensureBackendLinking() failed, err=%v", err)
 	}

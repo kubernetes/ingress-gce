@@ -173,8 +173,8 @@ func TestServiceNetwork(t *testing.T) {
 			if tc.gkeNetworkParamSet != nil {
 				gkeNetworkParamSetIndexer.Add(tc.gkeNetworkParamSet)
 			}
-
-			network, err := ServiceNetwork(tc.service, networkIndexer, gkeNetworkParamSetIndexer, fakeCloud{}, klog.Background())
+			networksResolver := NewNetworksResolver(networkIndexer, gkeNetworkParamSetIndexer, fakeCloud{}, true, klog.Background())
+			network, err := networksResolver.ServiceNetwork(tc.service)
 			if err != nil {
 				if tc.wantErr == "" {
 					t.Fatalf("determining network info returned an error, err=%v", err)

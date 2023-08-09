@@ -49,16 +49,20 @@ import (
 const (
 	l4NetLBControllerName          = "l4netlb-controller"
 	l4NetLBDualStackControllerName = "l4netlb-dualstack-controller"
+
+	instanceGroupLink backendLinkType = 0
+	negLink           backendLinkType = 1
 )
 
+type backendLinkType int64
+
 type L4NetLBController struct {
-	ctx                      *context.ControllerContext
-	svcQueue                 utils.TaskQueue
-	serviceLister            cache.Indexer
-	nodeLister               listers.NodeLister
-	networkLister            cache.Indexer
-	gkeNetworkParamSetLister cache.Indexer
-	stopCh                   chan struct{}
+	ctx             *context.ControllerContext
+	svcQueue        utils.TaskQueue
+	serviceLister   cache.Indexer
+	nodeLister      listers.NodeLister
+	networkResolver network.Resolver
+	stopCh          chan struct{}
 
 	translator *translator.Translator
 	namer      namer.L4ResourcesNamer
@@ -100,12 +104,15 @@ func NewL4NetLBController(
 		enableDualStack:               ctx.EnableL4NetLBDualStack,
 		enableL4StrongSessionAffinity: ctx.EnableL4StrongSessionAffinity,
 	}
+	var networkLister cache.Indexer
 	if ctx.NetworkInformer != nil {
-		l4netLBc.networkLister = ctx.NetworkInformer.GetIndexer()
+		networkLister = ctx.NetworkInformer.GetIndexer()
 	}
+	var gkeNetworkParamSetLister cache.Indexer
 	if ctx.GKENetworkParamsInformer != nil {
-		l4netLBc.gkeNetworkParamSetLister = ctx.GKENetworkParamsInformer.GetIndexer()
+		gkeNetworkParamSetLister = ctx.GKENetworkParamsInformer.GetIndexer()
 	}
+	l4netLBc.networkResolver = network.NewNetworksResolver(networkLister, gkeNetworkParamSetLister, ctx.Cloud, ctx.EnableMultinetworking, klog.TODO())
 	l4netLBc.negLinker = backends.NewNEGLinker(l4netLBc.backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer())
 	l4netLBc.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("l4netLB", "services", ctx.NumL4NetLBWorkers, l4netLBc.sync)
 
@@ -454,11 +461,6 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 		return nil
 	}
 
-	networkInfo, err := network.ServiceNetwork(service, lc.networkLister, lc.gkeNetworkParamSetLister, lc.ctx.Cloud, klog.TODO())
-	if err != nil {
-		klog.Errorf("Failed to get network for service %s/%s, err: %v", service.Namespace, service.Name, err)
-		return &loadbalancers.L4NetLBSyncResult{Error: err}
-	}
 	startTime := time.Now()
 	klog.Infof("Syncing L4 NetLB RBS service %s/%s", service.Namespace, service.Name)
 	defer func() {
@@ -472,7 +474,7 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 		Recorder:                     lc.ctx.Recorder(service.Namespace),
 		DualStackEnabled:             lc.enableDualStack,
 		StrongSessionAffinityEnabled: lc.enableL4StrongSessionAffinity,
-		NetworkInfo:                  *networkInfo,
+		NetworkResolver:              lc.networkResolver,
 	}
 	l4netlb := loadbalancers.NewL4NetLB(l4NetLBParams)
 
@@ -485,7 +487,8 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 		return &loadbalancers.L4NetLBSyncResult{Error: err}
 	}
 
-	if networkInfo.IsDefault {
+	isMultinet := lc.networkResolver.IsMultinetService(service)
+	if !isMultinet {
 		if err := lc.ensureInstanceGroups(service, nodeNames); err != nil {
 			lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncInstanceGroupsFailed",
 				"Error syncing instance group, err: %v", err)
@@ -508,7 +511,12 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 		return syncResult
 	}
 
-	if err = lc.ensureBackendLinking(service, networkInfo); err != nil {
+	linkType := instanceGroupLink
+	if isMultinet {
+		linkType = negLink
+	}
+
+	if err = lc.ensureBackendLinking(service, linkType); err != nil {
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
 			"Error linking instance groups to backend service, err: %v", err)
 		syncResult.Error = err
@@ -555,7 +563,7 @@ func (lc *L4NetLBController) emitEnsuredDualStackEvent(service *v1.Service) {
 		"Successfully ensured %v External LoadBalancer resources", strings.Join(ipFamilies, " "))
 }
 
-func (lc *L4NetLBController) ensureBackendLinking(service *v1.Service, networkInfo *network.NetworkInfo) error {
+func (lc *L4NetLBController) ensureBackendLinking(service *v1.Service, linkType backendLinkType) error {
 	start := time.Now()
 
 	klog.V(2).Infof("Linking backends to backend service for k8s service %s/%s", service.Namespace, service.Name)
@@ -576,18 +584,19 @@ func (lc *L4NetLBController) ensureBackendLinking(service *v1.Service, networkIn
 		L4RBSEnabled: true,
 	}
 	// NEG backends should only be used for multinetwork services on the non default network.
-	linkWithNEGs := !networkInfo.IsDefault
-	if linkWithNEGs {
-		klog.V(2).Infof("Linking backend service with NEGs for service %s/%s in network %s", service.Namespace, service.Name, networkInfo.K8sNetwork)
+	if linkType == negLink {
+		klog.V(2).Infof("Linking backend service with NEGs for service %s/%s", service.Namespace, service.Name)
 		servicePort.VMIPNEGEnabled = true
 		var groupKeys []backends.GroupKey
 		for _, zone := range zones {
 			groupKeys = append(groupKeys, backends.GroupKey{Zone: zone})
 		}
 		return lc.negLinker.Link(servicePort, groupKeys)
-	} else {
+	} else if linkType == instanceGroupLink {
 		klog.V(2).Infof("Linking backend service with Instance Groups for service %s/%s (uses default network)", service.Namespace, service.Name)
 		return lc.igLinker.Link(servicePort, lc.ctx.Cloud.ProjectID(), zones)
+	} else {
+		return fmt.Errorf("cannot link backend service - invalid backend link type %d", linkType)
 	}
 }
 
@@ -625,7 +634,7 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service)
 		Namer:            lc.namer,
 		Recorder:         lc.ctx.Recorder(svc.Namespace),
 		DualStackEnabled: lc.enableDualStack,
-		NetworkInfo:      *network.DefaultNetwork(lc.ctx.Cloud),
+		NetworkResolver:  network.NewFakeResolver(network.DefaultNetwork(lc.ctx.Cloud)),
 	}
 	l4netLB := loadbalancers.NewL4NetLB(l4NetLBParams)
 	lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer",

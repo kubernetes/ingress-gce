@@ -65,6 +65,7 @@ type L4NetLB struct {
 	// represents if `enable strong session affinity` flag was set
 	enableStrongSessionAffinity bool
 	networkInfo                 network.NetworkInfo
+	networkResolver             network.Resolver
 }
 
 // L4NetLBSyncResult contains information about the outcome of an L4 NetLB sync. It stores the list of resource name annotations,
@@ -106,7 +107,7 @@ type L4NetLBParams struct {
 	Recorder                     record.EventRecorder
 	DualStackEnabled             bool
 	StrongSessionAffinityEnabled bool
-	NetworkInfo                  network.NetworkInfo
+	NetworkResolver              network.Resolver
 }
 
 // NewL4NetLB creates a new Handler for the given L4NetLB service.
@@ -119,11 +120,11 @@ func NewL4NetLB(params *L4NetLBParams) *L4NetLB {
 		Service:                     params.Service,
 		NamespacedName:              types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace},
 		backendPool:                 backends.NewPool(params.Cloud, params.Namer),
-		healthChecks:                healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder, params.NetworkInfo),
+		healthChecks:                healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder),
 		forwardingRules:             forwardingrules.New(params.Cloud, meta.VersionGA, meta.Regional),
 		enableDualStack:             params.DualStackEnabled,
 		enableStrongSessionAffinity: params.StrongSessionAffinityEnabled,
-		networkInfo:                 params.NetworkInfo,
+		networkResolver:             params.NetworkResolver,
 	}
 	return l4netlb
 }
@@ -187,6 +188,19 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 
 	l4netlb.Service = svc
 
+	networkInfo, err := l4netlb.networkResolver.ServiceNetwork(svc)
+	if err != nil {
+		klog.Errorf("Failed to get network for service %s/%s, err: %v", svc.Namespace, svc.Name, err)
+		result.Error = err
+		isUserError := utils.IsUserError(err)
+		result.MetricsState.IsUserError = isUserError
+		result.DualStackMetricsState.Status = metrics.StatusError
+		if isUserError {
+			result.DualStackMetricsState.Status = metrics.StatusUserError
+		}
+		return result
+	}
+	l4netlb.networkInfo = *networkInfo
 	// if service requires strong session affinity, check requirements
 	if l4netlb.enableStrongSessionAffinity {
 		if err := l4netlb.checkStrongSessionAffinityRequirements(); err != nil {
@@ -233,7 +247,7 @@ func (l4netlb *L4NetLB) provideHealthChecks(nodeNames []string, result *L4NetLBS
 
 func (l4netlb *L4NetLB) provideDualStackHealthChecks(nodeNames []string, result *L4NetLBSyncResult) string {
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(l4netlb.Service)
-	hcResult := l4netlb.healthChecks.EnsureHealthCheckWithDualStackFirewalls(l4netlb.Service, l4netlb.namer, sharedHC, l4netlb.scope, utils.XLB, nodeNames, utils.NeedsIPv4(l4netlb.Service), utils.NeedsIPv6(l4netlb.Service))
+	hcResult := l4netlb.healthChecks.EnsureHealthCheckWithDualStackFirewalls(l4netlb.Service, l4netlb.namer, sharedHC, l4netlb.scope, utils.XLB, nodeNames, utils.NeedsIPv4(l4netlb.Service), utils.NeedsIPv6(l4netlb.Service), l4netlb.networkInfo)
 	if hcResult.Err != nil {
 		result.GCEResourceInError = hcResult.GceResourceInError
 		result.Error = hcResult.Err
@@ -252,7 +266,7 @@ func (l4netlb *L4NetLB) provideDualStackHealthChecks(nodeNames []string, result 
 
 func (l4netlb *L4NetLB) provideIPv4HealthChecks(nodeNames []string, result *L4NetLBSyncResult) string {
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(l4netlb.Service)
-	hcResult := l4netlb.healthChecks.EnsureHealthCheckWithFirewall(l4netlb.Service, l4netlb.namer, sharedHC, l4netlb.scope, utils.XLB, nodeNames)
+	hcResult := l4netlb.healthChecks.EnsureHealthCheckWithFirewall(l4netlb.Service, l4netlb.namer, sharedHC, l4netlb.scope, utils.XLB, nodeNames, l4netlb.networkInfo)
 	if hcResult.Err != nil {
 		result.GCEResourceInError = hcResult.GceResourceInError
 		result.Error = hcResult.Err

@@ -64,6 +64,7 @@ type L4Controller struct {
 	nodeLister               listers.NodeLister
 	networkLister            cache.Indexer
 	gkeNetworkParamSetLister cache.Indexer
+	networkResolver          network.Resolver
 	stopCh                   chan struct{}
 	// needed for listing the zones in the cluster.
 	translator *translator.Translator
@@ -109,7 +110,7 @@ func NewILBController(ctx *context.ControllerContext, stopCh chan struct{}) *L4C
 	if ctx.GKENetworkParamsInformer != nil {
 		l4c.gkeNetworkParamSetLister = ctx.GKENetworkParamsInformer.GetIndexer()
 	}
-
+	l4c.networkResolver = network.NewNetworksResolver(l4c.networkLister, l4c.gkeNetworkParamSetLister, ctx.Cloud, ctx.EnableMultinetworking, klog.TODO())
 	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			addSvc := obj.(*v1.Service)
@@ -237,10 +238,6 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service) *load
 	if err != nil {
 		return &loadbalancers.L4ILBSyncResult{Error: err}
 	}
-	network, err := network.ServiceNetwork(service, l4c.networkLister, l4c.gkeNetworkParamSetLister, l4c.ctx.Cloud, klog.TODO())
-	if err != nil {
-		return &loadbalancers.L4ILBSyncResult{Error: err}
-	}
 	// Use the same function for both create and updates. If controller crashes and restarts,
 	// all existing services will show up as Service Adds.
 	l4ilbParams := &loadbalancers.L4ILBParams{
@@ -249,7 +246,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service) *load
 		Namer:            l4c.namer,
 		Recorder:         l4c.ctx.Recorder(service.Namespace),
 		DualStackEnabled: l4c.enableDualStack,
-		Network:          *network,
+		NetworkResolver:  l4c.networkResolver,
 	}
 	l4 := loadbalancers.NewL4Handler(l4ilbParams)
 	syncResult := l4.EnsureInternalLoadBalancer(nodeNames, service)

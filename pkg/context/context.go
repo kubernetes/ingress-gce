@@ -136,6 +136,7 @@ type ControllerContextConfig struct {
 	EnableL4ILBDualStack          bool
 	EnableL4NetLBDualStack        bool
 	EnableL4StrongSessionAffinity bool // flag that enables strong session affinity feature
+	EnableMultinetworking         bool
 }
 
 // NewControllerContext returns a new shared set of informers.

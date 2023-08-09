@@ -63,16 +63,14 @@ type l4HealthChecks struct {
 	hcProvider          healthChecksProvider
 	cloud               *gce.Cloud
 	recorder            record.EventRecorder
-	network             network.NetworkInfo
 }
 
-func NewL4HealthChecks(cloud *gce.Cloud, recorder record.EventRecorder, network network.NetworkInfo) *l4HealthChecks {
+func NewL4HealthChecks(cloud *gce.Cloud, recorder record.EventRecorder) *l4HealthChecks {
 	return &l4HealthChecks{
 		sharedResourcesLock: sharedLock,
 		cloud:               cloud,
 		recorder:            recorder,
 		hcProvider:          healthchecksprovider.NewHealthChecks(cloud, meta.VersionGA),
-		network:             network,
 	}
 }
 
@@ -114,11 +112,11 @@ func healthcheckUnhealthyThreshold(isShared bool) int64 {
 // Firewall rules are always created at in the Global scope (vs
 // Regional). This means that one Firewall rule is created for
 // Services of different scope (Global vs Regional).
-func (l4hc *l4HealthChecks) EnsureHealthCheckWithFirewall(svc *corev1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType, nodeNames []string) *EnsureHealthCheckResult {
-	return l4hc.EnsureHealthCheckWithDualStackFirewalls(svc, namer, sharedHC, scope, l4Type, nodeNames /*create IPv4*/, true /*don't create IPv6*/, false)
+func (l4hc *l4HealthChecks) EnsureHealthCheckWithFirewall(svc *corev1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType, nodeNames []string, svcNetwork network.NetworkInfo) *EnsureHealthCheckResult {
+	return l4hc.EnsureHealthCheckWithDualStackFirewalls(svc, namer, sharedHC, scope, l4Type, nodeNames /*create IPv4*/, true /*don't create IPv6*/, false, svcNetwork)
 }
 
-func (l4hc *l4HealthChecks) EnsureHealthCheckWithDualStackFirewalls(svc *corev1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType, nodeNames []string, needsIPv4 bool, needsIPv6 bool) *EnsureHealthCheckResult {
+func (l4hc *l4HealthChecks) EnsureHealthCheckWithDualStackFirewalls(svc *corev1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType, nodeNames []string, needsIPv4 bool, needsIPv6 bool, svcNetwork network.NetworkInfo) *EnsureHealthCheckResult {
 	namespacedName := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}
 
 	hcName := namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
@@ -149,12 +147,12 @@ func (l4hc *l4HealthChecks) EnsureHealthCheckWithDualStackFirewalls(svc *corev1.
 
 	if needsIPv4 {
 		klog.V(3).Infof("Ensuring IPv4 firewall rule for health check %s for service %s", hcName, namespacedName.String())
-		l4hc.ensureIPv4Firewall(svc, namer, hcPort, sharedHC, nodeNames, hcResult)
+		l4hc.ensureIPv4Firewall(svc, namer, hcPort, sharedHC, nodeNames, hcResult, svcNetwork)
 	}
 
 	if needsIPv6 {
 		klog.V(3).Infof("Ensuring IPv6 firewall rule for health check %s for service %s", hcName, namespacedName.String())
-		l4hc.ensureIPv6Firewall(svc, namer, hcPort, sharedHC, nodeNames, l4Type, hcResult)
+		l4hc.ensureIPv6Firewall(svc, namer, hcPort, sharedHC, nodeNames, l4Type, hcResult, svcNetwork)
 	}
 
 	return hcResult
@@ -210,7 +208,7 @@ func (l4hc *l4HealthChecks) ensureHealthCheck(hcName string, svcName types.Names
 //
 // L4 ILB and L4 NetLB Services with ExternalTrafficPolicy=Cluster use the same firewall
 // rule at global scope.
-func (l4hc *l4HealthChecks) ensureIPv4Firewall(svc *corev1.Service, namer namer.L4ResourcesNamer, hcPort int32, isSharedHC bool, nodeNames []string, hcResult *EnsureHealthCheckResult) {
+func (l4hc *l4HealthChecks) ensureIPv4Firewall(svc *corev1.Service, namer namer.L4ResourcesNamer, hcPort int32, isSharedHC bool, nodeNames []string, hcResult *EnsureHealthCheckResult, svcNetwork network.NetworkInfo) {
 	start := time.Now()
 
 	hcFwName := namer.L4HealthCheckFirewall(svc.Namespace, svc.Name, isSharedHC)
@@ -226,7 +224,7 @@ func (l4hc *l4HealthChecks) ensureIPv4Firewall(svc *corev1.Service, namer namer.
 		Protocol:     string(corev1.ProtocolTCP),
 		Name:         hcFwName,
 		NodeNames:    nodeNames,
-		Network:      l4hc.network,
+		Network:      svcNetwork,
 	}
 	err := firewalls.EnsureL4LBFirewallForHc(svc, isSharedHC, &hcFWRParams, l4hc.cloud, l4hc.recorder)
 	if err != nil {
@@ -238,7 +236,7 @@ func (l4hc *l4HealthChecks) ensureIPv4Firewall(svc *corev1.Service, namer namer.
 	hcResult.HCFirewallRuleName = hcFwName
 }
 
-func (l4hc *l4HealthChecks) ensureIPv6Firewall(svc *corev1.Service, namer namer.L4ResourcesNamer, hcPort int32, isSharedHC bool, nodeNames []string, l4Type utils.L4LBType, hcResult *EnsureHealthCheckResult) {
+func (l4hc *l4HealthChecks) ensureIPv6Firewall(svc *corev1.Service, namer namer.L4ResourcesNamer, hcPort int32, isSharedHC bool, nodeNames []string, l4Type utils.L4LBType, hcResult *EnsureHealthCheckResult, svcNetwork network.NetworkInfo) {
 	ipv6HCFWName := namer.L4IPv6HealthCheckFirewall(svc.Namespace, svc.Name, isSharedHC)
 
 	start := time.Now()
@@ -253,7 +251,7 @@ func (l4hc *l4HealthChecks) ensureIPv6Firewall(svc *corev1.Service, namer namer.
 		Protocol:     string(corev1.ProtocolTCP),
 		Name:         ipv6HCFWName,
 		NodeNames:    nodeNames,
-		Network:      l4hc.network,
+		Network:      svcNetwork,
 	}
 	err := firewalls.EnsureL4LBFirewallForHc(svc, isSharedHC, &hcFWRParams, l4hc.cloud, l4hc.recorder)
 	if err != nil {

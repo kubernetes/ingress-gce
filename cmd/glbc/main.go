@@ -223,6 +223,7 @@ func main() {
 		EnableL4ILBDualStack:          flags.F.EnableL4ILBDualStack,
 		EnableL4NetLBDualStack:        flags.F.EnableL4NetLBDualStack,
 		EnableL4StrongSessionAffinity: flags.F.EnableL4StrongSessionAffinity,
+		EnableMultinetworking:         flags.F.EnableMultiNetworking,
 	}
 	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, ingParamsClient, svcAttachmentClient, networkClient, cloud, namer, kubeSystemUID, ctxConfig)
 	go app.RunHTTPServer(ctx.HealthCheck)
@@ -380,6 +381,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		enableAsm,
 		asmServiceNEGSkipNamespaces,
 		lpConfig,
+		flags.F.EnableMultiNetworking,
 		klog.TODO(), // TODO(#1761): Replace this with a top level logger configuration once one is available.
 	)
 
