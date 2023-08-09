@@ -120,8 +120,11 @@ const (
 	FirewallForHealthcheckIPv6Resource = FirewallRuleForHealthcheckKey + IPv6Suffix
 	AddressResource                    = "address"
 	// TODO(slavik): import this from gce_annotations when it will be merged in k8s
-	RBSAnnotationKey                   = "cloud.google.com/l4-rbs"
-	RBSEnabled                         = "enabled"
+	RBSAnnotationKey = "cloud.google.com/l4-rbs"
+	RBSEnabled       = "enabled"
+	// StrongSessionAffinity is a restricted feature that is enabled on
+	// allow-listed projects only. If you need access to this feature for your
+	// External L4 Load Balancer, please contact Google Cloud support team.
 	StrongSessionAffinityAnnotationKey = "networking.gke.io/l4-strong-session-affinity"
 	StrongSessionAffinityEnabled       = "enabled"
 	// CustomSubnetAnnotationKey is the new way to specify custom subnet both for ILB and NetLB (only for IPv6)

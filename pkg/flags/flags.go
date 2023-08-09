@@ -289,7 +289,10 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnablePinhole, "enable-pinhole", false, "Enable Pinhole firewall feature")
 	flag.BoolVar(&F.EnableL4ILBDualStack, "enable-l4ilb-dual-stack", false, "Enable Dual-Stack handling for L4 Internal Load Balancers")
 	flag.BoolVar(&F.EnableL4NetLBDualStack, "enable-l4netlb-dual-stack", false, "Enable Dual-Stack handling for L4 External Load Balancers")
-	flag.BoolVar(&F.EnableL4StrongSessionAffinity, "enable-l4lb-strong-sa", false, "Enable Strong Session Affinity for L4 External Load Balancers")
+	// StrongSessionAffinity is a restricted feature that is enabled on
+	// allow-listed projects only. If you need access to this feature for your
+	// External L4 Load Balancer, please contact Google Cloud support team.
+	flag.BoolVar(&F.EnableL4StrongSessionAffinity, "enable-l4lb-strong-sa", false, "Enable Strong Session Affinity for L4 External Load Balancers. The feature is restricted for allow-listed clusters only.")
 	flag.BoolVar(&F.EnableMultipleIGs, "enable-multiple-igs", false, "Enable using multiple unmanaged instance groups")
 	flag.BoolVar(&F.EnableMultiNetworking, "enable-multi-networking", false, "Enable support for multi-networking L4 load balancers.")
 	flag.IntVar(&F.MaxIGSize, "max-ig-size", 1000, "Max number of instances in Instance Group")

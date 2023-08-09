@@ -951,7 +951,7 @@ func TestCheckStrongSessionAffinityRequirements(t *testing.T) {
 				annotations.StrongSessionAffinityAnnotationKey: annotations.StrongSessionAffinityEnabled,
 			},
 			sessionAffinityType:   v1.ServiceAffinityNone,
-			sessionAffinityConfig: &v1.SessionAffinityConfig{ClientIP: &v1.ClientIPConfig{TimeoutSeconds: proto.Int32(MinStrongSessionAffinityIdleTimeout)}},
+			sessionAffinityConfig: &v1.SessionAffinityConfig{ClientIP: &v1.ClientIPConfig{TimeoutSeconds: proto.Int32(minStrongSessionAffinityIdleTimeout)}},
 			expectError:           true,
 		},
 		{
@@ -961,7 +961,7 @@ func TestCheckStrongSessionAffinityRequirements(t *testing.T) {
 				annotations.StrongSessionAffinityAnnotationKey: annotations.StrongSessionAffinityEnabled,
 			},
 			sessionAffinityType:   v1.ServiceAffinityClientIP,
-			sessionAffinityConfig: &v1.SessionAffinityConfig{ClientIP: &v1.ClientIPConfig{TimeoutSeconds: proto.Int32(MaxSessionAffinityIdleTimeout + 1)}},
+			sessionAffinityConfig: &v1.SessionAffinityConfig{ClientIP: &v1.ClientIPConfig{TimeoutSeconds: proto.Int32(maxSessionAffinityIdleTimeout + 1)}},
 			expectError:           true,
 		},
 		{
@@ -981,7 +981,7 @@ func TestCheckStrongSessionAffinityRequirements(t *testing.T) {
 				annotations.StrongSessionAffinityAnnotationKey: annotations.StrongSessionAffinityEnabled,
 			},
 			sessionAffinityType:   v1.ServiceAffinityClientIP,
-			sessionAffinityConfig: &v1.SessionAffinityConfig{ClientIP: &v1.ClientIPConfig{TimeoutSeconds: proto.Int32(MinStrongSessionAffinityIdleTimeout)}},
+			sessionAffinityConfig: &v1.SessionAffinityConfig{ClientIP: &v1.ClientIPConfig{TimeoutSeconds: proto.Int32(minStrongSessionAffinityIdleTimeout)}},
 			expectError:           false,
 		},
 	}

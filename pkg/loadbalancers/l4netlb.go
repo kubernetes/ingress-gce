@@ -41,12 +41,16 @@ import (
 )
 
 const (
-	StrongSessionAffinityFeatureName    = "EnableStrongAffinity"
-	MinStrongSessionAffinityIdleTimeout = int32(60) // 60 seconds
-	// MaxSessionAffinityIdleTimeout is 16 hours if Strong Session Affinity is configured
+	strongSessionAffinityFeatureName    = "EnableStrongAffinity"
+	minStrongSessionAffinityIdleTimeout = int32(60) // 60 seconds
+	// maxSessionAffinityIdleTimeout is 16 hours if Strong Session Affinity is configured
 	// and Connection Tracking is less than 5-tuple (i.e. Session Affinity is
 	// CLIENT_IP or CLIENT_IP_PROTO and Tracking Mode is PER_SESSION).
-	MaxSessionAffinityIdleTimeout = int32(16 * 60 * 60)
+	maxSessionAffinityIdleTimeout              = int32(16 * 60 * 60)
+	strongSessionAffinityConditionedSupportMsg = "StrongSessionAffinity is a " +
+		"restricted feature that is enabled on allow-listed projects only. " +
+		"If you need access to this feature for your External L4 Load Balancer, " +
+		"please contact Google Cloud support team"
 )
 
 // L4NetLB handles the resource creation/deletion/update for a given L4 External LoadBalancer service.
@@ -167,8 +171,8 @@ func (l4netlb *L4NetLB) checkStrongSessionAffinityRequirements() *utils.UserErro
 	}
 	idleTimeout := *l4netlb.Service.Spec.SessionAffinityConfig.ClientIP.TimeoutSeconds
 	// idle idleTimeout is not supported
-	if idleTimeout < MinStrongSessionAffinityIdleTimeout || idleTimeout > MaxSessionAffinityIdleTimeout {
-		err := fmt.Errorf("session affinity config has an unsupported idleTimeout (%d). It should be in [%d, %d]", idleTimeout, MinStrongSessionAffinityIdleTimeout, MaxSessionAffinityIdleTimeout)
+	if idleTimeout < minStrongSessionAffinityIdleTimeout || idleTimeout > maxSessionAffinityIdleTimeout {
+		err := fmt.Errorf("session affinity config has an unsupported idleTimeout (%d). It should be in [%d, %d]", idleTimeout, minStrongSessionAffinityIdleTimeout, maxSessionAffinityIdleTimeout)
 		return utils.NewUserError(err)
 	}
 	return nil
@@ -302,11 +306,12 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 	var bs *composite.BackendService
 	bs, err = l4netlb.backendPool.EnsureL4BackendService(bsName, hcLink, string(protocol), string(l4netlb.Service.Spec.SessionAffinity), string(cloud.SchemeExternal), l4netlb.NamespacedName, *network.DefaultNetwork(l4netlb.cloud), connectionTrackingPolicy)
 	if err != nil {
-		if utils.IsUnsupportedFeatureError(err, StrongSessionAffinityFeatureName) {
+		if utils.IsUnsupportedFeatureError(err, strongSessionAffinityFeatureName) {
 			syncResult.GCEResourceInError = annotations.BackendServiceResource
+			l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeWarning, strongSessionAffinityFeatureName, strongSessionAffinityConditionedSupportMsg)
 			syncResult.Error = utils.NewUserError(err)
 			syncResult.MetricsState.IsUserError = true
-		} else {
+		} else { // another problem with BackendServiceResource
 			syncResult.GCEResourceInError = annotations.BackendServiceResource
 			syncResult.Error = fmt.Errorf("failed to ensure backend service %s - %w", bsName, err)
 		}
