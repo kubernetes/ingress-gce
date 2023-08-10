@@ -17,9 +17,11 @@ import (
 )
 
 const (
-	kubeSystemUID        = "ksuid123"
-	defaultIdleTimeout   = int64(10 * 60)     // 10 minutes
-	prolongedIdleTimeout = int64(2 * 60 * 60) // 2 hours
+	kubeSystemUID             = "ksuid123"
+	defaultIdleTimeout        = int64(10 * 60)     // 10 minutes
+	prolongedIdleTimeout      = int64(2 * 60 * 60) // 2 hours
+	perSessionTrackingMode    = "PER_SESSION"
+	perConnectionTrackingMode = "PER_CONNECTION"
 )
 
 func TestEnsureL4BackendService(t *testing.T) {
@@ -43,7 +45,7 @@ func TestEnsureL4BackendService(t *testing.T) {
 			schemeType:                  string(cloud.SchemeInternal),
 			enableStrongSessionAffinity: false,
 			idleTimeout:                 defaultIdleTimeout,
-			trackingMode:                DefaultTrackingMode,
+			trackingMode:                defaultTrackingMode,
 		},
 		{
 			desc:                        "Test Backend Service with Strong Session Affinity configuration",
@@ -104,6 +106,168 @@ func TestEnsureL4BackendService(t *testing.T) {
 			}
 			if diff := cmp.Diff(bs.ConnectionTrackingPolicy, connectionTrackingPolicy); diff != "" {
 				t.Errorf("BackendService.ConnectionTrackingPolicy was not populated correctly, expected to be different: %s", diff)
+			}
+		})
+	}
+}
+
+// TestBackendSvcEqual checks that backendSvcEqual() and
+// connectionTrackingPolicyEqual() (as a part ofit  backendSvcEqual)
+// return expected results for two resources compared.
+func TestBackendSvcEqual(t *testing.T) {
+	for _, tc := range []struct {
+		desc              string
+		oldBackendService *composite.BackendService
+		newBackendService *composite.BackendService
+		wantEqual         bool
+	}{
+		{
+			desc:              "Test empty backend services are equal",
+			oldBackendService: &composite.BackendService{},
+			newBackendService: &composite.BackendService{},
+			wantEqual:         true,
+		},
+		{
+			desc: "Test with equal non-empty backend services",
+			oldBackendService: &composite.BackendService{
+				Description:         "same_description",
+				Protocol:            "TCP",
+				SessionAffinity:     string(v1.ServiceAffinityClientIP),
+				LoadBalancingScheme: string(cloud.SchemeExternal),
+				ConnectionTrackingPolicy: &composite.BackendServiceConnectionTrackingPolicy{
+					EnableStrongAffinity: false,
+					IdleTimeoutSec:       defaultIdleTimeout,
+					TrackingMode:         defaultTrackingMode,
+				},
+			},
+			newBackendService: &composite.BackendService{
+				Description:         "same_description",
+				Protocol:            "TCP",
+				SessionAffinity:     string(v1.ServiceAffinityClientIP),
+				LoadBalancingScheme: string(cloud.SchemeExternal),
+				ConnectionTrackingPolicy: &composite.BackendServiceConnectionTrackingPolicy{
+					EnableStrongAffinity: false,
+					IdleTimeoutSec:       defaultIdleTimeout,
+					TrackingMode:         defaultTrackingMode,
+				},
+			},
+			wantEqual: true,
+		},
+		{
+			desc: "Test with changed idle timeout",
+			oldBackendService: &composite.BackendService{
+				ConnectionTrackingPolicy: &composite.BackendServiceConnectionTrackingPolicy{
+					IdleTimeoutSec: prolongedIdleTimeout,
+				},
+			},
+			newBackendService: &composite.BackendService{
+				ConnectionTrackingPolicy: &composite.BackendServiceConnectionTrackingPolicy{
+					IdleTimeoutSec: defaultIdleTimeout,
+				},
+			},
+			wantEqual: false,
+		},
+		{
+			desc: "Test with changed backend description",
+			oldBackendService: &composite.BackendService{
+				Description: "old description",
+			},
+			newBackendService: &composite.BackendService{
+				Description: "new description",
+			},
+			wantEqual: false,
+		},
+		{
+			desc: "Test with changed protocols",
+			oldBackendService: &composite.BackendService{
+				Protocol: "TCP",
+			},
+			newBackendService: &composite.BackendService{
+				Protocol: "UDP",
+			},
+			wantEqual: false,
+		},
+		{
+			desc: "Test with changed TrackingMode",
+			oldBackendService: &composite.BackendService{
+				ConnectionTrackingPolicy: &composite.BackendServiceConnectionTrackingPolicy{
+					TrackingMode: perSessionTrackingMode,
+				},
+			},
+			newBackendService: &composite.BackendService{
+				ConnectionTrackingPolicy: &composite.BackendServiceConnectionTrackingPolicy{
+					TrackingMode: perConnectionTrackingMode,
+				},
+			},
+			wantEqual: false,
+		},
+		{
+			desc: "Test with changed health-checks",
+			oldBackendService: &composite.BackendService{
+				HealthChecks: []string{"abc"},
+			},
+			newBackendService: &composite.BackendService{
+				HealthChecks: []string{"abc", "xyz"},
+			},
+			wantEqual: false,
+		},
+		{
+			desc: "Test with deleted network",
+			oldBackendService: &composite.BackendService{
+				Network: "network-1",
+			},
+			newBackendService: &composite.BackendService{},
+			wantEqual:         false,
+		},
+		{
+			desc: "Test with a few changed parameters",
+			oldBackendService: &composite.BackendService{
+				SessionAffinity:     string(v1.ServiceAffinityClientIP),
+				LoadBalancingScheme: string(cloud.SchemeInternal),
+				ConnectionTrackingPolicy: &composite.BackendServiceConnectionTrackingPolicy{
+					EnableStrongAffinity: false,
+					IdleTimeoutSec:       defaultIdleTimeout,
+				},
+			},
+			newBackendService: &composite.BackendService{
+				SessionAffinity:     string(v1.ServiceAffinityNone),
+				LoadBalancingScheme: string(cloud.SchemeExternal),
+				ConnectionTrackingPolicy: &composite.BackendServiceConnectionTrackingPolicy{
+					EnableStrongAffinity: true,
+					IdleTimeoutSec:       prolongedIdleTimeout,
+				},
+			},
+			wantEqual: false,
+		},
+		{
+			// ConnectionPersistenceOnUnhealthyBackends change is not supported yet
+			// that's why wantEqual = True. Change this case when the support starts.
+			desc: "The customer's update to ConnectionPersistenceOnUnhealthyBackends will not be overriden",
+			oldBackendService: &composite.BackendService{
+				ConnectionTrackingPolicy: &composite.BackendServiceConnectionTrackingPolicy{
+					EnableStrongAffinity:                     false,
+					IdleTimeoutSec:                           defaultIdleTimeout,
+					TrackingMode:                             perSessionTrackingMode,
+					ConnectionPersistenceOnUnhealthyBackends: "non-default",
+				},
+			},
+			newBackendService: &composite.BackendService{
+				ConnectionTrackingPolicy: &composite.BackendServiceConnectionTrackingPolicy{
+					EnableStrongAffinity:                     false,
+					IdleTimeoutSec:                           defaultIdleTimeout,
+					TrackingMode:                             perSessionTrackingMode,
+					ConnectionPersistenceOnUnhealthyBackends: "DEFAULT_FOR_PROTOCOL",
+				},
+			},
+			wantEqual: true,
+		},
+	} {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			if res := backendSvcEqual(tc.oldBackendService, tc.newBackendService) == tc.wantEqual; !res {
+				t.Errorf("backendSvcEqual() returned %v, expected %v. Diff(oldScv, newSvc): %s",
+					res, tc.wantEqual, cmp.Diff(tc.oldBackendService, tc.newBackendService))
 			}
 		})
 	}
