@@ -60,9 +60,9 @@ func NewVmIpNegType(trafficPolicyLocal bool) *VmIpNegType {
 	return &VmIpNegType{trafficPolicyLocal: trafficPolicyLocal}
 }
 
-// L4ILBServiceState defines if global access and subnet features are enabled
+// L4ILBServiceLegacyState defines if global access and subnet features are enabled
 // for an L4 ILB service.
-type L4ILBServiceState struct {
+type L4ILBServiceLegacyState struct {
 	// EnabledGlobalAccess specifies if Global Access is enabled.
 	EnabledGlobalAccess bool
 	// EnabledCustomSubNet specifies if Custom Subnet is enabled.
@@ -73,36 +73,43 @@ type L4ILBServiceState struct {
 	IsUserError bool
 }
 
-type L4DualStackServiceStatus string
+type L4ServiceStatus string
 
-const StatusSuccess = L4DualStackServiceStatus("Success")
-const StatusUserError = L4DualStackServiceStatus("UserError")
-const StatusError = L4DualStackServiceStatus("Error")
-const StatusPersistentError = L4DualStackServiceStatus("PersistentError")
+const StatusSuccess = L4ServiceStatus("Success")
+const StatusUserError = L4ServiceStatus("UserError")
+const StatusError = L4ServiceStatus("Error")
+const StatusPersistentError = L4ServiceStatus("PersistentError")
 
-// L4DualStackServiceLabels defines ipFamilies, ipFamilyPolicy and status
+// L4DualStackServiceLabels defines ipFamilies, ipFamilyPolicy
 // of L4 DualStack service
 type L4DualStackServiceLabels struct {
 	// IPFamilies stores spec.ipFamilies of Service
 	IPFamilies string
 	// IPFamilyPolicy specifies spec.IPFamilyPolicy of Service
 	IPFamilyPolicy string
-	// Status specifies status of L4 DualStack Service
-	Status L4DualStackServiceStatus
 }
 
-// L4DualStackServiceState defines ipFamilies, ipFamilyPolicy, status and tracks
-// FirstSyncErrorTime of L4 DualStack service
-type L4DualStackServiceState struct {
+// L4FeaturesServiceLabels defines various properties we want to track for L4 LBs
+type L4FeaturesServiceLabels struct {
+	// Multinetwork specifies if the service is a multinetworked service
+	Multinetwork bool
+}
+
+// L4ServiceState tracks the state of an L4 service. It includes data needed to fill various L4 metrics plus the status of the service.
+// FirstSyncErrorTime of an L4 service
+type L4ServiceState struct {
 	L4DualStackServiceLabels
+	L4FeaturesServiceLabels
+	// Status specifies status of an L4 Service
+	Status L4ServiceStatus
 	// FirstSyncErrorTime specifies the time timestamp when the service sync ended up with error for the first time.
 	FirstSyncErrorTime *time.Time
 }
 
-// L4NetLBServiceState defines if network tier is premium and
+// L4NetLBServiceLegacyState defines if network tier is premium and
 // if static ip address is managed by controller
 // for an L4 NetLB service.
-type L4NetLBServiceState struct {
+type L4NetLBServiceLegacyState struct {
 	// IsManagedIP specifies if Static IP is managed by controller.
 	IsManagedIP bool
 	// IsPremiumTier specifies if network tier for forwarding rule is premium.
@@ -115,9 +122,9 @@ type L4NetLBServiceState struct {
 	FirstSyncErrorTime *time.Time
 }
 
-// InitL4NetLBServiceState sets FirstSyncErrorTime
-func InitL4NetLBServiceState(syncTime *time.Time) L4NetLBServiceState {
-	return L4NetLBServiceState{FirstSyncErrorTime: syncTime}
+// InitL4NetLBServiceLegacyState created and inits the L4NetLBServiceLegacyState struct by setting FirstSyncErrorTime.
+func InitL4NetLBServiceLegacyState(syncTime *time.Time) L4NetLBServiceLegacyState {
+	return L4NetLBServiceLegacyState{FirstSyncErrorTime: syncTime}
 }
 
 // IngressMetricsCollector is an interface to update/delete ingress states in the cache
@@ -141,8 +148,8 @@ type NegMetricsCollector interface {
 // L4ILBMetricsCollector is an interface to update/delete L4 ILb service states
 // in the cache that is used for computing L4 ILB usage metrics.
 type L4ILBMetricsCollector interface {
-	// SetL4ILBService adds/updates L4 ILB service state for given service key.
-	SetL4ILBService(svcKey string, state L4ILBServiceState)
-	// DeleteL4ILBService removes the given L4 ILB service key.
-	DeleteL4ILBService(svcKey string)
+	// SetL4ILBServiceForLegacyMetric adds/updates L4 ILB service state for given service key.
+	SetL4ILBServiceForLegacyMetric(svcKey string, state L4ILBServiceLegacyState)
+	// DeleteL4ILBServiceForLegacyMetric removes the given L4 ILB service key.
+	DeleteL4ILBServiceForLegacyMetric(svcKey string)
 }

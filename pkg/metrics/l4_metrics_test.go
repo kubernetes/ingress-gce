@@ -17,416 +17,128 @@ limitations under the License.
 package metrics
 
 import (
-	"fmt"
+	"math"
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
-const (
-	premium             = true
-	standard            = false
-	managed             = true
-	unmanaged           = false
-	isSuccess           = true
-	isError             = false
-	isUserError         = true
-	noUserError         = false
-	enableGlobalAccess  = true
-	disableGlobalAccess = false
-	enableCustomSubnet  = true
-	disableCustomSubnet = false
-)
-
-func TestComputeL4ILBMetrics(t *testing.T) {
-	t.Parallel()
-	for _, tc := range []struct {
-		desc             string
-		serviceStates    []L4ILBServiceState
-		expectL4ILBCount map[feature]int
-	}{
-		{
-			desc:          "empty input",
-			serviceStates: []L4ILBServiceState{},
-			expectL4ILBCount: map[feature]int{
-				l4ILBService:      0,
-				l4ILBGlobalAccess: 0,
-				l4ILBCustomSubnet: 0,
-				l4ILBInSuccess:    0,
-				l4ILBInError:      0,
-				l4ILBInUserError:  0,
-			},
-		},
-		{
-			desc: "one l4 ilb service",
-			serviceStates: []L4ILBServiceState{
-				newL4ILBServiceState(disableGlobalAccess, disableCustomSubnet, isSuccess, noUserError),
-			},
-			expectL4ILBCount: map[feature]int{
-				l4ILBService:      1,
-				l4ILBGlobalAccess: 0,
-				l4ILBCustomSubnet: 0,
-				l4ILBInSuccess:    1,
-				l4ILBInError:      0,
-				l4ILBInUserError:  0,
-			},
-		},
-		{
-			desc: "l4 ilb service in error state",
-			serviceStates: []L4ILBServiceState{
-				newL4ILBServiceState(disableGlobalAccess, enableCustomSubnet, isError, noUserError),
-			},
-			expectL4ILBCount: map[feature]int{
-				l4ILBService:      1,
-				l4ILBGlobalAccess: 0,
-				l4ILBCustomSubnet: 0,
-				l4ILBInSuccess:    0,
-				l4ILBInError:      1,
-				l4ILBInUserError:  0,
-			},
-		},
-		{
-			desc: "l4 ilb service in user error state",
-			serviceStates: []L4ILBServiceState{
-				newL4ILBServiceState(disableGlobalAccess, enableCustomSubnet, isError, isUserError),
-			},
-			expectL4ILBCount: map[feature]int{
-				l4ILBService:      1,
-				l4ILBGlobalAccess: 0,
-				l4ILBCustomSubnet: 0,
-				l4ILBInSuccess:    0,
-				l4ILBInError:      0,
-				l4ILBInUserError:  1,
-			},
-		},
-		{
-			desc: "global access for l4 ilb service enabled",
-			serviceStates: []L4ILBServiceState{
-				newL4ILBServiceState(enableGlobalAccess, disableCustomSubnet, isSuccess, noUserError),
-			},
-			expectL4ILBCount: map[feature]int{
-				l4ILBService:      1,
-				l4ILBGlobalAccess: 1,
-				l4ILBCustomSubnet: 0,
-				l4ILBInSuccess:    1,
-				l4ILBInError:      0,
-				l4ILBInUserError:  0,
-			},
-		},
-		{
-			desc: "custom subnet for l4 ilb service enabled",
-			serviceStates: []L4ILBServiceState{
-				newL4ILBServiceState(disableGlobalAccess, enableCustomSubnet, isSuccess, noUserError),
-			},
-			expectL4ILBCount: map[feature]int{
-				l4ILBService:      1,
-				l4ILBGlobalAccess: 0,
-				l4ILBCustomSubnet: 1,
-				l4ILBInSuccess:    1,
-				l4ILBInError:      0,
-				l4ILBInUserError:  0,
-			},
-		},
-		{
-			desc: "both global access and custom subnet for l4 ilb service enabled",
-			serviceStates: []L4ILBServiceState{
-				newL4ILBServiceState(enableGlobalAccess, enableCustomSubnet, isSuccess, noUserError),
-			},
-			expectL4ILBCount: map[feature]int{
-				l4ILBService:      1,
-				l4ILBGlobalAccess: 1,
-				l4ILBCustomSubnet: 1,
-				l4ILBInSuccess:    1,
-				l4ILBInError:      0,
-				l4ILBInUserError:  0,
-			},
-		},
-		{
-			desc: "many l4 ilb services",
-			serviceStates: []L4ILBServiceState{
-				newL4ILBServiceState(disableGlobalAccess, disableCustomSubnet, isSuccess, noUserError),
-				newL4ILBServiceState(disableGlobalAccess, enableCustomSubnet, isSuccess, noUserError),
-				newL4ILBServiceState(enableGlobalAccess, disableCustomSubnet, isSuccess, noUserError),
-				newL4ILBServiceState(enableGlobalAccess, enableCustomSubnet, isSuccess, noUserError),
-			},
-			expectL4ILBCount: map[feature]int{
-				l4ILBService:      4,
-				l4ILBGlobalAccess: 2,
-				l4ILBCustomSubnet: 2,
-				l4ILBInSuccess:    4,
-				l4ILBInError:      0,
-				l4ILBInUserError:  0,
-			},
-		},
-		{
-			desc: "many l4 ilb services with some in error state",
-			serviceStates: []L4ILBServiceState{
-				newL4ILBServiceState(disableGlobalAccess, disableCustomSubnet, isSuccess, noUserError),
-				newL4ILBServiceState(disableGlobalAccess, enableCustomSubnet, isError, noUserError),
-				newL4ILBServiceState(disableGlobalAccess, enableCustomSubnet, isSuccess, noUserError),
-				newL4ILBServiceState(enableGlobalAccess, disableCustomSubnet, isSuccess, noUserError),
-				newL4ILBServiceState(enableGlobalAccess, disableCustomSubnet, isError, noUserError),
-				newL4ILBServiceState(enableGlobalAccess, enableCustomSubnet, isSuccess, noUserError),
-				newL4ILBServiceState(enableGlobalAccess, enableCustomSubnet, isError, isUserError),
-			},
-			expectL4ILBCount: map[feature]int{
-				l4ILBService:      7,
-				l4ILBGlobalAccess: 2,
-				l4ILBCustomSubnet: 2,
-				l4ILBInSuccess:    4,
-				l4ILBInError:      2,
-				l4ILBInUserError:  1,
-			},
-		},
-	} {
-		tc := tc
-		t.Run(tc.desc, func(t *testing.T) {
-			t.Parallel()
-			newMetrics := FakeControllerMetrics()
-			for i, serviceState := range tc.serviceStates {
-				newMetrics.SetL4ILBService(fmt.Sprint(i), serviceState)
-			}
-			got := newMetrics.l4ControllerMetrics.computeL4ILBMetrics()
-			if diff := cmp.Diff(tc.expectL4ILBCount, got); diff != "" {
-				t.Fatalf("Got diff for L4 ILB service counts (-want +got):\n%s", diff)
-			}
-		})
-	}
-}
-
-func newL4ILBServiceState(globalAccess bool, customSubnet bool, inSuccess bool, isUserError bool) L4ILBServiceState {
-	return L4ILBServiceState{
-		EnabledGlobalAccess: globalAccess,
-		EnabledCustomSubnet: customSubnet,
-		InSuccess:           inSuccess,
-		IsUserError:         isUserError,
-	}
-}
-
-func TestComputeL4NetLBMetrics(t *testing.T) {
-	t.Parallel()
-
-	currTime := time.Now()
-	before5min := currTime.Add(-5 * time.Minute)
-	before25min := currTime.Add(-25 * time.Minute)
-
-	for _, tc := range []struct {
-		desc               string
-		serviceStates      []L4NetLBServiceState
-		expectL4NetLBCount netLBFeatureCount
-	}{
-		{
-			desc:          "empty input",
-			serviceStates: []L4NetLBServiceState{},
-			expectL4NetLBCount: netLBFeatureCount{
-				service:            0,
-				managedStaticIP:    0,
-				premiumNetworkTier: 0,
-				success:            0,
-				inUserError:        0,
-				inError:            0,
-			},
-		},
-		{
-			desc: "one l4 Netlb service",
-			serviceStates: []L4NetLBServiceState{
-				newL4NetLBServiceState(isSuccess, unmanaged, noUserError, standard /*resyncTime = */, nil),
-			},
-			expectL4NetLBCount: netLBFeatureCount{
-				service:            1,
-				managedStaticIP:    0,
-				premiumNetworkTier: 0,
-				success:            1,
-				inUserError:        0,
-				inError:            0,
-			},
-		},
-		{
-			desc: "one l4 Netlb service in premium network tier",
-			serviceStates: []L4NetLBServiceState{
-				newL4NetLBServiceState(isSuccess, unmanaged, premium, noUserError /*resyncTime = */, nil),
-			},
-			expectL4NetLBCount: netLBFeatureCount{
-				service:            1,
-				managedStaticIP:    0,
-				premiumNetworkTier: 1,
-				success:            1,
-				inUserError:        0,
-				inError:            0,
-			},
-		},
-		{
-			desc: "one l4 Netlb service in premium network tier and managed static ip",
-			serviceStates: []L4NetLBServiceState{
-				newL4NetLBServiceState(isSuccess, managed, premium, noUserError /*resyncTime = */, nil),
-			},
-			expectL4NetLBCount: netLBFeatureCount{
-				service:            1,
-				managedStaticIP:    1,
-				premiumNetworkTier: 1,
-				success:            1,
-				inUserError:        0,
-				inError:            0,
-			},
-		},
-		{
-			desc: "l4 Netlb service in error state with timestamp greater than resync period",
-			serviceStates: []L4NetLBServiceState{
-				newL4NetLBServiceState(isError, unmanaged, standard, noUserError, &before25min),
-			},
-			expectL4NetLBCount: netLBFeatureCount{
-				service:            1,
-				managedStaticIP:    0,
-				premiumNetworkTier: 0,
-				success:            0,
-				inUserError:        0,
-				inError:            1,
-			},
-		},
-		{
-			desc: "l4 Netlb service in error state should not count static ip and network tier",
-			serviceStates: []L4NetLBServiceState{
-				newL4NetLBServiceState(isError, unmanaged, standard, noUserError, &before25min),
-				newL4NetLBServiceState(isError, managed, premium, noUserError, &before25min),
-			},
-			expectL4NetLBCount: netLBFeatureCount{
-				service:            2,
-				managedStaticIP:    0,
-				premiumNetworkTier: 0,
-				success:            0,
-				inUserError:        0,
-				inError:            2,
-			},
-		},
-		{
-			desc: "two l4 Netlb services with different network tier",
-			serviceStates: []L4NetLBServiceState{
-				newL4NetLBServiceState(isSuccess, unmanaged, standard, noUserError /*resyncTime = */, nil),
-				newL4NetLBServiceState(isSuccess, unmanaged, premium, noUserError, nil),
-			},
-			expectL4NetLBCount: netLBFeatureCount{
-				service:            2,
-				managedStaticIP:    0,
-				premiumNetworkTier: 1,
-				success:            2,
-				inUserError:        0,
-			},
-		},
-		{
-			desc: "two l4 Netlb services with user error should not count others features",
-			serviceStates: []L4NetLBServiceState{
-				newL4NetLBServiceState(isError, unmanaged, standard, isUserError /*resyncTime = */, nil),
-				newL4NetLBServiceState(isError, unmanaged, premium, isUserError, nil),
-			},
-			expectL4NetLBCount: netLBFeatureCount{
-				service:            2,
-				managedStaticIP:    0,
-				premiumNetworkTier: 0,
-				success:            0,
-				inUserError:        2,
-				inError:            0,
-			},
-		},
-		{
-			desc: "Error should be measure only after retry time period",
-			serviceStates: []L4NetLBServiceState{
-				newL4NetLBServiceState(isError, unmanaged, premium, noUserError, &before5min),
-			},
-			expectL4NetLBCount: netLBFeatureCount{
-				service:            1,
-				managedStaticIP:    0,
-				premiumNetworkTier: 0,
-				success:            0,
-				inUserError:        0,
-				inError:            0,
-			},
-		},
-		{
-			desc: "multi l4 Netlb services",
-			serviceStates: []L4NetLBServiceState{
-				newL4NetLBServiceState(isSuccess, unmanaged, standard, noUserError /*resyncTime = */, nil),
-				newL4NetLBServiceState(isSuccess, unmanaged, premium, noUserError, nil),
-				newL4NetLBServiceState(isSuccess, unmanaged, premium, noUserError, nil),
-				newL4NetLBServiceState(isSuccess, managed, premium, noUserError, nil),
-				newL4NetLBServiceState(isSuccess, managed, premium, noUserError, nil),
-				newL4NetLBServiceState(isSuccess, managed, standard, noUserError, nil),
-				newL4NetLBServiceState(isError, managed, premium, noUserError, &before25min),
-				newL4NetLBServiceState(isError, managed, standard, noUserError, &before25min),
-			},
-			expectL4NetLBCount: netLBFeatureCount{
-				service:            8,
-				managedStaticIP:    3,
-				premiumNetworkTier: 4,
-				success:            6,
-				inUserError:        0,
-				inError:            2,
-			},
-		},
-	} {
-		tc := tc
-		t.Run(tc.desc, func(t *testing.T) {
-			t.Parallel()
-			newMetrics := FakeControllerMetrics()
-			for i, serviceState := range tc.serviceStates {
-				newMetrics.SetL4NetLBService(fmt.Sprint(i), serviceState)
-			}
-			got := newMetrics.l4ControllerMetrics.computeL4NetLBMetrics()
-			if diff := cmp.Diff(tc.expectL4NetLBCount, got, cmp.AllowUnexported(netLBFeatureCount{})); diff != "" {
-				t.Fatalf("Got diff for L4 NetLB service counts (-want +got):\n%s", diff)
-			}
-		})
-	}
-}
-
-func newL4NetLBServiceState(inSuccess, managed, premium, userError bool, errorTimestamp *time.Time) L4NetLBServiceState {
-	return L4NetLBServiceState{
-		IsPremiumTier:      premium,
-		IsManagedIP:        managed,
-		InSuccess:          inSuccess,
-		IsUserError:        userError,
-		FirstSyncErrorTime: errorTimestamp,
-	}
-}
-
-func TestRetryPeriodForL4NetLBServices(t *testing.T) {
-	t.Parallel()
-	currTime := time.Now()
-	before5min := currTime.Add(-5 * time.Minute)
-	before25min := currTime.Add(-25 * time.Minute)
-
-	svcName1 := "svc1"
-	svcName2 := "svc2"
+func TestExportILBMetric(t *testing.T) {
 	newMetrics := FakeControllerMetrics()
-	errorState := newL4NetLBServiceState(isError, managed, premium, noUserError, &currTime)
-	newMetrics.SetL4NetLBService(svcName1, errorState)
+	pastPersistentErrorThresholdTime := time.Now().Add(-1*persistentErrorThresholdTime - time.Minute)
+	notExceedingPersistentErrorThresholdTime := time.Now().Add(-1*persistentErrorThresholdTime + 5*time.Minute)
 
-	if err := checkMetricsComputation(newMetrics /*expErrorCount =*/, 0 /*expSvcCount =*/, 1); err != nil {
-		t.Fatalf("Check metrics computation failed err: %v", err)
-	}
-	errorState.FirstSyncErrorTime = &before5min
-	newMetrics.SetL4NetLBService(svcName1, errorState)
-	state, ok := newMetrics.l4ControllerMetrics.l4NetLBServiceMap[svcName1]
-	if !ok {
-		t.Fatalf("state should be set")
-	}
-	if *state.FirstSyncErrorTime == before5min {
-		t.Fatal("Time Should Not be rewrite")
-	}
-	errorState.FirstSyncErrorTime = &before25min
-	newMetrics.SetL4NetLBService(svcName2, errorState)
-	if err := checkMetricsComputation(newMetrics /*expErrorCount =*/, 1 /*expSvcCount =*/, 2); err != nil {
-		t.Fatalf("Check metrics computation failed err: %v", err)
+	newMetrics.SetL4ILBService("s1", L4ServiceState{
+		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: true},
+		Status:                  StatusSuccess,
+	})
+	newMetrics.SetL4ILBService("s2", L4ServiceState{
+		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: true},
+		Status:                  StatusSuccess,
+	})
+	newMetrics.SetL4ILBService("s3", L4ServiceState{
+		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: false},
+		Status:                  StatusUserError,
+	})
+	newMetrics.SetL4ILBService("s4", L4ServiceState{
+		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: false},
+		Status:                  StatusError,
+		FirstSyncErrorTime:      &notExceedingPersistentErrorThresholdTime,
+	})
+	newMetrics.SetL4ILBService("s5", L4ServiceState{
+		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: false},
+		Status:                  StatusError,
+		FirstSyncErrorTime:      &pastPersistentErrorThresholdTime,
+	})
+	// check that updating later does not move FirstSyncErrorTime
+	newMetrics.SetL4ILBService("s5", L4ServiceState{
+		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: false},
+		Status:                  StatusError,
+		FirstSyncErrorTime:      &notExceedingPersistentErrorThresholdTime,
+	})
+	newMetrics.SetL4ILBService("s6", L4ServiceState{
+		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: false},
+		L4DualStackServiceLabels: L4DualStackServiceLabels{
+			IPFamilies:     "IPv4",
+			IPFamilyPolicy: "SingleStack",
+		},
+		Status:             StatusError,
+		FirstSyncErrorTime: &notExceedingPersistentErrorThresholdTime,
+	})
+
+	newMetrics.exportL4ILBsMetrics()
+
+	verifyL4ILBMetric(t, 2, StatusSuccess, "true")
+	verifyL4ILBMetric(t, 1, StatusUserError, "false")
+	verifyL4ILBMetric(t, 2, StatusError, "false")
+	verifyL4ILBMetric(t, 1, StatusPersistentError, "false")
+}
+
+func verifyL4ILBMetric(t *testing.T, expectedCount int, status L4ServiceStatus, multinet string) {
+	countFloat := testutil.ToFloat64(l4ILBCount.With(prometheus.Labels{l4LabelStatus: string(status), l4LabelMultinet: multinet}))
+	actualCount := int(math.Round(countFloat))
+	if expectedCount != actualCount {
+		t.Errorf("expected value %d but got %d", expectedCount, actualCount)
 	}
 }
 
-func checkMetricsComputation(newMetrics *ControllerMetrics, expErrorCount, expSvcCount int) error {
-	got := newMetrics.l4ControllerMetrics.computeL4NetLBMetrics()
-	if got.inError != expErrorCount {
-		return fmt.Errorf("Error count mismatch expected: %v got: %v", expErrorCount, got.inError)
+func TestExportNetLBMetric(t *testing.T) {
+	newMetrics := FakeControllerMetrics()
+	pastPersistentErrorThresholdTime := time.Now().Add(-1*persistentErrorThresholdTime - time.Minute)
+	notExceedingPersistentErrorThresholdTime := time.Now().Add(-1*persistentErrorThresholdTime + 5*time.Minute)
+
+	newMetrics.SetL4NetLBService("s1", L4ServiceState{
+		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: true},
+		Status:                  StatusSuccess,
+	})
+	newMetrics.SetL4NetLBService("s2", L4ServiceState{
+		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: true},
+		Status:                  StatusSuccess,
+	})
+	newMetrics.SetL4NetLBService("s3", L4ServiceState{
+		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: false},
+		Status:                  StatusUserError,
+	})
+	newMetrics.SetL4NetLBService("s4", L4ServiceState{
+		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: false},
+		Status:                  StatusError,
+		FirstSyncErrorTime:      &notExceedingPersistentErrorThresholdTime,
+	})
+	newMetrics.SetL4NetLBService("s5", L4ServiceState{
+		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: false},
+		Status:                  StatusError,
+		FirstSyncErrorTime:      &pastPersistentErrorThresholdTime,
+	})
+	// check that updating later does not move FirstSyncErrorTime
+	newMetrics.SetL4NetLBService("s5", L4ServiceState{
+		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: false},
+		Status:                  StatusError,
+		FirstSyncErrorTime:      &notExceedingPersistentErrorThresholdTime,
+	})
+	newMetrics.SetL4NetLBService("s6", L4ServiceState{
+		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: false},
+		L4DualStackServiceLabels: L4DualStackServiceLabels{
+			IPFamilies:     "IPv4",
+			IPFamilyPolicy: "SingleStack",
+		},
+		Status:             StatusError,
+		FirstSyncErrorTime: &notExceedingPersistentErrorThresholdTime,
+	})
+
+	newMetrics.exportL4NetLBsMetrics()
+
+	verifyL4NetLBMetric(t, 2, StatusSuccess, "true")
+	verifyL4NetLBMetric(t, 1, StatusUserError, "false")
+	verifyL4NetLBMetric(t, 2, StatusError, "false")
+	verifyL4NetLBMetric(t, 1, StatusPersistentError, "false")
+}
+
+func verifyL4NetLBMetric(t *testing.T, expectedCount int, status L4ServiceStatus, multinet string) {
+	countFloat := testutil.ToFloat64(l4NetLBCount.With(prometheus.Labels{l4LabelStatus: string(status), l4LabelMultinet: multinet}))
+	actualCount := int(math.Round(countFloat))
+	if expectedCount != actualCount {
+		t.Errorf("expected value %d but got %d", expectedCount, actualCount)
 	}
-	if got.service != expSvcCount {
-		return fmt.Errorf("Service count mismatch expected: %v got: %v", expSvcCount, got.service)
-	}
-	return nil
 }

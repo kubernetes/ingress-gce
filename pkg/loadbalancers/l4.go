@@ -67,14 +67,31 @@ type L4 struct {
 // L4ILBSyncResult contains information about the outcome of an L4 ILB sync. It stores the list of resource name annotations,
 // sync error, the GCE resource that hit the error along with the error type, metrics and more fields.
 type L4ILBSyncResult struct {
-	Annotations           map[string]string
-	Error                 error
-	GCEResourceInError    string
-	Status                *corev1.LoadBalancerStatus
-	MetricsState          metrics.L4ILBServiceState
-	DualStackMetricsState metrics.L4DualStackServiceState
-	SyncType              string
-	StartTime             time.Time
+	Annotations        map[string]string
+	Error              error
+	GCEResourceInError string
+	Status             *corev1.LoadBalancerStatus
+	MetricsLegacyState metrics.L4ILBServiceLegacyState
+	MetricsState       metrics.L4ServiceState
+	SyncType           string
+	StartTime          time.Time
+}
+
+func NewL4ILBSyncResult(syncType string, startTime time.Time, svc *corev1.Service, isMultinetService bool) *L4ILBSyncResult {
+	result := &L4ILBSyncResult{
+		Annotations:  make(map[string]string),
+		StartTime:    startTime,
+		SyncType:     syncType,
+		MetricsState: metrics.InitServiceMetricsState(svc, &startTime, isMultinetService),
+	}
+
+	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
+	// This will also cover cases where an external LB is updated to an ILB, which is technically a create for ILB.
+	// But this is still the easiest way to identify create vs update in the common case.
+	if syncType == SyncTypeCreate && len(svc.Status.LoadBalancer.Ingress) > 0 {
+		result.SyncType = SyncTypeUpdate
+	}
+	return result
 }
 
 type L4ILBParams struct {
@@ -126,7 +143,8 @@ func (l4 *L4) getILBOptions() gce.ILBOptions {
 // EnsureInternalLoadBalancerDeleted performs a cleanup of all GCE resources for the given loadbalancer service.
 func (l4 *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4ILBSyncResult {
 	klog.V(2).Infof("EnsureInternalLoadBalancerDeleted(%s): deleting L4 ILB LoadBalancer resources", l4.NamespacedName.String())
-	result := &L4ILBSyncResult{SyncType: SyncTypeDelete, StartTime: time.Now()}
+	isMultinetService := l4.networkResolver.IsMultinetService(svc)
+	result := NewL4ILBSyncResult(SyncTypeDelete, time.Now(), svc, isMultinetService)
 
 	l4.deleteIPv4ResourcesOnDelete(result)
 	if l4.enableDualStack {
@@ -306,19 +324,8 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	l4.Service = svc
 
 	startTime := time.Now()
-	result := &L4ILBSyncResult{
-		Annotations:           make(map[string]string),
-		StartTime:             startTime,
-		SyncType:              SyncTypeCreate,
-		DualStackMetricsState: metrics.InitServiceDualStackMetricsState(svc, &startTime),
-	}
-
-	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
-	// This will also cover cases where an external LB is updated to an ILB, which is technically a create for ILB.
-	// But this is still the easiest way to identify create vs update in the common case.
-	if len(svc.Status.LoadBalancer.Ingress) > 0 {
-		result.SyncType = SyncTypeUpdate
-	}
+	isMultinetService := l4.networkResolver.IsMultinetService(svc)
+	result := NewL4ILBSyncResult(SyncTypeCreate, startTime, svc, isMultinetService)
 
 	svcNetwork, err := l4.networkResolver.ServiceNetwork(svc)
 	if err != nil {
@@ -454,20 +461,18 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		return result
 	}
 
-	result.MetricsState.InSuccess = true
+	result.MetricsLegacyState.InSuccess = true
 	if options.AllowGlobalAccess {
-		result.MetricsState.EnabledGlobalAccess = true
+		result.MetricsLegacyState.EnabledGlobalAccess = true
 	}
 	// SubnetName is overwritten to nil value if Alpha feature gate for custom subnet
 	// is not enabled. So, a non empty subnet name at this point implies that the
 	// feature is in use.
 	if options.SubnetName != "" {
-		result.MetricsState.EnabledCustomSubnet = true
+		result.MetricsLegacyState.EnabledCustomSubnet = true
 	}
-	if l4.enableDualStack {
-		result.DualStackMetricsState.Status = metrics.StatusSuccess
-		result.DualStackMetricsState.FirstSyncErrorTime = nil
-	}
+	result.MetricsState.Status = metrics.StatusSuccess
+	result.MetricsState.FirstSyncErrorTime = nil
 	return result
 }
 

@@ -18,11 +18,12 @@ package loadbalancers
 import (
 	"context"
 	"fmt"
-	"k8s.io/ingress-gce/pkg/network"
 	"reflect"
 	"regexp"
 	"strings"
 	"testing"
+
+	"k8s.io/ingress-gce/pkg/network"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -84,7 +85,7 @@ func TestEnsureL4NetLoadBalancer(t *testing.T) {
 	}
 	l4netlb.Service.Annotations = result.Annotations
 	assertNetLBResources(t, l4netlb, nodeNames)
-	if err := checkMetrics(result.MetricsState /*isManaged = */, true /*isPremium = */, true /*isUserError =*/, false); err != nil {
+	if err := checkMetrics(result.MetricsLegacyState /*isManaged = */, true /*isPremium = */, true /*isUserError =*/, false); err != nil {
 		t.Errorf("Metrics error: %v", err)
 	}
 }
@@ -125,7 +126,7 @@ func TestEnsureMultinetL4NetLoadBalancer(t *testing.T) {
 	}
 	l4netlb.Service.Annotations = result.Annotations
 	assertNetLBResources(t, l4netlb, nodeNames)
-	if err := checkMetrics(result.MetricsState /*isManaged = */, true /*isPremium = */, true /*isUserError =*/, false); err != nil {
+	if err := checkMetrics(result.MetricsLegacyState /*isManaged = */, true /*isPremium = */, true /*isUserError =*/, false); err != nil {
 		t.Errorf("Metrics error: %v", err)
 	}
 }
@@ -280,7 +281,7 @@ func TestMetricsForStandardNetworkTier(t *testing.T) {
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
-	if err := checkMetrics(result.MetricsState /*isManaged = */, false /*isPremium = */, false /*isUserError =*/, false); err != nil {
+	if err := checkMetrics(result.MetricsLegacyState /*isManaged = */, false /*isPremium = */, false /*isUserError =*/, false); err != nil {
 		t.Errorf("Metrics error: %v", err)
 	}
 	// Check that service sync will return error if User Address IP Network Tier mismatch with service Network Tier.
@@ -289,7 +290,7 @@ func TestMetricsForStandardNetworkTier(t *testing.T) {
 	if result.Error == nil || !utils.IsNetworkTierError(result.Error) {
 		t.Errorf("LoadBalancer sync should return Network Tier error, err %v", result.Error)
 	}
-	if err := checkMetrics(result.MetricsState /*isManaged = */, false /*isPremium = */, false /*isUserError =*/, true); err != nil {
+	if err := checkMetrics(result.MetricsLegacyState /*isManaged = */, false /*isPremium = */, false /*isUserError =*/, true); err != nil {
 		t.Errorf("Metrics error: %v", err)
 	}
 	// Check that when network tier annotation will be deleted which will change desired service Network Tier to PREMIUM
@@ -305,7 +306,7 @@ func TestMetricsForStandardNetworkTier(t *testing.T) {
 	if result.Error == nil || !utils.IsNetworkTierError(result.Error) {
 		t.Errorf("LoadBalancer sync should return Network Tier error, err %v", result.Error)
 	}
-	if err := checkMetrics(result.MetricsState /*isManaged = */, false /*isPremium = */, false /*isUserError =*/, true); err != nil {
+	if err := checkMetrics(result.MetricsLegacyState /*isManaged = */, false /*isPremium = */, false /*isUserError =*/, true); err != nil {
 		t.Errorf("Metrics error: %v", err)
 	}
 }
@@ -1524,7 +1525,7 @@ func createUserStaticIPInPremiumTier(fakeGCE *gce.Cloud, region string) {
 	fakeGCE.ReserveRegionAddress(newAddr, region)
 }
 
-func checkMetrics(m metrics.L4NetLBServiceState, isManaged, isPremium, isUserError bool) error {
+func checkMetrics(m metrics.L4NetLBServiceLegacyState, isManaged, isPremium, isUserError bool) error {
 	if m.IsPremiumTier != isPremium {
 		return fmt.Errorf("L4 NetLB metric premium tier should be %v", isPremium)
 	}
