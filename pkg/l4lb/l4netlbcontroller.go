@@ -612,14 +612,6 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service)
 		return result
 	}
 
-	if err := common.EnsureDeleteServiceFinalizer(svc, common.NetLBFinalizerV2, lc.ctx.KubeClient); err != nil {
-		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancerFailed",
-			"Error removing finalizer from L4 External LoadBalancer, err: %v", err)
-		result.Error = fmt.Errorf("Failed to remove L4 External LoadBalancer finalizer, err: %w", err)
-		return result
-	}
-
-	// IMPORTANT: Remove LB annotations from the Service LAST, cause changing service fields are emitted as service update to other controllers
 	if lc.enableDualStack {
 		if err := deleteL4RBSDualStackAnnotations(lc.ctx, svc); err != nil {
 			lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
@@ -634,6 +626,15 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service)
 			result.Error = fmt.Errorf("failed to reset resource annotations, err: %w", err)
 			return result
 		}
+	}
+
+	// Finalizer needs to be removed last, because after deleting finalizer service can be deleted and
+	// updating annotations or other manipulations will fail
+	if err := common.EnsureDeleteServiceFinalizer(svc, common.NetLBFinalizerV2, lc.ctx.KubeClient); err != nil {
+		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancerFailed",
+			"Error removing finalizer from L4 External LoadBalancer, err: %v", err)
+		result.Error = fmt.Errorf("Failed to remove L4 External LoadBalancer finalizer, err: %w", err)
+		return result
 	}
 
 	lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletedLoadBalancer", "Deleted L4 External LoadBalancer")
