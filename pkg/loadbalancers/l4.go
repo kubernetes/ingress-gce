@@ -79,10 +79,11 @@ type L4ILBSyncResult struct {
 
 func NewL4ILBSyncResult(syncType string, startTime time.Time, svc *corev1.Service, isMultinetService bool) *L4ILBSyncResult {
 	result := &L4ILBSyncResult{
-		Annotations:  make(map[string]string),
-		StartTime:    startTime,
-		SyncType:     syncType,
-		MetricsState: metrics.InitServiceMetricsState(svc, &startTime, isMultinetService),
+		Annotations: make(map[string]string),
+		StartTime:   startTime,
+		SyncType:    syncType,
+		// Internal Load Balancer doesn't support strong session affinity (passing `false` all along)
+		MetricsState: metrics.InitServiceMetricsState(svc, &startTime, isMultinetService, false),
 	}
 
 	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.

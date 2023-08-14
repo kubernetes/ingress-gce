@@ -85,14 +85,14 @@ type L4NetLBSyncResult struct {
 	StartTime          time.Time
 }
 
-func NewL4SyncResult(syncType string, svc *corev1.Service, isMultinet bool) *L4NetLBSyncResult {
+func NewL4SyncResult(syncType string, svc *corev1.Service, isMultinet bool, enabledStrongSessionAffinity bool) *L4NetLBSyncResult {
 	startTime := time.Now()
 	result := &L4NetLBSyncResult{
 		Annotations:        make(map[string]string),
 		StartTime:          startTime,
 		SyncType:           syncType,
 		MetricsLegacyState: metrics.InitL4NetLBServiceLegacyState(&startTime),
-		MetricsState:       metrics.InitServiceMetricsState(svc, &startTime, isMultinet),
+		MetricsState:       metrics.InitServiceMetricsState(svc, &startTime, isMultinet, enabledStrongSessionAffinity),
 	}
 	return result
 }
@@ -185,7 +185,8 @@ func (l4netlb *L4NetLB) checkStrongSessionAffinityRequirements() *utils.UserErro
 // This function does not link instances to Backend Service.
 func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) *L4NetLBSyncResult {
 	isMultinetService := l4netlb.networkResolver.IsMultinetService(svc)
-	result := NewL4SyncResult(SyncTypeCreate, svc, isMultinetService)
+	enabledStrongSessionAffinity := annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service)
+	result := NewL4SyncResult(SyncTypeCreate, svc, isMultinetService, enabledStrongSessionAffinity)
 	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
 	if len(svc.Status.LoadBalancer.Ingress) > 0 {
 		result.SyncType = SyncTypeUpdate
@@ -198,22 +199,23 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 	if err != nil {
 		klog.Errorf("Failed to get network for service %s/%s, err: %v", svc.Namespace, svc.Name, err)
 		result.Error = err
-		isUserError := utils.IsUserError(err)
-		result.MetricsLegacyState.IsUserError = isUserError
 		result.MetricsState.Status = metrics.StatusError
-		if isUserError {
+		if utils.IsUserError(err) {
+			result.MetricsLegacyState.IsUserError = true
 			result.MetricsState.Status = metrics.StatusUserError
 		}
 		return result
 	}
 	l4netlb.networkInfo = *networkInfo
 	// if service requires strong session affinity, check requirements
-	if l4netlb.enableStrongSessionAffinity {
-		if err := l4netlb.checkStrongSessionAffinityRequirements(); err != nil {
-			result.Error = err
-			result.MetricsLegacyState.IsUserError = utils.IsUserError(err)
-			return result
+	if err := l4netlb.checkStrongSessionAffinityRequirements(); err != nil {
+		result.Error = err
+		result.MetricsState.Status = metrics.StatusError
+		if utils.IsUserError(err) {
+			result.MetricsLegacyState.IsUserError = true
+			result.MetricsState.Status = metrics.StatusUserError
 		}
+		return result
 	}
 
 	// If service requires IPv6 LoadBalancer -- verify that Subnet with External IPv6 ranges is used.
@@ -411,7 +413,8 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 // It is health check, firewall rules and backend service
 func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *L4NetLBSyncResult {
 	isMultinetService := l4netlb.networkResolver.IsMultinetService(svc)
-	result := NewL4SyncResult(SyncTypeDelete, svc, isMultinetService)
+	enabledStrongSessionAffinity := annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service)
+	result := NewL4SyncResult(SyncTypeDelete, svc, isMultinetService, enabledStrongSessionAffinity)
 	l4netlb.Service = svc
 
 	l4netlb.deleteIPv4ResourcesOnDelete(result)

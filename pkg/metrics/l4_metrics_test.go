@@ -25,6 +25,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
+const (
+	isMultinetwork                = "true"
+	notMultinetwork               = "false"
+	enabledStrongSessionAffinity  = "true"
+	disabledStrongSessionAffinity = "false"
+)
+
 func TestExportILBMetric(t *testing.T) {
 	newMetrics := FakeControllerMetrics()
 	pastPersistentErrorThresholdTime := time.Now().Add(-1*persistentErrorThresholdTime - time.Minute)
@@ -70,10 +77,10 @@ func TestExportILBMetric(t *testing.T) {
 
 	newMetrics.exportL4ILBsMetrics()
 
-	verifyL4ILBMetric(t, 2, StatusSuccess, "true")
-	verifyL4ILBMetric(t, 1, StatusUserError, "false")
-	verifyL4ILBMetric(t, 2, StatusError, "false")
-	verifyL4ILBMetric(t, 1, StatusPersistentError, "false")
+	verifyL4ILBMetric(t, 2, StatusSuccess, isMultinetwork)
+	verifyL4ILBMetric(t, 1, StatusUserError, notMultinetwork)
+	verifyL4ILBMetric(t, 2, StatusError, notMultinetwork)
+	verifyL4ILBMetric(t, 1, StatusPersistentError, notMultinetwork)
 }
 
 func verifyL4ILBMetric(t *testing.T, expectedCount int, status L4ServiceStatus, multinet string) {
@@ -89,36 +96,45 @@ func TestExportNetLBMetric(t *testing.T) {
 	pastPersistentErrorThresholdTime := time.Now().Add(-1*persistentErrorThresholdTime - time.Minute)
 	notExceedingPersistentErrorThresholdTime := time.Now().Add(-1*persistentErrorThresholdTime + 5*time.Minute)
 
-	newMetrics.SetL4NetLBService("s1", L4ServiceState{
-		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: true},
+	newMetrics.SetL4NetLBService("svc-success-multinet-1", L4ServiceState{
+		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: true, StrongSessionAffinity: false},
 		Status:                  StatusSuccess,
 	})
-	newMetrics.SetL4NetLBService("s2", L4ServiceState{
-		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: true},
+	newMetrics.SetL4NetLBService("svc-success-all-labels", L4ServiceState{
+		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: true, StrongSessionAffinity: true},
 		Status:                  StatusSuccess,
 	})
-	newMetrics.SetL4NetLBService("s3", L4ServiceState{
-		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: false},
+	newMetrics.SetL4NetLBService("svc-success-multinet-2", L4ServiceState{
+		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: true, StrongSessionAffinity: false},
+		Status:                  StatusSuccess,
+	})
+	newMetrics.SetL4NetLBService("svc-user-error-ssa", L4ServiceState{
+		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: false, StrongSessionAffinity: true},
 		Status:                  StatusUserError,
 	})
-	newMetrics.SetL4NetLBService("s4", L4ServiceState{
-		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: false},
+	newMetrics.SetL4NetLBService("svc-error", L4ServiceState{
+		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: false, StrongSessionAffinity: false},
 		Status:                  StatusError,
 		FirstSyncErrorTime:      &notExceedingPersistentErrorThresholdTime,
 	})
-	newMetrics.SetL4NetLBService("s5", L4ServiceState{
-		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: false},
+	newMetrics.SetL4NetLBService("svc-error", L4ServiceState{
+		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: false, StrongSessionAffinity: false},
+		Status:                  StatusError,
+		FirstSyncErrorTime:      &notExceedingPersistentErrorThresholdTime,
+	})
+	newMetrics.SetL4NetLBService("svc-threshold-check", L4ServiceState{
+		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: false, StrongSessionAffinity: false},
 		Status:                  StatusError,
 		FirstSyncErrorTime:      &pastPersistentErrorThresholdTime,
 	})
 	// check that updating later does not move FirstSyncErrorTime
-	newMetrics.SetL4NetLBService("s5", L4ServiceState{
-		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: false},
+	newMetrics.SetL4NetLBService("svc-threshold-check", L4ServiceState{
+		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: false, StrongSessionAffinity: false},
 		Status:                  StatusError,
 		FirstSyncErrorTime:      &notExceedingPersistentErrorThresholdTime,
 	})
-	newMetrics.SetL4NetLBService("s6", L4ServiceState{
-		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: false},
+	newMetrics.SetL4NetLBService("svc-single-stack", L4ServiceState{
+		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: false, StrongSessionAffinity: false},
 		L4DualStackServiceLabels: L4DualStackServiceLabels{
 			IPFamilies:     "IPv4",
 			IPFamilyPolicy: "SingleStack",
@@ -129,14 +145,15 @@ func TestExportNetLBMetric(t *testing.T) {
 
 	newMetrics.exportL4NetLBsMetrics()
 
-	verifyL4NetLBMetric(t, 2, StatusSuccess, "true")
-	verifyL4NetLBMetric(t, 1, StatusUserError, "false")
-	verifyL4NetLBMetric(t, 2, StatusError, "false")
-	verifyL4NetLBMetric(t, 1, StatusPersistentError, "false")
+	verifyL4NetLBMetric(t, 2, StatusSuccess, isMultinetwork, disabledStrongSessionAffinity)
+	verifyL4NetLBMetric(t, 1, StatusSuccess, isMultinetwork, enabledStrongSessionAffinity)
+	verifyL4NetLBMetric(t, 1, StatusUserError, notMultinetwork, enabledStrongSessionAffinity)
+	verifyL4NetLBMetric(t, 2, StatusError, notMultinetwork, disabledStrongSessionAffinity)
+	verifyL4NetLBMetric(t, 1, StatusPersistentError, notMultinetwork, disabledStrongSessionAffinity)
 }
 
-func verifyL4NetLBMetric(t *testing.T, expectedCount int, status L4ServiceStatus, multinet string) {
-	countFloat := testutil.ToFloat64(l4NetLBCount.With(prometheus.Labels{l4LabelStatus: string(status), l4LabelMultinet: multinet}))
+func verifyL4NetLBMetric(t *testing.T, expectedCount int, status L4ServiceStatus, multinet string, strongSessionAffinity string) {
+	countFloat := testutil.ToFloat64(l4NetLBCount.With(prometheus.Labels{l4LabelStatus: string(status), l4LabelMultinet: multinet, l4LabelStrongSessionAffinity: strongSessionAffinity}))
 	actualCount := int(math.Round(countFloat))
 	if expectedCount != actualCount {
 		t.Errorf("expected value %d but got %d", expectedCount, actualCount)
