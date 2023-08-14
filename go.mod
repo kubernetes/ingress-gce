@@ -21,7 +21,7 @@ require (
 	k8s.io/apimachinery v0.27.1
 	k8s.io/client-go v0.27.1
 	k8s.io/cloud-provider v0.27.1
-	k8s.io/cloud-provider-gcp/crd v0.0.0-20230720235610-49c9a2577cb3
+	k8s.io/cloud-provider-gcp/crd v0.0.0-20230801075638-1b50c1969753
 	k8s.io/cloud-provider-gcp/providers v0.27.1
 	k8s.io/component-base v0.27.1
 	k8s.io/klog/v2 v2.90.1

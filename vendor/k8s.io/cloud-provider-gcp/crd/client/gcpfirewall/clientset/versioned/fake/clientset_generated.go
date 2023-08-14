@@ -25,6 +25,8 @@ import (
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/testing"
 	clientset "k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned"
+	networkingv1 "k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned/typed/gcpfirewall/v1"
+	fakenetworkingv1 "k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned/typed/gcpfirewall/v1/fake"
 	networkingv1beta1 "k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned/typed/gcpfirewall/v1beta1"
 	fakenetworkingv1beta1 "k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned/typed/gcpfirewall/v1beta1/fake"
 )
@@ -82,4 +84,9 @@ var (
 // NetworkingV1beta1 retrieves the NetworkingV1beta1Client
 func (c *Clientset) NetworkingV1beta1() networkingv1beta1.NetworkingV1beta1Interface {
 	return &fakenetworkingv1beta1.FakeNetworkingV1beta1{Fake: &c.Fake}
+}
+
+// NetworkingV1 retrieves the NetworkingV1Client
+func (c *Clientset) NetworkingV1() networkingv1.NetworkingV1Interface {
+	return &fakenetworkingv1.FakeNetworkingV1{Fake: &c.Fake}
 }

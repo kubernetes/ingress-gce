@@ -255,7 +255,7 @@ func TestFirewallPoolGC(t *testing.T) {
 		t.Fatalf("GetFirewall() = %v, %v, expected nil, (error)", f, err)
 	}
 
-	fw := fwClient.NetworkingV1beta1().GCPFirewalls()
+	fw := fwClient.NetworkingV1().GCPFirewalls()
 	fcr, err := fw.Get(context.TODO(), ruleName, metav1.GetOptions{})
 	if err == nil || fcr != nil {
 		t.Fatalf("Get() = %v, %v, expected nil, (error)", fcr, err)
@@ -352,7 +352,7 @@ func validateXPNError(err error, op string, t *testing.T) {
 
 func verifyFirewallCR(firewallclient *firewallclient.Clientset, ruleName string, sourceRanges, expectedPorts []string, crEnabled bool, t *testing.T) {
 	if !crEnabled {
-		fw := firewallclient.NetworkingV1beta1().GCPFirewalls()
+		fw := firewallclient.NetworkingV1().GCPFirewalls()
 		actualFW, _ := fw.Get(context.TODO(), ruleName, metav1.GetOptions{})
 		if actualFW != nil {
 			t.Errorf("firewallCR is disabled, should not generate firewall CR")
@@ -360,7 +360,7 @@ func verifyFirewallCR(firewallclient *firewallclient.Clientset, ruleName string,
 		return
 	}
 
-	fw := firewallclient.NetworkingV1beta1().GCPFirewalls()
+	fw := firewallclient.NetworkingV1().GCPFirewalls()
 	actualFW, err := fw.Get(context.TODO(), ruleName, metav1.GetOptions{})
 	if err != nil {
 		t.Errorf("could not get firewall CR, err %v", err)

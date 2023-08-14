@@ -26,7 +26,7 @@ import (
 	api_errors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/cloud-provider-gcp/crd/apis/gcpfirewall/v1beta1"
+	gcpfirewallv1 "k8s.io/cloud-provider-gcp/crd/apis/gcpfirewall/v1"
 	firewallclient "k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
@@ -90,8 +90,8 @@ func (fr *FirewallCR) Sync(nodeNames, additionalPorts, additionalRanges []string
 // ensureFirewallCR creates/updates the firewall CR
 // On CR update, it will read the conditions to see if there are errors updated by PFW controller.
 // If the Spec was updated by others, it will reconcile the Spec.
-func ensureFirewallCR(client firewallclient.Interface, expectedFWCR *v1beta1.GCPFirewall) error {
-	fw := client.NetworkingV1beta1().GCPFirewalls()
+func ensureFirewallCR(client firewallclient.Interface, expectedFWCR *gcpfirewallv1.GCPFirewall) error {
+	fw := client.NetworkingV1().GCPFirewalls()
 	currentFWCR, err := fw.Get(context.Background(), expectedFWCR.Name, metav1.GetOptions{})
 	klog.V(3).Infof("ensureFirewallCR Get CR :%+v, err :%v", currentFWCR, err)
 	if err != nil {
@@ -110,9 +110,9 @@ func ensureFirewallCR(client firewallclient.Interface, expectedFWCR *v1beta1.GCP
 		return err
 	}
 	for _, con := range currentFWCR.Status.Conditions {
-		if con.Reason == string(v1beta1.FirewallRuleReasonXPNPermissionError) ||
-			con.Reason == string(v1beta1.FirewallRuleReasonInvalid) ||
-			con.Reason == string(v1beta1.FirewallRuleReasonSyncError) {
+		if con.Reason == string(gcpfirewallv1.FirewallRuleReasonXPNPermissionError) ||
+			con.Reason == string(gcpfirewallv1.FirewallRuleReasonInvalid) ||
+			con.Reason == string(gcpfirewallv1.FirewallRuleReasonSyncError) {
 			// Use recorder to emit the cmd in Sync()
 			klog.V(3).Infof("ensureFirewallCR(%v): Could not enforce Firewall CR Reason:%v", currentFWCR.Name, con.Reason)
 			return fmt.Errorf(con.Reason)
@@ -123,27 +123,27 @@ func ensureFirewallCR(client firewallclient.Interface, expectedFWCR *v1beta1.GCP
 
 // deleteFirewallCR deletes the firewall CR
 func deleteFirewallCR(client firewallclient.Interface, name string) error {
-	fw := client.NetworkingV1beta1().GCPFirewalls()
+	fw := client.NetworkingV1().GCPFirewalls()
 	klog.V(3).Infof("Delete CR :%v", name)
 	return fw.Delete(context.Background(), name, metav1.DeleteOptions{})
 }
 
 // NewFirewallCR constructs the firewall CR from name, ports and ranges
-func NewFirewallCR(name string, ports, srcRanges, dstRanges []string, enforced bool) (*v1beta1.GCPFirewall, error) {
-	firewallCR := &v1beta1.GCPFirewall{
+func NewFirewallCR(name string, ports, srcRanges, dstRanges []string, enforced bool) (*gcpfirewallv1.GCPFirewall, error) {
+	firewallCR := &gcpfirewallv1.GCPFirewall{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 		},
-		Spec: v1beta1.GCPFirewallSpec{
-			Action:   v1beta1.ActionAllow,
+		Spec: gcpfirewallv1.GCPFirewallSpec{
+			Action:   gcpfirewallv1.ActionAllow,
 			Disabled: !enforced,
 		},
 	}
-	var protocolPorts []v1beta1.ProtocolPort
+	var protocolPorts []gcpfirewallv1.ProtocolPort
 
 	for _, item := range ports {
 		s := strings.Split(item, "-")
-		var protocolPort v1beta1.ProtocolPort
+		var protocolPort gcpfirewallv1.ProtocolPort
 		startport, err := strconv.Atoi(s[0])
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert startport to an integer: %w", err)
@@ -155,14 +155,14 @@ func NewFirewallCR(name string, ports, srcRanges, dstRanges []string, enforced b
 				return nil, fmt.Errorf("failed to convert endport to an integer: %w", err)
 			}
 			ep32 := int32(endport)
-			protocolPort = v1beta1.ProtocolPort{
-				Protocol:  v1beta1.ProtocolTCP,
+			protocolPort = gcpfirewallv1.ProtocolPort{
+				Protocol:  gcpfirewallv1.ProtocolTCP,
 				StartPort: &sp32,
 				EndPort:   &ep32,
 			}
 		} else {
-			protocolPort = v1beta1.ProtocolPort{
-				Protocol:  v1beta1.ProtocolTCP,
+			protocolPort = gcpfirewallv1.ProtocolPort{
+				Protocol:  gcpfirewallv1.ProtocolTCP,
 				StartPort: &sp32,
 			}
 		}
@@ -170,20 +170,20 @@ func NewFirewallCR(name string, ports, srcRanges, dstRanges []string, enforced b
 	}
 	firewallCR.Spec.Ports = protocolPorts
 
-	var src_cidrs, dst_cidrs []v1beta1.CIDR
+	var src_cidrs, dst_cidrs []gcpfirewallv1.CIDR
 
 	for _, item := range srcRanges {
-		src_cidrs = append(src_cidrs, v1beta1.CIDR(item))
+		src_cidrs = append(src_cidrs, gcpfirewallv1.CIDR(item))
 	}
 
 	for _, item := range dstRanges {
-		dst_cidrs = append(dst_cidrs, v1beta1.CIDR(item))
+		dst_cidrs = append(dst_cidrs, gcpfirewallv1.CIDR(item))
 	}
-	firewallCR.Spec.Ingress = &v1beta1.GCPFirewallIngress{
-		Source: &v1beta1.IngressSource{
+	firewallCR.Spec.Ingress = &gcpfirewallv1.GCPFirewallIngress{
+		Source: &gcpfirewallv1.IngressSource{
 			IPBlocks: src_cidrs,
 		},
-		Destination: &v1beta1.IngressDestination{
+		Destination: &gcpfirewallv1.IngressDestination{
 			IPBlocks: dst_cidrs,
 		},
 	}
