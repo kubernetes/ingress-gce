@@ -32,6 +32,7 @@ import (
 	api_v1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -1570,6 +1571,102 @@ func TestAddIPToLBStatus(t *testing.T) {
 
 			if !reflect.DeepEqual(tc.expectedStatus, newStatus) {
 				t.Errorf("newStatus = %v, not equal to expectedStatus = %v", newStatus, tc.expectedStatus)
+			}
+		})
+	}
+}
+
+func TestIsGCEServerError(t *testing.T) {
+	testcases := []struct {
+		desc string
+		err  error
+		want bool
+	}{
+		{
+			desc: "not a GCE server error",
+			err:  errors.New("error"),
+			want: false,
+		},
+		{
+			desc: "gce error that is not a server error",
+			err:  &googleapi.Error{Code: 100},
+			want: false,
+		},
+		{
+			desc: "gce server error",
+			err:  &googleapi.Error{Code: http.StatusInternalServerError},
+			want: true,
+		},
+		{
+			desc: "wrapped gce server error",
+			err:  fmt.Errorf("errors:%w", &googleapi.Error{Code: http.StatusInternalServerError}),
+			want: true,
+		},
+		{
+			desc: "double wrapped error, with server error as the first",
+			err:  fmt.Errorf("%w:%w", errors.New("error"), &googleapi.Error{Code: http.StatusInternalServerError}),
+			want: true,
+		},
+		{
+			desc: "double wrapped error, with server error as the last",
+			err:  fmt.Errorf("%w:%w", &googleapi.Error{Code: http.StatusInternalServerError}, errors.New("error")),
+			want: true,
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := IsGCEServerError(tc.err)
+			if got != tc.want {
+				t.Errorf("Got %+v, expected %+v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsK8sServerError(t *testing.T) {
+	testcases := []struct {
+		desc string
+		err  error
+		want bool
+	}{
+		{
+			desc: "not a GCE server error",
+			err:  errors.New("error"),
+			want: false,
+		},
+		{
+			desc: "k8s server error that is not a server error",
+			err:  &k8serrors.StatusError{ErrStatus: metav1.Status{Code: 100}},
+			want: false,
+		},
+		{
+			desc: "k8s server error",
+			err:  &k8serrors.StatusError{ErrStatus: metav1.Status{Code: http.StatusInternalServerError}},
+			want: true,
+		},
+		{
+			desc: "wrapped k8s server error",
+			err:  fmt.Errorf("errors:%w", &k8serrors.StatusError{ErrStatus: metav1.Status{Code: http.StatusInternalServerError}}),
+			want: true,
+		},
+		{
+			desc: "double wrapped error, with server error as the first",
+			err:  fmt.Errorf("%w:%w", errors.New("error"), &k8serrors.StatusError{ErrStatus: metav1.Status{Code: http.StatusInternalServerError}}),
+			want: true,
+		},
+		{
+			desc: "double wrapped error, with server error as the last",
+			err:  fmt.Errorf("%w:%w", &k8serrors.StatusError{ErrStatus: metav1.Status{Code: http.StatusInternalServerError}}, errors.New("error")),
+			want: true,
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := IsK8sServerError(tc.err)
+			if got != tc.want {
+				t.Errorf("Got %+v, expected %+v", got, tc.want)
 			}
 		})
 	}
