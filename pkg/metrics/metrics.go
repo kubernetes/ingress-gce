@@ -498,6 +498,7 @@ func initializeCounts() (map[feature]int, map[feature]int) {
 			clientIPAffinity:          0,
 			cookieAffinity:            0,
 			customRequestHeaders:      0,
+			transparentHealthChecks:   0,
 		}
 }
 
