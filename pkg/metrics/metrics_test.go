@@ -959,6 +959,7 @@ func TestComputeIngressMetrics(t *testing.T) {
 				servicePort:               0,
 				externalServicePort:       0,
 				neg:                       0,
+				transparentHealthChecks:   0,
 			},
 		},
 		{
@@ -1011,6 +1012,7 @@ func TestComputeIngressMetrics(t *testing.T) {
 				servicePort:               2,
 				externalServicePort:       0,
 				neg:                       2,
+				transparentHealthChecks:   0,
 			},
 		},
 		{
@@ -1137,6 +1139,7 @@ func TestComputeIngressMetrics(t *testing.T) {
 				servicePort:               5,
 				externalServicePort:       3,
 				neg:                       3,
+				transparentHealthChecks:   0,
 			},
 		},
 	} {
