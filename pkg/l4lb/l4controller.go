@@ -334,29 +334,35 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) *lo
 		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancerFailed", "Error deleting load balancer: %v", result.Error)
 		return result
 	}
-	// Reset the loadbalancer status first, before resetting annotations.
-	// Other controllers(like service-controller) will process the service update if annotations change, but will ignore a service status change.
-	// Following this order avoids a race condition when a service is changed from LoadBalancer type Internal to External.
-	if err := updateServiceStatus(l4c.ctx, svc, &v1.LoadBalancerStatus{}); err != nil {
-		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
-			"Error resetting load balancer status to empty: %v", err)
-		result.Error = fmt.Errorf("failed to reset ILB status, err: %w", err)
-		return result
-	}
-	// Also remove any ILB annotations from the service metadata
-	if l4c.enableDualStack {
-		if err := updateL4DualStackResourcesAnnotations(l4c.ctx, svc, nil); err != nil {
+
+	// If the Service is not being deleted, it has been mutated, so we have to wipe the Status and the Annotations.
+	// If is being deleted just remove the finalizer to the Services can be deleted by the apiserver.
+	if svc.DeletionTimestamp == nil {
+		// Reset the loadbalancer status first, before resetting annotations.
+		// Other controllers(like service-controller) will process the service update if annotations change, but will ignore a service status change.
+		// Following this order avoids a race condition when a service is changed from LoadBalancer type Internal to External.
+		if err := updateServiceStatus(l4c.ctx, svc, &v1.LoadBalancerStatus{}); err != nil {
 			l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
-				"Error resetting DualStack resource annotations for load balancer: %v", err)
-			result.Error = fmt.Errorf("failed to reset DualStack resource annotations, err: %w", err)
+				"Error resetting load balancer status to empty: %v", err)
+			result.Error = fmt.Errorf("failed to reset ILB status, err: %w", err)
 			return result
 		}
-	} else {
-		if err := updateL4ResourcesAnnotations(l4c.ctx, svc, nil); err != nil {
-			l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
-				"Error resetting resource annotations for load balancer: %v", err)
-			result.Error = fmt.Errorf("failed to reset resource annotations, err: %w", err)
-			return result
+
+		// Also remove any ILB annotations from the service metadata
+		if l4c.enableDualStack {
+			if err := updateL4DualStackResourcesAnnotations(l4c.ctx, svc, nil); err != nil {
+				l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
+					"Error resetting DualStack resource annotations for load balancer: %v", err)
+				result.Error = fmt.Errorf("failed to reset DualStack resource annotations, err: %w", err)
+				return result
+			}
+		} else {
+			if err := updateL4ResourcesAnnotations(l4c.ctx, svc, nil); err != nil {
+				l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
+					"Error resetting resource annotations for load balancer: %v", err)
+				result.Error = fmt.Errorf("failed to reset resource annotations, err: %w", err)
+				return result
+			}
 		}
 	}
 
