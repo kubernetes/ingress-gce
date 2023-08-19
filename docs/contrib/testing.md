@@ -13,13 +13,13 @@ tests that run against a release image use both GCE and GKE.
 
 Any test that starts with ingress-gce-* is a test which runs an image of GLBC from HEAD.
 Any other test you see runs a release image of GLBC.
-Check out https://k8s-testgrid.appspot.com/sig-network-gce & https://k8s-testgrid.appspot.com/sig-network-gke
+Check out https://testgrid.k8s.io/sig-network-gce & https://testgrid.k8s.io/sig-network-gke
 for to see the results for these tests.
 
 Every time a PR is merged to ingress-gce, Kubernetes test-infra triggers
 a job that pushes a new image of GLBC for e2e testing. The ingress-gce-* jobs then use
 this image when the test cluster is brought up. You can see the results of this job
-at https://k8s-testgrid.appspot.com/sig-network-gce#ingress-gce-image-push.
+at https://testgrid.k8s.io/sig-network-gce#ingress-gce-image-push.
 
 ## Running E2E tests
 
