@@ -259,6 +259,11 @@ func (lc *L4NetLBController) needsUpdate(newSvc, oldSvc *v1.Service) bool {
 
 // shouldProcessService checks if given service should be process by controller
 func (lc *L4NetLBController) shouldProcessService(newSvc, oldSvc *v1.Service) bool {
+	// Ignore services with LoadBalancerClass set. LoadBalancerClass can't be updated (see the field API doc) so we don't need to worry about cleaning up services that changed the class.
+	if newSvc.Spec.LoadBalancerClass != nil {
+		klog.Infof("Ignoring service %s:%s managed by another controller (service LoadBalancerClass is %s)", newSvc.Namespace, newSvc.Name, *newSvc.Spec.LoadBalancerClass)
+		return false
+	}
 	if !lc.isRBSBasedService(newSvc) && !lc.isRBSBasedService(oldSvc) {
 		return false
 	}
@@ -418,7 +423,6 @@ func (lc *L4NetLBController) sync(key string) error {
 		klog.V(3).Infof("Ignoring sync of non-existent service %s", key)
 		return nil
 	}
-
 	isLegacyService, err := lc.preventLegacyServiceHandling(svc, key)
 	if err != nil {
 		klog.Warningf("lc.preventLegacyServiceHandling(%v, %s) returned error %v, want nil", svc, key, err)

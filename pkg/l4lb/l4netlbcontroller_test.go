@@ -1271,6 +1271,14 @@ func TestShouldProcessService(t *testing.T) {
 	svcWithRBSAnnotationAndFinalizer.ObjectMeta.Finalizers = append(svcWithRBSAnnotationAndFinalizer.ObjectMeta.Finalizers, common.NetLBFinalizerV2)
 	svcWithRBSAnnotationAndFinalizer.Annotations = map[string]string{annotations.RBSAnnotationKey: annotations.RBSEnabled}
 
+	svcWithLoadBalancerClass, err := l4netController.ctx.KubeClient.CoreV1().Services(legacyNetLBSvc.Namespace).Get(context.TODO(), legacyNetLBSvc.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err: %v", legacyNetLBSvc.Name, err)
+	}
+	svcWithLoadBalancerClass.Annotations = map[string]string{annotations.RBSAnnotationKey: annotations.RBSEnabled}
+	testLBClass := "testLBClass"
+	svcWithLoadBalancerClass.Spec.LoadBalancerClass = &testLBClass
+
 	for _, testCase := range []struct {
 		oldSvc        *v1.Service
 		newSvc        *v1.Service
@@ -1295,6 +1303,11 @@ func TestShouldProcessService(t *testing.T) {
 			oldSvc:        nil,
 			newSvc:        svcWithRBSAnnotationAndFinalizer,
 			shouldProcess: true,
+		},
+		{
+			oldSvc:        nil,
+			newSvc:        svcWithLoadBalancerClass,
+			shouldProcess: false,
 		},
 		{
 			// We do not support migration only by finalizer
