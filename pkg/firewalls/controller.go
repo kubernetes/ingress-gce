@@ -29,7 +29,7 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/cloud-provider-gcp/crd/apis/gcpfirewall/v1beta1"
+	gcpfirewallv1 "k8s.io/cloud-provider-gcp/crd/apis/gcpfirewall/v1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/common/operator"
@@ -166,7 +166,7 @@ func NewFirewallController(
 			// 1. Make sure the CR is consistent with the FW configuration.
 			// 2. Force the controller to read the CR status and populate proper errors.
 			UpdateFunc: func(old, cur interface{}) {
-				curFW := cur.(*v1beta1.GCPFirewall)
+				curFW := cur.(*gcpfirewallv1.GCPFirewall)
 				name := fwc.ctx.ClusterNamer.FirewallRule()
 				if name != curFW.Name {
 					return

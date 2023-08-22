@@ -24,6 +24,7 @@ import (
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	serializer "k8s.io/apimachinery/pkg/runtime/serializer"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	networkingv1 "k8s.io/cloud-provider-gcp/crd/apis/gcpfirewall/v1"
 	networkingv1beta1 "k8s.io/cloud-provider-gcp/crd/apis/gcpfirewall/v1beta1"
 )
 
@@ -32,6 +33,7 @@ var Codecs = serializer.NewCodecFactory(Scheme)
 var ParameterCodec = runtime.NewParameterCodec(Scheme)
 var localSchemeBuilder = runtime.SchemeBuilder{
 	networkingv1beta1.AddToScheme,
+	networkingv1.AddToScheme,
 }
 
 // AddToScheme adds all types of this clientset into the given scheme. This allows composition
