@@ -449,9 +449,10 @@ func validateAndModifyPrefixPathType(path v1.HTTPIngressPath) ([]string, error) 
 	return []string{path.Path, path.Path + "/*"}, nil
 }
 
-func getZone(n *api_v1.Node) string {
-	zone, ok := n.Labels[annotations.ZoneKey]
+func getZone(node *api_v1.Node) string {
+	zone, ok := node.Labels[annotations.ZoneKey]
 	if !ok {
+		klog.Warningf("Node without zone label %q, returning %q as zone. Node name: %v, node labels: %v", annotations.ZoneKey, annotations.DefaultZone, node.Name, node.Labels)
 		return annotations.DefaultZone
 	}
 	return zone

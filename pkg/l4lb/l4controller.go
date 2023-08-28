@@ -542,6 +542,6 @@ func (l4c *L4Controller) publishMetrics(result *loadbalancers.L4ILBSyncResult, n
 			l4metrics.PublishL4ILBDualStackSyncLatency(result.Error == nil, result.SyncType, result.MetricsState.IPFamilies, result.StartTime)
 		}
 	default:
-		klog.Warningf("Unknown sync type %q, skipping metrics", result.SyncType)
+		klog.Warningf("Unknown sync type: %q, for service %s skipping metrics", result.SyncType, namespacedName)
 	}
 }
