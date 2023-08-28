@@ -708,7 +708,7 @@ func (lc *L4NetLBController) publishMetrics(result *loadbalancers.L4NetLBSyncRes
 		}
 		lc.publishSyncMetrics(result)
 	default:
-		klog.Warningf("Unknown sync type %q, skipping metrics", result.SyncType)
+		klog.Warningf("Unknown sync type: %q, for service %s skipping metrics", result.SyncType, namespacedName)
 	}
 }
 
