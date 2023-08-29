@@ -198,6 +198,11 @@ func (l4c *L4Controller) shutdown() {
 // the subsetting controller will not process it. Processing it will fail forwarding rule creation with the same IP anyway.
 // This check prevents processing of v1-implemented services whose finalizer field got wiped out.
 func (l4c *L4Controller) shouldProcessService(service *v1.Service) bool {
+	// Ignore services with LoadBalancerClass set. LoadBalancerClass can't be updated (see the field API doc) so we don't need to worry about cleaning up services that changed the class.
+	if service.Spec.LoadBalancerClass != nil {
+		klog.Infof("Ignoring service %s:%s managed by another controller (service LoadBalancerClass is %s)", service.Namespace, service.Name, *service.Spec.LoadBalancerClass)
+		return false
+	}
 	// skip services that are being handled by the legacy service controller.
 	if utils.IsLegacyL4ILBService(service) {
 		klog.Warningf("Ignoring update for service %s:%s managed by service controller", service.Namespace, service.Name)

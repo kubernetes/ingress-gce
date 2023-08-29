@@ -47,6 +47,7 @@ import (
 	"k8s.io/ingress-gce/pkg/network"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/klog/v2"
 )
 
@@ -1042,6 +1043,73 @@ func TestMergeCSMPortInfoMap(t *testing.T) {
 				t.Fatalf("Failed to run mergeCSMPortInfoMap: %v", err)
 			}
 			if !reflect.DeepEqual(tc.wantSvcPortMap, portInfoMap) {
+				t.Fatalf("Wrong services PortInfoMap, got %+v, want %+v", portInfoMap, tc.wantSvcPortMap)
+			}
+		})
+	}
+}
+
+func TestMergeVmIpNEGsPortInfo(t *testing.T) {
+	controller := newTestController(fake.NewSimpleClientset())
+	secondaryNetwork := &network.NetworkInfo{
+		IsDefault:  false,
+		K8sNetwork: "secondaryNetwork",
+	}
+	serviceILBWithFinalizer := newTestILBService(controller, false, 80)
+	serviceILBWithFinalizer.Finalizers = append(serviceILBWithFinalizer.Finalizers, common.ILBFinalizerV2)
+
+	serviceWithLoadBalancerClass := newTestILBService(controller, false, 80)
+	testLBClass := "testClass"
+	serviceWithLoadBalancerClass.Spec.LoadBalancerClass = &testLBClass
+	serviceWithLoadBalancerClass.Finalizers = append(serviceILBWithFinalizer.Finalizers, common.ILBFinalizerV2)
+
+	testCases := []struct {
+		desc           string
+		svc            *apiv1.Service
+		networkInfo    *network.NetworkInfo
+		wantSvcPortMap negtypes.PortInfoMap
+	}{
+		{
+			desc:           "ILB subsetting service",
+			svc:            serviceILBWithFinalizer,
+			networkInfo:    defaultNetwork,
+			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, false, defaultNetwork),
+		},
+		{
+			desc:           "ILB legacy service",
+			svc:            newTestILBService(controller, false, 80),
+			networkInfo:    defaultNetwork,
+			wantSvcPortMap: nil,
+		},
+		{
+			desc:           "RBS Multinet Service",
+			svc:            newTestRBSMultinetService(controller, true, 80),
+			networkInfo:    secondaryNetwork,
+			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, secondaryNetwork),
+		},
+		{
+			desc:           "RBS non-multinet Service",
+			svc:            newTestRBSMultinetService(controller, true, 80),
+			networkInfo:    defaultNetwork,
+			wantSvcPortMap: nil,
+		},
+		{
+			desc:           "Service with load balancer class",
+			svc:            serviceWithLoadBalancerClass,
+			networkInfo:    defaultNetwork,
+			wantSvcPortMap: nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			portInfoMap := make(negtypes.PortInfoMap)
+			negUsage := metrics.NegServiceState{}
+			controller.mergeVmIpNEGsPortInfo(tc.svc, types.NamespacedName{Namespace: tc.svc.Namespace, Name: tc.svc.Name}, portInfoMap, &negUsage, tc.networkInfo)
+			if tc.wantSvcPortMap == nil && len(portInfoMap) > 0 {
+				t.Errorf("expected no new data in PortInfoMap but got %+v", portInfoMap)
+			}
+			if tc.wantSvcPortMap != nil && !reflect.DeepEqual(tc.wantSvcPortMap, portInfoMap) {
 				t.Fatalf("Wrong services PortInfoMap, got %+v, want %+v", portInfoMap, tc.wantSvcPortMap)
 			}
 		})

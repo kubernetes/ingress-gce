@@ -755,6 +755,25 @@ func TestProcessUpdateILBIPFamilies(t *testing.T) {
 	}
 }
 
+func TestProcessCreateServiceWithLoadBalancerClass(t *testing.T) {
+	l4c := newServiceController(t, newFakeGCE())
+	newSvc := test.NewL4ILBService(false, 8080)
+	// Set the legacy finalizer
+	testLBClass := "testClass"
+	newSvc.Spec.LoadBalancerClass = &testLBClass
+	addILBService(l4c, newSvc)
+	err := l4c.sync(getKeyForSvc(newSvc, t))
+	if err != nil {
+		t.Errorf("Failed to sync newly added service %s, err %v", newSvc.Name, err)
+	}
+	// List the service and ensure that the status field is not updated.
+	svc, err := l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
+	}
+	verifyILBServiceNotProvisioned(t, svc)
+}
+
 func newServiceController(t *testing.T, fakeGCE *gce.Cloud) *L4Controller {
 	kubeClient := fake.NewSimpleClientset()
 

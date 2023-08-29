@@ -603,6 +603,12 @@ func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.Na
 		return nil
 	}
 
+	if service.Spec.LoadBalancerClass != nil {
+		msg := fmt.Sprintf("Ignoring Service %s, namespace %s as it uses a LoadBalancerClass %s", service.Name, service.Namespace, *service.Spec.LoadBalancerClass)
+		c.logger.Info(msg)
+		return nil
+	}
+
 	onlyLocal := helpers.RequestsOnlyLocalTraffic(service)
 	// Update usage metrics.
 	negUsage.VmIpNeg = usageMetrics.NewVmIpNegType(onlyLocal)
