@@ -1377,6 +1377,37 @@ func TestStrongSessionAffinityServiceUpdate(t *testing.T) {
 	deleteNetLBService(l4netController, svcAfterUpdate)
 }
 
+func TestMultinetNeedsUpdate(t *testing.T) {
+	// setup an original service
+	lc := newL4NetLBServiceController()
+	lc.networkResolver = network.NewFakeResolver(&network.NetworkInfo{
+		IsDefault: false,
+	})
+
+	oldSvc := test.NewL4NetLBRBSService(8080)
+	selectorWithNet1 := map[string]string{
+		network.NetworkSelectorKey: "net1",
+	}
+	oldSvc.Spec.Selector = selectorWithNet1
+	newSvcSame := test.NewL4NetLBRBSService(8080)
+	newSvcSame.Spec.Selector = selectorWithNet1
+	newSvcDifferentNet := test.NewL4NetLBRBSService(8080)
+	newSvcDifferentNet.Spec.Selector = map[string]string{
+		network.NetworkSelectorKey: "otherNet",
+	}
+	newSvcDefault := test.NewL4NetLBRBSService(8080)
+
+	if lc.needsUpdate(oldSvc, newSvcSame) {
+		t.Errorf("expected no update needed between services in the same network old: %+v, new: %+v", oldSvc, newSvcSame)
+	}
+	if !lc.needsUpdate(oldSvc, newSvcDifferentNet) {
+		t.Errorf("expected update is needed between services in different network old: %+v, new: %+v", oldSvc, newSvcDifferentNet)
+	}
+	if !lc.needsUpdate(oldSvc, newSvcDefault) {
+		t.Errorf("expected no update needed between services in different network old: %+v, new: %+v", oldSvc, newSvcDefault)
+	}
+}
+
 func TestDualStackServiceNeedsUpdate(t *testing.T) {
 	testCases := []struct {
 		desc              string

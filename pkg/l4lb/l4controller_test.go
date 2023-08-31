@@ -26,6 +26,7 @@ import (
 	"google.golang.org/api/googleapi"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/metrics"
+	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
@@ -774,6 +775,32 @@ func TestProcessCreateServiceWithLoadBalancerClass(t *testing.T) {
 	verifyILBServiceNotProvisioned(t, svc)
 }
 
+func TestNeedsUpdateAfterNetworkChange(t *testing.T) {
+	l4c := newServiceController(t, newFakeGCE())
+	oldSvc := test.NewL4ILBService(false, 8080)
+	selectorWithNet1 := map[string]string{
+		network.NetworkSelectorKey: "net1",
+	}
+	oldSvc.Spec.Selector = selectorWithNet1
+	newSvcSame := test.NewL4ILBService(false, 8080)
+	newSvcSame.Spec.Selector = selectorWithNet1
+	newSvcDifferentNet := test.NewL4ILBService(false, 8080)
+	newSvcDifferentNet.Spec.Selector = map[string]string{
+		network.NetworkSelectorKey: "otherNet",
+	}
+	newSvcDefault := test.NewL4ILBService(false, 8080)
+
+	if l4c.needsUpdate(oldSvc, newSvcSame) {
+		t.Errorf("expected no update needed between services in the same network old: %+v, new: %+v", oldSvc, newSvcSame)
+	}
+	if !l4c.needsUpdate(oldSvc, newSvcDifferentNet) {
+		t.Errorf("expected update is needed between services in different network old: %+v, new: %+v", oldSvc, newSvcDifferentNet)
+	}
+	if !l4c.needsUpdate(oldSvc, newSvcDefault) {
+		t.Errorf("expected no update needed between services in different network old: %+v, new: %+v", oldSvc, newSvcDefault)
+	}
+}
+
 func newServiceController(t *testing.T, fakeGCE *gce.Cloud) *L4Controller {
 	kubeClient := fake.NewSimpleClientset()
 
@@ -782,9 +809,10 @@ func newServiceController(t *testing.T, fakeGCE *gce.Cloud) *L4Controller {
 
 	stopCh := make(chan struct{})
 	ctxConfig := context.ControllerContextConfig{
-		Namespace:    api_v1.NamespaceAll,
-		ResyncPeriod: 1 * time.Minute,
-		NumL4Workers: 5,
+		Namespace:             api_v1.NamespaceAll,
+		ResyncPeriod:          1 * time.Minute,
+		NumL4Workers:          5,
+		EnableMultinetworking: true,
 	}
 	ctx := context.NewControllerContext(nil, kubeClient, nil, nil, nil, nil, nil, nil, nil, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig)
 	// Add some nodes so that NEG linker kicks in during ILB creation.

@@ -31,13 +31,16 @@ import (
 const (
 	networkingGKEGroup     = networkv1.GroupName
 	gkeNetworkParamSetKind = "gkenetworkparamset"
-	networkSelector        = networkv1.NetworkAnnotationKey
+
+	// NetworkSelectorKey is the key under which services indicate the network to use in their selector.
+	NetworkSelectorKey = networkv1.NetworkAnnotationKey
 )
 
 // Resolver is the interface to resolve networks that the LB resources should be created in.
 type Resolver interface {
 	ServiceNetwork(service *apiv1.Service) (*NetworkInfo, error)
 	IsMultinetService(service *apiv1.Service) bool
+	NetworkNameFromSelector(service *apiv1.Service) string
 }
 
 // NetworksResolver is responsible for resolving networks that the LB resources should be created in.
@@ -68,7 +71,7 @@ func (nr *NetworksResolver) ServiceNetwork(service *apiv1.Service) (*NetworkInfo
 		return DefaultNetwork(nr.cloudProvider), nil
 	}
 	nr.logger.Info("Network lookup for service", "service", service.Name, "namespace", service.Namespace)
-	networkName, ok := service.Spec.Selector[networkSelector]
+	networkName, ok := service.Spec.Selector[NetworkSelectorKey]
 	if !ok || networkName == "" || networkName == networkv1.DefaultPodNetworkName {
 		return DefaultNetwork(nr.cloudProvider), nil
 	}
@@ -120,11 +123,19 @@ func (nr *NetworksResolver) IsMultinetService(service *apiv1.Service) bool {
 	if !nr.enableMultinetworking {
 		return false
 	}
-	networkName, ok := service.Spec.Selector[networkSelector]
+	networkName, ok := service.Spec.Selector[NetworkSelectorKey]
 	if !ok || networkName == "" || networkName == networkv1.DefaultPodNetworkName {
 		return false
 	}
 	return true
+}
+
+func (nr *NetworksResolver) NetworkNameFromSelector(service *apiv1.Service) string {
+	if !nr.enableMultinetworking {
+		return ""
+	}
+	networkName := service.Spec.Selector[NetworkSelectorKey]
+	return networkName
 }
 
 // DefaultNetwork creates network information struct of the default network. Default network is the main cluster network.
@@ -223,8 +234,12 @@ func (fake *FakeNetworkResolver) ServiceNetwork(service *apiv1.Service) (*Networ
 	return fake.networkInfo, nil
 }
 
+func (fake *FakeNetworkResolver) NetworkNameFromSelector(service *apiv1.Service) string {
+	return service.Spec.Selector[NetworkSelectorKey]
+}
+
 func (fake *FakeNetworkResolver) IsMultinetService(service *apiv1.Service) bool {
-	networkName, ok := service.Spec.Selector[networkSelector]
+	networkName, ok := service.Spec.Selector[NetworkSelectorKey]
 	if !ok || networkName == "" || networkName == networkv1.DefaultPodNetworkName {
 		return false
 	}

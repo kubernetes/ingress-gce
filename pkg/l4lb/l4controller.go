@@ -516,6 +516,13 @@ func (l4c *L4Controller) needsUpdate(oldService *v1.Service, newService *v1.Serv
 			oldService.Spec.IPFamilies, newService.Spec.IPFamilies)
 		return true
 	}
+	oldNetwork := l4c.networkResolver.NetworkNameFromSelector(oldService)
+	newNetwork := l4c.networkResolver.NetworkNameFromSelector(newService)
+	if oldNetwork != newNetwork {
+		recorder.Eventf(newService, v1.EventTypeNormal, "Service network", "%v -> %v",
+			oldNetwork, newNetwork)
+		return true
+	}
 	return false
 }
 

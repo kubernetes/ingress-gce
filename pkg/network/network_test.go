@@ -41,7 +41,7 @@ func TestServiceNetwork(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "testService"},
 		Spec: apiv1.ServiceSpec{
 			Selector: map[string]string{
-				networkSelector: "secondary-network",
+				NetworkSelectorKey: "secondary-network",
 			},
 		},
 	}
@@ -85,7 +85,7 @@ func TestServiceNetwork(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Name: "testService"},
 				Spec: apiv1.ServiceSpec{
 					Selector: map[string]string{
-						networkSelector: "",
+						NetworkSelectorKey: "",
 					},
 				},
 			},
@@ -97,7 +97,7 @@ func TestServiceNetwork(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Name: "testService"},
 				Spec: apiv1.ServiceSpec{
 					Selector: map[string]string{
-						networkSelector: networkv1.DefaultPodNetworkName,
+						NetworkSelectorKey: networkv1.DefaultPodNetworkName,
 					},
 				},
 			},
@@ -358,6 +358,32 @@ func TestNodeIPForNetwork(t *testing.T) {
 				t.Errorf("GetNodeIPForNetwork(%+v, %q) wanted %v but got %v", tc.node, tc.network, tc.want, got)
 			}
 		})
+	}
+}
+
+func TestNetworkNameFromSelector(t *testing.T) {
+	networksResolver := NewNetworksResolver(nil, nil, fakeCloud{}, true, klog.Background())
+	secondaryNetworkName := "secondary-network"
+	serviceWithSecondaryNet := &apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "testService"},
+		Spec: apiv1.ServiceSpec{
+			Selector: map[string]string{
+				NetworkSelectorKey: secondaryNetworkName,
+			},
+		},
+	}
+	networkNameFromSelector := networksResolver.NetworkNameFromSelector(serviceWithSecondaryNet)
+	if networkNameFromSelector != secondaryNetworkName {
+		t.Errorf("networksResolver.NetworkNameFromSelector() invalid name, want=%s, got=%s for service %+v", secondaryNetworkName, networkNameFromSelector, serviceWithSecondaryNet)
+	}
+
+	serviceInDefaultNet := &apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "testService"},
+	}
+	empty := ""
+	networkNameFromSelector = networksResolver.NetworkNameFromSelector(serviceInDefaultNet)
+	if networkNameFromSelector != empty {
+		t.Errorf("networksResolver.NetworkNameFromSelector() invalid name, want=%s, got=%s for service %+v", empty, networkNameFromSelector, serviceWithSecondaryNet)
 	}
 }
 
