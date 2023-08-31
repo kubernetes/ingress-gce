@@ -279,10 +279,13 @@ type NegSyncerKey struct {
 	//   The endpoints are nodes selected at random in case of Cluster trafficPolicy(L4ClusterMode).
 	//   The endpoints are nodes running backends of this service in case of Local trafficPolicy(L4LocalMode).
 	EpCalculatorMode EndpointsCalculatorMode
+
+	// K8sNetwork is the name of the network the NEG is in as indicated in the Network CRD resource.
+	K8sNetwork string
 }
 
 func (key NegSyncerKey) String() string {
-	return fmt.Sprintf("%s/%s-%s-%s-%s-%s", key.Namespace, key.Name, key.NegName, key.PortTuple.String(), string(key.NegType), key.EpCalculatorMode)
+	return fmt.Sprintf("%s/%s-%s-%s-%s-%s-%s", key.Namespace, key.Name, key.NegName, key.PortTuple.String(), string(key.NegType), key.EpCalculatorMode, key.K8sNetwork)
 }
 
 // GetAPIVersion returns the compute API version to be used in order

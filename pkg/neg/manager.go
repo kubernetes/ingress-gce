@@ -863,6 +863,7 @@ func (manager *syncerManager) getSyncerKey(namespace, name string, servicePortKe
 		PortTuple:        portInfo.PortTuple,
 		NegType:          networkEndpointType,
 		EpCalculatorMode: calculatorMode,
+		K8sNetwork:       portInfo.NetworkInfo.K8sNetwork,
 	}
 }
 
