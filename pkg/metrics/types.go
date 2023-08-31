@@ -93,6 +93,8 @@ type L4DualStackServiceLabels struct {
 type L4FeaturesServiceLabels struct {
 	// Multinetwork specifies if the service is a multinetworked service
 	Multinetwork bool
+	// StrongSessionAffinity is true if String Session Affinity is enabled
+	StrongSessionAffinity bool
 }
 
 // L4ServiceState tracks the state of an L4 service. It includes data needed to fill various L4 metrics plus the status of the service.
