@@ -443,6 +443,23 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		}
 	}
 
+	// if Service network changed, we must delete forwarding rule and the backend service,
+	// otherwise, on updating backend service, google cloud api will return error
+	// Do this only if multinet is enabled
+	if l4.networkResolver.IsMultinetEnabled() {
+		deletedFwdRule, deletedBackendService, err := l4.multinetCheckResourceNetworksAndDeleteIfNeeded(existingIPv4FR, subnetworkURL, existingBS)
+		if err != nil {
+			result.Error = err
+			return result
+		}
+		if deletedFwdRule {
+			existingIPv4FR = nil
+		}
+		if deletedBackendService {
+			existingBS = nil
+		}
+	}
+
 	// ensure backend service
 	bs, err := l4.backendPool.EnsureL4BackendService(bsName, hcLink, string(protocol), string(l4.Service.Spec.SessionAffinity), string(cloud.SchemeInternal), l4.NamespacedName, l4.network, &composite.BackendServiceConnectionTrackingPolicy{})
 	if err != nil {
@@ -474,6 +491,41 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	result.MetricsState.Status = metrics.StatusSuccess
 	result.MetricsState.FirstSyncErrorTime = nil
 	return result
+}
+
+func (l4 *L4) multinetCheckResourceNetworksAndDeleteIfNeeded(existingIPv4FR *composite.ForwardingRule, expectedFWRuleSubnetworkURL string, existingBS *composite.BackendService) (deletedFwdRule bool, deletedBackendService bool, err error) {
+	deletedFwdRule, deletedBackendService = false, false
+	if existingIPv4FR != nil && (l4.resourceNetworkChanged(existingIPv4FR.Network) || l4.resourceSubnetworkChanged(existingIPv4FR.Subnetwork, expectedFWRuleSubnetworkURL)) {
+		klog.Infof("Service network changed, deleting existing forwarding rule %s", existingIPv4FR.Name)
+		err := l4.forwardingRules.Delete(existingIPv4FR.Name)
+		if err != nil {
+			return deletedFwdRule, deletedBackendService, fmt.Errorf("service network change, failed to delete forwarding rule %s, err %v", existingIPv4FR.Name, err)
+		}
+		deletedFwdRule = true
+	}
+	if existingBS != nil && l4.resourceNetworkChanged(existingBS.Network) {
+		klog.Infof("Service network changed, deleting existing backend service %s", existingBS.Name)
+		err := l4.backendPool.Delete(existingBS.Name, meta.VersionGA, meta.Regional)
+		if err != nil {
+			return deletedFwdRule, deletedBackendService, fmt.Errorf("service network change, failed to delete backend service %s, err %v", existingBS.Name, err)
+		}
+		deletedBackendService = true
+	}
+	return deletedFwdRule, deletedBackendService, nil
+}
+
+func (l4 *L4) resourceNetworkChanged(existingResourceNetworkURL string) bool {
+	if existingResourceNetworkURL == "" && l4.network.IsDefault {
+		return false
+	}
+	return existingResourceNetworkURL != l4.network.NetworkURL && !utils.EqualResourceIDs(existingResourceNetworkURL, l4.network.NetworkURL)
+}
+
+func (l4 *L4) resourceSubnetworkChanged(existingResourceSubnetworkURL, expectedResourceSubnetworkURL string) bool {
+	if existingResourceSubnetworkURL == "" && l4.network.IsDefault {
+		return false
+	}
+	return existingResourceSubnetworkURL != expectedResourceSubnetworkURL && !utils.EqualResourceIDs(existingResourceSubnetworkURL, expectedResourceSubnetworkURL)
 }
 
 func (l4 *L4) provideHealthChecks(nodeNames []string, result *L4ILBSyncResult) string {

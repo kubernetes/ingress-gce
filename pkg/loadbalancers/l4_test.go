@@ -2154,6 +2154,152 @@ func TestDualStackILBStaticIPAnnotation(t *testing.T) {
 	}
 }
 
+func TestMultinetCheckResourceNetworksAndDeleteIfNeeded(t *testing.T) {
+	defaultNetwork := &network.NetworkInfo{
+		IsDefault:     true,
+		K8sNetwork:    "default",
+		NetworkURL:    "https://www.googleapis.com/compute/v1/projects/test-project/global/networks/default",
+		SubnetworkURL: "https://www.googleapis.com/compute/v1/projects/test-project/regions/test-region/subnetworks/default",
+	}
+	testCases := []struct {
+		desc                       string
+		existingFWDRule            *composite.ForwardingRule
+		existingBackendService     *composite.BackendService
+		newServiceNetwork          *network.NetworkInfo
+		newSubnetworkForFWDRule    string
+		shouldDeleteFWDRule        bool
+		shouldDeleteBackendService bool
+	}{
+		{
+			desc:                       "no prior resources",
+			existingFWDRule:            nil,
+			existingBackendService:     nil,
+			newServiceNetwork:          defaultNetwork,
+			newSubnetworkForFWDRule:    "",
+			shouldDeleteFWDRule:        false,
+			shouldDeleteBackendService: false,
+		},
+		{
+			desc: "resources in default network but not specified",
+			existingFWDRule: &composite.ForwardingRule{
+				Name: "testFWRule",
+			},
+			existingBackendService: &composite.BackendService{
+				Name: "testBS",
+			},
+			newServiceNetwork:          defaultNetwork,
+			shouldDeleteFWDRule:        false,
+			shouldDeleteBackendService: false,
+		},
+		{
+			desc: "resources in default network with different format",
+			existingFWDRule: &composite.ForwardingRule{
+				Name:       "testFWRule",
+				Network:    "projects/test-project/global/networks/default",
+				Subnetwork: "projects/test-project/regions/test-region/subnetworks/default",
+			},
+			existingBackendService: &composite.BackendService{
+				Name:    "testBS",
+				Network: "projects/test-project/global/networks/default",
+			},
+			newServiceNetwork:          defaultNetwork,
+			newSubnetworkForFWDRule:    "https://www.googleapis.com/compute/v1/projects/test-project/regions/test-region/subnetworks/default",
+			shouldDeleteFWDRule:        false,
+			shouldDeleteBackendService: false,
+		},
+		{
+			desc: "resources in default network but different new service network",
+			existingFWDRule: &composite.ForwardingRule{
+				Name: "testFWRule",
+			},
+			existingBackendService: &composite.BackendService{
+				Name: "testBS",
+			},
+			newServiceNetwork:          &network.NetworkInfo{IsDefault: false, NetworkURL: "projects/test-project/global/networks/different", SubnetworkURL: "projects/test-project/regions/test-region/subnetworks/different"},
+			shouldDeleteFWDRule:        true,
+			shouldDeleteBackendService: true,
+		},
+		{
+			desc: "resources in same non default default",
+			existingFWDRule: &composite.ForwardingRule{
+				Name:       "testFWRule",
+				Network:    "https://www.googleapis.com/compute/v1alpha1/projects/test-project/global/networks/net1",
+				Subnetwork: "https://www.googleapis.com/compute/v1alpha1/projects/test-project/regions/test-region/subnetworks/s1",
+			},
+			existingBackendService: &composite.BackendService{
+				Name:    "testBS",
+				Network: "https://www.googleapis.com/compute/v1alpha1/projects/test-project/global/networks/net1",
+			},
+			newServiceNetwork:          &network.NetworkInfo{IsDefault: false, NetworkURL: "projects/test-project/global/networks/net1", SubnetworkURL: "projects/test-project/regions/test-region/subnetworks/s1"},
+			newSubnetworkForFWDRule:    "https://www.googleapis.com/compute/v1/projects/test-project/regions/test-region/subnetworks/s1",
+			shouldDeleteFWDRule:        false,
+			shouldDeleteBackendService: false,
+		},
+		{
+			desc: "forwarding rule different subnetwork",
+			existingFWDRule: &composite.ForwardingRule{
+				Name:       "testFWRule",
+				Network:    "https://www.googleapis.com/compute/v1alpha1/projects/test-project/global/networks/net1",
+				Subnetwork: "https://www.googleapis.com/compute/v1alpha1/projects/test-project/regions/test-region/subnetworks/oldSubnet",
+			},
+			existingBackendService: &composite.BackendService{
+				Name:    "testBS",
+				Network: "https://www.googleapis.com/compute/v1alpha1/projects/test-project/global/networks/net1",
+			},
+			newServiceNetwork:          &network.NetworkInfo{IsDefault: false, NetworkURL: "projects/test-project/global/networks/net1", SubnetworkURL: "projects/test-project/regions/test-region/subnetworks/s1"},
+			newSubnetworkForFWDRule:    "https://www.googleapis.com/compute/v1/projects/test-project/regions/test-region/subnetworks/s1",
+			shouldDeleteFWDRule:        true,
+			shouldDeleteBackendService: false,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			fakeGCE := getFakeGCECloud(vals)
+
+			svc := test.NewL4ILBService(false, 8080)
+			namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+
+			l4ilbParams := &L4ILBParams{
+				Service:         svc,
+				Cloud:           fakeGCE,
+				Namer:           namer,
+				Recorder:        record.NewFakeRecorder(100),
+				NetworkResolver: network.NewFakeResolver(network.DefaultNetwork(fakeGCE)),
+			}
+			l4 := NewL4Handler(l4ilbParams)
+			l4.network = *tc.newServiceNetwork
+
+			c := fakeGCE.Compute().(*cloud.MockGCE)
+			mockDeletedFWRule := false
+			c.MockForwardingRules.DeleteHook = func(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules) (bool, error) {
+				mockDeletedFWRule = true
+				return false, nil
+			}
+			mockDeletedBS := false
+			c.MockRegionBackendServices.DeleteHook = func(ctx context.Context, key *meta.Key, m *cloud.MockRegionBackendServices) (bool, error) {
+				mockDeletedBS = true
+				return false, nil
+			}
+
+			deletedFwdRule, deletedBackendService, err := l4.multinetCheckResourceNetworksAndDeleteIfNeeded(tc.existingFWDRule, tc.newSubnetworkForFWDRule, tc.existingBackendService)
+			if err != nil {
+				t.Errorf("l4.multinetCheckResourceNetworksAndDeleteIfNeeded() failed err=%v", err)
+			}
+
+			if deletedFwdRule != tc.shouldDeleteFWDRule || deletedBackendService != tc.shouldDeleteBackendService {
+				t.Errorf("l4.multinetCheckResourceNetworksAndDeleteIfNeeded() unexpected result, want=(deleteFwdRule=%v, deleteBackendService=%v) got=want=(deleteFwdRule=%v, deleteBackendService=%v)", tc.shouldDeleteFWDRule, tc.shouldDeleteBackendService, deletedFwdRule, deletedBackendService)
+			}
+
+			if tc.shouldDeleteFWDRule != mockDeletedFWRule {
+				t.Errorf("multinetCheckResourceNetworksAndDeleteIfNeeded() invalid operation, shouldDeleteFWDRule=%v but actually mockDeletedFWRule=%v. existing FWD rule=%+v", tc.shouldDeleteFWDRule, mockDeletedFWRule, tc.existingFWDRule)
+			}
+			if tc.shouldDeleteBackendService != mockDeletedBS {
+				t.Errorf("multinetCheckResourceNetworksAndDeleteIfNeeded() invalid operation, shouldDeleteBackendService=%v but actually mockDeletedBS=%v. existing Backend service=%+v", tc.shouldDeleteBackendService, mockDeletedBS, tc.existingBackendService)
+			}
+		})
+	}
+}
+
 func mustSetupILBTestHandler(t *testing.T, svc *v1.Service, nodeNames []string) *L4 {
 	vals := gce.DefaultTestClusterValues()
 

@@ -41,6 +41,7 @@ type Resolver interface {
 	ServiceNetwork(service *apiv1.Service) (*NetworkInfo, error)
 	IsMultinetService(service *apiv1.Service) bool
 	NetworkNameFromSelector(service *apiv1.Service) string
+	IsMultinetEnabled() bool
 }
 
 // NetworksResolver is responsible for resolving networks that the LB resources should be created in.
@@ -136,6 +137,10 @@ func (nr *NetworksResolver) NetworkNameFromSelector(service *apiv1.Service) stri
 	}
 	networkName := service.Spec.Selector[NetworkSelectorKey]
 	return networkName
+}
+
+func (nr *NetworksResolver) IsMultinetEnabled() bool {
+	return nr.enableMultinetworking
 }
 
 // DefaultNetwork creates network information struct of the default network. Default network is the main cluster network.
@@ -243,5 +248,9 @@ func (fake *FakeNetworkResolver) IsMultinetService(service *apiv1.Service) bool 
 	if !ok || networkName == "" || networkName == networkv1.DefaultPodNetworkName {
 		return false
 	}
+	return true
+}
+
+func (fake *FakeNetworkResolver) IsMultinetEnabled() bool {
 	return true
 }

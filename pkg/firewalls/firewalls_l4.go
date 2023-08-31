@@ -136,6 +136,10 @@ func firewallRuleEqual(a, b *compute.Firewall, skipDescription bool) bool {
 		return false
 	}
 
+	if a.Network != b.Network && !utils.EqualResourceIDs(a.Network, b.Network) {
+		return false
+	}
+
 	if !skipDescription && a.Description != b.Description {
 		return false
 	}
