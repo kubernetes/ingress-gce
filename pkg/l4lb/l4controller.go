@@ -102,7 +102,7 @@ func NewILBController(ctx *context.ControllerContext, stopCh chan struct{}) *L4C
 	l4c.backendPool = backends.NewPool(ctx.Cloud, l4c.namer)
 	l4c.NegLinker = backends.NewNEGLinker(l4c.backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer())
 
-	l4c.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("l4", "services", l4c.numWorkers, l4c.sync)
+	l4c.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("l4", "services", l4c.numWorkers, l4c.syncWrapper)
 
 	if ctx.NetworkInformer != nil {
 		l4c.networkLister = ctx.NetworkInformer.GetIndexer()
@@ -389,6 +389,10 @@ func (l4c *L4Controller) linkNEG(l4 *loadbalancers.L4) error {
 	return l4c.NegLinker.Link(l4.ServicePort, groupKeys)
 }
 
+func (l4c *L4Controller) syncWrapper(key string) error {
+	return skipUserError(l4c.sync(key))
+}
+
 func (l4c *L4Controller) sync(key string) error {
 	l4c.syncTracker.Track()
 	svc, exists, err := l4c.ctx.Services().GetByKey(key)
@@ -410,7 +414,7 @@ func (l4c *L4Controller) sync(key string) error {
 			return nil
 		}
 		l4c.publishMetrics(result, namespacedName)
-		return result.Error
+		return skipUserError(result.Error)
 	}
 	// Check again here, to avoid time-of check, time-of-use race. A service queued by informer could have changed, no
 	// longer needing an ILB.
@@ -422,7 +426,7 @@ func (l4c *L4Controller) sync(key string) error {
 			return nil
 		}
 		l4c.publishMetrics(result, namespacedName)
-		return result.Error
+		return skipUserError(result.Error)
 	}
 	klog.V(3).Infof("Ignoring sync of service %s, neither delete nor ensure needed.", key)
 	return nil

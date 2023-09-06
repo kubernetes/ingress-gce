@@ -114,7 +114,7 @@ func NewL4NetLBController(
 	}
 	l4netLBc.networkResolver = network.NewNetworksResolver(networkLister, gkeNetworkParamSetLister, ctx.Cloud, ctx.EnableMultinetworking, klog.TODO())
 	l4netLBc.negLinker = backends.NewNEGLinker(l4netLBc.backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer())
-	l4netLBc.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("l4netLB", "services", ctx.NumL4NetLBWorkers, l4netLBc.sync)
+	l4netLBc.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("l4netLB", "services", ctx.NumL4NetLBWorkers, l4netLBc.syncWrapper)
 
 	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
@@ -411,6 +411,9 @@ func (lc *L4NetLBController) Run() {
 func (lc *L4NetLBController) shutdown() {
 	klog.Infof("Shutting down l4NetLBController")
 	lc.svcQueue.Shutdown()
+}
+func (lc *L4NetLBController) syncWrapper(key string) error {
+	return skipUserError(lc.sync(key))
 }
 
 func (lc *L4NetLBController) sync(key string) error {

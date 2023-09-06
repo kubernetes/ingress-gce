@@ -111,3 +111,10 @@ func isHealthCheckDeleted(cloud *gce.Cloud, hcName string) bool {
 	_, err := composite.GetHealthCheck(cloud, meta.GlobalKey(hcName), meta.VersionGA)
 	return utils.IsNotFoundError(err)
 }
+
+func skipUserError(err error) error {
+	if utils.IsUserError(err) {
+		return nil
+	}
+	return err
+}
