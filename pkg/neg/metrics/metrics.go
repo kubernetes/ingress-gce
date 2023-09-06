@@ -82,6 +82,8 @@ var (
 			Subsystem: negControllerSubsystem,
 			Name:      negOpEndpointsKey,
 			Help:      "Number of Endpoints during an NEG Operation",
+			// custom buckets - [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, +Inf]
+			Buckets: prometheus.ExponentialBuckets(1, 2, 13),
 		},
 		negOpEndpointsMetricsLabels,
 	)
