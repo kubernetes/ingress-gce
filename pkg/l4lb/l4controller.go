@@ -534,6 +534,9 @@ func (l4c *L4Controller) publishMetrics(result *loadbalancers.L4ILBSyncResult, n
 			klog.V(2).Infof("Internal L4 DualStack Loadbalancer for Service %s ensured, updating its state %v in metrics cache", namespacedName, result.MetricsState)
 			l4metrics.PublishL4ILBDualStackSyncLatency(result.Error == nil, result.SyncType, result.MetricsState.IPFamilies, result.StartTime)
 		}
+		if result.MetricsState.Multinetwork {
+			l4metrics.PublishL4ILBMultiNetSyncLatency(result.Error == nil, result.SyncType, result.StartTime)
+		}
 
 	case loadbalancers.SyncTypeDelete:
 		// if service is successfully deleted, remove it from cache
@@ -545,6 +548,9 @@ func (l4c *L4Controller) publishMetrics(result *loadbalancers.L4ILBSyncResult, n
 		l4metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime)
 		if l4c.enableDualStack {
 			l4metrics.PublishL4ILBDualStackSyncLatency(result.Error == nil, result.SyncType, result.MetricsState.IPFamilies, result.StartTime)
+		}
+		if result.MetricsState.Multinetwork {
+			l4metrics.PublishL4ILBMultiNetSyncLatency(result.Error == nil, result.SyncType, result.StartTime)
 		}
 	default:
 		klog.Warningf("Unknown sync type: %q, for service %s skipping metrics", result.SyncType, namespacedName)

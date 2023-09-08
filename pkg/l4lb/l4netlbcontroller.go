@@ -720,6 +720,9 @@ func (lc *L4NetLBController) publishSyncMetrics(result *loadbalancers.L4NetLBSyn
 	if lc.enableDualStack {
 		l4metrics.PublishL4NetLBDualStackSyncLatency(result.Error == nil, result.SyncType, result.MetricsState.IPFamilies, result.StartTime)
 	}
+	if result.MetricsState.Multinetwork {
+		l4metrics.PublishL4NetLBMultiNetSyncLatency(result.Error == nil, result.SyncType, result.StartTime)
+	}
 	if result.Error == nil {
 		l4metrics.PublishL4NetLBSyncSuccess(result.SyncType, result.StartTime)
 		return
