@@ -1,6 +1,6 @@
 module k8s.io/ingress-gce
 
-go 1.16
+go 1.20
 
 require (
 	github.com/go-openapi/jsonpointer v0.19.5 // indirect
