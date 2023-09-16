@@ -208,8 +208,8 @@ func TestPatchServiceLoadBalancerStatus(t *testing.T) {
 			newMetaFunc: func(svc *apiv1.Service) *apiv1.Service {
 				ret := svc.DeepCopy()
 				ret.Status = apiv1.ServiceStatus{
-					LoadBalancer: apiv1.LoadBalancerStatus{
-						Ingress: []apiv1.LoadBalancerIngress{
+					LoadBalancer: v1.IngressLoadBalancerStatus{
+						Ingress: []v1.IngressLoadBalancerIngress{
 							{IP: "10.0.0.1"},
 						},
 					},
@@ -272,8 +272,8 @@ func newTestService(namespace, name string) *apiv1.Service {
 			},
 		},
 		Status: apiv1.ServiceStatus{
-			LoadBalancer: apiv1.LoadBalancerStatus{
-				Ingress: []apiv1.LoadBalancerIngress{
+			LoadBalancer: v1.IngressLoadBalancerStatus{
+				Ingress: []v1.IngressLoadBalancerIngress{
 					{IP: "127.0.0.1"},
 				},
 			},

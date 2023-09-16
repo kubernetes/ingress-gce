@@ -20,7 +20,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
@@ -128,8 +127,8 @@ func TestPatchIngressStatus(t *testing.T) {
 			newMetaFunc: func(ing *v1.Ingress) *v1.Ingress {
 				ret := ing.DeepCopy()
 				ret.Status = v1.IngressStatus{
-					LoadBalancer: apiv1.LoadBalancerStatus{
-						Ingress: []apiv1.LoadBalancerIngress{
+					LoadBalancer: v1.IngressLoadBalancerStatus{
+						Ingress: []v1.IngressLoadBalancerIngress{
 							{IP: "10.0.0.1"},
 						},
 					},
@@ -197,8 +196,8 @@ func newTestIngress(namespace, name string) *v1.Ingress {
 			},
 		},
 		Status: v1.IngressStatus{
-			LoadBalancer: apiv1.LoadBalancerStatus{
-				Ingress: []apiv1.LoadBalancerIngress{
+			LoadBalancer: v1.IngressLoadBalancerStatus{
+				Ingress: []v1.IngressLoadBalancerIngress{
 					{IP: "127.0.0.1"},
 				},
 			},
