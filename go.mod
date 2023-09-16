@@ -6,7 +6,7 @@ require (
 	github.com/GoogleCloudPlatform/k8s-cloud-provider v1.18.1-0.20220218231025-f11817397a1b
 	github.com/google/go-cmp v0.5.6
 	github.com/kr/pretty v0.2.0
-	github.com/prometheus/client_golang v1.7.1
+	github.com/prometheus/client_golang v1.11.1
 	github.com/prometheus/client_model v0.2.0
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.7.0
@@ -16,7 +16,7 @@ require (
 	k8s.io/api v0.22.2
 	k8s.io/apiextensions-apiserver v0.20.0
 	k8s.io/apimachinery v0.22.2
-	k8s.io/client-go v0.22.2
+	k8s.io/client-go v0.27.0
 	k8s.io/cloud-provider v0.20.0
 	k8s.io/component-base v0.20.0
 	k8s.io/klog v1.0.0
