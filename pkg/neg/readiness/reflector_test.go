@@ -26,10 +26,10 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/clock"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/clock"
 )
 
 // fakeLookUp implements LookUp interface
