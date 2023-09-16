@@ -874,15 +874,15 @@ func TestHasVIP(t *testing.T) {
 		},
 		{"empty load-balancer status", &networkingv1.Ingress{
 			Status: networkingv1.IngressStatus{
-				LoadBalancer: api_v1.LoadBalancerStatus{},
+				LoadBalancer: networkingv1.IngressLoadBalancerStatus{},
 			},
 		},
 			false,
 		},
 		{"empty load-balancer ingress", &networkingv1.Ingress{
 			Status: networkingv1.IngressStatus{
-				LoadBalancer: api_v1.LoadBalancerStatus{
-					Ingress: []api_v1.LoadBalancerIngress{},
+				LoadBalancer: networkingv1.IngressLoadBalancerStatus{
+					Ingress: []networkingv1.IngressLoadBalancerIngress{},
 				},
 			},
 		},
@@ -890,8 +890,8 @@ func TestHasVIP(t *testing.T) {
 		},
 		{"empty IP", &networkingv1.Ingress{
 			Status: networkingv1.IngressStatus{
-				LoadBalancer: api_v1.LoadBalancerStatus{
-					Ingress: []api_v1.LoadBalancerIngress{
+				LoadBalancer: networkingv1.IngressLoadBalancerStatus{
+					Ingress: []networkingv1.IngressLoadBalancerIngress{
 						{IP: ""},
 					},
 				},
@@ -901,8 +901,8 @@ func TestHasVIP(t *testing.T) {
 		},
 		{"valid IP", &networkingv1.Ingress{
 			Status: networkingv1.IngressStatus{
-				LoadBalancer: api_v1.LoadBalancerStatus{
-					Ingress: []api_v1.LoadBalancerIngress{
+				LoadBalancer: networkingv1.IngressLoadBalancerStatus{
+					Ingress: []networkingv1.IngressLoadBalancerIngress{
 						{IP: "0.0.0.0"},
 					},
 				},
@@ -912,8 +912,8 @@ func TestHasVIP(t *testing.T) {
 		},
 		{"random", &networkingv1.Ingress{
 			Status: networkingv1.IngressStatus{
-				LoadBalancer: api_v1.LoadBalancerStatus{
-					Ingress: []api_v1.LoadBalancerIngress{
+				LoadBalancer: networkingv1.IngressLoadBalancerStatus{
+					Ingress: []networkingv1.IngressLoadBalancerIngress{
 						{IP: "xxxxxx"},
 					},
 				},

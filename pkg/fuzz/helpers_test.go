@@ -173,8 +173,8 @@ func TestIngressBuilder(t *testing.T) {
 			want: &networkingv1.Ingress{
 				ObjectMeta: om,
 				Status: networkingv1.IngressStatus{
-					LoadBalancer: v1.LoadBalancerStatus{
-						Ingress: []v1.LoadBalancerIngress{{IP: "127.0.0.1"}},
+					LoadBalancer: networkingv1.IngressLoadBalancerStatus{
+						Ingress: []networkingv1.IngressLoadBalancerIngress{{IP: "127.0.0.1"}},
 					},
 				},
 			},

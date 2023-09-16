@@ -29,7 +29,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
 	"google.golang.org/api/compute/v1"
 	"k8s.io/legacy-cloud-providers/gce"
-	"k8s.io/utils/clock"
+	clocktesting "k8s.io/utils/clock/testing"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/apimachinery/pkg/types"
@@ -354,7 +354,7 @@ func TestPoll(t *testing.T) {
 	t.Parallel()
 
 	poller := newFakePoller()
-	fakeClock := clock.NewFakeClock(time.Now())
+	fakeClock := clocktesting.NewFakeClock(time.Now())
 	poller.clock = fakeClock
 	patcherTester := poller.patcher.(*testPatcher)
 	negCloud := poller.negCloud

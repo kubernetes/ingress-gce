@@ -28,7 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
-	"k8s.io/utils/clock"
+	clocktesting "k8s.io/utils/clock/testing"
 )
 
 // fakeLookUp implements LookUp interface
@@ -59,7 +59,7 @@ func TestSyncPod(t *testing.T) {
 	podLister := testReadinessReflector.podLister
 	testlookUp := testReadinessReflector.lookup.(*fakeLookUp)
 	podName := "pod1"
-	fakeClock := clock.NewFakeClock(time.Now())
+	fakeClock := clocktesting.NewFakeClock(time.Now())
 	testReadinessReflector.clock = fakeClock
 	now := metav1.NewTime(fakeClock.Now()).Rfc3339Copy()
 
