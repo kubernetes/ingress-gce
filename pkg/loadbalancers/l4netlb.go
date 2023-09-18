@@ -294,8 +294,6 @@ func (l4netlb *L4NetLB) connectionTrackingPolicy() (*composite.BackendServiceCon
 	connectionTrackingPolicy := composite.BackendServiceConnectionTrackingPolicy{}
 	connectionTrackingPolicy.EnableStrongAffinity = true
 	connectionTrackingPolicy.TrackingMode = backends.PerSessionTrackingMode
-	// verified l4netlb.Service.Spec.SessionAffinityConfig is not null in
-	// checkStrongSessionAffinityRequirements()
 	connectionTrackingPolicy.IdleTimeoutSec = int64(*l4netlb.Service.Spec.SessionAffinityConfig.ClientIP.TimeoutSeconds)
 	return &connectionTrackingPolicy, nil
 }
