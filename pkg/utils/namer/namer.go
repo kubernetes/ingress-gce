@@ -431,7 +431,7 @@ func (n *Namer) NamedPort(port int64) string {
 // NEG returns the gce neg name based on the service namespace, name
 // and target port. NEG naming convention:
 //
-//   {prefix}{version}-{clusterid}-{namespace}-{name}-{service port}-{hash}
+//	{prefix}{version}-{clusterid}-{namespace}-{name}-{service port}-{hash}
 //
 // Output name is at most 63 characters. NEG tries to keep as much
 // information as possible.
@@ -451,7 +451,7 @@ func (n *Namer) NEG(namespace, name string, port int32) string {
 // NEGWithSubset returns the gce neg name based on the service namespace, name
 // target port and Istio:DestinationRule subset. NEG naming convention:
 //
-//   {prefix}{version}-{clusterid}-{namespace}-{name}-{service port}-{destination rule subset}-{hash}
+//	{prefix}{version}-{clusterid}-{namespace}-{name}-{service port}-{destination rule subset}-{hash}
 //
 // Output name is at most 63 characters. NEG tries to keep as much
 // information as possible.

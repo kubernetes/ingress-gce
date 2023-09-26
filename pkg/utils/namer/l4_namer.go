@@ -47,7 +47,9 @@ func NewL4Namer(kubeSystemUID string, namer *Namer) *L4Namer {
 
 // L4Backend returns the gce L4 Backend name based on the service namespace and name
 // Naming convention:
-//   k8s2-{uid}-{ns}-{name}-{suffix}
+//
+//	k8s2-{uid}-{ns}-{name}-{suffix}
+//
 // Output name is at most 63 characters.
 func (namer *L4Namer) L4Backend(namespace, name string) (string, bool) {
 	truncFields := TrimFieldsEvenly(maximumL4CombinedLength, namespace, name)
@@ -59,7 +61,9 @@ func (namer *L4Namer) L4Backend(namespace, name string) (string, bool) {
 
 // L4ForwardingRule returns the name of the L4 forwarding rule name based on the service namespace, name and protocol.
 // Naming convention:
-//   k8s2-{protocol}-{uid}-{ns}-{name}-{suffix}
+//
+//	k8s2-{protocol}-{uid}-{ns}-{name}-{suffix}
+//
 // Output name is at most 63 characters.
 func (namer *L4Namer) L4ForwardingRule(namespace, name, protocol string) string {
 	// add 1 for hyphen

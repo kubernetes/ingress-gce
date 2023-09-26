@@ -30,7 +30,7 @@ import (
 var defaultNamer = namer.NewNamer("ABC", "XYZ")
 var ruleName = defaultNamer.FirewallRule()
 
-//var srcRanges = []string{"1.1.1.1/11", "2.2.2.2/22"}
+// var srcRanges = []string{"1.1.1.1/11", "2.2.2.2/22"}
 var srcRanges = gce.L7LoadBalancerSrcRanges()
 
 func portRanges() []string {

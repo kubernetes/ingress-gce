@@ -104,7 +104,9 @@ func NewStaticNamer(kubeClient kubernetes.Interface, clusterName, fwName string)
 // a name from a ConfigMap.  The returned value follows this priority:
 //
 // If the provided 'defaultName' is not empty, that name is used.
-//     This is effectively a client override via a command line flag.
+//
+//	This is effectively a client override via a command line flag.
+//
 // else, check cfgVault with 'configMapKey' as a key and if found, use the associated value
 // else, return an empty 'name' and pass along an error iff the configmap lookup is erroneous.
 func useDefaultOrLookupVault(cfgVault *storage.ConfigMapVault, configMapKey, defaultName string) (string, error) {
@@ -150,7 +152,8 @@ func getFirewallName(kubeClient kubernetes.Interface, name, clusterUID string) (
 // If the user specifies a --cluster-uid param it overwrites everything
 // else, check UID config map for a previously recorded uid
 // else, check if there are any working Ingresses
-//	- remember that "" is the cluster uid
+//   - remember that "" is the cluster uid
+//
 // else, allocate a new uid
 func getClusterUID(kubeClient kubernetes.Interface, name string) (string, error) {
 	cfgVault := storage.NewConfigMapVault(kubeClient, metav1.NamespaceSystem, uidConfigMapName)
