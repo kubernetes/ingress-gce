@@ -54,8 +54,8 @@ type recorderSource interface {
 }
 
 // NewNodePool creates a new node pool.
-// - cloud: implements InstanceGroups, used to sync Kubernetes nodes with
-//   members of the cloud InstanceGroup.
+//   - cloud: implements InstanceGroups, used to sync Kubernetes nodes with
+//     members of the cloud InstanceGroup.
 func NewNodePool(cloud InstanceGroups, namer namer.BackendNamer, recorders recorderSource, basePath string, zl ZoneLister) NodePool {
 	return &Instances{
 		cloud:              cloud,

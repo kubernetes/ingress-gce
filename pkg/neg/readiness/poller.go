@@ -18,10 +18,11 @@ package readiness
 
 import (
 	"fmt"
-	"k8s.io/apimachinery/pkg/util/clock"
 	"strconv"
 	"sync"
 	"time"
+
+	"k8s.io/utils/clock"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
