@@ -47,7 +47,7 @@ const (
 	DefaultRetryPeriod = 2 * time.Second
 
 	// DefaultResourceLock is the type of resource used for the lock object.
-	DefaultResourceLock = resourcelock.ConfigMapsResourceLock
+	DefaultResourceLock = resourcelock.ConfigMapsLeasesResourceLock
 
 	// DefaultLockObjectNamespace is the namespace which owns the lock object.
 	DefaultLockObjectNamespace string = "kube-system"

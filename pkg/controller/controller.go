@@ -674,8 +674,8 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 	// Update IP through update/status endpoint
 	ip := l7.GetIP()
 	updatedIngStatus := v1.IngressStatus{
-		LoadBalancer: apiv1.LoadBalancerStatus{
-			Ingress: []apiv1.LoadBalancerIngress{
+		LoadBalancer: v1.IngressLoadBalancerStatus{
+			Ingress: []v1.IngressLoadBalancerIngress{
 				{IP: ip},
 			},
 		},
