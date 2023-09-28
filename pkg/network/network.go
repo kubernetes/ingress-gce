@@ -25,6 +25,7 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 	networkv1 "k8s.io/cloud-provider-gcp/crd/apis/network/v1"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
 
@@ -77,7 +78,7 @@ func (nr *NetworksResolver) ServiceNetwork(service *apiv1.Service) (*NetworkInfo
 		return nil, err
 	}
 	if !exists {
-		return nil, fmt.Errorf("network %s does not exist", networkName)
+		return nil, utils.NewUserError(fmt.Errorf("network %s does not exist", networkName))
 	}
 	network := obj.(*networkv1.Network)
 	if network == nil {
@@ -86,17 +87,17 @@ func (nr *NetworksResolver) ServiceNetwork(service *apiv1.Service) (*NetworkInfo
 	nr.logger.Info("Found network for service", "network", network.Name, "service", service.Name, "namespace", service.Namespace)
 	parametersRef := network.Spec.ParametersRef
 	if !refersGKENetworkParamSet(parametersRef) {
-		return nil, fmt.Errorf("network.Spec.ParametersRef does not refer a GKENetworkParamSet resource")
+		return nil, utils.NewUserError(fmt.Errorf("network.Spec.ParametersRef does not refer a GKENetworkParamSet resource"))
 	}
 	if parametersRef.Namespace != nil {
-		return nil, fmt.Errorf("network.Spec.ParametersRef.namespace must not be set for GKENetworkParamSet reference as it is a cluster scope resource")
+		return nil, utils.NewUserError(fmt.Errorf("network.Spec.ParametersRef.namespace must not be set for GKENetworkParamSet reference as it is a cluster scope resource"))
 	}
 	gkeParamsObj, exists, err := nr.gkeNetworkParamSetLister.GetByKey(parametersRef.Name)
 	if err != nil {
 		return nil, err
 	}
 	if !exists {
-		return nil, fmt.Errorf("GKENetworkParamSet %s was not found", parametersRef.Name)
+		return nil, utils.NewUserError(fmt.Errorf("GKENetworkParamSet %s was not found", parametersRef.Name))
 	}
 	gkeNetworkParamSet := gkeParamsObj.(*networkv1.GKENetworkParamSet)
 	if network == nil {
