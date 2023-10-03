@@ -29,7 +29,7 @@ export PATH=$GOBIN:$PATH
 # Install golangci-lint
 echo "Installing golangci-lint"
 echo
-go install github.com/golangci/golangci-lint/cmd/golangci-lint > /dev/null
+go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest > /dev/null
 cd "../.."
 
 export GOLANGCI_LINT_CACHE=$PWD/.cache
