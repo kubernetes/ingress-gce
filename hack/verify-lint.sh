@@ -26,10 +26,11 @@ cd "${REPO_ROOT}"
 cd "hack/tools"
 export GOBIN=$PWD/bin
 export PATH=$GOBIN:$PATH
-# Install golangci-lint
-echo "Installing golangci-lint"
+# Install golangci-lint & linter
+echo "Installing golangci-lint forbidigo"
 echo
 go install github.com/golangci/golangci-lint/cmd/golangci-lint > /dev/null
+go install github.com/ashanbrown/forbidigo > /dev/null
 cd "../.."
 
 export GOLANGCI_LINT_CACHE=$PWD/.cache

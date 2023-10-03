@@ -6,6 +6,7 @@ linters:
   # https://golangci-lint.run/usage/linters/#enabled-by-default-linters
   enable:
     - errcheck
+    - forbidigo
 
 issues:
   exclude-rules:
@@ -13,14 +14,81 @@ issues:
     - path: _test\.go
       linters:
         - errcheck
+        - forbidigo
     - linters:
         - errcheck
       text: "AddEventHandler"
+    - linters:
+      - forbidigo
+      path: pkg/context/context.go$
+    - linters:
+      - forbidigo
+      path: pkg/e2e/fixtures.go$
 linters-settings:
   errcheck:
     exclude-functions:
       - (*flag.FlagSet).Parse
       - k8s.io/apimachinery/pkg/util/wait.PollUntil
+  forbidigo:
+    analyze-types: true
+    forbid:
+    # metadata
+    - p: ^v1.Pod.Annotations$
+      pkg: ^k8s\.io/api/core/v1$
+    - p: ^v1.Pod.OwnerReferences$
+      pkg: ^k8s\.io/api/core/v1$
+    - p: ^v1.Pod.Finalizers$
+      pkg: ^k8s\.io/api/core/v1$
+    - p: ^v1.Pod.ManagedFields$
+      pkg: ^k8s\.io/api/core/v1$
+    # Spec
+    - p: ^v1.PodSpec.Volumes$
+      pkg: ^k8s\.io/api/core/v1$
+    - p: ^v1.PodSpec.InitContainers$
+      pkg: ^k8s\.io/api/core/v1$
+    - p: ^v1.PodSpec.EphemeralContainers$
+      pkg: ^k8s\.io/api/core/v1$
+    - p: ^v1.PodSpec.ImagePullSecrets$
+      pkg: ^k8s\.io/api/core/v1$
+    - p: ^v1.PodSpec.HostAliases$
+      pkg: ^k8s\.io/api/core/v1$
+    - p: ^v1.PodSpec.SchedulingGates$
+      pkg: ^k8s\.io/api/core/v1$
+    - p: ^v1.PodSpec.ResourceClaims$
+      pkg: ^k8s\.io/api/core/v1$
+    - p: ^v1.PodSpec.Tolerations$
+      pkg: ^k8s\.io/api/core/v1$
+    - p: ^v1.PodSpec.Affinity$
+      pkg: ^k8s\.io/api/core/v1$
+    # PodStatus
+    - p: ^v1.PodStatus.InitContainerStatuses$
+      pkg: ^k8s\.io/api/core/v1$
+    - p: ^v1.PodStatus.ContainerStatuses$
+      pkg: ^k8s\.io/api/core/v1$
+    - p: ^v1.PodStatus.EphemeralContainerStatuses$
+      pkg: ^k8s\.io/api/core/v1$
+    # Container
+    - p: ^v1.Container.Image$
+      pkg: ^k8s\.io/api/core/v1$
+    - p: ^v1.Container.Command$
+      pkg: ^k8s\.io/api/core/v1$
+    - p: ^v1.Container.Args$
+      pkg: ^k8s\.io/api/core/v1$
+    - p: ^v1.Container.EnvFrom$
+      pkg: ^k8s\.io/api/core/v1$
+    - p: ^v1.Container.Env$
+      pkg: ^k8s\.io/api/core/v1$
+    - p: ^v1.Container.Resources$
+      pkg: ^k8s\.io/api/core/v1$
+    - p: ^v1.Container.VolumeMounts$
+      pkg: ^k8s\.io/api/core/v1$
+    - p: ^v1.Container.VolumeDevices$
+      pkg: ^k8s\.io/api/core/v1$
+    - p: ^v1.Container.SecurityContext$
+      pkg: ^k8s\.io/api/core/v1$
+    # Node
+    - p: ^v1.NodeStatus.Images$
+      pkg: ^k8s\.io/api/core/v1$
 
 run:
   timeout: 3m

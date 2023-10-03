@@ -19,6 +19,7 @@ import (
 	"time"
 
 	apiv1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -158,6 +159,17 @@ func NewControllerContext(
 	kubeSystemUID types.UID,
 	config ControllerContextConfig) *ControllerContext {
 
+	podInformer := informerv1.NewPodInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
+	nodeInformer := informerv1.NewNodeInformer(kubeClient, config.ResyncPeriod, utils.NewNamespaceIndexer())
+
+	// Error in SetTransform() doesn't affect the correctness but the memory efficiency
+	if err := podInformer.SetTransform(preserveNeeded); err != nil {
+		klog.Errorf("unable to SetTransForm: %v", err)
+	}
+	if err := nodeInformer.SetTransform(preserveNeeded); err != nil {
+		klog.Errorf("unable to SetTransForm: %v", err)
+	}
+
 	context := &ControllerContext{
 		KubeConfig:              kubeConfig,
 		KubeClient:              kubeClient,
@@ -173,8 +185,8 @@ func NewControllerContext(
 		IngressInformer:         informernetworking.NewIngressInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		ServiceInformer:         informerv1.NewServiceInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		BackendConfigInformer:   informerbackendconfig.NewBackendConfigInformer(backendConfigClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
-		PodInformer:             informerv1.NewPodInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
-		NodeInformer:            informerv1.NewNodeInformer(kubeClient, config.ResyncPeriod, utils.NewNamespaceIndexer()),
+		PodInformer:             podInformer,
+		NodeInformer:            nodeInformer,
 		SvcNegInformer:          informersvcneg.NewServiceNetworkEndpointGroupInformer(svcnegClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		recorders:               map[string]record.EventRecorder{},
 		healthChecks:            make(map[string]func() error),
@@ -438,4 +450,47 @@ func (ctx *ControllerContext) generateScheme() *runtime.Scheme {
 		}
 	}
 	return controllerScheme
+}
+
+// preserveNeeded returns the obj preserving fields needed for memory efficiency.
+// Corresponding lint check is in hack/golangci.yaml to avoid using those fields.
+func preserveNeeded(obj interface{}) (interface{}, error) {
+	if pod, ok := obj.(*v1.Pod); ok {
+		pod.Annotations = nil
+		pod.OwnerReferences = nil
+		pod.Finalizers = nil
+		pod.ManagedFields = nil
+
+		pod.Spec.Volumes = nil
+		pod.Spec.InitContainers = nil
+		pod.Spec.EphemeralContainers = nil
+		pod.Spec.ImagePullSecrets = nil
+		pod.Spec.HostAliases = nil
+		pod.Spec.SchedulingGates = nil
+		pod.Spec.ResourceClaims = nil
+		pod.Spec.Tolerations = nil
+		pod.Spec.Affinity = nil
+
+		pod.Status.InitContainerStatuses = nil
+		pod.Status.ContainerStatuses = nil
+		pod.Status.EphemeralContainerStatuses = nil
+
+		for i := 0; i < len(pod.Spec.Containers); i++ {
+			c := &pod.Spec.Containers[i]
+			c.Image = ""
+			c.Command = nil
+			c.Args = nil
+			c.EnvFrom = nil
+			c.Env = nil
+			c.Resources = v1.ResourceRequirements{}
+			c.VolumeMounts = nil
+			c.VolumeDevices = nil
+			c.SecurityContext = nil
+		}
+	}
+	if node, ok := obj.(*v1.Node); ok {
+		node.ManagedFields = nil
+		node.Status.Images = nil
+	}
+	return obj, nil
 }
