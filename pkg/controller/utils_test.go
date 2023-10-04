@@ -115,7 +115,7 @@ func addNodes(lbc *LoadBalancerController, zoneToNode map[string][]string) {
 }
 
 func getProbePath(p *api_v1.Probe) string {
-	return p.Handler.HTTPGet.Path
+	return p.ProbeHandler.HTTPGet.Path
 }
 
 func TestAddInstanceGroupsAnnotation(t *testing.T) {
