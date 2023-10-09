@@ -719,7 +719,7 @@ func makeEndpointBatch(endpoints negtypes.NetworkEndpointSet, negType negtypes.N
 			if flags.F.EnableNEGLabelPropagation {
 				annotations, ok := endpointPodLabelMap[networkEndpoint]
 				if !ok {
-					klog.Errorf("Can not find annotations for endpoint %v from endpointPodLabelMap: %v", networkEndpoint, err)
+					klog.Infof("Can not find annotations for endpoint %v from endpointPodLabelMap.", networkEndpoint)
 				} else {
 					cloudNetworkEndpoint.Annotations = annotations
 				}
