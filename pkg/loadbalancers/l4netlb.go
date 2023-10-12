@@ -308,8 +308,9 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 		syncResult.GCEResourceInError = annotations.BackendServiceResource
 		syncResult.Error = err
 	}
+	needsConnectionTracking := connectionTrackingPolicy != nil
 	var bs *composite.BackendService
-	bs, err = l4netlb.backendPool.EnsureL4BackendService(bsName, hcLink, string(protocol), string(l4netlb.Service.Spec.SessionAffinity), string(cloud.SchemeExternal), l4netlb.NamespacedName, *network.DefaultNetwork(l4netlb.cloud), connectionTrackingPolicy)
+	bs, err = l4netlb.backendPool.EnsureL4BackendService(bsName, hcLink, string(protocol), string(l4netlb.Service.Spec.SessionAffinity), string(cloud.SchemeExternal), l4netlb.NamespacedName, *network.DefaultNetwork(l4netlb.cloud), needsConnectionTracking, connectionTrackingPolicy)
 	if err != nil {
 		if utils.IsUnsupportedFeatureError(err, strongSessionAffinityFeatureName) {
 			syncResult.GCEResourceInError = annotations.BackendServiceResource

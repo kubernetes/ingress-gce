@@ -234,7 +234,7 @@ func createBackendService(t *testing.T, sp utils.ServicePort, backendPool *Backe
 	serviceAffinityNone := string(apiv1.ServiceAffinityNone)
 	schemeExternal := string(cloud.SchemeExternal)
 	defaultNetworkInfo := network.NetworkInfo{IsDefault: true}
-	if _, err := backendPool.EnsureL4BackendService(sp.BackendName(), hcLink, protocol, serviceAffinityNone, schemeExternal, namespacedName, defaultNetworkInfo, &composite.BackendServiceConnectionTrackingPolicy{}); err != nil {
+	if _, err := backendPool.EnsureL4BackendService(sp.BackendName(), hcLink, protocol, serviceAffinityNone, schemeExternal, namespacedName, defaultNetworkInfo, false, &composite.BackendServiceConnectionTrackingPolicy{}); err != nil {
 		t.Fatalf("Error creating backend service %v", err)
 	}
 }

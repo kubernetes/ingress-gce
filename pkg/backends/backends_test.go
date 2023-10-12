@@ -73,7 +73,7 @@ func TestEnsureL4BackendService(t *testing.T) {
 			hcLink := l4namer.L4HealthCheck(tc.serviceNamespace, tc.serviceName, false)
 			bsName := l4namer.L4Backend(tc.serviceNamespace, tc.serviceName)
 			network := network.NetworkInfo{IsDefault: false, NetworkURL: "https://www.googleapis.com/compute/v1/projects/test-poject/global/networks/test-vpc"}
-			bs, err := backendPool.EnsureL4BackendService(bsName, hcLink, tc.protocol, tc.affinityType, tc.schemeType, namespacedName, network, connectionTrackingPolicy)
+			bs, err := backendPool.EnsureL4BackendService(bsName, hcLink, tc.protocol, tc.affinityType, tc.schemeType, namespacedName, network, tc.enableStrongSessionAffinity, connectionTrackingPolicy)
 			if err != nil {
 				t.Errorf("EnsureL4BackendService failed")
 			}
@@ -104,8 +104,14 @@ func TestEnsureL4BackendService(t *testing.T) {
 			if bs.ConnectionDraining == nil || bs.ConnectionDraining.DrainingTimeoutSec != DefaultConnectionDrainingTimeoutSeconds {
 				t.Errorf("BackendService.ConnectionDraining was not populated correctly, want=connection draining with %q, got=%q", DefaultConnectionDrainingTimeoutSeconds, bs.ConnectionDraining)
 			}
-			if diff := cmp.Diff(bs.ConnectionTrackingPolicy, connectionTrackingPolicy); diff != "" {
-				t.Errorf("BackendService.ConnectionTrackingPolicy was not populated correctly, expected to be different: %s", diff)
+			if tc.enableStrongSessionAffinity {
+				if diff := cmp.Diff(bs.ConnectionTrackingPolicy, connectionTrackingPolicy); diff != "" {
+					t.Errorf("BackendService.ConnectionTrackingPolicy was not populated correctly, expected to be different: %s", diff)
+				}
+			} else {
+				if bs.ConnectionTrackingPolicy != nil {
+					t.Errorf("ConnectionTrackingPolicy should not be set for non strong session affinity services.")
+				}
 			}
 		})
 	}
@@ -116,10 +122,11 @@ func TestEnsureL4BackendService(t *testing.T) {
 // return expected results for two resources compared.
 func TestBackendSvcEqual(t *testing.T) {
 	for _, tc := range []struct {
-		desc              string
-		oldBackendService *composite.BackendService
-		newBackendService *composite.BackendService
-		wantEqual         bool
+		desc                      string
+		oldBackendService         *composite.BackendService
+		newBackendService         *composite.BackendService
+		compareConnectionTracking bool
+		wantEqual                 bool
 	}{
 		{
 			desc:              "Test empty backend services are equal",
@@ -154,7 +161,8 @@ func TestBackendSvcEqual(t *testing.T) {
 			wantEqual: true,
 		},
 		{
-			desc: "Test with changed idle timeout",
+			desc:                      "Test with changed idle timeout",
+			compareConnectionTracking: true,
 			oldBackendService: &composite.BackendService{
 				ConnectionTrackingPolicy: &composite.BackendServiceConnectionTrackingPolicy{
 					IdleTimeoutSec: prolongedIdleTimeout,
@@ -188,7 +196,8 @@ func TestBackendSvcEqual(t *testing.T) {
 			wantEqual: false,
 		},
 		{
-			desc: "Test with changed TrackingMode",
+			desc:                      "Test with changed TrackingMode",
+			compareConnectionTracking: true,
 			oldBackendService: &composite.BackendService{
 				ConnectionTrackingPolicy: &composite.BackendServiceConnectionTrackingPolicy{
 					TrackingMode: perSessionTrackingMode,
@@ -261,11 +270,38 @@ func TestBackendSvcEqual(t *testing.T) {
 			},
 			wantEqual: true,
 		},
+		{
+			desc:                      "Test with ignoring connection tracking",
+			compareConnectionTracking: false,
+			oldBackendService: &composite.BackendService{
+				Description:         "same_description",
+				Protocol:            "TCP",
+				SessionAffinity:     string(v1.ServiceAffinityClientIP),
+				LoadBalancingScheme: string(cloud.SchemeExternal),
+				ConnectionTrackingPolicy: &composite.BackendServiceConnectionTrackingPolicy{
+					EnableStrongAffinity: false,
+					IdleTimeoutSec:       defaultIdleTimeout,
+					TrackingMode:         defaultTrackingMode,
+				},
+			},
+			newBackendService: &composite.BackendService{
+				Description:         "same_description",
+				Protocol:            "TCP",
+				SessionAffinity:     string(v1.ServiceAffinityClientIP),
+				LoadBalancingScheme: string(cloud.SchemeExternal),
+				ConnectionTrackingPolicy: &composite.BackendServiceConnectionTrackingPolicy{
+					EnableStrongAffinity: true,
+					IdleTimeoutSec:       100,
+					TrackingMode:         "otherTrackingMode",
+				},
+			},
+			wantEqual: true,
+		},
 	} {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
-			if res := backendSvcEqual(tc.oldBackendService, tc.newBackendService) == tc.wantEqual; !res {
+			if res := backendSvcEqual(tc.oldBackendService, tc.newBackendService, tc.compareConnectionTracking) == tc.wantEqual; !res {
 				t.Errorf("backendSvcEqual() returned %v, expected %v. Diff(oldScv, newSvc): %s",
 					res, tc.wantEqual, cmp.Diff(tc.oldBackendService, tc.newBackendService))
 			}
