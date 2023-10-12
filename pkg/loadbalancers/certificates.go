@@ -76,7 +76,7 @@ func (l7 *L7) createSslCertificates(existingCerts, translatorCerts []*composite.
 		}
 
 		if addedBy, exists := visitedCertMap[translatorCert.Name]; exists {
-			klog.V(3).Infof("Secret cert %q has a certificate already used by %v", translatorCert.Certificate, addedBy)
+			klog.V(3).Infof("Secret cert %q has a certificate already used by %v", translatorCert.Name, addedBy)
 			continue
 		}
 
@@ -87,7 +87,7 @@ func (l7 *L7) createSslCertificates(existingCerts, translatorCerts []*composite.
 		// to check if this cert name exists in the map.
 		if existingCertsMap != nil {
 			if cert, ok := existingCertsMap[translatorCert.Name]; ok {
-				klog.V(3).Infof("Secret cert %q already exists as certificate %q", cert.Certificate, cert.Name)
+				klog.V(3).Infof("Secret cert %q already exists as certificate %q", translatorCert.Name, cert.Name)
 				visitedCertMap[translatorCert.Name] = fmt.Sprintf("certificate:%q", translatorCert.Name)
 				result = append(result, cert)
 				continue
