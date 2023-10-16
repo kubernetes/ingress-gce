@@ -224,6 +224,7 @@ func main() {
 		EnableL4NetLBDualStack:        flags.F.EnableL4NetLBDualStack,
 		EnableL4StrongSessionAffinity: flags.F.EnableL4StrongSessionAffinity,
 		EnableMultinetworking:         flags.F.EnableMultiNetworking,
+		EnableIngressRegionalExternal: flags.F.EnableIngressRegionalExternal,
 	}
 	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, ingParamsClient, svcAttachmentClient, networkClient, cloud, namer, kubeSystemUID, ctxConfig)
 	go app.RunHTTPServer(ctx.HealthCheck)
