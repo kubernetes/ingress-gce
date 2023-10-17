@@ -124,7 +124,7 @@ func NewL4NetLB(params *L4NetLBParams) *L4NetLB {
 		recorder:                    params.Recorder,
 		Service:                     params.Service,
 		NamespacedName:              types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace},
-		backendPool:                 backends.NewPool(params.Cloud, params.Namer),
+		backendPool:                 backends.NewPoolWithConnectionTrackingPolicy(params.Cloud, params.Namer, params.StrongSessionAffinityEnabled),
 		healthChecks:                healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder),
 		forwardingRules:             forwardingrules.New(params.Cloud, meta.VersionGA, meta.Regional),
 		enableDualStack:             params.DualStackEnabled,
@@ -185,8 +185,8 @@ func (l4netlb *L4NetLB) checkStrongSessionAffinityRequirements() *utils.UserErro
 // This function does not link instances to Backend Service.
 func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) *L4NetLBSyncResult {
 	isMultinetService := l4netlb.networkResolver.IsMultinetService(svc)
-	enabledStrongSessionAffinity := annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service)
-	result := NewL4SyncResult(SyncTypeCreate, svc, isMultinetService, enabledStrongSessionAffinity)
+	serviceUsesSSA := l4netlb.enableStrongSessionAffinity && annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service)
+	result := NewL4SyncResult(SyncTypeCreate, svc, isMultinetService, serviceUsesSSA)
 	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
 	if len(svc.Status.LoadBalancer.Ingress) > 0 {
 		result.SyncType = SyncTypeUpdate
@@ -287,15 +287,15 @@ func (l4netlb *L4NetLB) provideIPv4HealthChecks(nodeNames []string, result *L4Ne
 
 // connectionTrackingPolicy returns BackendServiceConnectionTrackingPolicy
 // based on StrongSessionAffinity and IdleTimeoutSec
-func (l4netlb *L4NetLB) connectionTrackingPolicy() (*composite.BackendServiceConnectionTrackingPolicy, error) {
+func (l4netlb *L4NetLB) connectionTrackingPolicy() *composite.BackendServiceConnectionTrackingPolicy {
 	if !l4netlb.enableStrongSessionAffinity || !annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service) {
-		return nil, nil
+		return nil
 	}
 	connectionTrackingPolicy := composite.BackendServiceConnectionTrackingPolicy{}
 	connectionTrackingPolicy.EnableStrongAffinity = true
 	connectionTrackingPolicy.TrackingMode = backends.PerSessionTrackingMode
 	connectionTrackingPolicy.IdleTimeoutSec = int64(*l4netlb.Service.Spec.SessionAffinityConfig.ClientIP.TimeoutSeconds)
-	return &connectionTrackingPolicy, nil
+	return &connectionTrackingPolicy
 }
 
 func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcLink string) string {
@@ -303,26 +303,21 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 	servicePorts := l4netlb.Service.Spec.Ports
 	protocol := utils.GetProtocol(servicePorts)
 
-	connectionTrackingPolicy, err := l4netlb.connectionTrackingPolicy()
-	if err != nil {
-		syncResult.GCEResourceInError = annotations.BackendServiceResource
-		syncResult.Error = err
-	}
-	needsConnectionTracking := connectionTrackingPolicy != nil
-	var bs *composite.BackendService
-	bs, err = l4netlb.backendPool.EnsureL4BackendService(bsName, hcLink, string(protocol), string(l4netlb.Service.Spec.SessionAffinity), string(cloud.SchemeExternal), l4netlb.NamespacedName, *network.DefaultNetwork(l4netlb.cloud), needsConnectionTracking, connectionTrackingPolicy)
+	connectionTrackingPolicy := l4netlb.connectionTrackingPolicy()
+	bs, err := l4netlb.backendPool.EnsureL4BackendService(bsName, hcLink, string(protocol), string(l4netlb.Service.Spec.SessionAffinity), string(cloud.SchemeExternal), l4netlb.NamespacedName, *network.DefaultNetwork(l4netlb.cloud), connectionTrackingPolicy)
 	if err != nil {
 		if utils.IsUnsupportedFeatureError(err, strongSessionAffinityFeatureName) {
 			syncResult.GCEResourceInError = annotations.BackendServiceResource
 			l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeWarning, strongSessionAffinityFeatureName, strongSessionAffinityConditionedSupportMsg)
 			syncResult.Error = utils.NewUserError(err)
 			syncResult.MetricsLegacyState.IsUserError = true
-		} else { // another problem with BackendServiceResource
+		} else { // not UserError but something else
 			syncResult.GCEResourceInError = annotations.BackendServiceResource
 			syncResult.Error = fmt.Errorf("failed to ensure backend service %s - %w", bsName, err)
 		}
 		return ""
 	}
+
 	syncResult.Annotations[annotations.BackendServiceKey] = bsName
 	return bs.SelfLink
 }
@@ -412,8 +407,9 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 // It is health check, firewall rules and backend service
 func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *L4NetLBSyncResult {
 	isMultinetService := l4netlb.networkResolver.IsMultinetService(svc)
-	enabledStrongSessionAffinity := annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service)
-	result := NewL4SyncResult(SyncTypeDelete, svc, isMultinetService, enabledStrongSessionAffinity)
+	useSSA := l4netlb.enableStrongSessionAffinity && annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service)
+	result := NewL4SyncResult(SyncTypeDelete, svc, isMultinetService, useSSA)
+
 	l4netlb.Service = svc
 
 	l4netlb.deleteIPv4ResourcesOnDelete(result)
