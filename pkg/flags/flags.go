@@ -248,8 +248,6 @@ the pod secrets for creating a Kubernetes client.`)
 		`Namespace to watch for Ingress/Services/Endpoints.`)
 	flag.BoolVar(&F.Version, "version", false,
 		`Print the version of the controller and exit`)
-	flag.StringVar(&F.IngressClass, "ingress-class", "",
-		`If set, overrides what ingress classes are managed by the controller.`)
 	flag.Var(&F.NodePortRanges, "node-port-ranges", `Node port/port-ranges whitelisted for the
 L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-500`)
 

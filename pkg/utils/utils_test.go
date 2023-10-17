@@ -38,7 +38,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
-	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils/common"
 )
 
@@ -645,15 +644,12 @@ func TestGetNodeConditionPredicate(t *testing.T) {
 	}
 }
 
-// Do not run in parallel since modifies global flags
-// TODO(shance): remove l7-ilb flag tests once flag is removed
 func TestIsGCEIngress(t *testing.T) {
-	var wrongClassName = "wrong-class"
+	wrongClassName := "wrong-class"
 	testCases := []struct {
-		desc             string
-		ingress          *networkingv1.Ingress
-		ingressClassFlag string
-		expected         bool
+		desc     string
+		ingress  *networkingv1.Ingress
+		expected bool
 	}{
 		{
 			desc: "No ingress class",
@@ -685,28 +681,6 @@ func TestIsGCEIngress(t *testing.T) {
 			expected: true,
 		},
 		{
-			desc: "Set by flag with non-matching class",
-			ingress: &networkingv1.Ingress{
-				ObjectMeta: v1.ObjectMeta{
-					Annotations: map[string]string{
-						annotations.IngressClassKey: wrongClassName},
-				},
-			},
-			ingressClassFlag: "right-class",
-			expected:         false,
-		},
-		{
-			desc: "Set by flag with matching class",
-			ingress: &networkingv1.Ingress{
-				ObjectMeta: v1.ObjectMeta{
-					Annotations: map[string]string{
-						annotations.IngressClassKey: "right-class"},
-				},
-			},
-			ingressClassFlag: "right-class",
-			expected:         true,
-		},
-		{
 			desc: "No ingress class annotation, ingressClassName set",
 			ingress: &networkingv1.Ingress{
 				ObjectMeta: v1.ObjectMeta{
@@ -719,27 +693,25 @@ func TestIsGCEIngress(t *testing.T) {
 			expected: false,
 		},
 		{
-			// Annotation supercedes spec.ingressClassName
-			desc: "Set by flag with matching class, and ingressClassName set",
+			desc: "Annotation supersedes spec.ingressClassName",
 			ingress: &networkingv1.Ingress{
 				ObjectMeta: v1.ObjectMeta{
 					Annotations: map[string]string{
-						annotations.IngressClassKey: "right-class"},
+						annotations.IngressClassKey: annotations.GceL7ILBIngressClass,
+					},
 				},
 				Spec: networkingv1.IngressSpec{
 					IngressClassName: &wrongClassName,
 				},
 			},
-			ingressClassFlag: "right-class",
-			expected:         true,
+			expected: true,
 		},
 	}
 
 	for _, tc := range testCases {
+		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
-			if tc.ingressClassFlag != "" {
-				flags.F.IngressClass = tc.ingressClassFlag
-			}
+			t.Parallel()
 
 			result := IsGCEIngress(tc.ingress)
 			if result != tc.expected {

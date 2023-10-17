@@ -40,7 +40,6 @@ import (
 	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
-	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/slice"
 	"k8s.io/klog/v2"
@@ -400,9 +399,6 @@ func EqualResourceIDs(a, b string) bool {
 // controller.
 func IsGCEIngress(ing *networkingv1.Ingress) bool {
 	class := annotations.FromIngress(ing).IngressClass()
-	if flags.F.IngressClass != "" && class == flags.F.IngressClass {
-		return true
-	}
 
 	switch class {
 	case "":
