@@ -26,9 +26,6 @@ const (
 	// - 2 (service attachment identifier prefix) - 8 (truncated kube system id) - 8 (suffix hash)
 	// - 5 (hyphen connectors) = 39
 	maxSADescriptiveLabel = 39
-
-	// serviceAttachmentPrefix is the prefix used in service attachment naming scheme
-	serviceAttachmentPrefix = "sa"
 )
 
 // V1ServiceAttachment implements ServiceAttachmentNamer. This is a wrapper on top of namer.Namer.

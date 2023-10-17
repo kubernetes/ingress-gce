@@ -17,7 +17,6 @@ limitations under the License.
 package utils
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,7 +28,6 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	api_v1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -319,19 +317,6 @@ func IsK8sServerError(err error) bool {
 	return k8serr.ErrStatus.Code >= http.StatusInternalServerError
 }
 
-// PrettyJson marshals an object in a human-friendly format.
-func PrettyJson(data interface{}) (string, error) {
-	buffer := new(bytes.Buffer)
-	encoder := json.NewEncoder(buffer)
-	encoder.SetIndent("", "\t")
-
-	err := encoder.Encode(data)
-	if err != nil {
-		return "", err
-	}
-	return buffer.String(), nil
-}
-
 // KeyName returns the name portion from a full or partial GCP resource URL.
 // Example:
 //
@@ -409,15 +394,6 @@ func EqualResourceIDs(a, b string) bool {
 	}
 
 	return aId.Equal(bId)
-}
-
-// IGLinks returns a list of links extracted from the passed in list of
-// compute.InstanceGroup's.
-func IGLinks(igs []*compute.InstanceGroup) (igLinks []string) {
-	for _, ig := range igs {
-		igLinks = append(igLinks, ig.SelfLink)
-	}
-	return
 }
 
 // IsGCEIngress returns true if the Ingress matches the class managed by this
@@ -658,14 +634,6 @@ func HasVIP(ing *networkingv1.Ingress) bool {
 	return true
 }
 
-// NumEndpoints returns the count of endpoints in the given endpoints object.
-func NumEndpoints(ep *api_v1.Endpoints) (result int) {
-	for _, subset := range ep.Subsets {
-		result = result + len(subset.Addresses)*len(subset.Ports)
-	}
-	return result
-}
-
 // EqualStringSets returns true if 2 given string slices contain the same elements, in any order.
 func EqualStringSets(x, y []string) bool {
 	if len(x) != len(y) {
@@ -896,15 +864,6 @@ func IsLoadBalancerServiceType(service *api_v1.Service) bool {
 		return false
 	}
 	return service.Spec.Type == api_v1.ServiceTypeLoadBalancer
-}
-
-// GetServiceNodePort safely gets service's first node port,
-// even if they are empty, which can happen for headless services
-func GetServiceNodePort(service *api_v1.Service) int64 {
-	if len(service.Spec.Ports) == 0 {
-		return 0
-	}
-	return int64(service.Spec.Ports[0].NodePort)
 }
 
 func AddIPToLBStatus(status *api_v1.LoadBalancerStatus, ips ...string) *api_v1.LoadBalancerStatus {
