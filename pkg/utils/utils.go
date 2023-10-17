@@ -395,24 +395,37 @@ func EqualResourceIDs(a, b string) bool {
 	return aId.Equal(bId)
 }
 
+// IsGLBCIngress returns true if the given Ingress should be processed by GLBC.
+func IsGLBCIngress(ing *networkingv1.Ingress) bool {
+	return IsGCEIngress(ing) || IsGCEMultiClusterIngress(ing)
+}
+
 // IsGCEIngress returns true if the Ingress matches the class managed by this
 // controller.
 func IsGCEIngress(ing *networkingv1.Ingress) bool {
-	class := annotations.FromIngress(ing).IngressClass()
+	return IsGCEL7XLBIngress(ing) || IsGCEL7ILBIngress(ing)
+}
 
-	switch class {
-	case "":
+// IsGCEL7XLBIngress returns true if the given Ingress has ingress.class
+// annotation set to "gce", or has no ingress class specified, which defaults to
+// external ingress.
+func IsGCEL7XLBIngress(ing *networkingv1.Ingress) bool {
+	class := annotations.FromIngress(ing).IngressClass()
+	if class == "" {
 		// Ingress controller does not have any ingress classes that can be
 		// specified by spec.IngressClassName. If spec.IngressClassName
 		// is nil, then consider GCEIngress.
 		return ing.Spec.IngressClassName == nil
-	case annotations.GceIngressClass:
-		return true
-	case annotations.GceL7ILBIngressClass:
-		return true
-	default:
-		return false
 	}
+
+	return class == annotations.GceIngressClass
+}
+
+// IsGCEL7ILBIngress returns true if the given Ingress has ingress.class
+// annotation set to "gce-internal".
+func IsGCEL7ILBIngress(ing *networkingv1.Ingress) bool {
+	class := annotations.FromIngress(ing).IngressClass()
+	return class == annotations.GceL7ILBIngressClass
 }
 
 // IsGCEMultiClusterIngress returns true if the given Ingress has
@@ -420,18 +433,6 @@ func IsGCEIngress(ing *networkingv1.Ingress) bool {
 func IsGCEMultiClusterIngress(ing *networkingv1.Ingress) bool {
 	class := annotations.FromIngress(ing).IngressClass()
 	return class == annotations.GceMultiIngressClass
-}
-
-// IsGCEL7ILBIngress returns true if the given Ingress has
-// ingress.class annotation set to "gce-l7-ilb"
-func IsGCEL7ILBIngress(ing *networkingv1.Ingress) bool {
-	class := annotations.FromIngress(ing).IngressClass()
-	return class == annotations.GceL7ILBIngressClass
-}
-
-// IsGLBCIngress returns true if the given Ingress should be processed by GLBC
-func IsGLBCIngress(ing *networkingv1.Ingress) bool {
-	return IsGCEIngress(ing) || IsGCEMultiClusterIngress(ing)
 }
 
 // GetReadyNodeNames returns names of schedulable, ready nodes from the node lister

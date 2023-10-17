@@ -117,21 +117,21 @@ func NewFirewallController(
 	ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			addIng := obj.(*v1.Ingress)
-			if !utils.IsGCEIngress(addIng) && !utils.IsGCEMultiClusterIngress(addIng) {
+			if !utils.IsGLBCIngress(addIng) {
 				return
 			}
 			fwc.queue.Enqueue(queueKey)
 		},
 		DeleteFunc: func(obj interface{}) {
 			delIng := obj.(*v1.Ingress)
-			if !utils.IsGCEIngress(delIng) && !utils.IsGCEMultiClusterIngress(delIng) {
+			if !utils.IsGLBCIngress(delIng) {
 				return
 			}
 			fwc.queue.Enqueue(queueKey)
 		},
 		UpdateFunc: func(old, cur interface{}) {
 			curIng := cur.(*v1.Ingress)
-			if !utils.IsGCEIngress(curIng) && !utils.IsGCEMultiClusterIngress(curIng) {
+			if !utils.IsGLBCIngress(curIng) {
 				return
 			}
 			fwc.queue.Enqueue(queueKey)
