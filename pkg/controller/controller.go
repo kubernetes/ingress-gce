@@ -388,7 +388,7 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}) error {
 
 	// Sync the backends
 	if err := lbc.backendSyncer.Sync(ingSvcPorts); err != nil {
-		return fmt.Errorf("lbc.backendSyncer.Sync(%v) returned error %w", ingSvcPorts, err)
+		return err
 	}
 
 	// Get the zones our groups live in.

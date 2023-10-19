@@ -91,7 +91,7 @@ func (nl *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 	}
 	backendService, err := composite.GetBackendService(nl.cloud, key, version)
 	if err != nil {
-		return fmt.Errorf("composite.GetBackendService(..., %v, %v) returned error %w", key, version, err)
+		return err
 	}
 
 	newBackends := backendsForNEGs(negSelfLinks, &sp)

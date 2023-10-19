@@ -153,12 +153,12 @@ func (l7 *L7) edgeHop() error {
 	}
 
 	if err := l7.ensureComputeURLMap(); err != nil {
-		return fmt.Errorf("l7.ensureComputeURLMap() returned error %w", err)
+		return err
 	}
 
 	if flags.F.EnableFrontendConfig {
 		if err := l7.ensureRedirectURLMap(); err != nil {
-			return fmt.Errorf("ensureRedirectUrlMap() = %v", err)
+			return err
 		}
 	}
 

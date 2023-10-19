@@ -27,6 +27,7 @@ import (
 	"strconv"
 	"strings"
 
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -90,10 +91,10 @@ func (v *negValidator) CheckResponse(host, path string, resp *http.Response, bod
 
 	urlMapName := v.env.FrontendNamerFactory().Namer(v.ing).UrlMap()
 	if negEnabled {
-		//if utils.IsGCEL7ILBIngress(v.ing) {
-		return fuzz.CheckResponseContinue, verifyNegRegionBackend(v.env, negName, negName, urlMapName, v.region)
-		//}
-		//return fuzz.CheckResponseContinue, verifyNegBackend(v.env, negName, urlMapName)
+		if utils.IsGCEL7ILBIngress(v.ing) {
+			return fuzz.CheckResponseContinue, verifyNegRegionBackend(v.env, negName, negName, urlMapName, v.region)
+		}
+		return fuzz.CheckResponseContinue, verifyNegBackend(v.env, negName, urlMapName)
 	}
 	return fuzz.CheckResponseContinue, verifyIgBackend(v.env, v.env.BackendNamer().IGBackend(int64(svcPort.NodePort)), urlMapName)
 }
