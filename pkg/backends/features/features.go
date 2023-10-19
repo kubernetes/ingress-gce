@@ -48,7 +48,7 @@ var (
 	}
 	// TODO: (shance) refactor all scope to be above the serviceport level
 	scopeToFeatures = map[meta.KeyType][]string{
-		meta.Regional: []string{FeatureL7ILB, FeatureVMIPNEG},
+		meta.Regional: []string{FeatureL7ILB, FeatureVMIPNEG, FeatureNEG},
 	}
 )
 
@@ -117,11 +117,11 @@ func VersionFromFeatures(features []string) meta.Version {
 // (e.g.) if a regional feature is added, the backend will be regional
 // TODO: (shance) refactor all scope to be above the serviceport level
 func ScopeFromFeatures(features []string) meta.KeyType {
-	fs := sets.NewString(features...)
-	if fs.HasAny(scopeToFeatures[meta.Regional]...) {
-		return meta.Regional
-	}
-	return meta.Global
+	//fs := sets.NewString(features...)
+	//if fs.HasAny(scopeToFeatures[meta.Regional]...) {
+	return meta.Regional
+	//}
+	//return meta.Global
 }
 
 var (

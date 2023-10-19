@@ -388,7 +388,7 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}) error {
 
 	// Sync the backends
 	if err := lbc.backendSyncer.Sync(ingSvcPorts); err != nil {
-		return err
+		return fmt.Errorf("lbc.backendSyncer.Sync(%v) returned error %w", ingSvcPorts, err)
 	}
 
 	// Get the zones our groups live in.
@@ -404,17 +404,19 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}) error {
 
 	// Link backends to groups.
 	for _, sp := range ingSvcPorts {
-		var linkErr error
-		if sp.NEGEnabled {
-			// Link backend to NEG's if the backend has NEG enabled.
-			linkErr = lbc.negLinker.Link(sp, groupKeys)
-		} else {
-			// Otherwise, link backend to IG's.
-			linkErr = lbc.igLinker.Link(sp, groupKeys)
+		//if sp.NEGEnabled {
+		// Link backend to NEG's if the backend has NEG enabled.
+		err := lbc.negLinker.Link(sp, groupKeys)
+		if err != nil {
+			return fmt.Errorf("lbc.negLinker.Link(%v, %v) returned error %w", sp, groupKeys, err)
 		}
-		if linkErr != nil {
-			return linkErr
-		}
+		//} else {
+		//	// Otherwise, link backend to IG's.
+		//	err := lbc.igLinker.Link(sp, groupKeys)
+		//	if err != nil {
+		//		return fmt.Errorf("lbc.igLinker.Link(%v, %v) returned error %w", sp, groupKeys, err)
+		//	}
+		//}
 	}
 
 	return nil

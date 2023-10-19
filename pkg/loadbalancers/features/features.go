@@ -20,7 +20,6 @@ package features
 import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/networking/v1"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -137,14 +136,16 @@ func mergeVersions(a, b meta.Version) meta.Version {
 // TODO: (shance) refactor scope to be per-resource
 // scopeFromFeatures returns the required scope for a list of features
 func scopeFromFeatures(features []string) meta.KeyType {
-	fs := sets.NewString(features...)
-	if fs.HasAny(scopeToFeatures[meta.Zonal]...) {
-		return meta.Zonal
-	}
-	if fs.HasAny(scopeToFeatures[meta.Regional]...) {
-		return meta.Regional
-	}
-	return meta.Global
+	return meta.Regional
+
+	//fs := sets.NewString(features...)
+	//if fs.HasAny(scopeToFeatures[meta.Zonal]...) {
+	//	return meta.Zonal
+	//}
+	//if fs.HasAny(scopeToFeatures[meta.Regional]...) {
+	//	return meta.Regional
+	//}
+	//return meta.Global
 }
 
 // TODO: (shance) refactor scope to be per-resource

@@ -153,7 +153,7 @@ func (l7 *L7) edgeHop() error {
 	}
 
 	if err := l7.ensureComputeURLMap(); err != nil {
-		return err
+		return fmt.Errorf("l7.ensureComputeURLMap() returned error %w", err)
 	}
 
 	if flags.F.EnableFrontendConfig {
@@ -164,7 +164,7 @@ func (l7 *L7) edgeHop() error {
 
 	if l7.runtimeInfo.AllowHTTP {
 		if err := l7.edgeHopHttp(); err != nil {
-			return err
+			return fmt.Errorf("l7.edgeHopHttp() returned error %w", err)
 		}
 	} else if flags.F.EnableDeleteUnusedFrontends && requireDeleteFrontend(l7.ingress, namer.HTTPProtocol) {
 		if err := l7.deleteHttp(features.VersionsFromIngress(&l7.ingress)); err != nil {

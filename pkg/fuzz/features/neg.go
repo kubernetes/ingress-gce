@@ -34,7 +34,6 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/fuzz"
-	"k8s.io/ingress-gce/pkg/utils"
 )
 
 // NEG is a feature in GCP to support pod as Loadbalancer backends
@@ -91,10 +90,10 @@ func (v *negValidator) CheckResponse(host, path string, resp *http.Response, bod
 
 	urlMapName := v.env.FrontendNamerFactory().Namer(v.ing).UrlMap()
 	if negEnabled {
-		if utils.IsGCEL7ILBIngress(v.ing) {
-			return fuzz.CheckResponseContinue, verifyNegRegionBackend(v.env, negName, negName, urlMapName, v.region)
-		}
-		return fuzz.CheckResponseContinue, verifyNegBackend(v.env, negName, urlMapName)
+		//if utils.IsGCEL7ILBIngress(v.ing) {
+		return fuzz.CheckResponseContinue, verifyNegRegionBackend(v.env, negName, negName, urlMapName, v.region)
+		//}
+		//return fuzz.CheckResponseContinue, verifyNegBackend(v.env, negName, urlMapName)
 	}
 	return fuzz.CheckResponseContinue, verifyIgBackend(v.env, v.env.BackendNamer().IGBackend(int64(svcPort.NodePort)), urlMapName)
 }

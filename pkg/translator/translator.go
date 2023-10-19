@@ -265,13 +265,14 @@ func (t *Translator) ToCompositeForwardingRule(env *Env, protocol namer.NamerPro
 	}
 
 	fr := &composite.ForwardingRule{
-		Name:        t.FrontendNamer.ForwardingRule(protocol),
-		IPAddress:   env.VIP,
-		Target:      proxyLink,
-		PortRange:   portRange,
-		IPProtocol:  "TCP",
-		Description: description,
-		Version:     version,
+		Name:                t.FrontendNamer.ForwardingRule(protocol),
+		IPAddress:           env.VIP,
+		Target:              proxyLink,
+		PortRange:           portRange,
+		IPProtocol:          "TCP",
+		Description:         description,
+		Version:             version,
+		LoadBalancingScheme: "EXTERNAL_MANAGED",
 	}
 
 	if t.IsL7ILB {
@@ -282,6 +283,8 @@ func (t *Translator) ToCompositeForwardingRule(env *Env, protocol namer.NamerPro
 		} else {
 			fr.Subnetwork = env.Subnetwork
 		}
+	} else {
+		fr.NetworkTier = "Standard"
 	}
 
 	return fr
@@ -342,9 +345,9 @@ func (t *Translator) ToCompositeSSLCertificates(env *Env, tlsName string, tls []
 	tlsNames := utils.SplitAnnotation(tlsName)
 	for _, name := range tlsNames {
 		resID := cloud.ResourceID{Resource: "sslCertificates", Key: &meta.Key{Name: name}, ProjectID: env.Project}
-		if t.IsL7ILB {
-			resID.Key.Region = env.Region
-		}
+		//if t.IsL7ILB {
+		resID.Key.Region = env.Region
+		//}
 		preSharedCert := &composite.SslCertificate{
 			Name:     name,
 			SelfLink: resID.SelfLink(version),
@@ -357,9 +360,9 @@ func (t *Translator) ToCompositeSSLCertificates(env *Env, tlsName string, tls []
 		ingKey := tlsCert.Key
 		gcpCertName := t.FrontendNamer.SSLCertName(tlsCert.CertHash)
 		resID := cloud.ResourceID{Resource: "sslCertificates", Key: &meta.Key{Name: gcpCertName}, ProjectID: env.Project}
-		if t.IsL7ILB {
-			resID.Key.Region = env.Region
-		}
+		//if t.IsL7ILB {
+		resID.Key.Region = env.Region
+		//}
 		cert := &composite.SslCertificate{
 			Name:        gcpCertName,
 			Certificate: ingCert,

@@ -232,11 +232,11 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, backendConfigHCConfig *b
 
 	var scope meta.KeyType
 	// TODO(shance): find a way to remove this
-	if hc.ForILB {
-		scope = meta.Regional
-	} else {
-		scope = meta.Global
-	}
+	//if hc.ForILB {
+	scope = meta.Regional
+	//} else {
+	//	scope = meta.Global
+	//}
 
 	existingHC, err := h.Get(hc.Name, hc.Version(), scope)
 	if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
@@ -374,9 +374,9 @@ func (h *HealthChecks) create(hc *translator.HealthCheck, bchcc *backendconfigv1
 		hc.UpdateFromBackendConfig(bchcc)
 	}
 	// special case ILB to avoid mucking with stable HC code
-	if hc.ForILB {
-		return h.createILB(hc)
-	}
+	//if hc.ForILB {
+	return h.createILB(hc)
+	//}
 
 	switch hc.Version() {
 	case meta.VersionAlpha:
@@ -427,9 +427,9 @@ func (h *HealthChecks) updateILB(hc *translator.HealthCheck) error {
 }
 
 func (h *HealthChecks) update(hc *translator.HealthCheck) error {
-	if hc.ForILB {
-		return h.updateILB(hc)
-	}
+	//if hc.ForILB {
+	return h.updateILB(hc)
+	//}
 	switch hc.Version() {
 	case meta.VersionAlpha:
 		klog.V(2).Infof("Updating alpha health check with protocol %v", hc.Type)

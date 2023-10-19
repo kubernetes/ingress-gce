@@ -629,7 +629,7 @@ func (c *Controller) mergeDefaultBackendServicePortInfoMap(key string, service *
 	scanIngress := func(qualify func(*v1.Ingress) bool) error {
 		for _, m := range c.ingressLister.List() {
 			ing := *m.(*v1.Ingress)
-			if qualify(&ing) && ing.Spec.DefaultBackend == nil {
+			if ing.Spec.DefaultBackend == nil {
 				svcPortTupleSet := make(negtypes.SvcPortTupleSet)
 				svcPortTupleSet.Insert(negtypes.SvcPortTuple{
 					Name:       c.defaultBackendService.ID.Port.Name,
