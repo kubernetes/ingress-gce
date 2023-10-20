@@ -32,7 +32,6 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/context"
-	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/instancegroups"
 	l4metrics "k8s.io/ingress-gce/pkg/l4lb/metrics"
@@ -43,6 +42,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/ingress-gce/pkg/zonegetter"
 	"k8s.io/klog/v2"
 )
 
@@ -64,7 +64,7 @@ type L4NetLBController struct {
 	networkResolver network.Resolver
 	stopCh          chan struct{}
 
-	translator *translator.Translator
+	zoneGetter *zonegetter.ZoneGetter
 	namer      namer.L4ResourcesNamer
 	// enqueueTracker tracks the latest time an update was enqueued
 	enqueueTracker utils.TimeTracker
@@ -95,7 +95,7 @@ func NewL4NetLBController(
 		serviceLister:               ctx.ServiceInformer.GetIndexer(),
 		nodeLister:                  listers.NewNodeLister(ctx.NodeInformer.GetIndexer()),
 		stopCh:                      stopCh,
-		translator:                  ctx.Translator,
+		zoneGetter:                  ctx.ZoneGetter,
 		backendPool:                 backendPool,
 		namer:                       ctx.L4Namer,
 		instancePool:                ctx.InstancePool,
@@ -576,7 +576,7 @@ func (lc *L4NetLBController) ensureBackendLinking(service *v1.Service, linkType 
 		klog.V(2).Infof("Finished linking backends to backend service for k8s service %s/%s, time taken: %v", service.Namespace, service.Name, time.Since(start))
 	}()
 
-	zones, err := lc.translator.ListZones(utils.CandidateNodesPredicate)
+	zones, err := lc.zoneGetter.ListZones(utils.CandidateNodesPredicate)
 	if err != nil {
 		return err
 	}

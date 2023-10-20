@@ -53,6 +53,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/ingress-gce/pkg/zonegetter"
 	"k8s.io/klog/v2"
 )
 
@@ -101,6 +102,8 @@ type LoadBalancerController struct {
 
 	ingClassLister  cache.Indexer
 	ingParamsLister cache.Indexer
+
+	ZoneGetter *zonegetter.ZoneGetter
 }
 
 // NewLoadBalancerController creates a controller for gce loadbalancers.
@@ -132,6 +135,7 @@ func NewLoadBalancerController(
 		backendSyncer: backends.NewBackendSyncer(backendPool, healthChecker, ctx.Cloud),
 		negLinker:     backends.NewNEGLinker(backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer()),
 		igLinker:      backends.NewInstanceGroupLinker(ctx.InstancePool, backendPool),
+		ZoneGetter:    ctx.ZoneGetter,
 		metrics:       ctx.ControllerMetrics,
 	}
 
@@ -392,7 +396,7 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}) error {
 	}
 
 	// Get the zones our groups live in.
-	zones, err := lbc.Translator.ListZones(utils.CandidateNodesPredicate)
+	zones, err := lbc.ZoneGetter.ListZones(utils.CandidateNodesPredicate)
 	if err != nil {
 		klog.Errorf("lbc.Translator.ListZones(utils.CandidateNodesPredicate) = %v", err)
 		return err

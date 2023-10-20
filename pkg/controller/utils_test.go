@@ -45,7 +45,7 @@ func TestZoneListing(t *testing.T) {
 		"zone-2": {"n2"},
 	}
 	addNodes(lbc, zoneToNode)
-	zones, err := lbc.Translator.ListZones(utils.AllNodesPredicate)
+	zones, err := lbc.ZoneGetter.ListZones(utils.AllNodesPredicate)
 	if err != nil {
 		t.Errorf("Failed to list zones: %v", err)
 	}

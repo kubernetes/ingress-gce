@@ -328,7 +328,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	}
 
 	var zoneGetter negtypes.ZoneGetter
-	zoneGetter = lbc.Translator
+	zoneGetter = lbc.ZoneGetter
 	// In NonGCP mode, use the zone specified in gce.conf directly.
 	// This overrides the zone/fault-domain label on nodes for NEG controller.
 	if flags.F.EnableNonGCPMode {

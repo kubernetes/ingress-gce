@@ -79,13 +79,11 @@ func configuredFakeTranslator() *Translator {
 	ServiceInformer := informerv1.NewServiceInformer(client, namespace, resyncPeriod, utils.NewNamespaceIndexer())
 	BackendConfigInformer := informerbackendconfig.NewBackendConfigInformer(backendConfigClient, namespace, resyncPeriod, utils.NewNamespaceIndexer())
 	PodInformer := informerv1.NewPodInformer(client, namespace, resyncPeriod, utils.NewNamespaceIndexer())
-	NodeInformer := informerv1.NewNodeInformer(client, resyncPeriod, utils.NewNamespaceIndexer())
 	EndpointSliceInformer := discoveryinformer.NewEndpointSliceInformer(client, namespace, 0,
 		cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc, endpointslices.EndpointSlicesByServiceIndex: endpointslices.EndpointSlicesByServiceFunc})
 	return NewTranslator(
 		ServiceInformer,
 		BackendConfigInformer,
-		NodeInformer,
 		PodInformer,
 		EndpointSliceInformer,
 		client,
@@ -1061,41 +1059,6 @@ func TestGatherEndpointPorts(t *testing.T) {
 				t.Errorf("GatherEndpointPorts() = %v, expected %v", gotPorts, tc.expectedPorts)
 			}
 		})
-	}
-}
-
-func TestGetZoneForNode(t *testing.T) {
-	nodeName := "node"
-	zone := "us-central1-a"
-	translator := fakeTranslator()
-	translator.NodeInformer.GetIndexer().Add(&apiv1.Node{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "ns",
-			Name:      nodeName,
-			Labels: map[string]string{
-				annotations.ZoneKey: zone,
-			},
-		},
-		Spec: apiv1.NodeSpec{
-			Unschedulable: false,
-		},
-		Status: apiv1.NodeStatus{
-			Conditions: []apiv1.NodeCondition{
-				{
-					Type:   apiv1.NodeReady,
-					Status: apiv1.ConditionFalse,
-				},
-			},
-		},
-	})
-
-	ret, err := translator.GetZoneForNode(nodeName)
-	if err != nil {
-		t.Errorf("Expect error = nil, but got %v", err)
-	}
-
-	if zone != ret {
-		t.Errorf("Expect zone = %q, but got %q", zone, ret)
 	}
 }
 

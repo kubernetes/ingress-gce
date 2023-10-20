@@ -32,8 +32,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/apimachinery/pkg/util/sets"
-	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -71,7 +69,6 @@ func (t *Translator) getServicePortParamsForIngress(ing *v1.Ingress) *getService
 // NewTranslator returns a new Translator.
 func NewTranslator(serviceInformer cache.SharedIndexInformer,
 	backendConfigInformer cache.SharedIndexInformer,
-	nodeInformer cache.SharedIndexInformer,
 	podInformer cache.SharedIndexInformer,
 	endpointSliceInformer cache.SharedIndexInformer,
 	kubeClient kubernetes.Interface,
@@ -82,7 +79,6 @@ func NewTranslator(serviceInformer cache.SharedIndexInformer,
 	return &Translator{
 		ServiceInformer:       serviceInformer,
 		BackendConfigInformer: backendConfigInformer,
-		NodeInformer:          nodeInformer,
 		PodInformer:           podInformer,
 		EndpointSliceInformer: endpointSliceInformer,
 		KubeClient:            kubeClient,
@@ -92,11 +88,10 @@ func NewTranslator(serviceInformer cache.SharedIndexInformer,
 	}
 }
 
-// Translator helps with kubernetes -> gce api conversion.
+// Translator helps with kubernetes s-> gce api conversion.
 type Translator struct {
 	ServiceInformer       cache.SharedIndexInformer
 	BackendConfigInformer cache.SharedIndexInformer
-	NodeInformer          cache.SharedIndexInformer
 	PodInformer           cache.SharedIndexInformer
 	EndpointSliceInformer cache.SharedIndexInformer
 	KubeClient            kubernetes.Interface
@@ -458,50 +453,6 @@ func validateAndModifyPrefixPathType(path v1.HTTPIngressPath) ([]string, error) 
 		return []string{path.Path[0 : len(path.Path)-1], path.Path + "*"}, nil
 	}
 	return []string{path.Path, path.Path + "/*"}, nil
-}
-
-func getZone(node *api_v1.Node) string {
-	zone, ok := node.Labels[annotations.ZoneKey]
-	if !ok {
-		klog.Warningf("Node without zone label %q, returning %q as zone. Node name: %v, node labels: %v", annotations.ZoneKey, annotations.DefaultZone, node.Name, node.Labels)
-		return annotations.DefaultZone
-	}
-	return zone
-}
-
-// GetZoneForNode returns the zone for a given node by looking up its zone label.
-func (t *Translator) GetZoneForNode(name string) (string, error) {
-	nodeLister := t.NodeInformer.GetIndexer()
-	nodes, err := listers.NewNodeLister(nodeLister).List(labels.Everything())
-	if err != nil {
-		return "", err
-	}
-	for _, n := range nodes {
-		if n.Name == name {
-			// TODO: Make this more resilient to label changes by listing
-			// cloud nodes and figuring out zone.
-			return getZone(n), nil
-		}
-	}
-	return "", fmt.Errorf("node not found %v", name)
-}
-
-// ListZones returns a list of zones containing nodes that satisfy the given predicate.
-func (t *Translator) ListZones(predicate utils.NodeConditionPredicate) ([]string, error) {
-	nodeLister := t.NodeInformer.GetIndexer()
-	return t.listZones(listers.NewNodeLister(nodeLister), predicate)
-}
-
-func (t *Translator) listZones(lister listers.NodeLister, predicate utils.NodeConditionPredicate) ([]string, error) {
-	zones := sets.String{}
-	nodes, err := utils.ListWithPredicate(lister, predicate)
-	if err != nil {
-		return zones.List(), err
-	}
-	for _, n := range nodes {
-		zones.Insert(getZone(n))
-	}
-	return zones.List(), nil
 }
 
 // geHTTPProbe returns the http readiness probe from the first container
