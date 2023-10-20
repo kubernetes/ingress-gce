@@ -214,7 +214,7 @@ func TestCreateHTTPILBLoadBalancerStaticIp(t *testing.T) {
 
 	ipName := "test-ilb-static-ip"
 	ip := "10.1.2.3"
-	key, err := composite.CreateKey(j.fakeGCE, ipName, features.L7ILBScope())
+	key, err := composite.CreateKey(j.fakeGCE, ipName, meta.Regional)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +290,7 @@ func TestCreateHTTPSILBLoadBalancerAllowHTTPSharedVIP(t *testing.T) {
 
 	ipName := "test-ilb-static-ip"
 	ip := "10.1.2.3"
-	key, err := composite.CreateKey(j.fakeGCE, ipName, features.L7ILBScope())
+	key, err := composite.CreateKey(j.fakeGCE, ipName, meta.Regional)
 	if err != nil {
 		t.Fatal(err)
 	}

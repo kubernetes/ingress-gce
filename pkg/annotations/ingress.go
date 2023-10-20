@@ -59,10 +59,11 @@ const (
 	// IngressClassKey picks a specific "class" for the Ingress. The controller
 	// only processes Ingresses with this annotation either unset, or set
 	// to either gceIngressClass or the empty string.
-	IngressClassKey      = "kubernetes.io/ingress.class"
-	GceIngressClass      = "gce"
-	GceMultiIngressClass = "gce-multi-cluster"
-	GceL7ILBIngressClass = "gce-internal"
+	IngressClassKey              = "kubernetes.io/ingress.class"
+	GceIngressClass              = "gce"
+	GceMultiIngressClass         = "gce-multi-cluster"
+	GceL7ILBIngressClass         = "gce-internal"
+	GceL7XLBRegionalIngressClass = "gce-regional"
 
 	// Label key to denote which GCE zone a Kubernetes node is in.
 	ZoneKey     = "topology.kubernetes.io/zone"

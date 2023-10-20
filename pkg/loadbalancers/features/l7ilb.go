@@ -24,7 +24,6 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
-	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/klog/v2"
 )
@@ -69,9 +68,4 @@ func isSameNetwork(l, r string) (bool, error) {
 // L7ILBVersions is a helper to get the version of L7-ILB
 func L7ILBVersions() *ResourceVersions {
 	return versionsFromFeatures([]string{FeatureL7ILB})
-}
-
-// L7ILBScope is a helper to get the scope of L7-ILB
-func L7ILBScope() meta.KeyType {
-	return scopeFromFeatures([]string{FeatureL7ILB})
 }

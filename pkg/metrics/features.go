@@ -72,10 +72,11 @@ const (
 	specifiedStaticGlobalIP   = feature("SpecifiedStaticGlobalIP")
 	specifiedStaticRegionalIP = feature("SpecifiedStaticRegionalIP")
 
-	servicePort         = feature("L7LBServicePort")
-	externalServicePort = feature("L7XLBServicePort")
-	internalServicePort = feature("L7ILBServicePort")
-	neg                 = feature("NEG")
+	servicePort                 = feature("L7LBServicePort")
+	externalServicePort         = feature("L7XLBServicePort")
+	externalRegionalServicePort = feature("L7RegionalXLBServicePort")
+	internalServicePort         = feature("L7ILBServicePort")
+	neg                         = feature("NEG")
 
 	// BackendConfig Features
 	cloudCDN                  = feature("CloudCDN")
@@ -282,6 +283,9 @@ func featuresForServicePort(sp utils.ServicePort) []feature {
 	if sp.L7ILBEnabled {
 		klog.V(6).Infof("L7 ILB is enabled for service port %s", svcPortKey)
 		features = append(features, internalServicePort)
+	} else if sp.L7XLBRegionalEnabled {
+		klog.V(6).Infof("L7 Regional XLB is enabled for service port %s", svcPortKey)
+		features = append(features, externalRegionalServicePort)
 	} else {
 		features = append(features, externalServicePort)
 	}

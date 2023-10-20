@@ -55,7 +55,7 @@ type HealthChecker interface {
 	// `probe` can be nil if no probe exists.
 	SyncServicePort(sp *utils.ServicePort, probe *v1.Probe) (string, error)
 	Delete(name string, scope meta.KeyType) error
-	Get(name string, version meta.Version, scope meta.KeyType) (*translator.HealthCheck, error)
+	Get(name string, scope meta.KeyType) (*translator.HealthCheck, error)
 }
 
 // ServiceGetter is an interface to retrieve Kubernetes Services.

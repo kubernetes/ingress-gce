@@ -646,6 +646,9 @@ func (c *Controller) mergeDefaultBackendServicePortInfoMap(key string, service *
 	if err := scanIngress(utils.IsGCEL7ILBIngress); err != nil {
 		return err
 	}
+	if err := scanIngress(utils.IsGCEL7XLBRegionalIngress); err != nil {
+		return err
+	}
 
 	// process default backend service for L7 XLB
 	negAnnotation, foundNEGAnnotation, err := annotations.FromService(service).NEGAnnotation()

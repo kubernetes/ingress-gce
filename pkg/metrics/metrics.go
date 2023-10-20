@@ -178,17 +178,24 @@ func FakeControllerMetrics() *ControllerMetrics {
 // servicePortKey defines a service port uniquely.
 // Note that same service port combination used by ILB and XLB are treated as separate service ports.
 type servicePortKey struct {
-	svcPortID      utils.ServicePortID
-	isL7ILBEnabled bool
+	svcPortID              utils.ServicePortID
+	isL7ILBEnabled         bool
+	isL7XLBRegionalEnabled bool
 }
 
 func newServicePortKey(svcPort utils.ServicePort) servicePortKey {
-	return servicePortKey{svcPortID: svcPort.ID, isL7ILBEnabled: svcPort.L7ILBEnabled}
+	return servicePortKey{
+		svcPortID:              svcPort.ID,
+		isL7ILBEnabled:         svcPort.L7ILBEnabled,
+		isL7XLBRegionalEnabled: svcPort.L7XLBRegionalEnabled,
+	}
 }
 
 func (spk servicePortKey) string() string {
 	if spk.isL7ILBEnabled {
 		return fmt.Sprintf("%s/%s", spk.svcPortID, "ILB")
+	} else if spk.isL7XLBRegionalEnabled {
+		return fmt.Sprintf("%s/%s", spk.svcPortID, "RegionalXLB")
 	}
 	return fmt.Sprintf("%s/%s", spk.svcPortID, "XLB")
 }

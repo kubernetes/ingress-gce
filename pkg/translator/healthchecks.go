@@ -91,8 +91,9 @@ const (
 // HealthCheck is a wrapper for different versions of the compute struct.
 // TODO(bowei): replace inner workings with composite.
 type HealthCheck struct {
-	ForNEG bool
-	ForILB bool
+	ForNEG         bool
+	ForILB         bool
+	ForRegionalXLB bool
 
 	// As the {HTTP, HTTPS, HTTP2} settings are identical, we maintain the
 	// settings at the outer-level and copy into the appropriate struct
@@ -288,6 +289,12 @@ func DefaultHealthCheck(port int64, protocol annotations.AppProtocol) *HealthChe
 		HealthCheck:     hcSettings,
 		ForNEG:          false,
 	}
+}
+
+func DefaultXLBRegionalHealthCheck(protocol annotations.AppProtocol) *HealthCheck {
+	hc := DefaultNEGHealthCheck(protocol)
+	hc.ForRegionalXLB = true
+	return hc
 }
 
 // DefaultNEGHealthCheck simply returns the default health check.

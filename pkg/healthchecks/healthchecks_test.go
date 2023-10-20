@@ -336,7 +336,7 @@ func TestRegionalHealthCheckDelete(t *testing.T) {
 		t.Fatalf("healthchecks.Create(%q) = %v, want nil", hc.Name, err)
 	}
 
-	key, err := composite.CreateKey(fakeGCE, hc.Name, features.L7ILBScope())
+	key, err := composite.CreateKey(fakeGCE, hc.Name, meta.Regional)
 	if err != nil {
 		t.Fatalf("Unexpected error creating composite key: %v", err)
 	}
@@ -379,7 +379,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	fakeGCE.CreateHealthCheck(v1hc)
 
 	// Verify the health check exists
-	_, err = healthChecks.Get(hc.Name, meta.VersionGA, meta.Global)
+	_, err = healthChecks.Get(hc.Name, meta.Global)
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
@@ -392,7 +392,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	}
 
 	// Verify the health check exists
-	_, err = healthChecks.Get(hc.Name, meta.VersionGA, meta.Global)
+	_, err = healthChecks.Get(hc.Name, meta.Global)
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
@@ -410,7 +410,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	}
 
 	// Verify the health check exists. HTTP2 is alpha-only.
-	_, err = healthChecks.Get(hc.Name, meta.VersionAlpha, meta.Global)
+	_, err = healthChecks.Get(hc.Name, meta.Global)
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
@@ -430,7 +430,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	}
 
 	// Verify the health check exists.
-	hc, err = healthChecks.Get(hc.Name, meta.VersionAlpha, meta.Global)
+	hc, err = healthChecks.Get(hc.Name, meta.Global)
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
@@ -450,7 +450,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	}
 
 	// Verify the health check exists.
-	hc, err = healthChecks.Get(hc.Name, meta.VersionAlpha, meta.Global)
+	hc, err = healthChecks.Get(hc.Name, meta.Global)
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
@@ -488,7 +488,7 @@ func TestEnableTHC(t *testing.T) {
 	fakeGCE.CreateHealthCheck(v1hc)
 
 	// Verify the health check exists
-	initialObtainedHC, err := healthChecks.Get(hc.Name, meta.VersionGA, meta.Global)
+	initialObtainedHC, err := healthChecks.Get(hc.Name, meta.Global)
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
@@ -515,7 +515,7 @@ func TestEnableTHC(t *testing.T) {
 	}
 
 	// Verify the health check exists
-	obtainedHC, err := healthChecks.Get(hc.Name, meta.VersionGA, meta.Global)
+	obtainedHC, err := healthChecks.Get(hc.Name, meta.Global)
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}

@@ -150,7 +150,10 @@ func scopeFromFeatures(features []string) meta.KeyType {
 // TODO: (shance) refactor scope to be per-resource
 // ScopeFromIngress returns the required scope of features for an Ingress
 func ScopeFromIngress(ing *v1.Ingress) meta.KeyType {
-	return scopeFromFeatures(featuresFromIngress(ing))
+	if utils.IsGCEL7ILBIngress(ing) || utils.IsGCEL7XLBRegionalIngress(ing) {
+		return meta.Regional
+	}
+	return meta.Global
 }
 
 // VersionsFromIngress returns a ResourceVersions struct containing all of the resources per version

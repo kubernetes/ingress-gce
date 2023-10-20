@@ -189,7 +189,7 @@ func TestSync(t *testing.T) {
 				t.Fatalf("Backend %v has wrong port %v, expected %v", be.Name, be.Port, sp)
 			}
 
-			hc, err := syncer.healthChecker.Get(beName, features.VersionFromServicePort(&sp), features.ScopeFromServicePort(&sp))
+			hc, err := syncer.healthChecker.Get(beName, features.ScopeFromServicePort(&sp))
 			if err != nil {
 				t.Fatalf("Unexpected err when querying fake healthchecker: %v", err)
 			}
@@ -223,7 +223,7 @@ func TestSyncUpdateHTTPS(t *testing.T) {
 	}
 
 	// Assert the proper health check was created
-	hc, _ := syncer.healthChecker.Get(beName, features.VersionFromServicePort(&p), features.ScopeFromServicePort(&p))
+	hc, _ := syncer.healthChecker.Get(beName, features.ScopeFromServicePort(&p))
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
 	}
@@ -243,7 +243,7 @@ func TestSyncUpdateHTTPS(t *testing.T) {
 	}
 
 	// Assert the proper health check was created
-	hc, _ = syncer.healthChecker.Get(beName, features.VersionFromServicePort(&p), features.ScopeFromServicePort(&p))
+	hc, _ = syncer.healthChecker.Get(beName, features.ScopeFromServicePort(&p))
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
 	}
@@ -267,7 +267,7 @@ func TestSyncUpdateHTTP2(t *testing.T) {
 	}
 
 	// Assert the proper health check was created
-	hc, _ := syncer.healthChecker.Get(beName, features.VersionFromServicePort(&p), features.ScopeFromServicePort(&p))
+	hc, _ := syncer.healthChecker.Get(beName, features.ScopeFromServicePort(&p))
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
 	}
@@ -287,7 +287,7 @@ func TestSyncUpdateHTTP2(t *testing.T) {
 	}
 
 	// Assert the proper health check was created
-	hc, _ = syncer.healthChecker.Get(beName, features.VersionFromServicePort(&p), features.ScopeFromServicePort(&p))
+	hc, _ = syncer.healthChecker.Get(beName, features.ScopeFromServicePort(&p))
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
 	}

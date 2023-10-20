@@ -685,6 +685,17 @@ func TestIsGCEIngress(t *testing.T) {
 			expected: true,
 		},
 		{
+			desc: "L7 XLB Regional ingress class",
+			ingress: &networkingv1.Ingress{
+				ObjectMeta: v1.ObjectMeta{
+					Annotations: map[string]string{
+						annotations.IngressClassKey: annotations.GceL7XLBRegionalIngressClass,
+					},
+				},
+			},
+			expected: true,
+		},
+		{
 			desc: "Set by flag with non-matching class",
 			ingress: &networkingv1.Ingress{
 				ObjectMeta: v1.ObjectMeta{
@@ -794,6 +805,71 @@ func TestIsGCEL7ILBIngress(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			result := IsGCEL7ILBIngress(tc.ingress)
+			if result != tc.expected {
+				t.Fatalf("want %v, got %v", tc.expected, result)
+			}
+		})
+	}
+}
+
+func TestIsGCEL7XLBRegionalIngress(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		desc     string
+		ingress  *networkingv1.Ingress
+		expected bool
+	}{
+		{
+			desc: "No ingress class",
+			ingress: &networkingv1.Ingress{
+				ObjectMeta: v1.ObjectMeta{
+					Annotations: map[string]string{},
+				},
+			},
+			expected: false,
+		},
+		{
+			desc:     "Empty Annotations",
+			ingress:  &networkingv1.Ingress{},
+			expected: false,
+		},
+		{
+			desc: "L7 XLB Regional ingress class",
+			ingress: &networkingv1.Ingress{
+				ObjectMeta: v1.ObjectMeta{
+					Annotations: map[string]string{
+						annotations.IngressClassKey: annotations.GceL7XLBRegionalIngressClass,
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			desc: "L7 XLB Global ingress class",
+			ingress: &networkingv1.Ingress{
+				ObjectMeta: v1.ObjectMeta{
+					Annotations: map[string]string{
+						annotations.IngressClassKey: annotations.GceIngressClass,
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			desc: "foo ingress class",
+			ingress: &networkingv1.Ingress{
+				ObjectMeta: v1.ObjectMeta{
+					Annotations: map[string]string{
+						annotations.IngressClassKey: "foo-class",
+					},
+				},
+			},
+			expected: false,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			result := IsGCEL7XLBRegionalIngress(tc.ingress)
 			if result != tc.expected {
 				t.Fatalf("want %v, got %v", tc.expected, result)
 			}
