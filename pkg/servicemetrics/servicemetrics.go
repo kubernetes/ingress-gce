@@ -17,6 +17,7 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/klog/v2"
@@ -167,6 +168,12 @@ type serviceGCPFeaturesMetricState struct {
 }
 
 func (c *Controller) export() {
+	defer func() {
+		if r := recover(); r != nil {
+			klog.Errorf("failed to export metrics: %v", r)
+			metrics.MetricExportFailureCount.WithLabelValues("service").Inc()
+		}
+	}()
 	start := time.Now()
 	serviceLister := c.serviceInformer.GetIndexer()
 	allServices, err := listers.NewServiceLister(serviceLister).List(labels.Everything())

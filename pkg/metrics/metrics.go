@@ -84,6 +84,13 @@ var (
 		},
 		[]string{"component_version"},
 	)
+	MetricExportFailureCount = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "metric_export_failure",
+			Help: "Number of metric export failures",
+		},
+		[]string{"metric_subset"},
+	)
 )
 
 // init registers ingress usage metrics.
@@ -112,6 +119,9 @@ func init() {
 	klog.V(3).Infof("Registering PSC usage metrics %v", serviceAttachmentCount)
 	prometheus.MustRegister(serviceAttachmentCount)
 	prometheus.MustRegister(serviceCount)
+
+	klog.V(3).Infof("Registering metric export failures count %v", MetricExportFailureCount)
+	prometheus.MustRegister(MetricExportFailureCount)
 
 	klog.V(3).Infof("Registering Component Version metrics %v", componentVersion)
 	prometheus.MustRegister(componentVersion)
@@ -286,6 +296,12 @@ func (im *ControllerMetrics) DeleteService(serviceKey string) {
 
 // export computes and exports ingress usage metrics.
 func (im *ControllerMetrics) export() {
+	defer func() {
+		if r := recover(); r != nil {
+			klog.Errorf("failed to export metrics: %v", r)
+			MetricExportFailureCount.WithLabelValues("main").Inc()
+		}
+	}()
 	ingCount, svcPortCount := im.computeIngressMetrics()
 	negCount := im.computeNegMetrics()
 
