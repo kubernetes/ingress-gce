@@ -6,6 +6,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
 	"github.com/google/go-cmp/cmp"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -108,6 +109,66 @@ func TestEnsureL4BackendService(t *testing.T) {
 				t.Errorf("BackendService.ConnectionTrackingPolicy was not populated correctly, expected to be different: %s", diff)
 			}
 		})
+	}
+}
+
+func TestEnsureL4BackendServiceDoesNotDetachBackends(t *testing.T) {
+	serviceName := "test-service"
+	serviceNamespace := "test-ns"
+	namespacedName := types.NamespacedName{Name: serviceName, Namespace: serviceNamespace}
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockRegionBackendServices.UpdateHook = mock.UpdateRegionBackendServiceHook
+	l4namer := namer.NewL4Namer(kubeSystemUID, nil)
+	backendPool := NewPool(fakeGCE, l4namer)
+
+	hcLink := l4namer.L4HealthCheck(serviceNamespace, serviceName, false)
+	bsName := l4namer.L4Backend(serviceNamespace, serviceName)
+	network := network.NetworkInfo{IsDefault: false, NetworkURL: "https://www.googleapis.com/compute/v1/projects/test-poject/global/networks/test-vpc"}
+
+	backendName := "testNeg"
+	existingBS := &composite.BackendService{
+		Name:                bsName,
+		Protocol:            "TCP",
+		Description:         "test description", // this will make sure the BackendService needs update.
+		HealthChecks:        []string{hcLink},
+		SessionAffinity:     utils.TranslateAffinityType(string(v1.ServiceAffinityNone)),
+		LoadBalancingScheme: string(cloud.SchemeInternal),
+		Backends: []*composite.Backend{
+			{
+				BalancingMode: "CONNECTION",
+				Group:         backendName,
+			},
+		},
+	}
+	key, err := composite.CreateKey(fakeGCE, bsName, meta.Regional)
+	if err != nil {
+		t.Fatalf("failed to create key %v", err)
+	}
+	err = composite.CreateBackendService(fakeGCE, key, existingBS)
+	if err != nil {
+		t.Fatalf("failed to create the existing backend service: %v", err)
+	}
+
+	bs, err := backendPool.EnsureL4BackendService(bsName, hcLink, "TCP", string(v1.ServiceAffinityNone), string(cloud.SchemeInternal), namespacedName, network, nil)
+	if err != nil {
+		t.Errorf("EnsureL4BackendService failed")
+	}
+	if len(bs.Backends) == 0 {
+		t.Fatalf("expected backends to be still attached to the backend service but there were none")
+	}
+	backend := bs.Backends[0]
+	if backend.Group != backendName {
+		t.Errorf("")
+	}
+	if diff := cmp.Diff(backend, existingBS.Backends[0]); diff != "" {
+		t.Errorf("BackendService.Backends were changed, expected no change: %s", diff)
+	}
+	description, err := utils.MakeL4LBServiceDescription(namespacedName.String(), "", meta.VersionGA, false, utils.ILB)
+	if err != nil {
+		t.Errorf("utils.MakeL4LBServiceDescription() failed %v", err)
+	}
+	if bs.Description != description {
+		t.Errorf("BackendService.Description was not populated correctly, want=%q, got=%q", description, bs.Description)
 	}
 }
 

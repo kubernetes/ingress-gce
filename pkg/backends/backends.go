@@ -353,6 +353,8 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 	klog.V(2).Infof("EnsureL4BackendService: updating backend service %v", name)
 	// Set fingerprint for optimistic locking
 	expectedBS.Fingerprint = bs.Fingerprint
+	// Copy backends to avoid detaching them during update. This could be replaced with a patch call in the future.
+	expectedBS.Backends = bs.Backends
 	if err := composite.UpdateBackendService(b.cloud, key, expectedBS); err != nil {
 		return nil, err
 	}
