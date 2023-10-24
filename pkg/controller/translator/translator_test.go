@@ -87,8 +87,9 @@ func configuredFakeTranslator() *Translator {
 		PodInformer,
 		EndpointSliceInformer,
 		client,
-		false,
 		healthchecks.NewFakeRecorderGetter(0),
+		false,
+		false,
 	)
 }
 
