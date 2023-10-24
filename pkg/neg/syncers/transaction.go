@@ -18,6 +18,7 @@ package syncers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -286,9 +287,11 @@ func (s *transactionSyncer) syncInternalImpl() error {
 		if degradedModeErr != nil {
 			return degradedModeErr
 		}
+		s.logStats(targetMap, "normal mode desired NEG endpoints")
+		s.logStats(degradedTargetMap, "degraded mode desired NEG endpoints")
 		notInDegraded, onlyInDegraded := calculateNetworkEndpointDifference(targetMap, degradedTargetMap)
 		if err == nil { // we collect metrics when the normal calculation doesn't run into error
-			computeDegradedModeCorrectness(notInDegraded, onlyInDegraded, string(s.NegSyncerKey.NegType))
+			computeDegradedModeCorrectness(notInDegraded, onlyInDegraded, string(s.NegSyncerKey.NegType), s.logger)
 		}
 		if s.inErrorState() {
 			targetMap = degradedTargetMap
@@ -545,12 +548,11 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, zone stri
 // it returns an error-state error if NEG API error is due to bad endpoint batch request
 // otherwise, it returns the error unmodified
 func checkEndpointBatchErr(err error, operation transactionOp) error {
-	apiErr, ok := err.(*googleapi.Error)
-	if !ok {
+	var gerr *googleapi.Error
+	if !errors.As(err, &gerr) {
 		return fmt.Errorf("%w: %v", negtypes.ErrInvalidAPIResponse, err)
 	}
-	errCode := apiErr.Code
-	if errCode == http.StatusBadRequest {
+	if gerr.Code == http.StatusBadRequest {
 		if operation == attachOp {
 			return fmt.Errorf("%w: %v", negtypes.ErrInvalidEPAttach, err)
 		}
@@ -818,7 +820,8 @@ func (s *transactionSyncer) computeEPSStaleness(endpointSlices []*discovery.Endp
 }
 
 // computeDegradedModeCorrectness computes degraded mode correctness metrics based on the difference between degraded mode and normal calculation
-func computeDegradedModeCorrectness(notInDegraded, onlyInDegraded map[string]negtypes.NetworkEndpointSet, negType string) {
+func computeDegradedModeCorrectness(notInDegraded, onlyInDegraded map[string]negtypes.NetworkEndpointSet, negType string, logger klog.Logger) {
+	logger.Info("Exporting degraded mode correctness metrics", "notInDegraded", notInDegraded, "onlyInDegraded", onlyInDegraded)
 	notInDegradedEndpoints := 0
 	for _, val := range notInDegraded {
 		notInDegradedEndpoints += len(val)
