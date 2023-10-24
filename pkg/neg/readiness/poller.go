@@ -119,7 +119,7 @@ func (p *poller) RegisterNegEndpoints(key negMeta, endpointMap negtypes.Endpoint
 // It returns false if there is no endpoints needed to be polled, returns true if otherwise.
 // Assumes p.lock is held when calling this method.
 func (p *poller) registerNegEndpoints(key negMeta, endpointMap negtypes.EndpointPodMap) bool {
-	endpointsToPoll := needToPoll(key.SyncerKey, endpointMap, p.lookup, p.podLister)
+	endpointsToPoll := needToPoll(key.SyncerKey, endpointMap, p.lookup, p.podLister, p.logger)
 	if len(endpointsToPoll) == 0 {
 		delete(p.pollMap, key)
 		return false

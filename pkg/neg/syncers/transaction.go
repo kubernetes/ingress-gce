@@ -250,7 +250,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	}
 	s.logger.V(2).Info("Sync NEG", "negSyncerKey", s.NegSyncerKey.String(), "endpointsCalculatorMode", s.endpointsCalculator.Mode())
 
-	currentMap, currentPodLabelMap, err := retrieveExistingZoneNetworkEndpointMap(s.NegSyncerKey.NegName, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode(), s.enableDualStackNEG)
+	currentMap, currentPodLabelMap, err := retrieveExistingZoneNetworkEndpointMap(s.NegSyncerKey.NegName, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode(), s.enableDualStackNEG, s.logger)
 	if err != nil {
 		return fmt.Errorf("%w: %w", negtypes.ErrCurrentNegEPNotFound, err)
 	}
@@ -412,6 +412,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 			s.NegSyncerKey.GetAPIVersion(),
 			s.customName,
 			s.networkInfo,
+			s.logger,
 		)
 		if err != nil {
 			errList = append(errList, err)
@@ -438,7 +439,7 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 				continue
 			}
 
-			batch, err := makeEndpointBatch(endpointSet, s.NegType, endpointPodLabelMap)
+			batch, err := makeEndpointBatch(endpointSet, s.NegType, endpointPodLabelMap, s.logger)
 			if err != nil {
 				return err
 			}
@@ -564,7 +565,7 @@ func checkEndpointBatchErr(err error, operation transactionOp) error {
 }
 
 func (s *transactionSyncer) recordEvent(eventType, reason, eventDesc string) {
-	if svc := getService(s.serviceLister, s.Namespace, s.Name); svc != nil {
+	if svc := getService(s.serviceLister, s.Namespace, s.Name, s.logger); svc != nil {
 		s.recorder.Eventf(svc, eventType, reason, eventDesc)
 	}
 }

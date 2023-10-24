@@ -29,6 +29,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -566,7 +567,7 @@ func TestNeedToPoll(t *testing.T) {
 		},
 	} {
 		tc.mutateState()
-		ret := needToPoll(key, tc.inputMap, fakeLookUp, podLister)
+		ret := needToPoll(key, tc.inputMap, fakeLookUp, podLister, klog.TODO())
 		if !reflect.DeepEqual(ret, tc.expectOutputMap) {
 			t.Errorf("For test case %q, expect %v, got: %v", tc.desc, tc.expectOutputMap, ret)
 		}
