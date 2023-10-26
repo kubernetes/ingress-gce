@@ -1908,13 +1908,37 @@ func TestCheckEndpointBatchErr(t *testing.T) {
 			endpointOperation: detachOp,
 			expectErr:         negtypes.ErrInvalidEPDetach,
 		},
+		{
+			desc:              "Wrapped googleapi server error",
+			err:               fmt.Errorf("%w: wrapped error", serverError),
+			endpointOperation: attachOp,
+			expectErr:         serverError,
+		},
+		{
+			desc:              "Wrapped googleapi attach request error",
+			err:               fmt.Errorf("%w: wrapped error", requestError),
+			endpointOperation: attachOp,
+			expectErr:         negtypes.ErrInvalidEPAttach,
+		},
+		{
+			desc:              "Double wrapped googleapi server error",
+			err:               fmt.Errorf("%w: %w", serverError, errors.New("wrapped error")),
+			endpointOperation: attachOp,
+			expectErr:         serverError,
+		},
+		{
+			desc:              "Double wrapped googleapi request error",
+			err:               fmt.Errorf("%w: %w", requestError, errors.New("wrapped error")),
+			endpointOperation: attachOp,
+			expectErr:         negtypes.ErrInvalidEPAttach,
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			endpointBatchErr := checkEndpointBatchErr(tc.err, tc.endpointOperation)
 			if !errors.Is(endpointBatchErr, tc.expectErr) {
-				t.Errorf("checkEndpointBatchErr() = %t, expected %t", endpointBatchErr, tc.expectErr)
+				t.Errorf("checkEndpointBatchErr() = %v, expected %v", endpointBatchErr, tc.expectErr)
 			}
 		})
 	}
