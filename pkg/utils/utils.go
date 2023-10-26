@@ -433,6 +433,13 @@ func IsGCEL7ILBIngress(ing *networkingv1.Ingress) bool {
 	return class == annotations.GceL7ILBIngressClass
 }
 
+// IsGCEL7XLBRegionalIngress returns true if the given Ingress has
+// ingress.class annotation set to "gce-regional"
+func IsGCEL7XLBRegionalIngress(ing *networkingv1.Ingress) bool {
+	class := annotations.FromIngress(ing).IngressClass()
+	return class == annotations.GceL7XLBRegionalIngressClass
+}
+
 // IsGLBCIngress returns true if the given Ingress should be processed by GLBC
 func IsGLBCIngress(ing *networkingv1.Ingress) bool {
 	return IsGCEIngress(ing) || IsGCEMultiClusterIngress(ing)
