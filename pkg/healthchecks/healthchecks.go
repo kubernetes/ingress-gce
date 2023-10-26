@@ -88,10 +88,10 @@ func generateClusterInfo(gceCloud *gce.Cloud) healthcheck.ClusterInfo {
 // new returns a *HealthCheck with default settings and specified port/protocol
 func (h *HealthChecks) new(sp utils.ServicePort) *translator.HealthCheck {
 	var hc *translator.HealthCheck
-	if sp.NEGEnabled && !sp.L7ILBEnabled {
-		hc = translator.DefaultNEGHealthCheck(sp.Protocol)
-	} else if sp.L7ILBEnabled {
+	if sp.L7ILBEnabled {
 		hc = translator.DefaultILBHealthCheck(sp.Protocol)
+	} else if sp.NEGEnabled {
+		hc = translator.DefaultNEGHealthCheck(sp.Protocol)
 	} else {
 		hc = translator.DefaultHealthCheck(sp.NodePort, sp.Protocol)
 	}
