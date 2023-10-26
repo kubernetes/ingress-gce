@@ -383,6 +383,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		asmServiceNEGSkipNamespaces,
 		lpConfig,
 		flags.F.EnableMultiNetworking,
+		ctx.EnableIngressRegionalExternal,
 		klog.TODO(), // TODO(#1761): Replace this with a top level logger configuration once one is available.
 	)
 

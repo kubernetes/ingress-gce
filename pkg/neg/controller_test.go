@@ -154,6 +154,7 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		[]string{},
 		labels.PodLabelPropagationConfig{},
 		true,
+		false,
 		klog.TODO(),
 	)
 }

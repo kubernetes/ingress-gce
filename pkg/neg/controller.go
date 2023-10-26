@@ -104,6 +104,10 @@ type Controller struct {
 	// runL4 indicates whether to run NEG controller that processes L4 services
 	runL4 bool
 
+	// enableIngressRegionalExternal indicates where NEG controller should process
+	// gce-regional-external ingresses
+	enableIngressRegionalExternal bool
+
 	logger klog.Logger
 }
 
@@ -139,6 +143,7 @@ func NewController(
 	asmServiceNEGSkipNamespaces []string,
 	lpConfig labels.PodLabelPropagationConfig,
 	enableMultiNetworking bool,
+	enableIngressRegionalExternal bool,
 	logger klog.Logger,
 ) *Controller {
 	logger = logger.WithName("NEGController")
@@ -208,29 +213,30 @@ func NewController(
 		gkeNetworkParamSetIndexer = gkeNetworkParamSetInformer.GetIndexer()
 	}
 	negController := &Controller{
-		client:                kubeClient,
-		manager:               manager,
-		resyncPeriod:          resyncPeriod,
-		gcPeriod:              gcPeriod,
-		recorder:              recorder,
-		zoneGetter:            zoneGetter,
-		cloud:                 cloud,
-		namer:                 namer,
-		l4Namer:               l4Namer,
-		defaultBackendService: defaultBackendService,
-		hasSynced:             hasSynced,
-		ingressLister:         ingressInformer.GetIndexer(),
-		serviceLister:         serviceInformer.GetIndexer(),
-		networkResolver:       network.NewNetworksResolver(networkIndexer, gkeNetworkParamSetIndexer, cloud, enableMultiNetworking, logger),
-		serviceQueue:          workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_service_queue"),
-		endpointQueue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_endpoint_queue"),
-		nodeQueue:             workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_node_queue"),
-		syncTracker:           utils.NewTimeTracker(),
-		reflector:             reflector,
-		usageCollector:        controllerMetrics,
-		syncerMetrics:         syncerMetrics,
-		runL4:                 runL4Controller,
-		logger:                logger,
+		client:                        kubeClient,
+		manager:                       manager,
+		resyncPeriod:                  resyncPeriod,
+		gcPeriod:                      gcPeriod,
+		recorder:                      recorder,
+		zoneGetter:                    zoneGetter,
+		cloud:                         cloud,
+		namer:                         namer,
+		l4Namer:                       l4Namer,
+		defaultBackendService:         defaultBackendService,
+		hasSynced:                     hasSynced,
+		ingressLister:                 ingressInformer.GetIndexer(),
+		serviceLister:                 serviceInformer.GetIndexer(),
+		networkResolver:               network.NewNetworksResolver(networkIndexer, gkeNetworkParamSetIndexer, cloud, enableMultiNetworking, logger),
+		serviceQueue:                  workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_service_queue"),
+		endpointQueue:                 workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_endpoint_queue"),
+		nodeQueue:                     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_node_queue"),
+		syncTracker:                   utils.NewTimeTracker(),
+		reflector:                     reflector,
+		usageCollector:                controllerMetrics,
+		syncerMetrics:                 syncerMetrics,
+		runL4:                         runL4Controller,
+		enableIngressRegionalExternal: enableIngressRegionalExternal,
+		logger:                        logger,
 	}
 	if runIngress {
 		ingressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
