@@ -20,29 +20,30 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog/v2"
 )
 
 // Syncer is an interface to sync GCP resources associated with an Ingress.
 type Syncer interface {
 	// Sync creates a full GCLB given some state related to an Ingress.
-	Sync(state interface{}) error
+	Sync(state interface{}, ingLogger klog.Logger) error
 	// GC cleans up GCLB resources for all Ingresses and can optionally
 	// use some arbitrary to help with the process.
 	// GC workflow performs frontend resource deletion based on given gc algorithm.
 	// TODO(rramkumar): Do we need to rethink the strategy of GC'ing
 	// all Ingresses at once?
-	GC(ings []*v1.Ingress, currIng *v1.Ingress, frontendGCAlgorithm utils.FrontendGCAlgorithm, scope meta.KeyType) error
+	GC(ings []*v1.Ingress, currIng *v1.Ingress, frontendGCAlgorithm utils.FrontendGCAlgorithm, scope meta.KeyType, ingLogger klog.Logger) error
 }
 
 // Controller is an interface for ingress controllers and declares methods
 // on how to sync the various portions of the GCLB for an Ingress.
 type Controller interface {
 	// SyncBackends syncs the backends for a GCLB given some existing state.
-	SyncBackends(state interface{}) error
+	SyncBackends(state interface{}, ingLogger klog.Logger) error
 	// GCBackends garbage collects backends for all ingresses given a list of ingresses to exclude from GC.
-	GCBackends(toKeep []*v1.Ingress) error
+	GCBackends(toKeep []*v1.Ingress, ingLogger klog.Logger) error
 	// SyncLoadBalancer syncs the front-end load balancer resources for a GCLB given some existing state.
-	SyncLoadBalancer(state interface{}) error
+	SyncLoadBalancer(state interface{}, ingLogger klog.Logger) error
 	// GCv1LoadBalancers garbage collects front-end load balancer resources for all ingresses
 	// given a list of ingresses with v1 naming policy to exclude from GC.
 	GCv1LoadBalancers(toKeep []*v1.Ingress) error
@@ -50,9 +51,9 @@ type Controller interface {
 	// with v2 naming policy.
 	GCv2LoadBalancer(ing *v1.Ingress, scope meta.KeyType) error
 	// PostProcess allows for doing some post-processing after an Ingress is synced to a GCLB.
-	PostProcess(state interface{}) error
+	PostProcess(state interface{}, ingLogger klog.Logger) error
 	// EnsureDeleteV1Finalizers ensures that v1 finalizers are removed for given list of ingresses.
-	EnsureDeleteV1Finalizers(toCleanup []*v1.Ingress) error
+	EnsureDeleteV1Finalizers(toCleanup []*v1.Ingress, ingLogger klog.Logger) error
 	// EnsureDeleteV2Finalizer ensures that v2 finalizer is removed for given ingress.
-	EnsureDeleteV2Finalizer(ing *v1.Ingress) error
+	EnsureDeleteV2Finalizer(ing *v1.Ingress, ingLogger klog.Logger) error
 }

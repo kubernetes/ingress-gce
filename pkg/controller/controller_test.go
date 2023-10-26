@@ -717,7 +717,7 @@ func TestToRuntimeInfoCerts(t *testing.T) {
 		},
 	}
 	urlMap := &utils.GCEURLMap{}
-	lbInfo, err := lbc.toRuntimeInfo(ing, urlMap)
+	lbInfo, err := lbc.toRuntimeInfo(ing, urlMap, klog.TODO())
 	if err != nil {
 		t.Fatalf("lbc.toRuntimeInfo() = err %v", err)
 	}

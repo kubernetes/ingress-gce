@@ -20,6 +20,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/klog/v2"
 )
 
 // LoadBalancerPool is an interface to manage the cloud resources associated
@@ -32,7 +33,7 @@ type LoadBalancerPool interface {
 	// GCv1 garbage collects loadbalancers not in the input list using v1 naming scheme.
 	GCv1(names []string) error
 	// FrontendScopeChangeGC checks if GC is needed for an ingress that has changed scopes
-	FrontendScopeChangeGC(ing *v1.Ingress) (*meta.KeyType, error)
+	FrontendScopeChangeGC(ing *v1.Ingress, ingLogger klog.Logger) (*meta.KeyType, error)
 	// Shutdown deletes all loadbalancers for given list of ingresses.
 	Shutdown(ings []*v1.Ingress) error
 	// HasUrlMap returns true if an URL map exists in GCE for given ingress.

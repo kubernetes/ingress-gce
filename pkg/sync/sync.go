@@ -45,19 +45,19 @@ func NewIngressSyncer(controller Controller) Syncer {
 }
 
 // Sync implements Syncer.
-func (s *IngressSyncer) Sync(state interface{}) error {
-	if err := s.controller.SyncBackends(state); err != nil {
+func (s *IngressSyncer) Sync(state interface{}, ingLogger klog.Logger) error {
+	if err := s.controller.SyncBackends(state, ingLogger); err != nil {
 		if err == ErrSkipBackendsSync {
 			return nil
 		}
 		return fmt.Errorf("error running backend syncing routine: %v", err)
 	}
 
-	if err := s.controller.SyncLoadBalancer(state); err != nil {
+	if err := s.controller.SyncLoadBalancer(state, ingLogger); err != nil {
 		return fmt.Errorf("error running load balancer syncing routine: %v", err)
 	}
 
-	if err := s.controller.PostProcess(state); err != nil {
+	if err := s.controller.PostProcess(state, ingLogger); err != nil {
 		return fmt.Errorf("error running post-process routine: %v", err)
 	}
 
@@ -65,7 +65,7 @@ func (s *IngressSyncer) Sync(state interface{}) error {
 }
 
 // GC implements Syncer.
-func (s *IngressSyncer) GC(ings []*v1.Ingress, currIng *v1.Ingress, frontendGCAlgorithm utils.FrontendGCAlgorithm, scope meta.KeyType) error {
+func (s *IngressSyncer) GC(ings []*v1.Ingress, currIng *v1.Ingress, frontendGCAlgorithm utils.FrontendGCAlgorithm, scope meta.KeyType, ingLogger klog.Logger) error {
 	var lbErr, err error
 	var errs []error
 	switch frontendGCAlgorithm {
@@ -77,7 +77,7 @@ func (s *IngressSyncer) GC(ings []*v1.Ingress, currIng *v1.Ingress, frontendGCAl
 			if err != nil {
 				return
 			}
-			err = s.controller.EnsureDeleteV2Finalizer(currIng)
+			err = s.controller.EnsureDeleteV2Finalizer(currIng, ingLogger)
 		}()
 	case utils.CleanupV2FrontendResourcesScopeChange:
 		klog.V(3).Infof("Using algorithm CleanupV2FrontendResourcesScopeChange to GC frontend of ingress %s", common.NamespacedName(currIng))
@@ -98,7 +98,7 @@ func (s *IngressSyncer) GC(ings []*v1.Ingress, currIng *v1.Ingress, frontendGCAl
 			if err != nil {
 				return
 			}
-			err = s.controller.EnsureDeleteV1Finalizers(toCleanupV1.AsList())
+			err = s.controller.EnsureDeleteV1Finalizers(toCleanupV1.AsList(), ingLogger)
 		}()
 	case utils.NoCleanUpNeeded:
 		klog.V(3).Infof("Using algorithm NoCleanUpNeeded to GC frontend of ingress %s", common.NamespacedName(currIng))
@@ -116,7 +116,7 @@ func (s *IngressSyncer) GC(ings []*v1.Ingress, currIng *v1.Ingress, frontendGCAl
 	toKeep := operator.Ingresses(ings).Filter(func(ing *v1.Ingress) bool {
 		return !utils.NeedsCleanup(ing)
 	}).AsList()
-	if beErr := s.controller.GCBackends(toKeep); beErr != nil {
+	if beErr := s.controller.GCBackends(toKeep, ingLogger); beErr != nil {
 		errs = append(errs, fmt.Errorf("error running backend garbage collection routine: %v", beErr))
 	}
 	if errs != nil {

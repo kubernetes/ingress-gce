@@ -24,6 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/ingress-gce/pkg/utils/slice"
+	"k8s.io/klog/v2"
 )
 
 func TestPatchIngressObjectMetadata(t *testing.T) {
@@ -101,7 +102,7 @@ func TestPatchIngressObjectMetadata(t *testing.T) {
 			if _, err := ingClient.Update(context.TODO(), updatedIng, metav1.UpdateOptions{}); err != nil {
 				t.Fatalf("Create(%s) = %v, want nil", ingKey, err)
 			}
-			gotIng, err := PatchIngressObjectMetadata(ingClient, tc.ing, tc.newMetaFunc(tc.ing).ObjectMeta)
+			gotIng, err := PatchIngressObjectMetadata(ingClient, tc.ing, tc.newMetaFunc(tc.ing).ObjectMeta, klog.TODO())
 			if err != nil {
 				t.Fatalf("PatchIngressObjectMetadata(%s) = %v, want nil", ingKey, err)
 			}
@@ -153,7 +154,7 @@ func TestPatchIngressStatus(t *testing.T) {
 				t.Fatalf("Create(%s) = %v, want nil", ingKey, err)
 			}
 			expectIng := tc.newMetaFunc(tc.ing)
-			gotIng, err := PatchIngressStatus(ingClient, tc.ing, expectIng.Status)
+			gotIng, err := PatchIngressStatus(ingClient, tc.ing, expectIng.Status, klog.TODO())
 			if err != nil {
 				t.Fatalf("PatchIngressStatus(%s) = %v, want nil", ingKey, err)
 			}
