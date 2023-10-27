@@ -119,10 +119,11 @@ func TestTranslateIngress(t *testing.T) {
 	svcLister.Add(svc)
 
 	cases := []struct {
-		desc          string
-		ing           *v1.Ingress
-		wantErrCount  int
-		wantGCEURLMap *utils.GCEURLMap
+		desc                   string
+		ing                    *v1.Ingress
+		wantErrCount           int
+		wantGCEURLMap          *utils.GCEURLMap
+		enableL7XLBGCERegional bool
 	}{
 		{
 			desc: "default backend only",
@@ -132,6 +133,13 @@ func TestTranslateIngress(t *testing.T) {
 				}),
 			wantErrCount:  0,
 			wantGCEURLMap: &utils.GCEURLMap{DefaultBackend: &utils.ServicePort{ID: utils.ServicePortID{Service: types.NamespacedName{Name: "first-service", Namespace: "default"}, Port: port80}}},
+		},
+		{
+			desc:                   "gce-regional",
+			ing:                    ingressFromFile(t, "ingress-gce-regional.yaml"),
+			wantErrCount:           0,
+			wantGCEURLMap:          gceURLMapFromFile(t, "ingress-gce-regional.json"),
+			enableL7XLBGCERegional: true,
 		},
 		{
 			desc:          "no backend",
@@ -209,6 +217,7 @@ func TestTranslateIngress(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
+			translator.enableL7XLBRegional = tc.enableL7XLBGCERegional
 			gotGCEURLMap, gotErrs, _ := translator.TranslateIngress(tc.ing, defaultBackend.ID, defaultNamer)
 			if len(gotErrs) != tc.wantErrCount {
 				t.Errorf("%s: TranslateIngress() = _, %+v, want %v errs", tc.desc, gotErrs, tc.wantErrCount)

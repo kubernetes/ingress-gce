@@ -61,6 +61,13 @@ type getServicePortParams struct {
 	isL7XLBRegional bool
 }
 
+func (t *Translator) getServicePortParamsForIngress(ing *v1.Ingress) *getServicePortParams {
+	return &getServicePortParams{
+		isL7ILB:         utils.IsGCEL7ILBIngress(ing),
+		isL7XLBRegional: t.enableL7XLBRegional && utils.IsGCEL7XLBRegionalIngress(ing),
+	}
+}
+
 // NewTranslator returns a new Translator.
 func NewTranslator(serviceInformer cache.SharedIndexInformer,
 	backendConfigInformer cache.SharedIndexInformer,
@@ -316,12 +323,7 @@ func (t *Translator) TranslateIngress(ing *v1.Ingress, systemDefaultBackend util
 	var errs []error
 	var warnings bool
 	urlMap := utils.NewGCEURLMap()
-
-	params := &getServicePortParams{}
-	params.isL7ILB = utils.IsGCEL7ILBIngress(ing)
-	if t.enableL7XLBRegional {
-		params.isL7XLBRegional = utils.IsGCEL7XLBRegionalIngress(ing)
-	}
+	params := t.getServicePortParamsForIngress(ing)
 
 	for _, rule := range ing.Spec.Rules {
 		if rule.HTTP == nil {
