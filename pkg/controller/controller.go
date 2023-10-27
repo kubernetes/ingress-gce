@@ -104,15 +104,20 @@ type LoadBalancerController struct {
 	ingParamsLister cache.Indexer
 
 	ZoneGetter *zonegetter.ZoneGetter
+
+	logger klog.Logger
 }
 
 // NewLoadBalancerController creates a controller for gce loadbalancers.
 func NewLoadBalancerController(
 	ctx *context.ControllerContext,
-	stopCh chan struct{}) *LoadBalancerController {
+	stopCh chan struct{},
+	log klog.Logger,
+) *LoadBalancerController {
+	log = log.WithName("IngressController")
 
 	broadcaster := record.NewBroadcaster()
-	broadcaster.StartLogging(klog.Infof)
+	broadcaster.StartLogging(log.Info)
 	broadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
 		Interface: ctx.KubeClient.CoreV1().Events(""),
 	})
@@ -137,6 +142,7 @@ func NewLoadBalancerController(
 		igLinker:      backends.NewInstanceGroupLinker(ctx.InstancePool, backendPool),
 		metrics:       ctx.ControllerMetrics,
 		ZoneGetter:    ctx.ZoneGetter,
+		logger:        log,
 	}
 
 	if ctx.IngClassInformer != nil {
@@ -459,7 +465,7 @@ func (lbc *LoadBalancerController) syncInstanceGroup(ing *v1.Ingress, ingSvcPort
 		if err = setInstanceGroupsAnnotation(newAnnotations, igs); err != nil {
 			return err
 		}
-		if err = updateAnnotations(lbc.ctx.KubeClient, ing, newAnnotations); err != nil {
+		if err = updateAnnotations(lbc.ctx.KubeClient, ing, newAnnotations, lbc.logger); err != nil {
 			return err
 		}
 		// This short-circuit will stop the syncer from moving to next step.
@@ -574,7 +580,7 @@ func (lbc *LoadBalancerController) preSyncGC(key string, scope meta.KeyType, ing
 	allIngresses := lbc.ctx.Ingresses().List()
 	// Determine if the ingress needs to be GCed.
 	if !ingExists || utils.NeedsCleanup(ing) {
-		frontendGCAlgorithm := frontendGCAlgorithm(ingExists, false, ing)
+		frontendGCAlgorithm := frontendGCAlgorithm(ingExists, false, ing, lbc.logger)
 		// GC will find GCE resources that were used for this ingress and delete them.
 		err := lbc.ingSyncer.GC(allIngresses, ing, frontendGCAlgorithm, scope)
 		// Skip emitting an event if ingress does not exist as we cannot retrieve ingress namespace.
@@ -602,7 +608,7 @@ func (lbc *LoadBalancerController) postSyncGC(key string, syncErr error, oldScop
 	// it could have been caused by quota issues; therefore, garbage collecting now may
 	// free up enough quota for the next sync to pass.
 	allIngresses := lbc.ctx.Ingresses().List()
-	frontendGCAlgorithm := frontendGCAlgorithm(ingExists, oldScope != nil, ing)
+	frontendGCAlgorithm := frontendGCAlgorithm(ingExists, oldScope != nil, ing, lbc.logger)
 	if gcErr := lbc.ingSyncer.GC(allIngresses, ing, frontendGCAlgorithm, newScope); gcErr != nil {
 		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, events.GarbageCollection, "Error during garbage collection: %v", gcErr)
 		return fmt.Errorf("error during sync %v, error during GC %v", syncErr, gcErr)
@@ -716,7 +722,7 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 		return err
 	}
 
-	if err := updateAnnotations(lbc.ctx.KubeClient, ing, newAnnotations); err != nil {
+	if err := updateAnnotations(lbc.ctx.KubeClient, ing, newAnnotations, lbc.logger); err != nil {
 		return err
 	}
 	return nil
@@ -776,7 +782,7 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ing *v1.Ingress, urlMap *utils.
 	}, nil
 }
 
-func updateAnnotations(client kubernetes.Interface, ing *v1.Ingress, newAnnotations map[string]string) error {
+func updateAnnotations(client kubernetes.Interface, ing *v1.Ingress, newAnnotations map[string]string, logger klog.Logger) error {
 	if reflect.DeepEqual(ing.Annotations, newAnnotations) {
 		return nil
 	}
@@ -784,7 +790,7 @@ func updateAnnotations(client kubernetes.Interface, ing *v1.Ingress, newAnnotati
 	newObjectMeta := ing.ObjectMeta.DeepCopy()
 	newObjectMeta.Annotations = newAnnotations
 	if _, err := common.PatchIngressObjectMetadata(ingClient, ing, *newObjectMeta); err != nil {
-		klog.Errorf("PatchIngressObjectMetadata(%s/%s) failed: %v", ing.Namespace, ing.Name, err)
+		logger.Error(err, "PatchIngressObjectMetadata failed", "ingressNamespace", ing.Namespace, "ingressName", ing.Name)
 		return err
 	}
 	return nil
@@ -866,7 +872,7 @@ func (lbc *LoadBalancerController) ensureFinalizer(ing *v1.Ingress) (*v1.Ingress
 //   - Finalizer enabled    :    all backends
 //   - Finalizer disabled   :    v1 frontends and all backends
 //   - Scope changed        :    v2 frontends for all scope
-func frontendGCAlgorithm(ingExists bool, scopeChange bool, ing *v1.Ingress) utils.FrontendGCAlgorithm {
+func frontendGCAlgorithm(ingExists bool, scopeChange bool, ing *v1.Ingress, logger klog.Logger) utils.FrontendGCAlgorithm {
 	// If ingress does not exist, that means its pre-finalizer era.
 	// Run GC via v1 naming scheme.
 	if !ingExists {
@@ -890,7 +896,7 @@ func frontendGCAlgorithm(ingExists bool, scopeChange bool, ing *v1.Ingress) util
 	case namer.V1NamingScheme:
 		return utils.CleanupV1FrontendResources
 	default:
-		klog.Errorf("Unexpected naming scheme %v", namingScheme)
+		logger.Error(nil, "Unexpected naming scheme", "schema", namingScheme)
 		return utils.NoCleanUpNeeded
 	}
 }
