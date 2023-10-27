@@ -24,6 +24,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/kr/pretty"
 	apiv1 "k8s.io/api/core/v1"
 	discoveryapi "k8s.io/api/discovery/v1"
@@ -223,15 +225,14 @@ func TestTranslateIngress(t *testing.T) {
 
 func TestGetServicePort(t *testing.T) {
 	cases := []struct {
-		desc        string
-		spec        apiv1.ServiceSpec
-		annotations map[string]string
-		id          utils.ServicePortID
-		wantErr     bool
-		wantPort    bool
-		params      getServicePortParams
-		wantedPort  apiv1.ServicePort
-		wantWarning bool
+		desc            string
+		spec            apiv1.ServiceSpec
+		annotations     map[string]string
+		id              utils.ServicePortID
+		wantErr         bool
+		params          getServicePortParams
+		wantServicePort *utils.ServicePort
+		wantWarning     bool
 	}{
 		{
 			desc: "clusterIP service",
@@ -239,10 +240,8 @@ func TestGetServicePort(t *testing.T) {
 				Type:  apiv1.ServiceTypeClusterIP,
 				Ports: []apiv1.ServicePort{{Name: "http", Port: 80}},
 			},
-			id:         utils.ServicePortID{Port: v1.ServiceBackendPort{Name: "http"}},
-			wantErr:    true,
-			wantPort:   false,
-			wantedPort: apiv1.ServicePort{Name: "http", Port: 80},
+			id:      utils.ServicePortID{Port: v1.ServiceBackendPort{Name: "http"}},
+			wantErr: true,
 		},
 		{
 			desc: "missing port",
@@ -250,10 +249,8 @@ func TestGetServicePort(t *testing.T) {
 				Type:  apiv1.ServiceTypeNodePort,
 				Ports: []apiv1.ServicePort{{Name: "http", Port: 80}},
 			},
-			id:         utils.ServicePortID{Port: v1.ServiceBackendPort{Name: "badport"}},
-			wantErr:    true,
-			wantPort:   false,
-			wantedPort: apiv1.ServicePort{Name: "http", Port: 80},
+			id:      utils.ServicePortID{Port: v1.ServiceBackendPort{Name: "badport"}},
+			wantErr: true,
 		},
 		{
 			desc: "app protocols malformed",
@@ -264,10 +261,19 @@ func TestGetServicePort(t *testing.T) {
 			annotations: map[string]string{
 				"service.alpha.kubernetes.io/app-protocols": "bad-string",
 			},
-			id:         utils.ServicePortID{Port: v1.ServiceBackendPort{Name: "http"}},
-			wantErr:    true,
-			wantPort:   true,
-			wantedPort: apiv1.ServicePort{Name: "http", Port: 80},
+			id:      utils.ServicePortID{Port: v1.ServiceBackendPort{Name: "http"}},
+			wantErr: true,
+			wantServicePort: &utils.ServicePort{
+				ID: utils.ServicePortID{
+					Service: types.NamespacedName{
+						Namespace: "default",
+						Name:      "foo",
+					},
+					Port: v1.ServiceBackendPort{Name: "http"},
+				},
+				Port:     80,
+				PortName: "http",
+			},
 		},
 		{
 			desc: "find port by name",
@@ -279,10 +285,20 @@ func TestGetServicePort(t *testing.T) {
 					{Name: "otherPort", Port: 12345},
 				},
 			},
-			id:         utils.ServicePortID{Port: v1.ServiceBackendPort{Name: "https"}},
-			wantErr:    false,
-			wantPort:   true,
-			wantedPort: apiv1.ServicePort{Name: "https", Port: 443},
+			id:      utils.ServicePortID{Port: v1.ServiceBackendPort{Name: "https"}},
+			wantErr: false,
+			wantServicePort: &utils.ServicePort{
+				ID: utils.ServicePortID{
+					Service: types.NamespacedName{
+						Namespace: "default",
+						Name:      "foo",
+					},
+					Port: v1.ServiceBackendPort{Name: "https"},
+				},
+				Port:     443,
+				PortName: "https",
+				Protocol: "HTTP",
+			},
 		},
 		{
 			desc: "find port by number",
@@ -294,10 +310,20 @@ func TestGetServicePort(t *testing.T) {
 					{Name: "otherPort", Port: 12345},
 				},
 			},
-			id:         utils.ServicePortID{Port: v1.ServiceBackendPort{Number: 443}},
-			wantErr:    false,
-			wantPort:   true,
-			wantedPort: apiv1.ServicePort{Name: "https", Port: 443},
+			id:      utils.ServicePortID{Port: v1.ServiceBackendPort{Number: 443}},
+			wantErr: false,
+			wantServicePort: &utils.ServicePort{
+				ID: utils.ServicePortID{
+					Service: types.NamespacedName{
+						Namespace: "default",
+						Name:      "foo",
+					},
+					Port: v1.ServiceBackendPort{Number: 443},
+				},
+				Port:     443,
+				PortName: "https",
+				Protocol: "HTTP",
+			},
 		},
 		{
 			desc: "correct port spec",
@@ -307,10 +333,22 @@ func TestGetServicePort(t *testing.T) {
 					{Name: "http", Port: 80, NodePort: 123, TargetPort: intstr.FromString("podport")},
 				},
 			},
-			id:         utils.ServicePortID{Port: v1.ServiceBackendPort{Number: 80}},
-			wantErr:    false,
-			wantPort:   true,
-			wantedPort: apiv1.ServicePort{Name: "http", Port: 80, NodePort: 123, TargetPort: intstr.FromString("podport")},
+			id:      utils.ServicePortID{Port: v1.ServiceBackendPort{Number: 80}},
+			wantErr: false,
+			wantServicePort: &utils.ServicePort{
+				ID: utils.ServicePortID{
+					Service: types.NamespacedName{
+						Namespace: "default",
+						Name:      "foo",
+					},
+					Port: v1.ServiceBackendPort{Number: 80},
+				},
+				TargetPort: intstr.FromString("podport"),
+				NodePort:   123,
+				Port:       80,
+				PortName:   "http",
+				Protocol:   "HTTP",
+			},
 		},
 		{
 			desc: "handle duplicated target port name by name",
@@ -322,10 +360,21 @@ func TestGetServicePort(t *testing.T) {
 					{Name: "otherPort", Port: 12345, TargetPort: intstr.FromString("pod-otherPort")},
 				},
 			},
-			id:         utils.ServicePortID{Port: v1.ServiceBackendPort{Name: "https"}},
-			wantErr:    false,
-			wantPort:   true,
-			wantedPort: apiv1.ServicePort{Name: "https", Port: 443, TargetPort: intstr.FromString("pod-https")},
+			id:      utils.ServicePortID{Port: v1.ServiceBackendPort{Name: "https"}},
+			wantErr: false,
+			wantServicePort: &utils.ServicePort{
+				ID: utils.ServicePortID{
+					Service: types.NamespacedName{
+						Namespace: "default",
+						Name:      "foo",
+					},
+					Port: v1.ServiceBackendPort{Name: "https"},
+				},
+				TargetPort: intstr.FromString("pod-https"),
+				Port:       443,
+				PortName:   "https",
+				Protocol:   "HTTP",
+			},
 		},
 		{
 			desc: "handle duplicated target port name by number",
@@ -337,10 +386,21 @@ func TestGetServicePort(t *testing.T) {
 					{Name: "otherPort", Port: 12345, TargetPort: intstr.FromString("pod-otherPort")},
 				},
 			},
-			id:         utils.ServicePortID{Port: v1.ServiceBackendPort{Number: 443}},
-			wantErr:    false,
-			wantPort:   true,
-			wantedPort: apiv1.ServicePort{Name: "https", Port: 443, TargetPort: intstr.FromString("pod-https")},
+			id:      utils.ServicePortID{Port: v1.ServiceBackendPort{Number: 443}},
+			wantErr: false,
+			wantServicePort: &utils.ServicePort{
+				ID: utils.ServicePortID{
+					Service: types.NamespacedName{
+						Namespace: "default",
+						Name:      "foo",
+					},
+					Port: v1.ServiceBackendPort{Number: 443},
+				},
+				TargetPort: intstr.FromString("pod-https"),
+				Port:       443,
+				PortName:   "https",
+				Protocol:   "HTTP",
+			},
 		},
 		{
 			annotations: map[string]string{annotations.THCAnnotationKey: `{"enabled":true}`},
@@ -351,10 +411,27 @@ func TestGetServicePort(t *testing.T) {
 					{Name: "http", Port: 80, NodePort: 123, TargetPort: intstr.FromString("podport")},
 				},
 			},
-			id:          utils.ServicePortID{Port: v1.ServiceBackendPort{Number: 80}},
-			wantErr:     false,
-			wantPort:    true,
-			wantedPort:  apiv1.ServicePort{Name: "http", Port: 80, NodePort: 123, TargetPort: intstr.FromString("podport")},
+			id:      utils.ServicePortID{Port: v1.ServiceBackendPort{Number: 80}},
+			wantErr: false,
+			wantServicePort: &utils.ServicePort{
+				ID: utils.ServicePortID{
+					Service: types.NamespacedName{
+						Namespace: "default",
+						Name:      "foo",
+					},
+					Port: v1.ServiceBackendPort{Number: 80},
+				},
+				NodePort:   123,
+				TargetPort: intstr.FromString("podport"),
+				Port:       80,
+				PortName:   "http",
+				Protocol:   "HTTP",
+				THCConfiguration: utils.THCConfiguration{
+					THCEvents: utils.THCEvents{
+						THCAnnotationWithoutFlag: true,
+					},
+				},
+			},
 			wantWarning: true,
 		},
 	}
@@ -373,22 +450,8 @@ func TestGetServicePort(t *testing.T) {
 			if (gotErr != nil) != tc.wantErr {
 				t.Errorf("translator.getServicePort(%+v) = _, %v, want err? %v", tc.id, gotErr, tc.wantErr)
 			}
-			if (port != nil) != tc.wantPort {
-				t.Errorf("translator.getServicePort(%+v) = %v, want port? %v", tc.id, port, tc.wantPort)
-			}
-			if tc.wantPort && port != nil {
-				if port.Port != tc.wantedPort.Port {
-					t.Errorf("Expected port.Port %d, got %d", port.Port, tc.wantedPort.Port)
-				}
-				if port.NodePort != int64(tc.wantedPort.NodePort) {
-					t.Errorf("Expected port.NodePort %d, got %d", port.NodePort, tc.wantedPort.NodePort)
-				}
-				if port.PortName != tc.wantedPort.Name {
-					t.Errorf("Expected port.PortName %s, got %s", port.PortName, tc.wantedPort.Name)
-				}
-				if port.TargetPort != tc.wantedPort.TargetPort {
-					t.Errorf("Expected port.TargetPort %v, got %v", port.TargetPort, tc.wantedPort.TargetPort)
-				}
+			if diff := cmp.Diff(tc.wantServicePort, port, cmpopts.IgnoreFields(utils.ServicePort{}, "BackendNamer")); diff != "" {
+				t.Errorf("ServicePort not equal to expeccted, : (-want +got):\n%s", diff)
 			}
 			if tc.wantWarning && !warning {
 				t.Errorf("Expected warning %v, got warning %v.", tc.wantWarning, warning)
