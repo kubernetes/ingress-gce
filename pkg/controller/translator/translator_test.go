@@ -444,6 +444,34 @@ func TestGetServicePort(t *testing.T) {
 			},
 			wantWarning: true,
 		},
+		{
+			desc: "correct port and config for gce-regional-external",
+			spec: apiv1.ServiceSpec{
+				Type: apiv1.ServiceTypeNodePort,
+				Ports: []apiv1.ServicePort{
+					{Name: "http", Port: 80},
+					{Name: "https", Port: 443},
+					{Name: "otherPort", Port: 12345},
+				},
+			},
+			id:      utils.ServicePortID{Port: v1.ServiceBackendPort{Name: "https"}},
+			params:  getServicePortParams{isL7XLBRegional: true},
+			wantErr: false,
+			wantServicePort: &utils.ServicePort{
+				ID: utils.ServicePortID{
+					Service: types.NamespacedName{
+						Namespace: "default",
+						Name:      "foo",
+					},
+					Port: v1.ServiceBackendPort{Name: "https"},
+				},
+				Port:                 443,
+				PortName:             "https",
+				Protocol:             "HTTP",
+				L7XLBRegionalEnabled: true,
+				NEGEnabled:           true,
+			},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
