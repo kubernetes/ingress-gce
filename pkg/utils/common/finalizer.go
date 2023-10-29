@@ -71,7 +71,7 @@ func EnsureFinalizer(ing *v1.Ingress, ingClient client.IngressInterface, finaliz
 		if _, err := PatchIngressObjectMetadata(ingClient, ing, updated.ObjectMeta, ingLogger); err != nil {
 			return nil, fmt.Errorf("error patching Ingress %s/%s: %v", ing.Namespace, ing.Name, err)
 		}
-		klog.V(2).Infof("Added finalizer %q for Ingress %s/%s", finalizerKey, ing.Namespace, ing.Name)
+		ingLogger.Info("Added finalizer", "finalizerKey", finalizerKey)
 	}
 	return updated, nil
 }
@@ -89,7 +89,7 @@ func EnsureDeleteFinalizer(ing *v1.Ingress, ingClient client.IngressInterface, f
 		if _, err := PatchIngressObjectMetadata(ingClient, ing, *updatedObjectMeta, ingLogger); err != nil {
 			return fmt.Errorf("error patching Ingress %s/%s: %v", ing.Namespace, ing.Name, err)
 		}
-		klog.V(2).Infof("Removed finalizer %q for Ingress %s/%s", finalizerKey, ing.Namespace, ing.Name)
+		ingLogger.Info("Removed finalizer", "finalizer", finalizerKey)
 	}
 	return nil
 }

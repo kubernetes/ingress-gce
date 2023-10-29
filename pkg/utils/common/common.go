@@ -133,6 +133,6 @@ func patchIngress(ic client.IngressInterface, oldIngress, newIngress *v1.Ingress
 		return nil, fmt.Errorf("failed to create TwoWayMergePatch for ingress %s: %v", ingKey, err)
 	}
 
-	klog.V(4).Infof("Patch bytes for ingress %s: %s", ingKey, patchBytes)
+	ingLogger.Info("Patch bytes for ingress", "patchBytes", patchBytes)
 	return ic.Patch(context.TODO(), oldIngress.Name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{}, "status")
 }
