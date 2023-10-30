@@ -24,7 +24,7 @@ require (
 	k8s.io/cloud-provider-gcp/crd v0.0.0-20230801075638-1b50c1969753
 	k8s.io/cloud-provider-gcp/providers v0.27.1
 	k8s.io/component-base v0.27.1
-	k8s.io/klog/v2 v2.90.1
+	k8s.io/klog/v2 v2.100.1
 	k8s.io/kube-openapi v0.0.0-20230308215209-15aac26d736a
 	k8s.io/utils v0.0.0-20230209194617-a36077c30491
 )
