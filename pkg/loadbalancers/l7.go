@@ -260,7 +260,7 @@ func (l7 *L7) deleteForwardingRule(versions *features.ResourceVersions, protocol
 	if err != nil {
 		return err
 	}
-	if err := utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l7.cloud, key, versions.ForwardingRule)); err != nil {
+	if err := utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l7.cloud, key, versions.ForwardingRule, klog.TODO())); err != nil {
 		return err
 	}
 	return nil
@@ -276,11 +276,11 @@ func (l7 *L7) deleteTargetProxy(versions *features.ResourceVersions, protocol na
 	}
 	switch protocol {
 	case namer.HTTPProtocol:
-		if err := utils.IgnoreHTTPNotFound(composite.DeleteTargetHttpProxy(l7.cloud, key, versions.TargetHttpProxy)); err != nil {
+		if err := utils.IgnoreHTTPNotFound(composite.DeleteTargetHttpProxy(l7.cloud, key, versions.TargetHttpProxy, klog.TODO())); err != nil {
 			return err
 		}
 	case namer.HTTPSProtocol:
-		if err := utils.IgnoreHTTPNotFound(composite.DeleteTargetHttpsProxy(l7.cloud, key, versions.TargetHttpsProxy)); err != nil {
+		if err := utils.IgnoreHTTPNotFound(composite.DeleteTargetHttpsProxy(l7.cloud, key, versions.TargetHttpsProxy, klog.TODO())); err != nil {
 			return err
 		}
 	default:
@@ -334,7 +334,7 @@ func (l7 *L7) deleteSSLCertificates(sslCertificates []*composite.SslCertificate,
 		if err != nil {
 			return err
 		}
-		if err := utils.IgnoreHTTPNotFound(composite.DeleteSslCertificate(l7.cloud, key, versions.SslCertificate)); err != nil {
+		if err := utils.IgnoreHTTPNotFound(composite.DeleteSslCertificate(l7.cloud, key, versions.SslCertificate, klog.TODO())); err != nil {
 			klog.Errorf("Old cert delete failed - %v", err)
 			certErr = err
 		}
@@ -380,7 +380,7 @@ func (l7 *L7) Cleanup(versions *features.ResourceVersions) error {
 	if err != nil {
 		return err
 	}
-	if err := utils.IgnoreHTTPNotFound(composite.DeleteUrlMap(l7.cloud, key, versions.UrlMap)); err != nil {
+	if err := utils.IgnoreHTTPNotFound(composite.DeleteUrlMap(l7.cloud, key, versions.UrlMap, klog.TODO())); err != nil {
 		return err
 	}
 
@@ -396,7 +396,7 @@ func (l7 *L7) Cleanup(versions *features.ResourceVersions) error {
 		if err != nil {
 			return err
 		}
-		if err := utils.IgnoreHTTPNotFound(composite.DeleteUrlMap(l7.cloud, key, versions.UrlMap)); err != nil {
+		if err := utils.IgnoreHTTPNotFound(composite.DeleteUrlMap(l7.cloud, key, versions.UrlMap, klog.TODO())); err != nil {
 			return err
 		}
 	}

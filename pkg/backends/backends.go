@@ -105,7 +105,7 @@ func (b *Backends) Create(sp utils.ServicePort, hcLink string) (*composite.Backe
 		return nil, err
 	}
 
-	if err := composite.CreateBackendService(b.cloud, key, be); err != nil {
+	if err := composite.CreateBackendService(b.cloud, key, be, klog.TODO()); err != nil {
 		return nil, err
 	}
 	// Note: We need to perform a GCE call to re-fetch the object we just created
@@ -127,7 +127,7 @@ func (b *Backends) Update(be *composite.BackendService) error {
 	if err != nil {
 		return err
 	}
-	if err := composite.UpdateBackendService(b.cloud, key, be); err != nil {
+	if err := composite.UpdateBackendService(b.cloud, key, be, klog.TODO()); err != nil {
 		return err
 	}
 	return nil
@@ -139,7 +139,7 @@ func (b *Backends) Get(name string, version meta.Version, scope meta.KeyType) (*
 	if err != nil {
 		return nil, err
 	}
-	be, err := composite.GetBackendService(b.cloud, key, version)
+	be, err := composite.GetBackendService(b.cloud, key, version, klog.TODO())
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +149,7 @@ func (b *Backends) Get(name string, version meta.Version, scope meta.KeyType) (*
 	versionRequired := features.VersionFromDescription(be.Description)
 
 	if features.IsLowerVersion(versionRequired, version) {
-		be, err = composite.GetBackendService(b.cloud, key, versionRequired)
+		be, err = composite.GetBackendService(b.cloud, key, versionRequired, klog.TODO())
 		if err != nil {
 			return nil, err
 		}
@@ -165,7 +165,7 @@ func (b *Backends) Delete(name string, version meta.Version, scope meta.KeyType)
 	if err != nil {
 		return err
 	}
-	err = composite.DeleteBackendService(b.cloud, key, version)
+	err = composite.DeleteBackendService(b.cloud, key, version, klog.TODO())
 	if err != nil {
 		if utils.IsHTTPErrorCode(err, http.StatusNotFound) || utils.IsInUsedByError(err) {
 			klog.Infof("DeleteBackendService(_, %v, %v) = %v; ignorable error", key, version, err)
@@ -228,7 +228,7 @@ func (b *Backends) List(key *meta.Key, version meta.Version) ([]*composite.Backe
 	var backends []*composite.BackendService
 	var err error
 
-	backends, err = composite.ListBackendServices(b.cloud, key, version)
+	backends, err = composite.ListBackendServices(b.cloud, key, version, klog.TODO())
 	if err != nil {
 		return nil, err
 	}
@@ -300,7 +300,7 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 	if err != nil {
 		return nil, err
 	}
-	bs, err := composite.GetBackendService(b.cloud, key, meta.VersionGA)
+	bs, err := composite.GetBackendService(b.cloud, key, meta.VersionGA, klog.TODO())
 	if err != nil && !utils.IsNotFoundError(err) {
 		return nil, err
 	}
@@ -331,7 +331,7 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 	// Create backend service if none was found
 	if bs == nil {
 		klog.V(2).Infof("EnsureL4BackendService: creating backend service %v", name)
-		err := composite.CreateBackendService(b.cloud, key, expectedBS)
+		err := composite.CreateBackendService(b.cloud, key, expectedBS, klog.TODO())
 		if err != nil {
 			return nil, err
 		}
@@ -339,7 +339,7 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 		// We need to perform a GCE call to re-fetch the object we just created
 		// so that the "Fingerprint" field is filled in. This is needed to update the
 		// object without error. The lookup is also needed to populate the selfLink.
-		return composite.GetBackendService(b.cloud, key, meta.VersionGA)
+		return composite.GetBackendService(b.cloud, key, meta.VersionGA, klog.TODO())
 	}
 
 	if backendSvcEqual(expectedBS, bs) {
@@ -355,11 +355,11 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 	expectedBS.Fingerprint = bs.Fingerprint
 	// Copy backends to avoid detaching them during update. This could be replaced with a patch call in the future.
 	expectedBS.Backends = bs.Backends
-	if err := composite.UpdateBackendService(b.cloud, key, expectedBS); err != nil {
+	if err := composite.UpdateBackendService(b.cloud, key, expectedBS, klog.TODO()); err != nil {
 		return nil, err
 	}
 	klog.V(2).Infof("EnsureL4BackendService: updated backend service %v successfully", name)
-	return composite.GetBackendService(b.cloud, key, meta.VersionGA)
+	return composite.GetBackendService(b.cloud, key, meta.VersionGA, klog.TODO())
 }
 
 // backendSvcEqual returns true if the 2 BackendService objects are equal.

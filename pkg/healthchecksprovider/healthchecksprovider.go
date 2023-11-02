@@ -8,6 +8,7 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog/v2"
 )
 
 type HealthChecks struct {
@@ -27,7 +28,7 @@ func (hc *HealthChecks) Get(name string, scope meta.KeyType) (*composite.HealthC
 	if err != nil {
 		return nil, fmt.Errorf("hc.createKey(%s, %s) returned error %w, want nil", name, scope, err)
 	}
-	healthCheck, err := composite.GetHealthCheck(hc.cloud, key, hc.version)
+	healthCheck, err := composite.GetHealthCheck(hc.cloud, key, hc.version, klog.TODO())
 	if err != nil {
 		if utils.IsNotFoundError(err) {
 			return nil, nil
@@ -43,7 +44,7 @@ func (hc *HealthChecks) Create(healthCheck *composite.HealthCheck) error {
 		return fmt.Errorf("hc.createKey(%s, %s) returned error: %w, want nil", healthCheck.Name, healthCheck.Scope, err)
 	}
 
-	err = composite.CreateHealthCheck(hc.cloud, key, healthCheck)
+	err = composite.CreateHealthCheck(hc.cloud, key, healthCheck, klog.TODO())
 	if err != nil {
 		return fmt.Errorf("composite.CreateHealthCheck(_, %s, %v) returned error %w, want nil", key, healthCheck, err)
 	}
@@ -56,7 +57,7 @@ func (hc *HealthChecks) Update(name string, scope meta.KeyType, updatedHealthChe
 		return fmt.Errorf("hc.createKey(%s, %s) returned error: %w, want nil", name, scope, err)
 	}
 
-	err = composite.UpdateHealthCheck(hc.cloud, key, updatedHealthCheck)
+	err = composite.UpdateHealthCheck(hc.cloud, key, updatedHealthCheck, klog.TODO())
 	if err != nil {
 		return fmt.Errorf("composite.UpdateHealthCheck(_, %s, %v) returned error %w, want nil", key, updatedHealthCheck, err)
 	}
@@ -69,7 +70,7 @@ func (hc *HealthChecks) Delete(name string, scope meta.KeyType) error {
 		return fmt.Errorf("hc.createKey(%s, %s) returned error %w, want nil", name, scope, err)
 	}
 
-	return utils.IgnoreHTTPNotFound(composite.DeleteHealthCheck(hc.cloud, key, hc.version))
+	return utils.IgnoreHTTPNotFound(composite.DeleteHealthCheck(hc.cloud, key, hc.version, klog.TODO()))
 }
 
 func (hc *HealthChecks) SelfLink(name string, scope meta.KeyType) (string, error) {

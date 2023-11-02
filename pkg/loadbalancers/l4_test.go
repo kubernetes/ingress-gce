@@ -33,6 +33,7 @@ import (
 	"k8s.io/ingress-gce/pkg/healthchecksl4"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog/v2"
 	"k8s.io/utils/strings/slices"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
@@ -96,7 +97,7 @@ func TestEnsureInternalBackendServiceUpdates(t *testing.T) {
 		t.Errorf("Failed to ensure backend service  %s - err %v", bsName, err)
 	}
 	key := meta.RegionalKey(bsName, l4.cloud.Region())
-	bs, err := composite.GetBackendService(l4.cloud, key, meta.VersionGA)
+	bs, err := composite.GetBackendService(l4.cloud, key, meta.VersionGA, klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to get backend service  %s - err %v", bsName, err)
 	}
@@ -108,7 +109,7 @@ func TestEnsureInternalBackendServiceUpdates(t *testing.T) {
 	newTimeout := int64(backends.DefaultConnectionDrainingTimeoutSeconds * 2)
 	bs.ConnectionDraining.DrainingTimeoutSec = newTimeout
 	bs.SessionAffinity = strings.ToUpper(string(v1.ServiceAffinityClientIP))
-	err = composite.UpdateBackendService(l4.cloud, key, bs)
+	err = composite.UpdateBackendService(l4.cloud, key, bs, klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to update backend service with new connection draining timeout - err %v", err)
 	}
@@ -184,7 +185,7 @@ func TestEnsureInternalLoadBalancer(t *testing.T) {
 
 			backendServiceName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
 			key := meta.RegionalKey(backendServiceName, l4.cloud.Region())
-			bs, err := composite.GetBackendService(l4.cloud, key, meta.VersionGA)
+			bs, err := composite.GetBackendService(l4.cloud, key, meta.VersionGA, klog.TODO())
 			if err != nil {
 				t.Errorf("Failed to lookup backend service, err %v", err)
 			}
@@ -194,7 +195,7 @@ func TestEnsureInternalLoadBalancer(t *testing.T) {
 			}
 			// Add a backend list to simulate NEG linker populating the backends.
 			bs.Backends = []*composite.Backend{{Group: "test"}}
-			if err := composite.UpdateBackendService(l4.cloud, key, bs); err != nil {
+			if err := composite.UpdateBackendService(l4.cloud, key, bs, klog.TODO()); err != nil {
 				t.Errorf("Failed updating backend service, err %v", err)
 			}
 			// Simulate a periodic sync. The backends list should not be reconciled.
@@ -206,7 +207,7 @@ func TestEnsureInternalLoadBalancer(t *testing.T) {
 				t.Errorf("Got empty loadBalancer status using handler %v", l4)
 			}
 			assertILBResources(t, l4, nodeNames, result.Annotations)
-			bs, err = composite.GetBackendService(l4.cloud, meta.RegionalKey(backendServiceName, l4.cloud.Region()), meta.VersionGA)
+			bs, err = composite.GetBackendService(l4.cloud, meta.RegionalKey(backendServiceName, l4.cloud.Region()), meta.VersionGA, klog.TODO())
 			if err != nil {
 				t.Errorf("Failed to lookup backend service, err %v", err)
 			}
@@ -348,7 +349,7 @@ func TestEnsureInternalLoadBalancerClearPreviousResources(t *testing.T) {
 		IPProtocol:          "TCP",
 		LoadBalancingScheme: string(cloud.SchemeInternal),
 	}
-	if err = composite.CreateForwardingRule(l4.cloud, key, existingFwdRule); err != nil {
+	if err = composite.CreateForwardingRule(l4.cloud, key, existingFwdRule, klog.TODO()); err != nil {
 		t.Errorf("Failed to create fake forwarding rule %s, err %v", lbName, err)
 	}
 	key.Name = lbName
@@ -373,7 +374,7 @@ func TestEnsureInternalLoadBalancerClearPreviousResources(t *testing.T) {
 	// Create a healthcheck with an incomplete fields
 	existingHC := &composite.HealthCheck{Name: hcName}
 	// hcName will be same as lbName since this service uses trafficPolicy Local. So the same key can be used.
-	if err = composite.CreateHealthCheck(fakeGCE, key, existingHC); err != nil {
+	if err = composite.CreateHealthCheck(fakeGCE, key, existingHC, klog.TODO()); err != nil {
 		t.Errorf("Failed to create fake healthcheck %s, err %v", hcName, err)
 	}
 
@@ -384,16 +385,16 @@ func TestEnsureInternalLoadBalancerClearPreviousResources(t *testing.T) {
 		LoadBalancingScheme: string(cloud.SchemeInternal),
 	}
 
-	if err = composite.CreateBackendService(fakeGCE, key, existingBS); err != nil {
+	if err = composite.CreateBackendService(fakeGCE, key, existingBS, klog.TODO()); err != nil {
 		t.Errorf("Failed to create fake backend service %s, err %v", lbName, err)
 	}
 	key.Name = frName
 	// Set the backend service link correctly, so that forwarding rule comparison works correctly
 	existingFwdRule.BackendService = cloud.SelfLink(meta.VersionGA, vals.ProjectID, "backendServices", meta.RegionalKey(existingBS.Name, vals.Region))
-	if err = composite.DeleteForwardingRule(fakeGCE, key, meta.VersionGA); err != nil {
+	if err = composite.DeleteForwardingRule(fakeGCE, key, meta.VersionGA, klog.TODO()); err != nil {
 		t.Errorf("Failed to delete forwarding rule, err %v", err)
 	}
-	if err = composite.CreateForwardingRule(fakeGCE, key, existingFwdRule); err != nil {
+	if err = composite.CreateForwardingRule(fakeGCE, key, existingFwdRule, klog.TODO()); err != nil {
 		t.Errorf("Failed to update forwarding rule with new BS link, err %v", err)
 	}
 	if result := l4.EnsureInternalLoadBalancer(nodeNames, svc); result.Error != nil {
@@ -401,7 +402,7 @@ func TestEnsureInternalLoadBalancerClearPreviousResources(t *testing.T) {
 	}
 	key.Name = frName
 	// Expect new resources with the correct attributes to be created
-	newFwdRule, err := composite.GetForwardingRule(fakeGCE, key, meta.VersionGA)
+	newFwdRule, err := composite.GetForwardingRule(fakeGCE, key, meta.VersionGA, klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to lookup forwarding rule %s, err %v", lbName, err)
 	}
@@ -418,7 +419,7 @@ func TestEnsureInternalLoadBalancerClearPreviousResources(t *testing.T) {
 	}
 
 	key.Name = lbName
-	newHC, err := composite.GetHealthCheck(fakeGCE, key, meta.VersionGA)
+	newHC, err := composite.GetHealthCheck(fakeGCE, key, meta.VersionGA, klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to lookup healthcheck %s, err %v", lbName, err)
 	}
@@ -426,7 +427,7 @@ func TestEnsureInternalLoadBalancerClearPreviousResources(t *testing.T) {
 		t.Errorf("Expected incomplete healthcheck to be updated")
 	}
 
-	newBS, err := composite.GetBackendService(fakeGCE, key, meta.VersionGA)
+	newBS, err := composite.GetBackendService(fakeGCE, key, meta.VersionGA, klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to lookup backend service %s, err %v", lbName, err)
 	}
@@ -470,13 +471,13 @@ func TestUpdateResourceLinks(t *testing.T) {
 	}
 	key.Name = "hc1"
 	hc1 := &composite.HealthCheck{Name: "hc1"}
-	if err = composite.CreateHealthCheck(fakeGCE, key, hc1); err != nil {
+	if err = composite.CreateHealthCheck(fakeGCE, key, hc1, klog.TODO()); err != nil {
 		t.Errorf("Failed to create fake healthcheck hc1 , err %v", err)
 	}
 
 	key.Name = "hc2"
 	hc2 := &composite.HealthCheck{Name: "hc2"}
-	if err = composite.CreateHealthCheck(fakeGCE, key, hc2); err != nil {
+	if err = composite.CreateHealthCheck(fakeGCE, key, hc2, klog.TODO()); err != nil {
 		t.Errorf("Failed to create fake healthcheck hc2, err %v", err)
 	}
 
@@ -489,10 +490,10 @@ func TestUpdateResourceLinks(t *testing.T) {
 		HealthChecks:        []string{"hc1", "hc2"},
 	}
 
-	if err = composite.CreateBackendService(fakeGCE, key, existingBS); err != nil {
+	if err = composite.CreateBackendService(fakeGCE, key, existingBS, klog.TODO()); err != nil {
 		t.Errorf("Failed to create fake backend service %s, err %v", lbName, err)
 	}
-	bs, err := composite.GetBackendService(fakeGCE, key, meta.VersionGA)
+	bs, err := composite.GetBackendService(fakeGCE, key, meta.VersionGA, klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to lookup backend service")
 	}
@@ -508,14 +509,14 @@ func TestUpdateResourceLinks(t *testing.T) {
 
 	// ensure that the other healthchecks still exist.
 	key.Name = "hc1"
-	if hc1, err = composite.GetHealthCheck(fakeGCE, key, meta.VersionGA); err != nil {
+	if hc1, err = composite.GetHealthCheck(fakeGCE, key, meta.VersionGA, klog.TODO()); err != nil {
 		t.Errorf("Failed to lookup healthcheck - hc1")
 	}
 	if hc1 == nil {
 		t.Errorf("Got nil healthcheck")
 	}
 	key.Name = "hc2"
-	if hc2, err = composite.GetHealthCheck(fakeGCE, key, meta.VersionGA); err != nil {
+	if hc2, err = composite.GetHealthCheck(fakeGCE, key, meta.VersionGA, klog.TODO()); err != nil {
 		t.Errorf("Failed to lookup healthcheck - hc1")
 	}
 	if hc2 == nil {
@@ -558,7 +559,7 @@ func TestEnsureInternalLoadBalancerHealthCheckConfigurable(t *testing.T) {
 
 	// Create a healthcheck with an incorrect threshold, default value is 8s.
 	existingHC := &composite.HealthCheck{Name: hcName, CheckIntervalSec: 6000}
-	if err = composite.CreateHealthCheck(fakeGCE, key, existingHC); err != nil {
+	if err = composite.CreateHealthCheck(fakeGCE, key, existingHC, klog.TODO()); err != nil {
 		t.Errorf("Failed to create fake healthcheck %s, err %v", hcName, err)
 	}
 
@@ -566,7 +567,7 @@ func TestEnsureInternalLoadBalancerHealthCheckConfigurable(t *testing.T) {
 		t.Errorf("Failed to ensure loadBalancer %s, err %v", lbName, result.Error)
 	}
 
-	newHC, err := composite.GetHealthCheck(fakeGCE, key, meta.VersionGA)
+	newHC, err := composite.GetHealthCheck(fakeGCE, key, meta.VersionGA, klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to lookup healthcheck %s, err %v", lbName, err)
 	}
@@ -821,7 +822,7 @@ func TestEnsureInternalLoadBalancerWithSpecialHealthCheck(t *testing.T) {
 	if err != nil {
 		t.Errorf("Unexpected error when creating key - %v", err)
 	}
-	hc, err := composite.GetHealthCheck(l4.cloud, key, meta.VersionGA)
+	hc, err := composite.GetHealthCheck(l4.cloud, key, meta.VersionGA, klog.TODO())
 	if err != nil || hc == nil {
 		t.Errorf("Failed to get healthcheck, err %v", err)
 	}
@@ -932,7 +933,7 @@ func TestEnsureInternalLoadBalancerErrors(t *testing.T) {
 				t.Errorf("Unexpected error when adding nodes %v", err)
 			}
 			// Create a dummy forwarding rule in order to trigger a delete in the EnsureInternalLoadBalancer function.
-			if err = composite.CreateForwardingRule(l4.cloud, key, &composite.ForwardingRule{Name: frName}); err != nil {
+			if err = composite.CreateForwardingRule(l4.cloud, key, &composite.ForwardingRule{Name: frName}, klog.TODO()); err != nil {
 				t.Errorf("Failed to create fake forwarding rule %s, err %v", frName, err)
 			}
 			// Inject error hooks after creating the forwarding rule.
@@ -1043,7 +1044,7 @@ func TestEnsureInternalLoadBalancerEnableGlobalAccess(t *testing.T) {
 	if err != nil {
 		t.Errorf("Unexpected error when creating key - %v", err)
 	}
-	fwdRule, err := composite.GetForwardingRule(l4.cloud, key, meta.VersionGA)
+	fwdRule, err := composite.GetForwardingRule(l4.cloud, key, meta.VersionGA, klog.TODO())
 	if err != nil {
 		t.Errorf("Unexpected error when looking up forwarding rule - %v", err)
 	}
@@ -1063,7 +1064,7 @@ func TestEnsureInternalLoadBalancerEnableGlobalAccess(t *testing.T) {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
 	// make sure GlobalAccess field is off.
-	fwdRule, err = composite.GetForwardingRule(l4.cloud, key, meta.VersionGA)
+	fwdRule, err = composite.GetForwardingRule(l4.cloud, key, meta.VersionGA, klog.TODO())
 	if err != nil {
 		t.Errorf("Unexpected error when looking up forwarding rule - %v", err)
 	}
@@ -1115,7 +1116,7 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 	assertILBResourcesWithCustomSubnet(t, l4, nodeNames, result.Annotations, l4.cloud.SubnetworkURL())
 
 	frName := l4.GetFRName()
-	fwdRule, err := composite.GetForwardingRule(l4.cloud, meta.RegionalKey(frName, l4.cloud.Region()), meta.VersionGA)
+	fwdRule, err := composite.GetForwardingRule(l4.cloud, meta.RegionalKey(frName, l4.cloud.Region()), meta.VersionGA, klog.TODO())
 	if err != nil || fwdRule == nil {
 		t.Errorf("Unexpected error looking up forwarding rule - err %v", err)
 	}
@@ -1178,7 +1179,7 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
-	fwdRule, err = composite.GetForwardingRule(l4.cloud, meta.RegionalKey(frName, l4.cloud.Region()), meta.VersionGA)
+	fwdRule, err = composite.GetForwardingRule(l4.cloud, meta.RegionalKey(frName, l4.cloud.Region()), meta.VersionGA, klog.TODO())
 	if err != nil || fwdRule == nil {
 		t.Errorf("Unexpected error %v", err)
 	}
@@ -1390,7 +1391,7 @@ func TestEnsureInternalLoadBalancerModifyProtocol(t *testing.T) {
 	if err != nil {
 		t.Errorf("Unexpected error when creating key - %v", err)
 	}
-	fwdRule, err := composite.GetForwardingRule(l4.cloud, key, meta.VersionGA)
+	fwdRule, err := composite.GetForwardingRule(l4.cloud, key, meta.VersionGA, klog.TODO())
 	if err != nil {
 		t.Errorf("Unexpected error when looking up forwarding rule - %v", err)
 	}
@@ -1408,7 +1409,7 @@ func TestEnsureInternalLoadBalancerModifyProtocol(t *testing.T) {
 	}
 	assertILBResources(t, l4, nodeNames, result.Annotations)
 	// Make sure the old forwarding rule is deleted
-	fwdRule, err = composite.GetForwardingRule(l4.cloud, key, meta.VersionGA)
+	fwdRule, err = composite.GetForwardingRule(l4.cloud, key, meta.VersionGA, klog.TODO())
 	if !utils.IsNotFoundError(err) {
 		t.Errorf("Failed to delete ForwardingRule %s", frName)
 	}
@@ -1416,7 +1417,7 @@ func TestEnsureInternalLoadBalancerModifyProtocol(t *testing.T) {
 	if key, err = composite.CreateKey(l4.cloud, frName, meta.Regional); err != nil {
 		t.Errorf("Unexpected error when creating key - %v", err)
 	}
-	if fwdRule, err = composite.GetForwardingRule(l4.cloud, key, meta.VersionGA); err != nil {
+	if fwdRule, err = composite.GetForwardingRule(l4.cloud, key, meta.VersionGA, klog.TODO()); err != nil {
 		t.Errorf("Unexpected error when looking up forwarding rule - %v", err)
 	}
 	if fwdRule.IPProtocol != "UDP" {
@@ -1639,7 +1640,7 @@ func TestEnsureInternalLoadBalancerAllPorts(t *testing.T) {
 	if err != nil {
 		t.Errorf("Unexpected error when creating key - %v", err)
 	}
-	fwdRule, err := composite.GetForwardingRule(l4.cloud, key, meta.VersionGA)
+	fwdRule, err := composite.GetForwardingRule(l4.cloud, key, meta.VersionGA, klog.TODO())
 	if err != nil {
 		t.Errorf("Unexpected error when looking up forwarding rule - %v", err)
 	}
@@ -1663,7 +1664,7 @@ func TestEnsureInternalLoadBalancerAllPorts(t *testing.T) {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
 	assertILBResources(t, l4, nodeNames, result.Annotations)
-	fwdRule, err = composite.GetForwardingRule(l4.cloud, key, meta.VersionGA)
+	fwdRule, err = composite.GetForwardingRule(l4.cloud, key, meta.VersionGA, klog.TODO())
 	if err != nil {
 		t.Errorf("Unexpected error when looking up forwarding rule - %v", err)
 	}
@@ -1689,7 +1690,7 @@ func TestEnsureInternalLoadBalancerAllPorts(t *testing.T) {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
 	assertILBResources(t, l4, nodeNames, result.Annotations)
-	fwdRule, err = composite.GetForwardingRule(l4.cloud, key, meta.VersionGA)
+	fwdRule, err = composite.GetForwardingRule(l4.cloud, key, meta.VersionGA, klog.TODO())
 	if err != nil {
 		t.Errorf("Unexpected error when looking up forwarding rule - %v", err)
 	}
@@ -2343,7 +2344,7 @@ func getAndVerifyILBHealthCheck(l4 *L4) (*composite.HealthCheck, error) {
 	isSharedHC := !servicehelper.RequestsOnlyLocalTraffic(l4.Service)
 	hcName := l4.namer.L4HealthCheck(l4.Service.Namespace, l4.Service.Name, isSharedHC)
 
-	healthcheck, err := composite.GetHealthCheck(l4.cloud, meta.GlobalKey(hcName), meta.VersionGA)
+	healthcheck, err := composite.GetHealthCheck(l4.cloud, meta.GlobalKey(hcName), meta.VersionGA, klog.TODO())
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch healthcheck %s - err %w", hcName, err)
 	}
@@ -2365,7 +2366,7 @@ func getAndVerifyILBHealthCheck(l4 *L4) (*composite.HealthCheck, error) {
 func getAndVerifyILBBackendService(l4 *L4, healthCheck *composite.HealthCheck) (*composite.BackendService, error) {
 	backendServiceName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
 	key := meta.RegionalKey(backendServiceName, l4.cloud.Region())
-	bs, err := composite.GetBackendService(l4.cloud, key, meta.VersionGA)
+	bs, err := composite.GetBackendService(l4.cloud, key, meta.VersionGA, klog.TODO())
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch backend service %s - err %w", backendServiceName, err)
 	}
@@ -2406,7 +2407,7 @@ func verifyILBIPv6ForwardingRule(l4 *L4, backendServiceLink, expectedSubnet stri
 }
 
 func verifyILBForwardingRule(l4 *L4, frName, backendServiceLink, expectedSubnet, expectedNetworkURL string) error {
-	fwdRule, err := composite.GetForwardingRule(l4.cloud, meta.RegionalKey(frName, l4.cloud.Region()), meta.VersionGA)
+	fwdRule, err := composite.GetForwardingRule(l4.cloud, meta.RegionalKey(frName, l4.cloud.Region()), meta.VersionGA, klog.TODO())
 	if err != nil {
 		return fmt.Errorf("failed to fetch forwarding rule %s - err %w", frName, err)
 	}

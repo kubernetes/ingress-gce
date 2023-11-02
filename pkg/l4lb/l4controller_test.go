@@ -27,6 +27,7 @@ import (
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog/v2"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -839,7 +840,7 @@ func addNEG(l4c *L4Controller, svc *api_v1.Service) {
 	negName := l4c.namer.L4Backend(svc.Namespace, svc.Name)
 	neg := &composite.NetworkEndpointGroup{Name: negName}
 	key := meta.ZonalKey(negName, testGCEZone)
-	composite.CreateNetworkEndpointGroup(l4c.ctx.Cloud, key, neg)
+	composite.CreateNetworkEndpointGroup(l4c.ctx.Cloud, key, neg, klog.TODO())
 }
 
 func getKeyForSvc(svc *api_v1.Service, t *testing.T) string {
@@ -936,7 +937,7 @@ func createLegacyForwardingRule(t *testing.T, svc *api_v1.Service, cloud *gce.Cl
 		IPProtocol:          "TCP",
 		LoadBalancingScheme: scheme,
 	}
-	if err = composite.CreateForwardingRule(cloud, key, existingFwdRule); err != nil {
+	if err = composite.CreateForwardingRule(cloud, key, existingFwdRule, klog.TODO()); err != nil {
 		t.Errorf("Failed to create fake forwarding rule %s, err %v", frName, err)
 	}
 }

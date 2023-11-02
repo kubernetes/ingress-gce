@@ -101,11 +101,11 @@ func (l7 *L7) checkForwardingRule(protocol namer.NamerProtocol, name, proxyLink,
 	env := &translator.Env{VIP: ip, Network: l7.cloud.NetworkURL(), Subnetwork: l7.cloud.SubnetworkURL()}
 	fr := tr.ToCompositeForwardingRule(env, protocol, version, proxyLink, description, l7.runtimeInfo.StaticIPSubnet)
 
-	existing, _ = composite.GetForwardingRule(l7.cloud, key, version)
+	existing, _ = composite.GetForwardingRule(l7.cloud, key, version, klog.TODO())
 	if existing != nil && (fr.IPAddress != "" && existing.IPAddress != fr.IPAddress || existing.PortRange != fr.PortRange) {
 		klog.Warningf("Recreating forwarding rule %v(%v), so it has %v(%v)",
 			existing.IPAddress, existing.PortRange, fr.IPAddress, fr.PortRange)
-		if err = utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l7.cloud, key, version)); err != nil {
+		if err = utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l7.cloud, key, version, klog.TODO())); err != nil {
 			return nil, err
 		}
 		existing = nil
@@ -130,7 +130,7 @@ func (l7 *L7) checkForwardingRule(protocol namer.NamerProtocol, name, proxyLink,
 		}
 		klog.V(3).Infof("Creating forwarding rule for proxy %q and ip %v:%v", proxyLink, ip, protocol)
 
-		if err = composite.CreateForwardingRule(l7.cloud, key, fr); err != nil {
+		if err = composite.CreateForwardingRule(l7.cloud, key, fr, klog.TODO()); err != nil {
 			return nil, err
 		}
 		l7.recorder.Eventf(l7.runtimeInfo.Ingress, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %q created", key.Name)
@@ -139,7 +139,7 @@ func (l7 *L7) checkForwardingRule(protocol namer.NamerProtocol, name, proxyLink,
 		if err != nil {
 			return nil, err
 		}
-		existing, err = composite.GetForwardingRule(l7.cloud, key, version)
+		existing, err = composite.GetForwardingRule(l7.cloud, key, version, klog.TODO())
 		if err != nil {
 			return nil, err
 		}
@@ -191,7 +191,7 @@ func (l7 *L7) getEffectiveIP() (string, bool, error) {
 		// Existing static IPs allocated to forwarding rules will get orphaned
 		// till the Ingress is torn down.
 		// TODO(shance): Replace version
-		if ip, err := composite.GetAddress(l7.cloud, key, meta.VersionGA); err != nil || ip == nil {
+		if ip, err := composite.GetAddress(l7.cloud, key, meta.VersionGA, klog.TODO()); err != nil || ip == nil {
 			return "", false, fmt.Errorf("the given static IP name %v doesn't translate to an existing static IP.",
 				l7.runtimeInfo.StaticIPName)
 		} else {

@@ -34,6 +34,7 @@ import (
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -632,13 +633,13 @@ func createFakeLoadbalancer(cloud *gce.Cloud, namer namer_util.IngressFrontendNa
 	key, _ := composite.CreateKey(cloud, "", scope)
 
 	key.Name = namer.ForwardingRule(namer_util.HTTPProtocol)
-	composite.CreateForwardingRule(cloud, key, &composite.ForwardingRule{Name: key.Name, Version: versions.ForwardingRule})
+	composite.CreateForwardingRule(cloud, key, &composite.ForwardingRule{Name: key.Name, Version: versions.ForwardingRule}, klog.TODO())
 
 	key.Name = namer.TargetProxy(namer_util.HTTPProtocol)
-	composite.CreateTargetHttpProxy(cloud, key, &composite.TargetHttpProxy{Name: key.Name, Version: versions.TargetHttpProxy})
+	composite.CreateTargetHttpProxy(cloud, key, &composite.TargetHttpProxy{Name: key.Name, Version: versions.TargetHttpProxy}, klog.TODO())
 
 	key.Name = namer.UrlMap()
-	composite.CreateUrlMap(cloud, key, &composite.UrlMap{Name: key.Name, Version: versions.UrlMap})
+	composite.CreateUrlMap(cloud, key, &composite.UrlMap{Name: key.Name, Version: versions.UrlMap}, klog.TODO())
 
 	cloud.ReserveGlobalAddress(&compute.Address{Name: namer.ForwardingRule(namer_util.HTTPProtocol)})
 
@@ -647,13 +648,13 @@ func createFakeLoadbalancer(cloud *gce.Cloud, namer namer_util.IngressFrontendNa
 func removeFakeLoadBalancer(cloud *gce.Cloud, namer namer_util.IngressFrontendNamer, versions *features.ResourceVersions, scope meta.KeyType) {
 	key, _ := composite.CreateKey(cloud, "", scope)
 	key.Name = namer.ForwardingRule(namer_util.HTTPProtocol)
-	composite.DeleteForwardingRule(cloud, key, versions.ForwardingRule)
+	composite.DeleteForwardingRule(cloud, key, versions.ForwardingRule, klog.TODO())
 
 	key.Name = namer.TargetProxy(namer_util.HTTPProtocol)
-	composite.DeleteTargetHttpProxy(cloud, key, versions.TargetHttpProxy)
+	composite.DeleteTargetHttpProxy(cloud, key, versions.TargetHttpProxy, klog.TODO())
 
 	key.Name = namer.UrlMap()
-	composite.DeleteUrlMap(cloud, key, versions.UrlMap)
+	composite.DeleteUrlMap(cloud, key, versions.UrlMap, klog.TODO())
 
 	cloud.DeleteGlobalAddress(namer.ForwardingRule(namer_util.HTTPProtocol))
 }
@@ -663,7 +664,7 @@ func checkFakeLoadBalancer(cloud *gce.Cloud, namer namer_util.IngressFrontendNam
 		return err
 	}
 	key, _ := composite.CreateKey(cloud, namer.UrlMap(), scope)
-	_, err := composite.GetUrlMap(cloud, key, versions.UrlMap)
+	_, err := composite.GetUrlMap(cloud, key, versions.UrlMap, klog.TODO())
 	if expectPresent && err != nil {
 		return err
 	}
@@ -684,7 +685,7 @@ func checkFakeLoadBalancerWithProtocol(cloud *gce.Cloud, namer namer_util.Ingres
 	var err error
 	key, _ := composite.CreateKey(cloud, namer.ForwardingRule(protocol), scope)
 
-	_, err = composite.GetForwardingRule(cloud, key, versions.ForwardingRule)
+	_, err = composite.GetForwardingRule(cloud, key, versions.ForwardingRule, klog.TODO())
 	if expectPresent && err != nil {
 		return err
 	}
@@ -694,9 +695,9 @@ func checkFakeLoadBalancerWithProtocol(cloud *gce.Cloud, namer namer_util.Ingres
 
 	key.Name = namer.TargetProxy(protocol)
 	if protocol == namer_util.HTTPProtocol {
-		_, err = composite.GetTargetHttpProxy(cloud, key, versions.TargetHttpProxy)
+		_, err = composite.GetTargetHttpProxy(cloud, key, versions.TargetHttpProxy, klog.TODO())
 	} else {
-		_, err = composite.GetTargetHttpsProxy(cloud, key, versions.TargetHttpsProxy)
+		_, err = composite.GetTargetHttpsProxy(cloud, key, versions.TargetHttpsProxy, klog.TODO())
 	}
 	if expectPresent && err != nil {
 		return err

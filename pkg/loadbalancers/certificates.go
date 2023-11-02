@@ -102,7 +102,7 @@ func (l7 *L7) createSslCertificates(existingCerts, translatorCerts []*composite.
 			klog.Errorf("l7.CreateKey(%s) = %v", translatorCert.Name, err)
 			return nil, err
 		}
-		err = composite.CreateSslCertificate(l7.cloud, key, translatorCert)
+		err = composite.CreateSslCertificate(l7.cloud, key, translatorCert, klog.TODO())
 		if err != nil {
 			klog.Errorf("Failed to create new sslCertificate %q for %q - %v", translatorCert.Name, l7, err)
 			failedCerts = append(failedCerts, translatorCert.Name+" Error:"+err.Error())
@@ -111,7 +111,7 @@ func (l7 *L7) createSslCertificates(existingCerts, translatorCerts []*composite.
 		visitedCertMap[translatorCert.Name] = fmt.Sprintf("secret cert:%q", translatorCert.Certificate)
 
 		// Get SSLCert
-		cert, err := composite.GetSslCertificate(l7.cloud, key, translatorCert.Version)
+		cert, err := composite.GetSslCertificate(l7.cloud, key, translatorCert.Version, klog.TODO())
 		if err != nil {
 			klog.Errorf("GetSslCertificate(_, %v, %v) = %v", key, translatorCert.Version, err)
 			return nil, err
@@ -153,7 +153,7 @@ func (l7 *L7) getIngressManagedSslCerts() ([]*composite.SslCertificate, error) {
 		return nil, err
 	}
 	version := l7.Versions().SslCertificate
-	certs, err := composite.ListSslCertificates(l7.cloud, key, version)
+	certs, err := composite.ListSslCertificates(l7.cloud, key, version, klog.TODO())
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +186,7 @@ func (l7 *L7) getIngressManagedSslCerts() ([]*composite.SslCertificate, error) {
 			if err != nil {
 				return nil, err
 			}
-			cert, _ := composite.GetSslCertificate(l7.cloud, key, version)
+			cert, _ := composite.GetSslCertificate(l7.cloud, key, version, klog.TODO())
 			if cert != nil {
 				klog.V(4).Infof("Populating legacy ssl cert %s for l7 %s", cert.Name, l7)
 				result = append(result, cert)
@@ -212,7 +212,7 @@ func (l7 *L7) deleteOldSSLCerts() {
 		}
 		klog.V(3).Infof("Cleaning up old SSL Certificate %s", cert.Name)
 		key, _ := l7.CreateKey(cert.Name)
-		if certErr := utils.IgnoreHTTPNotFound(composite.DeleteSslCertificate(l7.cloud, key, l7.Versions().SslCertificate)); certErr != nil {
+		if certErr := utils.IgnoreHTTPNotFound(composite.DeleteSslCertificate(l7.cloud, key, l7.Versions().SslCertificate, klog.TODO())); certErr != nil {
 			klog.Errorf("Old cert %s delete failed - %v", cert.Name, certErr)
 		}
 	}

@@ -44,6 +44,7 @@ import (
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	sautils "k8s.io/ingress-gce/pkg/utils/serviceattachment"
+	"k8s.io/klog/v2"
 	utilpointer "k8s.io/utils/pointer"
 )
 
@@ -1161,11 +1162,11 @@ func createForwardingRule(c *gce.Cloud, frName, ipAddr string) (*composite.Forwa
 		LoadBalancingScheme: string(cloud.SchemeInternal),
 		IPAddress:           ipAddr,
 	}
-	if err = composite.CreateForwardingRule(c, key, fwdRule); err != nil {
+	if err = composite.CreateForwardingRule(c, key, fwdRule, klog.TODO()); err != nil {
 		return nil, fmt.Errorf("Failed to create fake forwarding rule %s:  %q", frName, err)
 	}
 
-	rule, err := composite.GetForwardingRule(c, key, meta.VersionGA)
+	rule, err := composite.GetForwardingRule(c, key, meta.VersionGA, klog.TODO())
 	if err != nil {
 		return rule, fmt.Errorf("Failed to get forwarding rule: %q", err)
 	}

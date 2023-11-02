@@ -139,7 +139,7 @@ func checkForwardingRule(lc *L4NetLBController, svc *v1.Service, expectedPortRan
 		return fmt.Errorf("There are no ports in service!")
 	}
 	frName := utils.LegacyForwardingRuleName(svc)
-	fwdRule, err := composite.GetForwardingRule(lc.ctx.Cloud, meta.RegionalKey(frName, lc.ctx.Cloud.Region()), meta.VersionGA)
+	fwdRule, err := composite.GetForwardingRule(lc.ctx.Cloud, meta.RegionalKey(frName, lc.ctx.Cloud.Region()), meta.VersionGA, klog.TODO())
 	if err != nil {
 		return fmt.Errorf("Error getting forwarding rule: %v", err)
 	}
@@ -256,7 +256,7 @@ func getBackend(l4netController *L4NetLBController, svc *v1.Service) (string, *c
 	backendServiceName := l4netController.namer.L4Backend(svc.Namespace, svc.Name)
 	key := meta.RegionalKey(backendServiceName, l4netController.ctx.Cloud.Region())
 	backendServiceLink := cloud.SelfLink(meta.VersionGA, l4netController.ctx.Cloud.ProjectID(), "backendServices", key)
-	bs, err := composite.GetBackendService(l4netController.ctx.Cloud, key, meta.VersionGA)
+	bs, err := composite.GetBackendService(l4netController.ctx.Cloud, key, meta.VersionGA, klog.TODO())
 	return backendServiceLink, bs, err
 }
 
@@ -958,7 +958,7 @@ func TestProcessServiceUpdate(t *testing.T) {
 			Update: func(s *v1.Service) { s.Spec.LoadBalancerIP = loadBalancerIP },
 			CheckResult: func(lc *L4NetLBController, svc *v1.Service) error {
 				frName := utils.LegacyForwardingRuleName(svc)
-				fwdRule, err := composite.GetForwardingRule(lc.ctx.Cloud, meta.RegionalKey(frName, lc.ctx.Cloud.Region()), meta.VersionGA)
+				fwdRule, err := composite.GetForwardingRule(lc.ctx.Cloud, meta.RegionalKey(frName, lc.ctx.Cloud.Region()), meta.VersionGA, klog.TODO())
 				if err != nil {
 					return fmt.Errorf("Error getting forwarding rule %v", err)
 				}
@@ -1105,7 +1105,7 @@ func updateAndAssertExternalTrafficPolicy(newSvc *v1.Service, lc *L4NetLBControl
 	if err != nil {
 		return fmt.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
-	_, err = composite.GetHealthCheck(lc.ctx.Cloud, meta.RegionalKey(hcName, lc.ctx.Cloud.Region()), meta.VersionGA)
+	_, err = composite.GetHealthCheck(lc.ctx.Cloud, meta.RegionalKey(hcName, lc.ctx.Cloud.Region()), meta.VersionGA, klog.TODO())
 	if err != nil {
 		return fmt.Errorf("Error getting health check %v", err)
 	}

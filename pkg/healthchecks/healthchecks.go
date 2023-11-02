@@ -359,7 +359,7 @@ func (h *HealthChecks) createRegional(hc *translator.HealthCheck) error {
 
 	compositeType.Version = meta.VersionGA
 	compositeType.Region = key.Region
-	err = composite.CreateHealthCheck(cloud, key, compositeType)
+	err = composite.CreateHealthCheck(cloud, key, compositeType, klog.TODO())
 	if err != nil {
 		return fmt.Errorf("Error creating health check %v: %w", compositeType, err)
 	}
@@ -423,7 +423,7 @@ func (h *HealthChecks) updateRegional(hc *translator.HealthCheck) error {
 	compositeType.Version = meta.VersionGA
 	compositeType.Region = key.Region
 
-	return composite.UpdateHealthCheck(cloud, key, compositeType)
+	return composite.UpdateHealthCheck(cloud, key, compositeType, klog.TODO())
 }
 
 func (h *HealthChecks) update(hc *translator.HealthCheck) error {
@@ -476,7 +476,7 @@ func (h *HealthChecks) Delete(name string, scope meta.KeyType) error {
 		}
 		klog.V(2).Infof("Deleting regional health check %v", name)
 		// L7-ILB is the only use of regional right now
-		if err = composite.DeleteHealthCheck(cloud, key, meta.VersionGA); err != nil {
+		if err = composite.DeleteHealthCheck(cloud, key, meta.VersionGA, klog.TODO()); err != nil {
 			// Ignore error if the deletion candidate is being used by another resource.
 			// In most of the cases, this is the associated backend resource itself.
 			if utils.IsHTTPErrorCode(err, http.StatusNotFound) || utils.IsInUsedByError(err) {
@@ -510,7 +510,7 @@ func (h *HealthChecks) getRegional(name string) (*translator.HealthCheck, error)
 		return nil, err
 	}
 	// L7-ILB is the only use of regional right now
-	hc, err := composite.GetHealthCheck(cloud, key, meta.VersionGA)
+	hc, err := composite.GetHealthCheck(cloud, key, meta.VersionGA, klog.TODO())
 	if err != nil {
 		return nil, err
 	}

@@ -56,12 +56,12 @@ func (l7 *L7) checkStaticIP() (err error) {
 		return err
 	}
 
-	ip, _ := composite.GetAddress(l7.cloud, key, meta.VersionGA)
+	ip, _ := composite.GetAddress(l7.cloud, key, meta.VersionGA, klog.TODO())
 	if ip == nil {
 		klog.V(3).Infof("Creating static ip %v", managedStaticIPName)
 		address := l7.newStaticAddress(managedStaticIPName)
 
-		err = composite.CreateAddress(l7.cloud, key, address)
+		err = composite.CreateAddress(l7.cloud, key, address, klog.TODO())
 		if err != nil {
 			if utils.IsHTTPErrorCode(err, http.StatusConflict) ||
 				utils.IsHTTPErrorCode(err, http.StatusBadRequest) {
@@ -71,7 +71,7 @@ func (l7 *L7) checkStaticIP() (err error) {
 			}
 			return err
 		}
-		ip, err = composite.GetAddress(l7.cloud, key, meta.VersionGA)
+		ip, err = composite.GetAddress(l7.cloud, key, meta.VersionGA, klog.TODO())
 		if err != nil {
 			return err
 		}
