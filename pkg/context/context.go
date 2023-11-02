@@ -214,8 +214,9 @@ func NewControllerContext(
 		context.PodInformer,
 		context.EndpointSliceInformer,
 		context.KubeClient,
-		flags.F.EnableTransparentHealthChecks,
 		context,
+		flags.F.EnableTransparentHealthChecks,
+		context.EnableIngressRegionalExternal,
 	)
 	context.InstancePool = instancegroups.NewManager(&instancegroups.ManagerConfig{
 		Cloud:      context.Cloud,

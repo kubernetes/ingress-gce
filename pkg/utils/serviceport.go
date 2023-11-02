@@ -59,16 +59,17 @@ type ServicePort struct {
 	// Numerical port of the Service, retrieved from the Service
 	Port int32
 	// Name of the port of the Service, retrieved from the Service
-	PortName         string
-	Protocol         annotations.AppProtocol
-	TargetPort       intstr.IntOrString
-	NEGEnabled       bool
-	VMIPNEGEnabled   bool
-	L4RBSEnabled     bool
-	L7ILBEnabled     bool
-	THCConfiguration THCConfiguration
-	BackendConfig    *backendconfigv1.BackendConfig
-	BackendNamer     namer.BackendNamer
+	PortName             string
+	Protocol             annotations.AppProtocol
+	TargetPort           intstr.IntOrString
+	NEGEnabled           bool
+	VMIPNEGEnabled       bool
+	L4RBSEnabled         bool
+	L7ILBEnabled         bool
+	L7XLBRegionalEnabled bool
+	THCConfiguration     THCConfiguration
+	BackendConfig        *backendconfigv1.BackendConfig
+	BackendNamer         namer.BackendNamer
 	// Traffic policy fields that apply if non-nil.
 	MaxRatePerEndpoint *float64
 	CapacityScaler     *float64

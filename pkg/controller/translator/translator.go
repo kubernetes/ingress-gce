@@ -57,7 +57,15 @@ const (
 
 // getServicePortParams allows for passing parameters to getServicePort()
 type getServicePortParams struct {
-	isL7ILB bool
+	isL7ILB         bool
+	isL7XLBRegional bool
+}
+
+func (t *Translator) getServicePortParamsForIngress(ing *v1.Ingress) *getServicePortParams {
+	return &getServicePortParams{
+		isL7ILB:         utils.IsGCEL7ILBIngress(ing),
+		isL7XLBRegional: t.enableL7XLBRegional && utils.IsGCEL7XLBRegionalIngress(ing),
+	}
 }
 
 // NewTranslator returns a new Translator.
@@ -67,8 +75,10 @@ func NewTranslator(serviceInformer cache.SharedIndexInformer,
 	podInformer cache.SharedIndexInformer,
 	endpointSliceInformer cache.SharedIndexInformer,
 	kubeClient kubernetes.Interface,
-	enableTHC bool,
-	recorderGetter healthchecks.RecorderGetter) *Translator {
+	recorderGetter healthchecks.RecorderGetter,
+	enableTHC,
+	enableL7XLBRegional bool,
+) *Translator {
 	return &Translator{
 		ServiceInformer:       serviceInformer,
 		BackendConfigInformer: backendConfigInformer,
@@ -78,6 +88,7 @@ func NewTranslator(serviceInformer cache.SharedIndexInformer,
 		KubeClient:            kubeClient,
 		enableTHC:             enableTHC,
 		recorderGetter:        recorderGetter,
+		enableL7XLBRegional:   enableL7XLBRegional,
 	}
 }
 
@@ -89,8 +100,9 @@ type Translator struct {
 	PodInformer           cache.SharedIndexInformer
 	EndpointSliceInformer cache.SharedIndexInformer
 	KubeClient            kubernetes.Interface
-	enableTHC             bool
 	recorderGetter        healthchecks.RecorderGetter
+	enableTHC             bool
+	enableL7XLBRegional   bool
 }
 
 func (t *Translator) getCachedService(id utils.ServicePortID) (*api_v1.Service, error) {
@@ -272,13 +284,14 @@ func (t *Translator) getServicePort(id utils.ServicePortID, params *getServicePo
 	// We periodically add information to the ServicePort to ensure that we
 	// always return as much as possible, rather than nil, if there was a non-fatal error.
 	svcPort := &utils.ServicePort{
-		ID:           id,
-		NodePort:     int64(port.NodePort),
-		Port:         port.Port,
-		PortName:     port.Name,
-		TargetPort:   port.TargetPort,
-		L7ILBEnabled: params.isL7ILB,
-		BackendNamer: namer,
+		ID:                   id,
+		NodePort:             int64(port.NodePort),
+		Port:                 port.Port,
+		PortName:             port.Name,
+		TargetPort:           port.TargetPort,
+		L7ILBEnabled:         params.isL7ILB,
+		L7XLBRegionalEnabled: params.isL7XLBRegional,
+		BackendNamer:         namer,
 	}
 
 	if err := maybeEnableNEG(svcPort, svc); err != nil {
@@ -310,9 +323,7 @@ func (t *Translator) TranslateIngress(ing *v1.Ingress, systemDefaultBackend util
 	var errs []error
 	var warnings bool
 	urlMap := utils.NewGCEURLMap()
-
-	params := &getServicePortParams{}
-	params.isL7ILB = utils.IsGCEL7ILBIngress(ing)
+	params := t.getServicePortParamsForIngress(ing)
 
 	for _, rule := range ing.Spec.Rules {
 		if rule.HTTP == nil {
