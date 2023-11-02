@@ -126,7 +126,7 @@ func getService(serviceLister cache.Indexer, namespace, name string, logger klog
 func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negServicePortName, kubeSystemUID, port string, networkEndpointType negtypes.NetworkEndpointType, cloud negtypes.NetworkEndpointGroupCloud, serviceLister cache.Indexer, recorder record.EventRecorder, version meta.Version, customName bool, networkInfo network.NetworkInfo, logger klog.Logger) (negv1beta1.NegObjectReference, error) {
 	negLogger := logger.WithValues("negName", negName, "zone", zone)
 	var negRef negv1beta1.NegObjectReference
-	neg, err := cloud.GetNetworkEndpointGroup(negName, zone, version)
+	neg, err := cloud.GetNetworkEndpointGroup(negName, zone, version, logger)
 	if err != nil {
 		if !utils.IsNotFoundError(err) {
 			negLogger.Error(err, "Failed to get Neg")
@@ -163,7 +163,7 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 
 			needToCreate = true
 			negLogger.Info("NEG does not match network and subnetwork of the cluster. Deleting NEG")
-			err = cloud.DeleteNetworkEndpointGroup(negName, zone, version)
+			err = cloud.DeleteNetworkEndpointGroup(negName, zone, version, logger)
 			if err != nil {
 				return negRef, err
 			}
@@ -201,7 +201,7 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 			Network:             networkInfo.NetworkURL,
 			Subnetwork:          subnetwork,
 			Description:         desc,
-		}, zone)
+		}, zone, logger)
 		if err != nil {
 			return negRef, err
 		}
@@ -214,7 +214,7 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 
 	if neg == nil {
 		var err error
-		neg, err = cloud.GetNetworkEndpointGroup(negName, zone, version)
+		neg, err = cloud.GetNetworkEndpointGroup(negName, zone, version, logger)
 		if err != nil {
 			negLogger.Error(err, "Error while retrieving NEG after initialization")
 			return negRef, err
@@ -684,7 +684,7 @@ func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter negtypes.
 	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
 	endpointPodLabelMap := labels.EndpointPodLabelMap{}
 	for _, zone := range zones {
-		networkEndpointsWithHealthStatus, err := cloud.ListNetworkEndpoints(negName, zone, false, version)
+		networkEndpointsWithHealthStatus, err := cloud.ListNetworkEndpoints(negName, zone, false, version, logger)
 		if err != nil {
 			// It is possible for a NEG to be missing in a zone without candidate nodes. Log and ignore this error.
 			// NEG not found in a candidate zone is an error.

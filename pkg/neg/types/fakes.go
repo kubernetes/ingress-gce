@@ -29,6 +29,7 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -146,7 +147,7 @@ func NewFakeNetworkEndpointGroupCloud(subnetwork, network string) NetworkEndpoin
 	}
 }
 
-func (f *FakeNetworkEndpointGroupCloud) GetNetworkEndpointGroup(name string, zone string, version meta.Version) (*composite.NetworkEndpointGroup, error) {
+func (f *FakeNetworkEndpointGroupCloud) GetNetworkEndpointGroup(name string, zone string, version meta.Version, _ klog.Logger) (*composite.NetworkEndpointGroup, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	negs, ok := f.NetworkEndpointGroups[zone]
@@ -164,13 +165,13 @@ func networkEndpointKey(name, zone string) string {
 	return fmt.Sprintf("%s-%s", zone, name)
 }
 
-func (f *FakeNetworkEndpointGroupCloud) ListNetworkEndpointGroup(zone string, version meta.Version) ([]*composite.NetworkEndpointGroup, error) {
+func (f *FakeNetworkEndpointGroupCloud) ListNetworkEndpointGroup(zone string, version meta.Version, _ klog.Logger) ([]*composite.NetworkEndpointGroup, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.NetworkEndpointGroups[zone], nil
 }
 
-func (f *FakeNetworkEndpointGroupCloud) AggregatedListNetworkEndpointGroup(version meta.Version) (map[*meta.Key]*composite.NetworkEndpointGroup, error) {
+func (f *FakeNetworkEndpointGroupCloud) AggregatedListNetworkEndpointGroup(version meta.Version, _ klog.Logger) (map[*meta.Key]*composite.NetworkEndpointGroup, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	result := make(map[*meta.Key]*composite.NetworkEndpointGroup)
@@ -182,7 +183,7 @@ func (f *FakeNetworkEndpointGroupCloud) AggregatedListNetworkEndpointGroup(versi
 	return result, nil
 }
 
-func (f *FakeNetworkEndpointGroupCloud) CreateNetworkEndpointGroup(neg *composite.NetworkEndpointGroup, zone string) error {
+func (f *FakeNetworkEndpointGroupCloud) CreateNetworkEndpointGroup(neg *composite.NetworkEndpointGroup, zone string, _ klog.Logger) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	neg.SelfLink = cloud.NewNetworkEndpointGroupsResourceID("mock-project", zone, neg.Name).SelfLink(meta.VersionAlpha)
@@ -194,7 +195,7 @@ func (f *FakeNetworkEndpointGroupCloud) CreateNetworkEndpointGroup(neg *composit
 	return nil
 }
 
-func (f *FakeNetworkEndpointGroupCloud) DeleteNetworkEndpointGroup(name string, zone string, version meta.Version) error {
+func (f *FakeNetworkEndpointGroupCloud) DeleteNetworkEndpointGroup(name string, zone string, version meta.Version, _ klog.Logger) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	delete(f.NetworkEndpoints, networkEndpointKey(name, zone))
@@ -215,14 +216,14 @@ func (f *FakeNetworkEndpointGroupCloud) DeleteNetworkEndpointGroup(name string, 
 	return nil
 }
 
-func (f *FakeNetworkEndpointGroupCloud) AttachNetworkEndpoints(name, zone string, endpoints []*composite.NetworkEndpoint, version meta.Version) error {
+func (f *FakeNetworkEndpointGroupCloud) AttachNetworkEndpoints(name, zone string, endpoints []*composite.NetworkEndpoint, version meta.Version, _ klog.Logger) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.NetworkEndpoints[networkEndpointKey(name, zone)] = append(f.NetworkEndpoints[networkEndpointKey(name, zone)], endpoints...)
 	return nil
 }
 
-func (f *FakeNetworkEndpointGroupCloud) DetachNetworkEndpoints(name, zone string, endpoints []*composite.NetworkEndpoint, version meta.Version) error {
+func (f *FakeNetworkEndpointGroupCloud) DetachNetworkEndpoints(name, zone string, endpoints []*composite.NetworkEndpoint, version meta.Version, _ klog.Logger) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	newList := []*composite.NetworkEndpoint{}
@@ -243,7 +244,7 @@ func (f *FakeNetworkEndpointGroupCloud) DetachNetworkEndpoints(name, zone string
 	return nil
 }
 
-func (f *FakeNetworkEndpointGroupCloud) ListNetworkEndpoints(name, zone string, showHealthStatus bool, version meta.Version) ([]*composite.NetworkEndpointWithHealthStatus, error) {
+func (f *FakeNetworkEndpointGroupCloud) ListNetworkEndpoints(name, zone string, showHealthStatus bool, version meta.Version, _ klog.Logger) ([]*composite.NetworkEndpointWithHealthStatus, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	ret := []*composite.NetworkEndpointWithHealthStatus{}

@@ -20,6 +20,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog/v2"
 )
 
 // ZoneGetter is an interface for retrieve zone related information
@@ -30,14 +31,14 @@ type ZoneGetter interface {
 
 // NetworkEndpointGroupCloud is an interface for managing gce network endpoint group.
 type NetworkEndpointGroupCloud interface {
-	GetNetworkEndpointGroup(name string, zone string, version meta.Version) (*composite.NetworkEndpointGroup, error)
-	ListNetworkEndpointGroup(zone string, version meta.Version) ([]*composite.NetworkEndpointGroup, error)
-	AggregatedListNetworkEndpointGroup(version meta.Version) (map[*meta.Key]*composite.NetworkEndpointGroup, error)
-	CreateNetworkEndpointGroup(neg *composite.NetworkEndpointGroup, zone string) error
-	DeleteNetworkEndpointGroup(name string, zone string, version meta.Version) error
-	AttachNetworkEndpoints(name, zone string, endpoints []*composite.NetworkEndpoint, version meta.Version) error
-	DetachNetworkEndpoints(name, zone string, endpoints []*composite.NetworkEndpoint, version meta.Version) error
-	ListNetworkEndpoints(name, zone string, showHealthStatus bool, version meta.Version) ([]*composite.NetworkEndpointWithHealthStatus, error)
+	GetNetworkEndpointGroup(name string, zone string, version meta.Version, logger klog.Logger) (*composite.NetworkEndpointGroup, error)
+	ListNetworkEndpointGroup(zone string, version meta.Version, logger klog.Logger) ([]*composite.NetworkEndpointGroup, error)
+	AggregatedListNetworkEndpointGroup(version meta.Version, logger klog.Logger) (map[*meta.Key]*composite.NetworkEndpointGroup, error)
+	CreateNetworkEndpointGroup(neg *composite.NetworkEndpointGroup, zone string, logger klog.Logger) error
+	DeleteNetworkEndpointGroup(name string, zone string, version meta.Version, logger klog.Logger) error
+	AttachNetworkEndpoints(name, zone string, endpoints []*composite.NetworkEndpoint, version meta.Version, logger klog.Logger) error
+	DetachNetworkEndpoints(name, zone string, endpoints []*composite.NetworkEndpoint, version meta.Version, logger klog.Logger) error
+	ListNetworkEndpoints(name, zone string, showHealthStatus bool, version meta.Version, logger klog.Logger) ([]*composite.NetworkEndpointWithHealthStatus, error)
 	NetworkURL() string
 	SubnetworkURL() string
 	NetworkProjectID() string
