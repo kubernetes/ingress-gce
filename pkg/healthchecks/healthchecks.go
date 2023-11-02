@@ -30,7 +30,6 @@ import (
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
-	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/healthcheck"
@@ -342,7 +341,7 @@ func (h *HealthChecks) isDescriptionOnlyUpdateNeeded(changes *fieldDiffs, existi
 }
 
 // TODO(shance): merge with existing hc code
-func (h *HealthChecks) createILB(hc *translator.HealthCheck) error {
+func (h *HealthChecks) createRegional(hc *translator.HealthCheck) error {
 	alpha, err := hc.ToAlphaComputeHealthCheck()
 	if err != nil {
 		return err
@@ -353,12 +352,12 @@ func (h *HealthChecks) createILB(hc *translator.HealthCheck) error {
 	}
 
 	cloud := h.cloud.(*gce.Cloud)
-	key, err := composite.CreateKey(cloud, hc.Name, features.L7ILBScope())
+	key, err := composite.CreateKey(cloud, hc.Name, meta.Regional)
 	if err != nil {
 		return err
 	}
 
-	compositeType.Version = features.L7ILBVersions().HealthCheck
+	compositeType.Version = meta.VersionGA
 	compositeType.Region = key.Region
 	err = composite.CreateHealthCheck(cloud, key, compositeType)
 	if err != nil {
@@ -375,7 +374,8 @@ func (h *HealthChecks) create(hc *translator.HealthCheck, bchcc *backendconfigv1
 	}
 	// special case ILB to avoid mucking with stable HC code
 	if hc.ForILB {
-		return h.createILB(hc)
+		klog.V(3).Infof("Creating ILB Health Check, name: %s", hc.Name)
+		return h.createRegional(hc)
 	}
 
 	switch hc.Version() {
@@ -406,7 +406,7 @@ func (h *HealthChecks) create(hc *translator.HealthCheck, bchcc *backendconfigv1
 }
 
 // TODO(shance): merge with existing hc code
-func (h *HealthChecks) updateILB(hc *translator.HealthCheck) error {
+func (h *HealthChecks) updateRegional(hc *translator.HealthCheck) error {
 	// special case ILB to avoid mucking with stable HC code
 	alpha, err := hc.ToAlphaComputeHealthCheck()
 	if err != nil {
@@ -417,10 +417,10 @@ func (h *HealthChecks) updateILB(hc *translator.HealthCheck) error {
 		return fmt.Errorf("Error converting newHC to composite: %w", err)
 	}
 	cloud := h.cloud.(*gce.Cloud)
-	key, err := composite.CreateKey(cloud, hc.Name, features.L7ILBScope())
+	key, err := composite.CreateKey(cloud, hc.Name, meta.Regional)
 
 	// Update fields
-	compositeType.Version = features.L7ILBVersions().HealthCheck
+	compositeType.Version = meta.VersionGA
 	compositeType.Region = key.Region
 
 	return composite.UpdateHealthCheck(cloud, key, compositeType)
@@ -428,7 +428,8 @@ func (h *HealthChecks) updateILB(hc *translator.HealthCheck) error {
 
 func (h *HealthChecks) update(hc *translator.HealthCheck) error {
 	if hc.ForILB {
-		return h.updateILB(hc)
+		klog.V(3).Infof("Updating ILB Health Check, name: %s", hc)
+		return h.updateRegional(hc)
 	}
 	switch hc.Version() {
 	case meta.VersionAlpha:
@@ -475,7 +476,7 @@ func (h *HealthChecks) Delete(name string, scope meta.KeyType) error {
 		}
 		klog.V(2).Infof("Deleting regional health check %v", name)
 		// L7-ILB is the only use of regional right now
-		if err = composite.DeleteHealthCheck(cloud, key, features.L7ILBVersions().HealthCheck); err != nil {
+		if err = composite.DeleteHealthCheck(cloud, key, meta.VersionGA); err != nil {
 			// Ignore error if the deletion candidate is being used by another resource.
 			// In most of the cases, this is the associated backend resource itself.
 			if utils.IsHTTPErrorCode(err, http.StatusNotFound) || utils.IsInUsedByError(err) {
@@ -502,15 +503,14 @@ func (h *HealthChecks) Delete(name string, scope meta.KeyType) error {
 }
 
 // TODO(shance): merge with existing hc code
-func (h *HealthChecks) getILB(name string) (*translator.HealthCheck, error) {
-	klog.V(3).Infof("Getting ILB Health Check, name: %s", name)
+func (h *HealthChecks) getRegional(name string) (*translator.HealthCheck, error) {
 	cloud := h.cloud.(*gce.Cloud)
 	key, err := composite.CreateKey(cloud, name, meta.Regional)
 	if err != nil {
 		return nil, err
 	}
 	// L7-ILB is the only use of regional right now
-	hc, err := composite.GetHealthCheck(cloud, key, features.L7ILBVersions().HealthCheck)
+	hc, err := composite.GetHealthCheck(cloud, key, meta.VersionGA)
 	if err != nil {
 		return nil, err
 	}
@@ -537,7 +537,8 @@ func (h *HealthChecks) Get(name string, version meta.Version, scope meta.KeyType
 
 	// L7-ILB is the only use of regional right now
 	if scope == meta.Regional {
-		return h.getILB(name)
+		klog.V(3).Infof("Getting ILB Health Check, name: %s", name)
+		return h.getRegional(name)
 	}
 
 	var hc *computealpha.HealthCheck
