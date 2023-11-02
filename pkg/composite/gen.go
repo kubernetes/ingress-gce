@@ -3823,7 +3823,7 @@ type WeightedBackendService struct {
 	NullFields      []string `json:"-"`
 }
 
-func CreateAddress(gceCloud *gce.Cloud, key *meta.Key, address *Address) error {
+func CreateAddress(gceCloud *gce.Cloud, key *meta.Key, address *Address, logger klog.Logger) error {
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("Address", "create", key.Region, key.Zone, string(address.Version))
@@ -3834,13 +3834,14 @@ func CreateAddress(gceCloud *gce.Cloud, key *meta.Key, address *Address) error {
 		if err != nil {
 			return err
 		}
+		alphaLogger := logger.WithValues("name", alpha.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Creating alpha region Address %v", alpha.Name)
+			alphaLogger.Info("Creating alpha region Address")
 			alpha.Region = key.Region
 			return mc.Observe(gceCloud.Compute().AlphaAddresses().Insert(ctx, key, alpha))
 		default:
-			klog.V(3).Infof("Creating alpha Address %v", alpha.Name)
+			alphaLogger.Info("Creating alpha Address")
 			return mc.Observe(gceCloud.Compute().AlphaGlobalAddresses().Insert(ctx, key, alpha))
 		}
 	case meta.VersionBeta:
@@ -3848,13 +3849,14 @@ func CreateAddress(gceCloud *gce.Cloud, key *meta.Key, address *Address) error {
 		if err != nil {
 			return err
 		}
+		betaLogger := logger.WithValues("name", beta.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Creating beta region Address %v", beta.Name)
+			betaLogger.Info("Creating beta region Address")
 			beta.Region = key.Region
 			return mc.Observe(gceCloud.Compute().BetaAddresses().Insert(ctx, key, beta))
 		default:
-			klog.V(3).Infof("Creating beta Address %v", beta.Name)
+			betaLogger.Info("Creating beta Address")
 			return mc.Observe(gceCloud.Compute().BetaGlobalAddresses().Insert(ctx, key, beta))
 		}
 	default:
@@ -3862,19 +3864,21 @@ func CreateAddress(gceCloud *gce.Cloud, key *meta.Key, address *Address) error {
 		if err != nil {
 			return err
 		}
+		gaLogger := logger.WithValues("name", ga.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Creating ga region Address %v", ga.Name)
+			gaLogger.Info("Creating ga region Address")
 			ga.Region = key.Region
 			return mc.Observe(gceCloud.Compute().Addresses().Insert(ctx, key, ga))
 		default:
-			klog.V(3).Infof("Creating ga Address %v", ga.Name)
+			gaLogger.Info("Creating ga Address")
 			return mc.Observe(gceCloud.Compute().GlobalAddresses().Insert(ctx, key, ga))
 		}
 	}
 }
 
-func DeleteAddress(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) error {
+func DeleteAddress(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger) error {
+	logger = logger.WithValues("name", key.Name)
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("Address", "delete", key.Region, key.Zone, string(version))
@@ -3883,34 +3887,35 @@ func DeleteAddress(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) err
 	case meta.VersionAlpha:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Deleting alpha region Address %v", key.Name)
+			logger.Info("Deleting alpha region Address")
 			return mc.Observe(gceCloud.Compute().AlphaAddresses().Delete(ctx, key))
 		default:
-			klog.V(3).Infof("Deleting alpha Address %v", key.Name)
+			logger.Info("Deleting alpha Address")
 			return mc.Observe(gceCloud.Compute().AlphaGlobalAddresses().Delete(ctx, key))
 		}
 	case meta.VersionBeta:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Deleting beta region Address %v", key.Name)
+			logger.Info("Deleting beta region Address")
 			return mc.Observe(gceCloud.Compute().BetaAddresses().Delete(ctx, key))
 		default:
-			klog.V(3).Infof("Deleting beta Address %v", key.Name)
+			logger.Info("Deleting beta Address")
 			return mc.Observe(gceCloud.Compute().BetaGlobalAddresses().Delete(ctx, key))
 		}
 	default:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Deleting ga region Address %v", key.Name)
+			logger.Info("Deleting ga region Address")
 			return mc.Observe(gceCloud.Compute().Addresses().Delete(ctx, key))
 		default:
-			klog.V(3).Infof("Deleting ga Address %v", key.Name)
+			logger.Info("Deleting ga Address")
 			return mc.Observe(gceCloud.Compute().GlobalAddresses().Delete(ctx, key))
 		}
 	}
 }
 
-func GetAddress(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) (*Address, error) {
+func GetAddress(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger) (*Address, error) {
+	logger = logger.WithValues("name", key.Name)
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("Address", "get", key.Region, key.Zone, string(version))
@@ -3921,28 +3926,28 @@ func GetAddress(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) (*Addr
 	case meta.VersionAlpha:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Getting alpha region Address %v", key.Name)
+			logger.Info("Getting alpha region Address")
 			gceObj, err = gceCloud.Compute().AlphaAddresses().Get(ctx, key)
 		default:
-			klog.V(3).Infof("Getting alpha Address %v", key.Name)
+			logger.Info("Getting alpha Address")
 			gceObj, err = gceCloud.Compute().AlphaGlobalAddresses().Get(ctx, key)
 		}
 	case meta.VersionBeta:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Getting beta region Address %v", key.Name)
+			logger.Info("Getting beta region Address")
 			gceObj, err = gceCloud.Compute().BetaAddresses().Get(ctx, key)
 		default:
-			klog.V(3).Infof("Getting beta Address %v", key.Name)
+			logger.Info("Getting beta Address")
 			gceObj, err = gceCloud.Compute().BetaGlobalAddresses().Get(ctx, key)
 		}
 	default:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Getting ga region Address %v", key.Name)
+			logger.Info("Getting ga region Address")
 			gceObj, err = gceCloud.Compute().Addresses().Get(ctx, key)
 		default:
-			klog.V(3).Infof("Getting ga Address %v", key.Name)
+			logger.Info("Getting ga Address")
 			gceObj, err = gceCloud.Compute().GlobalAddresses().Get(ctx, key)
 		}
 	}
@@ -3960,7 +3965,7 @@ func GetAddress(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) (*Addr
 	return compositeType, nil
 }
 
-func ListAddresses(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) ([]*Address, error) {
+func ListAddresses(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger) ([]*Address, error) {
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("Address", "list", key.Region, key.Zone, string(version))
@@ -3971,28 +3976,28 @@ func ListAddresses(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) ([]
 	case meta.VersionAlpha:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Listing alpha region Address")
+			logger.Info("Listing alpha region Address")
 			gceObjs, err = gceCloud.Compute().AlphaAddresses().List(ctx, key.Region, filter.None)
 		default:
-			klog.V(3).Infof("Listing alpha Address")
+			logger.Info("Listing alpha Address")
 			gceObjs, err = gceCloud.Compute().AlphaGlobalAddresses().List(ctx, filter.None)
 		}
 	case meta.VersionBeta:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Listing beta region Address")
+			logger.Info("Listing beta region Address")
 			gceObjs, err = gceCloud.Compute().BetaAddresses().List(ctx, key.Region, filter.None)
 		default:
-			klog.V(3).Infof("Listing beta Address")
+			logger.Info("Listing beta Address")
 			gceObjs, err = gceCloud.Compute().BetaGlobalAddresses().List(ctx, filter.None)
 		}
 	default:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Listing ga region Address")
+			logger.Info("Listing ga region Address")
 			gceObjs, err = gceCloud.Compute().Addresses().List(ctx, key.Region, filter.None)
 		default:
-			klog.V(3).Infof("Listing ga Address")
+			logger.Info("Listing ga Address")
 			gceObjs, err = gceCloud.Compute().GlobalAddresses().List(ctx, filter.None)
 		}
 	}
@@ -4101,7 +4106,7 @@ func (address *Address) ToGA() (*compute.Address, error) {
 	return ga, nil
 }
 
-func CreateBackendService(gceCloud *gce.Cloud, key *meta.Key, backendService *BackendService) error {
+func CreateBackendService(gceCloud *gce.Cloud, key *meta.Key, backendService *BackendService, logger klog.Logger) error {
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("BackendService", "create", key.Region, key.Zone, string(backendService.Version))
@@ -4112,13 +4117,14 @@ func CreateBackendService(gceCloud *gce.Cloud, key *meta.Key, backendService *Ba
 		if err != nil {
 			return err
 		}
+		alphaLogger := logger.WithValues("name", alpha.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Creating alpha region BackendService %v", alpha.Name)
+			alphaLogger.Info("Creating alpha region BackendService")
 			alpha.Region = key.Region
 			return mc.Observe(gceCloud.Compute().AlphaRegionBackendServices().Insert(ctx, key, alpha))
 		default:
-			klog.V(3).Infof("Creating alpha BackendService %v", alpha.Name)
+			alphaLogger.Info("Creating alpha BackendService")
 			return mc.Observe(gceCloud.Compute().AlphaBackendServices().Insert(ctx, key, alpha))
 		}
 	case meta.VersionBeta:
@@ -4126,13 +4132,14 @@ func CreateBackendService(gceCloud *gce.Cloud, key *meta.Key, backendService *Ba
 		if err != nil {
 			return err
 		}
+		betaLogger := logger.WithValues("name", beta.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Creating beta region BackendService %v", beta.Name)
+			betaLogger.Info("Creating beta region BackendService")
 			beta.Region = key.Region
 			return mc.Observe(gceCloud.Compute().BetaRegionBackendServices().Insert(ctx, key, beta))
 		default:
-			klog.V(3).Infof("Creating beta BackendService %v", beta.Name)
+			betaLogger.Info("Creating beta BackendService")
 			return mc.Observe(gceCloud.Compute().BetaBackendServices().Insert(ctx, key, beta))
 		}
 	default:
@@ -4140,19 +4147,20 @@ func CreateBackendService(gceCloud *gce.Cloud, key *meta.Key, backendService *Ba
 		if err != nil {
 			return err
 		}
+		gaLogger := logger.WithValues("name", ga.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Creating ga region BackendService %v", ga.Name)
+			gaLogger.Info("Creating ga region BackendService")
 			ga.Region = key.Region
 			return mc.Observe(gceCloud.Compute().RegionBackendServices().Insert(ctx, key, ga))
 		default:
-			klog.V(3).Infof("Creating ga BackendService %v", ga.Name)
+			gaLogger.Info("Creating ga BackendService")
 			return mc.Observe(gceCloud.Compute().BackendServices().Insert(ctx, key, ga))
 		}
 	}
 }
 
-func UpdateBackendService(gceCloud *gce.Cloud, key *meta.Key, backendService *BackendService) error {
+func UpdateBackendService(gceCloud *gce.Cloud, key *meta.Key, backendService *BackendService, logger klog.Logger) error {
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("BackendService", "update", key.Region, key.Zone, string(backendService.Version))
@@ -4162,12 +4170,13 @@ func UpdateBackendService(gceCloud *gce.Cloud, key *meta.Key, backendService *Ba
 		if err != nil {
 			return err
 		}
+		alphaLogger := logger.WithValues("name", alpha.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Updating alpha region BackendService %v", alpha.Name)
+			alphaLogger.Info("Updating alpha region BackendService")
 			return mc.Observe(gceCloud.Compute().AlphaRegionBackendServices().Update(ctx, key, alpha))
 		default:
-			klog.V(3).Infof("Updating alpha BackendService %v", alpha.Name)
+			alphaLogger.Info("Updating alpha BackendService")
 			return mc.Observe(gceCloud.Compute().AlphaBackendServices().Update(ctx, key, alpha))
 		}
 	case meta.VersionBeta:
@@ -4175,12 +4184,13 @@ func UpdateBackendService(gceCloud *gce.Cloud, key *meta.Key, backendService *Ba
 		if err != nil {
 			return err
 		}
+		betaLogger := logger.WithValues("name", beta.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Updating beta region BackendService %v", beta.Name)
+			betaLogger.Info("Updating beta region BackendService")
 			return mc.Observe(gceCloud.Compute().BetaRegionBackendServices().Update(ctx, key, beta))
 		default:
-			klog.V(3).Infof("Updating beta BackendService %v", beta.Name)
+			betaLogger.Info("Updating beta BackendService")
 			return mc.Observe(gceCloud.Compute().BetaBackendServices().Update(ctx, key, beta))
 		}
 	default:
@@ -4188,18 +4198,20 @@ func UpdateBackendService(gceCloud *gce.Cloud, key *meta.Key, backendService *Ba
 		if err != nil {
 			return err
 		}
+		gaLogger := logger.WithValues("name", ga.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Updating ga region BackendService %v", ga.Name)
+			gaLogger.Info("Updating ga region BackendService")
 			return mc.Observe(gceCloud.Compute().RegionBackendServices().Update(ctx, key, ga))
 		default:
-			klog.V(3).Infof("Updating ga BackendService %v", ga.Name)
+			gaLogger.Info("Updating ga BackendService")
 			return mc.Observe(gceCloud.Compute().BackendServices().Update(ctx, key, ga))
 		}
 	}
 }
 
-func DeleteBackendService(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) error {
+func DeleteBackendService(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger) error {
+	logger = logger.WithValues("name", key.Name)
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("BackendService", "delete", key.Region, key.Zone, string(version))
@@ -4208,34 +4220,35 @@ func DeleteBackendService(gceCloud *gce.Cloud, key *meta.Key, version meta.Versi
 	case meta.VersionAlpha:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Deleting alpha region BackendService %v", key.Name)
+			logger.Info("Deleting alpha region BackendService")
 			return mc.Observe(gceCloud.Compute().AlphaRegionBackendServices().Delete(ctx, key))
 		default:
-			klog.V(3).Infof("Deleting alpha BackendService %v", key.Name)
+			logger.Info("Deleting alpha BackendService")
 			return mc.Observe(gceCloud.Compute().AlphaBackendServices().Delete(ctx, key))
 		}
 	case meta.VersionBeta:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Deleting beta region BackendService %v", key.Name)
+			logger.Info("Deleting beta region BackendService")
 			return mc.Observe(gceCloud.Compute().BetaRegionBackendServices().Delete(ctx, key))
 		default:
-			klog.V(3).Infof("Deleting beta BackendService %v", key.Name)
+			logger.Info("Deleting beta BackendService")
 			return mc.Observe(gceCloud.Compute().BetaBackendServices().Delete(ctx, key))
 		}
 	default:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Deleting ga region BackendService %v", key.Name)
+			logger.Info("Deleting ga region BackendService")
 			return mc.Observe(gceCloud.Compute().RegionBackendServices().Delete(ctx, key))
 		default:
-			klog.V(3).Infof("Deleting ga BackendService %v", key.Name)
+			logger.Info("Deleting ga BackendService")
 			return mc.Observe(gceCloud.Compute().BackendServices().Delete(ctx, key))
 		}
 	}
 }
 
-func GetBackendService(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) (*BackendService, error) {
+func GetBackendService(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger) (*BackendService, error) {
+	logger = logger.WithValues("name", key.Name)
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("BackendService", "get", key.Region, key.Zone, string(version))
@@ -4246,28 +4259,28 @@ func GetBackendService(gceCloud *gce.Cloud, key *meta.Key, version meta.Version)
 	case meta.VersionAlpha:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Getting alpha region BackendService %v", key.Name)
+			logger.Info("Getting alpha region BackendService")
 			gceObj, err = gceCloud.Compute().AlphaRegionBackendServices().Get(ctx, key)
 		default:
-			klog.V(3).Infof("Getting alpha BackendService %v", key.Name)
+			logger.Info("Getting alpha BackendService")
 			gceObj, err = gceCloud.Compute().AlphaBackendServices().Get(ctx, key)
 		}
 	case meta.VersionBeta:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Getting beta region BackendService %v", key.Name)
+			logger.Info("Getting beta region BackendService")
 			gceObj, err = gceCloud.Compute().BetaRegionBackendServices().Get(ctx, key)
 		default:
-			klog.V(3).Infof("Getting beta BackendService %v", key.Name)
+			logger.Info("Getting beta BackendService")
 			gceObj, err = gceCloud.Compute().BetaBackendServices().Get(ctx, key)
 		}
 	default:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Getting ga region BackendService %v", key.Name)
+			logger.Info("Getting ga region BackendService")
 			gceObj, err = gceCloud.Compute().RegionBackendServices().Get(ctx, key)
 		default:
-			klog.V(3).Infof("Getting ga BackendService %v", key.Name)
+			logger.Info("Getting ga BackendService")
 			gceObj, err = gceCloud.Compute().BackendServices().Get(ctx, key)
 		}
 	}
@@ -4282,7 +4295,7 @@ func GetBackendService(gceCloud *gce.Cloud, key *meta.Key, version meta.Version)
 	return compositeType, nil
 }
 
-func ListBackendServices(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) ([]*BackendService, error) {
+func ListBackendServices(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger) ([]*BackendService, error) {
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("BackendService", "list", key.Region, key.Zone, string(version))
@@ -4293,28 +4306,28 @@ func ListBackendServices(gceCloud *gce.Cloud, key *meta.Key, version meta.Versio
 	case meta.VersionAlpha:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Listing alpha region BackendService")
+			logger.Info("Listing alpha region BackendService")
 			gceObjs, err = gceCloud.Compute().AlphaRegionBackendServices().List(ctx, key.Region, filter.None)
 		default:
-			klog.V(3).Infof("Listing alpha BackendService")
+			logger.Info("Listing alpha BackendService")
 			gceObjs, err = gceCloud.Compute().AlphaBackendServices().List(ctx, filter.None)
 		}
 	case meta.VersionBeta:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Listing beta region BackendService")
+			logger.Info("Listing beta region BackendService")
 			gceObjs, err = gceCloud.Compute().BetaRegionBackendServices().List(ctx, key.Region, filter.None)
 		default:
-			klog.V(3).Infof("Listing beta BackendService")
+			logger.Info("Listing beta BackendService")
 			gceObjs, err = gceCloud.Compute().BetaBackendServices().List(ctx, filter.None)
 		}
 	default:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Listing ga region BackendService")
+			logger.Info("Listing ga region BackendService")
 			gceObjs, err = gceCloud.Compute().RegionBackendServices().List(ctx, key.Region, filter.None)
 		default:
-			klog.V(3).Infof("Listing ga BackendService")
+			logger.Info("Listing ga BackendService")
 			gceObjs, err = gceCloud.Compute().BackendServices().List(ctx, filter.None)
 		}
 	}
@@ -4471,7 +4484,7 @@ func (backendService *BackendService) ToGA() (*compute.BackendService, error) {
 	return ga, nil
 }
 
-func CreateForwardingRule(gceCloud *gce.Cloud, key *meta.Key, forwardingRule *ForwardingRule) error {
+func CreateForwardingRule(gceCloud *gce.Cloud, key *meta.Key, forwardingRule *ForwardingRule, logger klog.Logger) error {
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("ForwardingRule", "create", key.Region, key.Zone, string(forwardingRule.Version))
@@ -4482,13 +4495,14 @@ func CreateForwardingRule(gceCloud *gce.Cloud, key *meta.Key, forwardingRule *Fo
 		if err != nil {
 			return err
 		}
+		alphaLogger := logger.WithValues("name", alpha.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Creating alpha region ForwardingRule %v", alpha.Name)
+			alphaLogger.Info("Creating alpha region ForwardingRule")
 			alpha.Region = key.Region
 			return mc.Observe(gceCloud.Compute().AlphaForwardingRules().Insert(ctx, key, alpha))
 		default:
-			klog.V(3).Infof("Creating alpha ForwardingRule %v", alpha.Name)
+			alphaLogger.Info("Creating alpha ForwardingRule")
 			return mc.Observe(gceCloud.Compute().AlphaGlobalForwardingRules().Insert(ctx, key, alpha))
 		}
 	case meta.VersionBeta:
@@ -4496,13 +4510,14 @@ func CreateForwardingRule(gceCloud *gce.Cloud, key *meta.Key, forwardingRule *Fo
 		if err != nil {
 			return err
 		}
+		betaLogger := logger.WithValues("name", beta.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Creating beta region ForwardingRule %v", beta.Name)
+			betaLogger.Info("Creating beta region ForwardingRule")
 			beta.Region = key.Region
 			return mc.Observe(gceCloud.Compute().BetaForwardingRules().Insert(ctx, key, beta))
 		default:
-			klog.V(3).Infof("Creating beta ForwardingRule %v", beta.Name)
+			betaLogger.Info("Creating beta ForwardingRule")
 			return mc.Observe(gceCloud.Compute().BetaGlobalForwardingRules().Insert(ctx, key, beta))
 		}
 	default:
@@ -4510,19 +4525,21 @@ func CreateForwardingRule(gceCloud *gce.Cloud, key *meta.Key, forwardingRule *Fo
 		if err != nil {
 			return err
 		}
+		gaLogger := logger.WithValues("name", ga.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Creating ga region ForwardingRule %v", ga.Name)
+			gaLogger.Info("Creating ga region ForwardingRule")
 			ga.Region = key.Region
 			return mc.Observe(gceCloud.Compute().ForwardingRules().Insert(ctx, key, ga))
 		default:
-			klog.V(3).Infof("Creating ga ForwardingRule %v", ga.Name)
+			gaLogger.Info("Creating ga ForwardingRule")
 			return mc.Observe(gceCloud.Compute().GlobalForwardingRules().Insert(ctx, key, ga))
 		}
 	}
 }
 
-func DeleteForwardingRule(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) error {
+func DeleteForwardingRule(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger) error {
+	logger = logger.WithValues("name", key.Name)
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("ForwardingRule", "delete", key.Region, key.Zone, string(version))
@@ -4531,34 +4548,35 @@ func DeleteForwardingRule(gceCloud *gce.Cloud, key *meta.Key, version meta.Versi
 	case meta.VersionAlpha:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Deleting alpha region ForwardingRule %v", key.Name)
+			logger.Info("Deleting alpha region ForwardingRule")
 			return mc.Observe(gceCloud.Compute().AlphaForwardingRules().Delete(ctx, key))
 		default:
-			klog.V(3).Infof("Deleting alpha ForwardingRule %v", key.Name)
+			logger.Info("Deleting alpha ForwardingRule")
 			return mc.Observe(gceCloud.Compute().AlphaGlobalForwardingRules().Delete(ctx, key))
 		}
 	case meta.VersionBeta:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Deleting beta region ForwardingRule %v", key.Name)
+			logger.Info("Deleting beta region ForwardingRule")
 			return mc.Observe(gceCloud.Compute().BetaForwardingRules().Delete(ctx, key))
 		default:
-			klog.V(3).Infof("Deleting beta ForwardingRule %v", key.Name)
+			logger.Info("Deleting beta ForwardingRule")
 			return mc.Observe(gceCloud.Compute().BetaGlobalForwardingRules().Delete(ctx, key))
 		}
 	default:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Deleting ga region ForwardingRule %v", key.Name)
+			logger.Info("Deleting ga region ForwardingRule")
 			return mc.Observe(gceCloud.Compute().ForwardingRules().Delete(ctx, key))
 		default:
-			klog.V(3).Infof("Deleting ga ForwardingRule %v", key.Name)
+			logger.Info("Deleting ga ForwardingRule")
 			return mc.Observe(gceCloud.Compute().GlobalForwardingRules().Delete(ctx, key))
 		}
 	}
 }
 
-func GetForwardingRule(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) (*ForwardingRule, error) {
+func GetForwardingRule(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger) (*ForwardingRule, error) {
+	logger = logger.WithValues("name", key.Name)
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("ForwardingRule", "get", key.Region, key.Zone, string(version))
@@ -4569,28 +4587,28 @@ func GetForwardingRule(gceCloud *gce.Cloud, key *meta.Key, version meta.Version)
 	case meta.VersionAlpha:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Getting alpha region ForwardingRule %v", key.Name)
+			logger.Info("Getting alpha region ForwardingRule")
 			gceObj, err = gceCloud.Compute().AlphaForwardingRules().Get(ctx, key)
 		default:
-			klog.V(3).Infof("Getting alpha ForwardingRule %v", key.Name)
+			logger.Info("Getting alpha ForwardingRule")
 			gceObj, err = gceCloud.Compute().AlphaGlobalForwardingRules().Get(ctx, key)
 		}
 	case meta.VersionBeta:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Getting beta region ForwardingRule %v", key.Name)
+			logger.Info("Getting beta region ForwardingRule")
 			gceObj, err = gceCloud.Compute().BetaForwardingRules().Get(ctx, key)
 		default:
-			klog.V(3).Infof("Getting beta ForwardingRule %v", key.Name)
+			logger.Info("Getting beta ForwardingRule")
 			gceObj, err = gceCloud.Compute().BetaGlobalForwardingRules().Get(ctx, key)
 		}
 	default:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Getting ga region ForwardingRule %v", key.Name)
+			logger.Info("Getting ga region ForwardingRule")
 			gceObj, err = gceCloud.Compute().ForwardingRules().Get(ctx, key)
 		default:
-			klog.V(3).Infof("Getting ga ForwardingRule %v", key.Name)
+			logger.Info("Getting ga ForwardingRule")
 			gceObj, err = gceCloud.Compute().GlobalForwardingRules().Get(ctx, key)
 		}
 	}
@@ -4608,7 +4626,7 @@ func GetForwardingRule(gceCloud *gce.Cloud, key *meta.Key, version meta.Version)
 	return compositeType, nil
 }
 
-func ListForwardingRules(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) ([]*ForwardingRule, error) {
+func ListForwardingRules(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger) ([]*ForwardingRule, error) {
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("ForwardingRule", "list", key.Region, key.Zone, string(version))
@@ -4619,28 +4637,28 @@ func ListForwardingRules(gceCloud *gce.Cloud, key *meta.Key, version meta.Versio
 	case meta.VersionAlpha:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Listing alpha region ForwardingRule")
+			logger.Info("Listing alpha region ForwardingRule")
 			gceObjs, err = gceCloud.Compute().AlphaForwardingRules().List(ctx, key.Region, filter.None)
 		default:
-			klog.V(3).Infof("Listing alpha ForwardingRule")
+			logger.Info("Listing alpha ForwardingRule")
 			gceObjs, err = gceCloud.Compute().AlphaGlobalForwardingRules().List(ctx, filter.None)
 		}
 	case meta.VersionBeta:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Listing beta region ForwardingRule")
+			logger.Info("Listing beta region ForwardingRule")
 			gceObjs, err = gceCloud.Compute().BetaForwardingRules().List(ctx, key.Region, filter.None)
 		default:
-			klog.V(3).Infof("Listing beta ForwardingRule")
+			logger.Info("Listing beta ForwardingRule")
 			gceObjs, err = gceCloud.Compute().BetaGlobalForwardingRules().List(ctx, filter.None)
 		}
 	default:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Listing ga region ForwardingRule")
+			logger.Info("Listing ga region ForwardingRule")
 			gceObjs, err = gceCloud.Compute().ForwardingRules().List(ctx, key.Region, filter.None)
 		default:
-			klog.V(3).Infof("Listing ga ForwardingRule")
+			logger.Info("Listing ga ForwardingRule")
 			gceObjs, err = gceCloud.Compute().GlobalForwardingRules().List(ctx, filter.None)
 		}
 	}
@@ -4749,7 +4767,7 @@ func (forwardingRule *ForwardingRule) ToGA() (*compute.ForwardingRule, error) {
 	return ga, nil
 }
 
-func CreateHealthCheck(gceCloud *gce.Cloud, key *meta.Key, healthCheck *HealthCheck) error {
+func CreateHealthCheck(gceCloud *gce.Cloud, key *meta.Key, healthCheck *HealthCheck, logger klog.Logger) error {
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("HealthCheck", "create", key.Region, key.Zone, string(healthCheck.Version))
@@ -4760,13 +4778,14 @@ func CreateHealthCheck(gceCloud *gce.Cloud, key *meta.Key, healthCheck *HealthCh
 		if err != nil {
 			return err
 		}
+		alphaLogger := logger.WithValues("name", alpha.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Creating alpha region HealthCheck %v", alpha.Name)
+			alphaLogger.Info("Creating alpha region HealthCheck")
 			alpha.Region = key.Region
 			return mc.Observe(gceCloud.Compute().AlphaRegionHealthChecks().Insert(ctx, key, alpha))
 		default:
-			klog.V(3).Infof("Creating alpha HealthCheck %v", alpha.Name)
+			alphaLogger.Info("Creating alpha HealthCheck")
 			return mc.Observe(gceCloud.Compute().AlphaHealthChecks().Insert(ctx, key, alpha))
 		}
 	case meta.VersionBeta:
@@ -4774,13 +4793,14 @@ func CreateHealthCheck(gceCloud *gce.Cloud, key *meta.Key, healthCheck *HealthCh
 		if err != nil {
 			return err
 		}
+		betaLogger := logger.WithValues("name", beta.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Creating beta region HealthCheck %v", beta.Name)
+			betaLogger.Info("Creating beta region HealthCheck")
 			beta.Region = key.Region
 			return mc.Observe(gceCloud.Compute().BetaRegionHealthChecks().Insert(ctx, key, beta))
 		default:
-			klog.V(3).Infof("Creating beta HealthCheck %v", beta.Name)
+			betaLogger.Info("Creating beta HealthCheck")
 			return mc.Observe(gceCloud.Compute().BetaHealthChecks().Insert(ctx, key, beta))
 		}
 	default:
@@ -4788,19 +4808,20 @@ func CreateHealthCheck(gceCloud *gce.Cloud, key *meta.Key, healthCheck *HealthCh
 		if err != nil {
 			return err
 		}
+		gaLogger := logger.WithValues("name", ga.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Creating ga region HealthCheck %v", ga.Name)
+			gaLogger.Info("Creating ga region HealthCheck")
 			ga.Region = key.Region
 			return mc.Observe(gceCloud.Compute().RegionHealthChecks().Insert(ctx, key, ga))
 		default:
-			klog.V(3).Infof("Creating ga HealthCheck %v", ga.Name)
+			gaLogger.Info("Creating ga HealthCheck")
 			return mc.Observe(gceCloud.Compute().HealthChecks().Insert(ctx, key, ga))
 		}
 	}
 }
 
-func UpdateHealthCheck(gceCloud *gce.Cloud, key *meta.Key, healthCheck *HealthCheck) error {
+func UpdateHealthCheck(gceCloud *gce.Cloud, key *meta.Key, healthCheck *HealthCheck, logger klog.Logger) error {
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("HealthCheck", "update", key.Region, key.Zone, string(healthCheck.Version))
@@ -4810,12 +4831,13 @@ func UpdateHealthCheck(gceCloud *gce.Cloud, key *meta.Key, healthCheck *HealthCh
 		if err != nil {
 			return err
 		}
+		alphaLogger := logger.WithValues("name", alpha.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Updating alpha region HealthCheck %v", alpha.Name)
+			alphaLogger.Info("Updating alpha region HealthCheck")
 			return mc.Observe(gceCloud.Compute().AlphaRegionHealthChecks().Update(ctx, key, alpha))
 		default:
-			klog.V(3).Infof("Updating alpha HealthCheck %v", alpha.Name)
+			alphaLogger.Info("Updating alpha HealthCheck")
 			return mc.Observe(gceCloud.Compute().AlphaHealthChecks().Update(ctx, key, alpha))
 		}
 	case meta.VersionBeta:
@@ -4823,12 +4845,13 @@ func UpdateHealthCheck(gceCloud *gce.Cloud, key *meta.Key, healthCheck *HealthCh
 		if err != nil {
 			return err
 		}
+		betaLogger := logger.WithValues("name", beta.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Updating beta region HealthCheck %v", beta.Name)
+			betaLogger.Info("Updating beta region HealthCheck")
 			return mc.Observe(gceCloud.Compute().BetaRegionHealthChecks().Update(ctx, key, beta))
 		default:
-			klog.V(3).Infof("Updating beta HealthCheck %v", beta.Name)
+			betaLogger.Info("Updating beta HealthCheck")
 			return mc.Observe(gceCloud.Compute().BetaHealthChecks().Update(ctx, key, beta))
 		}
 	default:
@@ -4836,18 +4859,20 @@ func UpdateHealthCheck(gceCloud *gce.Cloud, key *meta.Key, healthCheck *HealthCh
 		if err != nil {
 			return err
 		}
+		gaLogger := logger.WithValues("name", ga.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Updating ga region HealthCheck %v", ga.Name)
+			gaLogger.Info("Updating ga region HealthCheck")
 			return mc.Observe(gceCloud.Compute().RegionHealthChecks().Update(ctx, key, ga))
 		default:
-			klog.V(3).Infof("Updating ga HealthCheck %v", ga.Name)
+			gaLogger.Info("Updating ga HealthCheck")
 			return mc.Observe(gceCloud.Compute().HealthChecks().Update(ctx, key, ga))
 		}
 	}
 }
 
-func DeleteHealthCheck(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) error {
+func DeleteHealthCheck(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger) error {
+	logger = logger.WithValues("name", key.Name)
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("HealthCheck", "delete", key.Region, key.Zone, string(version))
@@ -4856,34 +4881,35 @@ func DeleteHealthCheck(gceCloud *gce.Cloud, key *meta.Key, version meta.Version)
 	case meta.VersionAlpha:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Deleting alpha region HealthCheck %v", key.Name)
+			logger.Info("Deleting alpha region HealthCheck")
 			return mc.Observe(gceCloud.Compute().AlphaRegionHealthChecks().Delete(ctx, key))
 		default:
-			klog.V(3).Infof("Deleting alpha HealthCheck %v", key.Name)
+			logger.Info("Deleting alpha HealthCheck")
 			return mc.Observe(gceCloud.Compute().AlphaHealthChecks().Delete(ctx, key))
 		}
 	case meta.VersionBeta:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Deleting beta region HealthCheck %v", key.Name)
+			logger.Info("Deleting beta region HealthCheck")
 			return mc.Observe(gceCloud.Compute().BetaRegionHealthChecks().Delete(ctx, key))
 		default:
-			klog.V(3).Infof("Deleting beta HealthCheck %v", key.Name)
+			logger.Info("Deleting beta HealthCheck")
 			return mc.Observe(gceCloud.Compute().BetaHealthChecks().Delete(ctx, key))
 		}
 	default:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Deleting ga region HealthCheck %v", key.Name)
+			logger.Info("Deleting ga region HealthCheck")
 			return mc.Observe(gceCloud.Compute().RegionHealthChecks().Delete(ctx, key))
 		default:
-			klog.V(3).Infof("Deleting ga HealthCheck %v", key.Name)
+			logger.Info("Deleting ga HealthCheck")
 			return mc.Observe(gceCloud.Compute().HealthChecks().Delete(ctx, key))
 		}
 	}
 }
 
-func GetHealthCheck(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) (*HealthCheck, error) {
+func GetHealthCheck(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger) (*HealthCheck, error) {
+	logger = logger.WithValues("name", key.Name)
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("HealthCheck", "get", key.Region, key.Zone, string(version))
@@ -4894,28 +4920,28 @@ func GetHealthCheck(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) (*
 	case meta.VersionAlpha:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Getting alpha region HealthCheck %v", key.Name)
+			logger.Info("Getting alpha region HealthCheck")
 			gceObj, err = gceCloud.Compute().AlphaRegionHealthChecks().Get(ctx, key)
 		default:
-			klog.V(3).Infof("Getting alpha HealthCheck %v", key.Name)
+			logger.Info("Getting alpha HealthCheck")
 			gceObj, err = gceCloud.Compute().AlphaHealthChecks().Get(ctx, key)
 		}
 	case meta.VersionBeta:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Getting beta region HealthCheck %v", key.Name)
+			logger.Info("Getting beta region HealthCheck")
 			gceObj, err = gceCloud.Compute().BetaRegionHealthChecks().Get(ctx, key)
 		default:
-			klog.V(3).Infof("Getting beta HealthCheck %v", key.Name)
+			logger.Info("Getting beta HealthCheck")
 			gceObj, err = gceCloud.Compute().BetaHealthChecks().Get(ctx, key)
 		}
 	default:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Getting ga region HealthCheck %v", key.Name)
+			logger.Info("Getting ga region HealthCheck")
 			gceObj, err = gceCloud.Compute().RegionHealthChecks().Get(ctx, key)
 		default:
-			klog.V(3).Infof("Getting ga HealthCheck %v", key.Name)
+			logger.Info("Getting ga HealthCheck")
 			gceObj, err = gceCloud.Compute().HealthChecks().Get(ctx, key)
 		}
 	}
@@ -4930,7 +4956,7 @@ func GetHealthCheck(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) (*
 	return compositeType, nil
 }
 
-func ListHealthChecks(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) ([]*HealthCheck, error) {
+func ListHealthChecks(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger) ([]*HealthCheck, error) {
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("HealthCheck", "list", key.Region, key.Zone, string(version))
@@ -4941,28 +4967,28 @@ func ListHealthChecks(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) 
 	case meta.VersionAlpha:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Listing alpha region HealthCheck")
+			logger.Info("Listing alpha region HealthCheck")
 			gceObjs, err = gceCloud.Compute().AlphaRegionHealthChecks().List(ctx, key.Region, filter.None)
 		default:
-			klog.V(3).Infof("Listing alpha HealthCheck")
+			logger.Info("Listing alpha HealthCheck")
 			gceObjs, err = gceCloud.Compute().AlphaHealthChecks().List(ctx, filter.None)
 		}
 	case meta.VersionBeta:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Listing beta region HealthCheck")
+			logger.Info("Listing beta region HealthCheck")
 			gceObjs, err = gceCloud.Compute().BetaRegionHealthChecks().List(ctx, key.Region, filter.None)
 		default:
-			klog.V(3).Infof("Listing beta HealthCheck")
+			logger.Info("Listing beta HealthCheck")
 			gceObjs, err = gceCloud.Compute().BetaHealthChecks().List(ctx, filter.None)
 		}
 	default:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Listing ga region HealthCheck")
+			logger.Info("Listing ga region HealthCheck")
 			gceObjs, err = gceCloud.Compute().RegionHealthChecks().List(ctx, key.Region, filter.None)
 		default:
-			klog.V(3).Infof("Listing ga HealthCheck")
+			logger.Info("Listing ga HealthCheck")
 			gceObjs, err = gceCloud.Compute().HealthChecks().List(ctx, filter.None)
 		}
 	}
@@ -5253,7 +5279,7 @@ func (networkEndpoint *NetworkEndpoint) ToGA() (*compute.NetworkEndpoint, error)
 	return ga, nil
 }
 
-func CreateNetworkEndpointGroup(gceCloud *gce.Cloud, key *meta.Key, networkEndpointGroup *NetworkEndpointGroup) error {
+func CreateNetworkEndpointGroup(gceCloud *gce.Cloud, key *meta.Key, networkEndpointGroup *NetworkEndpointGroup, logger klog.Logger) error {
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("NetworkEndpointGroup", "create", key.Region, key.Zone, string(networkEndpointGroup.Version))
@@ -5269,26 +5295,30 @@ func CreateNetworkEndpointGroup(gceCloud *gce.Cloud, key *meta.Key, networkEndpo
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Creating alpha zonal NetworkEndpointGroup %v", alpha.Name)
+		alphaLogger := logger.WithValues("name", alpha.Name)
+		alphaLogger.Info("Creating alpha zonal NetworkEndpointGroup")
 		return mc.Observe(gceCloud.Compute().AlphaNetworkEndpointGroups().Insert(ctx, key, alpha))
 	case meta.VersionBeta:
 		beta, err := networkEndpointGroup.ToBeta()
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Creating beta zonal NetworkEndpointGroup %v", beta.Name)
+		betaLogger := logger.WithValues("name", beta.Name)
+		betaLogger.Info("Creating beta zonal NetworkEndpointGroup")
 		return mc.Observe(gceCloud.Compute().BetaNetworkEndpointGroups().Insert(ctx, key, beta))
 	default:
 		ga, err := networkEndpointGroup.ToGA()
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Creating ga zonal NetworkEndpointGroup %v", ga.Name)
+		gaLogger := logger.WithValues("name", ga.Name)
+		gaLogger.Info("Creating ga zonal NetworkEndpointGroup")
 		return mc.Observe(gceCloud.Compute().NetworkEndpointGroups().Insert(ctx, key, ga))
 	}
 }
 
-func DeleteNetworkEndpointGroup(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) error {
+func DeleteNetworkEndpointGroup(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger) error {
+	logger = logger.WithValues("name", key.Name)
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("NetworkEndpointGroup", "delete", key.Region, key.Zone, string(version))
@@ -5300,18 +5330,19 @@ func DeleteNetworkEndpointGroup(gceCloud *gce.Cloud, key *meta.Key, version meta
 
 	switch version {
 	case meta.VersionAlpha:
-		klog.V(3).Infof("Deleting alpha zonal NetworkEndpointGroup %v", key.Name)
+		logger.Info("Deleting alpha zonal NetworkEndpointGroup")
 		return mc.Observe(gceCloud.Compute().AlphaNetworkEndpointGroups().Delete(ctx, key))
 	case meta.VersionBeta:
-		klog.V(3).Infof("Deleting beta zonal NetworkEndpointGroup %v", key.Name)
+		logger.Info("Deleting beta zonal NetworkEndpointGroup")
 		return mc.Observe(gceCloud.Compute().BetaNetworkEndpointGroups().Delete(ctx, key))
 	default:
-		klog.V(3).Infof("Deleting ga zonal NetworkEndpointGroup %v", key.Name)
+		logger.Info("Deleting ga zonal NetworkEndpointGroup")
 		return mc.Observe(gceCloud.Compute().NetworkEndpointGroups().Delete(ctx, key))
 	}
 }
 
-func GetNetworkEndpointGroup(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) (*NetworkEndpointGroup, error) {
+func GetNetworkEndpointGroup(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger) (*NetworkEndpointGroup, error) {
+	logger = logger.WithValues("name", key.Name)
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("NetworkEndpointGroup", "get", key.Region, key.Zone, string(version))
@@ -5325,14 +5356,14 @@ func GetNetworkEndpointGroup(gceCloud *gce.Cloud, key *meta.Key, version meta.Ve
 	}
 	switch version {
 	case meta.VersionAlpha:
-		klog.V(3).Infof("Getting alpha zonal NetworkEndpointGroup %v", key.Name)
+		logger.Info("Getting alpha zonal NetworkEndpointGroup")
 		gceObj, err = gceCloud.Compute().AlphaNetworkEndpointGroups().Get(ctx, key)
 	case meta.VersionBeta:
-		klog.V(3).Infof("Getting beta zonal NetworkEndpointGroup %v", key.Name)
+		logger.Info("Getting beta zonal NetworkEndpointGroup")
 		gceObj, err = gceCloud.Compute().BetaNetworkEndpointGroups().Get(ctx, key)
 
 	default:
-		klog.V(3).Infof("Getting ga zonal NetworkEndpointGroup %v", key.Name)
+		logger.Info("Getting ga zonal NetworkEndpointGroup")
 		gceObj, err = gceCloud.Compute().NetworkEndpointGroups().Get(ctx, key)
 	}
 	if err != nil {
@@ -5347,7 +5378,7 @@ func GetNetworkEndpointGroup(gceCloud *gce.Cloud, key *meta.Key, version meta.Ve
 	return compositeType, nil
 }
 
-func ListNetworkEndpointGroups(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) ([]*NetworkEndpointGroup, error) {
+func ListNetworkEndpointGroups(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger) ([]*NetworkEndpointGroup, error) {
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("NetworkEndpointGroup", "list", key.Region, key.Zone, string(version))
@@ -5361,13 +5392,13 @@ func ListNetworkEndpointGroups(gceCloud *gce.Cloud, key *meta.Key, version meta.
 	}
 	switch version {
 	case meta.VersionAlpha:
-		klog.V(3).Infof("Listing alpha zoneNetworkEndpointGroup")
+		logger.Info("Listing alpha zoneNetworkEndpointGroup")
 		gceObjs, err = gceCloud.Compute().AlphaNetworkEndpointGroups().List(ctx, key.Zone, filter.None)
 	case meta.VersionBeta:
-		klog.V(3).Infof("Listing beta zoneNetworkEndpointGroup")
+		logger.Info("Listing beta zoneNetworkEndpointGroup")
 		gceObjs, err = gceCloud.Compute().BetaNetworkEndpointGroups().List(ctx, key.Zone, filter.None)
 	default:
-		klog.V(3).Infof("Listing ga zoneNetworkEndpointGroup")
+		logger.Info("Listing ga zoneNetworkEndpointGroup")
 		gceObjs, err = gceCloud.Compute().NetworkEndpointGroups().List(ctx, key.Zone, filter.None)
 	}
 	if err != nil {
@@ -5384,7 +5415,8 @@ func ListNetworkEndpointGroups(gceCloud *gce.Cloud, key *meta.Key, version meta.
 	return compositeObjs, nil
 }
 
-func AttachNetworkEndpoints(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, req *NetworkEndpointGroupsAttachEndpointsRequest) error {
+func AttachNetworkEndpoints(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, req *NetworkEndpointGroupsAttachEndpointsRequest, logger klog.Logger) error {
+	logger = logger.WithValues("name", key.Name)
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("NetworkEndpointGroup", "attach", key.Region, key.Zone, string(version))
@@ -5401,26 +5433,27 @@ func AttachNetworkEndpoints(gceCloud *gce.Cloud, key *meta.Key, version meta.Ver
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Attaching to alpha zonal NetworkEndpointGroup %v", key.Name)
+		logger.Info("Attaching to alpha zonal NetworkEndpointGroup")
 		return mc.Observe(gceCloud.Compute().AlphaNetworkEndpointGroups().AttachNetworkEndpoints(ctx, key, alphareq))
 	case meta.VersionBeta:
 		betareq, err := req.ToBeta()
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Attaching to beta zonal NetworkEndpointGroup %v", key.Name)
+		logger.Info("Attaching to beta zonal NetworkEndpointGroup")
 		return mc.Observe(gceCloud.Compute().BetaNetworkEndpointGroups().AttachNetworkEndpoints(ctx, key, betareq))
 	default:
 		gareq, err := req.ToGA()
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Attaching to ga zonal NetworkEndpointGroup %v", key.Name)
+		logger.Info("Attaching to ga zonal NetworkEndpointGroup")
 		return mc.Observe(gceCloud.Compute().NetworkEndpointGroups().AttachNetworkEndpoints(ctx, key, gareq))
 	}
 }
 
-func DetachNetworkEndpoints(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, req *NetworkEndpointGroupsDetachEndpointsRequest) error {
+func DetachNetworkEndpoints(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, req *NetworkEndpointGroupsDetachEndpointsRequest, logger klog.Logger) error {
+	logger = logger.WithValues("name", key.Name)
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("NetworkEndpointGroup", "detach", key.Region, key.Zone, string(version))
@@ -5437,26 +5470,27 @@ func DetachNetworkEndpoints(gceCloud *gce.Cloud, key *meta.Key, version meta.Ver
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Detaching from alpha zonal NetworkEndpointGroup %v", key.Name)
+		logger.Info("Detaching from alpha zonal NetworkEndpointGroup")
 		return mc.Observe(gceCloud.Compute().AlphaNetworkEndpointGroups().DetachNetworkEndpoints(ctx, key, alphareq))
 	case meta.VersionBeta:
 		betareq, err := req.ToBeta()
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Detaching from beta zonal NetworkEndpointGroup %v", key.Name)
+		logger.Info("Detaching from beta zonal NetworkEndpointGroup")
 		return mc.Observe(gceCloud.Compute().BetaNetworkEndpointGroups().DetachNetworkEndpoints(ctx, key, betareq))
 	default:
 		gareq, err := req.ToGA()
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Detaching from ga zonal NetworkEndpointGroup %v", key.Name)
+		logger.Info("Detaching from ga zonal NetworkEndpointGroup")
 		return mc.Observe(gceCloud.Compute().NetworkEndpointGroups().DetachNetworkEndpoints(ctx, key, gareq))
 	}
 }
 
-func ListNetworkEndpoints(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, req *NetworkEndpointGroupsListEndpointsRequest) ([]*NetworkEndpointWithHealthStatus, error) {
+func ListNetworkEndpoints(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, req *NetworkEndpointGroupsListEndpointsRequest, logger klog.Logger) ([]*NetworkEndpointWithHealthStatus, error) {
+	logger = logger.WithValues("name", key.Name)
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("NetworkEndpointGroup", "list", key.Region, key.Zone, string(version))
@@ -5476,21 +5510,21 @@ func ListNetworkEndpoints(gceCloud *gce.Cloud, key *meta.Key, version meta.Versi
 		if reqerr != nil {
 			return nil, reqerr
 		}
-		klog.V(3).Infof("Listing alpha zonal NetworkEndpointGroup %v", key.Name)
+		logger.Info("Listing alpha zonal NetworkEndpointGroup")
 		gceObjs, err = gceCloud.Compute().AlphaNetworkEndpointGroups().ListNetworkEndpoints(ctx, key, alphareq, filter.None)
 	case meta.VersionBeta:
 		betareq, reqerr := req.ToBeta()
 		if reqerr != nil {
 			return nil, reqerr
 		}
-		klog.V(3).Infof("Listing beta zonal NetworkEndpointGroup %v", key.Name)
+		logger.Info("Listing beta zonal NetworkEndpointGroup")
 		gceObjs, err = gceCloud.Compute().BetaNetworkEndpointGroups().ListNetworkEndpoints(ctx, key, betareq, filter.None)
 	default:
 		gareq, reqerr := req.ToGA()
 		if reqerr != nil {
 			return nil, reqerr
 		}
-		klog.V(3).Infof("Listing ga zonal NetworkEndpointGroup %v", key.Name)
+		logger.Info("Listing ga zonal NetworkEndpointGroup")
 		gceObjs, err = gceCloud.Compute().NetworkEndpointGroups().ListNetworkEndpoints(ctx, key, gareq, filter.None)
 	}
 	if err != nil {
@@ -5507,7 +5541,7 @@ func ListNetworkEndpoints(gceCloud *gce.Cloud, key *meta.Key, version meta.Versi
 	return compositeObjs, nil
 }
 
-func AggregatedListNetworkEndpointGroup(gceCloud *gce.Cloud, version meta.Version) (map[*meta.Key]*NetworkEndpointGroup, error) {
+func AggregatedListNetworkEndpointGroup(gceCloud *gce.Cloud, version meta.Version, logger klog.Logger) (map[*meta.Key]*NetworkEndpointGroup, error) {
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("NetworkEndpointGroup", "aggregateList", "", "", string(version))
@@ -5517,7 +5551,7 @@ func AggregatedListNetworkEndpointGroup(gceCloud *gce.Cloud, version meta.Versio
 
 	switch version {
 	case meta.VersionAlpha:
-		klog.V(3).Infof("Aggregate List of alpha zonal NetworkEndpointGroup")
+		logger.Info("Aggregate List of alpha zonal NetworkEndpointGroup")
 		alphaMap, err := gceCloud.Compute().AlphaNetworkEndpointGroups().AggregatedList(ctx, filter.None)
 		if err != nil {
 			return nil, mc.Observe(err)
@@ -5529,7 +5563,7 @@ func AggregatedListNetworkEndpointGroup(gceCloud *gce.Cloud, version meta.Versio
 		}
 		gceObjs = alphaList
 	case meta.VersionBeta:
-		klog.V(3).Infof("Aggregate List of beta zonal NetworkEndpointGroup")
+		logger.Info("Aggregate List of beta zonal NetworkEndpointGroup")
 		betaMap, err := gceCloud.Compute().BetaNetworkEndpointGroups().AggregatedList(ctx, filter.None)
 		if err != nil {
 			return nil, mc.Observe(err)
@@ -5541,7 +5575,7 @@ func AggregatedListNetworkEndpointGroup(gceCloud *gce.Cloud, version meta.Versio
 		}
 		gceObjs = betaList
 	default:
-		klog.V(3).Infof("Aggregate List of ga zonal NetworkEndpointGroup")
+		logger.Info("Aggregate List of ga zonal NetworkEndpointGroup")
 		gaMap, err := gceCloud.Compute().NetworkEndpointGroups().AggregatedList(ctx, filter.None)
 		if err != nil {
 			return nil, mc.Observe(err)
@@ -5561,7 +5595,7 @@ func AggregatedListNetworkEndpointGroup(gceCloud *gce.Cloud, version meta.Versio
 		obj.Version = version
 		resourceID, err := cloudprovider.ParseResourceURL(obj.SelfLink)
 		if err != nil || resourceID == nil || resourceID.Key == nil {
-			klog.Errorf("Failed to parse SelfLink - %s for obj %v, err %v", obj.SelfLink, obj, err)
+			logger.Error(err, "Failed to parse obj's SelfLink", "selfLink", obj.SelfLink, "obj", obj)
 			continue
 		}
 		compositeMap[resourceID.Key] = obj
@@ -6116,7 +6150,7 @@ func (signedUrlKey *SignedUrlKey) ToGA() (*compute.SignedUrlKey, error) {
 	return ga, nil
 }
 
-func CreateSslCertificate(gceCloud *gce.Cloud, key *meta.Key, sslCertificate *SslCertificate) error {
+func CreateSslCertificate(gceCloud *gce.Cloud, key *meta.Key, sslCertificate *SslCertificate, logger klog.Logger) error {
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("SslCertificate", "create", key.Region, key.Zone, string(sslCertificate.Version))
@@ -6127,13 +6161,14 @@ func CreateSslCertificate(gceCloud *gce.Cloud, key *meta.Key, sslCertificate *Ss
 		if err != nil {
 			return err
 		}
+		alphaLogger := logger.WithValues("name", alpha.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Creating alpha region SslCertificate %v", alpha.Name)
+			alphaLogger.Info("Creating alpha region SslCertificate")
 			alpha.Region = key.Region
 			return mc.Observe(gceCloud.Compute().AlphaRegionSslCertificates().Insert(ctx, key, alpha))
 		default:
-			klog.V(3).Infof("Creating alpha SslCertificate %v", alpha.Name)
+			alphaLogger.Info("Creating alpha SslCertificate")
 			return mc.Observe(gceCloud.Compute().AlphaSslCertificates().Insert(ctx, key, alpha))
 		}
 	case meta.VersionBeta:
@@ -6141,13 +6176,14 @@ func CreateSslCertificate(gceCloud *gce.Cloud, key *meta.Key, sslCertificate *Ss
 		if err != nil {
 			return err
 		}
+		betaLogger := logger.WithValues("name", beta.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Creating beta region SslCertificate %v", beta.Name)
+			betaLogger.Info("Creating beta region SslCertificate")
 			beta.Region = key.Region
 			return mc.Observe(gceCloud.Compute().BetaRegionSslCertificates().Insert(ctx, key, beta))
 		default:
-			klog.V(3).Infof("Creating beta SslCertificate %v", beta.Name)
+			betaLogger.Info("Creating beta SslCertificate")
 			return mc.Observe(gceCloud.Compute().BetaSslCertificates().Insert(ctx, key, beta))
 		}
 	default:
@@ -6155,19 +6191,21 @@ func CreateSslCertificate(gceCloud *gce.Cloud, key *meta.Key, sslCertificate *Ss
 		if err != nil {
 			return err
 		}
+		gaLogger := logger.WithValues("name", ga.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Creating ga region SslCertificate %v", ga.Name)
+			gaLogger.Info("Creating ga region SslCertificate")
 			ga.Region = key.Region
 			return mc.Observe(gceCloud.Compute().RegionSslCertificates().Insert(ctx, key, ga))
 		default:
-			klog.V(3).Infof("Creating ga SslCertificate %v", ga.Name)
+			gaLogger.Info("Creating ga SslCertificate")
 			return mc.Observe(gceCloud.Compute().SslCertificates().Insert(ctx, key, ga))
 		}
 	}
 }
 
-func DeleteSslCertificate(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) error {
+func DeleteSslCertificate(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger) error {
+	logger = logger.WithValues("name", key.Name)
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("SslCertificate", "delete", key.Region, key.Zone, string(version))
@@ -6176,34 +6214,35 @@ func DeleteSslCertificate(gceCloud *gce.Cloud, key *meta.Key, version meta.Versi
 	case meta.VersionAlpha:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Deleting alpha region SslCertificate %v", key.Name)
+			logger.Info("Deleting alpha region SslCertificate")
 			return mc.Observe(gceCloud.Compute().AlphaRegionSslCertificates().Delete(ctx, key))
 		default:
-			klog.V(3).Infof("Deleting alpha SslCertificate %v", key.Name)
+			logger.Info("Deleting alpha SslCertificate")
 			return mc.Observe(gceCloud.Compute().AlphaSslCertificates().Delete(ctx, key))
 		}
 	case meta.VersionBeta:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Deleting beta region SslCertificate %v", key.Name)
+			logger.Info("Deleting beta region SslCertificate")
 			return mc.Observe(gceCloud.Compute().BetaRegionSslCertificates().Delete(ctx, key))
 		default:
-			klog.V(3).Infof("Deleting beta SslCertificate %v", key.Name)
+			logger.Info("Deleting beta SslCertificate")
 			return mc.Observe(gceCloud.Compute().BetaSslCertificates().Delete(ctx, key))
 		}
 	default:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Deleting ga region SslCertificate %v", key.Name)
+			logger.Info("Deleting ga region SslCertificate")
 			return mc.Observe(gceCloud.Compute().RegionSslCertificates().Delete(ctx, key))
 		default:
-			klog.V(3).Infof("Deleting ga SslCertificate %v", key.Name)
+			logger.Info("Deleting ga SslCertificate")
 			return mc.Observe(gceCloud.Compute().SslCertificates().Delete(ctx, key))
 		}
 	}
 }
 
-func GetSslCertificate(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) (*SslCertificate, error) {
+func GetSslCertificate(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger) (*SslCertificate, error) {
+	logger = logger.WithValues("name", key.Name)
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("SslCertificate", "get", key.Region, key.Zone, string(version))
@@ -6214,28 +6253,28 @@ func GetSslCertificate(gceCloud *gce.Cloud, key *meta.Key, version meta.Version)
 	case meta.VersionAlpha:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Getting alpha region SslCertificate %v", key.Name)
+			logger.Info("Getting alpha region SslCertificate")
 			gceObj, err = gceCloud.Compute().AlphaRegionSslCertificates().Get(ctx, key)
 		default:
-			klog.V(3).Infof("Getting alpha SslCertificate %v", key.Name)
+			logger.Info("Getting alpha SslCertificate")
 			gceObj, err = gceCloud.Compute().AlphaSslCertificates().Get(ctx, key)
 		}
 	case meta.VersionBeta:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Getting beta region SslCertificate %v", key.Name)
+			logger.Info("Getting beta region SslCertificate")
 			gceObj, err = gceCloud.Compute().BetaRegionSslCertificates().Get(ctx, key)
 		default:
-			klog.V(3).Infof("Getting beta SslCertificate %v", key.Name)
+			logger.Info("Getting beta SslCertificate")
 			gceObj, err = gceCloud.Compute().BetaSslCertificates().Get(ctx, key)
 		}
 	default:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Getting ga region SslCertificate %v", key.Name)
+			logger.Info("Getting ga region SslCertificate")
 			gceObj, err = gceCloud.Compute().RegionSslCertificates().Get(ctx, key)
 		default:
-			klog.V(3).Infof("Getting ga SslCertificate %v", key.Name)
+			logger.Info("Getting ga SslCertificate")
 			gceObj, err = gceCloud.Compute().SslCertificates().Get(ctx, key)
 		}
 	}
@@ -6250,7 +6289,7 @@ func GetSslCertificate(gceCloud *gce.Cloud, key *meta.Key, version meta.Version)
 	return compositeType, nil
 }
 
-func ListSslCertificates(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) ([]*SslCertificate, error) {
+func ListSslCertificates(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger) ([]*SslCertificate, error) {
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("SslCertificate", "list", key.Region, key.Zone, string(version))
@@ -6261,28 +6300,28 @@ func ListSslCertificates(gceCloud *gce.Cloud, key *meta.Key, version meta.Versio
 	case meta.VersionAlpha:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Listing alpha region SslCertificate")
+			logger.Info("Listing alpha region SslCertificate")
 			gceObjs, err = gceCloud.Compute().AlphaRegionSslCertificates().List(ctx, key.Region, filter.None)
 		default:
-			klog.V(3).Infof("Listing alpha SslCertificate")
+			logger.Info("Listing alpha SslCertificate")
 			gceObjs, err = gceCloud.Compute().AlphaSslCertificates().List(ctx, filter.None)
 		}
 	case meta.VersionBeta:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Listing beta region SslCertificate")
+			logger.Info("Listing beta region SslCertificate")
 			gceObjs, err = gceCloud.Compute().BetaRegionSslCertificates().List(ctx, key.Region, filter.None)
 		default:
-			klog.V(3).Infof("Listing beta SslCertificate")
+			logger.Info("Listing beta SslCertificate")
 			gceObjs, err = gceCloud.Compute().BetaSslCertificates().List(ctx, filter.None)
 		}
 	default:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Listing ga region SslCertificate")
+			logger.Info("Listing ga region SslCertificate")
 			gceObjs, err = gceCloud.Compute().RegionSslCertificates().List(ctx, key.Region, filter.None)
 		default:
-			klog.V(3).Infof("Listing ga SslCertificate")
+			logger.Info("Listing ga SslCertificate")
 			gceObjs, err = gceCloud.Compute().SslCertificates().List(ctx, filter.None)
 		}
 	}
@@ -6391,7 +6430,7 @@ func (sslCertificate *SslCertificate) ToGA() (*compute.SslCertificate, error) {
 	return ga, nil
 }
 
-func CreateTargetHttpProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpProxy *TargetHttpProxy) error {
+func CreateTargetHttpProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpProxy *TargetHttpProxy, logger klog.Logger) error {
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("TargetHttpProxy", "create", key.Region, key.Zone, string(targetHttpProxy.Version))
@@ -6402,13 +6441,14 @@ func CreateTargetHttpProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpProxy *
 		if err != nil {
 			return err
 		}
+		alphaLogger := logger.WithValues("name", alpha.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Creating alpha region TargetHttpProxy %v", alpha.Name)
+			alphaLogger.Info("Creating alpha region TargetHttpProxy")
 			alpha.Region = key.Region
 			return mc.Observe(gceCloud.Compute().AlphaRegionTargetHttpProxies().Insert(ctx, key, alpha))
 		default:
-			klog.V(3).Infof("Creating alpha TargetHttpProxy %v", alpha.Name)
+			alphaLogger.Info("Creating alpha TargetHttpProxy")
 			return mc.Observe(gceCloud.Compute().AlphaTargetHttpProxies().Insert(ctx, key, alpha))
 		}
 	case meta.VersionBeta:
@@ -6416,13 +6456,14 @@ func CreateTargetHttpProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpProxy *
 		if err != nil {
 			return err
 		}
+		betaLogger := logger.WithValues("name", beta.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Creating beta region TargetHttpProxy %v", beta.Name)
+			betaLogger.Info("Creating beta region TargetHttpProxy")
 			beta.Region = key.Region
 			return mc.Observe(gceCloud.Compute().BetaRegionTargetHttpProxies().Insert(ctx, key, beta))
 		default:
-			klog.V(3).Infof("Creating beta TargetHttpProxy %v", beta.Name)
+			betaLogger.Info("Creating beta TargetHttpProxy")
 			return mc.Observe(gceCloud.Compute().BetaTargetHttpProxies().Insert(ctx, key, beta))
 		}
 	default:
@@ -6430,19 +6471,21 @@ func CreateTargetHttpProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpProxy *
 		if err != nil {
 			return err
 		}
+		gaLogger := logger.WithValues("name", ga.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Creating ga region TargetHttpProxy %v", ga.Name)
+			gaLogger.Info("Creating ga region TargetHttpProxy")
 			ga.Region = key.Region
 			return mc.Observe(gceCloud.Compute().RegionTargetHttpProxies().Insert(ctx, key, ga))
 		default:
-			klog.V(3).Infof("Creating ga TargetHttpProxy %v", ga.Name)
+			gaLogger.Info("Creating ga TargetHttpProxy")
 			return mc.Observe(gceCloud.Compute().TargetHttpProxies().Insert(ctx, key, ga))
 		}
 	}
 }
 
-func DeleteTargetHttpProxy(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) error {
+func DeleteTargetHttpProxy(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger) error {
+	logger = logger.WithValues("name", key.Name)
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("TargetHttpProxy", "delete", key.Region, key.Zone, string(version))
@@ -6451,34 +6494,35 @@ func DeleteTargetHttpProxy(gceCloud *gce.Cloud, key *meta.Key, version meta.Vers
 	case meta.VersionAlpha:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Deleting alpha region TargetHttpProxy %v", key.Name)
+			logger.Info("Deleting alpha region TargetHttpProxy")
 			return mc.Observe(gceCloud.Compute().AlphaRegionTargetHttpProxies().Delete(ctx, key))
 		default:
-			klog.V(3).Infof("Deleting alpha TargetHttpProxy %v", key.Name)
+			logger.Info("Deleting alpha TargetHttpProxy")
 			return mc.Observe(gceCloud.Compute().AlphaTargetHttpProxies().Delete(ctx, key))
 		}
 	case meta.VersionBeta:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Deleting beta region TargetHttpProxy %v", key.Name)
+			logger.Info("Deleting beta region TargetHttpProxy")
 			return mc.Observe(gceCloud.Compute().BetaRegionTargetHttpProxies().Delete(ctx, key))
 		default:
-			klog.V(3).Infof("Deleting beta TargetHttpProxy %v", key.Name)
+			logger.Info("Deleting beta TargetHttpProxy")
 			return mc.Observe(gceCloud.Compute().BetaTargetHttpProxies().Delete(ctx, key))
 		}
 	default:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Deleting ga region TargetHttpProxy %v", key.Name)
+			logger.Info("Deleting ga region TargetHttpProxy")
 			return mc.Observe(gceCloud.Compute().RegionTargetHttpProxies().Delete(ctx, key))
 		default:
-			klog.V(3).Infof("Deleting ga TargetHttpProxy %v", key.Name)
+			logger.Info("Deleting ga TargetHttpProxy")
 			return mc.Observe(gceCloud.Compute().TargetHttpProxies().Delete(ctx, key))
 		}
 	}
 }
 
-func GetTargetHttpProxy(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) (*TargetHttpProxy, error) {
+func GetTargetHttpProxy(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger) (*TargetHttpProxy, error) {
+	logger = logger.WithValues("name", key.Name)
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("TargetHttpProxy", "get", key.Region, key.Zone, string(version))
@@ -6489,28 +6533,28 @@ func GetTargetHttpProxy(gceCloud *gce.Cloud, key *meta.Key, version meta.Version
 	case meta.VersionAlpha:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Getting alpha region TargetHttpProxy %v", key.Name)
+			logger.Info("Getting alpha region TargetHttpProxy")
 			gceObj, err = gceCloud.Compute().AlphaRegionTargetHttpProxies().Get(ctx, key)
 		default:
-			klog.V(3).Infof("Getting alpha TargetHttpProxy %v", key.Name)
+			logger.Info("Getting alpha TargetHttpProxy")
 			gceObj, err = gceCloud.Compute().AlphaTargetHttpProxies().Get(ctx, key)
 		}
 	case meta.VersionBeta:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Getting beta region TargetHttpProxy %v", key.Name)
+			logger.Info("Getting beta region TargetHttpProxy")
 			gceObj, err = gceCloud.Compute().BetaRegionTargetHttpProxies().Get(ctx, key)
 		default:
-			klog.V(3).Infof("Getting beta TargetHttpProxy %v", key.Name)
+			logger.Info("Getting beta TargetHttpProxy")
 			gceObj, err = gceCloud.Compute().BetaTargetHttpProxies().Get(ctx, key)
 		}
 	default:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Getting ga region TargetHttpProxy %v", key.Name)
+			logger.Info("Getting ga region TargetHttpProxy")
 			gceObj, err = gceCloud.Compute().RegionTargetHttpProxies().Get(ctx, key)
 		default:
-			klog.V(3).Infof("Getting ga TargetHttpProxy %v", key.Name)
+			logger.Info("Getting ga TargetHttpProxy")
 			gceObj, err = gceCloud.Compute().TargetHttpProxies().Get(ctx, key)
 		}
 	}
@@ -6525,7 +6569,7 @@ func GetTargetHttpProxy(gceCloud *gce.Cloud, key *meta.Key, version meta.Version
 	return compositeType, nil
 }
 
-func ListTargetHttpProxies(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) ([]*TargetHttpProxy, error) {
+func ListTargetHttpProxies(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger) ([]*TargetHttpProxy, error) {
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("TargetHttpProxy", "list", key.Region, key.Zone, string(version))
@@ -6536,28 +6580,28 @@ func ListTargetHttpProxies(gceCloud *gce.Cloud, key *meta.Key, version meta.Vers
 	case meta.VersionAlpha:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Listing alpha region TargetHttpProxy")
+			logger.Info("Listing alpha region TargetHttpProxy")
 			gceObjs, err = gceCloud.Compute().AlphaRegionTargetHttpProxies().List(ctx, key.Region, filter.None)
 		default:
-			klog.V(3).Infof("Listing alpha TargetHttpProxy")
+			logger.Info("Listing alpha TargetHttpProxy")
 			gceObjs, err = gceCloud.Compute().AlphaTargetHttpProxies().List(ctx, filter.None)
 		}
 	case meta.VersionBeta:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Listing beta region TargetHttpProxy")
+			logger.Info("Listing beta region TargetHttpProxy")
 			gceObjs, err = gceCloud.Compute().BetaRegionTargetHttpProxies().List(ctx, key.Region, filter.None)
 		default:
-			klog.V(3).Infof("Listing beta TargetHttpProxy")
+			logger.Info("Listing beta TargetHttpProxy")
 			gceObjs, err = gceCloud.Compute().BetaTargetHttpProxies().List(ctx, filter.None)
 		}
 	default:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Listing ga region TargetHttpProxy")
+			logger.Info("Listing ga region TargetHttpProxy")
 			gceObjs, err = gceCloud.Compute().RegionTargetHttpProxies().List(ctx, key.Region, filter.None)
 		default:
-			klog.V(3).Infof("Listing ga TargetHttpProxy")
+			logger.Info("Listing ga TargetHttpProxy")
 			gceObjs, err = gceCloud.Compute().TargetHttpProxies().List(ctx, filter.None)
 		}
 	}
@@ -6666,7 +6710,7 @@ func (targetHttpProxy *TargetHttpProxy) ToGA() (*compute.TargetHttpProxy, error)
 	return ga, nil
 }
 
-func CreateTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpsProxy *TargetHttpsProxy) error {
+func CreateTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpsProxy *TargetHttpsProxy, logger klog.Logger) error {
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("TargetHttpsProxy", "create", key.Region, key.Zone, string(targetHttpsProxy.Version))
@@ -6677,13 +6721,14 @@ func CreateTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpsProxy
 		if err != nil {
 			return err
 		}
+		alphaLogger := logger.WithValues("name", alpha.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Creating alpha region TargetHttpsProxy %v", alpha.Name)
+			alphaLogger.Info("Creating alpha region TargetHttpsProxy")
 			alpha.Region = key.Region
 			return mc.Observe(gceCloud.Compute().AlphaRegionTargetHttpsProxies().Insert(ctx, key, alpha))
 		default:
-			klog.V(3).Infof("Creating alpha TargetHttpsProxy %v", alpha.Name)
+			alphaLogger.Info("Creating alpha TargetHttpsProxy")
 			return mc.Observe(gceCloud.Compute().AlphaTargetHttpsProxies().Insert(ctx, key, alpha))
 		}
 	case meta.VersionBeta:
@@ -6691,13 +6736,14 @@ func CreateTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpsProxy
 		if err != nil {
 			return err
 		}
+		betaLogger := logger.WithValues("name", beta.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Creating beta region TargetHttpsProxy %v", beta.Name)
+			betaLogger.Info("Creating beta region TargetHttpsProxy")
 			beta.Region = key.Region
 			return mc.Observe(gceCloud.Compute().BetaRegionTargetHttpsProxies().Insert(ctx, key, beta))
 		default:
-			klog.V(3).Infof("Creating beta TargetHttpsProxy %v", beta.Name)
+			betaLogger.Info("Creating beta TargetHttpsProxy")
 			return mc.Observe(gceCloud.Compute().BetaTargetHttpsProxies().Insert(ctx, key, beta))
 		}
 	default:
@@ -6705,19 +6751,21 @@ func CreateTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpsProxy
 		if err != nil {
 			return err
 		}
+		gaLogger := logger.WithValues("name", ga.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Creating ga region TargetHttpsProxy %v", ga.Name)
+			gaLogger.Info("Creating ga region TargetHttpsProxy")
 			ga.Region = key.Region
 			return mc.Observe(gceCloud.Compute().RegionTargetHttpsProxies().Insert(ctx, key, ga))
 		default:
-			klog.V(3).Infof("Creating ga TargetHttpsProxy %v", ga.Name)
+			gaLogger.Info("Creating ga TargetHttpsProxy")
 			return mc.Observe(gceCloud.Compute().TargetHttpsProxies().Insert(ctx, key, ga))
 		}
 	}
 }
 
-func DeleteTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) error {
+func DeleteTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger) error {
+	logger = logger.WithValues("name", key.Name)
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("TargetHttpsProxy", "delete", key.Region, key.Zone, string(version))
@@ -6726,34 +6774,35 @@ func DeleteTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, version meta.Ver
 	case meta.VersionAlpha:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Deleting alpha region TargetHttpsProxy %v", key.Name)
+			logger.Info("Deleting alpha region TargetHttpsProxy")
 			return mc.Observe(gceCloud.Compute().AlphaRegionTargetHttpsProxies().Delete(ctx, key))
 		default:
-			klog.V(3).Infof("Deleting alpha TargetHttpsProxy %v", key.Name)
+			logger.Info("Deleting alpha TargetHttpsProxy")
 			return mc.Observe(gceCloud.Compute().AlphaTargetHttpsProxies().Delete(ctx, key))
 		}
 	case meta.VersionBeta:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Deleting beta region TargetHttpsProxy %v", key.Name)
+			logger.Info("Deleting beta region TargetHttpsProxy")
 			return mc.Observe(gceCloud.Compute().BetaRegionTargetHttpsProxies().Delete(ctx, key))
 		default:
-			klog.V(3).Infof("Deleting beta TargetHttpsProxy %v", key.Name)
+			logger.Info("Deleting beta TargetHttpsProxy")
 			return mc.Observe(gceCloud.Compute().BetaTargetHttpsProxies().Delete(ctx, key))
 		}
 	default:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Deleting ga region TargetHttpsProxy %v", key.Name)
+			logger.Info("Deleting ga region TargetHttpsProxy")
 			return mc.Observe(gceCloud.Compute().RegionTargetHttpsProxies().Delete(ctx, key))
 		default:
-			klog.V(3).Infof("Deleting ga TargetHttpsProxy %v", key.Name)
+			logger.Info("Deleting ga TargetHttpsProxy")
 			return mc.Observe(gceCloud.Compute().TargetHttpsProxies().Delete(ctx, key))
 		}
 	}
 }
 
-func GetTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) (*TargetHttpsProxy, error) {
+func GetTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger) (*TargetHttpsProxy, error) {
+	logger = logger.WithValues("name", key.Name)
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("TargetHttpsProxy", "get", key.Region, key.Zone, string(version))
@@ -6764,28 +6813,28 @@ func GetTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, version meta.Versio
 	case meta.VersionAlpha:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Getting alpha region TargetHttpsProxy %v", key.Name)
+			logger.Info("Getting alpha region TargetHttpsProxy")
 			gceObj, err = gceCloud.Compute().AlphaRegionTargetHttpsProxies().Get(ctx, key)
 		default:
-			klog.V(3).Infof("Getting alpha TargetHttpsProxy %v", key.Name)
+			logger.Info("Getting alpha TargetHttpsProxy")
 			gceObj, err = gceCloud.Compute().AlphaTargetHttpsProxies().Get(ctx, key)
 		}
 	case meta.VersionBeta:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Getting beta region TargetHttpsProxy %v", key.Name)
+			logger.Info("Getting beta region TargetHttpsProxy")
 			gceObj, err = gceCloud.Compute().BetaRegionTargetHttpsProxies().Get(ctx, key)
 		default:
-			klog.V(3).Infof("Getting beta TargetHttpsProxy %v", key.Name)
+			logger.Info("Getting beta TargetHttpsProxy")
 			gceObj, err = gceCloud.Compute().BetaTargetHttpsProxies().Get(ctx, key)
 		}
 	default:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Getting ga region TargetHttpsProxy %v", key.Name)
+			logger.Info("Getting ga region TargetHttpsProxy")
 			gceObj, err = gceCloud.Compute().RegionTargetHttpsProxies().Get(ctx, key)
 		default:
-			klog.V(3).Infof("Getting ga TargetHttpsProxy %v", key.Name)
+			logger.Info("Getting ga TargetHttpsProxy")
 			gceObj, err = gceCloud.Compute().TargetHttpsProxies().Get(ctx, key)
 		}
 	}
@@ -6800,7 +6849,7 @@ func GetTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, version meta.Versio
 	return compositeType, nil
 }
 
-func ListTargetHttpsProxies(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) ([]*TargetHttpsProxy, error) {
+func ListTargetHttpsProxies(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger) ([]*TargetHttpsProxy, error) {
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("TargetHttpsProxy", "list", key.Region, key.Zone, string(version))
@@ -6811,28 +6860,28 @@ func ListTargetHttpsProxies(gceCloud *gce.Cloud, key *meta.Key, version meta.Ver
 	case meta.VersionAlpha:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Listing alpha region TargetHttpsProxy")
+			logger.Info("Listing alpha region TargetHttpsProxy")
 			gceObjs, err = gceCloud.Compute().AlphaRegionTargetHttpsProxies().List(ctx, key.Region, filter.None)
 		default:
-			klog.V(3).Infof("Listing alpha TargetHttpsProxy")
+			logger.Info("Listing alpha TargetHttpsProxy")
 			gceObjs, err = gceCloud.Compute().AlphaTargetHttpsProxies().List(ctx, filter.None)
 		}
 	case meta.VersionBeta:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Listing beta region TargetHttpsProxy")
+			logger.Info("Listing beta region TargetHttpsProxy")
 			gceObjs, err = gceCloud.Compute().BetaRegionTargetHttpsProxies().List(ctx, key.Region, filter.None)
 		default:
-			klog.V(3).Infof("Listing beta TargetHttpsProxy")
+			logger.Info("Listing beta TargetHttpsProxy")
 			gceObjs, err = gceCloud.Compute().BetaTargetHttpsProxies().List(ctx, filter.None)
 		}
 	default:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Listing ga region TargetHttpsProxy")
+			logger.Info("Listing ga region TargetHttpsProxy")
 			gceObjs, err = gceCloud.Compute().RegionTargetHttpsProxies().List(ctx, key.Region, filter.None)
 		default:
-			klog.V(3).Infof("Listing ga TargetHttpsProxy")
+			logger.Info("Listing ga TargetHttpsProxy")
 			gceObjs, err = gceCloud.Compute().TargetHttpsProxies().List(ctx, filter.None)
 		}
 	}
@@ -6941,7 +6990,7 @@ func (targetHttpsProxy *TargetHttpsProxy) ToGA() (*compute.TargetHttpsProxy, err
 	return ga, nil
 }
 
-func CreateUrlMap(gceCloud *gce.Cloud, key *meta.Key, urlMap *UrlMap) error {
+func CreateUrlMap(gceCloud *gce.Cloud, key *meta.Key, urlMap *UrlMap, logger klog.Logger) error {
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("UrlMap", "create", key.Region, key.Zone, string(urlMap.Version))
@@ -6952,13 +7001,14 @@ func CreateUrlMap(gceCloud *gce.Cloud, key *meta.Key, urlMap *UrlMap) error {
 		if err != nil {
 			return err
 		}
+		alphaLogger := logger.WithValues("name", alpha.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Creating alpha region UrlMap %v", alpha.Name)
+			alphaLogger.Info("Creating alpha region UrlMap")
 			alpha.Region = key.Region
 			return mc.Observe(gceCloud.Compute().AlphaRegionUrlMaps().Insert(ctx, key, alpha))
 		default:
-			klog.V(3).Infof("Creating alpha UrlMap %v", alpha.Name)
+			alphaLogger.Info("Creating alpha UrlMap")
 			return mc.Observe(gceCloud.Compute().AlphaUrlMaps().Insert(ctx, key, alpha))
 		}
 	case meta.VersionBeta:
@@ -6966,13 +7016,14 @@ func CreateUrlMap(gceCloud *gce.Cloud, key *meta.Key, urlMap *UrlMap) error {
 		if err != nil {
 			return err
 		}
+		betaLogger := logger.WithValues("name", beta.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Creating beta region UrlMap %v", beta.Name)
+			betaLogger.Info("Creating beta region UrlMap")
 			beta.Region = key.Region
 			return mc.Observe(gceCloud.Compute().BetaRegionUrlMaps().Insert(ctx, key, beta))
 		default:
-			klog.V(3).Infof("Creating beta UrlMap %v", beta.Name)
+			betaLogger.Info("Creating beta UrlMap")
 			return mc.Observe(gceCloud.Compute().BetaUrlMaps().Insert(ctx, key, beta))
 		}
 	default:
@@ -6980,19 +7031,20 @@ func CreateUrlMap(gceCloud *gce.Cloud, key *meta.Key, urlMap *UrlMap) error {
 		if err != nil {
 			return err
 		}
+		gaLogger := logger.WithValues("name", ga.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Creating ga region UrlMap %v", ga.Name)
+			gaLogger.Info("Creating ga region UrlMap")
 			ga.Region = key.Region
 			return mc.Observe(gceCloud.Compute().RegionUrlMaps().Insert(ctx, key, ga))
 		default:
-			klog.V(3).Infof("Creating ga UrlMap %v", ga.Name)
+			gaLogger.Info("Creating ga UrlMap")
 			return mc.Observe(gceCloud.Compute().UrlMaps().Insert(ctx, key, ga))
 		}
 	}
 }
 
-func UpdateUrlMap(gceCloud *gce.Cloud, key *meta.Key, urlMap *UrlMap) error {
+func UpdateUrlMap(gceCloud *gce.Cloud, key *meta.Key, urlMap *UrlMap, logger klog.Logger) error {
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("UrlMap", "update", key.Region, key.Zone, string(urlMap.Version))
@@ -7002,12 +7054,13 @@ func UpdateUrlMap(gceCloud *gce.Cloud, key *meta.Key, urlMap *UrlMap) error {
 		if err != nil {
 			return err
 		}
+		alphaLogger := logger.WithValues("name", alpha.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Updating alpha region UrlMap %v", alpha.Name)
+			alphaLogger.Info("Updating alpha region UrlMap")
 			return mc.Observe(gceCloud.Compute().AlphaRegionUrlMaps().Update(ctx, key, alpha))
 		default:
-			klog.V(3).Infof("Updating alpha UrlMap %v", alpha.Name)
+			alphaLogger.Info("Updating alpha UrlMap")
 			return mc.Observe(gceCloud.Compute().AlphaUrlMaps().Update(ctx, key, alpha))
 		}
 	case meta.VersionBeta:
@@ -7015,12 +7068,13 @@ func UpdateUrlMap(gceCloud *gce.Cloud, key *meta.Key, urlMap *UrlMap) error {
 		if err != nil {
 			return err
 		}
+		betaLogger := logger.WithValues("name", beta.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Updating beta region UrlMap %v", beta.Name)
+			betaLogger.Info("Updating beta region UrlMap")
 			return mc.Observe(gceCloud.Compute().BetaRegionUrlMaps().Update(ctx, key, beta))
 		default:
-			klog.V(3).Infof("Updating beta UrlMap %v", beta.Name)
+			betaLogger.Info("Updating beta UrlMap")
 			return mc.Observe(gceCloud.Compute().BetaUrlMaps().Update(ctx, key, beta))
 		}
 	default:
@@ -7028,18 +7082,20 @@ func UpdateUrlMap(gceCloud *gce.Cloud, key *meta.Key, urlMap *UrlMap) error {
 		if err != nil {
 			return err
 		}
+		gaLogger := logger.WithValues("name", ga.Name)
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Updating ga region UrlMap %v", ga.Name)
+			gaLogger.Info("Updating ga region UrlMap")
 			return mc.Observe(gceCloud.Compute().RegionUrlMaps().Update(ctx, key, ga))
 		default:
-			klog.V(3).Infof("Updating ga UrlMap %v", ga.Name)
+			gaLogger.Info("Updating ga UrlMap")
 			return mc.Observe(gceCloud.Compute().UrlMaps().Update(ctx, key, ga))
 		}
 	}
 }
 
-func DeleteUrlMap(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) error {
+func DeleteUrlMap(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger) error {
+	logger = logger.WithValues("name", key.Name)
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("UrlMap", "delete", key.Region, key.Zone, string(version))
@@ -7048,34 +7104,35 @@ func DeleteUrlMap(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) erro
 	case meta.VersionAlpha:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Deleting alpha region UrlMap %v", key.Name)
+			logger.Info("Deleting alpha region UrlMap")
 			return mc.Observe(gceCloud.Compute().AlphaRegionUrlMaps().Delete(ctx, key))
 		default:
-			klog.V(3).Infof("Deleting alpha UrlMap %v", key.Name)
+			logger.Info("Deleting alpha UrlMap")
 			return mc.Observe(gceCloud.Compute().AlphaUrlMaps().Delete(ctx, key))
 		}
 	case meta.VersionBeta:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Deleting beta region UrlMap %v", key.Name)
+			logger.Info("Deleting beta region UrlMap")
 			return mc.Observe(gceCloud.Compute().BetaRegionUrlMaps().Delete(ctx, key))
 		default:
-			klog.V(3).Infof("Deleting beta UrlMap %v", key.Name)
+			logger.Info("Deleting beta UrlMap")
 			return mc.Observe(gceCloud.Compute().BetaUrlMaps().Delete(ctx, key))
 		}
 	default:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Deleting ga region UrlMap %v", key.Name)
+			logger.Info("Deleting ga region UrlMap")
 			return mc.Observe(gceCloud.Compute().RegionUrlMaps().Delete(ctx, key))
 		default:
-			klog.V(3).Infof("Deleting ga UrlMap %v", key.Name)
+			logger.Info("Deleting ga UrlMap")
 			return mc.Observe(gceCloud.Compute().UrlMaps().Delete(ctx, key))
 		}
 	}
 }
 
-func GetUrlMap(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) (*UrlMap, error) {
+func GetUrlMap(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger) (*UrlMap, error) {
+	logger = logger.WithValues("name", key.Name)
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("UrlMap", "get", key.Region, key.Zone, string(version))
@@ -7086,28 +7143,28 @@ func GetUrlMap(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) (*UrlMa
 	case meta.VersionAlpha:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Getting alpha region UrlMap %v", key.Name)
+			logger.Info("Getting alpha region UrlMap")
 			gceObj, err = gceCloud.Compute().AlphaRegionUrlMaps().Get(ctx, key)
 		default:
-			klog.V(3).Infof("Getting alpha UrlMap %v", key.Name)
+			logger.Info("Getting alpha UrlMap")
 			gceObj, err = gceCloud.Compute().AlphaUrlMaps().Get(ctx, key)
 		}
 	case meta.VersionBeta:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Getting beta region UrlMap %v", key.Name)
+			logger.Info("Getting beta region UrlMap")
 			gceObj, err = gceCloud.Compute().BetaRegionUrlMaps().Get(ctx, key)
 		default:
-			klog.V(3).Infof("Getting beta UrlMap %v", key.Name)
+			logger.Info("Getting beta UrlMap")
 			gceObj, err = gceCloud.Compute().BetaUrlMaps().Get(ctx, key)
 		}
 	default:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Getting ga region UrlMap %v", key.Name)
+			logger.Info("Getting ga region UrlMap")
 			gceObj, err = gceCloud.Compute().RegionUrlMaps().Get(ctx, key)
 		default:
-			klog.V(3).Infof("Getting ga UrlMap %v", key.Name)
+			logger.Info("Getting ga UrlMap")
 			gceObj, err = gceCloud.Compute().UrlMaps().Get(ctx, key)
 		}
 	}
@@ -7122,7 +7179,7 @@ func GetUrlMap(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) (*UrlMa
 	return compositeType, nil
 }
 
-func ListUrlMaps(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) ([]*UrlMap, error) {
+func ListUrlMaps(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger) ([]*UrlMap, error) {
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("UrlMap", "list", key.Region, key.Zone, string(version))
@@ -7133,28 +7190,28 @@ func ListUrlMaps(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) ([]*U
 	case meta.VersionAlpha:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Listing alpha region UrlMap")
+			logger.Info("Listing alpha region UrlMap")
 			gceObjs, err = gceCloud.Compute().AlphaRegionUrlMaps().List(ctx, key.Region, filter.None)
 		default:
-			klog.V(3).Infof("Listing alpha UrlMap")
+			logger.Info("Listing alpha UrlMap")
 			gceObjs, err = gceCloud.Compute().AlphaUrlMaps().List(ctx, filter.None)
 		}
 	case meta.VersionBeta:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Listing beta region UrlMap")
+			logger.Info("Listing beta region UrlMap")
 			gceObjs, err = gceCloud.Compute().BetaRegionUrlMaps().List(ctx, key.Region, filter.None)
 		default:
-			klog.V(3).Infof("Listing beta UrlMap")
+			logger.Info("Listing beta UrlMap")
 			gceObjs, err = gceCloud.Compute().BetaUrlMaps().List(ctx, filter.None)
 		}
 	default:
 		switch key.Type() {
 		case meta.Regional:
-			klog.V(3).Infof("Listing ga region UrlMap")
+			logger.Info("Listing ga region UrlMap")
 			gceObjs, err = gceCloud.Compute().RegionUrlMaps().List(ctx, key.Region, filter.None)
 		default:
-			klog.V(3).Infof("Listing ga UrlMap")
+			logger.Info("Listing ga UrlMap")
 			gceObjs, err = gceCloud.Compute().UrlMaps().List(ctx, filter.None)
 		}
 	}
