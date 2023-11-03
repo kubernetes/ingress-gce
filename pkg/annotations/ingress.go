@@ -63,7 +63,7 @@ const (
 	GceIngressClass              = "gce"
 	GceMultiIngressClass         = "gce-multi-cluster"
 	GceL7ILBIngressClass         = "gce-internal"
-	GceL7XLBRegionalIngressClass = "gce-regional"
+	GceL7XLBRegionalIngressClass = "gce-regional-external"
 
 	// Label key to denote which GCE zone a Kubernetes node is in.
 	ZoneKey     = "topology.kubernetes.io/zone"
