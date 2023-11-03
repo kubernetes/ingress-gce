@@ -86,8 +86,9 @@ func (l7 *L7) ensureComputeURLMap() error {
 func (l7 *L7) ensureRedirectURLMap() error {
 	feConfig := l7.runtimeInfo.FrontendConfig
 	isL7ILB := utils.IsGCEL7ILBIngress(&l7.ingress)
+	isL7XLBRegional := utils.IsGCEL7XLBRegionalIngress(&l7.ingress)
 
-	t := translator.NewTranslator(isL7ILB, l7.namer)
+	t := translator.NewTranslator(isL7ILB, isL7XLBRegional, l7.namer)
 	env := &translator.Env{FrontendConfig: feConfig, Ing: &l7.ingress}
 
 	name, namerSupported := l7.namer.RedirectUrlMap()

@@ -56,7 +56,8 @@ func (l7 *L7) checkProxy() (err error) {
 	}
 
 	isL7ILB := utils.IsGCEL7ILBIngress(l7.runtimeInfo.Ingress)
-	tr := translator.NewTranslator(isL7ILB, l7.namer)
+	isL7XLBRegional := utils.IsGCEL7XLBRegionalIngress(l7.runtimeInfo.Ingress)
+	tr := translator.NewTranslator(isL7ILB, isL7XLBRegional, l7.namer)
 
 	description, err := l7.description()
 	if err != nil {
@@ -107,7 +108,8 @@ func (l7 *L7) checkProxy() (err error) {
 
 func (l7 *L7) checkHttpsProxy() (err error) {
 	isL7ILB := utils.IsGCEL7ILBIngress(l7.runtimeInfo.Ingress)
-	tr := translator.NewTranslator(isL7ILB, l7.namer)
+	isL7XLBRegional := utils.IsGCEL7XLBRegionalIngress(l7.runtimeInfo.Ingress)
+	tr := translator.NewTranslator(isL7ILB, isL7XLBRegional, l7.namer)
 	env := &translator.Env{FrontendConfig: l7.runtimeInfo.FrontendConfig}
 
 	if len(l7.sslCerts) == 0 {

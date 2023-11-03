@@ -155,7 +155,7 @@ func TestToRedirectUrlMap(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			tr := NewTranslator(false, &testNamer{"foo"})
+			tr := NewTranslator(false, false, &testNamer{"foo"})
 			env := &Env{FrontendConfig: tc.fc}
 
 			result := tr.ToRedirectUrlMap(env, meta.VersionGA)
@@ -381,11 +381,12 @@ func TestToForwardingRule(t *testing.T) {
 	vip := "127.0.0.1"
 
 	cases := []struct {
-		desc     string
-		isL7ILB  bool
-		protocol namer_util.NamerProtocol
-		ipSubnet string
-		want     *composite.ForwardingRule
+		desc            string
+		isL7ILB         bool
+		isL7XLBRegional bool
+		protocol        namer_util.NamerProtocol
+		ipSubnet        string
+		want            *composite.ForwardingRule
 	}{
 		{
 			desc:     "http-xlb",
@@ -411,6 +412,38 @@ func TestToForwardingRule(t *testing.T) {
 				IPProtocol:  "TCP",
 				Description: description,
 				Version:     version,
+			},
+		},
+		{
+			desc:            "http-xlb-regional",
+			isL7XLBRegional: true,
+			protocol:        namer_util.HTTPProtocol,
+			want: &composite.ForwardingRule{
+				Name:                "foo-fr",
+				IPAddress:           vip,
+				Target:              proxyLink,
+				PortRange:           httpDefaultPortRange,
+				IPProtocol:          "TCP",
+				Description:         description,
+				Version:             version,
+				LoadBalancingScheme: "EXTERNAL_MANAGED",
+				NetworkTier:         "STANDARD",
+			},
+		},
+		{
+			desc:            "https-xlb-regional",
+			isL7XLBRegional: true,
+			protocol:        namer_util.HTTPSProtocol,
+			want: &composite.ForwardingRule{
+				Name:                "foo-fr",
+				IPAddress:           vip,
+				Target:              proxyLink,
+				PortRange:           httpsDefaultPortRange,
+				IPProtocol:          "TCP",
+				Description:         description,
+				Version:             version,
+				LoadBalancingScheme: "EXTERNAL_MANAGED",
+				NetworkTier:         "STANDARD",
 			},
 		},
 		{
@@ -469,7 +502,7 @@ func TestToForwardingRule(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
-			tr := NewTranslator(tc.isL7ILB, &testNamer{"foo"})
+			tr := NewTranslator(tc.isL7ILB, tc.isL7XLBRegional, &testNamer{"foo"})
 			env := &Env{VIP: vip, Network: network, Subnetwork: subnetwork}
 			got := tr.ToCompositeForwardingRule(env, tc.protocol, version, proxyLink, description, tc.ipSubnet)
 			if diff := cmp.Diff(tc.want, got); diff != "" {
@@ -526,8 +559,8 @@ func TestToCompositeTargetHttpProxy(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			// isL7ILB doesn't affect the outcome here since the key is creating during ensure
-			tr := NewTranslator(false, &testNamer{"foo"})
+			// isL7ILB or isL7XLBRegional doesn't affect the outcome here since the key is creating during ensure
+			tr := NewTranslator(false, false, &testNamer{"foo"})
 			got := tr.ToCompositeTargetHttpProxy(description, tc.version, tc.urlMapKey)
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Fatalf("Got diff for TargetHttpProxy (-want +got):\n%s", diff)
@@ -599,8 +632,8 @@ func TestToCompositeTargetHttpsProxy(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			// isL7ILB doesn't affect the outcome here since the key is creating during ensure
-			tr := NewTranslator(false, &testNamer{"foo"})
+			// isL7ILB or isL7XLBRegional doesn't affect the outcome here since the key is creating during ensure
+			tr := NewTranslator(false, false, &testNamer{"foo"})
 			env := &Env{FrontendConfig: &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: tc.sslPolicy}}}
 			got, sslPolicySet, err := tr.ToCompositeTargetHttpsProxy(env, description, tc.version, tc.urlMapKey, tc.sslCerts)
 			if err != nil {
@@ -690,7 +723,7 @@ func TestToCompositeSSLCertificates(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			tr := NewTranslator(false, &testNamer{"foo"})
+			tr := NewTranslator(false, false, &testNamer{"foo"})
 			env := &Env{Region: tc.region}
 			got := tr.ToCompositeSSLCertificates(env, tc.tlsName, tc.tlsCerts, meta.VersionGA)
 
