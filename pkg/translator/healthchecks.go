@@ -75,13 +75,13 @@ const (
 	// used for health checking.
 	useServingPortSpecification = "USE_SERVING_PORT"
 
-	DescriptionForDefaultHealthChecks             = "Default kubernetes L7 Loadbalancing health check."
-	DescriptionForDefaultNEGHealthChecks          = "Default kubernetes L7 Loadbalancing health check for NEG."
-	DescriptionForDefaultILBHealthChecks          = "Default kubernetes L7 Loadbalancing health check for ILB."
-	DescriptionForDefaultlXLBRegionalHealthChecks = "Default kubernetes L7 Loadbalancing health check for Regional XLB."
-	DescriptionForHealthChecksFromReadinessProbe  = "Kubernetes L7 health check generated with readiness probe settings."
-	DescriptionForHealthChecksFromBackendConfig   = "Kubernetes L7 health check generated with BackendConfig CRD."
-	DescriptionForTransparentHealthChecks         = "Kubernetes L7 transparent health check."
+	DescriptionForDefaultHealthChecks            = "Default kubernetes L7 Loadbalancing health check."
+	DescriptionForDefaultNEGHealthChecks         = "Default kubernetes L7 Loadbalancing health check for NEG."
+	DescriptionForDefaultILBHealthChecks         = "Default kubernetes L7 Loadbalancing health check for ILB."
+	DescriptionForDefaultXLBRegionalHealthChecks = "Default kubernetes L7 Loadbalancing health check for Regional XLB."
+	DescriptionForHealthChecksFromReadinessProbe = "Kubernetes L7 health check generated with readiness probe settings."
+	DescriptionForHealthChecksFromBackendConfig  = "Kubernetes L7 health check generated with BackendConfig CRD."
+	DescriptionForTransparentHealthChecks        = "Kubernetes L7 transparent health check."
 
 	// TODO: revendor the GCE API go client so that this error will not be hit.
 	newHealthCheckErrorMessageTemplate = "the %v health check configuration on the existing health check %v is nil. " +
@@ -294,7 +294,7 @@ func DefaultHealthCheck(port int64, protocol annotations.AppProtocol) *HealthChe
 
 func DefaultXLBRegionalHealthCheck(protocol annotations.AppProtocol) *HealthCheck {
 	hc := DefaultNEGHealthCheck(protocol)
-	hc.Description = DescriptionForDefaultlXLBRegionalHealthChecks
+	hc.Description = DescriptionForDefaultXLBRegionalHealthChecks
 	hc.ForRegionalXLB = true
 	return hc
 }
