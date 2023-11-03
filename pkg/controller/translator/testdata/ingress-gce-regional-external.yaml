@@ -4,7 +4,7 @@ metadata:
   name: test-ingress
   namespace: default
   annotations:
-    kubernetes.io/ingress.class: "gce-regional"
+    kubernetes.io/ingress.class: "gce-regional-external"
 spec:
   rules:
   - host: foo.bar.com

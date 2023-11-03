@@ -434,7 +434,7 @@ func IsGCEL7ILBIngress(ing *networkingv1.Ingress) bool {
 }
 
 // IsGCEL7XLBRegionalIngress returns true if the given Ingress has
-// ingress.class annotation set to "gce-regional"
+// ingress.class annotation set to "gce-regional-external"
 func IsGCEL7XLBRegionalIngress(ing *networkingv1.Ingress) bool {
 	class := annotations.FromIngress(ing).IngressClass()
 	return class == annotations.GceL7XLBRegionalIngressClass

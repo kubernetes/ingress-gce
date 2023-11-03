@@ -137,10 +137,10 @@ func TestTranslateIngress(t *testing.T) {
 			wantGCEURLMap: &utils.GCEURLMap{DefaultBackend: &utils.ServicePort{ID: utils.ServicePortID{Service: types.NamespacedName{Name: "first-service", Namespace: "default"}, Port: port80}}},
 		},
 		{
-			desc:                   "gce-regional",
-			ing:                    ingressFromFile(t, "ingress-gce-regional.yaml"),
+			desc:                   "gce-regional-external",
+			ing:                    ingressFromFile(t, "ingress-gce-regional-external.yaml"),
 			wantErrCount:           0,
-			wantGCEURLMap:          gceURLMapFromFile(t, "ingress-gce-regional.json"),
+			wantGCEURLMap:          gceURLMapFromFile(t, "ingress-gce-regional-external.json"),
 			enableL7XLBGCERegional: true,
 		},
 		{
