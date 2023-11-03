@@ -148,8 +148,8 @@ func maybeEnableNEG(sp *utils.ServicePort, svc *api_v1.Service) error {
 		return errors.ErrBadSvcType{Service: sp.ID.Service, ServiceType: svc.Spec.Type}
 	}
 
-	if sp.L7ILBEnabled {
-		// L7-ILB Requires NEGs
+	if sp.L7ILBEnabled || sp.L7XLBRegionalEnabled {
+		// L7-ILB and L7 Regional XLB require NEGs
 		sp.NEGEnabled = true
 	}
 
