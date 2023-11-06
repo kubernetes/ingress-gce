@@ -25,7 +25,8 @@ import (
 )
 
 const (
-	FeatureL7ILB = "L7ILB"
+	FeatureL7ILB         = "L7ILB"
+	FeatureL7XLBRegional = "L7XLBRegional"
 )
 
 var GAResourceVersions = NewResourceVersions()
@@ -51,7 +52,8 @@ var (
 	// require using different versions for each resource.
 	// must not be nil
 	featureToVersions = map[string]*ResourceVersions{
-		FeatureL7ILB: &l7IlbVersions,
+		FeatureL7ILB:         &l7IlbVersions,
+		FeatureL7XLBRegional: &l7XLBRegionalVersions,
 	}
 
 	// scopeToFeatures stores the mapping from the required resource type
@@ -59,12 +61,13 @@ var (
 	// Only add features that have a hard scope requirement
 	// TODO: (shance) refactor scope to be per-resource
 	scopeToFeatures = map[meta.KeyType][]string{
-		meta.Regional: {FeatureL7ILB},
+		meta.Regional: {FeatureL7ILB, FeatureL7XLBRegional},
 	}
 
 	// All of these fields must be filled in for L7ILBVersions() to work
 	// TODO(shance) Remove this entirely
-	l7IlbVersions = *NewResourceVersions()
+	l7IlbVersions         = *NewResourceVersions()
+	l7XLBRegionalVersions = *NewResourceVersions()
 )
 
 func NewResourceVersions() *ResourceVersions {
@@ -96,6 +99,8 @@ func featuresFromIngress(ing *v1.Ingress) []string {
 	var result []string
 	if utils.IsGCEL7ILBIngress(ing) {
 		result = append(result, FeatureL7ILB)
+	} else if utils.IsGCEL7XLBRegionalIngress(ing) {
+		result = append(result, FeatureL7XLBRegional)
 	}
 	return result
 }
