@@ -233,7 +233,7 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, backendConfigHCConfig *b
 
 	var scope meta.KeyType
 	// TODO(shance): find a way to remove this
-	if hc.ForILB {
+	if hc.ForILB || hc.ForRegionalXLB {
 		scope = meta.Regional
 	} else {
 		scope = meta.Global
@@ -260,6 +260,9 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, backendConfigHCConfig *b
 	if hc.ForILB {
 		existingHC.ForNEG = true
 		existingHC.ForILB = true
+	} else if hc.ForRegionalXLB {
+		existingHC.ForNEG = true
+		existingHC.ForRegionalXLB = true
 	}
 
 	// Do not merge the existing settings and perform the full diff in calculateDiff.
@@ -384,6 +387,10 @@ func (h *HealthChecks) create(hc *translator.HealthCheck, bchcc *backendconfigv1
 		klog.V(3).Infof("Creating ILB Health Check, name: %s", hc.Name)
 		return h.createRegional(hc)
 	}
+	if hc.ForRegionalXLB {
+		klog.V(3).Infof("Creating XLB Regional Health Check, name: %s", hc.Name)
+		return h.createRegional(hc)
+	}
 
 	switch hc.Version() {
 	case meta.VersionAlpha:
@@ -435,7 +442,11 @@ func (h *HealthChecks) updateRegional(hc *translator.HealthCheck) error {
 
 func (h *HealthChecks) update(hc *translator.HealthCheck) error {
 	if hc.ForILB {
-		klog.V(3).Infof("Updating ILB Health Check, name: %s", hc)
+		klog.V(3).Infof("Updating ILB Health Check: %v", hc)
+		return h.updateRegional(hc)
+	}
+	if hc.ForRegionalXLB {
+		klog.V(3).Infof("Updating XLB Regional Health Check: %v", hc)
 		return h.updateRegional(hc)
 	}
 	switch hc.Version() {
