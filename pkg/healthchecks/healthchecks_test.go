@@ -29,6 +29,8 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/kr/pretty"
 	computealpha "google.golang.org/api/compute/v0.alpha"
 	computebeta "google.golang.org/api/compute/v0.beta"
@@ -354,6 +356,64 @@ func TestRegionalHealthCheckDelete(t *testing.T) {
 	// Validate health-check is deleted.
 	if _, err = composite.GetHealthCheck(fakeGCE, key, features.L7ILBVersions().HealthCheck); !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 		t.Errorf("Expected not-found error, actual: %v", err)
+	}
+}
+
+func TestNewHealthCheckFromServicePort(t *testing.T) {
+	testCases := []struct {
+		desc        string
+		servicePort utils.ServicePort
+		wantHC      *translator.HealthCheck
+	}{
+		{
+			desc: "Regional External Health Check",
+			servicePort: utils.ServicePort{
+				ID: utils.ServicePortID{
+					Service: types.NamespacedName{
+						Namespace: "ns2",
+						Name:      "svc2",
+					},
+				},
+				Port:                 80,
+				Protocol:             annotations.ProtocolHTTP,
+				NEGEnabled:           true,
+				L7XLBRegionalEnabled: true,
+				BackendNamer:         testNamer,
+			},
+			wantHC: &translator.HealthCheck{
+				HTTPHealthCheck: computealpha.HTTPHealthCheck{
+					PortSpecification: "USE_SERVING_PORT",
+					RequestPath:       "/",
+				},
+				HealthCheck: computealpha.HealthCheck{
+					Name:               "k8s1-uid1-ns2-svc2-80-c8109fc7",
+					CheckIntervalSec:   int64((15 * time.Second).Seconds()),
+					TimeoutSec:         int64((15 * time.Second).Seconds()),
+					HealthyThreshold:   1,
+					UnhealthyThreshold: 2,
+					Description:        "Default kubernetes L7 Loadbalancing health check for Regional XLB.",
+					Type:               string(annotations.ProtocolHTTP),
+				},
+				ForNEG:         true,
+				ForRegionalXLB: true,
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+			healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), HealthcheckFlags{})
+
+			gotHC := healthChecks.new(tc.servicePort)
+			if diff := cmp.Diff(tc.wantHC, gotHC, cmpopts.IgnoreUnexported(translator.HealthCheck{})); diff != "" {
+				t.Errorf("HealthCheck not equal to expected: (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

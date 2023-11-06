@@ -75,12 +75,13 @@ const (
 	// used for health checking.
 	useServingPortSpecification = "USE_SERVING_PORT"
 
-	DescriptionForDefaultHealthChecks            = "Default kubernetes L7 Loadbalancing health check."
-	DescriptionForDefaultNEGHealthChecks         = "Default kubernetes L7 Loadbalancing health check for NEG."
-	DescriptionForDefaultILBHealthChecks         = "Default kubernetes L7 Loadbalancing health check for ILB."
-	DescriptionForHealthChecksFromReadinessProbe = "Kubernetes L7 health check generated with readiness probe settings."
-	DescriptionForHealthChecksFromBackendConfig  = "Kubernetes L7 health check generated with BackendConfig CRD."
-	DescriptionForTransparentHealthChecks        = "Kubernetes L7 transparent health check."
+	DescriptionForDefaultHealthChecks             = "Default kubernetes L7 Loadbalancing health check."
+	DescriptionForDefaultNEGHealthChecks          = "Default kubernetes L7 Loadbalancing health check for NEG."
+	DescriptionForDefaultILBHealthChecks          = "Default kubernetes L7 Loadbalancing health check for ILB."
+	DescriptionForDefaultlXLBRegionalHealthChecks = "Default kubernetes L7 Loadbalancing health check for Regional XLB."
+	DescriptionForHealthChecksFromReadinessProbe  = "Kubernetes L7 health check generated with readiness probe settings."
+	DescriptionForHealthChecksFromBackendConfig   = "Kubernetes L7 health check generated with BackendConfig CRD."
+	DescriptionForTransparentHealthChecks         = "Kubernetes L7 transparent health check."
 
 	// TODO: revendor the GCE API go client so that this error will not be hit.
 	newHealthCheckErrorMessageTemplate = "the %v health check configuration on the existing health check %v is nil. " +
@@ -91,8 +92,9 @@ const (
 // HealthCheck is a wrapper for different versions of the compute struct.
 // TODO(bowei): replace inner workings with composite.
 type HealthCheck struct {
-	ForNEG bool
-	ForILB bool
+	ForNEG         bool
+	ForILB         bool
+	ForRegionalXLB bool
 
 	// As the {HTTP, HTTPS, HTTP2} settings are identical, we maintain the
 	// settings at the outer-level and copy into the appropriate struct
@@ -288,6 +290,13 @@ func DefaultHealthCheck(port int64, protocol annotations.AppProtocol) *HealthChe
 		HealthCheck:     hcSettings,
 		ForNEG:          false,
 	}
+}
+
+func DefaultXLBRegionalHealthCheck(protocol annotations.AppProtocol) *HealthCheck {
+	hc := DefaultNEGHealthCheck(protocol)
+	hc.Description = DescriptionForDefaultlXLBRegionalHealthChecks
+	hc.ForRegionalXLB = true
+	return hc
 }
 
 // DefaultNEGHealthCheck simply returns the default health check.
