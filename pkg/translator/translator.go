@@ -80,13 +80,19 @@ func NewEnv(ing *v1.Ingress, client kubernetes.Interface, vip, net, subnet strin
 type Translator struct {
 	// IsL7ILB is true if the Ingress will be translated into an L7 ILB (as opposed to an XLB).
 	IsL7ILB bool
+	// IsL7XLBRegional is true if the Ingress will be translated into an L7 Regional XLB (as opposed to an XLB).
+	IsL7XLBRegional bool
 	// FrontendNamer generates names for frontend resources.
 	FrontendNamer namer.IngressFrontendNamer
 }
 
 // NewTranslator returns a new Translator.
-func NewTranslator(isL7ILB bool, frontendNamer namer.IngressFrontendNamer) *Translator {
-	return &Translator{IsL7ILB: isL7ILB, FrontendNamer: frontendNamer}
+func NewTranslator(isL7ILB bool, isL7XLBRegional bool, frontendNamer namer.IngressFrontendNamer) *Translator {
+	return &Translator{
+		IsL7ILB:         isL7ILB,
+		IsL7XLBRegional: isL7XLBRegional,
+		FrontendNamer:   frontendNamer,
+	}
 }
 
 // TLSCerts encapsulates .pem encoded TLS information.
@@ -282,6 +288,10 @@ func (t *Translator) ToCompositeForwardingRule(env *Env, protocol namer.NamerPro
 		} else {
 			fr.Subnetwork = env.Subnetwork
 		}
+	} else if t.IsL7XLBRegional {
+		fr.LoadBalancingScheme = "EXTERNAL_MANAGED"
+		// Regional External LB only supports Standard Network Tier.
+		fr.NetworkTier = cloud.NetworkTierStandard.ToGCEValue()
 	}
 
 	return fr
@@ -342,7 +352,7 @@ func (t *Translator) ToCompositeSSLCertificates(env *Env, tlsName string, tls []
 	tlsNames := utils.SplitAnnotation(tlsName)
 	for _, name := range tlsNames {
 		resID := cloud.ResourceID{Resource: "sslCertificates", Key: &meta.Key{Name: name}, ProjectID: env.Project}
-		if t.IsL7ILB {
+		if t.IsL7ILB || t.IsL7XLBRegional {
 			resID.Key.Region = env.Region
 		}
 		preSharedCert := &composite.SslCertificate{
@@ -357,7 +367,7 @@ func (t *Translator) ToCompositeSSLCertificates(env *Env, tlsName string, tls []
 		ingKey := tlsCert.Key
 		gcpCertName := t.FrontendNamer.SSLCertName(tlsCert.CertHash)
 		resID := cloud.ResourceID{Resource: "sslCertificates", Key: &meta.Key{Name: gcpCertName}, ProjectID: env.Project}
-		if t.IsL7ILB {
+		if t.IsL7ILB || t.IsL7XLBRegional {
 			resID.Key.Region = env.Region
 		}
 		cert := &composite.SslCertificate{

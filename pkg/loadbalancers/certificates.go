@@ -30,7 +30,8 @@ const SslCertificateMissing = "SslCertificateMissing"
 
 func (l7 *L7) checkSSLCert() error {
 	isL7ILB := utils.IsGCEL7ILBIngress(l7.runtimeInfo.Ingress)
-	tr := translator.NewTranslator(isL7ILB, l7.namer)
+	isL7XLBRegional := utils.IsGCEL7XLBRegionalIngress(l7.runtimeInfo.Ingress)
+	tr := translator.NewTranslator(isL7ILB, isL7XLBRegional, l7.namer)
 	env := &translator.Env{Region: l7.cloud.Region(), Project: l7.cloud.ProjectID()}
 	translatorCerts := tr.ToCompositeSSLCertificates(env, l7.runtimeInfo.TLSName, l7.runtimeInfo.TLS, l7.Versions().SslCertificate)
 
