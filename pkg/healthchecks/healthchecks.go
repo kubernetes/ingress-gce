@@ -254,6 +254,11 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, backendConfigHCConfig *b
 	if err != nil {
 		return "", err
 	}
+	// Update fields for future update() calls
+	if hc.ForILB {
+		existingHC.ForNEG = true
+		existingHC.ForILB = true
+	}
 
 	// Do not merge the existing settings and perform the full diff in calculateDiff.
 	recalculate := h.shouldRecalculateHC(existingHC, backendConfigHCConfig, thcConf)
@@ -523,10 +528,6 @@ func (h *HealthChecks) getRegional(name string) (*translator.HealthCheck, error)
 	if err != nil {
 		return nil, err
 	}
-
-	// Update fields for future update() calls
-	newHC.ForILB = true
-	newHC.ForNEG = true
 
 	return newHC, nil
 }
