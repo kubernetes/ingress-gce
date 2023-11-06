@@ -649,8 +649,15 @@ func (c *Controller) mergeDefaultBackendServicePortInfoMap(key string, service *
 		return nil
 	}
 
+	// ILB always has neg enabled, regardless of neg annotation.
 	if err := scanIngress(utils.IsGCEL7ILBIngress); err != nil {
 		return err
+	}
+	if c.enableIngressRegionalExternal {
+		// Regional XLB always has neg enabled, regardless of annotation.
+		if err := scanIngress(utils.IsGCEL7XLBRegionalIngress); err != nil {
+			return err
+		}
 	}
 
 	// process default backend service for L7 XLB
