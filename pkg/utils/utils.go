@@ -414,6 +414,8 @@ func IsGCEIngress(ing *networkingv1.Ingress) bool {
 		return true
 	case annotations.GceL7ILBIngressClass:
 		return true
+	case annotations.GceL7XLBRegionalIngressClass:
+		return flags.F.EnableIngressRegionalExternal
 	default:
 		return false
 	}

@@ -650,10 +650,11 @@ func TestGetNodeConditionPredicate(t *testing.T) {
 func TestIsGCEIngress(t *testing.T) {
 	var wrongClassName = "wrong-class"
 	testCases := []struct {
-		desc             string
-		ingress          *networkingv1.Ingress
-		ingressClassFlag string
-		expected         bool
+		desc                   string
+		ingress                *networkingv1.Ingress
+		ingressClassFlag       string
+		xlbRegionalEnabledFlag bool
+		expected               bool
 	}{
 		{
 			desc: "No ingress class",
@@ -733,6 +734,30 @@ func TestIsGCEIngress(t *testing.T) {
 			ingressClassFlag: "right-class",
 			expected:         true,
 		},
+		{
+			desc: "L7 XLB Regional ingress class with flag disabled",
+			ingress: &networkingv1.Ingress{
+				ObjectMeta: v1.ObjectMeta{
+					Annotations: map[string]string{
+						annotations.IngressClassKey: annotations.GceL7XLBRegionalIngressClass,
+					},
+				},
+			},
+			xlbRegionalEnabledFlag: false,
+			expected:               false,
+		},
+		{
+			desc: "L7 XLB Regional ingress class with flag enabled",
+			ingress: &networkingv1.Ingress{
+				ObjectMeta: v1.ObjectMeta{
+					Annotations: map[string]string{
+						annotations.IngressClassKey: annotations.GceL7XLBRegionalIngressClass,
+					},
+				},
+			},
+			xlbRegionalEnabledFlag: true,
+			expected:               true,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -740,6 +765,7 @@ func TestIsGCEIngress(t *testing.T) {
 			if tc.ingressClassFlag != "" {
 				flags.F.IngressClass = tc.ingressClassFlag
 			}
+			flags.F.EnableIngressRegionalExternal = tc.xlbRegionalEnabledFlag
 
 			result := IsGCEIngress(tc.ingress)
 			if result != tc.expected {
