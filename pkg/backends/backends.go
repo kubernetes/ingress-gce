@@ -96,6 +96,8 @@ func (b *Backends) Create(sp utils.ServicePort, hcLink string) (*composite.Backe
 	if sp.L7ILBEnabled {
 		// This enables l7-ILB and advanced traffic management features
 		be.LoadBalancingScheme = "INTERNAL_MANAGED"
+	} else if sp.L7XLBRegionalEnabled {
+		be.LoadBalancingScheme = "EXTERNAL_MANAGED"
 	}
 
 	ensureDescription(be, &sp)
