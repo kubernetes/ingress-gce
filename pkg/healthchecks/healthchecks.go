@@ -549,9 +549,8 @@ func (h *HealthChecks) getRegional(name string) (*translator.HealthCheck, error)
 func (h *HealthChecks) Get(name string, version meta.Version, scope meta.KeyType) (*translator.HealthCheck, error) {
 	klog.V(3).Infof("Getting Health Check, name: %s, version: %v, scope: %v", name, version, scope)
 
-	// L7-ILB is the only use of regional right now
 	if scope == meta.Regional {
-		klog.V(3).Infof("Getting ILB Health Check, name: %s", name)
+		klog.V(3).Infof("Getting Regional Health Check, name: %s", name)
 		return h.getRegional(name)
 	}
 
