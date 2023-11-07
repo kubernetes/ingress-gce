@@ -411,7 +411,7 @@ func IsGCEIngress(ing *networkingv1.Ingress) bool {
 		// is nil, then consider GCEIngress.
 		return ing.Spec.IngressClassName == nil
 	case annotations.GceIngressClass:
-		return true
+		return !flags.F.DisableIngressGlobalExternal
 	case annotations.GceL7ILBIngressClass:
 		return true
 	case annotations.GceL7XLBRegionalIngressClass:

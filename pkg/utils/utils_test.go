@@ -650,11 +650,12 @@ func TestGetNodeConditionPredicate(t *testing.T) {
 func TestIsGCEIngress(t *testing.T) {
 	var wrongClassName = "wrong-class"
 	testCases := []struct {
-		desc                   string
-		ingress                *networkingv1.Ingress
-		ingressClassFlag       string
-		xlbRegionalEnabledFlag bool
-		expected               bool
+		desc                             string
+		ingress                          *networkingv1.Ingress
+		ingressClassFlag                 string
+		xlbRegionalEnabledFlag           bool
+		disableIngressGlobalExternalFlag bool
+		expected                         bool
 	}{
 		{
 			desc: "No ingress class",
@@ -758,19 +759,46 @@ func TestIsGCEIngress(t *testing.T) {
 			xlbRegionalEnabledFlag: true,
 			expected:               true,
 		},
+		{
+			desc: "L7 XLB Global",
+			ingress: &networkingv1.Ingress{
+				ObjectMeta: v1.ObjectMeta{
+					Annotations: map[string]string{
+						annotations.IngressClassKey: annotations.GceIngressClass,
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			desc: "L7 XLB Global class, but with DisableIngressGlobalExternal flag",
+			ingress: &networkingv1.Ingress{
+				ObjectMeta: v1.ObjectMeta{
+					Annotations: map[string]string{
+						annotations.IngressClassKey: annotations.GceIngressClass,
+					},
+				},
+			},
+			disableIngressGlobalExternalFlag: true,
+			expected:                         false,
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			if tc.ingressClassFlag != "" {
-				flags.F.IngressClass = tc.ingressClassFlag
-			}
+			flags.F.IngressClass = tc.ingressClassFlag
 			flags.F.EnableIngressRegionalExternal = tc.xlbRegionalEnabledFlag
+			flags.F.DisableIngressGlobalExternal = tc.disableIngressGlobalExternalFlag
 
 			result := IsGCEIngress(tc.ingress)
 			if result != tc.expected {
 				t.Fatalf("want %v, got %v", tc.expected, result)
 			}
+
+			// reset flags to default, otherwise they stay modified for other tests
+			flags.F.IngressClass = ""
+			flags.F.EnableIngressRegionalExternal = false
+			flags.F.DisableIngressGlobalExternal = false
 		})
 	}
 }
