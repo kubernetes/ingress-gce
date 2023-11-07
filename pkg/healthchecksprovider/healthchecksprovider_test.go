@@ -10,6 +10,7 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog/v2"
 )
 
 func TestCreateHealthCheck(t *testing.T) {
@@ -229,7 +230,7 @@ func verifyHealthCheckShouldExist(cloud *gce.Cloud, name string, scope meta.KeyT
 	if err != nil {
 		return fmt.Errorf("hailed to create key for fetching health check %s, err: %w", name, err)
 	}
-	_, err = composite.GetHealthCheck(cloud, key, meta.VersionGA)
+	_, err = composite.GetHealthCheck(cloud, key, meta.VersionGA, klog.TODO())
 	if err != nil {
 		if utils.IsNotFoundError(err) {
 			if shouldExist {
@@ -260,7 +261,7 @@ func mustCreateHealthCheck(t *testing.T, cloud *gce.Cloud, hc *composite.HealthC
 	if err != nil {
 		t.Fatalf("composite.CreateKey(_, %s, %s) returned error %v, want nil", hc.Name, hc.Scope, err)
 	}
-	err = composite.CreateHealthCheck(cloud, key, hc)
+	err = composite.CreateHealthCheck(cloud, key, hc, klog.TODO())
 	if err != nil {
 		t.Fatalf("composite.CreateHealthCheck(_, %s, %v) returned error %v, want nil", key, hc, err)
 	}

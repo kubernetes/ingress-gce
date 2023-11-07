@@ -22,6 +22,7 @@ import (
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/klog/v2"
 )
 
 func TestGetEffectiveIP(t *testing.T) {
@@ -77,7 +78,7 @@ func TestGetEffectiveIP(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				err = composite.CreateAddress(fakeGCE, key, tc.address)
+				err = composite.CreateAddress(fakeGCE, key, tc.address, klog.TODO())
 				if err != nil {
 					t.Fatal(err)
 				}

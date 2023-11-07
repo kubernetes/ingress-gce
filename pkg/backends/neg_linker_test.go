@@ -20,6 +20,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
+	"k8s.io/klog/v2"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
@@ -129,7 +130,7 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 					if err != nil {
 						t.Fatalf("Failed to create composite key - %v", err)
 					}
-					bs, err := composite.GetBackendService(fakeGCE, key, version)
+					bs, err := composite.GetBackendService(fakeGCE, key, version, klog.TODO())
 					if err != nil {
 						t.Fatalf("Failed to retrieve backend service using key %+v for svcPort %v: %v", key, svcPort, err)
 					}

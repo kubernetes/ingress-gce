@@ -11,6 +11,7 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog/v2"
 )
 
 func TestCreateForwardingRule(t *testing.T) {
@@ -185,7 +186,7 @@ func verifyForwardingRuleExists(cloud *gce.Cloud, name string) error {
 		return fmt.Errorf("failed to create key for fetching forwarding rule %s, err: %w", name, err)
 	}
 
-	_, err = composite.GetForwardingRule(cloud, key, meta.VersionGA)
+	_, err = composite.GetForwardingRule(cloud, key, meta.VersionGA, klog.TODO())
 	if err != nil {
 		if utils.IsNotFoundError(err) {
 			return fmt.Errorf("forwarding rule %s was not found, expected to exist", name)
@@ -201,7 +202,7 @@ func verifyForwardingRuleNotExists(cloud *gce.Cloud, name string) error {
 		return fmt.Errorf("failed to create key for fetching forwarding rule %s, err: %w", name, err)
 	}
 
-	_, err = composite.GetForwardingRule(cloud, key, meta.VersionGA)
+	_, err = composite.GetForwardingRule(cloud, key, meta.VersionGA, klog.TODO())
 	if err != nil {
 		if utils.IsNotFoundError(err) {
 			return nil
@@ -222,7 +223,7 @@ func mustCreateForwardingRule(t *testing.T, cloud *gce.Cloud, fr *composite.Forw
 	t.Helper()
 
 	key := meta.RegionalKey(fr.Name, cloud.Region())
-	err := composite.CreateForwardingRule(cloud, key, fr)
+	err := composite.CreateForwardingRule(cloud, key, fr, klog.TODO())
 	if err != nil {
 		t.Fatalf("composite.CreateForwardingRule(_, %s, %v) returned error %v, want nil", key, fr, err)
 	}

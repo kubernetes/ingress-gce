@@ -108,7 +108,7 @@ func updateServiceStatus(ctx *context.ControllerContext, svc *v1.Service, newSta
 
 // isHealthCheckDeleted checks if given health check exists in GCE
 func isHealthCheckDeleted(cloud *gce.Cloud, hcName string) bool {
-	_, err := composite.GetHealthCheck(cloud, meta.GlobalKey(hcName), meta.VersionGA)
+	_, err := composite.GetHealthCheck(cloud, meta.GlobalKey(hcName), meta.VersionGA, klog.TODO())
 	return utils.IsNotFoundError(err)
 }
 

@@ -9,6 +9,7 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog/v2"
 )
 
 func verifyFirewallNotExists(cloud *gce.Cloud, fwName string) error {
@@ -32,7 +33,7 @@ func verifyHealthCheckNotExists(cloud *gce.Cloud, hcName string, scope meta.KeyT
 	if scope == meta.Regional {
 		key = meta.RegionalKey(hcName, cloud.Region())
 	}
-	healthCheck, err := composite.GetHealthCheck(cloud, key, meta.VersionGA)
+	healthCheck, err := composite.GetHealthCheck(cloud, key, meta.VersionGA, klog.TODO())
 	if !utils.IsNotFoundError(err) || healthCheck != nil {
 		return fmt.Errorf("health check %s exists, expected not", hcName)
 	}

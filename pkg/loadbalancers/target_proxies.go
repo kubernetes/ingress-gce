@@ -72,17 +72,17 @@ func (l7 *L7) checkProxy() (err error) {
 		return err
 	}
 
-	currentProxy, _ := composite.GetTargetHttpProxy(l7.cloud, key, version)
+	currentProxy, _ := composite.GetTargetHttpProxy(l7.cloud, key, version, klog.TODO())
 	if currentProxy == nil {
 		klog.V(3).Infof("Creating new http proxy for urlmap %v", l7.um.Name)
 		key, err := l7.CreateKey(proxy.Name)
 		if err != nil {
 			return err
 		}
-		if err = composite.CreateTargetHttpProxy(l7.cloud, key, proxy); err != nil {
+		if err = composite.CreateTargetHttpProxy(l7.cloud, key, proxy, klog.TODO()); err != nil {
 			return err
 		}
-		currentProxy, err = composite.GetTargetHttpProxy(l7.cloud, key, version)
+		currentProxy, err = composite.GetTargetHttpProxy(l7.cloud, key, version, klog.TODO())
 		l7.recorder.Eventf(l7.runtimeInfo.Ingress, corev1.EventTypeNormal, events.SyncIngress, "TargetProxy %q created", key.Name)
 		if err != nil {
 			return err
@@ -133,7 +133,7 @@ func (l7 *L7) checkHttpsProxy() (err error) {
 		return err
 	}
 
-	currentProxy, _ := composite.GetTargetHttpsProxy(l7.cloud, key, version)
+	currentProxy, _ := composite.GetTargetHttpsProxy(l7.cloud, key, version, klog.TODO())
 	if err != nil {
 		return err
 	}
@@ -141,7 +141,7 @@ func (l7 *L7) checkHttpsProxy() (err error) {
 	if currentProxy == nil {
 		klog.V(3).Infof("Creating new https Proxy for urlmap %q", l7.um.Name)
 
-		if err = composite.CreateTargetHttpsProxy(l7.cloud, key, proxy); err != nil {
+		if err = composite.CreateTargetHttpsProxy(l7.cloud, key, proxy, klog.TODO()); err != nil {
 			return err
 		}
 		l7.recorder.Eventf(l7.runtimeInfo.Ingress, corev1.EventTypeNormal, events.SyncIngress, "TargetProxy %q created", key.Name)
@@ -150,7 +150,7 @@ func (l7 *L7) checkHttpsProxy() (err error) {
 		if err != nil {
 			return err
 		}
-		currentProxy, err = composite.GetTargetHttpsProxy(l7.cloud, key, version)
+		currentProxy, err = composite.GetTargetHttpsProxy(l7.cloud, key, version, klog.TODO())
 		if err != nil {
 			return err
 		}
@@ -204,7 +204,7 @@ func (l7 *L7) getSslCertLinkInUse() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	proxy, err := composite.GetTargetHttpsProxy(l7.cloud, key, l7.Versions().TargetHttpsProxy)
+	proxy, err := composite.GetTargetHttpsProxy(l7.cloud, key, l7.Versions().TargetHttpsProxy, klog.TODO())
 	if err != nil {
 		return nil, err
 	}

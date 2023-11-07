@@ -344,7 +344,7 @@ func TestRegionalHealthCheckDelete(t *testing.T) {
 	}
 
 	// Verify that Health-check exists.
-	if existingHC, err := composite.GetHealthCheck(fakeGCE, key, features.L7ILBVersions().HealthCheck); err != nil || existingHC == nil {
+	if existingHC, err := composite.GetHealthCheck(fakeGCE, key, features.L7ILBVersions().HealthCheck, klog.TODO()); err != nil || existingHC == nil {
 		t.Fatalf("GetHealthCheck(%q) = %v, %v, want nil", hc.Name, existingHC, err)
 	}
 
@@ -354,7 +354,7 @@ func TestRegionalHealthCheckDelete(t *testing.T) {
 	}
 
 	// Validate health-check is deleted.
-	if _, err = composite.GetHealthCheck(fakeGCE, key, features.L7ILBVersions().HealthCheck); !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
+	if _, err = composite.GetHealthCheck(fakeGCE, key, features.L7ILBVersions().HealthCheck, klog.TODO()); !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 		t.Errorf("Expected not-found error, actual: %v", err)
 	}
 }

@@ -103,7 +103,7 @@ func (l7s *L7s) delete(namer namer_util.IngressFrontendNamer, versions *features
 // list returns a list of urlMaps (the top level LB resource) that belong to the cluster.
 func (l7s *L7s) list(key *meta.Key, version meta.Version) ([]*composite.UrlMap, error) {
 	var result []*composite.UrlMap
-	urlMaps, err := composite.ListUrlMaps(l7s.cloud, key, version)
+	urlMaps, err := composite.ListUrlMaps(l7s.cloud, key, version, klog.TODO())
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +149,7 @@ func (l7s *L7s) FrontendScopeChangeGC(ing *v1.Ingress) (*meta.KeyType, error) {
 			}
 
 			// Look for existing LBs with the same name but of a different scope
-			_, err = composite.GetUrlMap(l7s.cloud, key, features.VersionsFromIngress(ing).UrlMap)
+			_, err = composite.GetUrlMap(l7s.cloud, key, features.VersionsFromIngress(ing).UrlMap, klog.TODO())
 			if err == nil {
 				klog.V(2).Infof("GC'ing ing %v for scope %q", ing, scope)
 				return &scope, nil
@@ -256,7 +256,7 @@ func (l7s *L7s) HasUrlMap(ing *v1.Ingress) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if _, err := composite.GetUrlMap(l7s.cloud, key, features.VersionsFromIngress(ing).UrlMap); err != nil {
+	if _, err := composite.GetUrlMap(l7s.cloud, key, features.VersionsFromIngress(ing).UrlMap, klog.TODO()); err != nil {
 		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 			return false, nil
 		}

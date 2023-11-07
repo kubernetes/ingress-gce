@@ -89,7 +89,7 @@ func (nl *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 	if err != nil {
 		return err
 	}
-	backendService, err := composite.GetBackendService(nl.cloud, key, version)
+	backendService, err := composite.GetBackendService(nl.cloud, key, version, klog.TODO())
 	if err != nil {
 		return err
 	}
@@ -111,7 +111,7 @@ func (nl *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 	klog.V(2).Infof("Backends changed for service port %s, removing: %s, adding: %s, changed: %s", sp.ID, diff.toRemove(), diff.toAdd(), diff.changed)
 
 	backendService.Backends = mergedBackend
-	return composite.UpdateBackendService(nl.cloud, key, backendService)
+	return composite.UpdateBackendService(nl.cloud, key, backendService, klog.TODO())
 }
 
 type backendDiff struct {

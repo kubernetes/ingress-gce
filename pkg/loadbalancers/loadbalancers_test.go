@@ -44,6 +44,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/common"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/slice"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -100,7 +101,7 @@ func newTestJig(t *testing.T) *testJig {
 			if err != nil {
 				return err
 			}
-			_, err = composite.GetSslCertificate(fakeGCE, resID.Key, defaultVersion)
+			_, err = composite.GetSslCertificate(fakeGCE, resID.Key, defaultVersion, klog.TODO())
 			if err != nil {
 				return err
 			}
@@ -218,7 +219,7 @@ func TestCreateHTTPILBLoadBalancerStaticIp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = composite.CreateAddress(j.fakeGCE, key, &composite.Address{Name: ipName, Version: meta.VersionGA, Address: ip})
+	err = composite.CreateAddress(j.fakeGCE, key, &composite.Address{Name: ipName, Version: meta.VersionGA, Address: ip}, klog.TODO())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,7 +295,7 @@ func TestCreateHTTPSILBLoadBalancerAllowHTTPSharedVIP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = composite.CreateAddress(j.fakeGCE, key, &composite.Address{Name: ipName, Version: meta.VersionGA, Address: ip})
+	err = composite.CreateAddress(j.fakeGCE, key, &composite.Address{Name: ipName, Version: meta.VersionGA, Address: ip}, klog.TODO())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,11 +346,11 @@ func verifyHTTPSForwardingRuleAndProxyLinks(t *testing.T, j *testJig, l7 *L7) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	um, err := composite.GetUrlMap(j.fakeGCE, key, versions.UrlMap)
+	um, err := composite.GetUrlMap(j.fakeGCE, key, versions.UrlMap, klog.TODO())
 
 	tpsName := l7.namer.TargetProxy(namer_util.HTTPSProtocol)
 	key.Name = tpsName
-	tps, err := composite.GetTargetHttpsProxy(j.fakeGCE, key, versions.TargetHttpsProxy)
+	tps, err := composite.GetTargetHttpsProxy(j.fakeGCE, key, versions.TargetHttpsProxy, klog.TODO())
 	if err != nil {
 		t.Fatalf("j.fakeGCE.GetTargetHTTPSProxy(%q) = _, %v; want nil", tpsName, err)
 	}
@@ -359,7 +360,7 @@ func verifyHTTPSForwardingRuleAndProxyLinks(t *testing.T, j *testJig, l7 *L7) {
 
 	fwsName := l7.namer.ForwardingRule(namer_util.HTTPSProtocol)
 	key.Name = fwsName
-	fws, err := composite.GetForwardingRule(j.fakeGCE, key, versions.ForwardingRule)
+	fws, err := composite.GetForwardingRule(j.fakeGCE, key, versions.ForwardingRule, klog.TODO())
 	if err != nil {
 		t.Fatalf("j.fakeGCE.GetGlobalForwardingRule(%q) = _, %v, want nil", fwsName, err)
 	}
@@ -379,10 +380,10 @@ func verifyHTTPForwardingRuleAndProxyLinks(t *testing.T, j *testJig, l7 *L7, ip 
 	if err != nil {
 		t.Fatal(err)
 	}
-	um, err := composite.GetUrlMap(j.fakeGCE, key, versions.UrlMap)
+	um, err := composite.GetUrlMap(j.fakeGCE, key, versions.UrlMap, klog.TODO())
 	tpName := l7.namer.TargetProxy(namer_util.HTTPProtocol)
 	key.Name = tpName
-	tps, err := composite.GetTargetHttpProxy(j.fakeGCE, key, versions.TargetHttpProxy)
+	tps, err := composite.GetTargetHttpProxy(j.fakeGCE, key, versions.TargetHttpProxy, klog.TODO())
 	if err != nil {
 		t.Fatalf("j.fakeGCE.GetTargetHTTPProxy(%q) = _, %v; want nil", tpName, err)
 	}
@@ -391,7 +392,7 @@ func verifyHTTPForwardingRuleAndProxyLinks(t *testing.T, j *testJig, l7 *L7, ip 
 	}
 	fwName := l7.namer.ForwardingRule(namer_util.HTTPProtocol)
 	key.Name = fwName
-	fws, err := composite.GetForwardingRule(j.fakeGCE, key, versions.ForwardingRule)
+	fws, err := composite.GetForwardingRule(j.fakeGCE, key, versions.ForwardingRule, klog.TODO())
 	if err != nil {
 		t.Fatalf("j.fakeGCE.GetGlobalForwardingRule(%q) = _, %v, want nil", fwName, err)
 	}
@@ -506,7 +507,7 @@ func TestCertCreationWithCollision(t *testing.T) {
 		Name:        certName1,
 		Certificate: "cert",
 		SelfLink:    "existing",
-	})
+	}, klog.TODO())
 
 	// Sync first cert
 	if _, err := j.pool.Ensure(lbInfo); err != nil {
@@ -523,7 +524,7 @@ func TestCertCreationWithCollision(t *testing.T) {
 		Name:        certName2,
 		Certificate: "xyz",
 		SelfLink:    "existing",
-	})
+	}, klog.TODO())
 
 	// Sync with different cert
 	lbInfo.TLS = []*translator.TLSCerts{createCert("key2", "cert2", "name")}
@@ -610,8 +611,8 @@ func TestUpgradeToNewCertNames(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	composite.CreateSslCertificate(j.fakeGCE, key, sslCert)
-	sslCert, _ = composite.GetSslCertificate(j.fakeGCE, key, defaultVersion)
+	composite.CreateSslCertificate(j.fakeGCE, key, sslCert, klog.TODO())
+	sslCert, _ = composite.GetSslCertificate(j.fakeGCE, key, defaultVersion, klog.TODO())
 	tpName := feNamer.TargetProxy(namer_util.HTTPSProtocol)
 	newProxy := &composite.TargetHttpsProxy{
 		Name:            tpName,
@@ -620,11 +621,11 @@ func TestUpgradeToNewCertNames(t *testing.T) {
 		Version:         defaultVersion,
 	}
 	key.Name = tpName
-	err = composite.CreateTargetHttpsProxy(j.fakeGCE, key, newProxy)
+	err = composite.CreateTargetHttpsProxy(j.fakeGCE, key, newProxy, klog.TODO())
 	if err != nil {
 		t.Fatalf("Failed to create Target proxy %v - %v", newProxy, err)
 	}
-	proxyCerts, err := composite.ListSslCertificates(j.fakeGCE, key, defaultVersion)
+	proxyCerts, err := composite.ListSslCertificates(j.fakeGCE, key, defaultVersion, klog.TODO())
 	if err != nil {
 		t.Fatalf("Failed to list certs for load balancer %v - %v", j, err)
 	}
@@ -768,24 +769,24 @@ func TestIdenticalHostnameCertsPreShared(t *testing.T) {
 		Name:        "test-pre-shared-cert",
 		Certificate: "cert-0 foo.com",
 		SelfLink:    "existing",
-	})
-	preSharedCert1, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion)
+	}, klog.TODO())
+	preSharedCert1, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion, klog.TODO())
 
 	key.Name = "test-pre-shared-cert1"
 	composite.CreateSslCertificate(j.fakeGCE, key, &composite.SslCertificate{
 		Name:        "test-pre-shared-cert1",
 		Certificate: "cert-1 foo.com",
 		SelfLink:    "existing",
-	})
-	preSharedCert2, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion)
+	}, klog.TODO())
+	preSharedCert2, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion, klog.TODO())
 
 	key.Name = "test-pre-shared-cert2"
 	composite.CreateSslCertificate(j.fakeGCE, key, &composite.SslCertificate{
 		Name:        "test-pre-shared-cert2",
 		Certificate: "cert2",
 		SelfLink:    "existing",
-	})
-	preSharedCert3, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion)
+	}, klog.TODO())
+	preSharedCert3, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion, klog.TODO())
 
 	expectCerts := map[string]string{preSharedCert1.Name: preSharedCert1.Certificate,
 		preSharedCert2.Name: preSharedCert2.Certificate, preSharedCert3.Name: preSharedCert3.Certificate}
@@ -832,8 +833,8 @@ func TestPreSharedToSecretBasedCertUpdate(t *testing.T) {
 		Name:        "test-pre-shared-cert",
 		Certificate: "abc",
 		SelfLink:    "existing",
-	})
-	preSharedCert1, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion)
+	}, klog.TODO())
+	preSharedCert1, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion, klog.TODO())
 
 	// Prepare pre-shared certs.
 	key.Name = "test-pre-shared-cert2"
@@ -842,8 +843,8 @@ func TestPreSharedToSecretBasedCertUpdate(t *testing.T) {
 		Certificate: "xyz",
 		SelfLink:    "existing",
 		Version:     defaultVersion,
-	})
-	preSharedCert2, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion)
+	}, klog.TODO())
+	preSharedCert2, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion, klog.TODO())
 
 	lbInfo.TLSName = preSharedCert1.Name + "," + preSharedCert2.Name
 
@@ -876,11 +877,11 @@ func TestPreSharedToSecretBasedCertUpdate(t *testing.T) {
 
 	// Check if pre-shared certs are retained.
 	key.Name = preSharedCert1.Name
-	if cert, err := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion); err != nil || cert == nil {
+	if cert, err := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion, klog.TODO()); err != nil || cert == nil {
 		t.Fatalf("Want pre-shared certificate %v to exist, got none, err: %v", preSharedCert1.Name, err)
 	}
 	key.Name = preSharedCert2.Name
-	if cert, err := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion); err != nil || cert == nil {
+	if cert, err := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion, klog.TODO()); err != nil || cert == nil {
 		t.Fatalf("Want pre-shared certificate %v to exist, got none, err: %v", preSharedCert2.Name, err)
 	}
 }
@@ -894,7 +895,7 @@ func verifyProxyCertsInOrder(hostname string, j *testJig, t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tps, err := composite.GetTargetHttpsProxy(j.fakeGCE, key, defaultVersion)
+	tps, err := composite.GetTargetHttpsProxy(j.fakeGCE, key, defaultVersion, klog.TODO())
 	if err != nil {
 		t.Fatalf("expected https proxy to exist: %v, err: %v", TPName, err)
 	}
@@ -904,7 +905,7 @@ func verifyProxyCertsInOrder(hostname string, j *testJig, t *testing.T) {
 	for _, link := range tps.SslCertificates {
 		certName, _ := utils.KeyName(link)
 		key.Name = certName
-		cert, err := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion)
+		cert, err := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion, klog.TODO())
 		if err != nil {
 			t.Fatalf("Failed to fetch certificate from link %s - %v", link, err)
 		}
@@ -933,7 +934,7 @@ func verifyCertAndProxyLink(expectCerts map[string]string, expectCertsProxy map[
 	if err != nil {
 		t.Fatal(err)
 	}
-	allCerts, err := composite.ListSslCertificates(j.fakeGCE, key, defaultVersion)
+	allCerts, err := composite.ListSslCertificates(j.fakeGCE, key, defaultVersion, klog.TODO())
 	if err != nil {
 		t.Fatalf("Failed to list certificates for %v - %v", j, err)
 	}
@@ -943,7 +944,7 @@ func verifyCertAndProxyLink(expectCerts map[string]string, expectCertsProxy map[
 	}
 	for certName, certValue := range expectCerts {
 		key.Name = certName
-		cert, err := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion)
+		cert, err := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion, klog.TODO())
 		if err != nil {
 			t.Fatalf("expected ssl certificate to exist: %v, err: %v, all certs: %v", certName, err, toCertNames(allCerts))
 		}
@@ -958,7 +959,7 @@ func verifyCertAndProxyLink(expectCerts map[string]string, expectCertsProxy map[
 	if err != nil {
 		t.Fatal(err)
 	}
-	tps, err := composite.GetTargetHttpsProxy(j.fakeGCE, key, defaultVersion)
+	tps, err := composite.GetTargetHttpsProxy(j.fakeGCE, key, defaultVersion, klog.TODO())
 	if err != nil {
 		// Return immediately if expected certs is an empty map.
 		if len(expectCertsProxy) == 0 && err.(*googleapi.Error).Code == http.StatusNotFound {
@@ -1007,7 +1008,7 @@ func TestCreateHTTPSLoadBalancerAnnotationCert(t *testing.T) {
 	}
 	composite.CreateSslCertificate(j.fakeGCE, key, &composite.SslCertificate{
 		Name: tlsName,
-	})
+	}, klog.TODO())
 	if _, err := j.pool.Ensure(lbInfo); err != nil {
 		t.Fatalf("pool.Ensure() = err %v", err)
 	}
@@ -1052,9 +1053,9 @@ func TestCreateBothLoadBalancers(t *testing.T) {
 	}
 
 	key.Name = j.feNamer.ForwardingRule(namer_util.HTTPSProtocol)
-	fws, _ := composite.GetForwardingRule(j.fakeGCE, key, defaultVersion)
+	fws, _ := composite.GetForwardingRule(j.fakeGCE, key, defaultVersion, klog.TODO())
 	key.Name = j.feNamer.ForwardingRule(namer_util.HTTPProtocol)
-	fw, _ := composite.GetForwardingRule(j.fakeGCE, key, defaultVersion)
+	fw, _ := composite.GetForwardingRule(j.fakeGCE, key, defaultVersion, klog.TODO())
 	ip, err := j.fakeGCE.GetGlobalAddress(j.feNamer.ForwardingRule(namer_util.HTTPProtocol))
 	if err != nil {
 		t.Fatalf("%v", err)
@@ -1120,7 +1121,7 @@ func TestFrontendConfigSslPolicy(t *testing.T) {
 	}
 
 	tpsName := l7.tps.Name
-	tps, _ := composite.GetTargetHttpsProxy(j.fakeGCE, meta.GlobalKey(tpsName), meta.VersionGA)
+	tps, _ := composite.GetTargetHttpsProxy(j.fakeGCE, meta.GlobalKey(tpsName), meta.VersionGA, klog.TODO())
 
 	resourceID, err := cloud.ParseResourceURL(tps.SslPolicy)
 	if err != nil {
@@ -1169,7 +1170,7 @@ func TestFrontendConfigRedirects(t *testing.T) {
 	}
 
 	tpName := l7.tp.Name
-	tp, err := composite.GetTargetHttpProxy(j.fakeGCE, meta.GlobalKey(tpName), meta.VersionGA)
+	tp, err := composite.GetTargetHttpProxy(j.fakeGCE, meta.GlobalKey(tpName), meta.VersionGA, klog.TODO())
 	if err != nil {
 		t.Error(err)
 	}
@@ -1241,7 +1242,7 @@ func TestEnsureSslPolicy(t *testing.T) {
 
 	for _, tc := range testCases {
 		key := meta.GlobalKey(tc.proxy.Name)
-		if err := composite.CreateTargetHttpsProxy(j.fakeGCE, key, tc.proxy); err != nil {
+		if err := composite.CreateTargetHttpsProxy(j.fakeGCE, key, tc.proxy, klog.TODO()); err != nil {
 			t.Error(err)
 		}
 		l7 := L7{runtimeInfo: &L7RuntimeInfo{FrontendConfig: tc.fc}, cloud: j.fakeGCE, scope: meta.Global}
@@ -1251,7 +1252,7 @@ func TestEnsureSslPolicy(t *testing.T) {
 			t.Errorf("desc: %q, l7.ensureSslPolicy() = %v, want nil", tc.desc, err)
 		}
 
-		result, err := composite.GetTargetHttpsProxy(j.fakeGCE, key, meta.VersionGA)
+		result, err := composite.GetTargetHttpsProxy(j.fakeGCE, key, meta.VersionGA, klog.TODO())
 		if err != nil {
 			t.Error(err)
 		}
@@ -1271,7 +1272,7 @@ func verifyURLMap(t *testing.T, j *testJig, feNamer namer_util.IngressFrontendNa
 	if err != nil {
 		t.Fatal(err)
 	}
-	um, err := composite.GetUrlMap(j.fakeGCE, key, defaultVersion)
+	um, err := composite.GetUrlMap(j.fakeGCE, key, defaultVersion, klog.TODO())
 	if err != nil || um == nil {
 		t.Errorf("j.fakeGCE.GetUrlMap(%q) = %v, %v; want _, nil", name, um, err)
 	}
@@ -1478,7 +1479,7 @@ func TestList(t *testing.T) {
 	}
 	for _, name := range names {
 		key.Name = name
-		composite.CreateUrlMap(j.fakeGCE, key, &composite.UrlMap{Name: name})
+		composite.CreateUrlMap(j.fakeGCE, key, &composite.UrlMap{Name: name}, klog.TODO())
 	}
 
 	if _, err := j.pool.Ensure(lbInfo); err != nil {
@@ -1532,16 +1533,16 @@ func TestSecretBasedAndPreSharedCerts(t *testing.T) {
 		Name:        "test-pre-shared-cert",
 		Certificate: "abc",
 		SelfLink:    "existing",
-	})
-	preSharedCert1, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion)
+	}, klog.TODO())
+	preSharedCert1, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion, klog.TODO())
 
 	key.Name = "test-pre-shared-cert2"
 	composite.CreateSslCertificate(j.fakeGCE, key, &composite.SslCertificate{
 		Name:        "test-pre-shared-cert2",
 		Certificate: "xyz",
 		SelfLink:    "existing2",
-	})
-	preSharedCert2, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion)
+	}, klog.TODO())
+	preSharedCert2, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion, klog.TODO())
 	lbInfo.TLSName = preSharedCert1.Name + "," + preSharedCert2.Name
 
 	// Secret based certs.
@@ -1613,11 +1614,11 @@ func TestMaxSecretBasedAndPreSharedCerts(t *testing.T) {
 			Name:        "test-pre-shared-cert-" + str,
 			Certificate: "abc-" + str,
 			SelfLink:    "existing-" + str,
-		})
+		}, klog.TODO())
 		if err != nil {
 			t.Fatalf("j.fakeGCE.CreateSslCertificate() = err %v", err)
 		}
-		cert, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion)
+		cert, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion, klog.TODO())
 		preSharedCerts = append(preSharedCerts, cert)
 		tlsNames = append(tlsNames, cert.Name)
 		expectCertsExtra[cert.Name] = cert.Certificate
@@ -1629,7 +1630,7 @@ func TestMaxSecretBasedAndPreSharedCerts(t *testing.T) {
 		Name:        "test-pre-shared-cert-100",
 		Certificate: "abc-100",
 		SelfLink:    "existing-100",
-	})
+	}, klog.TODO())
 	if err == nil {
 		t.Fatalf("Creating more than %d certs should have errored out", FakeCertQuota)
 	}
@@ -1695,8 +1696,8 @@ func TestSecretBasedToPreSharedCertUpdate(t *testing.T) {
 		Name:        "test-pre-shared-cert",
 		Certificate: "abc",
 		SelfLink:    "existing",
-	})
-	preSharedCert1, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion)
+	}, klog.TODO())
+	preSharedCert1, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion, klog.TODO())
 	lbInfo.TLSName = preSharedCert1.Name
 
 	// Sync certs.
@@ -1751,8 +1752,8 @@ func TestSecretBasedToPreSharedCertUpdateWithErrors(t *testing.T) {
 		Name:        "test-pre-shared-cert",
 		Certificate: "abc",
 		SelfLink:    "existing",
-	})
-	preSharedCert1, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion)
+	}, klog.TODO())
+	preSharedCert1, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion, klog.TODO())
 
 	// Typo in the cert name.
 	lbInfo.TLSName = preSharedCert1.Name + "typo"

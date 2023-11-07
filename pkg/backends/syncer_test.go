@@ -40,6 +40,7 @@ import (
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/klog/v2"
 )
 
 // portset helps keep track of service ports during GC tests
@@ -102,11 +103,11 @@ func (p *portset) check(fakeGCE *gce.Cloud) error {
 		}
 
 		if found {
-			if _, err := composite.GetBackendService(fakeGCE, key, features.VersionFromServicePort(&sp)); err != nil {
+			if _, err := composite.GetBackendService(fakeGCE, key, features.VersionFromServicePort(&sp), klog.TODO()); err != nil {
 				return fmt.Errorf("backend for port %+v should exist, but got: %v", sp.NodePort, err)
 			}
 		} else {
-			bs, err := composite.GetBackendService(fakeGCE, key, features.VersionFromServicePort(&sp))
+			bs, err := composite.GetBackendService(fakeGCE, key, features.VersionFromServicePort(&sp), klog.TODO())
 			if err == nil || !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 				if sp.VMIPNEGEnabled {
 					// It is expected that these Backends should not get cleaned up in the GC loop.

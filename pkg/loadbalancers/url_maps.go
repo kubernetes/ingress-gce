@@ -47,7 +47,7 @@ func (l7 *L7) ensureComputeURLMap() error {
 	key.Name = expectedMap.Name
 
 	expectedMap.Version = l7.Versions().UrlMap
-	currentMap, err := composite.GetUrlMap(l7.cloud, key, expectedMap.Version)
+	currentMap, err := composite.GetUrlMap(l7.cloud, key, expectedMap.Version, klog.TODO())
 	if utils.IgnoreHTTPNotFound(err) != nil {
 		return err
 	}
@@ -56,7 +56,7 @@ func (l7 *L7) ensureComputeURLMap() error {
 		// Check for transitions between elb and ilb
 
 		klog.V(2).Infof("Creating URLMap %q", expectedMap.Name)
-		if err := composite.CreateUrlMap(l7.cloud, key, expectedMap); err != nil {
+		if err := composite.CreateUrlMap(l7.cloud, key, expectedMap, klog.TODO()); err != nil {
 			return fmt.Errorf("CreateUrlMap: %v", err)
 		}
 		l7.recorder.Eventf(&l7.ingress, apiv1.EventTypeNormal, events.SyncIngress, "UrlMap %q created", key.Name)
@@ -73,7 +73,7 @@ func (l7 *L7) ensureComputeURLMap() error {
 
 	klog.V(2).Infof("Updating URLMap for %q", l7)
 	expectedMap.Fingerprint = currentMap.Fingerprint
-	if err := composite.UpdateUrlMap(l7.cloud, key, expectedMap); err != nil {
+	if err := composite.UpdateUrlMap(l7.cloud, key, expectedMap, klog.TODO()); err != nil {
 		return fmt.Errorf("UpdateURLMap: %v", err)
 	}
 
@@ -119,7 +119,7 @@ func (l7 *L7) ensureRedirectURLMap() error {
 		if !ok || status == "" {
 			return nil
 		} else {
-			if err := composite.DeleteUrlMap(l7.cloud, key, l7.Versions().UrlMap); err != nil {
+			if err := composite.DeleteUrlMap(l7.cloud, key, l7.Versions().UrlMap, klog.TODO()); err != nil {
 				// Do not block LB sync if this fails
 				klog.Errorf("DeleteUrlMap(%s) = %v", key, err)
 				// Signal to the rest of the controller that the UrlMap still exists
@@ -129,18 +129,18 @@ func (l7 *L7) ensureRedirectURLMap() error {
 		return nil
 	}
 
-	currentMap, err := composite.GetUrlMap(l7.cloud, key, l7.Versions().UrlMap)
+	currentMap, err := composite.GetUrlMap(l7.cloud, key, l7.Versions().UrlMap, klog.TODO())
 	if utils.IgnoreHTTPNotFound(err) != nil {
 		return err
 	}
 
 	if currentMap == nil {
-		if err := composite.CreateUrlMap(l7.cloud, key, expectedMap); err != nil {
+		if err := composite.CreateUrlMap(l7.cloud, key, expectedMap, klog.TODO()); err != nil {
 			return err
 		}
 	} else if compareRedirectUrlMaps(expectedMap, currentMap) {
 		expectedMap.Fingerprint = currentMap.Fingerprint
-		if err := composite.UpdateUrlMap(l7.cloud, key, expectedMap); err != nil {
+		if err := composite.UpdateUrlMap(l7.cloud, key, expectedMap, klog.TODO()); err != nil {
 			return err
 		}
 	}

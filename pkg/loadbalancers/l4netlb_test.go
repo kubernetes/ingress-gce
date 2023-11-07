@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"k8s.io/ingress-gce/pkg/network"
+	"k8s.io/klog/v2"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -246,7 +247,7 @@ func TestHealthCheckFirewallDeletionWithILB(t *testing.T) {
 	}
 
 	// The healthcheck itself should be deleted.
-	_, err = composite.GetHealthCheck(l4NetLB.cloud, meta.RegionalKey(hcName, l4NetLB.cloud.Region()), meta.VersionGA)
+	_, err = composite.GetHealthCheck(l4NetLB.cloud, meta.RegionalKey(hcName, l4NetLB.cloud.Region()), meta.VersionGA, klog.TODO())
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Errorf("Healthcheck %s should be deleted", hcName)
 	}
@@ -1312,7 +1313,7 @@ func getAndVerifyNetLBHealthCheck(l4netlb *L4NetLB) (*composite.HealthCheck, err
 	isSharedHC := !servicehelper.RequestsOnlyLocalTraffic(l4netlb.Service)
 	hcName := l4netlb.namer.L4HealthCheck(l4netlb.Service.Namespace, l4netlb.Service.Name, isSharedHC)
 
-	healthcheck, err := composite.GetHealthCheck(l4netlb.cloud, meta.RegionalKey(hcName, l4netlb.cloud.Region()), meta.VersionGA)
+	healthcheck, err := composite.GetHealthCheck(l4netlb.cloud, meta.RegionalKey(hcName, l4netlb.cloud.Region()), meta.VersionGA, klog.TODO())
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch healthcheck %s - err %w", hcName, err)
 	}
@@ -1334,7 +1335,7 @@ func getAndVerifyNetLBHealthCheck(l4netlb *L4NetLB) (*composite.HealthCheck, err
 func getAndVerifyNetLBBackendService(l4netlb *L4NetLB, healthCheck *composite.HealthCheck) (*composite.BackendService, error) {
 	backendServiceName := l4netlb.namer.L4Backend(l4netlb.Service.Namespace, l4netlb.Service.Name)
 	key := meta.RegionalKey(backendServiceName, l4netlb.cloud.Region())
-	bs, err := composite.GetBackendService(l4netlb.cloud, key, meta.VersionGA)
+	bs, err := composite.GetBackendService(l4netlb.cloud, key, meta.VersionGA, klog.TODO())
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch backend service %s - err %w", backendServiceName, err)
 	}
@@ -1372,7 +1373,7 @@ func verifyNetLBIPv6ForwardingRule(l4netlb *L4NetLB, backendServiceLink string, 
 }
 
 func verifyNetLBForwardingRule(l4netlb *L4NetLB, frName string, backendServiceLink string, expectedSubnet string) error {
-	fwdRule, err := composite.GetForwardingRule(l4netlb.cloud, meta.RegionalKey(frName, l4netlb.cloud.Region()), meta.VersionGA)
+	fwdRule, err := composite.GetForwardingRule(l4netlb.cloud, meta.RegionalKey(frName, l4netlb.cloud.Region()), meta.VersionGA, klog.TODO())
 	if err != nil {
 		return fmt.Errorf("failed to fetch forwarding rule %s - err %w", frName, err)
 	}

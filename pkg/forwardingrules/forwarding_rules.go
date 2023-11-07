@@ -30,7 +30,7 @@ func (frc *ForwardingRules) Create(forwardingRule *composite.ForwardingRule) err
 		klog.Errorf("Failed to create key for creating forwarding rule %s, err: %v", forwardingRule.Name, err)
 		return nil
 	}
-	return composite.CreateForwardingRule(frc.cloud, key, forwardingRule)
+	return composite.CreateForwardingRule(frc.cloud, key, forwardingRule, klog.TODO())
 }
 
 func (frc *ForwardingRules) Get(name string) (*composite.ForwardingRule, error) {
@@ -38,7 +38,7 @@ func (frc *ForwardingRules) Get(name string) (*composite.ForwardingRule, error) 
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create key for fetching forwarding rule %s, err: %w", name, err)
 	}
-	fr, err := composite.GetForwardingRule(frc.cloud, key, frc.version)
+	fr, err := composite.GetForwardingRule(frc.cloud, key, frc.version, klog.TODO())
 	if utils.IgnoreHTTPNotFound(err) != nil {
 		return nil, fmt.Errorf("Failed to get existing forwarding rule %s, err: %w", name, err)
 	}
@@ -50,7 +50,7 @@ func (frc *ForwardingRules) Delete(name string) error {
 	if err != nil {
 		return fmt.Errorf("Failed to create key for deleting forwarding rule %s, err: %w", name, err)
 	}
-	err = composite.DeleteForwardingRule(frc.cloud, key, frc.version)
+	err = composite.DeleteForwardingRule(frc.cloud, key, frc.version, klog.TODO())
 	if utils.IgnoreHTTPNotFound(err) != nil {
 		return fmt.Errorf("Failed to delete forwarding rule %s, err: %w", name, err)
 	}

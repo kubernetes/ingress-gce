@@ -15,6 +15,7 @@ import (
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -144,7 +145,7 @@ func TestEnsureL4BackendServiceDoesNotDetachBackends(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create key %v", err)
 	}
-	err = composite.CreateBackendService(fakeGCE, key, existingBS)
+	err = composite.CreateBackendService(fakeGCE, key, existingBS, klog.TODO())
 	if err != nil {
 		t.Fatalf("failed to create the existing backend service: %v", err)
 	}

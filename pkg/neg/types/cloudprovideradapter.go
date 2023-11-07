@@ -26,6 +26,7 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -81,7 +82,7 @@ type cloudProviderAdapter struct {
 // GetNetworkEndpointGroup implements NetworkEndpointGroupCloud.
 func (a *cloudProviderAdapter) GetNetworkEndpointGroup(name string, zone string, version meta.Version) (*composite.NetworkEndpointGroup, error) {
 	start := time.Now()
-	neg, err := composite.GetNetworkEndpointGroup(a.c, meta.ZonalKey(name, zone), version)
+	neg, err := composite.GetNetworkEndpointGroup(a.c, meta.ZonalKey(name, zone), version, klog.TODO())
 	metrics.PublishGCERequestCountMetrics(start, metrics.GetRequest, err)
 	return neg, err
 
@@ -90,7 +91,7 @@ func (a *cloudProviderAdapter) GetNetworkEndpointGroup(name string, zone string,
 // ListNetworkEndpointGroup implements NetworkEndpointGroupCloud.
 func (a *cloudProviderAdapter) ListNetworkEndpointGroup(zone string, version meta.Version) ([]*composite.NetworkEndpointGroup, error) {
 	start := time.Now()
-	negs, err := composite.ListNetworkEndpointGroups(a.c, meta.ZonalKey("", zone), version)
+	negs, err := composite.ListNetworkEndpointGroups(a.c, meta.ZonalKey("", zone), version, klog.TODO())
 	metrics.PublishGCERequestCountMetrics(start, metrics.ListRequest, err)
 	return negs, err
 }
@@ -99,7 +100,7 @@ func (a *cloudProviderAdapter) ListNetworkEndpointGroup(zone string, version met
 func (a *cloudProviderAdapter) AggregatedListNetworkEndpointGroup(version meta.Version) (map[*meta.Key]*composite.NetworkEndpointGroup, error) {
 	start := time.Now()
 	// TODO: filter for the region the cluster is in.
-	negs, err := composite.AggregatedListNetworkEndpointGroup(a.c, version)
+	negs, err := composite.AggregatedListNetworkEndpointGroup(a.c, version, klog.TODO())
 	metrics.PublishGCERequestCountMetrics(start, metrics.AggregatedListRequest, err)
 	return negs, err
 }
@@ -107,7 +108,7 @@ func (a *cloudProviderAdapter) AggregatedListNetworkEndpointGroup(version meta.V
 // CreateNetworkEndpointGroup implements NetworkEndpointGroupCloud.
 func (a *cloudProviderAdapter) CreateNetworkEndpointGroup(neg *composite.NetworkEndpointGroup, zone string) error {
 	start := time.Now()
-	err := composite.CreateNetworkEndpointGroup(a.c, meta.ZonalKey(neg.Name, zone), neg)
+	err := composite.CreateNetworkEndpointGroup(a.c, meta.ZonalKey(neg.Name, zone), neg, klog.TODO())
 	metrics.PublishGCERequestCountMetrics(start, metrics.CreateRequest, err)
 	return err
 }
@@ -115,7 +116,7 @@ func (a *cloudProviderAdapter) CreateNetworkEndpointGroup(neg *composite.Network
 // DeleteNetworkEndpointGroup implements NetworkEndpointGroupCloud.
 func (a *cloudProviderAdapter) DeleteNetworkEndpointGroup(name string, zone string, version meta.Version) error {
 	start := time.Now()
-	err := composite.DeleteNetworkEndpointGroup(a.c, meta.ZonalKey(name, zone), version)
+	err := composite.DeleteNetworkEndpointGroup(a.c, meta.ZonalKey(name, zone), version, klog.TODO())
 	metrics.PublishGCERequestCountMetrics(start, metrics.DeleteRequest, err)
 	return err
 }
@@ -124,7 +125,7 @@ func (a *cloudProviderAdapter) DeleteNetworkEndpointGroup(name string, zone stri
 func (a cloudProviderAdapter) AttachNetworkEndpoints(name, zone string, endpoints []*composite.NetworkEndpoint, version meta.Version) error {
 	req := &composite.NetworkEndpointGroupsAttachEndpointsRequest{NetworkEndpoints: endpoints}
 	start := time.Now()
-	err := composite.AttachNetworkEndpoints(a.c, meta.ZonalKey(name, zone), version, req)
+	err := composite.AttachNetworkEndpoints(a.c, meta.ZonalKey(name, zone), version, req, klog.TODO())
 	metrics.PublishGCERequestCountMetrics(start, metrics.AttachNERequest, err)
 	_, strategyUsed := a.strategyKeys[fmt.Sprintf("%s.%s.%s", version, negServiceName, attachNetworkEndpoints)]
 	if utils.IsQuotaExceededError(err) && strategyUsed {
@@ -137,7 +138,7 @@ func (a cloudProviderAdapter) AttachNetworkEndpoints(name, zone string, endpoint
 func (a *cloudProviderAdapter) DetachNetworkEndpoints(name, zone string, endpoints []*composite.NetworkEndpoint, version meta.Version) error {
 	req := &composite.NetworkEndpointGroupsDetachEndpointsRequest{NetworkEndpoints: endpoints}
 	start := time.Now()
-	err := composite.DetachNetworkEndpoints(a.c, meta.ZonalKey(name, zone), version, req)
+	err := composite.DetachNetworkEndpoints(a.c, meta.ZonalKey(name, zone), version, req, klog.TODO())
 	metrics.PublishGCERequestCountMetrics(start, metrics.DetachNERequest, err)
 	_, strategyUsed := a.strategyKeys[fmt.Sprintf("%s.%s.%s", version, negServiceName, detachNetworkEndpoints)]
 	if utils.IsQuotaExceededError(err) && strategyUsed {
@@ -156,7 +157,7 @@ func (a *cloudProviderAdapter) ListNetworkEndpoints(name, zone string, showHealt
 	}
 	req := &composite.NetworkEndpointGroupsListEndpointsRequest{HealthStatus: healthStatus}
 	start := time.Now()
-	networkEndpoints, err := composite.ListNetworkEndpoints(a.c, meta.ZonalKey(name, zone), version, req)
+	networkEndpoints, err := composite.ListNetworkEndpoints(a.c, meta.ZonalKey(name, zone), version, req, klog.TODO())
 	_, strategyUsed := a.strategyKeys[fmt.Sprintf("%s.%s.%s", version, negServiceName, listNetworkEndpoints)]
 	if utils.IsQuotaExceededError(err) && strategyUsed {
 		err = &StrategyQuotaError{Err: err}
