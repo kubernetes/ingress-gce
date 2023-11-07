@@ -36,6 +36,8 @@ const (
 	// FeatureL7ILB defines the feature name of L7 Internal Load Balancer
 	// L7-ILB Resources are currently alpha and regional
 	FeatureL7ILB = "L7ILB"
+	// FeatureL7XLBRegional defines the feature name of L7 External Regional Load Balancer.
+	FeatureL7XLBRegional = "L7XLBRegional"
 	//FeatureVMIPNEG defines the feature name of GCE_VM_IP NEGs which are used for L4 ILB.
 	FeatureVMIPNEG = "VMIPNEG"
 )
@@ -48,7 +50,7 @@ var (
 	}
 	// TODO: (shance) refactor all scope to be above the serviceport level
 	scopeToFeatures = map[meta.KeyType][]string{
-		meta.Regional: []string{FeatureL7ILB, FeatureVMIPNEG},
+		meta.Regional: []string{FeatureL7ILB, FeatureVMIPNEG, FeatureL7XLBRegional},
 	}
 )
 
@@ -75,6 +77,9 @@ func featuresFromServicePort(sp *utils.ServicePort) []string {
 	}
 	if sp.L7ILBEnabled {
 		features = append(features, FeatureL7ILB)
+	}
+	if sp.L7XLBRegionalEnabled {
+		features = append(features, FeatureL7XLBRegional)
 	}
 	// Keep feature names sorted to be consistent.
 	sort.Strings(features)
