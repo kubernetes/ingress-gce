@@ -963,19 +963,14 @@ func TestDefaultBackendServicePortInfoMapForL7RXLB(t *testing.T) {
 }
 
 func TestMergeDefaultBackendServicePortInfoMap(t *testing.T) {
-	controller := newTestController(fake.NewSimpleClientset())
-	controller.enableIngressRegionalExternal = true
-	controller.defaultBackendService = defaultBackend
-	newTestService(controller, false, []int32{})
 	defaultBackendServiceKey := defaultBackend.ID.Service.String()
-	expectPortMap := negtypes.NewPortInfoMap(defaultBackend.ID.Service.Namespace, defaultBackend.ID.Service.Name, negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Name: "http", Port: 80, TargetPort: defaultBackend.TargetPort.String()}), controller.namer, false, nil, defaultNetwork)
-	expectEmptyPortmap := make(negtypes.PortInfoMap)
 
 	for _, tc := range []struct {
-		desc           string
-		getIngress     func() *networkingv1.Ingress
-		defaultService *v1.Service
-		expectNeg      bool
+		desc                          string
+		getIngress                    func() *networkingv1.Ingress
+		defaultService                *v1.Service
+		enableIngressRegionalExternal bool
+		expectNeg                     bool
 	}{
 		{
 			desc:           "no ingress",
@@ -1010,7 +1005,7 @@ func TestMergeDefaultBackendServicePortInfoMap(t *testing.T) {
 			expectNeg:      false,
 		},
 		{
-			desc: "ing2 does not backend and default backend service does not have NEG annotation",
+			desc: "ing2 does not have backend and default backend service does not have NEG annotation",
 			getIngress: func() *networkingv1.Ingress {
 				ing := newTestIngress("ing2")
 				ing.Spec.DefaultBackend = nil
@@ -1020,8 +1015,12 @@ func TestMergeDefaultBackendServicePortInfoMap(t *testing.T) {
 			expectNeg:      false,
 		},
 		{
-			desc:           "ing2 does not backend and default backend service has NEG annotation",
-			getIngress:     func() *networkingv1.Ingress { return nil },
+			desc: "ing2 does not have backend and default backend service has NEG annotation",
+			getIngress: func() *networkingv1.Ingress {
+				ing := newTestIngress("ing2")
+				ing.Spec.DefaultBackend = nil
+				return ing
+			},
 			defaultService: defaultBackendServiceWithNeg,
 			expectNeg:      true,
 		},
@@ -1057,24 +1056,39 @@ func TestMergeDefaultBackendServicePortInfoMap(t *testing.T) {
 			expectNeg:      true,
 		},
 		{
-			desc: "L7 Regional XLB is enabled, ing41 is L7 Regional XLB, does not has backend and default backend service does not have NEG annotation",
+			desc: "L7 Regional XLB is disabled, ing41 is L7 Regional XLB, does not has backend and default backend service does not have NEG annotation",
 			getIngress: func() *networkingv1.Ingress {
 				ing := newTestIngress("ing41")
 				ing.Annotations = map[string]string{annotations.IngressClassKey: annotations.GceL7XLBRegionalIngressClass}
 				ing.Spec.DefaultBackend = nil
 				return ing
 			},
-			defaultService: defaultBackendService,
-			expectNeg:      true,
+			defaultService:                defaultBackendService,
+			enableIngressRegionalExternal: false,
+			expectNeg:                     false,
 		},
 		{
-			desc:           "cluster has many ingresses (ILB and XLB) without backend and default backend service has NEG annotation",
-			getIngress:     func() *networkingv1.Ingress { return nil },
-			defaultService: defaultBackendServiceWithNeg,
-			expectNeg:      true,
+			desc: "L7 Regional XLB is enabled, ing42 is L7 Regional XLB, does not has backend and default backend service does not have NEG annotation",
+			getIngress: func() *networkingv1.Ingress {
+				ing := newTestIngress("ing42")
+				ing.Annotations = map[string]string{annotations.IngressClassKey: annotations.GceL7XLBRegionalIngressClass}
+				ing.Spec.DefaultBackend = nil
+				return ing
+			},
+			defaultService:                defaultBackendService,
+			enableIngressRegionalExternal: true,
+			expectNeg:                     true,
 		},
 	} {
+		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			controller := newTestController(fake.NewSimpleClientset())
+			controller.enableIngressRegionalExternal = tc.enableIngressRegionalExternal
+			controller.defaultBackendService = defaultBackend
+			newTestService(controller, false, []int32{})
+
 			ing := tc.getIngress()
 			if ing != nil {
 				if err := controller.ingressLister.Add(ing); err != nil {
@@ -1088,10 +1102,12 @@ func TestMergeDefaultBackendServicePortInfoMap(t *testing.T) {
 			}
 
 			if tc.expectNeg {
+				expectPortMap := negtypes.NewPortInfoMap(defaultBackend.ID.Service.Namespace, defaultBackend.ID.Service.Name, negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Name: "http", Port: 80, TargetPort: defaultBackend.TargetPort.String()}), controller.namer, false, nil, defaultNetwork)
 				if !reflect.DeepEqual(portMap, expectPortMap) {
 					t.Errorf("for test case %q, expect port map == \n%+v, but got \n%+v", tc.desc, expectPortMap, portMap)
 				}
 			} else {
+				expectEmptyPortmap := make(negtypes.PortInfoMap)
 				if !reflect.DeepEqual(portMap, expectEmptyPortmap) {
 					t.Errorf("for test case %q, expect port map == %v, but got %v", tc.desc, expectEmptyPortmap, portMap)
 				}
