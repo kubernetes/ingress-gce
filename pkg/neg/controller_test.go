@@ -861,8 +861,110 @@ func TestDefaultBackendServicePortInfoMapForL7ILB(t *testing.T) {
 	}
 }
 
+func TestDefaultBackendServicePortInfoMapForL7RXLB(t *testing.T) {
+	// Not using t.Parallel() since we are sharing the controller
+	controller := newTestController(fake.NewSimpleClientset())
+	controller.enableIngressRegionalExternal = true
+	defer controller.stop()
+	newTestService(controller, false, []int32{})
+
+	testCases := []struct {
+		desc    string
+		ingName string
+		// forXLBRegional sets the annotation for RXLB
+		forXLBRegional bool
+		// defaultOverride sets backend to nil
+		defaultOverride                  bool
+		defaultBackendServiceServicePort utils.ServicePort
+		want                             negtypes.PortInfoMap
+	}{
+		{
+			desc:            "ingress with backend",
+			ingName:         "ingress-name-1",
+			forXLBRegional:  false,
+			defaultOverride: false,
+			want:            negtypes.PortInfoMap{},
+		},
+		{
+			desc:                             "ingress without backend",
+			ingName:                          "ingress-name-2",
+			forXLBRegional:                   false,
+			defaultOverride:                  true,
+			defaultBackendServiceServicePort: defaultBackend,
+			want:                             negtypes.PortInfoMap{},
+		},
+		{
+			desc:            "ingress with backend with RXLB",
+			ingName:         "ingress-name-3",
+			forXLBRegional:  true,
+			defaultOverride: false,
+			want:            negtypes.PortInfoMap{},
+		},
+		{
+			desc:                             "ingress without backend with RXLB",
+			ingName:                          "ingress-name-4",
+			forXLBRegional:                   true,
+			defaultOverride:                  true,
+			defaultBackendServiceServicePort: defaultBackend,
+			want:                             negtypes.NewPortInfoMap(defaultBackend.ID.Service.Namespace, defaultBackend.ID.Service.Name, negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Name: "http", Port: 80, TargetPort: defaultBackend.TargetPort.String()}), controller.namer, false, nil, defaultNetwork),
+		},
+		{
+			desc:            "User default backend with different port",
+			ingName:         "ingress-name-5",
+			forXLBRegional:  true,
+			defaultOverride: true,
+			defaultBackendServiceServicePort: utils.ServicePort{
+				ID: utils.ServicePortID{
+					Service: types.NamespacedName{
+						Namespace: testServiceNamespace, Name: "newDefaultBackend",
+					},
+					// Default Backend Service Port is always referenced by name
+					Port: networkingv1.ServiceBackendPort{Name: "80"},
+				},
+				Port:       80,
+				TargetPort: intstr.FromInt(8888),
+			},
+			want: negtypes.NewPortInfoMap(testServiceNamespace, "newDefaultBackend", negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Name: "80", Port: 80, TargetPort: "8888"}), controller.namer, false, nil, defaultNetwork),
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			ing := newTestIngress(tc.ingName)
+
+			if tc.forXLBRegional {
+				ing.Annotations = map[string]string{annotations.IngressClassKey: annotations.GceL7XLBRegionalIngressClass}
+			}
+
+			if tc.defaultOverride {
+				// Override backend service
+				controller.defaultBackendService = tc.defaultBackendServiceServicePort
+				ing.Spec.DefaultBackend = nil
+			}
+
+			newIng, err := controller.client.NetworkingV1().Ingresses(testServiceNamespace).Create(context.TODO(), ing, metav1.CreateOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Add to cache directly since the cache doesn't get updated
+			if err := controller.ingressLister.Add(newIng); err != nil {
+				t.Fatal(err)
+			}
+			result := make(negtypes.PortInfoMap)
+			err = controller.mergeDefaultBackendServicePortInfoMap(controller.defaultBackendService.ID.Service.String(), defaultBackendService, result, defaultNetwork)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(tc.want, result) {
+				t.Fatalf("got %+v, want %+v", result, tc.want)
+			}
+		})
+	}
+}
+
 func TestMergeDefaultBackendServicePortInfoMap(t *testing.T) {
 	controller := newTestController(fake.NewSimpleClientset())
+	controller.enableIngressRegionalExternal = true
 	controller.defaultBackendService = defaultBackend
 	newTestService(controller, false, []int32{})
 	defaultBackendServiceKey := defaultBackend.ID.Service.String()
@@ -934,10 +1036,31 @@ func TestMergeDefaultBackendServicePortInfoMap(t *testing.T) {
 			expectNeg:      false,
 		},
 		{
+			desc: "ing31 is L7 Regional XLB, has backend and default backend service does not have NEG annotation",
+			getIngress: func() *networkingv1.Ingress {
+				ing := newTestIngress("ing31")
+				ing.Annotations = map[string]string{annotations.IngressClassKey: annotations.GceL7XLBRegionalIngressClass}
+				return ing
+			},
+			defaultService: defaultBackendService,
+			expectNeg:      false,
+		},
+		{
 			desc: "L7ILB is enabled, ing4 is L7 ILB, does not has backend and default backend service does not have NEG annotation",
 			getIngress: func() *networkingv1.Ingress {
 				ing := newTestIngress("ing4")
 				ing.Annotations = map[string]string{annotations.IngressClassKey: annotations.GceL7ILBIngressClass}
+				ing.Spec.DefaultBackend = nil
+				return ing
+			},
+			defaultService: defaultBackendService,
+			expectNeg:      true,
+		},
+		{
+			desc: "L7 Regional XLB is enabled, ing41 is L7 Regional XLB, does not has backend and default backend service does not have NEG annotation",
+			getIngress: func() *networkingv1.Ingress {
+				ing := newTestIngress("ing41")
+				ing.Annotations = map[string]string{annotations.IngressClassKey: annotations.GceL7XLBRegionalIngressClass}
 				ing.Spec.DefaultBackend = nil
 				return ing
 			},
