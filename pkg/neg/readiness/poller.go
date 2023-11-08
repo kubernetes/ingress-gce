@@ -119,7 +119,7 @@ func (p *poller) RegisterNegEndpoints(key negMeta, endpointMap negtypes.Endpoint
 // It returns false if there is no endpoints needed to be polled, returns true if otherwise.
 // Assumes p.lock is held when calling this method.
 func (p *poller) registerNegEndpoints(key negMeta, endpointMap negtypes.EndpointPodMap) bool {
-	endpointsToPoll := needToPoll(key.SyncerKey, endpointMap, p.lookup, p.podLister)
+	endpointsToPoll := needToPoll(key.SyncerKey, endpointMap, p.lookup, p.podLister, p.logger)
 	if len(endpointsToPoll) == 0 {
 		delete(p.pollMap, key)
 		return false
@@ -160,7 +160,7 @@ func (p *poller) Poll(key negMeta) (retry bool, err error) {
 
 	p.logger.V(2).Info("polling NEG", "neg", key.Name, "negZone", key.Zone)
 	// TODO(freehan): filter the NEs that are in interest once the API supports it
-	res, err := p.negCloud.ListNetworkEndpoints(key.Name, key.Zone /*showHealthStatus*/, true, key.SyncerKey.GetAPIVersion())
+	res, err := p.negCloud.ListNetworkEndpoints(key.Name, key.Zone /*showHealthStatus*/, true, key.SyncerKey.GetAPIVersion(), klog.TODO())
 	if err != nil {
 		if negtypes.IsStrategyQuotaError(err) {
 			p.logger.V(4).Error(err, "Failed to ListNetworkEndpoints in NEG", "neg", key.String())

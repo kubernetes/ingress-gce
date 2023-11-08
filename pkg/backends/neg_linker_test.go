@@ -112,7 +112,7 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 					if svcPort.VMIPNEGEnabled {
 						neg.NetworkEndpointType = string(negtypes.VmIpEndpointType)
 					}
-					err := fakeNEG.CreateNetworkEndpointGroup(neg, key.Zone)
+					err := fakeNEG.CreateNetworkEndpointGroup(neg, key.Zone, klog.TODO())
 					if err != nil {
 						t.Fatalf("unexpected error creating NEG for svcPort %v: %v", svcPort, err)
 					}

@@ -34,6 +34,7 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/klog/v2"
 	clocktesting "k8s.io/utils/clock/testing"
 )
 
@@ -430,7 +431,7 @@ func TestPoll(t *testing.T) {
 
 	step = "NEG exists, but with no endpoint"
 	// create NEG, but with no endpoint
-	negCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: negName, Zone: zone, Version: meta.VersionGA}, zone)
+	negCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: negName, Zone: zone, Version: meta.VersionGA}, zone, klog.TODO())
 	pollAndValidate(step, false, true, 0, true, true)
 	pollAndValidate(step, false, true, 0, true, true)
 
@@ -441,7 +442,7 @@ func TestPoll(t *testing.T) {
 		Instance:  instance,
 	}
 
-	negCloud.AttachNetworkEndpoints(negName, zone, []*composite.NetworkEndpoint{ne}, meta.VersionGA)
+	negCloud.AttachNetworkEndpoints(negName, zone, []*composite.NetworkEndpoint{ne}, meta.VersionGA, klog.TODO())
 	// add NE with empty healthy status
 	negtypes.GetNetworkEndpointStore(negCloud).AddNetworkEndpointHealthStatus(*meta.ZonalKey(negName, zone), []negtypes.NetworkEndpointEntry{
 		{

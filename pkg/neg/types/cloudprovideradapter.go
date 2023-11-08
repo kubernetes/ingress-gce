@@ -80,52 +80,52 @@ type cloudProviderAdapter struct {
 }
 
 // GetNetworkEndpointGroup implements NetworkEndpointGroupCloud.
-func (a *cloudProviderAdapter) GetNetworkEndpointGroup(name string, zone string, version meta.Version) (*composite.NetworkEndpointGroup, error) {
+func (a *cloudProviderAdapter) GetNetworkEndpointGroup(name string, zone string, version meta.Version, logger klog.Logger) (*composite.NetworkEndpointGroup, error) {
 	start := time.Now()
-	neg, err := composite.GetNetworkEndpointGroup(a.c, meta.ZonalKey(name, zone), version, klog.TODO())
+	neg, err := composite.GetNetworkEndpointGroup(a.c, meta.ZonalKey(name, zone), version, logger)
 	metrics.PublishGCERequestCountMetrics(start, metrics.GetRequest, err)
 	return neg, err
 
 }
 
 // ListNetworkEndpointGroup implements NetworkEndpointGroupCloud.
-func (a *cloudProviderAdapter) ListNetworkEndpointGroup(zone string, version meta.Version) ([]*composite.NetworkEndpointGroup, error) {
+func (a *cloudProviderAdapter) ListNetworkEndpointGroup(zone string, version meta.Version, logger klog.Logger) ([]*composite.NetworkEndpointGroup, error) {
 	start := time.Now()
-	negs, err := composite.ListNetworkEndpointGroups(a.c, meta.ZonalKey("", zone), version, klog.TODO())
+	negs, err := composite.ListNetworkEndpointGroups(a.c, meta.ZonalKey("", zone), version, logger)
 	metrics.PublishGCERequestCountMetrics(start, metrics.ListRequest, err)
 	return negs, err
 }
 
 // AggregatedListNetworkEndpointGroup returns a map of zone -> endpoint group.
-func (a *cloudProviderAdapter) AggregatedListNetworkEndpointGroup(version meta.Version) (map[*meta.Key]*composite.NetworkEndpointGroup, error) {
+func (a *cloudProviderAdapter) AggregatedListNetworkEndpointGroup(version meta.Version, logger klog.Logger) (map[*meta.Key]*composite.NetworkEndpointGroup, error) {
 	start := time.Now()
 	// TODO: filter for the region the cluster is in.
-	negs, err := composite.AggregatedListNetworkEndpointGroup(a.c, version, klog.TODO())
+	negs, err := composite.AggregatedListNetworkEndpointGroup(a.c, version, logger)
 	metrics.PublishGCERequestCountMetrics(start, metrics.AggregatedListRequest, err)
 	return negs, err
 }
 
 // CreateNetworkEndpointGroup implements NetworkEndpointGroupCloud.
-func (a *cloudProviderAdapter) CreateNetworkEndpointGroup(neg *composite.NetworkEndpointGroup, zone string) error {
+func (a *cloudProviderAdapter) CreateNetworkEndpointGroup(neg *composite.NetworkEndpointGroup, zone string, logger klog.Logger) error {
 	start := time.Now()
-	err := composite.CreateNetworkEndpointGroup(a.c, meta.ZonalKey(neg.Name, zone), neg, klog.TODO())
+	err := composite.CreateNetworkEndpointGroup(a.c, meta.ZonalKey(neg.Name, zone), neg, logger)
 	metrics.PublishGCERequestCountMetrics(start, metrics.CreateRequest, err)
 	return err
 }
 
 // DeleteNetworkEndpointGroup implements NetworkEndpointGroupCloud.
-func (a *cloudProviderAdapter) DeleteNetworkEndpointGroup(name string, zone string, version meta.Version) error {
+func (a *cloudProviderAdapter) DeleteNetworkEndpointGroup(name string, zone string, version meta.Version, logger klog.Logger) error {
 	start := time.Now()
-	err := composite.DeleteNetworkEndpointGroup(a.c, meta.ZonalKey(name, zone), version, klog.TODO())
+	err := composite.DeleteNetworkEndpointGroup(a.c, meta.ZonalKey(name, zone), version, logger)
 	metrics.PublishGCERequestCountMetrics(start, metrics.DeleteRequest, err)
 	return err
 }
 
 // AttachNetworkEndpoints implements NetworkEndpointGroupCloud.
-func (a cloudProviderAdapter) AttachNetworkEndpoints(name, zone string, endpoints []*composite.NetworkEndpoint, version meta.Version) error {
+func (a cloudProviderAdapter) AttachNetworkEndpoints(name, zone string, endpoints []*composite.NetworkEndpoint, version meta.Version, logger klog.Logger) error {
 	req := &composite.NetworkEndpointGroupsAttachEndpointsRequest{NetworkEndpoints: endpoints}
 	start := time.Now()
-	err := composite.AttachNetworkEndpoints(a.c, meta.ZonalKey(name, zone), version, req, klog.TODO())
+	err := composite.AttachNetworkEndpoints(a.c, meta.ZonalKey(name, zone), version, req, logger)
 	metrics.PublishGCERequestCountMetrics(start, metrics.AttachNERequest, err)
 	_, strategyUsed := a.strategyKeys[fmt.Sprintf("%s.%s.%s", version, negServiceName, attachNetworkEndpoints)]
 	if utils.IsQuotaExceededError(err) && strategyUsed {
@@ -135,10 +135,10 @@ func (a cloudProviderAdapter) AttachNetworkEndpoints(name, zone string, endpoint
 }
 
 // DetachNetworkEndpoints implements NetworkEndpointGroupCloud.
-func (a *cloudProviderAdapter) DetachNetworkEndpoints(name, zone string, endpoints []*composite.NetworkEndpoint, version meta.Version) error {
+func (a *cloudProviderAdapter) DetachNetworkEndpoints(name, zone string, endpoints []*composite.NetworkEndpoint, version meta.Version, logger klog.Logger) error {
 	req := &composite.NetworkEndpointGroupsDetachEndpointsRequest{NetworkEndpoints: endpoints}
 	start := time.Now()
-	err := composite.DetachNetworkEndpoints(a.c, meta.ZonalKey(name, zone), version, req, klog.TODO())
+	err := composite.DetachNetworkEndpoints(a.c, meta.ZonalKey(name, zone), version, req, logger)
 	metrics.PublishGCERequestCountMetrics(start, metrics.DetachNERequest, err)
 	_, strategyUsed := a.strategyKeys[fmt.Sprintf("%s.%s.%s", version, negServiceName, detachNetworkEndpoints)]
 	if utils.IsQuotaExceededError(err) && strategyUsed {
@@ -148,7 +148,7 @@ func (a *cloudProviderAdapter) DetachNetworkEndpoints(name, zone string, endpoin
 }
 
 // ListNetworkEndpoints implements NetworkEndpointGroupCloud.
-func (a *cloudProviderAdapter) ListNetworkEndpoints(name, zone string, showHealthStatus bool, version meta.Version) ([]*composite.NetworkEndpointWithHealthStatus, error) {
+func (a *cloudProviderAdapter) ListNetworkEndpoints(name, zone string, showHealthStatus bool, version meta.Version, logger klog.Logger) ([]*composite.NetworkEndpointWithHealthStatus, error) {
 	healthStatus := "SKIP"
 	metricLabel := metrics.ListNERequest
 	if showHealthStatus {
@@ -157,7 +157,7 @@ func (a *cloudProviderAdapter) ListNetworkEndpoints(name, zone string, showHealt
 	}
 	req := &composite.NetworkEndpointGroupsListEndpointsRequest{HealthStatus: healthStatus}
 	start := time.Now()
-	networkEndpoints, err := composite.ListNetworkEndpoints(a.c, meta.ZonalKey(name, zone), version, req, klog.TODO())
+	networkEndpoints, err := composite.ListNetworkEndpoints(a.c, meta.ZonalKey(name, zone), version, req, logger)
 	_, strategyUsed := a.strategyKeys[fmt.Sprintf("%s.%s.%s", version, negServiceName, listNetworkEndpoints)]
 	if utils.IsQuotaExceededError(err) && strategyUsed {
 		err = &StrategyQuotaError{Err: err}

@@ -20,6 +20,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/cloud-provider-gcp/providers/gce"
+	"k8s.io/klog/v2"
 
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -43,7 +44,7 @@ func TestAggregatedListNetworkEndpointGroup(t *testing.T) {
 
 	neg := &composite.NetworkEndpointGroup{Name: neg1, Version: meta.VersionGA}
 	zone := zone1
-	if err := fakeCloud.CreateNetworkEndpointGroup(neg, zone); err != nil {
+	if err := fakeCloud.CreateNetworkEndpointGroup(neg, zone, klog.TODO()); err != nil {
 		t.Fatalf("Got CreateNetworkEndpointGroup(%v, %v) = %v, want nil", neg, zone, err)
 	}
 
@@ -51,7 +52,7 @@ func TestAggregatedListNetworkEndpointGroup(t *testing.T) {
 
 	neg = &composite.NetworkEndpointGroup{Name: neg2, Version: meta.VersionGA}
 	zone = zone2
-	if err := fakeCloud.CreateNetworkEndpointGroup(neg, zone); err != nil {
+	if err := fakeCloud.CreateNetworkEndpointGroup(neg, zone, klog.TODO()); err != nil {
 		t.Fatalf("Got CreateNetworkEndpointGroup(%v, %v) = %v, want nil", neg, zone, err)
 	}
 
@@ -59,13 +60,13 @@ func TestAggregatedListNetworkEndpointGroup(t *testing.T) {
 
 	neg = &composite.NetworkEndpointGroup{Name: neg1, Version: meta.VersionGA}
 	zone = zone2
-	if err := fakeCloud.CreateNetworkEndpointGroup(neg, zone); err != nil {
+	if err := fakeCloud.CreateNetworkEndpointGroup(neg, zone, klog.TODO()); err != nil {
 		t.Fatalf("Got CreateNetworkEndpointGroup(%v, %v) = %v, want nil", neg, zone, err)
 	}
 
 	validateAggregatedList(t, fakeCloud, 2, map[string][]string{zone1: {neg1}, zone2: {neg1, neg2}})
 
-	if err := fakeCloud.DeleteNetworkEndpointGroup(neg1, zone1, meta.VersionGA); err != nil {
+	if err := fakeCloud.DeleteNetworkEndpointGroup(neg1, zone1, meta.VersionGA, klog.TODO()); err != nil {
 		t.Fatalf("Got DeleteNetworkEndpointGroup(%v, %v) = %v, want nil", neg1, zone1, err)
 	}
 
@@ -73,7 +74,7 @@ func TestAggregatedListNetworkEndpointGroup(t *testing.T) {
 }
 
 func validateAggregatedList(t *testing.T, adapter NetworkEndpointGroupCloud, expectZoneNum int, expectZoneNegs map[string][]string) {
-	ret, err := adapter.AggregatedListNetworkEndpointGroup(meta.VersionGA)
+	ret, err := adapter.AggregatedListNetworkEndpointGroup(meta.VersionGA, klog.TODO())
 	if err != nil {
 		t.Errorf("Expect AggregatedListNetworkEndpointGroup to return nil error, but got %v", err)
 	}

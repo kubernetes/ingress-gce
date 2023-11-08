@@ -250,7 +250,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	}
 	s.logger.V(2).Info("Sync NEG", "negSyncerKey", s.NegSyncerKey.String(), "endpointsCalculatorMode", s.endpointsCalculator.Mode())
 
-	currentMap, currentPodLabelMap, err := retrieveExistingZoneNetworkEndpointMap(s.NegSyncerKey.NegName, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode(), s.enableDualStackNEG)
+	currentMap, currentPodLabelMap, err := retrieveExistingZoneNetworkEndpointMap(s.NegSyncerKey.NegName, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode(), s.enableDualStackNEG, s.logger)
 	if err != nil {
 		return fmt.Errorf("%w: %w", negtypes.ErrCurrentNegEPNotFound, err)
 	}
@@ -412,6 +412,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 			s.NegSyncerKey.GetAPIVersion(),
 			s.customName,
 			s.networkInfo,
+			s.logger,
 		)
 		if err != nil {
 			errList = append(errList, err)
@@ -438,7 +439,7 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 				continue
 			}
 
-			batch, err := makeEndpointBatch(endpointSet, s.NegType, endpointPodLabelMap)
+			batch, err := makeEndpointBatch(endpointSet, s.NegType, endpointPodLabelMap, s.logger)
 			if err != nil {
 				return err
 			}
@@ -481,7 +482,7 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 // attachNetworkEndpoints runs operation for attaching network endpoints.
 func (s *transactionSyncer) attachNetworkEndpoints(zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
 	s.logger.V(2).Info("Attaching endpoints to NEG.", "countOfEndpointsBeingAttached", len(networkEndpointMap), "negSyncerKey", s.NegSyncerKey.String(), "zone", zone)
-	err := s.operationInternal(attachOp, zone, networkEndpointMap)
+	err := s.operationInternal(attachOp, zone, networkEndpointMap, s.logger)
 
 	// WARNING: commitTransaction must be called at last for analyzing the operation result
 	s.commitTransaction(err, networkEndpointMap)
@@ -490,7 +491,7 @@ func (s *transactionSyncer) attachNetworkEndpoints(zone string, networkEndpointM
 // detachNetworkEndpoints runs operation for detaching network endpoints.
 func (s *transactionSyncer) detachNetworkEndpoints(zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, hasMigrationDetachments bool) {
 	s.logger.V(2).Info("Detaching endpoints from NEG.", "countOfEndpointsBeingDetached", len(networkEndpointMap), "negSyncerKey", s.NegSyncerKey.String(), "zone", zone)
-	err := s.operationInternal(detachOp, zone, networkEndpointMap)
+	err := s.operationInternal(detachOp, zone, networkEndpointMap, s.logger)
 
 	if hasMigrationDetachments {
 		// Unpause the migration since the ongoing migration-detachments have
@@ -505,7 +506,7 @@ func (s *transactionSyncer) detachNetworkEndpoints(zone string, networkEndpointM
 // operationInternal executes NEG API call and commits the transactions
 // It will record events when operations are completed
 // If error occurs or any transaction entry requires reconciliation, it will trigger resync
-func (s *transactionSyncer) operationInternal(operation transactionOp, zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) error {
+func (s *transactionSyncer) operationInternal(operation transactionOp, zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, logger klog.Logger) error {
 	var err error
 	start := time.Now()
 	networkEndpoints := []*composite.NetworkEndpoint{}
@@ -514,10 +515,10 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, zone stri
 	}
 
 	if operation == attachOp {
-		err = s.cloud.AttachNetworkEndpoints(s.NegSyncerKey.NegName, zone, networkEndpoints, s.NegSyncerKey.GetAPIVersion())
+		err = s.cloud.AttachNetworkEndpoints(s.NegSyncerKey.NegName, zone, networkEndpoints, s.NegSyncerKey.GetAPIVersion(), logger)
 	}
 	if operation == detachOp {
-		err = s.cloud.DetachNetworkEndpoints(s.NegSyncerKey.NegName, zone, networkEndpoints, s.NegSyncerKey.GetAPIVersion())
+		err = s.cloud.DetachNetworkEndpoints(s.NegSyncerKey.NegName, zone, networkEndpoints, s.NegSyncerKey.GetAPIVersion(), logger)
 	}
 
 	if err == nil {
@@ -564,7 +565,7 @@ func checkEndpointBatchErr(err error, operation transactionOp) error {
 }
 
 func (s *transactionSyncer) recordEvent(eventType, reason, eventDesc string) {
-	if svc := getService(s.serviceLister, s.Namespace, s.Name); svc != nil {
+	if svc := getService(s.serviceLister, s.Namespace, s.Name, s.logger); svc != nil {
 		s.recorder.Eventf(svc, eventType, reason, eventDesc)
 	}
 }

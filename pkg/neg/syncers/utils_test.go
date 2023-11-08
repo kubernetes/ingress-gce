@@ -42,6 +42,7 @@ import (
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog/v2"
 )
 
 func TestEncodeDecodeEndpoint(t *testing.T) {
@@ -419,12 +420,13 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 				tc.apiVersion,
 				false,
 				tc.networkInfo,
+				klog.TODO(),
 			)
 			if err != nil {
 				t.Errorf("unexpected error: %s", err)
 			}
 
-			neg, err := fakeCloud.GetNetworkEndpointGroup(tc.negName, testZone, tc.apiVersion)
+			neg, err := fakeCloud.GetNetworkEndpointGroup(tc.negName, testZone, tc.apiVersion, klog.TODO())
 			if err != nil {
 				t.Errorf("Failed to retrieve NEG %q: %v", tc.negName, err)
 			}
@@ -476,6 +478,7 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 				tc.apiVersion,
 				false,
 				tc.networkInfo,
+				klog.TODO(),
 			)
 
 			if err != nil {
@@ -611,7 +614,7 @@ func TestToZoneNetworkEndpointMap(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			gotResult, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()), zoneGetter, podLister, tc.portName, tc.networkEndpointType, tc.enableDualStackNEG)
+			gotResult, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()), zoneGetter, podLister, tc.portName, tc.networkEndpointType, tc.enableDualStackNEG, klog.TODO())
 			if err != nil {
 				t.Errorf("toZoneNetworkEndpointMap() = err %v, want no error", err)
 			}
@@ -1082,7 +1085,7 @@ func TestValidateEndpointFields(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
-		result, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlice), zoneGetter, podLister, "", negtypes.VmIpPortEndpointType, false)
+		result, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlice), zoneGetter, podLister, "", negtypes.VmIpPortEndpointType, false, klog.TODO())
 		if !errors.Is(err, tc.expectErr) {
 			t.Errorf("For case %q, expect %v error, but got %v.", tc.desc, tc.expectErr, err)
 		}
@@ -1133,22 +1136,22 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 		{
 			desc: "neg only exists in one of the zone",
 			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
-				cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: testNegName, Version: meta.VersionGA}, negtypes.TestZone1)
+				cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: testNegName, Version: meta.VersionGA}, negtypes.TestZone1, klog.TODO())
 			},
 			expectErr: true,
 		},
 		{
 			desc: "neg only exists in one of the zone plus irrelevant negs",
 			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
-				cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: irrelevantNegName, Version: meta.VersionGA}, negtypes.TestZone2)
+				cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: irrelevantNegName, Version: meta.VersionGA}, negtypes.TestZone2, klog.TODO())
 			},
 			expectErr: true,
 		},
 		{
 			desc: "empty negs exists in all 3 zones",
 			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
-				cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: testNegName, Version: meta.VersionGA}, negtypes.TestZone2)
-				cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: testNegName, Version: meta.VersionGA}, negtypes.TestZone4)
+				cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: testNegName, Version: meta.VersionGA}, negtypes.TestZone2, klog.TODO())
+				cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: testNegName, Version: meta.VersionGA}, negtypes.TestZone4, klog.TODO())
 			},
 			expect: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(),
@@ -1170,7 +1173,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 							"foo": "bar",
 						},
 					},
-				}, meta.VersionGA)
+				}, meta.VersionGA, klog.TODO())
 			},
 			expect: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(endpoint1),
@@ -1196,7 +1199,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 							"foo": "bar",
 						},
 					},
-				}, meta.VersionGA)
+				}, meta.VersionGA, klog.TODO())
 			},
 			expect: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
@@ -1236,7 +1239,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 							"foo": "bar",
 						},
 					},
-				}, meta.VersionGA)
+				}, meta.VersionGA, klog.TODO())
 			},
 			expect: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
@@ -1279,7 +1282,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 						IpAddress: testIP7,
 						Port:      testPort,
 					},
-				}, meta.VersionGA)
+				}, meta.VersionGA, klog.TODO())
 			},
 			expect: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
@@ -1322,7 +1325,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 						IpAddress: testIP4,
 						Port:      testPort,
 					},
-				}, meta.VersionGA)
+				}, meta.VersionGA, klog.TODO())
 			},
 			expect: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
@@ -1366,7 +1369,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 						IpAddress: testIP5,
 						Port:      testPort,
 					},
-				}, meta.VersionGA)
+				}, meta.VersionGA, klog.TODO())
 			},
 			// set mode to L4 since this scenario applies more to VM_IP NEGs.
 			mode: negtypes.L4LocalMode,
@@ -1410,7 +1413,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 		{
 			desc: "NEG does not exist in a zone where endpoints exist(mimics user deleting NEG manually)",
 			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
-				cloud.DeleteNetworkEndpointGroup(testNegName, negtypes.TestZone2, meta.VersionGA)
+				cloud.DeleteNetworkEndpointGroup(testNegName, negtypes.TestZone2, meta.VersionGA, klog.TODO())
 			},
 			expectErr: true,
 		},
@@ -1419,7 +1422,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 	for _, tc := range testCases {
 		tc.mutate(negCloud)
 		// tc.mode of "" will result in the default node predicate being selected, which is ok for this test.
-		endpointSets, annotationMap, err := retrieveExistingZoneNetworkEndpointMap(negName, zoneGetter, negCloud, meta.VersionGA, tc.mode, false)
+		endpointSets, annotationMap, err := retrieveExistingZoneNetworkEndpointMap(negName, zoneGetter, negCloud, meta.VersionGA, tc.mode, false, klog.TODO())
 
 		if tc.expectErr {
 			if err == nil {
@@ -1519,7 +1522,7 @@ func TestMakeEndpointBatch(t *testing.T) {
 
 			endpointSet, endpointMap, endpointPodLabelMap := genTestEndpoints(tc.endpointNum, negType, flags.F.EnableNEGLabelPropagation)
 
-			out, err := makeEndpointBatch(endpointSet, negType, endpointPodLabelMap)
+			out, err := makeEndpointBatch(endpointSet, negType, endpointPodLabelMap, klog.TODO())
 
 			if err != nil {
 				t.Errorf("Expect err = nil, but got %v", err)
@@ -1590,12 +1593,13 @@ func TestNameUniqueness(t *testing.T) {
 		apiVersion,
 		false,
 		networkInfo,
+		klog.TODO(),
 	)
 	if err != nil {
 		t.Errorf("Errored while ensuring network endpoint groups: %s", err)
 	}
 
-	neg, err := fakeCloud.GetNetworkEndpointGroup(negName, testZone, apiVersion)
+	neg, err := fakeCloud.GetNetworkEndpointGroup(negName, testZone, apiVersion, klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to retrieve NEG %q: %v", negName, err)
 	}
@@ -1620,6 +1624,7 @@ func TestNameUniqueness(t *testing.T) {
 		apiVersion,
 		false,
 		networkInfo,
+		klog.TODO(),
 	)
 
 	if err == nil {
@@ -1667,12 +1672,13 @@ func TestNegObjectCrd(t *testing.T) {
 			apiVersion,
 			false,
 			networkInfo,
+			klog.TODO(),
 		)
 		if err != nil {
 			t.Errorf("Errored while ensuring network endpoint groups: %s", err)
 		}
 
-		neg, err := fakeCloud.GetNetworkEndpointGroup(negName, testZone, apiVersion)
+		neg, err := fakeCloud.GetNetworkEndpointGroup(negName, testZone, apiVersion, klog.TODO())
 		if err != nil {
 			t.Errorf("Failed to retrieve NEG %q: %v", negName, err)
 		}
@@ -1708,6 +1714,7 @@ func TestNegObjectCrd(t *testing.T) {
 			apiVersion,
 			false,
 			networkInfo,
+			klog.TODO(),
 		)
 
 		if err != nil {
@@ -1860,7 +1867,7 @@ func TestNEGRecreate(t *testing.T) {
 			Network:             tc.network,
 			Subnetwork:          tc.subnetwork,
 			Description:         tc.negDescription,
-		}, testZone)
+		}, testZone, klog.TODO())
 
 		// Ensure with the correct network and subnet
 		_, err := ensureNetworkEndpointGroup(
@@ -1878,6 +1885,7 @@ func TestNEGRecreate(t *testing.T) {
 			apiVersion,
 			tc.customName,
 			networkInfo,
+			klog.TODO(),
 		)
 		if !tc.expectError && err != nil {
 			t.Errorf("TestCase: %s, Errored while ensuring network endpoint groups: %s", tc.desc, err)
@@ -1885,7 +1893,7 @@ func TestNEGRecreate(t *testing.T) {
 			t.Errorf("TestCase: %s, Expected error when ensure network endpoint groups", tc.desc)
 		}
 
-		neg, err := fakeCloud.GetNetworkEndpointGroup(negName, testZone, apiVersion)
+		neg, err := fakeCloud.GetNetworkEndpointGroup(negName, testZone, apiVersion, klog.TODO())
 		if err != nil {
 			t.Errorf("TestCase: %s, Failed to retrieve NEG %q: %v", tc.desc, negName, err)
 		}
@@ -2030,7 +2038,7 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			result := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, serviceLister, tc.portName, tc.networkEndpointType, false)
+			result := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, serviceLister, tc.portName, tc.networkEndpointType, false, klog.TODO())
 			if !reflect.DeepEqual(result.NetworkEndpointSet, tc.expectedEndpointMap) {
 				t.Errorf("degraded mode endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", result.NetworkEndpointSet, tc.expectedEndpointMap)
 			}
@@ -2362,7 +2370,7 @@ func TestDegradedModeValidateEndpointInfo(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			result := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, serviceLister, emptyNamedPort, tc.endpointType, true)
+			result := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, serviceLister, emptyNamedPort, tc.endpointType, true, klog.TODO())
 			if !reflect.DeepEqual(result.NetworkEndpointSet, tc.expectedEndpointMap) {
 				t.Errorf("degraded mode endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", result.NetworkEndpointSet, tc.expectedEndpointMap)
 			}
@@ -2701,7 +2709,7 @@ func TestValidatePod(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			if _, got := validatePod(tc.pod, nodeLister, serviceLister, tc.networkEndpoint, tc.serviceName, tc.isCustomEPS); !errors.Is(got, tc.expectErr) {
+			if _, got := validatePod(tc.pod, nodeLister, serviceLister, tc.networkEndpoint, tc.serviceName, tc.isCustomEPS, klog.TODO()); !errors.Is(got, tc.expectErr) {
 				t.Errorf("validatePod() = %t, expected %t\n", got, tc.expectErr)
 			}
 		})

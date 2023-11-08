@@ -488,7 +488,7 @@ func (manager *syncerManager) garbageCollectSyncer() {
 func (manager *syncerManager) garbageCollectNEG() error {
 	// Retrieve aggregated NEG list from cloud
 	// Compare against svcPortMap and Remove unintended NEGs by best effort
-	negList, err := manager.cloud.AggregatedListNetworkEndpointGroup(meta.VersionGA)
+	negList, err := manager.cloud.AggregatedListNetworkEndpointGroup(meta.VersionGA, manager.logger)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve aggregated NEG list: %w", err)
 	}
@@ -685,7 +685,7 @@ func (manager *syncerManager) deleteNegOrReportErr(name, zone string, svcNegCR *
 
 // ensureDeleteNetworkEndpointGroup ensures neg is delete from zone
 func (manager *syncerManager) ensureDeleteNetworkEndpointGroup(name, zone string, expectedDesc *utils.NegDescription) error {
-	neg, err := manager.cloud.GetNetworkEndpointGroup(name, zone, meta.VersionGA)
+	neg, err := manager.cloud.GetNetworkEndpointGroup(name, zone, meta.VersionGA, manager.logger)
 	if err != nil {
 		if utils.IsNotFoundError(err) || utils.IsHTTPErrorCode(err, http.StatusBadRequest) {
 			manager.logger.V(2).Info("Ignoring error when querying for neg during GC", "negName", name, "zone", zone, "err", err)
@@ -709,7 +709,7 @@ func (manager *syncerManager) ensureDeleteNetworkEndpointGroup(name, zone string
 	}
 
 	manager.logger.V(2).Info("Deleting NEG", "negName", name, "zone", zone)
-	return manager.cloud.DeleteNetworkEndpointGroup(name, zone, meta.VersionGA)
+	return manager.cloud.DeleteNetworkEndpointGroup(name, zone, meta.VersionGA, manager.logger)
 }
 
 // ensureSvcNegCR ensures that if neg crd is enabled, a Neg CR exists for every

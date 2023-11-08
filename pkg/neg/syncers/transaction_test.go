@@ -92,7 +92,7 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 		}
 
 		// Verify the NEGs are created as expected
-		ret, _ := transactionSyncer.cloud.AggregatedListNetworkEndpointGroup(transactionSyncer.NegSyncerKey.GetAPIVersion())
+		ret, _ := transactionSyncer.cloud.AggregatedListNetworkEndpointGroup(transactionSyncer.NegSyncerKey.GetAPIVersion(), klog.TODO())
 		// Though the test cases below only add instances in zone1 and zone2, NEGs will be created in zone3 or zone4 as well since fakeZoneGetter includes those zones.
 		var expectZones []string
 		if testNegType == negtypes.VmIpEndpointType {
@@ -222,7 +222,7 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 			}
 
 			for zone, endpoints := range tc.expectEndpoints {
-				list, err := fakeCloud.ListNetworkEndpoints(transactionSyncer.NegSyncerKey.NegName, zone, false, transactionSyncer.NegSyncerKey.GetAPIVersion())
+				list, err := fakeCloud.ListNetworkEndpoints(transactionSyncer.NegSyncerKey.NegName, zone, false, transactionSyncer.NegSyncerKey.GetAPIVersion(), klog.TODO())
 				if err != nil {
 					t.Errorf("For case %q, ListNetworkEndpoints() got %v, want nil", tc.desc, err)
 				}
@@ -241,10 +241,10 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 				}
 			}
 		}
-		transactionSyncer.cloud.DeleteNetworkEndpointGroup(transactionSyncer.NegName, negtypes.TestZone1, transactionSyncer.NegSyncerKey.GetAPIVersion())
-		transactionSyncer.cloud.DeleteNetworkEndpointGroup(transactionSyncer.NegName, negtypes.TestZone2, transactionSyncer.NegSyncerKey.GetAPIVersion())
-		transactionSyncer.cloud.DeleteNetworkEndpointGroup(transactionSyncer.NegName, negtypes.TestZone3, transactionSyncer.NegSyncerKey.GetAPIVersion())
-		transactionSyncer.cloud.DeleteNetworkEndpointGroup(transactionSyncer.NegName, negtypes.TestZone4, transactionSyncer.NegSyncerKey.GetAPIVersion())
+		transactionSyncer.cloud.DeleteNetworkEndpointGroup(transactionSyncer.NegName, negtypes.TestZone1, transactionSyncer.NegSyncerKey.GetAPIVersion(), klog.TODO())
+		transactionSyncer.cloud.DeleteNetworkEndpointGroup(transactionSyncer.NegName, negtypes.TestZone2, transactionSyncer.NegSyncerKey.GetAPIVersion(), klog.TODO())
+		transactionSyncer.cloud.DeleteNetworkEndpointGroup(transactionSyncer.NegName, negtypes.TestZone3, transactionSyncer.NegSyncerKey.GetAPIVersion(), klog.TODO())
+		transactionSyncer.cloud.DeleteNetworkEndpointGroup(transactionSyncer.NegName, negtypes.TestZone4, transactionSyncer.NegSyncerKey.GetAPIVersion(), klog.TODO())
 	}
 }
 
@@ -397,7 +397,7 @@ func TestSyncNetworkEndpointLabel(t *testing.T) {
 		}
 
 		for zone := range tc.addEndpoints {
-			list, err := fakeCloud.ListNetworkEndpoints(transactionSyncer.NegSyncerKey.NegName, zone, false, transactionSyncer.NegSyncerKey.GetAPIVersion())
+			list, err := fakeCloud.ListNetworkEndpoints(transactionSyncer.NegSyncerKey.NegName, zone, false, transactionSyncer.NegSyncerKey.GetAPIVersion(), klog.TODO())
 			if err != nil {
 				t.Errorf("For case %q, ListNetworkEndpoints() got %v, want nil", tc.desc, err)
 			}
@@ -1179,9 +1179,9 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 						Network:             fakeCloud.NetworkURL(),
 						Subnetwork:          fakeCloud.SubnetworkURL(),
 						Description:         tc.negDesc,
-					}, zone)
+					}, zone, klog.TODO())
 				}
-				ret, _ := fakeCloud.AggregatedListNetworkEndpointGroup(syncer.NegSyncerKey.GetAPIVersion())
+				ret, _ := fakeCloud.AggregatedListNetworkEndpointGroup(syncer.NegSyncerKey.GetAPIVersion(), klog.TODO())
 				expectedNegRefs = negObjectReferences(ret)
 			}
 			var refs []negv1beta1.NegObjectReference
@@ -1212,7 +1212,7 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 			if err != nil {
 				t.Errorf("Failed to get NEG from neg client: %s", err)
 			}
-			ret, _ := fakeCloud.AggregatedListNetworkEndpointGroup(syncer.NegSyncerKey.GetAPIVersion())
+			ret, _ := fakeCloud.AggregatedListNetworkEndpointGroup(syncer.NegSyncerKey.GetAPIVersion(), klog.TODO())
 			if len(expectedNegRefs) == 0 && !tc.expectErr {
 				expectedNegRefs = negObjectReferences(ret)
 			}
@@ -1255,10 +1255,10 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 
 		negClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Delete(context2.TODO(), testNegName, v1.DeleteOptions{})
 
-		syncer.cloud.DeleteNetworkEndpointGroup(testNegName, negtypes.TestZone1, syncer.NegSyncerKey.GetAPIVersion())
-		syncer.cloud.DeleteNetworkEndpointGroup(testNegName, negtypes.TestZone2, syncer.NegSyncerKey.GetAPIVersion())
-		syncer.cloud.DeleteNetworkEndpointGroup(testNegName, negtypes.TestZone3, syncer.NegSyncerKey.GetAPIVersion())
-		syncer.cloud.DeleteNetworkEndpointGroup(testNegName, negtypes.TestZone4, syncer.NegSyncerKey.GetAPIVersion())
+		syncer.cloud.DeleteNetworkEndpointGroup(testNegName, negtypes.TestZone1, syncer.NegSyncerKey.GetAPIVersion(), klog.TODO())
+		syncer.cloud.DeleteNetworkEndpointGroup(testNegName, negtypes.TestZone2, syncer.NegSyncerKey.GetAPIVersion(), klog.TODO())
+		syncer.cloud.DeleteNetworkEndpointGroup(testNegName, negtypes.TestZone3, syncer.NegSyncerKey.GetAPIVersion(), klog.TODO())
+		syncer.cloud.DeleteNetworkEndpointGroup(testNegName, negtypes.TestZone4, syncer.NegSyncerKey.GetAPIVersion(), klog.TODO())
 
 	}
 }
@@ -1348,9 +1348,9 @@ func TestUpdateStatus(t *testing.T) {
 						Network:             fakeCloud.NetworkURL(),
 						Subnetwork:          fakeCloud.SubnetworkURL(),
 						Description:         "",
-					}, testZone1)
+					}, testZone1, klog.TODO())
 
-					_, err = fakeCloud.GetNetworkEndpointGroup(testNegName, testZone1, syncer.NegSyncerKey.GetAPIVersion())
+					_, err = fakeCloud.GetNetworkEndpointGroup(testNegName, testZone1, syncer.NegSyncerKey.GetAPIVersion(), klog.TODO())
 					if err != nil {
 						t.Errorf("failed to get neg from cloud: %s ", err)
 					}
@@ -1437,9 +1437,9 @@ func TestIsZoneChange(t *testing.T) {
 					NetworkEndpointType: string(syncer.NegSyncerKey.NegType),
 					Network:             fakeCloud.NetworkURL(),
 					Subnetwork:          fakeCloud.SubnetworkURL(),
-				}, zone)
+				}, zone, klog.TODO())
 			}
-			ret, _ := fakeCloud.AggregatedListNetworkEndpointGroup(syncer.NegSyncerKey.GetAPIVersion())
+			ret, _ := fakeCloud.AggregatedListNetworkEndpointGroup(syncer.NegSyncerKey.GetAPIVersion(), klog.TODO())
 			negRefMap := negObjectReferences(ret)
 			var refs []negv1beta1.NegObjectReference
 			for _, neg := range negRefMap {
@@ -1505,9 +1505,9 @@ func TestUnknownNodes(t *testing.T) {
 	// Create initial NetworkEndpointGroups in cloud
 	var objRefs []negv1beta1.NegObjectReference
 	for zone, endpoint := range testEndpointMap {
-		fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: testNegName, Version: meta.VersionGA}, zone)
-		fakeCloud.AttachNetworkEndpoints(testNegName, zone, []*composite.NetworkEndpoint{endpoint}, meta.VersionGA)
-		neg, err := fakeCloud.GetNetworkEndpointGroup(testNegName, zone, meta.VersionGA)
+		fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: testNegName, Version: meta.VersionGA}, zone, klog.TODO())
+		fakeCloud.AttachNetworkEndpoints(testNegName, zone, []*composite.NetworkEndpoint{endpoint}, meta.VersionGA, klog.TODO())
+		neg, err := fakeCloud.GetNetworkEndpointGroup(testNegName, zone, meta.VersionGA, klog.TODO())
 		if err != nil {
 			t.Fatalf("failed to get neg from fake cloud: %s", err)
 		}
@@ -1540,7 +1540,7 @@ func TestUnknownNodes(t *testing.T) {
 	}
 
 	// Check that unknown zone did not cause endpoints to be removed
-	out, _, err := retrieveExistingZoneNetworkEndpointMap(testNegName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false)
+	out, _, err := retrieveExistingZoneNetworkEndpointMap(testNegName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO())
 	if err != nil {
 		t.Errorf("errored retrieving existing network endpoints")
 	}
@@ -1783,9 +1783,9 @@ func TestEnableDegradedMode(t *testing.T) {
 			// Create initial NetworkEndpointGroups in cloud
 			var objRefs []negv1beta1.NegObjectReference
 			for zone, endpoint := range testEndpointMap {
-				fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: tc.negName, Version: meta.VersionGA}, zone)
-				fakeCloud.AttachNetworkEndpoints(tc.negName, zone, []*composite.NetworkEndpoint{endpoint}, meta.VersionGA)
-				neg, err := fakeCloud.GetNetworkEndpointGroup(tc.negName, zone, meta.VersionGA)
+				fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: tc.negName, Version: meta.VersionGA}, zone, klog.TODO())
+				fakeCloud.AttachNetworkEndpoints(tc.negName, zone, []*composite.NetworkEndpoint{endpoint}, meta.VersionGA, klog.TODO())
+				neg, err := fakeCloud.GetNetworkEndpointGroup(tc.negName, zone, meta.VersionGA, klog.TODO())
 				if err != nil {
 					t.Fatalf("failed to get neg from fake cloud: %s", err)
 				}
@@ -1835,7 +1835,7 @@ func TestEnableDegradedMode(t *testing.T) {
 			(s.syncer.(*syncer)).stopped = false
 			tc.modify(s)
 
-			out, _, err := retrieveExistingZoneNetworkEndpointMap(tc.negName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false)
+			out, _, err := retrieveExistingZoneNetworkEndpointMap(tc.negName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO())
 			if err != nil {
 				t.Errorf("errored retrieving existing network endpoints")
 			}
@@ -1848,7 +1848,7 @@ func TestEnableDegradedMode(t *testing.T) {
 				t.Errorf("syncInternal returned %v, expected %v", err, tc.expectErr)
 			}
 			err = wait.PollImmediate(time.Second, 3*time.Second, func() (bool, error) {
-				out, _, err = retrieveExistingZoneNetworkEndpointMap(tc.negName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false)
+				out, _, err = retrieveExistingZoneNetworkEndpointMap(tc.negName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO())
 				if err != nil {
 					return false, nil
 				}
@@ -2282,7 +2282,7 @@ func unionEndpointMap(m1, m2 negtypes.EndpointPodMap) negtypes.EndpointPodMap {
 }
 
 func generateEndpointBatch(endpointSet negtypes.NetworkEndpointSet, endpointPodLabelMap labels.EndpointPodLabelMap) map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint {
-	ret, _ := makeEndpointBatch(endpointSet, negtypes.VmIpPortEndpointType, endpointPodLabelMap)
+	ret, _ := makeEndpointBatch(endpointSet, negtypes.VmIpPortEndpointType, endpointPodLabelMap, klog.TODO())
 	return ret
 }
 

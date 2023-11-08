@@ -21,6 +21,7 @@ import (
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog/v2"
 )
 
 // GroupKey represents a single group for a backend. The implementation of
@@ -74,7 +75,7 @@ type Linker interface {
 
 // NEGGetter is an interface to retrieve NEG object
 type NEGGetter interface {
-	GetNetworkEndpointGroup(name string, zone string, version meta.Version) (*composite.NetworkEndpointGroup, error)
+	GetNetworkEndpointGroup(name string, zone string, version meta.Version, logger klog.Logger) (*composite.NetworkEndpointGroup, error)
 }
 
 // ProbeProvider retrieves a probe struct given a nodePort

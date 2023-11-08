@@ -397,12 +397,12 @@ func TestGarbageCollectionNEG(t *testing.T) {
 			Version:             version,
 			Name:                negName,
 			NetworkEndpointType: string(networkEndpointType),
-		}, negtypes.TestZone1)
+		}, negtypes.TestZone1, klog.TODO())
 		manager.cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
 			Version:             version,
 			Name:                negName,
 			NetworkEndpointType: string(networkEndpointType),
-		}, negtypes.TestZone2)
+		}, negtypes.TestZone2, klog.TODO())
 
 		svcNeg := &negv1beta1.ServiceNetworkEndpointGroup{
 			ObjectMeta: metav1.ObjectMeta{Namespace: "test", Name: negName},
@@ -416,7 +416,7 @@ func TestGarbageCollectionNEG(t *testing.T) {
 			t.Fatalf("Failed to GC: %v", err)
 		}
 		for _, zone := range []string{negtypes.TestZone1, negtypes.TestZone2} {
-			negs, _ := manager.cloud.ListNetworkEndpointGroup(zone, version)
+			negs, _ := manager.cloud.ListNetworkEndpointGroup(zone, version, klog.TODO())
 			for _, neg := range negs {
 				if neg.Name == negName {
 					t.Errorf("Expect NEG %q in zone %q to be GCed.", negName, zone)
@@ -1324,7 +1324,7 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 							Name:                negName,
 							NetworkEndpointType: string(networkEndpointType),
 							Description:         tc.negDesc,
-						}, zone)
+						}, zone, klog.TODO())
 					}
 
 					gcPortInfo := negtypes.PortInfo{PortTuple: negtypes.SvcPortTuple{Port: port80}, NegName: negName}
@@ -1360,7 +1360,7 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 
 					if !tc.negsExist {
 						for _, zone := range []string{negtypes.TestZone1, negtypes.TestZone2} {
-							fakeNegCloud.DeleteNetworkEndpointGroup(negName, zone, version)
+							fakeNegCloud.DeleteNetworkEndpointGroup(negName, zone, version, klog.TODO())
 						}
 					}
 
@@ -1380,7 +1380,7 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 						t.Errorf("expected GC to error")
 					}
 
-					negs, err := fakeNegCloud.AggregatedListNetworkEndpointGroup(version)
+					negs, err := fakeNegCloud.AggregatedListNetworkEndpointGroup(version, klog.TODO())
 					if err != nil {
 						t.Errorf("failed getting negs from cloud: %s", err)
 					}
@@ -1533,7 +1533,7 @@ func (s *fakeSyncer) IsShuttingDown() bool { return false }
 func getNegObjectRefs(t *testing.T, cloud negtypes.NetworkEndpointGroupCloud, zones []string, negName string, version meta.Version) []negv1beta1.NegObjectReference {
 	var negRefs []negv1beta1.NegObjectReference
 	for _, zone := range zones {
-		neg, err := cloud.GetNetworkEndpointGroup(negName, zone, version)
+		neg, err := cloud.GetNetworkEndpointGroup(negName, zone, version, klog.TODO())
 		if err != nil {
 			t.Errorf("failed to get neg %s, from zone %s", negName, zone)
 			continue

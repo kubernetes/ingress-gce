@@ -73,7 +73,7 @@ func (nl *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 		negUrl, ok := getNegUrlFromSvcneg(svcNegKey, group.Zone, nl.svcNegLister)
 		if !ok {
 			klog.V(4).Infof("Falling back to use NEG API to retrieve NEG url for NEG %q", negName)
-			neg, err := nl.negGetter.GetNetworkEndpointGroup(negName, group.Zone, version)
+			neg, err := nl.negGetter.GetNetworkEndpointGroup(negName, group.Zone, version, klog.TODO())
 			if err != nil {
 				return err
 			}
