@@ -103,7 +103,7 @@ func TestAffinityBeta(t *testing.T) {
 		}
 
 		// Check conformity.
-		if err := verifyAffinity(t, gclb, s.Namespace, svcName, affinityType, 0); err != nil {
+		if err := verifyAffinity(gclb, s.Namespace, svcName, affinityType, 0); err != nil {
 			t.Error(err)
 		}
 
@@ -132,7 +132,7 @@ func TestAffinityBeta(t *testing.T) {
 						t.Logf("Error getting GCP resources for LB with IP(%q): %v", vip, logicErr)
 						return false, nil
 					}
-					if logicErr = verifyAffinity(t, gclb, s.Namespace, svcName, transition.affinity, transition.ttl); logicErr != nil {
+					if logicErr = verifyAffinity(gclb, s.Namespace, svcName, transition.affinity, transition.ttl); logicErr != nil {
 						return false, nil
 					}
 					return true, nil
