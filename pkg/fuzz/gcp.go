@@ -700,13 +700,19 @@ func RegionalGCLBForVIP(ctx context.Context, c cloud.Cloud, gclb *GCLB, params *
 
 	var rfrs []*compute.ForwardingRule
 	for _, rfr := range allRFRs {
-		netResID, err := cloud.ParseResourceURL(rfr.Network)
-		if err != nil {
-			klog.Warningf("Error parsing Network (%q): %v", rfr.Network, err)
-			return err
-		}
-		if rfr.IPAddress == params.VIP && netResID.Key.Name == params.Network {
-			rfrs = append(rfrs, rfr)
+		if rfr.IPAddress == params.VIP {
+			if rfr.Network == "" {
+				continue
+			}
+
+			netResID, err := cloud.ParseResourceURL(rfr.Network)
+			if err != nil {
+				klog.Warningf("Error parsing Network (%q): %v", rfr.Network, err)
+				return err
+			}
+			if netResID.Key.Name == params.Network {
+				rfrs = append(rfrs, rfr)
+			}
 		}
 	}
 

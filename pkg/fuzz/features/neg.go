@@ -91,7 +91,7 @@ func (v *negValidator) CheckResponse(host, path string, resp *http.Response, bod
 
 	urlMapName := v.env.FrontendNamerFactory().Namer(v.ing).UrlMap()
 	if negEnabled {
-		if utils.IsGCEL7ILBIngress(v.ing) {
+		if utils.IsGCEL7ILBIngress(v.ing) || utils.IsGCEL7XLBRegionalIngress(v.ing) {
 			return fuzz.CheckResponseContinue, verifyNegRegionBackend(v.env, negName, negName, urlMapName, v.region)
 		}
 		return fuzz.CheckResponseContinue, verifyNegBackend(v.env, negName, urlMapName)
