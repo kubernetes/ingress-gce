@@ -127,7 +127,7 @@ func TestAffinity(t *testing.T) {
 			}
 
 			// Check conformity
-			if err := verifyAffinity(t, gclb, s.Namespace, "service-1", tc.expect, tc.ttl); err != nil {
+			if err := verifyAffinity(gclb, s.Namespace, "service-1", tc.expect, tc.ttl); err != nil {
 				t.Error(err)
 			}
 
@@ -154,7 +154,7 @@ func TestAffinity(t *testing.T) {
 					t.Logf("error getting GCP resources for LB with IP = %q: %v", vip, err)
 					return false, nil
 				}
-				if err := verifyAffinity(t, gclb, s.Namespace, "service-1", tc.transition.affinity, tc.transition.ttl); err != nil {
+				if err := verifyAffinity(gclb, s.Namespace, "service-1", tc.transition.affinity, tc.transition.ttl); err != nil {
 					return false, nil
 				}
 				return true, nil
@@ -266,7 +266,7 @@ func TestILBSA(t *testing.T) {
 			}
 
 			// Check conformity
-			if err := verifyAffinity(t, gclb, s.Namespace, "service-1", tc.expect, tc.ttl); err != nil {
+			if err := verifyAffinity(gclb, s.Namespace, "service-1", tc.expect, tc.ttl); err != nil {
 				t.Error(err)
 			}
 
@@ -293,7 +293,7 @@ func TestILBSA(t *testing.T) {
 					t.Logf("error getting GCP resources for LB with IP = %q: %v", vip, err)
 					return false, nil
 				}
-				if err := verifyAffinity(t, gclb, s.Namespace, "service-1", tc.transition.affinity, tc.transition.ttl); err != nil {
+				if err := verifyAffinity(gclb, s.Namespace, "service-1", tc.transition.affinity, tc.transition.ttl); err != nil {
 					return false, nil
 				}
 				return true, nil
@@ -318,7 +318,145 @@ func TestILBSA(t *testing.T) {
 	}
 }
 
-func verifyAffinity(t *testing.T, gclb *fuzz.GCLB, svcNamespace, svcName string, expect string, ttl int64) error {
+// Session affinity test for L7 Regional XLB.
+func TestXLBRegionalSA(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		desc       string
+		ttl        int64
+		expect     string
+		transition affinityTransition
+		beConfig   *backendconfig.BackendConfig
+	}{
+		{
+			desc:       "http with no affinity.",
+			beConfig:   fuzz.NewBackendConfigBuilder("", "backendconfig-1").Build(),
+			expect:     "NONE",
+			transition: affinityTransition{"CLIENT_IP", 10},
+		},
+		{
+			desc: "http with cookie based affinity.",
+			beConfig: fuzz.NewBackendConfigBuilder("", "backendconfig-1").
+				SetSessionAffinity("GENERATED_COOKIE").
+				Build(),
+			expect:     "GENERATED_COOKIE",
+			transition: affinityTransition{"NONE", 20},
+		},
+		{
+			desc: "http with cookie based affinity and 60s ttl.",
+			beConfig: fuzz.NewBackendConfigBuilder("", "backendconfig-1").
+				SetSessionAffinity("GENERATED_COOKIE").
+				SetAffinityCookieTtlSec(60).
+				Build(),
+			expect:     "GENERATED_COOKIE",
+			ttl:        60,
+			transition: affinityTransition{"CLIENT_IP", 30},
+		},
+	} {
+		tc := tc // Capture tc as we are running this in parallel.
+		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
+			t.Parallel()
+
+			ctx := context.Background()
+
+			svcAnnotation := map[string]string{
+				annotations.BetaBackendConfigKey: `{"default":"backendconfig-1"}`,
+				annotations.NEGAnnotationKey:     negVal.String(),
+			}
+
+			bcCRUD := adapter.BackendConfigCRUD{C: Framework.BackendConfigClient}
+			tc.beConfig.Namespace = s.Namespace
+			if _, err := bcCRUD.Create(tc.beConfig); err != nil {
+				t.Fatalf("error creating BackendConfig: %v", err)
+			}
+			t.Logf("BackendConfig created (%s/%s) ", s.Namespace, tc.beConfig.Name)
+
+			_, err := e2e.CreateEchoService(s, "service-1", svcAnnotation)
+			if err != nil {
+				t.Fatalf("error creating echo service: %v", err)
+			}
+			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
+
+			ing := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
+				AddPath("test.com", "/", "service-1", v1.ServiceBackendPort{Number: 80}).
+				ConfigureForRegionalXLB().
+				Build()
+			crud := adapter.IngressCRUD{C: Framework.Clientset}
+			if _, err := crud.Create(ing); err != nil {
+				t.Fatalf("error creating Ingress spec: %v", err)
+			}
+			t.Logf("Ingress created (%s/%s)", s.Namespace, ing.Name)
+
+			ing, err = e2e.WaitForIngress(s, ing, nil, nil)
+			if err != nil {
+				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
+			}
+			t.Logf("GCLB resources created (%s/%s)", s.Namespace, ing.Name)
+
+			vip := ing.Status.LoadBalancer.Ingress[0].IP
+			t.Logf("Ingress %s/%s VIP = %s", s.Namespace, ing.Name, vip)
+
+			params := &fuzz.GCLBForVIPParams{VIP: vip, Validators: fuzz.FeatureValidators(features.All), Region: Framework.Region, Network: Framework.Network}
+			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
+			if err != nil {
+				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
+			}
+
+			// Check conformity
+			if err := verifyAffinity(gclb, s.Namespace, "service-1", tc.expect, tc.ttl); err != nil {
+				t.Error(err)
+			}
+
+			// Test modifications
+			if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+				bc, err := bcCRUD.Get(tc.beConfig.Namespace, tc.beConfig.Name)
+				if err != nil {
+					return err
+				}
+				if bc.Spec.SessionAffinity == nil {
+					bc.Spec.SessionAffinity = &backendconfig.SessionAffinityConfig{}
+				}
+				bc.Spec.SessionAffinity.AffinityType = tc.transition.affinity
+				bc.Spec.SessionAffinity.AffinityCookieTtlSec = &tc.transition.ttl
+				_, err = bcCRUD.Update(bc)
+				return err
+			}); err != nil {
+				t.Errorf("Failed to update BackendConfig affinity settings for %s: %v", t.Name(), err)
+			}
+
+			if err := wait.Poll(transitionPollInterval, transitionPollTimeout, func() (bool, error) {
+				gclb, err = fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
+				if err != nil {
+					t.Logf("error getting GCP resources for LB with IP = %q: %v", vip, err)
+					return false, nil
+				}
+				if err := verifyAffinity(gclb, s.Namespace, "service-1", tc.transition.affinity, tc.transition.ttl); err != nil {
+					return false, nil
+				}
+				return true, nil
+			}); err != nil {
+				t.Errorf("error waiting for BackendConfig affinity transition propagation to GCLB: %v", err)
+			}
+
+			// Wait for GCLB resources to be deleted.
+			if err := crud.Delete(s.Namespace, ing.Name); err != nil {
+				t.Errorf("Delete(%q) = %v, want nil", ing.Name, err)
+			}
+
+			deleteOptions := &fuzz.GCLBDeleteOptions{
+				SkipDefaultBackend: true,
+			}
+			t.Logf("Waiting for GCLB resources to be deleted (%s/%s)", s.Namespace, ing.Name)
+			if err := e2e.WaitForGCLBDeletion(ctx, Framework.Cloud, gclb, deleteOptions); err != nil {
+				t.Errorf("e2e.WaitForGCLBDeletion(...) = %v, want nil", err)
+			}
+			t.Logf("GCLB resources deleted (%s/%s)", s.Namespace, ing.Name)
+		})
+	}
+}
+
+func verifyAffinity(gclb *fuzz.GCLB, svcNamespace, svcName, expect string, ttl int64) error {
 	for _, bs := range gclb.BackendService {
 		desc := utils.DescriptionFromString(bs.Beta.Description)
 		if desc.ServiceName != fmt.Sprintf("%s/%s", svcNamespace, svcName) {
