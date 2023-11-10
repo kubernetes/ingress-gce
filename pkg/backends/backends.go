@@ -344,7 +344,7 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 		return composite.GetBackendService(b.cloud, key, meta.VersionGA, klog.TODO())
 	}
 
-	if backendSvcEqual(expectedBS, bs) {
+	if backendSvcL4RelevantPropertiesEqual(expectedBS, bs) {
 		klog.V(2).Infof("EnsureL4BackendService: backend service %s did not change, skipping update", name)
 		return bs, nil
 	}
@@ -364,13 +364,14 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 	return composite.GetBackendService(b.cloud, key, meta.VersionGA, klog.TODO())
 }
 
-// backendSvcEqual returns true if the 2 BackendService objects are equal.
+// backendSvcL4RelevantPropertiesEqual returns true if the 2 BackendService
+// objects for the properties relevant to the L4 controllers.
+// The list of backends is not checked, since that is handled by the neg-linker.
 // ConnectionDraining timeout is not checked for equality, if user changes
 // this timeout and no other backendService parameters change, the backend
 // service will not be updated. The list of backends is not checked either,
 // since that is handled by the neg-linker.
-// The list of backends is not checked, since that is handled by the neg-linker.
-func backendSvcEqual(a, b *composite.BackendService) bool {
+func backendSvcL4RelevantPropertiesEqual(a, b *composite.BackendService) bool {
 	return a.Protocol == b.Protocol &&
 		a.Description == b.Description &&
 		a.SessionAffinity == b.SessionAffinity &&

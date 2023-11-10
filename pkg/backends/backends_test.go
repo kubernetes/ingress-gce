@@ -8,6 +8,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/api/googleapi"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/cloud-provider-gcp/providers/gce"
@@ -24,6 +25,9 @@ const (
 	prolongedIdleTimeout      = int64(2 * 60 * 60) // 2 hours
 	perSessionTrackingMode    = "PER_SESSION"
 	perConnectionTrackingMode = "PER_CONNECTION"
+
+	testServiceName      = "test-service"
+	testServiceNamespace = "test-ns"
 )
 
 func TestEnsureL4BackendService(t *testing.T) {
@@ -40,8 +44,8 @@ func TestEnsureL4BackendService(t *testing.T) {
 	}{
 		{
 			desc:                        "Test basic Backend Service with Internal scheme type",
-			serviceName:                 "test-service",
-			serviceNamespace:            "test-ns",
+			serviceName:                 testServiceName,
+			serviceNamespace:            testServiceNamespace,
 			protocol:                    "TCP",
 			affinityType:                string(v1.ServiceAffinityNone),
 			schemeType:                  string(cloud.SchemeInternal),
@@ -51,8 +55,8 @@ func TestEnsureL4BackendService(t *testing.T) {
 		},
 		{
 			desc:                        "Test Backend Service with Strong Session Affinity configuration",
-			serviceName:                 "test-service",
-			serviceNamespace:            "test-ns",
+			serviceName:                 testServiceName,
+			serviceNamespace:            testServiceNamespace,
 			protocol:                    "TCP",
 			affinityType:                string(v1.ServiceAffinityClientIP),
 			schemeType:                  string(cloud.SchemeExternal),
@@ -114,16 +118,14 @@ func TestEnsureL4BackendService(t *testing.T) {
 }
 
 func TestEnsureL4BackendServiceDoesNotDetachBackends(t *testing.T) {
-	serviceName := "test-service"
-	serviceNamespace := "test-ns"
-	namespacedName := types.NamespacedName{Name: serviceName, Namespace: serviceNamespace}
+	namespacedName := types.NamespacedName{Name: testServiceName, Namespace: testServiceNamespace}
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockRegionBackendServices.UpdateHook = mock.UpdateRegionBackendServiceHook
 	l4namer := namer.NewL4Namer(kubeSystemUID, nil)
 	backendPool := NewPool(fakeGCE, l4namer)
 
-	hcLink := l4namer.L4HealthCheck(serviceNamespace, serviceName, false)
-	bsName := l4namer.L4Backend(serviceNamespace, serviceName)
+	hcLink := l4namer.L4HealthCheck(testServiceNamespace, testServiceName, false)
+	bsName := l4namer.L4Backend(testServiceNamespace, testServiceName)
 	network := network.NetworkInfo{IsDefault: false, NetworkURL: "https://www.googleapis.com/compute/v1/projects/test-poject/global/networks/test-vpc"}
 
 	backendName := "testNeg"
@@ -158,11 +160,8 @@ func TestEnsureL4BackendServiceDoesNotDetachBackends(t *testing.T) {
 		t.Fatalf("expected backends to be still attached to the backend service but there were none")
 	}
 	backend := bs.Backends[0]
-	if backend.Group != backendName {
-		t.Errorf("")
-	}
-	if diff := cmp.Diff(backend, existingBS.Backends[0]); diff != "" {
-		t.Errorf("BackendService.Backends were changed, expected no change: %s", diff)
+	if diff := cmp.Diff(existingBS.Backends[0], backend); diff != "" {
+		t.Errorf("BackendService.Backends were changed, expected no change (+got,-want): %s", diff)
 	}
 	description, err := utils.MakeL4LBServiceDescription(namespacedName.String(), "", meta.VersionGA, false, utils.ILB)
 	if err != nil {
@@ -173,10 +172,10 @@ func TestEnsureL4BackendServiceDoesNotDetachBackends(t *testing.T) {
 	}
 }
 
-// TestBackendSvcEqual checks that backendSvcEqual() and
-// connectionTrackingPolicyEqual() (as a part ofit  backendSvcEqual)
+// TestBackendSvcL4RelevantPropertiesEqual checks that backendSvcL4RelevantPropertiesEqual() and
+// connectionTrackingPolicyEqual() (as a part ofit  backendSvcL4RelevantPropertiesEqual)
 // return expected results for two resources compared.
-func TestBackendSvcEqual(t *testing.T) {
+func TestBackendSvcL4RelevantPropertiesEqual(t *testing.T) {
 	for _, tc := range []struct {
 		desc              string
 		oldBackendService *composite.BackendService
@@ -323,12 +322,184 @@ func TestBackendSvcEqual(t *testing.T) {
 			},
 			wantEqual: true,
 		},
+		{
+			desc: "Ignores backends",
+			oldBackendService: &composite.BackendService{
+				Backends: []*composite.Backend{
+					{
+						Group: "test1",
+					},
+				},
+			},
+			newBackendService: &composite.BackendService{
+				Backends: []*composite.Backend{
+					{
+						Group: "test2",
+					},
+				},
+			},
+			wantEqual: true,
+		},
+		{
+			desc: "Ignores non relevant attributes",
+			oldBackendService: &composite.BackendService{
+				AffinityCookieTtlSec: 1,
+				Backends: []*composite.Backend{
+					{
+						Group: "test1",
+					},
+				},
+				CdnPolicy: &composite.BackendServiceCdnPolicy{
+					MaxTtl: 10,
+				},
+				CircuitBreakers: &composite.CircuitBreakers{
+					MaxConnections: 10,
+				},
+				CompressionMode: "Brotli",
+				ConnectionDraining: &composite.ConnectionDraining{
+					DrainingTimeoutSec: 10,
+				},
+				ConnectionTrackingPolicy: &composite.BackendServiceConnectionTrackingPolicy{
+					IdleTimeoutSec: 10,
+				},
+				ConsistentHash: &composite.ConsistentHashLoadBalancerSettings{
+					HttpHeaderName: "Test1",
+				},
+				CustomRequestHeaders:  []string{"h1"},
+				CustomResponseHeaders: []string{"rh1"},
+				EdgeSecurityPolicy:    "test1",
+				EnableCDN:             false,
+				FailoverPolicy: &composite.BackendServiceFailoverPolicy{
+					FailoverRatio: 0.5,
+				},
+				Iap: &composite.BackendServiceIAP{
+					Enabled: false,
+				},
+				Id:                       1,
+				IpAddressSelectionPolicy: "IPV4_ONLY",
+				Kind:                     "compute#backendService",
+				LoadBalancingScheme:      "INTERNAL_MANAGED",
+				LocalityLbPolicies: []*composite.BackendServiceLocalityLoadBalancingPolicyConfig{
+					{
+						CustomPolicy: &composite.BackendServiceLocalityLoadBalancingPolicyConfigCustomPolicy{
+							Name: "test1",
+						},
+					},
+				},
+				LocalityLbPolicy: "LEAST_REQUEST",
+				LogConfig: &composite.BackendServiceLogConfig{
+					Enable: false,
+				},
+				MaxStreamDuration: &composite.Duration{
+					Seconds: 10,
+				},
+				Metadatas: nil,
+				Name:      "test1",
+				OutlierDetection: &composite.OutlierDetection{
+					ConsecutiveErrors: 10,
+				},
+				Port:           80,
+				PortName:       "http",
+				Protocol:       "TCP",
+				Region:         "us-central1",
+				SecurityPolicy: "policyURL1",
+				SecuritySettings: &composite.SecuritySettings{
+					ClientTlsPolicy: "policy1",
+				},
+				ServiceBindings: []string{"test1"},
+				ServiceLbPolicy: "EXTERNAL",
+				Subsetting: &composite.Subsetting{
+					SubsetSize: 10,
+				},
+				TimeoutSec:      10,
+				VpcNetworkScope: "REGIONAL_VPC_NETWORK",
+				ServerResponse: googleapi.ServerResponse{
+					HTTPStatusCode: 200,
+				},
+			},
+			newBackendService: &composite.BackendService{
+				AffinityCookieTtlSec: 1,
+				Backends: []*composite.Backend{
+					{
+						Group: "test2",
+					},
+				},
+				CdnPolicy: &composite.BackendServiceCdnPolicy{
+					MaxTtl: 20,
+				},
+				CircuitBreakers: &composite.CircuitBreakers{
+					MaxConnections: 20,
+				},
+				CompressionMode: "gzip",
+				ConnectionDraining: &composite.ConnectionDraining{
+					DrainingTimeoutSec: 20,
+				},
+				ConnectionTrackingPolicy: &composite.BackendServiceConnectionTrackingPolicy{
+					IdleTimeoutSec: 10,
+				},
+				ConsistentHash: &composite.ConsistentHashLoadBalancerSettings{
+					HttpHeaderName: "Test2",
+				},
+				CustomRequestHeaders:  []string{"h2"},
+				CustomResponseHeaders: []string{"rh2"},
+				EdgeSecurityPolicy:    "test2",
+				EnableCDN:             true,
+				FailoverPolicy: &composite.BackendServiceFailoverPolicy{
+					FailoverRatio: 0.8,
+				},
+				Iap: &composite.BackendServiceIAP{
+					Enabled: true,
+				},
+				Id:                       2,
+				IpAddressSelectionPolicy: "PREFER_IPV6",
+				Kind:                     "compute#backendService",
+				LoadBalancingScheme:      "INTERNAL_MANAGED",
+				LocalityLbPolicies: []*composite.BackendServiceLocalityLoadBalancingPolicyConfig{
+					{
+						CustomPolicy: &composite.BackendServiceLocalityLoadBalancingPolicyConfigCustomPolicy{
+							Name: "test2",
+						},
+					},
+				},
+				LocalityLbPolicy: "ROUND_ROBIN",
+				LogConfig: &composite.BackendServiceLogConfig{
+					Enable: true,
+				},
+				MaxStreamDuration: &composite.Duration{
+					Seconds: 20,
+				},
+				Metadatas: nil,
+				Name:      "test2",
+				OutlierDetection: &composite.OutlierDetection{
+					ConsecutiveErrors: 20,
+				},
+				Port:           443,
+				PortName:       "https",
+				Protocol:       "TCP",
+				Region:         "us-central2",
+				SecurityPolicy: "policyURL2",
+				SecuritySettings: &composite.SecuritySettings{
+					ClientTlsPolicy: "policy2",
+				},
+				ServiceBindings: []string{"test2"},
+				ServiceLbPolicy: "INTERNAL",
+				Subsetting: &composite.Subsetting{
+					SubsetSize: 20,
+				},
+				TimeoutSec:      20,
+				VpcNetworkScope: "GLOBAL_VPC_NETWORK",
+				ServerResponse: googleapi.ServerResponse{
+					HTTPStatusCode: 400,
+				},
+			},
+			wantEqual: true,
+		},
 	} {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
-			if res := backendSvcEqual(tc.oldBackendService, tc.newBackendService) == tc.wantEqual; !res {
-				t.Errorf("backendSvcEqual() returned %v, expected %v. Diff(oldScv, newSvc): %s",
+			if res := backendSvcL4RelevantPropertiesEqual(tc.oldBackendService, tc.newBackendService) == tc.wantEqual; !res {
+				t.Errorf("backendSvcL4RelevantPropertiesEqual() returned %v, expected %v. Diff(oldScv, newSvc): %s",
 					res, tc.wantEqual, cmp.Diff(tc.oldBackendService, tc.newBackendService))
 			}
 		})
