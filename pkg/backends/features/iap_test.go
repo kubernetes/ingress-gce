@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -32,6 +33,7 @@ func TestEnsureIAP(t *testing.T) {
 		sp             utils.ServicePort
 		be             *composite.BackendService
 		updateExpected bool
+		wantBE         *composite.BackendService
 	}{
 		{
 			desc: "iap settings are missing from spec, no update needed",
@@ -43,6 +45,13 @@ func TestEnsureIAP(t *testing.T) {
 				},
 			},
 			be: &composite.BackendService{
+				Iap: &composite.BackendServiceIAP{
+					Enabled:                  true,
+					Oauth2ClientId:           "foo",
+					Oauth2ClientSecretSha256: fmt.Sprintf("%x", sha256.Sum256([]byte("bar"))),
+				},
+			},
+			wantBE: &composite.BackendService{
 				Iap: &composite.BackendServiceIAP{
 					Enabled:                  true,
 					Oauth2ClientId:           "foo",
@@ -73,6 +82,13 @@ func TestEnsureIAP(t *testing.T) {
 					Oauth2ClientSecretSha256: fmt.Sprintf("%x", sha256.Sum256([]byte("bar"))),
 				},
 			},
+			wantBE: &composite.BackendService{
+				Iap: &composite.BackendServiceIAP{
+					Enabled:                  true,
+					Oauth2ClientId:           "foo",
+					Oauth2ClientSecretSha256: fmt.Sprintf("%x", sha256.Sum256([]byte("bar"))),
+				},
+			},
 			updateExpected: false,
 		},
 		{
@@ -92,6 +108,34 @@ func TestEnsureIAP(t *testing.T) {
 			},
 			be: &composite.BackendService{
 				Iap: nil,
+			},
+			wantBE: &composite.BackendService{
+				Iap: &composite.BackendServiceIAP{
+					Enabled:            true,
+					Oauth2ClientId:     "foo",
+					Oauth2ClientSecret: "baz",
+				},
+			},
+			updateExpected: true,
+		},
+		{
+			desc: "no existing settings, update needed (no credentials provided)",
+			sp: utils.ServicePort{
+				BackendConfig: &backendconfigv1.BackendConfig{
+					Spec: backendconfigv1.BackendConfigSpec{
+						Iap: &backendconfigv1.IAPConfig{
+							Enabled: true,
+						},
+					},
+				},
+			},
+			be: &composite.BackendService{
+				Iap: nil,
+			},
+			wantBE: &composite.BackendService{
+				Iap: &composite.BackendServiceIAP{
+					Enabled: true,
+				},
 			},
 			updateExpected: true,
 		},
@@ -115,6 +159,13 @@ func TestEnsureIAP(t *testing.T) {
 					Enabled:                  true,
 					Oauth2ClientId:           "bar",
 					Oauth2ClientSecretSha256: fmt.Sprintf("%x", sha256.Sum256([]byte("baz"))),
+				},
+			},
+			wantBE: &composite.BackendService{
+				Iap: &composite.BackendServiceIAP{
+					Enabled:            true,
+					Oauth2ClientId:     "foo",
+					Oauth2ClientSecret: "baz",
 				},
 			},
 			updateExpected: true,
@@ -141,6 +192,13 @@ func TestEnsureIAP(t *testing.T) {
 					Oauth2ClientSecretSha256: fmt.Sprintf("%x", sha256.Sum256([]byte("bar"))),
 				},
 			},
+			wantBE: &composite.BackendService{
+				Iap: &composite.BackendServiceIAP{
+					Enabled:            true,
+					Oauth2ClientId:     "foo",
+					Oauth2ClientSecret: "baz",
+				},
+			},
 			updateExpected: true,
 		},
 		{
@@ -165,6 +223,38 @@ func TestEnsureIAP(t *testing.T) {
 					Oauth2ClientSecretSha256: fmt.Sprintf("%x", sha256.Sum256([]byte("baz"))),
 				},
 			},
+			wantBE: &composite.BackendService{
+				Iap: &composite.BackendServiceIAP{
+					Enabled:            false,
+					Oauth2ClientId:     "foo",
+					Oauth2ClientSecret: "baz",
+				},
+			},
+			updateExpected: true,
+		},
+		{
+			desc: "credentials removed, update needed",
+			sp: utils.ServicePort{
+				BackendConfig: &backendconfigv1.BackendConfig{
+					Spec: backendconfigv1.BackendConfigSpec{
+						Iap: &backendconfigv1.IAPConfig{
+							Enabled: true,
+						},
+					},
+				},
+			},
+			be: &composite.BackendService{
+				Iap: &composite.BackendServiceIAP{
+					Enabled:                  true,
+					Oauth2ClientId:           "foo",
+					Oauth2ClientSecretSha256: fmt.Sprintf("%x", sha256.Sum256([]byte("baz"))),
+				},
+			},
+			wantBE: &composite.BackendService{
+				Iap: &composite.BackendServiceIAP{
+					Enabled: true,
+				},
+			},
 			updateExpected: true,
 		},
 	}
@@ -174,6 +264,11 @@ func TestEnsureIAP(t *testing.T) {
 			result := EnsureIAP(tc.sp, tc.be)
 			if result != tc.updateExpected {
 				t.Errorf("%v: expected %v but got %v", tc.desc, tc.updateExpected, result)
+			}
+
+			diff := cmp.Diff(tc.be, tc.wantBE)
+			if diff != "" {
+				t.Errorf("EnsureIAP: unexpected backend service (-got, +want):\n%s", diff)
 			}
 		})
 	}

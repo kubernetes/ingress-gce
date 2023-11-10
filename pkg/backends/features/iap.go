@@ -52,7 +52,14 @@ func applyIAPSettings(sp utils.ServicePort, be *composite.BackendService) {
 	beConfig := sp.BackendConfig
 	// Apply the boolean switch
 	be.Iap = &composite.BackendServiceIAP{Enabled: beConfig.Spec.Iap.Enabled}
-	// Apply the OAuth credentials
-	be.Iap.Oauth2ClientId = beConfig.Spec.Iap.OAuthClientCredentials.ClientID
-	be.Iap.Oauth2ClientSecret = beConfig.Spec.Iap.OAuthClientCredentials.ClientSecret
+
+	if beConfig.Spec.Iap.OAuthClientCredentials != nil {
+		// Apply the OAuth credentials
+		be.Iap.Oauth2ClientId = beConfig.Spec.Iap.OAuthClientCredentials.ClientID
+		be.Iap.Oauth2ClientSecret = beConfig.Spec.Iap.OAuthClientCredentials.ClientSecret
+	} else {
+		//  Clear the credentials
+		be.Iap.Oauth2ClientId = ""
+		be.Iap.Oauth2ClientSecret = ""
+	}
 }
