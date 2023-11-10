@@ -66,7 +66,8 @@ type BackendConfigList struct {
 // IAPConfig contains configuration for IAP-enabled backends.
 // +k8s:openapi-gen=true
 type IAPConfig struct {
-	Enabled                bool                    `json:"enabled"`
+	Enabled bool `json:"enabled"`
+	// +optional
 	OAuthClientCredentials *OAuthClientCredentials `json:"oauthclientCredentials"`
 }
 
