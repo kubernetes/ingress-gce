@@ -26,6 +26,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	testutils "k8s.io/ingress-gce/pkg/test"
+	"k8s.io/ingress-gce/pkg/utils"
 )
 
 var (
@@ -66,6 +67,7 @@ func TestValidateIAP(t *testing.T) {
 		desc        string
 		init        func(kubeClient kubernetes.Interface)
 		beConfig    *backendconfigv1.BackendConfig
+		servicePort *utils.ServicePort
 		expectError bool
 	}{
 		{
@@ -164,18 +166,42 @@ func TestValidateIAP(t *testing.T) {
 			},
 			expectError: true,
 		},
+		{
+			desc: "IAP not enabled it Regional Ingress",
+			beConfig: &backendconfigv1.BackendConfig{
+				ObjectMeta: meta_v1.ObjectMeta{
+					Namespace: "default",
+				},
+				Spec: backendconfigv1.BackendConfigSpec{
+					Iap: &backendconfigv1.IAPConfig{
+						Enabled: true,
+					},
+				},
+			},
+			init: func(kubeClient kubernetes.Interface) {},
+			servicePort: &utils.ServicePort{
+				L7XLBRegionalEnabled: true,
+			},
+			expectError: true,
+		},
 	}
 
 	for _, testCase := range testCases {
-		kubeClient := fake.NewSimpleClientset()
-		testCase.init(kubeClient)
-		err := Validate(kubeClient, testCase.beConfig)
-		if testCase.expectError && err == nil {
-			t.Errorf("%v: Expected error but got nil", testCase.desc)
-		}
-		if !testCase.expectError && err != nil {
-			t.Errorf("%v: Did not expect error but got: %v", testCase.desc, err)
-		}
+		testCase := testCase
+
+		t.Run(testCase.desc, func(t *testing.T) {
+			t.Parallel()
+
+			kubeClient := fake.NewSimpleClientset()
+			testCase.init(kubeClient)
+			err := Validate(kubeClient, testCase.beConfig, testCase.servicePort)
+			if testCase.expectError && err == nil {
+				t.Errorf("%v: Expected error but got nil", testCase.desc)
+			}
+			if !testCase.expectError && err != nil {
+				t.Errorf("%v: Did not expect error but got: %v", testCase.desc, err)
+			}
+		})
 	}
 }
 
@@ -246,7 +272,7 @@ func TestValidateSessionAffinity(t *testing.T) {
 
 	for _, testCase := range testCases {
 		kubeClient := fake.NewSimpleClientset()
-		err := Validate(kubeClient, testCase.beConfig)
+		err := Validate(kubeClient, testCase.beConfig, &utils.ServicePort{})
 		if testCase.expectError && err == nil {
 			t.Errorf("%v: Expected error but got nil", testCase.desc)
 		}
@@ -332,7 +358,7 @@ func TestValidateLogging(t *testing.T) {
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
 			kubeClient := fake.NewSimpleClientset()
-			err := Validate(kubeClient, tc.beConfig)
+			err := Validate(kubeClient, tc.beConfig, &utils.ServicePort{})
 			if tc.expectError && err == nil {
 				t.Errorf("Expected error but got nil")
 			}
@@ -348,6 +374,7 @@ func TestValidateCDN(t *testing.T) {
 		desc        string
 		init        func(kubeClient kubernetes.Interface)
 		beConfig    *backendconfigv1.BackendConfig
+		servicePort *utils.ServicePort
 		expectError bool
 	}{
 		{
@@ -398,17 +425,41 @@ func TestValidateCDN(t *testing.T) {
 			},
 			expectError: false,
 		},
+		{
+			desc: "CDN not enabled for Regional External",
+			beConfig: &backendconfigv1.BackendConfig{
+				ObjectMeta: meta_v1.ObjectMeta{
+					Namespace: "default",
+				},
+				Spec: backendconfigv1.BackendConfigSpec{
+					Cdn: &backendconfigv1.CDNConfig{
+						Enabled: true,
+					},
+				},
+			},
+			init: func(kubeClient kubernetes.Interface) {},
+			servicePort: &utils.ServicePort{
+				L7XLBRegionalEnabled: true,
+			},
+			expectError: true,
+		},
 	}
 
 	for _, testCase := range testCases {
-		kubeClient := fake.NewSimpleClientset()
-		testCase.init(kubeClient)
-		err := Validate(kubeClient, testCase.beConfig)
-		if testCase.expectError && err == nil {
-			t.Errorf("%v: Expected error but got nil", testCase.desc)
-		}
-		if !testCase.expectError && err != nil {
-			t.Errorf("%v: Did not expect error but got: %v", testCase.desc, err)
-		}
+		testCase := testCase
+
+		t.Run(testCase.desc, func(t *testing.T) {
+			t.Parallel()
+
+			kubeClient := fake.NewSimpleClientset()
+			testCase.init(kubeClient)
+			err := Validate(kubeClient, testCase.beConfig, testCase.servicePort)
+			if testCase.expectError && err == nil {
+				t.Errorf("%v: Expected error but got nil", testCase.desc)
+			}
+			if !testCase.expectError && err != nil {
+				t.Errorf("%v: Did not expect error but got: %v", testCase.desc, err)
+			}
+		})
 	}
 }
