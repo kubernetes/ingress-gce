@@ -25,6 +25,7 @@ import (
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog/v2"
 )
 
 func TestEnsureIAP(t *testing.T) {
@@ -261,7 +262,7 @@ func TestEnsureIAP(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			result := EnsureIAP(tc.sp, tc.be)
+			result := EnsureIAP(tc.sp, tc.be, klog.TODO())
 			if result != tc.updateExpected {
 				t.Errorf("%v: expected %v but got %v", tc.desc, tc.updateExpected, result)
 			}

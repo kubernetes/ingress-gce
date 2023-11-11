@@ -28,20 +28,20 @@ import (
 // EnsureIAP reads the IAP configuration specified in the BackendConfig
 // and applies it to the BackendService if it is stale. It returns true
 // if there were existing settings on the BackendService that were overwritten.
-func EnsureIAP(sp utils.ServicePort, be *composite.BackendService) bool {
+func EnsureIAP(sp utils.ServicePort, be *composite.BackendService, logger klog.Logger) bool {
+	// TODO: Update when context logging is enabled to ensure no duplicate keys
+	logger = logger.WithName("EnsureIAP").WithValues("service", klog.KRef(sp.ID.Service.Namespace, sp.ID.Service.Name))
 	if sp.BackendConfig.Spec.Iap == nil {
 		return false
 	}
 	beTemp := &composite.BackendService{}
 	applyIAPSettings(sp, beTemp)
-	// We need to compare the SHA256 of the client secret instead of the client secret itself
-	// since that field is redacted when getting a BackendService.
-	beTemp.Iap.Oauth2ClientSecretSha256 = fmt.Sprintf("%x", sha256.Sum256([]byte(beTemp.Iap.Oauth2ClientSecret)))
-	if be.Iap == nil || beTemp.Iap.Enabled != be.Iap.Enabled || beTemp.Iap.Oauth2ClientId != be.Iap.Oauth2ClientId || beTemp.Iap.Oauth2ClientSecretSha256 != be.Iap.Oauth2ClientSecretSha256 {
+	if diffIAP(beTemp, be, logger) {
 		applyIAPSettings(sp, be)
-		klog.V(2).Infof("Updated IAP settings for service %v/%v.", sp.ID.Service.Namespace, sp.ID.Service.Name)
+		logger.Info("Updated IAP settings")
 		return true
 	}
+	logger.Info("Detected no change in IAP Settings")
 	return false
 }
 
@@ -58,8 +58,34 @@ func applyIAPSettings(sp utils.ServicePort, be *composite.BackendService) {
 		be.Iap.Oauth2ClientId = beConfig.Spec.Iap.OAuthClientCredentials.ClientID
 		be.Iap.Oauth2ClientSecret = beConfig.Spec.Iap.OAuthClientCredentials.ClientSecret
 	} else {
-		//  Clear the credentials
 		be.Iap.Oauth2ClientId = ""
 		be.Iap.Oauth2ClientSecret = ""
 	}
+}
+
+// diffIAP logs the diff between desired and current and returns true if any diff exists
+func diffIAP(desired, curr *composite.BackendService, logger klog.Logger) bool {
+	if curr.Iap == nil {
+		logger.Info("IAP settings changing from nil policy to new policy")
+		return true
+	}
+
+	if curr.Iap.Enabled != desired.Iap.Enabled {
+		logger.Info("Iap `enabled` setting changed: ", "from", curr.Iap.Enabled, "to", desired.Iap.Enabled)
+		return true
+	}
+
+	// We need to compare the SHA256 of the client secret instead of the client secret itself
+	// since that field is redacted when getting a BackendService.
+	desired.Iap.Oauth2ClientSecretSha256 = fmt.Sprintf("%x", sha256.Sum256([]byte(desired.Iap.Oauth2ClientSecret)))
+	if curr.Iap.Oauth2ClientId != desired.Iap.Oauth2ClientId || curr.Iap.Oauth2ClientSecretSha256 != desired.Iap.Oauth2ClientSecretSha256 {
+		if curr.Iap.Oauth2ClientId == "" {
+			logger.Info("IAP Credentials are switching from default to credentials")
+		} else {
+			logger.Info("Iap Credentials are being updated")
+		}
+
+		return true
+	}
+	return false
 }

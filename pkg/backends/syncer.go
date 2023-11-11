@@ -103,7 +103,7 @@ func (s *backendSyncer) ensureBackendService(sp utils.ServicePort) error {
 	needUpdate = ensureDescription(be, &sp) || needUpdate
 	if sp.BackendConfig != nil {
 		needUpdate = features.EnsureCDN(sp, be) || needUpdate
-		needUpdate = features.EnsureIAP(sp, be) || needUpdate
+		needUpdate = features.EnsureIAP(sp, be, klog.TODO()) || needUpdate
 		needUpdate = features.EnsureTimeout(sp, be) || needUpdate
 		needUpdate = features.EnsureDraining(sp, be) || needUpdate
 		needUpdate = features.EnsureAffinity(sp, be) || needUpdate
