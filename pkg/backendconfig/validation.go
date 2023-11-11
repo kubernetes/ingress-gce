@@ -23,6 +23,7 @@ import (
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
+	"k8s.io/ingress-gce/pkg/utils"
 )
 
 const (
@@ -37,16 +38,16 @@ var supportedAffinities = map[string]bool{
 	"GENERATED_COOKIE": true,
 }
 
-func Validate(kubeClient kubernetes.Interface, beConfig *backendconfigv1.BackendConfig) error {
+func Validate(kubeClient kubernetes.Interface, beConfig *backendconfigv1.BackendConfig, servicePort *utils.ServicePort) error {
 	if beConfig == nil {
 		return nil
 	}
 
-	if err := validateIAP(kubeClient, beConfig); err != nil {
+	if err := validateIAP(kubeClient, beConfig, servicePort); err != nil {
 		return err
 	}
 
-	if err := validateCDN(kubeClient, beConfig); err != nil {
+	if err := validateCDN(kubeClient, beConfig, servicePort); err != nil {
 		return err
 	}
 
@@ -63,10 +64,14 @@ func Validate(kubeClient kubernetes.Interface, beConfig *backendconfigv1.Backend
 
 // TODO(rramkumar): Return errors as constants so that the unit tests can distinguish
 // between which error is returned.
-func validateIAP(kubeClient kubernetes.Interface, beConfig *backendconfigv1.BackendConfig) error {
+func validateIAP(kubeClient kubernetes.Interface, beConfig *backendconfigv1.BackendConfig, servicePort *utils.ServicePort) error {
 	// If IAP settings are not found or IAP is not enabled then don't bother continuing.
 	if beConfig.Spec.Iap == nil || beConfig.Spec.Iap.Enabled == false {
 		return nil
+	}
+
+	if servicePort != nil && servicePort.L7XLBRegionalEnabled {
+		return fmt.Errorf("IAP configuration is not supported in TPC Environment")
 	}
 	// If necessary, get the OAuth credentials stored in the K8s secret.
 	if beConfig.Spec.Iap.OAuthClientCredentials != nil && beConfig.Spec.Iap.OAuthClientCredentials.SecretName != "" {
@@ -128,11 +133,13 @@ func validateLogging(beConfig *backendconfigv1.BackendConfig) error {
 	return nil
 }
 
-func validateCDN(kubeClient kubernetes.Interface, beConfig *backendconfigv1.BackendConfig) error {
+func validateCDN(kubeClient kubernetes.Interface, beConfig *backendconfigv1.BackendConfig, servicePort *utils.ServicePort) error {
 	if beConfig.Spec.Cdn == nil || beConfig.Spec.Cdn.Enabled == false {
 		return nil
 	}
-
+	if servicePort != nil && servicePort.L7XLBRegionalEnabled {
+		return fmt.Errorf("CDN configuration is not supported in TPC Environment")
+	}
 	for _, key := range beConfig.Spec.Cdn.SignedUrlKeys {
 		if key.SecretName != "" {
 			secret, err := kubeClient.CoreV1().Secrets(beConfig.Namespace).Get(context.TODO(), key.SecretName, meta_v1.GetOptions{})

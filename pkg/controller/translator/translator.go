@@ -210,7 +210,7 @@ func (t *Translator) maybeEnableBackendConfig(sp *utils.ServicePort, svc *api_v1
 	// Object in cache could be changed in-flight. Deepcopy to
 	// reduce race conditions.
 	beConfig = beConfig.DeepCopy()
-	if err = backendconfig.Validate(t.KubeClient, beConfig); err != nil {
+	if err = backendconfig.Validate(t.KubeClient, beConfig, sp); err != nil {
 		return errors.ErrBackendConfigValidation{BackendConfig: *beConfig, Err: err}
 	}
 
