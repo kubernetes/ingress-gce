@@ -123,6 +123,7 @@ var (
 		EnableMultiNetworking                    bool
 		MaxIGSize                                int
 		EnableDegradedMode                       bool
+		EnableDegradedModeMetrics                bool
 		EnableDualStackNEG                       bool
 		EnableFirewallCR                         bool
 		DisableFWEnforcement                     bool
@@ -298,7 +299,8 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.IntVar(&F.MaxIGSize, "max-ig-size", 1000, "Max number of instances in Instance Group")
 	flag.DurationVar(&F.MetricsExportInterval, "metrics-export-interval", 10*time.Minute, `Period for calculating and exporting metrics related to state of managed objects.`)
 	flag.DurationVar(&F.NegMetricsExportInterval, "neg-metrics-export-interval", 5*time.Second, `Period for calculating and exporting internal neg controller metrics, not usage.`)
-	flag.BoolVar(&F.EnableDegradedMode, "enable-degraded-mode", false, `Enable endpoint calculation using degraded mode procedures`)
+	flag.BoolVar(&F.EnableDegradedMode, "enable-degraded-mode", false, `Enable degraded mode endpoint calculation and use results when error state is triggered. enabledDegradedMode also enables degrade mode correctness metrics with or without enabledDegradedModeMetrics.`)
+	flag.BoolVar(&F.EnableDegradedModeMetrics, "enable-degraded-mode-metrics", false, `Enable metrics collection for degraded mode, but uses normal mode calculation result when error state is triggered.`)
 	flag.BoolVar(&F.EnableNEGLabelPropagation, "enable-label-propagation", false, "Enable NEG endpoint label propagation")
 	flag.BoolVar(&F.EnableDualStackNEG, "enable-dual-stack-neg", false, `Enable support for Dual-Stack NEGs within the NEG Controller`)
 	flag.BoolVar(&F.EnableFirewallCR, "enable-firewall-cr", false, "Enable generating firewall CR")
