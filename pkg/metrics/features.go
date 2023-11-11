@@ -93,6 +93,8 @@ const (
 	cookieAffinity            = feature("CookieAffinity")
 	customRequestHeaders      = feature("CustomRequestHeaders")
 	customHealthChecks        = feature("CustomHealthChecks")
+	cloudIAPCredentials       = feature("CloudIAPCredentials")
+	cloudIAPEmpty             = feature("CloudIAPEmpty")
 
 	// Transparent Health Checks feature
 	transparentHealthChecks = feature("TransparentHC")
@@ -302,8 +304,12 @@ func featuresForServicePort(sp utils.ServicePort) []feature {
 		features = append(features, cloudCDN)
 	}
 	if sp.BackendConfig.Spec.Iap != nil && sp.BackendConfig.Spec.Iap.Enabled {
-		klog.V(6).Infof("Cloud IAP is enabled for service port %s", svcPortKey)
-		features = append(features, cloudIAP)
+		iapConfiguration := cloudIAPCredentials
+		if sp.BackendConfig.Spec.Iap.OAuthClientCredentials == nil {
+			iapConfiguration = cloudIAPEmpty
+		}
+		klog.V(6).Infof("Cloud IAP is enabled for service port %s and IAP credentials are:  %s", svcPortKey, iapConfiguration)
+		features = append(features, cloudIAP, iapConfiguration)
 	}
 	// Possible list of Affinity types:
 	// NONE, CLIENT_IP, GENERATED_COOKIE, CLIENT_IP_PROTO, or CLIENT_IP_PORT_PROTO.
