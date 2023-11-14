@@ -2063,6 +2063,8 @@ func TestDegradedModeValidateEndpointInfo(t *testing.T) {
 	testContext := negtypes.NewTestContext()
 	podLister := testContext.PodInformer.GetIndexer()
 	addPodsToLister(podLister, getDefaultEndpointSlices())
+	emptyZoneInstance := "empty-zone-instance"
+	fakeZoneGetter.AddZone("", emptyZoneInstance)
 
 	nodeLister := testContext.NodeInformer.GetIndexer()
 	nodeLister.Add(&v1.Node{
@@ -2096,6 +2098,35 @@ func TestDegradedModeValidateEndpointInfo(t *testing.T) {
 	testLabels := map[string]string{
 		"run": "foo",
 	}
+
+	// Map pod4 to empty zone instance, which leads to empty zone when using zoneGetter
+	podLister.Add(&v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testServiceNamespace,
+			Name:      "pod4",
+			Labels:    testLabels,
+		},
+		Spec: v1.PodSpec{
+			NodeName: emptyZoneInstance,
+		},
+		Status: v1.PodStatus{
+			Phase: v1.PodRunning,
+			PodIP: "10.100.3.1",
+			PodIPs: []v1.PodIP{
+				{IP: "10.100.3.1"},
+			},
+		},
+	})
+	nodeLister.Add(&v1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: emptyZoneInstance,
+		},
+		Spec: v1.NodeSpec{
+			PodCIDR:  "10.100.5.0/24",
+			PodCIDRs: []string{"a:b::/48", "10.100.5.0/24"},
+		},
+	})
+
 	serviceLister := testContext.ServiceInformer.GetIndexer()
 	serviceLister.Add(&v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -2197,6 +2228,58 @@ func TestDegradedModeValidateEndpointInfo(t *testing.T) {
 							TargetRef: &v1.ObjectReference{
 								Namespace: testServiceNamespace,
 								Name:      "pod2",
+							},
+						},
+					},
+					Ports: []discovery.EndpointPort{
+						{
+							Name:     &emptyNamedPort,
+							Port:     &port80,
+							Protocol: &protocolTCP,
+						},
+					},
+				},
+			},
+			endpointType:        negtypes.VmIpPortEndpointType,
+			expectedEndpointMap: endpointMap,
+			expectedPodMap:      podMap,
+		},
+		{
+			desc: "contains one endpoint with empty zone, endpoint should be removed",
+			testEndpointSlices: []*discovery.EndpointSlice{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testServiceName + "-1",
+						Namespace: testServiceNamespace,
+						Labels: map[string]string{
+							discovery.LabelServiceName: testServiceName,
+							discovery.LabelManagedBy:   managedByEPSControllerValue,
+						},
+					},
+					AddressType: "IPv4",
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"10.100.1.1"},
+							NodeName:  &instance1,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod1",
+							},
+						},
+						{
+							Addresses: []string{"10.100.1.2"},
+							NodeName:  &instance1,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod2",
+							},
+						},
+						{
+							Addresses: []string{"10.100.3.1"},
+							NodeName:  &emptyZoneInstance,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod4", // This endpoint's pod is mapped to the empty zone instance.
 							},
 						},
 					},

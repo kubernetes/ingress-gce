@@ -457,6 +457,12 @@ func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGett
 				localEPCount[negtypes.NodeNotFound]++
 				continue
 			}
+			if zone == "" {
+				epLogger.Error(negtypes.ErrEPZoneMissing, "Endpoint's corresponding node has an empty zone, skipping", "nodeName", nodeName)
+				metrics.PublishNegControllerErrorCountMetrics(negtypes.ErrEPZoneMissing, true)
+				localEPCount[negtypes.ZoneMissing]++
+				continue
+			}
 			if zoneNetworkEndpointMap[zone] == nil {
 				zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
 			}
