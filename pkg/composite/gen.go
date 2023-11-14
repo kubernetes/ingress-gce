@@ -3951,8 +3951,9 @@ func GetAddress(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger
 			gceObj, err = gceCloud.Compute().GlobalAddresses().Get(ctx, key)
 		}
 	}
+	err = mc.Observe(err)
 	if err != nil {
-		return nil, mc.Observe(err)
+		return nil, err
 	}
 	compositeType, err := toAddress(gceObj)
 	if err != nil {
@@ -4001,8 +4002,9 @@ func ListAddresses(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, log
 			gceObjs, err = gceCloud.Compute().GlobalAddresses().List(ctx, filter.None)
 		}
 	}
+	err = mc.Observe(err)
 	if err != nil {
-		return nil, mc.Observe(err)
+		return nil, err
 	}
 
 	compositeObjs, err := toAddressList(gceObjs)
@@ -4284,8 +4286,9 @@ func GetBackendService(gceCloud *gce.Cloud, key *meta.Key, version meta.Version,
 			gceObj, err = gceCloud.Compute().BackendServices().Get(ctx, key)
 		}
 	}
+	err = mc.Observe(err)
 	if err != nil {
-		return nil, mc.Observe(err)
+		return nil, err
 	}
 	compositeType, err := toBackendService(gceObj)
 	if err != nil {
@@ -4331,8 +4334,9 @@ func ListBackendServices(gceCloud *gce.Cloud, key *meta.Key, version meta.Versio
 			gceObjs, err = gceCloud.Compute().BackendServices().List(ctx, filter.None)
 		}
 	}
+	err = mc.Observe(err)
 	if err != nil {
-		return nil, mc.Observe(err)
+		return nil, err
 	}
 
 	compositeObjs, err := toBackendServiceList(gceObjs)
@@ -4612,8 +4616,9 @@ func GetForwardingRule(gceCloud *gce.Cloud, key *meta.Key, version meta.Version,
 			gceObj, err = gceCloud.Compute().GlobalForwardingRules().Get(ctx, key)
 		}
 	}
+	err = mc.Observe(err)
 	if err != nil {
-		return nil, mc.Observe(err)
+		return nil, err
 	}
 	compositeType, err := toForwardingRule(gceObj)
 	if err != nil {
@@ -4662,8 +4667,9 @@ func ListForwardingRules(gceCloud *gce.Cloud, key *meta.Key, version meta.Versio
 			gceObjs, err = gceCloud.Compute().GlobalForwardingRules().List(ctx, filter.None)
 		}
 	}
+	err = mc.Observe(err)
 	if err != nil {
-		return nil, mc.Observe(err)
+		return nil, err
 	}
 
 	compositeObjs, err := toForwardingRuleList(gceObjs)
@@ -4945,8 +4951,9 @@ func GetHealthCheck(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, lo
 			gceObj, err = gceCloud.Compute().HealthChecks().Get(ctx, key)
 		}
 	}
+	err = mc.Observe(err)
 	if err != nil {
-		return nil, mc.Observe(err)
+		return nil, err
 	}
 	compositeType, err := toHealthCheck(gceObj)
 	if err != nil {
@@ -4992,8 +4999,9 @@ func ListHealthChecks(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, 
 			gceObjs, err = gceCloud.Compute().HealthChecks().List(ctx, filter.None)
 		}
 	}
+	err = mc.Observe(err)
 	if err != nil {
-		return nil, mc.Observe(err)
+		return nil, err
 	}
 
 	compositeObjs, err := toHealthCheckList(gceObjs)
@@ -5366,8 +5374,9 @@ func GetNetworkEndpointGroup(gceCloud *gce.Cloud, key *meta.Key, version meta.Ve
 		logger.Info("Getting ga zonal NetworkEndpointGroup")
 		gceObj, err = gceCloud.Compute().NetworkEndpointGroups().Get(ctx, key)
 	}
+	err = mc.Observe(err)
 	if err != nil {
-		return nil, mc.Observe(err)
+		return nil, err
 	}
 	compositeType, err := toNetworkEndpointGroup(gceObj)
 	if err != nil {
@@ -5401,8 +5410,9 @@ func ListNetworkEndpointGroups(gceCloud *gce.Cloud, key *meta.Key, version meta.
 		logger.Info("Listing ga zoneNetworkEndpointGroup")
 		gceObjs, err = gceCloud.Compute().NetworkEndpointGroups().List(ctx, key.Zone, filter.None)
 	}
+	err = mc.Observe(err)
 	if err != nil {
-		return nil, mc.Observe(err)
+		return nil, err
 	}
 
 	compositeObjs, err := toNetworkEndpointGroupList(gceObjs)
@@ -5527,8 +5537,9 @@ func ListNetworkEndpoints(gceCloud *gce.Cloud, key *meta.Key, version meta.Versi
 		logger.Info("Listing ga zonal NetworkEndpointGroup")
 		gceObjs, err = gceCloud.Compute().NetworkEndpointGroups().ListNetworkEndpoints(ctx, key, gareq, filter.None)
 	}
+	err = mc.Observe(err)
 	if err != nil {
-		return nil, mc.Observe(err)
+		return nil, err
 	}
 
 	compositeObjs, err := toNetworkEndpointWithHealthStatusList(gceObjs)
@@ -5553,8 +5564,9 @@ func AggregatedListNetworkEndpointGroup(gceCloud *gce.Cloud, version meta.Versio
 	case meta.VersionAlpha:
 		logger.Info("Aggregate List of alpha zonal NetworkEndpointGroup")
 		alphaMap, err := gceCloud.Compute().AlphaNetworkEndpointGroups().AggregatedList(ctx, filter.None)
+		err = mc.Observe(err)
 		if err != nil {
-			return nil, mc.Observe(err)
+			return nil, err
 		}
 		// Convert from map to list
 		alphaList := []*computealpha.NetworkEndpointGroup{}
@@ -5565,8 +5577,9 @@ func AggregatedListNetworkEndpointGroup(gceCloud *gce.Cloud, version meta.Versio
 	case meta.VersionBeta:
 		logger.Info("Aggregate List of beta zonal NetworkEndpointGroup")
 		betaMap, err := gceCloud.Compute().BetaNetworkEndpointGroups().AggregatedList(ctx, filter.None)
+		err = mc.Observe(err)
 		if err != nil {
-			return nil, mc.Observe(err)
+			return nil, err
 		}
 		// Convert from map to list
 		betaList := []*computebeta.NetworkEndpointGroup{}
@@ -5577,8 +5590,9 @@ func AggregatedListNetworkEndpointGroup(gceCloud *gce.Cloud, version meta.Versio
 	default:
 		logger.Info("Aggregate List of ga zonal NetworkEndpointGroup")
 		gaMap, err := gceCloud.Compute().NetworkEndpointGroups().AggregatedList(ctx, filter.None)
+		err = mc.Observe(err)
 		if err != nil {
-			return nil, mc.Observe(err)
+			return nil, err
 		}
 		// Convert from map to list
 		gaList := []*compute.NetworkEndpointGroup{}
@@ -6278,8 +6292,9 @@ func GetSslCertificate(gceCloud *gce.Cloud, key *meta.Key, version meta.Version,
 			gceObj, err = gceCloud.Compute().SslCertificates().Get(ctx, key)
 		}
 	}
+	err = mc.Observe(err)
 	if err != nil {
-		return nil, mc.Observe(err)
+		return nil, err
 	}
 	compositeType, err := toSslCertificate(gceObj)
 	if err != nil {
@@ -6325,8 +6340,9 @@ func ListSslCertificates(gceCloud *gce.Cloud, key *meta.Key, version meta.Versio
 			gceObjs, err = gceCloud.Compute().SslCertificates().List(ctx, filter.None)
 		}
 	}
+	err = mc.Observe(err)
 	if err != nil {
-		return nil, mc.Observe(err)
+		return nil, err
 	}
 
 	compositeObjs, err := toSslCertificateList(gceObjs)
@@ -6558,8 +6574,9 @@ func GetTargetHttpProxy(gceCloud *gce.Cloud, key *meta.Key, version meta.Version
 			gceObj, err = gceCloud.Compute().TargetHttpProxies().Get(ctx, key)
 		}
 	}
+	err = mc.Observe(err)
 	if err != nil {
-		return nil, mc.Observe(err)
+		return nil, err
 	}
 	compositeType, err := toTargetHttpProxy(gceObj)
 	if err != nil {
@@ -6605,8 +6622,9 @@ func ListTargetHttpProxies(gceCloud *gce.Cloud, key *meta.Key, version meta.Vers
 			gceObjs, err = gceCloud.Compute().TargetHttpProxies().List(ctx, filter.None)
 		}
 	}
+	err = mc.Observe(err)
 	if err != nil {
-		return nil, mc.Observe(err)
+		return nil, err
 	}
 
 	compositeObjs, err := toTargetHttpProxyList(gceObjs)
@@ -6838,8 +6856,9 @@ func GetTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, version meta.Versio
 			gceObj, err = gceCloud.Compute().TargetHttpsProxies().Get(ctx, key)
 		}
 	}
+	err = mc.Observe(err)
 	if err != nil {
-		return nil, mc.Observe(err)
+		return nil, err
 	}
 	compositeType, err := toTargetHttpsProxy(gceObj)
 	if err != nil {
@@ -6885,8 +6904,9 @@ func ListTargetHttpsProxies(gceCloud *gce.Cloud, key *meta.Key, version meta.Ver
 			gceObjs, err = gceCloud.Compute().TargetHttpsProxies().List(ctx, filter.None)
 		}
 	}
+	err = mc.Observe(err)
 	if err != nil {
-		return nil, mc.Observe(err)
+		return nil, err
 	}
 
 	compositeObjs, err := toTargetHttpsProxyList(gceObjs)
@@ -7168,8 +7188,9 @@ func GetUrlMap(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger 
 			gceObj, err = gceCloud.Compute().UrlMaps().Get(ctx, key)
 		}
 	}
+	err = mc.Observe(err)
 	if err != nil {
-		return nil, mc.Observe(err)
+		return nil, err
 	}
 	compositeType, err := toUrlMap(gceObj)
 	if err != nil {
@@ -7215,8 +7236,9 @@ func ListUrlMaps(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logge
 			gceObjs, err = gceCloud.Compute().UrlMaps().List(ctx, filter.None)
 		}
 	}
+	err = mc.Observe(err)
 	if err != nil {
-		return nil, mc.Observe(err)
+		return nil, err
 	}
 
 	compositeObjs, err := toUrlMapList(gceObjs)

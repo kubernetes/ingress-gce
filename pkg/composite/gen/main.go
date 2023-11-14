@@ -491,8 +491,9 @@ func Get{{.Name}}(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logg
 		}
 	{{- end}} {{/* $onlyZonalKeySupported*/}}
 	}
+	err = mc.Observe(err)
 	if err != nil {
-		return nil, mc.Observe(err)
+		return nil, err
 	}
 	compositeType, err := to{{.Name}}(gceObj)
   	if err != nil {
@@ -570,8 +571,9 @@ func List{{.GetCloudProviderName}}(gceCloud *gce.Cloud, key *meta.Key, version m
 		}
     {{- end}} {{/* $onlyZonalKeySupported*/}}
 	}
+	err = mc.Observe(err)
 	if err != nil {
-		return nil, mc.Observe(err)
+		return nil, err
 	}
 
 	compositeObjs, err := to{{.Name}}List(gceObjs)
@@ -697,8 +699,9 @@ func {{.GetGroupResourceInfo.ListFuncName}}(gceCloud *gce.Cloud, key *meta.Key, 
 		logger.Info("Listing ga zonal {{.Name}}")
 			gceObjs, err = gceCloud.Compute().{{.GetCloudProviderName}}().{{.GetGroupResourceInfo.ListFuncName}}(ctx, key, gareq, filter.None)
 	}
+	err = mc.Observe(err)
 	if err != nil {
-		return nil, mc.Observe(err)
+		return nil, err
 	}
 
 	compositeObjs, err := to{{.GetGroupResourceInfo.ListRespName}}List(gceObjs)
@@ -723,8 +726,9 @@ func {{.GetGroupResourceInfo.AggListFuncName}}{{.GetGroupResourceInfo.AggListRes
 	case meta.VersionAlpha:
 		logger.Info("Aggregate List of alpha zonal {{.Name}}")
 		alphaMap, err := gceCloud.Compute().Alpha{{.GetCloudProviderName}}().{{.GetGroupResourceInfo.AggListFuncName}}(ctx, filter.None)
+		err = mc.Observe(err)
 		if err != nil {
-			return nil, mc.Observe(err)
+			return nil, err
 		}
 		// Convert from map to list
 		alphaList := []*computealpha.{{.GetGroupResourceInfo.AggListRespName}}{}
@@ -735,8 +739,9 @@ func {{.GetGroupResourceInfo.AggListFuncName}}{{.GetGroupResourceInfo.AggListRes
 	case meta.VersionBeta:
 		logger.Info("Aggregate List of beta zonal {{.Name}}")
 		betaMap, err := gceCloud.Compute().Beta{{.GetCloudProviderName}}().{{.GetGroupResourceInfo.AggListFuncName}}(ctx, filter.None)
+		err = mc.Observe(err)
 		if err != nil {
-			return nil, mc.Observe(err)
+			return nil, err
 		}
 		// Convert from map to list
 		betaList := []*computebeta.{{.GetGroupResourceInfo.AggListRespName}}{}
@@ -747,8 +752,9 @@ func {{.GetGroupResourceInfo.AggListFuncName}}{{.GetGroupResourceInfo.AggListRes
 	default:
 		logger.Info("Aggregate List of ga zonal {{.Name}}")
 		gaMap, err := gceCloud.Compute().{{.GetCloudProviderName}}().{{.GetGroupResourceInfo.AggListFuncName}}(ctx, filter.None)
+		err = mc.Observe(err)
 		if err != nil {
-			return nil, mc.Observe(err)
+			return nil, err
 		}
 		// Convert from map to list
 		gaList := []*compute.{{.GetGroupResourceInfo.AggListRespName}}{}
