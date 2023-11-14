@@ -45,6 +45,10 @@ const (
 	subnetInternalIPv6AccessType = "INTERNAL"
 )
 
+var (
+	noConnectionTrackingPolicy *composite.BackendServiceConnectionTrackingPolicy = nil
+)
+
 // Many of the functions in this file are re-implemented from gce_loadbalancer_internal.go
 // L4 handles the resource creation/deletion/update for a given L4 ILB service.
 type L4 struct {
@@ -445,7 +449,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	}
 
 	// ensure backend service
-	bs, err := l4.backendPool.EnsureL4BackendService(bsName, hcLink, string(protocol), string(l4.Service.Spec.SessionAffinity), string(cloud.SchemeInternal), l4.NamespacedName, l4.network, &composite.BackendServiceConnectionTrackingPolicy{})
+	bs, err := l4.backendPool.EnsureL4BackendService(bsName, hcLink, string(protocol), string(l4.Service.Spec.SessionAffinity), string(cloud.SchemeInternal), l4.NamespacedName, l4.network, noConnectionTrackingPolicy)
 	if err != nil {
 		result.GCEResourceInError = annotations.BackendServiceResource
 		result.Error = err

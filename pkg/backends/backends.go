@@ -40,8 +40,9 @@ const (
 
 // Backends handles CRUD operations for backends.
 type Backends struct {
-	cloud *gce.Cloud
-	namer namer.BackendNamer
+	cloud                       *gce.Cloud
+	namer                       namer.BackendNamer
+	useConnectionTrackingPolicy bool
 }
 
 // Backends is a Pool.
@@ -54,6 +55,19 @@ func NewPool(cloud *gce.Cloud, namer namer.BackendNamer) *Backends {
 	return &Backends{
 		cloud: cloud,
 		namer: namer,
+	}
+}
+
+// NewPoolWithConnectionTrackingPolicy returns a new backend pool.
+// It is similar to NewPool() but has a field for ConnectionTrackingPolicy flag
+// - cloud: implements BackendServices
+// - namer: produces names for backends.
+// - useConnectionTrackingPolicy: specifies the need in Connection Tracking Policy configuration
+func NewPoolWithConnectionTrackingPolicy(cloud *gce.Cloud, namer namer.BackendNamer, useConnectionTrackingPolicy bool) *Backends {
+	return &Backends{
+		cloud:                       cloud,
+		namer:                       namer,
+		useConnectionTrackingPolicy: useConnectionTrackingPolicy,
 	}
 }
 
@@ -290,6 +304,7 @@ func (b *Backends) DeleteSignedUrlKey(be *composite.BackendService, keyName stri
 }
 
 // EnsureL4BackendService creates or updates the backend service with the given name.
+// TODO(code-elinka): refactor the list of arguments (there are too many now)
 func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinity, scheme string, nm types.NamespacedName, network network.NetworkInfo, connectionTrackingPolicy *composite.BackendServiceConnectionTrackingPolicy) (*composite.BackendService, error) {
 	start := time.Now()
 	klog.V(2).Infof("EnsureL4BackendService(%v, %v, %v): started", name, scheme, protocol)
@@ -312,13 +327,16 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 			name, err)
 	}
 	expectedBS := &composite.BackendService{
-		Name:                     name,
-		Protocol:                 protocol,
-		Description:              desc,
-		HealthChecks:             []string{hcLink},
-		SessionAffinity:          utils.TranslateAffinityType(sessionAffinity),
-		LoadBalancingScheme:      scheme,
-		ConnectionTrackingPolicy: connectionTrackingPolicy,
+		Name:                name,
+		Protocol:            protocol,
+		Description:         desc,
+		HealthChecks:        []string{hcLink},
+		SessionAffinity:     utils.TranslateAffinityType(sessionAffinity),
+		LoadBalancingScheme: scheme,
+	}
+	// We need this configuration only for Strong Session Affinity feature
+	if b.useConnectionTrackingPolicy {
+		expectedBS.ConnectionTrackingPolicy = connectionTrackingPolicy
 	}
 	if !network.IsDefault {
 		expectedBS.Network = network.NetworkURL
@@ -344,7 +362,7 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 		return composite.GetBackendService(b.cloud, key, meta.VersionGA, klog.TODO())
 	}
 
-	if backendSvcEqual(expectedBS, bs) {
+	if backendSvcEqual(expectedBS, bs, b.useConnectionTrackingPolicy) {
 		klog.V(2).Infof("EnsureL4BackendService: backend service %s did not change, skipping update", name)
 		return bs, nil
 	}
@@ -370,14 +388,20 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 // service will not be updated. The list of backends is not checked either,
 // since that is handled by the neg-linker.
 // The list of backends is not checked, since that is handled by the neg-linker.
-func backendSvcEqual(a, b *composite.BackendService) bool {
-	return a.Protocol == b.Protocol &&
+func backendSvcEqual(a, b *composite.BackendService, compareConnectionTracking bool) bool {
+	svcsEqual := a.Protocol == b.Protocol &&
 		a.Description == b.Description &&
 		a.SessionAffinity == b.SessionAffinity &&
-		connectionTrackingPolicyEqual(a.ConnectionTrackingPolicy, b.ConnectionTrackingPolicy) &&
 		a.LoadBalancingScheme == b.LoadBalancingScheme &&
 		utils.EqualStringSets(a.HealthChecks, b.HealthChecks) &&
 		a.Network == b.Network
+
+	// Compare only for backendSvc that uses Strong Session Affinity feature
+	if compareConnectionTracking {
+		return svcsEqual && connectionTrackingPolicyEqual(a.ConnectionTrackingPolicy, b.ConnectionTrackingPolicy)
+	}
+
+	return svcsEqual
 }
 
 // connectionTrackingPolicyEqual returns true if both elements are equal

@@ -71,13 +71,13 @@ type L4NetLBController struct {
 	// syncTracker tracks the latest time an enqueued service was synced
 	syncTracker utils.TimeTracker
 
-	backendPool                   *backends.Backends
-	instancePool                  instancegroups.Manager
-	igLinker                      *backends.RegionalInstanceGroupLinker
-	negLinker                     backends.Linker
-	forwardingRules               ForwardingRulesGetter
-	enableDualStack               bool
-	enableL4StrongSessionAffinity bool
+	backendPool                 *backends.Backends
+	instancePool                instancegroups.Manager
+	igLinker                    *backends.RegionalInstanceGroupLinker
+	negLinker                   backends.Linker
+	forwardingRules             ForwardingRulesGetter
+	enableDualStack             bool
+	enableStrongSessionAffinity bool
 }
 
 // NewL4NetLBController creates a controller for l4 external loadbalancer.
@@ -89,20 +89,20 @@ func NewL4NetLBController(
 		ctx.NumL4NetLBWorkers = 1
 	}
 
-	backendPool := backends.NewPool(ctx.Cloud, ctx.L4Namer)
+	backendPool := backends.NewPoolWithConnectionTrackingPolicy(ctx.Cloud, ctx.L4Namer, ctx.EnableL4StrongSessionAffinity)
 	l4netLBc := &L4NetLBController{
-		ctx:                           ctx,
-		serviceLister:                 ctx.ServiceInformer.GetIndexer(),
-		nodeLister:                    listers.NewNodeLister(ctx.NodeInformer.GetIndexer()),
-		stopCh:                        stopCh,
-		translator:                    ctx.Translator,
-		backendPool:                   backendPool,
-		namer:                         ctx.L4Namer,
-		instancePool:                  ctx.InstancePool,
-		igLinker:                      backends.NewRegionalInstanceGroupLinker(ctx.InstancePool, backendPool),
-		forwardingRules:               forwardingrules.New(ctx.Cloud, meta.VersionGA, meta.Regional),
-		enableDualStack:               ctx.EnableL4NetLBDualStack,
-		enableL4StrongSessionAffinity: ctx.EnableL4StrongSessionAffinity,
+		ctx:                         ctx,
+		serviceLister:               ctx.ServiceInformer.GetIndexer(),
+		nodeLister:                  listers.NewNodeLister(ctx.NodeInformer.GetIndexer()),
+		stopCh:                      stopCh,
+		translator:                  ctx.Translator,
+		backendPool:                 backendPool,
+		namer:                       ctx.L4Namer,
+		instancePool:                ctx.InstancePool,
+		igLinker:                    backends.NewRegionalInstanceGroupLinker(ctx.InstancePool, backendPool),
+		forwardingRules:             forwardingrules.New(ctx.Cloud, meta.VersionGA, meta.Regional),
+		enableDualStack:             ctx.EnableL4NetLBDualStack,
+		enableStrongSessionAffinity: ctx.EnableL4StrongSessionAffinity,
 	}
 	var networkLister cache.Indexer
 	if ctx.NetworkInformer != nil {
@@ -480,7 +480,7 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 		Namer:                        lc.namer,
 		Recorder:                     lc.ctx.Recorder(service.Namespace),
 		DualStackEnabled:             lc.enableDualStack,
-		StrongSessionAffinityEnabled: lc.enableL4StrongSessionAffinity,
+		StrongSessionAffinityEnabled: lc.enableStrongSessionAffinity,
 		NetworkResolver:              lc.networkResolver,
 	}
 	l4netlb := loadbalancers.NewL4NetLB(l4NetLBParams)
@@ -634,12 +634,13 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service)
 	}()
 
 	l4NetLBParams := &loadbalancers.L4NetLBParams{
-		Service:          svc,
-		Cloud:            lc.ctx.Cloud,
-		Namer:            lc.namer,
-		Recorder:         lc.ctx.Recorder(svc.Namespace),
-		DualStackEnabled: lc.enableDualStack,
-		NetworkResolver:  lc.networkResolver,
+		Service:                      svc,
+		Cloud:                        lc.ctx.Cloud,
+		Namer:                        lc.namer,
+		Recorder:                     lc.ctx.Recorder(svc.Namespace),
+		DualStackEnabled:             lc.enableDualStack,
+		StrongSessionAffinityEnabled: lc.enableStrongSessionAffinity,
+		NetworkResolver:              lc.networkResolver,
 	}
 	l4netLB := loadbalancers.NewL4NetLB(l4NetLBParams)
 	lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer",
