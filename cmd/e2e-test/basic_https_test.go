@@ -25,6 +25,7 @@ import (
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
+	"k8s.io/ingress-gce/pkg/fuzz/features"
 )
 
 func TestBasicHTTPS(t *testing.T) {
@@ -121,6 +122,140 @@ func TestBasicHTTPS(t *testing.T) {
 				SkipDefaultBackend: true,
 			}
 			if err := e2e.WaitForIngressDeletion(ctx, gclb, s, ing, deleteOptions); err != nil {
+				t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing.Name, err)
+			}
+		})
+	}
+}
+
+func TestRegionalXLBHTTPS(t *testing.T) {
+	t.Parallel()
+
+	// These names are useful when reading the debug logs
+	ingressPrefix := "ing2-"
+	serviceName := "svc-2"
+
+	port80 := v1.ServiceBackendPort{Number: 80}
+
+	for _, tc := range []struct {
+		desc       string
+		ingBuilder *fuzz.IngressBuilder
+		hosts      []string
+		certType   e2e.CertType
+
+		numForwardingRules int
+		numBackendServices int
+	}{
+		{
+			desc: "https RXLB one path, pre-shared cert",
+			ingBuilder: fuzz.NewIngressBuilder("", ingressPrefix+"1", "").
+				AddPath("test.com", "/", serviceName, port80).
+				ConfigureForRegionalXLB(),
+			numForwardingRules: 2,
+			numBackendServices: 2,
+			certType:           e2e.GCPCert,
+			hosts:              []string{"test.com"},
+		},
+		{
+			desc: "https RXLB one path, tls",
+			ingBuilder: fuzz.NewIngressBuilder("", ingressPrefix+"2", "").
+				AddPath("test.com", "/", serviceName, port80).
+				ConfigureForRegionalXLB(),
+			numForwardingRules: 2,
+			numBackendServices: 2,
+			certType:           e2e.K8sCert,
+			hosts:              []string{"test.com"},
+		},
+		{
+			desc: "https RXLB multiple paths, pre-shared cert",
+			ingBuilder: fuzz.NewIngressBuilder("", ingressPrefix+"3", "").
+				AddPath("test.com", "/foo", serviceName, port80).
+				AddPath("baz.com", "/bar", serviceName, port80).
+				ConfigureForRegionalXLB(),
+			numForwardingRules: 2,
+			numBackendServices: 2,
+			certType:           e2e.GCPCert,
+			hosts:              []string{"test.com", "baz.com"},
+		},
+		{
+			desc: "https RXLB multiple paths, tls",
+			ingBuilder: fuzz.NewIngressBuilder("", ingressPrefix+"4", "").
+				AddPath("test.com", "/foo", serviceName, port80).
+				AddPath("baz.com", "/bar", serviceName, port80).
+				ConfigureForRegionalXLB(),
+			numForwardingRules: 2,
+			numBackendServices: 2,
+			certType:           e2e.K8sCert,
+			hosts:              []string{"test.com", "baz.com"},
+		},
+	} {
+		tc := tc // Capture tc as we are running this in parallel.
+		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
+			t.Parallel()
+
+			crud := adapter.IngressCRUD{C: Framework.Clientset}
+
+			for i, h := range tc.hosts {
+				name := fmt.Sprintf("cert%d--%s", i, s.Namespace)
+				cert, err := e2e.NewCert(name, h, tc.certType, true)
+				if err != nil {
+					t.Fatalf("Error initializing cert: %v", err)
+				}
+				if err := cert.Create(s); err != nil {
+					t.Fatalf("Error creating cert %s: %v", cert.Name, err)
+				}
+				defer cert.Delete(s)
+
+				if tc.certType == e2e.K8sCert {
+					tc.ingBuilder.AddTLS([]string{}, cert.Name)
+				} else {
+					tc.ingBuilder.AddPresharedCerts([]string{cert.Name})
+				}
+			}
+			ing := tc.ingBuilder.Build()
+			ing.Namespace = s.Namespace // namespace depends on sandbox
+
+			t.Logf("Ingress = %s", ing.String())
+
+			_, err := e2e.CreateEchoService(s, serviceName, negAnnotation)
+			if err != nil {
+				t.Fatalf("error creating echo service: %v", err)
+			}
+			t.Logf("Echo service created (%s/%s)", s.Namespace, serviceName)
+
+			if _, err := crud.Create(ing); err != nil {
+				t.Fatalf("error creating Ingress spec: %v", err)
+			}
+			t.Logf("Ingress created (%s/%s)", s.Namespace, ing.Name)
+
+			ing, err = e2e.WaitForIngress(s, ing, nil, nil)
+			if err != nil {
+				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
+			}
+			t.Logf("GCLB resources created (%s/%s)", s.Namespace, ing.Name)
+
+			// Perform whitebox testing.
+			if len(ing.Status.LoadBalancer.Ingress) < 1 {
+				t.Fatalf("Ingress does not have an IP: %+v", ing.Status)
+			}
+
+			vip := ing.Status.LoadBalancer.Ingress[0].IP
+			t.Logf("Ingress %s/%s VIP = %s", s.Namespace, ing.Name, vip)
+
+			params := &fuzz.GCLBForVIPParams{VIP: vip, Region: Framework.Region, Network: Framework.Network, Validators: fuzz.FeatureValidators(features.All)}
+			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
+			if err != nil {
+				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
+			}
+
+			if err = e2e.CheckGCLB(gclb, tc.numForwardingRules, tc.numBackendServices); err != nil {
+				t.Error(err)
+			}
+
+			deleteOptions := &fuzz.GCLBDeleteOptions{
+				SkipDefaultBackend: false,
+			}
+			if err := e2e.WaitForIngressDeletion(context.Background(), gclb, s, ing, deleteOptions); err != nil {
 				t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing.Name, err)
 			}
 		})
