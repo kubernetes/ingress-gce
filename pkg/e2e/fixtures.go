@@ -368,6 +368,18 @@ func NewGCPAddress(s *Sandbox, name string, region string) error {
 	return nil
 }
 
+func NewGCPRegionalExternalAddress(s *Sandbox, name string, region string) error {
+	addr := &compute.Address{Name: name}
+
+	addr.NetworkTier = cloud.NetworkTierStandard.ToGCEValue()
+	if err := s.f.Cloud.Addresses().Insert(context.Background(), meta.RegionalKey(addr.Name, region), addr); err != nil {
+		return err
+	}
+	klog.V(2).Infof("Regional static IP %s created", name)
+
+	return nil
+}
+
 // DeleteGCPAddress deletes a global static IP address with the given name.
 func DeleteGCPAddress(s *Sandbox, name string, region string) error {
 	if region == "" {
