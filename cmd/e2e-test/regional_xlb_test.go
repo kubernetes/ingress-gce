@@ -26,6 +26,7 @@ import (
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
+	"k8s.io/ingress-gce/pkg/utils"
 )
 
 // TestRegionalXLB simple test that creates and deletes gce-regional-external
@@ -196,4 +197,122 @@ func TestRegionalXLBStaticIP(t *testing.T) {
 			t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing.Name, err)
 		}
 	})
+}
+
+// Test RXLB and ILB sharing same service
+func TestRXLBILBShared(t *testing.T) {
+	t.Parallel()
+
+	// These names are useful when reading the debug logs
+	ingressPrefix := "ing5-"
+	serviceName := "svc-5"
+
+	port80 := v1.ServiceBackendPort{Number: 80}
+
+	for _, tc := range []struct {
+		desc               string
+		ilbIng             *v1.Ingress
+		rxlbIng            *v1.Ingress
+		numForwardingRules int
+		numBackendServices int
+	}{
+		{
+			desc: "default backend",
+			ilbIng: fuzz.NewIngressBuilder("", ingressPrefix+"i-1", "").
+				DefaultBackend(serviceName, port80).
+				ConfigureForILB().
+				Build(),
+			rxlbIng: fuzz.NewIngressBuilder("", ingressPrefix+"e-1", "").
+				DefaultBackend(serviceName, port80).
+				ConfigureForRegionalXLB().
+				Build(),
+			numForwardingRules: 1,
+			numBackendServices: 1,
+		},
+		{
+			desc: "one path",
+			ilbIng: fuzz.NewIngressBuilder("", ingressPrefix+"i-2", "").
+				AddPath("test.com", "/", serviceName, port80).
+				ConfigureForILB().
+				Build(),
+			rxlbIng: fuzz.NewIngressBuilder("", ingressPrefix+"e-2", "").
+				AddPath("test.com", "/", serviceName, port80).
+				ConfigureForRegionalXLB().
+				Build(),
+			numForwardingRules: 1,
+			numBackendServices: 2,
+		},
+		{
+			desc: "multiple paths",
+			ilbIng: fuzz.NewIngressBuilder("", ingressPrefix+"i-3", "").
+				AddPath("test.com", "/foo", serviceName, port80).
+				AddPath("test.com", "/bar", serviceName, port80).
+				ConfigureForILB().
+				Build(),
+			rxlbIng: fuzz.NewIngressBuilder("", ingressPrefix+"e-3", "").
+				AddPath("test.com", "/foo", serviceName, port80).
+				AddPath("test.com", "/bar", serviceName, port80).
+				ConfigureForRegionalXLB().
+				Build(),
+			numForwardingRules: 1,
+			numBackendServices: 2,
+		},
+	} {
+		tc := tc // Capture tc as we are running this in parallel.
+		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
+			t.Parallel()
+
+			if Framework.CreateILBSubnet {
+				if err := e2e.CreateILBSubnet(s); err != nil && err != e2e.ErrSubnetExists {
+					t.Fatalf("e2e.CreateILBSubnet(%+v) = %v", s, err)
+				}
+			}
+
+			_, err := e2e.CreateEchoService(s, serviceName, negAnnotation)
+			if err != nil {
+				t.Fatalf("error creating echo service: %v", err)
+			}
+			t.Logf("Echo service created (%s/%s)", s.Namespace, serviceName)
+
+			var gclb *fuzz.GCLB
+			for _, ing := range []*v1.Ingress{tc.ilbIng, tc.rxlbIng} {
+
+				t.Logf("Ingress = %s", ing.String())
+
+				crud := adapter.IngressCRUD{C: Framework.Clientset}
+				ing.Namespace = s.Namespace
+				if _, err := crud.Create(ing); err != nil {
+					t.Fatalf("error creating Ingress spec: %v", err)
+				}
+				t.Logf("Ingress created (%s/%s)", s.Namespace, ing.Name)
+
+				ing, err := e2e.WaitForIngress(s, ing, nil, nil)
+				if err != nil {
+					t.Fatalf("error waiting for Ingress to stabilize: %v", err)
+				}
+				t.Logf("GCLB resources created (%s/%s)", s.Namespace, ing.Name)
+
+				// Perform whitebox testing.
+				if len(ing.Status.LoadBalancer.Ingress) < 1 {
+					t.Fatalf("Ingress does not have an IP: %+v", ing.Status)
+				}
+
+				vip := ing.Status.LoadBalancer.Ingress[0].IP
+				t.Logf("Ingress %s/%s VIP = %s", s.Namespace, ing.Name, vip)
+				if utils.IsGCEL7ILBIngress(ing) && !e2e.IsRfc1918Addr(vip) {
+					t.Fatalf("got %v, want RFC1918 address, ing: %v", vip, ing)
+				}
+
+				params := &fuzz.GCLBForVIPParams{VIP: vip, Region: Framework.Region, Network: Framework.Network, Validators: fuzz.FeatureValidators(features.All)}
+				gclb, err = fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
+				if err != nil {
+					t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
+				}
+
+				if err = e2e.CheckGCLB(gclb, tc.numForwardingRules, tc.numBackendServices); err != nil {
+					t.Error(err)
+				}
+			}
+		})
+	}
 }
