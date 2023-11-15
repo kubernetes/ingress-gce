@@ -220,3 +220,114 @@ func TestBackendConfigAPI(t *testing.T) {
 		}
 	})
 }
+
+func TestRegionalXLBBackendConfigNegatives(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		desc           string
+		svcAnnotations map[string]string
+		backendConfig  *backendconfigv1.BackendConfig
+		expectedMsg    string
+	}{
+		{
+			desc: "backend config not exist",
+			svcAnnotations: map[string]string{
+				annotations.BackendConfigKey: `{"default":"backendconfig-1"}`,
+				annotations.NEGAnnotationKey: negVal.String(),
+			},
+			expectedMsg: "no BackendConfig",
+		},
+		{
+			desc: "invalid format in backend config annotation",
+			svcAnnotations: map[string]string{
+				annotations.BackendConfigKey: `invalid`,
+				annotations.NEGAnnotationKey: negVal.String(),
+			},
+			expectedMsg: fmt.Sprintf("%v", annotations.ErrBackendConfigInvalidJSON),
+		},
+		{
+			desc: "enable IAP in backend config",
+			svcAnnotations: map[string]string{
+				annotations.BackendConfigKey: `{"default":"backendconfig-1"}`,
+				annotations.NEGAnnotationKey: negVal.String(),
+			},
+			backendConfig: fuzz.NewBackendConfigBuilder("", "backendconfig-1").
+				SetIAPConfig(true, "bar").
+				Build(),
+			expectedMsg: "IAP configuration is not supported in TPC Environment",
+		},
+		{
+			desc: "enable CDN in backend config",
+			svcAnnotations: map[string]string{
+				annotations.BackendConfigKey: `{"default":"backendconfig-1"}`,
+				annotations.NEGAnnotationKey: negVal.String(),
+			},
+			backendConfig: fuzz.NewBackendConfigBuilder("", "backendconfig-1").
+				EnableCDN(true).
+				Build(),
+			expectedMsg: "CDN configuration is not supported in TPC Environment",
+		},
+	} {
+		tc := tc // Capture tc as we are running this in parallel.
+		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
+			t.Parallel()
+
+			if tc.backendConfig != nil {
+				tc.backendConfig.Namespace = s.Namespace
+				bcCRUD := adapter.BackendConfigCRUD{C: Framework.BackendConfigClient}
+				if _, err := bcCRUD.Create(tc.backendConfig); err != nil {
+					t.Fatalf("Error creating backend config: %v", err)
+				}
+				t.Logf("Backend config %s/%s created", s.Namespace, tc.backendConfig.Name)
+			}
+
+			if _, err := e2e.CreateEchoService(s, "service-1", tc.svcAnnotations); err != nil {
+				t.Fatalf("e2e.CreateEchoService(s, service-1, %q) = _, _, %v, want _, _, nil", tc.svcAnnotations, err)
+			}
+
+			port80 := networkingv1.ServiceBackendPort{Number: 80}
+			testIng := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
+				AddPath("test.com", "/", "service-1", port80).
+				ConfigureForRegionalXLB().
+				Build()
+			crud := adapter.IngressCRUD{C: Framework.Clientset}
+			testIng, err := crud.Create(testIng)
+			if err != nil {
+				t.Fatalf("error creating Ingress spec: %v", err)
+			}
+			t.Logf("Ingress %s/%s created", s.Namespace, testIng.Name)
+
+			t.Logf("Waiting %v for warning event to be emitted", eventPollTimeout)
+			if err := wait.Poll(eventPollInterval, eventPollTimeout, func() (bool, error) {
+				events, err := Framework.Clientset.CoreV1().Events(s.Namespace).List(context.TODO(), metav1.ListOptions{})
+				if err != nil {
+					return false, fmt.Errorf("error in listing events: %s", err)
+				}
+				for _, event := range events.Items {
+					if event.InvolvedObject.Kind != "Ingress" ||
+						event.InvolvedObject.Name != "ingress-1" ||
+						event.Type != v1.EventTypeWarning {
+						continue
+					}
+					if strings.Contains(event.Message, tc.expectedMsg) {
+						t.Logf("Warning event emitted")
+						return true, nil
+					}
+				}
+				t.Logf("No warning event is emitted yet")
+				return false, nil
+			}); err != nil {
+				t.Fatalf("error waiting for BackendConfig warning event: %v", err)
+			}
+
+			testIng, err = crud.Get(s.Namespace, testIng.Name)
+			if err != nil {
+				t.Fatalf("error retrieving Ingress %q: %v", testIng.Name, err)
+			}
+			if len(testIng.Status.LoadBalancer.Ingress) > 0 {
+				t.Fatalf("Ingress should not have an IP: %+v", testIng.Status)
+			}
+		})
+	}
+}
