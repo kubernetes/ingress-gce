@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -65,8 +66,8 @@ func (l7 *L7) checkStaticIP() (err error) {
 		if err != nil {
 			if utils.IsHTTPErrorCode(err, http.StatusConflict) ||
 				utils.IsHTTPErrorCode(err, http.StatusBadRequest) {
-				klog.V(3).Infof("IP %v(%v) is already reserved, assuming it is OK to use.",
-					l7.fw.IPAddress, managedStaticIPName)
+				klog.V(3).Infof("IP %v(%v) is already reserved, assuming it is OK to use. Error from API: %v",
+					l7.fw.IPAddress, managedStaticIPName, err)
 				return nil
 			}
 			return err
@@ -82,10 +83,13 @@ func (l7 *L7) checkStaticIP() (err error) {
 
 func (l7 *L7) newStaticAddress(name string) *composite.Address {
 	isInternal := utils.IsGCEL7ILBIngress(&l7.ingress)
+	isRegionalExternal := utils.IsGCEL7XLBRegionalIngress(&l7.ingress)
 	address := &composite.Address{Name: name, Address: l7.fw.IPAddress, Version: meta.VersionGA}
 	if isInternal {
 		// Used for L7 ILB
 		address.AddressType = "INTERNAL"
+	} else if isRegionalExternal {
+		address.NetworkTier = cloud.NetworkTierStandard.ToGCEValue()
 	}
 
 	return address
