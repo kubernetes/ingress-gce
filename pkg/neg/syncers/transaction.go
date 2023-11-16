@@ -296,9 +296,12 @@ func (s *transactionSyncer) syncInternalImpl() error {
 		}
 	}
 
-	if !s.enableDegradedMode && err != nil {
-		return err
-	} else if s.enableDegradedMode {
+	if !s.enableDegradedMode {
+		if err != nil {
+			return err
+		}
+		s.logger.Info("Using normal mode endpoint calculation")
+	} else {
 		if !s.inErrorState() && err != nil {
 			return err // if we encounter an error, we will return and run the next sync in degraded mode
 		}
@@ -306,12 +309,15 @@ func (s *transactionSyncer) syncInternalImpl() error {
 			return degradedModeErr
 		}
 		if s.inErrorState() {
+			s.logger.Info("Using degraded mode endpoint calculation")
 			targetMap = degradedTargetMap
 			endpointPodMap = degradedPodMap
 			if len(notInDegraded) == 0 && len(onlyInDegraded) == 0 {
 				s.logger.Info("Resetting error state")
 				s.resetErrorState()
 			}
+		} else {
+			s.logger.Info("Using normal mode endpoint calculation")
 		}
 	}
 	s.logStats(targetMap, "desired NEG endpoints")
