@@ -2071,7 +2071,16 @@ func TestDegradedModeValidateEndpointInfo(t *testing.T) {
 		},
 		Spec: v1.NodeSpec{
 			PodCIDR:  "10.100.1.0/24",
-			PodCIDRs: []string{"2001:db8::/48", "10.100.1.0/24"},
+			PodCIDRs: []string{"a:b::/48", "10.100.1.0/24"},
+		},
+	})
+	nodeLister.Add(&v1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: instance2,
+		},
+		Spec: v1.NodeSpec{
+			PodCIDR:  "10.100.2.0/24",
+			PodCIDRs: []string{"a:b::/48", "10.100.2.0/24"},
 		},
 	})
 	nodeLister.Add(&v1.Node{
