@@ -285,11 +285,13 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 			zone, _, getZoneErr := getEndpointZone(endpointAddress, zoneGetter)
 			if getZoneErr != nil {
 				epLogger.Error(getZoneErr, "Detected unexpected error when getting zone for endpoint")
+				metrics.PublishNegControllerErrorCountMetrics(getZoneErr, true)
 				return ZoneNetworkEndpointMapResult{}, fmt.Errorf("unexpected error when getting zone for endpoint %q in endpoint slice %s/%s: %w", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, getZoneErr)
 			}
 
 			_, _, getPodErr := getEndpointPod(endpointAddress, podLister)
 			if getPodErr != nil {
+				metrics.PublishNegControllerErrorCountMetrics(getPodErr, true)
 				if flags.F.EnableDegradedMode {
 					epLogger.Error(getPodErr, "Detected unexpected error when getting pod for endpoint")
 					// when degraded mode is enabled, we want to trigger degraded mode so return the error
@@ -447,6 +449,7 @@ func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGett
 			nodeName := pod.Spec.NodeName
 			if nodeName == "" {
 				epLogger.Error(negtypes.ErrEPNodeMissing, "Endpoint's corresponding pod does not have valid nodeName, skipping", "podName", pod.Name)
+				metrics.PublishNegControllerErrorCountMetrics(negtypes.ErrEPNodeMissing, true)
 				localEPCount[negtypes.NodeMissing]++
 				continue
 			}
@@ -465,6 +468,7 @@ func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGett
 			// TODO(cheungdavid): Remove this validation when single stack ipv6 endpoint is supported
 			if parseIPAddress(podIPs.IP) == "" {
 				epLogger.Error(negtypes.ErrEPIPInvalid, "Endpoint has an invalid IPv4 address, skipping", "podName", pod.ObjectMeta.Name)
+				metrics.PublishNegControllerErrorCountMetrics(negtypes.ErrEPIPInvalid, true)
 				localEPCount[negtypes.IPInvalid]++
 				continue
 			}
