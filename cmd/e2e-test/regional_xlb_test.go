@@ -316,3 +316,183 @@ func TestRXLBILBShared(t *testing.T) {
 		})
 	}
 }
+
+// Test Updating RXLB and transitioning between ILB/RXLB
+func TestRegionalXLBILBTransition(t *testing.T) {
+	t.Parallel()
+
+	// These names are useful when reading the debug logs
+	ingressPrefix := "ing3-"
+	serviceName := "svc-3"
+
+	port80 := v1.ServiceBackendPort{Number: 80}
+
+	for _, tc := range []struct {
+		desc      string
+		ing       *v1.Ingress
+		ingUpdate *v1.Ingress
+
+		numForwardingRules       int
+		numBackendServices       int
+		numForwardingRulesUpdate int
+		numBackendServicesUpdate int
+	}{
+		{
+			desc: "http RXLB default backend to one path",
+			ing: fuzz.NewIngressBuilder("", ingressPrefix+"1", "").
+				DefaultBackend(serviceName, port80).
+				ConfigureForRegionalXLB().
+				Build(),
+			numForwardingRules: 1,
+			numBackendServices: 1,
+			ingUpdate: fuzz.NewIngressBuilder("", ingressPrefix+"1", "").
+				AddPath("test.com", "/", serviceName, port80).
+				ConfigureForRegionalXLB().
+				Build(),
+			numForwardingRulesUpdate: 1,
+			numBackendServicesUpdate: 2,
+		},
+		{
+			desc: "http RXLB one path to default backend",
+			ing: fuzz.NewIngressBuilder("", ingressPrefix+"2", "").
+				AddPath("test.com", "/", serviceName, port80).
+				ConfigureForRegionalXLB().
+				Build(),
+			numForwardingRules: 1,
+			numBackendServices: 2,
+			ingUpdate: fuzz.NewIngressBuilder("", ingressPrefix+"2", "").
+				DefaultBackend(serviceName, port80).
+				ConfigureForRegionalXLB().
+				Build(),
+			numForwardingRulesUpdate: 1,
+			numBackendServicesUpdate: 1,
+		},
+		{
+			desc: "http ILB default backend to ELB default backend",
+			ing: fuzz.NewIngressBuilder("", ingressPrefix+"3", "").
+				DefaultBackend(serviceName, port80).
+				ConfigureForILB().
+				Build(),
+			numForwardingRules: 1,
+			numBackendServices: 1,
+			ingUpdate: fuzz.NewIngressBuilder("", ingressPrefix+"3", "").
+				DefaultBackend(serviceName, port80).
+				ConfigureForRegionalXLB().
+				Build(),
+			numForwardingRulesUpdate: 1,
+			numBackendServicesUpdate: 1,
+		},
+		{
+			desc: "RXLB default backend to ILB default backend",
+			ing: fuzz.NewIngressBuilder("", ingressPrefix+"4", "").
+				DefaultBackend(serviceName, port80).
+				ConfigureForRegionalXLB().
+				Build(),
+			numForwardingRules: 1,
+			numBackendServices: 1,
+			ingUpdate: fuzz.NewIngressBuilder("", ingressPrefix+"4", "").
+				DefaultBackend(serviceName, port80).
+				ConfigureForILB().
+				Build(),
+			numForwardingRulesUpdate: 1,
+			numBackendServicesUpdate: 1,
+		},
+	} {
+		tc := tc // Capture tc as we are running this in parallel.
+		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
+			t.Parallel()
+
+			t.Logf("Ingress = %s", tc.ing.String())
+
+			if Framework.CreateILBSubnet {
+				if err := e2e.CreateILBSubnet(s); err != nil && err != e2e.ErrSubnetExists {
+					t.Fatalf("e2e.CreateILBSubnet(%+v) = %v", s, err)
+				}
+			}
+
+			_, err := e2e.CreateEchoService(s, serviceName, negAnnotation)
+			if err != nil {
+				t.Fatalf("error creating echo service: %v", err)
+			}
+			t.Logf("Echo service created (%s/%s)", s.Namespace, serviceName)
+
+			crud := adapter.IngressCRUD{C: Framework.Clientset}
+			tc.ing.Namespace = s.Namespace
+			if _, err := crud.Create(tc.ing); err != nil {
+				t.Fatalf("error creating Ingress spec: %v", err)
+			}
+			t.Logf("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)
+
+			ing1, err := e2e.WaitForIngress(s, tc.ing, nil, nil)
+			if err != nil {
+				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
+			}
+			t.Logf("GCLB resources created (%s/%s)", s.Namespace, tc.ing.Name)
+
+			// Perform whitebox testing.
+			if len(ing1.Status.LoadBalancer.Ingress) < 1 {
+				t.Fatalf("Ingress does not have an IP: %+v", ing1.Status)
+			}
+
+			vip := ing1.Status.LoadBalancer.Ingress[0].IP
+			t.Logf("Ingress %s/%s VIP = %s", s.Namespace, tc.ing.Name, vip)
+
+			if utils.IsGCEL7ILBIngress(ing1) && !e2e.IsRfc1918Addr(vip) {
+				t.Fatalf("got %v, want RFC1918 address, ing1: %v", vip, ing1)
+			}
+
+			params := &fuzz.GCLBForVIPParams{VIP: vip, Region: Framework.Region, Network: Framework.Network, Validators: fuzz.FeatureValidators(features.All)}
+			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
+			if err != nil {
+				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
+			}
+
+			if err = e2e.CheckGCLB(gclb, tc.numForwardingRules, tc.numBackendServices); err != nil {
+				t.Error(err)
+			}
+
+			tc.ingUpdate.Namespace = s.Namespace
+			// Perform update
+			if _, err := crud.Update(tc.ingUpdate); err != nil {
+				t.Fatalf("error updating ingress spec: %v", err)
+			}
+
+			// Verify everything works
+			ing2, err := e2e.WaitForIngress(s, tc.ingUpdate, nil, nil)
+			if err != nil {
+				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
+			}
+			t.Logf("GCLB resources created (%s/%s)", s.Namespace, tc.ingUpdate.Name)
+
+			// Perform whitebox testing.
+			if len(ing2.Status.LoadBalancer.Ingress) < 1 {
+				t.Fatalf("Ingress does not have an IP: %+v", ing2.Status)
+			}
+
+			vip = ing2.Status.LoadBalancer.Ingress[0].IP
+			t.Logf("Ingress %s/%s VIP = %s", s.Namespace, tc.ingUpdate.Name, vip)
+			if utils.IsGCEL7ILBIngress(ing2) && !e2e.IsRfc1918Addr(vip) {
+				t.Fatalf("got %v, want RFC1918 address, ing1: %v", vip, ing2)
+			}
+
+			gclb2, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
+			if err != nil {
+				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
+			}
+
+			if err = e2e.CheckGCLB(gclb2, tc.numForwardingRulesUpdate, tc.numBackendServicesUpdate); err != nil {
+				t.Error(err)
+			}
+
+			deleteOptions := &fuzz.GCLBDeleteOptions{
+				SkipDefaultBackend: true,
+			}
+			if err := e2e.WaitForIngressDeletion(context.Background(), gclb, s, ing1, deleteOptions); err != nil {
+				t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing1.Name, err)
+			}
+			if err := e2e.WaitForIngressDeletion(context.Background(), gclb2, s, ing2, deleteOptions); err != nil {
+				t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing2.Name, err)
+			}
+		})
+	}
+}
