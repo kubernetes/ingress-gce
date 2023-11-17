@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	v1 "k8s.io/api/networking/v1"
@@ -125,4 +126,74 @@ func TestRegionalXLB(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestRegionalXLBStaticIP is a transition test:
+// 1) static IP disabled
+// 2) static IP enabled
+// 3) static IP disabled
+func TestRegionalXLBStaticIP(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	Framework.RunWithSandbox("rxlb-static-ip", t, func(t *testing.T, s *e2e.Sandbox) {
+		_, err := e2e.CreateEchoService(s, "service-1", negAnnotation)
+		if err != nil {
+			t.Fatalf("e2e.CreateEchoService(s, service-1, nil) = _, %v; want _, nil", err)
+		}
+
+		addrName := fmt.Sprintf("test-addr-%s", s.Namespace)
+		if err := e2e.NewGCPRegionalExternalAddress(s, addrName, Framework.Region); err != nil {
+			t.Fatalf("e2e.NewGCPRegionalExternalAddress(..., %s) = %v, want nil", addrName, err)
+		}
+		defer e2e.DeleteGCPAddress(s, addrName, Framework.Region)
+
+		testIngEnabled := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
+			DefaultBackend("service-1", v1.ServiceBackendPort{Number: 80}).
+			ConfigureForRegionalXLB().
+			AddStaticIP(addrName, true).
+			Build()
+		testIngDisabled := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
+			DefaultBackend("service-1", v1.ServiceBackendPort{Number: 80}).
+			ConfigureForRegionalXLB().
+			Build()
+
+		// Create original ingress
+		crud := adapter.IngressCRUD{C: Framework.Clientset}
+		ing, err := crud.Create(testIngDisabled)
+		if err != nil {
+			t.Fatalf("error creating Ingress spec: %v", err)
+		}
+		t.Logf("Ingress %s/%s created", s.Namespace, ing.Name)
+
+		var gclb *fuzz.GCLB
+		for i, testIng := range []*v1.Ingress{testIngDisabled, testIngEnabled, testIngDisabled} {
+			t.Run(fmt.Sprintf("Transition-%d", i), func(t *testing.T) {
+				ing, err = e2e.EnsureIngress(s, testIng)
+				if err != nil {
+					t.Fatalf("error patching Ingress spec: %v", err)
+				}
+				t.Logf("Ingress %s/%s updated", s.Namespace, testIng.Name)
+
+				ing, err = e2e.WaitForIngress(s, ing, nil, nil)
+				if err != nil {
+					t.Fatalf("e2e.WaitForIngress(s, %q) = _, %v; want _, nil", testIng.Name, err)
+				}
+				if len(ing.Status.LoadBalancer.Ingress) < 1 {
+					t.Fatalf("Ingress does not have an IP: %+v", ing.Status)
+				}
+
+				vip := ing.Status.LoadBalancer.Ingress[0].IP
+				params := &fuzz.GCLBForVIPParams{VIP: vip, Validators: fuzz.FeatureValidators(features.All), Region: Framework.Region, Network: Framework.Network}
+				gclb, err = fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
+				if err != nil {
+					t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
+				}
+			})
+		}
+		if err := e2e.WaitForIngressDeletion(ctx, gclb, s, ing, deleteOptions); err != nil {
+			t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing.Name, err)
+		}
+	})
 }
