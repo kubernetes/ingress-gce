@@ -426,10 +426,11 @@ func hasBetaResource(resourceType string, validators []FeatureValidator) bool {
 }
 
 type GCLBForVIPParams struct {
-	VIP        string
-	Region     string
-	Network    string
-	Validators []FeatureValidator
+	VIP              string
+	Region           string
+	Network          string
+	Validators       []FeatureValidator
+	IsForRegionalXLB bool
 }
 
 // GCLBForVIP retrieves all of the resources associated with the GCLB for a given VIP.
@@ -791,6 +792,15 @@ func RegionalGCLBForVIP(ctx context.Context, c cloud.Cloud, gclb *GCLB, params *
 				return err
 			}
 			if urlMapKey == nil {
+				urlMapKey = urlMapResID.Key
+			}
+			// Ignore redirect urlmaps since they will not have backends, but add them to the gclb map
+			if params.IsForRegionalXLB && strings.Contains(urlMapKey.Name, "-rm-") {
+				urlMap, err := c.RegionUrlMaps().Get(ctx, urlMapKey)
+				if err != nil {
+					return err
+				}
+				gclb.URLMap[*urlMapKey] = &URLMap{GA: urlMap}
 				urlMapKey = urlMapResID.Key
 			}
 			if *urlMapKey != *urlMapResID.Key {
