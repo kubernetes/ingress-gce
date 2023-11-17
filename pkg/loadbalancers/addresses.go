@@ -89,6 +89,8 @@ func (l7 *L7) newStaticAddress(name string) *composite.Address {
 		// Used for L7 ILB
 		address.AddressType = "INTERNAL"
 	} else if isRegionalExternal {
+		// GCP requires L7 Regional External Addresses to use Standard Network Tier,
+		// (the same as regional external forwarding rules).
 		address.NetworkTier = cloud.NetworkTierStandard.ToGCEValue()
 	}
 
