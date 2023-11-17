@@ -21,3 +21,6 @@ linters-settings:
     exclude-functions:
       - (*flag.FlagSet).Parse
       - k8s.io/apimachinery/pkg/util/wait.PollUntil
+
+run:
+  timeout: 3m
