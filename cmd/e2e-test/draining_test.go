@@ -166,7 +166,7 @@ func TestDraining(t *testing.T) {
 	}
 }
 
-func TestRegionalXLBDraining(t *testing.T) {
+func TestRegionalXLBDrain(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
