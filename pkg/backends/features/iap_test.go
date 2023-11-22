@@ -35,6 +35,7 @@ func TestEnsureIAP(t *testing.T) {
 		be             *composite.BackendService
 		updateExpected bool
 		wantBE         *composite.BackendService
+		expectErr      bool
 	}{
 		{
 			desc: "iap settings are missing from spec, no update needed",
@@ -234,7 +235,7 @@ func TestEnsureIAP(t *testing.T) {
 			updateExpected: true,
 		},
 		{
-			desc: "credentials removed, update needed",
+			desc: "credentials removed, update will error",
 			sp: utils.ServicePort{
 				BackendConfig: &backendconfigv1.BackendConfig{
 					Spec: backendconfigv1.BackendConfigSpec{
@@ -253,18 +254,27 @@ func TestEnsureIAP(t *testing.T) {
 			},
 			wantBE: &composite.BackendService{
 				Iap: &composite.BackendServiceIAP{
-					Enabled: true,
+					Enabled:                  true,
+					Oauth2ClientId:           "foo",
+					Oauth2ClientSecretSha256: fmt.Sprintf("%x", sha256.Sum256([]byte("baz"))),
 				},
 			},
-			updateExpected: true,
+			updateExpected: false,
+			expectErr:      true,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			result := EnsureIAP(tc.sp, tc.be, klog.TODO())
+			result, err := EnsureIAP(tc.sp, tc.be, klog.TODO())
+			if tc.expectErr && err == nil {
+				t.Errorf("EnsureIAP: got nil but expected an error")
+			} else if !tc.expectErr && err != nil {
+				t.Errorf("EnsureIAP: got err: %+v but expected none", err)
+			}
+
 			if result != tc.updateExpected {
-				t.Errorf("%v: expected %v but got %v", tc.desc, tc.updateExpected, result)
+				t.Errorf("EnsureIAP: got %v but expected %v", result, tc.updateExpected)
 			}
 
 			diff := cmp.Diff(tc.be, tc.wantBE)

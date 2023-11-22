@@ -18,6 +18,7 @@ package features
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 
 	"k8s.io/ingress-gce/pkg/composite"
@@ -25,24 +26,32 @@ import (
 	"k8s.io/klog/v2"
 )
 
+var switchingToDefaultError = errors.New("Cannot switch to default OAuth once IAP credentials have been set")
+
 // EnsureIAP reads the IAP configuration specified in the BackendConfig
 // and applies it to the BackendService if it is stale. It returns true
 // if there were existing settings on the BackendService that were overwritten.
-func EnsureIAP(sp utils.ServicePort, be *composite.BackendService, logger klog.Logger) bool {
+func EnsureIAP(sp utils.ServicePort, be *composite.BackendService, logger klog.Logger) (bool, error) {
 	// TODO: Update when context logging is enabled to ensure no duplicate keys
 	logger = logger.WithName("EnsureIAP").WithValues("service", klog.KRef(sp.ID.Service.Namespace, sp.ID.Service.Name))
 	if sp.BackendConfig.Spec.Iap == nil {
-		return false
+		return false, nil
 	}
 	beTemp := &composite.BackendService{}
 	applyIAPSettings(sp, beTemp)
+
+	if err := switchingToDefault(beTemp, be); err != nil {
+		logger.Error(err, "Errored updating IAP settings")
+		return false, fmt.Errorf("Errored updating IAP Settings for service %s/%s: %w", sp.ID.Service.Namespace, sp.ID.Service.Name, err)
+	}
+
 	if diffIAP(beTemp, be, logger) {
 		applyIAPSettings(sp, be)
 		logger.Info("Updated IAP settings")
-		return true
+		return true, nil
 	}
 	logger.Info("Detected no change in IAP Settings")
-	return false
+	return false, nil
 }
 
 // applyIAPSettings applies the IAP settings specified in the BackendConfig
@@ -88,4 +97,24 @@ func diffIAP(desired, curr *composite.BackendService, logger klog.Logger) bool {
 		return true
 	}
 	return false
+}
+
+// switchingToDefault returns an error if the IAP configuration is switching from credentials to default.
+// TODO: remove validation when the IAP API supports this transition
+func switchingToDefault(desired, curr *composite.BackendService) error {
+	// EnsureIAP (only caller for switchingToDefault) is validates that desired is not empty,
+	// therefore only check if curr is nil.
+	if curr.Iap == nil {
+		return nil
+	}
+
+	// Due to the validation earlier in the sync both Oauth2 fields will be empty or both are set
+	// so only one field needs to be checked.
+	desiredIsEmpty := desired.Iap.Oauth2ClientId == ""
+	currIsEmpty := curr.Iap.Oauth2ClientId == ""
+
+	if desiredIsEmpty && !currIsEmpty {
+		return switchingToDefaultError
+	}
+	return nil
 }
