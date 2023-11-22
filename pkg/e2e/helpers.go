@@ -64,7 +64,8 @@ import (
 const (
 	ingressPollInterval = 30 * time.Second
 	// TODO(shance): Find a way to lower this timeout
-	ingressPollTimeout = 45 * time.Minute
+	ingressPollTimeout            = 45 * time.Minute
+	ingressUnreachablePollTimeout = 10 * time.Minute
 
 	gclbDeletionInterval = 30 * time.Second
 	// TODO(smatti): Change this back to 15 when the issue
@@ -148,7 +149,12 @@ func UpgradeTestWaitForIngress(s *Sandbox, ing *networkingv1.Ingress, options *W
 // We expect the ingress to be unreachable at first as LB is
 // still programming itself (i.e 404's / 502's)
 func WaitForIngress(s *Sandbox, ing *networkingv1.Ingress, fc *frontendconfigv1beta1.FrontendConfig, options *WaitForIngressOptions) (*networkingv1.Ingress, error) {
-	err := wait.Poll(ingressPollInterval, ingressPollTimeout, func() (bool, error) {
+	pollTimeout := ingressPollTimeout
+	if options != nil && options.ExpectUnreachable {
+		pollTimeout = ingressUnreachablePollTimeout
+	}
+
+	err := wait.Poll(ingressPollInterval, pollTimeout, func() (bool, error) {
 		var err error
 		crud := adapter.IngressCRUD{C: s.f.Clientset}
 		ing, err = crud.Get(s.Namespace, ing.Name)
