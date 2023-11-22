@@ -114,6 +114,9 @@ type transactionSyncer struct {
 
 	// enableDegradedMode indicates whether we do endpoint calculation using degraded mode procedures
 	enableDegradedMode bool
+	// enableDegradedModeMetrics indicates whether we enable metrics collection for degraded mode.
+	// Degraded mode calculation results will not be used when error state is triggered.
+	enableDegradedModeMetrics bool
 	// Enables support for Dual-Stack NEGs within the NEG Controller.
 	enableDualStackNEG bool
 
@@ -173,6 +176,7 @@ func NewTransactionSyncer(
 		errorState:                false,
 		logger:                    logger,
 		enableDegradedMode:        flags.F.EnableDegradedMode,
+		enableDegradedModeMetrics: flags.F.EnableDegradedModeMetrics,
 		enableDualStackNEG:        enableDualStackNEG,
 		podLabelPropagationConfig: lpConfig,
 		networkInfo:               networkInfo,
@@ -277,29 +281,43 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	endpointsData := negtypes.EndpointsDataFromEndpointSlices(endpointSlices)
 	targetMap, endpointPodMap, err = s.getEndpointsCalculation(endpointsData, currentMap)
 
-	if !s.enableDegradedMode && err != nil {
-		return err
-	} else if s.enableDegradedMode {
+	var degradedTargetMap, notInDegraded, onlyInDegraded map[string]negtypes.NetworkEndpointSet
+	var degradedPodMap negtypes.EndpointPodMap
+	var degradedModeErr error
+	if s.enableDegradedModeMetrics || s.enableDegradedMode {
+		degradedTargetMap, degradedPodMap, degradedModeErr = s.endpointsCalculator.CalculateEndpointsDegradedMode(endpointsData, currentMap)
+		if degradedModeErr == nil { // we collect metrics when the normal calculation doesn't run into error
+			s.logStats(targetMap, "normal mode desired NEG endpoints")
+			s.logStats(degradedTargetMap, "degraded mode desired NEG endpoints")
+			notInDegraded, onlyInDegraded = calculateNetworkEndpointDifference(targetMap, degradedTargetMap)
+			if err == nil {
+				computeDegradedModeCorrectness(notInDegraded, onlyInDegraded, string(s.NegSyncerKey.NegType), s.logger)
+			}
+		}
+	}
+
+	if !s.enableDegradedMode {
+		if err != nil {
+			return err
+		}
+		s.logger.Info("Using normal mode endpoint calculation")
+	} else {
 		if !s.inErrorState() && err != nil {
 			return err // if we encounter an error, we will return and run the next sync in degraded mode
 		}
-		degradedTargetMap, degradedPodMap, degradedModeErr := s.endpointsCalculator.CalculateEndpointsDegradedMode(endpointsData, currentMap)
 		if degradedModeErr != nil {
 			return degradedModeErr
 		}
-		s.logStats(targetMap, "normal mode desired NEG endpoints")
-		s.logStats(degradedTargetMap, "degraded mode desired NEG endpoints")
-		notInDegraded, onlyInDegraded := calculateNetworkEndpointDifference(targetMap, degradedTargetMap)
-		if err == nil { // we collect metrics when the normal calculation doesn't run into error
-			computeDegradedModeCorrectness(notInDegraded, onlyInDegraded, string(s.NegSyncerKey.NegType), s.logger)
-		}
 		if s.inErrorState() {
+			s.logger.Info("Using degraded mode endpoint calculation")
 			targetMap = degradedTargetMap
 			endpointPodMap = degradedPodMap
 			if len(notInDegraded) == 0 && len(onlyInDegraded) == 0 {
 				s.logger.Info("Resetting error state")
 				s.resetErrorState()
 			}
+		} else {
+			s.logger.Info("Using normal mode endpoint calculation")
 		}
 	}
 	s.logStats(targetMap, "desired NEG endpoints")
