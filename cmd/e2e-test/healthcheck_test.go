@@ -173,6 +173,127 @@ func TestHealthCheck(t *testing.T) {
 	}
 }
 
+func TestRegionalXLBHC(t *testing.T) {
+	t.Parallel()
+
+	pint64 := func(x int64) *int64 { return &x }
+	pstring := func(x string) *string { return &x }
+
+	for _, tc := range []struct {
+		desc     string
+		beConfig *backendconfig.BackendConfig
+		want     *backendconfig.HealthCheckConfig
+	}{
+		{
+			desc:     "override healthcheck configs",
+			beConfig: fuzz.NewBackendConfigBuilder("", "backendconfig-1").Build(),
+			want: &backendconfig.HealthCheckConfig{
+				CheckIntervalSec:   pint64(7),
+				TimeoutSec:         pint64(3),
+				HealthyThreshold:   pint64(3),
+				UnhealthyThreshold: pint64(5),
+				RequestPath:        pstring("/my-path"),
+				Port:               pint64(9000), // Purposely does not match deployment, we verify it separately
+			},
+		},
+	} {
+		tc := tc // Capture tc as we are running this in parallel.
+		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
+			t.Parallel()
+
+			ctx := context.Background()
+
+			backendConfigAnnotation := map[string]string{
+				annotations.BackendConfigKey: `{"default":"backendconfig-1"}`,
+				annotations.NEGAnnotationKey: negVal.String(),
+			}
+			tc.beConfig.Spec.HealthCheck = tc.want
+
+			becrud := adapter.BackendConfigCRUD{C: Framework.BackendConfigClient}
+			tc.beConfig.Namespace = s.Namespace
+			if _, err := becrud.Create(tc.beConfig); err != nil {
+				t.Fatalf("error creating BackendConfig: %v", err)
+			}
+			t.Logf("BackendConfig created (%s/%s) ", s.Namespace, tc.beConfig.Name)
+
+			_, err := e2e.CreateEchoService(s, "service-1", backendConfigAnnotation)
+			if err != nil {
+				t.Fatalf("error creating echo service: %v", err)
+			}
+			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
+
+			ing := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
+				DefaultBackend("service-1", networkingv1.ServiceBackendPort{Number: 80}).
+				ConfigureForRegionalXLB().
+				Build()
+			crud := adapter.IngressCRUD{C: Framework.Clientset}
+			if _, err := crud.Create(ing); err != nil {
+				t.Fatalf("error creating Ingress spec: %v", err)
+			}
+			t.Logf("Ingress created (%s/%s)", s.Namespace, ing.Name)
+
+			// If health check port does not match deployment, then the deployment will be unreachable
+			options := &e2e.WaitForIngressOptions{
+				ExpectUnreachable: true,
+			}
+			ing, _ = e2e.WaitForIngress(s, ing, nil, options)
+			t.Logf("GCLB resources created (%s/%s)", s.Namespace, ing.Name)
+
+			vip := ing.Status.LoadBalancer.Ingress[0].IP
+			t.Logf("Ingress %s/%s VIP = %s", s.Namespace, ing.Name, vip)
+			params := &fuzz.GCLBForVIPParams{VIP: vip, Validators: fuzz.FeatureValidators(features.All), Region: Framework.Region}
+			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
+			if err != nil {
+				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
+			}
+			if err := verifyHealthCheck(t, gclb, tc.want); err != nil {
+				t.Fatal(err)
+			}
+
+			// Change the configuration and wait for stabilization.
+			if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+				newBEConfig, err := becrud.Get(s.Namespace, tc.beConfig.Name)
+				if err != nil {
+					t.Fatalf("becrud.Get(%q, %q) = %v, want nil", s.Namespace, tc.beConfig.Name, err)
+				}
+				newBEConfig.Spec.HealthCheck.RequestPath = pstring("/other-path")
+				if _, err := becrud.Update(newBEConfig); err != nil {
+					return err
+				}
+				t.Logf("BackendConfig updated (%s/%s) ", s.Namespace, tc.beConfig.Name)
+				return nil
+			}); err != nil {
+				t.Fatalf("error updating BackendConfig %s/%s: %v", s.Namespace, tc.beConfig.Name, err)
+			}
+
+			if err := wait.Poll(transitionPollInterval, transitionPollTimeout, func() (bool, error) {
+				err := verifyHealthCheck(t, gclb, tc.want)
+				if err == nil {
+					return true, nil
+				}
+				t.Logf("Waiting for healthcheck to be updated: %v", err)
+				return false, nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			// Wait for GCLB resources to be deleted.
+			if err := crud.Delete(s.Namespace, ing.Name); err != nil {
+				t.Errorf("Delete(%q) = %v, want nil", ing.Name, err)
+			}
+
+			deleteOptions := &fuzz.GCLBDeleteOptions{
+				SkipDefaultBackend: true,
+			}
+			t.Logf("Waiting for GCLB resources to be deleted (%s/%s)", s.Namespace, ing.Name)
+			if err := e2e.WaitForGCLBDeletion(ctx, Framework.Cloud, gclb, deleteOptions); err != nil {
+				t.Errorf("e2e.WaitForGCLBDeletion(...) = %v, want nil", err)
+			}
+			t.Logf("GCLB resources deleted (%s/%s)", s.Namespace, ing.Name)
+		})
+	}
+}
+
 func verifyHealthCheck(t *testing.T, gclb *fuzz.GCLB, want *backendconfig.HealthCheckConfig) error {
 	// We assume there is a single service for now. The logic will have to be
 	// changed if there is more than one backend service.
