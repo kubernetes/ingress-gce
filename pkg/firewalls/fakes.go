@@ -30,25 +30,30 @@ type fakeFirewallsProvider struct {
 	networkURL       string
 	onXPN            bool
 	fwReadOnly       bool
+	GetFirewallHook  func(name string) (*compute.Firewall, error)
 }
 
 // NewFakeFirewallsProvider creates a fake for firewall rules.
 func NewFakeFirewallsProvider(onXPN bool, fwReadOnly bool) *fakeFirewallsProvider {
-	return &fakeFirewallsProvider{
+	ff := &fakeFirewallsProvider{
 		fw:               make(map[string]*compute.Firewall),
 		networkProjectID: "test-network-project",
 		networkURL:       "/path/to/my-network",
 		onXPN:            onXPN,
 		fwReadOnly:       fwReadOnly,
 	}
+	ff.GetFirewallHook = func(name string) (*compute.Firewall, error) {
+		rule, exists := ff.fw[name]
+		if exists {
+			return rule, nil
+		}
+		return nil, test.FakeGoogleAPINotFoundErr()
+	}
+	return ff
 }
 
 func (ff *fakeFirewallsProvider) GetFirewall(name string) (*compute.Firewall, error) {
-	rule, exists := ff.fw[name]
-	if exists {
-		return rule, nil
-	}
-	return nil, test.FakeGoogleAPINotFoundErr()
+	return ff.GetFirewallHook(name)
 }
 
 func (ff *fakeFirewallsProvider) doCreateFirewall(f *compute.Firewall) error {
