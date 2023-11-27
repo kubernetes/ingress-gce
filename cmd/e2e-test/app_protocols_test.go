@@ -185,7 +185,7 @@ func TestAppProtocolTransition(t *testing.T) {
 	}
 }
 
-func TestXLBRegionalAppProtocol(t *testing.T) {
+func TestRegionalXLBAppProtocol(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
@@ -259,7 +259,7 @@ func TestXLBRegionalAppProtocol(t *testing.T) {
 	}
 }
 
-func TestXLBRegionalProtocolTransition(t *testing.T) {
+func TestRegionalXLBProtocolTransition(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {

@@ -200,7 +200,7 @@ func TestRegionalXLBStaticIP(t *testing.T) {
 }
 
 // Test RXLB and ILB sharing same service
-func TestRXLBILBShared(t *testing.T) {
+func TestRegionalXLBILBShared(t *testing.T) {
 	t.Parallel()
 
 	// These names are useful when reading the debug logs
