@@ -532,6 +532,11 @@ func FakeGoogleAPIRequestEntityTooLargeError() *googleapi.Error {
 	return &googleapi.Error{Code: http.StatusRequestEntityTooLarge}
 }
 
+// FakeGoogleAPIRequestServerError creates a StatusInternalServerError error with type googleapi.Error
+func FakeGoogleAPIRequestServerError() *googleapi.Error {
+	return &googleapi.Error{Code: http.StatusInternalServerError}
+}
+
 func InstancesListToNameSet(instancesList []*compute.InstanceWithNamedPorts) (sets.String, error) {
 	instancesSet := sets.NewString()
 	for _, instance := range instancesList {
