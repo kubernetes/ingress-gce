@@ -305,14 +305,14 @@ func (b *Backends) DeleteSignedUrlKey(be *composite.BackendService, keyName stri
 
 // EnsureL4BackendService creates or updates the backend service with the given name.
 // TODO(code-elinka): refactor the list of arguments (there are too many now)
-func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinity, scheme string, nm types.NamespacedName, network network.NetworkInfo, connectionTrackingPolicy *composite.BackendServiceConnectionTrackingPolicy) (*composite.BackendService, error) {
+func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinity, scheme string, namespacedName types.NamespacedName, network network.NetworkInfo, connectionTrackingPolicy *composite.BackendServiceConnectionTrackingPolicy) (*composite.BackendService, error) {
 	start := time.Now()
-	klog.V(2).Infof("EnsureL4BackendService(%v, %v, %v): started", name, scheme, protocol)
+	klog.V(2).Infof("EnsureL4BackendService started, backend service name: %v, service: %v, scheme: %v, protocol: %v, sessionAffinity: %v, network: %v, subnetwork: %v ", name, namespacedName, scheme, protocol, sessionAffinity, network.NetworkURL, network.SubnetworkURL)
 	defer func() {
-		klog.V(2).Infof("EnsureL4BackendService(%v, %v, %v): finished, time taken: %v", name, scheme, protocol, time.Since(start))
+		klog.V(2).Infof("EnsureL4BackendService(%v, _, %v, _, %v, %v ...): finished, time taken: %v", name, protocol, scheme, namespacedName, time.Since(start))
 	}()
 
-	klog.V(2).Infof("EnsureL4BackendService(%v, %v, %v): checking existing backend service", name, scheme, protocol)
+	klog.V(2).Infof("EnsureL4BackendService(%v, _, %v, _, %v, %v...):checking existing backend service", name, protocol, scheme, namespacedName)
 	key, err := composite.CreateKey(b.cloud, name, meta.Regional)
 	if err != nil {
 		return nil, err
@@ -321,7 +321,7 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 	if err != nil && !utils.IsNotFoundError(err) {
 		return nil, err
 	}
-	desc, err := utils.MakeL4LBServiceDescription(nm.String(), "", meta.VersionGA, false, utils.ILB)
+	desc, err := utils.MakeL4LBServiceDescription(namespacedName.String(), "", meta.VersionGA, false, utils.ILB)
 	if err != nil {
 		klog.Warningf("EnsureL4BackendService: Failed to generate description for BackendService %s, err %v",
 			name, err)
@@ -336,9 +336,11 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 	}
 	// We need this configuration only for Strong Session Affinity feature
 	if b.useConnectionTrackingPolicy {
+		klog.V(2).Infof("EnsureL4BackendService %v,  service: %v, using connection tracking policy: %+v", name, namespacedName, connectionTrackingPolicy)
 		expectedBS.ConnectionTrackingPolicy = connectionTrackingPolicy
 	}
 	if !network.IsDefault {
+		klog.V(2).Infof("EnsureL4BackendService %v,  service: %v, using non-default network: %+v", name, namespacedName, network)
 		expectedBS.Network = network.NetworkURL
 	}
 	if protocol == string(api_v1.ProtocolTCP) {
@@ -350,12 +352,12 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 
 	// Create backend service if none was found
 	if bs == nil {
-		klog.V(2).Infof("EnsureL4BackendService: creating backend service %v", name)
+		klog.V(2).Infof("EnsureL4BackendService(%v, _, %v, _, %v, %v ...): creating backend service %v", name, protocol, scheme, namespacedName)
 		err := composite.CreateBackendService(b.cloud, key, expectedBS, klog.TODO())
 		if err != nil {
 			return nil, err
 		}
-		klog.V(2).Infof("EnsureL4BackendService: created backend service %v successfully", name)
+		klog.V(2).Infof("EnsureL4BackendService(%v, _, %v, _, %v, %v ...): created backend service %v successfully", name, protocol, scheme, namespacedName)
 		// We need to perform a GCE call to re-fetch the object we just created
 		// so that the "Fingerprint" field is filled in. This is needed to update the
 		// object without error. The lookup is also needed to populate the selfLink.
@@ -363,14 +365,14 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 	}
 
 	if backendSvcEqual(expectedBS, bs, b.useConnectionTrackingPolicy) {
-		klog.V(2).Infof("EnsureL4BackendService: backend service %s did not change, skipping update", name)
+		klog.V(2).Infof("EnsureL4BackendService(%v, _, %v, _, %v, %v ...): backend service %s did not change, skipping update", name, protocol, scheme, namespacedName)
 		return bs, nil
 	}
 	if bs.ConnectionDraining != nil && bs.ConnectionDraining.DrainingTimeoutSec > 0 && protocol == string(api_v1.ProtocolTCP) {
 		// only preserves user overridden timeout value when the protocol is TCP
 		expectedBS.ConnectionDraining.DrainingTimeoutSec = bs.ConnectionDraining.DrainingTimeoutSec
 	}
-	klog.V(2).Infof("EnsureL4BackendService: updating backend service %v", name)
+	klog.V(2).Infof("EnsureL4BackendService(%v, _, %v, _, %v, %v ...): updating backend service %v", name, protocol, scheme, namespacedName)
 	// Set fingerprint for optimistic locking
 	expectedBS.Fingerprint = bs.Fingerprint
 	// Copy backends to avoid detaching them during update. This could be replaced with a patch call in the future.
@@ -378,7 +380,8 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 	if err := composite.UpdateBackendService(b.cloud, key, expectedBS, klog.TODO()); err != nil {
 		return nil, err
 	}
-	klog.V(2).Infof("EnsureL4BackendService: updated backend service %v successfully", name)
+	klog.V(2).Infof("EnsureL4BackendService(%v, _, %v, _, %v, %v ...): updated backend service %v successfully", name, protocol, scheme, namespacedName)
+
 	return composite.GetBackendService(b.cloud, key, meta.VersionGA, klog.TODO())
 }
 

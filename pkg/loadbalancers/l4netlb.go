@@ -191,7 +191,7 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 	if len(svc.Status.LoadBalancer.Ingress) > 0 {
 		result.SyncType = SyncTypeUpdate
 	}
-	klog.V(3).Infof("EnsureFrontend started for service %s/%s, len(nodeNames) = %d, SyncType: %s", svc.Namespace, svc.Name, len(nodeNames), result.SyncType)
+	klog.V(3).Infof("EnsureFrontend started for service %s/%s, len(nodeNames) = %d, SyncType: %s, isMultinetService: %v, serviceUsesSSA: %v", svc.Namespace, svc.Name, len(nodeNames), result.SyncType, isMultinetService, serviceUsesSSA)
 
 	l4netlb.Service = svc
 
@@ -206,7 +206,10 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 		}
 		return result
 	}
+	klog.V(3).Infof("EnsureFrontend started for service %s/%s,  use networkInfo: %+v", svc.Namespace, svc.Name, networkInfo)
+
 	l4netlb.networkInfo = *networkInfo
+
 	// if service requires strong session affinity, check requirements
 	if err := l4netlb.checkStrongSessionAffinityRequirements(); err != nil {
 		result.Error = err

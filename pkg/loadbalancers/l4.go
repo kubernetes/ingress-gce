@@ -326,6 +326,8 @@ func (l4 *L4) subnetName() string {
 // EnsureInternalLoadBalancer ensures that all GCE resources for the given loadbalancer service have
 // been created. It returns a LoadBalancerStatus with the updated ForwardingRule IP address.
 func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service) *L4ILBSyncResult {
+	klog.V(2).Infof("EnsureInternalLoadBalancer(_,  %s/%s)", svc.Namespace, svc.Name)
+
 	l4.Service = svc
 
 	startTime := time.Now()
@@ -373,7 +375,10 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 			return result
 		}
 		expectedFRName := l4.GetFRName()
+
 		if !l4.cloud.IsLegacyNetwork() {
+			klog.V(2).Infof("EnsureInternalLoadBalancer(_,  %s/%s), reserve existing IPv4 address before making any changes", svc.Namespace, svc.Name)
+
 			nm := types.NamespacedName{Namespace: l4.Service.Namespace, Name: l4.Service.Name}.String()
 			// ILB can be created only in Premium Tier
 			addrMgr := newAddressManager(l4.cloud, nm, l4.cloud.Region(), subnetworkURL, expectedFRName, ipv4AddressToUse, cloud.SchemeInternal, cloud.NetworkTierPremium, IPv4Version)
@@ -404,6 +409,8 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 			return result
 		}
 		expectedIPv6FRName := l4.getIPv6FRName()
+		klog.V(2).Infof("EnsureInternalLoadBalancer(_,  %s/%s), reserve existing IPv6 address before making any changes", svc.Namespace, svc.Name)
+
 		if !l4.cloud.IsLegacyNetwork() {
 			nm := types.NamespacedName{Namespace: l4.Service.Namespace, Name: l4.Service.Name}.String()
 			// ILB can be created only in Premium Tier
