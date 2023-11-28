@@ -84,7 +84,7 @@ func TestV2FrontendNamer(t *testing.T) {
 			}
 			// Wait for ingress to stabilize and perform whitebox testing.
 			for _, ing := range tc.ings {
-				ingKey := fmt.Sprintf(s.Namespace, ing.Name)
+				ingKey := fmt.Sprintf("%s/%s", s.Namespace, ing.Name)
 				// Determine the expected finalizer after ingress creation.
 				isV1Finalizer := false
 				if len(ing.GetFinalizers()) > 0 {
