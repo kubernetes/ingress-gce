@@ -176,7 +176,6 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 	}
 
 	if needToCreate {
-		negLogger.Info("Creating NEG", "negServicePortName", negServicePortName)
 		var subnetwork string
 		switch networkEndpointType {
 		case negtypes.NonGCPPrivateEndpointType:
@@ -184,7 +183,7 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 		default:
 			subnetwork = networkInfo.SubnetworkURL
 		}
-
+		negLogger.Info("Creating NEG", "negServicePortName", negServicePortName, "network", networkInfo.NetworkURL, "subnetwork", subnetwork)
 		desc := ""
 		negDesc := utils.NegDescription{
 			ClusterUID:  kubeSystemUID,
