@@ -352,12 +352,12 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 
 	// Create backend service if none was found
 	if bs == nil {
-		klog.V(2).Infof("EnsureL4BackendService(%v, _, %v, _, %v, %v ...): creating backend service %v", name, protocol, scheme, namespacedName)
+		klog.V(2).Infof("EnsureL4BackendService(%v, _, %v, _, %v, %v ...): creating backend service %v", name, protocol, scheme, namespacedName, name)
 		err := composite.CreateBackendService(b.cloud, key, expectedBS, klog.TODO())
 		if err != nil {
 			return nil, err
 		}
-		klog.V(2).Infof("EnsureL4BackendService(%v, _, %v, _, %v, %v ...): created backend service %v successfully", name, protocol, scheme, namespacedName)
+		klog.V(2).Infof("EnsureL4BackendService(%v, _, %v, _, %v, %v ...): created backend service %v successfully", name, protocol, scheme, namespacedName, name)
 		// We need to perform a GCE call to re-fetch the object we just created
 		// so that the "Fingerprint" field is filled in. This is needed to update the
 		// object without error. The lookup is also needed to populate the selfLink.
@@ -365,14 +365,14 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 	}
 
 	if backendSvcEqual(expectedBS, bs, b.useConnectionTrackingPolicy) {
-		klog.V(2).Infof("EnsureL4BackendService(%v, _, %v, _, %v, %v ...): backend service %s did not change, skipping update", name, protocol, scheme, namespacedName)
+		klog.V(2).Infof("EnsureL4BackendService(%v, _, %v, _, %v, %v ...): backend service %s did not change, skipping update", name, protocol, scheme, namespacedName, name)
 		return bs, nil
 	}
 	if bs.ConnectionDraining != nil && bs.ConnectionDraining.DrainingTimeoutSec > 0 && protocol == string(api_v1.ProtocolTCP) {
 		// only preserves user overridden timeout value when the protocol is TCP
 		expectedBS.ConnectionDraining.DrainingTimeoutSec = bs.ConnectionDraining.DrainingTimeoutSec
 	}
-	klog.V(2).Infof("EnsureL4BackendService(%v, _, %v, _, %v, %v ...): updating backend service %v", name, protocol, scheme, namespacedName)
+	klog.V(2).Infof("EnsureL4BackendService(%v, _, %v, _, %v, %v ...): updating backend service %v", name, protocol, scheme, namespacedName, name)
 	// Set fingerprint for optimistic locking
 	expectedBS.Fingerprint = bs.Fingerprint
 	// Copy backends to avoid detaching them during update. This could be replaced with a patch call in the future.
@@ -380,7 +380,7 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 	if err := composite.UpdateBackendService(b.cloud, key, expectedBS, klog.TODO()); err != nil {
 		return nil, err
 	}
-	klog.V(2).Infof("EnsureL4BackendService(%v, _, %v, _, %v, %v ...): updated backend service %v successfully", name, protocol, scheme, namespacedName)
+	klog.V(2).Infof("EnsureL4BackendService(%v, _, %v, _, %v, %v ...): updated backend service %v successfully", name, protocol, scheme, namespacedName, name)
 
 	return composite.GetBackendService(b.cloud, key, meta.VersionGA, klog.TODO())
 }
