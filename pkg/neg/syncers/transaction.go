@@ -232,7 +232,10 @@ func (s *transactionSyncer) syncInternal() error {
 	err := s.syncInternalImpl()
 	if err != nil {
 		if syncErr := negtypes.ClassifyError(err); syncErr.IsErrorState {
-			s.logger.Info("Setting error state", "error state", syncErr.Reason)
+			s.logger.Info("Enter degraded mode", "reason", syncErr.Reason)
+			if s.enableDegradedMode {
+				s.recordEvent(apiv1.EventTypeWarning, "EnterDegradedMode", fmt.Sprintf("Entering degraded mode for NEG %s due to sync err: %v", s.NegSyncerKey.String(), syncErr))
+			}
 			s.setErrorState()
 		}
 	}
@@ -322,7 +325,10 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	// notInDegraded and onlyInDegraded are not populated when the flags are
 	// not enabled, so they would always be empty and reset error state.
 	if len(notInDegraded) == 0 && len(onlyInDegraded) == 0 {
-		s.logger.Info("Resetting error state")
+		s.logger.Info("Exit degraded mode")
+		if s.enableDegradedMode {
+			s.recordEvent(apiv1.EventTypeNormal, "ExitDegradedMode", fmt.Sprintf("NEG %s is no longer in degraded mode", s.NegSyncerKey.String()))
+		}
 		s.resetErrorState()
 	}
 	s.logStats(targetMap, "desired NEG endpoints")
@@ -557,7 +563,10 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, zone stri
 		if syncErr.IsErrorState {
 			s.logger.Error(err, "Detected unexpected error when checking endpoint update response", "operation", operation)
 			s.syncLock.Lock()
-			s.logger.Info("Setting error state", "error state", syncErr.Reason)
+			s.logger.Info("Enter degraded mode", "reason", syncErr.Reason)
+			if s.enableDegradedMode {
+				s.recordEvent(apiv1.EventTypeWarning, "EnterDegradedMode", fmt.Sprintf("Entering degraded mode for NEG %s due to sync err: %v", s.NegSyncerKey.String(), syncErr))
+			}
 			s.setErrorState()
 			s.syncLock.Unlock()
 		}
