@@ -319,7 +319,7 @@ func TestILBSA(t *testing.T) {
 }
 
 // Session affinity test for L7 Regional XLB.
-func TestXLBRegionalSA(t *testing.T) {
+func TestRegionalXLBSA(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
