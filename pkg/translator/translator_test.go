@@ -739,10 +739,13 @@ func TestToCompositeSSLCertificates(t *testing.T) {
 
 func TestSslPolicyLink(t *testing.T) {
 	t.Parallel()
+
+	testRegion := "test-region"
 	testCases := []struct {
-		desc string
-		fc   *frontendconfigv1beta1.FrontendConfig
-		want *string
+		desc       string
+		fc         *frontendconfigv1beta1.FrontendConfig
+		isRegional bool
+		want       *string
 	}{
 		{
 			desc: "Empty frontendconfig",
@@ -764,18 +767,24 @@ func TestSslPolicyLink(t *testing.T) {
 			fc:   &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: utils.NewStringPointer("")}},
 			want: utils.NewStringPointer(""),
 		},
+		{
+			desc:       "frontendconfig with ssl policy",
+			fc:         &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: utils.NewStringPointer("test-policy")}},
+			isRegional: true,
+			want:       utils.NewStringPointer(fmt.Sprintf("regions/%s/sslPolicies/test-policy", testRegion)),
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			env := &Env{FrontendConfig: tc.fc}
-			result, err := sslPolicyLink(env)
+			env := &Env{FrontendConfig: tc.fc, Region: "test-region"}
+			result, err := sslPolicyLink(env, tc.isRegional)
 			if err != nil {
 				t.Errorf("sslPolicyLink() = %v, want nil", err)
 			}
 
 			if !reflect.DeepEqual(result, tc.want) {
-				t.Errorf("sslPolicyLink() = %v, want %+v", result, tc.want)
+				t.Errorf("sslPolicyLink() = %v, want %+v", *result, *tc.want)
 			}
 		})
 	}

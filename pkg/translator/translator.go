@@ -333,7 +333,7 @@ func (t *Translator) ToCompositeTargetHttpsProxy(env *Env, description string, v
 	}
 	var sslPolicySet bool
 	if flags.F.EnableFrontendConfig {
-		sslPolicy, err := sslPolicyLink(env)
+		sslPolicy, err := sslPolicyLink(env, t.IsL7XLBRegional)
 		if err != nil {
 			return nil, sslPolicySet, err
 		}
@@ -388,7 +388,7 @@ func (t *Translator) ToCompositeSSLCertificates(env *Env, tlsName string, tls []
 // 1) policy is nil -> this returns nil
 // 2) policy is an empty string -> this returns an empty string
 // 3) policy is non-empty -> this constructs the resource path and returns it
-func sslPolicyLink(env *Env) (*string, error) {
+func sslPolicyLink(env *Env, isRegional bool) (*string, error) {
 	var link string
 
 	if env.FrontendConfig == nil {
@@ -405,10 +405,13 @@ func sslPolicyLink(env *Env) (*string, error) {
 
 	resourceID := cloud.ResourceID{
 		Resource: "sslPolicies",
-		Key:      meta.GlobalKey(*policyName),
+	}
+	if isRegional {
+		resourceID.Key = meta.RegionalKey(*policyName, env.Region)
+	} else {
+		resourceID.Key = meta.GlobalKey(*policyName)
 	}
 	resID := resourceID.ResourcePath()
-
 	return &resID, nil
 }
 
