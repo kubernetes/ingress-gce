@@ -36,7 +36,7 @@ import (
 func TestEnsureSecurityPolicy(t *testing.T) {
 	mockSecurityPolicies := make(map[string]*compute.SecurityPolicyReference)
 	mockSecurityPolicyLock := sync.Mutex{}
-	setSecurityPolicyHook := func(_ context.Context, key *meta.Key, ref *compute.SecurityPolicyReference, _ *cloud.MockBackendServices) error {
+	setSecurityPolicyHook := func(_ context.Context, key *meta.Key, ref *compute.SecurityPolicyReference, _ *cloud.MockBackendServices, _ ...cloud.Option) error {
 		mockSecurityPolicyLock.Lock()
 		mockSecurityPolicies[key.Name] = ref
 		mockSecurityPolicyLock.Unlock()

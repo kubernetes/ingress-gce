@@ -1337,7 +1337,7 @@ func TestEnsureInternalLoadBalancerModifyProtocol(t *testing.T) {
 	}
 	// This function simulates the error where backend service protocol cannot be changed
 	// before deleting the forwarding rule.
-	c.MockRegionBackendServices.UpdateHook = func(ctx context.Context, key *meta.Key, be *compute.BackendService, m *cloud.MockRegionBackendServices) error {
+	c.MockRegionBackendServices.UpdateHook = func(ctx context.Context, key *meta.Key, be *compute.BackendService, m *cloud.MockRegionBackendServices, options ...cloud.Option) error {
 		// Check FRnames with both protocols to make sure there is no leak or incorrect update.
 		frNames := []string{l4.getFRNameWithProtocol("TCP"), l4.getFRNameWithProtocol("UDP")}
 		for _, name := range frNames {
@@ -1357,7 +1357,7 @@ func TestEnsureInternalLoadBalancerModifyProtocol(t *testing.T) {
 		return mock.UpdateRegionBackendServiceHook(ctx, key, be, m)
 	}
 	// Before deleting forwarding rule, check, that the address was reserved
-	c.MockForwardingRules.DeleteHook = func(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules) (bool, error) {
+	c.MockForwardingRules.DeleteHook = func(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules, options ...cloud.Option) (bool, error) {
 		fr, err := c.MockForwardingRules.Get(ctx, key)
 		// if forwarding rule not exists, don't need to check if address reserved
 		if utils.IsNotFoundError(err) {
@@ -1475,7 +1475,7 @@ func TestDualStackInternalLoadBalancerModifyProtocol(t *testing.T) {
 			// This function simulates the error where backend service protocol cannot be changed
 			// before deleting the forwarding rule.
 			c := l4.cloud.Compute().(*cloud.MockGCE)
-			c.MockRegionBackendServices.UpdateHook = func(ctx context.Context, key *meta.Key, bs *compute.BackendService, m *cloud.MockRegionBackendServices) error {
+			c.MockRegionBackendServices.UpdateHook = func(ctx context.Context, key *meta.Key, bs *compute.BackendService, m *cloud.MockRegionBackendServices, options ...cloud.Option) error {
 				// Check FR names with both protocols to make sure there is no leak or incorrect update.
 				frNames := []string{l4.getFRNameWithProtocol("TCP"), l4.getFRNameWithProtocol("UDP"), l4.getIPv6FRNameWithProtocol("TCP"), l4.getIPv6FRNameWithProtocol("UDP")}
 				for _, name := range frNames {
@@ -1495,7 +1495,7 @@ func TestDualStackInternalLoadBalancerModifyProtocol(t *testing.T) {
 				return mock.UpdateRegionBackendServiceHook(ctx, key, bs, m)
 			}
 			// Before deleting forwarding rule, check, that the address was reserved
-			c.MockForwardingRules.DeleteHook = func(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules) (bool, error) {
+			c.MockForwardingRules.DeleteHook = func(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules, options ...cloud.Option) (bool, error) {
 				fr, err := c.MockForwardingRules.Get(ctx, key)
 				// if forwarding rule not exists, don't need to check if address reserved
 				if utils.IsNotFoundError(err) {

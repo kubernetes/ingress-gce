@@ -543,7 +543,7 @@ func TestPoll(t *testing.T) {
 	step = "ListNetworkEndpoint return error response"
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	m := (fakeGCE.Compute().(*cloud.MockGCE))
-	m.MockNetworkEndpointGroups.ListNetworkEndpointsHook = func(ctx context.Context, key *meta.Key, obj *compute.NetworkEndpointGroupsListEndpointsRequest, filter *filter.F, m *cloud.MockNetworkEndpointGroups) ([]*compute.NetworkEndpointWithHealthStatus, error) {
+	m.MockNetworkEndpointGroups.ListNetworkEndpointsHook = func(ctx context.Context, key *meta.Key, obj *compute.NetworkEndpointGroupsListEndpointsRequest, filter *filter.F, m *cloud.MockNetworkEndpointGroups, options ...cloud.Option) ([]*compute.NetworkEndpointWithHealthStatus, error) {
 		return nil, fmt.Errorf("random error from GCE")
 	}
 	poller.negCloud = negtypes.NewAdapter(fakeGCE)

@@ -18,11 +18,10 @@ package types
 
 import (
 	"context"
-
-	"k8s.io/ingress-gce/pkg/composite"
-
 	"fmt"
 	"net/http"
+
+	"k8s.io/ingress-gce/pkg/composite"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
@@ -62,7 +61,7 @@ func MockNetworkEndpointAPIs(fakeGCE *gce.Cloud) {
 
 // TODO: move this logic into code gen
 // TODO: make AggregateList return map[meta.Key]Object
-func MockAggregatedListNetworkEndpointGroupHook(ctx context.Context, fl *filter.F, m *cloud.MockNetworkEndpointGroups) (bool, map[string][]*compute.NetworkEndpointGroup, error) {
+func MockAggregatedListNetworkEndpointGroupHook(ctx context.Context, fl *filter.F, m *cloud.MockNetworkEndpointGroups, options ...cloud.Option) (bool, map[string][]*compute.NetworkEndpointGroup, error) {
 	objs := map[string][]*compute.NetworkEndpointGroup{}
 	for _, obj := range m.Objects {
 		res, err := cloud.ParseResourceURL(obj.ToGA().SelfLink)
@@ -92,7 +91,7 @@ func MockAggregatedListNetworkEndpointGroupHook(ctx context.Context, fl *filter.
 	return true, objs, nil
 }
 
-func MockListNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj *compute.NetworkEndpointGroupsListEndpointsRequest, filter *filter.F, m *cloud.MockNetworkEndpointGroups) ([]*compute.NetworkEndpointWithHealthStatus, error) {
+func MockListNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj *compute.NetworkEndpointGroupsListEndpointsRequest, filter *filter.F, m *cloud.MockNetworkEndpointGroups, options ...cloud.Option) ([]*compute.NetworkEndpointWithHealthStatus, error) {
 	_, err := m.Get(ctx, key)
 	if err != nil {
 		return nil, &googleapi.Error{
@@ -109,7 +108,7 @@ func MockListNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj *compu
 	return generateNetworkEndpointWithHealthStatusList(m.X.(NetworkEndpointStore)[*key]), nil
 }
 
-func MockAttachNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj *compute.NetworkEndpointGroupsAttachEndpointsRequest, m *cloud.MockNetworkEndpointGroups) error {
+func MockAttachNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj *compute.NetworkEndpointGroupsAttachEndpointsRequest, m *cloud.MockNetworkEndpointGroups, options ...cloud.Option) error {
 	_, err := m.Get(ctx, key)
 	if err != nil {
 		return &googleapi.Error{
@@ -146,7 +145,7 @@ func MockAttachNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj *com
 	return nil
 }
 
-func MockDetachNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj *compute.NetworkEndpointGroupsDetachEndpointsRequest, m *cloud.MockNetworkEndpointGroups) error {
+func MockDetachNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj *compute.NetworkEndpointGroupsDetachEndpointsRequest, m *cloud.MockNetworkEndpointGroups, options ...cloud.Option) error {
 	_, err := m.Get(ctx, key)
 	if err != nil {
 		return &googleapi.Error{

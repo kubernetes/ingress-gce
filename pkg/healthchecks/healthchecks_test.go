@@ -1270,27 +1270,27 @@ func (f *syncSPFixture) setupExistingRegionalHCFunc(region string, hc *compute.H
 
 func setupMockUpdate(mock *cloud.MockGCE) {
 	// Mock does not know how to autogenerate update() methods.
-	mock.MockHealthChecks.UpdateHook = func(ctx context.Context, k *meta.Key, hc *compute.HealthCheck, m *cloud.MockHealthChecks) error {
+	mock.MockHealthChecks.UpdateHook = func(ctx context.Context, k *meta.Key, hc *compute.HealthCheck, m *cloud.MockHealthChecks, options ...cloud.Option) error {
 		m.Objects[*k].Obj = hc
 		return nil
 	}
-	mock.MockAlphaHealthChecks.UpdateHook = func(ctx context.Context, k *meta.Key, hc *computealpha.HealthCheck, m *cloud.MockAlphaHealthChecks) error {
+	mock.MockAlphaHealthChecks.UpdateHook = func(ctx context.Context, k *meta.Key, hc *computealpha.HealthCheck, m *cloud.MockAlphaHealthChecks, options ...cloud.Option) error {
 		m.Objects[*k].Obj = hc
 		return nil
 	}
-	mock.MockBetaHealthChecks.UpdateHook = func(ctx context.Context, k *meta.Key, hc *computebeta.HealthCheck, m *cloud.MockBetaHealthChecks) error {
+	mock.MockBetaHealthChecks.UpdateHook = func(ctx context.Context, k *meta.Key, hc *computebeta.HealthCheck, m *cloud.MockBetaHealthChecks, options ...cloud.Option) error {
 		m.Objects[*k].Obj = hc
 		return nil
 	}
-	mock.MockRegionHealthChecks.UpdateHook = func(ctx context.Context, k *meta.Key, hc *compute.HealthCheck, m *cloud.MockRegionHealthChecks) error {
+	mock.MockRegionHealthChecks.UpdateHook = func(ctx context.Context, k *meta.Key, hc *compute.HealthCheck, m *cloud.MockRegionHealthChecks, options ...cloud.Option) error {
 		m.Objects[*k].Obj = hc
 		return nil
 	}
-	mock.MockAlphaRegionHealthChecks.UpdateHook = func(ctx context.Context, k *meta.Key, hc *computealpha.HealthCheck, m *cloud.MockAlphaRegionHealthChecks) error {
+	mock.MockAlphaRegionHealthChecks.UpdateHook = func(ctx context.Context, k *meta.Key, hc *computealpha.HealthCheck, m *cloud.MockAlphaRegionHealthChecks, options ...cloud.Option) error {
 		m.Objects[*k].Obj = hc
 		return nil
 	}
-	mock.MockBetaRegionHealthChecks.UpdateHook = func(ctx context.Context, k *meta.Key, hc *computebeta.HealthCheck, m *cloud.MockBetaRegionHealthChecks) error {
+	mock.MockBetaRegionHealthChecks.UpdateHook = func(ctx context.Context, k *meta.Key, hc *computebeta.HealthCheck, m *cloud.MockBetaRegionHealthChecks, options ...cloud.Option) error {
 		m.Objects[*k].Obj = hc
 		return nil
 	}
@@ -1848,7 +1848,7 @@ func TestSyncServicePort(t *testing.T) {
 
 			// Check that resync should not have an effect and does not issue
 			// an update to GCE. Hook Update() to fail.
-			mock.MockHealthChecks.UpdateHook = func(context.Context, *meta.Key, *compute.HealthCheck, *cloud.MockHealthChecks) error {
+			mock.MockHealthChecks.UpdateHook = func(context.Context, *meta.Key, *compute.HealthCheck, *cloud.MockHealthChecks, ...cloud.Option) error {
 				t.Fatalf("resync should not result in an update")
 				return nil
 			}
@@ -2154,7 +2154,7 @@ func TestCustomHealthcheckRemoval(t *testing.T) {
 
 			// Check that resync should not have an effect and does not issue
 			// an update to GCE. Hook Update() to fail.
-			mock.MockHealthChecks.UpdateHook = func(context.Context, *meta.Key, *compute.HealthCheck, *cloud.MockHealthChecks) error {
+			mock.MockHealthChecks.UpdateHook = func(context.Context, *meta.Key, *compute.HealthCheck, *cloud.MockHealthChecks, ...cloud.Option) error {
 				t.Fatalf("resync should not result in an update")
 				return nil
 			}

@@ -76,13 +76,13 @@ func newTestJig(t *testing.T) *testJig {
 	mockGCE.MockTargetHttpProxies.SetUrlMapHook = mock.SetURLMapTargetHTTPProxyHook
 	mockGCE.MockTargetHttpsProxies.SetUrlMapHook = mock.SetURLMapTargetHTTPSProxyHook
 	mockGCE.MockTargetHttpsProxies.SetSslCertificatesHook = mock.SetSslCertificateTargetHTTPSProxyHook
-	mockGCE.MockSslCertificates.InsertHook = func(ctx context.Context, key *meta.Key, obj *compute.SslCertificate, m *cloud.MockSslCertificates) (b bool, e error) {
+	mockGCE.MockSslCertificates.InsertHook = func(ctx context.Context, key *meta.Key, obj *compute.SslCertificate, m *cloud.MockSslCertificates, options ...cloud.Option) (b bool, e error) {
 		if len(m.Objects) >= FakeCertQuota {
 			return true, fmt.Errorf("error exceeded fake cert quota")
 		}
 		return false, nil
 	}
-	mockGCE.MockTargetHttpsProxies.SetSslCertificatesHook = func(ctx context.Context, key *meta.Key, request *compute.TargetHttpsProxiesSetSslCertificatesRequest, proxies *cloud.MockTargetHttpsProxies) error {
+	mockGCE.MockTargetHttpsProxies.SetSslCertificatesHook = func(ctx context.Context, key *meta.Key, request *compute.TargetHttpsProxiesSetSslCertificatesRequest, proxies *cloud.MockTargetHttpsProxies, _ ...cloud.Option) error {
 		tp, err := proxies.Get(ctx, key)
 		if err != nil {
 			return &googleapi.Error{
@@ -110,7 +110,7 @@ func newTestJig(t *testing.T) *testJig {
 		tp.SslCertificates = request.SslCertificates
 		return nil
 	}
-	mockGCE.MockTargetHttpsProxies.SetSslPolicyHook = func(ctx context.Context, key *meta.Key, ref *compute.SslPolicyReference, proxies *cloud.MockTargetHttpsProxies) error {
+	mockGCE.MockTargetHttpsProxies.SetSslPolicyHook = func(ctx context.Context, key *meta.Key, ref *compute.SslPolicyReference, proxies *cloud.MockTargetHttpsProxies, _ ...cloud.Option) error {
 		tps, err := proxies.Get(ctx, key)
 		fmt.Printf("tps = %+v, err = %v\n\n", tps, err)
 		if err != nil {
@@ -1327,7 +1327,7 @@ func TestPoolSyncNoChanges(t *testing.T) {
 
 	// Add hook to keep track of how many calls are made.
 	updateCalls := 0
-	j.mock.MockUrlMaps.UpdateHook = func(ctx context.Context, key *meta.Key, obj *compute.UrlMap, m *cloud.MockUrlMaps) error {
+	j.mock.MockUrlMaps.UpdateHook = func(ctx context.Context, key *meta.Key, obj *compute.UrlMap, m *cloud.MockUrlMaps, options ...cloud.Option) error {
 		updateCalls += 1
 		return nil
 	}

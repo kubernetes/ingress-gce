@@ -237,7 +237,7 @@ func checkBackendServiceCommon(lc *L4NetLBController, svc *v1.Service) (*composi
 	return bs, nil
 }
 
-func updateRegionBackendServiceWithLockHook(ctx context.Context, key *meta.Key, obj *ga.BackendService, m *cloud.MockRegionBackendServices) error {
+func updateRegionBackendServiceWithLockHook(ctx context.Context, key *meta.Key, obj *ga.BackendService, m *cloud.MockRegionBackendServices, options ...cloud.Option) error {
 	_, err := m.Get(ctx, key)
 	if err != nil {
 		return err
@@ -707,7 +707,7 @@ func TestProcessRBSServiceTypeTransition(t *testing.T) {
 func TestServiceDeletionWhenInstanceGroupInUse(t *testing.T) {
 	svc, lc := createAndSyncNetLBSvc(t)
 
-	(lc.ctx.Cloud.Compute().(*cloud.MockGCE)).MockInstanceGroups.DeleteHook = func(ctx context.Context, key *meta.Key, m *cloud.MockInstanceGroups) (bool, error) {
+	(lc.ctx.Cloud.Compute().(*cloud.MockGCE)).MockInstanceGroups.DeleteHook = func(ctx context.Context, key *meta.Key, m *cloud.MockInstanceGroups, options ...cloud.Option) (bool, error) {
 		err := &googleapi.Error{
 			Code:    http.StatusBadRequest,
 			Message: "GetErrorInstanceGroupHook: Cannot delete instance group being used by another service",
@@ -1135,7 +1135,7 @@ func TestControllerUserIPWithStandardNetworkTier(t *testing.T) {
 	}
 }
 
-type getForwardingRuleHook func(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules) (bool, *ga.ForwardingRule, error)
+type getForwardingRuleHook func(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules, options ...cloud.Option) (bool, *ga.ForwardingRule, error)
 
 func TestIsRBSBasedService(t *testing.T) {
 	testCases := []struct {

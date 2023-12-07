@@ -1571,7 +1571,7 @@ func TestEnableDegradedMode(t *testing.T) {
 	fakeCloud := negtypes.NewAdapter(fakeGCE)
 	mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
 	ipOutOfRange := "1.1.1.1"
-	mockGCE.MockNetworkEndpointGroups.AttachNetworkEndpointsHook = func(ctx context.Context, key *meta.Key, obj *compute.NetworkEndpointGroupsAttachEndpointsRequest, m *cloud.MockNetworkEndpointGroups) error {
+	mockGCE.MockNetworkEndpointGroups.AttachNetworkEndpointsHook = func(ctx context.Context, key *meta.Key, obj *compute.NetworkEndpointGroupsAttachEndpointsRequest, m *cloud.MockNetworkEndpointGroups, options ...cloud.Option) error {
 		for _, newEP := range obj.NetworkEndpoints {
 			if newEP.IpAddress == ipOutOfRange {
 				return &googleapi.Error{

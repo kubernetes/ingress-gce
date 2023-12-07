@@ -182,7 +182,7 @@ func TestSyncChaosMonkey(t *testing.T) {
 	// Add hook to keep track of how many calls are made.
 	// TODO(rramkumar): This is a hack. Implement function call counters in generated code.
 	createCalls := 0
-	(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.InsertHook = func(ctx context.Context, key *meta.Key, obj *compute.BackendService, m *cloud.MockBackendServices) (bool, error) {
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.InsertHook = func(ctx context.Context, key *meta.Key, obj *compute.BackendService, m *cloud.MockBackendServices, options ...cloud.Option) (bool, error) {
 		createCalls += 1
 		return false, nil
 	}
