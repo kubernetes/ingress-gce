@@ -155,7 +155,7 @@ func (sm *SyncerMetrics) export() {
 		"Network Endpoint Count", lpMetrics.NumberOfEndpoints,
 		"Endpoint Count From EPS", epCount,
 		"Endpoint Slice Count", epsCount,
-		"NEG Count", negCounts,
+		"NEG Count", fmt.Sprintf("%+v", negCounts),
 	)
 
 	finishedDurations, longestUnfinishedDurations := sm.computeDualStackMigrationDurations()
