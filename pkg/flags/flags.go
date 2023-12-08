@@ -26,7 +26,6 @@ import (
 	flag "github.com/spf13/pflag"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/component-base/config"
 	leaderelectionconfig "k8s.io/component-base/config/options"
 	"k8s.io/klog/v2"
@@ -46,9 +45,6 @@ const (
 	DefaultRenewDeadline = 10 * time.Second
 	// DefaultRetryPeriod is a 2 second retry period.
 	DefaultRetryPeriod = 2 * time.Second
-
-	// DefaultResourceLock is the type of resource used for the lock object.
-	DefaultResourceLock = resourcelock.ConfigMapsLeasesResourceLock
 
 	// DefaultLockObjectNamespace is the namespace which owns the lock object.
 	DefaultLockObjectNamespace string = "kube-system"
@@ -150,7 +146,6 @@ func defaultLeaderElectionConfiguration() LeaderElectionConfiguration {
 			LeaseDuration: metav1.Duration{Duration: DefaultLeaseDuration},
 			RenewDeadline: metav1.Duration{Duration: DefaultRenewDeadline},
 			RetryPeriod:   metav1.Duration{Duration: DefaultRetryPeriod},
-			ResourceLock:  DefaultResourceLock,
 		},
 
 		LockObjectNamespace: DefaultLockObjectNamespace,
