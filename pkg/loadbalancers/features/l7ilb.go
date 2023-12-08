@@ -22,6 +22,7 @@ import (
 	"fmt"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"k8s.io/ingress-gce/pkg/utils"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -52,7 +53,6 @@ func ILBSubnetSourceRange(cloud *gce.Cloud, region string) (string, error) {
 	return "", ErrSubnetNotFound
 }
 
-// isSameNetwork() is a helper for comparing networks across API versions
 func isSameNetwork(l, r string) (bool, error) {
 	lID, err := cloud.ParseResourceURL(l)
 	if err != nil {
@@ -63,7 +63,7 @@ func isSameNetwork(l, r string) (bool, error) {
 		return false, err
 	}
 
-	return lID.Equal(rID), nil
+	return utils.EqualCloudResourceIDs(lID, rID), nil
 }
 
 // L7ILBVersions is a helper to get the version of L7-ILB
