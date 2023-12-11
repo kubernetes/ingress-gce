@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -20,7 +19,10 @@ import (
 	"golang.org/x/oauth2/authhandler"
 )
 
-const adcSetupURL = "https://cloud.google.com/docs/authentication/external/set-up-adc"
+const (
+	adcSetupURL           = "https://cloud.google.com/docs/authentication/external/set-up-adc"
+	universeDomainDefault = "googleapis.com"
+)
 
 // Credentials holds Google credentials, including "Application Default Credentials".
 // For more details, see:
@@ -38,6 +40,18 @@ type Credentials struct {
 	// environment and not with a credentials file, e.g. when code is
 	// running on Google Cloud Platform.
 	JSON []byte
+
+	// universeDomain is the default service domain for a given Cloud universe.
+	universeDomain string
+}
+
+// UniverseDomain returns the default service domain for a given Cloud universe.
+// The default value is "googleapis.com".
+func (c *Credentials) UniverseDomain() string {
+	if c.universeDomain == "" {
+		return universeDomainDefault
+	}
+	return c.universeDomain
 }
 
 // DefaultCredentials is the old name of Credentials.
@@ -142,10 +156,8 @@ func FindDefaultCredentialsWithParams(ctx context.Context, params CredentialsPar
 
 	// Second, try a well-known file.
 	filename := wellKnownFile()
-	if creds, err := readCredentialsFile(ctx, filename, params); err == nil {
-		return creds, nil
-	} else if !os.IsNotExist(err) {
-		return nil, fmt.Errorf("google: error getting credentials using well-known file (%v): %v", filename, err)
+	if b, err := os.ReadFile(filename); err == nil {
+		return CredentialsFromJSONWithParams(ctx, b, params)
 	}
 
 	// Third, if we're on a Google App Engine standard first generation runtime (<= Go 1.9)
@@ -203,15 +215,23 @@ func CredentialsFromJSONWithParams(ctx context.Context, jsonData []byte, params 
 	if err := json.Unmarshal(jsonData, &f); err != nil {
 		return nil, err
 	}
+
+	universeDomain := f.UniverseDomain
+	// Authorized user credentials are only supported in the googleapis.com universe.
+	if f.Type == userCredentialsKey {
+		universeDomain = universeDomainDefault
+	}
+
 	ts, err := f.tokenSource(ctx, params)
 	if err != nil {
 		return nil, err
 	}
 	ts = newErrWrappingTokenSource(ts)
 	return &Credentials{
-		ProjectID:   f.ProjectID,
-		TokenSource: ts,
-		JSON:        jsonData,
+		ProjectID:      f.ProjectID,
+		TokenSource:    ts,
+		JSON:           jsonData,
+		universeDomain: universeDomain,
 	}, nil
 }
 
@@ -231,7 +251,7 @@ func wellKnownFile() string {
 }
 
 func readCredentialsFile(ctx context.Context, filename string, params CredentialsParams) (*Credentials, error) {
-	b, err := ioutil.ReadFile(filename)
+	b, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
