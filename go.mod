@@ -16,10 +16,10 @@ require (
 	golang.org/x/oauth2 v0.13.0
 	google.golang.org/api v0.151.0
 	istio.io/api v0.0.0-20190809125725-591cf32c1d0e
-	k8s.io/api v0.28.2
+	k8s.io/api v0.28.4
 	k8s.io/apiextensions-apiserver v0.26.1
-	k8s.io/apimachinery v0.28.2
-	k8s.io/client-go v0.28.2
+	k8s.io/apimachinery v0.28.4
+	k8s.io/client-go v0.28.4
 	k8s.io/cloud-provider v0.28.2
 	k8s.io/cloud-provider-gcp/crd v0.0.0-20230801075638-1b50c1969753
 	k8s.io/cloud-provider-gcp/providers v0.28.2
