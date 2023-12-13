@@ -422,7 +422,7 @@ gopkg.in/yaml.v3
 # istio.io/api v0.0.0-20190809125725-591cf32c1d0e
 ## explicit; go 1.12
 istio.io/api/networking/v1alpha3
-# k8s.io/api v0.28.2
+# k8s.io/api v0.28.4
 ## explicit; go 1.20
 k8s.io/api/admissionregistration/v1
 k8s.io/api/admissionregistration/v1alpha1
@@ -488,7 +488,7 @@ k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/typed/apiextension
 k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/typed/apiextensions/v1/fake
 k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/typed/apiextensions/v1beta1
 k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/typed/apiextensions/v1beta1/fake
-# k8s.io/apimachinery v0.28.2
+# k8s.io/apimachinery v0.28.4
 ## explicit; go 1.20
 k8s.io/apimachinery/pkg/api/equality
 k8s.io/apimachinery/pkg/api/errors
@@ -539,7 +539,7 @@ k8s.io/apimachinery/pkg/version
 k8s.io/apimachinery/pkg/watch
 k8s.io/apimachinery/third_party/forked/golang/json
 k8s.io/apimachinery/third_party/forked/golang/reflect
-# k8s.io/client-go v0.28.2
+# k8s.io/client-go v0.28.4
 ## explicit; go 1.20
 k8s.io/client-go/applyconfigurations/admissionregistration/v1
 k8s.io/client-go/applyconfigurations/admissionregistration/v1alpha1
@@ -883,7 +883,7 @@ k8s.io/cloud-provider-gcp/crd/client/network/listers/network/v1alpha1
 # k8s.io/cloud-provider-gcp/providers v0.28.2
 ## explicit; go 1.20
 k8s.io/cloud-provider-gcp/providers/gce
-# k8s.io/component-base v0.28.2
+# k8s.io/component-base v0.28.4
 ## explicit; go 1.20
 k8s.io/component-base/config
 k8s.io/component-base/config/options
