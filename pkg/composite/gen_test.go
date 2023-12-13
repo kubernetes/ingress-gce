@@ -1,5 +1,5 @@
 /*
-Copyright 2022 The Kubernetes Authors.
+Copyright 2023 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -29,6 +29,13 @@ import (
 	compute "google.golang.org/api/compute/v1"
 )
 
+func TestAWSV4Signature(t *testing.T) {
+	compositeType := reflect.TypeOf(AWSV4Signature{})
+	alphaType := reflect.TypeOf(computealpha.AWSV4Signature{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
 func TestAddress(t *testing.T) {
 	// Use reflection to verify that our composite type contains all the
 	// same fields as the alpha type.
@@ -262,6 +269,30 @@ func TestBackendServiceIAPOAuth2ClientInfo(t *testing.T) {
 	}
 }
 
+func TestBackendServiceLocalityLoadBalancingPolicyConfig(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendServiceLocalityLoadBalancingPolicyConfig{})
+	alphaType := reflect.TypeOf(computealpha.BackendServiceLocalityLoadBalancingPolicyConfig{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBackendServiceLocalityLoadBalancingPolicyConfigCustomPolicy(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendServiceLocalityLoadBalancingPolicyConfigCustomPolicy{})
+	alphaType := reflect.TypeOf(computealpha.BackendServiceLocalityLoadBalancingPolicyConfigCustomPolicy{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBackendServiceLocalityLoadBalancingPolicyConfigPolicy(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendServiceLocalityLoadBalancingPolicyConfigPolicy{})
+	alphaType := reflect.TypeOf(computealpha.BackendServiceLocalityLoadBalancingPolicyConfigPolicy{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBackendServiceLogConfig(t *testing.T) {
 	compositeType := reflect.TypeOf(BackendServiceLogConfig{})
 	alphaType := reflect.TypeOf(computealpha.BackendServiceLogConfig{})
@@ -273,6 +304,14 @@ func TestBackendServiceLogConfig(t *testing.T) {
 func TestBackendServiceReference(t *testing.T) {
 	compositeType := reflect.TypeOf(BackendServiceReference{})
 	alphaType := reflect.TypeOf(computealpha.BackendServiceReference{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBackendServiceUsedBy(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendServiceUsedBy{})
+	alphaType := reflect.TypeOf(computealpha.BackendServiceUsedBy{})
 	if err := typeEquality(compositeType, alphaType, true); err != nil {
 		t.Fatal(err)
 	}
@@ -345,6 +384,22 @@ func TestConsistentHashLoadBalancerSettingsHttpCookie(t *testing.T) {
 func TestCorsPolicy(t *testing.T) {
 	compositeType := reflect.TypeOf(CorsPolicy{})
 	alphaType := reflect.TypeOf(computealpha.CorsPolicy{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCustomErrorResponsePolicy(t *testing.T) {
+	compositeType := reflect.TypeOf(CustomErrorResponsePolicy{})
+	alphaType := reflect.TypeOf(computealpha.CustomErrorResponsePolicy{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCustomErrorResponsePolicyCustomErrorResponseRule(t *testing.T) {
+	compositeType := reflect.TypeOf(CustomErrorResponsePolicyCustomErrorResponseRule{})
+	alphaType := reflect.TypeOf(computealpha.CustomErrorResponsePolicyCustomErrorResponseRule{})
 	if err := typeEquality(compositeType, alphaType, true); err != nil {
 		t.Fatal(err)
 	}
@@ -1013,6 +1068,14 @@ func TestNetworkEndpointGroupCloudRun(t *testing.T) {
 func TestNetworkEndpointGroupLbNetworkEndpointGroup(t *testing.T) {
 	compositeType := reflect.TypeOf(NetworkEndpointGroupLbNetworkEndpointGroup{})
 	alphaType := reflect.TypeOf(computealpha.NetworkEndpointGroupLbNetworkEndpointGroup{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNetworkEndpointGroupPscData(t *testing.T) {
+	compositeType := reflect.TypeOf(NetworkEndpointGroupPscData{})
+	alphaType := reflect.TypeOf(computealpha.NetworkEndpointGroupPscData{})
 	if err := typeEquality(compositeType, alphaType, true); err != nil {
 		t.Fatal(err)
 	}
