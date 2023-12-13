@@ -35,22 +35,22 @@ const (
 	bsUrl = "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/backendServices/k8s2-axyqjz2d-default-netbtest-hgray14h"
 )
 
-func ListErrorHook(ctx context.Context, zone string, fl *filter.F, m *cloud.MockInstanceGroups) (bool, []*compute.InstanceGroup, error) {
+func ListErrorHook(ctx context.Context, zone string, fl *filter.F, m *cloud.MockInstanceGroups, options ...cloud.Option) (bool, []*compute.InstanceGroup, error) {
 	return true, nil, fmt.Errorf("ListErrorHook")
 }
-func ListInstancesWithErrorHook(context.Context, *meta.Key, *compute.InstanceGroupsListInstancesRequest, *filter.F, *cloud.MockInstanceGroups) ([]*compute.InstanceWithNamedPorts, error) {
+func ListInstancesWithErrorHook(context.Context, *meta.Key, *compute.InstanceGroupsListInstancesRequest, *filter.F, *cloud.MockInstanceGroups, ...cloud.Option) ([]*compute.InstanceWithNamedPorts, error) {
 	return nil, fmt.Errorf("ListInstancesWithErrorHook")
 }
 
-func AddInstancesErrorHook(context.Context, *meta.Key, *compute.InstanceGroupsAddInstancesRequest, *cloud.MockInstanceGroups) error {
+func AddInstancesErrorHook(context.Context, *meta.Key, *compute.InstanceGroupsAddInstancesRequest, *cloud.MockInstanceGroups, ...cloud.Option) error {
 	return fmt.Errorf("AddInstancesErrorHook")
 }
 
-func GetErrorInstanceGroupHook(ctx context.Context, key *meta.Key, m *cloud.MockInstanceGroups) (bool, *compute.InstanceGroup, error) {
+func GetErrorInstanceGroupHook(ctx context.Context, key *meta.Key, m *cloud.MockInstanceGroups, options ...cloud.Option) (bool, *compute.InstanceGroup, error) {
 	return true, nil, fmt.Errorf("GetErrorInstanceGroupHook")
 }
 
-func InsertErrorHook(ctx context.Context, key *meta.Key, obj *compute.InstanceGroup, m *cloud.MockInstanceGroups) (bool, error) {
+func InsertErrorHook(ctx context.Context, key *meta.Key, obj *compute.InstanceGroup, m *cloud.MockInstanceGroups, options ...cloud.Option) (bool, error) {
 	return true, fmt.Errorf("InsertErrorHook")
 }
 
@@ -58,73 +58,73 @@ func SetNamedPortsErrorHook(context.Context, *meta.Key, *compute.InstanceGroupsS
 	return fmt.Errorf("SetNamedPortsErrorHook")
 }
 
-func InsertForwardingRuleHook(ctx context.Context, key *meta.Key, obj *compute.ForwardingRule, m *cloud.MockForwardingRules) (b bool, e error) {
+func InsertForwardingRuleHook(ctx context.Context, key *meta.Key, obj *compute.ForwardingRule, m *cloud.MockForwardingRules, options ...cloud.Option) (b bool, e error) {
 	if obj.IPAddress == "" {
 		obj.IPAddress = FwIPAddress
 	}
 	return false, nil
 }
 
-func InsertForwardingRuleErrorHook(err error) func(ctx context.Context, key *meta.Key, obj *compute.ForwardingRule, m *cloud.MockForwardingRules) (b bool, e error) {
-	return func(ctx context.Context, key *meta.Key, obj *compute.ForwardingRule, m *cloud.MockForwardingRules) (b bool, e error) {
+func InsertForwardingRuleErrorHook(err error) func(ctx context.Context, key *meta.Key, obj *compute.ForwardingRule, m *cloud.MockForwardingRules, options ...cloud.Option) (b bool, e error) {
+	return func(ctx context.Context, key *meta.Key, obj *compute.ForwardingRule, m *cloud.MockForwardingRules, options ...cloud.Option) (b bool, e error) {
 		return true, err
 	}
 }
 
-func DeleteForwardingRulesErrorHook(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules) (bool, error) {
+func DeleteForwardingRulesErrorHook(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules, options ...cloud.Option) (bool, error) {
 	return true, fmt.Errorf("DeleteForwardingRulesErrorHook")
 }
 
-func DeleteAddressErrorHook(ctx context.Context, key *meta.Key, m *cloud.MockAddresses) (bool, error) {
+func DeleteAddressErrorHook(ctx context.Context, key *meta.Key, m *cloud.MockAddresses, options ...cloud.Option) (bool, error) {
 	return true, fmt.Errorf("DeleteAddressErrorHook")
 }
 
-func DeleteFirewallsErrorHook(ctx context.Context, key *meta.Key, m *cloud.MockFirewalls) (bool, error) {
+func DeleteFirewallsErrorHook(ctx context.Context, key *meta.Key, m *cloud.MockFirewalls, options ...cloud.Option) (bool, error) {
 	return true, fmt.Errorf("DeleteFirewallsErrorHook")
 }
 
-func DeleteBackendServicesErrorHook(ctx context.Context, key *meta.Key, m *cloud.MockRegionBackendServices) (bool, error) {
+func DeleteBackendServicesErrorHook(ctx context.Context, key *meta.Key, m *cloud.MockRegionBackendServices, options ...cloud.Option) (bool, error) {
 	return true, fmt.Errorf("DeleteBackendServicesErrorHook")
 }
 
-func UpdateRegionBackendServiceWithErrorHookUpdate(context.Context, *meta.Key, *compute.BackendService, *cloud.MockRegionBackendServices) error {
+func UpdateRegionBackendServiceWithErrorHookUpdate(context.Context, *meta.Key, *compute.BackendService, *cloud.MockRegionBackendServices, ...cloud.Option) error {
 	return fmt.Errorf("Undefined error")
 }
 
-func DeleteHealthCheckErrorHook(ctx context.Context, key *meta.Key, m *cloud.MockRegionHealthChecks) (bool, error) {
+func DeleteHealthCheckErrorHook(ctx context.Context, key *meta.Key, m *cloud.MockRegionHealthChecks, options ...cloud.Option) (bool, error) {
 	return true, fmt.Errorf("DeleteHealthCheckErrorHook")
 }
 
-func DeleteRegionalHealthCheckResourceInUseErrorHook(ctx context.Context, key *meta.Key, m *cloud.MockRegionHealthChecks) (bool, error) {
+func DeleteRegionalHealthCheckResourceInUseErrorHook(ctx context.Context, key *meta.Key, m *cloud.MockRegionHealthChecks, options ...cloud.Option) (bool, error) {
 	return true, &googleapi.Error{Code: http.StatusBadRequest, Message: "Cannot delete health check resource being used by another service"}
 }
-func DeleteHealthCheckResourceInUseErrorHook(ctx context.Context, key *meta.Key, m *cloud.MockHealthChecks) (bool, error) {
+func DeleteHealthCheckResourceInUseErrorHook(ctx context.Context, key *meta.Key, m *cloud.MockHealthChecks, options ...cloud.Option) (bool, error) {
 	return true, &googleapi.Error{Code: http.StatusBadRequest, Message: "Cannot delete health check resource being used by another service"}
 }
 
-func GetLegacyForwardingRule(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules) (bool, *compute.ForwardingRule, error) {
+func GetLegacyForwardingRule(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules, options ...cloud.Option) (bool, *compute.ForwardingRule, error) {
 	fwRule := compute.ForwardingRule{Target: "some_target", LoadBalancingScheme: string(cloud.SchemeExternal), NetworkTier: cloud.NetworkTierDefault.ToGCEValue()}
 	return true, &fwRule, nil
 }
 
-func GetRBSForwardingRule(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules) (bool, *compute.ForwardingRule, error) {
+func GetRBSForwardingRule(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules, options ...cloud.Option) (bool, *compute.ForwardingRule, error) {
 	fwRule := compute.ForwardingRule{BackendService: bsUrl, LoadBalancingScheme: string(cloud.SchemeExternal), NetworkTier: cloud.NetworkTierDefault.ToGCEValue()}
 	return true, &fwRule, nil
 }
 
-func GetRBSForwardingRuleInStandardTier(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules) (bool, *compute.ForwardingRule, error) {
+func GetRBSForwardingRuleInStandardTier(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules, options ...cloud.Option) (bool, *compute.ForwardingRule, error) {
 	fwRule := compute.ForwardingRule{BackendService: bsUrl, LoadBalancingScheme: string(cloud.SchemeExternal), NetworkTier: cloud.NetworkTierStandard.ToGCEValue()}
 	return true, &fwRule, nil
 }
 
-func InsertAddressErrorHook(ctx context.Context, key *meta.Key, obj *compute.Address, m *cloud.MockAddresses) (bool, error) {
+func InsertAddressErrorHook(ctx context.Context, key *meta.Key, obj *compute.Address, m *cloud.MockAddresses, options ...cloud.Option) (bool, error) {
 	return true, &googleapi.Error{Code: http.StatusBadRequest, Message: "Cannot reserve region address, the resource already exist"}
 }
 
-func InsertAddressNetworkErrorHook(ctx context.Context, key *meta.Key, obj *compute.Address, m *cloud.MockAddresses) (bool, error) {
+func InsertAddressNetworkErrorHook(ctx context.Context, key *meta.Key, obj *compute.Address, m *cloud.MockAddresses, options ...cloud.Option) (bool, error) {
 	return true, &googleapi.Error{Code: http.StatusBadRequest, Message: "The network tier of external IP is STANDARD, that of Address must be the same."}
 }
 
-func InsertAddressNotAllocatedToProjectErrorHook(ctx context.Context, key *meta.Key, obj *compute.Address, m *cloud.MockAddresses) (bool, error) {
+func InsertAddressNotAllocatedToProjectErrorHook(ctx context.Context, key *meta.Key, obj *compute.Address, m *cloud.MockAddresses, options ...cloud.Option) (bool, error) {
 	return true, &googleapi.Error{Code: http.StatusBadRequest, Message: "Specified IP address is not allocated to the project or does not belong to the specified scope."}
 }

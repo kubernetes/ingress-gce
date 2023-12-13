@@ -1059,7 +1059,7 @@ func newTestController(clusterType string) *Controller {
 	mockSA := fakeGCE.ServiceAttachments().(*cloud.MockServiceAttachments)
 
 	// Mock has a noop for the Patch. Add the patch hook so GCE SA gets updated when mock patch is called
-	mockSA.PatchHook = func(ctx context2.Context, key *meta.Key, sa *ga.ServiceAttachment, fake *cloud.MockServiceAttachments) error {
+	mockSA.PatchHook = func(ctx context2.Context, key *meta.Key, sa *ga.ServiceAttachment, fake *cloud.MockServiceAttachments, _ ...cloud.Option) error {
 		if !key.Valid() {
 			return fmt.Errorf("PatchHook: invalid GCE key (%+v)", key)
 		}

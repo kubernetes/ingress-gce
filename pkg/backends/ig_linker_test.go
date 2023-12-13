@@ -108,7 +108,7 @@ func TestLinkWithCreationModeError(t *testing.T) {
 	// and verify that a backend with the other balancingMode is
 	// updated properly.
 	for i, bm := range modes {
-		(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.UpdateHook = func(ctx context.Context, key *meta.Key, be *compute.BackendService, m *cloud.MockBackendServices) error {
+		(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.UpdateHook = func(ctx context.Context, key *meta.Key, be *compute.BackendService, m *cloud.MockBackendServices, options ...cloud.Option) error {
 			for _, b := range be.Backends {
 				if b.BalancingMode == string(bm) {
 					return &googleapi.Error{Code: http.StatusBadRequest}

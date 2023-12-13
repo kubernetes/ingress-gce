@@ -393,7 +393,26 @@ func EqualResourceIDs(a, b string) bool {
 		return false
 	}
 
-	return aId.Equal(bId)
+	return EqualCloudResourceIDs(aId, bId)
+}
+
+// EqualCloudResourceIDs returns true if a and b have equal ResourceIDs which entail the project,
+// location, resource type, and resource name.
+func EqualCloudResourceIDs(a, b *cloud.ResourceID) bool {
+	switch {
+	case a == nil && b == nil:
+		return true
+	case a == nil || b == nil:
+		return false
+	case a.ProjectID != b.ProjectID || a.Resource != b.Resource:
+		return false
+	case a.Key != nil && b.Key != nil:
+		return *a.Key == *b.Key
+	case a.Key == nil && b.Key == nil:
+		return true
+	default:
+		return false
+	}
 }
 
 // IsGCEIngress returns true if the Ingress matches the class managed by this

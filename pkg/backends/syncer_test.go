@@ -476,13 +476,13 @@ func TestSyncQuota(t *testing.T) {
 				bsCreated += 1
 				return false, nil
 			}
-			(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.InsertHook = func(ctx context.Context, key *meta.Key, be *compute.BackendService, m *cloud.MockBackendServices) (bool, error) {
+			(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.InsertHook = func(ctx context.Context, key *meta.Key, be *compute.BackendService, m *cloud.MockBackendServices, options ...cloud.Option) (bool, error) {
 				return insertFunc(ctx, key, be.Name)
 			}
-			(fakeGCE.Compute().(*cloud.MockGCE)).MockBetaBackendServices.InsertHook = func(ctx context.Context, key *meta.Key, be *computebeta.BackendService, m *cloud.MockBetaBackendServices) (bool, error) {
+			(fakeGCE.Compute().(*cloud.MockGCE)).MockBetaBackendServices.InsertHook = func(ctx context.Context, key *meta.Key, be *computebeta.BackendService, m *cloud.MockBetaBackendServices, options ...cloud.Option) (bool, error) {
 				return insertFunc(ctx, key, be.Name)
 			}
-			(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.DeleteHook = func(ctx context.Context, key *meta.Key, m *cloud.MockBackendServices) (bool, error) {
+			(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.DeleteHook = func(ctx context.Context, key *meta.Key, m *cloud.MockBackendServices, options ...cloud.Option) (bool, error) {
 				bsCreated -= 1
 				return false, nil
 			}

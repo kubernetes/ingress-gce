@@ -430,7 +430,7 @@ func Equal(fr1, fr2 *composite.ForwardingRule) (bool, error) {
 		fr1.LoadBalancingScheme == fr2.LoadBalancingScheme &&
 		utils.EqualStringSets(fr1.Ports, fr2.Ports) &&
 		fr1.PortRange == fr2.PortRange &&
-		id1.Equal(id2) &&
+		utils.EqualCloudResourceIDs(id1, id2) &&
 		fr1.AllowGlobalAccess == fr2.AllowGlobalAccess &&
 		fr1.AllPorts == fr2.AllPorts &&
 		equalResourcePaths(fr1.Subnetwork, fr2.Subnetwork) &&

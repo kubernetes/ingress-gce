@@ -1539,9 +1539,9 @@ func checkMetrics(m metrics.L4NetLBServiceLegacyState, isManaged, isPremium, isU
 	return nil
 }
 
-func assertAddressOldReservedHook(t *testing.T, gceCloud *gce.Cloud) func(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules) (bool, error) {
+func assertAddressOldReservedHook(t *testing.T, gceCloud *gce.Cloud) func(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules, options ...cloud.Option) (bool, error) {
 	mockGCE := gceCloud.Compute().(*cloud.MockGCE)
-	return func(ctx context.Context, key *meta.Key, _ *cloud.MockForwardingRules) (bool, error) {
+	return func(ctx context.Context, key *meta.Key, _ *cloud.MockForwardingRules, _ ...cloud.Option) (bool, error) {
 		fr, err := mockGCE.MockForwardingRules.Get(ctx, key)
 		// if forwarding rule not exists, don't need to check if address reserved
 		if utils.IsNotFoundError(err) {
