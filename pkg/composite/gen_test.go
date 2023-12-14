@@ -309,6 +309,14 @@ func TestBackendServiceReference(t *testing.T) {
 	}
 }
 
+func TestBackendServiceUsedBy(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendServiceUsedBy{})
+	alphaType := reflect.TypeOf(computealpha.BackendServiceUsedBy{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCacheKeyPolicy(t *testing.T) {
 	compositeType := reflect.TypeOf(CacheKeyPolicy{})
 	alphaType := reflect.TypeOf(computealpha.CacheKeyPolicy{})
