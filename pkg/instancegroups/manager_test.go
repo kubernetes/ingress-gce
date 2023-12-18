@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 )
 
 const (
@@ -35,12 +36,15 @@ const (
 var defaultNamer = namer.NewNamer("uid1", "fw1")
 
 func newNodePool(f *FakeInstanceGroups, zone string, maxIGSize int) Manager {
+	nodeInformer := zonegetter.FakeNodeInformer()
+	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+
 	pool := NewManager(&ManagerConfig{
 		Cloud:      f,
 		Namer:      defaultNamer,
 		Recorders:  &test.FakeRecorderSource{},
 		BasePath:   basePath,
-		ZoneLister: &FakeZoneLister{[]string{zone}},
+		ZoneGetter: fakeZoneGetter,
 		MaxIGSize:  maxIGSize,
 	})
 	return pool
@@ -93,6 +97,10 @@ func TestNodePoolSync(t *testing.T) {
 		fakeGCEInstanceGroups := NewFakeInstanceGroups(zonesToIGs, maxIGSize)
 
 		pool := newNodePool(fakeGCEInstanceGroups, defaultZone, maxIGSize)
+		for _, kubeNode := range testCase.kubeNodes.List() {
+			manager := pool.(*manager)
+			zonegetter.AddFakeNodes(manager.ZoneGetter, defaultZone, kubeNode)
+		}
 
 		igName := defaultNamer.InstanceGroup()
 		ports := []int64{80}
@@ -158,6 +166,8 @@ func TestSetNamedPorts(t *testing.T) {
 	}
 	fakeIGs := NewFakeInstanceGroups(zonesToIGs, maxIGSize)
 	pool := newNodePool(fakeIGs, defaultZone, maxIGSize)
+	manager := pool.(*manager)
+	zonegetter.AddFakeNodes(manager.ZoneGetter, defaultZone, "test-node")
 
 	testCases := []struct {
 		activePorts   []int64

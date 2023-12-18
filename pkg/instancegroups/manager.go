@@ -26,6 +26,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
 
 	core "k8s.io/api/core/v1"
@@ -41,8 +42,8 @@ const (
 
 // manager implements Manager.
 type manager struct {
-	cloud Provider
-	ZoneLister
+	cloud              Provider
+	ZoneGetter         *zonegetter.ZoneGetter
 	namer              namer.BackendNamer
 	recorder           record.EventRecorder
 	instanceLinkFormat string
@@ -60,7 +61,7 @@ type ManagerConfig struct {
 	Namer      namer.BackendNamer
 	Recorders  recorderSource
 	BasePath   string
-	ZoneLister ZoneLister
+	ZoneGetter *zonegetter.ZoneGetter
 	MaxIGSize  int
 }
 
@@ -71,7 +72,7 @@ func NewManager(config *ManagerConfig) Manager {
 		namer:              config.Namer,
 		recorder:           config.Recorders.Recorder(""), // No namespace
 		instanceLinkFormat: config.BasePath + "zones/%s/instances/%s",
-		ZoneLister:         config.ZoneLister,
+		ZoneGetter:         config.ZoneGetter,
 		maxIGSize:          config.MaxIGSize,
 	}
 }
@@ -81,7 +82,7 @@ func NewManager(config *ManagerConfig) Manager {
 // all of which have the exact same named ports.
 func (m *manager) EnsureInstanceGroupsAndPorts(name string, ports []int64) (igs []*compute.InstanceGroup, err error) {
 	// Instance groups need to be created only in zones that have ready nodes.
-	zones, err := m.ListZones(utils.CandidateNodesPredicate)
+	zones, err := m.ZoneGetter.List(zonegetter.CandidateNodesFilter, klog.TODO())
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +164,7 @@ func (m *manager) ensureInstanceGroupAndPorts(name, zone string, ports []int64) 
 func (m *manager) DeleteInstanceGroup(name string) error {
 	var errs []error
 
-	zones, err := m.ListZones(utils.AllNodesPredicate)
+	zones, err := m.ZoneGetter.List(zonegetter.AllNodesFilter, klog.TODO())
 	if err != nil {
 		return err
 	}
@@ -192,7 +193,7 @@ func (m *manager) DeleteInstanceGroup(name string) error {
 func (m *manager) listIGInstances(name string) (sets.String, map[string]string, error) {
 	nodeNames := sets.NewString()
 	nodeZoneMap := make(map[string]string)
-	zones, err := m.ListZones(utils.AllNodesPredicate)
+	zones, err := m.ZoneGetter.List(zonegetter.AllNodesFilter, klog.TODO())
 	if err != nil {
 		return nodeNames, nodeZoneMap, err
 	}
@@ -228,7 +229,7 @@ func (m *manager) Get(name, zone string) (*compute.InstanceGroup, error) {
 func (m *manager) List() ([]string, error) {
 	var igs []*compute.InstanceGroup
 
-	zones, err := m.ListZones(utils.AllNodesPredicate)
+	zones, err := m.ZoneGetter.List(zonegetter.AllNodesFilter, klog.TODO())
 	if err != nil {
 		return nil, err
 	}
@@ -259,7 +260,7 @@ func (m *manager) List() ([]string, error) {
 func (m *manager) splitNodesByZone(names []string) map[string][]string {
 	nodesByZone := map[string][]string{}
 	for _, name := range names {
-		zone, err := m.GetZoneForNode(name)
+		zone, err := m.ZoneGetter.ZoneForNode(name, klog.TODO())
 		if err != nil {
 			klog.Errorf("Failed to get zones for %v: %v, skipping", name, err)
 			continue
