@@ -149,6 +149,9 @@ func NewLoadBalancerController(
 		AddFunc: func(obj interface{}) {
 			addIng := obj.(*v1.Ingress)
 			if !utils.IsGLBCIngress(addIng) {
+				if flags.F.DisableIngressGlobalExternal && annotations.FromIngress(addIng).IngressClass() == annotations.GceIngressClass {
+					lbc.ctx.Recorder(addIng.Namespace).Eventf(addIng, apiv1.EventTypeWarning, events.SyncIngress, "Ingress class \"gce\" is not supported in this environment. Please use \"gce-regional-external\".")
+				}
 				klog.V(4).Infof("Ignoring add for ingress %v based on annotation %v", common.NamespacedName(addIng), annotations.IngressClassKey)
 				return
 			}
@@ -188,6 +191,9 @@ func NewLoadBalancerController(
 					klog.V(2).Infof("Ingress %s class was changed but has a glbc finalizer, enqueuing", common.NamespacedName(curIng))
 					lbc.ingQueue.Enqueue(cur)
 					return
+				}
+				if flags.F.DisableIngressGlobalExternal && annotations.FromIngress(curIng).IngressClass() == annotations.GceIngressClass {
+					lbc.ctx.Recorder(curIng.Namespace).Eventf(curIng, apiv1.EventTypeWarning, events.SyncIngress, "Ingress class \"gce\" is not supported in this environment. Please use \"gce-regional-external\".")
 				}
 				return
 			}
