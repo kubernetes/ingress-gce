@@ -37,11 +37,12 @@ const (
 	// WARNING: Please keep the following constants in sync with
 	// pkg/annotations/ingress.go
 	// allowHTTPKey tells the Ingress controller to allow/block HTTP access.
-	allowHTTPKey         = "kubernetes.io/ingress.allow-http"
-	ingressClassKey      = "kubernetes.io/ingress.class"
-	gceIngressClass      = "gce"
-	gceMultiIngressClass = "gce-multi-cluster"
-	gceL7ILBIngressClass = "gce-internal"
+	allowHTTPKey                      = "kubernetes.io/ingress.allow-http"
+	ingressClassKey                   = "kubernetes.io/ingress.class"
+	gceIngressClass                   = "gce"
+	gceMultiIngressClass              = "gce-multi-cluster"
+	gceL7ILBIngressClass              = "gce-internal"
+	gceL7RegionalExternalIngressClass = "gce-regional-external"
 	// preSharedCertKey represents the specific pre-shared SSL
 	// certificate for the Ingress controller to use.
 	preSharedCertKey = "ingress.gcp.kubernetes.io/pre-shared-cert"
@@ -60,6 +61,7 @@ const (
 	ingress                   = feature("Ingress")
 	externalIngress           = feature("ExternalIngress")
 	internalIngress           = feature("InternalIngress")
+	regionalExternalIngress   = feature("RegionalExternalIngress")
 	httpEnabled               = feature("HTTPEnabled")
 	hostBasedRouting          = feature("HostBasedRouting")
 	pathBasedRouting          = feature("PathBasedRouting")
@@ -72,10 +74,11 @@ const (
 	specifiedStaticGlobalIP   = feature("SpecifiedStaticGlobalIP")
 	specifiedStaticRegionalIP = feature("SpecifiedStaticRegionalIP")
 
-	servicePort         = feature("L7LBServicePort")
-	externalServicePort = feature("L7XLBServicePort")
-	internalServicePort = feature("L7ILBServicePort")
-	neg                 = feature("NEG")
+	servicePort                 = feature("L7LBServicePort")
+	externalServicePort         = feature("L7XLBServicePort")
+	internalServicePort         = feature("L7ILBServicePort")
+	regionalExternalServicePort = feature("L7RegionalXLBServicePort")
+	neg                         = feature("NEG")
 
 	// BackendConfig Features
 	cloudCDN                  = feature("CloudCDN")
@@ -158,6 +161,8 @@ func featuresForIngress(ing *v1.Ingress, fc *frontendconfigv1beta1.FrontendConfi
 		features = append(features, externalIngress)
 	case gceL7ILBIngressClass:
 		features = append(features, internalIngress)
+	case gceL7RegionalExternalIngressClass:
+		features = append(features, regionalExternalIngress)
 	}
 
 	// Determine if http is enabled.
@@ -282,6 +287,9 @@ func featuresForServicePort(sp utils.ServicePort) []feature {
 	if sp.L7ILBEnabled {
 		klog.V(6).Infof("L7 ILB is enabled for service port %s", svcPortKey)
 		features = append(features, internalServicePort)
+	} else if sp.L7XLBRegionalEnabled {
+		klog.V(6).Infof("L7 Regional XLB is enabled for service port %s", svcPortKey)
+		features = append(features, regionalExternalServicePort)
 	} else {
 		features = append(features, externalServicePort)
 	}

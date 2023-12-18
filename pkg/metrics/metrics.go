@@ -476,6 +476,7 @@ func initializeCounts() (map[feature]int, map[feature]int) {
 			ingress:                   0,
 			externalIngress:           0,
 			internalIngress:           0,
+			regionalExternalIngress:   0,
 			httpEnabled:               0,
 			hostBasedRouting:          0,
 			pathBasedRouting:          0,
@@ -499,22 +500,23 @@ func initializeCounts() (map[feature]int, map[feature]int) {
 		},
 		// service port counts
 		map[feature]int{
-			servicePort:               0,
-			externalServicePort:       0,
-			internalServicePort:       0,
-			neg:                       0,
-			cloudCDN:                  0,
-			cloudArmor:                0,
-			cloudArmorSet:             0,
-			cloudArmorEmpty:           0,
-			cloudArmorNil:             0,
-			cloudIAP:                  0,
-			backendTimeout:            0,
-			backendConnectionDraining: 0,
-			clientIPAffinity:          0,
-			cookieAffinity:            0,
-			customRequestHeaders:      0,
-			transparentHealthChecks:   0,
+			servicePort:                 0,
+			externalServicePort:         0,
+			internalServicePort:         0,
+			regionalExternalServicePort: 0,
+			neg:                         0,
+			cloudCDN:                    0,
+			cloudArmor:                  0,
+			cloudArmorSet:               0,
+			cloudArmorEmpty:             0,
+			cloudArmorNil:               0,
+			cloudIAP:                    0,
+			backendTimeout:              0,
+			backendConnectionDraining:   0,
+			clientIPAffinity:            0,
+			cookieAffinity:              0,
+			customRequestHeaders:        0,
+			transparentHealthChecks:     0,
 		}
 }
 
@@ -536,13 +538,14 @@ func updateIngressCount(ingCount map[feature]int, features map[feature]bool) {
 // not to the ingress that references this service-port.
 func isServiceFeature(ftr feature) bool {
 	serviceFeatures := map[feature]bool{
-		servicePort:             true,
-		externalServicePort:     true,
-		internalServicePort:     true,
-		transparentHealthChecks: true,
-		cloudArmorEmpty:         true,
-		cloudArmorNil:           true,
-		cloudArmorSet:           true,
+		servicePort:                 true,
+		externalServicePort:         true,
+		internalServicePort:         true,
+		regionalExternalServicePort: true,
+		transparentHealthChecks:     true,
+		cloudArmorEmpty:             true,
+		cloudArmorNil:               true,
+		cloudArmorSet:               true,
 	}
 	return serviceFeatures[ftr]
 }
