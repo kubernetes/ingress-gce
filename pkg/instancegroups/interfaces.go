@@ -18,7 +18,6 @@ package instancegroups
 
 import (
 	compute "google.golang.org/api/compute/v1"
-	"k8s.io/ingress-gce/pkg/utils"
 )
 
 // Manager is an interface to sync kubernetes nodes to google cloud instance groups
@@ -31,12 +30,6 @@ type Manager interface {
 	List() ([]string, error)
 
 	Sync(nodeNames []string) error
-}
-
-// ZoneLister manages lookups for GCE instance groups/instances to zones.
-type ZoneLister interface {
-	ListZones(predicate utils.NodeConditionPredicate) ([]string, error)
-	GetZoneForNode(name string) (string, error)
 }
 
 // Provider is an interface for managing gce instances groups, and the instances therein.
