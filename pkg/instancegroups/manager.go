@@ -187,27 +187,31 @@ func (m *manager) DeleteInstanceGroup(name string) error {
 }
 
 // listIGInstances lists all instances of provided instance group name in all zones.
-func (m *manager) listIGInstances(name string) (sets.String, error) {
+// The return format will be a set of nodes in the instance group and
+// a map from node name to zone.
+func (m *manager) listIGInstances(name string) (sets.String, map[string]string, error) {
 	nodeNames := sets.NewString()
+	nodeZoneMap := make(map[string]string)
 	zones, err := m.ListZones(utils.AllNodesPredicate)
 	if err != nil {
-		return nodeNames, err
+		return nodeNames, nodeZoneMap, err
 	}
 
 	for _, zone := range zones {
 		instances, err := m.cloud.ListInstancesInInstanceGroup(name, zone, allInstances)
 		if err != nil {
-			return nodeNames, err
+			return nodeNames, nodeZoneMap, err
 		}
 		for _, ins := range instances {
 			name, err := utils.KeyName(ins.Instance)
 			if err != nil {
-				return nodeNames, err
+				return nodeNames, nodeZoneMap, err
 			}
 			nodeNames.Insert(name)
+			nodeZoneMap[name] = zone
 		}
 	}
-	return nodeNames, nil
+	return nodeNames, nodeZoneMap, nil
 }
 
 // Get returns the Instance Group by name.
@@ -297,10 +301,27 @@ func (m *manager) add(groupName string, names []string) error {
 }
 
 // Remove removes the given instances from the appropriately zoned Instance Group.
-func (m *manager) remove(groupName string, names []string) error {
+func (m *manager) remove(groupName string, names []string, nodeZoneMap map[string]string) error {
 	events.GlobalEventf(m.recorder, core.EventTypeNormal, events.RemoveNodes, "Removing %s from InstanceGroup %q", events.TruncatedStringList(names), groupName)
 	var errs []error
-	for zone, nodeNames := range m.splitNodesByZone(names) {
+
+	// Get the zone information from nameZoneMap instead of ZoneGetter.
+	// Since the ZoneGetter is based on k8s nodes but in most remove cases,
+	// k8s nodes do not exist. It will be impossible to get zone infromation.
+	nodesByZone := map[string][]string{}
+	for _, name := range names {
+		zone, ok := nodeZoneMap[name]
+		if !ok {
+			klog.Errorf("Failed to get zones for %v, skipping", name)
+			continue
+		}
+		if _, ok := nodesByZone[zone]; !ok {
+			nodesByZone[zone] = []string{}
+		}
+		nodesByZone[zone] = append(nodesByZone[zone], name)
+	}
+
+	for zone, nodeNames := range nodesByZone {
 		klog.V(1).Infof("Removing %d nodes from %v in zone %v", len(nodeNames), groupName, zone)
 		if err := m.cloud.RemoveInstancesFromInstanceGroup(groupName, zone, m.getInstanceReferences(zone, nodeNames)); err != nil {
 			errs = append(errs, err)
@@ -339,8 +360,10 @@ func (m *manager) Sync(nodes []string) (err error) {
 	}
 
 	for _, igName := range pool {
-		gceNodes := sets.NewString()
-		gceNodes, err = m.listIGInstances(igName)
+		// Keep the zone information for each node in this map.
+		// This will be used as a reference to get zone information
+		// when removing nodes.
+		gceNodes, gceNodeZoneMap, err := m.listIGInstances(igName)
 		if err != nil {
 			klog.Errorf("list(%q) error: %v", igName, err)
 			return err
@@ -378,7 +401,7 @@ func (m *manager) Sync(nodes []string) (err error) {
 
 		start := time.Now()
 		if len(removeNodes) != 0 {
-			err = m.remove(igName, removeNodes)
+			err = m.remove(igName, removeNodes, gceNodeZoneMap)
 			klog.V(2).Infof("Remove(%q, _) = %v (took %s); nodes = %v", igName, err, time.Now().Sub(start), removeNodes)
 			if err != nil {
 				return err
