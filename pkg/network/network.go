@@ -61,9 +61,7 @@ func NewNetworksResolver(networkLister, gkeNetworkParamSetLister cache.Indexer, 
 	}
 }
 
-// ServiceNetwork determines the network data to be used for the LB resources.
-// This function currently returns only the default network but will provide
-// secondary networks information for multi-networked services in the future.
+// ServiceNetwork determines the network data to be used for the L4 LB resources.
 func (nr *NetworksResolver) ServiceNetwork(service *apiv1.Service) (*NetworkInfo, error) {
 	if !nr.enableMultinetworking || nr.networkLister == nil || nr.gkeNetworkParamSetLister == nil {
 		return DefaultNetwork(nr.cloudProvider), nil
@@ -73,6 +71,12 @@ func (nr *NetworksResolver) ServiceNetwork(service *apiv1.Service) (*NetworkInfo
 	if !ok || networkName == "" || networkName == networkv1.DefaultPodNetworkName {
 		return DefaultNetwork(nr.cloudProvider), nil
 	}
+
+	// TODO: remove this check once DPv2 supports externalTrafficPolicy=Cluster services.
+	if service.Spec.ExternalTrafficPolicy != apiv1.ServiceExternalTrafficPolicyLocal {
+		return nil, utils.NewUserError(fmt.Errorf("multinetwork services with externalTrafficPolicy='%s' are not supported, only externalTrafficPolicy=Local services are supported", service.Spec.ExternalTrafficPolicy))
+	}
+
 	obj, exists, err := nr.networkLister.GetByKey(networkName)
 	if err != nil {
 		return nil, err
@@ -85,6 +89,9 @@ func (nr *NetworksResolver) ServiceNetwork(service *apiv1.Service) (*NetworkInfo
 		return nil, fmt.Errorf("cannot convert to Network (%T)", obj)
 	}
 	nr.logger.Info("Found network for service", "network", network.Name, "service", service.Name, "namespace", service.Namespace)
+	if network.Spec.Type != networkv1.L3NetworkType {
+		return nil, utils.NewUserError(fmt.Errorf("network.Spec.Type=%s is not supported for multinetwork LoadBalancer services, the only supported network type is L3", network.Spec.Type))
+	}
 	parametersRef := network.Spec.ParametersRef
 	if !refersGKENetworkParamSet(parametersRef) {
 		return nil, utils.NewUserError(fmt.Errorf("network.Spec.ParametersRef does not refer a GKENetworkParamSet resource"))
@@ -100,7 +107,7 @@ func (nr *NetworksResolver) ServiceNetwork(service *apiv1.Service) (*NetworkInfo
 		return nil, utils.NewUserError(fmt.Errorf("GKENetworkParamSet %s was not found", parametersRef.Name))
 	}
 	gkeNetworkParamSet := gkeParamsObj.(*networkv1.GKENetworkParamSet)
-	if network == nil {
+	if gkeNetworkParamSet == nil {
 		return nil, fmt.Errorf("cannot convert to GKENetworkParamSet (%T)", gkeParamsObj)
 	}
 	netURL := networkURL(nr.cloudProvider, gkeNetworkParamSet.Spec.VPC)
