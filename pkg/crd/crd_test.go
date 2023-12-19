@@ -19,6 +19,7 @@ package crd
 import (
 	"context"
 	"fmt"
+	"k8s.io/klog/v2"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -62,7 +63,7 @@ func TestCreateOrUpdateCRD(t *testing.T) {
 		{
 			desc: "Update CRD when exist with wrongname",
 			initFunc: func(clientset crdclient.Interface, namespaceScoped bool) error {
-				crd := crd(crdMeta, namespaceScoped)
+				crd := crd(crdMeta, namespaceScoped, klog.TODO())
 				crd.Spec.Names.Kind = "wrongname"
 				crd.Spec.Names.ListKind = "wrongnameList"
 				if _, err := clientset.ApiextensionsV1().CustomResourceDefinitions().Create(context.TODO(), crd, metav1.CreateOptions{}); err != nil {
@@ -74,7 +75,7 @@ func TestCreateOrUpdateCRD(t *testing.T) {
 		{
 			desc: "Update CRD when pruning is not enabled",
 			initFunc: func(clientset crdclient.Interface, namespaceScoped bool) error {
-				crd := crd(crdMeta, namespaceScoped)
+				crd := crd(crdMeta, namespaceScoped, klog.TODO())
 				crd.Spec.PreserveUnknownFields = trueValue
 				if _, err := clientset.ApiextensionsV1().CustomResourceDefinitions().Create(context.TODO(), crd, metav1.CreateOptions{}); err != nil {
 					return err
@@ -89,7 +90,7 @@ func TestCreateOrUpdateCRD(t *testing.T) {
 		{
 			desc: "Update CRD when exist with wrongname after receiving a forbidden error the first time",
 			initFunc: func(clientset crdclient.Interface, namespaceScoped bool) error {
-				crd := crd(crdMeta, namespaceScoped)
+				crd := crd(crdMeta, namespaceScoped, klog.TODO())
 				crd.Spec.Names.Kind = "wrongname"
 				crd.Spec.Names.ListKind = "wrongnameList"
 				if _, err := clientset.ApiextensionsV1().CustomResourceDefinitions().Create(context.TODO(), crd, metav1.CreateOptions{}); err != nil {
@@ -102,7 +103,7 @@ func TestCreateOrUpdateCRD(t *testing.T) {
 		{
 			desc: "Update CRD when pruning is not enabled after receiving a forbidden error the first time",
 			initFunc: func(clientset crdclient.Interface, namespaceScoped bool) error {
-				crd := crd(crdMeta, namespaceScoped)
+				crd := crd(crdMeta, namespaceScoped, klog.TODO())
 				crd.Spec.PreserveUnknownFields = trueValue
 				if _, err := clientset.ApiextensionsV1().CustomResourceDefinitions().Create(context.TODO(), crd, metav1.CreateOptions{}); err != nil {
 					return err
@@ -114,11 +115,11 @@ func TestCreateOrUpdateCRD(t *testing.T) {
 	}
 
 	for _, namespacedScoped := range []bool{true, false} {
-		expectedCRD := crd(crdMeta, namespacedScoped)
+		expectedCRD := crd(crdMeta, namespacedScoped, klog.TODO())
 		for _, tc := range testCases {
 			t.Run(tc.desc+fmt.Sprintf(" namespaced scoped %v", namespacedScoped), func(t *testing.T) {
 				fakeCRDClient := crdclientfake.NewSimpleClientset()
-				fakeCRDHandler := NewCRDHandler(fakeCRDClient)
+				fakeCRDHandler := NewCRDHandler(fakeCRDClient, klog.TODO())
 				if tc.initFunc != nil {
 					if err := tc.initFunc(fakeCRDClient, namespacedScoped); err != nil {
 						t.Errorf("Unexpected error in initFunc(): %v", err)

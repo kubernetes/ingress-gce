@@ -469,9 +469,9 @@ func IsGLBCIngress(ing *networkingv1.Ingress) bool {
 // GetReadyNodeNames returns names of schedulable, ready nodes from the node lister
 // It also filters out masters and nodes excluded from load-balancing
 // TODO(rramkumar): Add a test for this.
-func GetReadyNodeNames(lister listers.NodeLister) ([]string, error) {
+func GetReadyNodeNames(lister listers.NodeLister, logger klog.Logger) ([]string, error) {
 	var nodeNames []string
-	nodes, err := ListWithPredicate(lister, CandidateNodesPredicate)
+	nodes, err := ListWithPredicate(lister, CandidateNodesPredicate, logger)
 	if err != nil {
 		return nodeNames, err
 	}
@@ -494,25 +494,25 @@ func NodeIsReady(node *api_v1.Node) bool {
 
 // NodeConditionPredicate is a function that indicates whether the given node's conditions meet
 // some set of criteria defined by the function.
-type NodeConditionPredicate func(node *api_v1.Node) bool
+type NodeConditionPredicate func(*api_v1.Node, klog.Logger) bool
 
 var (
 	// AllNodesPredicate selects all nodes.
-	AllNodesPredicate = func(node *api_v1.Node) bool { return true }
+	AllNodesPredicate = func(*api_v1.Node, klog.Logger) bool { return true }
 	// CandidateNodesPredicate selects all nodes that are in ready state and devoid of any exclude labels.
 	// This is a duplicate definition of the function in:
 	// https://github.com/kubernetes/kubernetes/blob/3723713c550f649b6ba84964edef9da6cc334f9d/staging/src/k8s.io/cloud-provider/controllers/service/controller.go#L668
-	CandidateNodesPredicate = func(node *api_v1.Node) bool {
-		return nodePredicateInternal(node, false, false)
+	CandidateNodesPredicate = func(node *api_v1.Node, logger klog.Logger) bool {
+		return nodePredicateInternal(node, false, false, logger)
 	}
 	// CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes selects all nodes except ones that are upgrading and/or have any exclude labels. This function tolerates unready nodes.
 	// TODO(prameshj) - Once the kubernetes/kubernetes Predicate function includes Unready nodes and the GKE nodepool code sets exclude labels on upgrade, this can be replaced with CandidateNodesPredicate.
-	CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes = func(node *api_v1.Node) bool {
-		return nodePredicateInternal(node, true, true)
+	CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes = func(node *api_v1.Node, logger klog.Logger) bool {
+		return nodePredicateInternal(node, true, true, logger)
 	}
 )
 
-func nodePredicateInternal(node *api_v1.Node, includeUnreadyNodes, excludeUpgradingNodes bool) bool {
+func nodePredicateInternal(node *api_v1.Node, includeUnreadyNodes, excludeUpgradingNodes bool, logger klog.Logger) bool {
 	// Get all nodes that have a taint with NoSchedule effect
 	for _, taint := range node.Spec.Taints {
 		if taint.Key == ToBeDeletedTaint {
@@ -552,7 +552,7 @@ func nodePredicateInternal(node *api_v1.Node, includeUnreadyNodes, excludeUpgrad
 		// We consider the node for load balancing only when its NodeReady condition status
 		// is ConditionTrue
 		if cond.Type == api_v1.NodeReady && cond.Status != api_v1.ConditionTrue {
-			klog.V(4).Infof("Ignoring node %v with %v condition status %v", node.Name, cond.Type, cond.Status)
+			logger.V(4).Info("Ignoring node", "nodeName", node.Name, "conditionType", cond.Type, "conditionStatus", cond.Status)
 			return false
 		}
 	}
@@ -561,7 +561,7 @@ func nodePredicateInternal(node *api_v1.Node, includeUnreadyNodes, excludeUpgrad
 }
 
 // ListWithPredicate gets nodes that matches predicate function.
-func ListWithPredicate(nodeLister listers.NodeLister, predicate NodeConditionPredicate) ([]*api_v1.Node, error) {
+func ListWithPredicate(nodeLister listers.NodeLister, predicate NodeConditionPredicate, logger klog.Logger) ([]*api_v1.Node, error) {
 	nodes, err := nodeLister.List(labels.Everything())
 	if err != nil {
 		return nil, err
@@ -569,7 +569,7 @@ func ListWithPredicate(nodeLister listers.NodeLister, predicate NodeConditionPre
 
 	var filtered []*api_v1.Node
 	for i := range nodes {
-		if predicate(nodes[i]) {
+		if predicate(nodes[i], logger) {
 			filtered = append(filtered, nodes[i])
 		}
 	}
@@ -578,10 +578,10 @@ func ListWithPredicate(nodeLister listers.NodeLister, predicate NodeConditionPre
 }
 
 // GetNodePrimaryIP returns a primary internal IP address of the node.
-func GetNodePrimaryIP(inputNode *api_v1.Node) string {
+func GetNodePrimaryIP(inputNode *api_v1.Node, logger klog.Logger) string {
 	ip, err := getPreferredNodeAddress(inputNode, []api_v1.NodeAddressType{api_v1.NodeInternalIP})
 	if err != nil {
-		klog.Errorf("Failed to get IP address for node %s", inputNode.Name)
+		logger.Error(err, "Failed to get IP address for node", "nodeName", inputNode.Name)
 	}
 	return ip
 }
@@ -765,14 +765,14 @@ func MinMaxPortRangeAndProtocol(svcPorts []api_v1.ServicePort) (portRange, proto
 }
 
 // TranslateAffinityType converts the k8s affinity type to the GCE affinity type.
-func TranslateAffinityType(affinityType string) string {
+func TranslateAffinityType(affinityType string, logger klog.Logger) string {
 	switch affinityType {
 	case string(api_v1.ServiceAffinityClientIP):
 		return gceAffinityTypeClientIP
 	case string(api_v1.ServiceAffinityNone):
 		return gceAffinityTypeNone
 	default:
-		klog.Errorf("Unexpected affinity type: %v", affinityType)
+		logger.Error(nil, "Unexpected affinity type", "affinityType", affinityType)
 		return gceAffinityTypeNone
 	}
 }

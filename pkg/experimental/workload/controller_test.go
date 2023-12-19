@@ -18,6 +18,7 @@ package workload
 
 import (
 	"context"
+	"k8s.io/klog/v2"
 	"reflect"
 	"testing"
 	"time"
@@ -39,7 +40,7 @@ func newWorkloadController() *Controller {
 	workloadClient := workloadclient.NewSimpleClientset()
 
 	ctx := NewControllerContext(kubeClient, workloadClient, corev1.NamespaceAll, 1*time.Minute)
-	wlc := NewController(ctx)
+	wlc := NewController(ctx, klog.TODO())
 	wlc.hasSynced = func() bool { return true }
 
 	return wlc

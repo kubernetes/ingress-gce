@@ -45,8 +45,8 @@ const (
 
 // NewKubeConfigForProtobuf returns a Kubernetes client config that uses protobufs
 // for given the command line settings.
-func NewKubeConfigForProtobuf() (*rest.Config, error) {
-	config, err := NewKubeConfig()
+func NewKubeConfigForProtobuf(logger klog.Logger) (*rest.Config, error) {
+	config, err := NewKubeConfig(logger)
 	if err != nil {
 		return nil, err
 	}
@@ -56,22 +56,22 @@ func NewKubeConfigForProtobuf() (*rest.Config, error) {
 }
 
 // NewKubeConfig returns a Kubernetes client config given the command line settings.
-func NewKubeConfig() (*rest.Config, error) {
+func NewKubeConfig(logger klog.Logger) (*rest.Config, error) {
 	if flags.F.InCluster {
-		klog.V(0).Infof("Using in cluster configuration")
+		logger.V(0).Info("Using in cluster configuration")
 		return rest.InClusterConfig()
 	}
 
-	klog.V(0).Infof("Using APIServerHost=%q, KubeConfig=%q", flags.F.APIServerHost, flags.F.KubeConfigFile)
+	logger.V(0).Info("Got APIServerHost and KubeConfig", "APIServerHost", flags.F.APIServerHost, "KubeConfig", flags.F.KubeConfigFile)
 	return clientcmd.BuildConfigFromFlags(flags.F.APIServerHost, flags.F.KubeConfigFile)
 }
 
 // NewGCEClient returns a client to the GCE environment. This will block until
 // a valid configuration file can be read.
-func NewGCEClient() *gce.Cloud {
+func NewGCEClient(logger klog.Logger) *gce.Cloud {
 	var configReader func() io.Reader
 	if flags.F.ConfigFilePath != "" {
-		klog.Infof("Reading config from path %q", flags.F.ConfigFilePath)
+		logger.Info("Reading config from the specified path", "path", flags.F.ConfigFilePath)
 		config, err := os.Open(flags.F.ConfigFilePath)
 		if err != nil {
 			klog.Fatalf("%v", err)
@@ -82,11 +82,11 @@ func NewGCEClient() *gce.Cloud {
 		if err != nil {
 			klog.Fatalf("Error while reading config (%q): %v", flags.F.ConfigFilePath, err)
 		}
-		klog.V(4).Infof("Cloudprovider config file contains: %q", string(allConfig))
+		logger.V(4).Info("Cloudprovider config file", "config", string(allConfig))
 
 		configReader = generateConfigReaderFunc(allConfig)
 	} else {
-		klog.V(2).Infof("No cloudprovider config file provided, using default values.")
+		logger.V(2).Info("No cloudprovider config file provided, using default values")
 		configReader = func() io.Reader { return nil }
 	}
 
@@ -99,7 +99,7 @@ func NewGCEClient() *gce.Cloud {
 		if err == nil {
 			cloud := provider.(*gce.Cloud)
 			// Configure GCE rate limiting
-			rl, err := ratelimit.NewGCERateLimiter(flags.F.GCERateLimit.Values(), flags.F.GCEOperationPollInterval)
+			rl, err := ratelimit.NewGCERateLimiter(flags.F.GCERateLimit.Values(), flags.F.GCEOperationPollInterval, logger)
 			if err != nil {
 				klog.Fatalf("Error configuring rate limiting: %v", err)
 			}
@@ -113,9 +113,9 @@ func NewGCEClient() *gce.Cloud {
 			if _, err = cloud.ListGlobalBackendServices(); err == nil || utils.IsHTTPErrorCode(err, http.StatusForbidden) {
 				return cloud
 			}
-			klog.Warningf("Failed to list backend services, retrying: %v", err)
+			logger.Info("Failed to list backend services, retrying", "err", err)
 		} else {
-			klog.Warningf("Failed to get cloud provider, retrying: %v", err)
+			logger.Info("Failed to get cloud provider, retrying", "err", err)
 		}
 		time.Sleep(cloudClientRetryInterval)
 	}

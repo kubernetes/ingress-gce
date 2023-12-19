@@ -17,6 +17,7 @@ limitations under the License.
 package utils
 
 import (
+	"k8s.io/klog/v2"
 	"reflect"
 	"testing"
 
@@ -25,7 +26,7 @@ import (
 
 func TestGCEURLMap(t *testing.T) {
 	t.Parallel()
-	urlMap := NewGCEURLMap()
+	urlMap := NewGCEURLMap(klog.TODO())
 
 	// Add an unrelated host to urlmap.
 	rules := []PathRule{
@@ -82,7 +83,7 @@ func TestGCEURLMap(t *testing.T) {
 
 func TestGCEURLMapDeleteHost(t *testing.T) {
 	t.Parallel()
-	urlMap := NewGCEURLMap()
+	urlMap := NewGCEURLMap(klog.TODO())
 	rules := []PathRule{
 		PathRule{Path: "/test1", Backend: ServicePort{NodePort: 30000}},
 		PathRule{Path: "/test2", Backend: ServicePort{NodePort: 30001}},
@@ -180,7 +181,7 @@ func TestAllServicePorts(t *testing.T) {
 
 func TestAllServicePortsDistinct(t *testing.T) {
 	t.Parallel()
-	m := NewGCEURLMap()
+	m := NewGCEURLMap(klog.TODO())
 	b := newServicePortWithID("svc-X", "ns", v1.ServiceBackendPort{Number: 80})
 	b1 := newServicePortWithID("svc-X", "ns", v1.ServiceBackendPort{Number: 80})
 	b2 := newServicePortWithID("svc-X", "ns", v1.ServiceBackendPort{Number: 80})
@@ -202,7 +203,7 @@ func TestAllServicePortsDistinct(t *testing.T) {
 }
 
 func newTestMap() *GCEURLMap {
-	m := NewGCEURLMap()
+	m := NewGCEURLMap(klog.TODO())
 	b := newServicePortWithID("svc-X", "ns", v1.ServiceBackendPort{Number: 80})
 	m.DefaultBackend = &b
 	rules := []PathRule{

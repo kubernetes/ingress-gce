@@ -137,7 +137,7 @@ func ipFamiliesToString(ipFamilies []corev1.IPFamily) string {
 func (im *ControllerMetrics) exportL4ILBsMetrics() {
 	im.Lock()
 	defer im.Unlock()
-	klog.V(3).Infof("Exporting L4 ILB usage metrics for %d services.", len(im.l4ILBServiceMap))
+	im.logger.V(3).Info("Exporting L4 ILB usage metrics for services", "serviceCount", len(im.l4ILBServiceMap))
 	l4ILBCount.Reset()
 	for _, svcState := range im.l4ILBServiceMap {
 		l4ILBCount.With(prometheus.Labels{
@@ -145,13 +145,13 @@ func (im *ControllerMetrics) exportL4ILBsMetrics() {
 			l4LabelMultinet: strconv.FormatBool(svcState.Multinetwork),
 		}).Inc()
 	}
-	klog.V(3).Infof("L4 ILB usage metrics exported.")
+	im.logger.V(3).Info("L4 ILB usage metrics exported")
 }
 
 func (im *ControllerMetrics) exportL4NetLBsMetrics() {
 	im.Lock()
 	defer im.Unlock()
-	klog.V(3).Infof("Exporting L4 NetLB usage metrics for %d services.", len(im.l4NetLBServiceMap))
+	im.logger.V(3).Info("Exporting L4 NetLB usage metrics for services", "serviceCount", len(im.l4NetLBServiceMap))
 	l4NetLBCount.Reset()
 	for _, svcState := range im.l4NetLBServiceMap {
 		l4NetLBCount.With(prometheus.Labels{
@@ -160,7 +160,7 @@ func (im *ControllerMetrics) exportL4NetLBsMetrics() {
 			l4LabelStrongSessionAffinity: strconv.FormatBool(svcState.StrongSessionAffinity),
 		}).Inc()
 	}
-	klog.V(3).Infof("L4 NetLB usage metrics exported.")
+	im.logger.V(3).Info("L4 NetLB usage metrics exported")
 }
 
 func getStatusConsideringPersistentError(state *L4ServiceState) L4ServiceStatus {

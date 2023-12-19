@@ -19,6 +19,7 @@ package translator
 import (
 	"encoding/json"
 	"fmt"
+	"k8s.io/klog/v2"
 	"os"
 	"reflect"
 	"testing"
@@ -62,7 +63,7 @@ var (
 		},
 		TargetPort: intstr.FromInt(9376),
 	}
-	defaultNamer = namer_util.NewNamer("uid1", "")
+	defaultNamer = namer_util.NewNamer("uid1", "", klog.TODO())
 	port80       = v1.ServiceBackendPort{Number: 80}
 )
 
@@ -92,6 +93,7 @@ func configuredFakeTranslator() *Translator {
 		healthchecks.NewFakeRecorderGetter(0),
 		false,
 		false,
+		klog.TODO(),
 	)
 }
 
@@ -198,7 +200,7 @@ func TestTranslateIngress(t *testing.T) {
 					DefaultBackend: test.Backend("random-service", port80),
 				}),
 			wantErrCount:  1,
-			wantGCEURLMap: utils.NewGCEURLMap(),
+			wantGCEURLMap: utils.NewGCEURLMap(klog.TODO()),
 		},
 		{
 			desc: "null service default backend",
@@ -207,7 +209,7 @@ func TestTranslateIngress(t *testing.T) {
 					DefaultBackend: &v1.IngressBackend{},
 				}),
 			wantErrCount:  1,
-			wantGCEURLMap: utils.NewGCEURLMap(),
+			wantGCEURLMap: utils.NewGCEURLMap(klog.TODO()),
 		},
 		{
 			desc:          "null service backend",

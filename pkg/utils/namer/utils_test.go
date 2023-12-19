@@ -15,6 +15,7 @@ package namer
 
 import (
 	"fmt"
+	"k8s.io/klog/v2"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -112,7 +113,7 @@ func TestFrontendNamingScheme(t *testing.T) {
 				ing.ObjectMeta.Finalizers = []string{tc.finalizer}
 			}
 
-			if diff := cmp.Diff(tc.expectScheme, FrontendNamingScheme(ing)); diff != "" {
+			if diff := cmp.Diff(tc.expectScheme, FrontendNamingScheme(ing, klog.TODO())); diff != "" {
 				t.Fatalf("Got diff for Frontend naming scheme (-want +got):\n%s", diff)
 			}
 		})

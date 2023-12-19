@@ -31,14 +31,14 @@ import (
 )
 
 // SetUrlMapForTargetHttpsProxy() sets the UrlMap for a target https proxy
-func SetUrlMapForTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpsProxy *TargetHttpsProxy, urlMapLink string) error {
+func SetUrlMapForTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpsProxy *TargetHttpsProxy, urlMapLink string, logger klog.Logger) error {
 	ctx, cancel := cloud.ContextWithCallTimeout()
 	defer cancel()
 	mc := metrics.NewMetricContext("TargetHttpsProxy", "set_url_map", key.Region, key.Zone, string(targetHttpsProxy.Version))
 
 	// Set name in case it is not present in the key
 	key.Name = targetHttpsProxy.Name
-	klog.V(3).Infof("setting URLMap for TargetHttpsProxy %v", key)
+	logger.V(3).Info("setting URLMap for TargetHttpsProxy", "key", key)
 
 	switch targetHttpsProxy.Version {
 	case meta.VersionAlpha:
@@ -69,14 +69,14 @@ func SetUrlMapForTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttp
 }
 
 // SetSslCertificateForTargetHttpsProxy() sets the SSL Certificate for a target https proxy
-func SetSslCertificateForTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpsProxy *TargetHttpsProxy, sslCertURLs []string) error {
+func SetSslCertificateForTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpsProxy *TargetHttpsProxy, sslCertURLs []string, logger klog.Logger) error {
 	ctx, cancel := cloud.ContextWithCallTimeout()
 	defer cancel()
 	mc := metrics.NewMetricContext("TargetHttpsProxy", "set_ssl_certificate", key.Region, key.Zone, string(targetHttpsProxy.Version))
 
 	// Set name in case it is not present in the key
 	key.Name = targetHttpsProxy.Name
-	klog.V(3).Infof("setting SslCertificate for TargetHttpsProxy %v", key)
+	logger.V(3).Info("setting SslCertificate for TargetHttpsProxy", "key", key)
 
 	switch targetHttpsProxy.Version {
 	case meta.VersionAlpha:
@@ -110,14 +110,14 @@ func SetSslCertificateForTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, ta
 }
 
 // SetSslPolicyForTargetHttpsProxy() sets the url map for a target proxy
-func SetSslPolicyForTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpsProxy *TargetHttpsProxy, SslPolicyLink string) error {
+func SetSslPolicyForTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpsProxy *TargetHttpsProxy, SslPolicyLink string, logger klog.Logger) error {
 	ctx, cancel := cloud.ContextWithCallTimeout()
 	defer cancel()
 	mc := metrics.NewMetricContext("TargetHttpProxy", "set_url_map", key.Region, key.Zone, string(targetHttpsProxy.Version))
 
 	// Set name in case it is not present in the key
 	key.Name = targetHttpsProxy.Name
-	klog.V(3).Infof("Setting SslPolicy for TargetHttpProxy %v", key)
+	logger.V(3).Info("Setting SslPolicy for TargetHttpProxy", "key", key)
 
 	switch targetHttpsProxy.Version {
 	case meta.VersionAlpha:
@@ -148,14 +148,14 @@ func SetSslPolicyForTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetH
 }
 
 // SetUrlMapForTargetHttpProxy() sets the url map for a target proxy
-func SetUrlMapForTargetHttpProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpProxy *TargetHttpProxy, urlMapLink string) error {
+func SetUrlMapForTargetHttpProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpProxy *TargetHttpProxy, urlMapLink string, logger klog.Logger) error {
 	ctx, cancel := cloud.ContextWithCallTimeout()
 	defer cancel()
 	mc := metrics.NewMetricContext("TargetHttpProxy", "set_url_map", key.Region, key.Zone, string(targetHttpProxy.Version))
 
 	// Set name in case it is not present in the key
 	key.Name = targetHttpProxy.Name
-	klog.V(3).Infof("setting URLMap for TargetHttpProxy %v", key)
+	logger.V(3).Info("setting URLMap for TargetHttpProxy", "key", key)
 
 	switch targetHttpProxy.Version {
 	case meta.VersionAlpha:
@@ -186,14 +186,14 @@ func SetUrlMapForTargetHttpProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpP
 }
 
 // SetProxyForForwardingRule() sets the target proxy for a forwarding rule
-func SetProxyForForwardingRule(gceCloud *gce.Cloud, key *meta.Key, forwardingRule *ForwardingRule, targetProxyLink string) error {
+func SetProxyForForwardingRule(gceCloud *gce.Cloud, key *meta.Key, forwardingRule *ForwardingRule, targetProxyLink string, logger klog.Logger) error {
 	ctx, cancel := cloud.ContextWithCallTimeout()
 	defer cancel()
 	mc := metrics.NewMetricContext("ForwardingRule", "set_proxy", key.Region, key.Zone, string(forwardingRule.Version))
 
 	// Set name in case it is not present in the key
 	key.Name = forwardingRule.Name
-	klog.V(3).Infof("setting proxy for forwarding rule ForwardingRule %v", key)
+	logger.V(3).Info("setting proxy for forwarding rule", "key", key)
 
 	switch forwardingRule.Version {
 	case meta.VersionAlpha:
@@ -224,7 +224,7 @@ func SetProxyForForwardingRule(gceCloud *gce.Cloud, key *meta.Key, forwardingRul
 }
 
 // SetSecurityPolicy sets the cloud armor security policy for a backend service.
-func SetSecurityPolicy(gceCloud *gce.Cloud, backendService *BackendService, securityPolicy string) error {
+func SetSecurityPolicy(gceCloud *gce.Cloud, backendService *BackendService, securityPolicy string, logger klog.Logger) error {
 	key := meta.GlobalKey(backendService.Name)
 	if backendService.Scope != meta.Global {
 		return fmt.Errorf("cloud armor security policies not supported for %s backend service %s", backendService.Scope, backendService.Name)
@@ -233,6 +233,7 @@ func SetSecurityPolicy(gceCloud *gce.Cloud, backendService *BackendService, secu
 	ctx, cancel := cloud.ContextWithCallTimeout()
 	defer cancel()
 	mc := metrics.NewMetricContext("BackendService", "set_security_policy", key.Region, key.Zone, string(backendService.Version))
+	logger.V(3).Info("setting security policy for backend service", "key", key)
 
 	switch backendService.Version {
 	case meta.VersionAlpha:
@@ -259,7 +260,7 @@ func SetSecurityPolicy(gceCloud *gce.Cloud, backendService *BackendService, secu
 	}
 }
 
-func AddSignedUrlKey(gceCloud *gce.Cloud, key *meta.Key, backendService *BackendService, signedUrlKey *SignedUrlKey) error {
+func AddSignedUrlKey(gceCloud *gce.Cloud, key *meta.Key, backendService *BackendService, signedUrlKey *SignedUrlKey, logger klog.Logger) error {
 	ctx, cancel := cloud.ContextWithCallTimeout()
 	defer cancel()
 	mc := metrics.NewMetricContext("BackendService", "addSignedUrlKey", key.Region, key.Zone, string(backendService.Version))
@@ -269,20 +270,21 @@ func AddSignedUrlKey(gceCloud *gce.Cloud, key *meta.Key, backendService *Backend
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Updating alpha BackendService %v, add SignedUrlKey %s", key.Name, alphaKey.KeyName)
+		logger.V(3).Info("Updating alpha BackendService, add SignedUrlKey", "backendService", key.Name, "signedUrlKey", alphaKey.KeyName)
 		return mc.Observe(gceCloud.Compute().AlphaBackendServices().AddSignedUrlKey(ctx, key, alphaKey))
 	case meta.VersionBeta:
 		betaKey, err := signedUrlKey.ToBeta()
 		if err != nil {
 			return err
 		}
+		logger.V(3).Info("Updating beta BackendService, add SignedUrlKey", "backendService", key.Name, "signedUrlKey", betaKey.KeyName)
 		return mc.Observe(gceCloud.Compute().BetaBackendServices().AddSignedUrlKey(ctx, key, betaKey))
 	default:
 		gaKey, err := signedUrlKey.ToGA()
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Updating ga region BackendService %v, add SignedUrlKey %s", key.Name, gaKey.KeyName)
+		logger.V(3).Info("Updating ga BackendService, add SignedUrlKey", "backendService", key.Name, "signedUrlKey", gaKey.KeyName)
 		return mc.Observe(gceCloud.Compute().BackendServices().AddSignedUrlKey(ctx, key, gaKey))
 	}
 }

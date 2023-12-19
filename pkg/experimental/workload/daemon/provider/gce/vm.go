@@ -19,6 +19,7 @@ package gce
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -64,6 +65,8 @@ type VM struct {
 	// Metadata startwith "k8s-label-" are used to create it.
 	// For example, metadata "k8s-label-foo:bar" leads to the label "foo:bar"
 	vmLabels map[string]string
+
+	logger klog.Logger
 }
 
 // gsaAccessToken is an OAuth2 access token fetched from metadata server
@@ -103,11 +106,11 @@ func (vm *VM) Zone() (string, bool) {
 	return vm.zone, true
 }
 
-func decodeGsaAccessToken(jsonData string) (token gsaAccessToken, err error) {
+func decodeGsaAccessToken(jsonData string, logger klog.Logger) (token gsaAccessToken, err error) {
 	token = gsaAccessToken{}
 	err = json.Unmarshal([]byte(jsonData), &token)
 	if err != nil {
-		klog.Errorf("malformed service account access token: %+v", err)
+		logger.Error(err, "malformed service account access token")
 		return
 	}
 	return
@@ -117,13 +120,13 @@ func decodeGsaAccessToken(jsonData string) (token gsaAccessToken, err error) {
 func (vm *VM) Credentials() (daemonutils.ClusterCredentials, error) {
 	jsonData, err := metadata.Get("instance/service-accounts/default/token")
 	if err != nil {
-		klog.Errorf("failed to get service account access token: %+v", err)
+		vm.logger.Error(err, "failed to get service account access token")
 		return daemonutils.ClusterCredentials{}, err
 	}
 
-	token, err := decodeGsaAccessToken(jsonData)
+	token, err := decodeGsaAccessToken(jsonData, vm.logger)
 	if err != nil {
-		klog.Errorf("failed to decode service account access token: %+v", err)
+		vm.logger.Error(err, "failed to decode service account access token")
 		return daemonutils.ClusterCredentials{}, err
 	}
 	expiryTime := time.Now().Add(time.Duration(token.ExpiresIn) * time.Second)
@@ -142,14 +145,14 @@ func (vm *VM) getCluster() (cluster *gkev1.Cluster, err error) {
 	if vm.clusterName == "" {
 		vm.clusterName, err = metadata.InstanceAttributeValue("k8s-cluster-name")
 		if err != nil {
-			klog.Errorf("failed to get k8s-cluster-name from metadata server: %+v", err)
+			vm.logger.Error(err, "failed to get k8s-cluster-name from metadata server")
 			return
 		}
 	}
 	if vm.clusterZone == "" {
 		vm.clusterZone, err = metadata.InstanceAttributeValue("k8s-cluster-zone")
 		if err != nil {
-			klog.Errorf("failed to get k8s-cluster-zone from metadata server: %+v", err)
+			vm.logger.Error(err, "failed to get k8s-cluster-zone from metadata server")
 			return
 		}
 	}
@@ -159,18 +162,18 @@ func (vm *VM) getCluster() (cluster *gkev1.Cluster, err error) {
 	oauthClient, _, err := transport.NewHTTPClient(context.Background(),
 		option.WithScopes(gkev1.CloudPlatformScope))
 	if err != nil {
-		klog.Errorf("failed to initialize http client: %+v", err)
+		vm.logger.Error(err, "failed to initialize http client")
 		return
 	}
 	gkeSvc, err := gkev1.New(oauthClient)
 	if err != nil {
-		klog.Errorf("failed to initialize gke client: %+v", err)
+		vm.logger.Error(err, "failed to initialize gke client")
 		return
 	}
 	clusterSvc := gkev1.NewProjectsZonesClustersService(gkeSvc)
 	cluster, err = clusterSvc.Get(vm.projectID, vm.clusterZone, vm.clusterName).Do()
 	if err != nil {
-		klog.Errorf("failed to get gke cluster: %+v", err)
+		vm.logger.Error(err, "failed to get gke cluster")
 		return
 	}
 	return
@@ -189,14 +192,14 @@ func (vm *VM) KubeConfig() (config *rest.Config, err error) {
 		return
 	}
 	if !os.IsNotExist(err) {
-		klog.Errorf("unable to build config from kubeConfig file: %+v", err)
+		vm.logger.Error(err, "unable to build config from kubeConfig file")
 		return
 	}
 
 	// Get container master address and CA
 	cluster, err := vm.getCluster()
 	if err != nil {
-		klog.Errorf("unable to get the cluster info: %+v", err)
+		vm.logger.Error(err, "unable to get the cluster info")
 		return
 	}
 
@@ -213,17 +216,17 @@ func (vm *VM) KubeConfig() (config *rest.Config, err error) {
 
 	config, err = clientcmd.RESTConfigFromKubeConfig([]byte(kubeConfig))
 	if err != nil {
-		klog.Errorf("failed to create kubeconfig: %+v", err)
+		vm.logger.Error(err, "failed to create kubeconfig")
 		return
 	}
 
 	return
 }
 
-func getAttrOrPanic(getter func() (string, error), name string) string {
+func getAttrOrPanic(getter func() (string, error), name string, logger klog.Logger) string {
 	ret, err := getter()
 	if err != nil {
-		klog.Errorf("failed to get %s from metadata server: %+v", name, err)
+		logger.Error(err, "failed to get attribute from metadata server", "attributeName", name)
 		// This will be recovered by the NewVM function.
 		panic(err)
 	}
@@ -239,7 +242,7 @@ func getOptionalMetadata(attr string) string {
 }
 
 // NewVM fetches all data needed from the metadata server to create VM
-func NewVM() (vm *VM, err error) {
+func NewVM(logger klog.Logger) (vm *VM, err error) {
 	// Catch the error in getAttrOrPanic
 	defer func() {
 		e := recover()
@@ -247,14 +250,15 @@ func NewVM() (vm *VM, err error) {
 			err = e.(error)
 		}
 	}()
+	logger = logger.WithName("VM")
 	vm = &VM{
 		// Fetch basic info that every GCP Instance has
-		instanceName: getAttrOrPanic(metadata.InstanceName, "InstanceName"),
-		hostname:     getAttrOrPanic(metadata.Hostname, "Hostname"),
-		internalIP:   getAttrOrPanic(metadata.InternalIP, "InternalIP"),
-		externalIP:   getAttrOrPanic(metadata.ExternalIP, "ExternalIP"),
-		projectID:    getAttrOrPanic(metadata.ProjectID, "ProjectID"),
-		zone:         getAttrOrPanic(metadata.Zone, "Zone"),
+		instanceName: getAttrOrPanic(metadata.InstanceName, "InstanceName", logger),
+		hostname:     getAttrOrPanic(metadata.Hostname, "Hostname", logger),
+		internalIP:   getAttrOrPanic(metadata.InternalIP, "InternalIP", logger),
+		externalIP:   getAttrOrPanic(metadata.ExternalIP, "ExternalIP", logger),
+		projectID:    getAttrOrPanic(metadata.ProjectID, "ProjectID", logger),
+		zone:         getAttrOrPanic(metadata.Zone, "Zone", logger),
 		// Fetch the cluster name and zone
 		// Not specified if the user want to use ~/.kube/config file
 		clusterName: getOptionalMetadata("k8s-cluster-name"),
@@ -264,6 +268,7 @@ func NewVM() (vm *VM, err error) {
 		ksaToken: getOptionalMetadata("k8s-sa-token"),
 		// Labels to use in the workload resource
 		vmLabels: make(map[string]string),
+		logger:   logger,
 	}
 
 	lastDash := strings.LastIndex(vm.zone, "-")
@@ -281,14 +286,14 @@ func NewVM() (vm *VM, err error) {
 	// Fetch labels
 	attrs, err := metadata.InstanceAttributes()
 	if err != nil {
-		klog.Errorf("failed to get attribute list from metadata server: %+v", err)
+		logger.Error(err, "failed to get attribute list from metadata server", "fullErr", fmt.Sprintf("%+v", err))
 		return nil, err
 	}
 	for _, name := range attrs {
 		if strings.HasPrefix(name, labelPrefix) {
 			val, err := metadata.InstanceAttributeValue(name)
 			if err != nil {
-				klog.Errorf("failed to fetch label %s: %+v", name, err)
+				logger.Error(err, "failed to fetch label", "label", name, "fullErr", fmt.Sprintf("%+v", err))
 			}
 			vm.vmLabels[name[prefixLen:]] = val
 		}

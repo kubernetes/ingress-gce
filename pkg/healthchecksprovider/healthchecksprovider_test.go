@@ -37,7 +37,7 @@ func TestCreateHealthCheck(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-			hc := NewHealthChecks(fakeGCE, meta.VersionGA)
+			hc := NewHealthChecks(fakeGCE, meta.VersionGA, klog.TODO())
 
 			err := hc.Create(tc.healthCheck)
 			if err != nil {
@@ -119,7 +119,7 @@ func TestGetHealthCheck(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 			mustCreateHealthChecks(t, fakeGCE, tc.existingHealthChecks)
-			hcp := NewHealthChecks(fakeGCE, meta.VersionGA)
+			hcp := NewHealthChecks(fakeGCE, meta.VersionGA, klog.TODO())
 
 			hc, err := hcp.Get(tc.getHCName, tc.getHCScope)
 			if err != nil {
@@ -196,7 +196,7 @@ func TestDeleteHealthCheck(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 			mustCreateHealthChecks(t, fakeGCE, tc.existingHealthChecks)
-			hc := NewHealthChecks(fakeGCE, meta.VersionGA)
+			hc := NewHealthChecks(fakeGCE, meta.VersionGA, klog.TODO())
 
 			err := hc.Delete(tc.deleteHCName, tc.deleteHCScope)
 			if err != nil {

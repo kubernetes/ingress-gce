@@ -142,7 +142,7 @@ func TestProcessCreateOrUpdate(t *testing.T) {
 	}
 	for _, isShared := range []bool{true, false} {
 		hcName := l4c.namer.L4HealthCheck(newSvc.Namespace, newSvc.Name, isShared)
-		if !isHealthCheckDeleted(l4c.ctx.Cloud, hcName) {
+		if !isHealthCheckDeleted(l4c.ctx.Cloud, hcName, klog.TODO()) {
 			t.Errorf("Health check %s should be deleted", hcName)
 		}
 	}
@@ -185,7 +185,7 @@ func TestProcessUpdateExternalTrafficPolicy(t *testing.T) {
 	// Verify that both health checks were created.
 	for _, isShared := range []bool{true, false} {
 		hcName := l4c.namer.L4HealthCheck(svc.Namespace, svc.Name, isShared)
-		if isHealthCheckDeleted(l4c.ctx.Cloud, hcName) {
+		if isHealthCheckDeleted(l4c.ctx.Cloud, hcName, klog.TODO()) {
 			t.Errorf("Health check %s should be created", hcName)
 		}
 	}
@@ -199,7 +199,7 @@ func TestProcessUpdateExternalTrafficPolicy(t *testing.T) {
 	// Verify that both health checks were deleted.
 	for _, isShared := range []bool{true, false} {
 		hcName := l4c.namer.L4HealthCheck(svc.Namespace, svc.Name, isShared)
-		if !isHealthCheckDeleted(l4c.ctx.Cloud, hcName) {
+		if !isHealthCheckDeleted(l4c.ctx.Cloud, hcName, klog.TODO()) {
 			t.Errorf("Health check %s should be deleted", hcName)
 		}
 	}
@@ -779,7 +779,7 @@ func newServiceController(t *testing.T, fakeGCE *gce.Cloud) *L4Controller {
 	kubeClient := fake.NewSimpleClientset()
 
 	vals := gce.DefaultTestClusterValues()
-	namer := namer.NewNamer(clusterUID, "")
+	namer := namer.NewNamer(clusterUID, "", klog.TODO())
 
 	stopCh := make(chan struct{})
 	ctxConfig := context.ControllerContextConfig{
@@ -787,7 +787,7 @@ func newServiceController(t *testing.T, fakeGCE *gce.Cloud) *L4Controller {
 		ResyncPeriod: 1 * time.Minute,
 		NumL4Workers: 5,
 	}
-	ctx := context.NewControllerContext(nil, kubeClient, nil, nil, nil, nil, nil, nil, nil, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig)
+	ctx := context.NewControllerContext(nil, kubeClient, nil, nil, nil, nil, nil, nil, nil, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
 	// Add some nodes so that NEG linker kicks in during ILB creation.
 	nodes, err := test.CreateAndInsertNodes(ctx.Cloud, []string{"instance-1"}, vals.ZoneName)
 	if err != nil {
@@ -796,7 +796,7 @@ func newServiceController(t *testing.T, fakeGCE *gce.Cloud) *L4Controller {
 	for _, n := range nodes {
 		ctx.NodeInformer.GetIndexer().Add(n)
 	}
-	return NewILBController(ctx, stopCh)
+	return NewILBController(ctx, stopCh, klog.TODO())
 }
 
 func newFakeGCE() *gce.Cloud {

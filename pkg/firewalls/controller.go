@@ -61,6 +61,8 @@ type FirewallController struct {
 	hasSynced                     func() bool
 	enableIngressRegionalExternal bool
 	stopCh                        <-chan struct{}
+
+	logger klog.Logger
 }
 
 type compositeFirewallPool struct {
@@ -96,15 +98,16 @@ func NewFirewallController(
 	portRanges []string,
 	enableCR, disableFWEnforcement, enableRegionalXLB bool,
 	stopCh <-chan struct{},
+	logger klog.Logger,
 ) *FirewallController {
-
+	logger = logger.WithName("FirewallController")
 	compositeFirewallPool := &compositeFirewallPool{}
 	if enableCR {
-		firewallCRPool := NewFirewallCRPool(ctx.FirewallClient, ctx.Cloud, ctx.ClusterNamer, gce.L7LoadBalancerSrcRanges(), portRanges, disableFWEnforcement)
+		firewallCRPool := NewFirewallCRPool(ctx.FirewallClient, ctx.Cloud, ctx.ClusterNamer, gce.L7LoadBalancerSrcRanges(), portRanges, disableFWEnforcement, logger)
 		compositeFirewallPool.pools = append(compositeFirewallPool.pools, firewallCRPool)
 	}
 	if !disableFWEnforcement {
-		firewallPool := NewFirewallPool(ctx.Cloud, ctx.ClusterNamer, gce.L7LoadBalancerSrcRanges(), portRanges)
+		firewallPool := NewFirewallPool(ctx.Cloud, ctx.ClusterNamer, gce.L7LoadBalancerSrcRanges(), portRanges, logger)
 		compositeFirewallPool.pools = append(compositeFirewallPool.pools, firewallPool)
 	}
 
@@ -116,9 +119,10 @@ func NewFirewallController(
 		hasSynced:                     ctx.HasSynced,
 		enableIngressRegionalExternal: enableRegionalXLB,
 		stopCh:                        stopCh,
+		logger:                        logger,
 	}
 
-	fwc.queue = utils.NewPeriodicTaskQueue("", "firewall", fwc.sync)
+	fwc.queue = utils.NewPeriodicTaskQueue("", "firewall", fwc.sync, logger)
 
 	// Ingress event handlers.
 	ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -205,17 +209,18 @@ func (fwc *FirewallController) ToSvcPorts(ings []*v1.Ingress) []utils.ServicePor
 
 func (fwc *FirewallController) Run() {
 	defer func() {
-		klog.Info("Shutting down firewall controller")
+		fwc.logger.Info("Shutting down firewall controller")
 		fwc.shutdown()
-		klog.Info("Firewall controller shut down")
+		fwc.logger.Info("Firewall controller shut down")
 	}()
-	klog.Info("Starting firewall controller")
+	fwc.logger.Info("Starting firewall controller")
 	go fwc.queue.Run()
 	<-fwc.stopCh
 }
 
 // This should only be called when the process is being terminated.
 func (fwc *FirewallController) shutdown() {
+	fwc.logger.Info("Shutting down Firewall Controller")
 	fwc.queue.Shutdown()
 }
 
@@ -224,7 +229,7 @@ func (fwc *FirewallController) sync(key string) error {
 		time.Sleep(context.StoreSyncPollPeriod)
 		return fmt.Errorf("waiting for stores to sync")
 	}
-	klog.V(3).Infof("Syncing firewall")
+	fwc.logger.V(3).Info("Syncing firewall")
 
 	gceIngresses := operator.Ingresses(fwc.ctx.Ingresses().List()).Filter(func(ing *v1.Ingress) bool {
 		return utils.IsGCEIngress(ing)
@@ -233,14 +238,14 @@ func (fwc *FirewallController) sync(key string) error {
 	// If there are no more ingresses, then delete the firewall rule.
 	if len(gceIngresses) == 0 {
 		if err := fwc.firewallPool.GC(); err != nil {
-			klog.Errorf("Could not garbage collect firewall pool, got error: %v", err)
+			fwc.logger.Error(err, "Could not garbage collect firewall pool, got error")
 		}
 		return nil
 	}
 
 	// gceSvcPorts contains the ServicePorts used by only single-cluster ingress.
 	gceSvcPorts := fwc.ToSvcPorts(gceIngresses)
-	nodeNames, err := utils.GetReadyNodeNames(listers.NewNodeLister(fwc.nodeLister))
+	nodeNames, err := utils.GetReadyNodeNames(listers.NewNodeLister(fwc.nodeLister), fwc.logger)
 	if err != nil {
 		return err
 	}
@@ -267,7 +272,7 @@ func (fwc *FirewallController) sync(key string) error {
 	}
 	if fwc.enableIngressRegionalExternal {
 		rxlbRange, err := fwc.rxlbFirewallSrcRange(gceIngresses)
-		klog.Infof("fwc.rxlbFirewallSrcRange() = %v, %v", rxlbRange, err)
+		fwc.logger.Info("fwc.rxlbFirewallsSrcRange", "rxlbRange", rxlbRange, "err", err)
 		if err != nil {
 			if err != features.ErrSubnetNotFound && err != ErrNoRXLBIngress {
 				return err
@@ -309,7 +314,7 @@ func (fwc *FirewallController) ilbFirewallSrcRange(gceIngresses []*v1.Ingress) (
 	}
 
 	if ilbEnabled {
-		L7ILBSrcRange, err := features.ILBSubnetSourceRange(fwc.ctx.Cloud, fwc.ctx.Cloud.Region())
+		L7ILBSrcRange, err := features.ILBSubnetSourceRange(fwc.ctx.Cloud, fwc.ctx.Cloud.Region(), fwc.logger)
 		if err != nil {
 			return "", err
 		}
@@ -330,7 +335,7 @@ func (fwc *FirewallController) rxlbFirewallSrcRange(gceIngresses []*v1.Ingress) 
 	}
 
 	if rxlbEnabled {
-		rxlbSourceRange, err := features.RXLBSubnetSourceRange(fwc.ctx.Cloud, fwc.ctx.Cloud.Region())
+		rxlbSourceRange, err := features.RXLBSubnetSourceRange(fwc.ctx.Cloud, fwc.ctx.Cloud.Region(), fwc.logger)
 		if err != nil {
 			return "", err
 		}

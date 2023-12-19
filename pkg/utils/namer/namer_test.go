@@ -19,6 +19,7 @@ package namer
 import (
 	"crypto/sha256"
 	"fmt"
+	"k8s.io/klog/v2"
 	"strings"
 	"testing"
 )
@@ -48,7 +49,7 @@ func TestTruncate(t *testing.T) {
 
 func TestNamerUID(t *testing.T) {
 	const uid = "cluster-uid"
-	newNamer := NewNamer(uid, "cluster-fw")
+	newNamer := NewNamer(uid, "cluster-fw", klog.TODO())
 	if newNamer.UID() != uid {
 		t.Errorf("newNamer.UID() = %q, want %q", newNamer.UID(), uid)
 	}
@@ -74,12 +75,12 @@ func TestNamerUID(t *testing.T) {
 func TestNamerFirewall(t *testing.T) {
 	const uid = "cluster-uid"
 	const fw1 = "fw1"
-	newNamer := NewNamer(uid, fw1)
+	newNamer := NewNamer(uid, fw1, klog.TODO())
 	if newNamer.Firewall() != fw1 {
 		t.Errorf("newNamer.Firewall() = %q, want %q", newNamer.Firewall(), fw1)
 	}
 
-	newNamer = NewNamer(uid, "")
+	newNamer = NewNamer(uid, "", klog.TODO())
 	if newNamer.Firewall() != uid {
 		t.Errorf("when initial firewall is empty, newNamer.Firewall() = %q, want %q", newNamer.Firewall(), uid)
 	}
@@ -93,7 +94,7 @@ func TestNamerFirewall(t *testing.T) {
 
 func TestNamerParseName(t *testing.T) {
 	const uid = "uid1"
-	newNamer := NewNamer(uid, "fw1")
+	newNamer := NewNamer(uid, "fw1", klog.TODO())
 	lbName := newNamer.LoadBalancer("key1")
 	secretHash := fmt.Sprintf("%x", sha256.Sum256([]byte("test123")))[:16]
 	for _, tc := range []struct {
@@ -124,7 +125,7 @@ func TestNameBelongsToCluster(t *testing.T) {
 	longKey := "0123456789"
 	secretHash := fmt.Sprintf("%x", sha256.Sum256([]byte("test123")))[:16]
 	for _, prefix := range []string{defaultPrefix, "mci"} {
-		newNamer := NewNamerWithPrefix(prefix, uid, "fw1")
+		newNamer := NewNamerWithPrefix(prefix, uid, "fw1", klog.TODO())
 		lbName := newNamer.LoadBalancer("key1")
 		// longLBName with 40 characters. Triggers truncation
 		longLBName := newNamer.LoadBalancer(strings.Repeat(longKey, 4))
@@ -156,7 +157,7 @@ func TestNameBelongsToCluster(t *testing.T) {
 	}
 
 	// Negative cases.
-	newNamer := NewNamer(uid, "fw1")
+	newNamer := NewNamer(uid, "fw1", klog.TODO())
 	// longLBName with 60 characters. Triggers truncation to eliminate cluster name suffix
 	longLBName := newNamer.LoadBalancer(strings.Repeat(longKey, 6))
 	for _, tc := range []string{
@@ -192,7 +193,7 @@ func TestNamerBackend(t *testing.T) {
 			want: "k8s-be-8080--xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx0",
 		},
 	} {
-		newNamer := NewNamer("uid1", "fw1")
+		newNamer := NewNamer("uid1", "fw1", klog.TODO())
 		if tc.uid != "" {
 			newNamer.SetUID(tc.uid)
 		}
@@ -202,7 +203,7 @@ func TestNamerBackend(t *testing.T) {
 		}
 	}
 	// Prefix.
-	newNamer := NewNamerWithPrefix("mci", "uid1", "fw1")
+	newNamer := NewNamerWithPrefix("mci", "uid1", "fw1", klog.TODO())
 	name := newNamer.IGBackend(80)
 	const want = "mci-be-80--uid1"
 	if name != want {
@@ -211,7 +212,7 @@ func TestNamerBackend(t *testing.T) {
 }
 
 func TestBackendPort(t *testing.T) {
-	newNamer := NewNamer("uid1", "fw1")
+	newNamer := NewNamer("uid1", "fw1", klog.TODO())
 	for _, tc := range []struct {
 		in    string
 		port  string
@@ -250,7 +251,7 @@ func TestIsSSLCert(t *testing.T) {
 		{defaultPrefix, "k8s-tp-foo--uid", false},
 		{"mci", "mci-ssl-foo--uid", true},
 	} {
-		newNamer := NewNamerWithPrefix(tc.prefix, "uid", "fw")
+		newNamer := NewNamerWithPrefix(tc.prefix, "uid", "fw", klog.TODO())
 		res := newNamer.IsLegacySSLCert("foo", tc.in)
 		if res != tc.want {
 			t.Errorf("with prefix = %q, newNamer.IsLegacySSLCert(%q) = %v, want %v", tc.prefix, tc.in, res, tc.want)
@@ -259,7 +260,7 @@ func TestIsSSLCert(t *testing.T) {
 }
 
 func TestNamedPort(t *testing.T) {
-	newNamer := NewNamer("uid1", "fw1")
+	newNamer := NewNamer("uid1", "fw1", klog.TODO())
 	name := newNamer.NamedPort(80)
 	const want = "port80"
 	if name != want {
@@ -268,13 +269,13 @@ func TestNamedPort(t *testing.T) {
 }
 
 func TestNamerInstanceGroup(t *testing.T) {
-	newNamer := NewNamer("uid1", "fw1")
+	newNamer := NewNamer("uid1", "fw1", klog.TODO())
 	name := newNamer.InstanceGroup()
 	if name != "k8s-ig--uid1" {
 		t.Errorf("newNamer.InstanceGroup() = %q, want %q", name, "k8s-ig--uid1")
 	}
 	// Prefix.
-	newNamer = NewNamerWithPrefix("mci", "uid1", "fw1")
+	newNamer = NewNamerWithPrefix("mci", "uid1", "fw1", klog.TODO())
 	name = newNamer.InstanceGroup()
 	if name != "mci-ig--uid1" {
 		t.Errorf("newNamer.InstanceGroup() = %q, want %q", name, "mci-ig--uid1")
@@ -282,7 +283,7 @@ func TestNamerInstanceGroup(t *testing.T) {
 }
 
 func TestNamerFirewallRule(t *testing.T) {
-	newNamer := NewNamer("uid1", "fw1")
+	newNamer := NewNamer("uid1", "fw1", klog.TODO())
 	name := newNamer.FirewallRule()
 	if name != "k8s-fw-l7--fw1" {
 		t.Errorf("newNamer.FirewallRule() = %q, want %q", name, "k8s-fw-l7--fw1")
@@ -323,7 +324,7 @@ func TestNamerLoadBalancer(t *testing.T) {
 			"mci-um-key1--uid1",
 		},
 	} {
-		newNamer := NewNamerWithPrefix(tc.prefix, "uid1", "fw1")
+		newNamer := NewNamerWithPrefix(tc.prefix, "uid1", "fw1", klog.TODO())
 		lbName := newNamer.LoadBalancer("key1")
 		// namespaceHash is calculated the same way as cert hash
 		namespaceHash := fmt.Sprintf("%x", sha256.Sum256([]byte(lbName)))[:16]
@@ -363,7 +364,7 @@ func TestNamerLoadBalancer(t *testing.T) {
 // Ensure that a valid cert name is created if clusterName is empty.
 func TestNamerSSLCertName(t *testing.T) {
 	secretHash := fmt.Sprintf("%x", sha256.Sum256([]byte("test123")))[:16]
-	newNamer := NewNamerWithPrefix("k8s", "", "fw1")
+	newNamer := NewNamerWithPrefix("k8s", "", "fw1", klog.TODO())
 	lbName := newNamer.LoadBalancer("key1")
 	certName := newNamer.SSLCertName(lbName, secretHash)
 	if strings.HasSuffix(certName, clusterNameDelimiter) {
@@ -395,7 +396,7 @@ func TestNamerIsCertUsedForLB(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			newNamer := NewNamerWithPrefix(tc.prefix, "cluster-uid", "fw1")
+			newNamer := NewNamerWithPrefix(tc.prefix, "cluster-uid", "fw1", klog.TODO())
 			lbName := newNamer.LoadBalancer(tc.ingName)
 			secretHash := fmt.Sprintf("%x", sha256.Sum256([]byte(tc.secretValue)))[:16]
 
@@ -454,7 +455,7 @@ func TestNamerNEG(t *testing.T) {
 		},
 	}
 
-	newNamer := NewNamer(clusterId, "")
+	newNamer := NewNamer(clusterId, "", klog.TODO())
 	for _, tc := range testCases {
 		res := newNamer.NEG(tc.namespace, tc.name, tc.port)
 		if len(res) > 63 {
@@ -466,7 +467,7 @@ func TestNamerNEG(t *testing.T) {
 	}
 
 	// Different prefix.
-	newNamer = NewNamerWithPrefix("mci", clusterId, "fw")
+	newNamer = NewNamerWithPrefix("mci", clusterId, "fw", klog.TODO())
 	name := newNamer.NEG("ns", "svc", 80)
 	const want = "mci1-01234567-ns-svc-80-4890871b"
 	if name != want {
@@ -521,7 +522,7 @@ func TestNamerRXLBBackendName(t *testing.T) {
 		},
 	}
 
-	newNamer := NewNamer(clusterId, "")
+	newNamer := NewNamer(clusterId, "", klog.TODO())
 	for _, tc := range testCases {
 		res := newNamer.RXLBBackendName(tc.namespace, tc.name, tc.port)
 		if len(res) > 63 {
@@ -533,7 +534,7 @@ func TestNamerRXLBBackendName(t *testing.T) {
 	}
 
 	// Different prefix.
-	newNamer = NewNamerWithPrefix("mci", clusterId, "fw")
+	newNamer = NewNamerWithPrefix("mci", clusterId, "fw", klog.TODO())
 	name := newNamer.NEG("ns", "svc", 80)
 	const want = "mci1-01234567-ns-svc-80-4890871b"
 	if name != want {
@@ -559,7 +560,7 @@ func TestIsNEG(t *testing.T) {
 		{defaultPrefix, "k8s-ssl-foo--uid", false},
 		{defaultPrefix, "invalidk8sresourcename", false},
 	} {
-		newNamer := NewNamerWithPrefix(tc.prefix, "uid1", "fw1")
+		newNamer := NewNamerWithPrefix(tc.prefix, "uid1", "fw1", klog.TODO())
 		res := newNamer.IsNEG(tc.in)
 		if res != tc.want {
 			t.Errorf("with prefix %q, newNamer.NEG(%q) = %v, want %v", tc.prefix, tc.in, res, tc.want)

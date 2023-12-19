@@ -21,11 +21,12 @@ import (
 	"fmt"
 	"testing"
 
+	"k8s.io/klog/v2"
+
 	"github.com/google/go-cmp/cmp"
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/klog/v2"
 )
 
 func TestEnsureIAP(t *testing.T) {

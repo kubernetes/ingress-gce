@@ -1,6 +1,7 @@
 package operator
 
 import (
+	"k8s.io/klog/v2"
 	"testing"
 
 	"k8s.io/ingress-gce/pkg/backendconfig"
@@ -52,7 +53,7 @@ func TestDoesServiceReferenceBackendConfig(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		result := doesServiceReferenceBackendConfig(tc.service, backendconfig.TestBackendConfig)
+		result := doesServiceReferenceBackendConfig(tc.service, backendconfig.TestBackendConfig, klog.TODO())
 		if result != tc.expected {
 			t.Fatalf("SDSD)")
 		}

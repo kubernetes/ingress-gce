@@ -26,7 +26,7 @@ import (
 // EnsureCustomRequestHeaders reads the CustomRequestHeaders configuration specified in the ServicePort.BackendConfig
 // and applies it to the BackendService. It returns true if there were existing
 // settings on the BackendService that were overwritten.
-func EnsureCustomRequestHeaders(sp utils.ServicePort, be *composite.BackendService) bool {
+func EnsureCustomRequestHeaders(sp utils.ServicePort, be *composite.BackendService, logger klog.Logger) bool {
 	if sp.BackendConfig.Spec.CustomRequestHeaders == nil {
 		return false
 	}
@@ -34,7 +34,7 @@ func EnsureCustomRequestHeaders(sp utils.ServicePort, be *composite.BackendServi
 	applyCustomRequestHeaders(sp, beTemp)
 	if !reflect.DeepEqual(beTemp.CustomRequestHeaders, be.CustomRequestHeaders) {
 		applyCustomRequestHeaders(sp, be)
-		klog.V(2).Infof("Updated Custom Request Headers for service %v/%v.", sp.ID.Service.Namespace, sp.ID.Service.Name)
+		logger.V(2).Info("Updated Custom Request Headers for service", "serviceKey", klog.KRef(sp.ID.Service.Namespace, sp.ID.Service.Name))
 		return true
 	}
 

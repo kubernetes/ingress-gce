@@ -76,6 +76,7 @@ func NewTranslator(serviceInformer cache.SharedIndexInformer,
 	recorderGetter healthchecks.RecorderGetter,
 	enableTHC,
 	enableL7XLBRegional bool,
+	logger klog.Logger,
 ) *Translator {
 	return &Translator{
 		ServiceInformer:       serviceInformer,
@@ -87,6 +88,7 @@ func NewTranslator(serviceInformer cache.SharedIndexInformer,
 		enableTHC:             enableTHC,
 		recorderGetter:        recorderGetter,
 		enableL7XLBRegional:   enableL7XLBRegional,
+		logger:                logger.WithName("Translator"),
 	}
 }
 
@@ -101,6 +103,8 @@ type Translator struct {
 	recorderGetter        healthchecks.RecorderGetter
 	enableTHC             bool
 	enableL7XLBRegional   bool
+
+	logger klog.Logger
 }
 
 func (t *Translator) getCachedService(id utils.ServicePortID) (*api_v1.Service, error) {
@@ -221,11 +225,11 @@ func (t *Translator) maybeEnableBackendConfig(sp *utils.ServicePort, svc *api_v1
 func (t *Translator) setThcOptInOnSvc(sp *utils.ServicePort, svc *api_v1.Service) (flagWarning bool) {
 	thcOptIn, err := annotations.FromService(svc).IsThcAnnotated()
 	if err != nil {
-		klog.Warningf("Parsing THC annotation failed: %+v.", err)
+		t.logger.Info(fmt.Sprintf("Parsing THC annotation failed: %+v.", err))
 	}
 	if !thcOptIn {
 		sp.THCConfiguration.THCOptInOnSvc = false
-		klog.Infof("THCOptInOnSvc=%v for the sevice %v with service port (%v, %v).", sp.THCConfiguration.THCOptInOnSvc, svc.Name, sp.Port, sp.PortName)
+		t.logger.Info(fmt.Sprintf("THCOptInOnSvc=%v for the service", sp.THCConfiguration.THCOptInOnSvc), "serviceName", svc.Name, "servicePort", sp.Port, "servicePortName", sp.PortName)
 		return
 	}
 
@@ -235,7 +239,7 @@ func (t *Translator) setThcOptInOnSvc(sp *utils.ServicePort, svc *api_v1.Service
 		flagWarning = true
 
 		sp.THCConfiguration.THCOptInOnSvc = false
-		klog.Infof("THCOptInOnSvc=%v for the sevice %v with service port (%v, %v).", sp.THCConfiguration.THCOptInOnSvc, svc.Name, sp.Port, sp.PortName)
+		t.logger.Info(fmt.Sprintf("THCOptInOnSvc=%v for the service", sp.THCConfiguration.THCOptInOnSvc), "serviceName", svc.Name, "servicePort", sp.Port, "servicePortName", sp.PortName)
 		return
 	}
 
@@ -244,7 +248,7 @@ func (t *Translator) setThcOptInOnSvc(sp *utils.ServicePort, svc *api_v1.Service
 		sp.THCConfiguration.THCEvents.BackendConfigOverridesTHC = true
 
 		sp.THCConfiguration.THCOptInOnSvc = false
-		klog.Infof("THCOptInOnSvc=%v for the sevice %v with service port (%v, %v).", sp.THCConfiguration.THCOptInOnSvc, svc.Name, sp.Port, sp.PortName)
+		t.logger.Info(fmt.Sprintf("THCOptInOnSvc=%v for the service", sp.THCConfiguration.THCOptInOnSvc), "serviceName", svc.Name, "servicePort", sp.Port, "servicePortName", sp.PortName)
 		return
 	}
 
@@ -253,14 +257,14 @@ func (t *Translator) setThcOptInOnSvc(sp *utils.ServicePort, svc *api_v1.Service
 		sp.THCConfiguration.THCEvents.THCAnnotationWithoutNEG = true
 
 		sp.THCConfiguration.THCOptInOnSvc = false
-		klog.Infof("THCOptInOnSvc=%v for the sevice %v with service port (%v, %v).", sp.THCConfiguration.THCOptInOnSvc, svc.Name, sp.Port, sp.PortName)
+		t.logger.Info(fmt.Sprintf("THCOptInOnSvc=%v for the service", sp.THCConfiguration.THCOptInOnSvc), "serviceName", svc.Name, "servicePort", sp.Port, "servicePortName", sp.PortName)
 		return
 	}
 
 	sp.THCConfiguration.THCEvents.THCConfigured = true
 
 	sp.THCConfiguration.THCOptInOnSvc = true
-	klog.Infof("THCOptInOnSvc=%v for the sevice %v with service port (%v, %v).", sp.THCConfiguration.THCOptInOnSvc, svc.Name, sp.Port, sp.PortName)
+	t.logger.Info(fmt.Sprintf("THCOptInOnSvc=%v for the service", sp.THCConfiguration.THCOptInOnSvc), "serviceName", svc.Name, "servicePort", sp.Port, "servicePortName", sp.PortName)
 	return
 }
 
@@ -320,7 +324,7 @@ func (t *Translator) getServicePort(id utils.ServicePortID, params *getServicePo
 func (t *Translator) TranslateIngress(ing *v1.Ingress, systemDefaultBackend utils.ServicePortID, namer namer_util.BackendNamer) (*utils.GCEURLMap, []error, bool) {
 	var errs []error
 	var warnings bool
-	urlMap := utils.NewGCEURLMap()
+	urlMap := utils.NewGCEURLMap(t.logger)
 	params := t.getServicePortParamsForIngress(ing)
 
 	for _, rule := range ing.Spec.Rules {
@@ -499,12 +503,12 @@ func (t *Translator) getHTTPProbe(svc api_v1.Service, targetPort intstr.IntOrStr
 						}
 					}
 
-					klog.Infof("%v: found matching targetPort on container %v, but not on readinessProbe (%+v)",
-						logStr, c.Name, c.ReadinessProbe.ProbeHandler.HTTPGet.Port)
+					t.logger.Info(fmt.Sprintf("%v: found matching targetPort on container %v, but not on readinessProbe (%+v)",
+						logStr, c.Name, c.ReadinessProbe.ProbeHandler.HTTPGet.Port))
 				}
 			}
 		}
-		klog.V(5).Infof("%v: lacks a matching HTTP probe for use in health checks.", logStr)
+		t.logger.V(5).Info(fmt.Sprintf("%v: lacks a matching HTTP probe for use in health checks.", logStr))
 	}
 	return nil, nil
 }
@@ -522,7 +526,7 @@ func (t *Translator) GatherEndpointPorts(svcPorts []utils.ServicePort) []string 
 			if p.TargetPort.Type == intstr.Int {
 				endpointPorts = []int{p.TargetPort.IntValue()}
 			} else {
-				endpointPorts = listEndpointTargetPortsFromEndpointSlices(t.EndpointSliceInformer.GetIndexer(), p.ID.Service.Namespace, p.ID.Service.Name, p.PortName)
+				endpointPorts = listEndpointTargetPortsFromEndpointSlices(t.EndpointSliceInformer.GetIndexer(), p.ID.Service.Namespace, p.ID.Service.Name, p.PortName, t.logger)
 			}
 			for _, ep := range endpointPorts {
 				portMap[int64(ep)] = true
@@ -612,14 +616,14 @@ func listAll(store cache.Store, selector labels.Selector, appendFn cache.AppendF
 }
 
 // finds the actual target port behind named target port, the name of the target port is the same as service port name
-func listEndpointTargetPortsFromEndpointSlices(indexer cache.Indexer, namespace, name, svcPortName string) []int {
+func listEndpointTargetPortsFromEndpointSlices(indexer cache.Indexer, namespace, name, svcPortName string, logger klog.Logger) []int {
 	slices, err := indexer.ByIndex(endpointslices.EndpointSlicesByServiceIndex, endpointslices.FormatEndpointSlicesServiceKey(namespace, name))
 	if len(slices) == 0 {
-		klog.Errorf("No Endpoint Slices found for service %s/%s.", namespace, name)
+		logger.Error(nil, "No Endpoint Slices found for service", "serviceKey", klog.KRef(namespace, name))
 		return []int{}
 	}
 	if err != nil {
-		klog.Errorf("Failed to retrieve endpoint slices for service %s/%s: %v", namespace, name, err)
+		logger.Error(err, "Failed to retrieve endpoint slices for service", "serviceKey", klog.KRef(namespace, name))
 		return []int{}
 	}
 

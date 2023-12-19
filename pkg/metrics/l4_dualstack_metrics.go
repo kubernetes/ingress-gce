@@ -1,8 +1,8 @@
 package metrics
 
 import (
+	"fmt"
 	"github.com/prometheus/client_golang/prometheus"
-	"k8s.io/klog/v2"
 )
 
 var (
@@ -32,10 +32,11 @@ func (im *ControllerMetrics) exportL4ILBDualStackMetrics() {
 	// need to reset, otherwise metrics counted on previous exports will be still stored in a prometheus state
 	l4ILBDualStackCount.Reset()
 
-	klog.V(3).Infof("Exporting L4 ILB DualStack usage metrics")
+	im.logger.V(3).Info("Exporting L4 ILB DualStack usage metrics")
 
 	for key, state := range im.l4ILBServiceMap {
-		klog.V(6).Infof("ILB Service %s has IPFamilies: %v, IPFamilyPolicy: %t, Status: %v", key, state.IPFamilies, state.IPFamilyPolicy, state.Status)
+		im.logger.V(6).Info("Got ILB Service with IPFamilies, IPFamilyPolicy and Status",
+			"serviceKey", key, "ipFamilies", state.IPFamilies, "ipFamilyPolicy", fmt.Sprintf("%T", state.IPFamilyPolicy), "status", state.Status)
 		l4ILBDualStackCount.With(prometheus.Labels{
 			"ip_families":      state.IPFamilies,
 			"ip_family_policy": state.IPFamilyPolicy,
@@ -43,7 +44,7 @@ func (im *ControllerMetrics) exportL4ILBDualStackMetrics() {
 		}).Inc()
 	}
 
-	klog.V(3).Infof("L4 ILB DualStack usage metrics exported.")
+	im.logger.V(3).Info("L4 ILB DualStack usage metrics exported")
 }
 
 func (im *ControllerMetrics) exportL4NetLBDualStackMetrics() {
@@ -56,15 +57,16 @@ func (im *ControllerMetrics) exportL4NetLBDualStackMetrics() {
 	// need to reset, otherwise metrics counted on previous exports will be still stored in a prometheus state
 	l4NetLBDualStackCount.Reset()
 
-	klog.V(3).Infof("Exporting L4 NetLB DualStack usage metrics")
+	im.logger.V(3).Info("Exporting L4 NetLB DualStack usage metrics")
 
 	for key, state := range im.l4NetLBServiceMap {
-		klog.V(6).Infof("NetLB Service %s has IPFamilies: %v, IPFamilyPolicy: %t, Status: %v", key, state.IPFamilies, state.IPFamilyPolicy, state.Status)
+		im.logger.V(6).Info("Got NetLB Service with IPFamilies, IPFamilyPolicy and Status",
+			"serviceKey", key, "ipFamilies", state.IPFamilies, "ipFamilyPolicy", state.IPFamilyPolicy, "status", state.Status)
 		l4NetLBDualStackCount.With(prometheus.Labels{
 			"ip_families":      state.IPFamilies,
 			"ip_family_policy": state.IPFamilyPolicy,
 			"status":           string(getStatusConsideringPersistentError(&state)),
 		}).Inc()
 	}
-	klog.V(3).Infof("L4 Netlb DualStack usage metrics exported.")
+	im.logger.V(3).Info("L4 NetLB DualStack usage metrics exported")
 }

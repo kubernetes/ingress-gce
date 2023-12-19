@@ -42,12 +42,12 @@ const (
 )
 
 // NewNamer returns a new naming policy given the state of the cluster.
-func NewNamer(kubeClient kubernetes.Interface, clusterName, fwName string) (*namer.Namer, error) {
-	namer, err := NewStaticNamer(kubeClient, clusterName, fwName)
+func NewNamer(kubeClient kubernetes.Interface, clusterName, fwName string, logger klog.Logger) (*namer.Namer, error) {
+	namer, err := NewStaticNamer(kubeClient, clusterName, fwName, logger)
 	if err != nil {
 		return nil, err
 	}
-	uidVault := storage.NewConfigMapVault(kubeClient, metav1.NamespaceSystem, uidConfigMapName)
+	uidVault := storage.NewConfigMapVault(kubeClient, metav1.NamespaceSystem, uidConfigMapName, logger)
 
 	// Start a goroutine to poll the cluster UID config map.  We don't
 	// watch because we know exactly which configmap we want and this
@@ -57,25 +57,25 @@ func NewNamer(kubeClient kubernetes.Interface, clusterName, fwName string) (*nam
 		for _, key := range [...]string{storage.UIDDataKey, storage.ProviderDataKey} {
 			val, found, err := uidVault.Get(key)
 			if err != nil {
-				klog.Errorf("Can't read uidConfigMap %v", uidConfigMapName)
+				logger.Error(err, "Can't read uidConfigMap", "uidConfigMapName", uidConfigMapName)
 			} else if !found {
 				errmsg := fmt.Sprintf("Can't read %v from uidConfigMap %v", key, uidConfigMapName)
 				if key == storage.UIDDataKey {
-					klog.Errorf(errmsg)
+					logger.Error(nil, errmsg)
 				} else {
-					klog.V(4).Infof(errmsg)
+					logger.V(4).Info(errmsg)
 				}
 			} else {
 
 				switch key {
 				case storage.UIDDataKey:
 					if uid := namer.UID(); uid != val {
-						klog.Infof("Cluster uid changed from %v -> %v", uid, val)
+						logger.Info("Cluster uid changed", "oldUid", uid, "newUid", val)
 						namer.SetUID(val)
 					}
 				case storage.ProviderDataKey:
 					if fw_name := namer.Firewall(); fw_name != val {
-						klog.Infof("Cluster firewall name changed from %v -> %v", fw_name, val)
+						logger.Info("Cluster firewall name changed", "oldFirewallName", fw_name, "newFirewallName", val)
 						namer.SetFirewall(val)
 					}
 				}
@@ -87,17 +87,17 @@ func NewNamer(kubeClient kubernetes.Interface, clusterName, fwName string) (*nam
 
 // NewStaticNamer returns a new naming policy given a snapshot of cluster state. Note that this
 // implementation does not dynamically change the naming policy based on changes in cluster state.
-func NewStaticNamer(kubeClient kubernetes.Interface, clusterName, fwName string) (*namer.Namer, error) {
-	name, err := getClusterUID(kubeClient, clusterName)
+func NewStaticNamer(kubeClient kubernetes.Interface, clusterName, fwName string, logger klog.Logger) (*namer.Namer, error) {
+	name, err := getClusterUID(kubeClient, clusterName, logger)
 	if err != nil {
 		return nil, err
 	}
-	fw_name, err := getFirewallName(kubeClient, fwName, name)
+	fw_name, err := getFirewallName(kubeClient, fwName, name, logger)
 	if err != nil {
 		return nil, err
 	}
 
-	return namer.NewNamer(name, fw_name), nil
+	return namer.NewNamer(name, fw_name, logger), nil
 }
 
 // useDefaultOrLookupVault returns either a 'defaultName' or if unset, obtains
@@ -109,9 +109,9 @@ func NewStaticNamer(kubeClient kubernetes.Interface, clusterName, fwName string)
 //
 // else, check cfgVault with 'configMapKey' as a key and if found, use the associated value
 // else, return an empty 'name' and pass along an error iff the configmap lookup is erroneous.
-func useDefaultOrLookupVault(cfgVault *storage.ConfigMapVault, configMapKey, defaultName string) (string, error) {
+func useDefaultOrLookupVault(cfgVault *storage.ConfigMapVault, configMapKey, defaultName string, logger klog.Logger) (string, error) {
 	if defaultName != "" {
-		klog.Infof("Using user provided %v %v", configMapKey, defaultName)
+		logger.Info(fmt.Sprintf("Using user provided %v %v", configMapKey, defaultName))
 		// Don't save the uid in the vault, so users can rollback
 		// through setting the accompany flag to ""
 		return defaultName, nil
@@ -128,7 +128,7 @@ func useDefaultOrLookupVault(cfgVault *storage.ConfigMapVault, configMapKey, def
 		// Not found but safe to proceed.
 		return "", nil
 	}
-	klog.Infof("Using %v = %q saved in ConfigMap", configMapKey, val)
+	logger.Info(fmt.Sprintf("Using %v = %q saved in ConfigMap", configMapKey, val))
 	return val, nil
 }
 
@@ -136,14 +136,14 @@ func useDefaultOrLookupVault(cfgVault *storage.ConfigMapVault, configMapKey, def
 // backwards compatibility, the firewall name will default to the cluster UID.
 // Use getFlagOrLookupVault to obtain a stored or overridden value for the firewall name.
 // else, use the cluster UID as a backup (this retains backwards compatibility).
-func getFirewallName(kubeClient kubernetes.Interface, name, clusterUID string) (string, error) {
-	cfgVault := storage.NewConfigMapVault(kubeClient, metav1.NamespaceSystem, uidConfigMapName)
-	if firewallName, err := useDefaultOrLookupVault(cfgVault, storage.ProviderDataKey, name); err != nil {
+func getFirewallName(kubeClient kubernetes.Interface, name, clusterUID string, logger klog.Logger) (string, error) {
+	cfgVault := storage.NewConfigMapVault(kubeClient, metav1.NamespaceSystem, uidConfigMapName, logger)
+	if firewallName, err := useDefaultOrLookupVault(cfgVault, storage.ProviderDataKey, name, logger); err != nil {
 		return "", err
 	} else if firewallName != "" {
 		return firewallName, cfgVault.Put(storage.ProviderDataKey, firewallName, false)
 	} else {
-		klog.Infof("Using cluster UID %v as firewall name", clusterUID)
+		logger.Info("Using cluster UID as firewall name", "clusterUID", clusterUID)
 		return clusterUID, cfgVault.Put(storage.ProviderDataKey, clusterUID, false)
 	}
 }
@@ -155,9 +155,9 @@ func getFirewallName(kubeClient kubernetes.Interface, name, clusterUID string) (
 //   - remember that "" is the cluster uid
 //
 // else, allocate a new uid
-func getClusterUID(kubeClient kubernetes.Interface, name string) (string, error) {
-	cfgVault := storage.NewConfigMapVault(kubeClient, metav1.NamespaceSystem, uidConfigMapName)
-	if name, err := useDefaultOrLookupVault(cfgVault, storage.UIDDataKey, name); err != nil {
+func getClusterUID(kubeClient kubernetes.Interface, name string, logger klog.Logger) (string, error) {
+	cfgVault := storage.NewConfigMapVault(kubeClient, metav1.NamespaceSystem, uidConfigMapName, logger)
+	if name, err := useDefaultOrLookupVault(cfgVault, storage.UIDDataKey, name, logger); err != nil {
 		return "", err
 	} else if name != "" {
 		return name, nil
@@ -170,14 +170,14 @@ func getClusterUID(kubeClient kubernetes.Interface, name string) (string, error)
 	if err != nil {
 		return "", err
 	}
-	namer := namer.NewNamer("", "")
+	namer := namer.NewNamer("", "", logger)
 	for _, ing := range ings.Items {
 		if len(ing.Status.LoadBalancer.Ingress) != 0 {
 			c := namer.ParseName(loadbalancers.GCEResourceName(ing.Annotations, "forwarding-rule"))
 			if c.ClusterName != "" {
 				return c.ClusterName, cfgVault.Put(storage.UIDDataKey, c.ClusterName, false)
 			}
-			klog.Infof("Found a working Ingress, assuming uid is empty string")
+			logger.Info("Found a working Ingress, assuming uid is empty string")
 			return "", cfgVault.Put(storage.UIDDataKey, "", false)
 		}
 	}

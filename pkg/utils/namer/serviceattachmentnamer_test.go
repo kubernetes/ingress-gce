@@ -17,6 +17,7 @@ limitations under the License.
 package namer
 
 import (
+	"k8s.io/klog/v2"
 	"strings"
 	"testing"
 )
@@ -75,10 +76,10 @@ func TestNamerServiceAttachment(t *testing.T) {
 			var expectedName string
 
 			if withPrefix {
-				oldNamer = NewNamer(clusterId, "")
+				oldNamer = NewNamer(clusterId, "", klog.TODO())
 				expectedName = tc.expectDefaultPrefix
 			} else {
-				oldNamer = NewNamerWithPrefix(prefix, clusterId, "")
+				oldNamer = NewNamerWithPrefix(prefix, clusterId, "", klog.TODO())
 				expectedName = tc.expectCustomPrefix
 			}
 

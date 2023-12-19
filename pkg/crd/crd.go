@@ -44,11 +44,13 @@ const (
 // CRDHandler takes care of ensuring CRD's for a cluster.
 type CRDHandler struct {
 	client crdclient.Interface
+
+	logger klog.Logger
 }
 
 // NewCRDHandler returns a new CRDHandler.
-func NewCRDHandler(client crdclient.Interface) *CRDHandler {
-	return &CRDHandler{client}
+func NewCRDHandler(client crdclient.Interface, logger klog.Logger) *CRDHandler {
+	return &CRDHandler{client, logger.WithName("CRDHandler")}
 }
 
 // EnsureCRD ensures a CRD in a cluster given the CRD's metadata.
@@ -77,13 +79,13 @@ func (h *CRDHandler) EnsureCRD(meta *CRDMeta, namespacedScoped bool) (*apiextens
 		return nil, fmt.Errorf("timed out waiting for %v CRD to become Established: %v", meta.kind, err)
 	}
 
-	klog.V(0).Infof("%v CRD is Established.", meta.kind)
+	h.logger.V(0).Info("CRD is Established", "kind", meta.kind)
 	return crd, nil
 }
 
 func (h *CRDHandler) createOrUpdateCRD(meta *CRDMeta, namespacedScoped bool) (*apiextensionsv1.CustomResourceDefinition, error) {
 	updateCRD := false
-	crd := crd(meta, namespacedScoped)
+	crd := crd(meta, namespacedScoped, h.logger)
 	if err := wait.PollImmediate(checkCRDPresentInterval, checkCRDPresentTimeout, func() (bool, error) {
 		existingCRD, err := h.client.ApiextensionsV1().CustomResourceDefinitions().Get(context.TODO(), crd.Name, metav1.GetOptions{})
 		// Retry until the RBAC permissions are propagated to be able to read the CRD
@@ -108,15 +110,15 @@ func (h *CRDHandler) createOrUpdateCRD(meta *CRDMeta, namespacedScoped bool) (*a
 
 	// Update CRD if already present.
 	if updateCRD {
-		klog.V(0).Infof("Updating existing %v CRD...", meta.kind)
+		h.logger.V(0).Info("Updating existing CRD...", "kind", meta.kind)
 		return h.client.ApiextensionsV1().CustomResourceDefinitions().Update(context.TODO(), crd, metav1.UpdateOptions{})
 	}
 
-	klog.V(0).Infof("Creating %v CRD...", meta.kind)
+	h.logger.V(0).Info("Creating CRD...", "kind", meta.kind)
 	return h.client.ApiextensionsV1().CustomResourceDefinitions().Create(context.TODO(), crd, metav1.CreateOptions{})
 }
 
-func crd(meta *CRDMeta, namespacedScoped bool) *apiextensionsv1.CustomResourceDefinition {
+func crd(meta *CRDMeta, namespacedScoped bool, logger klog.Logger) *apiextensionsv1.CustomResourceDefinition {
 	scope := apiextensionsv1.NamespaceScoped
 	if !namespacedScoped {
 		scope = apiextensionsv1.ClusterScoped
@@ -137,17 +139,17 @@ func crd(meta *CRDMeta, namespacedScoped bool) *apiextensionsv1.CustomResourceDe
 	}
 
 	if len(meta.versions) == 0 {
-		klog.Errorf("No versions specified in CRD meta")
+		logger.Error(nil, "No versions specified in CRD meta")
 	}
 
 	var versions []apiextensionsv1.CustomResourceDefinitionVersion
 	for i, v := range meta.versions {
 		validationSchema, err := v.validation()
 		if err != nil {
-			klog.Errorf("Error adding simple validation for %v CRD(%s API): %v", meta.kind, v.name, err)
+			logger.Error(err, "Error adding simple validation for CRD", "kind", meta.kind, "apiVersion", v.name)
 		}
 		if validationSchema == nil {
-			klog.Errorf("No validation schema exists for %v CRD(%s API)", meta.kind, v.name)
+			logger.Error(nil, "No validation schema exists for CRD", "kind", meta.kind, "apiVersion", v.name)
 		}
 		version := apiextensionsv1.CustomResourceDefinitionVersion{
 			Name:       v.name,

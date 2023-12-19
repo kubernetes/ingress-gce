@@ -17,6 +17,7 @@ limitations under the License.
 package features
 
 import (
+	"k8s.io/klog/v2"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -260,7 +261,7 @@ func TestEnsureLogging(t *testing.T) {
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			hasUpdated := EnsureLogging(tc.sp, tc.be)
+			hasUpdated := EnsureLogging(tc.sp, tc.be, klog.TODO())
 			if hasUpdated != tc.expectUpdate {
 				t.Errorf("%v: expected %v but got %v", tc.desc, tc.expectUpdate, hasUpdated)
 			}
@@ -434,7 +435,7 @@ func TestEnsureBackendServiceLogConfig(t *testing.T) {
 			backendService := &composite.BackendService{
 				LogConfig: tc.logConfig,
 			}
-			ensureBackendServiceLogConfig(tc.sp, backendService)
+			ensureBackendServiceLogConfig(tc.sp, backendService, klog.TODO())
 			if diff := cmp.Diff(tc.expectLogConfig, backendService.LogConfig); diff != "" {
 				t.Errorf("ensureBackendServiceLogConfig() mismatch (-want +got):\n%s", diff)
 			}

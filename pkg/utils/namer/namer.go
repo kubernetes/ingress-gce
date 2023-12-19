@@ -111,16 +111,18 @@ type Namer struct {
 	nameLock     sync.Mutex
 	clusterName  string
 	firewallName string
+
+	logger klog.Logger
 }
 
 // NewNamer creates a new namer with a Cluster and Firewall name.
-func NewNamer(clusterName, firewallName string) *Namer {
-	return NewNamerWithPrefix(defaultPrefix, clusterName, firewallName)
+func NewNamer(clusterName, firewallName string, logger klog.Logger) *Namer {
+	return NewNamerWithPrefix(defaultPrefix, clusterName, firewallName, logger)
 }
 
 // NewNamerWithPrefix creates a new namer with a custom prefix.
-func NewNamerWithPrefix(prefix, clusterName, firewallName string) *Namer {
-	namer := &Namer{prefix: prefix}
+func NewNamerWithPrefix(prefix, clusterName, firewallName string, logger klog.Logger) *Namer {
+	namer := &Namer{prefix: prefix, logger: logger.WithName("Namer")}
 	namer.SetUID(clusterName)
 	namer.SetFirewall(firewallName)
 
@@ -142,16 +144,16 @@ func (n *Namer) SetUID(name string) {
 
 	if strings.Contains(name, clusterNameDelimiter) {
 		tokens := strings.Split(name, clusterNameDelimiter)
-		klog.Warningf("Name %q contains %q, taking last token in: %+v", name, clusterNameDelimiter, tokens)
+		n.logger.Info(fmt.Sprintf("Name %q contains %q, taking last token in: %+v", name, clusterNameDelimiter, tokens))
 		name = tokens[len(tokens)-1]
 	}
 
 	if n.clusterName == name {
-		klog.V(4).Infof("Cluster name is unchanged (%q)", name)
+		n.logger.V(4).Info("Cluster name is unchanged", "clusterName", name)
 		return
 	}
 
-	klog.Infof("Changing cluster name from %q to %q", n.clusterName, name)
+	n.logger.Info("Changing cluster name", "oldClusterName", n.clusterName, "newClusterName", name)
 	n.clusterName = name
 }
 
@@ -161,7 +163,7 @@ func (n *Namer) SetFirewall(name string) {
 	defer n.nameLock.Unlock()
 
 	if n.firewallName != name {
-		klog.Infof("Changing firewall name from %q to %q", n.firewallName, name)
+		n.logger.Info("Changing firewall name", "oldFirewallName", n.firewallName, "newFirewallName", name)
 		n.firewallName = name
 	}
 }

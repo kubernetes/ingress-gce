@@ -17,6 +17,7 @@ limitations under the License.
 package features
 
 import (
+	"k8s.io/klog/v2"
 	"testing"
 
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
@@ -90,7 +91,7 @@ func TestEnsureCustomResponseHeaders(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			result := EnsureCustomResponseHeaders(tc.sp, tc.be)
+			result := EnsureCustomResponseHeaders(tc.sp, tc.be, klog.TODO())
 			if result != tc.updateExpected {
 				t.Errorf("Expected %v but got %v", tc.updateExpected, result)
 			}

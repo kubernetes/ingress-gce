@@ -28,7 +28,7 @@ import (
 // specified in the ServicePort.BackendConfig and applies it to the BackendService.
 // It returns true if there were existing settings on the BackendService
 // that were overwritten.
-func EnsureAffinity(sp utils.ServicePort, be *composite.BackendService) bool {
+func EnsureAffinity(sp utils.ServicePort, be *composite.BackendService, logger klog.Logger) bool {
 	if sp.BackendConfig.Spec.SessionAffinity == nil {
 		return false
 	}
@@ -36,7 +36,7 @@ func EnsureAffinity(sp utils.ServicePort, be *composite.BackendService) bool {
 	applyAffinitySettings(sp, beTemp)
 	if !reflect.DeepEqual(beTemp.AffinityCookieTtlSec, be.AffinityCookieTtlSec) || beTemp.SessionAffinity != be.SessionAffinity {
 		applyAffinitySettings(sp, be)
-		klog.V(2).Infof("Updated SessionAffinity settings for service %v/%v.", sp.ID.Service.Namespace, sp.ID.Service.Name)
+		logger.V(2).Info("Updated SessionAffinity settings for service", "serviceKey", klog.KRef(sp.ID.Service.Namespace, sp.ID.Service.Name))
 		return true
 	}
 	return false

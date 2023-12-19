@@ -19,6 +19,7 @@ package controller
 import (
 	context2 "context"
 	"fmt"
+	"k8s.io/klog/v2"
 	"net/http"
 	"reflect"
 	"sort"
@@ -51,7 +52,6 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/common"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
-	"k8s.io/klog/v2"
 )
 
 var (
@@ -70,7 +70,7 @@ func newLoadBalancerController() *LoadBalancerController {
 	zonegetter.AddFakeNodes(fakeZoneGetter, fakeZone, "test-node")
 
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockGlobalForwardingRules.InsertHook = loadbalancers.InsertGlobalForwardingRuleHook
-	namer := namer_util.NewNamer(clusterUID, "")
+	namer := namer_util.NewNamer(clusterUID, "", klog.TODO())
 
 	stopCh := make(chan struct{})
 	ctxConfig := context.ControllerContextConfig{
@@ -80,7 +80,7 @@ func newLoadBalancerController() *LoadBalancerController {
 		HealthCheckPath:               "/",
 		EnableIngressRegionalExternal: true,
 	}
-	ctx := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, nil, nil, nil, nil, nil, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig)
+	ctx := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, nil, nil, nil, nil, nil, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
 	lbc := NewLoadBalancerController(ctx, stopCh, klog.TODO())
 	// TODO(rramkumar): Fix this so we don't have to override with our fake
 	lbc.instancePool = instancegroups.NewManager(&instancegroups.ManagerConfig{
@@ -90,8 +90,8 @@ func newLoadBalancerController() *LoadBalancerController {
 		BasePath:   utils.GetBasePath(fakeGCE),
 		ZoneGetter: fakeZoneGetter,
 		MaxIGSize:  1000,
-	})
-	lbc.l7Pool = loadbalancers.NewLoadBalancerPool(fakeGCE, namer, events.RecorderProducerMock{}, namer_util.NewFrontendNamerFactory(namer, ""))
+	}, klog.TODO())
+	lbc.l7Pool = loadbalancers.NewLoadBalancerPool(fakeGCE, namer, events.RecorderProducerMock{}, namer_util.NewFrontendNamerFactory(namer, "", klog.TODO()), klog.TODO())
 
 	lbc.hasSynced = func() bool { return true }
 
@@ -790,7 +790,7 @@ func TestIngressTagging(t *testing.T) {
 			addIngress(lbc, ing)
 			// Create URL map if enabled.
 			if tc.urlMapExists {
-				lbName := lbc.ctx.ClusterNamer.LoadBalancer(common.IngressKeyFunc(ing))
+				lbName := lbc.ctx.ClusterNamer.LoadBalancer(common.IngressKeyFunc(ing, klog.TODO()))
 				lbc.ctx.Cloud.CreateURLMap(&compute.UrlMap{Name: lbc.ctx.ClusterNamer.UrlMap(lbName)})
 			}
 
@@ -878,7 +878,7 @@ func TestGCMultiple(t *testing.T) {
 	allIngresses := operator.Ingresses(lbc.ctx.Ingresses().List()).Filter(func(ing *networkingv1.Ingress) bool {
 		return common.HasFinalizer(ing.ObjectMeta)
 	}).AsList()
-	allIngressKeys = common.ToIngressKeys(allIngresses)
+	allIngressKeys = common.ToIngressKeys(allIngresses, klog.TODO())
 	sort.Strings(allIngressKeys)
 	if diff := cmp.Diff(expectedIngresses, allIngressKeys); diff != "" {
 		t.Fatalf("Got diff for Ingresses after delete (-want +got):\n%s", diff)
@@ -993,7 +993,7 @@ func TestGC(t *testing.T) {
 			allIngresses := operator.Ingresses(lbc.ctx.Ingresses().List()).Filter(func(ing *networkingv1.Ingress) bool {
 				return common.HasFinalizer(ing.ObjectMeta)
 			}).AsList()
-			allIngressKeys = common.ToIngressKeys(allIngresses)
+			allIngressKeys = common.ToIngressKeys(allIngresses, klog.TODO())
 			sort.Strings(allIngressKeys)
 			if diff := cmp.Diff(tc.expectedIngresses, allIngressKeys); diff != "" {
 				t.Fatalf("Got diff for Ingresses after delete (-want +got):\n%s", diff)
@@ -1040,7 +1040,7 @@ func TestGCRegionalIngressResources(t *testing.T) {
 			}
 			ingressToDelete := ensureNEGIngress(t, lbc, namespace, ingressToDeleteResources, tc.ingressClassName)
 			// Verify Forwarding Rule was created.
-			frontendNamer := namer_util.NewFrontendNamerFactory(lbc.ctx.ClusterNamer, lbc.ctx.KubeSystemUID).Namer(ingressToDelete)
+			frontendNamer := namer_util.NewFrontendNamerFactory(lbc.ctx.ClusterNamer, lbc.ctx.KubeSystemUID, klog.TODO()).Namer(ingressToDelete)
 			fwRuleName := frontendNamer.ForwardingRule(namer_util.HTTPProtocol)
 			fwRulekey, err := composite.CreateKey(lbc.ctx.Cloud, fwRuleName, meta.Regional)
 			if err != nil {
@@ -1071,7 +1071,7 @@ func TestGCRegionalIngressResources(t *testing.T) {
 
 			// Verify we didn't delete any ingress objects.
 			allIngresses := operator.Ingresses(lbc.ctx.Ingresses().List()).AsList()
-			allIngressKeys := common.ToIngressKeys(allIngresses)
+			allIngressKeys := common.ToIngressKeys(allIngresses, klog.TODO())
 			sort.Strings(allIngressKeys)
 			if diff := cmp.Diff(ingressesWithClassNames, allIngressKeys); diff != "" {
 				t.Fatalf("Got diff for Ingresses after delete (-want +got):\n%s", diff)

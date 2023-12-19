@@ -24,7 +24,6 @@ import (
 	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
-	"k8s.io/klog/v2"
 )
 
 const (
@@ -72,17 +71,17 @@ func (l7 *L7) checkProxy() (err error) {
 		return err
 	}
 
-	currentProxy, _ := composite.GetTargetHttpProxy(l7.cloud, key, version, klog.TODO())
+	currentProxy, _ := composite.GetTargetHttpProxy(l7.cloud, key, version, l7.logger)
 	if currentProxy == nil {
-		klog.V(3).Infof("Creating new http proxy for urlmap %v", l7.um.Name)
+		l7.logger.V(3).Info("Creating new http proxy for urlmap", "urlMapName", l7.um.Name)
 		key, err := l7.CreateKey(proxy.Name)
 		if err != nil {
 			return err
 		}
-		if err = composite.CreateTargetHttpProxy(l7.cloud, key, proxy, klog.TODO()); err != nil {
+		if err = composite.CreateTargetHttpProxy(l7.cloud, key, proxy, l7.logger); err != nil {
 			return err
 		}
-		currentProxy, err = composite.GetTargetHttpProxy(l7.cloud, key, version, klog.TODO())
+		currentProxy, err = composite.GetTargetHttpProxy(l7.cloud, key, version, l7.logger)
 		l7.recorder.Eventf(l7.runtimeInfo.Ingress, corev1.EventTypeNormal, events.SyncIngress, "TargetProxy %q created", key.Name)
 		if err != nil {
 			return err
@@ -91,13 +90,13 @@ func (l7 *L7) checkProxy() (err error) {
 		return nil
 	}
 	if !utils.EqualResourcePaths(currentProxy.UrlMap, proxy.UrlMap) {
-		klog.V(3).Infof("Proxy %v has the wrong url map, setting %v overwriting %v",
-			currentProxy.Name, proxy.UrlMap, currentProxy.UrlMap)
+		l7.logger.V(3).Info("Proxy has the wrong url map, overwriting",
+			"proxyName", currentProxy.Name, "newUrlMap", proxy.UrlMap, "existingUrlMap", currentProxy.UrlMap)
 		key, err := l7.CreateKey(currentProxy.Name)
 		if err != nil {
 			return err
 		}
-		if err := composite.SetUrlMapForTargetHttpProxy(l7.cloud, key, currentProxy, proxy.UrlMap); err != nil {
+		if err := composite.SetUrlMapForTargetHttpProxy(l7.cloud, key, currentProxy, proxy.UrlMap, l7.logger); err != nil {
 			return err
 		}
 		l7.recorder.Eventf(l7.runtimeInfo.Ingress, corev1.EventTypeNormal, events.SyncIngress, "TargetProxy %q updated", key.Name)
@@ -113,7 +112,7 @@ func (l7 *L7) checkHttpsProxy() (err error) {
 	env := &translator.Env{FrontendConfig: l7.runtimeInfo.FrontendConfig}
 
 	if len(l7.sslCerts) == 0 {
-		klog.V(2).Infof("No SSL certificates for %q, will not create HTTPS Proxy.", l7)
+		l7.logger.V(2).Info("No SSL certificates for load-balancer, will not create HTTPS Proxy.", "l7", l7)
 		return nil
 	}
 
@@ -133,15 +132,15 @@ func (l7 *L7) checkHttpsProxy() (err error) {
 		return err
 	}
 
-	currentProxy, _ := composite.GetTargetHttpsProxy(l7.cloud, key, version, klog.TODO())
+	currentProxy, _ := composite.GetTargetHttpsProxy(l7.cloud, key, version, l7.logger)
 	if err != nil {
 		return err
 	}
 
 	if currentProxy == nil {
-		klog.V(3).Infof("Creating new https Proxy for urlmap %q", l7.um.Name)
+		l7.logger.V(3).Info("Creating new https Proxy for urlmap", "urlMapName", l7.um.Name)
 
-		if err = composite.CreateTargetHttpsProxy(l7.cloud, key, proxy, klog.TODO()); err != nil {
+		if err = composite.CreateTargetHttpsProxy(l7.cloud, key, proxy, l7.logger); err != nil {
 			return err
 		}
 		l7.recorder.Eventf(l7.runtimeInfo.Ingress, corev1.EventTypeNormal, events.SyncIngress, "TargetProxy %q created", key.Name)
@@ -150,7 +149,7 @@ func (l7 *L7) checkHttpsProxy() (err error) {
 		if err != nil {
 			return err
 		}
-		currentProxy, err = composite.GetTargetHttpsProxy(l7.cloud, key, version, klog.TODO())
+		currentProxy, err = composite.GetTargetHttpsProxy(l7.cloud, key, version, l7.logger)
 		if err != nil {
 			return err
 		}
@@ -160,20 +159,20 @@ func (l7 *L7) checkHttpsProxy() (err error) {
 	}
 
 	if !utils.EqualResourcePaths(currentProxy.UrlMap, proxy.UrlMap) {
-		klog.V(2).Infof("Https Proxy %v has the wrong url map, setting %v overwriting %v", currentProxy.Name, proxy.UrlMap, currentProxy.UrlMap)
+		l7.logger.V(2).Info("Https Proxy has the wrong url map, overwriting", "proxyName", currentProxy.Name, "newUrlMap", proxy.UrlMap, "existingUrlMap", currentProxy.UrlMap)
 		key, err := l7.CreateKey(currentProxy.Name)
 		if err != nil {
 			return err
 		}
-		if err := composite.SetUrlMapForTargetHttpsProxy(l7.cloud, key, currentProxy, proxy.UrlMap); err != nil {
+		if err := composite.SetUrlMapForTargetHttpsProxy(l7.cloud, key, currentProxy, proxy.UrlMap, l7.logger); err != nil {
 			return err
 		}
 		l7.recorder.Eventf(l7.runtimeInfo.Ingress, corev1.EventTypeNormal, events.SyncIngress, "TargetProxy %q updated", key.Name)
 	}
 
 	if !l7.compareCerts(currentProxy.SslCertificates) {
-		klog.V(2).Infof("Https Proxy %q has the wrong ssl certs, setting %v overwriting %v",
-			currentProxy.Name, toCertNames(l7.sslCerts), currentProxy.SslCertificates)
+		l7.logger.V(2).Info("Https Proxy has the wrong ssl certs, overwriting",
+			"proxyName", currentProxy.Name, "newCerts", toCertNames(l7.sslCerts), "existingCerts", currentProxy.SslCertificates)
 		var sslCertURLs []string
 		for _, cert := range l7.sslCerts {
 			sslCertURLs = append(sslCertURLs, cert.SelfLink)
@@ -182,7 +181,7 @@ func (l7 *L7) checkHttpsProxy() (err error) {
 		if err != nil {
 			return err
 		}
-		if err := composite.SetSslCertificateForTargetHttpsProxy(l7.cloud, key, currentProxy, sslCertURLs); err != nil {
+		if err := composite.SetSslCertificateForTargetHttpsProxy(l7.cloud, key, currentProxy, sslCertURLs, l7.logger); err != nil {
 			return err
 		}
 		l7.recorder.Eventf(l7.runtimeInfo.Ingress, corev1.EventTypeNormal, events.SyncIngress, "TargetProxy %q certs updated", key.Name)
@@ -204,7 +203,7 @@ func (l7 *L7) getSslCertLinkInUse() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	proxy, err := composite.GetTargetHttpsProxy(l7.cloud, key, l7.Versions().TargetHttpsProxy, klog.TODO())
+	proxy, err := composite.GetTargetHttpsProxy(l7.cloud, key, l7.Versions().TargetHttpsProxy, l7.logger)
 	if err != nil {
 		return nil, err
 	}
@@ -220,7 +219,7 @@ func (l7 *L7) ensureSslPolicy(env *translator.Env, currentProxy *composite.Targe
 		if err != nil {
 			return err
 		}
-		if err := composite.SetSslPolicyForTargetHttpsProxy(l7.cloud, key, currentProxy, policyLink); err != nil {
+		if err := composite.SetSslPolicyForTargetHttpsProxy(l7.cloud, key, currentProxy, policyLink, l7.logger); err != nil {
 			l7.recorder.Eventf(l7.runtimeInfo.Ingress, corev1.EventTypeNormal, events.SyncIngress, "TargetProxy %q SSLPolicy updated", key.Name)
 			return err
 		}

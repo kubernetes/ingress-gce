@@ -105,6 +105,8 @@ type L7 struct {
 	recorder record.EventRecorder
 	// resource type stores the KeyType of the resources in the loadbalancer (e.g. Regional)
 	scope meta.KeyType
+
+	logger klog.Logger
 }
 
 // String returns the name of the loadbalancer.
@@ -166,29 +168,29 @@ func (l7 *L7) edgeHop() error {
 		if err := l7.edgeHopHttp(); err != nil {
 			return err
 		}
-	} else if flags.F.EnableDeleteUnusedFrontends && requireDeleteFrontend(l7.ingress, namer.HTTPProtocol) {
+	} else if flags.F.EnableDeleteUnusedFrontends && requireDeleteFrontend(l7.ingress, namer.HTTPProtocol, l7.logger) {
 		if err := l7.deleteHttp(features.VersionsFromIngress(&l7.ingress)); err != nil {
 			return err
 		}
-		klog.V(2).Infof("Successfully deleted unused HTTP frontend resources for load-balancer %s", l7)
+		l7.logger.V(2).Info("Successfully deleted unused HTTP frontend resources for load-balancer", "l7", l7)
 	}
 	// Defer promoting an ephemeral to a static IP until it's really needed.
 	if l7.runtimeInfo.AllowHTTP && sslConfigured {
-		klog.V(3).Infof("checking static ip for %v", l7)
+		l7.logger.V(3).Info("checking static ip for load-balancer", "l7", l7)
 		if err := l7.checkStaticIP(); err != nil {
 			return err
 		}
 	}
 	if sslConfigured {
-		klog.V(3).Infof("validating https for %v", l7)
+		l7.logger.V(3).Info("validating https for load-balancer", "l7", l7)
 		if err := l7.edgeHopHttps(); err != nil {
 			return err
 		}
-	} else if flags.F.EnableDeleteUnusedFrontends && requireDeleteFrontend(l7.ingress, namer.HTTPSProtocol) {
+	} else if flags.F.EnableDeleteUnusedFrontends && requireDeleteFrontend(l7.ingress, namer.HTTPSProtocol, l7.logger) {
 		if err := l7.deleteHttps(features.VersionsFromIngress(&l7.ingress)); err != nil {
 			return err
 		}
-		klog.V(2).Infof("Successfully deleted unused HTTPS frontend resources for load-balancer %s", l7)
+		l7.logger.V(2).Info("Successfully deleted unused HTTPS frontend resources for load-balancer", "l7", l7)
 	}
 	return nil
 }
@@ -216,7 +218,7 @@ func (l7 *L7) edgeHopHttps() error {
 }
 
 // requireDeleteFrontend returns true if gce loadbalancer resources needs to deleted for given protocol.
-func requireDeleteFrontend(ing v1.Ingress, protocol namer.NamerProtocol) bool {
+func requireDeleteFrontend(ing v1.Ingress, protocol namer.NamerProtocol, logger klog.Logger) bool {
 	var keys []string
 	switch protocol {
 	case namer.HTTPSProtocol:
@@ -230,7 +232,7 @@ func requireDeleteFrontend(ing v1.Ingress, protocol namer.NamerProtocol) bool {
 			annotations.TargetHttpProxyKey,
 		}...)
 	default:
-		klog.Errorf("Unexpected frontend resource protocol %v", protocol)
+		logger.Error(nil, "Unexpected frontend resource protocol", "protocol", protocol)
 	}
 
 	for _, key := range keys {
@@ -255,12 +257,12 @@ func (l7 *L7) GetIP() string {
 // deleteForwardingRule deletes forwarding rule for given protocol.
 func (l7 *L7) deleteForwardingRule(versions *features.ResourceVersions, protocol namer.NamerProtocol) error {
 	frName := l7.namer.ForwardingRule(protocol)
-	klog.V(2).Infof("Deleting forwarding rule %v", frName)
+	l7.logger.V(2).Info("Deleting forwarding rule", "forwardingRuleName", frName)
 	key, err := l7.CreateKey(frName)
 	if err != nil {
 		return err
 	}
-	if err := utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l7.cloud, key, versions.ForwardingRule, klog.TODO())); err != nil {
+	if err := utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l7.cloud, key, versions.ForwardingRule, l7.logger)); err != nil {
 		return err
 	}
 	return nil
@@ -269,18 +271,18 @@ func (l7 *L7) deleteForwardingRule(versions *features.ResourceVersions, protocol
 // deleteTargetProxy deletes target proxy for given protocol.
 func (l7 *L7) deleteTargetProxy(versions *features.ResourceVersions, protocol namer.NamerProtocol) error {
 	tpName := l7.namer.TargetProxy(protocol)
-	klog.V(2).Infof("Deleting target %v proxy %v", protocol, tpName)
+	l7.logger.V(2).Info("Deleting target proxy", "protocol", protocol, "targetProxyName", tpName)
 	key, err := l7.CreateKey(tpName)
 	if err != nil {
 		return err
 	}
 	switch protocol {
 	case namer.HTTPProtocol:
-		if err := utils.IgnoreHTTPNotFound(composite.DeleteTargetHttpProxy(l7.cloud, key, versions.TargetHttpProxy, klog.TODO())); err != nil {
+		if err := utils.IgnoreHTTPNotFound(composite.DeleteTargetHttpProxy(l7.cloud, key, versions.TargetHttpProxy, l7.logger)); err != nil {
 			return err
 		}
 	case namer.HTTPSProtocol:
-		if err := utils.IgnoreHTTPNotFound(composite.DeleteTargetHttpsProxy(l7.cloud, key, versions.TargetHttpsProxy, klog.TODO())); err != nil {
+		if err := utils.IgnoreHTTPNotFound(composite.DeleteTargetHttpsProxy(l7.cloud, key, versions.TargetHttpsProxy, l7.logger)); err != nil {
 			return err
 		}
 	default:
@@ -329,13 +331,13 @@ func (l7 *L7) deleteSSLCertificates(sslCertificates []*composite.SslCertificate,
 	}
 	var certErr error
 	for _, cert := range sslCertificates {
-		klog.V(2).Infof("Deleting sslcert %s", cert.Name)
+		l7.logger.V(2).Info("Deleting sslcert", "certName", cert.Name)
 		key, err := l7.CreateKey(cert.Name)
 		if err != nil {
 			return err
 		}
-		if err := utils.IgnoreHTTPNotFound(composite.DeleteSslCertificate(l7.cloud, key, versions.SslCertificate, klog.TODO())); err != nil {
-			klog.Errorf("Old cert delete failed - %v", err)
+		if err := utils.IgnoreHTTPNotFound(composite.DeleteSslCertificate(l7.cloud, key, versions.SslCertificate, l7.logger)); err != nil {
+			l7.logger.Error(err, "Old cert delete failed")
 			certErr = err
 		}
 	}
@@ -348,7 +350,7 @@ func (l7 *L7) deleteStaticIP() error {
 	frName := l7.namer.ForwardingRule(namer.HTTPProtocol)
 	ip, err := l7.cloud.GetGlobalAddress(frName)
 	if ip != nil && utils.IgnoreHTTPNotFound(err) == nil {
-		klog.V(2).Infof("Deleting static IP %v(%v)", ip.Name, ip.Address)
+		l7.logger.V(2).Info("Deleting static IP", "ipName", ip.Name, "ipAddress", ip.Address)
 		if err := utils.IgnoreHTTPNotFound(l7.cloud.DeleteGlobalAddress(ip.Name)); err != nil {
 			return err
 		}
@@ -375,12 +377,12 @@ func (l7 *L7) Cleanup(versions *features.ResourceVersions) error {
 	}
 	// Delete URL map.
 	umName := l7.namer.UrlMap()
-	klog.V(2).Infof("Deleting URL Map %v", umName)
+	l7.logger.V(2).Info("Deleting URL Map", "urlMapName", umName)
 	key, err := l7.CreateKey(umName)
 	if err != nil {
 		return err
 	}
-	if err := utils.IgnoreHTTPNotFound(composite.DeleteUrlMap(l7.cloud, key, versions.UrlMap, klog.TODO())); err != nil {
+	if err := utils.IgnoreHTTPNotFound(composite.DeleteUrlMap(l7.cloud, key, versions.UrlMap, l7.logger)); err != nil {
 		return err
 	}
 
@@ -391,12 +393,12 @@ func (l7 *L7) Cleanup(versions *features.ResourceVersions) error {
 			// Skip deletion
 			return nil
 		}
-		klog.V(2).Infof("Deleting Redirect URL Map %v", umName)
+		l7.logger.V(2).Info("Deleting Redirect URL Map", "urlMapName", umName)
 		key, err := l7.CreateKey(umName)
 		if err != nil {
 			return err
 		}
-		if err := utils.IgnoreHTTPNotFound(composite.DeleteUrlMap(l7.cloud, key, versions.UrlMap, klog.TODO())); err != nil {
+		if err := utils.IgnoreHTTPNotFound(composite.DeleteUrlMap(l7.cloud, key, versions.UrlMap, l7.logger)); err != nil {
 			return err
 		}
 	}
@@ -472,7 +474,7 @@ func GetLBAnnotations(l7 *L7, existing map[string]string, backendSyncer backends
 		state, err := backendSyncer.Status(beName, version, l7.scope, ingLogger)
 		// Don't return error here since we want to keep syncing
 		if err != nil {
-			klog.Errorf("Error syncing backend status for %s - %s - %s: %v", beName, version, l7.scope, err)
+			ingLogger.Error(err, "Error syncing backend status", "backendName", beName, "version", version, "scope", l7.scope)
 		}
 		backendState[beName] = state
 	}

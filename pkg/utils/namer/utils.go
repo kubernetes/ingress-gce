@@ -62,14 +62,14 @@ func TrimFieldsEvenly(max int, fields ...string) []string {
 }
 
 // FrontendNamingScheme returns naming scheme for given ingress based on its finalizer.
-func FrontendNamingScheme(ing *v1.Ingress) Scheme {
+func FrontendNamingScheme(ing *v1.Ingress, logger klog.Logger) Scheme {
 	switch {
 	case common.HasGivenFinalizer(ing.ObjectMeta, common.FinalizerKeyV2):
 		return V2NamingScheme
 	case common.HasGivenFinalizer(ing.ObjectMeta, common.FinalizerKey):
 		return V1NamingScheme
 	default:
-		klog.V(3).Infof("No finalizer found on Ingress %v, using v1 naming scheme", ing)
+		logger.V(3).Info("No finalizer found on Ingress, using v1 naming scheme", "ingress", ing)
 		return V1NamingScheme
 	}
 }

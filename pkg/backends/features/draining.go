@@ -28,7 +28,7 @@ import (
 // the ServicePort.BackendConfig and applies it to the BackendService.
 // It returns true if there were existing settings on the BackendService
 // that were overwritten.
-func EnsureDraining(sp utils.ServicePort, be *composite.BackendService) bool {
+func EnsureDraining(sp utils.ServicePort, be *composite.BackendService, logger klog.Logger) bool {
 	if sp.BackendConfig.Spec.ConnectionDraining == nil {
 		return false
 	}
@@ -36,7 +36,7 @@ func EnsureDraining(sp utils.ServicePort, be *composite.BackendService) bool {
 	applyDrainingSettings(sp, beTemp)
 	if !reflect.DeepEqual(beTemp.ConnectionDraining, be.ConnectionDraining) {
 		applyDrainingSettings(sp, be)
-		klog.V(2).Infof("Updated ConnectionDraining settings for service %v/%v.", sp.ID.Service.Namespace, sp.ID.Service.Name)
+		logger.V(2).Info("Updated ConnectionDraining settings for service", "serviceKey", klog.KRef(sp.ID.Service.Namespace, sp.ID.Service.Name))
 		return true
 	}
 	return false

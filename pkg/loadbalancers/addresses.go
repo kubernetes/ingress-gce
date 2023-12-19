@@ -27,7 +27,6 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
-	"k8s.io/klog/v2"
 )
 
 // checkStaticIP reserves a regional or global static IP allocated to the Forwarding Rule.
@@ -42,7 +41,7 @@ func (l7 *L7) checkStaticIP() (err error) {
 		return err
 	}
 	if !manageStaticIP {
-		klog.V(3).Infof("Not managing user specified static IP %v", address)
+		l7.logger.V(3).Info("Not managing user specified static IP", "ip", address)
 		if flags.F.EnableDeleteUnusedFrontends {
 			// Delete ingress controller managed static ip if exists.
 			if ip, ok := l7.ingress.Annotations[annotations.StaticIPKey]; ok && ip == managedStaticIPName {
@@ -57,22 +56,22 @@ func (l7 *L7) checkStaticIP() (err error) {
 		return err
 	}
 
-	ip, _ := composite.GetAddress(l7.cloud, key, meta.VersionGA, klog.TODO())
+	ip, _ := composite.GetAddress(l7.cloud, key, meta.VersionGA, l7.logger)
 	if ip == nil {
-		klog.V(3).Infof("Creating static ip %v", managedStaticIPName)
+		l7.logger.V(3).Info("Creating static ip", "ipName", managedStaticIPName)
 		address := l7.newStaticAddress(managedStaticIPName)
 
-		err = composite.CreateAddress(l7.cloud, key, address, klog.TODO())
+		err = composite.CreateAddress(l7.cloud, key, address, l7.logger)
 		if err != nil {
 			if utils.IsHTTPErrorCode(err, http.StatusConflict) ||
 				utils.IsHTTPErrorCode(err, http.StatusBadRequest) {
-				klog.V(3).Infof("IP %v(%v) is already reserved, assuming it is OK to use. Error from API: %v",
-					l7.fw.IPAddress, managedStaticIPName, err)
+				l7.logger.V(3).Info("IP is already reserved, assuming it is OK to use. Got error from API",
+					"ip", l7.fw.IPAddress, "ipName", managedStaticIPName, "err", err)
 				return nil
 			}
 			return err
 		}
-		ip, err = composite.GetAddress(l7.cloud, key, meta.VersionGA, klog.TODO())
+		ip, err = composite.GetAddress(l7.cloud, key, meta.VersionGA, l7.logger)
 		if err != nil {
 			return err
 		}

@@ -27,7 +27,7 @@ import (
 // and applies it to the BackendService. It returns true if there was a difference between
 // current settings on the BackendService and ServicePort.BackendConfig.
 
-func EnsureCustomResponseHeaders(sp utils.ServicePort, be *composite.BackendService) bool {
+func EnsureCustomResponseHeaders(sp utils.ServicePort, be *composite.BackendService, logger klog.Logger) bool {
 	desiredHeaders := []string{}
 	if sp.BackendConfig.Spec.CustomResponseHeaders != nil {
 		desiredHeaders = sp.BackendConfig.Spec.CustomResponseHeaders.Headers
@@ -39,7 +39,7 @@ func EnsureCustomResponseHeaders(sp utils.ServicePort, be *composite.BackendServ
 
 	if !reflect.DeepEqual(desiredHeaders, currentHeaders) {
 		be.CustomResponseHeaders = desiredHeaders
-		klog.V(2).Infof("Updated Custom Response Headers for service %v/%v.", sp.ID.Service.Namespace, sp.ID.Service.Name)
+		logger.V(2).Info("Updated Custom Response Headers for service", "serviceKey", klog.KRef(sp.ID.Service.Namespace, sp.ID.Service.Name))
 		return true
 	}
 

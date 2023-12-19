@@ -65,15 +65,18 @@ const maxRPS = 1
 type instanceGroupLinker struct {
 	instancePool instancegroups.Manager
 	backendPool  Pool
+
+	logger klog.Logger
 }
 
 // instanceGroupLinker is a Linker
 var _ Linker = (*instanceGroupLinker)(nil)
 
-func NewInstanceGroupLinker(instancePool instancegroups.Manager, backendPool Pool) Linker {
+func NewInstanceGroupLinker(instancePool instancegroups.Manager, backendPool Pool, logger klog.Logger) Linker {
 	return &instanceGroupLinker{
 		instancePool: instancePool,
 		backendPool:  backendPool,
+		logger:       logger.WithName("InstanceGroupLinker"),
 	}
 }
 
@@ -99,7 +102,7 @@ func (igl *instanceGroupLinker) Link(sp utils.ServicePort, groups []GroupKey) er
 		return err
 	}
 
-	addIGs, _, err := getInstanceGroupsToAddAndRemove(be, igLinks)
+	addIGs, _, err := getInstanceGroupsToAddAndRemove(be, igLinks, igl.logger)
 	if err != nil {
 		return err
 	}
@@ -134,7 +137,7 @@ func (igl *instanceGroupLinker) Link(sp utils.ServicePort, groups []GroupKey) er
 		// See example in backendSyncer.ensureBackendService().
 		if err := igl.backendPool.Update(be, klog.TODO()); err != nil {
 			if utils.IsHTTPErrorCode(err, http.StatusBadRequest) {
-				klog.V(2).Infof("Updating backend service backends with balancing mode %v failed, will try another mode. err:%v", bm, err)
+				igl.logger.V(2).Info("Updating backend service backends with balancing mode failed, will try another mode", "balancingMode", bm, "err", err)
 				errs = append(errs, err.Error())
 				// This is probably a failure because we tried to create the backend
 				// with balancingMode=RATE when there are already backends with
@@ -142,7 +145,7 @@ func (igl *instanceGroupLinker) Link(sp utils.ServicePort, groups []GroupKey) er
 				// balancingMode=UTILIZATION (b/35102911).
 				continue
 			}
-			klog.V(2).Infof("Error updating backend service backends with balancing mode %v:%v", bm, err)
+			igl.logger.V(2).Info("Error updating backend service backends with balancing mode", "balancingMode", bm, "err", err)
 			return err
 		}
 		// Successfully updated Backends, no need to Update the BackendService again
@@ -173,7 +176,7 @@ func backendsForIGs(igLinks []string, bm BalancingMode) []*composite.Backend {
 	return backends
 }
 
-func getInstanceGroupsToAddAndRemove(be *composite.BackendService, igLinks []string) ([]string, sets.String, error) {
+func getInstanceGroupsToAddAndRemove(be *composite.BackendService, igLinks []string, logger klog.Logger) ([]string, sets.String, error) {
 	existingIGs := sets.String{}
 	for _, existingBe := range be.Backends {
 		path, err := utils.RelativeResourceName(existingBe.Group)
@@ -195,8 +198,7 @@ func getInstanceGroupsToAddAndRemove(be *composite.BackendService, igLinks []str
 	missingIGs := wantIGs.Difference(existingIGs)
 	removeIGs := existingIGs.Difference(wantIGs)
 	if missingIGs.Len() > 0 || removeIGs.Len() > 0 {
-		klog.V(2).Infof("Backend service %q has instance groups %+v, want %+v",
-			be.Name, existingIGs.List(), wantIGs.List())
+		logger.V(2).Info(fmt.Sprintf("Backend service has instance groups %+v, want %+v", existingIGs.List(), wantIGs.List()), "backendService", be.Name)
 	}
 	return missingIGs.List(), removeIGs, nil
 }

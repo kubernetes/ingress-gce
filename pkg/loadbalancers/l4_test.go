@@ -82,7 +82,7 @@ func TestEnsureInternalBackendServiceUpdates(t *testing.T) {
 		Recorder:        record.NewFakeRecorder(100),
 		NetworkResolver: network.NewFakeResolver(network.DefaultNetwork(fakeGCE)),
 	}
-	l4 := NewL4Handler(l4ilbParams)
+	l4 := NewL4Handler(l4ilbParams, klog.TODO())
 	l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
 
 	bsName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
@@ -167,7 +167,7 @@ func TestEnsureInternalLoadBalancer(t *testing.T) {
 				Recorder:        record.NewFakeRecorder(100),
 				NetworkResolver: network.NewFakeResolver(networkInfo),
 			}
-			l4 := NewL4Handler(l4ilbParams)
+			l4 := NewL4Handler(l4ilbParams, klog.TODO())
 			l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
 
 			if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
@@ -234,7 +234,7 @@ func TestEnsureInternalLoadBalancerTypeChange(t *testing.T) {
 		Recorder:        record.NewFakeRecorder(100),
 		NetworkResolver: network.NewFakeResolver(network.DefaultNetwork(fakeGCE)),
 	}
-	l4 := NewL4Handler(l4ilbParams)
+	l4 := NewL4Handler(l4ilbParams, klog.TODO())
 	l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
 
 	if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
@@ -275,7 +275,7 @@ func TestEnsureInternalLoadBalancerWithExistingResources(t *testing.T) {
 		Recorder:        record.NewFakeRecorder(100),
 		NetworkResolver: network.NewFakeResolver(network.DefaultNetwork(fakeGCE)),
 	}
-	l4 := NewL4Handler(l4ilbParams)
+	l4 := NewL4Handler(l4ilbParams, klog.TODO())
 	l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
 
 	if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
@@ -326,7 +326,7 @@ func TestEnsureInternalLoadBalancerClearPreviousResources(t *testing.T) {
 		Recorder:        record.NewFakeRecorder(100),
 		NetworkResolver: network.NewFakeResolver(network.DefaultNetwork(fakeGCE)),
 	}
-	l4 := NewL4Handler(l4ilbParams)
+	l4 := NewL4Handler(l4ilbParams, klog.TODO())
 	l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
 
 	_, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName)
@@ -456,7 +456,7 @@ func TestUpdateResourceLinks(t *testing.T) {
 		Recorder:        record.NewFakeRecorder(100),
 		NetworkResolver: network.NewFakeResolver(network.DefaultNetwork(fakeGCE)),
 	}
-	l4 := NewL4Handler(l4ilbParams)
+	l4 := NewL4Handler(l4ilbParams, klog.TODO())
 	l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
 
 	_, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName)
@@ -542,7 +542,7 @@ func TestEnsureInternalLoadBalancerHealthCheckConfigurable(t *testing.T) {
 		Recorder:        record.NewFakeRecorder(100),
 		NetworkResolver: network.NewFakeResolver(network.DefaultNetwork(fakeGCE)),
 	}
-	l4 := NewL4Handler(l4ilbParams)
+	l4 := NewL4Handler(l4ilbParams, klog.TODO())
 	l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
 
 	_, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName)
@@ -593,7 +593,7 @@ func TestEnsureInternalLoadBalancerDeleted(t *testing.T) {
 		Recorder:        record.NewFakeRecorder(100),
 		NetworkResolver: network.NewFakeResolver(network.DefaultNetwork(fakeGCE)),
 	}
-	l4 := NewL4Handler(l4ilbParams)
+	l4 := NewL4Handler(l4ilbParams, klog.TODO())
 	l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
 
 	if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
@@ -633,7 +633,7 @@ func TestEnsureInternalLoadBalancerDeletedTwiceDoesNotError(t *testing.T) {
 		Recorder:        record.NewFakeRecorder(100),
 		NetworkResolver: network.NewFakeResolver(network.DefaultNetwork(fakeGCE)),
 	}
-	l4 := NewL4Handler(l4ilbParams)
+	l4 := NewL4Handler(l4ilbParams, klog.TODO())
 	l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
 
 	if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
@@ -714,7 +714,7 @@ func TestHealthCheckFirewallDeletionWithNetLB(t *testing.T) {
 		Recorder:        record.NewFakeRecorder(100),
 		NetworkResolver: network.NewFakeResolver(network.DefaultNetwork(fakeGCE)),
 	}
-	l4NetLB := NewL4NetLB(l4NetLBParams)
+	l4NetLB := NewL4NetLB(l4NetLBParams, klog.TODO())
 	// make sure both ilb and netlb use the same l4 healthcheck instance
 	l4NetLB.healthChecks = l4.healthChecks
 
@@ -763,7 +763,7 @@ func ensureService(fakeGCE *gce.Cloud, namer *namer_util.L4Namer, nodeNames []st
 		Recorder:        record.NewFakeRecorder(100),
 		NetworkResolver: network.NewFakeResolver(network.DefaultNetwork(fakeGCE)),
 	}
-	l4 := NewL4Handler(l4ilbParams)
+	l4 := NewL4Handler(l4ilbParams, klog.TODO())
 	l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
 
 	if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, zoneName); err != nil {
@@ -796,7 +796,7 @@ func TestEnsureInternalLoadBalancerWithSpecialHealthCheck(t *testing.T) {
 		Recorder:        record.NewFakeRecorder(100),
 		NetworkResolver: network.NewFakeResolver(network.DefaultNetwork(fakeGCE)),
 	}
-	l4 := NewL4Handler(l4ilbParams)
+	l4 := NewL4Handler(l4ilbParams, klog.TODO())
 	l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
 
 	if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
@@ -919,7 +919,7 @@ func TestEnsureInternalLoadBalancerErrors(t *testing.T) {
 			if params.networkResolver != nil {
 				l4ilbParams.NetworkResolver = params.networkResolver
 			}
-			l4 := NewL4Handler(l4ilbParams)
+			l4 := NewL4Handler(l4ilbParams, klog.TODO())
 			l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
 
 			//lbName :=l4.namer.L4Backend(params.service.Namespace, params.service.Name)
@@ -1010,7 +1010,7 @@ func TestEnsureInternalLoadBalancerEnableGlobalAccess(t *testing.T) {
 		Recorder:        record.NewFakeRecorder(100),
 		NetworkResolver: network.NewFakeResolver(network.DefaultNetwork(fakeGCE)),
 	}
-	l4 := NewL4Handler(l4ilbParams)
+	l4 := NewL4Handler(l4ilbParams, klog.TODO())
 	l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
 
 	if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
@@ -1100,7 +1100,7 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 		Recorder:        record.NewFakeRecorder(100),
 		NetworkResolver: network.NewFakeResolver(network.DefaultNetwork(fakeGCE)),
 	}
-	l4 := NewL4Handler(l4ilbParams)
+	l4 := NewL4Handler(l4ilbParams, klog.TODO())
 	l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
 
 	if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
@@ -1265,7 +1265,7 @@ func TestEnsureInternalFirewallPortRanges(t *testing.T) {
 		Recorder:        record.NewFakeRecorder(100),
 		NetworkResolver: network.NewFakeResolver(network.DefaultNetwork(fakeGCE)),
 	}
-	l4 := NewL4Handler(l4ilbParams)
+	l4 := NewL4Handler(l4ilbParams, klog.TODO())
 	l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
 
 	fwName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
@@ -1296,7 +1296,7 @@ func TestEnsureInternalFirewallPortRanges(t *testing.T) {
 		Protocol:          string(v1.ProtocolTCP),
 		IP:                "1.2.3.4",
 	}
-	err = firewalls.EnsureL4FirewallRule(l4.cloud, utils.ServiceKeyFunc(svc.Namespace, svc.Name), &fwrParams /*sharedRule = */, false)
+	err = firewalls.EnsureL4FirewallRule(l4.cloud, utils.ServiceKeyFunc(svc.Namespace, svc.Name), &fwrParams /*sharedRule = */, false, klog.TODO())
 	if err != nil {
 		t.Errorf("Unexpected error %v when ensuring firewall rule %s for svc %+v", err, fwName, svc)
 	}
@@ -1328,7 +1328,7 @@ func TestEnsureInternalLoadBalancerModifyProtocol(t *testing.T) {
 		Recorder:        record.NewFakeRecorder(100),
 		NetworkResolver: network.NewFakeResolver(network.DefaultNetwork(fakeGCE)),
 	}
-	l4 := NewL4Handler(l4ilbParams)
+	l4 := NewL4Handler(l4ilbParams, klog.TODO())
 	l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
 
 	_, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName)
@@ -1621,7 +1621,7 @@ func TestEnsureInternalLoadBalancerAllPorts(t *testing.T) {
 		Recorder:        record.NewFakeRecorder(100),
 		NetworkResolver: network.NewFakeResolver(network.DefaultNetwork(fakeGCE)),
 	}
-	l4 := NewL4Handler(l4ilbParams)
+	l4 := NewL4Handler(l4ilbParams, klog.TODO())
 	l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
 
 	if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
@@ -1788,7 +1788,7 @@ func TestEnsureIPv4Firewall4Nodes(t *testing.T) {
 		Recorder:        record.NewFakeRecorder(100),
 		NetworkResolver: network.NewFakeResolver(networkInfo),
 	}
-	l4 := NewL4Handler(l4ilbParams)
+	l4 := NewL4Handler(l4ilbParams, klog.TODO())
 	l4.network = *networkInfo
 	syncResult := &L4ILBSyncResult{
 		Annotations: make(map[string]string),
@@ -1843,7 +1843,7 @@ func TestEnsureIPv6Firewall4Nodes(t *testing.T) {
 		Recorder:        record.NewFakeRecorder(100),
 		NetworkResolver: network.NewFakeResolver(networkInfo),
 	}
-	l4 := NewL4Handler(l4ilbParams)
+	l4 := NewL4Handler(l4ilbParams, klog.TODO())
 	l4.network = *networkInfo
 	syncResult := &L4ILBSyncResult{
 		Annotations: make(map[string]string),
@@ -2169,7 +2169,7 @@ func mustSetupILBTestHandler(t *testing.T, svc *v1.Service, nodeNames []string) 
 		DualStackEnabled: true,
 		NetworkResolver:  network.NewFakeResolver(network.DefaultNetwork(fakeGCE)),
 	}
-	l4 := NewL4Handler(l4ilbParams)
+	l4 := NewL4Handler(l4ilbParams, klog.TODO())
 	l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
 
 	if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
@@ -2523,13 +2523,13 @@ func assertILBResourcesDeleted(t *testing.T, l4 *L4) {
 	}
 
 	hcNameShared := l4.namer.L4HealthCheck(l4.Service.Namespace, l4.Service.Name, true)
-	err = verifyHealthCheckNotExists(l4.cloud, hcNameShared, meta.Global)
+	err = verifyHealthCheckNotExists(l4.cloud, hcNameShared, meta.Global, klog.TODO())
 	if err != nil {
 		t.Errorf("verifyHealthCheckNotExists(_, %s)", hcNameShared)
 	}
 
 	hcNameNonShared := l4.namer.L4HealthCheck(l4.Service.Namespace, l4.Service.Name, false)
-	err = verifyHealthCheckNotExists(l4.cloud, hcNameNonShared, meta.Global)
+	err = verifyHealthCheckNotExists(l4.cloud, hcNameNonShared, meta.Global, klog.TODO())
 	if err != nil {
 		t.Errorf("verifyHealthCheckNotExists(_, %s)", hcNameNonShared)
 	}
@@ -2593,13 +2593,13 @@ func verifyILBCommonDualStackResourcesDeleted(l4 *L4) error {
 	}
 
 	hcNameShared := l4.namer.L4HealthCheck(l4.Service.Namespace, l4.Service.Name, true)
-	err = verifyHealthCheckNotExists(l4.cloud, hcNameShared, meta.Global)
+	err = verifyHealthCheckNotExists(l4.cloud, hcNameShared, meta.Global, klog.TODO())
 	if err != nil {
 		return fmt.Errorf("verifyHealthCheckNotExists(_, %s)", hcNameShared)
 	}
 
 	hcNameNonShared := l4.namer.L4HealthCheck(l4.Service.Namespace, l4.Service.Name, false)
-	err = verifyHealthCheckNotExists(l4.cloud, hcNameNonShared, meta.Global)
+	err = verifyHealthCheckNotExists(l4.cloud, hcNameNonShared, meta.Global, klog.TODO())
 	if err != nil {
 		return fmt.Errorf("verifyHealthCheckNotExists(_, %s)", hcNameNonShared)
 	}

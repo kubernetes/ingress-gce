@@ -65,8 +65,8 @@ type V1IngressFrontendNamer struct {
 }
 
 // newV1IngressFrontendNamer returns v1 frontend namer for given ingress.
-func newV1IngressFrontendNamer(ing *v1.Ingress, namer *Namer) IngressFrontendNamer {
-	lbName := namer.LoadBalancer(common.IngressKeyFunc(ing))
+func newV1IngressFrontendNamer(ing *v1.Ingress, namer *Namer, logger klog.Logger) IngressFrontendNamer {
+	lbName := namer.LoadBalancer(common.IngressKeyFunc(ing, logger))
 	return &V1IngressFrontendNamer{ing: ing, namer: namer, lbName: lbName}
 }
 
@@ -240,24 +240,26 @@ type FrontendNamerFactory struct {
 	// kubeSystemUID is the UID of kube-system namespace which is unique for a k8s cluster.
 	// Note that this is used only for V2IngressFrontendNamer.
 	kubeSystemUID string
+
+	logger klog.Logger
 }
 
 // NewFrontendNamerFactory returns IngressFrontendNamerFactory given a v1 namer and kube-system uid.
-func NewFrontendNamerFactory(namer *Namer, kubeSystemUID types.UID) IngressFrontendNamerFactory {
-	return &FrontendNamerFactory{namer: namer, kubeSystemUID: string(kubeSystemUID)}
+func NewFrontendNamerFactory(namer *Namer, kubeSystemUID types.UID, logger klog.Logger) IngressFrontendNamerFactory {
+	return &FrontendNamerFactory{namer: namer, kubeSystemUID: string(kubeSystemUID), logger: logger.WithName("IngressFrontendNamerFactory")}
 }
 
 // Namer implements IngressFrontendNamerFactory.
 func (rn *FrontendNamerFactory) Namer(ing *v1.Ingress) IngressFrontendNamer {
-	namingScheme := FrontendNamingScheme(ing)
+	namingScheme := FrontendNamingScheme(ing, rn.logger)
 	switch namingScheme {
 	case V1NamingScheme:
-		return newV1IngressFrontendNamer(ing, rn.namer)
+		return newV1IngressFrontendNamer(ing, rn.namer, rn.logger)
 	case V2NamingScheme:
 		return newV2IngressFrontendNamer(ing, rn.kubeSystemUID, rn.namer.prefix)
 	default:
-		klog.Errorf("Unexpected frontend naming scheme %s", namingScheme)
-		return newV1IngressFrontendNamer(ing, rn.namer)
+		rn.logger.Error(nil, "Unexpected frontend naming scheme", "namingScheme", namingScheme)
+		return newV1IngressFrontendNamer(ing, rn.namer, rn.logger)
 	}
 }
 

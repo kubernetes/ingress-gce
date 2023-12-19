@@ -36,27 +36,27 @@ import (
 
 // RunHTTPServer starts an HTTP server. `healthChecker` returns a mapping of component/controller
 // name to the result of its healthcheck.
-func RunHTTPServer(healthChecker func() context.HealthCheckResults) {
-	http.HandleFunc("/healthz", healthCheckHandler(healthChecker))
+func RunHTTPServer(healthChecker func() context.HealthCheckResults, logger klog.Logger) {
+	http.HandleFunc("/healthz", healthCheckHandler(healthChecker, logger))
 	http.HandleFunc("/flag", flagHandler)
 	http.Handle("/metrics", promhttp.Handler())
 
-	klog.V(0).Infof("Running http server on :%v", flags.F.HealthzPort)
+	logger.V(0).Info("Running http server", "port", flags.F.HealthzPort)
 	klog.Fatal(http.ListenAndServe(fmt.Sprintf(":%v", flags.F.HealthzPort), nil))
 }
 
-func RunSIGTERMHandler(closeStopCh func()) {
+func RunSIGTERMHandler(closeStopCh func(), logger klog.Logger) {
 	// Multiple SIGTERMs will get dropped
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, syscall.SIGTERM)
-	klog.V(0).Infof("SIGTERM handler registered")
+	logger.V(0).Info("SIGTERM handler registered")
 	<-signalChan
-	klog.Infof("Received SIGTERM, shutting down")
+	logger.Info("Received SIGTERM, shutting down")
 
 	closeStopCh()
 }
 
-func healthCheckHandler(checker func() context.HealthCheckResults) http.HandlerFunc {
+func healthCheckHandler(checker func() context.HealthCheckResults, logger klog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var hasErr bool
 		var s strings.Builder
@@ -79,14 +79,14 @@ func healthCheckHandler(checker func() context.HealthCheckResults) http.HandlerF
 		if s.Len() == 0 {
 			_, err := w.Write([]byte("OK - no running controllers"))
 			if err != nil {
-				klog.Errorf("Error writing bytes: %v", err)
+				logger.Error(err, "Error writing bytes")
 			}
 			return
 		}
 
 		_, err := w.Write([]byte(s.String()))
 		if err != nil {
-			klog.Errorf("Error writing bytes: %v", err)
+			logger.Error(err, "Error writing bytes")
 		}
 		return
 	}

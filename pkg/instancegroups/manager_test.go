@@ -18,6 +18,7 @@ package instancegroups
 
 import (
 	"fmt"
+	"k8s.io/klog/v2"
 	"strings"
 	"testing"
 
@@ -33,7 +34,7 @@ const (
 	basePath    = "/basepath/projects/project-id/"
 )
 
-var defaultNamer = namer.NewNamer("uid1", "fw1")
+var defaultNamer = namer.NewNamer("uid1", "fw1", klog.TODO())
 
 func newNodePool(f *FakeInstanceGroups, zone string, maxIGSize int) Manager {
 	nodeInformer := zonegetter.FakeNodeInformer()
@@ -46,7 +47,7 @@ func newNodePool(f *FakeInstanceGroups, zone string, maxIGSize int) Manager {
 		BasePath:   basePath,
 		ZoneGetter: fakeZoneGetter,
 		MaxIGSize:  maxIGSize,
-	})
+	}, klog.TODO())
 	return pool
 }
 

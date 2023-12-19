@@ -27,13 +27,13 @@ import (
 // EnsureLogging reads the log configurations specified in the ServicePort.BackendConfig
 // and applies it to the BackendService. It returns true if there were existing settings
 // on the BackendService that were overwritten.
-func EnsureLogging(sp utils.ServicePort, be *composite.BackendService) bool {
+func EnsureLogging(sp utils.ServicePort, be *composite.BackendService, logger klog.Logger) bool {
 	if sp.BackendConfig.Spec.Logging == nil {
 		return false
 	}
 	svcKey := fmt.Sprintf("%s/%s", sp.ID.Service.Namespace, sp.ID.Service.Name)
 	if be.LogConfig != nil && !be.LogConfig.Enable && !sp.BackendConfig.Spec.Logging.Enable && be.LogConfig.SampleRate == 0.0 {
-		klog.V(3).Infof("Logging continues to stay disabled for service %s (port %d), skipping update", svcKey, sp.Port)
+		logger.V(3).Info("Logging continues to stay disabled for service, skipping update", "serviceKey", svcKey, "servicePort", sp.Port)
 		return false
 	}
 	var existingLogConfig *composite.BackendServiceLogConfig
@@ -43,9 +43,9 @@ func EnsureLogging(sp utils.ServicePort, be *composite.BackendService) bool {
 			SampleRate: be.LogConfig.SampleRate,
 		}
 	}
-	ensureBackendServiceLogConfig(sp, be)
+	ensureBackendServiceLogConfig(sp, be, logger)
 	if existingLogConfig == nil || existingLogConfig.Enable != be.LogConfig.Enable || existingLogConfig.SampleRate != be.LogConfig.SampleRate {
-		klog.V(2).Infof("Updated Logging settings for service %s (port %d) to (Enable: %t, SampleRate: %f)", svcKey, sp.Port, be.LogConfig.Enable, be.LogConfig.SampleRate)
+		logger.V(2).Info(fmt.Sprintf("Updated Logging settings for service to (Enable: %t, SampleRate: %f)", be.LogConfig.Enable, be.LogConfig.SampleRate), "serviceKey", svcKey, "servicePort", sp.Port)
 		return true
 	}
 	return false
@@ -55,7 +55,7 @@ func EnsureLogging(sp utils.ServicePort, be *composite.BackendService) bool {
 // the access log settings specified in the BackendConfig for the passed in
 // service port.
 // This method assumes that sp.BackendConfig.Spec.Logging is not nil.
-func ensureBackendServiceLogConfig(sp utils.ServicePort, be *composite.BackendService) {
+func ensureBackendServiceLogConfig(sp utils.ServicePort, be *composite.BackendService, logger klog.Logger) {
 	if be.LogConfig == nil {
 		be.LogConfig = &composite.BackendServiceLogConfig{}
 	}
@@ -70,7 +70,7 @@ func ensureBackendServiceLogConfig(sp utils.ServicePort, be *composite.BackendSe
 		// Update sample rate to 1.0 if no existing sample rate or is 0.0
 		if be.LogConfig.SampleRate == 0.0 {
 			svcKey := fmt.Sprintf("%s/%s", sp.ID.Service.Namespace, sp.ID.Service.Name)
-			klog.V(2).Infof("Sample rate neither specified nor preexists for service %s (port %d), defaulting to 1.0", svcKey, sp.Port)
+			logger.V(2).Info("Sample rate neither specified nor preexists for service, defaulting to 1.0", "serviceKey", svcKey, "servicePort", sp.Port)
 			be.LogConfig.SampleRate = 1.0
 		}
 		return

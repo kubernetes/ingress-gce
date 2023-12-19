@@ -2,6 +2,7 @@ package operator
 
 import (
 	"fmt"
+	"k8s.io/klog/v2"
 
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -11,13 +12,15 @@ import (
 )
 
 // Services returns the wrapper
-func Services(s []*api_v1.Service) *ServicesOperator {
-	return &ServicesOperator{s: s}
+func Services(s []*api_v1.Service, logger klog.Logger) *ServicesOperator {
+	return &ServicesOperator{s: s, logger: logger.WithName("ServicesOperator")}
 }
 
 // ServicesOperator is an operator wrapper for a list of Services.
 type ServicesOperator struct {
 	s []*api_v1.Service
+
+	logger klog.Logger
 }
 
 // AsList returns the underlying list of Services
@@ -35,12 +38,12 @@ func (op *ServicesOperator) ReferencesBackendConfig(beConfig *backendconfigv1.Ba
 	var s []*api_v1.Service
 	for _, svc := range op.s {
 		key := fmt.Sprintf("%s/%s", svc.Namespace, svc.Name)
-		if doesServiceReferenceBackendConfig(svc, beConfig) && !dupes[key] {
+		if doesServiceReferenceBackendConfig(svc, beConfig, op.logger) && !dupes[key] {
 			s = append(s, svc)
 			dupes[key] = true
 		}
 	}
-	return Services(s)
+	return Services(s, op.logger)
 }
 
 // ReferencedByIngress returns the Services that are referenced by the passed in Ingress.
@@ -55,7 +58,7 @@ func (op *ServicesOperator) ReferencedByIngress(ing *v1.Ingress) *ServicesOperat
 			dupes[key] = true
 		}
 	}
-	return Services(s)
+	return Services(s, op.logger)
 }
 
 // doesIngressReferenceService returns true if the passed in Ingress directly references

@@ -120,6 +120,8 @@ type ControllerContext struct {
 	InstancePool instancegroups.Manager
 	Translator   *translator.Translator
 	ZoneGetter   *zonegetter.ZoneGetter
+
+	logger klog.Logger
 }
 
 // ControllerContextConfig encapsulates some settings that are tunable via command line flags.
@@ -157,17 +159,19 @@ func NewControllerContext(
 	cloud *gce.Cloud,
 	clusterNamer *namer.Namer,
 	kubeSystemUID types.UID,
-	config ControllerContextConfig) *ControllerContext {
+	config ControllerContextConfig,
+	logger klog.Logger) *ControllerContext {
+	logger = logger.WithName("ControllerContext")
 
 	podInformer := informerv1.NewPodInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
 	nodeInformer := informerv1.NewNodeInformer(kubeClient, config.ResyncPeriod, utils.NewNamespaceIndexer())
 
 	// Error in SetTransform() doesn't affect the correctness but the memory efficiency
 	if err := podInformer.SetTransform(preserveNeeded); err != nil {
-		klog.Errorf("unable to SetTransForm: %v", err)
+		logger.Error(err, "unable to SetTransForm")
 	}
 	if err := nodeInformer.SetTransform(preserveNeeded); err != nil {
-		klog.Errorf("unable to SetTransForm: %v", err)
+		logger.Error(err, "unable to SetTransForm")
 	}
 
 	context := &ControllerContext{
@@ -180,7 +184,7 @@ func NewControllerContext(
 		ClusterNamer:            clusterNamer,
 		L4Namer:                 namer.NewL4Namer(string(kubeSystemUID), clusterNamer),
 		KubeSystemUID:           kubeSystemUID,
-		ControllerMetrics:       metrics.NewControllerMetrics(flags.F.MetricsExportInterval, flags.F.L4NetLBProvisionDeadline, flags.F.EnableL4NetLBDualStack, flags.F.EnableL4ILBDualStack),
+		ControllerMetrics:       metrics.NewControllerMetrics(flags.F.MetricsExportInterval, flags.F.L4NetLBProvisionDeadline, flags.F.EnableL4NetLBDualStack, flags.F.EnableL4ILBDualStack, logger),
 		ControllerContextConfig: config,
 		IngressInformer:         informernetworking.NewIngressInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		ServiceInformer:         informerv1.NewServiceInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
@@ -190,6 +194,7 @@ func NewControllerContext(
 		SvcNegInformer:          informersvcneg.NewServiceNetworkEndpointGroupInformer(svcnegClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		recorders:               map[string]record.EventRecorder{},
 		healthChecks:            make(map[string]func() error),
+		logger:                  logger,
 	}
 	if firewallClient != nil {
 		context.FirewallInformer = informerfirewall.NewGCPFirewallInformer(firewallClient, config.ResyncPeriod, utils.NewNamespaceIndexer())
@@ -231,6 +236,7 @@ func NewControllerContext(
 		context,
 		flags.F.EnableTransparentHealthChecks,
 		context.EnableIngressRegionalExternal,
+		logger,
 	)
 	context.ZoneGetter = zonegetter.NewZoneGetter(context.NodeInformer)
 	context.InstancePool = instancegroups.NewManager(&instancegroups.ManagerConfig{
@@ -240,17 +246,17 @@ func NewControllerContext(
 		BasePath:   utils.GetBasePath(context.Cloud),
 		ZoneGetter: context.ZoneGetter,
 		MaxIGSize:  config.MaxIGSize,
-	})
+	}, logger)
 
 	return context
 }
 
 // Init inits the Context, so that we can defers some config until the main thread enter actually get the leader hcLock.
 func (ctx *ControllerContext) Init() {
-	klog.V(2).Infof("Controller Context initializing with %+v", ctx.ControllerContextConfig)
+	ctx.logger.V(2).Info(fmt.Sprintf("Controller Context initializing with %+v", ctx.ControllerContextConfig))
 	// Initialize controller context internals based on ASMConfigMap
 	if ctx.EnableASMConfigMap {
-		klog.Infof("ASMConfigMap is enabled")
+		ctx.logger.Info("ASMConfigMap is enabled")
 
 		informerFactory := informers.NewSharedInformerFactoryWithOptions(
 			ctx.KubeClient,
@@ -260,7 +266,7 @@ func (ctx *ControllerContext) Init() {
 				listOptions.FieldSelector = fmt.Sprintf("metadata.name=%s", ctx.ASMConfigMapName)
 			}))
 		ctx.ConfigMapInformer = informerFactory.Core().V1().ConfigMaps().Informer()
-		ctx.ASMConfigController = cmconfig.NewConfigMapConfigController(ctx.KubeClient, ctx.Recorder(ctx.ASMConfigMapNamespace), ctx.ASMConfigMapNamespace, ctx.ASMConfigMapName)
+		ctx.ASMConfigController = cmconfig.NewConfigMapConfigController(ctx.KubeClient, ctx.Recorder(ctx.ASMConfigMapNamespace), ctx.ASMConfigMapNamespace, ctx.ASMConfigMapName, ctx.logger)
 
 		cmConfig := ctx.ASMConfigController.GetConfig()
 		if cmConfig.EnableASM {
@@ -272,7 +278,7 @@ func (ctx *ControllerContext) Init() {
 }
 
 func (ctx *ControllerContext) initEnableASM() {
-	klog.V(0).Infof("ASM mode is enabled from ConfigMap")
+	ctx.logger.V(0).Info("ASM mode is enabled from ConfigMap")
 
 	ctx.ASMConfigController.RecordEvent("Normal", "ASMModeOn", "NEG controller is running in ASM Mode")
 	ctx.ASMConfigController.SetASMReadyTrue()
@@ -443,10 +449,10 @@ func (ctx *ControllerContext) generateScheme() *runtime.Scheme {
 
 	if ctx.SAInformer != nil {
 		if err := sav1beta1.AddToScheme(controllerScheme); err != nil {
-			klog.Errorf("Failed to add v1beta1 ServiceAttachment CRD scheme to event recorder: %s", err)
+			ctx.logger.Error(err, "Failed to add v1beta1 ServiceAttachment CRD scheme to event recorder")
 		}
 		if err := sav1.AddToScheme(controllerScheme); err != nil {
-			klog.Errorf("Failed to add v1 ServiceAttachment CRD scheme to event recorder: %s", err)
+			ctx.logger.Error(err, "Failed to add v1 ServiceAttachment CRD scheme to event recorder: %s")
 		}
 	}
 	return controllerScheme

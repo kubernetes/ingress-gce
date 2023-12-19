@@ -150,7 +150,7 @@ func evaluateTestCases(t *testing.T, testCases []testCase) {
 					prettyJSON(tc.be))
 			}
 
-			result := EnsureCDN(tc.sp, tc.be)
+			result := EnsureCDN(tc.sp, tc.be, klog.TODO())
 
 			if result != tc.updateExpected {
 				t.Errorf("%v: expected %v but got %v", tc.desc, tc.updateExpected, result)

@@ -17,6 +17,7 @@ limitations under the License.
 package features
 
 import (
+	"fmt"
 	"reflect"
 	"sort"
 	"strings"
@@ -43,15 +44,15 @@ var defaultCdnPolicy = composite.BackendServiceCdnPolicy{
 // EnsureCDN reads the CDN configuration specified in the ServicePort.BackendConfig
 // and applies it to the BackendService. It returns true if there were existing
 // settings on the BackendService that were overwritten.
-func EnsureCDN(sp utils.ServicePort, be *composite.BackendService) bool {
+func EnsureCDN(sp utils.ServicePort, be *composite.BackendService, logger klog.Logger) bool {
 	if sp.BackendConfig.Spec.Cdn == nil {
 		return false
 	}
-	klog.V(3).Infof("BackendConfig.Spec.Cdn before merge = %s", prettyPrint(sp.BackendConfig.Spec.Cdn))
-	klog.V(3).Infof("CdnPolicy before merge = %+v", prettyPrint(be.CdnPolicy))
+	logger.V(3).Info(fmt.Sprintf("BackendConfig.Spec.Cdn before merge = %s", prettyPrint(sp.BackendConfig.Spec.Cdn)))
+	logger.V(3).Info(fmt.Sprintf("CdnPolicy before merge = %+v", prettyPrint(be.CdnPolicy)))
 	newConfig := renderConfig(sp)
 	if hasDiff(newConfig, be) {
-		klog.V(2).Infof("Updated CDN settings for service %v/%v.", sp.ID.Service.Namespace, sp.ID.Service.Name)
+		logger.V(2).Info("Updated CDN settings for service", "serviceKey", klog.KRef(sp.ID.Service.Namespace, sp.ID.Service.Name))
 		applyConfig(newConfig, be)
 		return true
 	}

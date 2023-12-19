@@ -19,6 +19,7 @@ package namer
 import (
 	"crypto/sha256"
 	"fmt"
+	"k8s.io/klog/v2"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -169,7 +170,7 @@ func TestV1IngressFrontendNamer(t *testing.T) {
 		},
 	}
 	for _, prefix := range []string{"k8s", "xyz"} {
-		oldNamer := NewNamerWithPrefix(prefix, clusterUID, "")
+		oldNamer := NewNamerWithPrefix(prefix, clusterUID, "", klog.TODO())
 		secretHash := fmt.Sprintf("%x", sha256.Sum256([]byte("test123")))[:16]
 		for _, tc := range testCases {
 			tc.desc = fmt.Sprintf("%s prefix %s", tc.desc, prefix)
@@ -241,7 +242,7 @@ func TestV1IngressFrontendNamer(t *testing.T) {
 				}
 
 				// Ensure that V1 namer created using ingress returns same values as V1 namer created using lb name.
-				namerFromIngress := newV1IngressFrontendNamer(newIngress(tc.namespace, tc.name), oldNamer)
+				namerFromIngress := newV1IngressFrontendNamer(newIngress(tc.namespace, tc.name), oldNamer, klog.TODO())
 				if diff := cmp.Diff(targetHTTPProxyName, namerFromIngress.TargetProxy(HTTPProtocol)); diff != "" {
 					t.Errorf("Got diff for target http proxy (-want +got):\n%s", diff)
 				}
@@ -391,7 +392,7 @@ func TestV2IngressFrontendNamer(t *testing.T) {
 		},
 	}
 	for _, prefix := range []string{"k8s", "xyz"} {
-		oldNamer := NewNamerWithPrefix(prefix, clusterUID, "")
+		oldNamer := NewNamerWithPrefix(prefix, clusterUID, "", klog.TODO())
 		secretHash := fmt.Sprintf("%x", sha256.Sum256([]byte("test123")))[:16]
 		for _, tc := range testCases {
 			tc.desc = fmt.Sprintf("%s namespaceLength %d nameLength %d prefix %s", tc.desc, len(tc.namespace), len(tc.name), prefix)

@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"k8s.io/klog/v2"
 	"testing"
 
 	"k8s.io/apimachinery/pkg/types"
@@ -13,7 +14,7 @@ func TestNEGName(t *testing.T) {
 	longNamespace := "namespacenamespacenamespacenamespacenamespace"
 	longName := "namenamenamenamenamenamenamenamename"
 
-	defaultNamer := namer.NewNamer("uid1", "")
+	defaultNamer := namer.NewNamer("uid1", "", klog.TODO())
 	l4Namer := namer.NewL4Namer("uid1", defaultNamer)
 
 	testCases := []struct {
@@ -127,7 +128,7 @@ func TestBackendName(t *testing.T) {
 	longNamespace := "namespacenamespacenamespacenamespacenamespace"
 	longName := "namenamenamenamenamenamenamenamename"
 
-	defaultNamer := namer.NewNamer("uid1", "")
+	defaultNamer := namer.NewNamer("uid1", "", klog.TODO())
 	l4Namer := namer.NewL4Namer("uid1", defaultNamer)
 
 	testCases := []struct {

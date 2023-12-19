@@ -55,7 +55,6 @@ const (
 
 // Original file in https://github.com/kubernetes/legacy-cloud-providers/blob/6aa80146c33550e908aed072618bd7f9998837f6/gce/gce_address_manager.go
 type addressManager struct {
-	logPrefix   string
 	svc         gce.CloudAddressService
 	name        string
 	serviceName string
@@ -66,9 +65,11 @@ type addressManager struct {
 	tryRelease  bool
 	networkTier cloud.NetworkTier
 	ipVersion   IPVersion
+
+	logger klog.Logger
 }
 
-func newAddressManager(svc gce.CloudAddressService, serviceName, region, subnetURL, name, targetIP string, addressType cloud.LbScheme, networkTier cloud.NetworkTier, ipVersion IPVersion) *addressManager {
+func newAddressManager(svc gce.CloudAddressService, serviceName, region, subnetURL, name, targetIP string, addressType cloud.LbScheme, networkTier cloud.NetworkTier, ipVersion IPVersion, logger klog.Logger) *addressManager {
 	if targetIP != "" {
 		// Store address in normalized format.
 		// This is required for IPv6 addresses, to be able to filter by exact address,
@@ -78,7 +79,6 @@ func newAddressManager(svc gce.CloudAddressService, serviceName, region, subnetU
 	// We don't have verification that targetIP matches IPVersion, we will rely on Google cloud API verification
 	return &addressManager{
 		svc:         svc,
-		logPrefix:   fmt.Sprintf("AddressManager(%q)", name),
 		region:      region,
 		serviceName: serviceName,
 		name:        name,
@@ -88,6 +88,7 @@ func newAddressManager(svc gce.CloudAddressService, serviceName, region, subnetU
 		subnetURL:   subnetURL,
 		networkTier: networkTier,
 		ipVersion:   ipVersion,
+		logger:      logger.WithName("AddressManager").WithValues("serviceKey", name),
 	}
 }
 
@@ -101,7 +102,7 @@ func (am *addressManager) HoldAddress() (string, IPAddressType, error) {
 	// could be reserving another address; therefore, it would need to be deleted. In the normal
 	// case of using a controller address, retrieving the address by name results in the fewest API
 	// calls since it indicates whether a Delete is necessary before Reserve.
-	klog.V(4).Infof("%v: attempting hold of IP %q Type %q", am.logPrefix, am.targetIP, am.addressType)
+	am.logger.V(4).Info("Attempting hold of IP", "ip", am.targetIP, "addressType", am.addressType)
 	// Get the address in case it was orphaned earlier
 	addr, err := am.svc.GetRegionAddress(am.name, am.region)
 	if err != nil && !utils.IsNotFoundError(err) {
@@ -112,20 +113,20 @@ func (am *addressManager) HoldAddress() (string, IPAddressType, error) {
 		// If address exists, check if the address had the expected attributes.
 		validationError := am.validateAddress(addr)
 		if validationError == nil {
-			klog.V(4).Infof("%v: address %q already reserves IP %q Type %q. No further action required.", am.logPrefix, addr.Name, addr.Address, addr.AddressType)
+			am.logger.V(4).Info("Address already reserves IP. No further action required.", "addressName", addr.Name, "ip", addr.Address, "type", addr.AddressType)
 			return addr.Address, IPAddrManaged, nil
 		}
 
-		klog.V(2).Infof("%v: deleting existing address because %v", am.logPrefix, validationError)
+		am.logger.V(2).Info("Deleting existing address", "reason", validationError)
 		err := am.svc.DeleteRegionAddress(addr.Name, am.region)
 		if err != nil {
 			if utils.IsNotFoundError(err) {
-				klog.V(4).Infof("%v: address %q was not found. Ignoring.", am.logPrefix, addr.Name)
+				am.logger.V(4).Info("Address was not found. Ignoring.", "addressName", addr.Name)
 			} else {
 				return "", IPAddrUndefined, err
 			}
 		} else {
-			klog.V(4).Infof("%v: successfully deleted previous address %q", am.logPrefix, addr.Name)
+			am.logger.V(4).Info("Successfully deleted previous address", "addressName", addr.Name)
 		}
 	}
 
@@ -135,23 +136,23 @@ func (am *addressManager) HoldAddress() (string, IPAddressType, error) {
 // ReleaseAddress will release the address if it's owned by the controller.
 func (am *addressManager) ReleaseAddress() error {
 	if !am.tryRelease {
-		klog.V(4).Infof("%v: not attempting release of address %q.", am.logPrefix, am.targetIP)
+		am.logger.V(4).Info("Not attempting release of address", "ip", am.targetIP)
 		return nil
 	}
 
-	klog.V(4).Infof("%v: releasing address %q named %q", am.logPrefix, am.targetIP, am.name)
+	am.logger.V(4).Info("Releasing address", "ip", am.targetIP, "addressName", am.name)
 	// Controller only ever tries to unreserve the address named with the load balancer's name.
 	err := am.svc.DeleteRegionAddress(am.name, am.region)
 	if err != nil {
 		if utils.IsNotFoundError(err) {
-			klog.Warningf("%v: address %q was not found. Ignoring.", am.logPrefix, am.name)
+			am.logger.Info("Address was not found. Ignoring.", "addressName", am.name)
 			return nil
 		}
 
 		return err
 	}
 
-	klog.V(4).Infof("%v: successfully released IP %q named %q", am.logPrefix, am.targetIP, am.name)
+	am.logger.V(4).Info("Successfully released IP named", "ip", am.targetIP, "addressName", am.name)
 	return nil
 }
 
@@ -198,7 +199,7 @@ func (am *addressManager) ensureAddressReservation() (string, IPAddressType, err
 	reserveErr := am.svc.ReserveRegionAddress(newAddr, am.region)
 	if reserveErr == nil {
 		if newAddr.Address != "" {
-			klog.V(4).Infof("%v: successfully reserved IP %q with name %q", am.logPrefix, newAddr.Address, newAddr.Name)
+			am.logger.V(4).Info("Successfully reserved IP", "ip", newAddr.Address, "addressName", newAddr.Name)
 			return newAddr.Address, IPAddrManaged, nil
 		}
 
@@ -208,11 +209,11 @@ func (am *addressManager) ensureAddressReservation() (string, IPAddressType, err
 			return "", IPAddrUndefined, err
 		}
 
-		klog.V(4).Infof("%v: successfully created address %q which reserved IP %q", am.logPrefix, addr.Name, addr.Address)
+		am.logger.V(4).Info("Successfully created address which reserved IP", "addressName", addr.Name, "ip", addr.Address)
 		return addr.Address, IPAddrManaged, nil
 	}
 
-	klog.V(2).Infof("Address reserve error: %v", reserveErr)
+	am.logger.V(2).Info("Address reserve error", "err", reserveErr)
 
 	if utils.IsNetworkTierMismatchGCEError(reserveErr) {
 		receivedNetworkTier := cloud.NetworkTierPremium
@@ -261,11 +262,11 @@ func (am *addressManager) ensureAddressReservation() (string, IPAddressType, err
 	if am.isManagedAddress(addr) {
 		// The address with this name is checked at the beginning of 'HoldAddress()', but for some reason
 		// it was re-created by this point. May be possible that two controllers are running.
-		klog.Warningf("%v: address %q unexpectedly existed with IP %q.", am.logPrefix, addr.Name, am.targetIP)
+		am.logger.Info("Address %q unexpectedly existed with IP %q.", "addressName", addr.Name, "ip", am.targetIP)
 		return addr.Address, IPAddrManaged, nil
 	}
 	// If the retrieved address is not named with the loadbalancer name, then the controller does not own it, but will allow use of it.
-	klog.V(4).Infof("%v: address %q was already reserved with name: %q, description: %q", am.logPrefix, am.targetIP, addr.Name, addr.Description)
+	am.logger.V(4).Info("Address was already reserved with name: %q, description: %q", "ip", am.targetIP, "addressName", addr.Name, "addressDescription", addr.Description)
 	am.tryRelease = false
 	return addr.Address, IPAddrUnmanaged, nil
 
@@ -318,9 +319,9 @@ func (am *addressManager) TearDownAddressIPIfNetworkTierMismatch() error {
 		if !am.isManagedAddress(addr) {
 			return utils.NewNetworkTierErr(fmt.Sprintf("User specific address IP (%v)", am.name), string(am.networkTier), addr.NetworkTier)
 		}
-		klog.V(3).Infof("Deleting IP address %v because has wrong network tier", am.targetIP)
+		am.logger.V(3).Info("Deleting IP address because it has a wrong network tier", "ip", am.targetIP)
 		if err := am.svc.DeleteRegionAddress(addr.Name, am.targetIP); err != nil {
-			klog.Errorf("Unable to delete region address %s on target ip %s, err: %v", addr.Name, am.targetIP, err)
+			am.logger.Error(err, "Unable to delete region address on target ip", "addressName", addr.Name, "ip", am.targetIP)
 		}
 	}
 	return nil

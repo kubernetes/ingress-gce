@@ -28,12 +28,12 @@ func verifyForwardingRuleNotExists(cloud *gce.Cloud, frName string) error {
 	return nil
 }
 
-func verifyHealthCheckNotExists(cloud *gce.Cloud, hcName string, scope meta.KeyType) error {
+func verifyHealthCheckNotExists(cloud *gce.Cloud, hcName string, scope meta.KeyType, logger klog.Logger) error {
 	key := meta.GlobalKey(hcName)
 	if scope == meta.Regional {
 		key = meta.RegionalKey(hcName, cloud.Region())
 	}
-	healthCheck, err := composite.GetHealthCheck(cloud, key, meta.VersionGA, klog.TODO())
+	healthCheck, err := composite.GetHealthCheck(cloud, key, meta.VersionGA, logger)
 	if !utils.IsNotFoundError(err) || healthCheck != nil {
 		return fmt.Errorf("health check %s exists, expected not", hcName)
 	}

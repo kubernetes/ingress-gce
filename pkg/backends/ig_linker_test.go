@@ -48,7 +48,7 @@ func newTestIGLinker(fakeGCE *gce.Cloud, fakeInstancePool instancegroups.Manager
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockBetaBackendServices.UpdateHook = mock.UpdateBetaBackendServiceHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.UpdateHook = mock.UpdateBackendServiceHook
 
-	return &instanceGroupLinker{fakeInstancePool, fakeBackendPool}
+	return &instanceGroupLinker{fakeInstancePool, fakeBackendPool, klog.TODO()}
 }
 
 func TestLink(t *testing.T) {
@@ -66,7 +66,7 @@ func TestLink(t *testing.T) {
 		BasePath:   utils.GetBasePath(fakeGCE),
 		ZoneGetter: fakeZoneGetter,
 		MaxIGSize:  1000,
-	})
+	}, klog.TODO())
 	linker := newTestIGLinker(fakeGCE, fakeNodePool)
 
 	sp := utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP, BackendNamer: defaultNamer}
@@ -108,7 +108,7 @@ func TestLinkWithCreationModeError(t *testing.T) {
 		BasePath:   utils.GetBasePath(fakeGCE),
 		ZoneGetter: fakeZoneGetter,
 		MaxIGSize:  1000,
-	})
+	}, klog.TODO())
 	linker := newTestIGLinker(fakeGCE, fakeNodePool)
 
 	sp := utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP, BackendNamer: defaultNamer}
@@ -270,7 +270,7 @@ func TestGetIGLinksToAddAndRemove(t *testing.T) {
 				newBackends = append(newBackends, b)
 			}
 			be.Backends = newBackends
-			toAdd, toRemove, err := getInstanceGroupsToAddAndRemove(&be, tc.igLinks)
+			toAdd, toRemove, err := getInstanceGroupsToAddAndRemove(&be, tc.igLinks, klog.TODO())
 			if err != nil {
 				t.Fatalf("getInstanceGroupsToAddAndRemove(_,_): err:%v ", err)
 			}
