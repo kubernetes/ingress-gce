@@ -350,47 +350,48 @@ func runControllers(ctx *ingctx.ControllerContext) {
 			klog.Errorf("Failed tp retrieve pod label propagation config: %v", err)
 		}
 	}
-	enableNEGsForNetLB := flags.F.RunL4NetLBController && flags.F.EnableMultiNetworking
-	// TODO: Refactor NEG to use cloud mocks so ctx.Cloud can be referenced within NewController.
-	negController := neg.NewController(
-		ctx.KubeClient,
-		ctx.SvcNegClient,
-		ctx.KubeSystemUID,
-		ctx.IngressInformer,
-		ctx.ServiceInformer,
-		ctx.PodInformer,
-		ctx.NodeInformer,
-		ctx.EndpointSliceInformer,
-		ctx.SvcNegInformer,
-		ctx.NetworkInformer,
-		ctx.GKENetworkParamsInformer,
-		ctx.HasSynced,
-		ctx.ControllerMetrics,
-		ctx.L4Namer,
-		ctx.DefaultBackendSvcPort,
-		negtypes.NewAdapterWithRateLimitSpecs(ctx.Cloud, flags.F.GCERateLimit.Values()),
-		zoneGetter,
-		ctx.ClusterNamer,
-		flags.F.ResyncPeriod,
-		flags.F.NegGCPeriod,
-		flags.F.NumNegGCWorkers,
-		flags.F.EnableReadinessReflector,
-		flags.F.RunIngressController,
-		flags.F.RunL4Controller || enableNEGsForNetLB,
-		flags.F.EnableNonGCPMode,
-		flags.F.EnableDualStackNEG,
-		enableAsm,
-		asmServiceNEGSkipNamespaces,
-		lpConfig,
-		flags.F.EnableMultiNetworking,
-		ctx.EnableIngressRegionalExternal,
-		klog.TODO(), // TODO(#1761): Replace this with a top level logger configuration once one is available.
-	)
+	if flags.F.EnableNEGController {
+		enableNEGsForNetLB := flags.F.RunL4NetLBController && flags.F.EnableMultiNetworking
+		// TODO: Refactor NEG to use cloud mocks so ctx.Cloud can be referenced within NewController.
+		negController := neg.NewController(
+			ctx.KubeClient,
+			ctx.SvcNegClient,
+			ctx.KubeSystemUID,
+			ctx.IngressInformer,
+			ctx.ServiceInformer,
+			ctx.PodInformer,
+			ctx.NodeInformer,
+			ctx.EndpointSliceInformer,
+			ctx.SvcNegInformer,
+			ctx.NetworkInformer,
+			ctx.GKENetworkParamsInformer,
+			ctx.HasSynced,
+			ctx.ControllerMetrics,
+			ctx.L4Namer,
+			ctx.DefaultBackendSvcPort,
+			negtypes.NewAdapterWithRateLimitSpecs(ctx.Cloud, flags.F.GCERateLimit.Values()),
+			zoneGetter,
+			ctx.ClusterNamer,
+			flags.F.ResyncPeriod,
+			flags.F.NegGCPeriod,
+			flags.F.NumNegGCWorkers,
+			flags.F.EnableReadinessReflector,
+			flags.F.RunIngressController,
+			flags.F.RunL4Controller || enableNEGsForNetLB,
+			flags.F.EnableNonGCPMode,
+			flags.F.EnableDualStackNEG,
+			enableAsm,
+			asmServiceNEGSkipNamespaces,
+			lpConfig,
+			flags.F.EnableMultiNetworking,
+			ctx.EnableIngressRegionalExternal,
+			klog.TODO(), // TODO(#1761): Replace this with a top level logger configuration once one is available.
+		)
+		ctx.AddHealthCheck("neg-controller", negController.IsHealthy)
 
-	ctx.AddHealthCheck("neg-controller", negController.IsHealthy)
-
-	go negController.Run(stopCh)
-	klog.V(0).Infof("negController started")
+		go negController.Run(stopCh)
+		klog.V(0).Infof("negController started")
+	}
 
 	go app.RunSIGTERMHandler(lbc, flags.F.DeleteAllOnQuit)
 
