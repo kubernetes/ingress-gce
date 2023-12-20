@@ -64,7 +64,7 @@ func TestNodePoolSync(t *testing.T) {
 			kubeNodes: sets.NewString("n1", "n2"),
 		},
 		{
-			gceNodes:  sets.NewString("n1, n2"),
+			gceNodes:  sets.NewString("n1", "n2"),
 			kubeNodes: sets.NewString("n1"),
 		},
 		{
