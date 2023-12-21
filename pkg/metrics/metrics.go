@@ -56,13 +56,6 @@ var (
 		},
 		[]string{label},
 	)
-	networkEndpointGroupCount = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "number_of_negs",
-			Help: "Number of NEGs",
-		},
-		[]string{label},
-	)
 	serviceAttachmentCount = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "number_of_service_attachments",
@@ -138,8 +131,6 @@ func NewIngressState(ing *v1.Ingress, fc *frontendconfigv1beta1.FrontendConfig, 
 type ControllerMetrics struct {
 	// ingressMap is a map between ingress key to ingress state
 	ingressMap map[string]IngressState
-	// negMap is a map between service key to neg state
-	negMap map[string]NegServiceState
 	// l4ILBServiceLegacyMap is a map between service key and L4 ILB service state. It's used in the legacy metric.
 	l4ILBServiceLegacyMap map[string]L4ILBServiceLegacyState
 	// l4NetLBServiceLegacyMap is a map between service key and L4 NetLB service state. It's used in the legacy metric.
@@ -166,7 +157,6 @@ type ControllerMetrics struct {
 func NewControllerMetrics(exportInterval, l4NetLBProvisionDeadline time.Duration, enableNetLBDualStack, enableILBDualStack bool) *ControllerMetrics {
 	return &ControllerMetrics{
 		ingressMap:                              make(map[string]IngressState),
-		negMap:                                  make(map[string]NegServiceState),
 		l4ILBServiceLegacyMap:                   make(map[string]L4ILBServiceLegacyState),
 		l4NetLBServiceLegacyMap:                 make(map[string]L4NetLBServiceLegacyState),
 		l4ILBServiceMap:                         make(map[string]L4ServiceState),
@@ -231,25 +221,6 @@ func (im *ControllerMetrics) DeleteIngress(ingKey string) {
 	defer im.Unlock()
 
 	delete(im.ingressMap, ingKey)
-}
-
-// SetNegService implements NegMetricsCollector.
-func (im *ControllerMetrics) SetNegService(svcKey string, negState NegServiceState) {
-	im.Lock()
-	defer im.Unlock()
-
-	if im.negMap == nil {
-		klog.Fatalf("Ingress Metrics failed to initialize correctly.")
-	}
-	im.negMap[svcKey] = negState
-}
-
-// DeleteNegService implements NegMetricsCollector.
-func (im *ControllerMetrics) DeleteNegService(svcKey string) {
-	im.Lock()
-	defer im.Unlock()
-
-	delete(im.negMap, svcKey)
 }
 
 // SetServiceAttachment adds sa state to the map to be counted during metrics computation.
@@ -391,49 +362,6 @@ func (im *ControllerMetrics) computeIngressMetrics() (map[feature]int, map[featu
 
 	klog.V(4).Infof("Ingress usage metrics computed.")
 	return ingCount, svcPortCount
-}
-
-// computeNegMetrics aggregates NEG metrics in the cache
-func (im *ControllerMetrics) computeNegMetrics() map[feature]int {
-	im.Lock()
-	defer im.Unlock()
-	klog.V(4).Infof("Computing NEG usage metrics from neg state map: %#v", im.negMap)
-
-	counts := map[feature]int{
-		standaloneNeg:  0,
-		ingressNeg:     0,
-		asmNeg:         0,
-		neg:            0,
-		vmIpNeg:        0,
-		vmIpNegLocal:   0,
-		vmIpNegCluster: 0,
-		customNamedNeg: 0,
-		negInSuccess:   0,
-		negInError:     0,
-	}
-
-	for key, negState := range im.negMap {
-		klog.V(6).Infof("For service %s, it has standaloneNegs:%d, ingressNegs:%d, asmNeg:%d and vmPrimaryNeg:%v",
-			key, negState.StandaloneNeg, negState.IngressNeg, negState.AsmNeg, negState.VmIpNeg)
-		counts[standaloneNeg] += negState.StandaloneNeg
-		counts[ingressNeg] += negState.IngressNeg
-		counts[asmNeg] += negState.AsmNeg
-		counts[neg] += negState.AsmNeg + negState.StandaloneNeg + negState.IngressNeg
-		counts[customNamedNeg] += negState.CustomNamedNeg
-		counts[negInSuccess] += negState.SuccessfulNeg
-		counts[negInError] += negState.ErrorNeg
-		if negState.VmIpNeg != nil {
-			counts[neg] += 1
-			counts[vmIpNeg] += 1
-			if negState.VmIpNeg.trafficPolicyLocal {
-				counts[vmIpNegLocal] += 1
-			} else {
-				counts[vmIpNegCluster] += 1
-			}
-		}
-	}
-	klog.V(4).Info("NEG usage metrics computed.")
-	return counts
 }
 
 func (im *ControllerMetrics) computePSCMetrics() map[feature]int {

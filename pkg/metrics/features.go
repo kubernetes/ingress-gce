@@ -101,18 +101,6 @@ const (
 	sslPolicy      = feature("SSLPolicy")
 	httpsRedirects = feature("HTTPSRedirects")
 
-	standaloneNeg  = feature("StandaloneNEG")
-	ingressNeg     = feature("IngressNEG")
-	asmNeg         = feature("AsmNEG")
-	vmIpNeg        = feature("VmIpNEG")
-	vmIpNegLocal   = feature("VmIpNegLocal")
-	vmIpNegCluster = feature("VmIpNegCluster")
-	customNamedNeg = feature("CustomNamedNEG")
-	// negInSuccess feature specifies that syncers were created for the Neg
-	negInSuccess = feature("NegInSuccess")
-	// negInError feature specifies that an error occurring in ensuring Neg Syncer
-	negInError = feature("NegInError")
-
 	l4ILBService      = feature("L4ILBService")
 	l4ILBGlobalAccess = feature("L4ILBGlobalAccess")
 	l4ILBCustomSubnet = feature("L4ILBCustomSubnet")
