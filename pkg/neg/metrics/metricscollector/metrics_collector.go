@@ -56,6 +56,10 @@ type SyncerMetricsCollector interface {
 	SetLabelPropagationStats(key negtypes.NegSyncerKey, labelstatLabelPropagationStats LabelPropagationStats)
 	// Updates the number of negs per syncer per zone
 	UpdateSyncerNegCount(key negtypes.NegSyncerKey, negByLocation map[string]int)
+	// SetNegService adds/updates neg state for given service key.
+	SetNegService(svcKey string, negState NegServiceState)
+	// DeleteNegService removes the given service key.
+	DeleteNegService(svcKey string)
 }
 
 type negLocTypeKey struct {
@@ -86,6 +90,8 @@ type SyncerMetrics struct {
 	endpointsCountPerType map[negtypes.NegSyncerKey]map[string]int
 	//Stores the number of NEGs the NEG controller is managed based on location
 	syncerNegCount map[negtypes.NegSyncerKey]map[string]int
+	// negMap is a map between service key to neg state
+	negMap map[string]NegServiceState
 
 	// logger logs message related to NegMetricsCollector
 	logger klog.Logger
@@ -102,6 +108,7 @@ func NewNegMetricsCollector(exportInterval time.Duration, logger klog.Logger) *S
 		dualStackMigrationEndTime:   make(map[negtypes.NegSyncerKey]time.Time),
 		endpointsCountPerType:       make(map[negtypes.NegSyncerKey]map[string]int),
 		syncerNegCount:              make(map[negtypes.NegSyncerKey]map[string]int),
+		negMap:                      make(map[string]NegServiceState),
 		clock:                       clock.RealClock{},
 		metricsInterval:             exportInterval,
 		logger:                      logger.WithName("NegMetricsCollector"),
@@ -429,4 +436,23 @@ func (sm *SyncerMetrics) computeNegCounts() map[negLocTypeKey]int {
 	}
 
 	return negCountByLocation
+}
+
+// SetNegService implements NegMetricsCollector.
+func (sm *SyncerMetrics) SetNegService(svcKey string, negState NegServiceState) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	if sm.negMap == nil {
+		klog.Fatalf("Ingress Metrics failed to initialize correctly.")
+	}
+	sm.negMap[svcKey] = negState
+}
+
+// DeleteNegService implements NegMetricsCollector.
+func (sm *SyncerMetrics) DeleteNegService(svcKey string) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	delete(sm.negMap, svcKey)
 }
