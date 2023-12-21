@@ -399,14 +399,16 @@ func runControllers(ctx *ingctx.ControllerContext) {
 
 	ctx.Start(stopCh)
 
-	igControllerParams := &instancegroups.ControllerConfig{
-		NodeInformer: ctx.NodeInformer,
-		IGManager:    ctx.InstancePool,
-		HasSynced:    ctx.HasSynced,
-		StopCh:       stopCh,
+	if flags.F.EnableIGController {
+		igControllerParams := &instancegroups.ControllerConfig{
+			NodeInformer: ctx.NodeInformer,
+			IGManager:    ctx.InstancePool,
+			HasSynced:    ctx.HasSynced,
+			StopCh:       stopCh,
+		}
+		igController := instancegroups.NewController(igControllerParams)
+		go igController.Run()
 	}
-	igController := instancegroups.NewController(igControllerParams)
-	go igController.Run()
 
 	// The L4NetLbController will be run when RbsMode flag is Set
 	if flags.F.RunL4NetLBController {
