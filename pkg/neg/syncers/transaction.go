@@ -110,8 +110,8 @@ type transactionSyncer struct {
 	// Need to grab syncLock first for any reads or writes based on this value
 	errorState bool
 
-	// syncMetricsCollector collect sync related metrics
-	syncMetricsCollector metricscollector.SyncerMetricsCollector
+	// metricsCollector collects NEG controller metrics
+	metricsCollector *metricscollector.NEGControllerMetrics
 
 	// enableDegradedMode indicates whether we do endpoint calculation using degraded mode procedures
 	enableDegradedMode bool
@@ -145,7 +145,7 @@ func NewTransactionSyncer(
 	epc negtypes.NetworkEndpointsCalculator,
 	kubeSystemUID string,
 	svcNegClient svcnegclient.Interface,
-	syncerMetrics *metricscollector.SyncerMetrics,
+	metricsCollector *metricscollector.NEGControllerMetrics,
 	customName bool,
 	log klog.Logger,
 	lpConfig labels.PodLabelPropagationConfig,
@@ -172,7 +172,7 @@ func NewTransactionSyncer(
 		reflector:                 reflector,
 		kubeSystemUID:             kubeSystemUID,
 		svcNegClient:              svcNegClient,
-		syncMetricsCollector:      syncerMetrics,
+		metricsCollector:          metricsCollector,
 		customName:                customName,
 		errorState:                false,
 		logger:                    logger,
@@ -187,11 +187,11 @@ func NewTransactionSyncer(
 	// transactionSyncer needs syncer interface for internals
 	ts.syncer = syncer
 	ts.retry = backoff.NewDelayRetryHandler(func() { syncer.Sync() }, backoff.NewExponentialBackoffHandler(maxRetries, minRetryDelay, maxRetryDelay))
-	ts.dsMigrator = dualstack.NewMigrator(enableDualStackNEG, syncer, negSyncerKey, syncerMetrics, ts, logger)
+	ts.dsMigrator = dualstack.NewMigrator(enableDualStackNEG, syncer, negSyncerKey, metricsCollector, ts, logger)
 	return syncer
 }
 
-func GetEndpointsCalculator(podLister, nodeLister, serviceLister cache.Indexer, zoneGetter *zonegetter.ZoneGetter, syncerKey negtypes.NegSyncerKey, mode negtypes.EndpointsCalculatorMode, logger klog.Logger, enableDualStackNEG bool, syncMetricsCollector *metricscollector.SyncerMetrics, networkInfo *network.NetworkInfo) negtypes.NetworkEndpointsCalculator {
+func GetEndpointsCalculator(podLister, nodeLister, serviceLister cache.Indexer, zoneGetter *zonegetter.ZoneGetter, syncerKey negtypes.NegSyncerKey, mode negtypes.EndpointsCalculatorMode, logger klog.Logger, enableDualStackNEG bool, metricsCollector *metricscollector.NEGControllerMetrics, networkInfo *network.NetworkInfo) negtypes.NetworkEndpointsCalculator {
 	serviceKey := strings.Join([]string{syncerKey.Name, syncerKey.Namespace}, "/")
 	if syncerKey.NegType == negtypes.VmIpEndpointType {
 		nodeLister := listers.NewNodeLister(nodeLister)
@@ -210,7 +210,7 @@ func GetEndpointsCalculator(podLister, nodeLister, serviceLister cache.Indexer, 
 		syncerKey,
 		logger,
 		enableDualStackNEG,
-		syncMetricsCollector,
+		metricsCollector,
 	)
 }
 
@@ -241,7 +241,7 @@ func (s *transactionSyncer) syncInternal() error {
 	}
 	s.updateStatus(err)
 	metrics.PublishNegSyncMetrics(string(s.NegSyncerKey.NegType), string(s.endpointsCalculator.Mode()), err, start)
-	s.syncMetricsCollector.UpdateSyncerStatusInMetrics(s.NegSyncerKey, err, s.inErrorState())
+	s.metricsCollector.UpdateSyncerStatusInMetrics(s.NegSyncerKey, err, s.inErrorState())
 	return err
 }
 
@@ -359,7 +359,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 		publishAnnotationSizeMetrics(addEndpoints, endpointPodLabelMap)
 	}
 
-	s.syncMetricsCollector.SetLabelPropagationStats(s.NegSyncerKey, collectLabelStats(currentPodLabelMap, endpointPodLabelMap, targetMap))
+	s.metricsCollector.SetLabelPropagationStats(s.NegSyncerKey, collectLabelStats(currentPodLabelMap, endpointPodLabelMap, targetMap))
 
 	if s.needCommit() {
 		s.commitPods(committedEndpoints, endpointPodMap)
@@ -454,7 +454,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 	}
 
 	s.updateInitStatus(negObjRefs, errList)
-	s.syncMetricsCollector.UpdateSyncerNegCount(s.NegSyncerKey, negsByLocation)
+	s.metricsCollector.UpdateSyncerNegCount(s.NegSyncerKey, negsByLocation)
 	return utilerrors.NewAggregate(errList)
 }
 
@@ -552,7 +552,7 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, zone stri
 
 	if err == nil {
 		s.recordEvent(apiv1.EventTypeNormal, operation.String(), fmt.Sprintf("%s %d network endpoint(s) (NEG %q in zone %q)", operation.String(), len(networkEndpointMap), s.NegSyncerKey.NegName, zone))
-		s.syncMetricsCollector.UpdateSyncerStatusInMetrics(s.NegSyncerKey, nil, s.inErrorState())
+		s.metricsCollector.UpdateSyncerStatusInMetrics(s.NegSyncerKey, nil, s.inErrorState())
 	} else {
 		s.recordEvent(apiv1.EventTypeWarning, operation.String()+"Failed", fmt.Sprintf("Failed to %s %d network endpoint(s) (NEG %q in zone %q): %v", operation.String(), len(networkEndpointMap), s.NegSyncerKey.NegName, zone, err))
 		err := checkEndpointBatchErr(err, operation)
@@ -570,7 +570,7 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, zone stri
 			s.setErrorState()
 			s.syncLock.Unlock()
 		}
-		s.syncMetricsCollector.UpdateSyncerStatusInMetrics(s.NegSyncerKey, syncErr, s.inErrorState())
+		s.metricsCollector.UpdateSyncerStatusInMetrics(s.NegSyncerKey, syncErr, s.inErrorState())
 	}
 
 	metrics.PublishNegOperationMetrics(operation.String(), string(s.NegSyncerKey.NegType), string(s.NegSyncerKey.GetAPIVersion()), err, len(networkEndpointMap), start)

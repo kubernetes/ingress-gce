@@ -82,8 +82,8 @@ type syncerManager struct {
 	// syncerMap stores the NEG syncer
 	// key consists of service namespace, name and targetPort. Value is the corresponding syncer.
 	syncerMap map[negtypes.NegSyncerKey]negtypes.NegSyncer
-	// syncCollector collect sync related metrics
-	syncerMetrics *metricscollector.SyncerMetrics
+	// metricsCollector collects NEG controller metrics
+	metricsCollector *metricscollector.NEGControllerMetrics
 
 	// reflector handles NEG readiness gate and conditions for pods in NEG.
 	reflector readiness.Reflector
@@ -128,7 +128,7 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 	endpointSliceLister cache.Indexer,
 	nodeLister cache.Indexer,
 	svcNegLister cache.Indexer,
-	syncerMetrics *metricscollector.SyncerMetrics,
+	metricsCollector *metricscollector.NEGControllerMetrics,
 	enableNonGcpMode bool,
 	enableDualStackNEG bool,
 	numGCWorkers int,
@@ -151,7 +151,7 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 		svcNegLister:        svcNegLister,
 		svcPortMap:          make(map[serviceKey]negtypes.PortInfoMap),
 		syncerMap:           make(map[negtypes.NegSyncerKey]negtypes.NegSyncer),
-		syncerMetrics:       syncerMetrics,
+		metricsCollector:    metricsCollector,
 		svcNegClient:        svcNegClient,
 		kubeSystemUID:       kubeSystemUID,
 		enableNonGcpMode:    enableNonGcpMode,
@@ -238,7 +238,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				portInfo.EpCalculatorMode,
 				manager.logger.WithValues("service", klog.KRef(syncerKey.Namespace, syncerKey.Name), "negName", syncerKey.NegName),
 				manager.enableDualStackNEG,
-				manager.syncerMetrics,
+				manager.metricsCollector,
 				&portInfo.NetworkInfo,
 			)
 			syncer = negsyncer.NewTransactionSyncer(
@@ -255,7 +255,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				epc,
 				string(manager.kubeSystemUID),
 				manager.svcNegClient,
-				manager.syncerMetrics,
+				manager.metricsCollector,
 				!manager.namer.IsNEG(portInfo.NegName),
 				manager.logger,
 				manager.lpConfig,
@@ -481,7 +481,7 @@ func (manager *syncerManager) garbageCollectSyncer() {
 	for key, syncer := range manager.syncerMap {
 		if syncer.IsStopped() && !syncer.IsShuttingDown() {
 			delete(manager.syncerMap, key)
-			manager.syncerMetrics.DeleteSyncer(key)
+			manager.metricsCollector.DeleteSyncer(key)
 		}
 	}
 }

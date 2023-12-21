@@ -25,7 +25,6 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"k8s.io/ingress-gce/pkg/neg/types"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
-	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
 )
 
@@ -95,7 +94,7 @@ func TestUpdateMigrationStartAndEndTime(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			sm := &SyncerMetrics{
+			sm := &NEGControllerMetrics{
 				dualStackMigrationStartTime: tc.dualStackMigrationStartTime,
 				dualStackMigrationEndTime:   tc.dualStackMigrationEndTime,
 				clock:                       clock.RealClock{},
@@ -138,7 +137,7 @@ func TestUpdateEndpointsCountPerType(t *testing.T) {
 			migrationEndpointType: 7,
 		},
 	}
-	sm := &SyncerMetrics{
+	sm := &NEGControllerMetrics{
 		endpointsCountPerType: inputEndpointsCountPerType,
 	}
 
@@ -170,7 +169,7 @@ func TestComputeDualStackMigrationDurations(t *testing.T) {
 		syncerKey(1): time.Unix(10, 0),
 		syncerKey(3): time.Unix(9, 0),
 	}
-	sm := &SyncerMetrics{
+	sm := &NEGControllerMetrics{
 		dualStackMigrationStartTime: inputDualStackMigrationStartTime,
 		dualStackMigrationEndTime:   inputDualStackMigrationEndTime,
 		clock:                       &fakeClock{curTime: curTime},
@@ -211,7 +210,7 @@ func TestComputeDualStackMigrationCounts(t *testing.T) {
 		syncerKeyWithPort(2, 8443): {ipv6EndpointType: 8, dualStackEndpointType: 12, migrationEndpointType: 16},
 		syncerKeyWithPort(3, 80):   {ipv4EndpointType: 10, ipv6EndpointType: 20, dualStackEndpointType: 30},
 	}
-	sm := &SyncerMetrics{
+	sm := &NEGControllerMetrics{
 		endpointsCountPerType: inputEndpointsCountPerType,
 	}
 
@@ -238,7 +237,7 @@ func TestComputeDualStackMigrationCounts(t *testing.T) {
 }
 
 func TestComputeLabelMetrics(t *testing.T) {
-	collector := NewNegMetricsCollector(10*time.Second, klog.TODO())
+	collector := FakeNEGControllerMetrics()
 	syncer1 := negtypes.NegSyncerKey{
 		Namespace:        "ns1",
 		Name:             "svc-1",
@@ -308,7 +307,7 @@ func TestComputeLabelMetrics(t *testing.T) {
 }
 
 func TestComputeNegCounts(t *testing.T) {
-	collector := NewNegMetricsCollector(10*time.Second, klog.TODO())
+	collector := FakeNEGControllerMetrics()
 	l7Syncer1 := negtypes.NegSyncerKey{
 		Namespace:        "ns1",
 		Name:             "svc-1",
@@ -506,7 +505,7 @@ func TestComputeNegMetrics(t *testing.T) {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
-			newMetrics := FakeSyncerMetrics()
+			newMetrics := FakeNEGControllerMetrics()
 			for i, negState := range tc.negStates {
 				newMetrics.SetNegService(fmt.Sprint(i), negState)
 			}
