@@ -148,6 +148,14 @@ var (
 		},
 		[]string{"location", "endpoint_type"},
 	)
+
+	networkEndpointGroupCount = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "number_of_negs",
+			Help: "Number of NEGs",
+		},
+		[]string{"feature"},
+	)
 )
 
 type syncerState struct {
