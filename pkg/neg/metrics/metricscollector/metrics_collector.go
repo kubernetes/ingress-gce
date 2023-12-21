@@ -456,3 +456,46 @@ func (sm *SyncerMetrics) DeleteNegService(svcKey string) {
 
 	delete(sm.negMap, svcKey)
 }
+
+// computeNegMetrics aggregates NEG metrics in the cache
+func (sm *SyncerMetrics) computeNegMetrics() map[feature]int {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	klog.V(4).Infof("Computing NEG usage metrics from neg state map: %#v", sm.negMap)
+
+	counts := map[feature]int{
+		standaloneNeg:  0,
+		ingressNeg:     0,
+		asmNeg:         0,
+		neg:            0,
+		vmIpNeg:        0,
+		vmIpNegLocal:   0,
+		vmIpNegCluster: 0,
+		customNamedNeg: 0,
+		negInSuccess:   0,
+		negInError:     0,
+	}
+
+	for key, negState := range sm.negMap {
+		klog.V(6).Infof("For service %s, it has standaloneNegs:%d, ingressNegs:%d, asmNeg:%d and vmPrimaryNeg:%v",
+			key, negState.StandaloneNeg, negState.IngressNeg, negState.AsmNeg, negState.VmIpNeg)
+		counts[standaloneNeg] += negState.StandaloneNeg
+		counts[ingressNeg] += negState.IngressNeg
+		counts[asmNeg] += negState.AsmNeg
+		counts[neg] += negState.AsmNeg + negState.StandaloneNeg + negState.IngressNeg
+		counts[customNamedNeg] += negState.CustomNamedNeg
+		counts[negInSuccess] += negState.SuccessfulNeg
+		counts[negInError] += negState.ErrorNeg
+		if negState.VmIpNeg != nil {
+			counts[neg] += 1
+			counts[vmIpNeg] += 1
+			if negState.VmIpNeg.trafficPolicyLocal {
+				counts[vmIpNegLocal] += 1
+			} else {
+				counts[vmIpNegCluster] += 1
+			}
+		}
+	}
+	klog.V(4).Info("NEG usage metrics computed.")
+	return counts
+}
