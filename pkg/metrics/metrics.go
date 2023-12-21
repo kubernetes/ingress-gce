@@ -95,8 +95,8 @@ var (
 
 // init registers ingress usage metrics.
 func init() {
-	klog.V(3).Infof("Registering Ingress usage metrics %v and %v, NEG usage metrics %v", ingressCount, servicePortCount, networkEndpointGroupCount)
-	prometheus.MustRegister(ingressCount, servicePortCount, networkEndpointGroupCount)
+	klog.V(3).Infof("Registering Ingress usage metrics %v and %v", ingressCount, servicePortCount)
+	prometheus.MustRegister(ingressCount, servicePortCount)
 
 	klog.V(3).Infof("Registering L4 ILB usage legacy metrics %v", l4ILBLegacyCount)
 	prometheus.MustRegister(l4ILBLegacyCount)
@@ -303,9 +303,8 @@ func (im *ControllerMetrics) export() {
 		}
 	}()
 	ingCount, svcPortCount := im.computeIngressMetrics()
-	negCount := im.computeNegMetrics()
 
-	klog.V(3).Infof("Exporting ingress usage metrics. Ingress Count: %#v, Service Port count: %#v, NEG count: %#v", ingCount, svcPortCount, negCount)
+	klog.V(3).Infof("Exporting ingress usage metrics. Ingress Count: %#v, Service Port count: %#v", ingCount, svcPortCount)
 	for feature, count := range ingCount {
 		ingressCount.With(prometheus.Labels{label: feature.String()}).Set(float64(count))
 	}
@@ -314,9 +313,6 @@ func (im *ControllerMetrics) export() {
 		servicePortCount.With(prometheus.Labels{label: feature.String()}).Set(float64(count))
 	}
 
-	for feature, count := range negCount {
-		networkEndpointGroupCount.With(prometheus.Labels{label: feature.String()}).Set(float64(count))
-	}
 	klog.V(3).Infof("Ingress usage metrics exported.")
 
 	// Export L4 metrics.
