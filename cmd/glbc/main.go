@@ -148,14 +148,16 @@ func main() {
 		}
 	}
 	var svcNegClient svcnegclient.Interface
-	negCRDMeta := svcneg.CRDMeta()
-	if _, err := crdHandler.EnsureCRD(negCRDMeta, true); err != nil {
-		klog.Fatalf("Failed to ensure ServiceNetworkEndpointGroup CRD: %v", err)
-	}
+	if flags.F.EnableNEGController {
+		negCRDMeta := svcneg.CRDMeta()
+		if _, err := crdHandler.EnsureCRD(negCRDMeta, true); err != nil {
+			klog.Fatalf("Failed to ensure ServiceNetworkEndpointGroup CRD: %v", err)
+		}
 
-	svcNegClient, err = svcnegclient.NewForConfig(kubeConfig)
-	if err != nil {
-		klog.Fatalf("Failed to create NetworkEndpointGroup client: %v", err)
+		svcNegClient, err = svcnegclient.NewForConfig(kubeConfig)
+		if err != nil {
+			klog.Fatalf("Failed to create NetworkEndpointGroup client: %v", err)
+		}
 	}
 
 	var svcAttachmentClient serviceattachmentclient.Interface
