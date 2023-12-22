@@ -30,7 +30,6 @@ import (
 	"k8s.io/klog/v2"
 
 	"k8s.io/ingress-gce/pkg/context"
-	"k8s.io/ingress-gce/pkg/controller"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/version"
 )
@@ -46,7 +45,7 @@ func RunHTTPServer(healthChecker func() context.HealthCheckResults) {
 	klog.Fatal(http.ListenAndServe(fmt.Sprintf(":%v", flags.F.HealthzPort), nil))
 }
 
-func RunSIGTERMHandler(lbc *controller.LoadBalancerController, deleteAll bool) {
+func RunSIGTERMHandler(stopCh chan struct{}, exitCh <-chan error) {
 	// Multiple SIGTERMs will get dropped
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, syscall.SIGTERM)
@@ -54,9 +53,11 @@ func RunSIGTERMHandler(lbc *controller.LoadBalancerController, deleteAll bool) {
 	<-signalChan
 	klog.Infof("Received SIGTERM, shutting down")
 
+	close(stopCh)
+
 	// TODO: Better retries than relying on restartPolicy.
 	exitCode := 0
-	if err := lbc.Stop(deleteAll); err != nil {
+	if err := <-exitCh; err != nil {
 		klog.Infof("Error during shutdown %v", err)
 		exitCode = 1
 	}

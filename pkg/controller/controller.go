@@ -68,6 +68,10 @@ type LoadBalancerController struct {
 	ingQueue   utils.TaskQueue
 	Translator *legacytranslator.Translator
 	stopCh     chan struct{}
+
+	// exitCh is used to communicate the result of lbc.stop() and determine
+	// the exit status.
+	exitCh chan<- error
 	// stopLock is used to enforce only a single call to Stop is active.
 	// Needed because we allow stopping through an http endpoint and
 	// allowing concurrent stoppers leads to stack traces.
@@ -112,6 +116,7 @@ type LoadBalancerController struct {
 func NewLoadBalancerController(
 	ctx *context.ControllerContext,
 	stopCh chan struct{},
+	exitCh chan<- error,
 	log klog.Logger,
 ) *LoadBalancerController {
 	log = log.WithName("IngressController")
@@ -134,6 +139,7 @@ func NewLoadBalancerController(
 		nodeLister:    ctx.NodeInformer.GetIndexer(),
 		Translator:    ctx.Translator,
 		stopCh:        stopCh,
+		exitCh:        exitCh,
 		hasSynced:     ctx.HasSynced,
 		instancePool:  ctx.InstancePool,
 		l7Pool:        loadbalancers.NewLoadBalancerPool(ctx.Cloud, ctx.ClusterNamer, ctx, namer.NewFrontendNamerFactory(ctx.ClusterNamer, ctx.KubeSystemUID)),
@@ -340,6 +346,9 @@ func NewLoadBalancerController(
 
 // Run starts the loadbalancer controller.
 func (lbc *LoadBalancerController) Run() {
+	defer func() {
+		lbc.exitCh <- lbc.Stop(flags.F.DeleteAllOnQuit)
+	}()
 	lbc.logger.Info("Starting loadbalancer controller")
 	go lbc.ingQueue.Run()
 
@@ -356,7 +365,6 @@ func (lbc *LoadBalancerController) Stop(deleteAll bool) error {
 
 	// Only try draining the workqueue if we haven't already.
 	if !lbc.shutdown {
-		close(lbc.stopCh)
 		lbc.logger.Info("Shutting down controller queues.")
 		lbc.ingQueue.Shutdown()
 		lbc.shutdown = true
