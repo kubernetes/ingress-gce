@@ -294,21 +294,29 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	stopCh := make(chan struct{})
 	exitCh := make(chan error)
 	ctx.Init()
-	lbc := controller.NewLoadBalancerController(ctx, stopCh, exitCh)
-	if ctx.EnableASMConfigMap {
-		ctx.ASMConfigController.RegisterInformer(ctx.ConfigMapInformer, func() {
-			// We want to trigger a restart, don't have to clean up all the resources.
-			if err := lbc.Stop(false); err != nil {
-				klog.Errorf("Failed to stop the load balancer controller: %v", err)
-			}
-		})
-	}
+	go app.RunSIGTERMHandler(stopCh, exitCh)
 
-	if !flags.F.EnableFirewallCR && flags.F.DisableFWEnforcement {
-		klog.Fatalf("We can only disable the ingress controller FW enforcement when enabling the FW CR")
-	}
+	var lbc *controller.LoadBalancerController
+	if flags.F.RunIngressController {
+		lbc = controller.NewLoadBalancerController(ctx, stopCh, exitCh)
+		if ctx.EnableASMConfigMap {
+			ctx.ASMConfigController.RegisterInformer(ctx.ConfigMapInformer, func() {
+				// We want to trigger a restart, don't have to clean up all the resources.
+				if err := lbc.Stop(false); err != nil {
+					klog.Errorf("Failed to stop the load balancer controller: %v", err)
+				}
+			})
+		}
 
-	fwc := firewalls.NewFirewallController(ctx, flags.F.NodePortRanges.Values(), flags.F.EnableFirewallCR, flags.F.DisableFWEnforcement)
+		if !flags.F.EnableFirewallCR && flags.F.DisableFWEnforcement {
+			klog.Fatalf("We can only disable the ingress controller FW enforcement when enabling the FW CR")
+		}
+		go lbc.Run()
+
+		fwc := firewalls.NewFirewallController(ctx, flags.F.NodePortRanges.Values(), flags.F.EnableFirewallCR, flags.F.DisableFWEnforcement)
+		go fwc.Run()
+		klog.V(0).Infof("firewall controller started")
+	}
 
 	if flags.F.RunL4Controller {
 		l4Controller := l4lb.NewILBController(ctx, stopCh)
@@ -393,11 +401,6 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	go negController.Run(stopCh)
 	klog.V(0).Infof("negController started")
 
-	go app.RunSIGTERMHandler(stopCh, exitCh)
-
-	go fwc.Run()
-	klog.V(0).Infof("firewall controller started")
-
 	ctx.Start(stopCh)
 
 	igControllerParams := &instancegroups.ControllerConfig{
@@ -416,7 +419,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		klog.V(0).Infof("L4NetLB controller started")
 		go l4netlbController.Run()
 	}
-	go lbc.Run()
+
 	// Keep the program running until TERM signal.
 	<-stopCh
 	for {

@@ -327,7 +327,7 @@ func (lbc *LoadBalancerController) Run() {
 		lbc.exitCh <- lbc.Stop(flags.F.DeleteAllOnQuit)
 	}()
 	klog.Infof("Starting loadbalancer controller")
-	lbc.ingQueue.Run()
+	go lbc.ingQueue.Run()
 
 	<-lbc.stopCh
 	klog.Infof("Shutting down Loadbalancer Controller")

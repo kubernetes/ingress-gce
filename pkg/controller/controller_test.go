@@ -66,7 +66,7 @@ func newLoadBalancerController() *LoadBalancerController {
 	namer := namer_util.NewNamer(clusterUID, "")
 
 	stopCh := make(chan struct{})
-	shutDownCh := make(chan error)
+	exitCh := make(chan error)
 	ctxConfig := context.ControllerContextConfig{
 		Namespace:             api_v1.NamespaceAll,
 		ResyncPeriod:          1 * time.Minute,
@@ -74,7 +74,7 @@ func newLoadBalancerController() *LoadBalancerController {
 		HealthCheckPath:       "/",
 	}
 	ctx := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, nil, nil, nil, nil, nil, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig)
-	lbc := NewLoadBalancerController(ctx, stopCh, shutDownCh)
+	lbc := NewLoadBalancerController(ctx, stopCh, exitCh)
 	// TODO(rramkumar): Fix this so we don't have to override with our fake
 	lbc.instancePool = instancegroups.NewManager(&instancegroups.ManagerConfig{
 		Cloud:      instancegroups.NewEmptyFakeInstanceGroups(),
