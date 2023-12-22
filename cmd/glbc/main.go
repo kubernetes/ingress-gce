@@ -307,20 +307,25 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	}
 
 	ctx.Init()
-	lbc := controller.NewLoadBalancerController(ctx, stopCh, klog.TODO())
+	if flags.F.RunIngressController {
+		lbc := controller.NewLoadBalancerController(ctx, stopCh, klog.TODO())
+		go runWithWg(lbc.Run, &wg)
+		klog.V(0).Infof("ingress controller started")
+
+		if !flags.F.EnableFirewallCR && flags.F.DisableFWEnforcement {
+			klog.Fatalf("We can only disable the ingress controller FW enforcement when enabling the FW CR")
+		}
+		fwc := firewalls.NewFirewallController(ctx, flags.F.NodePortRanges.Values(), flags.F.EnableFirewallCR, flags.F.DisableFWEnforcement, ctx.EnableIngressRegionalExternal, stopCh)
+		go runWithWg(fwc.Run, &wg)
+		klog.V(0).Infof("firewall controller started")
+	}
+
 	if ctx.EnableASMConfigMap {
 		ctx.ASMConfigController.RegisterInformer(ctx.ConfigMapInformer, func() {
 			// We want to trigger a restart.
 			closeStopCh()
 		})
 	}
-
-	if !flags.F.EnableFirewallCR && flags.F.DisableFWEnforcement {
-		klog.Fatalf("We can only disable the ingress controller FW enforcement when enabling the FW CR")
-	}
-
-	fwc := firewalls.NewFirewallController(ctx, flags.F.NodePortRanges.Values(), flags.F.EnableFirewallCR, flags.F.DisableFWEnforcement, ctx.EnableIngressRegionalExternal, stopCh)
-
 	if flags.F.RunL4Controller {
 		l4Controller := l4lb.NewILBController(ctx, stopCh)
 		go runWithWg(l4Controller.Run, &wg)
@@ -346,9 +351,6 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	}
 	go app.RunSIGTERMHandler(closeStopCh)
 
-	go runWithWg(fwc.Run, &wg)
-	klog.V(0).Infof("firewall controller started")
-
 	ctx.Start(stopCh)
 
 	if flags.F.EnableIGController {
@@ -369,8 +371,6 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		go runWithWg(l4netlbController.Run, &wg)
 		klog.V(0).Infof("L4NetLB controller started")
 	}
-
-	go runWithWg(lbc.Run, &wg)
 	// Keep the program running until TERM signal.
 	<-stopCh
 	klog.Warning("Shutdown has been triggered")
