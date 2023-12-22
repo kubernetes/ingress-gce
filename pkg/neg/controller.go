@@ -132,7 +132,6 @@ func NewController(
 	gcPeriod time.Duration,
 	numGCWorkers int,
 	enableReadinessReflector bool,
-	runIngress bool,
 	runL4Controller bool,
 	enableNonGcpMode bool,
 	enableDualStackNEG bool,
@@ -234,52 +233,49 @@ func NewController(
 		enableIngressRegionalExternal: enableIngressRegionalExternal,
 		logger:                        logger,
 	}
-	if runIngress {
-		ingressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc: func(obj interface{}) {
-				addIng := obj.(*v1.Ingress)
-				if !utils.IsGLBCIngress(addIng) {
-					logger.V(4).Info("Ignoring add for ingress based on annotation", "ingress", klog.KObj(addIng), "annotation", annotations.IngressClassKey)
-					return
-				}
-				negController.enqueueIngressServices(addIng)
-			},
-			DeleteFunc: func(obj interface{}) {
-				delIng := obj.(*v1.Ingress)
-				if !utils.IsGLBCIngress(delIng) {
-					logger.V(4).Info("Ignoring delete for ingress based on annotation", "ingress", klog.KObj(delIng), "annotation", annotations.IngressClassKey)
-					return
-				}
-				negController.enqueueIngressServices(delIng)
-			},
-			UpdateFunc: func(old, cur interface{}) {
-				oldIng := old.(*v1.Ingress)
-				curIng := cur.(*v1.Ingress)
-				// Check if ingress class changed and previous class was a GCE ingress
-				// Ingress class change may require cleanup so enqueue related services
-				if !utils.IsGLBCIngress(curIng) && !utils.IsGLBCIngress(oldIng) {
-					logger.V(4).Info("Ignoring update for ingress based on annotation", "ingress", klog.KObj(curIng), "annotation", annotations.IngressClassKey)
-					return
-				}
-				keys := gatherIngressServiceKeys(oldIng)
-				keys = keys.Union(gatherIngressServiceKeys(curIng))
-				for _, key := range keys.List() {
-					negController.enqueueService(cache.ExplicitKey(key))
-				}
-			},
-		})
-
-		podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc: func(obj interface{}) {
-				pod := obj.(*apiv1.Pod)
-				negController.reflector.SyncPod(pod)
-			},
-			UpdateFunc: func(old, cur interface{}) {
-				pod := cur.(*apiv1.Pod)
-				negController.reflector.SyncPod(pod)
-			},
-		})
-	}
+	ingressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			addIng := obj.(*v1.Ingress)
+			if !utils.IsGLBCIngress(addIng) {
+				logger.V(4).Info("Ignoring add for ingress based on annotation", "ingress", klog.KObj(addIng), "annotation", annotations.IngressClassKey)
+				return
+			}
+			negController.enqueueIngressServices(addIng)
+		},
+		DeleteFunc: func(obj interface{}) {
+			delIng := obj.(*v1.Ingress)
+			if !utils.IsGLBCIngress(delIng) {
+				logger.V(4).Info("Ignoring delete for ingress based on annotation", "ingress", klog.KObj(delIng), "annotation", annotations.IngressClassKey)
+				return
+			}
+			negController.enqueueIngressServices(delIng)
+		},
+		UpdateFunc: func(old, cur interface{}) {
+			oldIng := old.(*v1.Ingress)
+			curIng := cur.(*v1.Ingress)
+			// Check if ingress class changed and previous class was a GCE ingress
+			// Ingress class change may require cleanup so enqueue related services
+			if !utils.IsGLBCIngress(curIng) && !utils.IsGLBCIngress(oldIng) {
+				logger.V(4).Info("Ignoring update for ingress based on annotation", "ingress", klog.KObj(curIng), "annotation", annotations.IngressClassKey)
+				return
+			}
+			keys := gatherIngressServiceKeys(oldIng)
+			keys = keys.Union(gatherIngressServiceKeys(curIng))
+			for _, key := range keys.List() {
+				negController.enqueueService(cache.ExplicitKey(key))
+			}
+		},
+	})
+	podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			pod := obj.(*apiv1.Pod)
+			negController.reflector.SyncPod(pod)
+		},
+		UpdateFunc: func(old, cur interface{}) {
+			pod := cur.(*apiv1.Pod)
+			negController.reflector.SyncPod(pod)
+		},
+	})
 	serviceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    negController.enqueueService,
 		DeleteFunc: negController.enqueueService,

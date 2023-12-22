@@ -150,7 +150,6 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		testContext.NumGCWorkers,
 		// TODO(freehan): enable readiness reflector for unit tests
 		false, // enableReadinessReflector
-		true,  // runIngress
 		runL4, //runL4Controller
 		false, //enableNonGcpMode
 		testContext.EnableDualStackNEG,

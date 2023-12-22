@@ -57,9 +57,22 @@ func RunSIGTERMHandler(stopCh chan struct{}, exitCh <-chan error) {
 
 	// TODO: Better retries than relying on restartPolicy.
 	exitCode := 0
-	if err := <-exitCh; err != nil {
-		klog.Infof("Error during shutdown %v", err)
-		exitCode = 1
+	// The ingress controller is the only controller that returns errors when
+	// running cleanup. exitCh is used to communicate the error returned from
+	// ingress controller's stop() and etermine the exit code.
+	// For other controllers, no errors are returned from stop/cleanup
+	// functions, and they do not contribute to the determination of the exit
+	// code.
+	// Here we flag-gate exitCh since the ingress controller is the only
+	// controller that uses this channel to communciate its exit error.
+	//
+	// TODO(cheungdavid): Add a waitGroup here to make sure graceful exits for
+	// other controllers.
+	if flags.F.RunIngressController {
+		if err := <-exitCh; err != nil {
+			klog.Infof("Error during shutdown %v", err)
+			exitCode = 1
+		}
 	}
 	klog.Infof("Exiting with %v", exitCode)
 	os.Exit(exitCode)
