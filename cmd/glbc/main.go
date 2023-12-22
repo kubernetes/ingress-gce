@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"sync"
 	"time"
 
 	flag "github.com/spf13/pflag"
@@ -295,12 +296,21 @@ func makeLeaderElectionConfig(ctx *ingctx.ControllerContext, client clientset.In
 
 func runControllers(ctx *ingctx.ControllerContext) {
 	stopCh := make(chan struct{})
+	var once sync.Once
+	// This ensures that stopCh is only closed once.
+	// Right now, we have two callers.
+	// One is triggered when the ASM configmap changes, and the other one is
+	// triggered by the SIGTERM handler.
+	closeStopCh := func() {
+		once.Do(func() { close(stopCh) })
+	}
+
 	ctx.Init()
 	lbc := controller.NewLoadBalancerController(ctx, stopCh, klog.TODO())
 	if ctx.EnableASMConfigMap {
 		ctx.ASMConfigController.RegisterInformer(ctx.ConfigMapInformer, func() {
 			// We want to trigger a restart.
-			lbc.Stop()
+			closeStopCh()
 		})
 	}
 
@@ -331,7 +341,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	if flags.F.EnableNEGController {
 		runNEGController(ctx, stopCh)
 	}
-	go app.RunSIGTERMHandler(lbc)
+	go app.RunSIGTERMHandler(closeStopCh)
 
 	go fwc.Run()
 	klog.V(0).Infof("firewall controller started")
@@ -356,7 +366,9 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		klog.V(0).Infof("L4NetLB controller started")
 		go l4netlbController.Run()
 	}
-	lbc.Run()
+	go lbc.Run()
+	// Keep the program running until TERM signal.
+	<-stopCh
 	for {
 		klog.Warning("Handled quit, awaiting pod deletion.")
 		time.Sleep(30 * time.Second)
