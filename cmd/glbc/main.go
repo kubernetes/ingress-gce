@@ -292,8 +292,9 @@ func makeLeaderElectionConfig(ctx *ingctx.ControllerContext, client clientset.In
 
 func runControllers(ctx *ingctx.ControllerContext) {
 	stopCh := make(chan struct{})
+	exitCh := make(chan error)
 	ctx.Init()
-	lbc := controller.NewLoadBalancerController(ctx, stopCh)
+	lbc := controller.NewLoadBalancerController(ctx, stopCh, exitCh)
 	if ctx.EnableASMConfigMap {
 		ctx.ASMConfigController.RegisterInformer(ctx.ConfigMapInformer, func() {
 			// We want to trigger a restart, don't have to clean up all the resources.
@@ -392,7 +393,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	go negController.Run(stopCh)
 	klog.V(0).Infof("negController started")
 
-	go app.RunSIGTERMHandler(lbc, flags.F.DeleteAllOnQuit)
+	go app.RunSIGTERMHandler(stopCh, exitCh)
 
 	go fwc.Run()
 	klog.V(0).Infof("firewall controller started")
@@ -415,7 +416,9 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		klog.V(0).Infof("L4NetLB controller started")
 		go l4netlbController.Run()
 	}
-	lbc.Run()
+	go lbc.Run()
+	// Keep the program running until TERM signal.
+	<-stopCh
 	for {
 		klog.Warning("Handled quit, awaiting pod deletion.")
 		time.Sleep(30 * time.Second)

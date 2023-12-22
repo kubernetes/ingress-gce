@@ -67,6 +67,7 @@ type LoadBalancerController struct {
 	ingQueue   utils.TaskQueue
 	Translator *legacytranslator.Translator
 	stopCh     chan struct{}
+	exitCh     chan error
 	// stopLock is used to enforce only a single call to Stop is active.
 	// Needed because we allow stopping through an http endpoint and
 	// allowing concurrent stoppers leads to stack traces.
@@ -106,7 +107,8 @@ type LoadBalancerController struct {
 // NewLoadBalancerController creates a controller for gce loadbalancers.
 func NewLoadBalancerController(
 	ctx *context.ControllerContext,
-	stopCh chan struct{}) *LoadBalancerController {
+	stopCh chan struct{},
+	exitCh chan error) *LoadBalancerController {
 
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartLogging(klog.Infof)
@@ -321,8 +323,11 @@ func NewLoadBalancerController(
 
 // Run starts the loadbalancer controller.
 func (lbc *LoadBalancerController) Run() {
+	defer func() {
+		lbc.exitCh <- lbc.Stop(flags.F.DeleteAllOnQuit)
+	}()
 	klog.Infof("Starting loadbalancer controller")
-	go lbc.ingQueue.Run()
+	lbc.ingQueue.Run()
 
 	<-lbc.stopCh
 	klog.Infof("Shutting down Loadbalancer Controller")
