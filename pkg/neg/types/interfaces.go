@@ -19,15 +19,8 @@ package types
 import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
-
-// ZoneGetter is an interface for retrieve zone related information
-type ZoneGetter interface {
-	ListZones(predicate utils.NodeConditionPredicate) ([]string, error)
-	GetZoneForNode(name string) (string, error)
-}
 
 // NetworkEndpointGroupCloud is an interface for managing gce network endpoint group.
 type NetworkEndpointGroupCloud interface {
