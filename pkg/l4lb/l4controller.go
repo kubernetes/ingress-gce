@@ -33,7 +33,6 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/context"
-	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/forwardingrules"
 	l4metrics "k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
@@ -43,6 +42,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
 )
 
@@ -67,7 +67,7 @@ type L4Controller struct {
 	networkResolver          network.Resolver
 	stopCh                   chan struct{}
 	// needed for listing the zones in the cluster.
-	translator *translator.Translator
+	zoneGetter *zonegetter.ZoneGetter
 	// needed for linking the NEG with the backend service for each ILB service.
 	NegLinker   backends.Linker
 	backendPool *backends.Backends
@@ -95,7 +95,7 @@ func NewILBController(ctx *context.ControllerContext, stopCh chan struct{}) *L4C
 		stopCh:          stopCh,
 		numWorkers:      ctx.NumL4Workers,
 		namer:           ctx.L4Namer,
-		translator:      ctx.Translator,
+		zoneGetter:      ctx.ZoneGetter,
 		forwardingRules: forwardingrules.New(ctx.Cloud, meta.VersionGA, meta.Regional),
 		enableDualStack: ctx.EnableL4ILBDualStack,
 	}
@@ -378,7 +378,7 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) *lo
 // linkNEG associates the NEG to the backendService for the given L4 ILB service.
 func (l4c *L4Controller) linkNEG(l4 *loadbalancers.L4) error {
 	// link neg to backend service
-	zones, err := l4c.translator.ListZones(utils.CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes)
+	zones, err := l4c.zoneGetter.List(zonegetter.CandidateAndUnreadyNodesFilter, klog.TODO())
 	if err != nil {
 		return nil
 	}
