@@ -34,6 +34,7 @@ import (
 	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 )
 
 const defaultZone = "zone-a"
@@ -52,13 +53,17 @@ func newTestIGLinker(fakeGCE *gce.Cloud, fakeInstancePool instancegroups.Manager
 func TestLink(t *testing.T) {
 	fakeIGs := instancegroups.NewEmptyFakeInstanceGroups()
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	fakeZL := &instancegroups.FakeZoneLister{Zones: []string{defaultZone}}
+
+	nodeInformer := zonegetter.FakeNodeInformer()
+	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	zonegetter.AddFakeNodes(fakeZoneGetter, defaultZone, "test-instance")
+
 	fakeNodePool := instancegroups.NewManager(&instancegroups.ManagerConfig{
 		Cloud:      fakeIGs,
 		Namer:      defaultNamer,
 		Recorders:  &test.FakeRecorderSource{},
 		BasePath:   utils.GetBasePath(fakeGCE),
-		ZoneLister: fakeZL,
+		ZoneGetter: fakeZoneGetter,
 		MaxIGSize:  1000,
 	})
 	linker := newTestIGLinker(fakeGCE, fakeNodePool)
@@ -90,13 +95,17 @@ func TestLink(t *testing.T) {
 func TestLinkWithCreationModeError(t *testing.T) {
 	fakeIGs := instancegroups.NewEmptyFakeInstanceGroups()
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	fakeZL := &instancegroups.FakeZoneLister{Zones: []string{defaultZone}}
+
+	nodeInformer := zonegetter.FakeNodeInformer()
+	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	zonegetter.AddFakeNodes(fakeZoneGetter, defaultZone, "test-instance")
+
 	fakeNodePool := instancegroups.NewManager(&instancegroups.ManagerConfig{
 		Cloud:      fakeIGs,
 		Namer:      defaultNamer,
 		Recorders:  &test.FakeRecorderSource{},
 		BasePath:   utils.GetBasePath(fakeGCE),
-		ZoneLister: fakeZL,
+		ZoneGetter: fakeZoneGetter,
 		MaxIGSize:  1000,
 	})
 	linker := newTestIGLinker(fakeGCE, fakeNodePool)
