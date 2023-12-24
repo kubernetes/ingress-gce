@@ -33,6 +33,7 @@ import (
 	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 )
 
 type Jig struct {
@@ -50,13 +51,17 @@ func newTestJig(fakeGCE *gce.Cloud) *Jig {
 	fakeBackendPool := NewPool(fakeGCE, defaultNamer)
 
 	fakeIGs := instancegroups.NewEmptyFakeInstanceGroups()
-	fakeZL := &instancegroups.FakeZoneLister{Zones: []string{defaultZone}}
+
+	nodeInformer := zonegetter.FakeNodeInformer()
+	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	zonegetter.AddFakeNodes(fakeZoneGetter, defaultZone, "test-instance")
+
 	fakeInstancePool := instancegroups.NewManager(&instancegroups.ManagerConfig{
 		Cloud:      fakeIGs,
 		Namer:      defaultNamer,
 		Recorders:  &test.FakeRecorderSource{},
 		BasePath:   utils.GetBasePath(fakeGCE),
-		ZoneLister: fakeZL,
+		ZoneGetter: fakeZoneGetter,
 		MaxIGSize:  1000,
 	})
 
