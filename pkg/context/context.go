@@ -58,6 +58,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 	"k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
 )
 
@@ -117,6 +118,7 @@ type ControllerContext struct {
 
 	InstancePool instancegroups.Manager
 	Translator   *translator.Translator
+	ZoneGetter   *zonegetter.ZoneGetter
 }
 
 // ControllerContextConfig encapsulates some settings that are tunable via command line flags.
@@ -218,12 +220,13 @@ func NewControllerContext(
 		flags.F.EnableTransparentHealthChecks,
 		context.EnableIngressRegionalExternal,
 	)
+	context.ZoneGetter = zonegetter.NewZoneGetter(context.NodeInformer)
 	context.InstancePool = instancegroups.NewManager(&instancegroups.ManagerConfig{
 		Cloud:      context.Cloud,
 		Namer:      context.ClusterNamer,
 		Recorders:  context,
 		BasePath:   utils.GetBasePath(context.Cloud),
-		ZoneLister: context.Translator,
+		ZoneGetter: context.ZoneGetter,
 		MaxIGSize:  config.MaxIGSize,
 	})
 
