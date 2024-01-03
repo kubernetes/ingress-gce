@@ -43,6 +43,7 @@ func TestServiceNetwork(t *testing.T) {
 			Selector: map[string]string{
 				networkSelector: "secondary-network",
 			},
+			ExternalTrafficPolicy: apiv1.ServiceExternalTrafficPolicyLocal,
 		},
 	}
 	cloud := fakeCloud{}
@@ -115,7 +116,7 @@ func TestServiceNetwork(t *testing.T) {
 					Name: "secondary-network",
 				},
 				Spec: networkv1.NetworkSpec{
-					Type: "L3",
+					Type: networkv1.L3NetworkType,
 					ParametersRef: &networkv1.NetworkParametersReference{
 						Group: networkingGKEGroup,
 						Kind:  "UnsupportedNetworkParams",
@@ -134,7 +135,7 @@ func TestServiceNetwork(t *testing.T) {
 					Name: "secondary-network",
 				},
 				Spec: networkv1.NetworkSpec{
-					Type: "L3",
+					Type: networkv1.L3NetworkType,
 					ParametersRef: &networkv1.NetworkParametersReference{
 						Group:     networkingGKEGroup,
 						Kind:      "GKENetworkParamSet",
@@ -153,6 +154,73 @@ func TestServiceNetwork(t *testing.T) {
 			gkeNetworkParamSet: nil,
 			service:            serviceWithSecondaryNet,
 			wantErr:            "GKENetworkParamSet secondary-network-params was not found",
+		},
+		{
+			desc: "invalid network type L2",
+			network: &networkv1.Network{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "secondary-network",
+				},
+				Spec: networkv1.NetworkSpec{
+					Type: networkv1.L2NetworkType,
+					ParametersRef: &networkv1.NetworkParametersReference{
+						Group: networkingGKEGroup,
+						Kind:  "GKENetworkParamSet",
+						Name:  "secondary-network-params",
+					},
+				},
+			},
+			gkeNetworkParamSet: testGKENetworkParamSet("secondary-network-params", "secondary-vpc", "secondary-subnet"),
+			service:            serviceWithSecondaryNet,
+			wantErr:            "network.Spec.Type=L2 is not supported for multinetwork LoadBalancer services, the only supported network type is L3",
+		},
+		{
+			desc: "invalid network type Device",
+			network: &networkv1.Network{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "secondary-network",
+				},
+				Spec: networkv1.NetworkSpec{
+					Type: networkv1.DeviceNetworkType,
+					ParametersRef: &networkv1.NetworkParametersReference{
+						Group: networkingGKEGroup,
+						Kind:  "GKENetworkParamSet",
+						Name:  "secondary-network-params",
+					},
+				},
+			},
+			gkeNetworkParamSet: testGKENetworkParamSet("secondary-network-params", "secondary-vpc", "secondary-subnet"),
+			service:            serviceWithSecondaryNet,
+			wantErr:            "network.Spec.Type=Device is not supported for multinetwork LoadBalancer services, the only supported network type is L3",
+		},
+		{
+			desc:               "service with externalTrafficPolicy=Cluster",
+			network:            testNetwork("secondary-network", "secondary-network-params"),
+			gkeNetworkParamSet: testGKENetworkParamSet("secondary-network-params", "secondary-vpc", "secondary-subnet"),
+			service: &apiv1.Service{
+				ObjectMeta: metav1.ObjectMeta{Name: "testService"},
+				Spec: apiv1.ServiceSpec{
+					Selector: map[string]string{
+						networkSelector: "secondary-network",
+					},
+					ExternalTrafficPolicy: apiv1.ServiceExternalTrafficPolicyCluster,
+				},
+			},
+			wantErr: "multinetwork services with externalTrafficPolicy='Cluster' are not supported, only externalTrafficPolicy=Local services are supported",
+		},
+		{
+			desc:               "service with externalTrafficPolicy default",
+			network:            testNetwork("secondary-network", "secondary-network-params"),
+			gkeNetworkParamSet: testGKENetworkParamSet("secondary-network-params", "secondary-vpc", "secondary-subnet"),
+			service: &apiv1.Service{
+				ObjectMeta: metav1.ObjectMeta{Name: "testService"},
+				Spec: apiv1.ServiceSpec{
+					Selector: map[string]string{
+						networkSelector: "secondary-network",
+					},
+				},
+			},
+			wantErr: "multinetwork services with externalTrafficPolicy='' are not supported, only externalTrafficPolicy=Local services are supported",
 		},
 	}
 
@@ -218,7 +286,7 @@ func testNetwork(name, gkeNetworkParamSetName string) *networkv1.Network {
 			Name: name,
 		},
 		Spec: networkv1.NetworkSpec{
-			Type: "L3",
+			Type: networkv1.L3NetworkType,
 			ParametersRef: &networkv1.NetworkParametersReference{
 				Group: networkingGKEGroup,
 				Kind:  "GKENetworkParamSet",
