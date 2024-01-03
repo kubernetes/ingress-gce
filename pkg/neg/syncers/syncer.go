@@ -91,7 +91,7 @@ func (s *syncer) Start() error {
 			retryCh := make(<-chan time.Time)
 			err := s.core.sync()
 			if err != nil {
-				go metrics.PublishNegControllerErrorCountMetrics(err, false)
+				metrics.PublishNegControllerErrorCountMetrics(err, false)
 				delay, retryErr := time.Duration(0), error(nil)
 				if !negtypes.IsStrategyQuotaError(err) {
 					delay, retryErr = s.backoff.NextDelay()
