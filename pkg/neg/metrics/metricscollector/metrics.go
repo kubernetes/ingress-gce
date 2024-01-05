@@ -16,10 +16,7 @@ limitations under the License.
 
 package metricscollector
 
-import (
-	"github.com/prometheus/client_golang/prometheus"
-	negtypes "k8s.io/ingress-gce/pkg/neg/types"
-)
+import "github.com/prometheus/client_golang/prometheus"
 
 const (
 	negControllerSubsystem = "neg_controller"
@@ -157,22 +154,3 @@ var (
 		[]string{"feature"},
 	)
 )
-
-type syncerState struct {
-	lastSyncResult negtypes.Reason
-	inErrorState   bool
-}
-
-type syncerStateCount map[syncerState]int
-
-// LabelPropagationStat contains stats related to label propagation.
-type LabelPropagationStats struct {
-	EndpointsWithAnnotation int
-	NumberOfEndpoints       int
-}
-
-// LabelPropagationMetrics contains aggregated label propagation related metrics.
-type LabelPropagationMetrics struct {
-	EndpointsWithAnnotation int
-	NumberOfEndpoints       int
-}

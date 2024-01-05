@@ -16,6 +16,10 @@ limitations under the License.
 
 package metricscollector
 
+import (
+	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+)
+
 // NegServiceState contains all the neg usage associated with one service
 type NegServiceState struct {
 	// standaloneNeg is the count of standalone NEG
@@ -38,6 +42,30 @@ type NegServiceState struct {
 // local traffic (or service external policy set to local).
 type VmIpNegType struct {
 	trafficPolicyLocal bool
+}
+
+type negLocTypeKey struct {
+	location     string
+	endpointType string
+}
+
+type syncerState struct {
+	lastSyncResult negtypes.Reason
+	inErrorState   bool
+}
+
+type syncerStateCount map[syncerState]int
+
+// LabelPropagationStat contains stats related to label propagation.
+type LabelPropagationStats struct {
+	EndpointsWithAnnotation int
+	NumberOfEndpoints       int
+}
+
+// LabelPropagationMetrics contains aggregated label propagation related metrics.
+type LabelPropagationMetrics struct {
+	EndpointsWithAnnotation int
+	NumberOfEndpoints       int
 }
 
 // NewVmIpNegType returns a new VmIpNegType.

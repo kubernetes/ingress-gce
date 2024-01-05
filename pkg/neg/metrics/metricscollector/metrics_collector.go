@@ -62,11 +62,6 @@ type SyncerMetricsCollector interface {
 	DeleteNegService(svcKey string)
 }
 
-type negLocTypeKey struct {
-	location     string
-	endpointType string
-}
-
 type SyncerMetrics struct {
 	clock clock.Clock
 	// duration between metrics exports
