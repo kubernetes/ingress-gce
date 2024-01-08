@@ -48,6 +48,7 @@ import (
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
+	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
 )
 
@@ -122,6 +123,10 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 	if enableASM {
 		kubeClient.CoreV1().ConfigMaps("kube-system").Create(context.TODO(), &apiv1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "ingress-controller-config-test"}, Data: map[string]string{"enable-asm": "true"}}, metav1.CreateOptions{})
 	}
+	nodeInformer := zonegetter.FakeNodeInformer()
+	zonegetter.PopulateFakeNodeInformer(nodeInformer)
+	zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+
 	return NewController(
 		kubeClient,
 		testContext.SvcNegClient,
@@ -139,7 +144,7 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		testContext.L4Namer,
 		defaultBackend,
 		negtypes.NewAdapter(testContext.Cloud),
-		negtypes.NewFakeZoneGetter(),
+		zoneGetter,
 		testContext.NegNamer,
 		testContext.ResyncPeriod,
 		testContext.ResyncPeriod,
@@ -1682,8 +1687,10 @@ func validateServiceAnnotationWithPortInfoMap(t *testing.T, svc *apiv1.Service, 
 		t.Fatalf("Failed to apply the NEG service state annotation, got %+v", svc.Annotations)
 	}
 
-	zoneGetter := negtypes.NewFakeZoneGetter()
-	zones, _ := zoneGetter.ListZones(negtypes.NodePredicateForEndpointCalculatorMode(portInfoMap.EndpointsCalculatorMode()))
+	nodeInformer := zonegetter.FakeNodeInformer()
+	zonegetter.PopulateFakeNodeInformer(nodeInformer)
+	zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	zones, _ := zoneGetter.List(negtypes.NodeFilterForEndpointCalculatorMode(portInfoMap.EndpointsCalculatorMode()), klog.TODO())
 	if !sets.NewString(expectZones...).Equal(sets.NewString(zones...)) {
 		t.Errorf("Unexpected zones listed by the predicate function, got %v, want %v", zones, expectZones)
 	}
@@ -1761,10 +1768,11 @@ func validateServiceStateAnnotationExceptNames(t *testing.T, svc *apiv1.Service,
 			t.Fatalf("Expected NEG service state annotation to contain port %v, got %v", port, v)
 		}
 	}
-
-	zoneGetter := negtypes.NewFakeZoneGetter()
+	nodeInformer := zonegetter.FakeNodeInformer()
+	zonegetter.PopulateFakeNodeInformer(nodeInformer)
+	zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
 	// This routine is called from tests verifying L7 NEGs.
-	zones, _ := zoneGetter.ListZones(negtypes.NodePredicateForEndpointCalculatorMode(negtypes.L7Mode))
+	zones, _ := zoneGetter.List(negtypes.NodeFilterForEndpointCalculatorMode(negtypes.L7Mode), klog.TODO())
 
 	// negStatus validation
 	negStatus, err := annotations.ParseNegStatus(v)
