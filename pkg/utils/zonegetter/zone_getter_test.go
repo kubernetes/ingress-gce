@@ -20,18 +20,15 @@ import (
 	"errors"
 	"reflect"
 	"testing"
-	"time"
 
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	informerv1 "k8s.io/client-go/informers/core/v1"
-	"k8s.io/client-go/kubernetes/fake"
-	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
 
 func TestList(t *testing.T) {
-	zoneGetter := NewFakeZoneGetter()
+	fakeNodeInformer := FakeNodeInformer()
+	zoneGetter := NewZoneGetter(fakeNodeInformer)
 	zoneGetter.nodeInformer.GetIndexer().Add(&apiv1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "ReadyNodeWithProviderID",
@@ -178,7 +175,8 @@ func TestList(t *testing.T) {
 }
 
 func TestZoneForNode(t *testing.T) {
-	zoneGetter := NewFakeZoneGetter()
+	fakeNodeInformer := FakeNodeInformer()
+	zoneGetter := NewZoneGetter(fakeNodeInformer)
 	zoneGetter.nodeInformer.GetIndexer().Add(&apiv1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "NodeWithValidProviderID",
@@ -339,10 +337,4 @@ func TestNonGCPZoneGetter(t *testing.T) {
 	}
 	validateGetZoneForNode("foo-node")
 	validateGetZoneForNode("bar-node")
-}
-
-// NewZoneGetter initialize a fake ZoneGetter in normal mode.
-func NewFakeZoneGetter() *ZoneGetter {
-	nodeInformer := informerv1.NewNodeInformer(fake.NewSimpleClientset(), 1*time.Second, utils.NewNamespaceIndexer())
-	return NewZoneGetter(nodeInformer)
 }
