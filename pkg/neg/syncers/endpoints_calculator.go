@@ -30,6 +30,7 @@ import (
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
 )
 
@@ -43,14 +44,14 @@ import (
 // nodes - node10, node 11 ... node45 will be part of the subset.
 type LocalL4ILBEndpointsCalculator struct {
 	nodeLister      listers.NodeLister
-	zoneGetter      types.ZoneGetter
+	zoneGetter      *zonegetter.ZoneGetter
 	subsetSizeLimit int
 	svcId           string
 	logger          klog.Logger
 	networkInfo     *network.NetworkInfo
 }
 
-func NewLocalL4ILBEndpointsCalculator(nodeLister listers.NodeLister, zoneGetter types.ZoneGetter, svcId string, logger klog.Logger, networkInfo *network.NetworkInfo) *LocalL4ILBEndpointsCalculator {
+func NewLocalL4ILBEndpointsCalculator(nodeLister listers.NodeLister, zoneGetter *zonegetter.ZoneGetter, svcId string, logger klog.Logger, networkInfo *network.NetworkInfo) *LocalL4ILBEndpointsCalculator {
 	return &LocalL4ILBEndpointsCalculator{
 		nodeLister:      nodeLister,
 		zoneGetter:      zoneGetter,
@@ -102,7 +103,7 @@ func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(eds []types.Endpoints
 				l.logger.Info("Node not connected to service network", "nodeName", node.Name, "network", l.networkInfo.K8sNetwork)
 				continue
 			}
-			zone, err := l.zoneGetter.GetZoneForNode(node.Name)
+			zone, err := l.zoneGetter.ZoneForNode(node.Name, l.logger)
 			if err != nil {
 				l.logger.Error(err, "Unable to find zone for node, skipping", "nodeName", node.Name)
 				metrics.PublishNegControllerErrorCountMetrics(err, true)
@@ -141,7 +142,7 @@ type ClusterL4ILBEndpointsCalculator struct {
 	// nodeLister is used for listing all the nodes in the cluster when calculating the subset.
 	nodeLister listers.NodeLister
 	// zoneGetter looks up the zone for a given node when calculating subsets.
-	zoneGetter types.ZoneGetter
+	zoneGetter *zonegetter.ZoneGetter
 	// subsetSizeLimit is the max value of the subset size in this mode.
 	subsetSizeLimit int
 	// svcId is the unique identifier for the service, that is used as a salt when hashing nodenames.
@@ -151,7 +152,7 @@ type ClusterL4ILBEndpointsCalculator struct {
 	logger klog.Logger
 }
 
-func NewClusterL4ILBEndpointsCalculator(nodeLister listers.NodeLister, zoneGetter types.ZoneGetter, svcId string, logger klog.Logger, networkInfo *network.NetworkInfo) *ClusterL4ILBEndpointsCalculator {
+func NewClusterL4ILBEndpointsCalculator(nodeLister listers.NodeLister, zoneGetter *zonegetter.ZoneGetter, svcId string, logger klog.Logger, networkInfo *network.NetworkInfo) *ClusterL4ILBEndpointsCalculator {
 	return &ClusterL4ILBEndpointsCalculator{
 		nodeLister:      nodeLister,
 		zoneGetter:      zoneGetter,
@@ -178,7 +179,7 @@ func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpoints(_ []types.Endpoints
 			l.logger.Info("Node not connected to service network", "nodeName", node.Name, "network", l.networkInfo.K8sNetwork)
 			continue
 		}
-		zone, err := l.zoneGetter.GetZoneForNode(node.Name)
+		zone, err := l.zoneGetter.ZoneForNode(node.Name, l.logger)
 		if err != nil {
 			l.logger.Error(err, "Unable to find zone for node skipping", "nodeName", node.Name)
 			metrics.PublishNegControllerErrorCountMetrics(err, true)
@@ -205,7 +206,7 @@ func (l *ClusterL4ILBEndpointsCalculator) ValidateEndpoints(endpointData []types
 
 // L7EndpointsCalculator implements methods to calculate Network endpoints for VM_IP_PORT NEGs
 type L7EndpointsCalculator struct {
-	zoneGetter           types.ZoneGetter
+	zoneGetter           *zonegetter.ZoneGetter
 	servicePortName      string
 	podLister            cache.Indexer
 	nodeLister           cache.Indexer
@@ -217,7 +218,7 @@ type L7EndpointsCalculator struct {
 	syncMetricsCollector *metricscollector.SyncerMetrics
 }
 
-func NewL7EndpointsCalculator(zoneGetter types.ZoneGetter, podLister, nodeLister, serviceLister cache.Indexer, syncerKey types.NegSyncerKey, logger klog.Logger, enableDualStackNEG bool, syncMetricsCollector *metricscollector.SyncerMetrics) *L7EndpointsCalculator {
+func NewL7EndpointsCalculator(zoneGetter *zonegetter.ZoneGetter, podLister, nodeLister, serviceLister cache.Indexer, syncerKey types.NegSyncerKey, logger klog.Logger, enableDualStackNEG bool, syncMetricsCollector *metricscollector.SyncerMetrics) *L7EndpointsCalculator {
 	return &L7EndpointsCalculator{
 		zoneGetter:           zoneGetter,
 		servicePortName:      syncerKey.PortTuple.Name,

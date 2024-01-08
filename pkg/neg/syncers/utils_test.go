@@ -42,6 +42,7 @@ import (
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
 )
 
@@ -490,7 +491,9 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 
 func TestToZoneNetworkEndpointMap(t *testing.T) {
 	t.Parallel()
-	zoneGetter := negtypes.NewFakeZoneGetter()
+	nodeInformer := zonegetter.FakeNodeInformer()
+	zonegetter.PopulateFakeNodeInformer(nodeInformer)
+	zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
 	podLister := negtypes.NewTestContext().PodInformer.GetIndexer()
 	testEndpointSlice := getDefaultEndpointSlices()
 	addPodsToLister(podLister, testEndpointSlice)
@@ -745,7 +748,9 @@ func TestIpsForPod(t *testing.T) {
 // returns correct type of error with invalid endpoint information
 func TestValidateEndpointFields(t *testing.T) {
 	t.Parallel()
-	zoneGetter := negtypes.NewFakeZoneGetter()
+	nodeInformer := zonegetter.FakeNodeInformer()
+	zonegetter.PopulateFakeNodeInformer(nodeInformer)
+	zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
 	podLister := negtypes.NewTestContext().PodInformer.GetIndexer()
 	addPodsToLister(podLister, getDefaultEndpointSlices())
 
@@ -753,7 +758,7 @@ func TestValidateEndpointFields(t *testing.T) {
 	instance3 := negtypes.TestInstance3
 	instanceNotExist := "non-existent-node"
 	emptyZoneInstance := "empty-zone-instance"
-	zoneGetter.AddZone("", emptyZoneInstance)
+	zonegetter.AddFakeNodes(zoneGetter, "", emptyZoneInstance)
 
 	emptyNamedPort := ""
 	emptyNodeName := ""
@@ -1099,7 +1104,9 @@ func TestValidateEndpointFields(t *testing.T) {
 }
 
 func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
-	zoneGetter := negtypes.NewFakeZoneGetter()
+	nodeInformer := zonegetter.FakeNodeInformer()
+	zonegetter.PopulateFakeNodeInformer(nodeInformer)
+	zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
 	negCloud := negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
 	negName := "test-neg-name"
 	irrelevantNegName := "irrelevant"
@@ -1913,7 +1920,9 @@ func TestNEGRecreate(t *testing.T) {
 func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 	t.Parallel()
 
-	fakeZoneGetter := negtypes.NewFakeZoneGetter()
+	nodeInformer := zonegetter.FakeNodeInformer()
+	zonegetter.PopulateFakeNodeInformer(nodeInformer)
+	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer)
 	testContext := negtypes.NewTestContext()
 	podLister := testContext.PodInformer.GetIndexer()
 	addPodsToLister(podLister, getDefaultEndpointSlices())
@@ -2059,7 +2068,9 @@ func TestDegradedModeValidateEndpointInfo(t *testing.T) {
 	instance2 := negtypes.TestInstance2
 	instance3 := negtypes.TestInstance3
 	instance4 := negtypes.TestInstance4
-	fakeZoneGetter := negtypes.NewFakeZoneGetter()
+	nodeInformer := zonegetter.FakeNodeInformer()
+	zonegetter.PopulateFakeNodeInformer(nodeInformer)
+	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer)
 	testContext := negtypes.NewTestContext()
 	podLister := testContext.PodInformer.GetIndexer()
 	addPodsToLister(podLister, getDefaultEndpointSlices())

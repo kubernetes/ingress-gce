@@ -53,6 +53,7 @@ import (
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
+	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
 	utilpointer "k8s.io/utils/pointer"
 )
@@ -1423,9 +1424,8 @@ func TestIsZoneChange(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			_, syncer := newTestTransactionSyncer(fakeCloud, testNegType, false)
-
-			fakeZoneGetter := syncer.zoneGetter.(*negtypes.FakeZoneGetter)
-			origZones, err := fakeZoneGetter.ListZones(negtypes.NodePredicateForEndpointCalculatorMode(syncer.EpCalculatorMode))
+			fakeZoneGetter := syncer.zoneGetter
+			origZones, err := fakeZoneGetter.List(negtypes.NodeFilterForEndpointCalculatorMode(syncer.EpCalculatorMode), klog.TODO())
 			if err != nil {
 				t.Errorf("errored when retrieving zones: %s", err)
 			}
@@ -1451,11 +1451,12 @@ func TestIsZoneChange(t *testing.T) {
 			}
 
 			if tc.zoneDeleted {
-				fakeZoneGetter.DeleteZone("zone1")
+				zonegetter.DeleteFakeNodesInZone(t, "zone1", fakeZoneGetter)
 			}
 
 			if tc.zoneAdded {
-				if err := fakeZoneGetter.AddZone("zoneA", "instance-1"); err != nil {
+				// Add a node in the zone to add a new zone to the ZoneGetter.
+				if err := zonegetter.AddFakeNodes(fakeZoneGetter, "zoneA", "instance-1"); err != nil {
 					t.Errorf("failed to add zone:%s", err)
 				}
 			}
@@ -1470,7 +1471,9 @@ func TestIsZoneChange(t *testing.T) {
 }
 
 func TestUnknownNodes(t *testing.T) {
-	zoneGetter := negtypes.NewFakeZoneGetter()
+	nodeInformer := zonegetter.FakeNodeInformer()
+	zonegetter.PopulateFakeNodeInformer(nodeInformer)
+	zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
 	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
 	testSubnetwork := cloud.ResourcePath("subnetwork", &meta.Key{Name: "test-subnetwork"})
 	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
@@ -1565,7 +1568,9 @@ func TestUnknownNodes(t *testing.T) {
 // TestEnableDegradedMode verifies if DegradedMode has been correctly enabled for L7 endpoint calculator
 func TestEnableDegradedMode(t *testing.T) {
 	t.Parallel()
-	zoneGetter := negtypes.NewFakeZoneGetter()
+	nodeInformer := zonegetter.FakeNodeInformer()
+	zonegetter.PopulateFakeNodeInformer(nodeInformer)
+	zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	negtypes.MockNetworkEndpointAPIs(fakeGCE)
 	fakeCloud := negtypes.NewAdapter(fakeGCE)
@@ -2196,7 +2201,9 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 
 	// TODO(freehan): use real readiness reflector
 	reflector := &readiness.NoopReflector{}
-	fakeZoneGetter := negtypes.NewFakeZoneGetter()
+	nodeInformer := zonegetter.FakeNodeInformer()
+	zonegetter.PopulateFakeNodeInformer(nodeInformer)
+	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer)
 
 	negsyncer := NewTransactionSyncer(svcPort,
 		record.NewFakeRecorder(100),
