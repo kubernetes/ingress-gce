@@ -1,4 +1,4 @@
-// Copyright 2023 Google LLC.
+// Copyright 2024 Google LLC.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -534,6 +534,9 @@ func (s *AddonsConfig) MarshalJSON() ([]byte, error) {
 type AdvancedDatapathObservabilityConfig struct {
 	// EnableMetrics: Expose flow metrics on nodes
 	EnableMetrics bool `json:"enableMetrics,omitempty"`
+
+	// EnableRelay: Enable Relay component
+	EnableRelay bool `json:"enableRelay,omitempty"`
 
 	// RelayMode: Method used to make Relay available
 	//
@@ -6561,6 +6564,8 @@ type SecurityPostureConfig struct {
 	// cluster.
 	//   "VULNERABILITY_BASIC" - Applies basic vulnerability scanning on the
 	// cluster.
+	//   "VULNERABILITY_ENTERPRISE" - Applies the Security Posture's
+	// vulnerability on cluster Enterprise level features.
 	VulnerabilityMode string `json:"vulnerabilityMode,omitempty"`
 
 	// ForceSendFields is a list of field names (e.g. "Mode") to
