@@ -46,6 +46,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/patch"
+	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
 	utilpointer "k8s.io/utils/pointer"
 )
@@ -64,7 +65,7 @@ type syncerManager struct {
 	namer      negtypes.NetworkEndpointGroupNamer
 	recorder   record.EventRecorder
 	cloud      negtypes.NetworkEndpointGroupCloud
-	zoneGetter negtypes.ZoneGetter
+	zoneGetter *zonegetter.ZoneGetter
 
 	nodeLister          cache.Indexer
 	podLister           cache.Indexer
@@ -119,7 +120,7 @@ type syncerManager struct {
 func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 	recorder record.EventRecorder,
 	cloud negtypes.NetworkEndpointGroupCloud,
-	zoneGetter negtypes.ZoneGetter,
+	zoneGetter *zonegetter.ZoneGetter,
 	svcNegClient svcnegclient.Interface,
 	kubeSystemUID types.UID,
 	podLister cache.Indexer,
@@ -135,8 +136,8 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 	logger klog.Logger) *syncerManager {
 
 	var vmIpZoneMap, vmIpPortZoneMap map[string]struct{}
-	updateZoneMap(&vmIpZoneMap, negtypes.NodePredicateForNetworkEndpointType(negtypes.VmIpEndpointType), zoneGetter, logger)
-	updateZoneMap(&vmIpPortZoneMap, negtypes.NodePredicateForNetworkEndpointType(negtypes.VmIpPortEndpointType), zoneGetter, logger)
+	updateZoneMap(&vmIpZoneMap, negtypes.NodeFilterForNetworkEndpointType(negtypes.VmIpEndpointType), zoneGetter, logger)
+	updateZoneMap(&vmIpPortZoneMap, negtypes.NodeFilterForNetworkEndpointType(negtypes.VmIpPortEndpointType), zoneGetter, logger)
 
 	return &syncerManager{
 		namer:               namer,
@@ -317,8 +318,8 @@ func (manager *syncerManager) SyncNodes() {
 	defer manager.mu.Unlock()
 
 	// When a zone change occurs (new zone is added or deleted), a sync should be triggered
-	isVmIpZoneChange := updateZoneMap(&manager.vmIpZoneMap, negtypes.NodePredicateForNetworkEndpointType(negtypes.VmIpEndpointType), manager.zoneGetter, manager.logger)
-	isVmIpPortZoneChange := updateZoneMap(&manager.vmIpPortZoneMap, negtypes.NodePredicateForNetworkEndpointType(negtypes.VmIpPortEndpointType), manager.zoneGetter, manager.logger)
+	isVmIpZoneChange := updateZoneMap(&manager.vmIpZoneMap, negtypes.NodeFilterForNetworkEndpointType(negtypes.VmIpEndpointType), manager.zoneGetter, manager.logger)
+	isVmIpPortZoneChange := updateZoneMap(&manager.vmIpPortZoneMap, negtypes.NodeFilterForNetworkEndpointType(negtypes.VmIpPortEndpointType), manager.zoneGetter, manager.logger)
 
 	for key, syncer := range manager.syncerMap {
 		if syncer.IsStopped() {
@@ -347,8 +348,8 @@ func (manager *syncerManager) SyncNodes() {
 // true if the zones have changed. The caller must obtain mu mutex of the
 // manager before calling this function since it modifies the passed
 // existingZoneMap.
-func updateZoneMap(existingZoneMap *map[string]struct{}, candidateNodePredicate utils.NodeConditionPredicate, zoneGetter negtypes.ZoneGetter, logger klog.Logger) bool {
-	zones, err := zoneGetter.ListZones(candidateNodePredicate)
+func updateZoneMap(existingZoneMap *map[string]struct{}, nodeFilter zonegetter.Filter, zoneGetter *zonegetter.ZoneGetter, logger klog.Logger) bool {
+	zones, err := zoneGetter.List(nodeFilter, logger)
 	if err != nil {
 		logger.Error(err, "Unable to list zones")
 		metrics.PublishNegControllerErrorCountMetrics(err, true)
@@ -574,7 +575,7 @@ func (manager *syncerManager) garbageCollectNEGWithCRD() error {
 
 	// Deletion candidate NEGs should be deleted from all zones, even ones that
 	// currently don't have any Ready nodes.
-	zones, err := manager.zoneGetter.ListZones(utils.AllNodesPredicate)
+	zones, err := manager.zoneGetter.List(zonegetter.AllNodesFilter, manager.logger)
 	if err != nil {
 		errList = append(errList, fmt.Errorf("failed to get zones during garbage collection: %w", err))
 	}

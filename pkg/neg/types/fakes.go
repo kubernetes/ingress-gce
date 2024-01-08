@@ -23,12 +23,8 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/test"
-	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
 
@@ -48,86 +44,6 @@ const (
 	TestUpgradeInstance1 = "upgrade-instance1"
 	TestUpgradeInstance2 = "upgrade-instance2"
 )
-
-type FakeZoneGetter struct {
-	zoneInstanceMap     map[string]sets.String
-	unreadyInstancesMap map[string]sets.String
-	upgradeInstancesMap map[string]sets.String
-}
-
-func NewFakeZoneGetter() *FakeZoneGetter {
-	return &FakeZoneGetter{
-		zoneInstanceMap: map[string]sets.String{
-			TestZone1: sets.NewString(TestInstance1, TestInstance2),
-			TestZone2: sets.NewString(TestInstance3, TestInstance4, TestInstance5, TestInstance6),
-		},
-		unreadyInstancesMap: map[string]sets.String{
-			TestZone3: sets.NewString(TestUnreadyInstance1, TestUnreadyInstance2),
-		},
-		upgradeInstancesMap: map[string]sets.String{
-			TestZone4: sets.NewString(TestUpgradeInstance1, TestUpgradeInstance2),
-		},
-	}
-}
-
-func (f *FakeZoneGetter) ListZones(predicate utils.NodeConditionPredicate) ([]string, error) {
-	ret := []string{}
-	for zone := range f.zoneInstanceMap {
-		node := &v1.Node{
-			Status: v1.NodeStatus{
-				Conditions: []v1.NodeCondition{v1.NodeCondition{Type: v1.NodeReady, Status: v1.ConditionTrue}}}}
-		if predicate(node) {
-			ret = append(ret, zone)
-		}
-	}
-	for zone := range f.unreadyInstancesMap {
-		node := &v1.Node{
-			Status: v1.NodeStatus{
-				Conditions: []v1.NodeCondition{v1.NodeCondition{Type: v1.NodeReady, Status: v1.ConditionFalse}}}}
-		if predicate(node) {
-			ret = append(ret, zone)
-		}
-	}
-	for zone := range f.upgradeInstancesMap {
-		node := &v1.Node{
-			ObjectMeta: metav1.ObjectMeta{
-				Labels: map[string]string{utils.GKECurrentOperationLabel: utils.NodeDrain},
-			},
-			Status: v1.NodeStatus{
-				Conditions: []v1.NodeCondition{v1.NodeCondition{Type: v1.NodeReady, Status: v1.ConditionTrue}}}}
-		if predicate(node) {
-			ret = append(ret, zone)
-		}
-	}
-	return ret, nil
-}
-func (f *FakeZoneGetter) GetZoneForNode(name string) (string, error) {
-	for zone, instances := range f.zoneInstanceMap {
-		if instances.Has(name) {
-			return zone, nil
-		}
-	}
-	for zone, instances := range f.unreadyInstancesMap {
-		if instances.Has(name) {
-			return zone, nil
-		}
-	}
-	return "", test.FakeGoogleAPINotFoundErr()
-}
-
-// Adds a zone with the given instances to the zone getter
-func (f *FakeZoneGetter) AddZone(newZone string, instances ...string) error {
-	if _, ok := f.zoneInstanceMap[newZone]; ok {
-		return fmt.Errorf("zone already exists")
-	}
-	f.zoneInstanceMap[newZone] = sets.NewString(instances...)
-	return nil
-}
-
-// Deletes a zone in the zoneInstanceMap
-func (f *FakeZoneGetter) DeleteZone(newZone string) {
-	delete(f.zoneInstanceMap, newZone)
-}
 
 type FakeNetworkEndpointGroupCloud struct {
 	NetworkEndpointGroups map[string][]*composite.NetworkEndpointGroup

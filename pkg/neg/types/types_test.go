@@ -27,6 +27,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/network"
+	"k8s.io/ingress-gce/pkg/utils/zonegetter"
+	"k8s.io/klog/v2"
 )
 
 type negNamer struct{}
@@ -747,8 +749,11 @@ func TestNodePredicateForEndpointCalculatorMode(t *testing.T) {
 		{"L7 mode, includes upgrading, excludes unready", L7Mode, []string{TestZone1, TestZone2, TestZone4}},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			predicate := NodePredicateForEndpointCalculatorMode(tc.epCalculatorMode)
-			zones, err := NewFakeZoneGetter().ListZones(predicate)
+			predicate := NodeFilterForEndpointCalculatorMode(tc.epCalculatorMode)
+			nodeInformer := zonegetter.FakeNodeInformer()
+			zonegetter.PopulateFakeNodeInformer(nodeInformer)
+			zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+			zones, err := zoneGetter.List(predicate, klog.TODO())
 			if err != nil {
 				t.Errorf("Failed listing zones with predicate, err - %v", err)
 			}

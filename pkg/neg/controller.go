@@ -50,6 +50,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 	namer2 "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/patch"
+	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
 )
 
@@ -68,7 +69,7 @@ type Controller struct {
 	recorder        record.EventRecorder
 	namer           negtypes.NetworkEndpointGroupNamer
 	l4Namer         namer2.L4ResourcesNamer
-	zoneGetter      negtypes.ZoneGetter
+	zoneGetter      *zonegetter.ZoneGetter
 	cloud           negtypes.NetworkEndpointGroupCloud
 	networkResolver network.Resolver
 
@@ -129,7 +130,7 @@ func NewController(
 	l4Namer namer2.L4ResourcesNamer,
 	defaultBackendService utils.ServicePort,
 	cloud negtypes.NetworkEndpointGroupCloud,
-	zoneGetter negtypes.ZoneGetter,
+	zoneGetter *zonegetter.ZoneGetter,
 	namer negtypes.NetworkEndpointGroupNamer,
 	resyncPeriod time.Duration,
 	gcPeriod time.Duration,
@@ -311,8 +312,8 @@ func NewController(
 			oldNode := old.(*apiv1.Node)
 			currentNode := cur.(*apiv1.Node)
 
-			vmIpCandidateNodeCheck := negtypes.NodePredicateForNetworkEndpointType(negtypes.VmIpEndpointType)
-			vmIpPortCandidateNodeCheck := negtypes.NodePredicateForNetworkEndpointType(negtypes.VmIpPortEndpointType)
+			vmIpCandidateNodeCheck := utils.CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes
+			vmIpPortCandidateNodeCheck := utils.CandidateNodesPredicate
 
 			if vmIpCandidateNodeCheck(oldNode) != vmIpCandidateNodeCheck(currentNode) ||
 				vmIpPortCandidateNodeCheck(oldNode) != vmIpPortCandidateNodeCheck(currentNode) {
@@ -695,7 +696,7 @@ func (c *Controller) getCSMPortInfoMap(namespace, name string, service *apiv1.Se
 // syncNegStatusAnnotation syncs the neg status annotation
 // it takes service namespace, name and the expected service ports for NEGs.
 func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap negtypes.PortInfoMap) error {
-	zones, err := c.zoneGetter.ListZones(negtypes.NodePredicateForEndpointCalculatorMode(portMap.EndpointsCalculatorMode()))
+	zones, err := c.zoneGetter.List(negtypes.NodeFilterForEndpointCalculatorMode(portMap.EndpointsCalculatorMode()), c.logger)
 	if err != nil {
 		return err
 	}
