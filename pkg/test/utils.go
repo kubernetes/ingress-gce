@@ -271,6 +271,9 @@ func CreateAndInsertNodes(gce *gce.Cloud, nodeNames []string, zoneName string) (
 						api_v1.LabelZoneFailureDomainStable: zoneName,
 					},
 				},
+				Spec: api_v1.NodeSpec{
+					ProviderID: fmt.Sprintf("gce://foo-project/%s/%s", zoneName, name),
+				},
 				Status: api_v1.NodeStatus{
 					NodeInfo: api_v1.NodeSystemInfo{
 						KubeProxyVersion: "v1.7.2",

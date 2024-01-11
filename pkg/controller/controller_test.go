@@ -48,6 +48,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 )
 
 var (
@@ -61,7 +62,10 @@ func newLoadBalancerController() *LoadBalancerController {
 	kubeClient := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	fakeZL := &instancegroups.FakeZoneLister{Zones: []string{fakeZone}}
+	nodeInformer := zonegetter.FakeNodeInformer()
+	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	zonegetter.AddFakeNodes(fakeZoneGetter, fakeZone, "test-node")
+
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockGlobalForwardingRules.InsertHook = loadbalancers.InsertGlobalForwardingRuleHook
 	namer := namer_util.NewNamer(clusterUID, "")
 
@@ -80,7 +84,7 @@ func newLoadBalancerController() *LoadBalancerController {
 		Namer:      namer,
 		Recorders:  &test.FakeRecorderSource{},
 		BasePath:   utils.GetBasePath(fakeGCE),
-		ZoneLister: fakeZL,
+		ZoneGetter: fakeZoneGetter,
 		MaxIGSize:  1000,
 	})
 	lbc.l7Pool = loadbalancers.NewLoadBalancerPool(fakeGCE, namer, events.RecorderProducerMock{}, namer_util.NewFrontendNamerFactory(namer, ""))

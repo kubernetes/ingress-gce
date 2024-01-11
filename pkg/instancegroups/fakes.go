@@ -43,24 +43,6 @@ func NewFakeInstanceGroups(zonesToIGsToInstances map[string]IGsToInstances, maxI
 	}
 }
 
-// FakeZoneLister records zones for nodes.
-type FakeZoneLister struct {
-	Zones []string
-}
-
-// ListZones returns the list of zones.
-func (z *FakeZoneLister) ListZones(_ utils.NodeConditionPredicate) ([]string, error) {
-	return z.Zones, nil
-}
-
-// GetZoneForNode returns the only zone stored in the fake zone lister.
-func (z *FakeZoneLister) GetZoneForNode(name string) (string, error) {
-	// TODO: evolve as required, it's currently needed just to satisfy the
-	// interface in unittests that don't care about zones. See unittests in
-	// controller/util_test for actual zoneLister testing.
-	return z.Zones[0], nil
-}
-
 type IGsToInstances map[*compute.InstanceGroup]sets.String
 
 // FakeInstanceGroups fakes out the instance groups api.

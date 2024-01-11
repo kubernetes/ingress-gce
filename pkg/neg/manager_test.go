@@ -49,6 +49,7 @@ import (
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 )
 
 const (
@@ -80,11 +81,14 @@ const (
 
 func NewTestSyncerManager(kubeClient kubernetes.Interface) (*syncerManager, *gce.Cloud) {
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
+	nodeInformer := zonegetter.FakeNodeInformer()
+	zonegetter.PopulateFakeNodeInformer(nodeInformer)
+	zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
 	manager := newSyncerManager(
 		testContext.NegNamer,
 		record.NewFakeRecorder(100),
 		negtypes.NewAdapter(testContext.Cloud),
-		negtypes.NewFakeZoneGetter(),
+		zoneGetter,
 		testContext.SvcNegClient,
 		testContext.KubeSystemUID,
 		testContext.PodInformer.GetIndexer(),
@@ -1490,16 +1494,17 @@ func TestSyncNodesConditions(t *testing.T) {
 			manager.syncerMap = map[negtypes.NegSyncerKey]negtypes.NegSyncer{
 				key: syncer,
 			}
-			fakeZoneGetter := manager.zoneGetter.(*negtypes.FakeZoneGetter)
+			fakeZoneGetter := manager.zoneGetter
 			for zone, instances := range tc.addZones {
-				err := fakeZoneGetter.AddZone(zone, instances...)
+				// Add a node in the zone to add a new zone to the ZoneGetter.
+				err := zonegetter.AddFakeNodes(fakeZoneGetter, zone, instances...)
 				if err != nil {
 					t.Errorf("failed to add zone: %s", err)
 				}
 			}
 
 			for _, zone := range tc.deleteZones {
-				fakeZoneGetter.DeleteZone(zone)
+				zonegetter.DeleteFakeNodesInZone(t, zone, fakeZoneGetter)
 			}
 
 			manager.SyncNodes()
