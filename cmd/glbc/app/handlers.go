@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -45,7 +46,7 @@ func RunHTTPServer(healthChecker func() context.HealthCheckResults) {
 	klog.Fatal(http.ListenAndServe(fmt.Sprintf(":%v", flags.F.HealthzPort), nil))
 }
 
-func RunSIGTERMHandler(stopCh chan struct{}, exitCh <-chan error) {
+func RunSIGTERMHandler(stopCh chan struct{}, exitCh <-chan error, wg *sync.WaitGroup) {
 	// Multiple SIGTERMs will get dropped
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, syscall.SIGTERM)
@@ -65,15 +66,17 @@ func RunSIGTERMHandler(stopCh chan struct{}, exitCh <-chan error) {
 	// code.
 	// Here we flag-gate exitCh since the ingress controller is the only
 	// controller that uses this channel to communciate its exit error.
-	//
-	// TODO(cheungdavid): Add a waitGroup here to make sure graceful exits for
-	// other controllers.
 	if flags.F.RunIngressController {
 		if err := <-exitCh; err != nil {
 			klog.Infof("Error during shutdown %v", err)
 			exitCode = 1
 		}
 	}
+	// Wait until related controllers are done with cleanup.
+	// If Ingress controller is not running, the program will exit immediately
+	// after stopCh is closed without waitGroup. It allows controllers to finish
+	// their cleanups.
+	wg.Wait()
 	klog.Infof("Exiting with %v", exitCode)
 	os.Exit(exitCode)
 }

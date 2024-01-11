@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"sync"
 	"time"
 
 	flag "github.com/spf13/pflag"
@@ -297,10 +298,12 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	stopCh := make(chan struct{})
 	exitCh := make(chan error)
 	ctx.Init()
+	var wg sync.WaitGroup
 
 	var lbc *controller.LoadBalancerController
 	var fwc *firewalls.FirewallController
 	if flags.F.RunIngressController {
+		wg.Add(1)
 		lbc = controller.NewLoadBalancerController(ctx, stopCh, exitCh, klog.TODO())
 
 		if !flags.F.EnableFirewallCR && flags.F.DisableFWEnforcement {
@@ -365,6 +368,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		}
 		enableNEGsForNetLB := flags.F.RunL4NetLBController && flags.F.EnableMultiNetworking
 		// TODO: Refactor NEG to use cloud mocks so ctx.Cloud can be referenced within NewController.
+		wg.Add(1)
 		negController := neg.NewController(
 			ctx.KubeClient,
 			ctx.SvcNegClient,
@@ -400,13 +404,19 @@ func runControllers(ctx *ingctx.ControllerContext) {
 
 		ctx.AddHealthCheck("neg-controller", negController.IsHealthy)
 
-		go negController.Run(stopCh)
+		go func() {
+			defer wg.Done()
+			negController.Run(stopCh)
+		}()
 		klog.V(0).Infof("negController started")
 	}
-	go app.RunSIGTERMHandler(stopCh, exitCh)
+	go app.RunSIGTERMHandler(stopCh, exitCh, &wg)
 
 	if flags.F.RunIngressController {
-		go lbc.Run()
+		go func() {
+			defer wg.Done()
+			lbc.Run()
+		}()
 		klog.V(0).Infof("ingress controller started")
 
 		go fwc.Run()
