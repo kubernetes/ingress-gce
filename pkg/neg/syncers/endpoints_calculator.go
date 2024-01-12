@@ -122,10 +122,10 @@ func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(eds []types.Endpoints
 	return subsetMap, nil, 0, err
 }
 
-func (l *LocalL4ILBEndpointsCalculator) CalculateEndpointsDegradedMode(_ []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
+func (l *LocalL4ILBEndpointsCalculator) CalculateEndpointsDegradedMode(eds []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
 	// this should be the same as CalculateEndpoints for L4 ec
-	subsetMap, _, _, err := l.CalculateEndpoints(nil, currentMap)
-	return subsetMap, nil, err
+	subsetMap, podMap, _, err := l.CalculateEndpoints(eds, currentMap)
+	return subsetMap, podMap, err
 }
 
 func (l *LocalL4ILBEndpointsCalculator) ValidateEndpoints(endpointData []types.EndpointsData, endpointPodMap types.EndpointPodMap, dupCount int) error {
@@ -193,10 +193,10 @@ func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpoints(_ []types.Endpoints
 	return subsetMap, nil, 0, err
 }
 
-func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpointsDegradedMode(_ []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
+func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpointsDegradedMode(eps []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
 	// this should be the same as CalculateEndpoints for L4 ec
-	subsetMap, _, _, err := l.CalculateEndpoints(nil, currentMap)
-	return subsetMap, nil, err
+	subsetMap, podMap, _, err := l.CalculateEndpoints(eps, currentMap)
+	return subsetMap, podMap, err
 }
 
 func (l *ClusterL4ILBEndpointsCalculator) ValidateEndpoints(endpointData []types.EndpointsData, endpointPodMap types.EndpointPodMap, dupCount int) error {
