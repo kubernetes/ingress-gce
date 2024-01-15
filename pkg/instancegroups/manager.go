@@ -226,6 +226,8 @@ func (m *manager) Get(name, zone string) (*compute.InstanceGroup, error) {
 }
 
 // List lists the names of all Instance Groups belonging to this cluster.
+// It will return only the names of the groups without the zone. If a group
+// with the same name exists in more than one zone it will be returned only once.
 func (m *manager) List() ([]string, error) {
 	var igs []*compute.InstanceGroup
 
@@ -245,14 +247,14 @@ func (m *manager) List() ([]string, error) {
 		}
 	}
 
-	var names []string
+	names := sets.New[string]()
+
 	for _, ig := range igs {
 		if m.namer.NameBelongsToCluster(ig.Name) {
-			names = append(names, ig.Name)
+			names.Insert(ig.Name)
 		}
 	}
-
-	return names, nil
+	return names.UnsortedList(), nil
 }
 
 // splitNodesByZones takes a list of node names and returns a map of zone:node names.
