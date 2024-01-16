@@ -77,6 +77,14 @@ func AddFakeNodes(zoneGetter *ZoneGetter, newZone string, instances ...string) e
 	return nil
 }
 
+// AddFakeNode adds fake node to the ZoneGetter.
+func AddFakeNode(zoneGetter *ZoneGetter, node *apiv1.Node) error {
+	if err := zoneGetter.nodeInformer.GetIndexer().Add(node); err != nil {
+		return err
+	}
+	return nil
+}
+
 // PopulateFakeNodeInformer populates a fake node informer with fake nodes.
 func PopulateFakeNodeInformer(nodeInformer cache.SharedIndexInformer) {
 	// Ready nodes.
@@ -276,5 +284,44 @@ func PopulateFakeNodeInformer(nodeInformer cache.SharedIndexInformer) {
 		},
 	}); err != nil {
 		fmt.Printf("Failed to add node upgrade-instance2: %v\n", err)
+	}
+
+	// Node with no providerID.
+	// This should not affect any tests since the zoneGetter will ignore this.
+	if err := nodeInformer.GetIndexer().Add(&apiv1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "instance-empty-providerID",
+		},
+		Status: apiv1.NodeStatus{
+			Conditions: []apiv1.NodeCondition{
+				{
+					Type:   apiv1.NodeReady,
+					Status: apiv1.ConditionTrue,
+				},
+			},
+		},
+	}); err != nil {
+		fmt.Printf("Failed to add node instance-empty-providerID: %v\n", err)
+	}
+
+	// Node with invalid providerID.
+	// This should not affect any tests since the zoneGetter will ignore this.
+	if err := nodeInformer.GetIndexer().Add(&apiv1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "instance-invalid-providerID",
+		},
+		Spec: apiv1.NodeSpec{
+			ProviderID: "gce://foo-project/instance-invalid-providerID",
+		},
+		Status: apiv1.NodeStatus{
+			Conditions: []apiv1.NodeCondition{
+				{
+					Type:   apiv1.NodeReady,
+					Status: apiv1.ConditionTrue,
+				},
+			},
+		},
+	}); err != nil {
+		fmt.Printf("Failed to add node instance-empty-providerID: %v\n", err)
 	}
 }

@@ -1400,10 +1400,12 @@ func TestIsZoneChange(t *testing.T) {
 	testNegType := negtypes.VmIpPortEndpointType
 
 	testCases := []struct {
-		desc           string
-		zoneDeleted    bool
-		zoneAdded      bool
-		expectedResult bool
+		desc                           string
+		zoneDeleted                    bool
+		zoneAdded                      bool
+		nodeWithNoProviderIDAdded      bool
+		nodeWithInvalidProviderIDAdded bool
+		expectedResult                 bool
 	}{
 		{
 			desc:           "zone was added",
@@ -1414,6 +1416,22 @@ func TestIsZoneChange(t *testing.T) {
 			desc:           "zone was deleted",
 			zoneDeleted:    true,
 			expectedResult: true,
+		},
+		{
+			desc:                           "node with invalid providerID was added",
+			nodeWithInvalidProviderIDAdded: true,
+			expectedResult:                 false,
+		},
+		{
+			desc:                      "node with no providerID was added",
+			nodeWithNoProviderIDAdded: true,
+			expectedResult:            false,
+		},
+		{
+			desc:                      "node with no providerID was added and normal nodes added",
+			zoneAdded:                 true,
+			nodeWithNoProviderIDAdded: true,
+			expectedResult:            true,
 		},
 		{
 			desc:           "no zone change occurred",
@@ -1458,6 +1476,45 @@ func TestIsZoneChange(t *testing.T) {
 				// Add a node in the zone to add a new zone to the ZoneGetter.
 				if err := zonegetter.AddFakeNodes(fakeZoneGetter, "zoneA", "instance-1"); err != nil {
 					t.Errorf("failed to add zone:%s", err)
+				}
+			}
+
+			if tc.nodeWithInvalidProviderIDAdded {
+				if err := zonegetter.AddFakeNode(fakeZoneGetter, &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-with-invalid-providerID",
+					},
+					Spec: corev1.NodeSpec{
+						ProviderID: "gce://foo-project/instance",
+					},
+					Status: corev1.NodeStatus{
+						Conditions: []corev1.NodeCondition{
+							{
+								Type:   corev1.NodeReady,
+								Status: corev1.ConditionTrue,
+							},
+						},
+					},
+				}); err != nil {
+					t.Errorf("failed to add node with invalid providerID:%s", err)
+				}
+			}
+
+			if tc.nodeWithNoProviderIDAdded {
+				if err := zonegetter.AddFakeNode(fakeZoneGetter, &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-without-providerID",
+					},
+					Status: corev1.NodeStatus{
+						Conditions: []corev1.NodeCondition{
+							{
+								Type:   corev1.NodeReady,
+								Status: corev1.ConditionTrue,
+							},
+						},
+					},
+				}); err != nil {
+					t.Errorf("failed to add node with no providerID:%s", err)
 				}
 			}
 
