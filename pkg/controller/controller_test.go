@@ -49,6 +49,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/common"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
+	"k8s.io/klog/v2"
 )
 
 var (
@@ -77,7 +78,7 @@ func newLoadBalancerController() *LoadBalancerController {
 		HealthCheckPath:       "/",
 	}
 	ctx := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, nil, nil, nil, nil, nil, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig)
-	lbc := NewLoadBalancerController(ctx, stopCh)
+	lbc := NewLoadBalancerController(ctx, stopCh, klog.TODO())
 	// TODO(rramkumar): Fix this so we don't have to override with our fake
 	lbc.instancePool = instancegroups.NewManager(&instancegroups.ManagerConfig{
 		Cloud:      instancegroups.NewEmptyFakeInstanceGroups(),
@@ -716,7 +717,7 @@ func TestToRuntimeInfoCerts(t *testing.T) {
 		},
 	}
 	urlMap := &utils.GCEURLMap{}
-	lbInfo, err := lbc.toRuntimeInfo(ing, urlMap)
+	lbInfo, err := lbc.toRuntimeInfo(ing, urlMap, klog.TODO())
 	if err != nil {
 		t.Fatalf("lbc.toRuntimeInfo() = err %v", err)
 	}

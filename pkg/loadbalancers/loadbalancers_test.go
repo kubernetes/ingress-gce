@@ -1926,7 +1926,7 @@ func TestResourceDeletionWithScopeChange(t *testing.T) {
 			verifyHTTPForwardingRuleAndProxyLinks(t, j, l7, "")
 
 			// Check to make sure that there is something to GC
-			scope, err := j.pool.FrontendScopeChangeGC(tc.ing)
+			scope, err := j.pool.FrontendScopeChangeGC(tc.ing, klog.TODO())
 			if scope == nil || *scope != tc.gcScope || err != nil {
 				t.Errorf("FrontendScopeChangeGC(%v) = (%v, %v), want (%q, nil)", tc.ing, scope, err, tc.gcScope)
 			}
@@ -1936,7 +1936,7 @@ func TestResourceDeletionWithScopeChange(t *testing.T) {
 			}
 
 			// Check to make sure that there is nothing to GC
-			scope, err = j.pool.FrontendScopeChangeGC(tc.ing)
+			scope, err = j.pool.FrontendScopeChangeGC(tc.ing, klog.TODO())
 			if scope != nil || err != nil {
 				t.Errorf("FrontendScopeChangeGC(%v) = (%v, %v), want (nil, nil)", tc.ing, scope, err)
 			}

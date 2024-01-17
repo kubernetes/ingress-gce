@@ -132,7 +132,7 @@ func (l7s *L7s) GCv2(ing *v1.Ingress, scope meta.KeyType) error {
 // (e.g. when a user migrates from ILB to ELB on the same ingress or vice versa.)
 // This only applies to the V2 Naming Scheme
 // TODO(shance): Refactor to avoid calling GCE every sync loop
-func (l7s *L7s) FrontendScopeChangeGC(ing *v1.Ingress) (*meta.KeyType, error) {
+func (l7s *L7s) FrontendScopeChangeGC(ing *v1.Ingress, ingLogger klog.Logger) (*meta.KeyType, error) {
 	if ing == nil {
 		return nil, nil
 	}

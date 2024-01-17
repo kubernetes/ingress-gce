@@ -64,14 +64,14 @@ func HasGivenFinalizer(m meta_v1.ObjectMeta, key string) bool {
 }
 
 // EnsureFinalizer ensures that the specified finalizer exists on given Ingress.
-func EnsureFinalizer(ing *v1.Ingress, ingClient client.IngressInterface, finalizerKey string) (*v1.Ingress, error) {
+func EnsureFinalizer(ing *v1.Ingress, ingClient client.IngressInterface, finalizerKey string, ingLogger klog.Logger) (*v1.Ingress, error) {
 	updated := ing.DeepCopy()
 	if needToAddFinalizer(ing.ObjectMeta, finalizerKey) {
 		updated.ObjectMeta.Finalizers = append(updated.ObjectMeta.Finalizers, finalizerKey)
-		if _, err := PatchIngressObjectMetadata(ingClient, ing, updated.ObjectMeta); err != nil {
+		if _, err := PatchIngressObjectMetadata(ingClient, ing, updated.ObjectMeta, ingLogger); err != nil {
 			return nil, fmt.Errorf("error patching Ingress %s/%s: %v", ing.Namespace, ing.Name, err)
 		}
-		klog.V(2).Infof("Added finalizer %q for Ingress %s/%s", finalizerKey, ing.Namespace, ing.Name)
+		ingLogger.Info("Added finalizer", "finalizerKey", finalizerKey)
 	}
 	return updated, nil
 }
@@ -82,14 +82,14 @@ func needToAddFinalizer(m meta_v1.ObjectMeta, key string) bool {
 }
 
 // EnsureDeleteFinalizer ensures that the specified finalizer is deleted from given Ingress.
-func EnsureDeleteFinalizer(ing *v1.Ingress, ingClient client.IngressInterface, finalizerKey string) error {
+func EnsureDeleteFinalizer(ing *v1.Ingress, ingClient client.IngressInterface, finalizerKey string, ingLogger klog.Logger) error {
 	if HasGivenFinalizer(ing.ObjectMeta, finalizerKey) {
 		updatedObjectMeta := ing.ObjectMeta.DeepCopy()
 		updatedObjectMeta.Finalizers = slice.RemoveString(updatedObjectMeta.Finalizers, finalizerKey, nil)
-		if _, err := PatchIngressObjectMetadata(ingClient, ing, *updatedObjectMeta); err != nil {
+		if _, err := PatchIngressObjectMetadata(ingClient, ing, *updatedObjectMeta, ingLogger); err != nil {
 			return fmt.Errorf("error patching Ingress %s/%s: %v", ing.Namespace, ing.Name, err)
 		}
-		klog.V(2).Infof("Removed finalizer %q for Ingress %s/%s", finalizerKey, ing.Namespace, ing.Name)
+		ingLogger.Info("Removed finalizer", "finalizer", finalizerKey)
 	}
 	return nil
 }

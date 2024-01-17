@@ -98,25 +98,25 @@ func ToIngressKeys(ings []*v1.Ingress) []string {
 
 // PatchIngressObjectMetadata patches the given ingress's metadata based on new
 // ingress metadata.
-func PatchIngressObjectMetadata(ic client.IngressInterface, ing *v1.Ingress, newObjectMetadata metav1.ObjectMeta) (*v1.Ingress, error) {
+func PatchIngressObjectMetadata(ic client.IngressInterface, ing *v1.Ingress, newObjectMetadata metav1.ObjectMeta, ingLogger klog.Logger) (*v1.Ingress, error) {
 	newIng := ing.DeepCopy()
 	newIng.ObjectMeta = newObjectMetadata
-	return patchIngress(ic, ing, newIng)
+	return patchIngress(ic, ing, newIng, ingLogger)
 }
 
 // PatchIngressStatus patches the given ingress's Status based on new ingress
 // status.
-func PatchIngressStatus(ic client.IngressInterface, ing *v1.Ingress, newStatus v1.IngressStatus) (*v1.Ingress, error) {
+func PatchIngressStatus(ic client.IngressInterface, ing *v1.Ingress, newStatus v1.IngressStatus, ingLogger klog.Logger) (*v1.Ingress, error) {
 	newIng := ing.DeepCopy()
 	newIng.Status = newStatus
-	return patchIngress(ic, ing, newIng)
+	return patchIngress(ic, ing, newIng, ingLogger)
 }
 
 // patchIngress patches the given ingress's Status or ObjectMetadata based on
 // the old and new ingresses.
 // Note that both Status and ObjectMetadata (annotations and finalizers)
 // can be patched via `status` subresource API endpoint.
-func patchIngress(ic client.IngressInterface, oldIngress, newIngress *v1.Ingress) (*v1.Ingress, error) {
+func patchIngress(ic client.IngressInterface, oldIngress, newIngress *v1.Ingress, ingLogger klog.Logger) (*v1.Ingress, error) {
 	ingKey := fmt.Sprintf("%s/%s", oldIngress.Namespace, oldIngress.Name)
 	oldData, err := json.Marshal(oldIngress)
 	if err != nil {
@@ -133,6 +133,6 @@ func patchIngress(ic client.IngressInterface, oldIngress, newIngress *v1.Ingress
 		return nil, fmt.Errorf("failed to create TwoWayMergePatch for ingress %s: %v", ingKey, err)
 	}
 
-	klog.V(4).Infof("Patch bytes for ingress %s: %s", ingKey, patchBytes)
+	ingLogger.Info("Patch bytes for ingress", "patchBytes", patchBytes)
 	return ic.Patch(context.TODO(), oldIngress.Name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{}, "status")
 }

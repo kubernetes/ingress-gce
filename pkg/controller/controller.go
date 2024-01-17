@@ -104,15 +104,20 @@ type LoadBalancerController struct {
 	ingParamsLister cache.Indexer
 
 	ZoneGetter *zonegetter.ZoneGetter
+
+	logger klog.Logger
 }
 
 // NewLoadBalancerController creates a controller for gce loadbalancers.
 func NewLoadBalancerController(
 	ctx *context.ControllerContext,
-	stopCh chan struct{}) *LoadBalancerController {
+	stopCh chan struct{},
+	log klog.Logger,
+) *LoadBalancerController {
+	log = log.WithName("IngressController")
 
 	broadcaster := record.NewBroadcaster()
-	broadcaster.StartLogging(klog.Infof)
+	broadcaster.StartLogging(log.Info)
 	broadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
 		Interface: ctx.KubeClient.CoreV1().Events(""),
 	})
@@ -137,6 +142,7 @@ func NewLoadBalancerController(
 		igLinker:      backends.NewInstanceGroupLinker(ctx.InstancePool, backendPool),
 		metrics:       ctx.ControllerMetrics,
 		ZoneGetter:    ctx.ZoneGetter,
+		logger:        log,
 	}
 
 	if ctx.IngClassInformer != nil {
@@ -152,39 +158,42 @@ func NewLoadBalancerController(
 	ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			addIng := obj.(*v1.Ingress)
+			ingLogger := log.WithValues("ingressKey", common.NamespacedName(addIng))
 			if !utils.IsGLBCIngress(addIng) {
 				if flags.F.DisableIngressGlobalExternal && annotations.FromIngress(addIng).IngressClass() == annotations.GceIngressClass {
 					lbc.ctx.Recorder(addIng.Namespace).Eventf(addIng, apiv1.EventTypeWarning, events.SyncIngress, "Ingress class \"gce\" is not supported in this environment. Please use \"gce-regional-external\".")
 				}
-				klog.V(4).Infof("Ignoring add for ingress %v based on annotation %v", common.NamespacedName(addIng), annotations.IngressClassKey)
+				ingLogger.Info("Ignoring add for ingress based on annotation", "annotation", annotations.IngressClassKey)
 				return
 			}
 
-			klog.V(2).Infof("Ingress %v added, enqueuing", common.NamespacedName(addIng))
+			ingLogger.Info("Ingress added, enqueuing")
 			lbc.ctx.Recorder(addIng.Namespace).Eventf(addIng, apiv1.EventTypeNormal, events.SyncIngress, "Scheduled for sync")
 			lbc.ingQueue.Enqueue(obj)
 		},
 		DeleteFunc: func(obj interface{}) {
 			delIng := obj.(*v1.Ingress)
 			if delIng == nil {
-				klog.Errorf("Invalid object type: %T", obj)
+				log.Error(nil, "Invalid object type", "type", fmt.Sprintf("%T", obj))
 				return
 			}
+			ingLogger := log.WithValues("ingressKey", common.NamespacedName(delIng))
 			if delIng.ObjectMeta.DeletionTimestamp != nil {
-				klog.V(2).Infof("Ignoring delete event for Ingress %v, deletion will be handled via the finalizer", common.NamespacedName(delIng))
+				ingLogger.Info("Ignoring delete event for ingress, deletion will be handled via the finalizer")
 				return
 			}
 
 			if !utils.IsGLBCIngress(delIng) {
-				klog.V(4).Infof("Ignoring delete for ingress %v based on annotation %v", common.NamespacedName(delIng), annotations.IngressClassKey)
+				ingLogger.Info("Ignoring delete for ingress based on annotation", "annotation", annotations.IngressClassKey)
 				return
 			}
 
-			klog.V(3).Infof("Ingress %v deleted, enqueueing", common.NamespacedName(delIng))
+			ingLogger.Info("Ingress deleted, enqueueing")
 			lbc.ingQueue.Enqueue(obj)
 		},
 		UpdateFunc: func(old, cur interface{}) {
 			curIng := cur.(*v1.Ingress)
+			ingLogger := log.WithValues("ingressKey", common.NamespacedName(curIng))
 			if !utils.IsGLBCIngress(curIng) {
 				// Ingress needs to be enqueued if a ingress finalizer exists.
 				// An existing finalizer means that
@@ -192,7 +201,7 @@ func NewLoadBalancerController(
 				// 2. Ingress cleanup failed and re-queued.
 				// 3. Finalizer remove failed and re-queued.
 				if common.HasFinalizer(curIng.ObjectMeta) {
-					klog.V(2).Infof("Ingress %s class was changed but has a glbc finalizer, enqueuing", common.NamespacedName(curIng))
+					ingLogger.Info("Ingress class was changed but has a glbc finalizer, enqueuing")
 					lbc.ingQueue.Enqueue(cur)
 					return
 				}
@@ -202,9 +211,9 @@ func NewLoadBalancerController(
 				return
 			}
 			if reflect.DeepEqual(old, cur) {
-				klog.V(2).Infof("Periodic enqueueing of %s", common.NamespacedName(curIng))
+				ingLogger.Info("Periodic enqueueing ingress")
 			} else {
-				klog.V(2).Infof("Ingress %s changed, enqueuing", common.NamespacedName(curIng))
+				ingLogger.Info("Ingress changed, enqueuing")
 			}
 			lbc.ctx.Recorder(curIng.Namespace).Eventf(curIng, apiv1.EventTypeNormal, events.SyncIngress, "Scheduled for sync")
 			lbc.ingQueue.Enqueue(cur)
@@ -231,21 +240,21 @@ func NewLoadBalancerController(
 	// BackendConfig event handlers.
 	ctx.BackendConfigInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			klog.V(3).Infof("obj(type %T) added", obj)
+			log.Info("obj added", "type", fmt.Sprintf("%T", obj))
 			beConfig := obj.(*backendconfigv1.BackendConfig)
 			ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesBackendConfig(beConfig, operator.Services(ctx.Services().List())).AsList()
 			lbc.ingQueue.Enqueue(convert(ings)...)
 		},
 		UpdateFunc: func(old, cur interface{}) {
 			if !reflect.DeepEqual(old, cur) {
-				klog.V(3).Infof("obj(type %T) updated", cur)
+				log.Info("obj updated", "type", fmt.Sprintf("%T", cur))
 				beConfig := cur.(*backendconfigv1.BackendConfig)
 				ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesBackendConfig(beConfig, operator.Services(ctx.Services().List())).AsList()
 				lbc.ingQueue.Enqueue(convert(ings)...)
 			}
 		},
 		DeleteFunc: func(obj interface{}) {
-			klog.V(3).Infof("obj(type %T) deleted", obj)
+			log.Info("obj deleted", "type", fmt.Sprintf("%T", obj))
 			var beConfig *backendconfigv1.BackendConfig
 			var ok, beOk bool
 			beConfig, ok = obj.(*backendconfigv1.BackendConfig)
@@ -253,13 +262,13 @@ func NewLoadBalancerController(
 				// This can happen if the watch is closed and misses the delete event
 				state, stateOk := obj.(cache.DeletedFinalStateUnknown)
 				if !stateOk {
-					klog.Errorf("Wanted cache.DeleteFinalStateUnknown of backendconfig obj, got: %+v", obj)
+					log.Error(nil, "Wanted cache.DeleteFinalStateUnknown of backendconfig obj", "got", obj)
 					return
 				}
 
 				beConfig, beOk = state.Obj.(*backendconfigv1.BackendConfig)
 				if !beOk {
-					klog.Errorf("Wanted backendconfig obj, got %+v", state.Obj)
+					log.Error(nil, "Wanted backendconfig obj", "got", state.Obj)
 					return
 				}
 			}
@@ -293,13 +302,13 @@ func NewLoadBalancerController(
 					// This can happen if the watch is closed and misses the delete event
 					state, stateOk := obj.(cache.DeletedFinalStateUnknown)
 					if !stateOk {
-						klog.Errorf("Wanted cache.DeleteFinalStateUnknown of frontendconfig obj, got: %+v type: %T", obj, obj)
+						log.Error(nil, "Wanted cache.DeleteFinalStateUnknown of frontendconfig obj", "got", obj, "gotType", fmt.Sprintf("%T", obj))
 						return
 					}
 
 					feConfig, feOk = state.Obj.(*frontendconfigv1beta1.FrontendConfig)
 					if !feOk {
-						klog.Errorf("Wanted frontendconfig obj, got %+v, type %T", state.Obj, state.Obj)
+						log.Error(nil, "Wanted frontendconfig obj", "got", state.Obj, "gotType", fmt.Sprintf("%T", state.Obj))
 						return
 					}
 				}
@@ -318,24 +327,24 @@ func NewLoadBalancerController(
 		// effectively useless, but it is healthy. Reporting it as unhealthy
 		// will lead to container crashlooping.
 		if utils.IsHTTPErrorCode(err, http.StatusForbidden) {
-			klog.Infof("Reporting cluster as healthy, but unable to list backends: %v", err)
+			log.Info("Reporting cluster as healthy, but unable to list backends", "err", err)
 			return nil
 		}
 		return utils.IgnoreHTTPNotFound(err)
 	})
 
-	klog.V(3).Infof("Created new loadbalancer controller")
+	log.Info("Created new loadbalancer controller")
 
 	return &lbc
 }
 
 // Run starts the loadbalancer controller.
 func (lbc *LoadBalancerController) Run() {
-	klog.Infof("Starting loadbalancer controller")
+	lbc.logger.Info("Starting loadbalancer controller")
 	go lbc.ingQueue.Run()
 
 	<-lbc.stopCh
-	klog.Infof("Shutting down Loadbalancer Controller")
+	lbc.logger.Info("Shutting down Loadbalancer Controller")
 }
 
 // Stop stops the loadbalancer controller. It also deletes cluster resources
@@ -348,7 +357,7 @@ func (lbc *LoadBalancerController) Stop(deleteAll bool) error {
 	// Only try draining the workqueue if we haven't already.
 	if !lbc.shutdown {
 		close(lbc.stopCh)
-		klog.Infof("Shutting down controller queues.")
+		lbc.logger.Info("Shutting down controller queues.")
 		lbc.ingQueue.Shutdown()
 		lbc.shutdown = true
 	}
@@ -356,7 +365,7 @@ func (lbc *LoadBalancerController) Stop(deleteAll bool) error {
 	// Deleting shared cluster resources is idempotent.
 	// TODO(rramkumar): Do we need deleteAll? Can we get rid of its' flag?
 	if deleteAll {
-		klog.Infof("Shutting down cluster manager.")
+		lbc.logger.Info("Shutting down cluster manager.")
 		if err := lbc.l7Pool.Shutdown(lbc.ctx.Ingresses().List()); err != nil {
 			return err
 		}
@@ -368,7 +377,7 @@ func (lbc *LoadBalancerController) Stop(deleteAll bool) error {
 }
 
 // SyncBackends implements Controller.
-func (lbc *LoadBalancerController) SyncBackends(state interface{}) error {
+func (lbc *LoadBalancerController) SyncBackends(state interface{}, ingLogger klog.Logger) error {
 	// TODO: Only lock per resource
 	// It is incredibly tricky to get an efficient synchronization method here.
 	// For now, we are effectively making backend syncing single-threaded to avoid
@@ -378,6 +387,7 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}) error {
 	// as being in an error state in the UI
 	lbc.backendLock.Lock()
 	defer lbc.backendLock.Unlock()
+	ingLogger = ingLogger.WithName("SyncBackends")
 
 	// We expect state to be a syncState
 	syncState, ok := state.(*syncState)
@@ -388,12 +398,12 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}) error {
 
 	// Only sync instance group when IG is used for this ingress
 	if len(nodePorts(ingSvcPorts)) > 0 {
-		if err := lbc.syncInstanceGroup(syncState.ing, ingSvcPorts); err != nil {
-			klog.Errorf("Failed to sync instance group for ingress %v: %v", syncState.ing, err)
+		if err := lbc.syncInstanceGroup(syncState.ing, ingSvcPorts, ingLogger); err != nil {
+			ingLogger.Error(err, "Failed to sync instance group", "ingress", syncState.ing)
 			return err
 		}
 	} else {
-		klog.V(2).Infof("Skip syncing instance groups for ingress %v/%v", syncState.ing.Namespace, syncState.ing.Name)
+		ingLogger.Info("Skip syncing instance groups")
 	}
 
 	// Sync the backends
@@ -404,7 +414,7 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}) error {
 	// Get the zones our groups live in.
 	zones, err := lbc.ZoneGetter.List(zonegetter.CandidateNodesFilter, klog.TODO())
 	if err != nil {
-		klog.Errorf("lbc.ZoneGetter.List(zonegetter.CandidateNodesFilter) = %v", err)
+		ingLogger.Error(err, "lbc.ZoneGetter.List(zonegetter.CandidateNodesFilter)")
 		return err
 	}
 	var groupKeys []backends.GroupKey
@@ -431,9 +441,9 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}) error {
 }
 
 // syncInstanceGroup creates instance groups, syncs instances, sets named ports and updates instance group annotation
-func (lbc *LoadBalancerController) syncInstanceGroup(ing *v1.Ingress, ingSvcPorts []utils.ServicePort) error {
+func (lbc *LoadBalancerController) syncInstanceGroup(ing *v1.Ingress, ingSvcPorts []utils.ServicePort, ingLogger klog.Logger) error {
 	nodePorts := nodePorts(ingSvcPorts)
-	klog.V(2).Infof("Syncing Instance Group for ingress %v/%v with nodeports %v", ing.Namespace, ing.Name, nodePorts)
+	ingLogger.Info("Syncing Instance Group", "nodePorts", nodePorts)
 	igs, err := lbc.instancePool.EnsureInstanceGroupsAndPorts(lbc.ctx.ClusterNamer.InstanceGroup(), nodePorts)
 	if err != nil {
 		return err
@@ -450,7 +460,7 @@ func (lbc *LoadBalancerController) syncInstanceGroup(ing *v1.Ingress, ingSvcPort
 
 	// TODO: Remove this after deprecation
 	if utils.IsGCEMultiClusterIngress(ing) {
-		klog.Warningf("kubemci is used for ingress %v", ing)
+		ingLogger.Info("kubemci is used", "ingress", ing)
 		// Add instance group names as annotation on the ingress and return.
 		newAnnotations := ing.ObjectMeta.DeepCopy().Annotations
 		if newAnnotations == nil {
@@ -459,7 +469,7 @@ func (lbc *LoadBalancerController) syncInstanceGroup(ing *v1.Ingress, ingSvcPort
 		if err = setInstanceGroupsAnnotation(newAnnotations, igs); err != nil {
 			return err
 		}
-		if err = updateAnnotations(lbc.ctx.KubeClient, ing, newAnnotations); err != nil {
+		if err = updateAnnotations(lbc.ctx.KubeClient, ing, newAnnotations, ingLogger); err != nil {
 			return err
 		}
 		// This short-circuit will stop the syncer from moving to next step.
@@ -469,7 +479,7 @@ func (lbc *LoadBalancerController) syncInstanceGroup(ing *v1.Ingress, ingSvcPort
 }
 
 // GCBackends implements Controller.
-func (lbc *LoadBalancerController) GCBackends(toKeep []*v1.Ingress) error {
+func (lbc *LoadBalancerController) GCBackends(toKeep []*v1.Ingress, ingLogger klog.Logger) error {
 	// Only GCE ingress associated resources are managed by this controller.
 	GCEIngresses := operator.Ingresses(toKeep).Filter(utils.IsGCEIngress).AsList()
 	svcPortsToKeep := lbc.ToSvcPorts(GCEIngresses)
@@ -480,7 +490,7 @@ func (lbc *LoadBalancerController) GCBackends(toKeep []*v1.Ingress) error {
 	// Do not delete instance group if there exists a GLBC ingress.
 	if len(toKeep) == 0 {
 		igName := lbc.ctx.ClusterNamer.InstanceGroup()
-		klog.Infof("Deleting instance group %v", igName)
+		ingLogger.Info("Deleting instance group", "instanceGroup", igName)
 		if err := lbc.instancePool.DeleteInstanceGroup(igName); err != err {
 			return err
 		}
@@ -489,14 +499,15 @@ func (lbc *LoadBalancerController) GCBackends(toKeep []*v1.Ingress) error {
 }
 
 // SyncLoadBalancer implements Controller.
-func (lbc *LoadBalancerController) SyncLoadBalancer(state interface{}) error {
+func (lbc *LoadBalancerController) SyncLoadBalancer(state interface{}, ingLogger klog.Logger) error {
+	ingLogger = ingLogger.WithName("SyncLoadBalancer")
 	// We expect state to be a syncState
 	syncState, ok := state.(*syncState)
 	if !ok {
 		return fmt.Errorf("expected state type to be syncState, type was %T", state)
 	}
 
-	lb, err := lbc.toRuntimeInfo(syncState.ing, syncState.urlMap)
+	lb, err := lbc.toRuntimeInfo(syncState.ing, syncState.urlMap, ingLogger)
 	if err != nil {
 		return err
 	}
@@ -522,15 +533,15 @@ func (lbc *LoadBalancerController) GCv2LoadBalancer(ing *v1.Ingress, scope meta.
 }
 
 // EnsureDeleteV1Finalizers implements Controller.
-func (lbc *LoadBalancerController) EnsureDeleteV1Finalizers(toCleanup []*v1.Ingress) error {
+func (lbc *LoadBalancerController) EnsureDeleteV1Finalizers(toCleanup []*v1.Ingress, ingLogger klog.Logger) error {
 	if !flags.F.FinalizerRemove {
-		klog.V(4).Infof("Removing finalizers not enabled")
+		ingLogger.Info("Removing finalizers not enabled")
 		return nil
 	}
 	for _, ing := range toCleanup {
 		ingClient := lbc.ctx.KubeClient.NetworkingV1().Ingresses(ing.Namespace)
-		if err := common.EnsureDeleteFinalizer(ing, ingClient, common.FinalizerKey); err != nil {
-			klog.Errorf("Failed to ensure delete finalizer %s for ingress %s: %v", common.FinalizerKey, common.NamespacedName(ing), err)
+		if err := common.EnsureDeleteFinalizer(ing, ingClient, common.FinalizerKey, ingLogger); err != nil {
+			ingLogger.Error(err, "Failed to ensure delete finalizer", "finalizer", common.FinalizerKey)
 			return err
 		}
 	}
@@ -538,21 +549,22 @@ func (lbc *LoadBalancerController) EnsureDeleteV1Finalizers(toCleanup []*v1.Ingr
 }
 
 // EnsureDeleteV2Finalizer implements Controller.
-func (lbc *LoadBalancerController) EnsureDeleteV2Finalizer(ing *v1.Ingress) error {
+func (lbc *LoadBalancerController) EnsureDeleteV2Finalizer(ing *v1.Ingress, ingLogger klog.Logger) error {
 	if !flags.F.FinalizerRemove {
-		klog.V(4).Infof("Removing finalizers not enabled")
+		ingLogger.Info("Removing finalizers not enabled")
 		return nil
 	}
 	ingClient := lbc.ctx.KubeClient.NetworkingV1().Ingresses(ing.Namespace)
-	if err := common.EnsureDeleteFinalizer(ing, ingClient, common.FinalizerKeyV2); err != nil {
-		klog.Errorf("Failed to ensure delete finalizer %s for ingress %s: %v", common.FinalizerKeyV2, common.NamespacedName(ing), err)
+	if err := common.EnsureDeleteFinalizer(ing, ingClient, common.FinalizerKeyV2, ingLogger); err != nil {
+		ingLogger.Error(err, "Failed to ensure delete finalizer", "finalizer", common.FinalizerKeyV2)
 		return err
 	}
 	return nil
 }
 
 // PostProcess implements Controller.
-func (lbc *LoadBalancerController) PostProcess(state interface{}) error {
+func (lbc *LoadBalancerController) PostProcess(state interface{}, ingLogger klog.Logger) error {
+	ingLogger = ingLogger.WithName("PostProcess")
 	// We expect state to be a syncState
 	syncState, ok := state.(*syncState)
 	if !ok {
@@ -560,26 +572,28 @@ func (lbc *LoadBalancerController) PostProcess(state interface{}) error {
 	}
 
 	// Update the ingress status.
-	return lbc.updateIngressStatus(syncState.l7, syncState.ing)
+	return lbc.updateIngressStatus(syncState.l7, syncState.ing, ingLogger)
 }
 
 // preSyncGC is intended to execute GC logic before sync if necessary. e.g. Ingress ing has deletion timestamp.
 // preSyncGC returns if the sync needs to take place or not.
-func (lbc *LoadBalancerController) preSyncGC(key string, scope meta.KeyType, ingExists bool, ing *v1.Ingress) (bool, error) {
+func (lbc *LoadBalancerController) preSyncGC(key string, scope meta.KeyType, ingExists bool, ing *v1.Ingress, ingLogger klog.Logger) (bool, error) {
 	lbc.gcLock.Lock()
 	defer lbc.gcLock.Unlock()
-	klog.V(4).Infof("Running preSyncGC for ingress %q. ", key)
-	defer klog.V(4).Infof("Finish preSyncGC for ingress %q. ", key)
+	ingLogger = ingLogger.WithName("preSyncGC")
+
+	ingLogger.Info("Running preSyncGC")
+	defer ingLogger.Info("Finish preSyncGC")
 
 	allIngresses := lbc.ctx.Ingresses().List()
 	// Determine if the ingress needs to be GCed.
 	if !ingExists || utils.NeedsCleanup(ing) {
-		frontendGCAlgorithm := frontendGCAlgorithm(ingExists, false, ing)
+		frontendGCAlgorithm := frontendGCAlgorithm(ingExists, false, ing, ingLogger)
 		// GC will find GCE resources that were used for this ingress and delete them.
-		err := lbc.ingSyncer.GC(allIngresses, ing, frontendGCAlgorithm, scope)
+		err := lbc.ingSyncer.GC(allIngresses, ing, frontendGCAlgorithm, scope, ingLogger)
 		// Skip emitting an event if ingress does not exist as we cannot retrieve ingress namespace.
 		if err != nil && ingExists {
-			klog.Errorf("Error in GC for %s/%s: %v", ing.Namespace, ing.Name, err)
+			ingLogger.Error(err, "Error in ingress GC")
 			lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, events.GarbageCollection, "Error: %v", err)
 		}
 		// Delete the ingress state for metrics after GC is successful.
@@ -592,18 +606,20 @@ func (lbc *LoadBalancerController) preSyncGC(key string, scope meta.KeyType, ing
 }
 
 // postSyncGC cleans up the unnecessary resources (backend-services, frontend resources in wrong scope) after sync.
-func (lbc *LoadBalancerController) postSyncGC(key string, syncErr error, oldScope *meta.KeyType, newScope meta.KeyType, ingExists bool, ing *v1.Ingress) error {
+func (lbc *LoadBalancerController) postSyncGC(key string, syncErr error, oldScope *meta.KeyType, newScope meta.KeyType, ingExists bool, ing *v1.Ingress, ingLogger klog.Logger) error {
 	lbc.gcLock.Lock()
 	defer lbc.gcLock.Unlock()
-	klog.V(4).Infof("Running postSyncGC for ingress %q. ", key)
-	defer klog.V(4).Infof("Finish postSyncGC for ingress %q. ", key)
+	ingLogger = ingLogger.WithName("postSyncGC")
+
+	ingLogger.Info("Running postSyncGC")
+	defer ingLogger.Info("Finish postSyncGC")
 
 	// Garbage collection will occur regardless of an error occurring. If an error occurred,
 	// it could have been caused by quota issues; therefore, garbage collecting now may
 	// free up enough quota for the next sync to pass.
 	allIngresses := lbc.ctx.Ingresses().List()
-	frontendGCAlgorithm := frontendGCAlgorithm(ingExists, oldScope != nil, ing)
-	if gcErr := lbc.ingSyncer.GC(allIngresses, ing, frontendGCAlgorithm, newScope); gcErr != nil {
+	frontendGCAlgorithm := frontendGCAlgorithm(ingExists, oldScope != nil, ing, ingLogger)
+	if gcErr := lbc.ingSyncer.GC(allIngresses, ing, frontendGCAlgorithm, newScope, ingLogger); gcErr != nil {
 		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, events.GarbageCollection, "Error during garbage collection: %v", gcErr)
 		return fmt.Errorf("error during sync %v, error during GC %v", syncErr, gcErr)
 	}
@@ -612,11 +628,12 @@ func (lbc *LoadBalancerController) postSyncGC(key string, syncErr error, oldScop
 
 // sync manages Ingress create/updates/deletes events from queue.
 func (lbc *LoadBalancerController) sync(key string) error {
+	ingLogger := lbc.logger.WithValues("ingressKey", key)
 	if !lbc.hasSynced() {
 		time.Sleep(context.StoreSyncPollPeriod)
 		return fmt.Errorf("waiting for stores to sync")
 	}
-	klog.V(3).Infof("Syncing %v", key)
+	ingLogger.Info("Syncing ingress")
 
 	ing, ingExists, err := lbc.ctx.Ingresses().GetByKey(key)
 	if err != nil {
@@ -625,18 +642,18 @@ func (lbc *LoadBalancerController) sync(key string) error {
 
 	// Capture GC state for ingress.
 	scope := features.ScopeFromIngress(ing)
-	needSync, err := lbc.preSyncGC(key, scope, ingExists, ing)
+	needSync, err := lbc.preSyncGC(key, scope, ingExists, ing, ingLogger)
 	if err != nil {
 		return err
 	}
 	if !needSync {
-		klog.V(2).Infof("Ingress %q does not need to be synced. Skipping sync", key)
+		ingLogger.Info("Ingress does not need to be synced. Skipping sync")
 		return nil
 	}
 
 	// Ensure that a finalizer is attached.
 	if flags.F.FinalizerAdd {
-		if ing, err = lbc.ensureFinalizer(ing); err != nil {
+		if ing, err = lbc.ensureFinalizer(ing, ingLogger); err != nil {
 			return err
 		}
 	}
@@ -657,7 +674,7 @@ func (lbc *LoadBalancerController) sync(key string) error {
 
 	// Sync GCP resources.
 	syncState := &syncState{urlMap, ing, nil}
-	syncErr := lbc.ingSyncer.Sync(syncState)
+	syncErr := lbc.ingSyncer.Sync(syncState, ingLogger)
 	if syncErr != nil {
 		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, events.SyncIngress, "Error syncing to GCP: %v", syncErr.Error())
 	} else {
@@ -674,7 +691,7 @@ func (lbc *LoadBalancerController) sync(key string) error {
 
 	// Check for scope change GC
 	var oldScope *meta.KeyType
-	oldScope, err = lbc.l7Pool.FrontendScopeChangeGC(ing)
+	oldScope, err = lbc.l7Pool.FrontendScopeChangeGC(ing, ingLogger)
 	if err != nil {
 		return err
 	}
@@ -682,12 +699,12 @@ func (lbc *LoadBalancerController) sync(key string) error {
 		scope = *oldScope
 	}
 
-	return lbc.postSyncGC(key, syncErr, oldScope, scope, ingExists, ing)
+	return lbc.postSyncGC(key, syncErr, oldScope, scope, ingExists, ing, ingLogger)
 }
 
 // updateIngressStatus updates the IP and annotations of a loadbalancer.
 // The annotations are parsed by kubectl describe.
-func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing *v1.Ingress) error {
+func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing *v1.Ingress, ingLogger klog.Logger) error {
 	ingClient := lbc.ctx.KubeClient.NetworkingV1().Ingresses(ing.Namespace)
 
 	// Update IP through update/status endpoint
@@ -702,9 +719,9 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 	if ip != "" {
 		lbIPs := ing.Status.LoadBalancer.Ingress
 		if len(lbIPs) == 0 || lbIPs[0].IP != ip {
-			klog.Infof("Updating loadbalancer %v/%v with IP %v", ing.Namespace, ing.Name, ip)
-			if _, err := common.PatchIngressStatus(ingClient, ing, updatedIngStatus); err != nil {
-				klog.Errorf("PatchIngressStatus(%s/%s) failed: %v", ing.Namespace, ing.Name, err)
+			ingLogger.Info("Updating loadbalancer", "IP", ip)
+			if _, err := common.PatchIngressStatus(ingClient, ing, updatedIngStatus, ingLogger); err != nil {
+				ingLogger.Error(err, "PatchIngressStatus failed")
 				return err
 			}
 			lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeNormal, events.IPChanged, "IP is now %v", ip)
@@ -716,14 +733,14 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 		return err
 	}
 
-	if err := updateAnnotations(lbc.ctx.KubeClient, ing, newAnnotations); err != nil {
+	if err := updateAnnotations(lbc.ctx.KubeClient, ing, newAnnotations, ingLogger); err != nil {
 		return err
 	}
 	return nil
 }
 
 // toRuntimeInfo returns L7RuntimeInfo for the given ingress.
-func (lbc *LoadBalancerController) toRuntimeInfo(ing *v1.Ingress, urlMap *utils.GCEURLMap) (*loadbalancers.L7RuntimeInfo, error) {
+func (lbc *LoadBalancerController) toRuntimeInfo(ing *v1.Ingress, urlMap *utils.GCEURLMap, ingLogger klog.Logger) (*loadbalancers.L7RuntimeInfo, error) {
 	annotations := annotations.FromIngress(ing)
 	env, err := translator.NewEnv(ing, lbc.ctx.KubeClient, "", "", "")
 	if err != nil {
@@ -736,7 +753,7 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ing *v1.Ingress, urlMap *utils.
 			msg := fmt.Sprintf("Could not find TLS certificate: %v", err)
 			lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, events.SyncIngress, msg)
 		} else {
-			klog.Errorf("Could not get certificates for ingress %s/%s: %v", ing.Namespace, ing.Name, err)
+			ingLogger.Error(err, "Could not get certificates")
 			return nil, err
 		}
 	}
@@ -776,15 +793,15 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ing *v1.Ingress, urlMap *utils.
 	}, nil
 }
 
-func updateAnnotations(client kubernetes.Interface, ing *v1.Ingress, newAnnotations map[string]string) error {
+func updateAnnotations(client kubernetes.Interface, ing *v1.Ingress, newAnnotations map[string]string, ingLogger klog.Logger) error {
 	if reflect.DeepEqual(ing.Annotations, newAnnotations) {
 		return nil
 	}
 	ingClient := client.NetworkingV1().Ingresses(ing.Namespace)
 	newObjectMeta := ing.ObjectMeta.DeepCopy()
 	newObjectMeta.Annotations = newAnnotations
-	if _, err := common.PatchIngressObjectMetadata(ingClient, ing, *newObjectMeta); err != nil {
-		klog.Errorf("PatchIngressObjectMetadata(%s/%s) failed: %v", ing.Namespace, ing.Name, err)
+	if _, err := common.PatchIngressObjectMetadata(ingClient, ing, *newObjectMeta, ingLogger); err != nil {
+		ingLogger.Error(err, "PatchIngressObjectMetadata failed")
 		return err
 	}
 	return nil
@@ -828,10 +845,10 @@ func (lbc *LoadBalancerController) defaultFrontendNamingScheme(ing *v1.Ingress) 
 }
 
 // ensureFinalizer ensures that a finalizer is attached.
-func (lbc *LoadBalancerController) ensureFinalizer(ing *v1.Ingress) (*v1.Ingress, error) {
-	ingKey := common.NamespacedName(ing)
+func (lbc *LoadBalancerController) ensureFinalizer(ing *v1.Ingress, ingLogger klog.Logger) (*v1.Ingress, error) {
+	ingLogger = ingLogger.WithName("ensureFinalizer")
 	if common.HasFinalizer(ing.ObjectMeta) {
-		klog.V(4).Infof("Finalizer exists for ingress %s", ingKey)
+		ingLogger.Info("Finalizer exists")
 		return ing, nil
 	}
 	namingScheme, err := lbc.defaultFrontendNamingScheme(ing)
@@ -846,9 +863,9 @@ func (lbc *LoadBalancerController) ensureFinalizer(ing *v1.Ingress) (*v1.Ingress
 	// Update ingress with finalizer so that load-balancer pool uses correct naming scheme
 	// while ensuring frontend resources. Note that this updates only the finalizer annotation
 	// which may be inconsistent with ingress store for a short period.
-	updatedIng, err := common.EnsureFinalizer(ing, ingClient, finalizerKey)
+	updatedIng, err := common.EnsureFinalizer(ing, ingClient, finalizerKey, ingLogger)
 	if err != nil {
-		klog.Errorf("Failed to ensure finalizer %s for ingress %s: %v", finalizerKey, ingKey, err)
+		ingLogger.Error(err, "Failed to ensure finalizer", "finalizer", finalizerKey)
 		return nil, err
 	}
 	return updatedIng, nil
@@ -866,7 +883,7 @@ func (lbc *LoadBalancerController) ensureFinalizer(ing *v1.Ingress) (*v1.Ingress
 //   - Finalizer enabled    :    all backends
 //   - Finalizer disabled   :    v1 frontends and all backends
 //   - Scope changed        :    v2 frontends for all scope
-func frontendGCAlgorithm(ingExists bool, scopeChange bool, ing *v1.Ingress) utils.FrontendGCAlgorithm {
+func frontendGCAlgorithm(ingExists bool, scopeChange bool, ing *v1.Ingress, ingLogger klog.Logger) utils.FrontendGCAlgorithm {
 	// If ingress does not exist, that means its pre-finalizer era.
 	// Run GC via v1 naming scheme.
 	if !ingExists {
@@ -890,7 +907,7 @@ func frontendGCAlgorithm(ingExists bool, scopeChange bool, ing *v1.Ingress) util
 	case namer.V1NamingScheme:
 		return utils.CleanupV1FrontendResources
 	default:
-		klog.Errorf("Unexpected naming scheme %v", namingScheme)
+		ingLogger.Error(nil, "Unexpected naming scheme", "schema", namingScheme)
 		return utils.NoCleanUpNeeded
 	}
 }

@@ -294,7 +294,7 @@ func makeLeaderElectionConfig(ctx *ingctx.ControllerContext, client clientset.In
 func runControllers(ctx *ingctx.ControllerContext) {
 	stopCh := make(chan struct{})
 	ctx.Init()
-	lbc := controller.NewLoadBalancerController(ctx, stopCh)
+	lbc := controller.NewLoadBalancerController(ctx, stopCh, klog.TODO())
 	if ctx.EnableASMConfigMap {
 		ctx.ASMConfigController.RegisterInformer(ctx.ConfigMapInformer, func() {
 			// We want to trigger a restart, don't have to clean up all the resources.
