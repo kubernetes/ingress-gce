@@ -25,13 +25,14 @@ import (
 
 	api_v1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
-	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/klog/v2"
 
 	//"k8s.io/apimachinery/pkg/util/sets"
 
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 )
 
 // Pods created in loops start from this time, for routines that
@@ -44,8 +45,10 @@ func TestZoneListing(t *testing.T) {
 		"zone-1": {"n1"},
 		"zone-2": {"n2"},
 	}
-	addNodes(lbc, zoneToNode)
-	zones, err := lbc.Translator.ListZones(utils.AllNodesPredicate)
+	zonegetter.AddFakeNodes(lbc.ZoneGetter, "zone-1", "n1")
+	zonegetter.AddFakeNodes(lbc.ZoneGetter, "zone-2", "n2")
+
+	zones, err := lbc.ZoneGetter.List(zonegetter.AllNodesFilter, klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to list zones: %v", err)
 	}
@@ -92,27 +95,6 @@ func TestInstancesAddedToZones(t *testing.T) {
 	}
 }
 */
-
-func addNodes(lbc *LoadBalancerController, zoneToNode map[string][]string) {
-	for zone, nodes := range zoneToNode {
-		for _, node := range nodes {
-			n := &api_v1.Node{
-				ObjectMeta: meta_v1.ObjectMeta{
-					Name: node,
-					Labels: map[string]string{
-						annotations.ZoneKey: zone,
-					},
-				},
-				Status: api_v1.NodeStatus{
-					Conditions: []api_v1.NodeCondition{
-						{Type: api_v1.NodeReady, Status: api_v1.ConditionTrue},
-					},
-				},
-			}
-			lbc.nodeLister.Add(n)
-		}
-	}
-}
 
 func getProbePath(p *api_v1.Probe) string {
 	return p.ProbeHandler.HTTPGet.Path

@@ -63,6 +63,7 @@ import (
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/flags"
 	_ "k8s.io/ingress-gce/pkg/klog"
+	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/ingress-gce/pkg/version"
 )
 
@@ -327,12 +328,12 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		klog.V(0).Infof("Service Metrics Controller started")
 	}
 
-	var zoneGetter negtypes.ZoneGetter
-	zoneGetter = lbc.Translator
+	zoneGetter := ctx.ZoneGetter
+
 	// In NonGCP mode, use the zone specified in gce.conf directly.
 	// This overrides the zone/fault-domain label on nodes for NEG controller.
 	if flags.F.EnableNonGCPMode {
-		zoneGetter = negtypes.NewSimpleZoneGetter(ctx.Cloud.LocalZone())
+		zoneGetter = zonegetter.NewNonGCPZoneGetter(ctx.Cloud.LocalZone())
 	}
 
 	enableAsm := false
