@@ -675,7 +675,7 @@ func TestMCIngressIG(t *testing.T) {
 	if err != nil {
 		t.Errorf("lbc.instancePool.List() = _, %v, want nil", err)
 	}
-	var wantInstanceGroups []string
+	wantInstanceGroups := []string{}
 	if diff := cmp.Diff(wantInstanceGroups, instanceGroups); diff != "" {
 		t.Errorf("lbc.instancePool.List()() mismatch (-want +got):\n%s", diff)
 	}
