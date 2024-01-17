@@ -113,6 +113,7 @@ var (
 		EnableL4ILBDualStack                     bool
 		EnableL4NetLBDualStack                   bool
 		EnableNEGController                      bool
+		EnableL4NEG                              bool
 		EnableMultipleIGs                        bool
 		EnableServiceMetrics                     bool
 		EnableL4StrongSessionAffinity            bool
@@ -268,6 +269,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.RunL4Controller, "run-l4-controller", false, `Optional, whether or not to run L4 Service Controller as part of glbc. If set to true, services of Type:LoadBalancer with Internal annotation will be processed by this controller.`)
 	flag.BoolVar(&F.RunL4NetLBController, "run-l4-netlb-controller", false, `Optional, if enabled then the L4NetLbController will be run.`)
 	flag.BoolVar(&F.EnableNEGController, "enable-neg-controller", true, `Optional, if enabled then the NEG controller will be run.`)
+	flag.BoolVar(&F.EnableL4NEG, "enable-l4-neg", false, `Optional, if enabled then the NEG controller will process L4 NEGs.`)
 	flag.BoolVar(&F.EnableIGController, "enable-ig-controller", true, `Optional, if enabled then the IG controller will be run.`)
 	flag.BoolVar(&F.EnableServiceMetrics, "enable-service-metrics", false, `Optional, if enabled then the service metrics controller will be run.`)
 	flag.BoolVar(&F.EnablePSC, "enable-psc", false, "Enable PSC controller")
