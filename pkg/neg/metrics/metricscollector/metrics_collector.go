@@ -45,6 +45,7 @@ func RegisterMetrics() {
 		prometheus.MustRegister(SyncerCountByEndpointType)
 		prometheus.MustRegister(syncerSyncResult)
 		prometheus.MustRegister(negsManagedCount)
+		prometheus.MustRegister(networkEndpointGroupCount)
 	})
 }
 
@@ -174,6 +175,12 @@ func (sm *SyncerMetrics) export() {
 	DualStackMigrationServiceCount.Set(float64(migrationServicesCount))
 
 	sm.logger.V(3).Info("Exported DualStack Migration metrics")
+
+	negCount := sm.computeNegMetrics()
+	for feature, count := range negCount {
+		networkEndpointGroupCount.WithLabelValues(feature.String()).Set(float64(count))
+	}
+	sm.logger.V(3).Info("Exported NEG usage metrics", "NEG count", fmt.Sprintf("%#v", negCount))
 }
 
 // UpdateSyncerStatusInMetrics update the status of syncer based on the error

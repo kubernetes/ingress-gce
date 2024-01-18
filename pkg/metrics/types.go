@@ -31,35 +31,6 @@ type IngressState struct {
 	servicePorts   []utils.ServicePort
 }
 
-// NegServiceState contains all the neg usage associated with one service
-type NegServiceState struct {
-	// standaloneNeg is the count of standalone NEG
-	StandaloneNeg int
-	// ingressNeg is the count of NEGs created for ingress
-	IngressNeg int
-	// asmNeg is the count of NEGs created for ASM
-	AsmNeg int
-	// VmIpNeg specifies if a service uses GCE_VM_IP NEG.
-	VmIpNeg *VmIpNegType
-	// CustomNamedNeg is the count of standalone negs with custom names
-	CustomNamedNeg int
-	// SuccessfulNeg is the count of successful NEG syncer creations
-	SuccessfulNeg int
-	// SuccessfulNeg is the count of errors in NEG syncer creations
-	ErrorNeg int
-}
-
-// VmIpNegType contains whether a GCE_VM_IP NEG is requesting for
-// local traffic (or service external policy set to local).
-type VmIpNegType struct {
-	trafficPolicyLocal bool
-}
-
-// NewVmIpNegType returns a new VmIpNegType.
-func NewVmIpNegType(trafficPolicyLocal bool) *VmIpNegType {
-	return &VmIpNegType{trafficPolicyLocal: trafficPolicyLocal}
-}
-
 // L4ILBServiceLegacyState defines if global access and subnet features are enabled
 // for an L4 ILB service.
 type L4ILBServiceLegacyState struct {
@@ -136,15 +107,6 @@ type IngressMetricsCollector interface {
 	SetIngress(ingKey string, ing IngressState)
 	// DeleteIngress removes the given ingress key.
 	DeleteIngress(ingKey string)
-}
-
-// NegMetricsCollector is an interface to update/delete Neg states in the cache
-// that is used for computing neg usage metrics.
-type NegMetricsCollector interface {
-	// SetNegService adds/updates neg state for given service key.
-	SetNegService(svcKey string, negState NegServiceState)
-	// DeleteNegService removes the given service key.
-	DeleteNegService(svcKey string)
 }
 
 // L4ILBMetricsCollector is an interface to update/delete L4 ILb service states

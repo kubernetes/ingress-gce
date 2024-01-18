@@ -38,8 +38,8 @@ import (
 	svcnegv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/flags"
-	usageMetrics "k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
+	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	syncMetrics "k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
@@ -96,9 +96,6 @@ type Controller struct {
 	// reflector handles NEG readiness gate and conditions for pods in NEG.
 	reflector readiness.Reflector
 
-	// usageCollector collects NEG usage metrics
-	usageCollector usageMetrics.NegMetricsCollector
-
 	// syncerMetrics collects NEG controller metrics
 	syncerMetrics *syncMetrics.SyncerMetrics
 
@@ -126,7 +123,6 @@ func NewController(
 	networkInformer cache.SharedIndexInformer,
 	gkeNetworkParamSetInformer cache.SharedIndexInformer,
 	hasSynced func() bool,
-	controllerMetrics *usageMetrics.ControllerMetrics,
 	l4Namer namer2.L4ResourcesNamer,
 	defaultBackendService utils.ServicePort,
 	cloud negtypes.NetworkEndpointGroupCloud,
@@ -233,7 +229,6 @@ func NewController(
 		nodeQueue:                     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_node_queue"),
 		syncTracker:                   utils.NewTimeTracker(),
 		reflector:                     reflector,
-		usageCollector:                controllerMetrics,
 		syncerMetrics:                 syncerMetrics,
 		runL4:                         runL4Controller,
 		enableIngressRegionalExternal: enableIngressRegionalExternal,
@@ -463,7 +458,7 @@ func (c *Controller) processService(key string) error {
 		return err
 	}
 	if !exists {
-		c.usageCollector.DeleteNegService(key)
+		c.syncerMetrics.DeleteNegService(key)
 		c.manager.StopSyncer(namespace, name)
 		return nil
 	}
@@ -475,7 +470,7 @@ func (c *Controller) processService(key string) error {
 	if service.Spec.Type != apiv1.ServiceTypeLoadBalancer && isSingleStackIPv6Service(service) {
 		return fmt.Errorf("NEG is not supported for ipv6 only service (%T)", service)
 	}
-	negUsage := usageMetrics.NegServiceState{}
+	negUsage := metricscollector.NegServiceState{}
 	svcPortInfoMap := make(negtypes.PortInfoMap)
 	networkInfo, err := c.networkResolver.ServiceNetwork(service)
 	if err != nil {
@@ -518,12 +513,12 @@ func (c *Controller) processService(key string) error {
 			return err
 		}
 		negUsage.SuccessfulNeg, negUsage.ErrorNeg, err = c.manager.EnsureSyncers(namespace, name, svcPortInfoMap)
-		c.usageCollector.SetNegService(key, negUsage)
+		c.syncerMetrics.SetNegService(key, negUsage)
 		return err
 	}
 	// do not need Neg
 	c.logger.V(3).Info("Service does not need any NEG. Skipping", "service", key)
-	c.usageCollector.DeleteNegService(key)
+	c.syncerMetrics.DeleteNegService(key)
 	// neg annotation is not found or NEG is not enabled
 	c.manager.StopSyncer(namespace, name)
 
@@ -555,7 +550,7 @@ func (c *Controller) mergeIngressPortInfo(service *apiv1.Service, name types.Nam
 }
 
 // mergeStandaloneNEGsPortInfo merge Standalone NEG PortInfo into portInfoMap
-func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap, negUsage *usageMetrics.NegServiceState, networkInfo *network.NetworkInfo) error {
+func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap, negUsage *metricscollector.NegServiceState, networkInfo *network.NetworkInfo) error {
 	negAnnotation, foundNEGAnnotation, err := annotations.FromService(service).NEGAnnotation()
 	if err != nil {
 		return err
@@ -595,7 +590,7 @@ func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name ty
 }
 
 // mergeVmIpNEGsPortInfo merges the PortInfo for ILB and multinet NetLB services using GCE_VM_IP NEGs into portInfoMap
-func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap, negUsage *usageMetrics.NegServiceState, networkInfo *network.NetworkInfo) error {
+func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap, negUsage *metricscollector.NegServiceState, networkInfo *network.NetworkInfo) error {
 	wantsILB, _ := annotations.WantsL4ILB(service)
 	wantsNetLB, _ := annotations.WantsL4NetLB(service)
 	needsNEGForNetLB := wantsNetLB && !networkInfo.IsDefault && annotations.HasRBSAnnotation(service)
@@ -618,7 +613,7 @@ func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.Na
 
 	onlyLocal := helpers.RequestsOnlyLocalTraffic(service)
 	// Update usage metrics.
-	negUsage.VmIpNeg = usageMetrics.NewVmIpNegType(onlyLocal)
+	negUsage.VmIpNeg = metricscollector.NewVmIpNegType(onlyLocal)
 
 	return portInfoMap.Merge(negtypes.NewPortInfoMapForVMIPNEG(name.Namespace, name.Name, c.l4Namer, onlyLocal, networkInfo))
 }

@@ -41,7 +41,7 @@ import (
 	networkv1 "k8s.io/cloud-provider-gcp/crd/apis/network/v1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
-	"k8s.io/ingress-gce/pkg/metrics"
+	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
@@ -140,7 +140,6 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		testContext.NetworkInformer,
 		testContext.GKENetworkParamSetInformer,
 		func() bool { return true },
-		metrics.FakeControllerMetrics(),
 		testContext.L4Namer,
 		defaultBackend,
 		negtypes.NewAdapter(testContext.Cloud),
@@ -1249,7 +1248,7 @@ func TestMergeVmIpNEGsPortInfo(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			portInfoMap := make(negtypes.PortInfoMap)
-			negUsage := metrics.NegServiceState{}
+			negUsage := metricscollector.NegServiceState{}
 			controller.mergeVmIpNEGsPortInfo(tc.svc, types.NamespacedName{Namespace: tc.svc.Namespace, Name: tc.svc.Name}, portInfoMap, &negUsage, tc.networkInfo)
 			if tc.wantSvcPortMap == nil && len(portInfoMap) > 0 {
 				t.Errorf("expected no new data in PortInfoMap but got %+v", portInfoMap)

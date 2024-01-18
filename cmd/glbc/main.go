@@ -366,7 +366,6 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		ctx.NetworkInformer,
 		ctx.GKENetworkParamsInformer,
 		ctx.HasSynced,
-		ctx.ControllerMetrics,
 		ctx.L4Namer,
 		ctx.DefaultBackendSvcPort,
 		negtypes.NewAdapterWithRateLimitSpecs(ctx.Cloud, flags.F.GCERateLimit.Values()),
