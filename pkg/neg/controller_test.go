@@ -462,6 +462,53 @@ func TestEnqueueNodeWithILBSubsetting(t *testing.T) {
 	ensureNodeEnqueue(t, nodeKey, controller)
 }
 
+func TestEnqueueNodeWhenProviderIDPopulated(t *testing.T) {
+	kubeClient := fake.NewSimpleClientset()
+	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
+	controller := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false)
+	stopChan := make(chan struct{}, 1)
+	// start the informer directly, without starting the entire controller.
+	go testContext.NodeInformer.Run(stopChan)
+	defer func() {
+		stopChan <- struct{}{}
+		controller.stop()
+	}()
+	ctx := context.Background()
+	nodeClient := controller.client.CoreV1().Nodes()
+
+	// Add a node without providerID
+	node, err := nodeClient.Create(ctx,
+		&apiv1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-node",
+			},
+		}, metav1.CreateOptions{},
+	)
+	if err != nil {
+		t.Fatalf("Failed to create test node, error - %v", err)
+	}
+	nodeKey, err := cache.DeletionHandlingMetaNamespaceKeyFunc(node)
+	if err != nil {
+		t.Fatalf("Failed to create node key for test node %v, error - %v", node, err)
+	}
+	// sleep for the Informer store to pick this up.
+	time.Sleep(1 * time.Second)
+	if list := testContext.NodeInformer.GetIndexer().List(); len(list) != 1 {
+		t.Errorf("Got nodes list - %v of size %d, want 1 element", list, len(list))
+	}
+	t.Logf("Checking for enqueue of node create event")
+	ensureNodeEnqueue(t, nodeKey, controller)
+
+	// Update the node with providerID
+	node.Spec.ProviderID = "gce://foo-project/zone1/test-node"
+	if _, err = nodeClient.Update(ctx, node, metav1.UpdateOptions{}); err != nil {
+		t.Fatalf("Failed to update test node, error - %v", err)
+	}
+
+	t.Logf("Checking for enqueue of node update event")
+	ensureNodeEnqueue(t, nodeKey, controller)
+}
+
 // TestEnableNEGServiceWithILBIngress tests ILB service with NEG enabled
 func TestEnableNEGServiceWithILBIngress(t *testing.T) {
 	t.Parallel()

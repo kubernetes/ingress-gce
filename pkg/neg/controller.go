@@ -315,6 +315,11 @@ func NewController(
 				logger.Info("Node has changed, enqueueing", "node", currentNode.Name)
 				negController.enqueueNode(currentNode)
 			}
+			// Trigger a sync when node provider ID changed.
+			if oldNode.Spec.ProviderID != currentNode.Spec.ProviderID {
+				logger.Info("Node provider ID changed, enqueueing", "node", currentNode.Name, "old providerID", oldNode.Spec.ProviderID, "new providerID", currentNode.Spec.ProviderID)
+				negController.enqueueNode(currentNode)
+			}
 		},
 	})
 
