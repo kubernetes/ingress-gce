@@ -127,6 +127,7 @@ var (
 		DisableFWEnforcement                     bool
 		EnableIngressRegionalExternal            bool
 		DisableIngressGlobalExternal             bool
+		NEGLockPhase                             LeaderElectionLockPhase
 	}{
 		GCERateLimitScale: 1.0,
 	}
@@ -159,6 +160,7 @@ func init() {
 	F.NodePortRanges.ports = []string{DefaultNodePortRange}
 	F.GCERateLimit.specs = []string{"alpha.Operations.Get,qps,10,10", "beta.Operations.Get,qps,10,10", "ga.Operations.Get,qps,10,10"}
 	F.LeaderElection = defaultLeaderElectionConfiguration()
+	F.NEGLockPhase = NEGLockPhase0
 }
 
 // Register flags with the command line parser.
@@ -306,6 +308,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.DisableFWEnforcement, "disable-fw-enforcement", false, "Disable Ingress controller to enforce the firewall rules. If set to true, Ingress Controller stops creating GCE firewall rules. We can only enable this if enable-firewall-cr sets to true.")
 	flag.BoolVar(&F.EnableIngressRegionalExternal, "enable-ingress-regional-external", false, "Enable L7 Ingress Regional External.")
 	flag.BoolVar(&F.DisableIngressGlobalExternal, "disable-ingress-global-external", false, "Disable L7 Ingress Global External. Should be used when Regional External is enabled.")
+	flag.Var(&F.NEGLockPhase, "neg-lock-phase", "The phase of resource lock configuration for NEG controller. Default value is neg-p0. Allowed values are neg-p0, neg-p1, and neg-p2. Any other values are treated as neg-p0.")
 }
 
 func Validate() {
@@ -380,4 +383,39 @@ func (c *PortRanges) Values() []string {
 
 func (c *PortRanges) Type() string {
 	return "portRanges"
+}
+
+const (
+	NEGLockPhase0 = LeaderElectionLockPhase("neg-p0")
+	NEGLockPhase1 = LeaderElectionLockPhase("neg-p1")
+	NEGLockPhase2 = LeaderElectionLockPhase("neg-p2")
+)
+
+type LeaderElectionLockPhase string
+
+func (p *LeaderElectionLockPhase) String() string {
+	return string(*p)
+}
+
+func (p *LeaderElectionLockPhase) Set(phase string) error {
+	parts := strings.Split(phase, "-")
+	if parts[0] == "neg" {
+		switch parts[1] {
+		case "p2":
+			*p = NEGLockPhase2
+		case "p1":
+			*p = NEGLockPhase1
+		default:
+			*p = NEGLockPhase0
+		}
+	}
+	return nil
+}
+
+func (p *LeaderElectionLockPhase) Get() any {
+	return *p
+}
+
+func (p *LeaderElectionLockPhase) Type() string {
+	return "leaderElectionLockPhase"
 }
