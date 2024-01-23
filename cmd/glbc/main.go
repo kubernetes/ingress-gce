@@ -416,7 +416,6 @@ func runNEGController(ctx *ingctx.ControllerContext, stopCh chan struct{}) {
 		flags.F.NegGCPeriod,
 		flags.F.NumNegGCWorkers,
 		flags.F.EnableReadinessReflector,
-		flags.F.RunIngressController,
 		flags.F.RunL4Controller || enableNEGsForNetLB,
 		flags.F.EnableNonGCPMode,
 		flags.F.EnableDualStackNEG,
