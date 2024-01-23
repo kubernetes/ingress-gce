@@ -151,6 +151,7 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 	if err != nil {
 		return nil, fmt.Errorf("error getting ipv6 forwarding rule subnet: %w", err)
 	}
+	klog.V(2).Infof("subnetworkURL for service %v/%v: %v", l4netlb.Service.Namespace, l4netlb.Service.Name, subnetworkURL)
 
 	// Determine IP which will be used for this LB. If no forwarding rule has been established
 	// or specified in the Service spec, then requestedIP = "".
@@ -159,7 +160,10 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 		klog.Errorf("ipv6AddressToUse for service %s/%s returned error %v", l4netlb.Service.Namespace, l4netlb.Service.Name, err)
 		return nil, err
 	}
+	klog.V(2).Infof("ipv6AddressToUse for service %v/%v: %v", l4netlb.Service.Namespace, l4netlb.Service.Name, ipv6AddrToUse)
+
 	netTier, isFromAnnotation := utils.GetNetworkTier(l4netlb.Service)
+	klog.V(2).Infof("network tier for service %v/%v: %v, isFromAnnotation: %v", l4netlb.Service.Namespace, l4netlb.Service.Name, netTier, isFromAnnotation)
 
 	// Only for IPv6, address reservation is not supported on Standard Tier
 	if !l4netlb.cloud.IsLegacyNetwork() && netTier == cloud.NetworkTierPremium {
@@ -188,6 +192,7 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 			}
 		}()
 	} else if existingIPv6FwdRule != nil && existingIPv6FwdRule.NetworkTier != netTier.ToGCEValue() {
+		klog.V(2).Infof("deleting forwarding rule for service %v/%v due to network tier mismatch, existing tier: %v, expected tier: %v", l4netlb.Service.Namespace, l4netlb.Service.Name, existingIPv6FwdRule.NetworkTier, netTier)
 		err := l4netlb.forwardingRules.Delete(existingIPv6FwdRule.Name)
 		if err != nil {
 			klog.Errorf("l4netlb.forwardingRules.Delete(%s) returned error %v, want nil", existingIPv6FwdRule.Name, err)
@@ -198,6 +203,7 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 	if err != nil {
 		return nil, fmt.Errorf("l4netlb.buildExpectedIPv6ForwardingRule(%s, %s, %s, %v) returned error %w, want nil", bsLink, ipv6AddrToUse, subnetworkURL, netTier, err)
 	}
+	klog.V(2).Infof("l4netlb.buildExpectedIPv6ForwardingRule(_,_,_,_) for service %v/%v, expectedIPv6FwdRule: %v", l4netlb.Service.Namespace, l4netlb.Service.Name, expectedIPv6FwdRule)
 
 	if existingIPv6FwdRule != nil {
 		if existingIPv6FwdRule.NetworkTier != expectedIPv6FwdRule.NetworkTier {
@@ -309,19 +315,24 @@ func ipv6AddressToUse(cloud *gce.Cloud, svc *corev1.Service, ipv6FwdRule *compos
 	if ipv6AddressFromAnnotation != "" {
 		// Google Cloud stores ipv6 addresses in CIDR form,
 		// but to create static address you need to specify address without range
-		return ipv6AddressWithoutRange(ipv6AddressFromAnnotation), nil
+		addr := ipv6AddressWithoutRange(ipv6AddressFromAnnotation)
+		klog.V(2).Infof("ipv6AddressToUse: using IPv6 Address from annotation: %v", addr)
+		return addr, nil
 	}
 	if ipv6FwdRule == nil {
+		klog.V(2).Info("ipv6AddressToUse: use any IPv6 Address")
 		return "", nil
 	}
 	if requestedSubnet != ipv6FwdRule.Subnetwork {
-		// reset ip address since subnet is being changed.
+		klog.V(2).Info("ipv6AddressToUse: reset IPv6 Address due to changed subnet")
 		return "", nil
 	}
 
 	// Google Cloud creates ipv6 forwarding rules with IPAddress in CIDR form,
 	// but to create static address you need to specify address without range
-	return ipv6AddressWithoutRange(ipv6FwdRule.IPAddress), nil
+	addr := ipv6AddressWithoutRange(ipv6FwdRule.IPAddress)
+	klog.V(2).Infof("ipv6AddressToUse: using IPv6 Address from existing forwarding rule (%v): %v", ipv6FwdRule.Name, addr)
+	return addr, nil
 }
 
 func ipv6AddressWithoutRange(ipv6Address string) string {

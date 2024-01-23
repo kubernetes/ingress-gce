@@ -357,6 +357,11 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 
 	options := l4.getILBOptions()
 	subnetworkURL, err := l4.getServiceSubnetworkURL(options)
+	if err != nil {
+		result.Error = err
+		return result
+	}
+	klog.V(2).Infof("subnetworkURL for service %v/%v: %v", l4.Service.Namespace, l4.Service.Name, subnetworkURL)
 
 	bsName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
 	existingBS, err := l4.backendPool.Get(bsName, meta.VersionGA, l4.scope)
@@ -409,7 +414,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 			return result
 		}
 		expectedIPv6FRName := l4.getIPv6FRName()
-		klog.V(2).Infof("EnsureInternalLoadBalancer(_,  %s/%s), reserve existing IPv6 address before making any changes", svc.Namespace, svc.Name)
+		klog.V(2).Infof("EnsureInternalLoadBalancer(_,  %s/%s), reserve existing IPv6 address '%s' before making any changes", svc.Namespace, svc.Name, ipv6AddrToUse)
 
 		if !l4.cloud.IsLegacyNetwork() {
 			nm := types.NamespacedName{Namespace: l4.Service.Namespace, Name: l4.Service.Name}.String()
