@@ -46,7 +46,7 @@ func RunHTTPServer(healthChecker func() context.HealthCheckResults) {
 	klog.Fatal(http.ListenAndServe(fmt.Sprintf(":%v", flags.F.HealthzPort), nil))
 }
 
-func RunSIGTERMHandler(lbc *controller.LoadBalancerController, deleteAll bool) {
+func RunSIGTERMHandler(lbc *controller.LoadBalancerController) {
 	// Multiple SIGTERMs will get dropped
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, syscall.SIGTERM)
@@ -54,14 +54,8 @@ func RunSIGTERMHandler(lbc *controller.LoadBalancerController, deleteAll bool) {
 	<-signalChan
 	klog.Infof("Received SIGTERM, shutting down")
 
-	// TODO: Better retries than relying on restartPolicy.
-	exitCode := 0
-	if err := lbc.Stop(deleteAll); err != nil {
-		klog.Infof("Error during shutdown %v", err)
-		exitCode = 1
-	}
-	klog.Infof("Exiting with %v", exitCode)
-	os.Exit(exitCode)
+	lbc.Stop()
+	os.Exit(0)
 }
 
 func healthCheckHandler(checker func() context.HealthCheckResults) http.HandlerFunc {

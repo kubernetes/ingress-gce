@@ -299,10 +299,8 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	lbc := controller.NewLoadBalancerController(ctx, stopCh, klog.TODO())
 	if ctx.EnableASMConfigMap {
 		ctx.ASMConfigController.RegisterInformer(ctx.ConfigMapInformer, func() {
-			// We want to trigger a restart, don't have to clean up all the resources.
-			if err := lbc.Stop(false); err != nil {
-				klog.Errorf("Failed to stop the load balancer controller: %v", err)
-			}
+			// We want to trigger a restart.
+			lbc.Stop()
 		})
 	}
 
@@ -333,7 +331,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	if flags.F.EnableNEGController {
 		runNEGController(ctx, stopCh)
 	}
-	go app.RunSIGTERMHandler(lbc, flags.F.DeleteAllOnQuit)
+	go app.RunSIGTERMHandler(lbc)
 
 	go fwc.Run()
 	klog.V(0).Infof("firewall controller started")
