@@ -236,8 +236,11 @@ func main() {
 		runControllers(ctx)
 		return
 	}
+	runControllersLeaderElect(ctx, leaderElectKubeClient, ctx.Recorder(flags.F.LeaderElection.LockObjectNamespace))
+}
 
-	electionConfig, err := makeLeaderElectionConfig(ctx, leaderElectKubeClient, ctx.Recorder(flags.F.LeaderElection.LockObjectNamespace))
+func runControllersLeaderElect(ctx *ingctx.ControllerContext, client clientset.Interface, recorder record.EventRecorder) {
+	electionConfig, err := makeLeaderElectionConfig(ctx, client, recorder)
 	if err != nil {
 		klog.Fatalf("%v", err)
 	}
