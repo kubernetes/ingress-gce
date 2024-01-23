@@ -296,6 +296,7 @@ func makeLeaderElectionConfig(ctx *ingctx.ControllerContext, client clientset.In
 
 func runControllers(ctx *ingctx.ControllerContext) {
 	stopCh := make(chan struct{})
+	var wg sync.WaitGroup
 	var once sync.Once
 	// This ensures that stopCh is only closed once.
 	// Right now, we have two callers.
@@ -322,28 +323,30 @@ func runControllers(ctx *ingctx.ControllerContext) {
 
 	if flags.F.RunL4Controller {
 		l4Controller := l4lb.NewILBController(ctx, stopCh)
-		go l4Controller.Run()
+		go runWithWg(l4Controller.Run, &wg)
 		klog.V(0).Infof("L4 controller started")
 	}
 
 	if flags.F.EnablePSC {
 		pscController := psc.NewController(ctx, stopCh)
-		go pscController.Run()
+		go runWithWg(pscController.Run, &wg)
 		klog.V(0).Infof("PSC Controller started")
 	}
 
 	if flags.F.EnableServiceMetrics {
 		metricsController := servicemetrics.NewController(ctx, flags.F.MetricsExportInterval, stopCh)
-		go metricsController.Run()
+		go runWithWg(metricsController.Run, &wg)
 		klog.V(0).Infof("Service Metrics Controller started")
 	}
 
 	if flags.F.EnableNEGController {
-		runNEGController(ctx, stopCh)
+		negController := createNEGController(ctx, stopCh)
+		go runWithWg(negController.Run, &wg)
+		klog.V(0).Infof("negController started")
 	}
-	go app.RunSIGTERMHandler(closeStopCh)
+	go app.RunSIGTERMHandler(closeStopCh, &wg)
 
-	go fwc.Run()
+	go runWithWg(fwc.Run, &wg)
 	klog.V(0).Infof("firewall controller started")
 
 	ctx.Start(stopCh)
@@ -356,17 +359,18 @@ func runControllers(ctx *ingctx.ControllerContext) {
 			StopCh:       stopCh,
 		}
 		igController := instancegroups.NewController(igControllerParams)
-		go igController.Run()
+		go runWithWg(igController.Run, &wg)
 	}
 
 	// The L4NetLbController will be run when RbsMode flag is Set
 	if flags.F.RunL4NetLBController {
 		l4netlbController := l4lb.NewL4NetLBController(ctx, stopCh)
 
+		go runWithWg(l4netlbController.Run, &wg)
 		klog.V(0).Infof("L4NetLB controller started")
-		go l4netlbController.Run()
 	}
-	go lbc.Run()
+
+	go runWithWg(lbc.Run, &wg)
 	// Keep the program running until TERM signal.
 	<-stopCh
 	for {
@@ -378,7 +382,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	}
 }
 
-func runNEGController(ctx *ingctx.ControllerContext, stopCh <-chan struct{}) {
+func createNEGController(ctx *ingctx.ControllerContext, stopCh <-chan struct{}) *neg.Controller {
 	zoneGetter := ctx.ZoneGetter
 
 	// In NonGCP mode, use the zone specified in gce.conf directly.
@@ -439,7 +443,13 @@ func runNEGController(ctx *ingctx.ControllerContext, stopCh <-chan struct{}) {
 	)
 
 	ctx.AddHealthCheck("neg-controller", negController.IsHealthy)
+	return negController
+}
 
-	go negController.Run()
-	klog.V(0).Infof("negController started")
+// runWithWg is a convenience wrapper that do a wg.Add(1) and runs the given
+// function with a deferred wg.Done()
+func runWithWg(runFunc func(), wg *sync.WaitGroup) {
+	wg.Add(1)
+	defer wg.Done()
+	runFunc()
 }
