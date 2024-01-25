@@ -340,6 +340,7 @@ func (c *Controller) Run(stopCh <-chan struct{}) {
 	defer func() {
 		c.logger.V(2).Info("Shutting down network endpoint group controller")
 		c.stop()
+		c.logger.Info("Network Endpoint Group Controller Shutdown")
 	}()
 
 	go wait.Until(c.serviceWorker, time.Second, stopCh)
@@ -371,7 +372,6 @@ func (c *Controller) IsHealthy() error {
 }
 
 func (c *Controller) stop() {
-	c.logger.V(2).Info("Shutting down network endpoint group controller")
 	c.serviceQueue.ShutDown()
 	c.endpointQueue.ShutDown()
 	c.nodeQueue.ShutDown()
