@@ -60,6 +60,7 @@ type FirewallController struct {
 	nodeLister                    cache.Indexer
 	hasSynced                     func() bool
 	enableIngressRegionalExternal bool
+	stopCh                        chan struct{}
 }
 
 type compositeFirewallPool struct {
@@ -93,7 +94,9 @@ func (comp *compositeFirewallPool) GC() error {
 func NewFirewallController(
 	ctx *context.ControllerContext,
 	portRanges []string,
-	enableCR, disableFWEnforcement, enableRegionalXLB bool) *FirewallController {
+	enableCR, disableFWEnforcement, enableRegionalXLB bool,
+	stopCh chan struct{},
+) *FirewallController {
 
 	compositeFirewallPool := &compositeFirewallPool{}
 	if enableCR {
@@ -112,6 +115,7 @@ func NewFirewallController(
 		nodeLister:                    ctx.NodeInformer.GetIndexer(),
 		hasSynced:                     ctx.HasSynced,
 		enableIngressRegionalExternal: enableRegionalXLB,
+		stopCh:                        stopCh,
 	}
 
 	fwc.queue = utils.NewPeriodicTaskQueue("", "firewall", fwc.sync)
@@ -200,13 +204,18 @@ func (fwc *FirewallController) ToSvcPorts(ings []*v1.Ingress) []utils.ServicePor
 }
 
 func (fwc *FirewallController) Run() {
-	defer fwc.shutdown()
-	fwc.queue.Run()
+	defer func() {
+		klog.Info("Shutting down firewall controller")
+		fwc.shutdown()
+		klog.Info("Firewall controller shut down")
+	}()
+	klog.Info("Starting firewall controller")
+	go fwc.queue.Run()
+	<-fwc.stopCh
 }
 
 // This should only be called when the process is being terminated.
 func (fwc *FirewallController) shutdown() {
-	klog.Infof("Shutting down Firewall Controller")
 	fwc.queue.Shutdown()
 }
 
