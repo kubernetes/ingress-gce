@@ -47,17 +47,19 @@ var (
 		ObjectMeta: metav1.ObjectMeta{Name: "queueKey"},
 	}
 
-	ErrNoILBIngress = errors.New("no ILB Ingress found")
+	ErrNoILBIngress  = errors.New("no ILB Ingress found")
+	ErrNoRXLBIngress = errors.New("no Regional External Ingress found")
 )
 
 // FirewallController synchronizes the firewall rule for all ingresses.
 type FirewallController struct {
-	ctx          *context.ControllerContext
-	firewallPool SingleFirewallPool
-	queue        utils.TaskQueue
-	translator   *translator.Translator
-	nodeLister   cache.Indexer
-	hasSynced    func() bool
+	ctx                           *context.ControllerContext
+	firewallPool                  SingleFirewallPool
+	queue                         utils.TaskQueue
+	translator                    *translator.Translator
+	nodeLister                    cache.Indexer
+	hasSynced                     func() bool
+	enableIngressRegionalExternal bool
 }
 
 type compositeFirewallPool struct {
@@ -91,7 +93,7 @@ func (comp *compositeFirewallPool) GC() error {
 func NewFirewallController(
 	ctx *context.ControllerContext,
 	portRanges []string,
-	enableCR, disableFWEnforcement bool) *FirewallController {
+	enableCR, disableFWEnforcement, enableRegionalXLB bool) *FirewallController {
 
 	compositeFirewallPool := &compositeFirewallPool{}
 	if enableCR {
@@ -104,11 +106,12 @@ func NewFirewallController(
 	}
 
 	fwc := &FirewallController{
-		ctx:          ctx,
-		firewallPool: compositeFirewallPool,
-		translator:   ctx.Translator,
-		nodeLister:   ctx.NodeInformer.GetIndexer(),
-		hasSynced:    ctx.HasSynced,
+		ctx:                           ctx,
+		firewallPool:                  compositeFirewallPool,
+		translator:                    ctx.Translator,
+		nodeLister:                    ctx.NodeInformer.GetIndexer(),
+		hasSynced:                     ctx.HasSynced,
+		enableIngressRegionalExternal: enableRegionalXLB,
 	}
 
 	fwc.queue = utils.NewPeriodicTaskQueue("", "firewall", fwc.sync)
@@ -253,6 +256,17 @@ func (fwc *FirewallController) sync(key string) error {
 	} else {
 		additionalRanges = append(additionalRanges, ilbRange)
 	}
+	if fwc.enableIngressRegionalExternal {
+		rxlbRange, err := fwc.rxlbFirewallSrcRange(gceIngresses)
+		klog.Infof("fwc.rxlbFirewallSrcRange(%+v) = %v, %v", gceIngresses, rxlbRange, err)
+		if err != nil {
+			if err != features.ErrSubnetNotFound && err != ErrNoRXLBIngress {
+				return err
+			}
+		} else {
+			additionalRanges = append(additionalRanges, rxlbRange)
+		}
+	}
 
 	var additionalPorts []string
 	hcPorts := fwc.getCustomHealthCheckPorts(gceSvcPorts)
@@ -294,6 +308,26 @@ func (fwc *FirewallController) ilbFirewallSrcRange(gceIngresses []*v1.Ingress) (
 	}
 
 	return "", ErrNoILBIngress
+}
+
+func (fwc *FirewallController) rxlbFirewallSrcRange(gceIngresses []*v1.Ingress) (string, error) {
+	rxlbEnabled := false
+	for _, ing := range gceIngresses {
+		if utils.IsGCEL7XLBRegionalIngress(ing) {
+			rxlbEnabled = true
+			break
+		}
+	}
+
+	if rxlbEnabled {
+		rxlbSourceRange, err := features.RXLBSubnetSourceRange(fwc.ctx.Cloud, fwc.ctx.Cloud.Region())
+		if err != nil {
+			return "", err
+		}
+		return rxlbSourceRange, nil
+	}
+
+	return "", ErrNoRXLBIngress
 }
 
 func (fwc *FirewallController) getCustomHealthCheckPorts(svcPorts []utils.ServicePort) []string {
