@@ -24,7 +24,6 @@ import (
 	"os"
 	"os/signal"
 	"strings"
-	"sync"
 	"syscall"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -46,7 +45,7 @@ func RunHTTPServer(healthChecker func() context.HealthCheckResults) {
 	klog.Fatal(http.ListenAndServe(fmt.Sprintf(":%v", flags.F.HealthzPort), nil))
 }
 
-func RunSIGTERMHandler(closeStopCh func(), wg *sync.WaitGroup) {
+func RunSIGTERMHandler(closeStopCh func()) {
 	// Multiple SIGTERMs will get dropped
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, syscall.SIGTERM)
@@ -55,11 +54,6 @@ func RunSIGTERMHandler(closeStopCh func(), wg *sync.WaitGroup) {
 	klog.Infof("Received SIGTERM, shutting down")
 
 	closeStopCh()
-	// Wait until all controllers are done with cleanup.
-	klog.Info("Starting to wait for controller cleanup")
-	wg.Wait()
-	klog.Info("Finished waiting for controller cleanup")
-	os.Exit(0)
 }
 
 func healthCheckHandler(checker func() context.HealthCheckResults) http.HandlerFunc {

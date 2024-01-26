@@ -344,7 +344,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		go runWithWg(negController.Run, &wg)
 		klog.V(0).Infof("negController started")
 	}
-	go app.RunSIGTERMHandler(closeStopCh, &wg)
+	go app.RunSIGTERMHandler(closeStopCh)
 
 	go runWithWg(fwc.Run, &wg)
 	klog.V(0).Infof("firewall controller started")
@@ -373,12 +373,24 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	go runWithWg(lbc.Run, &wg)
 	// Keep the program running until TERM signal.
 	<-stopCh
-	for {
-		klog.Warning("Handled quit, awaiting pod deletion.")
-		time.Sleep(30 * time.Second)
-		if ctx.EnableASMConfigMap {
-			return
-		}
+	klog.Warning("Shutdown has been triggered")
+
+	doneCh := make(chan struct{})
+	go func() {
+		defer close(doneCh)
+		// Wait until all controllers are done with cleanup.
+		klog.Info("Starting to wait for controller cleanup")
+		wg.Wait()
+		klog.Info("Finished waiting for controller cleanup")
+	}()
+
+	select {
+	case <-doneCh:
+		klog.Info("Finished cleanup for all controllers, shutting down")
+		return
+	case <-time.After(30 * time.Second):
+		klog.Warning("Reached 30 seconds timeout limit, shutting down")
+		return
 	}
 }
 
