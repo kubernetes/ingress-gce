@@ -256,6 +256,16 @@ var (
 		},
 		[]string{"request", "result"},
 	)
+
+	// NEGLockAvailability tracks the how long has the container been running with NEG resource lock
+	NEGLockAvailability = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      "neg_lock_availability",
+			Help:      "Time in second since the container has been running with NEG resource lock",
+		},
+		[]string{"cluster_type"},
+	)
 )
 
 var register sync.Once
@@ -279,6 +289,7 @@ func RegisterMetrics() {
 		prometheus.MustRegister(GCERequestLatency)
 		prometheus.MustRegister(K8sRequestCount)
 		prometheus.MustRegister(K8sRequestLatency)
+		prometheus.MustRegister(NEGLockAvailability)
 	})
 }
 
@@ -373,6 +384,10 @@ func PublishK8sRequestCountMetrics(start time.Time, requestType string, err erro
 	}
 	K8sRequestLatency.WithLabelValues(requestType, result).Observe(time.Since(start).Seconds())
 	K8sRequestCount.WithLabelValues(requestType, result).Inc()
+}
+
+func PublishNegLockAvailabilityMetrics(clusterType string) {
+	NEGLockAvailability.WithLabelValues(clusterType).Inc()
 }
 
 func getResult(err error) string {

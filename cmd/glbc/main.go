@@ -54,6 +54,7 @@ import (
 	ingctx "k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller"
 	"k8s.io/ingress-gce/pkg/neg"
+	negmetrics "k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 
@@ -430,4 +431,12 @@ func runNEGController(ctx *ingctx.ControllerContext, stopCh <-chan struct{}) {
 
 	go negController.Run()
 	klog.V(0).Infof("negController started")
+}
+
+func collectNEGLockAvailabilityMetrics() {
+	for {
+		negmetrics.PublishNegLockAvailabilityMetrics(flags.F.GKEClusterType)
+		klog.Info("Exported NEG controller lock availability metrics.")
+		time.Sleep(1 * time.Second)
+	}
 }
