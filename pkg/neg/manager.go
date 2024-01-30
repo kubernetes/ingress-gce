@@ -185,7 +185,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 	// Hence, Existing NEG syncer for the service port will always work
 	manager.removeCommonPorts(adds, removes)
 	manager.svcPortMap[key] = newPorts
-	manager.logger.V(3).Info("EnsureSyncer is syncing ports", "service", klog.KRef(namespace, name), "ports", newPorts, "portsToRemove", removes, "portsToAdd", adds)
+	manager.logger.V(3).Info("EnsureSyncer is syncing ports", "service", klog.KRef(namespace, name), "ports", fmt.Sprintf("%v", newPorts), "portsToRemove", fmt.Sprintf("%v", removes), "portsToAdd", fmt.Sprintf("%v", adds))
 
 	errList := []error{}
 	successfulSyncers := 0
