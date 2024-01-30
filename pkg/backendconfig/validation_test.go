@@ -119,7 +119,7 @@ func TestValidateIAP(t *testing.T) {
 			expectError: true,
 		},
 		{
-			desc:     "validation passes",
+			desc:     "secret exists, validation passes",
 			beConfig: defaultBeConfig,
 			init: func(kubeClient kubernetes.Interface) {
 				secret := &v1.Secret{
@@ -183,6 +183,22 @@ func TestValidateIAP(t *testing.T) {
 				L7XLBRegionalEnabled: true,
 			},
 			expectError: true,
+		},
+		{
+			// IAP supports Google OAauth which is specified by not providing a clientID and client secret
+			desc: "oauth credentials are empty, validation passes",
+			beConfig: &backendconfigv1.BackendConfig{
+				ObjectMeta: meta_v1.ObjectMeta{
+					Namespace: "default",
+				},
+				Spec: backendconfigv1.BackendConfigSpec{
+					Iap: &backendconfigv1.IAPConfig{
+						Enabled: true,
+					},
+				},
+			},
+			init:        func(kubeClient kubernetes.Interface) {},
+			expectError: false,
 		},
 	}
 

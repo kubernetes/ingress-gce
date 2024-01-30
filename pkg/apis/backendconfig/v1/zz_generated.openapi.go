@@ -514,7 +514,7 @@ func schema_pkg_apis_backendconfig_v1_IAPConfig(ref common.ReferenceCallback) co
 						},
 					},
 				},
-				Required: []string{"enabled", "oauthclientCredentials"},
+				Required: []string{"enabled"},
 			},
 		},
 		Dependencies: []string{

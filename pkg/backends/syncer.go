@@ -103,13 +103,19 @@ func (s *backendSyncer) ensureBackendService(sp utils.ServicePort) error {
 	needUpdate = ensureDescription(be, &sp) || needUpdate
 	if sp.BackendConfig != nil {
 		needUpdate = features.EnsureCDN(sp, be) || needUpdate
-		needUpdate = features.EnsureIAP(sp, be) || needUpdate
 		needUpdate = features.EnsureTimeout(sp, be) || needUpdate
 		needUpdate = features.EnsureDraining(sp, be) || needUpdate
 		needUpdate = features.EnsureAffinity(sp, be) || needUpdate
 		needUpdate = features.EnsureCustomRequestHeaders(sp, be) || needUpdate
 		needUpdate = features.EnsureCustomResponseHeaders(sp, be) || needUpdate
 		needUpdate = features.EnsureLogging(sp, be) || needUpdate
+
+		updateIAP, err := features.EnsureIAP(sp, be, klog.TODO())
+		if err != nil {
+			klog.Errorf("Errored ensuring IAP: %s", err)
+			return err
+		}
+		needUpdate = updateIAP || needUpdate
 	}
 
 	if needUpdate {
