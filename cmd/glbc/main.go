@@ -310,7 +310,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		klog.Fatalf("We can only disable the ingress controller FW enforcement when enabling the FW CR")
 	}
 
-	fwc := firewalls.NewFirewallController(ctx, flags.F.NodePortRanges.Values(), flags.F.EnableFirewallCR, flags.F.DisableFWEnforcement, ctx.EnableIngressRegionalExternal)
+	fwc := firewalls.NewFirewallController(ctx, flags.F.NodePortRanges.Values(), flags.F.EnableFirewallCR, flags.F.DisableFWEnforcement, ctx.EnableIngressRegionalExternal, stopCh)
 
 	if flags.F.RunL4Controller {
 		l4Controller := l4lb.NewILBController(ctx, stopCh)
