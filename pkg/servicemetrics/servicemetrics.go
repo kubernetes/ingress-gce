@@ -109,14 +109,14 @@ func init() {
 // Controller is the controller that exposes and populates metrics containing various stats about Services in the cluster.
 type Controller struct {
 	ctx             *context.ControllerContext
-	stopCh          chan struct{}
+	stopCh          <-chan struct{}
 	svcQueue        utils.TaskQueue
 	metricsInterval time.Duration
 	serviceInformer cache.SharedIndexInformer
 }
 
 // NewController creates a new Controller.
-func NewController(ctx *context.ControllerContext, exportInterval time.Duration, stopCh chan struct{}) *Controller {
+func NewController(ctx *context.ControllerContext, exportInterval time.Duration, stopCh <-chan struct{}) *Controller {
 	svcMetrics := &Controller{
 		ctx:             ctx,
 		stopCh:          stopCh,

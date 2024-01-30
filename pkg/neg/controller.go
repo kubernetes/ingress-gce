@@ -106,6 +106,7 @@ type Controller struct {
 	// gce-regional-external ingresses
 	enableIngressRegionalExternal bool
 
+	stopCh <-chan struct{}
 	logger klog.Logger
 }
 
@@ -141,6 +142,7 @@ func NewController(
 	lpConfig labels.PodLabelPropagationConfig,
 	enableMultiNetworking bool,
 	enableIngressRegionalExternal bool,
+	stopCh <-chan struct{},
 	logger klog.Logger,
 ) *Controller {
 	logger = logger.WithName("NEGController")
@@ -232,6 +234,7 @@ func NewController(
 		syncerMetrics:                 syncerMetrics,
 		runL4:                         runL4Controller,
 		enableIngressRegionalExternal: enableIngressRegionalExternal,
+		stopCh:                        stopCh,
 		logger:                        logger,
 	}
 	if runIngress {
@@ -330,11 +333,11 @@ func NewController(
 	return negController
 }
 
-func (c *Controller) Run(stopCh <-chan struct{}) {
+func (c *Controller) Run() {
 	wait.PollUntil(5*time.Second, func() (bool, error) {
 		c.logger.V(2).Info("Waiting for initial sync")
 		return c.hasSynced(), nil
-	}, stopCh)
+	}, c.stopCh)
 
 	c.logger.V(2).Info("Starting network endpoint group controller")
 	defer func() {
@@ -343,18 +346,18 @@ func (c *Controller) Run(stopCh <-chan struct{}) {
 		c.logger.Info("Network Endpoint Group Controller Shutdown")
 	}()
 
-	go wait.Until(c.serviceWorker, time.Second, stopCh)
-	go wait.Until(c.endpointWorker, time.Second, stopCh)
-	go wait.Until(c.nodeWorker, time.Second, stopCh)
+	go wait.Until(c.serviceWorker, time.Second, c.stopCh)
+	go wait.Until(c.endpointWorker, time.Second, c.stopCh)
+	go wait.Until(c.nodeWorker, time.Second, c.stopCh)
 	go func() {
 		// Wait for gcPeriod to run the first GC
 		// This is to make sure that all services are fully processed before running GC.
 		time.Sleep(c.gcPeriod)
-		wait.Until(c.gc, c.gcPeriod, stopCh)
+		wait.Until(c.gc, c.gcPeriod, c.stopCh)
 	}()
-	go c.reflector.Run(stopCh)
-	go c.syncerMetrics.Run(stopCh)
-	<-stopCh
+	go c.reflector.Run(c.stopCh)
+	go c.syncerMetrics.Run(c.stopCh)
+	<-c.stopCh
 }
 
 func (c *Controller) IsHealthy() error {

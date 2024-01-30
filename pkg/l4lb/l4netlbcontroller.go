@@ -62,7 +62,7 @@ type L4NetLBController struct {
 	serviceLister   cache.Indexer
 	nodeLister      listers.NodeLister
 	networkResolver network.Resolver
-	stopCh          chan struct{}
+	stopCh          <-chan struct{}
 
 	zoneGetter *zonegetter.ZoneGetter
 	namer      namer.L4ResourcesNamer
@@ -83,7 +83,7 @@ type L4NetLBController struct {
 // NewL4NetLBController creates a controller for l4 external loadbalancer.
 func NewL4NetLBController(
 	ctx *context.ControllerContext,
-	stopCh chan struct{}) *L4NetLBController {
+	stopCh <-chan struct{}) *L4NetLBController {
 	if ctx.NumL4NetLBWorkers <= 0 {
 		klog.Infof("External L4 worker count has not been set, setting to 1")
 		ctx.NumL4NetLBWorkers = 1
