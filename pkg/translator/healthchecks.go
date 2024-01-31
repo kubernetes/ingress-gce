@@ -107,15 +107,15 @@ type HealthCheck struct {
 	healthcheckInfo healthcheck.HealthcheckInfo
 }
 
-func (hc *HealthCheck) SetHealthcheckInfo(ci healthcheck.ClusterInfo, si healthcheck.ServiceInfo) {
+func (hc *HealthCheck) SetHealthcheckInfo(ci healthcheck.ClusterInfo, si healthcheck.ServiceInfo, spLogger klog.Logger) {
 	hc.healthcheckInfo.ClusterInfo = ci
 	hc.healthcheckInfo.ServiceInfo = si
-	hc.reconcileHCDescription()
+	hc.reconcileHCDescription(spLogger)
 }
 
-func (hc *HealthCheck) reconcileHCDescription() {
+func (hc *HealthCheck) reconcileHCDescription(spLogger klog.Logger) {
 	if (flags.F.EnableUpdateCustomHealthCheckDescription && hc.healthcheckInfo.HealthcheckConfig == healthcheck.BackendConfigHC) || hc.healthcheckInfo.HealthcheckConfig == healthcheck.TransparentHC {
-		hc.Description = hc.healthcheckInfo.GenerateHealthcheckDescription()
+		hc.Description = hc.healthcheckInfo.GenerateHealthcheckDescription(spLogger)
 	}
 }
 
@@ -228,7 +228,7 @@ func (hc *HealthCheck) Version() meta.Version {
 }
 
 // OverwriteWithTHC applies the standard values for Transparent Health Checks.
-func OverwriteWithTHC(hc *HealthCheck, port int64) {
+func OverwriteWithTHC(hc *HealthCheck, port int64, spLogger klog.Logger) {
 	hc.CheckIntervalSec = int64(thcCheckInterval.Seconds())
 	hc.TimeoutSec = int64(thcTimeout.Seconds())
 	hc.UnhealthyThreshold = defaultUnhealthyThreshold
@@ -239,10 +239,10 @@ func OverwriteWithTHC(hc *HealthCheck, port int64) {
 	hc.Port = port
 	hc.RequestPath = thcRequestPath
 	hc.healthcheckInfo.HealthcheckConfig = healthcheck.TransparentHC
-	hc.reconcileHCDescription()
+	hc.reconcileHCDescription(spLogger)
 }
 
-func (hc *HealthCheck) UpdateFromBackendConfig(c *backendconfigv1.HealthCheckConfig) {
+func (hc *HealthCheck) UpdateFromBackendConfig(c *backendconfigv1.HealthCheckConfig, hcLogger klog.Logger) {
 	if c.CheckIntervalSec != nil {
 		hc.CheckIntervalSec = *c.CheckIntervalSec
 	}
@@ -267,11 +267,12 @@ func (hc *HealthCheck) UpdateFromBackendConfig(c *backendconfigv1.HealthCheckCon
 		hc.PortSpecification = "USE_FIXED_PORT"
 	}
 	hc.healthcheckInfo.HealthcheckConfig = healthcheck.BackendConfigHC
-	hc.reconcileHCDescription()
+	hc.reconcileHCDescription(hcLogger)
 }
 
 // DefaultHealthCheck simply returns the default health check.
-func DefaultHealthCheck(port int64, protocol annotations.AppProtocol) *HealthCheck {
+func DefaultHealthCheck(port int64, protocol annotations.AppProtocol, spLogger klog.Logger) *HealthCheck {
+	spLogger.Info("DefaultHealthCheck()")
 	httpSettings := computealpha.HTTPHealthCheck{Port: port}
 	hcSettings := computealpha.HealthCheck{
 		// How often to health check.
@@ -292,17 +293,18 @@ func DefaultHealthCheck(port int64, protocol annotations.AppProtocol) *HealthChe
 	}
 }
 
-func DefaultXLBRegionalHealthCheck(protocol annotations.AppProtocol) *HealthCheck {
-	hc := DefaultNEGHealthCheck(protocol)
+func DefaultXLBRegionalHealthCheck(protocol annotations.AppProtocol, spLogger klog.Logger) *HealthCheck {
+	spLogger.Info("DefaultXLBRegionalHealthCheck()")
+	hc := DefaultNEGHealthCheck(protocol, spLogger)
 	hc.Description = DescriptionForDefaultXLBRegionalHealthChecks
 	hc.ForRegionalXLB = true
 	return hc
 }
 
 // DefaultNEGHealthCheck simply returns the default health check.
-func DefaultNEGHealthCheck(protocol annotations.AppProtocol) *HealthCheck {
+func DefaultNEGHealthCheck(protocol annotations.AppProtocol, spLogger klog.Logger) *HealthCheck {
 	httpSettings := computealpha.HTTPHealthCheck{PortSpecification: useServingPortSpecification}
-	klog.V(3).Infof("DefaultNEGHealthCheck(%v)", protocol)
+	spLogger.Info("DefaultNEGHealthCheck()")
 
 	hcSettings := computealpha.HealthCheck{
 		// How often to health check.
@@ -323,9 +325,9 @@ func DefaultNEGHealthCheck(protocol annotations.AppProtocol) *HealthCheck {
 	}
 }
 
-func DefaultILBHealthCheck(protocol annotations.AppProtocol) *HealthCheck {
+func DefaultILBHealthCheck(protocol annotations.AppProtocol, spLogger klog.Logger) *HealthCheck {
 	httpSettings := computealpha.HTTPHealthCheck{PortSpecification: useServingPortSpecification}
-	klog.V(3).Infof("DefaultILBHealthCheck(%v)", protocol)
+	spLogger.Info("DefaultILBHealthCheck()")
 
 	hcSettings := computealpha.HealthCheck{
 		// How often to health check.
@@ -353,7 +355,7 @@ func DefaultILBHealthCheck(protocol annotations.AppProtocol) *HealthCheck {
 //
 // TODO: what if the port changes?
 // TODO: does not handle protocol?
-func ApplyProbeSettingsToHC(p *v1.Probe, hc *HealthCheck) {
+func ApplyProbeSettingsToHC(p *v1.Probe, hc *HealthCheck, spLogger klog.Logger) {
 	if p.ProbeHandler.HTTPGet == nil {
 		return
 	}
@@ -386,5 +388,5 @@ func ApplyProbeSettingsToHC(p *v1.Probe, hc *HealthCheck) {
 
 	hc.Description = DescriptionForHealthChecksFromReadinessProbe
 	hc.healthcheckInfo.HealthcheckConfig = healthcheck.ReadinessProbeHC
-	hc.reconcileHCDescription()
+	hc.reconcileHCDescription(spLogger)
 }

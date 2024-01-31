@@ -18,6 +18,8 @@ package healthcheck
 
 import (
 	"testing"
+
+	"k8s.io/klog/v2"
 )
 
 func TestGenerateClusterDescription(t *testing.T) {
@@ -73,7 +75,7 @@ func TestGenerateHealthcheckDescription(t *testing.T) {
 		"    \"config\": \"Default\"\n" +
 		"}"
 
-	generatedDescription := i.GenerateHealthcheckDescription()
+	generatedDescription := i.GenerateHealthcheckDescription(klog.TODO())
 	if generatedDescription != expectedDescription {
 		t.Errorf("unexpected healthcheck description: wanted %v, but got %v", expectedDescription, generatedDescription)
 	}

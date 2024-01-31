@@ -248,7 +248,8 @@ func (s *backendSyncer) gc(backends []*composite.BackendService, knownPorts sets
 			return err
 		}
 
-		if err := s.healthChecker.Delete(name, scope); err != nil {
+		// TODO(cheungdavid): Replace klog.TODO() with logger from backendSyncer
+		if err := s.healthChecker.Delete(name, scope, klog.TODO()); err != nil {
 			return err
 		}
 	}
@@ -295,7 +296,9 @@ func (s *backendSyncer) ensureHealthCheck(sp utils.ServicePort) (string, error) 
 			return "", fmt.Errorf("Error getting prober: %w", err)
 		}
 	}
-	return s.healthChecker.SyncServicePort(&sp, probe)
+	// TODO(cheungdavid): update to logger from ensureBackendService()
+	// and embed service port information there.
+	return s.healthChecker.SyncServicePort(&sp, probe, klog.TODO())
 }
 
 // getHealthCheckLink gets the Healthcheck link off the BackendService
