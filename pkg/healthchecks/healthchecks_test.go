@@ -128,7 +128,7 @@ func TestHealthCheckAdd(t *testing.T) {
 	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), HealthcheckFlags{})
 
 	sp := &utils.ServicePort{NodePort: 80, Protocol: annotations.ProtocolHTTP, NEGEnabled: false, BackendNamer: testNamer}
-	_, err := healthChecks.SyncServicePort(sp, nil)
+	_, err := healthChecks.SyncServicePort(sp, nil, klog.TODO())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestHealthCheckAdd(t *testing.T) {
 	}
 
 	sp = &utils.ServicePort{NodePort: 443, Protocol: annotations.ProtocolHTTPS, NEGEnabled: false, BackendNamer: testNamer}
-	_, err = healthChecks.SyncServicePort(sp, nil)
+	_, err = healthChecks.SyncServicePort(sp, nil, klog.TODO())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -150,7 +150,7 @@ func TestHealthCheckAdd(t *testing.T) {
 	}
 
 	sp = &utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP2, NEGEnabled: false, BackendNamer: testNamer}
-	_, err = healthChecks.SyncServicePort(sp, nil)
+	_, err = healthChecks.SyncServicePort(sp, nil, klog.TODO())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestHealthCheckAdd(t *testing.T) {
 	}
 
 	sp = &utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP, NEGEnabled: false, BackendNamer: testNamer, THCConfiguration: utils.THCConfiguration{THCOptInOnSvc: true}}
-	_, err = healthChecks.SyncServicePort(sp, nil)
+	_, err = healthChecks.SyncServicePort(sp, nil, klog.TODO())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 
 	// HTTP
 	// Manually insert a health check
-	httpHC := translator.DefaultHealthCheck(3000, annotations.ProtocolHTTP)
+	httpHC := translator.DefaultHealthCheck(3000, annotations.ProtocolHTTP, klog.TODO())
 	httpHC.Name = testNamer.IGBackend(3000)
 	httpHC.RequestPath = "/my-probes-health"
 	v1hc, err := httpHC.ToComputeHealthCheck()
@@ -189,7 +189,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 
 	sp := &utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP, NEGEnabled: false, BackendNamer: testNamer}
 	// Should not fail adding the same type of health check
-	_, err = healthChecks.SyncServicePort(sp, nil)
+	_, err = healthChecks.SyncServicePort(sp, nil, klog.TODO())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -201,7 +201,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 
 	// Enable Transparent Health Checks
 	sp = &utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP, NEGEnabled: false, BackendNamer: testNamer, THCConfiguration: utils.THCConfiguration{THCOptInOnSvc: true}}
-	_, err = healthChecks.SyncServicePort(sp, nil)
+	_, err = healthChecks.SyncServicePort(sp, nil, klog.TODO())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -213,7 +213,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 
 	// HTTPS
 	// Manually insert a health check
-	httpsHC := translator.DefaultHealthCheck(4000, annotations.ProtocolHTTPS)
+	httpsHC := translator.DefaultHealthCheck(4000, annotations.ProtocolHTTPS, klog.TODO())
 	httpsHC.Name = testNamer.IGBackend(4000)
 	httpsHC.RequestPath = "/my-probes-health"
 	v1hc, err = httpHC.ToComputeHealthCheck()
@@ -223,7 +223,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 	fakeGCE.CreateHealthCheck(v1hc)
 
 	sp = &utils.ServicePort{NodePort: 4000, Protocol: annotations.ProtocolHTTPS, NEGEnabled: false, BackendNamer: testNamer}
-	_, err = healthChecks.SyncServicePort(sp, nil)
+	_, err = healthChecks.SyncServicePort(sp, nil, klog.TODO())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -235,7 +235,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 
 	// HTTP2
 	// Manually insert a health check
-	http2 := translator.DefaultHealthCheck(5000, annotations.ProtocolHTTP2)
+	http2 := translator.DefaultHealthCheck(5000, annotations.ProtocolHTTP2, klog.TODO())
 	http2.Name = testNamer.IGBackend(5000)
 	http2.RequestPath = "/my-probes-health"
 	v1hc, err = httpHC.ToComputeHealthCheck()
@@ -245,7 +245,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 	fakeGCE.CreateHealthCheck(v1hc)
 
 	sp = &utils.ServicePort{NodePort: 5000, Protocol: annotations.ProtocolHTTPS, NEGEnabled: false, BackendNamer: testNamer}
-	_, err = healthChecks.SyncServicePort(sp, nil)
+	_, err = healthChecks.SyncServicePort(sp, nil, klog.TODO())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -261,7 +261,7 @@ func TestHealthCheckDelete(t *testing.T) {
 	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), HealthcheckFlags{})
 
 	// Create HTTP HC for 1234
-	hc := translator.DefaultHealthCheck(1234, annotations.ProtocolHTTP)
+	hc := translator.DefaultHealthCheck(1234, annotations.ProtocolHTTP, klog.TODO())
 	hc.Name = testNamer.IGBackend(1234)
 	v1hc, err := hc.ToComputeHealthCheck()
 	if err != nil {
@@ -274,7 +274,7 @@ func TestHealthCheckDelete(t *testing.T) {
 	fakeGCE.CreateHealthCheck(v1hc)
 
 	// Delete only HTTP 1234
-	err = healthChecks.Delete(testNamer.IGBackend(1234), meta.Global)
+	err = healthChecks.Delete(testNamer.IGBackend(1234), meta.Global, klog.TODO())
 	if err != nil {
 		t.Errorf("unexpected error when deleting health check, err: %v", err)
 	}
@@ -291,7 +291,7 @@ func TestHTTP2HealthCheckDelete(t *testing.T) {
 	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), HealthcheckFlags{})
 
 	// Create HTTP2 HC for 1234
-	hc := translator.DefaultHealthCheck(1234, annotations.ProtocolHTTP2)
+	hc := translator.DefaultHealthCheck(1234, annotations.ProtocolHTTP2, klog.TODO())
 	hc.Name = testNamer.IGBackend(1234)
 
 	alphahc, err := hc.ToAlphaComputeHealthCheck()
@@ -301,7 +301,7 @@ func TestHTTP2HealthCheckDelete(t *testing.T) {
 	fakeGCE.CreateAlphaHealthCheck(alphahc)
 
 	// Delete only HTTP2 1234
-	err = healthChecks.Delete(testNamer.IGBackend(1234), meta.Global)
+	err = healthChecks.Delete(testNamer.IGBackend(1234), meta.Global, klog.TODO())
 	if err != nil {
 		t.Errorf("unexpected error when deleting health check, err: %v", err)
 	}
@@ -331,10 +331,11 @@ func TestRegionalHealthCheckDelete(t *testing.T) {
 			L7ILBEnabled: true,
 			BackendNamer: testNamer,
 		},
+		klog.TODO(),
 	)
 	hcName := testNamer.NEG("ns2", "svc2", 80)
 
-	if err := healthChecks.create(hc, nil); err != nil {
+	if err := healthChecks.create(hc, nil, klog.TODO()); err != nil {
 		t.Fatalf("healthchecks.Create(%q) = %v, want nil", hc.Name, err)
 	}
 
@@ -349,7 +350,7 @@ func TestRegionalHealthCheckDelete(t *testing.T) {
 	}
 
 	// Delete HTTP health-check.
-	if err = healthChecks.Delete(hcName, meta.Regional); err != nil {
+	if err = healthChecks.Delete(hcName, meta.Regional, klog.TODO()); err != nil {
 		t.Errorf("healthchecks.Delete(%q, %q) = %v, want nil", hcName, meta.Regional, err)
 	}
 
@@ -409,7 +410,7 @@ func TestNewHealthCheckFromServicePort(t *testing.T) {
 			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 			healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, NewFakeRecorderGetter(0), NewFakeServiceGetter(), HealthcheckFlags{})
 
-			gotHC := healthChecks.new(tc.servicePort)
+			gotHC := healthChecks.new(tc.servicePort, klog.TODO())
 			if diff := cmp.Diff(tc.wantHC, gotHC, cmpopts.IgnoreUnexported(translator.HealthCheck{})); diff != "" {
 				t.Errorf("HealthCheck not equal to expected: (-want +got):\n%s", diff)
 			}
@@ -429,7 +430,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 
 	// HTTP
 	// Manually insert a health check
-	hc := translator.DefaultHealthCheck(3000, annotations.ProtocolHTTP)
+	hc := translator.DefaultHealthCheck(3000, annotations.ProtocolHTTP, klog.TODO())
 	hc.Name = testNamer.IGBackend(3000)
 	hc.RequestPath = "/my-probes-health"
 	v1hc, err := hc.ToComputeHealthCheck()
@@ -439,20 +440,20 @@ func TestHealthCheckUpdate(t *testing.T) {
 	fakeGCE.CreateHealthCheck(v1hc)
 
 	// Verify the health check exists
-	_, err = healthChecks.Get(hc.Name, meta.VersionGA, meta.Global)
+	_, err = healthChecks.Get(hc.Name, meta.VersionGA, meta.Global, klog.TODO())
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
 
 	// Change to HTTPS
 	hc.Type = string(annotations.ProtocolHTTPS)
-	_, err = healthChecks.sync(hc, nil, utils.THCConfiguration{})
+	_, err = healthChecks.sync(hc, nil, utils.THCConfiguration{}, klog.TODO())
 	if err != nil {
 		t.Fatalf("unexpected err while syncing healthcheck, err %v", err)
 	}
 
 	// Verify the health check exists
-	_, err = healthChecks.Get(hc.Name, meta.VersionGA, meta.Global)
+	_, err = healthChecks.Get(hc.Name, meta.VersionGA, meta.Global, klog.TODO())
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
@@ -464,13 +465,13 @@ func TestHealthCheckUpdate(t *testing.T) {
 
 	// Change to HTTP2
 	hc.Type = string(annotations.ProtocolHTTP2)
-	_, err = healthChecks.sync(hc, nil, utils.THCConfiguration{})
+	_, err = healthChecks.sync(hc, nil, utils.THCConfiguration{}, klog.TODO())
 	if err != nil {
 		t.Fatalf("unexpected err while syncing healthcheck, err %v", err)
 	}
 
 	// Verify the health check exists. HTTP2 is alpha-only.
-	_, err = healthChecks.Get(hc.Name, meta.VersionAlpha, meta.Global)
+	_, err = healthChecks.Get(hc.Name, meta.VersionAlpha, meta.Global, klog.TODO())
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
@@ -483,14 +484,14 @@ func TestHealthCheckUpdate(t *testing.T) {
 	// Change to NEG Health Check
 	hc.ForNEG = true
 	hc.PortSpecification = "USE_SERVING_PORT"
-	_, err = healthChecks.sync(hc, nil, utils.THCConfiguration{})
+	_, err = healthChecks.sync(hc, nil, utils.THCConfiguration{}, klog.TODO())
 
 	if err != nil {
 		t.Fatalf("unexpected err while syncing healthcheck, err %v", err)
 	}
 
 	// Verify the health check exists.
-	hc, err = healthChecks.Get(hc.Name, meta.VersionAlpha, meta.Global)
+	hc, err = healthChecks.Get(hc.Name, meta.VersionAlpha, meta.Global, klog.TODO())
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
@@ -504,13 +505,13 @@ func TestHealthCheckUpdate(t *testing.T) {
 	hc.Port = 3000
 	hc.PortSpecification = ""
 
-	_, err = healthChecks.sync(hc, nil, utils.THCConfiguration{})
+	_, err = healthChecks.sync(hc, nil, utils.THCConfiguration{}, klog.TODO())
 	if err != nil {
 		t.Fatalf("unexpected err while syncing healthcheck, err %v", err)
 	}
 
 	// Verify the health check exists.
-	hc, err = healthChecks.Get(hc.Name, meta.VersionAlpha, meta.Global)
+	hc, err = healthChecks.Get(hc.Name, meta.VersionAlpha, meta.Global, klog.TODO())
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
@@ -538,7 +539,7 @@ func TestEnableTHC(t *testing.T) {
 
 	// HTTP
 	// Manually insert a health check
-	hc := translator.DefaultHealthCheck(3000, annotations.ProtocolHTTP)
+	hc := translator.DefaultHealthCheck(3000, annotations.ProtocolHTTP, klog.TODO())
 	hc.Name = testNamer.IGBackend(3000)
 	hc.RequestPath = "/my-probes-health"
 	v1hc, err := hc.ToComputeHealthCheck()
@@ -548,7 +549,7 @@ func TestEnableTHC(t *testing.T) {
 	fakeGCE.CreateHealthCheck(v1hc)
 
 	// Verify the health check exists
-	initialObtainedHC, err := healthChecks.Get(hc.Name, meta.VersionGA, meta.Global)
+	initialObtainedHC, err := healthChecks.Get(hc.Name, meta.VersionGA, meta.Global, klog.TODO())
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
@@ -559,23 +560,23 @@ func TestEnableTHC(t *testing.T) {
 	wantHC.UnhealthyThreshold = 10
 	wantHC.HealthyThreshold = 1
 	wantHC.Type = "HTTP"
-	wantHC.Description = (&healthcheck.HealthcheckInfo{HealthcheckConfig: healthcheck.TransparentHC}).GenerateHealthcheckDescription()
+	wantHC.Description = (&healthcheck.HealthcheckInfo{HealthcheckConfig: healthcheck.TransparentHC}).GenerateHealthcheckDescription(klog.TODO())
 	wantHC.RequestPath = "/api/podhealth"
 	wantHC.Port = thcPort
 	wantHC.PortSpecification = "USE_FIXED_PORT"
 
 	oldName := hc.Name
 	hc = &translator.HealthCheck{}
-	translator.OverwriteWithTHC(hc, thcPort)
+	translator.OverwriteWithTHC(hc, thcPort, klog.TODO())
 	hc.Name = oldName
 	// Enable Transparent Health Checks
-	_, err = healthChecks.sync(hc, nil, utils.THCConfiguration{THCOptInOnSvc: true})
+	_, err = healthChecks.sync(hc, nil, utils.THCConfiguration{THCOptInOnSvc: true}, klog.TODO())
 	if err != nil {
 		t.Fatalf("unexpected err while syncing healthcheck, err %v", err)
 	}
 
 	// Verify the health check exists
-	obtainedHC, err := healthChecks.Get(hc.Name, meta.VersionGA, meta.Global)
+	obtainedHC, err := healthChecks.Get(hc.Name, meta.VersionGA, meta.Global, klog.TODO())
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
@@ -606,7 +607,7 @@ func TestEmitTHCEvents(t *testing.T) {
 	fakeSingletonRecorderGetter := NewFakeSingletonRecorderGetter(10)
 	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, fakeSingletonRecorderGetter, NewFakeServiceGetter(), HealthcheckFlags{})
 
-	hc := translator.DefaultHealthCheck(3000, annotations.ProtocolHTTP)
+	hc := translator.DefaultHealthCheck(3000, annotations.ProtocolHTTP, klog.TODO())
 	hc.Service = &v1.Service{}
 
 	type tc = struct {
@@ -639,7 +640,7 @@ func TestEmitTHCEvents(t *testing.T) {
 
 	fakeRecorder := fakeSingletonRecorderGetter.FakeRecorder()
 	for _, tc := range testCases {
-		healthChecks.emitTHCEvents(hc, tc.events)
+		healthChecks.emitTHCEvents(hc, tc.events, klog.TODO())
 		for _, wantText := range tc.wantTexts {
 			select {
 			case output := <-fakeRecorder.Events:
@@ -692,7 +693,7 @@ func TestRolloutUpdateCustomHCDescription(t *testing.T) {
 	fakeSingletonRecorderGetter := NewFakeSingletonRecorderGetter(1)
 	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc, fakeSingletonRecorderGetter, NewFakeServiceGetter(), HealthcheckFlags{})
 
-	_, err := healthChecks.SyncServicePort(defaultSP, nil)
+	_, err := healthChecks.SyncServicePort(defaultSP, nil, klog.TODO())
 	if err != nil {
 		t.Fatalf("unexpected err while syncing healthcheck, err %v", err)
 	}
@@ -704,7 +705,7 @@ func TestRolloutUpdateCustomHCDescription(t *testing.T) {
 			outputDefaultHC.Description, translator.DescriptionForDefaultHealthChecks)
 	}
 
-	_, err = healthChecks.SyncServicePort(backendConfigSP, nil)
+	_, err = healthChecks.SyncServicePort(backendConfigSP, nil, klog.TODO())
 	if err != nil {
 		t.Fatalf("unexpected err while syncing healthcheck, err %v", err)
 	}
@@ -721,7 +722,7 @@ func TestRolloutUpdateCustomHCDescription(t *testing.T) {
 	// Modify the flag and see what happens.
 	flags.F.EnableUpdateCustomHealthCheckDescription = true
 
-	_, err = healthChecks.SyncServicePort(backendConfigSP, nil)
+	_, err = healthChecks.SyncServicePort(backendConfigSP, nil, klog.TODO())
 	if err != nil {
 		t.Fatalf("unexpected err while syncing healthcheck, err %v", err)
 	}
@@ -913,11 +914,11 @@ func TestApplyProbeSettingsToHC(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			var got *translator.HealthCheck
 			if tc.neg {
-				got = translator.DefaultNEGHealthCheck(annotations.ProtocolHTTP)
+				got = translator.DefaultNEGHealthCheck(annotations.ProtocolHTTP, klog.TODO())
 			} else {
-				got = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+				got = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP, klog.TODO())
 			}
-			translator.ApplyProbeSettingsToHC(tc.probe, got)
+			translator.ApplyProbeSettingsToHC(tc.probe, got, klog.TODO())
 
 			if got.Host != tc.want.host {
 				t.Errorf("got.Host = %q, want %q", got.Host, tc.want.host)
@@ -951,137 +952,137 @@ func TestCalculateDiff(t *testing.T) {
 	cases := []tc{
 		{
 			desc: "HTTP, no change",
-			old:  translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
-			new:  translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+			old:  translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP, klog.TODO()),
+			new:  translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP, klog.TODO()),
 		},
 		{
 			desc:    "HTTP => HTTPS",
-			old:     translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
-			new:     translator.DefaultHealthCheck(8080, annotations.ProtocolHTTPS),
+			old:     translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP, klog.TODO()),
+			new:     translator.DefaultHealthCheck(8080, annotations.ProtocolHTTPS, klog.TODO()),
 			hasDiff: true,
 		},
 		{
 			// TODO(bowei) -- this seems wrong.
 			desc: "Port change",
-			old:  translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
-			new:  translator.DefaultHealthCheck(443, annotations.ProtocolHTTP),
+			old:  translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP, klog.TODO()),
+			new:  translator.DefaultHealthCheck(443, annotations.ProtocolHTTP, klog.TODO()),
 			// hasDiff: true
 		},
 		{
 			desc:    "PortSpecification",
-			old:     translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
-			new:     translator.DefaultNEGHealthCheck(annotations.ProtocolHTTP),
+			old:     translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP, klog.TODO()),
+			new:     translator.DefaultNEGHealthCheck(annotations.ProtocolHTTP, klog.TODO()),
 			hasDiff: true,
 		},
 	}
 
 	// TODO(bowei) -- this seems wrong, we should be checking for Port changes.
-	newHC := translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+	newHC := translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP, klog.TODO())
 	newHC.Port = 80
 	cases = append(cases, tc{
 		desc: "Port",
-		old:  translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		old:  translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP, klog.TODO()),
 		new:  newHC,
 		// hasDiff: true
 	})
 
-	newHC = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+	newHC = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP, klog.TODO())
 	newHC.CheckIntervalSec = 1000
 	cases = append(cases, tc{
 		desc: "ignore changes without backend config",
-		old:  translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		old:  translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP, klog.TODO()),
 		new:  newHC,
 	})
 
 	i64 := func(i int64) *int64 { return &i }
 	s := func(s string) *string { return &s }
 
-	newHC = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+	newHC = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP, klog.TODO())
 	newHC.CheckIntervalSec = 1000
 	cases = append(cases, tc{
 		desc:    "CheckIntervalSec",
-		old:     translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		old:     translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP, klog.TODO()),
 		new:     newHC,
 		c:       &backendconfigv1.HealthCheckConfig{CheckIntervalSec: i64(1000)},
 		hasDiff: true,
 	})
 
-	newHC = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+	newHC = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP, klog.TODO())
 	newHC.TimeoutSec = 1000
 	cases = append(cases, tc{
 		desc:    "TimeoutSec",
-		old:     translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		old:     translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP, klog.TODO()),
 		new:     newHC,
 		c:       &backendconfigv1.HealthCheckConfig{TimeoutSec: i64(1000)},
 		hasDiff: true,
 	})
 
-	newHC = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+	newHC = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP, klog.TODO())
 	newHC.HealthyThreshold = 1000
 	cases = append(cases, tc{
 		desc:    "HealthyThreshold",
-		old:     translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		old:     translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP, klog.TODO()),
 		new:     newHC,
 		c:       &backendconfigv1.HealthCheckConfig{HealthyThreshold: i64(1000)},
 		hasDiff: true,
 	})
 
-	newHC = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+	newHC = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP, klog.TODO())
 	newHC.UnhealthyThreshold = 1000
 	cases = append(cases, tc{
 		desc:    "UnhealthyThreshold",
-		old:     translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		old:     translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP, klog.TODO()),
 		new:     newHC,
 		c:       &backendconfigv1.HealthCheckConfig{UnhealthyThreshold: i64(1000)},
 		hasDiff: true,
 	})
 
-	newHC = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+	newHC = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP, klog.TODO())
 	newHC.RequestPath = "/foo"
 	cases = append(cases, tc{
 		desc:    "RequestPath",
-		old:     translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		old:     translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP, klog.TODO()),
 		new:     newHC,
 		c:       &backendconfigv1.HealthCheckConfig{RequestPath: s("/foo")},
 		hasDiff: true,
 	})
 
-	newHC = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+	newHC = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP, klog.TODO())
 	newHC.RequestPath = "/foo"
 	cases = append(cases, tc{
 		desc: "non-backendconfig field is not a diff",
-		old:  translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		old:  translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP, klog.TODO()),
 		new:  newHC,
 		c:    &backendconfigv1.HealthCheckConfig{},
 	})
 
-	newHC = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+	newHC = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP, klog.TODO())
 	newHC.Description = translator.DescriptionForHealthChecksFromBackendConfig
 	cases = append(cases, tc{
 		desc:     "hc with empty backendconfig and appropriate Description is a diff",
-		old:      translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		old:      translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP, klog.TODO()),
 		new:      newHC,
 		c:        &backendconfigv1.HealthCheckConfig{},
 		hasDiff:  true,
 		diffSize: i64(1),
 	})
 
-	newHC = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+	newHC = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP, klog.TODO())
 	newHC.TimeoutSec = 1000
 	newHC.RequestPath = "/foo"
 	cases = append(cases, tc{
 		desc:    "multiple changes",
-		old:     translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		old:     translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP, klog.TODO()),
 		new:     newHC,
 		c:       &backendconfigv1.HealthCheckConfig{TimeoutSec: i64(1000), RequestPath: s("/foo")},
 		hasDiff: true,
 	})
 
-	newHC = translator.DefaultHealthCheck(500, annotations.ProtocolHTTP)
+	newHC = translator.DefaultHealthCheck(500, annotations.ProtocolHTTP, klog.TODO())
 	newHC.Port = 500
 	cases = append(cases, tc{
 		desc:    "Backendconfig Port",
-		old:     translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		old:     translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP, klog.TODO()),
 		new:     newHC,
 		c:       &backendconfigv1.HealthCheckConfig{Port: i64(500)},
 		hasDiff: true,
@@ -1158,7 +1159,7 @@ func (*syncSPFixture) bchc() *compute.HealthCheck {
 			RequestPath: "/foo",
 			Host:        "foo.com",
 		},
-		Description: (&healthcheck.HealthcheckInfo{HealthcheckConfig: healthcheck.BackendConfigHC}).GenerateHealthcheckDescription(),
+		Description: (&healthcheck.HealthcheckInfo{HealthcheckConfig: healthcheck.BackendConfigHC}).GenerateHealthcheckDescription(klog.TODO()),
 	}
 }
 
@@ -1807,7 +1808,7 @@ func TestSyncServicePort(t *testing.T) {
 				THCPort: 7877,
 			})
 
-			gotSelfLink, err := hcs.SyncServicePort(tc.sp, tc.probe)
+			gotSelfLink, err := hcs.SyncServicePort(tc.sp, tc.probe, klog.TODO())
 			if gotErr := err != nil; gotErr != tc.wantErr {
 				t.Errorf("hcs.SyncServicePort(tc.sp, tc.probe) = _, %v; gotErr = %t, want %t\nsp = %s\nprobe = %s", err, gotErr, tc.wantErr, pretty.Sprint(tc.sp), pretty.Sprint(tc.probe))
 			}
@@ -1853,7 +1854,7 @@ func TestSyncServicePort(t *testing.T) {
 				return nil
 			}
 
-			gotSelfLink, err = hcs.SyncServicePort(tc.sp, tc.probe)
+			gotSelfLink, err = hcs.SyncServicePort(tc.sp, tc.probe, klog.TODO())
 			if gotErr := err != nil; gotErr != tc.wantErr {
 				t.Errorf("hcs.SyncServicePort(tc.sp, tc.probe) = %v; gotErr = %t, want %t\nsp = %s\nprobe = %s", err, gotErr, tc.wantErr, pretty.Sprint(tc.sp), pretty.Sprint(tc.probe))
 			}
@@ -1956,7 +1957,7 @@ func TestCustomHealthcheckRemoval(t *testing.T) {
 	// Update hc from BackendConfig with only interval specified to Default.
 	chc = fixture.hc()
 	chc.CheckIntervalSec = 17
-	chc.Description = (&healthcheck.HealthcheckInfo{HealthcheckConfig: healthcheck.BackendConfigHC}).GenerateHealthcheckDescription()
+	chc.Description = (&healthcheck.HealthcheckInfo{HealthcheckConfig: healthcheck.BackendConfigHC}).GenerateHealthcheckDescription(klog.TODO())
 	wantCHC = fixture.hc()
 	cases = append(cases, &tc{
 		desc:                "update hc from BackendConfig to Default",
@@ -1970,7 +1971,7 @@ func TestCustomHealthcheckRemoval(t *testing.T) {
 	// Update hc from BackendConfig to NEG.
 	chc = fixture.neg()
 	chc.CheckIntervalSec = 17
-	chc.Description = (&healthcheck.HealthcheckInfo{HealthcheckConfig: healthcheck.BackendConfigHC}).GenerateHealthcheckDescription()
+	chc.Description = (&healthcheck.HealthcheckInfo{HealthcheckConfig: healthcheck.BackendConfigHC}).GenerateHealthcheckDescription(klog.TODO())
 	wantCHC = fixture.neg()
 	cases = append(cases, &tc{
 		desc:                "update hc from BackendConfig to NEG",
@@ -1983,7 +1984,7 @@ func TestCustomHealthcheckRemoval(t *testing.T) {
 
 	// Update hc from BackendConfig to ReadinessProbe.
 	chc = fixture.neg()
-	chc.Description = (&healthcheck.HealthcheckInfo{HealthcheckConfig: healthcheck.BackendConfigHC}).GenerateHealthcheckDescription()
+	chc.Description = (&healthcheck.HealthcheckInfo{HealthcheckConfig: healthcheck.BackendConfigHC}).GenerateHealthcheckDescription(klog.TODO())
 	wantCHC = fixture.neg()
 	wantCHC.HttpHealthCheck.RequestPath = "/foo"
 	wantCHC.HttpHealthCheck.Host = "foo.com"
@@ -2120,7 +2121,7 @@ func TestCustomHealthcheckRemoval(t *testing.T) {
 				THCPort: 7877,
 			})
 
-			gotSelfLink, err := hcs.SyncServicePort(&tc.sp, tc.probe)
+			gotSelfLink, err := hcs.SyncServicePort(&tc.sp, tc.probe, klog.TODO())
 			if gotErr := err != nil; gotErr != tc.wantErr {
 				t.Errorf("hcs.SyncServicePort(tc.sp, tc.probe) = _, %v; gotErr = %t, want %t\nsp = %s\nprobe = %s", err, gotErr, tc.wantErr, pretty.Sprint(tc.sp), pretty.Sprint(tc.probe))
 			}
@@ -2159,7 +2160,7 @@ func TestCustomHealthcheckRemoval(t *testing.T) {
 				return nil
 			}
 
-			gotSelfLink, err = hcs.SyncServicePort(&tc.sp, tc.probe)
+			gotSelfLink, err = hcs.SyncServicePort(&tc.sp, tc.probe, klog.TODO())
 			if gotErr := err != nil; gotErr != tc.wantErr {
 				t.Errorf("hcs.SyncServicePort(tc.sp, tc.probe) = %v; gotErr = %t, want %t\nsp = %s\nprobe = %s", err, gotErr, tc.wantErr, pretty.Sprint(tc.sp), pretty.Sprint(tc.probe))
 			}

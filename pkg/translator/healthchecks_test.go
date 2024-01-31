@@ -24,6 +24,7 @@ import (
 	computealpha "google.golang.org/api/compute/v0.alpha"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/utils/healthcheck"
+	"k8s.io/klog/v2"
 )
 
 func TestMerge(t *testing.T) {
@@ -97,7 +98,7 @@ func TestOverwriteWithTHC(t *testing.T) {
 			UnhealthyThreshold: 10,
 			HealthyThreshold:   1,
 			Type:               "HTTP",
-			Description:        (&healthcheck.HealthcheckInfo{HealthcheckConfig: healthcheck.TransparentHC}).GenerateHealthcheckDescription(),
+			Description:        (&healthcheck.HealthcheckInfo{HealthcheckConfig: healthcheck.TransparentHC}).GenerateHealthcheckDescription(klog.TODO()),
 		},
 		HTTPHealthCheck: computealpha.HTTPHealthCheck{
 			Port:              7877,
@@ -112,7 +113,7 @@ func TestOverwriteWithTHC(t *testing.T) {
 	hc := &HealthCheck{
 		ForNEG: true,
 	}
-	OverwriteWithTHC(hc, 7877)
+	OverwriteWithTHC(hc, 7877, klog.TODO())
 	if !reflect.DeepEqual(hc, wantHC) {
 		t.Fatalf("Translate healthcheck is:\n%s, want:\n%s", pretty.Sprint(hc), pretty.Sprint(wantHC))
 	}

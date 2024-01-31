@@ -68,14 +68,14 @@ func (i *ServiceInfo) generateK8sResourceDescription() string {
 	return descutils.GenerateK8sResourceLink(i.Namespace, "services", i.Name)
 }
 
-func (i *HealthcheckInfo) GenerateHealthcheckDescription() string {
+func (i *HealthcheckInfo) GenerateHealthcheckDescription(spLogger klog.Logger) string {
 	desc := HealthcheckDesc{}
 	desc.K8sCluster = i.ClusterInfo.generateClusterDescription()
 	desc.K8sResource = i.ServiceInfo.generateK8sResourceDescription()
 	desc.Config = i.HealthcheckConfig
 	json, err := json.MarshalIndent(desc, "", "    ")
 	if err != nil {
-		klog.Error("Failed to marshall HealthcheckDesc %s: %v", desc, err)
+		spLogger.Error(err, "Failed to marshall HealthcheckDesc", "desc", fmt.Sprintf("%+v", desc))
 	}
 	return string(json)
 }

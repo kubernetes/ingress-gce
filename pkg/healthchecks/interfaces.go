@@ -25,6 +25,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog/v2"
 )
 
 // HealthCheckProvider is an interface to manage a single GCE health check.
@@ -53,9 +54,9 @@ type HealthChecker interface {
 	// ServicePort and Pod Probe definition.
 	//
 	// `probe` can be nil if no probe exists.
-	SyncServicePort(sp *utils.ServicePort, probe *v1.Probe) (string, error)
-	Delete(name string, scope meta.KeyType) error
-	Get(name string, version meta.Version, scope meta.KeyType) (*translator.HealthCheck, error)
+	SyncServicePort(sp *utils.ServicePort, probe *v1.Probe, logger klog.Logger) (string, error)
+	Delete(name string, scope meta.KeyType, logger klog.Logger) error
+	Get(name string, version meta.Version, scope meta.KeyType, logger klog.Logger) (*translator.HealthCheck, error)
 }
 
 // ServiceGetter is an interface to retrieve Kubernetes Services.

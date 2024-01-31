@@ -85,31 +85,31 @@ func generateClusterInfo(gceCloud *gce.Cloud) healthcheck.ClusterInfo {
 }
 
 // new returns a *HealthCheck with default settings and specified port/protocol
-func (h *HealthChecks) new(sp utils.ServicePort) *translator.HealthCheck {
+func (h *HealthChecks) new(sp utils.ServicePort, spLogger klog.Logger) *translator.HealthCheck {
 	var hc *translator.HealthCheck
 	if sp.L7XLBRegionalEnabled {
-		hc = translator.DefaultXLBRegionalHealthCheck(sp.Protocol)
+		hc = translator.DefaultXLBRegionalHealthCheck(sp.Protocol, spLogger)
 	} else if sp.L7ILBEnabled {
-		hc = translator.DefaultILBHealthCheck(sp.Protocol)
+		hc = translator.DefaultILBHealthCheck(sp.Protocol, spLogger)
 	} else if sp.NEGEnabled {
-		hc = translator.DefaultNEGHealthCheck(sp.Protocol)
+		hc = translator.DefaultNEGHealthCheck(sp.Protocol, spLogger)
 	} else {
-		hc = translator.DefaultHealthCheck(sp.NodePort, sp.Protocol)
+		hc = translator.DefaultHealthCheck(sp.NodePort, sp.Protocol, spLogger)
 	}
 	// port is the key for retrieving existing health-check
 	// TODO: rename backend-service and health-check to not use port as key
 	hc.Port = sp.NodePort
 	hc.RequestPath = h.pathFromSvcPort(sp)
 	if sp.THCConfiguration.THCOptInOnSvc {
-		translator.OverwriteWithTHC(hc, h.healthcheckFlags.THCPort)
+		translator.OverwriteWithTHC(hc, h.healthcheckFlags.THCPort, spLogger)
 	}
 	hc.Name = sp.BackendName()
-	hc.Service = h.getService(sp)
-	hc.SetHealthcheckInfo(h.clusterInfo, h.generateServiceInfo(sp))
+	hc.Service = h.getService(sp, spLogger)
+	hc.SetHealthcheckInfo(h.clusterInfo, h.generateServiceInfo(sp), spLogger)
 	return hc
 }
 
-func (h *HealthChecks) getService(sp utils.ServicePort) *v1.Service {
+func (h *HealthChecks) getService(sp utils.ServicePort, spLogger klog.Logger) *v1.Service {
 	if !flags.F.EnableUpdateCustomHealthCheckDescription {
 		return nil
 	}
@@ -117,7 +117,7 @@ func (h *HealthChecks) getService(sp utils.ServicePort) *v1.Service {
 	var err error
 	service, err := h.serviceGetter.GetService(namespacedName.Namespace, namespacedName.Name)
 	if err != nil {
-		klog.Warningf("Service %s/%s needed for emitting an event not found (we'll log instead): %v.", namespacedName.Namespace, namespacedName.Name, err)
+		spLogger.Info("Service needed for emitting an event not found (we'll log instead)", "err", err)
 	}
 	return service
 }
@@ -140,60 +140,66 @@ func (h *HealthChecks) generateServiceInfo(sp utils.ServicePort) healthcheck.Ser
 }
 
 // SyncServicePort implements HealthChecker.
-func (h *HealthChecks) SyncServicePort(sp *utils.ServicePort, probe *v1.Probe) (string, error) {
-	klog.Infof("SyncServicePort: sp.ID=%v, sp.NodePort=%v, sp.Port=%v, sp.PortName=%v, sp.THCConfiguration.THCOptInOnSvc=%v, h.thcEnabled=%v.", sp.ID, sp.NodePort, sp.Port, sp.PortName, sp.THCConfiguration.THCOptInOnSvc, h.healthcheckFlags.EnableTHC)
+func (h *HealthChecks) SyncServicePort(sp *utils.ServicePort, probe *v1.Probe, beLogger klog.Logger) (string, error) {
+	spLogger := beLogger.WithValues(
+		"servicePortID", sp.ID,
+		"protocol", sp.Protocol,
+		"serviceNamespace", sp.ID.Service.Namespace,
+		"serviceName", sp.ID.Service.Name,
+	)
+	spLogger.Info("SyncServicePort", "nodePort", sp.NodePort, "portNumber", sp.Port, "portName", sp.PortName, "THCOptInOnSvc", sp.THCConfiguration.THCOptInOnSvc, "enableTHC", h.healthcheckFlags.EnableTHC)
 	if !h.healthcheckFlags.EnableTHC && sp.THCConfiguration.THCOptInOnSvc {
-		klog.Warningf("THC flag disabled for HealthChecks, but ServicePort %v has Transparent Health Checks enabled. Disabling.", sp.ID)
+		spLogger.Info("THC flag disabled for HealthChecks, but ServicePort has Transparent Health Checks enabled. Disabling.")
 		sp.THCConfiguration.THCOptInOnSvc = false
 	}
 	defer func() { sp.THCConfiguration.THCEvents = utils.THCEvents{} }()
 
-	hc := h.new(*sp)
+	hc := h.new(*sp, spLogger)
 	if sp.THCConfiguration.THCOptInOnSvc {
-		klog.V(2).Infof("ServicePort %v has Transparent Health Checks enabled", sp.ID)
-		return h.sync(hc, nil, sp.THCConfiguration)
+		spLogger.Info("ServicePort has Transparent Health Checks enabled")
+		return h.sync(hc, nil, sp.THCConfiguration, spLogger)
 	}
 	if probe != nil {
-		klog.V(2).Infof("Applying httpGet settings of readinessProbe to health check on port %+v", sp)
-		translator.ApplyProbeSettingsToHC(probe, hc)
+		spLogger.Info("Applying httpGet settings of readinessProbe to health check on port", "port", fmt.Sprintf("%+v", sp))
+		translator.ApplyProbeSettingsToHC(probe, hc, spLogger)
 	}
 	var bchcc *backendconfigv1.HealthCheckConfig
 	if sp.BackendConfig != nil && sp.BackendConfig.Spec.HealthCheck != nil {
 		bchcc = sp.BackendConfig.Spec.HealthCheck
-		klog.V(2).Infof("ServicePort (%v) has BackendConfig health check override (%+s)", sp.ID, formatBackendConfigHC(bchcc))
+		spLogger.Info("ServicePort has BackendConfig health check override", "newHealthCheck", formatBackendConfigHC(bchcc))
 	}
 	if bchcc != nil {
-		klog.V(2).Infof("ServicePort %v has BackendConfig healthcheck override", sp.ID)
+		spLogger.Info("ServicePort has BackendConfig healthcheck override")
 	}
-	return h.sync(hc, bchcc, sp.THCConfiguration)
+	return h.sync(hc, bchcc, sp.THCConfiguration, spLogger)
 }
 
 // emitTHCEvents emits Events about successful or attempted THC configuration.
 // Currently called on creation or update of a health check.
-func (h *HealthChecks) emitTHCEvents(hc *translator.HealthCheck, thcEvents utils.THCEvents) {
+func (h *HealthChecks) emitTHCEvents(hc *translator.HealthCheck, thcEvents utils.THCEvents, hcLogger klog.Logger) {
 	if thcEvents.THCConfigured {
 		message := "Transparent Health Check successfully configured."
 		h.recorderGetter.Recorder(hc.Service.Namespace).Event(
 			hc.Service, v1.EventTypeNormal, "THCConfigured", message)
-		klog.Infof("%s Health check name: %s.", message, hc.Name)
+		hcLogger.Info(message)
 	}
 	if thcEvents.BackendConfigOverridesTHC {
 		message := "Both THC and BackendConfig annotations present and the BackendConfig has spec.healthCheck. The THC annotation will be ignored."
 		h.recorderGetter.Recorder(hc.Service.Namespace).Event(
 			hc.Service, v1.EventTypeWarning, "BackendConfigOverridesTHC", message)
-		klog.Warningf("%s Health check name: %s.", message, hc.Name)
+		hcLogger.Info(message)
 	}
 	if thcEvents.THCAnnotationWithoutFlag {
 		message := "THC annotation present, but the Transparent Health Checks feature is not enabled."
 		h.recorderGetter.Recorder(hc.Service.Namespace).Event(
 			hc.Service, v1.EventTypeWarning, "THCAnnotationWithoutFlag", message)
-		klog.Warningf("%s Health check name: %s.", message, hc.Name)
+		hcLogger.Info(message)
 	}
 	if thcEvents.THCAnnotationWithoutNEG {
 		message := "THC annotation present, but NEG is disabled. Will not enable Transparent Health Checks."
 		h.recorderGetter.Recorder(hc.Service.Namespace).Event(
 			hc.Service, v1.EventTypeWarning, "THCAnnotationWithoutNEG", message)
-		klog.Warningf("%s Health check name: %s.", message, hc.Name)
+		hcLogger.Info(message)
 	}
 
 }
@@ -213,10 +219,10 @@ func isTHCRemoved(hcDesc *healthcheck.HealthcheckDesc, thcOptIn bool) bool {
 	return hcDesc != nil && hcDesc.Config == healthcheck.TransparentHC && !thcOptIn
 }
 
-func (h *HealthChecks) shouldRecalculateHC(existingHC *translator.HealthCheck, backendConfigHCConfig *backendconfigv1.HealthCheckConfig, thcConf utils.THCConfiguration) bool {
+func (h *HealthChecks) shouldRecalculateHC(existingHC *translator.HealthCheck, backendConfigHCConfig *backendconfigv1.HealthCheckConfig, thcConf utils.THCConfiguration, hcLogger klog.Logger) bool {
 	hcDesc := &healthcheck.HealthcheckDesc{}
 	if err := json.Unmarshal([]byte(existingHC.Description), hcDesc); err != nil {
-		klog.V(3).Infof("Health check description is not JSONified: %s", existingHC.Description)
+		hcLogger.Info("Health check description is not JSONified", "description", existingHC.Description)
 		hcDesc = nil
 	}
 	return thcConf.THCOptInOnSvc || (h.healthcheckFlags.EnableRecalculationOnBackendConfigRemoval && isBackendConfigRemoved(hcDesc, backendConfigHCConfig)) || isTHCRemoved(hcDesc, thcConf.THCOptInOnSvc)
@@ -225,9 +231,10 @@ func (h *HealthChecks) shouldRecalculateHC(existingHC *translator.HealthCheck, b
 // sync retrieves a health check based on port, checks type and settings and updates/creates if necessary.
 // sync is only called by the backends.Add func - it's not a pool like other resources.
 // We assume that backendConfigHCConfig cannot be non-nil and thcOptIn be true simultaneously.
-func (h *HealthChecks) sync(hc *translator.HealthCheck, backendConfigHCConfig *backendconfigv1.HealthCheckConfig, thcConf utils.THCConfiguration) (string, error) {
+func (h *HealthChecks) sync(hc *translator.HealthCheck, backendConfigHCConfig *backendconfigv1.HealthCheckConfig, thcConf utils.THCConfiguration, spLogger klog.Logger) (string, error) {
+	hcLogger := spLogger.WithValues("healthCheckName", hc.Name)
 	if backendConfigHCConfig != nil && thcConf.THCOptInOnSvc {
-		klog.Warningf("BackendConfig exists and thcOptIn true simultaneously for %v. Ignoring transparent health check.", hc.Name)
+		hcLogger.Info("BackendConfig exists and thcOptIn true simultaneously. Ignoring transparent health check.")
 		thcConf.THCOptInOnSvc = false
 	}
 
@@ -239,18 +246,18 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, backendConfigHCConfig *b
 		scope = meta.Global
 	}
 
-	existingHC, err := h.Get(hc.Name, hc.Version(), scope)
+	existingHC, err := h.Get(hc.Name, hc.Version(), scope, hcLogger)
 	if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
-		klog.V(2).Infof("Health check %q does not exist, creating (hc=%+v, backendConfigHCConfig=%+v)", hc.Name, hc, backendConfigHCConfig)
-		if err = h.create(hc, backendConfigHCConfig); err != nil {
-			klog.Errorf("Health check %q creation error: %v", hc.Name, err)
+		hcLogger.Info("Health check does not exist, creating", "healthCheck", fmt.Sprintf("%+v", hc), "backendConfigHCConfig", fmt.Sprintf("%+v", backendConfigHCConfig))
+		if err = h.create(hc, backendConfigHCConfig, hcLogger); err != nil {
+			hcLogger.Error(err, "Health check creation error")
 			return "", err
 		}
-		h.emitTHCEvents(hc, thcConf.THCEvents)
+		h.emitTHCEvents(hc, thcConf.THCEvents, hcLogger)
 		// TODO(bowei) -- we don't need to fetch the self-link here as it is
 		// returned as part of the GCE call.
-		selfLink, err := h.getHealthCheckLink(hc.Name, hc.Version(), scope)
-		klog.V(2).Infof("Health check %q selflink = %q", hc.Name, selfLink)
+		selfLink, err := h.getHealthCheckLink(hc.Name, hc.Version(), scope, hcLogger)
+		hcLogger.Info("Health check selflink", "healthCheckSelfLink", selfLink)
 		return selfLink, err
 	}
 	if err != nil {
@@ -266,7 +273,7 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, backendConfigHCConfig *b
 	}
 
 	// Do not merge the existing settings and perform the full diff in calculateDiff.
-	recalculate := h.shouldRecalculateHC(existingHC, backendConfigHCConfig, thcConf)
+	recalculate := h.shouldRecalculateHC(existingHC, backendConfigHCConfig, thcConf, hcLogger)
 
 	if !recalculate {
 		// Merge in the configuration from the existing healthcheck to cover
@@ -274,15 +281,13 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, backendConfigHCConfig *b
 		// GKE.
 		premergeHC := hc
 		hc = mergeUserSettings(existingHC, hc)
-		klog.V(3).Infof("Existing HC = %+v", existingHC)
-		klog.V(3).Infof("HC before merge = %+v", premergeHC)
-		klog.V(3).Infof("Resulting HC = %+v", hc)
+		hcLogger.Info("Health check Configuration updated", "existing HC", fmt.Sprintf("%+v", existingHC), "health check before merge", fmt.Sprintf("%+v", premergeHC), "resulting HC", fmt.Sprintf("%+v", hc))
 	}
 
 	// Then, BackendConfig will override any fields that are explicitly set.
 	if backendConfigHCConfig != nil {
 		// BackendConfig healthcheck settings always take precedence.
-		hc.UpdateFromBackendConfig(backendConfigHCConfig)
+		hc.UpdateFromBackendConfig(backendConfigHCConfig, hcLogger)
 	}
 
 	filter := func(hc *translator.HealthCheck) *translator.HealthCheck {
@@ -298,31 +303,31 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, backendConfigHCConfig *b
 	// updated accordingly even if changes.hasDiff() is false. The purpose is for the Description to accurately reflect
 	// the existence of a backendconfigv1.HealthCheckConfig for the service. This is temporary, see
 	// https://github.com/kubernetes/ingress-gce/pull/2181 for details.
-	descriptionOnlyUpdate := h.isDescriptionOnlyUpdateNeeded(changes, existingHC, backendConfigHCConfig)
+	descriptionOnlyUpdate := h.isDescriptionOnlyUpdateNeeded(changes, existingHC, backendConfigHCConfig, hcLogger)
 	if changes.hasDiff() || descriptionOnlyUpdate {
-		klog.V(2).Infof("Health check %q needs update (%s)", existingHC.Name, changes)
+		hcLogger.Info("Health check needs update", "diff", changes)
 		if descriptionOnlyUpdate {
 			message := fmt.Sprintf("Healthcheck will be updated and the only field updated is Description.\nOld: %+v\nNew: %+v\n", existingHC, hc)
 			if hc.Service != nil {
 				h.recorderGetter.Recorder(hc.Service.Namespace).Event(
 					hc.Service, v1.EventTypeNormal, "HealthcheckDescriptionUpdate", message)
 			} else {
-				klog.Info(message)
+				hcLogger.Info(message)
 			}
 		}
-		err := h.update(hc)
+		err := h.update(hc, hcLogger)
 		if err != nil {
-			klog.Errorf("Health check %q update error: %v", existingHC.Name, err)
+			hcLogger.Error(err, "Health check update error")
 		}
-		h.emitTHCEvents(hc, thcConf.THCEvents)
+		h.emitTHCEvents(hc, thcConf.THCEvents, hcLogger)
 		return existingHC.SelfLink, err
 	}
 
-	klog.V(2).Infof("Health check %q already exists and needs no update", hc.Name)
+	hcLogger.Info("Health check already exists and needs no update")
 	return existingHC.SelfLink, nil
 }
 
-func (h *HealthChecks) isDescriptionOnlyUpdateNeeded(changes *fieldDiffs, existingHC *translator.HealthCheck, backendConfigHCConfig *backendconfigv1.HealthCheckConfig) bool {
+func (h *HealthChecks) isDescriptionOnlyUpdateNeeded(changes *fieldDiffs, existingHC *translator.HealthCheck, backendConfigHCConfig *backendconfigv1.HealthCheckConfig, hcLogger klog.Logger) bool {
 	if flags.F.EnableUpdateCustomHealthCheckDescription {
 		// BackendConfig exists, but the health check has had a wrong description.
 		if changes.size() == 1 && changes.has("Description") {
@@ -339,7 +344,7 @@ func (h *HealthChecks) isDescriptionOnlyUpdateNeeded(changes *fieldDiffs, existi
 		desc := &healthcheck.HealthcheckDesc{}
 		err := json.Unmarshal([]byte(existingHC.Description), desc)
 		if err != nil {
-			klog.V(3).Info("Description for healthcheck %s is not a JSON (probably a plain-text description): %s.", existingHC.Name, existingHC.Description)
+			hcLogger.Info("Description for healthcheck is not a JSON (probably a plain-text description)", "description", existingHC.Description)
 			return false
 		}
 		// BackendConfig existed and has been removed now + no other changes to healthcheck are needed.
@@ -351,7 +356,7 @@ func (h *HealthChecks) isDescriptionOnlyUpdateNeeded(changes *fieldDiffs, existi
 }
 
 // TODO(shance): merge with existing hc code
-func (h *HealthChecks) createRegional(hc *translator.HealthCheck) error {
+func (h *HealthChecks) createRegional(hc *translator.HealthCheck, hcLogger klog.Logger) error {
 	alpha, err := hc.ToAlphaComputeHealthCheck()
 	if err != nil {
 		return err
@@ -369,7 +374,7 @@ func (h *HealthChecks) createRegional(hc *translator.HealthCheck) error {
 
 	compositeType.Version = meta.VersionGA
 	compositeType.Region = key.Region
-	err = composite.CreateHealthCheck(cloud, key, compositeType, klog.TODO())
+	err = composite.CreateHealthCheck(cloud, key, compositeType, hcLogger)
 	if err != nil {
 		return fmt.Errorf("Error creating health check %v: %w", compositeType, err)
 	}
@@ -377,38 +382,38 @@ func (h *HealthChecks) createRegional(hc *translator.HealthCheck) error {
 	return nil
 }
 
-func (h *HealthChecks) create(hc *translator.HealthCheck, bchcc *backendconfigv1.HealthCheckConfig) error {
+func (h *HealthChecks) create(hc *translator.HealthCheck, bchcc *backendconfigv1.HealthCheckConfig, hcLogger klog.Logger) error {
 	if bchcc != nil {
 		// BackendConfig healthcheck settings always take precedence.
-		hc.UpdateFromBackendConfig(bchcc)
+		hc.UpdateFromBackendConfig(bchcc, hcLogger)
 	}
 	// special case ILB to avoid mucking with stable HC code
 	if hc.ForILB {
-		klog.V(3).Infof("Creating ILB Health Check, name: %s", hc.Name)
-		return h.createRegional(hc)
+		hcLogger.Info("Creating ILB Health Check")
+		return h.createRegional(hc, hcLogger)
 	}
 	if hc.ForRegionalXLB {
-		klog.V(3).Infof("Creating XLB Regional Health Check, name: %s", hc.Name)
-		return h.createRegional(hc)
+		hcLogger.Info("Creating XLB Regional Health Check")
+		return h.createRegional(hc, hcLogger)
 	}
 
 	switch hc.Version() {
 	case meta.VersionAlpha:
-		klog.V(2).Infof("Creating alpha health check with protocol %v", hc.Type)
+		hcLogger.Info("Creating alpha health check")
 		alphaHC, err := hc.ToAlphaComputeHealthCheck()
 		if err != nil {
 			return err
 		}
 		return h.cloud.CreateAlphaHealthCheck(alphaHC)
 	case meta.VersionBeta:
-		klog.V(2).Infof("Creating beta health check with protocol %v", hc.Type)
+		hcLogger.Info("Creating beta health check")
 		betaHC, err := hc.ToBetaComputeHealthCheck()
 		if err != nil {
 			return err
 		}
 		return h.cloud.CreateBetaHealthCheck(betaHC)
 	case meta.VersionGA:
-		klog.V(2).Infof("Creating health check for port %v with protocol %v", hc.Port, hc.Type)
+		hcLogger.Info("Creating health check", "port", hc.Port)
 		v1hc, err := hc.ToComputeHealthCheck()
 		if err != nil {
 			return err
@@ -420,7 +425,7 @@ func (h *HealthChecks) create(hc *translator.HealthCheck, bchcc *backendconfigv1
 }
 
 // TODO(shance): merge with existing hc code
-func (h *HealthChecks) updateRegional(hc *translator.HealthCheck) error {
+func (h *HealthChecks) updateRegional(hc *translator.HealthCheck, hcLogger klog.Logger) error {
 	// special case ILB to avoid mucking with stable HC code
 	alpha, err := hc.ToAlphaComputeHealthCheck()
 	if err != nil {
@@ -437,35 +442,36 @@ func (h *HealthChecks) updateRegional(hc *translator.HealthCheck) error {
 	compositeType.Version = meta.VersionGA
 	compositeType.Region = key.Region
 
-	return composite.UpdateHealthCheck(cloud, key, compositeType, klog.TODO())
+	return composite.UpdateHealthCheck(cloud, key, compositeType, hcLogger)
 }
 
-func (h *HealthChecks) update(hc *translator.HealthCheck) error {
+func (h *HealthChecks) update(hc *translator.HealthCheck, hcLogger klog.Logger) error {
+	hcLogger = hcLogger.WithValues("healthCheck", fmt.Sprintf("%v", hc))
 	if hc.ForILB {
-		klog.V(3).Infof("Updating ILB Health Check: %v", hc)
-		return h.updateRegional(hc)
+		hcLogger.Info("Updating ILB Health Check")
+		return h.updateRegional(hc, hcLogger)
 	}
 	if hc.ForRegionalXLB {
-		klog.V(3).Infof("Updating XLB Regional Health Check: %v", hc)
-		return h.updateRegional(hc)
+		hcLogger.Info("Updating XLB Regional Health Check")
+		return h.updateRegional(hc, hcLogger)
 	}
 	switch hc.Version() {
 	case meta.VersionAlpha:
-		klog.V(2).Infof("Updating alpha health check with protocol %v", hc.Type)
+		hcLogger.Info("Updating alpha health check")
 		alpha, err := hc.ToAlphaComputeHealthCheck()
 		if err != nil {
 			return err
 		}
 		return h.cloud.UpdateAlphaHealthCheck(alpha)
 	case meta.VersionBeta:
-		klog.V(2).Infof("Updating beta health check with protocol %v", hc.Type)
+		hcLogger.Info("Updating beta health check")
 		beta, err := hc.ToBetaComputeHealthCheck()
 		if err != nil {
 			return err
 		}
 		return h.cloud.UpdateBetaHealthCheck(beta)
 	case meta.VersionGA:
-		klog.V(2).Infof("Updating health check %q for port %v with protocol %v", hc.Name, hc.Port, hc.Type)
+		hcLogger.Info("Updating health check", "name", hc.Name, "port", hc.Port)
 		ga, err := hc.ToComputeHealthCheck()
 		if err != nil {
 			return err
@@ -476,8 +482,8 @@ func (h *HealthChecks) update(hc *translator.HealthCheck) error {
 	}
 }
 
-func (h *HealthChecks) getHealthCheckLink(name string, version meta.Version, scope meta.KeyType) (string, error) {
-	hc, err := h.Get(name, version, scope)
+func (h *HealthChecks) getHealthCheckLink(name string, version meta.Version, scope meta.KeyType, hcLogger klog.Logger) (string, error) {
+	hc, err := h.Get(name, version, scope, hcLogger)
 	if err != nil {
 		return "", err
 	}
@@ -485,20 +491,21 @@ func (h *HealthChecks) getHealthCheckLink(name string, version meta.Version, sco
 }
 
 // Delete deletes the health check by port.
-func (h *HealthChecks) Delete(name string, scope meta.KeyType) error {
+func (h *HealthChecks) Delete(name string, scope meta.KeyType, beLogger klog.Logger) error {
+	hcLogger := beLogger.WithValues("healthCheckName", name)
 	if scope == meta.Regional {
 		cloud := h.cloud.(*gce.Cloud)
 		key, err := composite.CreateKey(cloud, name, meta.Regional)
 		if err != nil {
 			return err
 		}
-		klog.V(2).Infof("Deleting regional health check %v", name)
+		hcLogger.Info("Deleting regional health check")
 		// L7-ILB is the only use of regional right now
-		if err = composite.DeleteHealthCheck(cloud, key, meta.VersionGA, klog.TODO()); err != nil {
+		if err = composite.DeleteHealthCheck(cloud, key, meta.VersionGA, hcLogger); err != nil {
 			// Ignore error if the deletion candidate is being used by another resource.
 			// In most of the cases, this is the associated backend resource itself.
 			if utils.IsHTTPErrorCode(err, http.StatusNotFound) || utils.IsInUsedByError(err) {
-				klog.V(4).Infof("DeleteRegionalHealthCheck(%s, _): %v, ignorable error", name, err)
+				hcLogger.Info("DeleteRegionalHealthCheck: ignorable error", "err", err)
 				return nil
 			}
 			return err
@@ -506,13 +513,13 @@ func (h *HealthChecks) Delete(name string, scope meta.KeyType) error {
 		return nil
 	}
 
-	klog.V(2).Infof("Deleting health check %v", name)
+	hcLogger.Info("Deleting health check")
 	// Not using composite here since the tests still rely on the fake health check interface
 	if err := h.cloud.DeleteHealthCheck(name); err != nil {
 		// Ignore error if the deletion candidate does not exist or is being used
 		// by another resource.
 		if utils.IsHTTPErrorCode(err, http.StatusNotFound) || utils.IsInUsedByError(err) {
-			klog.V(4).Infof("DeleteHealthCheck(%s, _): %v, ignorable error", name, err)
+			hcLogger.Info("DeleteHealthCheck: ignorable error", "err", err)
 			return nil
 		}
 		return err
@@ -521,14 +528,14 @@ func (h *HealthChecks) Delete(name string, scope meta.KeyType) error {
 }
 
 // TODO(shance): merge with existing hc code
-func (h *HealthChecks) getRegional(name string) (*translator.HealthCheck, error) {
+func (h *HealthChecks) getRegional(name string, hcLogger klog.Logger) (*translator.HealthCheck, error) {
 	cloud := h.cloud.(*gce.Cloud)
 	key, err := composite.CreateKey(cloud, name, meta.Regional)
 	if err != nil {
 		return nil, err
 	}
 	// L7-ILB is the only use of regional right now
-	hc, err := composite.GetHealthCheck(cloud, key, meta.VersionGA, klog.TODO())
+	hc, err := composite.GetHealthCheck(cloud, key, meta.VersionGA, hcLogger)
 	if err != nil {
 		return nil, err
 	}
@@ -546,12 +553,12 @@ func (h *HealthChecks) getRegional(name string) (*translator.HealthCheck, error)
 }
 
 // Get returns the health check by port
-func (h *HealthChecks) Get(name string, version meta.Version, scope meta.KeyType) (*translator.HealthCheck, error) {
-	klog.V(3).Infof("Getting Health Check, name: %s, version: %v, scope: %v", name, version, scope)
+func (h *HealthChecks) Get(name string, version meta.Version, scope meta.KeyType, hcLogger klog.Logger) (*translator.HealthCheck, error) {
+	hcLogger.Info("Getting Health Check", "healthCheckVersion", version, "healthCheckScope", scope)
 
 	if scope == meta.Regional {
-		klog.V(3).Infof("Getting Regional Health Check, name: %s", name)
-		return h.getRegional(name)
+		hcLogger.Info("Getting Regional Health Check")
+		return h.getRegional(name, hcLogger)
 	}
 
 	var hc *computealpha.HealthCheck
