@@ -413,7 +413,7 @@ func (n *Namer) UrlMap(lbName LoadBalancerName) string {
 	return truncate(fmt.Sprintf("%v-%v-%v", n.prefix, urlMapPrefix, lbName))
 }
 
-// UrlMap returns the name for the UrlMap for a given load balancer.
+// RedirectUrlMap returns the name for the UrlMap for a given load balancer.
 func (n *Namer) RedirectUrlMap(lbName LoadBalancerName) string {
 	return truncate(fmt.Sprintf("%v-%v-%v", n.prefix, redirectMapPrefix, lbName))
 }
@@ -441,6 +441,21 @@ func (n *Namer) NEG(namespace, name string, port int32) string {
 	truncName := truncFields[1]
 	truncPort := truncFields[2]
 	return fmt.Sprintf("%s-%s-%s-%s-%s", n.negPrefix(), truncNamespace, truncName, truncPort, negSuffix(n.shortUID(), namespace, name, portStr, ""))
+}
+
+// RXLBBackendName returns the gce Backend name based on the service namespace, name
+// and target port. Naming convention:
+//
+//	{prefix}{version}-{clusterid}-e-{namespace}-{name}-{service port}-{hash}
+//
+// Output name is at most 63 characters.
+func (n *Namer) RXLBBackendName(namespace, name string, port int32) string {
+	portStr := fmt.Sprintf("%v", port)
+	truncFields := TrimFieldsEvenly(maxNEGDescriptiveLabel-2, namespace, name, portStr)
+	truncNamespace := truncFields[0]
+	truncName := truncFields[1]
+	truncPort := truncFields[2]
+	return fmt.Sprintf("%s-e-%s-%s-%s-%s", n.negPrefix(), truncNamespace, truncName, truncPort, negSuffix(n.shortUID(), namespace, name, portStr, ""))
 }
 
 // IsNEG returns true if the name is a NEG owned by this cluster.
