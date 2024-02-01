@@ -90,7 +90,7 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 					BackendNamer: defaultNamer},
 			} {
 				// Mimic how the syncer would create the backend.
-				if _, err := linker.backendPool.Create(svcPort, "fake-healthcheck-link"); err != nil {
+				if _, err := linker.backendPool.Create(svcPort, "fake-healthcheck-link", klog.TODO()); err != nil {
 					t.Fatalf("Failed to create backend service to NEG for svcPort %v: %v", svcPort, err)
 				}
 

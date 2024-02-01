@@ -461,7 +461,7 @@ func (l7 *L7) getFrontendAnnotations(existing map[string]string) map[string]stri
 }
 
 // GetLBAnnotations returns the annotations of an l7. This includes it's current status.
-func GetLBAnnotations(l7 *L7, existing map[string]string, backendSyncer backends.Syncer) (map[string]string, error) {
+func GetLBAnnotations(l7 *L7, existing map[string]string, backendSyncer backends.Syncer, ingLogger klog.Logger) (map[string]string, error) {
 	backends, err := getBackendNames(l7.um)
 	if err != nil {
 		return nil, err
@@ -469,7 +469,7 @@ func GetLBAnnotations(l7 *L7, existing map[string]string, backendSyncer backends
 	backendState := map[string]string{}
 	for _, beName := range backends {
 		version := l7.Versions().BackendService
-		state, err := backendSyncer.Status(beName, version, l7.scope)
+		state, err := backendSyncer.Status(beName, version, l7.scope, ingLogger)
 		// Don't return error here since we want to keep syncing
 		if err != nil {
 			klog.Errorf("Error syncing backend status for %s - %s - %s: %v", beName, version, l7.scope, err)

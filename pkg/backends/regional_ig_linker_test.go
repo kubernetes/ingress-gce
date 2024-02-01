@@ -31,6 +31,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/slice"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -241,7 +242,7 @@ func createBackendService(t *testing.T, sp utils.ServicePort, backendPool *Backe
 	schemeExternal := string(cloud.SchemeExternal)
 	defaultNetworkInfo := network.NetworkInfo{IsDefault: true}
 	var noConnectionTrackingPolicy *composite.BackendServiceConnectionTrackingPolicy = nil
-	if _, err := backendPool.EnsureL4BackendService(sp.BackendName(), hcLink, protocol, serviceAffinityNone, schemeExternal, namespacedName, defaultNetworkInfo, noConnectionTrackingPolicy); err != nil {
+	if _, err := backendPool.EnsureL4BackendService(sp.BackendName(), hcLink, protocol, serviceAffinityNone, schemeExternal, namespacedName, defaultNetworkInfo, noConnectionTrackingPolicy, klog.TODO()); err != nil {
 		t.Fatalf("Error creating backend service %v", err)
 	}
 }

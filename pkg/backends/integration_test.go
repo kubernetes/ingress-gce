@@ -34,6 +34,7 @@ import (
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
+	"k8s.io/klog/v2"
 )
 
 type Jig struct {
@@ -91,7 +92,7 @@ func TestBackendInstanceGroupClobbering(t *testing.T) {
 		t.Fatalf("Did not expect error when ensuring IG for ServicePort %+v: %v", sp, err)
 	}
 
-	if err := jig.syncer.Sync([]utils.ServicePort{sp}); err != nil {
+	if err := jig.syncer.Sync([]utils.ServicePort{sp}, klog.TODO()); err != nil {
 		t.Fatalf("Did not expect error when syncing backend with port %v", sp.NodePort)
 	}
 	if err := jig.linker.Link(sp, []GroupKey{{Zone: defaultZone}}); err != nil {
@@ -119,7 +120,7 @@ func TestBackendInstanceGroupClobbering(t *testing.T) {
 		t.Fatalf("Did not expect error when ensuring IG for ServicePort %+v: %v", sp, err)
 	}
 
-	if err := jig.syncer.Sync([]utils.ServicePort{sp}); err != nil {
+	if err := jig.syncer.Sync([]utils.ServicePort{sp}, klog.TODO()); err != nil {
 		t.Fatalf("Did not expect error when syncing backend with port %v", sp.NodePort)
 	}
 	if err := jig.linker.Link(sp, []GroupKey{{Zone: defaultZone}}); err != nil {
@@ -164,7 +165,7 @@ func TestSyncChaosMonkey(t *testing.T) {
 		t.Fatalf("Did not expect error when ensuring IG for ServicePort %+v, err %v", sp, err)
 	}
 
-	if err := jig.syncer.Sync([]utils.ServicePort{sp}); err != nil {
+	if err := jig.syncer.Sync([]utils.ServicePort{sp}, klog.TODO()); err != nil {
 		t.Fatalf("Did not expect error when syncing backend with port %v, err: %v", sp.NodePort, err)
 	}
 	if err := jig.linker.Link(sp, []GroupKey{{Zone: defaultZone}}); err != nil {
@@ -197,7 +198,7 @@ func TestSyncChaosMonkey(t *testing.T) {
 		t.Fatalf("Did not expect error when ensuring IG for ServicePort %+v: %v", sp, err)
 	}
 
-	if err := jig.syncer.Sync([]utils.ServicePort{sp}); err != nil {
+	if err := jig.syncer.Sync([]utils.ServicePort{sp}, klog.TODO()); err != nil {
 		t.Fatalf("Did not expect error when syncing backend with port %v", sp.NodePort)
 	}
 	if err := jig.linker.Link(sp, []GroupKey{{Zone: defaultZone}}); err != nil {

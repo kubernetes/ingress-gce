@@ -57,10 +57,10 @@ func (s *backendSyncer) Init(pp ProbeProvider) {
 }
 
 // Sync implements Syncer.
-func (s *backendSyncer) Sync(svcPorts []utils.ServicePort) error {
+func (s *backendSyncer) Sync(svcPorts []utils.ServicePort, ingLogger klog.Logger) error {
 	for _, sp := range svcPorts {
-		klog.V(3).Infof("Sync: backend %+v", sp)
-		if err := s.ensureBackendService(sp); err != nil {
+		ingLogger.Info("Sync backend", "servicePort", fmt.Sprintf("%v", sp))
+		if err := s.ensureBackendService(sp, ingLogger); err != nil {
 			return err
 		}
 	}
@@ -68,7 +68,7 @@ func (s *backendSyncer) Sync(svcPorts []utils.ServicePort) error {
 }
 
 // ensureBackendService will update or create a BackendService for the given port.
-func (s *backendSyncer) ensureBackendService(sp utils.ServicePort) error {
+func (s *backendSyncer) ensureBackendService(sp utils.ServicePort, ingLogger klog.Logger) error {
 	// We must track the ports even if creating the backends failed, because
 	// we might've created health-check for them.
 	be := &composite.BackendService{}
@@ -76,10 +76,16 @@ func (s *backendSyncer) ensureBackendService(sp utils.ServicePort) error {
 	version := features.VersionFromServicePort(&sp)
 	scope := features.ScopeFromServicePort(&sp)
 
-	be, getErr := s.backendPool.Get(beName, version, scope)
+	beLogger := ingLogger.WithValues(
+		"backendServiceName", beName,
+		"backendVersion", version,
+		"backendScope", scope,
+		"port", sp.NodePort,
+	)
+	be, getErr := s.backendPool.Get(beName, version, scope, beLogger)
 
 	// Ensure health check for backend service exists.
-	hcLink, err := s.ensureHealthCheck(sp)
+	hcLink, err := s.ensureHealthCheck(sp, beLogger)
 	if err != nil {
 		return fmt.Errorf("error ensuring health check: %w", err)
 	}
@@ -91,8 +97,8 @@ func (s *backendSyncer) ensureBackendService(sp utils.ServicePort) error {
 			return getErr
 		}
 		// Only create the backend service if the error was 404.
-		klog.V(2).Infof("Creating backend service for port %v named %v", sp.NodePort, beName)
-		be, err = s.backendPool.Create(sp, hcLink)
+		beLogger.Info("Creating backend service")
+		be, err = s.backendPool.Create(sp, hcLink, beLogger)
 		if err != nil {
 			return err
 		}
@@ -110,21 +116,21 @@ func (s *backendSyncer) ensureBackendService(sp utils.ServicePort) error {
 		needUpdate = features.EnsureCustomResponseHeaders(sp, be) || needUpdate
 		needUpdate = features.EnsureLogging(sp, be) || needUpdate
 
-		updateIAP, err := features.EnsureIAP(sp, be, klog.TODO())
+		updateIAP, err := features.EnsureIAP(sp, be, beLogger)
 		if err != nil {
-			klog.Errorf("Errored ensuring IAP: %s", err)
+			beLogger.Error(err, "Errored ensuring IAP")
 			return err
 		}
 		needUpdate = updateIAP || needUpdate
 	}
 
 	if needUpdate {
-		if err := s.backendPool.Update(be); err != nil {
+		if err := s.backendPool.Update(be, beLogger); err != nil {
 			return err
 		}
 	}
 
-	if err := s.ensureBackendSignedUrlKeys(sp, be); err != nil {
+	if err := s.ensureBackendSignedUrlKeys(sp, be, beLogger); err != nil {
 		return err
 	}
 
@@ -141,7 +147,7 @@ func (s *backendSyncer) ensureBackendService(sp utils.ServicePort) error {
 	return nil
 }
 
-func (s *backendSyncer) ensureBackendSignedUrlKeys(sp utils.ServicePort, be *composite.BackendService) error {
+func (s *backendSyncer) ensureBackendSignedUrlKeys(sp utils.ServicePort, be *composite.BackendService, beLogger klog.Logger) error {
 
 	existingKeyNames := map[string]bool{}
 	if be.CdnPolicy != nil && be.CdnPolicy.SignedUrlKeyNames != nil {
@@ -154,28 +160,31 @@ func (s *backendSyncer) ensureBackendSignedUrlKeys(sp utils.ServicePort, be *com
 	newSignedUrlKeys := []*composite.SignedUrlKey{}
 	if sp.BackendConfig != nil && sp.BackendConfig.Spec.Cdn != nil && sp.BackendConfig.Spec.Cdn.SignedUrlKeys != nil {
 		for _, key := range sp.BackendConfig.Spec.Cdn.SignedUrlKeys {
-			klog.V(5).Infof("Search for SignedUrlKey %q in backend %q", key.KeyName, be.Name)
+			urlKeyLogger := beLogger.WithValues("SignedUrlKey", key.KeyName)
+			urlKeyLogger.Info("Search for SignedUrlKey")
 			if _, found := existingKeyNames[key.KeyName]; !found {
 				newSignedUrlKeys = append(newSignedUrlKeys, &composite.SignedUrlKey{KeyName: key.KeyName, KeyValue: key.KeyValue})
 			} else {
-				klog.V(5).Infof("SignedUrlKey %q found on backend %q, no update needed", key.KeyName, be.Name)
+				urlKeyLogger.Info("SignedUrlKey found, no update needed")
 				existingKeyNames[key.KeyName] = true
 			}
 		}
 	}
 	// delete all removed keys
 	for keyName, found := range existingKeyNames {
+		urlKeyLogger := beLogger.WithValues("SignedUrlKey", keyName)
 		if !found {
-			klog.V(5).Infof("Removing SignedUrlKey %q from backend %q", keyName, be.Name)
-			if err := s.backendPool.DeleteSignedUrlKey(be, keyName); err != nil {
+			urlKeyLogger.Info("Removing SignedUrlKey")
+			if err := s.backendPool.DeleteSignedUrlKey(be, keyName, urlKeyLogger); err != nil {
 				return err
 			}
 		}
 	}
 	// add all appended keys
 	for _, key := range newSignedUrlKeys {
-		klog.V(5).Infof("Adding SignedUrlKey %q to backend %q", key.KeyName, be.Name)
-		if err := s.backendPool.AddSignedUrlKey(be, key); err != nil {
+		urlKeyLogger := beLogger.WithValues("SignedUrlKey", key.KeyName)
+		urlKeyLogger.Info("Adding SignedUrlKey")
+		if err := s.backendPool.AddSignedUrlKey(be, key, urlKeyLogger); err != nil {
 			return err
 		}
 	}
@@ -183,36 +192,38 @@ func (s *backendSyncer) ensureBackendSignedUrlKeys(sp utils.ServicePort, be *com
 }
 
 // GC implements Syncer.
-func (s *backendSyncer) GC(svcPorts []utils.ServicePort) error {
+func (s *backendSyncer) GC(svcPorts []utils.ServicePort, ingLogger klog.Logger) error {
 	knownPorts, err := knownPortsFromServicePorts(s.cloud, svcPorts)
 	if err != nil {
 		return err
 	}
 
+	ilbBeLogger := ingLogger.WithName("ILBBackends")
 	// TODO(shance): Refactor out empty key field
 	key, err := composite.CreateKey(s.cloud, "", meta.Regional)
 	if err != nil {
 		return fmt.Errorf("error creating l7 ilb key: %w", err)
 	}
-	ilbBackends, err := s.backendPool.List(key, lbfeatures.L7ILBVersions().BackendService)
+	ilbBackends, err := s.backendPool.List(key, lbfeatures.L7ILBVersions().BackendService, ilbBeLogger)
 	if err != nil {
 		return fmt.Errorf("error listing regional backends: %w", err)
 	}
-	err = s.gc(ilbBackends, knownPorts)
+	err = s.gc(ilbBackends, knownPorts, ilbBeLogger)
 	if err != nil {
 		return fmt.Errorf("error GCing regional Backends: %w", err)
 	}
 
+	gaBeLogger := ingLogger.WithName("GABackends")
 	// Requires an empty name field until it is refactored out
 	key, err = composite.CreateKey(s.cloud, "", meta.Global)
 	if err != nil {
 		return fmt.Errorf("error creating l7 ilb key: %w", err)
 	}
-	backends, err := s.backendPool.List(key, meta.VersionGA)
+	backends, err := s.backendPool.List(key, meta.VersionGA, gaBeLogger)
 	if err != nil {
 		return fmt.Errorf("error listing backends: %w", err)
 	}
-	err = s.gc(backends, knownPorts)
+	err = s.gc(backends, knownPorts, gaBeLogger)
 	if err != nil {
 		return fmt.Errorf("error GCing Backends: %w", err)
 	}
@@ -221,7 +232,7 @@ func (s *backendSyncer) GC(svcPorts []utils.ServicePort) error {
 }
 
 // gc deletes the provided backends
-func (s *backendSyncer) gc(backends []*composite.BackendService, knownPorts sets.String) error {
+func (s *backendSyncer) gc(backends []*composite.BackendService, knownPorts sets.String, ingLogger klog.Logger) error {
 	for _, be := range backends {
 		// Skip L4 LB backend services
 		// backendSyncer currently only GC backend services for L7 XLB/ILB.
@@ -241,15 +252,19 @@ func (s *backendSyncer) gc(backends []*composite.BackendService, knownPorts sets
 		if knownPorts.Has(key.String()) {
 			continue
 		}
-		klog.V(2).Infof("GCing backendService for port %s", name)
-		err = s.backendPool.Delete(name, be.Version, scope)
+		beLogger := ingLogger.WithValues(
+			"backendName", name,
+			"backendVersion", be.Version,
+			"backendScope", scope,
+		)
+		beLogger.Info("GCing backendService")
+		err = s.backendPool.Delete(name, be.Version, scope, beLogger)
 		if err != nil {
-			klog.Errorf("backendPool.Delete(%v, %v, %v) = %v", name, be.Version, scope, err)
+			beLogger.Error(err, "backendPool.Delete()")
 			return err
 		}
 
-		// TODO(cheungdavid): Replace klog.TODO() with logger from backendSyncer
-		if err := s.healthChecker.Delete(name, scope, klog.TODO()); err != nil {
+		if err := s.healthChecker.Delete(name, scope, beLogger); err != nil {
 			return err
 		}
 	}
@@ -274,19 +289,25 @@ func knownPortsFromServicePorts(cloud *gce.Cloud, svcPorts []utils.ServicePort) 
 }
 
 // Status implements Syncer.
-func (s *backendSyncer) Status(name string, version meta.Version, scope meta.KeyType) (string, error) {
-	return s.backendPool.Health(name, version, scope)
+func (s *backendSyncer) Status(name string, version meta.Version, scope meta.KeyType, ingLogger klog.Logger) (string, error) {
+	beLogger := ingLogger.WithValues(
+		"backendName", name,
+		"backendVersion", version,
+		"backendScope", scope,
+	)
+	return s.backendPool.Health(name, version, scope, beLogger)
 }
 
 // Shutdown implements Syncer.
+// TODO(cheungdavid): Shutdown() should be deprecated after the removal of delateAll option.
 func (s *backendSyncer) Shutdown() error {
-	if err := s.GC([]utils.ServicePort{}); err != nil {
+	if err := s.GC([]utils.ServicePort{}, klog.TODO()); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (s *backendSyncer) ensureHealthCheck(sp utils.ServicePort) (string, error) {
+func (s *backendSyncer) ensureHealthCheck(sp utils.ServicePort, beLogger klog.Logger) (string, error) {
 	var probe *v1.Probe
 	var err error
 
@@ -296,9 +317,7 @@ func (s *backendSyncer) ensureHealthCheck(sp utils.ServicePort) (string, error) 
 			return "", fmt.Errorf("Error getting prober: %w", err)
 		}
 	}
-	// TODO(cheungdavid): update to logger from ensureBackendService()
-	// and embed service port information there.
-	return s.healthChecker.SyncServicePort(&sp, probe, klog.TODO())
+	return s.healthChecker.SyncServicePort(&sp, probe, beLogger)
 }
 
 // getHealthCheckLink gets the Healthcheck link off the BackendService

@@ -35,21 +35,21 @@ type GroupKey struct {
 // Backend Services.
 type Pool interface {
 	// Get a composite BackendService given a required version.
-	Get(name string, version meta.Version, scope meta.KeyType) (*composite.BackendService, error)
+	Get(name string, version meta.Version, scope meta.KeyType, logger klog.Logger) (*composite.BackendService, error)
 	// Create a composite BackendService and returns it.
-	Create(sp utils.ServicePort, hcLink string) (*composite.BackendService, error)
+	Create(sp utils.ServicePort, hcLink string, logger klog.Logger) (*composite.BackendService, error)
 	// Update a BackendService given the composite type.
-	Update(be *composite.BackendService) error
+	Update(be *composite.BackendService, logger klog.Logger) error
 	// Delete a BackendService given its name.
-	Delete(name string, version meta.Version, scope meta.KeyType) error
+	Delete(name string, version meta.Version, scope meta.KeyType, logger klog.Logger) error
 	// Get the health of a BackendService given its name.
-	Health(name string, version meta.Version, scope meta.KeyType) (string, error)
+	Health(name string, version meta.Version, scope meta.KeyType, logger klog.Logger) (string, error)
 	// Get a list of BackendService names that are managed by this pool.
-	List(key *meta.Key, version meta.Version) ([]*composite.BackendService, error)
+	List(key *meta.Key, version meta.Version, logger klog.Logger) ([]*composite.BackendService, error)
 	// Add a SignedUrlKey to a BackendService
-	AddSignedUrlKey(be *composite.BackendService, signedurlkey *composite.SignedUrlKey) error
+	AddSignedUrlKey(be *composite.BackendService, signedurlkey *composite.SignedUrlKey, logger klog.Logger) error
 	// Deletes a SignedUrlKey from BackendService
-	DeleteSignedUrlKey(be *composite.BackendService, keyName string) error
+	DeleteSignedUrlKey(be *composite.BackendService, keyName string, logger klog.Logger) error
 }
 
 // Syncer is an interface to sync Kubernetes services to GCE BackendServices.
@@ -58,11 +58,11 @@ type Syncer interface {
 	Init(p ProbeProvider)
 	// Sync a BackendService. Implementations should only create the BackendService
 	// but not its groups.
-	Sync(svcPorts []utils.ServicePort) error
+	Sync(svcPorts []utils.ServicePort, logger klog.Logger) error
 	// GC garbage collects unused BackendService's
-	GC(svcPorts []utils.ServicePort) error
+	GC(svcPorts []utils.ServicePort, logger klog.Logger) error
 	// Status returns the status of a BackendService given its name.
-	Status(name string, version meta.Version, scope meta.KeyType) (string, error)
+	Status(name string, version meta.Version, scope meta.KeyType, logger klog.Logger) (string, error)
 	// Shutdown cleans up all BackendService's previously synced.
 	Shutdown() error
 }

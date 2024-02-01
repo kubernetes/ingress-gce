@@ -287,19 +287,19 @@ func AddSignedUrlKey(gceCloud *gce.Cloud, key *meta.Key, backendService *Backend
 	}
 }
 
-func DeleteSignedUrlKey(gceCloud *gce.Cloud, key *meta.Key, backendService *BackendService, keyName string) error {
+func DeleteSignedUrlKey(gceCloud *gce.Cloud, key *meta.Key, backendService *BackendService, keyName string, urlKeyLogger klog.Logger) error {
 	ctx, cancel := cloud.ContextWithCallTimeout()
 	defer cancel()
 	mc := metrics.NewMetricContext("BackendService", "deleteSignedUrlKey", key.Region, key.Zone, string(backendService.Version))
 	switch backendService.Version {
 	case meta.VersionAlpha:
-		klog.V(3).Infof("Updating alpha BackendService %v, delete SignedUrlKey %s", key.Name, keyName)
+		urlKeyLogger.Info("Updating alpha BackendService, delete SignedUrlKey")
 		return mc.Observe(gceCloud.Compute().AlphaBackendServices().DeleteSignedUrlKey(ctx, key, keyName))
 	case meta.VersionBeta:
-		klog.V(3).Infof("Updating beta BackendService %v, delete SignedUrlKey %s", key.Name, keyName)
+		urlKeyLogger.Info("Updating beta BackendService, delete SignedUrlKey")
 		return mc.Observe(gceCloud.Compute().BetaBackendServices().DeleteSignedUrlKey(ctx, key, keyName))
 	default:
-		klog.V(3).Infof("Updating ga BackendService %v, delete SignedUrlKey %s", key.Name, keyName)
+		urlKeyLogger.Info("Updating ga BackendService, delete SignedUrlKey")
 		return mc.Observe(gceCloud.Compute().BackendServices().DeleteSignedUrlKey(ctx, key, keyName))
 	}
 }
