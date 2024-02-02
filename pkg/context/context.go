@@ -360,7 +360,7 @@ func (ctx *ControllerContext) HealthCheck() HealthCheckResults {
 }
 
 // Start all of the informers.
-func (ctx *ControllerContext) Start(stopCh chan struct{}) {
+func (ctx *ControllerContext) Start(stopCh <-chan struct{}) {
 	go ctx.IngressInformer.Run(stopCh)
 	go ctx.ServiceInformer.Run(stopCh)
 	go ctx.PodInformer.Run(stopCh)

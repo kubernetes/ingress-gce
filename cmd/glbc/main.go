@@ -317,8 +317,8 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	}
 
 	if flags.F.EnablePSC {
-		pscController := psc.NewController(ctx)
-		go pscController.Run(stopCh)
+		pscController := psc.NewController(ctx, stopCh)
+		go pscController.Run()
 		klog.V(0).Infof("PSC Controller started")
 	}
 
@@ -366,7 +366,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	}
 }
 
-func runNEGController(ctx *ingctx.ControllerContext, stopCh chan struct{}) {
+func runNEGController(ctx *ingctx.ControllerContext, stopCh <-chan struct{}) {
 	zoneGetter := ctx.ZoneGetter
 
 	// In NonGCP mode, use the zone specified in gce.conf directly.
@@ -422,11 +422,12 @@ func runNEGController(ctx *ingctx.ControllerContext, stopCh chan struct{}) {
 		lpConfig,
 		flags.F.EnableMultiNetworking,
 		ctx.EnableIngressRegionalExternal,
+		stopCh,
 		klog.TODO(), // TODO(#1761): Replace this with a top level logger configuration once one is available.
 	)
 
 	ctx.AddHealthCheck("neg-controller", negController.IsHealthy)
 
-	go negController.Run(stopCh)
+	go negController.Run()
 	klog.V(0).Infof("negController started")
 }

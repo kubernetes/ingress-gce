@@ -60,7 +60,7 @@ type FirewallController struct {
 	nodeLister                    cache.Indexer
 	hasSynced                     func() bool
 	enableIngressRegionalExternal bool
-	stopCh                        chan struct{}
+	stopCh                        <-chan struct{}
 }
 
 type compositeFirewallPool struct {
@@ -95,7 +95,7 @@ func NewFirewallController(
 	ctx *context.ControllerContext,
 	portRanges []string,
 	enableCR, disableFWEnforcement, enableRegionalXLB bool,
-	stopCh chan struct{},
+	stopCh <-chan struct{},
 ) *FirewallController {
 
 	compositeFirewallPool := &compositeFirewallPool{}

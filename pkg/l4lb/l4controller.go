@@ -65,7 +65,7 @@ type L4Controller struct {
 	networkLister            cache.Indexer
 	gkeNetworkParamSetLister cache.Indexer
 	networkResolver          network.Resolver
-	stopCh                   chan struct{}
+	stopCh                   <-chan struct{}
 	// needed for listing the zones in the cluster.
 	zoneGetter *zonegetter.ZoneGetter
 	// needed for linking the NEG with the backend service for each ILB service.
@@ -82,7 +82,7 @@ type L4Controller struct {
 }
 
 // NewILBController creates a new instance of the L4 ILB controller.
-func NewILBController(ctx *context.ControllerContext, stopCh chan struct{}) *L4Controller {
+func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}) *L4Controller {
 	if ctx.NumL4Workers <= 0 {
 		klog.Infof("L4 Internal LB Service worker count has not been set, setting to 1")
 		ctx.NumL4Workers = 1

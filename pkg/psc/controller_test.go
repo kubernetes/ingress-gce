@@ -1094,7 +1094,7 @@ func newTestController(clusterType string) *Controller {
 	flags.F.GKEClusterType = clusterType
 	ctx := context.NewControllerContext(nil, kubeClient, nil, nil, nil, nil, nil, saClient, nil, gceClient, resourceNamer, kubeSystemUID, ctxConfig)
 
-	return NewController(ctx)
+	return NewController(ctx, make(<-chan struct{}))
 }
 
 // createSvc creates a test K8s Service resource and adds it to the controller's svcAttachmentLister. If forwardingRuleKey is empty, no annotations will be added to the service.

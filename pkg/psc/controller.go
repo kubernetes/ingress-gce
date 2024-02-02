@@ -107,9 +107,11 @@ type Controller struct {
 	clusterLoc string
 	// regionalCluster indicates whether the cluster is regional or not.
 	regionalCluster bool
+
+	stopCh <-chan struct{}
 }
 
-func NewController(ctx *context.ControllerContext) *Controller {
+func NewController(ctx *context.ControllerContext, stopCh <-chan struct{}) *Controller {
 	saNamer := namer.NewServiceAttachmentNamer(ctx.ClusterNamer, string(ctx.KubeSystemUID))
 	controller := &Controller{
 		client:              ctx.KubeClient,
@@ -124,6 +126,7 @@ func NewController(ctx *context.ControllerContext) *Controller {
 		collector:           ctx.ControllerMetrics,
 		clusterName:         flags.F.GKEClusterName,
 		regionalCluster:     ctx.RegionalCluster,
+		stopCh:              stopCh,
 	}
 	if controller.regionalCluster {
 		controller.clusterLoc = controller.cloud.Region()
@@ -157,11 +160,11 @@ func NewController(ctx *context.ControllerContext) *Controller {
 
 // Run waits for the initial sync and will process keys in the queue and run GC
 // until signaled
-func (c *Controller) Run(stopChan <-chan struct{}) {
+func (c *Controller) Run() {
 	wait.PollUntil(5*time.Second, func() (bool, error) {
 		klog.V(2).Infof("Waiting for initial sync")
 		return c.hasSynced(), nil
-	}, stopChan)
+	}, c.stopCh)
 
 	klog.V(2).Infof("Starting private service connect controller")
 	defer func() {
@@ -169,15 +172,15 @@ func (c *Controller) Run(stopChan <-chan struct{}) {
 		c.svcAttachmentQueue.ShutDown()
 	}()
 
-	go wait.Until(func() { c.serviceAttachmentWorker(stopChan) }, time.Second, stopChan)
+	go wait.Until(func() { c.serviceAttachmentWorker(c.stopCh) }, time.Second, c.stopCh)
 
 	go func() {
 		// Wait a GC period before starting to ensure that resources have enough time to sync
 		time.Sleep(ServiceAttachmentGCPeriod)
-		wait.Until(c.garbageCollectServiceAttachments, ServiceAttachmentGCPeriod, stopChan)
+		wait.Until(c.garbageCollectServiceAttachments, ServiceAttachmentGCPeriod, c.stopCh)
 	}()
 
-	<-stopChan
+	<-c.stopCh
 }
 
 // serviceAttachmentWorker keeps processing service attachment keys in the queue

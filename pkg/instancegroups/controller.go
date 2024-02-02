@@ -39,14 +39,14 @@ type Controller struct {
 	// synchronization.
 	hasSynced func() bool
 
-	stopCh chan struct{}
+	stopCh <-chan struct{}
 }
 
 type ControllerConfig struct {
 	NodeInformer cache.SharedIndexInformer
 	IGManager    Manager
 	HasSynced    func() bool
-	StopCh       chan struct{}
+	StopCh       <-chan struct{}
 }
 
 // NewController returns a new node update controller.
