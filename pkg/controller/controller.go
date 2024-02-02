@@ -401,7 +401,7 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}, ingLogger klo
 
 	// Sync the backends
 	if err := lbc.backendSyncer.Sync(ingSvcPorts, ingLogger); err != nil {
-		return err
+		return fmt.Errorf("lbc.backendSyncer.Sync(%v) returned error %w, want nil", ingSvcPorts, err)
 	}
 
 	// Get the zones our groups live in.
@@ -598,6 +598,25 @@ func (lbc *LoadBalancerController) preSyncGC(key string, scope meta.KeyType, ing
 	return true, nil
 }
 
+func (lbc *LoadBalancerController) gcRegionalIngress(ing *v1.Ingress, ingLogger klog.Logger) error {
+	lbc.gcLock.Lock()
+	defer lbc.gcLock.Unlock()
+	ingLogger = ingLogger.WithName("gcRegionalIngress")
+
+	ingLogger.Info("Running gcRegionalIngress")
+	defer ingLogger.Info("Finish gcRegionalIngress")
+
+	allIngresses := lbc.ctx.Ingresses().List()
+	filteredIngresses := operator.Ingresses(allIngresses).Filter(func(curIng *v1.Ingress) bool {
+		return curIng.Namespace != ing.Namespace && curIng.Name != ing.Name
+	}).AsList()
+	if gcErr := lbc.ingSyncer.GC(filteredIngresses, ing, utils.CleanupV2FrontendResourcesScopeChange, meta.Regional, ingLogger); gcErr != nil {
+		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, events.GarbageCollection, "Error during garbage collection: %v", gcErr)
+		return fmt.Errorf("error during GC %v", gcErr)
+	}
+	return nil
+}
+
 // postSyncGC cleans up the unnecessary resources (backend-services, frontend resources in wrong scope) after sync.
 func (lbc *LoadBalancerController) postSyncGC(key string, syncErr error, oldScope *meta.KeyType, newScope meta.KeyType, ingExists bool, ing *v1.Ingress, ingLogger klog.Logger) error {
 	lbc.gcLock.Lock()
@@ -635,6 +654,21 @@ func (lbc *LoadBalancerController) sync(key string) error {
 
 	// Capture GC state for ingress.
 	scope := features.ScopeFromIngress(ing)
+
+	if flags.F.EnableIngressRegionalExternal {
+		classNameChanged, err := lbc.l7Pool.DidRegionalClassChange(ing, ingLogger)
+		if err != nil {
+			return fmt.Errorf("failed checking regional class name change for ing %w, err: %w", ing, err)
+		}
+		if classNameChanged {
+			ingLogger.Info("Detected Ingress class change, cleaning up old resources")
+			err := lbc.gcRegionalIngress(ing, ingLogger)
+			if err != nil {
+				return fmt.Errorf("failed while handling ingress class name change. Ingress: %v, err: %w", ing, err)
+			}
+		}
+	}
+
 	needSync, err := lbc.preSyncGC(key, scope, ingExists, ing, ingLogger)
 	if err != nil {
 		return err
