@@ -104,7 +104,7 @@ func TestEnsureL4BackendService(t *testing.T) {
 			hcLink := l4namer.L4HealthCheck(tc.serviceNamespace, tc.serviceName, false)
 			bsName := l4namer.L4Backend(tc.serviceNamespace, tc.serviceName)
 			network := network.NetworkInfo{IsDefault: false, NetworkURL: "https://www.googleapis.com/compute/v1/projects/test-poject/global/networks/test-vpc"}
-			bs, err := backendPool.EnsureL4BackendService(bsName, hcLink, tc.protocol, tc.affinityType, tc.schemeType, namespacedName, network, tc.connectionTrackingPolicy)
+			bs, err := backendPool.EnsureL4BackendService(bsName, hcLink, tc.protocol, tc.affinityType, tc.schemeType, namespacedName, network, tc.connectionTrackingPolicy, klog.TODO())
 			if err != nil {
 				t.Errorf("EnsureL4BackendService failed")
 			}
@@ -189,7 +189,7 @@ func TestEnsureL4BackendServiceDoesNotDetachBackends(t *testing.T) {
 			}
 
 			var noConnectionTrackingPolicy *composite.BackendServiceConnectionTrackingPolicy = nil
-			bs, err := backendPool.EnsureL4BackendService(bsName, hcLink, "TCP", string(v1.ServiceAffinityNone), string(cloud.SchemeInternal), namespacedName, network, noConnectionTrackingPolicy)
+			bs, err := backendPool.EnsureL4BackendService(bsName, hcLink, "TCP", string(v1.ServiceAffinityNone), string(cloud.SchemeInternal), namespacedName, network, noConnectionTrackingPolicy, klog.TODO())
 			if err != nil {
 				t.Errorf("EnsureL4BackendService failed")
 			}

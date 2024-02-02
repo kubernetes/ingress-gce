@@ -31,9 +31,9 @@ var switchingToDefaultError = errors.New("Cannot switch to default OAuth once IA
 // EnsureIAP reads the IAP configuration specified in the BackendConfig
 // and applies it to the BackendService if it is stale. It returns true
 // if there were existing settings on the BackendService that were overwritten.
-func EnsureIAP(sp utils.ServicePort, be *composite.BackendService, logger klog.Logger) (bool, error) {
+func EnsureIAP(sp utils.ServicePort, be *composite.BackendService, beLogger klog.Logger) (bool, error) {
 	// TODO: Update when context logging is enabled to ensure no duplicate keys
-	logger = logger.WithName("EnsureIAP").WithValues("service", klog.KRef(sp.ID.Service.Namespace, sp.ID.Service.Name))
+	beLogger = beLogger.WithName("EnsureIAP").WithValues("service", klog.KRef(sp.ID.Service.Namespace, sp.ID.Service.Name))
 	if sp.BackendConfig.Spec.Iap == nil {
 		return false, nil
 	}
@@ -41,16 +41,16 @@ func EnsureIAP(sp utils.ServicePort, be *composite.BackendService, logger klog.L
 	applyIAPSettings(sp, beTemp)
 
 	if err := switchingToDefault(beTemp, be); err != nil {
-		logger.Error(err, "Errored updating IAP settings")
+		beLogger.Error(err, "Errored updating IAP settings")
 		return false, fmt.Errorf("Errored updating IAP Settings for service %s/%s: %w", sp.ID.Service.Namespace, sp.ID.Service.Name, err)
 	}
 
-	if diffIAP(beTemp, be, logger) {
+	if diffIAP(beTemp, be, beLogger) {
 		applyIAPSettings(sp, be)
-		logger.Info("Updated IAP settings")
+		beLogger.Info("Updated IAP settings")
 		return true, nil
 	}
-	logger.Info("Detected no change in IAP Settings")
+	beLogger.Info("Detected no change in IAP Settings")
 	return false, nil
 }
 

@@ -321,7 +321,11 @@ func NewLoadBalancerController(
 
 	// Register health check on controller context.
 	ctx.AddHealthCheck("ingress", func() error {
-		_, err := backendPool.Get("k8s-ingress-svc-acct-permission-check-probe", meta.VersionGA, meta.Global)
+		name := "k8s-ingress-svc-acct-permission-check-probe"
+		version := meta.VersionGA
+		var scope meta.KeyType = meta.Global
+		beLogger := log.WithValues("backendServiceName", name, "backendVersion", version, "backendScope", scope)
+		_, err := backendPool.Get(name, meta.VersionGA, meta.Global, beLogger)
 
 		// If this container is scheduled on a node without compute/rw it is
 		// effectively useless, but it is healthy. Reporting it as unhealthy
@@ -407,7 +411,7 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}, ingLogger klo
 	}
 
 	// Sync the backends
-	if err := lbc.backendSyncer.Sync(ingSvcPorts); err != nil {
+	if err := lbc.backendSyncer.Sync(ingSvcPorts, ingLogger); err != nil {
 		return err
 	}
 
@@ -483,7 +487,7 @@ func (lbc *LoadBalancerController) GCBackends(toKeep []*v1.Ingress, ingLogger kl
 	// Only GCE ingress associated resources are managed by this controller.
 	GCEIngresses := operator.Ingresses(toKeep).Filter(utils.IsGCEIngress).AsList()
 	svcPortsToKeep := lbc.ToSvcPorts(GCEIngresses)
-	if err := lbc.backendSyncer.GC(svcPortsToKeep); err != nil {
+	if err := lbc.backendSyncer.GC(svcPortsToKeep, ingLogger); err != nil {
 		return err
 	}
 	// TODO(ingress#120): Move this to the backend pool so it mirrors creation
@@ -728,7 +732,7 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 		}
 	}
 
-	newAnnotations, err := loadbalancers.GetLBAnnotations(l7, ing.ObjectMeta.DeepCopy().Annotations, lbc.backendSyncer)
+	newAnnotations, err := loadbalancers.GetLBAnnotations(l7, ing.ObjectMeta.DeepCopy().Annotations, lbc.backendSyncer, ingLogger)
 	if err != nil {
 		return err
 	}

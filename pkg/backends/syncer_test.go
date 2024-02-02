@@ -176,13 +176,13 @@ func TestSync(t *testing.T) {
 
 	for _, sp := range testCases {
 		t.Run(fmt.Sprintf("Port: %v Protocol: %v", sp.NodePort, sp.Protocol), func(t *testing.T) {
-			if err := syncer.Sync([]utils.ServicePort{sp}); err != nil {
+			if err := syncer.Sync([]utils.ServicePort{sp}, klog.TODO()); err != nil {
 				t.Fatalf("Unexpected error when syncing backend with port %v: %v", sp.NodePort, err)
 			}
 			beName := sp.BackendName()
 
 			// Check that the new backend has the right port
-			be, err := syncer.backendPool.Get(beName, features.VersionFromServicePort(&sp), features.ScopeFromServicePort(&sp))
+			be, err := syncer.backendPool.Get(beName, features.VersionFromServicePort(&sp), features.ScopeFromServicePort(&sp), klog.TODO())
 			if err != nil {
 				t.Fatalf("Did not find expected backend with port %v", sp.NodePort)
 			}
@@ -211,10 +211,10 @@ func TestSyncUpdateHTTPS(t *testing.T) {
 	syncer := newTestSyncer(fakeGCE)
 
 	p := utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP, BackendNamer: defaultNamer}
-	syncer.Sync([]utils.ServicePort{p})
+	syncer.Sync([]utils.ServicePort{p}, klog.TODO())
 	beName := p.BackendName()
 
-	be, err := syncer.backendPool.Get(beName, features.VersionFromServicePort(&p), features.ScopeFromServicePort(&p))
+	be, err := syncer.backendPool.Get(beName, features.VersionFromServicePort(&p), features.ScopeFromServicePort(&p), klog.TODO())
 	if err != nil {
 		t.Fatalf("Unexpected err: %v", err)
 	}
@@ -231,9 +231,9 @@ func TestSyncUpdateHTTPS(t *testing.T) {
 
 	// Update service port to encrypted
 	p.Protocol = annotations.ProtocolHTTPS
-	syncer.Sync([]utils.ServicePort{p})
+	syncer.Sync([]utils.ServicePort{p}, klog.TODO())
 
-	be, err = syncer.backendPool.Get(beName, features.VersionFromServicePort(&p), features.ScopeFromServicePort(&p))
+	be, err = syncer.backendPool.Get(beName, features.VersionFromServicePort(&p), features.ScopeFromServicePort(&p), klog.TODO())
 	if err != nil {
 		t.Fatalf("Unexpected err retrieving backend service after update: %v", err)
 	}
@@ -255,10 +255,10 @@ func TestSyncUpdateHTTP2(t *testing.T) {
 	syncer := newTestSyncer(fakeGCE)
 
 	p := utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP, BackendNamer: defaultNamer}
-	syncer.Sync([]utils.ServicePort{p})
+	syncer.Sync([]utils.ServicePort{p}, klog.TODO())
 	beName := p.BackendName()
 
-	be, err := syncer.backendPool.Get(beName, features.VersionFromServicePort(&p), features.ScopeFromServicePort(&p))
+	be, err := syncer.backendPool.Get(beName, features.VersionFromServicePort(&p), features.ScopeFromServicePort(&p), klog.TODO())
 	if err != nil {
 		t.Fatalf("Unexpected err: %v", err)
 	}
@@ -275,9 +275,9 @@ func TestSyncUpdateHTTP2(t *testing.T) {
 
 	// Update service port to HTTP2
 	p.Protocol = annotations.ProtocolHTTP2
-	syncer.Sync([]utils.ServicePort{p})
+	syncer.Sync([]utils.ServicePort{p}, klog.TODO())
 
-	beBeta, err := syncer.backendPool.Get(beName, features.VersionFromServicePort(&p), features.ScopeFromServicePort(&p))
+	beBeta, err := syncer.backendPool.Get(beName, features.VersionFromServicePort(&p), features.ScopeFromServicePort(&p), klog.TODO())
 	if err != nil {
 		t.Fatalf("Unexpected err retrieving backend service after update: %v", err)
 	}
@@ -309,7 +309,7 @@ func TestGC(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := syncer.Sync(ps.existingPorts()); err != nil {
+	if err := syncer.Sync(ps.existingPorts(), klog.TODO()); err != nil {
 		t.Fatalf("syncer.Sync(%+v) = %v, want nil ", ps.existingPorts(), err)
 	}
 
@@ -318,7 +318,7 @@ func TestGC(t *testing.T) {
 	}
 
 	// Run a no-op GC (i.e nothing is actually cleaned up)
-	if err := syncer.GC(ps.existingPorts()); err != nil {
+	if err := syncer.GC(ps.existingPorts(), klog.TODO()); err != nil {
 		t.Fatalf("syncer.GC(%+v) = %v, want nil", ps.existingPorts(), err)
 	}
 
@@ -331,7 +331,7 @@ func TestGC(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := syncer.GC(ps.existingPorts()); err != nil {
+	if err := syncer.GC(ps.existingPorts(), klog.TODO()); err != nil {
 		t.Fatalf("syncer.GC(%+v) = %v, want nil", ps.existingPorts(), err)
 	}
 
@@ -359,7 +359,7 @@ func TestGCMixed(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := syncer.Sync(ps.existingPorts()); err != nil {
+	if err := syncer.Sync(ps.existingPorts(), klog.TODO()); err != nil {
 		t.Fatalf("syncer.Sync(%+v) = %v, want nil ", ps.existingPorts(), err)
 	}
 
@@ -368,7 +368,7 @@ func TestGCMixed(t *testing.T) {
 	}
 
 	// Run a no-op GC (i.e nothing is actually cleaned up)
-	if err := syncer.GC(ps.existingPorts()); err != nil {
+	if err := syncer.GC(ps.existingPorts(), klog.TODO()); err != nil {
 		t.Fatalf("syncer.GC(%+v) = %v, want nil", ps.existingPorts(), err)
 	}
 
@@ -381,7 +381,7 @@ func TestGCMixed(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := syncer.GC(ps.existingPorts()); err != nil {
+	if err := syncer.GC(ps.existingPorts(), klog.TODO()); err != nil {
 		t.Fatalf("syncer.GC(%+v) = %v, want nil", ps.existingPorts(), err)
 	}
 
@@ -487,19 +487,19 @@ func TestSyncQuota(t *testing.T) {
 				return false, nil
 			}
 
-			if err := syncer.Sync(tc.oldPorts); err != nil {
+			if err := syncer.Sync(tc.oldPorts, klog.TODO()); err != nil {
 				t.Errorf("Expected backend pool to add node ports, err: %v", err)
 			}
 
 			// Ensuring these ports again without first Garbage Collecting goes over
 			// the set quota. Expect an error here, until GC is called.
-			err := syncer.Sync(tc.newPorts)
+			err := syncer.Sync(tc.newPorts, klog.TODO())
 			if tc.expectSyncErr && err == nil {
 				t.Errorf("Expect initial sync to go over quota, but received no error")
 			}
 
-			syncer.GC(tc.newPorts)
-			if err := syncer.Sync(tc.newPorts); err != nil {
+			syncer.GC(tc.newPorts, klog.TODO())
+			if err := syncer.Sync(tc.newPorts, klog.TODO()); err != nil {
 				t.Errorf("Expected backend pool to add node ports, err: %v", err)
 			}
 
@@ -517,7 +517,7 @@ func TestSyncNEG(t *testing.T) {
 	syncer := newTestSyncer(fakeGCE)
 
 	svcPort := utils.ServicePort{NodePort: 81, Protocol: annotations.ProtocolHTTP, BackendNamer: defaultNamer}
-	if err := syncer.Sync([]utils.ServicePort{svcPort}); err != nil {
+	if err := syncer.Sync([]utils.ServicePort{svcPort}, klog.TODO()); err != nil {
 		t.Errorf("Expected backend pool to add node ports, err: %v", err)
 	}
 
@@ -529,7 +529,7 @@ func TestSyncNEG(t *testing.T) {
 
 	// Convert to NEG
 	svcPort.NEGEnabled = true
-	if err := syncer.Sync([]utils.ServicePort{svcPort}); err != nil {
+	if err := syncer.Sync([]utils.ServicePort{svcPort}, klog.TODO()); err != nil {
 		t.Errorf("Expected backend pool to add node ports, err: %v", err)
 	}
 
@@ -539,20 +539,20 @@ func TestSyncNEG(t *testing.T) {
 		t.Fatalf("Failed to get backend service with name %v: %v", negName, err)
 	}
 	// GC should garbage collect the Backend on the old naming schema
-	syncer.GC([]utils.ServicePort{svcPort})
+	syncer.GC([]utils.ServicePort{svcPort}, klog.TODO())
 
-	bs, err := syncer.backendPool.Get(nodePortName, features.VersionFromServicePort(&svcPort), features.ScopeFromServicePort(&svcPort))
+	bs, err := syncer.backendPool.Get(nodePortName, features.VersionFromServicePort(&svcPort), features.ScopeFromServicePort(&svcPort), klog.TODO())
 	if err == nil {
 		t.Fatalf("Expected not to get BackendService with name %v, got: %+v", nodePortName, bs)
 	}
 
 	// Convert back to non-NEG
 	svcPort.NEGEnabled = false
-	if err := syncer.Sync([]utils.ServicePort{svcPort}); err != nil {
+	if err := syncer.Sync([]utils.ServicePort{svcPort}, klog.TODO()); err != nil {
 		t.Errorf("Expected backend pool to add node ports, err: %v", err)
 	}
 
-	syncer.GC([]utils.ServicePort{svcPort})
+	syncer.GC([]utils.ServicePort{svcPort}, klog.TODO())
 
 	_, err = fakeGCE.GetGlobalBackendService(nodePortName)
 	if err != nil {
@@ -565,7 +565,7 @@ func TestShutdown(t *testing.T) {
 	syncer := newTestSyncer(fakeGCE)
 
 	// Sync a backend and verify that it doesn't exist after Shutdown()
-	syncer.Sync([]utils.ServicePort{{NodePort: 80, BackendNamer: defaultNamer}})
+	syncer.Sync([]utils.ServicePort{{NodePort: 80, BackendNamer: defaultNamer}}, klog.TODO())
 	syncer.Shutdown()
 	if _, err := fakeGCE.GetGlobalBackendService(defaultNamer.IGBackend(80)); err == nil {
 		t.Fatalf("%v", err)
@@ -587,8 +587,8 @@ func TestEnsureBackendServiceProtocol(t *testing.T) {
 			t.Run(
 				fmt.Sprintf("Updating Port:%v Protocol:%v to Port:%v Protocol:%v", oldPort.NodePort, oldPort.Protocol, newPort.NodePort, newPort.Protocol),
 				func(t *testing.T) {
-					syncer.Sync([]utils.ServicePort{oldPort})
-					be, err := syncer.backendPool.Get(oldPort.BackendName(), features.VersionFromServicePort(&oldPort), features.ScopeFromServicePort(&oldPort))
+					syncer.Sync([]utils.ServicePort{oldPort}, klog.TODO())
+					be, err := syncer.backendPool.Get(oldPort.BackendName(), features.VersionFromServicePort(&oldPort), features.ScopeFromServicePort(&oldPort), klog.TODO())
 					if err != nil {
 						t.Fatalf("%v", err)
 					}
@@ -631,8 +631,8 @@ func TestEnsureBackendServiceDescription(t *testing.T) {
 			t.Run(
 				fmt.Sprintf("Updating Port:%v Protocol:%v to Port:%v Protocol:%v", oldPort.NodePort, oldPort.Protocol, newPort.NodePort, newPort.Protocol),
 				func(t *testing.T) {
-					syncer.Sync([]utils.ServicePort{oldPort})
-					be, err := syncer.backendPool.Get(oldPort.BackendName(), features.VersionFromServicePort(&oldPort), features.ScopeFromServicePort(&oldPort))
+					syncer.Sync([]utils.ServicePort{oldPort}, klog.TODO())
+					be, err := syncer.backendPool.Get(oldPort.BackendName(), features.VersionFromServicePort(&oldPort), features.ScopeFromServicePort(&oldPort), klog.TODO())
 					if err != nil {
 						t.Fatalf("%v", err)
 					}
@@ -659,8 +659,8 @@ func TestEnsureBackendServiceHealthCheckLink(t *testing.T) {
 	syncer := newTestSyncer(fakeGCE)
 
 	p := utils.ServicePort{NodePort: 80, Protocol: annotations.ProtocolHTTP, ID: utils.ServicePortID{Port: networkingv1.ServiceBackendPort{Number: 1}}, BackendNamer: defaultNamer}
-	syncer.Sync([]utils.ServicePort{p})
-	be, err := syncer.backendPool.Get(p.BackendName(), features.VersionFromServicePort(&p), features.ScopeFromServicePort(&p))
+	syncer.Sync([]utils.ServicePort{p}, klog.TODO())
+	be, err := syncer.backendPool.Get(p.BackendName(), features.VersionFromServicePort(&p), features.ScopeFromServicePort(&p), klog.TODO())
 	if err != nil {
 		t.Fatalf("%v", err)
 	}

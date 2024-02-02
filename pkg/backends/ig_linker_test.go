@@ -35,6 +35,7 @@ import (
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
+	"k8s.io/klog/v2"
 )
 
 const defaultZone = "zone-a"
@@ -76,7 +77,7 @@ func TestLink(t *testing.T) {
 	}
 
 	// Mimic the syncer creating the backend.
-	linker.backendPool.Create(sp, "fake-health-check-link")
+	linker.backendPool.Create(sp, "fake-health-check-link", klog.TODO())
 
 	if err := linker.Link(sp, []GroupKey{{Zone: defaultZone}}); err != nil {
 		t.Fatalf("%v", err)
@@ -132,7 +133,7 @@ func TestLinkWithCreationModeError(t *testing.T) {
 		}
 
 		// Mimic the syncer creating the backend.
-		linker.backendPool.Create(sp, "fake-health-check-link")
+		linker.backendPool.Create(sp, "fake-health-check-link", klog.TODO())
 
 		if err := linker.Link(sp, []GroupKey{{Zone: defaultZone}}); err != nil {
 			t.Fatalf("%v", err)
@@ -152,7 +153,7 @@ func TestLinkWithCreationModeError(t *testing.T) {
 				t.Fatalf("Wrong balancing mode, expected %v got %v", modes[(i+1)%len(modes)], b.BalancingMode)
 			}
 		}
-		linker.backendPool.Delete(sp.BackendName(), features.VersionFromServicePort(&sp), features.ScopeFromServicePort(&sp))
+		linker.backendPool.Delete(sp.BackendName(), features.VersionFromServicePort(&sp), features.ScopeFromServicePort(&sp), klog.TODO())
 	}
 }
 

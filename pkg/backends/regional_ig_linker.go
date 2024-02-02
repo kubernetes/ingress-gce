@@ -47,7 +47,10 @@ func (linker *RegionalInstanceGroupLinker) Link(sp utils.ServicePort, projectID 
 		igSelfLink := cloudprovider.SelfLink(meta.VersionGA, projectID, "instanceGroups", key)
 		igLinks = append(igLinks, igSelfLink)
 	}
-	bs, err := linker.backendPool.Get(sp.BackendName(), meta.VersionGA, meta.Regional)
+	// TODO(cheungdavid): Create regional ig linker logger that contains backendName,
+	// backendVersion, and backendScope before passing to backendPool.Get().
+	// See example in backendSyncer.ensureBackendService().
+	bs, err := linker.backendPool.Get(sp.BackendName(), meta.VersionGA, meta.Regional, klog.TODO())
 	if err != nil {
 		return err
 	}
@@ -82,7 +85,7 @@ func (linker *RegionalInstanceGroupLinker) Link(sp utils.ServicePort, projectID 
 	}
 
 	klog.V(3).Infof("Update Backend %s, with %d added backends (total %d).", sp.BackendName(), len(addIGs), len(bs.Backends))
-	if err := linker.backendPool.Update(bs); err != nil {
+	if err := linker.backendPool.Update(bs, klog.TODO()); err != nil {
 		return fmt.Errorf("updating backend service %s for IG failed, err:%w", sp.BackendName(), err)
 	}
 	return nil

@@ -307,7 +307,10 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 	protocol := utils.GetProtocol(servicePorts)
 
 	connectionTrackingPolicy := l4netlb.connectionTrackingPolicy()
-	bs, err := l4netlb.backendPool.EnsureL4BackendService(bsName, hcLink, string(protocol), string(l4netlb.Service.Spec.SessionAffinity), string(cloud.SchemeExternal), l4netlb.NamespacedName, *network.DefaultNetwork(l4netlb.cloud), connectionTrackingPolicy)
+	// TODO(cheungdavid): Create backend logger that contains backendName,
+	// backendVersion, and backendScope before passing to backendPool.EnsureL4BackendService().
+	// See example in backendSyncer.ensureBackendService().
+	bs, err := l4netlb.backendPool.EnsureL4BackendService(bsName, hcLink, string(protocol), string(l4netlb.Service.Spec.SessionAffinity), string(cloud.SchemeExternal), l4netlb.NamespacedName, *network.DefaultNetwork(l4netlb.cloud), connectionTrackingPolicy, klog.TODO())
 	if err != nil {
 		if utils.IsUnsupportedFeatureError(err, strongSessionAffinityFeatureName) {
 			syncResult.GCEResourceInError = annotations.BackendServiceResource
@@ -544,7 +547,10 @@ func (l4netlb *L4NetLB) deleteBackendService(result *L4NetLBSyncResult) {
 		klog.V(2).Infof("Finished deleting backend service %s, for L4 NetLB Service %s/%s, time taken", bsName, l4netlb.Service.Namespace, l4netlb.Service.Name, time.Since(start))
 	}()
 
-	err := utils.IgnoreHTTPNotFound(l4netlb.backendPool.Delete(bsName, meta.VersionGA, meta.Regional))
+	// TODO(cheungdavid): Create backend logger that contains backendName,
+	// backendVersion, and backendScope before passing to backendPool.Delete().
+	// See example in backendSyncer.ensureBackendService().
+	err := utils.IgnoreHTTPNotFound(l4netlb.backendPool.Delete(bsName, meta.VersionGA, meta.Regional, klog.TODO()))
 	if err != nil {
 		klog.Errorf("Failed to delete backends for L4 External LoadBalancer service %s - %v", l4netlb.NamespacedName.String(), err)
 		result.GCEResourceInError = annotations.BackendServiceResource
