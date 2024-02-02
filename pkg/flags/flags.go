@@ -64,7 +64,6 @@ var (
 		DefaultSvc                       string
 		DefaultSvcHealthCheckPath        string
 		DefaultSvcPortName               string
-		DeleteAllOnQuit                  bool
 		GCEOperationPollInterval         time.Duration
 		GCERateLimit                     RateLimitSpecs
 		GCERateLimitScale                float64
@@ -189,11 +188,6 @@ form namespace/name.`)
 	flag.StringVar(&F.DefaultSvcPortName, "default-backend-service-port", "http",
 		`Specify the default service's port used to serve a 404 page for the default backend. Takes
 only the port's name - not its number.`)
-	flag.BoolVar(&F.DeleteAllOnQuit, "delete-all-on-quit", false,
-		`If true, the controller will delete all Ingress and the associated
-external cloud resources as it's shutting down. Mostly used for testing. In
-normal environments the controller should only delete a loadbalancer if the
-associated Ingress is deleted.`)
 	flag.BoolVar(&F.EnableFrontendConfig, "enable-frontend-config", false,
 		`Optional, whether or not to enable FrontendConfig.`)
 	flag.Var(&F.GCERateLimit, "gce-ratelimit",

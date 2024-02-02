@@ -353,7 +353,7 @@ func (lbc *LoadBalancerController) Run() {
 
 // Stop stops the loadbalancer controller. It also deletes cluster resources
 // if deleteAll is true.
-func (lbc *LoadBalancerController) Stop(deleteAll bool) error {
+func (lbc *LoadBalancerController) Stop() {
 	// Stop is invoked from the http endpoint.
 	lbc.stopLock.Lock()
 	defer lbc.stopLock.Unlock()
@@ -365,19 +365,6 @@ func (lbc *LoadBalancerController) Stop(deleteAll bool) error {
 		lbc.ingQueue.Shutdown()
 		lbc.shutdown = true
 	}
-
-	// Deleting shared cluster resources is idempotent.
-	// TODO(rramkumar): Do we need deleteAll? Can we get rid of its' flag?
-	if deleteAll {
-		lbc.logger.Info("Shutting down cluster manager.")
-		if err := lbc.l7Pool.Shutdown(lbc.ctx.Ingresses().List()); err != nil {
-			return err
-		}
-
-		// The backend pool will also delete instance groups.
-		return lbc.backendSyncer.Shutdown()
-	}
-	return nil
 }
 
 // SyncBackends implements Controller.
