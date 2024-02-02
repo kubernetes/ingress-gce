@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"sync"
 	"time"
 
 	flag "github.com/spf13/pflag"
@@ -295,46 +296,60 @@ func makeLeaderElectionConfig(ctx *ingctx.ControllerContext, client clientset.In
 
 func runControllers(ctx *ingctx.ControllerContext) {
 	stopCh := make(chan struct{})
+	var wg sync.WaitGroup
+	var once sync.Once
+	// This ensures that stopCh is only closed once.
+	// Right now, we have two callers.
+	// One is triggered when the ASM configmap changes, and the other one is
+	// triggered by the SIGTERM handler.
+	closeStopCh := func() {
+		once.Do(func() { close(stopCh) })
+	}
+
 	ctx.Init()
-	lbc := controller.NewLoadBalancerController(ctx, stopCh, klog.TODO())
+	if flags.F.RunIngressController {
+		lbc := controller.NewLoadBalancerController(ctx, stopCh, klog.TODO())
+		go runWithWg(lbc.Run, &wg)
+		klog.V(0).Infof("ingress controller started")
+
+		if !flags.F.EnableFirewallCR && flags.F.DisableFWEnforcement {
+			klog.Fatalf("We can only disable the ingress controller FW enforcement when enabling the FW CR")
+		}
+		fwc := firewalls.NewFirewallController(ctx, flags.F.NodePortRanges.Values(), flags.F.EnableFirewallCR, flags.F.DisableFWEnforcement, ctx.EnableIngressRegionalExternal, stopCh)
+		go runWithWg(fwc.Run, &wg)
+		klog.V(0).Infof("firewall controller started")
+	}
+
 	if ctx.EnableASMConfigMap {
 		ctx.ASMConfigController.RegisterInformer(ctx.ConfigMapInformer, func() {
 			// We want to trigger a restart.
-			lbc.Stop()
+			closeStopCh()
 		})
 	}
-
-	if !flags.F.EnableFirewallCR && flags.F.DisableFWEnforcement {
-		klog.Fatalf("We can only disable the ingress controller FW enforcement when enabling the FW CR")
-	}
-
-	fwc := firewalls.NewFirewallController(ctx, flags.F.NodePortRanges.Values(), flags.F.EnableFirewallCR, flags.F.DisableFWEnforcement, ctx.EnableIngressRegionalExternal, stopCh)
-
 	if flags.F.RunL4Controller {
 		l4Controller := l4lb.NewILBController(ctx, stopCh)
-		go l4Controller.Run()
+		go runWithWg(l4Controller.Run, &wg)
 		klog.V(0).Infof("L4 controller started")
 	}
 
 	if flags.F.EnablePSC {
 		pscController := psc.NewController(ctx, stopCh)
-		go pscController.Run()
+		go runWithWg(pscController.Run, &wg)
 		klog.V(0).Infof("PSC Controller started")
 	}
 
 	if flags.F.EnableServiceMetrics {
 		metricsController := servicemetrics.NewController(ctx, flags.F.MetricsExportInterval, stopCh)
-		go metricsController.Run()
+		go runWithWg(metricsController.Run, &wg)
 		klog.V(0).Infof("Service Metrics Controller started")
 	}
 
 	if flags.F.EnableNEGController {
-		runNEGController(ctx, stopCh)
+		negController := createNEGController(ctx, stopCh)
+		go runWithWg(negController.Run, &wg)
+		klog.V(0).Infof("negController started")
 	}
-	go app.RunSIGTERMHandler(lbc)
-
-	go fwc.Run()
-	klog.V(0).Infof("firewall controller started")
+	go app.RunSIGTERMHandler(closeStopCh)
 
 	ctx.Start(stopCh)
 
@@ -346,27 +361,40 @@ func runControllers(ctx *ingctx.ControllerContext) {
 			StopCh:       stopCh,
 		}
 		igController := instancegroups.NewController(igControllerParams)
-		go igController.Run()
+		go runWithWg(igController.Run, &wg)
 	}
 
 	// The L4NetLbController will be run when RbsMode flag is Set
 	if flags.F.RunL4NetLBController {
 		l4netlbController := l4lb.NewL4NetLBController(ctx, stopCh)
 
+		go runWithWg(l4netlbController.Run, &wg)
 		klog.V(0).Infof("L4NetLB controller started")
-		go l4netlbController.Run()
 	}
-	lbc.Run()
-	for {
-		klog.Warning("Handled quit, awaiting pod deletion.")
-		time.Sleep(30 * time.Second)
-		if ctx.EnableASMConfigMap {
-			return
-		}
+	// Keep the program running until TERM signal.
+	<-stopCh
+	klog.Warning("Shutdown has been triggered")
+
+	doneCh := make(chan struct{})
+	go func() {
+		defer close(doneCh)
+		// Wait until all controllers are done with cleanup.
+		klog.Info("Starting to wait for controller cleanup")
+		wg.Wait()
+		klog.Info("Finished waiting for controller cleanup")
+	}()
+
+	select {
+	case <-doneCh:
+		klog.Info("Finished cleanup for all controllers, shutting down")
+		return
+	case <-time.After(30 * time.Second):
+		klog.Warning("Reached 30 seconds timeout limit, shutting down")
+		return
 	}
 }
 
-func runNEGController(ctx *ingctx.ControllerContext, stopCh <-chan struct{}) {
+func createNEGController(ctx *ingctx.ControllerContext, stopCh <-chan struct{}) *neg.Controller {
 	zoneGetter := ctx.ZoneGetter
 
 	// In NonGCP mode, use the zone specified in gce.conf directly.
@@ -427,7 +455,13 @@ func runNEGController(ctx *ingctx.ControllerContext, stopCh <-chan struct{}) {
 	)
 
 	ctx.AddHealthCheck("neg-controller", negController.IsHealthy)
+	return negController
+}
 
-	go negController.Run()
-	klog.V(0).Infof("negController started")
+// runWithWg is a convenience wrapper that do a wg.Add(1) and runs the given
+// function with a deferred wg.Done()
+func runWithWg(runFunc func(), wg *sync.WaitGroup) {
+	wg.Add(1)
+	defer wg.Done()
+	runFunc()
 }
