@@ -114,6 +114,7 @@ var (
 		EnableL4NetLBDualStack                   bool
 		EnableNEGController                      bool
 		EnableL4NEG                              bool
+		GateNEGByLock                            bool
 		EnableMultipleIGs                        bool
 		EnableServiceMetrics                     bool
 		EnableL4StrongSessionAffinity            bool
@@ -270,6 +271,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.RunL4NetLBController, "run-l4-netlb-controller", false, `Optional, if enabled then the L4NetLbController will be run.`)
 	flag.BoolVar(&F.EnableNEGController, "enable-neg-controller", true, `Optional, if enabled then the NEG controller will be run.`)
 	flag.BoolVar(&F.EnableL4NEG, "enable-l4-neg", false, `Optional, if enabled then the NEG controller will process L4 NEGs.`)
+	flag.BoolVar(&F.GateNEGByLock, "gate-neg-by-lock", false, "If enabled then the NEG controller will be run via leader election with NEG resource lock")
 	flag.BoolVar(&F.EnableIGController, "enable-ig-controller", true, `Optional, if enabled then the IG controller will be run.`)
 	flag.BoolVar(&F.EnableServiceMetrics, "enable-service-metrics", false, `Optional, if enabled then the service metrics controller will be run.`)
 	flag.BoolVar(&F.EnablePSC, "enable-psc", false, "Enable PSC controller")
