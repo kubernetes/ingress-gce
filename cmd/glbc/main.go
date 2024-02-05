@@ -233,11 +233,24 @@ func main() {
 	go app.RunHTTPServer(ctx.HealthCheck)
 
 	if !flags.F.LeaderElection.LeaderElect {
-		runControllers(ctx)
+		option := runOption{
+			stopCh: make(chan struct{}),
+			wg:     &sync.WaitGroup{},
+		}
+		ctx.Init()
+		if flags.F.EnableNEGController {
+			runNEGController(ctx, option)
+		}
+		runControllers(ctx, option)
 		return
 	}
 
-	electionConfig, err := makeLeaderElectionConfig(ctx, leaderElectKubeClient, ctx.Recorder(flags.F.LeaderElection.LockObjectNamespace))
+	electionConfig, err := makeLeaderElectionConfig(ctx, runOption{
+		client:   leaderElectKubeClient,
+		recorder: ctx.Recorder(flags.F.LeaderElection.LockObjectNamespace),
+		stopCh:   make(chan struct{}),
+		wg:       &sync.WaitGroup{},
+	})
 	if err != nil {
 		klog.Fatalf("%v", err)
 	}
@@ -245,32 +258,41 @@ func main() {
 	klog.Warning("Ingress Controller exited.")
 }
 
+type runOption struct {
+	client   clientset.Interface
+	recorder record.EventRecorder
+	stopCh   chan struct{}
+	wg       *sync.WaitGroup
+}
+
 // makeLeaderElectionConfig builds a leader election configuration. It will
 // create a new resource lock associated with the configuration.
-func makeLeaderElectionConfig(ctx *ingctx.ControllerContext, client clientset.Interface, recorder record.EventRecorder) (*leaderelection.LeaderElectionConfig, error) {
+func makeLeaderElectionConfig(ctx *ingctx.ControllerContext, option runOption) (*leaderelection.LeaderElectionConfig, error) {
 	hostname, err := os.Hostname()
 	if err != nil {
 		return nil, fmt.Errorf("unable to get hostname: %v", err)
 	}
 	// add a uniquifier so that two processes on the same host don't accidentally both become active
 	id := fmt.Sprintf("%v_%x", hostname, rand.Intn(1e6))
-	// TODO(#1590): Migrate to LeasesResourceLock two releases after the
-	//  migration to ConfigMapsLeases were done.
 	rl, err := resourcelock.New(resourcelock.LeasesResourceLock,
 		flags.F.LeaderElection.LockObjectNamespace,
 		flags.F.LeaderElection.LockObjectName,
-		client.CoreV1(),
-		client.CoordinationV1(),
+		option.client.CoreV1(),
+		option.client.CoordinationV1(),
 		resourcelock.ResourceLockConfig{
 			Identity:      id,
-			EventRecorder: recorder,
+			EventRecorder: option.recorder,
 		})
 	if err != nil {
 		return nil, fmt.Errorf("couldn't create resource lock: %v", err)
 	}
 
 	run := func() {
-		runControllers(ctx)
+		ctx.Init()
+		if flags.F.EnableNEGController {
+			runNEGController(ctx, option)
+		}
+		runControllers(ctx, option)
 		klog.Info("Shutting down leader election")
 		os.Exit(0)
 	}
@@ -293,9 +315,9 @@ func makeLeaderElectionConfig(ctx *ingctx.ControllerContext, client clientset.In
 	}, nil
 }
 
-func runControllers(ctx *ingctx.ControllerContext) {
-	stopCh := make(chan struct{})
-	var wg sync.WaitGroup
+func runControllers(ctx *ingctx.ControllerContext, option runOption) {
+	stopCh := option.stopCh
+	wg := option.wg
 	var once sync.Once
 	// This ensures that stopCh is only closed once.
 	// Right now, we have two callers.
@@ -305,17 +327,16 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		once.Do(func() { close(stopCh) })
 	}
 
-	ctx.Init()
 	if flags.F.RunIngressController {
 		lbc := controller.NewLoadBalancerController(ctx, stopCh, klog.TODO())
-		go runWithWg(lbc.Run, &wg)
+		go runWithWg(lbc.Run, wg)
 		klog.V(0).Infof("ingress controller started")
 
 		if !flags.F.EnableFirewallCR && flags.F.DisableFWEnforcement {
 			klog.Fatalf("We can only disable the ingress controller FW enforcement when enabling the FW CR")
 		}
 		fwc := firewalls.NewFirewallController(ctx, flags.F.NodePortRanges.Values(), flags.F.EnableFirewallCR, flags.F.DisableFWEnforcement, ctx.EnableIngressRegionalExternal, stopCh)
-		go runWithWg(fwc.Run, &wg)
+		go runWithWg(fwc.Run, wg)
 		klog.V(0).Infof("firewall controller started")
 	}
 
@@ -327,27 +348,22 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	}
 	if flags.F.RunL4Controller {
 		l4Controller := l4lb.NewILBController(ctx, stopCh)
-		go runWithWg(l4Controller.Run, &wg)
+		go runWithWg(l4Controller.Run, wg)
 		klog.V(0).Infof("L4 controller started")
 	}
 
 	if flags.F.EnablePSC {
 		pscController := psc.NewController(ctx, stopCh)
-		go runWithWg(pscController.Run, &wg)
+		go runWithWg(pscController.Run, wg)
 		klog.V(0).Infof("PSC Controller started")
 	}
 
 	if flags.F.EnableServiceMetrics {
 		metricsController := servicemetrics.NewController(ctx, flags.F.MetricsExportInterval, stopCh)
-		go runWithWg(metricsController.Run, &wg)
+		go runWithWg(metricsController.Run, wg)
 		klog.V(0).Infof("Service Metrics Controller started")
 	}
 
-	if flags.F.EnableNEGController {
-		negController := createNEGController(ctx, stopCh)
-		go runWithWg(negController.Run, &wg)
-		klog.V(0).Infof("negController started")
-	}
 	go app.RunSIGTERMHandler(closeStopCh)
 
 	ctx.Start(stopCh)
@@ -360,14 +376,14 @@ func runControllers(ctx *ingctx.ControllerContext) {
 			StopCh:       stopCh,
 		}
 		igController := instancegroups.NewController(igControllerParams)
-		go runWithWg(igController.Run, &wg)
+		go runWithWg(igController.Run, wg)
 	}
 
 	// The L4NetLbController will be run when RbsMode flag is Set
 	if flags.F.RunL4NetLBController {
 		l4netlbController := l4lb.NewL4NetLBController(ctx, stopCh)
 
-		go runWithWg(l4netlbController.Run, &wg)
+		go runWithWg(l4netlbController.Run, wg)
 		klog.V(0).Infof("L4NetLB controller started")
 	}
 	// Keep the program running until TERM signal.
@@ -391,6 +407,12 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		klog.Warning("Reached 30 seconds timeout limit, shutting down")
 		return
 	}
+}
+
+func runNEGController(ctx *ingctx.ControllerContext, option runOption) {
+	negController := createNEGController(ctx, option.stopCh)
+	go runWithWg(negController.Run, option.wg)
+	klog.V(0).Infof("negController started")
 }
 
 func createNEGController(ctx *ingctx.ControllerContext, stopCh <-chan struct{}) *neg.Controller {
