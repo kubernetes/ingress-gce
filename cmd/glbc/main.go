@@ -68,6 +68,8 @@ import (
 	"k8s.io/ingress-gce/pkg/version"
 )
 
+const negLockName = "ingress-gce-neg-lock"
+
 func main() {
 	flags.Register()
 	rand.Seed(time.Now().UTC().UnixNano())
@@ -234,22 +236,25 @@ func main() {
 
 	if !flags.F.LeaderElection.LeaderElect {
 		option := runOption{
-			stopCh: make(chan struct{}),
-			wg:     &sync.WaitGroup{},
+			stopCh:      make(chan struct{}),
+			wg:          &sync.WaitGroup{},
+			leaderElect: false,
 		}
 		ctx.Init()
 		if flags.F.EnableNEGController {
-			runNEGController(ctx, option)
+			// ID is only used during leader election.
+			runNEGController(ctx, "", option)
 		}
 		runControllers(ctx, option)
 		return
 	}
 
 	electionConfig, err := makeLeaderElectionConfig(ctx, runOption{
-		client:   leaderElectKubeClient,
-		recorder: ctx.Recorder(flags.F.LeaderElection.LockObjectNamespace),
-		stopCh:   make(chan struct{}),
-		wg:       &sync.WaitGroup{},
+		client:      leaderElectKubeClient,
+		recorder:    ctx.Recorder(flags.F.LeaderElection.LockObjectNamespace),
+		stopCh:      make(chan struct{}),
+		wg:          &sync.WaitGroup{},
+		leaderElect: true,
 	})
 	if err != nil {
 		klog.Fatalf("%v", err)
@@ -259,10 +264,11 @@ func main() {
 }
 
 type runOption struct {
-	client   clientset.Interface
-	recorder record.EventRecorder
-	stopCh   chan struct{}
-	wg       *sync.WaitGroup
+	client      clientset.Interface
+	recorder    record.EventRecorder
+	stopCh      chan struct{}
+	wg          *sync.WaitGroup
+	leaderElect bool
 }
 
 // makeLeaderElectionConfig builds a leader election configuration. It will
@@ -290,7 +296,7 @@ func makeLeaderElectionConfig(ctx *ingctx.ControllerContext, option runOption) (
 	run := func() {
 		ctx.Init()
 		if flags.F.EnableNEGController {
-			runNEGController(ctx, option)
+			runNEGController(ctx, id, option)
 		}
 		runControllers(ctx, option)
 		klog.Info("Shutting down leader election")
@@ -409,10 +415,80 @@ func runControllers(ctx *ingctx.ControllerContext, option runOption) {
 	}
 }
 
-func runNEGController(ctx *ingctx.ControllerContext, option runOption) {
+// runNEGController needs to be a non-blocking because runController is the
+// main thread.
+// If leader election is disabled, we only run NEG controller.
+// Otherwise, we do leader election based on ingress-gce-neg-lock, run NEG
+// controller and collect availability metrics on the lock.
+// If GateNEGByLock is true, NEG controller is run in the leader election.
+// Otherwise, it is run with other controllers together.
+func runNEGController(ctx *ingctx.ControllerContext, id string, option runOption) {
 	negController := createNEGController(ctx, option.stopCh)
-	go runWithWg(negController.Run, option.wg)
-	klog.V(0).Infof("negController started")
+	if !option.leaderElect {
+		go runWithWg(negController.Run, option.wg)
+		klog.V(0).Info("negController started")
+		return
+	}
+
+	// If GateNEGByLock is false, we run NEG controller with other controllers.
+	// In this case, NEG controller is controlled by the combined lock/ingress-gce-lock.
+	if !flags.F.GateNEGByLock {
+		go runWithWg(negController.Run, option.wg)
+		klog.V(0).Info("negController started")
+	}
+
+	klog.Infof("Attempting to grab %s", negLockName)
+	negRunFunc := func() {
+		go collectLockAvailabilityMetrics(negLockName, flags.F.GKEClusterType, option.stopCh)
+		// If GateNEGByLock is true, we run NEG controller with NEG leader election.
+		// In this case, NEG controller is controlled by the ingres-gce-lock
+		// and ingress-gce-neg-lock.
+		if flags.F.GateNEGByLock {
+			go runWithWg(negController.Run, option.wg)
+			klog.V(0).Info("Gated: negController started")
+		}
+		<-option.stopCh
+		klog.Info("Shutting down NEG leader election")
+		option.wg.Wait()
+		os.Exit(0)
+	}
+
+	negElectConfig, err := makeNEGLeaderElectionConfig(ctx, id, option, negRunFunc)
+	if err != nil {
+		klog.Errorf("makeNEGLeaderElectionConfig()=%v, want nil", err)
+	}
+	// Run in goroutine since RunOrDie is a blocking call.
+	go leaderelection.RunOrDie(context.Background(), *negElectConfig)
+}
+
+func makeNEGLeaderElectionConfig(ctx *ingctx.ControllerContext, id string, option runOption, runNEGFunc func()) (*leaderelection.LeaderElectionConfig, error) {
+	negLock, err := resourcelock.New(resourcelock.LeasesResourceLock,
+		flags.F.LeaderElection.LockObjectNamespace,
+		negLockName,
+		option.client.CoreV1(),
+		option.client.CoordinationV1(),
+		resourcelock.ResourceLockConfig{
+			Identity:      id,
+			EventRecorder: option.recorder,
+		})
+	if err != nil {
+		return nil, fmt.Errorf("couldn't create resource lock: %v", err)
+	}
+
+	return &leaderelection.LeaderElectionConfig{
+		Lock:          negLock,
+		LeaseDuration: flags.F.LeaderElection.LeaseDuration.Duration,
+		RenewDeadline: flags.F.LeaderElection.RenewDeadline.Duration,
+		RetryPeriod:   flags.F.LeaderElection.RetryPeriod.Duration,
+		Callbacks: leaderelection.LeaderCallbacks{
+			OnStartedLeading: func(context.Context) {
+				runNEGFunc()
+			},
+			OnStoppedLeading: func() {
+				klog.Warning("Stop running NEG Leader election")
+			},
+		},
+	}, nil
 }
 
 func createNEGController(ctx *ingctx.ControllerContext, stopCh <-chan struct{}) *neg.Controller {
