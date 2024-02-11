@@ -255,26 +255,17 @@ func main() {
 	go app.RunHTTPServer(ctx.HealthCheck, rootLogger)
 
 	if !flags.F.LeaderElection.LeaderElect {
-		option := runOption{
-			stopCh:      make(chan struct{}),
-			wg:          &sync.WaitGroup{},
-			leaderElect: false,
-		}
-		ctx.Init()
 		if flags.F.EnableNEGController {
 			// ID is only used during leader election.
-			runNEGController(ctx, "", option, rootLogger)
+			runNEGController(ctx, rootLogger)
 		}
 		runControllers(ctx, rootLogger)
 		return
 	}
 
 	electionConfig, err := makeLeaderElectionConfig(ctx, runOption{
-		client:      leaderElectKubeClient,
-		recorder:    ctx.Recorder(flags.F.LeaderElection.LockObjectNamespace),
-		stopCh:      make(chan struct{}),
-		wg:          &sync.WaitGroup{},
-		leaderElect: true,
+		client:   leaderElectKubeClient,
+		recorder: ctx.Recorder(flags.F.LeaderElection.LockObjectNamespace),
 	}, rootLogger)
 	if err != nil {
 		klog.Fatalf("%v", err)
@@ -284,11 +275,8 @@ func main() {
 }
 
 type runOption struct {
-	client      clientset.Interface
-	recorder    record.EventRecorder
-	stopCh      chan struct{}
-	wg          *sync.WaitGroup
-	leaderElect bool
+	client   clientset.Interface
+	recorder record.EventRecorder
 }
 
 // makeLeaderElectionConfig builds a leader election configuration. It will
@@ -410,54 +398,14 @@ func runControllers(ctx *ingctx.ControllerContext, logger klog.Logger) {
 	waitWithTimeout(&wg, logger)
 }
 
-// runNEGController needs to be a non-blocking because runController is the
-// main thread.
-// If leader election is disabled, we only run NEG controller.
-// Otherwise, we do leader election based on ingress-gce-neg-lock, run NEG
-// controller and collect availability metrics on the lock.
-// If GateNEGByLock is true, NEG controller is run in the leader election.
-// Otherwise, it is run with other controllers together.
-func runNEGController(ctx *ingctx.ControllerContext, id string, option runOption, logger klog.Logger) {
-	negController := createNEGController(ctx, option.stopCh, logger)
-	if !option.leaderElect {
-		runWithWg(negController.Run, option.wg)
-		logger.V(0).Info("negController started")
-		return
-	}
-
-	// If GateNEGByLock is false, we run NEG controller with other controllers.
-	// In this case, NEG controller is controlled by the combined lock/ingress-gce-lock.
-	if !flags.F.GateNEGByLock {
-		runWithWg(negController.Run, option.wg)
-		logger.V(0).Info("negController started")
-	}
-
-	lockLogger := logger.WithValues("lockName", negLockName)
-	lockLogger.Info("Attempting to grab lock", "lockName", negLockName)
-	negRunFunc := func() {
-		go collectLockAvailabilityMetrics(negLockName, flags.F.GKEClusterType, option.stopCh, lockLogger)
-		// If GateNEGByLock is true, we run NEG controller with NEG leader election.
-		// In this case, NEG controller is controlled by the ingres-gce-lock
-		// and ingress-gce-neg-lock.
-		if flags.F.GateNEGByLock {
-			runWithWg(negController.Run, option.wg)
-			logger.V(0).Info("Gated: negController started")
-		}
-		<-option.stopCh
-		logger.Info("Shutting down NEG leader election")
-		option.wg.Wait()
-		os.Exit(0)
-	}
-
-	negElectConfig, err := makeNEGLeaderElectionConfig(ctx, id, option, negRunFunc, logger)
+func makeNEGLeaderElectionConfig(ctx *ingctx.ControllerContext, option runOption, logger klog.Logger) (*leaderelection.LeaderElectionConfig, error) {
+	hostname, err := os.Hostname()
 	if err != nil {
-		logger.Error(err, "makeNEGLeaderElectionConfig() has an error")
+		return nil, fmt.Errorf("unable to get hostname: %v", err)
 	}
-	// Run in goroutine since RunOrDie is a blocking call.
-	go leaderelection.RunOrDie(context.Background(), *negElectConfig)
-}
+	// add a uniquifier so that two processes on the same host don't accidentally both become active
+	id := fmt.Sprintf("%v_%x", hostname, rand.Intn(1e6))
 
-func makeNEGLeaderElectionConfig(ctx *ingctx.ControllerContext, id string, option runOption, runNEGFunc func(), logger klog.Logger) (*leaderelection.LeaderElectionConfig, error) {
 	negLock, err := resourcelock.New(resourcelock.LeasesResourceLock,
 		flags.F.LeaderElection.LockObjectNamespace,
 		negLockName,
@@ -471,6 +419,11 @@ func makeNEGLeaderElectionConfig(ctx *ingctx.ControllerContext, id string, optio
 		return nil, fmt.Errorf("couldn't create resource lock: %v", err)
 	}
 
+	run := func() {
+		runNEGController(ctx, logger)
+		logger.Info("Shutting down NEG leader election")
+	}
+
 	return &leaderelection.LeaderElectionConfig{
 		Lock:          negLock,
 		LeaseDuration: flags.F.LeaderElection.LeaseDuration.Duration,
@@ -478,13 +431,59 @@ func makeNEGLeaderElectionConfig(ctx *ingctx.ControllerContext, id string, optio
 		RetryPeriod:   flags.F.LeaderElection.RetryPeriod.Duration,
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(context.Context) {
-				runNEGFunc()
+				run()
 			},
 			OnStoppedLeading: func() {
 				logger.Info("Stop running NEG Leader election")
 			},
 		},
 	}, nil
+}
+
+func runNEGController(ctx *ingctx.ControllerContext, logger klog.Logger) {
+	stopCh := make(chan struct{})
+	var wg sync.WaitGroup
+	var once sync.Once
+	// This ensures that stopCh is only closed once.
+	// Right now, we have two callers.
+	// One is triggered when the ASM configmap changes, and the other one is
+	// triggered by the SIGTERM handler.
+	closeStopCh := func() {
+		once.Do(func() { close(stopCh) })
+	}
+
+	lockLogger := logger.WithValues("lockName", negLockName)
+	lockLogger.Info("Attempting to grab lock", "lockName", negLockName)
+	go collectLockAvailabilityMetrics(negLockName, flags.F.GKEClusterType, stopCh, logger)
+
+	ctx.Init()
+	if ctx.EnableASMConfigMap {
+		ctx.ASMConfigController.RegisterInformer(ctx.ConfigMapInformer, func() {
+			// We want to trigger a restart.
+			closeStopCh()
+		})
+	}
+
+	if flags.F.EnableNEGController {
+		negController := createNEGController(ctx, stopCh, logger)
+		go runWithWg(negController.Run, &wg)
+		klog.V(0).Info("negController started")
+	}
+
+	go app.RunSIGTERMHandler(closeStopCh, logger)
+
+	// TODO(cheungdavid): Find a better approach to start informers.
+	// We could start some informers twice if Ingress and NEG controllers are
+	// run together.
+	// For informers that are already started, Run() will be skipped with
+	// warnings.
+	ctx.Start(stopCh)
+
+	// Keep the program running until TERM signal.
+	<-stopCh
+	klog.Warning("NEG Shutdown has been triggered")
+
+	waitWithTimeout(&wg, logger)
 }
 
 func createNEGController(ctx *ingctx.ControllerContext, stopCh <-chan struct{}, logger klog.Logger) *neg.Controller {
@@ -569,11 +568,11 @@ func collectLockAvailabilityMetrics(lockName, clusterType string, stopCh <-chan 
 	for {
 		select {
 		case <-stopCh:
-			lockLogger.Info("StopCh is closed. Stop collecting metrics for resource lock", "lockName", lockName)
+			lockLogger.Info("StopCh is closed. Stop collecting metrics for resource lock")
 			return
 		case <-ticker.C:
 			app.PublishLockAvailabilityMetrics(lockName, clusterType)
-			lockLogger.Info("Exported resource lock availability metrics", "lockName", lockName)
+			lockLogger.Info("Exported resource lock availability metrics")
 		}
 	}
 }
