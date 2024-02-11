@@ -247,7 +247,7 @@ func main() {
 			runNEG = func() {
 				negElectionConfig, err := makeNEGLeaderElectionConfig(
 					ctx,
-					runOption{
+					leOption{
 						client:   leaderElectKubeClient,
 						recorder: ctx.Recorder(flags.F.LeaderElection.LockObjectNamespace),
 					},
@@ -276,7 +276,7 @@ func main() {
 				rootLogger.Info("Start running Ingress le")
 				electionConfig, err := makeLeaderElectionConfig(
 					ctx,
-					runOption{
+					leOption{
 						client:   leaderElectKubeClient,
 						recorder: ctx.Recorder(flags.F.LeaderElection.LockObjectNamespace),
 					},
@@ -295,14 +295,14 @@ func main() {
 	wg.Wait()
 }
 
-type runOption struct {
+type leOption struct {
 	client   clientset.Interface
 	recorder record.EventRecorder
 }
 
 // makeLeaderElectionConfig builds a leader election configuration. It will
 // create a new resource lock associated with the configuration.
-func makeLeaderElectionConfig(ctx *ingctx.ControllerContext, option runOption, logger klog.Logger) (*leaderelection.LeaderElectionConfig, error) {
+func makeLeaderElectionConfig(ctx *ingctx.ControllerContext, option leOption, logger klog.Logger) (*leaderelection.LeaderElectionConfig, error) {
 	hostname, err := os.Hostname()
 	if err != nil {
 		return nil, fmt.Errorf("unable to get hostname: %v", err)
@@ -417,7 +417,7 @@ func runControllers(ctx *ingctx.ControllerContext, logger klog.Logger) {
 	waitWithTimeout(&wg, logger)
 }
 
-func makeNEGLeaderElectionConfig(ctx *ingctx.ControllerContext, option runOption, logger klog.Logger) (*leaderelection.LeaderElectionConfig, error) {
+func makeNEGLeaderElectionConfig(ctx *ingctx.ControllerContext, option leOption, logger klog.Logger) (*leaderelection.LeaderElectionConfig, error) {
 	hostname, err := os.Hostname()
 	if err != nil {
 		return nil, fmt.Errorf("unable to get hostname: %v", err)
