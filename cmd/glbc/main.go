@@ -254,24 +254,64 @@ func main() {
 	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, ingParamsClient, svcAttachmentClient, networkClient, eventRecorderKubeClient, cloud, namer, kubeSystemUID, ctxConfig, rootLogger)
 	go app.RunHTTPServer(ctx.HealthCheck, rootLogger)
 
-	if !flags.F.LeaderElection.LeaderElect {
-		if flags.F.EnableNEGController {
-			// ID is only used during leader election.
+	var wg sync.WaitGroup
+	if flags.F.EnableNEGController {
+		wg.Add(1)
+		defer wg.Done()
+		runNEG := func() {
 			runNEGController(ctx, rootLogger)
+			rootLogger.Info("NEG Controller exited.")
 		}
-		runControllers(ctx, rootLogger)
-		return
+		if flags.F.LeaderElection.LeaderElect {
+			runNEG = func() {
+				negElectionConfig, err := makeNEGLeaderElectionConfig(
+					ctx,
+					runOption{
+						client:   leaderElectKubeClient,
+						recorder: ctx.Recorder(flags.F.LeaderElection.LockObjectNamespace),
+					},
+					rootLogger,
+				)
+				if err != nil {
+					klog.Fatalf("makeNEGLeaderElectionConfig()=%v, want nil", err)
+				}
+				leaderelection.RunOrDie(context.Background(), *negElectionConfig)
+				rootLogger.Info("NEG Controller exited.")
+			}
+		}
+		go runNEG()
 	}
 
-	electionConfig, err := makeLeaderElectionConfig(ctx, runOption{
-		client:   leaderElectKubeClient,
-		recorder: ctx.Recorder(flags.F.LeaderElection.LockObjectNamespace),
-	}, rootLogger)
-	if err != nil {
-		klog.Fatalf("%v", err)
+	if flags.F.RunIngressController || flags.F.RunL4Controller || flags.F.RunL4NetLBController || flags.F.EnableIGController || flags.F.EnablePSC {
+		wg.Add(1)
+		defer wg.Done()
+		runIngress := func() {
+			rootLogger.Info("Start running Ingress")
+			runControllers(ctx, rootLogger)
+			rootLogger.Info("Ingress Controller exited.")
+		}
+		if flags.F.LeaderElection.LeaderElect {
+			runIngress = func() {
+				rootLogger.Info("Start running Ingress le")
+				electionConfig, err := makeLeaderElectionConfig(
+					ctx,
+					runOption{
+						client:   leaderElectKubeClient,
+						recorder: ctx.Recorder(flags.F.LeaderElection.LockObjectNamespace),
+					},
+					rootLogger,
+				)
+				if err != nil {
+					klog.Fatalf("makeLeaderElectionConfig()=%v, want nil", err)
+				}
+				leaderelection.RunOrDie(context.Background(), *electionConfig)
+				rootLogger.Info("Ingress Controller exited.")
+			}
+		}
+		go runIngress()
 	}
-	leaderelection.RunOrDie(context.Background(), *electionConfig)
-	rootLogger.Info("Ingress Controller exited.")
+
+	wg.Wait()
 }
 
 type runOption struct {
@@ -467,7 +507,7 @@ func runNEGController(ctx *ingctx.ControllerContext, logger klog.Logger) {
 	if flags.F.EnableNEGController {
 		negController := createNEGController(ctx, stopCh, logger)
 		go runWithWg(negController.Run, &wg)
-		klog.V(0).Info("negController started")
+		logger.V(0).Info("negController started")
 	}
 
 	go app.RunSIGTERMHandler(closeStopCh, logger)
@@ -481,7 +521,7 @@ func runNEGController(ctx *ingctx.ControllerContext, logger klog.Logger) {
 
 	// Keep the program running until TERM signal.
 	<-stopCh
-	klog.Warning("NEG Shutdown has been triggered")
+	logger.Info("NEG Shutdown has been triggered")
 
 	waitWithTimeout(&wg, logger)
 }
