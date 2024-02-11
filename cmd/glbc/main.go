@@ -265,7 +265,7 @@ func main() {
 			// ID is only used during leader election.
 			runNEGController(ctx, "", option, rootLogger)
 		}
-		runControllers(ctx, option, rootLogger)
+		runControllers(ctx, rootLogger)
 		return
 	}
 
@@ -314,13 +314,8 @@ func makeLeaderElectionConfig(ctx *ingctx.ControllerContext, option runOption, l
 	}
 
 	run := func() {
-		ctx.Init()
-		if flags.F.EnableNEGController {
-			runNEGController(ctx, id, option, logger)
-		}
-		runControllers(ctx, option, logger)
+		runControllers(ctx, logger)
 		logger.Info("Shutting down leader election")
-		os.Exit(0)
 	}
 
 	return &leaderelection.LeaderElectionConfig{
@@ -341,9 +336,9 @@ func makeLeaderElectionConfig(ctx *ingctx.ControllerContext, option runOption, l
 	}, nil
 }
 
-func runControllers(ctx *ingctx.ControllerContext, option runOption, logger klog.Logger) {
-	stopCh := option.stopCh
-	wg := option.wg
+func runControllers(ctx *ingctx.ControllerContext, logger klog.Logger) {
+	stopCh := make(chan struct{})
+	var wg sync.WaitGroup
 	var once sync.Once
 	// This ensures that stopCh is only closed once.
 	// Right now, we have two callers.
@@ -355,38 +350,32 @@ func runControllers(ctx *ingctx.ControllerContext, option runOption, logger klog
 
 	if flags.F.RunIngressController {
 		lbc := controller.NewLoadBalancerController(ctx, stopCh, logger)
-		runWithWg(lbc.Run, wg)
+		runWithWg(lbc.Run, &wg)
 		logger.V(0).Info("ingress controller started")
 
 		if !flags.F.EnableFirewallCR && flags.F.DisableFWEnforcement {
 			klog.Fatalf("We can only disable the ingress controller FW enforcement when enabling the FW CR")
 		}
 		fwc := firewalls.NewFirewallController(ctx, flags.F.NodePortRanges.Values(), flags.F.EnableFirewallCR, flags.F.DisableFWEnforcement, ctx.EnableIngressRegionalExternal, stopCh, logger)
-		runWithWg(fwc.Run, wg)
+		runWithWg(fwc.Run, &wg)
 		logger.V(0).Info("firewall controller started")
 	}
 
-	if ctx.EnableASMConfigMap {
-		ctx.ASMConfigController.RegisterInformer(ctx.ConfigMapInformer, func() {
-			// We want to trigger a restart.
-			closeStopCh()
-		})
-	}
 	if flags.F.RunL4Controller {
 		l4Controller := l4lb.NewILBController(ctx, stopCh, logger)
-		runWithWg(l4Controller.Run, wg)
+		runWithWg(l4Controller.Run, &wg)
 		logger.V(0).Info("L4 controller started")
 	}
 
 	if flags.F.EnablePSC {
 		pscController := psc.NewController(ctx, stopCh, logger)
-		runWithWg(pscController.Run, wg)
+		runWithWg(pscController.Run, &wg)
 		logger.V(0).Info("PSC Controller started")
 	}
 
 	if flags.F.EnableServiceMetrics {
 		metricsController := servicemetrics.NewController(ctx, flags.F.MetricsExportInterval, stopCh, logger)
-		runWithWg(metricsController.Run, wg)
+		runWithWg(metricsController.Run, &wg)
 		logger.V(0).Info("Service Metrics Controller started")
 	}
 
@@ -404,37 +393,21 @@ func runControllers(ctx *ingctx.ControllerContext, option runOption, logger klog
 			StopCh:                   stopCh,
 		}
 		igController := instancegroups.NewController(igControllerParams, logger)
-		runWithWg(igController.Run, wg)
+		runWithWg(igController.Run, &wg)
 	}
 
 	// The L4NetLbController will be run when RbsMode flag is Set
 	if flags.F.RunL4NetLBController {
 		l4netlbController := l4lb.NewL4NetLBController(ctx, stopCh, logger)
 
-		runWithWg(l4netlbController.Run, wg)
+		runWithWg(l4netlbController.Run, &wg)
 		logger.V(0).Info("L4NetLB controller started")
 	}
 	// Keep the program running until TERM signal.
 	<-stopCh
 	logger.Info("Shutdown has been triggered")
 
-	doneCh := make(chan struct{})
-	go func() {
-		defer close(doneCh)
-		// Wait until all controllers are done with cleanup.
-		logger.Info("Starting to wait for controller cleanup")
-		wg.Wait()
-		logger.Info("Finished waiting for controller cleanup")
-	}()
-
-	select {
-	case <-doneCh:
-		logger.Info("Finished cleanup for all controllers, shutting down")
-		return
-	case <-time.After(30 * time.Second):
-		logger.Info("Reached 30 seconds timeout limit, shutting down")
-		return
-	}
+	waitWithTimeout(&wg, logger)
 }
 
 // runNEGController needs to be a non-blocking because runController is the
@@ -602,5 +575,25 @@ func collectLockAvailabilityMetrics(lockName, clusterType string, stopCh <-chan 
 			app.PublishLockAvailabilityMetrics(lockName, clusterType)
 			lockLogger.Info("Exported resource lock availability metrics", "lockName", lockName)
 		}
+	}
+}
+
+func waitWithTimeout(wg *sync.WaitGroup, logger klog.Logger) {
+	doneCh := make(chan struct{})
+	go func() {
+		defer close(doneCh)
+		// Wait until all controllers are done with cleanup.
+		logger.Info("Starting to wait for NEG controller cleanup")
+		wg.Wait()
+		logger.Info("Finished waiting for NEG controller cleanup")
+	}()
+
+	select {
+	case <-doneCh:
+		logger.Info("Finished cleanup for NEG controller, shutting down")
+		return
+	case <-time.After(30 * time.Second):
+		logger.Info("Reached 30 seconds timeout limit for NEG controller, shutting down")
+		return
 	}
 }
