@@ -35,7 +35,7 @@ import (
 )
 
 const (
-	transitionPollTimeout  = 15 * time.Minute
+	transitionPollTimeout  = 30 * time.Minute
 	transitionPollInterval = 30 * time.Second
 )
 

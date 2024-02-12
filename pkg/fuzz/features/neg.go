@@ -91,8 +91,23 @@ func (v *negValidator) CheckResponse(host, path string, resp *http.Response, bod
 
 	urlMapName := v.env.FrontendNamerFactory().Namer(v.ing).UrlMap()
 	if negEnabled {
-		if utils.IsGCEL7ILBIngress(v.ing) || utils.IsGCEL7XLBRegionalIngress(v.ing) {
-			return fuzz.CheckResponseContinue, verifyNegRegionBackend(v.env, negName, negName, urlMapName, v.region)
+		if utils.IsGCEL7ILBIngress(v.ing) {
+			err := verifyNegRegionBackend(v.env, negName, negName, urlMapName, v.region)
+			if err != nil {
+				return fuzz.CheckResponseContinue, fmt.Errorf("verifyNegRegionBackend(..., %s, %s, %s, %s) = %w", negName, negName, urlMapName, v.region, err)
+			}
+			return fuzz.CheckResponseContinue, nil
+		} else if utils.IsGCEL7XLBRegionalIngress(v.ing) {
+			bsName := v.env.BackendNamer().RXLBBackendName(svc.Namespace, svc.Name, svcPort.Port)
+			err := verifyNegRegionBackend(v.env, bsName, negName, urlMapName, v.region)
+			if err != nil {
+				return fuzz.CheckResponseContinue, fmt.Errorf("verifyNegRegionBackend(..., %s, %s, %s, %s) = %w", bsName, negName, urlMapName, v.region, err)
+			}
+			return fuzz.CheckResponseContinue, nil
+		}
+		err := verifyNegBackend(v.env, negName, urlMapName)
+		if err != nil {
+			return fuzz.CheckResponseContinue, fmt.Errorf("verifyNegRegionBackend(..., %s, %s) = %w", negName, urlMapName, err)
 		}
 		return fuzz.CheckResponseContinue, verifyNegBackend(v.env, negName, urlMapName)
 	}
@@ -137,7 +152,7 @@ func verifyNegBackend(env fuzz.ValidatorEnv, negName string, urlMapName string) 
 	return verifyBackend(env, negName, negName, urlMapName)
 }
 
-// verifyNegBackend verifies if the backend service is using instance group
+// verifyIgBackend verifies if the backend service is using instance group
 func verifyIgBackend(env fuzz.ValidatorEnv, bsName string, urlMapName string) error {
 	return verifyBackend(env, bsName, "instanceGroup", urlMapName)
 }
@@ -183,7 +198,7 @@ func verifyBackend(env fuzz.ValidatorEnv, bsName string, backendKeyword string, 
 
 // verifyBackend verifies the backend service and check if the corresponding backend group has the keyword
 func verifyNegRegionBackend(env fuzz.ValidatorEnv, bsName, backendKeyword, urlMapName, region string) error {
-	klog.V(3).Info("Verifying NEG Regional Backend")
+	klog.V(3).Infof("Verifying NEG Regional Backend. bsName = %s, urlMapName = %s, region = %s", bsName, urlMapName, region)
 
 	// Region can't be empty
 	if region == "" {

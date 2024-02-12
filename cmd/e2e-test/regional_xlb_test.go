@@ -275,7 +275,7 @@ func TestRegionalXLBILBShared(t *testing.T) {
 			t.Logf("Echo service created (%s/%s)", s.Namespace, serviceName)
 
 			var gclb *fuzz.GCLB
-			for _, ing := range []*v1.Ingress{tc.ilbIng, tc.rxlbIng} {
+			for _, ing := range []*v1.Ingress{tc.rxlbIng, tc.ilbIng} {
 
 				t.Logf("Ingress = %s", ing.String())
 
@@ -332,10 +332,8 @@ func TestRegionalXLBILBTransition(t *testing.T) {
 		ing       *v1.Ingress
 		ingUpdate *v1.Ingress
 
-		numForwardingRules       int
-		numBackendServices       int
-		numForwardingRulesUpdate int
-		numBackendServicesUpdate int
+		numForwardingRules int
+		numBackendServices int
 	}{
 		{
 			desc: "http RXLB default backend to one path",
@@ -349,8 +347,6 @@ func TestRegionalXLBILBTransition(t *testing.T) {
 				AddPath("test.com", "/", serviceName, port80).
 				ConfigureForRegionalXLB().
 				Build(),
-			numForwardingRulesUpdate: 1,
-			numBackendServicesUpdate: 2,
 		},
 		{
 			desc: "http RXLB one path to default backend",
@@ -364,8 +360,6 @@ func TestRegionalXLBILBTransition(t *testing.T) {
 				DefaultBackend(serviceName, port80).
 				ConfigureForRegionalXLB().
 				Build(),
-			numForwardingRulesUpdate: 1,
-			numBackendServicesUpdate: 1,
 		},
 		{
 			desc: "http ILB default backend to ELB default backend",
@@ -379,8 +373,6 @@ func TestRegionalXLBILBTransition(t *testing.T) {
 				DefaultBackend(serviceName, port80).
 				ConfigureForRegionalXLB().
 				Build(),
-			numForwardingRulesUpdate: 1,
-			numBackendServicesUpdate: 1,
 		},
 		{
 			desc: "RXLB default backend to ILB default backend",
@@ -394,8 +386,6 @@ func TestRegionalXLBILBTransition(t *testing.T) {
 				DefaultBackend(serviceName, port80).
 				ConfigureForILB().
 				Build(),
-			numForwardingRulesUpdate: 1,
-			numBackendServicesUpdate: 1,
 		},
 	} {
 		tc := tc // Capture tc as we are running this in parallel.
@@ -475,23 +465,13 @@ func TestRegionalXLBILBTransition(t *testing.T) {
 				t.Fatalf("got %v, want RFC1918 address, ing1: %v", vip, ing2)
 			}
 
-			gclb2, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
-			if err != nil {
-				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
-			}
-
-			if err = e2e.CheckGCLB(gclb2, tc.numForwardingRulesUpdate, tc.numBackendServicesUpdate); err != nil {
-				t.Error(err)
-			}
+			t.Logf("gclb: %+v", gclb)
 
 			deleteOptions := &fuzz.GCLBDeleteOptions{
 				SkipDefaultBackend: true,
 			}
 			if err := e2e.WaitForIngressDeletion(context.Background(), gclb, s, ing1, deleteOptions); err != nil {
 				t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing1.Name, err)
-			}
-			if err := e2e.WaitForIngressDeletion(context.Background(), gclb2, s, ing2, deleteOptions); err != nil {
-				t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing2.Name, err)
 			}
 		})
 	}

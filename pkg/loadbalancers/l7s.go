@@ -162,6 +162,48 @@ func (l7s *L7s) FrontendScopeChangeGC(ing *v1.Ingress, ingLogger klog.Logger) (*
 	return nil, nil
 }
 
+// DidRegionalClassChange detects if regional ingress changed type between ILB and RXLB.
+// We should garbage collect frontend resources on such change, because RXLB and ILB
+// use the same name, but different LoadBalancingScheme.
+func (l7s *L7s) DidRegionalClassChange(ing *v1.Ingress, ingLogger klog.Logger) (bool, error) {
+	if ing == nil {
+		return false, nil
+	}
+
+	namer := l7s.namerFactory.Namer(ing)
+	currentLBScheme := lbSchemeForIngress(ing)
+
+	for _, protocol := range []namer_util.NamerProtocol{namer_util.HTTPProtocol, namer_util.HTTPSProtocol} {
+		frName := namer.ForwardingRule(protocol)
+
+		key, err := composite.CreateKey(l7s.cloud, frName, meta.Regional)
+		if err != nil {
+			return false, err
+		}
+
+		// Look for existing LBs with the same name but of a different scope
+		fr, err := composite.GetForwardingRule(l7s.cloud, key, features.VersionsFromIngress(ing).ForwardingRule, klog.TODO())
+		if err == nil && fr.LoadBalancingScheme != currentLBScheme {
+			ingLogger.Info("GC'ing ing %v for lb scheme %q", ing, fr.LoadBalancingScheme)
+			return true, nil
+		}
+		if !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
+			return false, err
+		}
+	}
+	return false, nil
+}
+
+func lbSchemeForIngress(ing *v1.Ingress) string {
+	if utils.IsGCEL7XLBRegionalIngress(ing) {
+		return "EXTERNAL_MANAGED"
+	} else if utils.IsGCEL7ILBIngress(ing) {
+		return "INTERNAL_MANAGED"
+	} else {
+		return "EXTERNAL"
+	}
+}
+
 // GCv1 implements LoadBalancerPool.
 // TODO(shance): Update to handle regional and global LB with same name
 func (l7s *L7s) GCv1(names []string) error {

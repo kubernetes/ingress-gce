@@ -34,6 +34,8 @@ type LoadBalancerPool interface {
 	GCv1(names []string) error
 	// FrontendScopeChangeGC checks if GC is needed for an ingress that has changed scopes
 	FrontendScopeChangeGC(ing *v1.Ingress, ingLogger klog.Logger) (*meta.KeyType, error)
+	// DidRegionalClassChange checks if GC is needed for an ingress that has changed scopes
+	DidRegionalClassChange(ing *v1.Ingress, ingLogger klog.Logger) (bool, error)
 	// Shutdown deletes all loadbalancers for given list of ingresses.
 	Shutdown(ings []*v1.Ingress) error
 	// HasUrlMap returns true if an URL map exists in GCE for given ingress.

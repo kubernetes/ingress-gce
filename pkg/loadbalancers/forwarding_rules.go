@@ -129,10 +129,10 @@ func (l7 *L7) checkForwardingRule(protocol namer.NamerProtocol, name, proxyLink,
 				}
 			}
 		}
-		klog.V(3).Infof("Creating forwarding rule for proxy %q and ip %v:%v", proxyLink, ip, protocol)
+		klog.V(3).Infof("Creating forwarding rule for proxy %q and ip %v:%v, LB scheme: %v", proxyLink, ip, protocol, fr.LoadBalancingScheme)
 
 		if err = composite.CreateForwardingRule(l7.cloud, key, fr, klog.TODO()); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("composite.CreateForwardingRule(..., %v, %+v) = %w", key, fr, err)
 		}
 		l7.recorder.Eventf(l7.runtimeInfo.Ingress, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %q created", key.Name)
 

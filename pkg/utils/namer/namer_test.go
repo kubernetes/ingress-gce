@@ -474,6 +474,73 @@ func TestNamerNEG(t *testing.T) {
 	}
 }
 
+func TestNamerRXLBBackendName(t *testing.T) {
+	longstring := "01234567890123456789012345678901234567890123456789"
+	testCases := []struct {
+		desc      string
+		namespace string
+		name      string
+		port      int32
+		expect    string
+	}{
+		{
+			"simple case",
+			"namespace",
+			"name",
+			80,
+			"k8s1-01234567-e-namespace-name-80-5104b449",
+		},
+		{
+			"63 characters",
+			longstring[:10],
+			longstring[:10],
+			1234567890,
+			"k8s1-01234567-e-0123456789-0123456789-1234567890-ed141b14",
+		},
+		{
+			"long namespace",
+			longstring,
+			"0",
+			0,
+			"k8s1-01234567-e-01234567890123456789012345678901234-0--72142e04",
+		},
+
+		{
+			"long name and namespace",
+			longstring,
+			longstring,
+			0,
+			"k8s1-01234567-e-012345678901234567-012345678901234567--9129e3d2",
+		},
+		{
+			"long name, namespace and port",
+			longstring,
+			longstring[:40],
+			2147483647,
+			"k8s1-01234567-e-012345678901234567-012345678901234-214-ed1f2a2f",
+		},
+	}
+
+	newNamer := NewNamer(clusterId, "")
+	for _, tc := range testCases {
+		res := newNamer.RXLBBackendName(tc.namespace, tc.name, tc.port)
+		if len(res) > 63 {
+			t.Errorf("%s: got len(res) == %v, want <= 63", tc.desc, len(res))
+		}
+		if res != tc.expect {
+			t.Errorf("%s: got %q, want %q", tc.desc, res, tc.expect)
+		}
+	}
+
+	// Different prefix.
+	newNamer = NewNamerWithPrefix("mci", clusterId, "fw")
+	name := newNamer.NEG("ns", "svc", 80)
+	const want = "mci1-01234567-ns-svc-80-4890871b"
+	if name != want {
+		t.Errorf(`with prefix %q, newNamer.NEG("ns", "svc", 80) = %q, want %q`, "mci", name, want)
+	}
+}
+
 func TestIsNEG(t *testing.T) {
 	for _, tc := range []struct {
 		prefix string

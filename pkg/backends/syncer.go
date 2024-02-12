@@ -61,7 +61,7 @@ func (s *backendSyncer) Sync(svcPorts []utils.ServicePort, ingLogger klog.Logger
 	for _, sp := range svcPorts {
 		ingLogger.Info("Sync backend", "servicePort", fmt.Sprintf("%v", sp))
 		if err := s.ensureBackendService(sp, ingLogger); err != nil {
-			return err
+			return fmt.Errorf("s.ensureBackendService(%v) returned error %w", sp, err)
 		}
 	}
 	return nil
@@ -100,7 +100,7 @@ func (s *backendSyncer) ensureBackendService(sp utils.ServicePort, ingLogger klo
 		beLogger.Info("Creating backend service")
 		be, err = s.backendPool.Create(sp, hcLink, beLogger)
 		if err != nil {
-			return err
+			return fmt.Errorf("s.backendPool.Create(%v, %v) returned error %w, want nil", sp, hcLink, err)
 		}
 	}
 

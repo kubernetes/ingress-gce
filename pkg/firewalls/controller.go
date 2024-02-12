@@ -267,7 +267,7 @@ func (fwc *FirewallController) sync(key string) error {
 	}
 	if fwc.enableIngressRegionalExternal {
 		rxlbRange, err := fwc.rxlbFirewallSrcRange(gceIngresses)
-		klog.Infof("fwc.rxlbFirewallSrcRange(%+v) = %v, %v", gceIngresses, rxlbRange, err)
+		klog.Infof("fwc.rxlbFirewallSrcRange() = %v, %v", rxlbRange, err)
 		if err != nil {
 			if err != features.ErrSubnetNotFound && err != ErrNoRXLBIngress {
 				return err

@@ -65,7 +65,7 @@ func (nl *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 		// Otherwise, get the name from svc port.
 		negName := group.Name
 		if negName == "" {
-			negName = sp.BackendName()
+			negName = sp.NEGName()
 		}
 
 		negUrl := ""

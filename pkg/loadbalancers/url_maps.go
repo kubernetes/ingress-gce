@@ -74,7 +74,7 @@ func (l7 *L7) ensureComputeURLMap() error {
 	klog.V(2).Infof("Updating URLMap for %q", l7)
 	expectedMap.Fingerprint = currentMap.Fingerprint
 	if err := composite.UpdateUrlMap(l7.cloud, key, expectedMap, klog.TODO()); err != nil {
-		return fmt.Errorf("UpdateURLMap: %v", err)
+		return fmt.Errorf("UpdateURLMap(%v, %v): %v", key, expectedMap, err)
 	}
 
 	l7.recorder.Eventf(&l7.ingress, apiv1.EventTypeNormal, events.SyncIngress, "UrlMap %q updated", key.Name)
