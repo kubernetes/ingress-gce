@@ -88,6 +88,15 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 					TargetPort:   intstr.FromString(port),
 					NEGEnabled:   true,
 					BackendNamer: defaultNamer},
+				{
+					ID:                   utils.ServicePortID{Service: svc},
+					Port:                 80,
+					NodePort:             30001,
+					Protocol:             annotations.ProtocolHTTP,
+					TargetPort:           intstr.FromString(port),
+					NEGEnabled:           true,
+					L7XLBRegionalEnabled: true,
+					BackendNamer:         defaultNamer},
 			} {
 				// Mimic how the syncer would create the backend.
 				if _, err := linker.backendPool.Create(svcPort, "fake-healthcheck-link", klog.TODO()); err != nil {
@@ -99,14 +108,14 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 				if tc.populateSvcNeg {
 					linker.svcNegLister.Add(v1beta1.ServiceNetworkEndpointGroup{Status: v1beta1.ServiceNetworkEndpointGroupStatus{
 						NetworkEndpointGroups: []v1beta1.NegObjectReference{
-							{SelfLink: fmt.Sprintf("https://www.googleapis.com/compute/alpha/projects/mock-project/zones/zone1/networkEndpointGroups/%s", svcPort.BackendName())},
-							{SelfLink: fmt.Sprintf("https://www.googleapis.com/compute/alpha/projects/mock-project/zones/zone2/networkEndpointGroups/%s", svcPort.BackendName())},
+							{SelfLink: fmt.Sprintf("https://www.googleapis.com/compute/alpha/projects/mock-project/zones/zone1/networkEndpointGroups/%s", svcPort.NEGName())},
+							{SelfLink: fmt.Sprintf("https://www.googleapis.com/compute/alpha/projects/mock-project/zones/zone2/networkEndpointGroups/%s", svcPort.NEGName())},
 						},
 					}})
 				}
 				for _, key := range zones {
 					neg := &composite.NetworkEndpointGroup{
-						Name:    svcPort.BackendName(),
+						Name:    svcPort.NEGName(),
 						Version: version,
 					}
 					if svcPort.VMIPNEGEnabled {

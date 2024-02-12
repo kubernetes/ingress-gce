@@ -91,8 +91,23 @@ func (v *negValidator) CheckResponse(host, path string, resp *http.Response, bod
 
 	urlMapName := v.env.FrontendNamerFactory().Namer(v.ing).UrlMap()
 	if negEnabled {
-		if utils.IsGCEL7ILBIngress(v.ing) || utils.IsGCEL7XLBRegionalIngress(v.ing) {
-			return fuzz.CheckResponseContinue, verifyNegRegionBackend(v.env, negName, negName, urlMapName, v.region)
+		if utils.IsGCEL7ILBIngress(v.ing) {
+			err := verifyNegRegionBackend(v.env, negName, negName, urlMapName, v.region)
+			if err != nil {
+				return fuzz.CheckResponseContinue, fmt.Errorf("verifyNegRegionBackend(..., %s, %s, %s, %s) = %w", negName, negName, urlMapName, v.region, err)
+			}
+			return fuzz.CheckResponseContinue, nil
+		} else if utils.IsGCEL7XLBRegionalIngress(v.ing) {
+			bsName := v.env.BackendNamer().RXLBBackendName(svc.Namespace, svc.Name, svcPort.Port)
+			err := verifyNegRegionBackend(v.env, bsName, negName, urlMapName, v.region)
+			if err != nil {
+				return fuzz.CheckResponseContinue, fmt.Errorf("verifyNegRegionBackend(..., %s, %s, %s, %s) = %w", bsName, negName, urlMapName, v.region, err)
+			}
+			return fuzz.CheckResponseContinue, nil
+		}
+		err := verifyNegBackend(v.env, negName, urlMapName)
+		if err != nil {
+			return fuzz.CheckResponseContinue, fmt.Errorf("verifyNegRegionBackend(..., %s, %s) = %w", negName, urlMapName, err)
 		}
 		return fuzz.CheckResponseContinue, verifyNegBackend(v.env, negName, urlMapName)
 	}
