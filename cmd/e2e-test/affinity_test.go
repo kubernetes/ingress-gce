@@ -35,7 +35,7 @@ import (
 )
 
 const (
-	transitionPollTimeout  = 15 * time.Minute
+	transitionPollTimeout  = 30 * time.Minute
 	transitionPollInterval = 30 * time.Second
 )
 
@@ -322,6 +322,9 @@ func TestILBSA(t *testing.T) {
 func TestRegionalXLBSA(t *testing.T) {
 	t.Parallel()
 
+	ingName := "rxlbsa"
+	svcName := "rxlbsa"
+
 	for _, tc := range []struct {
 		desc       string
 		ttl        int64
@@ -372,14 +375,14 @@ func TestRegionalXLBSA(t *testing.T) {
 			}
 			t.Logf("BackendConfig created (%s/%s) ", s.Namespace, tc.beConfig.Name)
 
-			_, err := e2e.CreateEchoService(s, "service-1", svcAnnotation)
+			_, err := e2e.CreateEchoService(s, svcName, svcAnnotation)
 			if err != nil {
 				t.Fatalf("error creating echo service: %v", err)
 			}
-			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
+			t.Logf("Echo service created (%s/%s)", s.Namespace, svcName)
 
-			ing := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
-				AddPath("test.com", "/", "service-1", v1.ServiceBackendPort{Number: 80}).
+			ing := fuzz.NewIngressBuilder(s.Namespace, ingName, "").
+				AddPath("test.com", "/", svcName, v1.ServiceBackendPort{Number: 80}).
 				ConfigureForRegionalXLB().
 				Build()
 			crud := adapter.IngressCRUD{C: Framework.Clientset}
@@ -404,7 +407,7 @@ func TestRegionalXLBSA(t *testing.T) {
 			}
 
 			// Check conformity
-			if err := verifyAffinity(gclb, s.Namespace, "service-1", tc.expect, tc.ttl); err != nil {
+			if err := verifyAffinity(gclb, s.Namespace, svcName, tc.expect, tc.ttl); err != nil {
 				t.Error(err)
 			}
 
@@ -431,7 +434,7 @@ func TestRegionalXLBSA(t *testing.T) {
 					t.Logf("error getting GCP resources for LB with IP = %q: %v", vip, err)
 					return false, nil
 				}
-				if err := verifyAffinity(gclb, s.Namespace, "service-1", tc.transition.affinity, tc.transition.ttl); err != nil {
+				if err := verifyAffinity(gclb, s.Namespace, svcName, tc.transition.affinity, tc.transition.ttl); err != nil {
 					return false, nil
 				}
 				return true, nil

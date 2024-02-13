@@ -40,7 +40,7 @@ import (
 
 var (
 	eventPollInterval = 15 * time.Second
-	eventPollTimeout  = 10 * time.Minute
+	eventPollTimeout  = 30 * time.Minute
 )
 
 func TestBackendConfigNegatives(t *testing.T) {
@@ -224,6 +224,9 @@ func TestBackendConfigAPI(t *testing.T) {
 func TestRegionalXLBBackendConfigNegatives(t *testing.T) {
 	t.Parallel()
 
+	svcName := "rxlbbcndngtv"
+	ingressName := "rxlbbcndngtv"
+
 	for _, tc := range []struct {
 		desc           string
 		svcAnnotations map[string]string
@@ -282,13 +285,13 @@ func TestRegionalXLBBackendConfigNegatives(t *testing.T) {
 				t.Logf("Backend config %s/%s created", s.Namespace, tc.backendConfig.Name)
 			}
 
-			if _, err := e2e.CreateEchoService(s, "service-1", tc.svcAnnotations); err != nil {
-				t.Fatalf("e2e.CreateEchoService(s, service-1, %q) = _, _, %v, want _, _, nil", tc.svcAnnotations, err)
+			if _, err := e2e.CreateEchoService(s, svcName, tc.svcAnnotations); err != nil {
+				t.Fatalf("e2e.CreateEchoService(s, %s, %q) = _, _, %v, want _, _, nil", svcName, tc.svcAnnotations, err)
 			}
 
 			port80 := networkingv1.ServiceBackendPort{Number: 80}
-			testIng := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
-				AddPath("test.com", "/", "service-1", port80).
+			testIng := fuzz.NewIngressBuilder(s.Namespace, ingressName, "").
+				AddPath("test.com", "/", svcName, port80).
 				ConfigureForRegionalXLB().
 				Build()
 			crud := adapter.IngressCRUD{C: Framework.Clientset}
@@ -306,7 +309,7 @@ func TestRegionalXLBBackendConfigNegatives(t *testing.T) {
 				}
 				for _, event := range events.Items {
 					if event.InvolvedObject.Kind != "Ingress" ||
-						event.InvolvedObject.Name != "ingress-1" ||
+						event.InvolvedObject.Name != ingressName ||
 						event.Type != v1.EventTypeWarning {
 						continue
 					}

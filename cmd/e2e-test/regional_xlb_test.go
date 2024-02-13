@@ -36,8 +36,8 @@ func TestRegionalXLB(t *testing.T) {
 	t.Parallel()
 
 	// These names are useful when reading the debug logs
-	ingressPrefix := "ing1-"
-	serviceName := "svc-1"
+	ingressPrefix := "rxlb-"
+	serviceName := "rxlb"
 
 	port80 := v1.ServiceBackendPort{Number: 80}
 
@@ -138,8 +138,11 @@ func TestRegionalXLBStaticIP(t *testing.T) {
 
 	ctx := context.Background()
 
+	svcName := "sttc"
+	ingName := "sttc"
+
 	Framework.RunWithSandbox("rxlb-static-ip", t, func(t *testing.T, s *e2e.Sandbox) {
-		_, err := e2e.CreateEchoService(s, "service-1", negAnnotation)
+		_, err := e2e.CreateEchoService(s, svcName, negAnnotation)
 		if err != nil {
 			t.Fatalf("e2e.CreateEchoService(s, service-1, nil) = _, %v; want _, nil", err)
 		}
@@ -150,13 +153,13 @@ func TestRegionalXLBStaticIP(t *testing.T) {
 		}
 		defer e2e.DeleteGCPAddress(s, addrName, Framework.Region)
 
-		testIngEnabled := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
-			DefaultBackend("service-1", v1.ServiceBackendPort{Number: 80}).
+		testIngEnabled := fuzz.NewIngressBuilder(s.Namespace, ingName, "").
+			DefaultBackend(svcName, v1.ServiceBackendPort{Number: 80}).
 			ConfigureForRegionalXLB().
 			AddStaticIP(addrName, true).
 			Build()
-		testIngDisabled := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
-			DefaultBackend("service-1", v1.ServiceBackendPort{Number: 80}).
+		testIngDisabled := fuzz.NewIngressBuilder(s.Namespace, ingName, "").
+			DefaultBackend(svcName, v1.ServiceBackendPort{Number: 80}).
 			ConfigureForRegionalXLB().
 			Build()
 
@@ -204,8 +207,8 @@ func TestRegionalXLBILBShared(t *testing.T) {
 	t.Parallel()
 
 	// These names are useful when reading the debug logs
-	ingressPrefix := "ing5-"
-	serviceName := "svc-5"
+	ingressPrefix := "shrdrxilb"
+	serviceName := "shrdrxilb"
 
 	port80 := v1.ServiceBackendPort{Number: 80}
 
@@ -322,8 +325,8 @@ func TestRegionalXLBILBTransition(t *testing.T) {
 	t.Parallel()
 
 	// These names are useful when reading the debug logs
-	ingressPrefix := "ing3-"
-	serviceName := "svc-3"
+	ingressPrefix := "rxlbilbtr-"
+	serviceName := "rxlbilbtr"
 
 	port80 := v1.ServiceBackendPort{Number: 80}
 
@@ -359,13 +362,13 @@ func TestRegionalXLBILBTransition(t *testing.T) {
 				ConfigureForRegionalXLB().
 				Build(),
 			numForwardingRules: 1,
-			numBackendServices: 2,
+			numBackendServices: 1,
 			ingUpdate: fuzz.NewIngressBuilder("", ingressPrefix+"2", "").
 				DefaultBackend(serviceName, port80).
 				ConfigureForRegionalXLB().
 				Build(),
 			numForwardingRulesUpdate: 1,
-			numBackendServicesUpdate: 1,
+			numBackendServicesUpdate: 2,
 		},
 		{
 			desc: "http ILB default backend to ELB default backend",
@@ -469,15 +472,15 @@ func TestRegionalXLBILBTransition(t *testing.T) {
 				t.Fatalf("Ingress does not have an IP: %+v", ing2.Status)
 			}
 
-			vip = ing2.Status.LoadBalancer.Ingress[0].IP
+			params.VIP = ing2.Status.LoadBalancer.Ingress[0].IP
 			t.Logf("Ingress %s/%s VIP = %s", s.Namespace, tc.ingUpdate.Name, vip)
 			if utils.IsGCEL7ILBIngress(ing2) && !e2e.IsRfc1918Addr(vip) {
-				t.Fatalf("got %v, want RFC1918 address, ing1: %v", vip, ing2)
+				t.Fatalf("got %v, want RFC1918 address, ing1: %v", params.VIP, ing2)
 			}
 
 			gclb2, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
 			if err != nil {
-				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
+				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", params.VIP, err)
 			}
 
 			if err = e2e.CheckGCLB(gclb2, tc.numForwardingRulesUpdate, tc.numBackendServicesUpdate); err != nil {
