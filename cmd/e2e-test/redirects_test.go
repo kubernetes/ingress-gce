@@ -29,6 +29,7 @@ import (
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
+	"k8s.io/klog/v2"
 )
 
 // Does not run in parallel since this is a transition test
@@ -210,7 +211,7 @@ func TestRegionalXLBHttpsRedirects(t *testing.T) {
 			},
 		} {
 			t.Run(tc.desc, func(t *testing.T) {
-				t.Logf("Running step: %s", tc.desc)
+				klog.V(2).Infof("Running step: %s", tc.desc)
 				for _, cert := range certs {
 					tc.ingBuilder.AddPresharedCerts([]string{cert.Name})
 				}
@@ -232,7 +233,7 @@ func TestRegionalXLBHttpsRedirects(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Error creating echo service: %v", err)
 				}
-				t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
+				klog.V(2).Infof("Echo service created (%s/%s)", s.Namespace, "service-1")
 
 				// Ensure Ingress
 				crud := adapter.IngressCRUD{C: Framework.Clientset}
@@ -251,7 +252,7 @@ func TestRegionalXLBHttpsRedirects(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Error waiting for Ingress to stabilize: %v", err)
 				}
-				t.Logf("GCLB resources created (%s/%s)", s.Namespace, ing.Name)
+				klog.V(2).Infof("GCLB resources created (%s/%s)", s.Namespace, ing.Name)
 
 				// Check just for URL map deletion.  This URL map should have been created in another transition test case
 				if tc.config != nil && !tc.config.Enabled {
@@ -266,7 +267,7 @@ func TestRegionalXLBHttpsRedirects(t *testing.T) {
 				}
 
 				vip := ing.Status.LoadBalancer.Ingress[0].IP
-				t.Logf("Ingress %s/%s VIP = %s", ing.Namespace, ing.Name, vip)
+				klog.V(2).Infof("Ingress %s/%s VIP = %s", ing.Namespace, ing.Name, vip)
 
 				params := &fuzz.GCLBForVIPParams{
 					VIP:              vip,
