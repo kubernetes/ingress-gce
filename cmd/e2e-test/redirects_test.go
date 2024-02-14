@@ -210,7 +210,7 @@ func TestRegionalXLBHttpsRedirects(t *testing.T) {
 			},
 		} {
 			t.Run(tc.desc, func(t *testing.T) {
-
+				t.Logf("Running step: %s", tc.desc)
 				for _, cert := range certs {
 					tc.ingBuilder.AddPresharedCerts([]string{cert.Name})
 				}
