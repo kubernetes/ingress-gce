@@ -197,6 +197,7 @@ func (s *backendSyncer) GC(svcPorts []utils.ServicePort, ingLogger klog.Logger) 
 	if err != nil {
 		return err
 	}
+	ingLogger.V(2).Info("GC", "knownPorts", knownPorts)
 
 	ilbBeLogger := ingLogger.WithName("ILBBackends")
 	// TODO(shance): Refactor out empty key field
@@ -208,6 +209,7 @@ func (s *backendSyncer) GC(svcPorts []utils.ServicePort, ingLogger klog.Logger) 
 	if err != nil {
 		return fmt.Errorf("error listing regional backends: %w", err)
 	}
+	ingLogger.V(2).Info("GC", "ilbBackends", ilbBackends)
 	err = s.gc(ilbBackends, knownPorts, ilbBeLogger)
 	if err != nil {
 		return fmt.Errorf("error GCing regional Backends: %w", err)
@@ -282,7 +284,6 @@ func knownPortsFromServicePorts(cloud *gce.Cloud, svcPorts []utils.ServicePort) 
 			return nil, err
 		}
 		knownPorts.Insert(key.String())
-
 	}
 
 	return knownPorts, nil

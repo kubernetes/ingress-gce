@@ -476,6 +476,7 @@ func (lbc *LoadBalancerController) GCBackends(toKeep []*v1.Ingress, ingLogger kl
 	// Only GCE ingress associated resources are managed by this controller.
 	GCEIngresses := operator.Ingresses(toKeep).Filter(utils.IsGCEIngress).AsList()
 	svcPortsToKeep := lbc.ToSvcPorts(GCEIngresses)
+	ingLogger.V(2).Info("GCBackends:", "svcPortsToKeep", svcPortsToKeep)
 	if err := lbc.backendSyncer.GC(svcPortsToKeep, ingLogger); err != nil {
 		return err
 	}
