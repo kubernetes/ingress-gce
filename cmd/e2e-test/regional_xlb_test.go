@@ -353,7 +353,7 @@ func TestRegionalXLBILBTransition(t *testing.T) {
 				ConfigureForRegionalXLB().
 				Build(),
 			numForwardingRulesUpdate: 1,
-			numBackendServicesUpdate: 2,
+			numBackendServicesUpdate: 1,
 		},
 		{
 			desc: "http RXLB one path to default backend",
@@ -362,13 +362,13 @@ func TestRegionalXLBILBTransition(t *testing.T) {
 				ConfigureForRegionalXLB().
 				Build(),
 			numForwardingRules: 1,
-			numBackendServices: 1,
+			numBackendServices: 2,
 			ingUpdate: fuzz.NewIngressBuilder("", ingressPrefix+"2", "").
 				DefaultBackend(serviceName, port80).
 				ConfigureForRegionalXLB().
 				Build(),
 			numForwardingRulesUpdate: 1,
-			numBackendServicesUpdate: 2,
+			numBackendServicesUpdate: 1,
 		},
 		{
 			desc: "http ILB default backend to ELB default backend",
