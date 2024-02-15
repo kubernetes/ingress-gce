@@ -138,8 +138,8 @@ func TestRegionalXLBStaticIP(t *testing.T) {
 
 	ctx := context.Background()
 
-	svcName := "sttc"
-	ingName := "sttc"
+	svcName := "rxlbsttc"
+	ingName := "rxlbsttc"
 
 	Framework.RunWithSandbox("rxlb-static-ip", t, func(t *testing.T, s *e2e.Sandbox) {
 		_, err := e2e.CreateEchoService(s, svcName, negAnnotation)
@@ -472,12 +472,13 @@ func TestRegionalXLBILBTransition(t *testing.T) {
 				t.Fatalf("Ingress does not have an IP: %+v", ing2.Status)
 			}
 
-			params.VIP = ing2.Status.LoadBalancer.Ingress[0].IP
+			vip = ing2.Status.LoadBalancer.Ingress[0].IP
 			t.Logf("Ingress %s/%s VIP = %s", s.Namespace, tc.ingUpdate.Name, vip)
 			if utils.IsGCEL7ILBIngress(ing2) && !e2e.IsRfc1918Addr(vip) {
-				t.Fatalf("got %v, want RFC1918 address, ing1: %v", params.VIP, ing2)
+				t.Fatalf("got %v, want RFC1918 address, ing1: %v", vip, ing2)
 			}
 
+			params.VIP = vip
 			gclb2, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
 			if err != nil {
 				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", params.VIP, err)
