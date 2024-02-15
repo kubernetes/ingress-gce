@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"github.com/google/go-cmp/cmp"
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -214,6 +215,7 @@ func NewLoadBalancerController(
 				ingLogger.Info("Periodic enqueueing ingress")
 			} else {
 				ingLogger.Info("Ingress changed, enqueuing")
+				ingLogger.Info("Ingress change Diff", "diff", cmp.Diff(old, cur))
 			}
 			lbc.ctx.Recorder(curIng.Namespace).Eventf(curIng, apiv1.EventTypeNormal, events.SyncIngress, "Scheduled for sync")
 			lbc.ingQueue.Enqueue(cur)
