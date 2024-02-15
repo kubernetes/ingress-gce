@@ -267,7 +267,7 @@ func (fwc *FirewallController) sync(key string) error {
 	}
 	if fwc.enableIngressRegionalExternal {
 		rxlbRange, err := fwc.rxlbFirewallSrcRange(gceIngresses)
-		klog.Infof("fwc.rxlbFirewallSrcRange(%+v) = %v, %v", gceIngresses, rxlbRange, err)
+		klog.Infof("fwc.rxlbFirewallSrcRange() = %v, %v", rxlbRange, err)
 		if err != nil {
 			if err != features.ErrSubnetNotFound && err != ErrNoRXLBIngress {
 				return err
@@ -324,6 +324,7 @@ func (fwc *FirewallController) rxlbFirewallSrcRange(gceIngresses []*v1.Ingress) 
 	for _, ing := range gceIngresses {
 		if utils.IsGCEL7XLBRegionalIngress(ing) {
 			rxlbEnabled = true
+			klog.Infof("Found Regional XLB Enabled on ingress %s/%s, requires regional xlb firewall.", ing.Namespace, ing.Name)
 			break
 		}
 	}
