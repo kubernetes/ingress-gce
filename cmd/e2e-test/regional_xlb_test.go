@@ -353,7 +353,7 @@ func TestRegionalXLBILBTransition(t *testing.T) {
 				ConfigureForRegionalXLB().
 				Build(),
 			numForwardingRulesUpdate: 1,
-			numBackendServicesUpdate: 2,
+			numBackendServicesUpdate: 1,
 		},
 		{
 			desc: "http RXLB one path to default backend",
