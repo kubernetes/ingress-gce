@@ -469,10 +469,10 @@ func CheckSvcEvents(s *Sandbox, svcName, msgType, message string, ignoreMessages
 func CheckGCLB(gclb *fuzz.GCLB, numForwardingRules int, numBackendServices int) error {
 	// Do some cursory checks on the GCP objects.
 	if len(gclb.ForwardingRule) != numForwardingRules {
-		return fmt.Errorf("got %d forwarding rules, want %d", len(gclb.ForwardingRule), numForwardingRules)
+		return fmt.Errorf("got %d forwarding rules = %+v, want %d", len(gclb.ForwardingRule), gclb.ForwardingRule, numForwardingRules)
 	}
 	if len(gclb.BackendService) != numBackendServices {
-		return fmt.Errorf("got %d backend services, want %d", len(gclb.BackendService), numBackendServices)
+		return fmt.Errorf("got %d backend services = %+v, want %d", len(gclb.BackendService), gclb.BackendService, numBackendServices)
 	}
 
 	return nil

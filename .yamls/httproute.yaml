@@ -1,0 +1,11 @@
+kind: HTTPRoute
+apiVersion: gateway.networking.k8s.io/v1beta1
+metadata:
+  name: store-external
+  labels:
+    gateway: external-http
+spec:
+  rules:
+  - backendRefs:
+    - name: store-v1
+      port: 8080
