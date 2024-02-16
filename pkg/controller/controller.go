@@ -659,21 +659,6 @@ func (lbc *LoadBalancerController) sync(key string) error {
 	if err != nil {
 		return fmt.Errorf("error getting Ingress for key %s: %v", key, err)
 	}
-
-	if lbc.ctx.EnableIngressRegionalExternal {
-		classNameChanged, err := lbc.l7Pool.DidRegionalClassChange(ing, ingLogger)
-		if err != nil {
-			return fmt.Errorf("failed checking regional class name change for ing %v, err: %w", ing, err)
-		}
-		if classNameChanged {
-			ingLogger.Info("Detected Ingress class change, cleaning up old resources")
-			err := lbc.gcRegionalIngressResources(ing, ingLogger)
-			if err != nil {
-				return fmt.Errorf("failed while handling ingress class name change. Ingress: %v, err: %w", ing, err)
-			}
-		}
-	}
-
 	// Capture GC state for ingress.
 	scope := features.ScopeFromIngress(ing)
 	needSync, err := lbc.preSyncGC(key, scope, ingExists, ing, ingLogger)
