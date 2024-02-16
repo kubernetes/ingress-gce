@@ -670,6 +670,15 @@ func TestILBUpdate(t *testing.T) {
 				t.Fatalf("got %v, want RFC1918 address, ing: %v", vip, ing)
 			}
 
+			gclb2, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
+			if err != nil {
+				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
+			}
+
+			if err = e2e.CheckGCLB(gclb2, tc.numForwardingRulesUpdate, tc.numBackendServicesUpdate); err != nil {
+				t.Error(err)
+			}
+
 			deleteOptions := &fuzz.GCLBDeleteOptions{
 				SkipDefaultBackend: true,
 			}
