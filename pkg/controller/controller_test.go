@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/compute/v1"
 	api_v1 "k8s.io/api/core/v1"
@@ -38,6 +39,7 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/common/operator"
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/flags"
@@ -72,10 +74,11 @@ func newLoadBalancerController() *LoadBalancerController {
 
 	stopCh := make(chan struct{})
 	ctxConfig := context.ControllerContextConfig{
-		Namespace:             api_v1.NamespaceAll,
-		ResyncPeriod:          1 * time.Minute,
-		DefaultBackendSvcPort: test.DefaultBeSvcPort,
-		HealthCheckPath:       "/",
+		Namespace:                     api_v1.NamespaceAll,
+		ResyncPeriod:                  1 * time.Minute,
+		DefaultBackendSvcPort:         test.DefaultBeSvcPort,
+		HealthCheckPath:               "/",
+		EnableIngressRegionalExternal: true,
 	}
 	ctx := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, nil, nil, nil, nil, nil, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig)
 	lbc := NewLoadBalancerController(ctx, stopCh, klog.TODO())
@@ -999,6 +1002,96 @@ func TestGC(t *testing.T) {
 	}
 }
 
+func TestGCRegionalIngressResources(t *testing.T) {
+	const namespace = "namespace"
+
+	ingressesToCreate := []string{"ing1", "ing2", "ing3", "ing4"}
+	ingressesWithClassNames := []string{"namespace/ing1", "namespace/ing2", "namespace/ing3", "namespace/ing4"}
+	ingressToDeleteResources := "ing2"
+	for _, tc := range []struct {
+		desc             string
+		ingressClassName string
+	}{
+		{
+			desc:             "ILB",
+			ingressClassName: annotations.GceL7ILBIngressClass,
+		},
+		{
+			desc:             "RXLB",
+			ingressClassName: annotations.GceL7XLBRegionalIngressClass,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			flags.F.EnableIngressRegionalExternal = true
+
+			// expected ingresses after creation.
+			expectedIngressKeys := make([]string, 0)
+			for _, ingName := range ingressesToCreate {
+				expectedIngressKeys = append(expectedIngressKeys, fmt.Sprintf("%s/%s", namespace, ingName))
+			}
+			lbc := newLoadBalancerController()
+			lbc.ctx.EnableIngressRegionalExternal = true
+			// Create ingresses and run sync on them.
+			var existingIngresses []*networkingv1.Ingress
+			for _, ing := range ingressesToCreate {
+				if ing != ingressToDeleteResources {
+					existingIngresses = append(existingIngresses, ensureNEGIngress(t, lbc, namespace, ing, tc.ingressClassName))
+				}
+			}
+			ingressToDelete := ensureNEGIngress(t, lbc, namespace, ingressToDeleteResources, tc.ingressClassName)
+			// Verify Forwarding Rule was created.
+			frontendNamer := namer_util.NewFrontendNamerFactory(lbc.ctx.ClusterNamer, lbc.ctx.KubeSystemUID).Namer(ingressToDelete)
+			fwRuleName := frontendNamer.ForwardingRule(namer_util.HTTPProtocol)
+			fwRulekey, err := composite.CreateKey(lbc.ctx.Cloud, fwRuleName, meta.Regional)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fr, err := composite.GetForwardingRule(lbc.ctx.Cloud, fwRulekey, meta.VersionGA, lbc.logger)
+			if err != nil || fr == nil {
+				t.Fatalf("Expected to get forwarding rule, got fr = %v, err = %v", fr, err)
+			}
+			// verify backend service was created
+			bsName := lbc.ctx.ClusterNamer.RXLBBackendName(namespace, fmt.Sprintf("service-for-%s", ingressToDelete.Name), 80)
+			if tc.ingressClassName == annotations.GceL7ILBIngressClass {
+				bsName = lbc.ctx.ClusterNamer.NEG(namespace, fmt.Sprintf("service-for-%s", ingressToDelete.Name), 80)
+			}
+			bsKey, err := composite.CreateKey(lbc.ctx.Cloud, bsName, meta.Regional)
+			if err != nil {
+				t.Fatal(err)
+			}
+			bs, err := composite.GetBackendService(lbc.ctx.Cloud, bsKey, meta.VersionGA, lbc.logger)
+			if err != nil || bs == nil {
+				t.Fatalf("Expected to get backend service, got bs = %v, err = %v", bs, err)
+			}
+
+			err = lbc.gcRegionalIngressResources(ingressToDelete, lbc.logger)
+			if err != nil {
+				t.Fatalf("lbc.gcRegionalIngressResources(%v, ...) returned error %v", ingressToDelete, err)
+			}
+
+			// Verify we didn't delete any ingress objects.
+			allIngresses := operator.Ingresses(lbc.ctx.Ingresses().List()).AsList()
+			allIngressKeys := common.ToIngressKeys(allIngresses)
+			sort.Strings(allIngressKeys)
+			if diff := cmp.Diff(ingressesWithClassNames, allIngressKeys); diff != "" {
+				t.Fatalf("Got diff for Ingresses after delete (-want +got):\n%s", diff)
+			}
+
+			// verify forwarding rule do not exist
+			_, err = composite.GetForwardingRule(lbc.ctx.Cloud, fwRulekey, meta.VersionGA, lbc.logger)
+			if err == nil || !utils.IsNotFoundError(err) {
+				t.Errorf("Expected to get 404 error querying for forwarding rule %v, got %v", fwRulekey, err)
+			}
+
+			// verify RXLB backend service does not exist.
+			_, err = composite.GetBackendService(lbc.ctx.Cloud, bsKey, meta.VersionGA, lbc.logger)
+			if err == nil || !utils.IsNotFoundError(err) {
+				t.Errorf("Expected to get 404 error querying for backend service %v, got %v", bsKey, err)
+			}
+		})
+	}
+}
+
 // ensureIngress creates an ingress and syncs it with ingress controller.
 // This returns updated ingress after sync.
 func ensureIngress(t *testing.T, lbc *LoadBalancerController, namespace, name string, scheme namer_util.Scheme) *networkingv1.Ingress {
@@ -1018,6 +1111,38 @@ func ensureIngress(t *testing.T, lbc *LoadBalancerController, namespace, name st
 		ing.ObjectMeta.Finalizers = []string{common.FinalizerKey}
 	} else if scheme == namer_util.V2NamingScheme {
 		ing.ObjectMeta.Finalizers = []string{common.FinalizerKeyV2}
+	}
+	addIngress(lbc, ing)
+
+	ingStoreKey := getKey(ing, t)
+	if err := lbc.sync(ingStoreKey); err != nil {
+		t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
+	}
+
+	return getUpdatedIngress(t, lbc, ing)
+}
+
+// ensureNEGIngress creates an ingress with neg annotation and syncs it with ingress controller.
+// This returns updated ingress after sync.
+func ensureNEGIngress(t *testing.T, lbc *LoadBalancerController, namespace, name string, ingressClassName string) *networkingv1.Ingress {
+	serviceName := fmt.Sprintf("service-for-%s", name)
+	svc := test.NewService(types.NamespacedName{Name: serviceName, Namespace: namespace},
+		api_v1.ServiceSpec{
+			Type:  api_v1.ServiceTypeNodePort,
+			Ports: []api_v1.ServicePort{{Port: 80}},
+		})
+	svc.Annotations = map[string]string{
+		annotations.NEGAnnotationKey: `{"ingress": true,}`,
+	}
+	addService(lbc, svc)
+
+	defaultBackend := backend(serviceName, networkingv1.ServiceBackendPort{Number: 80})
+	ing := test.NewIngress(types.NamespacedName{Name: name, Namespace: namespace},
+		networkingv1.IngressSpec{
+			DefaultBackend: &defaultBackend,
+		})
+	ing.Annotations = map[string]string{
+		annotations.IngressClassKey: ingressClassName,
 	}
 	addIngress(lbc, ing)
 

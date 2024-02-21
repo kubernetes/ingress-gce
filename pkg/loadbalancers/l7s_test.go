@@ -29,6 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/cloud-provider-gcp/providers/gce"
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
@@ -618,6 +619,203 @@ func TestDoNotLeakV2LB(t *testing.T) {
 				t.Errorf("len(l7sPool.cloud.ListURLMaps()) = %d, want %d for case %q", len(urlMaps), ingCount, tc.desc)
 			}
 			removeFakeLoadBalancer(l7sPool.cloud, feNamer, versions, defaultScope)
+		})
+	}
+}
+
+func TestDidRegionalClassChange(t *testing.T) {
+	namespace := "namespace-1"
+	name := "name-1"
+
+	testCases := []struct {
+		desc                    string
+		existingForwardingRules []*composite.ForwardingRule
+		ingress                 *networkingv1.Ingress
+		wantDidClassChange      bool
+	}{
+		{
+			desc:                    "no existing forwarding rules. L7 RXLB",
+			existingForwardingRules: []*composite.ForwardingRule{},
+			ingress: &networkingv1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+					Name:      name,
+					Annotations: map[string]string{
+						annotations.IngressClassKey: annotations.GceL7XLBRegionalIngressClass,
+					},
+				},
+			},
+			wantDidClassChange: false,
+		},
+		{
+			desc:                    "no existing forwarding rules. L7 ILB",
+			existingForwardingRules: []*composite.ForwardingRule{},
+			ingress: &networkingv1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+					Name:      name,
+					Annotations: map[string]string{
+						annotations.IngressClassKey: annotations.GceL7ILBIngressClass,
+					},
+				},
+			},
+			wantDidClassChange: false,
+		},
+		{
+			desc: "exists HTTP and HTTPS forwarding rules, no change. L7 RXLB",
+			existingForwardingRules: []*composite.ForwardingRule{
+				{
+					Name:                "k8s-fw-namespace-1-name-1--0123456789abcedf",
+					LoadBalancingScheme: "EXTERNAL_MANAGED",
+				},
+				{
+					Name:                "k8s-fws-namespace-1-name-1--0123456789abcedf",
+					LoadBalancingScheme: "EXTERNAL_MANAGED",
+				},
+			},
+			ingress: &networkingv1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+					Name:      name,
+					Annotations: map[string]string{
+						annotations.IngressClassKey: annotations.GceL7XLBRegionalIngressClass,
+					},
+				},
+			},
+			wantDidClassChange: false,
+		},
+		{
+			desc: "exists HTTP and HTTPS forwarding rules, no change. L7 ILB",
+			existingForwardingRules: []*composite.ForwardingRule{
+				{
+					Name:                "k8s-fw-namespace-1-name-1--0123456789abcedf",
+					LoadBalancingScheme: "INTERNAL_MANAGED",
+				},
+				{
+					Name:                "k8s-fws-namespace-1-name-1--0123456789abcedf",
+					LoadBalancingScheme: "INTERNAL_MANAGED",
+				},
+			},
+			ingress: &networkingv1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+					Name:      name,
+					Annotations: map[string]string{
+						annotations.IngressClassKey: annotations.GceL7ILBIngressClass,
+					},
+				},
+			},
+			wantDidClassChange: false,
+		},
+		{
+			desc: "exists HTTP forwarding rules with different lb scheme. L7 ILB",
+			existingForwardingRules: []*composite.ForwardingRule{
+				{
+					Name:                "k8s-fw-namespace-1-name-1--0123456789abcedf",
+					LoadBalancingScheme: "EXTERNAL_MANAGED",
+				},
+			},
+			ingress: &networkingv1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+					Name:      name,
+					Annotations: map[string]string{
+						annotations.IngressClassKey: annotations.GceL7ILBIngressClass,
+					},
+				},
+			},
+			wantDidClassChange: true,
+		},
+		{
+			desc: "exists HTTPS forwarding rules with different lb scheme. L7 ILB",
+			existingForwardingRules: []*composite.ForwardingRule{
+				{
+					Name:                "k8s-fws-namespace-1-name-1--0123456789abcedf",
+					LoadBalancingScheme: "EXTERNAL_MANAGED",
+				},
+			},
+			ingress: &networkingv1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+					Name:      name,
+					Annotations: map[string]string{
+						annotations.IngressClassKey: annotations.GceL7ILBIngressClass,
+					},
+				},
+			},
+			wantDidClassChange: true,
+		},
+		{
+			desc: "exists HTTP forwarding rules with different lb scheme. L7 RXLB",
+			existingForwardingRules: []*composite.ForwardingRule{
+				{
+					Name:                "k8s-fw-namespace-1-name-1--0123456789abcedf",
+					LoadBalancingScheme: "INTERNAL_MANAGED",
+				},
+			},
+			ingress: &networkingv1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+					Name:      name,
+					Annotations: map[string]string{
+						annotations.IngressClassKey: annotations.GceL7XLBRegionalIngressClass,
+					},
+				},
+			},
+			wantDidClassChange: true,
+		},
+		{
+			desc: "exists HTTPS forwarding rules with different lb scheme. L7 RXLB",
+			existingForwardingRules: []*composite.ForwardingRule{
+				{
+					Name:                "k8s-fws-namespace-1-name-1--0123456789abcedf",
+					LoadBalancingScheme: "INTERNAL_MANAGED",
+				},
+			},
+			ingress: &networkingv1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+					Name:      name,
+					Annotations: map[string]string{
+						annotations.IngressClassKey: annotations.GceL7XLBRegionalIngressClass,
+					},
+				},
+			},
+			wantDidClassChange: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			pool := newTestLoadBalancerPool()
+			l7sPool := pool.(*L7s)
+			cloud := l7sPool.cloud
+
+			for _, fr := range tc.existingForwardingRules {
+				key, err := composite.CreateKey(cloud, fr.Name, meta.Regional)
+				if err != nil {
+					t.Fatalf("composite.CreateKey(..., %s, %v) returned error %v", fr.Name, meta.Regional, err)
+				}
+
+				err = composite.CreateForwardingRule(cloud, key, fr, klog.TODO())
+				if err != nil {
+					t.Fatalf("composite.CreateForwardingRule(..., %v, %v, ...) returned error %v", key, fr, err)
+				}
+				t.Logf("Forwarding rule %+v created. Region: %v", fr, cloud.Region())
+			}
+
+			gotDidClassChange, err := l7sPool.DidRegionalClassChange(tc.ingress, klog.TODO())
+			if err != nil {
+				t.Fatalf("l7sPool.DidRegionalClassChange(%v, ...) returned error %v", tc.ingress, err)
+			}
+
+			if gotDidClassChange != tc.wantDidClassChange {
+				t.Fatalf("l7sPool.DidRegionalClassChange(%v, ...) returned %v, want %v", tc.ingress, gotDidClassChange, tc.wantDidClassChange)
+			}
 		})
 	}
 }
