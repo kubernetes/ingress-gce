@@ -387,7 +387,7 @@ func TestNewHealthCheckFromServicePort(t *testing.T) {
 					RequestPath:       "/",
 				},
 				HealthCheck: computealpha.HealthCheck{
-					Name:               "k8s1-uid1-ns2-svc2-80-c8109fc7",
+					Name:               "k8s1-uid1-e-ns2-svc2-80-c8109fc7",
 					CheckIntervalSec:   int64((15 * time.Second).Seconds()),
 					TimeoutSec:         int64((15 * time.Second).Seconds()),
 					HealthyThreshold:   1,

@@ -85,13 +85,21 @@ func (sp *ServicePort) GetDescription() Description {
 
 // BackendName returns the name of the backend which would be used for this ServicePort.
 func (sp *ServicePort) BackendName() string {
-	if sp.NEGEnabled {
-		return sp.BackendNamer.NEG(sp.ID.Service.Namespace, sp.ID.Service.Name, sp.Port)
-	} else if sp.VMIPNEGEnabled || sp.L4RBSEnabled {
+	if sp.L7XLBRegionalEnabled {
+		return sp.BackendNamer.RXLBBackendName(sp.ID.Service.Namespace, sp.ID.Service.Name, sp.Port)
+	} else if sp.NEGEnabled || sp.VMIPNEGEnabled || sp.L4RBSEnabled {
+		// L4 ILB and RBS (with NEGs), Ingress ILB and GXLB are using NEG Name for all backend resources.
+		return sp.NEGName()
+	}
+	return sp.BackendNamer.IGBackend(sp.NodePort)
+}
+
+func (sp *ServicePort) NEGName() string {
+	if sp.VMIPNEGEnabled || sp.L4RBSEnabled {
 		// Use L4 Backend name for both Internal and External LoadBalancers
 		return sp.BackendNamer.L4Backend(sp.ID.Service.Namespace, sp.ID.Service.Name)
 	}
-	return sp.BackendNamer.IGBackend(sp.NodePort)
+	return sp.BackendNamer.NEG(sp.ID.Service.Namespace, sp.ID.Service.Name, sp.Port)
 }
 
 // IGName returns the name of the instance group which would be used for this ServicePort.
