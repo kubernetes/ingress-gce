@@ -27,6 +27,7 @@ import (
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog/v2"
 )
 
 // TestRegionalXLB simple test that creates and deletes gce-regional-external
@@ -36,8 +37,8 @@ func TestRegionalXLB(t *testing.T) {
 	t.Parallel()
 
 	// These names are useful when reading the debug logs
-	ingressPrefix := "ing1-"
-	serviceName := "svc-1"
+	ingressPrefix := "rxlb-"
+	serviceName := "rxlb"
 
 	port80 := v1.ServiceBackendPort{Number: 80}
 
@@ -80,26 +81,26 @@ func TestRegionalXLB(t *testing.T) {
 		tc := tc // Capture tc as we are running this in parallel.
 		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
 			t.Parallel()
-			t.Logf("Ingress = %s", tc.ing.String())
+			klog.Infof("Ingress = %s", tc.ing.String())
 			crud := adapter.IngressCRUD{C: Framework.Clientset}
 
 			_, err := e2e.CreateEchoService(s, serviceName, negAnnotation)
 			if err != nil {
 				t.Fatalf("error creating echo service: %v", err)
 			}
-			t.Logf("Echo service created (%s/%s)", s.Namespace, serviceName)
+			klog.Infof("Echo service created (%s/%s)", s.Namespace, serviceName)
 
 			tc.ing.Namespace = s.Namespace
 			if _, err := crud.Create(tc.ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
 			}
-			t.Logf("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)
+			klog.Infof("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)
 
 			ing, err := e2e.WaitForIngress(s, tc.ing, nil, nil)
 			if err != nil {
 				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 			}
-			t.Logf("GCLB resources created (%s/%s)", s.Namespace, tc.ing.Name)
+			klog.Infof("GCLB resources created (%s/%s)", s.Namespace, tc.ing.Name)
 
 			// Perform whitebox testing.
 			if len(ing.Status.LoadBalancer.Ingress) < 1 {
@@ -107,7 +108,7 @@ func TestRegionalXLB(t *testing.T) {
 			}
 
 			vip := ing.Status.LoadBalancer.Ingress[0].IP
-			t.Logf("Ingress %s/%s VIP = %s", s.Namespace, tc.ing.Name, vip)
+			klog.Infof("Ingress %s/%s VIP = %s", s.Namespace, tc.ing.Name, vip)
 
 			params := &fuzz.GCLBForVIPParams{VIP: vip, Validators: fuzz.FeatureValidators(features.All), Region: Framework.Region, Network: Framework.Network}
 			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
@@ -138,8 +139,11 @@ func TestRegionalXLBStaticIP(t *testing.T) {
 
 	ctx := context.Background()
 
+	svcName := "rxlbsttc"
+	ingName := "rxlbsttc"
+
 	Framework.RunWithSandbox("rxlb-static-ip", t, func(t *testing.T, s *e2e.Sandbox) {
-		_, err := e2e.CreateEchoService(s, "service-1", negAnnotation)
+		_, err := e2e.CreateEchoService(s, svcName, negAnnotation)
 		if err != nil {
 			t.Fatalf("e2e.CreateEchoService(s, service-1, nil) = _, %v; want _, nil", err)
 		}
@@ -150,13 +154,13 @@ func TestRegionalXLBStaticIP(t *testing.T) {
 		}
 		defer e2e.DeleteGCPAddress(s, addrName, Framework.Region)
 
-		testIngEnabled := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
-			DefaultBackend("service-1", v1.ServiceBackendPort{Number: 80}).
+		testIngEnabled := fuzz.NewIngressBuilder(s.Namespace, ingName, "").
+			DefaultBackend(svcName, v1.ServiceBackendPort{Number: 80}).
 			ConfigureForRegionalXLB().
 			AddStaticIP(addrName, true).
 			Build()
-		testIngDisabled := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
-			DefaultBackend("service-1", v1.ServiceBackendPort{Number: 80}).
+		testIngDisabled := fuzz.NewIngressBuilder(s.Namespace, ingName, "").
+			DefaultBackend(svcName, v1.ServiceBackendPort{Number: 80}).
 			ConfigureForRegionalXLB().
 			Build()
 
@@ -166,7 +170,7 @@ func TestRegionalXLBStaticIP(t *testing.T) {
 		if err != nil {
 			t.Fatalf("error creating Ingress spec: %v", err)
 		}
-		t.Logf("Ingress %s/%s created", s.Namespace, ing.Name)
+		klog.Infof("Ingress %s/%s created", s.Namespace, ing.Name)
 
 		var gclb *fuzz.GCLB
 		for i, testIng := range []*v1.Ingress{testIngDisabled, testIngEnabled, testIngDisabled} {
@@ -175,7 +179,7 @@ func TestRegionalXLBStaticIP(t *testing.T) {
 				if err != nil {
 					t.Fatalf("error patching Ingress spec: %v", err)
 				}
-				t.Logf("Ingress %s/%s updated", s.Namespace, testIng.Name)
+				klog.Infof("Ingress %s/%s updated", s.Namespace, testIng.Name)
 
 				ing, err = e2e.WaitForIngress(s, ing, nil, nil)
 				if err != nil {
@@ -204,8 +208,8 @@ func TestRegionalXLBILBShared(t *testing.T) {
 	t.Parallel()
 
 	// These names are useful when reading the debug logs
-	ingressPrefix := "ing5-"
-	serviceName := "svc-5"
+	ingressPrefix := "shrdrxilb"
+	serviceName := "shrdrxilb"
 
 	port80 := v1.ServiceBackendPort{Number: 80}
 
@@ -272,25 +276,25 @@ func TestRegionalXLBILBShared(t *testing.T) {
 			if err != nil {
 				t.Fatalf("error creating echo service: %v", err)
 			}
-			t.Logf("Echo service created (%s/%s)", s.Namespace, serviceName)
+			klog.Infof("Echo service created (%s/%s)", s.Namespace, serviceName)
 
 			var gclb *fuzz.GCLB
 			for _, ing := range []*v1.Ingress{tc.ilbIng, tc.rxlbIng} {
 
-				t.Logf("Ingress = %s", ing.String())
+				klog.Infof("Ingress = %s", ing.String())
 
 				crud := adapter.IngressCRUD{C: Framework.Clientset}
 				ing.Namespace = s.Namespace
 				if _, err := crud.Create(ing); err != nil {
 					t.Fatalf("error creating Ingress spec: %v", err)
 				}
-				t.Logf("Ingress created (%s/%s)", s.Namespace, ing.Name)
+				klog.Infof("Ingress created (%s/%s)", s.Namespace, ing.Name)
 
 				ing, err := e2e.WaitForIngress(s, ing, nil, nil)
 				if err != nil {
 					t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 				}
-				t.Logf("GCLB resources created (%s/%s)", s.Namespace, ing.Name)
+				klog.Infof("GCLB resources created (%s/%s)", s.Namespace, ing.Name)
 
 				// Perform whitebox testing.
 				if len(ing.Status.LoadBalancer.Ingress) < 1 {
@@ -298,7 +302,7 @@ func TestRegionalXLBILBShared(t *testing.T) {
 				}
 
 				vip := ing.Status.LoadBalancer.Ingress[0].IP
-				t.Logf("Ingress %s/%s VIP = %s", s.Namespace, ing.Name, vip)
+				klog.Infof("Ingress %s/%s VIP = %s", s.Namespace, ing.Name, vip)
 				if utils.IsGCEL7ILBIngress(ing) && !e2e.IsRfc1918Addr(vip) {
 					t.Fatalf("got %v, want RFC1918 address, ing: %v", vip, ing)
 				}
@@ -322,8 +326,8 @@ func TestRegionalXLBILBTransition(t *testing.T) {
 	t.Parallel()
 
 	// These names are useful when reading the debug logs
-	ingressPrefix := "ing3-"
-	serviceName := "svc-3"
+	ingressPrefix := "rxlbilbtr-"
+	serviceName := "rxlbilbtr"
 
 	port80 := v1.ServiceBackendPort{Number: 80}
 
@@ -402,7 +406,7 @@ func TestRegionalXLBILBTransition(t *testing.T) {
 		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
 			t.Parallel()
 
-			t.Logf("Ingress = %s", tc.ing.String())
+			klog.Infof("Ingress = %s", tc.ing.String())
 
 			if Framework.CreateILBSubnet {
 				if err := e2e.CreateILBSubnet(s); err != nil && err != e2e.ErrSubnetExists {
@@ -414,20 +418,20 @@ func TestRegionalXLBILBTransition(t *testing.T) {
 			if err != nil {
 				t.Fatalf("error creating echo service: %v", err)
 			}
-			t.Logf("Echo service created (%s/%s)", s.Namespace, serviceName)
+			klog.Infof("Echo service created (%s/%s)", s.Namespace, serviceName)
 
 			crud := adapter.IngressCRUD{C: Framework.Clientset}
 			tc.ing.Namespace = s.Namespace
 			if _, err := crud.Create(tc.ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
 			}
-			t.Logf("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)
+			klog.Infof("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)
 
 			ing1, err := e2e.WaitForIngress(s, tc.ing, nil, nil)
 			if err != nil {
 				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 			}
-			t.Logf("GCLB resources created (%s/%s)", s.Namespace, tc.ing.Name)
+			klog.Infof("GCLB resources created (%s/%s)", s.Namespace, tc.ing.Name)
 
 			// Perform whitebox testing.
 			if len(ing1.Status.LoadBalancer.Ingress) < 1 {
@@ -435,7 +439,7 @@ func TestRegionalXLBILBTransition(t *testing.T) {
 			}
 
 			vip := ing1.Status.LoadBalancer.Ingress[0].IP
-			t.Logf("Ingress %s/%s VIP = %s", s.Namespace, tc.ing.Name, vip)
+			klog.Infof("Ingress %s/%s VIP = %s", s.Namespace, tc.ing.Name, vip)
 
 			if utils.IsGCEL7ILBIngress(ing1) && !e2e.IsRfc1918Addr(vip) {
 				t.Fatalf("got %v, want RFC1918 address, ing1: %v", vip, ing1)
@@ -462,7 +466,7 @@ func TestRegionalXLBILBTransition(t *testing.T) {
 			if err != nil {
 				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 			}
-			t.Logf("GCLB resources created (%s/%s)", s.Namespace, tc.ingUpdate.Name)
+			klog.Infof("GCLB resources created (%s/%s)", s.Namespace, tc.ingUpdate.Name)
 
 			// Perform whitebox testing.
 			if len(ing2.Status.LoadBalancer.Ingress) < 1 {
@@ -470,14 +474,15 @@ func TestRegionalXLBILBTransition(t *testing.T) {
 			}
 
 			vip = ing2.Status.LoadBalancer.Ingress[0].IP
-			t.Logf("Ingress %s/%s VIP = %s", s.Namespace, tc.ingUpdate.Name, vip)
+			klog.Infof("Ingress %s/%s VIP = %s", s.Namespace, tc.ingUpdate.Name, vip)
 			if utils.IsGCEL7ILBIngress(ing2) && !e2e.IsRfc1918Addr(vip) {
 				t.Fatalf("got %v, want RFC1918 address, ing1: %v", vip, ing2)
 			}
 
+			params.VIP = vip
 			gclb2, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
 			if err != nil {
-				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
+				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", params.VIP, err)
 			}
 
 			if err = e2e.CheckGCLB(gclb2, tc.numForwardingRulesUpdate, tc.numBackendServicesUpdate); err != nil {

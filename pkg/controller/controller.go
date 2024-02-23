@@ -18,12 +18,14 @@ package controller
 
 import (
 	"fmt"
+	"math/rand"
 	"net/http"
 	"reflect"
 	"sync"
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"github.com/google/go-cmp/cmp"
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -214,6 +216,7 @@ func NewLoadBalancerController(
 				ingLogger.Info("Periodic enqueueing ingress")
 			} else {
 				ingLogger.Info("Ingress changed, enqueuing")
+				ingLogger.Info("Ingress change Diff", "diff", cmp.Diff(old, cur))
 			}
 			lbc.ctx.Recorder(curIng.Namespace).Eventf(curIng, apiv1.EventTypeNormal, events.SyncIngress, "Scheduled for sync")
 			lbc.ingQueue.Enqueue(cur)
@@ -476,6 +479,7 @@ func (lbc *LoadBalancerController) GCBackends(toKeep []*v1.Ingress, ingLogger kl
 	// Only GCE ingress associated resources are managed by this controller.
 	GCEIngresses := operator.Ingresses(toKeep).Filter(utils.IsGCEIngress).AsList()
 	svcPortsToKeep := lbc.ToSvcPorts(GCEIngresses)
+	ingLogger.V(2).Info("GCBackends:", "svcPortsToKeep", svcPortsToKeep)
 	if err := lbc.backendSyncer.GC(svcPortsToKeep, ingLogger); err != nil {
 		return err
 	}
@@ -643,7 +647,8 @@ func (lbc *LoadBalancerController) postSyncGC(key string, syncErr error, oldScop
 
 // sync manages Ingress create/updates/deletes events from queue.
 func (lbc *LoadBalancerController) sync(key string) error {
-	ingLogger := lbc.logger.WithValues("ingressKey", key)
+	syncTrackingId := rand.Int31()
+	ingLogger := lbc.logger.WithValues("ingressKey", key, "trackingId", syncTrackingId)
 	if !lbc.hasSynced() {
 		time.Sleep(context.StoreSyncPollPeriod)
 		return fmt.Errorf("waiting for stores to sync")
@@ -654,7 +659,6 @@ func (lbc *LoadBalancerController) sync(key string) error {
 	if err != nil {
 		return fmt.Errorf("error getting Ingress for key %s: %v", key, err)
 	}
-
 	// Capture GC state for ingress.
 	scope := features.ScopeFromIngress(ing)
 	needSync, err := lbc.preSyncGC(key, scope, ingExists, ing, ingLogger)

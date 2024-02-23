@@ -273,7 +273,7 @@ func performWhiteboxTests(s *Sandbox, ing *networkingv1.Ingress, fc *frontendcon
 // resources associated with it to be deleted.
 func WaitForIngressDeletion(ctx context.Context, g *fuzz.GCLB, s *Sandbox, ing *networkingv1.Ingress, options *fuzz.GCLBDeleteOptions) error {
 	crud := adapter.IngressCRUD{C: s.f.Clientset}
-	if err := crud.Delete(ing.Namespace, ing.Name); err != nil {
+	if err := crud.Delete(ing.Namespace, ing.Name); err != nil && !strings.Contains(err.Error(), "not found") {
 		return fmt.Errorf("delete(%q) = %v, want nil", ing.Name, err)
 	}
 	klog.Infof("Waiting for GCLB resources to be deleted (%s/%s), IngressDeletionOptions=%+v", s.Namespace, ing.Name, options)
@@ -469,10 +469,10 @@ func CheckSvcEvents(s *Sandbox, svcName, msgType, message string, ignoreMessages
 func CheckGCLB(gclb *fuzz.GCLB, numForwardingRules int, numBackendServices int) error {
 	// Do some cursory checks on the GCP objects.
 	if len(gclb.ForwardingRule) != numForwardingRules {
-		return fmt.Errorf("got %d forwarding rules, want %d", len(gclb.ForwardingRule), numForwardingRules)
+		return fmt.Errorf("got %d forwarding rules = %+v, want %d", len(gclb.ForwardingRule), gclb.ForwardingRule, numForwardingRules)
 	}
 	if len(gclb.BackendService) != numBackendServices {
-		return fmt.Errorf("got %d backend services, want %d", len(gclb.BackendService), numBackendServices)
+		return fmt.Errorf("got %d backend services = %+v, want %d", len(gclb.BackendService), gclb.BackendService, numBackendServices)
 	}
 
 	return nil

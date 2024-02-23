@@ -116,6 +116,7 @@ func (s *IngressSyncer) GC(ings []*v1.Ingress, currIng *v1.Ingress, frontendGCAl
 	toKeep := operator.Ingresses(ings).Filter(func(ing *v1.Ingress) bool {
 		return !utils.NeedsCleanup(ing)
 	}).AsList()
+	ingLogger.V(2).Info("GC: Ingresses to keep", "toKeep", toKeep)
 	if beErr := s.controller.GCBackends(toKeep, ingLogger); beErr != nil {
 		errs = append(errs, fmt.Errorf("error running backend garbage collection routine: %v", beErr))
 	}

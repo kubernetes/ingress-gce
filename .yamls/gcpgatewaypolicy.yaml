@@ -1,0 +1,12 @@
+kind: GCPGatewayPolicy
+apiVersion: networking.gke.io/v1
+metadata:
+  name: region-gateway-policy
+  namespace: store
+spec:
+  default:
+    region: us-east1
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: external-http
