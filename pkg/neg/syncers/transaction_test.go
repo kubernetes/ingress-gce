@@ -1811,7 +1811,7 @@ func TestEnableDegradedMode(t *testing.T) {
 			negName:              "neg-8",
 			testEndpointSlices:   validEndpointSlice,
 			expectedEndpoints:    updateSucceedEndpoints,
-			expectedInErrorState: true, // if degraded mode is disabled, we don't reset error state, but we won't have different behaviors based on error state either
+			expectedInErrorState: false,
 			expectErr:            nil,
 		},
 		{
