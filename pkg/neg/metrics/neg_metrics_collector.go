@@ -20,9 +20,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/apimachinery/pkg/util/wait"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/klog/v2"
+)
+
+const (
+	epWithAnnotation = "with_annotation"
+	totalEndpoints   = "total"
 )
 
 type SyncerMetricsCollector interface {
@@ -48,6 +54,18 @@ type SyncerMetrics struct {
 	logger klog.Logger
 }
 
+// LabelPropagationStat contains stats related to label propagation.
+type LabelPropagationStats struct {
+	EndpointsWithAnnotation int
+	NumberOfEndpoints       int
+}
+
+// LabelPropagationMetrics contains aggregated label propagation related metrics.
+type LabelPropagationMetrics struct {
+	EndpointsWithAnnotation int
+	NumberOfEndpoints       int
+}
+
 // NewNEGMetricsCollector initializes SyncerMetrics and starts a go routine to compute and export metrics periodically.
 func NewNegMetricsCollector(exportInterval time.Duration, logger klog.Logger) *SyncerMetrics {
 	return &SyncerMetrics{
@@ -65,8 +83,20 @@ func FakeSyncerMetrics() *SyncerMetrics {
 	return NewNegMetricsCollector(5*time.Second, klog.TODO())
 }
 
+var (
+	NumberOfEndpoints = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      "number_of_endpoints",
+			Help:      "The total number of endpoints",
+		},
+		[]string{"feature"},
+	)
+)
+
 // RegisterSyncerMetrics registers syncer related metrics
 func RegisterSyncerMetrics() {
+	prometheus.MustRegister(NumberOfEndpoints)
 }
 
 func (sm *SyncerMetrics) Run(stopCh <-chan struct{}) {
