@@ -31,6 +31,7 @@ var register sync.Once
 func RegisterMetrics() {
 	register.Do(func() {
 		prometheus.MustRegister(NumberOfEndpoints)
+		prometheus.MustRegister(negsManagedCount)
 	})
 }
 
@@ -38,6 +39,13 @@ type SyncerMetricsCollector interface {
 	UpdateSyncer(key negtypes.NegSyncerKey, result *negtypes.NegSyncResult)
 	SetSyncerEPMetrics(key negtypes.NegSyncerKey, epState *negtypes.SyncerEPStat)
 	SetLabelPropagationStats(key negtypes.NegSyncerKey, labelstatLabelPropagationStats LabelPropagationStats)
+	// Updates the number of negs per syncer per zone
+	UpdateSyncerNegCount(key negtypes.NegSyncerKey, negByLocation map[string]int)
+}
+
+type negLocTypeKey struct {
+	location     string
+	endpointType string
 }
 
 type SyncerMetrics struct {
@@ -49,6 +57,8 @@ type SyncerMetrics struct {
 	syncerEPSStateMap map[negtypes.NegSyncerKey]negtypes.StateCountMap
 	// syncerLabelProagationStats is a map between syncer and label propagation stats.
 	syncerLabelProagationStats map[negtypes.NegSyncerKey]LabelPropagationStats
+	//Stores the number of NEGs the NEG controller is managed based on location
+	syncerNegCount map[negtypes.NegSyncerKey]map[string]int
 	// mu avoid race conditions and ensure correctness of metrics
 	mu sync.Mutex
 	// duration between metrics exports
@@ -66,6 +76,7 @@ func NewNegMetricsCollector(exportInterval time.Duration, logger klog.Logger) *S
 		syncerLabelProagationStats: make(map[negtypes.NegSyncerKey]LabelPropagationStats),
 		metricsInterval:            exportInterval,
 		logger:                     logger.WithName("NegMetricsCollector"),
+		syncerNegCount:             make(map[negtypes.NegSyncerKey]map[string]int),
 	}
 }
 
@@ -89,7 +100,20 @@ func (sm *SyncerMetrics) export() {
 	lpMetrics := sm.computeLabelMetrics()
 	NumberOfEndpoints.WithLabelValues(totalEndpoints).Set(float64(lpMetrics.NumberOfEndpoints))
 	NumberOfEndpoints.WithLabelValues(epWithAnnotation).Set(float64(lpMetrics.EndpointsWithAnnotation))
+
 	sm.logger.V(3).Info("Exporting syncer related metrics", "Number of Endpoints", lpMetrics.NumberOfEndpoints)
+
+	negCounts := sm.computeNegCounts()
+	//Clear existing metrics (ensures that keys that don't exist anymore are reset)
+	negsManagedCount.Reset()
+	for key, count := range negCounts {
+		negsManagedCount.WithLabelValues(key.location, key.endpointType).Set(float64(count))
+	}
+
+	sm.logger.V(3).Info("Exporting syncer related metrics",
+		"Network Endpoint Count", lpMetrics.NumberOfEndpoints,
+		"NEG Count", negCounts,
+	)
 }
 
 // UpdateSyncer update the status of corresponding syncer based on the syncResult.
@@ -130,6 +154,14 @@ func (sm *SyncerMetrics) SetLabelPropagationStats(key negtypes.NegSyncerKey, lab
 	sm.syncerLabelProagationStats[key] = labelstatLabelPropagationStats
 }
 
+// DeleteSyncer will reset any metrics for the syncer corresponding to `key`. It
+// should be invoked when a Syncer has been stopped.
+func (sm *SyncerMetrics) DeleteSyncer(key negtypes.NegSyncerKey) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	delete(sm.syncerNegCount, key)
+}
+
 // computeLabelMetrics aggregates label propagation metrics.
 func (sm *SyncerMetrics) computeLabelMetrics() LabelPropagationMetrics {
 	sm.mu.Lock()
@@ -141,4 +173,27 @@ func (sm *SyncerMetrics) computeLabelMetrics() LabelPropagationMetrics {
 		lpMetrics.NumberOfEndpoints += stats.NumberOfEndpoints
 	}
 	return lpMetrics
+}
+
+func (sm *SyncerMetrics) UpdateSyncerNegCount(key negtypes.NegSyncerKey, negsByLocation map[string]int) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	sm.syncerNegCount[key] = negsByLocation
+}
+
+func (sm *SyncerMetrics) computeNegCounts() map[negLocTypeKey]int {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	negCountByLocation := make(map[negLocTypeKey]int)
+
+	for syncerKey, syncerNegCount := range sm.syncerNegCount {
+		for location, count := range syncerNegCount {
+			key := negLocTypeKey{location: location, endpointType: string(syncerKey.NegType)}
+			negCountByLocation[key] += count
+		}
+	}
+
+	return negCountByLocation
 }

@@ -375,6 +375,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 
 	var errList []error
 	var negObjRefs []negv1beta1.NegObjectReference
+	negsByLocation := make(map[string]int)
 	for _, zone := range zones {
 		var negObj negv1beta1.NegObjectReference
 		negObj, err = ensureNetworkEndpointGroup(
@@ -398,10 +399,12 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 
 		if s.svcNegClient != nil && err == nil {
 			negObjRefs = append(negObjRefs, negObj)
+			negsByLocation[zone]++
 		}
 	}
 
 	s.updateInitStatus(negObjRefs, errList)
+	s.syncCollector.UpdateSyncerNegCount(s.NegSyncerKey, negsByLocation)
 	return utilerrors.NewAggregate(errList)
 }
 

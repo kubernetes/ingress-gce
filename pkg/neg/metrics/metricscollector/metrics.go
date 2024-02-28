@@ -36,6 +36,15 @@ var (
 		},
 		[]string{"feature"},
 	)
+
+	negsManagedCount = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      "managed_neg_count",
+			Help:      "Number of NEGs the Neg Controller Manages",
+		},
+		[]string{"location", "endpoint_type"},
+	)
 )
 
 // LabelPropagationStat contains stats related to label propagation.
