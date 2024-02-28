@@ -1,5 +1,5 @@
 /*
-Copyright 2023 The Kubernetes Authors.
+Copyright 2024 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package metrics
+package metricscollector
 
 import (
 	"sync"
@@ -26,10 +26,13 @@ import (
 	"k8s.io/klog/v2"
 )
 
-const (
-	epWithAnnotation = "with_annotation"
-	totalEndpoints   = "total"
-)
+var register sync.Once
+
+func RegisterMetrics() {
+	register.Do(func() {
+		prometheus.MustRegister(NumberOfEndpoints)
+	})
+}
 
 type SyncerMetricsCollector interface {
 	UpdateSyncer(key negtypes.NegSyncerKey, result *negtypes.NegSyncResult)
@@ -54,18 +57,6 @@ type SyncerMetrics struct {
 	logger klog.Logger
 }
 
-// LabelPropagationStat contains stats related to label propagation.
-type LabelPropagationStats struct {
-	EndpointsWithAnnotation int
-	NumberOfEndpoints       int
-}
-
-// LabelPropagationMetrics contains aggregated label propagation related metrics.
-type LabelPropagationMetrics struct {
-	EndpointsWithAnnotation int
-	NumberOfEndpoints       int
-}
-
 // NewNEGMetricsCollector initializes SyncerMetrics and starts a go routine to compute and export metrics periodically.
 func NewNegMetricsCollector(exportInterval time.Duration, logger klog.Logger) *SyncerMetrics {
 	return &SyncerMetrics{
@@ -81,22 +72,6 @@ func NewNegMetricsCollector(exportInterval time.Duration, logger klog.Logger) *S
 // FakeSyncerMetrics creates new NegMetricsCollector with fixed 5 second metricsInterval, to be used in tests
 func FakeSyncerMetrics() *SyncerMetrics {
 	return NewNegMetricsCollector(5*time.Second, klog.TODO())
-}
-
-var (
-	NumberOfEndpoints = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Subsystem: negControllerSubsystem,
-			Name:      "number_of_endpoints",
-			Help:      "The total number of endpoints",
-		},
-		[]string{"feature"},
-	)
-)
-
-// RegisterSyncerMetrics registers syncer related metrics
-func RegisterSyncerMetrics() {
-	prometheus.MustRegister(NumberOfEndpoints)
 }
 
 func (sm *SyncerMetrics) Run(stopCh <-chan struct{}) {

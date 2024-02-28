@@ -179,8 +179,6 @@ func RegisterMetrics() {
 		prometheus.MustRegister(LabelPropagationError)
 		prometheus.MustRegister(LabelNumber)
 		prometheus.MustRegister(AnnotationSize)
-
-		RegisterSyncerMetrics()
 	})
 }
 

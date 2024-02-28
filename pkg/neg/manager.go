@@ -37,6 +37,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
+	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negsyncer "k8s.io/ingress-gce/pkg/neg/syncers"
 	podlabels "k8s.io/ingress-gce/pkg/neg/syncers/labels"
@@ -81,7 +82,7 @@ type syncerManager struct {
 	// key consists of service namespace, name and targetPort. Value is the corresponding syncer.
 	syncerMap map[negtypes.NegSyncerKey]negtypes.NegSyncer
 	// syncCollector collect sync related metrics
-	syncerMetrics *metrics.SyncerMetrics
+	syncerMetrics *metricscollector.SyncerMetrics
 
 	// reflector handles NEG readiness gate and conditions for pods in NEG.
 	reflector readiness.Reflector
@@ -126,7 +127,7 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 	endpointSliceLister cache.Indexer,
 	nodeLister cache.Indexer,
 	svcNegLister cache.Indexer,
-	syncerMetrics *metrics.SyncerMetrics,
+	syncerMetrics *metricscollector.SyncerMetrics,
 	enableNonGcpMode bool,
 	enableDualStackNEG bool,
 	numGCWorkers int,
