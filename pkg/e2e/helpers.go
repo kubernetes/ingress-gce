@@ -273,7 +273,7 @@ func performWhiteboxTests(s *Sandbox, ing *networkingv1.Ingress, fc *frontendcon
 // resources associated with it to be deleted.
 func WaitForIngressDeletion(ctx context.Context, g *fuzz.GCLB, s *Sandbox, ing *networkingv1.Ingress, options *fuzz.GCLBDeleteOptions) error {
 	crud := adapter.IngressCRUD{C: s.f.Clientset}
-	if err := crud.Delete(ing.Namespace, ing.Name); err != nil {
+	if err := crud.Delete(ing.Namespace, ing.Name); err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("delete(%q) = %v, want nil", ing.Name, err)
 	}
 	klog.Infof("Waiting for GCLB resources to be deleted (%s/%s), IngressDeletionOptions=%+v", s.Namespace, ing.Name, options)
