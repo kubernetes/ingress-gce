@@ -117,7 +117,7 @@ func NewLoadBalancerController(
 	log = log.WithName("IngressController")
 
 	broadcaster := record.NewBroadcaster()
-	broadcaster.StartLogging(log.Info)
+	broadcaster.StartLogging(klog.Infof)
 	broadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
 		Interface: ctx.KubeClient.CoreV1().Events(""),
 	})
