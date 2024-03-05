@@ -475,6 +475,7 @@ func TestRegionalXLBILBTransition(t *testing.T) {
 				t.Fatalf("got %v, want RFC1918 address, ing1: %v", vip, ing2)
 			}
 
+			params.VIP = vip
 			gclb2, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
 			if err != nil {
 				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)

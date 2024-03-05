@@ -718,7 +718,7 @@ func RegionalGCLBForVIP(ctx context.Context, c cloud.Cloud, gclb *GCLB, params *
 	}
 
 	if len(rfrs) == 0 {
-		klog.Warningf("No regional forwarding rules found, can't get all GCLB resources")
+		klog.Warningf("No regional forwarding rules found for IP %s, network %s, can't get all GCLB resources", params.VIP, params.Network)
 		return nil
 	}
 
