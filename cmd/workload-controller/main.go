@@ -45,13 +45,14 @@ func main() {
 		os.Exit(0)
 	}
 
-	klog.V(0).Infof("Starting GLBC image: %q, cluster name %q", version.Version, flags.F.ClusterName)
-	klog.V(0).Infof("Latest commit hash: %q", version.GitCommit)
+	rootLogger := klog.TODO()
+	rootLogger.V(0).Info("Starting GLBC image", "version", version.Version, "clusterName", flags.F.ClusterName)
+	rootLogger.V(0).Info(fmt.Sprintf("Latest commit hash: %q", version.GitCommit))
 	for i, a := range os.Args {
-		klog.V(0).Infof("argv[%d]: %q", i, a)
+		rootLogger.V(0).Info(fmt.Sprintf("argv[%d]: %q", i, a))
 	}
 
-	klog.V(2).Infof("Flags = %+v", flags.F)
+	rootLogger.V(2).Info(fmt.Sprintf("Flags = %+v", flags.F))
 	defer klog.Flush()
 	// Create kube-config that uses protobufs to communicate with API server.
 	kubeConfigForProtobuf, err := app.NewKubeConfigForProtobuf()
@@ -74,7 +75,7 @@ func main() {
 	if err != nil {
 		klog.Fatalf("Failed to create kubernetes CRD client: %v", err)
 	}
-	crdHandler := crd.NewCRDHandler(crdClient)
+	crdHandler := crd.NewCRDHandler(crdClient, rootLogger)
 	workloadCRDMeta := workload.CRDMeta()
 	if _, err := crdHandler.EnsureCRD(workloadCRDMeta, true); err != nil {
 		klog.Fatalf("Failed to ensure Workload CRD: %v", err)
@@ -87,18 +88,18 @@ func main() {
 	ctx := workload.NewControllerContext(kubeClient, workloadClient, flags.F.WatchNamespace, flags.F.ResyncPeriod)
 	// TODO: Leader Elect and Health Check?
 
-	runController(ctx)
+	runController(ctx, rootLogger)
 }
 
-func runController(ctx *workload.ControllerContext) {
+func runController(ctx *workload.ControllerContext, logger klog.Logger) {
 	stopCh := make(chan struct{})
-	controller := workload.NewController(ctx)
+	controller := workload.NewController(ctx, logger)
 	ctx.Start(stopCh)
-	klog.V(0).Infof("Workload controller started")
+	logger.V(0).Info("Workload controller started")
 	controller.Run(stopCh)
 
 	for {
-		klog.Warning("Handled quit, awaiting pod deletion.")
+		logger.Info("Handled quit, awaiting pod deletion.")
 		time.Sleep(30 * time.Second)
 	}
 }

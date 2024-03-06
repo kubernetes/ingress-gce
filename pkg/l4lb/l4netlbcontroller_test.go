@@ -272,7 +272,7 @@ func buildContext(vals gce.TestClusterValues) *ingctx.ControllerContext {
 	kubeClient := fake.NewSimpleClientset()
 	networkClient := netfake.NewSimpleClientset()
 
-	namer := namer.NewNamer(clusterUID, "")
+	namer := namer.NewNamer(clusterUID, "", klog.TODO())
 
 	ctxConfig := ingctx.ControllerContextConfig{
 		Namespace:         v1.NamespaceAll,
@@ -280,7 +280,7 @@ func buildContext(vals gce.TestClusterValues) *ingctx.ControllerContext {
 		NumL4NetLBWorkers: 5,
 		MaxIGSize:         1000,
 	}
-	return ingctx.NewControllerContext(nil, kubeClient, nil, nil, nil, nil, nil, nil, networkClient, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig)
+	return ingctx.NewControllerContext(nil, kubeClient, nil, nil, nil, nil, nil, nil, networkClient, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
 }
 
 func newL4NetLBServiceController() *L4NetLBController {
@@ -294,7 +294,7 @@ func newL4NetLBServiceController() *L4NetLBController {
 	for _, n := range nodes {
 		ctx.NodeInformer.GetIndexer().Add(n)
 	}
-	return NewL4NetLBController(ctx, stopCh)
+	return NewL4NetLBController(ctx, stopCh, klog.TODO())
 }
 
 func validateNetLBSvcStatus(svc *v1.Service, t *testing.T) {
@@ -904,7 +904,7 @@ func TestProcessServiceUpdate(t *testing.T) {
 				if err != nil {
 					return fmt.Errorf("Failed to fetch backend service: %v", err)
 				}
-				if bs.SessionAffinity != utils.TranslateAffinityType(string(v1.ServiceAffinityNone)) {
+				if bs.SessionAffinity != utils.TranslateAffinityType(string(v1.ServiceAffinityNone), klog.TODO()) {
 					return fmt.Errorf("SessionAffinity mismatch %v != %v", bs.SessionAffinity, v1.ServiceAffinityNone)
 				}
 				return nil
@@ -1084,10 +1084,10 @@ func TestHealthCheckWhenExternalTrafficPolicyWasUpdated(t *testing.T) {
 	if err = lc.sync(key); err != nil {
 		t.Errorf("Failed to sync deleted service %s, err %v", key, err)
 	}
-	if !isHealthCheckDeleted(lc.ctx.Cloud, hcNameNonShared) {
+	if !isHealthCheckDeleted(lc.ctx.Cloud, hcNameNonShared, klog.TODO()) {
 		t.Errorf("Health check %s should be deleted", hcNameNonShared)
 	}
-	if !isHealthCheckDeleted(lc.ctx.Cloud, hcNameShared) {
+	if !isHealthCheckDeleted(lc.ctx.Cloud, hcNameShared, klog.TODO()) {
 		t.Errorf("Health check %s should be deleted", hcNameShared)
 	}
 	deleteNetLBService(lc, svc)
@@ -1210,7 +1210,7 @@ func TestIsRBSBasedServiceWithILBServices(t *testing.T) {
 		Namer:    controller.namer,
 		Recorder: record.NewFakeRecorder(100),
 	}
-	ilbFrName := loadbalancers.NewL4Handler(l4ilbParams).GetFRName()
+	ilbFrName := loadbalancers.NewL4Handler(l4ilbParams, klog.TODO()).GetFRName()
 	ilbSvc.Annotations = map[string]string{
 		annotations.TCPForwardingRuleKey: ilbFrName,
 		annotations.UDPForwardingRuleKey: ilbFrName,

@@ -41,18 +41,21 @@ type L7s struct {
 	recorderProducer events.RecorderProducer
 	// namerFactory creates frontend naming policy for ingress/ load balancer.
 	namerFactory namer_util.IngressFrontendNamerFactory
+
+	logger klog.Logger
 }
 
 // NewLoadBalancerPool returns a new loadbalancer pool.
 // - cloud: implements LoadBalancers. Used to sync L7 loadbalancer resources
 //
 //	with the cloud.
-func NewLoadBalancerPool(cloud *gce.Cloud, v1NamerHelper namer_util.V1FrontendNamer, recorderProducer events.RecorderProducer, namerFactory namer_util.IngressFrontendNamerFactory) LoadBalancerPool {
+func NewLoadBalancerPool(cloud *gce.Cloud, v1NamerHelper namer_util.V1FrontendNamer, recorderProducer events.RecorderProducer, namerFactory namer_util.IngressFrontendNamerFactory, logger klog.Logger) LoadBalancerPool {
 	return &L7s{
 		cloud:            cloud,
 		v1NamerHelper:    v1NamerHelper,
 		recorderProducer: recorderProducer,
 		namerFactory:     namerFactory,
+		logger:           logger.WithName("L7Pool"),
 	}
 }
 
@@ -65,11 +68,12 @@ func (l7s *L7s) Ensure(ri *L7RuntimeInfo) (*L7, error) {
 		recorder:    l7s.recorderProducer.Recorder(ri.Ingress.Namespace),
 		scope:       features.ScopeFromIngress(ri.Ingress),
 		ingress:     *ri.Ingress,
+		logger:      l7s.logger,
 	}
 
 	if !lb.namer.IsValidLoadBalancer() {
 		err := fmt.Errorf("invalid loadbalancer name %s, the resource name must comply with RFC1035 (https://www.ietf.org/rfc/rfc1035.txt)", lb.namer.LoadBalancer())
-		klog.Error(err)
+		l7s.logger.Error(err, "invalid loadbalancer")
 		return nil, err
 	}
 
@@ -82,7 +86,7 @@ func (l7s *L7s) Ensure(ri *L7RuntimeInfo) (*L7, error) {
 // delete deletes a loadbalancer by frontend namer.
 func (l7s *L7s) delete(namer namer_util.IngressFrontendNamer, versions *features.ResourceVersions, scope meta.KeyType) error {
 	if !namer.IsValidLoadBalancer() {
-		klog.V(2).Infof("Loadbalancer name %s invalid, skipping GC", namer.LoadBalancer())
+		l7s.logger.V(2).Info("Loadbalancer name invalid, skipping GC", "name", namer.LoadBalancer())
 		return nil
 	}
 	lb := &L7{
@@ -90,9 +94,10 @@ func (l7s *L7s) delete(namer namer_util.IngressFrontendNamer, versions *features
 		cloud:       l7s.cloud,
 		namer:       namer,
 		scope:       scope,
+		logger:      l7s.logger,
 	}
 
-	klog.V(2).Infof("Deleting loadbalancer %s", lb.String())
+	l7s.logger.V(2).Info("Deleting loadbalancer", "name", lb.String())
 
 	if err := lb.Cleanup(versions); err != nil {
 		return err
@@ -103,7 +108,7 @@ func (l7s *L7s) delete(namer namer_util.IngressFrontendNamer, versions *features
 // list returns a list of urlMaps (the top level LB resource) that belong to the cluster.
 func (l7s *L7s) list(key *meta.Key, version meta.Version) ([]*composite.UrlMap, error) {
 	var result []*composite.UrlMap
-	urlMaps, err := composite.ListUrlMaps(l7s.cloud, key, version, klog.TODO())
+	urlMaps, err := composite.ListUrlMaps(l7s.cloud, key, version, l7s.logger)
 	if err != nil {
 		return nil, err
 	}
@@ -120,11 +125,11 @@ func (l7s *L7s) list(key *meta.Key, version meta.Version) ([]*composite.UrlMap, 
 // GCv2 implements LoadBalancerPool.
 func (l7s *L7s) GCv2(ing *v1.Ingress, scope meta.KeyType) error {
 	ingKey := common.NamespacedName(ing)
-	klog.V(2).Infof("GCv2(%v)", ingKey)
+	l7s.logger.V(2).Info("GCv2", "key", ingKey)
 	if err := l7s.delete(l7s.namerFactory.Namer(ing), features.VersionsFromIngress(ing), scope); err != nil {
 		return err
 	}
-	klog.V(2).Infof("GCv2(%v) ok", ingKey)
+	l7s.logger.V(2).Info("GCv2 ok", "key", ingKey)
 	return nil
 }
 
@@ -149,9 +154,9 @@ func (l7s *L7s) FrontendScopeChangeGC(ing *v1.Ingress, ingLogger klog.Logger) (*
 			}
 
 			// Look for existing LBs with the same name but of a different scope
-			_, err = composite.GetUrlMap(l7s.cloud, key, features.VersionsFromIngress(ing).UrlMap, klog.TODO())
+			_, err = composite.GetUrlMap(l7s.cloud, key, features.VersionsFromIngress(ing).UrlMap, l7s.logger)
 			if err == nil {
-				klog.V(2).Infof("GC'ing ing %v for scope %q", ing, scope)
+				l7s.logger.V(2).Info("GC'ing ing for scope", "ing", ing, "scope", scope)
 				return &scope, nil
 			}
 			if !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
@@ -209,7 +214,7 @@ func lbSchemeForIngress(ing *v1.Ingress) string {
 // GCv1 implements LoadBalancerPool.
 // TODO(shance): Update to handle regional and global LB with same name
 func (l7s *L7s) GCv1(names []string) error {
-	klog.V(2).Infof("GCv1(%v)", names)
+	l7s.logger.V(2).Info("GCv1", "names", names)
 
 	knownLoadBalancers := make(map[namer_util.LoadBalancerName]bool)
 	for _, n := range names {
@@ -253,7 +258,7 @@ func (l7s *L7s) gc(urlMaps []*composite.UrlMap, knownLoadBalancers map[namer_uti
 		l7Name := l7s.v1NamerHelper.LoadBalancerForURLMap(um.Name)
 
 		if knownLoadBalancers[l7Name] {
-			klog.V(3).Infof("Load balancer %v is still valid, not GC'ing", l7Name)
+			l7s.logger.V(3).Info("Load balancer is still valid, not GC'ing", "name", l7Name)
 			continue
 		}
 
@@ -279,7 +284,7 @@ func (l7s *L7s) Shutdown(ings []*v1.Ingress) error {
 	// Delete ingresses that use v2 naming policy.
 	var errs []error
 	v2Ings := operator.Ingresses(ings).Filter(func(ing *v1.Ingress) bool {
-		return namer_util.FrontendNamingScheme(ing) == namer_util.V2NamingScheme
+		return namer_util.FrontendNamingScheme(ing, l7s.logger) == namer_util.V2NamingScheme
 	}).AsList()
 	for _, ing := range v2Ings {
 		if err := l7s.GCv2(ing, features.ScopeFromIngress(ing)); err != nil {
@@ -289,7 +294,7 @@ func (l7s *L7s) Shutdown(ings []*v1.Ingress) error {
 	if errs != nil {
 		return fmt.Errorf("error deleting load-balancers for v2 naming policy: %v", utils.JoinErrs(errs))
 	}
-	klog.V(2).Infof("Loadbalancer pool shutdown.")
+	l7s.logger.V(2).Info("Loadbalancer pool shutdown.")
 	return nil
 }
 
@@ -300,7 +305,7 @@ func (l7s *L7s) HasUrlMap(ing *v1.Ingress) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if _, err := composite.GetUrlMap(l7s.cloud, key, features.VersionsFromIngress(ing).UrlMap, klog.TODO()); err != nil {
+	if _, err := composite.GetUrlMap(l7s.cloud, key, features.VersionsFromIngress(ing).UrlMap, l7s.logger); err != nil {
 		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 			return false, nil
 		}

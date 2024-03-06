@@ -113,22 +113,25 @@ type Controller struct {
 	svcQueue        utils.TaskQueue
 	metricsInterval time.Duration
 	serviceInformer cache.SharedIndexInformer
+
+	logger klog.Logger
 }
 
 // NewController creates a new Controller.
-func NewController(ctx *context.ControllerContext, exportInterval time.Duration, stopCh <-chan struct{}) *Controller {
+func NewController(ctx *context.ControllerContext, exportInterval time.Duration, stopCh <-chan struct{}, logger klog.Logger) *Controller {
 	svcMetrics := &Controller{
 		ctx:             ctx,
 		stopCh:          stopCh,
 		serviceInformer: ctx.ServiceInformer,
 		metricsInterval: exportInterval,
+		logger:          logger.WithName("ServiceMetricsController"),
 	}
 	return svcMetrics
 }
 
 // Run starts the controller until stopped via the stop channel.
 func (c *Controller) Run() {
-	klog.Infof("Starting Service Metric Stats controller")
+	c.logger.Info("Starting Service Metric Stats controller")
 	go func() {
 		time.Sleep(c.metricsInterval)
 		wait.Until(c.export, c.metricsInterval, c.stopCh)
@@ -170,7 +173,7 @@ type serviceGCPFeaturesMetricState struct {
 func (c *Controller) export() {
 	defer func() {
 		if r := recover(); r != nil {
-			klog.Errorf("failed to export metrics: %v", r)
+			c.logger.Error(nil, "failed to export metrics", "recoverMessage", r)
 			metrics.MetricExportFailureCount.WithLabelValues("service").Inc()
 		}
 	}()
@@ -178,14 +181,14 @@ func (c *Controller) export() {
 	serviceLister := c.serviceInformer.GetIndexer()
 	allServices, err := listers.NewServiceLister(serviceLister).List(labels.Everything())
 	if err != nil {
-		klog.Errorf("failed to list services err=%v", err)
+		c.logger.Error(err, "failed to list services")
 		return
 	}
 
 	l4ProtocolState, ipStackState, gcpFeaturesState := calculateMetrics(allServices)
 
 	updatePrometheusMetrics(l4ProtocolState, ipStackState, gcpFeaturesState)
-	klog.Infof("Exported service metrics in %s", time.Since(start))
+	c.logger.Info("Exported service metrics", "timeTaken", time.Since(start))
 }
 
 func calculateMetrics(services []*v1.Service) (map[serviceL4ProtocolMetricState]int64, map[serviceIPStackMetricState]int64, map[serviceGCPFeaturesMetricState]int64) {

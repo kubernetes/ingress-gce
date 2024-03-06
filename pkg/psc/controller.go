@@ -13,6 +13,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+
 package psc
 
 import (
@@ -109,9 +110,12 @@ type Controller struct {
 	regionalCluster bool
 
 	stopCh <-chan struct{}
+
+	logger klog.Logger
 }
 
-func NewController(ctx *context.ControllerContext, stopCh <-chan struct{}) *Controller {
+func NewController(ctx *context.ControllerContext, stopCh <-chan struct{}, logger klog.Logger) *Controller {
+	logger = logger.WithName("PSCController")
 	saNamer := namer.NewServiceAttachmentNamer(ctx.ClusterNamer, string(ctx.KubeSystemUID))
 	controller := &Controller{
 		client:              ctx.KubeClient,
@@ -127,6 +131,7 @@ func NewController(ctx *context.ControllerContext, stopCh <-chan struct{}) *Cont
 		clusterName:         flags.F.GKEClusterName,
 		regionalCluster:     ctx.RegionalCluster,
 		stopCh:              stopCh,
+		logger:              logger,
 	}
 	if controller.regionalCluster {
 		controller.clusterLoc = controller.cloud.Region()
@@ -140,7 +145,7 @@ func NewController(ctx *context.ControllerContext, stopCh <-chan struct{}) *Cont
 			curSA := cur.(*sav1.ServiceAttachment)
 			oldSA := old.(*sav1.ServiceAttachment)
 
-			if !shouldProcess(oldSA, curSA) {
+			if !shouldProcess(oldSA, curSA, logger) {
 				return
 			}
 			controller.enqueueServiceAttachment(cur)
@@ -162,13 +167,13 @@ func NewController(ctx *context.ControllerContext, stopCh <-chan struct{}) *Cont
 // until signaled
 func (c *Controller) Run() {
 	wait.PollUntil(5*time.Second, func() (bool, error) {
-		klog.V(2).Infof("Waiting for initial sync")
+		c.logger.V(2).Info("Waiting for initial sync")
 		return c.hasSynced(), nil
 	}, c.stopCh)
 
-	klog.V(2).Infof("Starting private service connect controller")
+	c.logger.V(2).Info("Starting private service connect controller")
 	defer func() {
-		klog.V(2).Infof("Shutting down private service connect controller")
+		c.logger.V(2).Info("Shutting down private service connect controller")
 		c.svcAttachmentQueue.ShutDown()
 	}()
 
@@ -214,9 +219,9 @@ func (c *Controller) handleErr(err error, key interface{}) {
 		return
 	}
 	eventMsg := fmt.Sprintf("error processing service attachment %q: %q", key, err)
-	klog.Errorf(eventMsg)
+	c.logger.Error(err, eventMsg)
 	if obj, exists, err := c.svcAttachmentLister.GetByKey(key.(string)); err != nil {
-		klog.Warningf("failed to retrieve service attachment %q from the store: %q", key.(string), err)
+		c.logger.Info("failed to retrieve service attachment from the store", "serviceKey", key.(string), "err", err)
 	} else if exists {
 		svcAttachment := obj.(*sav1.ServiceAttachment)
 		c.recorder(svcAttachment.Namespace).Eventf(svcAttachment, v1.EventTypeWarning, "ProcessServiceAttachmentFailed", eventMsg)
@@ -228,7 +233,7 @@ func (c *Controller) handleErr(err error, key interface{}) {
 func (c *Controller) enqueueServiceAttachment(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
-		klog.Errorf("Failed to generate service attachment key: %q", err)
+		c.logger.Error(err, "Failed to generate service attachment key")
 		return
 	}
 	c.svcAttachmentQueue.Add(key)
@@ -238,7 +243,7 @@ func (c *Controller) enqueueServiceAttachment(obj interface{}) {
 func (c *Controller) addServiceToMetrics(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
-		klog.Errorf("Failed to generate service key for obj %v: %q", obj, err)
+		c.logger.Error(err, "Failed to generate service key for obj", "obj", obj)
 		return
 	}
 	c.collector.SetService(key)
@@ -248,7 +253,7 @@ func (c *Controller) addServiceToMetrics(obj interface{}) {
 func (c *Controller) deleteServiceFromMetrics(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
-		klog.Errorf("Failed to generate service key for obj %v: %q", obj, err)
+		c.logger.Error(err, "Failed to generate service key for obj", "obj", obj)
 		return
 	}
 	c.collector.DeleteService(key)
@@ -284,11 +289,11 @@ func (c *Controller) processServiceAttachment(key string) error {
 
 	if !exists {
 		// Allow Garbage Collection to Delete Service Attachment
-		klog.V(2).Infof("Service attachment %s/%s does not exist in store. Will be cleaned up by GC", namespace, name)
+		c.logger.V(2).Info("Service attachment does not exist in store. Will be cleaned up by GC", "serviceKey", klog.KRef(namespace, name))
 		return nil
 	}
-	klog.V(2).Infof("Processing Service attachment %s/%s", namespace, name)
-	defer klog.V(4).Infof("Finished processing service attachment %s/%s", namespace, name)
+	c.logger.V(2).Info("Processing Service attachment", "serviceKey", klog.KRef(namespace, name))
+	defer c.logger.V(4).Info("Finished processing service attachment", "serviceKey", klog.KRef(namespace, name))
 
 	svcAttachment := obj.(*sav1.ServiceAttachment)
 	var updatedCR *sav1.ServiceAttachment
@@ -326,7 +331,7 @@ func (c *Controller) processServiceAttachment(key string) error {
 
 	gceSvcAttachment := &ga.ServiceAttachment{}
 	if existingSA != nil {
-		klog.V(4).Infof("Found existing service attachment %s", existingSA.Name)
+		c.logger.V(4).Info("Found existing service attachment", "attachmentName", existingSA.Name)
 		*gceSvcAttachment = *existingSA
 	}
 
@@ -359,7 +364,7 @@ func (c *Controller) processServiceAttachment(key string) error {
 			// may use a different version causing the selflink to differ even if the resource is the same.
 			gceSvcAttachment.TargetService = existingSA.TargetService
 
-			klog.V(2).Infof("Service Attachment CR %s/%s was updated. %s requires an update", updatedCR.Namespace, updatedCR.Name, saName)
+			c.logger.V(2).Info("Service Attachment CR was updated, it requires an update", "attachmentKey", klog.KRef(updatedCR.Namespace, updatedCR.Name), "attachmentName", saName)
 			if err = c.cloud.Compute().ServiceAttachments().Patch(context2.Background(), gceSAKey, gceSvcAttachment); err != nil {
 				return fmt.Errorf("failed to update GCE Service Attachment: %w", err)
 			}
@@ -369,14 +374,14 @@ func (c *Controller) processServiceAttachment(key string) error {
 		return err
 	}
 
-	klog.V(2).Infof("Creating service attachment %s", saName)
+	c.logger.V(2).Info("Creating service attachment", "attachmentName", saName)
 	if err = c.cloud.Compute().ServiceAttachments().Insert(context2.Background(), gceSAKey, gceSvcAttachment); err != nil {
 		return fmt.Errorf("failed to create GCE Service Attachment: %w", err)
 	}
-	klog.V(2).Infof("Created service attachment %s", saName)
+	c.logger.V(2).Info("Created service attachment", "attachmentName", saName)
 
 	updatedCR, err = c.updateServiceAttachmentStatus(updatedCR, gceSAKey)
-	klog.V(2).Infof("Updated Service Attachment %s/%s status", updatedCR.Namespace, updatedCR.Name)
+	c.logger.V(2).Info("Updated Service Attachment status", "attachmentKey", klog.KRef(updatedCR.Namespace, updatedCR.Name))
 
 	if err == nil {
 		c.recorder(svcAttachment.Namespace).Eventf(svcAttachment, v1.EventTypeNormal, "ServiceAttachmentCreated",
@@ -391,9 +396,9 @@ func (c *Controller) processServiceAttachment(key string) error {
 // resource has successfully been deleted, the finalizer is removed from the service attachment
 // cr.
 func (c *Controller) garbageCollectServiceAttachments() {
-	klog.V(2).Infof("Starting Service Attachment Garbage Collection")
+	c.logger.V(2).Info("Starting Service Attachment Garbage Collection")
 	defer func() {
-		klog.V(2).Infof("Finished Service Attachment Garbage Collection")
+		c.logger.V(2).Info("Finished Service Attachment Garbage Collection")
 		metrics.PublishLastProcessTimestampMetrics(metrics.GCProcess)
 	}()
 	crs := c.svcAttachmentLister.List()
@@ -404,7 +409,7 @@ func (c *Controller) garbageCollectServiceAttachments() {
 		}
 		key, err := cache.MetaNamespaceKeyFunc(sa)
 		if err != nil {
-			klog.V(4).Infof("failed to generate key for service attachment: %s/%s: %q", sa.Namespace, sa.Name, err)
+			c.logger.V(4).Info("failed to generate key for service attachment", "attachmentKey", klog.KRef(sa.Namespace, sa.Name), "err", err)
 		} else {
 			c.collector.DeleteServiceAttachment(key)
 		}
@@ -423,7 +428,7 @@ func (c *Controller) deleteServiceAttachment(sa *sav1.ServiceAttachment) {
 	resourceID, err := cloud.ParseResourceURL(sa.Status.ServiceAttachmentURL)
 	var gceName string
 	if err != nil {
-		klog.Errorf("failed to parse service attachment url %s/%s: %s", sa.Namespace, sa.Name, err)
+		c.logger.Error(err, "failed to parse service attachment url", "attachmentKey", klog.KRef(sa.Namespace, sa.Name))
 	} else {
 		gceName = resourceID.Key.Name
 	}
@@ -434,27 +439,27 @@ func (c *Controller) deleteServiceAttachment(sa *sav1.ServiceAttachment) {
 	// attachment CR. Since the CR's UID is used, the name found will be unique to this CR
 	// and can safely be deleted if found.
 	if gceName == "" {
-		klog.V(2).Infof("could not find name from service attachment url on %s/%s, generating name based on CR", sa.Namespace, sa.Name)
+		c.logger.V(2).Info("could not find name from service attachment url, generating name based on CR", "attachmentKey", klog.KRef(sa.Namespace, sa.Name))
 		gceName = c.saNamer.ServiceAttachment(sa.Namespace, sa.Name, string(sa.UID))
 	}
 
-	klog.V(2).Infof("Deleting Service Attachment %s", gceName)
+	c.logger.V(2).Info("Deleting Service Attachment", "attachmentName", gceName)
 	if err = c.ensureDeleteGCEServiceAttachment(gceName); err != nil {
 		eventMsg := fmt.Sprintf("Failed to Garbage Collect Service Attachment %s/%s: %q", sa.Namespace, sa.Name, err)
-		klog.Errorf(eventMsg)
+		c.logger.Error(err, eventMsg)
 		c.recorder(sa.Namespace).Eventf(sa, v1.EventTypeWarning, SvcAttachmentGCError, eventMsg)
 		return
 	}
-	klog.V(2).Infof("Deleted Service Attachment %s", gceName)
+	c.logger.V(2).Info("Deleted Service Attachment", "attachmentName", gceName)
 
-	klog.V(2).Infof("Removing finalizer on Service Attachment %s/%s", sa.Namespace, sa.Name)
+	c.logger.V(2).Info("Removing finalizer on Service Attachment", "attachmentName", klog.KRef(sa.Namespace, sa.Name))
 	if err = c.ensureSAFinalizerRemoved(sa); err != nil {
 		eventMsg := fmt.Sprintf("Failed to remove finalizer on ServiceAttachment %s/%s: %q", sa.Namespace, sa.Name, err)
-		klog.Errorf(eventMsg)
+		c.logger.Error(err, eventMsg)
 		c.recorder(sa.Namespace).Eventf(sa, v1.EventTypeWarning, SvcAttachmentGCError, eventMsg)
 		return
 	}
-	klog.V(2).Infof("Removed finalizer on Service Attachment %s/%s", sa.Namespace, sa.Name)
+	c.logger.V(2).Info("Removed finalizer on Service Attachment", "attachmentName", klog.KRef(sa.Namespace, sa.Name))
 }
 
 // getForwardingRule returns the URL of the forwarding rule based by using the service resource
@@ -482,7 +487,7 @@ func (c *Controller) getForwardingRule(namespace, svcName string) (string, error
 			// The annotation only exists for ILB Subsetting LBs. If no annotation exists, fallback
 			// to finding the name by regenerating the name using the svc resource
 			frName = cloudprovider.DefaultLoadBalancerName(svc)
-			klog.V(2).Infof("no forwarding rule annotation exists on %s/%s, falling back to autogenerated forwarding rule name: %s", svc.Namespace, svc.Name, frName)
+			c.logger.V(2).Info("no forwarding rule annotation exists, falling back to autogenerated forwarding rule name", "serviceKey", klog.KRef(svc.Namespace, svc.Name), "forwardingRuleName", frName)
 		}
 	}
 	fwdRule, err := c.cloud.Compute().ForwardingRules().Get(context2.Background(), meta.RegionalKey(frName, c.cloud.Region()))
@@ -494,7 +499,7 @@ func (c *Controller) getForwardingRule(namespace, svcName string) (string, error
 	foundMatchingIP := false
 	for _, ing := range svc.Status.LoadBalancer.Ingress {
 		if ing.IP == fwdRule.IPAddress {
-			klog.V(2).Infof("verified %s has matching ip to service %s/%s", frName, svc.Namespace, svc.Name)
+			c.logger.V(2).Info("verified forwarding rule has matching ip to service", "forwardingRuleName", frName, "serviceKey", klog.KRef(svc.Namespace, svc.Name))
 			foundMatchingIP = true
 			break
 		}
@@ -549,13 +554,13 @@ func (c *Controller) updateServiceAttachmentStatus(cr *sav1.ServiceAttachment, g
 	updatedSA.Status.ConsumerForwardingRules = consumers
 
 	if reflect.DeepEqual(cr.Status, updatedSA.Status) {
-		klog.V(2).Infof("Service Attachment %s/%s has no status update. Skipping patch", cr.Namespace, cr.Name)
+		c.logger.V(2).Info("Service Attachment has no status update. Skipping patch", "attachmentKey", klog.KRef(cr.Namespace, cr.Name))
 		return cr, nil
 	}
 
 	updatedSA.Status.LastModifiedTimestamp = metav1.Now()
 
-	klog.V(2).Infof("Updating Service Attachment %s/%s status", cr.Namespace, cr.Name)
+	c.logger.V(2).Info("Updating Service Attachment status", "attachmentKey", klog.KRef(cr.Namespace, cr.Name))
 	return c.patchServiceAttachment(cr, updatedSA)
 }
 
@@ -695,27 +700,28 @@ func needsUpdate(existingSA, desiredSA *ga.ServiceAttachment) (bool, error) {
 
 // shouldProcess checks if service attachment should be processed or not.
 // It will ignore status or type meta only updates but will return true for periodic enqueues
-func shouldProcess(old, cur *sav1.ServiceAttachment) bool {
+func shouldProcess(old, cur *sav1.ServiceAttachment, logger klog.Logger) bool {
+	logger = logger.WithValues("attachmentKey", klog.KRef(cur.Namespace, cur.Name))
 	if cur.GetDeletionTimestamp() != nil {
-		klog.V(4).Infof("Deletion timestamp is set, skipping service attachment %s/%s", cur.Namespace, cur.Name)
+		logger.V(4).Info("Deletion timestamp is set, skipping service attachment")
 		return false
 	}
 
 	// If spec changed, the ServiceAttachment should be processed.
 	if !reflect.DeepEqual(old.Spec, cur.Spec) {
-		klog.V(4).Infof("Spec has changed, queuing service attachment %s/%s", cur.Namespace, cur.Name)
+		logger.V(4).Info("Spec has changed, queuing service attachment")
 		return true
 	}
 
 	if reflect.DeepEqual(old.Status, cur.Status) {
 		// Periodic enqueues where nothing changed should be processed to update Status
-		klog.V(4).Infof("Periodic sync, queuing service attachment %s/%s", cur.Namespace, cur.Name)
+		logger.V(4).Info("Periodic sync, queuing service attachment")
 		return true
 	}
 
 	// If Status changed, update was done by the controller and further processing is unnecessary.
 	// Status change results in a resource version change, so do not check for metadata changes
-	klog.V(4).Infof("Status only update, skipping service attachment %s/%s", cur.Namespace, cur.Name)
+	logger.V(4).Info("Status only update, skipping service attachment")
 	return false
 }
 

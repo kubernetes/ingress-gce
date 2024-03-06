@@ -27,26 +27,30 @@ type ConfigMapConfigController struct {
 	configMapLister        corelisters.ConfigMapLister
 	kubeClient             kubernetes.Interface
 	recorder               record.EventRecorder
+
+	logger klog.Logger
 }
 
 // NewConfigMapConfigController creates a new ConfigMapConfigController, it will load the config from the target configmap
-func NewConfigMapConfigController(kubeClient kubernetes.Interface, recorder record.EventRecorder, configMapNamespace, configMapName string) *ConfigMapConfigController {
+func NewConfigMapConfigController(kubeClient kubernetes.Interface, recorder record.EventRecorder, configMapNamespace, configMapName string, logger klog.Logger) *ConfigMapConfigController {
+	logger = logger.WithName("ConfigMapConfigController")
+
 	currentConfig := NewConfig()
 	cm, err := kubeClient.CoreV1().ConfigMaps(configMapNamespace).Get(context.TODO(), configMapName, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
-			klog.Infof("ConfigMapConfigController: Not found the configmap based config, using default config: %v", currentConfig)
+			logger.Info("ConfigMapConfigController: Not found the configmap based config, using default config", "defaultConfig", currentConfig)
 		} else {
-			klog.Warningf("ConfigMapConfigController failed to load config from api server, using the default config. Error: %v", err)
+			logger.Info("ConfigMapConfigController failed to load config from api server, using the default config", "err", err)
 		}
 	} else {
 		if err := currentConfig.LoadValue(cm.Data); err != nil {
 			if recorder != nil {
 				recorder.Event(cm, "Warning", "LoadValueError", err.Error())
 			}
-			klog.Warningf("LoadValue error: %s", err.Error())
+			logger.Info("LoadValue error", "err", err.Error())
 		}
-		klog.Infof("ConfigMapConfigController: loaded config from configmap, config %v", currentConfig)
+		logger.Info("ConfigMapConfigController: loaded config from configmap", "config", currentConfig)
 	}
 
 	c := &ConfigMapConfigController{
@@ -56,6 +60,7 @@ func NewConfigMapConfigController(kubeClient kubernetes.Interface, recorder reco
 		kubeClient:             kubeClient,
 		recorder:               recorder,
 		currentConfigMapObject: cm,
+		logger:                 logger,
 	}
 	return c
 }
@@ -91,13 +96,13 @@ func (c *ConfigMapConfigController) DisableASM() {
 
 // SetASMReadyTrue update the ASMReady to True.
 func (c *ConfigMapConfigController) SetASMReadyTrue() {
-	klog.V(0).Info("SetASMReadyTrue")
+	c.logger.V(0).Info("SetASMReadyTrue")
 	c.updateASMReady(trueValue)
 }
 
 // SetASMReadyFalse update the ASMReady to False.
 func (c *ConfigMapConfigController) SetASMReadyFalse() {
-	klog.V(0).Info("SetASMReadyFalse")
+	c.logger.V(0).Info("SetASMReadyFalse")
 	c.updateASMReady(falseValue)
 }
 
@@ -129,14 +134,14 @@ func (c *ConfigMapConfigController) RegisterInformer(configMapInformer cache.Sha
 }
 
 func (c *ConfigMapConfigController) processItem(obj interface{}, cancel func()) {
-	klog.V(4).Infof("ConfigMapConfigController.processItem()")
+	c.logger.V(4).Info("ConfigMapConfigController.processItem()")
 
 	configMap, ok := obj.(*v1.ConfigMap)
 	if !ok {
-		klog.Errorf("ConfigMapConfigController: failed to convert informer object to ConfigMap.")
+		c.logger.Error(nil, "ConfigMapConfigController: failed to convert informer object to ConfigMap.")
 	}
 
-	klog.V(3).Infof("ConfigMapConfigController.processItem '%s.%s'", configMap.Namespace, configMap.Name)
+	c.logger.V(3).Info("ConfigMapConfigController.processItem", "itemKey", klog.KRef(configMap.Namespace, configMap.Name))
 
 	if configMap.Namespace != c.configMapNamespace || configMap.Name != c.configMapName {
 		return
@@ -146,9 +151,9 @@ func (c *ConfigMapConfigController) processItem(obj interface{}, cancel func()) 
 	cm, err := c.configMapLister.ConfigMaps(c.configMapNamespace).Get(c.configMapName)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			klog.Infof("ConfigMapConfigController: Not found the configmap based config, using default config: %v", config)
+			c.logger.Info("ConfigMapConfigController: Not found the configmap based config, using default config", "defaultConfig", config)
 		} else {
-			klog.Warningf("ConfigMapConfigController failed to load config from api server, using the default config. Error: %v", err)
+			c.logger.Info("ConfigMapConfigController failed to load config from api server, using the default config", "err", err)
 		}
 	} else {
 		c.currentConfigMapObject = cm

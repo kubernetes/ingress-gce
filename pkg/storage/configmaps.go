@@ -47,6 +47,8 @@ type ConfigMapVault struct {
 	configMapStore cache.Store
 	namespace      string
 	name           string
+
+	logger klog.Logger
 }
 
 // Get retrieves the value associated to the provided 'key' from the cluster config map.
@@ -65,7 +67,7 @@ func (c *ConfigMapVault) Get(key string) (string, bool, error) {
 	if k, ok := data[key]; ok {
 		return k, true, nil
 	}
-	klog.Infof("Found config map %v but it doesn't contain key %v: %+v", keyStore, key, data)
+	c.logger.Info("Found config map but it doesn't contain key", "configMapKey", keyStore, "key", key, "data", fmt.Sprintf("%+v", data))
 	return "", false, nil
 }
 
@@ -96,9 +98,9 @@ func (c *ConfigMapVault) Put(key, val string, createOnly bool) error {
 		data[key] = val
 		apiObj.Data = data
 		if existingVal != val {
-			klog.Infof("Configmap %v has key %v but wrong value %v, updating to %v", cfgMapKey, key, existingVal, val)
+			c.logger.Info("Configmap has key but wrong value, updating", "configMapKey", cfgMapKey, "key", key, "existingValue", existingVal, "newValue", val)
 		} else {
-			klog.Infof("Configmap %v will be updated with %v = %v", cfgMapKey, key, val)
+			c.logger.Info("Configmap will be updated", "configMapKey", cfgMapKey, "key", key, "value", val)
 		}
 		if err := c.configMapStore.Update(apiObj); err != nil {
 			return fmt.Errorf("failed to update %v: %v", cfgMapKey, err)
@@ -109,7 +111,7 @@ func (c *ConfigMapVault) Put(key, val string, createOnly bool) error {
 			return fmt.Errorf("failed to add %v: %v", cfgMapKey, err)
 		}
 	}
-	klog.Infof("Successfully stored key %v = %v in config map %v", key, val, cfgMapKey)
+	c.logger.Info("Successfully stored key in config map", "key", key, "value", val, "configMapKey", cfgMapKey)
 	return nil
 }
 
@@ -120,18 +122,19 @@ func (c *ConfigMapVault) Delete() error {
 	if err == nil {
 		return c.configMapStore.Delete(item)
 	}
-	klog.Warningf("Couldn't find item %v in vault, unable to delete", cfgMapKey)
+	c.logger.Info("Couldn't find item in vault, unable to delete", "configMapKey", cfgMapKey)
 	return nil
 }
 
 // NewConfigMapVault creates a config map client.
 // This client is essentially meant to abstract out the details of
 // configmaps and the API, and just store/retrieve a single value, the cluster uid.
-func NewConfigMapVault(c kubernetes.Interface, uidNs, uidConfigMapName string) *ConfigMapVault {
+func NewConfigMapVault(c kubernetes.Interface, uidNs, uidConfigMapName string, logger klog.Logger) *ConfigMapVault {
 	return &ConfigMapVault{
 		configMapStore: newConfigMapStore(c),
 		namespace:      uidNs,
-		name:           uidConfigMapName}
+		name:           uidConfigMapName,
+		logger:         logger.WithName("ConfigMapVault")}
 }
 
 // NewFakeConfigMapVault is an implementation of the configMapStore that doesn't
@@ -140,7 +143,8 @@ func NewFakeConfigMapVault(ns, name string) *ConfigMapVault {
 	return &ConfigMapVault{
 		configMapStore: cache.NewStore(cache.MetaNamespaceKeyFunc),
 		namespace:      ns,
-		name:           name}
+		name:           name,
+		logger:         klog.TODO()}
 }
 
 // configMapStore wraps the store interface. Implementations usually persist

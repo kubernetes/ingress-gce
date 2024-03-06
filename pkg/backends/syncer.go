@@ -108,13 +108,13 @@ func (s *backendSyncer) ensureBackendService(sp utils.ServicePort, ingLogger klo
 	needUpdate = ensureHealthCheckLink(be, hcLink) || needUpdate
 	needUpdate = ensureDescription(be, &sp) || needUpdate
 	if sp.BackendConfig != nil {
-		needUpdate = features.EnsureCDN(sp, be) || needUpdate
-		needUpdate = features.EnsureTimeout(sp, be) || needUpdate
-		needUpdate = features.EnsureDraining(sp, be) || needUpdate
-		needUpdate = features.EnsureAffinity(sp, be) || needUpdate
-		needUpdate = features.EnsureCustomRequestHeaders(sp, be) || needUpdate
-		needUpdate = features.EnsureCustomResponseHeaders(sp, be) || needUpdate
-		needUpdate = features.EnsureLogging(sp, be) || needUpdate
+		needUpdate = features.EnsureCDN(sp, be, beLogger) || needUpdate
+		needUpdate = features.EnsureTimeout(sp, be, beLogger) || needUpdate
+		needUpdate = features.EnsureDraining(sp, be, beLogger) || needUpdate
+		needUpdate = features.EnsureAffinity(sp, be, beLogger) || needUpdate
+		needUpdate = features.EnsureCustomRequestHeaders(sp, be, beLogger) || needUpdate
+		needUpdate = features.EnsureCustomResponseHeaders(sp, be, beLogger) || needUpdate
+		needUpdate = features.EnsureLogging(sp, be, beLogger) || needUpdate
 
 		updateIAP, err := features.EnsureIAP(sp, be, beLogger)
 		if err != nil {
@@ -139,7 +139,7 @@ func (s *backendSyncer) ensureBackendService(sp utils.ServicePort, ingLogger klo
 		// available. meta.Key is not needed as security policy supported only for
 		// global backends.
 		be.Scope = scope
-		if err := features.EnsureSecurityPolicy(s.cloud, sp, be); err != nil {
+		if err := features.EnsureSecurityPolicy(s.cloud, sp, be, beLogger); err != nil {
 			return err
 		}
 	}

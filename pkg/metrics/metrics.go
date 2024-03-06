@@ -151,10 +151,12 @@ type ControllerMetrics struct {
 	metricsInterval      time.Duration
 	enableILBDualStack   bool
 	enableNetLBDualStack bool
+
+	logger klog.Logger
 }
 
 // NewControllerMetrics initializes ControllerMetrics and starts a go routine to compute and export metrics periodically.
-func NewControllerMetrics(exportInterval, l4NetLBProvisionDeadline time.Duration, enableNetLBDualStack, enableILBDualStack bool) *ControllerMetrics {
+func NewControllerMetrics(exportInterval, l4NetLBProvisionDeadline time.Duration, enableNetLBDualStack, enableILBDualStack bool, logger klog.Logger) *ControllerMetrics {
 	return &ControllerMetrics{
 		ingressMap:                              make(map[string]IngressState),
 		l4ILBServiceLegacyMap:                   make(map[string]L4ILBServiceLegacyState),
@@ -167,12 +169,13 @@ func NewControllerMetrics(exportInterval, l4NetLBProvisionDeadline time.Duration
 		l4NetLBProvisionDeadlineForLegacyMetric: l4NetLBProvisionDeadline,
 		enableILBDualStack:                      enableILBDualStack,
 		enableNetLBDualStack:                    enableNetLBDualStack,
+		logger:                                  logger.WithName("ControllerMetrics"),
 	}
 }
 
 // FakeControllerMetrics creates new ControllerMetrics with fixed 10 minutes metricsInterval, to be used in tests
 func FakeControllerMetrics() *ControllerMetrics {
-	return NewControllerMetrics(10*time.Minute, 20*time.Minute, true, true)
+	return NewControllerMetrics(10*time.Minute, 20*time.Minute, true, true, klog.TODO())
 }
 
 // servicePortKey defines a service port uniquely.
@@ -194,7 +197,7 @@ func (spk servicePortKey) string() string {
 }
 
 func (im *ControllerMetrics) Run(stopCh <-chan struct{}) {
-	klog.V(3).Infof("Ingress Metrics initialized. Metrics will be exported at an interval of %v", im.metricsInterval)
+	im.logger.V(3).Info("Ingress Metrics initialized. Metrics will be exported periodically", "interval", im.metricsInterval)
 	// Compute and export metrics periodically.
 	go func() {
 		// Wait for ingress states to be populated in the cache before computing metrics.
@@ -269,13 +272,13 @@ func (im *ControllerMetrics) DeleteService(serviceKey string) {
 func (im *ControllerMetrics) export() {
 	defer func() {
 		if r := recover(); r != nil {
-			klog.Errorf("failed to export metrics: %v", r)
+			im.logger.Error(nil, "failed to export metrics", "recoverMessage", r)
 			MetricExportFailureCount.WithLabelValues("main").Inc()
 		}
 	}()
 	ingCount, svcPortCount := im.computeIngressMetrics()
 
-	klog.V(3).Infof("Exporting ingress usage metrics. Ingress Count: %#v, Service Port count: %#v", ingCount, svcPortCount)
+	im.logger.V(3).Info("Exporting ingress usage metrics", "ingressCount", ingCount, "servicePortCount", svcPortCount)
 	for feature, count := range ingCount {
 		ingressCount.With(prometheus.Labels{label: feature.String()}).Set(float64(count))
 	}
@@ -284,7 +287,7 @@ func (im *ControllerMetrics) export() {
 		servicePortCount.With(prometheus.Labels{label: feature.String()}).Set(float64(count))
 	}
 
-	klog.V(3).Infof("Ingress usage metrics exported.")
+	im.logger.V(3).Info("Ingress usage metrics exported")
 
 	// Export L4 metrics.
 	im.exportL4LegacyMetrics()
@@ -294,18 +297,18 @@ func (im *ControllerMetrics) export() {
 	im.exportL4NetLBDualStackMetrics()
 
 	saCount := im.computePSCMetrics()
-	klog.V(3).Infof("Exporting PSC Usage Metrics: %#v", saCount)
+	im.logger.V(3).Info("Exporting PSC Usage Metrics", "serviceAttachmentsCount", saCount)
 	for feature, count := range saCount {
 		serviceAttachmentCount.With(prometheus.Labels{label: feature.String()}).Set(float64(count))
 	}
-	klog.V(3).Infof("Exported PSC Usage Metrics: %#v", saCount)
+	im.logger.V(3).Info("Exported PSC Usage Metrics", "serviceAttachmentsCount", saCount)
 
 	services := im.computeServiceMetrics()
-	klog.V(3).Infof("Exporting Service Metrics: %#v", serviceCount)
+	im.logger.V(3).Info("Exporting Service Metrics", "serviceCount", serviceCount)
 	for feature, count := range services {
 		serviceCount.With(prometheus.Labels{label: feature.String()}).Set(float64(count))
 	}
-	klog.V(3).Infof("Exported Service Metrics: %#v", saCount)
+	im.logger.V(3).Info("Exported Service Metrics", "serviceCount", serviceCount)
 
 }
 
@@ -317,26 +320,26 @@ func (im *ControllerMetrics) computeIngressMetrics() (map[feature]int, map[featu
 	// servicePortFeatures tracks the list of service-ports and their features.
 	// This is to avoid re-computing features for a service-port.
 	svcPortFeatures := make(map[servicePortKey][]feature)
-	klog.V(4).Infof("Computing Ingress usage metrics from ingress state map: %#v", im.ingressMap)
+	im.logger.V(4).Info("Computing Ingress usage metrics from ingress state map", "ingressMap", im.ingressMap)
 	im.Lock()
 	defer im.Unlock()
 
 	for ingKey, ingState := range im.ingressMap {
 		// Both frontend and backend associated ingress features are tracked.
 		currIngFeatures := make(map[feature]bool)
-		klog.V(6).Infof("Computing frontend based features for ingress %s", ingKey)
+		im.logger.V(6).Info("Computing frontend based features for ingress", "ingressKey", ingKey)
 		// Add frontend associated ingress features.
-		for _, feature := range featuresForIngress(ingState.ingress, ingState.frontendconfig) {
+		for _, feature := range featuresForIngress(ingState.ingress, ingState.frontendconfig, im.logger) {
 			currIngFeatures[feature] = true
 		}
-		klog.V(6).Infof("Frontend based features for ingress %s: %v", ingKey, currIngFeatures)
-		klog.V(6).Infof("Computing backend based features for ingress %s", ingKey)
+		im.logger.V(6).Info("Frontend based features for ingress", "ingressKey", ingKey, "frontendIngressFeatures", currIngFeatures)
+		im.logger.V(6).Info("Computing backend based features for ingress", "ingressKey", ingKey)
 		for _, svcPort := range ingState.servicePorts {
 			svcPortKey := newServicePortKey(svcPort)
-			klog.V(6).Infof("Computing features for service-port %s", svcPortKey.string())
+			im.logger.V(6).Info("Computing features for service-port", "servicePortKey", svcPortKey.string())
 			svcFeatures, ok := svcPortFeatures[svcPortKey]
 			if !ok {
-				svcFeatures = featuresForServicePort(svcPort)
+				svcFeatures = featuresForServicePort(svcPort, im.logger)
 			}
 			// Add backend associated ingress features.
 			for _, sf := range svcFeatures {
@@ -347,27 +350,27 @@ func (im *ControllerMetrics) computeIngressMetrics() (map[feature]int, map[featu
 			}
 			if ok {
 				// Skip re-computing features for a service port.
-				klog.V(4).Infof("Features for service port %s exists, skipping.", svcPortKey.string())
+				im.logger.V(4).Info("Features for service port exists, skipping", "servicePortKey", svcPortKey.string())
 				continue
 			}
 			svcPortFeatures[svcPortKey] = svcFeatures
-			klog.V(6).Infof("Features for service port %s: %v", svcPortKey.string(), svcFeatures)
+			im.logger.V(6).Info("Features for service port", "servicePortKey", svcPortKey.string(), "serviceFeatures", svcFeatures)
 			// Update service port feature counts.
 			updateServicePortCount(svcPortCount, svcFeatures)
 		}
-		klog.V(6).Infof("Features for ingress %s: %v", ingKey, currIngFeatures)
+		im.logger.V(6).Info("Features for ingress", "ingressKey", ingKey, "ingressFeatures", currIngFeatures)
 		// Merge current ingress to update ingress feature counts.
 		updateIngressCount(ingCount, currIngFeatures)
 	}
 
-	klog.V(4).Infof("Ingress usage metrics computed.")
+	im.logger.V(4).Info("Ingress usage metrics computed")
 	return ingCount, svcPortCount
 }
 
 func (im *ControllerMetrics) computePSCMetrics() map[feature]int {
 	im.Lock()
 	defer im.Unlock()
-	klog.V(4).Infof("Compute PSC Usage metrics from psc state map: %+v", im.pscMap)
+	im.logger.V(4).Info("Compute PSC Usage metrics from psc state map", "pscStateMap", im.pscMap)
 
 	counts := map[feature]int{
 		sa:          0,

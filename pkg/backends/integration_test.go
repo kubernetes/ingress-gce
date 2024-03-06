@@ -64,7 +64,7 @@ func newTestJig(fakeGCE *gce.Cloud) *Jig {
 		BasePath:   utils.GetBasePath(fakeGCE),
 		ZoneGetter: fakeZoneGetter,
 		MaxIGSize:  1000,
-	})
+	}, klog.TODO())
 
 	// Add standard hooks for mocking update calls. Each test can set a different update hook if it chooses to.
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaBackendServices.UpdateHook = mock.UpdateAlphaBackendServiceHook
@@ -76,7 +76,7 @@ func newTestJig(fakeGCE *gce.Cloud) *Jig {
 
 	return &Jig{
 		fakeInstancePool: fakeInstancePool,
-		linker:           NewInstanceGroupLinker(fakeInstancePool, fakeBackendPool),
+		linker:           NewInstanceGroupLinker(fakeInstancePool, fakeBackendPool, klog.TODO()),
 		syncer:           NewBackendSyncer(fakeBackendPool, fakeHealthChecks, fakeGCE),
 		pool:             fakeBackendPool,
 	}

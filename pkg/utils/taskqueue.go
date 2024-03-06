@@ -17,6 +17,7 @@ limitations under the License.
 package utils
 
 import (
+	"fmt"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
@@ -51,6 +52,8 @@ type PeriodicTaskQueueWithMultipleWorkers struct {
 	workerDone []chan struct{}
 	// numWorkers indicates the number of worker routines processing the queue.
 	numWorkers int
+
+	logger klog.Logger
 }
 
 // Len returns the length of the queue.
@@ -72,12 +75,12 @@ func (t *PeriodicTaskQueueWithMultipleWorkers) runInternal(workerId int) {
 			close(t.workerDone[workerId])
 			return
 		}
-		klog.V(4).Infof("Worker-%d: Syncing %v (%v)", workerId, key, t.resource)
+		t.logger.V(4).Info("Syncing", "workerId", workerId, "key", key, "resource", t.resource)
 		if err := t.sync(key.(string)); err != nil {
-			klog.Errorf("Worker-%d: Requeuing %q due to error: %v (%v)", workerId, key, err, t.resource)
+			t.logger.Error(err, "Requeuing due to error", "workerId", workerId, "key", key, "resource", t.resource)
 			t.queue.AddRateLimited(key)
 		} else {
-			klog.V(4).Infof("Worker-%d: Finished syncing %v", workerId, key)
+			t.logger.V(4).Info("Finished syncing", "workerId", workerId, "key", key)
 			t.queue.Forget(key)
 		}
 		t.queue.Done(key)
@@ -87,7 +90,7 @@ func (t *PeriodicTaskQueueWithMultipleWorkers) runInternal(workerId int) {
 // Run spawns off n parallel worker routines and returns immediately.
 func (t *PeriodicTaskQueueWithMultipleWorkers) Run() {
 	for worker := 0; worker < t.numWorkers; worker++ {
-		klog.Infof("Spawning off Worker-%d for taskQueue %s", worker, t.resource)
+		t.logger.Info("Spawning off worker for taskQueue", "workerId", worker, "resource", t.resource)
 		go t.runInternal(worker)
 	}
 }
@@ -97,17 +100,17 @@ func (t *PeriodicTaskQueueWithMultipleWorkers) Enqueue(objs ...interface{}) {
 	for _, obj := range objs {
 		key, err := t.keyFunc(obj)
 		if err != nil {
-			klog.Errorf("Couldn't get key for object %+v (type %T): %v", obj, obj, err)
+			t.logger.Error(err, "Couldn't get key for object", "object", fmt.Sprintf("%+v", obj), "objectType", fmt.Sprintf("%T", obj))
 			return
 		}
-		klog.V(4).Infof("Enqueue key=%q (%v)", key, t.resource)
+		t.logger.V(4).Info("Enqueue key", "key", key, "resource", t.resource)
 		t.queue.Add(key)
 	}
 }
 
 // Shutdown shuts down the work queue and waits for all the workers to ACK
 func (t *PeriodicTaskQueueWithMultipleWorkers) Shutdown() {
-	klog.V(2).Infof("Shutting down task queue for resource %s", t.resource)
+	t.logger.V(2).Info("Shutting down task queue for resource", "resource", t.resource)
 	t.queue.ShutDown()
 	// wait for all workers to shutdown.
 	for _, workerDone := range t.workerDone {
@@ -116,9 +119,10 @@ func (t *PeriodicTaskQueueWithMultipleWorkers) Shutdown() {
 }
 
 // NewPeriodicTaskQueueWithMultipleWorkers creates a new task queue with the default rate limiter and the given number of worker goroutines.
-func NewPeriodicTaskQueueWithMultipleWorkers(name, resource string, numWorkers int, syncFn func(string) error) *PeriodicTaskQueueWithMultipleWorkers {
+func NewPeriodicTaskQueueWithMultipleWorkers(name, resource string, numWorkers int, syncFn func(string) error, logger klog.Logger) *PeriodicTaskQueueWithMultipleWorkers {
+	logger = logger.WithName("PeriodicTaskQueueWithMultipleWorkers")
 	if numWorkers <= 0 {
-		klog.Errorf("Invalid worker count %d", numWorkers)
+		logger.Error(nil, "Invalid worker count", "numWorkers", numWorkers)
 		return nil
 	}
 	rl := workqueue.DefaultControllerRateLimiter()
@@ -134,6 +138,7 @@ func NewPeriodicTaskQueueWithMultipleWorkers(name, resource string, numWorkers i
 		queue:      queue,
 		sync:       syncFn,
 		numWorkers: numWorkers,
+		logger:     logger,
 	}
 	for worker := 0; worker < numWorkers; worker++ {
 		taskQueue.workerDone = append(taskQueue.workerDone, make(chan struct{}))
@@ -155,6 +160,8 @@ type PeriodicTaskQueue struct {
 	sync func(string) error
 	// workerDone is closed when the worker exits.
 	workerDone chan struct{}
+
+	logger klog.Logger
 }
 
 // Len returns the length of the queue.
@@ -175,12 +182,12 @@ func (t *PeriodicTaskQueue) Run() {
 			close(t.workerDone)
 			return
 		}
-		klog.V(4).Infof("Syncing %v (%v)", key, t.resource)
+		t.logger.V(4).Info("Syncing", "key", key, "resource", t.resource)
 		if err := t.sync(key.(string)); err != nil {
-			klog.Errorf("Requeuing %q due to error: %v (%v)", key, err, t.resource)
+			t.logger.Error(err, "Requeuing due to error", "key", key, "resource", t.resource)
 			t.queue.AddRateLimited(key)
 		} else {
-			klog.V(4).Infof("Finished syncing %v", key)
+			t.logger.V(4).Info("Finished syncing", "key", key)
 			t.queue.Forget(key)
 		}
 		t.queue.Done(key)
@@ -192,30 +199,30 @@ func (t *PeriodicTaskQueue) Enqueue(objs ...interface{}) {
 	for _, obj := range objs {
 		key, err := t.keyFunc(obj)
 		if err != nil {
-			klog.Errorf("Couldn't get key for object %+v (type %T): %v", obj, obj, err)
+			t.logger.Error(err, "Couldn't get key for object", "object", fmt.Sprintf("%+v", obj), "objectType", fmt.Sprintf("%T", obj))
 			return
 		}
-		klog.V(4).Infof("Enqueue key=%q (%v)", key, t.resource)
+		t.logger.V(4).Info("Enqueue key", "key", key, "resource", t.resource)
 		t.queue.Add(key)
 	}
 }
 
 // Shutdown shuts down the work queue and waits for the worker to ACK
 func (t *PeriodicTaskQueue) Shutdown() {
-	klog.V(2).Infof("Shutdown")
+	t.logger.V(2).Info("Shutdown")
 	t.queue.ShutDown()
 	<-t.workerDone
 }
 
 // NewPeriodicTaskQueue creates a new task queue with the default rate limiter.
-func NewPeriodicTaskQueue(name, resource string, syncFn func(string) error) *PeriodicTaskQueue {
+func NewPeriodicTaskQueue(name, resource string, syncFn func(string) error, logger klog.Logger) *PeriodicTaskQueue {
 	rl := workqueue.DefaultControllerRateLimiter()
-	return NewPeriodicTaskQueueWithLimiter(name, resource, syncFn, rl)
+	return NewPeriodicTaskQueueWithLimiter(name, resource, syncFn, rl, logger)
 }
 
 // NewPeriodicTaskQueueWithLimiter creates a new task queue with the given sync function
 // and rate limiter. The sync function is called for every element inserted into the queue.
-func NewPeriodicTaskQueueWithLimiter(name, resource string, syncFn func(string) error, rl workqueue.RateLimiter) *PeriodicTaskQueue {
+func NewPeriodicTaskQueueWithLimiter(name, resource string, syncFn func(string) error, rl workqueue.RateLimiter, logger klog.Logger) *PeriodicTaskQueue {
 	var queue workqueue.RateLimitingInterface
 	if name == "" {
 		queue = workqueue.NewRateLimitingQueue(rl)
@@ -229,5 +236,6 @@ func NewPeriodicTaskQueueWithLimiter(name, resource string, syncFn func(string) 
 		queue:      queue,
 		sync:       syncFn,
 		workerDone: make(chan struct{}),
+		logger:     logger.WithName("PeriodicTaskQueue"),
 	}
 }

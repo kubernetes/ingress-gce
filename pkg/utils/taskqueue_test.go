@@ -18,6 +18,7 @@ package utils
 
 import (
 	"errors"
+	"k8s.io/klog/v2"
 	"reflect"
 	"testing"
 
@@ -44,7 +45,7 @@ func TestPeriodicTaskQueue(t *testing.T) {
 		}
 		return nil
 	}
-	tq = NewPeriodicTaskQueue("", "test", sync)
+	tq = NewPeriodicTaskQueue("", "test", sync, klog.TODO())
 
 	go tq.Run()
 	tq.Enqueue(cache.ExplicitKey("a"))
@@ -98,7 +99,7 @@ func TestPeriodicQueueWithMultipleWorkers(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			tq := NewPeriodicTaskQueueWithMultipleWorkers("multiple-workers", "test", tc.numWorkers, sync)
+			tq := NewPeriodicTaskQueueWithMultipleWorkers("multiple-workers", "test", tc.numWorkers, sync, klog.TODO())
 			gotNil := tq == nil
 			if gotNil != tc.expectNil {
 				t.Errorf("gotNilQueue - %v, expectNilQueue - %v.", gotNil, tc.expectNil)

@@ -79,12 +79,15 @@ type L4Controller struct {
 	forwardingRules     ForwardingRulesGetter
 	sharedResourcesLock sync.Mutex
 	enableDualStack     bool
+
+	logger klog.Logger
 }
 
 // NewILBController creates a new instance of the L4 ILB controller.
-func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}) *L4Controller {
+func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, logger klog.Logger) *L4Controller {
+	logger = logger.WithName("L4Controller")
 	if ctx.NumL4Workers <= 0 {
-		klog.Infof("L4 Internal LB Service worker count has not been set, setting to 1")
+		logger.Info("L4 Internal LB Service worker count has not been set, setting to 1")
 		ctx.NumL4Workers = 1
 	}
 	l4c := &L4Controller{
@@ -96,13 +99,14 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}) *L
 		numWorkers:      ctx.NumL4Workers,
 		namer:           ctx.L4Namer,
 		zoneGetter:      ctx.ZoneGetter,
-		forwardingRules: forwardingrules.New(ctx.Cloud, meta.VersionGA, meta.Regional),
+		forwardingRules: forwardingrules.New(ctx.Cloud, meta.VersionGA, meta.Regional, logger),
 		enableDualStack: ctx.EnableL4ILBDualStack,
+		logger:          logger,
 	}
 	l4c.backendPool = backends.NewPool(ctx.Cloud, l4c.namer)
-	l4c.NegLinker = backends.NewNEGLinker(l4c.backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer())
+	l4c.NegLinker = backends.NewNEGLinker(l4c.backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer(), logger)
 
-	l4c.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("l4", "services", l4c.numWorkers, l4c.syncWrapper)
+	l4c.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("l4", "services", l4c.numWorkers, l4c.syncWrapper, logger)
 
 	if ctx.NetworkInformer != nil {
 		l4c.networkLister = ctx.NetworkInformer.GetIndexer()
@@ -110,7 +114,7 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}) *L
 	if ctx.GKENetworkParamsInformer != nil {
 		l4c.gkeNetworkParamSetLister = ctx.GKENetworkParamsInformer.GetIndexer()
 	}
-	l4c.networkResolver = network.NewNetworksResolver(l4c.networkLister, l4c.gkeNetworkParamSetLister, ctx.Cloud, ctx.EnableMultinetworking, klog.TODO())
+	l4c.networkResolver = network.NewNetworksResolver(l4c.networkLister, l4c.gkeNetworkParamSetLister, ctx.Cloud, ctx.EnableMultinetworking, logger)
 	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			addSvc := obj.(*v1.Service)
@@ -118,12 +122,12 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}) *L
 			needsILB, svcType := annotations.WantsL4ILB(addSvc)
 			// Check for deletion since updates or deletes show up as Add when controller restarts.
 			if needsILB || l4c.needsDeletion(addSvc) {
-				klog.V(3).Infof("ILB Service %s added, enqueuing", svcKey)
+				logger.V(3).Info("ILB Service added, enqueuing", "serviceKey", svcKey)
 				l4c.ctx.Recorder(addSvc.Namespace).Eventf(addSvc, v1.EventTypeNormal, "ADD", svcKey)
 				l4c.svcQueue.Enqueue(addSvc)
 				l4c.enqueueTracker.Track()
 			} else {
-				klog.V(4).Infof("Ignoring add for non-lb service %s based on %v", svcKey, svcType)
+				logger.V(4).Info("Ignoring add for non-lb service", "serviceKey", svcKey, "serviceType", svcType)
 			}
 		},
 		// Deletes will be handled in the Update when the deletion timestamp is set.
@@ -134,7 +138,7 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}) *L
 			needsUpdate := l4c.needsUpdate(oldSvc, curSvc)
 			needsDeletion := l4c.needsDeletion(curSvc)
 			if needsUpdate || needsDeletion {
-				klog.V(3).Infof("Service %v changed, needsUpdate %v, needsDeletion %v, enqueuing", svcKey, needsUpdate, needsDeletion)
+				logger.V(3).Info("Service changed, enqueuing", "serviceKey", svcKey, "needsUpdate", needsUpdate, "needsDeletion", needsDeletion)
 				l4c.svcQueue.Enqueue(curSvc)
 				l4c.enqueueTracker.Track()
 				return
@@ -144,7 +148,7 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}) *L
 			if needsILB && reflect.DeepEqual(old, cur) {
 				// this will happen when informers run a resync on all the existing services even when the object is
 				// not modified.
-				klog.V(3).Infof("Periodic enqueueing of %v", svcKey)
+				logger.V(3).Info("Periodic enqueueing of service", "serviceKey", svcKey)
 				l4c.svcQueue.Enqueue(curSvc)
 				l4c.enqueueTracker.Track()
 			}
@@ -166,7 +170,7 @@ func (l4c *L4Controller) checkHealth() error {
 	if lastSyncTime.After(syncTimeLatest) {
 		msg := fmt.Sprintf("L4 ILB Sync happened at time %v, %v after enqueue time, last enqueue time %v, threshold is %v", lastSyncTime, lastSyncTime.Sub(lastEnqueueTime), lastEnqueueTime, enqueueToSyncDelayThreshold)
 		// Log here, context/http handler do no log the error.
-		klog.Error(msg)
+		l4c.logger.Error(nil, msg)
 		l4metrics.PublishL4FailedHealthCheckCount(l4ILBControllerName)
 		controllerHealth = l4metrics.ControllerUnhealthyStatus
 		// Reset trackers. Otherwise, if there is nothing in the queue then it will report the FailedHealthCheckCount every time the checkHealth is called
@@ -182,14 +186,14 @@ func (l4c *L4Controller) checkHealth() error {
 
 func (l4c *L4Controller) Run() {
 	defer l4c.shutdown()
-	klog.Infof("Running L4 Controller with %d worker goroutines", l4c.numWorkers)
+	l4c.logger.Info("Running L4 Controller with worker goroutines", "numWorkers", l4c.numWorkers)
 	l4c.svcQueue.Run()
 	<-l4c.stopCh
 }
 
 // This should only be called when the process is being terminated.
 func (l4c *L4Controller) shutdown() {
-	klog.Infof("Shutting down L4 Service Controller")
+	l4c.logger.Info("Shutting down L4 Service Controller")
 	l4c.svcQueue.Shutdown()
 }
 
@@ -200,12 +204,12 @@ func (l4c *L4Controller) shutdown() {
 func (l4c *L4Controller) shouldProcessService(service *v1.Service) bool {
 	// Ignore services with LoadBalancerClass set. LoadBalancerClass can't be updated (see the field API doc) so we don't need to worry about cleaning up services that changed the class.
 	if service.Spec.LoadBalancerClass != nil {
-		klog.Infof("Ignoring service %s:%s managed by another controller (service LoadBalancerClass is %s)", service.Namespace, service.Name, *service.Spec.LoadBalancerClass)
+		l4c.logger.Info("Ignoring service managed by another controller", "serviceKey", klog.KRef(service.Namespace, service.Name), "serviceLoadBalancerClass", *service.Spec.LoadBalancerClass)
 		return false
 	}
 	// skip services that are being handled by the legacy service controller.
 	if utils.IsLegacyL4ILBService(service) {
-		klog.Warningf("Ignoring update for service %s:%s managed by service controller", service.Namespace, service.Name)
+		l4c.logger.Info("Ignoring update for service managed by service controller", "serviceKey", klog.KRef(service.Namespace, service.Name))
 		return false
 	}
 	frName := utils.LegacyForwardingRuleName(service)
@@ -213,10 +217,10 @@ func (l4c *L4Controller) shouldProcessService(service *v1.Service) bool {
 	// The external forwarding rule might not be deleted by the time this controller starts processing the service.
 	fr, err := l4c.forwardingRules.Get(frName)
 	if err != nil {
-		klog.Errorf("Error getting l4 forwarding rule %s", frName)
+		l4c.logger.Error(err, "Error getting l4 forwarding rule %s", frName)
 	}
 	if fr != nil && fr.LoadBalancingScheme == string(cloud.SchemeInternal) {
-		klog.Warningf("Ignoring update for service %s:%s as it contains legacy forwarding rule %q", service.Namespace, service.Name, frName)
+		l4c.logger.Info("Ignoring update for service as it contains legacy forwarding rule", "serviceKey", klog.KRef(service.Namespace, service.Name), "forwardingRule", frName)
 		return false
 	}
 	return true
@@ -230,16 +234,16 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service) *load
 	}
 
 	startTime := time.Now()
-	klog.Infof("Syncing L4 ILB service %s/%s", service.Namespace, service.Name)
+	l4c.logger.Info("Syncing L4 ILB service", "serviceKey", klog.KRef(service.Namespace, service.Name))
 	defer func() {
-		klog.Infof("Finished syncing L4 ILB service %s/%s, time taken: %v", service.Namespace, service.Name, time.Since(startTime))
+		l4c.logger.Info("Finished syncing L4 ILB service", "serviceKey", klog.KRef(service.Namespace, service.Name), "timeTaken", time.Since(startTime))
 	}()
 
 	// Ensure v2 finalizer
-	if err := common.EnsureServiceFinalizer(service, common.ILBFinalizerV2, l4c.ctx.KubeClient); err != nil {
+	if err := common.EnsureServiceFinalizer(service, common.ILBFinalizerV2, l4c.ctx.KubeClient, l4c.logger); err != nil {
 		return &loadbalancers.L4ILBSyncResult{Error: fmt.Errorf("Failed to attach finalizer to service %s/%s, err %w", service.Namespace, service.Name, err)}
 	}
-	nodeNames, err := utils.GetReadyNodeNames(l4c.nodeLister)
+	nodeNames, err := utils.GetReadyNodeNames(l4c.nodeLister, l4c.logger)
 	if err != nil {
 		return &loadbalancers.L4ILBSyncResult{Error: err}
 	}
@@ -253,7 +257,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service) *load
 		DualStackEnabled: l4c.enableDualStack,
 		NetworkResolver:  l4c.networkResolver,
 	}
-	l4 := loadbalancers.NewL4Handler(l4ilbParams)
+	l4 := loadbalancers.NewL4Handler(l4ilbParams, l4c.logger)
 	syncResult := l4.EnsureInternalLoadBalancer(nodeNames, service)
 	// syncResult will not be nil
 	if syncResult.Error != nil {
@@ -280,7 +284,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service) *load
 		syncResult.Error = err
 		return syncResult
 	}
-	err = updateServiceStatus(l4c.ctx, service, syncResult.Status)
+	err = updateServiceStatus(l4c.ctx, service, syncResult.Status, l4c.logger)
 	if err != nil {
 		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
 			"Error updating load balancer status: %v", err)
@@ -289,7 +293,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service) *load
 	}
 	if l4c.enableDualStack {
 		l4c.emitEnsuredDualStackEvent(service)
-		if err = updateL4DualStackResourcesAnnotations(l4c.ctx, service, syncResult.Annotations); err != nil {
+		if err = updateL4DualStackResourcesAnnotations(l4c.ctx, service, syncResult.Annotations, l4c.logger); err != nil {
 			l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
 				"Failed to update Dual Stack annotations for load balancer, err: %v", err)
 			syncResult.Error = fmt.Errorf("failed to set Dual Stack resource annotations, err: %w", err)
@@ -298,7 +302,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service) *load
 	} else {
 		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeNormal, "SyncLoadBalancerSuccessful",
 			"Successfully ensured load balancer resources")
-		if err = updateL4ResourcesAnnotations(l4c.ctx, service, syncResult.Annotations); err != nil {
+		if err = updateL4ResourcesAnnotations(l4c.ctx, service, syncResult.Annotations, l4c.logger); err != nil {
 			l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
 				"Failed to update annotations for load balancer, err: %v", err)
 			syncResult.Error = fmt.Errorf("failed to set resource annotations, err: %w", err)
@@ -319,9 +323,9 @@ func (l4c *L4Controller) emitEnsuredDualStackEvent(service *v1.Service) {
 
 func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) *loadbalancers.L4ILBSyncResult {
 	startTime := time.Now()
-	klog.Infof("Deleting L4 ILB service %s/%s", svc.Namespace, svc.Name)
+	l4c.logger.Info("Deleting L4 ILB service", "serviceKey", klog.KRef(svc.Namespace, svc.Name))
 	defer func() {
-		klog.Infof("Finished deleting L4 ILB service %s/%s, time taken: %v", svc.Namespace, svc.Name, time.Since(startTime))
+		l4c.logger.Info("Finished deleting L4 ILB service", "serviceKey", klog.KRef(svc.Namespace, svc.Name), "timeTaken", time.Since(startTime))
 	}()
 
 	l4ilbParams := &loadbalancers.L4ILBParams{
@@ -332,7 +336,7 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) *lo
 		DualStackEnabled: l4c.enableDualStack,
 		NetworkResolver:  l4c.networkResolver,
 	}
-	l4 := loadbalancers.NewL4Handler(l4ilbParams)
+	l4 := loadbalancers.NewL4Handler(l4ilbParams, l4c.logger)
 	l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer", "Deleting load balancer for %s", key)
 	result := l4.EnsureInternalLoadBalancerDeleted(svc)
 	if result.Error != nil {
@@ -342,7 +346,7 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) *lo
 	// Reset the loadbalancer status first, before resetting annotations.
 	// Other controllers(like service-controller) will process the service update if annotations change, but will ignore a service status change.
 	// Following this order avoids a race condition when a service is changed from LoadBalancer type Internal to External.
-	if err := updateServiceStatus(l4c.ctx, svc, &v1.LoadBalancerStatus{}); err != nil {
+	if err := updateServiceStatus(l4c.ctx, svc, &v1.LoadBalancerStatus{}, l4c.logger); err != nil {
 		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 			"Error resetting load balancer status to empty: %v", err)
 		result.Error = fmt.Errorf("failed to reset ILB status, err: %w", err)
@@ -350,14 +354,14 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) *lo
 	}
 	// Also remove any ILB annotations from the service metadata
 	if l4c.enableDualStack {
-		if err := updateL4DualStackResourcesAnnotations(l4c.ctx, svc, nil); err != nil {
+		if err := updateL4DualStackResourcesAnnotations(l4c.ctx, svc, nil, l4c.logger); err != nil {
 			l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 				"Error resetting DualStack resource annotations for load balancer: %v", err)
 			result.Error = fmt.Errorf("failed to reset DualStack resource annotations, err: %w", err)
 			return result
 		}
 	} else {
-		if err := updateL4ResourcesAnnotations(l4c.ctx, svc, nil); err != nil {
+		if err := updateL4ResourcesAnnotations(l4c.ctx, svc, nil, l4c.logger); err != nil {
 			l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 				"Error resetting resource annotations for load balancer: %v", err)
 			result.Error = fmt.Errorf("failed to reset resource annotations, err: %w", err)
@@ -365,7 +369,7 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) *lo
 		}
 	}
 
-	if err := common.EnsureDeleteServiceFinalizer(svc, common.ILBFinalizerV2, l4c.ctx.KubeClient); err != nil {
+	if err := common.EnsureDeleteServiceFinalizer(svc, common.ILBFinalizerV2, l4c.ctx.KubeClient, l4c.logger); err != nil {
 		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancerFailed",
 			"Error removing finalizer from load balancer: %v", err)
 		result.Error = fmt.Errorf("failed to remove ILB finalizer, err: %w", err)
@@ -390,7 +394,7 @@ func (l4c *L4Controller) linkNEG(l4 *loadbalancers.L4) error {
 }
 
 func (l4c *L4Controller) syncWrapper(key string) error {
-	return skipUserError(l4c.sync(key))
+	return skipUserError(l4c.sync(key), l4c.logger)
 }
 
 func (l4c *L4Controller) sync(key string) error {
@@ -402,33 +406,33 @@ func (l4c *L4Controller) sync(key string) error {
 	if !exists || svc == nil {
 		// The service will not exist if its resources and finalizer are handled by the legacy service controller and
 		// it has been deleted. As long as the V2 finalizer is present, the service will not be deleted by apiserver.
-		klog.V(3).Infof("Ignoring delete of service %s not managed by L4 controller", key)
+		l4c.logger.V(3).Info("Ignoring delete of service not managed by L4 controller", "serviceKey", key)
 		return nil
 	}
 	namespacedName := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}.String()
 	var result *loadbalancers.L4ILBSyncResult
 	if l4c.needsDeletion(svc) {
-		klog.V(2).Infof("Deleting ILB resources for service %s managed by L4 controller", key)
+		l4c.logger.V(2).Info("Deleting ILB resources for service managed by L4 controller", "serviceKey", key)
 		result = l4c.processServiceDeletion(key, svc)
 		if result == nil {
 			return nil
 		}
 		l4c.publishMetrics(result, namespacedName)
-		return skipUserError(result.Error)
+		return skipUserError(result.Error, l4c.logger)
 	}
 	// Check again here, to avoid time-of check, time-of-use race. A service queued by informer could have changed, no
 	// longer needing an ILB.
 	if wantsILB, _ := annotations.WantsL4ILB(svc); wantsILB {
-		klog.V(2).Infof("Ensuring ILB resources for service %s managed by L4 controller", key)
+		l4c.logger.V(2).Info("Ensuring ILB resources for service managed by L4 controller", "serviceKey", key)
 		result = l4c.processServiceCreateOrUpdate(svc)
 		if result == nil {
 			// result will be nil if the service was ignored(due to presence of service controller finalizer).
 			return nil
 		}
 		l4c.publishMetrics(result, namespacedName)
-		return skipUserError(result.Error)
+		return skipUserError(result.Error, l4c.logger)
 	}
-	klog.V(3).Infof("Ignoring sync of service %s, neither delete nor ensure needed.", key)
+	l4c.logger.V(3).Info("Ignoring sync of service, neither delete nor ensure needed.", "serviceKey", key)
 	return nil
 }
 
@@ -530,12 +534,12 @@ func (l4c *L4Controller) publishMetrics(result *loadbalancers.L4ILBSyncResult, n
 	}
 	switch result.SyncType {
 	case loadbalancers.SyncTypeCreate, loadbalancers.SyncTypeUpdate:
-		klog.V(2).Infof("Internal L4 Loadbalancer for Service %s ensured, updating its state %v in metrics cache", namespacedName, result.MetricsLegacyState)
+		l4c.logger.V(2).Info("Internal L4 Loadbalancer for Service ensured, updating its state in metrics cache", "serviceKey", namespacedName, "serviceState", result.MetricsLegacyState)
 		l4c.ctx.ControllerMetrics.SetL4ILBServiceForLegacyMetric(namespacedName, result.MetricsLegacyState)
 		l4c.ctx.ControllerMetrics.SetL4ILBService(namespacedName, result.MetricsState)
 		l4metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime)
 		if l4c.enableDualStack {
-			klog.V(2).Infof("Internal L4 DualStack Loadbalancer for Service %s ensured, updating its state %v in metrics cache", namespacedName, result.MetricsState)
+			l4c.logger.V(2).Info("Internal L4 DualStack Loadbalancer for Service ensured, updating its state in metrics cache", "serviceKey", namespacedName, "serviceState", result.MetricsState)
 			l4metrics.PublishL4ILBDualStackSyncLatency(result.Error == nil, result.SyncType, result.MetricsState.IPFamilies, result.StartTime)
 		}
 		if result.MetricsState.Multinetwork {
@@ -545,7 +549,7 @@ func (l4c *L4Controller) publishMetrics(result *loadbalancers.L4ILBSyncResult, n
 	case loadbalancers.SyncTypeDelete:
 		// if service is successfully deleted, remove it from cache
 		if result.Error == nil {
-			klog.V(2).Infof("Internal L4 Loadbalancer for Service %s deleted, removing its state from metrics cache", namespacedName)
+			l4c.logger.V(2).Info("Internal L4 Loadbalancer for Service deleted, removing its state from metrics cache", "serviceKey", namespacedName)
 			l4c.ctx.ControllerMetrics.DeleteL4ILBServiceForLegacyMetric(namespacedName)
 			l4c.ctx.ControllerMetrics.DeleteL4ILBService(namespacedName)
 		}
@@ -557,6 +561,6 @@ func (l4c *L4Controller) publishMetrics(result *loadbalancers.L4ILBSyncResult, n
 			l4metrics.PublishL4ILBMultiNetSyncLatency(result.Error == nil, result.SyncType, result.StartTime)
 		}
 	default:
-		klog.Warningf("Unknown sync type: %q, for service %s skipping metrics", result.SyncType, namespacedName)
+		l4c.logger.Info("Unknown sync type, skipping metrics for service", "syncType", result.SyncType, "serviceKey", namespacedName)
 	}
 }

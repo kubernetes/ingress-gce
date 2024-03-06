@@ -40,6 +40,8 @@ type Controller struct {
 	hasSynced func() bool
 
 	stopCh <-chan struct{}
+
+	logger klog.Logger
 }
 
 type ControllerConfig struct {
@@ -50,14 +52,16 @@ type ControllerConfig struct {
 }
 
 // NewController returns a new node update controller.
-func NewController(config *ControllerConfig) *Controller {
+func NewController(config *ControllerConfig, logger klog.Logger) *Controller {
+	logger = logger.WithName("InstanceGroupsController")
 	c := &Controller{
 		lister:    config.NodeInformer.GetIndexer(),
 		igManager: config.IGManager,
 		hasSynced: config.HasSynced,
 		stopCh:    config.StopCh,
+		logger:    logger,
 	}
-	c.queue = utils.NewPeriodicTaskQueue("", "nodes", c.sync)
+	c.queue = utils.NewPeriodicTaskQueue("", "nodes", c.sync, logger)
 
 	config.NodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
@@ -80,10 +84,10 @@ func NewController(config *ControllerConfig) *Controller {
 func (c *Controller) Run() {
 	start := time.Now()
 	for !c.hasSynced() {
-		klog.V(2).Infof("Waiting for hasSynced (%s elapsed)", time.Now().Sub(start))
+		c.logger.V(2).Info("Waiting for hasSynced", "elapsedTime", time.Now().Sub(start))
 		time.Sleep(1 * time.Second)
 	}
-	klog.V(2).Infof("Caches synced (took %s)", time.Now().Sub(start))
+	c.logger.V(2).Info("Caches synced", "timeTaken", time.Now().Sub(start))
 	go c.queue.Run()
 	<-c.stopCh
 	c.Shutdown()
@@ -106,12 +110,12 @@ func (c *Controller) Shutdown() {
 
 func (c *Controller) sync(key string) error {
 	start := time.Now()
-	klog.V(4).Infof("Instance groups controller: Start processing %s", key)
+	c.logger.V(4).Info("Instance groups controller: Start processing", "key", key)
 	defer func() {
-		klog.V(4).Infof("Instance groups controller: Processing key %s took %v", key, time.Since(start))
+		c.logger.V(4).Info("Instance groups controller: Processing key finished", "key", key, "timeTaken", time.Since(start))
 	}()
 
-	nodeNames, err := utils.GetReadyNodeNames(listers.NewNodeLister(c.lister))
+	nodeNames, err := utils.GetReadyNodeNames(listers.NewNodeLister(c.lister), c.logger)
 	if err != nil {
 		return err
 	}

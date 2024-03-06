@@ -69,7 +69,7 @@ func (l7 *L7) checkHttpForwardingRule() (err error) {
 
 func (l7 *L7) checkHttpsForwardingRule() (err error) {
 	if l7.tps == nil {
-		klog.V(3).Infof("No https target proxy for %v, not created https forwarding rule", l7)
+		l7.logger.V(3).Info("No https target proxy for l7, not created https forwarding rule", "l7", l7)
 		return nil
 	}
 	name := l7.namer.ForwardingRule(namer.HTTPSProtocol)
@@ -102,11 +102,12 @@ func (l7 *L7) checkForwardingRule(protocol namer.NamerProtocol, name, proxyLink,
 	env := &translator.Env{VIP: ip, Network: l7.cloud.NetworkURL(), Subnetwork: l7.cloud.SubnetworkURL()}
 	fr := tr.ToCompositeForwardingRule(env, protocol, version, proxyLink, description, l7.runtimeInfo.StaticIPSubnet)
 
-	existing, _ = composite.GetForwardingRule(l7.cloud, key, version, klog.TODO())
+	existing, _ = composite.GetForwardingRule(l7.cloud, key, version, l7.logger)
 	if existing != nil && (fr.IPAddress != "" && existing.IPAddress != fr.IPAddress || existing.PortRange != fr.PortRange) {
-		klog.Warningf("Recreating forwarding rule %v(%v), so it has %v(%v)",
-			existing.IPAddress, existing.PortRange, fr.IPAddress, fr.PortRange)
-		if err = utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l7.cloud, key, version, klog.TODO())); err != nil {
+		l7.logger.Info("Recreating forwarding rule %v(%v), so it has %v(%v)",
+			"existingIp", existing.IPAddress, "existingPortRange", existing.PortRange,
+			"targetIp", fr.IPAddress, "targetPortRange", fr.PortRange)
+		if err = utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l7.cloud, key, version, l7.logger)); err != nil {
 			return nil, err
 		}
 		existing = nil
@@ -124,14 +125,14 @@ func (l7 *L7) checkForwardingRule(protocol namer.NamerProtocol, name, proxyLink,
 			if currentIPName, exists := l7.ingress.Annotations[annotations.StaticIPKey]; exists && currentIPName == managedStaticIPName {
 				currentIP, _ := l7.cloud.GetGlobalAddress(managedStaticIPName)
 				if currentIP != nil {
-					klog.V(3).Infof("Ingress managed static IP %s(%s) exists, using it to create forwarding rule %s", currentIPName, currentIP.Address, name)
+					l7.logger.V(3).Info("Ingress managed static IP %s(%s) exists, using it to create forwarding rule %s", "currentIpName", currentIPName, "currentIp", currentIP.Address, "forwardingRuleName", name)
 					fr.IPAddress = currentIP.Address
 				}
 			}
 		}
-		klog.V(3).Infof("Creating forwarding rule for proxy %q and ip %v:%v", proxyLink, ip, protocol)
+		l7.logger.V(3).Info("Creating forwarding rule for proxy and ip", "proxy", proxyLink, "ip", ip, "protocol", protocol)
 
-		if err = composite.CreateForwardingRule(l7.cloud, key, fr, klog.TODO()); err != nil {
+		if err = composite.CreateForwardingRule(l7.cloud, key, fr, l7.logger); err != nil {
 			return nil, err
 		}
 		l7.recorder.Eventf(l7.runtimeInfo.Ingress, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %q created", key.Name)
@@ -140,22 +141,22 @@ func (l7 *L7) checkForwardingRule(protocol namer.NamerProtocol, name, proxyLink,
 		if err != nil {
 			return nil, err
 		}
-		existing, err = composite.GetForwardingRule(l7.cloud, key, version, klog.TODO())
+		existing, err = composite.GetForwardingRule(l7.cloud, key, version, l7.logger)
 		if err != nil {
 			return nil, err
 		}
 	}
 	// TODO: If the port range and protocol don't match, recreate the rule
 	if utils.EqualResourceIDs(existing.Target, proxyLink) {
-		klog.V(4).Infof("Forwarding rule %v already exists", existing.Name)
+		l7.logger.V(4).Info("Forwarding rule already exists", "forwardingRuleName", existing.Name)
 	} else {
-		klog.V(3).Infof("Forwarding rule %v has the wrong proxy, setting %v overwriting %v",
-			existing.Name, existing.Target, proxyLink)
+		l7.logger.V(3).Info("Forwarding rule has the wrong proxy, overwriting",
+			"forwardingRuleName", existing.Name, "existingTarget", existing.Target, "proxy", proxyLink)
 		key, err := l7.CreateKey(existing.Name)
 		if err != nil {
 			return nil, err
 		}
-		if err := composite.SetProxyForForwardingRule(l7.cloud, key, existing, proxyLink); err != nil {
+		if err := composite.SetProxyForForwardingRule(l7.cloud, key, existing, proxyLink, l7.logger); err != nil {
 			return nil, err
 		}
 	}
@@ -192,7 +193,7 @@ func (l7 *L7) getEffectiveIP() (string, bool, error) {
 		// Existing static IPs allocated to forwarding rules will get orphaned
 		// till the Ingress is torn down.
 		// TODO(shance): Replace version
-		if ip, err := composite.GetAddress(l7.cloud, key, meta.VersionGA, klog.TODO()); err != nil || ip == nil {
+		if ip, err := composite.GetAddress(l7.cloud, key, meta.VersionGA, l7.logger); err != nil || ip == nil {
 			return "", false, fmt.Errorf("the given static IP name %v doesn't translate to an existing static IP.",
 				l7.runtimeInfo.StaticIPName)
 		} else {
@@ -215,9 +216,9 @@ func (l4 *L4) ensureIPv4ForwardingRule(bsLink string, options gce.ILBOptions, ex
 	version := meta.VersionGA
 	frName := l4.GetFRName()
 
-	klog.V(2).Infof("Ensuring internal forwarding rule %s for L4 ILB Service %s/%s, backend service link: %s", frName, l4.Service.Namespace, l4.Service.Name, bsLink)
+	l4.logger.V(2).Info("Ensuring internal forwarding rule for L4 ILB Service", "forwardingRuleName", frName, "serviceKey", klog.KRef(l4.Service.Namespace, l4.Service.Name), "backendServiceLink", bsLink)
 	defer func() {
-		klog.V(2).Infof("Finished ensuring internal forwarding rule %s for L4 ILB Service %s/%s, time taken: %v", frName, l4.Service.Namespace, l4.Service.Name, time.Since(start))
+		l4.logger.V(2).Info("Finished ensuring internal forwarding rule for L4 ILB Service", "forwardingRuleName", frName, "serviceKey", klog.KRef(l4.Service.Namespace, l4.Service.Name), "timeTaken", time.Since(start))
 	}()
 
 	servicePorts := l4.Service.Spec.Ports
@@ -257,19 +258,20 @@ func (l4 *L4) ensureIPv4ForwardingRule(bsLink string, options gce.ILBOptions, ex
 		}
 		if equal {
 			// nothing to do
-			klog.V(2).Infof("ensureIPv4ForwardingRule: Skipping update of unchanged forwarding rule - %s", fr.Name)
+			l4.logger.V(2).Info("ensureIPv4ForwardingRule: Skipping update of unchanged forwarding rule", "forwardingRuleName", fr.Name)
 			return existingFwdRule, nil
 		}
 		frDiff := cmp.Diff(existingFwdRule, fr)
 		// If the forwarding rule pointed to a backend service which does not match the controller naming scheme,
 		// that resource could be leaked. It is not being deleted here because that is a user-managed resource.
-		klog.V(2).Infof("ensureIPv4ForwardingRule: forwarding rule changed - Existing - %+v\n, New - %+v\n, Diff(-existing, +new) - %s\n. Deleting existing forwarding rule.", existingFwdRule, fr, frDiff)
+		l4.logger.V(2).Info("ensureIPv4ForwardingRule: forwarding rule changed. Deleting existing forwarding rule.",
+			"existingForwardingRule", fmt.Sprintf("%+v", existingFwdRule), "newForwardingRule", fmt.Sprintf("%+v", fr), "diff", frDiff)
 		if err = l4.forwardingRules.Delete(existingFwdRule.Name); err != nil {
 			return nil, err
 		}
 		l4.recorder.Eventf(l4.Service, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %q deleted", existingFwdRule.Name)
 	}
-	klog.V(2).Infof("ensureIPv4ForwardingRule: Creating/Recreating forwarding rule - %s", fr.Name)
+	l4.logger.V(2).Info("ensureIPv4ForwardingRule: Creating/Recreating forwarding rule", "forwardingRuleName", fr.Name)
 	if err = l4.forwardingRules.Create(fr); err != nil {
 		if isAddressAlreadyInUseError(err) {
 			return nil, utils.NewIPConfigurationError(fr.IPAddress, err.Error())
@@ -293,16 +295,16 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 	frName := l4netlb.frName()
 
 	start := time.Now()
-	klog.V(2).Infof("Ensuring external forwarding rule %s for L4 NetLB Service %s/%s, backend service link: %s", l4netlb.Service.Namespace, l4netlb.Service.Name, frName, bsLink)
+	l4netlb.logger.V(2).Info("Ensuring external forwarding rule for L4 NetLB Service", "forwardingRuleName", frName, "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name), "backendServiceLink", bsLink)
 	defer func() {
-		klog.V(2).Infof("Finished ensuring external forwarding rule %s for L4 NetLB Service %s/%s, time taken: %v", l4netlb.Service.Namespace, l4netlb.Service.Name, frName, time.Since(start))
+		l4netlb.logger.V(2).Info("Finished ensuring external forwarding rule for L4 NetLB Service", "forwardingRuleName", frName, "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name), "timeTaken", time.Since(start))
 	}()
 
 	// version used for creating the existing forwarding rule.
 	version := meta.VersionGA
 	existingFwdRule, err := l4netlb.forwardingRules.Get(frName)
 	if err != nil {
-		klog.Errorf("l4netlb.forwardingRules.Get(%s) returned error %v", frName, err)
+		l4netlb.logger.Error(err, "l4netlb.forwardingRules.Get returned error", "forwardingRuleName", frName)
 		return nil, IPAddrUndefined, err
 	}
 
@@ -310,17 +312,17 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 	// or specified in the Service spec, then requestedIP = "".
 	ipToUse, err := ipv4AddrToUse(l4netlb.cloud, l4netlb.recorder, l4netlb.Service, existingFwdRule, "")
 	if err != nil {
-		klog.Errorf("ipv4AddrToUse for service %s/%s returned error %v", l4netlb.Service.Namespace, l4netlb.Service.Name, err)
+		l4netlb.logger.Error(err, "ipv4AddrToUse for service returned error", "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name))
 		return nil, IPAddrUndefined, err
 	}
-	klog.V(2).Infof("ensureIPv4ForwardingRule(%s): LoadBalancer IP %s", frName, ipToUse)
+	l4netlb.logger.V(2).Info("ensureIPv4ForwardingRule: Got LoadBalancer IP", "forwardingRuleName", frName, "ip", ipToUse)
 
 	netTier, isFromAnnotation := utils.GetNetworkTier(l4netlb.Service)
 	var isIPManaged IPAddressType
 	// If the network is not a legacy network, use the address manager
 	if !l4netlb.cloud.IsLegacyNetwork() {
 		nm := types.NamespacedName{Namespace: l4netlb.Service.Namespace, Name: l4netlb.Service.Name}.String()
-		addrMgr := newAddressManager(l4netlb.cloud, nm, l4netlb.cloud.Region() /*subnetURL = */, "", frName, ipToUse, cloud.SchemeExternal, netTier, IPv4Version)
+		addrMgr := newAddressManager(l4netlb.cloud, nm, l4netlb.cloud.Region() /*subnetURL = */, "", frName, ipToUse, cloud.SchemeExternal, netTier, IPv4Version, l4netlb.logger)
 
 		// If network tier annotation in Service Spec is present
 		// check if it matches network tiers from forwarding rule and external ip Address.
@@ -335,12 +337,12 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 		if err != nil {
 			return nil, IPAddrUndefined, err
 		}
-		klog.V(2).Infof("ensureIPv4ForwardingRule(%v): reserved IP %q for the forwarding rule", frName, ipToUse)
+		l4netlb.logger.V(2).Info("ensureIPv4ForwardingRule: reserved IP for the forwarding rule", "forwardingRuleName", frName, "ip", ipToUse)
 		defer func() {
 			// Release the address that was reserved, in all cases. If the forwarding rule was successfully created,
 			// the ephemeral IP is not needed anymore. If it was not created, the address should be released to prevent leaks.
 			if err := addrMgr.ReleaseAddress(); err != nil {
-				klog.Errorf("ensureIPv4ForwardingRule: failed to release address reservation, possibly causing an orphan: %v", err)
+				l4netlb.logger.Error(err, "ensureIPv4ForwardingRule: failed to release address reservation, possibly causing an orphan")
 			}
 		}()
 	}
@@ -376,19 +378,20 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 		}
 		if equal {
 			// nothing to do
-			klog.V(2).Infof("ensureIPv4ForwardingRule: Skipping update of unchanged forwarding rule - %s", fr.Name)
+			l4netlb.logger.V(2).Info("ensureIPv4ForwardingRule: Skipping update of unchanged forwarding rule", "forwardingRuleName", fr.Name)
 			return existingFwdRule, isIPManaged, nil
 		}
 		frDiff := cmp.Diff(existingFwdRule, fr)
 		// If the forwarding rule pointed to a backend service which does not match the controller naming scheme,
 		// that resource could be leaked. It is not being deleted here because that is a user-managed resource.
-		klog.V(2).Infof("ensureIPv4ForwardingRule: forwarding rule changed - Existing - %+v\n, New - %+v\n, Diff(-existing, +new) - %s\n. Deleting existing forwarding rule.", existingFwdRule, fr, frDiff)
+		l4netlb.logger.V(2).Info("ensureIPv4ForwardingRule: forwarding rule changed. Deleting existing forwarding rule.",
+			"existingForwardingRule", fmt.Sprintf("%+v", existingFwdRule), "newForwardingRule", fmt.Sprintf("%+v", fr), "diff", frDiff)
 		if err = l4netlb.forwardingRules.Delete(existingFwdRule.Name); err != nil {
 			return nil, IPAddrUndefined, err
 		}
 		l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %q deleted", existingFwdRule.Name)
 	}
-	klog.V(2).Infof("ensureIPv4ForwardingRule: Creating/Recreating forwarding rule - %s", fr.Name)
+	l4netlb.logger.V(2).Info("ensureIPv4ForwardingRule: Creating/Recreating forwarding rule", "forwardingRuleName", fr.Name)
 	if err = l4netlb.forwardingRules.Create(fr); err != nil {
 		if isAddressAlreadyInUseError(err) {
 			return nil, IPAddrUndefined, utils.NewIPConfigurationError(fr.IPAddress, addressAlreadyInUseMessageExternal)
@@ -410,7 +413,7 @@ func (l4netlb *L4NetLB) tearDownResourcesWithWrongNetworkTier(existingFwdRule *c
 	if existingFwdRule != nil && existingFwdRule.NetworkTier != svcNetTier.ToGCEValue() {
 		err := l4netlb.forwardingRules.Delete(existingFwdRule.Name)
 		if err != nil {
-			klog.Errorf("l4netlb.forwardingRules.Delete(%s) returned error %v, want nil", existingFwdRule.Name, err)
+			l4netlb.logger.Error(err, "l4netlb.forwardingRules.Delete returned error, want nil", "forwardingRuleName", existingFwdRule.Name)
 		}
 	}
 	return am.TearDownAddressIPIfNetworkTierMismatch()

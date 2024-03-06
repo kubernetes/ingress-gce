@@ -48,7 +48,7 @@ func newTestNEGLinker(fakeNEG negtypes.NetworkEndpointGroupCloud, fakeGCE *gce.C
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaRegionBackendServices.UpdateHook = mock.UpdateAlphaRegionBackendServiceHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockBetaRegionBackendServices.UpdateHook = mock.UpdateBetaRegionBackendServiceHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockRegionBackendServices.UpdateHook = mock.UpdateRegionBackendServiceHook
-	return &negLinker{fakeBackendPool, fakeNEG, fakeGCE, ctx.SvcNegInformer.GetIndexer()}
+	return &negLinker{fakeBackendPool, fakeNEG, fakeGCE, ctx.SvcNegInformer.GetIndexer(), klog.TODO()}
 }
 
 func TestLinkBackendServiceToNEG(t *testing.T) {
@@ -260,7 +260,7 @@ func TestMergeBackends(t *testing.T) {
 			}
 
 			if !tc.expectError {
-				diffBackend := diffBackends(tc.expect, ret)
+				diffBackend := diffBackends(tc.expect, ret, klog.TODO())
 				if !diffBackend.isEqual() {
 					t.Errorf("Expect tc.expect == ret, however got, tc.expect = %v, ret = %v", tc.expect, ret)
 				}
@@ -352,7 +352,7 @@ func TestDiffBackends(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			diff := diffBackends(tc.old, tc.new)
+			diff := diffBackends(tc.old, tc.new, klog.TODO())
 			if got := diff.isEqual(); got != tc.isEqual {
 				t.Errorf("diff := diffBackends(%s, %s); diff.isEqual() = %t, want %t", pretty.Sprint(tc.old), pretty.Sprint(tc.new), got, tc.isEqual)
 			}

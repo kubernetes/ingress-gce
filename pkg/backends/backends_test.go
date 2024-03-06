@@ -170,7 +170,7 @@ func TestEnsureL4BackendServiceDoesNotDetachBackends(t *testing.T) {
 				Protocol:            "TCP",
 				Description:         "test description", // this will make sure the BackendService needs update.
 				HealthChecks:        []string{hcLink},
-				SessionAffinity:     utils.TranslateAffinityType(string(v1.ServiceAffinityNone)),
+				SessionAffinity:     utils.TranslateAffinityType(string(v1.ServiceAffinityNone), klog.TODO()),
 				LoadBalancingScheme: string(cloud.SchemeInternal),
 				Backends: []*composite.Backend{
 					{

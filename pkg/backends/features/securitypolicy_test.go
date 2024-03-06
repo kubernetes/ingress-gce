@@ -19,6 +19,7 @@ package features
 import (
 	"context"
 	"fmt"
+	"k8s.io/klog/v2"
 	"sync"
 	"testing"
 
@@ -150,7 +151,7 @@ func TestEnsureSecurityPolicy(t *testing.T) {
 
 			(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.SetSecurityPolicyHook = setSecurityPolicyHook
 
-			err := EnsureSecurityPolicy(fakeGCE, utils.ServicePort{BackendConfig: tc.desiredConfig}, tc.currentBackendService)
+			err := EnsureSecurityPolicy(fakeGCE, utils.ServicePort{BackendConfig: tc.desiredConfig}, tc.currentBackendService, klog.TODO())
 			if !tc.expectError && err != nil {
 				t.Errorf("EnsureSecurityPolicy()=%v, want nil", err)
 			}

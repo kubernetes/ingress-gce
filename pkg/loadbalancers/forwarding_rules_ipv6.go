@@ -47,9 +47,9 @@ func (l4 *L4) ensureIPv6ForwardingRule(bsLink string, options gce.ILBOptions, ex
 		return nil, fmt.Errorf("l4.buildExpectedIPv6ForwardingRule(%s, %v, %s) returned error %w, want nil", bsLink, options, ipv6AddressToUse, err)
 	}
 
-	klog.V(2).Infof("Ensuring internal ipv6 forwarding rule %s for L4 ILB Service %s/%s, backend service link: %s", expectedIPv6FwdRule.Name, l4.Service.Namespace, l4.Service.Name, bsLink)
+	l4.logger.V(2).Info("Ensuring internal ipv6 forwarding rule for L4 ILB Service", "forwardingRuleName", expectedIPv6FwdRule.Name, "serviceKey", klog.KRef(l4.Service.Namespace, l4.Service.Name), "backendServiceLink", bsLink)
 	defer func() {
-		klog.V(2).Infof("Finished ensuring internal ipv6 forwarding rule %s for L4 ILB Service %s/%s, time taken: %v", expectedIPv6FwdRule.Name, l4.Service.Namespace, l4.Service.Name, time.Since(start))
+		l4.logger.V(2).Info("Finished ensuring internal ipv6 forwarding rule for L4 ILB Service", "forwardingRuleName", expectedIPv6FwdRule.Name, "serviceKey", klog.KRef(l4.Service.Namespace, l4.Service.Name), "timeTaken", time.Since(start))
 	}()
 
 	if existingIPv6FwdRule != nil {
@@ -58,7 +58,7 @@ func (l4 *L4) ensureIPv6ForwardingRule(bsLink string, options gce.ILBOptions, ex
 			return existingIPv6FwdRule, err
 		}
 		if equal {
-			klog.V(2).Infof("ensureIPv6ForwardingRule: Skipping update of unchanged ipv6 forwarding rule - %s", expectedIPv6FwdRule.Name)
+			l4.logger.V(2).Info("ensureIPv6ForwardingRule: Skipping update of unchanged ipv6 forwarding rule", "forwardingRuleName", expectedIPv6FwdRule.Name)
 			return existingIPv6FwdRule, nil
 		}
 		err = l4.deleteChangedIPv6ForwardingRule(existingIPv6FwdRule, expectedIPv6FwdRule)
@@ -67,7 +67,7 @@ func (l4 *L4) ensureIPv6ForwardingRule(bsLink string, options gce.ILBOptions, ex
 		}
 	}
 
-	klog.V(2).Infof("ensureIPv6ForwardingRule: Creating/Recreating forwarding rule - %s", expectedIPv6FwdRule.Name)
+	l4.logger.V(2).Info("ensureIPv6ForwardingRule: Creating/Recreating forwarding rule", "forwardingRuleName", expectedIPv6FwdRule.Name)
 	err = l4.forwardingRules.Create(expectedIPv6FwdRule)
 	if err != nil {
 		return nil, err
@@ -122,7 +122,8 @@ func (l4 *L4) buildExpectedIPv6ForwardingRule(bsLink string, options gce.ILBOpti
 
 func (l4 *L4) deleteChangedIPv6ForwardingRule(existingFwdRule *composite.ForwardingRule, expectedFwdRule *composite.ForwardingRule) error {
 	frDiff := cmp.Diff(existingFwdRule, expectedFwdRule, cmpopts.IgnoreFields(composite.ForwardingRule{}, "IPAddress"))
-	klog.V(2).Infof("IPv6 forwarding rule changed - Existing - %+v\n, New - %+v\n, Diff(-existing, +new) - %s\n. Deleting existing ipv6 forwarding rule.", existingFwdRule, expectedFwdRule, frDiff)
+	l4.logger.V(2).Info("IPv6 forwarding rule changed. Deleting existing ipv6 forwarding rule.",
+		"existingForwardingRule", fmt.Sprintf("%+v", existingFwdRule), "newForwardingRule", fmt.Sprintf("%+v", expectedFwdRule), "diff", frDiff)
 
 	err := l4.forwardingRules.Delete(existingFwdRule.Name)
 	if err != nil {
@@ -134,16 +135,16 @@ func (l4 *L4) deleteChangedIPv6ForwardingRule(existingFwdRule *composite.Forward
 
 func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.ForwardingRule, error) {
 	start := time.Now()
+	expectedIPv6FrName := l4netlb.ipv6FRName()
 
-	klog.V(2).Infof("Ensuring external ipv6 forwarding rule for L4 NetLB Service %s/%s, backend service link: %s", l4netlb.Service.Namespace, l4netlb.Service.Name, bsLink)
+	l4netlb.logger.V(2).Info("Ensuring external ipv6 forwarding rule for L4 NetLB Service", "forwardingRuleName", expectedIPv6FrName, "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name), "backendServiceLink", bsLink)
 	defer func() {
-		klog.V(2).Infof("Finished ensuring external ipv6 forwarding rule for L4 NetLB Service %s/%s, time taken: %v", l4netlb.Service.Namespace, l4netlb.Service.Name, time.Since(start))
+		l4netlb.logger.V(2).Info("Finished ensuring external ipv6 forwarding rule for L4 NetLB Service", "forwardingRuleName", expectedIPv6FrName, "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name), "timeTaken", time.Since(start))
 	}()
 
-	expectedIPv6FrName := l4netlb.ipv6FRName()
 	existingIPv6FwdRule, err := l4netlb.forwardingRules.Get(expectedIPv6FrName)
 	if err != nil {
-		klog.Errorf("l4netlb.forwardingRules.Get(%s) returned error %v", expectedIPv6FrName, err)
+		l4netlb.logger.Error(err, "l4netlb.forwardingRules.Get returned error", "forwardingRuleName", expectedIPv6FrName)
 		return nil, err
 	}
 
@@ -151,24 +152,24 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 	if err != nil {
 		return nil, fmt.Errorf("error getting ipv6 forwarding rule subnet: %w", err)
 	}
-	klog.V(2).Infof("subnetworkURL for service %v/%v: %v", l4netlb.Service.Namespace, l4netlb.Service.Name, subnetworkURL)
+	l4netlb.logger.V(2).Info("subnetworkURL for service", "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name), "subnetworkURL", subnetworkURL)
 
 	// Determine IP which will be used for this LB. If no forwarding rule has been established
 	// or specified in the Service spec, then requestedIP = "".
-	ipv6AddrToUse, err := ipv6AddressToUse(l4netlb.cloud, l4netlb.Service, existingIPv6FwdRule, subnetworkURL)
+	ipv6AddrToUse, err := ipv6AddressToUse(l4netlb.cloud, l4netlb.Service, existingIPv6FwdRule, subnetworkURL, l4netlb.logger)
 	if err != nil {
-		klog.Errorf("ipv6AddressToUse for service %s/%s returned error %v", l4netlb.Service.Namespace, l4netlb.Service.Name, err)
+		l4netlb.logger.Error(err, "ipv6AddressToUse for service returned error", "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name))
 		return nil, err
 	}
-	klog.V(2).Infof("ipv6AddressToUse for service %v/%v: %v", l4netlb.Service.Namespace, l4netlb.Service.Name, ipv6AddrToUse)
+	l4netlb.logger.V(2).Info("ipv6AddressToUse for service", "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name), "ipv6AddressToUse", ipv6AddrToUse)
 
 	netTier, isFromAnnotation := utils.GetNetworkTier(l4netlb.Service)
-	klog.V(2).Infof("network tier for service %v/%v: %v, isFromAnnotation: %v", l4netlb.Service.Namespace, l4netlb.Service.Name, netTier, isFromAnnotation)
+	l4netlb.logger.V(2).Info("network tier for service", "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name), "networkTier", netTier, "isFromAnnotation", isFromAnnotation)
 
 	// Only for IPv6, address reservation is not supported on Standard Tier
 	if !l4netlb.cloud.IsLegacyNetwork() && netTier == cloud.NetworkTierPremium {
 		nm := types.NamespacedName{Namespace: l4netlb.Service.Namespace, Name: l4netlb.Service.Name}.String()
-		addrMgr := newAddressManager(l4netlb.cloud, nm, l4netlb.cloud.Region(), subnetworkURL, expectedIPv6FrName, ipv6AddrToUse, cloud.SchemeExternal, netTier, IPv6Version)
+		addrMgr := newAddressManager(l4netlb.cloud, nm, l4netlb.cloud.Region(), subnetworkURL, expectedIPv6FrName, ipv6AddrToUse, cloud.SchemeExternal, netTier, IPv6Version, l4netlb.logger)
 
 		// If network tier annotation in Service Spec is present
 		// check if it matches network tiers from forwarding rule and external ip Address.
@@ -183,19 +184,19 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 		if err != nil {
 			return nil, err
 		}
-		klog.V(2).Infof("ensureIPv6ForwardingRule(%v): reserved IP %q for the forwarding rule %s", nm, ipv6AddrToUse, expectedIPv6FrName)
+		l4netlb.logger.V(2).Info("ensureIPv6ForwardingRule: reserved IP for the forwarding rule", "serviceKey", nm, "ip", ipv6AddrToUse, "forwardingRuleName", expectedIPv6FrName)
 		defer func() {
 			// Release the address that was reserved, in all cases. If the forwarding rule was successfully created,
 			// the ephemeral IP is not needed anymore. If it was not created, the address should be released to prevent leaks.
 			if err := addrMgr.ReleaseAddress(); err != nil {
-				klog.Errorf("ensureIPv6ForwardingRule: failed to release address reservation, possibly causing an orphan: %v", err)
+				l4netlb.logger.Error(err, "ensureIPv6ForwardingRule: failed to release address reservation, possibly causing an orphan")
 			}
 		}()
 	} else if existingIPv6FwdRule != nil && existingIPv6FwdRule.NetworkTier != netTier.ToGCEValue() {
-		klog.V(2).Infof("deleting forwarding rule for service %v/%v due to network tier mismatch, existing tier: %v, expected tier: %v", l4netlb.Service.Namespace, l4netlb.Service.Name, existingIPv6FwdRule.NetworkTier, netTier)
+		l4netlb.logger.V(2).Info("deleting forwarding rule for service due to network tier mismatch", "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name), "existingTier", existingIPv6FwdRule.NetworkTier, "expectedTier", netTier)
 		err := l4netlb.forwardingRules.Delete(existingIPv6FwdRule.Name)
 		if err != nil {
-			klog.Errorf("l4netlb.forwardingRules.Delete(%s) returned error %v, want nil", existingIPv6FwdRule.Name, err)
+			l4netlb.logger.Error(err, "l4netlb.forwardingRules.Delete returned error, want nil", "forwardingRuleName", existingIPv6FwdRule.Name)
 		}
 	}
 
@@ -203,7 +204,7 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 	if err != nil {
 		return nil, fmt.Errorf("l4netlb.buildExpectedIPv6ForwardingRule(%s, %s, %s, %v) returned error %w, want nil", bsLink, ipv6AddrToUse, subnetworkURL, netTier, err)
 	}
-	klog.V(2).Infof("l4netlb.buildExpectedIPv6ForwardingRule(_,_,_,_) for service %v/%v, expectedIPv6FwdRule: %v", l4netlb.Service.Namespace, l4netlb.Service.Name, expectedIPv6FwdRule)
+	l4netlb.logger.V(2).Info("l4netlb.buildExpectedIPv6ForwardingRule(_,_,_,_) for service", "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name), "expectedIPv6FwdRule", expectedIPv6FwdRule)
 
 	if existingIPv6FwdRule != nil {
 		if existingIPv6FwdRule.NetworkTier != expectedIPv6FwdRule.NetworkTier {
@@ -217,7 +218,7 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 			return existingIPv6FwdRule, err
 		}
 		if equal {
-			klog.V(2).Infof("ensureIPv6ForwardingRule: Skipping update of unchanged ipv6 forwarding rule - %s", expectedIPv6FwdRule.Name)
+			l4netlb.logger.V(2).Info("ensureIPv6ForwardingRule: Skipping update of unchanged ipv6 forwarding rule", "forwardingRuleName", expectedIPv6FwdRule.Name)
 			return existingIPv6FwdRule, nil
 		}
 		err = l4netlb.deleteChangedIPv6ForwardingRule(existingIPv6FwdRule, expectedIPv6FwdRule)
@@ -225,7 +226,7 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 			return nil, err
 		}
 	}
-	klog.V(2).Infof("ensureIPv6ForwardingRule: Creating/Recreating forwarding rule - %s", expectedIPv6FwdRule.Name)
+	l4netlb.logger.V(2).Info("ensureIPv6ForwardingRule: Creating/Recreating forwarding rule", "forwardingRuleName", expectedIPv6FwdRule.Name)
 	err = l4netlb.forwardingRules.Create(expectedIPv6FwdRule)
 	if err != nil {
 		return nil, err
@@ -271,7 +272,8 @@ func (l4netlb *L4NetLB) buildExpectedIPv6ForwardingRule(bsLink, ipv6AddressToUse
 
 func (l4netlb *L4NetLB) deleteChangedIPv6ForwardingRule(existingFwdRule *composite.ForwardingRule, expectedFwdRule *composite.ForwardingRule) error {
 	frDiff := cmp.Diff(existingFwdRule, expectedFwdRule, cmpopts.IgnoreFields(composite.ForwardingRule{}, "IPAddress"))
-	klog.V(2).Infof("IPv6 External forwarding rule changed - Existing - %+v\n, New - %+v\n, Diff(-existing, +new) - %s\n. Deleting existing ipv6 forwarding rule.", existingFwdRule, expectedFwdRule, frDiff)
+	l4netlb.logger.V(2).Info("IPv6 External forwarding rule changed. Deleting existing ipv6 forwarding rule.",
+		"existingForwardingRule", fmt.Sprintf("%+v", existingFwdRule), "newForwardingRule", fmt.Sprintf("%+v", expectedFwdRule), "diff", frDiff)
 
 	err := l4netlb.forwardingRules.Delete(existingFwdRule.Name)
 	if err != nil {
@@ -306,7 +308,7 @@ func EqualIPv6ForwardingRules(fr1, fr2 *composite.ForwardingRule) (bool, error) 
 //  1. Use static addresses annotation "networking.gke.io/load-balancer-ip-addresses".
 //  2. Use existing forwarding rule IP. If subnetwork was changed (or no existing IP),
 //     reset the IP (by returning empty string).
-func ipv6AddressToUse(cloud *gce.Cloud, svc *corev1.Service, ipv6FwdRule *composite.ForwardingRule, requestedSubnet string) (string, error) {
+func ipv6AddressToUse(cloud *gce.Cloud, svc *corev1.Service, ipv6FwdRule *composite.ForwardingRule, requestedSubnet string, logger klog.Logger) (string, error) {
 	// Get value from new annotation which support both IPv4 and IPv6
 	ipv6AddressFromAnnotation, err := annotations.FromService(svc).IPv6AddressAnnotation(cloud)
 	if err != nil {
@@ -316,22 +318,22 @@ func ipv6AddressToUse(cloud *gce.Cloud, svc *corev1.Service, ipv6FwdRule *compos
 		// Google Cloud stores ipv6 addresses in CIDR form,
 		// but to create static address you need to specify address without range
 		addr := ipv6AddressWithoutRange(ipv6AddressFromAnnotation)
-		klog.V(2).Infof("ipv6AddressToUse: using IPv6 Address from annotation: %v", addr)
+		logger.V(2).Info("ipv6AddressToUse: using IPv6 Address from annotation", "address", addr)
 		return addr, nil
 	}
 	if ipv6FwdRule == nil {
-		klog.V(2).Info("ipv6AddressToUse: use any IPv6 Address")
+		logger.V(2).Info("ipv6AddressToUse: use any IPv6 Address")
 		return "", nil
 	}
 	if requestedSubnet != ipv6FwdRule.Subnetwork {
-		klog.V(2).Info("ipv6AddressToUse: reset IPv6 Address due to changed subnet")
+		logger.V(2).Info("ipv6AddressToUse: reset IPv6 Address due to changed subnet")
 		return "", nil
 	}
 
 	// Google Cloud creates ipv6 forwarding rules with IPAddress in CIDR form,
 	// but to create static address you need to specify address without range
 	addr := ipv6AddressWithoutRange(ipv6FwdRule.IPAddress)
-	klog.V(2).Infof("ipv6AddressToUse: using IPv6 Address from existing forwarding rule (%v): %v", ipv6FwdRule.Name, addr)
+	logger.V(2).Info("ipv6AddressToUse: using IPv6 Address from existing forwarding rule", "forwardingRuleName", ipv6FwdRule.Name, "address", addr)
 	return addr, nil
 }
 

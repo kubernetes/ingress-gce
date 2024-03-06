@@ -75,7 +75,7 @@ func NamespacedName(ing *v1.Ingress) string {
 // This falls back to utility function in case of an error.
 // Note: Ingress Store and NamespacedName both return same key in general. But, Ingress Store
 // returns <name> where as NamespacedName returns /<name> when <namespace> is empty.
-func IngressKeyFunc(ing *v1.Ingress) string {
+func IngressKeyFunc(ing *v1.Ingress, logger klog.Logger) string {
 	ingKey, err := KeyFunc(ing)
 	if err == nil {
 		return ingKey
@@ -83,15 +83,15 @@ func IngressKeyFunc(ing *v1.Ingress) string {
 	// An error is returned only if ingress object does not have a valid meta.
 	// So, this should not happen in production, fall back on utility function to
 	// get ingress key.
-	klog.Errorf("Cannot get key for Ingress %v/%v: %v, using utility function", ing.Namespace, ing.Name, err)
+	logger.Error(err, "Cannot get key for Ingress, using utility function", "ingressKey", klog.KRef(ing.Namespace, ing.Name))
 	return NamespacedName(ing)
 }
 
 // ToIngressKeys returns a list of ingress keys for given list of ingresses.
-func ToIngressKeys(ings []*v1.Ingress) []string {
+func ToIngressKeys(ings []*v1.Ingress, logger klog.Logger) []string {
 	ingKeys := make([]string, 0, len(ings))
 	for _, ing := range ings {
-		ingKeys = append(ingKeys, IngressKeyFunc(ing))
+		ingKeys = append(ingKeys, IngressKeyFunc(ing, logger))
 	}
 	return ingKeys
 }

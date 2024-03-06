@@ -18,6 +18,7 @@ package metrics
 
 import (
 	"fmt"
+	"k8s.io/klog/v2"
 	"strconv"
 	"testing"
 
@@ -929,7 +930,7 @@ func TestFeaturesForIngress(t *testing.T) {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
-			gotFrontendFeatures := featuresForIngress(tc.ing, tc.fc)
+			gotFrontendFeatures := featuresForIngress(tc.ing, tc.fc, klog.TODO())
 			if diff := cmp.Diff(tc.frontendFeatures, gotFrontendFeatures); diff != "" {
 				t.Fatalf("Got diff for frontend features (-want +got):\n%s", diff)
 			}
@@ -946,7 +947,7 @@ func TestFeaturesForServicePort(t *testing.T) {
 			backendFeatureMap := make(map[feature]bool)
 			var gotBackendFeatures []feature
 			for _, svcPort := range tc.svcPorts {
-				for _, feature := range featuresForServicePort(svcPort) {
+				for _, feature := range featuresForServicePort(svcPort, klog.TODO()) {
 					if backendFeatureMap[feature] {
 						continue
 					}

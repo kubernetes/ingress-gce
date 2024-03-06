@@ -28,18 +28,21 @@ import (
 type RegionalInstanceGroupLinker struct {
 	instancePool instancegroups.Manager
 	backendPool  Pool
+
+	logger klog.Logger
 }
 
-func NewRegionalInstanceGroupLinker(instancePool instancegroups.Manager, backendPool Pool) *RegionalInstanceGroupLinker {
+func NewRegionalInstanceGroupLinker(instancePool instancegroups.Manager, backendPool Pool, logger klog.Logger) *RegionalInstanceGroupLinker {
 	return &RegionalInstanceGroupLinker{
 		instancePool: instancePool,
 		backendPool:  backendPool,
+		logger:       logger.WithName("RegionalInstanceGroupLinker"),
 	}
 }
 
 // Link performs linking instance groups to regional backend service
 func (linker *RegionalInstanceGroupLinker) Link(sp utils.ServicePort, projectID string, zones []string) error {
-	klog.V(2).Infof("Link(%v, %q, %v)", sp, projectID, zones)
+	linker.logger.V(2).Info("Link", "servicePort", sp, "projectID", projectID, "zones", zones)
 
 	var igLinks []string
 	for _, zone := range zones {
@@ -54,12 +57,12 @@ func (linker *RegionalInstanceGroupLinker) Link(sp utils.ServicePort, projectID 
 	if err != nil {
 		return err
 	}
-	addIGs, removeIGs, err := getInstanceGroupsToAddAndRemove(bs, igLinks)
+	addIGs, removeIGs, err := getInstanceGroupsToAddAndRemove(bs, igLinks, linker.logger)
 	if err != nil {
 		return err
 	}
 	if len(addIGs) == 0 && len(removeIGs) == 0 {
-		klog.V(3).Infof("No backends to add or remove for %s, skipping update.", sp.BackendName())
+		linker.logger.V(3).Info("No backends to add or remove, skipping update", "backendName", sp.BackendName())
 		return nil
 	}
 
@@ -84,8 +87,8 @@ func (linker *RegionalInstanceGroupLinker) Link(sp utils.ServicePort, projectID 
 		bs.Backends = append(bs.Backends, b)
 	}
 
-	klog.V(3).Infof("Update Backend %s, with %d added backends (total %d).", sp.BackendName(), len(addIGs), len(bs.Backends))
-	if err := linker.backendPool.Update(bs, klog.TODO()); err != nil {
+	linker.logger.V(3).Info("Update Backend", "backendName", sp.BackendName(), "addedBackends", len(addIGs), "totalBackends", len(bs.Backends))
+	if err := linker.backendPool.Update(bs, linker.logger); err != nil {
 		return fmt.Errorf("updating backend service %s for IG failed, err:%w", sp.BackendName(), err)
 	}
 	return nil

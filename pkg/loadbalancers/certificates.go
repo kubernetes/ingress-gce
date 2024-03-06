@@ -77,7 +77,7 @@ func (l7 *L7) createSslCertificates(existingCerts, translatorCerts []*composite.
 		}
 
 		if addedBy, exists := visitedCertMap[translatorCert.Name]; exists {
-			klog.V(3).Infof("Secret cert %q has a certificate already used by %v", translatorCert.Name, addedBy)
+			l7.logger.V(3).Info("Secret cert has a certificate already used", "certName", translatorCert.Name, "addedBy", addedBy)
 			continue
 		}
 
@@ -88,7 +88,7 @@ func (l7 *L7) createSslCertificates(existingCerts, translatorCerts []*composite.
 		// to check if this cert name exists in the map.
 		if existingCertsMap != nil {
 			if cert, ok := existingCertsMap[translatorCert.Name]; ok {
-				klog.V(3).Infof("Secret cert %q already exists as certificate %q", translatorCert.Name, cert.Name)
+				l7.logger.V(3).Info("Secret cert already exists as another certificate", "secretCertName", translatorCert.Name, "existingCertName", cert.Name)
 				visitedCertMap[translatorCert.Name] = fmt.Sprintf("certificate:%q", translatorCert.Name)
 				result = append(result, cert)
 				continue
@@ -96,16 +96,16 @@ func (l7 *L7) createSslCertificates(existingCerts, translatorCerts []*composite.
 		}
 		// Controller needs to create the certificate, no need to check if it exists and delete. If it did exist, it
 		// would have been listed in the populateSSLCert function and matched in the check above.
-		klog.V(2).Infof("Creating new sslCertificate %q for LB %q", translatorCert.Name, l7)
+		l7.logger.V(2).Info("Creating new sslCertificate for LB", "certName", translatorCert.Name, "l7", l7)
 		translatorCert.Version = l7.Versions().SslCertificate
 		key, err := l7.CreateKey(translatorCert.Name)
 		if err != nil {
-			klog.Errorf("l7.CreateKey(%s) = %v", translatorCert.Name, err)
+			l7.logger.Error(err, "l7.CreateKey", "certName", translatorCert.Name)
 			return nil, err
 		}
 		err = composite.CreateSslCertificate(l7.cloud, key, translatorCert, klog.TODO())
 		if err != nil {
-			klog.Errorf("Failed to create new sslCertificate %q for %q - %v", translatorCert.Name, l7, err)
+			l7.logger.Error(err, "Failed to create new sslCertificate for LB", "certName", translatorCert.Name, "l7", l7)
 			failedCerts = append(failedCerts, translatorCert.Name+" Error:"+err.Error())
 			continue
 		}
@@ -114,7 +114,7 @@ func (l7 *L7) createSslCertificates(existingCerts, translatorCerts []*composite.
 		// Get SSLCert
 		cert, err := composite.GetSslCertificate(l7.cloud, key, translatorCert.Version, klog.TODO())
 		if err != nil {
-			klog.Errorf("GetSslCertificate(_, %v, %v) = %v", key, translatorCert.Version, err)
+			l7.logger.Error(err, "GetSslCertificate", "key", key, "certVersion", translatorCert.Version)
 			return nil, err
 		}
 		result = append(result, cert)
@@ -160,13 +160,13 @@ func (l7 *L7) getIngressManagedSslCerts() ([]*composite.SslCertificate, error) {
 	}
 	for _, c := range certs {
 		if l7.namer.IsCertNameForLB(c.Name) {
-			klog.V(4).Infof("Populating ssl cert %s for l7 %s", c.Name, l7)
+			l7.logger.V(4).Info("Populating ssl cert for l7", "certName", c.Name, "l7", l7)
 			result = append(result, c)
 		}
 	}
 	if len(result) == 0 {
 		// Check for legacy cert since that follows a different naming convention
-		klog.V(4).Infof("Looking for legacy ssl certs")
+		l7.logger.V(4).Info("Looking for legacy ssl certs")
 		expectedCertLinks, err := l7.getSslCertLinkInUse()
 		if err != nil {
 			// Return nil if target proxy doesn't exist.
@@ -176,7 +176,7 @@ func (l7 *L7) getIngressManagedSslCerts() ([]*composite.SslCertificate, error) {
 			// Retrieve the certificate and ignore error if certificate wasn't found
 			name, err := utils.KeyName(link)
 			if err != nil {
-				klog.Warningf("error parsing cert name: %v", err)
+				l7.logger.Info("Error parsing cert name", "err", err)
 				continue
 			}
 
@@ -189,7 +189,7 @@ func (l7 *L7) getIngressManagedSslCerts() ([]*composite.SslCertificate, error) {
 			}
 			cert, _ := composite.GetSslCertificate(l7.cloud, key, version, klog.TODO())
 			if cert != nil {
-				klog.V(4).Infof("Populating legacy ssl cert %s for l7 %s", cert.Name, l7)
+				l7.logger.V(4).Info("Populating legacy ssl cert for l7", "certName", cert.Name, "l7", l7)
 				result = append(result, cert)
 			}
 		}
@@ -211,10 +211,10 @@ func (l7 *L7) deleteOldSSLCerts() {
 			// cert found in current map
 			continue
 		}
-		klog.V(3).Infof("Cleaning up old SSL Certificate %s", cert.Name)
+		l7.logger.V(3).Info("Cleaning up old SSL Certificate", "certName", cert.Name)
 		key, _ := l7.CreateKey(cert.Name)
 		if certErr := utils.IgnoreHTTPNotFound(composite.DeleteSslCertificate(l7.cloud, key, l7.Versions().SslCertificate, klog.TODO())); certErr != nil {
-			klog.Errorf("Old cert %s delete failed - %v", cert.Name, certErr)
+			l7.logger.Error(certErr, "Old cert delete failed", "certName", cert.Name)
 		}
 	}
 }
@@ -224,22 +224,22 @@ func (l7 *L7) deleteOldSSLCerts() {
 func (l7 *L7) compareCerts(certLinks []string) bool {
 	certsMap := getMapFromCertList(l7.sslCerts)
 	if len(certLinks) != len(certsMap) {
-		klog.V(4).Infof("Loadbalancer has %d certs, target proxy has %d certs", len(certsMap), len(certLinks))
+		l7.logger.V(4).Info("Loadbalancer and target proxy have different number of certs", "lbCertsCount", len(certsMap), "targetProxyCertsCount", len(certLinks))
 		return false
 	}
 
 	for _, link := range certLinks {
 		certName, err := utils.KeyName(link)
 		if err != nil {
-			klog.Warningf("Cannot get cert name: %v", err)
+			l7.logger.Info("Cannot get cert name", "err", err)
 			return false
 		}
 
 		if cert, ok := certsMap[certName]; !ok {
-			klog.V(4).Infof("Cannot find cert with name %s in certsMap %+v", certName, certsMap)
+			l7.logger.V(4).Info("Cannot find cert in certsMap", "certName", certName, "certsMap", fmt.Sprintf("%+v", certsMap))
 			return false
 		} else if ok && !utils.EqualResourceIDs(link, cert.SelfLink) {
-			klog.V(4).Infof("Selflink compare failed for certs - %s in loadbalancer, %s in targetproxy", cert.SelfLink, link)
+			l7.logger.V(4).Info("Selflink compare failed for certs", "lbSelfLink", cert.SelfLink, "targetProxySelfLink", link)
 			return false
 		}
 	}

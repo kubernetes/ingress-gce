@@ -145,7 +145,7 @@ func listNodesWithFilter(nodeLister listers.NodeLister, filter Filter, logger kl
 	filteredOut := []string{}
 	for _, node := range nodes {
 		// Filter nodes with predicate and exclude nodes without providerID
-		if predicate(node) {
+		if predicate(node, logger) {
 			filtered = append(filtered, node)
 		} else {
 			filteredOut = append(filteredOut, node.Name)

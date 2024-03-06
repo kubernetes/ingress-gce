@@ -2,6 +2,7 @@ package firewalls
 
 import (
 	"context"
+	"k8s.io/klog/v2"
 	"testing"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -101,7 +102,7 @@ func TestEnsureL4FirewallRule(t *testing.T) {
 			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 			// Add some instance to act as the node so that target tags in the firewall can be resolved.
 			createVMInstanceWithTag(t, fakeGCE, "k8s-test")
-			if err := EnsureL4FirewallRule(fakeGCE, tc.nsName, tc.params, tc.shared); err != nil {
+			if err := EnsureL4FirewallRule(fakeGCE, tc.nsName, tc.params, tc.shared, klog.TODO()); err != nil {
 				t.Errorf("EnsureL4FirewallRule() failed, err=%v", err)
 			}
 			firewall, err := fakeGCE.GetFirewall(tc.params.Name)

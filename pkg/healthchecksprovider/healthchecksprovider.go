@@ -14,12 +14,15 @@ import (
 type HealthChecks struct {
 	cloud   *gce.Cloud
 	version meta.Version
+
+	logger klog.Logger
 }
 
-func NewHealthChecks(cloud *gce.Cloud, version meta.Version) *HealthChecks {
+func NewHealthChecks(cloud *gce.Cloud, version meta.Version, logger klog.Logger) *HealthChecks {
 	return &HealthChecks{
 		cloud:   cloud,
 		version: version,
+		logger:  logger.WithName("HealthChecksProvider"),
 	}
 }
 
@@ -28,7 +31,7 @@ func (hc *HealthChecks) Get(name string, scope meta.KeyType) (*composite.HealthC
 	if err != nil {
 		return nil, fmt.Errorf("hc.createKey(%s, %s) returned error %w, want nil", name, scope, err)
 	}
-	healthCheck, err := composite.GetHealthCheck(hc.cloud, key, hc.version, klog.TODO())
+	healthCheck, err := composite.GetHealthCheck(hc.cloud, key, hc.version, hc.logger)
 	if err != nil {
 		if utils.IsNotFoundError(err) {
 			return nil, nil
@@ -44,7 +47,7 @@ func (hc *HealthChecks) Create(healthCheck *composite.HealthCheck) error {
 		return fmt.Errorf("hc.createKey(%s, %s) returned error: %w, want nil", healthCheck.Name, healthCheck.Scope, err)
 	}
 
-	err = composite.CreateHealthCheck(hc.cloud, key, healthCheck, klog.TODO())
+	err = composite.CreateHealthCheck(hc.cloud, key, healthCheck, hc.logger)
 	if err != nil {
 		return fmt.Errorf("composite.CreateHealthCheck(_, %s, %v) returned error %w, want nil", key, healthCheck, err)
 	}
@@ -57,7 +60,7 @@ func (hc *HealthChecks) Update(name string, scope meta.KeyType, updatedHealthChe
 		return fmt.Errorf("hc.createKey(%s, %s) returned error: %w, want nil", name, scope, err)
 	}
 
-	err = composite.UpdateHealthCheck(hc.cloud, key, updatedHealthCheck, klog.TODO())
+	err = composite.UpdateHealthCheck(hc.cloud, key, updatedHealthCheck, hc.logger)
 	if err != nil {
 		return fmt.Errorf("composite.UpdateHealthCheck(_, %s, %v) returned error %w, want nil", key, updatedHealthCheck, err)
 	}
@@ -70,7 +73,7 @@ func (hc *HealthChecks) Delete(name string, scope meta.KeyType) error {
 		return fmt.Errorf("hc.createKey(%s, %s) returned error %w, want nil", name, scope, err)
 	}
 
-	return utils.IgnoreHTTPNotFound(composite.DeleteHealthCheck(hc.cloud, key, hc.version, klog.TODO()))
+	return utils.IgnoreHTTPNotFound(composite.DeleteHealthCheck(hc.cloud, key, hc.version, hc.logger))
 }
 
 func (hc *HealthChecks) SelfLink(name string, scope meta.KeyType) (string, error) {

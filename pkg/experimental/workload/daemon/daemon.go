@@ -40,7 +40,9 @@ func RunDaemon(
 	workload daemonutils.WorkloadInfo,
 	connHelper daemonutils.ConnectionHelper,
 	updateInterval time.Duration,
+	logger klog.Logger,
 ) {
+	logger = logger.WithName("Daemon")
 	name, nameExist := workload.Name()
 	if !nameExist {
 		klog.Fatalf("Workload must have a name")
@@ -64,23 +66,23 @@ func RunDaemon(
 	if err != nil {
 		klog.Fatalf("unable to create the workload resource: %+v", err)
 	}
-	klog.V(2).Infof("workload resource created: %s", name)
+	logger.V(2).Info("workload resource created", "name", name)
 
 	// Update the heartbeat regularly
 	ticker := time.NewTicker(updateInterval)
 	quit := make(chan interface{})
 	sigs := make(chan os.Signal, 1)
-	go updateCR(wlcr, clientset, ticker, sigs, quit)
+	go updateCR(wlcr, clientset, ticker, sigs, quit, logger)
 
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	klog.V(0).Infof("receiving quit signal, try to delete the workload resource")
+	logger.V(0).Info("receiving quit signal, try to delete the workload resource")
 
 	err = client.Delete(context.Background(), name, metav1.DeleteOptions{})
 	if err != nil {
-		klog.Errorf("unable to delete the workload resource: %+v", err)
+		logger.Error(err, "unable to delete the workload resource")
 	} else {
-		klog.V(2).Infof("workload resource deleted")
+		logger.V(2).Info("workload resource deleted")
 	}
 }
 
@@ -90,6 +92,7 @@ func updateCR(
 	ticker *time.Ticker,
 	sigs chan os.Signal,
 	quit chan interface{},
+	logger klog.Logger,
 ) {
 	oldStatus := workload.Status
 	for {
@@ -98,7 +101,7 @@ func updateCR(
 			newStatus := generateHeartbeatStatus()
 			patch, err := preparePatchBytesForWorkloadStatus(oldStatus, newStatus)
 			if err != nil {
-				klog.Errorf("failed to prepare the patch for workload resource: %+v", err)
+				logger.Error(err, "failed to prepare the patch for workload resource")
 				continue
 			}
 			oldStatus = newStatus
@@ -114,9 +117,9 @@ func updateCR(
 			_, err = vmInstClient.Patch(context.Background(), workload.Name, types.MergePatchType,
 				patch, metav1.PatchOptions{})
 			if err != nil {
-				klog.Errorf("failed to update the workload resource: %+v", err)
+				logger.Error(err, "failed to update the workload resource")
 			} else {
-				klog.V(2).Infof("workload resource updated")
+				logger.V(2).Info("workload resource updated")
 			}
 		case <-sigs:
 			ticker.Stop()

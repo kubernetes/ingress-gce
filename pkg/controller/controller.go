@@ -112,12 +112,12 @@ type LoadBalancerController struct {
 func NewLoadBalancerController(
 	ctx *context.ControllerContext,
 	stopCh <-chan struct{},
-	log klog.Logger,
+	logger klog.Logger,
 ) *LoadBalancerController {
-	log = log.WithName("IngressController")
+	logger = logger.WithName("IngressController")
 
 	broadcaster := record.NewBroadcaster()
-	broadcaster.StartLogging(log.Info)
+	broadcaster.StartLogging(klog.Infof)
 	broadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
 		Interface: ctx.KubeClient.CoreV1().Events(""),
 	})
@@ -136,13 +136,13 @@ func NewLoadBalancerController(
 		stopCh:        stopCh,
 		hasSynced:     ctx.HasSynced,
 		instancePool:  ctx.InstancePool,
-		l7Pool:        loadbalancers.NewLoadBalancerPool(ctx.Cloud, ctx.ClusterNamer, ctx, namer.NewFrontendNamerFactory(ctx.ClusterNamer, ctx.KubeSystemUID)),
+		l7Pool:        loadbalancers.NewLoadBalancerPool(ctx.Cloud, ctx.ClusterNamer, ctx, namer.NewFrontendNamerFactory(ctx.ClusterNamer, ctx.KubeSystemUID, logger), logger),
 		backendSyncer: backends.NewBackendSyncer(backendPool, healthChecker, ctx.Cloud),
-		negLinker:     backends.NewNEGLinker(backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer()),
-		igLinker:      backends.NewInstanceGroupLinker(ctx.InstancePool, backendPool),
+		negLinker:     backends.NewNEGLinker(backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer(), logger),
+		igLinker:      backends.NewInstanceGroupLinker(ctx.InstancePool, backendPool, logger),
 		metrics:       ctx.ControllerMetrics,
 		ZoneGetter:    ctx.ZoneGetter,
-		logger:        log,
+		logger:        logger,
 	}
 
 	if ctx.IngClassInformer != nil {
@@ -150,15 +150,15 @@ func NewLoadBalancerController(
 		lbc.ingParamsLister = ctx.IngParamsInformer.GetIndexer()
 	}
 
-	lbc.ingSyncer = ingsync.NewIngressSyncer(&lbc)
-	lbc.ingQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("ingress", "ingresses", flags.F.NumIngressWorkers, lbc.sync)
+	lbc.ingSyncer = ingsync.NewIngressSyncer(&lbc, logger)
+	lbc.ingQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("ingress", "ingresses", flags.F.NumIngressWorkers, lbc.sync, logger)
 	lbc.backendSyncer.Init(lbc.Translator)
 
 	// Ingress event handlers.
 	ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			addIng := obj.(*v1.Ingress)
-			ingLogger := log.WithValues("ingressKey", common.NamespacedName(addIng))
+			ingLogger := logger.WithValues("ingressKey", common.NamespacedName(addIng))
 			if !utils.IsGLBCIngress(addIng) {
 				if flags.F.DisableIngressGlobalExternal && annotations.FromIngress(addIng).IngressClass() == annotations.GceIngressClass {
 					lbc.ctx.Recorder(addIng.Namespace).Eventf(addIng, apiv1.EventTypeWarning, events.SyncIngress, "Ingress class \"gce\" is not supported in this environment. Please use \"gce-regional-external\".")
@@ -174,10 +174,10 @@ func NewLoadBalancerController(
 		DeleteFunc: func(obj interface{}) {
 			delIng := obj.(*v1.Ingress)
 			if delIng == nil {
-				log.Error(nil, "Invalid object type", "type", fmt.Sprintf("%T", obj))
+				logger.Error(nil, "Invalid object type", "type", fmt.Sprintf("%T", obj))
 				return
 			}
-			ingLogger := log.WithValues("ingressKey", common.NamespacedName(delIng))
+			ingLogger := logger.WithValues("ingressKey", common.NamespacedName(delIng))
 			if delIng.ObjectMeta.DeletionTimestamp != nil {
 				ingLogger.Info("Ignoring delete event for ingress, deletion will be handled via the finalizer")
 				return
@@ -193,7 +193,7 @@ func NewLoadBalancerController(
 		},
 		UpdateFunc: func(old, cur interface{}) {
 			curIng := cur.(*v1.Ingress)
-			ingLogger := log.WithValues("ingressKey", common.NamespacedName(curIng))
+			ingLogger := logger.WithValues("ingressKey", common.NamespacedName(curIng))
 			if !utils.IsGLBCIngress(curIng) {
 				// Ingress needs to be enqueued if a ingress finalizer exists.
 				// An existing finalizer means that
@@ -211,7 +211,7 @@ func NewLoadBalancerController(
 				return
 			}
 			if reflect.DeepEqual(old, cur) {
-				ingLogger.Info("Periodic enqueueing ingress")
+				ingLogger.Info("Periodic enqueueing of ingress")
 			} else {
 				ingLogger.Info("Ingress changed, enqueuing")
 			}
@@ -240,21 +240,21 @@ func NewLoadBalancerController(
 	// BackendConfig event handlers.
 	ctx.BackendConfigInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			log.Info("obj added", "type", fmt.Sprintf("%T", obj))
+			logger.Info("obj added", "type", fmt.Sprintf("%T", obj))
 			beConfig := obj.(*backendconfigv1.BackendConfig)
-			ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesBackendConfig(beConfig, operator.Services(ctx.Services().List())).AsList()
+			ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesBackendConfig(beConfig, operator.Services(ctx.Services().List(), logger)).AsList()
 			lbc.ingQueue.Enqueue(convert(ings)...)
 		},
 		UpdateFunc: func(old, cur interface{}) {
 			if !reflect.DeepEqual(old, cur) {
-				log.Info("obj updated", "type", fmt.Sprintf("%T", cur))
+				logger.Info("obj updated", "type", fmt.Sprintf("%T", cur))
 				beConfig := cur.(*backendconfigv1.BackendConfig)
-				ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesBackendConfig(beConfig, operator.Services(ctx.Services().List())).AsList()
+				ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesBackendConfig(beConfig, operator.Services(ctx.Services().List(), logger)).AsList()
 				lbc.ingQueue.Enqueue(convert(ings)...)
 			}
 		},
 		DeleteFunc: func(obj interface{}) {
-			log.Info("obj deleted", "type", fmt.Sprintf("%T", obj))
+			logger.Info("obj deleted", "type", fmt.Sprintf("%T", obj))
 			var beConfig *backendconfigv1.BackendConfig
 			var ok, beOk bool
 			beConfig, ok = obj.(*backendconfigv1.BackendConfig)
@@ -262,18 +262,18 @@ func NewLoadBalancerController(
 				// This can happen if the watch is closed and misses the delete event
 				state, stateOk := obj.(cache.DeletedFinalStateUnknown)
 				if !stateOk {
-					log.Error(nil, "Wanted cache.DeleteFinalStateUnknown of backendconfig obj", "got", obj)
+					logger.Error(nil, "Wanted cache.DeleteFinalStateUnknown of backendconfig obj", "got", obj)
 					return
 				}
 
 				beConfig, beOk = state.Obj.(*backendconfigv1.BackendConfig)
 				if !beOk {
-					log.Error(nil, "Wanted backendconfig obj", "got", state.Obj)
+					logger.Error(nil, "Wanted backendconfig obj", "got", fmt.Sprintf("%+v", state.Obj))
 					return
 				}
 			}
 
-			ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesBackendConfig(beConfig, operator.Services(ctx.Services().List())).AsList()
+			ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesBackendConfig(beConfig, operator.Services(ctx.Services().List(), logger)).AsList()
 			lbc.ingQueue.Enqueue(convert(ings)...)
 		},
 	})
@@ -302,13 +302,13 @@ func NewLoadBalancerController(
 					// This can happen if the watch is closed and misses the delete event
 					state, stateOk := obj.(cache.DeletedFinalStateUnknown)
 					if !stateOk {
-						log.Error(nil, "Wanted cache.DeleteFinalStateUnknown of frontendconfig obj", "got", obj, "gotType", fmt.Sprintf("%T", obj))
+						logger.Error(nil, "Wanted cache.DeleteFinalStateUnknown of frontendconfig obj", "got", fmt.Sprintf("%+v", obj), "gotType", fmt.Sprintf("%T", obj))
 						return
 					}
 
 					feConfig, feOk = state.Obj.(*frontendconfigv1beta1.FrontendConfig)
 					if !feOk {
-						log.Error(nil, "Wanted frontendconfig obj", "got", state.Obj, "gotType", fmt.Sprintf("%T", state.Obj))
+						logger.Error(nil, "Wanted frontendconfig obj", "got", fmt.Sprintf("%+v", state.Obj), "gotType", fmt.Sprintf("%T", state.Obj))
 						return
 					}
 				}
@@ -324,20 +324,20 @@ func NewLoadBalancerController(
 		name := "k8s-ingress-svc-acct-permission-check-probe"
 		version := meta.VersionGA
 		var scope meta.KeyType = meta.Global
-		beLogger := log.WithValues("backendServiceName", name, "backendVersion", version, "backendScope", scope)
+		beLogger := logger.WithValues("backendServiceName", name, "backendVersion", version, "backendScope", scope)
 		_, err := backendPool.Get(name, meta.VersionGA, meta.Global, beLogger)
 
 		// If this container is scheduled on a node without compute/rw it is
 		// effectively useless, but it is healthy. Reporting it as unhealthy
 		// will lead to container crashlooping.
 		if utils.IsHTTPErrorCode(err, http.StatusForbidden) {
-			log.Info("Reporting cluster as healthy, but unable to list backends", "err", err)
+			logger.Info("Reporting cluster as healthy, but unable to list backends", "err", err)
 			return nil
 		}
 		return utils.IgnoreHTTPNotFound(err)
 	})
 
-	log.Info("Created new loadbalancer controller")
+	logger.Info("Created new loadbalancer controller")
 
 	return &lbc
 }
@@ -442,7 +442,7 @@ func (lbc *LoadBalancerController) syncInstanceGroup(ing *v1.Ingress, ingSvcPort
 		return err
 	}
 
-	nodeNames, err := utils.GetReadyNodeNames(listers.NewNodeLister(lbc.nodeLister))
+	nodeNames, err := utils.GetReadyNodeNames(listers.NewNodeLister(lbc.nodeLister), lbc.logger)
 	if err != nil {
 		return err
 	}
@@ -517,7 +517,7 @@ func (lbc *LoadBalancerController) SyncLoadBalancer(state interface{}, ingLogger
 
 // GCv1LoadBalancers implements Controller.
 func (lbc *LoadBalancerController) GCv1LoadBalancers(toKeep []*v1.Ingress) error {
-	return lbc.l7Pool.GCv1(common.ToIngressKeys(toKeep))
+	return lbc.l7Pool.GCv1(common.ToIngressKeys(toKeep, lbc.logger))
 }
 
 // GCv2LoadBalancer implements Controller.
@@ -929,14 +929,14 @@ func frontendGCAlgorithm(ingExists bool, scopeChange bool, ing *v1.Ingress, ingL
 		}
 		return utils.CleanupV1FrontendResources
 	}
-	namingScheme := namer.FrontendNamingScheme(ing)
+	namingScheme := namer.FrontendNamingScheme(ing, ingLogger)
 	switch namingScheme {
 	case namer.V2NamingScheme:
 		return utils.CleanupV2FrontendResources
 	case namer.V1NamingScheme:
 		return utils.CleanupV1FrontendResources
 	default:
-		ingLogger.Error(nil, "Unexpected naming scheme", "schema", namingScheme)
+		ingLogger.Error(nil, "Unexpected naming scheme", "scheme", namingScheme)
 		return utils.NoCleanUpNeeded
 	}
 }

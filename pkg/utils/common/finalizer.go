@@ -95,7 +95,7 @@ func EnsureDeleteFinalizer(ing *v1.Ingress, ingClient client.IngressInterface, f
 }
 
 // EnsureServiceFinalizer patches the service to add finalizer.
-func EnsureServiceFinalizer(service *corev1.Service, key string, kubeClient kubernetes.Interface) error {
+func EnsureServiceFinalizer(service *corev1.Service, key string, kubeClient kubernetes.Interface, logger klog.Logger) error {
 	if HasGivenFinalizer(service.ObjectMeta, key) {
 		return nil
 	}
@@ -104,12 +104,12 @@ func EnsureServiceFinalizer(service *corev1.Service, key string, kubeClient kube
 	updatedObjectMeta := service.ObjectMeta.DeepCopy()
 	updatedObjectMeta.Finalizers = append(updatedObjectMeta.Finalizers, key)
 
-	klog.V(2).Infof("Adding finalizer %s to service %s/%s", key, service.Namespace, service.Name)
+	logger.V(2).Info("Adding finalizer to service", "finalizerKey", key, "serviceKey", klog.KRef(service.Namespace, service.Name))
 	return patch.PatchServiceObjectMetadata(kubeClient.CoreV1(), service, *updatedObjectMeta)
 }
 
 // removeFinalizer patches the service to remove finalizer.
-func EnsureDeleteServiceFinalizer(service *corev1.Service, key string, kubeClient kubernetes.Interface) error {
+func EnsureDeleteServiceFinalizer(service *corev1.Service, key string, kubeClient kubernetes.Interface, logger klog.Logger) error {
 	if !HasGivenFinalizer(service.ObjectMeta, key) {
 		return nil
 	}
@@ -118,6 +118,6 @@ func EnsureDeleteServiceFinalizer(service *corev1.Service, key string, kubeClien
 	updatedObjectMeta := service.ObjectMeta.DeepCopy()
 	updatedObjectMeta.Finalizers = slice.RemoveString(updatedObjectMeta.Finalizers, key, nil)
 
-	klog.V(2).Infof("Removing finalizer from service %s/%s", service.Namespace, service.Name)
+	logger.V(2).Info("Removing finalizer from service", "finalizerKey", key, "serviceKey", klog.KRef(service.Namespace, service.Name))
 	return patch.PatchServiceObjectMetadata(kubeClient.CoreV1(), service, *updatedObjectMeta)
 }

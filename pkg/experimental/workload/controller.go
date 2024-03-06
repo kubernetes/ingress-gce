@@ -78,6 +78,8 @@ type Controller struct {
 	endpointSliceLister cache.Indexer
 	kubeClient          kubernetes.Interface
 	ctx                 *ControllerContext
+
+	logger klog.Logger
 }
 
 // HasSynced returns true if all relevant informers has been synced.
@@ -101,7 +103,7 @@ func (ctx *ControllerContext) Start(stopCh chan struct{}) {
 //    4. Write code logic for Ready condition based on Ping and Heartbeat.
 
 // NewController returns a workload controller.
-func NewController(ctx *ControllerContext) *Controller {
+func NewController(ctx *ControllerContext, logger klog.Logger) *Controller {
 	c := &Controller{
 		hasSynced:           ctx.HasSynced,
 		queue:               workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
@@ -110,6 +112,7 @@ func NewController(ctx *ControllerContext) *Controller {
 		endpointSliceLister: ctx.EndpointSliceInformer.GetIndexer(),
 		kubeClient:          ctx.KubeClient,
 		ctx:                 ctx,
+		logger:              logger.WithName("WorkloadController"),
 	}
 
 	ctx.WorkloadInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -133,13 +136,13 @@ func NewController(ctx *ControllerContext) *Controller {
 
 func (c *Controller) Run(stopCh <-chan struct{}) {
 	wait.PollUntil(5*time.Second, func() (bool, error) {
-		klog.V(2).Infof("Waiting for initial sync")
+		c.logger.V(2).Info("Waiting for initial sync")
 		return c.hasSynced(), nil
 	}, stopCh)
 
-	klog.V(2).Infof("Starting workload controller")
+	c.logger.V(2).Info("Starting workload controller")
 	defer func() {
-		klog.V(2).Infof("Shutting down workload controller")
+		c.logger.V(2).Info("Shutting down workload controller")
 		c.stop()
 	}()
 
@@ -149,7 +152,7 @@ func (c *Controller) Run(stopCh <-chan struct{}) {
 }
 
 func (c *Controller) stop() {
-	klog.V(2).Infof("Shutting down workload controller")
+	c.logger.V(2).Info("Shutting down workload controller")
 	c.queue.ShutDown()
 }
 
@@ -173,11 +176,11 @@ func (c *Controller) handleErr(err error, key interface{}) {
 		return
 	}
 
-	klog.Errorf("error processing Service %q: %v", key, err)
+	c.logger.Error(err, "error processing Service", "serviceKey", key)
 	if _, exists, err := c.workloadLister.GetByKey(key.(string)); err != nil {
-		klog.Warningf("failed to retrieve Service %q from store: %v", key.(string), err)
+		c.logger.Info("failed to retrieve Service from store", "serviceKey", key.(string), "err", err)
 	} else if exists {
-		klog.Warningf("process Service %q failed: %v", key.(string), err)
+		c.logger.Info("process Service failed", "serviceKey", key.(string), "err", err)
 	}
 	c.queue.AddRateLimited(key)
 }
@@ -212,7 +215,7 @@ func getWorkloadFromDeleteAction(obj interface{}) *workloadv1a1.Workload {
 }
 
 // getWorkloadServiceMemberships returns the services that select the specified workload
-func getWorkloadServiceMemberships(serviceLister cache.Indexer, workload *workloadv1a1.Workload) []string {
+func getWorkloadServiceMemberships(serviceLister cache.Indexer, workload *workloadv1a1.Workload, logger klog.Logger) []string {
 	ret := make([]string, 0)
 	for _, obj := range serviceLister.List() {
 		service := obj.(*corev1.Service)
@@ -227,7 +230,7 @@ func getWorkloadServiceMemberships(serviceLister cache.Indexer, workload *worklo
 
 		key, err := cache.MetaNamespaceKeyFunc(service)
 		if err != nil {
-			klog.Errorf("failed to get the key of Service %q: %v", service.GetName(), err)
+			logger.Error(err, "failed to get the key of Service", "serviceKey", service.GetName())
 			continue
 		}
 
@@ -238,7 +241,7 @@ func getWorkloadServiceMemberships(serviceLister cache.Indexer, workload *worklo
 
 func (c *Controller) addWorkload(obj interface{}) {
 	workload := obj.(*workloadv1a1.Workload)
-	services := getWorkloadServiceMemberships(c.serviceLister, workload)
+	services := getWorkloadServiceMemberships(c.serviceLister, workload, c.logger)
 	for _, key := range services {
 		c.queue.Add(key)
 	}
@@ -308,15 +311,15 @@ func (c *Controller) processService(key string) error {
 		if len(subsets) == 0 {
 			err := c.kubeClient.DiscoveryV1().EndpointSlices(namespace).Delete(context.Background(), sliceName, metav1.DeleteOptions{})
 			if err != nil {
-				klog.Errorf("error deleting EndpointSlice %q: %+v", sliceName, err)
+				c.logger.Error(err, "error deleting EndpointSlice", "sliceName", sliceName)
 			} else {
-				klog.V(2).Infof("Deleted EndpointSlice %q", sliceName)
+				c.logger.V(2).Info("Deleted EndpointSlice", "sliceName", sliceName)
 			}
 			return err
 		}
 		curEs = obj.(*discovery.EndpointSlice)
 		if equalEndpoints(curEs.Endpoints, subsets) {
-			klog.V(2).Infof("Unchanged EndpointSlice %q", sliceName)
+			c.logger.V(2).Info("Unchanged EndpointSlice", "sliceName", sliceName)
 			return nil
 		}
 	} else {
@@ -335,9 +338,9 @@ func (c *Controller) processService(key string) error {
 		_, err = c.kubeClient.DiscoveryV1().EndpointSlices(namespace).Update(context.Background(), newEs, metav1.UpdateOptions{})
 	}
 	if err != nil {
-		klog.Errorf("error updating EndpointSlice %q: %+v", sliceName, err)
+		c.logger.Error(err, "error updating EndpointSlice", "sliceName", sliceName)
 	} else {
-		klog.V(2).Infof("Updated EndpointSlice %q", sliceName)
+		c.logger.V(2).Info("Updated EndpointSlice", "sliceName", sliceName)
 	}
 
 	return err

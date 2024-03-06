@@ -34,7 +34,7 @@ import (
 
 // DefaultBackendServicePort returns the ServicePort which will be
 // used as the default backend for load balancers.
-func DefaultBackendServicePort(kubeClient kubernetes.Interface) utils.ServicePort {
+func DefaultBackendServicePort(kubeClient kubernetes.Interface, logger klog.Logger) utils.ServicePort {
 	if flags.F.DefaultSvc == "" {
 		klog.Fatalf("Please specify --default-backend-service")
 	}
@@ -48,7 +48,7 @@ func DefaultBackendServicePort(kubeClient kubernetes.Interface) utils.ServicePor
 		klog.Fatalf("Failed to parse --default-backend-service: %v", err)
 	}
 
-	svc, err := waitForServicePort(kubeClient, name, flags.F.DefaultSvcPortName)
+	svc, err := waitForServicePort(kubeClient, name, flags.F.DefaultSvcPortName, logger)
 	if err != nil {
 		klog.Fatalf("Failed to verify default backend service: %v", err)
 	}
@@ -62,13 +62,13 @@ func DefaultBackendServicePort(kubeClient kubernetes.Interface) utils.ServicePor
 }
 
 // IngressClassEnabled returns whether the IngressClass API exists on the kubernetes cluster
-func IngressClassEnabled(client kubernetes.Interface) bool {
-	klog.V(2).Info("Checking if Ingress Class API exists")
+func IngressClassEnabled(client kubernetes.Interface, logger klog.Logger) bool {
+	logger.V(2).Info("Checking if Ingress Class API exists")
 
 	err := wait.Poll(3*time.Second, 5*time.Minute, func() (bool, error) {
 		resourceList, err := client.Discovery().ServerResourcesForGroupVersion("networking.k8s.io/v1")
 		if err != nil {
-			klog.Errorf("errored checking for Ingress Class API: %s", err)
+			logger.Error(err, "Errored checking for Ingress Class API")
 			return false, nil
 		}
 
@@ -81,11 +81,11 @@ func IngressClassEnabled(client kubernetes.Interface) bool {
 	})
 
 	if err != nil {
-		klog.V(2).Infof("Ingress Class support disabled. Received error while checking for Ingress Class API: %s", err)
+		logger.V(2).Info("Ingress Class support disabled. Received error while checking for Ingress Class API", "err", err)
 		return false
 	}
 
-	klog.V(2).Info("Ingress Class support enabled")
+	logger.V(2).Info("Ingress Class support enabled")
 	return true
 }
 
@@ -110,15 +110,15 @@ func servicePortForDefaultService(svc *v1.Service, svcPortName string, name type
 }
 
 // servicePortExists checks that the service and specified port name exists.
-func waitForServicePort(client kubernetes.Interface, name types.NamespacedName, portName string) (*v1.Service, error) {
-	klog.V(2).Infof("Checking existence of default backend service %q", name.String())
+func waitForServicePort(client kubernetes.Interface, name types.NamespacedName, portName string, logger klog.Logger) (*v1.Service, error) {
+	logger.V(2).Info("Checking existence of default backend service", "serviceKey", name.String())
 	var svc *v1.Service
 
 	err := wait.Poll(3*time.Second, 5*time.Minute, func() (bool, error) {
 		var err error
 		svc, err = client.CoreV1().Services(name.Namespace).Get(context.TODO(), name.Name, meta_v1.GetOptions{})
 		if err != nil {
-			klog.V(4).Infof("Error getting service %v", name.String())
+			logger.V(4).Info("Error getting service", "serviceKey", name.String())
 			return false, nil
 		}
 		for _, p := range svc.Spec.Ports {

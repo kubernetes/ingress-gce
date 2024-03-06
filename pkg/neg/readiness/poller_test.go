@@ -358,7 +358,7 @@ func TestPoll(t *testing.T) {
 	poller.clock = fakeClock
 	patcherTester := poller.patcher.(*testPatcher)
 	negCloud := poller.negCloud
-	namer := namer_util.NewNamer("clusteruid", "")
+	namer := namer_util.NewNamer("clusteruid", "", klog.TODO())
 
 	ns := "ns"
 	podName := "pod1"

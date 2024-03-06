@@ -342,7 +342,7 @@ func TestL4CreateExternalForwardingRuleAddressAlreadyInUse(t *testing.T) {
 	targetIP := "1.1.1.1"
 	l4 := L4NetLB{
 		cloud:           fakeGCE,
-		forwardingRules: forwardingrules.New(fakeGCE, meta.VersionGA, meta.Regional),
+		forwardingRules: forwardingrules.New(fakeGCE, meta.VersionGA, meta.Regional, klog.TODO()),
 		Service: &corev1.Service{
 			ObjectMeta: metav1.ObjectMeta{Name: "testService", Namespace: "default", UID: types.UID("1")},
 			Spec: corev1.ServiceSpec{
@@ -372,8 +372,8 @@ func TestL4EnsureIPv4ForwardingRuleAddressAlreadyInUse(t *testing.T) {
 	targetIP := "1.1.1.1"
 	l4 := L4{
 		cloud:           fakeGCE,
-		forwardingRules: forwardingrules.New(fakeGCE, meta.VersionGA, meta.Regional),
-		namer:           namer.NewL4Namer("test", namer.NewNamer("testCluster", "testFirewall")),
+		forwardingRules: forwardingrules.New(fakeGCE, meta.VersionGA, meta.Regional, klog.TODO()),
+		namer:           namer.NewL4Namer("test", namer.NewNamer("testCluster", "testFirewall", klog.TODO())),
 		Service: &corev1.Service{
 			ObjectMeta: metav1.ObjectMeta{Name: "testService", Namespace: "default", UID: types.UID("1")},
 			Spec: corev1.ServiceSpec{
@@ -401,7 +401,7 @@ func TestL4EnsureIPv4ForwardingRuleAddressAlreadyInUse(t *testing.T) {
 func TestL4EnsureIPv4ForwardingRule(t *testing.T) {
 	subnetworkURL := "https://www.googleapis.com/compute/v1/projects/test-poject/regions/us-central1/subnetworks/default-subnet"
 	networkURL := "https://www.googleapis.com/compute/v1/projects/test-poject/global/networks/test-vpc"
-	l4namer := namer.NewL4Namer("test", namer.NewNamer("testCluster", "testFirewall"))
+	l4namer := namer.NewL4Namer("test", namer.NewNamer("testCluster", "testFirewall", klog.TODO()))
 	serviceName := "testService"
 	serviceNamespace := "default"
 	defaultService := &corev1.Service{
@@ -418,7 +418,7 @@ func TestL4EnsureIPv4ForwardingRule(t *testing.T) {
 	}
 
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	forwardingRules := forwardingrules.New(fakeGCE, meta.VersionGA, meta.Regional)
+	forwardingRules := forwardingrules.New(fakeGCE, meta.VersionGA, meta.Regional, klog.TODO())
 
 	l4 := &L4{
 		cloud:           fakeGCE,

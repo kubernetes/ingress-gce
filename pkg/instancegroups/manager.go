@@ -48,6 +48,8 @@ type manager struct {
 	recorder           record.EventRecorder
 	instanceLinkFormat string
 	maxIGSize          int
+
+	logger klog.Logger
 }
 
 type recorderSource interface {
@@ -66,7 +68,7 @@ type ManagerConfig struct {
 }
 
 // NewManager creates a new node pool using ManagerConfig.
-func NewManager(config *ManagerConfig) Manager {
+func NewManager(config *ManagerConfig, logger klog.Logger) Manager {
 	return &manager{
 		cloud:              config.Cloud,
 		namer:              config.Namer,
@@ -74,6 +76,7 @@ func NewManager(config *ManagerConfig) Manager {
 		instanceLinkFormat: config.BasePath + "zones/%s/instances/%s",
 		ZoneGetter:         config.ZoneGetter,
 		maxIGSize:          config.MaxIGSize,
+		logger:             logger.WithName("InstanceGroupsManager"),
 	}
 }
 
@@ -99,33 +102,33 @@ func (m *manager) EnsureInstanceGroupsAndPorts(name string, ports []int64) (igs 
 }
 
 func (m *manager) ensureInstanceGroupAndPorts(name, zone string, ports []int64) (*compute.InstanceGroup, error) {
-	klog.V(3).Infof("Ensuring instance group %s in zone %s. Ports: %v", name, zone, ports)
+	m.logger.V(3).Info("Ensuring instance group", "name", name, "zone", zone, "ports", ports)
 
 	ig, err := m.Get(name, zone)
 	if err != nil && !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
-		klog.Errorf("Failed to get instance group %v/%v, err: %v", zone, name, err)
+		m.logger.Error(err, "Failed to get instance group", "key", klog.KRef(zone, name))
 		return nil, err
 	}
 
 	if ig == nil {
-		klog.V(3).Infof("Creating instance group %v/%v.", zone, name)
+		m.logger.V(3).Info("Creating instance group", "key", klog.KRef(zone, name))
 		if err = m.cloud.CreateInstanceGroup(&compute.InstanceGroup{Name: name}, zone); err != nil {
 			// Error may come back with StatusConflict meaning the instance group was created by another controller
 			// possibly the Service Manager for internal load balancers.
 			if utils.IsHTTPErrorCode(err, http.StatusConflict) {
-				klog.Warningf("Failed to create instance group %v/%v due to conflict status, but continuing sync. err: %v", zone, name, err)
+				m.logger.Info("Failed to create instance group due to conflict status, but continuing sync", "key", klog.KRef(zone, name), "err", err)
 			} else {
-				klog.Errorf("Failed to create instance group %v/%v, err: %v", zone, name, err)
+				m.logger.Error(err, "Failed to create instance group", "key", klog.KRef(zone, name))
 				return nil, err
 			}
 		}
 		ig, err = m.Get(name, zone)
 		if err != nil {
-			klog.Errorf("Failed to get instance group %v/%v after ensuring existence, err: %v", zone, name, err)
+			m.logger.Error(err, "Failed to get instance group after ensuring existence", "key", klog.KRef(zone, name))
 			return nil, err
 		}
 	} else {
-		klog.V(2).Infof("Instance group %v/%v already exists.", zone, name)
+		m.logger.V(2).Info("Instance group already exists", "key", klog.KRef(zone, name))
 	}
 
 	// Build map of existing ports
@@ -138,7 +141,7 @@ func (m *manager) ensureInstanceGroupAndPorts(name, zone string, ports []int64) 
 	var newPorts []int64
 	for _, p := range ports {
 		if existingPorts[p] {
-			klog.V(5).Infof("Instance group %v/%v already has named port %v", zone, ig.Name, p)
+			m.logger.V(5).Info("Instance group already has named port", "key", klog.KRef(zone, ig.Name), "port", p)
 			continue
 		}
 		newPorts = append(newPorts, p)
@@ -151,7 +154,7 @@ func (m *manager) ensureInstanceGroupAndPorts(name, zone string, ports []int64) 
 	}
 
 	if len(newNamedPorts) > 0 {
-		klog.V(3).Infof("Instance group %v/%v does not have ports %+v, adding them now.", zone, name, newPorts)
+		m.logger.V(3).Info("Instance group does not have ports, adding them now", "key", klog.KRef(zone, name), "ports", fmt.Sprintf("%+v", newPorts))
 		if err := m.cloud.SetNamedPortsOfInstanceGroup(ig.Name, zone, append(ig.NamedPorts, newNamedPorts...)); err != nil {
 			return nil, err
 		}
@@ -171,14 +174,14 @@ func (m *manager) DeleteInstanceGroup(name string) error {
 	for _, zone := range zones {
 		if err := m.cloud.DeleteInstanceGroup(name, zone); err != nil {
 			if utils.IsNotFoundError(err) {
-				klog.V(3).Infof("Instance group %v in zone %v did not exist", name, zone)
+				m.logger.V(3).Info("Instance group in zone did not exist", "name", name, "zone", zone)
 			} else if utils.IsInUsedByError(err) {
-				klog.V(3).Infof("Could not delete instance group %v in zone %v because it's still in use. Ignoring: %v", name, zone, err)
+				m.logger.V(3).Info("Could not delete instance group in zone because it's still in use. Ignoring", "name", name, "zone", zone, "err", err)
 			} else {
 				errs = append(errs, err)
 			}
 		} else {
-			klog.V(3).Infof("Deleted instance group %v in zone %v", name, zone)
+			m.logger.V(3).Info("Deleted instance group in zone", "name", name, "zone", zone)
 		}
 	}
 	if len(errs) == 0 {
@@ -264,7 +267,7 @@ func (m *manager) splitNodesByZone(names []string) map[string][]string {
 	for _, name := range names {
 		zone, err := m.ZoneGetter.ZoneForNode(name, klog.TODO())
 		if err != nil {
-			klog.Errorf("Failed to get zones for %v: %v, skipping", name, err)
+			m.logger.Error(err, "Failed to get zones for instance node, skipping", "name", name)
 			continue
 		}
 		if _, ok := nodesByZone[zone]; !ok {
@@ -289,7 +292,7 @@ func (m *manager) add(groupName string, names []string) error {
 	events.GlobalEventf(m.recorder, core.EventTypeNormal, events.AddNodes, "Adding %s to InstanceGroup %q", events.TruncatedStringList(names), groupName)
 	var errs []error
 	for zone, nodeNames := range m.splitNodesByZone(names) {
-		klog.V(1).Infof("Adding %d nodes to %v in zone %v", len(nodeNames), groupName, zone)
+		m.logger.V(1).Info("Adding nodes to instance group in zone", "nodeCount", len(nodeNames), "name", groupName, "zone", zone)
 		if err := m.cloud.AddInstancesToInstanceGroup(groupName, zone, m.getInstanceReferences(zone, nodeNames)); err != nil {
 			errs = append(errs, err)
 		}
@@ -315,7 +318,7 @@ func (m *manager) remove(groupName string, names []string, nodeZoneMap map[strin
 	for _, name := range names {
 		zone, ok := nodeZoneMap[name]
 		if !ok {
-			klog.Errorf("Failed to get zones for %v, skipping", name)
+			m.logger.Error(nil, "Failed to get zones for node, skipping", "name", name)
 			continue
 		}
 		if _, ok := nodesByZone[zone]; !ok {
@@ -325,7 +328,7 @@ func (m *manager) remove(groupName string, names []string, nodeZoneMap map[strin
 	}
 
 	for zone, nodeNames := range nodesByZone {
-		klog.V(1).Infof("Removing %d nodes from %v in zone %v", len(nodeNames), groupName, zone)
+		m.logger.V(1).Info("Removing nodes from instance group in zone", "nodeCount", len(nodeNames), "name", groupName, "zone", zone)
 		if err := m.cloud.RemoveInstancesFromInstanceGroup(groupName, zone, m.getInstanceReferences(zone, nodeNames)); err != nil {
 			errs = append(errs, err)
 		}
@@ -341,7 +344,7 @@ func (m *manager) remove(groupName string, names []string, nodeZoneMap map[strin
 
 // Sync nodes with the instances in the instance group.
 func (m *manager) Sync(nodes []string) (err error) {
-	klog.V(2).Infof("Syncing nodes %v", nodes)
+	m.logger.V(2).Info("Syncing nodes", "nodes", nodes)
 
 	defer func() {
 		// The node pool is only responsible for syncing nodes to instance
@@ -351,14 +354,14 @@ func (m *manager) Sync(nodes []string) (err error) {
 		// group, however if it happens because a user deletes the IG by mistake
 		// we should just wait till the backend pool fixes it.
 		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
-			klog.Infof("Node pool encountered a 404, ignoring: %v", err)
+			m.logger.Info("Node pool encountered a 404, ignoring", "err", err)
 			err = nil
 		}
 	}()
 
 	pool, err := m.List()
 	if err != nil {
-		klog.Errorf("List error: %v", err)
+		m.logger.Error(err, "List error")
 		return err
 	}
 
@@ -368,7 +371,7 @@ func (m *manager) Sync(nodes []string) (err error) {
 		// when removing nodes.
 		gceNodes, gceNodeZoneMap, err := m.listIGInstances(igName)
 		if err != nil {
-			klog.Errorf("list(%q) error: %v", igName, err)
+			m.logger.Error(err, "listIGInstances error", "name", igName)
 			return err
 		}
 		kubeNodes := sets.NewString(nodes...)
@@ -388,7 +391,7 @@ func (m *manager) Sync(nodes []string) (err error) {
 				return nodes[:maxLogsSampleSize]
 			}
 
-			klog.Warningf("Total number of kubeNodes: %d, truncating to maximum Instance Group size = %d. Instance group name: %s. First truncated instances: %v", len(kubeNodesList), m.maxIGSize, igName, truncateForLogs(nodes[m.maxIGSize:]))
+			m.logger.Info(fmt.Sprintf("Total number of kubeNodes: %d, truncating to maximum Instance Group size = %d. Instance group name: %s. First truncated instances: %v", len(kubeNodesList), m.maxIGSize, igName, truncateForLogs(nodes[m.maxIGSize:])))
 			kubeNodes = sets.NewString(kubeNodesList[:m.maxIGSize]...)
 		}
 
@@ -399,13 +402,13 @@ func (m *manager) Sync(nodes []string) (err error) {
 		removeNodes := gceNodes.Difference(kubeNodes).List()
 		addNodes := kubeNodes.Difference(gceNodes).List()
 
-		klog.V(2).Infof("Removing nodes: %v", removeNodes)
-		klog.V(2).Infof("Adding nodes: %v", addNodes)
+		m.logger.V(2).Info("Removing nodes", "removeNodes", removeNodes)
+		m.logger.V(2).Info("Adding nodes", "addNodes", addNodes)
 
 		start := time.Now()
 		if len(removeNodes) != 0 {
 			err = m.remove(igName, removeNodes, gceNodeZoneMap)
-			klog.V(2).Infof("Remove(%q, _) = %v (took %s); nodes = %v", igName, err, time.Now().Sub(start), removeNodes)
+			m.logger.V(2).Info("Remove finished", "name", igName, "err", err, "timeTaken", time.Now().Sub(start), "removeNodes", removeNodes)
 			if err != nil {
 				return err
 			}
@@ -414,7 +417,7 @@ func (m *manager) Sync(nodes []string) (err error) {
 		start = time.Now()
 		if len(addNodes) != 0 {
 			err = m.add(igName, addNodes)
-			klog.V(2).Infof("Add(%q, _) = %v (took %s); nodes = %v", igName, err, time.Now().Sub(start), addNodes)
+			m.logger.V(2).Info("Add finished", "name", igName, "err", err, "timeTaken", time.Now().Sub(start), "addNodes", addNodes)
 			if err != nil {
 				return err
 			}

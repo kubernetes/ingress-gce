@@ -899,7 +899,7 @@ func TestShouldProcess(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.desc, func(t *testing.T) {
-			processSA := shouldProcess(originalSA, tc.newSA)
+			processSA := shouldProcess(originalSA, tc.newSA, klog.TODO())
 			if processSA != tc.shouldProcess {
 				t.Errorf("Expected shouldProcess to return %t, but got %t", tc.shouldProcess, processSA)
 			}
@@ -1080,7 +1080,7 @@ func newTestController(clusterType string) *Controller {
 		return nil
 	}
 
-	resourceNamer := namer.NewNamer(ClusterID, "")
+	resourceNamer := namer.NewNamer(ClusterID, "", klog.TODO())
 	saClient := safake.NewSimpleClientset()
 
 	ctxConfig := context.ControllerContextConfig{
@@ -1092,9 +1092,9 @@ func newTestController(clusterType string) *Controller {
 
 	flags.F.GKEClusterName = ClusterName
 	flags.F.GKEClusterType = clusterType
-	ctx := context.NewControllerContext(nil, kubeClient, nil, nil, nil, nil, nil, saClient, nil, gceClient, resourceNamer, kubeSystemUID, ctxConfig)
+	ctx := context.NewControllerContext(nil, kubeClient, nil, nil, nil, nil, nil, saClient, nil, gceClient, resourceNamer, kubeSystemUID, ctxConfig, klog.TODO())
 
-	return NewController(ctx, make(<-chan struct{}))
+	return NewController(ctx, make(<-chan struct{}), klog.TODO())
 }
 
 // createSvc creates a test K8s Service resource and adds it to the controller's svcAttachmentLister. If forwardingRuleKey is empty, no annotations will be added to the service.

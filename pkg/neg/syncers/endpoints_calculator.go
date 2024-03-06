@@ -95,7 +95,7 @@ func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(eds []types.Endpoints
 				metrics.PublishNegControllerErrorCountMetrics(err, true)
 				continue
 			}
-			if ok := candidateNodeCheck(node); !ok {
+			if ok := candidateNodeCheck(node, l.logger); !ok {
 				l.logger.Info("Dropping Node from subset since it is not a valid LB candidate", "nodeName", node.Name)
 				continue
 			}
@@ -117,7 +117,7 @@ func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(eds []types.Endpoints
 		return nil, nil, 0, nil
 	}
 	// Compute the networkEndpoints, with total endpoints count <= l.subsetSizeLimit
-	klog.V(2).Infof("Got zoneNodeMap as input for service", "zoneNodeMap", nodeMapToString(zoneNodeMap), "serviceID", l.svcId)
+	l.logger.V(2).Info("Got zoneNodeMap as input for service", "zoneNodeMap", nodeMapToString(zoneNodeMap), "serviceID", l.svcId)
 	subsetMap, err := getSubsetPerZone(zoneNodeMap, l.subsetSizeLimit, l.svcId, currentMap, l.logger, l.networkInfo)
 	return subsetMap, nil, 0, err
 }
@@ -171,7 +171,7 @@ func (l *ClusterL4ILBEndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
 func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpoints(_ []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
 	// In this mode, any of the cluster nodes can be part of the subset, whether or not a matching pod runs on it.
-	nodes, _ := utils.ListWithPredicate(l.nodeLister, utils.CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes)
+	nodes, _ := utils.ListWithPredicate(l.nodeLister, utils.CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes, l.logger)
 
 	zoneNodeMap := make(map[string][]*v1.Node)
 	for _, node := range nodes {
@@ -187,7 +187,7 @@ func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpoints(_ []types.Endpoints
 		}
 		zoneNodeMap[zone] = append(zoneNodeMap[zone], node)
 	}
-	klog.V(2).Infof("Got zoneNodeMap as input for service", "zoneNodeMap", nodeMapToString(zoneNodeMap), "serviceID", l.svcId)
+	l.logger.V(2).Info("Got zoneNodeMap as input for service", "zoneNodeMap", nodeMapToString(zoneNodeMap), "serviceID", l.svcId)
 	// Compute the networkEndpoints, with total endpoints <= l.subsetSizeLimit.
 	subsetMap, err := getSubsetPerZone(zoneNodeMap, l.subsetSizeLimit, l.svcId, currentMap, l.logger, l.networkInfo)
 	return subsetMap, nil, 0, err

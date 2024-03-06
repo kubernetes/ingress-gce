@@ -16,6 +16,7 @@ package translator
 import (
 	"context"
 	"fmt"
+	"k8s.io/klog/v2"
 	"reflect"
 	"testing"
 
@@ -78,7 +79,7 @@ func TestToComputeURLMap(t *testing.T) {
 	t.Parallel()
 
 	wantComputeMap := testCompositeURLMap()
-	namer := namer_util.NewNamer("uid1", "fw1")
+	namer := namer_util.NewNamer("uid1", "fw1", klog.TODO())
 	gceURLMap := &utils.GCEURLMap{
 		DefaultBackend: &utils.ServicePort{NodePort: 30000, BackendNamer: namer},
 		HostRules: []utils.HostRule{
@@ -111,7 +112,7 @@ func TestToComputeURLMap(t *testing.T) {
 		},
 	}
 
-	namerFactory := namer_util.NewFrontendNamerFactory(namer, "")
+	namerFactory := namer_util.NewFrontendNamerFactory(namer, "", klog.TODO())
 	feNamer := namerFactory.NamerForLoadBalancer("lb-name")
 	gotComputeURLMap := ToCompositeURLMap(gceURLMap, feNamer, meta.GlobalKey("ns-lb-name"))
 	if diff := cmp.Diff(wantComputeMap, gotComputeURLMap); diff != "" {

@@ -310,8 +310,8 @@ func NewController(
 			vmIpCandidateNodeCheck := utils.CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes
 			vmIpPortCandidateNodeCheck := utils.CandidateNodesPredicate
 
-			if vmIpCandidateNodeCheck(oldNode) != vmIpCandidateNodeCheck(currentNode) ||
-				vmIpPortCandidateNodeCheck(oldNode) != vmIpPortCandidateNodeCheck(currentNode) {
+			if vmIpCandidateNodeCheck(oldNode, logger) != vmIpCandidateNodeCheck(currentNode, logger) ||
+				vmIpPortCandidateNodeCheck(oldNode, logger) != vmIpPortCandidateNodeCheck(currentNode, logger) {
 				logger.Info("Node has changed, enqueueing", "node", currentNode.Name)
 				negController.enqueueNode(currentNode)
 			}

@@ -169,8 +169,8 @@ func TestGC(t *testing.T) {
 		},
 	}
 
-	otherNamer := namer_util.NewNamer("clusteruid", "fw1")
-	otherFeNamerFactory := namer_util.NewFrontendNamerFactory(otherNamer, "")
+	otherNamer := namer_util.NewNamer("clusteruid", "fw1", klog.TODO())
+	otherFeNamerFactory := namer_util.NewFrontendNamerFactory(otherNamer, "", klog.TODO())
 	otherKeys := []string{
 		"a/a",
 		"namespace/name",
@@ -501,8 +501,8 @@ func TestV2GC(t *testing.T) {
 	}
 
 	// Add LBs owned by another cluster.
-	otherNamer := namer_util.NewNamer("clusteruid", "fw1")
-	otherFeNamerFactory := namer_util.NewFrontendNamerFactory(otherNamer, "ksuid234")
+	otherNamer := namer_util.NewNamer("clusteruid", "fw1", klog.TODO())
+	otherFeNamerFactory := namer_util.NewFrontendNamerFactory(otherNamer, "ksuid234", klog.TODO())
 	otherIngresses := []*networkingv1.Ingress{
 		// ingresses with v1 naming scheme.
 		newIngressWithFinalizer(longName[:10], longName[:10], common.FinalizerKey),
@@ -583,8 +583,8 @@ func TestDoNotLeakV2LB(t *testing.T) {
 	}
 
 	// Add LBs owned by another cluster.
-	otherNamer := namer_util.NewNamer("clusteruid", "fw1")
-	otherFeNamerFactory := namer_util.NewFrontendNamerFactory(otherNamer, "ksuid234")
+	otherNamer := namer_util.NewNamer("clusteruid", "fw1", klog.TODO())
+	otherFeNamerFactory := namer_util.NewFrontendNamerFactory(otherNamer, "ksuid234", klog.TODO())
 	otherIngresses := []*networkingv1.Ingress{
 		// ingresses with v1 naming scheme.
 		newIngressWithFinalizer(longName[:10], longName[:10], common.FinalizerKey),
@@ -821,10 +821,10 @@ func TestDidRegionalClassChange(t *testing.T) {
 }
 
 func newTestLoadBalancerPool() LoadBalancerPool {
-	namer := namer_util.NewNamer(testClusterName, "fw1")
+	namer := namer_util.NewNamer(testClusterName, "fw1", klog.TODO())
 	fakeGCECloud := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	ctx := &context.ControllerContext{}
-	return NewLoadBalancerPool(fakeGCECloud, namer, ctx, namer_util.NewFrontendNamerFactory(namer, kubeSystemUID))
+	return NewLoadBalancerPool(fakeGCECloud, namer, ctx, namer_util.NewFrontendNamerFactory(namer, kubeSystemUID, klog.TODO()), klog.TODO())
 }
 
 func createFakeLoadbalancer(cloud *gce.Cloud, namer namer_util.IngressFrontendNamer, versions *features.ResourceVersions, scope meta.KeyType) {

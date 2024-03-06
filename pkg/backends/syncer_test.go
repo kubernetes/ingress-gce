@@ -121,7 +121,7 @@ func (p *portset) check(fakeGCE *gce.Cloud) error {
 }
 
 var (
-	defaultNamer      = namer.NewNamer("uid1", "fw1")
+	defaultNamer      = namer.NewNamer("uid1", "fw1", klog.TODO())
 	defaultBackendSvc = types.NamespacedName{Namespace: "system", Name: "default"}
 	existingProbe     = &api_v1.Probe{
 		ProbeHandler: api_v1.ProbeHandler{

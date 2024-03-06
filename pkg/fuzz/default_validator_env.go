@@ -30,6 +30,7 @@ import (
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	fcclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/klog/v2"
 )
 
 // DefaultValidatorEnv is a ValidatorEnv that gets data from the Kubernetes
@@ -59,7 +60,7 @@ func NewDefaultValidatorEnv(config *rest.Config, ns string, gce cloud.Cloud) (Va
 	if ret.fc, err = fcclient.NewForConfig(config); err != nil {
 		return nil, err
 	}
-	if ret.namer, err = app.NewStaticNamer(ret.k8s, "", ""); err != nil {
+	if ret.namer, err = app.NewStaticNamer(ret.k8s, "", "", klog.TODO()); err != nil {
 		return nil, err
 	}
 	// Get kube-system uid.
@@ -67,7 +68,7 @@ func NewDefaultValidatorEnv(config *rest.Config, ns string, gce cloud.Cloud) (Va
 	if err != nil {
 		return nil, err
 	}
-	ret.feNamerFactory = namer.NewFrontendNamerFactory(ret.namer, kubeSystemNS.GetUID())
+	ret.feNamerFactory = namer.NewFrontendNamerFactory(ret.namer, kubeSystemNS.GetUID(), klog.TODO())
 	return ret, nil
 }
 

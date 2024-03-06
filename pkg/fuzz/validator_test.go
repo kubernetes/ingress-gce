@@ -56,8 +56,8 @@ const (
 )
 
 var (
-	mockNamer, _     = app.NewStaticNamer(fake.NewSimpleClientset(), "", "")
-	mockNamerFactory = namer.NewFrontendNamerFactory(mockNamer, "")
+	mockNamer, _     = app.NewStaticNamer(fake.NewSimpleClientset(), "", "", klog.TODO())
+	mockNamerFactory = namer.NewFrontendNamerFactory(mockNamer, "", klog.TODO())
 )
 
 type mockFeature struct {

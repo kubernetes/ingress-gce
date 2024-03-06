@@ -70,6 +70,8 @@ type L4NetLB struct {
 	enableStrongSessionAffinity bool
 	networkInfo                 network.NetworkInfo
 	networkResolver             network.Resolver
+
+	logger klog.Logger
 }
 
 // L4NetLBSyncResult contains information about the outcome of an L4 NetLB sync. It stores the list of resource name annotations,
@@ -116,7 +118,8 @@ type L4NetLBParams struct {
 }
 
 // NewL4NetLB creates a new Handler for the given L4NetLB service.
-func NewL4NetLB(params *L4NetLBParams) *L4NetLB {
+func NewL4NetLB(params *L4NetLBParams, logger klog.Logger) *L4NetLB {
+	logger = logger.WithName("L4NetLBHandler")
 	l4netlb := &L4NetLB{
 		cloud:                       params.Cloud,
 		scope:                       meta.Regional,
@@ -125,11 +128,12 @@ func NewL4NetLB(params *L4NetLBParams) *L4NetLB {
 		Service:                     params.Service,
 		NamespacedName:              types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace},
 		backendPool:                 backends.NewPoolWithConnectionTrackingPolicy(params.Cloud, params.Namer, params.StrongSessionAffinityEnabled),
-		healthChecks:                healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder),
-		forwardingRules:             forwardingrules.New(params.Cloud, meta.VersionGA, meta.Regional),
+		healthChecks:                healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder, logger),
+		forwardingRules:             forwardingrules.New(params.Cloud, meta.VersionGA, meta.Regional, logger),
 		enableDualStack:             params.DualStackEnabled,
 		enableStrongSessionAffinity: params.StrongSessionAffinityEnabled,
 		networkResolver:             params.NetworkResolver,
+		logger:                      logger,
 	}
 	return l4netlb
 }
@@ -191,13 +195,13 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 	if len(svc.Status.LoadBalancer.Ingress) > 0 {
 		result.SyncType = SyncTypeUpdate
 	}
-	klog.V(3).Infof("EnsureFrontend started for service %s/%s, len(nodeNames) = %d, SyncType: %s, isMultinetService: %v, serviceUsesSSA: %v", svc.Namespace, svc.Name, len(nodeNames), result.SyncType, isMultinetService, serviceUsesSSA)
+	l4netlb.logger.V(3).Info("EnsureFrontend started for service", "serviceKey", klog.KRef(svc.Namespace, svc.Name), "len(nodeNames)", len(nodeNames), "syncType", result.SyncType, "isMultinetService", isMultinetService, "serviceUsesSSA", serviceUsesSSA)
 
 	l4netlb.Service = svc
 
 	networkInfo, err := l4netlb.networkResolver.ServiceNetwork(svc)
 	if err != nil {
-		klog.Errorf("Failed to get network for service %s/%s, err: %v", svc.Namespace, svc.Name, err)
+		l4netlb.logger.Error(err, "Failed to get network for service", "serviceKey", klog.KRef(svc.Namespace, svc.Name))
 		result.Error = err
 		result.MetricsState.Status = metrics.StatusError
 		if utils.IsUserError(err) {
@@ -206,7 +210,7 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 		}
 		return result
 	}
-	klog.V(3).Infof("EnsureFrontend started for service %s/%s,  use networkInfo: %+v", svc.Namespace, svc.Name, networkInfo)
+	l4netlb.logger.V(3).Info("EnsureFrontend started for service", "serviceKey", klog.KRef(svc.Namespace, svc.Name), "networkInfo", fmt.Sprintf("%+v", networkInfo))
 
 	l4netlb.networkInfo = *networkInfo
 
@@ -363,7 +367,7 @@ func (l4netlb *L4NetLB) ensureIPv4Resources(result *L4NetLBSyncResult, nodeNames
 
 	l4netlb.ensureIPv4NodesFirewall(nodeNames, fr.IPAddress, result)
 	if result.Error != nil {
-		klog.Errorf("ensureIPv4Resources: Failed to ensure nodes firewall for L4 NetLB Service %s/%s, error: %v", l4netlb.Service.Namespace, l4netlb.Service.Name, err)
+		l4netlb.logger.Error(err, "ensureIPv4Resources: Failed to ensure nodes firewall for L4 NetLB Service", "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name))
 		return
 	}
 
@@ -378,9 +382,9 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 	portRanges := utils.GetServicePortRanges(servicePorts)
 	protocol := utils.GetProtocol(servicePorts)
 
-	klog.V(2).Infof("Ensuring nodes firewall %s for L4 NetLB Service %s/%s, ipAddress: %s, protocol: %s, len(nodeNames): %v, portRanges: %v", firewallName, l4netlb.Service.Namespace, l4netlb.Service.Name, ipAddress, protocol, len(nodeNames), portRanges)
+	l4netlb.logger.V(2).Info("Ensuring nodes firewall for L4 NetLB Service", "firewallName", firewallName, "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name), "ipAddress", ipAddress, "protocol", protocol, "len(nodeNames)", len(nodeNames), "portRanges", portRanges)
 	defer func() {
-		klog.V(2).Infof("Finished ensuring nodes firewall %s for L4 NetLB Service %s/%s, time taken: %v", firewallName, l4netlb.Service.Namespace, l4netlb.Service.Name, time.Since(start))
+		l4netlb.logger.V(2).Info("Finished ensuring nodes firewall for L4 NetLB Service", "firewallName", firewallName, "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name), "timeTaken", time.Since(start))
 	}()
 
 	sourceRanges, err := utils.IPv4ServiceSourceRanges(l4netlb.Service)
@@ -400,7 +404,7 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 		NodeNames:         nodeNames,
 		Network:           l4netlb.networkInfo,
 	}
-	result.Error = firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, &nodesFWRParams, l4netlb.cloud, l4netlb.recorder)
+	result.Error = firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, &nodesFWRParams, l4netlb.cloud, l4netlb.recorder, l4netlb.logger)
 	if result.Error != nil {
 		result.GCEResourceInError = annotations.FirewallRuleResource
 		result.Error = err
@@ -436,7 +440,7 @@ func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *L4NetLBS
 // If annotation was deleted, but resource still exists, it will be left till the Service deletion,
 // where we delete all resources, no matter if they exist in annotations.
 func (l4netlb *L4NetLB) deleteIPv4ResourcesOnSync(result *L4NetLBSyncResult) {
-	klog.Infof("Deleting IPv4 resources for L4 NetLB Service %s/%s on sync, with checking for existence in annotation", l4netlb.Service.Namespace, l4netlb.Service.Name)
+	l4netlb.logger.Info("Deleting IPv4 resources for L4 NetLB Service on sync, with checking for existence in annotation", "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name))
 	l4netlb.deleteIPv4ResourcesAnnotationBased(result, false)
 }
 
@@ -446,7 +450,7 @@ func (l4netlb *L4NetLB) deleteIPv4ResourcesOnSync(result *L4NetLBSyncResult) {
 // so they could be leaked, if annotation was deleted.
 // That's why on service deletion we delete all IPv4 resources, ignoring their existence in annotations
 func (l4netlb *L4NetLB) deleteIPv4ResourcesOnDelete(result *L4NetLBSyncResult) {
-	klog.Infof("Deleting IPv4 resources for L4 NetLB Service %s/%s on delete, without checking for existence in annotation", l4netlb.Service.Namespace, l4netlb.Service.Name)
+	l4netlb.logger.Info("Deleting IPv4 resources for L4 NetLB Service on delete, without checking for existence in annotation", "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name))
 	l4netlb.deleteIPv4ResourcesAnnotationBased(result, true)
 }
 
@@ -462,7 +466,7 @@ func (l4netlb *L4NetLB) deleteIPv4ResourcesAnnotationBased(result *L4NetLBSyncRe
 	if shouldIgnoreAnnotations || l4netlb.hasAnnotation(annotations.TCPForwardingRuleKey) || l4netlb.hasAnnotation(annotations.UDPForwardingRuleKey) {
 		err := l4netlb.deleteIPv4ForwardingRule()
 		if err != nil {
-			klog.Errorf("Failed to delete forwarding rule for NetLB RBS service %s, error: %v", l4netlb.NamespacedName.String(), err)
+			l4netlb.logger.Error(err, "Failed to delete forwarding rule for NetLB RBS service", "serviceKey", l4netlb.NamespacedName.String())
 			result.Error = err
 			result.GCEResourceInError = annotations.ForwardingRuleResource
 		}
@@ -472,7 +476,7 @@ func (l4netlb *L4NetLB) deleteIPv4ResourcesAnnotationBased(result *L4NetLBSyncRe
 	// that's why we can delete it without checking annotation
 	err := l4netlb.deleteIPv4Address()
 	if err != nil {
-		klog.Errorf("Failed to delete address for NetLB RBS service %s, error: %v", l4netlb.NamespacedName.String(), err)
+		l4netlb.logger.Error(err, "Failed to delete address for NetLB RBS service", "serviceKey", l4netlb.NamespacedName.String())
 		result.Error = err
 		result.GCEResourceInError = annotations.AddressResource
 	}
@@ -481,7 +485,7 @@ func (l4netlb *L4NetLB) deleteIPv4ResourcesAnnotationBased(result *L4NetLBSyncRe
 	if shouldIgnoreAnnotations || l4netlb.hasAnnotation(annotations.FirewallRuleKey) {
 		err = l4netlb.deleteIPv4NodesFirewall()
 		if err != nil {
-			klog.Errorf("Failed to delete firewall rule for NetLB RBS service %s, error: %v", l4netlb.NamespacedName.String(), err)
+			l4netlb.logger.Error(err, "Failed to delete firewall rule for NetLB RBS service", "serviceKey", l4netlb.NamespacedName.String())
 			result.GCEResourceInError = annotations.FirewallRuleResource
 			result.Error = err
 		}
@@ -493,9 +497,9 @@ func (l4netlb *L4NetLB) deleteIPv4ForwardingRule() error {
 
 	frName := l4netlb.frName()
 
-	klog.V(2).Infof("Deleting IPv4 external forwarding rule %s for L4 NetLB Service %s/%s", frName, l4netlb.Service.Namespace, l4netlb.Service.Name)
+	l4netlb.logger.V(2).Info("Deleting IPv4 external forwarding rule for L4 NetLB Service", "forwardingRuleName", frName, "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name))
 	defer func() {
-		klog.V(2).Infof("Finished deleting IPv4 external forwarding rule %s for L4 NetLB Service %s/%s, time taken: %v", frName, l4netlb.Service.Namespace, l4netlb.Service.Name, time.Since(start))
+		l4netlb.logger.V(2).Info("Finished deleting IPv4 external forwarding rule for L4 NetLB Service", "forwardingRuleName", frName, "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name), "timeTaken", time.Since(start))
 	}()
 
 	return l4netlb.forwardingRules.Delete(frName)
@@ -505,9 +509,9 @@ func (l4netlb *L4NetLB) deleteIPv4Address() error {
 	addressName := l4netlb.frName()
 
 	start := time.Now()
-	klog.V(2).Infof("Deleting IPv4 external static address %s for L4 NetLB service %s/%s", addressName, l4netlb.Service.Namespace, l4netlb.Service.Name)
+	l4netlb.logger.V(2).Info("Deleting IPv4 external static address for L4 NetLB service", "addressName", addressName, "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name))
 	defer func() {
-		klog.V(2).Infof("Finished deleting IPv4 external static address %s for L4 NetLB service %s/%s, time taken: %v", addressName, l4netlb.Service.Namespace, l4netlb.Service.Name, time.Since(start))
+		l4netlb.logger.V(2).Info("Finished deleting IPv4 external static address for L4 NetLB service", "addressName", addressName, "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name), "timeTaken", time.Since(start))
 	}()
 
 	return ensureAddressDeleted(l4netlb.cloud, addressName, l4netlb.cloud.Region())
@@ -518,16 +522,16 @@ func (l4netlb *L4NetLB) deleteIPv4NodesFirewall() error {
 
 	firewallName := l4netlb.namer.L4Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)
 
-	klog.V(2).Infof("Deleting IPv4 nodes firewall %s for L4 NetLB Service %s/%s", firewallName, l4netlb.Service.Namespace, l4netlb.Service.Name)
+	l4netlb.logger.V(2).Info("Deleting IPv4 nodes firewall for L4 NetLB Service", "firewallName", firewallName, "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name))
 	defer func() {
-		klog.V(2).Infof("Finished deleting IPv4 nodes firewall %s for L4 NetLB Service %s/%s, time taken: %v", firewallName, l4netlb.Service.Namespace, l4netlb.Service.Name, time.Since(start))
+		l4netlb.logger.V(2).Info("Finished deleting IPv4 nodes firewall for L4 NetLB Service", "firewallName", firewallName, "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name), "timeTaken", time.Since(start))
 	}()
 
 	return l4netlb.deleteFirewall(firewallName)
 }
 
 func (l4netlb *L4NetLB) deleteFirewall(firewallName string) error {
-	err := firewalls.EnsureL4FirewallRuleDeleted(l4netlb.cloud, firewallName)
+	err := firewalls.EnsureL4FirewallRuleDeleted(l4netlb.cloud, firewallName, l4netlb.logger)
 	if err != nil {
 		if fwErr, ok := err.(*firewalls.FirewallXPNError); ok {
 			l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeNormal, "XPN", fwErr.Message)
@@ -542,9 +546,9 @@ func (l4netlb *L4NetLB) deleteBackendService(result *L4NetLBSyncResult) {
 	bsName := l4netlb.namer.L4Backend(l4netlb.Service.Namespace, l4netlb.Service.Name)
 
 	start := time.Now()
-	klog.V(2).Infof("Deleting backend service %s, for L4 NetLB Service %s/%s", bsName, l4netlb.Service.Namespace, l4netlb.Service.Name)
+	l4netlb.logger.V(2).Info("Deleting backend service for L4 NetLB Service", "backendServiceName", bsName, "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name))
 	defer func() {
-		klog.V(2).Infof("Finished deleting backend service %s, for L4 NetLB Service %s/%s, time taken", bsName, l4netlb.Service.Namespace, l4netlb.Service.Name, time.Since(start))
+		l4netlb.logger.V(2).Info("Finished deleting backend service for L4 NetLB Service", "backendServiceName", bsName, "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name), "timeTaken", time.Since(start))
 	}()
 
 	// TODO(cheungdavid): Create backend logger that contains backendName,
@@ -552,7 +556,7 @@ func (l4netlb *L4NetLB) deleteBackendService(result *L4NetLBSyncResult) {
 	// See example in backendSyncer.ensureBackendService().
 	err := utils.IgnoreHTTPNotFound(l4netlb.backendPool.Delete(bsName, meta.VersionGA, meta.Regional, klog.TODO()))
 	if err != nil {
-		klog.Errorf("Failed to delete backends for L4 External LoadBalancer service %s - %v", l4netlb.NamespacedName.String(), err)
+		l4netlb.logger.Error(err, "Failed to delete backends for L4 External LoadBalancer service", "serviceKey", l4netlb.NamespacedName.String())
 		result.GCEResourceInError = annotations.BackendServiceResource
 		result.Error = err
 	}
@@ -560,9 +564,9 @@ func (l4netlb *L4NetLB) deleteBackendService(result *L4NetLBSyncResult) {
 
 func (l4netlb *L4NetLB) deleteHealthChecksWithFirewall(result *L4NetLBSyncResult) {
 	start := time.Now()
-	klog.V(2).Infof("Deleting all health checks and firewalls for health checks for L4 NetLB service %s/%s", l4netlb.Service.Namespace, l4netlb.Service.Name)
+	l4netlb.logger.V(2).Info("Deleting all health checks and firewalls for health checks for L4 NetLB service", "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name))
 	defer func() {
-		klog.V(2).Infof("Finished deleting all health checks and firewalls for health checks for for L4 NetLB service %s/%s, time taken: %v", l4netlb.Service.Namespace, l4netlb.Service.Name, time.Since(start))
+		l4netlb.logger.V(2).Info("Finished deleting all health checks and firewalls for health checks for for L4 NetLB service", "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name), "timeTaken", time.Since(start))
 	}()
 
 	// Delete healthcheck

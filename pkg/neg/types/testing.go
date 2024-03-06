@@ -17,6 +17,7 @@ limitations under the License.
 package types
 
 import (
+	"k8s.io/klog/v2"
 	"time"
 
 	apiv1 "k8s.io/api/core/v1"
@@ -82,7 +83,7 @@ func NewTestContextWithKubeClient(kubeClient kubernetes.Interface) *TestContext 
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	MockNetworkEndpointAPIs(fakeGCE)
 
-	clusterNamer := namer.NewNamer(clusterID, "")
+	clusterNamer := namer.NewNamer(clusterID, "", klog.TODO())
 	l4namer := namer.NewL4Namer(kubeSystemUID, clusterNamer)
 
 	return &TestContext{

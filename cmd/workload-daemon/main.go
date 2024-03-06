@@ -39,9 +39,10 @@ func main() {
 		outputHelp()
 		return
 	}
+	rootLogger := klog.TODO()
 	err := cmdSet.Parse(os.Args[2:])
 	if err != nil {
-		klog.Errorf("cmdSet.Parse(%v) returned error: %v", os.Args[2:], err)
+		rootLogger.Error(err, "cmdSet.Parse returned error", "parseArgs", os.Args[2:])
 	}
 	if *provider != "gce" {
 		klog.Fatalf("Current implementation only supports gce provider.")
@@ -49,7 +50,7 @@ func main() {
 
 	switch os.Args[1] {
 	case "get-credentials":
-		vm, err := gce.NewVM()
+		vm, err := gce.NewVM(rootLogger)
 		if err != nil {
 			klog.Fatalf("unable to initialize GCE VM: %+v", err)
 		}
@@ -60,12 +61,12 @@ func main() {
 		daemon.OutputCredentials(credentials)
 		return
 	case "start":
-		klog.V(0).Infof("Workload daemon started")
-		vm, err := gce.NewVM()
+		rootLogger.V(0).Info("Workload daemon started")
+		vm, err := gce.NewVM(rootLogger)
 		if err != nil {
 			klog.Fatalf("unable to initialize GCE VM: %+v", err)
 		}
-		daemon.RunDaemon(vm, vm, *updateInterval)
+		daemon.RunDaemon(vm, vm, *updateInterval, rootLogger)
 		return
 	default:
 		outputHelp()

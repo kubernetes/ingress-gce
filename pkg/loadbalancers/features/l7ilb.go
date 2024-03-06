@@ -34,7 +34,7 @@ var ErrSubnetNotFound = errors.New("active subnet not found")
 
 // ILBSubnetSourceRange gets Subnet source range for ILB
 // TODO: (shance) refactor to use filter
-func ILBSubnetSourceRange(cloud *gce.Cloud, region string) (string, error) {
+func ILBSubnetSourceRange(cloud *gce.Cloud, region string, logger klog.Logger) (string, error) {
 	subnets, err := cloud.Compute().BetaSubnetworks().List(context.Background(), region, filter.None)
 	if err != nil {
 		return "", fmt.Errorf("error obtaining subnets for region %s, %v", region, err)
@@ -46,7 +46,7 @@ func ILBSubnetSourceRange(cloud *gce.Cloud, region string) (string, error) {
 			return "", fmt.Errorf("error comparing subnets: %v", err)
 		}
 		if subnet.Role == "ACTIVE" && (subnet.Purpose == "INTERNAL_HTTPS_LOAD_BALANCER" || subnet.Purpose == "REGIONAL_MANAGED_PROXY") && sameNetwork {
-			klog.V(3).Infof("Found L7-ILB Subnet %s - %s", subnet.Name, subnet.IpCidrRange)
+			logger.V(3).Info("Found L7-ILB Subnet", "subnetName", subnet.Name, "subnetRange", subnet.IpCidrRange)
 			return subnet.IpCidrRange, nil
 		}
 	}

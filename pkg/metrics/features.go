@@ -136,16 +136,16 @@ const (
 )
 
 // featuresForIngress returns the list of features for given ingress.
-func featuresForIngress(ing *v1.Ingress, fc *frontendconfigv1beta1.FrontendConfig) []feature {
+func featuresForIngress(ing *v1.Ingress, fc *frontendconfigv1beta1.FrontendConfig, logger klog.Logger) []feature {
 	features := []feature{ingress}
 
 	ingKey := fmt.Sprintf("%s/%s", ing.Namespace, ing.Name)
-	klog.V(4).Infof("Listing features for Ingress %s", ingKey)
+	logger.V(4).Info("Listing features for Ingress", "ingressKey", ingKey)
 	ingAnnotations := ing.Annotations
 
 	// Determine the type of ingress based on ingress class.
 	ingClass := ingAnnotations[ingressClassKey]
-	klog.V(6).Infof("Ingress class value for ingress %s: %s", ingKey, ingClass)
+	logger.V(6).Info("Got Ingress class value for ingress", "ingressKey", ingKey, "ingressClass", ingClass)
 	switch ingClass {
 	case "", gceIngressClass, gceMultiIngressClass:
 		features = append(features, externalIngress)
@@ -157,13 +157,13 @@ func featuresForIngress(ing *v1.Ingress, fc *frontendconfigv1beta1.FrontendConfi
 
 	// Determine if http is enabled.
 	if val, ok := ingAnnotations[allowHTTPKey]; !ok {
-		klog.V(6).Infof("Annotation %s does not exist for ingress %s", allowHTTPKey, ingKey)
+		logger.V(6).Info("Annotation does not exist for ingress", "annotation", allowHTTPKey, "ingressKey", ingKey)
 		features = append(features, httpEnabled)
 	} else {
-		klog.V(6).Infof("User specified value for annotation %s on ingress %s: %s", allowHTTPKey, ingKey, val)
+		logger.V(6).Info("User specified value for annotation on ingress", "annotation", allowHTTPKey, "ingressKey", ingKey, "annotationValue", val)
 		v, err := strconv.ParseBool(val)
 		if err != nil {
-			klog.Errorf("Failed to parse %s for annotation %s on ingress %s", val, allowHTTPKey, ingKey)
+			logger.Error(nil, "Failed to parse value for annotation on ingress", "annotationValue", val, "annotation", allowHTTPKey, "ingressKey", ingKey)
 		}
 		if err == nil && v {
 			features = append(features, httpEnabled)
@@ -173,15 +173,15 @@ func featuresForIngress(ing *v1.Ingress, fc *frontendconfigv1beta1.FrontendConfi
 	// An ingress without a host or http-path is ignored.
 	hostBased, pathBased := false, false
 	if len(ing.Spec.Rules) == 0 {
-		klog.V(6).Infof("Neither host-based nor path-based routing rules are setup for ingress %s", ingKey)
+		logger.V(6).Info("Neither host-based nor path-based routing rules are setup for ingress", "ingressKey", ingKey)
 	}
 	for _, rule := range ing.Spec.Rules {
 		if rule.HTTP != nil && len(rule.HTTP.Paths) > 0 {
-			klog.V(6).Infof("User specified http paths for ingress %s: %v", ingKey, rule.HTTP.Paths)
+			logger.V(6).Info("User specified http paths for ingress", "ingressKey", ingKey, "httpPaths", rule.HTTP.Paths)
 			pathBased = true
 		}
 		if rule.Host != "" {
-			klog.V(6).Infof("User specified host for ingress %s: %v", ingKey, rule.Host)
+			logger.V(6).Info("User specified host for ingress", "ingressKey", ingKey, "host", rule.Host)
 			hostBased = true
 		}
 		if pathBased && hostBased {
@@ -200,36 +200,36 @@ func featuresForIngress(ing *v1.Ingress, fc *frontendconfigv1beta1.FrontendConfi
 	// annotation on ingress, then SSL cert is invalid in some sense. Ignore reporting
 	// these SSL certificates.
 	if cert, ok := ingAnnotations[SSLCertKey]; ok {
-		klog.V(6).Infof("Configured SSL certificate for ingress %s: %v", ingKey, cert)
+		logger.V(6).Info("Configured SSL certificate for ingress", "ingressKey", ingKey, "sslCert", cert)
 		features = append(features, tlsTermination)
 
 		certSpecified := false
 		if val, ok := ingAnnotations[preSharedCertKey]; ok {
-			klog.V(6).Infof("Specified pre-shared certs for ingress %s: %v", ingKey, val)
+			logger.V(6).Info("Specified pre-shared certs for ingress", "ingressKey", ingKey, "preSharedCert", val)
 			certSpecified = true
 			features = append(features, preSharedCertsForTLS)
 		}
 		if val, ok := ingAnnotations[managedCertKey]; ok {
-			klog.V(6).Infof("Specified google managed certs for ingress %s: %v", ingKey, val)
+			logger.V(6).Info("Specified google managed certs for ingress", "ingressKey", ingKey, "managedCert", val)
 			certSpecified = true
 			features = append(features, managedCertsForTLS)
 		}
-		if hasSecretBasedCerts(ing) {
+		if hasSecretBasedCerts(ing, logger) {
 			certSpecified = true
 			features = append(features, secretBasedCertsForTLS)
 		}
 		if !certSpecified {
-			klog.Errorf("Unexpected TLS termination(cert: %s) for ingress %s", cert, ingKey)
+			logger.Error(nil, "Unexpected TLS termination for ingress", "cert", cert, "ingressKey", ingKey)
 		}
 	}
 
 	// Both user specified and ingress controller managed global static ips are reported.
 	if val, ok := ingAnnotations[staticIPKey]; ok && val != "" {
-		klog.V(6).Infof("Static IP for ingress %s: %s", ingKey, val)
+		logger.V(6).Info("Static IP for ingress", "ingressKey", ingKey, "staticIp", val)
 		features = append(features, staticGlobalIP)
 		// Check if user specified static ip annotation exists.
 		if val, ok = ingAnnotations[StaticGlobalIPNameKey]; ok {
-			klog.V(6).Infof("User specified static IP for ingress %s: %s", ingKey, val)
+			logger.V(6).Info("User specified static IP for ingress", "ingressKey", ingKey, "userStaticIp", val)
 			features = append(features, specifiedStaticGlobalIP)
 		} else {
 			features = append(features, managedStaticGlobalIP)
@@ -253,54 +253,54 @@ func featuresForIngress(ing *v1.Ingress, fc *frontendconfigv1beta1.FrontendConfi
 		}
 	}
 
-	klog.V(4).Infof("Features for ingress %s: %v", ingKey, features)
+	logger.V(4).Info("Features for ingress", "ingressKey", ingKey, "ingressFeatures", features)
 	return features
 }
 
 // hasSecretBasedCerts returns true if ingress spec contains a secret based cert.
-func hasSecretBasedCerts(ing *v1.Ingress) bool {
+func hasSecretBasedCerts(ing *v1.Ingress, logger klog.Logger) bool {
 	for _, tlsSecret := range ing.Spec.TLS {
 		if tlsSecret.SecretName == "" {
 			continue
 		}
-		klog.V(6).Infof("User specified secret for ingress %s/%s: %s", ing.Namespace, ing.Name, tlsSecret.SecretName)
+		logger.V(6).Info("User specified secret for ingress", "ingressKey", klog.KRef(ing.Namespace, ing.Name), "tlsSecret", tlsSecret.SecretName)
 		return true
 	}
 	return false
 }
 
 // featuresForServicePort returns the list of features for given service port.
-func featuresForServicePort(sp utils.ServicePort) []feature {
+func featuresForServicePort(sp utils.ServicePort, logger klog.Logger) []feature {
 	features := []feature{servicePort}
 	svcPortKey := newServicePortKey(sp).string()
-	klog.V(4).Infof("Listing features for service port %s", svcPortKey)
+	logger.V(4).Info("Listing features for service port", "servicePortKey", svcPortKey)
 	if sp.L7ILBEnabled {
-		klog.V(6).Infof("L7 ILB is enabled for service port %s", svcPortKey)
+		logger.V(6).Info("L7 ILB is enabled for service port", "servicePortKey", svcPortKey)
 		features = append(features, internalServicePort)
 	} else if sp.L7XLBRegionalEnabled {
-		klog.V(6).Infof("L7 Regional XLB is enabled for service port %s", svcPortKey)
+		logger.V(6).Info("L7 Regional XLB is enabled for service port", "servicePortKey", svcPortKey)
 		features = append(features, regionalExternalServicePort)
 	} else {
 		features = append(features, externalServicePort)
 	}
 	if sp.NEGEnabled {
-		klog.V(6).Infof("NEG is enabled for service port %s", svcPortKey)
+		logger.V(6).Info("NEG is enabled for service port", "servicePortKey", svcPortKey)
 		features = append(features, neg)
 	}
 	if sp.THCConfiguration.THCOptInOnSvc {
-		klog.V(6).Infof("Transparent Health Checks configured for service port %s.", svcPortKey)
+		logger.V(6).Info("Transparent Health Checks configured for service port", "servicePortKey", svcPortKey)
 		features = append(features, transparentHealthChecks)
 	}
 	if sp.BackendConfig == nil {
-		klog.V(4).Infof("Features for Service port %s: %v", svcPortKey, features)
+		logger.V(4).Info("Features for Service port", "servicePortKey", svcPortKey, "features", features)
 		return features
 	}
 
 	beConfig := fmt.Sprintf("%s/%s", sp.BackendConfig.Namespace, sp.BackendConfig.Name)
-	klog.V(6).Infof("Backend config specified for service port %s: %s", svcPortKey, beConfig)
+	logger.V(6).Info("Backend config specified for service port", "servicePortKey", svcPortKey, "backendConfig", beConfig)
 
 	if sp.BackendConfig.Spec.Cdn != nil && sp.BackendConfig.Spec.Cdn.Enabled {
-		klog.V(6).Infof("Cloud CDN is enabled for service port %s", svcPortKey)
+		logger.V(6).Info("Cloud CDN is enabled for service port", "servicePortKey", svcPortKey)
 		features = append(features, cloudCDN)
 	}
 	if sp.BackendConfig.Spec.Iap != nil && sp.BackendConfig.Spec.Iap.Enabled {
@@ -308,7 +308,7 @@ func featuresForServicePort(sp utils.ServicePort) []feature {
 		if sp.BackendConfig.Spec.Iap.OAuthClientCredentials == nil {
 			iapConfiguration = cloudIAPEmpty
 		}
-		klog.V(6).Infof("Cloud IAP is enabled for service port %s and IAP credentials are:  %s", svcPortKey, iapConfiguration)
+		logger.V(6).Info("Cloud IAP is enabled for service port", "servicePortKey", svcPortKey, "IAPCredentials", iapConfiguration)
 		features = append(features, cloudIAP, iapConfiguration)
 	}
 	// Possible list of Affinity types:
@@ -321,11 +321,11 @@ func featuresForServicePort(sp utils.ServicePort) []feature {
 		case "CLIENT_IP", "CLIENT_IP_PROTO", "CLIENT_IP_PORT_PROTO":
 			features = append(features, clientIPAffinity)
 		}
-		klog.V(6).Infof("Session affinity %s is configured for service port %s", affinityType, svcPortKey)
+		logger.V(6).Info("Session affinity is configured for service port", "affinityType", affinityType, "servicePortKey", svcPortKey)
 	}
 
 	if sp.BackendConfig.Spec.SecurityPolicy != nil {
-		klog.V(6).Infof("Security policy %s is configured for service port %s", sp.BackendConfig.Spec.SecurityPolicy, svcPortKey)
+		logger.V(6).Info("Security policy is configured for service port", "securityPolicy", sp.BackendConfig.Spec.SecurityPolicy, "servicePortKey", svcPortKey)
 		features = append(features, cloudArmor)
 	}
 
@@ -338,29 +338,29 @@ func featuresForServicePort(sp utils.ServicePort) []feature {
 			caFeature = cloudArmorSet
 		}
 		features = append(features, caFeature)
-		klog.V(6).Infof("Security policy %s is configured for service port %s (%s)", sp.BackendConfig.Spec.SecurityPolicy, svcPortKey, caFeature)
+		logger.V(6).Info("Security policy is configured for service port (cloud armor feature)", "securityPolicy", sp.BackendConfig.Spec.SecurityPolicy, "servicePortKey", svcPortKey, "cloudArmorFeature", caFeature)
 	} else {
 		features = append(features, cloudArmorNil)
-		klog.V(6).Infof("Security policy is configured to nil for service port %s (%s)", sp.BackendConfig.Spec.SecurityPolicy, svcPortKey)
+		logger.V(6).Info("Security policy is configured to nil for service port", "servicePortKey", svcPortKey)
 	}
 
 	if sp.BackendConfig.Spec.TimeoutSec != nil {
-		klog.V(6).Infof("Backend timeout(%v secs) is configured for service port %s", sp.BackendConfig.Spec.TimeoutSec, svcPortKey)
+		logger.V(6).Info("Backend timeout is configured for service port", "backendTimeoutSeconds", sp.BackendConfig.Spec.TimeoutSec, "servicePortKey", svcPortKey)
 		features = append(features, backendTimeout)
 	}
 	if sp.BackendConfig.Spec.ConnectionDraining != nil {
-		klog.V(6).Infof("Backend connection draining(%v secs) is configured for service port %s", sp.BackendConfig.Spec.ConnectionDraining.DrainingTimeoutSec, svcPortKey)
+		logger.V(6).Info("Backend connection draining is configured for service port", "backendConnectionDrainingSeconds", sp.BackendConfig.Spec.ConnectionDraining.DrainingTimeoutSec, "servicePortKey", svcPortKey)
 		features = append(features, backendConnectionDraining)
 	}
 	if sp.BackendConfig.Spec.CustomRequestHeaders != nil {
-		klog.V(6).Infof("Custom request headers configured for service port %s: %v", svcPortKey, sp.BackendConfig.Spec.CustomRequestHeaders.Headers)
+		logger.V(6).Info("Custom request headers configured for service port", "servicePortKey", svcPortKey, "requestHeaders", sp.BackendConfig.Spec.CustomRequestHeaders.Headers)
 		features = append(features, customRequestHeaders)
 	}
 	if sp.BackendConfig.Spec.HealthCheck != nil {
-		klog.V(6).Infof("Custom health check configured for service port %s: %v", svcPortKey, sp.BackendConfig.Spec.HealthCheck)
+		logger.V(6).Info("Custom health check configured for service port", "servicePortKey", svcPortKey, "healthCheck", sp.BackendConfig.Spec.HealthCheck)
 		features = append(features, customHealthChecks)
 	}
 
-	klog.V(4).Infof("Features for Service port %s: %v", svcPortKey, features)
+	logger.V(4).Info("Features for Service port", "servicePortKey", svcPortKey, "features", features)
 	return features
 }

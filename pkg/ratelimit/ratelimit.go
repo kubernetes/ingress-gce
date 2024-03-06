@@ -43,6 +43,8 @@ type GCERateLimiter struct {
 	// Minimum polling interval for getting operations. Underlying operations rate limiter
 	// may increase the time.
 	operationPollInterval time.Duration
+
+	logger klog.Logger
 }
 
 // strategyRateLimiter implements cloud.RateLimiter and uses underlying throttling.Strategy
@@ -82,7 +84,8 @@ func init() {
 // NewGCERateLimiter parses the list of rate limiting specs passed in and
 // returns a properly configured cloud.RateLimiter implementation.
 // Expected format of specs: {"[version].[service].[operation],[type],[param1],[param2],..", "..."}
-func NewGCERateLimiter(specs []string, operationPollInterval time.Duration) (*GCERateLimiter, error) {
+func NewGCERateLimiter(specs []string, operationPollInterval time.Duration, logger klog.Logger) (*GCERateLimiter, error) {
+	logger = logger.WithName("GCERateLimiter")
 	rateLimitImpls := make(map[cloud.RateLimitKey]flowcontrol.RateLimiter)
 	strategyRLs := make(map[cloud.RateLimitKey]*strategyRateLimiter)
 	// Within each specification, split on comma to get the operation,
@@ -107,14 +110,14 @@ func NewGCERateLimiter(specs []string, operationPollInterval time.Duration) (*GC
 				strategy: impl,
 				clock:    clock.RealClock{},
 			}
-			klog.Infof("Configured strategy for: %v", key)
+			logger.Info("Configured strategy for API key", "apiKey", key)
 		} else {
-			impl, err := constructRateLimitImpl(params[1:])
+			impl, err := constructRateLimitImpl(params[1:], logger)
 			if err != nil {
 				return nil, err
 			}
 			rateLimitImpls[key] = impl
-			klog.Infof("Configured rate limiting for: %v, scale = %f", key, flags.F.GCERateLimitScale)
+			logger.Info("Configured rate limiting for API key with scale", "apiKey", key, "scale", flags.F.GCERateLimitScale)
 		}
 	}
 	if len(rateLimitImpls) == 0 && len(strategyRLs) == 0 {
@@ -124,6 +127,7 @@ func NewGCERateLimiter(specs []string, operationPollInterval time.Duration) (*GC
 		rateLimitImpls:        rateLimitImpls,
 		strategyRLs:           strategyRLs,
 		operationPollInterval: operationPollInterval,
+		logger:                logger,
 	}, nil
 }
 
@@ -216,7 +220,7 @@ func constructRateLimitKey(param string) (cloud.RateLimitKey, error) {
 
 // constructRateLimitImpl parses the slice and returns a flowcontrol.RateLimiter
 // Expected format is [type],[param1],[param2],...
-func constructRateLimitImpl(params []string) (flowcontrol.RateLimiter, error) {
+func constructRateLimitImpl(params []string, logger klog.Logger) (flowcontrol.RateLimiter, error) {
 	// For now, only the "qps" type is supported.
 	rlType := params[0]
 	implArgs := params[1:]
@@ -233,13 +237,13 @@ func constructRateLimitImpl(params []string) (flowcontrol.RateLimiter, error) {
 			return nil, fmt.Errorf("invalid argument for rate limiter type %v, expected %v to be an int", rlType, implArgs[1])
 		}
 		if flags.F.GCERateLimitScale <= 1.0 {
-			klog.Infof("GCERateLimitScale <= 1.0 (is %f), not adjusting rate limits", flags.F.GCERateLimitScale)
+			logger.Info("GCERateLimitScale <= 1.0, not adjusting rate limits", "scale", flags.F.GCERateLimitScale)
 		} else {
 			oldQPS := qps
 			oldBurst := burst
 			qps = qps * flags.F.GCERateLimitScale
 			burst = int(float64(burst) * flags.F.GCERateLimitScale)
-			klog.Infof("Adjusted QPS rate limit according to scale: qps was %f, now %f; burst was %d, now %d", oldQPS, qps, oldBurst, burst)
+			logger.Info("Adjusted QPS rate limit according to scale", "oldQps", oldQPS, "adjustedQps", qps, "oldBurst", oldBurst, "adjustedBurst", burst)
 		}
 		tokenBucket := flowcontrol.NewTokenBucketRateLimiter(float32(qps), burst)
 		return tokenBucket, nil

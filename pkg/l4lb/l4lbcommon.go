@@ -17,6 +17,7 @@ limitations under the License.
 package l4lb
 
 import (
+	"fmt"
 	"reflect"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -64,57 +65,57 @@ func mergeAnnotations(existing, lbAnnotations map[string]string, keysToRemove []
 }
 
 // updateL4ResourcesAnnotations checks if new annotations should be added to service and patch service metadata if needed.
-func updateL4ResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBAnnotations map[string]string) error {
-	klog.V(3).Infof("Updating annotations of service %s/%s", svc.Namespace, svc.Name)
+func updateL4ResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBAnnotations map[string]string, logger klog.Logger) error {
+	logger.V(3).Info("Updating annotations of service", "serviceKey", klog.KRef(svc.Namespace, svc.Name))
 	newObjectMeta := computeNewAnnotationsIfNeeded(svc, newL4LBAnnotations, loadbalancers.L4ResourceAnnotationKeys)
 	if newObjectMeta == nil {
-		klog.V(3).Infof("Service annotations not changed, skipping patch for service %s/%s", svc.Namespace, svc.Name)
+		logger.V(3).Info("Service annotations not changed, skipping patch for service", "serviceKey", klog.KRef(svc.Namespace, svc.Name))
 		return nil
 	}
-	klog.V(3).Infof("Patching annotations of service %v/%v", svc.Namespace, svc.Name)
+	logger.V(3).Info("Patching annotations of service", "serviceKey", klog.KRef(svc.Namespace, svc.Name))
 	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
 }
 
 // updateL4DualStackResourcesAnnotations checks if new annotations should be added to dual-stack service and patch service metadata if needed.
-func updateL4DualStackResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBAnnotations map[string]string) error {
+func updateL4DualStackResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBAnnotations map[string]string, logger klog.Logger) error {
 	newObjectMeta := computeNewAnnotationsIfNeeded(svc, newL4LBAnnotations, loadbalancers.L4DualStackResourceAnnotationKeys)
 	if newObjectMeta == nil {
 		return nil
 	}
-	klog.V(3).Infof("Patching annotations of service %v/%v", svc.Namespace, svc.Name)
+	logger.V(3).Info("Patching annotations of service", "serviceKey", klog.KRef(svc.Namespace, svc.Name))
 	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
 }
 
-func deleteAnnotation(ctx *context.ControllerContext, svc *v1.Service, annotationKey string) error {
+func deleteAnnotation(ctx *context.ControllerContext, svc *v1.Service, annotationKey string, logger klog.Logger) error {
 	newObjectMeta := svc.ObjectMeta.DeepCopy()
 	if _, ok := newObjectMeta.Annotations[annotationKey]; !ok {
 		return nil
 	}
 
-	klog.V(3).Infof("Removing annotation %s from service %v/%v", annotationKey, svc.Namespace, svc.Name)
+	logger.V(3).Info("Removing annotation from service", "annotationKey", annotationKey, "serviceKey", klog.KRef(svc.Namespace, svc.Name))
 	delete(newObjectMeta.Annotations, annotationKey)
 	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
 }
 
 // updateServiceStatus this faction checks if LoadBalancer status changed and patch service if needed.
-func updateServiceStatus(ctx *context.ControllerContext, svc *v1.Service, newStatus *v1.LoadBalancerStatus) error {
-	klog.V(2).Infof("Updating service status, service: %s/%s, new status: %+v", svc.Namespace, svc.Name, newStatus)
+func updateServiceStatus(ctx *context.ControllerContext, svc *v1.Service, newStatus *v1.LoadBalancerStatus, logger klog.Logger) error {
+	logger.V(2).Info("Updating service status", "serviceKey", klog.KRef(svc.Namespace, svc.Name), "newStatus", fmt.Sprintf("%+v", newStatus))
 	if helpers.LoadBalancerStatusEqual(&svc.Status.LoadBalancer, newStatus) {
-		klog.V(2).Infof("New and old statuses are equal, skipping patch. Service: %s/%s", svc.Namespace, svc.Name)
+		logger.V(2).Info("New and old statuses are equal, skipping patch", "serviceKey", klog.KRef(svc.Namespace, svc.Name))
 		return nil
 	}
 	return patch.PatchServiceLoadBalancerStatus(ctx.KubeClient.CoreV1(), svc, *newStatus)
 }
 
 // isHealthCheckDeleted checks if given health check exists in GCE
-func isHealthCheckDeleted(cloud *gce.Cloud, hcName string) bool {
-	_, err := composite.GetHealthCheck(cloud, meta.GlobalKey(hcName), meta.VersionGA, klog.TODO())
+func isHealthCheckDeleted(cloud *gce.Cloud, hcName string, logger klog.Logger) bool {
+	_, err := composite.GetHealthCheck(cloud, meta.GlobalKey(hcName), meta.VersionGA, logger)
 	return utils.IsNotFoundError(err)
 }
 
-func skipUserError(err error) error {
+func skipUserError(err error, logger klog.Logger) error {
 	if utils.IsUserError(err) {
-		klog.Warning("Sync failed with user-caused error: %v", err)
+		logger.Info("Sync failed with user-caused error", "err", err)
 		return nil
 	}
 	return err

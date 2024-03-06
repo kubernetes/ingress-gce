@@ -65,18 +65,18 @@ func newTestRegionalIgLinker(fakeGCE *gce.Cloud, backendPool *Backends, l4Namer 
 		BasePath:   utils.GetBasePath(fakeGCE),
 		ZoneGetter: fakeZoneGetter,
 		MaxIGSize:  1000,
-	})
+	}, klog.TODO())
 
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockRegionBackendServices.UpdateHook = mock.UpdateRegionBackendServiceHook
 
-	return &RegionalInstanceGroupLinker{fakeInstancePool, backendPool}
+	return &RegionalInstanceGroupLinker{fakeInstancePool, backendPool, klog.TODO()}
 }
 
 func TestRegionalLink(t *testing.T) {
 	t.Parallel()
 	fakeGCE := gce.NewFakeGCECloud(linkerTestClusterValues())
 	clusterID, _ := fakeGCE.ClusterID.GetID()
-	l4Namer := namer.NewL4Namer("uid1", namer.NewNamer(clusterID, ""))
+	l4Namer := namer.NewL4Namer("uid1", namer.NewNamer(clusterID, "", klog.TODO()))
 	sp := utils.ServicePort{NodePort: 8080, BackendNamer: l4Namer}
 	fakeBackendPool := NewPool(fakeGCE, l4Namer)
 	linker := newTestRegionalIgLinker(fakeGCE, fakeBackendPool, l4Namer)
@@ -114,7 +114,7 @@ func TestRegionalUpdateLink(t *testing.T) {
 	t.Parallel()
 	fakeGCE := gce.NewFakeGCECloud(linkerTestClusterValues())
 	clusterID, _ := fakeGCE.ClusterID.GetID()
-	l4Namer := namer.NewL4Namer("uid1", namer.NewNamer(clusterID, ""))
+	l4Namer := namer.NewL4Namer("uid1", namer.NewNamer(clusterID, "", klog.TODO()))
 	sp := utils.ServicePort{NodePort: 8080, BackendNamer: l4Namer}
 	fakeBackendPool := NewPool(fakeGCE, l4Namer)
 	linker := newTestRegionalIgLinker(fakeGCE, fakeBackendPool, l4Namer)
@@ -150,7 +150,7 @@ func TestRegionalUpdateLinkWithNewBackends(t *testing.T) {
 	t.Parallel()
 	fakeGCE := gce.NewFakeGCECloud(linkerTestClusterValues())
 	clusterID, _ := fakeGCE.ClusterID.GetID()
-	l4Namer := namer.NewL4Namer("uid1", namer.NewNamer(clusterID, ""))
+	l4Namer := namer.NewL4Namer("uid1", namer.NewNamer(clusterID, "", klog.TODO()))
 	sp := utils.ServicePort{NodePort: 8080, BackendNamer: l4Namer}
 	fakeBackendPool := NewPool(fakeGCE, l4Namer)
 	linker := newTestRegionalIgLinker(fakeGCE, fakeBackendPool, l4Namer)
@@ -194,7 +194,7 @@ func TestRegionalUpdateLinkWithRemovedBackends(t *testing.T) {
 	t.Parallel()
 	fakeGCE := gce.NewFakeGCECloud(linkerTestClusterValues())
 	clusterID, _ := fakeGCE.ClusterID.GetID()
-	l4Namer := namer.NewL4Namer("uid1", namer.NewNamer(clusterID, ""))
+	l4Namer := namer.NewL4Namer("uid1", namer.NewNamer(clusterID, "", klog.TODO()))
 	sp := utils.ServicePort{NodePort: 8080, BackendNamer: l4Namer}
 	fakeBackendPool := NewPool(fakeGCE, l4Namer)
 	linker := newTestRegionalIgLinker(fakeGCE, fakeBackendPool, l4Namer)

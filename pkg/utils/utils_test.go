@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"k8s.io/klog/v2"
 	"net/http"
 	"reflect"
 	"testing"
@@ -634,11 +635,11 @@ func TestGetNodeConditionPredicate(t *testing.T) {
 	pred := CandidateNodesPredicate
 	unreadyPred := CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes
 	for _, test := range tests {
-		accept := pred(&test.node)
+		accept := pred(&test.node, klog.TODO())
 		if accept != test.expectAccept {
 			t.Errorf("Test failed for %s, got %v, want %v", test.name, accept, test.expectAccept)
 		}
-		unreadyAccept := unreadyPred(&test.node)
+		unreadyAccept := unreadyPred(&test.node, klog.TODO())
 		if unreadyAccept != test.expectAcceptByUnreadyNodePredicate {
 			t.Errorf("Test failed for unreadyNodesPredicate in case %s, got %v, want %v", test.name, unreadyAccept, test.expectAcceptByUnreadyNodePredicate)
 		}
@@ -1062,7 +1063,7 @@ func TestGetNodePrimaryIP(t *testing.T) {
 			},
 		},
 	}
-	out := GetNodePrimaryIP(node)
+	out := GetNodePrimaryIP(node, klog.TODO())
 	if out != internalIP {
 		t.Errorf("Expected Primary IP %s, got %s", internalIP, out)
 	}
@@ -1077,7 +1078,7 @@ func TestGetNodePrimaryIP(t *testing.T) {
 			},
 		},
 	}
-	out = GetNodePrimaryIP(node)
+	out = GetNodePrimaryIP(node, klog.TODO())
 	if out != "" {
 		t.Errorf("Expected Primary IP '', got %s", out)
 	}

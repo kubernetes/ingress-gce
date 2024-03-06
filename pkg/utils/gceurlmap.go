@@ -32,6 +32,8 @@ type GCEURLMap struct {
 	HostRules []HostRule
 	// hosts is a map of existing hosts.
 	hosts map[string]bool
+
+	logger klog.Logger
 }
 
 // HostRule encapsulates the Hostname and its list of PathRules.
@@ -47,8 +49,8 @@ type PathRule struct {
 }
 
 // NewGCEURLMap returns an empty GCEURLMap
-func NewGCEURLMap() *GCEURLMap {
-	return &GCEURLMap{hosts: make(map[string]bool)}
+func NewGCEURLMap(logger klog.Logger) *GCEURLMap {
+	return &GCEURLMap{hosts: make(map[string]bool), logger: logger.WithName("GCEURLMap")}
 }
 
 // EqualMapping returns true if both maps point to the same ServicePortIDs.
@@ -101,7 +103,7 @@ func (g *GCEURLMap) PutPathRulesForHost(hostname string, pathRules []PathRule) {
 		pathRule := pathRules[x]
 
 		if seen[pathRule.Path] {
-			klog.V(4).Infof("Path %q was duplicated", pathRule.Path)
+			g.logger.V(4).Info("Path was duplicated", "path", pathRule.Path)
 			continue
 		} else {
 			seen[pathRule.Path] = true
@@ -116,7 +118,7 @@ func (g *GCEURLMap) PutPathRulesForHost(hostname string, pathRules []PathRule) {
 
 	_, exists := g.hosts[hostname]
 	if exists {
-		klog.V(4).Infof("Overwriting path rules for host %v", hostname)
+		g.logger.V(4).Info("Overwriting path rules for host", "host", hostname)
 		g.deleteHost(hostname)
 	}
 

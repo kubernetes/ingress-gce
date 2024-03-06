@@ -17,6 +17,7 @@ limitations under the License.
 package metrics
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -111,7 +112,7 @@ func (im *ControllerMetrics) DeleteL4NetLBServiceForLegacyMetric(svcKey string) 
 func (im *ControllerMetrics) computeL4ILBLegacyMetrics() map[feature]int {
 	im.Lock()
 	defer im.Unlock()
-	klog.V(4).Infof("Computing L4 ILB usage legacy metrics from service state map: %#v", im.l4ILBServiceLegacyMap)
+	im.logger.V(4).Info("Computing L4 ILB usage legacy metrics from service state map", "serviceStateMap", im.l4ILBServiceLegacyMap)
 	counts := map[feature]int{
 		l4ILBService:      0,
 		l4ILBGlobalAccess: 0,
@@ -122,7 +123,8 @@ func (im *ControllerMetrics) computeL4ILBLegacyMetrics() map[feature]int {
 	}
 
 	for key, state := range im.l4ILBServiceLegacyMap {
-		klog.V(6).Infof("ILB Service %s has EnabledGlobalAccess: %t, EnabledCustomSubnet: %t, InSuccess: %t", key, state.EnabledGlobalAccess, state.EnabledCustomSubnet, state.InSuccess)
+		im.logger.V(6).Info("Got ILB Service", "serviceKey", key, "enabledGlobalAccess", fmt.Sprintf("%t", state.EnabledGlobalAccess),
+			"enabledCustomSubnet", fmt.Sprintf("%t", state.EnabledCustomSubnet), "inSuccess", fmt.Sprintf("%t", state.InSuccess))
 		counts[l4ILBService]++
 		if !state.InSuccess {
 			if state.IsUserError {
@@ -141,7 +143,7 @@ func (im *ControllerMetrics) computeL4ILBLegacyMetrics() map[feature]int {
 			counts[l4ILBCustomSubnet]++
 		}
 	}
-	klog.V(4).Info("L4 ILB usage legacy metrics computed.")
+	im.logger.V(4).Info("L4 ILB usage legacy metrics computed")
 	return counts
 }
 
@@ -149,11 +151,11 @@ func (im *ControllerMetrics) computeL4ILBLegacyMetrics() map[feature]int {
 func (im *ControllerMetrics) computeL4NetLBLegacyMetrics() netLBFeatureCount {
 	im.Lock()
 	defer im.Unlock()
-	klog.V(4).Infof("Computing L4 NetLB usage legacy metrics from service state map: %#v", im.l4NetLBServiceLegacyMap)
+	im.logger.V(4).Info("Computing L4 NetLB usage legacy metrics from service state map", "serviceStateMap", im.l4NetLBServiceLegacyMap)
 	var counts netLBFeatureCount
 
 	for key, state := range im.l4NetLBServiceLegacyMap {
-		klog.V(6).Infof("NetLB Service %s has metrics %+v", key, state)
+		im.logger.V(6).Info("NetLB Service", "serviceKey", key, "state", fmt.Sprintf("%+v", state))
 		counts.service++
 		if state.IsUserError {
 			counts.inUserError++
@@ -175,20 +177,20 @@ func (im *ControllerMetrics) computeL4NetLBLegacyMetrics() netLBFeatureCount {
 			counts.premiumNetworkTier++
 		}
 	}
-	klog.V(4).Info("L4 NetLB usage legacy metrics computed.")
+	im.logger.V(4).Info("L4 NetLB usage legacy metrics computed")
 	return counts
 }
 
 func (im *ControllerMetrics) exportL4LegacyMetrics() {
 	ilbCount := im.computeL4ILBLegacyMetrics()
-	klog.V(3).Infof("Exporting L4 ILB usage legacy metrics: %#v", ilbCount)
+	im.logger.V(3).Info("Exporting L4 ILB usage legacy metrics", "ilbCount", ilbCount)
 	for feature, count := range ilbCount {
 		l4ILBLegacyCount.With(prometheus.Labels{label: feature.String()}).Set(float64(count))
 	}
-	klog.V(3).Infof("L4 ILB usage legacy metrics exported.")
+	im.logger.V(3).Info("L4 ILB usage legacy metrics exported")
 
 	netlbCount := im.computeL4NetLBLegacyMetrics()
-	klog.V(3).Infof("Exporting L4 NetLB usage legacy metrics: %#v", netlbCount)
+	im.logger.V(3).Info("Exporting L4 NetLB usage legacy metrics", "netLBCount", netlbCount)
 	netlbCount.record()
-	klog.V(3).Infof("L4 NetLB usage legacy metrics exported.")
+	im.logger.V(3).Info("L4 NetLB usage legacy metrics exported")
 }

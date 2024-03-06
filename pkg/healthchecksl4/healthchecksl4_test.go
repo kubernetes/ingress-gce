@@ -17,6 +17,7 @@ limitations under the License.
 package healthchecksl4
 
 import (
+	"k8s.io/klog/v2"
 	"testing"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -261,7 +262,7 @@ func TestMergeHealthChecks(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			// healthcheck intervals and thresholds are common for Global and Regional healthchecks. Hence testing only Global case.
-			wantHC := newL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, tc.shared, "/", 12345, utils.ILB, meta.Global, "")
+			wantHC := newL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, tc.shared, "/", 12345, utils.ILB, meta.Global, "", klog.TODO())
 			hc := &composite.HealthCheck{
 				CheckIntervalSec:   tc.checkIntervalSec,
 				TimeoutSec:         tc.timeoutSec,
@@ -361,8 +362,8 @@ func TestCompareHealthChecks(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			// healthcheck intervals and thresholds are common for Global and Regional healthchecks. Hence testing only Global case.
-			hc := newL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, false, "/", 12345, utils.ILB, meta.Global, "")
-			wantHC := newL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, false, "/", 12345, utils.ILB, meta.Global, "")
+			hc := newL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, false, "/", 12345, utils.ILB, meta.Global, "", klog.TODO())
+			wantHC := newL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, false, "/", 12345, utils.ILB, meta.Global, "", klog.TODO())
 			if tc.modifier != nil {
 				tc.modifier(hc)
 			}
@@ -400,7 +401,7 @@ func TestSharedHealthChecks(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			// healthcheck intervals and thresholds are common for Global and Regional healthchecks. Hence testing only Global case.
-			gotHC := newL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, tc.shared, "/", 12345, utils.ILB, meta.Global, "")
+			gotHC := newL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, tc.shared, "/", 12345, utils.ILB, meta.Global, "", klog.TODO())
 			if gotHC.CheckIntervalSec != tc.wantCheckIntervalSec {
 				t.Errorf("gotHC.CheckIntervalSec = %d; want %d", gotHC.CheckIntervalSec, tc.wantCheckIntervalSec)
 			}
@@ -422,7 +423,7 @@ func TestNewHealthCheck(t *testing.T) {
 		{meta.Global, ""},
 		{meta.Regional, "us-central1"},
 	} {
-		hc := newL4HealthCheck("hc", namespaceName, false, "/", 12345, utils.ILB, v.scope, v.region)
+		hc := newL4HealthCheck("hc", namespaceName, false, "/", 12345, utils.ILB, v.scope, v.region, klog.TODO())
 		if hc.Region != v.region {
 			t.Errorf("HealthCheck Region mismatch! %v != %v", hc.Region, v.region)
 		}

@@ -53,7 +53,7 @@ import (
 )
 
 var (
-	testNamer         = namer_util.NewNamer("uid1", "fw1")
+	testNamer         = namer_util.NewNamer("uid1", "fw1", klog.TODO())
 	testSPs           = map[string]*utils.ServicePort{}
 	defaultBackendSvc = types.NamespacedName{Namespace: "system", Name: "default"}
 )

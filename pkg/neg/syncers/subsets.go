@@ -187,7 +187,7 @@ func getSubsetPerZone(nodesPerZone map[string][]*v1.Node, totalLimit int, svcID 
 			if !networkInfo.IsDefault {
 				ip = network.GetNodeIPForNetwork(node, networkInfo.K8sNetwork)
 			} else {
-				ip = utils.GetNodePrimaryIP(node)
+				ip = utils.GetNodePrimaryIP(node, logger)
 			}
 			result[zone.Name].Insert(negtypes.NetworkEndpoint{Node: node.Name, IP: ip})
 		}

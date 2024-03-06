@@ -11,7 +11,7 @@ import (
 
 // doesServiceReferenceBackendConfig returns true if the passed in Service directly references
 // the passed in BackendConfig.
-func doesServiceReferenceBackendConfig(svc *api_v1.Service, beConfig *backendconfigv1.BackendConfig) bool {
+func doesServiceReferenceBackendConfig(svc *api_v1.Service, beConfig *backendconfigv1.BackendConfig, logger klog.Logger) bool {
 	if svc.Namespace != beConfig.Namespace {
 		return false
 	}
@@ -20,7 +20,7 @@ func doesServiceReferenceBackendConfig(svc *api_v1.Service, beConfig *backendcon
 		// If the user did not provide the annotation at all, then we
 		// do not want to log an error.
 		if err != annotations.ErrBackendConfigAnnotationMissing {
-			klog.Errorf("Failed to get BackendConfig names from service %s/%s: %v", svc.Namespace, svc.Name, err)
+			logger.Error(err, "Failed to get BackendConfig names from service", "serviceKey", klog.KRef(svc.Namespace, svc.Name))
 		}
 		return false
 	}

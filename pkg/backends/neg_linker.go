@@ -36,6 +36,8 @@ type negLinker struct {
 	negGetter    NEGGetter
 	cloud        *gce.Cloud
 	svcNegLister cache.Indexer
+
+	logger klog.Logger
 }
 
 // negLinker is a Linker
@@ -46,12 +48,14 @@ func NewNEGLinker(
 	negGetter NEGGetter,
 	cloud *gce.Cloud,
 	svcNegLister cache.Indexer,
+	logger klog.Logger,
 ) Linker {
 	return &negLinker{
 		backendPool:  backendPool,
 		negGetter:    negGetter,
 		cloud:        cloud,
 		svcNegLister: svcNegLister,
+		logger:       logger.WithName("NEGLinker"),
 	}
 }
 
@@ -70,10 +74,10 @@ func (nl *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 
 		negUrl := ""
 		svcNegKey := fmt.Sprintf("%s/%s", sp.ID.Service.Namespace, negName)
-		negUrl, ok := getNegUrlFromSvcneg(svcNegKey, group.Zone, nl.svcNegLister)
+		negUrl, ok := getNegUrlFromSvcneg(svcNegKey, group.Zone, nl.svcNegLister, nl.logger)
 		if !ok {
-			klog.V(4).Infof("Falling back to use NEG API to retrieve NEG url for NEG %q", negName)
-			neg, err := nl.negGetter.GetNetworkEndpointGroup(negName, group.Zone, version, klog.TODO())
+			nl.logger.V(4).Info("Falling back to use NEG API to retrieve NEG url for NEG", "negName", negName)
+			neg, err := nl.negGetter.GetNetworkEndpointGroup(negName, group.Zone, version, nl.logger)
 			if err != nil {
 				return err
 			}
@@ -89,7 +93,7 @@ func (nl *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 	if err != nil {
 		return err
 	}
-	backendService, err := composite.GetBackendService(nl.cloud, key, version, klog.TODO())
+	backendService, err := composite.GetBackendService(nl.cloud, key, version, nl.logger)
 	if err != nil {
 		return err
 	}
@@ -98,20 +102,20 @@ func (nl *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 	// merge backends
 	mergedBackend, err := mergeBackends(backendService.Backends, newBackends)
 	if err != nil {
-		klog.Errorf("Failed to merge backends from %#v and %#v due to %v", backendService.Backends, newBackends, err)
-		klog.Infof("Fall back to ensure backend service with newBackends.")
+		nl.logger.Error(err, fmt.Sprintf("Failed to merge backends from %#v and %#v", backendService.Backends, newBackends))
+		nl.logger.Info("Fall back to ensure backend service with newBackends.")
 		mergedBackend = newBackends
 	}
 
-	diff := diffBackends(backendService.Backends, mergedBackend)
+	diff := diffBackends(backendService.Backends, mergedBackend, nl.logger)
 	if diff.isEqual() {
-		klog.V(2).Infof("No changes in backends for service port %s", sp.ID)
+		nl.logger.V(2).Info("No changes in backends for service port", "servicePort", sp.ID)
 		return nil
 	}
-	klog.V(2).Infof("Backends changed for service port %s, removing: %s, adding: %s, changed: %s", sp.ID, diff.toRemove(), diff.toAdd(), diff.changed)
+	nl.logger.V(2).Info("Backends changed for service port", "servicePort", sp.ID, "removing", diff.toRemove(), "adding", diff.toAdd(), "changed", diff.changed)
 
 	backendService.Backends = mergedBackend
-	return composite.UpdateBackendService(nl.cloud, key, backendService, klog.TODO())
+	return composite.UpdateBackendService(nl.cloud, key, backendService, nl.logger)
 }
 
 type backendDiff struct {
@@ -158,7 +162,7 @@ func mergeBackends(old, new []*composite.Backend) ([]*composite.Backend, error) 
 	return ret, nil
 }
 
-func diffBackends(old, new []*composite.Backend) *backendDiff {
+func diffBackends(old, new []*composite.Backend, logger klog.Logger) *backendDiff {
 	d := &backendDiff{
 		old:     sets.NewString(),
 		new:     sets.NewString(),
@@ -167,12 +171,12 @@ func diffBackends(old, new []*composite.Backend) *backendDiff {
 
 	oldMap := map[string]*composite.Backend{}
 	for _, be := range old {
-		beGroup := relativeResourceNameWithDefault(be.Group)
+		beGroup := relativeResourceNameWithDefault(be.Group, logger)
 		d.old.Insert(beGroup)
 		oldMap[beGroup] = be
 	}
 	for _, be := range new {
-		beGroup := relativeResourceNameWithDefault(be.Group)
+		beGroup := relativeResourceNameWithDefault(be.Group, logger)
 		d.new.Insert(beGroup)
 
 		if oldBe, ok := oldMap[beGroup]; ok {
@@ -243,10 +247,10 @@ func getNegType(sp utils.ServicePort) types.NetworkEndpointType {
 }
 
 // getNegUrlFromSvcneg return NEG url from svcneg status if found
-func getNegUrlFromSvcneg(key string, zone string, svcNegLister cache.Indexer) (string, bool) {
+func getNegUrlFromSvcneg(key string, zone string, svcNegLister cache.Indexer, logger klog.Logger) (string, bool) {
 	obj, exists, err := svcNegLister.GetByKey(key)
 	if err != nil {
-		klog.Errorf("Failed to retrieve svcneg %s from cache: %v", key, err)
+		logger.Error(err, "Failed to retrieve svcneg from cache", "svcneg", key)
 		return "", false
 	}
 	if !exists {
@@ -257,7 +261,7 @@ func getNegUrlFromSvcneg(key string, zone string, svcNegLister cache.Indexer) (s
 	for _, negRef := range svcneg.Status.NetworkEndpointGroups {
 		key, err := cloud.ParseResourceURL(negRef.SelfLink)
 		if err != nil {
-			klog.Errorf("Failed to parse NEG SelfLink from svcneg %v: %v", svcneg, err)
+			logger.Error(err, "Failed to parse NEG SelfLink from svcneg", "svcneg", svcneg)
 			continue
 		}
 		if key.Key.Zone == zone {
@@ -270,10 +274,10 @@ func getNegUrlFromSvcneg(key string, zone string, svcNegLister cache.Indexer) (s
 // relativeResourceNameWithDefault will attempt to return a RelativeResourceName
 // for the provided `selfLink`. In case of a faiure, it will return the
 // `selfLink` itself.
-func relativeResourceNameWithDefault(selfLink string) string {
+func relativeResourceNameWithDefault(selfLink string, logger klog.Logger) string {
 	result, err := utils.RelativeResourceName(selfLink)
 	if err != nil {
-		klog.Warningf("Unable to parse resource name from selfLink %q", selfLink)
+		logger.Info("Unable to parse resource name from selfLink", "selfLink", selfLink)
 		return selfLink
 	}
 	return result

@@ -27,7 +27,7 @@ import (
 // EnsureTimeout reads the TimeoutSec configuration specified in the ServicePort.BackendConfig
 // and applies it to the BackendService. It returns true if there were existing
 // settings on the BackendService that were overwritten.
-func EnsureTimeout(sp utils.ServicePort, be *composite.BackendService) bool {
+func EnsureTimeout(sp utils.ServicePort, be *composite.BackendService, logger klog.Logger) bool {
 	if sp.BackendConfig.Spec.TimeoutSec == nil {
 		return false
 	}
@@ -35,7 +35,7 @@ func EnsureTimeout(sp utils.ServicePort, be *composite.BackendService) bool {
 	applyTimeoutSettings(sp, beTemp)
 	if !reflect.DeepEqual(beTemp.TimeoutSec, be.TimeoutSec) {
 		applyTimeoutSettings(sp, be)
-		klog.V(2).Infof("Updated Timeout settings for service %v/%v.", sp.ID.Service.Namespace, sp.ID.Service.Name)
+		logger.V(2).Info("Updated Timeout settings for service", "serviceKey", klog.KRef(sp.ID.Service.Namespace, sp.ID.Service.Name))
 		return true
 	}
 	return false

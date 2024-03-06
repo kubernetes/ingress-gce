@@ -43,7 +43,7 @@ const (
 func (l4netlb *L4NetLB) ensureIPv6Resources(syncResult *L4NetLBSyncResult, nodeNames []string, bsLink string) {
 	ipv6fr, err := l4netlb.ensureIPv6ForwardingRule(bsLink)
 	if err != nil {
-		klog.Errorf("ensureIPv6Resources: Failed to create ipv6 forwarding rule - %v", err)
+		l4netlb.logger.Error(err, "ensureIPv6Resources: Failed to create ipv6 forwarding rule")
 		syncResult.GCEResourceInError = annotations.ForwardingRuleIPv6Resource
 		syncResult.Error = err
 		return
@@ -114,9 +114,9 @@ func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipAddress string, nodeNames []st
 	portRanges := utils.GetServicePortRanges(svcPorts)
 	protocol := utils.GetProtocol(svcPorts)
 
-	klog.V(2).Infof("Ensuring IPv6 nodes firewall %s for L4 NetLB Service %s/%s, ipAddress: %s, protocol: %s, len(nodeNames): %v, portRanges: %v", firewallName, l4netlb.Service.Namespace, l4netlb.Service.Name, ipAddress, protocol, len(nodeNames), portRanges)
+	l4netlb.logger.V(2).Info("Ensuring IPv6 nodes firewall for L4 NetLB Service", "firewallName", firewallName, "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name), "ipAddress", ipAddress, "protocol", protocol, "len(nodeNames)", len(nodeNames), "portRanges", portRanges)
 	defer func() {
-		klog.V(2).Infof("Finished ensuring IPv6 nodes firewall %s for L4 NetLB Service %s/%s, time taken: %v", l4netlb.Service.Namespace, l4netlb.Service.Name, firewallName, time.Since(start))
+		l4netlb.logger.V(2).Info("Finished ensuring IPv6 nodes firewall for L4 NetLB Service", "firewallName", firewallName, "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name), "timeTaken", time.Since(start))
 	}()
 
 	// ensure firewalls
@@ -137,9 +137,9 @@ func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipAddress string, nodeNames []st
 		Network:           l4netlb.networkInfo,
 	}
 
-	err = firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, &ipv6nodesFWRParams, l4netlb.cloud, l4netlb.recorder)
+	err = firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, &ipv6nodesFWRParams, l4netlb.cloud, l4netlb.recorder, l4netlb.logger)
 	if err != nil {
-		klog.Errorf("Failed to ensure ipv6 nodes firewall %s for L4 NetLB - %v", firewallName, err)
+		l4netlb.logger.Error(err, "Failed to ensure ipv6 nodes firewall for L4 NetLB", "firewallName", firewallName)
 		syncResult.GCEResourceInError = annotations.FirewallRuleIPv6Resource
 		syncResult.Error = err
 		return
@@ -151,14 +151,14 @@ func (l4netlb *L4NetLB) deleteIPv6ForwardingRule(syncResult *L4NetLBSyncResult) 
 	ipv6FrName := l4netlb.ipv6FRName()
 
 	start := time.Now()
-	klog.V(2).Infof("Deleting IPv6 forwarding rule %s for L4 NetLB Service %s/%s", ipv6FrName, l4netlb.Service.Namespace, l4netlb.Service.Name)
+	l4netlb.logger.V(2).Info("Deleting IPv6 forwarding rule for L4 NetLB Service", "forwardingRuleName", ipv6FrName, "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name))
 	defer func() {
-		klog.V(2).Infof("Finished deleting IPv6 forwarding rule %s for L4 NetLB Service %s/%s, time taken: %v", ipv6FrName, l4netlb.Service.Namespace, l4netlb.Service.Name, time.Since(start))
+		l4netlb.logger.V(2).Info("Finished deleting IPv6 forwarding rule for L4 NetLB Service", "forwardingRuleName", ipv6FrName, "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name), "timeTaken", time.Since(start))
 	}()
 
 	err := l4netlb.forwardingRules.Delete(ipv6FrName)
 	if err != nil {
-		klog.Errorf("Failed to delete ipv6 forwarding rule for external loadbalancer service %s, err %v", l4netlb.NamespacedName.String(), err)
+		l4netlb.logger.Error(err, "Failed to delete ipv6 forwarding rule for external loadbalancer service", "serviceKey", l4netlb.NamespacedName.String())
 		syncResult.Error = err
 		syncResult.GCEResourceInError = annotations.ForwardingRuleIPv6Resource
 	}
@@ -168,14 +168,14 @@ func (l4netlb *L4NetLB) deleteIPv6NodesFirewall(syncResult *L4NetLBSyncResult) {
 	ipv6FirewallName := l4netlb.namer.L4IPv6Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)
 
 	start := time.Now()
-	klog.V(2).Infof("Deleting IPv6 nodes firewall %s for L4 NetLB Service %s/%s", ipv6FirewallName, l4netlb.Service.Namespace, l4netlb.Service.Name)
+	l4netlb.logger.V(2).Info("Deleting IPv6 nodes firewall for L4 NetLB Service", "firewallName", ipv6FirewallName, "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name))
 	defer func() {
-		klog.V(2).Infof("Finished deleting IPv6 nodes firewall %s for L4 NetLB Service %s/%s, time taken: %v", ipv6FirewallName, l4netlb.Service.Namespace, l4netlb.Service.Name, time.Since(start))
+		l4netlb.logger.V(2).Info("Finished deleting IPv6 nodes firewall for L4 NetLB Service", "firewallName", ipv6FirewallName, "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name), "timeTaken", time.Since(start))
 	}()
 
 	err := l4netlb.deleteFirewall(ipv6FirewallName)
 	if err != nil {
-		klog.Errorf("Failed to delete ipv6 firewall rule for external loadbalancer service %s, err %v", l4netlb.NamespacedName.String(), err)
+		l4netlb.logger.Error(err, "Failed to delete ipv6 firewall rule for external loadbalancer service", "serviceKey", l4netlb.NamespacedName.String())
 		syncResult.GCEResourceInError = annotations.FirewallRuleIPv6Resource
 		syncResult.Error = err
 	}
@@ -215,7 +215,7 @@ func (l4netlb *L4NetLB) serviceSubnetHasExternalIPv6Range() error {
 	}
 	if !hasIPv6SubnetRange {
 		// We don't need to emit custom event, because errors are already emitted to the user as events.
-		klog.Infof("Subnet %s for IPv6 Service %s/%s does not have external IPv6 ranges", subnetName, l4netlb.Service.Namespace, l4netlb.Service.Name)
+		l4netlb.logger.Info("Subnet for IPv6 Service does not have external IPv6 ranges", "subnetName", subnetName, "serviceKey", klog.KRef(l4netlb.Service.Namespace, l4netlb.Service.Name))
 		return utils.NewUserError(
 			fmt.Errorf(
 				"subnet %s does not have external IPv6 ranges, required for an external IPv6 Service. You can specify an external IPv6 subnet using the \"%s\" annotation on the Service", subnetName, annotations.CustomSubnetAnnotationKey))

@@ -652,7 +652,7 @@ func TestReadinessGateEnabled(t *testing.T) {
 
 func TestFilterCommonPorts(t *testing.T) {
 	t.Parallel()
-	namer := namer_util.NewNamer(ClusterID, "")
+	namer := namer_util.NewNamer(ClusterID, "", klog.TODO())
 	kubeClient := fake.NewSimpleClientset()
 	manager, _ := NewTestSyncerManager(kubeClient)
 

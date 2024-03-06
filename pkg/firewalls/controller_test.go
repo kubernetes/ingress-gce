@@ -18,6 +18,7 @@ package firewalls
 
 import (
 	context2 "context"
+	"k8s.io/klog/v2"
 	"strconv"
 	"testing"
 	"time"
@@ -52,8 +53,8 @@ func newFirewallController() *FirewallController {
 		ResyncPeriod:          1 * time.Minute,
 		DefaultBackendSvcPort: test.DefaultBeSvcPort,
 	}
-	ctx := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, firewallClient, nil, nil, nil, nil, fakeGCE, defaultNamer, "" /*kubeSystemUID*/, ctxConfig)
-	fwc := NewFirewallController(ctx, []string{"30000-32767"}, false, false, true, make(chan struct{}))
+	ctx := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, firewallClient, nil, nil, nil, nil, fakeGCE, defaultNamer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
+	fwc := NewFirewallController(ctx, []string{"30000-32767"}, false, false, true, make(chan struct{}), klog.TODO())
 	fwc.hasSynced = func() bool { return true }
 
 	return fwc

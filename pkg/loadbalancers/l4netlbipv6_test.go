@@ -17,6 +17,7 @@ limitations under the License.
 package loadbalancers
 
 import (
+	"k8s.io/klog/v2"
 	"testing"
 
 	"k8s.io/apimachinery/pkg/types"
@@ -50,7 +51,7 @@ func TestIPv6FRName(t *testing.T) {
 			l4NetLBParams := &L4NetLBParams{
 				Service: svc,
 			}
-			l4NetLB := NewL4NetLB(l4NetLBParams)
+			l4NetLB := NewL4NetLB(l4NetLBParams, klog.TODO())
 
 			ipv6FRName := l4NetLB.ipv6FRName()
 			if ipv6FRName != tc.expectedIPv6FRName {
