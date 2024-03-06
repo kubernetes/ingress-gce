@@ -53,7 +53,7 @@ func (linker *RegionalInstanceGroupLinker) Link(sp utils.ServicePort, projectID 
 	// TODO(cheungdavid): Create regional ig linker logger that contains backendName,
 	// backendVersion, and backendScope before passing to backendPool.Get().
 	// See example in backendSyncer.ensureBackendService().
-	bs, err := linker.backendPool.Get(sp.BackendName(), meta.VersionGA, meta.Regional, klog.TODO())
+	bs, err := linker.backendPool.Get(sp.BackendName(), meta.VersionGA, meta.Regional, linker.logger)
 	if err != nil {
 		return err
 	}

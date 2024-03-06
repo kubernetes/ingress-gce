@@ -97,7 +97,7 @@ func (igl *instanceGroupLinker) Link(sp utils.ServicePort, groups []GroupKey) er
 	// TODO(cheungdavid): Create ig linker logger that contains backendName,
 	// backendVersion, and backendScope before passing to backendPool.Get().
 	// See example in backendSyncer.ensureBackendService().
-	be, err := igl.backendPool.Get(sp.BackendName(), meta.VersionGA, meta.Global, klog.TODO())
+	be, err := igl.backendPool.Get(sp.BackendName(), meta.VersionGA, meta.Global, igl.logger)
 	if err != nil {
 		return err
 	}
@@ -135,7 +135,7 @@ func (igl *instanceGroupLinker) Link(sp utils.ServicePort, groups []GroupKey) er
 		// TODO(cheungdavid): Create ig linker logger that contains backendName,
 		// backendVersion, and backendScope before passing to backendPool.Get().
 		// See example in backendSyncer.ensureBackendService().
-		if err := igl.backendPool.Update(be, klog.TODO()); err != nil {
+		if err := igl.backendPool.Update(be, igl.logger); err != nil {
 			if utils.IsHTTPErrorCode(err, http.StatusBadRequest) {
 				igl.logger.V(2).Info("Updating backend service backends with balancing mode failed, will try another mode", "balancingMode", bm, "err", err)
 				errs = append(errs, err.Error())

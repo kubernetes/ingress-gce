@@ -23,7 +23,6 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/klog/v2"
 )
 
 const SslCertificateMissing = "SslCertificateMissing"
@@ -103,7 +102,7 @@ func (l7 *L7) createSslCertificates(existingCerts, translatorCerts []*composite.
 			l7.logger.Error(err, "l7.CreateKey", "certName", translatorCert.Name)
 			return nil, err
 		}
-		err = composite.CreateSslCertificate(l7.cloud, key, translatorCert, klog.TODO())
+		err = composite.CreateSslCertificate(l7.cloud, key, translatorCert, l7.logger)
 		if err != nil {
 			l7.logger.Error(err, "Failed to create new sslCertificate for LB", "certName", translatorCert.Name, "l7", l7)
 			failedCerts = append(failedCerts, translatorCert.Name+" Error:"+err.Error())
@@ -112,7 +111,7 @@ func (l7 *L7) createSslCertificates(existingCerts, translatorCerts []*composite.
 		visitedCertMap[translatorCert.Name] = fmt.Sprintf("secret cert:%q", translatorCert.Certificate)
 
 		// Get SSLCert
-		cert, err := composite.GetSslCertificate(l7.cloud, key, translatorCert.Version, klog.TODO())
+		cert, err := composite.GetSslCertificate(l7.cloud, key, translatorCert.Version, l7.logger)
 		if err != nil {
 			l7.logger.Error(err, "GetSslCertificate", "key", key, "certVersion", translatorCert.Version)
 			return nil, err
@@ -154,7 +153,7 @@ func (l7 *L7) getIngressManagedSslCerts() ([]*composite.SslCertificate, error) {
 		return nil, err
 	}
 	version := l7.Versions().SslCertificate
-	certs, err := composite.ListSslCertificates(l7.cloud, key, version, klog.TODO())
+	certs, err := composite.ListSslCertificates(l7.cloud, key, version, l7.logger)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +186,7 @@ func (l7 *L7) getIngressManagedSslCerts() ([]*composite.SslCertificate, error) {
 			if err != nil {
 				return nil, err
 			}
-			cert, _ := composite.GetSslCertificate(l7.cloud, key, version, klog.TODO())
+			cert, _ := composite.GetSslCertificate(l7.cloud, key, version, l7.logger)
 			if cert != nil {
 				l7.logger.V(4).Info("Populating legacy ssl cert for l7", "certName", cert.Name, "l7", l7)
 				result = append(result, cert)
@@ -213,7 +212,7 @@ func (l7 *L7) deleteOldSSLCerts() {
 		}
 		l7.logger.V(3).Info("Cleaning up old SSL Certificate", "certName", cert.Name)
 		key, _ := l7.CreateKey(cert.Name)
-		if certErr := utils.IgnoreHTTPNotFound(composite.DeleteSslCertificate(l7.cloud, key, l7.Versions().SslCertificate, klog.TODO())); certErr != nil {
+		if certErr := utils.IgnoreHTTPNotFound(composite.DeleteSslCertificate(l7.cloud, key, l7.Versions().SslCertificate, l7.logger)); certErr != nil {
 			l7.logger.Error(certErr, "Old cert delete failed", "certName", cert.Name)
 		}
 	}
