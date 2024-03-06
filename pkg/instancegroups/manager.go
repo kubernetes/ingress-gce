@@ -85,7 +85,7 @@ func NewManager(config *ManagerConfig, logger klog.Logger) Manager {
 // all of which have the exact same named ports.
 func (m *manager) EnsureInstanceGroupsAndPorts(name string, ports []int64) (igs []*compute.InstanceGroup, err error) {
 	// Instance groups need to be created only in zones that have ready nodes.
-	zones, err := m.ZoneGetter.List(zonegetter.CandidateNodesFilter, klog.TODO())
+	zones, err := m.ZoneGetter.List(zonegetter.CandidateNodesFilter, m.logger)
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +167,7 @@ func (m *manager) ensureInstanceGroupAndPorts(name, zone string, ports []int64) 
 func (m *manager) DeleteInstanceGroup(name string) error {
 	var errs []error
 
-	zones, err := m.ZoneGetter.List(zonegetter.AllNodesFilter, klog.TODO())
+	zones, err := m.ZoneGetter.List(zonegetter.AllNodesFilter, m.logger)
 	if err != nil {
 		return err
 	}
@@ -196,7 +196,7 @@ func (m *manager) DeleteInstanceGroup(name string) error {
 func (m *manager) listIGInstances(name string) (sets.String, map[string]string, error) {
 	nodeNames := sets.NewString()
 	nodeZoneMap := make(map[string]string)
-	zones, err := m.ZoneGetter.List(zonegetter.AllNodesFilter, klog.TODO())
+	zones, err := m.ZoneGetter.List(zonegetter.AllNodesFilter, m.logger)
 	if err != nil {
 		return nodeNames, nodeZoneMap, err
 	}
@@ -234,7 +234,7 @@ func (m *manager) Get(name, zone string) (*compute.InstanceGroup, error) {
 func (m *manager) List() ([]string, error) {
 	var igs []*compute.InstanceGroup
 
-	zones, err := m.ZoneGetter.List(zonegetter.AllNodesFilter, klog.TODO())
+	zones, err := m.ZoneGetter.List(zonegetter.AllNodesFilter, m.logger)
 	if err != nil {
 		return nil, err
 	}
@@ -265,7 +265,7 @@ func (m *manager) List() ([]string, error) {
 func (m *manager) splitNodesByZone(names []string) map[string][]string {
 	nodesByZone := map[string][]string{}
 	for _, name := range names {
-		zone, err := m.ZoneGetter.ZoneForNode(name, klog.TODO())
+		zone, err := m.ZoneGetter.ZoneForNode(name, m.logger)
 		if err != nil {
 			m.logger.Error(err, "Failed to get zones for instance node, skipping", "name", name)
 			continue

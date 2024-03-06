@@ -24,7 +24,6 @@ import (
 	v1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/common/operator"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
 )
@@ -72,7 +71,7 @@ func (s *IngressSyncer) GC(ings []*v1.Ingress, currIng *v1.Ingress, frontendGCAl
 	var errs []error
 	switch frontendGCAlgorithm {
 	case utils.CleanupV2FrontendResources:
-		s.logger.V(3).Info("Using algorithm CleanupV2FrontendResources to GC frontend of ingress", "ingressKey", common.NamespacedName(currIng))
+		ingLogger.V(3).Info("Using algorithm CleanupV2FrontendResources to GC frontend of ingress")
 		lbErr = s.controller.GCv2LoadBalancer(currIng, scope)
 
 		defer func() {
@@ -82,10 +81,10 @@ func (s *IngressSyncer) GC(ings []*v1.Ingress, currIng *v1.Ingress, frontendGCAl
 			err = s.controller.EnsureDeleteV2Finalizer(currIng, ingLogger)
 		}()
 	case utils.CleanupV2FrontendResourcesScopeChange:
-		s.logger.V(3).Info("Using algorithm CleanupV2FrontendResourcesScopeChange to GC frontend of ingress", "ingressKey", common.NamespacedName(currIng))
+		ingLogger.V(3).Info("Using algorithm CleanupV2FrontendResourcesScopeChange to GC frontend of ingress")
 		lbErr = s.controller.GCv2LoadBalancer(currIng, scope)
 	case utils.CleanupV1FrontendResources:
-		s.logger.V(3).Info("Using algorithm CleanupV1FrontendResources to GC frontend of ingress", "ingressKey", common.NamespacedName(currIng))
+		ingLogger.V(3).Info("Using algorithm CleanupV1FrontendResources to GC frontend of ingress")
 		// Filter GCE ingresses that use v1 naming scheme.
 		v1Ingresses := operator.Ingresses(ings).Filter(func(ing *v1.Ingress) bool {
 			return namer.FrontendNamingScheme(ing, s.logger) == namer.V1NamingScheme
@@ -103,7 +102,7 @@ func (s *IngressSyncer) GC(ings []*v1.Ingress, currIng *v1.Ingress, frontendGCAl
 			err = s.controller.EnsureDeleteV1Finalizers(toCleanupV1.AsList(), ingLogger)
 		}()
 	case utils.NoCleanUpNeeded:
-		s.logger.V(3).Info("Using algorithm NoCleanUpNeeded to GC frontend of ingress", "ingressKey", common.NamespacedName(currIng))
+		ingLogger.V(3).Info("Using algorithm NoCleanUpNeeded to GC frontend of ingress")
 	default:
 		lbErr = fmt.Errorf("unexpected frontend GC algorithm %v", frontendGCAlgorithm)
 	}

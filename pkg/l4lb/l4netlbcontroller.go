@@ -581,7 +581,7 @@ func (lc *L4NetLBController) ensureBackendLinking(service *v1.Service, linkType 
 		lc.logger.V(2).Info("Finished linking backends to backend service for k8s service", "serviceKey", klog.KRef(service.Namespace, service.Name), "timeTaken", time.Since(start))
 	}()
 
-	zones, err := lc.zoneGetter.List(zonegetter.CandidateNodesFilter, klog.TODO())
+	zones, err := lc.zoneGetter.List(zonegetter.CandidateNodesFilter, lc.logger)
 	if err != nil {
 		return err
 	}

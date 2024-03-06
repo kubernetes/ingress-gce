@@ -166,7 +166,7 @@ func (l4 *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4ILBSyncR
 	// TODO(cheungdavid): Create backend logger that contains backendName,
 	// backendVersion, and backendScope before passing to backendPool.Delete().
 	// See example in backendSyncer.gc().
-	err := utils.IgnoreHTTPNotFound(l4.backendPool.Delete(bsName, meta.VersionGA, meta.Regional, klog.TODO()))
+	err := utils.IgnoreHTTPNotFound(l4.backendPool.Delete(bsName, meta.VersionGA, meta.Regional, l4.logger))
 	if err != nil {
 		l4.logger.Error(err, "Failed to delete backends for internal loadbalancer service", "serviceKey", l4.NamespacedName.String())
 		result.GCEResourceInError = annotations.BackendServiceResource
@@ -375,7 +375,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	// TODO(cheungdavid): Create backend logger that contains backendName,
 	// backendVersion, and backendScope before passing to backendPool.Get().
 	// See example in backendSyncer.ensureBackendService().
-	existingBS, err := l4.backendPool.Get(bsName, meta.VersionGA, l4.scope, klog.TODO())
+	existingBS, err := l4.backendPool.Get(bsName, meta.VersionGA, l4.scope, l4.logger)
 	if utils.IgnoreHTTPNotFound(err) != nil {
 		l4.logger.Error(err, "Failed to lookup existing backend service, ignoring err")
 	}
@@ -475,7 +475,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	// TODO(cheungdavid): Create backend logger that contains backendName,
 	// backendVersion, and backendScope before passing to backendPool.EnsureL4BackendService().
 	// See example in backendSyncer.ensureBackendService().
-	bs, err := l4.backendPool.EnsureL4BackendService(bsName, hcLink, string(protocol), string(l4.Service.Spec.SessionAffinity), string(cloud.SchemeInternal), l4.NamespacedName, l4.network, noConnectionTrackingPolicy, klog.TODO())
+	bs, err := l4.backendPool.EnsureL4BackendService(bsName, hcLink, string(protocol), string(l4.Service.Spec.SessionAffinity), string(cloud.SchemeInternal), l4.NamespacedName, l4.network, noConnectionTrackingPolicy, l4.logger)
 	if err != nil {
 		result.GCEResourceInError = annotations.BackendServiceResource
 		result.Error = err

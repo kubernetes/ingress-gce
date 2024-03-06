@@ -405,7 +405,7 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}, ingLogger klo
 	}
 
 	// Get the zones our groups live in.
-	zones, err := lbc.ZoneGetter.List(zonegetter.CandidateNodesFilter, klog.TODO())
+	zones, err := lbc.ZoneGetter.List(zonegetter.CandidateNodesFilter, lbc.logger)
 	if err != nil {
 		ingLogger.Error(err, "lbc.ZoneGetter.List(zonegetter.CandidateNodesFilter)")
 		return err

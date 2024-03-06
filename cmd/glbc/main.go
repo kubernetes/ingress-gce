@@ -335,7 +335,7 @@ func runControllers(ctx *ingctx.ControllerContext, option runOption, logger klog
 	}
 
 	if flags.F.RunIngressController {
-		lbc := controller.NewLoadBalancerController(ctx, stopCh, klog.TODO())
+		lbc := controller.NewLoadBalancerController(ctx, stopCh, logger)
 		go runWithWg(lbc.Run, wg)
 		logger.V(0).Info("ingress controller started")
 
