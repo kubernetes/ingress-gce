@@ -43,6 +43,7 @@ import (
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
+	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
@@ -105,7 +106,7 @@ type transactionSyncer struct {
 	errorState string
 
 	// syncCollector collect sync related metrics
-	syncCollector metrics.SyncerMetricsCollector
+	syncCollector metricscollector.SyncerMetricsCollector
 
 	// enableDegradedMode indicates whether we do endpoint calculation using degraded mode procedures
 	enableDegradedMode bool
@@ -132,7 +133,7 @@ func NewTransactionSyncer(
 	epc negtypes.NetworkEndpointsCalculator,
 	kubeSystemUID string,
 	svcNegClient svcnegclient.Interface,
-	syncerMetrics *metrics.SyncerMetrics,
+	syncerMetrics *metricscollector.SyncerMetrics,
 	customName bool,
 	log klog.Logger,
 	lpConfig labels.PodLabelPropagationConfig,
@@ -374,6 +375,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 
 	var errList []error
 	var negObjRefs []negv1beta1.NegObjectReference
+	negsByLocation := make(map[string]int)
 	for _, zone := range zones {
 		var negObj negv1beta1.NegObjectReference
 		negObj, err = ensureNetworkEndpointGroup(
@@ -397,10 +399,12 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 
 		if s.svcNegClient != nil && err == nil {
 			negObjRefs = append(negObjRefs, negObj)
+			negsByLocation[zone]++
 		}
 	}
 
 	s.updateInitStatus(negObjRefs, errList)
+	s.syncCollector.UpdateSyncerNegCount(s.NegSyncerKey, negsByLocation)
 	return utilerrors.NewAggregate(errList)
 }
 
@@ -901,8 +905,8 @@ func publishAnnotationSizeMetrics(endpoints map[string]negtypes.NetworkEndpointS
 }
 
 // collectLabelStats calculate the number of endpoints and the number of endpoints with annotations.
-func collectLabelStats(currentPodLabelMap, addPodLabelMap labels.EndpointPodLabelMap, targetEndpointMap map[string]negtypes.NetworkEndpointSet) metrics.LabelPropagationStats {
-	labelPropagationStats := metrics.LabelPropagationStats{}
+func collectLabelStats(currentPodLabelMap, addPodLabelMap labels.EndpointPodLabelMap, targetEndpointMap map[string]negtypes.NetworkEndpointSet) metricscollector.LabelPropagationStats {
+	labelPropagationStats := metricscollector.LabelPropagationStats{}
 	for _, endpointSet := range targetEndpointMap {
 		for endpoint := range endpointSet {
 			labelPropagationStats.NumberOfEndpoints += 1

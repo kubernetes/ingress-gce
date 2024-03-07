@@ -42,7 +42,7 @@ import (
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
-	"k8s.io/ingress-gce/pkg/neg/metrics"
+	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
@@ -1928,14 +1928,14 @@ func TestCollectLabelStats(t *testing.T) {
 		curLabelMap       labels.EndpointPodLabelMap
 		addLabelMap       labels.EndpointPodLabelMap
 		targetEndpointMap map[string]negtypes.NetworkEndpointSet
-		expect            metrics.LabelPropagationStats
+		expect            metricscollector.LabelPropagationStats
 	}{
 		{
 			desc:              "Empty inputs",
 			curLabelMap:       labels.EndpointPodLabelMap{},
 			addLabelMap:       labels.EndpointPodLabelMap{},
 			targetEndpointMap: map[string]negtypes.NetworkEndpointSet{},
-			expect: metrics.LabelPropagationStats{
+			expect: metricscollector.LabelPropagationStats{
 				EndpointsWithAnnotation: 0,
 				NumberOfEndpoints:       0,
 			},
@@ -1954,7 +1954,7 @@ func TestCollectLabelStats(t *testing.T) {
 					endpoint2,
 				),
 			},
-			expect: metrics.LabelPropagationStats{
+			expect: metricscollector.LabelPropagationStats{
 				EndpointsWithAnnotation: 1,
 				NumberOfEndpoints:       2,
 			},
@@ -1981,7 +1981,7 @@ func TestCollectLabelStats(t *testing.T) {
 					endpoint4,
 				),
 			},
-			expect: metrics.LabelPropagationStats{
+			expect: metricscollector.LabelPropagationStats{
 				EndpointsWithAnnotation: 2,
 				NumberOfEndpoints:       4,
 			},
@@ -2000,7 +2000,7 @@ func TestCollectLabelStats(t *testing.T) {
 					endpoint4,
 				),
 			},
-			expect: metrics.LabelPropagationStats{
+			expect: metricscollector.LabelPropagationStats{
 				EndpointsWithAnnotation: 1,
 				NumberOfEndpoints:       2,
 			},
@@ -2059,7 +2059,7 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 		GetEndpointsCalculator(testContext.NodeInformer.GetIndexer(), testContext.PodInformer.GetIndexer(), fakeZoneGetter, svcPort, mode, klog.TODO(), testContext.EnableDualStackNEG),
 		string(kubeSystemUID),
 		testContext.SvcNegClient,
-		metrics.FakeSyncerMetrics(),
+		metricscollector.FakeSyncerMetrics(),
 		customName,
 		klog.TODO(),
 		labels.PodLabelPropagationConfig{},
