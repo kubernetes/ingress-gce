@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	v1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/e2e"
@@ -464,6 +465,10 @@ func TestRegionalXLBILBTransition(t *testing.T) {
 			}
 			t.Logf("GCLB resources created (%s/%s)", s.Namespace, tc.ingUpdate.Name)
 
+			// TODO(panslava): debug why some resources are not yet ready after WaitForIngress.
+			// Without sleep we observe failures comparing expected numBackendServicesUpdate
+			// and real number in GCP.
+			time.Sleep(1 * time.Minute)
 			// Perform whitebox testing.
 			if len(ing2.Status.LoadBalancer.Ingress) < 1 {
 				t.Fatalf("Ingress does not have an IP: %+v", ing2.Status)
