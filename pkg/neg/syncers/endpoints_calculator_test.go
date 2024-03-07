@@ -144,6 +144,13 @@ func TestLocalGetEndpointSet(t *testing.T) {
 		if diff := cmp.Diff(retSet, tc.wantEndpointSets); diff != "" {
 			t.Errorf("For case %q, expecting endpoint set %v, but got %v.\nDiff: (-want +got):\n%s", tc.desc, tc.wantEndpointSets, retSet, diff)
 		}
+		degradedSet, _, err := ec.CalculateEndpointsDegradedMode(tc.endpointsData, nil)
+		if err != nil {
+			t.Errorf("For degraded mode case %q, expect nil error, but got %v.", tc.desc, err)
+		}
+		if diff := cmp.Diff(degradedSet, tc.wantEndpointSets); diff != "" {
+			t.Errorf("For degraded mode case %q, expecting endpoint set %v, but got %v.\nDiff: (-want +got):\n%s", tc.desc, tc.wantEndpointSets, retSet, diff)
+		}
 		deleteNodes(t, tc.nodeNames, transactionSyncer.nodeLister)
 	}
 }
@@ -273,6 +280,13 @@ func TestClusterGetEndpointSet(t *testing.T) {
 		}
 		if !reflect.DeepEqual(retSet, tc.wantEndpointSets) {
 			t.Errorf("For case %q, expecting endpoint set %v, but got %v.", tc.desc, tc.wantEndpointSets, retSet)
+		}
+		degradedSet, _, err := ec.CalculateEndpointsDegradedMode(tc.endpointsData, nil)
+		if err != nil {
+			t.Errorf("For degraded mode case %q, expect nil error, but got %v.", tc.desc, err)
+		}
+		if !reflect.DeepEqual(degradedSet, tc.wantEndpointSets) {
+			t.Errorf("For degraded mode case %q, expecting endpoint set %v, but got %v.", tc.desc, tc.wantEndpointSets, retSet)
 		}
 		deleteNodes(t, tc.nodeNames, transactionSyncer.nodeLister)
 	}
