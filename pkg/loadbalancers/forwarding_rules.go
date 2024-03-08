@@ -284,7 +284,7 @@ func (l4 *L4) ensureIPv4ForwardingRule(bsLink string, options gce.ILBOptions, ex
 		return nil, err
 	}
 	if fr == nil {
-		return nil, fmt.Errorf("forwarding Rule %s not found", fr.Name)
+		return nil, fmt.Errorf("forwarding Rule %s not found", frName)
 	}
 	return fr, nil
 }
