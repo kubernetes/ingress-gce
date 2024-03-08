@@ -212,8 +212,13 @@ func (l4c *L4Controller) shouldProcessService(service *v1.Service) bool {
 	// Processing should continue if an external forwarding rule exists. This can happen if the service is transitioning from External to Internal.
 	// The external forwarding rule might not be deleted by the time this controller starts processing the service.
 	fr, err := l4c.forwardingRules.Get(frName)
+	if utils.IsNotFoundError(err) {
+		klog.Info("Legacy ForwardingRule not found, start processing service %s, LegacyForwardingRuleName: %s", klog.KRef(service.Namespace, service.Name), frName)
+		return true
+	}
 	if err != nil {
-		klog.Errorf("Error getting l4 forwarding rule %s", frName)
+		klog.Error("Error getting l4 forwarding rule for service: %s. Ignore update until forwarding rule: %s can be read.", klog.KRef(service.Namespace, service.Name), frName)
+		return false
 	}
 	if fr != nil && fr.LoadBalancingScheme == string(cloud.SchemeInternal) {
 		klog.Warningf("Ignoring update for service %s:%s as it contains legacy forwarding rule %q", service.Namespace, service.Name, frName)
