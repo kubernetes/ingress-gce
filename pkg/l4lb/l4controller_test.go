@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/metrics"
@@ -316,6 +317,63 @@ func TestProcessCreateServiceWithLegacyInternalForwardingRule(t *testing.T) {
 		t.Errorf("Error getting L4 ILB latency metrics err: %v", metricErr)
 	}
 	prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{}, t)
+}
+
+func TestCreateServiceNoLegacyForwordingRule(t *testing.T) {
+	fakeGCE := newFakeGCE()
+	l4c := newServiceController(t, fakeGCE)
+	newSvc := test.NewL4ILBService(false, 8080)
+
+	firstHookCall := true
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.GetHook = func(ctx context2.Context, key *meta.Key, m *cloud.MockForwardingRules, options ...cloud.Option) (bool, *compute.ForwardingRule, error) {
+		if firstHookCall {
+			// change hook behaviour after first get, controller inserts and reads new rules as it runs
+			firstHookCall = false
+			return true, nil, &googleapi.Error{Code: http.StatusNotFound, Message: "No such fwd rule"}
+		}
+		return false, nil, nil
+	}
+	addILBService(l4c, newSvc)
+	// Mimic addition of NEG. This will not actually happen, but this test verifies that sync is skipped
+	// even if a NEG got added.
+	addNEG(l4c, newSvc)
+
+	// Call sync and expect service not provisioned as existing forwarding rule can not be verified
+	err := l4c.sync(getKeyForSvc(newSvc, t))
+	if err != nil {
+		t.Errorf("Failed to sync newly added service %s, err %v", newSvc.Name, err)
+	}
+	// List the service and ensure that the status field is not updated.
+	svc, err := l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
+	}
+	verifyILBServiceProvisioned(t, svc)
+}
+
+func TestCreateServiceUnknownLegacyForwordingRule(t *testing.T) {
+	fakeGCE := newFakeGCE()
+	l4c := newServiceController(t, fakeGCE)
+	newSvc := test.NewL4ILBService(false, 8080)
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.GetHook = func(ctx context2.Context, key *meta.Key, m *cloud.MockForwardingRules, options ...cloud.Option) (bool, *compute.ForwardingRule, error) {
+		return true, nil, fmt.Errorf("NON-404 error from mock API")
+	}
+	addILBService(l4c, newSvc)
+	// Mimic addition of NEG. This will not actually happen, but this test verifies that sync is skipped
+	// even if a NEG got added.
+	addNEG(l4c, newSvc)
+
+	// Call sync and expect service not provisioned as existing forwarding rule can not be verified
+	err := l4c.sync(getKeyForSvc(newSvc, t))
+	if err != nil {
+		t.Errorf("Failed to sync newly added service %s, err %v", newSvc.Name, err)
+	}
+	// List the service and ensure that the status field is not updated.
+	svc, err := l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
+	}
+	verifyILBServiceNotProvisioned(t, svc)
 }
 
 func TestProcessCreateServiceWithLegacyExternalForwardingRule(t *testing.T) {
