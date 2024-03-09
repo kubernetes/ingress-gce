@@ -37,6 +37,7 @@ const (
 	L4netlbLegacyToRBSMigrationPreventedMetricName = "l4_netlb_legacy_to_rbs_migration_prevented_count"
 	l4failedHealthCheckName                        = "l4_failed_healthcheck_count"
 	l4ControllerHealthCheckName                    = "l4_controller_healthcheck"
+	l4LastSyncTimeName                             = "l4_last_sync_time"
 )
 
 var (
@@ -144,6 +145,13 @@ var (
 		},
 		[]string{"type"}, // currently, can be migration or race
 	)
+	l4LastSyncTime = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: l4LastSyncTimeName,
+			Help: "Timestamp of last sync started by controller",
+		},
+		[]string{"controller_name"},
+	)
 )
 
 // init registers l4 ilb and netlb sync metrics.
@@ -164,6 +172,8 @@ func init() {
 	prometheus.MustRegister(l4FailedHealthCheckCount)
 	klog.V(3).Infof("Registering L4 controller healthcheck metric: %v", l4ControllerHealthCheck)
 	prometheus.MustRegister(l4ControllerHealthCheck)
+	klog.V(3).Infof("Registering L4 controller last processed item time metric: %v", l4LastSyncTime)
+	prometheus.MustRegister(l4LastSyncTime)
 }
 
 // PublishILBSyncMetrics exports metrics related to the L4 ILB sync.
@@ -258,4 +268,9 @@ func IncreaseL4NetLBLegacyToRBSMigrationAttempts() {
 // IncreaseL4NetLBTargetPoolRaceWithRBS increases l4NetLBLegacyToRBSPrevented metric for race condition between controllers
 func IncreaseL4NetLBTargetPoolRaceWithRBS() {
 	l4NetLBLegacyToRBSPrevented.WithLabelValues("race").Inc()
+}
+
+// PublishL4controllerLastSyncTime records timestamp when L4 controller STARTED to sync an item
+func PublishL4controllerLastSyncTime(controllerName string) {
+	l4LastSyncTime.WithLabelValues(controllerName).SetToCurrentTime()
 }

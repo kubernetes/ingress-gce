@@ -449,7 +449,7 @@ func TestRegionalXLBILBTransition(t *testing.T) {
 			}
 
 			if err = e2e.CheckGCLB(gclb, tc.numForwardingRules, tc.numBackendServices); err != nil {
-				t.Error(err)
+				t.Errorf("e2e.CheckGCLB(%v, %d, %d) returned error %v for ingress %s/%s after transition", gclb, tc.numForwardingRules, tc.numBackendServices, ing1.Namespace, tc.ing.Name, err)
 			}
 
 			tc.ingUpdate.Namespace = s.Namespace
@@ -487,7 +487,7 @@ func TestRegionalXLBILBTransition(t *testing.T) {
 			}
 
 			if err = e2e.CheckGCLB(gclb2, tc.numForwardingRulesUpdate, tc.numBackendServicesUpdate); err != nil {
-				t.Error(err)
+				t.Errorf("e2e.CheckGCLB(%v, %d, %d) returned error %v for ingress %s/%s after transition", gclb2, tc.numForwardingRulesUpdate, tc.numBackendServicesUpdate, s.Namespace, tc.ingUpdate.Name, err)
 			}
 
 			deleteOptions := &fuzz.GCLBDeleteOptions{
