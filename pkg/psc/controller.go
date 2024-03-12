@@ -750,7 +750,10 @@ func SvcAttachmentKeyFunc(namespace, name string) string {
 func filterError(err error) error {
 	var apiError *googleapi.Error
 	if errors.As(err, &apiError) {
-		if utils.IsHTTPErrorCode(apiError, http.StatusNotFound) || utils.IsHTTPErrorCode(apiError, http.StatusBadRequest) {
+		// The following errors are ignored because they frequently occur due to
+		// user-misconfiguration and usually do not point to some infrastructure
+		// problem.
+		if utils.IsHTTPErrorCode(apiError, http.StatusNotFound) || utils.IsHTTPErrorCode(apiError, http.StatusBadRequest) || utils.IsHTTPErrorCode(apiError, http.StatusForbidden) {
 			return nil
 		}
 	}
