@@ -404,6 +404,8 @@ func (l4c *L4Controller) syncWrapper(key string) error {
 
 func (l4c *L4Controller) sync(key string) error {
 	l4c.syncTracker.Track()
+	l4metrics.PublishL4controllerLastSyncTime(l4ILBControllerName)
+
 	svc, exists, err := l4c.ctx.Services().GetByKey(key)
 	if err != nil {
 		return fmt.Errorf("Failed to lookup service for key %s : %w", key, err)

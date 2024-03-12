@@ -423,6 +423,8 @@ func (lc *L4NetLBController) syncWrapper(key string) error {
 
 func (lc *L4NetLBController) sync(key string) error {
 	lc.syncTracker.Track()
+	l4metrics.PublishL4controllerLastSyncTime(l4NetLBControllerName)
+
 	svc, exists, err := lc.ctx.Services().GetByKey(key)
 	if err != nil {
 		return fmt.Errorf("failed to lookup L4 External LoadBalancer service for key %s : %w", key, err)
