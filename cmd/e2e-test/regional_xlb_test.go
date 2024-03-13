@@ -449,7 +449,7 @@ func TestRegionalXLBILBTransition(t *testing.T) {
 			}
 
 			if err = e2e.CheckGCLB(gclb, tc.numForwardingRules, tc.numBackendServices); err != nil {
-				t.Errorf("e2e.CheckGCLB(%v, %d, %d) returned error %v for ingress %s/%s after transition", gclb, tc.numForwardingRules, tc.numBackendServices, ing1.Namespace, tc.ing.Name, err)
+				t.Errorf("e2e.CheckGCLB(%v, %d, %d) returned error for ingress %s/%s after transition: %v", gclb, tc.numForwardingRules, tc.numBackendServices, ing1.Namespace, tc.ing.Name, err)
 			}
 
 			tc.ingUpdate.Namespace = s.Namespace
@@ -465,10 +465,18 @@ func TestRegionalXLBILBTransition(t *testing.T) {
 			}
 			t.Logf("GCLB resources created (%s/%s)", s.Namespace, tc.ingUpdate.Name)
 
-			// TODO(panslava): debug why some resources are not yet ready after WaitForIngress.
-			// Without sleep we observe failures comparing expected numBackendServicesUpdate
-			// and real number in GCP.
-			time.Sleep(1 * time.Minute)
+			// Sleep before getting gclb resources, even after ingress is considered
+			// to be "ready".
+			// In the validator we don't check for default backend to be ready, if it
+			// is not specified in Ingress Spec. However, if default backend is not
+			// specified in Spec -- controller will use default 404 service. But it
+			// takes time to provision it, specifically because "SyncBackends" guarded
+			// by global lock.
+			// If we don't sleep, verification that backend services count on the URLMap
+			// equals to tc.numBackendServicesUpdate will be very flaky.
+			// This is still a quick solution. Properly, we should wait for
+			// 404 service to be ready, if no defaultBackend specified in Ingress.Spec.
+			time.Sleep(5 * time.Minute)
 			// Perform whitebox testing.
 			if len(ing2.Status.LoadBalancer.Ingress) < 1 {
 				t.Fatalf("Ingress does not have an IP: %+v", ing2.Status)
@@ -487,7 +495,7 @@ func TestRegionalXLBILBTransition(t *testing.T) {
 			}
 
 			if err = e2e.CheckGCLB(gclb2, tc.numForwardingRulesUpdate, tc.numBackendServicesUpdate); err != nil {
-				t.Errorf("e2e.CheckGCLB(%v, %d, %d) returned error %v for ingress %s/%s after transition", gclb2, tc.numForwardingRulesUpdate, tc.numBackendServicesUpdate, s.Namespace, tc.ingUpdate.Name, err)
+				t.Errorf("e2e.CheckGCLB(%v, %d, %d) returned error for ingress %s/%s after transition: %v", gclb2, tc.numForwardingRulesUpdate, tc.numBackendServicesUpdate, s.Namespace, tc.ingUpdate.Name, err)
 			}
 
 			deleteOptions := &fuzz.GCLBDeleteOptions{
