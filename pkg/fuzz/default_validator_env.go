@@ -18,6 +18,7 @@ package fuzz
 
 import (
 	"context"
+
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -108,6 +109,13 @@ func (e *DefaultValidatorEnv) Services() (map[string]*v1.Service, error) {
 	for _, s := range sl.Items {
 		ret[s.Name] = s.DeepCopy()
 	}
+
+	// Add default-http-backend service, that belongs to different (kube-system) namespace.
+	defaultBackend, err := e.k8s.CoreV1().Services(kubeSystemNS).Get(context.TODO(), defaultHTTPBackend, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	ret[defaultBackend.Name] = defaultBackend.DeepCopy()
 	return ret, nil
 }
 
