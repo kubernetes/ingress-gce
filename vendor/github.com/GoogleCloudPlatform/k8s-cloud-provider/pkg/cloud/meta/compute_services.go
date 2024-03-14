@@ -140,6 +140,7 @@ var ComputeServices = []*ServiceInfo{
 			"GetHealth",
 			"Patch",
 			"Update",
+			"SetSecurityPolicy",
 		},
 	},
 	{
@@ -153,6 +154,7 @@ var ComputeServices = []*ServiceInfo{
 			"GetHealth",
 			"Patch",
 			"Update",
+			"SetSecurityPolicy",
 		},
 	},
 	{
@@ -166,6 +168,7 @@ var ComputeServices = []*ServiceInfo{
 			"GetHealth",
 			"Patch",
 			"Update",
+			"SetSecurityPolicy",
 		},
 	},
 	{

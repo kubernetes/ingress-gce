@@ -139,7 +139,6 @@ func (r *ResourceID) String() string {
 // <ver>/projects/ path or legacy one <api_group>.googleapis.com/<ver>/projects/.
 // Unfortunately it cannot predict what comes before the API
 // group since that is configurable via SetAPIDomain.
-// legacyApiGroupRegex is used to extract API Group from legacy path in format
 var apiGroupRegex = regexp.MustCompile(`([a-z]*)(\.googleapis\.com)?\/(alpha|beta|v1|v1alpha1|v1beta1)/projects`)
 
 // ParseResourceURL parses resource URLs of the following formats:
