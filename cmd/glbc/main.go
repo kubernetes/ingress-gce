@@ -568,11 +568,11 @@ func collectLockAvailabilityMetrics(lockName, clusterType string, stopCh <-chan 
 	for {
 		select {
 		case <-stopCh:
-			lockLogger.Info("StopCh is closed. Stop collecting metrics for lock")
+			lockLogger.Info("StopCh is closed. Stop collecting metrics for resource lock", "lockName", lockName)
 			return
 		case <-time.Tick(time.Second):
 			app.PublishLockAvailabilityMetrics(lockName, clusterType)
-			lockLogger.Info("Exported lock availability metrics")
+			lockLogger.Info("Exported resource lock availability metrics", "lockName", lockName)
 		}
 	}
 }
