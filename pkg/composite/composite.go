@@ -68,6 +68,45 @@ func SetUrlMapForTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttp
 	}
 }
 
+func PatchRegionalTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpsProxy *TargetHttpsProxy, logger klog.Logger) error {
+	ctx, cancel := cloud.ContextWithCallTimeout()
+	defer cancel()
+	mc := metrics.NewMetricContext("TargetHttpsProxy", "patch", key.Region, key.Zone, string(targetHttpsProxy.Version))
+
+	switch key.Type() {
+	case meta.Regional:
+	default:
+		return fmt.Errorf("key type %v is not valid. PatchRegionalTargetHttpsProxy is only supported for regional TargetHttpsProxies", key)
+	}
+
+	switch targetHttpsProxy.Version {
+	case meta.VersionAlpha:
+		alpha, err := targetHttpsProxy.ToAlpha()
+		if err != nil {
+			return err
+		}
+		alphaLogger := logger.WithValues("name", alpha.Name)
+		alphaLogger.Info("Patching alpha region TargetHttpsProxy")
+		return mc.Observe(gceCloud.Compute().AlphaRegionTargetHttpsProxies().Patch(ctx, key, alpha))
+	case meta.VersionBeta:
+		beta, err := targetHttpsProxy.ToBeta()
+		if err != nil {
+			return err
+		}
+		betaLogger := logger.WithValues("name", beta.Name)
+		betaLogger.Info("Patching beta region TargetHttpsProxy")
+		return mc.Observe(gceCloud.Compute().BetaRegionTargetHttpsProxies().Patch(ctx, key, beta))
+	default:
+		ga, err := targetHttpsProxy.ToGA()
+		if err != nil {
+			return err
+		}
+		gaLogger := logger.WithValues("name", ga.Name)
+		gaLogger.Info("Patching ga region TargetHttpsProxy")
+		return mc.Observe(gceCloud.Compute().RegionTargetHttpsProxies().Patch(ctx, key, ga))
+	}
+}
+
 // SetSslCertificateForTargetHttpsProxy() sets the SSL Certificate for a target https proxy
 func SetSslCertificateForTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpsProxy *TargetHttpsProxy, sslCertURLs []string, logger klog.Logger) error {
 	ctx, cancel := cloud.ContextWithCallTimeout()
