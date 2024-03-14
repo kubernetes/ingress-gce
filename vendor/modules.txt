@@ -4,7 +4,7 @@ cloud.google.com/go/compute/internal
 # cloud.google.com/go/compute/metadata v0.2.3
 ## explicit; go 1.19
 cloud.google.com/go/compute/metadata
-# github.com/GoogleCloudPlatform/k8s-cloud-provider v1.25.0
+# github.com/GoogleCloudPlatform/k8s-cloud-provider v1.27.0
 ## explicit; go 1.20
 github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud
 github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter

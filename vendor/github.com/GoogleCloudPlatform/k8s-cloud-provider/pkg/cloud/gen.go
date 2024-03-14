@@ -1,5 +1,5 @@
 /*
-Copyright 2023 Google LLC
+Copyright 2024 Google LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -7914,6 +7914,7 @@ type RegionBackendServices interface {
 	Delete(ctx context.Context, key *meta.Key, options ...Option) error
 	GetHealth(context.Context, *meta.Key, *computega.ResourceGroupReference, ...Option) (*computega.BackendServiceGroupHealth, error)
 	Patch(context.Context, *meta.Key, *computega.BackendService, ...Option) error
+	SetSecurityPolicy(context.Context, *meta.Key, *computega.SecurityPolicyReference, ...Option) error
 	Update(context.Context, *meta.Key, *computega.BackendService, ...Option) error
 }
 
@@ -7950,13 +7951,14 @@ type MockRegionBackendServices struct {
 	// order to add your own logic. Return (true, _, _) to prevent the normal
 	// execution flow of the mock. Return (false, nil, nil) to continue with
 	// normal mock behavior/ after the hook function executes.
-	GetHook       func(ctx context.Context, key *meta.Key, m *MockRegionBackendServices, options ...Option) (bool, *computega.BackendService, error)
-	ListHook      func(ctx context.Context, region string, fl *filter.F, m *MockRegionBackendServices, options ...Option) (bool, []*computega.BackendService, error)
-	InsertHook    func(ctx context.Context, key *meta.Key, obj *computega.BackendService, m *MockRegionBackendServices, options ...Option) (bool, error)
-	DeleteHook    func(ctx context.Context, key *meta.Key, m *MockRegionBackendServices, options ...Option) (bool, error)
-	GetHealthHook func(context.Context, *meta.Key, *computega.ResourceGroupReference, *MockRegionBackendServices, ...Option) (*computega.BackendServiceGroupHealth, error)
-	PatchHook     func(context.Context, *meta.Key, *computega.BackendService, *MockRegionBackendServices, ...Option) error
-	UpdateHook    func(context.Context, *meta.Key, *computega.BackendService, *MockRegionBackendServices, ...Option) error
+	GetHook               func(ctx context.Context, key *meta.Key, m *MockRegionBackendServices, options ...Option) (bool, *computega.BackendService, error)
+	ListHook              func(ctx context.Context, region string, fl *filter.F, m *MockRegionBackendServices, options ...Option) (bool, []*computega.BackendService, error)
+	InsertHook            func(ctx context.Context, key *meta.Key, obj *computega.BackendService, m *MockRegionBackendServices, options ...Option) (bool, error)
+	DeleteHook            func(ctx context.Context, key *meta.Key, m *MockRegionBackendServices, options ...Option) (bool, error)
+	GetHealthHook         func(context.Context, *meta.Key, *computega.ResourceGroupReference, *MockRegionBackendServices, ...Option) (*computega.BackendServiceGroupHealth, error)
+	PatchHook             func(context.Context, *meta.Key, *computega.BackendService, *MockRegionBackendServices, ...Option) error
+	SetSecurityPolicyHook func(context.Context, *meta.Key, *computega.SecurityPolicyReference, *MockRegionBackendServices, ...Option) error
+	UpdateHook            func(context.Context, *meta.Key, *computega.BackendService, *MockRegionBackendServices, ...Option) error
 
 	// X is extra state that can be used as part of the mock. Generated code
 	// will not use this field.
@@ -8118,6 +8120,14 @@ func (m *MockRegionBackendServices) GetHealth(ctx context.Context, key *meta.Key
 func (m *MockRegionBackendServices) Patch(ctx context.Context, key *meta.Key, arg0 *computega.BackendService, options ...Option) error {
 	if m.PatchHook != nil {
 		return m.PatchHook(ctx, key, arg0, m)
+	}
+	return nil
+}
+
+// SetSecurityPolicy is a mock for the corresponding method.
+func (m *MockRegionBackendServices) SetSecurityPolicy(ctx context.Context, key *meta.Key, arg0 *computega.SecurityPolicyReference, options ...Option) error {
+	if m.SetSecurityPolicyHook != nil {
+		return m.SetSecurityPolicyHook(ctx, key, arg0, m)
 	}
 	return nil
 }
@@ -8381,6 +8391,48 @@ func (g *GCERegionBackendServices) Patch(ctx context.Context, key *meta.Key, arg
 	return err
 }
 
+// SetSecurityPolicy is a method on GCERegionBackendServices.
+func (g *GCERegionBackendServices) SetSecurityPolicy(ctx context.Context, key *meta.Key, arg0 *computega.SecurityPolicyReference, options ...Option) error {
+	opts := mergeOptions(options)
+	klog.V(5).Infof("GCERegionBackendServices.SetSecurityPolicy(%v, %v, %v, ...): called", ctx, key, opts)
+
+	if !key.Valid() {
+		klog.V(2).Infof("GCERegionBackendServices.SetSecurityPolicy(%v, %v, %v, ...): key is invalid (%#v)", ctx, key, opts, key)
+		return fmt.Errorf("invalid GCE key (%+v)", key)
+	}
+	projectID := getProjectID(ctx, g.s.ProjectRouter, opts, "ga", "RegionBackendServices")
+	ck := &CallContextKey{
+		ProjectID: projectID,
+		Operation: "SetSecurityPolicy",
+		Version:   meta.Version("ga"),
+		Service:   "RegionBackendServices",
+	}
+	klog.V(5).Infof("GCERegionBackendServices.SetSecurityPolicy(%v, %v, ...): projectID = %v, ck = %+v", ctx, key, projectID, ck)
+	callObserverStart(ctx, ck)
+	if err := g.s.RateLimiter.Accept(ctx, ck); err != nil {
+		klog.V(4).Infof("GCERegionBackendServices.SetSecurityPolicy(%v, %v, ...): RateLimiter error: %v", ctx, key, err)
+		return err
+	}
+	call := g.s.GA.RegionBackendServices.SetSecurityPolicy(projectID, key.Region, key.Name, arg0)
+	call.Context(ctx)
+	op, err := call.Do()
+
+	if err != nil {
+		callObserverEnd(ctx, ck, err)
+		g.s.RateLimiter.Observe(ctx, err, ck)
+
+		klog.V(4).Infof("GCERegionBackendServices.SetSecurityPolicy(%v, %v, ...) = %+v", ctx, key, err)
+		return err
+	}
+
+	err = g.s.WaitForCompletion(ctx, op)
+	callObserverEnd(ctx, ck, err)
+	g.s.RateLimiter.Observe(ctx, err, ck) // XXX
+
+	klog.V(4).Infof("GCERegionBackendServices.SetSecurityPolicy(%v, %v, ...) = %+v", ctx, key, err)
+	return err
+}
+
 // Update is a method on GCERegionBackendServices.
 func (g *GCERegionBackendServices) Update(ctx context.Context, key *meta.Key, arg0 *computega.BackendService, options ...Option) error {
 	opts := mergeOptions(options)
@@ -8431,6 +8483,7 @@ type AlphaRegionBackendServices interface {
 	Delete(ctx context.Context, key *meta.Key, options ...Option) error
 	GetHealth(context.Context, *meta.Key, *computealpha.ResourceGroupReference, ...Option) (*computealpha.BackendServiceGroupHealth, error)
 	Patch(context.Context, *meta.Key, *computealpha.BackendService, ...Option) error
+	SetSecurityPolicy(context.Context, *meta.Key, *computealpha.SecurityPolicyReference, ...Option) error
 	Update(context.Context, *meta.Key, *computealpha.BackendService, ...Option) error
 }
 
@@ -8467,13 +8520,14 @@ type MockAlphaRegionBackendServices struct {
 	// order to add your own logic. Return (true, _, _) to prevent the normal
 	// execution flow of the mock. Return (false, nil, nil) to continue with
 	// normal mock behavior/ after the hook function executes.
-	GetHook       func(ctx context.Context, key *meta.Key, m *MockAlphaRegionBackendServices, options ...Option) (bool, *computealpha.BackendService, error)
-	ListHook      func(ctx context.Context, region string, fl *filter.F, m *MockAlphaRegionBackendServices, options ...Option) (bool, []*computealpha.BackendService, error)
-	InsertHook    func(ctx context.Context, key *meta.Key, obj *computealpha.BackendService, m *MockAlphaRegionBackendServices, options ...Option) (bool, error)
-	DeleteHook    func(ctx context.Context, key *meta.Key, m *MockAlphaRegionBackendServices, options ...Option) (bool, error)
-	GetHealthHook func(context.Context, *meta.Key, *computealpha.ResourceGroupReference, *MockAlphaRegionBackendServices, ...Option) (*computealpha.BackendServiceGroupHealth, error)
-	PatchHook     func(context.Context, *meta.Key, *computealpha.BackendService, *MockAlphaRegionBackendServices, ...Option) error
-	UpdateHook    func(context.Context, *meta.Key, *computealpha.BackendService, *MockAlphaRegionBackendServices, ...Option) error
+	GetHook               func(ctx context.Context, key *meta.Key, m *MockAlphaRegionBackendServices, options ...Option) (bool, *computealpha.BackendService, error)
+	ListHook              func(ctx context.Context, region string, fl *filter.F, m *MockAlphaRegionBackendServices, options ...Option) (bool, []*computealpha.BackendService, error)
+	InsertHook            func(ctx context.Context, key *meta.Key, obj *computealpha.BackendService, m *MockAlphaRegionBackendServices, options ...Option) (bool, error)
+	DeleteHook            func(ctx context.Context, key *meta.Key, m *MockAlphaRegionBackendServices, options ...Option) (bool, error)
+	GetHealthHook         func(context.Context, *meta.Key, *computealpha.ResourceGroupReference, *MockAlphaRegionBackendServices, ...Option) (*computealpha.BackendServiceGroupHealth, error)
+	PatchHook             func(context.Context, *meta.Key, *computealpha.BackendService, *MockAlphaRegionBackendServices, ...Option) error
+	SetSecurityPolicyHook func(context.Context, *meta.Key, *computealpha.SecurityPolicyReference, *MockAlphaRegionBackendServices, ...Option) error
+	UpdateHook            func(context.Context, *meta.Key, *computealpha.BackendService, *MockAlphaRegionBackendServices, ...Option) error
 
 	// X is extra state that can be used as part of the mock. Generated code
 	// will not use this field.
@@ -8635,6 +8689,14 @@ func (m *MockAlphaRegionBackendServices) GetHealth(ctx context.Context, key *met
 func (m *MockAlphaRegionBackendServices) Patch(ctx context.Context, key *meta.Key, arg0 *computealpha.BackendService, options ...Option) error {
 	if m.PatchHook != nil {
 		return m.PatchHook(ctx, key, arg0, m)
+	}
+	return nil
+}
+
+// SetSecurityPolicy is a mock for the corresponding method.
+func (m *MockAlphaRegionBackendServices) SetSecurityPolicy(ctx context.Context, key *meta.Key, arg0 *computealpha.SecurityPolicyReference, options ...Option) error {
+	if m.SetSecurityPolicyHook != nil {
+		return m.SetSecurityPolicyHook(ctx, key, arg0, m)
 	}
 	return nil
 }
@@ -8898,6 +8960,48 @@ func (g *GCEAlphaRegionBackendServices) Patch(ctx context.Context, key *meta.Key
 	return err
 }
 
+// SetSecurityPolicy is a method on GCEAlphaRegionBackendServices.
+func (g *GCEAlphaRegionBackendServices) SetSecurityPolicy(ctx context.Context, key *meta.Key, arg0 *computealpha.SecurityPolicyReference, options ...Option) error {
+	opts := mergeOptions(options)
+	klog.V(5).Infof("GCEAlphaRegionBackendServices.SetSecurityPolicy(%v, %v, %v, ...): called", ctx, key, opts)
+
+	if !key.Valid() {
+		klog.V(2).Infof("GCEAlphaRegionBackendServices.SetSecurityPolicy(%v, %v, %v, ...): key is invalid (%#v)", ctx, key, opts, key)
+		return fmt.Errorf("invalid GCE key (%+v)", key)
+	}
+	projectID := getProjectID(ctx, g.s.ProjectRouter, opts, "alpha", "RegionBackendServices")
+	ck := &CallContextKey{
+		ProjectID: projectID,
+		Operation: "SetSecurityPolicy",
+		Version:   meta.Version("alpha"),
+		Service:   "RegionBackendServices",
+	}
+	klog.V(5).Infof("GCEAlphaRegionBackendServices.SetSecurityPolicy(%v, %v, ...): projectID = %v, ck = %+v", ctx, key, projectID, ck)
+	callObserverStart(ctx, ck)
+	if err := g.s.RateLimiter.Accept(ctx, ck); err != nil {
+		klog.V(4).Infof("GCEAlphaRegionBackendServices.SetSecurityPolicy(%v, %v, ...): RateLimiter error: %v", ctx, key, err)
+		return err
+	}
+	call := g.s.Alpha.RegionBackendServices.SetSecurityPolicy(projectID, key.Region, key.Name, arg0)
+	call.Context(ctx)
+	op, err := call.Do()
+
+	if err != nil {
+		callObserverEnd(ctx, ck, err)
+		g.s.RateLimiter.Observe(ctx, err, ck)
+
+		klog.V(4).Infof("GCEAlphaRegionBackendServices.SetSecurityPolicy(%v, %v, ...) = %+v", ctx, key, err)
+		return err
+	}
+
+	err = g.s.WaitForCompletion(ctx, op)
+	callObserverEnd(ctx, ck, err)
+	g.s.RateLimiter.Observe(ctx, err, ck) // XXX
+
+	klog.V(4).Infof("GCEAlphaRegionBackendServices.SetSecurityPolicy(%v, %v, ...) = %+v", ctx, key, err)
+	return err
+}
+
 // Update is a method on GCEAlphaRegionBackendServices.
 func (g *GCEAlphaRegionBackendServices) Update(ctx context.Context, key *meta.Key, arg0 *computealpha.BackendService, options ...Option) error {
 	opts := mergeOptions(options)
@@ -8948,6 +9052,7 @@ type BetaRegionBackendServices interface {
 	Delete(ctx context.Context, key *meta.Key, options ...Option) error
 	GetHealth(context.Context, *meta.Key, *computebeta.ResourceGroupReference, ...Option) (*computebeta.BackendServiceGroupHealth, error)
 	Patch(context.Context, *meta.Key, *computebeta.BackendService, ...Option) error
+	SetSecurityPolicy(context.Context, *meta.Key, *computebeta.SecurityPolicyReference, ...Option) error
 	Update(context.Context, *meta.Key, *computebeta.BackendService, ...Option) error
 }
 
@@ -8984,13 +9089,14 @@ type MockBetaRegionBackendServices struct {
 	// order to add your own logic. Return (true, _, _) to prevent the normal
 	// execution flow of the mock. Return (false, nil, nil) to continue with
 	// normal mock behavior/ after the hook function executes.
-	GetHook       func(ctx context.Context, key *meta.Key, m *MockBetaRegionBackendServices, options ...Option) (bool, *computebeta.BackendService, error)
-	ListHook      func(ctx context.Context, region string, fl *filter.F, m *MockBetaRegionBackendServices, options ...Option) (bool, []*computebeta.BackendService, error)
-	InsertHook    func(ctx context.Context, key *meta.Key, obj *computebeta.BackendService, m *MockBetaRegionBackendServices, options ...Option) (bool, error)
-	DeleteHook    func(ctx context.Context, key *meta.Key, m *MockBetaRegionBackendServices, options ...Option) (bool, error)
-	GetHealthHook func(context.Context, *meta.Key, *computebeta.ResourceGroupReference, *MockBetaRegionBackendServices, ...Option) (*computebeta.BackendServiceGroupHealth, error)
-	PatchHook     func(context.Context, *meta.Key, *computebeta.BackendService, *MockBetaRegionBackendServices, ...Option) error
-	UpdateHook    func(context.Context, *meta.Key, *computebeta.BackendService, *MockBetaRegionBackendServices, ...Option) error
+	GetHook               func(ctx context.Context, key *meta.Key, m *MockBetaRegionBackendServices, options ...Option) (bool, *computebeta.BackendService, error)
+	ListHook              func(ctx context.Context, region string, fl *filter.F, m *MockBetaRegionBackendServices, options ...Option) (bool, []*computebeta.BackendService, error)
+	InsertHook            func(ctx context.Context, key *meta.Key, obj *computebeta.BackendService, m *MockBetaRegionBackendServices, options ...Option) (bool, error)
+	DeleteHook            func(ctx context.Context, key *meta.Key, m *MockBetaRegionBackendServices, options ...Option) (bool, error)
+	GetHealthHook         func(context.Context, *meta.Key, *computebeta.ResourceGroupReference, *MockBetaRegionBackendServices, ...Option) (*computebeta.BackendServiceGroupHealth, error)
+	PatchHook             func(context.Context, *meta.Key, *computebeta.BackendService, *MockBetaRegionBackendServices, ...Option) error
+	SetSecurityPolicyHook func(context.Context, *meta.Key, *computebeta.SecurityPolicyReference, *MockBetaRegionBackendServices, ...Option) error
+	UpdateHook            func(context.Context, *meta.Key, *computebeta.BackendService, *MockBetaRegionBackendServices, ...Option) error
 
 	// X is extra state that can be used as part of the mock. Generated code
 	// will not use this field.
@@ -9152,6 +9258,14 @@ func (m *MockBetaRegionBackendServices) GetHealth(ctx context.Context, key *meta
 func (m *MockBetaRegionBackendServices) Patch(ctx context.Context, key *meta.Key, arg0 *computebeta.BackendService, options ...Option) error {
 	if m.PatchHook != nil {
 		return m.PatchHook(ctx, key, arg0, m)
+	}
+	return nil
+}
+
+// SetSecurityPolicy is a mock for the corresponding method.
+func (m *MockBetaRegionBackendServices) SetSecurityPolicy(ctx context.Context, key *meta.Key, arg0 *computebeta.SecurityPolicyReference, options ...Option) error {
+	if m.SetSecurityPolicyHook != nil {
+		return m.SetSecurityPolicyHook(ctx, key, arg0, m)
 	}
 	return nil
 }
@@ -9412,6 +9526,48 @@ func (g *GCEBetaRegionBackendServices) Patch(ctx context.Context, key *meta.Key,
 	g.s.RateLimiter.Observe(ctx, err, ck) // XXX
 
 	klog.V(4).Infof("GCEBetaRegionBackendServices.Patch(%v, %v, ...) = %+v", ctx, key, err)
+	return err
+}
+
+// SetSecurityPolicy is a method on GCEBetaRegionBackendServices.
+func (g *GCEBetaRegionBackendServices) SetSecurityPolicy(ctx context.Context, key *meta.Key, arg0 *computebeta.SecurityPolicyReference, options ...Option) error {
+	opts := mergeOptions(options)
+	klog.V(5).Infof("GCEBetaRegionBackendServices.SetSecurityPolicy(%v, %v, %v, ...): called", ctx, key, opts)
+
+	if !key.Valid() {
+		klog.V(2).Infof("GCEBetaRegionBackendServices.SetSecurityPolicy(%v, %v, %v, ...): key is invalid (%#v)", ctx, key, opts, key)
+		return fmt.Errorf("invalid GCE key (%+v)", key)
+	}
+	projectID := getProjectID(ctx, g.s.ProjectRouter, opts, "beta", "RegionBackendServices")
+	ck := &CallContextKey{
+		ProjectID: projectID,
+		Operation: "SetSecurityPolicy",
+		Version:   meta.Version("beta"),
+		Service:   "RegionBackendServices",
+	}
+	klog.V(5).Infof("GCEBetaRegionBackendServices.SetSecurityPolicy(%v, %v, ...): projectID = %v, ck = %+v", ctx, key, projectID, ck)
+	callObserverStart(ctx, ck)
+	if err := g.s.RateLimiter.Accept(ctx, ck); err != nil {
+		klog.V(4).Infof("GCEBetaRegionBackendServices.SetSecurityPolicy(%v, %v, ...): RateLimiter error: %v", ctx, key, err)
+		return err
+	}
+	call := g.s.Beta.RegionBackendServices.SetSecurityPolicy(projectID, key.Region, key.Name, arg0)
+	call.Context(ctx)
+	op, err := call.Do()
+
+	if err != nil {
+		callObserverEnd(ctx, ck, err)
+		g.s.RateLimiter.Observe(ctx, err, ck)
+
+		klog.V(4).Infof("GCEBetaRegionBackendServices.SetSecurityPolicy(%v, %v, ...) = %+v", ctx, key, err)
+		return err
+	}
+
+	err = g.s.WaitForCompletion(ctx, op)
+	callObserverEnd(ctx, ck, err)
+	g.s.RateLimiter.Observe(ctx, err, ck) // XXX
+
+	klog.V(4).Infof("GCEBetaRegionBackendServices.SetSecurityPolicy(%v, %v, ...) = %+v", ctx, key, err)
 	return err
 }
 
