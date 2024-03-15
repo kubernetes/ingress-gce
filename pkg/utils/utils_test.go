@@ -20,11 +20,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"k8s.io/klog/v2"
 	"net/http"
 	"reflect"
 	"testing"
 	"time"
+
+	"k8s.io/klog/v2"
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/compute/v1"
@@ -651,12 +652,12 @@ func TestGetNodeConditionPredicate(t *testing.T) {
 func TestIsGCEIngress(t *testing.T) {
 	var wrongClassName = "wrong-class"
 	testCases := []struct {
-		desc                             string
-		ingress                          *networkingv1.Ingress
-		ingressClassFlag                 string
-		xlbRegionalEnabledFlag           bool
-		disableIngressGlobalExternalFlag bool
-		expected                         bool
+		desc                            string
+		ingress                         *networkingv1.Ingress
+		ingressClassFlag                string
+		xlbRegionalEnabledFlag          bool
+		enableIngressGlobalExternalFlag bool
+		expected                        bool
 	}{
 		{
 			desc: "No ingress class",
@@ -769,10 +770,11 @@ func TestIsGCEIngress(t *testing.T) {
 					},
 				},
 			},
-			expected: true,
+			enableIngressGlobalExternalFlag: true,
+			expected:                        true,
 		},
 		{
-			desc: "L7 XLB Global class, but with DisableIngressGlobalExternal flag",
+			desc: "L7 XLB Global class, but with EnableIngressGlobalExternal flag",
 			ingress: &networkingv1.Ingress{
 				ObjectMeta: v1.ObjectMeta{
 					Annotations: map[string]string{
@@ -780,8 +782,8 @@ func TestIsGCEIngress(t *testing.T) {
 					},
 				},
 			},
-			disableIngressGlobalExternalFlag: true,
-			expected:                         false,
+			enableIngressGlobalExternalFlag: false,
+			expected:                        false,
 		},
 	}
 
@@ -789,7 +791,7 @@ func TestIsGCEIngress(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			flags.F.IngressClass = tc.ingressClassFlag
 			flags.F.EnableIngressRegionalExternal = tc.xlbRegionalEnabledFlag
-			flags.F.DisableIngressGlobalExternal = tc.disableIngressGlobalExternalFlag
+			flags.F.EnableIngressGlobalExternal = tc.enableIngressGlobalExternalFlag
 
 			result := IsGCEIngress(tc.ingress)
 			if result != tc.expected {
@@ -799,7 +801,7 @@ func TestIsGCEIngress(t *testing.T) {
 			// reset flags to default, otherwise they stay modified for other tests
 			flags.F.IngressClass = ""
 			flags.F.EnableIngressRegionalExternal = false
-			flags.F.DisableIngressGlobalExternal = false
+			flags.F.EnableIngressGlobalExternal = true
 		})
 	}
 }

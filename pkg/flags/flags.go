@@ -127,7 +127,7 @@ var (
 		EnableFirewallCR                         bool
 		DisableFWEnforcement                     bool
 		EnableIngressRegionalExternal            bool
-		DisableIngressGlobalExternal             bool
+		EnableIngressGlobalExternal              bool
 	}{
 		GCERateLimitScale: 1.0,
 	}
@@ -303,7 +303,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableFirewallCR, "enable-firewall-cr", false, "Enable generating firewall CR")
 	flag.BoolVar(&F.DisableFWEnforcement, "disable-fw-enforcement", false, "Disable Ingress controller to enforce the firewall rules. If set to true, Ingress Controller stops creating GCE firewall rules. We can only enable this if enable-firewall-cr sets to true.")
 	flag.BoolVar(&F.EnableIngressRegionalExternal, "enable-ingress-regional-external", false, "Enable L7 Ingress Regional External.")
-	flag.BoolVar(&F.DisableIngressGlobalExternal, "disable-ingress-global-external", false, "Disable L7 Ingress Global External. Should be used when Regional External is enabled.")
+	flag.BoolVar(&F.EnableIngressGlobalExternal, "enable-ingress-global-external", true, "Enable L7 Ingress Global External. Should be disabled when Regional External is enabled.")
 }
 
 func Validate() {

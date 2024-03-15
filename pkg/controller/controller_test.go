@@ -19,13 +19,14 @@ package controller
 import (
 	context2 "context"
 	"fmt"
-	"k8s.io/klog/v2"
 	"net/http"
 	"reflect"
 	"sort"
 	"strings"
 	"testing"
 	"time"
+
+	"k8s.io/klog/v2"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -359,6 +360,7 @@ func TestIngressClassChangeWithFinalizer(t *testing.T) {
 	defer flagSaver.Reset(test.FinalizerRemoveFlag, &flags.F.FinalizerRemove)
 	flags.F.FinalizerAdd = true
 	flags.F.FinalizerRemove = true
+	flags.F.EnableIngressGlobalExternal = true
 	lbc := newLoadBalancerController()
 	svc := test.NewService(types.NamespacedName{Name: "my-service", Namespace: "default"}, api_v1.ServiceSpec{
 		Type:  api_v1.ServiceTypeNodePort,
