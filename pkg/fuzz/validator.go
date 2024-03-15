@@ -309,27 +309,21 @@ func (v *IngressValidator) CheckPaths(ctx context.Context, vr *IngressResult) er
 		wg     sync.WaitGroup
 	)
 	for _, scheme := range v.attribs.schemes() {
-		// If DefaultBackend is specified -- expect to get 200 response code (that's
-		// just the defaultbackend we've chosen to use in e2e tests).
-		expectedDefaultBackendResponseCode := 200
-		if v.ing.Spec.DefaultBackend == nil {
-			// if DefaultBackend is not specified in spec -- ingress controller will use
-			// default 404 service as a default backend.
-			expectedDefaultBackendResponseCode = 404
+		if v.ing.Spec.DefaultBackend != nil {
+			klog.V(2).Infof("Checking default backend for Ingress %s/%s", v.ing.Namespace, v.ing.Name)
+			// Capture variables for the thunk.
+			result := &PathResult{Scheme: scheme}
+			vr.Paths = append(vr.Paths, result)
+			scheme := scheme
+			ctx, cancelFunc := context.WithTimeout(ctx, v.attribs.RequestTimeout)
+			defer cancelFunc()
+			f := func() {
+				result.Err = v.checkPath(ctx, scheme, "", pathForDefaultBackend)
+				wg.Done()
+			}
+			thunks = append(thunks, f)
+			wg.Add(1)
 		}
-		klog.V(2).Infof("Checking default backend for Ingress %s/%s to return code %d", v.ing.Namespace, v.ing.Name, expectedDefaultBackendResponseCode)
-		// Capture variables for the thunk.
-		result := &PathResult{Scheme: scheme}
-		vr.Paths = append(vr.Paths, result)
-		scheme := scheme
-		ctx, cancelFunc := context.WithTimeout(ctx, v.attribs.RequestTimeout)
-		defer cancelFunc()
-		f := func() {
-			result.Err = v.checkPathForExpectedResponseCode(ctx, scheme, "", pathForDefaultBackend, expectedDefaultBackendResponseCode)
-			wg.Done()
-		}
-		thunks = append(thunks, f)
-		wg.Add(1)
 
 		for _, rule := range v.ing.Spec.Rules {
 			if rule.HTTP == nil {
@@ -368,15 +362,8 @@ func (v *IngressValidator) CheckPaths(ctx context.Context, vr *IngressResult) er
 	return nil
 }
 
-// checkPath performs a check for requests to scheme://host/path to return 200
-// response.
+// checkPath performs a check for scheme://host/path.
 func (v *IngressValidator) checkPath(ctx context.Context, scheme, host, path string) error {
-	return v.checkPathForExpectedResponseCode(ctx, scheme, host, path, 200)
-}
-
-// checkPathForExpectedResponseCode performs a check for requests to
-// scheme://host/path to return expected response code.
-func (v *IngressValidator) checkPathForExpectedResponseCode(ctx context.Context, scheme, host, path string, expectedResponseCode int) error {
 	if v.Vip() == nil {
 		return fmt.Errorf("ingress %s/%s does not have a VIP", v.ing.Namespace, v.ing.Name)
 	}
@@ -429,8 +416,8 @@ func (v *IngressValidator) checkPathForExpectedResponseCode(ctx context.Context,
 		}
 	}
 
-	if doStandardCheck && resp.StatusCode != expectedResponseCode {
-		return fmt.Errorf("ingress %s/%s: GET %q: %d, want %d", v.ing.Namespace, v.ing.Name, url, resp.StatusCode, expectedResponseCode)
+	if doStandardCheck && resp.StatusCode != 200 {
+		return fmt.Errorf("ingress %s/%s: GET %q: %d, want 200", v.ing.Namespace, v.ing.Name, url, resp.StatusCode)
 	}
 
 	return nil

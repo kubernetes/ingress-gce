@@ -116,18 +116,6 @@ func ServiceMapFromIngress(ing *networkingv1.Ingress) ServiceMap {
 
 	if defaultBackend := ing.Spec.DefaultBackend; defaultBackend != nil {
 		ret[HostPath{}] = defaultBackend
-	} else {
-		// If default backend is not specified, ingress will use default-http-backend
-		// service.
-		ret[HostPath{}] = &networkingv1.IngressBackend{
-			Service: &networkingv1.IngressServiceBackend{
-				Name: defaultHTTPBackend,
-				Port: networkingv1.ServiceBackendPort{
-					Name:   "http",
-					Number: 80,
-				},
-			},
-		}
 	}
 
 	for _, rule := range ing.Spec.Rules {
