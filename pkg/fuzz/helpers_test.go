@@ -73,15 +73,6 @@ func TestServiceMapFromIngress(t *testing.T) {
 				HostPath{"test1.com", "/foo"}: &networkingv1.IngressBackend{
 					Service: &networkingv1.IngressServiceBackend{Name: "s", Port: networkingv1.ServiceBackendPort{Number: 80}},
 				},
-				HostPath{}: &networkingv1.IngressBackend{
-					Service: &networkingv1.IngressServiceBackend{
-						Name: defaultHTTPBackend,
-						Port: networkingv1.ServiceBackendPort{
-							Name:   "http",
-							Number: 80,
-						},
-					},
-				},
 			},
 		},
 		{
@@ -96,15 +87,6 @@ func TestServiceMapFromIngress(t *testing.T) {
 				},
 				HostPath{"test1.com", "/bar"}: &networkingv1.IngressBackend{
 					Service: &networkingv1.IngressServiceBackend{Name: "s", Port: networkingv1.ServiceBackendPort{Number: 80}},
-				},
-				HostPath{}: &networkingv1.IngressBackend{
-					Service: &networkingv1.IngressServiceBackend{
-						Name: defaultHTTPBackend,
-						Port: networkingv1.ServiceBackendPort{
-							Name:   "http",
-							Number: 80,
-						},
-					},
 				},
 			},
 		},
