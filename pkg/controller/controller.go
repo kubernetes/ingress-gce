@@ -160,7 +160,7 @@ func NewLoadBalancerController(
 			addIng := obj.(*v1.Ingress)
 			ingLogger := logger.WithValues("ingressKey", common.NamespacedName(addIng))
 			if !utils.IsGLBCIngress(addIng) {
-				if flags.F.DisableIngressGlobalExternal && annotations.FromIngress(addIng).IngressClass() == annotations.GceIngressClass {
+				if !flags.F.EnableIngressGlobalExternal && annotations.FromIngress(addIng).IngressClass() == annotations.GceIngressClass {
 					lbc.ctx.Recorder(addIng.Namespace).Eventf(addIng, apiv1.EventTypeWarning, events.SyncIngress, "Ingress class \"gce\" is not supported in this environment. Please use \"gce-regional-external\".")
 				}
 				ingLogger.Info("Ignoring add for ingress based on annotation", "annotation", annotations.IngressClassKey)
@@ -205,7 +205,7 @@ func NewLoadBalancerController(
 					lbc.ingQueue.Enqueue(cur)
 					return
 				}
-				if flags.F.DisableIngressGlobalExternal && annotations.FromIngress(curIng).IngressClass() == annotations.GceIngressClass {
+				if !flags.F.EnableIngressGlobalExternal && annotations.FromIngress(curIng).IngressClass() == annotations.GceIngressClass {
 					lbc.ctx.Recorder(curIng.Namespace).Eventf(curIng, apiv1.EventTypeWarning, events.SyncIngress, "Ingress class \"gce\" is not supported in this environment. Please use \"gce-regional-external\".")
 				}
 				return
