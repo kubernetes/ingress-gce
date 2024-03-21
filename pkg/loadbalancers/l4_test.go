@@ -287,7 +287,7 @@ func TestEnsureInternalLoadBalancerWithExistingResources(t *testing.T) {
 	// Create the expected resources necessary for an Internal Load Balancer
 	sharedHC := !servicehelper.RequestsOnlyLocalTraffic(svc)
 	defaultNetwork := network.DefaultNetwork(fakeGCE)
-	hcResult := l4.healthChecks.EnsureHealthCheckWithFirewall(l4.Service, l4.namer, sharedHC, meta.Global, utils.ILB, []string{}, *defaultNetwork)
+	hcResult := l4.healthChecks.EnsureHealthCheckWithFirewall(l4.Service, l4.namer, sharedHC, meta.Global, utils.ILB, []string{}, *defaultNetwork, klog.TODO())
 
 	if hcResult.Err != nil {
 		t.Errorf("Failed to create healthcheck, err %v", hcResult.Err)

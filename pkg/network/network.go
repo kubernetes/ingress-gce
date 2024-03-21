@@ -63,10 +63,11 @@ func NewNetworksResolver(networkLister, gkeNetworkParamSetLister cache.Indexer, 
 
 // ServiceNetwork determines the network data to be used for the L4 LB resources.
 func (nr *NetworksResolver) ServiceNetwork(service *apiv1.Service) (*NetworkInfo, error) {
+	svcLogger := nr.logger.WithValues("serviceKey", klog.KRef(service.Namespace, service.Name))
 	if !nr.enableMultinetworking || nr.networkLister == nil || nr.gkeNetworkParamSetLister == nil {
 		return DefaultNetwork(nr.cloudProvider), nil
 	}
-	nr.logger.Info("Network lookup for service", "service", service.Name, "namespace", service.Namespace)
+	svcLogger.Info("Network lookup for service")
 	networkName, ok := service.Spec.Selector[networkSelector]
 	if !ok || networkName == "" || networkName == networkv1.DefaultPodNetworkName {
 		return DefaultNetwork(nr.cloudProvider), nil
@@ -88,7 +89,7 @@ func (nr *NetworksResolver) ServiceNetwork(service *apiv1.Service) (*NetworkInfo
 	if network == nil {
 		return nil, fmt.Errorf("cannot convert to Network (%T)", obj)
 	}
-	nr.logger.Info("Found network for service", "network", network.Name, "service", service.Name, "namespace", service.Namespace)
+	svcLogger.Info("Found network for service", "network", network.Name)
 	if network.Spec.Type != networkv1.L3NetworkType {
 		return nil, utils.NewUserError(fmt.Errorf("network.Spec.Type=%s is not supported for multinetwork LoadBalancer services, the only supported network type is L3", network.Spec.Type))
 	}
@@ -113,7 +114,7 @@ func (nr *NetworksResolver) ServiceNetwork(service *apiv1.Service) (*NetworkInfo
 	netURL := networkURL(nr.cloudProvider, gkeNetworkParamSet.Spec.VPC)
 	subnetURL := subnetworkURL(nr.cloudProvider, gkeNetworkParamSet.Spec.VPCSubnet)
 
-	nr.logger.Info("Found GKE network parameters for service", "NetworkURL", netURL, "SubnetworkURL", subnetURL, "service", service.Name, "namespace", service.Namespace)
+	svcLogger.Info("Found GKE network parameters for service", "NetworkURL", netURL, "SubnetworkURL", subnetURL)
 	return &NetworkInfo{
 		IsDefault:     false,
 		K8sNetwork:    networkName,

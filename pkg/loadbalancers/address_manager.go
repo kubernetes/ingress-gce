@@ -66,10 +66,10 @@ type addressManager struct {
 	networkTier cloud.NetworkTier
 	ipVersion   IPVersion
 
-	logger klog.Logger
+	frLogger klog.Logger
 }
 
-func newAddressManager(svc gce.CloudAddressService, serviceName, region, subnetURL, name, targetIP string, addressType cloud.LbScheme, networkTier cloud.NetworkTier, ipVersion IPVersion, logger klog.Logger) *addressManager {
+func newAddressManager(svc gce.CloudAddressService, serviceName, region, subnetURL, name, targetIP string, addressType cloud.LbScheme, networkTier cloud.NetworkTier, ipVersion IPVersion, frLogger klog.Logger) *addressManager {
 	if targetIP != "" {
 		// Store address in normalized format.
 		// This is required for IPv6 addresses, to be able to filter by exact address,
@@ -88,7 +88,7 @@ func newAddressManager(svc gce.CloudAddressService, serviceName, region, subnetU
 		subnetURL:   subnetURL,
 		networkTier: networkTier,
 		ipVersion:   ipVersion,
-		logger:      logger.WithName("AddressManager").WithValues("serviceKey", name),
+		frLogger:    frLogger.WithName("AddressManager"),
 	}
 }
 
@@ -102,7 +102,7 @@ func (am *addressManager) HoldAddress() (string, IPAddressType, error) {
 	// could be reserving another address; therefore, it would need to be deleted. In the normal
 	// case of using a controller address, retrieving the address by name results in the fewest API
 	// calls since it indicates whether a Delete is necessary before Reserve.
-	am.logger.V(4).Info("Attempting hold of IP", "ip", am.targetIP, "addressType", am.addressType)
+	am.frLogger.V(4).Info("Attempting hold of IP", "ip", am.targetIP, "addressType", am.addressType)
 	// Get the address in case it was orphaned earlier
 	addr, err := am.svc.GetRegionAddress(am.name, am.region)
 	if err != nil && !utils.IsNotFoundError(err) {
@@ -113,20 +113,20 @@ func (am *addressManager) HoldAddress() (string, IPAddressType, error) {
 		// If address exists, check if the address had the expected attributes.
 		validationError := am.validateAddress(addr)
 		if validationError == nil {
-			am.logger.V(4).Info("Address already reserves IP. No further action required.", "addressName", addr.Name, "ip", addr.Address, "type", addr.AddressType)
+			am.frLogger.V(4).Info("Address already reserves IP. No further action required.", "addressName", addr.Name, "ip", addr.Address, "type", addr.AddressType)
 			return addr.Address, IPAddrManaged, nil
 		}
 
-		am.logger.V(2).Info("Deleting existing address", "reason", validationError)
+		am.frLogger.V(2).Info("Deleting existing address", "reason", validationError)
 		err := am.svc.DeleteRegionAddress(addr.Name, am.region)
 		if err != nil {
 			if utils.IsNotFoundError(err) {
-				am.logger.V(4).Info("Address was not found. Ignoring.", "addressName", addr.Name)
+				am.frLogger.V(4).Info("Address was not found. Ignoring.", "addressName", addr.Name)
 			} else {
 				return "", IPAddrUndefined, err
 			}
 		} else {
-			am.logger.V(4).Info("Successfully deleted previous address", "addressName", addr.Name)
+			am.frLogger.V(4).Info("Successfully deleted previous address", "addressName", addr.Name)
 		}
 	}
 
@@ -136,23 +136,23 @@ func (am *addressManager) HoldAddress() (string, IPAddressType, error) {
 // ReleaseAddress will release the address if it's owned by the controller.
 func (am *addressManager) ReleaseAddress() error {
 	if !am.tryRelease {
-		am.logger.V(4).Info("Not attempting release of address", "ip", am.targetIP)
+		am.frLogger.V(4).Info("Not attempting release of address", "ip", am.targetIP)
 		return nil
 	}
 
-	am.logger.V(4).Info("Releasing address", "ip", am.targetIP, "addressName", am.name)
+	am.frLogger.V(4).Info("Releasing address", "ip", am.targetIP, "addressName", am.name)
 	// Controller only ever tries to unreserve the address named with the load balancer's name.
 	err := am.svc.DeleteRegionAddress(am.name, am.region)
 	if err != nil {
 		if utils.IsNotFoundError(err) {
-			am.logger.Info("Address was not found. Ignoring.", "addressName", am.name)
+			am.frLogger.Info("Address was not found. Ignoring.", "addressName", am.name)
 			return nil
 		}
 
 		return err
 	}
 
-	am.logger.V(4).Info("Successfully released IP named", "ip", am.targetIP, "addressName", am.name)
+	am.frLogger.V(4).Info("Successfully released IP named", "ip", am.targetIP, "addressName", am.name)
 	return nil
 }
 
@@ -199,7 +199,7 @@ func (am *addressManager) ensureAddressReservation() (string, IPAddressType, err
 	reserveErr := am.svc.ReserveRegionAddress(newAddr, am.region)
 	if reserveErr == nil {
 		if newAddr.Address != "" {
-			am.logger.V(4).Info("Successfully reserved IP", "ip", newAddr.Address, "addressName", newAddr.Name)
+			am.frLogger.V(4).Info("Successfully reserved IP", "ip", newAddr.Address, "addressName", newAddr.Name)
 			return newAddr.Address, IPAddrManaged, nil
 		}
 
@@ -209,11 +209,11 @@ func (am *addressManager) ensureAddressReservation() (string, IPAddressType, err
 			return "", IPAddrUndefined, err
 		}
 
-		am.logger.V(4).Info("Successfully created address which reserved IP", "addressName", addr.Name, "ip", addr.Address)
+		am.frLogger.V(4).Info("Successfully created address which reserved IP", "addressName", addr.Name, "ip", addr.Address)
 		return addr.Address, IPAddrManaged, nil
 	}
 
-	am.logger.V(2).Info("Address reserve error", "err", reserveErr)
+	am.frLogger.V(2).Info("Address reserve error", "err", reserveErr)
 
 	if utils.IsNetworkTierMismatchGCEError(reserveErr) {
 		receivedNetworkTier := cloud.NetworkTierPremium
@@ -262,11 +262,11 @@ func (am *addressManager) ensureAddressReservation() (string, IPAddressType, err
 	if am.isManagedAddress(addr) {
 		// The address with this name is checked at the beginning of 'HoldAddress()', but for some reason
 		// it was re-created by this point. May be possible that two controllers are running.
-		am.logger.Info("Address %q unexpectedly existed with IP %q.", "addressName", addr.Name, "ip", am.targetIP)
+		am.frLogger.Info("Address %q unexpectedly existed with IP %q.", "addressName", addr.Name, "ip", am.targetIP)
 		return addr.Address, IPAddrManaged, nil
 	}
 	// If the retrieved address is not named with the loadbalancer name, then the controller does not own it, but will allow use of it.
-	am.logger.V(4).Info("Address was already reserved with name: %q, description: %q", "ip", am.targetIP, "addressName", addr.Name, "addressDescription", addr.Description)
+	am.frLogger.V(4).Info("Address was already reserved with name: %q, description: %q", "ip", am.targetIP, "addressName", addr.Name, "addressDescription", addr.Description)
 	am.tryRelease = false
 	return addr.Address, IPAddrUnmanaged, nil
 
@@ -319,9 +319,9 @@ func (am *addressManager) TearDownAddressIPIfNetworkTierMismatch() error {
 		if !am.isManagedAddress(addr) {
 			return utils.NewNetworkTierErr(fmt.Sprintf("User specific address IP (%v)", am.name), string(am.networkTier), addr.NetworkTier)
 		}
-		am.logger.V(3).Info("Deleting IP address because it has a wrong network tier", "ip", am.targetIP)
+		am.frLogger.V(3).Info("Deleting IP address because it has a wrong network tier", "ip", am.targetIP)
 		if err := am.svc.DeleteRegionAddress(addr.Name, am.targetIP); err != nil {
-			am.logger.Error(err, "Unable to delete region address on target ip", "addressName", addr.Name, "ip", am.targetIP)
+			am.frLogger.Error(err, "Unable to delete region address on target ip", "addressName", addr.Name, "ip", am.targetIP)
 		}
 	}
 	return nil
