@@ -336,6 +336,7 @@ func EnsureFrontendConfig(s *Sandbox, fc *frontendconfig.FrontendConfig) (*front
 	}
 	// Update fc spec if they are not equal
 	if !reflect.DeepEqual(fc.Spec, currentFc.Spec) {
+		klog.Infof("Updating frontend config %s/%s", fc.Namespace, fc.Name)
 		currentFc.Spec = fc.Spec
 		return s.f.FrontendConfigClient.NetworkingV1beta1().FrontendConfigs(s.Namespace).Update(context.TODO(), currentFc, metav1.UpdateOptions{})
 	}
