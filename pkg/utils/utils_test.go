@@ -121,6 +121,16 @@ func TestEqualResourcePaths(t *testing.T) {
 			b:    "zones/us-central1-a/instanceGroups/example-group",
 			want: true,
 		},
+		"partial without project id vs full": {
+			a:    "https://www.googleapis.com/compute/v1/projects/project-name/regions/us-central1/sslPolicies/example-policy",
+			b:    "regions/us-central1/sslPolicies/example-policy",
+			want: true,
+		},
+		"partial without project id vs partial": {
+			a:    "projects/project-id/zones/us-central1-a/instanceGroups/example-group",
+			b:    "zones/us-central1-a/instanceGroups/example-group",
+			want: true,
+		},
 		"full vs full": {
 			a:    "https://www.googleapis.com/compute/beta/projects/project-id/zones/us-central1-a/instanceGroups/example-group",
 			b:    "https://www.googleapis.com/compute/beta/projects/project-id/zones/us-central1-a/instanceGroups/example-group",
@@ -178,6 +188,16 @@ func TestEqualResourceIDs(t *testing.T) {
 			a:    "https://www.googleapis.com/compute/beta/projects/project-id/zones/us-central1-a/instanceGroups/example-group",
 			b:    "projects/project-id/zones/us-central1-a/instanceGroups/example-group",
 			want: true,
+		},
+		"partial without project id vs full": {
+			a:    "https://www.googleapis.com/compute/v1/projects/project-name/regions/us-central1/sslPolicies/example-policy",
+			b:    "regions/us-central1/sslPolicies/example-policy",
+			want: false,
+		},
+		"partial without project id vs partial": {
+			a:    "projects/project-id/zones/us-central1-a/instanceGroups/example-group",
+			b:    "zones/us-central1-a/instanceGroups/example-group",
+			want: false,
 		},
 		"full vs full": {
 			a:    "https://www.googleapis.com/compute/beta/projects/project-id/zones/us-central1-a/instanceGroups/example-group",
