@@ -217,7 +217,7 @@ func (l7 *L7) getSslCertLinkInUse() ([]string, error) {
 // ensureSslPolicy ensures that the SslPolicy described in the frontendconfig is
 // properly applied to the proxy.
 func (l7 *L7) ensureSslPolicy(env *translator.Env, currentProxy *composite.TargetHttpsProxy, policyLink string) error {
-	if !utils.EqualResourceIDs(policyLink, currentProxy.SslPolicy) {
+	if !utils.EqualResourcePaths(policyLink, currentProxy.SslPolicy) {
 		key, err := l7.CreateKey(currentProxy.Name)
 		if err != nil {
 			return err
