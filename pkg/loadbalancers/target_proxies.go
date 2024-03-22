@@ -218,6 +218,7 @@ func (l7 *L7) getSslCertLinkInUse() ([]string, error) {
 // properly applied to the proxy.
 func (l7 *L7) ensureSslPolicy(env *translator.Env, currentProxy *composite.TargetHttpsProxy, policyLink string) error {
 	if !utils.EqualResourcePaths(policyLink, currentProxy.SslPolicy) {
+		l7.logger.Info("ensureSslPolicy", "newPolicyLink", policyLink, "currentPolicyLink", currentProxy.SslPolicy)
 		key, err := l7.CreateKey(currentProxy.Name)
 		if err != nil {
 			return err
@@ -241,6 +242,7 @@ func (l7 *L7) ensureSslPolicy(env *translator.Env, currentProxy *composite.Targe
 // Regional HTTPs Proxies do not support setSslPolicy, and require using patch
 // method.
 func ensureRegionalSslPolicy(cloud *gce.Cloud, key *meta.Key, currentProxy *composite.TargetHttpsProxy, policyLink string, ingLogger klog.Logger) error {
+	ingLogger.Info("Ensuring regional ssl policy", "policyLink", policyLink)
 	patchProxy := &composite.TargetHttpsProxy{
 		Fingerprint: currentProxy.Fingerprint,
 		SslPolicy:   policyLink,
