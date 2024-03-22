@@ -85,7 +85,7 @@ func PatchRegionalTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetHtt
 		if err != nil {
 			return err
 		}
-		alphaLogger := logger.WithValues("name", alpha.Name)
+		alphaLogger := logger.WithValues("name", key.Name)
 		alphaLogger.Info("Patching alpha region TargetHttpsProxy")
 		return mc.Observe(gceCloud.Compute().AlphaRegionTargetHttpsProxies().Patch(ctx, key, alpha))
 	case meta.VersionBeta:
@@ -93,7 +93,7 @@ func PatchRegionalTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetHtt
 		if err != nil {
 			return err
 		}
-		betaLogger := logger.WithValues("name", beta.Name)
+		betaLogger := logger.WithValues("name", key.Name)
 		betaLogger.Info("Patching beta region TargetHttpsProxy")
 		return mc.Observe(gceCloud.Compute().BetaRegionTargetHttpsProxies().Patch(ctx, key, beta))
 	default:
@@ -101,7 +101,13 @@ func PatchRegionalTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetHtt
 		if err != nil {
 			return err
 		}
-		gaLogger := logger.WithValues("name", ga.Name)
+		// NullFields is not getting copied because ToGA copies through json Marshal Unmarshal,
+		// and NullFields is marked as "`json:"-"` so it is ignored.
+		// Manually copy this field.
+		ga.NullFields = targetHttpsProxy.NullFields
+		gaLogger := logger.WithValues(
+			"name", key.Name,
+		)
 		gaLogger.Info("Patching ga region TargetHttpsProxy")
 		return mc.Observe(gceCloud.Compute().RegionTargetHttpsProxies().Patch(ctx, key, ga))
 	}

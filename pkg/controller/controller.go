@@ -290,6 +290,7 @@ func NewLoadBalancerController(
 			UpdateFunc: func(old, cur interface{}) {
 				if !reflect.DeepEqual(old, cur) {
 					feConfig := cur.(*frontendconfigv1beta1.FrontendConfig)
+					klog.Infof("FrontendConfig updated %s/%s", feConfig.Namespace, feConfig.Name)
 					ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesFrontendConfig(feConfig).AsList()
 					lbc.ingQueue.Enqueue(convert(ings)...)
 				}
