@@ -16,9 +16,7 @@ limitations under the License.
 
 package metricscollector
 
-import (
-	negtypes "k8s.io/ingress-gce/pkg/neg/types"
-)
+import negtypes "k8s.io/ingress-gce/pkg/neg/types"
 
 // NegServiceState contains all the neg usage associated with one service
 type NegServiceState struct {

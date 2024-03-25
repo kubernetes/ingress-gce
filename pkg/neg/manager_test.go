@@ -96,7 +96,7 @@ func NewTestSyncerManager(kubeClient kubernetes.Interface) (*syncerManager, *gce
 		testContext.EndpointSliceInformer.GetIndexer(),
 		testContext.NodeInformer.GetIndexer(),
 		testContext.SvcNegInformer.GetIndexer(),
-		metricscollector.FakeSyncerMetrics(),
+		metricscollector.FakeNEGControllerMetrics(),
 		false, //enableNonGcpMode
 		testContext.EnableDualStackNEG,
 		testContext.NumGCWorkers,
