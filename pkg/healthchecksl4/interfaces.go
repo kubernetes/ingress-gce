@@ -7,18 +7,19 @@ import (
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/klog/v2"
 )
 
 // L4HealthChecks defines methods for creating and deleting health checks (and their firewall rules) for l4 services
 type L4HealthChecks interface {
 	// EnsureHealthCheckWithFirewall creates health check (and firewall rule) for l4 service.
-	EnsureHealthCheckWithFirewall(svc *v1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType, nodeNames []string, svcNetwork network.NetworkInfo) *EnsureHealthCheckResult
+	EnsureHealthCheckWithFirewall(svc *v1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType, nodeNames []string, svcNetwork network.NetworkInfo, svcLogger klog.Logger) *EnsureHealthCheckResult
 	// EnsureHealthCheckWithDualStackFirewalls creates health check (and firewall rule) for l4 service. Handles both IPv4 and IPv6.
-	EnsureHealthCheckWithDualStackFirewalls(svc *v1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType, nodeNames []string, needsIPv4 bool, needsIPv6 bool, svcNetwork network.NetworkInfo) *EnsureHealthCheckResult
+	EnsureHealthCheckWithDualStackFirewalls(svc *v1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType, nodeNames []string, needsIPv4 bool, needsIPv6 bool, svcNetwork network.NetworkInfo, svcLogger klog.Logger) *EnsureHealthCheckResult
 	// DeleteHealthCheckWithFirewall deletes health check (and firewall rule) for l4 service.
-	DeleteHealthCheckWithFirewall(svc *v1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType) (string, error)
+	DeleteHealthCheckWithFirewall(svc *v1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType, svcLogger klog.Logger) (string, error)
 	// DeleteHealthCheckWithDualStackFirewalls deletes health check (and firewall rule) for l4 service, deletes IPv6 firewalls if asked.
-	DeleteHealthCheckWithDualStackFirewalls(svc *v1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType) (string, error)
+	DeleteHealthCheckWithDualStackFirewalls(svc *v1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType, svcLogger klog.Logger) (string, error)
 }
 
 type EnsureHealthCheckResult struct {
