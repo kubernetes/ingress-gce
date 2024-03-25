@@ -755,13 +755,13 @@ func minMaxPort(svcPorts []api_v1.ServicePort) (int32, int32) {
 	return minPort, maxPort
 }
 
-func MinMaxPortRangeAndProtocol(svcPorts []api_v1.ServicePort) (portRange, protocol string) {
+func MinMaxPortRange(svcPorts []api_v1.ServicePort) string {
 	if len(svcPorts) == 0 {
-		return "", ""
+		return ""
 	}
 
 	minPort, maxPort := minMaxPort(svcPorts)
-	return fmt.Sprintf("%d-%d", minPort, maxPort), string(svcPorts[0].Protocol)
+	return fmt.Sprintf("%d-%d", minPort, maxPort)
 }
 
 // TranslateAffinityType converts the k8s affinity type to the GCE affinity type.
