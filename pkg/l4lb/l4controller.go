@@ -80,6 +80,8 @@ type L4Controller struct {
 	sharedResourcesLock sync.Mutex
 	enableDualStack     bool
 
+	serviceVersions *serviceVersionsTracker
+
 	logger klog.Logger
 }
 
@@ -101,6 +103,7 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 		zoneGetter:      ctx.ZoneGetter,
 		forwardingRules: forwardingrules.New(ctx.Cloud, meta.VersionGA, meta.Regional, logger),
 		enableDualStack: ctx.EnableL4ILBDualStack,
+		serviceVersions: NewServiceVersionsTracker(),
 		logger:          logger,
 	}
 	l4c.backendPool = backends.NewPool(ctx.Cloud, l4c.namer)
@@ -124,6 +127,7 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 			if needsILB || l4c.needsDeletion(addSvc) {
 				logger.V(3).Info("ILB Service added, enqueuing", "serviceKey", svcKey)
 				l4c.ctx.Recorder(addSvc.Namespace).Eventf(addSvc, v1.EventTypeNormal, "ADD", svcKey)
+				l4c.serviceVersions.SetLastUpdateSeen(svcKey, addSvc.ResourceVersion, logger)
 				l4c.svcQueue.Enqueue(addSvc)
 				l4c.enqueueTracker.Track()
 			} else {
@@ -139,6 +143,7 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 			needsDeletion := l4c.needsDeletion(curSvc)
 			if needsUpdate || needsDeletion {
 				logger.V(3).Info("Service changed, enqueuing", "serviceKey", svcKey, "needsUpdate", needsUpdate, "needsDeletion", needsDeletion)
+				l4c.serviceVersions.SetLastUpdateSeen(svcKey, curSvc.ResourceVersion, logger)
 				l4c.svcQueue.Enqueue(curSvc)
 				l4c.enqueueTracker.Track()
 				return
@@ -151,6 +156,8 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 				logger.V(3).Info("Periodic enqueueing of service", "serviceKey", svcKey)
 				l4c.svcQueue.Enqueue(curSvc)
 				l4c.enqueueTracker.Track()
+			} else if needsILB {
+				l4c.serviceVersions.SetLastIgnored(svcKey, curSvc.ResourceVersion, logger)
 			}
 		},
 	})
@@ -418,12 +425,15 @@ func (l4c *L4Controller) sync(key string, svcLogger klog.Logger) error {
 		svcLogger.V(3).Info("Ignoring delete of service not managed by L4 controller")
 		return nil
 	}
+	isSync := l4c.serviceVersions.IsResync(key, svc.ResourceVersion, svcLogger)
+	svcLogger.V(2).Info("Processing update operation for service", "sync", isSync, "resourceVersion", svc.ResourceVersion)
 	namespacedName := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}.String()
 	var result *loadbalancers.L4ILBSyncResult
 	if l4c.needsDeletion(svc) {
 		svcLogger.V(2).Info("Deleting ILB resources for service managed by L4 controller")
 		result = l4c.processServiceDeletion(key, svc, svcLogger)
 		if result == nil {
+			l4c.serviceVersions.Delete(key)
 			return nil
 		}
 		l4c.publishMetrics(result, namespacedName, svcLogger)
@@ -439,6 +449,7 @@ func (l4c *L4Controller) sync(key string, svcLogger klog.Logger) error {
 			return nil
 		}
 		l4c.publishMetrics(result, namespacedName, svcLogger)
+		l4c.serviceVersions.SetProcessed(key, svc.ResourceVersion, result.Error == nil, isSync, svcLogger)
 		return skipUserError(result.Error, svcLogger)
 	}
 	svcLogger.V(3).Info("Ignoring sync of service, neither delete nor ensure needed.")
