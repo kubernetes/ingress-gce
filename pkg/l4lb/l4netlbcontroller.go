@@ -18,6 +18,7 @@ package l4lb
 
 import (
 	"fmt"
+	"math/rand"
 	"reflect"
 	"strings"
 	"time"
@@ -420,7 +421,8 @@ func (lc *L4NetLBController) shutdown() {
 	lc.svcQueue.Shutdown()
 }
 func (lc *L4NetLBController) syncWrapper(key string) error {
-	svcLogger := lc.logger.WithValues("serviceKey", key)
+	syncTrackingId := rand.Int31()
+	svcLogger := lc.logger.WithValues("serviceKey", key, "syncId", syncTrackingId)
 	return skipUserError(lc.sync(key, svcLogger), svcLogger)
 }
 

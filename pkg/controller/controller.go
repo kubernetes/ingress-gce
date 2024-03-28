@@ -18,6 +18,7 @@ package controller
 
 import (
 	"fmt"
+	"math/rand"
 	"net/http"
 	"reflect"
 	"sync"
@@ -644,7 +645,8 @@ func (lbc *LoadBalancerController) postSyncGC(key string, syncErr error, oldScop
 
 // sync manages Ingress create/updates/deletes events from queue.
 func (lbc *LoadBalancerController) sync(key string) error {
-	ingLogger := lbc.logger.WithValues("ingressKey", key)
+	syncTrackingId := rand.Int31()
+	ingLogger := lbc.logger.WithValues("ingressKey", key, "syncId", syncTrackingId)
 	if !lbc.hasSynced() {
 		time.Sleep(context.StoreSyncPollPeriod)
 		return fmt.Errorf("waiting for stores to sync")
