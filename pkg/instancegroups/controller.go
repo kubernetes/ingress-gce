@@ -40,16 +40,19 @@ type Controller struct {
 	// synchronization.
 	hasSynced func() bool
 
+	enableMultiSubnetCluster bool
+
 	stopCh <-chan struct{}
 
 	logger klog.Logger
 }
 
 type ControllerConfig struct {
-	NodeInformer cache.SharedIndexInformer
-	IGManager    Manager
-	HasSynced    func() bool
-	StopCh       <-chan struct{}
+	NodeInformer             cache.SharedIndexInformer
+	IGManager                Manager
+	HasSynced                func() bool
+	EnableMultiSubnetCluster bool
+	StopCh                   <-chan struct{}
 }
 
 var defaultNodeObj = &apiv1.Node{
@@ -62,11 +65,12 @@ var defaultNodeObj = &apiv1.Node{
 func NewController(config *ControllerConfig, logger klog.Logger) *Controller {
 	logger = logger.WithName("InstanceGroupsController")
 	c := &Controller{
-		lister:    config.NodeInformer.GetIndexer(),
-		igManager: config.IGManager,
-		hasSynced: config.HasSynced,
-		stopCh:    config.StopCh,
-		logger:    logger,
+		lister:                   config.NodeInformer.GetIndexer(),
+		igManager:                config.IGManager,
+		hasSynced:                config.HasSynced,
+		enableMultiSubnetCluster: config.EnableMultiSubnetCluster,
+		stopCh:                   config.StopCh,
+		logger:                   logger,
 	}
 	c.queue = utils.NewPeriodicTaskQueue("", "nodes", c.sync, logger)
 
