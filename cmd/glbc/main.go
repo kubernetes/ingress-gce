@@ -563,12 +563,14 @@ func runWithWg(runFunc func(), wg *sync.WaitGroup) {
 }
 
 func collectLockAvailabilityMetrics(lockName, clusterType string, stopCh <-chan struct{}) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-stopCh:
 			klog.Infof("StopCh is closed. Stop collecting metrics for %s.", lockName)
 			return
-		case <-time.Tick(time.Second):
+		case <-ticker.C:
 			app.PublishLockAvailabilityMetrics(lockName, clusterType)
 			klog.Infof("Exported %s availability metrics.", lockName)
 		}
