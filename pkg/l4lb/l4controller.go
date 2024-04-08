@@ -436,7 +436,7 @@ func (l4c *L4Controller) sync(key string, svcLogger klog.Logger) error {
 			return nil
 		}
 		l4c.serviceVersions.Delete(key)
-		l4c.publishMetrics(result, namespacedName, svcLogger)
+		l4c.publishMetrics(result, namespacedName, false, svcLogger)
 		return skipUserError(result.Error, svcLogger)
 	}
 	// Check again here, to avoid time-of check, time-of-use race. A service queued by informer could have changed, no
@@ -448,7 +448,7 @@ func (l4c *L4Controller) sync(key string, svcLogger klog.Logger) error {
 			// result will be nil if the service was ignored(due to presence of service controller finalizer).
 			return nil
 		}
-		l4c.publishMetrics(result, namespacedName, svcLogger)
+		l4c.publishMetrics(result, namespacedName, isResync, svcLogger)
 		l4c.serviceVersions.SetProcessed(key, svc.ResourceVersion, result.Error == nil, isResync, svcLogger)
 		return skipUserError(result.Error, svcLogger)
 	}
@@ -548,7 +548,7 @@ func (l4c *L4Controller) needsUpdate(oldService *v1.Service, newService *v1.Serv
 }
 
 // publishMetrics this function sets controller metrics for ILB services and pushed ILB metrics based on sync type.
-func (l4c *L4Controller) publishMetrics(result *loadbalancers.L4ILBSyncResult, namespacedName string, svcLogger klog.Logger) {
+func (l4c *L4Controller) publishMetrics(result *loadbalancers.L4ILBSyncResult, namespacedName string, isResync bool, svcLogger klog.Logger) {
 	if result == nil {
 		return
 	}
@@ -557,13 +557,13 @@ func (l4c *L4Controller) publishMetrics(result *loadbalancers.L4ILBSyncResult, n
 		svcLogger.V(2).Info("Internal L4 Loadbalancer for Service ensured, updating its state in metrics cache", "serviceState", result.MetricsLegacyState)
 		l4c.ctx.ControllerMetrics.SetL4ILBServiceForLegacyMetric(namespacedName, result.MetricsLegacyState)
 		l4c.ctx.ControllerMetrics.SetL4ILBService(namespacedName, result.MetricsState)
-		l4metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime)
+		l4metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime, isResync)
 		if l4c.enableDualStack {
 			svcLogger.V(2).Info("Internal L4 DualStack Loadbalancer for Service ensured, updating its state in metrics cache", "serviceState", result.MetricsState)
-			l4metrics.PublishL4ILBDualStackSyncLatency(result.Error == nil, result.SyncType, result.MetricsState.IPFamilies, result.StartTime)
+			l4metrics.PublishL4ILBDualStackSyncLatency(result.Error == nil, result.SyncType, result.MetricsState.IPFamilies, result.StartTime, isResync)
 		}
 		if result.MetricsState.Multinetwork {
-			l4metrics.PublishL4ILBMultiNetSyncLatency(result.Error == nil, result.SyncType, result.StartTime)
+			l4metrics.PublishL4ILBMultiNetSyncLatency(result.Error == nil, result.SyncType, result.StartTime, isResync)
 		}
 
 	case loadbalancers.SyncTypeDelete:
@@ -573,12 +573,12 @@ func (l4c *L4Controller) publishMetrics(result *loadbalancers.L4ILBSyncResult, n
 			l4c.ctx.ControllerMetrics.DeleteL4ILBServiceForLegacyMetric(namespacedName)
 			l4c.ctx.ControllerMetrics.DeleteL4ILBService(namespacedName)
 		}
-		l4metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime)
+		l4metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime, false)
 		if l4c.enableDualStack {
-			l4metrics.PublishL4ILBDualStackSyncLatency(result.Error == nil, result.SyncType, result.MetricsState.IPFamilies, result.StartTime)
+			l4metrics.PublishL4ILBDualStackSyncLatency(result.Error == nil, result.SyncType, result.MetricsState.IPFamilies, result.StartTime, false)
 		}
 		if result.MetricsState.Multinetwork {
-			l4metrics.PublishL4ILBMultiNetSyncLatency(result.Error == nil, result.SyncType, result.StartTime)
+			l4metrics.PublishL4ILBMultiNetSyncLatency(result.Error == nil, result.SyncType, result.StartTime, false)
 		}
 	default:
 		svcLogger.Info("Unknown sync type, skipping metrics for service", "syncType", result.SyncType)

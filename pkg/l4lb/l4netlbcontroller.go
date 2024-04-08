@@ -461,7 +461,7 @@ func (lc *L4NetLBController) sync(key string, svcLogger klog.Logger) error {
 			return nil
 		}
 		lc.serviceVersions.Delete(key)
-		lc.publishMetrics(result, svc.Name, svc.Namespace, svcLogger)
+		lc.publishMetrics(result, svc.Name, svc.Namespace, false, svcLogger)
 		return result.Error
 	}
 
@@ -472,7 +472,7 @@ func (lc *L4NetLBController) sync(key string, svcLogger klog.Logger) error {
 			return nil
 		}
 		lc.serviceVersions.SetProcessed(key, svc.ResourceVersion, result.Error == nil, isResync, svcLogger)
-		lc.publishMetrics(result, svc.Name, svc.Namespace, svcLogger)
+		lc.publishMetrics(result, svc.Name, svc.Namespace, isResync, svcLogger)
 		return result.Error
 	}
 	svcLogger.V(3).Info("Ignoring sync of service, neither delete nor ensure needed.")
@@ -719,14 +719,14 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service,
 }
 
 // publishMetrics sets controller metrics for NetLB services and pushes NetLB metrics based on sync type.
-func (lc *L4NetLBController) publishMetrics(result *loadbalancers.L4NetLBSyncResult, name, namespace string, svcLogger klog.Logger) {
+func (lc *L4NetLBController) publishMetrics(result *loadbalancers.L4NetLBSyncResult, name, namespace string, isResync bool, svcLogger klog.Logger) {
 	namespacedName := types.NamespacedName{Name: name, Namespace: namespace}.String()
 	switch result.SyncType {
 	case loadbalancers.SyncTypeCreate, loadbalancers.SyncTypeUpdate:
 		svcLogger.V(2).Info("External L4 Loadbalancer for Service ensured, updating its state in metrics cache", "serviceState", result.MetricsState, "serviceLegacyState", result.MetricsLegacyState)
 		lc.ctx.ControllerMetrics.SetL4NetLBServiceForLegacyMetric(namespacedName, result.MetricsLegacyState)
 		lc.ctx.ControllerMetrics.SetL4NetLBService(namespacedName, result.MetricsState)
-		lc.publishSyncMetrics(result)
+		lc.publishSyncMetrics(result, isResync)
 	case loadbalancers.SyncTypeDelete:
 		// if service is successfully deleted, remove it from cache
 		if result.Error == nil {
@@ -734,22 +734,22 @@ func (lc *L4NetLBController) publishMetrics(result *loadbalancers.L4NetLBSyncRes
 			lc.ctx.ControllerMetrics.DeleteL4NetLBServiceForLegacyMetric(namespacedName)
 			lc.ctx.ControllerMetrics.DeleteL4NetLBService(namespacedName)
 		}
-		lc.publishSyncMetrics(result)
+		lc.publishSyncMetrics(result, false)
 	default:
 		svcLogger.Info("Unknown sync type, skipping metrics for service", "syncType", result.SyncType)
 	}
 }
 
-func (lc *L4NetLBController) publishSyncMetrics(result *loadbalancers.L4NetLBSyncResult) {
+func (lc *L4NetLBController) publishSyncMetrics(result *loadbalancers.L4NetLBSyncResult, isResync bool) {
 	if lc.enableDualStack {
-		l4metrics.PublishL4NetLBDualStackSyncLatency(result.Error == nil, result.SyncType, result.MetricsState.IPFamilies, result.StartTime)
+		l4metrics.PublishL4NetLBDualStackSyncLatency(result.Error == nil, result.SyncType, result.MetricsState.IPFamilies, result.StartTime, isResync)
 	}
 	if result.MetricsState.Multinetwork {
-		l4metrics.PublishL4NetLBMultiNetSyncLatency(result.Error == nil, result.SyncType, result.StartTime)
+		l4metrics.PublishL4NetLBMultiNetSyncLatency(result.Error == nil, result.SyncType, result.StartTime, isResync)
 	}
 	if result.Error == nil {
-		l4metrics.PublishL4NetLBSyncSuccess(result.SyncType, result.StartTime)
+		l4metrics.PublishL4NetLBSyncSuccess(result.SyncType, result.StartTime, isResync)
 		return
 	}
-	l4metrics.PublishL4NetLBSyncError(result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime)
+	l4metrics.PublishL4NetLBSyncError(result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime, isResync)
 }
