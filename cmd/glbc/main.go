@@ -336,14 +336,14 @@ func runControllers(ctx *ingctx.ControllerContext, option runOption, logger klog
 
 	if flags.F.RunIngressController {
 		lbc := controller.NewLoadBalancerController(ctx, stopCh, logger)
-		go runWithWg(lbc.Run, wg)
+		runWithWg(lbc.Run, wg)
 		logger.V(0).Info("ingress controller started")
 
 		if !flags.F.EnableFirewallCR && flags.F.DisableFWEnforcement {
 			klog.Fatalf("We can only disable the ingress controller FW enforcement when enabling the FW CR")
 		}
 		fwc := firewalls.NewFirewallController(ctx, flags.F.NodePortRanges.Values(), flags.F.EnableFirewallCR, flags.F.DisableFWEnforcement, ctx.EnableIngressRegionalExternal, stopCh, logger)
-		go runWithWg(fwc.Run, wg)
+		runWithWg(fwc.Run, wg)
 		logger.V(0).Info("firewall controller started")
 	}
 
@@ -355,19 +355,19 @@ func runControllers(ctx *ingctx.ControllerContext, option runOption, logger klog
 	}
 	if flags.F.RunL4Controller {
 		l4Controller := l4lb.NewILBController(ctx, stopCh, logger)
-		go runWithWg(l4Controller.Run, wg)
+		runWithWg(l4Controller.Run, wg)
 		logger.V(0).Info("L4 controller started")
 	}
 
 	if flags.F.EnablePSC {
 		pscController := psc.NewController(ctx, stopCh, logger)
-		go runWithWg(pscController.Run, wg)
+		runWithWg(pscController.Run, wg)
 		logger.V(0).Info("PSC Controller started")
 	}
 
 	if flags.F.EnableServiceMetrics {
 		metricsController := servicemetrics.NewController(ctx, flags.F.MetricsExportInterval, stopCh, logger)
-		go runWithWg(metricsController.Run, wg)
+		runWithWg(metricsController.Run, wg)
 		logger.V(0).Info("Service Metrics Controller started")
 	}
 
@@ -383,14 +383,14 @@ func runControllers(ctx *ingctx.ControllerContext, option runOption, logger klog
 			StopCh:       stopCh,
 		}
 		igController := instancegroups.NewController(igControllerParams, logger)
-		go runWithWg(igController.Run, wg)
+		runWithWg(igController.Run, wg)
 	}
 
 	// The L4NetLbController will be run when RbsMode flag is Set
 	if flags.F.RunL4NetLBController {
 		l4netlbController := l4lb.NewL4NetLBController(ctx, stopCh, logger)
 
-		go runWithWg(l4netlbController.Run, wg)
+		runWithWg(l4netlbController.Run, wg)
 		logger.V(0).Info("L4NetLB controller started")
 	}
 	// Keep the program running until TERM signal.
@@ -426,7 +426,7 @@ func runControllers(ctx *ingctx.ControllerContext, option runOption, logger klog
 func runNEGController(ctx *ingctx.ControllerContext, id string, option runOption, logger klog.Logger) {
 	negController := createNEGController(ctx, option.stopCh, logger)
 	if !option.leaderElect {
-		go runWithWg(negController.Run, option.wg)
+		runWithWg(negController.Run, option.wg)
 		logger.V(0).Info("negController started")
 		return
 	}
@@ -434,7 +434,7 @@ func runNEGController(ctx *ingctx.ControllerContext, id string, option runOption
 	// If GateNEGByLock is false, we run NEG controller with other controllers.
 	// In this case, NEG controller is controlled by the combined lock/ingress-gce-lock.
 	if !flags.F.GateNEGByLock {
-		go runWithWg(negController.Run, option.wg)
+		runWithWg(negController.Run, option.wg)
 		logger.V(0).Info("negController started")
 	}
 
@@ -446,7 +446,7 @@ func runNEGController(ctx *ingctx.ControllerContext, id string, option runOption
 		// In this case, NEG controller is controlled by the ingres-gce-lock
 		// and ingress-gce-neg-lock.
 		if flags.F.GateNEGByLock {
-			go runWithWg(negController.Run, option.wg)
+			runWithWg(negController.Run, option.wg)
 			logger.V(0).Info("Gated: negController started")
 		}
 		<-option.stopCh
@@ -556,12 +556,16 @@ func createNEGController(ctx *ingctx.ControllerContext, stopCh <-chan struct{}, 
 	return negController
 }
 
-// runWithWg is a convenience wrapper that do a wg.Add(1) and runs the given
-// function with a deferred wg.Done()
+// runWithWg is a convenience wrapper that do a wg.Add(1), and runs the given
+// function in a goroutine with a deferred wg.Done().
+// We need to make sure wg.Add(1) when the counter is zero is executed before
+// wg.Wait().
 func runWithWg(runFunc func(), wg *sync.WaitGroup) {
 	wg.Add(1)
-	defer wg.Done()
-	runFunc()
+	go func() {
+		defer wg.Done()
+		runFunc()
+	}()
 }
 
 func collectLockAvailabilityMetrics(lockName, clusterType string, stopCh <-chan struct{}, lockLogger klog.Logger) {
