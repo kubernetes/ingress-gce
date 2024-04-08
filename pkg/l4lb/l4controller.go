@@ -425,17 +425,17 @@ func (l4c *L4Controller) sync(key string, svcLogger klog.Logger) error {
 		svcLogger.V(3).Info("Ignoring delete of service not managed by L4 controller")
 		return nil
 	}
-	isSync := l4c.serviceVersions.IsResync(key, svc.ResourceVersion, svcLogger)
-	svcLogger.V(2).Info("Processing update operation for service", "sync", isSync, "resourceVersion", svc.ResourceVersion)
+	isResync := l4c.serviceVersions.IsResync(key, svc.ResourceVersion, svcLogger)
+	svcLogger.V(2).Info("Processing update operation for service", "resync", isResync, "resourceVersion", svc.ResourceVersion)
 	namespacedName := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}.String()
 	var result *loadbalancers.L4ILBSyncResult
 	if l4c.needsDeletion(svc) {
 		svcLogger.V(2).Info("Deleting ILB resources for service managed by L4 controller")
 		result = l4c.processServiceDeletion(key, svc, svcLogger)
 		if result == nil {
-			l4c.serviceVersions.Delete(key)
 			return nil
 		}
+		l4c.serviceVersions.Delete(key)
 		l4c.publishMetrics(result, namespacedName, svcLogger)
 		return skipUserError(result.Error, svcLogger)
 	}
@@ -449,7 +449,7 @@ func (l4c *L4Controller) sync(key string, svcLogger klog.Logger) error {
 			return nil
 		}
 		l4c.publishMetrics(result, namespacedName, svcLogger)
-		l4c.serviceVersions.SetProcessed(key, svc.ResourceVersion, result.Error == nil, isSync, svcLogger)
+		l4c.serviceVersions.SetProcessed(key, svc.ResourceVersion, result.Error == nil, isResync, svcLogger)
 		return skipUserError(result.Error, svcLogger)
 	}
 	svcLogger.V(3).Info("Ignoring sync of service, neither delete nor ensure needed.")

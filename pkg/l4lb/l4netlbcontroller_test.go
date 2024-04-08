@@ -1283,6 +1283,7 @@ func TestShouldProcessService(t *testing.T) {
 		oldSvc        *v1.Service
 		newSvc        *v1.Service
 		shouldProcess bool
+		shouldResync  bool
 	}{
 		{
 			oldSvc:        nil,
@@ -1329,11 +1330,15 @@ func TestShouldProcessService(t *testing.T) {
 			oldSvc:        svcWithRBSAnnotationAndFinalizer,
 			newSvc:        svcWithRBSAnnotationAndFinalizer,
 			shouldProcess: true,
+			shouldResync:  true,
 		},
 	} {
-		result := l4netController.shouldProcessService(testCase.newSvc, testCase.oldSvc, klog.TODO())
+		result, isResync := l4netController.shouldProcessService(testCase.newSvc, testCase.oldSvc, klog.TODO())
 		if result != testCase.shouldProcess {
 			t.Errorf("Old service %v. New service %v. Expected needsUpdate: %t, got: %t", testCase.oldSvc, testCase.newSvc, testCase.shouldProcess, result)
+		}
+		if isResync != testCase.shouldResync {
+			t.Errorf("Old service %v. New service %v. Expected needsResync: %t, got: %t", testCase.oldSvc, testCase.newSvc, testCase.shouldResync, isResync)
 		}
 	}
 }

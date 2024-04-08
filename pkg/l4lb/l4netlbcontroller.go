@@ -78,6 +78,7 @@ type L4NetLBController struct {
 	forwardingRules             ForwardingRulesGetter
 	enableDualStack             bool
 	enableStrongSessionAffinity bool
+	serviceVersions             *serviceVersionsTracker
 
 	logger klog.Logger
 }
@@ -107,6 +108,7 @@ func NewL4NetLBController(
 		forwardingRules:             forwardingrules.New(ctx.Cloud, meta.VersionGA, meta.Regional, logger),
 		enableDualStack:             ctx.EnableL4NetLBDualStack,
 		enableStrongSessionAffinity: ctx.EnableL4StrongSessionAffinity,
+		serviceVersions:             NewServiceVersionsTracker(),
 		logger:                      logger,
 	}
 	var networkLister cache.Indexer
@@ -126,9 +128,10 @@ func NewL4NetLBController(
 			addSvc := obj.(*v1.Service)
 			svcKey := utils.ServiceKeyFunc(addSvc.Namespace, addSvc.Name)
 			svcLogger := logger.WithValues("serviceKey", svcKey)
-			if l4netLBc.shouldProcessService(addSvc, nil, svcLogger) {
+			if shouldProcess, _ := l4netLBc.shouldProcessService(addSvc, nil, svcLogger); shouldProcess {
 				svcLogger.V(3).Info("L4 External LoadBalancer Service added, enqueuing")
 				l4netLBc.ctx.Recorder(addSvc.Namespace).Eventf(addSvc, v1.EventTypeNormal, "ADD", svcKey)
+				l4netLBc.serviceVersions.SetLastUpdateSeen(svcKey, addSvc.ResourceVersion, logger)
 				l4netLBc.svcQueue.Enqueue(addSvc)
 				l4netLBc.enqueueTracker.Track()
 			} else {
@@ -141,8 +144,11 @@ func NewL4NetLBController(
 			oldSvc := old.(*v1.Service)
 			svcKey := utils.ServiceKeyFunc(curSvc.Namespace, curSvc.Name)
 			svcLogger := logger.WithValues("serviceKey", svcKey)
-			if l4netLBc.shouldProcessService(curSvc, oldSvc, svcLogger) {
+			if shouldProcess, isResync := l4netLBc.shouldProcessService(curSvc, oldSvc, svcLogger); shouldProcess {
 				svcLogger.V(3).Info("L4 External LoadBalancer Service updated, enqueuing")
+				if !isResync {
+					l4netLBc.serviceVersions.SetLastUpdateSeen(svcKey, curSvc.ResourceVersion, logger)
+				}
 				l4netLBc.svcQueue.Enqueue(curSvc)
 				l4netLBc.enqueueTracker.Track()
 				return
@@ -265,19 +271,20 @@ func (lc *L4NetLBController) needsUpdate(newSvc, oldSvc *v1.Service) bool {
 }
 
 // shouldProcessService checks if given service should be process by controller
-func (lc *L4NetLBController) shouldProcessService(newSvc, oldSvc *v1.Service, svcLogger klog.Logger) bool {
+func (lc *L4NetLBController) shouldProcessService(newSvc, oldSvc *v1.Service, svcLogger klog.Logger) (shouldProcess bool, isResync bool) {
 	// Ignore services with LoadBalancerClass set. LoadBalancerClass can't be updated (see the field API doc) so we don't need to worry about cleaning up services that changed the class.
 	if newSvc.Spec.LoadBalancerClass != nil {
 		svcLogger.Info("Ignoring service managed by another controller", "serviceLoadBalancerClass", *newSvc.Spec.LoadBalancerClass)
-		return false
+		return false, false
 	}
 	if !lc.isRBSBasedService(newSvc, svcLogger) && !lc.isRBSBasedService(oldSvc, svcLogger) {
-		return false
+		return false, false
 	}
 	if lc.needsAddition(newSvc, oldSvc) || lc.needsUpdate(newSvc, oldSvc) || lc.needsDeletion(newSvc, svcLogger) {
-		return true
+		return true, false
 	}
-	return lc.needsPeriodicEnqueue(newSvc, oldSvc)
+	needsResync := lc.needsPeriodicEnqueue(newSvc, oldSvc)
+	return needsResync, needsResync
 }
 
 // hasForwardingRuleAnnotation checks if service has forwarding rule with matching name
@@ -445,13 +452,15 @@ func (lc *L4NetLBController) sync(key string, svcLogger klog.Logger) error {
 		svcLogger.V(3).Info("Ignoring sync of legacy target pool service")
 		return nil
 	}
-
+	isResync := lc.serviceVersions.IsResync(key, svc.ResourceVersion, svcLogger)
+	svcLogger.Info("Processing update operation for service", "resync", isResync, "resourceVersion", svc.ResourceVersion)
 	if lc.needsDeletion(svc, svcLogger) {
 		svcLogger.V(3).Info("Deleting L4 External LoadBalancer resources for service")
 		result := lc.garbageCollectRBSNetLB(key, svc, svcLogger)
 		if result == nil {
 			return nil
 		}
+		lc.serviceVersions.Delete(key)
 		lc.publishMetrics(result, svc.Name, svc.Namespace, svcLogger)
 		return result.Error
 	}
@@ -462,6 +471,7 @@ func (lc *L4NetLBController) sync(key string, svcLogger klog.Logger) error {
 			// result will be nil if the service was ignored(due to presence of service controller finalizer).
 			return nil
 		}
+		lc.serviceVersions.SetProcessed(key, svc.ResourceVersion, result.Error == nil, isResync, svcLogger)
 		lc.publishMetrics(result, svc.Name, svc.Namespace, svcLogger)
 		return result.Error
 	}
