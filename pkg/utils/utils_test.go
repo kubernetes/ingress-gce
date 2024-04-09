@@ -667,6 +667,93 @@ func TestGetNodeConditionPredicate(t *testing.T) {
 	}
 }
 
+func TestCandidateNodesInDefaultSubnetPredicate(t *testing.T) {
+	tests := []struct {
+		node              api_v1.Node
+		expectAccept      bool
+		defaultSubnetwork string
+		name              string
+	}{
+		{
+			name:         "empty node",
+			node:         api_v1.Node{},
+			expectAccept: false,
+		},
+		{
+			name: "ready node but no subnet labels nor PodCIDR",
+			node: api_v1.Node{
+				Status: api_v1.NodeStatus{
+					Conditions: []api_v1.NodeCondition{
+						{Type: api_v1.NodeReady, Status: api_v1.ConditionTrue},
+					},
+				},
+			},
+			expectAccept: false,
+		},
+		{
+			name: "ready node with the subnet label",
+			node: api_v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						LabelGKESubnetworkName: "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/defaultSubnet",
+					},
+				},
+				Status: api_v1.NodeStatus{
+					Conditions: []api_v1.NodeCondition{
+						{Type: api_v1.NodeReady, Status: api_v1.ConditionTrue},
+					},
+				},
+			},
+			defaultSubnetwork: "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/defaultSubnet",
+			expectAccept:      true,
+		},
+		{
+			name: "ready node without the subnet label but with PodCIDR",
+			node: api_v1.Node{
+				Spec: api_v1.NodeSpec{
+					PodCIDR: "10.0.0.0/8",
+				},
+				Status: api_v1.NodeStatus{
+					Conditions: []api_v1.NodeCondition{
+						{Type: api_v1.NodeReady, Status: api_v1.ConditionTrue},
+					},
+				},
+			},
+			defaultSubnetwork: "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/defaultSubnet",
+			expectAccept:      true,
+		},
+		{
+			name: "ready node from not matching network",
+			node: api_v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						LabelGKESubnetworkName: "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/otherSubnet",
+					},
+				},
+				Spec: api_v1.NodeSpec{
+					PodCIDR: "10.0.0.0/8",
+				},
+				Status: api_v1.NodeStatus{
+					Conditions: []api_v1.NodeCondition{
+						{Type: api_v1.NodeReady, Status: api_v1.ConditionTrue},
+					},
+				},
+			},
+			defaultSubnetwork: "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/defaultSubnet",
+			expectAccept:      false,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			pred := CandidateNodesInDefaultSubnetPredicate(test.defaultSubnetwork)
+			accept := pred(&test.node, klog.TODO())
+			if accept != test.expectAccept {
+				t.Errorf("Test failed for %s, got %v, want %v", test.name, accept, test.expectAccept)
+			}
+		})
+	}
+}
+
 // Do not run in parallel since modifies global flags
 // TODO(shance): remove l7-ilb flag tests once flag is removed
 func TestIsGCEIngress(t *testing.T) {

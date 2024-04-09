@@ -242,6 +242,7 @@ func main() {
 		EnableL4StrongSessionAffinity: flags.F.EnableL4StrongSessionAffinity,
 		EnableMultinetworking:         flags.F.EnableMultiNetworking,
 		EnableIngressRegionalExternal: flags.F.EnableIngressRegionalExternal,
+		EnableIGMultiSubnetCluster:    flags.F.EnableIGMultiSubnetCluster,
 	}
 	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, ingParamsClient, svcAttachmentClient, networkClient, cloud, namer, kubeSystemUID, ctxConfig, rootLogger)
 	go app.RunHTTPServer(ctx.HealthCheck, rootLogger)
@@ -392,6 +393,7 @@ func runControllers(ctx *ingctx.ControllerContext, option runOption, logger klog
 			IGManager:                ctx.InstancePool,
 			HasSynced:                ctx.HasSynced,
 			EnableMultiSubnetCluster: flags.F.EnableIGMultiSubnetCluster,
+			Cloud:                    ctx.Cloud,
 			StopCh:                   stopCh,
 		}
 		igController := instancegroups.NewController(igControllerParams, logger)

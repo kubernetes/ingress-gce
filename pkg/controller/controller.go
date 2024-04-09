@@ -30,7 +30,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/kubernetes"
 	unversionedcore "k8s.io/client-go/kubernetes/typed/core/v1"
-	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -106,14 +105,16 @@ type LoadBalancerController struct {
 
 	ZoneGetter *zonegetter.ZoneGetter
 
+	igNodeGetter igNodeGetter
+
 	logger klog.Logger
 }
 
 // NewLoadBalancerController creates a controller for gce loadbalancers.
 func NewLoadBalancerController(
-	ctx *context.ControllerContext,
-	stopCh <-chan struct{},
-	logger klog.Logger,
+		ctx *context.ControllerContext,
+		stopCh <-chan struct{},
+		logger klog.Logger,
 ) *LoadBalancerController {
 	logger = logger.WithName("IngressController")
 
@@ -143,6 +144,7 @@ func NewLoadBalancerController(
 		igLinker:      backends.NewInstanceGroupLinker(ctx.InstancePool, backendPool, logger),
 		metrics:       ctx.ControllerMetrics,
 		ZoneGetter:    ctx.ZoneGetter,
+		igNodeGetter:  instancegroups.NewNodeGetter(ctx.NodeInformer.GetIndexer(), ctx.EnableIGMultiSubnetCluster, ctx.Cloud),
 		logger:        logger,
 	}
 
@@ -344,6 +346,10 @@ func NewLoadBalancerController(
 	return &lbc
 }
 
+type igNodeGetter interface {
+	GetReadyNodesForSharedInstanceGroup(logger klog.Logger) ([]string, error)
+}
+
 // Run starts the loadbalancer controller.
 func (lbc *LoadBalancerController) Run() {
 	defer func() {
@@ -444,7 +450,7 @@ func (lbc *LoadBalancerController) syncInstanceGroup(ing *v1.Ingress, ingSvcPort
 		return err
 	}
 
-	nodeNames, err := utils.GetReadyNodeNames(listers.NewNodeLister(lbc.nodeLister), lbc.logger)
+	nodeNames, err := lbc.igNodeGetter.GetReadyNodesForSharedInstanceGroup(ingLogger)
 	if err != nil {
 		return err
 	}

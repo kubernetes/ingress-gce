@@ -77,6 +77,7 @@ type L4NetLBController struct {
 	igLinker                    *backends.RegionalInstanceGroupLinker
 	negLinker                   backends.Linker
 	forwardingRules             ForwardingRulesGetter
+	igNodeGetter                nodeGetter
 	enableDualStack             bool
 	enableStrongSessionAffinity bool
 	serviceVersions             *serviceVersionsTracker
@@ -110,6 +111,7 @@ func NewL4NetLBController(
 		enableDualStack:             ctx.EnableL4NetLBDualStack,
 		enableStrongSessionAffinity: ctx.EnableL4StrongSessionAffinity,
 		serviceVersions:             NewServiceVersionsTracker(),
+		igNodeGetter:                instancegroups.NewNodeGetter(ctx.NodeInformer.GetIndexer(), ctx.EnableIGMultiSubnetCluster, ctx.Cloud),
 		logger:                      logger,
 	}
 	var networkLister cache.Indexer
@@ -158,6 +160,10 @@ func NewL4NetLBController(
 	})
 	ctx.AddHealthCheck(l4NetLBControllerName, l4netLBc.checkHealth)
 	return l4netLBc
+}
+
+type nodeGetter interface {
+	GetReadyNodesForSharedInstanceGroup(logger klog.Logger) ([]string, error)
 }
 
 // needsAddition checks if given service should be added by controller
@@ -511,7 +517,7 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 		return &loadbalancers.L4NetLBSyncResult{Error: fmt.Errorf("Failed to attach L4 External LoadBalancer finalizer to service %s/%s, err %w", service.Namespace, service.Name, err)}
 	}
 
-	nodeNames, err := utils.GetReadyNodeNames(lc.nodeLister, svcLogger)
+	nodeNames, err := lc.igNodeGetter.GetReadyNodesForSharedInstanceGroup(svcLogger)
 	if err != nil {
 		return &loadbalancers.L4NetLBSyncResult{Error: err}
 	}

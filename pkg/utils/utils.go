@@ -88,7 +88,10 @@ const (
 	// exclude from load balancers created by a cloud provider. This label is deprecated and will
 	// be removed in 1.18.
 	LabelAlphaNodeRoleExcludeBalancer = "alpha.service-controller.kubernetes.io/exclude-balancer"
-	DualStackSubnetStackType          = "IPV4_IPV6"
+
+	// LabelGKESubnetworkName specifies the subnetwork the node is in.
+	LabelGKESubnetworkName   = "gke-subnetwork-name"
+	DualStackSubnetStackType = "IPV4_IPV6"
 )
 
 var networkTierErrorRegexp = regexp.MustCompile(`The network tier of external IP is STANDARD|PREMIUM, that of Address must be the same.`)
@@ -481,6 +484,21 @@ func GetReadyNodeNames(lister listers.NodeLister, logger klog.Logger) ([]string,
 	return nodeNames, nil
 }
 
+// GetReadyNodeNamesInDefaultSubnet returns names of schedulable, ready nodes from the node lister
+// It also filters out masters and nodes excluded from load-balancing
+// This function also checks the the subnetwork label of the node and returns only nodes that belong to the default network.
+func GetReadyNodeNamesInDefaultSubnet(lister listers.NodeLister, defaultSubnet string, logger klog.Logger) ([]string, error) {
+	var nodeNames []string
+	nodes, err := ListWithPredicate(lister, CandidateNodesInDefaultSubnetPredicate(defaultSubnet), logger)
+	if err != nil {
+		return nodeNames, err
+	}
+	for _, n := range nodes {
+		nodeNames = append(nodeNames, n.Name)
+	}
+	return nodeNames, nil
+}
+
 // NodeIsReady returns true if a node contains at least one condition of type "Ready"
 func NodeIsReady(node *api_v1.Node) bool {
 	for i := range node.Status.Conditions {
@@ -511,6 +529,25 @@ var (
 		return nodePredicateInternal(node, true, true, logger)
 	}
 )
+
+func CandidateNodesInDefaultSubnetPredicate(defaultSubnet string) func(node *api_v1.Node, logger klog.Logger) bool {
+	return func(node *api_v1.Node, logger klog.Logger) bool {
+		if !CandidateNodesPredicate(node, logger) {
+			return false
+		}
+		gkeSubnetworkLabel, hasGKESubnetworkLabel := node.Labels[LabelGKESubnetworkName]
+		// if there is no label but the podCIDR is populated assume default network
+		if !hasGKESubnetworkLabel && node.Spec.PodCIDR != "" {
+			return true
+		}
+		if hasGKESubnetworkLabel && EqualResourceIDs(gkeSubnetworkLabel, defaultSubnet) {
+			return true
+		}
+		logger.Info("Skipping node for the instance group since it is from a non-default network", "node", node.Name, "nodeSubnetwork", gkeSubnetworkLabel)
+		return false
+	}
+
+}
 
 func nodePredicateInternal(node *api_v1.Node, includeUnreadyNodes, excludeUpgradingNodes bool, logger klog.Logger) bool {
 	// Get all nodes that have a taint with NoSchedule effect
