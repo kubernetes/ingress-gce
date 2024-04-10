@@ -18,6 +18,7 @@ package l4lb
 
 import (
 	"fmt"
+	"math/rand"
 	"reflect"
 	"strings"
 	"sync"
@@ -407,7 +408,8 @@ func (l4c *L4Controller) linkNEG(l4 *loadbalancers.L4, svcLogger klog.Logger) er
 }
 
 func (l4c *L4Controller) syncWrapper(key string) error {
-	svcLogger := l4c.logger.WithValues("serviceKey", key)
+	syncTrackingId := rand.Int31()
+	svcLogger := l4c.logger.WithValues("serviceKey", key, "syncId", syncTrackingId)
 	return skipUserError(l4c.sync(key, svcLogger), svcLogger)
 }
 
