@@ -17,6 +17,7 @@ limitations under the License.
 package metrics
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -42,8 +43,9 @@ const (
 
 var (
 	l4LBSyncLatencyMetricsLabels = []string{
-		"sync_result", // result of the sync
-		"sync_type",   // whether this is a new service, update or delete
+		"sync_result",     // result of the sync
+		"sync_type",       // whether this is a new service, update or delete
+		"periodic_resync", // whether the sync was periodic resync or a update caused by a resource change
 	}
 	l4LBDualStackSyncLatencyMetricsLabels = append(l4LBSyncLatencyMetricsLabels, "ip_families")
 	l4LBSyncErrorMetricLabels             = []string{
@@ -177,47 +179,47 @@ func init() {
 }
 
 // PublishILBSyncMetrics exports metrics related to the L4 ILB sync.
-func PublishILBSyncMetrics(success bool, syncType, gceResource, errType string, startTime time.Time) {
-	publishL4ILBSyncLatency(success, syncType, startTime)
+func PublishILBSyncMetrics(success bool, syncType, gceResource, errType string, startTime time.Time, isResync bool) {
+	publishL4ILBSyncLatency(success, syncType, startTime, isResync)
 	if !success {
 		publishL4ILBSyncErrorCount(syncType, gceResource, errType)
 	}
 }
 
 // publishL4ILBSyncLatency exports the given sync latency datapoint.
-func publishL4ILBSyncLatency(success bool, syncType string, startTime time.Time) {
+func publishL4ILBSyncLatency(success bool, syncType string, startTime time.Time, isResync bool) {
 	status := statusSuccess
 	if !success {
 		status = statusError
 	}
-	l4ILBSyncLatency.WithLabelValues(status, syncType).Observe(time.Since(startTime).Seconds())
+	l4ILBSyncLatency.WithLabelValues(status, syncType, strconv.FormatBool(isResync)).Observe(time.Since(startTime).Seconds())
 }
 
 // PublishL4ILBDualStackSyncLatency exports the given sync latency datapoint.
-func PublishL4ILBDualStackSyncLatency(success bool, syncType, ipFamilies string, startTime time.Time) {
+func PublishL4ILBDualStackSyncLatency(success bool, syncType, ipFamilies string, startTime time.Time, isResync bool) {
 	status := statusSuccess
 	if !success {
 		status = statusError
 	}
-	l4ILBDualStackSyncLatency.WithLabelValues(status, syncType, ipFamilies).Observe(time.Since(startTime).Seconds())
+	l4ILBDualStackSyncLatency.WithLabelValues(status, syncType, strconv.FormatBool(isResync), ipFamilies).Observe(time.Since(startTime).Seconds())
 }
 
 // PublishL4ILBMultiNetSyncLatency exports the given sync latency datapoint.
-func PublishL4ILBMultiNetSyncLatency(success bool, syncType string, startTime time.Time) {
+func PublishL4ILBMultiNetSyncLatency(success bool, syncType string, startTime time.Time, isResync bool) {
 	status := statusSuccess
 	if !success {
 		status = statusError
 	}
-	l4ILBMultiNetSyncLatency.WithLabelValues(status, syncType).Observe(time.Since(startTime).Seconds())
+	l4ILBMultiNetSyncLatency.WithLabelValues(status, syncType, strconv.FormatBool(isResync)).Observe(time.Since(startTime).Seconds())
 }
 
 // PublishL4NetLBMultiNetSyncLatency exports the given sync latency datapoint.
-func PublishL4NetLBMultiNetSyncLatency(success bool, syncType string, startTime time.Time) {
+func PublishL4NetLBMultiNetSyncLatency(success bool, syncType string, startTime time.Time, isResync bool) {
 	status := statusSuccess
 	if !success {
 		status = statusError
 	}
-	l4NetLBMultiNetSyncLatency.WithLabelValues(status, syncType).Observe(time.Since(startTime).Seconds())
+	l4NetLBMultiNetSyncLatency.WithLabelValues(status, syncType, strconv.FormatBool(isResync)).Observe(time.Since(startTime).Seconds())
 }
 
 // publishL4ILBSyncLatency exports the given sync latency datapoint.
@@ -226,22 +228,22 @@ func publishL4ILBSyncErrorCount(syncType, gceResource, errorType string) {
 }
 
 // PublishL4NetLBSyncSuccess exports latency metrics for L4 NetLB service after successful sync.
-func PublishL4NetLBSyncSuccess(syncType string, startTime time.Time) {
-	l4NetLBSyncLatency.WithLabelValues(statusSuccess, syncType).Observe(time.Since(startTime).Seconds())
+func PublishL4NetLBSyncSuccess(syncType string, startTime time.Time, isResync bool) {
+	l4NetLBSyncLatency.WithLabelValues(statusSuccess, syncType, strconv.FormatBool(isResync)).Observe(time.Since(startTime).Seconds())
 }
 
 // PublishL4NetLBDualStackSyncLatency exports the given sync latency datapoint.
-func PublishL4NetLBDualStackSyncLatency(success bool, syncType, ipFamilies string, startTime time.Time) {
+func PublishL4NetLBDualStackSyncLatency(success bool, syncType, ipFamilies string, startTime time.Time, isResync bool) {
 	status := statusSuccess
 	if !success {
 		status = statusError
 	}
-	l4NetLBDualStackSyncLatency.WithLabelValues(status, syncType, ipFamilies).Observe(time.Since(startTime).Seconds())
+	l4NetLBDualStackSyncLatency.WithLabelValues(status, syncType, strconv.FormatBool(isResync), ipFamilies).Observe(time.Since(startTime).Seconds())
 }
 
 // PublishL4NetLBSyncError exports latency and error count metrics for L4 NetLB after error sync.
-func PublishL4NetLBSyncError(syncType, gceResource, errType string, startTime time.Time) {
-	l4NetLBSyncLatency.WithLabelValues(statusError, syncType).Observe(time.Since(startTime).Seconds())
+func PublishL4NetLBSyncError(syncType, gceResource, errType string, startTime time.Time, isResync bool) {
+	l4NetLBSyncLatency.WithLabelValues(statusError, syncType, strconv.FormatBool(isResync)).Observe(time.Since(startTime).Seconds())
 	l4NetLBSyncErrorCount.WithLabelValues(syncType, gceResource, errType).Inc()
 }
 
