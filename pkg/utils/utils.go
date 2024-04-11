@@ -931,3 +931,12 @@ func IsUnsupportedFeatureError(err error, featureName string) bool {
 	}
 	return false
 }
+
+// GetDomainFromGABasePath takes a GA base path of the form <path>/compute/v1 and returns the path.
+func GetDomainFromGABasePath(basePath string) string {
+	// Trim URL to remove the "/v1" part since we are using the GA path.
+	// Start by trimming any trailing "/"
+	domain := strings.TrimSuffix(basePath, "/")
+	domain = strings.TrimSuffix(domain, "/compute/v1")
+	return domain
+}
