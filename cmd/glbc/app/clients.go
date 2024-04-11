@@ -50,6 +50,7 @@ func NewKubeConfigForProtobuf(logger klog.Logger) (*rest.Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	config = utils.AddIngressUserAgent(config)
 	// Use protobufs for communication with apiserver
 	config.ContentType = "application/vnd.kubernetes.protobuf"
 	return config, nil
@@ -63,7 +64,11 @@ func NewKubeConfig(logger klog.Logger) (*rest.Config, error) {
 	}
 
 	logger.V(0).Info("Got APIServerHost and KubeConfig", "APIServerHost", flags.F.APIServerHost, "KubeConfig", flags.F.KubeConfigFile)
-	return clientcmd.BuildConfigFromFlags(flags.F.APIServerHost, flags.F.KubeConfigFile)
+	config, err := clientcmd.BuildConfigFromFlags(flags.F.APIServerHost, flags.F.KubeConfigFile)
+	if err != nil {
+		return nil, err
+	}
+	return utils.AddIngressUserAgent(config), nil
 }
 
 // NewGCEClient returns a client to the GCE environment. This will block until
