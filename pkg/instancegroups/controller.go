@@ -20,6 +20,7 @@ import (
 	"time"
 
 	apiv1 "k8s.io/api/core/v1"
+	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -51,6 +52,12 @@ type ControllerConfig struct {
 	StopCh       <-chan struct{}
 }
 
+var defaultNodeObj = &apiv1.Node{
+	ObjectMeta: meta_v1.ObjectMeta{
+		Name: "default",
+	},
+}
+
 // NewController returns a new node update controller.
 func NewController(config *ControllerConfig, logger klog.Logger) *Controller {
 	logger = logger.WithName("InstanceGroupsController")
@@ -65,14 +72,14 @@ func NewController(config *ControllerConfig, logger klog.Logger) *Controller {
 
 	config.NodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			c.queue.Enqueue(obj)
+			c.queue.Enqueue(defaultNodeObj)
 		},
 		DeleteFunc: func(obj interface{}) {
-			c.queue.Enqueue(obj)
+			c.queue.Enqueue(defaultNodeObj)
 		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			if nodeStatusChanged(oldObj.(*apiv1.Node), newObj.(*apiv1.Node)) {
-				c.queue.Enqueue(newObj)
+				c.queue.Enqueue(defaultNodeObj)
 			}
 		},
 	})
