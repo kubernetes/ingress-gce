@@ -1,4 +1,4 @@
-// Copyright 2023 Google LLC.
+// Copyright 2024 Google LLC.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -90,7 +90,9 @@ const apiId = "container:v1"
 const apiName = "container"
 const apiVersion = "v1"
 const basePath = "https://container.googleapis.com/"
+const basePathTemplate = "https://container.UNIVERSE_DOMAIN/"
 const mtlsBasePath = "https://container.mtls.googleapis.com/"
+const defaultUniverseDomain = "googleapis.com"
 
 // OAuth2 scopes used by this API.
 const (
@@ -107,7 +109,9 @@ func NewService(ctx context.Context, opts ...option.ClientOption) (*Service, err
 	// NOTE: prepend, so we don't override user-specified scopes.
 	opts = append([]option.ClientOption{scopesOption}, opts...)
 	opts = append(opts, internaloption.WithDefaultEndpoint(basePath))
+	opts = append(opts, internaloption.WithDefaultEndpointTemplate(basePathTemplate))
 	opts = append(opts, internaloption.WithDefaultMTLSEndpoint(mtlsBasePath))
+	opts = append(opts, internaloption.WithDefaultUniverseDomain(defaultUniverseDomain))
 	client, endpoint, err := htransport.NewClient(ctx, opts...)
 	if err != nil {
 		return nil, err
@@ -504,6 +508,9 @@ type AddonsConfig struct {
 	// track whether network policy is enabled for the nodes.
 	NetworkPolicyConfig *NetworkPolicyConfig `json:"networkPolicyConfig,omitempty"`
 
+	// StatefulHaConfig: Optional. Configuration for the StatefulHA add-on.
+	StatefulHaConfig *StatefulHAConfig `json:"statefulHaConfig,omitempty"`
+
 	// ForceSendFields is a list of field names (e.g. "CloudRunConfig") to
 	// unconditionally include in API requests. By default, fields with
 	// empty or default values are omitted from API requests. However, any
@@ -534,6 +541,9 @@ func (s *AddonsConfig) MarshalJSON() ([]byte, error) {
 type AdvancedDatapathObservabilityConfig struct {
 	// EnableMetrics: Expose flow metrics on nodes
 	EnableMetrics bool `json:"enableMetrics,omitempty"`
+
+	// EnableRelay: Enable Relay component
+	EnableRelay bool `json:"enableRelay,omitempty"`
 
 	// RelayMode: Method used to make Relay available
 	//
@@ -1770,9 +1780,17 @@ type ClusterUpdate struct {
 	// cluster.
 	DesiredDnsConfig *DNSConfig `json:"desiredDnsConfig,omitempty"`
 
+	// DesiredEnableCiliumClusterwideNetworkPolicy: Enable/Disable Cilium
+	// Clusterwide Network Policy for the cluster.
+	DesiredEnableCiliumClusterwideNetworkPolicy bool `json:"desiredEnableCiliumClusterwideNetworkPolicy,omitempty"`
+
 	// DesiredEnableFqdnNetworkPolicy: Enable/Disable FQDN Network Policy
 	// for the cluster.
 	DesiredEnableFqdnNetworkPolicy bool `json:"desiredEnableFqdnNetworkPolicy,omitempty"`
+
+	// DesiredEnableMultiNetworking: Enable/Disable Multi-Networking for the
+	// cluster
+	DesiredEnableMultiNetworking bool `json:"desiredEnableMultiNetworking,omitempty"`
 
 	// DesiredEnablePrivateEndpoint: Enable/Disable private endpoint for the
 	// cluster's master.
@@ -1795,6 +1813,18 @@ type ClusterUpdate struct {
 	// DesiredImageType: The desired image type for the node pool. NOTE: Set
 	// the "desired_node_pool" field as well.
 	DesiredImageType string `json:"desiredImageType,omitempty"`
+
+	// DesiredInTransitEncryptionConfig: Specify the details of in-transit
+	// encryption.
+	//
+	// Possible values:
+	//   "IN_TRANSIT_ENCRYPTION_CONFIG_UNSPECIFIED" - Unspecified, will be
+	// inferred as default - IN_TRANSIT_ENCRYPTION_UNSPECIFIED.
+	//   "IN_TRANSIT_ENCRYPTION_DISABLED" - In-transit encryption is
+	// disabled.
+	//   "IN_TRANSIT_ENCRYPTION_INTER_NODE_TRANSPARENT" - Data in-transit is
+	// encrypted using inter-node transparent encryption.
+	DesiredInTransitEncryptionConfig string `json:"desiredInTransitEncryptionConfig,omitempty"`
 
 	// DesiredIntraNodeVisibilityConfig: The desired config of Intra-node
 	// visibility.
@@ -2360,11 +2390,39 @@ func (s *DailyMaintenanceWindow) MarshalJSON() ([]byte, error) {
 
 // DatabaseEncryption: Configuration of etcd encryption.
 type DatabaseEncryption struct {
+	// CurrentState: Output only. The current state of etcd encryption.
+	//
+	// Possible values:
+	//   "CURRENT_STATE_UNSPECIFIED" - Should never be set
+	//   "CURRENT_STATE_ENCRYPTED" - Secrets in etcd are encrypted.
+	//   "CURRENT_STATE_DECRYPTED" - Secrets in etcd are stored in plain
+	// text (at etcd level) - this is unrelated to Compute Engine level full
+	// disk encryption.
+	//   "CURRENT_STATE_ENCRYPTION_PENDING" - Encryption (or re-encryption
+	// with a different CloudKMS key) of Secrets is in progress.
+	//   "CURRENT_STATE_ENCRYPTION_ERROR" - Encryption (or re-encryption
+	// with a different CloudKMS key) of Secrets in etcd encountered an
+	// error.
+	//   "CURRENT_STATE_DECRYPTION_PENDING" - De-crypting Secrets to plain
+	// text in etcd is in progress.
+	//   "CURRENT_STATE_DECRYPTION_ERROR" - De-crypting Secrets to plain
+	// text in etcd encountered an error.
+	CurrentState string `json:"currentState,omitempty"`
+
+	// DecryptionKeys: Output only. Keys in use by the cluster for
+	// decrypting existing objects, in addition to the key in `key_name`.
+	// Each item is a CloudKMS key resource.
+	DecryptionKeys []string `json:"decryptionKeys,omitempty"`
+
 	// KeyName: Name of CloudKMS key to use for the encryption of secrets in
 	// etcd. Ex.
 	// projects/my-project/locations/global/keyRings/my-ring/cryptoKeys/my-ke
 	// y
 	KeyName string `json:"keyName,omitempty"`
+
+	// LastOperationErrors: Output only. Records errors seen during
+	// DatabaseEncryption update operations.
+	LastOperationErrors []*OperationError `json:"lastOperationErrors,omitempty"`
 
 	// State: The desired state of etcd encryption.
 	//
@@ -2376,7 +2434,7 @@ type DatabaseEncryption struct {
 	// encryption.
 	State string `json:"state,omitempty"`
 
-	// ForceSendFields is a list of field names (e.g. "KeyName") to
+	// ForceSendFields is a list of field names (e.g. "CurrentState") to
 	// unconditionally include in API requests. By default, fields with
 	// empty or default values are omitted from API requests. However, any
 	// non-pointer, non-interface field appearing in ForceSendFields will be
@@ -2384,10 +2442,10 @@ type DatabaseEncryption struct {
 	// This may be used to include empty fields in Patch requests.
 	ForceSendFields []string `json:"-"`
 
-	// NullFields is a list of field names (e.g. "KeyName") to include in
-	// API requests with the JSON null value. By default, fields with empty
-	// values are omitted from API requests. However, any field with an
-	// empty value appearing in NullFields will be sent to the server as
+	// NullFields is a list of field names (e.g. "CurrentState") to include
+	// in API requests with the JSON null value. By default, fields with
+	// empty values are omitted from API requests. However, any field with
+	// an empty value appearing in NullFields will be sent to the server as
 	// null. It is an error if a field in this list has a non-empty value.
 	// This may be used to include null fields in Patch requests.
 	NullFields []string `json:"-"`
@@ -4347,6 +4405,10 @@ type NetworkConfig struct {
 	// DnsConfig: DNSConfig contains clusterDNS config for this cluster.
 	DnsConfig *DNSConfig `json:"dnsConfig,omitempty"`
 
+	// EnableCiliumClusterwideNetworkPolicy: Whether
+	// CiliumClusterwideNetworkPolicy is enabled on this cluster.
+	EnableCiliumClusterwideNetworkPolicy bool `json:"enableCiliumClusterwideNetworkPolicy,omitempty"`
+
 	// EnableFqdnNetworkPolicy: Whether FQDN Network Policy is enabled on
 	// this cluster.
 	EnableFqdnNetworkPolicy bool `json:"enableFqdnNetworkPolicy,omitempty"`
@@ -4367,6 +4429,18 @@ type NetworkConfig struct {
 	// GatewayApiConfig: GatewayAPIConfig contains the desired config of
 	// Gateway API on this cluster.
 	GatewayApiConfig *GatewayAPIConfig `json:"gatewayApiConfig,omitempty"`
+
+	// InTransitEncryptionConfig: Specify the details of in-transit
+	// encryption.
+	//
+	// Possible values:
+	//   "IN_TRANSIT_ENCRYPTION_CONFIG_UNSPECIFIED" - Unspecified, will be
+	// inferred as default - IN_TRANSIT_ENCRYPTION_UNSPECIFIED.
+	//   "IN_TRANSIT_ENCRYPTION_DISABLED" - In-transit encryption is
+	// disabled.
+	//   "IN_TRANSIT_ENCRYPTION_INTER_NODE_TRANSPARENT" - Data in-transit is
+	// encrypted using inter-node transparent encryption.
+	InTransitEncryptionConfig string `json:"inTransitEncryptionConfig,omitempty"`
 
 	// Network: Output only. The relative name of the Google Compute Engine
 	// network(https://cloud.google.com/compute/docs/networks-and-firewalls#n
@@ -4633,6 +4707,9 @@ type NodeConfig struct {
 	// 'pd-standard'
 	DiskType string `json:"diskType,omitempty"`
 
+	// EnableConfidentialStorage: Optional. Reserved for future use.
+	EnableConfidentialStorage bool `json:"enableConfidentialStorage,omitempty"`
+
 	// EphemeralStorageLocalSsdConfig: Parameters for the node ephemeral
 	// storage using Local SSDs. If unspecified, ephemeral storage is backed
 	// by the boot disk.
@@ -4754,6 +4831,13 @@ type NodeConfig struct {
 
 	// SandboxConfig: Sandbox configuration for this node.
 	SandboxConfig *SandboxConfig `json:"sandboxConfig,omitempty"`
+
+	// SecondaryBootDiskUpdateStrategy: Secondary boot disk update strategy.
+	SecondaryBootDiskUpdateStrategy *SecondaryBootDiskUpdateStrategy `json:"secondaryBootDiskUpdateStrategy,omitempty"`
+
+	// SecondaryBootDisks: List of secondary boot disks attached to the
+	// nodes.
+	SecondaryBootDisks []*SecondaryBootDisk `json:"secondaryBootDisks,omitempty"`
 
 	// ServiceAccount: The Google Cloud Platform Service Account to be used
 	// by the node VMs. Specify the email address of the Service Account;
@@ -5679,6 +5763,41 @@ func (s *Operation) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
 }
 
+// OperationError: OperationError records errors seen from CloudKMS keys
+// encountered during updates to DatabaseEncryption configuration.
+type OperationError struct {
+	// ErrorMessage: Description of the error seen during the operation.
+	ErrorMessage string `json:"errorMessage,omitempty"`
+
+	// KeyName: CloudKMS key resource that had the error.
+	KeyName string `json:"keyName,omitempty"`
+
+	// Timestamp: Time when the CloudKMS error was seen.
+	Timestamp string `json:"timestamp,omitempty"`
+
+	// ForceSendFields is a list of field names (e.g. "ErrorMessage") to
+	// unconditionally include in API requests. By default, fields with
+	// empty or default values are omitted from API requests. However, any
+	// non-pointer, non-interface field appearing in ForceSendFields will be
+	// sent to the server regardless of whether the field is empty or not.
+	// This may be used to include empty fields in Patch requests.
+	ForceSendFields []string `json:"-"`
+
+	// NullFields is a list of field names (e.g. "ErrorMessage") to include
+	// in API requests with the JSON null value. By default, fields with
+	// empty values are omitted from API requests. However, any field with
+	// an empty value appearing in NullFields will be sent to the server as
+	// null. It is an error if a field in this list has a non-empty value.
+	// This may be used to include null fields in Patch requests.
+	NullFields []string `json:"-"`
+}
+
+func (s *OperationError) MarshalJSON() ([]byte, error) {
+	type NoMethod OperationError
+	raw := NoMethod(*s)
+	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
+}
+
 // OperationProgress: Information about operation (or operation stage)
 // progress.
 type OperationProgress struct {
@@ -6468,6 +6587,49 @@ func (s *SandboxConfig) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
 }
 
+// SecondaryBootDisk: SecondaryBootDisk represents a persistent disk
+// attached to a node with special configurations based on its mode.
+type SecondaryBootDisk struct {
+	// DiskImage: Fully-qualified resource ID for an existing disk image.
+	DiskImage string `json:"diskImage,omitempty"`
+
+	// Mode: Disk mode (container image cache, etc.)
+	//
+	// Possible values:
+	//   "MODE_UNSPECIFIED" - MODE_UNSPECIFIED is when mode is not set.
+	//   "CONTAINER_IMAGE_CACHE" - CONTAINER_IMAGE_CACHE is for using the
+	// secondary boot disk as a container image cache.
+	Mode string `json:"mode,omitempty"`
+
+	// ForceSendFields is a list of field names (e.g. "DiskImage") to
+	// unconditionally include in API requests. By default, fields with
+	// empty or default values are omitted from API requests. However, any
+	// non-pointer, non-interface field appearing in ForceSendFields will be
+	// sent to the server regardless of whether the field is empty or not.
+	// This may be used to include empty fields in Patch requests.
+	ForceSendFields []string `json:"-"`
+
+	// NullFields is a list of field names (e.g. "DiskImage") to include in
+	// API requests with the JSON null value. By default, fields with empty
+	// values are omitted from API requests. However, any field with an
+	// empty value appearing in NullFields will be sent to the server as
+	// null. It is an error if a field in this list has a non-empty value.
+	// This may be used to include null fields in Patch requests.
+	NullFields []string `json:"-"`
+}
+
+func (s *SecondaryBootDisk) MarshalJSON() ([]byte, error) {
+	type NoMethod SecondaryBootDisk
+	raw := NoMethod(*s)
+	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
+}
+
+// SecondaryBootDiskUpdateStrategy: SecondaryBootDiskUpdateStrategy is a
+// placeholder which will be extended in the future to define different
+// options for updating secondary boot disks.
+type SecondaryBootDiskUpdateStrategy struct {
+}
+
 // SecurityBulletinEvent: SecurityBulletinEvent is a notification sent
 // to customers when a security bulletin has been posted that they are
 // vulnerable to.
@@ -6561,6 +6723,8 @@ type SecurityPostureConfig struct {
 	// cluster.
 	//   "VULNERABILITY_BASIC" - Applies basic vulnerability scanning on the
 	// cluster.
+	//   "VULNERABILITY_ENTERPRISE" - Applies the Security Posture's
+	// vulnerability on cluster Enterprise level features.
 	VulnerabilityMode string `json:"vulnerabilityMode,omitempty"`
 
 	// ForceSendFields is a list of field names (e.g. "Mode") to
@@ -7521,6 +7685,34 @@ func (s *StartIPRotationRequest) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
 }
 
+// StatefulHAConfig: Configuration for the Stateful HA add-on.
+type StatefulHAConfig struct {
+	// Enabled: Whether the Stateful HA add-on is enabled for this cluster.
+	Enabled bool `json:"enabled,omitempty"`
+
+	// ForceSendFields is a list of field names (e.g. "Enabled") to
+	// unconditionally include in API requests. By default, fields with
+	// empty or default values are omitted from API requests. However, any
+	// non-pointer, non-interface field appearing in ForceSendFields will be
+	// sent to the server regardless of whether the field is empty or not.
+	// This may be used to include empty fields in Patch requests.
+	ForceSendFields []string `json:"-"`
+
+	// NullFields is a list of field names (e.g. "Enabled") to include in
+	// API requests with the JSON null value. By default, fields with empty
+	// values are omitted from API requests. However, any field with an
+	// empty value appearing in NullFields will be sent to the server as
+	// null. It is an error if a field in this list has a non-empty value.
+	// This may be used to include null fields in Patch requests.
+	NullFields []string `json:"-"`
+}
+
+func (s *StatefulHAConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod StatefulHAConfig
+	raw := NoMethod(*s)
+	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
+}
+
 // Status: The `Status` type defines a logical error model that is
 // suitable for different programming environments, including REST APIs
 // and RPC APIs. It is used by gRPC (https://github.com/grpc). Each
@@ -7973,6 +8165,10 @@ type UpdateNodePoolRequest struct {
 	// (https://cloud.google.com/resource-manager/docs/creating-managing-projects).
 	// This field has been deprecated and replaced by the name field.
 	ProjectId string `json:"projectId,omitempty"`
+
+	// QueuedProvisioning: Specifies the configuration of queued
+	// provisioning.
+	QueuedProvisioning *QueuedProvisioning `json:"queuedProvisioning,omitempty"`
 
 	// ResourceLabels: The resource labels for the node pool to use to
 	// annotate any related Google Compute Engine resources.
@@ -9743,8 +9939,7 @@ type ProjectsLocationsClustersGetJwksCall struct {
 }
 
 // GetJwks: Gets the public component of the cluster signing keys in
-// JSON Web Key format. This API is not yet intended for general use,
-// and is not available for all clusters.
+// JSON Web Key format.
 //
 //   - parent: The cluster (project, location, cluster name) to get keys
 //     for. Specified in the format `projects/*/locations/*/clusters/*`.
@@ -9853,7 +10048,7 @@ func (c *ProjectsLocationsClustersGetJwksCall) Do(opts ...googleapi.CallOption) 
 	}
 	return ret, nil
 	// {
-	//   "description": "Gets the public component of the cluster signing keys in JSON Web Key format. This API is not yet intended for general use, and is not available for all clusters.",
+	//   "description": "Gets the public component of the cluster signing keys in JSON Web Key format.",
 	//   "flatPath": "v1/projects/{projectsId}/locations/{locationsId}/clusters/{clustersId}/jwks",
 	//   "httpMethod": "GET",
 	//   "id": "container.projects.locations.clusters.getJwks",
@@ -13412,8 +13607,7 @@ type ProjectsLocationsClustersWellKnownGetOpenidConfigurationCall struct {
 // GetOpenidConfiguration: Gets the OIDC discovery document for the
 // cluster. See the OpenID Connect Discovery 1.0 specification
 // (https://openid.net/specs/openid-connect-discovery-1_0.html) for
-// details. This API is not yet intended for general use, and is not
-// available for all clusters.
+// details.
 //
 //   - parent: The cluster (project, location, cluster name) to get the
 //     discovery document for. Specified in the format
@@ -13523,7 +13717,7 @@ func (c *ProjectsLocationsClustersWellKnownGetOpenidConfigurationCall) Do(opts .
 	}
 	return ret, nil
 	// {
-	//   "description": "Gets the OIDC discovery document for the cluster. See the [OpenID Connect Discovery 1.0 specification](https://openid.net/specs/openid-connect-discovery-1_0.html) for details. This API is not yet intended for general use, and is not available for all clusters.",
+	//   "description": "Gets the OIDC discovery document for the cluster. See the [OpenID Connect Discovery 1.0 specification](https://openid.net/specs/openid-connect-discovery-1_0.html) for details.",
 	//   "flatPath": "v1/projects/{projectsId}/locations/{locationsId}/clusters/{clustersId}/.well-known/openid-configuration",
 	//   "httpMethod": "GET",
 	//   "id": "container.projects.locations.clusters.well-known.getOpenid-configuration",
