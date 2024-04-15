@@ -66,10 +66,34 @@ type NegObjectReference struct {
 	// SelfLink is the GCE Server-defined fully-qualified URL for the GCE NEG resource
 	SelfLink string `json:"selfLink,omitempty"`
 
+	// URL of the subnetwork to which all network endpoints in the NEG belong.
+	SubnetURL string `json:"subnetURL,omitempty"`
+
 	// NetworkEndpointType: Type of network endpoints in this network
 	// endpoint group.
 	NetworkEndpointType NetworkEndpointType `json:"networkEndpointType,omitempty"`
+
+	// Current condition of this network endpoint group.
+	// If state is empty, it should be considered the ACTIVE state.
+	State NegState `json:"state,omitempty"`
 }
+
+// +k8s:openapi-gen=true
+type NegState string
+
+const (
+	// NEG controller is currently managing this NEG and its endpoints.
+	ActiveState = NegState("ACTIVE")
+
+	// NEG Controller created the NEG but the NEG is no longer needed. NEG
+	// Controller will not delete this NEG until the corresponding service no
+	// longer wants NEGs or is deleted.
+	InactiveState = NegState("INACTIVE")
+
+	// NEG controller is deleting this NEG. If a NEG goes into TO_BE_DELETED,
+	// it cannot be switched to ACTIVE or INACTIVE state.
+	ToBeDeletedState = NegState("TO_BE_DELETED")
+)
 
 // +k8s:openapi-gen=true
 type NetworkEndpointType string
