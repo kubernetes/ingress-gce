@@ -128,6 +128,7 @@ var (
 		DisableFWEnforcement                     bool
 		EnableIngressRegionalExternal            bool
 		EnableIngressGlobalExternal              bool
+		EnableIngressMultiSubnetCluster          bool
 	}{
 		GCERateLimitScale: 1.0,
 	}
@@ -304,6 +305,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.DisableFWEnforcement, "disable-fw-enforcement", false, "Disable Ingress controller to enforce the firewall rules. If set to true, Ingress Controller stops creating GCE firewall rules. We can only enable this if enable-firewall-cr sets to true.")
 	flag.BoolVar(&F.EnableIngressRegionalExternal, "enable-ingress-regional-external", false, "Enable L7 Ingress Regional External.")
 	flag.BoolVar(&F.EnableIngressGlobalExternal, "enable-ingress-global-external", true, "Enable L7 Ingress Global External. Should be disabled when Regional External is enabled.")
+	flag.BoolVar(&F.EnableIngressMultiSubnetCluster, "enable-ing-multi-subnet-cluster", false, "Enable Multi Subnet support for the Ingress controller.")
 }
 
 func Validate() {

@@ -105,7 +105,8 @@ type LoadBalancerController struct {
 
 	ZoneGetter *zonegetter.ZoneGetter
 
-	logger klog.Logger
+	enableIngressMultiSubnetCluster bool
+	logger                          klog.Logger
 }
 
 // NewLoadBalancerController creates a controller for gce loadbalancers.
@@ -130,19 +131,20 @@ func NewLoadBalancerController(
 	backendPool := backends.NewPool(ctx.Cloud, ctx.ClusterNamer)
 
 	lbc := LoadBalancerController{
-		ctx:           ctx,
-		nodeLister:    ctx.NodeInformer.GetIndexer(),
-		Translator:    ctx.Translator,
-		stopCh:        stopCh,
-		hasSynced:     ctx.HasSynced,
-		instancePool:  ctx.InstancePool,
-		l7Pool:        loadbalancers.NewLoadBalancerPool(ctx.Cloud, ctx.ClusterNamer, ctx, namer.NewFrontendNamerFactory(ctx.ClusterNamer, ctx.KubeSystemUID, logger), logger),
-		backendSyncer: backends.NewBackendSyncer(backendPool, healthChecker, ctx.Cloud),
-		negLinker:     backends.NewNEGLinker(backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer(), logger),
-		igLinker:      backends.NewInstanceGroupLinker(ctx.InstancePool, backendPool, logger),
-		metrics:       ctx.ControllerMetrics,
-		ZoneGetter:    ctx.ZoneGetter,
-		logger:        logger,
+		ctx:                             ctx,
+		nodeLister:                      ctx.NodeInformer.GetIndexer(),
+		Translator:                      ctx.Translator,
+		stopCh:                          stopCh,
+		hasSynced:                       ctx.HasSynced,
+		instancePool:                    ctx.InstancePool,
+		l7Pool:                          loadbalancers.NewLoadBalancerPool(ctx.Cloud, ctx.ClusterNamer, ctx, namer.NewFrontendNamerFactory(ctx.ClusterNamer, ctx.KubeSystemUID, logger), logger),
+		backendSyncer:                   backends.NewBackendSyncer(backendPool, healthChecker, ctx.Cloud),
+		negLinker:                       backends.NewNEGLinker(backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer(), logger),
+		igLinker:                        backends.NewInstanceGroupLinker(ctx.InstancePool, backendPool, logger),
+		metrics:                         ctx.ControllerMetrics,
+		ZoneGetter:                      ctx.ZoneGetter,
+		enableIngressMultiSubnetCluster: flags.F.EnableIngressMultiSubnetCluster,
+		logger:                          logger,
 	}
 
 	if ctx.IngClassInformer != nil {
