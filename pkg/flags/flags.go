@@ -130,6 +130,8 @@ var (
 		EnableIngressGlobalExternal              bool
 		OverrideComputeAPIEndpoint               string
 		EnableIGMultiSubnetCluster               bool
+		EnableIngressMultiSubnetCluster          bool
+		EnableNEGMultiSubnetCluster              bool
 	}{
 		GCERateLimitScale: 1.0,
 	}
@@ -308,6 +310,8 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableIngressGlobalExternal, "enable-ingress-global-external", true, "Enable L7 Ingress Global External. Should be disabled when Regional External is enabled.")
 	flag.StringVar(&F.OverrideComputeAPIEndpoint, "override-compute-api-endpoint", "", "Override endpoint that is used to communicate to GCP compute APIs.")
 	flag.BoolVar(&F.EnableIGMultiSubnetCluster, "enable-ig-multi-subnet-cluster", false, "Enable Multi Subnet support for the controllers that use Instance Group backends.")
+	flag.BoolVar(&F.EnableIngressMultiSubnetCluster, "enable-ing-multi-subnet-cluster", false, "Enable Multi Subnet support for the Ingress controller.")
+	flag.BoolVar(&F.EnableNEGMultiSubnetCluster, "enable-neg-multi-subnet-cluster", false, "Enable Multi Subnet support for the NEG controller.")
 }
 
 func Validate() {

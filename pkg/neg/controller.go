@@ -106,6 +106,10 @@ type Controller struct {
 	// gce-regional-external ingresses
 	enableIngressRegionalExternal bool
 
+	// Whether the NEG controller should process Multi-Subnet Cluster related
+	// changes
+	enableNEGMultiSubnetCluster bool
+
 	stopCh <-chan struct{}
 	logger klog.Logger
 }
@@ -233,6 +237,7 @@ func NewController(
 		syncerMetrics:                 syncerMetrics,
 		runL4:                         runL4Controller,
 		enableIngressRegionalExternal: enableIngressRegionalExternal,
+		enableNEGMultiSubnetCluster:   flags.F.EnableNEGMultiSubnetCluster,
 		stopCh:                        stopCh,
 		logger:                        logger,
 	}
