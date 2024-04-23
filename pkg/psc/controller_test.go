@@ -952,6 +952,11 @@ func TestFilterError(t *testing.T) {
 			expectedError: nil,
 		},
 		{
+			desc:          "wrapped google api forbidden request error",
+			err:           fmt.Errorf("wrap 1: %w", fmt.Errorf("wrap 2: %w", &googleapi.Error{Code: http.StatusForbidden})),
+			expectedError: nil,
+		},
+		{
 			desc:          "wrapped google api bad gateway error",
 			err:           wrappedBadGatewayErr,
 			expectedError: wrappedBadGatewayErr,
