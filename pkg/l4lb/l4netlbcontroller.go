@@ -278,6 +278,9 @@ func (lc *L4NetLBController) shouldProcessService(newSvc, oldSvc *v1.Service, sv
 		svcLogger.Info("Ignoring service managed by another controller", "serviceLoadBalancerClass", *newSvc.Spec.LoadBalancerClass)
 		return false, false
 	}
+
+	warnL4FinalizerRemoved(lc.ctx, oldSvc, newSvc)
+
 	if !lc.isRBSBasedService(newSvc, svcLogger) && !lc.isRBSBasedService(oldSvc, svcLogger) {
 		return false, false
 	}
