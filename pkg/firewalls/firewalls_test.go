@@ -18,16 +18,19 @@ package firewalls
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"k8s.io/klog/v2"
 	"strings"
 	"testing"
+
+	"k8s.io/klog/v2"
 
 	"google.golang.org/api/compute/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	firewallclient "k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned/fake"
 	"k8s.io/cloud-provider-gcp/providers/gce"
+	test "k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/slice"
 )
@@ -180,6 +183,28 @@ func TestFirewallPoolSyncPorts(t *testing.T) {
 		t.Fatal(err)
 	}
 	verifyFirewallCR(fwClient, ruleName, srcRanges, negTargetports, true, t)
+}
+
+func TestFirewallPoolSyncGetServerError(t *testing.T) {
+	fwp := NewFakeFirewallsProvider(false, false)
+	fp := NewFirewallPool(fwp, defaultNamer, srcRanges, portRanges(), klog.TODO())
+	nodes := []string{"node-a", "node-b", "node-c"}
+	// Sync to create the firewall.
+	if err := fp.Sync(nodes, nil, nil, true); err != nil {
+		t.Fatalf("expect Sync to return nil, but got err %v", err)
+	}
+
+	serverError := test.FakeGoogleAPIRequestServerError()
+	fwp.getFirewallHook = func(name string) (*compute.Firewall, error) {
+		return nil, serverError
+	}
+	// GetFirewall returns server errors, and Sync should not trigger CreateFirewall.
+	// InternalServerError from GetFirewall should be received, instead of
+	// StatusConflict error from CreateFirewall.
+	err := fp.Sync(nodes, nil, nil, true)
+	if !errors.Is(err, serverError) {
+		t.Fatalf("expect Sync to return %v, but got %v", serverError, err)
+	}
 }
 
 func TestFirewallPoolSyncRanges(t *testing.T) {

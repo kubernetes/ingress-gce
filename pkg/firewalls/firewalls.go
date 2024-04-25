@@ -69,16 +69,20 @@ func NewFirewallPool(cloud Firewall, namer *namer_util.Namer, l7SrcRanges []stri
 func (fr *FirewallRules) Sync(nodeNames, additionalPorts, additionalRanges []string, allowNodePort bool) error {
 	fr.logger.V(4).Info("Sync", "nodeNames", nodeNames)
 	name := fr.namer.FirewallRule()
-	existingFirewall, _ := fr.cloud.GetFirewall(name)
 
 	expectedFirewall, err := fr.buildExpectedFW(nodeNames, additionalPorts, additionalRanges, allowNodePort)
 	if err != nil {
 		return err
 	}
 
-	if existingFirewall == nil {
-		fr.logger.V(3).Info("Creating firewall rule", "firewallRuleName", name)
-		return fr.createFirewall(expectedFirewall)
+	existingFirewall, err := fr.cloud.GetFirewall(name)
+	if err != nil {
+		if utils.IsNotFoundError(err) {
+			fr.logger.V(3).Info("Firewall not found, creating firewall rule", "firewallRuleName", name)
+			return fr.createFirewall(expectedFirewall)
+		}
+		fr.logger.Error(err, "Failed to get firewall", "firewallRuleName", name)
+		return err
 	}
 
 	// Early return if an update is not required.
