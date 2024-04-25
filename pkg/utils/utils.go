@@ -94,9 +94,14 @@ const (
 	// be removed in 1.18.
 	LabelAlphaNodeRoleExcludeBalancer = "alpha.service-controller.kubernetes.io/exclude-balancer"
 	DualStackSubnetStackType          = "IPV4_IPV6"
+
+	// LabelNodeSubnet specifies the subnet of this node in the form of SubnetURL.
+	LabelNodeSubnetURL = "cloud.google.com/gke-subnetwork-name"
 )
 
 var networkTierErrorRegexp = regexp.MustCompile(`The network tier of external IP is STANDARD|PREMIUM, that of Address must be the same.`)
+var ErrPodCIDRNotSet = errors.New("PodCIDR not set")
+var ErrNodeNotInDefaultSubnet = errors.New("node not in default subnet")
 
 // NetworkTierError is a struct to define error caused by User misconfiguration of Network Tier.
 type NetworkTierError struct {
@@ -516,6 +521,14 @@ var (
 		return nodePredicateInternal(node, true, true, logger)
 	}
 )
+
+// GetPredicateInDefaultSubnet returns the predicate that also filters out nodes in hte non-default subnet
+func GetPredicateInDefaultSubnet(defaultSubnetURL string, predicateFunc func(*api_v1.Node, klog.Logger) bool) func(*api_v1.Node, klog.Logger) bool {
+	return func(node *api_v1.Node, logger klog.Logger) bool {
+		err := CheckNodeSubnet(node, defaultSubnetURL, logger)
+		return predicateFunc(node, logger) && err == nil
+	}
+}
 
 func nodePredicateInternal(node *api_v1.Node, includeUnreadyNodes, excludeUpgradingNodes bool, logger klog.Logger) bool {
 	// Get all nodes that have a taint with NoSchedule effect
@@ -955,4 +968,39 @@ func IngressUserAgent() string {
 func AddIngressUserAgent(config *restclient.Config) *restclient.Config {
 	config.UserAgent = IngressUserAgent()
 	return config
+}
+
+// CheckNodeSubnet checks if the node is in the default subnet.
+func CheckNodeSubnet(node *api_v1.Node, defaultSubnetURL string, logger klog.Logger) error {
+	nodeLogger := logger.WithValues("nodeName", node.Name)
+	subnetURL, err := getNodeSubnetURL(node, logger)
+	if err != nil {
+		nodeLogger.Error(err, "Failed to get subnetURL from node")
+		return err
+	}
+	if subnetURL != "" && !EqualResourceIDs(subnetURL, defaultSubnetURL) {
+		nodeLogger.Error(err, "Node not in the default subnet", "subnetURL", subnetURL, "defaultSubnetURL", defaultSubnetURL)
+		return ErrNodeNotInDefaultSubnet
+	}
+	return nil
+}
+
+// getNodeSubnetURL returns the subnet URL on the node if it exists.
+//
+// The subnet label is guaranteed to be populated when PodCIDR is set.
+// For a node without the label, this should only be a transient state, and it
+// should only happen on existing nodes.
+func getNodeSubnetURL(node *api_v1.Node, nodeLogger klog.Logger) (string, error) {
+	if node.Spec.PodCIDR == "" || len(node.Spec.PodCIDRs) == 0 {
+		nodeLogger.Error(ErrPodCIDRNotSet, "Node does not have PodCIDR set")
+		return "", ErrPodCIDRNotSet
+	}
+
+	nodeSubnetURL, hasSubnetLabel := node.Labels[LabelNodeSubnetURL]
+	if !hasSubnetLabel {
+		nodeLogger.Info("Node does not have subnet label", "label", LabelNodeSubnetURL)
+		return "", nil
+	}
+
+	return nodeSubnetURL, nil
 }

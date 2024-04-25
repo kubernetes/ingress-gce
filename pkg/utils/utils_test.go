@@ -44,6 +44,11 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/common"
 )
 
+const (
+	defaultSubnetURL    = "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/default"
+	nonDefaultSubnetURL = "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/non-default"
+)
+
 func TestResourcePath(t *testing.T) {
 	t.Parallel()
 	testCases := []struct {
@@ -1908,6 +1913,163 @@ func TestGetDomainFromGABasePath(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			if got := GetDomainFromGABasePath(tc.basePath); got != tc.want {
 				t.Errorf("GetDomainFromGABasePath(%s) = %s, want %s", tc.basePath, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCheckNodeSubnet(t *testing.T) {
+	testCases := []struct {
+		desc string
+		node *api_v1.Node
+		want error
+	}{
+		{
+			desc: "Node in the default subnet",
+			node: &api_v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "NodeInDefaultSubnet",
+					Labels: map[string]string{
+						LabelNodeSubnetURL: defaultSubnetURL,
+					},
+				},
+				Spec: api_v1.NodeSpec{
+					PodCIDR:  "10.100.1.0/24",
+					PodCIDRs: []string{"10.100.1.0/24"},
+				},
+			},
+			want: nil,
+		},
+		{
+			desc: "Node without PodCIDR",
+			node: &api_v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "NodeWithoutPodCIDR",
+					Labels: map[string]string{
+						LabelNodeSubnetURL: defaultSubnetURL,
+					},
+				},
+				Spec: api_v1.NodeSpec{},
+			},
+			want: ErrPodCIDRNotSet,
+		},
+		{
+			desc: "Node without Subnet Label",
+			node: &api_v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "NodeWithoutSubnetLabel",
+				},
+				Spec: api_v1.NodeSpec{
+					PodCIDR:  "10.100.1.0/24",
+					PodCIDRs: []string{"10.100.1.0/24"},
+				},
+			},
+			want: nil,
+		},
+		{
+			desc: "Node in non-default subnet",
+			node: &api_v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "NodeInNonDefaultSubnet",
+					Labels: map[string]string{
+						LabelNodeSubnetURL: nonDefaultSubnetURL,
+					},
+				},
+				Spec: api_v1.NodeSpec{
+					PodCIDR:  "10.100.1.0/24",
+					PodCIDRs: []string{"10.100.1.0/24"},
+				},
+			},
+			want: ErrNodeNotInDefaultSubnet,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			if got := CheckNodeSubnet(tc.node, defaultSubnetURL, klog.TODO()); !errors.Is(got, tc.want) {
+				t.Errorf("CheckNodeSubnet(%v, %s) = %v, want %v", tc.node, defaultSubnetURL, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestGetNodeSubnetURL(t *testing.T) {
+	testCases := []struct {
+		desc       string
+		node       *api_v1.Node
+		wantSubnet string
+		wantErr    error
+	}{
+		{
+			desc: "Node in the default subnet",
+			node: &api_v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "NodeInDefaultSubnet",
+					Labels: map[string]string{
+						LabelNodeSubnetURL: defaultSubnetURL,
+					},
+				},
+				Spec: api_v1.NodeSpec{
+					PodCIDR:  "10.100.1.0/24",
+					PodCIDRs: []string{"10.100.1.0/24"},
+				},
+			},
+			wantSubnet: defaultSubnetURL,
+			wantErr:    nil,
+		},
+		{
+			desc: "Node without PodCIDR",
+			node: &api_v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "NodeWithoutPodCIDR",
+					Labels: map[string]string{
+						LabelNodeSubnetURL: defaultSubnetURL,
+					},
+				},
+				Spec: api_v1.NodeSpec{},
+			},
+			wantSubnet: "",
+			wantErr:    ErrPodCIDRNotSet,
+		},
+		{
+			desc: "Node without Subnet Label",
+			node: &api_v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "NodeWithoutSubnetLabel",
+				},
+				Spec: api_v1.NodeSpec{
+					PodCIDR:  "10.100.1.0/24",
+					PodCIDRs: []string{"10.100.1.0/24"},
+				},
+			},
+			wantSubnet: "",
+			wantErr:    nil,
+		},
+		{
+			desc: "Node in non-default subnet",
+			node: &api_v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "NodeInNonDefaultSubnet",
+					Labels: map[string]string{
+						LabelNodeSubnetURL: nonDefaultSubnetURL,
+					},
+				},
+				Spec: api_v1.NodeSpec{
+					PodCIDR:  "10.100.1.0/24",
+					PodCIDRs: []string{"10.100.1.0/24"},
+				},
+			},
+			wantSubnet: nonDefaultSubnetURL,
+			wantErr:    nil,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			gotSubnet, gotErr := getNodeSubnetURL(tc.node, klog.TODO())
+			if !errors.Is(gotErr, tc.wantErr) {
+				t.Errorf("getNodeSubnetURL(%v) = error %v, want %v", tc.node, gotErr, tc.wantErr)
+			}
+			if gotSubnet != tc.wantSubnet {
+				t.Errorf("getNodeSubnetURL(%v) = subnet %s, want %s", tc.node, gotSubnet, tc.wantSubnet)
 			}
 		})
 	}
