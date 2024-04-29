@@ -27,6 +27,7 @@ import (
 
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
@@ -67,6 +68,10 @@ type ZoneGetter struct {
 	// singleStoredZone is the single stored zone in the zoneGetter
 	// It is only used in Non-GCP mode.
 	singleStoredZone string
+
+	enableMultiSubnetCluster bool
+	// The subnetURL of the cluster's default subnet.
+	defaultSubnetURL string
 }
 
 // ZoneForNode returns the zone for a given node by looking up providerID.
@@ -82,6 +87,12 @@ func (z *ZoneGetter) ZoneForNode(name string, logger klog.Logger) (string, error
 	if err != nil {
 		logger.Error(err, "Failed to get node", "nodeName", name)
 		return "", fmt.Errorf("%w: failed to get node %s", ErrNodeNotFound, name)
+	}
+	if z.enableMultiSubnetCluster {
+		err = utils.CheckNodeSubnet(node, z.defaultSubnetURL, logger)
+		if err != nil {
+			return "", err
+		}
 	}
 	if node.Spec.ProviderID == "" {
 		logger.Error(ErrProviderIDNotFound, "Node does not have providerID", "nodeName", name)
@@ -111,6 +122,12 @@ func (z *ZoneGetter) List(filter Filter, logger klog.Logger) ([]string, error) {
 		return zones.List(), err
 	}
 	for _, n := range nodes {
+		if z.enableMultiSubnetCluster {
+			if err := utils.CheckNodeSubnet(n, z.defaultSubnetURL, logger); err != nil {
+				logger.Error(err, "Exclude node not from default subnet ", "nodeName", n.Name)
+				continue
+			}
+		}
 		zone, err := getZone(n)
 		if err != nil {
 			logger.Error(err, "Failed to get zone from providerID", "nodeName", n.Name)
@@ -183,9 +200,12 @@ func NewNonGCPZoneGetter(zone string) *ZoneGetter {
 }
 
 // NewZoneGetter initialize a ZoneGetter in GCP mode.
-func NewZoneGetter(nodeInformer cache.SharedIndexInformer) *ZoneGetter {
+func NewZoneGetter(nodeInformer cache.SharedIndexInformer, defaultSubnetURL string) *ZoneGetter {
+	enableMultiSubnetCluster := flags.F.EnableIngressMultiSubnetCluster || flags.F.EnableNEGMultiSubnetCluster
 	return &ZoneGetter{
-		mode:         GCP,
-		nodeInformer: nodeInformer,
+		mode:                     GCP,
+		nodeInformer:             nodeInformer,
+		enableMultiSubnetCluster: enableMultiSubnetCluster,
+		defaultSubnetURL:         defaultSubnetURL,
 	}
 }

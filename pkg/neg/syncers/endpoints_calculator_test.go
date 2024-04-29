@@ -46,7 +46,7 @@ func TestLocalGetEndpointSet(t *testing.T) {
 	_, transactionSyncer := newL4ILBTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), mode)
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer)
-	zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	zoneGetter := zonegetter.NewZoneGetter(nodeInformer, defaultSubnetURL)
 	nodeLister := listers.NewNodeLister(transactionSyncer.nodeLister)
 	defaultNetwork := network.NetworkInfo{IsDefault: true, K8sNetwork: "default"}
 
@@ -181,7 +181,7 @@ func TestClusterGetEndpointSet(t *testing.T) {
 	_, transactionSyncer := newL4ILBTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), mode)
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer)
-	zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	zoneGetter := zonegetter.NewZoneGetter(nodeInformer, defaultSubnetURL)
 	nodeLister := listers.NewNodeLister(transactionSyncer.nodeLister)
 	defaultNetwork := network.NetworkInfo{IsDefault: true, K8sNetwork: "default"}
 	testCases := []struct {
@@ -330,7 +330,7 @@ func TestValidateEndpoints(t *testing.T) {
 
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer)
-	zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	zoneGetter := zonegetter.NewZoneGetter(nodeInformer, defaultSubnetURL)
 	testContext := negtypes.NewTestContext()
 	podLister := testContext.PodInformer.GetIndexer()
 	nodeLister := testContext.NodeInformer.GetIndexer()

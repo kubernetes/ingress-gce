@@ -238,7 +238,8 @@ func NewControllerContext(
 		context.EnableIngressRegionalExternal,
 		logger,
 	)
-	context.ZoneGetter = zonegetter.NewZoneGetter(context.NodeInformer)
+
+	context.ZoneGetter = zonegetter.NewZoneGetter(context.NodeInformer, context.Cloud.SubnetworkURL())
 	context.InstancePool = instancegroups.NewManager(&instancegroups.ManagerConfig{
 		Cloud:      context.Cloud,
 		Namer:      context.ClusterNamer,

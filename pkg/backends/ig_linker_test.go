@@ -38,7 +38,10 @@ import (
 	"k8s.io/klog/v2"
 )
 
-const defaultZone = "zone-a"
+const (
+	defaultZone      = "zone-a"
+	defaultSubnetURL = "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/default"
+)
 
 func newTestIGLinker(fakeGCE *gce.Cloud, fakeInstancePool instancegroups.Manager) *instanceGroupLinker {
 	fakeBackendPool := NewPool(fakeGCE, defaultNamer)
@@ -56,7 +59,7 @@ func TestLink(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 
 	nodeInformer := zonegetter.FakeNodeInformer()
-	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer, defaultSubnetURL)
 	zonegetter.AddFakeNodes(fakeZoneGetter, defaultZone, "test-instance")
 
 	fakeNodePool := instancegroups.NewManager(&instancegroups.ManagerConfig{
@@ -98,7 +101,7 @@ func TestLinkWithCreationModeError(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 
 	nodeInformer := zonegetter.FakeNodeInformer()
-	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer, defaultSubnetURL)
 	zonegetter.AddFakeNodes(fakeZoneGetter, defaultZone, "test-instance")
 
 	fakeNodePool := instancegroups.NewManager(&instancegroups.ManagerConfig{

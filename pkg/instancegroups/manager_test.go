@@ -18,9 +18,10 @@ package instancegroups
 
 import (
 	"fmt"
-	"k8s.io/klog/v2"
 	"strings"
 	"testing"
+
+	"k8s.io/klog/v2"
 
 	"google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -30,15 +31,16 @@ import (
 )
 
 const (
-	defaultZone = "default-zone"
-	basePath    = "/basepath/projects/project-id/"
+	defaultZone      = "default-zone"
+	basePath         = "/basepath/projects/project-id/"
+	defaultSubnetURL = "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/default"
 )
 
 var defaultNamer = namer.NewNamer("uid1", "fw1", klog.TODO())
 
 func newNodePool(f *FakeInstanceGroups, zone string, maxIGSize int) Manager {
 	nodeInformer := zonegetter.FakeNodeInformer()
-	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer, defaultSubnetURL)
 
 	pool := NewManager(&ManagerConfig{
 		Cloud:      f,
