@@ -39,6 +39,7 @@ const (
 	l4failedHealthCheckName                        = "l4_failed_healthcheck_count"
 	l4ControllerHealthCheckName                    = "l4_controller_healthcheck"
 	l4LastSyncTimeName                             = "l4_last_sync_time"
+	l4LBRemovedFinalizerMetricName                 = "l4_removed_finalizer_count"
 )
 
 var (
@@ -154,6 +155,13 @@ var (
 		},
 		[]string{"controller_name"},
 	)
+	l4LBRemovedFinalizers = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: l4LBRemovedFinalizerMetricName,
+			Help: "Counter for times when L4 specific finalizers were removed unexpectedly",
+		},
+		[]string{"finalizer_name"},
+	)
 )
 
 // init registers l4 ilb and netlb sync metrics.
@@ -176,6 +184,7 @@ func init() {
 	prometheus.MustRegister(l4ControllerHealthCheck)
 	klog.V(3).Infof("Registering L4 controller last processed item time metric: %v", l4LastSyncTime)
 	prometheus.MustRegister(l4LastSyncTime)
+	klog.V(3).Infof("Registering L4 Removed Finalizers metric %v", l4LBRemovedFinalizers)
 }
 
 // PublishILBSyncMetrics exports metrics related to the L4 ILB sync.
@@ -245,6 +254,22 @@ func PublishL4NetLBDualStackSyncLatency(success bool, syncType, ipFamilies strin
 func PublishL4NetLBSyncError(syncType, gceResource, errType string, startTime time.Time, isResync bool) {
 	l4NetLBSyncLatency.WithLabelValues(statusError, syncType, strconv.FormatBool(isResync)).Observe(time.Since(startTime).Seconds())
 	l4NetLBSyncErrorCount.WithLabelValues(syncType, gceResource, errType).Inc()
+}
+
+func PublishL4RemovedILBLegacyFinalizer() {
+	l4LBRemovedFinalizers.WithLabelValues("ilb_legacy").Inc()
+}
+
+func PublishL4RemovedILBFinalizer() {
+	l4LBRemovedFinalizers.WithLabelValues("ilb").Inc()
+}
+
+func PublishL4RemovedNetLBRBSFinalizer() {
+	l4LBRemovedFinalizers.WithLabelValues("netlb_rbs").Inc()
+}
+
+func PublishL4ServiceCleanupFinalizer() {
+	l4LBRemovedFinalizers.WithLabelValues("service_cleanup").Inc()
 }
 
 // PublishL4FailedHealthCheckCount observers failed health check from controller.

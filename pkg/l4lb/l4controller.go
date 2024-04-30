@@ -471,6 +471,8 @@ func (l4c *L4Controller) needsDeletion(svc *v1.Service) bool {
 
 // needsUpdate checks if load balancer needs to be updated due to change in attributes.
 func (l4c *L4Controller) needsUpdate(oldService *v1.Service, newService *v1.Service) bool {
+	warnL4FinalizerRemoved(l4c.ctx, oldService, newService)
+
 	oldSvcWantsILB, oldType := annotations.WantsL4ILB(oldService)
 	newSvcWantsILB, newType := annotations.WantsL4ILB(newService)
 	recorder := l4c.ctx.Recorder(oldService.Namespace)

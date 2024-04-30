@@ -27,8 +27,10 @@ import (
 	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/context"
+	l4metrics "k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/klog/v2"
 )
@@ -119,4 +121,37 @@ func skipUserError(err error, logger klog.Logger) error {
 		return nil
 	}
 	return err
+}
+
+// warnL4FinalizerRemoved iterates across L4 specific finalizers and:
+// * emits a warning event,
+// * increases metric counter
+// for finalizers that were removed.
+func warnL4FinalizerRemoved(ctx *context.ControllerContext, oldService, newService *v1.Service) {
+
+	l4FinalizersWithMetrics := map[string]func(){
+		common.LegacyILBFinalizer:           l4metrics.PublishL4RemovedILBLegacyFinalizer,
+		common.ILBFinalizerV2:               l4metrics.PublishL4RemovedILBFinalizer,
+		common.NetLBFinalizerV2:             l4metrics.PublishL4RemovedNetLBRBSFinalizer,
+		common.LoadBalancerCleanupFinalizer: l4metrics.PublishL4ServiceCleanupFinalizer,
+	}
+	for finalizer, metricFunction := range l4FinalizersWithMetrics {
+		if finalizerWasRemovedUnexpectedly(oldService, newService, finalizer) {
+			ctx.Recorder(newService.Namespace).Eventf(newService, v1.EventTypeWarning, "UnexpectedlyRemovedFinalizer",
+				"Finalizer %v was unexpectedly removed from the service.", finalizer)
+			metricFunction()
+		}
+	}
+}
+
+// finalizerWasRemoved returns true if old service had a given finalizer and new doesn't.
+func finalizerWasRemovedUnexpectedly(oldService, newService *v1.Service, finalizer string) bool {
+	if oldService == nil || newService == nil {
+		return false
+	}
+	oldSvcHasLegacyFinalizer := common.HasGivenFinalizer(oldService.ObjectMeta, finalizer)
+	newSvcHasLegacyFinalizer := common.HasGivenFinalizer(newService.ObjectMeta, finalizer)
+	// If the service was added for deletion, we don't need finalizers
+	svcToBeDeleted := newService.ObjectMeta.DeletionTimestamp != nil
+	return oldSvcHasLegacyFinalizer && !newSvcHasLegacyFinalizer && !svcToBeDeleted
 }
