@@ -19,9 +19,10 @@ package instancegroups
 import (
 	"time"
 
+	"k8s.io/cloud-provider-gcp/providers/gce"
+
 	apiv1 "k8s.io/api/core/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
@@ -42,6 +43,10 @@ type Controller struct {
 
 	enableMultiSubnetCluster bool
 
+	cloud *gce.Cloud
+
+	nodeGetter nodeGetter
+
 	stopCh <-chan struct{}
 
 	logger klog.Logger
@@ -52,6 +57,7 @@ type ControllerConfig struct {
 	IGManager                Manager
 	HasSynced                func() bool
 	EnableMultiSubnetCluster bool
+	Cloud                    *gce.Cloud
 	StopCh                   <-chan struct{}
 }
 
@@ -59,6 +65,10 @@ var defaultNodeObj = &apiv1.Node{
 	ObjectMeta: meta_v1.ObjectMeta{
 		Name: "default",
 	},
+}
+
+type nodeGetter interface {
+	GetReadyNodesForSharedInstanceGroup(logger klog.Logger) ([]string, error)
 }
 
 // NewController returns a new node update controller.
@@ -69,6 +79,8 @@ func NewController(config *ControllerConfig, logger klog.Logger) *Controller {
 		igManager:                config.IGManager,
 		hasSynced:                config.HasSynced,
 		enableMultiSubnetCluster: config.EnableMultiSubnetCluster,
+		cloud:                    config.Cloud,
+		nodeGetter:               NewNodeGetter(config.NodeInformer.GetIndexer(), config.EnableMultiSubnetCluster, config.Cloud),
 		stopCh:                   config.StopCh,
 		logger:                   logger,
 	}
@@ -126,9 +138,10 @@ func (c *Controller) sync(key string) error {
 		c.logger.V(4).Info("Instance groups controller: Processing key finished", "key", key, "timeTaken", time.Since(start))
 	}()
 
-	nodeNames, err := utils.GetReadyNodeNames(listers.NewNodeLister(c.lister), c.logger)
+	nodeNames, err := c.nodeGetter.GetReadyNodesForSharedInstanceGroup(c.logger)
 	if err != nil {
 		return err
 	}
 	return c.igManager.Sync(nodeNames)
 }
+
