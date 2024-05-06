@@ -53,6 +53,7 @@ import (
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils/patch"
+	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
 )
 
@@ -81,7 +82,7 @@ type transactionSyncer struct {
 	svcNegLister        cache.Indexer
 	recorder            record.EventRecorder
 	cloud               negtypes.NetworkEndpointGroupCloud
-	zoneGetter          negtypes.ZoneGetter
+	zoneGetter          *zonegetter.ZoneGetter
 	endpointsCalculator negtypes.NetworkEndpointsCalculator
 
 	// retry handles back off retry for NEG API operations
@@ -134,7 +135,7 @@ func NewTransactionSyncer(
 	negSyncerKey negtypes.NegSyncerKey,
 	recorder record.EventRecorder,
 	cloud negtypes.NetworkEndpointGroupCloud,
-	zoneGetter negtypes.ZoneGetter,
+	zoneGetter *zonegetter.ZoneGetter,
 	podLister cache.Indexer,
 	serviceLister cache.Indexer,
 	endpointSliceLister cache.Indexer,
@@ -190,7 +191,7 @@ func NewTransactionSyncer(
 	return syncer
 }
 
-func GetEndpointsCalculator(podLister, nodeLister, serviceLister cache.Indexer, zoneGetter negtypes.ZoneGetter, syncerKey negtypes.NegSyncerKey, mode negtypes.EndpointsCalculatorMode, logger klog.Logger, enableDualStackNEG bool, syncMetricsCollector *metricscollector.SyncerMetrics, networkInfo *network.NetworkInfo) negtypes.NetworkEndpointsCalculator {
+func GetEndpointsCalculator(podLister, nodeLister, serviceLister cache.Indexer, zoneGetter *zonegetter.ZoneGetter, syncerKey negtypes.NegSyncerKey, mode negtypes.EndpointsCalculatorMode, logger klog.Logger, enableDualStackNEG bool, syncMetricsCollector *metricscollector.SyncerMetrics, networkInfo *network.NetworkInfo) negtypes.NetworkEndpointsCalculator {
 	serviceKey := strings.Join([]string{syncerKey.Name, syncerKey.Namespace}, "/")
 	if syncerKey.NegType == negtypes.VmIpEndpointType {
 		nodeLister := listers.NewNodeLister(nodeLister)
@@ -405,7 +406,7 @@ func (s *transactionSyncer) resetErrorState() {
 func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 	var err error
 	// NEGs should be created in zones with candidate nodes only.
-	zones, err := s.zoneGetter.ListZones(negtypes.NodePredicateForEndpointCalculatorMode(s.EpCalculatorMode))
+	zones, err := s.zoneGetter.List(negtypes.NodeFilterForEndpointCalculatorMode(s.EpCalculatorMode), s.logger)
 	if err != nil {
 		return err
 	}
@@ -678,7 +679,7 @@ func (s *transactionSyncer) isZoneChange() bool {
 		existingZones.Insert(id.Key.Zone)
 	}
 
-	zones, err := s.zoneGetter.ListZones(negtypes.NodePredicateForEndpointCalculatorMode(s.EpCalculatorMode))
+	zones, err := s.zoneGetter.List(negtypes.NodeFilterForEndpointCalculatorMode(s.EpCalculatorMode), s.logger)
 	if err != nil {
 		s.logger.Error(err, "unable to list zones")
 		metrics.PublishNegControllerErrorCountMetrics(err, true)

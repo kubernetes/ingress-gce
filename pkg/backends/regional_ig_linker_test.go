@@ -30,6 +30,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/slice"
+	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 )
 
 const (
@@ -50,13 +51,18 @@ func linkerTestClusterValues() gce.TestClusterValues {
 
 func newTestRegionalIgLinker(fakeGCE *gce.Cloud, backendPool *Backends, l4Namer *namer.L4Namer) *RegionalInstanceGroupLinker {
 	fakeIGs := instancegroups.NewEmptyFakeInstanceGroups()
-	fakeZL := &instancegroups.FakeZoneLister{Zones: []string{usCentral1AZone, "us-central1-c"}}
+
+	nodeInformer := zonegetter.FakeNodeInformer()
+	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	zonegetter.AddFakeNodes(fakeZoneGetter, usCentral1AZone, "test-instance1")
+	zonegetter.AddFakeNodes(fakeZoneGetter, "us-central1-c", "test-instance2")
+
 	fakeInstancePool := instancegroups.NewManager(&instancegroups.ManagerConfig{
 		Cloud:      fakeIGs,
 		Namer:      l4Namer,
 		Recorders:  &test.FakeRecorderSource{},
 		BasePath:   utils.GetBasePath(fakeGCE),
-		ZoneLister: fakeZL,
+		ZoneGetter: fakeZoneGetter,
 		MaxIGSize:  1000,
 	})
 

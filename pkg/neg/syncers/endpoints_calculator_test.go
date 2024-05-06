@@ -34,6 +34,7 @@ import (
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
 )
 
@@ -43,7 +44,9 @@ func TestLocalGetEndpointSet(t *testing.T) {
 	t.Parallel()
 	mode := negtypes.L4LocalMode
 	_, transactionSyncer := newL4ILBTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), mode)
-	zoneGetter := negtypes.NewFakeZoneGetter()
+	nodeInformer := zonegetter.FakeNodeInformer()
+	zonegetter.PopulateFakeNodeInformer(nodeInformer)
+	zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
 	nodeLister := listers.NewNodeLister(transactionSyncer.nodeLister)
 	defaultNetwork := network.NetworkInfo{IsDefault: true, K8sNetwork: "default"}
 
@@ -176,7 +179,9 @@ func TestClusterGetEndpointSet(t *testing.T) {
 	mode := negtypes.L4ClusterMode
 	// The "enableEndpointSlices=false" case is enough since this test does not depend on endpoints at all.
 	_, transactionSyncer := newL4ILBTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), mode)
-	zoneGetter := negtypes.NewFakeZoneGetter()
+	nodeInformer := zonegetter.FakeNodeInformer()
+	zonegetter.PopulateFakeNodeInformer(nodeInformer)
+	zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
 	nodeLister := listers.NewNodeLister(transactionSyncer.nodeLister)
 	defaultNetwork := network.NetworkInfo{IsDefault: true, K8sNetwork: "default"}
 	testCases := []struct {
@@ -323,7 +328,9 @@ func TestValidateEndpoints(t *testing.T) {
 		NegName: testNegName,
 	}
 
-	zoneGetter := negtypes.NewFakeZoneGetter()
+	nodeInformer := zonegetter.FakeNodeInformer()
+	zonegetter.PopulateFakeNodeInformer(nodeInformer)
+	zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
 	testContext := negtypes.NewTestContext()
 	podLister := testContext.PodInformer.GetIndexer()
 	nodeLister := testContext.NodeInformer.GetIndexer()

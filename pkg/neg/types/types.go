@@ -30,8 +30,8 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/network"
-	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 )
 
 type NetworkEndpointType string
@@ -366,19 +366,19 @@ func EndpointsDataFromEndpointSlices(slices []*discovery.EndpointSlice) []Endpoi
 	return result
 }
 
-// NodePredicateForEndpointCalculatorMode returns the predicate function to select candidate nodes, given the endpoints calculator mode.
-func NodePredicateForEndpointCalculatorMode(mode EndpointsCalculatorMode) utils.NodeConditionPredicate {
+// NodeFilterForEndpointCalculatorMode returns the filter type to select candidate nodes, given the endpoints calculator mode.
+func NodeFilterForEndpointCalculatorMode(mode EndpointsCalculatorMode) zonegetter.Filter {
 	// VM_IP NEGs can include unready and upgrading nodes.
 	if mode == L4ClusterMode || mode == L4LocalMode {
-		return NodePredicateForNetworkEndpointType(VmIpEndpointType)
+		return NodeFilterForNetworkEndpointType(VmIpEndpointType)
 	}
-	return NodePredicateForNetworkEndpointType(VmIpPortEndpointType)
+	return NodeFilterForNetworkEndpointType(VmIpPortEndpointType)
 }
 
-// NodePredicateForNetworkEndpointType returns the predicate function to select candidate nodes, given the NEG type.
-func NodePredicateForNetworkEndpointType(negType NetworkEndpointType) utils.NodeConditionPredicate {
+// NodeFilterForNetworkEndpointType returns the filter type to select candidate nodes, given the NEG type.
+func NodeFilterForNetworkEndpointType(negType NetworkEndpointType) zonegetter.Filter {
 	if negType == VmIpEndpointType {
-		return utils.CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes
+		return zonegetter.CandidateAndUnreadyNodesFilter
 	}
-	return utils.CandidateNodesPredicate
+	return zonegetter.CandidateNodesFilter
 }

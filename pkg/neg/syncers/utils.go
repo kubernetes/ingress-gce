@@ -17,6 +17,7 @@ limitations under the License.
 package syncers
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -38,6 +39,7 @@ import (
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
 )
 
@@ -236,7 +238,7 @@ type ZoneNetworkEndpointMapResult struct {
 }
 
 // toZoneNetworkEndpointMap translates addresses in endpoints object into zone and endpoints map, and also return the count for duplicated endpoints
-func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.ZoneGetter, podLister cache.Indexer, servicePortName string, networkEndpointType negtypes.NetworkEndpointType, enableDualStackNEG bool, logger klog.Logger) (ZoneNetworkEndpointMapResult, error) {
+func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter *zonegetter.ZoneGetter, podLister cache.Indexer, servicePortName string, networkEndpointType negtypes.NetworkEndpointType, enableDualStackNEG bool, logger klog.Logger) (ZoneNetworkEndpointMapResult, error) {
 	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
 	networkEndpointPodMap := negtypes.EndpointPodMap{}
 	ipsForPod := ipsForPod(eds)
@@ -281,7 +283,7 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 				continue
 			}
 			globalEPCount[negtypes.Total] += 1
-			zone, _, getZoneErr := getEndpointZone(endpointAddress, zoneGetter)
+			zone, _, getZoneErr := getEndpointZone(endpointAddress, zoneGetter, logger)
 			if getZoneErr != nil {
 				epLogger.Error(getZoneErr, "Detected unexpected error when getting zone for endpoint")
 				metrics.PublishNegControllerErrorCountMetrics(getZoneErr, true)
@@ -362,23 +364,25 @@ func mergeWithGlobalCounts(localEPCount, globalEPCount, globalEPSCount negtypes.
 }
 
 // getEndpointZone use an endpoint's nodeName to get its corresponding zone
-func getEndpointZone(endpointAddress negtypes.AddressData, zoneGetter negtypes.ZoneGetter) (string, negtypes.StateCountMap, error) {
+func getEndpointZone(endpointAddress negtypes.AddressData, zoneGetter *zonegetter.ZoneGetter, logger klog.Logger) (string, negtypes.StateCountMap, error) {
 	count := make(negtypes.StateCountMap)
 	if endpointAddress.NodeName == nil || len(*endpointAddress.NodeName) == 0 {
 		count[negtypes.NodeMissing]++
 		count[negtypes.ZoneMissing]++
 		return "", count, negtypes.ErrEPNodeMissing
 	}
-	zone, err := zoneGetter.GetZoneForNode(*endpointAddress.NodeName)
-	if err != nil {
+	zone, err := zoneGetter.ZoneForNode(*endpointAddress.NodeName, logger)
+	// Fail to get the node object.
+	if errors.Is(err, zonegetter.ErrNodeNotFound) {
 		count[negtypes.NodeNotFound]++
 		return zone, count, fmt.Errorf("%w: %v", negtypes.ErrEPNodeNotFound, err)
 	}
-	if zone == "" {
+	// providerID missing in node or zone information missing in providerID.
+	if errors.Is(err, zonegetter.ErrProviderIDNotFound) || errors.Is(err, zonegetter.ErrSplitProviderID) {
 		count[negtypes.ZoneMissing]++
 		return zone, count, fmt.Errorf("%w: zone is missing for node %v", negtypes.ErrEPZoneMissing, *endpointAddress.NodeName)
 	}
-	return zone, count, nil
+	return zone, count, err
 }
 
 // getEndpointPod use an endpoint's pod name and namespace to get its corresponding pod object
@@ -404,7 +408,7 @@ func getEndpointPod(endpointAddress negtypes.AddressData, podLister cache.Indexe
 
 // toZoneNetworkEndpointMap translates addresses in endpoints object into zone and endpoints map, and also return the count for duplicated endpoints
 // we will not raise error in degraded mode for misconfigured endpoints, instead they will be filtered directly
-func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGetter negtypes.ZoneGetter, podLister, nodeLister, serviceLister cache.Indexer, servicePortName string, networkEndpointType negtypes.NetworkEndpointType, enableDualStackNEG bool, logger klog.Logger) ZoneNetworkEndpointMapResult {
+func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGetter *zonegetter.ZoneGetter, podLister, nodeLister, serviceLister cache.Indexer, servicePortName string, networkEndpointType negtypes.NetworkEndpointType, enableDualStackNEG bool, logger klog.Logger) ZoneNetworkEndpointMapResult {
 	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
 	networkEndpointPodMap := negtypes.EndpointPodMap{}
 	ipsForPod := ipsForPod(eds)
@@ -452,7 +456,7 @@ func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGett
 				localEPCount[negtypes.NodeMissing]++
 				continue
 			}
-			zone, getZoneErr := zoneGetter.GetZoneForNode(nodeName)
+			zone, getZoneErr := zoneGetter.ZoneForNode(nodeName, logger)
 			if getZoneErr != nil {
 				epLogger.Error(getZoneErr, "Endpoint's corresponding node does not have valid zone information, skipping", "nodeName", nodeName)
 				metrics.PublishNegControllerErrorCountMetrics(getZoneErr, true)
@@ -670,15 +674,15 @@ func podBelongsToService(pod *apiv1.Pod, service *apiv1.Service) error {
 }
 
 // retrieveExistingZoneNetworkEndpointMap lists existing network endpoints in the neg and return the zone and endpoints map
-func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter negtypes.ZoneGetter, cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, mode negtypes.EndpointsCalculatorMode, enableDualStackNEG bool, logger klog.Logger) (map[string]negtypes.NetworkEndpointSet, labels.EndpointPodLabelMap, error) {
+func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter *zonegetter.ZoneGetter, cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, mode negtypes.EndpointsCalculatorMode, enableDualStackNEG bool, logger klog.Logger) (map[string]negtypes.NetworkEndpointSet, labels.EndpointPodLabelMap, error) {
 	// Include zones that have non-candidate nodes currently. It is possible that NEGs were created in those zones previously and the endpoints now became non-candidates.
 	// Endpoints in those NEGs now need to be removed. This mostly applies to VM_IP_NEGs where the endpoints are nodes.
-	zones, err := zoneGetter.ListZones(utils.AllNodesPredicate)
+	zones, err := zoneGetter.List(zonegetter.AllNodesFilter, logger)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	candidateNodeZones, err := zoneGetter.ListZones(negtypes.NodePredicateForEndpointCalculatorMode(mode))
+	candidateNodeZones, err := zoneGetter.List(negtypes.NodeFilterForEndpointCalculatorMode(mode), logger)
 	if err != nil {
 		return nil, nil, err
 	}
