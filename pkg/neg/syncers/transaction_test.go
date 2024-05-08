@@ -61,14 +61,16 @@ import (
 const (
 	// test zone and instances in the zones
 	// TODO - use negtypes.TestZone consts instead.
-	testZone1     = "zone1"
-	testInstance1 = "instance1"
-	testInstance2 = "instance2"
-	testZone2     = "zone2"
-	testInstance3 = "instance3"
-	testInstance4 = "instance4"
-	testInstance5 = "instance5"
-	testInstance6 = "instance6"
+	testZone1            = "zone1"
+	testInstance1        = "instance1"
+	testInstance2        = "instance2"
+	testZone2            = "zone2"
+	testInstance3        = "instance3"
+	testInstance4        = "instance4"
+	testInstance5        = "instance5"
+	testInstance6        = "instance6"
+	testUnreadyInstance1 = "unready-instance1"
+	testUnreadyInstance2 = "unready-instance2"
 )
 
 func TestTransactionSyncNetworkEndpoints(t *testing.T) {

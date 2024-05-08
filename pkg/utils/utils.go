@@ -35,10 +35,8 @@ import (
 	api_v1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
-	listers "k8s.io/client-go/listers/core/v1"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	cloudprovider "k8s.io/cloud-provider"
@@ -557,23 +555,6 @@ func nodePredicateInternal(node *api_v1.Node, includeUnreadyNodes, excludeUpgrad
 	}
 	return true
 
-}
-
-// ListWithPredicate gets nodes that matches predicate function.
-func ListWithPredicate(nodeLister listers.NodeLister, predicate NodeConditionPredicate, logger klog.Logger) ([]*api_v1.Node, error) {
-	nodes, err := nodeLister.List(labels.Everything())
-	if err != nil {
-		return nil, err
-	}
-
-	var filtered []*api_v1.Node
-	for i := range nodes {
-		if predicate(nodes[i], logger) {
-			filtered = append(filtered, nodes[i])
-		}
-	}
-
-	return filtered, nil
 }
 
 // GetNodePrimaryIP returns a primary internal IP address of the node.

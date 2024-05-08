@@ -96,6 +96,12 @@ func PopulateFakeNodeInformer(nodeInformer cache.SharedIndexInformer) {
 			ProviderID: "gce://foo-project/zone1/instance1",
 		},
 		Status: apiv1.NodeStatus{
+			Addresses: []apiv1.NodeAddress{
+				{
+					Type:    apiv1.NodeInternalIP,
+					Address: fmt.Sprintf("1.2.3.1"),
+				},
+			},
 			Conditions: []apiv1.NodeCondition{
 				{
 					Type:   apiv1.NodeReady,
@@ -115,6 +121,12 @@ func PopulateFakeNodeInformer(nodeInformer cache.SharedIndexInformer) {
 			ProviderID: "gce://foo-project/zone1/instance2",
 		},
 		Status: apiv1.NodeStatus{
+			Addresses: []apiv1.NodeAddress{
+				{
+					Type:    apiv1.NodeInternalIP,
+					Address: fmt.Sprintf("1.2.3.2"),
+				},
+			},
 			Conditions: []apiv1.NodeCondition{
 				{
 					Type:   apiv1.NodeReady,
@@ -134,6 +146,12 @@ func PopulateFakeNodeInformer(nodeInformer cache.SharedIndexInformer) {
 			ProviderID: "gce://foo-project/zone2/instance3",
 		},
 		Status: apiv1.NodeStatus{
+			Addresses: []apiv1.NodeAddress{
+				{
+					Type:    apiv1.NodeInternalIP,
+					Address: fmt.Sprintf("1.2.3.3"),
+				},
+			},
 			Conditions: []apiv1.NodeCondition{
 				{
 					Type:   apiv1.NodeReady,
@@ -153,6 +171,12 @@ func PopulateFakeNodeInformer(nodeInformer cache.SharedIndexInformer) {
 			ProviderID: "gce://foo-project/zone2/instance4",
 		},
 		Status: apiv1.NodeStatus{
+			Addresses: []apiv1.NodeAddress{
+				{
+					Type:    apiv1.NodeInternalIP,
+					Address: fmt.Sprintf("1.2.3.4"),
+				},
+			},
 			Conditions: []apiv1.NodeCondition{
 				{
 					Type:   apiv1.NodeReady,
@@ -172,6 +196,12 @@ func PopulateFakeNodeInformer(nodeInformer cache.SharedIndexInformer) {
 			ProviderID: "gce://foo-project/zone2/instance5",
 		},
 		Status: apiv1.NodeStatus{
+			Addresses: []apiv1.NodeAddress{
+				{
+					Type:    apiv1.NodeInternalIP,
+					Address: fmt.Sprintf("1.2.3.5"),
+				},
+			},
 			Conditions: []apiv1.NodeCondition{
 				{
 					Type:   apiv1.NodeReady,
@@ -191,6 +221,12 @@ func PopulateFakeNodeInformer(nodeInformer cache.SharedIndexInformer) {
 			ProviderID: "gce://foo-project/zone2/instance6",
 		},
 		Status: apiv1.NodeStatus{
+			Addresses: []apiv1.NodeAddress{
+				{
+					Type:    apiv1.NodeInternalIP,
+					Address: fmt.Sprintf("1.2.3.6"),
+				},
+			},
 			Conditions: []apiv1.NodeCondition{
 				{
 					Type:   apiv1.NodeReady,
@@ -211,6 +247,12 @@ func PopulateFakeNodeInformer(nodeInformer cache.SharedIndexInformer) {
 			ProviderID: "gce://foo-project/zone3/unready-instance1",
 		},
 		Status: apiv1.NodeStatus{
+			Addresses: []apiv1.NodeAddress{
+				{
+					Type:    apiv1.NodeInternalIP,
+					Address: fmt.Sprintf("1.2.3.7"),
+				},
+			},
 			Conditions: []apiv1.NodeCondition{
 				{
 					Type:   apiv1.NodeReady,
@@ -230,6 +272,12 @@ func PopulateFakeNodeInformer(nodeInformer cache.SharedIndexInformer) {
 			ProviderID: "gce://foo-project/zone3/unready-instance2",
 		},
 		Status: apiv1.NodeStatus{
+			Addresses: []apiv1.NodeAddress{
+				{
+					Type:    apiv1.NodeInternalIP,
+					Address: fmt.Sprintf("1.2.3.8"),
+				},
+			},
 			Conditions: []apiv1.NodeCondition{
 				{
 					Type:   apiv1.NodeReady,
@@ -253,6 +301,12 @@ func PopulateFakeNodeInformer(nodeInformer cache.SharedIndexInformer) {
 			ProviderID: "gce://foo-project/zone4/upgrade-instance1",
 		},
 		Status: apiv1.NodeStatus{
+			Addresses: []apiv1.NodeAddress{
+				{
+					Type:    apiv1.NodeInternalIP,
+					Address: fmt.Sprintf("1.2.3.9"),
+				},
+			},
 			Conditions: []apiv1.NodeCondition{
 				{
 					Type:   apiv1.NodeReady,
@@ -275,6 +329,12 @@ func PopulateFakeNodeInformer(nodeInformer cache.SharedIndexInformer) {
 			ProviderID: "gce://foo-project/zone4/upgrade-instance2",
 		},
 		Status: apiv1.NodeStatus{
+			Addresses: []apiv1.NodeAddress{
+				{
+					Type:    apiv1.NodeInternalIP,
+					Address: fmt.Sprintf("1.2.3.10"),
+				},
+			},
 			Conditions: []apiv1.NodeCondition{
 				{
 					Type:   apiv1.NodeReady,
@@ -293,6 +353,12 @@ func PopulateFakeNodeInformer(nodeInformer cache.SharedIndexInformer) {
 			Name: "instance-empty-providerID",
 		},
 		Status: apiv1.NodeStatus{
+			Addresses: []apiv1.NodeAddress{
+				{
+					Type:    apiv1.NodeInternalIP,
+					Address: fmt.Sprintf("1.2.3.11"),
+				},
+			},
 			Conditions: []apiv1.NodeCondition{
 				{
 					Type:   apiv1.NodeReady,
@@ -314,6 +380,12 @@ func PopulateFakeNodeInformer(nodeInformer cache.SharedIndexInformer) {
 			ProviderID: "gce://foo-project/instance-invalid-providerID",
 		},
 		Status: apiv1.NodeStatus{
+			Addresses: []apiv1.NodeAddress{
+				{
+					Type:    apiv1.NodeInternalIP,
+					Address: fmt.Sprintf("1.2.3.12"),
+				},
+			},
 			Conditions: []apiv1.NodeCondition{
 				{
 					Type:   apiv1.NodeReady,
