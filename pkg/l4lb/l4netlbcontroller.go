@@ -28,7 +28,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
-	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
@@ -61,7 +60,6 @@ type L4NetLBController struct {
 	ctx             *context.ControllerContext
 	svcQueue        utils.TaskQueue
 	serviceLister   cache.Indexer
-	nodeLister      listers.NodeLister
 	networkResolver network.Resolver
 	stopCh          <-chan struct{}
 
@@ -99,7 +97,6 @@ func NewL4NetLBController(
 	l4netLBc := &L4NetLBController{
 		ctx:                         ctx,
 		serviceLister:               ctx.ServiceInformer.GetIndexer(),
-		nodeLister:                  listers.NewNodeLister(ctx.NodeInformer.GetIndexer()),
 		stopCh:                      stopCh,
 		zoneGetter:                  ctx.ZoneGetter,
 		backendPool:                 backendPool,
@@ -511,11 +508,11 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 		return &loadbalancers.L4NetLBSyncResult{Error: fmt.Errorf("Failed to attach L4 External LoadBalancer finalizer to service %s/%s, err %w", service.Namespace, service.Name, err)}
 	}
 
-	nodeNames, err := utils.GetReadyNodeNames(lc.nodeLister, svcLogger)
+	nodes, err := lc.zoneGetter.ListNodes(zonegetter.CandidateNodesFilter, svcLogger)
 	if err != nil {
 		return &loadbalancers.L4NetLBSyncResult{Error: err}
 	}
-
+	nodeNames := utils.GetNodeNames(nodes)
 	isMultinet := lc.networkResolver.IsMultinetService(service)
 	if !isMultinet {
 		if err := lc.ensureInstanceGroups(service, nodeNames, svcLogger); err != nil {

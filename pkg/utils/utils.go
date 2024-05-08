@@ -471,19 +471,13 @@ func IsGLBCIngress(ing *networkingv1.Ingress) bool {
 	return IsGCEIngress(ing) || IsGCEMultiClusterIngress(ing)
 }
 
-// GetReadyNodeNames returns names of schedulable, ready nodes from the node lister
-// It also filters out masters and nodes excluded from load-balancing
-// TODO(rramkumar): Add a test for this.
-func GetReadyNodeNames(lister listers.NodeLister, logger klog.Logger) ([]string, error) {
+// GetNodeNames extracts names from the given nodes
+func GetNodeNames(nodes []*api_v1.Node) []string {
 	var nodeNames []string
-	nodes, err := ListWithPredicate(lister, CandidateNodesPredicate, logger)
-	if err != nil {
-		return nodeNames, err
-	}
 	for _, n := range nodes {
 		nodeNames = append(nodeNames, n.Name)
 	}
-	return nodeNames, nil
+	return nodeNames
 }
 
 // NodeIsReady returns true if a node contains at least one condition of type "Ready"

@@ -27,7 +27,6 @@ import (
 	v1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
-	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	gcpfirewallv1 "k8s.io/cloud-provider-gcp/crd/apis/gcpfirewall/v1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
@@ -38,6 +37,7 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
 )
 
@@ -57,7 +57,7 @@ type FirewallController struct {
 	firewallPool                  SingleFirewallPool
 	queue                         utils.TaskQueue
 	translator                    *translator.Translator
-	nodeLister                    cache.Indexer
+	zoneGetter                    *zonegetter.ZoneGetter
 	hasSynced                     func() bool
 	enableIngressRegionalExternal bool
 	stopCh                        <-chan struct{}
@@ -113,9 +113,9 @@ func NewFirewallController(
 
 	fwc := &FirewallController{
 		ctx:                           ctx,
+		zoneGetter:                    ctx.ZoneGetter,
 		firewallPool:                  compositeFirewallPool,
 		translator:                    ctx.Translator,
-		nodeLister:                    ctx.NodeInformer.GetIndexer(),
 		hasSynced:                     ctx.HasSynced,
 		enableIngressRegionalExternal: enableRegionalXLB,
 		stopCh:                        stopCh,
@@ -245,7 +245,7 @@ func (fwc *FirewallController) sync(key string) error {
 
 	// gceSvcPorts contains the ServicePorts used by only single-cluster ingress.
 	gceSvcPorts := fwc.ToSvcPorts(gceIngresses)
-	nodeNames, err := utils.GetReadyNodeNames(listers.NewNodeLister(fwc.nodeLister), fwc.logger)
+	nodes, err := fwc.zoneGetter.ListNodes(zonegetter.CandidateNodesFilter, fwc.logger)
 	if err != nil {
 		return err
 	}
@@ -288,7 +288,7 @@ func (fwc *FirewallController) sync(key string) error {
 	additionalPorts = append(additionalPorts, negPorts...)
 
 	// Ensure firewall rule for the cluster and pass any NEG endpoint ports.
-	if err := fwc.firewallPool.Sync(nodeNames, additionalPorts, additionalRanges, needNodePort); err != nil {
+	if err := fwc.firewallPool.Sync(utils.GetNodeNames(nodes), additionalPorts, additionalRanges, needNodePort); err != nil {
 		if fwErr, ok := err.(*FirewallXPNError); ok {
 			// XPN: Raise an event on each ingress
 			for _, ing := range gceIngresses {

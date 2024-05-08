@@ -29,7 +29,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
-	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
@@ -62,7 +61,6 @@ type L4Controller struct {
 	svcQueue                 utils.TaskQueue
 	numWorkers               int
 	serviceLister            cache.Indexer
-	nodeLister               listers.NodeLister
 	networkLister            cache.Indexer
 	gkeNetworkParamSetLister cache.Indexer
 	networkResolver          network.Resolver
@@ -97,7 +95,6 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 		ctx:             ctx,
 		client:          ctx.KubeClient,
 		serviceLister:   ctx.ServiceInformer.GetIndexer(),
-		nodeLister:      listers.NewNodeLister(ctx.NodeInformer.GetIndexer()),
 		stopCh:          stopCh,
 		numWorkers:      ctx.NumL4Workers,
 		namer:           ctx.L4Namer,
@@ -257,7 +254,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service, svcLo
 	if err := common.EnsureServiceFinalizer(service, common.ILBFinalizerV2, l4c.ctx.KubeClient, svcLogger); err != nil {
 		return &loadbalancers.L4ILBSyncResult{Error: fmt.Errorf("Failed to attach finalizer to service %s/%s, err %w", service.Namespace, service.Name, err)}
 	}
-	nodeNames, err := utils.GetReadyNodeNames(l4c.nodeLister, svcLogger)
+	nodes, err := l4c.zoneGetter.ListNodes(zonegetter.CandidateNodesFilter, svcLogger)
 	if err != nil {
 		return &loadbalancers.L4ILBSyncResult{Error: err}
 	}
@@ -272,7 +269,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service, svcLo
 		NetworkResolver:  l4c.networkResolver,
 	}
 	l4 := loadbalancers.NewL4Handler(l4ilbParams, svcLogger)
-	syncResult := l4.EnsureInternalLoadBalancer(nodeNames, service)
+	syncResult := l4.EnsureInternalLoadBalancer(utils.GetNodeNames(nodes), service)
 	// syncResult will not be nil
 	if syncResult.Error != nil {
 		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",

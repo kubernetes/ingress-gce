@@ -389,6 +389,7 @@ func runControllers(ctx *ingctx.ControllerContext, option runOption, logger klog
 	if flags.F.EnableIGController {
 		igControllerParams := &instancegroups.ControllerConfig{
 			NodeInformer:             ctx.NodeInformer,
+			ZoneGetter:               ctx.ZoneGetter,
 			IGManager:                ctx.InstancePool,
 			HasSynced:                ctx.HasSynced,
 			EnableMultiSubnetCluster: flags.F.EnableIGMultiSubnetCluster,
