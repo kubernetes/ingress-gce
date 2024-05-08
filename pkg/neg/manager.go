@@ -349,7 +349,7 @@ func (manager *syncerManager) SyncNodes() {
 // manager before calling this function since it modifies the passed
 // existingZoneMap.
 func updateZoneMap(existingZoneMap *map[string]struct{}, nodeFilter zonegetter.Filter, zoneGetter *zonegetter.ZoneGetter, logger klog.Logger) bool {
-	zones, err := zoneGetter.List(nodeFilter, logger)
+	zones, err := zoneGetter.ListZones(nodeFilter, logger)
 	if err != nil {
 		logger.Error(err, "Unable to list zones")
 		metrics.PublishNegControllerErrorCountMetrics(err, true)
@@ -575,7 +575,7 @@ func (manager *syncerManager) garbageCollectNEGWithCRD() error {
 
 	// Deletion candidate NEGs should be deleted from all zones, even ones that
 	// currently don't have any Ready nodes.
-	zones, err := manager.zoneGetter.List(zonegetter.AllNodesFilter, manager.logger)
+	zones, err := manager.zoneGetter.ListZones(zonegetter.AllNodesFilter, manager.logger)
 	if err != nil {
 		errList = append(errList, fmt.Errorf("failed to get zones during garbage collection: %w", err))
 	}

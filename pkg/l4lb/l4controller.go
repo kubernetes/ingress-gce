@@ -396,7 +396,7 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service, svc
 // linkNEG associates the NEG to the backendService for the given L4 ILB service.
 func (l4c *L4Controller) linkNEG(l4 *loadbalancers.L4, svcLogger klog.Logger) error {
 	// link neg to backend service
-	zones, err := l4c.zoneGetter.List(zonegetter.CandidateAndUnreadyNodesFilter, svcLogger)
+	zones, err := l4c.zoneGetter.ListZones(zonegetter.CandidateAndUnreadyNodesFilter, svcLogger)
 	if err != nil {
 		return nil
 	}

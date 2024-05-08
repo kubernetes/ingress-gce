@@ -1443,7 +1443,7 @@ func TestIsZoneChange(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			_, syncer := newTestTransactionSyncer(fakeCloud, testNegType, false)
 			fakeZoneGetter := syncer.zoneGetter
-			origZones, err := fakeZoneGetter.List(negtypes.NodeFilterForEndpointCalculatorMode(syncer.EpCalculatorMode), klog.TODO())
+			origZones, err := fakeZoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(syncer.EpCalculatorMode), klog.TODO())
 			if err != nil {
 				t.Errorf("errored when retrieving zones: %s", err)
 			}

@@ -598,7 +598,7 @@ func (lc *L4NetLBController) ensureBackendLinking(service *v1.Service, linkType 
 		svcLogger.V(2).Info("Finished linking backends to backend service for k8s service", "timeTaken", time.Since(start))
 	}()
 
-	zones, err := lc.zoneGetter.List(zonegetter.CandidateNodesFilter, svcLogger)
+	zones, err := lc.zoneGetter.ListZones(zonegetter.CandidateNodesFilter, svcLogger)
 	if err != nil {
 		return err
 	}

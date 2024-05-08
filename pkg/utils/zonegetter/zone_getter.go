@@ -95,21 +95,33 @@ func (z *ZoneGetter) ZoneForNode(name string, logger klog.Logger) (string, error
 	return zone, nil
 }
 
-// List returns a list of zones containing nodes that satisfy the given
+// ListNodes returns a list of nodes that satisfy the given node filtering mode.
+func (z *ZoneGetter) ListNodes(filter Filter, logger klog.Logger) ([]*api_v1.Node, error) {
+	nodeLister := z.nodeInformer.GetIndexer()
+	logger.Info("Listing nodes", "filter", filter)
+	nodes, err := listNodesWithFilter(listers.NewNodeLister(nodeLister), filter, logger)
+	if err != nil {
+		logger.Error(err, "Failed to list nodes")
+		return []*api_v1.Node{}, err
+	}
+	return nodes, nil
+}
+
+// ListZones returns a list of zones containing nodes that satisfy the given
 // node filtering mode.
-func (z *ZoneGetter) List(filter Filter, logger klog.Logger) ([]string, error) {
-	// Return the single stored zone if the zoneGetter is in non-gcp mode.
+func (z *ZoneGetter) ListZones(filter Filter, logger klog.Logger) ([]string, error) {
 	if z.mode == NonGCP {
 		logger.Info("ZoneGetter in non-gcp mode, return the single stored zone", "zone", z.singleStoredZone)
 		return []string{z.singleStoredZone}, nil
 	}
-	nodeLister := z.nodeInformer.GetIndexer()
-	zones := sets.String{}
-	nodes, err := listNodesWithFilter(listers.NewNodeLister(nodeLister), filter, logger)
+
+	logger.Info("Listing zones", "filter", filter)
+	nodes, err := z.ListNodes(filter, logger)
 	if err != nil {
-		logger.Error(err, "Failed to list nodes")
-		return zones.List(), err
+		logger.Error(err, "Failed to list nodes", "filter", filter)
+		return []string{}, err
 	}
+	zones := sets.String{}
 	for _, n := range nodes {
 		zone, err := getZone(n)
 		if err != nil {

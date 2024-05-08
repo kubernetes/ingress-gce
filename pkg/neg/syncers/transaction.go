@@ -416,7 +416,7 @@ func (s *transactionSyncer) resetErrorState() {
 func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 	var err error
 	// NEGs should be created in zones with candidate nodes only.
-	zones, err := s.zoneGetter.List(negtypes.NodeFilterForEndpointCalculatorMode(s.EpCalculatorMode), s.logger)
+	zones, err := s.zoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(s.EpCalculatorMode), s.logger)
 	if err != nil {
 		return err
 	}
@@ -692,7 +692,7 @@ func (s *transactionSyncer) isZoneChange() bool {
 		existingZones.Insert(id.Key.Zone)
 	}
 
-	zones, err := s.zoneGetter.List(negtypes.NodeFilterForEndpointCalculatorMode(s.EpCalculatorMode), s.logger)
+	zones, err := s.zoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(s.EpCalculatorMode), s.logger)
 	if err != nil {
 		s.logger.Error(err, "unable to list zones")
 		metrics.PublishNegControllerErrorCountMetrics(err, true)

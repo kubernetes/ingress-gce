@@ -26,7 +26,8 @@ import (
 	"k8s.io/klog/v2"
 )
 
-func TestList(t *testing.T) {
+func TestListZones(t *testing.T) {
+	t.Parallel()
 	fakeNodeInformer := FakeNodeInformer()
 	zoneGetter := NewZoneGetter(fakeNodeInformer)
 	zoneGetter.nodeInformer.GetIndexer().Add(&apiv1.Node{
@@ -141,7 +142,7 @@ func TestList(t *testing.T) {
 		},
 	})
 
-	for _, tc := range []struct {
+	testCases := []struct {
 		desc      string
 		filter    Filter
 		expectLen int
@@ -161,20 +162,175 @@ func TestList(t *testing.T) {
 			filter:    CandidateAndUnreadyNodesFilter,
 			expectLen: 2,
 		},
-	} {
-		zones, _ := zoneGetter.List(tc.filter, klog.TODO())
-		if len(zones) != tc.expectLen {
-			t.Errorf("For test case %q, got %d zones, want %d,", tc.desc, len(zones), tc.expectLen)
-		}
-		for _, zone := range zones {
-			if zone == "" {
-				t.Errorf("For test case %q, got an empty zone,", tc.desc)
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			zones, _ := zoneGetter.ListZones(tc.filter, klog.TODO())
+			if len(zones) != tc.expectLen {
+				t.Errorf("For test case %q, got %d zones, want %d,", tc.desc, len(zones), tc.expectLen)
 			}
-		}
+			for _, zone := range zones {
+				if zone == "" {
+					t.Errorf("For test case %q, got an empty zone,", tc.desc)
+				}
+			}
+		})
+
 	}
 }
 
+func TestListNodes(t *testing.T) {
+	t.Parallel()
+	fakeNodeInformer := FakeNodeInformer()
+	zoneGetter := NewZoneGetter(fakeNodeInformer)
+	zoneGetter.nodeInformer.GetIndexer().Add(&apiv1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "ReadyNodeWithProviderID",
+		},
+		Spec: apiv1.NodeSpec{
+			ProviderID: "gce://foo-project/us-central1-a/bar-node",
+		},
+		Status: apiv1.NodeStatus{
+			Conditions: []apiv1.NodeCondition{
+				{
+					Type:   apiv1.NodeReady,
+					Status: apiv1.ConditionTrue,
+				},
+			},
+		},
+	})
+	zoneGetter.nodeInformer.GetIndexer().Add(&apiv1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "UnReadyNodeWithProviderID",
+		},
+		Spec: apiv1.NodeSpec{
+			ProviderID: "gce://foo-project/us-central1-b/bar-node",
+		},
+		Status: apiv1.NodeStatus{
+			Conditions: []apiv1.NodeCondition{
+				{
+					Type:   apiv1.NodeReady,
+					Status: apiv1.ConditionFalse,
+				},
+			},
+		},
+	})
+	zoneGetter.nodeInformer.GetIndexer().Add(&apiv1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "ReadyNodeWithoutProviderID",
+		},
+		Spec: apiv1.NodeSpec{},
+		Status: apiv1.NodeStatus{
+			Conditions: []apiv1.NodeCondition{
+				{
+					Type:   apiv1.NodeReady,
+					Status: apiv1.ConditionTrue,
+				},
+			},
+		},
+	})
+	zoneGetter.nodeInformer.GetIndexer().Add(&apiv1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "UnReadyNodeWithoutProviderID",
+		},
+		Spec: apiv1.NodeSpec{},
+		Status: apiv1.NodeStatus{
+			Conditions: []apiv1.NodeCondition{
+				{
+					Type:   apiv1.NodeReady,
+					Status: apiv1.ConditionFalse,
+				},
+			},
+		},
+	})
+	zoneGetter.nodeInformer.GetIndexer().Add(&apiv1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "ReadyNodeInvalidProviderID",
+		},
+		Spec: apiv1.NodeSpec{
+			ProviderID: "gce://us-central1-c/bar-node",
+		},
+		Status: apiv1.NodeStatus{
+			Conditions: []apiv1.NodeCondition{
+				{
+					Type:   apiv1.NodeReady,
+					Status: apiv1.ConditionTrue,
+				},
+			},
+		},
+	})
+	zoneGetter.nodeInformer.GetIndexer().Add(&apiv1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "UpgradingNodeWithProviderID",
+			Labels: map[string]string{
+				"operation.gke.io/type": "drain",
+			},
+		},
+		Spec: apiv1.NodeSpec{
+			ProviderID: "gce://foo-project/us-central1-f/bar-node",
+		},
+		Status: apiv1.NodeStatus{
+			Conditions: []apiv1.NodeCondition{
+				{
+					Type:   apiv1.NodeReady,
+					Status: apiv1.ConditionFalse,
+				},
+			},
+		},
+	})
+	zoneGetter.nodeInformer.GetIndexer().Add(&apiv1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "ReadyNodeWithEmptyZone",
+		},
+		Spec: apiv1.NodeSpec{
+			ProviderID: "gce://foo-project//bar-node",
+		},
+		Status: apiv1.NodeStatus{
+			Conditions: []apiv1.NodeCondition{
+				{
+					Type:   apiv1.NodeReady,
+					Status: apiv1.ConditionTrue,
+				},
+			},
+		},
+	})
+
+	testCases := []struct {
+		desc      string
+		filter    Filter
+		expectLen int
+	}{
+		{
+			desc:      "List with AllNodesFilter",
+			filter:    AllNodesFilter,
+			expectLen: 7,
+		},
+		{
+			desc:      "List with CandidateNodesFilter",
+			filter:    CandidateNodesFilter,
+			expectLen: 4,
+		},
+		{
+			desc:      "List with CandidateAndUnreadyNodesFilter",
+			filter:    CandidateAndUnreadyNodesFilter,
+			expectLen: 6,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			nodes, _ := zoneGetter.ListNodes(tc.filter, klog.TODO())
+			if len(nodes) != tc.expectLen {
+				t.Errorf("For test case %q, got %d nodes, want %d,", tc.desc, len(nodes), tc.expectLen)
+			}
+		})
+	}
+
+}
+
 func TestZoneForNode(t *testing.T) {
+	t.Parallel()
 	fakeNodeInformer := FakeNodeInformer()
 	zoneGetter := NewZoneGetter(fakeNodeInformer)
 	zoneGetter.nodeInformer.GetIndexer().Add(&apiv1.Node{
@@ -208,7 +364,7 @@ func TestZoneForNode(t *testing.T) {
 		},
 	})
 
-	for _, tc := range []struct {
+	testCases := []struct {
 		desc       string
 		nodeName   string
 		expectZone string
@@ -244,14 +400,17 @@ func TestZoneForNode(t *testing.T) {
 			expectZone: "",
 			expectErr:  ErrSplitProviderID,
 		},
-	} {
-		zone, err := zoneGetter.ZoneForNode(tc.nodeName, klog.TODO())
-		if zone != tc.expectZone {
-			t.Errorf("For test case %q, got zone: %s, want: %s,", tc.desc, zone, tc.expectZone)
-		}
-		if !errors.Is(err, tc.expectErr) {
-			t.Errorf("For test case %q, got error: %s, want: %s,", tc.desc, err, tc.expectErr)
-		}
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			zone, err := zoneGetter.ZoneForNode(tc.nodeName, klog.TODO())
+			if zone != tc.expectZone {
+				t.Errorf("For test case %q, got zone: %s, want: %s,", tc.desc, zone, tc.expectZone)
+			}
+			if !errors.Is(err, tc.expectErr) {
+				t.Errorf("For test case %q, got error: %s, want: %s,", tc.desc, err, tc.expectErr)
+			}
+		})
 	}
 }
 
@@ -316,7 +475,7 @@ func TestGetZone(t *testing.T) {
 func TestNonGCPZoneGetter(t *testing.T) {
 	zone := "foo"
 	zoneGetter := NewNonGCPZoneGetter(zone)
-	ret, err := zoneGetter.List(AllNodesFilter, klog.TODO())
+	ret, err := zoneGetter.ListZones(AllNodesFilter, klog.TODO())
 	if err != nil {
 		t.Errorf("expect err = nil, but got %v", err)
 	}
