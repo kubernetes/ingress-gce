@@ -489,26 +489,6 @@ func NodeIsReady(node *api_v1.Node) bool {
 	return false
 }
 
-// NodeConditionPredicate is a function that indicates whether the given node's conditions meet
-// some set of criteria defined by the function.
-type NodeConditionPredicate func(*api_v1.Node, klog.Logger) bool
-
-var (
-	// AllNodesPredicate selects all nodes.
-	AllNodesPredicate = func(*api_v1.Node, klog.Logger) bool { return true }
-	// CandidateNodesPredicate selects all nodes that are in ready state and devoid of any exclude labels.
-	// This is a duplicate definition of the function in:
-	// https://github.com/kubernetes/kubernetes/blob/3723713c550f649b6ba84964edef9da6cc334f9d/staging/src/k8s.io/cloud-provider/controllers/service/controller.go#L668
-	CandidateNodesPredicate = func(node *api_v1.Node, logger klog.Logger) bool {
-		return nodePredicateInternal(node, false, false, logger)
-	}
-	// CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes selects all nodes except ones that are upgrading and/or have any exclude labels. This function tolerates unready nodes.
-	// TODO(prameshj) - Once the kubernetes/kubernetes Predicate function includes Unready nodes and the GKE nodepool code sets exclude labels on upgrade, this can be replaced with CandidateNodesPredicate.
-	CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes = func(node *api_v1.Node, logger klog.Logger) bool {
-		return nodePredicateInternal(node, true, true, logger)
-	}
-)
-
 func nodePredicateInternal(node *api_v1.Node, includeUnreadyNodes, excludeUpgradingNodes bool, logger klog.Logger) bool {
 	// Get all nodes that have a taint with NoSchedule effect
 	for _, taint := range node.Spec.Taints {

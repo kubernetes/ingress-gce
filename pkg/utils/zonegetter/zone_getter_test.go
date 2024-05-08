@@ -18,11 +18,14 @@ package zonegetter
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
 
@@ -496,4 +499,203 @@ func TestNonGCPZoneGetter(t *testing.T) {
 	}
 	validateGetZoneForNode("foo-node")
 	validateGetZoneForNode("bar-node")
+}
+
+func TestGetNodeConditionPredicate(t *testing.T) {
+	tests := []struct {
+		node                                             apiv1.Node
+		expectAccept, expectAcceptByUnreadyNodePredicate bool
+		name                                             string
+	}{
+		{
+			node:         apiv1.Node{},
+			expectAccept: false,
+
+			name: "empty",
+		},
+		{
+			node: apiv1.Node{
+				Status: apiv1.NodeStatus{
+					Conditions: []apiv1.NodeCondition{
+						{Type: apiv1.NodeReady, Status: apiv1.ConditionTrue},
+					},
+				},
+			},
+			expectAccept:                       true,
+			expectAcceptByUnreadyNodePredicate: true,
+			name:                               "ready node",
+		},
+		{
+			node: apiv1.Node{
+				Status: apiv1.NodeStatus{
+					Conditions: []apiv1.NodeCondition{
+						{Type: apiv1.NodeReady, Status: apiv1.ConditionFalse},
+					},
+				},
+			},
+			expectAccept:                       false,
+			expectAcceptByUnreadyNodePredicate: true,
+			name:                               "unready node",
+		},
+		{
+			node: apiv1.Node{
+				Status: apiv1.NodeStatus{
+					Conditions: []apiv1.NodeCondition{
+						{Type: apiv1.NodeReady, Status: apiv1.ConditionUnknown},
+					},
+				},
+			},
+			expectAccept:                       false,
+			expectAcceptByUnreadyNodePredicate: true,
+			name:                               "ready status unknown",
+		},
+		{
+			node: apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "node1",
+					Labels: map[string]string{utils.LabelNodeRoleExcludeBalancer: "true"},
+				},
+				Status: apiv1.NodeStatus{
+					Conditions: []apiv1.NodeCondition{
+						{Type: apiv1.NodeReady, Status: apiv1.ConditionTrue},
+					},
+				},
+			},
+			expectAccept:                       false,
+			expectAcceptByUnreadyNodePredicate: false,
+			name:                               "ready node, excluded from loadbalancers",
+		},
+		{
+			node: apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node1",
+					Labels: map[string]string{
+						utils.GKECurrentOperationLabel: utils.NodeDrain,
+					},
+				},
+				Status: apiv1.NodeStatus{
+					Conditions: []apiv1.NodeCondition{
+						{Type: apiv1.NodeReady, Status: apiv1.ConditionTrue},
+					},
+				},
+			},
+			expectAccept:                       true,
+			expectAcceptByUnreadyNodePredicate: false,
+			name:                               "ready node, upgrade/drain in progress",
+		},
+		{
+			node: apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node1",
+					Labels: map[string]string{
+						utils.GKECurrentOperationLabel: "random",
+					},
+				},
+				Status: apiv1.NodeStatus{
+					Conditions: []apiv1.NodeCondition{
+						{Type: apiv1.NodeReady, Status: apiv1.ConditionTrue},
+					},
+				},
+			},
+			expectAccept:                       true,
+			expectAcceptByUnreadyNodePredicate: true,
+			name:                               "ready node, non-drain operation",
+		},
+		{
+			node: apiv1.Node{
+				Spec: apiv1.NodeSpec{Unschedulable: true},
+				Status: apiv1.NodeStatus{
+					Conditions: []apiv1.NodeCondition{
+						{Type: apiv1.NodeReady, Status: apiv1.ConditionTrue},
+					},
+				},
+			},
+			expectAccept:                       true,
+			expectAcceptByUnreadyNodePredicate: true,
+			name:                               "unschedulable",
+		},
+		{
+			node: apiv1.Node{
+				Spec: apiv1.NodeSpec{
+					Taints: []apiv1.Taint{
+						{
+							Key:    utils.ToBeDeletedTaint,
+							Value:  fmt.Sprint(time.Now().Unix()),
+							Effect: apiv1.TaintEffectNoSchedule,
+						},
+					},
+				},
+				Status: apiv1.NodeStatus{
+					Conditions: []apiv1.NodeCondition{
+						{Type: apiv1.NodeReady, Status: apiv1.ConditionTrue},
+					},
+				},
+			},
+			expectAccept:                       false,
+			expectAcceptByUnreadyNodePredicate: false,
+			name:                               "ToBeDeletedByClusterAutoscaler-taint",
+		},
+	}
+	pred := candidateNodesPredicate
+	unreadyPred := candidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes
+	for _, test := range tests {
+		accept := pred(&test.node, klog.TODO())
+		if accept != test.expectAccept {
+			t.Errorf("Test failed for %s, got %v, want %v", test.name, accept, test.expectAccept)
+		}
+		unreadyAccept := unreadyPred(&test.node, klog.TODO())
+		if unreadyAccept != test.expectAcceptByUnreadyNodePredicate {
+			t.Errorf("Test failed for unreadyNodesPredicate in case %s, got %v, want %v", test.name, unreadyAccept, test.expectAcceptByUnreadyNodePredicate)
+		}
+	}
+}
+
+func TestGetPredicate(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		desc       string
+		filter     Filter
+		expectPred nodeConditionPredicate
+		expectNil  bool
+	}{
+
+		{
+			desc:       "AllNodesFilter",
+			filter:     AllNodesFilter,
+			expectPred: allNodesPredicate,
+			expectNil:  true,
+		},
+		{
+			desc:       "CandidateNodesFilter",
+			filter:     CandidateNodesFilter,
+			expectPred: candidateNodesPredicate,
+			expectNil:  true,
+		},
+		{
+			desc:       "CandidateAndUnreadyNodesFilter",
+			filter:     CandidateAndUnreadyNodesFilter,
+			expectPred: candidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes,
+			expectNil:  true,
+		},
+		{
+			desc:       "No matching Predicate",
+			filter:     Filter("random-filter"),
+			expectPred: nil,
+			expectNil:  false,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			gotPred, gotErr := getPredicate(tc.filter)
+			if tc.expectNil && gotErr != nil {
+				t.Errorf("getPredicate(%s) = got err %v, expect nil", tc.filter, gotErr)
+			}
+			if !tc.expectNil && gotErr == nil {
+				t.Errorf("getPredicate(%s) = got err nil, expect non-nil", tc.filter)
+			}
+			if reflect.ValueOf(gotPred) != reflect.ValueOf(tc.expectPred) {
+				t.Errorf("getPredicate(%s) = got pred %v, expect %v", tc.filter, gotPred, tc.expectPred)
+			}
+		})
+	}
 }

@@ -307,11 +307,11 @@ func NewController(
 			oldNode := old.(*apiv1.Node)
 			currentNode := cur.(*apiv1.Node)
 
-			vmIpCandidateNodeCheck := utils.CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes
-			vmIpPortCandidateNodeCheck := utils.CandidateNodesPredicate
+			vmIpCandidateNodeCheck := zonegetter.CandidateAndUnreadyNodesFilter
+			vmIpPortCandidateNodeCheck := zonegetter.CandidateNodesFilter
 
-			if vmIpCandidateNodeCheck(oldNode, logger) != vmIpCandidateNodeCheck(currentNode, logger) ||
-				vmIpPortCandidateNodeCheck(oldNode, logger) != vmIpPortCandidateNodeCheck(currentNode, logger) {
+			if zoneGetter.CheckNodeWithPredicate(oldNode, vmIpCandidateNodeCheck, logger) != zoneGetter.CheckNodeWithPredicate(currentNode, vmIpCandidateNodeCheck, logger) ||
+				zoneGetter.CheckNodeWithPredicate(oldNode, vmIpPortCandidateNodeCheck, logger) != zoneGetter.CheckNodeWithPredicate(currentNode, vmIpPortCandidateNodeCheck, logger) {
 				logger.Info("Node has changed, enqueueing", "node", currentNode.Name)
 				negController.enqueueNode(currentNode)
 			}
