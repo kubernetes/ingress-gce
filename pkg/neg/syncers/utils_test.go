@@ -46,6 +46,8 @@ import (
 	"k8s.io/klog/v2"
 )
 
+const defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/default"
+
 func TestEncodeDecodeEndpoint(t *testing.T) {
 	ip := "10.0.0.10"
 	instance := "somehost"
@@ -493,7 +495,7 @@ func TestToZoneNetworkEndpointMap(t *testing.T) {
 	t.Parallel()
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer)
-	zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	zoneGetter := zonegetter.NewZoneGetter(nodeInformer, defaultTestSubnetURL)
 	podLister := negtypes.NewTestContext().PodInformer.GetIndexer()
 	testEndpointSlice := getDefaultEndpointSlices()
 	addPodsToLister(podLister, testEndpointSlice)
@@ -750,7 +752,7 @@ func TestValidateEndpointFields(t *testing.T) {
 	t.Parallel()
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer)
-	zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	zoneGetter := zonegetter.NewZoneGetter(nodeInformer, defaultTestSubnetURL)
 	podLister := negtypes.NewTestContext().PodInformer.GetIndexer()
 	addPodsToLister(podLister, getDefaultEndpointSlices())
 
@@ -1106,7 +1108,7 @@ func TestValidateEndpointFields(t *testing.T) {
 func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer)
-	zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	zoneGetter := zonegetter.NewZoneGetter(nodeInformer, defaultTestSubnetURL)
 	negCloud := negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
 	negName := "test-neg-name"
 	irrelevantNegName := "irrelevant"
@@ -1922,7 +1924,7 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer)
-	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer, defaultTestSubnetURL)
 	testContext := negtypes.NewTestContext()
 	podLister := testContext.PodInformer.GetIndexer()
 	addPodsToLister(podLister, getDefaultEndpointSlices())
@@ -2070,7 +2072,7 @@ func TestDegradedModeValidateEndpointInfo(t *testing.T) {
 	instance4 := negtypes.TestInstance4
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer)
-	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer, defaultTestSubnetURL)
 	testContext := negtypes.NewTestContext()
 	podLister := testContext.PodInformer.GetIndexer()
 	addPodsToLister(podLister, getDefaultEndpointSlices())

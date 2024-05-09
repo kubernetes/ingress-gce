@@ -31,6 +31,8 @@ import (
 	"k8s.io/klog/v2"
 )
 
+const defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/default"
+
 type negNamer struct{}
 
 func (*negNamer) NEG(namespace, name string, svcPort int32) string {
@@ -752,7 +754,7 @@ func TestNodePredicateForEndpointCalculatorMode(t *testing.T) {
 			predicate := NodeFilterForEndpointCalculatorMode(tc.epCalculatorMode)
 			nodeInformer := zonegetter.FakeNodeInformer()
 			zonegetter.PopulateFakeNodeInformer(nodeInformer)
-			zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+			zoneGetter := zonegetter.NewZoneGetter(nodeInformer, defaultTestSubnetURL)
 			zones, err := zoneGetter.ListZones(predicate, klog.TODO())
 			if err != nil {
 				t.Errorf("Failed listing zones with predicate, err - %v", err)

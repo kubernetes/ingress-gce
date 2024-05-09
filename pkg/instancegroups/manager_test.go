@@ -18,9 +18,10 @@ package instancegroups
 
 import (
 	"fmt"
-	"k8s.io/klog/v2"
 	"strings"
 	"testing"
+
+	"k8s.io/klog/v2"
 
 	"google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -30,15 +31,17 @@ import (
 )
 
 const (
-	defaultZone = "default-zone"
-	basePath    = "/basepath/projects/project-id/"
+	defaultTestZone = "default-zone"
+	basePath        = "/basepath/projects/project-id/"
+
+	defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/default"
 )
 
 var defaultNamer = namer.NewNamer("uid1", "fw1", klog.TODO())
 
 func newNodePool(f *FakeInstanceGroups, zone string, maxIGSize int) Manager {
 	nodeInformer := zonegetter.FakeNodeInformer()
-	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer, defaultTestSubnetURL)
 
 	pool := NewManager(&ManagerConfig{
 		Cloud:      f,
@@ -91,16 +94,16 @@ func TestNodePoolSync(t *testing.T) {
 		// create fake gce node pool with existing gceNodes
 		ig := &compute.InstanceGroup{Name: defaultNamer.InstanceGroup()}
 		zonesToIGs := map[string]IGsToInstances{
-			defaultZone: {
+			defaultTestZone: {
 				ig: testCase.gceNodes,
 			},
 		}
 		fakeGCEInstanceGroups := NewFakeInstanceGroups(zonesToIGs, maxIGSize)
 
-		pool := newNodePool(fakeGCEInstanceGroups, defaultZone, maxIGSize)
+		pool := newNodePool(fakeGCEInstanceGroups, defaultTestZone, maxIGSize)
 		for _, kubeNode := range testCase.kubeNodes.List() {
 			manager := pool.(*manager)
-			zonegetter.AddFakeNodes(manager.ZoneGetter, defaultZone, kubeNode)
+			zonegetter.AddFakeNodes(manager.ZoneGetter, defaultTestZone, kubeNode)
 		}
 
 		igName := defaultNamer.InstanceGroup()
@@ -123,9 +126,9 @@ func TestNodePoolSync(t *testing.T) {
 			t.Errorf("Should skip sync. apiCallsCountBeforeSync = %d, apiCallsCountAfterSync = %d", apiCallsCountBeforeSync, apiCallsCountAfterSync)
 		}
 
-		instancesList, err := fakeGCEInstanceGroups.ListInstancesInInstanceGroup(ig.Name, defaultZone, allInstances)
+		instancesList, err := fakeGCEInstanceGroups.ListInstancesInInstanceGroup(ig.Name, defaultTestZone, allInstances)
 		if err != nil {
-			t.Fatalf("fakeGCEInstanceGroups.ListInstancesInInstanceGroup(%s, %s, %s) returned error %v, want nil", ig.Name, defaultZone, allInstances, err)
+			t.Fatalf("fakeGCEInstanceGroups.ListInstancesInInstanceGroup(%s, %s, %s) returned error %v, want nil", ig.Name, defaultTestZone, allInstances, err)
 		}
 		instances, err := test.InstancesListToNameSet(instancesList)
 		if err != nil {
@@ -161,14 +164,14 @@ func TestNodePoolSync(t *testing.T) {
 func TestSetNamedPorts(t *testing.T) {
 	maxIGSize := 1000
 	zonesToIGs := map[string]IGsToInstances{
-		defaultZone: {
+		defaultTestZone: {
 			&compute.InstanceGroup{Name: "ig"}: sets.NewString("ig"),
 		},
 	}
 	fakeIGs := NewFakeInstanceGroups(zonesToIGs, maxIGSize)
-	pool := newNodePool(fakeIGs, defaultZone, maxIGSize)
+	pool := newNodePool(fakeIGs, defaultTestZone, maxIGSize)
 	manager := pool.(*manager)
-	zonegetter.AddFakeNodes(manager.ZoneGetter, defaultZone, "test-node")
+	zonegetter.AddFakeNodes(manager.ZoneGetter, defaultTestZone, "test-node")
 
 	testCases := []struct {
 		activePorts   []int64
@@ -219,11 +222,11 @@ func TestSetNamedPorts(t *testing.T) {
 func TestGetInstanceReferences(t *testing.T) {
 	maxIGSize := 1000
 	zonesToIGs := map[string]IGsToInstances{
-		defaultZone: {
+		defaultTestZone: {
 			&compute.InstanceGroup{Name: "ig"}: sets.NewString("ig"),
 		},
 	}
-	pool := newNodePool(NewFakeInstanceGroups(zonesToIGs, maxIGSize), defaultZone, maxIGSize)
+	pool := newNodePool(NewFakeInstanceGroups(zonesToIGs, maxIGSize), defaultTestZone, maxIGSize)
 	instances := pool.(*manager)
 
 	nodeNames := []string{"node-1", "node-2", "node-3", "node-4.region.zone"}
@@ -231,10 +234,10 @@ func TestGetInstanceReferences(t *testing.T) {
 	expectedRefs := map[string]struct{}{}
 	for _, nodeName := range nodeNames {
 		name := strings.Split(nodeName, ".")[0]
-		expectedRefs[fmt.Sprintf("%szones/%s/instances/%s", basePath, defaultZone, name)] = struct{}{}
+		expectedRefs[fmt.Sprintf("%szones/%s/instances/%s", basePath, defaultTestZone, name)] = struct{}{}
 	}
 
-	refs := instances.getInstanceReferences(defaultZone, nodeNames)
+	refs := instances.getInstanceReferences(defaultTestZone, nodeNames)
 	for _, ref := range refs {
 		if _, ok := expectedRefs[ref.Instance]; !ok {
 			t.Errorf("found unexpected reference: %s, expected only %+v", ref.Instance, expectedRefs)

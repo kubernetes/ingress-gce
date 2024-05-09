@@ -97,7 +97,7 @@ func TestSync(t *testing.T) {
 	config.HasSynced = func() bool {
 		return true
 	}
-	config.ZoneGetter = zonegetter.NewZoneGetter(informer)
+	config.ZoneGetter = zonegetter.NewZoneGetter(informer, defaultTestSubnetURL)
 
 	controller := NewController(config, logr.Logger{})
 

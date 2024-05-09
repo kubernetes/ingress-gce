@@ -38,7 +38,10 @@ import (
 	"k8s.io/klog/v2"
 )
 
-const defaultZone = "zone-a"
+const (
+	defaultTestZone      = "zone-a"
+	defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/default"
+)
 
 func newTestIGLinker(fakeGCE *gce.Cloud, fakeInstancePool instancegroups.Manager) *instanceGroupLinker {
 	fakeBackendPool := NewPool(fakeGCE, defaultNamer)
@@ -56,8 +59,8 @@ func TestLink(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 
 	nodeInformer := zonegetter.FakeNodeInformer()
-	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer)
-	zonegetter.AddFakeNodes(fakeZoneGetter, defaultZone, "test-instance")
+	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer, defaultTestSubnetURL)
+	zonegetter.AddFakeNodes(fakeZoneGetter, defaultTestZone, "test-instance")
 
 	fakeNodePool := instancegroups.NewManager(&instancegroups.ManagerConfig{
 		Cloud:      fakeIGs,
@@ -79,7 +82,7 @@ func TestLink(t *testing.T) {
 	// Mimic the syncer creating the backend.
 	linker.backendPool.Create(sp, "fake-health-check-link", klog.TODO())
 
-	if err := linker.Link(sp, []GroupKey{{Zone: defaultZone}}); err != nil {
+	if err := linker.Link(sp, []GroupKey{{Zone: defaultTestZone}}); err != nil {
 		t.Fatalf("%v", err)
 	}
 
@@ -98,8 +101,8 @@ func TestLinkWithCreationModeError(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 
 	nodeInformer := zonegetter.FakeNodeInformer()
-	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer)
-	zonegetter.AddFakeNodes(fakeZoneGetter, defaultZone, "test-instance")
+	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer, defaultTestSubnetURL)
+	zonegetter.AddFakeNodes(fakeZoneGetter, defaultTestZone, "test-instance")
 
 	fakeNodePool := instancegroups.NewManager(&instancegroups.ManagerConfig{
 		Cloud:      fakeIGs,
@@ -135,7 +138,7 @@ func TestLinkWithCreationModeError(t *testing.T) {
 		// Mimic the syncer creating the backend.
 		linker.backendPool.Create(sp, "fake-health-check-link", klog.TODO())
 
-		if err := linker.Link(sp, []GroupKey{{Zone: defaultZone}}); err != nil {
+		if err := linker.Link(sp, []GroupKey{{Zone: defaultTestZone}}); err != nil {
 			t.Fatalf("%v", err)
 		}
 

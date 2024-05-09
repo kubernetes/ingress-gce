@@ -238,7 +238,8 @@ func NewControllerContext(
 		context.EnableIngressRegionalExternal,
 		logger,
 	)
-	context.ZoneGetter = zonegetter.NewZoneGetter(context.NodeInformer)
+	// The subnet specified in gce.conf is considered as the default subnet.
+	context.ZoneGetter = zonegetter.NewZoneGetter(context.NodeInformer, context.Cloud.SubnetworkURL())
 	context.InstancePool = instancegroups.NewManager(&instancegroups.ManagerConfig{
 		Cloud:      context.Cloud,
 		Namer:      context.ClusterNamer,
