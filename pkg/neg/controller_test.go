@@ -125,7 +125,7 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 	}
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer)
-	zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	zoneGetter := zonegetter.NewZoneGetter(nodeInformer, defaultTestSubnetURL)
 
 	return NewController(
 		kubeClient,
@@ -1735,7 +1735,7 @@ func validateServiceAnnotationWithPortInfoMap(t *testing.T, svc *apiv1.Service, 
 
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer)
-	zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	zoneGetter := zonegetter.NewZoneGetter(nodeInformer, defaultTestSubnetURL)
 	zones, _ := zoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(portInfoMap.EndpointsCalculatorMode()), klog.TODO())
 	if !sets.NewString(expectZones...).Equal(sets.NewString(zones...)) {
 		t.Errorf("Unexpected zones listed by the predicate function, got %v, want %v", zones, expectZones)
@@ -1816,7 +1816,7 @@ func validateServiceStateAnnotationExceptNames(t *testing.T, svc *apiv1.Service,
 	}
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer)
-	zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	zoneGetter := zonegetter.NewZoneGetter(nodeInformer, defaultTestSubnetURL)
 	// This routine is called from tests verifying L7 NEGs.
 	zones, _ := zoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(negtypes.L7Mode), klog.TODO())
 

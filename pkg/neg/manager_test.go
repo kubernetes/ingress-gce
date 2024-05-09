@@ -77,13 +77,15 @@ const (
 	labelValue1 = "v1"
 	labelValue2 = "v2"
 	negName1    = "neg1"
+
+	defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/default"
 )
 
 func NewTestSyncerManager(kubeClient kubernetes.Interface) (*syncerManager, *gce.Cloud) {
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer)
-	zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	zoneGetter := zonegetter.NewZoneGetter(nodeInformer, defaultTestSubnetURL)
 	manager := newSyncerManager(
 		testContext.NegNamer,
 		record.NewFakeRecorder(100),

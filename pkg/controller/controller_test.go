@@ -55,6 +55,8 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 )
 
+const defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/default"
+
 var (
 	nodePortCounter = 30000
 	clusterUID      = "aaaaa"
@@ -67,7 +69,7 @@ func newLoadBalancerController() *LoadBalancerController {
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	nodeInformer := zonegetter.FakeNodeInformer()
-	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer, defaultTestSubnetURL)
 	zonegetter.AddFakeNodes(fakeZoneGetter, fakeZone, "test-node")
 
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockGlobalForwardingRules.InsertHook = loadbalancers.InsertGlobalForwardingRuleHook

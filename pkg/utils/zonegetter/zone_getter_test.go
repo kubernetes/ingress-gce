@@ -29,10 +29,12 @@ import (
 	"k8s.io/klog/v2"
 )
 
+const defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/default"
+
 func TestListZones(t *testing.T) {
 	t.Parallel()
 	fakeNodeInformer := FakeNodeInformer()
-	zoneGetter := NewZoneGetter(fakeNodeInformer)
+	zoneGetter := NewZoneGetter(fakeNodeInformer, defaultTestSubnetURL)
 	zoneGetter.nodeInformer.GetIndexer().Add(&apiv1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "ReadyNodeWithProviderID",
@@ -186,7 +188,7 @@ func TestListZones(t *testing.T) {
 func TestListNodes(t *testing.T) {
 	t.Parallel()
 	fakeNodeInformer := FakeNodeInformer()
-	zoneGetter := NewZoneGetter(fakeNodeInformer)
+	zoneGetter := NewZoneGetter(fakeNodeInformer, defaultTestSubnetURL)
 	zoneGetter.nodeInformer.GetIndexer().Add(&apiv1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "ReadyNodeWithProviderID",
@@ -335,7 +337,7 @@ func TestListNodes(t *testing.T) {
 func TestZoneForNode(t *testing.T) {
 	t.Parallel()
 	fakeNodeInformer := FakeNodeInformer()
-	zoneGetter := NewZoneGetter(fakeNodeInformer)
+	zoneGetter := NewZoneGetter(fakeNodeInformer, defaultTestSubnetURL)
 	zoneGetter.nodeInformer.GetIndexer().Add(&apiv1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "NodeWithValidProviderID",

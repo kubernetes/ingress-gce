@@ -87,6 +87,9 @@ type ZoneGetter struct {
 	// singleStoredZone is the single stored zone in the zoneGetter
 	// It is only used in Non-GCP mode.
 	singleStoredZone string
+
+	// The subnetURL of the cluster's default subnet.
+	defaultSubnetURL string
 }
 
 // ZoneForNode returns the zone for a given node by looking up providerID.
@@ -280,9 +283,10 @@ func NewNonGCPZoneGetter(zone string) *ZoneGetter {
 }
 
 // NewZoneGetter initialize a ZoneGetter in GCP mode.
-func NewZoneGetter(nodeInformer cache.SharedIndexInformer) *ZoneGetter {
+func NewZoneGetter(nodeInformer cache.SharedIndexInformer, defaultSubnetURL string) *ZoneGetter {
 	return &ZoneGetter{
-		mode:         GCP,
-		nodeInformer: nodeInformer,
+		mode:             GCP,
+		nodeInformer:     nodeInformer,
+		defaultSubnetURL: defaultSubnetURL,
 	}
 }
