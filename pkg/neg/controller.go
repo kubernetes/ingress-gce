@@ -310,8 +310,8 @@ func NewController(
 			vmIpCandidateNodeCheck := zonegetter.CandidateAndUnreadyNodesFilter
 			vmIpPortCandidateNodeCheck := zonegetter.CandidateNodesFilter
 
-			if zoneGetter.CheckNodeWithPredicate(oldNode, vmIpCandidateNodeCheck, logger) != zoneGetter.CheckNodeWithPredicate(currentNode, vmIpCandidateNodeCheck, logger) ||
-				zoneGetter.CheckNodeWithPredicate(oldNode, vmIpPortCandidateNodeCheck, logger) != zoneGetter.CheckNodeWithPredicate(currentNode, vmIpPortCandidateNodeCheck, logger) {
+			if zoneGetter.IsNodeSelectedByFilter(oldNode, vmIpCandidateNodeCheck, logger) != zoneGetter.IsNodeSelectedByFilter(currentNode, vmIpCandidateNodeCheck, logger) ||
+				zoneGetter.IsNodeSelectedByFilter(oldNode, vmIpPortCandidateNodeCheck, logger) != zoneGetter.IsNodeSelectedByFilter(currentNode, vmIpPortCandidateNodeCheck, logger) {
 				logger.Info("Node has changed, enqueueing", "node", currentNode.Name)
 				negController.enqueueNode(currentNode)
 			}
