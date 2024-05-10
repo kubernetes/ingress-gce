@@ -12,6 +12,7 @@ import (
 	informerv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 )
 
 func TestNodeStatusChanged(t *testing.T) {
@@ -96,6 +97,7 @@ func TestSync(t *testing.T) {
 	config.HasSynced = func() bool {
 		return true
 	}
+	config.ZoneGetter = zonegetter.NewZoneGetter(informer)
 
 	controller := NewController(config, logr.Logger{})
 

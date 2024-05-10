@@ -307,11 +307,11 @@ func NewController(
 			oldNode := old.(*apiv1.Node)
 			currentNode := cur.(*apiv1.Node)
 
-			vmIpCandidateNodeCheck := utils.CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes
-			vmIpPortCandidateNodeCheck := utils.CandidateNodesPredicate
+			vmIpCandidateNodeCheck := zonegetter.CandidateAndUnreadyNodesFilter
+			vmIpPortCandidateNodeCheck := zonegetter.CandidateNodesFilter
 
-			if vmIpCandidateNodeCheck(oldNode, logger) != vmIpCandidateNodeCheck(currentNode, logger) ||
-				vmIpPortCandidateNodeCheck(oldNode, logger) != vmIpPortCandidateNodeCheck(currentNode, logger) {
+			if zoneGetter.CheckNodeWithPredicate(oldNode, vmIpCandidateNodeCheck, logger) != zoneGetter.CheckNodeWithPredicate(currentNode, vmIpCandidateNodeCheck, logger) ||
+				zoneGetter.CheckNodeWithPredicate(oldNode, vmIpPortCandidateNodeCheck, logger) != zoneGetter.CheckNodeWithPredicate(currentNode, vmIpPortCandidateNodeCheck, logger) {
 				logger.Info("Node has changed, enqueueing", "node", currentNode.Name)
 				negController.enqueueNode(currentNode)
 			}
@@ -696,7 +696,7 @@ func (c *Controller) getCSMPortInfoMap(namespace, name string, service *apiv1.Se
 // syncNegStatusAnnotation syncs the neg status annotation
 // it takes service namespace, name and the expected service ports for NEGs.
 func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap negtypes.PortInfoMap) error {
-	zones, err := c.zoneGetter.List(negtypes.NodeFilterForEndpointCalculatorMode(portMap.EndpointsCalculatorMode()), c.logger)
+	zones, err := c.zoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(portMap.EndpointsCalculatorMode()), c.logger)
 	if err != nil {
 		return err
 	}

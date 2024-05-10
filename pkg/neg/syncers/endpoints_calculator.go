@@ -29,7 +29,6 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/types"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
-	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
 )
@@ -73,7 +72,6 @@ func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(eds []types.Endpoints
 	zoneNodeMap := make(map[string][]*v1.Node)
 	processedNodes := sets.String{}
 	numEndpoints := 0
-	candidateNodeCheck := utils.CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes
 	for _, ed := range eds {
 		for _, addr := range ed.Addresses {
 			if addr.NodeName == nil {
@@ -95,7 +93,7 @@ func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(eds []types.Endpoints
 				metrics.PublishNegControllerErrorCountMetrics(err, true)
 				continue
 			}
-			if ok := candidateNodeCheck(node, l.logger); !ok {
+			if ok := l.zoneGetter.CheckNodeWithPredicate(node, zonegetter.CandidateAndUnreadyNodesFilter, l.logger); !ok {
 				l.logger.Info("Dropping Node from subset since it is not a valid LB candidate", "nodeName", node.Name)
 				continue
 			}
@@ -171,8 +169,7 @@ func (l *ClusterL4ILBEndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
 func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpoints(_ []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
 	// In this mode, any of the cluster nodes can be part of the subset, whether or not a matching pod runs on it.
-	nodes, _ := utils.ListWithPredicate(l.nodeLister, utils.CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes, l.logger)
-
+	nodes, _ := l.zoneGetter.ListNodes(zonegetter.CandidateAndUnreadyNodesFilter, l.logger)
 	zoneNodeMap := make(map[string][]*v1.Node)
 	for _, node := range nodes {
 		if !l.networkInfo.IsNodeConnected(node) {

@@ -21,9 +21,9 @@ import (
 
 	apiv1 "k8s.io/api/core/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
 )
 
@@ -42,13 +42,15 @@ type Controller struct {
 
 	enableMultiSubnetCluster bool
 
-	stopCh <-chan struct{}
+	stopCh     <-chan struct{}
+	zoneGetter *zonegetter.ZoneGetter
 
 	logger klog.Logger
 }
 
 type ControllerConfig struct {
 	NodeInformer             cache.SharedIndexInformer
+	ZoneGetter               *zonegetter.ZoneGetter
 	IGManager                Manager
 	HasSynced                func() bool
 	EnableMultiSubnetCluster bool
@@ -66,6 +68,7 @@ func NewController(config *ControllerConfig, logger klog.Logger) *Controller {
 	logger = logger.WithName("InstanceGroupsController")
 	c := &Controller{
 		lister:                   config.NodeInformer.GetIndexer(),
+		zoneGetter:               config.ZoneGetter,
 		igManager:                config.IGManager,
 		hasSynced:                config.HasSynced,
 		enableMultiSubnetCluster: config.EnableMultiSubnetCluster,
@@ -126,9 +129,9 @@ func (c *Controller) sync(key string) error {
 		c.logger.V(4).Info("Instance groups controller: Processing key finished", "key", key, "timeTaken", time.Since(start))
 	}()
 
-	nodeNames, err := utils.GetReadyNodeNames(listers.NewNodeLister(c.lister), c.logger)
+	nodes, err := c.zoneGetter.ListNodes(zonegetter.CandidateNodesFilter, c.logger)
 	if err != nil {
 		return err
 	}
-	return c.igManager.Sync(nodeNames)
+	return c.igManager.Sync(utils.GetNodeNames(nodes))
 }

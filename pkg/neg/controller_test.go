@@ -1736,7 +1736,7 @@ func validateServiceAnnotationWithPortInfoMap(t *testing.T, svc *apiv1.Service, 
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer)
 	zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
-	zones, _ := zoneGetter.List(negtypes.NodeFilterForEndpointCalculatorMode(portInfoMap.EndpointsCalculatorMode()), klog.TODO())
+	zones, _ := zoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(portInfoMap.EndpointsCalculatorMode()), klog.TODO())
 	if !sets.NewString(expectZones...).Equal(sets.NewString(zones...)) {
 		t.Errorf("Unexpected zones listed by the predicate function, got %v, want %v", zones, expectZones)
 	}
@@ -1818,7 +1818,7 @@ func validateServiceStateAnnotationExceptNames(t *testing.T, svc *apiv1.Service,
 	zonegetter.PopulateFakeNodeInformer(nodeInformer)
 	zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
 	// This routine is called from tests verifying L7 NEGs.
-	zones, _ := zoneGetter.List(negtypes.NodeFilterForEndpointCalculatorMode(negtypes.L7Mode), klog.TODO())
+	zones, _ := zoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(negtypes.L7Mode), klog.TODO())
 
 	// negStatus validation
 	negStatus, err := annotations.ParseNegStatus(v)

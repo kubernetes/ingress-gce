@@ -677,12 +677,12 @@ func podBelongsToService(pod *apiv1.Pod, service *apiv1.Service) error {
 func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter *zonegetter.ZoneGetter, cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, mode negtypes.EndpointsCalculatorMode, enableDualStackNEG bool, logger klog.Logger) (map[string]negtypes.NetworkEndpointSet, labels.EndpointPodLabelMap, error) {
 	// Include zones that have non-candidate nodes currently. It is possible that NEGs were created in those zones previously and the endpoints now became non-candidates.
 	// Endpoints in those NEGs now need to be removed. This mostly applies to VM_IP_NEGs where the endpoints are nodes.
-	zones, err := zoneGetter.List(zonegetter.AllNodesFilter, logger)
+	zones, err := zoneGetter.ListZones(zonegetter.AllNodesFilter, logger)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	candidateNodeZones, err := zoneGetter.List(negtypes.NodeFilterForEndpointCalculatorMode(mode), logger)
+	candidateNodeZones, err := zoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(mode), logger)
 	if err != nil {
 		return nil, nil, err
 	}
