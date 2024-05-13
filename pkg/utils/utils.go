@@ -92,6 +92,9 @@ const (
 	// be removed in 1.18.
 	LabelAlphaNodeRoleExcludeBalancer = "alpha.service-controller.kubernetes.io/exclude-balancer"
 	DualStackSubnetStackType          = "IPV4_IPV6"
+
+	// LabelNodeSubnet specifies the subnet name of this node.
+	LabelNodeSubnet = "cloud.google.com/gke-np-subnet"
 )
 
 var networkTierErrorRegexp = regexp.MustCompile(`The network tier of external IP is STANDARD|PREMIUM, that of Address must be the same.`)
