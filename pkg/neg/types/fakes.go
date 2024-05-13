@@ -45,11 +45,6 @@ const (
 	TestUpgradeInstance2  = "upgrade-instance2"
 	TestEmptyZoneInstance = "instance-empty-providerID" // This maps to an empty instance in PopulateFakeNodeInformer
 	TestNotExistInstance  = "not-exist-instance"
-
-	TestNoPodCIDRInstance        = "no-podcidr-instance"
-	TestNoPodCIDRPod             = "no-podcidr-pod"
-	TestNonDefaultSubnetInstance = "non-default-subnet-instance"
-	TestNonDefaultSubnetPod      = "non-default-subnet-pod"
 )
 
 type FakeNetworkEndpointGroupCloud struct {

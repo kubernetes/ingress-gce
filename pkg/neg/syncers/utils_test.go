@@ -1723,7 +1723,7 @@ func TestValidateEndpointFields(t *testing.T) {
 	addPodsToLister(podLister, getDefaultEndpointSlices())
 	nodeLister := testContext.NodeInformer.GetIndexer()
 	zonegetter.PopulateFakeNodeInformer(testContext.NodeInformer)
-	fakeZoneGetter := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, defaultTestSubnetURL, false)
+	fakeZoneGetter := zonegetter.NewZoneGetter(testContext.NodeInformer, defaultTestSubnetURL)
 
 	// Add the pod that corresponds to empty zone instance.
 	podLister.Add(&v1.Pod{
