@@ -29,20 +29,22 @@ import (
 )
 
 const (
-	TestZone1            = "zone1"
-	TestZone2            = "zone2"
-	TestZone3            = "zone3"
-	TestZone4            = "zone4"
-	TestInstance1        = "instance1"
-	TestInstance2        = "instance2"
-	TestInstance3        = "instance3"
-	TestInstance4        = "instance4"
-	TestInstance5        = "instance5"
-	TestInstance6        = "instance6"
-	TestUnreadyInstance1 = "unready-instance1"
-	TestUnreadyInstance2 = "unready-instance2"
-	TestUpgradeInstance1 = "upgrade-instance1"
-	TestUpgradeInstance2 = "upgrade-instance2"
+	TestZone1             = "zone1"
+	TestZone2             = "zone2"
+	TestZone3             = "zone3"
+	TestZone4             = "zone4"
+	TestInstance1         = "instance1"
+	TestInstance2         = "instance2"
+	TestInstance3         = "instance3"
+	TestInstance4         = "instance4"
+	TestInstance5         = "instance5"
+	TestInstance6         = "instance6"
+	TestUnreadyInstance1  = "unready-instance1"
+	TestUnreadyInstance2  = "unready-instance2"
+	TestUpgradeInstance1  = "upgrade-instance1"
+	TestUpgradeInstance2  = "upgrade-instance2"
+	TestEmptyZoneInstance = "instance-empty-providerID" // This maps to an empty instance in PopulateFakeNodeInformer
+	TestNotExistInstance  = "not-exist-instance"
 )
 
 type FakeNetworkEndpointGroupCloud struct {
