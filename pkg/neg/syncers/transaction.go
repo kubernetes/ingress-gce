@@ -326,7 +326,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	// not enabled, so they would always be empty and reset error state.
 	if len(notInDegraded) == 0 && len(onlyInDegraded) == 0 {
 		s.logger.Info("Exit degraded mode")
-		if s.enableDegradedMode {
+		if s.enableDegradedMode && s.inErrorState() {
 			s.recordEvent(apiv1.EventTypeNormal, "ExitDegradedMode", fmt.Sprintf("NEG %s is no longer in degraded mode", s.NegSyncerKey.String()))
 		}
 		s.resetErrorState()
