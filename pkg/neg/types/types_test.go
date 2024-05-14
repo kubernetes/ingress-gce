@@ -754,7 +754,7 @@ func TestNodePredicateForEndpointCalculatorMode(t *testing.T) {
 			predicate := NodeFilterForEndpointCalculatorMode(tc.epCalculatorMode)
 			nodeInformer := zonegetter.FakeNodeInformer()
 			zonegetter.PopulateFakeNodeInformer(nodeInformer)
-			zoneGetter := zonegetter.NewZoneGetter(nodeInformer, defaultTestSubnetURL)
+			zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer)
 			zones, err := zoneGetter.ListZones(predicate, klog.TODO())
 			if err != nil {
 				t.Errorf("Failed listing zones with predicate, err - %v", err)

@@ -41,7 +41,7 @@ var defaultNamer = namer.NewNamer("uid1", "fw1", klog.TODO())
 
 func newNodePool(f *FakeInstanceGroups, zone string, maxIGSize int) Manager {
 	nodeInformer := zonegetter.FakeNodeInformer()
-	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer, defaultTestSubnetURL)
+	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer)
 
 	pool := NewManager(&ManagerConfig{
 		Cloud:      f,

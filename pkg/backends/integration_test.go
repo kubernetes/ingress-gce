@@ -54,7 +54,7 @@ func newTestJig(fakeGCE *gce.Cloud) *Jig {
 	fakeIGs := instancegroups.NewEmptyFakeInstanceGroups()
 
 	nodeInformer := zonegetter.FakeNodeInformer()
-	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer, defaultTestSubnetURL)
+	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer)
 	zonegetter.AddFakeNodes(fakeZoneGetter, defaultTestZone, "test-instance")
 
 	fakeInstancePool := instancegroups.NewManager(&instancegroups.ManagerConfig{

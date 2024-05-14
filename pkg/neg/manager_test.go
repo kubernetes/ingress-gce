@@ -83,9 +83,8 @@ const (
 
 func NewTestSyncerManager(kubeClient kubernetes.Interface) (*syncerManager, *gce.Cloud) {
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-	nodeInformer := zonegetter.FakeNodeInformer()
-	zonegetter.PopulateFakeNodeInformer(nodeInformer)
-	zoneGetter := zonegetter.NewZoneGetter(nodeInformer, defaultTestSubnetURL)
+	zonegetter.PopulateFakeNodeInformer(testContext.NodeInformer)
+	zoneGetter := zonegetter.NewFakeZoneGetter(testContext.NodeInformer)
 	manager := newSyncerManager(
 		testContext.NegNamer,
 		record.NewFakeRecorder(100),

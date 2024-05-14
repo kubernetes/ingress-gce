@@ -69,7 +69,7 @@ func newLoadBalancerController() *LoadBalancerController {
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	nodeInformer := zonegetter.FakeNodeInformer()
-	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer, defaultTestSubnetURL)
+	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer)
 	zonegetter.AddFakeNodes(fakeZoneGetter, fakeZone, "test-node")
 
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockGlobalForwardingRules.InsertHook = loadbalancers.InsertGlobalForwardingRuleHook
