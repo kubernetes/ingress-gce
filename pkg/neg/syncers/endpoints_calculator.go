@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/types"
@@ -203,30 +204,32 @@ func (l *ClusterL4ILBEndpointsCalculator) ValidateEndpoints(endpointData []types
 
 // L7EndpointsCalculator implements methods to calculate Network endpoints for VM_IP_PORT NEGs
 type L7EndpointsCalculator struct {
-	zoneGetter           *zonegetter.ZoneGetter
-	servicePortName      string
-	podLister            cache.Indexer
-	nodeLister           cache.Indexer
-	serviceLister        cache.Indexer
-	syncerKey            types.NegSyncerKey
-	networkEndpointType  types.NetworkEndpointType
-	enableDualStackNEG   bool
-	logger               klog.Logger
-	syncMetricsCollector *metricscollector.SyncerMetrics
+	zoneGetter               *zonegetter.ZoneGetter
+	servicePortName          string
+	podLister                cache.Indexer
+	nodeLister               cache.Indexer
+	serviceLister            cache.Indexer
+	syncerKey                types.NegSyncerKey
+	networkEndpointType      types.NetworkEndpointType
+	enableDualStackNEG       bool
+	enableMultiSubnetCluster bool
+	logger                   klog.Logger
+	syncMetricsCollector     *metricscollector.SyncerMetrics
 }
 
 func NewL7EndpointsCalculator(zoneGetter *zonegetter.ZoneGetter, podLister, nodeLister, serviceLister cache.Indexer, syncerKey types.NegSyncerKey, logger klog.Logger, enableDualStackNEG bool, syncMetricsCollector *metricscollector.SyncerMetrics) *L7EndpointsCalculator {
 	return &L7EndpointsCalculator{
-		zoneGetter:           zoneGetter,
-		servicePortName:      syncerKey.PortTuple.Name,
-		podLister:            podLister,
-		nodeLister:           nodeLister,
-		serviceLister:        serviceLister,
-		syncerKey:            syncerKey,
-		networkEndpointType:  syncerKey.NegType,
-		enableDualStackNEG:   enableDualStackNEG,
-		logger:               logger.WithName("L7EndpointsCalculator"),
-		syncMetricsCollector: syncMetricsCollector,
+		zoneGetter:               zoneGetter,
+		servicePortName:          syncerKey.PortTuple.Name,
+		podLister:                podLister,
+		nodeLister:               nodeLister,
+		serviceLister:            serviceLister,
+		syncerKey:                syncerKey,
+		networkEndpointType:      syncerKey.NegType,
+		enableDualStackNEG:       enableDualStackNEG,
+		enableMultiSubnetCluster: flags.F.EnableMultiSubnetCluster,
+		logger:                   logger.WithName("L7EndpointsCalculator"),
+		syncMetricsCollector:     syncMetricsCollector,
 	}
 }
 
@@ -237,7 +240,7 @@ func (l *L7EndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
 func (l *L7EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, _ map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
-	result, err := toZoneNetworkEndpointMap(eds, l.zoneGetter, l.podLister, l.servicePortName, l.networkEndpointType, l.enableDualStackNEG, l.logger)
+	result, err := toZoneNetworkEndpointMap(eds, l.zoneGetter, l.podLister, l.servicePortName, l.networkEndpointType, l.enableDualStackNEG, l.enableMultiSubnetCluster, l.logger)
 	if err == nil { // If current calculation ends up in error, we trigger and emit metrics in degraded mode.
 		l.syncMetricsCollector.UpdateSyncerEPMetrics(l.syncerKey, result.EPCount, result.EPSCount)
 	}
@@ -246,7 +249,7 @@ func (l *L7EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, _ 
 
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
 func (l *L7EndpointsCalculator) CalculateEndpointsDegradedMode(eds []types.EndpointsData, _ map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
-	result := toZoneNetworkEndpointMapDegradedMode(eds, l.zoneGetter, l.podLister, l.nodeLister, l.serviceLister, l.servicePortName, l.networkEndpointType, l.enableDualStackNEG, l.logger)
+	result := toZoneNetworkEndpointMapDegradedMode(eds, l.zoneGetter, l.podLister, l.nodeLister, l.serviceLister, l.servicePortName, l.networkEndpointType, l.enableDualStackNEG, l.enableMultiSubnetCluster, l.logger)
 	l.syncMetricsCollector.UpdateSyncerEPMetrics(l.syncerKey, result.EPCount, result.EPSCount)
 	return result.NetworkEndpointSet, result.EndpointPodMap, nil
 }
