@@ -19,19 +19,20 @@ package types
 type State string
 
 const (
-	PodInvalid         = State("PodInvalid")
-	PodTerminal        = State("PodTerminal")
-	PodLabelMismatch   = State("PodLabelMismatch")
-	NodeMissing        = State("NodeMissing")
-	NodeNotFound       = State("NodeNotFound")
-	ZoneMissing        = State("ZoneMissing")
-	IPInvalid          = State("IPInvalid")
-	IPNotFromPod       = State("IPNotFromPod")
-	IPOutOfPodCIDR     = State("IPOutOfPodCIDR")
-	OtherError         = State("OtherError")
-	Duplicate          = State("Duplicate")
-	DualStackMigration = State("DualStackMigration") // Total number of endpoints which require migration.
-	Total              = State("Total")
+	PodInvalid             = State("PodInvalid")
+	PodTerminal            = State("PodTerminal")
+	PodLabelMismatch       = State("PodLabelMismatch")
+	NodeMissing            = State("NodeMissing")
+	NodeNotFound           = State("NodeNotFound")
+	ZoneMissing            = State("ZoneMissing")
+	IPInvalid              = State("IPInvalid")
+	IPNotFromPod           = State("IPNotFromPod")
+	IPOutOfPodCIDR         = State("IPOutOfPodCIDR")
+	OtherError             = State("OtherError")
+	Duplicate              = State("Duplicate")
+	DualStackMigration     = State("DualStackMigration") // Total number of endpoints which require migration.
+	NodeInNonDefaultSubnet = State("NodeInNonDefaultSubnet")
+	Total                  = State("Total")
 )
 
 // StateCountMap collect the count of instances in different states
