@@ -1560,7 +1560,7 @@ func TestServiceIPFamilies(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			controller := newTestController(fake.NewSimpleClientset())
 			defer controller.stop()
-			testService := newTestService(controller, false, []int32{})
+			testService := newTestService(controller, false, []int32{80})
 			testService.Spec.Type = tc.serviceType
 			testService.Spec.IPFamilies = tc.ipFamilies
 			testService.Spec.IPFamilyPolicy = tc.ipFamilyPolicy
