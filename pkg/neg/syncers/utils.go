@@ -238,7 +238,7 @@ type ZoneNetworkEndpointMapResult struct {
 }
 
 // toZoneNetworkEndpointMap translates addresses in endpoints object into zone and endpoints map, and also return the count for duplicated endpoints
-func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter *zonegetter.ZoneGetter, podLister cache.Indexer, servicePortName string, networkEndpointType negtypes.NetworkEndpointType, enableDualStackNEG bool, logger klog.Logger) (ZoneNetworkEndpointMapResult, error) {
+func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter *zonegetter.ZoneGetter, podLister cache.Indexer, servicePortName string, networkEndpointType negtypes.NetworkEndpointType, enableDualStackNEG, enableMultiSubnetCluster bool, logger klog.Logger) (ZoneNetworkEndpointMapResult, error) {
 	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
 	networkEndpointPodMap := negtypes.EndpointPodMap{}
 	ipsForPod := ipsForPod(eds)
@@ -285,8 +285,13 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter *zonegett
 			globalEPCount[negtypes.Total] += 1
 			zone, _, getZoneErr := getEndpointZone(endpointAddress, zoneGetter, logger)
 			if getZoneErr != nil {
-				epLogger.Error(getZoneErr, "Detected unexpected error when getting zone for endpoint")
 				metrics.PublishNegControllerErrorCountMetrics(getZoneErr, true)
+				if enableMultiSubnetCluster && errors.Is(getZoneErr, zonegetter.ErrNodeNotInDefaultSubnet) {
+					epLogger.Error(getZoneErr, "Detected endpoint not from default subnet. Skipping")
+					localEPCount[negtypes.NodeInNonDefaultSubnet]++
+					continue
+				}
+				epLogger.Error(getZoneErr, "Detected unexpected error when getting zone for endpoint")
 				return ZoneNetworkEndpointMapResult{}, fmt.Errorf("unexpected error when getting zone for endpoint %q in endpoint slice %s/%s: %w", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, getZoneErr)
 			}
 
@@ -408,7 +413,7 @@ func getEndpointPod(endpointAddress negtypes.AddressData, podLister cache.Indexe
 
 // toZoneNetworkEndpointMap translates addresses in endpoints object into zone and endpoints map, and also return the count for duplicated endpoints
 // we will not raise error in degraded mode for misconfigured endpoints, instead they will be filtered directly
-func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGetter *zonegetter.ZoneGetter, podLister, nodeLister, serviceLister cache.Indexer, servicePortName string, networkEndpointType negtypes.NetworkEndpointType, enableDualStackNEG bool, logger klog.Logger) ZoneNetworkEndpointMapResult {
+func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGetter *zonegetter.ZoneGetter, podLister, nodeLister, serviceLister cache.Indexer, servicePortName string, networkEndpointType negtypes.NetworkEndpointType, enableDualStackNEG, enableMultiSubnetCluster bool, logger klog.Logger) ZoneNetworkEndpointMapResult {
 	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
 	networkEndpointPodMap := negtypes.EndpointPodMap{}
 	ipsForPod := ipsForPod(eds)
@@ -458,8 +463,13 @@ func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGett
 			}
 			zone, getZoneErr := zoneGetter.ZoneForNode(nodeName, logger)
 			if getZoneErr != nil {
-				epLogger.Error(getZoneErr, "Endpoint's corresponding node does not have valid zone information, skipping", "nodeName", nodeName)
 				metrics.PublishNegControllerErrorCountMetrics(getZoneErr, true)
+				if enableMultiSubnetCluster && errors.Is(getZoneErr, zonegetter.ErrNodeNotInDefaultSubnet) {
+					epLogger.Error(getZoneErr, "Detected endpoint not from default subnet. Skipping", "nodeName", nodeName)
+					localEPCount[negtypes.NodeInNonDefaultSubnet]++
+					continue
+				}
+				epLogger.Error(getZoneErr, "Endpoint's corresponding node does not have valid zone information, skipping", "nodeName", nodeName)
 				localEPCount[negtypes.NodeNotFound]++
 				continue
 			}
@@ -619,7 +629,7 @@ func podContainsEndpointAddress(networkEndpoint negtypes.NetworkEndpoint, pod *a
 		}
 	}
 	if matching != len(endpointIPs) {
-		return fmt.Errorf("%w: endpoint has at least one IP %v that does not match its pod's IP(s)", negtypes.ErrEPIPNotFromPod, endpointIPs)
+		return fmt.Errorf("%w: endpoint has at least one IP %v that does not match its pod's IP(s) %v", negtypes.ErrEPIPNotFromPod, endpointIPs, pod.Status.PodIPs)
 	}
 	return nil
 }
