@@ -33,8 +33,7 @@ import (
 func TestListZones(t *testing.T) {
 	t.Parallel()
 	fakeNodeInformer := FakeNodeInformer()
-	zoneGetter := NewZoneGetter(fakeNodeInformer, defaultTestSubnetURL)
-	zoneGetter.onlyIncludeDefaultSubnetNodes = true
+	zoneGetter := NewFakeZoneGetter(fakeNodeInformer, defaultTestSubnetURL, true)
 	zoneGetter.nodeLister.Add(&apiv1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "ReadyNodeWithProviderID",
@@ -281,8 +280,7 @@ func TestListZones(t *testing.T) {
 func TestListNodes(t *testing.T) {
 	t.Parallel()
 	fakeNodeInformer := FakeNodeInformer()
-	zoneGetter := NewZoneGetter(fakeNodeInformer, defaultTestSubnetURL)
-	zoneGetter.onlyIncludeDefaultSubnetNodes = true
+	zoneGetter := NewFakeZoneGetter(fakeNodeInformer, defaultTestSubnetURL, true)
 	zoneGetter.nodeLister.Add(&apiv1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "ReadyNodeWithProviderID",
@@ -524,8 +522,7 @@ func TestListNodes(t *testing.T) {
 func TestZoneForNode(t *testing.T) {
 	t.Parallel()
 	fakeNodeInformer := FakeNodeInformer()
-	zoneGetter := NewZoneGetter(fakeNodeInformer, defaultTestSubnetURL)
-	zoneGetter.onlyIncludeDefaultSubnetNodes = true
+	zoneGetter := NewFakeZoneGetter(fakeNodeInformer, defaultTestSubnetURL, true)
 	zoneGetter.nodeLister.Add(&apiv1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "NodeWithValidProviderID",
@@ -791,8 +788,7 @@ func TestNonGCPZoneGetter(t *testing.T) {
 
 func TestIsNodeSelectedByFilter(t *testing.T) {
 	fakeNodeInformer := FakeNodeInformer()
-	zoneGetter := NewZoneGetter(fakeNodeInformer, defaultTestSubnetURL)
-	zoneGetter.onlyIncludeDefaultSubnetNodes = true
+	zoneGetter := NewFakeZoneGetter(fakeNodeInformer, defaultTestSubnetURL, true)
 
 	testCases := []struct {
 		node                    apiv1.Node
