@@ -316,3 +316,13 @@ func NewZoneGetter(nodeInformer cache.SharedIndexInformer, defaultSubnetURL stri
 		defaultSubnetURL:              defaultSubnetURL,
 	}
 }
+
+// NewFakeZoneGetter initialize a fake ZoneGetter in GCP mode to use in test.
+func NewFakeZoneGetter(nodeInformer cache.SharedIndexInformer, defaultSubnetURL string, onlyIncludeDefaultSubnetNodes bool) *ZoneGetter {
+	return &ZoneGetter{
+		mode:                          GCP,
+		nodeLister:                    nodeInformer.GetIndexer(),
+		onlyIncludeDefaultSubnetNodes: onlyIncludeDefaultSubnetNodes,
+		defaultSubnetURL:              defaultSubnetURL,
+	}
+}
