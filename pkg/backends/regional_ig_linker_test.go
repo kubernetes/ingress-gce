@@ -54,7 +54,7 @@ func newTestRegionalIgLinker(fakeGCE *gce.Cloud, backendPool *Backends, l4Namer 
 	fakeIGs := instancegroups.NewEmptyFakeInstanceGroups()
 
 	nodeInformer := zonegetter.FakeNodeInformer()
-	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer, defaultTestSubnetURL)
 	zonegetter.AddFakeNodes(fakeZoneGetter, usCentral1AZone, "test-instance1")
 	zonegetter.AddFakeNodes(fakeZoneGetter, "us-central1-c", "test-instance2")
 

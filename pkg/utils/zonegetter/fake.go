@@ -31,21 +31,27 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
+const (
+	defaultTestSubnet    = "default"
+	nonDefaultTestSubnet = "non-default"
+
+	defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/default"
+)
+
 func FakeNodeInformer() cache.SharedIndexInformer {
 	return informerv1.NewNodeInformer(fake.NewSimpleClientset(), 1*time.Second, utils.NewNamespaceIndexer())
 }
 
 // DeleteFakeNodesInZone deletes all nodes in a zone.
 func DeleteFakeNodesInZone(t *testing.T, zone string, zoneGetter *ZoneGetter) {
-	nodeIndexer := zoneGetter.nodeInformer.GetIndexer()
-	nodes, err := listers.NewNodeLister(nodeIndexer).List(labels.Everything())
+	nodes, err := listers.NewNodeLister(zoneGetter.nodeLister).List(labels.Everything())
 	if err != nil {
 		t.Errorf("Failed listing nodes in zone %q, err - %v", zone, err)
 	}
 	for _, node := range nodes {
 		nodeZone, _ := getZone(node)
 		if nodeZone == zone {
-			if err := nodeIndexer.Delete(node); err != nil {
+			if err := zoneGetter.nodeLister.Delete(node); err != nil {
 				t.Errorf("Failed to delete node %q in zone %q, err - %v", node.Name, zone, err)
 			}
 		}
@@ -54,13 +60,18 @@ func DeleteFakeNodesInZone(t *testing.T, zone string, zoneGetter *ZoneGetter) {
 
 // AddFakeNodes adds fake nodes to the ZoneGetter in the provided zone.
 func AddFakeNodes(zoneGetter *ZoneGetter, newZone string, instances ...string) error {
-	for _, instance := range instances {
-		if err := zoneGetter.nodeInformer.GetIndexer().Add(&apiv1.Node{
+	for i, instance := range instances {
+		if err := zoneGetter.nodeLister.Add(&apiv1.Node{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: instance,
+				Labels: map[string]string{
+					utils.LabelNodeSubnet: defaultTestSubnet,
+				},
 			},
 			Spec: apiv1.NodeSpec{
 				ProviderID: fmt.Sprintf("gce://foo-project/%s/instance1", newZone),
+				PodCIDR:    fmt.Sprintf("10.100.%d.0/24", i),
+				PodCIDRs:   []string{fmt.Sprintf("10.100.%d.0/24", i)},
 			},
 			Status: apiv1.NodeStatus{
 				Conditions: []apiv1.NodeCondition{
@@ -79,7 +90,7 @@ func AddFakeNodes(zoneGetter *ZoneGetter, newZone string, instances ...string) e
 
 // AddFakeNode adds fake node to the ZoneGetter.
 func AddFakeNode(zoneGetter *ZoneGetter, node *apiv1.Node) error {
-	if err := zoneGetter.nodeInformer.GetIndexer().Add(node); err != nil {
+	if err := zoneGetter.nodeLister.Add(node); err != nil {
 		return err
 	}
 	return nil
@@ -87,13 +98,19 @@ func AddFakeNode(zoneGetter *ZoneGetter, node *apiv1.Node) error {
 
 // PopulateFakeNodeInformer populates a fake node informer with fake nodes.
 func PopulateFakeNodeInformer(nodeInformer cache.SharedIndexInformer) {
+	defaultSubnetTestLabel := map[string]string{
+		utils.LabelNodeSubnet: defaultTestSubnet,
+	}
 	// Ready nodes.
 	if err := nodeInformer.GetIndexer().Add(&apiv1.Node{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "instance1",
+			Name:   "instance1",
+			Labels: defaultSubnetTestLabel,
 		},
 		Spec: apiv1.NodeSpec{
 			ProviderID: "gce://foo-project/zone1/instance1",
+			PodCIDR:    "10.100.1.0/24",
+			PodCIDRs:   []string{"a:b::/48", "10.100.1.0/24"},
 		},
 		Status: apiv1.NodeStatus{
 			Addresses: []apiv1.NodeAddress{
@@ -115,10 +132,13 @@ func PopulateFakeNodeInformer(nodeInformer cache.SharedIndexInformer) {
 
 	if err := nodeInformer.GetIndexer().Add(&apiv1.Node{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "instance2",
+			Name:   "instance2",
+			Labels: defaultSubnetTestLabel,
 		},
 		Spec: apiv1.NodeSpec{
 			ProviderID: "gce://foo-project/zone1/instance2",
+			PodCIDR:    "10.100.2.0/24",
+			PodCIDRs:   []string{"a:b::/48", "10.100.2.0/24"},
 		},
 		Status: apiv1.NodeStatus{
 			Addresses: []apiv1.NodeAddress{
@@ -140,10 +160,13 @@ func PopulateFakeNodeInformer(nodeInformer cache.SharedIndexInformer) {
 
 	if err := nodeInformer.GetIndexer().Add(&apiv1.Node{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "instance3",
+			Name:   "instance3",
+			Labels: defaultSubnetTestLabel,
 		},
 		Spec: apiv1.NodeSpec{
 			ProviderID: "gce://foo-project/zone2/instance3",
+			PodCIDR:    "10.100.3.0/24",
+			PodCIDRs:   []string{"a:b::/48", "10.100.3.0/24"},
 		},
 		Status: apiv1.NodeStatus{
 			Addresses: []apiv1.NodeAddress{
@@ -165,10 +188,13 @@ func PopulateFakeNodeInformer(nodeInformer cache.SharedIndexInformer) {
 
 	if err := nodeInformer.GetIndexer().Add(&apiv1.Node{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "instance4",
+			Name:   "instance4",
+			Labels: defaultSubnetTestLabel,
 		},
 		Spec: apiv1.NodeSpec{
 			ProviderID: "gce://foo-project/zone2/instance4",
+			PodCIDR:    "10.100.4.0/24",
+			PodCIDRs:   []string{"a:b::/48", "10.100.4.0/24"},
 		},
 		Status: apiv1.NodeStatus{
 			Addresses: []apiv1.NodeAddress{
@@ -190,10 +216,13 @@ func PopulateFakeNodeInformer(nodeInformer cache.SharedIndexInformer) {
 
 	if err := nodeInformer.GetIndexer().Add(&apiv1.Node{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "instance5",
+			Name:   "instance5",
+			Labels: defaultSubnetTestLabel,
 		},
 		Spec: apiv1.NodeSpec{
 			ProviderID: "gce://foo-project/zone2/instance5",
+			PodCIDR:    "10.100.5.0/24",
+			PodCIDRs:   []string{"a:b::/48", "10.100.5.0/24"},
 		},
 		Status: apiv1.NodeStatus{
 			Addresses: []apiv1.NodeAddress{
@@ -215,10 +244,13 @@ func PopulateFakeNodeInformer(nodeInformer cache.SharedIndexInformer) {
 
 	if err := nodeInformer.GetIndexer().Add(&apiv1.Node{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "instance6",
+			Name:   "instance6",
+			Labels: defaultSubnetTestLabel,
 		},
 		Spec: apiv1.NodeSpec{
 			ProviderID: "gce://foo-project/zone2/instance6",
+			PodCIDR:    "10.100.6.0/24",
+			PodCIDRs:   []string{"a:b::/48", "10.100.6.0/24"},
 		},
 		Status: apiv1.NodeStatus{
 			Addresses: []apiv1.NodeAddress{
@@ -241,10 +273,13 @@ func PopulateFakeNodeInformer(nodeInformer cache.SharedIndexInformer) {
 	// Unready nodes.
 	if err := nodeInformer.GetIndexer().Add(&apiv1.Node{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "unready-instance1",
+			Name:   "unready-instance1",
+			Labels: defaultSubnetTestLabel,
 		},
 		Spec: apiv1.NodeSpec{
 			ProviderID: "gce://foo-project/zone3/unready-instance1",
+			PodCIDR:    "10.100.7.0/24",
+			PodCIDRs:   []string{"a:b::/48", "10.100.7.0/24"},
 		},
 		Status: apiv1.NodeStatus{
 			Addresses: []apiv1.NodeAddress{
@@ -266,10 +301,13 @@ func PopulateFakeNodeInformer(nodeInformer cache.SharedIndexInformer) {
 
 	if err := nodeInformer.GetIndexer().Add(&apiv1.Node{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "unready-instance2",
+			Name:   "unready-instance2",
+			Labels: defaultSubnetTestLabel,
 		},
 		Spec: apiv1.NodeSpec{
 			ProviderID: "gce://foo-project/zone3/unready-instance2",
+			PodCIDR:    "10.100.8.0/24",
+			PodCIDRs:   []string{"a:b::/48", "10.100.8.0/24"},
 		},
 		Status: apiv1.NodeStatus{
 			Addresses: []apiv1.NodeAddress{
@@ -295,10 +333,13 @@ func PopulateFakeNodeInformer(nodeInformer cache.SharedIndexInformer) {
 			Name: "upgrade-instance1",
 			Labels: map[string]string{
 				"operation.gke.io/type": "drain",
+				utils.LabelNodeSubnet:   defaultTestSubnet,
 			},
 		},
 		Spec: apiv1.NodeSpec{
 			ProviderID: "gce://foo-project/zone4/upgrade-instance1",
+			PodCIDR:    "10.100.9.0/24",
+			PodCIDRs:   []string{"a:b::/48", "10.100.9.0/24"},
 		},
 		Status: apiv1.NodeStatus{
 			Addresses: []apiv1.NodeAddress{
@@ -323,10 +364,13 @@ func PopulateFakeNodeInformer(nodeInformer cache.SharedIndexInformer) {
 			Name: "upgrade-instance2",
 			Labels: map[string]string{
 				"operation.gke.io/type": "drain",
+				utils.LabelNodeSubnet:   defaultTestSubnet,
 			},
 		},
 		Spec: apiv1.NodeSpec{
 			ProviderID: "gce://foo-project/zone4/upgrade-instance2",
+			PodCIDR:    "10.100.10.0/24",
+			PodCIDRs:   []string{"a:b::/48", "10.100.10.0/24"},
 		},
 		Status: apiv1.NodeStatus{
 			Addresses: []apiv1.NodeAddress{
@@ -351,6 +395,14 @@ func PopulateFakeNodeInformer(nodeInformer cache.SharedIndexInformer) {
 	if err := nodeInformer.GetIndexer().Add(&apiv1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "instance-empty-providerID",
+			Labels: map[string]string{
+				"operation.gke.io/type": "drain",
+				utils.LabelNodeSubnet:   defaultTestSubnet,
+			},
+		},
+		Spec: apiv1.NodeSpec{
+			PodCIDR:  "10.100.11.0/24",
+			PodCIDRs: []string{"a:b::/48", "10.100.11.0/24"},
 		},
 		Status: apiv1.NodeStatus{
 			Addresses: []apiv1.NodeAddress{
@@ -375,9 +427,15 @@ func PopulateFakeNodeInformer(nodeInformer cache.SharedIndexInformer) {
 	if err := nodeInformer.GetIndexer().Add(&apiv1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "instance-invalid-providerID",
+			Labels: map[string]string{
+				"operation.gke.io/type": "drain",
+				utils.LabelNodeSubnet:   defaultTestSubnet,
+			},
 		},
 		Spec: apiv1.NodeSpec{
 			ProviderID: "gce://foo-project/instance-invalid-providerID",
+			PodCIDR:    "10.100.12.0/24",
+			PodCIDRs:   []string{"a:b::/48", "10.100.12.0/24"},
 		},
 		Status: apiv1.NodeStatus{
 			Addresses: []apiv1.NodeAddress{

@@ -54,8 +54,8 @@ func newTestJig(fakeGCE *gce.Cloud) *Jig {
 	fakeIGs := instancegroups.NewEmptyFakeInstanceGroups()
 
 	nodeInformer := zonegetter.FakeNodeInformer()
-	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer)
-	zonegetter.AddFakeNodes(fakeZoneGetter, defaultZone, "test-instance")
+	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer, defaultTestSubnetURL)
+	zonegetter.AddFakeNodes(fakeZoneGetter, defaultTestZone, "test-instance")
 
 	fakeInstancePool := instancegroups.NewManager(&instancegroups.ManagerConfig{
 		Cloud:      fakeIGs,
@@ -95,7 +95,7 @@ func TestBackendInstanceGroupClobbering(t *testing.T) {
 	if err := jig.syncer.Sync([]utils.ServicePort{sp}, klog.TODO()); err != nil {
 		t.Fatalf("Did not expect error when syncing backend with port %v", sp.NodePort)
 	}
-	if err := jig.linker.Link(sp, []GroupKey{{Zone: defaultZone}}); err != nil {
+	if err := jig.linker.Link(sp, []GroupKey{{Zone: defaultTestZone}}); err != nil {
 		t.Fatalf("Did not expect error when linking backend with port %v to groups", sp.NodePort)
 	}
 
@@ -106,8 +106,8 @@ func TestBackendInstanceGroupClobbering(t *testing.T) {
 	// Simulate another controller updating the same backend service with
 	// a different instance group
 	newGroups := []*compute.Backend{
-		{Group: fmt.Sprintf("zones/%s/instanceGroups/%s", defaultZone, "k8s-ig-bar")},
-		{Group: fmt.Sprintf("zones/%s/instanceGroups/%s", defaultZone, "k8s-ig-foo")},
+		{Group: fmt.Sprintf("zones/%s/instanceGroups/%s", defaultTestZone, "k8s-ig-bar")},
+		{Group: fmt.Sprintf("zones/%s/instanceGroups/%s", defaultTestZone, "k8s-ig-foo")},
 	}
 	be.Backends = append(be.Backends, newGroups...)
 	if err = fakeGCE.UpdateGlobalBackendService(be); err != nil {
@@ -123,7 +123,7 @@ func TestBackendInstanceGroupClobbering(t *testing.T) {
 	if err := jig.syncer.Sync([]utils.ServicePort{sp}, klog.TODO()); err != nil {
 		t.Fatalf("Did not expect error when syncing backend with port %v", sp.NodePort)
 	}
-	if err := jig.linker.Link(sp, []GroupKey{{Zone: defaultZone}}); err != nil {
+	if err := jig.linker.Link(sp, []GroupKey{{Zone: defaultTestZone}}); err != nil {
 		t.Fatalf("Did not expect error when linking backend with port %v to groups", sp.NodePort)
 	}
 
@@ -141,7 +141,7 @@ func TestBackendInstanceGroupClobbering(t *testing.T) {
 	}
 
 	// seed expectedGroups with the first group native to this controller
-	expectedGroups := sets.NewString(fmt.Sprintf("zones/%s/instanceGroups/%s", defaultZone, "k8s-ig--uid1"))
+	expectedGroups := sets.NewString(fmt.Sprintf("zones/%s/instanceGroups/%s", defaultTestZone, "k8s-ig--uid1"))
 	for _, newGroup := range newGroups {
 		igPath, err := utils.ResourcePath(newGroup.Group)
 		if err != nil {
@@ -168,7 +168,7 @@ func TestSyncChaosMonkey(t *testing.T) {
 	if err := jig.syncer.Sync([]utils.ServicePort{sp}, klog.TODO()); err != nil {
 		t.Fatalf("Did not expect error when syncing backend with port %v, err: %v", sp.NodePort, err)
 	}
-	if err := jig.linker.Link(sp, []GroupKey{{Zone: defaultZone}}); err != nil {
+	if err := jig.linker.Link(sp, []GroupKey{{Zone: defaultTestZone}}); err != nil {
 		t.Fatalf("Did not expect error when linking backend with port %v to groups, err: %v", sp.NodePort, err)
 	}
 
@@ -201,7 +201,7 @@ func TestSyncChaosMonkey(t *testing.T) {
 	if err := jig.syncer.Sync([]utils.ServicePort{sp}, klog.TODO()); err != nil {
 		t.Fatalf("Did not expect error when syncing backend with port %v", sp.NodePort)
 	}
-	if err := jig.linker.Link(sp, []GroupKey{{Zone: defaultZone}}); err != nil {
+	if err := jig.linker.Link(sp, []GroupKey{{Zone: defaultTestZone}}); err != nil {
 		t.Fatalf("Did not expect error when linking backend with port %v to groups", sp.NodePort)
 	}
 	if createCalls > 0 {
@@ -212,7 +212,7 @@ func TestSyncChaosMonkey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to find a backend with name %v: %v", beName, err)
 	}
-	gotGroup, err := jig.fakeInstancePool.Get(defaultNamer.InstanceGroup(), defaultZone)
+	gotGroup, err := jig.fakeInstancePool.Get(defaultNamer.InstanceGroup(), defaultTestZone)
 	if err != nil {
 		t.Fatalf("Failed to find instance group %v", defaultNamer.InstanceGroup())
 	}

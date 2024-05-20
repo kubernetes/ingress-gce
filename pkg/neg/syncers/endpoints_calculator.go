@@ -93,7 +93,7 @@ func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(eds []types.Endpoints
 				metrics.PublishNegControllerErrorCountMetrics(err, true)
 				continue
 			}
-			if ok := l.zoneGetter.CheckNodeWithPredicate(node, zonegetter.CandidateAndUnreadyNodesFilter, l.logger); !ok {
+			if ok := l.zoneGetter.IsNodeSelectedByFilter(node, zonegetter.CandidateAndUnreadyNodesFilter, l.logger); !ok {
 				l.logger.Info("Dropping Node from subset since it is not a valid LB candidate", "nodeName", node.Name)
 				continue
 			}
