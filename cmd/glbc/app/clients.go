@@ -57,6 +57,7 @@ func NewKubeConfigForProtobuf(logger klog.Logger) (*rest.Config, error) {
 	addIngressUserAgent(config)
 	// Use protobufs for communication with apiserver
 	config.ContentType = "application/vnd.kubernetes.protobuf"
+	addKubeClientQPSSettings(config, logger)
 	return config, nil
 }
 
@@ -73,6 +74,7 @@ func NewKubeConfig(logger klog.Logger) (*rest.Config, error) {
 		return nil, err
 	}
 	addIngressUserAgent(config)
+	addKubeClientQPSSettings(config, logger)
 	return config, nil
 }
 
@@ -147,4 +149,23 @@ func ingressUserAgent() string {
 // addIngressUserAgent updates the provided config with IngressUserAgent()
 func addIngressUserAgent(config *rest.Config) {
 	config.UserAgent = ingressUserAgent()
+}
+
+// addKubeClientQPSSettings updates the provided config with the QPS settings
+// determined by the KubeClientQPS and KubeClientBurst flags
+func addKubeClientQPSSettings(config *rest.Config, logger klog.Logger) {
+	if flags.F.KubeClientQPS == 0 {
+		logger.Info("Setting Kubernetes Client QPS to default by setting to 0")
+	} else {
+		logger.Info("Setting Kubernetes Client QPS to %d", flags.F.KubeClientQPS)
+	}
+
+	if flags.F.KubeClientBurst == 0 {
+		logger.Info("Setting Kubernetes Client Burst to default by setting to 0")
+	} else {
+		logger.Info("Setting Kubernetes Client Burst to %d", flags.F.KubeClientBurst)
+	}
+
+	config.QPS = flags.F.KubeClientQPS
+	config.Burst = flags.F.KubeClientBurst
 }
