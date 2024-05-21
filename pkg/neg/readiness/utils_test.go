@@ -587,6 +587,9 @@ func generatePod(namespace, name string, hasNegReadinessGate, hasNegCondition, n
 		Spec: v1.PodSpec{
 			NodeName: "instance1",
 		},
+		Spec: v1.PodSpec{
+			NodeName: "instance1",
+		},
 	}
 	if hasNegReadinessGate {
 		ret.Spec.ReadinessGates = []v1.PodReadinessGate{{ConditionType: shared.NegReadinessGate}}
