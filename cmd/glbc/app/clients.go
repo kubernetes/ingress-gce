@@ -54,7 +54,7 @@ func NewKubeConfigForProtobuf(logger klog.Logger) (*rest.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	config = AddIngressUserAgent(config)
+	addIngressUserAgent(config)
 	// Use protobufs for communication with apiserver
 	config.ContentType = "application/vnd.kubernetes.protobuf"
 	return config, nil
@@ -72,7 +72,8 @@ func NewKubeConfig(logger klog.Logger) (*rest.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	return AddIngressUserAgent(config), nil
+	addIngressUserAgent(config)
+	return config, nil
 }
 
 // NewGCEClient returns a client to the GCE environment. This will block until
@@ -138,13 +139,12 @@ func generateConfigReaderFunc(config []byte) readerFunc {
 	}
 }
 
-// IngressUserAgent returns l7controller/$VERSION ($GOOS/$GOARCH)
-func IngressUserAgent() string {
+// ingressUserAgent returns l7controller/$VERSION ($GOOS/$GOARCH)
+func ingressUserAgent() string {
 	return fmt.Sprintf("%s/%s (%s/%s)", filepath.Base(os.Args[0]), version.Version, runtime.GOOS, runtime.GOARCH)
 }
 
-// AddIngressUserAgent returns an updated config with IngressUserAgent()
-func AddIngressUserAgent(config *rest.Config) *rest.Config {
-	config.UserAgent = IngressUserAgent()
-	return config
+// addIngressUserAgent updates the provided config with IngressUserAgent()
+func addIngressUserAgent(config *rest.Config) {
+	config.UserAgent = ingressUserAgent()
 }
