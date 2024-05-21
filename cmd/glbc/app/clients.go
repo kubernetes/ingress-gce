@@ -18,9 +18,12 @@ package app
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
+	"runtime"
 	"time"
 
 	"k8s.io/client-go/rest"
@@ -36,6 +39,7 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/ratelimit"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/version"
 )
 
 const (
@@ -50,7 +54,7 @@ func NewKubeConfigForProtobuf(logger klog.Logger) (*rest.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	config = utils.AddIngressUserAgent(config)
+	config = AddIngressUserAgent(config)
 	// Use protobufs for communication with apiserver
 	config.ContentType = "application/vnd.kubernetes.protobuf"
 	return config, nil
@@ -68,7 +72,7 @@ func NewKubeConfig(logger klog.Logger) (*rest.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	return utils.AddIngressUserAgent(config), nil
+	return AddIngressUserAgent(config), nil
 }
 
 // NewGCEClient returns a client to the GCE environment. This will block until
@@ -132,4 +136,15 @@ func generateConfigReaderFunc(config []byte) readerFunc {
 	return func() io.Reader {
 		return bytes.NewReader(config)
 	}
+}
+
+// IngressUserAgent returns l7controller/$VERSION ($GOOS/$GOARCH)
+func IngressUserAgent() string {
+	return fmt.Sprintf("%s/%s (%s/%s)", filepath.Base(os.Args[0]), version.Version, runtime.GOOS, runtime.GOARCH)
+}
+
+// AddIngressUserAgent returns an updated config with IngressUserAgent()
+func AddIngressUserAgent(config *rest.Config) *rest.Config {
+	config.UserAgent = IngressUserAgent()
+	return config
 }

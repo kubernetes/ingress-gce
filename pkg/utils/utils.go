@@ -21,10 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"regexp"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -37,7 +34,6 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
-	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/cloud-provider-gcp/providers/gce"
@@ -45,7 +41,6 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/slice"
-	"k8s.io/ingress-gce/pkg/version"
 	"k8s.io/klog/v2"
 )
 
@@ -902,15 +897,4 @@ func GetDomainFromGABasePath(basePath string) string {
 	domain := strings.TrimSuffix(basePath, "/")
 	domain = strings.TrimSuffix(domain, "/compute/v1")
 	return domain
-}
-
-// IngressUserAgent returns l7controller/$VERSION ($GOOS/$GOARCH)
-func IngressUserAgent() string {
-	return fmt.Sprintf("%s/%s (%s/%s)", filepath.Base(os.Args[0]), version.Version, runtime.GOOS, runtime.GOARCH)
-}
-
-// AddIngressUserAgent returns an updated config with IngressUserAgent()
-func AddIngressUserAgent(config *restclient.Config) *restclient.Config {
-	config.UserAgent = IngressUserAgent()
-	return config
 }
