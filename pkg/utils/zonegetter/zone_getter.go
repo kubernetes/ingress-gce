@@ -252,32 +252,43 @@ func (z *ZoneGetter) nodePredicateInternal(node *api_v1.Node, includeUnreadyNode
 	return true
 }
 
+// ZoneForNode returns if the given node is in default subnet.
+func (z *ZoneGetter) IsDefaultSubnetNode(nodeName string, logger klog.Logger) bool {
+	nodeLogger := logger.WithValues("nodeName", nodeName)
+	node, err := listers.NewNodeLister(z.nodeLister).Get(nodeName)
+	if err != nil {
+		nodeLogger.Error(err, "Failed to get node")
+		return false
+	}
+	return isNodeInDefaultSubnet(node, z.defaultSubnetURL, logger)
+}
+
 // isNodeInDefaultSubnet checks if the node is in the default subnet.
 //
 // For any new nodes created after multi-subnet cluster is enabled, they are
 // guaranteed to have the subnet label if PodCIDR is populated. For any
 // existing nodes, they will not have label and can only be in the default
 // subnet.
-func isNodeInDefaultSubnet(node *api_v1.Node, defaultSubnetURL string, nodeAndFilterLogger klog.Logger) bool {
+func isNodeInDefaultSubnet(node *api_v1.Node, defaultSubnetURL string, nodeLogger klog.Logger) bool {
 	if node.Spec.PodCIDR == "" {
-		nodeAndFilterLogger.Info("Node does not have PodCIDR set")
+		nodeLogger.Info("Node does not have PodCIDR set")
 		return false
 	}
 
 	nodeSubnet, exist := node.Labels[utils.LabelNodeSubnet]
 	if !exist {
-		nodeAndFilterLogger.Info("Node does not have subnet label key, assumed to be in the default subnet", "subnet label key", utils.LabelNodeSubnet)
+		nodeLogger.Info("Node does not have subnet label key, assumed to be in the default subnet", "subnet label key", utils.LabelNodeSubnet)
 		return true
 	}
 	if nodeSubnet == "" {
-		nodeAndFilterLogger.Info("Node has empty value for subnet label key, assumed to be in the default subnet", "subnet label key", utils.LabelNodeSubnet)
+		nodeLogger.Info("Node has empty value for subnet label key, assumed to be in the default subnet", "subnet label key", utils.LabelNodeSubnet)
 		return true
 	}
-	nodeAndFilterLogger.Info("Node has an non-empty value for subnet label key", "subnet label key", utils.LabelNodeSubnet, "subnet label value", nodeSubnet)
+	nodeLogger.Info("Node has an non-empty value for subnet label key", "subnet label key", utils.LabelNodeSubnet, "subnet label value", nodeSubnet)
 
 	defaultSubnet, err := utils.KeyName(defaultSubnetURL)
 	if err != nil {
-		nodeAndFilterLogger.Error(err, "Failed to extract default subnet information from URL", "defaultSubnetURL", defaultSubnetURL)
+		nodeLogger.Error(err, "Failed to extract default subnet information from URL", "defaultSubnetURL", defaultSubnetURL)
 		return false
 	}
 	return nodeSubnet == defaultSubnet
@@ -313,6 +324,16 @@ func NewZoneGetter(nodeInformer cache.SharedIndexInformer, defaultSubnetURL stri
 		mode:                          GCP,
 		nodeLister:                    nodeInformer.GetIndexer(),
 		onlyIncludeDefaultSubnetNodes: flags.F.EnableMultiSubnetCluster,
+		defaultSubnetURL:              defaultSubnetURL,
+	}
+}
+
+// NewFakeZoneGetter initialize a fake ZoneGetter in GCP mode to use in test.
+func NewFakeZoneGetter(nodeInformer cache.SharedIndexInformer, defaultSubnetURL string, onlyIncludeDefaultSubnetNodes bool) *ZoneGetter {
+	return &ZoneGetter{
+		mode:                          GCP,
+		nodeLister:                    nodeInformer.GetIndexer(),
+		onlyIncludeDefaultSubnetNodes: onlyIncludeDefaultSubnetNodes,
 		defaultSubnetURL:              defaultSubnetURL,
 	}
 }

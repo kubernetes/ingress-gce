@@ -473,10 +473,17 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	}
 
 	// ensure backend service
-	// TODO(cheungdavid): Create backend logger that contains backendName,
-	// backendVersion, and backendScope before passing to backendPool.EnsureL4BackendService().
-	// See example in backendSyncer.ensureBackendService().
-	bs, err := l4.backendPool.EnsureL4BackendService(bsName, hcLink, string(protocol), string(l4.Service.Spec.SessionAffinity), string(cloud.SchemeInternal), l4.NamespacedName, l4.network, noConnectionTrackingPolicy, l4.svcLogger)
+	backendParams := backends.L4BackendServiceParams{
+		Name:                     bsName,
+		HealthCheckLink:          hcLink,
+		Protocol:                 string(protocol),
+		SessionAffinity:          string(l4.Service.Spec.SessionAffinity),
+		Scheme:                   string(cloud.SchemeInternal),
+		NamespacedName:           l4.NamespacedName,
+		NetworkInfo:              &l4.network,
+		ConnectionTrackingPolicy: noConnectionTrackingPolicy,
+	}
+	bs, err := l4.backendPool.EnsureL4BackendService(backendParams, l4.svcLogger)
 	if err != nil {
 		result.GCEResourceInError = annotations.BackendServiceResource
 		result.Error = err
