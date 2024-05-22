@@ -234,7 +234,7 @@ func TestPatchServiceLoadBalancerStatus(t *testing.T) {
 				t.Fatalf("Create(%s) = %v, want nil", svcKey, err)
 			}
 			expectSvc := tc.newMetaFunc(tc.svc)
-			err := PatchServiceLoadBalancerStatus(coreClient, tc.svc, expectSvc.Status.LoadBalancer)
+			err := PatchServiceLoadBalancerInformation(coreClient, tc.svc, expectSvc.Status.LoadBalancer, expectSvc.ObjectMeta)
 			if err != nil {
 				t.Fatalf("PatchServiceLoadBalancerStatus(%s) = %v, want nil", svcKey, err)
 			}

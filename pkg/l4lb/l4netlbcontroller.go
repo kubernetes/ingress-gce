@@ -550,32 +550,12 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 		return syncResult
 	}
 
-	err = updateServiceStatus(lc.ctx, service, syncResult.Status, svcLogger)
+	err = updateServiceInformation(lc.ctx, lc.enableDualStack, service, syncResult.Status, syncResult.Annotations, svcLogger)
 	if err != nil {
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
 			"Error updating L4 External LoadBalancer, err: %v", err)
 		syncResult.Error = err
 		return syncResult
-	}
-	if lc.enableDualStack {
-		lc.emitEnsuredDualStackEvent(service)
-
-		if err = updateL4DualStackResourcesAnnotations(lc.ctx, service, syncResult.Annotations, svcLogger); err != nil {
-			lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
-				"Failed to update annotations for load balancer, err: %v", err)
-			syncResult.Error = fmt.Errorf("failed to set resource annotations, err: %w", err)
-			return syncResult
-		}
-	} else {
-		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeNormal, "SyncLoadBalancerSuccessful",
-			"Successfully ensured L4 External LoadBalancer resources")
-
-		if err = updateL4ResourcesAnnotations(lc.ctx, service, syncResult.Annotations, svcLogger); err != nil {
-			lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
-				"Failed to update annotations for load balancer, err: %v", err)
-			syncResult.Error = fmt.Errorf("failed to set resource annotations, err: %w", err)
-			return syncResult
-		}
 	}
 	syncResult.SetMetricsForSuccessfulServiceSync()
 	return syncResult
@@ -675,7 +655,7 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service,
 		return result
 	}
 
-	if err := updateServiceStatus(lc.ctx, svc, &v1.LoadBalancerStatus{}, svcLogger); err != nil {
+	if err := updateServiceInformation(lc.ctx, lc.enableDualStack, svc, &v1.LoadBalancerStatus{}, nil, svcLogger); err != nil {
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 			"Error resetting L4 External LoadBalancer status to empty, err: %v", err)
 		result.Error = fmt.Errorf("Failed to reset L4 External LoadBalancer status, err: %w", err)
@@ -689,22 +669,6 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service,
 			"Error deleting delete Instance Group from L4 External LoadBalancer, err: %v", err)
 		result.Error = fmt.Errorf("Failed to delete Instance Group, err: %w", err)
 		return result
-	}
-
-	if lc.enableDualStack {
-		if err := updateL4DualStackResourcesAnnotations(lc.ctx, svc, nil, svcLogger); err != nil {
-			lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
-				"Error removing Dual Stack resource annotations: %v", err)
-			result.Error = fmt.Errorf("failed to reset Dual Stack resource annotations, err: %w", err)
-			return result
-		}
-	} else {
-		if err := updateL4ResourcesAnnotations(lc.ctx, svc, nil, svcLogger); err != nil {
-			lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
-				"Error removing resource annotations: %v", err)
-			result.Error = fmt.Errorf("failed to reset resource annotations, err: %w", err)
-			return result
-		}
 	}
 
 	// Finalizer needs to be removed last, because after deleting finalizer service can be deleted and
