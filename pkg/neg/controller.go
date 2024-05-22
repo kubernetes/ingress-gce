@@ -723,7 +723,7 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 			newSvcObjectMeta := service.ObjectMeta.DeepCopy()
 			delete(newSvcObjectMeta.Annotations, annotations.NEGStatusKey)
 			c.logger.V(2).Info("Removing NEG status annotation from service", "service", klog.KRef(namespace, name))
-			return patch.PatchServiceObjectMetadata(c.client.CoreV1(), service, *newSvcObjectMeta)
+			return patch.PatchServiceObjectMetadata(c.client.CoreV1(), service, newSvcObjectMeta)
 		}
 		// service doesn't have the expose NEG annotation and doesn't need update
 		return nil
@@ -745,7 +745,7 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 	}
 	newSvcObjectMeta.Annotations[annotations.NEGStatusKey] = annotation
 	c.logger.V(2).Info("Updating NEG visibility annotation on service", "annotation", annotation, "service", klog.KRef(namespace, name))
-	return patch.PatchServiceObjectMetadata(c.client.CoreV1(), service, *newSvcObjectMeta)
+	return patch.PatchServiceObjectMetadata(c.client.CoreV1(), service, newSvcObjectMeta)
 }
 
 func (c *Controller) handleErr(err error, key interface{}) {
