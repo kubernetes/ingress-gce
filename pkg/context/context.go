@@ -112,7 +112,7 @@ type ControllerContext struct {
 
 	recorderLock sync.Mutex
 	// Map of namespace => record.EventRecorder.
-	recorders map[string]record.EventRecorder
+	Recorders map[string]record.EventRecorder
 
 	// NOTE: If the flag GKEClusterType is empty, then cluster will default to zonal. This field should not be used for
 	// controller logic and should only be used for providing additional information to the user.
@@ -197,7 +197,7 @@ func NewControllerContext(
 		PodInformer:             podInformer,
 		NodeInformer:            nodeInformer,
 		SvcNegInformer:          informersvcneg.NewServiceNetworkEndpointGroupInformer(svcnegClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
-		recorders:               map[string]record.EventRecorder{},
+		Recorders:               map[string]record.EventRecorder{},
 		healthChecks:            make(map[string]func() error),
 		logger:                  logger,
 	}
@@ -344,7 +344,7 @@ func (ctx *ControllerContext) HasSynced() bool {
 func (ctx *ControllerContext) Recorder(ns string) record.EventRecorder {
 	ctx.recorderLock.Lock()
 	defer ctx.recorderLock.Unlock()
-	if rec, ok := ctx.recorders[ns]; ok {
+	if rec, ok := ctx.Recorders[ns]; ok {
 		return rec
 	}
 
@@ -354,7 +354,7 @@ func (ctx *ControllerContext) Recorder(ns string) record.EventRecorder {
 		Interface: ctx.EventRecorderClient.CoreV1().Events(ns),
 	})
 	rec := broadcaster.NewRecorder(ctx.generateScheme(), apiv1.EventSource{Component: "loadbalancer-controller"})
-	ctx.recorders[ns] = rec
+	ctx.Recorders[ns] = rec
 
 	return rec
 }

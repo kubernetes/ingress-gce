@@ -102,7 +102,7 @@ func TestJSONMergePatchBytes(t *testing.T) {
 	}
 }
 
-func TestPatchServiceObjectMetadata(t *testing.T) {
+func TestPatchServiceLoadBalancerInformation(t *testing.T) {
 	for _, tc := range []struct {
 		desc        string
 		svc         *apiv1.Service
@@ -180,9 +180,9 @@ func TestPatchServiceObjectMetadata(t *testing.T) {
 				t.Fatalf("Create(%s) = %v, want nil", svcKey, err)
 			}
 			expectSvc := tc.newMetaFunc(tc.svc)
-			err := PatchServiceObjectMetadata(coreClient, tc.svc, expectSvc.ObjectMeta)
+			err := PatchServiceObjectMetadata(coreClient, tc.svc, &expectSvc.ObjectMeta)
 			if err != nil {
-				t.Fatalf("PatchServiceObjectMetadata(%s) = %v, want nil", svcKey, err)
+				t.Fatalf("PatchServiceLoadBalancerInformation(%s) = %v, want nil", svcKey, err)
 			}
 
 			gotSvc, err := coreClient.Services(tc.svc.Namespace).Get(context.TODO(), tc.svc.Name, metav1.GetOptions{})
@@ -234,7 +234,7 @@ func TestPatchServiceLoadBalancerStatus(t *testing.T) {
 				t.Fatalf("Create(%s) = %v, want nil", svcKey, err)
 			}
 			expectSvc := tc.newMetaFunc(tc.svc)
-			err := PatchServiceLoadBalancerStatus(coreClient, tc.svc, expectSvc.Status.LoadBalancer)
+			err := PatchServiceLoadBalancerInformation(coreClient, tc.svc, &expectSvc.Status.LoadBalancer, &expectSvc.ObjectMeta)
 			if err != nil {
 				t.Fatalf("PatchServiceLoadBalancerStatus(%s) = %v, want nil", svcKey, err)
 			}
