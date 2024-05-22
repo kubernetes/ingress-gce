@@ -18,7 +18,7 @@ package l4lb
 
 import (
 	"fmt"
-	"reflect"
+	"strings"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
@@ -41,9 +41,6 @@ import (
 func computeNewAnnotationsIfNeeded(svc *v1.Service, newAnnotations map[string]string, keysToRemove []string) *metav1.ObjectMeta {
 	newObjectMeta := svc.ObjectMeta.DeepCopy()
 	newObjectMeta.Annotations = mergeAnnotations(newObjectMeta.Annotations, newAnnotations, keysToRemove)
-	if reflect.DeepEqual(svc.Annotations, newObjectMeta.Annotations) {
-		return nil
-	}
 	return newObjectMeta
 }
 
@@ -66,28 +63,6 @@ func mergeAnnotations(existing, lbAnnotations map[string]string, keysToRemove []
 	return existing
 }
 
-// updateL4ResourcesAnnotations checks if new annotations should be added to service and patch service metadata if needed.
-func updateL4ResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBAnnotations map[string]string, svcLogger klog.Logger) error {
-	svcLogger.V(3).Info("Updating annotations of service")
-	newObjectMeta := computeNewAnnotationsIfNeeded(svc, newL4LBAnnotations, loadbalancers.L4ResourceAnnotationKeys)
-	if newObjectMeta == nil {
-		svcLogger.V(3).Info("Service annotations not changed, skipping patch for service")
-		return nil
-	}
-	svcLogger.V(3).Info("Patching annotations of service")
-	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
-}
-
-// updateL4DualStackResourcesAnnotations checks if new annotations should be added to dual-stack service and patch service metadata if needed.
-func updateL4DualStackResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBAnnotations map[string]string, svcLogger klog.Logger) error {
-	newObjectMeta := computeNewAnnotationsIfNeeded(svc, newL4LBAnnotations, loadbalancers.L4DualStackResourceAnnotationKeys)
-	if newObjectMeta == nil {
-		return nil
-	}
-	svcLogger.V(3).Info("Patching annotations of service")
-	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
-}
-
 func deleteAnnotation(ctx *context.ControllerContext, svc *v1.Service, annotationKey string, svcLogger klog.Logger) error {
 	newObjectMeta := svc.ObjectMeta.DeepCopy()
 	if _, ok := newObjectMeta.Annotations[annotationKey]; !ok {
@@ -99,13 +74,36 @@ func deleteAnnotation(ctx *context.ControllerContext, svc *v1.Service, annotatio
 }
 
 // updateServiceStatus this faction checks if LoadBalancer status changed and patch service if needed.
-func updateServiceStatus(ctx *context.ControllerContext, svc *v1.Service, newStatus *v1.LoadBalancerStatus, svcLogger klog.Logger) error {
+func updateServiceInformation(ctx *context.ControllerContext, enableDualStack bool, svc *v1.Service, newStatus *v1.LoadBalancerStatus, newL4LBAnnotations map[string]string, svcLogger klog.Logger) error {
 	svcLogger.V(2).Info("Updating service status", "newStatus", fmt.Sprintf("%+v", newStatus))
 	if helpers.LoadBalancerStatusEqual(&svc.Status.LoadBalancer, newStatus) {
 		svcLogger.V(2).Info("New and old statuses are equal, skipping patch")
 		return nil
 	}
-	return patch.PatchServiceLoadBalancerStatus(ctx.KubeClient.CoreV1(), svc, *newStatus)
+
+	var keysToRemove []string
+	if enableDualStack {
+		emitEnsuredDualStackEvent(ctx, svc)
+		keysToRemove = loadbalancers.L4DualStackResourceAnnotationKeys
+	} else {
+		keysToRemove = loadbalancers.L4ResourceAnnotationKeys
+	}
+	svcLogger.V(2).Info("Selected keysToRemove", "keysToRemove", keysToRemove)
+
+	newObjectMeta := computeNewAnnotationsIfNeeded(svc, newL4LBAnnotations, keysToRemove)
+	svcLogger.V(2).Info("Computed new service metadata", "newObjectMeta", newObjectMeta)
+
+	return patch.PatchServiceLoadBalancerInformation(ctx.KubeClient.CoreV1(), svc, *newStatus, *newObjectMeta)
+
+}
+
+func emitEnsuredDualStackEvent(ctx *context.ControllerContext, service *v1.Service) {
+	var ipFamilies []string
+	for _, ipFamily := range service.Spec.IPFamilies {
+		ipFamilies = append(ipFamilies, string(ipFamily))
+	}
+	ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeNormal, "SyncLoadBalancerSuccessful",
+		"Successfully ensured %v load balancer resources", strings.Join(ipFamilies, " "))
 }
 
 // isHealthCheckDeleted checks if given health check exists in GCE
