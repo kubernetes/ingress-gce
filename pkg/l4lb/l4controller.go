@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"math/rand"
 	"reflect"
-	"strings"
 	"sync"
 	"time"
 
@@ -297,41 +296,14 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service, svcLo
 		syncResult.Error = err
 		return syncResult
 	}
-	err = updateServiceStatus(l4c.ctx, service, syncResult.Status, svcLogger)
+	err = updateServiceInformation(l4c.ctx, l4c.enableDualStack, service, syncResult.Status, syncResult.Annotations, svcLogger)
 	if err != nil {
 		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
 			"Error updating load balancer status: %v", err)
 		syncResult.Error = err
 		return syncResult
 	}
-	if l4c.enableDualStack {
-		l4c.emitEnsuredDualStackEvent(service)
-		if err = updateL4DualStackResourcesAnnotations(l4c.ctx, service, syncResult.Annotations, svcLogger); err != nil {
-			l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
-				"Failed to update Dual Stack annotations for load balancer, err: %v", err)
-			syncResult.Error = fmt.Errorf("failed to set Dual Stack resource annotations, err: %w", err)
-			return syncResult
-		}
-	} else {
-		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeNormal, "SyncLoadBalancerSuccessful",
-			"Successfully ensured load balancer resources")
-		if err = updateL4ResourcesAnnotations(l4c.ctx, service, syncResult.Annotations, svcLogger); err != nil {
-			l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
-				"Failed to update annotations for load balancer, err: %v", err)
-			syncResult.Error = fmt.Errorf("failed to set resource annotations, err: %w", err)
-			return syncResult
-		}
-	}
 	return syncResult
-}
-
-func (l4c *L4Controller) emitEnsuredDualStackEvent(service *v1.Service) {
-	var ipFamilies []string
-	for _, ipFamily := range service.Spec.IPFamilies {
-		ipFamilies = append(ipFamilies, string(ipFamily))
-	}
-	l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeNormal, "SyncLoadBalancerSuccessful",
-		"Successfully ensured %v load balancer resources", strings.Join(ipFamilies, " "))
 }
 
 func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service, svcLogger klog.Logger) *loadbalancers.L4ILBSyncResult {
@@ -359,27 +331,11 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service, svc
 	// Reset the loadbalancer status first, before resetting annotations.
 	// Other controllers(like service-controller) will process the service update if annotations change, but will ignore a service status change.
 	// Following this order avoids a race condition when a service is changed from LoadBalancer type Internal to External.
-	if err := updateServiceStatus(l4c.ctx, svc, &v1.LoadBalancerStatus{}, svcLogger); err != nil {
+	if err := updateServiceInformation(l4c.ctx, l4c.enableDualStack, svc, &v1.LoadBalancerStatus{}, nil, svcLogger); err != nil {
 		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 			"Error resetting load balancer status to empty: %v", err)
 		result.Error = fmt.Errorf("failed to reset ILB status, err: %w", err)
 		return result
-	}
-	// Also remove any ILB annotations from the service metadata
-	if l4c.enableDualStack {
-		if err := updateL4DualStackResourcesAnnotations(l4c.ctx, svc, nil, svcLogger); err != nil {
-			l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
-				"Error resetting DualStack resource annotations for load balancer: %v", err)
-			result.Error = fmt.Errorf("failed to reset DualStack resource annotations, err: %w", err)
-			return result
-		}
-	} else {
-		if err := updateL4ResourcesAnnotations(l4c.ctx, svc, nil, svcLogger); err != nil {
-			l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
-				"Error resetting resource annotations for load balancer: %v", err)
-			result.Error = fmt.Errorf("failed to reset resource annotations, err: %w", err)
-			return result
-		}
 	}
 
 	if err := common.EnsureDeleteServiceFinalizer(svc, common.ILBFinalizerV2, l4c.ctx.KubeClient, svcLogger); err != nil {
