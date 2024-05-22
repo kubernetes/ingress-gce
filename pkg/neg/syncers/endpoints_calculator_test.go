@@ -43,7 +43,7 @@ func TestLocalGetEndpointSet(t *testing.T) {
 	t.Parallel()
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
-	zonegetter.PopulateFakeNodeInformer(nodeInformer)
+	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
 	defaultNetwork := network.NetworkInfo{IsDefault: true, K8sNetwork: "default"}
 
 	testCases := []struct {
@@ -173,7 +173,7 @@ func TestClusterGetEndpointSet(t *testing.T) {
 	t.Parallel()
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
-	zonegetter.PopulateFakeNodeInformer(nodeInformer)
+	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
 	defaultNetwork := network.NetworkInfo{IsDefault: true, K8sNetwork: "default"}
 	testCases := []struct {
 		desc                string
@@ -323,7 +323,7 @@ func TestValidateEndpoints(t *testing.T) {
 	}
 
 	nodeInformer := zonegetter.FakeNodeInformer()
-	zonegetter.PopulateFakeNodeInformer(nodeInformer)
+	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
 	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
 	testContext := negtypes.NewTestContext()
 	podLister := testContext.PodInformer.GetIndexer()
