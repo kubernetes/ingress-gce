@@ -127,7 +127,7 @@ func (l *LocalL4ILBEndpointsCalculator) CalculateEndpointsDegradedMode(eds []typ
 	return subsetMap, podMap, err
 }
 
-func (l *LocalL4ILBEndpointsCalculator) ValidateEndpoints(endpointData []types.EndpointsData, endpointPodMap types.EndpointPodMap, dupCount int) error {
+func (l *LocalL4ILBEndpointsCalculator) ValidateEndpoints(endpointData []types.EndpointsData, endpointPodMap types.EndpointPodMap, endpointsExcludedInCalculation int) error {
 	// this should be a no-op for now
 	return nil
 }
@@ -197,7 +197,7 @@ func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpointsDegradedMode(eps []t
 	return subsetMap, podMap, err
 }
 
-func (l *ClusterL4ILBEndpointsCalculator) ValidateEndpoints(endpointData []types.EndpointsData, endpointPodMap types.EndpointPodMap, dupCount int) error {
+func (l *ClusterL4ILBEndpointsCalculator) ValidateEndpoints(endpointData []types.EndpointsData, endpointPodMap types.EndpointPodMap, endpointsExcludedInCalculation int) error {
 	// this should be a no-op for now
 	return nil
 }
@@ -244,7 +244,7 @@ func (l *L7EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, _ 
 	if err == nil { // If current calculation ends up in error, we trigger and emit metrics in degraded mode.
 		l.syncMetricsCollector.UpdateSyncerEPMetrics(l.syncerKey, result.EPCount, result.EPSCount)
 	}
-	return result.NetworkEndpointSet, result.EndpointPodMap, result.EPCount[negtypes.Duplicate], err
+	return result.NetworkEndpointSet, result.EndpointPodMap, result.EPCount[negtypes.Duplicate] + result.EPCount[negtypes.NodeInNonDefaultSubnet], err
 }
 
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
@@ -266,12 +266,12 @@ func nodeMapToString(nodeMap map[string][]*v1.Node) string {
 //
 //	For L7 Endpoint Calculator, it returns error if one of the two checks fails:
 //	1. The endpoint count from endpointData doesn't equal to the one from endpointPodMap:
-//	   endpiontPodMap removes the duplicated endpoints, and dupCount stores the number of duplicated it removed
+//	   endpiontPodMap removes the duplicated endpoints, and endpointsExcludedInCalculation stores the number of duplicated it removed
 //	   and we compare the endpoint counts with duplicates
 //	2. The endpoint count from endpointData or the one from endpointPodMap is 0
-func (l *L7EndpointsCalculator) ValidateEndpoints(endpointData []types.EndpointsData, endpointPodMap types.EndpointPodMap, dupCount int) error {
+func (l *L7EndpointsCalculator) ValidateEndpoints(endpointData []types.EndpointsData, endpointPodMap types.EndpointPodMap, endpointsExcludedInCalculation int) error {
 	// Endpoint count from EndpointPodMap
-	countFromPodMap := len(endpointPodMap) + dupCount
+	countFromPodMap := len(endpointPodMap) + endpointsExcludedInCalculation
 	if countFromPodMap == 0 {
 		l.logger.Info("Detected endpoint count from endpointPodMap going to zero", "endpointPodMap", endpointPodMap)
 		return fmt.Errorf("%w: Detect endpoint count goes to zero", types.ErrEPCalculationCountZero)
@@ -287,7 +287,7 @@ func (l *L7EndpointsCalculator) ValidateEndpoints(endpointData []types.Endpoints
 	}
 
 	if countFromEndpointData != countFromPodMap {
-		l.logger.Info("Detected error when comparing endpoint counts", "countFromEndpointData", countFromEndpointData, "countFromPodMap", countFromPodMap, "endpointData", endpointData, "endpointPodMap", endpointPodMap, "dupCount", dupCount)
+		l.logger.Info("Detected error when comparing endpoint counts", "countFromEndpointData", countFromEndpointData, "countFromPodMap", countFromPodMap, "endpointData", endpointData, "endpointPodMap", endpointPodMap, "endpointsExcludedInCalculation", endpointsExcludedInCalculation)
 		return fmt.Errorf("%w: Detect endpoint mismatch, count from endpoint slice=%d, count after calculation=%d", types.ErrEPCountsDiffer, countFromEndpointData, countFromPodMap)
 	}
 	return nil
