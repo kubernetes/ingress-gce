@@ -24,8 +24,8 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	v1 "k8s.io/api/core/v1"
+	discovery "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	networkv1 "k8s.io/cloud-provider-gcp/crd/apis/network/v1"
@@ -293,23 +293,14 @@ func TestClusterGetEndpointSet(t *testing.T) {
 
 func TestValidateEndpoints(t *testing.T) {
 	t.Parallel()
-
-	instance1 := testInstance1
-	instance2 := testInstance2
-	instance4 := testInstance4
 	testPortName := ""
-	testServiceNamespace := "namespace"
+	emptyNamedPort := ""
+	protocolTCP := v1.ProtocolTCP
 	port80 := int32(80)
-	port81 := int32(81)
-	testIP1 := "10.100.1.1"
-	testIP2 := "10.100.1.2"
-	testIP3 := "10.100.2.2"
-	testIP4 := "10.100.4.1"
-	testPodName1 := "pod1"
-	testPodName2 := "pod2"
-	testPodName3 := "pod3"
-	testPodName4 := "pod4"
-	svcKey := fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace)
+
+	instance1 := negtypes.TestInstance1
+	instance2 := negtypes.TestInstance2
+	duplicatePodName := "pod2-duplicate"
 	svcPort := negtypes.NegSyncerKey{
 		Namespace: testServiceNamespace,
 		Name:      testServiceName,
@@ -322,591 +313,228 @@ func TestValidateEndpoints(t *testing.T) {
 		NegName: testNegName,
 	}
 
-	nodeInformer := zonegetter.FakeNodeInformer()
-	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
-	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
 	testContext := negtypes.NewTestContext()
 	podLister := testContext.PodInformer.GetIndexer()
+	addPodsToLister(podLister, getDefaultEndpointSlices())
+
+	// Add duplicate pod that shares the same IP and node as pod2.
+	podLister.Add(&v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testServiceNamespace,
+			Name:      duplicatePodName,
+			Labels: map[string]string{
+				discovery.LabelServiceName: testServiceName,
+				discovery.LabelManagedBy:   managedByEPSControllerValue,
+			},
+		},
+		Spec: v1.PodSpec{
+			NodeName: instance2,
+		},
+		Status: v1.PodStatus{
+			Phase: v1.PodRunning,
+			PodIP: "10.100.1.2",
+			PodIPs: []v1.PodIP{
+				{IP: "10.100.1.2"},
+			},
+		},
+	})
 	nodeLister := testContext.NodeInformer.GetIndexer()
 	serviceLister := testContext.ServiceInformer.GetIndexer()
+	zonegetter.PopulateFakeNodeInformer(testContext.NodeInformer, false)
+	zoneGetter := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, defaultTestSubnetURL, false)
 	L7EndpointsCalculator := NewL7EndpointsCalculator(zoneGetter, podLister, nodeLister, serviceLister, svcPort, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics())
-	L4LocalEndpointCalculator := NewLocalL4ILBEndpointsCalculator(listers.NewNodeLister(nodeLister), zoneGetter, svcKey, klog.TODO(), &network.NetworkInfo{})
-	L4ClusterEndpointCalculator := NewClusterL4ILBEndpointsCalculator(listers.NewNodeLister(nodeLister), zoneGetter, svcKey, klog.TODO(), &network.NetworkInfo{})
+	L4LocalEndpointCalculator := NewLocalL4ILBEndpointsCalculator(listers.NewNodeLister(nodeLister), zoneGetter, fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace), klog.TODO(), &network.NetworkInfo{})
+	L4ClusterEndpointCalculator := NewClusterL4ILBEndpointsCalculator(listers.NewNodeLister(nodeLister), zoneGetter, fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace), klog.TODO(), &network.NetworkInfo{})
 
-	testEndpointPodMap := map[negtypes.NetworkEndpoint]types.NamespacedName{
+	l7TestEPS := []*discovery.EndpointSlice{
 		{
-			IP:   testIP1,
-			Port: "80",
-			Node: instance1,
-		}: {
-			Namespace: testServiceNamespace,
-			Name:      testPodName1,
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      testServiceName,
+				Namespace: testServiceNamespace,
+				Labels: map[string]string{
+					discovery.LabelServiceName: testServiceName,
+				},
+			},
+			AddressType: "IPv4",
+			Endpoints: []discovery.Endpoint{
+				{
+					Addresses: []string{"10.100.1.1"},
+					NodeName:  &instance1,
+					TargetRef: &v1.ObjectReference{
+						Namespace: testServiceNamespace,
+						Name:      "pod1",
+					},
+				},
+				{
+					Addresses: []string{"10.100.1.2"},
+					NodeName:  &instance1,
+					TargetRef: &v1.ObjectReference{
+						Namespace: testServiceNamespace,
+						Name:      "pod2",
+					},
+				},
+			},
+			Ports: []discovery.EndpointPort{
+				{
+					Name:     &emptyNamedPort,
+					Port:     &port80,
+					Protocol: &protocolTCP,
+				},
+			},
 		},
-		{
-			IP:   testIP2,
-			Port: "80",
-			Node: instance1,
-		}: {
-			Namespace: testServiceNamespace,
-			Name:      testPodName2,
-		},
-		{
-			IP:   testIP3,
-			Port: "81",
-			Node: instance2,
-		}: {
-			Namespace: testServiceNamespace,
-			Name:      testPodName3,
-		},
-		{
-			IP:   testIP4,
-			Port: "81",
-			Node: instance4,
-		}: {
-			Namespace: testServiceNamespace,
-			Name:      testPodName4,
-		},
+	}
+	noopMutation := func(ed []negtypes.EndpointsData, podMap negtypes.EndpointPodMap) ([]negtypes.EndpointsData, negtypes.EndpointPodMap) {
+		return ed, podMap
 	}
 
 	testCases := []struct {
-		desc           string
-		ec             negtypes.NetworkEndpointsCalculator
-		endpointsData  []negtypes.EndpointsData
-		endpointPodMap map[negtypes.NetworkEndpoint]types.NamespacedName
-		dupCount       int
-		expect         error
+		desc               string
+		ec                 negtypes.NetworkEndpointsCalculator
+		testEndpointSlices []*discovery.EndpointSlice
+		currentMap         map[string]negtypes.NetworkEndpointSet
+		// Use mutation to inject error into that we cannot trigger currently.
+		mutation func([]negtypes.EndpointsData, negtypes.EndpointPodMap) ([]negtypes.EndpointsData, negtypes.EndpointPodMap)
+		expect   error
 	}{
 		{
-			desc:           "ValidateEndpoints for L4 local endpoint calculator", // we are adding this test to make sure the test is updated when the functionality is added
-			ec:             L4LocalEndpointCalculator,
-			endpointsData:  nil, // for now it is a no-op
-			endpointPodMap: nil, // L4 EndpointCalculators do not compute endpoints pod data
-			dupCount:       0,
-			expect:         nil,
+			desc:               "ValidateEndpoints for L4 local endpoint calculator", // we are adding this test to make sure the test is updated when the functionality is added
+			ec:                 L4LocalEndpointCalculator,
+			testEndpointSlices: nil, // for now it is a no-op
+			mutation:           noopMutation,
+			currentMap:         nil,
+			expect:             nil,
 		},
 		{
 
-			desc:           "ValidateEndpoints for L4 cluster endpoint calculator", // we are adding this test to make sure the test is updated when the functionality is added
-			ec:             L4ClusterEndpointCalculator,
-			endpointsData:  nil, // for now it is a no-op
-			endpointPodMap: nil, // L4 EndpointCalculators do not compute endpoints pod data
-			dupCount:       0,
-			expect:         nil,
+			desc:               "ValidateEndpoints for L4 cluster endpoint calculator", // we are adding this test to make sure the test is updated when the functionality is added
+			ec:                 L4ClusterEndpointCalculator,
+			testEndpointSlices: nil, // for now it is a no-op
+			mutation:           noopMutation,
+			currentMap:         nil,
+			expect:             nil,
 		},
 		{
-			desc: "ValidateEndpoints for L7 Endpoint Calculator. Endpoint counts equal, endpointData has no duplicated endpoints",
+			desc:               "ValidateEndpoints for L7 Endpoint Calculator. Endpoint counts equal, endpointData has no duplicated endpoints",
+			ec:                 L7EndpointsCalculator,
+			testEndpointSlices: l7TestEPS,
+			mutation:           noopMutation,
+			currentMap:         nil,
+			expect:             nil,
+		},
+		{
+			desc: "ValidateEndpoints for L7 Endpoint Calculator. Endpoint counts equal, endpointData has one duplicated endpoint",
 			ec:   L7EndpointsCalculator,
-			endpointsData: []negtypes.EndpointsData{
+			testEndpointSlices: []*discovery.EndpointSlice{
 				{
-					Meta: &metav1.ObjectMeta{
-						Name:      testServiceName + "-1",
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testServiceName,
 						Namespace: testServiceNamespace,
-					},
-					Ports: []negtypes.PortData{
-						{
-							Name: testPortName,
-							Port: port80,
+						Labels: map[string]string{
+							discovery.LabelServiceName: testServiceName,
 						},
 					},
-					Addresses: []negtypes.AddressData{
+					AddressType: "IPv4",
+					Endpoints: []discovery.Endpoint{
 						{
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      testPodName1,
-							},
+							Addresses: []string{"10.100.1.1"},
 							NodeName:  &instance1,
-							Addresses: []string{testIP1},
-							Ready:     true,
-						},
-						{
 							TargetRef: &v1.ObjectReference{
 								Namespace: testServiceNamespace,
-								Name:      testPodName2,
+								Name:      "pod1",
 							},
+						},
+						{
+							Addresses: []string{"10.100.1.2"},
 							NodeName:  &instance1,
-							Addresses: []string{testIP2},
-							Ready:     true,
-						},
-					},
-				},
-				{
-					Meta: &metav1.ObjectMeta{
-						Name:      testServiceName + "-2",
-						Namespace: testServiceNamespace,
-					},
-					Ports: []negtypes.PortData{
-						{
-							Name: testPortName,
-							Port: port81,
-						},
-					},
-					Addresses: []negtypes.AddressData{
-						{
 							TargetRef: &v1.ObjectReference{
 								Namespace: testServiceNamespace,
-								Name:      testPodName3,
+								Name:      "pod2",
 							},
-							NodeName:  &instance2,
-							Addresses: []string{testIP3},
-							Ready:     true,
 						},
 						{
+							Addresses: []string{"10.100.1.2"},
+							NodeName:  &instance1,
 							TargetRef: &v1.ObjectReference{
 								Namespace: testServiceNamespace,
-								Name:      testPodName4,
+								Name:      duplicatePodName,
 							},
-							NodeName:  &instance4,
-							Addresses: []string{testIP4},
-							Ready:     true,
+						},
+					},
+					Ports: []discovery.EndpointPort{
+						{
+							Name:     &emptyNamedPort,
+							Port:     &port80,
+							Protocol: &protocolTCP,
 						},
 					},
 				},
 			},
-			endpointPodMap: testEndpointPodMap,
-			dupCount:       0,
-			expect:         nil,
+			mutation:   noopMutation,
+			currentMap: nil,
+			expect:     nil,
 		},
 		{
-			desc: "ValidateEndpoints for L7 Endpoint Calculator. Endpoint counts equal, endpointData has duplicated endpoints",
-			ec:   L7EndpointsCalculator,
-			endpointsData: []negtypes.EndpointsData{
-				{
-					Meta: &metav1.ObjectMeta{
-						Name:      testServiceName + "-1",
-						Namespace: testServiceNamespace,
-					},
-					Ports: []negtypes.PortData{
-						{
-							Name: testPortName,
-							Port: port80,
-						},
-					},
-					Addresses: []negtypes.AddressData{
-						{
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      testPodName1,
-							},
-							NodeName:  &instance1,
-							Addresses: []string{testIP1},
-							Ready:     true,
-						},
-						{
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      testPodName2,
-							},
-							NodeName:  &instance1,
-							Addresses: []string{testIP2},
-							Ready:     true,
-						},
-					},
-				},
-				{
-					Meta: &metav1.ObjectMeta{
-						Name:      testServiceName + "-2",
-						Namespace: testServiceNamespace,
-					},
-					Ports: []negtypes.PortData{
-						{
-							Name: testPortName,
-							Port: port81,
-						},
-					},
-					Addresses: []negtypes.AddressData{
-						{
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      testPodName2,
-							},
-							NodeName:  &instance1,
-							Addresses: []string{testIP2},
-							Ready:     true,
-						}, // this is a duplicated endpoint
-						{
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      testPodName3,
-							},
-							NodeName:  &instance2,
-							Addresses: []string{testIP3},
-							Ready:     true,
-						},
-						{
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      testPodName4,
-							},
-							NodeName:  &instance4,
-							Addresses: []string{testIP4},
-							Ready:     true,
-						},
-					},
-				},
+			desc:               "ValidateEndpoints for L7 Endpoint Calculator. Endpoint counts not equal",
+			ec:                 L7EndpointsCalculator,
+			testEndpointSlices: l7TestEPS,
+			mutation: func(endpointData []negtypes.EndpointsData, endpointPodMap negtypes.EndpointPodMap) ([]negtypes.EndpointsData, negtypes.EndpointPodMap) {
+				// Add one additional endpoint in endpointData
+				endpointData[0].Addresses = append(endpointData[0].Addresses, negtypes.AddressData{})
+				return endpointData, endpointPodMap
 			},
-			endpointPodMap: testEndpointPodMap,
-			dupCount:       1,
-			expect:         nil,
+			currentMap: nil,
+			expect:     negtypes.ErrEPCountsDiffer,
 		},
 		{
-			desc: "ValidateEndpoints for L7 Endpoint Calculator. Endpoint counts not equal, endpointData has no duplicated endpoints",
-			ec:   L7EndpointsCalculator,
-			endpointsData: []negtypes.EndpointsData{
-				{
-					Meta: &metav1.ObjectMeta{
-						Name:      testServiceName + "-1",
-						Namespace: testServiceNamespace,
-					},
-					Ports: []negtypes.PortData{
-						{
-							Name: testPortName,
-							Port: port80,
-						},
-					},
-					Addresses: []negtypes.AddressData{
-						{
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      testPodName2,
-							},
-							NodeName:  &instance1,
-							Addresses: []string{testIP2},
-							Ready:     true,
-						},
-					},
-				},
-				{
-					Meta: &metav1.ObjectMeta{
-						Name:      testServiceName + "-2",
-						Namespace: testServiceNamespace,
-					},
-					Ports: []negtypes.PortData{
-						{
-							Name: testPortName,
-							Port: port81,
-						},
-					},
-					Addresses: []negtypes.AddressData{
-						{
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      testPodName3,
-							},
-							NodeName:  &instance2,
-							Addresses: []string{testIP3},
-							Ready:     true,
-						},
-						{
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      testPodName4,
-							},
-							NodeName:  &instance4,
-							Addresses: []string{testIP4},
-							Ready:     true,
-						},
-					},
-				},
+			desc:               "ValidateEndpoints for L7 Endpoint Calculator. EndpointData has zero endpoint",
+			ec:                 L7EndpointsCalculator,
+			testEndpointSlices: l7TestEPS,
+			mutation: func(endpointData []negtypes.EndpointsData, endpointPodMap negtypes.EndpointPodMap) ([]negtypes.EndpointsData, negtypes.EndpointPodMap) {
+				for i := range endpointData {
+					endpointData[i].Addresses = []negtypes.AddressData{}
+				}
+				return endpointData, endpointPodMap
 			},
-			endpointPodMap: testEndpointPodMap,
-			dupCount:       0,
-			expect:         negtypes.ErrEPCountsDiffer,
+			currentMap: nil,
+			expect:     negtypes.ErrEPSEndpointCountZero,
 		},
 		{
-			desc: "ValidateEndpoints for L7 Endpoint Calculator. Endpoint counts not equal, endpointData has duplicated endpoints",
-			ec:   L7EndpointsCalculator,
-			endpointsData: []negtypes.EndpointsData{
-				{
-					Meta: &metav1.ObjectMeta{
-						Name:      testServiceName + "-1",
-						Namespace: testServiceNamespace,
-					},
-					Ports: []negtypes.PortData{
-						{
-							Name: testPortName,
-							Port: port80,
-						},
-					},
-					Addresses: []negtypes.AddressData{
-						{
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      testPodName2,
-							},
-							NodeName:  &instance1,
-							Addresses: []string{testIP2},
-							Ready:     true,
-						},
-					},
-				},
-				{
-					Meta: &metav1.ObjectMeta{
-						Name:      testServiceName + "-2",
-						Namespace: testServiceNamespace,
-					},
-					Ports: []negtypes.PortData{
-						{
-							Name: testPortName,
-							Port: port81,
-						},
-					},
-					Addresses: []negtypes.AddressData{
-						{
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      testPodName2,
-							},
-							NodeName:  &instance1,
-							Addresses: []string{testIP2},
-							Ready:     true,
-						}, // this is a duplicated endpoint
-						{
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      testPodName3,
-							},
-							NodeName:  &instance2,
-							Addresses: []string{testIP3},
-							Ready:     true,
-						},
-						{
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      testPodName4,
-							},
-							NodeName:  &instance4,
-							Addresses: []string{testIP4},
-							Ready:     true,
-						},
-					},
-				},
+			desc:               "ValidateEndpoints for L7 Endpoint Calculator. EndpointPodMap has zero endpoint",
+			ec:                 L7EndpointsCalculator,
+			testEndpointSlices: l7TestEPS,
+			mutation: func(endpointData []negtypes.EndpointsData, endpointPodMap negtypes.EndpointPodMap) ([]negtypes.EndpointsData, negtypes.EndpointPodMap) {
+				endpointPodMap = negtypes.EndpointPodMap{}
+				return endpointData, endpointPodMap
 			},
-			endpointPodMap: testEndpointPodMap,
-			dupCount:       1,
-			expect:         negtypes.ErrEPCountsDiffer,
+			currentMap: nil,
+			expect:     negtypes.ErrEPCalculationCountZero,
 		},
 		{
-			desc: "ValidateEndpoints for L7 Endpoint Calculator. EndpointData has zero endpoint",
-			ec:   L7EndpointsCalculator,
-			endpointsData: []negtypes.EndpointsData{
-				{
-					Meta: &metav1.ObjectMeta{
-						Name:      testServiceName + "-1",
-						Namespace: testServiceNamespace,
-					},
-					Ports: []negtypes.PortData{
-						{
-							Name: testPortName,
-							Port: port80,
-						},
-					},
-					Addresses: []negtypes.AddressData{},
-				},
-				{
-					Meta: &metav1.ObjectMeta{
-						Name:      testServiceName + "-2",
-						Namespace: testServiceNamespace,
-					},
-					Ports: []negtypes.PortData{
-						{
-							Name: testPortName,
-							Port: port81,
-						},
-					},
-					Addresses: []negtypes.AddressData{},
-				},
+			desc:               "ValidateEndpoints for L7 Endpoint Calculator. EndpointData and endpointPodMap both have zero endpoint",
+			ec:                 L7EndpointsCalculator,
+			testEndpointSlices: l7TestEPS,
+			mutation: func(endpointData []negtypes.EndpointsData, endpointPodMap negtypes.EndpointPodMap) ([]negtypes.EndpointsData, negtypes.EndpointPodMap) {
+				for i := range endpointData {
+					endpointData[i].Addresses = []negtypes.AddressData{}
+				}
+				endpointPodMap = negtypes.EndpointPodMap{}
+				return endpointData, endpointPodMap
 			},
-			endpointPodMap: testEndpointPodMap,
-			dupCount:       0,
-			expect:         negtypes.ErrEPSEndpointCountZero,
-		},
-		{
-			desc: "ValidateEndpoints for L7 Endpoint Calculator. EndpointPodMap has zero endpoint",
-			ec:   L7EndpointsCalculator,
-			endpointsData: []negtypes.EndpointsData{
-				{
-					Meta: &metav1.ObjectMeta{
-						Name:      testServiceName + "-1",
-						Namespace: testServiceNamespace,
-					},
-					Ports: []negtypes.PortData{
-						{
-							Name: testPortName,
-							Port: port80,
-						},
-					},
-					Addresses: []negtypes.AddressData{
-						{
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      testPodName1,
-							},
-							NodeName:  &instance1,
-							Addresses: []string{testIP1},
-							Ready:     true,
-						},
-						{
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      testPodName2,
-							},
-							NodeName:  &instance1,
-							Addresses: []string{testIP2},
-							Ready:     true,
-						},
-					},
-				},
-				{
-					Meta: &metav1.ObjectMeta{
-						Name:      testServiceName + "-2",
-						Namespace: testServiceNamespace,
-					},
-					Ports: []negtypes.PortData{
-						{
-							Name: testPortName,
-							Port: port81,
-						},
-					},
-					Addresses: []negtypes.AddressData{
-						{
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      testPodName3,
-							},
-							NodeName:  &instance2,
-							Addresses: []string{testIP3},
-							Ready:     true,
-						},
-						{
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      testPodName4,
-							},
-							NodeName:  &instance4,
-							Addresses: []string{testIP4},
-							Ready:     true,
-						},
-					},
-				},
-			},
-			endpointPodMap: map[negtypes.NetworkEndpoint]types.NamespacedName{},
-			dupCount:       0,
-			expect:         negtypes.ErrEPCalculationCountZero,
-		},
-		{
-			desc: "ValidateEndpoints for L7 Endpoint Calculator. EndpointData and endpointPodMap both have zero endpoint",
-			ec:   L7EndpointsCalculator,
-			endpointsData: []negtypes.EndpointsData{
-				{
-					Meta: &metav1.ObjectMeta{
-						Name:      testServiceName + "-1",
-						Namespace: testServiceNamespace,
-					},
-					Ports: []negtypes.PortData{
-						{
-							Name: testPortName,
-							Port: port80,
-						},
-					},
-					Addresses: []negtypes.AddressData{},
-				},
-				{
-					Meta: &metav1.ObjectMeta{
-						Name:      testServiceName + "-2",
-						Namespace: testServiceNamespace,
-					},
-					Ports: []negtypes.PortData{
-						{
-							Name: testPortName,
-							Port: port81,
-						},
-					},
-					Addresses: []negtypes.AddressData{},
-				},
-			},
-			endpointPodMap: map[negtypes.NetworkEndpoint]types.NamespacedName{},
-			dupCount:       0,
-			expect:         negtypes.ErrEPCalculationCountZero, // PodMap count is check and returned first,
-		},
-		{
-			desc: "ValidateEndpoints for L7 Endpoint Calculator. EndpointData and endpointPodMap both have non-zero endpoints",
-			ec:   L7EndpointsCalculator,
-			endpointsData: []negtypes.EndpointsData{
-				{
-					Meta: &metav1.ObjectMeta{
-						Name:      testServiceName + "-1",
-						Namespace: testServiceNamespace,
-					},
-					Ports: []negtypes.PortData{
-						{
-							Name: testPortName,
-							Port: port80,
-						},
-					},
-					Addresses: []negtypes.AddressData{
-						{
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      testPodName1,
-							},
-							NodeName:  &instance1,
-							Addresses: []string{testIP1},
-							Ready:     true,
-						},
-						{
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      testPodName2,
-							},
-							NodeName:  &instance1,
-							Addresses: []string{testIP2},
-							Ready:     true,
-						},
-					},
-				},
-				{
-					Meta: &metav1.ObjectMeta{
-						Name:      testServiceName + "-2",
-						Namespace: testServiceNamespace,
-					},
-					Ports: []negtypes.PortData{
-						{
-							Name: testPortName,
-							Port: port81,
-						},
-					},
-					Addresses: []negtypes.AddressData{
-						{
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      testPodName3,
-							},
-							NodeName:  &instance2,
-							Addresses: []string{testIP3},
-							Ready:     true,
-						},
-						{
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      testPodName4,
-							},
-							NodeName:  &instance4,
-							Addresses: []string{testIP4},
-							Ready:     true,
-						},
-					},
-				},
-			},
-			endpointPodMap: testEndpointPodMap,
-			dupCount:       0,
-			expect:         nil,
+			currentMap: nil,
+			expect:     negtypes.ErrEPCalculationCountZero, // PodMap count is check and returned first,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			if got := tc.ec.ValidateEndpoints(tc.endpointsData, tc.endpointPodMap, tc.dupCount); !errors.Is(got, tc.expect) {
-				t.Errorf("ValidateEndpoints() = %t,  expected %t", got, tc.expect)
+			endpointData := negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices)
+			_, endpointPodMap, endpointsExcludedInCalculation, err := tc.ec.CalculateEndpoints(endpointData, tc.currentMap)
+			if err != nil {
+				t.Errorf("Received error when calculating endpoint: %v", err)
+			}
+			endpointData, endpointPodMap = tc.mutation(endpointData, endpointPodMap)
+			if got := tc.ec.ValidateEndpoints(endpointData, endpointPodMap, endpointsExcludedInCalculation); !errors.Is(got, tc.expect) {
+				t.Errorf("ValidateEndpoints() = %v, expected %v", got, tc.expect)
 			}
 		})
 	}
