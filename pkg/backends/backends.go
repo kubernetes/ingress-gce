@@ -36,6 +36,8 @@ const (
 	defaultTrackingMode                     = "PER_CONNECTION"
 	PerSessionTrackingMode                  = "PER_SESSION" // the only one supported with strong session affinity
 
+	WeightedLocalityLbPolicy = "WEIGHTED_MAGLEV"
+	DefaultLocalityLbPolicy  = ""
 )
 
 // Backends handles CRUD operations for backends.
@@ -73,14 +75,15 @@ func NewPoolWithConnectionTrackingPolicy(cloud *gce.Cloud, namer namer.BackendNa
 
 // L4BackendServiceParams encapsulates parameters for ensuring an L4 BackendService.
 type L4BackendServiceParams struct {
-	Name                     string
-	HealthCheckLink          string
-	Protocol                 string
-	SessionAffinity          string
-	Scheme                   string
-	NamespacedName           types.NamespacedName
-	NetworkInfo              *network.NetworkInfo
-	ConnectionTrackingPolicy *composite.BackendServiceConnectionTrackingPolicy
+	Name                        string
+	HealthCheckLink             string
+	Protocol                    string
+	SessionAffinity             string
+	Scheme                      string
+	NamespacedName              types.NamespacedName
+	NetworkInfo                 *network.NetworkInfo
+	ConnectionTrackingPolicy    *composite.BackendServiceConnectionTrackingPolicy
+	EnableWeightedLoadBalancing bool
 }
 
 // ensureDescription updates the BackendService Description with the expected value
@@ -320,13 +323,14 @@ func (b *Backends) DeleteSignedUrlKey(be *composite.BackendService, keyName stri
 // EnsureL4BackendService creates or updates the backend service with the given name.
 func (b *Backends) EnsureL4BackendService(params L4BackendServiceParams, beLogger klog.Logger) (*composite.BackendService, error) {
 	start := time.Now()
-	beLogger = beLogger.WithValues("serviceKey", params.NamespacedName, "scheme", params.Scheme, "protocol", params.Protocol, "sessionAffinity", params.SessionAffinity, "network", params.NetworkInfo)
+	beLogger = beLogger.WithValues("L4BackendServiceParams", params)
 	beLogger.V(2).Info("EnsureL4BackendService started")
 	defer func() {
 		beLogger.V(2).Info("EnsureL4BackendService finished", "timeTaken", time.Since(start))
 	}()
 
 	beLogger.V(2).Info("EnsureL4BackendService: checking existing backend service")
+
 	key, err := composite.CreateKey(b.cloud, params.Name, meta.Regional)
 	if err != nil {
 		return nil, err
@@ -339,6 +343,7 @@ func (b *Backends) EnsureL4BackendService(params L4BackendServiceParams, beLogge
 	if err != nil {
 		beLogger.Info("EnsureL4BackendService: Failed to generate description for BackendService", "err", err)
 	}
+
 	expectedBS := &composite.BackendService{
 		Name:                params.Name,
 		Protocol:            params.Protocol,
@@ -347,13 +352,18 @@ func (b *Backends) EnsureL4BackendService(params L4BackendServiceParams, beLogge
 		SessionAffinity:     utils.TranslateAffinityType(params.SessionAffinity, beLogger),
 		LoadBalancingScheme: params.Scheme,
 	}
+	// Only touch the LoadBalancingScheme field if Weighted is enabled
+	if params.EnableWeightedLoadBalancing {
+		expectedBS.LocalityLbPolicy = WeightedLocalityLbPolicy
+	}
+
 	// We need this configuration only for Strong Session Affinity feature
 	if b.useConnectionTrackingPolicy {
-		beLogger.V(2).Info(fmt.Sprintf("EnsureL4BackendService: using connection tracking policy: %+v", params.ConnectionTrackingPolicy), "serviceKey", params.NamespacedName)
+		beLogger.V(2).Info(fmt.Sprintf("EnsureL4BackendService: using connection tracking policy: %+v", params.ConnectionTrackingPolicy))
 		expectedBS.ConnectionTrackingPolicy = params.ConnectionTrackingPolicy
 	}
 	if params.NetworkInfo != nil && !params.NetworkInfo.IsDefault {
-		beLogger.V(2).Info(fmt.Sprintf("EnsureL4BackendService: using non-default network: %+v", params.NetworkInfo))
+		beLogger.V(2).Info(fmt.Sprintf("EnsureL4BackendService: using non-default network"))
 		expectedBS.Network = params.NetworkInfo.NetworkURL
 	}
 	if params.Protocol == string(api_v1.ProtocolTCP) {
@@ -377,7 +387,7 @@ func (b *Backends) EnsureL4BackendService(params L4BackendServiceParams, beLogge
 		return composite.GetBackendService(b.cloud, key, meta.VersionGA, beLogger)
 	}
 
-	if backendSvcEqual(expectedBS, bs, b.useConnectionTrackingPolicy) {
+	if backendSvcEqual(expectedBS, bs, b.useConnectionTrackingPolicy, params.EnableWeightedLoadBalancing) {
 		beLogger.V(2).Info("EnsureL4BackendService: backend service did not change, skipping update")
 		return bs, nil
 	}
@@ -404,7 +414,7 @@ func (b *Backends) EnsureL4BackendService(params L4BackendServiceParams, beLogge
 // service will not be updated. The list of backends is not checked either,
 // since that is handled by the neg-linker.
 // The list of backends is not checked, since that is handled by the neg-linker.
-func backendSvcEqual(a, b *composite.BackendService, compareConnectionTracking bool) bool {
+func backendSvcEqual(a, b *composite.BackendService, compareConnectionTracking, compareWeightedLB bool) bool {
 	svcsEqual := a.Protocol == b.Protocol &&
 		a.Description == b.Description &&
 		a.SessionAffinity == b.SessionAffinity &&
@@ -414,7 +424,11 @@ func backendSvcEqual(a, b *composite.BackendService, compareConnectionTracking b
 
 	// Compare only for backendSvc that uses Strong Session Affinity feature
 	if compareConnectionTracking {
-		return svcsEqual && connectionTrackingPolicyEqual(a.ConnectionTrackingPolicy, b.ConnectionTrackingPolicy)
+		svcsEqual = svcsEqual && connectionTrackingPolicyEqual(a.ConnectionTrackingPolicy, b.ConnectionTrackingPolicy)
+	}
+
+	if compareWeightedLB {
+		svcsEqual = svcsEqual && (a.LocalityLbPolicy == b.LocalityLbPolicy)
 	}
 
 	return svcsEqual

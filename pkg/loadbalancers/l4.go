@@ -57,17 +57,17 @@ type L4 struct {
 	scope       meta.KeyType
 	namer       namer.L4ResourcesNamer
 	// recorder is used to generate k8s Events.
-	recorder        record.EventRecorder
-	Service         *corev1.Service
-	ServicePort     utils.ServicePort
-	NamespacedName  types.NamespacedName
-	forwardingRules ForwardingRulesProvider
-	healthChecks    healthchecksl4.L4HealthChecks
-	enableDualStack bool
-	network         network.NetworkInfo
-	networkResolver network.Resolver
-
-	svcLogger klog.Logger
+	recorder         record.EventRecorder
+	Service          *corev1.Service
+	ServicePort      utils.ServicePort
+	NamespacedName   types.NamespacedName
+	forwardingRules  ForwardingRulesProvider
+	healthChecks     healthchecksl4.L4HealthChecks
+	enableDualStack  bool
+	network          network.NetworkInfo
+	networkResolver  network.Resolver
+	enableWeightedLB bool
+	svcLogger        klog.Logger
 }
 
 // L4ILBSyncResult contains information about the outcome of an L4 ILB sync. It stores the list of resource name annotations,
@@ -108,6 +108,7 @@ type L4ILBParams struct {
 	Recorder         record.EventRecorder
 	DualStackEnabled bool
 	NetworkResolver  network.Resolver
+	EnableWeightedLB bool
 }
 
 // NewL4Handler creates a new L4Handler for the given L4 service.
@@ -116,16 +117,17 @@ func NewL4Handler(params *L4ILBParams, logger klog.Logger) *L4 {
 
 	var scope meta.KeyType = meta.Regional
 	l4 := &L4{
-		cloud:           params.Cloud,
-		scope:           scope,
-		namer:           params.Namer,
-		recorder:        params.Recorder,
-		Service:         params.Service,
-		healthChecks:    healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder, logger),
-		forwardingRules: forwardingrules.New(params.Cloud, meta.VersionGA, scope, logger),
-		enableDualStack: params.DualStackEnabled,
-		networkResolver: params.NetworkResolver,
-		svcLogger:       logger,
+		cloud:            params.Cloud,
+		scope:            scope,
+		namer:            params.Namer,
+		recorder:         params.Recorder,
+		Service:          params.Service,
+		healthChecks:     healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder, logger),
+		forwardingRules:  forwardingrules.New(params.Cloud, meta.VersionGA, scope, logger),
+		enableDualStack:  params.DualStackEnabled,
+		networkResolver:  params.NetworkResolver,
+		enableWeightedLB: params.EnableWeightedLB,
+		svcLogger:        logger,
 	}
 	l4.NamespacedName = types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace}
 	l4.backendPool = backends.NewPool(l4.cloud, l4.namer)
@@ -472,16 +474,19 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		}
 	}
 
+	enableWeightedOnService := l4.enableWeightedLB && annotations.IsWeightedLBEnabledForService(l4.Service)
+
 	// ensure backend service
 	backendParams := backends.L4BackendServiceParams{
-		Name:                     bsName,
-		HealthCheckLink:          hcLink,
-		Protocol:                 string(protocol),
-		SessionAffinity:          string(l4.Service.Spec.SessionAffinity),
-		Scheme:                   string(cloud.SchemeInternal),
-		NamespacedName:           l4.NamespacedName,
-		NetworkInfo:              &l4.network,
-		ConnectionTrackingPolicy: noConnectionTrackingPolicy,
+		Name:                        bsName,
+		HealthCheckLink:             hcLink,
+		Protocol:                    string(protocol),
+		SessionAffinity:             string(l4.Service.Spec.SessionAffinity),
+		Scheme:                      string(cloud.SchemeInternal),
+		NamespacedName:              l4.NamespacedName,
+		NetworkInfo:                 &l4.network,
+		ConnectionTrackingPolicy:    noConnectionTrackingPolicy,
+		EnableWeightedLoadBalancing: enableWeightedOnService,
 	}
 	bs, err := l4.backendPool.EnsureL4BackendService(backendParams, l4.svcLogger)
 	if err != nil {

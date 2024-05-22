@@ -244,6 +244,7 @@ func TestBackendSvcEqual(t *testing.T) {
 		oldBackendService         *composite.BackendService
 		newBackendService         *composite.BackendService
 		compareConnectionTracking bool
+		compareWeightedLB         bool
 		wantEqual                 bool
 	}{
 		{
@@ -453,13 +454,56 @@ func TestBackendSvcEqual(t *testing.T) {
 			},
 			wantEqual: true,
 		},
+		{
+			desc: "Test backend service diff with weighted load balancing ENABLED",
+			oldBackendService: &composite.BackendService{
+				LocalityLbPolicy: "",
+			},
+			newBackendService: &composite.BackendService{
+				LocalityLbPolicy: WeightedLocalityLbPolicy,
+			},
+			compareWeightedLB: true,
+			wantEqual:         false,
+		},
+		{
+			desc: "Test backend service diff with weighted load balancing DISABLED",
+			oldBackendService: &composite.BackendService{
+				LocalityLbPolicy: "",
+			},
+			newBackendService: &composite.BackendService{
+				LocalityLbPolicy: WeightedLocalityLbPolicy,
+			},
+			compareWeightedLB: false,
+			wantEqual:         true,
+		},
+		{
+			desc:                      "Test backend service diff with weighted load balancing and connection tracking enabled",
+			compareConnectionTracking: true,
+			compareWeightedLB:         true,
+			oldBackendService: &composite.BackendService{
+				ConnectionTrackingPolicy: &composite.BackendServiceConnectionTrackingPolicy{
+					EnableStrongAffinity: false,
+					IdleTimeoutSec:       defaultIdleTimeout,
+				},
+				LocalityLbPolicy: WeightedLocalityLbPolicy,
+			},
+			newBackendService: &composite.BackendService{
+				ConnectionTrackingPolicy: &composite.BackendServiceConnectionTrackingPolicy{
+					EnableStrongAffinity: true,
+					IdleTimeoutSec:       prolongedIdleTimeout,
+				},
+				LocalityLbPolicy: WeightedLocalityLbPolicy,
+			},
+			wantEqual: false,
+		},
 	} {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
-			if res := backendSvcEqual(tc.oldBackendService, tc.newBackendService, tc.compareConnectionTracking) == tc.wantEqual; !res {
+			result := backendSvcEqual(tc.oldBackendService, tc.newBackendService, tc.compareConnectionTracking, tc.compareWeightedLB)
+			if result != tc.wantEqual {
 				t.Errorf("backendSvcEqual() returned %v, expected %v. Diff(oldScv, newSvc): %s",
-					res, tc.wantEqual, cmp.Diff(tc.oldBackendService, tc.newBackendService))
+					result, tc.wantEqual, cmp.Diff(tc.oldBackendService, tc.newBackendService))
 			}
 		})
 	}

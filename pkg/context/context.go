@@ -143,6 +143,8 @@ type ControllerContextConfig struct {
 	EnableL4StrongSessionAffinity bool // flag that enables strong session affinity feature
 	EnableMultinetworking         bool
 	EnableIngressRegionalExternal bool
+	EnableWeightedL4ILB           bool
+	EnableWeightedL4NetLB         bool
 }
 
 // NewControllerContext returns a new shared set of informers.
