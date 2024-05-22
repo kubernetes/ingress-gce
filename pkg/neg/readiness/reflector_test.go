@@ -97,7 +97,7 @@ func TestSyncPod(t *testing.T) {
 			PodCIDRs: []string{"a:b::/48", "10.100.1.0/24"},
 		},
 	})
-	zonegetter.PopulateFakeNodeInformer(fakeContext.NodeInformer)
+	zonegetter.PopulateFakeNodeInformer(fakeContext.NodeInformer, false)
 
 	testCases := []struct {
 		desc                string
@@ -414,7 +414,7 @@ func TestSyncPodMultipleSubnets(t *testing.T) {
 	testReadinessReflector.clock = fakeClock
 	testlookUp := testReadinessReflector.lookup.(*fakeLookUp)
 
-	zonegetter.PopulateFakeNodeInformer(fakeContext.NodeInformer)
+	zonegetter.PopulateFakeNodeInformer(fakeContext.NodeInformer, true)
 
 	testCases := []struct {
 		desc                string
