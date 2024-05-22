@@ -311,10 +311,18 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 	protocol := utils.GetProtocol(servicePorts)
 
 	connectionTrackingPolicy := l4netlb.connectionTrackingPolicy()
-	// TODO(cheungdavid): Create backend logger that contains backendName,
-	// backendVersion, and backendScope before passing to backendPool.EnsureL4BackendService().
-	// See example in backendSyncer.ensureBackendService().
-	bs, err := l4netlb.backendPool.EnsureL4BackendService(bsName, hcLink, string(protocol), string(l4netlb.Service.Spec.SessionAffinity), string(cloud.SchemeExternal), l4netlb.NamespacedName, *network.DefaultNetwork(l4netlb.cloud), connectionTrackingPolicy, l4netlb.svcLogger)
+	backendParams := backends.L4BackendServiceParams{
+		Name:                     bsName,
+		HealthCheckLink:          hcLink,
+		Protocol:                 string(protocol),
+		SessionAffinity:          string(l4netlb.Service.Spec.SessionAffinity),
+		Scheme:                   string(cloud.SchemeExternal),
+		NamespacedName:           l4netlb.NamespacedName,
+		NetworkInfo:              network.DefaultNetwork(l4netlb.cloud),
+		ConnectionTrackingPolicy: connectionTrackingPolicy,
+	}
+
+	bs, err := l4netlb.backendPool.EnsureL4BackendService(backendParams, l4netlb.svcLogger)
 	if err != nil {
 		if utils.IsUnsupportedFeatureError(err, strongSessionAffinityFeatureName) {
 			syncResult.GCEResourceInError = annotations.BackendServiceResource
