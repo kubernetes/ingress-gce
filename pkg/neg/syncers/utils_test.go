@@ -2325,7 +2325,7 @@ func TestValidateEndpointFields(t *testing.T) {
 	}
 }
 
-func TestValidateEndpointFieldsWithMultipleSubnets(t *testing.T) {
+func TestValidateEndpointFieldsMultipleSubnets(t *testing.T) {
 	t.Parallel()
 
 	emptyNamedPort := ""
