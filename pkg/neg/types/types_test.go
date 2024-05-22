@@ -753,7 +753,7 @@ func TestNodePredicateForEndpointCalculatorMode(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			predicate := NodeFilterForEndpointCalculatorMode(tc.epCalculatorMode)
 			nodeInformer := zonegetter.FakeNodeInformer()
-			zonegetter.PopulateFakeNodeInformer(nodeInformer)
+			zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
 			zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
 			zones, err := zoneGetter.ListZones(predicate, klog.TODO())
 			if err != nil {
