@@ -114,7 +114,7 @@ func TestEnsureL4BackendService(t *testing.T) {
 				NetworkInfo:              network,
 				ConnectionTrackingPolicy: tc.connectionTrackingPolicy,
 			}
-			bs, err := backendPool.EnsureL4BackendService(backendParams, klog.TODO())
+			bs, _, err := backendPool.EnsureL4BackendService(backendParams, klog.TODO())
 			if err != nil {
 				t.Errorf("EnsureL4BackendService failed")
 			}
@@ -154,6 +154,109 @@ func TestEnsureL4BackendService(t *testing.T) {
 					t.Errorf("ConnectionTrackingPolicy should not be set for non strong session affinity services.")
 				}
 			}
+		})
+	}
+}
+
+func TestEnsureL4BackendServiceUpdate(t *testing.T) {
+	for _, tc := range []struct {
+		desc                string
+		serviceName         string
+		serviceNamespace    string
+		protocol            string
+		updatedProtocol     string
+		affinityType        string
+		updatedAffinityType string
+		schemeType          string
+		expectUpdate        utils.ResourceSyncStatus
+	}{
+		{
+			desc:                "Test no update needed",
+			serviceName:         "test-service",
+			serviceNamespace:    "test-ns",
+			protocol:            "TCP",
+			updatedProtocol:     "TCP",
+			affinityType:        string(v1.ServiceAffinityNone),
+			updatedAffinityType: string(v1.ServiceAffinityNone),
+			schemeType:          string(cloud.SchemeInternal),
+			expectUpdate:        utils.ResourceResync,
+		},
+		{
+			desc:                "Test update protocol",
+			serviceName:         "test-service",
+			serviceNamespace:    "test-ns",
+			protocol:            "TCP",
+			updatedProtocol:     "UDP",
+			affinityType:        string(v1.ServiceAffinityNone),
+			updatedAffinityType: string(v1.ServiceAffinityNone),
+			schemeType:          string(cloud.SchemeInternal),
+			expectUpdate:        utils.ResourceUpdate,
+		},
+		{
+			desc:                "Test update affinityType",
+			serviceName:         "test-service",
+			serviceNamespace:    "test-ns",
+			protocol:            "TCP",
+			updatedProtocol:     "TCP",
+			affinityType:        string(v1.ServiceAffinityNone),
+			updatedAffinityType: string(v1.ServiceAffinityClientIP),
+			schemeType:          string(cloud.SchemeInternal),
+			expectUpdate:        utils.ResourceUpdate,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			namespacedName := types.NamespacedName{Name: tc.serviceName, Namespace: tc.serviceNamespace}
+			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+			l4namer := namer.NewL4Namer(kubeSystemUID, nil)
+			backendPool := NewPoolWithConnectionTrackingPolicy(fakeGCE, l4namer, false)
+
+			hcLink := l4namer.L4HealthCheck(tc.serviceNamespace, tc.serviceName, false)
+			bsName := l4namer.L4Backend(tc.serviceNamespace, tc.serviceName)
+			network := &network.NetworkInfo{IsDefault: false, NetworkURL: "https://www.googleapis.com/compute/v1/projects/test-poject/global/networks/test-vpc"}
+			backendParams := L4BackendServiceParams{
+				Name:            bsName,
+				HealthCheckLink: hcLink,
+				Protocol:        tc.protocol,
+				SessionAffinity: tc.affinityType,
+				Scheme:          tc.schemeType,
+				NamespacedName:  namespacedName,
+				NetworkInfo:     network,
+			}
+			_, updated, err := backendPool.EnsureL4BackendService(backendParams, klog.TODO())
+			if err != nil {
+				t.Errorf("EnsureL4BackendService failed")
+			}
+			if !updated {
+				t.Errorf("EnsureL4BackendService was supposed to return update=true but returned=false")
+			}
+			// do a second update to verify if no GCE resource update was done.
+			_, updated, err = backendPool.EnsureL4BackendService(backendParams, klog.TODO())
+			if err != nil {
+				t.Errorf("EnsureL4BackendService failed")
+			}
+			if updated {
+				t.Errorf("second EnsureL4BackendService was supposed to return update=false but returned true")
+			}
+
+			updatedBackendParams := L4BackendServiceParams{
+				Name:            bsName,
+				HealthCheckLink: hcLink,
+				Protocol:        tc.updatedProtocol,
+				SessionAffinity: tc.updatedAffinityType,
+				Scheme:          tc.schemeType,
+				NamespacedName:  namespacedName,
+				NetworkInfo:     network,
+			}
+			_, updated, err = backendPool.EnsureL4BackendService(updatedBackendParams, klog.TODO())
+			if err != nil {
+				t.Errorf("EnsureL4BackendService failed")
+			}
+			if updated != tc.expectUpdate {
+				t.Errorf("EnsureL4BackendService was supposed to return update=%v but returned=%v", tc.expectUpdate, updated)
+			}
+
+			// the test does not verify values since the fakeGCE impl does not support updating objects.
+
 		})
 	}
 }
@@ -209,7 +312,7 @@ func TestEnsureL4BackendServiceDoesNotDetachBackends(t *testing.T) {
 				NetworkInfo:              network,
 				ConnectionTrackingPolicy: noConnectionTrackingPolicy,
 			}
-			bs, err := backendPool.EnsureL4BackendService(backendParams, klog.TODO())
+			bs, _, err := backendPool.EnsureL4BackendService(backendParams, klog.TODO())
 			if err != nil {
 				t.Errorf("EnsureL4BackendService failed")
 			}
@@ -624,7 +727,7 @@ func TestUpdateLocalityLBPolicy(t *testing.T) {
 				NamespacedName:   namespacedName,
 				LocalityLbPolicy: tc.updatedBSLocalityLbPolicy,
 			}
-			updatedBS, err := backendPool.EnsureL4BackendService(updateBackendParams, klog.TODO())
+			updatedBS, _, err := backendPool.EnsureL4BackendService(updateBackendParams, klog.TODO())
 			if updatedBS.LocalityLbPolicy != string(tc.wantBSLocalityLbPolicy) {
 				t.Errorf("Update LocalityLbPolicy failed, got: %v, want %v", updatedBS.LocalityLbPolicy, tc.wantBSLocalityLbPolicy)
 			}

@@ -495,6 +495,12 @@ func (lc *L4NetLBController) sync(key string, svcLogger klog.Logger) error {
 		}
 		lc.serviceVersions.SetProcessed(key, svc.ResourceVersion, result.Error == nil, isResync, svcLogger)
 		lc.publishMetrics(result, svc.Name, svc.Namespace, isResync, svcLogger)
+		svcLogger.V(3).Info("Resources modified in the sync", "modifiedResources", result.GCEResourceUpdate.String(), "wasResync", isResync)
+		if isResync {
+			if result.GCEResourceUpdate.WereAnyResourcesModified() {
+				svcLogger.V(3).Error(nil, "Resources were modified but this was not expected for a resync.", "modifiedResources", result.GCEResourceUpdate.String())
+			}
+		}
 		return result.Error
 	}
 	svcLogger.V(3).Info("Ignoring sync of service, neither delete nor ensure needed.")
