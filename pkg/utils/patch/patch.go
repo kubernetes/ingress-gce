@@ -78,9 +78,10 @@ func PatchServiceObjectMetadata(client coreclient.CoreV1Interface, svc *corev1.S
 
 // PatchServiceLoadBalancerStatus patches the given service's LoadBalancerStatus
 // based on new service's load-balancer status.
-func PatchServiceLoadBalancerStatus(client coreclient.CoreV1Interface, svc *corev1.Service, newStatus corev1.LoadBalancerStatus) error {
+func PatchServiceLoadBalancerInformation(client coreclient.CoreV1Interface, svc *corev1.Service, newStatus corev1.LoadBalancerStatus, newObjectMetadata metav1.ObjectMeta) error {
 	newSvc := svc.DeepCopy()
 	newSvc.Status.LoadBalancer = newStatus
+	newSvc.ObjectMeta = newObjectMetadata
 	_, err := svchelpers.PatchService(client, svc, newSvc)
 	return err
 }

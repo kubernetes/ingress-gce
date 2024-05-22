@@ -23,7 +23,6 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/cloud-provider-gcp/providers/gce"
-	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/test"
@@ -54,7 +53,7 @@ func newTestRegionalIgLinker(fakeGCE *gce.Cloud, backendPool *Backends, l4Namer 
 	fakeIGs := instancegroups.NewEmptyFakeInstanceGroups()
 
 	nodeInformer := zonegetter.FakeNodeInformer()
-	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer, defaultTestSubnetURL)
+	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
 	zonegetter.AddFakeNodes(fakeZoneGetter, usCentral1AZone, "test-instance1")
 	zonegetter.AddFakeNodes(fakeZoneGetter, "us-central1-c", "test-instance2")
 
@@ -236,13 +235,17 @@ func TestRegionalUpdateLinkWithRemovedBackends(t *testing.T) {
 
 func createBackendService(t *testing.T, sp utils.ServicePort, backendPool *Backends) {
 	t.Helper()
-	namespacedName := types.NamespacedName{Name: "service.Name", Namespace: "service.Namespace"}
-	protocol := string(apiv1.ProtocolTCP)
-	serviceAffinityNone := string(apiv1.ServiceAffinityNone)
-	schemeExternal := string(cloud.SchemeExternal)
-	defaultNetworkInfo := network.NetworkInfo{IsDefault: true}
-	var noConnectionTrackingPolicy *composite.BackendServiceConnectionTrackingPolicy = nil
-	if _, err := backendPool.EnsureL4BackendService(sp.BackendName(), hcLink, protocol, serviceAffinityNone, schemeExternal, namespacedName, defaultNetworkInfo, noConnectionTrackingPolicy, klog.TODO()); err != nil {
+	backendParams := L4BackendServiceParams{
+		Name:                     sp.BackendName(),
+		HealthCheckLink:          hcLink,
+		Protocol:                 string(apiv1.ProtocolTCP),
+		SessionAffinity:          string(apiv1.ServiceAffinityNone),
+		Scheme:                   string(cloud.SchemeExternal),
+		NamespacedName:           types.NamespacedName{Name: "service.Name", Namespace: "service.Namespace"},
+		NetworkInfo:              &network.NetworkInfo{IsDefault: true},
+		ConnectionTrackingPolicy: nil,
+	}
+	if _, err := backendPool.EnsureL4BackendService(backendParams, klog.TODO()); err != nil {
 		t.Fatalf("Error creating backend service %v", err)
 	}
 }
