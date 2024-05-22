@@ -121,15 +121,16 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 			addSvc := obj.(*v1.Service)
 			svcKey := utils.ServiceKeyFunc(addSvc.Namespace, addSvc.Name)
 			needsILB, svcType := annotations.WantsL4ILB(addSvc)
+			svcLogger := logger.WithValues("serviceKey", svcKey)
 			// Check for deletion since updates or deletes show up as Add when controller restarts.
 			if needsILB || l4c.needsDeletion(addSvc) {
-				logger.V(3).Info("ILB Service added, enqueuing", "serviceKey", svcKey)
+				svcLogger.V(3).Info("ILB Service added, enqueuing")
 				l4c.ctx.Recorder(addSvc.Namespace).Eventf(addSvc, v1.EventTypeNormal, "ADD", svcKey)
-				l4c.serviceVersions.SetLastUpdateSeen(svcKey, addSvc.ResourceVersion, logger)
+				l4c.serviceVersions.SetLastUpdateSeen(svcKey, addSvc.ResourceVersion, svcLogger)
 				l4c.svcQueue.Enqueue(addSvc)
 				l4c.enqueueTracker.Track()
 			} else {
-				logger.V(4).Info("Ignoring add for non-lb service", "serviceKey", svcKey, "serviceType", svcType)
+				svcLogger.V(4).Info("Ignoring add for non-lb service", "serviceType", svcType)
 			}
 		},
 		// Deletes will be handled in the Update when the deletion timestamp is set.
@@ -137,11 +138,12 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 			curSvc := cur.(*v1.Service)
 			svcKey := utils.ServiceKeyFunc(curSvc.Namespace, curSvc.Name)
 			oldSvc := old.(*v1.Service)
+			svcLogger := logger.WithValues("serviceKey", svcKey)
 			needsUpdate := l4c.needsUpdate(oldSvc, curSvc)
 			needsDeletion := l4c.needsDeletion(curSvc)
 			if needsUpdate || needsDeletion {
-				logger.V(3).Info("Service changed, enqueuing", "serviceKey", svcKey, "needsUpdate", needsUpdate, "needsDeletion", needsDeletion)
-				l4c.serviceVersions.SetLastUpdateSeen(svcKey, curSvc.ResourceVersion, logger)
+				svcLogger.V(3).Info("Service changed, enqueuing", "needsUpdate", needsUpdate, "needsDeletion", needsDeletion)
+				l4c.serviceVersions.SetLastUpdateSeen(svcKey, curSvc.ResourceVersion, svcLogger)
 				l4c.svcQueue.Enqueue(curSvc)
 				l4c.enqueueTracker.Track()
 				return
@@ -151,11 +153,11 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 			if needsILB && reflect.DeepEqual(old, cur) {
 				// this will happen when informers run a resync on all the existing services even when the object is
 				// not modified.
-				logger.V(3).Info("Periodic enqueueing of service", "serviceKey", svcKey)
+				svcLogger.V(3).Info("Periodic enqueueing of service")
 				l4c.svcQueue.Enqueue(curSvc)
 				l4c.enqueueTracker.Track()
 			} else if needsILB {
-				l4c.serviceVersions.SetLastIgnored(svcKey, curSvc.ResourceVersion, logger)
+				l4c.serviceVersions.SetLastIgnored(svcKey, curSvc.ResourceVersion, svcLogger)
 			}
 		},
 	})
