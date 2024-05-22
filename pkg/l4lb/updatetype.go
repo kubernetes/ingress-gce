@@ -51,25 +51,25 @@ func (t *serviceVersionsTracker) getVersionsForSvc(svcKey string) *serviceVersio
 
 }
 
-func (t *serviceVersionsTracker) SetLastUpdateSeen(svcKey, version string, logger klog.Logger) {
+func (t *serviceVersionsTracker) SetLastUpdateSeen(svcKey, version string, svcLogger klog.Logger) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
 	v := t.getVersionsForSvc(svcKey)
 	v.lastSeenUpdateVersion = version
-	logger.V(3).Info("serviceVersionsTracker: SetLastUpdateSeen()", "svcKey", svcKey, "version", version)
+	svcLogger.V(3).Info("serviceVersionsTracker: SetLastUpdateSeen()", "version", version)
 }
 
-func (t *serviceVersionsTracker) SetLastIgnored(svcKey, version string, logger klog.Logger) {
+func (t *serviceVersionsTracker) SetLastIgnored(svcKey, version string, svcLogger klog.Logger) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
 	v := t.getVersionsForSvc(svcKey)
 	v.lastIgnoredVersion = version
-	logger.V(3).Info("serviceVersionsTracker: SetLastIgnored()", "svcKey", svcKey, "version", version)
+	svcLogger.V(3).Info("serviceVersionsTracker: SetLastIgnored()", "version", version)
 }
 
-func (t *serviceVersionsTracker) SetProcessed(svcKey, version string, success, wasResync bool, logger klog.Logger) {
+func (t *serviceVersionsTracker) SetProcessed(svcKey, version string, success, wasResync bool, svcLogger klog.Logger) {
 	if wasResync && success {
 		return
 	}
@@ -79,16 +79,16 @@ func (t *serviceVersionsTracker) SetProcessed(svcKey, version string, success, w
 	v := t.getVersionsForSvc(svcKey)
 	v.lastProcessedUpdateVersion = version
 	v.lastProcessingSuccess = success
-	logger.V(3).Info("serviceVersionsTracker: SetProcessed()", "version", version, "success", success, "wasResync", wasResync)
+	svcLogger.V(3).Info("serviceVersionsTracker: SetProcessed()", "version", version, "success", success, "wasResync", wasResync)
 }
 
-func (t *serviceVersionsTracker) IsResync(svcKey, currentVersion string, logger klog.Logger) bool {
+func (t *serviceVersionsTracker) IsResync(svcKey, currentVersion string, svcLogger klog.Logger) bool {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
 	v := t.getVersionsForSvc(svcKey)
 
-	logger.V(3).Info("serviceVersionsTracker: IsResync()", "currentVersion", currentVersion, "lastProcessedUpdateVersion", v.lastProcessedUpdateVersion, "lastProcessingSuccess", v.lastProcessingSuccess, "lastSeenUpdate", v.lastSeenUpdateVersion, "lastIgnored", v.lastIgnoredVersion)
+	svcLogger.V(3).Info("serviceVersionsTracker: IsResync()", "currentVersion", currentVersion, "lastProcessedUpdateVersion", v.lastProcessedUpdateVersion, "lastProcessingSuccess", v.lastProcessingSuccess, "lastSeenUpdate", v.lastSeenUpdateVersion, "lastIgnored", v.lastIgnoredVersion)
 
 	if !v.lastProcessingSuccess {
 		return false
