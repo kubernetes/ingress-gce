@@ -573,6 +573,7 @@ func createNEGController(ctx *ingctx.ControllerContext, stopCh <-chan struct{}, 
 		lpConfig,
 		flags.F.EnableMultiNetworking,
 		ctx.EnableIngressRegionalExternal,
+		flags.F.EnableL4NetLBNEG,
 		stopCh,
 		logger,
 	)

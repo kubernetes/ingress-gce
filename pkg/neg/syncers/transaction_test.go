@@ -2456,7 +2456,7 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 		testContext.SvcNegInformer.GetIndexer(),
 		reflector,
 		GetEndpointsCalculator(testContext.PodInformer.GetIndexer(), testContext.NodeInformer.GetIndexer(), testContext.ServiceInformer.GetIndexer(),
-			fakeZoneGetter, svcPort, mode, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics(), &network.NetworkInfo{IsDefault: true}),
+			fakeZoneGetter, svcPort, mode, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics(), &network.NetworkInfo{IsDefault: true}, negtypes.L4InternalLB),
 		string(kubeSystemUID),
 		testContext.SvcNegClient,
 		metricscollector.FakeSyncerMetrics(),

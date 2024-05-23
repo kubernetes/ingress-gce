@@ -34,7 +34,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// LocalL4ILBEndpointGetter implements the NetworkEndpointsCalculator interface.
+// LocalL4EndpointsCalculator implements the NetworkEndpointsCalculator interface.
 // It exposes methods to calculate Network endpoints for GCE_VM_IP NEGs when the service
 // uses "ExternalTrafficPolicy: Local" mode.
 // In this mode, the endpoints of the NEG are calculated by listing the nodes that host the service endpoints(pods)
@@ -42,7 +42,7 @@ import (
 // Otherwise, a subset of nodes is selected.
 // In a cluster with nodes node1... node 50. If nodes node10 to node 45 run the pods for a given ILB service, all these
 // nodes - node10, node 11 ... node45 will be part of the subset.
-type LocalL4ILBEndpointsCalculator struct {
+type LocalL4EndpointsCalculator struct {
 	nodeLister      listers.NodeLister
 	zoneGetter      *zonegetter.ZoneGetter
 	subsetSizeLimit int
@@ -51,24 +51,28 @@ type LocalL4ILBEndpointsCalculator struct {
 	networkInfo     *network.NetworkInfo
 }
 
-func NewLocalL4ILBEndpointsCalculator(nodeLister listers.NodeLister, zoneGetter *zonegetter.ZoneGetter, svcId string, logger klog.Logger, networkInfo *network.NetworkInfo) *LocalL4ILBEndpointsCalculator {
-	return &LocalL4ILBEndpointsCalculator{
+func NewLocalL4EndpointsCalculator(nodeLister listers.NodeLister, zoneGetter *zonegetter.ZoneGetter, svcId string, logger klog.Logger, networkInfo *network.NetworkInfo, lbType types.L4LBType) *LocalL4EndpointsCalculator {
+	subsetSize := maxSubsetSizeLocal
+	if lbType == negtypes.L4ExternalLB {
+		subsetSize = maxSubsetSizeNetLBLocal
+	}
+	return &LocalL4EndpointsCalculator{
 		nodeLister:      nodeLister,
 		zoneGetter:      zoneGetter,
-		subsetSizeLimit: maxSubsetSizeLocal,
+		subsetSizeLimit: subsetSize,
 		svcId:           svcId,
-		logger:          logger.WithName("LocalL4ILBEndpointsCalculator"),
+		logger:          logger.WithName("LocalL4EndpointsCalculator"),
 		networkInfo:     networkInfo,
 	}
 }
 
 // Mode indicates the mode that the EndpointsCalculator is operating in.
-func (l *LocalL4ILBEndpointsCalculator) Mode() types.EndpointsCalculatorMode {
+func (l *LocalL4EndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 	return types.L4LocalMode
 }
 
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
-func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
+func (l *LocalL4EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
 	// List all nodes where the service endpoints are running. Get a subset of the desired count.
 	zoneNodeMap := make(map[string][]*v1.Node)
 	processedNodes := sets.String{}
@@ -121,23 +125,23 @@ func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(eds []types.Endpoints
 	return subsetMap, nil, 0, err
 }
 
-func (l *LocalL4ILBEndpointsCalculator) CalculateEndpointsDegradedMode(eds []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
+func (l *LocalL4EndpointsCalculator) CalculateEndpointsDegradedMode(eds []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
 	// this should be the same as CalculateEndpoints for L4 ec
 	subsetMap, podMap, _, err := l.CalculateEndpoints(eds, currentMap)
 	return subsetMap, podMap, err
 }
 
-func (l *LocalL4ILBEndpointsCalculator) ValidateEndpoints(endpointData []types.EndpointsData, endpointPodMap types.EndpointPodMap, endpointsExcludedInCalculation int) error {
+func (l *LocalL4EndpointsCalculator) ValidateEndpoints(endpointData []types.EndpointsData, endpointPodMap types.EndpointPodMap, endpointsExcludedInCalculation int) error {
 	// this should be a no-op for now
 	return nil
 }
 
-// ClusterL4ILBEndpointGetter implements the NetworkEndpointsCalculator interface.
+// ClusterL4EndpointsCalculator implements the NetworkEndpointsCalculator interface.
 // It exposes methods to calculate Network endpoints for GCE_VM_IP NEGs when the service
 // uses "ExternalTrafficPolicy: Cluster" mode This is the default mode.
 // In this mode, the endpoints of the NEG are calculated by selecting nodes at random. Up to 25(subset size limit in this
 // mode) are selected.
-type ClusterL4ILBEndpointsCalculator struct {
+type ClusterL4EndpointsCalculator struct {
 	// zoneGetter looks up the zone for a given node when calculating subsets.
 	zoneGetter *zonegetter.ZoneGetter
 	// subsetSizeLimit is the max value of the subset size in this mode.
@@ -149,23 +153,27 @@ type ClusterL4ILBEndpointsCalculator struct {
 	logger klog.Logger
 }
 
-func NewClusterL4ILBEndpointsCalculator(nodeLister listers.NodeLister, zoneGetter *zonegetter.ZoneGetter, svcId string, logger klog.Logger, networkInfo *network.NetworkInfo) *ClusterL4ILBEndpointsCalculator {
-	return &ClusterL4ILBEndpointsCalculator{
+func NewClusterL4EndpointsCalculator(nodeLister listers.NodeLister, zoneGetter *zonegetter.ZoneGetter, svcId string, logger klog.Logger, networkInfo *network.NetworkInfo, l4LBtype negtypes.L4LBType) *ClusterL4EndpointsCalculator {
+	subsetSize := maxSubsetSizeDefault
+	if l4LBtype == negtypes.L4ExternalLB {
+		subsetSize = maxSubsetSizeNetLBCluster
+	}
+	return &ClusterL4EndpointsCalculator{
 		zoneGetter:      zoneGetter,
-		subsetSizeLimit: maxSubsetSizeDefault,
+		subsetSizeLimit: subsetSize,
 		svcId:           svcId,
-		logger:          logger.WithName("ClusterL4ILBEndpointsCalculator"),
+		logger:          logger.WithName("ClusterL4EndpointsCalculator"),
 		networkInfo:     networkInfo,
 	}
 }
 
 // Mode indicates the mode that the EndpointsCalculator is operating in.
-func (l *ClusterL4ILBEndpointsCalculator) Mode() types.EndpointsCalculatorMode {
+func (l *ClusterL4EndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 	return types.L4ClusterMode
 }
 
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
-func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpoints(_ []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
+func (l *ClusterL4EndpointsCalculator) CalculateEndpoints(_ []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
 	// In this mode, any of the cluster nodes can be part of the subset, whether or not a matching pod runs on it.
 	nodes, _ := l.zoneGetter.ListNodes(zonegetter.CandidateAndUnreadyNodesFilter, l.logger)
 	zoneNodeMap := make(map[string][]*v1.Node)
@@ -188,13 +196,13 @@ func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpoints(_ []types.Endpoints
 	return subsetMap, nil, 0, err
 }
 
-func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpointsDegradedMode(eps []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
+func (l *ClusterL4EndpointsCalculator) CalculateEndpointsDegradedMode(eps []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
 	// this should be the same as CalculateEndpoints for L4 ec
 	subsetMap, podMap, _, err := l.CalculateEndpoints(eps, currentMap)
 	return subsetMap, podMap, err
 }
 
-func (l *ClusterL4ILBEndpointsCalculator) ValidateEndpoints(endpointData []types.EndpointsData, endpointPodMap types.EndpointPodMap, endpointsExcludedInCalculation int) error {
+func (l *ClusterL4EndpointsCalculator) ValidateEndpoints(endpointData []types.EndpointsData, endpointPodMap types.EndpointPodMap, endpointsExcludedInCalculation int) error {
 	// this should be a no-op for now
 	return nil
 }

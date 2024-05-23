@@ -158,6 +158,7 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		labels.PodLabelPropagationConfig{},
 		true,
 		false,
+		false,
 		make(<-chan struct{}),
 		klog.TODO(),
 	)
@@ -388,7 +389,7 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Service was not created.(*apiv1.Service) successfully, err: %v", err)
 	}
-	expectedPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, false, defaultNetwork)
+	expectedPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, false, defaultNetwork, negtypes.L4InternalLB)
 	// There will be only one entry in the map
 	for key, val := range expectedPortInfoMap {
 		prevSyncerKey = manager.getSyncerKey(testServiceNamespace, testServiceName, key, val)
@@ -409,7 +410,7 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 	if err = controller.processService(svcKey); err != nil {
 		t.Fatalf("Failed to process updated L4 ILB service: %v", err)
 	}
-	expectedPortInfoMap = negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, defaultNetwork)
+	expectedPortInfoMap = negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, defaultNetwork, negtypes.L4InternalLB)
 	// There will be only one entry in the map
 	for key, val := range expectedPortInfoMap {
 		updatedSyncerKey = manager.getSyncerKey(testServiceNamespace, testServiceName, key, val)
@@ -1258,13 +1259,16 @@ func TestMergeVmIpNEGsPortInfo(t *testing.T) {
 		desc           string
 		svc            *apiv1.Service
 		networkInfo    *network.NetworkInfo
+		runL4ILB       bool
+		runL4NetLB     bool
 		wantSvcPortMap negtypes.PortInfoMap
 	}{
 		{
 			desc:           "ILB subsetting service",
 			svc:            serviceILBWithFinalizer,
 			networkInfo:    defaultNetwork,
-			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, false, defaultNetwork),
+			runL4ILB:       true,
+			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, false, defaultNetwork, negtypes.L4InternalLB),
 		},
 		{
 			desc:           "ILB legacy service",
@@ -1276,12 +1280,26 @@ func TestMergeVmIpNEGsPortInfo(t *testing.T) {
 			desc:           "RBS Multinet Service",
 			svc:            newTestRBSMultinetService(controller, true, 80),
 			networkInfo:    secondaryNetwork,
-			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, secondaryNetwork),
+			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, secondaryNetwork, negtypes.L4ExternalLB),
 		},
 		{
 			desc:           "RBS non-multinet Service",
-			svc:            newTestRBSMultinetService(controller, true, 80),
+			svc:            newTestRBSService(controller, true, 80, common.NetLBFinalizerV2),
 			networkInfo:    defaultNetwork,
+			wantSvcPortMap: nil,
+		},
+		{
+			desc:           "RBS non-multinet Service with NEG",
+			svc:            newTestRBSService(controller, true, 80, common.NetLBFinalizerV3),
+			networkInfo:    defaultNetwork,
+			runL4NetLB:     true,
+			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, defaultNetwork, negtypes.L4ExternalLB),
+		},
+		{
+			desc:           "RBS non-multinet Service with NEG but NEGs not enabled for NetLB",
+			svc:            newTestRBSService(controller, true, 80, common.NetLBFinalizerV3),
+			networkInfo:    defaultNetwork,
+			runL4NetLB:     false,
 			wantSvcPortMap: nil,
 		},
 		{
@@ -1294,6 +1312,8 @@ func TestMergeVmIpNEGsPortInfo(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
+			controller.runL4ForNetLB = tc.runL4NetLB
+			controller.runL4ForILB = tc.runL4ILB
 			portInfoMap := make(negtypes.PortInfoMap)
 			negUsage := metricscollector.NegServiceState{}
 			controller.mergeVmIpNEGsPortInfo(tc.svc, types.NamespacedName{Namespace: tc.svc.Namespace, Name: tc.svc.Name}, portInfoMap, &negUsage, tc.networkInfo)
@@ -1609,7 +1629,7 @@ func TestEnableNEGServiceWithL4NetLB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Service was not created.(*apiv1.Service) successfully, err: %v", err)
 	}
-	expectedPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, networkInfo)
+	expectedPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, networkInfo, negtypes.L4ExternalLB)
 	// There will be only one entry in the map
 	for key, val := range expectedPortInfoMap {
 		prevSyncerKey = manager.getSyncerKey(testServiceNamespace, testServiceName, key, val)
@@ -2010,6 +2030,29 @@ func newTestRBSMultinetService(c *Controller, onlyLocal bool, port int) *apiv1.S
 				{Name: "testport", Port: int32(port)},
 			},
 			Selector: map[string]string{networkv1.NetworkAnnotationKey: "blue-net"},
+		},
+	}
+	if onlyLocal {
+		svc.Spec.ExternalTrafficPolicy = apiv1.ServiceExternalTrafficPolicyTypeLocal
+	}
+
+	c.client.CoreV1().Services(testServiceNamespace).Create(context.TODO(), svc, metav1.CreateOptions{})
+	return svc
+}
+
+func newTestRBSService(c *Controller, onlyLocal bool, port int, finalizer string) *apiv1.Service {
+	svc := &apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        testServiceName,
+			Namespace:   testServiceNamespace,
+			Annotations: map[string]string{annotations.RBSAnnotationKey: annotations.RBSEnabled},
+			Finalizers:  []string{finalizer},
+		},
+		Spec: apiv1.ServiceSpec{
+			Type: apiv1.ServiceTypeLoadBalancer,
+			Ports: []apiv1.ServicePort{
+				{Name: "testport", Port: int32(port)},
+			},
 		},
 	}
 	if onlyLocal {

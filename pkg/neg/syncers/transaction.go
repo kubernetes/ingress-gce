@@ -192,15 +192,15 @@ func NewTransactionSyncer(
 	return syncer
 }
 
-func GetEndpointsCalculator(podLister, nodeLister, serviceLister cache.Indexer, zoneGetter *zonegetter.ZoneGetter, syncerKey negtypes.NegSyncerKey, mode negtypes.EndpointsCalculatorMode, logger klog.Logger, enableDualStackNEG bool, syncMetricsCollector *metricscollector.SyncerMetrics, networkInfo *network.NetworkInfo) negtypes.NetworkEndpointsCalculator {
+func GetEndpointsCalculator(podLister, nodeLister, serviceLister cache.Indexer, zoneGetter *zonegetter.ZoneGetter, syncerKey negtypes.NegSyncerKey, mode negtypes.EndpointsCalculatorMode, logger klog.Logger, enableDualStackNEG bool, syncMetricsCollector *metricscollector.SyncerMetrics, networkInfo *network.NetworkInfo, l4LBType negtypes.L4LBType) negtypes.NetworkEndpointsCalculator {
 	serviceKey := strings.Join([]string{syncerKey.Name, syncerKey.Namespace}, "/")
 	if syncerKey.NegType == negtypes.VmIpEndpointType {
 		nodeLister := listers.NewNodeLister(nodeLister)
 		switch mode {
 		case negtypes.L4LocalMode:
-			return NewLocalL4ILBEndpointsCalculator(nodeLister, zoneGetter, serviceKey, logger, networkInfo)
+			return NewLocalL4EndpointsCalculator(nodeLister, zoneGetter, serviceKey, logger, networkInfo, l4LBType)
 		default:
-			return NewClusterL4ILBEndpointsCalculator(nodeLister, zoneGetter, serviceKey, logger, networkInfo)
+			return NewClusterL4EndpointsCalculator(nodeLister, zoneGetter, serviceKey, logger, networkInfo, l4LBType)
 		}
 	}
 	return NewL7EndpointsCalculator(
