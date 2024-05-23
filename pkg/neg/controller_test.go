@@ -119,7 +119,7 @@ var (
 	}
 )
 
-func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, testContext *negtypes.TestContext, runL4 bool, enableASM bool) *Controller {
+func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, testContext *negtypes.TestContext, runL4 bool, enableASM bool, enableL4NetLBNEGs bool) *Controller {
 	if enableASM {
 		kubeClient.CoreV1().ConfigMaps("kube-system").Create(context.TODO(), &apiv1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "ingress-controller-config-test"}, Data: map[string]string{"enable-asm": "true"}}, metav1.CreateOptions{})
 	}
@@ -158,17 +158,18 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		labels.PodLabelPropagationConfig{},
 		true,
 		false,
+		enableL4NetLBNEGs,
 		make(<-chan struct{}),
 		klog.TODO(),
 	)
 }
 func newTestControllerWithASM(kubeClient kubernetes.Interface) *Controller {
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-	return newTestControllerWithParamsAndContext(kubeClient, testContext, false, true)
+	return newTestControllerWithParamsAndContext(kubeClient, testContext, false, true, false)
 }
 func newTestController(kubeClient kubernetes.Interface) *Controller {
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-	return newTestControllerWithParamsAndContext(kubeClient, testContext, false, false)
+	return newTestControllerWithParamsAndContext(kubeClient, testContext, false, false, false)
 }
 
 func TestIsHealthy(t *testing.T) {
@@ -185,7 +186,7 @@ func TestIsHealthy(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			controller := newTestControllerWithParamsAndContext(kubeClient, testContext, false, false)
+			controller := newTestControllerWithParamsAndContext(kubeClient, testContext, false, false, false)
 			defer controller.stop()
 
 			err := controller.IsHealthy()
@@ -353,7 +354,7 @@ func TestEnableNEGServiceWithIngress(t *testing.T) {
 func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 	kubeClient := fake.NewSimpleClientset()
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-	controller := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false)
+	controller := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false, false)
 	manager := controller.manager.(*syncerManager)
 	// L4 ILB NEGs will be created in zones with ready and unready nodes. Zones with upgrading nodes will be skipped.
 	expectZones := []string{negtypes.TestZone1, negtypes.TestZone2, negtypes.TestZone3}
@@ -388,7 +389,7 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Service was not created.(*apiv1.Service) successfully, err: %v", err)
 	}
-	expectedPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, false, defaultNetwork)
+	expectedPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, false, defaultNetwork, negtypes.L4InternalLB)
 	// There will be only one entry in the map
 	for key, val := range expectedPortInfoMap {
 		prevSyncerKey = manager.getSyncerKey(testServiceNamespace, testServiceName, key, val)
@@ -409,7 +410,7 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 	if err = controller.processService(svcKey); err != nil {
 		t.Fatalf("Failed to process updated L4 ILB service: %v", err)
 	}
-	expectedPortInfoMap = negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, defaultNetwork)
+	expectedPortInfoMap = negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, defaultNetwork, negtypes.L4InternalLB)
 	// There will be only one entry in the map
 	for key, val := range expectedPortInfoMap {
 		updatedSyncerKey = manager.getSyncerKey(testServiceNamespace, testServiceName, key, val)
@@ -427,7 +428,7 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 func TestEnqueueNodeWithILBSubsetting(t *testing.T) {
 	kubeClient := fake.NewSimpleClientset()
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-	controller := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false)
+	controller := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false, false)
 	stopChan := make(chan struct{}, 1)
 	// start the informer directly, without starting the entire controller.
 	go testContext.NodeInformer.Run(stopChan)
@@ -465,7 +466,7 @@ func TestEnqueueNodeWithILBSubsetting(t *testing.T) {
 func TestEnqueueNodeWhenProviderIDPopulated(t *testing.T) {
 	kubeClient := fake.NewSimpleClientset()
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-	controller := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false)
+	controller := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false, false)
 	stopChan := make(chan struct{}, 1)
 	// start the informer directly, without starting the entire controller.
 	go testContext.NodeInformer.Run(stopChan)
@@ -1264,7 +1265,7 @@ func TestMergeVmIpNEGsPortInfo(t *testing.T) {
 			desc:           "ILB subsetting service",
 			svc:            serviceILBWithFinalizer,
 			networkInfo:    defaultNetwork,
-			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, false, defaultNetwork),
+			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, false, defaultNetwork, negtypes.L4InternalLB),
 		},
 		{
 			desc:           "ILB legacy service",
@@ -1276,7 +1277,7 @@ func TestMergeVmIpNEGsPortInfo(t *testing.T) {
 			desc:           "RBS Multinet Service",
 			svc:            newTestRBSMultinetService(controller, true, 80),
 			networkInfo:    secondaryNetwork,
-			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, secondaryNetwork),
+			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, secondaryNetwork, negtypes.L4ExternalLB),
 		},
 		{
 			desc:           "RBS non-multinet Service",
@@ -1447,7 +1448,7 @@ func TestEnqueueEndpoints(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			kubeClient := fake.NewSimpleClientset()
 			testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-			controller := newTestControllerWithParamsAndContext(kubeClient, testContext, false, false)
+			controller := newTestControllerWithParamsAndContext(kubeClient, testContext, false, false, false)
 			stopChan := make(chan struct{}, 1)
 			// start the informer directly, without starting the entire controller.
 			go testContext.EndpointSliceInformer.Run(stopChan)
@@ -1579,11 +1580,11 @@ func TestServiceIPFamilies(t *testing.T) {
 
 }
 
-// TestEnableNEGServiceWithL4NetLB tests L4 NetLB service with NEGs enabled (only for multinetworked services).
-func TestEnableNEGServiceWithL4NetLB(t *testing.T) {
+// TestEnableNEGServiceWithL4MultinetNetLB tests L4 NetLB service with NEGs enabled (only for multinetworked services).
+func TestEnableNEGServiceWithL4MultinetNetLB(t *testing.T) {
 	kubeClient := fake.NewSimpleClientset()
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-	controller := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false)
+	controller := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false, false)
 	manager := controller.manager.(*syncerManager)
 	// L4 ILB NEGs will be created in zones with ready and unready nodes. Zones with upgrading nodes will be skipped.
 	expectZones := []string{negtypes.TestZone1, negtypes.TestZone2, negtypes.TestZone3}
@@ -1609,7 +1610,7 @@ func TestEnableNEGServiceWithL4NetLB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Service was not created.(*apiv1.Service) successfully, err: %v", err)
 	}
-	expectedPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, networkInfo)
+	expectedPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, networkInfo, negtypes.L4ExternalLB)
 	// There will be only one entry in the map
 	for key, val := range expectedPortInfoMap {
 		prevSyncerKey = manager.getSyncerKey(testServiceNamespace, testServiceName, key, val)
@@ -1623,6 +1624,81 @@ func TestEnableNEGServiceWithL4NetLB(t *testing.T) {
 	// check the port info map after all stale syncers have been deleted.
 	validateSyncerManagerWithPortInfoMap(t, controller, testServiceNamespace, testServiceName, expectedPortInfoMap)
 	validateServiceAnnotationWithPortInfoMap(t, svc, expectedPortInfoMap, expectZones)
+}
+
+// TestEnableNEGServiceWithL4NetLB tests L4 NetLB service with NEGs enabled.
+func TestEnableNEGServiceWithL4NetLB(t *testing.T) {
+	testCases := []struct {
+		desc          string
+		enableNEGs    bool
+		svcFinalizers []string
+		expectSyncer  bool
+	}{
+		{
+			desc:          "NetLB with NEGs enabled",
+			enableNEGs:    true,
+			svcFinalizers: []string{common.NetLBFinalizerV3},
+			expectSyncer:  true,
+		},
+		{
+			desc:          "NetLB with NEGs disabled",
+			enableNEGs:    false,
+			svcFinalizers: []string{common.NetLBFinalizerV3},
+			expectSyncer:  false,
+		},
+		{
+			desc:          "NetLB with NEGs disabled but no V3 finalizer",
+			enableNEGs:    true,
+			svcFinalizers: nil,
+			expectSyncer:  false,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			kubeClient := fake.NewSimpleClientset()
+			testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
+			controller := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false, tc.enableNEGs)
+			manager := controller.manager.(*syncerManager)
+			// L4 ILB NEGs will be created in zones with ready and unready nodes. Zones with upgrading nodes will be skipped.
+			expectZones := []string{negtypes.TestZone1, negtypes.TestZone2, negtypes.TestZone3}
+			defer controller.stop()
+			var prevSyncerKey negtypes.NegSyncerKey
+			t.Logf("Creating L4 NetLB service with ExternalTrafficPolicy:Local")
+			testSvc := newTestRBSNEGServiceWithFinalizers(controller, true, 80, tc.svcFinalizers)
+			controller.serviceLister.Add(testSvc)
+			svcClient := controller.client.CoreV1().Services(testServiceNamespace)
+			svcKey := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
+			err := controller.processService(svcKey)
+			if err != nil {
+				t.Fatalf("Failed to process service: %v", err)
+			}
+			svc, err := svcClient.Get(context.TODO(), testServiceName, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("Service was not created.(*apiv1.Service) successfully, err: %v", err)
+			}
+			if tc.expectSyncer {
+				expectedPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, defaultNetwork, negtypes.L4ExternalLB)
+				// There will be only one entry in the map
+				for key, val := range expectedPortInfoMap {
+					prevSyncerKey = manager.getSyncerKey(testServiceNamespace, testServiceName, key, val)
+				}
+				ValidateSyncerByKey(t, controller, 1, prevSyncerKey, false)
+				validateSyncerManagerWithPortInfoMap(t, controller, testServiceNamespace, testServiceName, expectedPortInfoMap)
+				validateServiceAnnotationWithPortInfoMap(t, svc, expectedPortInfoMap, expectZones)
+
+				time.Sleep(1 * time.Second)
+
+				controller.manager.(*syncerManager).GC()
+				// check the port info map after all stale syncers have been deleted.
+				validateSyncerManagerWithPortInfoMap(t, controller, testServiceNamespace, testServiceName, expectedPortInfoMap)
+				validateServiceAnnotationWithPortInfoMap(t, svc, expectedPortInfoMap, expectZones)
+			} else {
+				if len(controller.manager.(*syncerManager).syncerMap) != 0 {
+					t.Errorf("expected no syncers to be created but got %d syncers.", len(controller.manager.(*syncerManager).syncerMap))
+				}
+			}
+		})
+	}
 }
 
 func getEvent(eventChan chan string, queue *workqueue.RateLimitingInterface) {
@@ -2010,6 +2086,31 @@ func newTestRBSMultinetService(c *Controller, onlyLocal bool, port int) *apiv1.S
 				{Name: "testport", Port: int32(port)},
 			},
 			Selector: map[string]string{networkv1.NetworkAnnotationKey: "blue-net"},
+		},
+	}
+	if onlyLocal {
+		svc.Spec.ExternalTrafficPolicy = apiv1.ServiceExternalTrafficPolicyTypeLocal
+	}
+
+	c.client.CoreV1().Services(testServiceNamespace).Create(context.TODO(), svc, metav1.CreateOptions{})
+	return svc
+}
+
+func newTestRBSNEGServiceWithFinalizers(c *Controller, onlyLocal bool, port int, finalizers []string) *apiv1.Service {
+	svc := &apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      testServiceName,
+			Namespace: testServiceNamespace,
+			Annotations: map[string]string{
+				annotations.RBSAnnotationKey: annotations.RBSEnabled,
+			},
+			Finalizers: finalizers,
+		},
+		Spec: apiv1.ServiceSpec{
+			Type: apiv1.ServiceTypeLoadBalancer,
+			Ports: []apiv1.ServicePort{
+				{Name: "testport", Port: int32(port)},
+			},
 		},
 	}
 	if onlyLocal {
