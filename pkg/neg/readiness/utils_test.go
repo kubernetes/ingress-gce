@@ -29,6 +29,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
 
@@ -579,6 +580,12 @@ func generatePod(namespace, name string, hasNegReadinessGate, hasNegCondition, n
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      name,
+			Labels: map[string]string{
+				utils.LabelNodeSubnet: defaultTestSubnet,
+			},
+		},
+		Spec: v1.PodSpec{
+			NodeName: "instance1",
 		},
 	}
 	if hasNegReadinessGate {
