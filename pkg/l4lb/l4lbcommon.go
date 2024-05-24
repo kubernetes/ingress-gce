@@ -67,43 +67,42 @@ func mergeAnnotations(existing, lbAnnotations map[string]string, keysToRemove []
 }
 
 // updateL4ResourcesAnnotations checks if new annotations should be added to service and patch service metadata if needed.
-func updateL4ResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBAnnotations map[string]string, logger klog.Logger) error {
-	logger.V(3).Info("Updating annotations of service", "serviceKey", klog.KRef(svc.Namespace, svc.Name))
+func updateL4ResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBAnnotations map[string]string, svcLogger klog.Logger) error {
+	svcLogger.V(3).Info("Updating annotations of service")
 	newObjectMeta := computeNewAnnotationsIfNeeded(svc, newL4LBAnnotations, loadbalancers.L4ResourceAnnotationKeys)
 	if newObjectMeta == nil {
-		logger.V(3).Info("Service annotations not changed, skipping patch for service", "serviceKey", klog.KRef(svc.Namespace, svc.Name))
+		svcLogger.V(3).Info("Service annotations not changed, skipping patch for service")
 		return nil
 	}
-	logger.V(3).Info("Patching annotations of service", "serviceKey", klog.KRef(svc.Namespace, svc.Name))
+	svcLogger.V(3).Info("Patching annotations of service")
 	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
 }
 
 // updateL4DualStackResourcesAnnotations checks if new annotations should be added to dual-stack service and patch service metadata if needed.
-func updateL4DualStackResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBAnnotations map[string]string, logger klog.Logger) error {
+func updateL4DualStackResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBAnnotations map[string]string, svcLogger klog.Logger) error {
 	newObjectMeta := computeNewAnnotationsIfNeeded(svc, newL4LBAnnotations, loadbalancers.L4DualStackResourceAnnotationKeys)
 	if newObjectMeta == nil {
 		return nil
 	}
-	logger.V(3).Info("Patching annotations of service", "serviceKey", klog.KRef(svc.Namespace, svc.Name))
+	svcLogger.V(3).Info("Patching annotations of service")
 	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
 }
 
-func deleteAnnotation(ctx *context.ControllerContext, svc *v1.Service, annotationKey string, logger klog.Logger) error {
+func deleteAnnotation(ctx *context.ControllerContext, svc *v1.Service, annotationKey string, svcLogger klog.Logger) error {
 	newObjectMeta := svc.ObjectMeta.DeepCopy()
 	if _, ok := newObjectMeta.Annotations[annotationKey]; !ok {
 		return nil
 	}
-
-	logger.V(3).Info("Removing annotation from service", "annotationKey", annotationKey, "serviceKey", klog.KRef(svc.Namespace, svc.Name))
+	svcLogger.V(3).Info("Removing annotation from service", "annotationKey", annotationKey)
 	delete(newObjectMeta.Annotations, annotationKey)
 	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
 }
 
 // updateServiceStatus this faction checks if LoadBalancer status changed and patch service if needed.
-func updateServiceStatus(ctx *context.ControllerContext, svc *v1.Service, newStatus *v1.LoadBalancerStatus, logger klog.Logger) error {
-	logger.V(2).Info("Updating service status", "serviceKey", klog.KRef(svc.Namespace, svc.Name), "newStatus", fmt.Sprintf("%+v", newStatus))
+func updateServiceStatus(ctx *context.ControllerContext, svc *v1.Service, newStatus *v1.LoadBalancerStatus, svcLogger klog.Logger) error {
+	svcLogger.V(2).Info("Updating service status", "newStatus", fmt.Sprintf("%+v", newStatus))
 	if helpers.LoadBalancerStatusEqual(&svc.Status.LoadBalancer, newStatus) {
-		logger.V(2).Info("New and old statuses are equal, skipping patch", "serviceKey", klog.KRef(svc.Namespace, svc.Name))
+		svcLogger.V(2).Info("New and old statuses are equal, skipping patch")
 		return nil
 	}
 	return patch.PatchServiceLoadBalancerStatus(ctx.KubeClient.CoreV1(), svc, *newStatus)
