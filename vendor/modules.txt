@@ -867,9 +867,9 @@ k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned/typed/gcpfi
 k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned/typed/gcpfirewall/v1/fake
 k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned/typed/gcpfirewall/v1beta1
 k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned/typed/gcpfirewall/v1beta1/fake
-k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/informers/externalversions/gcpfirewall/v1beta1
+k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/informers/externalversions/gcpfirewall/v1
 k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/informers/externalversions/internalinterfaces
-k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/listers/gcpfirewall/v1beta1
+k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/listers/gcpfirewall/v1
 k8s.io/cloud-provider-gcp/crd/client/network/clientset/versioned
 k8s.io/cloud-provider-gcp/crd/client/network/clientset/versioned/fake
 k8s.io/cloud-provider-gcp/crd/client/network/clientset/versioned/scheme
