@@ -71,6 +71,18 @@ func NewPoolWithConnectionTrackingPolicy(cloud *gce.Cloud, namer namer.BackendNa
 	}
 }
 
+// L4BackendServiceParams encapsulates parameters for ensuring an L4 BackendService.
+type L4BackendServiceParams struct {
+	Name                     string
+	HealthCheckLink          string
+	Protocol                 string
+	SessionAffinity          string
+	Scheme                   string
+	NamespacedName           types.NamespacedName
+	NetworkInfo              *network.NetworkInfo
+	ConnectionTrackingPolicy *composite.BackendServiceConnectionTrackingPolicy
+}
+
 // ensureDescription updates the BackendService Description with the expected value
 func ensureDescription(be *composite.BackendService, sp *utils.ServicePort) (needsUpdate bool) {
 	desc := sp.GetDescription()
@@ -306,16 +318,16 @@ func (b *Backends) DeleteSignedUrlKey(be *composite.BackendService, keyName stri
 }
 
 // EnsureL4BackendService creates or updates the backend service with the given name.
-// TODO(code-elinka): refactor the list of arguments (there are too many now)
-func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinity, scheme string, namespacedName types.NamespacedName, network network.NetworkInfo, connectionTrackingPolicy *composite.BackendServiceConnectionTrackingPolicy, beLogger klog.Logger) (*composite.BackendService, error) {
+func (b *Backends) EnsureL4BackendService(params L4BackendServiceParams, beLogger klog.Logger) (*composite.BackendService, error) {
 	start := time.Now()
-	beLogger.V(2).Info("EnsureL4BackendService started", "serviceKey", namespacedName, "scheme", scheme, "protocol", protocol, "sessionAffinity", sessionAffinity, "network", network.NetworkURL, "subnetwork", network.SubnetworkURL)
+	beLogger = beLogger.WithValues("serviceKey", params.NamespacedName, "scheme", params.Scheme, "protocol", params.Protocol, "sessionAffinity", params.SessionAffinity, "network", params.NetworkInfo)
+	beLogger.V(2).Info("EnsureL4BackendService started")
 	defer func() {
-		beLogger.V(2).Info("EnsureL4BackendService finished", "protocol", protocol, "scheme", scheme, "serviceKey", namespacedName, "timeTaken", time.Since(start))
+		beLogger.V(2).Info("EnsureL4BackendService finished", "timeTaken", time.Since(start))
 	}()
 
-	beLogger.V(2).Info("EnsureL4BackendService: checking existing backend service", "protocol", protocol, "scheme", scheme, "serviceKey", namespacedName)
-	key, err := composite.CreateKey(b.cloud, name, meta.Regional)
+	beLogger.V(2).Info("EnsureL4BackendService: checking existing backend service")
+	key, err := composite.CreateKey(b.cloud, params.Name, meta.Regional)
 	if err != nil {
 		return nil, err
 	}
@@ -323,28 +335,28 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 	if err != nil && !utils.IsNotFoundError(err) {
 		return nil, err
 	}
-	desc, err := utils.MakeL4LBServiceDescription(namespacedName.String(), "", meta.VersionGA, false, utils.ILB)
+	desc, err := utils.MakeL4LBServiceDescription(params.NamespacedName.String(), "", meta.VersionGA, false, utils.ILB)
 	if err != nil {
 		beLogger.Info("EnsureL4BackendService: Failed to generate description for BackendService", "err", err)
 	}
 	expectedBS := &composite.BackendService{
-		Name:                name,
-		Protocol:            protocol,
+		Name:                params.Name,
+		Protocol:            params.Protocol,
 		Description:         desc,
-		HealthChecks:        []string{hcLink},
-		SessionAffinity:     utils.TranslateAffinityType(sessionAffinity, beLogger),
-		LoadBalancingScheme: scheme,
+		HealthChecks:        []string{params.HealthCheckLink},
+		SessionAffinity:     utils.TranslateAffinityType(params.SessionAffinity, beLogger),
+		LoadBalancingScheme: params.Scheme,
 	}
 	// We need this configuration only for Strong Session Affinity feature
 	if b.useConnectionTrackingPolicy {
-		beLogger.V(2).Info(fmt.Sprintf("EnsureL4BackendService: using connection tracking policy: %+v", connectionTrackingPolicy), "serviceKey", namespacedName)
-		expectedBS.ConnectionTrackingPolicy = connectionTrackingPolicy
+		beLogger.V(2).Info(fmt.Sprintf("EnsureL4BackendService: using connection tracking policy: %+v", params.ConnectionTrackingPolicy), "serviceKey", params.NamespacedName)
+		expectedBS.ConnectionTrackingPolicy = params.ConnectionTrackingPolicy
 	}
-	if !network.IsDefault {
-		beLogger.V(2).Info(fmt.Sprintf("EnsureL4BackendService: using non-default network: %+v", network), "serviceKey", namespacedName)
-		expectedBS.Network = network.NetworkURL
+	if params.NetworkInfo != nil && !params.NetworkInfo.IsDefault {
+		beLogger.V(2).Info(fmt.Sprintf("EnsureL4BackendService: using non-default network: %+v", params.NetworkInfo))
+		expectedBS.Network = params.NetworkInfo.NetworkURL
 	}
-	if protocol == string(api_v1.ProtocolTCP) {
+	if params.Protocol == string(api_v1.ProtocolTCP) {
 		expectedBS.ConnectionDraining = &composite.ConnectionDraining{DrainingTimeoutSec: DefaultConnectionDrainingTimeoutSeconds}
 	} else {
 		// This config is not supported in UDP mode, explicitly set to 0 to reset, if proto was TCP previously.
@@ -353,12 +365,12 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 
 	// Create backend service if none was found
 	if bs == nil {
-		beLogger.V(2).Info("EnsureL4BackendService: creating backend service", "protocol", protocol, "scheme", scheme, "serviceKey", namespacedName)
+		beLogger.V(2).Info("EnsureL4BackendService: creating backend service")
 		err := composite.CreateBackendService(b.cloud, key, expectedBS, beLogger)
 		if err != nil {
 			return nil, err
 		}
-		beLogger.V(2).Info("EnsureL4BackendService: created backend service successfully", "protocol", protocol, "scheme", scheme, "serviceKey", namespacedName)
+		beLogger.V(2).Info("EnsureL4BackendService: created backend service successfully")
 		// We need to perform a GCE call to re-fetch the object we just created
 		// so that the "Fingerprint" field is filled in. This is needed to update the
 		// object without error. The lookup is also needed to populate the selfLink.
@@ -366,14 +378,14 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 	}
 
 	if backendSvcEqual(expectedBS, bs, b.useConnectionTrackingPolicy) {
-		beLogger.V(2).Info("EnsureL4BackendService: backend service did not change, skipping update", "protocol", protocol, "scheme", scheme, "serviceKey", namespacedName)
+		beLogger.V(2).Info("EnsureL4BackendService: backend service did not change, skipping update")
 		return bs, nil
 	}
-	if bs.ConnectionDraining != nil && bs.ConnectionDraining.DrainingTimeoutSec > 0 && protocol == string(api_v1.ProtocolTCP) {
+	if bs.ConnectionDraining != nil && bs.ConnectionDraining.DrainingTimeoutSec > 0 && params.Protocol == string(api_v1.ProtocolTCP) {
 		// only preserves user overridden timeout value when the protocol is TCP
 		expectedBS.ConnectionDraining.DrainingTimeoutSec = bs.ConnectionDraining.DrainingTimeoutSec
 	}
-	beLogger.V(2).Info("EnsureL4BackendService: updating backend service", "protocol", protocol, "scheme", scheme, "serviceKey", namespacedName)
+	beLogger.V(2).Info("EnsureL4BackendService: updating backend service")
 	// Set fingerprint for optimistic locking
 	expectedBS.Fingerprint = bs.Fingerprint
 	// Copy backends to avoid detaching them during update. This could be replaced with a patch call in the future.
@@ -381,7 +393,7 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 	if err := composite.UpdateBackendService(b.cloud, key, expectedBS, beLogger); err != nil {
 		return nil, err
 	}
-	beLogger.V(2).Info("EnsureL4BackendService: updated backend service successfully", "protocol", protocol, "scheme", scheme, "serviceKey", namespacedName)
+	beLogger.V(2).Info("EnsureL4BackendService: updated backend service successfully")
 
 	return composite.GetBackendService(b.cloud, key, meta.VersionGA, beLogger)
 }

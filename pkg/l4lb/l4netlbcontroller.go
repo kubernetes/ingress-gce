@@ -129,7 +129,7 @@ func NewL4NetLBController(
 			if shouldProcess, _ := l4netLBc.shouldProcessService(addSvc, nil, svcLogger); shouldProcess {
 				svcLogger.V(3).Info("L4 External LoadBalancer Service added, enqueuing")
 				l4netLBc.ctx.Recorder(addSvc.Namespace).Eventf(addSvc, v1.EventTypeNormal, "ADD", svcKey)
-				l4netLBc.serviceVersions.SetLastUpdateSeen(svcKey, addSvc.ResourceVersion, logger)
+				l4netLBc.serviceVersions.SetLastUpdateSeen(svcKey, addSvc.ResourceVersion, svcLogger)
 				l4netLBc.svcQueue.Enqueue(addSvc)
 				l4netLBc.enqueueTracker.Track()
 			} else {
@@ -145,7 +145,7 @@ func NewL4NetLBController(
 			if shouldProcess, isResync := l4netLBc.shouldProcessService(curSvc, oldSvc, svcLogger); shouldProcess {
 				svcLogger.V(3).Info("L4 External LoadBalancer Service updated, enqueuing")
 				if !isResync {
-					l4netLBc.serviceVersions.SetLastUpdateSeen(svcKey, curSvc.ResourceVersion, logger)
+					l4netLBc.serviceVersions.SetLastUpdateSeen(svcKey, curSvc.ResourceVersion, svcLogger)
 				}
 				l4netLBc.svcQueue.Enqueue(curSvc)
 				l4netLBc.enqueueTracker.Track()

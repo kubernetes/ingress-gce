@@ -63,22 +63,21 @@ func mergeAnnotations(existing, lbAnnotations map[string]string, keysToRemove []
 	return existing
 }
 
-func deleteAnnotation(ctx *context.ControllerContext, svc *v1.Service, annotationKey string, logger klog.Logger) error {
+func deleteAnnotation(ctx *context.ControllerContext, svc *v1.Service, annotationKey string, svcLogger klog.Logger) error {
 	newObjectMeta := svc.ObjectMeta.DeepCopy()
 	if _, ok := newObjectMeta.Annotations[annotationKey]; !ok {
 		return nil
 	}
-
-	logger.V(3).Info("Removing annotation from service", "annotationKey", annotationKey, "serviceKey", klog.KRef(svc.Namespace, svc.Name))
+	svcLogger.V(3).Info("Removing annotation from service", "annotationKey", annotationKey)
 	delete(newObjectMeta.Annotations, annotationKey)
 	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
 }
 
 // updateServiceStatus this faction checks if LoadBalancer status changed and patch service if needed.
-func updateServiceInformation(ctx *context.ControllerContext, enableDualStack bool, svc *v1.Service, newStatus *v1.LoadBalancerStatus, newL4LBAnnotations map[string]string, logger klog.Logger) error {
-	logger.V(2).Info("Updating service status", "serviceKey", klog.KRef(svc.Namespace, svc.Name), "newStatus", fmt.Sprintf("%+v", newStatus))
+func updateServiceInformation(ctx *context.ControllerContext, enableDualStack bool, svc *v1.Service, newStatus *v1.LoadBalancerStatus, newL4LBAnnotations map[string]string, svcLogger klog.Logger) error {
+	svcLogger.V(2).Info("Updating service status", "newStatus", fmt.Sprintf("%+v", newStatus))
 	if helpers.LoadBalancerStatusEqual(&svc.Status.LoadBalancer, newStatus) {
-		logger.V(2).Info("New and old statuses are equal, skipping patch", "serviceKey", klog.KRef(svc.Namespace, svc.Name))
+		svcLogger.V(2).Info("New and old statuses are equal, skipping patch")
 		return nil
 	}
 
