@@ -88,10 +88,10 @@ func updateServiceInformation(ctx *context.ControllerContext, enableDualStack bo
 	} else {
 		keysToRemove = loadbalancers.L4ResourceAnnotationKeys
 	}
-	logger.V(2).Info("Selected keysToRemove", "keysToRemove", keysToRemove)
+	svcLogger.V(2).Info("Selected keysToRemove", "keysToRemove", keysToRemove)
 
 	newObjectMeta := computeNewAnnotationsIfNeeded(svc, newL4LBAnnotations, keysToRemove)
-	logger.V(2).Info("Computed new service metadata", "newObjectMeta", newObjectMeta)
+	svcLogger.V(2).Info("Computed new service metadata", "newObjectMeta", newObjectMeta)
 
 	return patch.PatchServiceLoadBalancerInformation(ctx.KubeClient.CoreV1(), svc, *newStatus, *newObjectMeta)
 
