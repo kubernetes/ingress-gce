@@ -73,9 +73,9 @@ func deleteAnnotation(ctx *context.ControllerContext, svc *v1.Service, annotatio
 	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
 }
 
-// updateServiceStatus this faction checks if LoadBalancer status changed and patch service if needed.
+// updateServiceInformation this faction checks if LoadBalancer changed and patch service if needed.
 func updateServiceInformation(ctx *context.ControllerContext, enableDualStack bool, svc *v1.Service, newStatus *v1.LoadBalancerStatus, newL4LBAnnotations map[string]string, svcLogger klog.Logger) error {
-	svcLogger.V(2).Info("Updating service status", "serviceKey", klog.KRef(svc.Namespace, svc.Name), "newStatus", fmt.Sprintf("%+v", newStatus))
+	svcLogger.V(2).Info("Updating service status", "newStatus", fmt.Sprintf("%+v", newStatus))
 	if helpers.LoadBalancerStatusEqual(&svc.Status.LoadBalancer, newStatus) {
 		svcLogger.V(2).Info("New and old statuses are equal, skipping patch")
 		return nil
