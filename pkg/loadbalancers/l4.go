@@ -24,10 +24,10 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
-	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -109,6 +109,15 @@ type L4ILBParams struct {
 	DualStackEnabled bool
 	NetworkResolver  network.Resolver
 	EnableWeightedLB bool
+}
+
+// requestsOnlyLocalTraffic checks if service requests OnlyLocal traffic.
+func requestsOnlyLocalTraffic(service *v1.Service) bool {
+	if service.Spec.Type != v1.ServiceTypeLoadBalancer &&
+		service.Spec.Type != v1.ServiceTypeNodePort {
+		return false
+	}
+	return service.Spec.ExternalTrafficPolicy == v1.ServiceExternalTrafficPolicyLocal
 }
 
 // NewL4Handler creates a new L4Handler for the given L4 service.
@@ -528,7 +537,7 @@ func (l4 *L4) provideHealthChecks(nodeNames []string, result *L4ILBSyncResult) s
 }
 
 func (l4 *L4) provideDualStackHealthChecks(nodeNames []string, result *L4ILBSyncResult) string {
-	sharedHC := !helpers.RequestsOnlyLocalTraffic(l4.Service)
+	sharedHC := !requestsOnlyLocalTraffic(l4.Service)
 	hcResult := l4.healthChecks.EnsureHealthCheckWithDualStackFirewalls(l4.Service, l4.namer, sharedHC, meta.Global, utils.ILB, nodeNames, utils.NeedsIPv4(l4.Service), utils.NeedsIPv6(l4.Service), l4.network, l4.svcLogger)
 	if hcResult.Err != nil {
 		result.GCEResourceInError = hcResult.GceResourceInError
@@ -547,7 +556,7 @@ func (l4 *L4) provideDualStackHealthChecks(nodeNames []string, result *L4ILBSync
 }
 
 func (l4 *L4) provideIPv4HealthChecks(nodeNames []string, result *L4ILBSyncResult) string {
-	sharedHC := !helpers.RequestsOnlyLocalTraffic(l4.Service)
+	sharedHC := !requestsOnlyLocalTraffic(l4.Service)
 	hcResult := l4.healthChecks.EnsureHealthCheckWithFirewall(l4.Service, l4.namer, sharedHC, meta.Global, utils.ILB, nodeNames, l4.network, l4.svcLogger)
 	if hcResult.Err != nil {
 		result.GCEResourceInError = hcResult.GceResourceInError

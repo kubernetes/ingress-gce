@@ -24,7 +24,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
-	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/context"
 	l4metrics "k8s.io/ingress-gce/pkg/l4lb/metrics"
@@ -98,10 +97,37 @@ func deleteAnnotation(ctx *context.ControllerContext, svc *v1.Service, annotatio
 	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
 }
 
+// LoadBalancerStatusEqual checks if load balancer status are equal
+func loadBalancerStatusEqual(l, r *v1.LoadBalancerStatus) bool {
+	return ingressSliceEqual(l.Ingress, r.Ingress)
+}
+
+func ingressSliceEqual(lhs, rhs []v1.LoadBalancerIngress) bool {
+	if len(lhs) != len(rhs) {
+		return false
+	}
+	for i := range lhs {
+		if !ingressEqual(&lhs[i], &rhs[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func ingressEqual(lhs, rhs *v1.LoadBalancerIngress) bool {
+	if lhs.IP != rhs.IP {
+		return false
+	}
+	if lhs.Hostname != rhs.Hostname {
+		return false
+	}
+	return true
+}
+
 // updateServiceStatus this faction checks if LoadBalancer status changed and patch service if needed.
 func updateServiceStatus(ctx *context.ControllerContext, svc *v1.Service, newStatus *v1.LoadBalancerStatus, svcLogger klog.Logger) error {
 	svcLogger.V(2).Info("Updating service status", "newStatus", fmt.Sprintf("%+v", newStatus))
-	if helpers.LoadBalancerStatusEqual(&svc.Status.LoadBalancer, newStatus) {
+	if loadBalancerStatusEqual(&svc.Status.LoadBalancer, newStatus) {
 		svcLogger.V(2).Info("New and old statuses are equal, skipping patch")
 		return nil
 	}

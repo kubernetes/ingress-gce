@@ -33,7 +33,6 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
-	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/annotations"
 	svcnegv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/controller/translator"
@@ -108,6 +107,15 @@ type Controller struct {
 
 	stopCh <-chan struct{}
 	logger klog.Logger
+}
+
+// requestsOnlyLocalTraffic checks if service requests OnlyLocal traffic.
+func requestsOnlyLocalTraffic(service *apiv1.Service) bool {
+	if service.Spec.Type != apiv1.ServiceTypeLoadBalancer &&
+		service.Spec.Type != apiv1.ServiceTypeNodePort {
+		return false
+	}
+	return service.Spec.ExternalTrafficPolicy == apiv1.ServiceExternalTrafficPolicyLocal
 }
 
 // NewController returns a network endpoint group controller.
@@ -620,7 +628,7 @@ func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.Na
 		return nil
 	}
 
-	onlyLocal := helpers.RequestsOnlyLocalTraffic(service)
+	onlyLocal := requestsOnlyLocalTraffic(service)
 	// Update usage metrics.
 	negUsage.VmIpNeg = metricscollector.NewVmIpNegType(onlyLocal)
 
