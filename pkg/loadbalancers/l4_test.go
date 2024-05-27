@@ -42,7 +42,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
-	servicehelper "k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/test"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
@@ -297,7 +296,7 @@ func TestEnsureInternalLoadBalancerWithExistingResources(t *testing.T) {
 	lbName := l4.namer.L4Backend(svc.Namespace, svc.Name)
 
 	// Create the expected resources necessary for an Internal Load Balancer
-	sharedHC := !servicehelper.RequestsOnlyLocalTraffic(svc)
+	sharedHC := !requestsOnlyLocalTraffic(svc)
 	defaultNetwork := network.DefaultNetwork(fakeGCE)
 	hcResult := l4.healthChecks.EnsureHealthCheckWithFirewall(l4.Service, l4.namer, sharedHC, meta.Global, utils.ILB, []string{}, *defaultNetwork, klog.TODO())
 
@@ -390,7 +389,7 @@ func TestEnsureInternalLoadBalancerClearPreviousResources(t *testing.T) {
 		t.Errorf("fakeGCE.CreateFirewall(%v) returned error %v", existingFirewall, err)
 	}
 
-	sharedHealthCheck := !servicehelper.RequestsOnlyLocalTraffic(svc)
+	sharedHealthCheck := !requestsOnlyLocalTraffic(svc)
 	hcName := l4.namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHealthCheck)
 
 	// Create a healthcheck with an incomplete fields
@@ -576,7 +575,7 @@ func TestEnsureInternalLoadBalancerHealthCheckConfigurable(t *testing.T) {
 	if err != nil {
 		t.Errorf("Unexpected error when creating key - %v", err)
 	}
-	sharedHealthCheck := !servicehelper.RequestsOnlyLocalTraffic(svc)
+	sharedHealthCheck := !requestsOnlyLocalTraffic(svc)
 	hcName := l4.namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHealthCheck)
 
 	// Create a healthcheck with an incorrect threshold, default value is 8s.
@@ -2321,7 +2320,7 @@ func assertDualStackILBResourcesWithCustomSubnet(t *testing.T, l4 *L4, nodeNames
 }
 
 func buildExpectedAnnotations(l4 *L4) map[string]string {
-	isSharedHC := !servicehelper.RequestsOnlyLocalTraffic(l4.Service)
+	isSharedHC := !requestsOnlyLocalTraffic(l4.Service)
 	proto := utils.GetProtocol(l4.Service.Spec.Ports)
 
 	backendName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
@@ -2363,7 +2362,7 @@ func buildExpectedAnnotations(l4 *L4) map[string]string {
 }
 
 func getAndVerifyILBHealthCheck(l4 *L4) (*composite.HealthCheck, error) {
-	isSharedHC := !servicehelper.RequestsOnlyLocalTraffic(l4.Service)
+	isSharedHC := !requestsOnlyLocalTraffic(l4.Service)
 	hcName := l4.namer.L4HealthCheck(l4.Service.Namespace, l4.Service.Name, isSharedHC)
 
 	healthcheck, err := composite.GetHealthCheck(l4.cloud, meta.GlobalKey(hcName), meta.VersionGA, klog.TODO())
@@ -2495,7 +2494,7 @@ func verifyILBIPv6NodesFirewall(l4 *L4, nodeNames []string) error {
 }
 
 func verifyILBIPv4HealthCheckFirewall(l4 *L4, nodeNames []string) error {
-	isSharedHC := !servicehelper.RequestsOnlyLocalTraffic(l4.Service)
+	isSharedHC := !requestsOnlyLocalTraffic(l4.Service)
 
 	hcFwName := l4.namer.L4HealthCheckFirewall(l4.Service.Namespace, l4.Service.Name, isSharedHC)
 	hcFwDesc, err := utils.MakeL4LBFirewallDescription(utils.ServiceKeyFunc(l4.Service.Namespace, l4.Service.Name), "", meta.VersionGA, isSharedHC)
@@ -2507,7 +2506,7 @@ func verifyILBIPv4HealthCheckFirewall(l4 *L4, nodeNames []string) error {
 }
 
 func verifyILBIPv6HealthCheckFirewall(l4 *L4, nodeNames []string) error {
-	isSharedHC := !servicehelper.RequestsOnlyLocalTraffic(l4.Service)
+	isSharedHC := !requestsOnlyLocalTraffic(l4.Service)
 
 	ipv6hcFwName := l4.namer.L4IPv6HealthCheckFirewall(l4.Service.Namespace, l4.Service.Name, isSharedHC)
 	hcFwDesc, err := utils.MakeL4LBFirewallDescription(utils.ServiceKeyFunc(l4.Service.Namespace, l4.Service.Name), "", meta.VersionGA, isSharedHC)
