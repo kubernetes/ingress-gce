@@ -22,6 +22,8 @@ import (
 	"strings"
 	"time"
 
+	"k8s.io/klog/v2"
+
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/google/go-cmp/cmp"
@@ -33,6 +35,7 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -40,8 +43,8 @@ import (
 )
 
 const (
-	// maxL4ILBPorts is the maximum number of ports that can be specified in an L4 ILB Forwarding Rule
-	maxL4ILBPorts = 5
+	// maxForwardedPorts is the maximum number of ports that can be specified in an Forwarding Rule
+	maxForwardedPorts = 5
 	// addressAlreadyInUseMessageExternal is the error message string returned by the compute API
 	// when creating an external forwarding rule that uses a conflicting IP address.
 	addressAlreadyInUseMessageExternal = "Specified IP address is in-use and would result in a conflict."
@@ -245,7 +248,7 @@ func (l4 *L4) ensureIPv4ForwardingRule(bsLink string, options gce.ILBOptions, ex
 		AllowGlobalAccess:   options.AllowGlobalAccess,
 		Description:         frDesc,
 	}
-	if len(ports) > maxL4ILBPorts {
+	if len(ports) > maxForwardedPorts {
 		fr.Ports = nil
 		fr.AllPorts = true
 	}
@@ -345,8 +348,10 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 		}()
 	}
 
-	portRange, protocol := utils.MinMaxPortRangeAndProtocol(l4netlb.Service.Spec.Ports)
-
+	svcPorts := l4netlb.Service.Spec.Ports
+	ports := utils.GetPorts(svcPorts)
+	portRange := utils.MinMaxPortRange(svcPorts)
+	protocol := utils.GetProtocol(svcPorts)
 	serviceKey := utils.ServiceKeyFunc(l4netlb.Service.Namespace, l4netlb.Service.Name)
 	frDesc, err := utils.MakeL4LBServiceDescription(serviceKey, ipToUse, version, false, utils.XLB)
 	if err != nil {
@@ -357,11 +362,15 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 		Name:                frName,
 		Description:         frDesc,
 		IPAddress:           ipToUse,
-		IPProtocol:          protocol,
+		IPProtocol:          string(protocol),
 		PortRange:           portRange,
 		LoadBalancingScheme: string(cloud.SchemeExternal),
 		BackendService:      bsLink,
 		NetworkTier:         netTier.ToGCEValue(),
+	}
+	if len(ports) <= maxForwardedPorts && flags.F.EnableDiscretePortForwarding {
+		fr.Ports = ports
+		fr.PortRange = ""
 	}
 
 	if existingFwdRule != nil {
@@ -428,14 +437,31 @@ func Equal(fr1, fr2 *composite.ForwardingRule) (bool, error) {
 	return fr1.IPAddress == fr2.IPAddress &&
 		fr1.IPProtocol == fr2.IPProtocol &&
 		fr1.LoadBalancingScheme == fr2.LoadBalancingScheme &&
-		utils.EqualStringSets(fr1.Ports, fr2.Ports) &&
-		fr1.PortRange == fr2.PortRange &&
+		equalPorts(fr1.Ports, fr2.Ports, fr1.PortRange, fr2.PortRange) &&
 		utils.EqualCloudResourceIDs(id1, id2) &&
 		fr1.AllowGlobalAccess == fr2.AllowGlobalAccess &&
 		fr1.AllPorts == fr2.AllPorts &&
 		equalResourcePaths(fr1.Subnetwork, fr2.Subnetwork) &&
 		equalResourcePaths(fr1.Network, fr2.Network) &&
 		fr1.NetworkTier == fr2.NetworkTier, nil
+}
+
+// equalPorts compares two port ranges or slices of ports. Before comparison,
+// slices of ports are converted into a port range from smallest to largest
+// port. This is done so we don't unnecessarily recreate forwarding rules
+// when upgrading from port ranges to distinct ports, because recreating
+// forwarding rules is traffic impacting.
+func equalPorts(ports1, ports2 []string, portRange1, portRange2 string) bool {
+	if !flags.F.EnableDiscretePortForwarding {
+		return utils.EqualStringSets(ports1, ports2) && portRange1 == portRange2
+	}
+	if len(ports1) != 0 && portRange1 == "" {
+		portRange1 = utils.MinMaxPortRange(ports1)
+	}
+	if len(ports2) != 0 && portRange2 == "" {
+		portRange2 = utils.MinMaxPortRange(ports2)
+	}
+	return portRange1 == portRange2
 }
 
 func equalResourcePaths(rp1, rp2 string) bool {
