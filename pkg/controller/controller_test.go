@@ -19,13 +19,14 @@ package controller
 import (
 	context2 "context"
 	"fmt"
-	"k8s.io/klog/v2"
 	"net/http"
 	"reflect"
 	"sort"
 	"strings"
 	"testing"
 	"time"
+
+	"k8s.io/klog/v2"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -54,6 +55,8 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 )
 
+const defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/default"
+
 var (
 	nodePortCounter = 30000
 	clusterUID      = "aaaaa"
@@ -66,7 +69,7 @@ func newLoadBalancerController() *LoadBalancerController {
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	nodeInformer := zonegetter.FakeNodeInformer()
-	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
 	zonegetter.AddFakeNodes(fakeZoneGetter, fakeZone, "test-node")
 
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockGlobalForwardingRules.InsertHook = loadbalancers.InsertGlobalForwardingRuleHook
@@ -359,6 +362,7 @@ func TestIngressClassChangeWithFinalizer(t *testing.T) {
 	defer flagSaver.Reset(test.FinalizerRemoveFlag, &flags.F.FinalizerRemove)
 	flags.F.FinalizerAdd = true
 	flags.F.FinalizerRemove = true
+	flags.F.EnableIngressGlobalExternal = true
 	lbc := newLoadBalancerController()
 	svc := test.NewService(types.NamespacedName{Name: "my-service", Namespace: "default"}, api_v1.ServiceSpec{
 		Type:  api_v1.ServiceTypeNodePort,

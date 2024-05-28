@@ -17,13 +17,16 @@ limitations under the License.
 package loadbalancers
 
 import (
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -109,7 +112,7 @@ func (l7 *L7) checkHttpsProxy() (err error) {
 	isL7ILB := utils.IsGCEL7ILBIngress(l7.runtimeInfo.Ingress)
 	isL7XLBRegional := utils.IsGCEL7XLBRegionalIngress(l7.runtimeInfo.Ingress)
 	tr := translator.NewTranslator(isL7ILB, isL7XLBRegional, l7.namer)
-	env := &translator.Env{FrontendConfig: l7.runtimeInfo.FrontendConfig}
+	env := &translator.Env{FrontendConfig: l7.runtimeInfo.FrontendConfig, Region: l7.cloud.Region()}
 
 	if len(l7.sslCerts) == 0 {
 		l7.logger.V(2).Info("No SSL certificates for load-balancer, will not create HTTPS Proxy.", "l7", l7)
@@ -214,15 +217,38 @@ func (l7 *L7) getSslCertLinkInUse() ([]string, error) {
 // ensureSslPolicy ensures that the SslPolicy described in the frontendconfig is
 // properly applied to the proxy.
 func (l7 *L7) ensureSslPolicy(env *translator.Env, currentProxy *composite.TargetHttpsProxy, policyLink string) error {
-	if !utils.EqualResourceIDs(policyLink, currentProxy.SslPolicy) {
+	if !utils.EqualResourcePaths(policyLink, currentProxy.SslPolicy) {
+		l7.logger.Info("ensureSslPolicy", "newPolicyLink", policyLink, "currentPolicyLink", currentProxy.SslPolicy)
 		key, err := l7.CreateKey(currentProxy.Name)
 		if err != nil {
 			return err
 		}
-		if err := composite.SetSslPolicyForTargetHttpsProxy(l7.cloud, key, currentProxy, policyLink, l7.logger); err != nil {
-			l7.recorder.Eventf(l7.runtimeInfo.Ingress, corev1.EventTypeNormal, events.SyncIngress, "TargetProxy %q SSLPolicy updated", key.Name)
-			return err
+		if l7.scope == meta.Regional {
+			if err := ensureRegionalSslPolicy(l7.cloud, key, currentProxy, policyLink, l7.logger); err != nil {
+				l7.recorder.Eventf(l7.runtimeInfo.Ingress, corev1.EventTypeNormal, events.SyncIngress, "Regional TargetHttpsProxy %q SSLPolicy updated", key.Name)
+				return err
+			}
+		} else {
+			if err := composite.SetSslPolicyForTargetHttpsProxy(l7.cloud, key, currentProxy, policyLink, l7.logger); err != nil {
+				l7.recorder.Eventf(l7.runtimeInfo.Ingress, corev1.EventTypeNormal, events.SyncIngress, "TargetProxy %q SSLPolicy updated", key.Name)
+				return err
+			}
 		}
 	}
 	return nil
+}
+
+// ensureRegionalSslPolicy updates sslPolicy for regional HTTPs Proxy.
+// Regional HTTPs Proxies do not support setSslPolicy, and require using patch
+// method.
+func ensureRegionalSslPolicy(cloud *gce.Cloud, key *meta.Key, currentProxy *composite.TargetHttpsProxy, policyLink string, ingLogger klog.Logger) error {
+	ingLogger.Info("Ensuring regional ssl policy", "policyLink", policyLink)
+	patchProxy := &composite.TargetHttpsProxy{
+		Fingerprint: currentProxy.Fingerprint,
+		SslPolicy:   policyLink,
+	}
+	if policyLink == "" {
+		patchProxy.NullFields = []string{"SslPolicy"}
+	}
+	return composite.PatchRegionalTargetHttpsProxy(cloud, key, patchProxy, ingLogger)
 }

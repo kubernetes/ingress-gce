@@ -127,7 +127,10 @@ var (
 		EnableFirewallCR                         bool
 		DisableFWEnforcement                     bool
 		EnableIngressRegionalExternal            bool
-		DisableIngressGlobalExternal             bool
+		EnableIngressGlobalExternal              bool
+		OverrideComputeAPIEndpoint               string
+		EnableIGMultiSubnetCluster               bool
+		EnableMultiSubnetCluster                 bool
 	}{
 		GCERateLimitScale: 1.0,
 	}
@@ -303,7 +306,10 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableFirewallCR, "enable-firewall-cr", false, "Enable generating firewall CR")
 	flag.BoolVar(&F.DisableFWEnforcement, "disable-fw-enforcement", false, "Disable Ingress controller to enforce the firewall rules. If set to true, Ingress Controller stops creating GCE firewall rules. We can only enable this if enable-firewall-cr sets to true.")
 	flag.BoolVar(&F.EnableIngressRegionalExternal, "enable-ingress-regional-external", false, "Enable L7 Ingress Regional External.")
-	flag.BoolVar(&F.DisableIngressGlobalExternal, "disable-ingress-global-external", false, "Disable L7 Ingress Global External. Should be used when Regional External is enabled.")
+	flag.BoolVar(&F.EnableIngressGlobalExternal, "enable-ingress-global-external", true, "Enable L7 Ingress Global External. Should be disabled when Regional External is enabled.")
+	flag.StringVar(&F.OverrideComputeAPIEndpoint, "override-compute-api-endpoint", "", "Override endpoint that is used to communicate to GCP compute APIs.")
+	flag.BoolVar(&F.EnableIGMultiSubnetCluster, "enable-ig-multi-subnet-cluster", false, "Enable Multi Subnet support for the controllers that use Instance Group backends.")
+	flag.BoolVar(&F.EnableMultiSubnetCluster, "enable-multi-subnet-cluster", false, "Enable Multi Subnet support for all controllers that are running.")
 }
 
 func Validate() {

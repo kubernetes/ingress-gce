@@ -238,7 +238,7 @@ func (s *FlagSaver) Reset(key flag, flagPointer *bool) {
 func CreateAndInsertNodes(gce *gce.Cloud, nodeNames []string, zoneName string) ([]*api_v1.Node, error) {
 	nodes := []*api_v1.Node{}
 
-	for _, name := range nodeNames {
+	for i, name := range nodeNames {
 		// Inserting the same node name twice causes an error - here we check if
 		// the instance exists already before insertion.
 		exists, err := GCEInstanceExists(name, gce)
@@ -273,6 +273,8 @@ func CreateAndInsertNodes(gce *gce.Cloud, nodeNames []string, zoneName string) (
 				},
 				Spec: api_v1.NodeSpec{
 					ProviderID: fmt.Sprintf("gce://foo-project/%s/%s", zoneName, name),
+					PodCIDR:    fmt.Sprintf("10.100.%d.0/24", i),
+					PodCIDRs:   []string{fmt.Sprintf("10.100.%d.0/24", i)},
 				},
 				Status: api_v1.NodeStatus{
 					NodeInfo: api_v1.NodeSystemInfo{
@@ -530,6 +532,11 @@ func FakeGoogleAPIConflictErr() *googleapi.Error {
 // FakeGoogleAPIRequestEntityTooLargeError creates a StatusRequestEntityTooLarge error with type googleapi.Error
 func FakeGoogleAPIRequestEntityTooLargeError() *googleapi.Error {
 	return &googleapi.Error{Code: http.StatusRequestEntityTooLarge}
+}
+
+// FakeGoogleAPIRequestServerError creates a StatusInternalServerError error with type googleapi.Error
+func FakeGoogleAPIRequestServerError() *googleapi.Error {
+	return &googleapi.Error{Code: http.StatusInternalServerError}
 }
 
 func InstancesListToNameSet(instancesList []*compute.InstanceWithNamedPorts) (sets.String, error) {

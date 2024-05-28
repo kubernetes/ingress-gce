@@ -46,6 +46,8 @@ import (
 	"k8s.io/klog/v2"
 )
 
+const defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/default"
+
 func TestEncodeDecodeEndpoint(t *testing.T) {
 	ip := "10.0.0.10"
 	instance := "somehost"
@@ -493,7 +495,7 @@ func TestToZoneNetworkEndpointMap(t *testing.T) {
 	t.Parallel()
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer)
-	zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
 	podLister := negtypes.NewTestContext().PodInformer.GetIndexer()
 	testEndpointSlice := getDefaultEndpointSlices()
 	addPodsToLister(podLister, testEndpointSlice)
@@ -744,369 +746,10 @@ func TestIpsForPod(t *testing.T) {
 	}
 }
 
-// TestValidateEndpointFields validates if toZoneNetworkEndpointMap
-// returns correct type of error with invalid endpoint information
-func TestValidateEndpointFields(t *testing.T) {
-	t.Parallel()
-	nodeInformer := zonegetter.FakeNodeInformer()
-	zonegetter.PopulateFakeNodeInformer(nodeInformer)
-	zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
-	podLister := negtypes.NewTestContext().PodInformer.GetIndexer()
-	addPodsToLister(podLister, getDefaultEndpointSlices())
-
-	instance1 := negtypes.TestInstance1
-	instance3 := negtypes.TestInstance3
-	instanceNotExist := "non-existent-node"
-	emptyZoneInstance := "empty-zone-instance"
-	zonegetter.AddFakeNodes(zoneGetter, "", emptyZoneInstance)
-
-	emptyNamedPort := ""
-	emptyNodeName := ""
-	port80 := int32(80)
-	protocolTCP := v1.ProtocolTCP
-
-	testCases := []struct {
-		desc              string
-		testEndpointSlice []*discovery.EndpointSlice
-		expectSets        map[string]negtypes.NetworkEndpointSet
-		expectMap         negtypes.EndpointPodMap
-		expectErr         error
-	}{
-		{
-			desc: "endpoints no missing or invalid fields",
-			testEndpointSlice: []*discovery.EndpointSlice{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      testServiceName + "-1",
-						Namespace: testServiceNamespace,
-						Labels: map[string]string{
-							discovery.LabelServiceName: testServiceName,
-						},
-					},
-					AddressType: "IPv4",
-					Endpoints: []discovery.Endpoint{
-						{
-							Addresses: []string{"10.100.1.1"},
-							NodeName:  &instance1,
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      "pod1",
-							},
-						},
-						{
-							Addresses: []string{"10.100.3.1"},
-							NodeName:  &instance3,
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      "pod4",
-							},
-						},
-					},
-					Ports: []discovery.EndpointPort{
-						{
-							Name:     &emptyNamedPort,
-							Port:     &port80,
-							Protocol: &protocolTCP,
-						},
-					},
-				},
-			},
-			expectSets: map[string]negtypes.NetworkEndpointSet{
-				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
-					networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80")),
-				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
-					networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80")),
-			},
-			expectMap: negtypes.EndpointPodMap{
-				networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod1"},
-				networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod4"},
-			},
-			expectErr: nil,
-		},
-		{
-			desc: "include one endpoint that has missing nodeName",
-			testEndpointSlice: []*discovery.EndpointSlice{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      testServiceName + "-1",
-						Namespace: testServiceNamespace,
-						Labels: map[string]string{
-							discovery.LabelServiceName: testServiceName,
-						},
-					},
-					AddressType: "IPv4",
-					Endpoints: []discovery.Endpoint{
-						{
-							Addresses: []string{"10.100.1.1"},
-							NodeName:  nil, // endpoint with missing nodeName
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      "pod1",
-							},
-						},
-						{
-							Addresses: []string{"10.100.3.1"},
-							NodeName:  &instance3,
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      "pod4",
-							},
-						},
-					},
-					Ports: []discovery.EndpointPort{
-						{
-							Name:     &emptyNamedPort,
-							Port:     &port80,
-							Protocol: &protocolTCP,
-						},
-					},
-				},
-			},
-			expectSets: nil,
-			expectMap:  nil,
-			expectErr:  negtypes.ErrEPNodeMissing,
-		},
-		{
-			desc: "include one endpoint that has empty nodeName",
-			testEndpointSlice: []*discovery.EndpointSlice{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      testServiceName + "-1",
-						Namespace: testServiceNamespace,
-						Labels: map[string]string{
-							discovery.LabelServiceName: testServiceName,
-						},
-					},
-					AddressType: "IPv4",
-					Endpoints: []discovery.Endpoint{
-						{
-							Addresses: []string{"10.100.1.1"},
-							NodeName:  &emptyNodeName,
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      "pod1",
-							},
-						},
-						{
-							Addresses: []string{"10.100.3.1"},
-							NodeName:  &instance3,
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      "pod4",
-							},
-						},
-					},
-					Ports: []discovery.EndpointPort{
-						{
-							Name:     &emptyNamedPort,
-							Port:     &port80,
-							Protocol: &protocolTCP,
-						},
-					},
-				},
-			},
-			expectSets: nil,
-			expectMap:  nil,
-			expectErr:  negtypes.ErrEPNodeMissing,
-		},
-		{
-			desc: "include one endpoint that has missing pod",
-			testEndpointSlice: []*discovery.EndpointSlice{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      testServiceName + "-1",
-						Namespace: testServiceNamespace,
-						Labels: map[string]string{
-							discovery.LabelServiceName: testServiceName,
-						},
-					},
-					AddressType: "IPv4",
-					Endpoints: []discovery.Endpoint{
-						{
-							Addresses: []string{"10.100.1.1"},
-							NodeName:  &instance1,
-							TargetRef: nil,
-						},
-						{
-							Addresses: []string{"10.100.3.1"},
-							NodeName:  &instance3,
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      "pod4",
-							},
-						},
-					},
-					Ports: []discovery.EndpointPort{
-						{
-							Name:     &emptyNamedPort,
-							Port:     &port80,
-							Protocol: &protocolTCP,
-						},
-					},
-				},
-			},
-			expectSets: map[string]negtypes.NetworkEndpointSet{
-				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
-					networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80")),
-			},
-			expectMap: negtypes.EndpointPodMap{
-				networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod4"},
-			},
-			expectErr: nil,
-		},
-		{
-			desc: "include one endpoint that does not correspond to an existing pod",
-			testEndpointSlice: []*discovery.EndpointSlice{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      testServiceName + "-1",
-						Namespace: testServiceNamespace,
-						Labels: map[string]string{
-							discovery.LabelServiceName: testServiceName,
-						},
-					},
-					AddressType: "IPv4",
-					Endpoints: []discovery.Endpoint{
-						{
-							Addresses: []string{"10.100.1.1"},
-							NodeName:  &instance1,
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      "foo", // this is a non-existing pod
-							},
-						},
-						{
-							Addresses: []string{"10.100.3.1"},
-							NodeName:  &instance3,
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      "pod4",
-							},
-						},
-					},
-					Ports: []discovery.EndpointPort{
-						{
-							Name:     &emptyNamedPort,
-							Port:     &port80,
-							Protocol: &protocolTCP,
-						},
-					},
-				},
-			},
-			expectSets: map[string]negtypes.NetworkEndpointSet{
-				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
-					networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80")),
-			},
-			expectMap: negtypes.EndpointPodMap{
-				networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod4"},
-			},
-			expectErr: nil,
-		},
-		{
-			desc: "include one endpoint that does not correspond to an existing node",
-			testEndpointSlice: []*discovery.EndpointSlice{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      testServiceName + "-1",
-						Namespace: testServiceNamespace,
-						Labels: map[string]string{
-							discovery.LabelServiceName: testServiceName,
-						},
-					},
-					AddressType: "IPv4",
-					Endpoints: []discovery.Endpoint{
-						{
-							Addresses: []string{"10.100.1.1"},
-							NodeName:  &instanceNotExist,
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      "pod1",
-							},
-						},
-						{
-							Addresses: []string{"10.100.3.1"},
-							NodeName:  &instance3,
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      "pod4",
-							},
-						},
-					},
-					Ports: []discovery.EndpointPort{
-						{
-							Name:     &emptyNamedPort,
-							Port:     &port80,
-							Protocol: &protocolTCP,
-						},
-					},
-				},
-			},
-			expectSets: nil,
-			expectMap:  nil,
-			expectErr:  negtypes.ErrEPNodeNotFound,
-		},
-		{
-			desc: "include one endpoint that corresponds to an empty zone",
-			testEndpointSlice: []*discovery.EndpointSlice{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      testServiceName + "-1",
-						Namespace: testServiceNamespace,
-						Labels: map[string]string{
-							discovery.LabelServiceName: testServiceName,
-						},
-					},
-					AddressType: "IPv4",
-					Endpoints: []discovery.Endpoint{
-						{
-							Addresses: []string{"10.100.1.1"},
-							NodeName:  &emptyZoneInstance,
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      "pod1",
-							},
-						},
-						{
-							Addresses: []string{"10.100.3.1"},
-							NodeName:  &instance3,
-							TargetRef: &v1.ObjectReference{
-								Namespace: testServiceNamespace,
-								Name:      "pod4",
-							},
-						},
-					},
-					Ports: []discovery.EndpointPort{
-						{
-							Name:     &emptyNamedPort,
-							Port:     &port80,
-							Protocol: &protocolTCP,
-						},
-					},
-				},
-			},
-			expectSets: nil,
-			expectMap:  nil,
-			expectErr:  negtypes.ErrEPZoneMissing,
-		},
-	}
-	for _, tc := range testCases {
-		result, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlice), zoneGetter, podLister, "", negtypes.VmIpPortEndpointType, false, klog.TODO())
-		if !errors.Is(err, tc.expectErr) {
-			t.Errorf("For case %q, expect %v error, but got %v.", tc.desc, tc.expectErr, err)
-		}
-		if !reflect.DeepEqual(result.NetworkEndpointSet, tc.expectSets) {
-			t.Errorf("For case %q, expecting endpoint set %v, but got %v.", tc.desc, tc.expectSets, result.NetworkEndpointSet)
-		}
-		if !reflect.DeepEqual(result.EndpointPodMap, tc.expectMap) {
-			t.Errorf("For case %q, expecting endpoint map %v, but got %v.", tc.desc, tc.expectMap, result.EndpointPodMap)
-		}
-	}
-}
-
 func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer)
-	zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
 	negCloud := negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
 	negName := "test-neg-name"
 	irrelevantNegName := "irrelevant"
@@ -1922,7 +1565,7 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer)
-	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
 	testContext := negtypes.NewTestContext()
 	podLister := testContext.PodInformer.GetIndexer()
 	addPodsToLister(podLister, getDefaultEndpointSlices())
@@ -2058,7 +1701,10 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 	}
 }
 
-func TestDegradedModeValidateEndpointInfo(t *testing.T) {
+// TestValidateEndpointFields validates if toZoneNetworkEndpointMap
+// and toZoneNetworkEndpointMapDegradedMode return the correct endpoints and
+// correct type of error with the supplied invalid endpoint information.
+func TestValidateEndpointFields(t *testing.T) {
 	t.Parallel()
 	emptyNamedPort := ""
 	emptyNodeName := ""
@@ -2068,48 +1714,36 @@ func TestDegradedModeValidateEndpointInfo(t *testing.T) {
 	instance2 := negtypes.TestInstance2
 	instance3 := negtypes.TestInstance3
 	instance4 := negtypes.TestInstance4
-	nodeInformer := zonegetter.FakeNodeInformer()
-	zonegetter.PopulateFakeNodeInformer(nodeInformer)
-	fakeZoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	emptyZoneInstance := negtypes.TestEmptyZoneInstance
+	emptyZonePod := "empty-zone-pod" // This should map to emptyZoneInstance.
+	notExistInstance := negtypes.TestNotExistInstance
+
 	testContext := negtypes.NewTestContext()
 	podLister := testContext.PodInformer.GetIndexer()
 	addPodsToLister(podLister, getDefaultEndpointSlices())
-
 	nodeLister := testContext.NodeInformer.GetIndexer()
-	nodeLister.Add(&v1.Node{
+	zonegetter.PopulateFakeNodeInformer(testContext.NodeInformer)
+	fakeZoneGetter := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, defaultTestSubnetURL, false)
+
+	// Add the pod that corresponds to empty zone instance.
+	podLister.Add(&v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: instance1,
+			Namespace: testServiceNamespace,
+			Name:      emptyZonePod,
+			Labels: map[string]string{
+				discovery.LabelServiceName: testServiceName,
+				discovery.LabelManagedBy:   managedByEPSControllerValue,
+			},
 		},
-		Spec: v1.NodeSpec{
-			PodCIDR:  "10.100.1.0/24",
-			PodCIDRs: []string{"a:b::/48", "10.100.1.0/24"},
+		Spec: v1.PodSpec{
+			NodeName: emptyZoneInstance,
 		},
-	})
-	nodeLister.Add(&v1.Node{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: instance2,
-		},
-		Spec: v1.NodeSpec{
-			PodCIDR:  "10.100.2.0/24",
-			PodCIDRs: []string{"a:b::/48", "10.100.2.0/24"},
-		},
-	})
-	nodeLister.Add(&v1.Node{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: instance3,
-		},
-		Spec: v1.NodeSpec{
-			PodCIDR:  "10.100.3.0/24",
-			PodCIDRs: []string{"a:b::/48", "10.100.3.0/24"},
-		},
-	})
-	nodeLister.Add(&v1.Node{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: instance4,
-		},
-		Spec: v1.NodeSpec{
-			PodCIDR:  "10.100.4.0/24",
-			PodCIDRs: []string{"a:b::/48", "10.100.4.0/24"},
+		Status: v1.PodStatus{
+			Phase: v1.PodRunning,
+			PodIP: "10.100.5.1",
+			PodIPs: []v1.PodIP{
+				{IP: "10.100.5.1"},
+			},
 		},
 	})
 
@@ -2127,6 +1761,7 @@ func TestDegradedModeValidateEndpointInfo(t *testing.T) {
 		},
 	})
 
+	// endpointMap and podMap contain all correct endpoints.
 	endpointMap := map[string]negtypes.NetworkEndpointSet{
 		negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
 			negtypes.NetworkEndpoint{IP: "10.100.1.1", Node: instance1, Port: "80"},
@@ -2138,19 +1773,83 @@ func TestDegradedModeValidateEndpointInfo(t *testing.T) {
 		negtypes.NetworkEndpoint{IP: "10.100.1.2", Node: instance1, Port: "80"}: types.NamespacedName{Namespace: testServiceNamespace, Name: "pod2"},
 	}
 
+	// endpointMapExcluded and podMapExcluded only includes valid endpoints.
+	// In normal mode, we exclude the specific endpoint for cases where an endpoint's pod information is invalid, including:
+	//	1. endpoint has an empty targetRef
+	//  2. endpoint's corresponding pod does not exist
+	//  3. endpoint corresponds to an object that fails pod type assertion
+	//
+	// In degraded mode, we should exclude the invalid endpoint for non-coverable cases(pod invalid or empty zone).
+	// We always inject to first endpoint, so the result only contain the second endpoint.
+	endpointMapExcluded := map[string]negtypes.NetworkEndpointSet{
+		negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+			negtypes.NetworkEndpoint{IP: "10.100.1.2", Node: instance1, Port: "80"},
+		),
+	}
+	podMapExcluded := negtypes.EndpointPodMap{
+		negtypes.NetworkEndpoint{IP: "10.100.1.2", Node: instance1, Port: "80"}: types.NamespacedName{Namespace: testServiceNamespace, Name: "pod2"},
+	}
+
 	testCases := []struct {
-		desc                string
-		testEndpointSlices  []*discovery.EndpointSlice
-		endpointType        negtypes.NetworkEndpointType
-		expectedEndpointMap map[string]negtypes.NetworkEndpointSet
-		expectedPodMap      negtypes.EndpointPodMap
+		desc                            string
+		testEndpointSlices              []*discovery.EndpointSlice
+		expectedEndpointMap             map[string]negtypes.NetworkEndpointSet
+		expectedPodMap                  negtypes.EndpointPodMap
+		expectErr                       error
+		expectedEndpointMapDegradedMode map[string]negtypes.NetworkEndpointSet
+		expectedPodMapDegradedMode      negtypes.EndpointPodMap
 	}{
 		{
-			desc: "contains one endpoint without nodeName, nodeName should be filled",
+			desc: "endpoints with no errors, both calculations should have all endpoints",
 			testEndpointSlices: []*discovery.EndpointSlice{
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      testServiceName + "-1",
+						Name:      testServiceName,
+						Namespace: testServiceNamespace,
+						Labels: map[string]string{
+							discovery.LabelServiceName: testServiceName,
+						},
+					},
+					AddressType: "IPv4",
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"10.100.1.1"},
+							NodeName:  &instance1,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod1",
+							},
+						},
+						{
+							Addresses: []string{"10.100.1.2"},
+							NodeName:  &instance1,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod2",
+							},
+						},
+					},
+					Ports: []discovery.EndpointPort{
+						{
+							Name:     &emptyNamedPort,
+							Port:     &port80,
+							Protocol: &protocolTCP,
+						},
+					},
+				},
+			},
+			expectedEndpointMap:             endpointMap,
+			expectedPodMap:                  podMap,
+			expectErr:                       nil,
+			expectedEndpointMapDegradedMode: endpointMap,
+			expectedPodMapDegradedMode:      podMap,
+		},
+		{
+			desc: "include one endpoint that has missing nodeName, error will be raised in normal mode, nodeName should be filled in degraded mode",
+			testEndpointSlices: []*discovery.EndpointSlice{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testServiceName,
 						Namespace: testServiceNamespace,
 						Labels: map[string]string{
 							discovery.LabelServiceName: testServiceName,
@@ -2185,16 +1884,18 @@ func TestDegradedModeValidateEndpointInfo(t *testing.T) {
 					},
 				},
 			},
-			endpointType:        negtypes.VmIpPortEndpointType,
-			expectedEndpointMap: endpointMap,
-			expectedPodMap:      podMap,
+			expectedEndpointMap:             nil,
+			expectedPodMap:                  nil,
+			expectErr:                       negtypes.ErrEPNodeMissing,
+			expectedEndpointMapDegradedMode: endpointMap,
+			expectedPodMapDegradedMode:      podMap,
 		},
 		{
-			desc: "contains one endpoint with empty nodeName, nodeName should be filled",
+			desc: "include one endpoint that has empty nodeName, error will be raised in normal mode, nodeName should be filled in degraded mode",
 			testEndpointSlices: []*discovery.EndpointSlice{
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      testServiceName + "-1",
+						Name:      testServiceName,
 						Namespace: testServiceNamespace,
 						Labels: map[string]string{
 							discovery.LabelServiceName: testServiceName,
@@ -2229,16 +1930,198 @@ func TestDegradedModeValidateEndpointInfo(t *testing.T) {
 					},
 				},
 			},
-			endpointType:        negtypes.VmIpPortEndpointType,
-			expectedEndpointMap: endpointMap,
-			expectedPodMap:      podMap,
+			expectedEndpointMap:             nil,
+			expectedPodMap:                  nil,
+			expectErr:                       negtypes.ErrEPNodeMissing,
+			expectedEndpointMapDegradedMode: endpointMap,
+			expectedPodMapDegradedMode:      podMap,
 		},
 		{
-			desc: "single stack ipv4 endpoints, contains one endpoint with IPv4 address not matching to its pod, endpoint should be removed",
+			desc: "include one endpoint that has missing pod, endpoint should be excluded in both calculations",
 			testEndpointSlices: []*discovery.EndpointSlice{
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      testServiceName + "-1",
+						Name:      testServiceName,
+						Namespace: testServiceNamespace,
+						Labels: map[string]string{
+							discovery.LabelServiceName: testServiceName,
+						},
+					},
+					AddressType: "IPv4",
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"10.100.1.1"},
+							NodeName:  &instance1,
+							TargetRef: nil,
+						},
+						{
+							Addresses: []string{"10.100.1.2"},
+							NodeName:  &instance1,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod2",
+							},
+						},
+					},
+					Ports: []discovery.EndpointPort{
+						{
+							Name:     &emptyNamedPort,
+							Port:     &port80,
+							Protocol: &protocolTCP,
+						},
+					},
+				},
+			},
+			expectedEndpointMap:             endpointMapExcluded,
+			expectedPodMap:                  podMapExcluded,
+			expectErr:                       nil,
+			expectedEndpointMapDegradedMode: endpointMapExcluded,
+			expectedPodMapDegradedMode:      podMapExcluded,
+		},
+		{
+			desc: "include one endpoint that does not correspond to an existing pod, endpoint should be excluded in both calculations",
+			testEndpointSlices: []*discovery.EndpointSlice{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testServiceName,
+						Namespace: testServiceNamespace,
+						Labels: map[string]string{
+							discovery.LabelServiceName: testServiceName,
+						},
+					},
+					AddressType: "IPv4",
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"10.100.1.1"},
+							NodeName:  &instance1,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "foo", // this is a non-existing pod
+							},
+						},
+						{
+							Addresses: []string{"10.100.1.2"},
+							NodeName:  &instance1,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod2",
+							},
+						},
+					},
+					Ports: []discovery.EndpointPort{
+						{
+							Name:     &emptyNamedPort,
+							Port:     &port80,
+							Protocol: &protocolTCP,
+						},
+					},
+				},
+			},
+			expectedEndpointMap:             endpointMapExcluded,
+			expectedPodMap:                  podMapExcluded,
+			expectErr:                       nil,
+			expectedEndpointMapDegradedMode: endpointMapExcluded,
+			expectedPodMapDegradedMode:      podMapExcluded,
+		},
+		{
+			desc: "include one endpoint that does not correspond to an existing node, error will be raised in normal mode, instance name will be deduced from pod and corrected in degraded mode",
+			testEndpointSlices: []*discovery.EndpointSlice{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testServiceName,
+						Namespace: testServiceNamespace,
+						Labels: map[string]string{
+							discovery.LabelServiceName: testServiceName,
+						},
+					},
+					AddressType: "IPv4",
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"10.100.1.1"},
+							NodeName:  &notExistInstance,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod1",
+							},
+						},
+						{
+							Addresses: []string{"10.100.1.2"},
+							NodeName:  &instance1,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod2",
+							},
+						},
+					},
+					Ports: []discovery.EndpointPort{
+						{
+							Name:     &emptyNamedPort,
+							Port:     &port80,
+							Protocol: &protocolTCP,
+						},
+					},
+				},
+			},
+			expectedEndpointMap:             nil,
+			expectedPodMap:                  nil,
+			expectErr:                       negtypes.ErrEPNodeNotFound,
+			expectedEndpointMapDegradedMode: endpointMap,
+			expectedPodMapDegradedMode:      podMap,
+		},
+		{
+			desc: "include one endpoint that corresponds to an empty zone, error will be raised in normal mode, endpoint should be excluded in degraded mode",
+			testEndpointSlices: []*discovery.EndpointSlice{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testServiceName,
+						Namespace: testServiceNamespace,
+						Labels: map[string]string{
+							discovery.LabelServiceName: testServiceName,
+						},
+					},
+					AddressType: "IPv4",
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"10.100.1.1"},
+							NodeName:  &emptyZoneInstance,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      emptyZonePod,
+							},
+						},
+						{
+							Addresses: []string{"10.100.1.2"},
+							NodeName:  &instance1,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod2",
+							},
+						},
+					},
+					Ports: []discovery.EndpointPort{
+						{
+							Name:     &emptyNamedPort,
+							Port:     &port80,
+							Protocol: &protocolTCP,
+						},
+					},
+				},
+			},
+			expectedEndpointMap:             nil,
+			expectedPodMap:                  nil,
+			expectErr:                       negtypes.ErrEPZoneMissing,
+			expectedEndpointMapDegradedMode: endpointMapExcluded,
+			expectedPodMapDegradedMode:      podMapExcluded,
+		},
+		{
+			// Endpoint IP and pod IP check is only performed during degraded
+			// mode, so in normal calculation, endpoints with not matching will
+			// be included.
+			desc: "single stack ipv4 endpoints, contains one endpoint with IPv4 address not matching to its pod, normal mode will include the invalid endpoint, endpoint should be removed in degraded mode",
+			testEndpointSlices: []*discovery.EndpointSlice{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testServiceName,
 						Namespace: testServiceNamespace,
 						Labels: map[string]string{
 							discovery.LabelServiceName: testServiceName,
@@ -2281,16 +2164,31 @@ func TestDegradedModeValidateEndpointInfo(t *testing.T) {
 					},
 				},
 			},
-			endpointType:        negtypes.VmIpPortEndpointType,
-			expectedEndpointMap: endpointMap,
-			expectedPodMap:      podMap,
+			expectedEndpointMap: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: "10.100.1.1", Node: instance1, Port: "80"},
+					negtypes.NetworkEndpoint{IP: "10.100.1.2", Node: instance1, Port: "80"},
+					negtypes.NetworkEndpoint{IP: "10.100.2.2", Node: instance2, Port: "80"},
+				),
+			},
+			expectedPodMap: negtypes.EndpointPodMap{
+				negtypes.NetworkEndpoint{IP: "10.100.1.1", Node: instance1, Port: "80"}: types.NamespacedName{Namespace: testServiceNamespace, Name: "pod1"},
+				negtypes.NetworkEndpoint{IP: "10.100.1.2", Node: instance1, Port: "80"}: types.NamespacedName{Namespace: testServiceNamespace, Name: "pod2"},
+				negtypes.NetworkEndpoint{IP: "10.100.2.2", Node: instance2, Port: "80"}: types.NamespacedName{Namespace: testServiceNamespace, Name: "pod3"},
+			},
+			expectErr:                       nil,
+			expectedEndpointMapDegradedMode: endpointMap,
+			expectedPodMapDegradedMode:      podMap,
 		},
 		{
-			desc: "dual stack endpoints, contains one endpoint with IPv6 address not matching to its pod, endpoint should be removed",
+			// Endpoint IP and pod IP check is only performed during degraded
+			// mode, so in normal calculation, endpoints with not matching will
+			// be included.
+			desc: "dual stack endpoints, contains one endpoint with IPv6 address not matching to its pod, normal mode will include the invalid endpoint, endpoint should be removed in degraded mode",
 			testEndpointSlices: []*discovery.EndpointSlice{
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      testServiceName + "-3",
+						Name:      testServiceName,
 						Namespace: testServiceNamespace,
 						Labels: map[string]string{
 							discovery.LabelServiceName: testServiceName,
@@ -2333,7 +2231,7 @@ func TestDegradedModeValidateEndpointInfo(t *testing.T) {
 				},
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      testServiceName + "-4",
+						Name:      testServiceName,
 						Namespace: testServiceNamespace,
 						Labels: map[string]string{
 							discovery.LabelServiceName: testServiceName,
@@ -2375,14 +2273,26 @@ func TestDegradedModeValidateEndpointInfo(t *testing.T) {
 					},
 				},
 			},
-			endpointType: negtypes.VmIpPortEndpointType,
 			expectedEndpointMap: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: "10.100.3.2", IPv6: "a:b::1", Node: instance3, Port: "80"},
+					negtypes.NetworkEndpoint{IP: "10.100.4.2", IPv6: "a:b::2", Node: instance4, Port: "80"},
+					negtypes.NetworkEndpoint{IP: "10.100.4.4", IPv6: "a:b::4", Node: instance4, Port: "80"},
+				),
+			},
+			expectedPodMap: negtypes.EndpointPodMap{
+				negtypes.NetworkEndpoint{IP: "10.100.3.2", IPv6: "a:b::1", Node: instance3, Port: "80"}: types.NamespacedName{Namespace: testServiceNamespace, Name: "pod10"},
+				negtypes.NetworkEndpoint{IP: "10.100.4.2", IPv6: "a:b::2", Node: instance4, Port: "80"}: types.NamespacedName{Namespace: testServiceNamespace, Name: "pod11"},
+				negtypes.NetworkEndpoint{IP: "10.100.4.4", IPv6: "a:b::4", Node: instance4, Port: "80"}: types.NamespacedName{Namespace: testServiceNamespace, Name: "pod12"},
+			},
+			expectErr: nil,
+			expectedEndpointMapDegradedMode: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
 					negtypes.NetworkEndpoint{IP: "10.100.3.2", IPv6: "a:b::1", Node: instance3, Port: "80"},
 					negtypes.NetworkEndpoint{IP: "10.100.4.2", IPv6: "a:b::2", Node: instance4, Port: "80"},
 				),
 			},
-			expectedPodMap: negtypes.EndpointPodMap{
+			expectedPodMapDegradedMode: negtypes.EndpointPodMap{
 				negtypes.NetworkEndpoint{IP: "10.100.3.2", IPv6: "a:b::1", Node: instance3, Port: "80"}: types.NamespacedName{Namespace: testServiceNamespace, Name: "pod10"},
 				negtypes.NetworkEndpoint{IP: "10.100.4.2", IPv6: "a:b::2", Node: instance4, Port: "80"}: types.NamespacedName{Namespace: testServiceNamespace, Name: "pod11"},
 			},
@@ -2390,12 +2300,23 @@ func TestDegradedModeValidateEndpointInfo(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			result := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, serviceLister, emptyNamedPort, tc.endpointType, true, klog.TODO())
+			result, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, emptyNamedPort, negtypes.VmIpPortEndpointType, true, klog.TODO())
+			if !errors.Is(err, tc.expectErr) {
+				t.Errorf("normal mode calculation got error %v, expected %v", err, tc.expectErr)
+			}
 			if !reflect.DeepEqual(result.NetworkEndpointSet, tc.expectedEndpointMap) {
-				t.Errorf("degraded mode endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", result.NetworkEndpointSet, tc.expectedEndpointMap)
+				t.Errorf("normal mode endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", result.NetworkEndpointSet, tc.expectedEndpointMapDegradedMode)
 			}
 			if !reflect.DeepEqual(result.EndpointPodMap, tc.expectedPodMap) {
-				t.Errorf("degraded mode endpoint map is not calculated correctly:\ngot %+v,\n expected %+v", result.EndpointPodMap, tc.expectedPodMap)
+				t.Errorf("normal mode endpoint map is not calculated correctly:\ngot %+v,\n expected %+v", result.EndpointPodMap, tc.expectedPodMapDegradedMode)
+			}
+
+			resultDegradedMode := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, serviceLister, emptyNamedPort, negtypes.VmIpPortEndpointType, true, klog.TODO())
+			if !reflect.DeepEqual(resultDegradedMode.NetworkEndpointSet, tc.expectedEndpointMapDegradedMode) {
+				t.Errorf("degraded mode endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", resultDegradedMode.NetworkEndpointSet, tc.expectedEndpointMapDegradedMode)
+			}
+			if !reflect.DeepEqual(resultDegradedMode.EndpointPodMap, tc.expectedPodMapDegradedMode) {
+				t.Errorf("degraded mode endpoint map is not calculated correctly:\ngot %+v,\n expected %+v", resultDegradedMode.EndpointPodMap, tc.expectedPodMapDegradedMode)
 			}
 		})
 	}

@@ -30,6 +30,7 @@ type fakeFirewallsProvider struct {
 	networkURL       string
 	onXPN            bool
 	fwReadOnly       bool
+	getFirewallHook  func(name string) (*compute.Firewall, error)
 }
 
 // NewFakeFirewallsProvider creates a fake for firewall rules.
@@ -44,6 +45,10 @@ func NewFakeFirewallsProvider(onXPN bool, fwReadOnly bool) *fakeFirewallsProvide
 }
 
 func (ff *fakeFirewallsProvider) GetFirewall(name string) (*compute.Firewall, error) {
+	if ff.getFirewallHook != nil {
+		return ff.getFirewallHook(name)
+	}
+
 	rule, exists := ff.fw[name]
 	if exists {
 		return rule, nil

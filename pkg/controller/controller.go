@@ -18,6 +18,7 @@ package controller
 
 import (
 	"fmt"
+	"math/rand"
 	"net/http"
 	"reflect"
 	"sync"
@@ -29,7 +30,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/kubernetes"
 	unversionedcore "k8s.io/client-go/kubernetes/typed/core/v1"
-	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -160,7 +160,7 @@ func NewLoadBalancerController(
 			addIng := obj.(*v1.Ingress)
 			ingLogger := logger.WithValues("ingressKey", common.NamespacedName(addIng))
 			if !utils.IsGLBCIngress(addIng) {
-				if flags.F.DisableIngressGlobalExternal && annotations.FromIngress(addIng).IngressClass() == annotations.GceIngressClass {
+				if !flags.F.EnableIngressGlobalExternal && annotations.FromIngress(addIng).IngressClass() == annotations.GceIngressClass {
 					lbc.ctx.Recorder(addIng.Namespace).Eventf(addIng, apiv1.EventTypeWarning, events.SyncIngress, "Ingress class \"gce\" is not supported in this environment. Please use \"gce-regional-external\".")
 				}
 				ingLogger.Info("Ignoring add for ingress based on annotation", "annotation", annotations.IngressClassKey)
@@ -205,7 +205,7 @@ func NewLoadBalancerController(
 					lbc.ingQueue.Enqueue(cur)
 					return
 				}
-				if flags.F.DisableIngressGlobalExternal && annotations.FromIngress(curIng).IngressClass() == annotations.GceIngressClass {
+				if !flags.F.EnableIngressGlobalExternal && annotations.FromIngress(curIng).IngressClass() == annotations.GceIngressClass {
 					lbc.ctx.Recorder(curIng.Namespace).Eventf(curIng, apiv1.EventTypeWarning, events.SyncIngress, "Ingress class \"gce\" is not supported in this environment. Please use \"gce-regional-external\".")
 				}
 				return
@@ -290,6 +290,7 @@ func NewLoadBalancerController(
 			UpdateFunc: func(old, cur interface{}) {
 				if !reflect.DeepEqual(old, cur) {
 					feConfig := cur.(*frontendconfigv1beta1.FrontendConfig)
+					logger.Info("FrontendConfig updated", "feConfigName", klog.KRef(feConfig.Namespace, feConfig.Name))
 					ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesFrontendConfig(feConfig).AsList()
 					lbc.ingQueue.Enqueue(convert(ings)...)
 				}
@@ -405,7 +406,7 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}, ingLogger klo
 	}
 
 	// Get the zones our groups live in.
-	zones, err := lbc.ZoneGetter.List(zonegetter.CandidateNodesFilter, lbc.logger)
+	zones, err := lbc.ZoneGetter.ListZones(zonegetter.CandidateNodesFilter, lbc.logger)
 	if err != nil {
 		ingLogger.Error(err, "lbc.ZoneGetter.List(zonegetter.CandidateNodesFilter)")
 		return err
@@ -442,12 +443,12 @@ func (lbc *LoadBalancerController) syncInstanceGroup(ing *v1.Ingress, ingSvcPort
 		return err
 	}
 
-	nodeNames, err := utils.GetReadyNodeNames(listers.NewNodeLister(lbc.nodeLister), lbc.logger)
+	nodes, err := lbc.ZoneGetter.ListNodes(zonegetter.CandidateNodesFilter, lbc.logger)
 	if err != nil {
 		return err
 	}
 	// Add/remove instances to the instance groups.
-	if err = lbc.instancePool.Sync(nodeNames); err != nil {
+	if err = lbc.instancePool.Sync(utils.GetNodeNames(nodes)); err != nil {
 		return err
 	}
 
@@ -643,7 +644,8 @@ func (lbc *LoadBalancerController) postSyncGC(key string, syncErr error, oldScop
 
 // sync manages Ingress create/updates/deletes events from queue.
 func (lbc *LoadBalancerController) sync(key string) error {
-	ingLogger := lbc.logger.WithValues("ingressKey", key)
+	syncTrackingId := rand.Int31()
+	ingLogger := lbc.logger.WithValues("ingressKey", key, "syncId", syncTrackingId)
 	if !lbc.hasSynced() {
 		time.Sleep(context.StoreSyncPollPeriod)
 		return fmt.Errorf("waiting for stores to sync")

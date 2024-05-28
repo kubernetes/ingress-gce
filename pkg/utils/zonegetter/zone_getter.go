@@ -27,6 +27,7 @@ import (
 
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
@@ -44,14 +45,15 @@ const (
 )
 
 const (
-	AllNodesFilter                 = "AllNodesFilter"
-	CandidateNodesFilter           = "CandidateNodesFilter"
-	CandidateAndUnreadyNodesFilter = "CandidateAndUnreadyNodesFilter"
+	AllNodesFilter                 = Filter("AllNodesFilter")
+	CandidateNodesFilter           = Filter("CandidateNodesFilter")
+	CandidateAndUnreadyNodesFilter = Filter("CandidateAndUnreadyNodesFilter")
 )
 
 var ErrProviderIDNotFound = errors.New("providerID not found")
 var ErrSplitProviderID = errors.New("error splitting providerID")
 var ErrNodeNotFound = errors.New("node not found")
+var ErrNodeNotInDefaultSubnet = errors.New("Node not in default subnet")
 
 // providerIDRE is the regex to process providerID.
 // A providerID is build out of '${ProviderName}://${project-id}/${zone}/${instance-name}'
@@ -59,7 +61,7 @@ var providerIDRE = regexp.MustCompile(`^` + "gce" + `://([^/]+)/([^/]+)/([^/]+)$
 
 // ZoneGetter manages lookups for GCE instances to zones.
 type ZoneGetter struct {
-	nodeInformer cache.SharedIndexInformer
+	nodeLister cache.Indexer
 	// Mode indicates if the ZoneGetter is in GCP or Non-GCP mode
 	// GCP mode ZoneGetter fetches zones from k8s node resource objects.
 	// Non-GCP mode ZoneGetter always return its one single stored zone
@@ -67,6 +69,12 @@ type ZoneGetter struct {
 	// singleStoredZone is the single stored zone in the zoneGetter
 	// It is only used in Non-GCP mode.
 	singleStoredZone string
+
+	// Whether zoneGetter should only list default subnet nodes.
+	onlyIncludeDefaultSubnetNodes bool
+
+	// The subnetURL of the cluster's default subnet.
+	defaultSubnetURL string
 }
 
 // ZoneForNode returns the zone for a given node by looking up providerID.
@@ -77,43 +85,76 @@ func (z *ZoneGetter) ZoneForNode(name string, logger klog.Logger) (string, error
 		return z.singleStoredZone, nil
 	}
 
-	nodeLister := z.nodeInformer.GetIndexer()
-	node, err := listers.NewNodeLister(nodeLister).Get(name)
+	nodeLogger := logger.WithValues("nodeName", name)
+	node, err := listers.NewNodeLister(z.nodeLister).Get(name)
 	if err != nil {
-		logger.Error(err, "Failed to get node", "nodeName", name)
+		nodeLogger.Error(err, "Failed to get node")
 		return "", fmt.Errorf("%w: failed to get node %s", ErrNodeNotFound, name)
 	}
+	if z.onlyIncludeDefaultSubnetNodes && !isNodeInDefaultSubnet(node, z.defaultSubnetURL, nodeLogger) {
+		nodeLogger.Error(ErrNodeNotInDefaultSubnet, "Node is invalid since it is not in the default subnet")
+		return "", ErrNodeNotInDefaultSubnet
+	}
 	if node.Spec.ProviderID == "" {
-		logger.Error(ErrProviderIDNotFound, "Node does not have providerID", "nodeName", name)
+		nodeLogger.Error(ErrProviderIDNotFound, "Node does not have providerID")
 		return "", ErrProviderIDNotFound
 	}
 	zone, err := getZone(node)
 	if err != nil {
-		logger.Error(err, "Failed to get zone from the providerID", "nodeName", name)
+		nodeLogger.Error(err, "Failed to get zone from the providerID")
 		return "", err
 	}
 	return zone, nil
 }
 
-// List returns a list of zones containing nodes that satisfy the given
+// ListNodes returns a list of nodes that satisfy the given node filtering mode.
+func (z *ZoneGetter) ListNodes(filter Filter, logger klog.Logger) ([]*api_v1.Node, error) {
+	filterLogger := logger.WithValues("filter", filter)
+	filterLogger.Info("Listing nodes")
+
+	nodes, err := listers.NewNodeLister(z.nodeLister).List(labels.Everything())
+	if err != nil {
+		filterLogger.Error(err, "Failed to list all nodes")
+		return nil, err
+	}
+
+	var selected []*api_v1.Node
+	var filteredOut []string
+	for _, node := range nodes {
+		// Filter nodes with predicate and exclude nodes without providerID
+		if z.IsNodeSelectedByFilter(node, filter, filterLogger) {
+			selected = append(selected, node)
+		} else {
+			filteredOut = append(filteredOut, node.Name)
+		}
+	}
+	if len(filteredOut) <= 50 {
+		filterLogger.Info("Filtered out nodes when listing node zones", "nodes", filteredOut)
+	}
+
+	return selected, nil
+}
+
+// ListZones returns a list of zones containing nodes that satisfy the given
 // node filtering mode.
-func (z *ZoneGetter) List(filter Filter, logger klog.Logger) ([]string, error) {
-	// Return the single stored zone if the zoneGetter is in non-gcp mode.
+func (z *ZoneGetter) ListZones(filter Filter, logger klog.Logger) ([]string, error) {
 	if z.mode == NonGCP {
 		logger.Info("ZoneGetter in non-gcp mode, return the single stored zone", "zone", z.singleStoredZone)
 		return []string{z.singleStoredZone}, nil
 	}
-	nodeLister := z.nodeInformer.GetIndexer()
-	zones := sets.String{}
-	nodes, err := listNodesWithFilter(listers.NewNodeLister(nodeLister), filter, logger)
+
+	filterLogger := logger.WithValues("filter", filter)
+	filterLogger.Info("Listing zones")
+	nodes, err := z.ListNodes(filter, logger)
 	if err != nil {
-		logger.Error(err, "Failed to list nodes")
-		return zones.List(), err
+		filterLogger.Error(err, "Failed to list nodes")
+		return []string{}, err
 	}
+	zones := sets.String{}
 	for _, n := range nodes {
 		zone, err := getZone(n)
 		if err != nil {
-			logger.Error(err, "Failed to get zone from providerID", "nodeName", n.Name)
+			filterLogger.Error(err, "Failed to get zone from providerID", "nodeName", n.Name)
 			continue
 		}
 		zones.Insert(zone)
@@ -121,41 +162,136 @@ func (z *ZoneGetter) List(filter Filter, logger klog.Logger) ([]string, error) {
 	return zones.List(), nil
 }
 
-// listNodesWithFilter gets nodes that matches node filter mode.
-func listNodesWithFilter(nodeLister listers.NodeLister, filter Filter, logger klog.Logger) ([]*api_v1.Node, error) {
-	var filtered []*api_v1.Node
-	var predicate utils.NodeConditionPredicate
-	logger.Info("Filtering nodes", "filter", filter)
+// IsNodeSelectedByFilter checks if the node matches the node filter mode.
+func (z *ZoneGetter) IsNodeSelectedByFilter(node *api_v1.Node, filter Filter, filterLogger klog.Logger) bool {
+	nodeAndFilterLogger := filterLogger.WithValues("nodeName", node.Name)
 	switch filter {
 	case AllNodesFilter:
-		predicate = utils.AllNodesPredicate
+		return z.allNodesPredicate(node, nodeAndFilterLogger)
 	case CandidateNodesFilter:
-		predicate = utils.CandidateNodesPredicate
+		return z.candidateNodesPredicate(node, nodeAndFilterLogger)
 	case CandidateAndUnreadyNodesFilter:
-		predicate = utils.CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes
+		return z.candidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes(node, nodeAndFilterLogger)
 	default:
-		return filtered, nil
+		return false
+	}
+}
+
+// allNodesPredicate selects all nodes.
+func (z *ZoneGetter) allNodesPredicate(node *api_v1.Node, nodeLogger klog.Logger) bool {
+	if z.onlyIncludeDefaultSubnetNodes && !isNodeInDefaultSubnet(node, z.defaultSubnetURL, nodeLogger) {
+		nodeLogger.Error(ErrNodeNotInDefaultSubnet, "Ignoring node since it is not in the default subnet")
+		return false
+
+	}
+	return true
+}
+
+// candidateNodesPredicate selects all nodes that are in ready state and devoid of any exclude labels.
+// This is a duplicate definition of the function in:
+// https://github.com/kubernetes/kubernetes/blob/3723713c550f649b6ba84964edef9da6cc334f9d/staging/src/k8s.io/cloud-provider/controllers/service/controller.go#L668
+func (z *ZoneGetter) candidateNodesPredicate(node *api_v1.Node, nodeAndFilterLogger klog.Logger) bool {
+	return z.nodePredicateInternal(node, false, false, nodeAndFilterLogger)
+}
+
+// candidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes selects all nodes except ones that are upgrading and/or have any exclude labels. This function tolerates unready nodes.
+// TODO(prameshj) - Once the kubernetes/kubernetes Predicate function includes Unready nodes and the GKE nodepool code sets exclude labels on upgrade, this can be replaced with CandidateNodesPredicate.
+func (z *ZoneGetter) candidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes(node *api_v1.Node, nodeAndFilterLogger klog.Logger) bool {
+	return z.nodePredicateInternal(node, true, true, nodeAndFilterLogger)
+}
+
+func (z *ZoneGetter) nodePredicateInternal(node *api_v1.Node, includeUnreadyNodes, excludeUpgradingNodes bool, nodeAndFilterLogger klog.Logger) bool {
+	if z.onlyIncludeDefaultSubnetNodes && !isNodeInDefaultSubnet(node, z.defaultSubnetURL, nodeAndFilterLogger) {
+		nodeAndFilterLogger.Error(ErrNodeNotInDefaultSubnet, "Ignoring node since it is not in the default subnet")
+		return false
 	}
 
-	nodes, err := nodeLister.List(labels.Everything())
-	if err != nil {
-		return nil, err
-	}
-
-	filteredOut := []string{}
-	for _, node := range nodes {
-		// Filter nodes with predicate and exclude nodes without providerID
-		if predicate(node, logger) {
-			filtered = append(filtered, node)
-		} else {
-			filteredOut = append(filteredOut, node.Name)
+	// Get all nodes that have a taint with NoSchedule effect
+	for _, taint := range node.Spec.Taints {
+		if taint.Key == utils.ToBeDeletedTaint {
+			return false
 		}
 	}
-	if len(filteredOut) <= 50 {
-		logger.Info("Filtered out nodes when listing node zones", "nodes", filteredOut, "filter", filter)
+
+	// As of 1.6, we will taint the master, but not necessarily mark it unschedulable.
+	// Recognize nodes labeled as master, and filter them also, as we were doing previously.
+	if _, hasMasterRoleLabel := node.Labels[utils.LabelNodeRoleMaster]; hasMasterRoleLabel {
+		return false
 	}
 
-	return filtered, nil
+	// Will be removed in 1.18
+	if _, hasExcludeBalancerLabel := node.Labels[utils.LabelAlphaNodeRoleExcludeBalancer]; hasExcludeBalancerLabel {
+		return false
+	}
+
+	if _, hasExcludeBalancerLabel := node.Labels[utils.LabelNodeRoleExcludeBalancer]; hasExcludeBalancerLabel {
+		return false
+	}
+	if excludeUpgradingNodes {
+		// This node is about to be upgraded or deleted as part of resize.
+		if operation, _ := node.Labels[utils.GKECurrentOperationLabel]; operation == utils.NodeDrain {
+			return false
+		}
+	}
+
+	// If we have no info, don't accept
+	if len(node.Status.Conditions) == 0 {
+		return false
+	}
+	if includeUnreadyNodes {
+		return true
+	}
+	for _, cond := range node.Status.Conditions {
+		// We consider the node for load balancing only when its NodeReady condition status
+		// is ConditionTrue
+		if cond.Type == api_v1.NodeReady && cond.Status != api_v1.ConditionTrue {
+			nodeAndFilterLogger.V(4).Info("Ignoring node", "conditionType", cond.Type, "conditionStatus", cond.Status)
+			return false
+		}
+	}
+	return true
+}
+
+// ZoneForNode returns if the given node is in default subnet.
+func (z *ZoneGetter) IsDefaultSubnetNode(nodeName string, logger klog.Logger) bool {
+	nodeLogger := logger.WithValues("nodeName", nodeName)
+	node, err := listers.NewNodeLister(z.nodeLister).Get(nodeName)
+	if err != nil {
+		nodeLogger.Error(err, "Failed to get node")
+		return false
+	}
+	return isNodeInDefaultSubnet(node, z.defaultSubnetURL, logger)
+}
+
+// isNodeInDefaultSubnet checks if the node is in the default subnet.
+//
+// For any new nodes created after multi-subnet cluster is enabled, they are
+// guaranteed to have the subnet label if PodCIDR is populated. For any
+// existing nodes, they will not have label and can only be in the default
+// subnet.
+func isNodeInDefaultSubnet(node *api_v1.Node, defaultSubnetURL string, nodeLogger klog.Logger) bool {
+	if node.Spec.PodCIDR == "" {
+		nodeLogger.Info("Node does not have PodCIDR set")
+		return false
+	}
+
+	nodeSubnet, exist := node.Labels[utils.LabelNodeSubnet]
+	if !exist {
+		nodeLogger.Info("Node does not have subnet label key, assumed to be in the default subnet", "subnet label key", utils.LabelNodeSubnet)
+		return true
+	}
+	if nodeSubnet == "" {
+		nodeLogger.Info("Node has empty value for subnet label key, assumed to be in the default subnet", "subnet label key", utils.LabelNodeSubnet)
+		return true
+	}
+	nodeLogger.Info("Node has an non-empty value for subnet label key", "subnet label key", utils.LabelNodeSubnet, "subnet label value", nodeSubnet)
+
+	defaultSubnet, err := utils.KeyName(defaultSubnetURL)
+	if err != nil {
+		nodeLogger.Error(err, "Failed to extract default subnet information from URL", "defaultSubnetURL", defaultSubnetURL)
+		return false
+	}
+	return nodeSubnet == defaultSubnet
 }
 
 // getZone gets zone information from node provider id.
@@ -183,9 +319,21 @@ func NewNonGCPZoneGetter(zone string) *ZoneGetter {
 }
 
 // NewZoneGetter initialize a ZoneGetter in GCP mode.
-func NewZoneGetter(nodeInformer cache.SharedIndexInformer) *ZoneGetter {
+func NewZoneGetter(nodeInformer cache.SharedIndexInformer, defaultSubnetURL string) *ZoneGetter {
 	return &ZoneGetter{
-		mode:         GCP,
-		nodeInformer: nodeInformer,
+		mode:                          GCP,
+		nodeLister:                    nodeInformer.GetIndexer(),
+		onlyIncludeDefaultSubnetNodes: flags.F.EnableMultiSubnetCluster,
+		defaultSubnetURL:              defaultSubnetURL,
+	}
+}
+
+// NewFakeZoneGetter initialize a fake ZoneGetter in GCP mode to use in test.
+func NewFakeZoneGetter(nodeInformer cache.SharedIndexInformer, defaultSubnetURL string, onlyIncludeDefaultSubnetNodes bool) *ZoneGetter {
+	return &ZoneGetter{
+		mode:                          GCP,
+		nodeLister:                    nodeInformer.GetIndexer(),
+		onlyIncludeDefaultSubnetNodes: onlyIncludeDefaultSubnetNodes,
+		defaultSubnetURL:              defaultSubnetURL,
 	}
 }

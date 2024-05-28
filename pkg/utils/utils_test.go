@@ -121,6 +121,16 @@ func TestEqualResourcePaths(t *testing.T) {
 			b:    "zones/us-central1-a/instanceGroups/example-group",
 			want: true,
 		},
+		"partial without project id vs full": {
+			a:    "https://www.googleapis.com/compute/v1/projects/project-name/regions/us-central1/sslPolicies/example-policy",
+			b:    "regions/us-central1/sslPolicies/example-policy",
+			want: true,
+		},
+		"partial without project id vs partial": {
+			a:    "projects/project-id/zones/us-central1-a/instanceGroups/example-group",
+			b:    "zones/us-central1-a/instanceGroups/example-group",
+			want: true,
+		},
 		"full vs full": {
 			a:    "https://www.googleapis.com/compute/beta/projects/project-id/zones/us-central1-a/instanceGroups/example-group",
 			b:    "https://www.googleapis.com/compute/beta/projects/project-id/zones/us-central1-a/instanceGroups/example-group",
@@ -178,6 +188,16 @@ func TestEqualResourceIDs(t *testing.T) {
 			a:    "https://www.googleapis.com/compute/beta/projects/project-id/zones/us-central1-a/instanceGroups/example-group",
 			b:    "projects/project-id/zones/us-central1-a/instanceGroups/example-group",
 			want: true,
+		},
+		"partial without project id vs full": {
+			a:    "https://www.googleapis.com/compute/v1/projects/project-name/regions/us-central1/sslPolicies/example-policy",
+			b:    "regions/us-central1/sslPolicies/example-policy",
+			want: false,
+		},
+		"partial without project id vs partial": {
+			a:    "projects/project-id/zones/us-central1-a/instanceGroups/example-group",
+			b:    "zones/us-central1-a/instanceGroups/example-group",
+			want: false,
 		},
 		"full vs full": {
 			a:    "https://www.googleapis.com/compute/beta/projects/project-id/zones/us-central1-a/instanceGroups/example-group",
@@ -498,166 +518,17 @@ func TestTraverseIngressBackends(t *testing.T) {
 	}
 }
 
-func TestGetNodeConditionPredicate(t *testing.T) {
-	tests := []struct {
-		node                                             api_v1.Node
-		expectAccept, expectAcceptByUnreadyNodePredicate bool
-		name                                             string
-	}{
-		{
-			node:         api_v1.Node{},
-			expectAccept: false,
-
-			name: "empty",
-		},
-		{
-			node: api_v1.Node{
-				Status: api_v1.NodeStatus{
-					Conditions: []api_v1.NodeCondition{
-						{Type: api_v1.NodeReady, Status: api_v1.ConditionTrue},
-					},
-				},
-			},
-			expectAccept:                       true,
-			expectAcceptByUnreadyNodePredicate: true,
-			name:                               "ready node",
-		},
-		{
-			node: api_v1.Node{
-				Status: api_v1.NodeStatus{
-					Conditions: []api_v1.NodeCondition{
-						{Type: api_v1.NodeReady, Status: api_v1.ConditionFalse},
-					},
-				},
-			},
-			expectAccept:                       false,
-			expectAcceptByUnreadyNodePredicate: true,
-			name:                               "unready node",
-		},
-		{
-			node: api_v1.Node{
-				Status: api_v1.NodeStatus{
-					Conditions: []api_v1.NodeCondition{
-						{Type: api_v1.NodeReady, Status: api_v1.ConditionUnknown},
-					},
-				},
-			},
-			expectAccept:                       false,
-			expectAcceptByUnreadyNodePredicate: true,
-			name:                               "ready status unknown",
-		},
-		{
-			node: api_v1.Node{
-				ObjectMeta: v1.ObjectMeta{
-					Name:   "node1",
-					Labels: map[string]string{LabelNodeRoleExcludeBalancer: "true"},
-				},
-				Status: api_v1.NodeStatus{
-					Conditions: []api_v1.NodeCondition{
-						{Type: api_v1.NodeReady, Status: api_v1.ConditionTrue},
-					},
-				},
-			},
-			expectAccept:                       false,
-			expectAcceptByUnreadyNodePredicate: false,
-			name:                               "ready node, excluded from loadbalancers",
-		},
-		{
-			node: api_v1.Node{
-				ObjectMeta: v1.ObjectMeta{
-					Name: "node1",
-					Labels: map[string]string{
-						GKECurrentOperationLabel: NodeDrain,
-					},
-				},
-				Status: api_v1.NodeStatus{
-					Conditions: []api_v1.NodeCondition{
-						{Type: api_v1.NodeReady, Status: api_v1.ConditionTrue},
-					},
-				},
-			},
-			expectAccept:                       true,
-			expectAcceptByUnreadyNodePredicate: false,
-			name:                               "ready node, upgrade/drain in progress",
-		},
-		{
-			node: api_v1.Node{
-				ObjectMeta: v1.ObjectMeta{
-					Name: "node1",
-					Labels: map[string]string{
-						GKECurrentOperationLabel: "random",
-					},
-				},
-				Status: api_v1.NodeStatus{
-					Conditions: []api_v1.NodeCondition{
-						{Type: api_v1.NodeReady, Status: api_v1.ConditionTrue},
-					},
-				},
-			},
-			expectAccept:                       true,
-			expectAcceptByUnreadyNodePredicate: true,
-			name:                               "ready node, non-drain operation",
-		},
-		{
-			node: api_v1.Node{
-				Spec: api_v1.NodeSpec{Unschedulable: true},
-				Status: api_v1.NodeStatus{
-					Conditions: []api_v1.NodeCondition{
-						{Type: api_v1.NodeReady, Status: api_v1.ConditionTrue},
-					},
-				},
-			},
-			expectAccept:                       true,
-			expectAcceptByUnreadyNodePredicate: true,
-			name:                               "unschedulable",
-		},
-		{
-			node: api_v1.Node{
-				Spec: api_v1.NodeSpec{
-					Taints: []api_v1.Taint{
-						{
-							Key:    ToBeDeletedTaint,
-							Value:  fmt.Sprint(time.Now().Unix()),
-							Effect: api_v1.TaintEffectNoSchedule,
-						},
-					},
-				},
-				Status: api_v1.NodeStatus{
-					Conditions: []api_v1.NodeCondition{
-						{Type: api_v1.NodeReady, Status: api_v1.ConditionTrue},
-					},
-				},
-			},
-			expectAccept:                       false,
-			expectAcceptByUnreadyNodePredicate: false,
-			name:                               "ToBeDeletedByClusterAutoscaler-taint",
-		},
-	}
-	pred := CandidateNodesPredicate
-	unreadyPred := CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes
-	for _, test := range tests {
-		accept := pred(&test.node, klog.TODO())
-		if accept != test.expectAccept {
-			t.Errorf("Test failed for %s, got %v, want %v", test.name, accept, test.expectAccept)
-		}
-		unreadyAccept := unreadyPred(&test.node, klog.TODO())
-		if unreadyAccept != test.expectAcceptByUnreadyNodePredicate {
-			t.Errorf("Test failed for unreadyNodesPredicate in case %s, got %v, want %v", test.name, unreadyAccept, test.expectAcceptByUnreadyNodePredicate)
-		}
-	}
-}
-
 // Do not run in parallel since modifies global flags
 // TODO(shance): remove l7-ilb flag tests once flag is removed
 func TestIsGCEIngress(t *testing.T) {
 	var wrongClassName = "wrong-class"
 	testCases := []struct {
-		desc                             string
-		ingress                          *networkingv1.Ingress
-		ingressClassFlag                 string
-		xlbRegionalEnabledFlag           bool
-		disableIngressGlobalExternalFlag bool
-		expected                         bool
+		desc                            string
+		ingress                         *networkingv1.Ingress
+		ingressClassFlag                string
+		xlbRegionalEnabledFlag          bool
+		enableIngressGlobalExternalFlag bool
+		expected                        bool
 	}{
 		{
 			desc: "No ingress class",
@@ -770,10 +641,11 @@ func TestIsGCEIngress(t *testing.T) {
 					},
 				},
 			},
-			expected: true,
+			enableIngressGlobalExternalFlag: true,
+			expected:                        true,
 		},
 		{
-			desc: "L7 XLB Global class, but with DisableIngressGlobalExternal flag",
+			desc: "L7 XLB Global class, but with EnableIngressGlobalExternal flag",
 			ingress: &networkingv1.Ingress{
 				ObjectMeta: v1.ObjectMeta{
 					Annotations: map[string]string{
@@ -781,8 +653,8 @@ func TestIsGCEIngress(t *testing.T) {
 					},
 				},
 			},
-			disableIngressGlobalExternalFlag: true,
-			expected:                         false,
+			enableIngressGlobalExternalFlag: false,
+			expected:                        false,
 		},
 	}
 
@@ -790,7 +662,7 @@ func TestIsGCEIngress(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			flags.F.IngressClass = tc.ingressClassFlag
 			flags.F.EnableIngressRegionalExternal = tc.xlbRegionalEnabledFlag
-			flags.F.DisableIngressGlobalExternal = tc.disableIngressGlobalExternalFlag
+			flags.F.EnableIngressGlobalExternal = tc.enableIngressGlobalExternalFlag
 
 			result := IsGCEIngress(tc.ingress)
 			if result != tc.expected {
@@ -800,7 +672,7 @@ func TestIsGCEIngress(t *testing.T) {
 			// reset flags to default, otherwise they stay modified for other tests
 			flags.F.IngressClass = ""
 			flags.F.EnableIngressRegionalExternal = false
-			flags.F.DisableIngressGlobalExternal = false
+			flags.F.EnableIngressGlobalExternal = true
 		})
 	}
 }
@@ -1838,6 +1710,46 @@ func TestIsK8sServerError(t *testing.T) {
 			got := IsK8sServerError(tc.err)
 			if got != tc.want {
 				t.Errorf("Got %+v, expected %+v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestGetDomainFromGABasePath(t *testing.T) {
+	testCases := []struct {
+		desc     string
+		basePath string
+		want     string
+	}{
+		{
+			desc: "empty string",
+		},
+		{
+			desc:     "compute.googleapis.com path",
+			basePath: "https://www.compute.googleapis.com/compute/v1",
+			want:     "https://www.compute.googleapis.com",
+		},
+		{
+			desc:     "arbitary path",
+			basePath: "mycompute.mydomain.com/mypath/compute/v1",
+			want:     "mycompute.mydomain.com/mypath",
+		},
+		{
+			desc:     "arbitary path with trailing /",
+			basePath: "mycompute.mydomain.com/mypath/compute/v1/",
+			want:     "mycompute.mydomain.com/mypath",
+		},
+		{
+			desc:     "arbitary path without /v1 -- should return same string",
+			basePath: "mycompute.mydomain.com/mypath/compute",
+			want:     "mycompute.mydomain.com/mypath/compute",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			if got := GetDomainFromGABasePath(tc.basePath); got != tc.want {
+				t.Errorf("GetDomainFromGABasePath(%s) = %s, want %s", tc.basePath, got, tc.want)
 			}
 		})
 	}

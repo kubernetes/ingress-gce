@@ -41,6 +41,8 @@ const (
 	NegFinalizerKey = "networking.gke.io/neg-finalizer"
 	// NetLBFinalizerV2 is the finalizer used by newer controllers that manage L4 External LoadBalancer services.
 	NetLBFinalizerV2 = "gke.networking.io/l4-netlb-v2"
+	// LoadBalancerCleanupFinalizer added by original kubernetes service controller. This is not required in L4 RBS/ILB-subsetting services.
+	LoadBalancerCleanupFinalizer = "service.kubernetes.io/load-balancer-cleanup"
 )
 
 // IsDeletionCandidate is true if the passed in meta contains an ingress finalizer.
@@ -95,7 +97,7 @@ func EnsureDeleteFinalizer(ing *v1.Ingress, ingClient client.IngressInterface, f
 }
 
 // EnsureServiceFinalizer patches the service to add finalizer.
-func EnsureServiceFinalizer(service *corev1.Service, key string, kubeClient kubernetes.Interface, logger klog.Logger) error {
+func EnsureServiceFinalizer(service *corev1.Service, key string, kubeClient kubernetes.Interface, svcLogger klog.Logger) error {
 	if HasGivenFinalizer(service.ObjectMeta, key) {
 		return nil
 	}
@@ -104,12 +106,12 @@ func EnsureServiceFinalizer(service *corev1.Service, key string, kubeClient kube
 	updatedObjectMeta := service.ObjectMeta.DeepCopy()
 	updatedObjectMeta.Finalizers = append(updatedObjectMeta.Finalizers, key)
 
-	logger.V(2).Info("Adding finalizer to service", "finalizerKey", key, "serviceKey", klog.KRef(service.Namespace, service.Name))
+	svcLogger.V(2).Info("Adding finalizer to service", "finalizerKey", key)
 	return patch.PatchServiceObjectMetadata(kubeClient.CoreV1(), service, *updatedObjectMeta)
 }
 
 // removeFinalizer patches the service to remove finalizer.
-func EnsureDeleteServiceFinalizer(service *corev1.Service, key string, kubeClient kubernetes.Interface, logger klog.Logger) error {
+func EnsureDeleteServiceFinalizer(service *corev1.Service, key string, kubeClient kubernetes.Interface, svcLogger klog.Logger) error {
 	if !HasGivenFinalizer(service.ObjectMeta, key) {
 		return nil
 	}
@@ -118,6 +120,6 @@ func EnsureDeleteServiceFinalizer(service *corev1.Service, key string, kubeClien
 	updatedObjectMeta := service.ObjectMeta.DeepCopy()
 	updatedObjectMeta.Finalizers = slice.RemoveString(updatedObjectMeta.Finalizers, key, nil)
 
-	logger.V(2).Info("Removing finalizer from service", "finalizerKey", key, "serviceKey", klog.KRef(service.Namespace, service.Name))
+	svcLogger.V(2).Info("Removing finalizer from service", "finalizerKey", key)
 	return patch.PatchServiceObjectMetadata(kubeClient.CoreV1(), service, *updatedObjectMeta)
 }

@@ -48,7 +48,7 @@ func TestZoneListing(t *testing.T) {
 	zonegetter.AddFakeNodes(lbc.ZoneGetter, "zone-1", "n1")
 	zonegetter.AddFakeNodes(lbc.ZoneGetter, "zone-2", "n2")
 
-	zones, err := lbc.ZoneGetter.List(zonegetter.AllNodesFilter, klog.TODO())
+	zones, err := lbc.ZoneGetter.ListZones(zonegetter.AllNodesFilter, klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to list zones: %v", err)
 	}

@@ -125,7 +125,7 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 	}
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer)
-	zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
 
 	return NewController(
 		kubeClient,
@@ -1560,7 +1560,7 @@ func TestServiceIPFamilies(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			controller := newTestController(fake.NewSimpleClientset())
 			defer controller.stop()
-			testService := newTestService(controller, false, []int32{})
+			testService := newTestService(controller, false, []int32{80})
 			testService.Spec.Type = tc.serviceType
 			testService.Spec.IPFamilies = tc.ipFamilies
 			testService.Spec.IPFamilyPolicy = tc.ipFamilyPolicy
@@ -1735,8 +1735,8 @@ func validateServiceAnnotationWithPortInfoMap(t *testing.T, svc *apiv1.Service, 
 
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer)
-	zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
-	zones, _ := zoneGetter.List(negtypes.NodeFilterForEndpointCalculatorMode(portInfoMap.EndpointsCalculatorMode()), klog.TODO())
+	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
+	zones, _ := zoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(portInfoMap.EndpointsCalculatorMode()), klog.TODO())
 	if !sets.NewString(expectZones...).Equal(sets.NewString(zones...)) {
 		t.Errorf("Unexpected zones listed by the predicate function, got %v, want %v", zones, expectZones)
 	}
@@ -1816,9 +1816,9 @@ func validateServiceStateAnnotationExceptNames(t *testing.T, svc *apiv1.Service,
 	}
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer)
-	zoneGetter := zonegetter.NewZoneGetter(nodeInformer)
+	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
 	// This routine is called from tests verifying L7 NEGs.
-	zones, _ := zoneGetter.List(negtypes.NodeFilterForEndpointCalculatorMode(negtypes.L7Mode), klog.TODO())
+	zones, _ := zoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(negtypes.L7Mode), klog.TODO())
 
 	// negStatus validation
 	negStatus, err := annotations.ParseNegStatus(v)

@@ -194,7 +194,9 @@ func NewController(
 			podInformer.GetIndexer(),
 			cloud,
 			manager,
+			zoneGetter,
 			enableDualStackNEG,
+			flags.F.EnableMultiSubnetCluster,
 			logger,
 		)
 	} else {
@@ -307,11 +309,11 @@ func NewController(
 			oldNode := old.(*apiv1.Node)
 			currentNode := cur.(*apiv1.Node)
 
-			vmIpCandidateNodeCheck := utils.CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes
-			vmIpPortCandidateNodeCheck := utils.CandidateNodesPredicate
+			vmIpCandidateNodeCheck := zonegetter.CandidateAndUnreadyNodesFilter
+			vmIpPortCandidateNodeCheck := zonegetter.CandidateNodesFilter
 
-			if vmIpCandidateNodeCheck(oldNode, logger) != vmIpCandidateNodeCheck(currentNode, logger) ||
-				vmIpPortCandidateNodeCheck(oldNode, logger) != vmIpPortCandidateNodeCheck(currentNode, logger) {
+			if zoneGetter.IsNodeSelectedByFilter(oldNode, vmIpCandidateNodeCheck, logger) != zoneGetter.IsNodeSelectedByFilter(currentNode, vmIpCandidateNodeCheck, logger) ||
+				zoneGetter.IsNodeSelectedByFilter(oldNode, vmIpPortCandidateNodeCheck, logger) != zoneGetter.IsNodeSelectedByFilter(currentNode, vmIpPortCandidateNodeCheck, logger) {
 				logger.Info("Node has changed, enqueueing", "node", currentNode.Name)
 				negController.enqueueNode(currentNode)
 			}
@@ -471,10 +473,6 @@ func (c *Controller) processService(key string) error {
 	if service == nil {
 		return fmt.Errorf("cannot convert to Service (%T)", obj)
 	}
-	// TODO(cheungdavid): Remove this validation when single stack ipv6 endpoint is supported
-	if service.Spec.Type != apiv1.ServiceTypeLoadBalancer && isSingleStackIPv6Service(service) {
-		return fmt.Errorf("NEG is not supported for ipv6 only service (%T)", service)
-	}
 	negUsage := metricscollector.NegServiceState{}
 	svcPortInfoMap := make(negtypes.PortInfoMap)
 	networkInfo, err := c.networkResolver.ServiceNetwork(service)
@@ -514,6 +512,10 @@ func (c *Controller) processService(key string) error {
 	}
 	if len(svcPortInfoMap) != 0 {
 		c.logger.V(2).Info("Syncing service", "service", key)
+		// TODO(cheungdavid): Remove this validation when single stack ipv6 endpoint is supported
+		if service.Spec.Type != apiv1.ServiceTypeLoadBalancer && isSingleStackIPv6Service(service) {
+			return fmt.Errorf("NEG is not supported for ipv6 only service (%T)", service)
+		}
 		if err = c.syncNegStatusAnnotation(namespace, name, svcPortInfoMap); err != nil {
 			return err
 		}
@@ -696,7 +698,7 @@ func (c *Controller) getCSMPortInfoMap(namespace, name string, service *apiv1.Se
 // syncNegStatusAnnotation syncs the neg status annotation
 // it takes service namespace, name and the expected service ports for NEGs.
 func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap negtypes.PortInfoMap) error {
-	zones, err := c.zoneGetter.List(negtypes.NodeFilterForEndpointCalculatorMode(portMap.EndpointsCalculatorMode()), c.logger)
+	zones, err := c.zoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(portMap.EndpointsCalculatorMode()), c.logger)
 	if err != nil {
 		return err
 	}

@@ -24,9 +24,7 @@ import (
 
 	alpha "google.golang.org/api/compute/v0.alpha"
 	beta "google.golang.org/api/compute/v0.beta"
-	compute "google.golang.org/api/compute/v1"
 	ga "google.golang.org/api/compute/v1"
-	"google.golang.org/api/networkservices/v1"
 	networkservicesga "google.golang.org/api/networkservices/v1"
 	networkservicesbeta "google.golang.org/api/networkservices/v1beta1"
 	"google.golang.org/api/option"
@@ -56,7 +54,7 @@ func NewService(ctx context.Context, client *http.Client, pr ProjectRouter, rl R
 	if err != nil {
 		return nil, err
 	}
-	ga, err := compute.NewService(ctx, option.WithHTTPClient(client))
+	ga, err := ga.NewService(ctx, option.WithHTTPClient(client))
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +113,7 @@ func (s *Service) wrapOperation(anyOp any) (operation, error) {
 			s: s, projectID: r.ProjectID,
 			key: r.Key,
 		}, nil
-	case *networkservices.Operation:
+	case *networkservicesga.Operation:
 		result, err := parseNetworkServiceOpURL(o.Name)
 		if err != nil {
 			return nil, fmt.Errorf("wrapOperation: %w", err)

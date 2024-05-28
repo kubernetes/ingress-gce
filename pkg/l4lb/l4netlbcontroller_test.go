@@ -154,7 +154,7 @@ func createAndSyncNetLBSvc(t *testing.T) (svc *v1.Service, lc *L4NetLBController
 	svc = test.NewL4NetLBRBSService(8080)
 	addNetLBService(lc, svc)
 	key, _ := common.KeyFunc(svc)
-	err := lc.sync(key)
+	err := lc.sync(key, klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to sync newly added service %s, err %v", svc.Name, err)
 	}
@@ -428,7 +428,7 @@ func TestForwardingRuleWithPortRange(t *testing.T) {
 		svc.UID = types.UID(svc.Name + fmt.Sprintf("-%d", rand.Intn(1001)))
 		addNetLBService(lc, svc)
 		key, _ := common.KeyFunc(svc)
-		if err := lc.sync(key); err != nil {
+		if err := lc.sync(key, klog.TODO()); err != nil {
 			t.Errorf("Failed to sync service %s, err: %v", key, err)
 		}
 
@@ -462,7 +462,7 @@ func TestProcessServiceCreate(t *testing.T) {
 		t.Fatalf("Cannot get prometheus metrics for L4NetLB latency")
 	}
 	key, _ := common.KeyFunc(svc)
-	err = lc.sync(key)
+	err = lc.sync(key, klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to sync newly added service %s, err %v", svc.Name, err)
 	}
@@ -514,7 +514,7 @@ func TestProcessMultinetServiceCreate(t *testing.T) {
 		t.Fatalf("Cannot get prometheus metrics for L4NetLB latency")
 	}
 	key, _ := common.KeyFunc(svc)
-	err = lc.sync(key)
+	err = lc.sync(key, klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to sync newly added service %s, err %v", svc.Name, err)
 	}
@@ -546,11 +546,11 @@ func TestProcessServiceCreateWithUsersProvidedIP(t *testing.T) {
 	svc.Spec.LoadBalancerIP = usersIP
 	addNetLBService(lc, svc)
 	key, _ := common.KeyFunc(svc)
-	if err := lc.sync(key); err == nil {
+	if err := lc.sync(key, klog.TODO()); err == nil {
 		t.Errorf("Expected sync error when address reservation fails.")
 	}
 	addUsersStaticAddress(lc, cloud.NetworkTierDefault)
-	if err := lc.sync(key); err != nil {
+	if err := lc.sync(key, klog.TODO()); err != nil {
 		t.Errorf("Un expected Error when trying to sync service with user's address, err: %v", err)
 	}
 	svc, err := lc.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
@@ -566,7 +566,7 @@ func TestProcessServiceCreateWithUsersProvidedIP(t *testing.T) {
 	// Mark the service for deletion by updating timestamp
 	svc.DeletionTimestamp = &metav1.Time{}
 	updateNetLBService(lc, svc)
-	if err := lc.sync(key); err != nil {
+	if err := lc.sync(key, klog.TODO()); err != nil {
 		t.Errorf("Unexpected Error when trying to sync service after deletion, err: %v", err)
 	}
 	adr, err := lc.ctx.Cloud.GetRegionAddress(userAddrName, lc.ctx.Cloud.Region())
@@ -599,17 +599,17 @@ func TestProcessServiceDeletion(t *testing.T) {
 	if !common.HasGivenFinalizer(svc.ObjectMeta, common.NetLBFinalizerV2) {
 		t.Errorf("Expected L4 External LoadBalancer finalizer")
 	}
-	if lc.needsDeletion(svc) {
+	if lc.needsDeletion(svc, klog.TODO()) {
 		t.Errorf("Service should not be marked for deletion")
 	}
 	// Mark the service for deletion by updating timestamp
 	svc.DeletionTimestamp = &metav1.Time{}
 	updateNetLBService(lc, svc)
-	if !lc.needsDeletion(svc) {
+	if !lc.needsDeletion(svc, klog.TODO()) {
 		t.Errorf("Service should be marked for deletion")
 	}
 	key, _ := common.KeyFunc(svc)
-	err := lc.sync(key)
+	err := lc.sync(key, klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to sync service %s, err %v", svc.Name, err)
 	}
@@ -663,18 +663,18 @@ func TestProcessRBSServiceTypeTransition(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			svc, lc := createAndSyncNetLBSvc(t)
-			if lc.needsDeletion(svc) {
+			if lc.needsDeletion(svc, klog.TODO()) {
 				t.Errorf("Service should not be marked for deletion")
 			}
 
 			svc.Spec.Type = tc.finalType
 			updateNetLBService(lc, svc)
-			if !lc.needsDeletion(svc) {
+			if !lc.needsDeletion(svc, klog.TODO()) {
 				t.Errorf("RBS after switching to %v should be marked for deletion", tc.finalType)
 			}
 
 			key, _ := common.KeyFunc(svc)
-			err := lc.sync(key)
+			err := lc.sync(key, klog.TODO())
 			if err != nil {
 				t.Errorf("Failed to sync service %s, err %v", svc.Name, err)
 			}
@@ -718,7 +718,7 @@ func TestServiceDeletionWhenInstanceGroupInUse(t *testing.T) {
 	svc.DeletionTimestamp = &metav1.Time{}
 	updateNetLBService(lc, svc)
 	key, _ := common.KeyFunc(svc)
-	err := lc.sync(key)
+	err := lc.sync(key, klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to sync service %s, err %v", svc.Name, err)
 	}
@@ -749,7 +749,7 @@ func TestInternalLoadBalancerShouldNotBeProcessByL4NetLBController(t *testing.T)
 	ilbSvc := test.NewL4ILBService(false, 8080)
 	addNetLBService(lc, ilbSvc)
 	key, _ := common.KeyFunc(ilbSvc)
-	err := lc.sync(key)
+	err := lc.sync(key, klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to sync service %s, err %v", ilbSvc.Name, err)
 	}
@@ -761,7 +761,7 @@ func TestInternalLoadBalancerShouldNotBeProcessByL4NetLBController(t *testing.T)
 	// Mark the service for deletion by updating timestamp
 	ilbSvc.DeletionTimestamp = &metav1.Time{}
 	updateNetLBService(lc, ilbSvc)
-	if lc.needsDeletion(ilbSvc) {
+	if lc.needsDeletion(ilbSvc, klog.TODO()) {
 		t.Fatalf("Service should not be marked for deletion!")
 	}
 }
@@ -787,7 +787,7 @@ func TestProcessServiceCreationFailed(t *testing.T) {
 		svc := test.NewL4NetLBRBSService(8080)
 		addNetLBService(lc, svc)
 		key, _ := common.KeyFunc(svc)
-		err := lc.sync(key)
+		err := lc.sync(key, klog.TODO())
 		if err == nil || err.Error() != param.expectedError {
 			t.Errorf("Error mismatch '%v' != '%v'", err, param.expectedError)
 		}
@@ -805,7 +805,7 @@ func TestMetricsWithSyncError(t *testing.T) {
 	addNetLBService(lc, svc)
 
 	key, _ := common.KeyFunc(svc)
-	err = lc.sync(key)
+	err = lc.sync(key, klog.TODO())
 	if err == nil {
 		t.Errorf("Expected error in sync controller")
 	}
@@ -841,12 +841,12 @@ func TestProcessServiceDeletionFailed(t *testing.T) {
 		}
 		svc.DeletionTimestamp = &metav1.Time{}
 		updateNetLBService(lc, svc)
-		if !lc.needsDeletion(svc) {
+		if !lc.needsDeletion(svc, klog.TODO()) {
 			t.Fatalf("Service should be marked for deletion")
 		}
 		param.addMockFunc((lc.ctx.Cloud.Compute().(*cloud.MockGCE)))
 		key, _ := common.KeyFunc(svc)
-		err := lc.sync(key)
+		err := lc.sync(key, klog.TODO())
 		if err == nil || err.Error() != param.expectedError {
 			t.Errorf("Error mismatch '%v' != '%v'", err, param.expectedError)
 		}
@@ -860,7 +860,7 @@ func TestServiceStatusForErrorSync(t *testing.T) {
 	svc := test.NewL4NetLBRBSService(8080)
 	addNetLBService(lc, svc)
 
-	syncResult := lc.syncInternal(svc)
+	syncResult := lc.syncInternal(svc, klog.TODO())
 	if syncResult.Error == nil {
 		t.Errorf("Expected error in sync controller")
 	}
@@ -878,7 +878,7 @@ func TestServiceStatusForSuccessSync(t *testing.T) {
 	svc := test.NewL4NetLBRBSService(8080)
 	addNetLBService(lc, svc)
 
-	syncResult := lc.syncInternal(svc)
+	syncResult := lc.syncInternal(svc, klog.TODO())
 	if syncResult.Error != nil {
 		t.Errorf("Unexpected error in sync controller")
 	}
@@ -1039,7 +1039,7 @@ func TestProcessServiceUpdate(t *testing.T) {
 			}
 
 			key, _ := common.KeyFunc(newSvc)
-			err = l4netController.sync(key)
+			err = l4netController.sync(key, klog.TODO())
 			if err != nil {
 				t.Errorf("Failed to sync newly added service %s, err %v", svc.Name, err)
 			}
@@ -1072,7 +1072,7 @@ func TestHealthCheckWhenExternalTrafficPolicyWasUpdated(t *testing.T) {
 	// delete shared health check if is created, update service to Cluster and
 	// check that non-shared health check was created
 	hcNameShared := lc.namer.L4HealthCheck(svc.Namespace, svc.Name, true)
-	healthchecksl4.Fake(lc.ctx.Cloud, lc.ctx.Recorder(svc.Namespace)).DeleteHealthCheckWithFirewall(svc, lc.namer, true, meta.Regional, utils.XLB)
+	healthchecksl4.Fake(lc.ctx.Cloud, lc.ctx.Recorder(svc.Namespace)).DeleteHealthCheckWithFirewall(svc, lc.namer, true, meta.Regional, utils.XLB, klog.TODO())
 	// Update ExternalTrafficPolicy to Cluster check if shared HC was created
 	err = updateAndAssertExternalTrafficPolicy(newSvc, lc, v1.ServiceExternalTrafficPolicyTypeCluster, hcNameShared)
 	if err != nil {
@@ -1081,7 +1081,7 @@ func TestHealthCheckWhenExternalTrafficPolicyWasUpdated(t *testing.T) {
 	newSvc.DeletionTimestamp = &metav1.Time{}
 	updateNetLBService(lc, newSvc)
 	key, _ := common.KeyFunc(newSvc)
-	if err = lc.sync(key); err != nil {
+	if err = lc.sync(key, klog.TODO()); err != nil {
 		t.Errorf("Failed to sync deleted service %s, err %v", key, err)
 	}
 	if !isHealthCheckDeleted(lc.ctx.Cloud, hcNameNonShared, klog.TODO()) {
@@ -1097,7 +1097,7 @@ func updateAndAssertExternalTrafficPolicy(newSvc *v1.Service, lc *L4NetLBControl
 	newSvc.Spec.ExternalTrafficPolicy = newPolicy
 	updateNetLBService(lc, newSvc)
 	key, _ := common.KeyFunc(newSvc)
-	err := lc.sync(key)
+	err := lc.sync(key, klog.TODO())
 	if err != nil {
 		return fmt.Errorf("Failed to sync updated service %s, err %v", key, err)
 	}
@@ -1125,12 +1125,12 @@ func TestControllerUserIPWithStandardNetworkTier(t *testing.T) {
 	key, _ := common.KeyFunc(svc)
 	addUsersStaticAddress(lc, cloud.NetworkTierStandard)
 	// Sync should return error that Network Tier mismatch because we cannot tear User Managed Address.
-	if err := lc.sync(key); !utils.IsNetworkTierError(err) {
+	if err := lc.sync(key, klog.TODO()); !utils.IsNetworkTierError(err) {
 		t.Errorf("Expected error when trying to ensure service with wrong Network Tier, err: %v", err)
 	}
 	svc.Annotations[annotations.NetworkTierAnnotationKey] = string(cloud.NetworkTierStandard)
 	updateNetLBService(lc, svc)
-	if err := lc.sync(key); err != nil {
+	if err := lc.sync(key, klog.TODO()); err != nil {
 		t.Errorf("Unexpected error when trying to ensure service with STANDARD Network Tier, err: %v", err)
 	}
 }
@@ -1191,7 +1191,7 @@ func TestIsRBSBasedService(t *testing.T) {
 			controller.ctx.Cloud.Compute().(*cloud.MockGCE).MockForwardingRules.GetHook = testCase.frHook
 			addNetLBService(controller, svc)
 			// When
-			result := controller.isRBSBasedService(svc)
+			result := controller.isRBSBasedService(svc, klog.TODO())
 
 			// Then
 			if result != testCase.expectRBSService {
@@ -1215,7 +1215,7 @@ func TestIsRBSBasedServiceWithILBServices(t *testing.T) {
 		annotations.TCPForwardingRuleKey: ilbFrName,
 		annotations.UDPForwardingRuleKey: ilbFrName,
 	}
-	if controller.isRBSBasedService(ilbSvc) {
+	if controller.isRBSBasedService(ilbSvc, klog.TODO()) {
 		t.Errorf("isRBSBasedService should not detect RBS in ILB services. Service: %v", ilbSvc)
 	}
 }
@@ -1230,21 +1230,21 @@ func TestIsRBSBasedServiceByForwardingRuleAnnotation(t *testing.T) {
 		annotations.UDPForwardingRuleKey: "fr-1",
 		annotations.TCPForwardingRuleKey: "fr-2",
 	}
-	if controller.isRBSBasedService(svc) {
+	if controller.isRBSBasedService(svc, klog.TODO()) {
 		t.Errorf("Should not detect RBS by forwarding rule annotations without matching name. Service: %v", svc)
 	}
 
 	svc.Annotations = map[string]string{
 		annotations.TCPForwardingRuleKey: frName,
 	}
-	if !controller.isRBSBasedService(svc) {
+	if !controller.isRBSBasedService(svc, klog.TODO()) {
 		t.Errorf("Should detect RBS by TCP forwarding rule annotation with matching name. Service %v", svc)
 	}
 
 	svc.Annotations = map[string]string{
 		annotations.UDPForwardingRuleKey: frName,
 	}
-	if !controller.isRBSBasedService(svc) {
+	if !controller.isRBSBasedService(svc, klog.TODO()) {
 		t.Errorf("Should detect RBS by UDP forwarding rule annotation with matching name. Service %v", svc)
 	}
 }
@@ -1283,6 +1283,7 @@ func TestShouldProcessService(t *testing.T) {
 		oldSvc        *v1.Service
 		newSvc        *v1.Service
 		shouldProcess bool
+		shouldResync  bool
 	}{
 		{
 			oldSvc:        nil,
@@ -1329,11 +1330,15 @@ func TestShouldProcessService(t *testing.T) {
 			oldSvc:        svcWithRBSAnnotationAndFinalizer,
 			newSvc:        svcWithRBSAnnotationAndFinalizer,
 			shouldProcess: true,
+			shouldResync:  true,
 		},
 	} {
-		result := l4netController.shouldProcessService(testCase.newSvc, testCase.oldSvc)
+		result, isResync := l4netController.shouldProcessService(testCase.newSvc, testCase.oldSvc, klog.TODO())
 		if result != testCase.shouldProcess {
 			t.Errorf("Old service %v. New service %v. Expected needsUpdate: %t, got: %t", testCase.oldSvc, testCase.newSvc, testCase.shouldProcess, result)
+		}
+		if isResync != testCase.shouldResync {
+			t.Errorf("Old service %v. New service %v. Expected needsResync: %t, got: %t", testCase.oldSvc, testCase.newSvc, testCase.shouldResync, isResync)
 		}
 	}
 }
@@ -1357,7 +1362,7 @@ func TestStrongSessionAffinityServiceUpdate(t *testing.T) {
 		t.Errorf("Service should be marked for update")
 	}
 	key, _ := common.KeyFunc(newSvc)
-	l4netController.sync(key)
+	l4netController.sync(key, klog.TODO())
 
 	svcAfterUpdate, _ := l4netController.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
 
@@ -1486,7 +1491,7 @@ func TestPreventTargetPoolToRBSMigration(t *testing.T) {
 				t.Fatalf("common.KeyFunc(%v) returned error %v, want nil", svc, err)
 			}
 			// test only preventLegacyServiceHandling
-			_, err = controller.preventLegacyServiceHandling(svc, key)
+			_, err = controller.preventLegacyServiceHandling(svc, key, klog.TODO())
 			if err != nil {
 				t.Fatalf("controller.preventLegacyServiceHandling(%v, %s) returned error %v, want nil", svc, key, err)
 			}
@@ -1514,7 +1519,7 @@ func TestPreventTargetPoolToRBSMigration(t *testing.T) {
 				t.Fatalf("common.KeyFunc(%v) returned error %v, want nil", svc2, err)
 			}
 
-			err = controller.sync(key)
+			err = controller.sync(key, klog.TODO())
 			if err != nil {
 				t.Fatalf("controller.sync(%s) returned error %v, want nil", key, err)
 			}
@@ -1583,7 +1588,7 @@ func TestIsRBSBasedServiceForNonLoadBalancersType(t *testing.T) {
 			}
 			controller := newL4NetLBServiceController()
 
-			if controller.isRBSBasedService(svc) {
+			if controller.isRBSBasedService(svc, klog.TODO()) {
 				t.Errorf("isRBSBasedService(%v) = true, want false", svc)
 			}
 		})
@@ -1636,7 +1641,7 @@ func TestCreateDeleteDualStackNetLBService(t *testing.T) {
 			}
 
 			key, _ := common.KeyFunc(svc)
-			err = controller.sync(key)
+			err = controller.sync(key, klog.TODO())
 			if err != nil {
 				t.Errorf("Failed to sync newly added service %s, err %v", svc.Name, err)
 			}
@@ -1673,7 +1678,7 @@ func TestProcessDualStackNetLBServiceOnUserError(t *testing.T) {
 	// Create cluster subnet with INTERNAL ipv6 access type to trigger user error.
 	test.MustCreateDualStackClusterSubnet(t, controller.ctx.Cloud, "INTERNAL")
 
-	syncResult := controller.syncInternal(svc)
+	syncResult := controller.syncInternal(svc, klog.TODO())
 	if syncResult.Error == nil {
 		t.Fatalf("Failed to generate error when syncing service %s", svc.Name)
 	}
@@ -1708,7 +1713,7 @@ func TestEnsureBackendLinkingWithNEGs(t *testing.T) {
 	controller.negLinker = linker
 	svc := test.NewL4NetLBRBSService(8080)
 
-	err := controller.ensureBackendLinking(svc, negLink)
+	err := controller.ensureBackendLinking(svc, negLink, klog.TODO())
 	if err != nil {
 		t.Fatalf("ensureBackendLinking() failed, err=%v", err)
 	}
@@ -1741,7 +1746,7 @@ func TestEnsureBackendLinkingWithInstanceGroups(t *testing.T) {
 		t.Fatalf("CreateRegionBackendService() failed, err=%v", err)
 	}
 
-	err = controller.ensureBackendLinking(svc, instanceGroupLink)
+	err = controller.ensureBackendLinking(svc, instanceGroupLink, klog.TODO())
 	if err != nil {
 		t.Fatalf("ensureBackendLinking() failed, err=%v", err)
 	}
