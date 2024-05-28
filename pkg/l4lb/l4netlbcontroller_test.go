@@ -48,6 +48,7 @@ import (
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/composite"
 	ingctx "k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/healthchecksl4"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/metrics"
@@ -134,7 +135,7 @@ func deleteNetLBService(lc *L4NetLBController, svc *v1.Service) {
 	lc.ctx.ServiceInformer.GetIndexer().Delete(svc)
 }
 
-func checkForwardingRule(lc *L4NetLBController, svc *v1.Service, expectedPortRange string) error {
+func checkForwardingRule(lc *L4NetLBController, svc *v1.Service, expectedPortRange string, expectedPorts []string) error {
 	if len(svc.Spec.Ports) == 0 {
 		return fmt.Errorf("There are no ports in service!")
 	}
@@ -145,6 +146,9 @@ func checkForwardingRule(lc *L4NetLBController, svc *v1.Service, expectedPortRan
 	}
 	if fwdRule.PortRange != expectedPortRange {
 		return fmt.Errorf("Port Range Mismatch %v != %v", expectedPortRange, fwdRule.PortRange)
+	}
+	if !utils.EqualStringSets(fwdRule.Ports, expectedPorts) {
+		return fmt.Errorf("Port List Mismatch %v != %v", expectedPorts, fwdRule.Ports)
 	}
 	return nil
 }
@@ -386,7 +390,7 @@ func TestProcessMultipleNetLBServices(t *testing.T) {
 					t.Errorf("%v", err)
 				}
 				expectedPortRange := fmt.Sprintf("%d-%d", svc.Spec.Ports[0].Port, svc.Spec.Ports[0].Port)
-				if err := checkForwardingRule(lc, svc, expectedPortRange); err != nil {
+				if err := checkForwardingRule(lc, svc, expectedPortRange, nil); err != nil {
 					t.Errorf("Check forwarding rule error: %v", err)
 				}
 				deleteNetLBService(lc, svc)
@@ -401,6 +405,8 @@ func TestForwardingRuleWithPortRange(t *testing.T) {
 	for _, tc := range []struct {
 		svcName           string
 		ports             []int32
+		discretePorts     bool
+		expectedPorts     []string
 		expectedPortRange string
 	}{
 		{
@@ -423,7 +429,21 @@ func TestForwardingRuleWithPortRange(t *testing.T) {
 			ports:             []int32{8081, 80, 8080, 123},
 			expectedPortRange: "80-8081",
 		},
+		{
+			svcName:           "DiscretePortsLessThanMax",
+			ports:             []int32{8081, 80, 8080, 123},
+			discretePorts:     true,
+			expectedPorts:     []string{"80", "123", "8080", "8081"},
+			expectedPortRange: "",
+		},
+		{
+			svcName:           "DiscretePortsMoreThanMax",
+			ports:             []int32{8081, 80, 8080, 123, 666, 555},
+			discretePorts:     true,
+			expectedPortRange: "80-8081",
+		},
 	} {
+		flags.F.EnableDiscretePortForwarding = tc.discretePorts
 		svc := test.NewL4NetLBRBSServiceMultiplePorts(tc.svcName, tc.ports)
 		svc.UID = types.UID(svc.Name + fmt.Sprintf("-%d", rand.Intn(1001)))
 		addNetLBService(lc, svc)
@@ -443,7 +463,7 @@ func TestForwardingRuleWithPortRange(t *testing.T) {
 		if err := checkBackendService(lc, svc); err != nil {
 			t.Errorf("Check backend service err: %v", err)
 		}
-		if err := checkForwardingRule(lc, newSvc, tc.expectedPortRange); err != nil {
+		if err := checkForwardingRule(lc, newSvc, tc.expectedPortRange, tc.expectedPorts); err != nil {
 			t.Errorf("Check forwarding rule error: %v", err)
 		}
 		deleteNetLBService(lc, svc)

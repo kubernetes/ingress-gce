@@ -1317,7 +1317,7 @@ func TestComputeBasePath(t *testing.T) {
 	}
 }
 
-func TestMinMaxPortRangeAndProtocol(t *testing.T) {
+func TestMinMaxPortRange(t *testing.T) {
 
 	for _, tc := range []struct {
 		svcPorts         []api_v1.ServicePort
@@ -1326,55 +1326,46 @@ func TestMinMaxPortRangeAndProtocol(t *testing.T) {
 	}{
 		{
 			svcPorts: []api_v1.ServicePort{
-				{Port: 1, Protocol: "TCP"},
-				{Port: 10, Protocol: "TCP"},
-				{Port: 100, Protocol: "TCP"}},
-			expectedRange:    "1-100",
-			expectedProtocol: "TCP",
+				{Port: 1},
+				{Port: 10},
+				{Port: 100}},
+			expectedRange: "1-100",
 		},
 		{
 			svcPorts: []api_v1.ServicePort{
-				{Port: 10, Protocol: "TCP"},
-				{Port: 1, Protocol: "TCP"},
-				{Port: 50, Protocol: "TCP"},
-				{Port: 100, Protocol: "TCP"},
-				{Port: 90, Protocol: "TCP"}},
-			expectedRange:    "1-100",
-			expectedProtocol: "TCP",
+				{Port: 10},
+				{Port: 1},
+				{Port: 50},
+				{Port: 100},
+				{Port: 90}},
+			expectedRange: "1-100",
 		},
 		{
 			svcPorts: []api_v1.ServicePort{
-				{Port: 10, Protocol: "TCP"}},
-			expectedRange:    "10-10",
-			expectedProtocol: "TCP",
+				{Port: 10}},
+			expectedRange: "10-10",
 		},
 		{
 			svcPorts: []api_v1.ServicePort{
-				{Port: 100, Protocol: "TCP"},
-				{Port: 10, Protocol: "TCP"}},
-			expectedRange:    "10-100",
-			expectedProtocol: "TCP",
+				{Port: 100},
+				{Port: 10}},
+			expectedRange: "10-100",
 		},
 		{
 			svcPorts: []api_v1.ServicePort{
-				{Port: 100, Protocol: "TCP"},
-				{Port: 50, Protocol: "TCP"},
-				{Port: 10, Protocol: "TCP"}},
-			expectedRange:    "10-100",
-			expectedProtocol: "TCP",
+				{Port: 100},
+				{Port: 50},
+				{Port: 10}},
+			expectedRange: "10-100",
 		},
 		{
-			svcPorts:         []api_v1.ServicePort{},
-			expectedRange:    "",
-			expectedProtocol: "",
+			svcPorts:      []api_v1.ServicePort{},
+			expectedRange: "",
 		},
 	} {
-		portsRange, protocol := MinMaxPortRangeAndProtocol(tc.svcPorts)
+		portsRange := MinMaxPortRange(tc.svcPorts)
 		if portsRange != tc.expectedRange {
 			t.Errorf("PortRange mismatch %v != %v", tc.expectedRange, portsRange)
-		}
-		if protocol != tc.expectedProtocol {
-			t.Errorf("protocol mismatch %v != %v", protocol, tc.expectedProtocol)
 		}
 	}
 }
