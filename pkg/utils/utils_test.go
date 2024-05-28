@@ -27,6 +27,7 @@ import (
 
 	"k8s.io/klog/v2"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
@@ -40,6 +41,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils/common"
 )
@@ -121,16 +123,6 @@ func TestEqualResourcePaths(t *testing.T) {
 			b:    "zones/us-central1-a/instanceGroups/example-group",
 			want: true,
 		},
-		"partial without project id vs full": {
-			a:    "https://www.googleapis.com/compute/v1/projects/project-name/regions/us-central1/sslPolicies/example-policy",
-			b:    "regions/us-central1/sslPolicies/example-policy",
-			want: true,
-		},
-		"partial without project id vs partial": {
-			a:    "projects/project-id/zones/us-central1-a/instanceGroups/example-group",
-			b:    "zones/us-central1-a/instanceGroups/example-group",
-			want: true,
-		},
 		"full vs full": {
 			a:    "https://www.googleapis.com/compute/beta/projects/project-id/zones/us-central1-a/instanceGroups/example-group",
 			b:    "https://www.googleapis.com/compute/beta/projects/project-id/zones/us-central1-a/instanceGroups/example-group",
@@ -189,16 +181,6 @@ func TestEqualResourceIDs(t *testing.T) {
 			b:    "projects/project-id/zones/us-central1-a/instanceGroups/example-group",
 			want: true,
 		},
-		"partial without project id vs full": {
-			a:    "https://www.googleapis.com/compute/v1/projects/project-name/regions/us-central1/sslPolicies/example-policy",
-			b:    "regions/us-central1/sslPolicies/example-policy",
-			want: false,
-		},
-		"partial without project id vs partial": {
-			a:    "projects/project-id/zones/us-central1-a/instanceGroups/example-group",
-			b:    "zones/us-central1-a/instanceGroups/example-group",
-			want: false,
-		},
 		"full vs full": {
 			a:    "https://www.googleapis.com/compute/beta/projects/project-id/zones/us-central1-a/instanceGroups/example-group",
 			b:    "https://www.googleapis.com/compute/beta/projects/project-id/zones/us-central1-a/instanceGroups/example-group",
@@ -240,6 +222,243 @@ func TestEqualResourceIDs(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			if got := EqualResourceIDs(tc.a, tc.b); got != tc.want {
 				t.Errorf("EqualResourceIDs(%q, %q) = %v, want %v", tc.a, tc.b, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestEqualForwardingRules(t *testing.T) {
+	t.Parallel()
+
+	fwdRules := []*composite.ForwardingRule{
+		{
+			Name:                "empty-ip-address-fwd-rule",
+			IPAddress:           "",
+			Ports:               []string{"123"},
+			IPProtocol:          "TCP",
+			LoadBalancingScheme: string(cloud.SchemeInternal),
+			BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+		},
+		{
+			Name:                "tcp-fwd-rule",
+			IPAddress:           "10.0.0.0",
+			Ports:               []string{"123"},
+			IPProtocol:          "TCP",
+			LoadBalancingScheme: string(cloud.SchemeInternal),
+			BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+		},
+		{
+			Name:                "udp-fwd-rule",
+			IPAddress:           "10.0.0.0",
+			Ports:               []string{"123"},
+			IPProtocol:          "UDP",
+			LoadBalancingScheme: string(cloud.SchemeInternal),
+			BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+		},
+		{
+			Name:                "global-access-fwd-rule",
+			IPAddress:           "10.0.0.0",
+			Ports:               []string{"123"},
+			IPProtocol:          "TCP",
+			LoadBalancingScheme: string(cloud.SchemeInternal),
+			AllowGlobalAccess:   true,
+			BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+		},
+		{
+			Name:                "fwd-rule-bs-link1",
+			IPAddress:           "10.0.0.0",
+			Ports:               []string{"123"},
+			IPProtocol:          "TCP",
+			LoadBalancingScheme: string(cloud.SchemeInternal),
+			BackendService:      "http://compute.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+		},
+		{
+			Name:                "fwd-rule-bs-link2",
+			IPAddress:           "10.0.0.0",
+			Ports:               []string{"123"},
+			IPProtocol:          "TCP",
+			LoadBalancingScheme: string(cloud.SchemeInternal),
+			BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+		},
+		{
+			Name:                "udp-fwd-rule-all-ports",
+			IPAddress:           "10.0.0.0",
+			Ports:               []string{"123"},
+			AllPorts:            true,
+			IPProtocol:          "UDP",
+			LoadBalancingScheme: string(cloud.SchemeInternal),
+			BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+			NetworkTier:         cloud.NetworkTierPremium.ToGCEValue(),
+		},
+		{
+			Name:                "fwd-rule-bs-link2-standard-ntier",
+			IPAddress:           "10.0.0.0",
+			Ports:               []string{"123"},
+			IPProtocol:          "TCP",
+			LoadBalancingScheme: string(cloud.SchemeInternal),
+			BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+			NetworkTier:         string(cloud.NetworkTierStandard),
+		},
+		{
+			Name:                "fwd-rule-bs-link2-premium-ntier",
+			IPAddress:           "10.0.0.0",
+			Ports:               []string{"123"},
+			IPProtocol:          "TCP",
+			LoadBalancingScheme: string(cloud.SchemeInternal),
+			BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+			NetworkTier:         cloud.NetworkTierPremium.ToGCEValue(),
+		},
+	}
+
+	frPortRange1 := &composite.ForwardingRule{
+		Name:                "tcp-fwd-rule",
+		IPAddress:           "10.0.0.0",
+		PortRange:           "2-3",
+		IPProtocol:          "TCP",
+		LoadBalancingScheme: string(cloud.SchemeInternal),
+		BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+	}
+	frPortRange2 := &composite.ForwardingRule{
+		Name:                "tcp-fwd-rule",
+		IPAddress:           "10.0.0.0",
+		PortRange:           "1-2",
+		IPProtocol:          "TCP",
+		LoadBalancingScheme: string(cloud.SchemeInternal),
+		BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+	}
+
+	for _, tc := range []struct {
+		desc        string
+		oldFwdRule  *composite.ForwardingRule
+		newFwdRule  *composite.ForwardingRule
+		expectEqual bool
+	}{
+		{
+			desc:        "empty ip address does not match valid ip",
+			oldFwdRule:  fwdRules[0],
+			newFwdRule:  fwdRules[1],
+			expectEqual: false,
+		},
+		{
+			desc:        "global access enabled",
+			oldFwdRule:  fwdRules[1],
+			newFwdRule:  fwdRules[3],
+			expectEqual: false,
+		},
+		{
+			desc:        "IP protocol changed",
+			oldFwdRule:  fwdRules[1],
+			newFwdRule:  fwdRules[2],
+			expectEqual: false,
+		},
+		{
+			desc:        "same forwarding rule",
+			oldFwdRule:  fwdRules[3],
+			newFwdRule:  fwdRules[3],
+			expectEqual: true,
+		},
+		{
+			desc:        "same forwarding rule, different basepath",
+			oldFwdRule:  fwdRules[4],
+			newFwdRule:  fwdRules[5],
+			expectEqual: true,
+		},
+		{
+			desc:        "same forwarding rule, one uses ALL keyword for ports",
+			oldFwdRule:  fwdRules[2],
+			newFwdRule:  fwdRules[6],
+			expectEqual: false,
+		},
+		{
+			desc:        "network tier mismatch",
+			oldFwdRule:  fwdRules[6],
+			newFwdRule:  fwdRules[7],
+			expectEqual: false,
+		},
+		{
+			desc:        "same forwarding rule, different port ranges",
+			oldFwdRule:  frPortRange1,
+			newFwdRule:  frPortRange2,
+			expectEqual: false,
+		},
+		{
+			desc: "network mismatch",
+			oldFwdRule: &composite.ForwardingRule{
+				Name:                "tcp-fwd-rule",
+				IPAddress:           "10.0.0.0",
+				Ports:               []string{"123"},
+				IPProtocol:          "TCP",
+				LoadBalancingScheme: string(cloud.SchemeInternal),
+				BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+				Network:             "https://www.googleapis.com/compute/v1/projects/test-poject/global/networks/test-vpc",
+			},
+			newFwdRule: &composite.ForwardingRule{
+				Name:                "tcp-fwd-rule",
+				IPAddress:           "10.0.0.0",
+				Ports:               []string{"123"},
+				IPProtocol:          "TCP",
+				LoadBalancingScheme: string(cloud.SchemeInternal),
+				BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+				Network:             "https://www.googleapis.com/compute/v1/projects/test-poject/global/networks/test-other-vpc",
+			},
+			expectEqual: false,
+		},
+		{
+			desc: "subnetwork mismatch",
+			oldFwdRule: &composite.ForwardingRule{
+				Name:                "tcp-fwd-rule",
+				IPAddress:           "10.0.0.0",
+				Ports:               []string{"123"},
+				IPProtocol:          "TCP",
+				LoadBalancingScheme: string(cloud.SchemeInternal),
+				BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+				Network:             "https://www.googleapis.com/compute/v1/projects/test-poject/global/networks/test-vpc",
+				Subnetwork:          "https://www.googleapis.com/compute/v1/projects/test-poject/regions/us-central1/subnetworks/default-subnet",
+			},
+			newFwdRule: &composite.ForwardingRule{
+				Name:                "tcp-fwd-rule",
+				IPAddress:           "10.0.0.0",
+				Ports:               []string{"123"},
+				IPProtocol:          "TCP",
+				LoadBalancingScheme: string(cloud.SchemeInternal),
+				BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+				Network:             "https://www.googleapis.com/compute/v1/projects/test-poject/global/networks/test-vpc",
+				Subnetwork:          "https://www.googleapis.com/compute/v1/projects/test-poject/regions/us-central1/subnetworks/other-subnet",
+			},
+			expectEqual: false,
+		},
+		{
+			desc: "equal network data",
+			oldFwdRule: &composite.ForwardingRule{
+				Name:                "tcp-fwd-rule",
+				IPAddress:           "10.0.0.0",
+				Ports:               []string{"123"},
+				IPProtocol:          "TCP",
+				LoadBalancingScheme: string(cloud.SchemeInternal),
+				BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+				Network:             "https://www.googleapis.com/compute/v1/projects/test-poject/global/networks/test-vpc",
+				Subnetwork:          "https://www.googleapis.com/compute/v1/projects/test-poject/regions/us-central1/subnetworks/default-subnet",
+			},
+			newFwdRule: &composite.ForwardingRule{
+				Name:                "tcp-fwd-rule",
+				IPAddress:           "10.0.0.0",
+				Ports:               []string{"123"},
+				IPProtocol:          "TCP",
+				LoadBalancingScheme: string(cloud.SchemeInternal),
+				BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+				Network:             "projects/test-poject/global/networks/test-vpc",
+				Subnetwork:          "projects/test-poject/regions/us-central1/subnetworks/default-subnet",
+			},
+			expectEqual: true,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			got, err := EqualForwardingRules(tc.oldFwdRule, tc.newFwdRule)
+			if err != nil {
+				t.Errorf("EqualForwardingRules(_, _) = %v, want nil error", err)
+			}
+			if got != tc.expectEqual {
+				t.Errorf("EqualForwardingRules(_, _) = %t, want %t", got, tc.expectEqual)
 			}
 		})
 	}
@@ -518,17 +737,166 @@ func TestTraverseIngressBackends(t *testing.T) {
 	}
 }
 
+func TestGetNodeConditionPredicate(t *testing.T) {
+	tests := []struct {
+		node                                             api_v1.Node
+		expectAccept, expectAcceptByUnreadyNodePredicate bool
+		name                                             string
+	}{
+		{
+			node:         api_v1.Node{},
+			expectAccept: false,
+
+			name: "empty",
+		},
+		{
+			node: api_v1.Node{
+				Status: api_v1.NodeStatus{
+					Conditions: []api_v1.NodeCondition{
+						{Type: api_v1.NodeReady, Status: api_v1.ConditionTrue},
+					},
+				},
+			},
+			expectAccept:                       true,
+			expectAcceptByUnreadyNodePredicate: true,
+			name:                               "ready node",
+		},
+		{
+			node: api_v1.Node{
+				Status: api_v1.NodeStatus{
+					Conditions: []api_v1.NodeCondition{
+						{Type: api_v1.NodeReady, Status: api_v1.ConditionFalse},
+					},
+				},
+			},
+			expectAccept:                       false,
+			expectAcceptByUnreadyNodePredicate: true,
+			name:                               "unready node",
+		},
+		{
+			node: api_v1.Node{
+				Status: api_v1.NodeStatus{
+					Conditions: []api_v1.NodeCondition{
+						{Type: api_v1.NodeReady, Status: api_v1.ConditionUnknown},
+					},
+				},
+			},
+			expectAccept:                       false,
+			expectAcceptByUnreadyNodePredicate: true,
+			name:                               "ready status unknown",
+		},
+		{
+			node: api_v1.Node{
+				ObjectMeta: v1.ObjectMeta{
+					Name:   "node1",
+					Labels: map[string]string{LabelNodeRoleExcludeBalancer: "true"},
+				},
+				Status: api_v1.NodeStatus{
+					Conditions: []api_v1.NodeCondition{
+						{Type: api_v1.NodeReady, Status: api_v1.ConditionTrue},
+					},
+				},
+			},
+			expectAccept:                       false,
+			expectAcceptByUnreadyNodePredicate: false,
+			name:                               "ready node, excluded from loadbalancers",
+		},
+		{
+			node: api_v1.Node{
+				ObjectMeta: v1.ObjectMeta{
+					Name: "node1",
+					Labels: map[string]string{
+						GKECurrentOperationLabel: NodeDrain,
+					},
+				},
+				Status: api_v1.NodeStatus{
+					Conditions: []api_v1.NodeCondition{
+						{Type: api_v1.NodeReady, Status: api_v1.ConditionTrue},
+					},
+				},
+			},
+			expectAccept:                       true,
+			expectAcceptByUnreadyNodePredicate: false,
+			name:                               "ready node, upgrade/drain in progress",
+		},
+		{
+			node: api_v1.Node{
+				ObjectMeta: v1.ObjectMeta{
+					Name: "node1",
+					Labels: map[string]string{
+						GKECurrentOperationLabel: "random",
+					},
+				},
+				Status: api_v1.NodeStatus{
+					Conditions: []api_v1.NodeCondition{
+						{Type: api_v1.NodeReady, Status: api_v1.ConditionTrue},
+					},
+				},
+			},
+			expectAccept:                       true,
+			expectAcceptByUnreadyNodePredicate: true,
+			name:                               "ready node, non-drain operation",
+		},
+		{
+			node: api_v1.Node{
+				Spec: api_v1.NodeSpec{Unschedulable: true},
+				Status: api_v1.NodeStatus{
+					Conditions: []api_v1.NodeCondition{
+						{Type: api_v1.NodeReady, Status: api_v1.ConditionTrue},
+					},
+				},
+			},
+			expectAccept:                       true,
+			expectAcceptByUnreadyNodePredicate: true,
+			name:                               "unschedulable",
+		},
+		{
+			node: api_v1.Node{
+				Spec: api_v1.NodeSpec{
+					Taints: []api_v1.Taint{
+						{
+							Key:    ToBeDeletedTaint,
+							Value:  fmt.Sprint(time.Now().Unix()),
+							Effect: api_v1.TaintEffectNoSchedule,
+						},
+					},
+				},
+				Status: api_v1.NodeStatus{
+					Conditions: []api_v1.NodeCondition{
+						{Type: api_v1.NodeReady, Status: api_v1.ConditionTrue},
+					},
+				},
+			},
+			expectAccept:                       false,
+			expectAcceptByUnreadyNodePredicate: false,
+			name:                               "ToBeDeletedByClusterAutoscaler-taint",
+		},
+	}
+	pred := CandidateNodesPredicate
+	unreadyPred := CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes
+	for _, test := range tests {
+		accept := pred(&test.node, klog.TODO())
+		if accept != test.expectAccept {
+			t.Errorf("Test failed for %s, got %v, want %v", test.name, accept, test.expectAccept)
+		}
+		unreadyAccept := unreadyPred(&test.node, klog.TODO())
+		if unreadyAccept != test.expectAcceptByUnreadyNodePredicate {
+			t.Errorf("Test failed for unreadyNodesPredicate in case %s, got %v, want %v", test.name, unreadyAccept, test.expectAcceptByUnreadyNodePredicate)
+		}
+	}
+}
+
 // Do not run in parallel since modifies global flags
 // TODO(shance): remove l7-ilb flag tests once flag is removed
 func TestIsGCEIngress(t *testing.T) {
 	var wrongClassName = "wrong-class"
 	testCases := []struct {
-		desc                            string
-		ingress                         *networkingv1.Ingress
-		ingressClassFlag                string
-		xlbRegionalEnabledFlag          bool
-		enableIngressGlobalExternalFlag bool
-		expected                        bool
+		desc                             string
+		ingress                          *networkingv1.Ingress
+		ingressClassFlag                 string
+		xlbRegionalEnabledFlag           bool
+		disableIngressGlobalExternalFlag bool
+		expected                         bool
 	}{
 		{
 			desc: "No ingress class",
@@ -641,11 +1009,10 @@ func TestIsGCEIngress(t *testing.T) {
 					},
 				},
 			},
-			enableIngressGlobalExternalFlag: true,
-			expected:                        true,
+			expected: true,
 		},
 		{
-			desc: "L7 XLB Global class, but with EnableIngressGlobalExternal flag",
+			desc: "L7 XLB Global class, but with DisableIngressGlobalExternal flag",
 			ingress: &networkingv1.Ingress{
 				ObjectMeta: v1.ObjectMeta{
 					Annotations: map[string]string{
@@ -653,8 +1020,8 @@ func TestIsGCEIngress(t *testing.T) {
 					},
 				},
 			},
-			enableIngressGlobalExternalFlag: false,
-			expected:                        false,
+			disableIngressGlobalExternalFlag: true,
+			expected:                         false,
 		},
 	}
 
@@ -662,7 +1029,7 @@ func TestIsGCEIngress(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			flags.F.IngressClass = tc.ingressClassFlag
 			flags.F.EnableIngressRegionalExternal = tc.xlbRegionalEnabledFlag
-			flags.F.EnableIngressGlobalExternal = tc.enableIngressGlobalExternalFlag
+			flags.F.DisableIngressGlobalExternal = tc.disableIngressGlobalExternalFlag
 
 			result := IsGCEIngress(tc.ingress)
 			if result != tc.expected {
@@ -672,7 +1039,7 @@ func TestIsGCEIngress(t *testing.T) {
 			// reset flags to default, otherwise they stay modified for other tests
 			flags.F.IngressClass = ""
 			flags.F.EnableIngressRegionalExternal = false
-			flags.F.EnableIngressGlobalExternal = true
+			flags.F.DisableIngressGlobalExternal = false
 		})
 	}
 }
@@ -1719,46 +2086,6 @@ func TestIsK8sServerError(t *testing.T) {
 			got := IsK8sServerError(tc.err)
 			if got != tc.want {
 				t.Errorf("Got %+v, expected %+v", got, tc.want)
-			}
-		})
-	}
-}
-
-func TestGetDomainFromGABasePath(t *testing.T) {
-	testCases := []struct {
-		desc     string
-		basePath string
-		want     string
-	}{
-		{
-			desc: "empty string",
-		},
-		{
-			desc:     "compute.googleapis.com path",
-			basePath: "https://www.compute.googleapis.com/compute/v1",
-			want:     "https://www.compute.googleapis.com",
-		},
-		{
-			desc:     "arbitary path",
-			basePath: "mycompute.mydomain.com/mypath/compute/v1",
-			want:     "mycompute.mydomain.com/mypath",
-		},
-		{
-			desc:     "arbitary path with trailing /",
-			basePath: "mycompute.mydomain.com/mypath/compute/v1/",
-			want:     "mycompute.mydomain.com/mypath",
-		},
-		{
-			desc:     "arbitary path without /v1 -- should return same string",
-			basePath: "mycompute.mydomain.com/mypath/compute",
-			want:     "mycompute.mydomain.com/mypath/compute",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.desc, func(t *testing.T) {
-			if got := GetDomainFromGABasePath(tc.basePath); got != tc.want {
-				t.Errorf("GetDomainFromGABasePath(%s) = %s, want %s", tc.basePath, got, tc.want)
 			}
 		})
 	}

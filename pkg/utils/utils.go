@@ -21,10 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"regexp"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -35,17 +32,18 @@ import (
 	api_v1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
-	restclient "k8s.io/client-go/rest"
+	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/slice"
-	"k8s.io/ingress-gce/pkg/version"
 	"k8s.io/klog/v2"
 )
 
@@ -92,9 +90,6 @@ const (
 	// be removed in 1.18.
 	LabelAlphaNodeRoleExcludeBalancer = "alpha.service-controller.kubernetes.io/exclude-balancer"
 	DualStackSubnetStackType          = "IPV4_IPV6"
-
-	// LabelNodeSubnet specifies the subnet name of this node.
-	LabelNodeSubnet = "cloud.google.com/gke-np-subnet"
 )
 
 var networkTierErrorRegexp = regexp.MustCompile(`The network tier of external IP is STANDARD|PREMIUM, that of Address must be the same.`)
@@ -421,6 +416,34 @@ func EqualCloudResourceIDs(a, b *cloud.ResourceID) bool {
 	}
 }
 
+// EqualForwardingRules returns true if forwarding rules fr1 and fr2 have equal IP address,
+// protocol, load balancing scheme, ports or port ranges, resource paths and network tier.
+func EqualForwardingRules(fr1, fr2 *composite.ForwardingRule) (bool, error) {
+	id1, err := cloud.ParseResourceURL(fr1.BackendService)
+	if err != nil {
+		return false, fmt.Errorf("forwardingRulesEqual(): failed to parse backend resource URL from FR, err - %w", err)
+	}
+	id2, err := cloud.ParseResourceURL(fr2.BackendService)
+	if err != nil {
+		return false, fmt.Errorf("forwardingRulesEqual(): failed to parse resource URL from FR, err - %w", err)
+	}
+	return fr1.IPAddress == fr2.IPAddress &&
+		fr1.IPProtocol == fr2.IPProtocol &&
+		fr1.LoadBalancingScheme == fr2.LoadBalancingScheme &&
+		EqualStringSets(fr1.Ports, fr2.Ports) &&
+		fr1.PortRange == fr2.PortRange &&
+		EqualCloudResourceIDs(id1, id2) &&
+		fr1.AllowGlobalAccess == fr2.AllowGlobalAccess &&
+		fr1.AllPorts == fr2.AllPorts &&
+		equalResourcePaths(fr1.Subnetwork, fr2.Subnetwork) &&
+		equalResourcePaths(fr1.Network, fr2.Network) &&
+		fr1.NetworkTier == fr2.NetworkTier, nil
+}
+
+func equalResourcePaths(rp1, rp2 string) bool {
+	return rp1 == rp2 || EqualResourceIDs(rp1, rp2)
+}
+
 // IsGCEIngress returns true if the Ingress matches the class managed by this
 // controller.
 func IsGCEIngress(ing *networkingv1.Ingress) bool {
@@ -436,7 +459,7 @@ func IsGCEIngress(ing *networkingv1.Ingress) bool {
 		// is nil, then consider GCEIngress.
 		return ing.Spec.IngressClassName == nil
 	case annotations.GceIngressClass:
-		return flags.F.EnableIngressGlobalExternal
+		return !flags.F.DisableIngressGlobalExternal
 	case annotations.GceL7ILBIngressClass:
 		return true
 	case annotations.GceL7XLBRegionalIngressClass:
@@ -472,13 +495,19 @@ func IsGLBCIngress(ing *networkingv1.Ingress) bool {
 	return IsGCEIngress(ing) || IsGCEMultiClusterIngress(ing)
 }
 
-// GetNodeNames extracts names from the given nodes
-func GetNodeNames(nodes []*api_v1.Node) []string {
+// GetReadyNodeNames returns names of schedulable, ready nodes from the node lister
+// It also filters out masters and nodes excluded from load-balancing
+// TODO(rramkumar): Add a test for this.
+func GetReadyNodeNames(lister listers.NodeLister, logger klog.Logger) ([]string, error) {
 	var nodeNames []string
+	nodes, err := ListWithPredicate(lister, CandidateNodesPredicate, logger)
+	if err != nil {
+		return nodeNames, err
+	}
 	for _, n := range nodes {
 		nodeNames = append(nodeNames, n.Name)
 	}
-	return nodeNames
+	return nodeNames, nil
 }
 
 // NodeIsReady returns true if a node contains at least one condition of type "Ready"
@@ -491,6 +520,26 @@ func NodeIsReady(node *api_v1.Node) bool {
 	}
 	return false
 }
+
+// NodeConditionPredicate is a function that indicates whether the given node's conditions meet
+// some set of criteria defined by the function.
+type NodeConditionPredicate func(*api_v1.Node, klog.Logger) bool
+
+var (
+	// AllNodesPredicate selects all nodes.
+	AllNodesPredicate = func(*api_v1.Node, klog.Logger) bool { return true }
+	// CandidateNodesPredicate selects all nodes that are in ready state and devoid of any exclude labels.
+	// This is a duplicate definition of the function in:
+	// https://github.com/kubernetes/kubernetes/blob/3723713c550f649b6ba84964edef9da6cc334f9d/staging/src/k8s.io/cloud-provider/controllers/service/controller.go#L668
+	CandidateNodesPredicate = func(node *api_v1.Node, logger klog.Logger) bool {
+		return nodePredicateInternal(node, false, false, logger)
+	}
+	// CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes selects all nodes except ones that are upgrading and/or have any exclude labels. This function tolerates unready nodes.
+	// TODO(prameshj) - Once the kubernetes/kubernetes Predicate function includes Unready nodes and the GKE nodepool code sets exclude labels on upgrade, this can be replaced with CandidateNodesPredicate.
+	CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes = func(node *api_v1.Node, logger klog.Logger) bool {
+		return nodePredicateInternal(node, true, true, logger)
+	}
+)
 
 func nodePredicateInternal(node *api_v1.Node, includeUnreadyNodes, excludeUpgradingNodes bool, logger klog.Logger) bool {
 	// Get all nodes that have a taint with NoSchedule effect
@@ -538,6 +587,23 @@ func nodePredicateInternal(node *api_v1.Node, includeUnreadyNodes, excludeUpgrad
 	}
 	return true
 
+}
+
+// ListWithPredicate gets nodes that matches predicate function.
+func ListWithPredicate(nodeLister listers.NodeLister, predicate NodeConditionPredicate, logger klog.Logger) ([]*api_v1.Node, error) {
+	nodes, err := nodeLister.List(labels.Everything())
+	if err != nil {
+		return nil, err
+	}
+
+	var filtered []*api_v1.Node
+	for i := range nodes {
+		if predicate(nodes[i], logger) {
+			filtered = append(filtered, nodes[i])
+		}
+	}
+
+	return filtered, nil
 }
 
 // GetNodePrimaryIP returns a primary internal IP address of the node.
@@ -893,24 +959,4 @@ func IsUnsupportedFeatureError(err error, featureName string) bool {
 		return true
 	}
 	return false
-}
-
-// GetDomainFromGABasePath takes a GA base path of the form <path>/compute/v1 and returns the path.
-func GetDomainFromGABasePath(basePath string) string {
-	// Trim URL to remove the "/v1" part since we are using the GA path.
-	// Start by trimming any trailing "/"
-	domain := strings.TrimSuffix(basePath, "/")
-	domain = strings.TrimSuffix(domain, "/compute/v1")
-	return domain
-}
-
-// IngressUserAgent returns l7controller/$VERSION ($GOOS/$GOARCH)
-func IngressUserAgent() string {
-	return fmt.Sprintf("%s/%s (%s/%s)", filepath.Base(os.Args[0]), version.Version, runtime.GOOS, runtime.GOARCH)
-}
-
-// AddIngressUserAgent returns an updated config with IngressUserAgent()
-func AddIngressUserAgent(config *restclient.Config) *restclient.Config {
-	config.UserAgent = IngressUserAgent()
-	return config
 }
