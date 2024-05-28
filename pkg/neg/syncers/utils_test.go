@@ -494,7 +494,7 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 func TestToZoneNetworkEndpointMap(t *testing.T) {
 	t.Parallel()
 	nodeInformer := zonegetter.FakeNodeInformer()
-	zonegetter.PopulateFakeNodeInformer(nodeInformer)
+	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
 	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
 	podLister := negtypes.NewTestContext().PodInformer.GetIndexer()
 	testEndpointSlice := getDefaultEndpointSlices()
@@ -619,7 +619,7 @@ func TestToZoneNetworkEndpointMap(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			gotResult, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()), zoneGetter, podLister, tc.portName, tc.networkEndpointType, tc.enableDualStackNEG, klog.TODO())
+			gotResult, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()), zoneGetter, podLister, tc.portName, tc.networkEndpointType, tc.enableDualStackNEG, false, klog.TODO())
 			if err != nil {
 				t.Errorf("toZoneNetworkEndpointMap() = err %v, want no error", err)
 			}
@@ -748,7 +748,7 @@ func TestIpsForPod(t *testing.T) {
 
 func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 	nodeInformer := zonegetter.FakeNodeInformer()
-	zonegetter.PopulateFakeNodeInformer(nodeInformer)
+	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
 	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
 	negCloud := negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
 	negName := "test-neg-name"
@@ -1564,7 +1564,7 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 	t.Parallel()
 
 	nodeInformer := zonegetter.FakeNodeInformer()
-	zonegetter.PopulateFakeNodeInformer(nodeInformer)
+	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
 	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
 	testContext := negtypes.NewTestContext()
 	podLister := testContext.PodInformer.GetIndexer()
@@ -1690,7 +1690,7 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			result := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, serviceLister, tc.portName, tc.networkEndpointType, false, klog.TODO())
+			result := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, serviceLister, tc.portName, tc.networkEndpointType, false, false, klog.TODO())
 			if !reflect.DeepEqual(result.NetworkEndpointSet, tc.expectedEndpointMap) {
 				t.Errorf("degraded mode endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", result.NetworkEndpointSet, tc.expectedEndpointMap)
 			}
@@ -1706,6 +1706,7 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 // correct type of error with the supplied invalid endpoint information.
 func TestValidateEndpointFields(t *testing.T) {
 	t.Parallel()
+
 	emptyNamedPort := ""
 	emptyNodeName := ""
 	port80 := int32(80)
@@ -1722,7 +1723,7 @@ func TestValidateEndpointFields(t *testing.T) {
 	podLister := testContext.PodInformer.GetIndexer()
 	addPodsToLister(podLister, getDefaultEndpointSlices())
 	nodeLister := testContext.NodeInformer.GetIndexer()
-	zonegetter.PopulateFakeNodeInformer(testContext.NodeInformer)
+	zonegetter.PopulateFakeNodeInformer(testContext.NodeInformer, false)
 	fakeZoneGetter := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, defaultTestSubnetURL, false)
 
 	// Add the pod that corresponds to empty zone instance.
@@ -2300,23 +2301,456 @@ func TestValidateEndpointFields(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			result, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, emptyNamedPort, negtypes.VmIpPortEndpointType, true, klog.TODO())
+			for _, enableMultiSubnetCluster := range []bool{true, false} {
+				result, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, emptyNamedPort, negtypes.VmIpPortEndpointType, true, enableMultiSubnetCluster, klog.TODO())
+				if !errors.Is(err, tc.expectErr) {
+					t.Errorf("normal mode with enableMultiSubnetCluster = %v, calculation got error %v, expected %v", err, enableMultiSubnetCluster, tc.expectErr)
+				}
+				if !reflect.DeepEqual(result.NetworkEndpointSet, tc.expectedEndpointMap) {
+					t.Errorf("normal mode with enableMultiSubnetCluster = %v, endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", enableMultiSubnetCluster, result.NetworkEndpointSet, tc.expectedEndpointMapDegradedMode)
+				}
+				if !reflect.DeepEqual(result.EndpointPodMap, tc.expectedPodMap) {
+					t.Errorf("normal mode with enableMultiSubnetCluster = %v, endpoint map is not calculated correctly:\ngot %+v,\n expected %+v", enableMultiSubnetCluster, result.EndpointPodMap, tc.expectedPodMapDegradedMode)
+				}
+
+				resultDegradedMode := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, serviceLister, emptyNamedPort, negtypes.VmIpPortEndpointType, true, enableMultiSubnetCluster, klog.TODO())
+				if !reflect.DeepEqual(resultDegradedMode.NetworkEndpointSet, tc.expectedEndpointMapDegradedMode) {
+					t.Errorf("degraded mode with enableMultiSubnetCluster = %v, endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", enableMultiSubnetCluster, resultDegradedMode.NetworkEndpointSet, tc.expectedEndpointMapDegradedMode)
+				}
+				if !reflect.DeepEqual(resultDegradedMode.EndpointPodMap, tc.expectedPodMapDegradedMode) {
+					t.Errorf("degraded mode with enableMultiSubnetCluster = %v, endpoint map is not calculated correctly:\ngot %+v,\n expected %+v", enableMultiSubnetCluster, resultDegradedMode.EndpointPodMap, tc.expectedPodMapDegradedMode)
+				}
+			}
+		})
+	}
+}
+
+func TestValidateEndpointFieldsMultipleSubnets(t *testing.T) {
+	t.Parallel()
+
+	emptyNamedPort := ""
+	port80 := int32(80)
+	protocolTCP := v1.ProtocolTCP
+	instance1 := negtypes.TestInstance1
+
+	defaultSubnetLabelInstance := negtypes.TestDefaultSubnetLabelInstance
+	defaultSubnetLabelPod := negtypes.TestDefaultSubnetLabelPod
+	emptySubnetLabelInstance := negtypes.TestEmptySubnetLabelInstance
+	emptySubnetLabelPod := negtypes.TestEmptySubnetLabelPod
+	noPodCIDRInstance := negtypes.TestNoPodCIDRInstance
+	noPodCIDRPod := negtypes.TestNoPodCIDRPod
+	nonDefaultSubnetInstance := negtypes.TestNonDefaultSubnetInstance
+	nonDefaultSubnetPod := negtypes.TestNonDefaultSubnetPod
+
+	testContext := negtypes.NewTestContext()
+	podLister := testContext.PodInformer.GetIndexer()
+	addPodsToLister(podLister, getDefaultEndpointSlices())
+	nodeLister := testContext.NodeInformer.GetIndexer()
+	zonegetter.PopulateFakeNodeInformer(testContext.NodeInformer, true)
+	fakeZoneGetter := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, defaultTestSubnetURL, true)
+
+	// Add defaultSubnetLabelPod that corresponds to defaultSubnetLabelInstance.
+	podLister.Add(&v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testServiceNamespace,
+			Name:      defaultSubnetLabelPod,
+			Labels: map[string]string{
+				discovery.LabelServiceName: testServiceName,
+				discovery.LabelManagedBy:   managedByEPSControllerValue,
+			},
+		},
+		Spec: v1.PodSpec{
+			NodeName: defaultSubnetLabelInstance,
+		},
+		Status: v1.PodStatus{
+			Phase: v1.PodRunning,
+			PodIP: "10.101.1.1",
+			PodIPs: []v1.PodIP{
+				{IP: "10.101.1.1"},
+			},
+		},
+	})
+
+	// Add emptySubnetLabelPod that corresponds to emptySubnetLabelInstance.
+	podLister.Add(&v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testServiceNamespace,
+			Name:      emptySubnetLabelPod,
+			Labels: map[string]string{
+				discovery.LabelServiceName: testServiceName,
+				discovery.LabelManagedBy:   managedByEPSControllerValue,
+			},
+		},
+		Spec: v1.PodSpec{
+			NodeName: emptySubnetLabelInstance,
+		},
+		Status: v1.PodStatus{
+			Phase: v1.PodRunning,
+			PodIP: "10.101.2.1",
+			PodIPs: []v1.PodIP{
+				{IP: "10.101.2.1"},
+			},
+		},
+	})
+
+	// Add noPodCIDRPod that corresponds to noPodCIDRInstance.
+	podLister.Add(&v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testServiceNamespace,
+			Name:      noPodCIDRPod,
+			Labels: map[string]string{
+				discovery.LabelServiceName: testServiceName,
+				discovery.LabelManagedBy:   managedByEPSControllerValue,
+			},
+		},
+		Spec: v1.PodSpec{
+			NodeName: noPodCIDRInstance,
+		},
+		Status: v1.PodStatus{
+			Phase: v1.PodRunning,
+			PodIP: "10.101.3.1",
+			PodIPs: []v1.PodIP{
+				{IP: "10.101.3.1"},
+			},
+		},
+	})
+
+	// Add nonDefaultSubnetPod that corresponds to nonDefaultSubnetInstance.
+	podLister.Add(&v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testServiceNamespace,
+			Name:      nonDefaultSubnetPod,
+			Labels: map[string]string{
+				discovery.LabelServiceName: testServiceName,
+				discovery.LabelManagedBy:   managedByEPSControllerValue,
+			},
+		},
+		Spec: v1.PodSpec{
+			NodeName: nonDefaultSubnetInstance,
+		},
+		Status: v1.PodStatus{
+			Phase: v1.PodRunning,
+			PodIP: "10.200.1.1",
+			PodIPs: []v1.PodIP{
+				{IP: "10.200.1.1"},
+			},
+		},
+	})
+
+	testLabels := map[string]string{
+		"run": "foo",
+	}
+	serviceLister := testContext.ServiceInformer.GetIndexer()
+	serviceLister.Add(&v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testServiceNamespace,
+			Name:      testServiceName,
+		},
+		Spec: v1.ServiceSpec{
+			Selector: testLabels,
+		},
+	})
+
+	endpointMap := map[string]negtypes.NetworkEndpointSet{
+		negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+			negtypes.NetworkEndpoint{IP: "10.100.1.1", Node: instance1, Port: "80"},
+			negtypes.NetworkEndpoint{IP: "10.100.1.2", Node: instance1, Port: "80"},
+		),
+	}
+	podMap := negtypes.EndpointPodMap{
+		negtypes.NetworkEndpoint{IP: "10.100.1.1", Node: instance1, Port: "80"}: types.NamespacedName{Namespace: testServiceNamespace, Name: "pod1"},
+		negtypes.NetworkEndpoint{IP: "10.100.1.2", Node: instance1, Port: "80"}: types.NamespacedName{Namespace: testServiceNamespace, Name: "pod2"},
+	}
+
+	testCases := []struct {
+		desc                            string
+		testEndpointSlices              []*discovery.EndpointSlice
+		expectedEndpointMap             map[string]negtypes.NetworkEndpointSet
+		expectedPodMap                  negtypes.EndpointPodMap
+		expectErr                       error
+		expectedEndpointMapDegradedMode map[string]negtypes.NetworkEndpointSet
+		expectedPodMapDegradedMode      negtypes.EndpointPodMap
+	}{
+		{
+			desc: "include one endpoint that corresponds to a node without subnet label, endpoint should be included in both calculations",
+			testEndpointSlices: []*discovery.EndpointSlice{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testServiceName,
+						Namespace: testServiceNamespace,
+						Labels: map[string]string{
+							discovery.LabelServiceName: testServiceName,
+						},
+					},
+					AddressType: "IPv4",
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"10.100.1.1"},
+							NodeName:  &instance1,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod1",
+							},
+						},
+						{
+							Addresses: []string{"10.100.1.2"},
+							NodeName:  &instance1,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod2",
+							},
+						},
+						{
+							Addresses: []string{"10.101.1.1"},
+							NodeName:  &defaultSubnetLabelInstance,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      defaultSubnetLabelPod,
+							},
+						},
+					},
+					Ports: []discovery.EndpointPort{
+						{
+							Name:     &emptyNamedPort,
+							Port:     &port80,
+							Protocol: &protocolTCP,
+						},
+					},
+				},
+			},
+			expectedEndpointMap: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: "10.100.1.1", Node: instance1, Port: "80"},
+					negtypes.NetworkEndpoint{IP: "10.100.1.2", Node: instance1, Port: "80"},
+				),
+				negtypes.TestZone5: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: "10.101.1.1", Node: defaultSubnetLabelInstance, Port: "80"},
+				),
+			},
+			expectedPodMap: negtypes.EndpointPodMap{
+				negtypes.NetworkEndpoint{IP: "10.100.1.1", Node: instance1, Port: "80"}:                  types.NamespacedName{Namespace: testServiceNamespace, Name: "pod1"},
+				negtypes.NetworkEndpoint{IP: "10.100.1.2", Node: instance1, Port: "80"}:                  types.NamespacedName{Namespace: testServiceNamespace, Name: "pod2"},
+				negtypes.NetworkEndpoint{IP: "10.101.1.1", Node: defaultSubnetLabelInstance, Port: "80"}: types.NamespacedName{Namespace: testServiceNamespace, Name: defaultSubnetLabelPod},
+			},
+			expectErr: nil,
+			expectedEndpointMapDegradedMode: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: "10.100.1.1", Node: instance1, Port: "80"},
+					negtypes.NetworkEndpoint{IP: "10.100.1.2", Node: instance1, Port: "80"},
+				),
+				negtypes.TestZone5: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: "10.101.1.1", Node: defaultSubnetLabelInstance, Port: "80"},
+				),
+			},
+			expectedPodMapDegradedMode: negtypes.EndpointPodMap{
+				negtypes.NetworkEndpoint{IP: "10.100.1.1", Node: instance1, Port: "80"}:                  types.NamespacedName{Namespace: testServiceNamespace, Name: "pod1"},
+				negtypes.NetworkEndpoint{IP: "10.100.1.2", Node: instance1, Port: "80"}:                  types.NamespacedName{Namespace: testServiceNamespace, Name: "pod2"},
+				negtypes.NetworkEndpoint{IP: "10.101.1.1", Node: defaultSubnetLabelInstance, Port: "80"}: types.NamespacedName{Namespace: testServiceNamespace, Name: defaultSubnetLabelPod},
+			},
+		},
+		{
+			desc: "include one endpoint that corresponds to a node with empty string as subnet label, endpoint should be included in both calculations",
+			testEndpointSlices: []*discovery.EndpointSlice{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testServiceName,
+						Namespace: testServiceNamespace,
+						Labels: map[string]string{
+							discovery.LabelServiceName: testServiceName,
+						},
+					},
+					AddressType: "IPv4",
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"10.100.1.1"},
+							NodeName:  &instance1,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod1",
+							},
+						},
+						{
+							Addresses: []string{"10.100.1.2"},
+							NodeName:  &instance1,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod2",
+							},
+						},
+						{
+							Addresses: []string{"10.101.2.1"},
+							NodeName:  &emptySubnetLabelInstance,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      negtypes.TestEmptySubnetLabelPod,
+							},
+						},
+					},
+					Ports: []discovery.EndpointPort{
+						{
+							Name:     &emptyNamedPort,
+							Port:     &port80,
+							Protocol: &protocolTCP,
+						},
+					},
+				},
+			},
+			expectedEndpointMap: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: "10.100.1.1", Node: instance1, Port: "80"},
+					negtypes.NetworkEndpoint{IP: "10.100.1.2", Node: instance1, Port: "80"},
+				),
+				negtypes.TestZone6: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: "10.101.2.1", Node: emptySubnetLabelInstance, Port: "80"},
+				),
+			},
+			expectedPodMap: negtypes.EndpointPodMap{
+				negtypes.NetworkEndpoint{IP: "10.100.1.1", Node: instance1, Port: "80"}:                types.NamespacedName{Namespace: testServiceNamespace, Name: "pod1"},
+				negtypes.NetworkEndpoint{IP: "10.100.1.2", Node: instance1, Port: "80"}:                types.NamespacedName{Namespace: testServiceNamespace, Name: "pod2"},
+				negtypes.NetworkEndpoint{IP: "10.101.2.1", Node: emptySubnetLabelInstance, Port: "80"}: types.NamespacedName{Namespace: testServiceNamespace, Name: emptySubnetLabelPod},
+			},
+			expectErr: nil,
+			expectedEndpointMapDegradedMode: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: "10.100.1.1", Node: instance1, Port: "80"},
+					negtypes.NetworkEndpoint{IP: "10.100.1.2", Node: instance1, Port: "80"},
+				),
+				negtypes.TestZone6: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: "10.101.2.1", Node: emptySubnetLabelInstance, Port: "80"},
+				),
+			},
+			expectedPodMapDegradedMode: negtypes.EndpointPodMap{
+				negtypes.NetworkEndpoint{IP: "10.100.1.1", Node: instance1, Port: "80"}:                types.NamespacedName{Namespace: testServiceNamespace, Name: "pod1"},
+				negtypes.NetworkEndpoint{IP: "10.100.1.2", Node: instance1, Port: "80"}:                types.NamespacedName{Namespace: testServiceNamespace, Name: "pod2"},
+				negtypes.NetworkEndpoint{IP: "10.101.2.1", Node: emptySubnetLabelInstance, Port: "80"}: types.NamespacedName{Namespace: testServiceNamespace, Name: emptySubnetLabelPod},
+			},
+		},
+		{
+			desc: "include one endpoint that corresponds to a node without PodCIDR, endpoint should be excluded in both calculations",
+			testEndpointSlices: []*discovery.EndpointSlice{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testServiceName,
+						Namespace: testServiceNamespace,
+						Labels: map[string]string{
+							discovery.LabelServiceName: testServiceName,
+						},
+					},
+					AddressType: "IPv4",
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"10.100.1.1"},
+							NodeName:  &instance1,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod1",
+							},
+						},
+						{
+							Addresses: []string{"10.100.1.2"},
+							NodeName:  &instance1,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod2",
+							},
+						},
+						{
+							Addresses: []string{"10.101.3.1"},
+							NodeName:  &noPodCIDRInstance,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      noPodCIDRPod,
+							},
+						},
+					},
+					Ports: []discovery.EndpointPort{
+						{
+							Name:     &emptyNamedPort,
+							Port:     &port80,
+							Protocol: &protocolTCP,
+						},
+					},
+				},
+			},
+			expectedEndpointMap:             endpointMap,
+			expectedPodMap:                  podMap,
+			expectErr:                       nil,
+			expectedEndpointMapDegradedMode: endpointMap,
+			expectedPodMapDegradedMode:      podMap,
+		},
+		{
+			desc: "include one endpoint that corresponds to a non-default subnet node, endpoint should be excluded in both calculations",
+			testEndpointSlices: []*discovery.EndpointSlice{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testServiceName,
+						Namespace: testServiceNamespace,
+						Labels: map[string]string{
+							discovery.LabelServiceName: testServiceName,
+						},
+					},
+					AddressType: "IPv4",
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{"10.100.1.1"},
+							NodeName:  &instance1,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod1",
+							},
+						},
+						{
+							Addresses: []string{"10.100.1.2"},
+							NodeName:  &instance1,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      "pod2",
+							},
+						},
+						{
+							Addresses: []string{"10.200.1.1"},
+							NodeName:  &nonDefaultSubnetInstance,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      nonDefaultSubnetPod,
+							},
+						},
+					},
+					Ports: []discovery.EndpointPort{
+						{
+							Name:     &emptyNamedPort,
+							Port:     &port80,
+							Protocol: &protocolTCP,
+						},
+					},
+				},
+			},
+			expectedEndpointMap:             endpointMap,
+			expectedPodMap:                  podMap,
+			expectErr:                       nil,
+			expectedEndpointMapDegradedMode: endpointMap,
+			expectedPodMapDegradedMode:      podMap,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			result, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, emptyNamedPort, negtypes.VmIpPortEndpointType, true, true, klog.TODO())
 			if !errors.Is(err, tc.expectErr) {
-				t.Errorf("normal mode calculation got error %v, expected %v", err, tc.expectErr)
+				t.Errorf("With multi-subnet cluste enabled, normal mode calculation got error %v, expected %v", err, tc.expectErr)
 			}
 			if !reflect.DeepEqual(result.NetworkEndpointSet, tc.expectedEndpointMap) {
-				t.Errorf("normal mode endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", result.NetworkEndpointSet, tc.expectedEndpointMapDegradedMode)
+				t.Errorf("With multi-subnet cluste enabled, normal mode endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", result.NetworkEndpointSet, tc.expectedEndpointMapDegradedMode)
 			}
 			if !reflect.DeepEqual(result.EndpointPodMap, tc.expectedPodMap) {
-				t.Errorf("normal mode endpoint map is not calculated correctly:\ngot %+v,\n expected %+v", result.EndpointPodMap, tc.expectedPodMapDegradedMode)
+				t.Errorf("With multi-subnet cluste enabled, normal mode endpoint map is not calculated correctly:\ngot %+v,\n expected %+v", result.EndpointPodMap, tc.expectedPodMapDegradedMode)
 			}
 
-			resultDegradedMode := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, serviceLister, emptyNamedPort, negtypes.VmIpPortEndpointType, true, klog.TODO())
+			resultDegradedMode := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, serviceLister, emptyNamedPort, negtypes.VmIpPortEndpointType, true, true, klog.TODO())
 			if !reflect.DeepEqual(resultDegradedMode.NetworkEndpointSet, tc.expectedEndpointMapDegradedMode) {
-				t.Errorf("degraded mode endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", resultDegradedMode.NetworkEndpointSet, tc.expectedEndpointMapDegradedMode)
+				t.Errorf("With multi-subnet cluste enabled, degraded mode endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", resultDegradedMode.NetworkEndpointSet, tc.expectedEndpointMapDegradedMode)
 			}
 			if !reflect.DeepEqual(resultDegradedMode.EndpointPodMap, tc.expectedPodMapDegradedMode) {
-				t.Errorf("degraded mode endpoint map is not calculated correctly:\ngot %+v,\n expected %+v", resultDegradedMode.EndpointPodMap, tc.expectedPodMapDegradedMode)
+				t.Errorf("With multi-subnet cluste enabled, degraded mode endpoint map is not calculated correctly:\ngot %+v,\n expected %+v", resultDegradedMode.EndpointPodMap, tc.expectedPodMapDegradedMode)
 			}
 		})
 	}

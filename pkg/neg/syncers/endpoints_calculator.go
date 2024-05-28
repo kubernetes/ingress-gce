@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/types"
@@ -126,7 +127,7 @@ func (l *LocalL4ILBEndpointsCalculator) CalculateEndpointsDegradedMode(eds []typ
 	return subsetMap, podMap, err
 }
 
-func (l *LocalL4ILBEndpointsCalculator) ValidateEndpoints(endpointData []types.EndpointsData, endpointPodMap types.EndpointPodMap, dupCount int) error {
+func (l *LocalL4ILBEndpointsCalculator) ValidateEndpoints(endpointData []types.EndpointsData, endpointPodMap types.EndpointPodMap, endpointsExcludedInCalculation int) error {
 	// this should be a no-op for now
 	return nil
 }
@@ -196,37 +197,39 @@ func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpointsDegradedMode(eps []t
 	return subsetMap, podMap, err
 }
 
-func (l *ClusterL4ILBEndpointsCalculator) ValidateEndpoints(endpointData []types.EndpointsData, endpointPodMap types.EndpointPodMap, dupCount int) error {
+func (l *ClusterL4ILBEndpointsCalculator) ValidateEndpoints(endpointData []types.EndpointsData, endpointPodMap types.EndpointPodMap, endpointsExcludedInCalculation int) error {
 	// this should be a no-op for now
 	return nil
 }
 
 // L7EndpointsCalculator implements methods to calculate Network endpoints for VM_IP_PORT NEGs
 type L7EndpointsCalculator struct {
-	zoneGetter           *zonegetter.ZoneGetter
-	servicePortName      string
-	podLister            cache.Indexer
-	nodeLister           cache.Indexer
-	serviceLister        cache.Indexer
-	syncerKey            types.NegSyncerKey
-	networkEndpointType  types.NetworkEndpointType
-	enableDualStackNEG   bool
-	logger               klog.Logger
-	syncMetricsCollector *metricscollector.SyncerMetrics
+	zoneGetter               *zonegetter.ZoneGetter
+	servicePortName          string
+	podLister                cache.Indexer
+	nodeLister               cache.Indexer
+	serviceLister            cache.Indexer
+	syncerKey                types.NegSyncerKey
+	networkEndpointType      types.NetworkEndpointType
+	enableDualStackNEG       bool
+	enableMultiSubnetCluster bool
+	logger                   klog.Logger
+	syncMetricsCollector     *metricscollector.SyncerMetrics
 }
 
 func NewL7EndpointsCalculator(zoneGetter *zonegetter.ZoneGetter, podLister, nodeLister, serviceLister cache.Indexer, syncerKey types.NegSyncerKey, logger klog.Logger, enableDualStackNEG bool, syncMetricsCollector *metricscollector.SyncerMetrics) *L7EndpointsCalculator {
 	return &L7EndpointsCalculator{
-		zoneGetter:           zoneGetter,
-		servicePortName:      syncerKey.PortTuple.Name,
-		podLister:            podLister,
-		nodeLister:           nodeLister,
-		serviceLister:        serviceLister,
-		syncerKey:            syncerKey,
-		networkEndpointType:  syncerKey.NegType,
-		enableDualStackNEG:   enableDualStackNEG,
-		logger:               logger.WithName("L7EndpointsCalculator"),
-		syncMetricsCollector: syncMetricsCollector,
+		zoneGetter:               zoneGetter,
+		servicePortName:          syncerKey.PortTuple.Name,
+		podLister:                podLister,
+		nodeLister:               nodeLister,
+		serviceLister:            serviceLister,
+		syncerKey:                syncerKey,
+		networkEndpointType:      syncerKey.NegType,
+		enableDualStackNEG:       enableDualStackNEG,
+		enableMultiSubnetCluster: flags.F.EnableMultiSubnetCluster,
+		logger:                   logger.WithName("L7EndpointsCalculator"),
+		syncMetricsCollector:     syncMetricsCollector,
 	}
 }
 
@@ -237,16 +240,16 @@ func (l *L7EndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
 func (l *L7EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, _ map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
-	result, err := toZoneNetworkEndpointMap(eds, l.zoneGetter, l.podLister, l.servicePortName, l.networkEndpointType, l.enableDualStackNEG, l.logger)
+	result, err := toZoneNetworkEndpointMap(eds, l.zoneGetter, l.podLister, l.servicePortName, l.networkEndpointType, l.enableDualStackNEG, l.enableMultiSubnetCluster, l.logger)
 	if err == nil { // If current calculation ends up in error, we trigger and emit metrics in degraded mode.
 		l.syncMetricsCollector.UpdateSyncerEPMetrics(l.syncerKey, result.EPCount, result.EPSCount)
 	}
-	return result.NetworkEndpointSet, result.EndpointPodMap, result.EPCount[negtypes.Duplicate], err
+	return result.NetworkEndpointSet, result.EndpointPodMap, result.EPCount[negtypes.Duplicate] + result.EPCount[negtypes.NodeInNonDefaultSubnet], err
 }
 
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
 func (l *L7EndpointsCalculator) CalculateEndpointsDegradedMode(eds []types.EndpointsData, _ map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
-	result := toZoneNetworkEndpointMapDegradedMode(eds, l.zoneGetter, l.podLister, l.nodeLister, l.serviceLister, l.servicePortName, l.networkEndpointType, l.enableDualStackNEG, l.logger)
+	result := toZoneNetworkEndpointMapDegradedMode(eds, l.zoneGetter, l.podLister, l.nodeLister, l.serviceLister, l.servicePortName, l.networkEndpointType, l.enableDualStackNEG, l.enableMultiSubnetCluster, l.logger)
 	l.syncMetricsCollector.UpdateSyncerEPMetrics(l.syncerKey, result.EPCount, result.EPSCount)
 	return result.NetworkEndpointSet, result.EndpointPodMap, nil
 }
@@ -263,12 +266,12 @@ func nodeMapToString(nodeMap map[string][]*v1.Node) string {
 //
 //	For L7 Endpoint Calculator, it returns error if one of the two checks fails:
 //	1. The endpoint count from endpointData doesn't equal to the one from endpointPodMap:
-//	   endpiontPodMap removes the duplicated endpoints, and dupCount stores the number of duplicated it removed
+//	   endpiontPodMap removes the duplicated endpoints, and endpointsExcludedInCalculation stores the number of duplicated it removed
 //	   and we compare the endpoint counts with duplicates
 //	2. The endpoint count from endpointData or the one from endpointPodMap is 0
-func (l *L7EndpointsCalculator) ValidateEndpoints(endpointData []types.EndpointsData, endpointPodMap types.EndpointPodMap, dupCount int) error {
+func (l *L7EndpointsCalculator) ValidateEndpoints(endpointData []types.EndpointsData, endpointPodMap types.EndpointPodMap, endpointsExcludedInCalculation int) error {
 	// Endpoint count from EndpointPodMap
-	countFromPodMap := len(endpointPodMap) + dupCount
+	countFromPodMap := len(endpointPodMap) + endpointsExcludedInCalculation
 	if countFromPodMap == 0 {
 		l.logger.Info("Detected endpoint count from endpointPodMap going to zero", "endpointPodMap", endpointPodMap)
 		return fmt.Errorf("%w: Detect endpoint count goes to zero", types.ErrEPCalculationCountZero)
@@ -284,7 +287,7 @@ func (l *L7EndpointsCalculator) ValidateEndpoints(endpointData []types.Endpoints
 	}
 
 	if countFromEndpointData != countFromPodMap {
-		l.logger.Info("Detected error when comparing endpoint counts", "countFromEndpointData", countFromEndpointData, "countFromPodMap", countFromPodMap, "endpointData", endpointData, "endpointPodMap", endpointPodMap, "dupCount", dupCount)
+		l.logger.Info("Detected error when comparing endpoint counts", "countFromEndpointData", countFromEndpointData, "countFromPodMap", countFromPodMap, "endpointData", endpointData, "endpointPodMap", endpointPodMap, "endpointsExcludedInCalculation", endpointsExcludedInCalculation)
 		return fmt.Errorf("%w: Detect endpoint mismatch, count from endpoint slice=%d, count after calculation=%d", types.ErrEPCountsDiffer, countFromEndpointData, countFromPodMap)
 	}
 	return nil

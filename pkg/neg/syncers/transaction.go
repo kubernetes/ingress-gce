@@ -379,12 +379,12 @@ func (s *transactionSyncer) getEndpointsCalculation(
 	endpointsData []negtypes.EndpointsData,
 	currentMap map[string]negtypes.NetworkEndpointSet,
 ) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, error) {
-	targetMap, endpointPodMap, dupCount, err := s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
+	targetMap, endpointPodMap, endpointsExcludedInCalculation, err := s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
 	if err != nil {
 		return nil, nil, err
 	}
 	if s.enableDegradedMode {
-		err = s.endpointsCalculator.ValidateEndpoints(endpointsData, endpointPodMap, dupCount)
+		err = s.endpointsCalculator.ValidateEndpoints(endpointsData, endpointPodMap, endpointsExcludedInCalculation)
 		if err != nil {
 			return nil, nil, err
 		}
