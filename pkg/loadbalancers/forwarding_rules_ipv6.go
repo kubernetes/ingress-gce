@@ -54,7 +54,7 @@ func (l4 *L4) ensureIPv6ForwardingRule(bsLink string, options gce.ILBOptions, ex
 	}()
 
 	if existingIPv6FwdRule != nil {
-		equal, err := utils.EqualForwardingRules(existingIPv6FwdRule, expectedIPv6FwdRule)
+		equal, err := EqualIPv6ForwardingRules(existingIPv6FwdRule, expectedIPv6FwdRule)
 		if err != nil {
 			return existingIPv6FwdRule, err
 		}
@@ -215,7 +215,7 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 			return nil, networkTierMismatchError
 		}
 
-		equal, err := utils.EqualForwardingRules(existingIPv6FwdRule, expectedIPv6FwdRule)
+		equal, err := EqualIPv6ForwardingRules(existingIPv6FwdRule, expectedIPv6FwdRule)
 		if err != nil {
 			return existingIPv6FwdRule, err
 		}
@@ -288,6 +288,25 @@ func (l4netlb *L4NetLB) deleteChangedIPv6ForwardingRule(existingFwdRule *composi
 	}
 	l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeNormal, events.SyncIngress, "External ForwardingRule %q deleted", existingFwdRule.Name)
 	return nil
+}
+
+func EqualIPv6ForwardingRules(fr1, fr2 *composite.ForwardingRule) (bool, error) {
+	id1, err := cloud.ParseResourceURL(fr1.BackendService)
+	if err != nil {
+		return false, fmt.Errorf("EqualIPv6ForwardingRules(): failed to parse backend resource URL from FR, err - %w", err)
+	}
+	id2, err := cloud.ParseResourceURL(fr2.BackendService)
+	if err != nil {
+		return false, fmt.Errorf("EqualIPv6ForwardingRules(): failed to parse resource URL from FR, err - %w", err)
+	}
+	return fr1.IPProtocol == fr2.IPProtocol &&
+		fr1.LoadBalancingScheme == fr2.LoadBalancingScheme &&
+		utils.EqualStringSets(fr1.Ports, fr2.Ports) &&
+		utils.EqualCloudResourceIDs(id1, id2) &&
+		fr1.AllowGlobalAccess == fr2.AllowGlobalAccess &&
+		fr1.AllPorts == fr2.AllPorts &&
+		fr1.Subnetwork == fr2.Subnetwork &&
+		fr1.NetworkTier == fr2.NetworkTier, nil
 }
 
 // ipv6AddrToUse determines which IPv4 address needs to be used in the ForwardingRule,

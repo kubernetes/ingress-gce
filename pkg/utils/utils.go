@@ -42,7 +42,6 @@ import (
 	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
-	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/slice"
@@ -420,34 +419,6 @@ func EqualCloudResourceIDs(a, b *cloud.ResourceID) bool {
 	default:
 		return false
 	}
-}
-
-// EqualForwardingRules returns true if forwarding rules fr1 and fr2 have equal IP address,
-// protocol, load balancing scheme, ports or port ranges, resource paths and network tier.
-func EqualForwardingRules(fr1, fr2 *composite.ForwardingRule) (bool, error) {
-	id1, err := cloud.ParseResourceURL(fr1.BackendService)
-	if err != nil {
-		return false, fmt.Errorf("forwardingRulesEqual(): failed to parse backend resource URL from FR, err - %w", err)
-	}
-	id2, err := cloud.ParseResourceURL(fr2.BackendService)
-	if err != nil {
-		return false, fmt.Errorf("forwardingRulesEqual(): failed to parse resource URL from FR, err - %w", err)
-	}
-	return fr1.IPAddress == fr2.IPAddress &&
-		fr1.IPProtocol == fr2.IPProtocol &&
-		fr1.LoadBalancingScheme == fr2.LoadBalancingScheme &&
-		EqualStringSets(fr1.Ports, fr2.Ports) &&
-		fr1.PortRange == fr2.PortRange &&
-		EqualCloudResourceIDs(id1, id2) &&
-		fr1.AllowGlobalAccess == fr2.AllowGlobalAccess &&
-		fr1.AllPorts == fr2.AllPorts &&
-		equalResourcePaths(fr1.Subnetwork, fr2.Subnetwork) &&
-		equalResourcePaths(fr1.Network, fr2.Network) &&
-		fr1.NetworkTier == fr2.NetworkTier, nil
-}
-
-func equalResourcePaths(rp1, rp2 string) bool {
-	return rp1 == rp2 || EqualResourceIDs(rp1, rp2)
 }
 
 // IsGCEIngress returns true if the Ingress matches the class managed by this

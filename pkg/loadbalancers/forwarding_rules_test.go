@@ -100,6 +100,243 @@ func TestGetEffectiveIP(t *testing.T) {
 	}
 }
 
+func TestForwardingRulesEqual(t *testing.T) {
+	t.Parallel()
+
+	fwdRules := []*composite.ForwardingRule{
+		{
+			Name:                "empty-ip-address-fwd-rule",
+			IPAddress:           "",
+			Ports:               []string{"123"},
+			IPProtocol:          "TCP",
+			LoadBalancingScheme: string(cloud.SchemeInternal),
+			BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+		},
+		{
+			Name:                "tcp-fwd-rule",
+			IPAddress:           "10.0.0.0",
+			Ports:               []string{"123"},
+			IPProtocol:          "TCP",
+			LoadBalancingScheme: string(cloud.SchemeInternal),
+			BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+		},
+		{
+			Name:                "udp-fwd-rule",
+			IPAddress:           "10.0.0.0",
+			Ports:               []string{"123"},
+			IPProtocol:          "UDP",
+			LoadBalancingScheme: string(cloud.SchemeInternal),
+			BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+		},
+		{
+			Name:                "global-access-fwd-rule",
+			IPAddress:           "10.0.0.0",
+			Ports:               []string{"123"},
+			IPProtocol:          "TCP",
+			LoadBalancingScheme: string(cloud.SchemeInternal),
+			AllowGlobalAccess:   true,
+			BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+		},
+		{
+			Name:                "fwd-rule-bs-link1",
+			IPAddress:           "10.0.0.0",
+			Ports:               []string{"123"},
+			IPProtocol:          "TCP",
+			LoadBalancingScheme: string(cloud.SchemeInternal),
+			BackendService:      "http://compute.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+		},
+		{
+			Name:                "fwd-rule-bs-link2",
+			IPAddress:           "10.0.0.0",
+			Ports:               []string{"123"},
+			IPProtocol:          "TCP",
+			LoadBalancingScheme: string(cloud.SchemeInternal),
+			BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+		},
+		{
+			Name:                "udp-fwd-rule-all-ports",
+			IPAddress:           "10.0.0.0",
+			Ports:               []string{"123"},
+			AllPorts:            true,
+			IPProtocol:          "UDP",
+			LoadBalancingScheme: string(cloud.SchemeInternal),
+			BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+			NetworkTier:         cloud.NetworkTierPremium.ToGCEValue(),
+		},
+		{
+			Name:                "fwd-rule-bs-link2-standard-ntier",
+			IPAddress:           "10.0.0.0",
+			Ports:               []string{"123"},
+			IPProtocol:          "TCP",
+			LoadBalancingScheme: string(cloud.SchemeInternal),
+			BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+			NetworkTier:         string(cloud.NetworkTierStandard),
+		},
+		{
+			Name:                "fwd-rule-bs-link2-premium-ntier",
+			IPAddress:           "10.0.0.0",
+			Ports:               []string{"123"},
+			IPProtocol:          "TCP",
+			LoadBalancingScheme: string(cloud.SchemeInternal),
+			BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+			NetworkTier:         cloud.NetworkTierPremium.ToGCEValue(),
+		},
+	}
+
+	frPortRange1 := &composite.ForwardingRule{
+		Name:                "tcp-fwd-rule",
+		IPAddress:           "10.0.0.0",
+		PortRange:           "2-3",
+		IPProtocol:          "TCP",
+		LoadBalancingScheme: string(cloud.SchemeInternal),
+		BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+	}
+	frPortRange2 := &composite.ForwardingRule{
+		Name:                "tcp-fwd-rule",
+		IPAddress:           "10.0.0.0",
+		PortRange:           "1-2",
+		IPProtocol:          "TCP",
+		LoadBalancingScheme: string(cloud.SchemeInternal),
+		BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+	}
+
+	for _, tc := range []struct {
+		desc        string
+		oldFwdRule  *composite.ForwardingRule
+		newFwdRule  *composite.ForwardingRule
+		expectEqual bool
+	}{
+		{
+			desc:        "empty ip address does not match valid ip",
+			oldFwdRule:  fwdRules[0],
+			newFwdRule:  fwdRules[1],
+			expectEqual: false,
+		},
+		{
+			desc:        "global access enabled",
+			oldFwdRule:  fwdRules[1],
+			newFwdRule:  fwdRules[3],
+			expectEqual: false,
+		},
+		{
+			desc:        "IP protocol changed",
+			oldFwdRule:  fwdRules[1],
+			newFwdRule:  fwdRules[2],
+			expectEqual: false,
+		},
+		{
+			desc:        "same forwarding rule",
+			oldFwdRule:  fwdRules[3],
+			newFwdRule:  fwdRules[3],
+			expectEqual: true,
+		},
+		{
+			desc:        "same forwarding rule, different basepath",
+			oldFwdRule:  fwdRules[4],
+			newFwdRule:  fwdRules[5],
+			expectEqual: true,
+		},
+		{
+			desc:        "same forwarding rule, one uses ALL keyword for ports",
+			oldFwdRule:  fwdRules[2],
+			newFwdRule:  fwdRules[6],
+			expectEqual: false,
+		},
+		{
+			desc:        "network tier mismatch",
+			oldFwdRule:  fwdRules[6],
+			newFwdRule:  fwdRules[7],
+			expectEqual: false,
+		},
+		{
+			desc:        "same forwarding rule, different port ranges",
+			oldFwdRule:  frPortRange1,
+			newFwdRule:  frPortRange2,
+			expectEqual: false,
+		},
+		{
+			desc: "network mismatch",
+			oldFwdRule: &composite.ForwardingRule{
+				Name:                "tcp-fwd-rule",
+				IPAddress:           "10.0.0.0",
+				Ports:               []string{"123"},
+				IPProtocol:          "TCP",
+				LoadBalancingScheme: string(cloud.SchemeInternal),
+				BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+				Network:             "https://www.googleapis.com/compute/v1/projects/test-poject/global/networks/test-vpc",
+			},
+			newFwdRule: &composite.ForwardingRule{
+				Name:                "tcp-fwd-rule",
+				IPAddress:           "10.0.0.0",
+				Ports:               []string{"123"},
+				IPProtocol:          "TCP",
+				LoadBalancingScheme: string(cloud.SchemeInternal),
+				BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+				Network:             "https://www.googleapis.com/compute/v1/projects/test-poject/global/networks/test-other-vpc",
+			},
+			expectEqual: false,
+		},
+		{
+			desc: "subnetwork mismatch",
+			oldFwdRule: &composite.ForwardingRule{
+				Name:                "tcp-fwd-rule",
+				IPAddress:           "10.0.0.0",
+				Ports:               []string{"123"},
+				IPProtocol:          "TCP",
+				LoadBalancingScheme: string(cloud.SchemeInternal),
+				BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+				Network:             "https://www.googleapis.com/compute/v1/projects/test-poject/global/networks/test-vpc",
+				Subnetwork:          "https://www.googleapis.com/compute/v1/projects/test-poject/regions/us-central1/subnetworks/default-subnet",
+			},
+			newFwdRule: &composite.ForwardingRule{
+				Name:                "tcp-fwd-rule",
+				IPAddress:           "10.0.0.0",
+				Ports:               []string{"123"},
+				IPProtocol:          "TCP",
+				LoadBalancingScheme: string(cloud.SchemeInternal),
+				BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+				Network:             "https://www.googleapis.com/compute/v1/projects/test-poject/global/networks/test-vpc",
+				Subnetwork:          "https://www.googleapis.com/compute/v1/projects/test-poject/regions/us-central1/subnetworks/other-subnet",
+			},
+			expectEqual: false,
+		},
+		{
+			desc: "equal network data",
+			oldFwdRule: &composite.ForwardingRule{
+				Name:                "tcp-fwd-rule",
+				IPAddress:           "10.0.0.0",
+				Ports:               []string{"123"},
+				IPProtocol:          "TCP",
+				LoadBalancingScheme: string(cloud.SchemeInternal),
+				BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+				Network:             "https://www.googleapis.com/compute/v1/projects/test-poject/global/networks/test-vpc",
+				Subnetwork:          "https://www.googleapis.com/compute/v1/projects/test-poject/regions/us-central1/subnetworks/default-subnet",
+			},
+			newFwdRule: &composite.ForwardingRule{
+				Name:                "tcp-fwd-rule",
+				IPAddress:           "10.0.0.0",
+				Ports:               []string{"123"},
+				IPProtocol:          "TCP",
+				LoadBalancingScheme: string(cloud.SchemeInternal),
+				BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+				Network:             "projects/test-poject/global/networks/test-vpc",
+				Subnetwork:          "projects/test-poject/regions/us-central1/subnetworks/default-subnet",
+			},
+			expectEqual: true,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			got, err := Equal(tc.oldFwdRule, tc.newFwdRule)
+			if err != nil {
+				t.Errorf("forwardingRulesEqual(_, _) = %v, want nil error", err)
+			}
+			if got != tc.expectEqual {
+				t.Errorf("forwardingRulesEqual(_, _) = %t, want %t", got, tc.expectEqual)
+			}
+		})
+	}
+}
+
 func TestL4CreateExternalForwardingRuleAddressAlreadyInUse(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	targetIP := "1.1.1.1"

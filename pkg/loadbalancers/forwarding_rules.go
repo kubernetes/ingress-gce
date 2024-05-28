@@ -253,7 +253,7 @@ func (l4 *L4) ensureIPv4ForwardingRule(bsLink string, options gce.ILBOptions, ex
 	}
 
 	if existingFwdRule != nil {
-		equal, err := utils.EqualForwardingRules(existingFwdRule, fr)
+		equal, err := Equal(existingFwdRule, fr)
 		if err != nil {
 			return nil, err
 		}
@@ -379,7 +379,7 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 			networkTierMismatchError := utils.NewNetworkTierErr(resource, existingFwdRule.NetworkTier, fr.NetworkTier)
 			return nil, IPAddrUndefined, networkTierMismatchError
 		}
-		equal, err := utils.EqualForwardingRules(existingFwdRule, fr)
+		equal, err := Equal(existingFwdRule, fr)
 		if err != nil {
 			return existingFwdRule, IPAddrUndefined, err
 		}
@@ -424,6 +424,32 @@ func (l4netlb *L4NetLB) tearDownResourcesWithWrongNetworkTier(existingFwdRule *c
 		}
 	}
 	return am.TearDownAddressIPIfNetworkTierMismatch()
+}
+
+func Equal(fr1, fr2 *composite.ForwardingRule) (bool, error) {
+	id1, err := cloud.ParseResourceURL(fr1.BackendService)
+	if err != nil {
+		return false, fmt.Errorf("forwardingRulesEqual(): failed to parse backend resource URL from FR, err - %w", err)
+	}
+	id2, err := cloud.ParseResourceURL(fr2.BackendService)
+	if err != nil {
+		return false, fmt.Errorf("forwardingRulesEqual(): failed to parse resource URL from FR, err - %w", err)
+	}
+	return fr1.IPAddress == fr2.IPAddress &&
+		fr1.IPProtocol == fr2.IPProtocol &&
+		fr1.LoadBalancingScheme == fr2.LoadBalancingScheme &&
+		utils.EqualStringSets(fr1.Ports, fr2.Ports) &&
+		fr1.PortRange == fr2.PortRange &&
+		utils.EqualCloudResourceIDs(id1, id2) &&
+		fr1.AllowGlobalAccess == fr2.AllowGlobalAccess &&
+		fr1.AllPorts == fr2.AllPorts &&
+		equalResourcePaths(fr1.Subnetwork, fr2.Subnetwork) &&
+		equalResourcePaths(fr1.Network, fr2.Network) &&
+		fr1.NetworkTier == fr2.NetworkTier, nil
+}
+
+func equalResourcePaths(rp1, rp2 string) bool {
+	return rp1 == rp2 || utils.EqualResourceIDs(rp1, rp2)
 }
 
 // ipv4AddrToUse determines which IPv4 address needs to be used in the ForwardingRule,
