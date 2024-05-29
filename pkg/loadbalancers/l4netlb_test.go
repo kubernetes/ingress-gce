@@ -23,6 +23,7 @@ import (
 	"strings"
 	"testing"
 
+	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/klog/v2"
 
@@ -1122,6 +1123,80 @@ func assertDualStackNetLBResourcesDeleted(t *testing.T, l4netlb *L4NetLB) {
 		if err != nil {
 			t.Errorf("verifyFirewallNotExists(_, %s) returned error %v, want nil", fwName, err)
 		}
+	}
+}
+
+func TestWeightedNetLB(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		desc                     string
+		addAnnotationForWeighted bool
+		weightedFlagEnabled      bool
+		externalTrafficPolicy    v1.ServiceExternalTrafficPolicy
+		wantWeighted             bool
+	}{
+		{
+			desc:                     "Flag enabled, Service with weighted annotation, externalTrafficPolicy local",
+			addAnnotationForWeighted: true,
+			weightedFlagEnabled:      true,
+			externalTrafficPolicy:    v1.ServiceExternalTrafficPolicyTypeLocal,
+			wantWeighted:             true,
+		},
+		{
+			desc:                     "Flag enabled, NO weighted annotation, externalTrafficPolicy local",
+			addAnnotationForWeighted: false,
+			weightedFlagEnabled:      true,
+			externalTrafficPolicy:    v1.ServiceExternalTrafficPolicyTypeLocal,
+			wantWeighted:             false,
+		},
+		{
+			desc:                     "Flag DISABLED, Service with weighted annotation, externalTrafficPolicy local",
+			addAnnotationForWeighted: true,
+			weightedFlagEnabled:      false,
+			externalTrafficPolicy:    v1.ServiceExternalTrafficPolicyTypeLocal,
+			wantWeighted:             false,
+		},
+		{
+			desc:                     "Flag enabled, Service with weighted annotation and externalTrafficPolicy CLUSTER",
+			addAnnotationForWeighted: true,
+			weightedFlagEnabled:      true,
+			externalTrafficPolicy:    v1.ServiceExternalTrafficPolicyTypeCluster,
+			wantWeighted:             false,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			svc := test.NewL4NetLBRBSService(8080)
+			svc.Spec.ExternalTrafficPolicy = tc.externalTrafficPolicy
+			if tc.addAnnotationForWeighted {
+				svc.Annotations[annotations.WeightedL4AnnotationKey] = annotations.WeightedL4AnnotationEnabled
+			}
+
+			nodeNames := []string{"test-node-1"}
+
+			l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
+			l4NetLB.enableWeightedLB = tc.weightedFlagEnabled
+
+			result := l4NetLB.EnsureFrontend(nodeNames, svc)
+			if result.Error != nil {
+				t.Fatalf("Failed to ensure loadBalancer, err %v", result.Error)
+			}
+
+			backendServiceName := l4NetLB.namer.L4Backend(l4NetLB.Service.Namespace, l4NetLB.Service.Name)
+			key := meta.RegionalKey(backendServiceName, l4NetLB.cloud.Region())
+			bs, err := composite.GetBackendService(l4NetLB.cloud, key, meta.VersionGA, klog.TODO())
+
+			if err != nil {
+				t.Fatalf("failed to read BackendService, %v", err)
+			}
+			backedHasWeighted := (bs.LocalityLbPolicy == backends.WeightedLocalityLbPolicy)
+			if tc.wantWeighted != backedHasWeighted {
+				t.Errorf("Enexpected BackendService LocalityLbPolicy value %v, got weighted: %v, want weighted: %v", bs.LocalityLbPolicy, tc.wantWeighted, backedHasWeighted)
+			}
+		})
 	}
 }
 

@@ -2177,6 +2177,99 @@ func TestDualStackILBStaticIPAnnotation(t *testing.T) {
 	}
 }
 
+func TestWeightedILB(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		desc                     string
+		addAnnotationForWeighted bool
+		weightedFlagEnabled      bool
+		externalTrafficPolicy    v1.ServiceExternalTrafficPolicy
+		wantWeighted             bool
+	}{
+		{
+			desc:                     "Flag enabled, Service with weighted annotation, externalTrafficPolicy local",
+			addAnnotationForWeighted: true,
+			weightedFlagEnabled:      true,
+			externalTrafficPolicy:    v1.ServiceExternalTrafficPolicyTypeLocal,
+			wantWeighted:             true,
+		},
+		{
+			desc:                     "Flag enabled, NO weighted annotation, externalTrafficPolicy local",
+			addAnnotationForWeighted: false,
+			weightedFlagEnabled:      true,
+			externalTrafficPolicy:    v1.ServiceExternalTrafficPolicyTypeLocal,
+			wantWeighted:             false,
+		},
+		{
+			desc:                     "Flag DISABLED, Service with weighted annotation, externalTrafficPolicy local",
+			addAnnotationForWeighted: true,
+			weightedFlagEnabled:      false,
+			externalTrafficPolicy:    v1.ServiceExternalTrafficPolicyTypeLocal,
+			wantWeighted:             false,
+		},
+		{
+			desc:                     "Flag enabled, Service with weighted annotation and externalTrafficPolicy CLUSTER",
+			addAnnotationForWeighted: true,
+			weightedFlagEnabled:      true,
+			externalTrafficPolicy:    v1.ServiceExternalTrafficPolicyTypeCluster,
+			wantWeighted:             false,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			svc := test.NewL4ILBService(false, 8080)
+			svc.Spec.ExternalTrafficPolicy = tc.externalTrafficPolicy
+			if tc.addAnnotationForWeighted {
+				svc.Annotations[annotations.WeightedL4AnnotationKey] = annotations.WeightedL4AnnotationEnabled
+			}
+			nodeNames := []string{"test-node-1"}
+			vals := gce.DefaultTestClusterValues()
+			fakeGCE := getFakeGCECloud(vals)
+
+			namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+
+			networkInfo := network.DefaultNetwork(fakeGCE)
+
+			l4ilbParams := &L4ILBParams{
+				Service:          svc,
+				Cloud:            fakeGCE,
+				Namer:            namer,
+				Recorder:         record.NewFakeRecorder(100),
+				NetworkResolver:  network.NewFakeResolver(networkInfo),
+				EnableWeightedLB: tc.weightedFlagEnabled,
+			}
+			l4 := NewL4Handler(l4ilbParams, klog.TODO())
+			l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
+
+			if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
+				t.Errorf("Unexpected error when adding nodes %v", err)
+			}
+
+			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			if result.Error != nil {
+				t.Fatalf("Failed to ensure interna;l loadBalancer, err %v", result.Error)
+			}
+			backendServiceName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
+			key := meta.RegionalKey(backendServiceName, l4.cloud.Region())
+			bs, err := composite.GetBackendService(l4.cloud, key, meta.VersionGA, klog.TODO())
+
+			if err != nil {
+				t.Fatalf("failed to read BackendService, %v", err)
+			}
+			backedHasWeighted := (bs.LocalityLbPolicy == backends.WeightedLocalityLbPolicy)
+			if tc.wantWeighted != backedHasWeighted {
+				t.Errorf("Enexpected BackendService LocalityLbPolicy value %v, got weighted: %v, want weighted: %v", bs.LocalityLbPolicy, tc.wantWeighted, backedHasWeighted)
+			}
+		})
+	}
+
+}
+
 func mustSetupILBTestHandler(t *testing.T, svc *v1.Service, nodeNames []string) *L4 {
 	vals := gce.DefaultTestClusterValues()
 

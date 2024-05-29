@@ -130,6 +130,11 @@ const (
 	// CustomSubnetAnnotationKey is the new way to specify custom subnet both for ILB and NetLB (only for IPv6)
 	// Replaces networking.gke.io/internal-load-balancer-subnet with backward compatibility.
 	CustomSubnetAnnotationKey = "networking.gke.io/load-balancer-subnet"
+
+	// Service annotation key for using the L4 Weighted load balancing in both ILB and NetlB
+	WeightedL4AnnotationKey = "networking.gke.io/l4-weighted-load-balancing"
+	// Service annotation value for using the L4 Weighted load balancing in both ILB and NetlB
+	WeightedL4AnnotationEnabled = "enabled"
 )
 
 // NegAnnotation is the format of the annotation associated with the
@@ -284,6 +289,17 @@ func HasStrongSessionAffinityAnnotation(service *v1.Service) bool {
 
 	if val, ok := service.Annotations[StrongSessionAffinityAnnotationKey]; ok && val == StrongSessionAffinityEnabled {
 		return true
+	}
+	return false
+}
+func IsWeightedLBEnabledForService(service *v1.Service) bool {
+	if service == nil {
+		return false
+	}
+	if val, ok := service.Annotations[WeightedL4AnnotationKey]; ok && val == WeightedL4AnnotationEnabled {
+		if service.Spec.ExternalTrafficPolicy == v1.ServiceExternalTrafficPolicyTypeLocal {
+			return true
+		}
 	}
 	return false
 }

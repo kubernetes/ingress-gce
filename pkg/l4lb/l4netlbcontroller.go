@@ -504,6 +504,7 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 		DualStackEnabled:             lc.enableDualStack,
 		StrongSessionAffinityEnabled: lc.enableStrongSessionAffinity,
 		NetworkResolver:              lc.networkResolver,
+		EnableWeightedLB:             lc.ctx.EnableWeightedL4NetLB,
 	}
 	l4netlb := loadbalancers.NewL4NetLB(l4NetLBParams, svcLogger)
 
@@ -663,6 +664,7 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service,
 		DualStackEnabled:             lc.enableDualStack,
 		StrongSessionAffinityEnabled: lc.enableStrongSessionAffinity,
 		NetworkResolver:              lc.networkResolver,
+		EnableWeightedLB:             lc.ctx.EnableWeightedL4NetLB,
 	}
 	l4netLB := loadbalancers.NewL4NetLB(l4NetLBParams, svcLogger)
 	lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer",

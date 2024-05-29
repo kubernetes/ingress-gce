@@ -70,8 +70,8 @@ type L4NetLB struct {
 	enableStrongSessionAffinity bool
 	networkInfo                 network.NetworkInfo
 	networkResolver             network.Resolver
-
-	svcLogger klog.Logger
+	enableWeightedLB            bool
+	svcLogger                   klog.Logger
 }
 
 // L4NetLBSyncResult contains information about the outcome of an L4 NetLB sync. It stores the list of resource name annotations,
@@ -115,6 +115,7 @@ type L4NetLBParams struct {
 	DualStackEnabled             bool
 	StrongSessionAffinityEnabled bool
 	NetworkResolver              network.Resolver
+	EnableWeightedLB             bool
 }
 
 // NewL4NetLB creates a new Handler for the given L4NetLB service.
@@ -133,6 +134,7 @@ func NewL4NetLB(params *L4NetLBParams, logger klog.Logger) *L4NetLB {
 		enableDualStack:             params.DualStackEnabled,
 		enableStrongSessionAffinity: params.StrongSessionAffinityEnabled,
 		networkResolver:             params.NetworkResolver,
+		enableWeightedLB:            params.EnableWeightedLB,
 		svcLogger:                   logger,
 	}
 	return l4netlb
@@ -309,17 +311,19 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 	bsName := l4netlb.namer.L4Backend(l4netlb.Service.Namespace, l4netlb.Service.Name)
 	servicePorts := l4netlb.Service.Spec.Ports
 	protocol := utils.GetProtocol(servicePorts)
+	enableWeightedOnService := l4netlb.enableWeightedLB && annotations.IsWeightedLBEnabledForService(l4netlb.Service)
 
 	connectionTrackingPolicy := l4netlb.connectionTrackingPolicy()
 	backendParams := backends.L4BackendServiceParams{
-		Name:                     bsName,
-		HealthCheckLink:          hcLink,
-		Protocol:                 string(protocol),
-		SessionAffinity:          string(l4netlb.Service.Spec.SessionAffinity),
-		Scheme:                   string(cloud.SchemeExternal),
-		NamespacedName:           l4netlb.NamespacedName,
-		NetworkInfo:              network.DefaultNetwork(l4netlb.cloud),
-		ConnectionTrackingPolicy: connectionTrackingPolicy,
+		Name:                        bsName,
+		HealthCheckLink:             hcLink,
+		Protocol:                    string(protocol),
+		SessionAffinity:             string(l4netlb.Service.Spec.SessionAffinity),
+		Scheme:                      string(cloud.SchemeExternal),
+		NamespacedName:              l4netlb.NamespacedName,
+		NetworkInfo:                 network.DefaultNetwork(l4netlb.cloud),
+		ConnectionTrackingPolicy:    connectionTrackingPolicy,
+		EnableWeightedLoadBalancing: enableWeightedOnService,
 	}
 
 	bs, err := l4netlb.backendPool.EnsureL4BackendService(backendParams, l4netlb.svcLogger)

@@ -269,6 +269,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service, svcLo
 		Recorder:         l4c.ctx.Recorder(service.Namespace),
 		DualStackEnabled: l4c.enableDualStack,
 		NetworkResolver:  l4c.networkResolver,
+		EnableWeightedLB: l4c.ctx.EnableWeightedL4ILB,
 	}
 	l4 := loadbalancers.NewL4Handler(l4ilbParams, svcLogger)
 	syncResult := l4.EnsureInternalLoadBalancer(utils.GetNodeNames(nodes), service)
@@ -348,6 +349,7 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service, svc
 		Recorder:         l4c.ctx.Recorder(svc.Namespace),
 		DualStackEnabled: l4c.enableDualStack,
 		NetworkResolver:  l4c.networkResolver,
+		EnableWeightedLB: l4c.ctx.EnableWeightedL4ILB,
 	}
 	l4 := loadbalancers.NewL4Handler(l4ilbParams, svcLogger)
 	l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer", "Deleting load balancer for %s", key)
