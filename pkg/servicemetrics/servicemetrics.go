@@ -361,7 +361,7 @@ func getServiceType(service *v1.Service) string {
 	}
 	wantsL4NetLB, _ := annotations.WantsL4NetLB(service)
 	if wantsL4NetLB {
-		if common.HasGivenFinalizer(service.ObjectMeta, common.NetLBFinalizerV2) {
+		if common.HasGivenFinalizer(service.ObjectMeta, common.NetLBFinalizerV2) || common.HasGivenFinalizer(service.ObjectMeta, common.NetLBFinalizerV3) {
 			return serviceTypeRBSXLB
 		}
 		return serviceTypeLegacyXLB

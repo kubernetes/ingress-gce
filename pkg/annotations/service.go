@@ -120,8 +120,9 @@ const (
 	FirewallForHealthcheckIPv6Resource = FirewallRuleForHealthcheckKey + IPv6Suffix
 	AddressResource                    = "address"
 	// TODO(slavik): import this from gce_annotations when it will be merged in k8s
-	RBSAnnotationKey = "cloud.google.com/l4-rbs"
-	RBSEnabled       = "enabled"
+	RBSAnnotationKey    = "cloud.google.com/l4-rbs"
+	RBSNEGAnnotationKey = "cloud.google.com/l4-rbs-neg"
+	RBSEnabled          = "enabled"
 	// StrongSessionAffinity is a restricted feature that is enabled on
 	// allow-listed projects only. If you need access to this feature for your
 	// External L4 Load Balancer, please contact Google Cloud support team.
@@ -148,6 +149,8 @@ type NegAnnotation struct {
 	// ExposedPorts maps ServicePort to attributes of the NEG that should be
 	// associated with the ServicePort.
 	ExposedPorts map[int32]NegAttributes `json:"exposed_ports,omitempty"`
+	// L4ExternalLB specifies if the L4 external LB service should use NEGs.
+	L4ExternalLB bool `json:"l4_external_lb,omitempty"`
 }
 
 // THCAnnotation is the format of the annotation associated with the THCAnnotationKey key.
@@ -271,6 +274,18 @@ func HasRBSAnnotation(service *v1.Service) bool {
 	}
 
 	if val, ok := service.Annotations[RBSAnnotationKey]; ok && val == RBSEnabled {
+		return true
+	}
+	return false
+}
+
+// HasRBSNEGAnnotation checks if the given service has the RBS NEG annotation.
+func HasRBSNEGAnnotation(service *v1.Service) bool {
+	if service == nil {
+		return false
+	}
+
+	if val, ok := service.Annotations[RBSNEGAnnotationKey]; ok && val == RBSEnabled {
 		return true
 	}
 	return false

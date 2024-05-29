@@ -240,6 +240,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				manager.enableDualStackNEG,
 				manager.syncerMetrics,
 				&portInfo.NetworkInfo,
+				portInfo.L4LBType,
 			)
 			syncer = negsyncer.NewTransactionSyncer(
 				syncerKey,

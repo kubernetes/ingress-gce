@@ -538,6 +538,54 @@ func TestProcessMultinetServiceCreate(t *testing.T) {
 	deleteNetLBService(lc, svc)
 }
 
+func TestProcessNEGServiceCreate(t *testing.T) {
+	lc := newL4NetLBServiceController()
+	lc.enableNEGSupport = true
+
+	svc := test.NewL4NetLBRBSService(8080)
+	svc.Annotations[annotations.RBSNEGAnnotationKey] = annotations.RBSEnabled
+	// create the NEG that would be created by the NEG controller.
+	neg := &computebeta.NetworkEndpointGroup{
+		Name: lc.namer.L4Backend(svc.Namespace, svc.Name),
+	}
+	lc.ctx.Cloud.CreateNetworkEndpointGroup(neg, "us-central1-b")
+
+	addNetLBService(lc, svc)
+	prevMetrics, err := test.GetL4NetLBLatencyMetric()
+	if err != nil {
+		t.Errorf("Error getting L4 NetLB latency metrics err: %v", err)
+	}
+	if prevMetrics == nil {
+		t.Fatalf("Cannot get prometheus metrics for L4NetLB latency")
+	}
+	key, _ := common.KeyFunc(svc)
+	err = lc.sync(key, klog.TODO())
+	if err != nil {
+		t.Errorf("Failed to sync newly added service %s, err %v", svc.Name, err)
+	}
+	svc, err = lc.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err %v", svc.Name, err)
+	}
+	currMetrics, metricErr := test.GetL4NetLBLatencyMetric()
+	if metricErr != nil {
+		t.Errorf("Error getting L4 NetLB latency metrics err: %v", metricErr)
+	}
+	prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{CreateCount: 1, UpperBoundSeconds: 1}, t)
+
+	validateNetLBSvcStatus(svc, t)
+	if !utils.HasL4NetLBFinalizerV3(svc) {
+		t.Errorf("the service %s should have the V3 finalizer but instead it had %v", svc.Name, svc.Finalizers)
+	}
+	if err := checkBackendServiceWithNEG(lc, svc); err != nil {
+		t.Errorf("UnexpectedError %v", err)
+	}
+	if err := validateAnnotations(svc); err != nil {
+		t.Errorf("%v", err)
+	}
+	deleteNetLBService(lc, svc)
+}
+
 func TestProcessServiceCreateWithUsersProvidedIP(t *testing.T) {
 	lc := newL4NetLBServiceController()
 

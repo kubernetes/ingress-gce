@@ -106,6 +106,9 @@ type Controller struct {
 	// gce-regional-external ingresses
 	enableIngressRegionalExternal bool
 
+	// enableL4NetLBNEGs indicates if NEGs can be created for L4 NetLB services (the ones that qualify for NEGs)
+	enableL4NetLBNEGs bool
+
 	stopCh <-chan struct{}
 	logger klog.Logger
 }
@@ -141,6 +144,7 @@ func NewController(
 	lpConfig labels.PodLabelPropagationConfig,
 	enableMultiNetworking bool,
 	enableIngressRegionalExternal bool,
+	enableL4NEGs bool,
 	stopCh <-chan struct{},
 	logger klog.Logger,
 ) *Controller {
@@ -235,6 +239,7 @@ func NewController(
 		syncerMetrics:                 syncerMetrics,
 		runL4:                         runL4Controller,
 		enableIngressRegionalExternal: enableIngressRegionalExternal,
+		enableL4NetLBNEGs:             enableL4NEGs,
 		stopCh:                        stopCh,
 		logger:                        logger,
 	}
@@ -600,7 +605,7 @@ func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name ty
 func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap, negUsage *metricscollector.NegServiceState, networkInfo *network.NetworkInfo) error {
 	wantsILB, _ := annotations.WantsL4ILB(service)
 	wantsNetLB, _ := annotations.WantsL4NetLB(service)
-	needsNEGForNetLB := wantsNetLB && !networkInfo.IsDefault && annotations.HasRBSAnnotation(service)
+	needsNEGForNetLB := wantsNetLB && (!networkInfo.IsDefault || utils.HasL4NetLBFinalizerV3(service) && c.enableL4NetLBNEGs) && annotations.HasRBSAnnotation(service)
 	if !wantsILB && !needsNEGForNetLB {
 		return nil
 	}
@@ -621,8 +626,14 @@ func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.Na
 	onlyLocal := helpers.RequestsOnlyLocalTraffic(service)
 	// Update usage metrics.
 	negUsage.VmIpNeg = metricscollector.NewVmIpNegType(onlyLocal)
+	var l4LBType negtypes.L4LBType
+	if wantsILB {
+		l4LBType = negtypes.L4InternalLB
+	} else {
+		l4LBType = negtypes.L4ExternalLB
+	}
 
-	return portInfoMap.Merge(negtypes.NewPortInfoMapForVMIPNEG(name.Namespace, name.Name, c.l4Namer, onlyLocal, networkInfo))
+	return portInfoMap.Merge(negtypes.NewPortInfoMapForVMIPNEG(name.Namespace, name.Name, c.l4Namer, onlyLocal, networkInfo, l4LBType))
 }
 
 // mergeDefaultBackendServicePortInfoMap merge the PortInfoMap for the default backend service into portInfoMap

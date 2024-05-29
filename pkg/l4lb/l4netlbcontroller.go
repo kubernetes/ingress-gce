@@ -78,6 +78,7 @@ type L4NetLBController struct {
 	enableDualStack             bool
 	enableStrongSessionAffinity bool
 	serviceVersions             *serviceVersionsTracker
+	enableNEGSupport            bool
 
 	logger klog.Logger
 }
@@ -106,6 +107,7 @@ func NewL4NetLBController(
 		forwardingRules:             forwardingrules.New(ctx.Cloud, meta.VersionGA, meta.Regional, logger),
 		enableDualStack:             ctx.EnableL4NetLBDualStack,
 		enableStrongSessionAffinity: ctx.EnableL4StrongSessionAffinity,
+		enableNEGSupport:            ctx.EnableL4NetLBNEGs,
 		serviceVersions:             NewServiceVersionsTracker(),
 		logger:                      logger,
 	}
@@ -306,7 +308,7 @@ func (lc *L4NetLBController) isRBSBasedService(svc *v1.Service, svcLogger klog.L
 	if !utils.IsLoadBalancerServiceType(svc) {
 		return false
 	}
-	return annotations.HasRBSAnnotation(svc) || utils.HasL4NetLBFinalizerV2(svc) || lc.hasRBSForwardingRule(svc, svcLogger)
+	return annotations.HasRBSAnnotation(svc) || utils.HasL4NetLBFinalizerV2(svc) || utils.HasL4NetLBFinalizerV3(svc) || lc.hasRBSForwardingRule(svc, svcLogger)
 }
 
 func (lc *L4NetLBController) preventLegacyServiceHandling(service *v1.Service, key string, svcLogger klog.Logger) (bool, error) {
@@ -507,8 +509,18 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 	}
 	l4netlb := loadbalancers.NewL4NetLB(l4NetLBParams, svcLogger)
 
-	if err := common.EnsureServiceFinalizer(service, common.NetLBFinalizerV2, lc.ctx.KubeClient, svcLogger); err != nil {
-		return &loadbalancers.L4NetLBSyncResult{Error: fmt.Errorf("Failed to attach L4 External LoadBalancer finalizer to service %s/%s, err %w", service.Namespace, service.Name, err)}
+	usesNegBackends := false
+
+	annotationSettingForNEGs := annotations.HasRBSNEGAnnotation(service)
+	if lc.enableNEGSupport && (annotationSettingForNEGs || utils.HasL4NetLBFinalizerV3(service)) {
+		if err := common.EnsureServiceFinalizer(service, common.NetLBFinalizerV3, lc.ctx.KubeClient, svcLogger); err != nil {
+			return &loadbalancers.L4NetLBSyncResult{Error: fmt.Errorf("Failed to attach L4 External LoadBalancer finalizer to service %s/%s, err %w", service.Namespace, service.Name, err)}
+		}
+		usesNegBackends = true
+	} else {
+		if err := common.EnsureServiceFinalizer(service, common.NetLBFinalizerV2, lc.ctx.KubeClient, svcLogger); err != nil {
+			return &loadbalancers.L4NetLBSyncResult{Error: fmt.Errorf("Failed to attach L4 External LoadBalancer finalizer to service %s/%s, err %w", service.Namespace, service.Name, err)}
+		}
 	}
 
 	nodes, err := lc.zoneGetter.ListNodes(zonegetter.CandidateNodesFilter, svcLogger)
@@ -517,7 +529,7 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 	}
 	nodeNames := utils.GetNodeNames(nodes)
 	isMultinet := lc.networkResolver.IsMultinetService(service)
-	if !isMultinet {
+	if !isMultinet && !usesNegBackends {
 		if err := lc.ensureInstanceGroups(service, nodeNames, svcLogger); err != nil {
 			lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncInstanceGroupsFailed",
 				"Error syncing instance group, err: %v", err)
@@ -539,7 +551,7 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 	}
 
 	linkType := instanceGroupLink
-	if isMultinet {
+	if isMultinet || usesNegBackends {
 		linkType = negLink
 	}
 
@@ -710,6 +722,14 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service,
 	// Finalizer needs to be removed last, because after deleting finalizer service can be deleted and
 	// updating annotations or other manipulations will fail
 	if err := common.EnsureDeleteServiceFinalizer(svc, common.NetLBFinalizerV2, lc.ctx.KubeClient, svcLogger); err != nil {
+		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancerFailed",
+			"Error removing finalizer from L4 External LoadBalancer, err: %v", err)
+		result.Error = fmt.Errorf("Failed to remove L4 External LoadBalancer finalizer, err: %w", err)
+		return result
+	}
+	// Finalizer needs to be removed last, because after deleting finalizer service can be deleted and
+	// updating annotations or other manipulations will fail
+	if err := common.EnsureDeleteServiceFinalizer(svc, common.NetLBFinalizerV3, lc.ctx.KubeClient, svcLogger); err != nil {
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancerFailed",
 			"Error removing finalizer from L4 External LoadBalancer, err: %v", err)
 		result.Error = fmt.Errorf("Failed to remove L4 External LoadBalancer finalizer, err: %w", err)
