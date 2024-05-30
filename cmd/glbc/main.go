@@ -108,6 +108,12 @@ func main() {
 		klog.Fatalf("Failed to create kubernetes client for leader election: %v", err)
 	}
 
+	// To ensure that events do not use up Kube QPS and burst, use a separate k8s client
+	eventRecorderKubeClient, err := kubernetes.NewForConfig(restclient.AddUserAgent(kubeConfigForProtobuf, "l7lb-events"))
+	if err != nil {
+		klog.Fatalf("Failed to create kubernetes client for event recording: %v", err)
+	}
+
 	// Create kube-config for CRDs.
 	// TODO(smatti): Migrate to use protobuf once CRD supports.
 	kubeConfig, err := app.NewKubeConfig(rootLogger)
@@ -245,7 +251,7 @@ func main() {
 		EnableWeightedL4ILB:           flags.F.EnableWeightedL4ILB,
 		EnableWeightedL4NetLB:         flags.F.EnableWeightedL4NetLB,
 	}
-	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, ingParamsClient, svcAttachmentClient, networkClient, cloud, namer, kubeSystemUID, ctxConfig, rootLogger)
+	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, ingParamsClient, svcAttachmentClient, networkClient, eventRecorderKubeClient, cloud, namer, kubeSystemUID, ctxConfig, rootLogger)
 	go app.RunHTTPServer(ctx.HealthCheck, rootLogger)
 
 	if !flags.F.LeaderElection.LeaderElect {
@@ -536,6 +542,7 @@ func createNEGController(ctx *ingctx.ControllerContext, stopCh <-chan struct{}, 
 	negController := neg.NewController(
 		ctx.KubeClient,
 		ctx.SvcNegClient,
+		ctx.EventRecorderClient,
 		ctx.KubeSystemUID,
 		ctx.IngressInformer,
 		ctx.ServiceInformer,

@@ -84,11 +84,11 @@ type readinessReflector struct {
 	logger klog.Logger
 }
 
-func NewReadinessReflector(kubeClient kubernetes.Interface, podLister cache.Indexer, negCloud negtypes.NetworkEndpointGroupCloud, lookup NegLookup, zoneGetter *zonegetter.ZoneGetter, enableDualStackNEG, enableMultiSubnetCluster bool, logger klog.Logger) Reflector {
+func NewReadinessReflector(kubeClient, eventRecorderClient kubernetes.Interface, podLister cache.Indexer, negCloud negtypes.NetworkEndpointGroupCloud, lookup NegLookup, zoneGetter *zonegetter.ZoneGetter, enableDualStackNEG, enableMultiSubnetCluster bool, logger klog.Logger) Reflector {
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartLogging(klog.Infof)
 	broadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
-		Interface: kubeClient.CoreV1().Events(""),
+		Interface: eventRecorderClient.CoreV1().Events(""),
 	})
 	recorder := broadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "neg-readiness-reflector"})
 	logger = logger.WithName("ReadinessReflector")

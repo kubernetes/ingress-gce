@@ -62,6 +62,7 @@ func newTestReadinessReflector(testContext *negtypes.TestContext, enableMultiSub
 	fakeZoneGetter := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, defaultTestSubnetURL, enableMultiSubnetCluster)
 	reflector := NewReadinessReflector(
 		testContext.KubeClient,
+		testContext.KubeClient,
 		testContext.PodInformer.GetIndexer(),
 		negtypes.NewAdapter(testContext.Cloud),
 		&fakeLookUp{},
