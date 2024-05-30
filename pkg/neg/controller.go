@@ -114,6 +114,7 @@ type Controller struct {
 func NewController(
 	kubeClient kubernetes.Interface,
 	svcNegClient svcnegclient.Interface,
+	eventRecorderClient kubernetes.Interface,
 	kubeSystemUID types.UID,
 	ingressInformer cache.SharedIndexInformer,
 	serviceInformer cache.SharedIndexInformer,
@@ -151,7 +152,7 @@ func NewController(
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartStructuredLogging(0)
 	eventBroadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
-		Interface: kubeClient.CoreV1().Events(""),
+		Interface: eventRecorderClient.CoreV1().Events(""),
 	})
 	negScheme := runtime.NewScheme()
 	err := scheme.AddToScheme(negScheme)
@@ -191,6 +192,7 @@ func NewController(
 	if enableReadinessReflector {
 		reflector = readiness.NewReadinessReflector(
 			kubeClient,
+			eventRecorderClient,
 			podInformer.GetIndexer(),
 			cloud,
 			manager,

@@ -845,7 +845,7 @@ func newServiceController(t *testing.T, fakeGCE *gce.Cloud) *L4Controller {
 		ResyncPeriod: 1 * time.Minute,
 		NumL4Workers: 5,
 	}
-	ctx := context.NewControllerContext(nil, kubeClient, nil, nil, nil, nil, nil, nil, nil, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
+	ctx := context.NewControllerContext(nil, kubeClient, nil, nil, nil, nil, nil, nil, nil, kubeClient /*kube client to be used for events*/, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
 	// Add some nodes so that NEG linker kicks in during ILB creation.
 	nodes, err := test.CreateAndInsertNodes(ctx.Cloud, []string{"instance-1"}, vals.ZoneName)
 	if err != nil {

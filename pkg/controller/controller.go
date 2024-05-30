@@ -119,7 +119,7 @@ func NewLoadBalancerController(
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartLogging(klog.Infof)
 	broadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
-		Interface: ctx.KubeClient.CoreV1().Events(""),
+		Interface: ctx.EventRecorderClient.CoreV1().Events(""),
 	})
 
 	healthChecker := healthchecks.NewHealthChecker(ctx.Cloud, ctx.HealthCheckPath, ctx.DefaultBackendSvcPort.ID.Service, ctx, ctx.Translator, healthchecks.HealthcheckFlags{

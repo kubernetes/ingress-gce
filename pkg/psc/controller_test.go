@@ -1097,7 +1097,7 @@ func newTestController(clusterType string) *Controller {
 
 	flags.F.GKEClusterName = ClusterName
 	flags.F.GKEClusterType = clusterType
-	ctx := context.NewControllerContext(nil, kubeClient, nil, nil, nil, nil, nil, saClient, nil, gceClient, resourceNamer, kubeSystemUID, ctxConfig, klog.TODO())
+	ctx := context.NewControllerContext(nil, kubeClient, nil, nil, nil, nil, nil, saClient, nil, kubeClient /*kube client to be used for events*/, gceClient, resourceNamer, kubeSystemUID, ctxConfig, klog.TODO())
 
 	return NewController(ctx, make(<-chan struct{}), klog.TODO())
 }

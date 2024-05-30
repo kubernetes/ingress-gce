@@ -73,11 +73,12 @@ const (
 
 // ControllerContext holds the state needed for the execution of the controller.
 type ControllerContext struct {
-	KubeConfig     *rest.Config
-	KubeClient     kubernetes.Interface
-	SvcNegClient   svcnegclient.Interface
-	SAClient       serviceattachmentclient.Interface
-	FirewallClient firewallclient.Interface
+	KubeConfig          *rest.Config
+	KubeClient          kubernetes.Interface
+	SvcNegClient        svcnegclient.Interface
+	SAClient            serviceattachmentclient.Interface
+	FirewallClient      firewallclient.Interface
+	EventRecorderClient kubernetes.Interface
 
 	Cloud *gce.Cloud
 
@@ -158,6 +159,7 @@ func NewControllerContext(
 	ingParamsClient ingparamsclient.Interface,
 	saClient serviceattachmentclient.Interface,
 	networkClient networkclient.Interface,
+	eventRecorderClient kubernetes.Interface,
 	cloud *gce.Cloud,
 	clusterNamer *namer.Namer,
 	kubeSystemUID types.UID,
@@ -182,6 +184,7 @@ func NewControllerContext(
 		FirewallClient:          firewallClient,
 		SvcNegClient:            svcnegClient,
 		SAClient:                saClient,
+		EventRecorderClient:     eventRecorderClient,
 		Cloud:                   cloud,
 		ClusterNamer:            clusterNamer,
 		L4Namer:                 namer.NewL4Namer(string(kubeSystemUID), clusterNamer),
@@ -348,7 +351,7 @@ func (ctx *ControllerContext) Recorder(ns string) record.EventRecorder {
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartLogging(klog.Infof)
 	broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{
-		Interface: ctx.KubeClient.CoreV1().Events(ns),
+		Interface: ctx.EventRecorderClient.CoreV1().Events(ns),
 	})
 	rec := broadcaster.NewRecorder(ctx.generateScheme(), apiv1.EventSource{Component: "loadbalancer-controller"})
 	ctx.recorders[ns] = rec

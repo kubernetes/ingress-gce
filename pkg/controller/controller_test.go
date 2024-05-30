@@ -83,7 +83,7 @@ func newLoadBalancerController() *LoadBalancerController {
 		HealthCheckPath:               "/",
 		EnableIngressRegionalExternal: true,
 	}
-	ctx := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, nil, nil, nil, nil, nil, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
+	ctx := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, nil, nil, nil, nil, nil, kubeClient /*kube client to be used for events*/, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
 	lbc := NewLoadBalancerController(ctx, stopCh, klog.TODO())
 	// TODO(rramkumar): Fix this so we don't have to override with our fake
 	lbc.instancePool = instancegroups.NewManager(&instancegroups.ManagerConfig{

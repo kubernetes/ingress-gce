@@ -130,6 +130,7 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 	return NewController(
 		kubeClient,
 		testContext.SvcNegClient,
+		kubeClient,
 		testContext.KubeSystemUID,
 		testContext.IngressInformer,
 		testContext.ServiceInformer,

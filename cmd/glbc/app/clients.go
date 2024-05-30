@@ -18,9 +18,12 @@ package app
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
+	"runtime"
 	"time"
 
 	"k8s.io/client-go/rest"
@@ -36,6 +39,7 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/ratelimit"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/version"
 )
 
 const (
@@ -50,9 +54,10 @@ func NewKubeConfigForProtobuf(logger klog.Logger) (*rest.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	config = utils.AddIngressUserAgent(config)
+	addIngressUserAgent(config)
 	// Use protobufs for communication with apiserver
 	config.ContentType = "application/vnd.kubernetes.protobuf"
+	addKubeClientQPSSettings(config, logger)
 	return config, nil
 }
 
@@ -68,7 +73,9 @@ func NewKubeConfig(logger klog.Logger) (*rest.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	return utils.AddIngressUserAgent(config), nil
+	addIngressUserAgent(config)
+	addKubeClientQPSSettings(config, logger)
+	return config, nil
 }
 
 // NewGCEClient returns a client to the GCE environment. This will block until
@@ -132,4 +139,33 @@ func generateConfigReaderFunc(config []byte) readerFunc {
 	return func() io.Reader {
 		return bytes.NewReader(config)
 	}
+}
+
+// ingressUserAgent returns l7controller/$VERSION ($GOOS/$GOARCH)
+func ingressUserAgent() string {
+	return fmt.Sprintf("%s/%s (%s/%s)", filepath.Base(os.Args[0]), version.Version, runtime.GOOS, runtime.GOARCH)
+}
+
+// addIngressUserAgent updates the provided config with IngressUserAgent()
+func addIngressUserAgent(config *rest.Config) {
+	config.UserAgent = ingressUserAgent()
+}
+
+// addKubeClientQPSSettings updates the provided config with the QPS settings
+// determined by the KubeClientQPS and KubeClientBurst flags
+func addKubeClientQPSSettings(config *rest.Config, logger klog.Logger) {
+	if flags.F.KubeClientQPS == 0 {
+		logger.Info("Setting Kubernetes Client QPS to default by setting to 0")
+	} else {
+		logger.Info("Setting Kubernetes Client QPS to %d", flags.F.KubeClientQPS)
+	}
+
+	if flags.F.KubeClientBurst == 0 {
+		logger.Info("Setting Kubernetes Client Burst to default by setting to 0")
+	} else {
+		logger.Info("Setting Kubernetes Client Burst to %d", flags.F.KubeClientBurst)
+	}
+
+	config.QPS = flags.F.KubeClientQPS
+	config.Burst = flags.F.KubeClientBurst
 }
