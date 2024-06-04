@@ -121,9 +121,23 @@ func schema_pkg_apis_svcneg_v1beta1_NegObjectReference(ref common.ReferenceCallb
 							Format:      "",
 						},
 					},
+					"subnetURL": {
+						SchemaProps: spec.SchemaProps{
+							Description: "URL of the subnetwork to which all network endpoints in the NEG belong.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
 					"networkEndpointType": {
 						SchemaProps: spec.SchemaProps{
 							Description: "NetworkEndpointType: Type of network endpoints in this network endpoint group.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"state": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Current condition of this network endpoint group.",
 							Type:        []string{"string"},
 							Format:      "",
 						},
