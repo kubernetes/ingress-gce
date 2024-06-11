@@ -204,15 +204,16 @@ func (r *readinessReflector) getExpectedNegCondition(pod *v1.Pod, neg, backendSe
 		return expectedCondition
 	}
 
+	if r.enableMultiSubnetCluster && !r.zoneGetter.IsDefaultSubnetNode(pod.Spec.NodeName, r.logger) {
+		expectedCondition.Status = v1.ConditionTrue
+		expectedCondition.Reason = negReadyReason
+		expectedCondition.Message = fmt.Sprintf("Pod belongs to a node in non-default subnet. Marking condition %q to True.", shared.NegReadinessGate)
+		return expectedCondition
+	}
+
 	negs := r.lookup.ReadinessGateEnabledNegs(pod.Namespace, pod.Labels)
 	// mark pod as ready if it belongs to no NEGs
 	if len(negs) == 0 {
-		if r.enableMultiSubnetCluster && !r.zoneGetter.IsDefaultSubnetNode(pod.Spec.NodeName, r.logger) {
-			expectedCondition.Status = v1.ConditionTrue
-			expectedCondition.Reason = negReadyReason
-			expectedCondition.Message = fmt.Sprintf("Pod belongs to a node in non-default subnet. Marking condition %q to True.", shared.NegReadinessGate)
-			return expectedCondition
-		}
 		expectedCondition.Status = v1.ConditionTrue
 		expectedCondition.Reason = negReadyReason
 		expectedCondition.Message = fmt.Sprintf("Pod does not belong to any NEG. Marking condition %q to True.", shared.NegReadinessGate)

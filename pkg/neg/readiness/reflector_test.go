@@ -414,6 +414,7 @@ func TestSyncPodMultipleSubnets(t *testing.T) {
 	testReadinessReflector := newTestReadinessReflector(fakeContext, true)
 	testReadinessReflector.clock = fakeClock
 	testlookUp := testReadinessReflector.lookup.(*fakeLookUp)
+	testlookUp.readinessGateEnabledNegs = []string{"neg1", "neg2"}
 
 	zonegetter.PopulateFakeNodeInformer(fakeContext.NodeInformer, true)
 
