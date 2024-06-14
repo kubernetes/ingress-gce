@@ -120,8 +120,15 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 		AddFunc: func(obj interface{}) {
 			addSvc := obj.(*v1.Service)
 			svcKey := utils.ServiceKeyFunc(addSvc.Namespace, addSvc.Name)
-			needsILB, svcType := annotations.WantsL4ILB(addSvc)
 			svcLogger := logger.WithValues("serviceKey", svcKey)
+			defer func() {
+				if r := recover(); r != nil {
+					errMessage := fmt.Sprintf("Panic in L4 ILB controller worker goroutine: %v", r)
+					svcLogger.Error(nil, errMessage)
+					l4metrics.PublishL4ControllerPanicCount(l4ILBControllerName, "add")
+				}
+			}()
+			needsILB, svcType := annotations.WantsL4ILB(addSvc)
 			// Check for deletion since updates or deletes show up as Add when controller restarts.
 			if needsILB || l4c.needsDeletion(addSvc) {
 				svcLogger.V(3).Info("ILB Service added, enqueuing")
@@ -139,6 +146,13 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 			svcKey := utils.ServiceKeyFunc(curSvc.Namespace, curSvc.Name)
 			oldSvc := old.(*v1.Service)
 			svcLogger := logger.WithValues("serviceKey", svcKey)
+			defer func() {
+				if r := recover(); r != nil {
+					errMessage := fmt.Sprintf("Panic in L4 ILB controller worker goroutine: %v", r)
+					svcLogger.Error(nil, errMessage)
+					l4metrics.PublishL4ControllerPanicCount(l4ILBControllerName, "update")
+				}
+			}()
 			needsUpdate := l4c.needsUpdate(oldSvc, curSvc)
 			needsDeletion := l4c.needsDeletion(curSvc)
 			if needsUpdate || needsDeletion {
@@ -411,7 +425,17 @@ func (l4c *L4Controller) linkNEG(l4 *loadbalancers.L4, svcLogger klog.Logger) er
 func (l4c *L4Controller) syncWrapper(key string) error {
 	syncTrackingId := rand.Int31()
 	svcLogger := l4c.logger.WithValues("serviceKey", key, "syncId", syncTrackingId)
-	return skipUserError(l4c.sync(key, svcLogger), svcLogger)
+
+	var syncErr error
+	defer func() {
+		if r := recover(); r != nil {
+			errMessage := fmt.Sprintf("Panic in L4 ILB controller worker goroutine: %v", r)
+			svcLogger.Error(nil, errMessage)
+			l4metrics.PublishL4ControllerPanicCount(l4ILBControllerName, "sync")
+		}
+	}()
+	syncErr = l4c.sync(key, svcLogger)
+	return skipUserError(syncErr, svcLogger)
 }
 
 func (l4c *L4Controller) sync(key string, svcLogger klog.Logger) error {
