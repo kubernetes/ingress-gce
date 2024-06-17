@@ -123,7 +123,7 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 			svcLogger := logger.WithValues("serviceKey", svcKey)
 			defer func() {
 				if r := recover(); r != nil {
-					errMessage := fmt.Sprintf("Panic in L4 ILB controller worker goroutine: %v", r)
+					errMessage := fmt.Sprintf("Panic in L4 ILB AddFunc handler: %v", r)
 					svcLogger.Error(nil, errMessage)
 					l4metrics.PublishL4ControllerPanicCount(l4ILBControllerName, "add")
 				}
@@ -148,7 +148,7 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 			svcLogger := logger.WithValues("serviceKey", svcKey)
 			defer func() {
 				if r := recover(); r != nil {
-					errMessage := fmt.Sprintf("Panic in L4 ILB controller worker goroutine: %v", r)
+					errMessage := fmt.Sprintf("Panic in L4 ILB UpdateFunc handler: %v", r)
 					svcLogger.Error(nil, errMessage)
 					l4metrics.PublishL4ControllerPanicCount(l4ILBControllerName, "update")
 				}
@@ -429,7 +429,7 @@ func (l4c *L4Controller) syncWrapper(key string) error {
 	var syncErr error
 	defer func() {
 		if r := recover(); r != nil {
-			errMessage := fmt.Sprintf("Panic in L4 ILB controller worker goroutine: %v", r)
+			errMessage := fmt.Sprintf("Panic in L4 ILB sync worker goroutine: %v", r)
 			svcLogger.Error(nil, errMessage)
 			l4metrics.PublishL4ControllerPanicCount(l4ILBControllerName, "sync")
 		}
@@ -484,6 +484,8 @@ func (l4c *L4Controller) sync(key string, svcLogger klog.Logger) error {
 }
 
 func (l4c *L4Controller) needsDeletion(svc *v1.Service) bool {
+	fmt.Println("Panicking!")
+	panic("Simulated panic for testing")
 	if !utils.IsSubsettingL4ILBService(svc) {
 		return false
 	}

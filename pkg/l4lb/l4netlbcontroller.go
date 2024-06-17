@@ -128,7 +128,7 @@ func NewL4NetLBController(
 			svcLogger := logger.WithValues("serviceKey", svcKey)
 			defer func() {
 				if r := recover(); r != nil {
-					errMessage := fmt.Sprintf("Panic in L4 NetLB controller worker goroutine: %v", r)
+					errMessage := fmt.Sprintf("Panic in L4 NetLB AddFunc handler: %v", r)
 					svcLogger.Error(nil, errMessage)
 					l4metrics.PublishL4ControllerPanicCount(l4NetLBControllerName, "add")
 				}
@@ -151,7 +151,7 @@ func NewL4NetLBController(
 			svcLogger := logger.WithValues("serviceKey", svcKey)
 			defer func() {
 				if r := recover(); r != nil {
-					errMessage := fmt.Sprintf("Panic in L4 NetLB controller worker goroutine: %v", r)
+					errMessage := fmt.Sprintf("Panic in L4 NetLB UpdateFunc handler: %v", r)
 					svcLogger.Error(nil, errMessage)
 					l4metrics.PublishL4ControllerPanicCount(l4NetLBControllerName, "update")
 				}
@@ -448,7 +448,7 @@ func (lc *L4NetLBController) syncWrapper(key string) error {
 	var syncErr error
 	defer func() {
 		if r := recover(); r != nil {
-			errMessage := fmt.Sprintf("Panic in L4 NetLB controller worker goroutine: %v", r)
+			errMessage := fmt.Sprintf("Panic in L4 NetLB sync worker goroutine: %v", r)
 			svcLogger.Error(nil, errMessage)
 			l4metrics.PublishL4ControllerPanicCount(l4NetLBControllerName, "sync")
 		}
