@@ -484,8 +484,6 @@ func (l4c *L4Controller) sync(key string, svcLogger klog.Logger) error {
 }
 
 func (l4c *L4Controller) needsDeletion(svc *v1.Service) bool {
-	fmt.Println("Panicking!")
-	panic("Simulated panic for testing")
 	if !utils.IsSubsettingL4ILBService(svc) {
 		return false
 	}
