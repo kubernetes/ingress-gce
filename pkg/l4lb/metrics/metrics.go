@@ -168,7 +168,7 @@ var (
 			Name: l4LBControllerPanicsMetricName,
 			Help: "Counter for times when L4 controllers panic",
 		},
-		[]string{"controller_name", "sync_type"},
+		[]string{"controller_name"},
 	)
 )
 
@@ -284,8 +284,8 @@ func PublishL4ServiceCleanupFinalizer() {
 }
 
 // PublishL4ControllerPanicCount exports error count metrics for L4 controllers
-func PublishL4ControllerPanicCount(controllerName string, syncType string) {
-	l4LBControllerPanics.WithLabelValues(controllerName, syncType).Inc()
+func PublishL4ControllerPanicCount(controllerName string) {
+	l4LBControllerPanics.WithLabelValues(controllerName).Inc()
 }
 
 // PublishL4FailedHealthCheckCount observers failed health check from controller.

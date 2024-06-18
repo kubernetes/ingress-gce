@@ -126,13 +126,6 @@ func NewL4NetLBController(
 			addSvc := obj.(*v1.Service)
 			svcKey := utils.ServiceKeyFunc(addSvc.Namespace, addSvc.Name)
 			svcLogger := logger.WithValues("serviceKey", svcKey)
-			defer func() {
-				if r := recover(); r != nil {
-					errMessage := fmt.Sprintf("Panic in L4 NetLB AddFunc handler: %v", r)
-					svcLogger.Error(nil, errMessage)
-					l4metrics.PublishL4ControllerPanicCount(l4NetLBControllerName, "add")
-				}
-			}()
 			if shouldProcess, _ := l4netLBc.shouldProcessService(addSvc, nil, svcLogger); shouldProcess {
 				svcLogger.V(3).Info("L4 External LoadBalancer Service added, enqueuing")
 				l4netLBc.ctx.Recorder(addSvc.Namespace).Eventf(addSvc, v1.EventTypeNormal, "ADD", svcKey)
@@ -149,13 +142,6 @@ func NewL4NetLBController(
 			oldSvc := old.(*v1.Service)
 			svcKey := utils.ServiceKeyFunc(curSvc.Namespace, curSvc.Name)
 			svcLogger := logger.WithValues("serviceKey", svcKey)
-			defer func() {
-				if r := recover(); r != nil {
-					errMessage := fmt.Sprintf("Panic in L4 NetLB UpdateFunc handler: %v", r)
-					svcLogger.Error(nil, errMessage)
-					l4metrics.PublishL4ControllerPanicCount(l4NetLBControllerName, "update")
-				}
-			}()
 			if shouldProcess, isResync := l4netLBc.shouldProcessService(curSvc, oldSvc, svcLogger); shouldProcess {
 				svcLogger.V(3).Info("L4 External LoadBalancer Service updated, enqueuing")
 				if !isResync {
@@ -450,7 +436,7 @@ func (lc *L4NetLBController) syncWrapper(key string) error {
 		if r := recover(); r != nil {
 			errMessage := fmt.Sprintf("Panic in L4 NetLB sync worker goroutine: %v", r)
 			svcLogger.Error(nil, errMessage)
-			l4metrics.PublishL4ControllerPanicCount(l4NetLBControllerName, "sync")
+			l4metrics.PublishL4ControllerPanicCount(l4NetLBControllerName)
 		}
 	}()
 	syncErr = lc.sync(key, svcLogger)
