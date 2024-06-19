@@ -293,7 +293,8 @@ func (m *manager) add(groupName string, names []string) error {
 	var errs []error
 	for zone, nodeNames := range m.splitNodesByZone(names) {
 		m.logger.V(1).Info("Adding nodes to instance group in zone", "nodeCount", len(nodeNames), "name", groupName, "zone", zone)
-		if err := m.cloud.AddInstancesToInstanceGroup(groupName, zone, m.getInstanceReferences(zone, nodeNames)); err != nil {
+		err := m.cloud.AddInstancesToInstanceGroup(groupName, zone, m.getInstanceReferences(zone, nodeNames))
+		if err != nil && !utils.IsMemberAlreadyExistsError(err) {
 			errs = append(errs, err)
 		}
 	}
