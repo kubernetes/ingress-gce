@@ -198,6 +198,13 @@ func IsInUsedByError(err error) bool {
 	}
 	return strings.Contains(apiErr.Message, "being used by")
 }
+func IsMemberAlreadyExistsError(err error) bool {
+	apiErr, ok := err.(*googleapi.Error)
+	if !ok || apiErr.Code != http.StatusBadRequest {
+		return false
+	}
+	return strings.Contains(apiErr.Message, "memberAlreadyExists")
+}
 
 // IsNetworkTierMismatchGCEError checks if error is a GCE network tier mismatch for external IP
 func IsNetworkTierMismatchGCEError(err error) bool {
