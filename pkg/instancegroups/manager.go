@@ -292,18 +292,17 @@ func (m *manager) add(groupName string, names []string) error {
 	events.GlobalEventf(m.recorder, core.EventTypeNormal, events.AddNodes, "Adding %s to InstanceGroup %q", events.TruncatedStringList(names), groupName)
 	var errs []error
 	for zone, nodeNames := range m.splitNodesByZone(names) {
-		m.logger.V(1).Info("Adding nodes to instance group in zone", "nodeCount", len(nodeNames), "name", groupName, "zone", zone)
-		if err := m.cloud.AddInstancesToInstanceGroup(groupName, zone, m.getInstanceReferences(zone, nodeNames)); err != nil {
-			errs = append(errs, err)
+		m.logger.V(2).Info("Adding nodes to instance group in zone", "nodeCount", len(nodeNames), "name", groupName, "zone", zone)
+		err := m.cloud.AddInstancesToInstanceGroup(groupName, zone, m.getInstanceReferences(zone, nodeNames))
+		if err != nil {
+			if utils.IsMemberAlreadyExistsError(err) {
+				m.logger.V(2).Info("Instance already in instance group, skipping the api error: %v, ", err)
+			} else {
+				errs = append(errs, err)
+			}
 		}
 	}
-	if len(errs) == 0 {
-		return nil
-	}
-
-	err := fmt.Errorf("AddInstances: %v", errs)
-	events.GlobalEventf(m.recorder, core.EventTypeWarning, events.AddNodes, "Error adding %s to InstanceGroup %q: %v", events.TruncatedStringList(names), groupName, err)
-	return err
+	return nil
 }
 
 // Remove removes the given instances from the appropriately zoned Instance Group.

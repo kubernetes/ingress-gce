@@ -18,9 +18,11 @@ package instancegroups
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 
+	"google.golang.org/api/googleapi"
 	"k8s.io/klog/v2"
 
 	"google.golang.org/api/compute/v1"
@@ -39,7 +41,7 @@ const (
 
 var defaultNamer = namer.NewNamer("uid1", "fw1", klog.TODO())
 
-func newNodePool(f *FakeInstanceGroups, zone string, maxIGSize int) Manager {
+func newNodePool(f Provider, zone string, maxIGSize int) Manager {
 	nodeInformer := zonegetter.FakeNodeInformer()
 	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
 
@@ -158,6 +160,53 @@ func TestNodePoolSync(t *testing.T) {
 		if apiCallsCountBeforeSync != apiCallsCountAfterSync {
 			t.Errorf("Should skip sync if called second time with the same kubeNodes. apiCallsCountBeforeSync = %d, apiCallsCountAfterSync = %d", apiCallsCountBeforeSync, apiCallsCountAfterSync)
 		}
+	}
+}
+
+func TestInstanceAlreadyMemberOfIG(t *testing.T) {
+	maxIGSize := 1000
+	kubeNodes := sets.NewString("n1", "n2")
+
+	fakeInstanceGroups := new(fakeIGAlreadyExists)
+	fakeInstanceGroups.FakeInstanceGroups = NewFakeInstanceGroups(map[string]IGsToInstances{}, maxIGSize)
+
+	pool := newNodePool(fakeInstanceGroups, defaultTestZone, maxIGSize)
+	for _, kubeNode := range kubeNodes.List() {
+		manager := pool.(*manager)
+		zonegetter.AddFakeNodes(manager.ZoneGetter, defaultTestZone, kubeNode)
+	}
+
+	igName := defaultNamer.InstanceGroup()
+	ports := []int64{80}
+	_, err := pool.EnsureInstanceGroupsAndPorts(igName, ports)
+	if err != nil {
+		t.Fatalf("pool.EnsureInstanceGroupsAndPorts(%s, %v) returned error %v, want nil", igName, ports, err)
+	}
+
+	// run sync with 2 times, expect not error despite fakeInstanceGroups will return 'memberAlreadyExists'
+	err = pool.Sync(kubeNodes.List())
+	if err != nil {
+		t.Fatalf("pool.Sync() returned error %v, want nil", err)
+	}
+	err = pool.Sync(kubeNodes.List())
+	if err != nil {
+		t.Fatalf("pool.Sync() returned error %v, want nil", err)
+	}
+}
+
+type fakeIGAlreadyExists struct {
+	*FakeInstanceGroups
+}
+
+func (fakeIG *fakeIGAlreadyExists) AddInstancesToInstanceGroup(name, zone string, instanceRefs []*compute.InstanceReference) error {
+	return &googleapi.Error{
+		Code:    http.StatusBadRequest,
+		Message: fmt.Sprintf("Resource: %v is already a member of %v", instanceRefs, name),
+		Errors: []googleapi.ErrorItem{
+			{
+				Reason: "memberAlreadyExists",
+			},
+		},
 	}
 }
 
