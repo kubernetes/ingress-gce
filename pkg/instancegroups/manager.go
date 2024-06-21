@@ -292,10 +292,14 @@ func (m *manager) add(groupName string, names []string) error {
 	events.GlobalEventf(m.recorder, core.EventTypeNormal, events.AddNodes, "Adding %s to InstanceGroup %q", events.TruncatedStringList(names), groupName)
 	var errs []error
 	for zone, nodeNames := range m.splitNodesByZone(names) {
-		m.logger.V(1).Info("Adding nodes to instance group in zone", "nodeCount", len(nodeNames), "name", groupName, "zone", zone)
+		m.logger.V(2).Info("Adding nodes to instance group in zone", "nodeCount", len(nodeNames), "name", groupName, "zone", zone)
 		err := m.cloud.AddInstancesToInstanceGroup(groupName, zone, m.getInstanceReferences(zone, nodeNames))
-		if err != nil && !utils.IsMemberAlreadyExistsError(err) {
-			errs = append(errs, err)
+		if err != nil {
+			if utils.IsMemberAlreadyExistsError(err) {
+				m.logger.V(2).Info("Instance already in instance group, skipping the api error: %v, ", err)
+			} else {
+				errs = append(errs, err)
+			}
 		}
 	}
 	if len(errs) == 0 {
