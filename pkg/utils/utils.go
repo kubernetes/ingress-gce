@@ -203,7 +203,7 @@ func IsMemberAlreadyExistsError(err error) bool {
 	if !ok || apiErr.Code != http.StatusBadRequest {
 		return false
 	}
-	return strings.Contains(apiErr.Message, "memberAlreadyExists")
+	return strings.Contains(apiErr.Error(), "memberAlreadyExists")
 }
 
 // IsNetworkTierMismatchGCEError checks if error is a GCE network tier mismatch for external IP
