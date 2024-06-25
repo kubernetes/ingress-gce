@@ -32,6 +32,9 @@ import (
 
 const (
 	defaultTestZone = "default-zone"
+	testZoneA       = "dark-moon1-a"
+	testZoneB       = "dark-moon1-b"
+	testZoneC       = "dark-moon1-c"
 	basePath        = "/basepath/projects/project-id/"
 
 	defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/default"
@@ -39,7 +42,7 @@ const (
 
 var defaultNamer = namer.NewNamer("uid1", "fw1", klog.TODO())
 
-func newNodePool(f *FakeInstanceGroups, zone string, maxIGSize int) Manager {
+func newNodePool(f *FakeInstanceGroups, maxIGSize int) Manager {
 	nodeInformer := zonegetter.FakeNodeInformer()
 	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
 
@@ -100,7 +103,7 @@ func TestNodePoolSync(t *testing.T) {
 		}
 		fakeGCEInstanceGroups := NewFakeInstanceGroups(zonesToIGs, maxIGSize)
 
-		pool := newNodePool(fakeGCEInstanceGroups, defaultTestZone, maxIGSize)
+		pool := newNodePool(fakeGCEInstanceGroups, maxIGSize)
 		for _, kubeNode := range testCase.kubeNodes.List() {
 			manager := pool.(*manager)
 			zonegetter.AddFakeNodes(manager.ZoneGetter, defaultTestZone, kubeNode)
@@ -161,6 +164,91 @@ func TestNodePoolSync(t *testing.T) {
 	}
 }
 
+func TestNodePoolSyncHugeCluster(t *testing.T) {
+	// for sake of easier debugging cap instance group size to 3
+	maxIGSize := 3
+
+	testCases := []struct {
+		description    string
+		gceNodesZoneA  sets.String
+		gceNodesZoneB  sets.String
+		gceNodesZoneC  sets.String
+		kubeNodesZoneA sets.String
+		kubeNodesZoneB sets.String
+		kubeNodesZoneC sets.String
+	}{
+		{
+			description:    "too many kube nodes in one zone",
+			gceNodesZoneA:  getNodeSlice("nodes-zone-a", maxIGSize),
+			gceNodesZoneB:  getNodeSlice("nodes-zone-b", 2*maxIGSize),
+			gceNodesZoneC:  getNodeSlice("nodes-zone-c", maxIGSize),
+			kubeNodesZoneA: getNodeSlice("nodes-zone-a", maxIGSize),
+			kubeNodesZoneB: getNodeSlice("nodes-zone-b", 2*maxIGSize),
+			kubeNodesZoneC: getNodeSlice("nodes-zone-c", maxIGSize),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.description, func(t *testing.T) {
+
+			igName := defaultNamer.InstanceGroup()
+			fakeGCEInstanceGroups := NewFakeInstanceGroups(map[string]IGsToInstances{}, maxIGSize)
+			pool := newNodePool(fakeGCEInstanceGroups, maxIGSize)
+			manager := pool.(*manager)
+			zonegetter.AddFakeNodes(manager.ZoneGetter, testZoneA, tc.gceNodesZoneA.List()...)
+			zonegetter.AddFakeNodes(manager.ZoneGetter, testZoneB, tc.gceNodesZoneB.List()...)
+			zonegetter.AddFakeNodes(manager.ZoneGetter, testZoneC, tc.gceNodesZoneC.List()...)
+
+			ports := []int64{80}
+			_, err := pool.EnsureInstanceGroupsAndPorts(igName, ports)
+			if err != nil {
+				t.Fatalf("pool.EnsureInstanceGroupsAndPorts(%s, %v) returned error %v, want nil", igName, ports, err)
+			}
+			allKubeNodes := append(tc.kubeNodesZoneA.List(), tc.kubeNodesZoneB.List()...)
+			allKubeNodes = append(allKubeNodes, tc.kubeNodesZoneC.List()...)
+
+			// Execute manager's main isntance group sync function
+			err = pool.Sync(allKubeNodes)
+			if err != nil {
+				t.Fatalf("pool.Sync(_) returned error %v, want nil", err)
+			}
+
+			// Check that instance group in each zone has only `maxIGSize` number of nodes
+			// including zones with 2*maxIGSize nodes
+			for _, zone := range []string{testZoneA, testZoneB, testZoneC} {
+				numberOfIGsInZone := len(fakeGCEInstanceGroups.zonesToIGsToInstances[zone])
+				if numberOfIGsInZone != 1 {
+					t.Errorf("Unexpected instance group added, got %v, want: 1", numberOfIGsInZone)
+				}
+				for _, igToInstances := range fakeGCEInstanceGroups.zonesToIGsToInstances[zone] {
+					t.Logf("number of nodes in instance group from zone: %v, got %v", zone, len(igToInstances))
+					if len(igToInstances) != maxIGSize {
+						t.Errorf("unexpected number of nodes in instance group from zone: %v, got %v, want: %v", zone, len(igToInstances), maxIGSize)
+					}
+				}
+			}
+
+			apiCallsCountBeforeSync := len(fakeGCEInstanceGroups.calls)
+			err = pool.Sync(allKubeNodes)
+			if err != nil {
+				t.Fatalf("pool.Sync(_) returned error %v, want nil", err)
+			}
+			apiCallsCountAfterSync := len(fakeGCEInstanceGroups.calls)
+			if apiCallsCountBeforeSync != apiCallsCountAfterSync {
+				t.Errorf("Should skip sync if called second time with the same kubeNodes. apiCallsCountBeforeSync = %d, apiCallsCountAfterSync = %d", apiCallsCountBeforeSync, apiCallsCountAfterSync)
+			}
+		})
+	}
+}
+
+func getNodeSlice(prefix string, size int) sets.String {
+	nodes := make([]string, size)
+	for i := 0; i < size; i++ {
+		nodes[i] = fmt.Sprintf("%s-%d", prefix, i)
+	}
+	return sets.NewString(nodes...)
+}
+
 func TestSetNamedPorts(t *testing.T) {
 	maxIGSize := 1000
 	zonesToIGs := map[string]IGsToInstances{
@@ -169,7 +257,7 @@ func TestSetNamedPorts(t *testing.T) {
 		},
 	}
 	fakeIGs := NewFakeInstanceGroups(zonesToIGs, maxIGSize)
-	pool := newNodePool(fakeIGs, defaultTestZone, maxIGSize)
+	pool := newNodePool(fakeIGs, maxIGSize)
 	manager := pool.(*manager)
 	zonegetter.AddFakeNodes(manager.ZoneGetter, defaultTestZone, "test-node")
 
@@ -226,7 +314,7 @@ func TestGetInstanceReferences(t *testing.T) {
 			&compute.InstanceGroup{Name: "ig"}: sets.NewString("ig"),
 		},
 	}
-	pool := newNodePool(NewFakeInstanceGroups(zonesToIGs, maxIGSize), defaultTestZone, maxIGSize)
+	pool := newNodePool(NewFakeInstanceGroups(zonesToIGs, maxIGSize), maxIGSize)
 	instances := pool.(*manager)
 
 	nodeNames := []string{"node-1", "node-2", "node-3", "node-4.region.zone"}
