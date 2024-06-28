@@ -25,10 +25,10 @@ import (
 
 	"k8s.io/klog/v2"
 
+	firewallclient "github.com/GoogleCloudPlatform/gke-networking-api/client/gcpfirewall/clientset/versioned/fake"
 	"google.golang.org/api/compute/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
-	firewallclient "k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned/fake"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	test "k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils/namer"

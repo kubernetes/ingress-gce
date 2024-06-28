@@ -21,6 +21,9 @@ import (
 
 	"k8s.io/klog/v2"
 
+	netfake "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned/fake"
+	informernetwork "github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions/network/v1"
+	informergkenetworkparamset "github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions/network/v1alpha1"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	informerv1 "k8s.io/client-go/informers/core/v1"
@@ -29,9 +32,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
-	netfake "k8s.io/cloud-provider-gcp/crd/client/network/clientset/versioned/fake"
-	informernetwork "k8s.io/cloud-provider-gcp/crd/client/network/informers/externalversions/network/v1"
-	informergkenetworkparamset "k8s.io/cloud-provider-gcp/crd/client/network/informers/externalversions/network/v1alpha1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	negfake "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"

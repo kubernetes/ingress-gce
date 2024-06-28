@@ -26,6 +26,8 @@ import (
 	"testing"
 	"time"
 
+	networkv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1"
+	netfake "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned/fake"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
@@ -40,8 +42,6 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
-	networkv1 "k8s.io/cloud-provider-gcp/crd/apis/network/v1"
-	netfake "k8s.io/cloud-provider-gcp/crd/client/network/clientset/versioned/fake"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/annotations"
