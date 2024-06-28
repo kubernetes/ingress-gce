@@ -54,7 +54,7 @@ func (l4 *L4) ensureIPv6ForwardingRule(bsLink string, options gce.ILBOptions, ex
 	}()
 
 	if existingIPv6FwdRule != nil {
-		equal, err := EqualIPv6ForwardingRules(existingIPv6FwdRule, expectedIPv6FwdRule)
+		equal, err := utils.EqualIPv6ForwardingRules(existingIPv6FwdRule, expectedIPv6FwdRule)
 		if err != nil {
 			return existingIPv6FwdRule, err
 		}
@@ -95,9 +95,9 @@ func (l4 *L4) buildExpectedIPv6ForwardingRule(bsLink string, options gce.ILBOpti
 		}
 	}
 
-	svcPorts := l4.Service.Spec.Ports
-	ports := utils.GetPorts(svcPorts)
-	protocol := utils.GetProtocol(svcPorts)
+	servicePorts := l4.Service.Spec.Ports
+	ports := utils.GetPorts(servicePorts)
+	protocol := utils.GetProtocol(servicePorts)
 
 	fr := &composite.ForwardingRule{
 		Name:                frName,
@@ -113,7 +113,7 @@ func (l4 *L4) buildExpectedIPv6ForwardingRule(bsLink string, options gce.ILBOpti
 		AllowGlobalAccess:   options.AllowGlobalAccess,
 		NetworkTier:         cloud.NetworkTierPremium.ToGCEValue(),
 	}
-	if len(ports) > maxL4ILBPorts {
+	if len(ports) > maxForwardedPorts {
 		fr.Ports = nil
 		fr.AllPorts = true
 	}
@@ -215,7 +215,7 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 			return nil, networkTierMismatchError
 		}
 
-		equal, err := EqualIPv6ForwardingRules(existingIPv6FwdRule, expectedIPv6FwdRule)
+		equal, err := utils.EqualIPv6ForwardingRules(existingIPv6FwdRule, expectedIPv6FwdRule)
 		if err != nil {
 			return existingIPv6FwdRule, err
 		}
@@ -254,19 +254,24 @@ func (l4netlb *L4NetLB) buildExpectedIPv6ForwardingRule(bsLink, ipv6AddressToUse
 		ipv6AddressToUse += prefix96range
 	}
 
-	svcPorts := l4netlb.Service.Spec.Ports
-	portRange, protocol := utils.MinMaxPortRangeAndProtocol(svcPorts)
+	servicePorts := l4netlb.Service.Spec.Ports
+	ports := utils.GetPorts(servicePorts)
+	protocol := utils.GetProtocol(servicePorts)
 	fr := &composite.ForwardingRule{
 		Name:                frName,
 		Description:         frDesc,
 		IPAddress:           ipv6AddressToUse,
-		IPProtocol:          protocol,
-		PortRange:           portRange,
+		Ports:               ports,
+		IPProtocol:          string(protocol),
 		LoadBalancingScheme: string(cloud.SchemeExternal),
 		BackendService:      bsLink,
 		IpVersion:           IPVersionIPv6,
 		NetworkTier:         netTier.ToGCEValue(),
 		Subnetwork:          subnetworkURL,
+	}
+	if len(ports) > maxForwardedPorts {
+		fr.Ports = nil
+		fr.PortRange = utils.MinMaxPortRange(servicePorts)
 	}
 
 	return fr, nil
@@ -283,25 +288,6 @@ func (l4netlb *L4NetLB) deleteChangedIPv6ForwardingRule(existingFwdRule *composi
 	}
 	l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeNormal, events.SyncIngress, "External ForwardingRule %q deleted", existingFwdRule.Name)
 	return nil
-}
-
-func EqualIPv6ForwardingRules(fr1, fr2 *composite.ForwardingRule) (bool, error) {
-	id1, err := cloud.ParseResourceURL(fr1.BackendService)
-	if err != nil {
-		return false, fmt.Errorf("EqualIPv6ForwardingRules(): failed to parse backend resource URL from FR, err - %w", err)
-	}
-	id2, err := cloud.ParseResourceURL(fr2.BackendService)
-	if err != nil {
-		return false, fmt.Errorf("EqualIPv6ForwardingRules(): failed to parse resource URL from FR, err - %w", err)
-	}
-	return fr1.IPProtocol == fr2.IPProtocol &&
-		fr1.LoadBalancingScheme == fr2.LoadBalancingScheme &&
-		utils.EqualStringSets(fr1.Ports, fr2.Ports) &&
-		utils.EqualCloudResourceIDs(id1, id2) &&
-		fr1.AllowGlobalAccess == fr2.AllowGlobalAccess &&
-		fr1.AllPorts == fr2.AllPorts &&
-		fr1.Subnetwork == fr2.Subnetwork &&
-		fr1.NetworkTier == fr2.NetworkTier, nil
 }
 
 // ipv6AddrToUse determines which IPv4 address needs to be used in the ForwardingRule,

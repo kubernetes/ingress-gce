@@ -38,6 +38,7 @@ import (
 	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/slice"
@@ -423,6 +424,61 @@ func EqualCloudResourceIDs(a, b *cloud.ResourceID) bool {
 	}
 }
 
+// EqualForwardingRules returns true if forwarding rules fr1 and fr2 have equal IP address,
+// protocol, load balancing scheme, ports or port ranges, resource paths and network tier.
+func EqualForwardingRules(fr1, fr2 *composite.ForwardingRule) (bool, error) {
+	equal, err := equalForwardingRulesImpl(fr1, fr2)
+	if err != nil {
+		return false, err
+	}
+	return equal && fr1.IPAddress == fr2.IPAddress, nil
+}
+
+// EqualForwardingRules returns true if forwarding rules fr1 and fr2 have equal protocol,
+// load balancing scheme, ports or port ranges, resource paths and network tier.
+func EqualIPv6ForwardingRules(fr1, fr2 *composite.ForwardingRule) (bool, error) {
+	return equalForwardingRulesImpl(fr1, fr2)
+}
+
+func equalForwardingRulesImpl(fr1, fr2 *composite.ForwardingRule) (bool, error) {
+	id1, err := cloud.ParseResourceURL(fr1.BackendService)
+	if err != nil {
+		return false, fmt.Errorf("EqualIPv6ForwardingRules(): failed to parse backend resource URL from FR, err - %w", err)
+	}
+	id2, err := cloud.ParseResourceURL(fr2.BackendService)
+	if err != nil {
+		return false, fmt.Errorf("EqualIPv6ForwardingRules(): failed to parse resource URL from FR, err - %w", err)
+	}
+	return fr1.IPProtocol == fr2.IPProtocol &&
+		fr1.LoadBalancingScheme == fr2.LoadBalancingScheme &&
+		equalPorts(fr1.Ports, fr2.Ports, fr1.PortRange, fr2.PortRange) &&
+		EqualCloudResourceIDs(id1, id2) &&
+		fr1.AllowGlobalAccess == fr2.AllowGlobalAccess &&
+		fr1.AllPorts == fr2.AllPorts &&
+		equalResourcePaths(fr1.Subnetwork, fr2.Subnetwork) &&
+		equalResourcePaths(fr1.Network, fr2.Network) &&
+		fr1.NetworkTier == fr2.NetworkTier, nil
+}
+
+func equalResourcePaths(rp1, rp2 string) bool {
+	return rp1 == rp2 || EqualResourceIDs(rp1, rp2)
+}
+
+// equalPorts compares two port ranges or slices of ports. Before comparison,
+// slices of ports are converted into a port range from smallest to largest
+// port. This is done so we don't unnecessarily recreate forwarding rules
+// when upgrading from port ranges to distinct ports, because recreating
+// forwarding rules is traffic impacting.
+func equalPorts(ports1, ports2 []string, portRange1, portRange2 string) bool {
+	if len(ports1) != 0 && portRange1 == "" {
+		portRange1 = MinMaxPortRange(ports1)
+	}
+	if len(ports2) != 0 && portRange2 == "" {
+		portRange2 = MinMaxPortRange(ports2)
+	}
+	return portRange1 == portRange2
+}
+
 // IsGCEIngress returns true if the Ingress matches the class managed by this
 // controller.
 func IsGCEIngress(ing *networkingv1.Ingress) bool {
@@ -706,27 +762,38 @@ func GetServicePortRanges(svcPorts []api_v1.ServicePort) []string {
 	return GetPortRanges(portInts)
 }
 
-func minMaxPort(svcPorts []api_v1.ServicePort) (int32, int32) {
+func minMaxPort[T api_v1.ServicePort | string](svcPorts []T) (int32, int32) {
 	minPort := int32(65536)
 	maxPort := int32(0)
 	for _, svcPort := range svcPorts {
-		if svcPort.Port < minPort {
-			minPort = svcPort.Port
+		port := func(value any) int32 {
+			switch value.(type) {
+			case api_v1.ServicePort:
+				return value.(api_v1.ServicePort).Port
+			case string:
+				i, _ := strconv.ParseInt(value.(string), 10, 32)
+				return int32(i)
+			default:
+				return 0
+			}
+		}(svcPort)
+		if port < minPort {
+			minPort = port
 		}
-		if svcPort.Port > maxPort {
-			maxPort = svcPort.Port
+		if port > maxPort {
+			maxPort = port
 		}
 	}
 	return minPort, maxPort
 }
 
-func MinMaxPortRangeAndProtocol(svcPorts []api_v1.ServicePort) (portRange, protocol string) {
+func MinMaxPortRange[T api_v1.ServicePort | string](svcPorts []T) string {
 	if len(svcPorts) == 0 {
-		return "", ""
+		return ""
 	}
 
 	minPort, maxPort := minMaxPort(svcPorts)
-	return fmt.Sprintf("%d-%d", minPort, maxPort), string(svcPorts[0].Protocol)
+	return fmt.Sprintf("%d-%d", minPort, maxPort)
 }
 
 // TranslateAffinityType converts the k8s affinity type to the GCE affinity type.
