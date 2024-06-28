@@ -41,6 +41,8 @@ const (
 	NegFinalizerKey = "networking.gke.io/neg-finalizer"
 	// NetLBFinalizerV2 is the finalizer used by newer controllers that manage L4 External LoadBalancer services.
 	NetLBFinalizerV2 = "gke.networking.io/l4-netlb-v2"
+	// NetLBFinalizerV3 is the finalizer used by the NEG backed variant of the L4 External LoadBalancer services.
+	NetLBFinalizerV3 = "gke.networking.io/l4-netlb-v3"
 	// LoadBalancerCleanupFinalizer added by original kubernetes service controller. This is not required in L4 RBS/ILB-subsetting services.
 	LoadBalancerCleanupFinalizer = "service.kubernetes.io/load-balancer-cleanup"
 )

@@ -240,6 +240,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				manager.enableDualStackNEG,
 				manager.syncerMetrics,
 				&portInfo.NetworkInfo,
+				portInfo.L4LBType,
 			)
 			syncer = negsyncer.NewTransactionSyncer(
 				syncerKey,
@@ -864,6 +865,7 @@ func (manager *syncerManager) getSyncerKey(namespace, name string, servicePortKe
 		PortTuple:        portInfo.PortTuple,
 		NegType:          networkEndpointType,
 		EpCalculatorMode: calculatorMode,
+		L4LBType:         portInfo.L4LBType,
 	}
 }
 
