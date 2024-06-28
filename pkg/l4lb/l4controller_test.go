@@ -688,6 +688,7 @@ func TestProcessDualStackServiceOnUserError(t *testing.T) {
 	addILBService(l4c, newSvc)
 	addNEG(l4c, newSvc)
 	syncResult := l4c.processServiceCreateOrUpdate(newSvc, klog.TODO())
+
 	if syncResult.Error == nil {
 		t.Fatalf("Failed to generate error when syncing service %s", newSvc.Name)
 	}

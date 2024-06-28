@@ -1,12 +1,19 @@
 package l4lb
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	api_v1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils/common"
+	"k8s.io/klog/v2"
 )
 
 func TestFinalizerWasRemovedUnexpectedly(t *testing.T) {
@@ -140,4 +147,136 @@ func TestFinalizerWasRemovedUnexpectedly(t *testing.T) {
 			}
 		})
 	}
+}
+
+type EmitEventMock struct {
+	eventtype string
+	reason    string
+	message   string
+}
+
+type MockRecorder struct {
+	Events *[]EmitEventMock
+}
+
+func (r MockRecorder) Event(object runtime.Object, eventtype, reason, message string) {
+	*r.Events = append(*r.Events, EmitEventMock{
+		eventtype,
+		reason,
+		message,
+	})
+}
+
+func (r MockRecorder) Eventf(object runtime.Object, eventtype, reason, messageFmt string, args ...interface{}) {
+	message := fmt.Sprintf(messageFmt, args...) // Use fmt.Sprintf to format the message
+	*r.Events = append(*r.Events, EmitEventMock{
+		eventtype,
+		reason,
+		message,
+	})
+}
+
+func (r MockRecorder) AnnotatedEventf(object runtime.Object, annotations map[string]string, eventtype, reason, messageFmt string, args ...interface{}) {
+	message := fmt.Sprintf(messageFmt, args...) // Format the message
+	*r.Events = append(*r.Events, EmitEventMock{
+		eventtype,
+		reason,
+		message,
+	})
+}
+
+func TestEmitIpFamiliesStackEvent(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name          string
+		ipFamilies    []api_v1.IPFamily
+		service       *v1.Service
+		expectedEvent EmitEventMock
+	}{
+		{
+			name:       "L4 Single Stack",
+			service:    test.NewL4ILBService(false, 8080),
+			ipFamilies: []v1.IPFamily{},
+			expectedEvent: EmitEventMock{
+				eventtype: "Normal",
+				reason:    "SyncLoadBalancerSuccessful",
+				message:   "Successfully ensured L4 load balancer resources",
+			},
+		},
+		{
+			name:       "L4 Single Stack IPv4",
+			service:    test.NewL4ILBService(false, 8080),
+			ipFamilies: []v1.IPFamily{v1.IPv4Protocol},
+			expectedEvent: EmitEventMock{
+				eventtype: "Normal",
+				reason:    "SyncLoadBalancerSuccessful",
+				message:   "Successfully ensured IPv4 load balancer resources",
+			},
+		},
+		{
+			name:       "L4 Dual Stack",
+			service:    test.NewL4ILBDualStackService(8080, api_v1.ProtocolTCP, []api_v1.IPFamily{api_v1.IPv4Protocol, api_v1.IPv6Protocol}, api_v1.ServiceExternalTrafficPolicyTypeCluster),
+			ipFamilies: []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+			expectedEvent: EmitEventMock{
+				eventtype: "Normal",
+				reason:    "SyncLoadBalancerSuccessful",
+				message:   "Successfully ensured IPv4 IPv6 load balancer resources",
+			},
+		},
+		{
+			name:       "L4 Net Single Stack",
+			service:    test.NewL4NetLBRBSService(8080),
+			ipFamilies: []v1.IPFamily{},
+			expectedEvent: EmitEventMock{
+				eventtype: "Normal",
+				reason:    "SyncLoadBalancerSuccessful",
+				message:   "Successfully ensured L4 load balancer resources",
+			},
+		},
+		{
+			name:       "L4 Net Single Stack IPv4",
+			service:    test.NewL4NetLBRBSService(8080),
+			ipFamilies: []v1.IPFamily{v1.IPv4Protocol},
+			expectedEvent: EmitEventMock{
+				eventtype: "Normal",
+				reason:    "SyncLoadBalancerSuccessful",
+				message:   "Successfully ensured IPv4 load balancer resources",
+			},
+		},
+		{
+			name:       "L4 Net Dual Stack",
+			service:    test.NewL4NetLBRBSService(8080),
+			ipFamilies: []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+			expectedEvent: EmitEventMock{
+				eventtype: "Normal",
+				reason:    "SyncLoadBalancerSuccessful",
+				message:   "Successfully ensured IPv4 IPv6 load balancer resources",
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc // Capture range variable for parallel tests
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			eventSlice := []EmitEventMock{}
+			recorder := MockRecorder{Events: &eventSlice}
+			l4c := newServiceController(t, newFakeGCE())
+
+			test.MustCreateDualStackClusterSubnet(t, l4c.ctx.Cloud, "INTERNAL")
+
+			l4c.ctx.Recorders[tc.service.Namespace] = recorder
+			tc.service.Spec.IPFamilies = tc.ipFamilies
+			addILBService(l4c, tc.service)
+			addNEG(l4c, tc.service)
+			l4c.processServiceCreateOrUpdate(tc.service, klog.TODO())
+
+			require.Len(t, *recorder.Events, 1)
+			assert.Equal(t, tc.expectedEvent, (*recorder.Events)[0])
+		})
+	}
+
 }

@@ -69,18 +69,26 @@ func MergePatchBytes(old, cur interface{}) ([]byte, error) {
 
 // PatchServiceObjectMetadata patches the given service's metadata based on new
 // service metadata.
-func PatchServiceObjectMetadata(client coreclient.CoreV1Interface, svc *corev1.Service, newObjectMetadata metav1.ObjectMeta) error {
-	newSvc := svc.DeepCopy()
-	newSvc.ObjectMeta = newObjectMetadata
-	_, err := svchelpers.PatchService(client, svc, newSvc)
-	return err
+func PatchServiceObjectMetadata(client coreclient.CoreV1Interface, svc *corev1.Service, newObjectMetadata *metav1.ObjectMeta) error {
+	return PatchServiceLoadBalancerInformation(client, svc, nil, newObjectMetadata)
 }
 
-// PatchServiceLoadBalancerStatus patches the given service's LoadBalancerStatus
-// based on new service's load-balancer status.
-func PatchServiceLoadBalancerStatus(client coreclient.CoreV1Interface, svc *corev1.Service, newStatus corev1.LoadBalancerStatus) error {
+// PatchServiceLoadBalancerInformation patches the given service's LoadBalancerStatus and ObjectMetadata
+// based on new service's load-balancer status and metadata.
+func PatchServiceLoadBalancerInformation(client coreclient.CoreV1Interface, svc *corev1.Service, newStatus *corev1.LoadBalancerStatus, newObjectMetadata *metav1.ObjectMeta) error {
+	if client == nil || svc == nil {
+		return fmt.Errorf("it was not possible to upload service information, nil client or service provided")
+	}
+
 	newSvc := svc.DeepCopy()
-	newSvc.Status.LoadBalancer = newStatus
+	if newStatus != nil {
+		newSvc.Status.LoadBalancer = *newStatus
+	}
+
+	if newObjectMetadata != nil {
+		newSvc.ObjectMeta = *newObjectMetadata
+	}
+
 	_, err := svchelpers.PatchService(client, svc, newSvc)
 	return err
 }

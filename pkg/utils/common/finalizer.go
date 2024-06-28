@@ -107,7 +107,7 @@ func EnsureServiceFinalizer(service *corev1.Service, key string, kubeClient kube
 	updatedObjectMeta.Finalizers = append(updatedObjectMeta.Finalizers, key)
 
 	svcLogger.V(2).Info("Adding finalizer to service", "finalizerKey", key)
-	return patch.PatchServiceObjectMetadata(kubeClient.CoreV1(), service, *updatedObjectMeta)
+	return patch.PatchServiceObjectMetadata(kubeClient.CoreV1(), service, updatedObjectMeta)
 }
 
 // removeFinalizer patches the service to remove finalizer.
@@ -121,5 +121,5 @@ func EnsureDeleteServiceFinalizer(service *corev1.Service, key string, kubeClien
 	updatedObjectMeta.Finalizers = slice.RemoveString(updatedObjectMeta.Finalizers, key, nil)
 
 	svcLogger.V(2).Info("Removing finalizer from service", "finalizerKey", key)
-	return patch.PatchServiceObjectMetadata(kubeClient.CoreV1(), service, *updatedObjectMeta)
+	return patch.PatchServiceLoadBalancerInformation(kubeClient.CoreV1(), service, nil, updatedObjectMeta)
 }
