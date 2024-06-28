@@ -40,7 +40,6 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
-	syncMetrics "k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
@@ -57,7 +56,7 @@ import (
 func init() {
 	// register prometheus metrics
 	metrics.RegisterMetrics()
-	syncMetrics.RegisterMetrics()
+	metricscollector.RegisterMetrics()
 }
 
 // Controller is network endpoint group controller.
@@ -96,8 +95,8 @@ type Controller struct {
 	// reflector handles NEG readiness gate and conditions for pods in NEG.
 	reflector readiness.Reflector
 
-	// syncerMetrics collects NEG controller metrics
-	syncerMetrics *syncMetrics.SyncerMetrics
+	// metricsCollector collects NEG controller metrics
+	metricsCollector *metricscollector.NEGControllerMetrics
 
 	// runL4 indicates whether to run NEG controller that processes L4 services
 	runL4 bool
@@ -168,7 +167,7 @@ func NewController(
 	recorder := eventBroadcaster.NewRecorder(negScheme,
 		apiv1.EventSource{Component: "neg-controller"})
 
-	syncerMetrics := syncMetrics.NewNegMetricsCollector(flags.F.NegMetricsExportInterval, logger)
+	metricsCollector := metricscollector.NewNegControllerMetrics(flags.F.NegMetricsExportInterval, logger)
 	manager := newSyncerManager(
 		namer,
 		recorder,
@@ -181,7 +180,7 @@ func NewController(
 		endpointSliceInformer.GetIndexer(),
 		nodeInformer.GetIndexer(),
 		svcNegInformer.GetIndexer(),
-		syncerMetrics,
+		metricsCollector,
 		enableNonGcpMode,
 		enableDualStackNEG,
 		numGCWorkers,
@@ -234,7 +233,7 @@ func NewController(
 		nodeQueue:                     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_node_queue"),
 		syncTracker:                   utils.NewTimeTracker(),
 		reflector:                     reflector,
-		syncerMetrics:                 syncerMetrics,
+		metricsCollector:              metricsCollector,
 		runL4:                         runL4Controller,
 		enableIngressRegionalExternal: enableIngressRegionalExternal,
 		stopCh:                        stopCh,
@@ -357,7 +356,7 @@ func (c *Controller) Run() {
 		wait.Until(c.gc, c.gcPeriod, c.stopCh)
 	}()
 	go c.reflector.Run(c.stopCh)
-	go c.syncerMetrics.Run(c.stopCh)
+	go c.metricsCollector.Run(c.stopCh)
 	<-c.stopCh
 }
 
@@ -467,7 +466,7 @@ func (c *Controller) processService(key string) error {
 		return err
 	}
 	if !exists {
-		c.syncerMetrics.DeleteNegService(key)
+		c.metricsCollector.DeleteNegService(key)
 		c.manager.StopSyncer(namespace, name)
 		return nil
 	}
@@ -522,12 +521,12 @@ func (c *Controller) processService(key string) error {
 			return err
 		}
 		negUsage.SuccessfulNeg, negUsage.ErrorNeg, err = c.manager.EnsureSyncers(namespace, name, svcPortInfoMap)
-		c.syncerMetrics.SetNegService(key, negUsage)
+		c.metricsCollector.SetNegService(key, negUsage)
 		return err
 	}
 	// do not need Neg
 	c.logger.V(3).Info("Service does not need any NEG. Skipping", "service", key)
-	c.syncerMetrics.DeleteNegService(key)
+	c.metricsCollector.DeleteNegService(key)
 	// neg annotation is not found or NEG is not enabled
 	c.manager.StopSyncer(namespace, name)
 

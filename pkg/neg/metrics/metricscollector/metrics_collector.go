@@ -32,7 +32,7 @@ import (
 
 var register sync.Once
 
-// RegisterSyncerMetrics registers syncer related metrics
+// RegisterMetrics registers syncer related metrics
 func RegisterMetrics() {
 	register.Do(func() {
 		prometheus.MustRegister(SyncerCountBySyncResult)
@@ -57,13 +57,16 @@ type SyncerMetricsCollector interface {
 	SetLabelPropagationStats(key negtypes.NegSyncerKey, labelstatLabelPropagationStats LabelPropagationStats)
 	// Updates the number of negs per syncer per zone
 	UpdateSyncerNegCount(key negtypes.NegSyncerKey, negByLocation map[string]int)
+}
+
+type NEGMetricsCollector interface {
 	// SetNegService adds/updates neg state for given service key.
 	SetNegService(svcKey string, negState NegServiceState)
 	// DeleteNegService removes the given service key.
 	DeleteNegService(svcKey string)
 }
 
-type SyncerMetrics struct {
+type NEGControllerMetrics struct {
 	clock clock.Clock
 	// duration between metrics exports
 	metricsInterval time.Duration
@@ -93,9 +96,9 @@ type SyncerMetrics struct {
 	logger klog.Logger
 }
 
-// NewNEGMetricsCollector initializes SyncerMetrics and starts a go routine to compute and export metrics periodically.
-func NewNegMetricsCollector(exportInterval time.Duration, logger klog.Logger) *SyncerMetrics {
-	return &SyncerMetrics{
+// NewNegControllerMetrics initializes SyncerMetrics and starts a go routine to compute and export metrics periodically.
+func NewNegControllerMetrics(exportInterval time.Duration, logger klog.Logger) *NEGControllerMetrics {
+	return &NEGControllerMetrics{
 		syncerStateMap:              make(map[negtypes.NegSyncerKey]syncerState),
 		syncerEndpointStateMap:      make(map[negtypes.NegSyncerKey]negtypes.StateCountMap),
 		syncerEndpointSliceStateMap: make(map[negtypes.NegSyncerKey]negtypes.StateCountMap),
@@ -111,35 +114,35 @@ func NewNegMetricsCollector(exportInterval time.Duration, logger klog.Logger) *S
 	}
 }
 
-// FakeSyncerMetrics creates new NegMetricsCollector with fixed 5 second metricsInterval, to be used in tests
-func FakeSyncerMetrics() *SyncerMetrics {
-	return NewNegMetricsCollector(5*time.Second, klog.TODO())
+// FakeNEGControllerMetrics creates new NegMetricsCollector with fixed 5 second metricsInterval, to be used in tests
+func FakeNEGControllerMetrics() *NEGControllerMetrics {
+	return NewNegControllerMetrics(5*time.Second, klog.TODO())
 }
 
-func (sm *SyncerMetrics) Run(stopCh <-chan struct{}) {
-	sm.logger.V(3).Info("Syncer Metrics initialized.", "exportInterval", sm.metricsInterval)
+func (cm *NEGControllerMetrics) Run(stopCh <-chan struct{}) {
+	cm.logger.V(3).Info("Syncer Metrics initialized.", "exportInterval", cm.metricsInterval)
 	// Compute and export metrics periodically.
 	go func() {
-		time.Sleep(sm.metricsInterval)
-		wait.Until(sm.export, sm.metricsInterval, stopCh)
+		time.Sleep(cm.metricsInterval)
+		wait.Until(cm.export, cm.metricsInterval, stopCh)
 	}()
 	<-stopCh
 }
 
 // export exports syncer metrics.
-func (sm *SyncerMetrics) export() {
-	lpMetrics := sm.computeLabelMetrics()
+func (cm *NEGControllerMetrics) export() {
+	lpMetrics := cm.computeLabelMetrics()
 	NumberOfEndpoints.WithLabelValues(totalEndpoints).Set(float64(lpMetrics.NumberOfEndpoints))
 	NumberOfEndpoints.WithLabelValues(epWithAnnotation).Set(float64(lpMetrics.EndpointsWithAnnotation))
 
-	stateCount, syncerCount := sm.computeSyncerStateMetrics()
+	stateCount, syncerCount := cm.computeSyncerStateMetrics()
 	//Reset metric so non-existent keys are now 0
 	SyncerCountBySyncResult.Reset()
 	for syncerState, count := range stateCount {
 		SyncerCountBySyncResult.WithLabelValues(string(syncerState.lastSyncResult), strconv.FormatBool(syncerState.inErrorState)).Set(float64(count))
 	}
 
-	epStateCount, epsStateCount, epCount, epsCount := sm.computeEndpointStateMetrics()
+	epStateCount, epsStateCount, epCount, epsCount := cm.computeEndpointStateMetrics()
 	for state, count := range epStateCount {
 		syncerEndpointState.WithLabelValues(string(state)).Set(float64(count))
 	}
@@ -147,121 +150,121 @@ func (sm *SyncerMetrics) export() {
 		syncerEndpointSliceState.WithLabelValues(string(state)).Set(float64(count))
 	}
 
-	negCounts := sm.computeNegCounts()
+	negCounts := cm.computeNegCounts()
 	//Clear existing metrics (ensures that keys that don't exist anymore are reset)
 	negsManagedCount.Reset()
 	for key, count := range negCounts {
 		negsManagedCount.WithLabelValues(key.location, key.endpointType).Set(float64(count))
 	}
 
-	sm.logger.V(3).Info("Exporting syncer related metrics", "Syncer count", syncerCount,
+	cm.logger.V(3).Info("Exporting syncer related metrics", "Syncer count", syncerCount,
 		"Network Endpoint Count", lpMetrics.NumberOfEndpoints,
 		"Endpoint Count From EPS", epCount,
 		"Endpoint Slice Count", epsCount,
 		"NEG Count", fmt.Sprintf("%+v", negCounts),
 	)
 
-	finishedDurations, longestUnfinishedDurations := sm.computeDualStackMigrationDurations()
+	finishedDurations, longestUnfinishedDurations := cm.computeDualStackMigrationDurations()
 	for _, duration := range finishedDurations {
 		DualStackMigrationFinishedDurations.Observe(float64(duration))
 	}
 	DualStackMigrationLongestUnfinishedDuration.Set(float64(longestUnfinishedDurations))
 
-	syncerCountByEndpointType, migrationEndpointCount, migrationServicesCount := sm.computeDualStackMigrationCounts()
+	syncerCountByEndpointType, migrationEndpointCount, migrationServicesCount := cm.computeDualStackMigrationCounts()
 	for endpointType, count := range syncerCountByEndpointType {
 		SyncerCountByEndpointType.WithLabelValues(endpointType).Set(float64(count))
 	}
 	syncerEndpointState.WithLabelValues(string(negtypes.DualStackMigration)).Set(float64(migrationEndpointCount))
 	DualStackMigrationServiceCount.Set(float64(migrationServicesCount))
 
-	sm.logger.V(3).Info("Exported DualStack Migration metrics")
+	cm.logger.V(3).Info("Exported DualStack Migration metrics")
 
-	negCount := sm.computeNegMetrics()
+	negCount := cm.computeNegMetrics()
 	for feature, count := range negCount {
 		networkEndpointGroupCount.WithLabelValues(feature.String()).Set(float64(count))
 	}
-	sm.logger.V(3).Info("Exported NEG usage metrics", "NEG count", fmt.Sprintf("%#v", negCount))
+	cm.logger.V(3).Info("Exported NEG usage metrics", "NEG count", fmt.Sprintf("%#v", negCount))
 }
 
 // UpdateSyncerStatusInMetrics update the status of syncer based on the error
-func (sm *SyncerMetrics) UpdateSyncerStatusInMetrics(key negtypes.NegSyncerKey, err error, inErrorState bool) {
+func (cm *NEGControllerMetrics) UpdateSyncerStatusInMetrics(key negtypes.NegSyncerKey, err error, inErrorState bool) {
 	reason := negtypes.ReasonSuccess
 	if err != nil {
 		syncErr := negtypes.ClassifyError(err)
 		reason = syncErr.Reason
 	}
 	syncerSyncResult.WithLabelValues(string(reason)).Inc()
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	if sm.syncerStateMap == nil {
-		sm.syncerStateMap = make(map[negtypes.NegSyncerKey]syncerState)
-		sm.logger.V(3).Info("Syncer Metrics failed to initialize correctly, reinitializing syncerStateMap: %v", sm.syncerStateMap)
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	if cm.syncerStateMap == nil {
+		cm.syncerStateMap = make(map[negtypes.NegSyncerKey]syncerState)
+		cm.logger.V(3).Info("Syncer Metrics failed to initialize correctly, reinitializing syncerStateMap: %v", cm.syncerStateMap)
 	}
-	sm.syncerStateMap[key] = syncerState{lastSyncResult: reason, inErrorState: inErrorState}
+	cm.syncerStateMap[key] = syncerState{lastSyncResult: reason, inErrorState: inErrorState}
 }
 
-func (sm *SyncerMetrics) UpdateSyncerEPMetrics(key negtypes.NegSyncerKey, endpointCount, endpointSliceCount negtypes.StateCountMap) {
-	sm.logger.V(3).Info("Updating syncer endpoint", "syncerKey", key)
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	if sm.syncerEndpointStateMap == nil {
-		sm.syncerEndpointStateMap = make(map[negtypes.NegSyncerKey]negtypes.StateCountMap)
-		sm.logger.V(3).Info("Syncer Metrics failed to initialize correctly, reinitializing syncerEndpointStateMap")
+func (cm *NEGControllerMetrics) UpdateSyncerEPMetrics(key negtypes.NegSyncerKey, endpointCount, endpointSliceCount negtypes.StateCountMap) {
+	cm.logger.V(3).Info("Updating syncer endpoint", "syncerKey", key)
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	if cm.syncerEndpointStateMap == nil {
+		cm.syncerEndpointStateMap = make(map[negtypes.NegSyncerKey]negtypes.StateCountMap)
+		cm.logger.V(3).Info("Syncer Metrics failed to initialize correctly, reinitializing syncerEndpointStateMap")
 	}
-	sm.syncerEndpointStateMap[key] = endpointCount
+	cm.syncerEndpointStateMap[key] = endpointCount
 
-	if sm.syncerEndpointSliceStateMap == nil {
-		sm.syncerEndpointSliceStateMap = make(map[negtypes.NegSyncerKey]negtypes.StateCountMap)
-		sm.logger.V(3).Info("Syncer Metrics failed to initialize correctly, reinitializing syncerEndpointSliceStateMap")
+	if cm.syncerEndpointSliceStateMap == nil {
+		cm.syncerEndpointSliceStateMap = make(map[negtypes.NegSyncerKey]negtypes.StateCountMap)
+		cm.logger.V(3).Info("Syncer Metrics failed to initialize correctly, reinitializing syncerEndpointSliceStateMap")
 	}
-	sm.syncerEndpointSliceStateMap[key] = endpointSliceCount
+	cm.syncerEndpointSliceStateMap[key] = endpointSliceCount
 }
 
-func (sm *SyncerMetrics) SetLabelPropagationStats(key negtypes.NegSyncerKey, labelstatLabelPropagationStats LabelPropagationStats) {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	if sm.syncerLabelProagationStats == nil {
-		sm.syncerLabelProagationStats = make(map[negtypes.NegSyncerKey]LabelPropagationStats)
-		sm.logger.V(3).Info("Syncer Metrics failed to initialize correctly, reinitializing syncerLabelProagationStats")
+func (cm *NEGControllerMetrics) SetLabelPropagationStats(key negtypes.NegSyncerKey, labelstatLabelPropagationStats LabelPropagationStats) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	if cm.syncerLabelProagationStats == nil {
+		cm.syncerLabelProagationStats = make(map[negtypes.NegSyncerKey]LabelPropagationStats)
+		cm.logger.V(3).Info("Syncer Metrics failed to initialize correctly, reinitializing syncerLabelProagationStats")
 	}
-	sm.syncerLabelProagationStats[key] = labelstatLabelPropagationStats
+	cm.syncerLabelProagationStats[key] = labelstatLabelPropagationStats
 }
 
 // DeleteSyncer will reset any metrics for the syncer corresponding to `key`. It
 // should be invoked when a Syncer has been stopped.
-func (sm *SyncerMetrics) DeleteSyncer(key negtypes.NegSyncerKey) {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	delete(sm.syncerStateMap, key)
-	delete(sm.syncerEndpointStateMap, key)
-	delete(sm.syncerEndpointSliceStateMap, key)
-	delete(sm.syncerLabelProagationStats, key)
-	delete(sm.dualStackMigrationStartTime, key)
-	delete(sm.dualStackMigrationEndTime, key)
-	delete(sm.endpointsCountPerType, key)
-	delete(sm.syncerNegCount, key)
+func (cm *NEGControllerMetrics) DeleteSyncer(key negtypes.NegSyncerKey) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	delete(cm.syncerStateMap, key)
+	delete(cm.syncerEndpointStateMap, key)
+	delete(cm.syncerEndpointSliceStateMap, key)
+	delete(cm.syncerLabelProagationStats, key)
+	delete(cm.dualStackMigrationStartTime, key)
+	delete(cm.dualStackMigrationEndTime, key)
+	delete(cm.endpointsCountPerType, key)
+	delete(cm.syncerNegCount, key)
 }
 
 // computeLabelMetrics aggregates label propagation metrics.
-func (sm *SyncerMetrics) computeLabelMetrics() LabelPropagationMetrics {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
+func (cm *NEGControllerMetrics) computeLabelMetrics() LabelPropagationMetrics {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
 
 	lpMetrics := LabelPropagationMetrics{}
-	for _, stats := range sm.syncerLabelProagationStats {
+	for _, stats := range cm.syncerLabelProagationStats {
 		lpMetrics.EndpointsWithAnnotation += stats.EndpointsWithAnnotation
 		lpMetrics.NumberOfEndpoints += stats.NumberOfEndpoints
 	}
 	return lpMetrics
 }
 
-func (sm *SyncerMetrics) computeSyncerStateMetrics() (syncerStateCount, int) {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
+func (cm *NEGControllerMetrics) computeSyncerStateMetrics() (syncerStateCount, int) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
 
 	stateCount := make(syncerStateCount)
 	syncerCount := 0
-	for _, syncerState := range sm.syncerStateMap {
+	for _, syncerState := range cm.syncerStateMap {
 		stateCount[syncerState] += 1
 		syncerCount++
 	}
@@ -269,21 +272,21 @@ func (sm *SyncerMetrics) computeSyncerStateMetrics() (syncerStateCount, int) {
 }
 
 // computeSyncerEndpointStateMetrics aggregates endpoint and endpoint slice counts from all syncers
-func (sm *SyncerMetrics) computeEndpointStateMetrics() (negtypes.StateCountMap, negtypes.StateCountMap, int, int) {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
+func (cm *NEGControllerMetrics) computeEndpointStateMetrics() (negtypes.StateCountMap, negtypes.StateCountMap, int, int) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
 
 	var epCount, epsCount int
 	epStateCount := negtypes.StateCountMap{}
 	epsStateCount := negtypes.StateCountMap{}
 	// collect count from each syncer
-	for _, epState := range sm.syncerEndpointStateMap {
+	for _, epState := range cm.syncerEndpointStateMap {
 		for _, state := range negtypes.StatesForEndpointMetrics() {
 			epStateCount[state] += epState[state]
 			epCount += epState[state]
 		}
 	}
-	for _, epsState := range sm.syncerEndpointSliceStateMap {
+	for _, epsState := range cm.syncerEndpointSliceStateMap {
 		for _, state := range negtypes.StatesForEndpointMetrics() {
 			epsStateCount[state] += epsState[state]
 			epsCount += epsState[state]
@@ -294,17 +297,17 @@ func (sm *SyncerMetrics) computeEndpointStateMetrics() (negtypes.StateCountMap, 
 
 // CollectDualStackMigrationMetrics will be used by dualstack.Migrator to export
 // metrics.
-func (sm *SyncerMetrics) CollectDualStackMigrationMetrics(key negtypes.NegSyncerKey, committedEndpoints map[string]negtypes.NetworkEndpointSet, migrationCount int) {
-	sm.updateMigrationStartAndEndTime(key, migrationCount)
-	sm.updateEndpointsCountPerType(key, committedEndpoints, migrationCount)
+func (cm *NEGControllerMetrics) CollectDualStackMigrationMetrics(key negtypes.NegSyncerKey, committedEndpoints map[string]negtypes.NetworkEndpointSet, migrationCount int) {
+	cm.updateMigrationStartAndEndTime(key, migrationCount)
+	cm.updateEndpointsCountPerType(key, committedEndpoints, migrationCount)
 }
 
-func (sm *SyncerMetrics) updateMigrationStartAndEndTime(key negtypes.NegSyncerKey, migrationCount int) {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
+func (cm *NEGControllerMetrics) updateMigrationStartAndEndTime(key negtypes.NegSyncerKey, migrationCount int) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
 
-	_, hasStartTime := sm.dualStackMigrationStartTime[key]
-	_, hasEndTime := sm.dualStackMigrationEndTime[key]
+	_, hasStartTime := cm.dualStackMigrationStartTime[key]
+	_, hasEndTime := cm.dualStackMigrationEndTime[key]
 
 	if migrationCount == 0 {
 		//
@@ -318,7 +321,7 @@ func (sm *SyncerMetrics) updateMigrationStartAndEndTime(key negtypes.NegSyncerKe
 			// Migration was already finished in some previous invocation.
 			return
 		}
-		sm.dualStackMigrationEndTime[key] = sm.clock.Now()
+		cm.dualStackMigrationEndTime[key] = cm.clock.Now()
 		return
 	}
 
@@ -328,18 +331,18 @@ func (sm *SyncerMetrics) updateMigrationStartAndEndTime(key negtypes.NegSyncerKe
 	if hasEndTime {
 		// A previous migration was completed but there are still migrating
 		// endpoints so extend the previous migration time.
-		delete(sm.dualStackMigrationEndTime, key)
+		delete(cm.dualStackMigrationEndTime, key)
 	}
 	if hasStartTime {
 		// Migration was already started in some previous invocation.
 		return
 	}
-	sm.dualStackMigrationStartTime[key] = sm.clock.Now()
+	cm.dualStackMigrationStartTime[key] = cm.clock.Now()
 }
 
-func (sm *SyncerMetrics) updateEndpointsCountPerType(key negtypes.NegSyncerKey, committedEndpoints map[string]negtypes.NetworkEndpointSet, migrationCount int) {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
+func (cm *NEGControllerMetrics) updateEndpointsCountPerType(key negtypes.NegSyncerKey, committedEndpoints map[string]negtypes.NetworkEndpointSet, migrationCount int) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
 
 	ipv4OnlyCount, ipv6OnlyCount, dualStackCount := 0, 0, 0
 	for _, endpointSet := range committedEndpoints {
@@ -356,7 +359,7 @@ func (sm *SyncerMetrics) updateEndpointsCountPerType(key negtypes.NegSyncerKey, 
 			}
 		}
 	}
-	sm.endpointsCountPerType[key] = map[string]int{
+	cm.endpointsCountPerType[key] = map[string]int{
 		ipv4EndpointType:      ipv4OnlyCount,
 		ipv6EndpointType:      ipv6OnlyCount,
 		dualStackEndpointType: dualStackCount,
@@ -364,15 +367,15 @@ func (sm *SyncerMetrics) updateEndpointsCountPerType(key negtypes.NegSyncerKey, 
 	}
 }
 
-func (sm *SyncerMetrics) computeDualStackMigrationDurations() ([]int, int) {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
+func (cm *NEGControllerMetrics) computeDualStackMigrationDurations() ([]int, int) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
 
 	finishedDurations, longestUnfinishedDuration := make([]int, 0), 0
-	for key, startTime := range sm.dualStackMigrationStartTime {
-		endTime, ok := sm.dualStackMigrationEndTime[key]
+	for key, startTime := range cm.dualStackMigrationStartTime {
+		endTime, ok := cm.dualStackMigrationEndTime[key]
 		if !ok {
-			if curUnfinishedDuration := int(sm.clock.Since(startTime).Seconds()); curUnfinishedDuration > longestUnfinishedDuration {
+			if curUnfinishedDuration := int(cm.clock.Since(startTime).Seconds()); curUnfinishedDuration > longestUnfinishedDuration {
 				longestUnfinishedDuration = curUnfinishedDuration
 			}
 			continue
@@ -380,16 +383,16 @@ func (sm *SyncerMetrics) computeDualStackMigrationDurations() ([]int, int) {
 		finishedDurations = append(finishedDurations, int(endTime.Sub(startTime).Seconds()))
 		// Prevent metrics from being re-emitted by deleting the syncer key whose
 		// migrations have finished.
-		delete(sm.dualStackMigrationStartTime, key)
-		delete(sm.dualStackMigrationEndTime, key)
+		delete(cm.dualStackMigrationStartTime, key)
+		delete(cm.dualStackMigrationEndTime, key)
 	}
 
 	return finishedDurations, longestUnfinishedDuration
 }
 
-func (sm *SyncerMetrics) computeDualStackMigrationCounts() (map[string]int, int, int) {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
+func (cm *NEGControllerMetrics) computeDualStackMigrationCounts() (map[string]int, int, int) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
 
 	// It's important to explicitly initialize all types to zero so that their
 	// counts get reset when the metrics are published.
@@ -402,7 +405,7 @@ func (sm *SyncerMetrics) computeDualStackMigrationCounts() (map[string]int, int,
 	migrationEndpointCount := 0
 	migrationServices := sets.NewString()
 
-	for syncerKey, syncerEndpointsCountPerType := range sm.endpointsCountPerType {
+	for syncerKey, syncerEndpointsCountPerType := range cm.endpointsCountPerType {
 		for endpointType, count := range syncerEndpointsCountPerType {
 			if count != 0 {
 				syncerCountByEndpointType[endpointType]++
@@ -417,20 +420,20 @@ func (sm *SyncerMetrics) computeDualStackMigrationCounts() (map[string]int, int,
 	return syncerCountByEndpointType, migrationEndpointCount, migrationServices.Len()
 }
 
-func (sm *SyncerMetrics) UpdateSyncerNegCount(key negtypes.NegSyncerKey, negsByLocation map[string]int) {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
+func (cm *NEGControllerMetrics) UpdateSyncerNegCount(key negtypes.NegSyncerKey, negsByLocation map[string]int) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
 
-	sm.syncerNegCount[key] = negsByLocation
+	cm.syncerNegCount[key] = negsByLocation
 }
 
-func (sm *SyncerMetrics) computeNegCounts() map[negLocTypeKey]int {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
+func (cm *NEGControllerMetrics) computeNegCounts() map[negLocTypeKey]int {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
 
 	negCountByLocation := make(map[negLocTypeKey]int)
 
-	for syncerKey, syncerNegCount := range sm.syncerNegCount {
+	for syncerKey, syncerNegCount := range cm.syncerNegCount {
 		for location, count := range syncerNegCount {
 			key := negLocTypeKey{location: location, endpointType: string(syncerKey.NegType)}
 			negCountByLocation[key] += count
@@ -441,29 +444,29 @@ func (sm *SyncerMetrics) computeNegCounts() map[negLocTypeKey]int {
 }
 
 // SetNegService implements NegMetricsCollector.
-func (sm *SyncerMetrics) SetNegService(svcKey string, negState NegServiceState) {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
+func (cm *NEGControllerMetrics) SetNegService(svcKey string, negState NegServiceState) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
 
-	if sm.negMap == nil {
+	if cm.negMap == nil {
 		klog.Fatalf("Ingress Metrics failed to initialize correctly.")
 	}
-	sm.negMap[svcKey] = negState
+	cm.negMap[svcKey] = negState
 }
 
 // DeleteNegService implements NegMetricsCollector.
-func (sm *SyncerMetrics) DeleteNegService(svcKey string) {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
+func (cm *NEGControllerMetrics) DeleteNegService(svcKey string) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
 
-	delete(sm.negMap, svcKey)
+	delete(cm.negMap, svcKey)
 }
 
 // computeNegMetrics aggregates NEG metrics in the cache
-func (sm *SyncerMetrics) computeNegMetrics() map[feature]int {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	klog.V(4).Infof("Computing NEG usage metrics from neg state map: %#v", sm.negMap)
+func (cm *NEGControllerMetrics) computeNegMetrics() map[feature]int {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	klog.V(4).Infof("Computing NEG usage metrics from neg state map: %#v", cm.negMap)
 
 	counts := map[feature]int{
 		standaloneNeg:  0,
@@ -478,7 +481,7 @@ func (sm *SyncerMetrics) computeNegMetrics() map[feature]int {
 		negInError:     0,
 	}
 
-	for key, negState := range sm.negMap {
+	for key, negState := range cm.negMap {
 		klog.V(6).Infof("For service %s, it has standaloneNegs:%d, ingressNegs:%d, asmNeg:%d and vmPrimaryNeg:%v",
 			key, negState.StandaloneNeg, negState.IngressNeg, negState.AsmNeg, negState.VmIpNeg)
 		counts[standaloneNeg] += negState.StandaloneNeg

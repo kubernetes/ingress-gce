@@ -992,7 +992,7 @@ func cloneZoneNetworkEndpointsMap(m map[string]types.NetworkEndpointSet) map[str
 
 func newMigratorForTest(t *testing.T, enableDualStackNEG bool) *Migrator {
 	logger, _ := ktesting.NewTestContext(t)
-	m := NewMigrator(enableDualStackNEG, &fakeSyncable{}, types.NegSyncerKey{}, metricscollector.FakeSyncerMetrics(), &fakeErrorStateChecker{}, logger)
+	m := NewMigrator(enableDualStackNEG, &fakeSyncable{}, types.NegSyncerKey{}, metricscollector.FakeNEGControllerMetrics(), &fakeErrorStateChecker{}, logger)
 	m.clock = clocktesting.NewFakeClock(time.Now())
 	return m
 }
