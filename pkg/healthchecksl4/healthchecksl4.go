@@ -24,10 +24,10 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
-	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
@@ -117,11 +117,40 @@ func (l4hc *l4HealthChecks) EnsureHealthCheckWithFirewall(svc *corev1.Service, n
 	return l4hc.EnsureHealthCheckWithDualStackFirewalls(svc, namer, sharedHC, scope, l4Type, nodeNames /*create IPv4*/, true /*don't create IPv6*/, false, svcNetwork, svcLogger)
 }
 
+// GetServiceHealthCheckPathPort returns the path and nodePort programmed into the Cloud LB Health Check
+func getServiceHealthCheckPathPort(service *v1.Service) (string, int32) {
+	if !needsHealthCheck(service) {
+		return "", 0
+	}
+	port := service.Spec.HealthCheckNodePort
+	if port == 0 {
+		return "", 0
+	}
+	return "/healthz", port
+}
+
+// NeedsHealthCheck checks if service needs health check.
+func needsHealthCheck(service *v1.Service) bool {
+	if service.Spec.Type != v1.ServiceTypeLoadBalancer {
+		return false
+	}
+	return requestsOnlyLocalTraffic(service)
+}
+
+// RequestsOnlyLocalTraffic checks if service requests OnlyLocal traffic.
+func requestsOnlyLocalTraffic(service *v1.Service) bool {
+	if service.Spec.Type != v1.ServiceTypeLoadBalancer &&
+		service.Spec.Type != v1.ServiceTypeNodePort {
+		return false
+	}
+	return service.Spec.ExternalTrafficPolicy == v1.ServiceExternalTrafficPolicyLocal
+}
+
 func (l4hc *l4HealthChecks) EnsureHealthCheckWithDualStackFirewalls(svc *corev1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType, nodeNames []string, needsIPv4 bool, needsIPv6 bool, svcNetwork network.NetworkInfo, svcLogger klog.Logger) *EnsureHealthCheckResult {
 	namespacedName := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}
 
 	hcName := namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
-	hcPath, hcPort := helpers.GetServiceHealthCheckPathPort(svc)
+	hcPath, hcPort := getServiceHealthCheckPathPort(svc)
 	hcLogger := svcLogger.WithValues("healthcheckName", hcName)
 	hcLogger.V(3).Info("Ensuring L4 healthcheck with firewalls for service", "shared", sharedHC)
 

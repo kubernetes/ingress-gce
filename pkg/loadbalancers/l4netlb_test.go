@@ -36,7 +36,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
-	servicehelper "k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
@@ -1361,7 +1360,7 @@ func verifyNetLBIPv6NodesFirewall(l4netlb *L4NetLB, nodeNames []string) error {
 }
 
 func verifyNetLBIPv4HealthCheckFirewall(l4netlb *L4NetLB, nodeNames []string) error {
-	isSharedHC := !servicehelper.RequestsOnlyLocalTraffic(l4netlb.Service)
+	isSharedHC := !requestsOnlyLocalTraffic(l4netlb.Service)
 
 	hcFwName := l4netlb.namer.L4HealthCheckFirewall(l4netlb.Service.Namespace, l4netlb.Service.Name, isSharedHC)
 	hcFwDesc, err := utils.MakeL4LBFirewallDescription(utils.ServiceKeyFunc(l4netlb.Service.Namespace, l4netlb.Service.Name), "", meta.VersionGA, isSharedHC)
@@ -1373,7 +1372,7 @@ func verifyNetLBIPv4HealthCheckFirewall(l4netlb *L4NetLB, nodeNames []string) er
 }
 
 func verifyNetLBIPv6HealthCheckFirewall(l4netlb *L4NetLB, nodeNames []string) error {
-	isSharedHC := !servicehelper.RequestsOnlyLocalTraffic(l4netlb.Service)
+	isSharedHC := !requestsOnlyLocalTraffic(l4netlb.Service)
 
 	ipv6hcFwName := l4netlb.namer.L4IPv6HealthCheckFirewall(l4netlb.Service.Namespace, l4netlb.Service.Name, isSharedHC)
 	hcFwDesc, err := utils.MakeL4LBFirewallDescription(utils.ServiceKeyFunc(l4netlb.Service.Namespace, l4netlb.Service.Name), "", meta.VersionGA, isSharedHC)
@@ -1385,7 +1384,7 @@ func verifyNetLBIPv6HealthCheckFirewall(l4netlb *L4NetLB, nodeNames []string) er
 }
 
 func getAndVerifyNetLBHealthCheck(l4netlb *L4NetLB) (*composite.HealthCheck, error) {
-	isSharedHC := !servicehelper.RequestsOnlyLocalTraffic(l4netlb.Service)
+	isSharedHC := !requestsOnlyLocalTraffic(l4netlb.Service)
 	hcName := l4netlb.namer.L4HealthCheck(l4netlb.Service.Namespace, l4netlb.Service.Name, isSharedHC)
 
 	healthcheck, err := composite.GetHealthCheck(l4netlb.cloud, meta.RegionalKey(hcName, l4netlb.cloud.Region()), meta.VersionGA, klog.TODO())
@@ -1526,7 +1525,7 @@ func verifyNetLBIPv6ResourcesDeletedOnSync(l4netlb *L4NetLB) error {
 }
 
 func buildExpectedNetLBAnnotations(l4netlb *L4NetLB) map[string]string {
-	isSharedHC := !servicehelper.RequestsOnlyLocalTraffic(l4netlb.Service)
+	isSharedHC := !requestsOnlyLocalTraffic(l4netlb.Service)
 	proto := utils.GetProtocol(l4netlb.Service.Spec.Ports)
 
 	backendName := l4netlb.namer.L4Backend(l4netlb.Service.Namespace, l4netlb.Service.Name)

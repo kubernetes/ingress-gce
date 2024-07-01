@@ -43,7 +43,6 @@ import (
 	networkv1 "k8s.io/cloud-provider-gcp/crd/apis/network/v1"
 	netfake "k8s.io/cloud-provider-gcp/crd/client/network/clientset/versioned/fake"
 	"k8s.io/cloud-provider-gcp/providers/gce"
-	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -60,12 +59,13 @@ import (
 )
 
 const (
-	FwIPAddress          = "10.0.0.1"
-	loadBalancerIP       = "10.0.0.10"
-	usersIP              = "35.10.211.60"
-	testServiceNamespace = "default"
-	hcNodePort           = int32(10111)
-	userAddrName         = "UserStaticAddress"
+	FwIPAddress                  = "10.0.0.1"
+	loadBalancerIP               = "10.0.0.10"
+	usersIP                      = "35.10.211.60"
+	testServiceNamespace         = "default"
+	hcNodePort                   = int32(10111)
+	userAddrName                 = "UserStaticAddress"
+	loadBalancerCleanupFinalizer = "service.kubernetes.io/load-balancer-cleanup"
 
 	shortSessionAffinityIdleTimeout = int32(20)     // 20 sec could be used for regular Session Affinity
 	longSessionAffinityIdleTimeout  = int32(2 * 60) // 2 min or 120 sec for Strong Session Affinity
@@ -1151,7 +1151,7 @@ func TestIsRBSBasedService(t *testing.T) {
 		},
 		{
 			desc:             "Legacy service should not be marked as RBS",
-			finalizers:       []string{helpers.LoadBalancerCleanupFinalizer},
+			finalizers:       []string{loadBalancerCleanupFinalizer},
 			expectRBSService: false,
 		},
 		{
@@ -1161,7 +1161,7 @@ func TestIsRBSBasedService(t *testing.T) {
 		},
 		{
 			desc:             "Should detect RBS by finalizer when service contains both legacy and NetLB finalizers",
-			finalizers:       []string{helpers.LoadBalancerCleanupFinalizer, common.NetLBFinalizerV2},
+			finalizers:       []string{loadBalancerCleanupFinalizer, common.NetLBFinalizerV2},
 			expectRBSService: true,
 		},
 		{

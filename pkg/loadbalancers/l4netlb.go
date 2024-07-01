@@ -26,7 +26,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
-	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -263,7 +262,7 @@ func (l4netlb *L4NetLB) provideHealthChecks(nodeNames []string, result *L4NetLBS
 }
 
 func (l4netlb *L4NetLB) provideDualStackHealthChecks(nodeNames []string, result *L4NetLBSyncResult) string {
-	sharedHC := !helpers.RequestsOnlyLocalTraffic(l4netlb.Service)
+	sharedHC := !requestsOnlyLocalTraffic(l4netlb.Service)
 	hcResult := l4netlb.healthChecks.EnsureHealthCheckWithDualStackFirewalls(l4netlb.Service, l4netlb.namer, sharedHC, l4netlb.scope, utils.XLB, nodeNames, utils.NeedsIPv4(l4netlb.Service), utils.NeedsIPv6(l4netlb.Service), l4netlb.networkInfo, l4netlb.svcLogger)
 	if hcResult.Err != nil {
 		result.GCEResourceInError = hcResult.GceResourceInError
@@ -282,7 +281,7 @@ func (l4netlb *L4NetLB) provideDualStackHealthChecks(nodeNames []string, result 
 }
 
 func (l4netlb *L4NetLB) provideIPv4HealthChecks(nodeNames []string, result *L4NetLBSyncResult) string {
-	sharedHC := !helpers.RequestsOnlyLocalTraffic(l4netlb.Service)
+	sharedHC := !requestsOnlyLocalTraffic(l4netlb.Service)
 	hcResult := l4netlb.healthChecks.EnsureHealthCheckWithFirewall(l4netlb.Service, l4netlb.namer, sharedHC, l4netlb.scope, utils.XLB, nodeNames, l4netlb.networkInfo, l4netlb.svcLogger)
 	if hcResult.Err != nil {
 		result.GCEResourceInError = hcResult.GceResourceInError
