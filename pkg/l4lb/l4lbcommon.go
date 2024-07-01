@@ -22,6 +22,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -99,7 +100,7 @@ func deleteAnnotation(ctx *context.ControllerContext, svc *v1.Service, annotatio
 
 // LoadBalancerStatusEqual checks if load balancer status are equal
 func loadBalancerStatusEqual(l, r *v1.LoadBalancerStatus) bool {
-	return ingressSliceEqual(l.Ingress, r.Ingress)
+	return apiequality.Semantic.DeepEqual(l.Ingress, r.Ingress)
 }
 
 func ingressSliceEqual(lhs, rhs []v1.LoadBalancerIngress) bool {
