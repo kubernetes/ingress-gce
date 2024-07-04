@@ -25,6 +25,8 @@ import (
 	"sync"
 	"time"
 
+	firewallcrclient "github.com/GoogleCloudPlatform/gke-networking-api/client/gcpfirewall/clientset/versioned"
+	networkclient "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned"
 	k8scp "github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	flag "github.com/spf13/pflag"
 	crdclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -35,8 +37,6 @@ import (
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/client-go/tools/record"
-	firewallcrclient "k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned"
-	networkclient "k8s.io/cloud-provider-gcp/crd/client/network/clientset/versioned"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/frontendconfig"
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
