@@ -21,6 +21,7 @@ const (
 	ReasonEPCountsDiffer            = Reason("EPCountsDiffer")
 	ReasonEPNodeMissing             = Reason("EPNodeMissing")
 	ReasonEPNodeNotFound            = Reason("EPNodeNotFound")
+	ReasonEPNodePodCIDRNotSet       = Reason("EPNodePodCIDRNotSet")
 	ReasonEPNodeTypeAssertionFailed = Reason("EPNodeTypeAssertionFailed")
 	ReasonEPPodMissing              = Reason("EPPodMissing")
 	ReasonEPPodNotFound             = Reason("EPPodNotFound")
@@ -60,6 +61,11 @@ var (
 	ErrEPNodeNotFound = NegSyncError{
 		Err:          errors.New("endpoint corresponds to an non-existing node"),
 		Reason:       ReasonEPNodeNotFound,
+		IsErrorState: true,
+	}
+	ErrEPNodePodCIDRNotSet = NegSyncError{
+		Err:          errors.New("endpoint corresponds to a node with PodCIDR not set"),
+		Reason:       ReasonEPNodePodCIDRNotSet,
 		IsErrorState: true,
 	}
 	ErrEPNodeTypeAssertionFailed = NegSyncError{

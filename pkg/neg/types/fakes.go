@@ -48,6 +48,7 @@ const (
 	TestUpgradeInstance1  = "upgrade-instance1"
 	TestUpgradeInstance2  = "upgrade-instance2"
 	TestNotExistInstance  = "not-exist-instance"
+	TestNotExistPod       = "not-exist-pod"
 	TestEmptyZoneInstance = "instance-empty-providerID" // This maps to an empty instance in PopulateFakeNodeInformer
 	TestEmptyZonePod      = "pod-empty-providerID"
 

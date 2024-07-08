@@ -54,6 +54,7 @@ var ErrProviderIDNotFound = errors.New("providerID not found")
 var ErrSplitProviderID = errors.New("error splitting providerID")
 var ErrNodeNotFound = errors.New("node not found")
 var ErrNodeNotInDefaultSubnet = errors.New("Node not in default subnet")
+var ErrNodePodCIDRNotSet = errors.New("Node does not have PodCIDR set")
 
 // providerIDRE is the regex to process providerID.
 // A providerID is build out of '${ProviderName}://${project-id}/${zone}/${instance-name}'
@@ -91,9 +92,16 @@ func (z *ZoneGetter) ZoneForNode(name string, logger klog.Logger) (string, error
 		nodeLogger.Error(err, "Failed to get node")
 		return "", fmt.Errorf("%w: failed to get node %s", ErrNodeNotFound, name)
 	}
-	if z.onlyIncludeDefaultSubnetNodes && !isNodeInDefaultSubnet(node, z.defaultSubnetURL, nodeLogger) {
-		nodeLogger.Error(ErrNodeNotInDefaultSubnet, "Node is invalid since it is not in the default subnet")
-		return "", ErrNodeNotInDefaultSubnet
+	if z.onlyIncludeDefaultSubnetNodes {
+		isInDefaultSubnet, err := isNodeInDefaultSubnet(node, z.defaultSubnetURL, nodeLogger)
+		if err != nil {
+			nodeLogger.Error(err, "Failed to verify if the node is in default subnet.")
+			return "", err
+		}
+		if !isInDefaultSubnet {
+			nodeLogger.Error(ErrNodeNotInDefaultSubnet, "Node is invalid since it is not in the default subnet")
+			return "", ErrNodeNotInDefaultSubnet
+		}
 	}
 	if node.Spec.ProviderID == "" {
 		nodeLogger.Error(ErrProviderIDNotFound, "Node does not have providerID")
@@ -179,10 +187,16 @@ func (z *ZoneGetter) IsNodeSelectedByFilter(node *api_v1.Node, filter Filter, fi
 
 // allNodesPredicate selects all nodes.
 func (z *ZoneGetter) allNodesPredicate(node *api_v1.Node, nodeLogger klog.Logger) bool {
-	if z.onlyIncludeDefaultSubnetNodes && !isNodeInDefaultSubnet(node, z.defaultSubnetURL, nodeLogger) {
-		nodeLogger.Error(ErrNodeNotInDefaultSubnet, "Ignoring node since it is not in the default subnet")
-		return false
-
+	if z.onlyIncludeDefaultSubnetNodes {
+		isInDefaultSubnet, err := isNodeInDefaultSubnet(node, z.defaultSubnetURL, nodeLogger)
+		if err != nil {
+			nodeLogger.Error(err, "Failed to verify if the node is in default subnet")
+			return false
+		}
+		if !isInDefaultSubnet {
+			nodeLogger.Error(ErrNodeNotInDefaultSubnet, "Ignoring node since it is not in the default subnet")
+			return false
+		}
 	}
 	return true
 }
@@ -201,9 +215,16 @@ func (z *ZoneGetter) candidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes(
 }
 
 func (z *ZoneGetter) nodePredicateInternal(node *api_v1.Node, includeUnreadyNodes, excludeUpgradingNodes bool, nodeAndFilterLogger klog.Logger) bool {
-	if z.onlyIncludeDefaultSubnetNodes && !isNodeInDefaultSubnet(node, z.defaultSubnetURL, nodeAndFilterLogger) {
-		nodeAndFilterLogger.Error(ErrNodeNotInDefaultSubnet, "Ignoring node since it is not in the default subnet")
-		return false
+	if z.onlyIncludeDefaultSubnetNodes {
+		isInDefaultSubnet, err := isNodeInDefaultSubnet(node, z.defaultSubnetURL, nodeAndFilterLogger)
+		if err != nil {
+			nodeAndFilterLogger.Error(err, "Failed to verify if the node is in default subnet")
+			return false
+		}
+		if !isInDefaultSubnet {
+			nodeAndFilterLogger.Error(ErrNodeNotInDefaultSubnet, "Ignoring node since it is not in the default subnet")
+			return false
+		}
 	}
 
 	// Get all nodes that have a taint with NoSchedule effect
@@ -253,12 +274,12 @@ func (z *ZoneGetter) nodePredicateInternal(node *api_v1.Node, includeUnreadyNode
 }
 
 // ZoneForNode returns if the given node is in default subnet.
-func (z *ZoneGetter) IsDefaultSubnetNode(nodeName string, logger klog.Logger) bool {
+func (z *ZoneGetter) IsDefaultSubnetNode(nodeName string, logger klog.Logger) (bool, error) {
 	nodeLogger := logger.WithValues("nodeName", nodeName)
 	node, err := listers.NewNodeLister(z.nodeLister).Get(nodeName)
 	if err != nil {
 		nodeLogger.Error(err, "Failed to get node")
-		return false
+		return false, err
 	}
 	return isNodeInDefaultSubnet(node, z.defaultSubnetURL, logger)
 }
@@ -269,29 +290,29 @@ func (z *ZoneGetter) IsDefaultSubnetNode(nodeName string, logger klog.Logger) bo
 // guaranteed to have the subnet label if PodCIDR is populated. For any
 // existing nodes, they will not have label and can only be in the default
 // subnet.
-func isNodeInDefaultSubnet(node *api_v1.Node, defaultSubnetURL string, nodeLogger klog.Logger) bool {
+func isNodeInDefaultSubnet(node *api_v1.Node, defaultSubnetURL string, nodeLogger klog.Logger) (bool, error) {
 	if node.Spec.PodCIDR == "" {
 		nodeLogger.Info("Node does not have PodCIDR set")
-		return false
+		return false, ErrNodePodCIDRNotSet
 	}
 
 	nodeSubnet, exist := node.Labels[utils.LabelNodeSubnet]
 	if !exist {
 		nodeLogger.Info("Node does not have subnet label key, assumed to be in the default subnet", "subnet label key", utils.LabelNodeSubnet)
-		return true
+		return true, nil
 	}
 	if nodeSubnet == "" {
 		nodeLogger.Info("Node has empty value for subnet label key, assumed to be in the default subnet", "subnet label key", utils.LabelNodeSubnet)
-		return true
+		return true, nil
 	}
 	nodeLogger.Info("Node has an non-empty value for subnet label key", "subnet label key", utils.LabelNodeSubnet, "subnet label value", nodeSubnet)
 
 	defaultSubnet, err := utils.KeyName(defaultSubnetURL)
 	if err != nil {
 		nodeLogger.Error(err, "Failed to extract default subnet information from URL", "defaultSubnetURL", defaultSubnetURL)
-		return false
+		return false, err
 	}
-	return nodeSubnet == defaultSubnet
+	return nodeSubnet == defaultSubnet, nil
 }
 
 // getZone gets zone information from node provider id.

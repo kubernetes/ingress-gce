@@ -24,6 +24,7 @@ const (
 	PodLabelMismatch       = State("PodLabelMismatch")
 	NodeMissing            = State("NodeMissing")
 	NodeNotFound           = State("NodeNotFound")
+	NodePodCIDRNotSet      = State("NodePodCIDRNotSet")
 	ZoneMissing            = State("ZoneMissing")
 	IPInvalid              = State("IPInvalid")
 	IPNotFromPod           = State("IPNotFromPod")
