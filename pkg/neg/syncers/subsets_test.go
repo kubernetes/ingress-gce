@@ -21,7 +21,7 @@ import (
 	"strings"
 	"testing"
 
-	networkv1 "k8s.io/cloud-provider-gcp/crd/apis/network/v1"
+	networkv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1"
 	"k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/klog/v2"
