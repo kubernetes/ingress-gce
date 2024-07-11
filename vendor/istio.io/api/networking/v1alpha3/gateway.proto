@@ -14,9 +14,13 @@
 
 syntax = "proto3";
 
+import "google/api/field_behavior.proto";
+
+// $schema: istio.networking.v1alpha3.Gateway
 // $title: Gateway
 // $description: Configuration affecting edge load balancer.
-// $location: https://istio.io/docs/reference/config/networking/v1alpha3/gateway.html
+// $location: https://istio.io/docs/reference/config/networking/gateway.html
+// $aliases: [/docs/reference/config/networking/v1alpha3/gateway]
 
 // `Gateway` describes a load balancer operating at the edge of the mesh
 // receiving incoming or outgoing HTTP/TCP connections. The specification
@@ -32,7 +36,7 @@ syntax = "proto3";
 // external traffic to these ports are allowed into the mesh.
 //
 // ```yaml
-// apiVersion: networking.istio.io/v1alpha3
+// apiVersion: networking.istio.io/v1
 // kind: Gateway
 // metadata:
 //   name: my-gateway
@@ -100,7 +104,7 @@ syntax = "proto3";
 // gets redirected to `https://uk.bookinfo.com` (i.e. 80 redirects to 443).
 //
 // ```yaml
-// apiVersion: networking.istio.io/v1alpha3
+// apiVersion: networking.istio.io/v1
 // kind: VirtualService
 // metadata:
 //   name: bookinfo-rule
@@ -143,17 +147,16 @@ syntax = "proto3";
 // reserved name `mesh`.
 //
 // ```yaml
-// apiVersion: networking.istio.io/v1alpha3
+// apiVersion: networking.istio.io/v1
 // kind: VirtualService
 // metadata:
-//   name: bookinfo-Mongo
+//   name: bookinfo-mongo
 //   namespace: bookinfo-namespace
 // spec:
 //   hosts:
 //   - mongosvr.prod.svc.cluster.local # name of internal Mongo service
 //   gateways:
-//   - some-config-namespace/my-gateway # can omit the namespace if gateway is in same
-//                                        namespace as virtual service.
+//   - some-config-namespace/my-gateway # can omit the namespace if gateway is in same namespace as virtual service.
 //   tcp:
 //   - match:
 //     - port: 27017
@@ -171,7 +174,7 @@ syntax = "proto3";
 // foo.bar.com host in the ns2 namespace to bind to it.
 //
 // ```yaml
-// apiVersion: networking.istio.io/v1alpha3
+// apiVersion: networking.istio.io/v1
 // kind: Gateway
 // metadata:
 //   name: my-gateway
@@ -193,15 +196,45 @@ package istio.networking.v1alpha3;
 
 option go_package = "istio.io/api/networking/v1alpha3";
 
+// Gateway describes a load balancer operating at the edge of the mesh
+// receiving incoming or outgoing HTTP/TCP connections.
+//
+// <!-- crd generation tags
+// +cue-gen:Gateway:groupName:networking.istio.io
+// +cue-gen:Gateway:version:v1alpha3
+// +cue-gen:Gateway:annotations:helm.sh/resource-policy=keep
+// +cue-gen:Gateway:labels:app=istio-pilot,chart=istio,heritage=Tiller,release=istio
+// +cue-gen:Gateway:subresource:status
+// +cue-gen:Gateway:scope:Namespaced
+// +cue-gen:Gateway:resource:categories=istio-io,networking-istio-io,shortNames=gw
+// +cue-gen:Gateway:preserveUnknownFields:false
+// -->
+//
+// <!-- go code generation tags
+// +kubetype-gen
+// +kubetype-gen:groupVersion=networking.istio.io/v1alpha3
+// +genclient
+// +k8s:deepcopy-gen=true
+// -->
+// <!-- istio code generation tags
+// +istio.io/sync-start
+// -->
 message Gateway {
-  // REQUIRED: A list of server specifications.
+  // A list of server specifications.
   repeated Server servers = 1;
 
-  // REQUIRED: One or more labels that indicate a specific set of pods/VMs
-  // on which this gateway configuration should be applied. The scope of
-  // label search is restricted to the configuration namespace in which the
-  // the resource is present. In other words, the Gateway resource must
-  // reside in the same namespace as the gateway workload instance.
+  // One or more labels that indicate a specific set of pods/VMs
+  // on which this gateway configuration should be applied.
+  // By default workloads are searched across all namespaces based on label selectors.
+  // This implies that a gateway resource in the namespace "foo" can select pods in
+  // the namespace "bar" based on labels.
+  // This behavior can be controlled via the `PILOT_SCOPE_GATEWAY_TO_NAMESPACE`
+  // environment variable in istiod. If this variable is set
+  // to true, the scope of label search is restricted to the configuration
+  // namespace in which the the resource is present. In other words, the Gateway
+  // resource must reside in the same namespace as the gateway workload
+  // instance.
+  // If selector is nil, the Gateway will be applied to all workloads.
   map<string, string> selector = 2;
 }
 
@@ -209,13 +242,13 @@ message Gateway {
 // port. For example,
 //
 // ```yaml
-// apiVersion: networking.istio.io/v1alpha3
+// apiVersion: networking.istio.io/v1
 // kind: Gateway
 // metadata:
 //   name: my-ingress
 // spec:
 //   selector:
-//     app: my-ingress-gateway
+//     app: my-ingressgateway
 //   servers:
 //   - port:
 //       number: 80
@@ -228,13 +261,13 @@ message Gateway {
 // Another example
 //
 // ```yaml
-// apiVersion: networking.istio.io/v1alpha3
+// apiVersion: networking.istio.io/v1
 // kind: Gateway
 // metadata:
 //   name: my-tcp-ingress
 // spec:
 //   selector:
-//     app: my-tcp-ingress-gateway
+//     app: my-tcp-ingressgateway
 //   servers:
 //   - port:
 //       number: 27018
@@ -247,13 +280,13 @@ message Gateway {
 // The following is an example of TLS configuration for port 443
 //
 // ```yaml
-// apiVersion: networking.istio.io/v1alpha3
+// apiVersion: networking.istio.io/v1
 // kind: Gateway
 // metadata:
 //   name: my-tls-ingress
 // spec:
 //   selector:
-//     app: my-tls-ingress-gateway
+//     app: my-tls-ingressgateway
 //   servers:
 //   - port:
 //       number: 443
@@ -263,31 +296,39 @@ message Gateway {
 //     - "*"
 //     tls:
 //       mode: SIMPLE
-//       serverCertificate: /etc/certs/server.pem
-//       privateKey: /etc/certs/privatekey.pem
+//       credentialName: tls-cert
 // ```
+//
 message Server {
-  // REQUIRED: The Port on which the proxy should listen for incoming
+  // The Port on which the proxy should listen for incoming
   // connections.
-  Port port = 1;
+  Port port = 1 [(google.api.field_behavior) = REQUIRED];
 
-  // $hide_from_docs
   // The ip or the Unix domain socket to which the listener should be bound
   // to. Format: `x.x.x.x` or `unix:///path/to/uds` or `unix://@foobar`
   // (Linux abstract namespace). When using Unix domain sockets, the port
   // number should be 0.
+  // This can be used to restrict the reachability of this server to be gateway internal only.
+  // This is typically used when a gateway needs to communicate to another mesh service
+  // e.g. publishing metrics. In such case, the server created with the
+  // specified bind will not be available to external gateway clients.
   string bind = 4;
 
-  // REQUIRED. One or more hosts exposed by this gateway.
+  // One or more hosts exposed by this gateway.
   // While typically applicable to
   // HTTP services, it can also be used for TCP services using TLS with SNI.
   // A host is specified as a `dnsName` with an optional `namespace/` prefix.
   // The `dnsName` should be specified using FQDN format, optionally including
   // a wildcard character in the left-most component (e.g., `prod/*.example.com`).
   // Set the `dnsName` to `*` to select all `VirtualService` hosts from the
-  // specified namespace (e.g.,`prod/*`). If no `namespace/` is specified,
-  // the `VirtualService` hosts will be selected from any available namespace.
-  // Any associated `DestinationRule` in the same namespace will also be used.
+  // specified namespace (e.g.,`prod/*`).
+  //
+  // The `namespace` can be set to `*` or `.`, representing any or the current
+  // namespace, respectively. For example, `*/foo.example.com` selects the
+  // service from any available namespace while `./foo.example.com` only selects
+  // the service from the namespace of the sidecar. The default, if no `namespace/`
+  // is specified, is `*/`, that is, select services from any namespace.
+  // Any associated `DestinationRule` in the selected namespace will also be used.
   //
   // A `VirtualService` must be bound to the gateway and must have one or
   // more hosts that match the hosts specified in a server. The match
@@ -302,154 +343,202 @@ message Server {
   // Private configurations (e.g., `exportTo` set to `.`) will not be
   // available. Refer to the `exportTo` setting in `VirtualService`,
   // `DestinationRule`, and `ServiceEntry` configurations for details.
-  repeated string hosts = 2;
-
-  message TLSOptions {
-    // If set to true, the load balancer will send a 301 redirect for all
-    // http connections, asking the clients to use HTTPS.
-    bool https_redirect = 1;
-
-    // TLS modes enforced by the proxy
-    enum TLSmode {
-      // The SNI string presented by the client will be used as the match
-      // criterion in a VirtualService TLS route to determine the
-      // destination service from the service registry.
-      PASSTHROUGH = 0;
-
-      // Secure connections with standard TLS semantics.
-      SIMPLE = 1;
-
-      // Secure connections to the downstream using mutual TLS by presenting
-      // server certificates for authentication.
-      MUTUAL = 2;
-
-      // Similar to the passthrough mode, except servers with this TLS mode
-      // do not require an associated VirtualService to map from the SNI
-      // value to service in the registry. The destination details such as
-      // the service/subset/port are encoded in the SNI value. The proxy
-      // will forward to the upstream (Envoy) cluster (a group of
-      // endpoints) specified by the SNI value. This server is typically
-      // used to provide connectivity between services in disparate L3
-      // networks that otherwise do not have direct connectivity between
-      // their respective endpoints. Use of this mode assumes that both the
-      // source and the destination are using Istio mTLS to secure traffic.
-      AUTO_PASSTHROUGH = 3;
-
-      // Secure connections from the downstream using mutual TLS by presenting
-      // server certificates for authentication.
-      // Compared to Mutual mode, this mode uses certificates, representing
-      // gateway workload identity, generated automatically by Istio for
-      // mTLS authentication. When this mode is used, all other fields in
-      // `TLSOptions` should be empty.
-      ISTIO_MUTUAL = 4;
-    };
-
-    // Optional: Indicates whether connections to this port should be
-    // secured using TLS. The value of this field determines how TLS is
-    // enforced.
-    TLSmode mode = 2;
-
-    // REQUIRED if mode is `SIMPLE` or `MUTUAL`. The path to the file
-    // holding the server-side TLS certificate to use.
-    string server_certificate = 3;
-
-    // REQUIRED if mode is `SIMPLE` or `MUTUAL`. The path to the file
-    // holding the server's private key.
-    string private_key = 4;
-
-    // REQUIRED if mode is `MUTUAL`. The path to a file containing
-    // certificate authority certificates to use in verifying a presented
-    // client side certificate.
-    string ca_certificates = 5;
-
-    // The credentialName stands for a unique identifier that can be used
-    // to identify the serverCertificate and the privateKey. The
-    // credentialName appended with suffix "-cacert" is used to identify
-    // the CaCertificates associated with this server. Gateway workloads
-    // capable of fetching credentials from a remote credential store such
-    // as Kubernetes secrets, will be configured to retrieve the
-    // serverCertificate and the privateKey using credentialName, instead
-    // of using the file system paths specified above. If using mutual TLS,
-    // gateway workload instances will retrieve the CaCertificates using
-    // credentialName-cacert. The semantics of the name are platform
-    // dependent.  In Kubernetes, the default Istio supplied credential
-    // server expects the credentialName to match the name of the
-    // Kubernetes secret that holds the server certificate, the private
-    // key, and the CA certificate (if using mutual TLS). Set the
-    // `ISTIO_META_USER_SDS` metadata variable in the gateway's proxy to
-    // enable the dynamic credential fetching feature.
-    string credential_name = 10;
-
-    // A list of alternate names to verify the subject identity in the
-    // certificate presented by the client.
-    repeated string subject_alt_names = 6;
-    
-    // An optional list of base64-encoded SHA-256 hashes of the SKPIs of
-    // authorized client certificates.
-    // Note: When both verify_certificate_hash and verify_certificate_spki
-    // are specified, a hash matching either value will result in the
-    // certificate being accepted.
-    repeated string verify_certificate_spki = 11;
-
-    // An optional list of hex-encoded SHA-256 hashes of the
-    // authorized client certificates. Both simple and colon separated
-    // formats are acceptable.
-    // Note: When both verify_certificate_hash and verify_certificate_spki
-    // are specified, a hash matching either value will result in the
-    // certificate being accepted.
-    repeated string verify_certificate_hash = 12;
-
-    // TLS protocol versions.
-    enum TLSProtocol {
-      // Automatically choose the optimal TLS version.
-      TLS_AUTO = 0;
-
-      // TLS version 1.0
-      TLSV1_0 = 1;
-
-      // TLS version 1.1
-      TLSV1_1 = 2;
-
-      // TLS version 1.2
-      TLSV1_2 = 3;
-
-      // TLS version 1.3
-      TLSV1_3 = 4;
-    }
-
-    // Optional: Minimum TLS protocol version.
-    TLSProtocol min_protocol_version = 7;
-
-    // Optional: Maximum TLS protocol version.
-    TLSProtocol max_protocol_version = 8;
-
-    // Optional: If specified, only support the specified cipher list.
-    // Otherwise default to the default cipher list supported by Envoy.
-    repeated string cipher_suites = 9;
-  }
+  repeated string hosts = 2 [(google.api.field_behavior) = REQUIRED];
 
   // Set of TLS related options that govern the server's behavior. Use
   // these options to control if all http requests should be redirected to
   // https, and the TLS modes to use.
-  TLSOptions tls = 3;
+  ServerTLSSettings tls = 3;
 
   // The loopback IP endpoint or Unix domain socket to which traffic should
   // be forwarded to by default. Format should be `127.0.0.1:PORT` or
   // `unix:///path/to/socket` or `unix://@foobar` (Linux abstract namespace).
+  // NOT IMPLEMENTED.
+  // $hide_from_docs
   string default_endpoint = 5;
+
+  // An optional name of the server, when set must be unique across all servers.
+  // This will be used for variety of purposes like prefixing stats generated with
+  // this name etc.
+  string name = 6;
 }
 
 // Port describes the properties of a specific port of a service.
 message Port {
-  // REQUIRED: A valid non-negative integer port number.
-  uint32 number = 1;
+  // A valid non-negative integer port number.
+  uint32 number = 1 [(google.api.field_behavior) = REQUIRED];
 
-  // REQUIRED: The protocol exposed on the port.
-  // MUST BE one of HTTP|HTTPS|GRPC|HTTP2|MONGO|TCP|TLS.
-  // TLS implies the connection will be routed based on the SNI header to
-  // the destination without terminating the TLS connection.
-  string protocol = 2;
+  // The protocol exposed on the port.
+  // MUST BE one of HTTP|HTTPS|GRPC|GRPC-WEB|HTTP2|MONGO|TCP|TLS.
+  // TLS can be either used to terminate non-HTTP based connections on a specific port
+  // or to route traffic based on SNI header to the destination without terminating the TLS connection.
+  string protocol = 2 [(google.api.field_behavior) = REQUIRED];
 
   // Label assigned to the port.
-  string name = 3;
+  string name = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // The port number on the endpoint where the traffic will be
+  // received. Applicable only when used with ServiceEntries.
+  // $hide_from_docs
+  uint32 target_port = 4 [deprecated=true];
+}
+
+message ServerTLSSettings {
+  // If set to true, the load balancer will send a 301 redirect for
+  // all http connections, asking the clients to use HTTPS.
+  bool https_redirect = 1;
+
+  // TLS modes enforced by the proxy
+  enum TLSmode {
+    // The SNI string presented by the client will be used as the
+    // match criterion in a VirtualService TLS route to determine
+    // the destination service from the service registry.
+    PASSTHROUGH = 0;
+
+    // Secure connections with standard TLS semantics. In this mode
+    // client certificate is not requested during handshake. 
+    SIMPLE = 1;
+
+    // Secure connections to the downstream using mutual TLS by
+    // presenting server certificates for authentication.
+    // A client certificate will also be requested during the handshake and 
+    // at least one valid certificate is required to be sent by the client.
+    MUTUAL = 2;
+
+    // Similar to the passthrough mode, except servers with this TLS
+    // mode do not require an associated VirtualService to map from
+    // the SNI value to service in the registry. The destination
+    // details such as the service/subset/port are encoded in the
+    // SNI value. The proxy will forward to the upstream (Envoy)
+    // cluster (a group of endpoints) specified by the SNI
+    // value. This server is typically used to provide connectivity
+    // between services in disparate L3 networks that otherwise do
+    // not have direct connectivity between their respective
+    // endpoints. Use of this mode assumes that both the source and
+    // the destination are using Istio mTLS to secure traffic.
+    AUTO_PASSTHROUGH = 3;
+
+    // Secure connections from the downstream using mutual TLS by
+    // presenting server certificates for authentication.  Compared
+    // to Mutual mode, this mode uses certificates, representing
+    // gateway workload identity, generated automatically by Istio
+    // for mTLS authentication. When this mode is used, all other
+    // fields in `TLSOptions` should be empty.
+    ISTIO_MUTUAL = 4;
+
+    // Similar to MUTUAL mode, except that the client certificate
+    // is optional. Unlike SIMPLE mode, A client certificate will 
+    // still be explicitly requested during handshake, but the client 
+    // is not required to send a certificate. If a client certificate 
+    // is presented, it will be validated. ca_certificates should
+    // be specified for validating client certificates.
+    OPTIONAL_MUTUAL = 5;
+  };
+
+  // Optional: Indicates whether connections to this port should be
+  // secured using TLS. The value of this field determines how TLS is
+  // enforced.
+  TLSmode mode = 2;
+
+  // REQUIRED if mode is `SIMPLE` or `MUTUAL`. The path to the file
+  // holding the server-side TLS certificate to use.
+  string server_certificate = 3;
+
+  // REQUIRED if mode is `SIMPLE` or `MUTUAL`. The path to the file
+  // holding the server's private key.
+  string private_key = 4;
+
+  // REQUIRED if mode is `MUTUAL` or `OPTIONAL_MUTUAL`. The path to a file
+  // containing certificate authority certificates to use in verifying a presented
+  // client side certificate.
+  string ca_certificates = 5;
+
+  // OPTIONAL: The path to the file containing the certificate revocation list (CRL)
+  // to use in verifying a presented client side certificate. `CRL` is a list of certificates
+  // that have been revoked by the CA (Certificate Authority) before their scheduled expiration date.
+  // If specified, the proxy will verify if the presented certificate is part of the revoked list of certificates.
+  // If omitted, the proxy will not verify the certificate against the `crl`.
+  string ca_crl = 13;
+
+  // For gateways running on Kubernetes, the name of the secret that
+  // holds the TLS certs including the CA certificates. Applicable
+  // only on Kubernetes. An Opaque secret should contain the following
+  // keys and values: `tls.key: <privateKey>` and `tls.crt: <serverCert>` or
+  // `key: <privateKey>` and `cert: <serverCert>`.
+  // For mutual TLS, `cacert: <CACertificate>` and `crl: <CertificateRevocationList>`
+  // can be provided in the same secret or a separate secret named `<secret>-cacert`.
+  // A TLS secret for server certificates with an additional `tls.ocsp-staple` key
+  // for specifying OCSP staple information, `ca.crt` key for CA certificates
+  // and `ca.crl` for certificate revocation list is also supported.
+  // Only one of server certificates and CA certificate
+  // or credentialName can be specified.
+  string credential_name = 10;
+
+  // A list of alternate names to verify the subject identity in the
+  // certificate presented by the client.
+  repeated string subject_alt_names = 6;
+
+  // An optional list of base64-encoded SHA-256 hashes of the SPKIs of
+  // authorized client certificates.
+  // Note: When both verify_certificate_hash and verify_certificate_spki
+  // are specified, a hash matching either value will result in the
+  // certificate being accepted.
+  repeated string verify_certificate_spki = 11;
+
+  // An optional list of hex-encoded SHA-256 hashes of the
+  // authorized client certificates. Both simple and colon separated
+  // formats are acceptable.
+  // Note: When both verify_certificate_hash and verify_certificate_spki
+  // are specified, a hash matching either value will result in the
+  // certificate being accepted.
+  repeated string verify_certificate_hash = 12;
+
+  // TLS protocol versions.
+  enum TLSProtocol {
+    // Automatically choose the optimal TLS version.
+    TLS_AUTO = 0;
+
+    // TLS version 1.0
+    TLSV1_0 = 1;
+
+    // TLS version 1.1
+    TLSV1_1 = 2;
+
+    // TLS version 1.2
+    TLSV1_2 = 3;
+
+    // TLS version 1.3
+    TLSV1_3 = 4;
+  }
+
+  // Optional: Minimum TLS protocol version. By default, it is `TLSV1_2`.
+  // TLS protocol versions below TLSV1_2 require setting compatible ciphers with the
+  // `cipherSuites` setting as they no longer include compatible ciphers.
+  //
+  // Note: Using TLS protocol versions below TLSV1_2 has serious security risks.
+  TLSProtocol min_protocol_version = 7;
+
+  // Optional: Maximum TLS protocol version.
+  TLSProtocol max_protocol_version = 8;
+
+  // Optional: If specified, only support the specified cipher list.
+  // Otherwise default to the default cipher list supported by Envoy
+  // as specified [here](https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/transport_sockets/tls/v3/common.proto).
+  // The supported list of ciphers are:
+  // * `ECDHE-ECDSA-AES128-GCM-SHA256`
+  // * `ECDHE-RSA-AES128-GCM-SHA256`
+  // * `ECDHE-ECDSA-AES256-GCM-SHA384`
+  // * `ECDHE-RSA-AES256-GCM-SHA384`
+  // * `ECDHE-ECDSA-CHACHA20-POLY1305`
+  // * `ECDHE-RSA-CHACHA20-POLY1305`
+  // * `ECDHE-ECDSA-AES128-SHA`
+  // * `ECDHE-RSA-AES128-SHA`
+  // * `ECDHE-ECDSA-AES256-SHA`
+  // * `ECDHE-RSA-AES256-SHA`
+  // * `AES128-GCM-SHA256`
+  // * `AES256-GCM-SHA384`
+  // * `AES128-SHA`
+  // * `AES256-SHA`
+  // * `DES-CBC3-SHA`
+  repeated string cipher_suites = 9;
 }
