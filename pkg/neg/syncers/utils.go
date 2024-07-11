@@ -382,6 +382,10 @@ func getEndpointZone(endpointAddress negtypes.AddressData, zoneGetter *zonegette
 		count[negtypes.NodeNotFound]++
 		return zone, count, fmt.Errorf("%w: %v", negtypes.ErrEPNodeNotFound, err)
 	}
+	if errors.Is(err, zonegetter.ErrNodePodCIDRNotSet) {
+		count[negtypes.NodePodCIDRNotSet]++
+		return zone, count, fmt.Errorf("%w: %w", negtypes.ErrEPNodePodCIDRNotSet, err)
+	}
 	// providerID missing in node or zone information missing in providerID.
 	if errors.Is(err, zonegetter.ErrProviderIDNotFound) || errors.Is(err, zonegetter.ErrSplitProviderID) {
 		count[negtypes.ZoneMissing]++

@@ -289,7 +289,7 @@ func TestZoneForNodeMultipleSubnets(t *testing.T) {
 			desc:       "Node without PodCIDR",
 			nodeName:   "no-podcidr-instance",
 			expectZone: "",
-			expectErr:  ErrNodeNotInDefaultSubnet,
+			expectErr:  ErrNodePodCIDRNotSet,
 		},
 		{
 			desc:       "Node in non-default subnet",
@@ -682,9 +682,10 @@ func TestIsNodeSelectedByFilter(t *testing.T) {
 func TestIsNodeInDefaultSubnet(t *testing.T) {
 	t.Parallel()
 	testCases := []struct {
-		desc string
-		node *apiv1.Node
-		want bool
+		desc                  string
+		node                  *apiv1.Node
+		expectInDefaultSubnet bool
+		expectNil             bool
 	}{
 		{
 			desc: "Node in the default subnet",
@@ -700,7 +701,8 @@ func TestIsNodeInDefaultSubnet(t *testing.T) {
 					PodCIDRs: []string{"10.100.1.0/24"},
 				},
 			},
-			want: true,
+			expectInDefaultSubnet: true,
+			expectNil:             true,
 		},
 		{
 			desc: "Node without PodCIDR",
@@ -713,7 +715,8 @@ func TestIsNodeInDefaultSubnet(t *testing.T) {
 				},
 				Spec: apiv1.NodeSpec{},
 			},
-			want: false,
+			expectInDefaultSubnet: false,
+			expectNil:             false,
 		},
 		{
 			desc: "Node with PodCIDR, without subnet label",
@@ -726,7 +729,8 @@ func TestIsNodeInDefaultSubnet(t *testing.T) {
 					PodCIDRs: []string{"10.100.1.0/24"},
 				},
 			},
-			want: true,
+			expectInDefaultSubnet: true,
+			expectNil:             true,
 		},
 		{
 			desc: "Node with PodCIDR, with empty Label",
@@ -742,23 +746,8 @@ func TestIsNodeInDefaultSubnet(t *testing.T) {
 					PodCIDRs: []string{"10.100.1.0/24"},
 				},
 			},
-			want: true,
-		},
-		{
-			desc: "Node with PodCIDR, with empty Label",
-			node: &apiv1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "NodeWithEmptyLabel",
-					Labels: map[string]string{
-						utils.LabelNodeSubnet: "",
-					},
-				},
-				Spec: apiv1.NodeSpec{
-					PodCIDR:  "10.100.1.0/24",
-					PodCIDRs: []string{"10.100.1.0/24"},
-				},
-			},
-			want: true,
+			expectInDefaultSubnet: true,
+			expectNil:             true,
 		},
 		{
 			desc: "Node in non-default subnet",
@@ -774,13 +763,21 @@ func TestIsNodeInDefaultSubnet(t *testing.T) {
 					PodCIDRs: []string{"10.100.1.0/24"},
 				},
 			},
-			want: false,
+			expectInDefaultSubnet: false,
+			expectNil:             true,
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			if got := isNodeInDefaultSubnet(tc.node, defaultTestSubnetURL, klog.TODO()); got != tc.want {
-				t.Errorf("isNodeInDefaultSubnet(%v, %s) = %v, want %v", tc.node, defaultTestSubnetURL, got, tc.want)
+			gotInDefaultSubnet, gotErr := isNodeInDefaultSubnet(tc.node, defaultTestSubnetURL, klog.TODO())
+			if gotErr != nil && tc.expectNil {
+				t.Errorf("isNodeInDefaultSubnet(%v, %s) = err %v, want nil", tc.node, defaultTestSubnetURL, gotErr)
+			}
+			if gotErr == nil && !tc.expectNil {
+				t.Errorf("isNodeInDefaultSubnet(%v, %s) = err nil, want not nil", tc.node, defaultTestSubnetURL)
+			}
+			if gotInDefaultSubnet != tc.expectInDefaultSubnet {
+				t.Errorf("isNodeInDefaultSubnet(%v, %s) = %v, want %v", tc.node, defaultTestSubnetURL, gotInDefaultSubnet, tc.expectInDefaultSubnet)
 			}
 		})
 	}

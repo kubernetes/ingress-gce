@@ -1797,6 +1797,7 @@ func TestValidateEndpointFields(t *testing.T) {
 		expectedEndpointMap             map[string]negtypes.NetworkEndpointSet
 		expectedPodMap                  negtypes.EndpointPodMap
 		expectErr                       error
+		expectErrorState                bool
 		expectedEndpointMapDegradedMode map[string]negtypes.NetworkEndpointSet
 		expectedPodMapDegradedMode      negtypes.EndpointPodMap
 	}{
@@ -1842,6 +1843,7 @@ func TestValidateEndpointFields(t *testing.T) {
 			expectedEndpointMap:             endpointMap,
 			expectedPodMap:                  podMap,
 			expectErr:                       nil,
+			expectErrorState:                false,
 			expectedEndpointMapDegradedMode: endpointMap,
 			expectedPodMapDegradedMode:      podMap,
 		},
@@ -1888,6 +1890,7 @@ func TestValidateEndpointFields(t *testing.T) {
 			expectedEndpointMap:             nil,
 			expectedPodMap:                  nil,
 			expectErr:                       negtypes.ErrEPNodeMissing,
+			expectErrorState:                true,
 			expectedEndpointMapDegradedMode: endpointMap,
 			expectedPodMapDegradedMode:      podMap,
 		},
@@ -1934,6 +1937,7 @@ func TestValidateEndpointFields(t *testing.T) {
 			expectedEndpointMap:             nil,
 			expectedPodMap:                  nil,
 			expectErr:                       negtypes.ErrEPNodeMissing,
+			expectErrorState:                true,
 			expectedEndpointMapDegradedMode: endpointMap,
 			expectedPodMapDegradedMode:      podMap,
 		},
@@ -1976,6 +1980,7 @@ func TestValidateEndpointFields(t *testing.T) {
 			expectedEndpointMap:             endpointMapExcluded,
 			expectedPodMap:                  podMapExcluded,
 			expectErr:                       nil,
+			expectErrorState:                false,
 			expectedEndpointMapDegradedMode: endpointMapExcluded,
 			expectedPodMapDegradedMode:      podMapExcluded,
 		},
@@ -2021,6 +2026,7 @@ func TestValidateEndpointFields(t *testing.T) {
 			expectedEndpointMap:             endpointMapExcluded,
 			expectedPodMap:                  podMapExcluded,
 			expectErr:                       nil,
+			expectErrorState:                false,
 			expectedEndpointMapDegradedMode: endpointMapExcluded,
 			expectedPodMapDegradedMode:      podMapExcluded,
 		},
@@ -2066,6 +2072,7 @@ func TestValidateEndpointFields(t *testing.T) {
 			expectedEndpointMap:             nil,
 			expectedPodMap:                  nil,
 			expectErr:                       negtypes.ErrEPNodeNotFound,
+			expectErrorState:                true,
 			expectedEndpointMapDegradedMode: endpointMap,
 			expectedPodMapDegradedMode:      podMap,
 		},
@@ -2111,6 +2118,7 @@ func TestValidateEndpointFields(t *testing.T) {
 			expectedEndpointMap:             nil,
 			expectedPodMap:                  nil,
 			expectErr:                       negtypes.ErrEPZoneMissing,
+			expectErrorState:                true,
 			expectedEndpointMapDegradedMode: endpointMapExcluded,
 			expectedPodMapDegradedMode:      podMapExcluded,
 		},
@@ -2178,6 +2186,7 @@ func TestValidateEndpointFields(t *testing.T) {
 				negtypes.NetworkEndpoint{IP: "10.100.2.2", Node: instance2, Port: "80"}: types.NamespacedName{Namespace: testServiceNamespace, Name: "pod3"},
 			},
 			expectErr:                       nil,
+			expectErrorState:                false,
 			expectedEndpointMapDegradedMode: endpointMap,
 			expectedPodMapDegradedMode:      podMap,
 		},
@@ -2286,7 +2295,8 @@ func TestValidateEndpointFields(t *testing.T) {
 				negtypes.NetworkEndpoint{IP: "10.100.4.2", IPv6: "a:b::2", Node: instance4, Port: "80"}: types.NamespacedName{Namespace: testServiceNamespace, Name: "pod11"},
 				negtypes.NetworkEndpoint{IP: "10.100.4.4", IPv6: "a:b::4", Node: instance4, Port: "80"}: types.NamespacedName{Namespace: testServiceNamespace, Name: "pod12"},
 			},
-			expectErr: nil,
+			expectErr:        nil,
+			expectErrorState: false,
 			expectedEndpointMapDegradedMode: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
 					negtypes.NetworkEndpoint{IP: "10.100.3.2", IPv6: "a:b::1", Node: instance3, Port: "80"},
@@ -2311,6 +2321,9 @@ func TestValidateEndpointFields(t *testing.T) {
 				}
 				if !reflect.DeepEqual(result.EndpointPodMap, tc.expectedPodMap) {
 					t.Errorf("normal mode with enableMultiSubnetCluster = %v, endpoint map is not calculated correctly:\ngot %+v,\n expected %+v", enableMultiSubnetCluster, result.EndpointPodMap, tc.expectedPodMapDegradedMode)
+				}
+				if syncErr := negtypes.ClassifyError(err); syncErr.IsErrorState != tc.expectErrorState {
+					t.Errorf("normal mode with enableMultiSubnetCluster = %v, got isErrorState=%v,\n expected %v", enableMultiSubnetCluster, syncErr.IsErrorState, tc.expectErrorState)
 				}
 
 				resultDegradedMode := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, serviceLister, emptyNamedPort, negtypes.VmIpPortEndpointType, true, enableMultiSubnetCluster, klog.TODO())
@@ -2468,6 +2481,7 @@ func TestValidateEndpointFieldsMultipleSubnets(t *testing.T) {
 		expectedEndpointMap             map[string]negtypes.NetworkEndpointSet
 		expectedPodMap                  negtypes.EndpointPodMap
 		expectErr                       error
+		expectErrorState                bool
 		expectedEndpointMapDegradedMode map[string]negtypes.NetworkEndpointSet
 		expectedPodMapDegradedMode      negtypes.EndpointPodMap
 	}{
@@ -2532,7 +2546,8 @@ func TestValidateEndpointFieldsMultipleSubnets(t *testing.T) {
 				negtypes.NetworkEndpoint{IP: "10.100.1.2", Node: instance1, Port: "80"}:                  types.NamespacedName{Namespace: testServiceNamespace, Name: "pod2"},
 				negtypes.NetworkEndpoint{IP: "10.101.1.1", Node: defaultSubnetLabelInstance, Port: "80"}: types.NamespacedName{Namespace: testServiceNamespace, Name: defaultSubnetLabelPod},
 			},
-			expectErr: nil,
+			expectErr:        nil,
+			expectErrorState: false,
 			expectedEndpointMapDegradedMode: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
 					negtypes.NetworkEndpoint{IP: "10.100.1.1", Node: instance1, Port: "80"},
@@ -2609,7 +2624,8 @@ func TestValidateEndpointFieldsMultipleSubnets(t *testing.T) {
 				negtypes.NetworkEndpoint{IP: "10.100.1.2", Node: instance1, Port: "80"}:                types.NamespacedName{Namespace: testServiceNamespace, Name: "pod2"},
 				negtypes.NetworkEndpoint{IP: "10.101.2.1", Node: emptySubnetLabelInstance, Port: "80"}: types.NamespacedName{Namespace: testServiceNamespace, Name: emptySubnetLabelPod},
 			},
-			expectErr: nil,
+			expectErr:        nil,
+			expectErrorState: false,
 			expectedEndpointMapDegradedMode: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
 					negtypes.NetworkEndpoint{IP: "10.100.1.1", Node: instance1, Port: "80"},
@@ -2626,7 +2642,7 @@ func TestValidateEndpointFieldsMultipleSubnets(t *testing.T) {
 			},
 		},
 		{
-			desc: "include one endpoint that corresponds to a node without PodCIDR, endpoint should be excluded in both calculations",
+			desc: "include one endpoint that corresponds to a node without PodCIDR, endpoint should be excluded in degraded mode",
 			testEndpointSlices: []*discovery.EndpointSlice{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -2672,9 +2688,10 @@ func TestValidateEndpointFieldsMultipleSubnets(t *testing.T) {
 					},
 				},
 			},
-			expectedEndpointMap:             endpointMap,
-			expectedPodMap:                  podMap,
-			expectErr:                       nil,
+			expectedEndpointMap:             nil,
+			expectedPodMap:                  nil,
+			expectErr:                       negtypes.ErrEPNodePodCIDRNotSet,
+			expectErrorState:                true,
 			expectedEndpointMapDegradedMode: endpointMap,
 			expectedPodMapDegradedMode:      podMap,
 		},
@@ -2728,6 +2745,7 @@ func TestValidateEndpointFieldsMultipleSubnets(t *testing.T) {
 			expectedEndpointMap:             endpointMap,
 			expectedPodMap:                  podMap,
 			expectErr:                       nil,
+			expectErrorState:                false,
 			expectedEndpointMapDegradedMode: endpointMap,
 			expectedPodMapDegradedMode:      podMap,
 		},
@@ -2736,13 +2754,16 @@ func TestValidateEndpointFieldsMultipleSubnets(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			result, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, emptyNamedPort, negtypes.VmIpPortEndpointType, true, true, klog.TODO())
 			if !errors.Is(err, tc.expectErr) {
-				t.Errorf("With multi-subnet cluste enabled, normal mode calculation got error %v, expected %v", err, tc.expectErr)
+				t.Errorf("With multi-subnet cluster enabled, normal mode calculation got error %v, expected %v", err, tc.expectErr)
 			}
 			if !reflect.DeepEqual(result.NetworkEndpointSet, tc.expectedEndpointMap) {
-				t.Errorf("With multi-subnet cluste enabled, normal mode endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", result.NetworkEndpointSet, tc.expectedEndpointMapDegradedMode)
+				t.Errorf("With multi-subnet cluster enabled, normal mode endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", result.NetworkEndpointSet, tc.expectedEndpointMapDegradedMode)
 			}
 			if !reflect.DeepEqual(result.EndpointPodMap, tc.expectedPodMap) {
-				t.Errorf("With multi-subnet cluste enabled, normal mode endpoint map is not calculated correctly:\ngot %+v,\n expected %+v", result.EndpointPodMap, tc.expectedPodMapDegradedMode)
+				t.Errorf("With multi-subnet cluster enabled, normal mode endpoint map is not calculated correctly:\ngot %+v,\n expected %+v", result.EndpointPodMap, tc.expectedPodMapDegradedMode)
+			}
+			if syncErr := negtypes.ClassifyError(err); syncErr.IsErrorState != tc.expectErrorState {
+				t.Errorf("With multi-subnet cluster enabled, normal mode got isErrorState=%v,\n expected %v", syncErr.IsErrorState, tc.expectErrorState)
 			}
 
 			resultDegradedMode := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, serviceLister, emptyNamedPort, negtypes.VmIpPortEndpointType, true, true, klog.TODO())
