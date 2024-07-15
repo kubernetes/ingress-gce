@@ -263,6 +263,34 @@ func TestEnsureIAP(t *testing.T) {
 			updateExpected: false,
 			expectErr:      true,
 		},
+		{
+			desc: "enabled is changed to false, update needed",
+			sp: utils.ServicePort{
+				BackendConfig: &backendconfigv1.BackendConfig{
+					Spec: backendconfigv1.BackendConfigSpec{
+						Iap: &backendconfigv1.IAPConfig{
+							Enabled: false,
+						},
+					},
+				},
+			},
+			be: &composite.BackendService{
+				Iap: &composite.BackendServiceIAP{
+					Enabled:                  true,
+					Oauth2ClientId:           "foo",
+					Oauth2ClientSecretSha256: fmt.Sprintf("%x", sha256.Sum256([]byte("baz"))),
+				},
+			},
+			wantBE: &composite.BackendService{
+				Iap: &composite.BackendServiceIAP{
+					Enabled:                  false,
+					Oauth2ClientId:           "",
+					Oauth2ClientSecretSha256: "",
+				},
+			},
+			updateExpected: true,
+			expectErr:      false,
+		},
 	}
 
 	for _, tc := range testCases {

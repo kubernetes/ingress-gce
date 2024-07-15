@@ -108,6 +108,10 @@ func switchingToDefault(desired, curr *composite.BackendService) error {
 		return nil
 	}
 
+	if !desired.Iap.Enabled {
+		return nil
+	}
+
 	// Due to the validation earlier in the sync both Oauth2 fields will be empty or both are set
 	// so only one field needs to be checked.
 	desiredIsEmpty := desired.Iap.Oauth2ClientId == ""
