@@ -14,26 +14,40 @@
 
 syntax = "proto3";
 
-import "networking/v1alpha3/gateway.proto";
+import "google/api/field_behavior.proto";
+import "networking/v1alpha3/sidecar.proto";
+import "networking/v1alpha3/workload_entry.proto";
+import "analysis/v1alpha1/message.proto";
+import "meta/v1alpha1/status.proto";
 
+// $schema: istio.networking.v1alpha3.ServiceEntry
 // $title: Service Entry
 // $description: Configuration affecting service registry.
-// $location: https://istio.io/docs/reference/config/networking/v1alpha3/service-entry.html
+// $location: https://istio.io/docs/reference/config/networking/service-entry.html
+// $aliases: [/docs/reference/config/networking/v1alpha3/service-entry]
 
-// `ServiceEntry` enables adding additional entries into Istio's internal
-// service registry, so that auto-discovered services in the mesh can
-// access/route to these manually specified services. A service entry
-// describes the properties of a service (DNS name, VIPs, ports, protocols,
-// endpoints). These services could be external to the mesh (e.g., web
-// APIs) or mesh-internal services that are not part of the platform's
-// service registry (e.g., a set of VMs talking to services in Kubernetes).
+// `ServiceEntry` enables adding additional entries into Istio's
+// internal service registry, so that auto-discovered services in the
+// mesh can access/route to these manually specified services. A
+// service entry describes the properties of a service (DNS name,
+// VIPs, ports, protocols, endpoints). These services could be
+// external to the mesh (e.g., web APIs) or mesh-internal services
+// that are not part of the platform's service registry (e.g., a set
+// of VMs talking to services in Kubernetes). In addition, the
+// endpoints of a service entry can also be dynamically selected by
+// using the `workloadSelector` field. These endpoints can be VM
+// workloads declared using the `WorkloadEntry` object or Kubernetes
+// pods. The ability to select both pods and VMs under a single
+// service allows for migration of services from VMs to Kubernetes
+// without having to change the existing DNS names associated with the
+// services.
 //
 // The following example declares a few external APIs accessed by internal
 // applications over HTTPS. The sidecar inspects the SNI value in the
 // ClientHello message to route to the appropriate external service.
 //
 // ```yaml
-// apiVersion: networking.istio.io/v1alpha3
+// apiVersion: networking.istio.io/v1
 // kind: ServiceEntry
 // metadata:
 //   name: external-svc-https
@@ -56,7 +70,7 @@ import "networking/v1alpha3/gateway.proto";
 // to initiate mTLS connections to the database instances.
 //
 // ```yaml
-// apiVersion: networking.istio.io/v1alpha3
+// apiVersion: networking.istio.io/v1
 // kind: ServiceEntry
 // metadata:
 //   name: external-svc-mongocluster
@@ -79,7 +93,7 @@ import "networking/v1alpha3/gateway.proto";
 // and the associated DestinationRule
 //
 // ```yaml
-// apiVersion: networking.istio.io/v1alpha3
+// apiVersion: networking.istio.io/v1
 // kind: DestinationRule
 // metadata:
 //   name: mtls-mongocluster
@@ -98,7 +112,7 @@ import "networking/v1alpha3/gateway.proto";
 // an internal egress firewall.
 //
 // ```yaml
-// apiVersion: networking.istio.io/v1alpha3
+// apiVersion: networking.istio.io/v1
 // kind: ServiceEntry
 // metadata:
 //   name: external-svc-redirect
@@ -117,7 +131,7 @@ import "networking/v1alpha3/gateway.proto";
 // And the associated VirtualService to route based on the SNI value.
 //
 // ```yaml
-// apiVersion: networking.istio.io/v1alpha3
+// apiVersion: networking.istio.io/v1
 // kind: VirtualService
 // metadata:
 //   name: tls-routing
@@ -148,14 +162,14 @@ import "networking/v1alpha3/gateway.proto";
 // namespaces.
 //
 // ```yaml
-// apiVersion: networking.istio.io/v1alpha3
+// apiVersion: networking.istio.io/v1
 // kind: ServiceEntry
 // metadata:
 //   name: external-svc-httpbin
 //   namespace : egress
 // spec:
 //   hosts:
-//   - httpbin.com
+//   - example.com
 //   exportTo:
 //   - "."
 //   location: MESH_EXTERNAL
@@ -169,7 +183,7 @@ import "networking/v1alpha3/gateway.proto";
 // Define a gateway to handle all egress traffic.
 //
 // ```yaml
-// apiVersion: networking.istio.io/v1alpha3
+// apiVersion: networking.istio.io/v1
 // kind: Gateway
 // metadata:
 //  name: istio-egressgateway
@@ -194,14 +208,14 @@ import "networking/v1alpha3/gateway.proto";
 // a managed middle proxy like this is a common practice.
 //
 // ```yaml
-// apiVersion: networking.istio.io/v1alpha3
+// apiVersion: networking.istio.io/v1
 // kind: VirtualService
 // metadata:
 //   name: gateway-routing
 //   namespace: egress
 // spec:
 //   hosts:
-//   - httpbin.com
+//   - example.com
 //   exportTo:
 //   - "*"
 //   gateways:
@@ -221,16 +235,16 @@ import "networking/v1alpha3/gateway.proto";
 //       - istio-egressgateway
 //     route:
 //     - destination:
-//         host: httpbin.com
+//         host: example.com
 // ```
 //
 // The following example demonstrates the use of wildcards in the hosts for
 // external services. If the connection has to be routed to the IP address
 // requested by the application (i.e. application resolves DNS and attempts
-// to connect to a specific IP), the discovery mode must be set to `NONE`.
+// to connect to a specific IP), the resolution mode must be set to `NONE`.
 //
 // ```yaml
-// apiVersion: networking.istio.io/v1alpha3
+// apiVersion: networking.istio.io/v1
 // kind: ServiceEntry
 // metadata:
 //   name: external-svc-wildcard-example
@@ -250,7 +264,7 @@ import "networking/v1alpha3/gateway.proto";
 // set to STATIC to use Unix address endpoints.
 //
 // ```yaml
-// apiVersion: networking.istio.io/v1alpha3
+// apiVersion: networking.istio.io/v1
 // kind: ServiceEntry
 // metadata:
 //   name: unix-domain-socket-example
@@ -276,7 +290,7 @@ import "networking/v1alpha3/gateway.proto";
 // uk.foo.bar.com:9080, and in.foo.bar.com:7080
 //
 // ```yaml
-// apiVersion: networking.istio.io/v1alpha3
+// apiVersion: networking.istio.io/v1
 // kind: ServiceEntry
 // metadata:
 //   name: external-svc-dns
@@ -292,13 +306,13 @@ import "networking/v1alpha3/gateway.proto";
 //   endpoints:
 //   - address: us.foo.bar.com
 //     ports:
-//       https: 8080
+//       http: 8080
 //   - address: uk.foo.bar.com
 //     ports:
-//       https: 9080
+//       http: 9080
 //   - address: in.foo.bar.com
 //     ports:
-//       https: 7080
+//       http: 7080
 // ```
 //
 // With `HTTP_PROXY=http://localhost/`, calls from the application to
@@ -308,17 +322,17 @@ import "networking/v1alpha3/gateway.proto";
 //
 // The following example illustrates the usage of a `ServiceEntry`
 // containing a subject alternate name
-// whose format conforms to the [SPIFEE standard](https://github.com/spiffe/spiffe/blob/master/standards/SPIFFE-ID.md):
+// whose format conforms to the [SPIFFE standard](https://github.com/spiffe/spiffe/blob/master/standards/SPIFFE-ID.md):
 //
 // ```yaml
-// apiVersion: networking.istio.io/v1alpha3
+// apiVersion: networking.istio.io/v1
 // kind: ServiceEntry
 // metadata:
 //   name: httpbin
 //   namespace : httpbin-ns
 // spec:
 //   hosts:
-//   - httpbin.com
+//   - example.com
 //   location: MESH_INTERNAL
 //   ports:
 //   - number: 80
@@ -332,12 +346,98 @@ import "networking/v1alpha3/gateway.proto";
 //   - "spiffe://cluster.local/ns/httpbin-ns/sa/httpbin-service-account"
 // ```
 //
+// The following example demonstrates the use of `ServiceEntry` with a
+// `workloadSelector` to handle the migration of a service
+// `details.bookinfo.com` from VMs to Kubernetes. The service has two
+// VM-based instances with sidecars as well as a set of Kubernetes
+// pods managed by a standard deployment object. Consumers of this
+// service in the mesh will be automatically load balanced across the
+// VMs and Kubernetes.
+//
+// ```yaml
+// apiVersion: networking.istio.io/v1
+// kind: WorkloadEntry
+// metadata:
+//   name: details-vm-1
+// spec:
+//   serviceAccount: details
+//   address: 2.2.2.2
+//   labels:
+//     app: details
+//     instance-id: vm1
+// ---
+// apiVersion: networking.istio.io/v1
+// kind: WorkloadEntry
+// metadata:
+//   name: details-vm-2
+// spec:
+//   serviceAccount: details
+//   address: 3.3.3.3
+//   labels:
+//     app: details
+//     instance-id: vm2
+// ```
+//
+// Assuming there is also a Kubernetes deployment with pod labels
+// `app: details` using the same service account `details`, the
+// following service entry declares a service spanning both VMs and
+// Kubernetes:
+//
+// ```yaml
+// apiVersion: networking.istio.io/v1
+// kind: ServiceEntry
+// metadata:
+//   name: details-svc
+// spec:
+//   hosts:
+//   - details.bookinfo.com
+//   location: MESH_INTERNAL
+//   ports:
+//   - number: 80
+//     name: http
+//     protocol: HTTP
+//   resolution: STATIC
+//   workloadSelector:
+//     labels:
+//       app: details
+// ```
 package istio.networking.v1alpha3;
 
 option go_package = "istio.io/api/networking/v1alpha3";
 
+
+// ServiceEntry enables adding additional entries into Istio's internal
+// service registry.
+//
+// <!-- crd generation tags
+// +cue-gen:ServiceEntry:groupName:networking.istio.io
+// +cue-gen:ServiceEntry:versions:v1beta1,v1alpha3,v1
+// +cue-gen:ServiceEntry:annotations:helm.sh/resource-policy=keep
+// +cue-gen:ServiceEntry:labels:app=istio-pilot,chart=istio,heritage=Tiller,release=istio
+// +cue-gen:ServiceEntry:subresource:status
+// +cue-gen:ServiceEntry:scope:Namespaced
+// +cue-gen:ServiceEntry:resource:categories=istio-io,networking-istio-io,shortNames=se,plural=serviceentries
+// +cue-gen:ServiceEntry:printerColumn:name=Hosts,type=string,JSONPath=.spec.hosts,description="The hosts associated with the ServiceEntry"
+// +cue-gen:ServiceEntry:printerColumn:name=Location,type=string,JSONPath=.spec.location,description="Whether the service is external to the
+// mesh or part of the mesh (MESH_EXTERNAL or MESH_INTERNAL)"
+// +cue-gen:ServiceEntry:printerColumn:name=Resolution,type=string,JSONPath=.spec.resolution,description="Service resolution mode for the hosts
+// (NONE, STATIC, or DNS)"
+// +cue-gen:ServiceEntry:printerColumn:name=Age,type=date,JSONPath=.metadata.creationTimestamp,description="CreationTimestamp is a timestamp
+// representing the server time when this object was created. It is not guaranteed to be set in happens-before order across separate operations.
+// Clients may not set this value. It is represented in RFC3339 form and is in UTC.
+// Populated by the system. Read-only. Null for lists. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#metadata"
+// +cue-gen:ServiceEntry:preserveUnknownFields:false
+// -->
+//
+// <!-- go code generation tags
+// +kubetype-gen
+// +kubetype-gen:groupVersion=networking.istio.io/v1alpha3
+// +genclient
+// +k8s:deepcopy-gen=true
+// istiostatus-override: ServiceEntryStatus: istio.io/api/networking/v1alpha3
+// -->
 message ServiceEntry {
-  // REQUIRED. The hosts associated with the ServiceEntry. Could be a DNS
+  // The hosts associated with the ServiceEntry. Could be a DNS
   // name with wildcard prefix.
   //
   // 1. The hosts field is used to select matching hosts in VirtualServices and DestinationRules.
@@ -345,10 +445,23 @@ message ServiceEntry {
   // 3. For HTTPs or TLS traffic containing Server Name Indication (SNI), the SNI value
   // will be matched against the hosts field.
   //
-  // Note that when resolution is set to type DNS
-  // and no endpoints are specified, the host field will be used as the DNS name
-  // of the endpoint to route traffic to.
-  repeated string hosts = 1;
+  // **NOTE 1:** When resolution is set to type DNS and no endpoints
+  // are specified, the host field will be used as the DNS name of the
+  // endpoint to route traffic to.
+  //
+  // **NOTE 2:** If the hostname matches with the name of a service
+  // from another service registry such as Kubernetes that also
+  // supplies its own set of endpoints, the ServiceEntry will be
+  // treated as a decorator of the existing Kubernetes
+  // service. Properties in the service entry will be added to the
+  // Kubernetes service if applicable. Currently, only the following
+  // additional properties will be considered by `istiod`:
+  //
+  // 1. subjectAltNames: In addition to verifying the SANs of the
+  //    service accounts associated with the pods of the service, the
+  //    SANs specified here will also be verified.
+  //
+  repeated string hosts = 1 [(google.api.field_behavior) = REQUIRED];
 
   // The virtual IP addresses associated with the service. Could be CIDR
   // prefix. For HTTP traffic, generated route configurations will include http route
@@ -366,10 +479,10 @@ message ServiceEntry {
   // addresses are not supported in this field.
   repeated string addresses = 2;
 
-  // REQUIRED. The ports associated with the external service. If the
+  // The ports associated with the external service. If the
   // Endpoints are Unix domain socket addresses, there must be exactly one
   // port.
-  repeated Port ports = 3;
+  repeated ServicePort ports = 3;
 
   // Location specifies whether the service is part of Istio mesh or
   // outside the mesh.  Location determines the behavior of several
@@ -416,74 +529,44 @@ message ServiceEntry {
     STATIC = 1;
 
     // Attempt to resolve the IP address by querying the ambient DNS,
-    // during request processing. If no endpoints are specified, the proxy
+    // asynchronously. If no endpoints are specified, the proxy
     // will resolve the DNS address specified in the hosts field, if
     // wildcards are not used. If endpoints are specified, the DNS
     // addresses specified in the endpoints will be resolved to determine
     // the destination IP address.  DNS resolution cannot be used with Unix
     // domain socket endpoints.
     DNS = 2;
+
+    // Attempt to resolve the IP address by querying the ambient DNS,
+    // asynchronously. Unlike `DNS`, `DNS_ROUND_ROBIN` only uses the
+    // first IP address returned when a new connection needs to be initiated
+    // without relying on complete results of DNS resolution, and connections
+    // made to hosts will be retained even if DNS records change frequently
+    // eliminating draining connection pools and connection cycling.
+    // This is best suited for large web scale services that
+    // must be accessed via DNS. The proxy will resolve the DNS address
+    // specified in the hosts field, if wildcards are not used. DNS resolution
+    // cannot be used with Unix domain socket endpoints.
+    DNS_ROUND_ROBIN = 3;
   };
 
-  // REQUIRED: Service discovery mode for the hosts. Care must be taken
+  // Service resolution mode for the hosts. Care must be taken
   // when setting the resolution mode to NONE for a TCP port without
   // accompanying IP addresses. In such cases, traffic to any IP on
-  // said port will be allowed (i.e. 0.0.0.0:<port>).
+  // said port will be allowed (i.e. `0.0.0.0:<port>`).
   Resolution resolution = 5;
 
-  // Endpoint defines a network address (IP or hostname) associated with
-  // the mesh service.
-  message Endpoint {
-    // REQUIRED: Address associated with the network endpoint without the
-    // port.  Domain names can be used if and only if the resolution is set
-    // to DNS, and must be fully-qualified without wildcards. Use the form
-    // unix:///absolute/path/to/socket for Unix domain socket endpoints.
-    string address = 1;
+  // One or more endpoints associated with the service. Only one of
+  // `endpoints` or `workloadSelector` can be specified.
+  repeated WorkloadEntry endpoints = 6;
 
-    // Set of ports associated with the endpoint. The ports must be
-    // associated with a port name that was declared as part of the
-    // service. Do not use for `unix://` addresses.
-    map<string, uint32> ports = 2;
-
-    // One or more labels associated with the endpoint.
-    map<string, string> labels = 3;
-
-    // Network enables Istio to group endpoints resident in the same L3
-    // domain/network. All endpoints in the same network are assumed to be
-    // directly reachable from one another. When endpoints in different
-    // networks cannot reach each other directly, an Istio Gateway can be
-    // used to establish connectivity (usually using the
-    // AUTO_PASSTHROUGH mode in a Gateway Server). This is
-    // an advanced configuration used typically for spanning an Istio mesh
-    // over multiple clusters.
-    string network = 4;
-
-    // The locality associated with the endpoint. A locality corresponds
-    // to a failure domain (e.g., country/region/zone). Arbitrary failure
-    // domain hierarchies can be represented by separating each
-    // encapsulating failure domain by /. For example, the locality of an
-    // an endpoint in US, in US-East-1 region, within availability zone
-    // az-1, in data center rack r11 can be represented as
-    // us/us-east-1/az-1/r11. Istio will configure the sidecar to route to
-    // endpoints within the same locality as the sidecar. If none of the
-    // endpoints in the locality are available, endpoints parent locality
-    // (but within the same network ID) will be chosen. For example, if
-    // there are two endpoints in same network (networkID "n1"), say e1
-    // with locality us/us-east-1/az-1/r11 and e2 with locality
-    // us/us-east-1/az-2/r12, a sidecar from us/us-east-1/az-1/r11 locality
-    // will prefer e1 from the same locality over e2 from a different
-    // locality. Endpoint e2 could be the IP associated with a gateway
-    // (that bridges networks n1 and n2), or the IP associated with a
-    // standard service endpoint.
-    string locality = 5;
-
-    // The load balancing weight associated with the endpoint. Endpoints
-    // with higher weights will receive proportionally higher traffic.
-    uint32 weight = 6;
-  };
-
-  // One or more endpoints associated with the service.
-  repeated Endpoint endpoints = 6;
+  // Applicable only for MESH_INTERNAL services. Only one of
+  // `endpoints` or `workloadSelector` can be specified. Selects one
+  // or more Kubernetes pods or VM workloads (specified using
+  // `WorkloadEntry`) based on their labels. The `WorkloadEntry` object
+  // representing the VMs should be defined in the same namespace as
+  // the ServiceEntry.
+  WorkloadSelector workload_selector = 9;
 
   // A list of namespaces to which this service is exported. Exporting a service
   // allows it to be used by sidecars, gateways and virtual services defined in
@@ -501,15 +584,67 @@ message ServiceEntry {
   // For a Kubernetes Service, the equivalent effect can be achieved by setting
   // the annotation "networking.istio.io/exportTo" to a comma-separated list
   // of namespace names.
-  //
-  // NOTE: in the current release, the `exportTo` value is restricted to
-  // "." or "*" (i.e., the current namespace or all namespaces).
   repeated string export_to = 7;
 
-  // The list of subject alternate names allowed for workload instances that
-  // implement this service. This information is used to enforce
-  // [secure-naming](https://istio.io/docs/concepts/security/#secure-naming).
-  // If specified, the proxy will verify that the server
-  // certificate's subject alternate name matches one of the specified values.
+  // If specified, the proxy will verify that the server certificate's
+  // subject alternate name matches one of the specified values.
+  //
+  // NOTE: When using the workloadEntry with workloadSelectors, the
+  // service account specified in the workloadEntry will also be used
+  // to derive the additional subject alternate names that should be
+  // verified.
   repeated string subject_alt_names = 8;
 }
+
+// ServicePort describes the properties of a specific port of a service.
+message ServicePort {
+  // A valid non-negative integer port number.
+  uint32 number = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // The protocol exposed on the port.
+  // MUST BE one of HTTP|HTTPS|GRPC|HTTP2|MONGO|TCP|TLS.
+  // TLS implies the connection will be routed based on the SNI header to
+  // the destination without terminating the TLS connection.
+  string protocol = 2;
+
+  // Label assigned to the port.
+  string name = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // The port number on the endpoint where the traffic will be
+  // received. If unset, default to `number`.
+  uint32 target_port = 4;
+}
+
+message ServiceEntryStatus {
+  // Current service state of ServiceEntry.
+  // More info: https://istio.io/docs/reference/config/config-status/
+  // +optional
+  // +patchMergeKey=type
+  // +patchStrategy=merge
+  repeated meta.v1alpha1.IstioCondition conditions = 1;
+
+  // Includes any errors or warnings detected by Istio's analyzers.
+  // +optional
+  // +patchMergeKey=type
+  // +patchStrategy=merge
+  repeated analysis.v1alpha1.AnalysisMessageBase validation_messages = 2;
+
+  // Resource Generation to which the Reconciled Condition refers.
+  // When this value is not equal to the object's metadata generation, reconciled condition  calculation for the current
+  // generation is still in progress.  See https://istio.io/latest/docs/reference/config/config-status/ for more info.
+  // +optional
+  int64 observed_generation = 3;
+
+  // Above this is just a copy of the common IstioStatus since proto cannot embed an anonymous message whole cloth
+
+  // List of addresses which were assigned to this ServiceEntry.
+  // +optional
+  repeated ServiceEntryAddress addresses = 10;
+}
+
+// minor abstraction to allow for adding hostnames if relevant
+message ServiceEntryAddress{
+  // Value is the address (192.168.0.2)
+  string value = 1;
+}
+
