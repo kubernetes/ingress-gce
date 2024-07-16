@@ -102,13 +102,13 @@ func diffIAP(desired, curr *composite.BackendService, logger klog.Logger) bool {
 // switchingToDefault returns an error if the IAP configuration is switching from credentials to default.
 // TODO: remove validation when the IAP API supports this transition
 func switchingToDefault(desired, curr *composite.BackendService) error {
-	// EnsureIAP (only caller for switchingToDefault) is validates that desired is not empty,
-	// therefore only check if curr is nil.
-	if curr.Iap == nil {
+	if !desired.Iap.Enabled {
 		return nil
 	}
 
-	if !desired.Iap.Enabled {
+	// EnsureIAP (only caller for switchingToDefault) is validates that desired is not empty,
+	// therefore only check if curr is nil.
+	if curr.Iap == nil {
 		return nil
 	}
 
