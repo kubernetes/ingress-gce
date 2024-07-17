@@ -21,6 +21,7 @@ import (
 	"reflect"
 	"strconv"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	apiv1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
@@ -28,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/annotations"
+	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -381,4 +383,19 @@ func NodeFilterForNetworkEndpointType(negType NetworkEndpointType) zonegetter.Fi
 		return zonegetter.CandidateAndUnreadyNodesFilter
 	}
 	return zonegetter.CandidateNodesFilter
+}
+
+// NegInfo holds the identifying information regarding a NEG.
+type NegInfo struct {
+	Name string
+	Zone string
+}
+
+// NegInfoFromNegRef returns NegInfo by parsing the NEG selflink.
+func NegInfoFromNegRef(negRef negv1beta1.NegObjectReference) (NegInfo, error) {
+	resourceID, err := cloud.ParseResourceURL(negRef.SelfLink)
+	if err != nil {
+		return NegInfo{}, fmt.Errorf("failed to parse selflink: %v", err)
+	}
+	return NegInfo{Name: resourceID.Key.Name, Zone: resourceID.Key.Zone}, nil
 }

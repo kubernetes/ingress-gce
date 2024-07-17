@@ -1337,11 +1337,16 @@ func TestNegObjectCrd(t *testing.T) {
 			t.Errorf("Failed to find neg")
 		}
 
-		var expectedNegObj negv1beta1.NegObjectReference
-		expectedNegObj = negv1beta1.NegObjectReference{
+		var subnetURL string
+		if networkEndpointType != negtypes.NonGCPPrivateEndpointType {
+			subnetURL = testSubnetwork
+		}
+		expectedNegObj := negv1beta1.NegObjectReference{
 			Id:                  fmt.Sprint(neg.Id),
 			SelfLink:            neg.SelfLink,
 			NetworkEndpointType: negv1beta1.NetworkEndpointType(networkEndpointType),
+			State:               negv1beta1.ActiveState,
+			SubnetURL:           subnetURL,
 		}
 
 		if negObj != expectedNegObj {
