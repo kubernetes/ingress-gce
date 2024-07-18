@@ -40,9 +40,13 @@ func EnsureIAP(sp utils.ServicePort, be *composite.BackendService, beLogger klog
 	beTemp := &composite.BackendService{}
 	applyIAPSettings(sp, beTemp)
 
-	if err := switchingToDefault(beTemp, be); err != nil {
-		beLogger.Error(err, "Errored updating IAP settings")
-		return false, fmt.Errorf("Errored updating IAP Settings for service %s/%s: %w", sp.ID.Service.Namespace, sp.ID.Service.Name, err)
+	// It's possible that a user could remove the credentials when
+	// disabling the IAP, so only check switchingToDefault when it's enabled.
+	if beTemp.Iap.Enabled {
+		if err := switchingToDefault(beTemp, be); err != nil {
+			beLogger.Error(err, "Errored updating IAP settings")
+			return false, fmt.Errorf("Errored updating IAP Settings for service %s/%s: %w", sp.ID.Service.Namespace, sp.ID.Service.Name, err)
+		}
 	}
 
 	if diffIAP(beTemp, be, beLogger) {
@@ -102,10 +106,6 @@ func diffIAP(desired, curr *composite.BackendService, logger klog.Logger) bool {
 // switchingToDefault returns an error if the IAP configuration is switching from credentials to default.
 // TODO: remove validation when the IAP API supports this transition
 func switchingToDefault(desired, curr *composite.BackendService) error {
-	if !desired.Iap.Enabled {
-		return nil
-	}
-
 	// EnsureIAP (only caller for switchingToDefault) is validates that desired is not empty,
 	// therefore only check if curr is nil.
 	if curr.Iap == nil {
