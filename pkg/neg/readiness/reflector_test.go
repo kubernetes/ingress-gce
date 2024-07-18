@@ -78,16 +78,18 @@ func newTestReadinessReflector(testContext *negtypes.TestContext, enableMultiSub
 func TestSyncPod(t *testing.T) {
 	t.Parallel()
 	fakeContext := negtypes.NewTestContext()
-	fakeClock := clocktesting.NewFakeClock(time.Now())
-	now := metav1.NewTime(fakeClock.Now()).Rfc3339Copy()
 	client := fakeContext.KubeClient
 	podLister := fakeContext.PodInformer.GetIndexer()
 	nodeLister := fakeContext.NodeInformer.GetIndexer()
-	nodeName := "instance1"
-
+	fakeClock := clocktesting.NewFakeClock(time.Now())
 	testReadinessReflector := newTestReadinessReflector(fakeContext, false)
 	testReadinessReflector.clock = fakeClock
 	testlookUp := testReadinessReflector.lookup.(*fakeLookUp)
+
+	nodeName := "instance1"
+	now := metav1.NewTime(fakeClock.Now()).Rfc3339Copy()
+	// Set creation time to be some time in the past so it exceeds unreadyTimeout.
+	timeoutTime := metav1.NewTime(fakeClock.Now().Add(-unreadyTimeout)).Rfc3339Copy()
 
 	nodeLister.Add(&v1.Node{
 		ObjectMeta: metav1.ObjectMeta{
@@ -121,6 +123,7 @@ func TestSyncPod(t *testing.T) {
 			desc: "no need to update when pod does not have neg readiness gate",
 			mutateState: func(testlookUp *fakeLookUp) {
 				pod := generatePod(testServiceNamespace, "pod1", false, true, true)
+				pod.CreationTimestamp = now
 				podLister.Add(pod)
 				client.CoreV1().Pods(testServiceNamespace).Create(context.TODO(), pod, metav1.CreateOptions{})
 				testlookUp.readinessGateEnabledNegs = []string{}
@@ -154,6 +157,7 @@ func TestSyncPod(t *testing.T) {
 			desc: "no need to update 2 when pod already has neg condition status == true",
 			mutateState: func(testlookUp *fakeLookUp) {
 				pod := generatePod(testServiceNamespace, "pod2", true, true, true)
+				pod.CreationTimestamp = now
 				podLister.Add(pod)
 				client.CoreV1().Pods(testServiceNamespace).Create(context.TODO(), pod, metav1.CreateOptions{})
 				testlookUp.readinessGateEnabledNegs = []string{}
@@ -190,6 +194,7 @@ func TestSyncPod(t *testing.T) {
 			desc: "need to update pod but there is no Negs associated",
 			mutateState: func(testlookUp *fakeLookUp) {
 				pod := generatePod(testServiceNamespace, "pod3", true, false, false)
+				pod.CreationTimestamp = now
 				podLister.Add(pod)
 				client.CoreV1().Pods(testServiceNamespace).Create(context.TODO(), pod, metav1.CreateOptions{})
 				testlookUp.readinessGateEnabledNegs = []string{}
@@ -237,9 +242,8 @@ func TestSyncPod(t *testing.T) {
 			expectExists: true,
 			expectPod: &v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Namespace:         testServiceNamespace,
-					Name:              "pod4",
-					CreationTimestamp: now,
+					Namespace: testServiceNamespace,
+					Name:      "pod4",
 					Labels: map[string]string{
 						utils.LabelNodeSubnet: defaultTestSubnet,
 					},
@@ -265,6 +269,7 @@ func TestSyncPod(t *testing.T) {
 			desc: "need to update pod: pod is not attached to health check",
 			mutateState: func(testlookUp *fakeLookUp) {
 				pod := generatePod(testServiceNamespace, "pod5", true, false, false)
+				pod.CreationTimestamp = now
 				podLister.Add(pod)
 				client.CoreV1().Pods(testServiceNamespace).Create(context.TODO(), pod, metav1.CreateOptions{})
 				testlookUp.readinessGateEnabledNegs = []string{"neg1", "neg2"}
@@ -303,20 +308,18 @@ func TestSyncPod(t *testing.T) {
 			desc: "timeout waiting for endpoint to become healthy in NEGs",
 			mutateState: func(testlookUp *fakeLookUp) {
 				pod := generatePod(testServiceNamespace, "pod6", true, false, false)
-				pod.CreationTimestamp = now
+				pod.CreationTimestamp = timeoutTime
 				podLister.Add(pod)
 				client.CoreV1().Pods(testServiceNamespace).Create(context.TODO(), pod, metav1.CreateOptions{})
 				testlookUp.readinessGateEnabledNegs = []string{"neg1", "neg2"}
-				fakeClock.Step(unreadyTimeout)
 			},
 			inputKey:     keyFunc(testServiceNamespace, "pod6"),
 			inputNeg:     nil,
 			expectExists: true,
 			expectPod: &v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Namespace:         testServiceNamespace,
-					Name:              "pod6",
-					CreationTimestamp: now,
+					Namespace: testServiceNamespace,
+					Name:      "pod6",
 					Labels: map[string]string{
 						utils.LabelNodeSubnet: defaultTestSubnet,
 					},
@@ -333,8 +336,7 @@ func TestSyncPod(t *testing.T) {
 							Type:    shared.NegReadinessGate,
 							Reason:  negReadyTimedOutReason,
 							Status:  v1.ConditionTrue,
-							Message: fmt.Sprintf("Timeout waiting for pod to become healthy in at least one of the NEG(s): %v. Marking condition %q to True.", []string{"neg1", "neg2"}, shared.NegReadinessGate),
-						},
+							Message: fmt.Sprintf("Timeout waiting for pod to become healthy in at least one of the NEG(s): %v. Marking condition %q to True.", []string{"neg1", "neg2"}, shared.NegReadinessGate)},
 					},
 				},
 			},
@@ -343,6 +345,7 @@ func TestSyncPod(t *testing.T) {
 			desc: "need to update pod: pod is healthy in NEG ",
 			mutateState: func(testlookUp *fakeLookUp) {
 				pod := generatePod(testServiceNamespace, "pod7", true, false, false)
+				pod.CreationTimestamp = now
 				podLister.Add(pod)
 				client.CoreV1().Pods(testServiceNamespace).Create(context.TODO(), pod, metav1.CreateOptions{})
 				testlookUp.readinessGateEnabledNegs = []string{"neg1", "neg2"}
@@ -407,14 +410,18 @@ func TestSyncPod(t *testing.T) {
 func TestSyncPodMultipleSubnets(t *testing.T) {
 	t.Parallel()
 	fakeContext := negtypes.NewTestContext()
-	fakeClock := clocktesting.NewFakeClock(time.Now())
 	client := fakeContext.KubeClient
 	podLister := fakeContext.PodInformer.GetIndexer()
-
+	fakeClock := clocktesting.NewFakeClock(time.Now())
 	testReadinessReflector := newTestReadinessReflector(fakeContext, true)
 	testReadinessReflector.clock = fakeClock
 	testlookUp := testReadinessReflector.lookup.(*fakeLookUp)
 	testlookUp.readinessGateEnabledNegs = []string{"neg1", "neg2"}
+
+	now := metav1.NewTime(fakeClock.Now()).Rfc3339Copy()
+	// Set creation time to be some time in the past so it exceeds unreadyTimeout.
+	timeoutTime := metav1.NewTime(fakeClock.Now().Add(-unreadyTimeout)).Rfc3339Copy()
+	nodeMissingPod := "node-missing-pod"
 
 	zonegetter.PopulateFakeNodeInformer(fakeContext.NodeInformer, true)
 
@@ -428,46 +435,11 @@ func TestSyncPodMultipleSubnets(t *testing.T) {
 		expectPod           *v1.Pod
 	}{
 		{
-			desc: "need to update pod: pod belongs to a node without PodCIDR",
-			mutateState: func(testlookUp *fakeLookUp) {
-				pod := generatePod(testServiceNamespace, negtypes.TestNoPodCIDRPod, true, false, false)
-				pod.Spec.NodeName = negtypes.TestNoPodCIDRInstance
-				podLister.Add(pod)
-				client.CoreV1().Pods(testServiceNamespace).Create(context.TODO(), pod, metav1.CreateOptions{})
-			},
-			inputKey: keyFunc(testServiceNamespace, negtypes.TestNoPodCIDRPod),
-			inputNeg: nil,
-			expectPod: &v1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: testServiceNamespace,
-					Name:      negtypes.TestNoPodCIDRPod,
-					Labels: map[string]string{
-						utils.LabelNodeSubnet: defaultTestSubnet,
-					},
-				},
-				Spec: v1.PodSpec{
-					NodeName: negtypes.TestNoPodCIDRInstance,
-					ReadinessGates: []v1.PodReadinessGate{
-						{ConditionType: shared.NegReadinessGate},
-					},
-				},
-				Status: v1.PodStatus{
-					Conditions: []v1.PodCondition{
-						{
-							Type:    shared.NegReadinessGate,
-							Status:  v1.ConditionTrue,
-							Reason:  negReadyReason,
-							Message: fmt.Sprintf("Pod belongs to a node in non-default subnet. Marking condition %q to True.", shared.NegReadinessGate),
-						},
-					},
-				},
-			},
-		},
-		{
 			desc: "need to update pod: pod belongs to a node in non-default subnet",
 			mutateState: func(testlookUp *fakeLookUp) {
 				pod := generatePod(testServiceNamespace, negtypes.TestNonDefaultSubnetPod, true, false, false)
 				pod.Spec.NodeName = negtypes.TestNonDefaultSubnetInstance
+				pod.CreationTimestamp = now
 				podLister.Add(pod)
 				client.CoreV1().Pods(testServiceNamespace).Create(context.TODO(), pod, metav1.CreateOptions{})
 			},
@@ -495,6 +467,150 @@ func TestSyncPodMultipleSubnets(t *testing.T) {
 							Reason:  negReadyReason,
 							Message: fmt.Sprintf("Pod belongs to a node in non-default subnet. Marking condition %q to True.", shared.NegReadinessGate),
 						},
+					},
+				},
+			},
+		},
+		{
+			desc: "need to update pod: pod belongs to a node without PodCIDR, timeout not reached yet",
+			mutateState: func(testlookUp *fakeLookUp) {
+				pod := generatePod(testServiceNamespace, negtypes.TestNoPodCIDRPod+"-1", true, false, false)
+				pod.Spec.NodeName = negtypes.TestNoPodCIDRInstance
+				pod.CreationTimestamp = now
+				podLister.Add(pod)
+				client.CoreV1().Pods(testServiceNamespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+			},
+			inputKey: keyFunc(testServiceNamespace, negtypes.TestNoPodCIDRPod+"-1"),
+			inputNeg: nil,
+			expectPod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testServiceNamespace,
+					Name:      negtypes.TestNoPodCIDRPod + "-1",
+					Labels: map[string]string{
+						utils.LabelNodeSubnet: defaultTestSubnet,
+					},
+				},
+				Spec: v1.PodSpec{
+					NodeName: negtypes.TestNoPodCIDRInstance,
+					ReadinessGates: []v1.PodReadinessGate{
+						{ConditionType: shared.NegReadinessGate},
+					},
+				},
+				Status: v1.PodStatus{
+					Conditions: []v1.PodCondition{
+						{
+							Type:    shared.NegReadinessGate,
+							Reason:  negNotReadyReason,
+							Message: "Unable to determine if the pod is in the default subnet.",
+						},
+					},
+				},
+			},
+		},
+		{
+			desc: "need to update pod: pod belongs to a node without PodCIDR, timeout reached",
+			mutateState: func(testlookUp *fakeLookUp) {
+				pod := generatePod(testServiceNamespace, negtypes.TestNoPodCIDRPod+"-2", true, false, false)
+				pod.Spec.NodeName = negtypes.TestNoPodCIDRInstance
+				pod.CreationTimestamp = timeoutTime
+				podLister.Add(pod)
+				client.CoreV1().Pods(testServiceNamespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+			},
+			inputKey: keyFunc(testServiceNamespace, negtypes.TestNoPodCIDRPod+"-2"),
+			inputNeg: nil,
+			expectPod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testServiceNamespace,
+					Name:      negtypes.TestNoPodCIDRPod + "-2",
+					Labels: map[string]string{
+						utils.LabelNodeSubnet: defaultTestSubnet,
+					},
+				},
+				Spec: v1.PodSpec{
+					NodeName: negtypes.TestNoPodCIDRInstance,
+					ReadinessGates: []v1.PodReadinessGate{
+						{ConditionType: shared.NegReadinessGate},
+					},
+				},
+				Status: v1.PodStatus{
+					Conditions: []v1.PodCondition{
+						{
+							Type:    shared.NegReadinessGate,
+							Reason:  negReadyTimedOutReason,
+							Status:  v1.ConditionTrue,
+							Message: fmt.Sprintf("Timeout waiting for pod to become healthy in at least one of the NEG(s): %v. Marking condition %q to True.", []string{"neg1", "neg2"}, shared.NegReadinessGate)},
+					},
+				},
+			},
+		},
+		{
+			desc: "need to update pod: pod does not have nodeName specified, timeout not reached yet",
+			mutateState: func(testlookUp *fakeLookUp) {
+				pod := generatePod(testServiceNamespace, nodeMissingPod+"-1", true, false, false)
+				pod.Spec.NodeName = ""
+				pod.CreationTimestamp = now
+				podLister.Add(pod)
+				client.CoreV1().Pods(testServiceNamespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+			},
+			inputKey: keyFunc(testServiceNamespace, nodeMissingPod+"-1"),
+			inputNeg: nil,
+			expectPod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testServiceNamespace,
+					Name:      nodeMissingPod + "-1",
+					Labels: map[string]string{
+						utils.LabelNodeSubnet: defaultTestSubnet,
+					},
+				},
+				Spec: v1.PodSpec{
+					NodeName: "",
+					ReadinessGates: []v1.PodReadinessGate{
+						{ConditionType: shared.NegReadinessGate},
+					},
+				},
+				Status: v1.PodStatus{
+					Conditions: []v1.PodCondition{
+						{
+							Type:    shared.NegReadinessGate,
+							Reason:  negNotReadyReason,
+							Message: "Unable to determine the pod's node name.",
+						},
+					},
+				},
+			},
+		},
+		{
+			desc: "need to update pod: pod does not have nodeName specified, timeout reached",
+			mutateState: func(testlookUp *fakeLookUp) {
+				pod := generatePod(testServiceNamespace, nodeMissingPod+"-2", true, false, false)
+				pod.Spec.NodeName = ""
+				pod.CreationTimestamp = timeoutTime
+				podLister.Add(pod)
+				client.CoreV1().Pods(testServiceNamespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+			},
+			inputKey: keyFunc(testServiceNamespace, nodeMissingPod+"-2"),
+			inputNeg: nil,
+			expectPod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testServiceNamespace,
+					Name:      nodeMissingPod + "-2",
+					Labels: map[string]string{
+						utils.LabelNodeSubnet: defaultTestSubnet,
+					},
+				},
+				Spec: v1.PodSpec{
+					NodeName: "",
+					ReadinessGates: []v1.PodReadinessGate{
+						{ConditionType: shared.NegReadinessGate},
+					},
+				},
+				Status: v1.PodStatus{
+					Conditions: []v1.PodCondition{
+						{
+							Type:    shared.NegReadinessGate,
+							Reason:  negReadyTimedOutReason,
+							Status:  v1.ConditionTrue,
+							Message: fmt.Sprintf("Timeout waiting for pod to become healthy in at least one of the NEG(s): %v. Marking condition %q to True.", []string{"neg1", "neg2"}, shared.NegReadinessGate)},
 					},
 				},
 			},

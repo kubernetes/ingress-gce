@@ -204,13 +204,6 @@ func (r *readinessReflector) getExpectedNegCondition(pod *v1.Pod, neg, backendSe
 		return expectedCondition
 	}
 
-	if r.enableMultiSubnetCluster && !r.zoneGetter.IsDefaultSubnetNode(pod.Spec.NodeName, r.logger) {
-		expectedCondition.Status = v1.ConditionTrue
-		expectedCondition.Reason = negReadyReason
-		expectedCondition.Message = fmt.Sprintf("Pod belongs to a node in non-default subnet. Marking condition %q to True.", shared.NegReadinessGate)
-		return expectedCondition
-	}
-
 	negs := r.lookup.ReadinessGateEnabledNegs(pod.Namespace, pod.Labels)
 	// mark pod as ready if it belongs to no NEGs
 	if len(negs) == 0 {
@@ -222,10 +215,33 @@ func (r *readinessReflector) getExpectedNegCondition(pod *v1.Pod, neg, backendSe
 
 	// check if the pod has been waiting for the endpoint to show up as Healthy in NEG for too long
 	if r.clock.Now().After(pod.CreationTimestamp.Add(unreadyTimeout)) {
+		r.logger.Info(pod.Name, "now", r.clock.Now(), "pod time", pod.CreationTimestamp)
 		expectedCondition.Status = v1.ConditionTrue
 		expectedCondition.Reason = negReadyTimedOutReason
 		expectedCondition.Message = fmt.Sprintf("Timeout waiting for pod to become healthy in at least one of the NEG(s): %v. Marking condition %q to True.", negs, shared.NegReadinessGate)
 		return expectedCondition
+	}
+
+	if r.enableMultiSubnetCluster {
+		if pod.Spec.NodeName == "" {
+			r.logger.Error(nil, "Unable to determine the pod's node name.", "podNamespace", pod.Namespace, "podName", pod.Name)
+			expectedCondition.Reason = negNotReadyReason
+			expectedCondition.Message = "Unable to determine the pod's node name."
+			return expectedCondition
+		}
+		isInDefaultSubnet, err := r.zoneGetter.IsDefaultSubnetNode(pod.Spec.NodeName, r.logger)
+		if err != nil {
+			r.logger.Error(err, "Unable to determine if the pod is in the default subnet.", "podNamespace", pod.Namespace, "podName", pod.Name)
+			expectedCondition.Reason = negNotReadyReason
+			expectedCondition.Message = "Unable to determine if the pod is in the default subnet."
+			return expectedCondition
+		}
+		if !isInDefaultSubnet {
+			expectedCondition.Status = v1.ConditionTrue
+			expectedCondition.Reason = negReadyReason
+			expectedCondition.Message = fmt.Sprintf("Pod belongs to a node in non-default subnet. Marking condition %q to True.", shared.NegReadinessGate)
+			return expectedCondition
+		}
 	}
 
 	// do not patch condition status in this case to prevent race condition:
