@@ -50,6 +50,9 @@ const (
 	// addressAlreadyInUseMessageInternal is the error message string returned by the compute API
 	// when creating an internal forwarding rule that uses a conflicting IP address.
 	addressAlreadyInUseMessageInternal = "IP_IN_USE_BY_ANOTHER_RESOURCE"
+
+	// Label to be added to all forwarding rules to indicate the FR was created throughGKE
+	gkeLabel = "goog-gke-node"
 )
 
 func (l7 *L7) checkHttpForwardingRule() (err error) {
@@ -98,11 +101,13 @@ func (l7 *L7) checkForwardingRule(protocol namer.NamerProtocol, name, proxyLink,
 		return nil, err
 	}
 
+	fwLabels := map[string]string{gkeLabel: ""}
+
 	isL7ILB := utils.IsGCEL7ILBIngress(l7.runtimeInfo.Ingress)
 	isL7XLBRegional := utils.IsGCEL7XLBRegionalIngress(&l7.ingress)
 	tr := translator.NewTranslator(isL7ILB, isL7XLBRegional, l7.namer)
 	env := &translator.Env{VIP: ip, Network: l7.cloud.NetworkURL(), Subnetwork: l7.cloud.SubnetworkURL()}
-	fr := tr.ToCompositeForwardingRule(env, protocol, version, proxyLink, description, l7.runtimeInfo.StaticIPSubnet)
+	fr := tr.ToCompositeForwardingRule(env, protocol, version, proxyLink, description, l7.runtimeInfo.StaticIPSubnet, fwLabels)
 
 	existing, _ = composite.GetForwardingRule(l7.cloud, key, version, l7.logger)
 	if existing != nil && (fr.IPAddress != "" && existing.IPAddress != fr.IPAddress || existing.PortRange != fr.PortRange) {
@@ -159,6 +164,17 @@ func (l7 *L7) checkForwardingRule(protocol namer.NamerProtocol, name, proxyLink,
 			return nil, err
 		}
 		if err := composite.SetProxyForForwardingRule(l7.cloud, key, existing, proxyLink, l7.logger); err != nil {
+			return nil, err
+		}
+	}
+	labels := existing.Labels
+	if labels == nil {
+		labels = make(map[string]string)
+	}
+	// Set GKE revenue label on the forwarding rule.
+	if _, ok := existing.Labels[gkeLabel]; !ok {
+		labels[gkeLabel] = ""
+		if err := composite.SetLabelsForwardingRule(l7.cloud, key, fr, labels, l7.logger); err != nil {
 			return nil, err
 		}
 	}

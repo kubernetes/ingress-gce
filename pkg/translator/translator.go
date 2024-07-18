@@ -262,7 +262,7 @@ const (
 )
 
 // ToCompositeForwardingRule returns a composite.ForwardingRule of type HTTP or HTTPS.
-func (t *Translator) ToCompositeForwardingRule(env *Env, protocol namer.NamerProtocol, version meta.Version, proxyLink, description, fwSubnet string) *composite.ForwardingRule {
+func (t *Translator) ToCompositeForwardingRule(env *Env, protocol namer.NamerProtocol, version meta.Version, proxyLink, description, fwSubnet string, labels map[string]string) *composite.ForwardingRule {
 	var portRange string
 	if protocol == namer.HTTPProtocol {
 		portRange = httpDefaultPortRange
@@ -278,6 +278,7 @@ func (t *Translator) ToCompositeForwardingRule(env *Env, protocol namer.NamerPro
 		IPProtocol:  "TCP",
 		Description: description,
 		Version:     version,
+		Labels:      labels,
 	}
 
 	if t.IsL7ILB {

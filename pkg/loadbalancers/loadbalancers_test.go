@@ -121,6 +121,7 @@ func newTestJig(t *testing.T) *testJig {
 		return nil
 	}
 	mockGCE.MockGlobalForwardingRules.InsertHook = InsertGlobalForwardingRuleHook
+	mockGCE.MockGlobalForwardingRules.SetLabelsHook = SetLabelsHook
 
 	ing := newIngress()
 	feNamer := namer_util.NewFrontendNamerFactory(namer, "", klog.TODO()).Namer(ing)
@@ -181,6 +182,72 @@ func TestCreateHTTPLoadBalancer(t *testing.T) {
 		t.Fatalf("Expected l7 not created, err: %v", err)
 	}
 	verifyHTTPForwardingRuleAndProxyLinks(t, j, l7, "")
+}
+
+func TestUpdateHTTPLoadBalancer(t *testing.T) {
+	for _, tc := range []struct {
+		desc   string
+		labels map[string]string
+	}{
+		{
+			desc:   "No label added in the forwarding rule",
+			labels: nil,
+		},
+		{
+			desc: "Other label added in the forwarding rule",
+			labels: map[string]string{
+				"foo": "bar",
+			},
+		},
+		{
+			desc: "GKE label added in the forwarding rule",
+			labels: map[string]string{
+				"goog-gke-node": "",
+			},
+		},
+	} {
+		j := newTestJig(t)
+
+		key := &meta.Key{
+			Name:   "k8s-fw-namespace1-test--uid1",
+			Zone:   "",
+			Region: "",
+		}
+
+		fr := &composite.ForwardingRule{
+			Version:    "ga",
+			IPProtocol: "TCP",
+			Name:       "k8s-fw-namespace1-test--uid1",
+			PortRange:  "80-80",
+			Target:     "https://www.googleapis.com/compute/v1/projects/test-project/global/targetHttpProxies/k8s-tp-namespace1-test--uid1",
+			Labels:     tc.labels,
+		}
+
+		if err := composite.CreateForwardingRule(j.fakeGCE, key, fr, j.pool.logger); err != nil {
+			t.Fatalf("Failed to create forwarding rule, err: %v", err)
+		}
+
+		gceUrlMap := utils.NewGCEURLMap(klog.TODO())
+		gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
+		lbInfo := &L7RuntimeInfo{
+			AllowHTTP: true,
+			UrlMap:    gceUrlMap,
+			Ingress:   newIngress(),
+		}
+		l7, err := j.pool.Ensure(lbInfo)
+		if err != nil || l7 == nil {
+			t.Fatalf("Expected l7 not created, err: %v", err)
+		}
+		fr = getForwardingRule(t, j, l7)
+		if _, ok := fr.Labels["goog-gke-node"]; !ok {
+			t.Errorf("desc: %q, no GKE revenue label found in test case", tc.desc)
+		}
+		for key := range tc.labels {
+			if _, ok := fr.Labels[key]; !ok {
+				t.Errorf("desc: %q, previous label %q not found", key, tc.desc)
+			}
+		}
+	}
 }
 
 func TestCreateHTTPILBLoadBalancer(t *testing.T) {
@@ -366,6 +433,13 @@ func verifyHTTPSForwardingRuleAndProxyLinks(t *testing.T, j *testJig, l7 *L7) {
 	if fws.Description == "" {
 		t.Errorf("fws.Description not set; expected it to be")
 	}
+	if len(fws.Labels) == 0 {
+		t.Errorf("fws.Labels are empty; expected gke label")
+	} else {
+		if _, ok := fws.Labels[gkeLabel]; !ok {
+			t.Errorf("fws.Labels are non-empty but does not contain the gke label")
+		}
+	}
 }
 
 func verifyHTTPForwardingRuleAndProxyLinks(t *testing.T, j *testJig, l7 *L7, ip string) {
@@ -403,6 +477,31 @@ func verifyHTTPForwardingRuleAndProxyLinks(t *testing.T, j *testJig, l7 *L7, ip 
 			t.Fatalf("fws.IPAddress = %q, want %q", fws.IPAddress, ip)
 		}
 	}
+	if len(fws.Labels) == 0 {
+		t.Errorf("fws.Labels are empty; expected revenue label")
+	} else {
+		if _, ok := fws.Labels[gkeLabel]; !ok {
+			t.Errorf("fws.Labels are non-empty but does not contain the revenue label")
+		}
+	}
+}
+
+func getForwardingRule(t *testing.T, j *testJig, l7 *L7) *composite.ForwardingRule {
+	t.Helper()
+
+	versions := l7.Versions()
+	key, err := composite.CreateKey(j.fakeGCE, l7.namer.UrlMap(), l7.scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fwName := l7.namer.ForwardingRule(namer_util.HTTPProtocol)
+	key.Name = fwName
+	fws, err := composite.GetForwardingRule(j.fakeGCE, key, versions.ForwardingRule, klog.TODO())
+	if err != nil {
+		t.Fatalf("j.fakeGCE.GetGlobalForwardingRule(%q) = _, %v, want nil", fwName, err)
+	}
+	return fws
 }
 
 // Tests that a certificate is created from the provided Key/Cert combo
