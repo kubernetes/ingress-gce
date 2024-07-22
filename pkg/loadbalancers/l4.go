@@ -94,7 +94,7 @@ func NewL4ILBSyncResult(syncType string, startTime time.Time, svc *corev1.Servic
 		StartTime:   startTime,
 		SyncType:    syncType,
 		// Internal Load Balancer doesn't support strong session affinity (passing `false` all along)
-		MetricsState: metrics.InitServiceMetricsState(svc, &startTime, isMultinetService, enabledStrongSessionAffinity, isWeightedLBPodsPerNode),
+		MetricsState: metrics.InitServiceMetricsState(svc, &startTime, isMultinetService, enabledStrongSessionAffinity, isWeightedLBPodsPerNode, metrics.L4BackendTypeNEG),
 	}
 	return result
 }
