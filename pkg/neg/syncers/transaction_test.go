@@ -1159,7 +1159,8 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 				ServiceName: "service-2",
 				Port:        "80",
 			}.String(),
-			crStatusPopulated:     false,
+			// This indicate a different syncer is owning the CR, and has already populated NEG CR Status with valid content.
+			crStatusPopulated:     true,
 			expectErr:             true,
 			expectNoopOnNegStatus: true,
 		},
@@ -1172,7 +1173,8 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 				ServiceName: testServiceName,
 				Port:        "81",
 			}.String(),
-			crStatusPopulated:     false,
+			// This indicate a different syncer is owning the CR, and has already populated NEG CR Status with valid content.
+			crStatusPopulated:     true,
 			expectErr:             true,
 			expectNoopOnNegStatus: true,
 		},
@@ -1281,6 +1283,9 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 			}
 			if tc.expectErr && !tc.expectNoopOnNegStatus {
 				checkCondition(t, negCR.Status.Conditions, negv1beta1.Initialized, creationTS, corev1.ConditionFalse, true)
+			}
+			if tc.expectErr && tc.expectNoopOnNegStatus {
+				checkCondition(t, negCR.Status.Conditions, negv1beta1.Initialized, creationTS, corev1.ConditionTrue, false)
 			}
 			if !tc.expectErr && tc.crStatusPopulated {
 				checkCondition(t, negCR.Status.Conditions, negv1beta1.Initialized, creationTS, corev1.ConditionTrue, false)
