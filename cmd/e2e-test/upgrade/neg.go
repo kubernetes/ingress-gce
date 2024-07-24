@@ -38,78 +38,24 @@ var (
 	expectedNegAttrs  = map[string]string{"80": "", "443": ""}
 )
 
-// StandaloneNeg implements e2e.UpgradeTest interface
-type StandaloneNeg struct {
+// StandaloneNEGWithSvcNEG implements e2e.UpgradeTest interface
+type StandaloneNEGWithSvcNEG struct {
 	t         *testing.T
 	s         *e2e.Sandbox
 	framework *e2e.Framework
 }
 
-func NewStandaloneNegUpgradeTest() e2e.UpgradeTest {
-	return &StandaloneNeg{}
+func NewStandaloneNEGWithSvcNEGUpgradeTest() e2e.UpgradeTest {
+	return &StandaloneNEGWithSvcNEG{}
 }
 
 // Name implements e2e.UpgradeTest.Init.
-func (sn *StandaloneNeg) Name() string {
-	return "StandaloneNegUpgrade"
+func (n *StandaloneNEGWithSvcNEG) Name() string {
+	return "StandaloneNEGWithSvcNEGUpgrade"
 }
 
 // Init implements e2e.UpgradeTest.Init.
-func (sn *StandaloneNeg) Init(t *testing.T, s *e2e.Sandbox, framework *e2e.Framework) error {
-	sn.t = t
-	sn.s = s
-	sn.framework = framework
-	return nil
-}
-
-// PreUpgrade implements e2e.UpgradeTest.PreUpgrade.
-func (sn *StandaloneNeg) PreUpgrade() error {
-	svcAnnotations := map[string]string{
-		annotations.NEGAnnotationKey: negAnnotation.String(),
-	}
-	_, err := e2e.EnsureEchoService(sn.s, svcName, svcAnnotations, v1.ServiceTypeClusterIP, 0)
-
-	if err != nil {
-		sn.t.Fatalf("error ensuring echo service: %v", err)
-	}
-	sn.t.Logf("Echo service ensured (%s/%s)", sn.s.Namespace, svcName)
-
-	negScaleAndValidate(sn.t, sn.s, sn.framework, 1)
-	negScaleAndValidate(sn.t, sn.s, sn.framework, 3)
-	return nil
-}
-
-// DuringUpgrade implements e2e.UpgradeTest.DuringUpgrade.
-func (sn *StandaloneNeg) DuringUpgrade() error {
-	return nil
-}
-
-// PostUpgrade implements e2e.UpgradeTest.PostUpgrade
-func (sn *StandaloneNeg) PostUpgrade() error {
-	negValidate(sn.t, sn.s, sn.framework, 3)
-	negScaleAndValidate(sn.t, sn.s, sn.framework, 5)
-	negScaleAndValidate(sn.t, sn.s, sn.framework, 2)
-	return nil
-}
-
-// NegCRD implements e2e.UpgradeTest interface
-type NegCRD struct {
-	t         *testing.T
-	s         *e2e.Sandbox
-	framework *e2e.Framework
-}
-
-func NewNegCRDUpgradeTest() e2e.UpgradeTest {
-	return &NegCRD{}
-}
-
-// Name implements e2e.UpgradeTest.Init.
-func (n *NegCRD) Name() string {
-	return "NegCRDUpgrade"
-}
-
-// Init implements e2e.UpgradeTest.Init.
-func (n *NegCRD) Init(t *testing.T, s *e2e.Sandbox, framework *e2e.Framework) error {
+func (n *StandaloneNEGWithSvcNEG) Init(t *testing.T, s *e2e.Sandbox, framework *e2e.Framework) error {
 	n.t = t
 	n.s = s
 	n.framework = framework
@@ -117,7 +63,7 @@ func (n *NegCRD) Init(t *testing.T, s *e2e.Sandbox, framework *e2e.Framework) er
 }
 
 // PreUpgrade implements e2e.UpgradeTest.PreUpgrade.
-func (n *NegCRD) PreUpgrade() error {
+func (n *StandaloneNEGWithSvcNEG) PreUpgrade() error {
 	svcAnnotations := map[string]string{
 		annotations.NEGAnnotationKey: negAnnotation.String(),
 	}
@@ -133,12 +79,12 @@ func (n *NegCRD) PreUpgrade() error {
 }
 
 // DuringUpgrade implements e2e.UpgradeTest.DuringUpgrade.
-func (n *NegCRD) DuringUpgrade() error {
+func (n *StandaloneNEGWithSvcNEG) DuringUpgrade() error {
 	return nil
 }
 
 // PostUpgrade implements e2e.UpgradeTest.PostUpgrade
-func (n *NegCRD) PostUpgrade() error {
+func (n *StandaloneNEGWithSvcNEG) PostUpgrade() error {
 	negValidate(n.t, n.s, n.framework, 1)
 
 	negStatus, err := e2e.WaitForNegCRs(n.s, svcName, expectedNegAttrs)
@@ -179,9 +125,9 @@ func negScaleAndValidate(t *testing.T, s *e2e.Sandbox, framework *e2e.Framework,
 // negValidate check if the NEG status annotation and the corresponding NEGs are correctly configured.
 func negValidate(t *testing.T, s *e2e.Sandbox, framework *e2e.Framework, replicas int32) {
 	// validate neg status
-	negStatus, err := e2e.WaitForNegStatus(s, svcName, expectServicePort, false)
+	negStatus, err := e2e.WaitForNegCRs(s, svcName, expectedNegAttrs)
 	if err != nil {
-		t.Fatalf("error waiting for NEG status to update: %v", err)
+		t.Fatalf("error waiting for NEG CRs to update: %v", err)
 	}
 
 	// validate neg configurations

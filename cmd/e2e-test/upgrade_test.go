@@ -28,7 +28,7 @@ func TestGenericUpgrade(t *testing.T) {
 
 	for _, test := range []e2e.UpgradeTest{
 		upgrade.NewBasicHTTPUpgradeTest(),
-		upgrade.NewStandaloneNegUpgradeTest(),
+		upgrade.NewStandaloneNEGWithSvcNEGUpgradeTest(),
 	} {
 		test := test // Capture test as we are running this in parallel.
 		runUpgradeTest(t, test)
@@ -45,12 +45,6 @@ func TestUpgradeToV1dot7(t *testing.T) {
 // Note that this test runs only when an upgrade results in enabling these features.
 func TestUpgradeToV1dot8(t *testing.T) {
 	runUpgradeTest(t, upgrade.NewV2FrontendNamerTest())
-}
-
-// TestUpgradeToV1dot10 runs upgrade tests for features that are introduced in v1.10.0.
-// Note that this test runs only when an upgrade results in enabling these features.
-func TestUpgradeToV1dot10(t *testing.T) {
-	runUpgradeTest(t, upgrade.NewNegCRDUpgradeTest())
 }
 
 // TestUpgradeToV1dot15 runs upgrade tests for features that are introduced in v1.15.0.
