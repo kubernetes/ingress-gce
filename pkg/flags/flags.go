@@ -132,6 +132,7 @@ var (
 		OverrideComputeAPIEndpoint               string
 		EnableIGMultiSubnetCluster               bool
 		EnableMultiSubnetCluster                 bool
+		EnableMultiSubnetClusterPhase1           bool
 		EnableWeightedL4ILB                      bool
 		EnableWeightedL4NetLB                    bool
 	}{
@@ -312,6 +313,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.StringVar(&F.OverrideComputeAPIEndpoint, "override-compute-api-endpoint", "", "Override endpoint that is used to communicate to GCP compute APIs.")
 	flag.BoolVar(&F.EnableIGMultiSubnetCluster, "enable-ig-multi-subnet-cluster", false, "Enable Multi Subnet support for the controllers that use Instance Group backends.")
 	flag.BoolVar(&F.EnableMultiSubnetCluster, "enable-multi-subnet-cluster", false, "Enable Multi Subnet support for all controllers that are running.")
+	flag.BoolVar(&F.EnableMultiSubnetClusterPhase1, "enable-multi-subnet-cluster-phase1", false, "Enable Phase 1 Multi Subnet support for all controllers that are running.")
 	flag.BoolVar(&F.EnableWeightedL4ILB, "enable-weighted-l4-ilb", false, "Enable Weighted Load balancing for L4 ILB.")
 	flag.BoolVar(&F.EnableWeightedL4NetLB, "enable-weighted-l4-netlb", false, "EnableWeighted Load balancing for  L4 NetLB .")
 	flag.Float32Var(&F.KubeClientQPS, "kube-client-qps", 0.0, "The QPS that the controllers' kube client should adhere to through client side throttling. If zero, client will be created with default settings.")
