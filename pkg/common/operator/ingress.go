@@ -5,6 +5,10 @@ import (
 
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
+	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
+	"k8s.io/ingress-gce/pkg/common/typed"
+	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/ingress-gce/pkg/utils"
 
 	api_v1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/networking/v1"
@@ -99,4 +103,15 @@ func (op *IngressesOperator) ReferencesFrontendConfig(feConfig *frontendconfigv1
 		}
 	}
 	return Ingresses(i)
+}
+
+// ReferencesSvcNeg returns the Ingresses that reference the NEGs in the given NEG CR.
+func (op *IngressesOperator) ReferencesSvcNeg(negCr *negv1beta1.ServiceNetworkEndpointGroup, serviceCache *typed.ServiceStore) *IngressesOperator {
+	svcName := negCr.GetLabels()[negtypes.NegCRServiceNameKey]
+	svc, exists, err := serviceCache.GetByKey(utils.ServiceKeyFunc(negCr.Namespace, svcName))
+	if err != nil || !exists {
+		return &IngressesOperator{}
+	}
+
+	return op.ReferencesService(svc)
 }
