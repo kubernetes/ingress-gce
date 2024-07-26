@@ -22,6 +22,8 @@ import (
 	"strings"
 	"time"
 
+	metrics "k8s.io/ingress-gce/pkg/instancegroups/metrics"
+
 	"google.golang.org/api/compute/v1"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/events"
@@ -339,6 +341,7 @@ func (m *manager) Sync(nodes []string) (err error) {
 
 		start := time.Now()
 		if len(removeNodes) != 0 {
+			metrics.PublishInstanceGroupRemove(len(removeNodes))
 			err = m.remove(igName, removeNodes, zone)
 			m.logger.V(2).Info("Remove finished", "name", igName, "err", err, "timeTaken", time.Now().Sub(start), "removeNodes", events.TruncatedStringList(removeNodes))
 			if err != nil {
@@ -348,6 +351,7 @@ func (m *manager) Sync(nodes []string) (err error) {
 
 		start = time.Now()
 		if len(addNodes) != 0 {
+			metrics.PublishInstanceGroupAdd(len(addNodes))
 			err = m.add(igName, addNodes, zone)
 			m.logger.V(2).Info("Add finished", "name", igName, "err", err, "timeTaken", time.Now().Sub(start), "addNodes", events.TruncatedStringList(addNodes))
 			if err != nil {
