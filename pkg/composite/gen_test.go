@@ -253,6 +253,38 @@ func TestBackendServiceFailoverPolicy(t *testing.T) {
 	}
 }
 
+func TestBackendServiceHAPolicy(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendServiceHAPolicy{})
+	alphaType := reflect.TypeOf(computealpha.BackendServiceHAPolicy{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBackendServiceHAPolicyLeader(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendServiceHAPolicyLeader{})
+	alphaType := reflect.TypeOf(computealpha.BackendServiceHAPolicyLeader{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBackendServiceHAPolicyLeaderNetworkEndpoint(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendServiceHAPolicyLeaderNetworkEndpoint{})
+	alphaType := reflect.TypeOf(computealpha.BackendServiceHAPolicyLeaderNetworkEndpoint{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBackendServiceHttpCookie(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendServiceHttpCookie{})
+	alphaType := reflect.TypeOf(computealpha.BackendServiceHttpCookie{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBackendServiceIAP(t *testing.T) {
 	compositeType := reflect.TypeOf(BackendServiceIAP{})
 	alphaType := reflect.TypeOf(computealpha.BackendServiceIAP{})
@@ -296,6 +328,22 @@ func TestBackendServiceLocalityLoadBalancingPolicyConfigPolicy(t *testing.T) {
 func TestBackendServiceLogConfig(t *testing.T) {
 	compositeType := reflect.TypeOf(BackendServiceLogConfig{})
 	alphaType := reflect.TypeOf(computealpha.BackendServiceLogConfig{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBackendServiceNetworkPassThroughLbTrafficPolicy(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendServiceNetworkPassThroughLbTrafficPolicy{})
+	alphaType := reflect.TypeOf(computealpha.BackendServiceNetworkPassThroughLbTrafficPolicy{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity{})
+	alphaType := reflect.TypeOf(computealpha.BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity{})
 	if err := typeEquality(compositeType, alphaType, true); err != nil {
 		t.Fatal(err)
 	}
@@ -508,6 +556,14 @@ func TestForwardingRuleServiceDirectoryRegistration(t *testing.T) {
 func TestGRPCHealthCheck(t *testing.T) {
 	compositeType := reflect.TypeOf(GRPCHealthCheck{})
 	alphaType := reflect.TypeOf(computealpha.GRPCHealthCheck{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGRPCTLSHealthCheck(t *testing.T) {
+	compositeType := reflect.TypeOf(GRPCTLSHealthCheck{})
+	alphaType := reflect.TypeOf(computealpha.GRPCTLSHealthCheck{})
 	if err := typeEquality(compositeType, alphaType, true); err != nil {
 		t.Fatal(err)
 	}

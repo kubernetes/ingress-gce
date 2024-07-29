@@ -27,6 +27,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/compute/v1"
+	ga "google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/firewalls"
@@ -62,11 +63,47 @@ func getFakeGCECloud(vals gce.TestClusterValues) *gce.Cloud {
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaAddresses.X = mock.AddressAttributes{}
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockAddresses.X = mock.AddressAttributes{}
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = mock.InsertFwdRuleHook
-
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.PatchHook = UpdateForwardingRuleHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockRegionBackendServices.UpdateHook = mock.UpdateRegionBackendServiceHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockHealthChecks.UpdateHook = mock.UpdateHealthCheckHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockFirewalls.PatchHook = mock.UpdateFirewallHook
+
 	return fakeGCE
+}
+
+func contains(slice []string, target string) bool {
+	for _, item := range slice {
+		if item == target {
+			return true
+		}
+	}
+	return false
+}
+
+func UpdateForwardingRuleHook(ctx context.Context, key *meta.Key, obj *ga.ForwardingRule, m *cloud.MockForwardingRules, options ...cloud.Option) error {
+	if !key.Valid() {
+		return fmt.Errorf("invalid GCE key (%+v)", key)
+	}
+
+	mRules := m.Objects
+	existingObj, ok := mRules[*key]
+	if !ok {
+		return fmt.Errorf("MockForwardingRule %v does not exists", key)
+	}
+
+	existingFr := existingObj.ToGA()
+
+	// Patch only patchable fields if not empty or in ForceSendFields ( simulating json omitempty)
+	if contains(obj.ForceSendFields, "AllowGlobalAccess") || obj.AllowGlobalAccess {
+		existingFr.AllowGlobalAccess = obj.AllowGlobalAccess
+	}
+
+	if contains(obj.ForceSendFields, "NetworkTier") || obj.NetworkTier != "" {
+		existingFr.NetworkTier = obj.NetworkTier
+	}
+
+	mRules[*key] = &cloud.MockForwardingRulesObj{Obj: existingFr}
+	return nil
 }
 
 func TestEnsureInternalBackendServiceUpdates(t *testing.T) {

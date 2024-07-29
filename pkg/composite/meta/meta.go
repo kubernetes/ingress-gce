@@ -69,6 +69,12 @@ var NoUpdate = sets.NewString(
 	"SignedUrlKey",
 )
 
+// Services in withPatch will have a Patch() method generated for them
+// The slice is the list of fields that need to be sent using ForceSend in order to avoid being omitted if empty
+var withPatch = map[string][]string{
+	"ForwardingRule": {"AllowGlobalAccess"},
+}
+
 // Services in NoCRUD will not have Create, Get, Delete, Update, methods generated for them
 var NoCRUD = sets.NewString(
 	"HealthStatusForNetworkEndpoint",
@@ -156,6 +162,20 @@ func (apiService *ApiService) IsMainService() bool {
 // HasUpdate() returns true if the service name is *not* in the NoUpdate() list
 func (apiService *ApiService) HasUpdate() bool {
 	return !NoUpdate.Has(apiService.Name)
+}
+
+// HasPatch() returns true if the service name is in the withPatch() list
+func (apiService *ApiService) HasPatch() bool {
+	_, ok := withPatch[apiService.Name]
+	return ok
+}
+
+// Patch ForceSendFields() returns the list of fields to add to the ForceSendFields list during a patch
+func (apiService *ApiService) ForceSendFields() []string {
+	if value, ok := withPatch[apiService.Name]; ok {
+		return value
+	}
+	return []string{}
 }
 
 // HasCRUD() returns true if the service name is *not* in the NoCRUD() list
