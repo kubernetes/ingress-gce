@@ -36,6 +36,15 @@ func (frc *ForwardingRules) Create(forwardingRule *composite.ForwardingRule) err
 	return composite.CreateForwardingRule(frc.cloud, key, forwardingRule, frc.logger)
 }
 
+func (frc *ForwardingRules) Patch(forwardingRule *composite.ForwardingRule) error {
+	key, err := frc.createKey(forwardingRule.Name)
+	if err != nil {
+		frc.logger.Error(err, "Failed to create key for creating forwarding rule", "forwardingRuleName", forwardingRule.Name)
+		return nil
+	}
+	return composite.PatchForwardingRule(frc.cloud, key, forwardingRule, frc.logger)
+}
+
 func (frc *ForwardingRules) Get(name string) (*composite.ForwardingRule, error) {
 	key, err := frc.createKey(name)
 	if err != nil {

@@ -15,6 +15,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
@@ -476,6 +477,7 @@ func TestL4EnsureIPv4ForwardingRule(t *testing.T) {
 		cloud:           fakeGCE,
 		forwardingRules: forwardingRules,
 		namer:           l4namer,
+		recorder:        record.NewFakeRecorder(100),
 		Service:         defaultService,
 		network: network.NetworkInfo{
 			IsDefault:  false,
