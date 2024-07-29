@@ -47,4 +47,5 @@ type ForwardingRulesProvider interface {
 	Get(name string) (*composite.ForwardingRule, error)
 	Create(forwardingRule *composite.ForwardingRule) error
 	Delete(name string) error
+	Patch(forwardingRule *composite.ForwardingRule) error
 }

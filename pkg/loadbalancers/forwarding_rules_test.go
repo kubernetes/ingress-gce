@@ -547,6 +547,7 @@ func TestL4CreateExternalForwardingRule(t *testing.T) {
 				cloud:           fakeGCE,
 				forwardingRules: forwardingrules.New(fakeGCE, meta.VersionGA, meta.Regional, klog.TODO()),
 				Service:         tc.svc,
+				recorder:        &record.FakeRecorder{},
 			}
 			tc.wantRule.Name = utils.LegacyForwardingRuleName(tc.svc)
 			if tc.namedAddress != nil {
@@ -790,6 +791,7 @@ func TestL4EnsureIPv4ForwardingRule(t *testing.T) {
 		cloud:           fakeGCE,
 		forwardingRules: forwardingRules,
 		namer:           l4namer,
+		recorder:        record.NewFakeRecorder(100),
 		Service:         defaultService,
 		network: network.NetworkInfo{
 			IsDefault:  false,
