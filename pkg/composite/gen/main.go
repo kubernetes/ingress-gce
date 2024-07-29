@@ -370,6 +370,93 @@ func Update{{.Name}}(gceCloud *gce.Cloud, key *meta.Key, {{.VarName}} *{{.Name}}
 }
 {{- end}} {{/*HasUpdate*/}}
 
+{{if .HasPatch}}
+func Patch{{.Name}}(gceCloud *gce.Cloud, key *meta.Key, {{.VarName}} *{{.Name}}, logger klog.Logger) error {
+	ctx, cancel := cloudprovider.ContextWithCallTimeout()
+	defer cancel()
+	mc := compositemetrics.NewMetricContext("{{.Name}}", "patch", key.Region, key.Zone, string({{.VarName}}.Version))
+
+	{{- if $onlyZonalKeySupported}}
+	switch key.Type() {
+	case meta.Zonal:
+	default:
+		return fmt.Errorf("Key %v not valid for zonal resource {{.Name}} %v", key, key.Name)
+	}
+
+	{{- end}} {{/* $onlyZonalKeySupported*/}}
+	switch {{.VarName}}.Version {
+	case meta.VersionAlpha:
+		alpha, err := {{.VarName}}.ToAlpha()
+		if err != nil {
+			return err
+		}
+		{{- range .ForceSendFields }}
+        alpha.ForceSendFields = append(alpha.ForceSendFields, "{{.}}")
+        {{- end}}
+		alphaLogger := logger.WithValues("name", alpha.Name)
+	{{- if $onlyZonalKeySupported}}
+		alphaLogger.Info("Updating alpha zonal {{.Name}}")
+		return mc.Observe(gceCloud.Compute().Alpha{{.GetCloudProviderName}}().Patch(ctx, key, alpha))
+	{{- else}}
+		switch key.Type() {
+		case meta.Regional:
+			alphaLogger.Info("Updating alpha region {{.Name}}")
+			return mc.Observe(gceCloud.Compute().Alpha{{$regionalKeyFiller}}{{.GetCloudProviderName}}().Patch(ctx, key, alpha))
+		default:
+			alphaLogger.Info("Updating alpha {{.Name}}")
+			return mc.Observe(gceCloud.Compute().Alpha{{$globalKeyFiller}}{{.GetCloudProviderName}}().Patch(ctx, key, alpha))
+		}
+	{{- end}} {{/* $onlyZonalKeySupported*/}}
+	case meta.VersionBeta:
+		beta, err := {{.VarName}}.ToBeta()
+		if err != nil {
+			return err
+		}
+		{{- range .ForceSendFields }}
+        beta.ForceSendFields = append(beta.ForceSendFields, "{{.}}")
+        {{- end}}
+		betaLogger := logger.WithValues("name", beta.Name)
+	{{- if $onlyZonalKeySupported}}
+		betaLogger.Info("Updating beta zonal {{.Name}}")
+		return mc.Observe(gceCloud.Compute().Beta{{.GetCloudProviderName}}().Patch(ctx, key, beta))
+	{{- else}}
+		switch key.Type() {
+		case meta.Regional:
+		  betaLogger.Info("Updating beta region {{.Name}}")
+			return mc.Observe(gceCloud.Compute().Beta{{$regionalKeyFiller}}{{.GetCloudProviderName}}().Patch(ctx, key, beta))
+		default:
+			betaLogger.Info("Updating beta {{.Name}}")
+			return mc.Observe(gceCloud.Compute().Beta{{$globalKeyFiller}}{{.GetCloudProviderName}}().Patch(ctx, key, beta))
+		}
+	{{- end}} {{/* $onlyZonalKeySupported*/}}
+	default:
+		ga, err := {{.VarName}}.ToGA()
+		if err != nil {
+			return err
+		}
+		{{- range .ForceSendFields }}
+        ga.ForceSendFields = append(ga.ForceSendFields, "{{.}}")
+        {{- end}}
+		gaLogger := logger.WithValues("name", ga.Name)
+	{{- if $onlyZonalKeySupported}}
+		gaLogger.Info("Updating ga zonal {{.Name}}")
+		return mc.Observe(gceCloud.Compute().{{.GetCloudProviderName}}().Patch(ctx, key, ga))
+	{{- else}}
+		switch key.Type() {
+		case meta.Regional:
+			gaLogger.Info("Updating ga region {{.Name}}")
+			return mc.Observe(gceCloud.Compute().{{$regionalKeyFiller}}{{.GetCloudProviderName}}().Patch(ctx, key, ga))
+		default:
+			gaLogger.Info("Updating ga {{.Name}}")
+			return mc.Observe(gceCloud.Compute().{{$globalKeyFiller}}{{.GetCloudProviderName}}().Patch(ctx, key, ga))
+		}
+	{{- end}} {{/* $onlyZonalKeySupported*/}}
+	}
+}
+{{- end}} {{/*HasPatch*/}}
+
+
+
 func Delete{{.Name}}(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger) error {
 	logger = logger.WithValues("name", key.Name)
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()

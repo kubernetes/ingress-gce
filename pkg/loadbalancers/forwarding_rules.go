@@ -235,7 +235,7 @@ func (l4 *L4) ensureIPv4ForwardingRule(bsLink string, options gce.ILBOptions, ex
 			err)
 	}
 
-	fr := &composite.ForwardingRule{
+	newFwdRule := &composite.ForwardingRule{
 		Name:                frName,
 		IPAddress:           ipToUse,
 		Ports:               ports,
@@ -250,12 +250,12 @@ func (l4 *L4) ensureIPv4ForwardingRule(bsLink string, options gce.ILBOptions, ex
 		Description:         frDesc,
 	}
 	if len(ports) > maxForwardedPorts {
-		fr.Ports = nil
-		fr.AllPorts = true
+		newFwdRule.Ports = nil
+		newFwdRule.AllPorts = true
 	}
 
 	if existingFwdRule != nil {
-		equal, err := Equal(existingFwdRule, fr)
+		equal, err := Equal(existingFwdRule, newFwdRule)
 		if err != nil {
 			return nil, err
 		}
@@ -264,32 +264,60 @@ func (l4 *L4) ensureIPv4ForwardingRule(bsLink string, options gce.ILBOptions, ex
 			frLogger.V(2).Info("ensureIPv4ForwardingRule: Skipping update of unchanged forwarding rule")
 			return existingFwdRule, nil
 		}
-		frDiff := cmp.Diff(existingFwdRule, fr)
-		// If the forwarding rule pointed to a backend service which does not match the controller naming scheme,
-		// that resource could be leaked. It is not being deleted here because that is a user-managed resource.
-		frLogger.V(2).Info("ensureIPv4ForwardingRule: forwarding rule changed. Deleting existing forwarding rule.",
-			"existingForwardingRule", fmt.Sprintf("%+v", existingFwdRule), "newForwardingRule", fmt.Sprintf("%+v", fr), "diff", frDiff)
-		if err = l4.forwardingRules.Delete(existingFwdRule.Name); err != nil {
+		frDiff := cmp.Diff(existingFwdRule, newFwdRule)
+		frLogger.V(2).Info("ensureIPv4ForwardingRule: forwarding rule changed.",
+			"existingForwardingRule", fmt.Sprintf("%+v", existingFwdRule), "newForwardingRule", fmt.Sprintf("%+v", newFwdRule), "diff", frDiff)
+
+		filtered, patchable := filterPatchableFields(existingFwdRule, newFwdRule)
+		if patchable {
+			if err = l4.forwardingRules.Patch(filtered); err != nil {
+				return nil, err
+			}
+			l4.recorder.Eventf(l4.Service, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %s patched", existingFwdRule.Name)
+		} else {
+			if err := l4.updateForwardingRule(existingFwdRule, newFwdRule, frLogger); err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		if err = l4.createFwdRule(newFwdRule, frLogger); err != nil {
 			return nil, err
 		}
-		l4.recorder.Eventf(l4.Service, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %q deleted", existingFwdRule.Name)
-	}
-	frLogger.V(2).Info("ensureIPv4ForwardingRule: Creating/Recreating forwarding rule")
-	if err = l4.forwardingRules.Create(fr); err != nil {
-		if isAddressAlreadyInUseError(err) {
-			return nil, utils.NewIPConfigurationError(fr.IPAddress, err.Error())
-		}
-		return nil, err
+		l4.recorder.Eventf(l4.Service, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %s created", newFwdRule.Name)
 	}
 
-	fr, err = l4.forwardingRules.Get(fr.Name)
+	readFwdRule, err := l4.forwardingRules.Get(newFwdRule.Name)
 	if err != nil {
 		return nil, err
 	}
-	if fr == nil {
-		return nil, fmt.Errorf("forwarding Rule %s not found", frName)
+	if readFwdRule == nil {
+		return nil, fmt.Errorf("Forwarding Rule %s not found", frName)
 	}
-	return fr, nil
+	return readFwdRule, nil
+}
+
+func (l4 *L4) updateForwardingRule(existingFwdRule, newFr *composite.ForwardingRule, frLogger klog.Logger) error {
+	if err := l4.forwardingRules.Delete(existingFwdRule.Name); err != nil {
+		return err
+	}
+	l4.recorder.Eventf(l4.Service, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %s deleted", existingFwdRule.Name)
+
+	if err := l4.createFwdRule(newFr, frLogger); err != nil {
+		return err
+	}
+	l4.recorder.Eventf(l4.Service, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %s re-created", newFr.Name)
+	return nil
+}
+
+func (l4 *L4) createFwdRule(newFr *composite.ForwardingRule, frLogger klog.Logger) error {
+	frLogger.V(2).Info("ensureIPv4ForwardingRule: Creating/Recreating forwarding rule")
+	if err := l4.forwardingRules.Create(newFr); err != nil {
+		if isAddressAlreadyInUseError(err) {
+			return utils.NewIPConfigurationError(newFr.IPAddress, err.Error())
+		}
+		return err
+	}
+	return nil
 }
 
 // ensureIPv4ForwardingRule creates a forwarding rule with the given name for L4NetLB,
@@ -361,7 +389,7 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 		return nil, IPAddrUndefined, fmt.Errorf("Failed to compute description for forwarding rule %s, err: %w", frName,
 			err)
 	}
-	fr := &composite.ForwardingRule{
+	newFwdRule := &composite.ForwardingRule{
 		Name:                frName,
 		Description:         frDesc,
 		IPAddress:           ipToUse,
@@ -372,17 +400,17 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 		NetworkTier:         netTier.ToGCEValue(),
 	}
 	if len(ports) <= maxForwardedPorts && flags.F.EnableDiscretePortForwarding {
-		fr.Ports = ports
-		fr.PortRange = ""
+		newFwdRule.Ports = ports
+		newFwdRule.PortRange = ""
 	}
 
 	if existingFwdRule != nil {
-		if existingFwdRule.NetworkTier != fr.NetworkTier {
+		if existingFwdRule.NetworkTier != newFwdRule.NetworkTier {
 			resource := fmt.Sprintf("Forwarding rule (%v)", frName)
-			networkTierMismatchError := utils.NewNetworkTierErr(resource, existingFwdRule.NetworkTier, fr.NetworkTier)
+			networkTierMismatchError := utils.NewNetworkTierErr(resource, existingFwdRule.NetworkTier, newFwdRule.NetworkTier)
 			return nil, IPAddrUndefined, networkTierMismatchError
 		}
-		equal, err := Equal(existingFwdRule, fr)
+		equal, err := Equal(existingFwdRule, newFwdRule)
 		if err != nil {
 			return existingFwdRule, IPAddrUndefined, err
 		}
@@ -391,31 +419,60 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 			frLogger.V(2).Info("ensureIPv4ForwardingRule: Skipping update of unchanged forwarding rule")
 			return existingFwdRule, isIPManaged, nil
 		}
-		frDiff := cmp.Diff(existingFwdRule, fr)
-		// If the forwarding rule pointed to a backend service which does not match the controller naming scheme,
-		// that resource could be leaked. It is not being deleted here because that is a user-managed resource.
-		frLogger.V(2).Info("ensureIPv4ForwardingRule: forwarding rule changed. Deleting existing forwarding rule.",
-			"existingForwardingRule", fmt.Sprintf("%+v", existingFwdRule), "newForwardingRule", fmt.Sprintf("%+v", fr), "diff", frDiff)
-		if err = l4netlb.forwardingRules.Delete(existingFwdRule.Name); err != nil {
+		frDiff := cmp.Diff(existingFwdRule, newFwdRule)
+		frLogger.V(2).Info("ensureIPv4ForwardingRule: forwarding rule changed.",
+			"existingForwardingRule", fmt.Sprintf("%+v", existingFwdRule), "newForwardingRule", fmt.Sprintf("%+v", newFwdRule), "diff", frDiff)
+
+		filtered, patchable := filterPatchableFields(existingFwdRule, newFwdRule)
+		if patchable {
+			if err = l4netlb.forwardingRules.Patch(filtered); err != nil {
+				return nil, IPAddrUndefined, err
+			}
+			l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %s patched", existingFwdRule.Name)
+		} else {
+			if err := l4netlb.updateForwardingRule(existingFwdRule, newFwdRule, frLogger); err != nil {
+				return nil, IPAddrUndefined, err
+			}
+		}
+
+	} else {
+		if err = l4netlb.createFwdRule(newFwdRule, frLogger); err != nil {
 			return nil, IPAddrUndefined, err
 		}
-		l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %q deleted", existingFwdRule.Name)
+		l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %s created", newFwdRule.Name)
 	}
-	frLogger.V(2).Info("ensureIPv4ForwardingRule: Creating/Recreating forwarding rule")
-	if err = l4netlb.forwardingRules.Create(fr); err != nil {
-		if isAddressAlreadyInUseError(err) {
-			return nil, IPAddrUndefined, utils.NewIPConfigurationError(fr.IPAddress, addressAlreadyInUseMessageExternal)
-		}
-		return nil, IPAddrUndefined, err
-	}
-	createdFr, err := l4netlb.forwardingRules.Get(fr.Name)
+	createdFr, err := l4netlb.forwardingRules.Get(newFwdRule.Name)
 	if err != nil {
 		return nil, IPAddrUndefined, err
 	}
 	if createdFr == nil {
-		return nil, IPAddrUndefined, fmt.Errorf("forwarding rule %s not found", fr.Name)
+		return nil, IPAddrUndefined, fmt.Errorf("forwarding rule %s not found", newFwdRule.Name)
 	}
 	return createdFr, isIPManaged, err
+}
+
+func (l4netlb *L4NetLB) updateForwardingRule(existingFwdRule, newFr *composite.ForwardingRule, frLogger klog.Logger) error {
+	if err := l4netlb.forwardingRules.Delete(existingFwdRule.Name); err != nil {
+		return err
+	}
+	l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %s deleted", existingFwdRule.Name)
+
+	if err := l4netlb.createFwdRule(newFr, frLogger); err != nil {
+		return err
+	}
+	l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %s re-created", newFr.Name)
+	return nil
+}
+
+func (l4netlb *L4NetLB) createFwdRule(newFr *composite.ForwardingRule, frLogger klog.Logger) error {
+	frLogger.V(2).Info("ensureIPv4ForwardingRule: Creating/Recreating forwarding rule")
+	if err := l4netlb.forwardingRules.Create(newFr); err != nil {
+		if isAddressAlreadyInUseError(err) {
+			return utils.NewIPConfigurationError(newFr.IPAddress, addressAlreadyInUseMessageExternal)
+		}
+		return err
+	}
+	return nil
 }
 
 // tearDownResourcesWithWrongNetworkTier removes forwarding rule or IP address if its Network Tier differs from desired.
@@ -427,6 +484,33 @@ func (l4netlb *L4NetLB) tearDownResourcesWithWrongNetworkTier(existingFwdRule *c
 		}
 	}
 	return am.TearDownAddressIPIfNetworkTierMismatch()
+}
+
+func filterPatchableFields(existing, new *composite.ForwardingRule) (*composite.ForwardingRule, bool) {
+	existingCopy := *existing
+	newCopy := *new
+
+	// Set AllowGlobalAccess and NetworkTier fields to the same value in both copies
+	existingCopy.AllowGlobalAccess = new.AllowGlobalAccess
+	existingCopy.NetworkTier = new.NetworkTier
+
+	equal, err := Equal(&existingCopy, &newCopy)
+
+	// Something is different other than AllowGlobalAccess and NetworkTier
+	if err != nil || !equal {
+		return nil, false
+	}
+
+	filtered := &composite.ForwardingRule{}
+	filtered.Id = existing.Id
+	filtered.Name = existing.Name
+	// AllowGlobalAccess is in the ForceSendFields list, it always need to have the right value
+	filtered.AllowGlobalAccess = new.AllowGlobalAccess
+	// Send NetworkTier in the patch request only if it has been updated
+	if existing.NetworkTier != new.NetworkTier {
+		filtered.NetworkTier = new.NetworkTier
+	}
+	return filtered, true
 }
 
 func Equal(fr1, fr2 *composite.ForwardingRule) (bool, error) {
