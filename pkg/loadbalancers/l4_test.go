@@ -2225,7 +2225,7 @@ func TestWeightedILB(t *testing.T) {
 			svc := test.NewL4ILBService(false, 8080)
 			svc.Spec.ExternalTrafficPolicy = tc.externalTrafficPolicy
 			if tc.addAnnotationForWeighted {
-				svc.Annotations[annotations.WeightedL4AnnotationKey] = annotations.WeightedL4AnnotationEnabled
+				svc.Annotations[annotations.WeightedL4AnnotationKey] = annotations.WeightedL4PodsPerNodeAnnotation
 			}
 			nodeNames := []string{"test-node-1"}
 			vals := gce.DefaultTestClusterValues()

@@ -131,10 +131,10 @@ const (
 	// Replaces networking.gke.io/internal-load-balancer-subnet with backward compatibility.
 	CustomSubnetAnnotationKey = "networking.gke.io/load-balancer-subnet"
 
-	// Service annotation key for using the L4 Weighted load balancing in both ILB and NetlB
-	WeightedL4AnnotationKey = "networking.gke.io/l4-weighted-load-balancing"
-	// Service annotation value for using the L4 Weighted load balancing in both ILB and NetlB
-	WeightedL4AnnotationEnabled = "enabled"
+	// Service annotation key for using the Weighted load balancing in both ILB and NetlB
+	WeightedL4AnnotationKey = "networking.gke.io/weighted-load-balancing"
+	// Service annotation value for using pods-per-node Weighted load balancing in both ILB and NetlB
+	WeightedL4PodsPerNodeAnnotation = "pods-per-node"
 )
 
 // NegAnnotation is the format of the annotation associated with the
@@ -292,11 +292,13 @@ func HasStrongSessionAffinityAnnotation(service *v1.Service) bool {
 	}
 	return false
 }
-func IsWeightedLBEnabledForService(service *v1.Service) bool {
+
+// HasWeightedLBPodsPerNodeAnnotations checks if the given service has pods-per-node Weighted load balancing annotation
+func HasWeightedLBPodsPerNodeAnnotations(service *v1.Service) bool {
 	if service == nil {
 		return false
 	}
-	if val, ok := service.Annotations[WeightedL4AnnotationKey]; ok && val == WeightedL4AnnotationEnabled {
+	if val, ok := service.Annotations[WeightedL4AnnotationKey]; ok && val == WeightedL4PodsPerNodeAnnotation {
 		if service.Spec.ExternalTrafficPolicy == v1.ServiceExternalTrafficPolicyTypeLocal {
 			return true
 		}

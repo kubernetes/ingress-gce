@@ -75,15 +75,15 @@ func NewPoolWithConnectionTrackingPolicy(cloud *gce.Cloud, namer namer.BackendNa
 
 // L4BackendServiceParams encapsulates parameters for ensuring an L4 BackendService.
 type L4BackendServiceParams struct {
-	Name                        string
-	HealthCheckLink             string
-	Protocol                    string
-	SessionAffinity             string
-	Scheme                      string
-	NamespacedName              types.NamespacedName
-	NetworkInfo                 *network.NetworkInfo
-	ConnectionTrackingPolicy    *composite.BackendServiceConnectionTrackingPolicy
-	EnableWeightedLoadBalancing bool
+	Name                             string
+	HealthCheckLink                  string
+	Protocol                         string
+	SessionAffinity                  string
+	Scheme                           string
+	NamespacedName                   types.NamespacedName
+	NetworkInfo                      *network.NetworkInfo
+	ConnectionTrackingPolicy         *composite.BackendServiceConnectionTrackingPolicy
+	WeightedLoadBalancingPodsPerNode bool
 }
 
 // ensureDescription updates the BackendService Description with the expected value
@@ -352,8 +352,8 @@ func (b *Backends) EnsureL4BackendService(params L4BackendServiceParams, beLogge
 		SessionAffinity:     utils.TranslateAffinityType(params.SessionAffinity, beLogger),
 		LoadBalancingScheme: params.Scheme,
 	}
-	// Only touch the LoadBalancingScheme field if Weighted is enabled
-	if params.EnableWeightedLoadBalancing {
+	// Update the LoadBalancingScheme field if Weighted Load Balancing has pods-per-node annotation
+	if params.WeightedLoadBalancingPodsPerNode {
 		expectedBS.LocalityLbPolicy = WeightedLocalityLbPolicy
 	}
 
@@ -387,7 +387,7 @@ func (b *Backends) EnsureL4BackendService(params L4BackendServiceParams, beLogge
 		return composite.GetBackendService(b.cloud, key, meta.VersionGA, beLogger)
 	}
 
-	if backendSvcEqual(expectedBS, bs, b.useConnectionTrackingPolicy, params.EnableWeightedLoadBalancing) {
+	if backendSvcEqual(expectedBS, bs, b.useConnectionTrackingPolicy, params.WeightedLoadBalancingPodsPerNode) {
 		beLogger.V(2).Info("EnsureL4BackendService: backend service did not change, skipping update")
 		return bs, nil
 	}
