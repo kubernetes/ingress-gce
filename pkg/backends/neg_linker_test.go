@@ -26,8 +26,10 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
 	"github.com/google/go-cmp/cmp"
 	"github.com/kr/pretty"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
+
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
 	befeatures "k8s.io/ingress-gce/pkg/backends/features"
@@ -35,6 +37,11 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
+)
+
+const (
+	testZone1 = "zone1"
+	testZone2 = "zone2"
 )
 
 func newTestNEGLinker(fakeNEG negtypes.NetworkEndpointGroupCloud, fakeGCE *gce.Cloud) *negLinker {
@@ -175,6 +182,123 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 
 	}
 
+}
+
+func TestGetNegSelfLinks(t *testing.T) {
+	t.Parallel()
+
+	groupKeys := []GroupKey{{Zone: testZone1}, {Zone: testZone2}}
+	namespace, svcName, port := "ns", "name", "port"
+	svc := types.NamespacedName{Namespace: namespace, Name: svcName}
+	svcPort := utils.ServicePort{
+		ID:           utils.ServicePortID{Service: svc},
+		Port:         80,
+		Protocol:     annotations.ProtocolHTTP,
+		TargetPort:   intstr.FromString(port),
+		NEGEnabled:   true,
+		BackendNamer: defaultNamer,
+	}
+	defaultSubnetNegName := svcPort.NEGName()
+	// TODO(sawsa307): Update NEG name once naming schema for non-default subnet is finalized.
+	nonDefaultSubnetNegName := "non-default-neg"
+
+	testCases := []struct {
+		desc             string
+		populateSvcNeg   bool
+		testNegRef       []v1beta1.NegObjectReference
+		expectedNegCount int
+	}{
+		{
+			desc:           "Get NEGs from SvcNeg, all NEGs are in active state, and NEGs are from default subnet",
+			populateSvcNeg: true,
+			testNegRef: []v1beta1.NegObjectReference{
+				createNegRef(testZone1, defaultSubnetNegName, v1beta1.ActiveState),
+				createNegRef(testZone2, defaultSubnetNegName, v1beta1.ActiveState),
+			},
+			expectedNegCount: 2,
+		},
+		{
+			desc:           "Get NEGs from SvcNeg, all NEGs are in active state, and containing NEGs from non-default subnet",
+			populateSvcNeg: true,
+			testNegRef: []v1beta1.NegObjectReference{
+				createNegRef(testZone1, defaultSubnetNegName, v1beta1.ActiveState),
+				createNegRef(testZone1, nonDefaultSubnetNegName, v1beta1.ActiveState),
+				createNegRef(testZone2, defaultSubnetNegName, v1beta1.ActiveState),
+				createNegRef(testZone2, nonDefaultSubnetNegName, v1beta1.ActiveState),
+			},
+			expectedNegCount: 4,
+		},
+		{
+			desc:           "Get NEGs from SvcNeg, containing one NEG from default subnet in inactive state",
+			populateSvcNeg: true,
+			testNegRef: []v1beta1.NegObjectReference{
+				createNegRef(testZone1, defaultSubnetNegName, v1beta1.ActiveState),
+				createNegRef(testZone2, defaultSubnetNegName, v1beta1.InactiveState),
+			},
+			expectedNegCount: 2,
+		},
+		{
+			desc:           "Get NEGs from SvcNeg, containing NEGs from non-default subnet in inactive state",
+			populateSvcNeg: true,
+			testNegRef: []v1beta1.NegObjectReference{
+				createNegRef(testZone1, defaultSubnetNegName, v1beta1.ActiveState),
+				createNegRef(testZone1, nonDefaultSubnetNegName, v1beta1.ActiveState),
+				createNegRef(testZone2, defaultSubnetNegName, v1beta1.InactiveState), // zone2 is inactive
+				createNegRef(testZone2, nonDefaultSubnetNegName, v1beta1.InactiveState),
+			},
+			expectedNegCount: 4,
+		},
+		{
+			desc:             "Get NEGs from GCE",
+			populateSvcNeg:   false,
+			expectedNegCount: 2,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+			fakeNEG := negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
+			linker := newTestNEGLinker(fakeNEG, fakeGCE)
+			if tc.populateSvcNeg {
+				svcNeg := &v1beta1.ServiceNetworkEndpointGroup{
+					TypeMeta: metav1.TypeMeta{
+						Kind:       "ServiceNetworkEndpointGroup",
+						APIVersion: "networking.gke.io/v1beta1",
+					},
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      svcPort.NEGName(),
+						Namespace: namespace,
+					},
+					Status: v1beta1.ServiceNetworkEndpointGroupStatus{
+						NetworkEndpointGroups: tc.testNegRef,
+					},
+				}
+				if err := linker.svcNegLister.Add(svcNeg); err != nil {
+					t.Fatalf("Failed to add svcneg: %v", err)
+				}
+			}
+
+			for _, groupKey := range groupKeys {
+				neg := &composite.NetworkEndpointGroup{
+					Name:    svcPort.NEGName(),
+					Version: befeatures.VersionFromServicePort(&svcPort),
+				}
+				err := fakeNEG.CreateNetworkEndpointGroup(neg, groupKey.Zone, klog.TODO())
+				if err != nil {
+					t.Fatalf("unexpected error creating NEG for svcPort %v: %v", svcPort, err)
+				}
+			}
+
+			negLinks, err := linker.getNegSelfLinks(svcPort, groupKeys)
+			if err != nil {
+				t.Fatalf("Failed to link backend service to NEG for svcPort %v: %v", svcPort, err)
+			}
+			if len(negLinks) != tc.expectedNegCount {
+				t.Errorf("Got %d neg links, expected %d", len(negLinks), tc.expectedNegCount)
+			}
+		})
+	}
 }
 
 func TestMergeBackends(t *testing.T) {
@@ -548,5 +672,12 @@ func TestBackendsForNEG(t *testing.T) {
 				t.Errorf("backendForNEGs(_), diff(-tc.want +got) = %s", diff)
 			}
 		})
+	}
+}
+
+func createNegRef(zone, negName string, state v1beta1.NegState) v1beta1.NegObjectReference {
+	return v1beta1.NegObjectReference{
+		SelfLink: fmt.Sprintf("https://www.googleapis.com/compute/alpha/projects/mock-project/zones/%s/networkEndpointGroups/%s", zone, negName),
+		State:    state,
 	}
 }
