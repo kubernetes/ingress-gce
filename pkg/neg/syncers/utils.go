@@ -150,11 +150,12 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 		}
 		if customName && neg.Description == "" {
 			negLogger.Error(nil, "Found Neg with custom name but empty description")
-			return negv1beta1.NegObjectReference{}, fmt.Errorf("neg name %s is already in use, found a custom named neg with an empty description", negName)
+			return negv1beta1.NegObjectReference{}, fmt.Errorf("found a custom named neg %s with an empty description", negName)
 		}
 		if matches, err := utils.VerifyDescription(expectedDesc, neg.Description, negName, zone); !matches {
 			negLogger.Error(err, "Neg Name is already in use")
-			return negv1beta1.NegObjectReference{}, fmt.Errorf("neg name %s is already in use, found conflicting description: %w", negName, err)
+			// Wrap returned error from VerifyDescription() since we need to check if error is ErrNEGUsedByAnotherSyncer.
+			return negv1beta1.NegObjectReference{}, fmt.Errorf("found conflicting description in neg %s: %w", negName, err)
 		}
 
 		if networkEndpointType != negtypes.NonGCPPrivateEndpointType &&
