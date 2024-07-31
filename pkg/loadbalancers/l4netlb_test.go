@@ -1172,7 +1172,7 @@ func TestWeightedNetLB(t *testing.T) {
 			svc := test.NewL4NetLBRBSService(8080)
 			svc.Spec.ExternalTrafficPolicy = tc.externalTrafficPolicy
 			if tc.addAnnotationForWeighted {
-				svc.Annotations[annotations.WeightedL4AnnotationKey] = annotations.WeightedL4PodsPerNodeAnnotation
+				svc.Annotations[annotations.WeightedL4AnnotationKey] = annotations.WeightedL4AnnotationPodsPerNode
 			}
 
 			nodeNames := []string{"test-node-1"}

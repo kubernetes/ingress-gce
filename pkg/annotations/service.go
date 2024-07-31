@@ -134,7 +134,7 @@ const (
 	// Service annotation key for using the Weighted load balancing in both ILB and NetlB
 	WeightedL4AnnotationKey = "networking.gke.io/weighted-load-balancing"
 	// Service annotation value for using pods-per-node Weighted load balancing in both ILB and NetlB
-	WeightedL4PodsPerNodeAnnotation = "pods-per-node"
+	WeightedL4AnnotationPodsPerNode = "pods-per-node"
 )
 
 // NegAnnotation is the format of the annotation associated with the
@@ -298,7 +298,7 @@ func HasWeightedLBPodsPerNodeAnnotations(service *v1.Service) bool {
 	if service == nil {
 		return false
 	}
-	if val, ok := service.Annotations[WeightedL4AnnotationKey]; ok && val == WeightedL4PodsPerNodeAnnotation {
+	if val, ok := service.Annotations[WeightedL4AnnotationKey]; ok && val == WeightedL4AnnotationPodsPerNode {
 		if service.Spec.ExternalTrafficPolicy == v1.ServiceExternalTrafficPolicyTypeLocal {
 			return true
 		}
