@@ -474,19 +474,19 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		}
 	}
 
-	enableWeightedOnService := l4.enableWeightedLB && annotations.IsWeightedLBEnabledForService(l4.Service)
+	enableWeightedLBPodsPerNode := l4.enableWeightedLB && annotations.HasWeightedLBPodsPerNodeAnnotations(l4.Service)
 
 	// ensure backend service
 	backendParams := backends.L4BackendServiceParams{
-		Name:                        bsName,
-		HealthCheckLink:             hcLink,
-		Protocol:                    string(protocol),
-		SessionAffinity:             string(l4.Service.Spec.SessionAffinity),
-		Scheme:                      string(cloud.SchemeInternal),
-		NamespacedName:              l4.NamespacedName,
-		NetworkInfo:                 &l4.network,
-		ConnectionTrackingPolicy:    noConnectionTrackingPolicy,
-		EnableWeightedLoadBalancing: enableWeightedOnService,
+		Name:                             bsName,
+		HealthCheckLink:                  hcLink,
+		Protocol:                         string(protocol),
+		SessionAffinity:                  string(l4.Service.Spec.SessionAffinity),
+		Scheme:                           string(cloud.SchemeInternal),
+		NamespacedName:                   l4.NamespacedName,
+		NetworkInfo:                      &l4.network,
+		ConnectionTrackingPolicy:         noConnectionTrackingPolicy,
+		WeightedLoadBalancingPodsPerNode: enableWeightedLBPodsPerNode,
 	}
 	bs, err := l4.backendPool.EnsureL4BackendService(backendParams, l4.svcLogger)
 	if err != nil {

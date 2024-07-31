@@ -311,19 +311,19 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 	bsName := l4netlb.namer.L4Backend(l4netlb.Service.Namespace, l4netlb.Service.Name)
 	servicePorts := l4netlb.Service.Spec.Ports
 	protocol := utils.GetProtocol(servicePorts)
-	enableWeightedOnService := l4netlb.enableWeightedLB && annotations.IsWeightedLBEnabledForService(l4netlb.Service)
+	enableWeightedLBPodsPerNode := l4netlb.enableWeightedLB && annotations.HasWeightedLBPodsPerNodeAnnotations(l4netlb.Service)
 
 	connectionTrackingPolicy := l4netlb.connectionTrackingPolicy()
 	backendParams := backends.L4BackendServiceParams{
-		Name:                        bsName,
-		HealthCheckLink:             hcLink,
-		Protocol:                    string(protocol),
-		SessionAffinity:             string(l4netlb.Service.Spec.SessionAffinity),
-		Scheme:                      string(cloud.SchemeExternal),
-		NamespacedName:              l4netlb.NamespacedName,
-		NetworkInfo:                 network.DefaultNetwork(l4netlb.cloud),
-		ConnectionTrackingPolicy:    connectionTrackingPolicy,
-		EnableWeightedLoadBalancing: enableWeightedOnService,
+		Name:                             bsName,
+		HealthCheckLink:                  hcLink,
+		Protocol:                         string(protocol),
+		SessionAffinity:                  string(l4netlb.Service.Spec.SessionAffinity),
+		Scheme:                           string(cloud.SchemeExternal),
+		NamespacedName:                   l4netlb.NamespacedName,
+		NetworkInfo:                      network.DefaultNetwork(l4netlb.cloud),
+		ConnectionTrackingPolicy:         connectionTrackingPolicy,
+		WeightedLoadBalancingPodsPerNode: enableWeightedLBPodsPerNode,
 	}
 
 	bs, err := l4netlb.backendPool.EnsureL4BackendService(backendParams, l4netlb.svcLogger)
