@@ -39,6 +39,8 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
+	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/common/operator"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -47,6 +49,7 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
+	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -67,6 +70,7 @@ var (
 func newLoadBalancerController() *LoadBalancerController {
 	kubeClient := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
+	svcNegClient := svcnegclient.NewSimpleClientset()
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	nodeInformer := zonegetter.FakeNodeInformer()
 	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
@@ -83,7 +87,7 @@ func newLoadBalancerController() *LoadBalancerController {
 		HealthCheckPath:               "/",
 		EnableIngressRegionalExternal: true,
 	}
-	ctx := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, nil, nil, nil, nil, nil, kubeClient /*kube client to be used for events*/, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
+	ctx := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, nil, svcNegClient, nil, nil, nil, kubeClient /*kube client to be used for events*/, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
 	lbc := NewLoadBalancerController(ctx, stopCh, klog.TODO())
 	// TODO(rramkumar): Fix this so we don't have to override with our fake
 	lbc.instancePool = instancegroups.NewManager(&instancegroups.ManagerConfig{
@@ -130,6 +134,11 @@ func addService(lbc *LoadBalancerController, svc *api_v1.Service) {
 func addIngress(lbc *LoadBalancerController, ing *networkingv1.Ingress) {
 	lbc.ctx.KubeClient.NetworkingV1().Ingresses(ing.Namespace).Create(context2.TODO(), ing, meta_v1.CreateOptions{})
 	lbc.ctx.IngressInformer.GetIndexer().Add(ing)
+}
+
+func addSvcNeg(lbc *LoadBalancerController, svcneg *negv1beta1.ServiceNetworkEndpointGroup) {
+	lbc.ctx.SvcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcneg.Namespace).Create(context2.TODO(), svcneg, meta_v1.CreateOptions{})
+	lbc.ctx.SvcNegInformer.GetIndexer().Add(svcneg)
 }
 
 func updateIngress(lbc *LoadBalancerController, ing *networkingv1.Ingress) {
@@ -198,28 +207,9 @@ func TestIngressSyncError(t *testing.T) {
 // TestNEGOnlyIngress asserts that `sync` will not create IG when there is only NEG backends for the ingress
 func TestNEGOnlyIngress(t *testing.T) {
 	lbc := newLoadBalancerController()
-
-	svc := test.NewService(types.NamespacedName{Name: "my-service", Namespace: "default"}, api_v1.ServiceSpec{
-		Type:  api_v1.ServiceTypeNodePort,
-		Ports: []api_v1.ServicePort{{Port: 80}},
-	})
-	negAnnotation := annotations.NegAnnotation{Ingress: true}
-	svc.Annotations = map[string]string{
-		annotations.NEGAnnotationKey: negAnnotation.String(),
-	}
-	addService(lbc, svc)
-	someBackend := backend("my-service", networkingv1.ServiceBackendPort{Number: 80})
-	ing := test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"},
-		networkingv1.IngressSpec{
-			DefaultBackend: &someBackend,
-		})
-	addIngress(lbc, ing)
-
-	ingStoreKey := getKey(ing, t)
-	err := lbc.sync(ingStoreKey)
-	if err != nil {
-		t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
-	}
+	namespace := "namespace"
+	ingressName := "my-ingress"
+	ensureNEGIngress(t, lbc, namespace, ingressName, "")
 
 	ig, err := lbc.instancePool.Get(lbc.ctx.ClusterNamer.InstanceGroup(), fakeZone)
 	if err != nil && !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
@@ -1130,15 +1120,27 @@ func ensureIngress(t *testing.T, lbc *LoadBalancerController, namespace, name st
 // This returns updated ingress after sync.
 func ensureNEGIngress(t *testing.T, lbc *LoadBalancerController, namespace, name string, ingressClassName string) *networkingv1.Ingress {
 	serviceName := fmt.Sprintf("service-for-%s", name)
+	servicePort := int32(80)
 	svc := test.NewService(types.NamespacedName{Name: serviceName, Namespace: namespace},
 		api_v1.ServiceSpec{
 			Type:  api_v1.ServiceTypeNodePort,
-			Ports: []api_v1.ServicePort{{Port: 80}},
+			Ports: []api_v1.ServicePort{{Port: servicePort}},
 		})
+	negAnnotation := annotations.NegAnnotation{Ingress: true}
 	svc.Annotations = map[string]string{
-		annotations.NEGAnnotationKey: `{"ingress": true,}`,
+		annotations.NEGAnnotationKey: negAnnotation.String(),
 	}
 	addService(lbc, svc)
+
+	negName := lbc.ctx.ClusterNamer.NEG(namespace, serviceName, servicePort)
+	svcNeg := test.NewSvcNeg(types.NamespacedName{Name: negName, Namespace: namespace},
+		negv1beta1.ServiceNetworkEndpointGroupStatus{
+			NetworkEndpointGroups: []v1beta1.NegObjectReference{
+				{SelfLink: fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/mock-project/zones/%s/networkEndpointGroups/%s", fakeZone, negName)},
+			},
+		},
+	)
+	addSvcNeg(lbc, svcNeg)
 
 	defaultBackend := backend(serviceName, networkingv1.ServiceBackendPort{Number: 80})
 	ing := test.NewIngress(types.NamespacedName{Name: name, Namespace: namespace},

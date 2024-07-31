@@ -59,96 +59,117 @@ func newTestNEGLinker(fakeNEG negtypes.NetworkEndpointGroupCloud, fakeGCE *gce.C
 }
 
 func TestLinkBackendServiceToNEG(t *testing.T) {
-	for _, tc := range []struct {
-		name           string
-		populateSvcNeg bool
+	t.Parallel()
+
+	zones := []GroupKey{{Zone: "zone1"}, {Zone: "zone2"}}
+	namespace, svcName, port := "ns", "name", "port"
+	svc := types.NamespacedName{Namespace: namespace, Name: svcName}
+
+	// validate different service port for both L4 ILB and L7 LBs
+	testCases := []struct {
+		desc    string
+		svcPort utils.ServicePort
 	}{
 		{
-			name:           "Get NEG URL via API",
-			populateSvcNeg: false,
+			desc: "Link L4 NEGs",
+			svcPort: utils.ServicePort{
+				ID:             utils.ServicePortID{Service: svc},
+				BackendNamer:   defaultL4Namer,
+				VMIPNEGEnabled: true,
+			},
 		},
 		{
-			name:           "Get NEG URL via SvcNeg",
-			populateSvcNeg: true,
+			desc: "Link Ingress NEGs",
+			svcPort: utils.ServicePort{
+				ID:           utils.ServicePortID{Service: svc},
+				Port:         80,
+				NodePort:     30001,
+				Protocol:     annotations.ProtocolHTTP,
+				TargetPort:   intstr.FromString(port),
+				NEGEnabled:   true,
+				BackendNamer: defaultNamer,
+			},
 		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-			fakeNEG := negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
-			linker := newTestNEGLinker(fakeNEG, fakeGCE)
+		{
+			desc: "Link RXLB Ingress",
+			svcPort: utils.ServicePort{
+				ID:                   utils.ServicePortID{Service: svc},
+				Port:                 80,
+				NodePort:             30001,
+				Protocol:             annotations.ProtocolHTTP,
+				TargetPort:           intstr.FromString(port),
+				NEGEnabled:           true,
+				L7XLBRegionalEnabled: true,
+				BackendNamer:         defaultNamer,
+			},
+		},
+	}
 
-			zones := []GroupKey{{Zone: "zone1"}, {Zone: "zone2"}}
-			namespace, name, port := "ns", "name", "port"
-			svc := types.NamespacedName{Namespace: namespace, Name: name}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			for _, populateSvcNeg := range []bool{true, false} {
+				fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+				fakeNEG := negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
+				linker := newTestNEGLinker(fakeNEG, fakeGCE)
 
-			// validate different service port for both L4 ILB and L7 LBs
-			for _, svcPort := range []utils.ServicePort{
-				{
-					ID:             utils.ServicePortID{Service: svc},
-					BackendNamer:   defaultNamer,
-					VMIPNEGEnabled: true},
-				{
-					ID:           utils.ServicePortID{Service: svc},
-					Port:         80,
-					NodePort:     30001,
-					Protocol:     annotations.ProtocolHTTP,
-					TargetPort:   intstr.FromString(port),
-					NEGEnabled:   true,
-					BackendNamer: defaultNamer},
-				{
-					ID:                   utils.ServicePortID{Service: svc},
-					Port:                 80,
-					NodePort:             30001,
-					Protocol:             annotations.ProtocolHTTP,
-					TargetPort:           intstr.FromString(port),
-					NEGEnabled:           true,
-					L7XLBRegionalEnabled: true,
-					BackendNamer:         defaultNamer},
-			} {
 				// Mimic how the syncer would create the backend.
-				if _, err := linker.backendPool.Create(svcPort, "fake-healthcheck-link", klog.TODO()); err != nil {
-					t.Fatalf("Failed to create backend service to NEG for svcPort %v: %v", svcPort, err)
+				if _, err := linker.backendPool.Create(tc.svcPort, "fake-healthcheck-link", klog.TODO()); err != nil {
+					t.Fatalf("Failed to create backend service to NEG for svcPort %v: %v", tc.svcPort, err)
 				}
 
-				version := befeatures.VersionFromServicePort(&svcPort)
+				version := befeatures.VersionFromServicePort(&tc.svcPort)
 
-				if tc.populateSvcNeg {
-					linker.svcNegLister.Add(v1beta1.ServiceNetworkEndpointGroup{Status: v1beta1.ServiceNetworkEndpointGroupStatus{
-						NetworkEndpointGroups: []v1beta1.NegObjectReference{
-							{SelfLink: fmt.Sprintf("https://www.googleapis.com/compute/alpha/projects/mock-project/zones/zone1/networkEndpointGroups/%s", svcPort.NEGName())},
-							{SelfLink: fmt.Sprintf("https://www.googleapis.com/compute/alpha/projects/mock-project/zones/zone2/networkEndpointGroups/%s", svcPort.NEGName())},
+				if populateSvcNeg {
+					svcNeg := &v1beta1.ServiceNetworkEndpointGroup{
+						TypeMeta: metav1.TypeMeta{
+							Kind:       "ServiceNetworkEndpointGroup",
+							APIVersion: "networking.gke.io/v1beta1",
 						},
-					}})
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      tc.svcPort.NEGName(),
+							Namespace: namespace,
+						},
+						Status: v1beta1.ServiceNetworkEndpointGroupStatus{
+							NetworkEndpointGroups: []v1beta1.NegObjectReference{
+								{SelfLink: fmt.Sprintf("https://www.googleapis.com/compute/alpha/projects/mock-project/zones/zone1/networkEndpointGroups/%s", tc.svcPort.NEGName())},
+								{SelfLink: fmt.Sprintf("https://www.googleapis.com/compute/alpha/projects/mock-project/zones/zone2/networkEndpointGroups/%s", tc.svcPort.NEGName())},
+							},
+						},
+					}
+					if err := linker.svcNegLister.Add(svcNeg); err != nil {
+						t.Fatalf("Failed to add svcneg: %v", err)
+					}
 				}
+
 				for _, key := range zones {
 					neg := &composite.NetworkEndpointGroup{
-						Name:    svcPort.NEGName(),
+						Name:    tc.svcPort.NEGName(),
 						Version: version,
 					}
-					if svcPort.VMIPNEGEnabled {
+					if tc.svcPort.VMIPNEGEnabled {
 						neg.NetworkEndpointType = string(negtypes.VmIpEndpointType)
 					}
 					err := fakeNEG.CreateNetworkEndpointGroup(neg, key.Zone, klog.TODO())
 					if err != nil {
-						t.Fatalf("unexpected error creating NEG for svcPort %v: %v", svcPort, err)
+						t.Fatalf("unexpected error creating NEG for svcPort %v: %v", tc.svcPort, err)
 					}
 				}
 
-				if err := linker.Link(svcPort, zones); err != nil {
-					t.Fatalf("Failed to link backend service to NEG for svcPort %v: %v", svcPort, err)
+				if err := linker.Link(tc.svcPort, zones); err != nil {
+					t.Fatalf("Failed to link backend service to NEG for svcPort %v when populateSvcNeg = %v: %v", tc.svcPort, populateSvcNeg, err)
 				}
 
 				// validate function validates if the state is expected
 				validate := func() {
-					beName := svcPort.BackendName()
-					scope := befeatures.ScopeFromServicePort(&svcPort)
+					beName := tc.svcPort.BackendName()
+					scope := befeatures.ScopeFromServicePort(&tc.svcPort)
 					key, err := composite.CreateKey(fakeGCE, beName, scope)
 					if err != nil {
 						t.Fatalf("Failed to create composite key - %v", err)
 					}
 					bs, err := composite.GetBackendService(fakeGCE, key, version, klog.TODO())
 					if err != nil {
-						t.Fatalf("Failed to retrieve backend service using key %+v for svcPort %v: %v", key, svcPort, err)
+						t.Fatalf("Failed to retrieve backend service using key %+v for svcPort %v: %v", key, tc.svcPort, err)
 					}
 					if len(bs.Backends) != len(zones) {
 						t.Errorf("Expect %v backends in backend service %s, but got %v.key %+v %+v", len(zones), beName, len(bs.Backends), key, bs)
@@ -159,7 +180,7 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 						if !strings.Contains(be.Group, neg) {
 							t.Errorf("Got backend link %q, want containing %q", be.Group, neg)
 						}
-						if svcPort.VMIPNEGEnabled {
+						if tc.svcPort.VMIPNEGEnabled {
 							// Balancing mode should be connection, rate should be unset
 							if be.BalancingMode != string(Connections) || be.MaxRatePerEndpoint != 0 {
 								t.Errorf("Only 'Connection' balancing mode is supported with VM_IP NEGs, Got %q with max rate %v", be.BalancingMode, be.MaxRatePerEndpoint)
@@ -170,16 +191,41 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 
 				validate()
 
-				// mimic cluster node shrinks to one of the zone
+				// mimic cluster node shrinks to one of the zone, so we only have nodes in zone1
 				shrinkZone := []GroupKey{zones[0]}
-				if err := linker.Link(svcPort, shrinkZone); err != nil {
-					t.Fatalf("Failed to link backend service to NEG for svcPort %v: %v", svcPort, err)
+				if populateSvcNeg {
+					svcNegAfterShrink := &v1beta1.ServiceNetworkEndpointGroup{
+						TypeMeta: metav1.TypeMeta{
+							Kind:       "ServiceNetworkEndpointGroup",
+							APIVersion: "networking.gke.io/v1beta1",
+						},
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      tc.svcPort.NEGName(),
+							Namespace: namespace,
+						},
+						Status: v1beta1.ServiceNetworkEndpointGroupStatus{
+							NetworkEndpointGroups: []v1beta1.NegObjectReference{
+								{
+									SelfLink: fmt.Sprintf("https://www.googleapis.com/compute/alpha/projects/mock-project/zones/zone1/networkEndpointGroups/%s", tc.svcPort.NEGName()),
+									State:    v1beta1.ActiveState,
+								},
+								{
+									SelfLink: fmt.Sprintf("https://www.googleapis.com/compute/alpha/projects/mock-project/zones/zone2/networkEndpointGroups/%s", tc.svcPort.NEGName()),
+									State:    v1beta1.InactiveState, // NEG is marked as Inactive when there is no node in this zone.
+								},
+							},
+						},
+					}
+					linker.svcNegLister.Update(svcNegAfterShrink)
+				}
+
+				if err := linker.Link(tc.svcPort, shrinkZone); err != nil {
+					t.Fatalf("Failed to link backend service to NEG for svcPort %v when populateSvcNeg = %v: %v", tc.svcPort, populateSvcNeg, err)
 				}
 
 				validate()
 			}
 		})
-
 	}
 
 }

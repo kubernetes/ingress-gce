@@ -45,6 +45,8 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
+	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/composite"
 	ingctx "k8s.io/ingress-gce/pkg/context"
@@ -52,6 +54,8 @@ import (
 	"k8s.io/ingress-gce/pkg/healthchecksl4"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/metrics"
+	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
+
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -123,6 +127,27 @@ func getAnnotations() map[string]string {
 func addNetLBService(l4netController *L4NetLBController, svc *v1.Service) {
 	l4netController.ctx.KubeClient.CoreV1().Services(svc.Namespace).Create(context.TODO(), svc, metav1.CreateOptions{})
 	l4netController.ctx.ServiceInformer.GetIndexer().Add(svc)
+}
+
+func addNEGAndSvcNegL4NetLBController(l4netController *L4NetLBController, svc *v1.Service) {
+	// Also create a fake NEG for this service since the sync code will try to link the backend service to NEG
+	negName := l4netController.namer.L4Backend(svc.Namespace, svc.Name)
+	neg := &computebeta.NetworkEndpointGroup{Name: negName}
+	l4netController.ctx.Cloud.CreateNetworkEndpointGroup(neg, testGCEZone)
+
+	newSvcNeg := test.NewSvcNeg(types.NamespacedName{
+		Namespace: svc.Namespace, Name: negName,
+	}, negv1beta1.ServiceNetworkEndpointGroupStatus{
+		NetworkEndpointGroups: []v1beta1.NegObjectReference{
+			{SelfLink: fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/mock-project/zones/%s/networkEndpointGroups/%s", testGCEZone, negName)},
+		},
+	})
+	addSvcNegL4NetLBController(l4netController, newSvcNeg)
+}
+
+func addSvcNegL4NetLBController(l4netController *L4NetLBController, svcneg *negv1beta1.ServiceNetworkEndpointGroup) {
+	l4netController.ctx.SvcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcneg.Namespace).Create(context.TODO(), svcneg, metav1.CreateOptions{})
+	l4netController.ctx.SvcNegInformer.GetIndexer().Add(svcneg)
 }
 
 func updateNetLBService(lc *L4NetLBController, svc *v1.Service) {
@@ -275,6 +300,7 @@ func buildContext(vals gce.TestClusterValues) *ingctx.ControllerContext {
 	fakeGCE := getFakeGCECloud(vals)
 	kubeClient := fake.NewSimpleClientset()
 	networkClient := netfake.NewSimpleClientset()
+	svcNegClient := svcnegclient.NewSimpleClientset()
 
 	namer := namer.NewNamer(clusterUID, "", klog.TODO())
 
@@ -284,7 +310,7 @@ func buildContext(vals gce.TestClusterValues) *ingctx.ControllerContext {
 		NumL4NetLBWorkers: 5,
 		MaxIGSize:         1000,
 	}
-	return ingctx.NewControllerContext(nil, kubeClient, nil, nil, nil, nil, nil, nil, networkClient, kubeClient /*kube client to be used for events*/, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
+	return ingctx.NewControllerContext(nil, kubeClient, nil, nil, nil, svcNegClient, nil, nil, networkClient, kubeClient /*kube client to be used for events*/, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
 }
 
 func newL4NetLBServiceController() *L4NetLBController {
@@ -520,10 +546,7 @@ func TestProcessMultinetServiceCreate(t *testing.T) {
 
 	svc := test.NewL4NetLBRBSService(8080)
 	// create the NEG that would be created by the NEG controller.
-	neg := &computebeta.NetworkEndpointGroup{
-		Name: lc.namer.L4Backend(svc.Namespace, svc.Name),
-	}
-	lc.ctx.Cloud.CreateNetworkEndpointGroup(neg, "us-central1-b")
+	addNEGAndSvcNegL4NetLBController(lc, svc)
 
 	svc.Spec.Selector = make(map[string]string)
 	svc.Spec.Selector[networkv1.NetworkAnnotationKey] = "secondary-network"
