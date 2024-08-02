@@ -249,6 +249,7 @@ func main() {
 		EnableIngressRegionalExternal: flags.F.EnableIngressRegionalExternal,
 		EnableWeightedL4ILB:           flags.F.EnableWeightedL4ILB,
 		EnableWeightedL4NetLB:         flags.F.EnableWeightedL4NetLB,
+		DisableL4LBFirewall:           flags.F.DisableL4LBFirewall,
 	}
 	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, ingParamsClient, svcAttachmentClient, networkClient, eventRecorderKubeClient, cloud, namer, kubeSystemUID, ctxConfig, rootLogger)
 	go app.RunHTTPServer(ctx.HealthCheck, rootLogger)

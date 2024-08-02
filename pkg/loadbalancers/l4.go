@@ -60,17 +60,18 @@ type L4 struct {
 	scope       meta.KeyType
 	namer       namer.L4ResourcesNamer
 	// recorder is used to generate k8s Events.
-	recorder         record.EventRecorder
-	Service          *corev1.Service
-	ServicePort      utils.ServicePort
-	NamespacedName   types.NamespacedName
-	forwardingRules  ForwardingRulesProvider
-	healthChecks     healthchecksl4.L4HealthChecks
-	enableDualStack  bool
-	network          network.NetworkInfo
-	networkResolver  network.Resolver
-	enableWeightedLB bool
-	svcLogger        klog.Logger
+	recorder               record.EventRecorder
+	Service                *corev1.Service
+	ServicePort            utils.ServicePort
+	NamespacedName         types.NamespacedName
+	forwardingRules        ForwardingRulesProvider
+	healthChecks           healthchecksl4.L4HealthChecks
+	enableDualStack        bool
+	network                network.NetworkInfo
+	networkResolver        network.Resolver
+	enableWeightedLB       bool
+	disableIngressFirewall bool
+	svcLogger              klog.Logger
 }
 
 // L4ILBSyncResult contains information about the outcome of an L4 ILB sync. It stores the list of resource name annotations,
@@ -105,13 +106,14 @@ func NewL4ILBSyncResult(syncType string, startTime time.Time, svc *corev1.Servic
 }
 
 type L4ILBParams struct {
-	Service          *corev1.Service
-	Cloud            *gce.Cloud
-	Namer            namer.L4ResourcesNamer
-	Recorder         record.EventRecorder
-	DualStackEnabled bool
-	NetworkResolver  network.Resolver
-	EnableWeightedLB bool
+	Service                *corev1.Service
+	Cloud                  *gce.Cloud
+	Namer                  namer.L4ResourcesNamer
+	Recorder               record.EventRecorder
+	DualStackEnabled       bool
+	NetworkResolver        network.Resolver
+	EnableWeightedLB       bool
+	DisableIngressFirewall bool
 }
 
 // NewL4Handler creates a new L4Handler for the given L4 service.
@@ -120,17 +122,18 @@ func NewL4Handler(params *L4ILBParams, logger klog.Logger) *L4 {
 
 	var scope meta.KeyType = meta.Regional
 	l4 := &L4{
-		cloud:            params.Cloud,
-		scope:            scope,
-		namer:            params.Namer,
-		recorder:         params.Recorder,
-		Service:          params.Service,
-		healthChecks:     healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder, logger),
-		forwardingRules:  forwardingrules.New(params.Cloud, meta.VersionGA, scope, logger),
-		enableDualStack:  params.DualStackEnabled,
-		networkResolver:  params.NetworkResolver,
-		enableWeightedLB: params.EnableWeightedLB,
-		svcLogger:        logger,
+		cloud:                  params.Cloud,
+		scope:                  scope,
+		namer:                  params.Namer,
+		recorder:               params.Recorder,
+		Service:                params.Service,
+		healthChecks:           healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder, logger),
+		forwardingRules:        forwardingrules.New(params.Cloud, meta.VersionGA, scope, logger),
+		enableDualStack:        params.DualStackEnabled,
+		networkResolver:        params.NetworkResolver,
+		enableWeightedLB:       params.EnableWeightedLB,
+		disableIngressFirewall: params.DisableIngressFirewall,
+		svcLogger:              logger,
 	}
 	l4.NamespacedName = types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace}
 	l4.backendPool = backends.NewPool(l4.cloud, l4.namer)
@@ -608,6 +611,10 @@ func (l4 *L4) ensureIPv4Resources(result *L4ILBSyncResult, nodeNames []string, o
 }
 
 func (l4 *L4) ensureIPv4NodesFirewall(nodeNames []string, ipAddress string, result *L4ILBSyncResult) {
+	// DisableL4LBFirewall flag disables L4 FW enforcment to remove conflicts with firewall policies
+	if l4.disableIngressFirewall == true {
+		return
+	}
 	start := time.Now()
 
 	firewallName := l4.namer.L4Firewall(l4.Service.Namespace, l4.Service.Name)
