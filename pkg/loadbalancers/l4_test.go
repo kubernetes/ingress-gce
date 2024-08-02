@@ -2252,7 +2252,7 @@ func TestWeightedILB(t *testing.T) {
 
 			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
 			if result.Error != nil {
-				t.Fatalf("Failed to ensure interna;l loadBalancer, err %v", result.Error)
+				t.Fatalf("Failed to ensure internal loadBalancer, err %v", result.Error)
 			}
 			backendServiceName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
 			key := meta.RegionalKey(backendServiceName, l4.cloud.Region())
@@ -2268,6 +2268,49 @@ func TestWeightedILB(t *testing.T) {
 		})
 	}
 
+}
+
+func TestDisableILBIngressFirewall(t *testing.T) {
+	t.Parallel()
+	fakeGCE := getFakeGCECloud(gce.DefaultTestClusterValues())
+	nodeNames := []string{"test-node-1"}
+	// create a test VM so that target tags can be found
+	createVMInstanceWithTag(t, fakeGCE, "test-node-1", "test-node-1")
+
+	svc := test.NewL4ILBService(false, 8080)
+	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+
+	l4ilbParams := &L4ILBParams{
+		Service:                svc,
+		Cloud:                  fakeGCE,
+		Namer:                  namer,
+		DisableIngressFirewall: true,
+	}
+	l4 := NewL4Handler(l4ilbParams, klog.TODO())
+	syncResult := &L4ILBSyncResult{
+		Annotations: make(map[string]string),
+	}
+
+	l4.ensureIPv4NodesFirewall(nodeNames, "10.0.0.7", syncResult)
+	if syncResult.Error != nil {
+		t.Fatalf("ensureIPv4NodesFirewall() error %+v", syncResult)
+	}
+
+	ipv4FirewallName := l4.namer.L4Firewall(l4.Service.Namespace, l4.Service.Name)
+	err := verifyFirewallNotExists(l4.cloud, ipv4FirewallName)
+	if err != nil {
+		t.Errorf("verifyFirewallNotExists(_, %s) for IPv4 ILB firewall returned error %v, want nil", ipv4FirewallName, err)
+	}
+
+	l4.ensureIPv6NodesFirewall("2001:db8::ff00:42:8329", nodeNames, syncResult)
+	if syncResult.Error != nil {
+		t.Fatalf("ensureIPv6NodesFirewall() error %+v", syncResult)
+	}
+	ipv6firewallName := l4.namer.L4IPv6Firewall(l4.Service.Namespace, l4.Service.Name)
+	err = verifyFirewallNotExists(l4.cloud, ipv6firewallName)
+	if err != nil {
+		t.Errorf("verifyFirewallNotExists(_, %s) for IPv6 ILB firewall returned error %v, want nil", ipv6firewallName, err)
+	}
 }
 
 func mustSetupILBTestHandler(t *testing.T, svc *v1.Service, nodeNames []string) *L4 {
