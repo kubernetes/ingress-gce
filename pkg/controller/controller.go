@@ -35,6 +35,7 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
+	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/common/operator"
 	"k8s.io/ingress-gce/pkg/context"
@@ -317,6 +318,23 @@ func NewLoadBalancerController(
 				ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesFrontendConfig(feConfig).AsList()
 				lbc.ingQueue.Enqueue(convert(ings)...)
 			},
+		})
+	}
+
+	if flags.F.EnableMultiSubnetClusterPhase1 {
+		// SvcNeg event handlers.
+		ctx.SvcNegInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			UpdateFunc: func(old, cur interface{}) {
+				oldSvcNeg := old.(*negv1beta1.ServiceNetworkEndpointGroup)
+				newSvcNeg := cur.(*negv1beta1.ServiceNetworkEndpointGroup)
+
+				if !reflect.DeepEqual(oldSvcNeg.Status.NetworkEndpointGroups, newSvcNeg.Status.NetworkEndpointGroups) {
+					logger.Info("svcneg updated", "namespace", newSvcNeg.Namespace, "name", newSvcNeg.Name)
+					ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesSvcNeg(newSvcNeg, ctx.Services()).AsList()
+					lbc.ingQueue.Enqueue(convert(ings)...)
+				}
+			},
+			// Similar to service handler, SvcNeg deletions do not matter.
 		})
 	}
 
