@@ -22,6 +22,7 @@ import (
 	"strings"
 	"testing"
 
+	"google.golang.org/api/googleapi"
 	"k8s.io/klog/v2"
 
 	"google.golang.org/api/compute/v1"

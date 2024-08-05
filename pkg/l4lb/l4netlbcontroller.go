@@ -427,10 +427,20 @@ func (lc *L4NetLBController) shutdown() {
 	lc.logger.Info("Shutting down l4NetLBController")
 	lc.svcQueue.Shutdown()
 }
-func (lc *L4NetLBController) syncWrapper(key string) error {
+func (lc *L4NetLBController) syncWrapper(key string) (err error) {
 	syncTrackingId := rand.Int31()
 	svcLogger := lc.logger.WithValues("serviceKey", key, "syncId", syncTrackingId)
-	return skipUserError(lc.sync(key, svcLogger), svcLogger)
+
+	defer func() {
+		if r := recover(); r != nil {
+			errMessage := fmt.Sprintf("Panic in L4 NetLB sync worker goroutine: %v", r)
+			svcLogger.Error(nil, errMessage)
+			l4metrics.PublishL4ControllerPanicCount(l4NetLBControllerName)
+			err = fmt.Errorf(errMessage)
+		}
+	}()
+	syncErr := lc.sync(key, svcLogger)
+	return skipUserError(syncErr, svcLogger)
 }
 
 func (lc *L4NetLBController) sync(key string, svcLogger klog.Logger) error {

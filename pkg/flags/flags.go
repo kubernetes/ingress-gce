@@ -118,7 +118,6 @@ var (
 		EnableL4NEG                              bool
 		GateNEGByLock                            bool
 		EnableMultipleIGs                        bool
-		EnableServiceMetrics                     bool
 		EnableL4StrongSessionAffinity            bool
 		EnableNEGLabelPropagation                bool
 		EnableMultiNetworking                    bool
@@ -133,6 +132,7 @@ var (
 		OverrideComputeAPIEndpoint               string
 		EnableIGMultiSubnetCluster               bool
 		EnableMultiSubnetCluster                 bool
+		EnableMultiSubnetClusterPhase1           bool
 		EnableWeightedL4ILB                      bool
 		EnableWeightedL4NetLB                    bool
 	}{
@@ -280,7 +280,6 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableL4NEG, "enable-l4-neg", false, `Optional, if enabled then the NEG controller will process L4 NEGs.`)
 	flag.BoolVar(&F.GateNEGByLock, "gate-neg-by-lock", false, "If enabled then the NEG controller will be run via leader election with NEG resource lock")
 	flag.BoolVar(&F.EnableIGController, "enable-ig-controller", true, `Optional, if enabled then the IG controller will be run.`)
-	flag.BoolVar(&F.EnableServiceMetrics, "enable-service-metrics", false, `Optional, if enabled then the service metrics controller will be run.`)
 	flag.BoolVar(&F.EnablePSC, "enable-psc", false, "Enable PSC controller")
 	flag.BoolVar(&F.EnableIngressGAFields, "enable-ingress-ga-fields", false, "Enable using Ingress Class GA features")
 	flag.StringVar(&F.GKEClusterName, "gke-cluster-name", "", "The name of the GKE cluster this Ingress Controller will be interacting with")
@@ -314,6 +313,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.StringVar(&F.OverrideComputeAPIEndpoint, "override-compute-api-endpoint", "", "Override endpoint that is used to communicate to GCP compute APIs.")
 	flag.BoolVar(&F.EnableIGMultiSubnetCluster, "enable-ig-multi-subnet-cluster", false, "Enable Multi Subnet support for the controllers that use Instance Group backends.")
 	flag.BoolVar(&F.EnableMultiSubnetCluster, "enable-multi-subnet-cluster", false, "Enable Multi Subnet support for all controllers that are running.")
+	flag.BoolVar(&F.EnableMultiSubnetClusterPhase1, "enable-multi-subnet-cluster-phase1", false, "Enable Phase 1 Multi Subnet support for all controllers that are running.")
 	flag.BoolVar(&F.EnableWeightedL4ILB, "enable-weighted-l4-ilb", false, "Enable Weighted Load balancing for L4 ILB.")
 	flag.BoolVar(&F.EnableWeightedL4NetLB, "enable-weighted-l4-netlb", false, "EnableWeighted Load balancing for  L4 NetLB .")
 	flag.Float32Var(&F.KubeClientQPS, "kube-client-qps", 0.0, "The QPS that the controllers' kube client should adhere to through client side throttling. If zero, client will be created with default settings.")

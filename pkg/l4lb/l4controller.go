@@ -408,10 +408,20 @@ func (l4c *L4Controller) linkNEG(l4 *loadbalancers.L4, svcLogger klog.Logger) er
 	return l4c.NegLinker.Link(l4.ServicePort, groupKeys)
 }
 
-func (l4c *L4Controller) syncWrapper(key string) error {
+func (l4c *L4Controller) syncWrapper(key string) (err error) {
 	syncTrackingId := rand.Int31()
 	svcLogger := l4c.logger.WithValues("serviceKey", key, "syncId", syncTrackingId)
-	return skipUserError(l4c.sync(key, svcLogger), svcLogger)
+
+	defer func() {
+		if r := recover(); r != nil {
+			errMessage := fmt.Sprintf("Panic in L4 ILB sync worker goroutine: %v", r)
+			svcLogger.Error(nil, errMessage)
+			l4metrics.PublishL4ControllerPanicCount(l4ILBControllerName)
+			err = fmt.Errorf(errMessage)
+		}
+	}()
+	syncErr := l4c.sync(key, svcLogger)
+	return skipUserError(syncErr, svcLogger)
 }
 
 func (l4c *L4Controller) sync(key string, svcLogger klog.Logger) error {

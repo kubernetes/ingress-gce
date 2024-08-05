@@ -23,11 +23,11 @@ import (
 	"strconv"
 	"strings"
 
+	gcpfirewallv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/gcpfirewall/v1"
+	firewallclient "github.com/GoogleCloudPlatform/gke-networking-api/client/gcpfirewall/clientset/versioned"
 	api_errors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
-	gcpfirewallv1 "k8s.io/cloud-provider-gcp/crd/apis/gcpfirewall/v1"
-	firewallclient "k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
 	netset "k8s.io/utils/net"

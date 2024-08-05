@@ -40,6 +40,7 @@ const (
 	l4ControllerHealthCheckName                    = "l4_controller_healthcheck"
 	l4LastSyncTimeName                             = "l4_last_sync_time"
 	l4LBRemovedFinalizerMetricName                 = "l4_removed_finalizer_count"
+	l4LBControllerPanicsMetricName                 = "l4_controllers_panics_count"
 )
 
 var (
@@ -162,6 +163,13 @@ var (
 		},
 		[]string{"finalizer_name"},
 	)
+	l4LBControllerPanics = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: l4LBControllerPanicsMetricName,
+			Help: "Counter for times when L4 controllers panic",
+		},
+		[]string{"controller_name"},
+	)
 )
 
 // init registers l4 ilb and netlb sync metrics.
@@ -185,6 +193,9 @@ func init() {
 	klog.V(3).Infof("Registering L4 controller last processed item time metric: %v", l4LastSyncTime)
 	prometheus.MustRegister(l4LastSyncTime)
 	klog.V(3).Infof("Registering L4 Removed Finalizers metric %v", l4LBRemovedFinalizers)
+	prometheus.MustRegister(l4LBRemovedFinalizers)
+	klog.V(3).Infof("Registering L4 controller panics metric: %v", l4LBControllerPanics)
+	prometheus.MustRegister(l4LBControllerPanics)
 }
 
 // PublishILBSyncMetrics exports metrics related to the L4 ILB sync.
@@ -270,6 +281,11 @@ func PublishL4RemovedNetLBRBSFinalizer() {
 
 func PublishL4ServiceCleanupFinalizer() {
 	l4LBRemovedFinalizers.WithLabelValues("service_cleanup").Inc()
+}
+
+// PublishL4ControllerPanicCount exports error count metrics for L4 controllers
+func PublishL4ControllerPanicCount(controllerName string) {
+	l4LBControllerPanics.WithLabelValues(controllerName).Inc()
 }
 
 // PublishL4FailedHealthCheckCount observers failed health check from controller.
