@@ -16,9 +16,10 @@ package translator
 import (
 	"context"
 	"fmt"
-	"k8s.io/klog/v2"
 	"reflect"
 	"testing"
+
+	"k8s.io/klog/v2"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/google/go-cmp/cmp"
@@ -429,7 +430,6 @@ func TestToForwardingRule(t *testing.T) {
 				Description:         description,
 				Version:             version,
 				LoadBalancingScheme: "EXTERNAL_MANAGED",
-				NetworkTier:         "STANDARD",
 			},
 		},
 		{
@@ -446,7 +446,6 @@ func TestToForwardingRule(t *testing.T) {
 				Description:         description,
 				Version:             version,
 				LoadBalancingScheme: "EXTERNAL_MANAGED",
-				NetworkTier:         "STANDARD",
 			},
 		},
 		{
