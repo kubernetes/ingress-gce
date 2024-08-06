@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -82,15 +81,10 @@ func (l7 *L7) checkStaticIP() (err error) {
 
 func (l7 *L7) newStaticAddress(name string) *composite.Address {
 	isInternal := utils.IsGCEL7ILBIngress(&l7.ingress)
-	isRegionalExternal := utils.IsGCEL7XLBRegionalIngress(&l7.ingress)
 	address := &composite.Address{Name: name, Address: l7.fw.IPAddress, Version: meta.VersionGA}
 	if isInternal {
 		// Used for L7 ILB
 		address.AddressType = "INTERNAL"
-	} else if isRegionalExternal {
-		// GCP requires L7 Regional External Addresses to use Standard Network Tier,
-		// (the same as regional external forwarding rules).
-		address.NetworkTier = cloud.NetworkTierStandard.ToGCEValue()
 	}
 
 	return address

@@ -290,8 +290,6 @@ func (t *Translator) ToCompositeForwardingRule(env *Env, protocol namer.NamerPro
 		}
 	} else if t.IsL7XLBRegional {
 		fr.LoadBalancingScheme = "EXTERNAL_MANAGED"
-		// Regional External LB only supports Standard Network Tier.
-		fr.NetworkTier = cloud.NetworkTierStandard.ToGCEValue()
 		fr.Network = env.Network
 	}
 
