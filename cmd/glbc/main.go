@@ -253,33 +253,89 @@ func main() {
 	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, ingParamsClient, svcAttachmentClient, networkClient, eventRecorderKubeClient, cloud, namer, kubeSystemUID, ctxConfig, rootLogger)
 	go app.RunHTTPServer(ctx.HealthCheck, rootLogger)
 
-	if !flags.F.LeaderElection.LeaderElect {
-		option := runOption{
-			stopCh:      make(chan struct{}),
-			wg:          &sync.WaitGroup{},
-			leaderElect: false,
-		}
-		ctx.Init()
-		if flags.F.EnableNEGController {
-			// ID is only used during leader election.
-			runNEGController(ctx, "", option, rootLogger)
-		}
-		runControllers(ctx, option, rootLogger)
-		return
+	var once sync.Once
+	// This ensures that stopCh is only closed once.
+	// Right now, we have three callers.
+	// One is triggered when the ASM configmap changes, and the other two are
+	// triggered by the SIGTERM handler.
+	stopCh := make(chan struct{})
+
+	hostname, err := os.Hostname()
+	if err != nil {
+		klog.Fatalf("unable to get hostname: %v", err)
+	}
+	option := runOption{
+		client:   leaderElectKubeClient,
+		recorder: ctx.Recorder(flags.F.LeaderElection.LockObjectNamespace),
+		wg:       &sync.WaitGroup{},
+		stopCh:   stopCh,
+		closeStopCh: func() {
+			once.Do(func() { close(stopCh) })
+		},
+		// add a uniquifier so that two processes on the same host don't accidentally both become active
+		id: fmt.Sprintf("%v_%x", hostname, rand.Intn(1e6)),
+	}
+	ctx.Init()
+
+	enableOtherControllers := flags.F.RunIngressController || flags.F.RunL4Controller || flags.F.RunL4NetLBController || flags.F.EnableIGController || flags.F.EnablePSC
+	runNEG := func() {
+		logger := rootLogger.WithName("NEG Controller")
+		logger.Info("Start running the enabled controllers",
+			"NEG controller", flags.F.EnableNEGController,
+		)
+		runNEGController(ctx, option, logger)
+	}
+	runIngress := func() {
+		logger := rootLogger.WithName("Other controllers")
+		logger.Info("Start running the enabled controllers",
+			"Ingress controller", flags.F.RunIngressController,
+			"L4 controller", flags.F.RunL4Controller,
+			"L4 NetLB controller", flags.F.RunL4NetLBController,
+			"InstanceGroup controller", flags.F.EnableIGController,
+			"PSC controller", flags.F.EnablePSC,
+		)
+		runControllers(ctx, option, logger)
 	}
 
-	electionConfig, err := makeLeaderElectionConfig(ctx, runOption{
-		client:      leaderElectKubeClient,
-		recorder:    ctx.Recorder(flags.F.LeaderElection.LockObjectNamespace),
-		stopCh:      make(chan struct{}),
-		wg:          &sync.WaitGroup{},
-		leaderElect: true,
-	}, rootLogger)
-	if err != nil {
-		klog.Fatalf("%v", err)
+	if flags.F.LeaderElection.LeaderElect {
+		runNEG = func() {
+			logger := rootLogger.WithName("NEG Controller")
+			logger.Info("Start running NEG leader election",
+				"NEG controller", flags.F.EnableNEGController,
+			)
+			negElectionConfig, err := makeNEGLeaderElectionConfig(ctx, option, logger)
+			if err != nil {
+				klog.Fatalf("makeNEGLeaderElectionConfig()=%v, want nil", err)
+			}
+			leaderelection.RunOrDie(context.Background(), *negElectionConfig)
+			logger.Info("NEG Controller exited.")
+		}
+		runIngress = func() {
+			logger := rootLogger.WithName("Other controllers")
+			logger.Info("Start running Ingress leader election",
+				"Ingress controller", flags.F.RunIngressController,
+				"L4 controller", flags.F.RunL4Controller,
+				"L4 NetLB controller", flags.F.RunL4NetLBController,
+				"InstanceGroup controller", flags.F.EnableIGController,
+				"PSC controller", flags.F.EnablePSC,
+			)
+			electionConfig, err := makeLeaderElectionConfig(ctx, option, logger)
+			if err != nil {
+				klog.Fatalf("makeLeaderElectionConfig()=%v, want nil", err)
+			}
+			leaderelection.RunOrDie(context.Background(), *electionConfig)
+		}
 	}
-	leaderelection.RunOrDie(context.Background(), *electionConfig)
-	rootLogger.Info("Ingress Controller exited.")
+
+	if flags.F.EnableNEGController {
+		go runNEG()
+	}
+	if enableOtherControllers {
+		go runIngress()
+	}
+
+	<-option.stopCh
+	waitWithTimeout(option.wg, rootLogger)
 }
 
 type runOption struct {
@@ -287,39 +343,24 @@ type runOption struct {
 	recorder    record.EventRecorder
 	stopCh      chan struct{}
 	wg          *sync.WaitGroup
-	leaderElect bool
+	closeStopCh func()
+	id          string
 }
 
 // makeLeaderElectionConfig builds a leader election configuration. It will
 // create a new resource lock associated with the configuration.
 func makeLeaderElectionConfig(ctx *ingctx.ControllerContext, option runOption, logger klog.Logger) (*leaderelection.LeaderElectionConfig, error) {
-	hostname, err := os.Hostname()
-	if err != nil {
-		return nil, fmt.Errorf("unable to get hostname: %v", err)
-	}
-	// add a uniquifier so that two processes on the same host don't accidentally both become active
-	id := fmt.Sprintf("%v_%x", hostname, rand.Intn(1e6))
 	rl, err := resourcelock.New(resourcelock.LeasesResourceLock,
 		flags.F.LeaderElection.LockObjectNamespace,
 		flags.F.LeaderElection.LockObjectName,
 		option.client.CoreV1(),
 		option.client.CoordinationV1(),
 		resourcelock.ResourceLockConfig{
-			Identity:      id,
+			Identity:      option.id,
 			EventRecorder: option.recorder,
 		})
 	if err != nil {
 		return nil, fmt.Errorf("couldn't create resource lock: %v", err)
-	}
-
-	run := func() {
-		ctx.Init()
-		if flags.F.EnableNEGController {
-			runNEGController(ctx, id, option, logger)
-		}
-		runControllers(ctx, option, logger)
-		logger.Info("Shutting down leader election")
-		os.Exit(0)
 	}
 
 	return &leaderelection.LeaderElectionConfig{
@@ -331,7 +372,7 @@ func makeLeaderElectionConfig(ctx *ingctx.ControllerContext, option runOption, l
 			OnStartedLeading: func(context.Context) {
 				// Since we are committing a suicide after losing
 				// mastership, we can safely ignore the argument.
-				run()
+				runControllers(ctx, option, logger)
 			},
 			OnStoppedLeading: func() {
 				logger.Info("lost master")
@@ -341,51 +382,34 @@ func makeLeaderElectionConfig(ctx *ingctx.ControllerContext, option runOption, l
 }
 
 func runControllers(ctx *ingctx.ControllerContext, option runOption, logger klog.Logger) {
-	stopCh := option.stopCh
-	wg := option.wg
-	var once sync.Once
-	// This ensures that stopCh is only closed once.
-	// Right now, we have two callers.
-	// One is triggered when the ASM configmap changes, and the other one is
-	// triggered by the SIGTERM handler.
-	closeStopCh := func() {
-		once.Do(func() { close(stopCh) })
-	}
-
 	if flags.F.RunIngressController {
-		lbc := controller.NewLoadBalancerController(ctx, stopCh, logger)
-		runWithWg(lbc.Run, wg)
+		lbc := controller.NewLoadBalancerController(ctx, option.stopCh, logger)
+		runWithWg(lbc.Run, option.wg)
 		logger.V(0).Info("ingress controller started")
 
 		if !flags.F.EnableFirewallCR && flags.F.DisableFWEnforcement {
 			klog.Fatalf("We can only disable the ingress controller FW enforcement when enabling the FW CR")
 		}
-		fwc := firewalls.NewFirewallController(ctx, flags.F.NodePortRanges.Values(), flags.F.EnableFirewallCR, flags.F.DisableFWEnforcement, ctx.EnableIngressRegionalExternal, stopCh, logger)
-		runWithWg(fwc.Run, wg)
+		fwc := firewalls.NewFirewallController(ctx, flags.F.NodePortRanges.Values(), flags.F.EnableFirewallCR, flags.F.DisableFWEnforcement, ctx.EnableIngressRegionalExternal, option.stopCh, logger)
+		runWithWg(fwc.Run, option.wg)
 		logger.V(0).Info("firewall controller started")
 	}
 
-	if ctx.EnableASMConfigMap {
-		ctx.ASMConfigController.RegisterInformer(ctx.ConfigMapInformer, func() {
-			// We want to trigger a restart.
-			closeStopCh()
-		})
-	}
 	if flags.F.RunL4Controller {
-		l4Controller := l4lb.NewILBController(ctx, stopCh, logger)
-		runWithWg(l4Controller.Run, wg)
+		l4Controller := l4lb.NewILBController(ctx, option.stopCh, logger)
+		runWithWg(l4Controller.Run, option.wg)
 		logger.V(0).Info("L4 controller started")
 	}
 
 	if flags.F.EnablePSC {
-		pscController := psc.NewController(ctx, stopCh, logger)
-		runWithWg(pscController.Run, wg)
+		pscController := psc.NewController(ctx, option.stopCh, logger)
+		runWithWg(pscController.Run, option.wg)
 		logger.V(0).Info("PSC Controller started")
 	}
 
-	go app.RunSIGTERMHandler(closeStopCh, logger)
+	go app.RunSIGTERMHandler(option.closeStopCh, logger)
 
-	ctx.Start(stopCh)
+	ctx.Start(option.stopCh)
 
 	if flags.F.EnableIGController {
 		igControllerParams := &instancegroups.ControllerConfig{
@@ -394,97 +418,29 @@ func runControllers(ctx *ingctx.ControllerContext, option runOption, logger klog
 			IGManager:                ctx.InstancePool,
 			HasSynced:                ctx.HasSynced,
 			EnableMultiSubnetCluster: flags.F.EnableIGMultiSubnetCluster,
-			StopCh:                   stopCh,
+			StopCh:                   option.stopCh,
 		}
 		igController := instancegroups.NewController(igControllerParams, logger)
-		runWithWg(igController.Run, wg)
+		runWithWg(igController.Run, option.wg)
 	}
 
 	// The L4NetLbController will be run when RbsMode flag is Set
 	if flags.F.RunL4NetLBController {
-		l4netlbController := l4lb.NewL4NetLBController(ctx, stopCh, logger)
+		l4netlbController := l4lb.NewL4NetLBController(ctx, option.stopCh, logger)
 
-		runWithWg(l4netlbController.Run, wg)
+		runWithWg(l4netlbController.Run, option.wg)
 		logger.V(0).Info("L4NetLB controller started")
 	}
-	// Keep the program running until TERM signal.
-	<-stopCh
-	logger.Info("Shutdown has been triggered")
-
-	doneCh := make(chan struct{})
-	go func() {
-		defer close(doneCh)
-		// Wait until all controllers are done with cleanup.
-		logger.Info("Starting to wait for controller cleanup")
-		wg.Wait()
-		logger.Info("Finished waiting for controller cleanup")
-	}()
-
-	select {
-	case <-doneCh:
-		logger.Info("Finished cleanup for all controllers, shutting down")
-		return
-	case <-time.After(30 * time.Second):
-		logger.Info("Reached 30 seconds timeout limit, shutting down")
-		return
-	}
 }
 
-// runNEGController needs to be a non-blocking because runController is the
-// main thread.
-// If leader election is disabled, we only run NEG controller.
-// Otherwise, we do leader election based on ingress-gce-neg-lock, run NEG
-// controller and collect availability metrics on the lock.
-// If GateNEGByLock is true, NEG controller is run in the leader election.
-// Otherwise, it is run with other controllers together.
-func runNEGController(ctx *ingctx.ControllerContext, id string, option runOption, logger klog.Logger) {
-	negController := createNEGController(ctx, option.stopCh, logger)
-	if !option.leaderElect {
-		runWithWg(negController.Run, option.wg)
-		logger.V(0).Info("negController started")
-		return
-	}
-
-	// If GateNEGByLock is false, we run NEG controller with other controllers.
-	// In this case, NEG controller is controlled by the combined lock/ingress-gce-lock.
-	if !flags.F.GateNEGByLock {
-		runWithWg(negController.Run, option.wg)
-		logger.V(0).Info("negController started")
-	}
-
-	lockLogger := logger.WithValues("lockName", negLockName)
-	lockLogger.Info("Attempting to grab lock", "lockName", negLockName)
-	negRunFunc := func() {
-		go collectLockAvailabilityMetrics(negLockName, flags.F.GKEClusterType, option.stopCh, lockLogger)
-		// If GateNEGByLock is true, we run NEG controller with NEG leader election.
-		// In this case, NEG controller is controlled by the ingres-gce-lock
-		// and ingress-gce-neg-lock.
-		if flags.F.GateNEGByLock {
-			runWithWg(negController.Run, option.wg)
-			logger.V(0).Info("Gated: negController started")
-		}
-		<-option.stopCh
-		logger.Info("Shutting down NEG leader election")
-		option.wg.Wait()
-		os.Exit(0)
-	}
-
-	negElectConfig, err := makeNEGLeaderElectionConfig(ctx, id, option, negRunFunc, logger)
-	if err != nil {
-		logger.Error(err, "makeNEGLeaderElectionConfig() has an error")
-	}
-	// Run in goroutine since RunOrDie is a blocking call.
-	go leaderelection.RunOrDie(context.Background(), *negElectConfig)
-}
-
-func makeNEGLeaderElectionConfig(ctx *ingctx.ControllerContext, id string, option runOption, runNEGFunc func(), logger klog.Logger) (*leaderelection.LeaderElectionConfig, error) {
+func makeNEGLeaderElectionConfig(ctx *ingctx.ControllerContext, option runOption, logger klog.Logger) (*leaderelection.LeaderElectionConfig, error) {
 	negLock, err := resourcelock.New(resourcelock.LeasesResourceLock,
 		flags.F.LeaderElection.LockObjectNamespace,
 		negLockName,
 		option.client.CoreV1(),
 		option.client.CoordinationV1(),
 		resourcelock.ResourceLockConfig{
-			Identity:      id,
+			Identity:      option.id,
 			EventRecorder: option.recorder,
 		})
 	if err != nil {
@@ -498,13 +454,41 @@ func makeNEGLeaderElectionConfig(ctx *ingctx.ControllerContext, id string, optio
 		RetryPeriod:   flags.F.LeaderElection.RetryPeriod.Duration,
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(context.Context) {
-				runNEGFunc()
+				runNEGController(ctx, option, logger)
 			},
 			OnStoppedLeading: func() {
 				logger.Info("Stop running NEG Leader election")
 			},
 		},
 	}, nil
+}
+
+func runNEGController(ctx *ingctx.ControllerContext, option runOption, logger klog.Logger) {
+	lockLogger := logger.WithValues("lockName", negLockName)
+	lockLogger.Info("Attempting to grab lock", "lockName", negLockName)
+	go collectLockAvailabilityMetrics(negLockName, flags.F.GKEClusterType, option.stopCh, logger)
+
+	if ctx.EnableASMConfigMap {
+		ctx.ASMConfigController.RegisterInformer(ctx.ConfigMapInformer, func() {
+			// We want to trigger a restart.
+			option.closeStopCh()
+		})
+	}
+
+	if flags.F.EnableNEGController {
+		negController := createNEGController(ctx, option.stopCh, logger)
+		go runWithWg(negController.Run, option.wg)
+		logger.V(0).Info("negController started")
+	}
+
+	go app.RunSIGTERMHandler(option.closeStopCh, logger)
+
+	// TODO(sawsa307): Find a better approach to start informers.
+	// If Ingress and NEG controller run together, since they share the same
+	// informers, they will be started twice, but on the second call, Run()
+	// will be skipped with the following warnings:
+	//    The sharedIndexInformer has started, run more than once is not allowed
+	ctx.Start(option.stopCh)
 }
 
 func createNEGController(ctx *ingctx.ControllerContext, stopCh <-chan struct{}, logger klog.Logger) *neg.Controller {
@@ -589,11 +573,31 @@ func collectLockAvailabilityMetrics(lockName, clusterType string, stopCh <-chan 
 	for {
 		select {
 		case <-stopCh:
-			lockLogger.Info("StopCh is closed. Stop collecting metrics for resource lock", "lockName", lockName)
+			lockLogger.Info("StopCh is closed. Stop collecting metrics for resource lock")
 			return
 		case <-ticker.C:
 			app.PublishLockAvailabilityMetrics(lockName, clusterType)
-			lockLogger.Info("Exported resource lock availability metrics", "lockName", lockName)
+			lockLogger.Info("Exported resource lock availability metrics")
 		}
+	}
+}
+
+func waitWithTimeout(wg *sync.WaitGroup, logger klog.Logger) {
+	doneCh := make(chan struct{})
+	go func() {
+		defer close(doneCh)
+		// Wait until all controllers are done with cleanup.
+		logger.Info("Starting to wait for cleanup")
+		wg.Wait()
+		logger.Info("Finished waiting for cleanup")
+	}()
+
+	select {
+	case <-doneCh:
+		logger.Info("Finished cleanup, shutting down")
+		return
+	case <-time.After(30 * time.Second):
+		logger.Info("Reached 30 seconds timeout limit for cleanup, shutting down")
+		return
 	}
 }
