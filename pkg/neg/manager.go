@@ -109,7 +109,6 @@ type syncerManager struct {
 
 	// zone maps keep track of the last set of zones the neg controller has seen
 	// for their respective NEG types. zone maps are protected by the mu mutex.
-	vmIpZoneMap     map[string]struct{}
 	vmIpPortZoneMap map[string]struct{}
 
 	// lpConfig configures the pod label to be propagated to NEG endpoints.
@@ -134,8 +133,7 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 	lpConfig podlabels.PodLabelPropagationConfig,
 	logger klog.Logger) *syncerManager {
 
-	var vmIpZoneMap, vmIpPortZoneMap map[string]struct{}
-	updateZoneMap(&vmIpZoneMap, negtypes.NodePredicateForNetworkEndpointType(negtypes.VmIpEndpointType), zoneGetter, logger)
+	var vmIpPortZoneMap map[string]struct{}
 	updateZoneMap(&vmIpPortZoneMap, negtypes.NodePredicateForNetworkEndpointType(negtypes.VmIpPortEndpointType), zoneGetter, logger)
 
 	return &syncerManager{
@@ -157,7 +155,6 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 		enableDualStackNEG:  enableDualStackNEG,
 		numGCWorkers:        numGCWorkers,
 		logger:              logger,
-		vmIpZoneMap:         vmIpZoneMap,
 		vmIpPortZoneMap:     vmIpPortZoneMap,
 		lpConfig:            lpConfig,
 	}
@@ -313,7 +310,6 @@ func (manager *syncerManager) SyncNodes() {
 	defer manager.mu.Unlock()
 
 	// When a zone change occurs (new zone is added or deleted), a sync should be triggered
-	isVmIpZoneChange := updateZoneMap(&manager.vmIpZoneMap, negtypes.NodePredicateForNetworkEndpointType(negtypes.VmIpEndpointType), manager.zoneGetter, manager.logger)
 	isVmIpPortZoneChange := updateZoneMap(&manager.vmIpPortZoneMap, negtypes.NodePredicateForNetworkEndpointType(negtypes.VmIpPortEndpointType), manager.zoneGetter, manager.logger)
 
 	for key, syncer := range manager.syncerMap {
@@ -324,9 +320,7 @@ func (manager *syncerManager) SyncNodes() {
 		switch key.NegType {
 
 		case negtypes.VmIpEndpointType:
-			if isVmIpZoneChange {
-				syncer.Sync()
-			}
+			syncer.Sync()
 
 		case negtypes.VmIpPortEndpointType, negtypes.NonGCPPrivateEndpointType:
 			if isVmIpPortZoneChange {
