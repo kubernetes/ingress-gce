@@ -2261,9 +2261,9 @@ func TestWeightedILB(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to read BackendService, %v", err)
 			}
-			backedHasWeighted := (bs.LocalityLbPolicy == backends.WeightedLocalityLbPolicy)
+			backedHasWeighted := (bs.LocalityLbPolicy == string(backends.LocalityLBPolicyWeightedMaglev))
 			if tc.wantWeighted != backedHasWeighted {
-				t.Errorf("Enexpected BackendService LocalityLbPolicy value %v, got weighted: %v, want weighted: %v", bs.LocalityLbPolicy, tc.wantWeighted, backedHasWeighted)
+				t.Errorf("Unexpected BackendService LocalityLbPolicy value %v, got weighted: %v, want weighted: %v", bs.LocalityLbPolicy, tc.wantWeighted, backedHasWeighted)
 			}
 		})
 	}

@@ -293,15 +293,13 @@ func HasStrongSessionAffinityAnnotation(service *v1.Service) bool {
 	return false
 }
 
-// HasWeightedLBPodsPerNodeAnnotations checks if the given service has pods-per-node Weighted load balancing annotation
-func HasWeightedLBPodsPerNodeAnnotations(service *v1.Service) bool {
+// HasWeightedLBPodsPerNodeAnnotation checks if the given service has pods-per-node Weighted load balancing annotation
+func HasWeightedLBPodsPerNodeAnnotation(service *v1.Service) bool {
 	if service == nil {
 		return false
 	}
 	if val, ok := service.Annotations[WeightedL4AnnotationKey]; ok && val == WeightedL4AnnotationPodsPerNode {
-		if service.Spec.ExternalTrafficPolicy == v1.ServiceExternalTrafficPolicyTypeLocal {
-			return true
-		}
+		return true
 	}
 	return false
 }

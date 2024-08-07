@@ -244,7 +244,6 @@ func TestBackendSvcEqual(t *testing.T) {
 		oldBackendService         *composite.BackendService
 		newBackendService         *composite.BackendService
 		compareConnectionTracking bool
-		compareWeightedLB         bool
 		wantEqual                 bool
 	}{
 		{
@@ -455,44 +454,61 @@ func TestBackendSvcEqual(t *testing.T) {
 			wantEqual: true,
 		},
 		{
-			desc: "Test backend service diff with weighted load balancing pods-per-node ENABLED",
+			desc: "Test existing backend service diff with weighted load balancing feature enabled",
 			oldBackendService: &composite.BackendService{
-				LocalityLbPolicy: "",
+				LocalityLbPolicy: string(LocalityLBPolicyDefault),
 			},
 			newBackendService: &composite.BackendService{
-				LocalityLbPolicy: WeightedLocalityLbPolicy,
+				LocalityLbPolicy: string(LocalityLBPolicyMaglev),
 			},
-			compareWeightedLB: true,
-			wantEqual:         false,
+			wantEqual: true,
+		},
+		{
+			desc: "Test backend service diff with weighted load balancing pods-per-node ENABLED",
+			oldBackendService: &composite.BackendService{
+				LocalityLbPolicy: string(LocalityLBPolicyDefault),
+			},
+			newBackendService: &composite.BackendService{
+				LocalityLbPolicy: string(LocalityLBPolicyWeightedMaglev),
+			},
+			wantEqual: false,
 		},
 		{
 			desc: "Test backend service diff with weighted load balancing pods-per-node DISABLED",
 			oldBackendService: &composite.BackendService{
-				LocalityLbPolicy: "",
+				LocalityLbPolicy: string(LocalityLBPolicyMaglev),
 			},
 			newBackendService: &composite.BackendService{
-				LocalityLbPolicy: WeightedLocalityLbPolicy,
+				LocalityLbPolicy: string(LocalityLBPolicyMaglev),
 			},
-			compareWeightedLB: false,
-			wantEqual:         true,
+			wantEqual: true,
+		},
+		{
+			desc: "Test backend service diff disable weighted load balancing pods-per-node",
+			oldBackendService: &composite.BackendService{
+				LocalityLbPolicy: string(LocalityLBPolicyWeightedMaglev),
+			},
+			newBackendService: &composite.BackendService{
+				LocalityLbPolicy: string(LocalityLBPolicyMaglev),
+			},
+			wantEqual: false,
 		},
 		{
 			desc:                      "Test backend service diff with weighted load balancing pods-per-node and connection tracking enabled",
 			compareConnectionTracking: true,
-			compareWeightedLB:         true,
 			oldBackendService: &composite.BackendService{
 				ConnectionTrackingPolicy: &composite.BackendServiceConnectionTrackingPolicy{
 					EnableStrongAffinity: false,
 					IdleTimeoutSec:       defaultIdleTimeout,
 				},
-				LocalityLbPolicy: WeightedLocalityLbPolicy,
+				LocalityLbPolicy: string(LocalityLBPolicyWeightedMaglev),
 			},
 			newBackendService: &composite.BackendService{
 				ConnectionTrackingPolicy: &composite.BackendServiceConnectionTrackingPolicy{
 					EnableStrongAffinity: true,
 					IdleTimeoutSec:       prolongedIdleTimeout,
 				},
-				LocalityLbPolicy: WeightedLocalityLbPolicy,
+				LocalityLbPolicy: string(LocalityLBPolicyWeightedMaglev),
 			},
 			wantEqual: false,
 		},
@@ -500,7 +516,7 @@ func TestBackendSvcEqual(t *testing.T) {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
-			result := backendSvcEqual(tc.oldBackendService, tc.newBackendService, tc.compareConnectionTracking, tc.compareWeightedLB)
+			result := backendSvcEqual(tc.oldBackendService, tc.newBackendService, tc.compareConnectionTracking)
 			if result != tc.wantEqual {
 				t.Errorf("backendSvcEqual() returned %v, expected %v. Diff(oldScv, newSvc): %s",
 					result, tc.wantEqual, cmp.Diff(tc.oldBackendService, tc.newBackendService))

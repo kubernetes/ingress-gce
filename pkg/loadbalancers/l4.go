@@ -474,19 +474,19 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		}
 	}
 
-	enableWeightedLBPodsPerNode := l4.enableWeightedLB && annotations.HasWeightedLBPodsPerNodeAnnotations(l4.Service)
+	localityLbPolicy := l4.determineBackendServiceLocalityPolicy()
 
 	// ensure backend service
 	backendParams := backends.L4BackendServiceParams{
-		Name:                             bsName,
-		HealthCheckLink:                  hcLink,
-		Protocol:                         string(protocol),
-		SessionAffinity:                  string(l4.Service.Spec.SessionAffinity),
-		Scheme:                           string(cloud.SchemeInternal),
-		NamespacedName:                   l4.NamespacedName,
-		NetworkInfo:                      &l4.network,
-		ConnectionTrackingPolicy:         noConnectionTrackingPolicy,
-		WeightedLoadBalancingPodsPerNode: enableWeightedLBPodsPerNode,
+		Name:                     bsName,
+		HealthCheckLink:          hcLink,
+		Protocol:                 string(protocol),
+		SessionAffinity:          string(l4.Service.Spec.SessionAffinity),
+		Scheme:                   string(cloud.SchemeInternal),
+		NamespacedName:           l4.NamespacedName,
+		NetworkInfo:              &l4.network,
+		ConnectionTrackingPolicy: noConnectionTrackingPolicy,
+		LocalityLbPolicy:         localityLbPolicy,
 	}
 	bs, err := l4.backendPool.EnsureL4BackendService(backendParams, l4.svcLogger)
 	if err != nil {
@@ -677,4 +677,29 @@ func (l4 *L4) getOldIPv4ForwardingRule(existingBS *composite.BackendService) (*c
 	}
 
 	return l4.forwardingRules.Get(oldFRName)
+}
+
+// determineBackendServiceLocalityPolicy returns the locality policy to be used for the backend service of the internal load balancer.
+func (l4 *L4) determineBackendServiceLocalityPolicy() backends.LocalityLBPolicyType {
+	// If the service has weighted load balancing enabled, the locality policy can only be WEIGHTED_MAGLEV or MAGLEV.
+	if l4.enableWeightedLB {
+		if annotations.HasWeightedLBPodsPerNodeAnnotation(l4.Service) {
+			if l4.Service.Spec.ExternalTrafficPolicy == corev1.ServiceExternalTrafficPolicyTypeLocal {
+				// If the service has the annotation "networking.gke.io/weighted-load-balancing = pods-per-node"
+				// and the external traffic policy is local, weighted load balancing is enabled and the backend
+				// service locality policy is set to WEIGHTED_MAGLEV.
+				return backends.LocalityLBPolicyWeightedMaglev
+			} else {
+				// If the service has the annotation "networking.gke.io/weighted-load-balancing = pods-per-node"
+				// and the external traffic policy is cluster, weighted load balancing is not enabled.
+				l4.recorder.Eventf(l4.Service, corev1.EventTypeWarning, "UnsupportedConfiguration",
+					"Weighted load balancing by pods-per-node has no effect with External Traffic Policy: Cluster.")
+				return backends.LocalityLBPolicyMaglev
+			}
+		} else {
+			return backends.LocalityLBPolicyMaglev
+		}
+	}
+	// If the service has weighted load balancing disabled, the default locality policy is used.
+	return backends.LocalityLBPolicyDefault
 }
