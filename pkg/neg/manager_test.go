@@ -1443,6 +1443,11 @@ func TestSyncNodesConditions(t *testing.T) {
 			negType:    negtypes.VmIpPortEndpointType,
 		},
 		{
+			desc:       "vm ip neg, should always sync on any node change",
+			expectSync: true,
+			negType:    negtypes.VmIpEndpointType,
+		},
+		{
 			desc:       "vm ip neg, zones added",
 			expectSync: true,
 			negType:    negtypes.VmIpEndpointType,
@@ -1458,7 +1463,7 @@ func TestSyncNodesConditions(t *testing.T) {
 		},
 		{
 			desc:       "vm ip neg, zones are the same",
-			expectSync: false,
+			expectSync: true,
 			negType:    negtypes.VmIpEndpointType,
 		},
 		{
