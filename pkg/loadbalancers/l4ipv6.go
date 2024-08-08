@@ -202,7 +202,7 @@ func (l4 *L4) getOldIPv6ForwardingRule(existingBS *composite.BackendService) (*c
 
 func (l4 *L4) serviceSubnetHasInternalIPv6Range() error {
 	subnetName := l4.subnetName()
-	hasIPv6SubnetRange, err := utils.SubnetHasIPv6Range(l4.cloud, subnetName, subnetInternalIPv6AccessType)
+	hasIPv6SubnetRange, err := utils.SubnetHasIPv6Range(l4.cloud, subnetName, subnetInternalAccessType)
 	if err != nil {
 		return err
 	}
@@ -212,6 +212,22 @@ func (l4 *L4) serviceSubnetHasInternalIPv6Range() error {
 		return utils.NewUserError(
 			fmt.Errorf(
 				"subnet %s does not have internal IPv6 ranges, required for an internal IPv6 Service. You can specify an internal IPv6 subnet using the \"%s\" annotation on the Service", subnetName, annotations.CustomSubnetAnnotationKey))
+	}
+	return nil
+}
+
+func (l4 *L4) serviceSubnetHasInternalIPv4Range() error {
+	subnetName := l4.subnetName()
+	hasIPv6SubnetRange, err := utils.SubnetHasIPv4Range(l4.cloud, subnetName, subnetInternalAccessType)
+	if err != nil {
+		return err
+	}
+	if !hasIPv6SubnetRange {
+		// We don't need to emit custom event, because errors are already emitted to the user as events.
+		l4.svcLogger.Info("Subnet for IPv4 Service does not have internal IPv4 ranges", "subnetName", subnetName)
+		return utils.NewUserError(
+			fmt.Errorf(
+				"subnet %s does not have internal IPv4 ranges, required for an internal IPv4 Service. You can specify an internal IPv4 subnet using the \"%s\" annotation on the Service", subnetName, annotations.CustomSubnetAnnotationKey))
 	}
 	return nil
 }

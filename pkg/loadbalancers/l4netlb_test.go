@@ -689,7 +689,7 @@ func TestEnsureIPv6ExternalLoadBalancerCustomSubnet(t *testing.T) {
 	// create custom subnet
 	subnetKey := meta.RegionalKey("test-subnet", l4NetLB.cloud.Region())
 	subnetToCreate := &ga.Subnetwork{
-		Ipv6AccessType: subnetExternalIPv6AccessType,
+		Ipv6AccessType: subnetExternalAccessType,
 		StackType:      "IPV4_IPV6",
 	}
 	err := l4NetLB.cloud.Compute().(*cloud.MockGCE).Subnetworks().Insert(context.TODO(), subnetKey, subnetToCreate)
@@ -750,7 +750,7 @@ func TestDualStackNetLBBadCustomSubnet(t *testing.T) {
 		},
 		{
 			desc:                 "Should return error on internal ipv6 subnet",
-			subnetIpv6AccessType: subnetInternalIPv6AccessType,
+			subnetIpv6AccessType: subnetInternalAccessType,
 			subnetStackType:      "IPV4_IPV6",
 		},
 	}
@@ -907,7 +907,7 @@ func mustSetupNetLBTestHandler(t *testing.T, svc *v1.Service, nodeNames []string
 	}
 
 	// Create cluster subnet. Mock GCE uses subnet with empty string name.
-	test.MustCreateDualStackClusterSubnet(t, l4NetLB.cloud, subnetExternalIPv6AccessType)
+	test.MustCreateDualStackClusterSubnet(t, l4NetLB.cloud, subnetExternalAccessType)
 	return l4NetLB
 }
 

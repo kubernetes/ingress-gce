@@ -31,8 +31,8 @@ import (
 )
 
 const (
-	ipv6Suffix                   = "-ipv6"
-	subnetExternalIPv6AccessType = "EXTERNAL"
+	ipv6Suffix               = "-ipv6"
+	subnetExternalAccessType = "EXTERNAL"
 )
 
 // ensureIPv6Resources creates resources specific to IPv6 L4 NetLB Load Balancers:
@@ -195,7 +195,7 @@ func (l4netlb *L4NetLB) ipv6SubnetURL() (string, error) {
 	return l4netlb.cloud.SubnetworkURL(), nil
 }
 
-func (l4netlb *L4NetLB) ipv6SubnetName() string {
+func (l4netlb *L4NetLB) getSubnetName() string {
 	// At first check custom subnet annotation.
 	customSubnetName := annotations.FromService(l4netlb.Service).GetExternalLoadBalancerAnnotationSubnet()
 	if customSubnetName != "" {
@@ -209,8 +209,8 @@ func (l4netlb *L4NetLB) ipv6SubnetName() string {
 }
 
 func (l4netlb *L4NetLB) serviceSubnetHasExternalIPv6Range() error {
-	subnetName := l4netlb.ipv6SubnetName()
-	hasIPv6SubnetRange, err := utils.SubnetHasIPv6Range(l4netlb.cloud, subnetName, subnetExternalIPv6AccessType)
+	subnetName := l4netlb.getSubnetName()
+	hasIPv6SubnetRange, err := utils.SubnetHasIPv6Range(l4netlb.cloud, subnetName, subnetExternalAccessType)
 	if err != nil {
 		return err
 	}
@@ -220,6 +220,22 @@ func (l4netlb *L4NetLB) serviceSubnetHasExternalIPv6Range() error {
 		return utils.NewUserError(
 			fmt.Errorf(
 				"subnet %s does not have external IPv6 ranges, required for an external IPv6 Service. You can specify an external IPv6 subnet using the \"%s\" annotation on the Service", subnetName, annotations.CustomSubnetAnnotationKey))
+	}
+	return nil
+}
+
+func (l4netlb *L4NetLB) serviceSubnetHasExternalIPv4Range() error {
+	subnetName := l4netlb.getSubnetName()
+	hasIPv6SubnetRange, err := utils.SubnetHasIPv4Range(l4netlb.cloud, subnetName, subnetExternalAccessType)
+	if err != nil {
+		return err
+	}
+	if !hasIPv6SubnetRange {
+		// We don't need to emit custom event, because errors are already emitted to the user as events.
+		l4netlb.svcLogger.Info("Subnet for IPv4 Service does not have external IPv6 ranges", "subnetName", subnetName)
+		return utils.NewUserError(
+			fmt.Errorf(
+				"subnet %s does not have external IPv4 ranges, required for an external IPv6 Service. You can specify an external IPv4 subnet using the \"%s\" annotation on the Service", subnetName, annotations.CustomSubnetAnnotationKey))
 	}
 	return nil
 }

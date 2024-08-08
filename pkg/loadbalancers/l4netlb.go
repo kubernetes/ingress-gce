@@ -236,6 +236,15 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 		}
 	}
 
+	// If service requires IPv6 LoadBalancer -- verify that Subnet with External IPv4 ranges is used.
+	if l4netlb.enableDualStack && utils.NeedsIPv6(svc) {
+		err := l4netlb.serviceSubnetHasExternalIPv4Range()
+		if err != nil {
+			result.Error = err
+			return result
+		}
+	}
+
 	hcLink := l4netlb.provideHealthChecks(nodeNames, result)
 	if result.Error != nil {
 		return result

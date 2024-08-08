@@ -17,6 +17,7 @@ limitations under the License.
 package utils
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -87,6 +88,9 @@ const (
 	// be removed in 1.18.
 	LabelAlphaNodeRoleExcludeBalancer = "alpha.service-controller.kubernetes.io/exclude-balancer"
 	DualStackSubnetStackType          = "IPV4_IPV6"
+	IPv6SubnetStackType               = "IPV6_ONLY"
+
+	IPv4SubnetStackType = "IPV4_ONLY"
 
 	// LabelNodeSubnet specifies the subnet name of this node.
 	LabelNodeSubnet = "cloud.google.com/gke-node-pool-subnet"
@@ -883,12 +887,26 @@ func AddIPToLBStatus(status *api_v1.LoadBalancerStatus, ips ...string) *api_v1.L
 	return status
 }
 
-func SubnetHasIPv6Range(cloud *gce.Cloud, subnetName, ipv6AccessType string) (bool, error) {
-	subnet, err := cloud.GetSubnetwork(cloud.Region(), subnetName)
+func SubnetHasIPv6Range(gcecloud *gce.Cloud, subnetName, accessType string) (bool, error) {
+	key := meta.RegionalKey(subnetName, gcecloud.Region())
+	subnet, err := gcecloud.Compute().AlphaSubnetworks().Get(context.Background(), key)
 	if err != nil {
 		return false, fmt.Errorf("failed getting subnet: %w", err)
 	}
-	return subnet.StackType == DualStackSubnetStackType && subnet.Ipv6AccessType == ipv6AccessType, nil
+	stackTypeMatches := subnet.StackType == DualStackSubnetStackType || subnet.StackType == IPv6SubnetStackType
+	accessTypeMatches := subnet.Ipv6AccessType == accessType
+	return stackTypeMatches && accessTypeMatches, nil
+}
+
+func SubnetHasIPv4Range(gcecloud *gce.Cloud, subnetName, accessType string) (bool, error) {
+	key := meta.RegionalKey(subnetName, gcecloud.Region())
+	subnet, err := gcecloud.Compute().AlphaSubnetworks().Get(context.Background(), key)
+	if err != nil {
+		return false, fmt.Errorf("failed getting subnet: %w", err)
+	}
+	stackTypeMatches := subnet.StackType == DualStackSubnetStackType || subnet.StackType == IPv4SubnetStackType
+	accessTypeMatches := subnet.Ipv6AccessType == accessType
+	return stackTypeMatches && accessTypeMatches, nil
 }
 
 // IsUnsupportedFeatureError returns true if the error has 400 number,
