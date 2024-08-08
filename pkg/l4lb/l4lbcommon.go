@@ -114,9 +114,9 @@ func isHealthCheckDeleted(cloud *gce.Cloud, hcName string, logger klog.Logger) b
 	return utils.IsNotFoundError(err)
 }
 
-func skipUserError(err error, logger klog.Logger) error {
+func skipUserError(err error, svcLogger klog.Logger) error {
 	if utils.IsUserError(err) {
-		logger.Info("Sync failed with user-caused error", "err", err)
+		svcLogger.Info("Sync failed with user-caused error", "err", err)
 		return nil
 	}
 	return err

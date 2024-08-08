@@ -35,9 +35,18 @@ const (
 	DefaultConnectionDrainingTimeoutSeconds = 30
 	defaultTrackingMode                     = "PER_CONNECTION"
 	PerSessionTrackingMode                  = "PER_SESSION" // the only one supported with strong session affinity
+)
 
-	WeightedLocalityLbPolicy = "WEIGHTED_MAGLEV"
-	DefaultLocalityLbPolicy  = ""
+// LocalityLBPolicyType is the type of locality lb policy the backend service should use.
+type LocalityLBPolicyType string
+
+const (
+	// LocalityLBPolicyDefault is the default locality lb policy for a backend service.
+	LocalityLBPolicyDefault LocalityLBPolicyType = ""
+	// LocalityLBPolicyWeightedMaglev is the locality lb policy for weighted load balancing by pods-per-node.
+	LocalityLBPolicyWeightedMaglev LocalityLBPolicyType = "WEIGHTED_MAGLEV"
+	// LocalityLBPolicyMaglev is the locality lb policy when weighted load balancing by pods-per-node is disabled.
+	LocalityLBPolicyMaglev LocalityLBPolicyType = "MAGLEV"
 )
 
 // Backends handles CRUD operations for backends.
@@ -75,15 +84,15 @@ func NewPoolWithConnectionTrackingPolicy(cloud *gce.Cloud, namer namer.BackendNa
 
 // L4BackendServiceParams encapsulates parameters for ensuring an L4 BackendService.
 type L4BackendServiceParams struct {
-	Name                             string
-	HealthCheckLink                  string
-	Protocol                         string
-	SessionAffinity                  string
-	Scheme                           string
-	NamespacedName                   types.NamespacedName
-	NetworkInfo                      *network.NetworkInfo
-	ConnectionTrackingPolicy         *composite.BackendServiceConnectionTrackingPolicy
-	WeightedLoadBalancingPodsPerNode bool
+	Name                     string
+	HealthCheckLink          string
+	Protocol                 string
+	SessionAffinity          string
+	Scheme                   string
+	NamespacedName           types.NamespacedName
+	NetworkInfo              *network.NetworkInfo
+	ConnectionTrackingPolicy *composite.BackendServiceConnectionTrackingPolicy
+	LocalityLbPolicy         LocalityLBPolicyType
 }
 
 // ensureDescription updates the BackendService Description with the expected value
@@ -351,10 +360,7 @@ func (b *Backends) EnsureL4BackendService(params L4BackendServiceParams, beLogge
 		HealthChecks:        []string{params.HealthCheckLink},
 		SessionAffinity:     utils.TranslateAffinityType(params.SessionAffinity, beLogger),
 		LoadBalancingScheme: params.Scheme,
-	}
-	// Update the LoadBalancingScheme field if Weighted Load Balancing has pods-per-node annotation
-	if params.WeightedLoadBalancingPodsPerNode {
-		expectedBS.LocalityLbPolicy = WeightedLocalityLbPolicy
+		LocalityLbPolicy:    string(params.LocalityLbPolicy),
 	}
 
 	// We need this configuration only for Strong Session Affinity feature
@@ -387,7 +393,7 @@ func (b *Backends) EnsureL4BackendService(params L4BackendServiceParams, beLogge
 		return composite.GetBackendService(b.cloud, key, meta.VersionGA, beLogger)
 	}
 
-	if backendSvcEqual(expectedBS, bs, b.useConnectionTrackingPolicy, params.WeightedLoadBalancingPodsPerNode) {
+	if backendSvcEqual(expectedBS, bs, b.useConnectionTrackingPolicy) {
 		beLogger.V(2).Info("EnsureL4BackendService: backend service did not change, skipping update")
 		return bs, nil
 	}
@@ -414,7 +420,7 @@ func (b *Backends) EnsureL4BackendService(params L4BackendServiceParams, beLogge
 // service will not be updated. The list of backends is not checked either,
 // since that is handled by the neg-linker.
 // The list of backends is not checked, since that is handled by the neg-linker.
-func backendSvcEqual(a, b *composite.BackendService, compareConnectionTracking, compareWeightedLB bool) bool {
+func backendSvcEqual(a, b *composite.BackendService, compareConnectionTracking bool) bool {
 	svcsEqual := a.Protocol == b.Protocol &&
 		a.Description == b.Description &&
 		a.SessionAffinity == b.SessionAffinity &&
@@ -427,9 +433,9 @@ func backendSvcEqual(a, b *composite.BackendService, compareConnectionTracking, 
 		svcsEqual = svcsEqual && connectionTrackingPolicyEqual(a.ConnectionTrackingPolicy, b.ConnectionTrackingPolicy)
 	}
 
-	if compareWeightedLB {
-		svcsEqual = svcsEqual && (a.LocalityLbPolicy == b.LocalityLbPolicy)
-	}
+	// If the locality lb policy is not set for existing services, no need to update to MAGLEV since it is the default now.
+	svcsEqual = svcsEqual && a.LocalityLbPolicy == b.LocalityLbPolicy || (a.LocalityLbPolicy == string(LocalityLBPolicyDefault) &&
+		b.LocalityLbPolicy == string(LocalityLBPolicyMaglev))
 
 	return svcsEqual
 }

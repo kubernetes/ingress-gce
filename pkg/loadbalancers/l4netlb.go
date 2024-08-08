@@ -311,19 +311,20 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 	bsName := l4netlb.namer.L4Backend(l4netlb.Service.Namespace, l4netlb.Service.Name)
 	servicePorts := l4netlb.Service.Spec.Ports
 	protocol := utils.GetProtocol(servicePorts)
-	enableWeightedLBPodsPerNode := l4netlb.enableWeightedLB && annotations.HasWeightedLBPodsPerNodeAnnotations(l4netlb.Service)
+
+	localityLbPolicy := l4netlb.determineBackendServiceLocalityPolicy()
 
 	connectionTrackingPolicy := l4netlb.connectionTrackingPolicy()
 	backendParams := backends.L4BackendServiceParams{
-		Name:                             bsName,
-		HealthCheckLink:                  hcLink,
-		Protocol:                         string(protocol),
-		SessionAffinity:                  string(l4netlb.Service.Spec.SessionAffinity),
-		Scheme:                           string(cloud.SchemeExternal),
-		NamespacedName:                   l4netlb.NamespacedName,
-		NetworkInfo:                      network.DefaultNetwork(l4netlb.cloud),
-		ConnectionTrackingPolicy:         connectionTrackingPolicy,
-		WeightedLoadBalancingPodsPerNode: enableWeightedLBPodsPerNode,
+		Name:                     bsName,
+		HealthCheckLink:          hcLink,
+		Protocol:                 string(protocol),
+		SessionAffinity:          string(l4netlb.Service.Spec.SessionAffinity),
+		Scheme:                   string(cloud.SchemeExternal),
+		NamespacedName:           l4netlb.NamespacedName,
+		NetworkInfo:              network.DefaultNetwork(l4netlb.cloud),
+		ConnectionTrackingPolicy: connectionTrackingPolicy,
+		LocalityLbPolicy:         localityLbPolicy,
 	}
 
 	bs, err := l4netlb.backendPool.EnsureL4BackendService(backendParams, l4netlb.svcLogger)
@@ -620,4 +621,29 @@ func (l4netlb *L4NetLB) hasAnnotation(annotationKey string) bool {
 // which controller should process the service Ingress-GCE or k/k service controller.
 func (l4netlb *L4NetLB) frName() string {
 	return utils.LegacyForwardingRuleName(l4netlb.Service)
+}
+
+// determineBackendServiceLocalityPolicy returns the locality policy to be used for the backend service of the external load balancer.
+func (l4netlb *L4NetLB) determineBackendServiceLocalityPolicy() backends.LocalityLBPolicyType {
+	// If the service has weighted load balancing enabled, the locality policy can only be WEIGHTED_MAGLEV or MAGLEV.
+	if l4netlb.enableWeightedLB {
+		if annotations.HasWeightedLBPodsPerNodeAnnotation(l4netlb.Service) {
+			if l4netlb.Service.Spec.ExternalTrafficPolicy == corev1.ServiceExternalTrafficPolicyTypeLocal {
+				// If the service has the annotation "networking.gke.io/weighted-load-balancing = pods-per-node"
+				// and the external traffic policy is local, weighted load balancing is enabled and the backend
+				// service locality policy is set to WEIGHTED_MAGLEV.
+				return backends.LocalityLBPolicyWeightedMaglev
+			} else {
+				// If the service has the annotation "networking.gke.io/weighted-load-balancing = pods-per-node"
+				// and the external traffic policy is cluster, weighted load balancing is not enabled.
+				l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeWarning, "UnsupportedConfiguration",
+					"Weighted load balancing by pods-per-node has no effect with External Traffic Policy: Cluster.")
+				return backends.LocalityLBPolicyMaglev
+			}
+		} else {
+			return backends.LocalityLBPolicyMaglev
+		}
+	}
+	// If the service has weighted load balancing disabled, the default locality policy is used.
+	return backends.LocalityLBPolicyDefault
 }
