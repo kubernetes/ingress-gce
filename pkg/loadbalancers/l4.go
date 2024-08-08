@@ -42,7 +42,10 @@ import (
 )
 
 const (
-	subnetInternalIPv6AccessType = "INTERNAL"
+	subnetInternalIPv6AccessType          = "INTERNAL"
+	WeightedLBPodsPerNodeAllowlistMessage = "Weighted Load Balancing for L4 " +
+		"Internal Passthrough Load Balancers requires project allowlisting. If " +
+		"you need access to this feature please contact Google Cloud support team"
 )
 
 var (
@@ -490,8 +493,14 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	}
 	bs, err := l4.backendPool.EnsureL4BackendService(backendParams, l4.svcLogger)
 	if err != nil {
-		result.GCEResourceInError = annotations.BackendServiceResource
-		result.Error = err
+		if utils.IsUnsupportedFeatureError(err, string(backends.LocalityLBPolicyWeightedMaglev)) {
+			result.GCEResourceInError = annotations.BackendServiceResource
+			l4.recorder.Eventf(l4.Service, corev1.EventTypeWarning, "AllowlistingRequired", WeightedLBPodsPerNodeAllowlistMessage)
+			result.Error = utils.NewUserError(err)
+		} else {
+			result.GCEResourceInError = annotations.BackendServiceResource
+			result.Error = err
+		}
 		return result
 	}
 	result.Annotations[annotations.BackendServiceKey] = bsName
