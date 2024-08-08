@@ -318,22 +318,29 @@ func (manager *syncerManager) SyncNodes() {
 	isVmIpPortZoneChange := updateZoneMap(&manager.vmIpPortZoneMap, negtypes.NodeFilterForNetworkEndpointType(negtypes.VmIpPortEndpointType), manager.zoneGetter, manager.logger)
 
 	for key, syncer := range manager.syncerMap {
+		manager.logger.V(1).Info("SyncNodes: Evaluating sync decision for syncer", "negSyncerKey", key.String())
+
 		if syncer.IsStopped() {
+			manager.logger.V(1).Info("SyncNodes: Syncer is already stopped; not syncing.", "negSyncerKey", key.String())
 			continue
 		}
 
 		switch key.NegType {
 
 		case negtypes.VmIpEndpointType:
+			manager.logger.V(1).Info("SyncNodes: Triggering sync", "negSyncerKey", key.String(), "negSyncerType", key.NegType)
 			syncer.Sync()
 
 		case negtypes.VmIpPortEndpointType, negtypes.NonGCPPrivateEndpointType:
 			if isVmIpPortZoneChange {
+				manager.logger.V(1).Info("SyncNodes: Triggering sync because of zone change", "negSyncerKey", key.String(), "negSyncerType", key.NegType)
 				syncer.Sync()
+			} else {
+				manager.logger.V(1).Info("SyncNodes: Not triggering sync since no zone change", "negSyncerKey", key.String(), "negSyncerType", key.NegType)
 			}
 
 		default:
-			manager.logger.Error(nil, "Not triggering sync for syncer of unknown type", "syncerType", key.NegType)
+			manager.logger.Error(nil, "SyncNodes: Not triggering sync for syncer of unknown type", "negSyncerType", key.NegType)
 		}
 	}
 }
