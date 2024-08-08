@@ -706,27 +706,38 @@ func GetServicePortRanges(svcPorts []api_v1.ServicePort) []string {
 	return GetPortRanges(portInts)
 }
 
-func minMaxPort(svcPorts []api_v1.ServicePort) (int32, int32) {
+func minMaxPort[T api_v1.ServicePort | string](svcPorts []T) (int32, int32) {
 	minPort := int32(65536)
 	maxPort := int32(0)
 	for _, svcPort := range svcPorts {
-		if svcPort.Port < minPort {
-			minPort = svcPort.Port
+		port := func(value any) int32 {
+			switch value.(type) {
+			case api_v1.ServicePort:
+				return value.(api_v1.ServicePort).Port
+			case string:
+				i, _ := strconv.ParseInt(value.(string), 10, 32)
+				return int32(i)
+			default:
+				return 0
+			}
+		}(svcPort)
+		if port < minPort {
+			minPort = port
 		}
-		if svcPort.Port > maxPort {
-			maxPort = svcPort.Port
+		if port > maxPort {
+			maxPort = port
 		}
 	}
 	return minPort, maxPort
 }
 
-func MinMaxPortRangeAndProtocol(svcPorts []api_v1.ServicePort) (portRange, protocol string) {
+func MinMaxPortRange[T api_v1.ServicePort | string](svcPorts []T) string {
 	if len(svcPorts) == 0 {
-		return "", ""
+		return ""
 	}
 
 	minPort, maxPort := minMaxPort(svcPorts)
-	return fmt.Sprintf("%d-%d", minPort, maxPort), string(svcPorts[0].Protocol)
+	return fmt.Sprintf("%d-%d", minPort, maxPort)
 }
 
 // TranslateAffinityType converts the k8s affinity type to the GCE affinity type.
