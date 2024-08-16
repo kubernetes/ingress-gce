@@ -17,6 +17,7 @@ limitations under the License.
 package network
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -28,6 +29,7 @@ import (
 	netfake "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned/fake"
 	informernetwork "github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions/network/v1"
 	informergkenetworkparamset "github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions/network/v1alpha1"
+	compute "google.golang.org/api/compute/v1"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -280,6 +282,97 @@ func (f fakeCloud) NetworkURL() string {
 func (f fakeCloud) SubnetworkURL() string {
 	return "https://www.googleapis.com/compute/v1/projects/test-region/regions/test-region/subnetworks/secondary-subnet"
 }
+
+type fakeCloudWithNetworkId struct {
+}
+
+func (f fakeCloudWithNetworkId) NetworkProjectID() string {
+	return "test-project"
+}
+
+func (f fakeCloudWithNetworkId) Region() string {
+	return "test-region"
+}
+
+func (f fakeCloudWithNetworkId) NetworkURL() string {
+	return "https://www.googleapis.com/compute/v1/projects/test-project/global/networks/12345678910"
+}
+
+func (f fakeCloudWithNetworkId) SubnetworkURL() string {
+	return "https://www.googleapis.com/compute/v1/projects/test-region/regions/test-region/subnetworks/secondary-subnet"
+}
+
+func (f fakeCloudWithNetworkId) GetNetwork(networkName string) (*compute.Network, error) {
+	if networkName == "12345678910" || networkName == "default" {
+		network := compute.Network{
+			SelfLink: "https://www.googleapis.com/compute/v1/projects/test-project/global/networks/default",
+		}
+		return &network, nil
+	}
+	return nil, fmt.Errorf("Invalid network name")
+}
+
+func TestServiceNetworkWithNetworkId(t *testing.T) {
+
+	cases := []struct {
+		desc               string
+		network            *networkv1.Network
+		gkeNetworkParamSet *networkv1.GKENetworkParamSet
+		service            *apiv1.Service
+		want               *NetworkInfo
+		wantErr            string
+	}{
+		{
+			desc: "service without network selector",
+			service: &apiv1.Service{
+				ObjectMeta: metav1.ObjectMeta{Name: "testService"},
+				Spec:       apiv1.ServiceSpec{},
+			},
+			want: DefaultNetwork(fakeCloud{}),
+		},
+	}
+
+	for _, tc := range cases {
+
+		t.Run(tc.desc, func(t *testing.T) {
+			networkClient := netfake.NewSimpleClientset()
+
+			networkInformer := informernetwork.NewNetworkInformer(networkClient, time.Minute*10, utils.NewNamespaceIndexer())
+			gkeNetworkParamSetInformer := informergkenetworkparamset.NewGKENetworkParamSetInformer(networkClient, time.Minute*10, utils.NewNamespaceIndexer())
+
+			networkIndexer := networkInformer.GetIndexer()
+			gkeNetworkParamSetIndexer := gkeNetworkParamSetInformer.GetIndexer()
+
+			if tc.network != nil {
+				networkIndexer.Add(tc.network)
+			}
+			if tc.gkeNetworkParamSet != nil {
+				gkeNetworkParamSetIndexer.Add(tc.gkeNetworkParamSet)
+			}
+
+			adapter, err := NewAdapterNetworkSelfLink(fakeCloudWithNetworkId{})
+
+			networksResolver := NewNetworksResolver(networkIndexer, gkeNetworkParamSetIndexer, adapter, true, klog.Background())
+			network, err := networksResolver.ServiceNetwork(tc.service)
+			if err != nil {
+				if tc.wantErr == "" {
+					t.Fatalf("determining network info returned an error, err=%v", err)
+				}
+				if !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("expected error containing message %q but got error %v", tc.wantErr, err)
+				}
+			}
+			if err == nil && tc.wantErr != "" {
+				t.Fatalf("expected error containing message %q but got no error", tc.wantErr)
+			}
+			diff := cmp.Diff(tc.want, network)
+			if diff != "" {
+				t.Errorf("Expected NetworkInfo ranges: %v, got ranges %v, diff: %s", tc.want, network, diff)
+			}
+		})
+	}
+}
+
 func testNetwork(name, gkeNetworkParamSetName string) *networkv1.Network {
 	return &networkv1.Network{
 		ObjectMeta: metav1.ObjectMeta{

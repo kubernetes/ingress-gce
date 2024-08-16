@@ -117,7 +117,16 @@ func NewL4NetLBController(
 	if ctx.GKENetworkParamsInformer != nil {
 		gkeNetworkParamSetLister = ctx.GKENetworkParamsInformer.GetIndexer()
 	}
-	l4netLBc.networkResolver = network.NewNetworksResolver(networkLister, gkeNetworkParamSetLister, ctx.Cloud, ctx.EnableMultinetworking, logger)
+	// The following adapter will use Network Selflink as Network Url instead of the NetworkUrl itself.
+	// Network Selflink is always composed by the network name even if the cluster was initialized with Network Id.
+	// All the components created from it will be consistent and always use the Url with network name and not the url with netowork Id
+	adapter, err := network.NewAdapterNetworkSelfLink(ctx.Cloud)
+	if err != nil {
+		logger.Error(err, "Failed to create network adapter with SelfLink")
+		// if it was not possible to retrieve network information use standard context as cloud network provider
+		adapter = ctx.Cloud
+	}
+	l4netLBc.networkResolver = network.NewNetworksResolver(networkLister, gkeNetworkParamSetLister, adapter, ctx.EnableMultinetworking, logger)
 	l4netLBc.negLinker = backends.NewNEGLinker(l4netLBc.backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer(), logger)
 	l4netLBc.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("l4netLB", "services", ctx.NumL4NetLBWorkers, l4netLBc.syncWrapper, logger)
 

@@ -115,7 +115,18 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 	if ctx.GKENetworkParamsInformer != nil {
 		l4c.gkeNetworkParamSetLister = ctx.GKENetworkParamsInformer.GetIndexer()
 	}
-	l4c.networkResolver = network.NewNetworksResolver(l4c.networkLister, l4c.gkeNetworkParamSetLister, ctx.Cloud, ctx.EnableMultinetworking, logger)
+
+	// The following adapter will use Network Selflink as Network Url instead of the NetworkUrl itself.
+	// Network Selflink is always composed by the network name even if the cluster was initialized with Network Id.
+	// All the components created from it will be consistent and always use the Url with network name and not the url with netowork Id
+	adapter, err := network.NewAdapterNetworkSelfLink(ctx.Cloud)
+	if err != nil {
+		logger.Error(err, "Failed to create network adapter with SelfLink")
+		// if it was not possible to retrieve network information use standard context as cloud network provider
+		adapter = ctx.Cloud
+	}
+
+	l4c.networkResolver = network.NewNetworksResolver(l4c.networkLister, l4c.gkeNetworkParamSetLister, adapter, ctx.EnableMultinetworking, logger)
 	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			addSvc := obj.(*v1.Service)

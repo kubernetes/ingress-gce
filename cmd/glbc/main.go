@@ -44,6 +44,7 @@ import (
 	ingparamsclient "k8s.io/ingress-gce/pkg/ingparams/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/l4lb"
+	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/psc"
 	"k8s.io/ingress-gce/pkg/serviceattachment"
 	serviceattachmentclient "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned"
@@ -515,6 +516,17 @@ func createNEGController(ctx *ingctx.ControllerContext, stopCh <-chan struct{}, 
 			logger.Error(err, "Failed to retrieve pod label propagation config")
 		}
 	}
+
+	// The following adapter will use Network Selflink as Network Url instead of the NetworkUrl itself.
+	// Network Selflink is always composed by the network name even if the cluster was initialized with Network Id.
+	// All the components created from it will be consistent and always use the Url with network name and not the url with netowork Id
+	adapter, err := network.NewAdapterNetworkSelfLink(ctx.Cloud)
+	if err != nil {
+		logger.Error(err, "Failed to create network adapter with SelfLink")
+		// if it was not possible to retrieve network information use standard context as cloud network provider
+		adapter = ctx.Cloud
+	}
+
 	// TODO: Refactor NEG to use cloud mocks so ctx.Cloud can be referenced within NewController.
 	negController := neg.NewController(
 		ctx.KubeClient,
@@ -532,7 +544,7 @@ func createNEGController(ctx *ingctx.ControllerContext, stopCh <-chan struct{}, 
 		ctx.HasSynced,
 		ctx.L4Namer,
 		ctx.DefaultBackendSvcPort,
-		negtypes.NewAdapterWithRateLimitSpecs(ctx.Cloud, flags.F.GCERateLimit.Values()),
+		negtypes.NewAdapterWithRateLimitSpecs(ctx.Cloud, flags.F.GCERateLimit.Values(), adapter),
 		zoneGetter,
 		ctx.ClusterNamer,
 		flags.F.ResyncPeriod,

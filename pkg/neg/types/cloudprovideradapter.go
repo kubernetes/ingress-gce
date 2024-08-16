@@ -25,6 +25,7 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
+	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
@@ -54,7 +55,7 @@ func NewAdapterWithNetwork(g *gce.Cloud, network, subnetwork string) NetworkEndp
 }
 
 // NewAdapterWithRateLimitSpecs takes a cloud and rate limit specs and returns a NetworkEndpointGroupCloud.
-func NewAdapterWithRateLimitSpecs(g *gce.Cloud, specs []string) NetworkEndpointGroupCloud {
+func NewAdapterWithRateLimitSpecs(g *gce.Cloud, specs []string, provider network.CloudNetworkProvider) NetworkEndpointGroupCloud {
 	strategyKeys := make(map[string]struct{})
 	for _, spec := range specs {
 		params := strings.Split(spec, ",")
@@ -64,8 +65,8 @@ func NewAdapterWithRateLimitSpecs(g *gce.Cloud, specs []string) NetworkEndpointG
 	}
 	return &cloudProviderAdapter{
 		c:             g,
-		networkURL:    g.NetworkURL(),
-		subnetworkURL: g.SubnetworkURL(),
+		networkURL:    provider.NetworkURL(),
+		subnetworkURL: provider.SubnetworkURL(),
 		strategyKeys:  strategyKeys,
 	}
 }
