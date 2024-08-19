@@ -337,7 +337,7 @@ func (m *manager) Sync(nodes []string) (err error) {
 		addNodes := kubeNodes.Difference(gceNodes).List()
 
 		m.logger.V(2).Info("Removing nodes", "removeNodes", events.TruncatedStringList(removeNodes))
-		m.logger.V(2).Info("Adding nodes", "addNodes", events.TruncatedStringList(removeNodes))
+		m.logger.V(2).Info("Adding nodes", "addNodes", events.TruncatedStringList(addNodes))
 
 		start := time.Now()
 		if len(removeNodes) != 0 {
