@@ -28,6 +28,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -79,6 +80,8 @@ type L4Controller struct {
 	sharedResourcesLock sync.Mutex
 	enableDualStack     bool
 
+	hasSynced func() bool
+
 	serviceVersions *serviceVersionsTracker
 
 	logger klog.Logger
@@ -103,6 +106,7 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 		enableDualStack: ctx.EnableL4ILBDualStack,
 		serviceVersions: NewServiceVersionsTracker(),
 		logger:          logger,
+		hasSynced:       ctx.HasSynced,
 	}
 	l4c.backendPool = backends.NewPool(ctx.Cloud, l4c.namer)
 	l4c.NegLinker = backends.NewNEGLinker(l4c.backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer(), logger)
@@ -193,7 +197,13 @@ func (l4c *L4Controller) checkHealth() error {
 
 func (l4c *L4Controller) Run() {
 	defer l4c.shutdown()
-	l4c.logger.Info("Running L4 Controller with worker goroutines", "numWorkers", l4c.numWorkers)
+
+	wait.PollUntil(5*time.Second, func() (bool, error) {
+		l4c.logger.V(2).Info("Waiting for initial cache sync before starting L4 Controller")
+		return l4c.hasSynced(), nil
+	}, l4c.stopCh)
+
+	l4c.logger.Info("Running L4 Controller", "numWorkers", l4c.numWorkers)
 	l4c.svcQueue.Run()
 	<-l4c.stopCh
 }
