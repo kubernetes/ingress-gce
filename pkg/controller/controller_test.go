@@ -93,7 +93,7 @@ func newLoadBalancerController() *LoadBalancerController {
 		BasePath:   utils.GetBasePath(fakeGCE),
 		ZoneGetter: fakeZoneGetter,
 		MaxIGSize:  1000,
-	}, klog.TODO())
+	})
 	lbc.l7Pool = loadbalancers.NewLoadBalancerPool(fakeGCE, namer, events.RecorderProducerMock{}, namer_util.NewFrontendNamerFactory(namer, "", klog.TODO()), klog.TODO())
 
 	lbc.hasSynced = func() bool { return true }
@@ -649,7 +649,7 @@ func TestMCIngressIG(t *testing.T) {
 	}
 
 	// Ensure that instance group exists.
-	instanceGroups, err := lbc.instancePool.List()
+	instanceGroups, err := lbc.instancePool.List(klog.TODO())
 	if err != nil {
 		t.Errorf("lbc.instancePool.List() = _, %v, want nil", err)
 	}
@@ -664,7 +664,7 @@ func TestMCIngressIG(t *testing.T) {
 	}
 
 	// Ensure that instance group still exists.
-	instanceGroups, err = lbc.instancePool.List()
+	instanceGroups, err = lbc.instancePool.List(klog.TODO())
 	if err != nil {
 		t.Errorf("lbc.instancePool.List() = _, %v, want nil", err)
 	}
@@ -679,7 +679,7 @@ func TestMCIngressIG(t *testing.T) {
 	}
 
 	// Ensure that instance group is cleaned up.
-	instanceGroups, err = lbc.instancePool.List()
+	instanceGroups, err = lbc.instancePool.List(klog.TODO())
 	if err != nil {
 		t.Errorf("lbc.instancePool.List() = _, %v, want nil", err)
 	}

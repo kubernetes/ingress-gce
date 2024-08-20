@@ -64,7 +64,7 @@ func newTestRegionalIgLinker(fakeGCE *gce.Cloud, backendPool *Backends, l4Namer 
 		BasePath:   utils.GetBasePath(fakeGCE),
 		ZoneGetter: fakeZoneGetter,
 		MaxIGSize:  1000,
-	}, klog.TODO())
+	})
 
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockRegionBackendServices.UpdateHook = mock.UpdateRegionBackendServiceHook
 
@@ -83,7 +83,7 @@ func TestRegionalLink(t *testing.T) {
 	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{usCentral1AZone}); err == nil {
 		t.Fatalf("Linking when instances does not exist should return error")
 	}
-	if _, err := linker.instancePool.EnsureInstanceGroupsAndPorts(l4Namer.InstanceGroup(), []int64{sp.NodePort}); err != nil {
+	if _, err := linker.instancePool.EnsureInstanceGroupsAndPorts(l4Namer.InstanceGroup(), []int64{sp.NodePort}, klog.TODO()); err != nil {
 		t.Fatalf("Unexpected error when ensuring IG for ServicePort %+v: %v", sp, err)
 	}
 	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{usCentral1AZone}); err == nil {
@@ -117,7 +117,7 @@ func TestRegionalUpdateLink(t *testing.T) {
 	sp := utils.ServicePort{NodePort: 8080, BackendNamer: l4Namer}
 	fakeBackendPool := NewPool(fakeGCE, l4Namer)
 	linker := newTestRegionalIgLinker(fakeGCE, fakeBackendPool, l4Namer)
-	if _, err := linker.instancePool.EnsureInstanceGroupsAndPorts(l4Namer.InstanceGroup(), []int64{sp.NodePort}); err != nil {
+	if _, err := linker.instancePool.EnsureInstanceGroupsAndPorts(l4Namer.InstanceGroup(), []int64{sp.NodePort}, klog.TODO()); err != nil {
 		t.Fatalf("Unexpected error when ensuring IG for ServicePort %+v: %v", sp, err)
 	}
 	createBackendService(t, sp, fakeBackendPool)
@@ -153,7 +153,7 @@ func TestRegionalUpdateLinkWithNewBackends(t *testing.T) {
 	sp := utils.ServicePort{NodePort: 8080, BackendNamer: l4Namer}
 	fakeBackendPool := NewPool(fakeGCE, l4Namer)
 	linker := newTestRegionalIgLinker(fakeGCE, fakeBackendPool, l4Namer)
-	if _, err := linker.instancePool.EnsureInstanceGroupsAndPorts(l4Namer.InstanceGroup(), []int64{sp.NodePort}); err != nil {
+	if _, err := linker.instancePool.EnsureInstanceGroupsAndPorts(l4Namer.InstanceGroup(), []int64{sp.NodePort}, klog.TODO()); err != nil {
 		t.Fatalf("Unexpected error when ensuring IG for ServicePort %+v: %v", sp, err)
 	}
 	createBackendService(t, sp, fakeBackendPool)
@@ -197,7 +197,7 @@ func TestRegionalUpdateLinkWithRemovedBackends(t *testing.T) {
 	sp := utils.ServicePort{NodePort: 8080, BackendNamer: l4Namer}
 	fakeBackendPool := NewPool(fakeGCE, l4Namer)
 	linker := newTestRegionalIgLinker(fakeGCE, fakeBackendPool, l4Namer)
-	if _, err := linker.instancePool.EnsureInstanceGroupsAndPorts(l4Namer.InstanceGroup(), []int64{sp.NodePort}); err != nil {
+	if _, err := linker.instancePool.EnsureInstanceGroupsAndPorts(l4Namer.InstanceGroup(), []int64{sp.NodePort}, klog.TODO()); err != nil {
 		t.Fatalf("Unexpected error when ensuring IG for ServicePort %+v: %v", sp, err)
 	}
 	createBackendService(t, sp, fakeBackendPool)

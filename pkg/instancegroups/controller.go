@@ -133,5 +133,5 @@ func (c *Controller) sync(key string) error {
 	if err != nil {
 		return err
 	}
-	return c.igManager.Sync(utils.GetNodeNames(nodes))
+	return c.igManager.Sync(utils.GetNodeNames(nodes), c.logger)
 }
