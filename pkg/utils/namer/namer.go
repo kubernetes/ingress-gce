@@ -82,6 +82,9 @@ const (
 
 	// schemaVersionV1 is the version 1 naming scheme for NEG
 	schemaVersionV1 = "1"
+
+	// Length of the subnet hash for non default subnet NEGs.
+	subnetHashLength = 6
 )
 
 // NamerProtocol is an enum for the different protocols given as
@@ -445,6 +448,26 @@ func (n *Namer) NEG(namespace, name string, port int32) string {
 	return fmt.Sprintf("%s-%s-%s-%s-%s", n.negPrefix(), truncNamespace, truncName, truncPort, negSuffix(n.shortUID(), namespace, name, portStr, ""))
 }
 
+// NonDefaultSubnetNEG returns the gce neg name in non default subnet based on
+// the service namespace, name, target port and subnet name. NEG naming convention:
+//
+//	{prefix}{version}-{clusterid}-{namespace}-{name}-{service port}-{subnetHash}-{combinedHash}
+//
+// subnetHash length = 6, combinedHash length = 8, and the remainings are trimmed evenly.
+// Output name is at most 63 characters. NEG tries to keep as much
+// information as possible, while avoiding potential conflicts with the NEGs in
+// the default subnet, or conflicts due to the naming pattern for non default
+// subnets(e.g.: us-central1-subnet, us-central2-subnet).
+func (n *Namer) NonDefaultSubnetNEG(namespace, name, subnetName string, port int32) string {
+	portStr := fmt.Sprintf("%v", port)
+	hashedSubnet := subnetHash(subnetName)
+	truncFields := TrimFieldsEvenly(maxNEGDescriptiveLabel-subnetHashLength-1, namespace, name, portStr)
+	truncNamespace := truncFields[0]
+	truncName := truncFields[1]
+	truncPort := truncFields[2]
+	return fmt.Sprintf("%s-%s-%s-%s-%s-%s", n.negPrefix(), truncNamespace, truncName, truncPort, hashedSubnet, negSuffix(n.shortUID(), namespace, name, portStr, ""))
+}
+
 // RXLBBackendName returns the gce Backend name based on the service namespace, name
 // and target port. Naming convention:
 //
@@ -486,4 +509,10 @@ func negSuffix(uid, namespace, name, port, subset string) string {
 	}
 	negHash := fmt.Sprintf("%x", sha256.Sum256([]byte(negString)))
 	return negHash[:8]
+}
+
+// subnetHash returns hash code with 6 characters
+func subnetHash(subnetName string) string {
+	subnetHash := fmt.Sprintf("%x", sha256.Sum256([]byte(subnetName)))
+	return subnetHash[:6]
 }
