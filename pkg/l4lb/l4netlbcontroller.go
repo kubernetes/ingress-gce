@@ -28,6 +28,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
@@ -79,6 +80,8 @@ type L4NetLBController struct {
 	enableStrongSessionAffinity bool
 	serviceVersions             *serviceVersionsTracker
 
+	hasSynced func() bool
+
 	logger klog.Logger
 }
 
@@ -108,6 +111,7 @@ func NewL4NetLBController(
 		enableStrongSessionAffinity: ctx.EnableL4StrongSessionAffinity,
 		serviceVersions:             NewServiceVersionsTracker(),
 		logger:                      logger,
+		hasSynced:                   ctx.HasSynced,
 	}
 	var networkLister cache.Indexer
 	if ctx.NetworkInformer != nil {
@@ -417,7 +421,13 @@ func (lc *L4NetLBController) checkHealth() error {
 // Run starts the loadbalancer controller.
 func (lc *L4NetLBController) Run() {
 	defer lc.shutdown()
-	lc.logger.Info("Starting l4NetLBController")
+
+	wait.PollUntil(5*time.Second, func() (bool, error) {
+		lc.logger.V(2).Info("Waiting for initial cache sync before starting L4 Net LB Controller")
+		return lc.hasSynced(), nil
+	}, lc.stopCh)
+
+	lc.logger.Info("Running L4 Net Controller", "numWorkers", lc.ctx.NumL4NetLBWorkers)
 	lc.svcQueue.Run()
 
 	<-lc.stopCh
