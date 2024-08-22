@@ -392,7 +392,8 @@ func (l4netlb *L4NetLB) ensureIPv4Resources(result *L4NetLBSyncResult, nodeNames
 
 func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress string, result *L4NetLBSyncResult) {
 	// DisableL4LBFirewall flag disables L4 FW enforcment to remove conflicts with firewall policies
-	if l4netlb.disableIngressFirewall == true {
+	if l4netlb.disableIngressFirewall {
+		l4netlb.svcLogger.Info("Skipped ensuring IPv4 nodes firewall for L4 NetLB Service")
 		return
 	}
 	start := time.Now()

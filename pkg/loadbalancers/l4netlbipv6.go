@@ -107,7 +107,8 @@ func (l4netlb *L4NetLB) ipv6FRName() string {
 
 func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipAddress string, nodeNames []string, syncResult *L4NetLBSyncResult) {
 	// DisableL4LBFirewall flag disables L4 FW enforcment to remove conflicts with firewall policies
-	if l4netlb.disableIngressFirewall == true {
+	if l4netlb.disableIngressFirewall {
+		l4netlb.svcLogger.Info("Skipped ensuring IPv6 nodes firewall for L4 NetLB Service")
 		return
 	}
 	start := time.Now()
