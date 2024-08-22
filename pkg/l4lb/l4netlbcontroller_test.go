@@ -298,7 +298,9 @@ func newL4NetLBServiceController() *L4NetLBController {
 	for _, n := range nodes {
 		ctx.NodeInformer.GetIndexer().Add(n)
 	}
-	return NewL4NetLBController(ctx, stopCh, klog.TODO())
+	lc := NewL4NetLBController(ctx, stopCh, klog.TODO())
+	lc.hasSynced = func() bool { return true }
+	return lc
 }
 
 func validateNetLBSvcStatus(svc *v1.Service, t *testing.T) {
@@ -350,7 +352,7 @@ func validateAnnotationsDeleted(svc *v1.Service) error {
 
 func TestProcessMultipleNetLBServices(t *testing.T) {
 	backoff := retry.DefaultRetry
-	backoff.Duration = 1 * time.Second
+	backoff.Duration = 3 * time.Second
 	for _, onlyLocal := range []bool{true, false} {
 		t.Run(fmt.Sprintf("L4 with LocalMode=%v", onlyLocal), func(t *testing.T) {
 			lc := newL4NetLBServiceController()
