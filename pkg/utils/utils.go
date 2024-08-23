@@ -494,54 +494,6 @@ func NodeIsReady(node *api_v1.Node) bool {
 	return false
 }
 
-func nodePredicateInternal(node *api_v1.Node, includeUnreadyNodes, excludeUpgradingNodes bool, logger klog.Logger) bool {
-	// Get all nodes that have a taint with NoSchedule effect
-	for _, taint := range node.Spec.Taints {
-		if taint.Key == ToBeDeletedTaint {
-			return false
-		}
-	}
-
-	// As of 1.6, we will taint the master, but not necessarily mark it unschedulable.
-	// Recognize nodes labeled as master, and filter them also, as we were doing previously.
-	if _, hasMasterRoleLabel := node.Labels[LabelNodeRoleMaster]; hasMasterRoleLabel {
-		return false
-	}
-
-	// Will be removed in 1.18
-	if _, hasExcludeBalancerLabel := node.Labels[LabelAlphaNodeRoleExcludeBalancer]; hasExcludeBalancerLabel {
-		return false
-	}
-
-	if _, hasExcludeBalancerLabel := node.Labels[LabelNodeRoleExcludeBalancer]; hasExcludeBalancerLabel {
-		return false
-	}
-	if excludeUpgradingNodes {
-		// This node is about to be upgraded or deleted as part of resize.
-		if operation, _ := node.Labels[GKECurrentOperationLabel]; operation == NodeDrain {
-			return false
-		}
-	}
-
-	// If we have no info, don't accept
-	if len(node.Status.Conditions) == 0 {
-		return false
-	}
-	if includeUnreadyNodes {
-		return true
-	}
-	for _, cond := range node.Status.Conditions {
-		// We consider the node for load balancing only when its NodeReady condition status
-		// is ConditionTrue
-		if cond.Type == api_v1.NodeReady && cond.Status != api_v1.ConditionTrue {
-			logger.V(4).Info("Ignoring node", "nodeName", node.Name, "conditionType", cond.Type, "conditionStatus", cond.Status)
-			return false
-		}
-	}
-	return true
-
-}
-
 // GetNodePrimaryIP returns a primary internal IP address of the node.
 func GetNodePrimaryIP(inputNode *api_v1.Node, logger klog.Logger) string {
 	ip, err := getPreferredNodeAddress(inputNode, []api_v1.NodeAddressType{api_v1.NodeInternalIP})

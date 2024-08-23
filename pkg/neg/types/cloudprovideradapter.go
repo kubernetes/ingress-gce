@@ -32,14 +32,10 @@ import (
 )
 
 const (
-	// aggregatedListZonalKeyPrefix is the prefix for the zonal key from AggregatedList
-	aggregatedListZonalKeyPrefix = "zones"
-	// aggregatedListGlobalKey is the global key from AggregatedList
-	aggregatedListGlobalKey = "global"
-	negServiceName          = "NetworkEndpointGroups"
-	listNetworkEndpoints    = "ListNetworkEndpoints"
-	attachNetworkEndpoints  = "AttachNetworkEndpoints"
-	detachNetworkEndpoints  = "DetachNetworkEndpoints"
+	negServiceName         = "NetworkEndpointGroups"
+	listNetworkEndpoints   = "ListNetworkEndpoints"
+	attachNetworkEndpoints = "AttachNetworkEndpoints"
+	detachNetworkEndpoints = "DetachNetworkEndpoints"
 )
 
 // NewAdapter takes a Cloud and returns a NetworkEndpointGroupCloud.

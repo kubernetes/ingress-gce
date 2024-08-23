@@ -1748,13 +1748,11 @@ func TestProcessDualStackNetLBServiceOnUserError(t *testing.T) {
 type fakeNEGLinker struct {
 	called bool
 	sp     utils.ServicePort
-	groups []backends.GroupKey
 }
 
 func (l *fakeNEGLinker) Link(sp utils.ServicePort, groups []backends.GroupKey) error {
 	l.called = true
 	l.sp = sp
-	l.groups = groups
 	return nil
 }
 

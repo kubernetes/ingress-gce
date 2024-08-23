@@ -30,7 +30,6 @@ const (
 
 // V1ServiceAttachment implements ServiceAttachmentNamer. This is a wrapper on top of namer.Namer.
 type V1ServiceAttachmentNamer struct {
-	namer         *Namer
 	kubeSystemUID string
 	prefix        string
 
@@ -43,7 +42,6 @@ type V1ServiceAttachmentNamer struct {
 // NewServiceAttachmentNamer returns a v1 namer for Service Attachments
 func NewServiceAttachmentNamer(namer *Namer, kubeSystemUID string) ServiceAttachmentNamer {
 	return &V1ServiceAttachmentNamer{
-		namer:               namer,
 		kubeSystemUID:       kubeSystemUID,
 		prefix:              namer.prefix,
 		maxDescriptiveLabel: maxSADescriptiveLabel - len(namer.prefix),

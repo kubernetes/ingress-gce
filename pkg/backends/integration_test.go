@@ -41,7 +41,6 @@ type Jig struct {
 	fakeInstancePool instancegroups.Manager
 	linker           Linker
 	syncer           Syncer
-	pool             Pool
 }
 
 func newTestJig(fakeGCE *gce.Cloud) *Jig {
@@ -78,7 +77,6 @@ func newTestJig(fakeGCE *gce.Cloud) *Jig {
 		fakeInstancePool: fakeInstancePool,
 		linker:           NewInstanceGroupLinker(fakeInstancePool, fakeBackendPool, klog.TODO()),
 		syncer:           NewBackendSyncer(fakeBackendPool, fakeHealthChecks, fakeGCE),
-		pool:             fakeBackendPool,
 	}
 }
 

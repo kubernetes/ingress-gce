@@ -30,8 +30,6 @@ import (
 // Controller synchronizes the state of the nodes to the unmanaged instance
 // groups.
 type Controller struct {
-	// lister is a cache of the k8s Node resources.
-	lister cache.Indexer
 	// queue is the TaskQueue used to manage the node worker updates.
 	queue utils.TaskQueue
 	// igManager is an interface to manage instance groups.
@@ -67,7 +65,6 @@ var defaultNodeObj = &apiv1.Node{
 func NewController(config *ControllerConfig, logger klog.Logger) *Controller {
 	logger = logger.WithName("InstanceGroupsController")
 	c := &Controller{
-		lister:                   config.NodeInformer.GetIndexer(),
 		zoneGetter:               config.ZoneGetter,
 		igManager:                config.IGManager,
 		hasSynced:                config.HasSynced,

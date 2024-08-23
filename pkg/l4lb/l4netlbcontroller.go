@@ -60,7 +60,6 @@ type backendLinkType int64
 type L4NetLBController struct {
 	ctx             *context.ControllerContext
 	svcQueue        utils.TaskQueue
-	serviceLister   cache.Indexer
 	networkResolver network.Resolver
 	stopCh          <-chan struct{}
 
@@ -99,7 +98,6 @@ func NewL4NetLBController(
 	backendPool := backends.NewPoolWithConnectionTrackingPolicy(ctx.Cloud, ctx.L4Namer, ctx.EnableL4StrongSessionAffinity)
 	l4netLBc := &L4NetLBController{
 		ctx:                         ctx,
-		serviceLister:               ctx.ServiceInformer.GetIndexer(),
 		stopCh:                      stopCh,
 		zoneGetter:                  ctx.ZoneGetter,
 		backendPool:                 backendPool,

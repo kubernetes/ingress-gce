@@ -35,7 +35,6 @@ import (
 
 // FirewallRules manages firewall rules.
 type FirewallCR struct {
-	cloud     Firewall
 	namer     *namer_util.Namer
 	srcRanges []string
 	// TODO(rramkumar): Eliminate this variable. We should just pass in
@@ -56,7 +55,6 @@ func NewFirewallCRPool(client firewallclient.Interface, cloud Firewall, namer *n
 		klog.Fatalf("Could not parse L7 src ranges %v for firewall rule: %v", l7SrcRanges, err)
 	}
 	return &FirewallCR{
-		cloud:          cloud,
 		namer:          namer,
 		srcRanges:      l7SrcRanges,
 		nodePortRanges: nodePortRanges,

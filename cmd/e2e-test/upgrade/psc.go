@@ -34,7 +34,6 @@ type PSC struct {
 	t         *testing.T
 	s         *e2e.Sandbox
 	framework *e2e.Framework
-	gceSAURL  string
 }
 
 func NewPSCUpgradeTest() e2e.UpgradeTest {

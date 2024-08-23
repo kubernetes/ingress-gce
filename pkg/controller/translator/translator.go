@@ -86,7 +86,6 @@ func NewTranslator(serviceInformer cache.SharedIndexInformer,
 		EndpointSliceInformer: endpointSliceInformer,
 		KubeClient:            kubeClient,
 		enableTHC:             enableTHC,
-		recorderGetter:        recorderGetter,
 		enableL7XLBRegional:   enableL7XLBRegional,
 		logger:                logger.WithName("Translator"),
 	}
@@ -100,7 +99,6 @@ type Translator struct {
 	PodInformer           cache.SharedIndexInformer
 	EndpointSliceInformer cache.SharedIndexInformer
 	KubeClient            kubernetes.Interface
-	recorderGetter        healthchecks.RecorderGetter
 	enableTHC             bool
 	enableL7XLBRegional   bool
 

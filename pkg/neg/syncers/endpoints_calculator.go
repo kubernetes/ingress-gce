@@ -138,8 +138,6 @@ func (l *LocalL4ILBEndpointsCalculator) ValidateEndpoints(endpointData []types.E
 // In this mode, the endpoints of the NEG are calculated by selecting nodes at random. Up to 25(subset size limit in this
 // mode) are selected.
 type ClusterL4ILBEndpointsCalculator struct {
-	// nodeLister is used for listing all the nodes in the cluster when calculating the subset.
-	nodeLister listers.NodeLister
 	// zoneGetter looks up the zone for a given node when calculating subsets.
 	zoneGetter *zonegetter.ZoneGetter
 	// subsetSizeLimit is the max value of the subset size in this mode.
@@ -153,7 +151,6 @@ type ClusterL4ILBEndpointsCalculator struct {
 
 func NewClusterL4ILBEndpointsCalculator(nodeLister listers.NodeLister, zoneGetter *zonegetter.ZoneGetter, svcId string, logger klog.Logger, networkInfo *network.NetworkInfo) *ClusterL4ILBEndpointsCalculator {
 	return &ClusterL4ILBEndpointsCalculator{
-		nodeLister:      nodeLister,
 		zoneGetter:      zoneGetter,
 		subsetSizeLimit: maxSubsetSizeDefault,
 		svcId:           svcId,

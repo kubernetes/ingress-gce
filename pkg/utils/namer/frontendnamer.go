@@ -59,7 +59,6 @@ type Scheme string
 
 // V1IngressFrontendNamer implements IngressFrontendNamer. This is a wrapper on top of namer.Namer.
 type V1IngressFrontendNamer struct {
-	ing    *v1.Ingress
 	namer  *Namer
 	lbName LoadBalancerName
 }
@@ -67,7 +66,7 @@ type V1IngressFrontendNamer struct {
 // newV1IngressFrontendNamer returns v1 frontend namer for given ingress.
 func newV1IngressFrontendNamer(ing *v1.Ingress, namer *Namer, logger klog.Logger) IngressFrontendNamer {
 	lbName := namer.LoadBalancer(common.IngressKeyFunc(ing, logger))
-	return &V1IngressFrontendNamer{ing: ing, namer: namer, lbName: lbName}
+	return &V1IngressFrontendNamer{namer: namer, lbName: lbName}
 }
 
 // newV1IngressFrontendNamerForLoadBalancer returns v1 frontend namer for load balancer.
@@ -123,7 +122,6 @@ func (ln *V1IngressFrontendNamer) IsValidLoadBalancer() bool {
 
 // V2IngressFrontendNamer implements IngressFrontendNamer.
 type V2IngressFrontendNamer struct {
-	ing *v1.Ingress
 	// prefix for all resource names (ex.: "k8s").
 	prefix string
 	// Load balancer name to be included in resource name.
@@ -147,7 +145,7 @@ type V2IngressFrontendNamer struct {
 // SSL Certificate       : k8s2-cr-uid01234-<lb-hash>-<secret-hash>
 func newV2IngressFrontendNamer(ing *v1.Ingress, kubeSystemUID string, prefix string) IngressFrontendNamer {
 	clusterUID := common.ContentHash(kubeSystemUID, clusterUIDLength)
-	namer := &V2IngressFrontendNamer{ing: ing, prefix: prefix, clusterUID: clusterUID}
+	namer := &V2IngressFrontendNamer{prefix: prefix, clusterUID: clusterUID}
 	// Initialize lbName.
 	truncFields := TrimFieldsEvenly(maximumAllowedCombinedLength, ing.Namespace, ing.Name)
 	truncNamespace := truncFields[0]
