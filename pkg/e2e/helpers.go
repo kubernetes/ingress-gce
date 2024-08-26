@@ -790,6 +790,7 @@ func waitForBackendConfigCRDEstablish(crdClient *apiextensionsclient.Clientset) 
 // otherwise returns an error. The parameter expectedNegs maps a port to an expected neg name or an empty string for a generated name.
 func WaitForNegCRs(s *Sandbox, serviceName string, expectedNegs map[string]string) (annotations.NegStatus, error) {
 	var svc *v1.Service
+	var negCRs []negv1beta1.ServiceNetworkEndpointGroup
 
 	err := wait.Poll(negPollInterval, negPollTimeout, func() (bool, error) {
 		var err error
@@ -808,6 +809,7 @@ func WaitForNegCRs(s *Sandbox, serviceName string, expectedNegs map[string]strin
 			klog.Infof("WaitForCustomNameNegs(%s/%s, %v) = %v", s.Namespace, serviceName, expectedNegs, err)
 			return false, nil
 		}
+		negCRs = svcNegs.Items
 
 		return true, nil
 	})
@@ -816,7 +818,47 @@ func WaitForNegCRs(s *Sandbox, serviceName string, expectedNegs map[string]strin
 		return annotations.NegStatus{}, err
 	}
 
-	return CheckNameInNegStatus(svc, expectedNegs)
+	negStatus, err := CheckNameInNegStatus(svc, expectedNegs)
+	if err != nil {
+		klog.Infof("CheckNameInNegStatus(%s/%s, %v) = %v", s.Namespace, serviceName, expectedNegs, err)
+		return annotations.NegStatus{}, err
+	}
+
+	return populateZonesFromCR(serviceName, negCRs, negStatus)
+}
+
+// populateZonesFromCR takes svcNEGs to determine the set of zones a cluster is in and adds it to the provided negStatus.
+func populateZonesFromCR(serviceName string, svcNegs []negv1beta1.ServiceNetworkEndpointGroup, negStatus annotations.NegStatus) (annotations.NegStatus, error) {
+	if len(svcNegs) == 0 {
+		return negStatus, nil
+	}
+
+	zones := sets.NewString()
+
+	// Query every SvcNEG for this service to ensure we get all the zones the NEGs should be active in. This ensures if there is a bug in a single
+	// SvcNeg, we don't accidentally misrepresent the zones we expect Negs in.
+	for _, svcNeg := range svcNegs {
+		if svcNeg.Labels[negtypes.NegCRServiceNameKey] != serviceName {
+			continue
+		}
+
+		for _, negRef := range svcNeg.Status.NetworkEndpointGroups {
+			// We only want zones of the negs that are in an active state.
+			// If a NEG is not active likely the cluster is not in that zone anymore, and we no longer guarantee a NEG in that zone
+			if negRef.State != "" && negRef.State != negv1beta1.ActiveState {
+				continue
+			}
+			resourceID, err := cloud.ParseResourceURL(negRef.SelfLink)
+			if err != nil {
+				return negStatus, fmt.Errorf("failed to parse resource url %q for svcneg cr %s/%s", negRef.SelfLink, svcNeg.Namespace, svcNeg.Name)
+			}
+
+			zones.Insert(resourceID.Key.Zone)
+		}
+	}
+
+	negStatus.Zones = zones.List()
+	return negStatus, nil
 }
 
 // CheckNegCRs will check that the provided neg cr list have negs with the expected neg attributes
