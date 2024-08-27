@@ -456,7 +456,7 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}, ingLogger klo
 func (lbc *LoadBalancerController) syncInstanceGroup(ing *v1.Ingress, ingSvcPorts []utils.ServicePort, ingLogger klog.Logger) error {
 	nodePorts := nodePorts(ingSvcPorts)
 	ingLogger.Info("Syncing Instance Group", "nodePorts", nodePorts)
-	igs, err := lbc.instancePool.EnsureInstanceGroupsAndPorts(lbc.ctx.ClusterNamer.InstanceGroup(), nodePorts)
+	igs, err := lbc.instancePool.EnsureInstanceGroupsAndPorts(lbc.ctx.ClusterNamer.InstanceGroup(), nodePorts, ingLogger)
 	if err != nil {
 		return err
 	}
@@ -466,7 +466,7 @@ func (lbc *LoadBalancerController) syncInstanceGroup(ing *v1.Ingress, ingSvcPort
 		return err
 	}
 	// Add/remove instances to the instance groups.
-	if err = lbc.instancePool.Sync(utils.GetNodeNames(nodes)); err != nil {
+	if err = lbc.instancePool.Sync(utils.GetNodeNames(nodes), ingLogger); err != nil {
 		return err
 	}
 
@@ -503,7 +503,7 @@ func (lbc *LoadBalancerController) GCBackends(toKeep []*v1.Ingress, ingLogger kl
 	if len(toKeep) == 0 {
 		igName := lbc.ctx.ClusterNamer.InstanceGroup()
 		ingLogger.Info("Deleting instance group", "instanceGroup", igName)
-		if err := lbc.instancePool.DeleteInstanceGroup(igName); err != err {
+		if err := lbc.instancePool.DeleteInstanceGroup(igName, ingLogger); err != err {
 			return err
 		}
 	}

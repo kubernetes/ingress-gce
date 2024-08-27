@@ -660,12 +660,12 @@ func (lc *L4NetLBController) ensureInstanceGroups(service *v1.Service, nodeNames
 	// L4 NetLB does not use node ports, so we provide empty slice
 	var nodePorts []int64
 	igName := lc.ctx.ClusterNamer.InstanceGroup()
-	_, err := lc.instancePool.EnsureInstanceGroupsAndPorts(igName, nodePorts)
+	_, err := lc.instancePool.EnsureInstanceGroupsAndPorts(igName, nodePorts, svcLogger)
 	if err != nil {
 		return fmt.Errorf("lc.instancePool.EnsureInstanceGroupsAndPorts(%s, %v) returned error %w", igName, nodePorts, err)
 	}
 
-	return lc.instancePool.Sync(nodeNames)
+	return lc.instancePool.Sync(nodeNames, svcLogger)
 }
 
 // garbageCollectRBSNetLB cleans-up all gce resources related to service and removes NetLB finalizer
@@ -706,7 +706,7 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service,
 
 	// Try to delete instance group, instancePool.DeleteInstanceGroup ignores errors if resource is in use or not found.
 	// TODO(cezarygerard) replace with multi-IG management
-	if err := lc.instancePool.DeleteInstanceGroup(lc.namer.InstanceGroup()); err != nil {
+	if err := lc.instancePool.DeleteInstanceGroup(lc.namer.InstanceGroup(), svcLogger); err != nil {
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteInstanceGroupFailed",
 			"Error deleting delete Instance Group from L4 External LoadBalancer, err: %v", err)
 		result.Error = fmt.Errorf("Failed to delete Instance Group, err: %w", err)

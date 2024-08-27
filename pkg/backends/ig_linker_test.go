@@ -69,13 +69,13 @@ func TestLink(t *testing.T) {
 		BasePath:   utils.GetBasePath(fakeGCE),
 		ZoneGetter: fakeZoneGetter,
 		MaxIGSize:  1000,
-	}, klog.TODO())
+	})
 	linker := newTestIGLinker(fakeGCE, fakeNodePool)
 
 	sp := utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP, BackendNamer: defaultNamer}
 
 	// Mimic the instance group being created
-	if _, err := linker.instancePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort}); err != nil {
+	if _, err := linker.instancePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort}, klog.TODO()); err != nil {
 		t.Fatalf("Did not expect error when ensuring IG for ServicePort %+v: %v", sp, err)
 	}
 
@@ -111,7 +111,7 @@ func TestLinkWithCreationModeError(t *testing.T) {
 		BasePath:   utils.GetBasePath(fakeGCE),
 		ZoneGetter: fakeZoneGetter,
 		MaxIGSize:  1000,
-	}, klog.TODO())
+	})
 	linker := newTestIGLinker(fakeGCE, fakeNodePool)
 
 	sp := utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP, BackendNamer: defaultNamer}
@@ -131,7 +131,7 @@ func TestLinkWithCreationModeError(t *testing.T) {
 		}
 
 		// Mimic the instance group being created
-		if _, err := linker.instancePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort}); err != nil {
+		if _, err := linker.instancePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort}, klog.TODO()); err != nil {
 			t.Fatalf("Did not expect error when ensuring IG for ServicePort %+v: %v", sp, err)
 		}
 
