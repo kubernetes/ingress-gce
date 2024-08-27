@@ -4719,6 +4719,7 @@ func (backendService *BackendService) ToAlpha() (*computealpha.BackendService, e
 			alpha.LogConfig.ForceSendFields = []string{"Enable", "SampleRate"}
 		}
 	}
+	alpha.ForceSendFields = []string{"localityLbPolicy"}
 
 	return alpha, nil
 }
@@ -4747,6 +4748,7 @@ func (backendService *BackendService) ToBeta() (*computebeta.BackendService, err
 			beta.LogConfig.ForceSendFields = []string{"Enable", "SampleRate"}
 		}
 	}
+	beta.ForceSendFields = []string{"localityLbPolicy"}
 
 	return beta, nil
 }
@@ -4775,6 +4777,7 @@ func (backendService *BackendService) ToGA() (*compute.BackendService, error) {
 			ga.LogConfig.ForceSendFields = []string{"Enable", "SampleRate"}
 		}
 	}
+	ga.ForceSendFields = []string{"localityLbPolicy"}
 
 	return ga, nil
 }

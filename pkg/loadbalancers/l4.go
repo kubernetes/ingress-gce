@@ -44,8 +44,11 @@ import (
 const (
 	subnetInternalIPv6AccessType          = "INTERNAL"
 	WeightedLBPodsPerNodeAllowlistMessage = "Weighted Load Balancing for L4 " +
-		"Internal Passthrough Load Balancers requires project allowlisting. If " +
-		"you need access to this feature please contact Google Cloud support team"
+			"Internal Passthrough Load Balancers requires project allowlisting. If " +
+			"you need access to this feature please contact Google Cloud support team"
+
+	// localityLBPolicyFeatureErrorSubstring string is used for matching backend service creation error due lack of allow-listing for weighted load balancing
+	localityLBPolicyFeatureErrorSubstring = "localityLbPolicy"
 )
 
 var (
@@ -477,8 +480,12 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		}
 	}
 
-	localityLbPolicy := l4.determineBackendServiceLocalityPolicy()
+	hasAnn := annotations.HasWeightedLBPodsPerNodeAnnotation(l4.Service)
+	etp := l4.Service.Spec.ExternalTrafficPolicy
+	l4.svcLogger.Info(">>>>> l4 params for wlb:", "enabled", l4.enableWeightedLB, "hasAnn", hasAnn, "etp", etp)
 
+	localityLbPolicy := l4.determineBackendServiceLocalityPolicy()
+	l4.svcLogger.Info("L4 ILB using: ", "localityLbPolicy", localityLbPolicy)
 	// ensure backend service
 	backendParams := backends.L4BackendServiceParams{
 		Name:                     bsName,
@@ -493,7 +500,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	}
 	bs, err := l4.backendPool.EnsureL4BackendService(backendParams, l4.svcLogger)
 	if err != nil {
-		if utils.IsUnsupportedFeatureError(err, string(backends.LocalityLBPolicyWeightedMaglev)) {
+		if utils.IsUnsupportedFeatureError(err, string(localityLBPolicyFeatureErrorSubstring)) {
 			result.GCEResourceInError = annotations.BackendServiceResource
 			l4.recorder.Eventf(l4.Service, corev1.EventTypeWarning, "AllowlistingRequired", WeightedLBPodsPerNodeAllowlistMessage)
 			result.Error = utils.NewUserError(err)
@@ -703,10 +710,10 @@ func (l4 *L4) determineBackendServiceLocalityPolicy() backends.LocalityLBPolicyT
 				// and the external traffic policy is cluster, weighted load balancing is not enabled.
 				l4.recorder.Eventf(l4.Service, corev1.EventTypeWarning, "UnsupportedConfiguration",
 					"Weighted load balancing by pods-per-node has no effect with External Traffic Policy: Cluster.")
-				return backends.LocalityLBPolicyMaglev
+				return backends.LocalityLBPolicyDefault
 			}
 		} else {
-			return backends.LocalityLBPolicyMaglev
+			return backends.LocalityLBPolicyDefault
 		}
 	}
 	// If the service has weighted load balancing disabled, the default locality policy is used.

@@ -137,7 +137,7 @@ func schema_pkg_apis_svcneg_v1beta1_NegObjectReference(ref common.ReferenceCallb
 					},
 					"state": {
 						SchemaProps: spec.SchemaProps{
-							Description: "Current condition of this network endpoint group.",
+							Description: "Current condition of this network endpoint group. If state is empty, it should be considered the ACTIVE state.",
 							Type:        []string{"string"},
 							Format:      "",
 						},

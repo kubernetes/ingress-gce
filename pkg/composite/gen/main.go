@@ -849,6 +849,7 @@ func ({{$type.VarName}} *{{$type.Name}}) To{{$version}}() (*compute{{$extension}
 			{{$lower}}.LogConfig.ForceSendFields = []string{"Enable", "SampleRate"}
 		}
 	}
+  {{$lower}}.ForceSendFields = []string{"localityLbPolicy"}
 	{{- end}}
 
 	return {{$lower}}, nil
