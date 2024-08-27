@@ -252,7 +252,7 @@ func NewControllerContext(
 		BasePath:   utils.GetBasePath(context.Cloud),
 		ZoneGetter: context.ZoneGetter,
 		MaxIGSize:  config.MaxIGSize,
-	}, logger)
+	})
 
 	return context
 }

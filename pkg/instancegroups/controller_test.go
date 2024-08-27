@@ -13,6 +13,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
+	"k8s.io/klog/v2"
 )
 
 func TestNodeStatusChanged(t *testing.T) {
@@ -147,17 +148,17 @@ type IGManagerFake struct {
 	syncedNodes [][]string
 }
 
-func (igmf *IGManagerFake) Sync(nodeNames []string) error {
+func (igmf *IGManagerFake) Sync(nodeNames []string, logger klog.Logger) error {
 	igmf.syncedNodes = append(igmf.syncedNodes, nodeNames)
 	return nil
 }
 
-func (igmf *IGManagerFake) EnsureInstanceGroupsAndPorts(name string, ports []int64) ([]*compute.InstanceGroup, error) {
+func (igmf *IGManagerFake) EnsureInstanceGroupsAndPorts(name string, ports []int64, logger klog.Logger) ([]*compute.InstanceGroup, error) {
 	igmf.syncedNodes = append(igmf.syncedNodes, []string{name})
 	return []*compute.InstanceGroup{}, nil
 }
 
-func (igmf *IGManagerFake) DeleteInstanceGroup(name string) error {
+func (igmf *IGManagerFake) DeleteInstanceGroup(name string, logger klog.Logger) error {
 	igmf.syncedNodes = append(igmf.syncedNodes, []string{name})
 	return nil
 }
@@ -167,6 +168,6 @@ func (igmf *IGManagerFake) Get(name, zone string) (*compute.InstanceGroup, error
 	return &ig, nil
 }
 
-func (igmf *IGManagerFake) List() ([]string, error) {
+func (igmf *IGManagerFake) List(logger klog.Logger) ([]string, error) {
 	return []string{}, nil
 }
