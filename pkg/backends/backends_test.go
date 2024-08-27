@@ -36,6 +36,8 @@ func TestEnsureL4BackendService(t *testing.T) {
 		schemeType                  string
 		enableStrongSessionAffinity bool
 		connectionTrackingPolicy    *composite.BackendServiceConnectionTrackingPolicy
+		localityLbPolicy            LocalityLBPolicyType
+		wantLocalityLbPolicy        string
 	}{
 		{
 			desc:             "Test basic Backend Service with Internal scheme type",
@@ -94,6 +96,26 @@ func TestEnsureL4BackendService(t *testing.T) {
 			affinityType:                string(v1.ServiceAffinityClientIP),
 			schemeType:                  string(cloud.SchemeExternal),
 		},
+		{
+			desc:                 "Test LocalityLBPolicy MAGLEV",
+			serviceName:          "test-service",
+			serviceNamespace:     "test-ns",
+			protocol:             "TCP",
+			schemeType:           string(cloud.SchemeInternal),
+			affinityType:         string(v1.ServiceAffinityNone),
+			localityLbPolicy:     LocalityLBPolicyMaglev,
+			wantLocalityLbPolicy: "",
+		},
+		{
+			desc:                 "Test LocalityLBPolicy WEIGHTED_MAGLEV",
+			serviceName:          "test-service",
+			serviceNamespace:     "test-ns",
+			protocol:             "TCP",
+			schemeType:           string(cloud.SchemeInternal),
+			affinityType:         string(v1.ServiceAffinityNone),
+			localityLbPolicy:     LocalityLBPolicyWeightedMaglev,
+			wantLocalityLbPolicy: "WEIGHTED_MAGLEV",
+		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
 			namespacedName := types.NamespacedName{Name: tc.serviceName, Namespace: tc.serviceNamespace}
@@ -113,6 +135,7 @@ func TestEnsureL4BackendService(t *testing.T) {
 				NamespacedName:           namespacedName,
 				NetworkInfo:              network,
 				ConnectionTrackingPolicy: tc.connectionTrackingPolicy,
+				LocalityLbPolicy:         tc.localityLbPolicy,
 			}
 			bs, err := backendPool.EnsureL4BackendService(backendParams, klog.TODO())
 			if err != nil {
@@ -153,6 +176,79 @@ func TestEnsureL4BackendService(t *testing.T) {
 				if bs.ConnectionTrackingPolicy != nil {
 					t.Errorf("ConnectionTrackingPolicy should not be set for non strong session affinity services.")
 				}
+			}
+			if bs.LocalityLbPolicy != tc.wantLocalityLbPolicy {
+				t.Errorf("LocalityLBPolicy should not be set when creating new backend service without Weighted Load Balancing")
+			}
+		})
+	}
+}
+
+func TestUpdateLocalityLBPolicy(t *testing.T) {
+	testCases := []struct {
+		desc                        string
+		exstingBSLocalityLbPolicy   string
+		updatedBSLocalityLbPolicy   LocalityLBPolicyType
+		wantFinalBSLocalityLbPolicy string
+	}{
+		{
+			desc:                        "from empty to MAGLEV",
+			exstingBSLocalityLbPolicy:   "",
+			updatedBSLocalityLbPolicy:   LocalityLBPolicyMaglev,
+			wantFinalBSLocalityLbPolicy: "",
+		},
+		{
+			desc:                        "from MAGLEV to MAGLEV",
+			exstingBSLocalityLbPolicy:   "MAGLEV",
+			updatedBSLocalityLbPolicy:   LocalityLBPolicyMaglev,
+			wantFinalBSLocalityLbPolicy: "MAGLEV",
+		},
+		{
+			desc:                        "from MAGLEV to WEIGHTED_MAGLEV",
+			exstingBSLocalityLbPolicy:   "MAGLEV",
+			updatedBSLocalityLbPolicy:   LocalityLBPolicyWeightedMaglev,
+			wantFinalBSLocalityLbPolicy: "WEIGHTED_MAGLEV",
+		},
+		{
+			desc:                        "from WEIGHTED_MAGLEV to MAGLEV",
+			exstingBSLocalityLbPolicy:   "WEIGHTED_MAGLEV",
+			updatedBSLocalityLbPolicy:   LocalityLBPolicyMaglev,
+			wantFinalBSLocalityLbPolicy: "MAGLEV",
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			serviceName := "test-service"
+			serviceNamespace := "test-ns"
+			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+			(fakeGCE.Compute().(*cloud.MockGCE)).MockRegionBackendServices.UpdateHook = mock.UpdateRegionBackendServiceHook
+			l4namer := namer.NewL4Namer(kubeSystemUID, nil)
+			backendPool := NewPool(fakeGCE, l4namer)
+			bsName := l4namer.L4Backend(serviceNamespace, serviceName)
+
+			existingBS := &composite.BackendService{
+				Name:             bsName,
+				LocalityLbPolicy: tc.exstingBSLocalityLbPolicy,
+			}
+			key, err := composite.CreateKey(fakeGCE, bsName, meta.Regional)
+			if err != nil {
+				t.Fatalf("failed to create key %v", err)
+			}
+			err = composite.CreateBackendService(fakeGCE, key, existingBS, klog.TODO())
+			if err != nil {
+				t.Fatalf("failed to create the existing backend service: %v", err)
+			}
+
+			backendParams := L4BackendServiceParams{
+				Name:             bsName,
+				LocalityLbPolicy: tc.updatedBSLocalityLbPolicy,
+			}
+			bs, err := backendPool.EnsureL4BackendService(backendParams, klog.TODO())
+
+			if bs.LocalityLbPolicy != tc.wantFinalBSLocalityLbPolicy {
+				t.Errorf("Update LocalityLbPolicy failed, got: %v, want %v", bs.LocalityLbPolicy, tc.wantFinalBSLocalityLbPolicy)
 			}
 		})
 	}

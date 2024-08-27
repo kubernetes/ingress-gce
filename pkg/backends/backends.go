@@ -381,6 +381,12 @@ func (b *Backends) EnsureL4BackendService(params L4BackendServiceParams, beLogge
 
 	// Create backend service if none was found
 	if bs == nil {
+		// TODO(FelipeYepez) remove this check once LocalityLBPolicyMaglev does not require allow lisiting
+		// only use LocalityLBPolicyMaglev where LocalityLBPolicyDefault can not be used
+		if expectedBS.LocalityLbPolicy == string(LocalityLBPolicyMaglev) {
+			expectedBS.LocalityLbPolicy = string(LocalityLBPolicyDefault)
+		}
+
 		beLogger.V(2).Info("EnsureL4BackendService: creating backend service")
 		err := composite.CreateBackendService(b.cloud, key, expectedBS, beLogger)
 		if err != nil {
@@ -391,6 +397,12 @@ func (b *Backends) EnsureL4BackendService(params L4BackendServiceParams, beLogge
 		// so that the "Fingerprint" field is filled in. This is needed to update the
 		// object without error. The lookup is also needed to populate the selfLink.
 		return composite.GetBackendService(b.cloud, key, meta.VersionGA, beLogger)
+	} else {
+		// TODO(FelipeYepez) remove this check once LocalityLBPolicyMaglev does not require allow lisiting
+		// only use LocalityLBPolicyMaglev where LocalityLBPolicyDefault can not be used
+		if expectedBS.LocalityLbPolicy == string(LocalityLBPolicyMaglev) && bs.LocalityLbPolicy != string(LocalityLBPolicyWeightedMaglev) {
+			expectedBS.LocalityLbPolicy = string(LocalityLBPolicyDefault)
+		}
 	}
 
 	if backendSvcEqual(expectedBS, bs, b.useConnectionTrackingPolicy) {
