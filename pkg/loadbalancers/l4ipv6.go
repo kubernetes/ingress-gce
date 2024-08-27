@@ -119,8 +119,9 @@ func (l4 *L4) getIPv6FRNameWithProtocol(protocol string) string {
 
 func (l4 *L4) ensureIPv6NodesFirewall(ipAddress string, nodeNames []string, result *L4ILBSyncResult) {
 	// DisableL4LBFirewall flag disables L4 FW enforcment to remove conflicts with firewall policies
-	if l4.disableIngressFirewall {
-		l4.svcLogger.Info("Skipped ensuring IPv6 nodes firewall for L4 ILB Service")
+	if l4.disableNodesFirewallProvisioning {
+		l4.svcLogger.Info("Skipped ensuring IPv6 nodes firewall for L4 ILB Service to enable compatibility with firewall policies. " +
+			"Be sure the network administrator manually created a global firewall policy.")
 		return
 	}
 	start := time.Now()

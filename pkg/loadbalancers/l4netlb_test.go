@@ -1211,10 +1211,10 @@ func TestDisableNetLBIngressFirewall(t *testing.T) {
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 
 	l4netlbParams := &L4NetLBParams{
-		Service:                svc,
-		Cloud:                  fakeGCE,
-		Namer:                  namer,
-		DisableIngressFirewall: true,
+		Service:                          svc,
+		Cloud:                            fakeGCE,
+		Namer:                            namer,
+		DisableNodesFirewallProvisioning: true,
 	}
 	l4netlb := NewL4NetLB(l4netlbParams, klog.TODO())
 	syncResult := &L4NetLBSyncResult{

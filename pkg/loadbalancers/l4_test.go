@@ -2281,10 +2281,10 @@ func TestDisableILBIngressFirewall(t *testing.T) {
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 
 	l4ilbParams := &L4ILBParams{
-		Service:                svc,
-		Cloud:                  fakeGCE,
-		Namer:                  namer,
-		DisableIngressFirewall: true,
+		Service:                          svc,
+		Cloud:                            fakeGCE,
+		Namer:                            namer,
+		DisableNodesFirewallProvisioning: true,
 	}
 	l4 := NewL4Handler(l4ilbParams, klog.TODO())
 	syncResult := &L4ILBSyncResult{
