@@ -861,7 +861,8 @@ func populateZonesFromCR(serviceName string, svcNegs []negv1beta1.ServiceNetwork
 	return negStatus, nil
 }
 
-// CheckNegCRs will check that the provided neg cr list have negs with the expected neg attributes
+// CheckNegCRs will check that the provided neg cr list have negs with the
+// expected neg attributes and the "Initialized" condition set to true.
 func CheckNegCRs(svc *v1.Service, svcNegs *negv1beta1.ServiceNetworkEndpointGroupList, expectedNegAttrs map[string]string) error {
 	portsFound := 0
 	for _, svcNeg := range svcNegs.Items {
@@ -888,6 +889,11 @@ func CheckNegCRs(svc *v1.Service, svcNegs *negv1beta1.ServiceNetworkEndpointGrou
 		err = CheckNegFinalizer(svcNeg)
 		if err != nil {
 			return fmt.Errorf("CheckNegCRs: errored checking neg finalizer: %s", err)
+		}
+
+		err = CheckNEGInitializedCondition(svcNeg)
+		if err != nil {
+			return fmt.Errorf("CheckNegCRs: errored checking initialized condition: %s", err)
 		}
 
 		portsFound += 1
@@ -964,6 +970,22 @@ func CheckNegFinalizer(svcNeg negv1beta1.ServiceNetworkEndpointGroup) error {
 		return fmt.Errorf("expected neg Finalizer %q but got %q", common.NegFinalizerKey, negFinalizers[0])
 	}
 	return nil
+}
+
+func CheckNEGInitializedCondition(svcNEG negv1beta1.ServiceNetworkEndpointGroup) error {
+	namespacedName := svcNEG.GetNamespace() + "/" + svcNEG.GetName()
+
+	for _, cond := range svcNEG.Status.Conditions {
+		if cond.Type == negv1beta1.Initialized {
+			if cond.Status == v1.ConditionTrue {
+				klog.Infof("svcNEG %q has condition %v set to True", namespacedName, negv1beta1.Initialized)
+				return nil
+			} else {
+				return fmt.Errorf("svcNEG %q has condition %v set to False, want True", namespacedName, negv1beta1.Initialized)
+			}
+		}
+	}
+	return fmt.Errorf("svcNEG %q does not have condition %v, want condition to exist and be set to True", namespacedName, negv1beta1.Initialized)
 }
 
 // WaitForSvcNegErrorEvents waits for at least one of the possibles messages to be emitted on the
