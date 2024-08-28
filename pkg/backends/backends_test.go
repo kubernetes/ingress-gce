@@ -524,3 +524,84 @@ func TestBackendSvcEqual(t *testing.T) {
 		})
 	}
 }
+
+func TestUpdateLocalityLBPolicy(t *testing.T) {
+	testCases := []struct {
+		desc                       string
+		existingBSLocalityLbPolicy LocalityLBPolicyType
+		updatedBSLocalityLbPolicy  LocalityLBPolicyType
+		wantBSLocalityLbPolicy     LocalityLBPolicyType
+	}{
+		{
+			desc:                       "from empty to WEIGHTED_MAGLEV",
+			existingBSLocalityLbPolicy: LocalityLBPolicyDefault,
+			updatedBSLocalityLbPolicy:  LocalityLBPolicyWeightedMaglev,
+			wantBSLocalityLbPolicy:     LocalityLBPolicyWeightedMaglev,
+		},
+		{
+			desc:                       "from MAGLEV to empty",
+			existingBSLocalityLbPolicy: LocalityLBPolicyMaglev,
+			updatedBSLocalityLbPolicy:  LocalityLBPolicyDefault,
+			wantBSLocalityLbPolicy:     LocalityLBPolicyMaglev,
+		},
+		{
+			desc:                       "from MAGLEV to MAGLEV",
+			existingBSLocalityLbPolicy: LocalityLBPolicyMaglev,
+			updatedBSLocalityLbPolicy:  LocalityLBPolicyMaglev,
+			wantBSLocalityLbPolicy:     LocalityLBPolicyMaglev,
+		},
+		{
+			desc:                       "from MAGLEV to WEIGHTED_MAGLEV",
+			existingBSLocalityLbPolicy: LocalityLBPolicyMaglev,
+			updatedBSLocalityLbPolicy:  LocalityLBPolicyWeightedMaglev,
+			wantBSLocalityLbPolicy:     LocalityLBPolicyWeightedMaglev,
+		},
+		{
+			desc:                       "from WEIGHTED_MAGLEV to MAGLEV",
+			existingBSLocalityLbPolicy: LocalityLBPolicyWeightedMaglev,
+			updatedBSLocalityLbPolicy:  LocalityLBPolicyMaglev,
+			wantBSLocalityLbPolicy:     LocalityLBPolicyMaglev,
+		},
+		{
+			desc:                       "from WEIGHTED_MAGLEV to empty",
+			existingBSLocalityLbPolicy: LocalityLBPolicyWeightedMaglev,
+			updatedBSLocalityLbPolicy:  LocalityLBPolicyDefault,
+			wantBSLocalityLbPolicy:     LocalityLBPolicyMaglev,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			serviceName := "test-service"
+			serviceNamespace := "test-ns"
+			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+			(fakeGCE.Compute().(*cloud.MockGCE)).MockRegionBackendServices.UpdateHook = mock.UpdateRegionBackendServiceHook
+			l4namer := namer.NewL4Namer(kubeSystemUID, nil)
+			backendPool := NewPool(fakeGCE, l4namer)
+			bsName := l4namer.L4Backend(serviceNamespace, serviceName)
+
+			key, err := composite.CreateKey(fakeGCE, bsName, meta.Regional)
+			if err != nil {
+				t.Fatalf("failed to create key %v", err)
+			}
+			existingBS := &composite.BackendService{
+				Name:             bsName,
+				LocalityLbPolicy: string(tc.existingBSLocalityLbPolicy),
+			}
+			err = composite.CreateBackendService(fakeGCE, key, existingBS, klog.TODO())
+			if err != nil {
+				t.Fatalf("failed to create the existing backend service: %v", err)
+			}
+
+			updateBackendParams := L4BackendServiceParams{
+				Name:             bsName,
+				LocalityLbPolicy: tc.updatedBSLocalityLbPolicy,
+			}
+			updatedBS, err := backendPool.EnsureL4BackendService(updateBackendParams, klog.TODO())
+			if updatedBS.LocalityLbPolicy != string(tc.wantBSLocalityLbPolicy) {
+				t.Errorf("Update LocalityLbPolicy failed, got: %v, want %v", updatedBS.LocalityLbPolicy, tc.wantBSLocalityLbPolicy)
+			}
+		})
+	}
+}

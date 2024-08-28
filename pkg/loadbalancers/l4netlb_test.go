@@ -1134,35 +1134,35 @@ func TestWeightedNetLB(t *testing.T) {
 		addAnnotationForWeighted bool
 		weightedFlagEnabled      bool
 		externalTrafficPolicy    v1.ServiceExternalTrafficPolicy
-		wantWeighted             bool
+		wantLocalityLBPolicy     backends.LocalityLBPolicyType
 	}{
 		{
 			desc:                     "Flag enabled, Service with weighted annotation, externalTrafficPolicy local",
 			addAnnotationForWeighted: true,
 			weightedFlagEnabled:      true,
 			externalTrafficPolicy:    v1.ServiceExternalTrafficPolicyTypeLocal,
-			wantWeighted:             true,
+			wantLocalityLBPolicy:     backends.LocalityLBPolicyWeightedMaglev,
 		},
 		{
 			desc:                     "Flag enabled, NO weighted annotation, externalTrafficPolicy local",
 			addAnnotationForWeighted: false,
 			weightedFlagEnabled:      true,
 			externalTrafficPolicy:    v1.ServiceExternalTrafficPolicyTypeLocal,
-			wantWeighted:             false,
+			wantLocalityLBPolicy:     backends.LocalityLBPolicyMaglev,
 		},
 		{
 			desc:                     "Flag DISABLED, Service with weighted annotation, externalTrafficPolicy local",
 			addAnnotationForWeighted: true,
 			weightedFlagEnabled:      false,
 			externalTrafficPolicy:    v1.ServiceExternalTrafficPolicyTypeLocal,
-			wantWeighted:             false,
+			wantLocalityLBPolicy:     backends.LocalityLBPolicyDefault,
 		},
 		{
 			desc:                     "Flag enabled, Service with weighted annotation and externalTrafficPolicy CLUSTER",
 			addAnnotationForWeighted: true,
 			weightedFlagEnabled:      true,
 			externalTrafficPolicy:    v1.ServiceExternalTrafficPolicyTypeCluster,
-			wantWeighted:             false,
+			wantLocalityLBPolicy:     backends.LocalityLBPolicyMaglev,
 		},
 	}
 
@@ -1192,9 +1192,9 @@ func TestWeightedNetLB(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to read BackendService, %v", err)
 			}
-			backedHasWeighted := (bs.LocalityLbPolicy == string(backends.LocalityLBPolicyWeightedMaglev))
-			if tc.wantWeighted != backedHasWeighted {
-				t.Errorf("Enexpected BackendService LocalityLbPolicy value %v, got weighted: %v, want weighted: %v", bs.LocalityLbPolicy, tc.wantWeighted, backedHasWeighted)
+
+			if bs.LocalityLbPolicy != string(tc.wantLocalityLBPolicy) {
+				t.Errorf("Unexpected BackendService LocalityLbPolicy value, got: %v, want: %v", bs.LocalityLbPolicy, tc.wantLocalityLBPolicy)
 			}
 		})
 	}
