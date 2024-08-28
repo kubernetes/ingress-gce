@@ -2185,35 +2185,35 @@ func TestWeightedILB(t *testing.T) {
 		addAnnotationForWeighted bool
 		weightedFlagEnabled      bool
 		externalTrafficPolicy    v1.ServiceExternalTrafficPolicy
-		wantWeighted             bool
+		wantLocalityLBPolicy     backends.LocalityLBPolicyType
 	}{
 		{
 			desc:                     "Flag enabled, Service with weighted annotation, externalTrafficPolicy local",
 			addAnnotationForWeighted: true,
 			weightedFlagEnabled:      true,
 			externalTrafficPolicy:    v1.ServiceExternalTrafficPolicyTypeLocal,
-			wantWeighted:             true,
+			wantLocalityLBPolicy:     backends.LocalityLBPolicyWeightedMaglev,
 		},
 		{
 			desc:                     "Flag enabled, NO weighted annotation, externalTrafficPolicy local",
 			addAnnotationForWeighted: false,
 			weightedFlagEnabled:      true,
 			externalTrafficPolicy:    v1.ServiceExternalTrafficPolicyTypeLocal,
-			wantWeighted:             false,
+			wantLocalityLBPolicy:     backends.LocalityLBPolicyDefault,
 		},
 		{
 			desc:                     "Flag DISABLED, Service with weighted annotation, externalTrafficPolicy local",
 			addAnnotationForWeighted: true,
 			weightedFlagEnabled:      false,
 			externalTrafficPolicy:    v1.ServiceExternalTrafficPolicyTypeLocal,
-			wantWeighted:             false,
+			wantLocalityLBPolicy:     backends.LocalityLBPolicyDefault,
 		},
 		{
 			desc:                     "Flag enabled, Service with weighted annotation and externalTrafficPolicy CLUSTER",
 			addAnnotationForWeighted: true,
 			weightedFlagEnabled:      true,
 			externalTrafficPolicy:    v1.ServiceExternalTrafficPolicyTypeCluster,
-			wantWeighted:             false,
+			wantLocalityLBPolicy:     backends.LocalityLBPolicyDefault,
 		},
 	}
 
@@ -2257,13 +2257,12 @@ func TestWeightedILB(t *testing.T) {
 			backendServiceName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
 			key := meta.RegionalKey(backendServiceName, l4.cloud.Region())
 			bs, err := composite.GetBackendService(l4.cloud, key, meta.VersionGA, klog.TODO())
-
 			if err != nil {
 				t.Fatalf("failed to read BackendService, %v", err)
 			}
-			backedHasWeighted := (bs.LocalityLbPolicy == string(backends.LocalityLBPolicyWeightedMaglev))
-			if tc.wantWeighted != backedHasWeighted {
-				t.Errorf("Unexpected BackendService LocalityLbPolicy value %v, got weighted: %v, want weighted: %v", bs.LocalityLbPolicy, tc.wantWeighted, backedHasWeighted)
+
+			if bs.LocalityLbPolicy != string(tc.wantLocalityLBPolicy) {
+				t.Errorf("Unexpected BackendService LocalityLbPolicy value, got: %v, want: %v", bs.LocalityLbPolicy, tc.wantLocalityLBPolicy)
 			}
 		})
 	}
