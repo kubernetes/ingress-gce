@@ -494,6 +494,17 @@ func TestBackendSvcEqual(t *testing.T) {
 			wantEqual: false,
 		},
 		{
+			desc: "Test LocalityLbPolicy equal does not override the other params",
+			oldBackendService: &composite.BackendService{
+				LocalityLbPolicy: string(LocalityLBPolicyDefault),
+				Network:          "network-1",
+			},
+			newBackendService: &composite.BackendService{
+				LocalityLbPolicy: string(LocalityLBPolicyMaglev),
+			},
+			wantEqual: false,
+		},
+		{
 			desc:                      "Test backend service diff with weighted load balancing pods-per-node and connection tracking enabled",
 			compareConnectionTracking: true,
 			oldBackendService: &composite.BackendService{
@@ -516,10 +527,13 @@ func TestBackendSvcEqual(t *testing.T) {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
-			result := backendSvcEqual(tc.oldBackendService, tc.newBackendService, tc.compareConnectionTracking)
+			result := backendSvcEqual(tc.newBackendService, tc.oldBackendService, tc.compareConnectionTracking)
 			if result != tc.wantEqual {
 				t.Errorf("backendSvcEqual() returned %v, expected %v. Diff(oldScv, newSvc): %s",
 					result, tc.wantEqual, cmp.Diff(tc.oldBackendService, tc.newBackendService))
+			}
+			if result != backendSvcEqual(tc.oldBackendService, tc.newBackendService, tc.compareConnectionTracking) {
+				t.Error("result from backendSvcEqual(old, new) should be the same as backendSvcEqual(new, old)")
 			}
 		})
 	}
@@ -537,6 +551,12 @@ func TestUpdateLocalityLBPolicy(t *testing.T) {
 			existingBSLocalityLbPolicy: LocalityLBPolicyDefault,
 			updatedBSLocalityLbPolicy:  LocalityLBPolicyWeightedMaglev,
 			wantBSLocalityLbPolicy:     LocalityLBPolicyWeightedMaglev,
+		},
+		{
+			desc:                       "from empty to MAGLEV",
+			existingBSLocalityLbPolicy: LocalityLBPolicyDefault,
+			updatedBSLocalityLbPolicy:  LocalityLBPolicyMaglev,
+			wantBSLocalityLbPolicy:     LocalityLBPolicyDefault,
 		},
 		{
 			desc:                       "from MAGLEV to empty",
@@ -580,6 +600,8 @@ func TestUpdateLocalityLBPolicy(t *testing.T) {
 			l4namer := namer.NewL4Namer(kubeSystemUID, nil)
 			backendPool := NewPool(fakeGCE, l4namer)
 			bsName := l4namer.L4Backend(serviceNamespace, serviceName)
+			namespacedName := types.NamespacedName{Name: serviceName, Namespace: serviceNamespace}
+			description, err := utils.MakeL4LBServiceDescription(namespacedName.String(), "", meta.VersionGA, false, utils.ILB)
 
 			key, err := composite.CreateKey(fakeGCE, bsName, meta.Regional)
 			if err != nil {
@@ -587,7 +609,10 @@ func TestUpdateLocalityLBPolicy(t *testing.T) {
 			}
 			existingBS := &composite.BackendService{
 				Name:             bsName,
+				Description:      description,
 				LocalityLbPolicy: string(tc.existingBSLocalityLbPolicy),
+				SessionAffinity:  "NONE",
+				HealthChecks:     []string{""},
 			}
 			err = composite.CreateBackendService(fakeGCE, key, existingBS, klog.TODO())
 			if err != nil {
@@ -596,6 +621,7 @@ func TestUpdateLocalityLBPolicy(t *testing.T) {
 
 			updateBackendParams := L4BackendServiceParams{
 				Name:             bsName,
+				NamespacedName:   namespacedName,
 				LocalityLbPolicy: tc.updatedBSLocalityLbPolicy,
 			}
 			updatedBS, err := backendPool.EnsureL4BackendService(updateBackendParams, klog.TODO())
