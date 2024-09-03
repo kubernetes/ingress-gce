@@ -471,12 +471,14 @@ func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGett
 				continue
 			}
 			zone, getZoneErr := zoneGetter.ZoneForNode(nodeName, logger)
-			if getZoneErr != nil {
-				metrics.PublishNegControllerErrorCountMetrics(getZoneErr, true)
-				if enableMultiSubnetCluster && errors.Is(getZoneErr, zonegetter.ErrNodeNotInDefaultSubnet) {
-					epLogger.Error(getZoneErr, "Detected endpoint not from default subnet. Skipping", "nodeName", nodeName)
-					localEPCount[negtypes.NodeInNonDefaultSubnet]++
-					continue
+			if getZoneErr != nil || zone == zonegetter.EmptyZone {
+				if getZoneErr != nil {
+					metrics.PublishNegControllerErrorCountMetrics(getZoneErr, true)
+					if enableMultiSubnetCluster && errors.Is(getZoneErr, zonegetter.ErrNodeNotInDefaultSubnet) {
+						epLogger.Error(getZoneErr, "Detected endpoint not from default subnet. Skipping", "nodeName", nodeName)
+						localEPCount[negtypes.NodeInNonDefaultSubnet]++
+						continue
+					}
 				}
 				epLogger.Error(getZoneErr, "Endpoint's corresponding node does not have valid zone information, skipping", "nodeName", nodeName)
 				localEPCount[negtypes.NodeNotFound]++
