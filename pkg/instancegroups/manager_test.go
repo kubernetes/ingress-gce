@@ -59,6 +59,139 @@ func newNodePool(f Provider, maxIGSize int) Manager {
 	return pool
 }
 
+func getNodeNames(nodes map[string]string) []string {
+	names := make([]string, 0)
+	for name, _ := range nodes {
+		names = append(names, name)
+	}
+	return names
+}
+
+func TestNodePoolSyncWithEmptyZone(t *testing.T) {
+
+	testCases := []struct {
+		desc              string
+		gceNodes          []string            // all in defaultTestZone
+		kubeNodesEachStep []map[string]string // map of node:zone during each "ensure instance group"
+		wantedNodes       []string            // Nodes that should be there at the end of the updates
+	}{
+		{
+			desc:     "Both nodes without zone during second update do not get deleted",
+			gceNodes: []string{"n1", "n2"},
+			kubeNodesEachStep: []map[string]string{
+				{
+					"n1": defaultTestZone,
+					"n2": defaultTestZone,
+				},
+				{
+					"n1": "",
+					"n2": "",
+				},
+			},
+			wantedNodes: []string{"n1", "n2"},
+		},
+		{
+			desc:     "Create node when zone ready",
+			gceNodes: []string{"n1"},
+			kubeNodesEachStep: []map[string]string{
+				{
+					"n1": "",
+					"n2": "",
+				},
+				{
+					"n1": "",
+					"n2": defaultTestZone,
+				},
+			},
+			wantedNodes: []string{"n1", "n2"},
+		},
+		{
+			desc:     "Do not delete nodes if zone is empty but delete if node not there",
+			gceNodes: []string{"n1", "n2", "n3"},
+			kubeNodesEachStep: []map[string]string{
+				{
+					"n1": defaultTestZone,
+					"n2": defaultTestZone,
+					"n3": defaultTestZone,
+				},
+				{
+					"n2": "",
+					"n3": defaultTestZone,
+				},
+			},
+			wantedNodes: []string{"n2", "n3"},
+		},
+		{
+			desc:     "Do not create one Node without zone assigned",
+			gceNodes: []string{"n1"},
+			kubeNodesEachStep: []map[string]string{
+				{
+					"n1": defaultTestZone,
+					"n2": "",
+				},
+			},
+			wantedNodes: []string{"n1"},
+		},
+		{
+			desc:     "Delete one Node",
+			gceNodes: []string{"n1", "n2"},
+			kubeNodesEachStep: []map[string]string{
+				{
+					"n1": defaultTestZone,
+				},
+			},
+			wantedNodes: []string{"n1"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			// create fake gce node pool with existing gceNodes
+			ig := &compute.InstanceGroup{Name: defaultNamer.InstanceGroup()}
+			zonesToIGs := map[string]IGsToInstances{
+				defaultTestZone: {
+					ig: sets.NewString(tc.gceNodes...),
+				},
+			}
+			fakeGCEInstanceGroups := NewFakeInstanceGroups(zonesToIGs, 10)
+
+			// run required syncs
+			for _, nodeMap := range tc.kubeNodesEachStep {
+				pool := newNodePool(fakeGCEInstanceGroups, 10)
+				for name, zone := range nodeMap {
+					manager := pool.(*manager)
+					zonegetter.AddFakeNodes(manager.ZoneGetter, zone, name)
+				}
+
+				// run sync step
+				nodeNames := getNodeNames(nodeMap)
+				err := pool.Sync(nodeNames, klog.TODO())
+				if err != nil {
+					t.Fatalf("pool.Sync(%v) returned error %v, want nil", nodeNames, err)
+				}
+			}
+
+			instancesList, err := fakeGCEInstanceGroups.ListInstancesInInstanceGroup(ig.Name, defaultTestZone, allInstances)
+			if err != nil {
+				t.Fatalf("fakeGCEInstanceGroups.ListInstancesInInstanceGroup(%s, %s, %s) returned error %v, want nil", ig.Name, defaultTestZone, allInstances, err)
+			}
+			instances, err := test.InstancesListToNameSet(instancesList)
+			if err != nil {
+				t.Fatalf("test.InstancesListToNameSet(%v) returned error %v, want nil", ig, err)
+			}
+			expectedInstancesSize := len(tc.wantedNodes)
+			if instances.Len() != expectedInstancesSize {
+				t.Errorf("instances.Len() = %d not equal expectedInstancesSize = %d", instances.Len(), expectedInstancesSize)
+			}
+
+			kubeNodeSet := sets.NewString(tc.wantedNodes...)
+			if !kubeNodeSet.Equal(instances) {
+				t.Errorf("Expected kubeNodeSet = %v is not equal to instance set = %v", kubeNodeSet, instances)
+			}
+		})
+	}
+}
+
 func TestNodePoolSync(t *testing.T) {
 	maxIGSize := 1000
 

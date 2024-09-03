@@ -310,7 +310,17 @@ func (m *manager) Sync(nodes []string, logger klog.Logger) (err error) {
 	// https://github.com/kubernetes/cloud-provider-gcp/blob/fca628cb3bf9267def0abb509eaae87d2d4040f3/providers/gce/gce_loadbalancer_internal.go#L606C1-L675C1
 	// the m.maxIGSize should be set to 1000 as is in the cloud-provider-gcp.
 	zonedNodes := m.splitNodesByZone(nodes, iglogger)
+	iglogger.Info(fmt.Sprintf("Syncing nodes: %d nodes over %d zones", len(nodes), len(zonedNodes)))
+
+	emptyZoneNodesNames := sets.NewString(zonedNodes[zonegetter.EmptyZone]...)
+	if len(emptyZoneNodesNames) > 0 {
+		iglogger.Info(fmt.Sprintf("%d nodes have empty zone: %v. They will not be removed from instance group as long as zone is missing", len(emptyZoneNodesNames), emptyZoneNodesNames))
+	}
+
 	for zone, kubeNodesFromZone := range zonedNodes {
+		if zone == zonegetter.EmptyZone {
+			continue // skip ensuring instance group for empty zone
+		}
 		igName := m.namer.InstanceGroup()
 		if len(kubeNodesFromZone) > m.maxIGSize {
 			sortedKubeNodesFromZone := sets.NewString(kubeNodesFromZone...).List()
@@ -335,7 +345,12 @@ func (m *manager) Sync(nodes []string, logger klog.Logger) (err error) {
 			gceNodes.Insert(instance)
 		}
 
-		removeNodes := gceNodes.Difference(kubeNodes).List()
+		removalCandidates := gceNodes.Difference(kubeNodes)
+		iglogger.V(2).Info("Nodes that are removal candidates", "removalCandidates", events.TruncatedStringList(removalCandidates.List()))
+
+		removeNodes := removalCandidates.Difference(emptyZoneNodesNames).List()                                                                   // Do not remove nodes which zone label still need to be assigned
+		iglogger.V(2).Info("Removing nodes (after ignoring nodes without zone assigned)", "removeNodes", events.TruncatedStringList(removeNodes)) // Do not remove nodes which zone label still need to be assigned
+
 		addNodes := kubeNodes.Difference(gceNodes).List()
 
 		iglogger.V(2).Info("Removing nodes", "removeNodes", events.TruncatedStringList(removeNodes))
