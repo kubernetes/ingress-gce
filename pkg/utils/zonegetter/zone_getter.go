@@ -48,6 +48,7 @@ const (
 	AllNodesFilter                 = Filter("AllNodesFilter")
 	CandidateNodesFilter           = Filter("CandidateNodesFilter")
 	CandidateAndUnreadyNodesFilter = Filter("CandidateAndUnreadyNodesFilter")
+	EmptyZone                      = ""
 )
 
 var ErrProviderIDNotFound = errors.New("providerID not found")
@@ -58,7 +59,7 @@ var ErrNodePodCIDRNotSet = errors.New("Node does not have PodCIDR set")
 
 // providerIDRE is the regex to process providerID.
 // A providerID is build out of '${ProviderName}://${project-id}/${zone}/${instance-name}'
-var providerIDRE = regexp.MustCompile(`^` + "gce" + `://([^/]+)/([^/]+)/([^/]+)$`)
+var providerIDRE = regexp.MustCompile(`^` + "gce" + `://([^/]+)/([^/]*)/([^/]+)$`)
 
 // ZoneGetter manages lookups for GCE instances to zones.
 type ZoneGetter struct {
@@ -102,6 +103,9 @@ func (z *ZoneGetter) ZoneAndSubnetForNode(name string, logger klog.Logger) (stri
 	if err != nil {
 		nodeLogger.Error(err, "Failed to get zone from the providerID")
 		return "", "", err
+	}
+	if zone == EmptyZone {
+		return EmptyZone, "", nil
 	}
 
 	subnet, err := getSubnet(node, z.defaultSubnetURL)
@@ -168,7 +172,7 @@ func (z *ZoneGetter) ListZones(filter Filter, logger klog.Logger) ([]string, err
 	zones := sets.String{}
 	for _, n := range nodes {
 		zone, err := getZone(n)
-		if err != nil {
+		if err != nil || zone == EmptyZone {
 			filterLogger.Error(err, "Failed to get zone from providerID", "nodeName", n.Name)
 			continue
 		}
@@ -320,9 +324,6 @@ func getZone(node *api_v1.Node) (string, error) {
 	matches := providerIDRE.FindStringSubmatch(node.Spec.ProviderID)
 	if len(matches) != 4 {
 		return "", fmt.Errorf("%w: providerID %q of node %s is not valid", ErrSplitProviderID, node.Spec.ProviderID, node.Name)
-	}
-	if matches[2] == "" {
-		return "", fmt.Errorf("%w: node %s has an empty zone", ErrSplitProviderID, node.Name)
 	}
 	return matches[2], nil
 }
