@@ -71,7 +71,7 @@ var (
 		prometheus.HistogramOpts{
 			Name:    L4ILBDualStackLatencyMetricName,
 			Help:    "Latency of an L4 ILB DualStack Sync",
-			Buckets: prometheus.ExponentialBuckets(0.5, 2, 12),
+			Buckets: prometheus.ExponentialBuckets(0.5, 2, 15),
 		},
 		l4LBDualStackSyncLatencyMetricsLabels,
 	)
@@ -80,7 +80,7 @@ var (
 		prometheus.HistogramOpts{
 			Name:    L4ILBMultiNetLatencyMetricName,
 			Help:    "Latency of an L4 ILB Multinet Sync",
-			Buckets: prometheus.ExponentialBuckets(0.5, 2, 12),
+			Buckets: prometheus.ExponentialBuckets(0.5, 2, 15),
 		},
 		l4LBSyncLatencyMetricsLabels,
 	)
@@ -88,7 +88,7 @@ var (
 		prometheus.HistogramOpts{
 			Name:    L4NetLBMultiNetLatencyMetricName,
 			Help:    "Latency of an L4 NetLB Multinet Sync",
-			Buckets: prometheus.ExponentialBuckets(0.5, 2, 12),
+			Buckets: prometheus.ExponentialBuckets(0.5, 2, 15),
 		},
 		l4LBSyncLatencyMetricsLabels,
 	)
@@ -115,7 +115,7 @@ var (
 		prometheus.HistogramOpts{
 			Name:    L4NetLBDualStackLatencyMetricName,
 			Help:    "Latency of an L4 NetB DualStack Sync",
-			Buckets: prometheus.ExponentialBuckets(0.5, 2, 12),
+			Buckets: prometheus.ExponentialBuckets(0.5, 2, 15),
 		},
 		l4LBDualStackSyncLatencyMetricsLabels,
 	)
