@@ -55,7 +55,7 @@ func newNodePool(f Provider, maxIGSize int) Manager {
 		BasePath:   basePath,
 		ZoneGetter: fakeZoneGetter,
 		MaxIGSize:  maxIGSize,
-	}, klog.TODO())
+	})
 	return pool
 }
 
@@ -113,14 +113,14 @@ func TestNodePoolSync(t *testing.T) {
 
 		igName := defaultNamer.InstanceGroup()
 		ports := []int64{80}
-		_, err := pool.EnsureInstanceGroupsAndPorts(igName, ports)
+		_, err := pool.EnsureInstanceGroupsAndPorts(igName, ports, klog.TODO())
 		if err != nil {
 			t.Fatalf("pool.EnsureInstanceGroupsAndPorts(%s, %v) returned error %v, want nil", igName, ports, err)
 		}
 
 		// run sync with expected kubeNodes
 		apiCallsCountBeforeSync := len(fakeGCEInstanceGroups.calls)
-		err = pool.Sync(testCase.kubeNodes.List())
+		err = pool.Sync(testCase.kubeNodes.List(), klog.TODO())
 		if err != nil {
 			t.Fatalf("pool.Sync(%v) returned error %v, want nil", testCase.kubeNodes.List(), err)
 		}
@@ -155,7 +155,7 @@ func TestNodePoolSync(t *testing.T) {
 
 		// call sync one more time and check that it will be no-op and will not cause any api calls
 		apiCallsCountBeforeSync = len(fakeGCEInstanceGroups.calls)
-		err = pool.Sync(testCase.kubeNodes.List())
+		err = pool.Sync(testCase.kubeNodes.List(), klog.TODO())
 		if err != nil {
 			t.Fatalf("pool.Sync(%v) returned error %v, want nil", testCase.kubeNodes.List(), err)
 		}
@@ -181,17 +181,17 @@ func TestInstanceAlreadyMemberOfIG(t *testing.T) {
 
 	igName := defaultNamer.InstanceGroup()
 	ports := []int64{80}
-	_, err := pool.EnsureInstanceGroupsAndPorts(igName, ports)
+	_, err := pool.EnsureInstanceGroupsAndPorts(igName, ports, klog.TODO())
 	if err != nil {
 		t.Fatalf("pool.EnsureInstanceGroupsAndPorts(%s, %v) returned error %v, want nil", igName, ports, err)
 	}
 
 	// run sync with 2 times, expect not error despite fakeInstanceGroups will return 'memberAlreadyExists'
-	err = pool.Sync(kubeNodes.List())
+	err = pool.Sync(kubeNodes.List(), klog.TODO())
 	if err != nil {
 		t.Fatalf("pool.Sync() returned error %v, want nil", err)
 	}
-	err = pool.Sync(kubeNodes.List())
+	err = pool.Sync(kubeNodes.List(), klog.TODO())
 	if err != nil {
 		t.Fatalf("pool.Sync() returned error %v, want nil", err)
 	}
@@ -267,7 +267,7 @@ func TestNodePoolSyncHugeCluster(t *testing.T) {
 			zonegetter.AddFakeNodes(manager.ZoneGetter, testZoneC, tc.gceNodesZoneC.List()...)
 
 			ports := []int64{80}
-			_, err := pool.EnsureInstanceGroupsAndPorts(igName, ports)
+			_, err := pool.EnsureInstanceGroupsAndPorts(igName, ports, klog.TODO())
 			if err != nil {
 				t.Fatalf("pool.EnsureInstanceGroupsAndPorts(%s, %v) returned error %v, want nil", igName, ports, err)
 			}
@@ -275,7 +275,7 @@ func TestNodePoolSyncHugeCluster(t *testing.T) {
 			allKubeNodes = append(allKubeNodes, tc.kubeNodesZoneC.List()...)
 
 			// Execute manager's main instance group sync function
-			err = pool.Sync(allKubeNodes)
+			err = pool.Sync(allKubeNodes, klog.TODO())
 			if err != nil {
 				t.Fatalf("pool.Sync(_) returned error %v, want nil", err)
 			}
@@ -296,7 +296,7 @@ func TestNodePoolSyncHugeCluster(t *testing.T) {
 			}
 
 			apiCallsCountBeforeSync := len(fakeGCEInstanceGroups.calls)
-			err = pool.Sync(allKubeNodes)
+			err = pool.Sync(allKubeNodes, klog.TODO())
 			if err != nil {
 				t.Fatalf("pool.Sync(_) returned error %v, want nil", err)
 			}
@@ -322,13 +322,13 @@ func TestInstanceTruncatingOrder(t *testing.T) {
 	zonegetter.AddFakeNodes(manager.ZoneGetter, testZoneA, gceNodesZoneA...)
 
 	ports := []int64{80}
-	_, err := pool.EnsureInstanceGroupsAndPorts(igName, ports)
+	_, err := pool.EnsureInstanceGroupsAndPorts(igName, ports, klog.TODO())
 	if err != nil {
 		t.Fatalf("pool.EnsureInstanceGroupsAndPorts(%s, %v) returned error %v, want nil", igName, ports, err)
 	}
 
 	// Execute manager's main instance group sync function
-	err = pool.Sync(kubeNodesZoneA)
+	err = pool.Sync(kubeNodesZoneA, klog.TODO())
 	if err != nil {
 		t.Fatalf("pool.Sync(_) returned error %v, want nil", err)
 	}
@@ -392,7 +392,7 @@ func TestSetNamedPorts(t *testing.T) {
 		// TODO: Add tests to remove named ports when we support that.
 	}
 	for _, testCase := range testCases {
-		igs, err := pool.EnsureInstanceGroupsAndPorts("ig", testCase.activePorts)
+		igs, err := pool.EnsureInstanceGroupsAndPorts("ig", testCase.activePorts, klog.TODO())
 		if err != nil {
 			t.Fatalf("unexpected error in setting ports %v to instance group: %s", testCase.activePorts, err)
 		}
