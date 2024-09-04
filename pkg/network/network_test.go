@@ -283,6 +283,22 @@ func (f fakeCloud) SubnetworkURL() string {
 	return "https://www.googleapis.com/compute/v1/projects/test-region/regions/test-region/subnetworks/secondary-subnet"
 }
 
+func (f fakeCloud) Get() string {
+	return "https://www.googleapis.com/compute/v1/projects/test-project/global/networks/default"
+}
+
+func (f fakeCloud) GetNetwork(networkName string) (*compute.Network, error) {
+	if networkName == "default" {
+		network := compute.Network{
+			Name:     "default",
+			Id:       12345678910,
+			SelfLink: "https://www.googleapis.com/compute/v1/projects/test-project/global/networks/default",
+		}
+		return &network, nil
+	}
+	return nil, fmt.Errorf("Invalid network name")
+}
+
 type fakeCloudWithNetworkId struct {
 }
 
@@ -305,6 +321,8 @@ func (f fakeCloudWithNetworkId) SubnetworkURL() string {
 func (f fakeCloudWithNetworkId) GetNetwork(networkName string) (*compute.Network, error) {
 	if networkName == "12345678910" || networkName == "default" {
 		network := compute.Network{
+			Name:     "default",
+			Id:       12345678910,
 			SelfLink: "https://www.googleapis.com/compute/v1/projects/test-project/global/networks/default",
 		}
 		return &network, nil
@@ -315,26 +333,40 @@ func (f fakeCloudWithNetworkId) GetNetwork(networkName string) (*compute.Network
 func TestServiceNetworkWithNetworkId(t *testing.T) {
 
 	cases := []struct {
-		desc               string
-		network            *networkv1.Network
-		gkeNetworkParamSet *networkv1.GKENetworkParamSet
-		service            *apiv1.Service
-		want               *NetworkInfo
-		wantErr            string
+		desc                 string
+		service              *apiv1.Service
+		network              *networkv1.Network
+		gkeNetworkParamSet   *networkv1.GKENetworkParamSet
+		cloudProviderNerwork CloudNetworkProvider
+		want                 *NetworkInfo
+		wantErr              string
 	}{
 		{
-			desc: "service without network selector",
+			desc: "cluster with network name",
 			service: &apiv1.Service{
 				ObjectMeta: metav1.ObjectMeta{Name: "testService"},
 				Spec:       apiv1.ServiceSpec{},
 			},
-			want: DefaultNetwork(fakeCloud{}),
+			cloudProviderNerwork: fakeCloud{},
+			want:                 DefaultNetwork(fakeCloud{}),
+		},
+		{
+			desc: "cluster with network Id",
+			service: &apiv1.Service{
+				ObjectMeta: metav1.ObjectMeta{Name: "testService"},
+				Spec:       apiv1.ServiceSpec{},
+			},
+			cloudProviderNerwork: fakeCloudWithNetworkId{},
+			want:                 DefaultNetwork(fakeCloud{}),
 		},
 	}
 
 	for _, tc := range cases {
 
 		t.Run(tc.desc, func(t *testing.T) {
+
+			adapter, err := NewAdapterNetworkSelfLink(fakeCloudWithNetworkId{})
+
 			networkClient := netfake.NewSimpleClientset()
 
 			networkInformer := informernetwork.NewNetworkInformer(networkClient, time.Minute*10, utils.NewNamespaceIndexer())
@@ -349,9 +381,6 @@ func TestServiceNetworkWithNetworkId(t *testing.T) {
 			if tc.gkeNetworkParamSet != nil {
 				gkeNetworkParamSetIndexer.Add(tc.gkeNetworkParamSet)
 			}
-
-			adapter, err := NewAdapterNetworkSelfLink(fakeCloudWithNetworkId{})
-
 			networksResolver := NewNetworksResolver(networkIndexer, gkeNetworkParamSetIndexer, adapter, true, klog.Background())
 			network, err := networksResolver.ServiceNetwork(tc.service)
 			if err != nil {

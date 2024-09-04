@@ -18,6 +18,7 @@ package types
 
 import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	compute "google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/klog/v2"
 )
@@ -36,6 +37,7 @@ type NetworkEndpointGroupCloud interface {
 	SubnetworkURL() string
 	NetworkProjectID() string
 	Region() string
+	GetNetwork(networkName string) (*compute.Network, error)
 }
 
 // NetworkEndpointGroupNamer is an interface for generating network endpoint group name.

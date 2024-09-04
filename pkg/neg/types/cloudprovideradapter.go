@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	compute "google.golang.org/api/compute/v1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
@@ -183,4 +184,8 @@ func (a *cloudProviderAdapter) NetworkProjectID() string {
 
 func (a *cloudProviderAdapter) Region() string {
 	return a.c.Region()
+}
+
+func (a *cloudProviderAdapter) GetNetwork(networkName string) (*compute.Network, error) {
+	return a.c.GetNetwork(networkName)
 }

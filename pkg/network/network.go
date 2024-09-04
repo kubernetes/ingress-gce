@@ -51,29 +51,21 @@ type NetworksResolver struct {
 	logger                   klog.Logger
 }
 
-type CloudNetworkProviderExtended interface {
-	NetworkURL() string
-	SubnetworkURL() string
-	NetworkProjectID() string
-	Region() string
-	GetNetwork(networkName string) (*compute.Network, error)
-}
-
 type CloudNetworkProviderAdapterWithSelfLink struct {
-	cloud      CloudNetworkProviderExtended
+	cloud      CloudNetworkProvider
 	networkURL string
 }
 
 // CloudNetworkProviderAdapterWithSelfLink uses the network selfLink as networkUrl.
-func NewAdapterNetworkSelfLink(gceCloud CloudNetworkProviderExtended) (CloudNetworkProvider, error) {
-	url, err := GetNetworkSelfLink(gceCloud)
+func NewAdapterNetworkSelfLink(cloudProvider CloudNetworkProvider) (CloudNetworkProvider, error) {
+	url, err := GetNetworkSelfLink(cloudProvider)
 
 	if err != nil {
 		return nil, err
 	}
 
 	return &CloudNetworkProviderAdapterWithSelfLink{
-		cloud:      gceCloud,
+		cloud:      cloudProvider,
 		networkURL: url,
 	}, nil
 }
@@ -94,6 +86,10 @@ func (adapter *CloudNetworkProviderAdapterWithSelfLink) Region() string {
 	return adapter.cloud.Region()
 }
 
+func (a *CloudNetworkProviderAdapterWithSelfLink) GetNetwork(networkName string) (*compute.Network, error) {
+	return a.cloud.GetNetwork(networkName)
+}
+
 // NewNetworksResolver creates a new instance of the NetworksResolver.
 func NewNetworksResolver(networkLister, gkeNetworkParamSetLister cache.Indexer, cloudProvider CloudNetworkProvider, enableMultinetworking bool, logger klog.Logger) *NetworksResolver {
 	return &NetworksResolver{
@@ -105,15 +101,15 @@ func NewNetworksResolver(networkLister, gkeNetworkParamSetLister cache.Indexer, 
 	}
 }
 
-func GetNetworkSelfLink(gceCloud CloudNetworkProviderExtended) (string, error) {
-	if gceCloud == nil {
+func GetNetworkSelfLink(cloudProvider CloudNetworkProvider) (string, error) {
+	if cloudProvider == nil {
 		return "", fmt.Errorf("Network resolver: provided cloud is nil")
 	}
-	url := gceCloud.NetworkURL()
+	url := cloudProvider.NetworkURL()
 	lastIndex := strings.LastIndex(url, "/")
 	networkId := url[lastIndex+1:]
 
-	networkResource, err := gceCloud.GetNetwork(networkId)
+	networkResource, err := cloudProvider.GetNetwork(networkId)
 	if err != nil || networkResource == nil || networkResource.SelfLink == "" {
 		return "", fmt.Errorf("Network resolver error: %v", err)
 	}
@@ -247,6 +243,7 @@ type CloudNetworkProvider interface {
 	SubnetworkURL() string
 	NetworkProjectID() string
 	Region() string
+	GetNetwork(networkName string) (*compute.Network, error)
 }
 
 // NetworkInfo contains the information about the network the LB resources should be created in.
