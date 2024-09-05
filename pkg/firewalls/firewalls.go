@@ -33,7 +33,8 @@ import (
 const (
 	// DefaultFirewallName is the name to use for firewall rules created
 	// by an L7 controller when --firewall-rule is not used.
-	DefaultFirewallName = ""
+	DefaultFirewallName        = ""
+	DefaultFirewallDescription = "GCE L7 firewall rule"
 )
 
 // FirewallRules manages firewall rules.
@@ -119,7 +120,7 @@ func (fr *FirewallRules) buildExpectedFW(nodeNames, additionalPorts, additionalR
 
 	expectedFirewall := &compute.Firewall{
 		Name:         name,
-		Description:  "GCE L7 firewall rule",
+		Description:  DefaultFirewallDescription,
 		SourceRanges: ranges.UnsortedList(),
 		Network:      fr.cloud.NetworkURL(),
 		Allowed: []*compute.FirewallAllowed{
