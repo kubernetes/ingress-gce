@@ -87,14 +87,14 @@ type L4NetLBSyncResult struct {
 	StartTime          time.Time
 }
 
-func NewL4SyncResult(syncType string, svc *corev1.Service, isMultinet bool, enabledStrongSessionAffinity bool) *L4NetLBSyncResult {
+func NewL4SyncResult(syncType string, svc *corev1.Service, isMultinet bool, enabledStrongSessionAffinity bool, isWeightedLBPodsPerNode bool) *L4NetLBSyncResult {
 	startTime := time.Now()
 	result := &L4NetLBSyncResult{
 		Annotations:        make(map[string]string),
 		StartTime:          startTime,
 		SyncType:           syncType,
 		MetricsLegacyState: metrics.InitL4NetLBServiceLegacyState(&startTime),
-		MetricsState:       metrics.InitServiceMetricsState(svc, &startTime, isMultinet, enabledStrongSessionAffinity),
+		MetricsState:       metrics.InitServiceMetricsState(svc, &startTime, isMultinet, enabledStrongSessionAffinity, isWeightedLBPodsPerNode),
 	}
 	return result
 }
@@ -192,12 +192,13 @@ func (l4netlb *L4NetLB) checkStrongSessionAffinityRequirements() *utils.UserErro
 func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) *L4NetLBSyncResult {
 	isMultinetService := l4netlb.networkResolver.IsMultinetService(svc)
 	serviceUsesSSA := l4netlb.enableStrongSessionAffinity && annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service)
-	result := NewL4SyncResult(SyncTypeCreate, svc, isMultinetService, serviceUsesSSA)
+	isWeightedLBPodsPerNode := l4netlb.isWeightedLBPodsPerNode()
+	result := NewL4SyncResult(SyncTypeCreate, svc, isMultinetService, serviceUsesSSA, isWeightedLBPodsPerNode)
 	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
 	if len(svc.Status.LoadBalancer.Ingress) > 0 {
 		result.SyncType = SyncTypeUpdate
 	}
-	l4netlb.svcLogger.V(3).Info("EnsureFrontend started for service", "len(nodeNames)", len(nodeNames), "syncType", result.SyncType, "isMultinetService", isMultinetService, "serviceUsesSSA", serviceUsesSSA)
+	l4netlb.svcLogger.V(3).Info("EnsureFrontend started for service", "len(nodeNames)", len(nodeNames), "syncType", result.SyncType)
 
 	l4netlb.Service = svc
 
@@ -432,7 +433,8 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *L4NetLBSyncResult {
 	isMultinetService := l4netlb.networkResolver.IsMultinetService(svc)
 	useSSA := l4netlb.enableStrongSessionAffinity && annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service)
-	result := NewL4SyncResult(SyncTypeDelete, svc, isMultinetService, useSSA)
+	isWeightedLBPodsPerNode := l4netlb.isWeightedLBPodsPerNode()
+	result := NewL4SyncResult(SyncTypeDelete, svc, isMultinetService, useSSA, isWeightedLBPodsPerNode)
 
 	l4netlb.Service = svc
 
@@ -646,4 +648,8 @@ func (l4netlb *L4NetLB) determineBackendServiceLocalityPolicy() backends.Localit
 	}
 	// If the service has weighted load balancing disabled, the default locality policy is used.
 	return backends.LocalityLBPolicyDefault
+}
+
+func (l4netlb *L4NetLB) isWeightedLBPodsPerNode() bool {
+	return backends.LocalityLBPolicyWeightedMaglev == l4netlb.determineBackendServiceLocalityPolicy()
 }

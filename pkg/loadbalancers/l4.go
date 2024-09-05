@@ -86,20 +86,14 @@ type L4ILBSyncResult struct {
 	StartTime          time.Time
 }
 
-func NewL4ILBSyncResult(syncType string, startTime time.Time, svc *corev1.Service, isMultinetService bool) *L4ILBSyncResult {
+func NewL4ILBSyncResult(syncType string, startTime time.Time, svc *corev1.Service, isMultinetService bool, isWeightedLBPodsPerNode bool) *L4ILBSyncResult {
+	enabledStrongSessionAffinity := false
 	result := &L4ILBSyncResult{
 		Annotations: make(map[string]string),
 		StartTime:   startTime,
 		SyncType:    syncType,
 		// Internal Load Balancer doesn't support strong session affinity (passing `false` all along)
-		MetricsState: metrics.InitServiceMetricsState(svc, &startTime, isMultinetService, false),
-	}
-
-	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
-	// This will also cover cases where an external LB is updated to an ILB, which is technically a create for ILB.
-	// But this is still the easiest way to identify create vs update in the common case.
-	if syncType == SyncTypeCreate && len(svc.Status.LoadBalancer.Ingress) > 0 {
-		result.SyncType = SyncTypeUpdate
+		MetricsState: metrics.InitServiceMetricsState(svc, &startTime, isMultinetService, enabledStrongSessionAffinity, isWeightedLBPodsPerNode),
 	}
 	return result
 }
@@ -159,7 +153,8 @@ func (l4 *L4) getILBOptions() gce.ILBOptions {
 func (l4 *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4ILBSyncResult {
 	l4.svcLogger.V(2).Info("EnsureInternalLoadBalancerDeleted: deleting L4 ILB LoadBalancer resources")
 	isMultinetService := l4.networkResolver.IsMultinetService(svc)
-	result := NewL4ILBSyncResult(SyncTypeDelete, time.Now(), svc, isMultinetService)
+	isWeightedLBPodsPerNode := l4.isWeightedLBPodsPerNode()
+	result := NewL4ILBSyncResult(SyncTypeDelete, time.Now(), svc, isMultinetService, isWeightedLBPodsPerNode)
 
 	l4.deleteIPv4ResourcesOnDelete(result)
 	if l4.enableDualStack {
@@ -340,13 +335,21 @@ func (l4 *L4) subnetName() string {
 // EnsureInternalLoadBalancer ensures that all GCE resources for the given loadbalancer service have
 // been created. It returns a LoadBalancerStatus with the updated ForwardingRule IP address.
 func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service) *L4ILBSyncResult {
-	l4.svcLogger.V(2).Info("EnsureInternalLoadBalancer")
-
 	l4.Service = svc
 
 	startTime := time.Now()
 	isMultinetService := l4.networkResolver.IsMultinetService(svc)
-	result := NewL4ILBSyncResult(SyncTypeCreate, startTime, svc, isMultinetService)
+	isWeightedLBPodsPerNode := l4.isWeightedLBPodsPerNode()
+	result := NewL4ILBSyncResult(SyncTypeCreate, startTime, svc, isMultinetService, isWeightedLBPodsPerNode)
+
+	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
+	// This will also cover cases where an external LB is updated to an ILB, which is technically a create for ILB.
+	// But this is still the easiest way to identify create vs update in the common case.
+	if len(svc.Status.LoadBalancer.Ingress) > 0 {
+		result.SyncType = SyncTypeUpdate
+	}
+
+	l4.svcLogger.V(2).Info("EnsureInternalLoadBalancer", "syncType", result.SyncType)
 
 	svcNetwork, err := l4.networkResolver.ServiceNetwork(svc)
 	if err != nil {
@@ -711,4 +714,8 @@ func (l4 *L4) determineBackendServiceLocalityPolicy() backends.LocalityLBPolicyT
 	// If the service has weighted load balancing disabled, the default locality policy is used.
 	// If the service disables Weighted Load Balancing the logic to use MAGLEV is handled by backends.go
 	return backends.LocalityLBPolicyDefault
+}
+
+func (l4 *L4) isWeightedLBPodsPerNode() bool {
+	return backends.LocalityLBPolicyWeightedMaglev == l4.determineBackendServiceLocalityPolicy()
 }

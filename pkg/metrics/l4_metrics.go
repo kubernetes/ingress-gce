@@ -30,6 +30,7 @@ const (
 	l4LabelStatus                = "status"
 	l4LabelMultinet              = "multinet"
 	l4LabelStrongSessionAffinity = "strong_session_affinity"
+	l4LabelWeightedLBPodsPerNode = "weighted_lb_pods_per_node"
 )
 
 var (
@@ -38,7 +39,7 @@ var (
 			Name: "l4_ilbs_count",
 			Help: "Metric containing the number of ILBs that can be filtered by feature labels and status",
 		},
-		[]string{l4LabelStatus, l4LabelMultinet},
+		[]string{l4LabelStatus, l4LabelMultinet, l4LabelWeightedLBPodsPerNode},
 	)
 
 	l4NetLBCount = prometheus.NewGaugeVec(
@@ -46,7 +47,7 @@ var (
 			Name: "l4_netlbs_count",
 			Help: "Metric containing the number of NetLBs that can be filtered by feature labels and status",
 		},
-		[]string{l4LabelStatus, l4LabelMultinet, l4LabelStrongSessionAffinity},
+		[]string{l4LabelStatus, l4LabelMultinet, l4LabelStrongSessionAffinity, l4LabelWeightedLBPodsPerNode},
 	)
 )
 
@@ -55,7 +56,7 @@ func (im *ControllerMetrics) exportL4Metrics() {
 	im.exportL4NetLBsMetrics()
 }
 
-func InitServiceMetricsState(svc *corev1.Service, startTime *time.Time, isMultinetwork bool, enabledStrongSessionAffinity bool) L4ServiceState {
+func InitServiceMetricsState(svc *corev1.Service, startTime *time.Time, isMultinetwork bool, enabledStrongSessionAffinity bool, isWeightedLBPodsPerNode bool) L4ServiceState {
 	state := L4ServiceState{
 		L4DualStackServiceLabels: L4DualStackServiceLabels{
 			IPFamilies: ipFamiliesToString(svc.Spec.IPFamilies),
@@ -63,6 +64,7 @@ func InitServiceMetricsState(svc *corev1.Service, startTime *time.Time, isMultin
 		L4FeaturesServiceLabels: L4FeaturesServiceLabels{
 			Multinetwork:          isMultinetwork,
 			StrongSessionAffinity: enabledStrongSessionAffinity,
+			WeightedLBPodsPerNode: isWeightedLBPodsPerNode,
 		},
 		// Always init status with error, and update with Success when service was provisioned
 		Status:             StatusError,
@@ -141,8 +143,9 @@ func (im *ControllerMetrics) exportL4ILBsMetrics() {
 	l4ILBCount.Reset()
 	for _, svcState := range im.l4ILBServiceMap {
 		l4ILBCount.With(prometheus.Labels{
-			l4LabelStatus:   string(getStatusConsideringPersistentError(&svcState)),
-			l4LabelMultinet: strconv.FormatBool(svcState.Multinetwork),
+			l4LabelStatus:                string(getStatusConsideringPersistentError(&svcState)),
+			l4LabelMultinet:              strconv.FormatBool(svcState.Multinetwork),
+			l4LabelWeightedLBPodsPerNode: strconv.FormatBool(svcState.WeightedLBPodsPerNode),
 		}).Inc()
 	}
 	im.logger.V(3).Info("L4 ILB usage metrics exported")
@@ -158,6 +161,7 @@ func (im *ControllerMetrics) exportL4NetLBsMetrics() {
 			l4LabelStatus:                string(getStatusConsideringPersistentError(&svcState)),
 			l4LabelMultinet:              strconv.FormatBool(svcState.Multinetwork),
 			l4LabelStrongSessionAffinity: strconv.FormatBool(svcState.StrongSessionAffinity),
+			l4LabelWeightedLBPodsPerNode: strconv.FormatBool(svcState.WeightedLBPodsPerNode),
 		}).Inc()
 	}
 	im.logger.V(3).Info("L4 NetLB usage metrics exported")
