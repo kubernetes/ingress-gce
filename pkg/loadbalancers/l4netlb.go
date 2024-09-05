@@ -67,11 +67,12 @@ type L4NetLB struct {
 	forwardingRules ForwardingRulesProvider
 	enableDualStack bool
 	// represents if `enable strong session affinity` flag was set
-	enableStrongSessionAffinity bool
-	networkInfo                 network.NetworkInfo
-	networkResolver             network.Resolver
-	enableWeightedLB            bool
-	svcLogger                   klog.Logger
+	enableStrongSessionAffinity      bool
+	networkInfo                      network.NetworkInfo
+	networkResolver                  network.Resolver
+	enableWeightedLB                 bool
+	disableNodesFirewallProvisioning bool
+	svcLogger                        klog.Logger
 }
 
 // L4NetLBSyncResult contains information about the outcome of an L4 NetLB sync. It stores the list of resource name annotations,
@@ -108,34 +109,36 @@ func (r *L4NetLBSyncResult) SetMetricsForSuccessfulServiceSync() {
 }
 
 type L4NetLBParams struct {
-	Service                      *corev1.Service
-	Cloud                        *gce.Cloud
-	Namer                        namer.L4ResourcesNamer
-	Recorder                     record.EventRecorder
-	DualStackEnabled             bool
-	StrongSessionAffinityEnabled bool
-	NetworkResolver              network.Resolver
-	EnableWeightedLB             bool
+	Service                          *corev1.Service
+	Cloud                            *gce.Cloud
+	Namer                            namer.L4ResourcesNamer
+	Recorder                         record.EventRecorder
+	DualStackEnabled                 bool
+	StrongSessionAffinityEnabled     bool
+	NetworkResolver                  network.Resolver
+	EnableWeightedLB                 bool
+	DisableNodesFirewallProvisioning bool
 }
 
 // NewL4NetLB creates a new Handler for the given L4NetLB service.
 func NewL4NetLB(params *L4NetLBParams, logger klog.Logger) *L4NetLB {
 	logger = logger.WithName("L4NetLBHandler")
 	l4netlb := &L4NetLB{
-		cloud:                       params.Cloud,
-		scope:                       meta.Regional,
-		namer:                       params.Namer,
-		recorder:                    params.Recorder,
-		Service:                     params.Service,
-		NamespacedName:              types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace},
-		backendPool:                 backends.NewPoolWithConnectionTrackingPolicy(params.Cloud, params.Namer, params.StrongSessionAffinityEnabled),
-		healthChecks:                healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder, logger),
-		forwardingRules:             forwardingrules.New(params.Cloud, meta.VersionGA, meta.Regional, logger),
-		enableDualStack:             params.DualStackEnabled,
-		enableStrongSessionAffinity: params.StrongSessionAffinityEnabled,
-		networkResolver:             params.NetworkResolver,
-		enableWeightedLB:            params.EnableWeightedLB,
-		svcLogger:                   logger,
+		cloud:                            params.Cloud,
+		scope:                            meta.Regional,
+		namer:                            params.Namer,
+		recorder:                         params.Recorder,
+		Service:                          params.Service,
+		NamespacedName:                   types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace},
+		backendPool:                      backends.NewPoolWithConnectionTrackingPolicy(params.Cloud, params.Namer, params.StrongSessionAffinityEnabled),
+		healthChecks:                     healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder, logger),
+		forwardingRules:                  forwardingrules.New(params.Cloud, meta.VersionGA, meta.Regional, logger),
+		enableDualStack:                  params.DualStackEnabled,
+		enableStrongSessionAffinity:      params.StrongSessionAffinityEnabled,
+		networkResolver:                  params.NetworkResolver,
+		enableWeightedLB:                 params.EnableWeightedLB,
+		disableNodesFirewallProvisioning: params.DisableNodesFirewallProvisioning,
+		svcLogger:                        logger,
 	}
 	return l4netlb
 }
@@ -389,6 +392,12 @@ func (l4netlb *L4NetLB) ensureIPv4Resources(result *L4NetLBSyncResult, nodeNames
 }
 
 func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress string, result *L4NetLBSyncResult) {
+	// DisableL4LBFirewall flag disables L4 FW enforcment to remove conflicts with firewall policies
+	if l4netlb.disableNodesFirewallProvisioning {
+		l4netlb.svcLogger.Info("Skipped ensuring IPv4 nodes firewall for L4 NetLB Service to enable compatibility with firewall policies. " +
+			"Be sure this cluster has a manually created global firewall policy in place.")
+		return
+	}
 	start := time.Now()
 
 	firewallName := l4netlb.namer.L4Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)

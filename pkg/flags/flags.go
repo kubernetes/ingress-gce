@@ -127,6 +127,7 @@ var (
 		EnableDualStackNEG                       bool
 		EnableFirewallCR                         bool
 		DisableFWEnforcement                     bool
+		DisableL4LBFirewall                      bool
 		EnableIngressRegionalExternal            bool
 		EnableIngressGlobalExternal              bool
 		OverrideComputeAPIEndpoint               string
@@ -309,6 +310,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableDualStackNEG, "enable-dual-stack-neg", false, `Enable support for Dual-Stack NEGs within the NEG Controller`)
 	flag.BoolVar(&F.EnableFirewallCR, "enable-firewall-cr", false, "Enable generating firewall CR")
 	flag.BoolVar(&F.DisableFWEnforcement, "disable-fw-enforcement", false, "Disable Ingress controller to enforce the firewall rules. If set to true, Ingress Controller stops creating GCE firewall rules. We can only enable this if enable-firewall-cr sets to true.")
+	flag.BoolVar(&F.DisableL4LBFirewall, "disable-l4-lb-fw", false, "Disable enforcement of L4 ILB and L4 NetLB VPC firewall rules. Required for firewall policies.")
 	flag.BoolVar(&F.EnableIngressRegionalExternal, "enable-ingress-regional-external", false, "Enable L7 Ingress Regional External.")
 	flag.BoolVar(&F.EnableIngressGlobalExternal, "enable-ingress-global-external", true, "Enable L7 Ingress Global External. Should be disabled when Regional External is enabled.")
 	flag.StringVar(&F.OverrideComputeAPIEndpoint, "override-compute-api-endpoint", "", "Override endpoint that is used to communicate to GCP compute APIs.")

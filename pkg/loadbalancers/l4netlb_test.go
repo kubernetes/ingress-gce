@@ -1200,6 +1200,49 @@ func TestWeightedNetLB(t *testing.T) {
 	}
 }
 
+func TestDisableNetLBIngressFirewall(t *testing.T) {
+	t.Parallel()
+	fakeGCE := getFakeGCECloud(gce.DefaultTestClusterValues())
+	nodeNames := []string{"test-node-1"}
+	// create a test VM so that target tags can be found
+	createVMInstanceWithTag(t, fakeGCE, "test-node-1", "test-node-1")
+
+	svc := test.NewL4NetLBRBSService(8080)
+	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+
+	l4netlbParams := &L4NetLBParams{
+		Service:                          svc,
+		Cloud:                            fakeGCE,
+		Namer:                            namer,
+		DisableNodesFirewallProvisioning: true,
+	}
+	l4netlb := NewL4NetLB(l4netlbParams, klog.TODO())
+	syncResult := &L4NetLBSyncResult{
+		Annotations: make(map[string]string),
+	}
+
+	l4netlb.ensureIPv4NodesFirewall(nodeNames, "10.0.0.7", syncResult)
+	if syncResult.Error != nil {
+		t.Fatalf("ensureIPv4NodesFirewall() error %+v", syncResult)
+	}
+
+	ipv4FirewallName := l4netlb.namer.L4Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)
+	err := verifyFirewallNotExists(l4netlb.cloud, ipv4FirewallName)
+	if err != nil {
+		t.Errorf("verifyFirewallNotExists(_, %s) for IPv4 NetLB firewall returned error %v, want nil", ipv4FirewallName, err)
+	}
+
+	l4netlb.ensureIPv6NodesFirewall("2001:db8::ff00:42:8329", nodeNames, syncResult)
+	if syncResult.Error != nil {
+		t.Fatalf("ensureIPv6NodesFirewall() error %+v", syncResult)
+	}
+	ipv6firewallName := l4netlb.namer.L4IPv6Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)
+	err = verifyFirewallNotExists(l4netlb.cloud, ipv6firewallName)
+	if err != nil {
+		t.Errorf("verifyFirewallNotExists(_, %s) for IPv6 NetLB firewall returned error %v, want nil", ipv6firewallName, err)
+	}
+}
+
 func verifyNetLBCommonDualStackResourcesDeleted(l4netlb *L4NetLB) error {
 	backendServiceName := l4netlb.namer.L4Backend(l4netlb.Service.Namespace, l4netlb.Service.Name)
 

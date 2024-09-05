@@ -526,14 +526,15 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 	}()
 
 	l4NetLBParams := &loadbalancers.L4NetLBParams{
-		Service:                      service,
-		Cloud:                        lc.ctx.Cloud,
-		Namer:                        lc.namer,
-		Recorder:                     lc.ctx.Recorder(service.Namespace),
-		DualStackEnabled:             lc.enableDualStack,
-		StrongSessionAffinityEnabled: lc.enableStrongSessionAffinity,
-		NetworkResolver:              lc.networkResolver,
-		EnableWeightedLB:             lc.ctx.EnableWeightedL4NetLB,
+		Service:                          service,
+		Cloud:                            lc.ctx.Cloud,
+		Namer:                            lc.namer,
+		Recorder:                         lc.ctx.Recorder(service.Namespace),
+		DualStackEnabled:                 lc.enableDualStack,
+		StrongSessionAffinityEnabled:     lc.enableStrongSessionAffinity,
+		NetworkResolver:                  lc.networkResolver,
+		EnableWeightedLB:                 lc.ctx.EnableWeightedL4NetLB,
+		DisableNodesFirewallProvisioning: lc.ctx.DisableL4LBFirewall,
 	}
 	l4netlb := loadbalancers.NewL4NetLB(l4NetLBParams, svcLogger)
 
@@ -686,14 +687,15 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service,
 	}()
 
 	l4NetLBParams := &loadbalancers.L4NetLBParams{
-		Service:                      svc,
-		Cloud:                        lc.ctx.Cloud,
-		Namer:                        lc.namer,
-		Recorder:                     lc.ctx.Recorder(svc.Namespace),
-		DualStackEnabled:             lc.enableDualStack,
-		StrongSessionAffinityEnabled: lc.enableStrongSessionAffinity,
-		NetworkResolver:              lc.networkResolver,
-		EnableWeightedLB:             lc.ctx.EnableWeightedL4NetLB,
+		Service:                          svc,
+		Cloud:                            lc.ctx.Cloud,
+		Namer:                            lc.namer,
+		Recorder:                         lc.ctx.Recorder(svc.Namespace),
+		DualStackEnabled:                 lc.enableDualStack,
+		StrongSessionAffinityEnabled:     lc.enableStrongSessionAffinity,
+		NetworkResolver:                  lc.networkResolver,
+		EnableWeightedLB:                 lc.ctx.EnableWeightedL4NetLB,
+		DisableNodesFirewallProvisioning: lc.ctx.DisableL4LBFirewall,
 	}
 	l4netLB := loadbalancers.NewL4NetLB(l4NetLBParams, svcLogger)
 	lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer",

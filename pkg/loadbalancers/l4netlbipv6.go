@@ -106,6 +106,12 @@ func (l4netlb *L4NetLB) ipv6FRName() string {
 }
 
 func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipAddress string, nodeNames []string, syncResult *L4NetLBSyncResult) {
+	// DisableL4LBFirewall flag disables L4 FW enforcment to remove conflicts with firewall policies
+	if l4netlb.disableNodesFirewallProvisioning {
+		l4netlb.svcLogger.Info("Skipped ensuring IPv6 nodes firewall for L4 NetLB Service to enable compatibility with firewall policies. " +
+			"Be sure this cluster has a manually created global firewall policy in place.")
+		return
+	}
 	start := time.Now()
 
 	firewallName := l4netlb.namer.L4IPv6Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)

@@ -284,13 +284,14 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service, svcLo
 	// Use the same function for both create and updates. If controller crashes and restarts,
 	// all existing services will show up as Service Adds.
 	l4ilbParams := &loadbalancers.L4ILBParams{
-		Service:          service,
-		Cloud:            l4c.ctx.Cloud,
-		Namer:            l4c.namer,
-		Recorder:         l4c.ctx.Recorder(service.Namespace),
-		DualStackEnabled: l4c.enableDualStack,
-		NetworkResolver:  l4c.networkResolver,
-		EnableWeightedLB: l4c.ctx.EnableWeightedL4ILB,
+		Service:                          service,
+		Cloud:                            l4c.ctx.Cloud,
+		Namer:                            l4c.namer,
+		Recorder:                         l4c.ctx.Recorder(service.Namespace),
+		DualStackEnabled:                 l4c.enableDualStack,
+		NetworkResolver:                  l4c.networkResolver,
+		EnableWeightedLB:                 l4c.ctx.EnableWeightedL4ILB,
+		DisableNodesFirewallProvisioning: l4c.ctx.DisableL4LBFirewall,
 	}
 	l4 := loadbalancers.NewL4Handler(l4ilbParams, svcLogger)
 	syncResult := l4.EnsureInternalLoadBalancer(utils.GetNodeNames(nodes), service)
@@ -364,13 +365,14 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service, svc
 	}()
 
 	l4ilbParams := &loadbalancers.L4ILBParams{
-		Service:          svc,
-		Cloud:            l4c.ctx.Cloud,
-		Namer:            l4c.namer,
-		Recorder:         l4c.ctx.Recorder(svc.Namespace),
-		DualStackEnabled: l4c.enableDualStack,
-		NetworkResolver:  l4c.networkResolver,
-		EnableWeightedLB: l4c.ctx.EnableWeightedL4ILB,
+		Service:                          svc,
+		Cloud:                            l4c.ctx.Cloud,
+		Namer:                            l4c.namer,
+		Recorder:                         l4c.ctx.Recorder(svc.Namespace),
+		DualStackEnabled:                 l4c.enableDualStack,
+		NetworkResolver:                  l4c.networkResolver,
+		EnableWeightedLB:                 l4c.ctx.EnableWeightedL4ILB,
+		DisableNodesFirewallProvisioning: l4c.ctx.DisableL4LBFirewall,
 	}
 	l4 := loadbalancers.NewL4Handler(l4ilbParams, svcLogger)
 	l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer", "Deleting load balancer for %s", key)
