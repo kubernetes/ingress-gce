@@ -66,6 +66,8 @@ type L4FeaturesServiceLabels struct {
 	Multinetwork bool
 	// StrongSessionAffinity is true if String Session Affinity is enabled
 	StrongSessionAffinity bool
+	// WeightedLBPodsPerNode is true if weighted load balancing is enabled by pods per node
+	WeightedLBPodsPerNode bool
 }
 
 // L4ServiceState tracks the state of an L4 service. It includes data needed to fill various L4 metrics plus the status of the service.
