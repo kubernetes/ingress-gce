@@ -102,7 +102,7 @@ func (igl *instanceGroupLinker) Link(sp utils.ServicePort, groups []GroupKey) er
 		return err
 	}
 
-	addIGs, _, err := getInstanceGroupsToAddAndRemove(be, igLinks, igl.logger)
+	addIGs, _, err := getInstanceGroupsToAddAndRemove(be, igLinks, nil, igl.logger)
 	if err != nil {
 		return err
 	}
@@ -176,7 +176,7 @@ func backendsForIGs(igLinks []string, bm BalancingMode) []*composite.Backend {
 	return backends
 }
 
-func getInstanceGroupsToAddAndRemove(be *composite.BackendService, igLinks []string, logger klog.Logger) ([]string, sets.String, error) {
+func getInstanceGroupsToAddAndRemove(be *composite.BackendService, igLinks []string, igLinksThatShouldNotBeRemoved []string, logger klog.Logger) ([]string, sets.String, error) {
 	existingIGs := sets.String{}
 	for _, existingBe := range be.Backends {
 		path, err := utils.RelativeResourceName(existingBe.Group)
@@ -187,6 +187,21 @@ func getInstanceGroupsToAddAndRemove(be *composite.BackendService, igLinks []str
 	}
 
 	wantIGs := sets.String{}
+	// There could be zones containing nodes that are not ready (or not candidate nodes for other reasons).
+	// If the service had these as backends make sure to keep them.
+	// This is to prevent the linker from removing a zone that is temporarily not ready, for example after master upgrade.
+	if len(igLinksThatShouldNotBeRemoved) > 0 {
+		igsToKeep := sets.String{}
+		for _, igLink := range igLinksThatShouldNotBeRemoved {
+			path, err := utils.RelativeResourceName(igLink)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to parse instance group: %w", err)
+			}
+			igsToKeep.Insert(path)
+		}
+		wantIGs = existingIGs.Intersection(igsToKeep)
+	}
+
 	for _, igLink := range igLinks {
 		path, err := utils.RelativeResourceName(igLink)
 		if err != nil {

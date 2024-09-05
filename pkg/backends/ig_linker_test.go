@@ -203,6 +203,7 @@ func TestGetIGLinksToAddAndRemove(t *testing.T) {
 		name           string
 		igLinks        []string
 		currentIGLinks []string
+		keepIGLinks    []string
 		wantAdd        []string
 		wantRemove     []string
 	}{
@@ -262,6 +263,14 @@ func TestGetIGLinksToAddAndRemove(t *testing.T) {
 			wantAdd:        []string{},
 			wantRemove:     []string{fmt.Sprintf(link, "same-backend"), fmt.Sprintf(link, "same-backend2")},
 		},
+		{
+			name:           "keep link that would be removed",
+			igLinks:        []string{fmt.Sprintf(url, "same-backend")},
+			currentIGLinks: []string{fmt.Sprintf(url, "same-backend"), fmt.Sprintf(url, "same-backend2")},
+			keepIGLinks:    []string{fmt.Sprintf(url, "same-backend2")},
+			wantAdd:        []string{},
+			wantRemove:     []string{},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			be := composite.BackendService{}
@@ -273,7 +282,7 @@ func TestGetIGLinksToAddAndRemove(t *testing.T) {
 				newBackends = append(newBackends, b)
 			}
 			be.Backends = newBackends
-			toAdd, toRemove, err := getInstanceGroupsToAddAndRemove(&be, tc.igLinks, klog.TODO())
+			toAdd, toRemove, err := getInstanceGroupsToAddAndRemove(&be, tc.igLinks, tc.keepIGLinks, klog.TODO())
 			if err != nil {
 				t.Fatalf("getInstanceGroupsToAddAndRemove(_,_): err:%v ", err)
 			}

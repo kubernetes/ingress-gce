@@ -642,7 +642,14 @@ func (lc *L4NetLBController) ensureBackendLinking(service *v1.Service, linkType 
 		return lc.negLinker.Link(servicePort, groupKeys)
 	} else if linkType == instanceGroupLink {
 		svcLogger.V(2).Info("Linking backend service with Instance Groups for service (uses default network)")
-		return lc.igLinker.Link(servicePort, lc.ctx.Cloud.ProjectID(), zones)
+
+		// This lists zones from all nodes, even unready ones. If a zone would be removed from the service but is in this list it should stay linked.
+		// This is to prevent situations where a zone would be removed by nodes becoming temporarily unready causing an outage.
+		zonesThatShouldNotBeRemoved, err := lc.zoneGetter.ListZones(zonegetter.AllNodesFilter, svcLogger)
+		if err != nil {
+			return err
+		}
+		return lc.igLinker.Link(servicePort, lc.ctx.Cloud.ProjectID(), zones, zonesThatShouldNotBeRemoved)
 	} else {
 		return fmt.Errorf("cannot link backend service - invalid backend link type %d", linkType)
 	}

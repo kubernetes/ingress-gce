@@ -41,15 +41,11 @@ func NewRegionalInstanceGroupLinker(instancePool instancegroups.Manager, backend
 }
 
 // Link performs linking instance groups to regional backend service
-func (linker *RegionalInstanceGroupLinker) Link(sp utils.ServicePort, projectID string, zones []string) error {
+func (linker *RegionalInstanceGroupLinker) Link(sp utils.ServicePort, projectID string, zones []string, zonesThatShouldNotBeRemoved []string) error {
 	linker.logger.V(2).Info("Link", "servicePort", sp, "projectID", projectID, "zones", zones)
 
-	var igLinks []string
-	for _, zone := range zones {
-		key := meta.ZonalKey(sp.IGName(), zone)
-		igSelfLink := cloudprovider.SelfLink(meta.VersionGA, projectID, "instanceGroups", key)
-		igLinks = append(igLinks, igSelfLink)
-	}
+	igLinks := createIGLingsForZones(projectID, sp.IGName(), zones)
+	igLinksThatShouldNotBeUnlinked := createIGLingsForZones(projectID, sp.IGName(), zonesThatShouldNotBeRemoved)
 	// TODO(cheungdavid): Create regional ig linker logger that contains backendName,
 	// backendVersion, and backendScope before passing to backendPool.Get().
 	// See example in backendSyncer.ensureBackendService().
@@ -57,7 +53,7 @@ func (linker *RegionalInstanceGroupLinker) Link(sp utils.ServicePort, projectID 
 	if err != nil {
 		return err
 	}
-	addIGs, removeIGs, err := getInstanceGroupsToAddAndRemove(bs, igLinks, linker.logger)
+	addIGs, removeIGs, err := getInstanceGroupsToAddAndRemove(bs, igLinks, igLinksThatShouldNotBeUnlinked, linker.logger)
 	if err != nil {
 		return err
 	}
@@ -92,4 +88,14 @@ func (linker *RegionalInstanceGroupLinker) Link(sp utils.ServicePort, projectID 
 		return fmt.Errorf("updating backend service %s for IG failed, err:%w", sp.BackendName(), err)
 	}
 	return nil
+}
+
+func createIGLingsForZones(projectID, igName string, zones []string) []string {
+	var igLinks []string
+	for _, zone := range zones {
+		key := meta.ZonalKey(igName, zone)
+		igSelfLink := cloudprovider.SelfLink(meta.VersionGA, projectID, "instanceGroups", key)
+		igLinks = append(igLinks, igSelfLink)
+	}
+	return igLinks
 }

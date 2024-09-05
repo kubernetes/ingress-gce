@@ -80,18 +80,18 @@ func TestRegionalLink(t *testing.T) {
 	fakeBackendPool := NewPool(fakeGCE, l4Namer)
 	linker := newTestRegionalIgLinker(fakeGCE, fakeBackendPool, l4Namer)
 
-	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{usCentral1AZone}); err == nil {
+	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{usCentral1AZone}, nil); err == nil {
 		t.Fatalf("Linking when instances does not exist should return error")
 	}
 	if _, err := linker.instancePool.EnsureInstanceGroupsAndPorts(l4Namer.InstanceGroup(), []int64{sp.NodePort}, klog.TODO()); err != nil {
 		t.Fatalf("Unexpected error when ensuring IG for ServicePort %+v: %v", sp, err)
 	}
-	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{usCentral1AZone}); err == nil {
+	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{usCentral1AZone}, nil); err == nil {
 		t.Fatalf("Linking when backend service does not exist should return error")
 	}
 	createBackendService(t, sp, fakeBackendPool)
 
-	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{usCentral1AZone}); err != nil {
+	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{usCentral1AZone}, nil); err != nil {
 		t.Fatalf("Unexpected error in Link. Error: %v", err)
 	}
 
@@ -122,13 +122,13 @@ func TestRegionalUpdateLink(t *testing.T) {
 	}
 	createBackendService(t, sp, fakeBackendPool)
 
-	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{usCentral1AZone}); err != nil {
+	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{usCentral1AZone}, nil); err != nil {
 		t.Fatalf("Unexpected error in Link(_). Error: %v", err)
 	}
 	// Add error hook to check that Link function will not call Backend Service Update when no IG was added
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockRegionBackendServices.UpdateHook = test.UpdateRegionBackendServiceWithErrorHookUpdate
 
-	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{usCentral1AZone}); err != nil {
+	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{usCentral1AZone}, nil); err != nil {
 		t.Fatalf("Unexpected error in Link(_). Error: %v", err)
 	}
 	be, err := fakeGCE.GetRegionBackendService(sp.BackendName(), fakeGCE.Region())
@@ -158,11 +158,11 @@ func TestRegionalUpdateLinkWithNewBackends(t *testing.T) {
 	}
 	createBackendService(t, sp, fakeBackendPool)
 
-	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{usCentral1AZone}); err != nil {
+	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{usCentral1AZone}, nil); err != nil {
 		t.Fatalf("Unexpected error in Link(_). Error: %v", err)
 	}
 
-	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{usCentral1AZone, usCentral1CZone}); err != nil {
+	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{usCentral1AZone, usCentral1CZone}, nil); err != nil {
 		t.Fatalf("Unexpected error in Link(_). Error: %v", err)
 	}
 	be, err := fakeGCE.GetRegionBackendService(sp.BackendName(), fakeGCE.Region())
@@ -202,11 +202,11 @@ func TestRegionalUpdateLinkWithRemovedBackends(t *testing.T) {
 	}
 	createBackendService(t, sp, fakeBackendPool)
 
-	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{usCentral1AZone, usCentral1CZone}); err != nil {
+	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{usCentral1AZone, usCentral1CZone}, nil); err != nil {
 		t.Fatalf("Unexpected error in Link(_). Error: %v", err)
 	}
 
-	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{usCentral1AZone}); err != nil {
+	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{usCentral1AZone}, nil); err != nil {
 		t.Fatalf("Unexpected error in Link(_). Error: %v", err)
 	}
 	be, err := fakeGCE.GetRegionBackendService(sp.BackendName(), fakeGCE.Region())
@@ -229,6 +229,50 @@ func TestRegionalUpdateLinkWithRemovedBackends(t *testing.T) {
 		t.Errorf("expected that BackendService backend contains %v, got=%v", expectedLinkA, backendGroups)
 	}
 	if slice.ContainsString(backendGroups, expectedLinkC, nil) {
+		t.Errorf("expected that BackendService backend does not contain %v, got=%v", expectedLinkC, backendGroups)
+	}
+}
+
+func TestRegionalUpdateLinkWithRemovedBackendsButWithAZoneToKeep(t *testing.T) {
+	t.Parallel()
+	fakeGCE := gce.NewFakeGCECloud(linkerTestClusterValues())
+	clusterID, _ := fakeGCE.ClusterID.GetID()
+	l4Namer := namer.NewL4Namer("uid1", namer.NewNamer(clusterID, "", klog.TODO()))
+	sp := utils.ServicePort{NodePort: 8080, BackendNamer: l4Namer}
+	fakeBackendPool := NewPool(fakeGCE, l4Namer)
+	linker := newTestRegionalIgLinker(fakeGCE, fakeBackendPool, l4Namer)
+	if _, err := linker.instancePool.EnsureInstanceGroupsAndPorts(l4Namer.InstanceGroup(), []int64{sp.NodePort}, klog.TODO()); err != nil {
+		t.Fatalf("Unexpected error when ensuring IG for ServicePort %+v: %v", sp, err)
+	}
+	createBackendService(t, sp, fakeBackendPool)
+
+	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{usCentral1AZone, usCentral1CZone}, []string{}); err != nil {
+		t.Fatalf("Unexpected error in Link(_). Error: %v", err)
+	}
+
+	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{usCentral1AZone}, []string{usCentral1AZone, usCentral1CZone}); err != nil {
+		t.Fatalf("Unexpected error in Link(_). Error: %v", err)
+	}
+	be, err := fakeGCE.GetRegionBackendService(sp.BackendName(), fakeGCE.Region())
+	if err != nil {
+		t.Fatalf("Get Regional Backend Service failed %v", err)
+	}
+	var backendGroups []string
+	for _, b := range be.Backends {
+		backendGroups = append(backendGroups, b.Group)
+	}
+	if len(be.Backends) != 2 {
+		t.Errorf("Expected that a zone that would be removed is kept with len=2 but got=%+v", strings.Join(backendGroups, ", "))
+	}
+
+	igA, _ := linker.instancePool.Get(sp.IGName(), usCentral1AZone)
+	expectedLinkA, _ := utils.RelativeResourceName(igA.SelfLink)
+	igC, _ := linker.instancePool.Get(sp.IGName(), usCentral1CZone)
+	expectedLinkC, _ := utils.RelativeResourceName(igC.SelfLink)
+	if !slice.ContainsString(backendGroups, expectedLinkA, nil) {
+		t.Errorf("expected that BackendService backend contains %v, got=%v", expectedLinkA, backendGroups)
+	}
+	if !slice.ContainsString(backendGroups, expectedLinkC, nil) {
 		t.Errorf("expected that BackendService backend does not contain %v, got=%v", expectedLinkC, backendGroups)
 	}
 }
