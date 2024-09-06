@@ -96,16 +96,22 @@ func TestEnsureInternalBackendServiceUpdates(t *testing.T) {
 		NetworkInfo:              network.DefaultNetwork(fakeGCE),
 		ConnectionTrackingPolicy: noConnectionTrackingPolicy,
 	}
-	_, err := l4.backendPool.EnsureL4BackendService(backendParams, klog.TODO())
+	_, wasUpdate, err := l4.backendPool.EnsureL4BackendService(backendParams, klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to ensure backend service  %s - err %v", bsName, err)
+	}
+	if !wasUpdate {
+		t.Errorf("First ensure of a Backend Service %s should be an update/create", bsName)
 	}
 
 	backendParams.SessionAffinity = string(v1.ServiceAffinityNone)
 	// Update the Internal Backend Service with a new ServiceAffinity
-	_, err = l4.backendPool.EnsureL4BackendService(backendParams, klog.TODO())
+	_, wasUpdate, err = l4.backendPool.EnsureL4BackendService(backendParams, klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to ensure backend service  %s - err %v", bsName, err)
+	}
+	if !wasUpdate {
+		t.Errorf("A change in Backend Service %s should be reported as update but it was not ", bsName)
 	}
 	key := meta.RegionalKey(bsName, l4.cloud.Region())
 	bs, err := composite.GetBackendService(l4.cloud, key, meta.VersionGA, klog.TODO())
@@ -125,7 +131,7 @@ func TestEnsureInternalBackendServiceUpdates(t *testing.T) {
 		t.Errorf("Failed to update backend service with new connection draining timeout - err %v", err)
 	}
 	// ensure the backend back to previous params
-	bs, err = l4.backendPool.EnsureL4BackendService(backendParams, klog.TODO())
+	bs, _, err = l4.backendPool.EnsureL4BackendService(backendParams, klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to ensure backend service  %s - err %v", bsName, err)
 	}
@@ -134,6 +140,15 @@ func TestEnsureInternalBackendServiceUpdates(t *testing.T) {
 	}
 	if bs.ConnectionDraining.DrainingTimeoutSec != newTimeout {
 		t.Errorf("Connection Draining timeout got reconciled to %d, expected %d", bs.ConnectionDraining.DrainingTimeoutSec, newTimeout)
+	}
+
+	// check if triggering ensure with the same params does not cause an update
+	bs, wasUpdate, err = l4.backendPool.EnsureL4BackendService(backendParams, klog.TODO())
+	if err != nil {
+		t.Errorf("Failed to ensure backend service  %s - err %v", bsName, err)
+	}
+	if wasUpdate {
+		t.Errorf("Ensure with the same parameters should result in no update reported")
 	}
 }
 
@@ -314,7 +329,7 @@ func TestEnsureInternalLoadBalancerWithExistingResources(t *testing.T) {
 		NetworkInfo:              defaultNetwork,
 		ConnectionTrackingPolicy: noConnectionTrackingPolicy,
 	}
-	_, err := l4.backendPool.EnsureL4BackendService(backendParams, klog.TODO())
+	_, _, err := l4.backendPool.EnsureL4BackendService(backendParams, klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to create backendservice, err %v", err)
 	}
@@ -1318,7 +1333,7 @@ func TestEnsureInternalFirewallPortRanges(t *testing.T) {
 		Protocol:          string(v1.ProtocolTCP),
 		IP:                "1.2.3.4",
 	}
-	err = firewalls.EnsureL4FirewallRule(l4.cloud, utils.ServiceKeyFunc(svc.Namespace, svc.Name), &fwrParams /*sharedRule = */, false, klog.TODO())
+	_, err = firewalls.EnsureL4FirewallRule(l4.cloud, utils.ServiceKeyFunc(svc.Namespace, svc.Name), &fwrParams /*sharedRule = */, false, klog.TODO())
 	if err != nil {
 		t.Errorf("Unexpected error %v when ensuring firewall rule %s for svc %+v", err, fwName, svc)
 	}

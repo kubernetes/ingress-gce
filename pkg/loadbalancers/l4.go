@@ -497,7 +497,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		ConnectionTrackingPolicy: noConnectionTrackingPolicy,
 		LocalityLbPolicy:         localityLbPolicy,
 	}
-	bs, err := l4.backendPool.EnsureL4BackendService(backendParams, l4.svcLogger)
+	bs, _, err := l4.backendPool.EnsureL4BackendService(backendParams, l4.svcLogger)
 	if err != nil {
 		if utils.IsUnsupportedFeatureError(err, string(backends.LocalityLBPolicyMaglev)) {
 			result.GCEResourceInError = annotations.BackendServiceResource
@@ -651,7 +651,7 @@ func (l4 *L4) ensureIPv4NodesFirewall(nodeNames []string, ipAddress string, resu
 		Network:           l4.network,
 	}
 
-	err = firewalls.EnsureL4LBFirewallForNodes(l4.Service, &nodesFWRParams, l4.cloud, l4.recorder, fwLogger)
+	_, err = firewalls.EnsureL4LBFirewallForNodes(l4.Service, &nodesFWRParams, l4.cloud, l4.recorder, fwLogger)
 	if err != nil {
 		result.GCEResourceInError = annotations.FirewallRuleResource
 		result.Error = err
