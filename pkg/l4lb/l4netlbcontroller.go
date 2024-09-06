@@ -619,11 +619,6 @@ func (lc *L4NetLBController) ensureBackendLinking(service *v1.Service, linkType 
 		svcLogger.V(2).Info("Finished linking backends to backend service for k8s service", "timeTaken", time.Since(start))
 	}()
 
-	zones, err := lc.zoneGetter.ListZones(zonegetter.CandidateNodesFilter, svcLogger)
-	if err != nil {
-		return err
-	}
-
 	namespacedName := types.NamespacedName{Name: service.Name, Namespace: service.Namespace}
 	portId := utils.ServicePortID{Service: namespacedName}
 	servicePort := utils.ServicePort{
@@ -634,6 +629,11 @@ func (lc *L4NetLBController) ensureBackendLinking(service *v1.Service, linkType 
 	// NEG backends should only be used for multinetwork services on the non default network.
 	if linkType == negLink {
 		svcLogger.V(2).Info("Linking backend service with NEGs for service")
+		// Only negs in zones with ready nodes will be attached to the service
+		zones, err := lc.zoneGetter.ListZones(zonegetter.CandidateNodesFilter, svcLogger)
+		if err != nil {
+			return err
+		}
 		servicePort.VMIPNEGEnabled = true
 		var groupKeys []backends.GroupKey
 		for _, zone := range zones {
@@ -642,6 +642,13 @@ func (lc *L4NetLBController) ensureBackendLinking(service *v1.Service, linkType 
 		return lc.negLinker.Link(servicePort, groupKeys)
 	} else if linkType == instanceGroupLink {
 		svcLogger.V(2).Info("Linking backend service with Instance Groups for service (uses default network)")
+		// The BackendService should be linked with zones of all nodes that's why AllNodesFilter is used.
+		// This is to prevent zones with unready nodes to be removed from the load balancer.
+		// The unready nodes will not be added to the group by the IG syncer but removing a group can cause 10 min outage if done because of a temporarily unready node.
+		zones, err := lc.zoneGetter.ListZones(zonegetter.AllNodesFilter, svcLogger)
+		if err != nil {
+			return err
+		}
 		return lc.igLinker.Link(servicePort, lc.ctx.Cloud.ProjectID(), zones)
 	} else {
 		return fmt.Errorf("cannot link backend service - invalid backend link type %d", linkType)
