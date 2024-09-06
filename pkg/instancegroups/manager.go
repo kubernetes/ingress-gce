@@ -84,8 +84,8 @@ func NewManager(config *ManagerConfig) Manager {
 // all of which have the exact same named ports.
 func (m *manager) EnsureInstanceGroupsAndPorts(name string, ports []int64, logger klog.Logger) (igs []*compute.InstanceGroup, err error) {
 	iglogger := logger.WithName("InstanceGroupsManager")
-	// Instance groups need to be created only in zones that have ready nodes.
-	zones, err := m.ZoneGetter.ListZones(zonegetter.CandidateNodesFilter, iglogger)
+	// Instance groups need to be created in all zones that nodes are in.
+	zones, err := m.ZoneGetter.ListZones(zonegetter.AllNodesFilter, iglogger)
 	if err != nil {
 		return nil, err
 	}
