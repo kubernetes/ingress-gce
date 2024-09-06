@@ -133,16 +133,22 @@ func TestEnsureInternalBackendServiceUpdates(t *testing.T) {
 		NetworkInfo:              network.DefaultNetwork(fakeGCE),
 		ConnectionTrackingPolicy: noConnectionTrackingPolicy,
 	}
-	_, err := l4.backendPool.EnsureL4BackendService(backendParams, klog.TODO())
+	_, wasUpdate, err := l4.backendPool.EnsureL4BackendService(backendParams, klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to ensure backend service  %s - err %v", bsName, err)
+	}
+	if !wasUpdate {
+		t.Errorf("First ensure of a Backend Service %s should be an update/create", bsName)
 	}
 
 	backendParams.SessionAffinity = string(v1.ServiceAffinityNone)
 	// Update the Internal Backend Service with a new ServiceAffinity
-	_, err = l4.backendPool.EnsureL4BackendService(backendParams, klog.TODO())
+	_, wasUpdate, err = l4.backendPool.EnsureL4BackendService(backendParams, klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to ensure backend service  %s - err %v", bsName, err)
+	}
+	if !wasUpdate {
+		t.Errorf("A change in Backend Service %s should be reported as update but it was not ", bsName)
 	}
 	key := meta.RegionalKey(bsName, l4.cloud.Region())
 	bs, err := composite.GetBackendService(l4.cloud, key, meta.VersionGA, klog.TODO())
@@ -162,7 +168,7 @@ func TestEnsureInternalBackendServiceUpdates(t *testing.T) {
 		t.Errorf("Failed to update backend service with new connection draining timeout - err %v", err)
 	}
 	// ensure the backend back to previous params
-	bs, err = l4.backendPool.EnsureL4BackendService(backendParams, klog.TODO())
+	bs, _, err = l4.backendPool.EnsureL4BackendService(backendParams, klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to ensure backend service  %s - err %v", bsName, err)
 	}
@@ -171,6 +177,15 @@ func TestEnsureInternalBackendServiceUpdates(t *testing.T) {
 	}
 	if bs.ConnectionDraining.DrainingTimeoutSec != newTimeout {
 		t.Errorf("Connection Draining timeout got reconciled to %d, expected %d", bs.ConnectionDraining.DrainingTimeoutSec, newTimeout)
+	}
+
+	// check if triggering ensure with the same params does not cause an update
+	bs, wasUpdate, err = l4.backendPool.EnsureL4BackendService(backendParams, klog.TODO())
+	if err != nil {
+		t.Errorf("Failed to ensure backend service  %s - err %v", bsName, err)
+	}
+	if wasUpdate {
+		t.Errorf("Ensure with the same parameters should result in no update reported")
 	}
 }
 
@@ -351,7 +366,7 @@ func TestEnsureInternalLoadBalancerWithExistingResources(t *testing.T) {
 		NetworkInfo:              defaultNetwork,
 		ConnectionTrackingPolicy: noConnectionTrackingPolicy,
 	}
-	_, err := l4.backendPool.EnsureL4BackendService(backendParams, klog.TODO())
+	_, _, err := l4.backendPool.EnsureL4BackendService(backendParams, klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to create backendservice, err %v", err)
 	}
@@ -1355,7 +1370,7 @@ func TestEnsureInternalFirewallPortRanges(t *testing.T) {
 		Protocol:          string(v1.ProtocolTCP),
 		IP:                "1.2.3.4",
 	}
-	err = firewalls.EnsureL4FirewallRule(l4.cloud, utils.ServiceKeyFunc(svc.Namespace, svc.Name), &fwrParams /*sharedRule = */, false, klog.TODO())
+	_, err = firewalls.EnsureL4FirewallRule(l4.cloud, utils.ServiceKeyFunc(svc.Namespace, svc.Name), &fwrParams /*sharedRule = */, false, klog.TODO())
 	if err != nil {
 		t.Errorf("Unexpected error %v when ensuring firewall rule %s for svc %+v", err, fwName, svc)
 	}
@@ -2222,35 +2237,35 @@ func TestWeightedILB(t *testing.T) {
 		addAnnotationForWeighted bool
 		weightedFlagEnabled      bool
 		externalTrafficPolicy    v1.ServiceExternalTrafficPolicy
-		wantWeighted             bool
+		wantLocalityLBPolicy     backends.LocalityLBPolicyType
 	}{
 		{
 			desc:                     "Flag enabled, Service with weighted annotation, externalTrafficPolicy local",
 			addAnnotationForWeighted: true,
 			weightedFlagEnabled:      true,
 			externalTrafficPolicy:    v1.ServiceExternalTrafficPolicyTypeLocal,
-			wantWeighted:             true,
+			wantLocalityLBPolicy:     backends.LocalityLBPolicyWeightedMaglev,
 		},
 		{
 			desc:                     "Flag enabled, NO weighted annotation, externalTrafficPolicy local",
 			addAnnotationForWeighted: false,
 			weightedFlagEnabled:      true,
 			externalTrafficPolicy:    v1.ServiceExternalTrafficPolicyTypeLocal,
-			wantWeighted:             false,
+			wantLocalityLBPolicy:     backends.LocalityLBPolicyDefault,
 		},
 		{
 			desc:                     "Flag DISABLED, Service with weighted annotation, externalTrafficPolicy local",
 			addAnnotationForWeighted: true,
 			weightedFlagEnabled:      false,
 			externalTrafficPolicy:    v1.ServiceExternalTrafficPolicyTypeLocal,
-			wantWeighted:             false,
+			wantLocalityLBPolicy:     backends.LocalityLBPolicyDefault,
 		},
 		{
 			desc:                     "Flag enabled, Service with weighted annotation and externalTrafficPolicy CLUSTER",
 			addAnnotationForWeighted: true,
 			weightedFlagEnabled:      true,
 			externalTrafficPolicy:    v1.ServiceExternalTrafficPolicyTypeCluster,
-			wantWeighted:             false,
+			wantLocalityLBPolicy:     backends.LocalityLBPolicyDefault,
 		},
 	}
 
@@ -2289,22 +2304,64 @@ func TestWeightedILB(t *testing.T) {
 
 			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
 			if result.Error != nil {
-				t.Fatalf("Failed to ensure interna;l loadBalancer, err %v", result.Error)
+				t.Fatalf("Failed to ensure internal loadBalancer, err %v", result.Error)
 			}
 			backendServiceName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
 			key := meta.RegionalKey(backendServiceName, l4.cloud.Region())
 			bs, err := composite.GetBackendService(l4.cloud, key, meta.VersionGA, klog.TODO())
-
 			if err != nil {
 				t.Fatalf("failed to read BackendService, %v", err)
 			}
-			backedHasWeighted := (bs.LocalityLbPolicy == string(backends.LocalityLBPolicyWeightedMaglev))
-			if tc.wantWeighted != backedHasWeighted {
-				t.Errorf("Unexpected BackendService LocalityLbPolicy value %v, got weighted: %v, want weighted: %v", bs.LocalityLbPolicy, tc.wantWeighted, backedHasWeighted)
+
+			if bs.LocalityLbPolicy != string(tc.wantLocalityLBPolicy) {
+				t.Errorf("Unexpected BackendService LocalityLbPolicy value, got: %v, want: %v", bs.LocalityLbPolicy, tc.wantLocalityLBPolicy)
 			}
 		})
 	}
 
+}
+
+func TestDisableILBIngressFirewall(t *testing.T) {
+	t.Parallel()
+	fakeGCE := getFakeGCECloud(gce.DefaultTestClusterValues())
+	nodeNames := []string{"test-node-1"}
+	// create a test VM so that target tags can be found
+	createVMInstanceWithTag(t, fakeGCE, "test-node-1", "test-node-1")
+
+	svc := test.NewL4ILBService(false, 8080)
+	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+
+	l4ilbParams := &L4ILBParams{
+		Service:                          svc,
+		Cloud:                            fakeGCE,
+		Namer:                            namer,
+		DisableNodesFirewallProvisioning: true,
+	}
+	l4 := NewL4Handler(l4ilbParams, klog.TODO())
+	syncResult := &L4ILBSyncResult{
+		Annotations: make(map[string]string),
+	}
+
+	l4.ensureIPv4NodesFirewall(nodeNames, "10.0.0.7", syncResult)
+	if syncResult.Error != nil {
+		t.Fatalf("ensureIPv4NodesFirewall() error %+v", syncResult)
+	}
+
+	ipv4FirewallName := l4.namer.L4Firewall(l4.Service.Namespace, l4.Service.Name)
+	err := verifyFirewallNotExists(l4.cloud, ipv4FirewallName)
+	if err != nil {
+		t.Errorf("verifyFirewallNotExists(_, %s) for IPv4 ILB firewall returned error %v, want nil", ipv4FirewallName, err)
+	}
+
+	l4.ensureIPv6NodesFirewall("2001:db8::ff00:42:8329", nodeNames, syncResult)
+	if syncResult.Error != nil {
+		t.Fatalf("ensureIPv6NodesFirewall() error %+v", syncResult)
+	}
+	ipv6firewallName := l4.namer.L4IPv6Firewall(l4.Service.Namespace, l4.Service.Name)
+	err = verifyFirewallNotExists(l4.cloud, ipv6firewallName)
+	if err != nil {
+		t.Errorf("verifyFirewallNotExists(_, %s) for IPv6 ILB firewall returned error %v, want nil", ipv6firewallName, err)
+	}
 }
 
 func mustSetupILBTestHandler(t *testing.T, svc *v1.Service, nodeNames []string) *L4 {

@@ -41,6 +41,7 @@ const (
 	l4LastSyncTimeName                             = "l4_last_sync_time"
 	l4LBRemovedFinalizerMetricName                 = "l4_removed_finalizer_count"
 	l4LBControllerPanicsMetricName                 = "l4_controllers_panics_count"
+	L4netlbSyncDetailsMetricName                   = "l4_netlb_sync_details_count"
 )
 
 var (
@@ -71,7 +72,7 @@ var (
 		prometheus.HistogramOpts{
 			Name:    L4ILBDualStackLatencyMetricName,
 			Help:    "Latency of an L4 ILB DualStack Sync",
-			Buckets: prometheus.ExponentialBuckets(0.5, 2, 12),
+			Buckets: prometheus.ExponentialBuckets(0.5, 2, 15),
 		},
 		l4LBDualStackSyncLatencyMetricsLabels,
 	)
@@ -80,7 +81,7 @@ var (
 		prometheus.HistogramOpts{
 			Name:    L4ILBMultiNetLatencyMetricName,
 			Help:    "Latency of an L4 ILB Multinet Sync",
-			Buckets: prometheus.ExponentialBuckets(0.5, 2, 12),
+			Buckets: prometheus.ExponentialBuckets(0.5, 2, 15),
 		},
 		l4LBSyncLatencyMetricsLabels,
 	)
@@ -88,7 +89,7 @@ var (
 		prometheus.HistogramOpts{
 			Name:    L4NetLBMultiNetLatencyMetricName,
 			Help:    "Latency of an L4 NetLB Multinet Sync",
-			Buckets: prometheus.ExponentialBuckets(0.5, 2, 12),
+			Buckets: prometheus.ExponentialBuckets(0.5, 2, 15),
 		},
 		l4LBSyncLatencyMetricsLabels,
 	)
@@ -115,7 +116,7 @@ var (
 		prometheus.HistogramOpts{
 			Name:    L4NetLBDualStackLatencyMetricName,
 			Help:    "Latency of an L4 NetB DualStack Sync",
-			Buckets: prometheus.ExponentialBuckets(0.5, 2, 12),
+			Buckets: prometheus.ExponentialBuckets(0.5, 2, 15),
 		},
 		l4LBDualStackSyncLatencyMetricsLabels,
 	)
@@ -170,6 +171,14 @@ var (
 		},
 		[]string{"controller_name"},
 	)
+
+	l4LBSyncDetails = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: L4netlbSyncDetailsMetricName,
+			Help: "Details of updates done during a resync",
+		},
+		[]string{"controller_name", "success", "predicted_periodic_resync", "was_update"},
+	)
 )
 
 // init registers l4 ilb and netlb sync metrics.
@@ -196,6 +205,8 @@ func init() {
 	prometheus.MustRegister(l4LBRemovedFinalizers)
 	klog.V(3).Infof("Registering L4 controller panics metric: %v", l4LBControllerPanics)
 	prometheus.MustRegister(l4LBControllerPanics)
+	klog.V(3).Infof("Registering L4 controller sync details metric: %v", l4LBSyncDetails)
+	prometheus.MustRegister(l4LBSyncDetails)
 }
 
 // PublishILBSyncMetrics exports metrics related to the L4 ILB sync.
@@ -316,4 +327,8 @@ func IncreaseL4NetLBTargetPoolRaceWithRBS() {
 // PublishL4controllerLastSyncTime records timestamp when L4 controller STARTED to sync an item
 func PublishL4controllerLastSyncTime(controllerName string) {
 	l4LastSyncTime.WithLabelValues(controllerName).SetToCurrentTime()
+}
+
+func PublishL4SyncDetails(controllerName string, success, isPredictedResync, wasUpdated bool) {
+	l4LBSyncDetails.WithLabelValues(controllerName, strconv.FormatBool(success), strconv.FormatBool(isPredictedResync), strconv.FormatBool(wasUpdated)).Inc()
 }

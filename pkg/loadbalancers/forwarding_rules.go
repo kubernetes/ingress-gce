@@ -322,7 +322,7 @@ func (l4 *L4) createFwdRule(newFr *composite.ForwardingRule, frLogger klog.Logge
 
 // ensureIPv4ForwardingRule creates a forwarding rule with the given name for L4NetLB,
 // if it does not exist. It updates the existing forwarding rule if needed.
-func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.ForwardingRule, IPAddressType, error) {
+func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.ForwardingRule, IPAddressType, utils.ResourceSyncStatus, error) {
 	frName := l4netlb.frName()
 
 	start := time.Now()
@@ -337,7 +337,7 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 	existingFwdRule, err := l4netlb.forwardingRules.Get(frName)
 	if err != nil {
 		frLogger.Error(err, "l4netlb.forwardingRules.Get returned error")
-		return nil, IPAddrUndefined, err
+		return nil, IPAddrUndefined, utils.ResourceResync, err
 	}
 
 	// Determine IP which will be used for this LB. If no forwarding rule has been established
@@ -345,7 +345,7 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 	ipToUse, err := ipv4AddrToUse(l4netlb.cloud, l4netlb.recorder, l4netlb.Service, existingFwdRule, "")
 	if err != nil {
 		frLogger.Error(err, "ipv4AddrToUse for service returned error")
-		return nil, IPAddrUndefined, err
+		return nil, IPAddrUndefined, utils.ResourceResync, err
 	}
 	frLogger.V(2).Info("ensureIPv4ForwardingRule: Got LoadBalancer IP", "ip", ipToUse)
 
@@ -361,13 +361,13 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 		// If they do not match, tear down the existing resources with the wrong tier.
 		if isFromAnnotation {
 			if err := l4netlb.tearDownResourcesWithWrongNetworkTier(existingFwdRule, netTier, addrMgr, frLogger); err != nil {
-				return nil, IPAddrUndefined, err
+				return nil, IPAddrUndefined, utils.ResourceResync, err
 			}
 		}
 
 		ipToUse, isIPManaged, err = addrMgr.HoldAddress()
 		if err != nil {
-			return nil, IPAddrUndefined, err
+			return nil, IPAddrUndefined, utils.ResourceResync, err
 		}
 		frLogger.V(2).Info("ensureIPv4ForwardingRule: reserved IP for the forwarding rule", "ip", ipToUse)
 		defer func() {
@@ -386,7 +386,7 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 	serviceKey := utils.ServiceKeyFunc(l4netlb.Service.Namespace, l4netlb.Service.Name)
 	frDesc, err := utils.MakeL4LBServiceDescription(serviceKey, ipToUse, version, false, utils.XLB)
 	if err != nil {
-		return nil, IPAddrUndefined, fmt.Errorf("Failed to compute description for forwarding rule %s, err: %w", frName,
+		return nil, IPAddrUndefined, utils.ResourceResync, fmt.Errorf("Failed to compute description for forwarding rule %s, err: %w", frName,
 			err)
 	}
 	newFwdRule := &composite.ForwardingRule{
@@ -412,12 +412,12 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 		}
 		equal, err := Equal(existingFwdRule, newFwdRule)
 		if err != nil {
-			return existingFwdRule, IPAddrUndefined, err
+			return existingFwdRule, IPAddrUndefined, utils.ResourceResync, err
 		}
 		if equal {
 			// nothing to do
 			frLogger.V(2).Info("ensureIPv4ForwardingRule: Skipping update of unchanged forwarding rule")
-			return existingFwdRule, isIPManaged, nil
+			return existingFwdRule, isIPManaged, utils.ResourceResync, nil
 		}
 		frDiff := cmp.Diff(existingFwdRule, newFwdRule)
 		frLogger.V(2).Info("ensureIPv4ForwardingRule: forwarding rule changed.",
@@ -443,12 +443,12 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 	}
 	createdFr, err := l4netlb.forwardingRules.Get(newFwdRule.Name)
 	if err != nil {
-		return nil, IPAddrUndefined, err
+		return nil, IPAddrUndefined, utils.ResourceUpdate, err
 	}
 	if createdFr == nil {
 		return nil, IPAddrUndefined, fmt.Errorf("forwarding rule %s not found", newFwdRule.Name)
 	}
-	return createdFr, isIPManaged, err
+	return createdFr, isIPManaged, utils.ResourceUpdate, err
 }
 
 func (l4netlb *L4NetLB) updateForwardingRule(existingFwdRule, newFr *composite.ForwardingRule, frLogger klog.Logger) error {

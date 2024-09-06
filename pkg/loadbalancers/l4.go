@@ -60,17 +60,18 @@ type L4 struct {
 	scope       meta.KeyType
 	namer       namer.L4ResourcesNamer
 	// recorder is used to generate k8s Events.
-	recorder         record.EventRecorder
-	Service          *corev1.Service
-	ServicePort      utils.ServicePort
-	NamespacedName   types.NamespacedName
-	forwardingRules  ForwardingRulesProvider
-	healthChecks     healthchecksl4.L4HealthChecks
-	enableDualStack  bool
-	network          network.NetworkInfo
-	networkResolver  network.Resolver
-	enableWeightedLB bool
-	svcLogger        klog.Logger
+	recorder                         record.EventRecorder
+	Service                          *corev1.Service
+	ServicePort                      utils.ServicePort
+	NamespacedName                   types.NamespacedName
+	forwardingRules                  ForwardingRulesProvider
+	healthChecks                     healthchecksl4.L4HealthChecks
+	enableDualStack                  bool
+	network                          network.NetworkInfo
+	networkResolver                  network.Resolver
+	enableWeightedLB                 bool
+	disableNodesFirewallProvisioning bool
+	svcLogger                        klog.Logger
 }
 
 // L4ILBSyncResult contains information about the outcome of an L4 ILB sync. It stores the list of resource name annotations,
@@ -86,32 +87,27 @@ type L4ILBSyncResult struct {
 	StartTime          time.Time
 }
 
-func NewL4ILBSyncResult(syncType string, startTime time.Time, svc *corev1.Service, isMultinetService bool) *L4ILBSyncResult {
+func NewL4ILBSyncResult(syncType string, startTime time.Time, svc *corev1.Service, isMultinetService bool, isWeightedLBPodsPerNode bool) *L4ILBSyncResult {
+	enabledStrongSessionAffinity := false
 	result := &L4ILBSyncResult{
 		Annotations: make(map[string]string),
 		StartTime:   startTime,
 		SyncType:    syncType,
 		// Internal Load Balancer doesn't support strong session affinity (passing `false` all along)
-		MetricsState: metrics.InitServiceMetricsState(svc, &startTime, isMultinetService, false),
-	}
-
-	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
-	// This will also cover cases where an external LB is updated to an ILB, which is technically a create for ILB.
-	// But this is still the easiest way to identify create vs update in the common case.
-	if syncType == SyncTypeCreate && len(svc.Status.LoadBalancer.Ingress) > 0 {
-		result.SyncType = SyncTypeUpdate
+		MetricsState: metrics.InitServiceMetricsState(svc, &startTime, isMultinetService, enabledStrongSessionAffinity, isWeightedLBPodsPerNode),
 	}
 	return result
 }
 
 type L4ILBParams struct {
-	Service          *corev1.Service
-	Cloud            *gce.Cloud
-	Namer            namer.L4ResourcesNamer
-	Recorder         record.EventRecorder
-	DualStackEnabled bool
-	NetworkResolver  network.Resolver
-	EnableWeightedLB bool
+	Service                          *corev1.Service
+	Cloud                            *gce.Cloud
+	Namer                            namer.L4ResourcesNamer
+	Recorder                         record.EventRecorder
+	DualStackEnabled                 bool
+	NetworkResolver                  network.Resolver
+	EnableWeightedLB                 bool
+	DisableNodesFirewallProvisioning bool
 }
 
 // NewL4Handler creates a new L4Handler for the given L4 service.
@@ -120,17 +116,18 @@ func NewL4Handler(params *L4ILBParams, logger klog.Logger) *L4 {
 
 	var scope meta.KeyType = meta.Regional
 	l4 := &L4{
-		cloud:            params.Cloud,
-		scope:            scope,
-		namer:            params.Namer,
-		recorder:         params.Recorder,
-		Service:          params.Service,
-		healthChecks:     healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder, logger),
-		forwardingRules:  forwardingrules.New(params.Cloud, meta.VersionGA, scope, logger),
-		enableDualStack:  params.DualStackEnabled,
-		networkResolver:  params.NetworkResolver,
-		enableWeightedLB: params.EnableWeightedLB,
-		svcLogger:        logger,
+		cloud:                            params.Cloud,
+		scope:                            scope,
+		namer:                            params.Namer,
+		recorder:                         params.Recorder,
+		Service:                          params.Service,
+		healthChecks:                     healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder, logger),
+		forwardingRules:                  forwardingrules.New(params.Cloud, meta.VersionGA, scope, logger),
+		enableDualStack:                  params.DualStackEnabled,
+		networkResolver:                  params.NetworkResolver,
+		enableWeightedLB:                 params.EnableWeightedLB,
+		disableNodesFirewallProvisioning: params.DisableNodesFirewallProvisioning,
+		svcLogger:                        logger,
 	}
 	l4.NamespacedName = types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace}
 	l4.backendPool = backends.NewPool(l4.cloud, l4.namer)
@@ -159,7 +156,8 @@ func (l4 *L4) getILBOptions() gce.ILBOptions {
 func (l4 *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4ILBSyncResult {
 	l4.svcLogger.V(2).Info("EnsureInternalLoadBalancerDeleted: deleting L4 ILB LoadBalancer resources")
 	isMultinetService := l4.networkResolver.IsMultinetService(svc)
-	result := NewL4ILBSyncResult(SyncTypeDelete, time.Now(), svc, isMultinetService)
+	isWeightedLBPodsPerNode := l4.isWeightedLBPodsPerNode()
+	result := NewL4ILBSyncResult(SyncTypeDelete, time.Now(), svc, isMultinetService, isWeightedLBPodsPerNode)
 
 	l4.deleteIPv4ResourcesOnDelete(result)
 	if l4.enableDualStack {
@@ -340,13 +338,21 @@ func (l4 *L4) subnetName() string {
 // EnsureInternalLoadBalancer ensures that all GCE resources for the given loadbalancer service have
 // been created. It returns a LoadBalancerStatus with the updated ForwardingRule IP address.
 func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service) *L4ILBSyncResult {
-	l4.svcLogger.V(2).Info("EnsureInternalLoadBalancer")
-
 	l4.Service = svc
 
 	startTime := time.Now()
 	isMultinetService := l4.networkResolver.IsMultinetService(svc)
-	result := NewL4ILBSyncResult(SyncTypeCreate, startTime, svc, isMultinetService)
+	isWeightedLBPodsPerNode := l4.isWeightedLBPodsPerNode()
+	result := NewL4ILBSyncResult(SyncTypeCreate, startTime, svc, isMultinetService, isWeightedLBPodsPerNode)
+
+	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
+	// This will also cover cases where an external LB is updated to an ILB, which is technically a create for ILB.
+	// But this is still the easiest way to identify create vs update in the common case.
+	if len(svc.Status.LoadBalancer.Ingress) > 0 {
+		result.SyncType = SyncTypeUpdate
+	}
+
+	l4.svcLogger.V(2).Info("EnsureInternalLoadBalancer", "syncType", result.SyncType)
 
 	svcNetwork, err := l4.networkResolver.ServiceNetwork(svc)
 	if err != nil {
@@ -491,9 +497,9 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		ConnectionTrackingPolicy: noConnectionTrackingPolicy,
 		LocalityLbPolicy:         localityLbPolicy,
 	}
-	bs, err := l4.backendPool.EnsureL4BackendService(backendParams, l4.svcLogger)
+	bs, _, err := l4.backendPool.EnsureL4BackendService(backendParams, l4.svcLogger)
 	if err != nil {
-		if utils.IsUnsupportedFeatureError(err, string(backends.LocalityLBPolicyWeightedMaglev)) {
+		if utils.IsUnsupportedFeatureError(err, string(backends.LocalityLBPolicyMaglev)) {
 			result.GCEResourceInError = annotations.BackendServiceResource
 			l4.recorder.Eventf(l4.Service, corev1.EventTypeWarning, "AllowlistingRequired", WeightedLBPodsPerNodeAllowlistMessage)
 			result.Error = utils.NewUserError(err)
@@ -608,6 +614,12 @@ func (l4 *L4) ensureIPv4Resources(result *L4ILBSyncResult, nodeNames []string, o
 }
 
 func (l4 *L4) ensureIPv4NodesFirewall(nodeNames []string, ipAddress string, result *L4ILBSyncResult) {
+	// DisableL4LBFirewall flag disables L4 FW enforcment to remove conflicts with firewall policies
+	if l4.disableNodesFirewallProvisioning {
+		l4.svcLogger.Info("Skipped ensuring IPv4 nodes firewall for L4 ILB Service to enable compatibility with firewall policies. " +
+			"Be sure this cluster has a manually created global firewall policy in place.")
+		return
+	}
 	start := time.Now()
 
 	firewallName := l4.namer.L4Firewall(l4.Service.Namespace, l4.Service.Name)
@@ -639,7 +651,7 @@ func (l4 *L4) ensureIPv4NodesFirewall(nodeNames []string, ipAddress string, resu
 		Network:           l4.network,
 	}
 
-	err = firewalls.EnsureL4LBFirewallForNodes(l4.Service, &nodesFWRParams, l4.cloud, l4.recorder, fwLogger)
+	_, err = firewalls.EnsureL4LBFirewallForNodes(l4.Service, &nodesFWRParams, l4.cloud, l4.recorder, fwLogger)
 	if err != nil {
 		result.GCEResourceInError = annotations.FirewallRuleResource
 		result.Error = err
@@ -690,7 +702,7 @@ func (l4 *L4) getOldIPv4ForwardingRule(existingBS *composite.BackendService) (*c
 
 // determineBackendServiceLocalityPolicy returns the locality policy to be used for the backend service of the internal load balancer.
 func (l4 *L4) determineBackendServiceLocalityPolicy() backends.LocalityLBPolicyType {
-	// If the service has weighted load balancing enabled, the locality policy can only be WEIGHTED_MAGLEV or MAGLEV.
+	// If the service has weighted load balancing enabled, the locality policy will be WEIGHTED_MAGLEV.
 	if l4.enableWeightedLB {
 		if annotations.HasWeightedLBPodsPerNodeAnnotation(l4.Service) {
 			if l4.Service.Spec.ExternalTrafficPolicy == corev1.ServiceExternalTrafficPolicyTypeLocal {
@@ -703,12 +715,16 @@ func (l4 *L4) determineBackendServiceLocalityPolicy() backends.LocalityLBPolicyT
 				// and the external traffic policy is cluster, weighted load balancing is not enabled.
 				l4.recorder.Eventf(l4.Service, corev1.EventTypeWarning, "UnsupportedConfiguration",
 					"Weighted load balancing by pods-per-node has no effect with External Traffic Policy: Cluster.")
-				return backends.LocalityLBPolicyMaglev
+				// TODO(FelipeYepez) use LocalityLBPolicyMaglev once it does not require allow lisiting
+				return backends.LocalityLBPolicyDefault
 			}
-		} else {
-			return backends.LocalityLBPolicyMaglev
 		}
 	}
 	// If the service has weighted load balancing disabled, the default locality policy is used.
+	// If the service disables Weighted Load Balancing the logic to use MAGLEV is handled by backends.go
 	return backends.LocalityLBPolicyDefault
+}
+
+func (l4 *L4) isWeightedLBPodsPerNode() bool {
+	return backends.LocalityLBPolicyWeightedMaglev == l4.determineBackendServiceLocalityPolicy()
 }

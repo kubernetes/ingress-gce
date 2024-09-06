@@ -121,7 +121,16 @@ func NewL4NetLBController(
 	if ctx.GKENetworkParamsInformer != nil {
 		gkeNetworkParamSetLister = ctx.GKENetworkParamsInformer.GetIndexer()
 	}
-	l4netLBc.networkResolver = network.NewNetworksResolver(networkLister, gkeNetworkParamSetLister, ctx.Cloud, ctx.EnableMultinetworking, logger)
+	// The following adapter will use Network Selflink as Network Url instead of the NetworkUrl itself.
+	// Network Selflink is always composed by the network name even if the cluster was initialized with Network Id.
+	// All the components created from it will be consistent and always use the Url with network name and not the url with netowork Id
+	adapter, err := network.NewAdapterNetworkSelfLink(ctx.Cloud)
+	if err != nil {
+		logger.Error(err, "Failed to create network adapter with SelfLink")
+		// if it was not possible to retrieve network information use standard context as cloud network provider
+		adapter = ctx.Cloud
+	}
+	l4netLBc.networkResolver = network.NewNetworksResolver(networkLister, gkeNetworkParamSetLister, adapter, ctx.EnableMultinetworking, logger)
 	l4netLBc.negLinker = backends.NewNEGLinker(l4netLBc.backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer(), logger)
 	l4netLBc.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("l4netLB", "services", ctx.NumL4NetLBWorkers, l4netLBc.syncWrapper, logger)
 
@@ -495,6 +504,12 @@ func (lc *L4NetLBController) sync(key string, svcLogger klog.Logger) error {
 		}
 		lc.serviceVersions.SetProcessed(key, svc.ResourceVersion, result.Error == nil, isResync, svcLogger)
 		lc.publishMetrics(result, svc.Name, svc.Namespace, isResync, svcLogger)
+		svcLogger.V(3).Info("Resources modified in the sync", "modifiedResources", result.GCEResourceUpdate.String(), "wasResync", isResync)
+		if isResync {
+			if result.GCEResourceUpdate.WereAnyResourcesModified() {
+				svcLogger.V(3).Error(nil, "Resources were modified but this was not expected for a resync.", "modifiedResources", result.GCEResourceUpdate.String())
+			}
+		}
 		return result.Error
 	}
 	svcLogger.V(3).Info("Ignoring sync of service, neither delete nor ensure needed.")
@@ -517,14 +532,15 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 	}()
 
 	l4NetLBParams := &loadbalancers.L4NetLBParams{
-		Service:                      service,
-		Cloud:                        lc.ctx.Cloud,
-		Namer:                        lc.namer,
-		Recorder:                     lc.ctx.Recorder(service.Namespace),
-		DualStackEnabled:             lc.enableDualStack,
-		StrongSessionAffinityEnabled: lc.enableStrongSessionAffinity,
-		NetworkResolver:              lc.networkResolver,
-		EnableWeightedLB:             lc.ctx.EnableWeightedL4NetLB,
+		Service:                          service,
+		Cloud:                            lc.ctx.Cloud,
+		Namer:                            lc.namer,
+		Recorder:                         lc.ctx.Recorder(service.Namespace),
+		DualStackEnabled:                 lc.enableDualStack,
+		StrongSessionAffinityEnabled:     lc.enableStrongSessionAffinity,
+		NetworkResolver:                  lc.networkResolver,
+		EnableWeightedLB:                 lc.ctx.EnableWeightedL4NetLB,
+		DisableNodesFirewallProvisioning: lc.ctx.DisableL4LBFirewall,
 	}
 	l4netlb := loadbalancers.NewL4NetLB(l4NetLBParams, svcLogger)
 
@@ -677,14 +693,15 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service,
 	}()
 
 	l4NetLBParams := &loadbalancers.L4NetLBParams{
-		Service:                      svc,
-		Cloud:                        lc.ctx.Cloud,
-		Namer:                        lc.namer,
-		Recorder:                     lc.ctx.Recorder(svc.Namespace),
-		DualStackEnabled:             lc.enableDualStack,
-		StrongSessionAffinityEnabled: lc.enableStrongSessionAffinity,
-		NetworkResolver:              lc.networkResolver,
-		EnableWeightedLB:             lc.ctx.EnableWeightedL4NetLB,
+		Service:                          svc,
+		Cloud:                            lc.ctx.Cloud,
+		Namer:                            lc.namer,
+		Recorder:                         lc.ctx.Recorder(svc.Namespace),
+		DualStackEnabled:                 lc.enableDualStack,
+		StrongSessionAffinityEnabled:     lc.enableStrongSessionAffinity,
+		NetworkResolver:                  lc.networkResolver,
+		EnableWeightedLB:                 lc.ctx.EnableWeightedL4NetLB,
+		DisableNodesFirewallProvisioning: lc.ctx.DisableL4LBFirewall,
 	}
 	l4netLB := loadbalancers.NewL4NetLB(l4NetLBParams, svcLogger)
 	lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer",
@@ -771,6 +788,7 @@ func (lc *L4NetLBController) publishSyncMetrics(result *loadbalancers.L4NetLBSyn
 	if result.MetricsState.Multinetwork {
 		l4metrics.PublishL4NetLBMultiNetSyncLatency(result.Error == nil, result.SyncType, result.StartTime, isResync)
 	}
+	l4metrics.PublishL4SyncDetails(l4NetLBControllerName, result.Error == nil, isResync, result.GCEResourceUpdate.WereAnyResourcesModified())
 	if result.Error == nil {
 		l4metrics.PublishL4NetLBSyncSuccess(result.SyncType, result.StartTime, isResync)
 		return

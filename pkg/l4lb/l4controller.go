@@ -119,7 +119,18 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 	if ctx.GKENetworkParamsInformer != nil {
 		l4c.gkeNetworkParamSetLister = ctx.GKENetworkParamsInformer.GetIndexer()
 	}
-	l4c.networkResolver = network.NewNetworksResolver(l4c.networkLister, l4c.gkeNetworkParamSetLister, ctx.Cloud, ctx.EnableMultinetworking, logger)
+
+	// The following adapter will use Network Selflink as Network Url instead of the NetworkUrl itself.
+	// Network Selflink is always composed by the network name even if the cluster was initialized with Network Id.
+	// All the components created from it will be consistent and always use the Url with network name and not the url with netowork Id
+	adapter, err := network.NewAdapterNetworkSelfLink(ctx.Cloud)
+	if err != nil {
+		logger.Error(err, "Failed to create network adapter with SelfLink")
+		// if it was not possible to retrieve network information use standard context as cloud network provider
+		adapter = ctx.Cloud
+	}
+
+	l4c.networkResolver = network.NewNetworksResolver(l4c.networkLister, l4c.gkeNetworkParamSetLister, adapter, ctx.EnableMultinetworking, logger)
 	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			addSvc := obj.(*v1.Service)
@@ -273,13 +284,14 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service, svcLo
 	// Use the same function for both create and updates. If controller crashes and restarts,
 	// all existing services will show up as Service Adds.
 	l4ilbParams := &loadbalancers.L4ILBParams{
-		Service:          service,
-		Cloud:            l4c.ctx.Cloud,
-		Namer:            l4c.namer,
-		Recorder:         l4c.ctx.Recorder(service.Namespace),
-		DualStackEnabled: l4c.enableDualStack,
-		NetworkResolver:  l4c.networkResolver,
-		EnableWeightedLB: l4c.ctx.EnableWeightedL4ILB,
+		Service:                          service,
+		Cloud:                            l4c.ctx.Cloud,
+		Namer:                            l4c.namer,
+		Recorder:                         l4c.ctx.Recorder(service.Namespace),
+		DualStackEnabled:                 l4c.enableDualStack,
+		NetworkResolver:                  l4c.networkResolver,
+		EnableWeightedLB:                 l4c.ctx.EnableWeightedL4ILB,
+		DisableNodesFirewallProvisioning: l4c.ctx.DisableL4LBFirewall,
 	}
 	l4 := loadbalancers.NewL4Handler(l4ilbParams, svcLogger)
 	syncResult := l4.EnsureInternalLoadBalancer(utils.GetNodeNames(nodes), service)
@@ -353,13 +365,14 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service, svc
 	}()
 
 	l4ilbParams := &loadbalancers.L4ILBParams{
-		Service:          svc,
-		Cloud:            l4c.ctx.Cloud,
-		Namer:            l4c.namer,
-		Recorder:         l4c.ctx.Recorder(svc.Namespace),
-		DualStackEnabled: l4c.enableDualStack,
-		NetworkResolver:  l4c.networkResolver,
-		EnableWeightedLB: l4c.ctx.EnableWeightedL4ILB,
+		Service:                          svc,
+		Cloud:                            l4c.ctx.Cloud,
+		Namer:                            l4c.namer,
+		Recorder:                         l4c.ctx.Recorder(svc.Namespace),
+		DualStackEnabled:                 l4c.enableDualStack,
+		NetworkResolver:                  l4c.networkResolver,
+		EnableWeightedLB:                 l4c.ctx.EnableWeightedL4ILB,
+		DisableNodesFirewallProvisioning: l4c.ctx.DisableL4LBFirewall,
 	}
 	l4 := loadbalancers.NewL4Handler(l4ilbParams, svcLogger)
 	l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer", "Deleting load balancer for %s", key)

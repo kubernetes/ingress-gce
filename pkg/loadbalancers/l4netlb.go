@@ -18,6 +18,7 @@ package loadbalancers
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
@@ -67,11 +68,12 @@ type L4NetLB struct {
 	forwardingRules ForwardingRulesProvider
 	enableDualStack bool
 	// represents if `enable strong session affinity` flag was set
-	enableStrongSessionAffinity bool
-	networkInfo                 network.NetworkInfo
-	networkResolver             network.Resolver
-	enableWeightedLB            bool
-	svcLogger                   klog.Logger
+	enableStrongSessionAffinity      bool
+	networkInfo                      network.NetworkInfo
+	networkResolver                  network.Resolver
+	enableWeightedLB                 bool
+	disableNodesFirewallProvisioning bool
+	svcLogger                        klog.Logger
 }
 
 // L4NetLBSyncResult contains information about the outcome of an L4 NetLB sync. It stores the list of resource name annotations,
@@ -85,16 +87,56 @@ type L4NetLBSyncResult struct {
 	MetricsState       metrics.L4ServiceState
 	SyncType           string
 	StartTime          time.Time
+	GCEResourceUpdate  ResourceUpdates
 }
 
-func NewL4SyncResult(syncType string, svc *corev1.Service, isMultinet bool, enabledStrongSessionAffinity bool) *L4NetLBSyncResult {
+type ResourceUpdates struct {
+	backendServiceUpdate   utils.ResourceSyncStatus
+	forwardingRuleUpdate   utils.ResourceSyncStatus
+	healthCheckUpdate      utils.ResourceSyncStatus
+	firewallForNodesUpdate utils.ResourceSyncStatus
+	firewallForHCUpdate    utils.ResourceSyncStatus
+}
+
+func (ru *ResourceUpdates) WereAnyResourcesModified() bool {
+	return ru.forwardingRuleUpdate == utils.ResourceUpdate ||
+		ru.backendServiceUpdate == utils.ResourceUpdate ||
+		ru.healthCheckUpdate == utils.ResourceUpdate ||
+		ru.firewallForNodesUpdate == utils.ResourceUpdate ||
+		ru.firewallForHCUpdate == utils.ResourceUpdate
+}
+
+func (ru *ResourceUpdates) String() string {
+	if ru.WereAnyResourcesModified() {
+		var modifiedResources []string
+		if ru.forwardingRuleUpdate == utils.ResourceUpdate {
+			modifiedResources = append(modifiedResources, "forwarding rule")
+		}
+		if ru.backendServiceUpdate == utils.ResourceUpdate {
+			modifiedResources = append(modifiedResources, "backend service")
+		}
+		if ru.healthCheckUpdate == utils.ResourceUpdate {
+			modifiedResources = append(modifiedResources, "health check")
+		}
+		if ru.firewallForNodesUpdate == utils.ResourceUpdate {
+			modifiedResources = append(modifiedResources, "nodes firewall")
+		}
+		if ru.firewallForHCUpdate == utils.ResourceUpdate {
+			modifiedResources = append(modifiedResources, "health check firewall")
+		}
+		return strings.Join(modifiedResources, ",")
+	}
+	return "-"
+}
+
+func NewL4SyncResult(syncType string, svc *corev1.Service, isMultinet bool, enabledStrongSessionAffinity bool, isWeightedLBPodsPerNode bool) *L4NetLBSyncResult {
 	startTime := time.Now()
 	result := &L4NetLBSyncResult{
 		Annotations:        make(map[string]string),
 		StartTime:          startTime,
 		SyncType:           syncType,
 		MetricsLegacyState: metrics.InitL4NetLBServiceLegacyState(&startTime),
-		MetricsState:       metrics.InitServiceMetricsState(svc, &startTime, isMultinet, enabledStrongSessionAffinity),
+		MetricsState:       metrics.InitServiceMetricsState(svc, &startTime, isMultinet, enabledStrongSessionAffinity, isWeightedLBPodsPerNode),
 	}
 	return result
 }
@@ -108,34 +150,36 @@ func (r *L4NetLBSyncResult) SetMetricsForSuccessfulServiceSync() {
 }
 
 type L4NetLBParams struct {
-	Service                      *corev1.Service
-	Cloud                        *gce.Cloud
-	Namer                        namer.L4ResourcesNamer
-	Recorder                     record.EventRecorder
-	DualStackEnabled             bool
-	StrongSessionAffinityEnabled bool
-	NetworkResolver              network.Resolver
-	EnableWeightedLB             bool
+	Service                          *corev1.Service
+	Cloud                            *gce.Cloud
+	Namer                            namer.L4ResourcesNamer
+	Recorder                         record.EventRecorder
+	DualStackEnabled                 bool
+	StrongSessionAffinityEnabled     bool
+	NetworkResolver                  network.Resolver
+	EnableWeightedLB                 bool
+	DisableNodesFirewallProvisioning bool
 }
 
 // NewL4NetLB creates a new Handler for the given L4NetLB service.
 func NewL4NetLB(params *L4NetLBParams, logger klog.Logger) *L4NetLB {
 	logger = logger.WithName("L4NetLBHandler")
 	l4netlb := &L4NetLB{
-		cloud:                       params.Cloud,
-		scope:                       meta.Regional,
-		namer:                       params.Namer,
-		recorder:                    params.Recorder,
-		Service:                     params.Service,
-		NamespacedName:              types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace},
-		backendPool:                 backends.NewPoolWithConnectionTrackingPolicy(params.Cloud, params.Namer, params.StrongSessionAffinityEnabled),
-		healthChecks:                healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder, logger),
-		forwardingRules:             forwardingrules.New(params.Cloud, meta.VersionGA, meta.Regional, logger),
-		enableDualStack:             params.DualStackEnabled,
-		enableStrongSessionAffinity: params.StrongSessionAffinityEnabled,
-		networkResolver:             params.NetworkResolver,
-		enableWeightedLB:            params.EnableWeightedLB,
-		svcLogger:                   logger,
+		cloud:                            params.Cloud,
+		scope:                            meta.Regional,
+		namer:                            params.Namer,
+		recorder:                         params.Recorder,
+		Service:                          params.Service,
+		NamespacedName:                   types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace},
+		backendPool:                      backends.NewPoolWithConnectionTrackingPolicy(params.Cloud, params.Namer, params.StrongSessionAffinityEnabled),
+		healthChecks:                     healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder, logger),
+		forwardingRules:                  forwardingrules.New(params.Cloud, meta.VersionGA, meta.Regional, logger),
+		enableDualStack:                  params.DualStackEnabled,
+		enableStrongSessionAffinity:      params.StrongSessionAffinityEnabled,
+		networkResolver:                  params.NetworkResolver,
+		enableWeightedLB:                 params.EnableWeightedLB,
+		disableNodesFirewallProvisioning: params.DisableNodesFirewallProvisioning,
+		svcLogger:                        logger,
 	}
 	return l4netlb
 }
@@ -192,12 +236,13 @@ func (l4netlb *L4NetLB) checkStrongSessionAffinityRequirements() *utils.UserErro
 func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) *L4NetLBSyncResult {
 	isMultinetService := l4netlb.networkResolver.IsMultinetService(svc)
 	serviceUsesSSA := l4netlb.enableStrongSessionAffinity && annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service)
-	result := NewL4SyncResult(SyncTypeCreate, svc, isMultinetService, serviceUsesSSA)
+	isWeightedLBPodsPerNode := l4netlb.isWeightedLBPodsPerNode()
+	result := NewL4SyncResult(SyncTypeCreate, svc, isMultinetService, serviceUsesSSA, isWeightedLBPodsPerNode)
 	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
 	if len(svc.Status.LoadBalancer.Ingress) > 0 {
 		result.SyncType = SyncTypeUpdate
 	}
-	l4netlb.svcLogger.V(3).Info("EnsureFrontend started for service", "len(nodeNames)", len(nodeNames), "syncType", result.SyncType, "isMultinetService", isMultinetService, "serviceUsesSSA", serviceUsesSSA)
+	l4netlb.svcLogger.V(3).Info("EnsureFrontend started for service", "len(nodeNames)", len(nodeNames), "syncType", result.SyncType)
 
 	l4netlb.Service = svc
 
@@ -265,6 +310,8 @@ func (l4netlb *L4NetLB) provideHealthChecks(nodeNames []string, result *L4NetLBS
 func (l4netlb *L4NetLB) provideDualStackHealthChecks(nodeNames []string, result *L4NetLBSyncResult) string {
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(l4netlb.Service)
 	hcResult := l4netlb.healthChecks.EnsureHealthCheckWithDualStackFirewalls(l4netlb.Service, l4netlb.namer, sharedHC, l4netlb.scope, utils.XLB, nodeNames, utils.NeedsIPv4(l4netlb.Service), utils.NeedsIPv6(l4netlb.Service), l4netlb.networkInfo, l4netlb.svcLogger)
+	result.GCEResourceUpdate.healthCheckUpdate = hcResult.WasUpdated
+	result.GCEResourceUpdate.firewallForHCUpdate = hcResult.WasFirewallUpdated
 	if hcResult.Err != nil {
 		result.GCEResourceInError = hcResult.GceResourceInError
 		result.Error = hcResult.Err
@@ -284,6 +331,8 @@ func (l4netlb *L4NetLB) provideDualStackHealthChecks(nodeNames []string, result 
 func (l4netlb *L4NetLB) provideIPv4HealthChecks(nodeNames []string, result *L4NetLBSyncResult) string {
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(l4netlb.Service)
 	hcResult := l4netlb.healthChecks.EnsureHealthCheckWithFirewall(l4netlb.Service, l4netlb.namer, sharedHC, l4netlb.scope, utils.XLB, nodeNames, l4netlb.networkInfo, l4netlb.svcLogger)
+	result.GCEResourceUpdate.healthCheckUpdate = hcResult.WasUpdated
+	result.GCEResourceUpdate.firewallForHCUpdate = hcResult.WasFirewallUpdated
 	if hcResult.Err != nil {
 		result.GCEResourceInError = hcResult.GceResourceInError
 		result.Error = hcResult.Err
@@ -327,7 +376,8 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 		LocalityLbPolicy:         localityLbPolicy,
 	}
 
-	bs, err := l4netlb.backendPool.EnsureL4BackendService(backendParams, l4netlb.svcLogger)
+	bs, wasUpdate, err := l4netlb.backendPool.EnsureL4BackendService(backendParams, l4netlb.svcLogger)
+	syncResult.GCEResourceUpdate.backendServiceUpdate = wasUpdate
 	if err != nil {
 		if utils.IsUnsupportedFeatureError(err, strongSessionAffinityFeatureName) {
 			syncResult.GCEResourceInError = annotations.BackendServiceResource
@@ -362,7 +412,8 @@ func (l4netlb *L4NetLB) ensureDualStackResources(result *L4NetLBSyncResult, node
 // - IPv4 Forwarding Rule
 // - IPv4 Firewall
 func (l4netlb *L4NetLB) ensureIPv4Resources(result *L4NetLBSyncResult, nodeNames []string, bsLink string) {
-	fr, ipAddrType, err := l4netlb.ensureIPv4ForwardingRule(bsLink)
+	fr, ipAddrType, wasUpdate, err := l4netlb.ensureIPv4ForwardingRule(bsLink)
+	result.GCEResourceUpdate.forwardingRuleUpdate = wasUpdate
 	if err != nil {
 		// User can misconfigure the forwarding rule if Network Tier will not match service level Network Tier.
 		result.GCEResourceInError = annotations.ForwardingRuleResource
@@ -388,6 +439,12 @@ func (l4netlb *L4NetLB) ensureIPv4Resources(result *L4NetLBSyncResult, nodeNames
 }
 
 func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress string, result *L4NetLBSyncResult) {
+	// DisableL4LBFirewall flag disables L4 FW enforcment to remove conflicts with firewall policies
+	if l4netlb.disableNodesFirewallProvisioning {
+		l4netlb.svcLogger.Info("Skipped ensuring IPv4 nodes firewall for L4 NetLB Service to enable compatibility with firewall policies. " +
+			"Be sure this cluster has a manually created global firewall policy in place.")
+		return
+	}
 	start := time.Now()
 
 	firewallName := l4netlb.namer.L4Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)
@@ -418,7 +475,7 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 		NodeNames:         nodeNames,
 		Network:           l4netlb.networkInfo,
 	}
-	result.Error = firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, &nodesFWRParams, l4netlb.cloud, l4netlb.recorder, fwLogger)
+	result.GCEResourceUpdate.firewallForNodesUpdate, result.Error = firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, &nodesFWRParams, l4netlb.cloud, l4netlb.recorder, fwLogger)
 	if result.Error != nil {
 		result.GCEResourceInError = annotations.FirewallRuleResource
 		result.Error = err
@@ -432,7 +489,8 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *L4NetLBSyncResult {
 	isMultinetService := l4netlb.networkResolver.IsMultinetService(svc)
 	useSSA := l4netlb.enableStrongSessionAffinity && annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service)
-	result := NewL4SyncResult(SyncTypeDelete, svc, isMultinetService, useSSA)
+	isWeightedLBPodsPerNode := l4netlb.isWeightedLBPodsPerNode()
+	result := NewL4SyncResult(SyncTypeDelete, svc, isMultinetService, useSSA, isWeightedLBPodsPerNode)
 
 	l4netlb.Service = svc
 
@@ -646,4 +704,8 @@ func (l4netlb *L4NetLB) determineBackendServiceLocalityPolicy() backends.Localit
 	}
 	// If the service has weighted load balancing disabled, the default locality policy is used.
 	return backends.LocalityLBPolicyDefault
+}
+
+func (l4netlb *L4NetLB) isWeightedLBPodsPerNode() bool {
+	return backends.LocalityLBPolicyWeightedMaglev == l4netlb.determineBackendServiceLocalityPolicy()
 }

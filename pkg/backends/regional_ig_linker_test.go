@@ -245,7 +245,7 @@ func createBackendService(t *testing.T, sp utils.ServicePort, backendPool *Backe
 		NetworkInfo:              &network.NetworkInfo{IsDefault: true},
 		ConnectionTrackingPolicy: nil,
 	}
-	if _, err := backendPool.EnsureL4BackendService(backendParams, klog.TODO()); err != nil {
+	if _, _, err := backendPool.EnsureL4BackendService(backendParams, klog.TODO()); err != nil {
 		t.Fatalf("Error creating backend service %v", err)
 	}
 }

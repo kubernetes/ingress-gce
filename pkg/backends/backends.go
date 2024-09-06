@@ -330,7 +330,7 @@ func (b *Backends) DeleteSignedUrlKey(be *composite.BackendService, keyName stri
 }
 
 // EnsureL4BackendService creates or updates the backend service with the given name.
-func (b *Backends) EnsureL4BackendService(params L4BackendServiceParams, beLogger klog.Logger) (*composite.BackendService, error) {
+func (b *Backends) EnsureL4BackendService(params L4BackendServiceParams, beLogger klog.Logger) (*composite.BackendService, utils.ResourceSyncStatus, error) {
 	start := time.Now()
 	beLogger = beLogger.WithValues("L4BackendServiceParams", params)
 	beLogger.V(2).Info("EnsureL4BackendService started")
@@ -342,11 +342,11 @@ func (b *Backends) EnsureL4BackendService(params L4BackendServiceParams, beLogge
 
 	key, err := composite.CreateKey(b.cloud, params.Name, meta.Regional)
 	if err != nil {
-		return nil, err
+		return nil, utils.ResourceResync, err
 	}
-	bs, err := composite.GetBackendService(b.cloud, key, meta.VersionGA, beLogger)
+	currentBS, err := composite.GetBackendService(b.cloud, key, meta.VersionGA, beLogger)
 	if err != nil && !utils.IsNotFoundError(err) {
-		return nil, err
+		return nil, utils.ResourceResync, err
 	}
 	desc, err := utils.MakeL4LBServiceDescription(params.NamespacedName.String(), "", meta.VersionGA, false, utils.ILB)
 	if err != nil {
@@ -380,38 +380,48 @@ func (b *Backends) EnsureL4BackendService(params L4BackendServiceParams, beLogge
 	}
 
 	// Create backend service if none was found
-	if bs == nil {
+	if currentBS == nil {
 		beLogger.V(2).Info("EnsureL4BackendService: creating backend service")
 		err := composite.CreateBackendService(b.cloud, key, expectedBS, beLogger)
 		if err != nil {
-			return nil, err
+			return nil, utils.ResourceResync, err
 		}
 		beLogger.V(2).Info("EnsureL4BackendService: created backend service successfully")
 		// We need to perform a GCE call to re-fetch the object we just created
 		// so that the "Fingerprint" field is filled in. This is needed to update the
 		// object without error. The lookup is also needed to populate the selfLink.
-		return composite.GetBackendService(b.cloud, key, meta.VersionGA, beLogger)
+		createdBS, err := composite.GetBackendService(b.cloud, key, meta.VersionGA, beLogger)
+		return createdBS, utils.ResourceUpdate, err
+	} else {
+		// TODO(FelipeYepez) remove this check once LocalityLBPolicyMaglev does not require allow lisiting
+		// Use LocalityLBPolicyMaglev instead of LocalityLBPolicyDefault if ILB already uses MAGLEV or WEIGHTEDMAGLEV
+		if expectedBS.LocalityLbPolicy == string(LocalityLBPolicyDefault) &&
+			(currentBS.LocalityLbPolicy == string(LocalityLBPolicyWeightedMaglev) || currentBS.LocalityLbPolicy == string(LocalityLBPolicyMaglev)) {
+
+			expectedBS.LocalityLbPolicy = string(LocalityLBPolicyMaglev)
+		}
 	}
 
-	if backendSvcEqual(expectedBS, bs, b.useConnectionTrackingPolicy) {
+	if backendSvcEqual(expectedBS, currentBS, b.useConnectionTrackingPolicy) {
 		beLogger.V(2).Info("EnsureL4BackendService: backend service did not change, skipping update")
-		return bs, nil
+		return currentBS, utils.ResourceResync, nil
 	}
-	if bs.ConnectionDraining != nil && bs.ConnectionDraining.DrainingTimeoutSec > 0 && params.Protocol == string(api_v1.ProtocolTCP) {
+	if currentBS.ConnectionDraining != nil && currentBS.ConnectionDraining.DrainingTimeoutSec > 0 && params.Protocol == string(api_v1.ProtocolTCP) {
 		// only preserves user overridden timeout value when the protocol is TCP
-		expectedBS.ConnectionDraining.DrainingTimeoutSec = bs.ConnectionDraining.DrainingTimeoutSec
+		expectedBS.ConnectionDraining.DrainingTimeoutSec = currentBS.ConnectionDraining.DrainingTimeoutSec
 	}
 	beLogger.V(2).Info("EnsureL4BackendService: updating backend service")
 	// Set fingerprint for optimistic locking
-	expectedBS.Fingerprint = bs.Fingerprint
+	expectedBS.Fingerprint = currentBS.Fingerprint
 	// Copy backends to avoid detaching them during update. This could be replaced with a patch call in the future.
-	expectedBS.Backends = bs.Backends
+	expectedBS.Backends = currentBS.Backends
 	if err := composite.UpdateBackendService(b.cloud, key, expectedBS, beLogger); err != nil {
-		return nil, err
+		return nil, utils.ResourceUpdate, err
 	}
 	beLogger.V(2).Info("EnsureL4BackendService: updated backend service successfully")
 
-	return composite.GetBackendService(b.cloud, key, meta.VersionGA, beLogger)
+	updatedBS, err := composite.GetBackendService(b.cloud, key, meta.VersionGA, beLogger)
+	return updatedBS, utils.ResourceUpdate, err
 }
 
 // backendSvcEqual returns true if the 2 BackendService objects are equal.
@@ -420,22 +430,24 @@ func (b *Backends) EnsureL4BackendService(params L4BackendServiceParams, beLogge
 // service will not be updated. The list of backends is not checked either,
 // since that is handled by the neg-linker.
 // The list of backends is not checked, since that is handled by the neg-linker.
-func backendSvcEqual(a, b *composite.BackendService, compareConnectionTracking bool) bool {
-	svcsEqual := a.Protocol == b.Protocol &&
-		a.Description == b.Description &&
-		a.SessionAffinity == b.SessionAffinity &&
-		a.LoadBalancingScheme == b.LoadBalancingScheme &&
-		utils.EqualStringSets(a.HealthChecks, b.HealthChecks) &&
-		a.Network == b.Network
+func backendSvcEqual(newBS, oldBS *composite.BackendService, compareConnectionTracking bool) bool {
+	svcsEqual := newBS.Protocol == oldBS.Protocol &&
+		newBS.Description == oldBS.Description &&
+		newBS.SessionAffinity == oldBS.SessionAffinity &&
+		newBS.LoadBalancingScheme == oldBS.LoadBalancingScheme &&
+		utils.EqualStringSets(newBS.HealthChecks, oldBS.HealthChecks) &&
+		newBS.Network == oldBS.Network
 
 	// Compare only for backendSvc that uses Strong Session Affinity feature
 	if compareConnectionTracking {
-		svcsEqual = svcsEqual && connectionTrackingPolicyEqual(a.ConnectionTrackingPolicy, b.ConnectionTrackingPolicy)
+		svcsEqual = svcsEqual && connectionTrackingPolicyEqual(newBS.ConnectionTrackingPolicy, oldBS.ConnectionTrackingPolicy)
 	}
 
 	// If the locality lb policy is not set for existing services, no need to update to MAGLEV since it is the default now.
-	svcsEqual = svcsEqual && a.LocalityLbPolicy == b.LocalityLbPolicy || (a.LocalityLbPolicy == string(LocalityLBPolicyDefault) &&
-		b.LocalityLbPolicy == string(LocalityLBPolicyMaglev))
+	svcsEqual = svcsEqual &&
+		(newBS.LocalityLbPolicy == oldBS.LocalityLbPolicy ||
+			(newBS.LocalityLbPolicy == string(LocalityLBPolicyDefault) && oldBS.LocalityLbPolicy == string(LocalityLBPolicyMaglev)) ||
+			(newBS.LocalityLbPolicy == string(LocalityLBPolicyMaglev) && oldBS.LocalityLbPolicy == string(LocalityLBPolicyDefault)))
 
 	return svcsEqual
 }
