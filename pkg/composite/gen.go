@@ -4833,6 +4833,59 @@ func CreateForwardingRule(gceCloud *gce.Cloud, key *meta.Key, forwardingRule *Fo
 	}
 }
 
+func PatchForwardingRule(gceCloud *gce.Cloud, key *meta.Key, forwardingRule *ForwardingRule, logger klog.Logger) error {
+	ctx, cancel := cloudprovider.ContextWithCallTimeout()
+	defer cancel()
+	mc := compositemetrics.NewMetricContext("ForwardingRule", "patch", key.Region, key.Zone, string(forwardingRule.Version))
+	switch forwardingRule.Version {
+	case meta.VersionAlpha:
+		alpha, err := forwardingRule.ToAlpha()
+		if err != nil {
+			return err
+		}
+		alpha.ForceSendFields = append(alpha.ForceSendFields, "AllowGlobalAccess")
+		alphaLogger := logger.WithValues("name", alpha.Name)
+		switch key.Type() {
+		case meta.Regional:
+			alphaLogger.Info("Updating alpha region ForwardingRule")
+			return mc.Observe(gceCloud.Compute().AlphaForwardingRules().Patch(ctx, key, alpha))
+		default:
+			alphaLogger.Info("Updating alpha ForwardingRule")
+			return mc.Observe(gceCloud.Compute().AlphaGlobalForwardingRules().Patch(ctx, key, alpha))
+		}
+	case meta.VersionBeta:
+		beta, err := forwardingRule.ToBeta()
+		if err != nil {
+			return err
+		}
+		beta.ForceSendFields = append(beta.ForceSendFields, "AllowGlobalAccess")
+		betaLogger := logger.WithValues("name", beta.Name)
+		switch key.Type() {
+		case meta.Regional:
+			betaLogger.Info("Updating beta region ForwardingRule")
+			return mc.Observe(gceCloud.Compute().BetaForwardingRules().Patch(ctx, key, beta))
+		default:
+			betaLogger.Info("Updating beta ForwardingRule")
+			return mc.Observe(gceCloud.Compute().BetaGlobalForwardingRules().Patch(ctx, key, beta))
+		}
+	default:
+		ga, err := forwardingRule.ToGA()
+		if err != nil {
+			return err
+		}
+		ga.ForceSendFields = append(ga.ForceSendFields, "AllowGlobalAccess")
+		gaLogger := logger.WithValues("name", ga.Name)
+		switch key.Type() {
+		case meta.Regional:
+			gaLogger.Info("Updating ga region ForwardingRule")
+			return mc.Observe(gceCloud.Compute().ForwardingRules().Patch(ctx, key, ga))
+		default:
+			gaLogger.Info("Updating ga ForwardingRule")
+			return mc.Observe(gceCloud.Compute().GlobalForwardingRules().Patch(ctx, key, ga))
+		}
+	}
+}
+
 func DeleteForwardingRule(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger) error {
 	logger = logger.WithValues("name", key.Name)
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
