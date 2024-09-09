@@ -18,6 +18,9 @@ package instancegroups
 
 import (
 	"fmt"
+	apiv1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/ingress-gce/pkg/utils"
 	"net/http"
 	"strings"
 	"testing"
@@ -342,6 +345,63 @@ func TestInstanceTruncatingOrder(t *testing.T) {
 			t.Errorf("Last nodes (alphabetically) should be truncated first.")
 		}
 
+	}
+}
+
+// TestEnsureInstanceGroupsAndPortsCreatesGroupForAllNodes verifies if instance groups are ensured for all zones, even if all nodes in a zone are unready or otherwise unfit for LB.
+func TestEnsureInstanceGroupsAndPortsCreatesGroupForAllNodes(t *testing.T) {
+
+	maxIGSize := 3
+	gceNodesZoneA := []string{"a-node"}
+
+	igName := defaultNamer.InstanceGroup()
+	fakeGCEInstanceGroups := NewFakeInstanceGroups(map[string]IGsToInstances{}, maxIGSize)
+	pool := newNodePool(fakeGCEInstanceGroups, maxIGSize)
+	manager := pool.(*manager)
+	zonegetter.AddFakeNodes(manager.ZoneGetter, testZoneA, gceNodesZoneA...)
+	// add an unready node in the zone B
+	zonegetter.AddFakeNode(manager.ZoneGetter, &apiv1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "abc",
+			Labels: map[string]string{
+				utils.LabelNodeSubnet: "default",
+			},
+		},
+		Spec: apiv1.NodeSpec{
+			ProviderID: fmt.Sprintf("gce://foo-project/%s/instance1", testZoneB),
+			PodCIDR:    "10.100.5.0/24",
+			PodCIDRs:   []string{"10.100.5.0/24"},
+		},
+		Status: apiv1.NodeStatus{
+			Conditions: []apiv1.NodeCondition{
+				{
+					Type:   apiv1.NodeReady,
+					Status: apiv1.ConditionFalse,
+				},
+			},
+		},
+	})
+
+	ports := []int64{80}
+	_, err := pool.EnsureInstanceGroupsAndPorts(igName, ports, klog.TODO())
+	if err != nil {
+		t.Fatalf("pool.EnsureInstanceGroupsAndPorts(%s, %v) returned error %v, want nil", igName, ports, err)
+	}
+
+	igZoneA, err := fakeGCEInstanceGroups.ListInstanceGroups(testZoneA)
+	if err != nil {
+		t.Errorf("Error listing IG from zone %q", testZoneA)
+	}
+	if len(igZoneA) != 1 {
+		t.Errorf("Expected 1 instance group to be created in zone %s but got %d, %+v", testZoneA, len(igZoneA), igZoneA)
+	}
+
+	igZoneB, err := fakeGCEInstanceGroups.ListInstanceGroups(testZoneB)
+	if err != nil {
+		t.Errorf("Error listing IG from zone %q", testZoneB)
+	}
+	if len(igZoneB) != 1 {
+		t.Errorf("Expected 1 instance group to be created in zone %s but got %d, %+v", testZoneB, len(igZoneB), igZoneB)
 	}
 }
 
