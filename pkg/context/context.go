@@ -22,6 +22,8 @@ import (
 	informerfirewall "github.com/GoogleCloudPlatform/gke-networking-api/client/gcpfirewall/informers/externalversions/gcpfirewall/v1"
 	networkclient "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned"
 	informernetwork "github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions/network/v1"
+	nodetopologyclient "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned"
+	informernodetopology "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions/nodetopology/v1"
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -79,6 +81,7 @@ type ControllerContext struct {
 	SAClient            serviceattachmentclient.Interface
 	FirewallClient      firewallclient.Interface
 	EventRecorderClient kubernetes.Interface
+	NodeTopologyClient  nodetopologyclient.Interface
 
 	Cloud *gce.Cloud
 
@@ -104,6 +107,7 @@ type ControllerContext struct {
 	FirewallInformer         cache.SharedIndexInformer
 	NetworkInformer          cache.SharedIndexInformer
 	GKENetworkParamsInformer cache.SharedIndexInformer
+	NodeTopologyInformer     cache.SharedIndexInformer
 
 	ControllerMetrics *metrics.ControllerMetrics
 
@@ -160,6 +164,7 @@ func NewControllerContext(
 	ingParamsClient ingparamsclient.Interface,
 	saClient serviceattachmentclient.Interface,
 	networkClient networkclient.Interface,
+	nodeTopologyClient nodetopologyclient.Interface,
 	eventRecorderClient kubernetes.Interface,
 	cloud *gce.Cloud,
 	clusterNamer *namer.Namer,
@@ -186,6 +191,7 @@ func NewControllerContext(
 		SvcNegClient:            svcnegClient,
 		SAClient:                saClient,
 		EventRecorderClient:     eventRecorderClient,
+		NodeTopologyClient:      nodeTopologyClient,
 		Cloud:                   cloud,
 		ClusterNamer:            clusterNamer,
 		L4Namer:                 namer.NewL4Namer(string(kubeSystemUID), clusterNamer),
@@ -224,6 +230,10 @@ func NewControllerContext(
 
 	if flags.F.GKEClusterType == ClusterTypeRegional {
 		context.RegionalCluster = true
+	}
+
+	if flags.F.EnableMultiSubnetClusterPhase1 && nodeTopologyClient != nil {
+		context.NodeTopologyInformer = informernodetopology.NewNodeTopologyInformer(nodeTopologyClient, config.ResyncPeriod, utils.NewNamespaceIndexer())
 	}
 
 	// Do not trigger periodic resync on EndpointSlices object.
@@ -331,6 +341,10 @@ func (ctx *ControllerContext) HasSynced() bool {
 
 	if ctx.FirewallInformer != nil {
 		funcs = append(funcs, ctx.FirewallInformer.HasSynced)
+	}
+
+	if ctx.NodeTopologyInformer != nil {
+		funcs = append(funcs, ctx.NodeTopologyInformer.HasSynced)
 	}
 
 	for _, f := range funcs {
