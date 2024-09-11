@@ -6,8 +6,8 @@ cloud.google.com/go/auth/oauth2adapt v0.2.2/go.mod h1:wcYjgpZI9+Yu7LyYBg4pqSiaRk
 cloud.google.com/go/compute/metadata v0.3.0 h1:Tz+eQXMEqDIKRsmY3cHTL6FVaynIjX2QxYC4trgAKZc=
 cloud.google.com/go/compute/metadata v0.3.0/go.mod h1:zFmK7XCadkQkj6TtorcaGlCW1hT1fIilQDwofLpJ20k=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
-github.com/GoogleCloudPlatform/gke-networking-api v0.1.0 h1:HooP7w65j7M/mZ4oeXSrEyZNJZi2aw0sOwuHjh+NDYI=
-github.com/GoogleCloudPlatform/gke-networking-api v0.1.0/go.mod h1:hngDInU0bLls5Nk7vssNbT6noFXS6ZwldjRhHwu85uE=
+github.com/GoogleCloudPlatform/gke-networking-api v0.1.2-0.20240909212819-4b1bab7c69ea h1:vstMt6suj5yqM0ey5znDUd5EVAk27MF3hWeA2namKtM=
+github.com/GoogleCloudPlatform/gke-networking-api v0.1.2-0.20240909212819-4b1bab7c69ea/go.mod h1:YnoYXo/cwpqFmIXKblHOV5jFEpsSL3PZeo0zaR3oGTI=
 github.com/GoogleCloudPlatform/k8s-cloud-provider v1.32.0 h1:mJj6GEg+6v18wbNRbuQompx7UXB9TMhreiYLKv8BADU=
 github.com/GoogleCloudPlatform/k8s-cloud-provider v1.32.0/go.mod h1:o5jNXLZ3JSgVv+mR2PFp7syFS3DGi6DlzMDwi928YJA=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=

@@ -20,12 +20,13 @@ cloud.google.com/go/auth/oauth2adapt
 # cloud.google.com/go/compute/metadata v0.3.0
 ## explicit; go 1.19
 cloud.google.com/go/compute/metadata
-# github.com/GoogleCloudPlatform/gke-networking-api v0.1.0
+# github.com/GoogleCloudPlatform/gke-networking-api v0.1.2-0.20240909212819-4b1bab7c69ea
 ## explicit; go 1.22.0
 github.com/GoogleCloudPlatform/gke-networking-api/apis/gcpfirewall/v1
 github.com/GoogleCloudPlatform/gke-networking-api/apis/gcpfirewall/v1beta1
 github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1
 github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1alpha1
+github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1
 github.com/GoogleCloudPlatform/gke-networking-api/client/gcpfirewall/clientset/versioned
 github.com/GoogleCloudPlatform/gke-networking-api/client/gcpfirewall/clientset/versioned/fake
 github.com/GoogleCloudPlatform/gke-networking-api/client/gcpfirewall/clientset/versioned/scheme
@@ -48,6 +49,12 @@ github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/exter
 github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions/network/v1alpha1
 github.com/GoogleCloudPlatform/gke-networking-api/client/network/listers/network/v1
 github.com/GoogleCloudPlatform/gke-networking-api/client/network/listers/network/v1alpha1
+github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned
+github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned/scheme
+github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned/typed/nodetopology/v1
+github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions/internalinterfaces
+github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions/nodetopology/v1
+github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/listers/nodetopology/v1
 # github.com/GoogleCloudPlatform/k8s-cloud-provider v1.32.0
 ## explicit; go 1.21
 github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud
