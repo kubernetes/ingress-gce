@@ -1927,6 +1927,33 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 	podLister := testContext.PodInformer.GetIndexer()
 	addPodsToLister(podLister, getDefaultEndpointSlices())
 
+	instance1 := negtypes.TestInstance1
+
+	emptyNamedPort := ""
+	port80 := int32(80)
+	protocolTCP := v1.ProtocolTCP
+	hostNetworkPodIP := "10.10.0.1"
+	hostNetworkPodName := "test-pod-host-network"
+	testLabels := map[string]string{
+		"run": "foo",
+	}
+	podLister.Add(&v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testServiceNamespace,
+			Name:      hostNetworkPodName,
+			Labels:    testLabels,
+		},
+		Spec: v1.PodSpec{
+			NodeName:    instance1,
+			HostNetwork: true,
+		},
+		Status: v1.PodStatus{
+			Phase:  v1.PodRunning,
+			PodIP:  hostNetworkPodIP,
+			PodIPs: []v1.PodIP{{IP: hostNetworkPodIP}},
+		},
+	})
+
 	nodeLister := testContext.NodeInformer.GetIndexer()
 	for i := 1; i <= 4; i++ {
 		nodeLister.Add(&v1.Node{
@@ -1937,11 +1964,14 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 				PodCIDR:  fmt.Sprintf("10.100.%v.0/24", i),
 				PodCIDRs: []string{fmt.Sprintf("200%v:db8::/48", i), fmt.Sprintf("10.100.%v.0/24", i)},
 			},
+			Status: v1.NodeStatus{
+				Addresses: []v1.NodeAddress{
+					{Type: v1.NodeInternalIP, Address: fmt.Sprintf("10.10.0.%v", i)},
+				},
+			},
 		})
 	}
-	testLabels := map[string]string{
-		"run": "foo",
-	}
+
 	serviceLister := testContext.ServiceInformer.GetIndexer()
 	serviceLister.Add(&v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -2043,6 +2073,49 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 				networkEndpointFromEncodedEndpoint("10.100.1.4||||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod6"},
 			},
 			networkEndpointType: negtypes.NonGCPPrivateEndpointType,
+		},
+		{
+			desc: "hostNetwork pods",
+			testEndpointSlices: []*discovery.EndpointSlice{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testServiceName + "-1",
+						Namespace: testServiceNamespace,
+						Labels: map[string]string{
+							discovery.LabelServiceName: testServiceName,
+							discovery.LabelManagedBy:   managedByEPSControllerValue,
+						},
+					},
+					AddressType: "IPv4",
+					Endpoints: []discovery.Endpoint{
+						{
+							Addresses: []string{hostNetworkPodIP}, // Node IP for instance1 is 10.10.0.1, its PodCIDR range is 10.100.1.0/24
+							NodeName:  &instance1,
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      hostNetworkPodName,
+							},
+						},
+					},
+					Ports: []discovery.EndpointPort{
+						{
+							Name:     &emptyNamedPort,
+							Port:     &port80,
+							Protocol: &protocolTCP,
+						},
+					},
+				},
+			},
+			portName: testEmptyNamedPort,
+			expectedEndpointMap: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+					networkEndpointFromEncodedEndpoint("10.10.0.1||instance1||80"),
+				),
+			},
+			expectedPodMap: negtypes.EndpointPodMap{
+				networkEndpointFromEncodedEndpoint("10.10.0.1||instance1||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: hostNetworkPodName},
+			},
+			networkEndpointType: negtypes.VmIpPortEndpointType,
 		},
 	}
 	for _, tc := range testCases {
