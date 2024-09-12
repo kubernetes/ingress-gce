@@ -796,9 +796,7 @@ func (lc *L4NetLBController) publishSyncMetrics(result *loadbalancers.L4NetLBSyn
 		l4metrics.PublishL4NetLBMultiNetSyncLatency(result.Error == nil, result.SyncType, result.StartTime, isResync)
 	}
 	l4metrics.PublishL4SyncDetails(l4NetLBControllerName, result.Error == nil, isResync, result.GCEResourceUpdate.WereAnyResourcesModified())
-	if result.Error == nil {
-		l4metrics.PublishL4NetLBSyncSuccess(result.SyncType, result.StartTime, isResync)
-		return
-	}
-	l4metrics.PublishL4NetLBSyncError(result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime, isResync)
+
+	isWeightedLB := result.MetricsState.WeightedLBPodsPerNode
+	l4metrics.PublishNetLBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime, isResync, isWeightedLB)
 }
