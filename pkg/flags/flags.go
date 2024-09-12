@@ -137,6 +137,7 @@ var (
 		EnableWeightedL4ILB                      bool
 		EnableWeightedL4NetLB                    bool
 		EnableDiscretePortForwarding             bool
+		EnableMultiProjectMode                   bool
 	}{
 		GCERateLimitScale: 1.0,
 	}
@@ -322,6 +323,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.Float32Var(&F.KubeClientQPS, "kube-client-qps", 0.0, "The QPS that the controllers' kube client should adhere to through client side throttling. If zero, client will be created with default settings.")
 	flag.IntVar(&F.KubeClientBurst, "kube-client-burst", 0, "The burst QPS that the controllers' kube client should adhere to through client side throttling. If zero, client will be created with default settings.")
 	flag.BoolVar(&F.EnableDiscretePortForwarding, "enable-discrete-port-forwarding", false, "Enable forwarding of individual ports instead of port ranges.")
+	flag.BoolVar(&F.EnableMultiProjectMode, "enable-multi-project-mode", false, "Enable running in multi-project mode.")
 }
 
 func Validate() {
