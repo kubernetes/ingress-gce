@@ -70,7 +70,6 @@ type Controller struct {
 	namer           negtypes.NetworkEndpointGroupNamer
 	l4Namer         namer2.L4ResourcesNamer
 	zoneGetter      *zonegetter.ZoneGetter
-	cloud           negtypes.NetworkEndpointGroupCloud
 	networkResolver network.Resolver
 
 	hasSynced                   func() bool
@@ -221,7 +220,6 @@ func NewController(
 		gcPeriod:                      gcPeriod,
 		recorder:                      recorder,
 		zoneGetter:                    zoneGetter,
-		cloud:                         cloud,
 		namer:                         namer,
 		l4Namer:                       l4Namer,
 		defaultBackendService:         defaultBackendService,
