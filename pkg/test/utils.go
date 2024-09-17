@@ -24,6 +24,7 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
+	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -73,6 +74,21 @@ func NewService(name types.NamespacedName, spec api_v1.ServiceSpec) *api_v1.Serv
 			Namespace: name.Namespace,
 		},
 		Spec: spec,
+	}
+}
+
+// NewService returns a SvcNeg with the given spec.
+func NewSvcNeg(name types.NamespacedName, status negv1beta1.ServiceNetworkEndpointGroupStatus) *negv1beta1.ServiceNetworkEndpointGroup {
+	return &negv1beta1.ServiceNetworkEndpointGroup{
+		TypeMeta: meta_v1.TypeMeta{
+			Kind:       "ServiceNetworkEndpointGroup",
+			APIVersion: "networking.gke.io/v1beta1",
+		},
+		ObjectMeta: meta_v1.ObjectMeta{
+			Name:      name.Name,
+			Namespace: name.Namespace,
+		},
+		Status: status,
 	}
 }
 
