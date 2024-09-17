@@ -125,6 +125,7 @@ func NewController(
 	svcNegInformer cache.SharedIndexInformer,
 	networkInformer cache.SharedIndexInformer,
 	gkeNetworkParamSetInformer cache.SharedIndexInformer,
+	nodeTopologyInformer cache.SharedIndexInformer,
 	hasSynced func() bool,
 	l4Namer namer2.L4ResourcesNamer,
 	defaultBackendService utils.ServicePort,

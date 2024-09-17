@@ -139,6 +139,7 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		testContext.SvcNegInformer,
 		testContext.NetworkInformer,
 		testContext.GKENetworkParamSetInformer,
+		testContext.NodeTopologyInformer,
 		func() bool { return true },
 		testContext.L4Namer,
 		defaultBackend,
