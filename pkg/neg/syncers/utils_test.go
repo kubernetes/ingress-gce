@@ -495,7 +495,8 @@ func TestToZoneNetworkEndpointMap(t *testing.T) {
 	t.Parallel()
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
-	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
+	testContext := negtypes.NewTestContext()
+	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, testContext.NodeTopologyInformer, defaultTestSubnetURL, false, false)
 	podLister := negtypes.NewTestContext().PodInformer.GetIndexer()
 	testEndpointSlice := getDefaultEndpointSlices()
 	addPodsToLister(podLister, testEndpointSlice)
@@ -749,7 +750,8 @@ func TestIpsForPod(t *testing.T) {
 func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
-	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
+	testContext := negtypes.NewTestContext()
+	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, testContext.NodeTopologyInformer, defaultTestSubnetURL, false, false)
 	negCloud := negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
 	negName := "test-neg-name"
 	irrelevantNegName := "irrelevant"
@@ -1565,8 +1567,8 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
-	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
 	testContext := negtypes.NewTestContext()
+	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, testContext.NodeTopologyInformer, defaultTestSubnetURL, false, false)
 	podLister := testContext.PodInformer.GetIndexer()
 	addPodsToLister(podLister, getDefaultEndpointSlices())
 
@@ -1797,7 +1799,7 @@ func TestValidateEndpointFields(t *testing.T) {
 	addPodsToLister(podLister, getDefaultEndpointSlices())
 	nodeLister := testContext.NodeInformer.GetIndexer()
 	zonegetter.PopulateFakeNodeInformer(testContext.NodeInformer, false)
-	fakeZoneGetter := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, defaultTestSubnetURL, false)
+	fakeZoneGetter := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, testContext.NodeTopologyInformer, defaultTestSubnetURL, false, false)
 
 	// Add the pod that corresponds to empty zone instance.
 	podLister.Add(&v1.Pod{
@@ -2433,7 +2435,7 @@ func TestValidateEndpointFieldsMultipleSubnets(t *testing.T) {
 	addPodsToLister(podLister, getDefaultEndpointSlices())
 	nodeLister := testContext.NodeInformer.GetIndexer()
 	zonegetter.PopulateFakeNodeInformer(testContext.NodeInformer, true)
-	fakeZoneGetter := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, defaultTestSubnetURL, true)
+	fakeZoneGetter := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, testContext.NodeTopologyInformer, defaultTestSubnetURL, true, false)
 
 	// Add defaultSubnetLabelPod that corresponds to defaultSubnetLabelInstance.
 	podLister.Add(&v1.Pod{

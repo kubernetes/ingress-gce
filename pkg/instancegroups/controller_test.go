@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	nodetopologyfake "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned/fake"
+	informernodetopology "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions/nodetopology/v1"
 	"github.com/go-logr/logr"
 	compute "google.golang.org/api/compute/v1"
 	api_v1 "k8s.io/api/core/v1"
@@ -92,13 +94,15 @@ func TestSync(t *testing.T) {
 	resyncPeriod := 1 * time.Second
 	fakeKubeClient := fake.NewSimpleClientset()
 	informer := informerv1.NewNodeInformer(fakeKubeClient, resyncPeriod, utils.NewNamespaceIndexer())
+	nodeTopologyClient := nodetopologyfake.NewSimpleClientset()
+	nodeTopologyInformer := informernodetopology.NewNodeTopologyInformer(nodeTopologyClient, 1*time.Second, utils.NewNamespaceIndexer())
 	config.NodeInformer = informer
 	fakeManager := &IGManagerFake{}
 	config.IGManager = fakeManager
 	config.HasSynced = func() bool {
 		return true
 	}
-	config.ZoneGetter = zonegetter.NewFakeZoneGetter(informer, defaultTestSubnetURL, false)
+	config.ZoneGetter = zonegetter.NewFakeZoneGetter(informer, nodeTopologyInformer, defaultTestSubnetURL, false, false)
 
 	controller := NewController(config, logr.Logger{})
 

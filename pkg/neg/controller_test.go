@@ -124,7 +124,7 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 	}
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
-	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
+	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, testContext.NodeTopologyInformer, defaultTestSubnetURL, false, false)
 
 	return NewController(
 		kubeClient,
@@ -1733,9 +1733,10 @@ func validateServiceAnnotationWithPortInfoMap(t *testing.T, svc *apiv1.Service, 
 		t.Fatalf("Failed to apply the NEG service state annotation, got %+v", svc.Annotations)
 	}
 
+	testContext := negtypes.NewTestContext()
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
-	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
+	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, testContext.NodeTopologyInformer, defaultTestSubnetURL, false, false)
 	zones, _ := zoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(portInfoMap.EndpointsCalculatorMode()), klog.TODO())
 	if !sets.NewString(expectZones...).Equal(sets.NewString(zones...)) {
 		t.Errorf("Unexpected zones listed by the predicate function, got %v, want %v", zones, expectZones)
@@ -1814,9 +1815,10 @@ func validateServiceStateAnnotationExceptNames(t *testing.T, svc *apiv1.Service,
 			t.Fatalf("Expected NEG service state annotation to contain port %v, got %v", port, v)
 		}
 	}
+	testContext := negtypes.NewTestContext()
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
-	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
+	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, testContext.NodeTopologyInformer, defaultTestSubnetURL, false, false)
 	// This routine is called from tests verifying L7 NEGs.
 	zones, _ := zoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(negtypes.L7Mode), klog.TODO())
 

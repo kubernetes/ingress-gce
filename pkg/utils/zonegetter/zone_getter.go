@@ -62,7 +62,8 @@ var providerIDRE = regexp.MustCompile(`^` + "gce" + `://([^/]+)/([^/]+)/([^/]+)$
 
 // ZoneGetter manages lookups for GCE instances to zones.
 type ZoneGetter struct {
-	nodeLister cache.Indexer
+	nodeLister         cache.Indexer
+	nodeTopologyLister cache.Indexer
 	// Mode indicates if the ZoneGetter is in GCP or Non-GCP mode
 	// GCP mode ZoneGetter fetches zones from k8s node resource objects.
 	// Non-GCP mode ZoneGetter always return its one single stored zone
@@ -73,6 +74,10 @@ type ZoneGetter struct {
 
 	// Whether zoneGetter should only list default subnet nodes.
 	onlyIncludeDefaultSubnetNodes bool
+
+	// Whether zoneGetter will use Node Topology CR to get zones.
+	// Will override the behavior of onlyIncludeDefaultSubnetNodes.
+	enableMultiSubnetClusterPhase1 bool
 
 	// The subnetURL of the cluster's default subnet.
 	defaultSubnetURL string
@@ -340,21 +345,31 @@ func NewNonGCPZoneGetter(zone string) *ZoneGetter {
 }
 
 // NewZoneGetter initialize a ZoneGetter in GCP mode.
-func NewZoneGetter(nodeInformer cache.SharedIndexInformer, defaultSubnetURL string) *ZoneGetter {
-	return &ZoneGetter{
-		mode:                          GCP,
-		nodeLister:                    nodeInformer.GetIndexer(),
-		onlyIncludeDefaultSubnetNodes: flags.F.EnableMultiSubnetCluster,
-		defaultSubnetURL:              defaultSubnetURL,
+func NewZoneGetter(nodeInformer, nodeTopologyInformer cache.SharedIndexInformer, defaultSubnetURL string) *ZoneGetter {
+	zoneGetter := &ZoneGetter{
+		mode:                           GCP,
+		nodeLister:                     nodeInformer.GetIndexer(),
+		onlyIncludeDefaultSubnetNodes:  flags.F.EnableMultiSubnetCluster,
+		enableMultiSubnetClusterPhase1: flags.F.EnableMultiSubnetClusterPhase1,
+		defaultSubnetURL:               defaultSubnetURL,
 	}
+	if nodeTopologyInformer != nil {
+		zoneGetter.nodeTopologyLister = nodeTopologyInformer.GetIndexer()
+	}
+	return zoneGetter
 }
 
 // NewFakeZoneGetter initialize a fake ZoneGetter in GCP mode to use in test.
-func NewFakeZoneGetter(nodeInformer cache.SharedIndexInformer, defaultSubnetURL string, onlyIncludeDefaultSubnetNodes bool) *ZoneGetter {
-	return &ZoneGetter{
-		mode:                          GCP,
-		nodeLister:                    nodeInformer.GetIndexer(),
-		onlyIncludeDefaultSubnetNodes: onlyIncludeDefaultSubnetNodes,
-		defaultSubnetURL:              defaultSubnetURL,
+func NewFakeZoneGetter(nodeInformer, nodeTopologyInformer cache.SharedIndexInformer, defaultSubnetURL string, onlyIncludeDefaultSubnetNodes, enableMultiSubnetClusterPhase1 bool) *ZoneGetter {
+	zoneGetter := &ZoneGetter{
+		mode:                           GCP,
+		nodeLister:                     nodeInformer.GetIndexer(),
+		onlyIncludeDefaultSubnetNodes:  onlyIncludeDefaultSubnetNodes,
+		enableMultiSubnetClusterPhase1: enableMultiSubnetClusterPhase1,
+		defaultSubnetURL:               defaultSubnetURL,
 	}
+	if nodeTopologyInformer != nil {
+		zoneGetter.nodeTopologyLister = nodeTopologyInformer.GetIndexer()
+	}
+	return zoneGetter
 }

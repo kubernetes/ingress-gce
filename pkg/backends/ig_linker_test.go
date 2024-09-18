@@ -20,7 +20,10 @@ import (
 	"reflect"
 	"sort"
 	"testing"
+	"time"
 
+	nodetopologyfake "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned/fake"
+	informernodetopology "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions/nodetopology/v1"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
@@ -59,7 +62,9 @@ func TestLink(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 
 	nodeInformer := zonegetter.FakeNodeInformer()
-	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
+	nodeTopologyClient := nodetopologyfake.NewSimpleClientset()
+	nodeTopologyInformer := informernodetopology.NewNodeTopologyInformer(nodeTopologyClient, 1*time.Second, utils.NewNamespaceIndexer())
+	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, nodeTopologyInformer, defaultTestSubnetURL, false, false)
 	zonegetter.AddFakeNodes(fakeZoneGetter, defaultTestZone, "test-instance")
 
 	fakeNodePool := instancegroups.NewManager(&instancegroups.ManagerConfig{
@@ -101,7 +106,9 @@ func TestLinkWithCreationModeError(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 
 	nodeInformer := zonegetter.FakeNodeInformer()
-	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
+	nodeTopologyClient := nodetopologyfake.NewSimpleClientset()
+	nodeTopologyInformer := informernodetopology.NewNodeTopologyInformer(nodeTopologyClient, 1*time.Second, utils.NewNamespaceIndexer())
+	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, nodeTopologyInformer, defaultTestSubnetURL, false, false)
 	zonegetter.AddFakeNodes(fakeZoneGetter, defaultTestZone, "test-instance")
 
 	fakeNodePool := instancegroups.NewManager(&instancegroups.ManagerConfig{

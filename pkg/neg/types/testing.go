@@ -24,6 +24,8 @@ import (
 	netfake "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned/fake"
 	informernetwork "github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions/network/v1"
 	informergkenetworkparamset "github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions/network/v1alpha1"
+	nodetopologyfake "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned/fake"
+	informernodetopology "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions/nodetopology/v1"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	informerv1 "k8s.io/client-go/informers/core/v1"
@@ -66,6 +68,7 @@ type TestContext struct {
 	SvcNegInformer             cache.SharedIndexInformer
 	NetworkInformer            cache.SharedIndexInformer
 	GKENetworkParamSetInformer cache.SharedIndexInformer
+	NodeTopologyInformer       cache.SharedIndexInformer
 
 	KubeSystemUID      types.UID
 	ResyncPeriod       time.Duration
@@ -81,6 +84,8 @@ func NewTestContext() *TestContext {
 func NewTestContextWithKubeClient(kubeClient kubernetes.Interface) *TestContext {
 	negClient := negfake.NewSimpleClientset()
 	networkClient := netfake.NewSimpleClientset()
+	nodeTopologyClient := nodetopologyfake.NewSimpleClientset()
+
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	MockNetworkEndpointAPIs(fakeGCE)
 
@@ -102,6 +107,7 @@ func NewTestContextWithKubeClient(kubeClient kubernetes.Interface) *TestContext 
 		SvcNegInformer:             informersvcneg.NewServiceNetworkEndpointGroupInformer(negClient, namespace, resyncPeriod, utils.NewNamespaceIndexer()),
 		NetworkInformer:            informernetwork.NewNetworkInformer(networkClient, resyncPeriod, utils.NewNamespaceIndexer()),
 		GKENetworkParamSetInformer: informergkenetworkparamset.NewGKENetworkParamSetInformer(networkClient, resyncPeriod, utils.NewNamespaceIndexer()),
+		NodeTopologyInformer:       informernodetopology.NewNodeTopologyInformer(nodeTopologyClient, resyncPeriod, utils.NewNamespaceIndexer()),
 		KubeSystemUID:              kubeSystemUID,
 		ResyncPeriod:               resyncPeriod,
 		NumGCWorkers:               numGCWorkers,

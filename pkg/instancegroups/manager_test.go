@@ -18,16 +18,20 @@ package instancegroups
 
 import (
 	"fmt"
-	apiv1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/ingress-gce/pkg/utils"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
+
+	apiv1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/ingress-gce/pkg/utils"
 
 	"google.golang.org/api/googleapi"
 	"k8s.io/klog/v2"
 
+	nodetopologyfake "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned/fake"
+	informernodetopology "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions/nodetopology/v1"
 	"google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/test"
@@ -49,7 +53,9 @@ var defaultNamer = namer.NewNamer("uid1", "fw1", klog.TODO())
 
 func newNodePool(f Provider, maxIGSize int) Manager {
 	nodeInformer := zonegetter.FakeNodeInformer()
-	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
+	nodeTopologyClient := nodetopologyfake.NewSimpleClientset()
+	nodeTopologyInformer := informernodetopology.NewNodeTopologyInformer(nodeTopologyClient, 1*time.Second, utils.NewNamespaceIndexer())
+	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, nodeTopologyInformer, defaultTestSubnetURL, false, false)
 
 	pool := NewManager(&ManagerConfig{
 		Cloud:      f,

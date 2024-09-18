@@ -59,7 +59,7 @@ func (f *fakeLookUp) ReadinessGateEnabled(syncerKey negtypes.NegSyncerKey) bool 
 }
 
 func newTestReadinessReflector(testContext *negtypes.TestContext, enableMultiSubnetCluster bool) *readinessReflector {
-	fakeZoneGetter := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, defaultTestSubnetURL, enableMultiSubnetCluster)
+	fakeZoneGetter := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, testContext.NodeTopologyInformer, defaultTestSubnetURL, enableMultiSubnetCluster, false)
 	reflector := NewReadinessReflector(
 		testContext.KubeClient,
 		testContext.KubeClient,

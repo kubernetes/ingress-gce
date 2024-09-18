@@ -21,6 +21,8 @@ import (
 	"testing"
 	"time"
 
+	nodetopologyfake "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned/fake"
+	informernodetopology "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions/nodetopology/v1"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -40,6 +42,11 @@ const (
 
 func FakeNodeInformer() cache.SharedIndexInformer {
 	return informerv1.NewNodeInformer(fake.NewSimpleClientset(), 1*time.Second, utils.NewNamespaceIndexer())
+}
+
+func FakeNodeTopologyInformer() cache.SharedIndexInformer {
+	nodeTopologyClient := nodetopologyfake.NewSimpleClientset()
+	return informernodetopology.NewNodeTopologyInformer(nodeTopologyClient, 1*time.Second, utils.NewNamespaceIndexer())
 }
 
 // DeleteFakeNodesInZone deletes all nodes in a zone.
