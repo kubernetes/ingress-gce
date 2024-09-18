@@ -63,8 +63,6 @@ import (
 type LoadBalancerController struct {
 	ctx *context.ControllerContext
 
-	nodeLister cache.Indexer
-
 	// TODO: Watch secrets
 	ingQueue   utils.TaskQueue
 	Translator *legacytranslator.Translator
@@ -101,9 +99,6 @@ type LoadBalancerController struct {
 	// Ingress usage metrics.
 	metrics metrics.IngressMetricsCollector
 
-	ingClassLister  cache.Indexer
-	ingParamsLister cache.Indexer
-
 	ZoneGetter *zonegetter.ZoneGetter
 
 	logger klog.Logger
@@ -132,7 +127,6 @@ func NewLoadBalancerController(
 
 	lbc := LoadBalancerController{
 		ctx:           ctx,
-		nodeLister:    ctx.NodeInformer.GetIndexer(),
 		Translator:    ctx.Translator,
 		stopCh:        stopCh,
 		hasSynced:     ctx.HasSynced,
@@ -144,11 +138,6 @@ func NewLoadBalancerController(
 		metrics:       ctx.ControllerMetrics,
 		ZoneGetter:    ctx.ZoneGetter,
 		logger:        logger,
-	}
-
-	if ctx.IngClassInformer != nil {
-		lbc.ingClassLister = ctx.IngClassInformer.GetIndexer()
-		lbc.ingParamsLister = ctx.IngParamsInformer.GetIndexer()
 	}
 
 	lbc.ingSyncer = ingsync.NewIngressSyncer(&lbc, logger)

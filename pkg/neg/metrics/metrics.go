@@ -56,8 +56,6 @@ const (
 	ListNEHealthRequest   = "ListNEHealth"
 )
 
-type syncType string
-
 var (
 	NegOperationLatency = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{

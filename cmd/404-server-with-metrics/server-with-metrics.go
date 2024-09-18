@@ -39,7 +39,6 @@ import (
 var (
 	port              = flag.Int("port", 8080, "Port number to serve default backend 404 page.")
 	metricsPort       = flag.Int("metricsPort", 8081, "Port number to serve metrics for the default  backend 404 page.")
-	serverTimeout     = flag.Duration("timeout", 5*time.Second, "Time in seconds to wait before forcefully terminating the server.")
 	readTimeout       = flag.Duration("read_timeout", 10*time.Second, "Time in seconds to read the entire request before timing out.")
 	readHeaderTimeout = flag.Duration("read_header_timeout", 10*time.Second, "Time in seconds to read the request header before timing out.")
 	writeTimeout      = flag.Duration("write_timeout", 10*time.Second, "Time in seconds to write response before timing out.")

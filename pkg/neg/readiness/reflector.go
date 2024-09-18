@@ -70,8 +70,7 @@ type readinessReflector struct {
 	podLister cache.Indexer
 	lookup    NegLookup
 
-	eventBroadcaster record.EventBroadcaster
-	eventRecorder    record.EventRecorder
+	eventRecorder record.EventRecorder
 
 	queue workqueue.RateLimitingInterface
 
@@ -97,7 +96,6 @@ func NewReadinessReflector(kubeClient, eventRecorderClient kubernetes.Interface,
 		podLister:                podLister,
 		clock:                    clock.RealClock{},
 		lookup:                   lookup,
-		eventBroadcaster:         broadcaster,
 		eventRecorder:            recorder,
 		queue:                    workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
 		zoneGetter:               zoneGetter,

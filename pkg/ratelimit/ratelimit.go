@@ -43,8 +43,6 @@ type GCERateLimiter struct {
 	// Minimum polling interval for getting operations. Underlying operations rate limiter
 	// may increase the time.
 	operationPollInterval time.Duration
-
-	logger klog.Logger
 }
 
 // strategyRateLimiter implements cloud.RateLimiter and uses underlying throttling.Strategy
@@ -127,7 +125,6 @@ func NewGCERateLimiter(specs []string, operationPollInterval time.Duration, logg
 		rateLimitImpls:        rateLimitImpls,
 		strategyRLs:           strategyRLs,
 		operationPollInterval: operationPollInterval,
-		logger:                logger,
 	}, nil
 }
 

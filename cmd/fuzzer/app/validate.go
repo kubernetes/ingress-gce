@@ -29,7 +29,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	backendconfig "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
@@ -172,14 +171,6 @@ func homeDir() string {
 
 func k8sClientSet(config *rest.Config) *kubernetes.Clientset {
 	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		panic(err.Error())
-	}
-	return clientset
-}
-
-func backendConfigClientset(config *rest.Config) *backendconfig.Clientset {
-	clientset, err := backendconfig.NewForConfig(config)
 	if err != nil {
 		panic(err.Error())
 	}

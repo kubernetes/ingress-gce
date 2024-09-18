@@ -61,9 +61,7 @@ type testJig struct {
 	fakeGCE *gce.Cloud
 	mock    *cloud.MockGCE
 	namer   *namer_util.Namer
-	ing     *networkingv1.Ingress
 	feNamer namer_util.IngressFrontendNamer
-	t       *testing.T
 }
 
 func newTestJig(t *testing.T) *testJig {
@@ -132,9 +130,7 @@ func newTestJig(t *testing.T) *testJig {
 		fakeGCE: fakeGCE,
 		mock:    mockGCE,
 		namer:   namer,
-		ing:     ing,
 		feNamer: feNamer,
-		t:       t,
 	}
 }
 
@@ -1441,16 +1437,6 @@ func TestInvalidClusterNameChange(t *testing.T) {
 
 func createCert(key string, contents string, name string) *translator.TLSCerts {
 	return &translator.TLSCerts{Key: key, Cert: contents, Name: name, CertHash: translator.GetCertHash(contents)}
-}
-
-func syncPool(j *testJig, t *testing.T, lbInfo *L7RuntimeInfo) {
-	if _, err := j.pool.Ensure(lbInfo); err != nil {
-		t.Fatalf("j.pool.Ensure() = err %v", err)
-	}
-	l7, err := j.pool.Ensure(lbInfo)
-	if err != nil || l7 == nil {
-		t.Fatalf("Expected l7 not created")
-	}
 }
 
 func TestList(t *testing.T) {

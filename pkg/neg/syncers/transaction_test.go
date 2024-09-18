@@ -2272,12 +2272,6 @@ func TestCollectLabelStats(t *testing.T) {
 	}
 }
 
-func newL4ILBTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, mode negtypes.EndpointsCalculatorMode) (negtypes.NegSyncer, *transactionSyncer) {
-	negsyncer, ts := newTestTransactionSyncer(fakeGCE, negtypes.VmIpEndpointType, false)
-	ts.endpointsCalculator = GetEndpointsCalculator(ts.podLister, ts.nodeLister, ts.serviceLister, ts.zoneGetter, ts.NegSyncerKey, mode, klog.TODO(), false, nil, &network.NetworkInfo{IsDefault: true})
-	return negsyncer, ts
-}
-
 func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negType negtypes.NetworkEndpointType, customName bool) (negtypes.NegSyncer, *transactionSyncer) {
 	testContext := negtypes.NewTestContext()
 	svcPort := negtypes.NegSyncerKey{
@@ -2334,14 +2328,6 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 	}
 	transactionSyncer.endpointSliceLister.AddIndexers(indexers)
 	return negsyncer, transactionSyncer
-}
-
-func copyMap(endpointMap map[string]negtypes.NetworkEndpointSet) map[string]negtypes.NetworkEndpointSet {
-	ret := map[string]negtypes.NetworkEndpointSet{}
-	for k, v := range endpointMap {
-		ret[k] = negtypes.NewNetworkEndpointSet(v.List()...)
-	}
-	return ret
 }
 
 func generateTransaction(table networkEndpointTransactionTable, entry transactionEntry, initialIp net.IP, num int, instance string, targetPort string) {

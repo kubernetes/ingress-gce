@@ -21,7 +21,6 @@ import (
 	"math/rand"
 	"reflect"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
@@ -61,7 +60,6 @@ type L4Controller struct {
 	client                   kubernetes.Interface
 	svcQueue                 utils.TaskQueue
 	numWorkers               int
-	serviceLister            cache.Indexer
 	networkLister            cache.Indexer
 	gkeNetworkParamSetLister cache.Indexer
 	networkResolver          network.Resolver
@@ -75,10 +73,9 @@ type L4Controller struct {
 	// enqueueTracker tracks the latest time an update was enqueued
 	enqueueTracker utils.TimeTracker
 	// syncTracker tracks the latest time an enqueued service was synced
-	syncTracker         utils.TimeTracker
-	forwardingRules     ForwardingRulesGetter
-	sharedResourcesLock sync.Mutex
-	enableDualStack     bool
+	syncTracker     utils.TimeTracker
+	forwardingRules ForwardingRulesGetter
+	enableDualStack bool
 
 	hasSynced func() bool
 
@@ -97,7 +94,6 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 	l4c := &L4Controller{
 		ctx:             ctx,
 		client:          ctx.KubeClient,
-		serviceLister:   ctx.ServiceInformer.GetIndexer(),
 		stopCh:          stopCh,
 		numWorkers:      ctx.NumL4Workers,
 		namer:           ctx.L4Namer,

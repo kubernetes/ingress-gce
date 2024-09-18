@@ -906,21 +906,14 @@ func TestEnsureInternalLoadBalancerWithSpecialHealthCheck(t *testing.T) {
 }
 
 type EnsureILBParams struct {
-	clusterName     string
-	clusterID       string
 	service         *v1.Service
-	existingFwdRule *composite.ForwardingRule
 	networkResolver network.Resolver
 }
 
 // newEnsureILBParams is the constructor of EnsureILBParams.
 func newEnsureILBParams() *EnsureILBParams {
-	vals := gce.DefaultTestClusterValues()
 	return &EnsureILBParams{
-		vals.ClusterName,
-		vals.ClusterID,
 		test.NewL4ILBService(false, 8080),
-		nil,
 		nil,
 	}
 }
@@ -962,9 +955,6 @@ func TestEnsureInternalLoadBalancerErrors(t *testing.T) {
 			},
 		},
 		"Delete region forwarding rule failed": {
-			adjustParams: func(params *EnsureILBParams) {
-				params.existingFwdRule = &composite.ForwardingRule{BackendService: "badBackendService"}
-			},
 			injectMock: func(c *cloud.MockGCE) {
 				c.MockForwardingRules.DeleteHook = mock.DeleteForwardingRuleErrHook
 			},

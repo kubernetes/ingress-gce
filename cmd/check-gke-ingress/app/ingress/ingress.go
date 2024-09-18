@@ -20,8 +20,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"reflect"
-	"runtime"
 
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -84,7 +82,6 @@ func RunChecks(ingresses []networkingv1.Ingress, client kubernetes.Interface, be
 			Checks:    []*report.Check{},
 		}
 		ingressChecker := &IngressChecker{
-			client:  client,
 			ingress: &ingress,
 		}
 
@@ -176,8 +173,4 @@ func addCheckResult(ingressRes *report.Resource, checkName, msg, res string) {
 		Message: msg,
 		Result:  res,
 	})
-}
-
-func getCheckName(check func()) string {
-	return runtime.FuncForPC(reflect.ValueOf(check).Pointer()).Name()
 }

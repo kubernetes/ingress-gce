@@ -64,7 +64,6 @@ func init() {
 // It determines whether NEG for a service port is needed, then signals NegSyncerManager to sync it.
 type Controller struct {
 	manager         negtypes.NegSyncerManager
-	resyncPeriod    time.Duration
 	gcPeriod        time.Duration
 	recorder        record.EventRecorder
 	namer           negtypes.NetworkEndpointGroupNamer
@@ -216,7 +215,6 @@ func NewController(
 	negController := &Controller{
 		client:                        kubeClient,
 		manager:                       manager,
-		resyncPeriod:                  resyncPeriod,
 		gcPeriod:                      gcPeriod,
 		recorder:                      recorder,
 		zoneGetter:                    zoneGetter,

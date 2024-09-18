@@ -19,11 +19,12 @@ package translator
 import (
 	"encoding/json"
 	"fmt"
-	"k8s.io/klog/v2"
 	"os"
 	"reflect"
 	"testing"
 	"time"
+
+	"k8s.io/klog/v2"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -1136,14 +1137,6 @@ func gceURLMapFromFile(t *testing.T, filename string) *utils.GCEURLMap {
 	return v
 }
 
-func int64ToMap(l []int64) map[int64]bool {
-	ret := map[int64]bool{}
-	for _, i := range l {
-		ret[i] = true
-	}
-	return ret
-}
-
 func TestSetTrafficScaling(t *testing.T) {
 	// No t.Parallel()
 
@@ -1383,7 +1376,6 @@ func TestSetThcOptInOnSvc(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			translator := fakeTranslator()
-			translator.recorderGetter = healthchecks.NewFakeRecorderGetter(0)
 			translator.enableTHC = tc.enableTHC
 			sp := *tc.sp
 

@@ -60,8 +60,7 @@ const (
 )
 
 var (
-	metricsInterval = 10 * time.Minute
-	defaultBackend  = utils.ServicePort{
+	defaultBackend = utils.ServicePort{
 		ID: utils.ServicePortID{
 			Service: types.NamespacedName{
 				Name:      "default-http-backend",

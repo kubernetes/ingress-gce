@@ -29,7 +29,6 @@ import (
 	"k8s.io/ingress-gce/cmd/check-gke-ingress/app/report"
 	"k8s.io/ingress-gce/pkg/annotations"
 	beconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
-	feconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	beconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	feconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 )
@@ -48,8 +47,6 @@ const (
 )
 
 type IngressChecker struct {
-	// Kubernetes client
-	client clientset.Interface
 	// Ingress object to be checked
 	ingress *networkingv1.Ingress
 }
@@ -89,8 +86,6 @@ type FrontendConfigChecker struct {
 	namespace string
 	// Name of the frontendConfig
 	name string
-	// FrontendConfig object to be checked
-	feConfig *feconfigv1beta1.FrontendConfig
 }
 
 type ingressCheckFunc func(c *IngressChecker) (string, string, string)
@@ -250,14 +245,13 @@ func CheckHealthCheckTimeout(c *BackendConfigChecker) (string, string, string) {
 
 // CheckFrontendConfigExistence checks whether a FrontendConfig exists.
 func CheckFrontendConfigExistence(c *FrontendConfigChecker) (string, string, string) {
-	feConfig, err := c.client.NetworkingV1beta1().FrontendConfigs(c.namespace).Get(context.TODO(), c.name, metav1.GetOptions{})
+	_, err := c.client.NetworkingV1beta1().FrontendConfigs(c.namespace).Get(context.TODO(), c.name, metav1.GetOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			return FrontendConfigExistenceCheck, report.Failed, fmt.Sprintf("FrontendConfig %s/%s does not exist", c.namespace, c.name)
 		}
 		return FrontendConfigExistenceCheck, report.Failed, fmt.Sprintf("Failed to get frontendConfig %s/%s", c.namespace, c.name)
 	}
-	c.feConfig = feConfig
 	return FrontendConfigExistenceCheck, report.Passed, fmt.Sprintf("FrontendConfig %s/%s found", c.namespace, c.name)
 }
 

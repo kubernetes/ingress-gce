@@ -22,13 +22,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-const (
-	// Version strings for recording metrics.
-	computeV1Version    = "v1"
-	computeAlphaVersion = "alpha"
-	computeBetaVersion  = "beta"
-)
-
 type apiCallMetrics struct {
 	latency *prometheus.HistogramVec
 	errors  *prometheus.CounterVec
