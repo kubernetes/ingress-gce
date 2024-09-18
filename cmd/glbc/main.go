@@ -27,6 +27,7 @@ import (
 
 	firewallcrclient "github.com/GoogleCloudPlatform/gke-networking-api/client/gcpfirewall/clientset/versioned"
 	networkclient "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned"
+	nodetopologyclient "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned"
 	k8scp "github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	flag "github.com/spf13/pflag"
 	crdclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -204,6 +205,14 @@ func main() {
 		}
 	}
 
+	var nodeTopologyClient nodetopologyclient.Interface
+	if flags.F.EnableMultiSubnetClusterPhase1 {
+		nodeTopologyClient, err = nodetopologyclient.NewForConfig(kubeConfig)
+		if err != nil {
+			klog.Fatalf("Failed to create Node Topology Client: %v", err)
+		}
+	}
+
 	namer, err := app.NewNamer(kubeClient, flags.F.ClusterName, firewalls.DefaultFirewallName, rootLogger)
 	if err != nil {
 		klog.Fatalf("app.NewNamer(ctx.KubeClient, %q, %q) = %v", flags.F.ClusterName, firewalls.DefaultFirewallName, err)
@@ -256,7 +265,7 @@ func main() {
 		EnableWeightedL4NetLB:         flags.F.EnableWeightedL4NetLB,
 		DisableL4LBFirewall:           flags.F.DisableL4LBFirewall,
 	}
-	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, ingParamsClient, svcAttachmentClient, networkClient, eventRecorderKubeClient, cloud, namer, kubeSystemUID, ctxConfig, rootLogger)
+	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, ingParamsClient, svcAttachmentClient, networkClient, nodeTopologyClient, eventRecorderKubeClient, cloud, namer, kubeSystemUID, ctxConfig, rootLogger)
 	go app.RunHTTPServer(ctx.HealthCheck, rootLogger)
 
 	var once sync.Once

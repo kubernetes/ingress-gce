@@ -126,6 +126,10 @@ const (
 	DPDKUnsupported GKENetworkParamSetConditionReason = "DPDKUnsupported"
 	// GNPReady indicates that this GNP resource has been successfully validated and Ready=True
 	GNPReady GKENetworkParamSetConditionReason = "GNPReady"
+	// NetworkAttachmentInvalid indicates that the specified network attachment is invalid.
+	NetworkAttachmentInvalid GKENetworkParamSetConditionReason = "NetworkAttachmentInvalid"
+	// GNPConfigInvalid indicates that the GNP config has an invalid combination of fields specified.
+	GNPConfigInvalid GKENetworkParamSetConditionReason = "GNPConfigInvalid"
 )
 
 // GNPNetworkParamsReadyConditionReason defines the set of reasons that explains
@@ -136,6 +140,9 @@ const (
 	// L3SecondaryMissing indicates that the L3 type Network resource is
 	// referencing a GKENetworkParamSet with secondary range unspecified.
 	L3SecondaryMissing GNPNetworkParamsReadyConditionReason = "L3SecondaryMissing"
+	// NetworkAttachmentUnsupported indicates that the Network does not support
+	// referencing a GKENetworkParamSet with NetworkAttachment specified.
+	NetworkAttachmentUnsupported GNPNetworkParamsReadyConditionReason = "NetworkAttachmentUnsupported"
 	// DeviceModeMissing indicates that the Device type Network resource is
 	// referencing a GKENetworkParamSet with device mode unspecified.
 	DeviceModeMissing GNPNetworkParamsReadyConditionReason = "DeviceModeMissing"

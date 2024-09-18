@@ -3,7 +3,7 @@ module k8s.io/ingress-gce
 go 1.22.4
 
 require (
-	github.com/GoogleCloudPlatform/gke-networking-api v0.1.0
+	github.com/GoogleCloudPlatform/gke-networking-api v0.1.2-0.20240909212819-4b1bab7c69ea
 	github.com/GoogleCloudPlatform/k8s-cloud-provider v1.32.0
 	github.com/go-logr/logr v1.4.1
 	github.com/golang/protobuf v1.5.4

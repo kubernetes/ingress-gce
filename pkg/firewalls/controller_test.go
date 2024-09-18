@@ -54,7 +54,7 @@ func newFirewallController() *FirewallController {
 		ResyncPeriod:          1 * time.Minute,
 		DefaultBackendSvcPort: test.DefaultBeSvcPort,
 	}
-	ctx := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, firewallClient, nil, nil, nil, nil, kubeClient /*kube client to be used for events*/, fakeGCE, defaultNamer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
+	ctx := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, firewallClient, nil, nil, nil, nil, nil, kubeClient /*kube client to be used for events*/, fakeGCE, defaultNamer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
 	fwc := NewFirewallController(ctx, []string{"30000-32767"}, false, false, true, make(chan struct{}), klog.TODO())
 	fwc.hasSynced = func() bool { return true }
 

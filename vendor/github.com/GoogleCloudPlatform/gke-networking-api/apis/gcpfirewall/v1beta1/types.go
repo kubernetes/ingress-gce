@@ -31,6 +31,7 @@ type CIDR string
 // +genclient
 // +genclient:nonNamespaced
 // +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
 // +kubebuilder:resource:shortName=gf,scope=Cluster
 
 // GCPFirewall describes a GCP firewall spec that can be used to configure GCE
