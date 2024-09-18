@@ -769,8 +769,12 @@ func (s *transactionSyncer) logEndpoints(endpointMap map[string]negtypes.Network
 	s.logger.V(3).Info("Endpoints for NEG", "description", desc, "endpointMap", endpointMap)
 }
 
-// updateInitStatus queries the k8s api server for the current NEG CR and updates the Initialized condition and neg objects as appropriate.
-// If neg client is nil, will return immediately
+// updateInitStatus takes in the NEG refs based on the existing node zones,
+// then queries the k8s api server for the current NEG CR and updates the
+// Initialized condition and neg objects as appropriate.
+// Before patching the NEG CR, it also includes NEG refs for NEGs are no longer
+// needed and change status as INACTIVE.
+// If neg client is nil, will return immediately.
 func (s *transactionSyncer) updateInitStatus(negObjRefs []negv1beta1.NegObjectReference, errList []error) {
 	if s.svcNegClient == nil {
 		return
@@ -784,6 +788,8 @@ func (s *transactionSyncer) updateInitStatus(negObjRefs []negv1beta1.NegObjectRe
 	}
 
 	neg := origNeg.DeepCopy()
+	inactiveNegObjRefs := getInactiveNegRefs(origNeg.Status.NetworkEndpointGroups, negObjRefs, s.logger)
+	negObjRefs = append(negObjRefs, inactiveNegObjRefs...)
 	neg.Status.NetworkEndpointGroups = negObjRefs
 
 	initializedCondition := getInitializedCondition(utilerrors.NewAggregate(errList))
@@ -915,6 +921,41 @@ func ensureCondition(neg *negv1beta1.ServiceNetworkEndpointGroup, expectedCondit
 
 	neg.Status.Conditions[index] = expectedCondition
 	return expectedCondition
+}
+
+// getInactiveNegRefs creates NEG references for NEGs in Inactive State.
+// Inactive NEG are NEGs that are no longer needed.
+func getInactiveNegRefs(oldNegRefs []negv1beta1.NegObjectReference, currentNegRefs []negv1beta1.NegObjectReference, logger klog.Logger) []negv1beta1.NegObjectReference {
+	activeNegs := make(map[negtypes.NegInfo]struct{})
+	for _, negRef := range currentNegRefs {
+		negInfo, err := negtypes.NegInfoFromNegRef(negRef)
+		if err != nil {
+			logger.Error(err, "Failed to extract name and zone information of a neg from the current snapshot", "negId", negRef.Id, "negSelfLink", negRef.SelfLink)
+			continue
+		}
+		activeNegs[negInfo] = struct{}{}
+	}
+
+	var inactiveNegRefs []negv1beta1.NegObjectReference
+	for _, origNegRef := range oldNegRefs {
+		negInfo, err := negtypes.NegInfoFromNegRef(origNegRef)
+		if err != nil {
+			logger.Error(err, "Failed to extract name and zone information of a neg from the previous snapshot, skipping validating if it is an Inactive NEG", "negId", origNegRef.Id, "negSelfLink", origNegRef.SelfLink)
+			continue
+		}
+
+		// NEGs are listed based on the current node zones. If a NEG no longer
+		// exists in the current list, it means there are no nodes/endpoints
+		// in that specific zone, and we mark it as INACTIVE.
+		// We use SelfLink as identifier since it contains the unique NEG zone
+		// and name pair.
+		if _, exists := activeNegs[negInfo]; !exists {
+			inactiveNegRef := origNegRef.DeepCopy()
+			inactiveNegRef.State = negv1beta1.InactiveState
+			inactiveNegRefs = append(inactiveNegRefs, *inactiveNegRef)
+		}
+	}
+	return inactiveNegRefs
 }
 
 // getSyncedCondition returns the expected synced condition based on given error

@@ -35,11 +35,13 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	apitypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
@@ -47,6 +49,7 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/types"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
+	negfake "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
@@ -1189,7 +1192,10 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 		expectNegGC          bool
 		expectCrGC           bool
 		expectErr            bool
-		gcError              error
+		negGCError           error
+		negGCErrorZone       []string
+		negCrGCError         error
+		expectedNegCount     int
 
 		// expectGenNamedNegGC indicates that the Neg GC only occurs if using a generated name
 		// expectNegGC will take precedence over this value
@@ -1250,6 +1256,7 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 			expectNegGC:       false,
 			expectCrGC:        true,
 			negDesc:           wrongDesc.String(),
+			expectedNegCount:  2,
 		},
 		{desc: "neg config not in svcPortMap, empty neg list, neg has empty description",
 			negsExist:           true,
@@ -1258,6 +1265,7 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 			expectGenNamedNegGC: true,
 			expectCrGC:          true,
 			negDesc:             "",
+			expectedNegCount:    2,
 		},
 		{desc: "neg config in svcPortMap, marked for deletion",
 			negsExist:         true,
@@ -1265,6 +1273,7 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 			desiredConfig:     true,
 			expectNegGC:       false,
 			expectCrGC:        false,
+			expectedNegCount:  2,
 		},
 		{desc: "neg config in svcPortMap",
 			negsExist:         true,
@@ -1272,6 +1281,7 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 			desiredConfig:     true,
 			expectNegGC:       false,
 			expectCrGC:        false,
+			expectedNegCount:  2,
 		},
 		{desc: "negs don't exist, config not in svcPortMap",
 			negsExist:         false,
@@ -1288,16 +1298,38 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 			markedForDeletion: true,
 			expectCrGC:        true,
 			expectErr:         false,
-			gcError:           &googleapi.Error{Code: http.StatusBadRequest},
+			negGCError:        &googleapi.Error{Code: http.StatusBadRequest},
+			negGCErrorZone:    []string{negtypes.TestZone1, negtypes.TestZone2},
 			negDesc:           matchingDesc.String(),
 		},
-		{desc: "error during neg gc, config not in svcPortMap",
+		{desc: "error on all NEG deletions during neg gc, config not in svcPortMap, NEG CR should still have all NEG ref",
 			negsExist:         true,
 			markedForDeletion: true,
 			expectCrGC:        true,
 			expectErr:         true,
-			gcError:           fmt.Errorf("gc-error"),
+			negGCError:        fmt.Errorf("neg-gc-error"),
+			negGCErrorZone:    []string{negtypes.TestZone1, negtypes.TestZone2},
 			negDesc:           matchingDesc.String(),
+			expectedNegCount:  2,
+		},
+		{desc: "error on one NEG deletion during neg gc, config not in svcPortMap, NEG CR should not have the deleted NEG ref",
+			negsExist:         true,
+			markedForDeletion: true,
+			expectCrGC:        true,
+			expectErr:         true,
+			negGCError:        fmt.Errorf("neg-gc-error"),
+			negGCErrorZone:    []string{negtypes.TestZone1},
+			negDesc:           matchingDesc.String(),
+			expectedNegCount:  1,
+		},
+		{desc: "error when deleting NEG CR during neg gc, config not in svcPortMap, NEG CR should not have any stale NEG ref",
+			negsExist:         true,
+			markedForDeletion: false, // Make sure deletion timestamp is not set so we will trigger error when delete NEG CR
+			expectErr:         true,
+			expectCrGC:        false, // NEG CR deletion should fail due to error from deletion API call
+			negCrGCError:      fmt.Errorf("neg-cr-gc-error"),
+			negDesc:           matchingDesc.String(),
+			expectedNegCount:  0,
 		},
 	}
 
@@ -1309,6 +1341,13 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 					kubeClient := fake.NewSimpleClientset()
 					manager, testCloud := NewTestSyncerManager(kubeClient)
 					svcNegClient := manager.svcNegClient
+
+					if tc.negCrGCError != nil {
+						svcNegClientFake := svcNegClient.(*negfake.Clientset)
+						svcNegClientFake.PrependReactor("delete", "servicenetworkendpointgroups", func(action k8stesting.Action) (handled bool, ret runtime.Object, err error) {
+							return true, &negv1beta1.ServiceNetworkEndpointGroup{}, tc.negCrGCError
+						})
+					}
 
 					manager.serviceLister.Add(svc)
 					fakeNegCloud := manager.cloud
@@ -1349,7 +1388,7 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 					}
 
 					if _, err := manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(cr.Namespace).Create(context2.TODO(), &cr, metav1.CreateOptions{}); err != nil {
-						t.Fatalf("failed to create neg cr")
+						t.Fatalf("failed to create neg cr: %v", err)
 					}
 
 					crs := getNegCRs(t, svcNegClient, testServiceNamespace)
@@ -1370,19 +1409,20 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 						}
 					}
 
-					if tc.gcError != nil {
+					if tc.negGCError != nil {
 						mockCloud := testCloud.Compute().(*cloud.MockGCE)
 						mockNEG := mockCloud.NetworkEndpointGroups().(*cloud.MockNetworkEndpointGroups)
 
-						for _, zone := range []string{negtypes.TestZone1, negtypes.TestZone2} {
-							mockNEG.DeleteError[*meta.ZonalKey(negName, zone)] = tc.gcError
+						for _, zone := range tc.negGCErrorZone {
+							mockNEG.DeleteError[*meta.ZonalKey(negName, zone)] = tc.negGCError
 						}
 					}
 
 					err := manager.GC()
 					if !tc.expectErr && err != nil {
 						t.Fatalf("failed to GC: %v", err)
-					} else if tc.expectErr && err == nil {
+					}
+					if tc.expectErr && err == nil {
 						t.Errorf("expected GC to error")
 					}
 
@@ -1391,13 +1431,14 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 						t.Errorf("failed getting negs from cloud: %s", err)
 					}
 
-					numExistingNegs, negsDeleted := checkForNegDeletions(negs, negName)
+					numExistingNegs := checkForNegDeletions(negs, negName)
 
 					expectNegGC := tc.expectNegGC || (tc.expectGenNamedNegGC && !customName)
-					if tc.negsExist && expectNegGC && !negsDeleted {
+					if tc.negsExist && expectNegGC && numExistingNegs != 0 {
 						t.Errorf("expected negs to be GCed, but found %d", numExistingNegs)
-					} else if tc.negsExist && !expectNegGC && numExistingNegs != 2 {
-						t.Errorf("expected two negs in the cloud, but found %d", numExistingNegs)
+					}
+					if tc.negsExist && !expectNegGC && numExistingNegs != tc.expectedNegCount {
+						t.Errorf("expected %d negs in the cloud, but found %d", tc.expectedNegCount, numExistingNegs)
 					}
 
 					crs = getNegCRs(t, svcNegClient, testServiceNamespace)
@@ -1405,7 +1446,8 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 
 					if tc.expectCrGC && !crDeleted {
 						t.Errorf("expected neg %s to be deleted", negName)
-					} else if !tc.expectCrGC && crDeleted && !tc.markedForDeletion {
+					}
+					if !tc.expectCrGC && crDeleted && !tc.markedForDeletion {
 						t.Errorf("expected neg %s to not be deleted", negName)
 					}
 				}
@@ -1559,8 +1601,8 @@ func getNegObjectRefs(t *testing.T, cloud negtypes.NetworkEndpointGroupCloud, zo
 	return negRefs
 }
 
-// checkForNegDeletions checks that negs does not have a neg with the provided negName. If none exists, returns true, otherwise returns false the number of negs found with the name
-func checkForNegDeletions(negs map[*meta.Key]*composite.NetworkEndpointGroup, negName string) (int, bool) {
+// checkForNegDeletions gets the count of neg objects in negs that has the provided negName.
+func checkForNegDeletions(negs map[*meta.Key]*composite.NetworkEndpointGroup, negName string) int {
 	foundNegs := 0
 	for _, neg := range negs {
 		if neg.Name == negName {
@@ -1568,7 +1610,7 @@ func checkForNegDeletions(negs map[*meta.Key]*composite.NetworkEndpointGroup, ne
 		}
 	}
 
-	return foundNegs, foundNegs == 0
+	return foundNegs
 }
 
 // checkForNegCRDeletion verifies that either no cr with name `negName` exists or a cr withe name `negName` has its deletion timestamp set

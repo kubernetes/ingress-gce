@@ -616,6 +616,9 @@ func (manager *syncerManager) processNEGDeletionCandidate(svcNegCR *negv1beta1.S
 	var errList []error
 	shouldDeleteNegCR := true
 	deleteByZone := len(svcNegCR.Status.NetworkEndpointGroups) == 0
+	// Change this to a map from NEG name to sets once we allow multiple NEGs
+	// in a specific zone(multi-subnet cluster).
+	deletedNegs := make(map[negtypes.NegInfo]struct{})
 
 	for _, negRef := range svcNegCR.Status.NetworkEndpointGroups {
 		resourceID, err := cloud.ParseResourceURL(negRef.SelfLink)
@@ -624,14 +627,34 @@ func (manager *syncerManager) processNEGDeletionCandidate(svcNegCR *negv1beta1.S
 			deleteByZone = true
 			continue
 		}
-
-		shouldDeleteNegCR = shouldDeleteNegCR && manager.deleteNegOrReportErr(resourceID.Key.Name, resourceID.Key.Zone, svcNegCR, &errList)
+		negDeleted := manager.deleteNegOrReportErr(resourceID.Key.Name, resourceID.Key.Zone, svcNegCR, &errList)
+		if negDeleted {
+			deletedNegs[negtypes.NegInfo{Name: resourceID.Key.Name, Zone: resourceID.Key.Zone}] = struct{}{}
+		}
+		shouldDeleteNegCR = shouldDeleteNegCR && negDeleted
 	}
 
 	if deleteByZone {
 		manager.logger.V(2).Info("Deletion candidate has 0 NEG reference", "svcneg", klog.KObj(svcNegCR), "svcNegCR", svcNegCR)
 		for _, zone := range zones {
-			shouldDeleteNegCR = shouldDeleteNegCR && manager.deleteNegOrReportErr(svcNegCR.Name, zone, svcNegCR, &errList)
+			negDeleted := manager.deleteNegOrReportErr(svcNegCR.Name, zone, svcNegCR, &errList)
+			if negDeleted {
+				deletedNegs[negtypes.NegInfo{Name: svcNegCR.Name, Zone: zone}] = struct{}{}
+			}
+			shouldDeleteNegCR = shouldDeleteNegCR && negDeleted
+		}
+	}
+	// Since no more NEG deletion will be happening at this point, and NEG
+	// CR will not be deleted, clear the reference for deleted NEGs in the
+	// NEG CR.
+	if len(deletedNegs) != 0 {
+		updatedCR := svcNegCR.DeepCopy()
+
+		if errs := ensureExistingNegRef(updatedCR, deletedNegs); len(errs) != 0 {
+			errList = append(errList, errs...)
+		}
+		if _, err := patchNegStatus(manager.svcNegClient, *svcNegCR, *updatedCR); err != nil {
+			errList = append(errList, err)
 		}
 	}
 
@@ -655,9 +678,13 @@ func (manager *syncerManager) processNEGDeletionCandidate(svcNegCR *negv1beta1.S
 		}
 
 		manager.logger.V(2).Info("Deleting NEG CR", "svcneg", klog.KObj(svcNegCR))
-		if err := deleteSvcNegCR(manager.svcNegClient, svcNegCR, manager.logger); err != nil {
+		err := deleteSvcNegCR(manager.svcNegClient, svcNegCR, manager.logger)
+		if err != nil {
+			manager.logger.V(2).Error(err, "Error when deleting NEG CR", "svcneg", klog.KObj(svcNegCR))
 			errList = append(errList, err)
+			return
 		}
+		manager.logger.V(2).Info("Deleted NEG CR", "svcneg", klog.KObj(svcNegCR))
 	}()
 
 	return errList
@@ -683,6 +710,25 @@ func (manager *syncerManager) deleteNegOrReportErr(name, zone string, svcNegCR *
 	}
 
 	return true
+}
+
+// ensureExistingNegRef removes NEG refs in NEG CR for NEGs that have been
+// deleted successfully.
+func ensureExistingNegRef(neg *negv1beta1.ServiceNetworkEndpointGroup, deletedNegs map[negtypes.NegInfo]struct{}) []error {
+	var updatedNegRef []negv1beta1.NegObjectReference
+	var errList []error
+	for _, negRef := range neg.Status.NetworkEndpointGroups {
+		negInfo, err := negtypes.NegInfoFromNegRef(negRef)
+		if err != nil {
+			errList = append(errList, err)
+			continue
+		}
+		if _, exists := deletedNegs[negInfo]; !exists {
+			updatedNegRef = append(updatedNegRef, negRef)
+		}
+	}
+	neg.Status.NetworkEndpointGroups = updatedNegRef
+	return errList
 }
 
 // ensureDeleteNetworkEndpointGroup ensures neg is delete from zone
