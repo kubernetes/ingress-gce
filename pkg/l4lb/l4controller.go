@@ -606,6 +606,7 @@ func (l4c *L4Controller) publishMetrics(result *loadbalancers.L4ILBSyncResult, n
 		if result.MetricsState.Multinetwork {
 			l4metrics.PublishL4ILBMultiNetSyncLatency(result.Error == nil, result.SyncType, result.StartTime, isResync)
 		}
+		l4metrics.PublishL4SyncDetails(l4ILBControllerName, result.Error == nil, isResync, result.ResourceUpdates.WereAnyResourcesModified())
 
 	case loadbalancers.SyncTypeDelete:
 		// if service is successfully deleted, remove it from cache
