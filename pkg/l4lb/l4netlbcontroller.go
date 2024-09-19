@@ -27,6 +27,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -78,6 +79,7 @@ type L4NetLBController struct {
 	forwardingRules             ForwardingRulesGetter
 	enableDualStack             bool
 	enableStrongSessionAffinity bool
+	hasSynced                   func() bool
 }
 
 // NewL4NetLBController creates a controller for l4 external loadbalancer.
@@ -103,6 +105,7 @@ func NewL4NetLBController(
 		forwardingRules:             forwardingrules.New(ctx.Cloud, meta.VersionGA, meta.Regional),
 		enableDualStack:             ctx.EnableL4NetLBDualStack,
 		enableStrongSessionAffinity: ctx.EnableL4StrongSessionAffinity,
+		hasSynced:                   ctx.HasSynced,
 	}
 	var networkLister cache.Indexer
 	if ctx.NetworkInformer != nil {
@@ -402,7 +405,13 @@ func (lc *L4NetLBController) checkHealth() error {
 // Run starts the loadbalancer controller.
 func (lc *L4NetLBController) Run() {
 	defer lc.shutdown()
-	klog.Infof("Starting l4NetLBController")
+
+	wait.PollUntil(5*time.Second, func() (bool, error) {
+		klog.Infof("Waiting for initial cache sync before starting L4 Net LB Controller")
+		return lc.hasSynced(), nil
+	}, lc.stopCh)
+
+	klog.Infof("Running L4 Net Controller", "numWorkers", lc.ctx.NumL4NetLBWorkers)
 	lc.svcQueue.Run()
 
 	<-lc.stopCh
