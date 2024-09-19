@@ -211,7 +211,7 @@ func (l7 *L7) getEffectiveIP() (string, bool, error) {
 
 // ensureIPv4ForwardingRule creates a forwarding rule with the given name, if it does not exist. It updates the existing
 // forwarding rule if needed.
-func (l4 *L4) ensureIPv4ForwardingRule(bsLink string, options gce.ILBOptions, existingFwdRule *composite.ForwardingRule, subnetworkURL, ipToUse string) (*composite.ForwardingRule, error) {
+func (l4 *L4) ensureIPv4ForwardingRule(bsLink string, options gce.ILBOptions, existingFwdRule *composite.ForwardingRule, subnetworkURL, ipToUse string) (*composite.ForwardingRule, utils.ResourceSyncStatus, error) {
 	start := time.Now()
 
 	// version used for creating the existing forwarding rule.
@@ -231,7 +231,7 @@ func (l4 *L4) ensureIPv4ForwardingRule(bsLink string, options gce.ILBOptions, ex
 	frDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(l4.Service.Namespace, l4.Service.Name), ipToUse,
 		version, false, utils.ILB)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to compute description for forwarding rule %s, err: %w", frName,
+		return nil, utils.ResourceResync, fmt.Errorf("Failed to compute description for forwarding rule %s, err: %w", frName,
 			err)
 	}
 
@@ -257,12 +257,12 @@ func (l4 *L4) ensureIPv4ForwardingRule(bsLink string, options gce.ILBOptions, ex
 	if existingFwdRule != nil {
 		equal, err := Equal(existingFwdRule, newFwdRule)
 		if err != nil {
-			return nil, err
+			return nil, utils.ResourceResync, err
 		}
 		if equal {
 			// nothing to do
 			frLogger.V(2).Info("ensureIPv4ForwardingRule: Skipping update of unchanged forwarding rule")
-			return existingFwdRule, nil
+			return existingFwdRule, utils.ResourceResync, nil
 		}
 		frDiff := cmp.Diff(existingFwdRule, newFwdRule)
 		frLogger.V(2).Info("ensureIPv4ForwardingRule: forwarding rule changed.",
@@ -271,29 +271,29 @@ func (l4 *L4) ensureIPv4ForwardingRule(bsLink string, options gce.ILBOptions, ex
 		filtered, patchable := filterPatchableFields(existingFwdRule, newFwdRule)
 		if patchable {
 			if err = l4.forwardingRules.Patch(filtered); err != nil {
-				return nil, err
+				return nil, utils.ResourceUpdate, err
 			}
 			l4.recorder.Eventf(l4.Service, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %s patched", existingFwdRule.Name)
 		} else {
 			if err := l4.updateForwardingRule(existingFwdRule, newFwdRule, frLogger); err != nil {
-				return nil, err
+				return nil, utils.ResourceUpdate, err
 			}
 		}
 	} else {
 		if err = l4.createFwdRule(newFwdRule, frLogger); err != nil {
-			return nil, err
+			return nil, utils.ResourceUpdate, err
 		}
 		l4.recorder.Eventf(l4.Service, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %s created", newFwdRule.Name)
 	}
 
 	readFwdRule, err := l4.forwardingRules.Get(newFwdRule.Name)
 	if err != nil {
-		return nil, err
+		return nil, utils.ResourceUpdate, err
 	}
 	if readFwdRule == nil {
-		return nil, fmt.Errorf("Forwarding Rule %s not found", frName)
+		return nil, utils.ResourceUpdate, fmt.Errorf("Forwarding Rule %s not found", frName)
 	}
-	return readFwdRule, nil
+	return readFwdRule, utils.ResourceUpdate, nil
 }
 
 func (l4 *L4) updateForwardingRule(existingFwdRule, newFr *composite.ForwardingRule, frLogger klog.Logger) error {

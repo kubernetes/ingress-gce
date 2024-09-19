@@ -656,41 +656,6 @@ func TestL4CreateExternalForwardingRuleUpdate(t *testing.T) {
 			},
 			wantUpdate: utils.ResourceUpdate,
 		},
-		{
-			desc: "network mismatch error",
-			svc: &corev1.Service{
-				ObjectMeta: metav1.ObjectMeta{Name: serviceName, Namespace: serviceNamespace, UID: types.UID("1"), Annotations: map[string]string{annotations.NetworkTierAnnotationKey: string(cloud.NetworkTierStandard)}},
-				Spec: corev1.ServiceSpec{
-					Ports: []corev1.ServicePort{
-						{
-							Port:     8080,
-							Protocol: corev1.ProtocolTCP,
-						},
-					},
-					Type: "LoadBalancer",
-				},
-			},
-			existingRule: &composite.ForwardingRule{
-				PortRange:           "8080-8080",
-				IPProtocol:          "TCP",
-				LoadBalancingScheme: string(cloud.SchemeExternal),
-				NetworkTier:         cloud.NetworkTierDefault.ToGCEValue(),
-				Version:             meta.VersionGA,
-				BackendService:      bsLink,
-				Description:         l4ServiceDescription(t, serviceName, serviceNamespace, "", utils.XLB),
-			},
-			wantRule: &composite.ForwardingRule{
-				PortRange:           "8080-8080",
-				IPProtocol:          "TCP",
-				LoadBalancingScheme: string(cloud.SchemeExternal),
-				NetworkTier:         cloud.NetworkTierDefault.ToGCEValue(),
-				Version:             meta.VersionGA,
-				BackendService:      bsLink,
-				Description:         l4ServiceDescription(t, serviceName, serviceNamespace, "", utils.XLB),
-			},
-			wantUpdate: utils.ResourceResync,
-			wantErrMsg: "Network tier mismatch for resource",
-		},
 	}
 
 	for _, tc := range testCases {
@@ -759,7 +724,7 @@ func TestL4EnsureIPv4ForwardingRuleAddressAlreadyInUse(t *testing.T) {
 	fakeGCE.ReserveRegionAddress(addr, fakeGCE.Region())
 	insertError := &googleapi.Error{Code: http.StatusConflict, Message: "IP_IN_USE_BY_ANOTHER_RESOURCE - IP '10.107.116.14' is already being used by another resource."}
 	fakeGCE.Compute().(*cloud.MockGCE).MockForwardingRules.InsertHook = test.InsertForwardingRuleErrorHook(insertError)
-	_, err := l4.ensureIPv4ForwardingRule("link", gce.ILBOptions{}, nil, "subnetworkX", "1.1.1.1")
+	_, _, err := l4.ensureIPv4ForwardingRule("link", gce.ILBOptions{}, nil, "subnetworkX", "1.1.1.1")
 
 	require.Error(t, err)
 	assert.True(t, utils.IsIPConfigurationError(err))
@@ -801,8 +766,9 @@ func TestL4EnsureIPv4ForwardingRule(t *testing.T) {
 	ipToUse := "1.1.1.1"
 	bsLink := "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1"
 
-	forwardingRule, err := l4.ensureIPv4ForwardingRule(bsLink, gce.ILBOptions{}, nil, subnetworkURL, ipToUse)
+	forwardingRule, syncStatus, err := l4.ensureIPv4ForwardingRule(bsLink, gce.ILBOptions{}, nil, subnetworkURL, ipToUse)
 	require.NoError(t, err)
+	require.Equal(t, utils.ResourceUpdate, syncStatus)
 
 	wantForwardingRule := &composite.ForwardingRule{
 		Name:                l4namer.L4ForwardingRule(serviceNamespace, serviceName, "tcp"),
@@ -831,4 +797,148 @@ func l4ServiceDescription(t *testing.T, svcName, svcNamespace, ipToUse string, l
 		t.Errorf("utils.MakeL4LBServiceDescription() failed, err=%v", err)
 	}
 	return description
+}
+
+func TestL4EnsureInternalForwardingRuleUpdate(t *testing.T) {
+	serviceNamespace := "testNs"
+	serviceName := "testSvc"
+	l4namer := namer.NewL4Namer("test", namer.NewNamer("testCluster", "testFirewall", klog.TODO()))
+
+	bsLink := "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1"
+	networkURL := "https://www.googleapis.com/compute/v1/projects/test-poject/global/networks/test-vpc"
+	subnetworkURL := "https://www.googleapis.com/compute/v1/projects/test-poject/regions/us-central1/subnetworks/default-subnet"
+
+	testCases := []struct {
+		desc         string
+		svc          *corev1.Service
+		namedAddress *compute.Address
+		existingRule *composite.ForwardingRule
+		wantRule     *composite.ForwardingRule
+		wantUpdate   utils.ResourceSyncStatus
+		wantErrMsg   string
+	}{
+		{
+			desc: "no update",
+			svc: &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{Name: serviceName, Namespace: serviceNamespace, UID: types.UID("1")},
+				Spec: corev1.ServiceSpec{
+					Ports: []corev1.ServicePort{
+						{
+							Port:     8080,
+							Protocol: corev1.ProtocolTCP,
+						},
+					},
+					Type: "LoadBalancer",
+				},
+			},
+			existingRule: &composite.ForwardingRule{
+				Ports:               []string{"8080"},
+				IPProtocol:          "TCP",
+				LoadBalancingScheme: string(cloud.SchemeInternal),
+				NetworkTier:         cloud.NetworkTierDefault.ToGCEValue(),
+				Version:             meta.VersionGA,
+				Network:             networkURL,
+				Subnetwork:          subnetworkURL,
+				BackendService:      bsLink,
+				Description:         l4ServiceDescription(t, serviceName, serviceNamespace, "", utils.ILB),
+			},
+			wantRule: &composite.ForwardingRule{
+				Ports:               []string{"8080"},
+				IPProtocol:          "TCP",
+				LoadBalancingScheme: string(cloud.SchemeInternal),
+				NetworkTier:         cloud.NetworkTierDefault.ToGCEValue(),
+				Version:             meta.VersionGA,
+				Network:             networkURL,
+				Subnetwork:          subnetworkURL,
+				BackendService:      bsLink,
+				Description:         l4ServiceDescription(t, serviceName, serviceNamespace, "", utils.ILB),
+			},
+			wantUpdate: utils.ResourceResync,
+		},
+		{
+			desc: "update ports",
+			svc: &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{Name: serviceName, Namespace: serviceNamespace, UID: types.UID("1")},
+				Spec: corev1.ServiceSpec{
+					Ports: []corev1.ServicePort{
+						{
+							Port:     8080,
+							Protocol: corev1.ProtocolTCP,
+						},
+						{
+							Port:     8082,
+							Protocol: corev1.ProtocolTCP,
+						},
+					},
+					Type: "LoadBalancer",
+				},
+			},
+			existingRule: &composite.ForwardingRule{
+				Ports:               []string{"8080"},
+				IPProtocol:          "TCP",
+				LoadBalancingScheme: string(cloud.SchemeInternal),
+				NetworkTier:         cloud.NetworkTierDefault.ToGCEValue(),
+				Version:             meta.VersionGA,
+				Network:             networkURL,
+				Subnetwork:          subnetworkURL,
+				BackendService:      bsLink,
+				Description:         l4ServiceDescription(t, serviceName, serviceNamespace, "", utils.ILB),
+			},
+			wantRule: &composite.ForwardingRule{
+				Ports:               []string{"8080", "8082"},
+				IPProtocol:          "TCP",
+				LoadBalancingScheme: string(cloud.SchemeInternal),
+				NetworkTier:         cloud.NetworkTierDefault.ToGCEValue(),
+				Version:             meta.VersionGA,
+				Network:             networkURL,
+				Subnetwork:          subnetworkURL,
+				BackendService:      bsLink,
+				Description:         l4ServiceDescription(t, serviceName, serviceNamespace, "", utils.ILB),
+			},
+			wantUpdate: utils.ResourceUpdate,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+			l4 := &L4{
+				cloud:           fakeGCE,
+				forwardingRules: forwardingrules.New(fakeGCE, meta.VersionGA, meta.Regional, klog.TODO()),
+				namer:           l4namer,
+				Service:         tc.svc,
+				network: network.NetworkInfo{
+					IsDefault:     true,
+					NetworkURL:    networkURL,
+					SubnetworkURL: subnetworkURL,
+				},
+				recorder: &record.FakeRecorder{},
+			}
+			tc.wantRule.Name = l4.GetFRName()
+			tc.existingRule.Name = l4.GetFRName()
+			if tc.namedAddress != nil {
+				fakeGCE.ReserveRegionAddress(tc.namedAddress, fakeGCE.Region())
+			}
+			fr, updated, err := l4.ensureIPv4ForwardingRule(bsLink, gce.ILBOptions{}, tc.existingRule, subnetworkURL, "")
+
+			if err != nil && tc.wantErrMsg == "" {
+				t.Errorf("ensureIPv4ForwardingRule() err=%v", err)
+			}
+			if tc.wantErrMsg != "" {
+				if err == nil {
+					t.Errorf("ensureIPv4ForwardingRule() wanted error with msg=%q but got none", tc.wantErrMsg)
+				} else if !strings.Contains(err.Error(), tc.wantErrMsg) {
+					t.Errorf("ensureIPv4ForwardingRule() wanted error with msg=%q but got err=%v", tc.wantErrMsg, err)
+				}
+				return
+			}
+			if updated != tc.wantUpdate {
+				t.Errorf("ensureIPv4ForwardingRule() wanted updated=%v but got=%v", tc.wantUpdate, updated)
+			}
+
+			if diff := cmp.Diff(tc.wantRule, fr, cmpopts.IgnoreFields(composite.ForwardingRule{}, "SelfLink", "Region", "Scope")); diff != "" {
+				t.Errorf("ensureIPv4ForwardingRule() diff -want +got\n%v\n", diff)
+			}
+		})
+	}
 }

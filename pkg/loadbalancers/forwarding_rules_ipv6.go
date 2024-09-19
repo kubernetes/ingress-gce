@@ -40,12 +40,12 @@ const (
 	prefix96range = "/96"
 )
 
-func (l4 *L4) ensureIPv6ForwardingRule(bsLink string, options gce.ILBOptions, existingIPv6FwdRule *composite.ForwardingRule, ipv6AddressToUse string) (*composite.ForwardingRule, error) {
+func (l4 *L4) ensureIPv6ForwardingRule(bsLink string, options gce.ILBOptions, existingIPv6FwdRule *composite.ForwardingRule, ipv6AddressToUse string) (*composite.ForwardingRule, utils.ResourceSyncStatus, error) {
 	start := time.Now()
 
 	expectedIPv6FwdRule, err := l4.buildExpectedIPv6ForwardingRule(bsLink, options, ipv6AddressToUse)
 	if err != nil {
-		return nil, fmt.Errorf("l4.buildExpectedIPv6ForwardingRule(%s, %v, %s) returned error %w, want nil", bsLink, options, ipv6AddressToUse, err)
+		return nil, utils.ResourceResync, fmt.Errorf("l4.buildExpectedIPv6ForwardingRule(%s, %v, %s) returned error %w, want nil", bsLink, options, ipv6AddressToUse, err)
 	}
 
 	frLogger := l4.svcLogger.WithValues("forwardingRuleName", expectedIPv6FwdRule.Name)
@@ -57,26 +57,26 @@ func (l4 *L4) ensureIPv6ForwardingRule(bsLink string, options gce.ILBOptions, ex
 	if existingIPv6FwdRule != nil {
 		equal, err := EqualIPv6ForwardingRules(existingIPv6FwdRule, expectedIPv6FwdRule)
 		if err != nil {
-			return existingIPv6FwdRule, err
+			return existingIPv6FwdRule, utils.ResourceResync, err
 		}
 		if equal {
 			frLogger.V(2).Info("ensureIPv6ForwardingRule: Skipping update of unchanged ipv6 forwarding rule")
-			return existingIPv6FwdRule, nil
+			return existingIPv6FwdRule, utils.ResourceResync, nil
 		}
 		err = l4.deleteChangedIPv6ForwardingRule(existingIPv6FwdRule, expectedIPv6FwdRule)
 		if err != nil {
-			return nil, err
+			return nil, utils.ResourceUpdate, err
 		}
 	}
 
 	frLogger.V(2).Info("ensureIPv6ForwardingRule: Creating/Recreating forwarding rule")
 	err = l4.forwardingRules.Create(expectedIPv6FwdRule)
 	if err != nil {
-		return nil, err
+		return nil, utils.ResourceUpdate, err
 	}
 
 	createdFr, err := l4.forwardingRules.Get(expectedIPv6FwdRule.Name)
-	return createdFr, err
+	return createdFr, utils.ResourceUpdate, err
 }
 
 func (l4 *L4) buildExpectedIPv6ForwardingRule(bsLink string, options gce.ILBOptions, ipv6AddressToUse string) (*composite.ForwardingRule, error) {

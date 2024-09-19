@@ -480,6 +480,12 @@ func (l4c *L4Controller) sync(key string, svcLogger klog.Logger) error {
 			// result will be nil if the service was ignored(due to presence of service controller finalizer).
 			return nil
 		}
+		svcLogger.V(3).Info("Resources modified in the sync", "modifiedResources", result.ResourceUpdates.String(), "wasResync", isResync)
+		if isResync {
+			if result.ResourceUpdates.WereAnyResourcesModified() {
+				svcLogger.V(3).Error(nil, "Resources were modified but this was not expected for a resync.", "modifiedResources", result.ResourceUpdates.String())
+			}
+		}
 		l4c.publishMetrics(result, namespacedName, isResync, svcLogger)
 		l4c.serviceVersions.SetProcessed(key, svc.ResourceVersion, result.Error == nil, isResync, svcLogger)
 		return skipUserError(result.Error, svcLogger)
