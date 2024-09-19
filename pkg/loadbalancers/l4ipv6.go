@@ -34,7 +34,8 @@ import (
 // - IPv6 Firewall
 // it also adds IPv6 address to LB status
 func (l4 *L4) ensureIPv6Resources(syncResult *L4ILBSyncResult, nodeNames []string, options gce.ILBOptions, bsLink string, existingIPv6FwdRule *composite.ForwardingRule, ipv6AddressToUse string) {
-	ipv6fr, err := l4.ensureIPv6ForwardingRule(bsLink, options, existingIPv6FwdRule, ipv6AddressToUse)
+	ipv6fr, fwdRuleSyncStatus, err := l4.ensureIPv6ForwardingRule(bsLink, options, existingIPv6FwdRule, ipv6AddressToUse)
+	syncResult.ResourceUpdates.SetForwardingRule(fwdRuleSyncStatus)
 	if err != nil {
 		l4.svcLogger.Error(err, "ensureIPv6Resources: Failed to ensure ipv6 forwarding rule")
 		syncResult.GCEResourceInError = annotations.ForwardingRuleIPv6Resource
@@ -156,7 +157,8 @@ func (l4 *L4) ensureIPv6NodesFirewall(ipAddress string, nodeNames []string, resu
 		Network:           l4.network,
 	}
 
-	_, err = firewalls.EnsureL4LBFirewallForNodes(l4.Service, &ipv6nodesFWRParams, l4.cloud, l4.recorder, fwLogger)
+	fwSyncStatus, err := firewalls.EnsureL4LBFirewallForNodes(l4.Service, &ipv6nodesFWRParams, l4.cloud, l4.recorder, fwLogger)
+	result.ResourceUpdates.SetFirewallForNodes(fwSyncStatus)
 	if err != nil {
 		result.GCEResourceInError = annotations.FirewallRuleIPv6Resource
 		result.Error = err

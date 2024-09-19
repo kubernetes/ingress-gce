@@ -41,7 +41,7 @@ const (
 // it also adds IPv6 address to LB status
 func (l4netlb *L4NetLB) ensureIPv6Resources(syncResult *L4NetLBSyncResult, nodeNames []string, bsLink string) {
 	ipv6fr, wasUpdate, err := l4netlb.ensureIPv6ForwardingRule(bsLink)
-	syncResult.GCEResourceUpdate.forwardingRuleUpdate = wasUpdate
+	syncResult.GCEResourceUpdate.SetForwardingRule(wasUpdate)
 	if err != nil {
 		l4netlb.svcLogger.Error(err, "ensureIPv6Resources: Failed to create ipv6 forwarding rule")
 		syncResult.GCEResourceInError = annotations.ForwardingRuleIPv6Resource
@@ -145,7 +145,7 @@ func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipAddress string, nodeNames []st
 	}
 
 	wasUpdate, err := firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, &ipv6nodesFWRParams, l4netlb.cloud, l4netlb.recorder, fwLogger)
-	syncResult.GCEResourceUpdate.firewallForNodesUpdate = wasUpdate
+	syncResult.GCEResourceUpdate.SetFirewallForNodes(wasUpdate)
 	if err != nil {
 		fwLogger.Error(err, "Failed to ensure ipv6 nodes firewall for L4 NetLB")
 		syncResult.GCEResourceInError = annotations.FirewallRuleIPv6Resource
