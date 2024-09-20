@@ -27,6 +27,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -79,6 +80,8 @@ type L4Controller struct {
 	forwardingRules     ForwardingRulesGetter
 	sharedResourcesLock sync.Mutex
 	enableDualStack     bool
+
+	hasSynced func() bool
 }
 
 // NewILBController creates a new instance of the L4 ILB controller.
@@ -98,6 +101,7 @@ func NewILBController(ctx *context.ControllerContext, stopCh chan struct{}) *L4C
 		zoneGetter:      ctx.ZoneGetter,
 		forwardingRules: forwardingrules.New(ctx.Cloud, meta.VersionGA, meta.Regional),
 		enableDualStack: ctx.EnableL4ILBDualStack,
+		hasSynced:       ctx.HasSynced,
 	}
 	l4c.backendPool = backends.NewPool(ctx.Cloud, l4c.namer)
 	l4c.NegLinker = backends.NewNEGLinker(l4c.backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer())
@@ -182,7 +186,13 @@ func (l4c *L4Controller) checkHealth() error {
 
 func (l4c *L4Controller) Run() {
 	defer l4c.shutdown()
-	klog.Infof("Running L4 Controller with %d worker goroutines", l4c.numWorkers)
+
+	wait.PollUntil(5*time.Second, func() (bool, error) {
+		klog.Infof("Waiting for initial cache sync before starting L4 Controller")
+		return l4c.hasSynced(), nil
+	}, l4c.stopCh)
+
+	klog.Infof("Running L4 Controller", "numWorkers", l4c.numWorkers)
 	l4c.svcQueue.Run()
 	<-l4c.stopCh
 }
