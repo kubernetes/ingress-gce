@@ -227,8 +227,10 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 		Id:                  fmt.Sprint(neg.Id),
 		SelfLink:            neg.SelfLink,
 		NetworkEndpointType: negv1beta1.NetworkEndpointType(neg.NetworkEndpointType),
-		State:               negv1beta1.ActiveState,
-		SubnetURL:           neg.Subnetwork,
+	}
+	if flags.F.EnableMultiSubnetClusterPhase1 {
+		negRef.State = negv1beta1.ActiveState
+		negRef.SubnetURL = neg.Subnetwork
 	}
 	return negRef, nil
 }
