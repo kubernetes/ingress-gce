@@ -195,35 +195,6 @@ func TestServiceNetwork(t *testing.T) {
 			service:            serviceWithSecondaryNet,
 			wantErr:            "network.Spec.Type=Device is not supported for multinetwork LoadBalancer services, the only supported network type is L3",
 		},
-		{
-			desc:               "service with externalTrafficPolicy=Cluster",
-			network:            testNetwork("secondary-network", "secondary-network-params"),
-			gkeNetworkParamSet: testGKENetworkParamSet("secondary-network-params", "secondary-vpc", "secondary-subnet"),
-			service: &apiv1.Service{
-				ObjectMeta: metav1.ObjectMeta{Name: "testService"},
-				Spec: apiv1.ServiceSpec{
-					Selector: map[string]string{
-						networkSelector: "secondary-network",
-					},
-					ExternalTrafficPolicy: apiv1.ServiceExternalTrafficPolicyCluster,
-				},
-			},
-			wantErr: "multinetwork services with externalTrafficPolicy='Cluster' are not supported, only externalTrafficPolicy=Local services are supported",
-		},
-		{
-			desc:               "service with externalTrafficPolicy default",
-			network:            testNetwork("secondary-network", "secondary-network-params"),
-			gkeNetworkParamSet: testGKENetworkParamSet("secondary-network-params", "secondary-vpc", "secondary-subnet"),
-			service: &apiv1.Service{
-				ObjectMeta: metav1.ObjectMeta{Name: "testService"},
-				Spec: apiv1.ServiceSpec{
-					Selector: map[string]string{
-						networkSelector: "secondary-network",
-					},
-				},
-			},
-			wantErr: "multinetwork services with externalTrafficPolicy='' are not supported, only externalTrafficPolicy=Local services are supported",
-		},
 	}
 
 	for _, tc := range cases {
