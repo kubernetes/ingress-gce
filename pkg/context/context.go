@@ -36,7 +36,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
@@ -75,7 +74,6 @@ const (
 
 // ControllerContext holds the state needed for the execution of the controller.
 type ControllerContext struct {
-	KubeConfig          *rest.Config
 	KubeClient          kubernetes.Interface
 	SvcNegClient        svcnegclient.Interface
 	SAClient            serviceattachmentclient.Interface
@@ -155,7 +153,6 @@ type ControllerContextConfig struct {
 
 // NewControllerContext returns a new shared set of informers.
 func NewControllerContext(
-	kubeConfig *rest.Config,
 	kubeClient kubernetes.Interface,
 	backendConfigClient backendconfigclient.Interface,
 	frontendConfigClient frontendconfigclient.Interface,
@@ -185,7 +182,6 @@ func NewControllerContext(
 	}
 
 	context := &ControllerContext{
-		KubeConfig:              kubeConfig,
 		KubeClient:              kubeClient,
 		FirewallClient:          firewallClient,
 		SvcNegClient:            svcnegClient,

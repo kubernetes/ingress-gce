@@ -265,7 +265,7 @@ func main() {
 		EnableWeightedL4NetLB:         flags.F.EnableWeightedL4NetLB,
 		DisableL4LBFirewall:           flags.F.DisableL4LBFirewall,
 	}
-	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, ingParamsClient, svcAttachmentClient, networkClient, nodeTopologyClient, eventRecorderKubeClient, cloud, namer, kubeSystemUID, ctxConfig, rootLogger)
+	ctx := ingctx.NewControllerContext(kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, ingParamsClient, svcAttachmentClient, networkClient, nodeTopologyClient, eventRecorderKubeClient, cloud, namer, kubeSystemUID, ctxConfig, rootLogger)
 	go app.RunHTTPServer(ctx.HealthCheck, rootLogger)
 
 	var once sync.Once
