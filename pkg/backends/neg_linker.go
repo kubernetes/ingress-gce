@@ -82,13 +82,40 @@ func (nl *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 		return err
 	}
 
-	newBackends := backendsForNEGs(negSelfLinks, &sp)
-	// merge backends
+	newBackends := backendsForNEGs(negSelfLinks.negsToAdd, &sp)
+	// Historically, we merged the old backends with the new backends to ensure
+	// that we don't detach NEGs when zones contract. Given that now we primarily
+	// use SvcNEGs as the source-of-truth for calculating backends, and since
+	// they don't get affected by zone-contraction, it's possible we could have
+	// simply used the new backends in the BackendService.
+	// We decided not to do this because we don't know what other errors the
+	// previous decision to mergeBackends may have been hiding.
+	//
+	// Current backend calculation = oldBackends + backends from negsToAdd
+	// - backends from negsToRemove.
 	mergedBackend, err := mergeBackends(backendService.Backends, newBackends)
 	if err != nil {
 		nl.logger.Error(err, fmt.Sprintf("Failed to merge backends from %#v and %#v", backendService.Backends, newBackends))
 		nl.logger.Info("Fall back to ensure backend service with newBackends.")
 		mergedBackend = newBackends
+	}
+
+	// Filter out backends from to-be-deleted NEGs if EnableMultiSubnetClusterPhase1=true.
+	if nl.enableMultiSubnetClusterPhase1 {
+		filteredBackends := mergedBackend
+		if len(negSelfLinks.negsToRemove) != 0 {
+			nl.logger.Info("Removing NEGs in to-be-deleted state from merged backends", "negsToRemove", negSelfLinks.negsToRemove)
+			backendsToRemove := backendsForNEGs(negSelfLinks.negsToRemove, &sp)
+
+			// Remove backends belonging to to-be-deleted NEGs from mergedBackend.
+			filteredBackends, err = removeBackends(mergedBackend, backendsToRemove)
+			if err != nil {
+				nl.logger.Error(err, fmt.Sprintf("Failed to remove backends %#v from %#v", backendsToRemove, mergedBackend))
+				nl.logger.Info("Fall back to ensure backend service with mergedBackends")
+				filteredBackends = mergedBackend
+			}
+		}
+		mergedBackend = filteredBackends
 	}
 
 	diff := diffBackends(backendService.Backends, mergedBackend, nl.logger)
@@ -102,30 +129,36 @@ func (nl *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 	return composite.UpdateBackendService(nl.cloud, key, backendService, nl.logger)
 }
 
-func (nl *negLinker) getNegSelfLinks(sp utils.ServicePort, groups []GroupKey) ([]string, error) {
+type backendNegUrls struct {
+	negsToAdd    []string
+	negsToRemove []string
+}
+
+func (nl *negLinker) getNegSelfLinks(sp utils.ServicePort, groups []GroupKey) (backendNegUrls, error) {
 	version := befeatures.VersionFromServicePort(&sp)
-	var negSelfLinks []string
 
 	if nl.enableMultiSubnetClusterPhase1 {
 		negName := sp.NEGName()
 		svcNegKey := fmt.Sprintf("%s/%s", sp.ID.Service.Namespace, negName)
-		urls, ok := getNegUrlsFromSvcneg(svcNegKey, nl.svcNegLister, nl.logger)
-		if ok {
+		if urls, ok := getNegUrlsFromSvcneg(svcNegKey, nl.svcNegLister, nl.enableMultiSubnetClusterPhase1, nl.logger); ok {
 			return urls, nil
 		}
+
+		var urls backendNegUrls
 		// In fail-safe situation, we only link NEGs in the default subnet.
 		// We will add all NEGs once CRD is available.
 		for _, group := range groups {
 			nl.logger.V(4).Info("Falling back to use NEG API to retrieve NEG url for NEG", "negName", negName)
 			neg, err := nl.negGetter.GetNetworkEndpointGroup(negName, group.Zone, version, nl.logger)
 			if err != nil {
-				return nil, err
+				return backendNegUrls{}, err
 			}
-			negSelfLinks = append(negSelfLinks, neg.SelfLink)
+			urls.negsToAdd = append(urls.negsToAdd, neg.SelfLink)
 		}
-		return negSelfLinks, nil
+		return urls, nil
 	}
 
+	var urls backendNegUrls
 	for _, group := range groups {
 		// If the group key contains a name, then use that.
 		// Otherwise, get the name from svc port.
@@ -141,13 +174,13 @@ func (nl *negLinker) getNegSelfLinks(sp utils.ServicePort, groups []GroupKey) ([
 			nl.logger.V(4).Info("Falling back to use NEG API to retrieve NEG url for NEG", "negName", negName)
 			neg, err := nl.negGetter.GetNetworkEndpointGroup(negName, group.Zone, version, nl.logger)
 			if err != nil {
-				return nil, err
+				return backendNegUrls{}, err
 			}
 			negUrl = neg.SelfLink
 		}
-		negSelfLinks = append(negSelfLinks, negUrl)
+		urls.negsToAdd = append(urls.negsToAdd, negUrl)
 	}
-	return negSelfLinks, nil
+	return urls, nil
 }
 
 type backendDiff struct {
@@ -182,6 +215,37 @@ func mergeBackends(old, new []*composite.Backend) ([]*composite.Backend, error) 
 			return []*composite.Backend{}, err
 		}
 		if _, ok := backendMap[key]; !ok {
+			backendMap[key] = be
+		}
+	}
+
+	ret := []*composite.Backend{}
+
+	for _, be := range backendMap {
+		ret = append(ret, be)
+	}
+	return ret, nil
+}
+
+// removeBackends remove the backends in toRemove list from curr list, similar
+// to how backends are merged in mergeBackends.
+func removeBackends(curr, toRemove []*composite.Backend) ([]*composite.Backend, error) {
+	backendMap := map[meta.Key]*composite.Backend{}
+	toRemoveBackends := make(map[meta.Key]struct{})
+	for _, be := range toRemove {
+		key, err := getNegMergeGroupKey(be.Group)
+		if err != nil {
+			return curr, err
+		}
+		toRemoveBackends[key] = struct{}{}
+	}
+
+	for _, be := range curr {
+		key, err := getNegMergeGroupKey(be.Group)
+		if err != nil {
+			return curr, err
+		}
+		if _, needToRemove := toRemoveBackends[key]; !needToRemove {
 			backendMap[key] = be
 		}
 	}
@@ -278,23 +342,29 @@ func getNegType(sp utils.ServicePort) types.NetworkEndpointType {
 	return types.VmIpPortEndpointType
 }
 
-// getNegUrlsFromSvcneg return NEG urls from svcneg status
-func getNegUrlsFromSvcneg(key string, svcNegLister cache.Indexer, logger klog.Logger) ([]string, bool) {
-	var negUrls []string
+// getNegUrlsFromSvcneg return NEG urls from svcneg status depending on if it is in
+// to-be-deleted state.
+func getNegUrlsFromSvcneg(key string, svcNegLister cache.Indexer, enableMultiSubnetClusterPhase1 bool, logger klog.Logger) (backendNegUrls, bool) {
+	var negsToAdd, negsToRemove []string
 	obj, exists, err := svcNegLister.GetByKey(key)
 	if err != nil {
 		logger.Error(err, "Failed to retrieve svcneg from cache", "svcneg", key)
-		return nil, false
+		return backendNegUrls{}, false
 	}
 	if !exists {
-		return nil, false
+		return backendNegUrls{}, false
 	}
 	svcneg := obj.(*negv1beta1.ServiceNetworkEndpointGroup)
 
 	for _, negRef := range svcneg.Status.NetworkEndpointGroups {
-		negUrls = append(negUrls, negRef.SelfLink)
+		if enableMultiSubnetClusterPhase1 && negRef.State == negv1beta1.ToBeDeletedState {
+			logger.Info("Found a NEG in to-be-deleted state", "negId", negRef.Id, "negSelfLink", negRef.SelfLink)
+			negsToRemove = append(negsToRemove, negRef.SelfLink)
+		} else {
+			negsToAdd = append(negsToAdd, negRef.SelfLink)
+		}
 	}
-	return negUrls, true
+	return backendNegUrls{negsToAdd: negsToAdd, negsToRemove: negsToRemove}, true
 }
 
 // getNegUrlFromSvcneg return NEG url from svcneg status if found

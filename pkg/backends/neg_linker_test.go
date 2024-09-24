@@ -354,6 +354,137 @@ func TestLinkWithNEGUpdates(t *testing.T) {
 	}
 }
 
+func TestLinkWithNEGUpdatesWithMultiSubnetCluster(t *testing.T) {
+	namespace, svcName, port := "ns", "name", "port"
+	svc := types.NamespacedName{Namespace: namespace, Name: svcName}
+	svcPort := utils.ServicePort{
+		ID:           utils.ServicePortID{Service: svc},
+		Port:         80,
+		Protocol:     annotations.ProtocolHTTP,
+		TargetPort:   intstr.FromString(port),
+		NEGEnabled:   true,
+		BackendNamer: defaultNamer,
+	}
+	scope := befeatures.ScopeFromServicePort(&svcPort)
+	version := befeatures.VersionFromServicePort(&svcPort)
+
+	negName := svcPort.NEGName()
+	// TODO(sawsa307): Update NEG name once naming schema for non-default subnet is finalized.
+	nonDefaultSubnetNegName := "non-default-neg"
+	beName := svcPort.BackendName()
+
+	negUrl1 := fmt.Sprintf("https://www.googleapis.com/compute/alpha/projects/mock-project/zones/%s/networkEndpointGroups/%s", testZone1, negName)
+	negUrl1ToBeDeleted := fmt.Sprintf("https://www.googleapis.com/compute/alpha/projects/mock-project/zones/%s/networkEndpointGroups/%s", testZone1, nonDefaultSubnetNegName)
+	negUrl2 := fmt.Sprintf("https://www.googleapis.com/compute/alpha/projects/mock-project/zones/%s/networkEndpointGroups/%s", testZone2, negName)
+	negUrl2ToBeDeleted := fmt.Sprintf("https://www.googleapis.com/compute/alpha/projects/mock-project/zones/%s/networkEndpointGroups/%s", testZone2, nonDefaultSubnetNegName)
+
+	testCases := []struct {
+		desc             string
+		prevGroups       []GroupKey
+		prevBackends     []*composite.Backend
+		currGroups       []GroupKey
+		currentNegObjRef []v1beta1.NegObjectReference
+		expectedBackends []*composite.Backend
+	}{
+
+		{
+			desc:         "Zones stay the same, containing one NEG in to-be-deleted state",
+			prevGroups:   []GroupKey{{Zone: testZone1}, {Zone: testZone2}},
+			prevBackends: []*composite.Backend{{Group: negUrl1}, {Group: negUrl1ToBeDeleted}, {Group: negUrl2}, {Group: negUrl2ToBeDeleted}},
+			currGroups:   []GroupKey{{Zone: testZone1}, {Zone: testZone2}},
+			currentNegObjRef: []v1beta1.NegObjectReference{
+				createNegRef(testZone1, negName, ""),
+				createNegRef(testZone1, nonDefaultSubnetNegName, v1beta1.ToBeDeletedState),
+				createNegRef(testZone2, negName, ""),
+				createNegRef(testZone2, nonDefaultSubnetNegName, v1beta1.ToBeDeletedState),
+			},
+			expectedBackends: []*composite.Backend{{Group: negUrl1}, {Group: negUrl2}},
+		},
+		{
+			desc:         "Remove a zone, and containing one NEG in to-be-deleted state",
+			prevGroups:   []GroupKey{{Zone: testZone1}, {Zone: testZone2}},
+			currGroups:   []GroupKey{{Zone: testZone1}},
+			prevBackends: []*composite.Backend{{Group: negUrl1}, {Group: negUrl1ToBeDeleted}, {Group: negUrl2}, {Group: negUrl2ToBeDeleted}},
+			currentNegObjRef: []v1beta1.NegObjectReference{
+				createNegRef(testZone1, negName, ""),
+				createNegRef(testZone1, nonDefaultSubnetNegName, v1beta1.ToBeDeletedState),
+				createNegRef(testZone2, negName, ""),
+				createNegRef(testZone2, nonDefaultSubnetNegName, v1beta1.ToBeDeletedState),
+			},
+			expectedBackends: []*composite.Backend{{Group: negUrl1}, {Group: negUrl2}},
+		},
+	}
+
+	for _, tc := range testCases {
+		// TODO(sawsa307): Add test cases for populateSvcNeg=false when we support querying CRD.
+		for _, populateSvcNeg := range []bool{true} {
+			testName := fmt.Sprintf("%s, populateSvcNeg=%v", tc.desc, populateSvcNeg)
+			t.Run(testName, func(t *testing.T) {
+				fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+				fakeNEG := negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
+				linker := newTestNEGLinker(fakeNEG, fakeGCE)
+				linker.enableMultiSubnetClusterPhase1 = true
+
+				for _, zone := range []string{testZone1, testZone2} {
+					neg := &composite.NetworkEndpointGroup{
+						Name:    negName,
+						Scope:   scope,
+						Version: version,
+					}
+					if err := fakeNEG.CreateNetworkEndpointGroup(neg, zone, klog.TODO()); err != nil {
+						t.Fatalf("unexpected error creating NEG for svcPort %v: %v", svcPort, err)
+					}
+				}
+
+				prevBe := &composite.BackendService{
+					Version:  version,
+					Scope:    scope,
+					Backends: tc.prevBackends,
+				}
+				key, err := composite.CreateKey(fakeGCE, beName, scope)
+				if err != nil {
+					t.Fatalf("Failed to create Backend Service key: %v", err)
+				}
+				if err := composite.CreateBackendService(fakeGCE, key, prevBe, klog.TODO()); err != nil {
+					t.Fatalf("Failed to create Backend Service: %v", err)
+				}
+
+				if populateSvcNeg {
+					svcNeg := &v1beta1.ServiceNetworkEndpointGroup{
+						TypeMeta: metav1.TypeMeta{
+							Kind:       "ServiceNetworkEndpointGroup",
+							APIVersion: "networking.gke.io/v1beta1",
+						},
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      svcPort.NEGName(),
+							Namespace: namespace,
+						},
+						Status: v1beta1.ServiceNetworkEndpointGroupStatus{
+							NetworkEndpointGroups: tc.currentNegObjRef,
+						},
+					}
+					if err := linker.svcNegLister.Add(svcNeg); err != nil {
+						t.Fatalf("Failed to add svcneg: %v", err)
+					}
+				}
+
+				if err := linker.Link(svcPort, tc.currGroups); err != nil {
+					t.Fatalf("Failed to link Backend Service to NEG: %v", err)
+				}
+
+				updatedBe, err := composite.GetBackendService(fakeGCE, key, version, klog.TODO())
+				if err != nil {
+					t.Fatalf("Failed to get Backend Service: %v", err)
+				}
+
+				if diff := diffBackends(updatedBe.Backends, tc.expectedBackends, klog.TODO()); !diff.isEqual() {
+					t.Fatalf("Got backends %v after Link(), expected %v", updatedBe.Backends, tc.expectedBackends)
+				}
+			})
+		}
+	}
+}
+
 func TestGetNegSelfLinks(t *testing.T) {
 	t.Parallel()
 
@@ -442,8 +573,8 @@ func TestGetNegSelfLinks(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Failed to link backend service to NEG for svcPort %v: %v", svcPort, err)
 				}
-				if len(negLinks) != tc.expectedNegCount {
-					t.Errorf("Got %d neg links, expected %d", len(negLinks), tc.expectedNegCount)
+				if len(negLinks.negsToAdd) != tc.expectedNegCount {
+					t.Errorf("Got %d neg links, expected %d", len(negLinks.negsToAdd), tc.expectedNegCount)
 				}
 			})
 		}
@@ -473,10 +604,11 @@ func TestGetNegSelfLinksWithMultiSubnetCluster(t *testing.T) {
 	nonDefaultSubnetNegName := "non-default-neg"
 
 	testCases := []struct {
-		desc             string
-		populateSvcNeg   bool
-		testNegRef       []v1beta1.NegObjectReference
-		expectedNegCount int
+		desc                string
+		populateSvcNeg      bool
+		testNegRef          []v1beta1.NegObjectReference
+		expectedNegToAdd    int
+		expectedNegToRemove int
 	}{
 		{
 			desc:           "Get NEGs from SvcNeg, all NEGs are in active state, and NEGs are from default subnet",
@@ -485,7 +617,7 @@ func TestGetNegSelfLinksWithMultiSubnetCluster(t *testing.T) {
 				createNegRef(testZone1, defaultSubnetNegName, v1beta1.ActiveState),
 				createNegRef(testZone2, defaultSubnetNegName, v1beta1.ActiveState),
 			},
-			expectedNegCount: 2,
+			expectedNegToAdd: 2,
 		},
 		{
 			desc:           "Get NEGs from SvcNeg, all NEGs are in active state, and containing NEGs from non-default subnet",
@@ -496,7 +628,7 @@ func TestGetNegSelfLinksWithMultiSubnetCluster(t *testing.T) {
 				createNegRef(testZone2, defaultSubnetNegName, v1beta1.ActiveState),
 				createNegRef(testZone2, nonDefaultSubnetNegName, v1beta1.ActiveState),
 			},
-			expectedNegCount: 4,
+			expectedNegToAdd: 4,
 		},
 		{
 			desc:           "Get NEGs from SvcNeg, containing one NEG from default subnet in inactive state",
@@ -505,7 +637,7 @@ func TestGetNegSelfLinksWithMultiSubnetCluster(t *testing.T) {
 				createNegRef(testZone1, defaultSubnetNegName, v1beta1.ActiveState),
 				createNegRef(testZone2, defaultSubnetNegName, v1beta1.InactiveState),
 			},
-			expectedNegCount: 2,
+			expectedNegToAdd: 2,
 		},
 		{
 			desc:           "Get NEGs from SvcNeg, containing NEGs from non-default subnet in inactive state",
@@ -516,12 +648,24 @@ func TestGetNegSelfLinksWithMultiSubnetCluster(t *testing.T) {
 				createNegRef(testZone2, defaultSubnetNegName, v1beta1.InactiveState), // zone2 is inactive
 				createNegRef(testZone2, nonDefaultSubnetNegName, v1beta1.InactiveState),
 			},
-			expectedNegCount: 4,
+			expectedNegToAdd: 4,
+		},
+		{
+			desc:           "Get NEGs from SvcNEG, containing NEGs from non-default subnet in to-be-deleted state",
+			populateSvcNeg: true,
+			testNegRef: []v1beta1.NegObjectReference{
+				createNegRef(testZone1, defaultSubnetNegName, v1beta1.ActiveState),
+				createNegRef(testZone1, nonDefaultSubnetNegName, v1beta1.ToBeDeletedState),
+				createNegRef(testZone2, defaultSubnetNegName, v1beta1.ActiveState),
+				createNegRef(testZone2, nonDefaultSubnetNegName, v1beta1.ToBeDeletedState),
+			},
+			expectedNegToAdd:    2,
+			expectedNegToRemove: 2,
 		},
 		{
 			desc:             "Get NEGs from GCE",
 			populateSvcNeg:   false,
-			expectedNegCount: 2,
+			expectedNegToAdd: 2,
 		},
 	}
 
@@ -566,8 +710,11 @@ func TestGetNegSelfLinksWithMultiSubnetCluster(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to link backend service to NEG for svcPort %v: %v", svcPort, err)
 			}
-			if len(negLinks) != tc.expectedNegCount {
-				t.Errorf("Got %d neg links, expected %d", len(negLinks), tc.expectedNegCount)
+			if len(negLinks.negsToAdd) != tc.expectedNegToAdd {
+				t.Errorf("Got %d neg links to add, expected %d", len(negLinks.negsToAdd), tc.expectedNegToAdd)
+			}
+			if len(negLinks.negsToRemove) != tc.expectedNegToRemove {
+				t.Errorf("Got %d neg links to remove, expected %d", len(negLinks.negsToRemove), tc.expectedNegToRemove)
 			}
 		})
 	}
@@ -660,6 +807,79 @@ func TestMergeBackends(t *testing.T) {
 				if !diffBackend.isEqual() {
 					t.Errorf("Expect tc.expect == ret, however got, tc.expect = %v, ret = %v", tc.expect, ret)
 				}
+			}
+		})
+	}
+}
+
+func TestRemoveBackends(t *testing.T) {
+	t.Parallel()
+
+	negUrl1 := "https://www.googleapis.com/compute/v1/projects/test-project/zones/us-central1-c/networkEndpointGroups/neg1"
+	negUrl2 := "https://www.googleapis.com/compute/v1/projects/test-project/zones/us-central1-c/networkEndpointGroups/neg2"
+
+	testCases := []struct {
+		desc             string
+		currBackends     []*composite.Backend
+		backendsToRemove []*composite.Backend
+		expectedBackends []*composite.Backend
+		expectError      bool
+	}{
+		{
+			desc:             "mal formed NEG url in curr",
+			currBackends:     []*composite.Backend{{Group: "malformed"}},
+			expectedBackends: []*composite.Backend{{Group: "malformed"}},
+			expectError:      true,
+		},
+		{
+			desc:             "mal formed NEG url in remving",
+			currBackends:     []*composite.Backend{{Group: negUrl1}},
+			backendsToRemove: []*composite.Backend{{Group: "malformed"}},
+			expectedBackends: []*composite.Backend{{Group: negUrl1}},
+			expectError:      true,
+		},
+		{
+			desc:             "no backendsToRemove",
+			currBackends:     []*composite.Backend{{Group: negUrl1}},
+			backendsToRemove: []*composite.Backend{},
+			expectedBackends: []*composite.Backend{{Group: negUrl1}},
+			expectError:      false,
+		},
+		{
+			desc:             "no backends",
+			currBackends:     []*composite.Backend{},
+			backendsToRemove: []*composite.Backend{{Group: negUrl1}},
+			expectedBackends: []*composite.Backend{},
+			expectError:      false,
+		},
+		{
+			desc:             "removing one backend",
+			currBackends:     []*composite.Backend{{Group: negUrl1}, {Group: negUrl2}},
+			backendsToRemove: []*composite.Backend{{Group: negUrl1}},
+			expectedBackends: []*composite.Backend{{Group: negUrl2}},
+			expectError:      false,
+		},
+		{
+			desc:             "removing all backend",
+			currBackends:     []*composite.Backend{{Group: negUrl1}, {Group: negUrl2}},
+			backendsToRemove: []*composite.Backend{{Group: negUrl1}, {Group: negUrl2}},
+			expectedBackends: []*composite.Backend{},
+			expectError:      false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			gotBackends, err := removeBackends(tc.currBackends, tc.backendsToRemove)
+			if tc.expectError && err == nil {
+				t.Errorf("Got err == nil, expect err != nil")
+			} else if !tc.expectError && err != nil {
+				t.Errorf("Got err %v, expect err == nil", err)
+			}
+
+			diff := diffBackends(gotBackends, tc.expectedBackends, klog.TODO())
+			if !diff.isEqual() {
+				t.Errorf("Got backends %v, expected %v", gotBackends, tc.expectedBackends)
 			}
 		})
 	}
