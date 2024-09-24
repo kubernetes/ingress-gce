@@ -230,6 +230,130 @@ func TestLinkWithDifferentSvcPorts(t *testing.T) {
 	}
 }
 
+func TestLinkWithNEGUpdates(t *testing.T) {
+	t.Parallel()
+
+	namespace, svcName, port := "ns", "name", "port"
+	svc := types.NamespacedName{Namespace: namespace, Name: svcName}
+	svcPort := utils.ServicePort{
+		ID:           utils.ServicePortID{Service: svc},
+		Port:         80,
+		Protocol:     annotations.ProtocolHTTP,
+		TargetPort:   intstr.FromString(port),
+		NEGEnabled:   true,
+		BackendNamer: defaultNamer,
+	}
+	scope := befeatures.ScopeFromServicePort(&svcPort)
+	version := befeatures.VersionFromServicePort(&svcPort)
+
+	negName := svcPort.NEGName()
+	beName := svcPort.BackendName()
+
+	negUrl1 := fmt.Sprintf("https://www.googleapis.com/compute/alpha/projects/mock-project/zones/%s/networkEndpointGroups/%s", testZone1, negName)
+	negUrl2 := fmt.Sprintf("https://www.googleapis.com/compute/alpha/projects/mock-project/zones/%s/networkEndpointGroups/%s", testZone2, negName)
+
+	testCases := []struct {
+		desc             string
+		prevGroups       []GroupKey
+		prevBackends     []*composite.Backend
+		currGroups       []GroupKey
+		currentNegObjRef []v1beta1.NegObjectReference
+		expectedBackends []*composite.Backend
+	}{
+		{
+			desc:         "Add a new zone",
+			prevGroups:   []GroupKey{{Zone: testZone1}},
+			prevBackends: []*composite.Backend{{Group: negUrl1}},
+			currGroups:   []GroupKey{{Zone: testZone1}, {Zone: testZone2}},
+			currentNegObjRef: []v1beta1.NegObjectReference{
+				createNegRef(testZone1, negName, ""),
+				createNegRef(testZone2, negName, ""),
+			},
+			expectedBackends: []*composite.Backend{{Group: negUrl1}, {Group: negUrl2}},
+		},
+		{
+			desc:         "Remove a zone, the Backends should stay the same",
+			prevGroups:   []GroupKey{{Zone: testZone1}, {Zone: testZone2}},
+			prevBackends: []*composite.Backend{{Group: negUrl1}, {Group: negUrl2}},
+			currGroups:   []GroupKey{{Zone: testZone1}},
+			currentNegObjRef: []v1beta1.NegObjectReference{
+				createNegRef(testZone1, negName, ""),
+			},
+			expectedBackends: []*composite.Backend{{Group: negUrl1}, {Group: negUrl2}},
+		},
+	}
+
+	for _, tc := range testCases {
+		for _, enableMultiSubnetClusterPhase1 := range []bool{true, false} {
+			for _, populateSvcNeg := range []bool{true, false} {
+				testName := fmt.Sprintf("%s, populateSvcNeg=%v", tc.desc, populateSvcNeg)
+				t.Run(testName, func(t *testing.T) {
+					fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+					fakeNEG := negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
+					linker := newTestNEGLinker(fakeNEG, fakeGCE)
+					linker.enableMultiSubnetClusterPhase1 = enableMultiSubnetClusterPhase1
+
+					for _, zone := range []string{testZone1, testZone2} {
+						neg := &composite.NetworkEndpointGroup{
+							Name:    negName,
+							Scope:   scope,
+							Version: version,
+						}
+						if err := fakeNEG.CreateNetworkEndpointGroup(neg, zone, klog.TODO()); err != nil {
+							t.Fatalf("unexpected error creating NEG for svcPort %v: %v", svcPort, err)
+						}
+					}
+
+					prevBe := &composite.BackendService{
+						Version:  version,
+						Scope:    scope,
+						Backends: tc.prevBackends,
+					}
+					key, err := composite.CreateKey(fakeGCE, beName, scope)
+					if err != nil {
+						t.Fatalf("Failed to create Backend Service key: %v", err)
+					}
+					if err := composite.CreateBackendService(fakeGCE, key, prevBe, klog.TODO()); err != nil {
+						t.Fatalf("Failed to create Backend Service: %v", err)
+					}
+
+					if populateSvcNeg {
+						svcNeg := &v1beta1.ServiceNetworkEndpointGroup{
+							TypeMeta: metav1.TypeMeta{
+								Kind:       "ServiceNetworkEndpointGroup",
+								APIVersion: "networking.gke.io/v1beta1",
+							},
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      svcPort.NEGName(),
+								Namespace: namespace,
+							},
+							Status: v1beta1.ServiceNetworkEndpointGroupStatus{
+								NetworkEndpointGroups: tc.currentNegObjRef,
+							},
+						}
+						if err := linker.svcNegLister.Add(svcNeg); err != nil {
+							t.Fatalf("Failed to add svcneg: %v", err)
+						}
+					}
+
+					if err := linker.Link(svcPort, tc.currGroups); err != nil {
+						t.Fatalf("Failed to link Backend Service to NEG: %v", err)
+					}
+
+					updatedBe, err := composite.GetBackendService(fakeGCE, key, version, klog.TODO())
+					if err != nil {
+						t.Fatalf("Failed to get Backend Service: %v", err)
+					}
+
+					if diff := diffBackends(updatedBe.Backends, tc.expectedBackends, klog.TODO()); !diff.isEqual() {
+						t.Fatalf("Got backends %v after Link(), expected %v", updatedBe.Backends, tc.expectedBackends)
+					}
+				})
+			}
+		}
+	}
+}
+
 func TestGetNegSelfLinks(t *testing.T) {
 	t.Parallel()
 
