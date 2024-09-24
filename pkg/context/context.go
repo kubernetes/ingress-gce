@@ -232,8 +232,10 @@ func NewControllerContext(
 		context.RegionalCluster = true
 	}
 
-	if flags.F.EnableMultiSubnetClusterPhase1 && nodeTopologyClient != nil {
-		context.NodeTopologyInformer = informernodetopology.NewNodeTopologyInformer(nodeTopologyClient, config.ResyncPeriod, utils.NewNamespaceIndexer())
+	if flags.F.EnableMultiSubnetClusterPhase1 {
+		if nodeTopologyClient != nil {
+			context.NodeTopologyInformer = informernodetopology.NewNodeTopologyInformer(nodeTopologyClient, config.ResyncPeriod, utils.NewNamespaceIndexer())
+		}
 	}
 
 	// Do not trigger periodic resync on EndpointSlices object.
