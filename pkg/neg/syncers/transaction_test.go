@@ -214,7 +214,7 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 			// TODO(gauravkghildiyal): When the DualStack Migrator is fully
 			// implemented, check if we need to cover scenarios where `migrationZone`
 			// is not empty.
-			err := transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, tc.removeEndpoints, labels.EndpointPodLabelMap{}, "")
+			err := transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, tc.removeEndpoints, labels.EndpointPodLabelMap{}, negtypes.EndpointGroupInfo{})
 			if err != nil {
 				t.Errorf("For case %q, syncNetworkEndpoints() got %v, want nil", tc.desc, err)
 			}
@@ -390,7 +390,7 @@ func TestSyncNetworkEndpointLabel(t *testing.T) {
 		if err := transactionSyncer.ensureNetworkEndpointGroups(); err != nil {
 			t.Errorf("Expect error == nil, but got %v", err)
 		}
-		err := transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{}, tc.endpointPodLabelMap, "")
+		err := transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{}, tc.endpointPodLabelMap, negtypes.EndpointGroupInfo{})
 		if err != nil {
 			t.Errorf("For case %q, syncNetworkEndpoints() got %v, want nil", tc.desc, err)
 		}

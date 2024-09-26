@@ -470,7 +470,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 }
 
 // syncNetworkEndpoints spins off go routines to execute NEG operations
-func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, endpointPodLabelMap labels.EndpointPodLabelMap, migrationZone string) error {
+func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, endpointPodLabelMap labels.EndpointPodLabelMap, migrationZone negtypes.EndpointGroupInfo) error {
 	syncFunc := func(endpointMap map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, operation transactionOp) error {
 		for endpointGroupInfo, endpointSet := range endpointMap {
 			zone := endpointGroupInfo.Zone
@@ -500,12 +500,12 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 				go s.attachNetworkEndpoints(zone, batch)
 			}
 			if operation == detachOp {
-				if zone == migrationZone {
+				if zone == migrationZone.Zone && subnet == migrationZone.Subnet {
 					// Prevent any further migration-detachments from starting while one
 					// is already in progress.
 					s.dsMigrator.Pause()
 				}
-				go s.detachNetworkEndpoints(zone, batch, zone == migrationZone)
+				go s.detachNetworkEndpoints(zone, batch, zone == migrationZone.Zone && subnet == migrationZone.Subnet)
 			}
 		}
 		return nil
