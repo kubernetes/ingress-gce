@@ -81,11 +81,13 @@ type NegSyncerManager interface {
 }
 
 type NetworkEndpointsCalculator interface {
-	// CalculateEndpoints computes the NEG endpoints based on service endpoints and the current NEG state and returns a
-	// map of zone name to network endpoint set
-	CalculateEndpoints(eds []EndpointsData, currentMap map[string]NetworkEndpointSet) (map[string]NetworkEndpointSet, EndpointPodMap, int, error)
+	// CalculateEndpoints computes the NEG endpoints based on service endpoints
+	// and the current NEG state and returns a map of EndpointGroupInfo to
+	// network endpoint set. EndpointGroupInfo contains the zone and subnet of
+	// this NEG.
+	CalculateEndpoints(eds []EndpointsData, currentMap map[EndpointGroupInfo]NetworkEndpointSet) (map[EndpointGroupInfo]NetworkEndpointSet, EndpointPodMap, int, error)
 	// CalculateEndpointsDegradedMode computes the NEG endpoints using degraded mode calculation
-	CalculateEndpointsDegradedMode(eds []EndpointsData, currentMap map[string]NetworkEndpointSet) (map[string]NetworkEndpointSet, EndpointPodMap, error)
+	CalculateEndpointsDegradedMode(eds []EndpointsData, currentMap map[EndpointGroupInfo]NetworkEndpointSet) (map[EndpointGroupInfo]NetworkEndpointSet, EndpointPodMap, error)
 	// Mode indicates the mode that the EndpointsCalculator is operating in.
 	Mode() EndpointsCalculatorMode
 	// ValidateEndpoints validates the NEG endpoint information is correct

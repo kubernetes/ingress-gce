@@ -17,8 +17,9 @@ limitations under the License.
 package syncers
 
 import (
-	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"sync"
+
+	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 )
 
 type networkEndpointTransactionTable interface {
@@ -51,6 +52,8 @@ type transactionEntry struct {
 	Operation transactionOp
 	// Zone represents the zone of the transaction
 	Zone string
+	// Subnet represents the subnet of the NEG corresponds to this transaction
+	Subnet string
 }
 
 // transactionTable records ongoing NEG API operation per endpoint

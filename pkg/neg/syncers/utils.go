@@ -89,20 +89,20 @@ func calculateDifference(targetMap, currentMap map[string]sets.String) (map[stri
 }
 
 // calculateNetworkEndpointDifference determines what endpoints needs to be added and removed in order to move current state to target state.
-func calculateNetworkEndpointDifference(targetMap, currentMap map[string]negtypes.NetworkEndpointSet) (map[string]negtypes.NetworkEndpointSet, map[string]negtypes.NetworkEndpointSet) {
-	addSet := map[string]negtypes.NetworkEndpointSet{}
-	removeSet := map[string]negtypes.NetworkEndpointSet{}
-	for zone, endpointSet := range targetMap {
-		diff := endpointSet.Difference(currentMap[zone])
+func calculateNetworkEndpointDifference(targetMap, currentMap map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet) (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet) {
+	addSet := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{}
+	removeSet := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{}
+	for endpointGroupInfo, endpointSet := range targetMap {
+		diff := endpointSet.Difference(currentMap[endpointGroupInfo])
 		if len(diff) > 0 {
-			addSet[zone] = diff
+			addSet[endpointGroupInfo] = diff
 		}
 	}
 
-	for zone, endpointSet := range currentMap {
-		diff := endpointSet.Difference(targetMap[zone])
+	for endpointGroupInfo, endpointSet := range currentMap {
+		diff := endpointSet.Difference(targetMap[endpointGroupInfo])
 		if len(diff) > 0 {
-			removeSet[zone] = diff
+			removeSet[endpointGroupInfo] = diff
 		}
 	}
 	return addSet, removeSet
@@ -236,7 +236,7 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 }
 
 type ZoneNetworkEndpointMapResult struct {
-	NetworkEndpointSet map[string]negtypes.NetworkEndpointSet
+	NetworkEndpointSet map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet
 	EndpointPodMap     negtypes.EndpointPodMap
 	EPCount            negtypes.StateCountMap
 	EPSCount           negtypes.StateCountMap
@@ -244,7 +244,7 @@ type ZoneNetworkEndpointMapResult struct {
 
 // toZoneNetworkEndpointMap translates addresses in endpoints object into zone and endpoints map, and also return the count for duplicated endpoints
 func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter *zonegetter.ZoneGetter, podLister cache.Indexer, servicePortName string, networkEndpointType negtypes.NetworkEndpointType, enableDualStackNEG, enableMultiSubnetCluster bool, logger klog.Logger) (ZoneNetworkEndpointMapResult, error) {
-	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
+	zoneNetworkEndpointMap := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{}
 	networkEndpointPodMap := negtypes.EndpointPodMap{}
 	ipsForPod := ipsForPod(eds)
 	globalEPCount := make(negtypes.StateCountMap)
@@ -300,6 +300,7 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter *zonegett
 				return ZoneNetworkEndpointMapResult{}, fmt.Errorf("unexpected error when getting zone for endpoint %q in endpoint slice %s/%s: %w", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name, getZoneErr)
 			}
 
+			epLocation := negtypes.EndpointGroupInfo{Zone: zone}
 			_, _, getPodErr := getEndpointPod(endpointAddress, podLister)
 			if getPodErr != nil {
 				metrics.PublishNegControllerErrorCountMetrics(getPodErr, true)
@@ -311,8 +312,8 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter *zonegett
 				epLogger.V(2).Info("Endpoint does not have an associated pod. Skipping")
 				continue
 			}
-			if zoneNetworkEndpointMap[zone] == nil {
-				zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
+			if zoneNetworkEndpointMap[epLocation] == nil {
+				zoneNetworkEndpointMap[epLocation] = negtypes.NewNetworkEndpointSet()
 			}
 
 			podIPs := ipsForPod[types.NamespacedName{Namespace: endpointAddress.TargetRef.Namespace, Name: endpointAddress.TargetRef.Name}]
@@ -331,7 +332,7 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter *zonegett
 				// Non-GCP network endpoints don't have associated nodes.
 				networkEndpoint.Node = ""
 			}
-			zoneNetworkEndpointMap[zone].Insert(networkEndpoint)
+			zoneNetworkEndpointMap[epLocation].Insert(networkEndpoint)
 
 			// if existing name is alphabetically lower than current one, continue and don't replace
 			if existingPod, contains := networkEndpointPodMap[networkEndpoint]; contains {
@@ -423,7 +424,7 @@ func getEndpointPod(endpointAddress negtypes.AddressData, podLister cache.Indexe
 // toZoneNetworkEndpointMap translates addresses in endpoints object into zone and endpoints map, and also return the count for duplicated endpoints
 // we will not raise error in degraded mode for misconfigured endpoints, instead they will be filtered directly
 func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGetter *zonegetter.ZoneGetter, podLister, nodeLister, serviceLister cache.Indexer, servicePortName string, networkEndpointType negtypes.NetworkEndpointType, enableDualStackNEG, enableMultiSubnetCluster bool, logger klog.Logger) ZoneNetworkEndpointMapResult {
-	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
+	zoneNetworkEndpointMap := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{}
 	networkEndpointPodMap := negtypes.EndpointPodMap{}
 	ipsForPod := ipsForPod(eds)
 	globalEPCount := make(negtypes.StateCountMap)
@@ -482,8 +483,9 @@ func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGett
 				localEPCount[negtypes.NodeNotFound]++
 				continue
 			}
-			if zoneNetworkEndpointMap[zone] == nil {
-				zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
+			epLocation := negtypes.EndpointGroupInfo{Zone: zone}
+			if zoneNetworkEndpointMap[epLocation] == nil {
+				zoneNetworkEndpointMap[epLocation] = negtypes.NewNetworkEndpointSet()
 			}
 
 			podIPs := ipsForPod[types.NamespacedName{Namespace: endpointAddress.TargetRef.Namespace, Name: endpointAddress.TargetRef.Name}]
@@ -526,7 +528,7 @@ func toZoneNetworkEndpointMapDegradedMode(eds []negtypes.EndpointsData, zoneGett
 				// Non-GCP network endpoints don't have associated nodes.
 				networkEndpoint.Node = ""
 			}
-			zoneNetworkEndpointMap[zone].Insert(networkEndpoint)
+			zoneNetworkEndpointMap[epLocation].Insert(networkEndpoint)
 
 			// if existing name is alphabetically lower than current one, continue and don't replace
 			if existingPod, contains := networkEndpointPodMap[networkEndpoint]; contains {
@@ -695,7 +697,7 @@ func podBelongsToService(pod *apiv1.Pod, service *apiv1.Service) error {
 }
 
 // retrieveExistingZoneNetworkEndpointMap lists existing network endpoints in the neg and return the zone and endpoints map
-func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter *zonegetter.ZoneGetter, cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, mode negtypes.EndpointsCalculatorMode, enableDualStackNEG bool, logger klog.Logger) (map[string]negtypes.NetworkEndpointSet, labels.EndpointPodLabelMap, error) {
+func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter *zonegetter.ZoneGetter, cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, mode negtypes.EndpointsCalculatorMode, enableDualStackNEG bool, logger klog.Logger) (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, labels.EndpointPodLabelMap, error) {
 	// Include zones that have non-candidate nodes currently. It is possible that NEGs were created in those zones previously and the endpoints now became non-candidates.
 	// Endpoints in those NEGs now need to be removed. This mostly applies to VM_IP_NEGs where the endpoints are nodes.
 	zones, err := zoneGetter.ListZones(zonegetter.AllNodesFilter, logger)
@@ -709,7 +711,7 @@ func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter *zonegett
 	}
 	candidateZonesMap := sets.NewString(candidateNodeZones...)
 
-	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
+	zoneNetworkEndpointMap := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{}
 	endpointPodLabelMap := labels.EndpointPodLabelMap{}
 	for _, zone := range zones {
 		networkEndpointsWithHealthStatus, err := cloud.ListNetworkEndpoints(negName, zone, false, version, logger)
@@ -723,7 +725,7 @@ func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter *zonegett
 			}
 			return nil, nil, fmt.Errorf("Failed to lookup NEG in zone %q, candidate zones %v, err - %w", zone, candidateZonesMap, err)
 		}
-		zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
+		zoneNetworkEndpointMap[negtypes.EndpointGroupInfo{Zone: zone}] = negtypes.NewNetworkEndpointSet()
 		for _, ne := range networkEndpointsWithHealthStatus {
 			newNE := negtypes.NetworkEndpoint{IP: ne.NetworkEndpoint.IpAddress, Node: ne.NetworkEndpoint.Instance}
 			if ne.NetworkEndpoint.Port != 0 {
@@ -732,7 +734,7 @@ func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter *zonegett
 			if enableDualStackNEG {
 				newNE.IPv6 = ne.NetworkEndpoint.Ipv6Address
 			}
-			zoneNetworkEndpointMap[zone].Insert(newNE)
+			zoneNetworkEndpointMap[negtypes.EndpointGroupInfo{Zone: zone}].Insert(newNE)
 			endpointPodLabelMap[newNE] = ne.NetworkEndpoint.Annotations
 		}
 	}
