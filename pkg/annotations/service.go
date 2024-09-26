@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
@@ -135,6 +136,9 @@ const (
 	WeightedL4AnnotationKey = "networking.gke.io/weighted-load-balancing"
 	// Service annotation value for using pods-per-node Weighted load balancing in both ILB and NetlB
 	WeightedL4AnnotationPodsPerNode = "pods-per-node"
+
+	// Service annotation key for using the Zonal Affinity feature with ILB
+	ZonalAffinitySpilloverRatioKey = "networking.gke.io/zonal-affinity-spillover-ratio"
 )
 
 // NegAnnotation is the format of the annotation associated with the
@@ -302,6 +306,19 @@ func HasWeightedLBPodsPerNodeAnnotation(service *v1.Service) bool {
 		return true
 	}
 	return false
+}
+
+// HasValidZonalAffinitySpilloverAnnotation checks if the given service has valid zonal affinity spillover ratio annotation
+func HasValidZonalAffinitySpilloverAnnotation(service *v1.Service) (bool, float64) {
+	if service == nil {
+		return false, 0
+	}
+	if val, ok := service.Annotations[ZonalAffinitySpilloverRatioKey]; ok {
+		if ratio, err := strconv.ParseFloat(val, 64); err == nil && ratio >= 0 && ratio <= 1 {
+			return true, ratio
+		}
+	}
+	return false, 0
 }
 
 // OnlyStatusAnnotationsChanged returns true if the only annotation change between the 2 services is the NEG or ILB

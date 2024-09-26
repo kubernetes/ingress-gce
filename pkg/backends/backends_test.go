@@ -626,6 +626,72 @@ func TestBackendSvcEqual(t *testing.T) {
 			},
 			wantEqual: false,
 		},
+		{
+			desc: "Test existing backend service diff with zonal affinity feature enabled",
+			oldBackendService: &composite.BackendService{
+				NetworkPassThroughLbTrafficPolicy: &composite.BackendServiceNetworkPassThroughLbTrafficPolicy{
+					ZonalAffinity: &composite.BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity{
+						Spillover:      "ZONAL_AFFINITY_SPILL_CROSS_ZONE",
+						SpilloverRatio: 0.7,
+					},
+				},
+			},
+			newBackendService: &composite.BackendService{
+				NetworkPassThroughLbTrafficPolicy: &composite.BackendServiceNetworkPassThroughLbTrafficPolicy{
+					ZonalAffinity: &composite.BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity{
+						Spillover:      "ZONAL_AFFINITY_SPILL_CROSS_ZONE",
+						SpilloverRatio: 0.7,
+					},
+				},
+			},
+			wantEqual: true,
+		},
+		{
+			desc: "Test existing backend service diff with zonal affinity feature enabled but different ratio",
+			oldBackendService: &composite.BackendService{
+				NetworkPassThroughLbTrafficPolicy: &composite.BackendServiceNetworkPassThroughLbTrafficPolicy{
+					ZonalAffinity: &composite.BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity{
+						Spillover:      "ZONAL_AFFINITY_SPILL_CROSS_ZONE",
+						SpilloverRatio: 0.7,
+					},
+				},
+			},
+			newBackendService: &composite.BackendService{
+				NetworkPassThroughLbTrafficPolicy: &composite.BackendServiceNetworkPassThroughLbTrafficPolicy{
+					ZonalAffinity: &composite.BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity{
+						Spillover:      "ZONAL_AFFINITY_SPILL_CROSS_ZONE",
+						SpilloverRatio: 0.3,
+					},
+				},
+			},
+			wantEqual: false,
+		},
+		{
+			desc:              "Test existing backend service diff enabling zonal affinity feature",
+			oldBackendService: &composite.BackendService{},
+			newBackendService: &composite.BackendService{
+				NetworkPassThroughLbTrafficPolicy: &composite.BackendServiceNetworkPassThroughLbTrafficPolicy{
+					ZonalAffinity: &composite.BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity{
+						Spillover:      "ZONAL_AFFINITY_SPILL_CROSS_ZONE",
+						SpilloverRatio: 0.3,
+					},
+				},
+			},
+			wantEqual: false,
+		},
+		{
+			desc: "Test existing backend service diff enabling zonal affinity feature",
+			oldBackendService: &composite.BackendService{
+				NetworkPassThroughLbTrafficPolicy: &composite.BackendServiceNetworkPassThroughLbTrafficPolicy{
+					ZonalAffinity: &composite.BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity{
+						Spillover:      "ZONAL_AFFINITY_SPILL_CROSS_ZONE",
+						SpilloverRatio: 0.3,
+					},
+				},
+			},
+			newBackendService: &composite.BackendService{},
+			wantEqual:         false,
+		},
 	} {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {

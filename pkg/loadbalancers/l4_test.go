@@ -2311,6 +2311,109 @@ func TestWeightedILB(t *testing.T) {
 
 }
 
+func TestZonalAffinity(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		desc                                  string
+		addAnnotationForZonalAffinity         bool
+		zonalAffinityFlagEnabled              bool
+		zonalAffinitySpilloverRatioAnnotation string
+		wantZonalAffinityEnabled              bool
+		wantZonalAffinitySpilloverRatio       float64
+	}{
+		{
+			desc:                                  "Flag enabled, Service with spillover ratio",
+			addAnnotationForZonalAffinity:         true,
+			zonalAffinityFlagEnabled:              true,
+			zonalAffinitySpilloverRatioAnnotation: "0.2",
+			wantZonalAffinityEnabled:              true,
+			wantZonalAffinitySpilloverRatio:       0.2,
+		},
+		{
+			desc:                                  "Flag enabled, Service without spillover ratio",
+			addAnnotationForZonalAffinity:         false,
+			zonalAffinityFlagEnabled:              true,
+			zonalAffinitySpilloverRatioAnnotation: "",
+			wantZonalAffinityEnabled:              false,
+			wantZonalAffinitySpilloverRatio:       -1,
+		},
+		{
+			desc:                                  "Flag DISABLED, Service with spillover ratio",
+			addAnnotationForZonalAffinity:         true,
+			zonalAffinityFlagEnabled:              false,
+			zonalAffinitySpilloverRatioAnnotation: "0.5",
+			wantZonalAffinityEnabled:              false,
+			wantZonalAffinitySpilloverRatio:       0.5,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			// t.Parallel()
+
+			svc := test.NewL4ILBService(false, 8080)
+
+			if tc.addAnnotationForZonalAffinity {
+				svc.Annotations[annotations.ZonalAffinitySpilloverRatioKey] = tc.zonalAffinitySpilloverRatioAnnotation
+			}
+			nodeNames := []string{"test-node-1"}
+			vals := gce.DefaultTestClusterValues()
+			fakeGCE := getFakeGCECloud(vals)
+
+			namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+
+			networkInfo := network.DefaultNetwork(fakeGCE)
+
+			l4ilbParams := &L4ILBParams{
+				Service:             svc,
+				Cloud:               fakeGCE,
+				Namer:               namer,
+				Recorder:            record.NewFakeRecorder(100),
+				NetworkResolver:     network.NewFakeResolver(networkInfo),
+				EnableZonalAffinity: tc.zonalAffinityFlagEnabled,
+			}
+			l4 := NewL4Handler(l4ilbParams, klog.TODO())
+			l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
+
+			if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
+				t.Errorf("Unexpected error when adding nodes %v", err)
+			}
+
+			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			if result.Error != nil {
+				t.Fatalf("Failed to ensure internal loadBalancer, err %v", result.Error)
+			}
+			backendServiceName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
+			key := meta.RegionalKey(backendServiceName, l4.cloud.Region())
+			bs, err := composite.GetBackendService(l4.cloud, key, meta.VersionAlpha, klog.TODO())
+			if err != nil {
+				t.Fatalf("failed to read BackendService, %v", err)
+			}
+
+			if bs.NetworkPassThroughLbTrafficPolicy != nil && (!tc.wantZonalAffinityEnabled || !tc.addAnnotationForZonalAffinity) {
+				t.Fatalf("Unexpected BackendService ZonalAffinity, got value, wanted nil")
+			}
+
+			if tc.wantZonalAffinityEnabled && tc.addAnnotationForZonalAffinity {
+				if bs.NetworkPassThroughLbTrafficPolicy == nil || bs.NetworkPassThroughLbTrafficPolicy.ZonalAffinity == nil {
+					t.Fatalf("Unexpected BackendService ZonalAffinity, got nil")
+				}
+
+				if bs.NetworkPassThroughLbTrafficPolicy.ZonalAffinity.Spillover != backends.DefaultZonalAffinitySpillover {
+					t.Errorf("Unexpected BackendService ZonalAffinity Spillover: got %q, want %q", bs.NetworkPassThroughLbTrafficPolicy.ZonalAffinity.Spillover, backends.DefaultZonalAffinitySpillover)
+				}
+
+				if bs.NetworkPassThroughLbTrafficPolicy.ZonalAffinity.SpilloverRatio != tc.wantZonalAffinitySpilloverRatio {
+					t.Errorf("Unexpected BackendService ZonalAffinity SpilloverRatio: got %v, want %v", bs.NetworkPassThroughLbTrafficPolicy.ZonalAffinity.SpilloverRatio, tc.wantZonalAffinitySpilloverRatio)
+				}
+			}
+		})
+	}
+
+}
+
 func TestDisableILBIngressFirewall(t *testing.T) {
 	t.Parallel()
 	fakeGCE := getFakeGCECloud(gce.DefaultTestClusterValues())

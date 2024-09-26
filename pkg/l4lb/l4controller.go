@@ -368,6 +368,7 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service, svc
 		DualStackEnabled:                 l4c.enableDualStack,
 		NetworkResolver:                  l4c.networkResolver,
 		EnableWeightedLB:                 l4c.ctx.EnableWeightedL4ILB,
+		EnableZonalAffinity:              l4c.ctx.EnableZonalAffinity,
 		DisableNodesFirewallProvisioning: l4c.ctx.DisableL4LBFirewall,
 	}
 	l4 := loadbalancers.NewL4Handler(l4ilbParams, svcLogger)

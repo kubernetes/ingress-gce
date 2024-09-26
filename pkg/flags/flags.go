@@ -136,6 +136,7 @@ var (
 		EnableMultiSubnetClusterPhase1           bool
 		EnableWeightedL4ILB                      bool
 		EnableWeightedL4NetLB                    bool
+		EnableZonalAffinity                      bool
 		EnableDiscretePortForwarding             bool
 		EnableMultiProjectMode                   bool
 	}{
@@ -320,6 +321,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableMultiSubnetClusterPhase1, "enable-multi-subnet-cluster-phase1", false, "Enable Phase 1 Multi Subnet support for all controllers that are running.")
 	flag.BoolVar(&F.EnableWeightedL4ILB, "enable-weighted-l4-ilb", false, "Enable Weighted Load balancing for L4 ILB.")
 	flag.BoolVar(&F.EnableWeightedL4NetLB, "enable-weighted-l4-netlb", false, "EnableWeighted Load balancing for  L4 NetLB .")
+	flag.BoolVar(&F.EnableZonalAffinity, "enable-zonal-affinity", false, "Enable Zonal Affinity for L4 ILB.")
 	flag.Float32Var(&F.KubeClientQPS, "kube-client-qps", 0.0, "The QPS that the controllers' kube client should adhere to through client side throttling. If zero, client will be created with default settings.")
 	flag.IntVar(&F.KubeClientBurst, "kube-client-burst", 0, "The burst QPS that the controllers' kube client should adhere to through client side throttling. If zero, client will be created with default settings.")
 	flag.BoolVar(&F.EnableDiscretePortForwarding, "enable-discrete-port-forwarding", false, "Enable forwarding of individual ports instead of port ranges.")
