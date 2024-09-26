@@ -39,6 +39,8 @@ import (
 type NetworkEndpointType string
 type EndpointsCalculatorMode string
 
+type L4LBType string
+
 const (
 	VmIpPortEndpointType      = NetworkEndpointType("GCE_VM_IP_PORT")
 	VmIpEndpointType          = NetworkEndpointType("GCE_VM_IP")
@@ -63,6 +65,10 @@ const (
 
 	// NEG CRD Enabled Garbage Collection Event Reasons
 	NegGCError = "NegCRError"
+
+	// L4LBTypes are used to mark what type of LB the calculator is determinig endpoints for.
+	L4InternalLB = L4LBType("INTERNAL")
+	L4ExternalLB = L4LBType("EXTERNAL")
 )
 
 // SvcPortTuple is the tuple representing one service port
@@ -130,6 +136,8 @@ type PortInfo struct {
 	EpCalculatorMode EndpointsCalculatorMode
 	// NetworkInfo specifies the network (K8s and VPC) and subnetwork the service port belongs to.
 	NetworkInfo network.NetworkInfo
+	// The type of the L4 LB. For L7 this should be left empty.
+	L4LBType L4LBType
 }
 
 // PortInfoMapKey is the Key of PortInfoMap
@@ -160,7 +168,7 @@ func NewPortInfoMap(namespace, name string, svcPortTupleSet SvcPortTupleSet, nam
 
 // NewPortInfoMapForVMIPNEG creates PortInfoMap with empty port tuple. Since VM_IP NEGs target
 // the node instead of the pod, there is no port info to be stored.
-func NewPortInfoMapForVMIPNEG(namespace, name string, namer namer.L4ResourcesNamer, local bool, networkInfo *network.NetworkInfo) PortInfoMap {
+func NewPortInfoMapForVMIPNEG(namespace, name string, namer namer.L4ResourcesNamer, local bool, networkInfo *network.NetworkInfo, l4LBType L4LBType) PortInfoMap {
 	ret := PortInfoMap{}
 	svcPortSet := make(SvcPortTupleSet)
 	svcPortSet.Insert(
@@ -178,6 +186,7 @@ func NewPortInfoMapForVMIPNEG(namespace, name string, namer namer.L4ResourcesNam
 			NegName:          negName,
 			EpCalculatorMode: mode,
 			NetworkInfo:      *networkInfo,
+			L4LBType:         l4LBType,
 		}
 	}
 	return ret
@@ -211,6 +220,7 @@ func (p1 PortInfoMap) Merge(p2 PortInfoMap) error {
 		mergedInfo.ReadinessGate = mergedInfo.ReadinessGate || portInfo.ReadinessGate
 		mergedInfo.EpCalculatorMode = portInfo.EpCalculatorMode
 		mergedInfo.NetworkInfo = portInfo.NetworkInfo
+		mergedInfo.L4LBType = portInfo.L4LBType
 
 		p1[mapKey] = mergedInfo
 	}
@@ -281,6 +291,9 @@ type NegSyncerKey struct {
 	//   The endpoints are nodes selected at random in case of Cluster trafficPolicy(L4ClusterMode).
 	//   The endpoints are nodes running backends of this service in case of Local trafficPolicy(L4LocalMode).
 	EpCalculatorMode EndpointsCalculatorMode
+
+	// L4LBType indicates which L4 LB this syncer is running for. For non L4 GCE_GM_IP NEGs this should be empty.
+	L4LBType L4LBType
 }
 
 func (key NegSyncerKey) String() string {

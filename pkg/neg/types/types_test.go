@@ -724,8 +724,10 @@ func TestEndpointsCalculatorMode(t *testing.T) {
 		portInfoMap PortInfoMap
 		expectMode  EndpointsCalculatorMode
 	}{
-		{"L4 Local Mode", NewPortInfoMapForVMIPNEG("testns", "testsvc", testContext.L4Namer, true, defaultNetwork), L4LocalMode},
-		{"L4 Cluster Mode", NewPortInfoMapForVMIPNEG("testns", "testsvc", testContext.L4Namer, false, defaultNetwork), L4ClusterMode},
+		{"L4 ILB Local Mode", NewPortInfoMapForVMIPNEG("testns", "testsvc", testContext.L4Namer, true, defaultNetwork, L4InternalLB), L4LocalMode},
+		{"L4 ILB Cluster Mode", NewPortInfoMapForVMIPNEG("testns", "testsvc", testContext.L4Namer, false, defaultNetwork, L4InternalLB), L4ClusterMode},
+		{"L4 NetLB Local Mode", NewPortInfoMapForVMIPNEG("testns", "testsvc", testContext.L4Namer, true, defaultNetwork, L4ExternalLB), L4LocalMode},
+		{"L4 NetLB Cluster Mode", NewPortInfoMapForVMIPNEG("testns", "testsvc", testContext.L4Namer, false, defaultNetwork, L4ExternalLB), L4ClusterMode},
 		{"L7 Mode", NewPortInfoMap("testns", "testsvc", NewSvcPortTupleSet(SvcPortTuple{Name: "http", Port: 80, TargetPort: "targetPort"}), testContext.NegNamer, false, nil, defaultNetwork), L7Mode},
 		{"Empty tupleset returns L7 Mode", NewPortInfoMap("testns", "testsvc", nil, testContext.NegNamer, false, nil, defaultNetwork), L7Mode},
 	} {

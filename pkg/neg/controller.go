@@ -97,12 +97,15 @@ type Controller struct {
 	// syncerMetrics collects NEG controller metrics
 	syncerMetrics *syncMetrics.SyncerMetrics
 
-	// runL4 indicates whether to run NEG controller that processes L4 services
-	runL4 bool
+	// runL4ForILB indicates whether to run NEG controller that processes L4 ILB services
+	runL4ForILB bool
 
 	// enableIngressRegionalExternal indicates where NEG controller should process
 	// gce-regional-external ingresses
 	enableIngressRegionalExternal bool
+
+	// runL4ForNetLB indicates if the controller can create NEGs for L4 NetLB services.
+	runL4ForNetLB bool
 
 	stopCh <-chan struct{}
 	logger klog.Logger
@@ -140,6 +143,7 @@ func NewController(
 	lpConfig labels.PodLabelPropagationConfig,
 	enableMultiNetworking bool,
 	enableIngressRegionalExternal bool,
+	runL4ForNetLB bool,
 	stopCh <-chan struct{},
 	logger klog.Logger,
 ) *Controller {
@@ -231,8 +235,9 @@ func NewController(
 		syncTracker:                   utils.NewTimeTracker(),
 		reflector:                     reflector,
 		syncerMetrics:                 syncerMetrics,
-		runL4:                         runL4Controller,
+		runL4ForILB:                   runL4Controller,
 		enableIngressRegionalExternal: enableIngressRegionalExternal,
+		runL4ForNetLB:                 runL4ForNetLB,
 		stopCh:                        stopCh,
 		logger:                        logger,
 	}
@@ -503,10 +508,9 @@ func (c *Controller) processService(key string) error {
 		}
 	}
 
-	if c.runL4 {
-		if err := c.mergeVmIpNEGsPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap, &negUsage, networkInfo); err != nil {
-			return err
-		}
+	// Create L4 PortInfo if ILB subsetting is enabled or a NetLB service needs NEG backends.
+	if err := c.mergeVmIpNEGsPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap, &negUsage, networkInfo); err != nil {
+		return err
 	}
 	if len(svcPortInfoMap) != 0 {
 		c.logger.V(2).Info("Syncing service", "service", key)
@@ -594,16 +598,16 @@ func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name ty
 	return nil
 }
 
-// mergeVmIpNEGsPortInfo merges the PortInfo for ILB and multinet NetLB services using GCE_VM_IP NEGs into portInfoMap
+// mergeVmIpNEGsPortInfo merges the PortInfo for ILB, multinet NetLB and NetLB V3 (variant with NEG default) services using GCE_VM_IP NEGs into portInfoMap
 func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap, negUsage *metricscollector.NegServiceState, networkInfo *network.NetworkInfo) error {
 	wantsILB, _ := annotations.WantsL4ILB(service)
-	wantsNetLB, _ := annotations.WantsL4NetLB(service)
-	needsNEGForNetLB := wantsNetLB && !networkInfo.IsDefault && annotations.HasRBSAnnotation(service)
-	if !wantsILB && !needsNEGForNetLB {
+	needsNEGForILB := c.runL4ForILB && wantsILB
+	needsNEGForNetLB := c.netLBServiceNeedsNEG(service, networkInfo)
+	if !needsNEGForILB && !needsNEGForNetLB {
 		return nil
 	}
 	// Only process ILB services after L4 controller has marked it with v2 finalizer.
-	if wantsILB && !utils.IsSubsettingL4ILBService(service) {
+	if needsNEGForILB && !utils.IsSubsettingL4ILBService(service) {
 		msg := fmt.Sprintf("Ignoring ILB Service %s, namespace %s as it does not have the v2 finalizer", service.Name, service.Namespace)
 		c.logger.Info(msg)
 		c.recorder.Eventf(service, apiv1.EventTypeWarning, "ProcessServiceSkipped", msg)
@@ -619,8 +623,32 @@ func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.Na
 	onlyLocal := helpers.RequestsOnlyLocalTraffic(service)
 	// Update usage metrics.
 	negUsage.VmIpNeg = metricscollector.NewVmIpNegType(onlyLocal)
+	var l4LBType negtypes.L4LBType
+	if needsNEGForILB {
+		l4LBType = negtypes.L4InternalLB
+	} else {
+		l4LBType = negtypes.L4ExternalLB
+	}
 
-	return portInfoMap.Merge(negtypes.NewPortInfoMapForVMIPNEG(name.Namespace, name.Name, c.l4Namer, onlyLocal, networkInfo))
+	return portInfoMap.Merge(negtypes.NewPortInfoMapForVMIPNEG(name.Namespace, name.Name, c.l4Namer, onlyLocal, networkInfo, l4LBType))
+}
+
+// netLBServiceNeedsNEG determines if NEGs need to be created for L4 NetLB.
+// - service must be an L4 External Load Balancer service
+// - service must have the RBS annotation
+// - service is a multinetwork service on a non default network OR NEGs are enabled and V3 finalizer is present.
+func (c *Controller) netLBServiceNeedsNEG(service *apiv1.Service, networkInfo *network.NetworkInfo) bool {
+	wantsNetLB, _ := annotations.WantsL4NetLB(service)
+	if !wantsNetLB {
+		return false
+	}
+	if !annotations.HasRBSAnnotation(service) {
+		return false
+	}
+	if !networkInfo.IsDefault {
+		return true
+	}
+	return c.runL4ForNetLB && utils.HasL4NetLBFinalizerV3(service)
 }
 
 // mergeDefaultBackendServicePortInfoMap merge the PortInfoMap for the default backend service into portInfoMap

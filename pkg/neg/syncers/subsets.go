@@ -34,6 +34,10 @@ const (
 	maxSubsetSizeLocal = 250
 	// Max number of subsets in ExternalTrafficPolicy:Cluster, which is the default mode.
 	maxSubsetSizeDefault = 25
+	// Max number of subsets for NetLB in ExternalTrafficPolicy:Local
+	maxSubsetSizeNetLBLocal = 1000
+	// Max number of subsets for NetLB in ExternalTrafficPolicy:Cluster
+	maxSubsetSizeNetLBCluster = 250
 )
 
 // NodeInfo stores node metadata used to sort nodes and pick a subset.
