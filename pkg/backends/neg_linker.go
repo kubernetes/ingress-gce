@@ -32,10 +32,11 @@ import (
 
 // negLinker handles linking backends to NEG's.
 type negLinker struct {
-	backendPool  Pool
-	negGetter    NEGGetter
-	cloud        *gce.Cloud
-	svcNegLister cache.Indexer
+	backendPool                    Pool
+	negGetter                      NEGGetter
+	cloud                          *gce.Cloud
+	svcNegLister                   cache.Indexer
+	enableMultiSubnetClusterPhase1 bool
 
 	logger klog.Logger
 }
@@ -51,11 +52,12 @@ func NewNEGLinker(
 	logger klog.Logger,
 ) Linker {
 	return &negLinker{
-		backendPool:  backendPool,
-		negGetter:    negGetter,
-		cloud:        cloud,
-		svcNegLister: svcNegLister,
-		logger:       logger.WithName("NEGLinker"),
+		backendPool:                    backendPool,
+		negGetter:                      negGetter,
+		cloud:                          cloud,
+		svcNegLister:                   svcNegLister,
+		enableMultiSubnetClusterPhase1: flags.F.EnableMultiSubnetClusterPhase1,
+		logger:                         logger.WithName("NEGLinker"),
 	}
 }
 
@@ -102,23 +104,48 @@ func (nl *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 
 func (nl *negLinker) getNegSelfLinks(sp utils.ServicePort, groups []GroupKey) ([]string, error) {
 	version := befeatures.VersionFromServicePort(&sp)
-	negName := sp.NEGName()
-	svcNegKey := fmt.Sprintf("%s/%s", sp.ID.Service.Namespace, negName)
-	urls, ok := getNegUrlsFromSvcneg(svcNegKey, nl.svcNegLister, nl.logger)
-	if ok {
-		return urls, nil
+	var negSelfLinks []string
+
+	if nl.enableMultiSubnetClusterPhase1 {
+		negName := sp.NEGName()
+		svcNegKey := fmt.Sprintf("%s/%s", sp.ID.Service.Namespace, negName)
+		urls, ok := getNegUrlsFromSvcneg(svcNegKey, nl.svcNegLister, nl.logger)
+		if ok {
+			return urls, nil
+		}
+		// In fail-safe situation, we only link NEGs in the default subnet.
+		// We will add all NEGs once CRD is available.
+		for _, group := range groups {
+			nl.logger.V(4).Info("Falling back to use NEG API to retrieve NEG url for NEG", "negName", negName)
+			neg, err := nl.negGetter.GetNetworkEndpointGroup(negName, group.Zone, version, nl.logger)
+			if err != nil {
+				return nil, err
+			}
+			negSelfLinks = append(negSelfLinks, neg.SelfLink)
+		}
+		return negSelfLinks, nil
 	}
 
-	var negSelfLinks []string
-	// In fail-safe situation, we only link NEGs in the default subnet.
-	// We will add all NEGs once CRD is available.
 	for _, group := range groups {
-		nl.logger.V(4).Info("Falling back to use NEG API to retrieve NEG url for NEG", "negName", negName)
-		neg, err := nl.negGetter.GetNetworkEndpointGroup(negName, group.Zone, version, nl.logger)
-		if err != nil {
-			return nil, err
+		// If the group key contains a name, then use that.
+		// Otherwise, get the name from svc port.
+		negName := group.Name
+		if negName == "" {
+			negName = sp.NEGName()
 		}
-		negSelfLinks = append(negSelfLinks, neg.SelfLink)
+
+		negUrl := ""
+		svcNegKey := fmt.Sprintf("%s/%s", sp.ID.Service.Namespace, negName)
+		negUrl, ok := getNegUrlFromSvcneg(svcNegKey, group.Zone, nl.svcNegLister, nl.logger)
+		if !ok {
+			nl.logger.V(4).Info("Falling back to use NEG API to retrieve NEG url for NEG", "negName", negName)
+			neg, err := nl.negGetter.GetNetworkEndpointGroup(negName, group.Zone, version, nl.logger)
+			if err != nil {
+				return nil, err
+			}
+			negUrl = neg.SelfLink
+		}
+		negSelfLinks = append(negSelfLinks, negUrl)
 	}
 	return negSelfLinks, nil
 }
@@ -268,6 +295,31 @@ func getNegUrlsFromSvcneg(key string, svcNegLister cache.Indexer, logger klog.Lo
 		negUrls = append(negUrls, negRef.SelfLink)
 	}
 	return negUrls, true
+}
+
+// getNegUrlFromSvcneg return NEG url from svcneg status if found
+func getNegUrlFromSvcneg(key string, zone string, svcNegLister cache.Indexer, logger klog.Logger) (string, bool) {
+	obj, exists, err := svcNegLister.GetByKey(key)
+	if err != nil {
+		logger.Error(err, "Failed to retrieve svcneg from cache", "svcneg", key)
+		return "", false
+	}
+	if !exists {
+		return "", false
+	}
+	svcneg := obj.(*negv1beta1.ServiceNetworkEndpointGroup)
+
+	for _, negRef := range svcneg.Status.NetworkEndpointGroups {
+		key, err := cloud.ParseResourceURL(negRef.SelfLink)
+		if err != nil {
+			logger.Error(err, "Failed to parse NEG SelfLink from svcneg", "svcneg", svcneg)
+			continue
+		}
+		if key.Key.Zone == zone {
+			return negRef.SelfLink, true
+		}
+	}
+	return "", false
 }
 
 // relativeResourceNameWithDefault will attempt to return a RelativeResourceName

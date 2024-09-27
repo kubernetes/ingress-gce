@@ -101,6 +101,8 @@ type LoadBalancerController struct {
 
 	ZoneGetter *zonegetter.ZoneGetter
 
+	enableMultiSubnetClusterPhase1 bool
+
 	logger klog.Logger
 }
 
@@ -125,19 +127,22 @@ func NewLoadBalancerController(
 	})
 	backendPool := backends.NewPool(ctx.Cloud, ctx.ClusterNamer)
 
+	enableMultiSubnetClusterPhase1 := flags.F.EnableMultiSubnetClusterPhase1
+
 	lbc := LoadBalancerController{
-		ctx:           ctx,
-		Translator:    ctx.Translator,
-		stopCh:        stopCh,
-		hasSynced:     ctx.HasSynced,
-		instancePool:  ctx.InstancePool,
-		l7Pool:        loadbalancers.NewLoadBalancerPool(ctx.Cloud, ctx.ClusterNamer, ctx, namer.NewFrontendNamerFactory(ctx.ClusterNamer, ctx.KubeSystemUID, logger), logger),
-		backendSyncer: backends.NewBackendSyncer(backendPool, healthChecker, ctx.Cloud),
-		negLinker:     backends.NewNEGLinker(backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer(), logger),
-		igLinker:      backends.NewInstanceGroupLinker(ctx.InstancePool, backendPool, logger),
-		metrics:       ctx.ControllerMetrics,
-		ZoneGetter:    ctx.ZoneGetter,
-		logger:        logger,
+		ctx:                            ctx,
+		Translator:                     ctx.Translator,
+		stopCh:                         stopCh,
+		hasSynced:                      ctx.HasSynced,
+		instancePool:                   ctx.InstancePool,
+		l7Pool:                         loadbalancers.NewLoadBalancerPool(ctx.Cloud, ctx.ClusterNamer, ctx, namer.NewFrontendNamerFactory(ctx.ClusterNamer, ctx.KubeSystemUID, logger), logger),
+		backendSyncer:                  backends.NewBackendSyncer(backendPool, healthChecker, ctx.Cloud),
+		negLinker:                      backends.NewNEGLinker(backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer(), logger),
+		igLinker:                       backends.NewInstanceGroupLinker(ctx.InstancePool, backendPool, logger),
+		metrics:                        ctx.ControllerMetrics,
+		ZoneGetter:                     ctx.ZoneGetter,
+		enableMultiSubnetClusterPhase1: enableMultiSubnetClusterPhase1,
+		logger:                         logger,
 	}
 
 	lbc.ingSyncer = ingsync.NewIngressSyncer(&lbc, logger)
@@ -310,7 +315,7 @@ func NewLoadBalancerController(
 		})
 	}
 
-	if flags.F.EnableMultiSubnetClusterPhase1 {
+	if enableMultiSubnetClusterPhase1 {
 		// SvcNeg event handlers.
 		ctx.SvcNegInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			UpdateFunc: func(old, cur interface{}) {

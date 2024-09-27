@@ -55,10 +55,10 @@ func newTestNEGLinker(fakeNEG negtypes.NetworkEndpointGroupCloud, fakeGCE *gce.C
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaRegionBackendServices.UpdateHook = mock.UpdateAlphaRegionBackendServiceHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockBetaRegionBackendServices.UpdateHook = mock.UpdateBetaRegionBackendServiceHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockRegionBackendServices.UpdateHook = mock.UpdateRegionBackendServiceHook
-	return &negLinker{fakeBackendPool, fakeNEG, fakeGCE, ctx.SvcNegInformer.GetIndexer(), klog.TODO()}
+	return &negLinker{fakeBackendPool, fakeNEG, fakeGCE, ctx.SvcNegInformer.GetIndexer(), false, klog.TODO()}
 }
 
-func TestLinkBackendServiceToNEG(t *testing.T) {
+func TestLinkWithDifferentSvcPorts(t *testing.T) {
 	t.Parallel()
 
 	zones := []GroupKey{{Zone: "zone1"}, {Zone: "zone2"}}
@@ -106,8 +106,8 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.desc, func(t *testing.T) {
-			for _, populateSvcNeg := range []bool{true, false} {
+		for _, populateSvcNeg := range []bool{true, false} {
+			t.Run(tc.desc, func(t *testing.T) {
 				fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 				fakeNEG := negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
 				linker := newTestNEGLinker(fakeNEG, fakeGCE)
@@ -224,13 +224,113 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 				}
 
 				validate()
-			}
-		})
-	}
 
+			})
+		}
+	}
 }
 
 func TestGetNegSelfLinks(t *testing.T) {
+	t.Parallel()
+
+	groupKeys := []GroupKey{{Zone: testZone1}, {Zone: testZone2}}
+	namespace, svcName, port := "ns", "name", "port"
+	svc := types.NamespacedName{Namespace: namespace, Name: svcName}
+	svcPort := utils.ServicePort{
+		ID:           utils.ServicePortID{Service: svc},
+		Port:         80,
+		Protocol:     annotations.ProtocolHTTP,
+		TargetPort:   intstr.FromString(port),
+		NEGEnabled:   true,
+		BackendNamer: defaultNamer,
+	}
+	negName := svcPort.NEGName()
+
+	testCases := []struct {
+		desc             string
+		populateSvcNeg   bool
+		testNegRef       []v1beta1.NegObjectReference
+		expectedNegCount int
+	}{
+		{
+			desc:           "Get NEGs from SvcNeg based on node zones",
+			populateSvcNeg: true,
+			// NEG state is empty for NEG created with MultiSubnetClusterPhase1=false
+			testNegRef: []v1beta1.NegObjectReference{
+				createNegRef(testZone1, negName, ""),
+				createNegRef(testZone2, negName, ""),
+			},
+			expectedNegCount: 2,
+		},
+		{
+			desc:             "Get NEGs from GCE based on node zones",
+			populateSvcNeg:   false,
+			expectedNegCount: 2,
+		},
+	}
+
+	for _, tc := range testCases {
+		for _, enableMultiSubnetPhase1 := range []bool{true, false} {
+			// When SvcNeg is populated:
+			// If EnableMultiSubnetClusterPhase1=true, getNegSelfLinks gets
+			// NEGs based on all NEG ObjectReference in NEG CR.
+			// Otherwise, it looks for NEGs located in the zones in GroupKeys
+			// from NEG CR.
+			testName := fmt.Sprintf("%s, enableMultiSubnetPhase1=%v", tc.desc, enableMultiSubnetPhase1)
+
+			t.Run(testName, func(t *testing.T) {
+				fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+				fakeNEG := negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
+				linker := newTestNEGLinker(fakeNEG, fakeGCE)
+				linker.enableMultiSubnetClusterPhase1 = enableMultiSubnetPhase1
+
+				if tc.populateSvcNeg {
+					svcNeg := &v1beta1.ServiceNetworkEndpointGroup{
+						TypeMeta: metav1.TypeMeta{
+							Kind:       "ServiceNetworkEndpointGroup",
+							APIVersion: "networking.gke.io/v1beta1",
+						},
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      svcPort.NEGName(),
+							Namespace: namespace,
+						},
+						Status: v1beta1.ServiceNetworkEndpointGroupStatus{
+							NetworkEndpointGroups: tc.testNegRef,
+						},
+					}
+					if err := linker.svcNegLister.Add(svcNeg); err != nil {
+						t.Fatalf("Failed to add svcneg: %v", err)
+					}
+				}
+
+				for _, groupKey := range groupKeys {
+					neg := &composite.NetworkEndpointGroup{
+						Name:    svcPort.NEGName(),
+						Version: befeatures.VersionFromServicePort(&svcPort),
+					}
+					err := fakeNEG.CreateNetworkEndpointGroup(neg, groupKey.Zone, klog.TODO())
+					if err != nil {
+						t.Fatalf("unexpected error creating NEG for svcPort %v: %v", svcPort, err)
+					}
+				}
+
+				negLinks, err := linker.getNegSelfLinks(svcPort, groupKeys)
+				if err != nil {
+					t.Fatalf("Failed to link backend service to NEG for svcPort %v: %v", svcPort, err)
+				}
+				if len(negLinks) != tc.expectedNegCount {
+					t.Errorf("Got %d neg links, expected %d", len(negLinks), tc.expectedNegCount)
+				}
+			})
+		}
+	}
+}
+
+// TestGetNegSelfLinksWithMultiSubnetCluster checks if getNegSelfLinks() returns
+// the correct set of NEGs when EnableMultiSubnetClusterPhase1 is enabled.
+// It should return NEGs from non-default subnets, which will have a different name
+// from the SvcPort.NEGName().
+func TestGetNegSelfLinksWithMultiSubnetCluster(t *testing.T) {
 	t.Parallel()
 
 	groupKeys := []GroupKey{{Zone: testZone1}, {Zone: testZone2}}
@@ -306,6 +406,8 @@ func TestGetNegSelfLinks(t *testing.T) {
 			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 			fakeNEG := negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
 			linker := newTestNEGLinker(fakeNEG, fakeGCE)
+			linker.enableMultiSubnetClusterPhase1 = true
+
 			if tc.populateSvcNeg {
 				svcNeg := &v1beta1.ServiceNetworkEndpointGroup{
 					TypeMeta: metav1.TypeMeta{

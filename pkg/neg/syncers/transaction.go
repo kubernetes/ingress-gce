@@ -788,8 +788,10 @@ func (s *transactionSyncer) updateInitStatus(negObjRefs []negv1beta1.NegObjectRe
 	}
 
 	neg := origNeg.DeepCopy()
-	inactiveNegObjRefs := getInactiveNegRefs(origNeg.Status.NetworkEndpointGroups, negObjRefs, s.logger)
-	negObjRefs = append(negObjRefs, inactiveNegObjRefs...)
+	if flags.F.EnableMultiSubnetClusterPhase1 {
+		inactiveNegObjRefs := getInactiveNegRefs(origNeg.Status.NetworkEndpointGroups, negObjRefs, s.logger)
+		negObjRefs = append(negObjRefs, inactiveNegObjRefs...)
+	}
 	neg.Status.NetworkEndpointGroups = negObjRefs
 
 	initializedCondition := getInitializedCondition(utilerrors.NewAggregate(errList))

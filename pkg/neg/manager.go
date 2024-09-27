@@ -36,6 +36,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
@@ -636,14 +637,16 @@ func (manager *syncerManager) processNEGDeletionCandidate(svcNegCR *negv1beta1.S
 	// Since no more NEG deletion will be happening at this point, and NEG
 	// CR will not be deleted, clear the reference for deleted NEGs in the
 	// NEG CR.
-	if len(deletedNegs) != 0 {
-		updatedCR := svcNegCR.DeepCopy()
+	if flags.F.EnableMultiSubnetClusterPhase1 {
+		if len(deletedNegs) != 0 {
+			updatedCR := svcNegCR.DeepCopy()
 
-		if errs := ensureExistingNegRef(updatedCR, deletedNegs); len(errs) != 0 {
-			errList = append(errList, errs...)
-		}
-		if _, err := patchNegStatus(manager.svcNegClient, *svcNegCR, *updatedCR); err != nil {
-			errList = append(errList, err)
+			if errs := ensureExistingNegRef(updatedCR, deletedNegs); len(errs) != 0 {
+				errList = append(errList, errs...)
+			}
+			if _, err := patchNegStatus(manager.svcNegClient, *svcNegCR, *updatedCR); err != nil {
+				errList = append(errList, err)
+			}
 		}
 	}
 
