@@ -49,8 +49,6 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 	informerfrontendconfig "k8s.io/ingress-gce/pkg/frontendconfig/client/informers/externalversions/frontendconfig/v1beta1"
-	ingparamsclient "k8s.io/ingress-gce/pkg/ingparams/client/clientset/versioned"
-	informeringparams "k8s.io/ingress-gce/pkg/ingparams/client/informers/externalversions/ingparams/v1beta1"
 	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/metrics"
 	serviceattachmentclient "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned"
@@ -99,8 +97,6 @@ type ControllerContext struct {
 	EndpointSliceInformer    cache.SharedIndexInformer
 	ConfigMapInformer        cache.SharedIndexInformer
 	SvcNegInformer           cache.SharedIndexInformer
-	IngClassInformer         cache.SharedIndexInformer
-	IngParamsInformer        cache.SharedIndexInformer
 	SAInformer               cache.SharedIndexInformer
 	FirewallInformer         cache.SharedIndexInformer
 	NetworkInformer          cache.SharedIndexInformer
@@ -158,7 +154,6 @@ func NewControllerContext(
 	frontendConfigClient frontendconfigclient.Interface,
 	firewallClient firewallclient.Interface,
 	svcnegClient svcnegclient.Interface,
-	ingParamsClient ingparamsclient.Interface,
 	saClient serviceattachmentclient.Interface,
 	networkClient networkclient.Interface,
 	nodeTopologyClient nodetopologyclient.Interface,
@@ -209,10 +204,6 @@ func NewControllerContext(
 	}
 	if config.FrontendConfigEnabled {
 		context.FrontendConfigInformer = informerfrontendconfig.NewFrontendConfigInformer(frontendConfigClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
-	}
-	if ingParamsClient != nil {
-		context.IngClassInformer = informernetworking.NewIngressClassInformer(kubeClient, config.ResyncPeriod, utils.NewNamespaceIndexer())
-		context.IngParamsInformer = informeringparams.NewGCPIngressParamsInformer(ingParamsClient, config.ResyncPeriod, utils.NewNamespaceIndexer())
 	}
 
 	if saClient != nil {
@@ -319,14 +310,6 @@ func (ctx *ControllerContext) HasSynced() bool {
 		funcs = append(funcs, ctx.ConfigMapInformer.HasSynced)
 	}
 
-	if ctx.IngClassInformer != nil {
-		funcs = append(funcs, ctx.IngClassInformer.HasSynced)
-	}
-
-	if ctx.IngParamsInformer != nil {
-		funcs = append(funcs, ctx.IngParamsInformer.HasSynced)
-	}
-
 	if ctx.SAInformer != nil {
 		funcs = append(funcs, ctx.SAInformer.HasSynced)
 	}
@@ -418,12 +401,6 @@ func (ctx *ControllerContext) Start(stopCh <-chan struct{}) {
 	}
 	if ctx.SvcNegInformer != nil {
 		go ctx.SvcNegInformer.Run(stopCh)
-	}
-	if ctx.IngClassInformer != nil {
-		go ctx.IngClassInformer.Run(stopCh)
-	}
-	if ctx.IngParamsInformer != nil {
-		go ctx.IngParamsInformer.Run(stopCh)
 	}
 	if ctx.SAInformer != nil {
 		go ctx.SAInformer.Run(stopCh)
