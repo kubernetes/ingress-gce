@@ -415,6 +415,9 @@ func (ctx *ControllerContext) Start(stopCh <-chan struct{}) {
 	if ctx.GKENetworkParamsInformer != nil {
 		go ctx.GKENetworkParamsInformer.Run(stopCh)
 	}
+	if ctx.NodeTopologyInformer != nil {
+		go ctx.NodeTopologyInformer.Run(stopCh)
+	}
 	// Export ingress usage metrics.
 	go ctx.ControllerMetrics.Run(stopCh)
 }
