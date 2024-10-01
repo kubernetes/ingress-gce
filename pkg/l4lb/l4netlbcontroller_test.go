@@ -178,21 +178,30 @@ func checkForwardingRule(lc *L4NetLBController, svc *v1.Service, expectedPortRan
 	return nil
 }
 
-func createAndSyncNetLBSvc(t *testing.T) (svc *v1.Service, lc *L4NetLBController) {
-	lc = newL4NetLBServiceController()
+func createAndSyncNetLBSvcWithInstanceGroups(t *testing.T, lc *L4NetLBController) (svc *v1.Service) {
 	svc = test.NewL4NetLBRBSService(8080)
+	return syncNetLBSvc(t, lc, svc)
+}
+
+func createAndSyncNetLBSvcWithNEGs(t *testing.T, lc *L4NetLBController) (svc *v1.Service) {
+	svc = test.NewL4NetLBRBSService(8080)
+	addNEGAndSvcNegL4NetLBController(lc, svc)
+	return syncNetLBSvc(t, lc, svc)
+}
+func syncNetLBSvc(t *testing.T, lc *L4NetLBController, svc *v1.Service) (syncedSvc *v1.Service) {
+
 	addNetLBService(lc, svc)
 	key, _ := common.KeyFunc(svc)
 	err := lc.sync(key, klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to sync newly added service %s, err %v", svc.Name, err)
 	}
-	svc, err = lc.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
+	syncedSvc, err = lc.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err %v", svc.Name, err)
 	}
-	validateNetLBSvcStatus(svc, t)
-	return
+	validateNetLBSvcStatus(syncedSvc, t)
+	return syncedSvc
 }
 
 func createAndSyncLegacyNetLBSvc(t *testing.T) (svc *v1.Service, lc *L4NetLBController) {
@@ -500,8 +509,7 @@ func TestForwardingRuleWithPortRange(t *testing.T) {
 
 func TestProcessServiceCreate(t *testing.T) {
 	lc := newL4NetLBServiceController()
-	svc := test.NewL4NetLBRBSService(8080)
-	addNetLBService(lc, svc)
+
 	prevMetrics, err := test.GetL4NetLBLatencyMetric()
 	if err != nil {
 		t.Errorf("Error getting L4 NetLB latency metrics err: %v", err)
@@ -509,15 +517,9 @@ func TestProcessServiceCreate(t *testing.T) {
 	if prevMetrics == nil {
 		t.Fatalf("Cannot get prometheus metrics for L4NetLB latency")
 	}
-	key, _ := common.KeyFunc(svc)
-	err = lc.sync(key, klog.TODO())
-	if err != nil {
-		t.Errorf("Failed to sync newly added service %s, err %v", svc.Name, err)
-	}
-	svc, err = lc.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
-	if err != nil {
-		t.Errorf("Failed to lookup service %s, err %v", svc.Name, err)
-	}
+
+	svc := createAndSyncNetLBSvcWithInstanceGroups(t, lc)
+
 	currMetrics, metricErr := test.GetL4NetLBLatencyMetric()
 	if metricErr != nil {
 		t.Errorf("Error getting L4 NetLB latency metrics err: %v", metricErr)
@@ -545,12 +547,9 @@ func TestProcessMultinetServiceCreate(t *testing.T) {
 	})
 
 	svc := test.NewL4NetLBRBSService(8080)
-	// create the NEG that would be created by the NEG controller.
-	addNEGAndSvcNegL4NetLBController(lc, svc)
-
 	svc.Spec.Selector = make(map[string]string)
 	svc.Spec.Selector[networkv1.NetworkAnnotationKey] = "secondary-network"
-	addNetLBService(lc, svc)
+
 	prevMetrics, err := test.GetL4NetLBLatencyMetric()
 	if err != nil {
 		t.Errorf("Error getting L4 NetLB latency metrics err: %v", err)
@@ -558,15 +557,11 @@ func TestProcessMultinetServiceCreate(t *testing.T) {
 	if prevMetrics == nil {
 		t.Fatalf("Cannot get prometheus metrics for L4NetLB latency")
 	}
-	key, _ := common.KeyFunc(svc)
-	err = lc.sync(key, klog.TODO())
-	if err != nil {
-		t.Errorf("Failed to sync newly added service %s, err %v", svc.Name, err)
-	}
-	svc, err = lc.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
-	if err != nil {
-		t.Errorf("Failed to lookup service %s, err %v", svc.Name, err)
-	}
+
+	// create the NEG that would be created by the NEG controller.
+	addNEGAndSvcNegL4NetLBController(lc, svc)
+	svc = syncNetLBSvc(t, lc, svc)
+
 	currMetrics, metricErr := test.GetL4NetLBLatencyMetric()
 	if metricErr != nil {
 		t.Errorf("Error getting L4 NetLB latency metrics err: %v", metricErr)
@@ -575,6 +570,147 @@ func TestProcessMultinetServiceCreate(t *testing.T) {
 
 	validateNetLBSvcStatus(svc, t)
 	if err := checkBackendServiceWithNEG(lc, svc); err != nil {
+		t.Errorf("UnexpectedError %v", err)
+	}
+	if err := validateAnnotations(svc); err != nil {
+		t.Errorf("%v", err)
+	}
+	deleteNetLBService(lc, svc)
+}
+
+func TestProcessNEGServiceCreate(t *testing.T) {
+	lc := newL4NetLBServiceController()
+	lc.enableNEGSupport = true
+	lc.enableNEGAsDefault = true
+
+	prevMetrics, err := test.GetL4NetLBLatencyMetric()
+	if err != nil {
+		t.Errorf("Error getting L4 NetLB latency metrics err: %v", err)
+	}
+	if prevMetrics == nil {
+		t.Fatalf("Cannot get prometheus metrics for L4NetLB latency")
+	}
+
+	svc := createAndSyncNetLBSvcWithNEGs(t, lc)
+
+	currMetrics, metricErr := test.GetL4NetLBLatencyMetric()
+	if metricErr != nil {
+		t.Errorf("Error getting L4 NetLB latency metrics err: %v", metricErr)
+	}
+	prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{CreateCount: 1, UpperBoundSeconds: 1}, t)
+
+	validateNetLBSvcStatus(svc, t)
+	if !utils.HasL4NetLBFinalizerV3(svc) {
+		t.Errorf("the service %s should have the V3 finalizer but instead it had %v", svc.Name, svc.Finalizers)
+	}
+	if err := checkBackendServiceWithNEG(lc, svc); err != nil {
+		t.Errorf("UnexpectedError %v", err)
+	}
+	if err := validateAnnotations(svc); err != nil {
+		t.Errorf("%v", err)
+	}
+	deleteNetLBService(lc, svc)
+}
+
+// Test the rollback scenario to a version where NEGs are disabled.
+func TestProcessNEGServiceUpdateAfterNEGFlagTurnOff(t *testing.T) {
+	lc := newL4NetLBServiceController()
+	lc.enableNEGSupport = true
+	lc.enableNEGAsDefault = true
+
+	svc := createAndSyncNetLBSvcWithNEGs(t, lc)
+	if err := checkBackendServiceWithNEG(lc, svc); err != nil {
+		t.Errorf("UnexpectedError %v", err)
+	}
+
+	// turn off NEG support
+	lc.enableNEGSupport = false
+	// Refresh the informer content
+	updateNetLBService(lc, svc)
+
+	svc = syncNetLBSvc(t, lc, svc)
+
+	if !utils.HasL4NetLBFinalizerV2(svc) {
+		t.Errorf("the service %s should have the V2 finalizer but instead it had %v", svc.Name, svc.Finalizers)
+	}
+	// validate that IG is attached
+	if err := checkBackendService(lc, svc); err != nil {
+		t.Errorf("UnexpectedError %v", err)
+	}
+	if err := validateAnnotations(svc); err != nil {
+		t.Errorf("%v", err)
+	}
+	deleteNetLBService(lc, svc)
+}
+
+// Test the rollback scenario to a version where NEGs are not default but enabled.
+func TestProcessNEGServiceUpdateAfterDefaultFlagTurnOff(t *testing.T) {
+	lc := newL4NetLBServiceController()
+	lc.enableNEGSupport = true
+	lc.enableNEGAsDefault = true
+
+	svc := createAndSyncNetLBSvcWithNEGs(t, lc)
+	if err := checkBackendServiceWithNEG(lc, svc); err != nil {
+		t.Errorf("UnexpectedError %v", err)
+	}
+
+	// turn off default NEG
+	lc.enableNEGAsDefault = false
+	// Refresh the informer content
+	updateNetLBService(lc, svc)
+	svc = syncNetLBSvc(t, lc, svc)
+
+	validateNetLBSvcStatus(svc, t)
+	if !utils.HasL4NetLBFinalizerV3(svc) {
+		t.Errorf("the service %s should have the V3 finalizer but instead it had %v", svc.Name, svc.Finalizers)
+	}
+	if utils.HasL4NetLBFinalizerV2(svc) {
+		t.Errorf("the service %s should not have the V2 finalizer but instead it had %v", svc.Name, svc.Finalizers)
+	}
+	// validate that NEG is still attached
+	if err := checkBackendServiceWithNEG(lc, svc); err != nil {
+		t.Errorf("UnexpectedError %v", err)
+	}
+	if err := validateAnnotations(svc); err != nil {
+		t.Errorf("%v", err)
+	}
+	deleteNetLBService(lc, svc)
+}
+
+func TestProcessIGServiceWhenNEGIsEnabled(t *testing.T) {
+	lc := newL4NetLBServiceController()
+	lc.enableNEGSupport = true
+	lc.enableNEGAsDefault = true
+
+	svc := test.NewL4NetLBRBSService(8080)
+	// add a finalizer that marks the service as IG service.
+	svc.Finalizers = append(svc.Finalizers, common.NetLBFinalizerV2)
+
+	prevMetrics, err := test.GetL4NetLBLatencyMetric()
+	if err != nil {
+		t.Errorf("Error getting L4 NetLB latency metrics err: %v", err)
+	}
+	if prevMetrics == nil {
+		t.Fatalf("Cannot get prometheus metrics for L4NetLB latency")
+	}
+
+	svc = syncNetLBSvc(t, lc, svc)
+
+	currMetrics, metricErr := test.GetL4NetLBLatencyMetric()
+	if metricErr != nil {
+		t.Errorf("Error getting L4 NetLB latency metrics err: %v", metricErr)
+	}
+	prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{CreateCount: 1, UpperBoundSeconds: 1}, t)
+
+	validateNetLBSvcStatus(svc, t)
+	if !utils.HasL4NetLBFinalizerV2(svc) {
+		t.Errorf("the service %s should have the V2 finalizer but instead it had %v", svc.Name, svc.Finalizers)
+	}
+	if utils.HasL4NetLBFinalizerV3(svc) {
+		t.Errorf("the service %s should not have the V3 finalizer but instead it had %v", svc.Name, svc.Finalizers)
+	}
+	validateNetLBSvcStatus(svc, t)
+	if err := checkBackendService(lc, svc); err != nil {
 		t.Errorf("UnexpectedError %v", err)
 	}
 	if err := validateAnnotations(svc); err != nil {
@@ -639,7 +775,8 @@ func addUsersStaticAddress(lc *L4NetLBController, netTier cloud.NetworkTier) {
 }
 
 func TestProcessServiceDeletion(t *testing.T) {
-	svc, lc := createAndSyncNetLBSvc(t)
+	lc := newL4NetLBServiceController()
+	svc := createAndSyncNetLBSvcWithInstanceGroups(t, lc)
 
 	if !common.HasGivenFinalizer(svc.ObjectMeta, common.NetLBFinalizerV2) {
 		t.Errorf("Expected L4 External LoadBalancer finalizer")
@@ -682,6 +819,50 @@ func TestProcessServiceDeletion(t *testing.T) {
 	deleteNetLBService(lc, svc)
 }
 
+func TestProcessNEGServiceDeletion(t *testing.T) {
+
+	lc := newL4NetLBServiceController()
+	lc.enableNEGSupport = true
+	lc.enableNEGAsDefault = true
+	svc := createAndSyncNetLBSvcWithNEGs(t, lc)
+
+	if !common.HasGivenFinalizer(svc.ObjectMeta, common.NetLBFinalizerV3) {
+		t.Errorf("Expected L4 External LoadBalancer finalizer")
+	}
+	if lc.needsDeletion(svc, klog.TODO()) {
+		t.Errorf("Service should not be marked for deletion")
+	}
+	// Mark the service for deletion by updating timestamp
+	svc.DeletionTimestamp = &metav1.Time{}
+	updateNetLBService(lc, svc)
+	if !lc.needsDeletion(svc, klog.TODO()) {
+		t.Errorf("Service should be marked for deletion")
+	}
+	key, _ := common.KeyFunc(svc)
+	err := lc.sync(key, klog.TODO())
+	if err != nil {
+		t.Errorf("Failed to sync service %s, err %v", svc.Name, err)
+	}
+	svc, err = lc.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err %v", svc.Name, err)
+	}
+	if len(svc.Status.LoadBalancer.Ingress) > 0 {
+		t.Errorf("Expected LoadBalancer status be deleted - %+v", svc.Status.LoadBalancer)
+	}
+	if common.HasGivenFinalizer(svc.ObjectMeta, common.NetLBFinalizerV2) {
+		t.Errorf("Unexpected LoadBalancer finalizer %v", svc.ObjectMeta.Finalizers)
+	}
+	if common.HasGivenFinalizer(svc.ObjectMeta, common.NetLBFinalizerV3) {
+		t.Errorf("Unexpected LoadBalancer finalizer %v", svc.ObjectMeta.Finalizers)
+	}
+
+	if err = validateAnnotationsDeleted(svc); err != nil {
+		t.Errorf("RBS Service annotations have NOT been deleted. Error: %v", err)
+	}
+	deleteNetLBService(lc, svc)
+}
+
 func TestProcessRBSServiceTypeTransition(t *testing.T) {
 	testCases := []struct {
 		desc      string
@@ -707,7 +888,8 @@ func TestProcessRBSServiceTypeTransition(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			svc, lc := createAndSyncNetLBSvc(t)
+			lc := newL4NetLBServiceController()
+			svc := createAndSyncNetLBSvcWithInstanceGroups(t, lc)
 			if lc.needsDeletion(svc, klog.TODO()) {
 				t.Errorf("Service should not be marked for deletion")
 			}
@@ -750,7 +932,8 @@ func TestProcessRBSServiceTypeTransition(t *testing.T) {
 }
 
 func TestServiceDeletionWhenInstanceGroupInUse(t *testing.T) {
-	svc, lc := createAndSyncNetLBSvc(t)
+	lc := newL4NetLBServiceController()
+	svc := createAndSyncNetLBSvcWithInstanceGroups(t, lc)
 
 	(lc.ctx.Cloud.Compute().(*cloud.MockGCE)).MockInstanceGroups.DeleteHook = func(ctx context.Context, key *meta.Key, m *cloud.MockInstanceGroups, options ...cloud.Option) (bool, error) {
 		err := &googleapi.Error{
@@ -886,7 +1069,8 @@ func TestProcessServiceDeletionFailed(t *testing.T) {
 		{addMockFunc: func(c *cloud.MockGCE) { c.MockRegionHealthChecks.DeleteHook = test.DeleteHealthCheckErrorHook },
 			expectedError: "DeleteHealthCheckErrorHook"},
 	} {
-		svc, lc := createAndSyncNetLBSvc(t)
+		lc := newL4NetLBServiceController()
+		svc := createAndSyncNetLBSvcWithInstanceGroups(t, lc)
 		if !common.HasGivenFinalizer(svc.ObjectMeta, common.NetLBFinalizerV2) {
 			t.Fatalf("Expected L4 External LoadBalancer finalizer")
 		}
@@ -1073,7 +1257,8 @@ func TestProcessServiceUpdate(t *testing.T) {
 		},
 	} {
 		t.Run(param.Desc, func(t *testing.T) {
-			svc, l4netController := createAndSyncNetLBSvc(t)
+			l4netController := newL4NetLBServiceController()
+			svc := createAndSyncNetLBSvcWithInstanceGroups(t, l4netController)
 			l4netController.ctx.EnableL4StrongSessionAffinity = true
 			(l4netController.ctx.Cloud.Compute().(*cloud.MockGCE)).MockFirewalls.PatchHook = mock.UpdateFirewallHook
 			(l4netController.ctx.Cloud.Compute().(*cloud.MockGCE)).MockRegionBackendServices.UpdateHook = mock.UpdateRegionBackendServiceHook
@@ -1108,7 +1293,8 @@ func TestProcessServiceUpdate(t *testing.T) {
 }
 
 func TestHealthCheckWhenExternalTrafficPolicyWasUpdated(t *testing.T) {
-	svc, lc := createAndSyncNetLBSvc(t)
+	lc := newL4NetLBServiceController()
+	svc := createAndSyncNetLBSvcWithInstanceGroups(t, lc)
 	newSvc, err := lc.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err: %v", svc.Name, err)
@@ -1396,7 +1582,8 @@ func TestShouldProcessService(t *testing.T) {
 
 func TestStrongSessionAffinityServiceUpdate(t *testing.T) {
 	// setup an original service
-	svc, l4netController := createAndSyncNetLBSvc(t)
+	l4netController := newL4NetLBServiceController()
+	svc := createAndSyncNetLBSvcWithInstanceGroups(t, l4netController)
 	l4netController.ctx.EnableL4StrongSessionAffinity = true
 
 	// update service objects
