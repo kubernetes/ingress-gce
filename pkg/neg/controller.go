@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"time"
 
+	nodetopologyv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1"
 	apiv1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
 	v1 "k8s.io/api/networking/v1"
@@ -85,6 +86,9 @@ type Controller struct {
 	endpointQueue workqueue.RateLimitingInterface
 	// nodeQueue takes node name as work item.
 	nodeQueue workqueue.RateLimitingInterface
+	// nodeTopologyQueue acts as an intermeidate queue to trigger sync on all
+	// syncers on Node Topology resource updates.
+	nodeTopologyQueue workqueue.RateLimitingInterface
 
 	// syncTracker tracks the latest time that service and endpoint changes are processed
 	syncTracker utils.TimeTracker
@@ -103,6 +107,10 @@ type Controller struct {
 	// enableIngressRegionalExternal indicates where NEG controller should process
 	// gce-regional-external ingresses
 	enableIngressRegionalExternal bool
+
+	// enableMultiSubnetClusterPhase1 indicates whether NEG controller should create
+	// additional NEGs in the non-default subnets.
+	enableMultiSubnetClusterPhase1 bool
 
 	// runL4ForNetLB indicates if the controller can create NEGs for L4 NetLB services.
 	runL4ForNetLB bool
@@ -217,30 +225,36 @@ func NewController(
 	if gkeNetworkParamSetInformer != nil {
 		gkeNetworkParamSetIndexer = gkeNetworkParamSetInformer.GetIndexer()
 	}
+	enableMultiSubnetClusterPhase1 := flags.F.EnableMultiSubnetClusterPhase1
+
 	negController := &Controller{
-		client:                        kubeClient,
-		manager:                       manager,
-		gcPeriod:                      gcPeriod,
-		recorder:                      recorder,
-		zoneGetter:                    zoneGetter,
-		namer:                         namer,
-		l4Namer:                       l4Namer,
-		defaultBackendService:         defaultBackendService,
-		hasSynced:                     hasSynced,
-		ingressLister:                 ingressInformer.GetIndexer(),
-		serviceLister:                 serviceInformer.GetIndexer(),
-		networkResolver:               network.NewNetworksResolver(networkIndexer, gkeNetworkParamSetIndexer, cloud, enableMultiNetworking, logger),
-		serviceQueue:                  workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_service_queue"),
-		endpointQueue:                 workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_endpoint_queue"),
-		nodeQueue:                     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_node_queue"),
-		syncTracker:                   utils.NewTimeTracker(),
-		reflector:                     reflector,
-		syncerMetrics:                 syncerMetrics,
-		runL4ForILB:                   runL4Controller,
-		enableIngressRegionalExternal: enableIngressRegionalExternal,
-		runL4ForNetLB:                 runL4ForNetLB,
-		stopCh:                        stopCh,
-		logger:                        logger,
+		client:                         kubeClient,
+		manager:                        manager,
+		gcPeriod:                       gcPeriod,
+		recorder:                       recorder,
+		zoneGetter:                     zoneGetter,
+		namer:                          namer,
+		l4Namer:                        l4Namer,
+		defaultBackendService:          defaultBackendService,
+		hasSynced:                      hasSynced,
+		ingressLister:                  ingressInformer.GetIndexer(),
+		serviceLister:                  serviceInformer.GetIndexer(),
+		networkResolver:                network.NewNetworksResolver(networkIndexer, gkeNetworkParamSetIndexer, cloud, enableMultiNetworking, logger),
+		serviceQueue:                   workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_service_queue"),
+		endpointQueue:                  workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_endpoint_queue"),
+		nodeQueue:                      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_node_queue"),
+		syncTracker:                    utils.NewTimeTracker(),
+		reflector:                      reflector,
+		syncerMetrics:                  syncerMetrics,
+		runL4ForILB:                    runL4Controller,
+		enableIngressRegionalExternal:  enableIngressRegionalExternal,
+		enableMultiSubnetClusterPhase1: enableMultiSubnetClusterPhase1,
+		runL4ForNetLB:                  runL4ForNetLB,
+		stopCh:                         stopCh,
+		logger:                         logger,
+	}
+	if enableMultiSubnetClusterPhase1 {
+		negController.nodeTopologyQueue = workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_node_topology_queue")
 	}
 
 	ingressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -328,6 +342,31 @@ func NewController(
 			}
 		},
 	})
+	if enableMultiSubnetClusterPhase1 {
+		nodeTopologyInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				crd := obj.(*nodetopologyv1.NodeTopology)
+				negController.enqueueNodeTopology(crd)
+			},
+			UpdateFunc: func(old, cur interface{}) {
+				oldCrd := old.(*nodetopologyv1.NodeTopology)
+				currentCrd := cur.(*nodetopologyv1.NodeTopology)
+
+				var zoneChanged, subnetChanged bool
+				if isZoneChanged(oldCrd.Status.Zones, currentCrd.Status.Zones) {
+					logger.Info("Zones in Node Topology CR have changed", "oldZones", oldCrd.Status.Zones, "currentZones", currentCrd.Status.Zones)
+					zoneChanged = true
+				}
+				if isSubnetChanged(oldCrd.Status.Subnets, currentCrd.Status.Subnets) {
+					logger.Info("Subnets in Node Topology CR have changed", "oldSubnets", oldCrd.Status.Subnets, "currentSubnets", currentCrd.Status.Subnets)
+					subnetChanged = true
+				}
+				if zoneChanged || subnetChanged {
+					negController.enqueueNodeTopology(currentCrd)
+				}
+			},
+		})
+	}
 
 	if enableAsm {
 		negController.enableASM = enableAsm
@@ -352,6 +391,9 @@ func (c *Controller) Run() {
 	go wait.Until(c.serviceWorker, time.Second, c.stopCh)
 	go wait.Until(c.endpointWorker, time.Second, c.stopCh)
 	go wait.Until(c.nodeWorker, time.Second, c.stopCh)
+	if c.enableMultiSubnetClusterPhase1 {
+		go wait.Until(c.nodeTopologyWorker, time.Second, c.stopCh)
+	}
 	go func() {
 		// Wait for gcPeriod to run the first GC
 		// This is to make sure that all services are fully processed before running GC.
@@ -381,6 +423,9 @@ func (c *Controller) stop() {
 	c.serviceQueue.ShutDown()
 	c.endpointQueue.ShutDown()
 	c.nodeQueue.ShutDown()
+	if c.enableMultiSubnetClusterPhase1 {
+		c.nodeTopologyQueue.ShutDown()
+	}
 	c.manager.ShutDown()
 }
 
@@ -534,6 +579,33 @@ func (c *Controller) processService(key string) error {
 
 	// delete the annotation
 	return c.syncNegStatusAnnotation(namespace, name, make(negtypes.PortInfoMap))
+}
+
+func (c *Controller) nodeTopologyWorker() {
+	for {
+		func() {
+			key, quit := c.nodeTopologyQueue.Get()
+			if quit {
+				return
+			}
+			c.processNodeTopology()
+			// Node Topology CR is a cluster-wide resource, so the key will
+			// always be the same.
+			// Done() ensures that if the item is updated while it is being
+			// process, it will be re-added to the queue for re-processing,
+			// so we won't miss any updates.
+			c.nodeTopologyQueue.Done(key)
+		}()
+	}
+}
+
+// processNodeTopology signals all syncers to sync
+func (c *Controller) processNodeTopology() {
+	defer func() {
+		now := c.syncTracker.Track()
+		metrics.LastSyncTimestamp.Set(float64(now.UTC().UnixNano()))
+	}()
+	c.manager.SyncAllSyncers()
 }
 
 // mergeIngressPortInfo merges Ingress PortInfo into portInfoMap if the service has Enable Ingress annotation.
@@ -846,6 +918,17 @@ func (c *Controller) enqueueIngressServices(ing *v1.Ingress) {
 	if ing.Spec.DefaultBackend == nil {
 		c.enqueueService(cache.ExplicitKey(c.defaultBackendService.ID.Service.String()))
 	}
+}
+
+func (c *Controller) enqueueNodeTopology(obj interface{}) {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+	if err != nil {
+		c.logger.Error(err, "Failed to generate Node Topology key")
+		metrics.PublishNegControllerErrorCountMetrics(err, true)
+		return
+	}
+	c.logger.V(3).Info("Adding NodeTopology to nodeTopologyQueue for processing", "nodeTopology", key)
+	c.nodeTopologyQueue.Add(key)
 }
 
 func (c *Controller) gc() {

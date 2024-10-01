@@ -335,6 +335,20 @@ func (manager *syncerManager) SyncNodes() {
 	}
 }
 
+// SyncAllSyncers signals all syncers to sync.
+func (manager *syncerManager) SyncAllSyncers() {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+
+	for key, syncer := range manager.syncerMap {
+		if syncer.IsStopped() {
+			manager.logger.V(1).Info("SyncAllSyncers: Syncer is already stopped; not syncing.", "negSyncerKey", key.String())
+			continue
+		}
+		syncer.Sync()
+	}
+}
+
 // updateZoneMap updates the existingZoneMap with the latest zones and returns
 // true if the zones have changed. The caller must obtain mu mutex of the
 // manager before calling this function since it modifies the passed

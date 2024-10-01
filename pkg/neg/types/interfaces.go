@@ -76,6 +76,8 @@ type NegSyncerManager interface {
 	GC() error
 	// ShutDown shuts down the manager
 	ShutDown()
+	// SyncAllSyncer signals all syncers to sync. This call is asynchronous.
+	SyncAllSyncers()
 }
 
 type NetworkEndpointsCalculator interface {
