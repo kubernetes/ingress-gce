@@ -50,6 +50,8 @@ const (
 	maxInstancesPerInstanceGroup = 1000
 	// maxL4ILBPorts is the maximum number of ports that can be specified in an L4 ILB Forwarding Rule. Beyond this, "AllPorts" field should be used.
 	maxL4ILBPorts = 5
+	// labelGKESubnetworkName is the key of the label that contains the subnet name the node is connected to.
+	labelGKESubnetworkName = "cloud.google.com/gke-node-pool-subnet"
 )
 
 func (g *Cloud) ensureInternalLoadBalancer(clusterName, clusterID string, svc *v1.Service, existingFwdRule *compute.ForwardingRule, nodes []*v1.Node) (*v1.LoadBalancerStatus, error) {
@@ -252,6 +254,54 @@ func (g *Cloud) ensureInternalLoadBalancer(clusterName, clusterID string, svc *v
 	status := &v1.LoadBalancerStatus{}
 	status.Ingress = []v1.LoadBalancerIngress{{IP: updatedFwdRule.IPAddress}}
 	return status, nil
+}
+
+func removeNodesInNonDefaultNetworks(nodes []*v1.Node, defaultSubnetName string) []*v1.Node {
+	var newList []*v1.Node
+	var skippedNodes []string
+	for _, node := range nodes {
+		subnetLabel, ok := node.Labels[labelGKESubnetworkName]
+		// nodes that have no label and no PodCIDR should be filtered out.
+		// This translates to: if node doesn't have the label but has PodCIDR then it is assumed to be in the default network.
+		// This check is a safeguard for situations when the cluster might be running older node controller that does not know multi-subnet or multi-subnet feature misbehaves.
+		if !ok && node.Spec.PodCIDR == "" {
+			skippedNodes = append(skippedNodes, node.Name)
+			continue
+		}
+		// For clusters that become multi-subnet the label on existing nodes from the default network can be present with an emtpy value.
+		if ok && subnetLabel != "" && subnetLabel != defaultSubnetName {
+			skippedNodes = append(skippedNodes, node.Name)
+			continue
+		}
+		newList = append(newList, node)
+	}
+	countOfSkippedNodes := len(skippedNodes)
+	if len(skippedNodes) > 0 {
+		klog.V(2).Infof("Skipped %d nodes from non default subnetworks. First skipped nodes: %v", countOfSkippedNodes, truncateList(skippedNodes, 10))
+	}
+	return newList
+}
+
+// Extract the subnet name from the URL.
+// example: for `https://www.googleapis.com/compute/v1/projects/project/regions/us-central1/subnetworks/defaultSubnet`
+// this will return `defaultSubnet`.
+func subnetNameFromURL(url string) (string, error) {
+	resource, err := cloud.ParseResourceURL(url)
+	if err != nil {
+		return "", err
+	}
+	if resource.Key == nil {
+		return "", fmt.Errorf("subnet URL %s is missing the name", url)
+	}
+	return resource.Key.Name, nil
+}
+
+// truncates a list - will return a sublist of at most max elements.
+func truncateList[T any](l []T, max int) []T {
+	if len(l) <= max {
+		return l
+	}
+	return l[:max]
 }
 
 func (g *Cloud) clearPreviousInternalResources(svc *v1.Service, loadBalancerName string, existingBackendService *compute.BackendService, expectedBSName, expectedHCName string) {
@@ -626,6 +676,17 @@ func (g *Cloud) ensureInternalInstanceGroup(name, zone string, nodes []*v1.Node)
 // ensureInternalInstanceGroups generates an unmanaged instance group for every zone
 // where a K8s node exists. It also ensures that each node belongs to an instance group
 func (g *Cloud) ensureInternalInstanceGroups(name string, nodes []*v1.Node) ([]string, error) {
+	defaultSubnetName, err := subnetNameFromURL(g.SubnetworkURL())
+	// Perform node filtering only if the subnet URL is valid. Do not stop execution in case some clusters have invalid SubnetworkURL configured.
+	if err == nil {
+		// Filter out any node that is not from the default network. This is required for multi-subnet feature.
+		// This should not change behavior for nodes that are in the default network.
+		// This can't be done earlier when listing node since the code is shared between internal and external LBs.
+		nodes = removeNodesInNonDefaultNetworks(nodes, defaultSubnetName)
+	} else {
+		klog.Errorf("invalid subnetwork URL configured for the controller, assuming all nodes are in the default subnetwork %s, err: %v", g.SubnetworkURL(), err)
+	}
+
 	zonedNodes := splitNodesByZone(nodes)
 	klog.V(2).Infof("ensureInternalInstanceGroups(%v): %d nodes over %d zones in region %v", name, len(nodes), len(zonedNodes), g.region)
 	var igLinks []string

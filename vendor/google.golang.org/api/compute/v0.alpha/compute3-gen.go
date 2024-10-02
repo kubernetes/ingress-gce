@@ -16,1622 +16,6 @@ import (
 	gensupport "google.golang.org/api/internal/gensupport"
 )
 
-type RegionBackendServicesDeleteCall struct {
-	s              *Service
-	project        string
-	region         string
-	backendService string
-	urlParams_     gensupport.URLParams
-	ctx_           context.Context
-	header_        http.Header
-}
-
-// Delete: Deletes the specified regional BackendService resource.
-//
-// - backendService: Name of the BackendService resource to delete.
-// - project: Project ID for this request.
-// - region: Name of the region scoping this request.
-func (r *RegionBackendServicesService) Delete(project string, region string, backendService string) *RegionBackendServicesDeleteCall {
-	c := &RegionBackendServicesDeleteCall{s: r.s, urlParams_: make(gensupport.URLParams)}
-	c.project = project
-	c.region = region
-	c.backendService = backendService
-	return c
-}
-
-// RequestId sets the optional parameter "requestId": An optional request ID to
-// identify requests. Specify a unique request ID so that if you must retry
-// your request, the server will know to ignore the request if it has already
-// been completed. For example, consider a situation where you make an initial
-// request and the request times out. If you make the request again with the
-// same request ID, the server can check if original operation with the same
-// request ID was received, and if so, will ignore the second request. This
-// prevents clients from accidentally creating duplicate commitments. The
-// request ID must be a valid UUID with the exception that zero UUID is not
-// supported ( 00000000-0000-0000-0000-000000000000).
-func (c *RegionBackendServicesDeleteCall) RequestId(requestId string) *RegionBackendServicesDeleteCall {
-	c.urlParams_.Set("requestId", requestId)
-	return c
-}
-
-// Fields allows partial responses to be retrieved. See
-// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
-// details.
-func (c *RegionBackendServicesDeleteCall) Fields(s ...googleapi.Field) *RegionBackendServicesDeleteCall {
-	c.urlParams_.Set("fields", googleapi.CombineFields(s))
-	return c
-}
-
-// Context sets the context to be used in this call's Do method.
-func (c *RegionBackendServicesDeleteCall) Context(ctx context.Context) *RegionBackendServicesDeleteCall {
-	c.ctx_ = ctx
-	return c
-}
-
-// Header returns a http.Header that can be modified by the caller to add
-// headers to the request.
-func (c *RegionBackendServicesDeleteCall) Header() http.Header {
-	if c.header_ == nil {
-		c.header_ = make(http.Header)
-	}
-	return c.header_
-}
-
-func (c *RegionBackendServicesDeleteCall) doRequest(alt string) (*http.Response, error) {
-	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "", c.header_)
-	var body io.Reader = nil
-	c.urlParams_.Set("alt", alt)
-	c.urlParams_.Set("prettyPrint", "false")
-	urls := googleapi.ResolveRelative(c.s.BasePath, "projects/{project}/regions/{region}/backendServices/{backendService}")
-	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("DELETE", urls, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header = reqHeaders
-	googleapi.Expand(req.URL, map[string]string{
-		"project":        c.project,
-		"region":         c.region,
-		"backendService": c.backendService,
-	})
-	return gensupport.SendRequest(c.ctx_, c.s.client, req)
-}
-
-// Do executes the "compute.regionBackendServices.delete" call.
-// Any non-2xx status code is an error. Response headers are in either
-// *Operation.ServerResponse.Header or (if a response was returned at all) in
-// error.(*googleapi.Error).Header. Use googleapi.IsNotModified to check
-// whether the returned error was because http.StatusNotModified was returned.
-func (c *RegionBackendServicesDeleteCall) Do(opts ...googleapi.CallOption) (*Operation, error) {
-	gensupport.SetOptions(c.urlParams_, opts...)
-	res, err := c.doRequest("json")
-	if res != nil && res.StatusCode == http.StatusNotModified {
-		if res.Body != nil {
-			res.Body.Close()
-		}
-		return nil, gensupport.WrapError(&googleapi.Error{
-			Code:   res.StatusCode,
-			Header: res.Header,
-		})
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer googleapi.CloseBody(res)
-	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, gensupport.WrapError(err)
-	}
-	ret := &Operation{
-		ServerResponse: googleapi.ServerResponse{
-			Header:         res.Header,
-			HTTPStatusCode: res.StatusCode,
-		},
-	}
-	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
-		return nil, err
-	}
-	return ret, nil
-}
-
-type RegionBackendServicesGetCall struct {
-	s              *Service
-	project        string
-	region         string
-	backendService string
-	urlParams_     gensupport.URLParams
-	ifNoneMatch_   string
-	ctx_           context.Context
-	header_        http.Header
-}
-
-// Get: Returns the specified regional BackendService resource.
-//
-// - backendService: Name of the BackendService resource to return.
-// - project: Project ID for this request.
-// - region: Name of the region scoping this request.
-func (r *RegionBackendServicesService) Get(project string, region string, backendService string) *RegionBackendServicesGetCall {
-	c := &RegionBackendServicesGetCall{s: r.s, urlParams_: make(gensupport.URLParams)}
-	c.project = project
-	c.region = region
-	c.backendService = backendService
-	return c
-}
-
-// Fields allows partial responses to be retrieved. See
-// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
-// details.
-func (c *RegionBackendServicesGetCall) Fields(s ...googleapi.Field) *RegionBackendServicesGetCall {
-	c.urlParams_.Set("fields", googleapi.CombineFields(s))
-	return c
-}
-
-// IfNoneMatch sets an optional parameter which makes the operation fail if the
-// object's ETag matches the given value. This is useful for getting updates
-// only after the object has changed since the last request.
-func (c *RegionBackendServicesGetCall) IfNoneMatch(entityTag string) *RegionBackendServicesGetCall {
-	c.ifNoneMatch_ = entityTag
-	return c
-}
-
-// Context sets the context to be used in this call's Do method.
-func (c *RegionBackendServicesGetCall) Context(ctx context.Context) *RegionBackendServicesGetCall {
-	c.ctx_ = ctx
-	return c
-}
-
-// Header returns a http.Header that can be modified by the caller to add
-// headers to the request.
-func (c *RegionBackendServicesGetCall) Header() http.Header {
-	if c.header_ == nil {
-		c.header_ = make(http.Header)
-	}
-	return c.header_
-}
-
-func (c *RegionBackendServicesGetCall) doRequest(alt string) (*http.Response, error) {
-	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "", c.header_)
-	if c.ifNoneMatch_ != "" {
-		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
-	}
-	var body io.Reader = nil
-	c.urlParams_.Set("alt", alt)
-	c.urlParams_.Set("prettyPrint", "false")
-	urls := googleapi.ResolveRelative(c.s.BasePath, "projects/{project}/regions/{region}/backendServices/{backendService}")
-	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("GET", urls, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header = reqHeaders
-	googleapi.Expand(req.URL, map[string]string{
-		"project":        c.project,
-		"region":         c.region,
-		"backendService": c.backendService,
-	})
-	return gensupport.SendRequest(c.ctx_, c.s.client, req)
-}
-
-// Do executes the "compute.regionBackendServices.get" call.
-// Any non-2xx status code is an error. Response headers are in either
-// *BackendService.ServerResponse.Header or (if a response was returned at all)
-// in error.(*googleapi.Error).Header. Use googleapi.IsNotModified to check
-// whether the returned error was because http.StatusNotModified was returned.
-func (c *RegionBackendServicesGetCall) Do(opts ...googleapi.CallOption) (*BackendService, error) {
-	gensupport.SetOptions(c.urlParams_, opts...)
-	res, err := c.doRequest("json")
-	if res != nil && res.StatusCode == http.StatusNotModified {
-		if res.Body != nil {
-			res.Body.Close()
-		}
-		return nil, gensupport.WrapError(&googleapi.Error{
-			Code:   res.StatusCode,
-			Header: res.Header,
-		})
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer googleapi.CloseBody(res)
-	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, gensupport.WrapError(err)
-	}
-	ret := &BackendService{
-		ServerResponse: googleapi.ServerResponse{
-			Header:         res.Header,
-			HTTPStatusCode: res.StatusCode,
-		},
-	}
-	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
-		return nil, err
-	}
-	return ret, nil
-}
-
-type RegionBackendServicesGetHealthCall struct {
-	s                      *Service
-	project                string
-	region                 string
-	backendService         string
-	resourcegroupreference *ResourceGroupReference
-	urlParams_             gensupport.URLParams
-	ctx_                   context.Context
-	header_                http.Header
-}
-
-// GetHealth: Gets the most recent health check results for this regional
-// BackendService.
-//
-//   - backendService: Name of the BackendService resource for which to get
-//     health.
-//   - project: .
-//   - region: Name of the region scoping this request.
-func (r *RegionBackendServicesService) GetHealth(project string, region string, backendService string, resourcegroupreference *ResourceGroupReference) *RegionBackendServicesGetHealthCall {
-	c := &RegionBackendServicesGetHealthCall{s: r.s, urlParams_: make(gensupport.URLParams)}
-	c.project = project
-	c.region = region
-	c.backendService = backendService
-	c.resourcegroupreference = resourcegroupreference
-	return c
-}
-
-// Fields allows partial responses to be retrieved. See
-// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
-// details.
-func (c *RegionBackendServicesGetHealthCall) Fields(s ...googleapi.Field) *RegionBackendServicesGetHealthCall {
-	c.urlParams_.Set("fields", googleapi.CombineFields(s))
-	return c
-}
-
-// Context sets the context to be used in this call's Do method.
-func (c *RegionBackendServicesGetHealthCall) Context(ctx context.Context) *RegionBackendServicesGetHealthCall {
-	c.ctx_ = ctx
-	return c
-}
-
-// Header returns a http.Header that can be modified by the caller to add
-// headers to the request.
-func (c *RegionBackendServicesGetHealthCall) Header() http.Header {
-	if c.header_ == nil {
-		c.header_ = make(http.Header)
-	}
-	return c.header_
-}
-
-func (c *RegionBackendServicesGetHealthCall) doRequest(alt string) (*http.Response, error) {
-	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.resourcegroupreference)
-	if err != nil {
-		return nil, err
-	}
-	c.urlParams_.Set("alt", alt)
-	c.urlParams_.Set("prettyPrint", "false")
-	urls := googleapi.ResolveRelative(c.s.BasePath, "projects/{project}/regions/{region}/backendServices/{backendService}/getHealth")
-	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("POST", urls, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header = reqHeaders
-	googleapi.Expand(req.URL, map[string]string{
-		"project":        c.project,
-		"region":         c.region,
-		"backendService": c.backendService,
-	})
-	return gensupport.SendRequest(c.ctx_, c.s.client, req)
-}
-
-// Do executes the "compute.regionBackendServices.getHealth" call.
-// Any non-2xx status code is an error. Response headers are in either
-// *BackendServiceGroupHealth.ServerResponse.Header or (if a response was
-// returned at all) in error.(*googleapi.Error).Header. Use
-// googleapi.IsNotModified to check whether the returned error was because
-// http.StatusNotModified was returned.
-func (c *RegionBackendServicesGetHealthCall) Do(opts ...googleapi.CallOption) (*BackendServiceGroupHealth, error) {
-	gensupport.SetOptions(c.urlParams_, opts...)
-	res, err := c.doRequest("json")
-	if res != nil && res.StatusCode == http.StatusNotModified {
-		if res.Body != nil {
-			res.Body.Close()
-		}
-		return nil, gensupport.WrapError(&googleapi.Error{
-			Code:   res.StatusCode,
-			Header: res.Header,
-		})
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer googleapi.CloseBody(res)
-	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, gensupport.WrapError(err)
-	}
-	ret := &BackendServiceGroupHealth{
-		ServerResponse: googleapi.ServerResponse{
-			Header:         res.Header,
-			HTTPStatusCode: res.StatusCode,
-		},
-	}
-	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
-		return nil, err
-	}
-	return ret, nil
-}
-
-type RegionBackendServicesGetIamPolicyCall struct {
-	s            *Service
-	project      string
-	region       string
-	resource     string
-	urlParams_   gensupport.URLParams
-	ifNoneMatch_ string
-	ctx_         context.Context
-	header_      http.Header
-}
-
-// GetIamPolicy: Gets the access control policy for a resource. May be empty if
-// no such policy or resource exists.
-//
-// - project: Project ID for this request.
-// - region: The name of the region for this request.
-// - resource: Name or id of the resource for this request.
-func (r *RegionBackendServicesService) GetIamPolicy(project string, region string, resource string) *RegionBackendServicesGetIamPolicyCall {
-	c := &RegionBackendServicesGetIamPolicyCall{s: r.s, urlParams_: make(gensupport.URLParams)}
-	c.project = project
-	c.region = region
-	c.resource = resource
-	return c
-}
-
-// OptionsRequestedPolicyVersion sets the optional parameter
-// "optionsRequestedPolicyVersion": Requested IAM Policy version.
-func (c *RegionBackendServicesGetIamPolicyCall) OptionsRequestedPolicyVersion(optionsRequestedPolicyVersion int64) *RegionBackendServicesGetIamPolicyCall {
-	c.urlParams_.Set("optionsRequestedPolicyVersion", fmt.Sprint(optionsRequestedPolicyVersion))
-	return c
-}
-
-// Fields allows partial responses to be retrieved. See
-// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
-// details.
-func (c *RegionBackendServicesGetIamPolicyCall) Fields(s ...googleapi.Field) *RegionBackendServicesGetIamPolicyCall {
-	c.urlParams_.Set("fields", googleapi.CombineFields(s))
-	return c
-}
-
-// IfNoneMatch sets an optional parameter which makes the operation fail if the
-// object's ETag matches the given value. This is useful for getting updates
-// only after the object has changed since the last request.
-func (c *RegionBackendServicesGetIamPolicyCall) IfNoneMatch(entityTag string) *RegionBackendServicesGetIamPolicyCall {
-	c.ifNoneMatch_ = entityTag
-	return c
-}
-
-// Context sets the context to be used in this call's Do method.
-func (c *RegionBackendServicesGetIamPolicyCall) Context(ctx context.Context) *RegionBackendServicesGetIamPolicyCall {
-	c.ctx_ = ctx
-	return c
-}
-
-// Header returns a http.Header that can be modified by the caller to add
-// headers to the request.
-func (c *RegionBackendServicesGetIamPolicyCall) Header() http.Header {
-	if c.header_ == nil {
-		c.header_ = make(http.Header)
-	}
-	return c.header_
-}
-
-func (c *RegionBackendServicesGetIamPolicyCall) doRequest(alt string) (*http.Response, error) {
-	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "", c.header_)
-	if c.ifNoneMatch_ != "" {
-		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
-	}
-	var body io.Reader = nil
-	c.urlParams_.Set("alt", alt)
-	c.urlParams_.Set("prettyPrint", "false")
-	urls := googleapi.ResolveRelative(c.s.BasePath, "projects/{project}/regions/{region}/backendServices/{resource}/getIamPolicy")
-	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("GET", urls, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header = reqHeaders
-	googleapi.Expand(req.URL, map[string]string{
-		"project":  c.project,
-		"region":   c.region,
-		"resource": c.resource,
-	})
-	return gensupport.SendRequest(c.ctx_, c.s.client, req)
-}
-
-// Do executes the "compute.regionBackendServices.getIamPolicy" call.
-// Any non-2xx status code is an error. Response headers are in either
-// *Policy.ServerResponse.Header or (if a response was returned at all) in
-// error.(*googleapi.Error).Header. Use googleapi.IsNotModified to check
-// whether the returned error was because http.StatusNotModified was returned.
-func (c *RegionBackendServicesGetIamPolicyCall) Do(opts ...googleapi.CallOption) (*Policy, error) {
-	gensupport.SetOptions(c.urlParams_, opts...)
-	res, err := c.doRequest("json")
-	if res != nil && res.StatusCode == http.StatusNotModified {
-		if res.Body != nil {
-			res.Body.Close()
-		}
-		return nil, gensupport.WrapError(&googleapi.Error{
-			Code:   res.StatusCode,
-			Header: res.Header,
-		})
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer googleapi.CloseBody(res)
-	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, gensupport.WrapError(err)
-	}
-	ret := &Policy{
-		ServerResponse: googleapi.ServerResponse{
-			Header:         res.Header,
-			HTTPStatusCode: res.StatusCode,
-		},
-	}
-	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
-		return nil, err
-	}
-	return ret, nil
-}
-
-type RegionBackendServicesInsertCall struct {
-	s              *Service
-	project        string
-	region         string
-	backendservice *BackendService
-	urlParams_     gensupport.URLParams
-	ctx_           context.Context
-	header_        http.Header
-}
-
-// Insert: Creates a regional BackendService resource in the specified project
-// using the data included in the request. For more information, see Backend
-// services overview.
-//
-// - project: Project ID for this request.
-// - region: Name of the region scoping this request.
-func (r *RegionBackendServicesService) Insert(project string, region string, backendservice *BackendService) *RegionBackendServicesInsertCall {
-	c := &RegionBackendServicesInsertCall{s: r.s, urlParams_: make(gensupport.URLParams)}
-	c.project = project
-	c.region = region
-	c.backendservice = backendservice
-	return c
-}
-
-// RequestId sets the optional parameter "requestId": An optional request ID to
-// identify requests. Specify a unique request ID so that if you must retry
-// your request, the server will know to ignore the request if it has already
-// been completed. For example, consider a situation where you make an initial
-// request and the request times out. If you make the request again with the
-// same request ID, the server can check if original operation with the same
-// request ID was received, and if so, will ignore the second request. This
-// prevents clients from accidentally creating duplicate commitments. The
-// request ID must be a valid UUID with the exception that zero UUID is not
-// supported ( 00000000-0000-0000-0000-000000000000).
-func (c *RegionBackendServicesInsertCall) RequestId(requestId string) *RegionBackendServicesInsertCall {
-	c.urlParams_.Set("requestId", requestId)
-	return c
-}
-
-// Fields allows partial responses to be retrieved. See
-// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
-// details.
-func (c *RegionBackendServicesInsertCall) Fields(s ...googleapi.Field) *RegionBackendServicesInsertCall {
-	c.urlParams_.Set("fields", googleapi.CombineFields(s))
-	return c
-}
-
-// Context sets the context to be used in this call's Do method.
-func (c *RegionBackendServicesInsertCall) Context(ctx context.Context) *RegionBackendServicesInsertCall {
-	c.ctx_ = ctx
-	return c
-}
-
-// Header returns a http.Header that can be modified by the caller to add
-// headers to the request.
-func (c *RegionBackendServicesInsertCall) Header() http.Header {
-	if c.header_ == nil {
-		c.header_ = make(http.Header)
-	}
-	return c.header_
-}
-
-func (c *RegionBackendServicesInsertCall) doRequest(alt string) (*http.Response, error) {
-	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.backendservice)
-	if err != nil {
-		return nil, err
-	}
-	c.urlParams_.Set("alt", alt)
-	c.urlParams_.Set("prettyPrint", "false")
-	urls := googleapi.ResolveRelative(c.s.BasePath, "projects/{project}/regions/{region}/backendServices")
-	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("POST", urls, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header = reqHeaders
-	googleapi.Expand(req.URL, map[string]string{
-		"project": c.project,
-		"region":  c.region,
-	})
-	return gensupport.SendRequest(c.ctx_, c.s.client, req)
-}
-
-// Do executes the "compute.regionBackendServices.insert" call.
-// Any non-2xx status code is an error. Response headers are in either
-// *Operation.ServerResponse.Header or (if a response was returned at all) in
-// error.(*googleapi.Error).Header. Use googleapi.IsNotModified to check
-// whether the returned error was because http.StatusNotModified was returned.
-func (c *RegionBackendServicesInsertCall) Do(opts ...googleapi.CallOption) (*Operation, error) {
-	gensupport.SetOptions(c.urlParams_, opts...)
-	res, err := c.doRequest("json")
-	if res != nil && res.StatusCode == http.StatusNotModified {
-		if res.Body != nil {
-			res.Body.Close()
-		}
-		return nil, gensupport.WrapError(&googleapi.Error{
-			Code:   res.StatusCode,
-			Header: res.Header,
-		})
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer googleapi.CloseBody(res)
-	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, gensupport.WrapError(err)
-	}
-	ret := &Operation{
-		ServerResponse: googleapi.ServerResponse{
-			Header:         res.Header,
-			HTTPStatusCode: res.StatusCode,
-		},
-	}
-	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
-		return nil, err
-	}
-	return ret, nil
-}
-
-type RegionBackendServicesListCall struct {
-	s            *Service
-	project      string
-	region       string
-	urlParams_   gensupport.URLParams
-	ifNoneMatch_ string
-	ctx_         context.Context
-	header_      http.Header
-}
-
-// List: Retrieves the list of regional BackendService resources available to
-// the specified project in the given region.
-//
-// - project: Project ID for this request.
-// - region: Name of the region scoping this request.
-func (r *RegionBackendServicesService) List(project string, region string) *RegionBackendServicesListCall {
-	c := &RegionBackendServicesListCall{s: r.s, urlParams_: make(gensupport.URLParams)}
-	c.project = project
-	c.region = region
-	return c
-}
-
-// Filter sets the optional parameter "filter": A filter expression that
-// filters resources listed in the response. Most Compute resources support two
-// types of filter expressions: expressions that support regular expressions
-// and expressions that follow API improvement proposal AIP-160. These two
-// types of filter expressions cannot be mixed in one request. If you want to
-// use AIP-160, your expression must specify the field name, an operator, and
-// the value that you want to use for filtering. The value must be a string, a
-// number, or a boolean. The operator must be either `=`, `!=`, `>`, `<`, `<=`,
-// `>=` or `:`. For example, if you are filtering Compute Engine instances, you
-// can exclude instances named `example-instance` by specifying `name !=
-// example-instance`. The `:*` comparison can be used to test whether a key has
-// been defined. For example, to find all objects with `owner` label use: ```
-// labels.owner:* ``` You can also filter nested fields. For example, you could
-// specify `scheduling.automaticRestart = false` to include instances only if
-// they are not scheduled for automatic restarts. You can use filtering on
-// nested fields to filter based on resource labels. To filter on multiple
-// expressions, provide each separate expression within parentheses. For
-// example: ``` (scheduling.automaticRestart = true) (cpuPlatform = "Intel
-// Skylake") ``` By default, each expression is an `AND` expression. However,
-// you can include `AND` and `OR` expressions explicitly. For example: ```
-// (cpuPlatform = "Intel Skylake") OR (cpuPlatform = "Intel Broadwell") AND
-// (scheduling.automaticRestart = true) ``` If you want to use a regular
-// expression, use the `eq` (equal) or `ne` (not equal) operator against a
-// single un-parenthesized expression with or without quotes or against
-// multiple parenthesized expressions. Examples: `fieldname eq unquoted
-// literal` `fieldname eq 'single quoted literal'` `fieldname eq "double quoted
-// literal" `(fieldname1 eq literal) (fieldname2 ne "literal")` The literal
-// value is interpreted as a regular expression using Google RE2 library
-// syntax. The literal value must match the entire field. For example, to
-// filter for instances that do not end with name "instance", you would use
-// `name ne .*instance`. You cannot combine constraints on multiple fields
-// using regular expressions.
-func (c *RegionBackendServicesListCall) Filter(filter string) *RegionBackendServicesListCall {
-	c.urlParams_.Set("filter", filter)
-	return c
-}
-
-// MaxResults sets the optional parameter "maxResults": The maximum number of
-// results per page that should be returned. If the number of available results
-// is larger than `maxResults`, Compute Engine returns a `nextPageToken` that
-// can be used to get the next page of results in subsequent list requests.
-// Acceptable values are `0` to `500`, inclusive. (Default: `500`)
-func (c *RegionBackendServicesListCall) MaxResults(maxResults int64) *RegionBackendServicesListCall {
-	c.urlParams_.Set("maxResults", fmt.Sprint(maxResults))
-	return c
-}
-
-// OrderBy sets the optional parameter "orderBy": Sorts list results by a
-// certain order. By default, results are returned in alphanumerical order
-// based on the resource name. You can also sort results in descending order
-// based on the creation timestamp using `orderBy="creationTimestamp desc".
-// This sorts results based on the `creationTimestamp` field in reverse
-// chronological order (newest result first). Use this to sort resources like
-// operations so that the newest operation is returned first. Currently, only
-// sorting by `name` or `creationTimestamp desc` is supported.
-func (c *RegionBackendServicesListCall) OrderBy(orderBy string) *RegionBackendServicesListCall {
-	c.urlParams_.Set("orderBy", orderBy)
-	return c
-}
-
-// PageToken sets the optional parameter "pageToken": Specifies a page token to
-// use. Set `pageToken` to the `nextPageToken` returned by a previous list
-// request to get the next page of results.
-func (c *RegionBackendServicesListCall) PageToken(pageToken string) *RegionBackendServicesListCall {
-	c.urlParams_.Set("pageToken", pageToken)
-	return c
-}
-
-// ReturnPartialSuccess sets the optional parameter "returnPartialSuccess":
-// Opt-in for partial success behavior which provides partial results in case
-// of failure. The default value is false. For example, when partial success
-// behavior is enabled, aggregatedList for a single zone scope either returns
-// all resources in the zone or no resources, with an error code.
-func (c *RegionBackendServicesListCall) ReturnPartialSuccess(returnPartialSuccess bool) *RegionBackendServicesListCall {
-	c.urlParams_.Set("returnPartialSuccess", fmt.Sprint(returnPartialSuccess))
-	return c
-}
-
-// Fields allows partial responses to be retrieved. See
-// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
-// details.
-func (c *RegionBackendServicesListCall) Fields(s ...googleapi.Field) *RegionBackendServicesListCall {
-	c.urlParams_.Set("fields", googleapi.CombineFields(s))
-	return c
-}
-
-// IfNoneMatch sets an optional parameter which makes the operation fail if the
-// object's ETag matches the given value. This is useful for getting updates
-// only after the object has changed since the last request.
-func (c *RegionBackendServicesListCall) IfNoneMatch(entityTag string) *RegionBackendServicesListCall {
-	c.ifNoneMatch_ = entityTag
-	return c
-}
-
-// Context sets the context to be used in this call's Do method.
-func (c *RegionBackendServicesListCall) Context(ctx context.Context) *RegionBackendServicesListCall {
-	c.ctx_ = ctx
-	return c
-}
-
-// Header returns a http.Header that can be modified by the caller to add
-// headers to the request.
-func (c *RegionBackendServicesListCall) Header() http.Header {
-	if c.header_ == nil {
-		c.header_ = make(http.Header)
-	}
-	return c.header_
-}
-
-func (c *RegionBackendServicesListCall) doRequest(alt string) (*http.Response, error) {
-	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "", c.header_)
-	if c.ifNoneMatch_ != "" {
-		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
-	}
-	var body io.Reader = nil
-	c.urlParams_.Set("alt", alt)
-	c.urlParams_.Set("prettyPrint", "false")
-	urls := googleapi.ResolveRelative(c.s.BasePath, "projects/{project}/regions/{region}/backendServices")
-	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("GET", urls, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header = reqHeaders
-	googleapi.Expand(req.URL, map[string]string{
-		"project": c.project,
-		"region":  c.region,
-	})
-	return gensupport.SendRequest(c.ctx_, c.s.client, req)
-}
-
-// Do executes the "compute.regionBackendServices.list" call.
-// Any non-2xx status code is an error. Response headers are in either
-// *BackendServiceList.ServerResponse.Header or (if a response was returned at
-// all) in error.(*googleapi.Error).Header. Use googleapi.IsNotModified to
-// check whether the returned error was because http.StatusNotModified was
-// returned.
-func (c *RegionBackendServicesListCall) Do(opts ...googleapi.CallOption) (*BackendServiceList, error) {
-	gensupport.SetOptions(c.urlParams_, opts...)
-	res, err := c.doRequest("json")
-	if res != nil && res.StatusCode == http.StatusNotModified {
-		if res.Body != nil {
-			res.Body.Close()
-		}
-		return nil, gensupport.WrapError(&googleapi.Error{
-			Code:   res.StatusCode,
-			Header: res.Header,
-		})
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer googleapi.CloseBody(res)
-	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, gensupport.WrapError(err)
-	}
-	ret := &BackendServiceList{
-		ServerResponse: googleapi.ServerResponse{
-			Header:         res.Header,
-			HTTPStatusCode: res.StatusCode,
-		},
-	}
-	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
-		return nil, err
-	}
-	return ret, nil
-}
-
-// Pages invokes f for each page of results.
-// A non-nil error returned from f will halt the iteration.
-// The provided context supersedes any context provided to the Context method.
-func (c *RegionBackendServicesListCall) Pages(ctx context.Context, f func(*BackendServiceList) error) error {
-	c.ctx_ = ctx
-	defer c.PageToken(c.urlParams_.Get("pageToken"))
-	for {
-		x, err := c.Do()
-		if err != nil {
-			return err
-		}
-		if err := f(x); err != nil {
-			return err
-		}
-		if x.NextPageToken == "" {
-			return nil
-		}
-		c.PageToken(x.NextPageToken)
-	}
-}
-
-type RegionBackendServicesListUsableCall struct {
-	s            *Service
-	project      string
-	region       string
-	urlParams_   gensupport.URLParams
-	ifNoneMatch_ string
-	ctx_         context.Context
-	header_      http.Header
-}
-
-// ListUsable: Retrieves an aggregated list of all usable backend services in
-// the specified project in the given region.
-//
-//   - project: Project ID for this request.
-//   - region: Name of the region scoping this request. It must be a string that
-//     meets the requirements in RFC1035.
-func (r *RegionBackendServicesService) ListUsable(project string, region string) *RegionBackendServicesListUsableCall {
-	c := &RegionBackendServicesListUsableCall{s: r.s, urlParams_: make(gensupport.URLParams)}
-	c.project = project
-	c.region = region
-	return c
-}
-
-// Filter sets the optional parameter "filter": A filter expression that
-// filters resources listed in the response. Most Compute resources support two
-// types of filter expressions: expressions that support regular expressions
-// and expressions that follow API improvement proposal AIP-160. These two
-// types of filter expressions cannot be mixed in one request. If you want to
-// use AIP-160, your expression must specify the field name, an operator, and
-// the value that you want to use for filtering. The value must be a string, a
-// number, or a boolean. The operator must be either `=`, `!=`, `>`, `<`, `<=`,
-// `>=` or `:`. For example, if you are filtering Compute Engine instances, you
-// can exclude instances named `example-instance` by specifying `name !=
-// example-instance`. The `:*` comparison can be used to test whether a key has
-// been defined. For example, to find all objects with `owner` label use: ```
-// labels.owner:* ``` You can also filter nested fields. For example, you could
-// specify `scheduling.automaticRestart = false` to include instances only if
-// they are not scheduled for automatic restarts. You can use filtering on
-// nested fields to filter based on resource labels. To filter on multiple
-// expressions, provide each separate expression within parentheses. For
-// example: ``` (scheduling.automaticRestart = true) (cpuPlatform = "Intel
-// Skylake") ``` By default, each expression is an `AND` expression. However,
-// you can include `AND` and `OR` expressions explicitly. For example: ```
-// (cpuPlatform = "Intel Skylake") OR (cpuPlatform = "Intel Broadwell") AND
-// (scheduling.automaticRestart = true) ``` If you want to use a regular
-// expression, use the `eq` (equal) or `ne` (not equal) operator against a
-// single un-parenthesized expression with or without quotes or against
-// multiple parenthesized expressions. Examples: `fieldname eq unquoted
-// literal` `fieldname eq 'single quoted literal'` `fieldname eq "double quoted
-// literal" `(fieldname1 eq literal) (fieldname2 ne "literal")` The literal
-// value is interpreted as a regular expression using Google RE2 library
-// syntax. The literal value must match the entire field. For example, to
-// filter for instances that do not end with name "instance", you would use
-// `name ne .*instance`. You cannot combine constraints on multiple fields
-// using regular expressions.
-func (c *RegionBackendServicesListUsableCall) Filter(filter string) *RegionBackendServicesListUsableCall {
-	c.urlParams_.Set("filter", filter)
-	return c
-}
-
-// MaxResults sets the optional parameter "maxResults": The maximum number of
-// results per page that should be returned. If the number of available results
-// is larger than `maxResults`, Compute Engine returns a `nextPageToken` that
-// can be used to get the next page of results in subsequent list requests.
-// Acceptable values are `0` to `500`, inclusive. (Default: `500`)
-func (c *RegionBackendServicesListUsableCall) MaxResults(maxResults int64) *RegionBackendServicesListUsableCall {
-	c.urlParams_.Set("maxResults", fmt.Sprint(maxResults))
-	return c
-}
-
-// OrderBy sets the optional parameter "orderBy": Sorts list results by a
-// certain order. By default, results are returned in alphanumerical order
-// based on the resource name. You can also sort results in descending order
-// based on the creation timestamp using `orderBy="creationTimestamp desc".
-// This sorts results based on the `creationTimestamp` field in reverse
-// chronological order (newest result first). Use this to sort resources like
-// operations so that the newest operation is returned first. Currently, only
-// sorting by `name` or `creationTimestamp desc` is supported.
-func (c *RegionBackendServicesListUsableCall) OrderBy(orderBy string) *RegionBackendServicesListUsableCall {
-	c.urlParams_.Set("orderBy", orderBy)
-	return c
-}
-
-// PageToken sets the optional parameter "pageToken": Specifies a page token to
-// use. Set `pageToken` to the `nextPageToken` returned by a previous list
-// request to get the next page of results.
-func (c *RegionBackendServicesListUsableCall) PageToken(pageToken string) *RegionBackendServicesListUsableCall {
-	c.urlParams_.Set("pageToken", pageToken)
-	return c
-}
-
-// ReturnPartialSuccess sets the optional parameter "returnPartialSuccess":
-// Opt-in for partial success behavior which provides partial results in case
-// of failure. The default value is false. For example, when partial success
-// behavior is enabled, aggregatedList for a single zone scope either returns
-// all resources in the zone or no resources, with an error code.
-func (c *RegionBackendServicesListUsableCall) ReturnPartialSuccess(returnPartialSuccess bool) *RegionBackendServicesListUsableCall {
-	c.urlParams_.Set("returnPartialSuccess", fmt.Sprint(returnPartialSuccess))
-	return c
-}
-
-// Fields allows partial responses to be retrieved. See
-// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
-// details.
-func (c *RegionBackendServicesListUsableCall) Fields(s ...googleapi.Field) *RegionBackendServicesListUsableCall {
-	c.urlParams_.Set("fields", googleapi.CombineFields(s))
-	return c
-}
-
-// IfNoneMatch sets an optional parameter which makes the operation fail if the
-// object's ETag matches the given value. This is useful for getting updates
-// only after the object has changed since the last request.
-func (c *RegionBackendServicesListUsableCall) IfNoneMatch(entityTag string) *RegionBackendServicesListUsableCall {
-	c.ifNoneMatch_ = entityTag
-	return c
-}
-
-// Context sets the context to be used in this call's Do method.
-func (c *RegionBackendServicesListUsableCall) Context(ctx context.Context) *RegionBackendServicesListUsableCall {
-	c.ctx_ = ctx
-	return c
-}
-
-// Header returns a http.Header that can be modified by the caller to add
-// headers to the request.
-func (c *RegionBackendServicesListUsableCall) Header() http.Header {
-	if c.header_ == nil {
-		c.header_ = make(http.Header)
-	}
-	return c.header_
-}
-
-func (c *RegionBackendServicesListUsableCall) doRequest(alt string) (*http.Response, error) {
-	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "", c.header_)
-	if c.ifNoneMatch_ != "" {
-		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
-	}
-	var body io.Reader = nil
-	c.urlParams_.Set("alt", alt)
-	c.urlParams_.Set("prettyPrint", "false")
-	urls := googleapi.ResolveRelative(c.s.BasePath, "projects/{project}/regions/{region}/backendServices/listUsable")
-	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("GET", urls, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header = reqHeaders
-	googleapi.Expand(req.URL, map[string]string{
-		"project": c.project,
-		"region":  c.region,
-	})
-	return gensupport.SendRequest(c.ctx_, c.s.client, req)
-}
-
-// Do executes the "compute.regionBackendServices.listUsable" call.
-// Any non-2xx status code is an error. Response headers are in either
-// *BackendServiceListUsable.ServerResponse.Header or (if a response was
-// returned at all) in error.(*googleapi.Error).Header. Use
-// googleapi.IsNotModified to check whether the returned error was because
-// http.StatusNotModified was returned.
-func (c *RegionBackendServicesListUsableCall) Do(opts ...googleapi.CallOption) (*BackendServiceListUsable, error) {
-	gensupport.SetOptions(c.urlParams_, opts...)
-	res, err := c.doRequest("json")
-	if res != nil && res.StatusCode == http.StatusNotModified {
-		if res.Body != nil {
-			res.Body.Close()
-		}
-		return nil, gensupport.WrapError(&googleapi.Error{
-			Code:   res.StatusCode,
-			Header: res.Header,
-		})
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer googleapi.CloseBody(res)
-	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, gensupport.WrapError(err)
-	}
-	ret := &BackendServiceListUsable{
-		ServerResponse: googleapi.ServerResponse{
-			Header:         res.Header,
-			HTTPStatusCode: res.StatusCode,
-		},
-	}
-	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
-		return nil, err
-	}
-	return ret, nil
-}
-
-// Pages invokes f for each page of results.
-// A non-nil error returned from f will halt the iteration.
-// The provided context supersedes any context provided to the Context method.
-func (c *RegionBackendServicesListUsableCall) Pages(ctx context.Context, f func(*BackendServiceListUsable) error) error {
-	c.ctx_ = ctx
-	defer c.PageToken(c.urlParams_.Get("pageToken"))
-	for {
-		x, err := c.Do()
-		if err != nil {
-			return err
-		}
-		if err := f(x); err != nil {
-			return err
-		}
-		if x.NextPageToken == "" {
-			return nil
-		}
-		c.PageToken(x.NextPageToken)
-	}
-}
-
-type RegionBackendServicesPatchCall struct {
-	s              *Service
-	project        string
-	region         string
-	backendService string
-	backendservice *BackendService
-	urlParams_     gensupport.URLParams
-	ctx_           context.Context
-	header_        http.Header
-}
-
-// Patch: Updates the specified regional BackendService resource with the data
-// included in the request. For more information, see Understanding backend
-// services This method supports PATCH semantics and uses the JSON merge patch
-// format and processing rules.
-//
-// - backendService: Name of the BackendService resource to patch.
-// - project: Project ID for this request.
-// - region: Name of the region scoping this request.
-func (r *RegionBackendServicesService) Patch(project string, region string, backendService string, backendservice *BackendService) *RegionBackendServicesPatchCall {
-	c := &RegionBackendServicesPatchCall{s: r.s, urlParams_: make(gensupport.URLParams)}
-	c.project = project
-	c.region = region
-	c.backendService = backendService
-	c.backendservice = backendservice
-	return c
-}
-
-// RequestId sets the optional parameter "requestId": An optional request ID to
-// identify requests. Specify a unique request ID so that if you must retry
-// your request, the server will know to ignore the request if it has already
-// been completed. For example, consider a situation where you make an initial
-// request and the request times out. If you make the request again with the
-// same request ID, the server can check if original operation with the same
-// request ID was received, and if so, will ignore the second request. This
-// prevents clients from accidentally creating duplicate commitments. The
-// request ID must be a valid UUID with the exception that zero UUID is not
-// supported ( 00000000-0000-0000-0000-000000000000).
-func (c *RegionBackendServicesPatchCall) RequestId(requestId string) *RegionBackendServicesPatchCall {
-	c.urlParams_.Set("requestId", requestId)
-	return c
-}
-
-// Fields allows partial responses to be retrieved. See
-// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
-// details.
-func (c *RegionBackendServicesPatchCall) Fields(s ...googleapi.Field) *RegionBackendServicesPatchCall {
-	c.urlParams_.Set("fields", googleapi.CombineFields(s))
-	return c
-}
-
-// Context sets the context to be used in this call's Do method.
-func (c *RegionBackendServicesPatchCall) Context(ctx context.Context) *RegionBackendServicesPatchCall {
-	c.ctx_ = ctx
-	return c
-}
-
-// Header returns a http.Header that can be modified by the caller to add
-// headers to the request.
-func (c *RegionBackendServicesPatchCall) Header() http.Header {
-	if c.header_ == nil {
-		c.header_ = make(http.Header)
-	}
-	return c.header_
-}
-
-func (c *RegionBackendServicesPatchCall) doRequest(alt string) (*http.Response, error) {
-	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.backendservice)
-	if err != nil {
-		return nil, err
-	}
-	c.urlParams_.Set("alt", alt)
-	c.urlParams_.Set("prettyPrint", "false")
-	urls := googleapi.ResolveRelative(c.s.BasePath, "projects/{project}/regions/{region}/backendServices/{backendService}")
-	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("PATCH", urls, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header = reqHeaders
-	googleapi.Expand(req.URL, map[string]string{
-		"project":        c.project,
-		"region":         c.region,
-		"backendService": c.backendService,
-	})
-	return gensupport.SendRequest(c.ctx_, c.s.client, req)
-}
-
-// Do executes the "compute.regionBackendServices.patch" call.
-// Any non-2xx status code is an error. Response headers are in either
-// *Operation.ServerResponse.Header or (if a response was returned at all) in
-// error.(*googleapi.Error).Header. Use googleapi.IsNotModified to check
-// whether the returned error was because http.StatusNotModified was returned.
-func (c *RegionBackendServicesPatchCall) Do(opts ...googleapi.CallOption) (*Operation, error) {
-	gensupport.SetOptions(c.urlParams_, opts...)
-	res, err := c.doRequest("json")
-	if res != nil && res.StatusCode == http.StatusNotModified {
-		if res.Body != nil {
-			res.Body.Close()
-		}
-		return nil, gensupport.WrapError(&googleapi.Error{
-			Code:   res.StatusCode,
-			Header: res.Header,
-		})
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer googleapi.CloseBody(res)
-	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, gensupport.WrapError(err)
-	}
-	ret := &Operation{
-		ServerResponse: googleapi.ServerResponse{
-			Header:         res.Header,
-			HTTPStatusCode: res.StatusCode,
-		},
-	}
-	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
-		return nil, err
-	}
-	return ret, nil
-}
-
-type RegionBackendServicesSetIamPolicyCall struct {
-	s                      *Service
-	project                string
-	region                 string
-	resource               string
-	regionsetpolicyrequest *RegionSetPolicyRequest
-	urlParams_             gensupport.URLParams
-	ctx_                   context.Context
-	header_                http.Header
-}
-
-// SetIamPolicy: Sets the access control policy on the specified resource.
-// Replaces any existing policy.
-//
-// - project: Project ID for this request.
-// - region: The name of the region for this request.
-// - resource: Name or id of the resource for this request.
-func (r *RegionBackendServicesService) SetIamPolicy(project string, region string, resource string, regionsetpolicyrequest *RegionSetPolicyRequest) *RegionBackendServicesSetIamPolicyCall {
-	c := &RegionBackendServicesSetIamPolicyCall{s: r.s, urlParams_: make(gensupport.URLParams)}
-	c.project = project
-	c.region = region
-	c.resource = resource
-	c.regionsetpolicyrequest = regionsetpolicyrequest
-	return c
-}
-
-// Fields allows partial responses to be retrieved. See
-// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
-// details.
-func (c *RegionBackendServicesSetIamPolicyCall) Fields(s ...googleapi.Field) *RegionBackendServicesSetIamPolicyCall {
-	c.urlParams_.Set("fields", googleapi.CombineFields(s))
-	return c
-}
-
-// Context sets the context to be used in this call's Do method.
-func (c *RegionBackendServicesSetIamPolicyCall) Context(ctx context.Context) *RegionBackendServicesSetIamPolicyCall {
-	c.ctx_ = ctx
-	return c
-}
-
-// Header returns a http.Header that can be modified by the caller to add
-// headers to the request.
-func (c *RegionBackendServicesSetIamPolicyCall) Header() http.Header {
-	if c.header_ == nil {
-		c.header_ = make(http.Header)
-	}
-	return c.header_
-}
-
-func (c *RegionBackendServicesSetIamPolicyCall) doRequest(alt string) (*http.Response, error) {
-	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.regionsetpolicyrequest)
-	if err != nil {
-		return nil, err
-	}
-	c.urlParams_.Set("alt", alt)
-	c.urlParams_.Set("prettyPrint", "false")
-	urls := googleapi.ResolveRelative(c.s.BasePath, "projects/{project}/regions/{region}/backendServices/{resource}/setIamPolicy")
-	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("POST", urls, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header = reqHeaders
-	googleapi.Expand(req.URL, map[string]string{
-		"project":  c.project,
-		"region":   c.region,
-		"resource": c.resource,
-	})
-	return gensupport.SendRequest(c.ctx_, c.s.client, req)
-}
-
-// Do executes the "compute.regionBackendServices.setIamPolicy" call.
-// Any non-2xx status code is an error. Response headers are in either
-// *Policy.ServerResponse.Header or (if a response was returned at all) in
-// error.(*googleapi.Error).Header. Use googleapi.IsNotModified to check
-// whether the returned error was because http.StatusNotModified was returned.
-func (c *RegionBackendServicesSetIamPolicyCall) Do(opts ...googleapi.CallOption) (*Policy, error) {
-	gensupport.SetOptions(c.urlParams_, opts...)
-	res, err := c.doRequest("json")
-	if res != nil && res.StatusCode == http.StatusNotModified {
-		if res.Body != nil {
-			res.Body.Close()
-		}
-		return nil, gensupport.WrapError(&googleapi.Error{
-			Code:   res.StatusCode,
-			Header: res.Header,
-		})
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer googleapi.CloseBody(res)
-	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, gensupport.WrapError(err)
-	}
-	ret := &Policy{
-		ServerResponse: googleapi.ServerResponse{
-			Header:         res.Header,
-			HTTPStatusCode: res.StatusCode,
-		},
-	}
-	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
-		return nil, err
-	}
-	return ret, nil
-}
-
-type RegionBackendServicesSetSecurityPolicyCall struct {
-	s                       *Service
-	project                 string
-	region                  string
-	backendService          string
-	securitypolicyreference *SecurityPolicyReference
-	urlParams_              gensupport.URLParams
-	ctx_                    context.Context
-	header_                 http.Header
-}
-
-// SetSecurityPolicy: Sets the Google Cloud Armor security policy for the
-// specified backend service. For more information, see Google Cloud Armor
-// Overview
-//
-//   - backendService: Name of the BackendService resource to which the security
-//     policy should be set. The name should conform to RFC1035.
-//   - project: Project ID for this request.
-//   - region: Name of the region scoping this request.
-func (r *RegionBackendServicesService) SetSecurityPolicy(project string, region string, backendService string, securitypolicyreference *SecurityPolicyReference) *RegionBackendServicesSetSecurityPolicyCall {
-	c := &RegionBackendServicesSetSecurityPolicyCall{s: r.s, urlParams_: make(gensupport.URLParams)}
-	c.project = project
-	c.region = region
-	c.backendService = backendService
-	c.securitypolicyreference = securitypolicyreference
-	return c
-}
-
-// RequestId sets the optional parameter "requestId": An optional request ID to
-// identify requests. Specify a unique request ID so that if you must retry
-// your request, the server will know to ignore the request if it has already
-// been completed. For example, consider a situation where you make an initial
-// request and the request times out. If you make the request again with the
-// same request ID, the server can check if original operation with the same
-// request ID was received, and if so, will ignore the second request. This
-// prevents clients from accidentally creating duplicate commitments. The
-// request ID must be a valid UUID with the exception that zero UUID is not
-// supported ( 00000000-0000-0000-0000-000000000000).
-func (c *RegionBackendServicesSetSecurityPolicyCall) RequestId(requestId string) *RegionBackendServicesSetSecurityPolicyCall {
-	c.urlParams_.Set("requestId", requestId)
-	return c
-}
-
-// Fields allows partial responses to be retrieved. See
-// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
-// details.
-func (c *RegionBackendServicesSetSecurityPolicyCall) Fields(s ...googleapi.Field) *RegionBackendServicesSetSecurityPolicyCall {
-	c.urlParams_.Set("fields", googleapi.CombineFields(s))
-	return c
-}
-
-// Context sets the context to be used in this call's Do method.
-func (c *RegionBackendServicesSetSecurityPolicyCall) Context(ctx context.Context) *RegionBackendServicesSetSecurityPolicyCall {
-	c.ctx_ = ctx
-	return c
-}
-
-// Header returns a http.Header that can be modified by the caller to add
-// headers to the request.
-func (c *RegionBackendServicesSetSecurityPolicyCall) Header() http.Header {
-	if c.header_ == nil {
-		c.header_ = make(http.Header)
-	}
-	return c.header_
-}
-
-func (c *RegionBackendServicesSetSecurityPolicyCall) doRequest(alt string) (*http.Response, error) {
-	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.securitypolicyreference)
-	if err != nil {
-		return nil, err
-	}
-	c.urlParams_.Set("alt", alt)
-	c.urlParams_.Set("prettyPrint", "false")
-	urls := googleapi.ResolveRelative(c.s.BasePath, "projects/{project}/regions/{region}/backendServices/{backendService}/setSecurityPolicy")
-	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("POST", urls, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header = reqHeaders
-	googleapi.Expand(req.URL, map[string]string{
-		"project":        c.project,
-		"region":         c.region,
-		"backendService": c.backendService,
-	})
-	return gensupport.SendRequest(c.ctx_, c.s.client, req)
-}
-
-// Do executes the "compute.regionBackendServices.setSecurityPolicy" call.
-// Any non-2xx status code is an error. Response headers are in either
-// *Operation.ServerResponse.Header or (if a response was returned at all) in
-// error.(*googleapi.Error).Header. Use googleapi.IsNotModified to check
-// whether the returned error was because http.StatusNotModified was returned.
-func (c *RegionBackendServicesSetSecurityPolicyCall) Do(opts ...googleapi.CallOption) (*Operation, error) {
-	gensupport.SetOptions(c.urlParams_, opts...)
-	res, err := c.doRequest("json")
-	if res != nil && res.StatusCode == http.StatusNotModified {
-		if res.Body != nil {
-			res.Body.Close()
-		}
-		return nil, gensupport.WrapError(&googleapi.Error{
-			Code:   res.StatusCode,
-			Header: res.Header,
-		})
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer googleapi.CloseBody(res)
-	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, gensupport.WrapError(err)
-	}
-	ret := &Operation{
-		ServerResponse: googleapi.ServerResponse{
-			Header:         res.Header,
-			HTTPStatusCode: res.StatusCode,
-		},
-	}
-	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
-		return nil, err
-	}
-	return ret, nil
-}
-
-type RegionBackendServicesTestIamPermissionsCall struct {
-	s                      *Service
-	project                string
-	region                 string
-	resource               string
-	testpermissionsrequest *TestPermissionsRequest
-	urlParams_             gensupport.URLParams
-	ctx_                   context.Context
-	header_                http.Header
-}
-
-// TestIamPermissions: Returns permissions that a caller has on the specified
-// resource.
-//
-// - project: Project ID for this request.
-// - region: The name of the region for this request.
-// - resource: Name or id of the resource for this request.
-func (r *RegionBackendServicesService) TestIamPermissions(project string, region string, resource string, testpermissionsrequest *TestPermissionsRequest) *RegionBackendServicesTestIamPermissionsCall {
-	c := &RegionBackendServicesTestIamPermissionsCall{s: r.s, urlParams_: make(gensupport.URLParams)}
-	c.project = project
-	c.region = region
-	c.resource = resource
-	c.testpermissionsrequest = testpermissionsrequest
-	return c
-}
-
-// Fields allows partial responses to be retrieved. See
-// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
-// details.
-func (c *RegionBackendServicesTestIamPermissionsCall) Fields(s ...googleapi.Field) *RegionBackendServicesTestIamPermissionsCall {
-	c.urlParams_.Set("fields", googleapi.CombineFields(s))
-	return c
-}
-
-// Context sets the context to be used in this call's Do method.
-func (c *RegionBackendServicesTestIamPermissionsCall) Context(ctx context.Context) *RegionBackendServicesTestIamPermissionsCall {
-	c.ctx_ = ctx
-	return c
-}
-
-// Header returns a http.Header that can be modified by the caller to add
-// headers to the request.
-func (c *RegionBackendServicesTestIamPermissionsCall) Header() http.Header {
-	if c.header_ == nil {
-		c.header_ = make(http.Header)
-	}
-	return c.header_
-}
-
-func (c *RegionBackendServicesTestIamPermissionsCall) doRequest(alt string) (*http.Response, error) {
-	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.testpermissionsrequest)
-	if err != nil {
-		return nil, err
-	}
-	c.urlParams_.Set("alt", alt)
-	c.urlParams_.Set("prettyPrint", "false")
-	urls := googleapi.ResolveRelative(c.s.BasePath, "projects/{project}/regions/{region}/backendServices/{resource}/testIamPermissions")
-	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("POST", urls, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header = reqHeaders
-	googleapi.Expand(req.URL, map[string]string{
-		"project":  c.project,
-		"region":   c.region,
-		"resource": c.resource,
-	})
-	return gensupport.SendRequest(c.ctx_, c.s.client, req)
-}
-
-// Do executes the "compute.regionBackendServices.testIamPermissions" call.
-// Any non-2xx status code is an error. Response headers are in either
-// *TestPermissionsResponse.ServerResponse.Header or (if a response was
-// returned at all) in error.(*googleapi.Error).Header. Use
-// googleapi.IsNotModified to check whether the returned error was because
-// http.StatusNotModified was returned.
-func (c *RegionBackendServicesTestIamPermissionsCall) Do(opts ...googleapi.CallOption) (*TestPermissionsResponse, error) {
-	gensupport.SetOptions(c.urlParams_, opts...)
-	res, err := c.doRequest("json")
-	if res != nil && res.StatusCode == http.StatusNotModified {
-		if res.Body != nil {
-			res.Body.Close()
-		}
-		return nil, gensupport.WrapError(&googleapi.Error{
-			Code:   res.StatusCode,
-			Header: res.Header,
-		})
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer googleapi.CloseBody(res)
-	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, gensupport.WrapError(err)
-	}
-	ret := &TestPermissionsResponse{
-		ServerResponse: googleapi.ServerResponse{
-			Header:         res.Header,
-			HTTPStatusCode: res.StatusCode,
-		},
-	}
-	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
-		return nil, err
-	}
-	return ret, nil
-}
-
-type RegionBackendServicesUpdateCall struct {
-	s              *Service
-	project        string
-	region         string
-	backendService string
-	backendservice *BackendService
-	urlParams_     gensupport.URLParams
-	ctx_           context.Context
-	header_        http.Header
-}
-
-// Update: Updates the specified regional BackendService resource with the data
-// included in the request. For more information, see Backend services overview
-// .
-//
-// - backendService: Name of the BackendService resource to update.
-// - project: Project ID for this request.
-// - region: Name of the region scoping this request.
-func (r *RegionBackendServicesService) Update(project string, region string, backendService string, backendservice *BackendService) *RegionBackendServicesUpdateCall {
-	c := &RegionBackendServicesUpdateCall{s: r.s, urlParams_: make(gensupport.URLParams)}
-	c.project = project
-	c.region = region
-	c.backendService = backendService
-	c.backendservice = backendservice
-	return c
-}
-
-// RequestId sets the optional parameter "requestId": An optional request ID to
-// identify requests. Specify a unique request ID so that if you must retry
-// your request, the server will know to ignore the request if it has already
-// been completed. For example, consider a situation where you make an initial
-// request and the request times out. If you make the request again with the
-// same request ID, the server can check if original operation with the same
-// request ID was received, and if so, will ignore the second request. This
-// prevents clients from accidentally creating duplicate commitments. The
-// request ID must be a valid UUID with the exception that zero UUID is not
-// supported ( 00000000-0000-0000-0000-000000000000).
-func (c *RegionBackendServicesUpdateCall) RequestId(requestId string) *RegionBackendServicesUpdateCall {
-	c.urlParams_.Set("requestId", requestId)
-	return c
-}
-
-// Fields allows partial responses to be retrieved. See
-// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
-// details.
-func (c *RegionBackendServicesUpdateCall) Fields(s ...googleapi.Field) *RegionBackendServicesUpdateCall {
-	c.urlParams_.Set("fields", googleapi.CombineFields(s))
-	return c
-}
-
-// Context sets the context to be used in this call's Do method.
-func (c *RegionBackendServicesUpdateCall) Context(ctx context.Context) *RegionBackendServicesUpdateCall {
-	c.ctx_ = ctx
-	return c
-}
-
-// Header returns a http.Header that can be modified by the caller to add
-// headers to the request.
-func (c *RegionBackendServicesUpdateCall) Header() http.Header {
-	if c.header_ == nil {
-		c.header_ = make(http.Header)
-	}
-	return c.header_
-}
-
-func (c *RegionBackendServicesUpdateCall) doRequest(alt string) (*http.Response, error) {
-	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.backendservice)
-	if err != nil {
-		return nil, err
-	}
-	c.urlParams_.Set("alt", alt)
-	c.urlParams_.Set("prettyPrint", "false")
-	urls := googleapi.ResolveRelative(c.s.BasePath, "projects/{project}/regions/{region}/backendServices/{backendService}")
-	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("PUT", urls, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header = reqHeaders
-	googleapi.Expand(req.URL, map[string]string{
-		"project":        c.project,
-		"region":         c.region,
-		"backendService": c.backendService,
-	})
-	return gensupport.SendRequest(c.ctx_, c.s.client, req)
-}
-
-// Do executes the "compute.regionBackendServices.update" call.
-// Any non-2xx status code is an error. Response headers are in either
-// *Operation.ServerResponse.Header or (if a response was returned at all) in
-// error.(*googleapi.Error).Header. Use googleapi.IsNotModified to check
-// whether the returned error was because http.StatusNotModified was returned.
-func (c *RegionBackendServicesUpdateCall) Do(opts ...googleapi.CallOption) (*Operation, error) {
-	gensupport.SetOptions(c.urlParams_, opts...)
-	res, err := c.doRequest("json")
-	if res != nil && res.StatusCode == http.StatusNotModified {
-		if res.Body != nil {
-			res.Body.Close()
-		}
-		return nil, gensupport.WrapError(&googleapi.Error{
-			Code:   res.StatusCode,
-			Header: res.Header,
-		})
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer googleapi.CloseBody(res)
-	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, gensupport.WrapError(err)
-	}
-	ret := &Operation{
-		ServerResponse: googleapi.ServerResponse{
-			Header:         res.Header,
-			HTTPStatusCode: res.StatusCode,
-		},
-	}
-	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
-		return nil, err
-	}
-	return ret, nil
-}
-
 type RegionCommitmentsAggregatedListCall struct {
 	s            *Service
 	project      string
@@ -7629,6 +6013,729 @@ func (c *RegionHealthChecksUpdateCall) Do(opts ...googleapi.CallOption) (*Operat
 	return ret, nil
 }
 
+type RegionInstanceGroupManagerResizeRequestsCancelCall struct {
+	s                    *Service
+	project              string
+	region               string
+	instanceGroupManager string
+	resizeRequest        string
+	urlParams_           gensupport.URLParams
+	ctx_                 context.Context
+	header_              http.Header
+}
+
+// Cancel: Cancels the specified resize request. Cancelled resize request no
+// longer waits for the resources to be provisioned. Cancel is only possible
+// for requests that are in accepted state.
+//
+//   - instanceGroupManager: The name of the managed instance group. Name should
+//     conform to RFC1035 or be a resource ID.
+//   - project: Project ID for this request.
+//   - region: The name of the region scoping this request. Name should conform
+//     to RFC1035.
+//   - resizeRequest: The name of the resize request to cancel. Name should
+//     conform to RFC1035 or be a resource ID.
+func (r *RegionInstanceGroupManagerResizeRequestsService) Cancel(project string, region string, instanceGroupManager string, resizeRequest string) *RegionInstanceGroupManagerResizeRequestsCancelCall {
+	c := &RegionInstanceGroupManagerResizeRequestsCancelCall{s: r.s, urlParams_: make(gensupport.URLParams)}
+	c.project = project
+	c.region = region
+	c.instanceGroupManager = instanceGroupManager
+	c.resizeRequest = resizeRequest
+	return c
+}
+
+// RequestId sets the optional parameter "requestId": An optional request ID to
+// identify requests. Specify a unique request ID so that if you must retry
+// your request, the server will know to ignore the request if it has already
+// been completed. For example, consider a situation where you make an initial
+// request and the request times out. If you make the request again with the
+// same request ID, the server can check if original operation with the same
+// request ID was received, and if so, will ignore the second request. This
+// prevents clients from accidentally creating duplicate commitments. The
+// request ID must be a valid UUID with the exception that zero UUID is not
+// supported ( 00000000-0000-0000-0000-000000000000).
+func (c *RegionInstanceGroupManagerResizeRequestsCancelCall) RequestId(requestId string) *RegionInstanceGroupManagerResizeRequestsCancelCall {
+	c.urlParams_.Set("requestId", requestId)
+	return c
+}
+
+// Fields allows partial responses to be retrieved. See
+// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
+// details.
+func (c *RegionInstanceGroupManagerResizeRequestsCancelCall) Fields(s ...googleapi.Field) *RegionInstanceGroupManagerResizeRequestsCancelCall {
+	c.urlParams_.Set("fields", googleapi.CombineFields(s))
+	return c
+}
+
+// Context sets the context to be used in this call's Do method.
+func (c *RegionInstanceGroupManagerResizeRequestsCancelCall) Context(ctx context.Context) *RegionInstanceGroupManagerResizeRequestsCancelCall {
+	c.ctx_ = ctx
+	return c
+}
+
+// Header returns a http.Header that can be modified by the caller to add
+// headers to the request.
+func (c *RegionInstanceGroupManagerResizeRequestsCancelCall) Header() http.Header {
+	if c.header_ == nil {
+		c.header_ = make(http.Header)
+	}
+	return c.header_
+}
+
+func (c *RegionInstanceGroupManagerResizeRequestsCancelCall) doRequest(alt string) (*http.Response, error) {
+	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "", c.header_)
+	var body io.Reader = nil
+	c.urlParams_.Set("alt", alt)
+	c.urlParams_.Set("prettyPrint", "false")
+	urls := googleapi.ResolveRelative(c.s.BasePath, "projects/{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/resizeRequests/{resizeRequest}/cancel")
+	urls += "?" + c.urlParams_.Encode()
+	req, err := http.NewRequest("POST", urls, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header = reqHeaders
+	googleapi.Expand(req.URL, map[string]string{
+		"project":              c.project,
+		"region":               c.region,
+		"instanceGroupManager": c.instanceGroupManager,
+		"resizeRequest":        c.resizeRequest,
+	})
+	return gensupport.SendRequest(c.ctx_, c.s.client, req)
+}
+
+// Do executes the "compute.regionInstanceGroupManagerResizeRequests.cancel" call.
+// Any non-2xx status code is an error. Response headers are in either
+// *Operation.ServerResponse.Header or (if a response was returned at all) in
+// error.(*googleapi.Error).Header. Use googleapi.IsNotModified to check
+// whether the returned error was because http.StatusNotModified was returned.
+func (c *RegionInstanceGroupManagerResizeRequestsCancelCall) Do(opts ...googleapi.CallOption) (*Operation, error) {
+	gensupport.SetOptions(c.urlParams_, opts...)
+	res, err := c.doRequest("json")
+	if res != nil && res.StatusCode == http.StatusNotModified {
+		if res.Body != nil {
+			res.Body.Close()
+		}
+		return nil, gensupport.WrapError(&googleapi.Error{
+			Code:   res.StatusCode,
+			Header: res.Header,
+		})
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer googleapi.CloseBody(res)
+	if err := googleapi.CheckResponse(res); err != nil {
+		return nil, gensupport.WrapError(err)
+	}
+	ret := &Operation{
+		ServerResponse: googleapi.ServerResponse{
+			Header:         res.Header,
+			HTTPStatusCode: res.StatusCode,
+		},
+	}
+	target := &ret
+	if err := gensupport.DecodeResponse(target, res); err != nil {
+		return nil, err
+	}
+	return ret, nil
+}
+
+type RegionInstanceGroupManagerResizeRequestsDeleteCall struct {
+	s                    *Service
+	project              string
+	region               string
+	instanceGroupManager string
+	resizeRequest        string
+	urlParams_           gensupport.URLParams
+	ctx_                 context.Context
+	header_              http.Header
+}
+
+// Delete: Deletes the specified, inactive resize request. Requests that are
+// still active cannot be deleted. Deleting request does not delete instances
+// that were provisioned previously.
+//
+//   - instanceGroupManager: The name of the managed instance group. Name should
+//     conform to RFC1035 or be a resource ID.
+//   - project: Project ID for this request.
+//   - region: The name of the region scoping this request. Name should conform
+//     to RFC1035.
+//   - resizeRequest: The name of the resize request to delete. Name should
+//     conform to RFC1035 or be a resource ID.
+func (r *RegionInstanceGroupManagerResizeRequestsService) Delete(project string, region string, instanceGroupManager string, resizeRequest string) *RegionInstanceGroupManagerResizeRequestsDeleteCall {
+	c := &RegionInstanceGroupManagerResizeRequestsDeleteCall{s: r.s, urlParams_: make(gensupport.URLParams)}
+	c.project = project
+	c.region = region
+	c.instanceGroupManager = instanceGroupManager
+	c.resizeRequest = resizeRequest
+	return c
+}
+
+// RequestId sets the optional parameter "requestId": An optional request ID to
+// identify requests. Specify a unique request ID so that if you must retry
+// your request, the server will know to ignore the request if it has already
+// been completed. For example, consider a situation where you make an initial
+// request and the request times out. If you make the request again with the
+// same request ID, the server can check if original operation with the same
+// request ID was received, and if so, will ignore the second request. This
+// prevents clients from accidentally creating duplicate commitments. The
+// request ID must be a valid UUID with the exception that zero UUID is not
+// supported ( 00000000-0000-0000-0000-000000000000).
+func (c *RegionInstanceGroupManagerResizeRequestsDeleteCall) RequestId(requestId string) *RegionInstanceGroupManagerResizeRequestsDeleteCall {
+	c.urlParams_.Set("requestId", requestId)
+	return c
+}
+
+// Fields allows partial responses to be retrieved. See
+// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
+// details.
+func (c *RegionInstanceGroupManagerResizeRequestsDeleteCall) Fields(s ...googleapi.Field) *RegionInstanceGroupManagerResizeRequestsDeleteCall {
+	c.urlParams_.Set("fields", googleapi.CombineFields(s))
+	return c
+}
+
+// Context sets the context to be used in this call's Do method.
+func (c *RegionInstanceGroupManagerResizeRequestsDeleteCall) Context(ctx context.Context) *RegionInstanceGroupManagerResizeRequestsDeleteCall {
+	c.ctx_ = ctx
+	return c
+}
+
+// Header returns a http.Header that can be modified by the caller to add
+// headers to the request.
+func (c *RegionInstanceGroupManagerResizeRequestsDeleteCall) Header() http.Header {
+	if c.header_ == nil {
+		c.header_ = make(http.Header)
+	}
+	return c.header_
+}
+
+func (c *RegionInstanceGroupManagerResizeRequestsDeleteCall) doRequest(alt string) (*http.Response, error) {
+	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "", c.header_)
+	var body io.Reader = nil
+	c.urlParams_.Set("alt", alt)
+	c.urlParams_.Set("prettyPrint", "false")
+	urls := googleapi.ResolveRelative(c.s.BasePath, "projects/{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/resizeRequests/{resizeRequest}")
+	urls += "?" + c.urlParams_.Encode()
+	req, err := http.NewRequest("DELETE", urls, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header = reqHeaders
+	googleapi.Expand(req.URL, map[string]string{
+		"project":              c.project,
+		"region":               c.region,
+		"instanceGroupManager": c.instanceGroupManager,
+		"resizeRequest":        c.resizeRequest,
+	})
+	return gensupport.SendRequest(c.ctx_, c.s.client, req)
+}
+
+// Do executes the "compute.regionInstanceGroupManagerResizeRequests.delete" call.
+// Any non-2xx status code is an error. Response headers are in either
+// *Operation.ServerResponse.Header or (if a response was returned at all) in
+// error.(*googleapi.Error).Header. Use googleapi.IsNotModified to check
+// whether the returned error was because http.StatusNotModified was returned.
+func (c *RegionInstanceGroupManagerResizeRequestsDeleteCall) Do(opts ...googleapi.CallOption) (*Operation, error) {
+	gensupport.SetOptions(c.urlParams_, opts...)
+	res, err := c.doRequest("json")
+	if res != nil && res.StatusCode == http.StatusNotModified {
+		if res.Body != nil {
+			res.Body.Close()
+		}
+		return nil, gensupport.WrapError(&googleapi.Error{
+			Code:   res.StatusCode,
+			Header: res.Header,
+		})
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer googleapi.CloseBody(res)
+	if err := googleapi.CheckResponse(res); err != nil {
+		return nil, gensupport.WrapError(err)
+	}
+	ret := &Operation{
+		ServerResponse: googleapi.ServerResponse{
+			Header:         res.Header,
+			HTTPStatusCode: res.StatusCode,
+		},
+	}
+	target := &ret
+	if err := gensupport.DecodeResponse(target, res); err != nil {
+		return nil, err
+	}
+	return ret, nil
+}
+
+type RegionInstanceGroupManagerResizeRequestsGetCall struct {
+	s                    *Service
+	project              string
+	region               string
+	instanceGroupManager string
+	resizeRequest        string
+	urlParams_           gensupport.URLParams
+	ifNoneMatch_         string
+	ctx_                 context.Context
+	header_              http.Header
+}
+
+// Get: Returns all of the details about the specified resize request.
+//
+//   - instanceGroupManager: The name of the managed instance group. Name should
+//     conform to RFC1035 or be a resource ID.
+//   - project: Project ID for this request.
+//   - region: The name of the region scoping this request. Name should conform
+//     to RFC1035.
+//   - resizeRequest: The name of the resize request. Name should conform to
+//     RFC1035 or be a resource ID.
+func (r *RegionInstanceGroupManagerResizeRequestsService) Get(project string, region string, instanceGroupManager string, resizeRequest string) *RegionInstanceGroupManagerResizeRequestsGetCall {
+	c := &RegionInstanceGroupManagerResizeRequestsGetCall{s: r.s, urlParams_: make(gensupport.URLParams)}
+	c.project = project
+	c.region = region
+	c.instanceGroupManager = instanceGroupManager
+	c.resizeRequest = resizeRequest
+	return c
+}
+
+// Fields allows partial responses to be retrieved. See
+// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
+// details.
+func (c *RegionInstanceGroupManagerResizeRequestsGetCall) Fields(s ...googleapi.Field) *RegionInstanceGroupManagerResizeRequestsGetCall {
+	c.urlParams_.Set("fields", googleapi.CombineFields(s))
+	return c
+}
+
+// IfNoneMatch sets an optional parameter which makes the operation fail if the
+// object's ETag matches the given value. This is useful for getting updates
+// only after the object has changed since the last request.
+func (c *RegionInstanceGroupManagerResizeRequestsGetCall) IfNoneMatch(entityTag string) *RegionInstanceGroupManagerResizeRequestsGetCall {
+	c.ifNoneMatch_ = entityTag
+	return c
+}
+
+// Context sets the context to be used in this call's Do method.
+func (c *RegionInstanceGroupManagerResizeRequestsGetCall) Context(ctx context.Context) *RegionInstanceGroupManagerResizeRequestsGetCall {
+	c.ctx_ = ctx
+	return c
+}
+
+// Header returns a http.Header that can be modified by the caller to add
+// headers to the request.
+func (c *RegionInstanceGroupManagerResizeRequestsGetCall) Header() http.Header {
+	if c.header_ == nil {
+		c.header_ = make(http.Header)
+	}
+	return c.header_
+}
+
+func (c *RegionInstanceGroupManagerResizeRequestsGetCall) doRequest(alt string) (*http.Response, error) {
+	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "", c.header_)
+	if c.ifNoneMatch_ != "" {
+		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
+	}
+	var body io.Reader = nil
+	c.urlParams_.Set("alt", alt)
+	c.urlParams_.Set("prettyPrint", "false")
+	urls := googleapi.ResolveRelative(c.s.BasePath, "projects/{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/resizeRequests/{resizeRequest}")
+	urls += "?" + c.urlParams_.Encode()
+	req, err := http.NewRequest("GET", urls, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header = reqHeaders
+	googleapi.Expand(req.URL, map[string]string{
+		"project":              c.project,
+		"region":               c.region,
+		"instanceGroupManager": c.instanceGroupManager,
+		"resizeRequest":        c.resizeRequest,
+	})
+	return gensupport.SendRequest(c.ctx_, c.s.client, req)
+}
+
+// Do executes the "compute.regionInstanceGroupManagerResizeRequests.get" call.
+// Any non-2xx status code is an error. Response headers are in either
+// *InstanceGroupManagerResizeRequest.ServerResponse.Header or (if a response
+// was returned at all) in error.(*googleapi.Error).Header. Use
+// googleapi.IsNotModified to check whether the returned error was because
+// http.StatusNotModified was returned.
+func (c *RegionInstanceGroupManagerResizeRequestsGetCall) Do(opts ...googleapi.CallOption) (*InstanceGroupManagerResizeRequest, error) {
+	gensupport.SetOptions(c.urlParams_, opts...)
+	res, err := c.doRequest("json")
+	if res != nil && res.StatusCode == http.StatusNotModified {
+		if res.Body != nil {
+			res.Body.Close()
+		}
+		return nil, gensupport.WrapError(&googleapi.Error{
+			Code:   res.StatusCode,
+			Header: res.Header,
+		})
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer googleapi.CloseBody(res)
+	if err := googleapi.CheckResponse(res); err != nil {
+		return nil, gensupport.WrapError(err)
+	}
+	ret := &InstanceGroupManagerResizeRequest{
+		ServerResponse: googleapi.ServerResponse{
+			Header:         res.Header,
+			HTTPStatusCode: res.StatusCode,
+		},
+	}
+	target := &ret
+	if err := gensupport.DecodeResponse(target, res); err != nil {
+		return nil, err
+	}
+	return ret, nil
+}
+
+type RegionInstanceGroupManagerResizeRequestsInsertCall struct {
+	s                                 *Service
+	project                           string
+	region                            string
+	instanceGroupManager              string
+	instancegroupmanagerresizerequest *InstanceGroupManagerResizeRequest
+	urlParams_                        gensupport.URLParams
+	ctx_                              context.Context
+	header_                           http.Header
+}
+
+// Insert: Creates a new Resize Request that starts provisioning VMs
+// immediately or queues VM creation.
+//
+//   - instanceGroupManager: Name of the managed instance group to which the
+//     resize request is scoped. Name should conform to RFC1035 or be a resource
+//     ID.
+//   - project: Project ID for this request.
+//   - region: Name of the region scoping this request. Name should conform to
+//     RFC1035.
+func (r *RegionInstanceGroupManagerResizeRequestsService) Insert(project string, region string, instanceGroupManager string, instancegroupmanagerresizerequest *InstanceGroupManagerResizeRequest) *RegionInstanceGroupManagerResizeRequestsInsertCall {
+	c := &RegionInstanceGroupManagerResizeRequestsInsertCall{s: r.s, urlParams_: make(gensupport.URLParams)}
+	c.project = project
+	c.region = region
+	c.instanceGroupManager = instanceGroupManager
+	c.instancegroupmanagerresizerequest = instancegroupmanagerresizerequest
+	return c
+}
+
+// RequestId sets the optional parameter "requestId": An optional request ID to
+// identify requests. Specify a unique request ID so that if you must retry
+// your request, the server will know to ignore the request if it has already
+// been completed. For example, consider a situation where you make an initial
+// request and the request times out. If you make the request again with the
+// same request ID, the server can check if original operation with the same
+// request ID was received, and if so, will ignore the second request. This
+// prevents clients from accidentally creating duplicate commitments. The
+// request ID must be a valid UUID with the exception that zero UUID is not
+// supported ( 00000000-0000-0000-0000-000000000000).
+func (c *RegionInstanceGroupManagerResizeRequestsInsertCall) RequestId(requestId string) *RegionInstanceGroupManagerResizeRequestsInsertCall {
+	c.urlParams_.Set("requestId", requestId)
+	return c
+}
+
+// Fields allows partial responses to be retrieved. See
+// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
+// details.
+func (c *RegionInstanceGroupManagerResizeRequestsInsertCall) Fields(s ...googleapi.Field) *RegionInstanceGroupManagerResizeRequestsInsertCall {
+	c.urlParams_.Set("fields", googleapi.CombineFields(s))
+	return c
+}
+
+// Context sets the context to be used in this call's Do method.
+func (c *RegionInstanceGroupManagerResizeRequestsInsertCall) Context(ctx context.Context) *RegionInstanceGroupManagerResizeRequestsInsertCall {
+	c.ctx_ = ctx
+	return c
+}
+
+// Header returns a http.Header that can be modified by the caller to add
+// headers to the request.
+func (c *RegionInstanceGroupManagerResizeRequestsInsertCall) Header() http.Header {
+	if c.header_ == nil {
+		c.header_ = make(http.Header)
+	}
+	return c.header_
+}
+
+func (c *RegionInstanceGroupManagerResizeRequestsInsertCall) doRequest(alt string) (*http.Response, error) {
+	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
+	var body io.Reader = nil
+	body, err := googleapi.WithoutDataWrapper.JSONReader(c.instancegroupmanagerresizerequest)
+	if err != nil {
+		return nil, err
+	}
+	c.urlParams_.Set("alt", alt)
+	c.urlParams_.Set("prettyPrint", "false")
+	urls := googleapi.ResolveRelative(c.s.BasePath, "projects/{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/resizeRequests")
+	urls += "?" + c.urlParams_.Encode()
+	req, err := http.NewRequest("POST", urls, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header = reqHeaders
+	googleapi.Expand(req.URL, map[string]string{
+		"project":              c.project,
+		"region":               c.region,
+		"instanceGroupManager": c.instanceGroupManager,
+	})
+	return gensupport.SendRequest(c.ctx_, c.s.client, req)
+}
+
+// Do executes the "compute.regionInstanceGroupManagerResizeRequests.insert" call.
+// Any non-2xx status code is an error. Response headers are in either
+// *Operation.ServerResponse.Header or (if a response was returned at all) in
+// error.(*googleapi.Error).Header. Use googleapi.IsNotModified to check
+// whether the returned error was because http.StatusNotModified was returned.
+func (c *RegionInstanceGroupManagerResizeRequestsInsertCall) Do(opts ...googleapi.CallOption) (*Operation, error) {
+	gensupport.SetOptions(c.urlParams_, opts...)
+	res, err := c.doRequest("json")
+	if res != nil && res.StatusCode == http.StatusNotModified {
+		if res.Body != nil {
+			res.Body.Close()
+		}
+		return nil, gensupport.WrapError(&googleapi.Error{
+			Code:   res.StatusCode,
+			Header: res.Header,
+		})
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer googleapi.CloseBody(res)
+	if err := googleapi.CheckResponse(res); err != nil {
+		return nil, gensupport.WrapError(err)
+	}
+	ret := &Operation{
+		ServerResponse: googleapi.ServerResponse{
+			Header:         res.Header,
+			HTTPStatusCode: res.StatusCode,
+		},
+	}
+	target := &ret
+	if err := gensupport.DecodeResponse(target, res); err != nil {
+		return nil, err
+	}
+	return ret, nil
+}
+
+type RegionInstanceGroupManagerResizeRequestsListCall struct {
+	s                    *Service
+	project              string
+	region               string
+	instanceGroupManager string
+	urlParams_           gensupport.URLParams
+	ifNoneMatch_         string
+	ctx_                 context.Context
+	header_              http.Header
+}
+
+// List: Retrieves a list of Resize Requests that are contained in the managed
+// instance group.
+//
+//   - instanceGroupManager: The name of the managed instance group. The name
+//     should conform to RFC1035.
+//   - project: Project ID for this request.
+//   - region: Name of the region scoping this request. Name should conform to
+//     RFC1035.
+func (r *RegionInstanceGroupManagerResizeRequestsService) List(project string, region string, instanceGroupManager string) *RegionInstanceGroupManagerResizeRequestsListCall {
+	c := &RegionInstanceGroupManagerResizeRequestsListCall{s: r.s, urlParams_: make(gensupport.URLParams)}
+	c.project = project
+	c.region = region
+	c.instanceGroupManager = instanceGroupManager
+	return c
+}
+
+// Filter sets the optional parameter "filter": A filter expression that
+// filters resources listed in the response. Most Compute resources support two
+// types of filter expressions: expressions that support regular expressions
+// and expressions that follow API improvement proposal AIP-160. These two
+// types of filter expressions cannot be mixed in one request. If you want to
+// use AIP-160, your expression must specify the field name, an operator, and
+// the value that you want to use for filtering. The value must be a string, a
+// number, or a boolean. The operator must be either `=`, `!=`, `>`, `<`, `<=`,
+// `>=` or `:`. For example, if you are filtering Compute Engine instances, you
+// can exclude instances named `example-instance` by specifying `name !=
+// example-instance`. The `:*` comparison can be used to test whether a key has
+// been defined. For example, to find all objects with `owner` label use: ```
+// labels.owner:* ``` You can also filter nested fields. For example, you could
+// specify `scheduling.automaticRestart = false` to include instances only if
+// they are not scheduled for automatic restarts. You can use filtering on
+// nested fields to filter based on resource labels. To filter on multiple
+// expressions, provide each separate expression within parentheses. For
+// example: ``` (scheduling.automaticRestart = true) (cpuPlatform = "Intel
+// Skylake") ``` By default, each expression is an `AND` expression. However,
+// you can include `AND` and `OR` expressions explicitly. For example: ```
+// (cpuPlatform = "Intel Skylake") OR (cpuPlatform = "Intel Broadwell") AND
+// (scheduling.automaticRestart = true) ``` If you want to use a regular
+// expression, use the `eq` (equal) or `ne` (not equal) operator against a
+// single un-parenthesized expression with or without quotes or against
+// multiple parenthesized expressions. Examples: `fieldname eq unquoted
+// literal` `fieldname eq 'single quoted literal'` `fieldname eq "double quoted
+// literal" `(fieldname1 eq literal) (fieldname2 ne "literal")` The literal
+// value is interpreted as a regular expression using Google RE2 library
+// syntax. The literal value must match the entire field. For example, to
+// filter for instances that do not end with name "instance", you would use
+// `name ne .*instance`. You cannot combine constraints on multiple fields
+// using regular expressions.
+func (c *RegionInstanceGroupManagerResizeRequestsListCall) Filter(filter string) *RegionInstanceGroupManagerResizeRequestsListCall {
+	c.urlParams_.Set("filter", filter)
+	return c
+}
+
+// MaxResults sets the optional parameter "maxResults": The maximum number of
+// results per page that should be returned. If the number of available results
+// is larger than `maxResults`, Compute Engine returns a `nextPageToken` that
+// can be used to get the next page of results in subsequent list requests.
+// Acceptable values are `0` to `500`, inclusive. (Default: `500`)
+func (c *RegionInstanceGroupManagerResizeRequestsListCall) MaxResults(maxResults int64) *RegionInstanceGroupManagerResizeRequestsListCall {
+	c.urlParams_.Set("maxResults", fmt.Sprint(maxResults))
+	return c
+}
+
+// OrderBy sets the optional parameter "orderBy": Sorts list results by a
+// certain order. By default, results are returned in alphanumerical order
+// based on the resource name. You can also sort results in descending order
+// based on the creation timestamp using `orderBy="creationTimestamp desc".
+// This sorts results based on the `creationTimestamp` field in reverse
+// chronological order (newest result first). Use this to sort resources like
+// operations so that the newest operation is returned first. Currently, only
+// sorting by `name` or `creationTimestamp desc` is supported.
+func (c *RegionInstanceGroupManagerResizeRequestsListCall) OrderBy(orderBy string) *RegionInstanceGroupManagerResizeRequestsListCall {
+	c.urlParams_.Set("orderBy", orderBy)
+	return c
+}
+
+// PageToken sets the optional parameter "pageToken": Specifies a page token to
+// use. Set `pageToken` to the `nextPageToken` returned by a previous list
+// request to get the next page of results.
+func (c *RegionInstanceGroupManagerResizeRequestsListCall) PageToken(pageToken string) *RegionInstanceGroupManagerResizeRequestsListCall {
+	c.urlParams_.Set("pageToken", pageToken)
+	return c
+}
+
+// ReturnPartialSuccess sets the optional parameter "returnPartialSuccess":
+// Opt-in for partial success behavior which provides partial results in case
+// of failure. The default value is false. For example, when partial success
+// behavior is enabled, aggregatedList for a single zone scope either returns
+// all resources in the zone or no resources, with an error code.
+func (c *RegionInstanceGroupManagerResizeRequestsListCall) ReturnPartialSuccess(returnPartialSuccess bool) *RegionInstanceGroupManagerResizeRequestsListCall {
+	c.urlParams_.Set("returnPartialSuccess", fmt.Sprint(returnPartialSuccess))
+	return c
+}
+
+// Fields allows partial responses to be retrieved. See
+// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
+// details.
+func (c *RegionInstanceGroupManagerResizeRequestsListCall) Fields(s ...googleapi.Field) *RegionInstanceGroupManagerResizeRequestsListCall {
+	c.urlParams_.Set("fields", googleapi.CombineFields(s))
+	return c
+}
+
+// IfNoneMatch sets an optional parameter which makes the operation fail if the
+// object's ETag matches the given value. This is useful for getting updates
+// only after the object has changed since the last request.
+func (c *RegionInstanceGroupManagerResizeRequestsListCall) IfNoneMatch(entityTag string) *RegionInstanceGroupManagerResizeRequestsListCall {
+	c.ifNoneMatch_ = entityTag
+	return c
+}
+
+// Context sets the context to be used in this call's Do method.
+func (c *RegionInstanceGroupManagerResizeRequestsListCall) Context(ctx context.Context) *RegionInstanceGroupManagerResizeRequestsListCall {
+	c.ctx_ = ctx
+	return c
+}
+
+// Header returns a http.Header that can be modified by the caller to add
+// headers to the request.
+func (c *RegionInstanceGroupManagerResizeRequestsListCall) Header() http.Header {
+	if c.header_ == nil {
+		c.header_ = make(http.Header)
+	}
+	return c.header_
+}
+
+func (c *RegionInstanceGroupManagerResizeRequestsListCall) doRequest(alt string) (*http.Response, error) {
+	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "", c.header_)
+	if c.ifNoneMatch_ != "" {
+		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
+	}
+	var body io.Reader = nil
+	c.urlParams_.Set("alt", alt)
+	c.urlParams_.Set("prettyPrint", "false")
+	urls := googleapi.ResolveRelative(c.s.BasePath, "projects/{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/resizeRequests")
+	urls += "?" + c.urlParams_.Encode()
+	req, err := http.NewRequest("GET", urls, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header = reqHeaders
+	googleapi.Expand(req.URL, map[string]string{
+		"project":              c.project,
+		"region":               c.region,
+		"instanceGroupManager": c.instanceGroupManager,
+	})
+	return gensupport.SendRequest(c.ctx_, c.s.client, req)
+}
+
+// Do executes the "compute.regionInstanceGroupManagerResizeRequests.list" call.
+// Any non-2xx status code is an error. Response headers are in either
+// *RegionInstanceGroupManagerResizeRequestsListResponse.ServerResponse.Header
+// or (if a response was returned at all) in error.(*googleapi.Error).Header.
+// Use googleapi.IsNotModified to check whether the returned error was because
+// http.StatusNotModified was returned.
+func (c *RegionInstanceGroupManagerResizeRequestsListCall) Do(opts ...googleapi.CallOption) (*RegionInstanceGroupManagerResizeRequestsListResponse, error) {
+	gensupport.SetOptions(c.urlParams_, opts...)
+	res, err := c.doRequest("json")
+	if res != nil && res.StatusCode == http.StatusNotModified {
+		if res.Body != nil {
+			res.Body.Close()
+		}
+		return nil, gensupport.WrapError(&googleapi.Error{
+			Code:   res.StatusCode,
+			Header: res.Header,
+		})
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer googleapi.CloseBody(res)
+	if err := googleapi.CheckResponse(res); err != nil {
+		return nil, gensupport.WrapError(err)
+	}
+	ret := &RegionInstanceGroupManagerResizeRequestsListResponse{
+		ServerResponse: googleapi.ServerResponse{
+			Header:         res.Header,
+			HTTPStatusCode: res.StatusCode,
+		},
+	}
+	target := &ret
+	if err := gensupport.DecodeResponse(target, res); err != nil {
+		return nil, err
+	}
+	return ret, nil
+}
+
+// Pages invokes f for each page of results.
+// A non-nil error returned from f will halt the iteration.
+// The provided context supersedes any context provided to the Context method.
+func (c *RegionInstanceGroupManagerResizeRequestsListCall) Pages(ctx context.Context, f func(*RegionInstanceGroupManagerResizeRequestsListResponse) error) error {
+	c.ctx_ = ctx
+	defer c.PageToken(c.urlParams_.Get("pageToken"))
+	for {
+		x, err := c.Do()
+		if err != nil {
+			return err
+		}
+		if err := f(x); err != nil {
+			return err
+		}
+		if x.NextPageToken == "" {
+			return nil
+		}
+		c.PageToken(x.NextPageToken)
+	}
+}
+
 type RegionInstanceGroupManagersAbandonInstancesCall struct {
 	s                                                  *Service
 	project                                            string
@@ -12917,6 +12024,924 @@ func (c *RegionInstancesBulkInsertCall) Do(opts ...googleapi.CallOption) (*Opera
 	return ret, nil
 }
 
+type RegionInstantSnapshotGroupsDeleteCall struct {
+	s                    *Service
+	project              string
+	region               string
+	instantSnapshotGroup string
+	urlParams_           gensupport.URLParams
+	ctx_                 context.Context
+	header_              http.Header
+}
+
+// Delete: deletes a Regional InstantSnapshotGroup resource
+//
+// - instantSnapshotGroup: Name of the InstantSnapshotGroup resource to delete.
+// - project: Project ID for this request.
+// - region: The name of the region for this request.
+func (r *RegionInstantSnapshotGroupsService) Delete(project string, region string, instantSnapshotGroup string) *RegionInstantSnapshotGroupsDeleteCall {
+	c := &RegionInstantSnapshotGroupsDeleteCall{s: r.s, urlParams_: make(gensupport.URLParams)}
+	c.project = project
+	c.region = region
+	c.instantSnapshotGroup = instantSnapshotGroup
+	return c
+}
+
+// RequestId sets the optional parameter "requestId": An optional request ID to
+// identify requests. Specify a unique request ID so that if you must retry
+// your request, the server will know to ignore the request if it has already
+// been completed. For example, consider a situation where you make an initial
+// request and the request times out. If you make the request again with the
+// same request ID, the server can check if original operation with the same
+// request ID was received, and if so, will ignore the second request. This
+// prevents clients from accidentally creating duplicate commitments. The
+// request ID must be a valid UUID with the exception that zero UUID is not
+// supported ( 00000000-0000-0000-0000-000000000000).
+func (c *RegionInstantSnapshotGroupsDeleteCall) RequestId(requestId string) *RegionInstantSnapshotGroupsDeleteCall {
+	c.urlParams_.Set("requestId", requestId)
+	return c
+}
+
+// Fields allows partial responses to be retrieved. See
+// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
+// details.
+func (c *RegionInstantSnapshotGroupsDeleteCall) Fields(s ...googleapi.Field) *RegionInstantSnapshotGroupsDeleteCall {
+	c.urlParams_.Set("fields", googleapi.CombineFields(s))
+	return c
+}
+
+// Context sets the context to be used in this call's Do method.
+func (c *RegionInstantSnapshotGroupsDeleteCall) Context(ctx context.Context) *RegionInstantSnapshotGroupsDeleteCall {
+	c.ctx_ = ctx
+	return c
+}
+
+// Header returns a http.Header that can be modified by the caller to add
+// headers to the request.
+func (c *RegionInstantSnapshotGroupsDeleteCall) Header() http.Header {
+	if c.header_ == nil {
+		c.header_ = make(http.Header)
+	}
+	return c.header_
+}
+
+func (c *RegionInstantSnapshotGroupsDeleteCall) doRequest(alt string) (*http.Response, error) {
+	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "", c.header_)
+	var body io.Reader = nil
+	c.urlParams_.Set("alt", alt)
+	c.urlParams_.Set("prettyPrint", "false")
+	urls := googleapi.ResolveRelative(c.s.BasePath, "projects/{project}/regions/{region}/instantSnapshotGroups/{instantSnapshotGroup}")
+	urls += "?" + c.urlParams_.Encode()
+	req, err := http.NewRequest("DELETE", urls, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header = reqHeaders
+	googleapi.Expand(req.URL, map[string]string{
+		"project":              c.project,
+		"region":               c.region,
+		"instantSnapshotGroup": c.instantSnapshotGroup,
+	})
+	return gensupport.SendRequest(c.ctx_, c.s.client, req)
+}
+
+// Do executes the "compute.regionInstantSnapshotGroups.delete" call.
+// Any non-2xx status code is an error. Response headers are in either
+// *Operation.ServerResponse.Header or (if a response was returned at all) in
+// error.(*googleapi.Error).Header. Use googleapi.IsNotModified to check
+// whether the returned error was because http.StatusNotModified was returned.
+func (c *RegionInstantSnapshotGroupsDeleteCall) Do(opts ...googleapi.CallOption) (*Operation, error) {
+	gensupport.SetOptions(c.urlParams_, opts...)
+	res, err := c.doRequest("json")
+	if res != nil && res.StatusCode == http.StatusNotModified {
+		if res.Body != nil {
+			res.Body.Close()
+		}
+		return nil, gensupport.WrapError(&googleapi.Error{
+			Code:   res.StatusCode,
+			Header: res.Header,
+		})
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer googleapi.CloseBody(res)
+	if err := googleapi.CheckResponse(res); err != nil {
+		return nil, gensupport.WrapError(err)
+	}
+	ret := &Operation{
+		ServerResponse: googleapi.ServerResponse{
+			Header:         res.Header,
+			HTTPStatusCode: res.StatusCode,
+		},
+	}
+	target := &ret
+	if err := gensupport.DecodeResponse(target, res); err != nil {
+		return nil, err
+	}
+	return ret, nil
+}
+
+type RegionInstantSnapshotGroupsGetCall struct {
+	s                    *Service
+	project              string
+	region               string
+	instantSnapshotGroup string
+	urlParams_           gensupport.URLParams
+	ifNoneMatch_         string
+	ctx_                 context.Context
+	header_              http.Header
+}
+
+// Get: returns the specified InstantSnapshotGroup resource in the specified
+// region.
+//
+// - instantSnapshotGroup: Name of the InstantSnapshotGroup resource to return.
+// - project: Project ID for this request.
+// - region: The name of the region for this request.
+func (r *RegionInstantSnapshotGroupsService) Get(project string, region string, instantSnapshotGroup string) *RegionInstantSnapshotGroupsGetCall {
+	c := &RegionInstantSnapshotGroupsGetCall{s: r.s, urlParams_: make(gensupport.URLParams)}
+	c.project = project
+	c.region = region
+	c.instantSnapshotGroup = instantSnapshotGroup
+	return c
+}
+
+// Fields allows partial responses to be retrieved. See
+// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
+// details.
+func (c *RegionInstantSnapshotGroupsGetCall) Fields(s ...googleapi.Field) *RegionInstantSnapshotGroupsGetCall {
+	c.urlParams_.Set("fields", googleapi.CombineFields(s))
+	return c
+}
+
+// IfNoneMatch sets an optional parameter which makes the operation fail if the
+// object's ETag matches the given value. This is useful for getting updates
+// only after the object has changed since the last request.
+func (c *RegionInstantSnapshotGroupsGetCall) IfNoneMatch(entityTag string) *RegionInstantSnapshotGroupsGetCall {
+	c.ifNoneMatch_ = entityTag
+	return c
+}
+
+// Context sets the context to be used in this call's Do method.
+func (c *RegionInstantSnapshotGroupsGetCall) Context(ctx context.Context) *RegionInstantSnapshotGroupsGetCall {
+	c.ctx_ = ctx
+	return c
+}
+
+// Header returns a http.Header that can be modified by the caller to add
+// headers to the request.
+func (c *RegionInstantSnapshotGroupsGetCall) Header() http.Header {
+	if c.header_ == nil {
+		c.header_ = make(http.Header)
+	}
+	return c.header_
+}
+
+func (c *RegionInstantSnapshotGroupsGetCall) doRequest(alt string) (*http.Response, error) {
+	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "", c.header_)
+	if c.ifNoneMatch_ != "" {
+		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
+	}
+	var body io.Reader = nil
+	c.urlParams_.Set("alt", alt)
+	c.urlParams_.Set("prettyPrint", "false")
+	urls := googleapi.ResolveRelative(c.s.BasePath, "projects/{project}/regions/{region}/instantSnapshotGroups/{instantSnapshotGroup}")
+	urls += "?" + c.urlParams_.Encode()
+	req, err := http.NewRequest("GET", urls, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header = reqHeaders
+	googleapi.Expand(req.URL, map[string]string{
+		"project":              c.project,
+		"region":               c.region,
+		"instantSnapshotGroup": c.instantSnapshotGroup,
+	})
+	return gensupport.SendRequest(c.ctx_, c.s.client, req)
+}
+
+// Do executes the "compute.regionInstantSnapshotGroups.get" call.
+// Any non-2xx status code is an error. Response headers are in either
+// *InstantSnapshotGroup.ServerResponse.Header or (if a response was returned
+// at all) in error.(*googleapi.Error).Header. Use googleapi.IsNotModified to
+// check whether the returned error was because http.StatusNotModified was
+// returned.
+func (c *RegionInstantSnapshotGroupsGetCall) Do(opts ...googleapi.CallOption) (*InstantSnapshotGroup, error) {
+	gensupport.SetOptions(c.urlParams_, opts...)
+	res, err := c.doRequest("json")
+	if res != nil && res.StatusCode == http.StatusNotModified {
+		if res.Body != nil {
+			res.Body.Close()
+		}
+		return nil, gensupport.WrapError(&googleapi.Error{
+			Code:   res.StatusCode,
+			Header: res.Header,
+		})
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer googleapi.CloseBody(res)
+	if err := googleapi.CheckResponse(res); err != nil {
+		return nil, gensupport.WrapError(err)
+	}
+	ret := &InstantSnapshotGroup{
+		ServerResponse: googleapi.ServerResponse{
+			Header:         res.Header,
+			HTTPStatusCode: res.StatusCode,
+		},
+	}
+	target := &ret
+	if err := gensupport.DecodeResponse(target, res); err != nil {
+		return nil, err
+	}
+	return ret, nil
+}
+
+type RegionInstantSnapshotGroupsGetIamPolicyCall struct {
+	s            *Service
+	project      string
+	region       string
+	resource     string
+	urlParams_   gensupport.URLParams
+	ifNoneMatch_ string
+	ctx_         context.Context
+	header_      http.Header
+}
+
+// GetIamPolicy: Gets the access control policy for a resource. May be empty if
+// no such policy or resource exists.
+//
+// - project: Project ID for this request.
+// - region: The name of the region for this request.
+// - resource: Name or id of the resource for this request.
+func (r *RegionInstantSnapshotGroupsService) GetIamPolicy(project string, region string, resource string) *RegionInstantSnapshotGroupsGetIamPolicyCall {
+	c := &RegionInstantSnapshotGroupsGetIamPolicyCall{s: r.s, urlParams_: make(gensupport.URLParams)}
+	c.project = project
+	c.region = region
+	c.resource = resource
+	return c
+}
+
+// OptionsRequestedPolicyVersion sets the optional parameter
+// "optionsRequestedPolicyVersion": Requested IAM Policy version.
+func (c *RegionInstantSnapshotGroupsGetIamPolicyCall) OptionsRequestedPolicyVersion(optionsRequestedPolicyVersion int64) *RegionInstantSnapshotGroupsGetIamPolicyCall {
+	c.urlParams_.Set("optionsRequestedPolicyVersion", fmt.Sprint(optionsRequestedPolicyVersion))
+	return c
+}
+
+// Fields allows partial responses to be retrieved. See
+// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
+// details.
+func (c *RegionInstantSnapshotGroupsGetIamPolicyCall) Fields(s ...googleapi.Field) *RegionInstantSnapshotGroupsGetIamPolicyCall {
+	c.urlParams_.Set("fields", googleapi.CombineFields(s))
+	return c
+}
+
+// IfNoneMatch sets an optional parameter which makes the operation fail if the
+// object's ETag matches the given value. This is useful for getting updates
+// only after the object has changed since the last request.
+func (c *RegionInstantSnapshotGroupsGetIamPolicyCall) IfNoneMatch(entityTag string) *RegionInstantSnapshotGroupsGetIamPolicyCall {
+	c.ifNoneMatch_ = entityTag
+	return c
+}
+
+// Context sets the context to be used in this call's Do method.
+func (c *RegionInstantSnapshotGroupsGetIamPolicyCall) Context(ctx context.Context) *RegionInstantSnapshotGroupsGetIamPolicyCall {
+	c.ctx_ = ctx
+	return c
+}
+
+// Header returns a http.Header that can be modified by the caller to add
+// headers to the request.
+func (c *RegionInstantSnapshotGroupsGetIamPolicyCall) Header() http.Header {
+	if c.header_ == nil {
+		c.header_ = make(http.Header)
+	}
+	return c.header_
+}
+
+func (c *RegionInstantSnapshotGroupsGetIamPolicyCall) doRequest(alt string) (*http.Response, error) {
+	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "", c.header_)
+	if c.ifNoneMatch_ != "" {
+		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
+	}
+	var body io.Reader = nil
+	c.urlParams_.Set("alt", alt)
+	c.urlParams_.Set("prettyPrint", "false")
+	urls := googleapi.ResolveRelative(c.s.BasePath, "projects/{project}/regions/{region}/instantSnapshotGroups/{resource}/getIamPolicy")
+	urls += "?" + c.urlParams_.Encode()
+	req, err := http.NewRequest("GET", urls, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header = reqHeaders
+	googleapi.Expand(req.URL, map[string]string{
+		"project":  c.project,
+		"region":   c.region,
+		"resource": c.resource,
+	})
+	return gensupport.SendRequest(c.ctx_, c.s.client, req)
+}
+
+// Do executes the "compute.regionInstantSnapshotGroups.getIamPolicy" call.
+// Any non-2xx status code is an error. Response headers are in either
+// *Policy.ServerResponse.Header or (if a response was returned at all) in
+// error.(*googleapi.Error).Header. Use googleapi.IsNotModified to check
+// whether the returned error was because http.StatusNotModified was returned.
+func (c *RegionInstantSnapshotGroupsGetIamPolicyCall) Do(opts ...googleapi.CallOption) (*Policy, error) {
+	gensupport.SetOptions(c.urlParams_, opts...)
+	res, err := c.doRequest("json")
+	if res != nil && res.StatusCode == http.StatusNotModified {
+		if res.Body != nil {
+			res.Body.Close()
+		}
+		return nil, gensupport.WrapError(&googleapi.Error{
+			Code:   res.StatusCode,
+			Header: res.Header,
+		})
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer googleapi.CloseBody(res)
+	if err := googleapi.CheckResponse(res); err != nil {
+		return nil, gensupport.WrapError(err)
+	}
+	ret := &Policy{
+		ServerResponse: googleapi.ServerResponse{
+			Header:         res.Header,
+			HTTPStatusCode: res.StatusCode,
+		},
+	}
+	target := &ret
+	if err := gensupport.DecodeResponse(target, res); err != nil {
+		return nil, err
+	}
+	return ret, nil
+}
+
+type RegionInstantSnapshotGroupsInsertCall struct {
+	s                    *Service
+	project              string
+	region               string
+	instantsnapshotgroup *InstantSnapshotGroup
+	urlParams_           gensupport.URLParams
+	ctx_                 context.Context
+	header_              http.Header
+}
+
+// Insert: creates a Regional InstantSnapshotGroup resource
+//
+// - project: Project ID for this request.
+// - region: Name of the region for this request.
+func (r *RegionInstantSnapshotGroupsService) Insert(project string, region string, instantsnapshotgroup *InstantSnapshotGroup) *RegionInstantSnapshotGroupsInsertCall {
+	c := &RegionInstantSnapshotGroupsInsertCall{s: r.s, urlParams_: make(gensupport.URLParams)}
+	c.project = project
+	c.region = region
+	c.instantsnapshotgroup = instantsnapshotgroup
+	return c
+}
+
+// RequestId sets the optional parameter "requestId": An optional request ID to
+// identify requests. Specify a unique request ID so that if you must retry
+// your request, the server will know to ignore the request if it has already
+// been completed. For example, consider a situation where you make an initial
+// request and the request times out. If you make the request again with the
+// same request ID, the server can check if original operation with the same
+// request ID was received, and if so, will ignore the second request. This
+// prevents clients from accidentally creating duplicate commitments. The
+// request ID must be a valid UUID with the exception that zero UUID is not
+// supported ( 00000000-0000-0000-0000-000000000000).
+func (c *RegionInstantSnapshotGroupsInsertCall) RequestId(requestId string) *RegionInstantSnapshotGroupsInsertCall {
+	c.urlParams_.Set("requestId", requestId)
+	return c
+}
+
+// SourceConsistencyGroup sets the optional parameter "sourceConsistencyGroup":
+// begin_interface: MixerMutationRequestBuilder
+func (c *RegionInstantSnapshotGroupsInsertCall) SourceConsistencyGroup(sourceConsistencyGroup string) *RegionInstantSnapshotGroupsInsertCall {
+	c.urlParams_.Set("sourceConsistencyGroup", sourceConsistencyGroup)
+	return c
+}
+
+// Fields allows partial responses to be retrieved. See
+// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
+// details.
+func (c *RegionInstantSnapshotGroupsInsertCall) Fields(s ...googleapi.Field) *RegionInstantSnapshotGroupsInsertCall {
+	c.urlParams_.Set("fields", googleapi.CombineFields(s))
+	return c
+}
+
+// Context sets the context to be used in this call's Do method.
+func (c *RegionInstantSnapshotGroupsInsertCall) Context(ctx context.Context) *RegionInstantSnapshotGroupsInsertCall {
+	c.ctx_ = ctx
+	return c
+}
+
+// Header returns a http.Header that can be modified by the caller to add
+// headers to the request.
+func (c *RegionInstantSnapshotGroupsInsertCall) Header() http.Header {
+	if c.header_ == nil {
+		c.header_ = make(http.Header)
+	}
+	return c.header_
+}
+
+func (c *RegionInstantSnapshotGroupsInsertCall) doRequest(alt string) (*http.Response, error) {
+	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
+	var body io.Reader = nil
+	body, err := googleapi.WithoutDataWrapper.JSONReader(c.instantsnapshotgroup)
+	if err != nil {
+		return nil, err
+	}
+	c.urlParams_.Set("alt", alt)
+	c.urlParams_.Set("prettyPrint", "false")
+	urls := googleapi.ResolveRelative(c.s.BasePath, "projects/{project}/regions/{region}/instantSnapshotGroups")
+	urls += "?" + c.urlParams_.Encode()
+	req, err := http.NewRequest("POST", urls, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header = reqHeaders
+	googleapi.Expand(req.URL, map[string]string{
+		"project": c.project,
+		"region":  c.region,
+	})
+	return gensupport.SendRequest(c.ctx_, c.s.client, req)
+}
+
+// Do executes the "compute.regionInstantSnapshotGroups.insert" call.
+// Any non-2xx status code is an error. Response headers are in either
+// *Operation.ServerResponse.Header or (if a response was returned at all) in
+// error.(*googleapi.Error).Header. Use googleapi.IsNotModified to check
+// whether the returned error was because http.StatusNotModified was returned.
+func (c *RegionInstantSnapshotGroupsInsertCall) Do(opts ...googleapi.CallOption) (*Operation, error) {
+	gensupport.SetOptions(c.urlParams_, opts...)
+	res, err := c.doRequest("json")
+	if res != nil && res.StatusCode == http.StatusNotModified {
+		if res.Body != nil {
+			res.Body.Close()
+		}
+		return nil, gensupport.WrapError(&googleapi.Error{
+			Code:   res.StatusCode,
+			Header: res.Header,
+		})
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer googleapi.CloseBody(res)
+	if err := googleapi.CheckResponse(res); err != nil {
+		return nil, gensupport.WrapError(err)
+	}
+	ret := &Operation{
+		ServerResponse: googleapi.ServerResponse{
+			Header:         res.Header,
+			HTTPStatusCode: res.StatusCode,
+		},
+	}
+	target := &ret
+	if err := gensupport.DecodeResponse(target, res); err != nil {
+		return nil, err
+	}
+	return ret, nil
+}
+
+type RegionInstantSnapshotGroupsListCall struct {
+	s            *Service
+	project      string
+	region       string
+	urlParams_   gensupport.URLParams
+	ifNoneMatch_ string
+	ctx_         context.Context
+	header_      http.Header
+}
+
+// List: retrieves the list of InstantSnapshotGroup resources contained within
+// the specified region.
+//
+// - project: Project ID for this request.
+// - region: The name of the region for this request.
+func (r *RegionInstantSnapshotGroupsService) List(project string, region string) *RegionInstantSnapshotGroupsListCall {
+	c := &RegionInstantSnapshotGroupsListCall{s: r.s, urlParams_: make(gensupport.URLParams)}
+	c.project = project
+	c.region = region
+	return c
+}
+
+// Filter sets the optional parameter "filter": A filter expression that
+// filters resources listed in the response. Most Compute resources support two
+// types of filter expressions: expressions that support regular expressions
+// and expressions that follow API improvement proposal AIP-160. These two
+// types of filter expressions cannot be mixed in one request. If you want to
+// use AIP-160, your expression must specify the field name, an operator, and
+// the value that you want to use for filtering. The value must be a string, a
+// number, or a boolean. The operator must be either `=`, `!=`, `>`, `<`, `<=`,
+// `>=` or `:`. For example, if you are filtering Compute Engine instances, you
+// can exclude instances named `example-instance` by specifying `name !=
+// example-instance`. The `:*` comparison can be used to test whether a key has
+// been defined. For example, to find all objects with `owner` label use: ```
+// labels.owner:* ``` You can also filter nested fields. For example, you could
+// specify `scheduling.automaticRestart = false` to include instances only if
+// they are not scheduled for automatic restarts. You can use filtering on
+// nested fields to filter based on resource labels. To filter on multiple
+// expressions, provide each separate expression within parentheses. For
+// example: ``` (scheduling.automaticRestart = true) (cpuPlatform = "Intel
+// Skylake") ``` By default, each expression is an `AND` expression. However,
+// you can include `AND` and `OR` expressions explicitly. For example: ```
+// (cpuPlatform = "Intel Skylake") OR (cpuPlatform = "Intel Broadwell") AND
+// (scheduling.automaticRestart = true) ``` If you want to use a regular
+// expression, use the `eq` (equal) or `ne` (not equal) operator against a
+// single un-parenthesized expression with or without quotes or against
+// multiple parenthesized expressions. Examples: `fieldname eq unquoted
+// literal` `fieldname eq 'single quoted literal'` `fieldname eq "double quoted
+// literal" `(fieldname1 eq literal) (fieldname2 ne "literal")` The literal
+// value is interpreted as a regular expression using Google RE2 library
+// syntax. The literal value must match the entire field. For example, to
+// filter for instances that do not end with name "instance", you would use
+// `name ne .*instance`. You cannot combine constraints on multiple fields
+// using regular expressions.
+func (c *RegionInstantSnapshotGroupsListCall) Filter(filter string) *RegionInstantSnapshotGroupsListCall {
+	c.urlParams_.Set("filter", filter)
+	return c
+}
+
+// MaxResults sets the optional parameter "maxResults": The maximum number of
+// results per page that should be returned. If the number of available results
+// is larger than `maxResults`, Compute Engine returns a `nextPageToken` that
+// can be used to get the next page of results in subsequent list requests.
+// Acceptable values are `0` to `500`, inclusive. (Default: `500`)
+func (c *RegionInstantSnapshotGroupsListCall) MaxResults(maxResults int64) *RegionInstantSnapshotGroupsListCall {
+	c.urlParams_.Set("maxResults", fmt.Sprint(maxResults))
+	return c
+}
+
+// OrderBy sets the optional parameter "orderBy": Sorts list results by a
+// certain order. By default, results are returned in alphanumerical order
+// based on the resource name. You can also sort results in descending order
+// based on the creation timestamp using `orderBy="creationTimestamp desc".
+// This sorts results based on the `creationTimestamp` field in reverse
+// chronological order (newest result first). Use this to sort resources like
+// operations so that the newest operation is returned first. Currently, only
+// sorting by `name` or `creationTimestamp desc` is supported.
+func (c *RegionInstantSnapshotGroupsListCall) OrderBy(orderBy string) *RegionInstantSnapshotGroupsListCall {
+	c.urlParams_.Set("orderBy", orderBy)
+	return c
+}
+
+// PageToken sets the optional parameter "pageToken": Specifies a page token to
+// use. Set `pageToken` to the `nextPageToken` returned by a previous list
+// request to get the next page of results.
+func (c *RegionInstantSnapshotGroupsListCall) PageToken(pageToken string) *RegionInstantSnapshotGroupsListCall {
+	c.urlParams_.Set("pageToken", pageToken)
+	return c
+}
+
+// ReturnPartialSuccess sets the optional parameter "returnPartialSuccess":
+// Opt-in for partial success behavior which provides partial results in case
+// of failure. The default value is false. For example, when partial success
+// behavior is enabled, aggregatedList for a single zone scope either returns
+// all resources in the zone or no resources, with an error code.
+func (c *RegionInstantSnapshotGroupsListCall) ReturnPartialSuccess(returnPartialSuccess bool) *RegionInstantSnapshotGroupsListCall {
+	c.urlParams_.Set("returnPartialSuccess", fmt.Sprint(returnPartialSuccess))
+	return c
+}
+
+// Fields allows partial responses to be retrieved. See
+// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
+// details.
+func (c *RegionInstantSnapshotGroupsListCall) Fields(s ...googleapi.Field) *RegionInstantSnapshotGroupsListCall {
+	c.urlParams_.Set("fields", googleapi.CombineFields(s))
+	return c
+}
+
+// IfNoneMatch sets an optional parameter which makes the operation fail if the
+// object's ETag matches the given value. This is useful for getting updates
+// only after the object has changed since the last request.
+func (c *RegionInstantSnapshotGroupsListCall) IfNoneMatch(entityTag string) *RegionInstantSnapshotGroupsListCall {
+	c.ifNoneMatch_ = entityTag
+	return c
+}
+
+// Context sets the context to be used in this call's Do method.
+func (c *RegionInstantSnapshotGroupsListCall) Context(ctx context.Context) *RegionInstantSnapshotGroupsListCall {
+	c.ctx_ = ctx
+	return c
+}
+
+// Header returns a http.Header that can be modified by the caller to add
+// headers to the request.
+func (c *RegionInstantSnapshotGroupsListCall) Header() http.Header {
+	if c.header_ == nil {
+		c.header_ = make(http.Header)
+	}
+	return c.header_
+}
+
+func (c *RegionInstantSnapshotGroupsListCall) doRequest(alt string) (*http.Response, error) {
+	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "", c.header_)
+	if c.ifNoneMatch_ != "" {
+		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
+	}
+	var body io.Reader = nil
+	c.urlParams_.Set("alt", alt)
+	c.urlParams_.Set("prettyPrint", "false")
+	urls := googleapi.ResolveRelative(c.s.BasePath, "projects/{project}/regions/{region}/instantSnapshotGroups")
+	urls += "?" + c.urlParams_.Encode()
+	req, err := http.NewRequest("GET", urls, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header = reqHeaders
+	googleapi.Expand(req.URL, map[string]string{
+		"project": c.project,
+		"region":  c.region,
+	})
+	return gensupport.SendRequest(c.ctx_, c.s.client, req)
+}
+
+// Do executes the "compute.regionInstantSnapshotGroups.list" call.
+// Any non-2xx status code is an error. Response headers are in either
+// *ListInstantSnapshotGroups.ServerResponse.Header or (if a response was
+// returned at all) in error.(*googleapi.Error).Header. Use
+// googleapi.IsNotModified to check whether the returned error was because
+// http.StatusNotModified was returned.
+func (c *RegionInstantSnapshotGroupsListCall) Do(opts ...googleapi.CallOption) (*ListInstantSnapshotGroups, error) {
+	gensupport.SetOptions(c.urlParams_, opts...)
+	res, err := c.doRequest("json")
+	if res != nil && res.StatusCode == http.StatusNotModified {
+		if res.Body != nil {
+			res.Body.Close()
+		}
+		return nil, gensupport.WrapError(&googleapi.Error{
+			Code:   res.StatusCode,
+			Header: res.Header,
+		})
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer googleapi.CloseBody(res)
+	if err := googleapi.CheckResponse(res); err != nil {
+		return nil, gensupport.WrapError(err)
+	}
+	ret := &ListInstantSnapshotGroups{
+		ServerResponse: googleapi.ServerResponse{
+			Header:         res.Header,
+			HTTPStatusCode: res.StatusCode,
+		},
+	}
+	target := &ret
+	if err := gensupport.DecodeResponse(target, res); err != nil {
+		return nil, err
+	}
+	return ret, nil
+}
+
+// Pages invokes f for each page of results.
+// A non-nil error returned from f will halt the iteration.
+// The provided context supersedes any context provided to the Context method.
+func (c *RegionInstantSnapshotGroupsListCall) Pages(ctx context.Context, f func(*ListInstantSnapshotGroups) error) error {
+	c.ctx_ = ctx
+	defer c.PageToken(c.urlParams_.Get("pageToken"))
+	for {
+		x, err := c.Do()
+		if err != nil {
+			return err
+		}
+		if err := f(x); err != nil {
+			return err
+		}
+		if x.NextPageToken == "" {
+			return nil
+		}
+		c.PageToken(x.NextPageToken)
+	}
+}
+
+type RegionInstantSnapshotGroupsSetIamPolicyCall struct {
+	s                      *Service
+	project                string
+	region                 string
+	resource               string
+	regionsetpolicyrequest *RegionSetPolicyRequest
+	urlParams_             gensupport.URLParams
+	ctx_                   context.Context
+	header_                http.Header
+}
+
+// SetIamPolicy: Sets the access control policy on the specified resource.
+// Replaces any existing policy.
+//
+// - project: Project ID for this request.
+// - region: The name of the region for this request.
+// - resource: Name or id of the resource for this request.
+func (r *RegionInstantSnapshotGroupsService) SetIamPolicy(project string, region string, resource string, regionsetpolicyrequest *RegionSetPolicyRequest) *RegionInstantSnapshotGroupsSetIamPolicyCall {
+	c := &RegionInstantSnapshotGroupsSetIamPolicyCall{s: r.s, urlParams_: make(gensupport.URLParams)}
+	c.project = project
+	c.region = region
+	c.resource = resource
+	c.regionsetpolicyrequest = regionsetpolicyrequest
+	return c
+}
+
+// Fields allows partial responses to be retrieved. See
+// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
+// details.
+func (c *RegionInstantSnapshotGroupsSetIamPolicyCall) Fields(s ...googleapi.Field) *RegionInstantSnapshotGroupsSetIamPolicyCall {
+	c.urlParams_.Set("fields", googleapi.CombineFields(s))
+	return c
+}
+
+// Context sets the context to be used in this call's Do method.
+func (c *RegionInstantSnapshotGroupsSetIamPolicyCall) Context(ctx context.Context) *RegionInstantSnapshotGroupsSetIamPolicyCall {
+	c.ctx_ = ctx
+	return c
+}
+
+// Header returns a http.Header that can be modified by the caller to add
+// headers to the request.
+func (c *RegionInstantSnapshotGroupsSetIamPolicyCall) Header() http.Header {
+	if c.header_ == nil {
+		c.header_ = make(http.Header)
+	}
+	return c.header_
+}
+
+func (c *RegionInstantSnapshotGroupsSetIamPolicyCall) doRequest(alt string) (*http.Response, error) {
+	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
+	var body io.Reader = nil
+	body, err := googleapi.WithoutDataWrapper.JSONReader(c.regionsetpolicyrequest)
+	if err != nil {
+		return nil, err
+	}
+	c.urlParams_.Set("alt", alt)
+	c.urlParams_.Set("prettyPrint", "false")
+	urls := googleapi.ResolveRelative(c.s.BasePath, "projects/{project}/regions/{region}/instantSnapshotGroups/{resource}/setIamPolicy")
+	urls += "?" + c.urlParams_.Encode()
+	req, err := http.NewRequest("POST", urls, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header = reqHeaders
+	googleapi.Expand(req.URL, map[string]string{
+		"project":  c.project,
+		"region":   c.region,
+		"resource": c.resource,
+	})
+	return gensupport.SendRequest(c.ctx_, c.s.client, req)
+}
+
+// Do executes the "compute.regionInstantSnapshotGroups.setIamPolicy" call.
+// Any non-2xx status code is an error. Response headers are in either
+// *Policy.ServerResponse.Header or (if a response was returned at all) in
+// error.(*googleapi.Error).Header. Use googleapi.IsNotModified to check
+// whether the returned error was because http.StatusNotModified was returned.
+func (c *RegionInstantSnapshotGroupsSetIamPolicyCall) Do(opts ...googleapi.CallOption) (*Policy, error) {
+	gensupport.SetOptions(c.urlParams_, opts...)
+	res, err := c.doRequest("json")
+	if res != nil && res.StatusCode == http.StatusNotModified {
+		if res.Body != nil {
+			res.Body.Close()
+		}
+		return nil, gensupport.WrapError(&googleapi.Error{
+			Code:   res.StatusCode,
+			Header: res.Header,
+		})
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer googleapi.CloseBody(res)
+	if err := googleapi.CheckResponse(res); err != nil {
+		return nil, gensupport.WrapError(err)
+	}
+	ret := &Policy{
+		ServerResponse: googleapi.ServerResponse{
+			Header:         res.Header,
+			HTTPStatusCode: res.StatusCode,
+		},
+	}
+	target := &ret
+	if err := gensupport.DecodeResponse(target, res); err != nil {
+		return nil, err
+	}
+	return ret, nil
+}
+
+type RegionInstantSnapshotGroupsTestIamPermissionsCall struct {
+	s                      *Service
+	project                string
+	region                 string
+	resource               string
+	testpermissionsrequest *TestPermissionsRequest
+	urlParams_             gensupport.URLParams
+	ctx_                   context.Context
+	header_                http.Header
+}
+
+// TestIamPermissions: Returns permissions that a caller has on the specified
+// resource.
+//
+// - project: Project ID for this request.
+// - region: The name of the region for this request.
+// - resource: Name or id of the resource for this request.
+func (r *RegionInstantSnapshotGroupsService) TestIamPermissions(project string, region string, resource string, testpermissionsrequest *TestPermissionsRequest) *RegionInstantSnapshotGroupsTestIamPermissionsCall {
+	c := &RegionInstantSnapshotGroupsTestIamPermissionsCall{s: r.s, urlParams_: make(gensupport.URLParams)}
+	c.project = project
+	c.region = region
+	c.resource = resource
+	c.testpermissionsrequest = testpermissionsrequest
+	return c
+}
+
+// Fields allows partial responses to be retrieved. See
+// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
+// details.
+func (c *RegionInstantSnapshotGroupsTestIamPermissionsCall) Fields(s ...googleapi.Field) *RegionInstantSnapshotGroupsTestIamPermissionsCall {
+	c.urlParams_.Set("fields", googleapi.CombineFields(s))
+	return c
+}
+
+// Context sets the context to be used in this call's Do method.
+func (c *RegionInstantSnapshotGroupsTestIamPermissionsCall) Context(ctx context.Context) *RegionInstantSnapshotGroupsTestIamPermissionsCall {
+	c.ctx_ = ctx
+	return c
+}
+
+// Header returns a http.Header that can be modified by the caller to add
+// headers to the request.
+func (c *RegionInstantSnapshotGroupsTestIamPermissionsCall) Header() http.Header {
+	if c.header_ == nil {
+		c.header_ = make(http.Header)
+	}
+	return c.header_
+}
+
+func (c *RegionInstantSnapshotGroupsTestIamPermissionsCall) doRequest(alt string) (*http.Response, error) {
+	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
+	var body io.Reader = nil
+	body, err := googleapi.WithoutDataWrapper.JSONReader(c.testpermissionsrequest)
+	if err != nil {
+		return nil, err
+	}
+	c.urlParams_.Set("alt", alt)
+	c.urlParams_.Set("prettyPrint", "false")
+	urls := googleapi.ResolveRelative(c.s.BasePath, "projects/{project}/regions/{region}/instantSnapshotGroups/{resource}/testIamPermissions")
+	urls += "?" + c.urlParams_.Encode()
+	req, err := http.NewRequest("POST", urls, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header = reqHeaders
+	googleapi.Expand(req.URL, map[string]string{
+		"project":  c.project,
+		"region":   c.region,
+		"resource": c.resource,
+	})
+	return gensupport.SendRequest(c.ctx_, c.s.client, req)
+}
+
+// Do executes the "compute.regionInstantSnapshotGroups.testIamPermissions" call.
+// Any non-2xx status code is an error. Response headers are in either
+// *TestPermissionsResponse.ServerResponse.Header or (if a response was
+// returned at all) in error.(*googleapi.Error).Header. Use
+// googleapi.IsNotModified to check whether the returned error was because
+// http.StatusNotModified was returned.
+func (c *RegionInstantSnapshotGroupsTestIamPermissionsCall) Do(opts ...googleapi.CallOption) (*TestPermissionsResponse, error) {
+	gensupport.SetOptions(c.urlParams_, opts...)
+	res, err := c.doRequest("json")
+	if res != nil && res.StatusCode == http.StatusNotModified {
+		if res.Body != nil {
+			res.Body.Close()
+		}
+		return nil, gensupport.WrapError(&googleapi.Error{
+			Code:   res.StatusCode,
+			Header: res.Header,
+		})
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer googleapi.CloseBody(res)
+	if err := googleapi.CheckResponse(res); err != nil {
+		return nil, gensupport.WrapError(err)
+	}
+	ret := &TestPermissionsResponse{
+		ServerResponse: googleapi.ServerResponse{
+			Header:         res.Header,
+			HTTPStatusCode: res.StatusCode,
+		},
+	}
+	target := &ret
+	if err := gensupport.DecodeResponse(target, res); err != nil {
+		return nil, err
+	}
+	return ret, nil
+}
+
 type RegionInstantSnapshotsDeleteCall struct {
 	s               *Service
 	project         string
@@ -13955,569 +13980,6 @@ func (c *RegionInstantSnapshotsTestIamPermissionsCall) Do(opts ...googleapi.Call
 		return nil, err
 	}
 	return ret, nil
-}
-
-type RegionMultiMigsDeleteCall struct {
-	s          *Service
-	project    string
-	region     string
-	multiMig   string
-	urlParams_ gensupport.URLParams
-	ctx_       context.Context
-	header_    http.Header
-}
-
-// Delete: Deletes a regional multiMIG in the specified project.
-//
-// - multiMig: Name of the multiMIG to delete.
-// - project: Project ID for this request.
-// - region: Name of the region for this request.
-func (r *RegionMultiMigsService) Delete(project string, region string, multiMig string) *RegionMultiMigsDeleteCall {
-	c := &RegionMultiMigsDeleteCall{s: r.s, urlParams_: make(gensupport.URLParams)}
-	c.project = project
-	c.region = region
-	c.multiMig = multiMig
-	return c
-}
-
-// RequestId sets the optional parameter "requestId": An optional request ID to
-// identify requests. Specify a unique request ID so that if you must retry
-// your request, the server will know to ignore the request if it has already
-// been completed. For example, consider a situation where you make an initial
-// request and the request times out. If you make the request again with the
-// same request ID, the server can check if original operation with the same
-// request ID was received, and if so, will ignore the second request. This
-// prevents clients from accidentally creating duplicate commitments. The
-// request ID must be a valid UUID with the exception that zero UUID is not
-// supported ( 00000000-0000-0000-0000-000000000000).
-func (c *RegionMultiMigsDeleteCall) RequestId(requestId string) *RegionMultiMigsDeleteCall {
-	c.urlParams_.Set("requestId", requestId)
-	return c
-}
-
-// Fields allows partial responses to be retrieved. See
-// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
-// details.
-func (c *RegionMultiMigsDeleteCall) Fields(s ...googleapi.Field) *RegionMultiMigsDeleteCall {
-	c.urlParams_.Set("fields", googleapi.CombineFields(s))
-	return c
-}
-
-// Context sets the context to be used in this call's Do method.
-func (c *RegionMultiMigsDeleteCall) Context(ctx context.Context) *RegionMultiMigsDeleteCall {
-	c.ctx_ = ctx
-	return c
-}
-
-// Header returns a http.Header that can be modified by the caller to add
-// headers to the request.
-func (c *RegionMultiMigsDeleteCall) Header() http.Header {
-	if c.header_ == nil {
-		c.header_ = make(http.Header)
-	}
-	return c.header_
-}
-
-func (c *RegionMultiMigsDeleteCall) doRequest(alt string) (*http.Response, error) {
-	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "", c.header_)
-	var body io.Reader = nil
-	c.urlParams_.Set("alt", alt)
-	c.urlParams_.Set("prettyPrint", "false")
-	urls := googleapi.ResolveRelative(c.s.BasePath, "projects/{project}/regions/{region}/multiMigs/{multiMig}")
-	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("DELETE", urls, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header = reqHeaders
-	googleapi.Expand(req.URL, map[string]string{
-		"project":  c.project,
-		"region":   c.region,
-		"multiMig": c.multiMig,
-	})
-	return gensupport.SendRequest(c.ctx_, c.s.client, req)
-}
-
-// Do executes the "compute.regionMultiMigs.delete" call.
-// Any non-2xx status code is an error. Response headers are in either
-// *Operation.ServerResponse.Header or (if a response was returned at all) in
-// error.(*googleapi.Error).Header. Use googleapi.IsNotModified to check
-// whether the returned error was because http.StatusNotModified was returned.
-func (c *RegionMultiMigsDeleteCall) Do(opts ...googleapi.CallOption) (*Operation, error) {
-	gensupport.SetOptions(c.urlParams_, opts...)
-	res, err := c.doRequest("json")
-	if res != nil && res.StatusCode == http.StatusNotModified {
-		if res.Body != nil {
-			res.Body.Close()
-		}
-		return nil, gensupport.WrapError(&googleapi.Error{
-			Code:   res.StatusCode,
-			Header: res.Header,
-		})
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer googleapi.CloseBody(res)
-	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, gensupport.WrapError(err)
-	}
-	ret := &Operation{
-		ServerResponse: googleapi.ServerResponse{
-			Header:         res.Header,
-			HTTPStatusCode: res.StatusCode,
-		},
-	}
-	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
-		return nil, err
-	}
-	return ret, nil
-}
-
-type RegionMultiMigsGetCall struct {
-	s            *Service
-	project      string
-	region       string
-	multiMig     string
-	urlParams_   gensupport.URLParams
-	ifNoneMatch_ string
-	ctx_         context.Context
-	header_      http.Header
-}
-
-// Get: Returns the specified MultiMIG resource.
-//
-// - multiMig: Name of the MultiMig resource to return.
-// - project: Project ID for this request.
-// - region: Name of the region for this request.
-func (r *RegionMultiMigsService) Get(project string, region string, multiMig string) *RegionMultiMigsGetCall {
-	c := &RegionMultiMigsGetCall{s: r.s, urlParams_: make(gensupport.URLParams)}
-	c.project = project
-	c.region = region
-	c.multiMig = multiMig
-	return c
-}
-
-// Fields allows partial responses to be retrieved. See
-// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
-// details.
-func (c *RegionMultiMigsGetCall) Fields(s ...googleapi.Field) *RegionMultiMigsGetCall {
-	c.urlParams_.Set("fields", googleapi.CombineFields(s))
-	return c
-}
-
-// IfNoneMatch sets an optional parameter which makes the operation fail if the
-// object's ETag matches the given value. This is useful for getting updates
-// only after the object has changed since the last request.
-func (c *RegionMultiMigsGetCall) IfNoneMatch(entityTag string) *RegionMultiMigsGetCall {
-	c.ifNoneMatch_ = entityTag
-	return c
-}
-
-// Context sets the context to be used in this call's Do method.
-func (c *RegionMultiMigsGetCall) Context(ctx context.Context) *RegionMultiMigsGetCall {
-	c.ctx_ = ctx
-	return c
-}
-
-// Header returns a http.Header that can be modified by the caller to add
-// headers to the request.
-func (c *RegionMultiMigsGetCall) Header() http.Header {
-	if c.header_ == nil {
-		c.header_ = make(http.Header)
-	}
-	return c.header_
-}
-
-func (c *RegionMultiMigsGetCall) doRequest(alt string) (*http.Response, error) {
-	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "", c.header_)
-	if c.ifNoneMatch_ != "" {
-		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
-	}
-	var body io.Reader = nil
-	c.urlParams_.Set("alt", alt)
-	c.urlParams_.Set("prettyPrint", "false")
-	urls := googleapi.ResolveRelative(c.s.BasePath, "projects/{project}/regions/{region}/multiMigs/{multiMig}")
-	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("GET", urls, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header = reqHeaders
-	googleapi.Expand(req.URL, map[string]string{
-		"project":  c.project,
-		"region":   c.region,
-		"multiMig": c.multiMig,
-	})
-	return gensupport.SendRequest(c.ctx_, c.s.client, req)
-}
-
-// Do executes the "compute.regionMultiMigs.get" call.
-// Any non-2xx status code is an error. Response headers are in either
-// *MultiMig.ServerResponse.Header or (if a response was returned at all) in
-// error.(*googleapi.Error).Header. Use googleapi.IsNotModified to check
-// whether the returned error was because http.StatusNotModified was returned.
-func (c *RegionMultiMigsGetCall) Do(opts ...googleapi.CallOption) (*MultiMig, error) {
-	gensupport.SetOptions(c.urlParams_, opts...)
-	res, err := c.doRequest("json")
-	if res != nil && res.StatusCode == http.StatusNotModified {
-		if res.Body != nil {
-			res.Body.Close()
-		}
-		return nil, gensupport.WrapError(&googleapi.Error{
-			Code:   res.StatusCode,
-			Header: res.Header,
-		})
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer googleapi.CloseBody(res)
-	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, gensupport.WrapError(err)
-	}
-	ret := &MultiMig{
-		ServerResponse: googleapi.ServerResponse{
-			Header:         res.Header,
-			HTTPStatusCode: res.StatusCode,
-		},
-	}
-	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
-		return nil, err
-	}
-	return ret, nil
-}
-
-type RegionMultiMigsInsertCall struct {
-	s          *Service
-	project    string
-	region     string
-	multimig   *MultiMig
-	urlParams_ gensupport.URLParams
-	ctx_       context.Context
-	header_    http.Header
-}
-
-// Insert: Creates a regional multiMIG in the specified project.
-//
-// - project: Project ID for this request.
-// - region: Name of the region for this request.
-func (r *RegionMultiMigsService) Insert(project string, region string, multimig *MultiMig) *RegionMultiMigsInsertCall {
-	c := &RegionMultiMigsInsertCall{s: r.s, urlParams_: make(gensupport.URLParams)}
-	c.project = project
-	c.region = region
-	c.multimig = multimig
-	return c
-}
-
-// RequestId sets the optional parameter "requestId": An optional request ID to
-// identify requests. Specify a unique request ID so that if you must retry
-// your request, the server will know to ignore the request if it has already
-// been completed. For example, consider a situation where you make an initial
-// request and the request times out. If you make the request again with the
-// same request ID, the server can check if original operation with the same
-// request ID was received, and if so, will ignore the second request. This
-// prevents clients from accidentally creating duplicate commitments. The
-// request ID must be a valid UUID with the exception that zero UUID is not
-// supported ( 00000000-0000-0000-0000-000000000000).
-func (c *RegionMultiMigsInsertCall) RequestId(requestId string) *RegionMultiMigsInsertCall {
-	c.urlParams_.Set("requestId", requestId)
-	return c
-}
-
-// Fields allows partial responses to be retrieved. See
-// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
-// details.
-func (c *RegionMultiMigsInsertCall) Fields(s ...googleapi.Field) *RegionMultiMigsInsertCall {
-	c.urlParams_.Set("fields", googleapi.CombineFields(s))
-	return c
-}
-
-// Context sets the context to be used in this call's Do method.
-func (c *RegionMultiMigsInsertCall) Context(ctx context.Context) *RegionMultiMigsInsertCall {
-	c.ctx_ = ctx
-	return c
-}
-
-// Header returns a http.Header that can be modified by the caller to add
-// headers to the request.
-func (c *RegionMultiMigsInsertCall) Header() http.Header {
-	if c.header_ == nil {
-		c.header_ = make(http.Header)
-	}
-	return c.header_
-}
-
-func (c *RegionMultiMigsInsertCall) doRequest(alt string) (*http.Response, error) {
-	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.multimig)
-	if err != nil {
-		return nil, err
-	}
-	c.urlParams_.Set("alt", alt)
-	c.urlParams_.Set("prettyPrint", "false")
-	urls := googleapi.ResolveRelative(c.s.BasePath, "projects/{project}/regions/{region}/multiMigs")
-	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("POST", urls, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header = reqHeaders
-	googleapi.Expand(req.URL, map[string]string{
-		"project": c.project,
-		"region":  c.region,
-	})
-	return gensupport.SendRequest(c.ctx_, c.s.client, req)
-}
-
-// Do executes the "compute.regionMultiMigs.insert" call.
-// Any non-2xx status code is an error. Response headers are in either
-// *Operation.ServerResponse.Header or (if a response was returned at all) in
-// error.(*googleapi.Error).Header. Use googleapi.IsNotModified to check
-// whether the returned error was because http.StatusNotModified was returned.
-func (c *RegionMultiMigsInsertCall) Do(opts ...googleapi.CallOption) (*Operation, error) {
-	gensupport.SetOptions(c.urlParams_, opts...)
-	res, err := c.doRequest("json")
-	if res != nil && res.StatusCode == http.StatusNotModified {
-		if res.Body != nil {
-			res.Body.Close()
-		}
-		return nil, gensupport.WrapError(&googleapi.Error{
-			Code:   res.StatusCode,
-			Header: res.Header,
-		})
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer googleapi.CloseBody(res)
-	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, gensupport.WrapError(err)
-	}
-	ret := &Operation{
-		ServerResponse: googleapi.ServerResponse{
-			Header:         res.Header,
-			HTTPStatusCode: res.StatusCode,
-		},
-	}
-	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
-		return nil, err
-	}
-	return ret, nil
-}
-
-type RegionMultiMigsListCall struct {
-	s            *Service
-	project      string
-	region       string
-	urlParams_   gensupport.URLParams
-	ifNoneMatch_ string
-	ctx_         context.Context
-	header_      http.Header
-}
-
-// List: Retrieves a list of MultiMIGs in a project and region.
-//
-// - project: Project ID for this request.
-// - region: Name of the region for this request.
-func (r *RegionMultiMigsService) List(project string, region string) *RegionMultiMigsListCall {
-	c := &RegionMultiMigsListCall{s: r.s, urlParams_: make(gensupport.URLParams)}
-	c.project = project
-	c.region = region
-	return c
-}
-
-// Filter sets the optional parameter "filter": A filter expression that
-// filters resources listed in the response. Most Compute resources support two
-// types of filter expressions: expressions that support regular expressions
-// and expressions that follow API improvement proposal AIP-160. These two
-// types of filter expressions cannot be mixed in one request. If you want to
-// use AIP-160, your expression must specify the field name, an operator, and
-// the value that you want to use for filtering. The value must be a string, a
-// number, or a boolean. The operator must be either `=`, `!=`, `>`, `<`, `<=`,
-// `>=` or `:`. For example, if you are filtering Compute Engine instances, you
-// can exclude instances named `example-instance` by specifying `name !=
-// example-instance`. The `:*` comparison can be used to test whether a key has
-// been defined. For example, to find all objects with `owner` label use: ```
-// labels.owner:* ``` You can also filter nested fields. For example, you could
-// specify `scheduling.automaticRestart = false` to include instances only if
-// they are not scheduled for automatic restarts. You can use filtering on
-// nested fields to filter based on resource labels. To filter on multiple
-// expressions, provide each separate expression within parentheses. For
-// example: ``` (scheduling.automaticRestart = true) (cpuPlatform = "Intel
-// Skylake") ``` By default, each expression is an `AND` expression. However,
-// you can include `AND` and `OR` expressions explicitly. For example: ```
-// (cpuPlatform = "Intel Skylake") OR (cpuPlatform = "Intel Broadwell") AND
-// (scheduling.automaticRestart = true) ``` If you want to use a regular
-// expression, use the `eq` (equal) or `ne` (not equal) operator against a
-// single un-parenthesized expression with or without quotes or against
-// multiple parenthesized expressions. Examples: `fieldname eq unquoted
-// literal` `fieldname eq 'single quoted literal'` `fieldname eq "double quoted
-// literal" `(fieldname1 eq literal) (fieldname2 ne "literal")` The literal
-// value is interpreted as a regular expression using Google RE2 library
-// syntax. The literal value must match the entire field. For example, to
-// filter for instances that do not end with name "instance", you would use
-// `name ne .*instance`. You cannot combine constraints on multiple fields
-// using regular expressions.
-func (c *RegionMultiMigsListCall) Filter(filter string) *RegionMultiMigsListCall {
-	c.urlParams_.Set("filter", filter)
-	return c
-}
-
-// MaxResults sets the optional parameter "maxResults": The maximum number of
-// results per page that should be returned. If the number of available results
-// is larger than `maxResults`, Compute Engine returns a `nextPageToken` that
-// can be used to get the next page of results in subsequent list requests.
-// Acceptable values are `0` to `500`, inclusive. (Default: `500`)
-func (c *RegionMultiMigsListCall) MaxResults(maxResults int64) *RegionMultiMigsListCall {
-	c.urlParams_.Set("maxResults", fmt.Sprint(maxResults))
-	return c
-}
-
-// OrderBy sets the optional parameter "orderBy": Sorts list results by a
-// certain order. By default, results are returned in alphanumerical order
-// based on the resource name. You can also sort results in descending order
-// based on the creation timestamp using `orderBy="creationTimestamp desc".
-// This sorts results based on the `creationTimestamp` field in reverse
-// chronological order (newest result first). Use this to sort resources like
-// operations so that the newest operation is returned first. Currently, only
-// sorting by `name` or `creationTimestamp desc` is supported.
-func (c *RegionMultiMigsListCall) OrderBy(orderBy string) *RegionMultiMigsListCall {
-	c.urlParams_.Set("orderBy", orderBy)
-	return c
-}
-
-// PageToken sets the optional parameter "pageToken": Specifies a page token to
-// use. Set `pageToken` to the `nextPageToken` returned by a previous list
-// request to get the next page of results.
-func (c *RegionMultiMigsListCall) PageToken(pageToken string) *RegionMultiMigsListCall {
-	c.urlParams_.Set("pageToken", pageToken)
-	return c
-}
-
-// ReturnPartialSuccess sets the optional parameter "returnPartialSuccess":
-// Opt-in for partial success behavior which provides partial results in case
-// of failure. The default value is false. For example, when partial success
-// behavior is enabled, aggregatedList for a single zone scope either returns
-// all resources in the zone or no resources, with an error code.
-func (c *RegionMultiMigsListCall) ReturnPartialSuccess(returnPartialSuccess bool) *RegionMultiMigsListCall {
-	c.urlParams_.Set("returnPartialSuccess", fmt.Sprint(returnPartialSuccess))
-	return c
-}
-
-// Fields allows partial responses to be retrieved. See
-// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
-// details.
-func (c *RegionMultiMigsListCall) Fields(s ...googleapi.Field) *RegionMultiMigsListCall {
-	c.urlParams_.Set("fields", googleapi.CombineFields(s))
-	return c
-}
-
-// IfNoneMatch sets an optional parameter which makes the operation fail if the
-// object's ETag matches the given value. This is useful for getting updates
-// only after the object has changed since the last request.
-func (c *RegionMultiMigsListCall) IfNoneMatch(entityTag string) *RegionMultiMigsListCall {
-	c.ifNoneMatch_ = entityTag
-	return c
-}
-
-// Context sets the context to be used in this call's Do method.
-func (c *RegionMultiMigsListCall) Context(ctx context.Context) *RegionMultiMigsListCall {
-	c.ctx_ = ctx
-	return c
-}
-
-// Header returns a http.Header that can be modified by the caller to add
-// headers to the request.
-func (c *RegionMultiMigsListCall) Header() http.Header {
-	if c.header_ == nil {
-		c.header_ = make(http.Header)
-	}
-	return c.header_
-}
-
-func (c *RegionMultiMigsListCall) doRequest(alt string) (*http.Response, error) {
-	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "", c.header_)
-	if c.ifNoneMatch_ != "" {
-		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
-	}
-	var body io.Reader = nil
-	c.urlParams_.Set("alt", alt)
-	c.urlParams_.Set("prettyPrint", "false")
-	urls := googleapi.ResolveRelative(c.s.BasePath, "projects/{project}/regions/{region}/multiMigs")
-	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("GET", urls, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header = reqHeaders
-	googleapi.Expand(req.URL, map[string]string{
-		"project": c.project,
-		"region":  c.region,
-	})
-	return gensupport.SendRequest(c.ctx_, c.s.client, req)
-}
-
-// Do executes the "compute.regionMultiMigs.list" call.
-// Any non-2xx status code is an error. Response headers are in either
-// *MultiMigsList.ServerResponse.Header or (if a response was returned at all)
-// in error.(*googleapi.Error).Header. Use googleapi.IsNotModified to check
-// whether the returned error was because http.StatusNotModified was returned.
-func (c *RegionMultiMigsListCall) Do(opts ...googleapi.CallOption) (*MultiMigsList, error) {
-	gensupport.SetOptions(c.urlParams_, opts...)
-	res, err := c.doRequest("json")
-	if res != nil && res.StatusCode == http.StatusNotModified {
-		if res.Body != nil {
-			res.Body.Close()
-		}
-		return nil, gensupport.WrapError(&googleapi.Error{
-			Code:   res.StatusCode,
-			Header: res.Header,
-		})
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer googleapi.CloseBody(res)
-	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, gensupport.WrapError(err)
-	}
-	ret := &MultiMigsList{
-		ServerResponse: googleapi.ServerResponse{
-			Header:         res.Header,
-			HTTPStatusCode: res.StatusCode,
-		},
-	}
-	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
-		return nil, err
-	}
-	return ret, nil
-}
-
-// Pages invokes f for each page of results.
-// A non-nil error returned from f will halt the iteration.
-// The provided context supersedes any context provided to the Context method.
-func (c *RegionMultiMigsListCall) Pages(ctx context.Context, f func(*MultiMigsList) error) error {
-	c.ctx_ = ctx
-	defer c.PageToken(c.urlParams_.Get("pageToken"))
-	for {
-		x, err := c.Do()
-		if err != nil {
-			return err
-		}
-		if err := f(x); err != nil {
-			return err
-		}
-		if x.NextPageToken == "" {
-			return nil
-		}
-		c.PageToken(x.NextPageToken)
-	}
 }
 
 type RegionNetworkEndpointGroupsAttachNetworkEndpointsCall struct {
@@ -18775,25 +18237,26 @@ func (c *RegionNotificationEndpointsTestIamPermissionsCall) Do(opts ...googleapi
 }
 
 type RegionOperationsDeleteCall struct {
-	s          *Service
-	project    string
-	region     string
-	operation  string
-	urlParams_ gensupport.URLParams
-	ctx_       context.Context
-	header_    http.Header
+	s           *Service
+	project     string
+	region      string
+	operationid string
+	urlParams_  gensupport.URLParams
+	ctx_        context.Context
+	header_     http.Header
 }
 
 // Delete: Deletes the specified region-specific Operations resource.
 //
-// - operation: Name of the Operations resource to delete.
-// - project: Project ID for this request.
-// - region: Name of the region for this request.
-func (r *RegionOperationsService) Delete(project string, region string, operation string) *RegionOperationsDeleteCall {
+//   - operation: Name of the Operations resource to delete, or its unique
+//     numeric identifier.
+//   - project: Project ID for this request.
+//   - region: Name of the region for this request.
+func (r *RegionOperationsService) Delete(project string, region string, operationid string) *RegionOperationsDeleteCall {
 	c := &RegionOperationsDeleteCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.project = project
 	c.region = region
-	c.operation = operation
+	c.operationid = operationid
 	return c
 }
 
@@ -18835,7 +18298,7 @@ func (c *RegionOperationsDeleteCall) doRequest(alt string) (*http.Response, erro
 	googleapi.Expand(req.URL, map[string]string{
 		"project":   c.project,
 		"region":    c.region,
-		"operation": c.operation,
+		"operation": c.operationid,
 	})
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
@@ -18858,7 +18321,7 @@ type RegionOperationsGetCall struct {
 	s            *Service
 	project      string
 	region       string
-	operation    string
+	operationid  string
 	urlParams_   gensupport.URLParams
 	ifNoneMatch_ string
 	ctx_         context.Context
@@ -18867,14 +18330,15 @@ type RegionOperationsGetCall struct {
 
 // Get: Retrieves the specified region-specific Operations resource.
 //
-// - operation: Name of the Operations resource to return.
-// - project: Project ID for this request.
-// - region: Name of the region for this request.
-func (r *RegionOperationsService) Get(project string, region string, operation string) *RegionOperationsGetCall {
+//   - operation: Name of the Operations resource to return, or its unique
+//     numeric identifier.
+//   - project: Project ID for this request.
+//   - region: Name of the region for this request.
+func (r *RegionOperationsService) Get(project string, region string, operationid string) *RegionOperationsGetCall {
 	c := &RegionOperationsGetCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.project = project
 	c.region = region
-	c.operation = operation
+	c.operationid = operationid
 	return c
 }
 
@@ -18927,7 +18391,7 @@ func (c *RegionOperationsGetCall) doRequest(alt string) (*http.Response, error) 
 	googleapi.Expand(req.URL, map[string]string{
 		"project":   c.project,
 		"region":    c.region,
-		"operation": c.operation,
+		"operation": c.operationid,
 	})
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
@@ -19181,13 +18645,13 @@ func (c *RegionOperationsListCall) Pages(ctx context.Context, f func(*OperationL
 }
 
 type RegionOperationsWaitCall struct {
-	s          *Service
-	project    string
-	region     string
-	operation  string
-	urlParams_ gensupport.URLParams
-	ctx_       context.Context
-	header_    http.Header
+	s           *Service
+	project     string
+	region      string
+	operationid string
+	urlParams_  gensupport.URLParams
+	ctx_        context.Context
+	header_     http.Header
 }
 
 // Wait: Waits for the specified Operation resource to return as `DONE` or for
@@ -19202,14 +18666,15 @@ type RegionOperationsWaitCall struct {
 // actually done when the method returns. Be prepared to retry if the operation
 // is not `DONE`.
 //
-// - operation: Name of the Operations resource to return.
-// - project: Project ID for this request.
-// - region: Name of the region for this request.
-func (r *RegionOperationsService) Wait(project string, region string, operation string) *RegionOperationsWaitCall {
+//   - operation: Name of the Operations resource to return, or its unique
+//     numeric identifier.
+//   - project: Project ID for this request.
+//   - region: Name of the region for this request.
+func (r *RegionOperationsService) Wait(project string, region string, operationid string) *RegionOperationsWaitCall {
 	c := &RegionOperationsWaitCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.project = project
 	c.region = region
-	c.operation = operation
+	c.operationid = operationid
 	return c
 }
 
@@ -19251,7 +18716,7 @@ func (c *RegionOperationsWaitCall) doRequest(alt string) (*http.Response, error)
 	googleapi.Expand(req.URL, map[string]string{
 		"project":   c.project,
 		"region":    c.region,
-		"operation": c.operation,
+		"operation": c.operationid,
 	})
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
@@ -27326,7 +26791,13 @@ type RegionsGetCall struct {
 // quota information (the `quotas` field). To exclude one or more fields, set
 // your request's `fields` query parameter to only include the fields you need.
 // For example, to only include the `id` and `selfLink` fields, add the query
-// parameter `?fields=id,selfLink` to your request.
+// parameter `?fields=id,selfLink` to your request. This method fails if the
+// quota information is unavailable for the region and if the organization
+// policy constraint compute.requireBasicQuotaInResponse is enforced. This
+// constraint, when enforced, disables the fail-open behaviour when quota
+// information (the `items.quotas` field) is unavailable for the region. It is
+// recommended to use the default setting for the constraint unless your
+// application requires the fail-closed behaviour for this method.
 //
 // - project: Project ID for this request.
 // - region: Name of the region resource to return.
@@ -27629,6 +27100,346 @@ func (c *RegionsListCall) Do(opts ...googleapi.CallOption) (*RegionList, error) 
 // A non-nil error returned from f will halt the iteration.
 // The provided context supersedes any context provided to the Context method.
 func (c *RegionsListCall) Pages(ctx context.Context, f func(*RegionList) error) error {
+	c.ctx_ = ctx
+	defer c.PageToken(c.urlParams_.Get("pageToken"))
+	for {
+		x, err := c.Do()
+		if err != nil {
+			return err
+		}
+		if err := f(x); err != nil {
+			return err
+		}
+		if x.NextPageToken == "" {
+			return nil
+		}
+		c.PageToken(x.NextPageToken)
+	}
+}
+
+type ReservationBlocksGetCall struct {
+	s                *Service
+	project          string
+	zone             string
+	reservation      string
+	reservationBlock string
+	urlParams_       gensupport.URLParams
+	ifNoneMatch_     string
+	ctx_             context.Context
+	header_          http.Header
+}
+
+// Get: Retrieves information about the specified reservation block.
+//
+//   - project: Project ID for this request.
+//   - reservation: The name of the reservation. Name should conform to RFC1035
+//     or be a resource ID.
+//   - reservationBlock: The name of the reservation block. Name should conform
+//     to RFC1035 or be a resource ID.
+//   - zone: Name of the zone for this request. Zone name should conform to
+//     RFC1035.
+func (r *ReservationBlocksService) Get(project string, zone string, reservation string, reservationBlock string) *ReservationBlocksGetCall {
+	c := &ReservationBlocksGetCall{s: r.s, urlParams_: make(gensupport.URLParams)}
+	c.project = project
+	c.zone = zone
+	c.reservation = reservation
+	c.reservationBlock = reservationBlock
+	return c
+}
+
+// Fields allows partial responses to be retrieved. See
+// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
+// details.
+func (c *ReservationBlocksGetCall) Fields(s ...googleapi.Field) *ReservationBlocksGetCall {
+	c.urlParams_.Set("fields", googleapi.CombineFields(s))
+	return c
+}
+
+// IfNoneMatch sets an optional parameter which makes the operation fail if the
+// object's ETag matches the given value. This is useful for getting updates
+// only after the object has changed since the last request.
+func (c *ReservationBlocksGetCall) IfNoneMatch(entityTag string) *ReservationBlocksGetCall {
+	c.ifNoneMatch_ = entityTag
+	return c
+}
+
+// Context sets the context to be used in this call's Do method.
+func (c *ReservationBlocksGetCall) Context(ctx context.Context) *ReservationBlocksGetCall {
+	c.ctx_ = ctx
+	return c
+}
+
+// Header returns a http.Header that can be modified by the caller to add
+// headers to the request.
+func (c *ReservationBlocksGetCall) Header() http.Header {
+	if c.header_ == nil {
+		c.header_ = make(http.Header)
+	}
+	return c.header_
+}
+
+func (c *ReservationBlocksGetCall) doRequest(alt string) (*http.Response, error) {
+	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "", c.header_)
+	if c.ifNoneMatch_ != "" {
+		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
+	}
+	var body io.Reader = nil
+	c.urlParams_.Set("alt", alt)
+	c.urlParams_.Set("prettyPrint", "false")
+	urls := googleapi.ResolveRelative(c.s.BasePath, "projects/{project}/zones/{zone}/reservations/{reservation}/reservationBlocks/{reservationBlock}")
+	urls += "?" + c.urlParams_.Encode()
+	req, err := http.NewRequest("GET", urls, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header = reqHeaders
+	googleapi.Expand(req.URL, map[string]string{
+		"project":          c.project,
+		"zone":             c.zone,
+		"reservation":      c.reservation,
+		"reservationBlock": c.reservationBlock,
+	})
+	return gensupport.SendRequest(c.ctx_, c.s.client, req)
+}
+
+// Do executes the "compute.reservationBlocks.get" call.
+// Any non-2xx status code is an error. Response headers are in either
+// *ReservationBlocksGetResponse.ServerResponse.Header or (if a response was
+// returned at all) in error.(*googleapi.Error).Header. Use
+// googleapi.IsNotModified to check whether the returned error was because
+// http.StatusNotModified was returned.
+func (c *ReservationBlocksGetCall) Do(opts ...googleapi.CallOption) (*ReservationBlocksGetResponse, error) {
+	gensupport.SetOptions(c.urlParams_, opts...)
+	res, err := c.doRequest("json")
+	if res != nil && res.StatusCode == http.StatusNotModified {
+		if res.Body != nil {
+			res.Body.Close()
+		}
+		return nil, gensupport.WrapError(&googleapi.Error{
+			Code:   res.StatusCode,
+			Header: res.Header,
+		})
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer googleapi.CloseBody(res)
+	if err := googleapi.CheckResponse(res); err != nil {
+		return nil, gensupport.WrapError(err)
+	}
+	ret := &ReservationBlocksGetResponse{
+		ServerResponse: googleapi.ServerResponse{
+			Header:         res.Header,
+			HTTPStatusCode: res.StatusCode,
+		},
+	}
+	target := &ret
+	if err := gensupport.DecodeResponse(target, res); err != nil {
+		return nil, err
+	}
+	return ret, nil
+}
+
+type ReservationBlocksListCall struct {
+	s            *Service
+	project      string
+	zone         string
+	reservation  string
+	urlParams_   gensupport.URLParams
+	ifNoneMatch_ string
+	ctx_         context.Context
+	header_      http.Header
+}
+
+// List: Retrieves a list of reservation blocks under a single reservation.
+//
+//   - project: Project ID for this request.
+//   - reservation: The name of the reservation. Name should conform to RFC1035
+//     or be a resource ID.
+//   - zone: Name of the zone for this request. Zone name should conform to
+//     RFC1035.
+func (r *ReservationBlocksService) List(project string, zone string, reservation string) *ReservationBlocksListCall {
+	c := &ReservationBlocksListCall{s: r.s, urlParams_: make(gensupport.URLParams)}
+	c.project = project
+	c.zone = zone
+	c.reservation = reservation
+	return c
+}
+
+// Filter sets the optional parameter "filter": A filter expression that
+// filters resources listed in the response. Most Compute resources support two
+// types of filter expressions: expressions that support regular expressions
+// and expressions that follow API improvement proposal AIP-160. These two
+// types of filter expressions cannot be mixed in one request. If you want to
+// use AIP-160, your expression must specify the field name, an operator, and
+// the value that you want to use for filtering. The value must be a string, a
+// number, or a boolean. The operator must be either `=`, `!=`, `>`, `<`, `<=`,
+// `>=` or `:`. For example, if you are filtering Compute Engine instances, you
+// can exclude instances named `example-instance` by specifying `name !=
+// example-instance`. The `:*` comparison can be used to test whether a key has
+// been defined. For example, to find all objects with `owner` label use: ```
+// labels.owner:* ``` You can also filter nested fields. For example, you could
+// specify `scheduling.automaticRestart = false` to include instances only if
+// they are not scheduled for automatic restarts. You can use filtering on
+// nested fields to filter based on resource labels. To filter on multiple
+// expressions, provide each separate expression within parentheses. For
+// example: ``` (scheduling.automaticRestart = true) (cpuPlatform = "Intel
+// Skylake") ``` By default, each expression is an `AND` expression. However,
+// you can include `AND` and `OR` expressions explicitly. For example: ```
+// (cpuPlatform = "Intel Skylake") OR (cpuPlatform = "Intel Broadwell") AND
+// (scheduling.automaticRestart = true) ``` If you want to use a regular
+// expression, use the `eq` (equal) or `ne` (not equal) operator against a
+// single un-parenthesized expression with or without quotes or against
+// multiple parenthesized expressions. Examples: `fieldname eq unquoted
+// literal` `fieldname eq 'single quoted literal'` `fieldname eq "double quoted
+// literal" `(fieldname1 eq literal) (fieldname2 ne "literal")` The literal
+// value is interpreted as a regular expression using Google RE2 library
+// syntax. The literal value must match the entire field. For example, to
+// filter for instances that do not end with name "instance", you would use
+// `name ne .*instance`. You cannot combine constraints on multiple fields
+// using regular expressions.
+func (c *ReservationBlocksListCall) Filter(filter string) *ReservationBlocksListCall {
+	c.urlParams_.Set("filter", filter)
+	return c
+}
+
+// MaxResults sets the optional parameter "maxResults": The maximum number of
+// results per page that should be returned. If the number of available results
+// is larger than `maxResults`, Compute Engine returns a `nextPageToken` that
+// can be used to get the next page of results in subsequent list requests.
+// Acceptable values are `0` to `500`, inclusive. (Default: `500`)
+func (c *ReservationBlocksListCall) MaxResults(maxResults int64) *ReservationBlocksListCall {
+	c.urlParams_.Set("maxResults", fmt.Sprint(maxResults))
+	return c
+}
+
+// OrderBy sets the optional parameter "orderBy": Sorts list results by a
+// certain order. By default, results are returned in alphanumerical order
+// based on the resource name. You can also sort results in descending order
+// based on the creation timestamp using `orderBy="creationTimestamp desc".
+// This sorts results based on the `creationTimestamp` field in reverse
+// chronological order (newest result first). Use this to sort resources like
+// operations so that the newest operation is returned first. Currently, only
+// sorting by `name` or `creationTimestamp desc` is supported.
+func (c *ReservationBlocksListCall) OrderBy(orderBy string) *ReservationBlocksListCall {
+	c.urlParams_.Set("orderBy", orderBy)
+	return c
+}
+
+// PageToken sets the optional parameter "pageToken": Specifies a page token to
+// use. Set `pageToken` to the `nextPageToken` returned by a previous list
+// request to get the next page of results.
+func (c *ReservationBlocksListCall) PageToken(pageToken string) *ReservationBlocksListCall {
+	c.urlParams_.Set("pageToken", pageToken)
+	return c
+}
+
+// ReturnPartialSuccess sets the optional parameter "returnPartialSuccess":
+// Opt-in for partial success behavior which provides partial results in case
+// of failure. The default value is false. For example, when partial success
+// behavior is enabled, aggregatedList for a single zone scope either returns
+// all resources in the zone or no resources, with an error code.
+func (c *ReservationBlocksListCall) ReturnPartialSuccess(returnPartialSuccess bool) *ReservationBlocksListCall {
+	c.urlParams_.Set("returnPartialSuccess", fmt.Sprint(returnPartialSuccess))
+	return c
+}
+
+// Fields allows partial responses to be retrieved. See
+// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
+// details.
+func (c *ReservationBlocksListCall) Fields(s ...googleapi.Field) *ReservationBlocksListCall {
+	c.urlParams_.Set("fields", googleapi.CombineFields(s))
+	return c
+}
+
+// IfNoneMatch sets an optional parameter which makes the operation fail if the
+// object's ETag matches the given value. This is useful for getting updates
+// only after the object has changed since the last request.
+func (c *ReservationBlocksListCall) IfNoneMatch(entityTag string) *ReservationBlocksListCall {
+	c.ifNoneMatch_ = entityTag
+	return c
+}
+
+// Context sets the context to be used in this call's Do method.
+func (c *ReservationBlocksListCall) Context(ctx context.Context) *ReservationBlocksListCall {
+	c.ctx_ = ctx
+	return c
+}
+
+// Header returns a http.Header that can be modified by the caller to add
+// headers to the request.
+func (c *ReservationBlocksListCall) Header() http.Header {
+	if c.header_ == nil {
+		c.header_ = make(http.Header)
+	}
+	return c.header_
+}
+
+func (c *ReservationBlocksListCall) doRequest(alt string) (*http.Response, error) {
+	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "", c.header_)
+	if c.ifNoneMatch_ != "" {
+		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
+	}
+	var body io.Reader = nil
+	c.urlParams_.Set("alt", alt)
+	c.urlParams_.Set("prettyPrint", "false")
+	urls := googleapi.ResolveRelative(c.s.BasePath, "projects/{project}/zones/{zone}/reservations/{reservation}/reservationBlocks")
+	urls += "?" + c.urlParams_.Encode()
+	req, err := http.NewRequest("GET", urls, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header = reqHeaders
+	googleapi.Expand(req.URL, map[string]string{
+		"project":     c.project,
+		"zone":        c.zone,
+		"reservation": c.reservation,
+	})
+	return gensupport.SendRequest(c.ctx_, c.s.client, req)
+}
+
+// Do executes the "compute.reservationBlocks.list" call.
+// Any non-2xx status code is an error. Response headers are in either
+// *ReservationBlocksListResponse.ServerResponse.Header or (if a response was
+// returned at all) in error.(*googleapi.Error).Header. Use
+// googleapi.IsNotModified to check whether the returned error was because
+// http.StatusNotModified was returned.
+func (c *ReservationBlocksListCall) Do(opts ...googleapi.CallOption) (*ReservationBlocksListResponse, error) {
+	gensupport.SetOptions(c.urlParams_, opts...)
+	res, err := c.doRequest("json")
+	if res != nil && res.StatusCode == http.StatusNotModified {
+		if res.Body != nil {
+			res.Body.Close()
+		}
+		return nil, gensupport.WrapError(&googleapi.Error{
+			Code:   res.StatusCode,
+			Header: res.Header,
+		})
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer googleapi.CloseBody(res)
+	if err := googleapi.CheckResponse(res); err != nil {
+		return nil, gensupport.WrapError(err)
+	}
+	ret := &ReservationBlocksListResponse{
+		ServerResponse: googleapi.ServerResponse{
+			Header:         res.Header,
+			HTTPStatusCode: res.StatusCode,
+		},
+	}
+	target := &ret
+	if err := gensupport.DecodeResponse(target, res); err != nil {
+		return nil, err
+	}
+	return ret, nil
+}
+
+// Pages invokes f for each page of results.
+// A non-nil error returned from f will halt the iteration.
+// The provided context supersedes any context provided to the Context method.
+func (c *ReservationBlocksListCall) Pages(ctx context.Context, f func(*ReservationBlocksListResponse) error) error {
 	c.ctx_ = ctx
 	defer c.PageToken(c.urlParams_.Get("pageToken"))
 	for {
@@ -58231,25 +58042,26 @@ func (c *VpnTunnelsTestIamPermissionsCall) Do(opts ...googleapi.CallOption) (*Te
 }
 
 type ZoneOperationsDeleteCall struct {
-	s          *Service
-	project    string
-	zone       string
-	operation  string
-	urlParams_ gensupport.URLParams
-	ctx_       context.Context
-	header_    http.Header
+	s           *Service
+	project     string
+	zone        string
+	operationid string
+	urlParams_  gensupport.URLParams
+	ctx_        context.Context
+	header_     http.Header
 }
 
 // Delete: Deletes the specified zone-specific Operations resource.
 //
-// - operation: Name of the Operations resource to delete.
-// - project: Project ID for this request.
-// - zone: Name of the zone for this request.
-func (r *ZoneOperationsService) Delete(project string, zone string, operation string) *ZoneOperationsDeleteCall {
+//   - operation: Name of the Operations resource to delete, or its unique
+//     numeric identifier.
+//   - project: Project ID for this request.
+//   - zone: Name of the zone for this request.
+func (r *ZoneOperationsService) Delete(project string, zone string, operationid string) *ZoneOperationsDeleteCall {
 	c := &ZoneOperationsDeleteCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.project = project
 	c.zone = zone
-	c.operation = operation
+	c.operationid = operationid
 	return c
 }
 
@@ -58291,7 +58103,7 @@ func (c *ZoneOperationsDeleteCall) doRequest(alt string) (*http.Response, error)
 	googleapi.Expand(req.URL, map[string]string{
 		"project":   c.project,
 		"zone":      c.zone,
-		"operation": c.operation,
+		"operation": c.operationid,
 	})
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
@@ -58314,7 +58126,7 @@ type ZoneOperationsGetCall struct {
 	s            *Service
 	project      string
 	zone         string
-	operation    string
+	operationid  string
 	urlParams_   gensupport.URLParams
 	ifNoneMatch_ string
 	ctx_         context.Context
@@ -58323,14 +58135,15 @@ type ZoneOperationsGetCall struct {
 
 // Get: Retrieves the specified zone-specific Operations resource.
 //
-// - operation: Name of the Operations resource to return.
-// - project: Project ID for this request.
-// - zone: Name of the zone for this request.
-func (r *ZoneOperationsService) Get(project string, zone string, operation string) *ZoneOperationsGetCall {
+//   - operation: Name of the Operations resource to return, or its unique
+//     numeric identifier.
+//   - project: Project ID for this request.
+//   - zone: Name of the zone for this request.
+func (r *ZoneOperationsService) Get(project string, zone string, operationid string) *ZoneOperationsGetCall {
 	c := &ZoneOperationsGetCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.project = project
 	c.zone = zone
-	c.operation = operation
+	c.operationid = operationid
 	return c
 }
 
@@ -58383,7 +58196,7 @@ func (c *ZoneOperationsGetCall) doRequest(alt string) (*http.Response, error) {
 	googleapi.Expand(req.URL, map[string]string{
 		"project":   c.project,
 		"zone":      c.zone,
-		"operation": c.operation,
+		"operation": c.operationid,
 	})
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
@@ -58637,13 +58450,13 @@ func (c *ZoneOperationsListCall) Pages(ctx context.Context, f func(*OperationLis
 }
 
 type ZoneOperationsWaitCall struct {
-	s          *Service
-	project    string
-	zone       string
-	operation  string
-	urlParams_ gensupport.URLParams
-	ctx_       context.Context
-	header_    http.Header
+	s           *Service
+	project     string
+	zone        string
+	operationid string
+	urlParams_  gensupport.URLParams
+	ctx_        context.Context
+	header_     http.Header
 }
 
 // Wait: Waits for the specified Operation resource to return as `DONE` or for
@@ -58657,14 +58470,15 @@ type ZoneOperationsWaitCall struct {
 // guarantee that the operation is actually done when the method returns. Be
 // prepared to retry if the operation is not `DONE`.
 //
-// - operation: Name of the Operations resource to return.
-// - project: Project ID for this request.
-// - zone: Name of the zone for this request.
-func (r *ZoneOperationsService) Wait(project string, zone string, operation string) *ZoneOperationsWaitCall {
+//   - operation: Name of the Operations resource to return, or its unique
+//     numeric identifier.
+//   - project: Project ID for this request.
+//   - zone: Name of the zone for this request.
+func (r *ZoneOperationsService) Wait(project string, zone string, operationid string) *ZoneOperationsWaitCall {
 	c := &ZoneOperationsWaitCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.project = project
 	c.zone = zone
-	c.operation = operation
+	c.operationid = operationid
 	return c
 }
 
@@ -58706,7 +58520,7 @@ func (c *ZoneOperationsWaitCall) doRequest(alt string) (*http.Response, error) {
 	googleapi.Expand(req.URL, map[string]string{
 		"project":   c.project,
 		"zone":      c.zone,
-		"operation": c.operation,
+		"operation": c.operationid,
 	})
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
