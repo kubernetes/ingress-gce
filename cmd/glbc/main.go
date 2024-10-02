@@ -41,8 +41,6 @@ import (
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/frontendconfig"
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
-	"k8s.io/ingress-gce/pkg/ingparams"
-	ingparamsclient "k8s.io/ingress-gce/pkg/ingparams/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/l4lb"
 	"k8s.io/ingress-gce/pkg/network"
@@ -192,19 +190,6 @@ func main() {
 		}
 	}
 
-	ingClassEnabled := flags.F.EnableIngressGAFields && app.IngressClassEnabled(kubeClient, rootLogger)
-	var ingParamsClient ingparamsclient.Interface
-	if ingClassEnabled {
-		ingParamsCRDMeta := ingparams.CRDMeta()
-		if _, err := crdHandler.EnsureCRD(ingParamsCRDMeta, false); err != nil {
-			klog.Fatalf("Failed to ensure GCPIngressParams CRD: %v", err)
-		}
-
-		if ingParamsClient, err = ingparamsclient.NewForConfig(kubeConfig); err != nil {
-			klog.Fatalf("Failed to create GCPIngressParams client: %v", err)
-		}
-	}
-
 	var nodeTopologyClient nodetopologyclient.Interface
 	if flags.F.EnableMultiSubnetClusterPhase1 {
 		nodeTopologyClient, err = nodetopologyclient.NewForConfig(kubeConfig)
@@ -267,7 +252,7 @@ func main() {
 		EnableL4NetLBNEGs:             flags.F.EnableL4NetLBNEG,
 		EnableL4NetLBNEGsDefault:      flags.F.EnableL4NetLBNEGDefault,
 	}
-	ctx := ingctx.NewControllerContext(kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, ingParamsClient, svcAttachmentClient, networkClient, nodeTopologyClient, eventRecorderKubeClient, cloud, namer, kubeSystemUID, ctxConfig, rootLogger)
+	ctx := ingctx.NewControllerContext(kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, svcAttachmentClient, networkClient, nodeTopologyClient, eventRecorderKubeClient, cloud, namer, kubeSystemUID, ctxConfig, rootLogger)
 	go app.RunHTTPServer(ctx.HealthCheck, rootLogger)
 
 	var once sync.Once
