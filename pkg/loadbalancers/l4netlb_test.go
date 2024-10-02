@@ -442,17 +442,11 @@ func TestEnsureDualStackNetLBNetworkTierChange(t *testing.T) {
 	svc.Annotations[annotations.NetworkTierAnnotationKey] = "Standard"
 	l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
 
-	// Ensure dualstack load balancer with Standard Network Tier and verify it synced successfully.
+	// Ensure dualstack load balancer with Standard Network Tier and verify it did not synced successfully.
 	result := l4NetLB.EnsureFrontend(nodeNames, svc)
-	if result.Error != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+	if _, ok := result.Error.(*utils.UnsupportedNetworkTierError); !ok {
+		t.Errorf("Expected error to be of type *utils.UnsupportedNetworkTierError, got %T", result.Error)
 	}
-	if len(result.Status.Ingress) == 0 {
-		t.Errorf("Got empty loadBalancer status using handler %v", l4NetLB)
-	}
-	l4NetLB.Service.Annotations = result.Annotations
-	l4NetLB.Service.Annotations[annotations.NetworkTierAnnotationKey] = "Standard"
-	assertDualStackNetLBResources(t, l4NetLB, nodeNames)
 
 	// Change network Tier to Premium, and trigger sync.
 	svc.Annotations[annotations.NetworkTierAnnotationKey] = "Premium"
@@ -787,6 +781,71 @@ func TestDualStackNetLBBadCustomSubnet(t *testing.T) {
 			}
 			if !noExternalIPv6InSubnetError.MatchString(result.Error.Error()) {
 				t.Errorf("Expected error to match %v regexp, got %v", noExternalIPv6InSubnetError.String(), result.Error)
+			}
+		})
+	}
+}
+
+func TestDualStackNetLBNetworkTier(t *testing.T) {
+	t.Parallel()
+	nodeNames := []string{"test-node-1"}
+
+	testCases := []struct {
+		desc        string
+		ipFamilies  []v1.IPFamily
+		networkTier string
+		returnError bool
+	}{
+		{
+			desc:        "Should not return error on ipv4 with Standard NetworkTier",
+			ipFamilies:  []v1.IPFamily{v1.IPv4Protocol},
+			networkTier: string(cloud.NetworkTierStandard),
+			returnError: false,
+		},
+		{
+			desc:        "Should not return error on ipv4 with Premium NetworkTier",
+			ipFamilies:  []v1.IPFamily{v1.IPv4Protocol},
+			networkTier: string(cloud.NetworkTierPremium),
+			returnError: false,
+		},
+		{
+			desc:        "Should return error on Dualstack with Standard NetworkTier",
+			ipFamilies:  []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+			networkTier: string(cloud.NetworkTierStandard),
+			returnError: true,
+		},
+		{
+			desc:        "Should not return error on Dualstack with Premium NetworkTier",
+			ipFamilies:  []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+			networkTier: string(cloud.NetworkTierPremium),
+			returnError: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			svc := test.NewL4NetLBRBSService(8080)
+			l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
+
+			svc.Annotations[annotations.NetworkTierAnnotationKey] = tc.networkTier
+			svc.Spec.IPFamilies = tc.ipFamilies
+
+			result := l4NetLB.EnsureFrontend(nodeNames, svc)
+			if tc.returnError {
+				if result.Error == nil {
+					t.Fatalf("Expected an error to be returned when ensuring the external load balancer, but the call succeeded unexpectedly.")
+				}
+				if !utils.IsUserError(result.Error) {
+					t.Fatalf("Expected to get user error if ensuring external IPv6 service, got %v", result.Error)
+				}
+			} else {
+				if result.Error != nil {
+					t.Fatalf("Unexpected error ensuring external load balancer: %v", result.Error)
+				}
 			}
 		})
 	}
