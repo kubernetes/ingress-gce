@@ -792,6 +792,71 @@ func TestDualStackNetLBBadCustomSubnet(t *testing.T) {
 	}
 }
 
+func TestDualStackNetLBNetworkTier(t *testing.T) {
+	t.Parallel()
+	nodeNames := []string{"test-node-1"}
+
+	testCases := []struct {
+		desc        string
+		dualstack   bool
+		networkTier string
+		returnError bool
+	}{
+		{
+			desc:        "Should not return error on ipv4 with Standard NetworkTier",
+			dualstack:   false,
+			networkTier: string(cloud.NetworkTierStandard),
+			returnError: false,
+		},
+		{
+			desc:        "Should not return error on ipv4 with Premium NetworkTier",
+			dualstack:   false,
+			networkTier: string(cloud.NetworkTierPremium),
+			returnError: false,
+		},
+		{
+			desc:        "Should return error on Dualstack with Standard NetworkTier",
+			dualstack:   false,
+			networkTier: string(cloud.NetworkTierStandard),
+			returnError: true,
+		},
+		{
+			desc:        "Should not return error on Dualstack with Premium NetworkTier",
+			dualstack:   false,
+			networkTier: string(cloud.NetworkTierPremium),
+			returnError: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			svc := test.NewL4NetLBRBSService(8080)
+			svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
+			l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
+
+			svc.Annotations[annotations.NetworkTierAnnotationKey] = tc.networkTier
+
+			svc.Spec.IPFamilies = append(svc.Spec.IPFamilies, v1.IPv4Protocol)
+
+			if tc.dualstack {
+				svc.Spec.IPFamilies = append(svc.Spec.IPFamilies, v1.IPv6Protocol)
+			}
+
+			result := l4NetLB.EnsureFrontend(nodeNames, svc)
+			if tc.returnError && result.Error == nil {
+				t.Fatalf("Expected error ensuring external loadbalancer, got: %v", result.Error)
+			}
+			if tc.returnError && !utils.IsUserError(result.Error) {
+				t.Fatalf("Expected to get user error if ensuring external IPv6 service, got %v", result.Error)
+			}
+		})
+	}
+}
+
 func TestDualStackNetLBStaticIPAnnotation(t *testing.T) {
 	t.Parallel()
 	nodeNames := []string{"test-node-1"}
