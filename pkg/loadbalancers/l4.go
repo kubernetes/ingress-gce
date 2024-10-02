@@ -85,6 +85,7 @@ type L4ILBSyncResult struct {
 	MetricsState       metrics.L4ServiceState
 	SyncType           string
 	StartTime          time.Time
+	ResourceUpdates    ResourceUpdates
 }
 
 func NewL4ILBSyncResult(syncType string, startTime time.Time, svc *corev1.Service, isMultinetService bool, isWeightedLBPodsPerNode bool) *L4ILBSyncResult {
@@ -497,7 +498,8 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		ConnectionTrackingPolicy: noConnectionTrackingPolicy,
 		LocalityLbPolicy:         localityLbPolicy,
 	}
-	bs, _, err := l4.backendPool.EnsureL4BackendService(backendParams, l4.svcLogger)
+	bs, bsSyncStatus, err := l4.backendPool.EnsureL4BackendService(backendParams, l4.svcLogger)
+	result.ResourceUpdates.SetBackendService(bsSyncStatus)
 	if err != nil {
 		if utils.IsUnsupportedFeatureError(err, string(backends.LocalityLBPolicyMaglev)) {
 			result.GCEResourceInError = annotations.BackendServiceResource
@@ -564,6 +566,8 @@ func (l4 *L4) provideDualStackHealthChecks(nodeNames []string, result *L4ILBSync
 func (l4 *L4) provideIPv4HealthChecks(nodeNames []string, result *L4ILBSyncResult) string {
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(l4.Service)
 	hcResult := l4.healthChecks.EnsureHealthCheckWithFirewall(l4.Service, l4.namer, sharedHC, meta.Global, utils.ILB, nodeNames, l4.network, l4.svcLogger)
+	result.ResourceUpdates.SetHealthCheck(hcResult.WasUpdated)
+	result.ResourceUpdates.SetFirewallForHealthCheck(hcResult.WasFirewallUpdated)
 	if hcResult.Err != nil {
 		result.GCEResourceInError = hcResult.GceResourceInError
 		result.Error = hcResult.Err
@@ -591,7 +595,8 @@ func (l4 *L4) ensureDualStackResources(result *L4ILBSyncResult, nodeNames []stri
 // - IPv4 Forwarding Rule
 // - IPv4 Firewall
 func (l4 *L4) ensureIPv4Resources(result *L4ILBSyncResult, nodeNames []string, options gce.ILBOptions, bs *composite.BackendService, existingFR *composite.ForwardingRule, subnetworkURL, ipToUse string) {
-	fr, err := l4.ensureIPv4ForwardingRule(bs.SelfLink, options, existingFR, subnetworkURL, ipToUse)
+	fr, fwdRuleSyncStatus, err := l4.ensureIPv4ForwardingRule(bs.SelfLink, options, existingFR, subnetworkURL, ipToUse)
+	result.ResourceUpdates.SetForwardingRule(fwdRuleSyncStatus)
 	if err != nil {
 		l4.svcLogger.Error(err, "ensureIPv4Resources: Failed to ensure forwarding rule for L4 ILB Service")
 		result.GCEResourceInError = annotations.ForwardingRuleResource
@@ -651,7 +656,8 @@ func (l4 *L4) ensureIPv4NodesFirewall(nodeNames []string, ipAddress string, resu
 		Network:           l4.network,
 	}
 
-	_, err = firewalls.EnsureL4LBFirewallForNodes(l4.Service, &nodesFWRParams, l4.cloud, l4.recorder, fwLogger)
+	fwSyncStatus, err := firewalls.EnsureL4LBFirewallForNodes(l4.Service, &nodesFWRParams, l4.cloud, l4.recorder, fwLogger)
+	result.ResourceUpdates.SetFirewallForNodes(fwSyncStatus)
 	if err != nil {
 		result.GCEResourceInError = annotations.FirewallRuleResource
 		result.Error = err
