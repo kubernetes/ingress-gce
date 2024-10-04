@@ -74,6 +74,7 @@ type L4NetLB struct {
 	enableWeightedLB                 bool
 	disableNodesFirewallProvisioning bool
 	svcLogger                        klog.Logger
+	useNEGs                          bool
 }
 
 // L4NetLBSyncResult contains information about the outcome of an L4 NetLB sync. It stores the list of resource name annotations,
@@ -129,14 +130,19 @@ func (ru *ResourceUpdates) String() string {
 	return "-"
 }
 
-func NewL4SyncResult(syncType string, svc *corev1.Service, isMultinet bool, enabledStrongSessionAffinity bool, isWeightedLBPodsPerNode bool) *L4NetLBSyncResult {
+func NewL4SyncResult(syncType string, svc *corev1.Service, isMultinet bool, enabledStrongSessionAffinity bool, isWeightedLBPodsPerNode bool, useNEGs bool) *L4NetLBSyncResult {
 	startTime := time.Now()
+	backendType := metrics.L4BackendTypeInstanceGroup
+	if useNEGs || isMultinet {
+		backendType = metrics.L4BackendTypeNEG
+	}
+
 	result := &L4NetLBSyncResult{
 		Annotations:        make(map[string]string),
 		StartTime:          startTime,
 		SyncType:           syncType,
 		MetricsLegacyState: metrics.InitL4NetLBServiceLegacyState(&startTime),
-		MetricsState:       metrics.InitServiceMetricsState(svc, &startTime, isMultinet, enabledStrongSessionAffinity, isWeightedLBPodsPerNode),
+		MetricsState:       metrics.InitServiceMetricsState(svc, &startTime, isMultinet, enabledStrongSessionAffinity, isWeightedLBPodsPerNode, backendType),
 	}
 	return result
 }
@@ -159,6 +165,7 @@ type L4NetLBParams struct {
 	NetworkResolver                  network.Resolver
 	EnableWeightedLB                 bool
 	DisableNodesFirewallProvisioning bool
+	UseNEGs                          bool
 }
 
 // NewL4NetLB creates a new Handler for the given L4NetLB service.
@@ -179,6 +186,7 @@ func NewL4NetLB(params *L4NetLBParams, logger klog.Logger) *L4NetLB {
 		networkResolver:                  params.NetworkResolver,
 		enableWeightedLB:                 params.EnableWeightedLB,
 		disableNodesFirewallProvisioning: params.DisableNodesFirewallProvisioning,
+		useNEGs:                          params.UseNEGs,
 		svcLogger:                        logger,
 	}
 	return l4netlb
@@ -237,7 +245,7 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 	isMultinetService := l4netlb.networkResolver.IsMultinetService(svc)
 	serviceUsesSSA := l4netlb.enableStrongSessionAffinity && annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service)
 	isWeightedLBPodsPerNode := l4netlb.isWeightedLBPodsPerNode()
-	result := NewL4SyncResult(SyncTypeCreate, svc, isMultinetService, serviceUsesSSA, isWeightedLBPodsPerNode)
+	result := NewL4SyncResult(SyncTypeCreate, svc, isMultinetService, serviceUsesSSA, isWeightedLBPodsPerNode, l4netlb.useNEGs)
 	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
 	if len(svc.Status.LoadBalancer.Ingress) > 0 {
 		result.SyncType = SyncTypeUpdate
@@ -490,7 +498,7 @@ func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *L4NetLBS
 	isMultinetService := l4netlb.networkResolver.IsMultinetService(svc)
 	useSSA := l4netlb.enableStrongSessionAffinity && annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service)
 	isWeightedLBPodsPerNode := l4netlb.isWeightedLBPodsPerNode()
-	result := NewL4SyncResult(SyncTypeDelete, svc, isMultinetService, useSSA, isWeightedLBPodsPerNode)
+	result := NewL4SyncResult(SyncTypeDelete, svc, isMultinetService, useSSA, isWeightedLBPodsPerNode, l4netlb.useNEGs)
 
 	l4netlb.Service = svc
 
