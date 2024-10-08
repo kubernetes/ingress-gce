@@ -496,7 +496,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	}
 	bs, err := l4.backendPool.EnsureL4BackendService(backendParams, l4.svcLogger)
 	if err != nil {
-		if utils.IsUnsupportedFeatureError(err, string(backends.LocalityLBPolicyWeightedMaglev)) {
+		if utils.IsUnsupportedFeatureError(err, string(backends.LocalityLBPolicyMaglev)) {
 			result.GCEResourceInError = annotations.BackendServiceResource
 			l4.recorder.Eventf(l4.Service, corev1.EventTypeWarning, "AllowlistingRequired", WeightedLBPodsPerNodeAllowlistMessage)
 			result.Error = utils.NewUserError(err)
@@ -693,7 +693,7 @@ func (l4 *L4) getOldIPv4ForwardingRule(existingBS *composite.BackendService) (*c
 
 // determineBackendServiceLocalityPolicy returns the locality policy to be used for the backend service of the internal load balancer.
 func (l4 *L4) determineBackendServiceLocalityPolicy() backends.LocalityLBPolicyType {
-	// If the service has weighted load balancing enabled, the locality policy can only be WEIGHTED_MAGLEV or MAGLEV.
+	// If the service has weighted load balancing enabled, the locality policy will be WEIGHTED_MAGLEV.
 	if l4.enableWeightedLB {
 		if annotations.HasWeightedLBPodsPerNodeAnnotation(l4.Service) {
 			if l4.Service.Spec.ExternalTrafficPolicy == corev1.ServiceExternalTrafficPolicyTypeLocal {
@@ -706,13 +706,13 @@ func (l4 *L4) determineBackendServiceLocalityPolicy() backends.LocalityLBPolicyT
 				// and the external traffic policy is cluster, weighted load balancing is not enabled.
 				l4.recorder.Eventf(l4.Service, corev1.EventTypeWarning, "UnsupportedConfiguration",
 					"Weighted load balancing by pods-per-node has no effect with External Traffic Policy: Cluster.")
-				return backends.LocalityLBPolicyMaglev
+				// TODO(FelipeYepez) use LocalityLBPolicyMaglev once it does not require allow lisiting
+				return backends.LocalityLBPolicyDefault
 			}
-		} else {
-			return backends.LocalityLBPolicyMaglev
 		}
 	}
 	// If the service has weighted load balancing disabled, the default locality policy is used.
+	// If the service disables Weighted Load Balancing the logic to use MAGLEV is handled by backends.go
 	return backends.LocalityLBPolicyDefault
 }
 
