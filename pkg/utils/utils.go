@@ -110,6 +110,20 @@ func NewNetworkTierErr(resourceInErr, desired, received string) *NetworkTierErro
 	return &NetworkTierError{resource: resourceInErr, desiredNT: desired, receivedNT: received}
 }
 
+type UnsupportedNetworkTierError struct {
+	resource      string
+	unsupportedNT string
+}
+
+// Error function prints out Network Tier error.
+func (e *UnsupportedNetworkTierError) Error() string {
+	return fmt.Sprintf("Network tier %s is not supported for %s", e.unsupportedNT, e.resource)
+}
+
+func NewUnsupportedNetworkTierErr(resourceInErr, networkTier string) *UnsupportedNetworkTierError {
+	return &UnsupportedNetworkTierError{resource: resourceInErr, unsupportedNT: networkTier}
+}
+
 // IPConfigurationError is a struct to define error caused by User misconfiguration the Load Balancer IP.
 type IPConfigurationError struct {
 	ip     string
@@ -217,6 +231,12 @@ func IsNetworkTierError(err error) bool {
 	return errors.As(err, &netTierError)
 }
 
+// IsUnsupportedNetworkTierError checks if wrapped error is an Unsupported Network Tier error
+func IsUnsupportedNetworkTierError(err error) bool {
+	var netTierError *UnsupportedNetworkTierError
+	return errors.As(err, &netTierError)
+}
+
 // IsIPConfigurationError checks if wrapped error is an IP configuration error.
 func IsIPConfigurationError(err error) bool {
 	var ipConfigError *IPConfigurationError
@@ -244,6 +264,7 @@ func IsUserError(err error) bool {
 		IsIPConfigurationError(err) ||
 		IsInvalidLoadBalancerSourceRangesSpecError(err) ||
 		IsInvalidLoadBalancerSourceRangesAnnotationError(err) ||
+		IsUnsupportedNetworkTierError(err) ||
 		errors.As(err, &userError)
 }
 
