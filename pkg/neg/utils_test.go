@@ -21,6 +21,7 @@ import (
 	"reflect"
 	"testing"
 
+	nodetopologyv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -227,6 +228,101 @@ func TestNEGServicePorts(t *testing.T) {
 				} else {
 					t.Errorf("Expected tuple %+v to be a key in customNameMap", expectedTuple)
 				}
+			}
+		})
+	}
+}
+
+func TestIsZoneChanged(t *testing.T) {
+	testCases := []struct {
+		desc          string
+		oldZones      []string
+		newZones      []string
+		expectChanged bool
+	}{
+		{
+			desc:          "a zone is added",
+			oldZones:      []string{"zone1"},
+			newZones:      []string{"zone1", "zone2"},
+			expectChanged: true,
+		},
+		{
+			desc:          "a zone is deleted",
+			oldZones:      []string{"zone1", "zone2"},
+			newZones:      []string{"zone1"},
+			expectChanged: true,
+		},
+		{
+			desc:          "zones stay unchaged",
+			oldZones:      []string{"zone1", "zone2"},
+			newZones:      []string{"zone1", "zone2"},
+			expectChanged: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			gotChanged := isZoneChanged(tc.oldZones, tc.newZones)
+			if gotChanged != tc.expectChanged {
+				t.Errorf("Got zone changed = %v, expected %v", gotChanged, tc.expectChanged)
+			}
+		})
+	}
+}
+
+func TestIsSubnetChange(t *testing.T) {
+	defaultSubnet := "default"
+	defaultSubnetPath := "projects/my-project/regions/us-central1/subnetworks/default"
+
+	additionalSubnet := "add-subnet"
+	additionalSubnetPath := "add-subnet"
+	testCases := []struct {
+		desc          string
+		oldSubnets    []nodetopologyv1.SubnetConfig
+		newSubnets    []nodetopologyv1.SubnetConfig
+		expectChanged bool
+	}{
+		{
+			desc: "a subnet is added",
+			oldSubnets: []nodetopologyv1.SubnetConfig{
+				{Name: defaultSubnet, SubnetPath: defaultSubnetPath},
+			},
+			newSubnets: []nodetopologyv1.SubnetConfig{
+				{Name: defaultSubnet, SubnetPath: defaultSubnetPath},
+				{Name: additionalSubnet, SubnetPath: additionalSubnetPath},
+			},
+			expectChanged: true,
+		},
+		{
+			desc: "a subnet is deleted",
+			oldSubnets: []nodetopologyv1.SubnetConfig{
+				{Name: defaultSubnet, SubnetPath: defaultSubnetPath},
+				{Name: additionalSubnet, SubnetPath: additionalSubnetPath},
+			},
+			newSubnets: []nodetopologyv1.SubnetConfig{
+				{Name: defaultSubnet, SubnetPath: defaultSubnetPath},
+			},
+			expectChanged: true,
+		},
+		{
+			desc: "subnets stay unchaged",
+			oldSubnets: []nodetopologyv1.SubnetConfig{
+				{Name: defaultSubnet, SubnetPath: defaultSubnetPath},
+				{Name: additionalSubnet, SubnetPath: additionalSubnetPath},
+			},
+			newSubnets: []nodetopologyv1.SubnetConfig{
+				{Name: defaultSubnet, SubnetPath: defaultSubnetPath},
+				{Name: additionalSubnet, SubnetPath: additionalSubnetPath},
+			},
+			expectChanged: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			gotChanged := isSubnetChanged(tc.oldSubnets, tc.newSubnets)
+			if gotChanged != tc.expectChanged {
+				t.Errorf("Got subnet changed = %v, expected %v", gotChanged, tc.expectChanged)
 			}
 		})
 	}
