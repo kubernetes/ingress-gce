@@ -554,9 +554,11 @@ func validatePod(pod *apiv1.Pod, nodeLister, serviceLister cache.Indexer, networ
 		count[negtypes.OtherError]++
 		return count, negtypes.ErrEPNodeTypeAssertionFailed
 	}
-	if err = nodeContainsPodIP(node, networkEndpoint); err != nil {
-		count[negtypes.IPOutOfPodCIDR]++
-		return count, err
+	if !pod.Spec.HostNetwork {
+		if err = nodeContainsPodIP(node, networkEndpoint); err != nil {
+			count[negtypes.IPOutOfPodCIDR]++
+			return count, err
+		}
 	}
 	service := getService(serviceLister, pod.ObjectMeta.Namespace, serviceName, logger)
 	if service == nil {
