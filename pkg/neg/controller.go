@@ -153,6 +153,7 @@ func NewController(
 	enableMultiNetworking bool,
 	enableIngressRegionalExternal bool,
 	runL4ForNetLB bool,
+	defaultSubnetURL string,
 	stopCh <-chan struct{},
 	logger klog.Logger,
 ) *Controller {
@@ -179,6 +180,15 @@ func NewController(
 	recorder := eventBroadcaster.NewRecorder(negScheme,
 		apiv1.EventSource{Component: "neg-controller"})
 
+	var defaultSubnet string
+	if flags.F.EnableMultiSubnetClusterPhase1 {
+		defaultSubnet, err = utils.KeyName(defaultSubnetURL)
+		if err != nil {
+			logger.Error(err, "Errored getting default subnet")
+			metrics.PublishNegControllerErrorCountMetrics(err, true)
+		}
+	}
+
 	syncerMetrics := syncMetrics.NewNegMetricsCollector(flags.F.NegMetricsExportInterval, logger)
 	manager := newSyncerManager(
 		namer,
@@ -197,6 +207,7 @@ func NewController(
 		enableDualStackNEG,
 		numGCWorkers,
 		lpConfig,
+		defaultSubnet,
 		logger)
 
 	var reflector readiness.Reflector

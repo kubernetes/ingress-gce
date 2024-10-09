@@ -49,9 +49,10 @@ type LocalL4EndpointsCalculator struct {
 	svcId           string
 	logger          klog.Logger
 	networkInfo     *network.NetworkInfo
+	defaultSubnet   string
 }
 
-func NewLocalL4EndpointsCalculator(nodeLister listers.NodeLister, zoneGetter *zonegetter.ZoneGetter, svcId string, logger klog.Logger, networkInfo *network.NetworkInfo, lbType types.L4LBType) *LocalL4EndpointsCalculator {
+func NewLocalL4EndpointsCalculator(nodeLister listers.NodeLister, zoneGetter *zonegetter.ZoneGetter, svcId string, logger klog.Logger, networkInfo *network.NetworkInfo, lbType types.L4LBType, defaultSubnet string) *LocalL4EndpointsCalculator {
 	subsetSize := maxSubsetSizeLocal
 	if lbType == negtypes.L4ExternalLB {
 		subsetSize = maxSubsetSizeNetLBLocal
@@ -63,6 +64,7 @@ func NewLocalL4EndpointsCalculator(nodeLister listers.NodeLister, zoneGetter *zo
 		svcId:           svcId,
 		logger:          logger.WithName("LocalL4EndpointsCalculator"),
 		networkInfo:     networkInfo,
+		defaultSubnet:   defaultSubnet,
 	}
 }
 
@@ -72,7 +74,7 @@ func (l *LocalL4EndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 }
 
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
-func (l *LocalL4EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
+func (l *LocalL4EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, currentMap map[negtypes.EndpointGroupInfo]types.NetworkEndpointSet) (map[negtypes.EndpointGroupInfo]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
 	// List all nodes where the service endpoints are running. Get a subset of the desired count.
 	zoneNodeMap := make(map[string][]*v1.Node)
 	processedNodes := sets.String{}
@@ -121,11 +123,11 @@ func (l *LocalL4EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsDat
 	}
 	// Compute the networkEndpoints, with total endpoints count <= l.subsetSizeLimit
 	l.logger.V(2).Info("Got zoneNodeMap as input for service", "zoneNodeMap", nodeMapToString(zoneNodeMap), "serviceID", l.svcId)
-	subsetMap, err := getSubsetPerZone(zoneNodeMap, l.subsetSizeLimit, l.svcId, currentMap, l.logger, l.networkInfo)
+	subsetMap, err := getSubsetPerZone(zoneNodeMap, l.subsetSizeLimit, l.svcId, currentMap, l.logger, l.networkInfo, l.defaultSubnet)
 	return subsetMap, nil, 0, err
 }
 
-func (l *LocalL4EndpointsCalculator) CalculateEndpointsDegradedMode(eds []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
+func (l *LocalL4EndpointsCalculator) CalculateEndpointsDegradedMode(eds []types.EndpointsData, currentMap map[negtypes.EndpointGroupInfo]types.NetworkEndpointSet) (map[negtypes.EndpointGroupInfo]types.NetworkEndpointSet, types.EndpointPodMap, error) {
 	// this should be the same as CalculateEndpoints for L4 ec
 	subsetMap, podMap, _, err := l.CalculateEndpoints(eds, currentMap)
 	return subsetMap, podMap, err
@@ -147,13 +149,14 @@ type ClusterL4EndpointsCalculator struct {
 	// subsetSizeLimit is the max value of the subset size in this mode.
 	subsetSizeLimit int
 	// svcId is the unique identifier for the service, that is used as a salt when hashing nodenames.
-	svcId       string
-	networkInfo *network.NetworkInfo
+	svcId         string
+	networkInfo   *network.NetworkInfo
+	defaultSubnet string
 
 	logger klog.Logger
 }
 
-func NewClusterL4EndpointsCalculator(nodeLister listers.NodeLister, zoneGetter *zonegetter.ZoneGetter, svcId string, logger klog.Logger, networkInfo *network.NetworkInfo, l4LBtype negtypes.L4LBType) *ClusterL4EndpointsCalculator {
+func NewClusterL4EndpointsCalculator(nodeLister listers.NodeLister, zoneGetter *zonegetter.ZoneGetter, svcId string, logger klog.Logger, networkInfo *network.NetworkInfo, l4LBtype negtypes.L4LBType, defaultSubnet string) *ClusterL4EndpointsCalculator {
 	subsetSize := maxSubsetSizeDefault
 	if l4LBtype == negtypes.L4ExternalLB {
 		subsetSize = maxSubsetSizeNetLBCluster
@@ -164,6 +167,7 @@ func NewClusterL4EndpointsCalculator(nodeLister listers.NodeLister, zoneGetter *
 		svcId:           svcId,
 		logger:          logger.WithName("ClusterL4EndpointsCalculator"),
 		networkInfo:     networkInfo,
+		defaultSubnet:   defaultSubnet,
 	}
 }
 
@@ -173,7 +177,7 @@ func (l *ClusterL4EndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 }
 
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
-func (l *ClusterL4EndpointsCalculator) CalculateEndpoints(_ []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
+func (l *ClusterL4EndpointsCalculator) CalculateEndpoints(_ []types.EndpointsData, currentMap map[negtypes.EndpointGroupInfo]types.NetworkEndpointSet) (map[negtypes.EndpointGroupInfo]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
 	// In this mode, any of the cluster nodes can be part of the subset, whether or not a matching pod runs on it.
 	nodes, _ := l.zoneGetter.ListNodes(zonegetter.CandidateAndUnreadyNodesFilter, l.logger)
 	zoneNodeMap := make(map[string][]*v1.Node)
@@ -192,11 +196,11 @@ func (l *ClusterL4EndpointsCalculator) CalculateEndpoints(_ []types.EndpointsDat
 	}
 	l.logger.V(2).Info("Got zoneNodeMap as input for service", "zoneNodeMap", nodeMapToString(zoneNodeMap), "serviceID", l.svcId)
 	// Compute the networkEndpoints, with total endpoints <= l.subsetSizeLimit.
-	subsetMap, err := getSubsetPerZone(zoneNodeMap, l.subsetSizeLimit, l.svcId, currentMap, l.logger, l.networkInfo)
+	subsetMap, err := getSubsetPerZone(zoneNodeMap, l.subsetSizeLimit, l.svcId, currentMap, l.logger, l.networkInfo, l.defaultSubnet)
 	return subsetMap, nil, 0, err
 }
 
-func (l *ClusterL4EndpointsCalculator) CalculateEndpointsDegradedMode(eps []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
+func (l *ClusterL4EndpointsCalculator) CalculateEndpointsDegradedMode(eps []types.EndpointsData, currentMap map[negtypes.EndpointGroupInfo]types.NetworkEndpointSet) (map[negtypes.EndpointGroupInfo]types.NetworkEndpointSet, types.EndpointPodMap, error) {
 	// this should be the same as CalculateEndpoints for L4 ec
 	subsetMap, podMap, _, err := l.CalculateEndpoints(eps, currentMap)
 	return subsetMap, podMap, err
@@ -218,11 +222,12 @@ type L7EndpointsCalculator struct {
 	networkEndpointType      types.NetworkEndpointType
 	enableDualStackNEG       bool
 	enableMultiSubnetCluster bool
+	defaultSubnet            string
 	logger                   klog.Logger
 	syncMetricsCollector     *metricscollector.SyncerMetrics
 }
 
-func NewL7EndpointsCalculator(zoneGetter *zonegetter.ZoneGetter, podLister, nodeLister, serviceLister cache.Indexer, syncerKey types.NegSyncerKey, logger klog.Logger, enableDualStackNEG bool, syncMetricsCollector *metricscollector.SyncerMetrics) *L7EndpointsCalculator {
+func NewL7EndpointsCalculator(zoneGetter *zonegetter.ZoneGetter, podLister, nodeLister, serviceLister cache.Indexer, syncerKey types.NegSyncerKey, logger klog.Logger, enableDualStackNEG bool, syncMetricsCollector *metricscollector.SyncerMetrics, defaultSubnet string) *L7EndpointsCalculator {
 	return &L7EndpointsCalculator{
 		zoneGetter:               zoneGetter,
 		servicePortName:          syncerKey.PortTuple.Name,
@@ -233,6 +238,7 @@ func NewL7EndpointsCalculator(zoneGetter *zonegetter.ZoneGetter, podLister, node
 		networkEndpointType:      syncerKey.NegType,
 		enableDualStackNEG:       enableDualStackNEG,
 		enableMultiSubnetCluster: flags.F.EnableMultiSubnetCluster,
+		defaultSubnet:            defaultSubnet,
 		logger:                   logger.WithName("L7EndpointsCalculator"),
 		syncMetricsCollector:     syncMetricsCollector,
 	}
@@ -244,8 +250,8 @@ func (l *L7EndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 }
 
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
-func (l *L7EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, _ map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
-	result, err := toZoneNetworkEndpointMap(eds, l.zoneGetter, l.podLister, l.servicePortName, l.networkEndpointType, l.enableDualStackNEG, l.enableMultiSubnetCluster, l.logger)
+func (l *L7EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, _ map[negtypes.EndpointGroupInfo]types.NetworkEndpointSet) (map[negtypes.EndpointGroupInfo]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
+	result, err := toZoneNetworkEndpointMap(eds, l.zoneGetter, l.podLister, l.servicePortName, l.networkEndpointType, l.enableDualStackNEG, l.enableMultiSubnetCluster, l.defaultSubnet, l.logger)
 	if err == nil { // If current calculation ends up in error, we trigger and emit metrics in degraded mode.
 		l.syncMetricsCollector.UpdateSyncerEPMetrics(l.syncerKey, result.EPCount, result.EPSCount)
 	}
@@ -253,8 +259,8 @@ func (l *L7EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, _ 
 }
 
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
-func (l *L7EndpointsCalculator) CalculateEndpointsDegradedMode(eds []types.EndpointsData, _ map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
-	result := toZoneNetworkEndpointMapDegradedMode(eds, l.zoneGetter, l.podLister, l.nodeLister, l.serviceLister, l.servicePortName, l.networkEndpointType, l.enableDualStackNEG, l.enableMultiSubnetCluster, l.logger)
+func (l *L7EndpointsCalculator) CalculateEndpointsDegradedMode(eds []types.EndpointsData, _ map[negtypes.EndpointGroupInfo]types.NetworkEndpointSet) (map[negtypes.EndpointGroupInfo]types.NetworkEndpointSet, types.EndpointPodMap, error) {
+	result := toZoneNetworkEndpointMapDegradedMode(eds, l.zoneGetter, l.podLister, l.nodeLister, l.serviceLister, l.servicePortName, l.networkEndpointType, l.enableDualStackNEG, l.enableMultiSubnetCluster, l.defaultSubnet, l.logger)
 	l.syncMetricsCollector.UpdateSyncerEPMetrics(l.syncerKey, result.EPCount, result.EPSCount)
 	return result.NetworkEndpointSet, result.EndpointPodMap, nil
 }

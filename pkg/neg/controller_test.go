@@ -160,6 +160,7 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		true,
 		false,
 		false,
+		defaultTestSubnetURL,
 		make(<-chan struct{}),
 		klog.TODO(),
 	)
