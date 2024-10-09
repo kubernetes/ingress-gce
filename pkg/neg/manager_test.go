@@ -377,6 +377,38 @@ func TestGarbageCollectionSyncer(t *testing.T) {
 	}
 }
 
+func TestEnsureSyncersWithMissingSyncer(t *testing.T) {
+	manager, _ := NewTestSyncerManager(fake.NewSimpleClientset())
+	namer := manager.namer
+	namespace := testServiceNamespace
+	name := testServiceName
+	portName := ""
+	svcPort := int32(3000)
+	targetPort := "80"
+	negName := namer.NEG(namespace, name, svcPort)
+	portMap := make(types.PortInfoMap)
+	portInfo := types.PortInfo{PortTuple: negtypes.SvcPortTuple{Name: portName, Port: svcPort, TargetPort: targetPort}, NegName: negName}
+
+	portMap[negtypes.PortInfoMapKey{ServicePort: svcPort}] = portInfo
+
+	manager.serviceLister.Add(&v1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name}})
+
+	svcKey := serviceKey{namespace: namespace, name: name}
+	negSyncerKey := manager.getSyncerKey(namespace, name, negtypes.PortInfoMapKey{ServicePort: svcPort}, portInfo)
+	manager.svcPortMap[svcKey] = portMap
+
+	if _, _, err := manager.EnsureSyncers(namespace, name, portMap); err != nil {
+		t.Fatalf("Failed to ensure syncer: %v", err)
+	}
+	if syncer, ok := manager.syncerMap[negSyncerKey]; !ok {
+		t.Error("No syncer found for the service port")
+	} else if syncer.IsShuttingDown() || syncer.IsStopped() {
+		t.Errorf("Syner is not started, current status: IsShuttingDown: %v, IsStopped: %v", syncer.IsShuttingDown(), syncer.IsStopped())
+	}
+	// make sure there is no leaking go routine
+	manager.StopSyncer(namespace, name)
+}
+
 func TestGarbageCollectionNEG(t *testing.T) {
 	t.Parallel()
 	kubeClient := fake.NewSimpleClientset()

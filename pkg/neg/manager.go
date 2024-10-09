@@ -175,7 +175,6 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 
 	removes := currentPorts.Difference(newPorts)
 	adds := newPorts.Difference(currentPorts)
-	samePorts := newPorts.Difference(adds)
 	// There may be duplicate ports in adds and removes due to difference in readinessGate flag
 	// Service/Ingress config changes can cause readinessGate to be turn on or off for the same service port.
 	// By removing the duplicate ports in removes and adds, this prevents disruption of NEG syncer due to the config changes
@@ -199,32 +198,21 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 		}
 	}
 
-	for _, portInfo := range samePorts {
+	// Ensure a syncer is running for each port in newPorts.
+	for svcPort, portInfo := range newPorts {
+		syncerKey := manager.getSyncerKey(namespace, name, svcPort, portInfo)
+		syncer, ok := manager.syncerMap[syncerKey]
+		// To ensure that a NEG CR always exists during the lifecycle of a NEG, do not create a
+		// syncer for the NEG until the NEG CR is successfully created. This will reduce the
+		// possibility of invalid states and reduces complexity of garbage collection
 		// To reduce the possibility of NEGs being leaked, ensure a SvcNeg CR exists for every
 		// desired port.
 		if err := manager.ensureSvcNegCR(key, portInfo); err != nil {
-			errList = append(errList, fmt.Errorf("failed to ensure svc neg cr %s/%s/%d for existing port: %w", namespace, portInfo.NegName, portInfo.PortTuple.Port, err))
+			errList = append(errList, fmt.Errorf("failed to ensure svc neg cr %s/%s/%d for port: %w ", namespace, portInfo.NegName, svcPort.ServicePort, err))
 			errorSyncers += 1
-		} else {
-			successfulSyncers += 1
+			continue
 		}
-	}
-
-	// Ensure a syncer is running for each port that is being added.
-	for svcPort, portInfo := range adds {
-		syncerKey := manager.getSyncerKey(namespace, name, svcPort, portInfo)
-		syncer, ok := manager.syncerMap[syncerKey]
 		if !ok {
-
-			// To ensure that a NEG CR always exists during the lifecycle of a NEG, do not create a
-			// syncer for the NEG until the NEG CR is successfully created. This will reduce the
-			// possibility of invalid states and reduces complexity of garbage collection
-			if err := manager.ensureSvcNegCR(key, portInfo); err != nil {
-				errList = append(errList, fmt.Errorf("failed to ensure svc neg cr %s/%s/%d for new port: %w ", namespace, portInfo.NegName, svcPort.ServicePort, err))
-				errorSyncers += 1
-				continue
-			}
-
 			// determine the implementation that calculates NEG endpoints on each sync.
 			epc := negsyncer.GetEndpointsCalculator(
 				manager.podLister,
