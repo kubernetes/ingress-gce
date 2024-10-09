@@ -1273,7 +1273,7 @@ func TestDualStackILBBadCustomSubnet(t *testing.T) {
 		},
 		{
 			desc:                 "Should return error on external ipv6 subnet",
-			subnetIpv6AccessType: subnetExternalIPv6AccessType,
+			subnetIpv6AccessType: subnetExternalAccessType,
 			subnetStackType:      "IPV4_IPV6",
 		},
 	}
@@ -2379,7 +2379,7 @@ func mustSetupILBTestHandler(t *testing.T, svc *v1.Service, nodeNames []string) 
 	clusterSubnetName := ""
 	key := meta.RegionalKey(clusterSubnetName, l4.cloud.Region())
 	subnetToCreate := &compute.Subnetwork{
-		Ipv6AccessType: subnetInternalIPv6AccessType,
+		Ipv6AccessType: subnetInternalAccessType,
 		StackType:      "IPV4_IPV6",
 	}
 	err := fakeGCE.Compute().(*cloud.MockGCE).Subnetworks().Insert(context.TODO(), key, subnetToCreate)
