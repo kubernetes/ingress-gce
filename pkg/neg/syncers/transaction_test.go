@@ -70,6 +70,8 @@ const (
 	testInstance6        = "instance6"
 	testUnreadyInstance1 = "unready-instance1"
 	testUnreadyInstance2 = "unready-instance2"
+
+	defaultTestSubnet = "default"
 )
 
 func TestTransactionSyncNetworkEndpoints(t *testing.T) {
@@ -1732,19 +1734,19 @@ func TestUnknownNodes(t *testing.T) {
 	testEndpointSlices := getDefaultEndpointSlices()
 	testEndpointSlices[0].Endpoints[0].NodeName = utilpointer.StringPtr("unknown-node")
 	testEndpointMap := map[negtypes.EndpointGroupInfo]*composite.NetworkEndpoint{
-		{Zone: negtypes.TestZone1}: &composite.NetworkEndpoint{
+		{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: &composite.NetworkEndpoint{
 			Instance:  negtypes.TestInstance1,
 			IpAddress: testIP1,
 			Port:      testPort,
 		},
 
-		{Zone: negtypes.TestZone2}: &composite.NetworkEndpoint{
+		{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: &composite.NetworkEndpoint{
 			Instance:  negtypes.TestInstance3,
 			IpAddress: testIP2,
 			Port:      testPort,
 		},
 
-		{Zone: negtypes.TestZone4}: &composite.NetworkEndpoint{
+		{Zone: negtypes.TestZone4, Subnet: defaultTestSubnet}: &composite.NetworkEndpoint{
 			Instance:  negtypes.TestUpgradeInstance1,
 			IpAddress: testIP3,
 			Port:      testPort,
@@ -1789,19 +1791,19 @@ func TestUnknownNodes(t *testing.T) {
 	}
 
 	// Check that unknown zone did not cause endpoints to be removed
-	out, _, err := retrieveExistingZoneNetworkEndpointMap(testNegName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO())
+	out, _, err := retrieveExistingZoneNetworkEndpointMap(testNegName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, defaultTestSubnet, klog.TODO())
 	if err != nil {
 		t.Errorf("errored retrieving existing network endpoints")
 	}
 
 	expectedEndpoints := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-		{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(
+		{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 			negtypes.NetworkEndpoint{IP: testIP1, Node: negtypes.TestInstance1, Port: strconv.Itoa(int(testPort))},
 		),
-		{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet(
+		{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 			negtypes.NetworkEndpoint{IP: testIP2, Node: negtypes.TestInstance3, Port: strconv.Itoa(int(testPort))},
 		),
-		{Zone: negtypes.TestZone4}: negtypes.NewNetworkEndpointSet(
+		{Zone: negtypes.TestZone4, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 			negtypes.NetworkEndpoint{IP: testIP3, Node: negtypes.TestUpgradeInstance1, Port: strconv.Itoa(int(testPort))},
 		),
 	}
@@ -1864,38 +1866,38 @@ func TestEnableDegradedMode(t *testing.T) {
 	}
 
 	initialEndpoints := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-		{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(
+		{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 			networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"),
 		),
-		{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet(
+		{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 			networkEndpointFromEncodedEndpoint("10.100.1.2||instance3||80"),
 		),
-		{Zone: negtypes.TestZone4}: negtypes.NewNetworkEndpointSet(
+		{Zone: negtypes.TestZone4, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 			networkEndpointFromEncodedEndpoint("10.100.2.1||upgrade-instance1||80"),
 		),
 	}
 
 	updateSucceedEndpoints := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-		{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(
+		{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 			networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"),
 			networkEndpointFromEncodedEndpoint("10.100.1.2||instance1||80"),
 			networkEndpointFromEncodedEndpoint("10.100.2.1||instance2||80"),
 			networkEndpointFromEncodedEndpoint("10.100.1.3||instance1||80"),
 			networkEndpointFromEncodedEndpoint("10.100.1.4||instance1||80")),
-		{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet(
+		{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 			networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80")),
-		{Zone: negtypes.TestZone4}: negtypes.NewNetworkEndpointSet(),
+		{Zone: negtypes.TestZone4, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
 	}
 
 	updateFailedEndpoints := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-		{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(
+		{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 			networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"),
 			networkEndpointFromEncodedEndpoint("10.100.1.2||instance1||80"),
 			networkEndpointFromEncodedEndpoint("10.100.2.1||instance2||80"),
 			networkEndpointFromEncodedEndpoint("10.100.1.3||instance1||80"),
 			networkEndpointFromEncodedEndpoint("10.100.1.4||instance1||80")),
-		{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet(),
-		{Zone: negtypes.TestZone4}: negtypes.NewNetworkEndpointSet(),
+		{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+		{Zone: negtypes.TestZone4, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
 	}
 
 	testCases := []struct {
@@ -2086,7 +2088,7 @@ func TestEnableDegradedMode(t *testing.T) {
 			(s.syncer.(*syncer)).stopped = false
 			tc.modify(s)
 
-			out, _, err := retrieveExistingZoneNetworkEndpointMap(tc.negName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO())
+			out, _, err := retrieveExistingZoneNetworkEndpointMap(tc.negName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, defaultTestSubnet, klog.TODO())
 			if err != nil {
 				t.Errorf("errored retrieving existing network endpoints")
 			}
@@ -2099,7 +2101,7 @@ func TestEnableDegradedMode(t *testing.T) {
 				t.Errorf("syncInternal returned %v, expected %v", err, tc.expectErr)
 			}
 			err = wait.PollImmediate(time.Second, 3*time.Second, func() (bool, error) {
-				out, _, err = retrieveExistingZoneNetworkEndpointMap(tc.negName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO())
+				out, _, err = retrieveExistingZoneNetworkEndpointMap(tc.negName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, defaultTestSubnet, klog.TODO())
 				if err != nil {
 					return false, nil
 				}
@@ -2456,7 +2458,7 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 		testContext.SvcNegInformer.GetIndexer(),
 		reflector,
 		GetEndpointsCalculator(testContext.PodInformer.GetIndexer(), testContext.NodeInformer.GetIndexer(), testContext.ServiceInformer.GetIndexer(),
-			fakeZoneGetter, svcPort, mode, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics(), &network.NetworkInfo{IsDefault: true}, negtypes.L4InternalLB),
+			fakeZoneGetter, svcPort, mode, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics(), &network.NetworkInfo{IsDefault: true}, negtypes.L4InternalLB, defaultTestSubnet),
 		string(kubeSystemUID),
 		testContext.SvcNegClient,
 		metricscollector.FakeSyncerMetrics(),
@@ -2465,6 +2467,7 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 		labels.PodLabelPropagationConfig{},
 		testContext.EnableDualStackNEG,
 		network.NetworkInfo{NetworkURL: fakeGCE.NetworkURL(), SubnetworkURL: fakeGCE.SubnetworkURL()},
+		defaultTestSubnet,
 	)
 	transactionSyncer := negsyncer.(*syncer).core.(*transactionSyncer)
 	indexers := map[string]cache.IndexFunc{

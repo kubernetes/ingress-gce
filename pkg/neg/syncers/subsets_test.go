@@ -192,7 +192,7 @@ func TestUnevenNodesInZones(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
-		subsetMap, err := getSubsetPerZone(tc.nodesMap, tc.subsetLimit, tc.svcKey, nil, klog.TODO(), &network.NetworkInfo{})
+		subsetMap, err := getSubsetPerZone(tc.nodesMap, tc.subsetLimit, tc.svcKey, nil, klog.TODO(), &network.NetworkInfo{}, defaultTestSubnet)
 		if err != nil {
 			t.Errorf("Failed to get subset for test '%s', err %v", tc.description, err)
 		}
@@ -236,9 +236,9 @@ func TestGetSubsetPerZoneMultinetwork(t *testing.T) {
 			svcKey: "svc123",
 			// empty IPs since test can't get the primary IP
 			expectedNodesMap: map[negtypes.EndpointGroupInfo]map[string]string{
-				{Zone: "zone1"}: {"n1_1": "", "n1_2": ""},
-				{Zone: "zone2"}: {"n2_1": "", "n2_2": ""},
-				{Zone: "zone3"}: {"n3_1": ""},
+				{Zone: "zone1", Subnet: defaultTestSubnet}: {"n1_1": "", "n1_2": ""},
+				{Zone: "zone2", Subnet: defaultTestSubnet}: {"n2_1": "", "n2_2": ""},
+				{Zone: "zone3", Subnet: defaultTestSubnet}: {"n3_1": ""},
 			},
 		},
 		{
@@ -254,15 +254,15 @@ func TestGetSubsetPerZoneMultinetwork(t *testing.T) {
 				K8sNetwork: "net1",
 			},
 			expectedNodesMap: map[negtypes.EndpointGroupInfo]map[string]string{
-				{Zone: "zone1"}: {"n1_1": "172.168.1.1", "n1_2": "172.168.1.2"},
-				{Zone: "zone2"}: {"n2_1": "172.168.2.1", "n2_2": "172.168.2.2"},
-				{Zone: "zone3"}: {"n3_1": "172.168.3.1"},
+				{Zone: "zone1", Subnet: defaultTestSubnet}: {"n1_1": "172.168.1.1", "n1_2": "172.168.1.2"},
+				{Zone: "zone2", Subnet: defaultTestSubnet}: {"n2_1": "172.168.2.1", "n2_2": "172.168.2.2"},
+				{Zone: "zone3", Subnet: defaultTestSubnet}: {"n3_1": "172.168.3.1"},
 			},
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.description, func(t *testing.T) {
-			subsetMap, err := getSubsetPerZone(tc.nodesMap, maxSubsetSizeLocal, tc.svcKey, nil, klog.TODO(), &tc.networkInfo)
+			subsetMap, err := getSubsetPerZone(tc.nodesMap, maxSubsetSizeLocal, tc.svcKey, nil, klog.TODO(), &tc.networkInfo, defaultTestSubnet)
 			if err != nil {
 				t.Errorf("Failed to get subset for test '%s', err %v", tc.description, err)
 			}

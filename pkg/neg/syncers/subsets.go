@@ -163,7 +163,7 @@ func sortZones(nodesPerZone map[string][]*v1.Node) []ZoneInfo {
 //	Since the number of nodes will keep increasing in successive zones due to the sorting, even if fewer nodes were
 //	present in some zones, more nodes will be picked from other nodes, taking the total subset size to the given limit
 //	whenever possible.
-func getSubsetPerZone(nodesPerZone map[string][]*v1.Node, totalLimit int, svcID string, currentMap map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, logger klog.Logger, networkInfo *network.NetworkInfo) (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, error) {
+func getSubsetPerZone(nodesPerZone map[string][]*v1.Node, totalLimit int, svcID string, currentMap map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, logger klog.Logger, networkInfo *network.NetworkInfo, defaultSubnet string) (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, error) {
 	result := make(map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet)
 	var currentList []negtypes.NetworkEndpoint
 
@@ -177,9 +177,9 @@ func getSubsetPerZone(nodesPerZone map[string][]*v1.Node, totalLimit int, svcID 
 		// split the limit across the leftover zones.
 		subsetSize = totalLimit / zonesRemaining
 		logger.Info("Picking subset for a zone", "subsetSize", subsetSize, "zone", zone, "svcID", svcID)
-		result[negtypes.EndpointGroupInfo{Zone: zone.Name}] = negtypes.NewNetworkEndpointSet()
+		result[negtypes.EndpointGroupInfo{Zone: zone.Name, Subnet: defaultSubnet}] = negtypes.NewNetworkEndpointSet()
 		if currentMap != nil {
-			if zset, ok := currentMap[negtypes.EndpointGroupInfo{Zone: zone.Name}]; ok && zset != nil {
+			if zset, ok := currentMap[negtypes.EndpointGroupInfo{Zone: zone.Name, Subnet: defaultSubnet}]; ok && zset != nil {
 				currentList = zset.List()
 			} else {
 				currentList = nil
@@ -193,7 +193,7 @@ func getSubsetPerZone(nodesPerZone map[string][]*v1.Node, totalLimit int, svcID 
 			} else {
 				ip = utils.GetNodePrimaryIP(node, logger)
 			}
-			result[negtypes.EndpointGroupInfo{Zone: zone.Name}].Insert(negtypes.NetworkEndpoint{Node: node.Name, IP: ip})
+			result[negtypes.EndpointGroupInfo{Zone: zone.Name, Subnet: defaultSubnet}].Insert(negtypes.NetworkEndpoint{Node: node.Name, IP: ip})
 		}
 		totalLimit -= len(subset)
 		zonesRemaining--

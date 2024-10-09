@@ -81,6 +81,7 @@ const (
 	labelValue2 = "v2"
 	negName1    = "neg1"
 
+	defaultTestSubnet    = "default"
 	defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/default"
 )
 
@@ -106,6 +107,7 @@ func NewTestSyncerManager(kubeClient kubernetes.Interface) (*syncerManager, *gce
 		testContext.EnableDualStackNEG,
 		testContext.NumGCWorkers,
 		labels.PodLabelPropagationConfig{},
+		defaultTestSubnet,
 		klog.TODO(),
 	)
 	return manager, testContext.Cloud, testContext

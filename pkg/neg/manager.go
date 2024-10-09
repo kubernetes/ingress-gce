@@ -114,6 +114,8 @@ type syncerManager struct {
 
 	// lpConfig configures the pod label to be propagated to NEG endpoints.
 	lpConfig podlabels.PodLabelPropagationConfig
+
+	defaultSubnet string
 }
 
 func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
@@ -132,6 +134,7 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 	enableDualStackNEG bool,
 	numGCWorkers int,
 	lpConfig podlabels.PodLabelPropagationConfig,
+	defaultSubnet string,
 	logger klog.Logger) *syncerManager {
 
 	var vmIpPortZoneMap map[string]struct{}
@@ -158,6 +161,7 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 		logger:              logger,
 		vmIpPortZoneMap:     vmIpPortZoneMap,
 		lpConfig:            lpConfig,
+		defaultSubnet:       defaultSubnet,
 	}
 }
 
@@ -238,6 +242,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				manager.syncerMetrics,
 				&portInfo.NetworkInfo,
 				portInfo.L4LBType,
+				manager.defaultSubnet,
 			)
 			syncer = negsyncer.NewTransactionSyncer(
 				syncerKey,
@@ -259,6 +264,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				manager.lpConfig,
 				manager.enableDualStackNEG,
 				portInfo.NetworkInfo,
+				manager.defaultSubnet,
 			)
 			manager.syncerMap[syncerKey] = syncer
 		}

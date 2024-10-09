@@ -196,10 +196,10 @@ func TestNetworkEndpointCalculateDifference(t *testing.T) {
 		// unchanged
 		{
 			targetSet: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
 			},
 			currentSet: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
 			},
 			addSet:    map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
 			removeSet: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
@@ -214,24 +214,24 @@ func TestNetworkEndpointCalculateDifference(t *testing.T) {
 		// add in one zone
 		{
 			targetSet: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
 			},
 			currentSet: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
 			addSet: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
 			},
 			removeSet: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
 		},
 		// add in 2 zones
 		{
 			targetSet: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
-				{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("e"), genNetworkEndpoint("f"), genNetworkEndpoint("g")),
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("e"), genNetworkEndpoint("f"), genNetworkEndpoint("g")),
 			},
 			currentSet: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
 			addSet: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
-				{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("e"), genNetworkEndpoint("f"), genNetworkEndpoint("g")),
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("e"), genNetworkEndpoint("f"), genNetworkEndpoint("g")),
 			},
 			removeSet: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
 		},
@@ -239,58 +239,58 @@ func TestNetworkEndpointCalculateDifference(t *testing.T) {
 		{
 			targetSet: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
 			currentSet: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
 			},
 			addSet: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
 			removeSet: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
 			},
 		},
 		// remove in 2 zones
 		{
 			targetSet: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
 			currentSet: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
-				{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("e"), genNetworkEndpoint("f"), genNetworkEndpoint("g")),
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("e"), genNetworkEndpoint("f"), genNetworkEndpoint("g")),
 			},
 			addSet: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
 			removeSet: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
-				{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("e"), genNetworkEndpoint("f"), genNetworkEndpoint("g")),
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("e"), genNetworkEndpoint("f"), genNetworkEndpoint("g")),
 			},
 		},
 		// add and delete in one zone
 		{
 			targetSet: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
 			},
 			currentSet: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("b"), genNetworkEndpoint("c"), genNetworkEndpoint("d")),
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("b"), genNetworkEndpoint("c"), genNetworkEndpoint("d")),
 			},
 			addSet: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a")),
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a")),
 			},
 			removeSet: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("d")),
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("d")),
 			},
 		},
 		// add and delete in 2 zones
 		{
 			targetSet: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
-				{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
 			},
 			currentSet: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("b"), genNetworkEndpoint("c"), genNetworkEndpoint("d")),
-				{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("b"), genNetworkEndpoint("c"), genNetworkEndpoint("d")),
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("b"), genNetworkEndpoint("c"), genNetworkEndpoint("d")),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("b"), genNetworkEndpoint("c"), genNetworkEndpoint("d")),
 			},
 			addSet: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a")),
-				{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a")),
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a")),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a")),
 			},
 			removeSet: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("d")),
-				{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("d")),
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("d")),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("d")),
 			},
 		},
 	}
@@ -518,14 +518,14 @@ func TestToZoneNetworkEndpointMap(t *testing.T) {
 			desc:     "default service port name",
 			portName: "",
 			wantZoneNetworkEndpointMap: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
 					{IP: "10.100.1.1", Node: "instance1", Port: "80"},
 					{IP: "10.100.1.2", Node: "instance1", Port: "80"},
 					{IP: "10.100.1.3", Node: "instance1", Port: "80"},
 					{IP: "10.100.1.4", Node: "instance1", Port: "80"},
 					{IP: "10.100.2.1", Node: "instance2", Port: "80"},
 				}...),
-				{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
 					{IP: "10.100.3.1", Node: "instance3", Port: "80"},
 				}...),
 			},
@@ -543,10 +543,10 @@ func TestToZoneNetworkEndpointMap(t *testing.T) {
 			desc:     "explicitly named service port",
 			portName: testNamedPort,
 			wantZoneNetworkEndpointMap: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
 					{IP: "10.100.2.2", Node: "instance2", Port: "81"},
 				}...),
-				{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
 					{IP: "10.100.4.1", Node: "instance4", Port: "81"},
 					{IP: "10.100.3.2", Node: "instance3", Port: "8081"},
 					{IP: "10.100.4.2", Node: "instance4", Port: "8081"},
@@ -568,10 +568,10 @@ func TestToZoneNetworkEndpointMap(t *testing.T) {
 			desc:     "dual stack enabled with explicitly named service ports",
 			portName: testNamedPort,
 			wantZoneNetworkEndpointMap: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
 					{IP: "10.100.2.2", Node: "instance2", Port: "81"},
 				}...),
-				{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
 					{IP: "10.100.4.1", Node: "instance4", Port: "81"},
 					{IP: "10.100.3.2", IPv6: "a:b::1", Node: "instance3", Port: "8081"},
 					{IP: "10.100.4.2", IPv6: "a:b::2", Node: "instance4", Port: "8081"},
@@ -594,14 +594,14 @@ func TestToZoneNetworkEndpointMap(t *testing.T) {
 			desc:     "non GCP network endpoints",
 			portName: "",
 			wantZoneNetworkEndpointMap: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
 					{IP: "10.100.1.1", Port: "80"},
 					{IP: "10.100.1.2", Port: "80"},
 					{IP: "10.100.1.3", Port: "80"},
 					{IP: "10.100.1.4", Port: "80"},
 					{IP: "10.100.2.1", Port: "80"},
 				}...),
-				{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet([]negtypes.NetworkEndpoint{
 					{IP: "10.100.3.1", Port: "80"},
 				}...),
 			},
@@ -619,7 +619,7 @@ func TestToZoneNetworkEndpointMap(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			gotResult, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()), zoneGetter, podLister, tc.portName, tc.networkEndpointType, tc.enableDualStackNEG, false, klog.TODO())
+			gotResult, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()), zoneGetter, podLister, tc.portName, tc.networkEndpointType, tc.enableDualStackNEG, false, defaultTestSubnet, klog.TODO())
 			if err != nil {
 				t.Errorf("toZoneNetworkEndpointMap() = err %v, want no error", err)
 			}
@@ -804,9 +804,9 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 				cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: testNegName, Version: meta.VersionGA}, negtypes.TestZone4, klog.TODO())
 			},
 			expect: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(),
-				{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet(),
-				{Zone: negtypes.TestZone4}: negtypes.NewNetworkEndpointSet(),
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+				{Zone: negtypes.TestZone4, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
 			},
 			expectAnnotationMap: labels.EndpointPodLabelMap{},
 			expectErr:           false,
@@ -826,9 +826,9 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 				}, meta.VersionGA, klog.TODO())
 			},
 			expect: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(endpoint1),
-				{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet(),
-				{Zone: negtypes.TestZone4}: negtypes.NewNetworkEndpointSet(),
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(endpoint1),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+				{Zone: negtypes.TestZone4, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
 			},
 			expectAnnotationMap: labels.EndpointPodLabelMap{
 				endpoint1: labels.PodLabelMap{
@@ -852,12 +852,12 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 				}, meta.VersionGA, klog.TODO())
 			},
 			expect: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					endpoint1,
 					endpoint2,
 				),
-				{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet(),
-				{Zone: negtypes.TestZone4}: negtypes.NewNetworkEndpointSet(),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+				{Zone: negtypes.TestZone4, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
 			},
 			expectAnnotationMap: labels.EndpointPodLabelMap{
 				endpoint1: labels.PodLabelMap{
@@ -892,15 +892,15 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 				}, meta.VersionGA, klog.TODO())
 			},
 			expect: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					endpoint1,
 					endpoint2,
 				),
-				{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					endpoint3,
 					endpoint4,
 				),
-				{Zone: negtypes.TestZone4}: negtypes.NewNetworkEndpointSet(),
+				{Zone: negtypes.TestZone4, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
 			},
 			expectAnnotationMap: labels.EndpointPodLabelMap{
 				endpoint1: labels.PodLabelMap{
@@ -935,15 +935,15 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 				}, meta.VersionGA, klog.TODO())
 			},
 			expect: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					endpoint1,
 					endpoint2,
 				),
-				{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					endpoint3,
 					endpoint4,
 				),
-				{Zone: negtypes.TestZone4}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone4, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					endpoint6,
 					endpoint7,
 				),
@@ -978,15 +978,15 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 				}, meta.VersionGA, klog.TODO())
 			},
 			expect: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					endpoint1,
 					endpoint2,
 				),
-				{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					endpoint3,
 					endpoint4,
 				),
-				{Zone: negtypes.TestZone4}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone4, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					endpoint6,
 					endpoint7,
 				),
@@ -1025,18 +1025,18 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 			mode: negtypes.L4LocalMode,
 			expect: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 				// NEGs in zone1, zone2 and zone4 are created from previous test case.
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					endpoint1,
 					endpoint2,
 				),
-				{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					endpoint3,
 					endpoint4,
 				),
-				{Zone: negtypes.TestZone3}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					endpoint5,
 				),
-				{Zone: negtypes.TestZone4}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone4, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					endpoint6,
 					endpoint7,
 				),
@@ -1072,7 +1072,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 	for _, tc := range testCases {
 		tc.mutate(negCloud)
 		// tc.mode of "" will result in the default node predicate being selected, which is ok for this test.
-		endpointSets, annotationMap, err := retrieveExistingZoneNetworkEndpointMap(negName, zoneGetter, negCloud, meta.VersionGA, tc.mode, false, klog.TODO())
+		endpointSets, annotationMap, err := retrieveExistingZoneNetworkEndpointMap(negName, zoneGetter, negCloud, meta.VersionGA, tc.mode, false, defaultTestSubnet, klog.TODO())
 
 		if tc.expectErr {
 			if err == nil {
@@ -1655,13 +1655,13 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 			testEndpointSlices: getDefaultEndpointSlices(),
 			portName:           testEmptyNamedPort,
 			expectedEndpointMap: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"),
 					networkEndpointFromEncodedEndpoint("10.100.1.2||instance1||80"),
 					networkEndpointFromEncodedEndpoint("10.100.2.1||instance2||80"),
 					networkEndpointFromEncodedEndpoint("10.100.1.3||instance1||80"),
 					networkEndpointFromEncodedEndpoint("10.100.1.4||instance1||80")),
-				{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80")),
 			},
 			expectedPodMap: negtypes.EndpointPodMap{
@@ -1679,9 +1679,9 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 			testEndpointSlices: getDefaultEndpointSlices(),
 			portName:           testNamedPort,
 			expectedEndpointMap: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					networkEndpointFromEncodedEndpoint("10.100.2.2||instance2||81")),
-				{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					networkEndpointFromEncodedEndpoint("10.100.4.1||instance4||81"),
 					networkEndpointFromEncodedEndpoint("10.100.3.2||instance3||8081"),
 					networkEndpointFromEncodedEndpoint("10.100.4.2||instance4||8081"),
@@ -1703,13 +1703,13 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 			testEndpointSlices: getDefaultEndpointSlices(),
 			portName:           testEmptyNamedPort,
 			expectedEndpointMap: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					networkEndpointFromEncodedEndpoint("10.100.1.1||||80"),
 					networkEndpointFromEncodedEndpoint("10.100.1.2||||80"),
 					networkEndpointFromEncodedEndpoint("10.100.2.1||||80"),
 					networkEndpointFromEncodedEndpoint("10.100.1.3||||80"),
 					networkEndpointFromEncodedEndpoint("10.100.1.4||||80")),
-				{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					networkEndpointFromEncodedEndpoint("10.100.3.1||||80")),
 			},
 			expectedPodMap: negtypes.EndpointPodMap{
@@ -1756,7 +1756,7 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 			},
 			portName: testEmptyNamedPort,
 			expectedEndpointMap: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					networkEndpointFromEncodedEndpoint("10.10.0.1||instance1||80"),
 				),
 			},
@@ -1768,7 +1768,7 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			result := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, serviceLister, tc.portName, tc.networkEndpointType, false, false, klog.TODO())
+			result := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, serviceLister, tc.portName, tc.networkEndpointType, false, false, defaultTestSubnet, klog.TODO())
 			if !reflect.DeepEqual(result.NetworkEndpointSet, tc.expectedEndpointMap) {
 				t.Errorf("degraded mode endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", result.NetworkEndpointSet, tc.expectedEndpointMap)
 			}
@@ -1842,7 +1842,7 @@ func TestValidateEndpointFields(t *testing.T) {
 
 	// endpointMap and podMap contain all correct endpoints.
 	endpointMap := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-		{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(
+		{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 			negtypes.NetworkEndpoint{IP: "10.100.1.1", Node: instance1, Port: "80"},
 			negtypes.NetworkEndpoint{IP: "10.100.1.2", Node: instance1, Port: "80"},
 		),
@@ -1861,7 +1861,7 @@ func TestValidateEndpointFields(t *testing.T) {
 	// In degraded mode, we should exclude the invalid endpoint for non-coverable cases(pod invalid or empty zone).
 	// We always inject to first endpoint, so the result only contain the second endpoint.
 	endpointMapExcluded := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-		{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(
+		{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 			negtypes.NetworkEndpoint{IP: "10.100.1.2", Node: instance1, Port: "80"},
 		),
 	}
@@ -2252,7 +2252,7 @@ func TestValidateEndpointFields(t *testing.T) {
 				},
 			},
 			expectedEndpointMap: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					negtypes.NetworkEndpoint{IP: "10.100.1.1", Node: instance1, Port: "80"},
 					negtypes.NetworkEndpoint{IP: "10.100.1.2", Node: instance1, Port: "80"},
 					negtypes.NetworkEndpoint{IP: "10.100.2.2", Node: instance2, Port: "80"},
@@ -2362,7 +2362,7 @@ func TestValidateEndpointFields(t *testing.T) {
 				},
 			},
 			expectedEndpointMap: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					negtypes.NetworkEndpoint{IP: "10.100.3.2", IPv6: "a:b::1", Node: instance3, Port: "80"},
 					negtypes.NetworkEndpoint{IP: "10.100.4.2", IPv6: "a:b::2", Node: instance4, Port: "80"},
 					negtypes.NetworkEndpoint{IP: "10.100.4.4", IPv6: "a:b::4", Node: instance4, Port: "80"},
@@ -2376,7 +2376,7 @@ func TestValidateEndpointFields(t *testing.T) {
 			expectErr:        nil,
 			expectErrorState: false,
 			expectedEndpointMapDegradedMode: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					negtypes.NetworkEndpoint{IP: "10.100.3.2", IPv6: "a:b::1", Node: instance3, Port: "80"},
 					negtypes.NetworkEndpoint{IP: "10.100.4.2", IPv6: "a:b::2", Node: instance4, Port: "80"},
 				),
@@ -2390,7 +2390,7 @@ func TestValidateEndpointFields(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			for _, enableMultiSubnetCluster := range []bool{true, false} {
-				result, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, emptyNamedPort, negtypes.VmIpPortEndpointType, true, enableMultiSubnetCluster, klog.TODO())
+				result, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, emptyNamedPort, negtypes.VmIpPortEndpointType, true, enableMultiSubnetCluster, defaultTestSubnet, klog.TODO())
 				if !errors.Is(err, tc.expectErr) {
 					t.Errorf("normal mode with enableMultiSubnetCluster = %v, calculation got error %v, expected %v", err, enableMultiSubnetCluster, tc.expectErr)
 				}
@@ -2404,7 +2404,7 @@ func TestValidateEndpointFields(t *testing.T) {
 					t.Errorf("normal mode with enableMultiSubnetCluster = %v, got isErrorState=%v,\n expected %v", enableMultiSubnetCluster, syncErr.IsErrorState, tc.expectErrorState)
 				}
 
-				resultDegradedMode := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, serviceLister, emptyNamedPort, negtypes.VmIpPortEndpointType, true, enableMultiSubnetCluster, klog.TODO())
+				resultDegradedMode := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, serviceLister, emptyNamedPort, negtypes.VmIpPortEndpointType, true, enableMultiSubnetCluster, defaultTestSubnet, klog.TODO())
 				if !reflect.DeepEqual(resultDegradedMode.NetworkEndpointSet, tc.expectedEndpointMapDegradedMode) {
 					t.Errorf("degraded mode with enableMultiSubnetCluster = %v, endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", enableMultiSubnetCluster, resultDegradedMode.NetworkEndpointSet, tc.expectedEndpointMapDegradedMode)
 				}
@@ -2543,7 +2543,7 @@ func TestValidateEndpointFieldsMultipleSubnets(t *testing.T) {
 	})
 
 	endpointMap := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-		{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(
+		{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 			negtypes.NetworkEndpoint{IP: "10.100.1.1", Node: instance1, Port: "80"},
 			negtypes.NetworkEndpoint{IP: "10.100.1.2", Node: instance1, Port: "80"},
 		),
@@ -2611,11 +2611,11 @@ func TestValidateEndpointFieldsMultipleSubnets(t *testing.T) {
 				},
 			},
 			expectedEndpointMap: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					negtypes.NetworkEndpoint{IP: "10.100.1.1", Node: instance1, Port: "80"},
 					negtypes.NetworkEndpoint{IP: "10.100.1.2", Node: instance1, Port: "80"},
 				),
-				{Zone: negtypes.TestZone5}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone5, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					negtypes.NetworkEndpoint{IP: "10.101.1.1", Node: defaultSubnetLabelInstance, Port: "80"},
 				),
 			},
@@ -2627,11 +2627,11 @@ func TestValidateEndpointFieldsMultipleSubnets(t *testing.T) {
 			expectErr:        nil,
 			expectErrorState: false,
 			expectedEndpointMapDegradedMode: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					negtypes.NetworkEndpoint{IP: "10.100.1.1", Node: instance1, Port: "80"},
 					negtypes.NetworkEndpoint{IP: "10.100.1.2", Node: instance1, Port: "80"},
 				),
-				{Zone: negtypes.TestZone5}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone5, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					negtypes.NetworkEndpoint{IP: "10.101.1.1", Node: defaultSubnetLabelInstance, Port: "80"},
 				),
 			},
@@ -2689,11 +2689,11 @@ func TestValidateEndpointFieldsMultipleSubnets(t *testing.T) {
 				},
 			},
 			expectedEndpointMap: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					negtypes.NetworkEndpoint{IP: "10.100.1.1", Node: instance1, Port: "80"},
 					negtypes.NetworkEndpoint{IP: "10.100.1.2", Node: instance1, Port: "80"},
 				),
-				{Zone: negtypes.TestZone6}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone6, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					negtypes.NetworkEndpoint{IP: "10.101.2.1", Node: emptySubnetLabelInstance, Port: "80"},
 				),
 			},
@@ -2705,11 +2705,11 @@ func TestValidateEndpointFieldsMultipleSubnets(t *testing.T) {
 			expectErr:        nil,
 			expectErrorState: false,
 			expectedEndpointMapDegradedMode: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					negtypes.NetworkEndpoint{IP: "10.100.1.1", Node: instance1, Port: "80"},
 					negtypes.NetworkEndpoint{IP: "10.100.1.2", Node: instance1, Port: "80"},
 				),
-				{Zone: negtypes.TestZone6}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone6, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					negtypes.NetworkEndpoint{IP: "10.101.2.1", Node: emptySubnetLabelInstance, Port: "80"},
 				),
 			},
@@ -2830,7 +2830,7 @@ func TestValidateEndpointFieldsMultipleSubnets(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			result, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, emptyNamedPort, negtypes.VmIpPortEndpointType, true, true, klog.TODO())
+			result, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, emptyNamedPort, negtypes.VmIpPortEndpointType, true, true, defaultTestSubnet, klog.TODO())
 			if !errors.Is(err, tc.expectErr) {
 				t.Errorf("With multi-subnet cluster enabled, normal mode calculation got error %v, expected %v", err, tc.expectErr)
 			}
@@ -2844,7 +2844,7 @@ func TestValidateEndpointFieldsMultipleSubnets(t *testing.T) {
 				t.Errorf("With multi-subnet cluster enabled, normal mode got isErrorState=%v,\n expected %v", syncErr.IsErrorState, tc.expectErrorState)
 			}
 
-			resultDegradedMode := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, serviceLister, emptyNamedPort, negtypes.VmIpPortEndpointType, true, true, klog.TODO())
+			resultDegradedMode := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, serviceLister, emptyNamedPort, negtypes.VmIpPortEndpointType, true, true, defaultTestSubnet, klog.TODO())
 			if !reflect.DeepEqual(resultDegradedMode.NetworkEndpointSet, tc.expectedEndpointMapDegradedMode) {
 				t.Errorf("With multi-subnet cluste enabled, degraded mode endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", resultDegradedMode.NetworkEndpointSet, tc.expectedEndpointMapDegradedMode)
 			}

@@ -540,6 +540,10 @@ func createNEGController(ctx *ingctx.ControllerContext, stopCh <-chan struct{}, 
 		// if it was not possible to retrieve network information use standard context as cloud network provider
 		adapter = ctx.Cloud
 	}
+	var defaultSubnetURL string
+	if flags.F.EnableMultiSubnetClusterPhase1 {
+		defaultSubnetURL = ctx.Cloud.SubnetworkURL()
+	}
 
 	// TODO: Refactor NEG to use cloud mocks so ctx.Cloud can be referenced within NewController.
 	negController := neg.NewController(
@@ -574,6 +578,7 @@ func createNEGController(ctx *ingctx.ControllerContext, stopCh <-chan struct{}, 
 		flags.F.EnableMultiNetworking,
 		ctx.EnableIngressRegionalExternal,
 		flags.F.EnableL4NetLBNEG,
+		defaultSubnetURL,
 		stopCh,
 		logger,
 	)
