@@ -70,6 +70,7 @@ type L4 struct {
 	network                          network.NetworkInfo
 	networkResolver                  network.Resolver
 	enableWeightedLB                 bool
+	enableZonalAffinity              bool
 	disableNodesFirewallProvisioning bool
 	svcLogger                        klog.Logger
 }
@@ -107,6 +108,7 @@ type L4ILBParams struct {
 	DualStackEnabled                 bool
 	NetworkResolver                  network.Resolver
 	EnableWeightedLB                 bool
+	EnableZonalAffinity              bool
 	DisableNodesFirewallProvisioning bool
 }
 
@@ -126,6 +128,7 @@ func NewL4Handler(params *L4ILBParams, logger klog.Logger) *L4 {
 		enableDualStack:                  params.DualStackEnabled,
 		networkResolver:                  params.NetworkResolver,
 		enableWeightedLB:                 params.EnableWeightedLB,
+		enableZonalAffinity:              params.EnableZonalAffinity,
 		disableNodesFirewallProvisioning: params.DisableNodesFirewallProvisioning,
 		svcLogger:                        logger,
 	}
@@ -485,17 +488,27 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 
 	localityLbPolicy := l4.determineBackendServiceLocalityPolicy()
 
+	svcEnableZonalAffinity, zonalAffinitySpilloverRatio := annotations.HasValidZonalAffinitySpilloverAnnotation(svc)
+	finalEnableZonalAffinity := l4.enableZonalAffinity && svcEnableZonalAffinity
+
+	version := meta.VersionGA
+	if finalEnableZonalAffinity {
+		version = meta.VersionAlpha
+	}
 	// ensure backend service
 	backendParams := backends.L4BackendServiceParams{
-		Name:                     bsName,
-		HealthCheckLink:          hcLink,
-		Protocol:                 string(protocol),
-		SessionAffinity:          string(l4.Service.Spec.SessionAffinity),
-		Scheme:                   string(cloud.SchemeInternal),
-		NamespacedName:           l4.NamespacedName,
-		NetworkInfo:              &l4.network,
-		ConnectionTrackingPolicy: noConnectionTrackingPolicy,
-		LocalityLbPolicy:         localityLbPolicy,
+		Name:                        bsName,
+		Version:                     version,
+		HealthCheckLink:             hcLink,
+		Protocol:                    string(protocol),
+		SessionAffinity:             string(l4.Service.Spec.SessionAffinity),
+		Scheme:                      string(cloud.SchemeInternal),
+		NamespacedName:              l4.NamespacedName,
+		NetworkInfo:                 &l4.network,
+		ConnectionTrackingPolicy:    noConnectionTrackingPolicy,
+		LocalityLbPolicy:            localityLbPolicy,
+		EnableZonalAffinity:         finalEnableZonalAffinity,
+		ZonalAffinitySpilloverRatio: zonalAffinitySpilloverRatio,
 	}
 	bs, _, err := l4.backendPool.EnsureL4BackendService(backendParams, l4.svcLogger)
 	if err != nil {

@@ -248,6 +248,7 @@ func main() {
 		EnableIngressRegionalExternal: flags.F.EnableIngressRegionalExternal,
 		EnableWeightedL4ILB:           flags.F.EnableWeightedL4ILB,
 		EnableWeightedL4NetLB:         flags.F.EnableWeightedL4NetLB,
+		EnableZonalAffinity:           flags.F.EnableZonalAffinity,
 		DisableL4LBFirewall:           flags.F.DisableL4LBFirewall,
 		EnableL4NetLBNEGs:             flags.F.EnableL4NetLBNEG,
 		EnableL4NetLBNEGsDefault:      flags.F.EnableL4NetLBNEGDefault,

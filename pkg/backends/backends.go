@@ -35,6 +35,7 @@ const (
 	DefaultConnectionDrainingTimeoutSeconds = 30
 	defaultTrackingMode                     = "PER_CONNECTION"
 	PerSessionTrackingMode                  = "PER_SESSION" // the only one supported with strong session affinity
+	DefaultZonalAffinitySpillover           = "ZONAL_AFFINITY_SPILL_CROSS_ZONE"
 )
 
 // LocalityLBPolicyType is the type of locality lb policy the backend service should use.
@@ -84,15 +85,18 @@ func NewPoolWithConnectionTrackingPolicy(cloud *gce.Cloud, namer namer.BackendNa
 
 // L4BackendServiceParams encapsulates parameters for ensuring an L4 BackendService.
 type L4BackendServiceParams struct {
-	Name                     string
-	HealthCheckLink          string
-	Protocol                 string
-	SessionAffinity          string
-	Scheme                   string
-	NamespacedName           types.NamespacedName
-	NetworkInfo              *network.NetworkInfo
-	ConnectionTrackingPolicy *composite.BackendServiceConnectionTrackingPolicy
-	LocalityLbPolicy         LocalityLBPolicyType
+	Name                        string
+	Version                     meta.Version
+	HealthCheckLink             string
+	Protocol                    string
+	SessionAffinity             string
+	Scheme                      string
+	NamespacedName              types.NamespacedName
+	NetworkInfo                 *network.NetworkInfo
+	ConnectionTrackingPolicy    *composite.BackendServiceConnectionTrackingPolicy
+	LocalityLbPolicy            LocalityLBPolicyType
+	EnableZonalAffinity         bool
+	ZonalAffinitySpilloverRatio float64
 }
 
 // ensureDescription updates the BackendService Description with the expected value
@@ -355,12 +359,23 @@ func (b *Backends) EnsureL4BackendService(params L4BackendServiceParams, beLogge
 
 	expectedBS := &composite.BackendService{
 		Name:                params.Name,
+		Version:             params.Version,
 		Protocol:            params.Protocol,
 		Description:         desc,
 		HealthChecks:        []string{params.HealthCheckLink},
 		SessionAffinity:     utils.TranslateAffinityType(params.SessionAffinity, beLogger),
 		LoadBalancingScheme: params.Scheme,
 		LocalityLbPolicy:    string(params.LocalityLbPolicy),
+	}
+
+	if params.EnableZonalAffinity && params.ZonalAffinitySpilloverRatio >= 0 && params.ZonalAffinitySpilloverRatio <= 1 {
+		beLogger.V(2).Info("EnsureL4BackendService: using Zonal Affinity with spillover ratio", "ratio", params.ZonalAffinitySpilloverRatio)
+		expectedBS.NetworkPassThroughLbTrafficPolicy = &composite.BackendServiceNetworkPassThroughLbTrafficPolicy{
+			ZonalAffinity: &composite.BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity{
+				Spillover:      DefaultZonalAffinitySpillover,
+				SpilloverRatio: params.ZonalAffinitySpilloverRatio,
+			},
+		}
 	}
 
 	// We need this configuration only for Strong Session Affinity feature
@@ -449,6 +464,13 @@ func backendSvcEqual(newBS, oldBS *composite.BackendService, compareConnectionTr
 			(newBS.LocalityLbPolicy == string(LocalityLBPolicyDefault) && oldBS.LocalityLbPolicy == string(LocalityLBPolicyMaglev)) ||
 			(newBS.LocalityLbPolicy == string(LocalityLBPolicyMaglev) && oldBS.LocalityLbPolicy == string(LocalityLBPolicyDefault)))
 
+	// If zonal affinity is set, needs to be equal
+	svcsEqual = svcsEqual &&
+		(newBS.NetworkPassThroughLbTrafficPolicy == nil) == (oldBS.NetworkPassThroughLbTrafficPolicy == nil) &&
+		(newBS.NetworkPassThroughLbTrafficPolicy == nil ||
+			(newBS.NetworkPassThroughLbTrafficPolicy.ZonalAffinity == nil) == (oldBS.NetworkPassThroughLbTrafficPolicy.ZonalAffinity == nil) &&
+				(newBS.NetworkPassThroughLbTrafficPolicy.ZonalAffinity == nil || (newBS.NetworkPassThroughLbTrafficPolicy.ZonalAffinity.Spillover == oldBS.NetworkPassThroughLbTrafficPolicy.ZonalAffinity.Spillover &&
+					newBS.NetworkPassThroughLbTrafficPolicy.ZonalAffinity.SpilloverRatio == oldBS.NetworkPassThroughLbTrafficPolicy.ZonalAffinity.SpilloverRatio)))
 	return svcsEqual
 }
 
