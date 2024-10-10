@@ -106,7 +106,6 @@ var (
 		FinalizerAdd                             bool // Should have been named Enablexxx.
 		FinalizerRemove                          bool // Should have been named Enablexxx.
 		EnablePSC                                bool
-		EnableIngressGAFields                    bool
 		EnableTrafficScaling                     bool
 		EnableRecalculateUHCOnBCRemoval          bool
 		EnableTransparentHealthChecks            bool
@@ -116,6 +115,8 @@ var (
 		EnableL4NetLBDualStack                   bool
 		EnableNEGController                      bool
 		EnableL4NEG                              bool
+		EnableL4NetLBNEG                         bool
+		EnableL4NetLBNEGDefault                  bool
 		GateNEGByLock                            bool
 		EnableMultipleIGs                        bool
 		EnableL4StrongSessionAffinity            bool
@@ -134,6 +135,7 @@ var (
 		EnableIGMultiSubnetCluster               bool
 		EnableMultiSubnetCluster                 bool
 		EnableMultiSubnetClusterPhase1           bool
+		NodeTopologyCRName                       string
 		EnableWeightedL4ILB                      bool
 		EnableWeightedL4NetLB                    bool
 		EnableZonalAffinity                      bool
@@ -282,10 +284,11 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.RunL4NetLBController, "run-l4-netlb-controller", false, `Optional, if enabled then the L4NetLbController will be run.`)
 	flag.BoolVar(&F.EnableNEGController, "enable-neg-controller", true, `Optional, if enabled then the NEG controller will be run.`)
 	flag.BoolVar(&F.EnableL4NEG, "enable-l4-neg", false, `Optional, if enabled then the NEG controller will process L4 NEGs.`)
+	flag.BoolVar(&F.EnableL4NetLBNEG, "enable-l4-netlb-neg", false, `Optional, if enabled then the NetLB controller can create L4 NetLB services with NEG backends.`)
+	flag.BoolVar(&F.EnableL4NetLBNEGDefault, "enable-l4-netlb-neg-default", false, `Optional, if enabled then newly created L4 NetLB services will use NEG backends. Has effect only if '--enable-l4-netlb-neg' is set to true.`)
 	flag.BoolVar(&F.GateNEGByLock, "gate-neg-by-lock", false, "If enabled then the NEG controller will be run via leader election with NEG resource lock")
 	flag.BoolVar(&F.EnableIGController, "enable-ig-controller", true, `Optional, if enabled then the IG controller will be run.`)
 	flag.BoolVar(&F.EnablePSC, "enable-psc", false, "Enable PSC controller")
-	flag.BoolVar(&F.EnableIngressGAFields, "enable-ingress-ga-fields", false, "Enable using Ingress Class GA features")
 	flag.StringVar(&F.GKEClusterName, "gke-cluster-name", "", "The name of the GKE cluster this Ingress Controller will be interacting with")
 	flag.StringVar(&F.GKEClusterHash, "gke-cluster-hash", "", "The cluster hash of the GKE cluster this Ingress Controller will be interacting with")
 	flag.StringVar(&F.GKEClusterType, "gke-cluster-type", "ZONAL", "The cluster type of the GKE cluster this Ingress Controller will be interacting with")
@@ -319,6 +322,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableIGMultiSubnetCluster, "enable-ig-multi-subnet-cluster", false, "Enable Multi Subnet support for the controllers that use Instance Group backends.")
 	flag.BoolVar(&F.EnableMultiSubnetCluster, "enable-multi-subnet-cluster", false, "Enable Multi Subnet support for all controllers that are running.")
 	flag.BoolVar(&F.EnableMultiSubnetClusterPhase1, "enable-multi-subnet-cluster-phase1", false, "Enable Phase 1 Multi Subnet support for all controllers that are running.")
+	flag.StringVar(&F.NodeTopologyCRName, "node-topology-cr-name", "default", "The name of the Node Topology CR.")
 	flag.BoolVar(&F.EnableWeightedL4ILB, "enable-weighted-l4-ilb", false, "Enable Weighted Load balancing for L4 ILB.")
 	flag.BoolVar(&F.EnableWeightedL4NetLB, "enable-weighted-l4-netlb", false, "EnableWeighted Load balancing for  L4 NetLB .")
 	flag.BoolVar(&F.EnableZonalAffinity, "enable-zonal-affinity", false, "Enable Zonal Affinity for L4 ILB.")

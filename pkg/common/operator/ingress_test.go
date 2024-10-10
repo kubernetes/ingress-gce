@@ -57,7 +57,7 @@ func TestReferencesSvcNeg(t *testing.T) {
 		HealthCheckPath:               "/",
 		EnableIngressRegionalExternal: true,
 	}
-	ctx := context.NewControllerContext(kubeClient, nil, nil, nil, nil, nil, nil, nil, nil, kubeClient /*kube client to be used for events*/, gceClient, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
+	ctx := context.NewControllerContext(kubeClient, nil, nil, nil, nil, nil, nil, nil, kubeClient /*kube client to be used for events*/, gceClient, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
 
 	if err := addTestService(ctx); err != nil {
 		t.Fatalf("Failed to add test service: %v", err)

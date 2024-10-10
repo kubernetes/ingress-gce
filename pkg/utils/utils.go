@@ -720,6 +720,11 @@ func HasL4NetLBFinalizerV2(svc *api_v1.Service) bool {
 	return slice.ContainsString(svc.ObjectMeta.Finalizers, common.NetLBFinalizerV2, nil)
 }
 
+// HasL4NetLBFinalizerV3 returns true if the given Service has NetLBFinalizerV3
+func HasL4NetLBFinalizerV3(svc *api_v1.Service) bool {
+	return slice.ContainsString(svc.ObjectMeta.Finalizers, common.NetLBFinalizerV3, nil)
+}
+
 func LegacyForwardingRuleName(svc *api_v1.Service) string {
 	return cloudprovider.DefaultLoadBalancerName(svc)
 }

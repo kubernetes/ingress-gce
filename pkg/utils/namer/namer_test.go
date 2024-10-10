@@ -19,9 +19,10 @@ package namer
 import (
 	"crypto/sha256"
 	"fmt"
-	"k8s.io/klog/v2"
 	"strings"
 	"testing"
+
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -472,6 +473,78 @@ func TestNamerNEG(t *testing.T) {
 	const want = "mci1-01234567-ns-svc-80-4890871b"
 	if name != want {
 		t.Errorf(`with prefix %q, newNamer.NEG("ns", "svc", 80) = %q, want %q`, "mci", name, want)
+	}
+}
+
+func TestNamerNonDefaultSubnetNEG(t *testing.T) {
+	testCases := []struct {
+		desc       string
+		namespace  string
+		name       string
+		subnetName string
+		port       int32
+		expect     string
+	}{
+		{
+			"simple case",
+			"namespace",
+			"service-name",
+			"subnet-name",
+			80,
+			"k8s1-01234567-namespace-service-name-80-3be412-08a4d9c0",
+		},
+		{
+			"over 63 characters",
+			"long-namespace",
+			"long-service-name",
+			"long-subnet-name",
+			80,
+			"k8s1-01234567-long-namespace-long-service-nam-8-b3be80-5d10aaf3",
+		},
+		{
+			"long namespace",
+			strings.Repeat("long-namespace", 5),
+			"service-name",
+			"subnet-name",
+			80,
+			"k8s1-01234567-long-namespacelong-namespa-servi--3be412-7acd125c",
+		},
+
+		{
+			"long name and namespace",
+			strings.Repeat("long-namespace", 5),
+			strings.Repeat("long-service-name", 5),
+			"subnet-name",
+			80,
+			"k8s1-01234567-long-namespace-long-service-name--3be412-728cddbe",
+		},
+		{
+			"long subnet name",
+			"namespace",
+			"service-name",
+			strings.Repeat("long-subnet-name", 2),
+			80,
+			"k8s1-01234567-namespace-service-name-80-884529-08a4d9c0",
+		},
+		{
+			"long name, namespace, port and subnet",
+			strings.Repeat("long-namespace", 5),
+			strings.Repeat("long-service-name", 5),
+			strings.Repeat("long-subnet-name", 2),
+			2147483647,
+			"k8s1-01234567-long-namespace-long-service-nam-2-884529-0d830ed2",
+		},
+	}
+
+	newNamer := NewNamer(clusterId, "", klog.TODO())
+	for _, tc := range testCases {
+		res := newNamer.NonDefaultSubnetNEG(tc.namespace, tc.name, tc.subnetName, tc.port)
+		if len(res) > 63 {
+			t.Errorf("%s: got len(res) == %v, want <= 63", tc.desc, len(res))
+		}
+		if res != tc.expect {
+			t.Errorf("%s: got %q, want %q", tc.desc, res, tc.expect)
+		}
 	}
 }
 

@@ -35,7 +35,7 @@ const (
 type L4Namer struct {
 	// Namer is needed to implement all methods required by BackendNamer interface.
 	*Namer
-	// v2Prefix is the string 'k8sv2'
+	// v2Prefix is the string 'k8s2'
 	v2Prefix string
 	// v2ClusterUID is the kube-system UID.
 	v2ClusterUID string
@@ -57,6 +57,24 @@ func (namer *L4Namer) L4Backend(namespace, name string) string {
 		namer.v2Prefix,
 		namer.v2ClusterUID,
 		getTrimmedNamespacedName(namespace, name, maximumL4CombinedLength),
+		namer.getClusterSuffix(namespace, name),
+	}, "-")
+}
+
+// L4NonDefaultSubnetNEG returns the gce NEG name for L4 NEGs in non default
+// subnet based on the service namespace, name, and subnet name.
+// Naming convention:
+//
+//	k8s2-{uid}-{ns}-{name}-{subnetHash}-{suffix}
+//
+// subnetHash length = 6, suffix length = 8, and the remainings are trimmed evenly.
+// Output name is at most 63 characters.
+func (namer *L4Namer) L4NonDefaultSubnetNEG(namespace, name, subnetName string) string {
+	return strings.Join([]string{
+		namer.v2Prefix,
+		namer.v2ClusterUID,
+		getTrimmedNamespacedName(namespace, name, maximumL4CombinedLength-subnetHashLength-1),
+		subnetHash(subnetName),
 		namer.getClusterSuffix(namespace, name),
 	}, "-")
 }

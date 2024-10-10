@@ -36,6 +36,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
@@ -175,7 +176,6 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 
 	removes := currentPorts.Difference(newPorts)
 	adds := newPorts.Difference(currentPorts)
-	samePorts := newPorts.Difference(adds)
 	// There may be duplicate ports in adds and removes due to difference in readinessGate flag
 	// Service/Ingress config changes can cause readinessGate to be turn on or off for the same service port.
 	// By removing the duplicate ports in removes and adds, this prevents disruption of NEG syncer due to the config changes
@@ -199,32 +199,21 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 		}
 	}
 
-	for _, portInfo := range samePorts {
+	// Ensure a syncer is running for each port in newPorts.
+	for svcPort, portInfo := range newPorts {
+		syncerKey := manager.getSyncerKey(namespace, name, svcPort, portInfo)
+		syncer, ok := manager.syncerMap[syncerKey]
+		// To ensure that a NEG CR always exists during the lifecycle of a NEG, do not create a
+		// syncer for the NEG until the NEG CR is successfully created. This will reduce the
+		// possibility of invalid states and reduces complexity of garbage collection
 		// To reduce the possibility of NEGs being leaked, ensure a SvcNeg CR exists for every
 		// desired port.
 		if err := manager.ensureSvcNegCR(key, portInfo); err != nil {
-			errList = append(errList, fmt.Errorf("failed to ensure svc neg cr %s/%s/%d for existing port: %w", namespace, portInfo.NegName, portInfo.PortTuple.Port, err))
+			errList = append(errList, fmt.Errorf("failed to ensure svc neg cr %s/%s/%d for port: %w ", namespace, portInfo.NegName, svcPort.ServicePort, err))
 			errorSyncers += 1
-		} else {
-			successfulSyncers += 1
+			continue
 		}
-	}
-
-	// Ensure a syncer is running for each port that is being added.
-	for svcPort, portInfo := range adds {
-		syncerKey := manager.getSyncerKey(namespace, name, svcPort, portInfo)
-		syncer, ok := manager.syncerMap[syncerKey]
 		if !ok {
-
-			// To ensure that a NEG CR always exists during the lifecycle of a NEG, do not create a
-			// syncer for the NEG until the NEG CR is successfully created. This will reduce the
-			// possibility of invalid states and reduces complexity of garbage collection
-			if err := manager.ensureSvcNegCR(key, portInfo); err != nil {
-				errList = append(errList, fmt.Errorf("failed to ensure svc neg cr %s/%s/%d for new port: %w ", namespace, portInfo.NegName, svcPort.ServicePort, err))
-				errorSyncers += 1
-				continue
-			}
-
 			// determine the implementation that calculates NEG endpoints on each sync.
 			epc := negsyncer.GetEndpointsCalculator(
 				manager.podLister,
@@ -237,6 +226,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				manager.enableDualStackNEG,
 				manager.syncerMetrics,
 				&portInfo.NetworkInfo,
+				portInfo.L4LBType,
 			)
 			syncer = negsyncer.NewTransactionSyncer(
 				syncerKey,
@@ -342,6 +332,20 @@ func (manager *syncerManager) SyncNodes() {
 		default:
 			manager.logger.Error(nil, "SyncNodes: Not triggering sync for syncer of unknown type", "negSyncerType", key.NegType)
 		}
+	}
+}
+
+// SyncAllSyncers signals all syncers to sync.
+func (manager *syncerManager) SyncAllSyncers() {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+
+	for key, syncer := range manager.syncerMap {
+		if syncer.IsStopped() {
+			manager.logger.V(1).Info("SyncAllSyncers: Syncer is already stopped; not syncing.", "negSyncerKey", key.String())
+			continue
+		}
+		syncer.Sync()
 	}
 }
 
@@ -647,14 +651,16 @@ func (manager *syncerManager) processNEGDeletionCandidate(svcNegCR *negv1beta1.S
 	// Since no more NEG deletion will be happening at this point, and NEG
 	// CR will not be deleted, clear the reference for deleted NEGs in the
 	// NEG CR.
-	if len(deletedNegs) != 0 {
-		updatedCR := svcNegCR.DeepCopy()
+	if flags.F.EnableMultiSubnetClusterPhase1 {
+		if len(deletedNegs) != 0 {
+			updatedCR := svcNegCR.DeepCopy()
 
-		if errs := ensureExistingNegRef(updatedCR, deletedNegs); len(errs) != 0 {
-			errList = append(errList, errs...)
-		}
-		if _, err := patchNegStatus(manager.svcNegClient, *svcNegCR, *updatedCR); err != nil {
-			errList = append(errList, err)
+			if errs := ensureExistingNegRef(updatedCR, deletedNegs); len(errs) != 0 {
+				errList = append(errList, errs...)
+			}
+			if _, err := patchNegStatus(manager.svcNegClient, *svcNegCR, *updatedCR); err != nil {
+				errList = append(errList, err)
+			}
 		}
 	}
 
@@ -911,6 +917,7 @@ func (manager *syncerManager) getSyncerKey(namespace, name string, servicePortKe
 		PortTuple:        portInfo.PortTuple,
 		NegType:          networkEndpointType,
 		EpCalculatorMode: calculatorMode,
+		L4LBType:         portInfo.L4LBType,
 	}
 }
 

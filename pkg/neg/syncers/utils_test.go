@@ -1345,8 +1345,10 @@ func TestNegObjectCrd(t *testing.T) {
 			Id:                  fmt.Sprint(neg.Id),
 			SelfLink:            neg.SelfLink,
 			NetworkEndpointType: negv1beta1.NetworkEndpointType(networkEndpointType),
-			State:               negv1beta1.ActiveState,
-			SubnetURL:           subnetURL,
+		}
+		if flags.F.EnableMultiSubnetClusterPhase1 {
+			expectedNegObj.State = negv1beta1.ActiveState
+			expectedNegObj.SubnetURL = subnetURL
 		}
 
 		if negObj != expectedNegObj {

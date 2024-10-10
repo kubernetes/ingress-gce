@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"time"
 
+	nodetopologyv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1"
 	apiv1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
 	v1 "k8s.io/api/networking/v1"
@@ -85,6 +86,9 @@ type Controller struct {
 	endpointQueue workqueue.RateLimitingInterface
 	// nodeQueue takes node name as work item.
 	nodeQueue workqueue.RateLimitingInterface
+	// nodeTopologyQueue acts as an intermeidate queue to trigger sync on all
+	// syncers on Node Topology resource updates.
+	nodeTopologyQueue workqueue.RateLimitingInterface
 
 	// syncTracker tracks the latest time that service and endpoint changes are processed
 	syncTracker utils.TimeTracker
@@ -97,12 +101,19 @@ type Controller struct {
 	// syncerMetrics collects NEG controller metrics
 	syncerMetrics *syncMetrics.SyncerMetrics
 
-	// runL4 indicates whether to run NEG controller that processes L4 services
-	runL4 bool
+	// runL4ForILB indicates whether to run NEG controller that processes L4 ILB services
+	runL4ForILB bool
 
 	// enableIngressRegionalExternal indicates where NEG controller should process
 	// gce-regional-external ingresses
 	enableIngressRegionalExternal bool
+
+	// enableMultiSubnetClusterPhase1 indicates whether NEG controller should create
+	// additional NEGs in the non-default subnets.
+	enableMultiSubnetClusterPhase1 bool
+
+	// runL4ForNetLB indicates if the controller can create NEGs for L4 NetLB services.
+	runL4ForNetLB bool
 
 	stopCh <-chan struct{}
 	logger klog.Logger
@@ -122,6 +133,7 @@ func NewController(
 	svcNegInformer cache.SharedIndexInformer,
 	networkInformer cache.SharedIndexInformer,
 	gkeNetworkParamSetInformer cache.SharedIndexInformer,
+	nodeTopologyInformer cache.SharedIndexInformer,
 	hasSynced func() bool,
 	l4Namer namer2.L4ResourcesNamer,
 	defaultBackendService utils.ServicePort,
@@ -140,6 +152,7 @@ func NewController(
 	lpConfig labels.PodLabelPropagationConfig,
 	enableMultiNetworking bool,
 	enableIngressRegionalExternal bool,
+	runL4ForNetLB bool,
 	stopCh <-chan struct{},
 	logger klog.Logger,
 ) *Controller {
@@ -212,29 +225,36 @@ func NewController(
 	if gkeNetworkParamSetInformer != nil {
 		gkeNetworkParamSetIndexer = gkeNetworkParamSetInformer.GetIndexer()
 	}
+	enableMultiSubnetClusterPhase1 := flags.F.EnableMultiSubnetClusterPhase1
+
 	negController := &Controller{
-		client:                        kubeClient,
-		manager:                       manager,
-		gcPeriod:                      gcPeriod,
-		recorder:                      recorder,
-		zoneGetter:                    zoneGetter,
-		namer:                         namer,
-		l4Namer:                       l4Namer,
-		defaultBackendService:         defaultBackendService,
-		hasSynced:                     hasSynced,
-		ingressLister:                 ingressInformer.GetIndexer(),
-		serviceLister:                 serviceInformer.GetIndexer(),
-		networkResolver:               network.NewNetworksResolver(networkIndexer, gkeNetworkParamSetIndexer, cloud, enableMultiNetworking, logger),
-		serviceQueue:                  workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_service_queue"),
-		endpointQueue:                 workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_endpoint_queue"),
-		nodeQueue:                     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_node_queue"),
-		syncTracker:                   utils.NewTimeTracker(),
-		reflector:                     reflector,
-		syncerMetrics:                 syncerMetrics,
-		runL4:                         runL4Controller,
-		enableIngressRegionalExternal: enableIngressRegionalExternal,
-		stopCh:                        stopCh,
-		logger:                        logger,
+		client:                         kubeClient,
+		manager:                        manager,
+		gcPeriod:                       gcPeriod,
+		recorder:                       recorder,
+		zoneGetter:                     zoneGetter,
+		namer:                          namer,
+		l4Namer:                        l4Namer,
+		defaultBackendService:          defaultBackendService,
+		hasSynced:                      hasSynced,
+		ingressLister:                  ingressInformer.GetIndexer(),
+		serviceLister:                  serviceInformer.GetIndexer(),
+		networkResolver:                network.NewNetworksResolver(networkIndexer, gkeNetworkParamSetIndexer, cloud, enableMultiNetworking, logger),
+		serviceQueue:                   workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_service_queue"),
+		endpointQueue:                  workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_endpoint_queue"),
+		nodeQueue:                      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_node_queue"),
+		syncTracker:                    utils.NewTimeTracker(),
+		reflector:                      reflector,
+		syncerMetrics:                  syncerMetrics,
+		runL4ForILB:                    runL4Controller,
+		enableIngressRegionalExternal:  enableIngressRegionalExternal,
+		enableMultiSubnetClusterPhase1: enableMultiSubnetClusterPhase1,
+		runL4ForNetLB:                  runL4ForNetLB,
+		stopCh:                         stopCh,
+		logger:                         logger,
+	}
+	if enableMultiSubnetClusterPhase1 {
+		negController.nodeTopologyQueue = workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_node_topology_queue")
 	}
 
 	ingressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -322,6 +342,31 @@ func NewController(
 			}
 		},
 	})
+	if enableMultiSubnetClusterPhase1 {
+		nodeTopologyInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				crd := obj.(*nodetopologyv1.NodeTopology)
+				negController.enqueueNodeTopology(crd)
+			},
+			UpdateFunc: func(old, cur interface{}) {
+				oldCrd := old.(*nodetopologyv1.NodeTopology)
+				currentCrd := cur.(*nodetopologyv1.NodeTopology)
+
+				var zoneChanged, subnetChanged bool
+				if isZoneChanged(oldCrd.Status.Zones, currentCrd.Status.Zones) {
+					logger.Info("Zones in Node Topology CR have changed", "oldZones", oldCrd.Status.Zones, "currentZones", currentCrd.Status.Zones)
+					zoneChanged = true
+				}
+				if isSubnetChanged(oldCrd.Status.Subnets, currentCrd.Status.Subnets) {
+					logger.Info("Subnets in Node Topology CR have changed", "oldSubnets", oldCrd.Status.Subnets, "currentSubnets", currentCrd.Status.Subnets)
+					subnetChanged = true
+				}
+				if zoneChanged || subnetChanged {
+					negController.enqueueNodeTopology(currentCrd)
+				}
+			},
+		})
+	}
 
 	if enableAsm {
 		negController.enableASM = enableAsm
@@ -346,6 +391,9 @@ func (c *Controller) Run() {
 	go wait.Until(c.serviceWorker, time.Second, c.stopCh)
 	go wait.Until(c.endpointWorker, time.Second, c.stopCh)
 	go wait.Until(c.nodeWorker, time.Second, c.stopCh)
+	if c.enableMultiSubnetClusterPhase1 {
+		go wait.Until(c.nodeTopologyWorker, time.Second, c.stopCh)
+	}
 	go func() {
 		// Wait for gcPeriod to run the first GC
 		// This is to make sure that all services are fully processed before running GC.
@@ -375,6 +423,9 @@ func (c *Controller) stop() {
 	c.serviceQueue.ShutDown()
 	c.endpointQueue.ShutDown()
 	c.nodeQueue.ShutDown()
+	if c.enableMultiSubnetClusterPhase1 {
+		c.nodeTopologyQueue.ShutDown()
+	}
 	c.manager.ShutDown()
 }
 
@@ -503,10 +554,9 @@ func (c *Controller) processService(key string) error {
 		}
 	}
 
-	if c.runL4 {
-		if err := c.mergeVmIpNEGsPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap, &negUsage, networkInfo); err != nil {
-			return err
-		}
+	// Create L4 PortInfo if ILB subsetting is enabled or a NetLB service needs NEG backends.
+	if err := c.mergeVmIpNEGsPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap, &negUsage, networkInfo); err != nil {
+		return err
 	}
 	if len(svcPortInfoMap) != 0 {
 		c.logger.V(2).Info("Syncing service", "service", key)
@@ -529,6 +579,33 @@ func (c *Controller) processService(key string) error {
 
 	// delete the annotation
 	return c.syncNegStatusAnnotation(namespace, name, make(negtypes.PortInfoMap))
+}
+
+func (c *Controller) nodeTopologyWorker() {
+	for {
+		func() {
+			key, quit := c.nodeTopologyQueue.Get()
+			if quit {
+				return
+			}
+			c.processNodeTopology()
+			// Node Topology CR is a cluster-wide resource, so the key will
+			// always be the same.
+			// Done() ensures that if the item is updated while it is being
+			// process, it will be re-added to the queue for re-processing,
+			// so we won't miss any updates.
+			c.nodeTopologyQueue.Done(key)
+		}()
+	}
+}
+
+// processNodeTopology signals all syncers to sync
+func (c *Controller) processNodeTopology() {
+	defer func() {
+		now := c.syncTracker.Track()
+		metrics.LastSyncTimestamp.Set(float64(now.UTC().UnixNano()))
+	}()
+	c.manager.SyncAllSyncers()
 }
 
 // mergeIngressPortInfo merges Ingress PortInfo into portInfoMap if the service has Enable Ingress annotation.
@@ -594,16 +671,16 @@ func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name ty
 	return nil
 }
 
-// mergeVmIpNEGsPortInfo merges the PortInfo for ILB and multinet NetLB services using GCE_VM_IP NEGs into portInfoMap
+// mergeVmIpNEGsPortInfo merges the PortInfo for ILB, multinet NetLB and NetLB V3 (variant with NEG default) services using GCE_VM_IP NEGs into portInfoMap
 func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap, negUsage *metricscollector.NegServiceState, networkInfo *network.NetworkInfo) error {
 	wantsILB, _ := annotations.WantsL4ILB(service)
-	wantsNetLB, _ := annotations.WantsL4NetLB(service)
-	needsNEGForNetLB := wantsNetLB && !networkInfo.IsDefault && annotations.HasRBSAnnotation(service)
-	if !wantsILB && !needsNEGForNetLB {
+	needsNEGForILB := c.runL4ForILB && wantsILB
+	needsNEGForNetLB := c.netLBServiceNeedsNEG(service, networkInfo)
+	if !needsNEGForILB && !needsNEGForNetLB {
 		return nil
 	}
 	// Only process ILB services after L4 controller has marked it with v2 finalizer.
-	if wantsILB && !utils.IsSubsettingL4ILBService(service) {
+	if needsNEGForILB && !utils.IsSubsettingL4ILBService(service) {
 		msg := fmt.Sprintf("Ignoring ILB Service %s, namespace %s as it does not have the v2 finalizer", service.Name, service.Namespace)
 		c.logger.Info(msg)
 		c.recorder.Eventf(service, apiv1.EventTypeWarning, "ProcessServiceSkipped", msg)
@@ -619,8 +696,32 @@ func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.Na
 	onlyLocal := helpers.RequestsOnlyLocalTraffic(service)
 	// Update usage metrics.
 	negUsage.VmIpNeg = metricscollector.NewVmIpNegType(onlyLocal)
+	var l4LBType negtypes.L4LBType
+	if needsNEGForILB {
+		l4LBType = negtypes.L4InternalLB
+	} else {
+		l4LBType = negtypes.L4ExternalLB
+	}
 
-	return portInfoMap.Merge(negtypes.NewPortInfoMapForVMIPNEG(name.Namespace, name.Name, c.l4Namer, onlyLocal, networkInfo))
+	return portInfoMap.Merge(negtypes.NewPortInfoMapForVMIPNEG(name.Namespace, name.Name, c.l4Namer, onlyLocal, networkInfo, l4LBType))
+}
+
+// netLBServiceNeedsNEG determines if NEGs need to be created for L4 NetLB.
+// - service must be an L4 External Load Balancer service
+// - service must have the RBS annotation
+// - service is a multinetwork service on a non default network OR NEGs are enabled and V3 finalizer is present.
+func (c *Controller) netLBServiceNeedsNEG(service *apiv1.Service, networkInfo *network.NetworkInfo) bool {
+	wantsNetLB, _ := annotations.WantsL4NetLB(service)
+	if !wantsNetLB {
+		return false
+	}
+	if !annotations.HasRBSAnnotation(service) {
+		return false
+	}
+	if !networkInfo.IsDefault {
+		return true
+	}
+	return c.runL4ForNetLB && utils.HasL4NetLBFinalizerV3(service)
 }
 
 // mergeDefaultBackendServicePortInfoMap merge the PortInfoMap for the default backend service into portInfoMap
@@ -817,6 +918,17 @@ func (c *Controller) enqueueIngressServices(ing *v1.Ingress) {
 	if ing.Spec.DefaultBackend == nil {
 		c.enqueueService(cache.ExplicitKey(c.defaultBackendService.ID.Service.String()))
 	}
+}
+
+func (c *Controller) enqueueNodeTopology(obj interface{}) {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+	if err != nil {
+		c.logger.Error(err, "Failed to generate Node Topology key")
+		metrics.PublishNegControllerErrorCountMetrics(err, true)
+		return
+	}
+	c.logger.V(3).Info("Adding NodeTopology to nodeTopologyQueue for processing", "nodeTopology", key)
+	c.nodeTopologyQueue.Add(key)
 }
 
 func (c *Controller) gc() {

@@ -37,7 +37,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// TestLocalGetEndpointSet verifies the GetEndpointSet method implemented by the LocalL4ILBEndpointsCalculator.
+// TestLocalGetEndpointSet verifies the GetEndpointSet method implemented by the LocalL4EndpointsCalculator.
 // The L7 implementation is tested in TestToZoneNetworkEndpointMapUtil.
 func TestLocalGetEndpointSet(t *testing.T) {
 	t.Parallel()
@@ -134,7 +134,7 @@ func TestLocalGetEndpointSet(t *testing.T) {
 	}
 	svcKey := fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace)
 	for _, tc := range testCases {
-		ec := NewLocalL4ILBEndpointsCalculator(listers.NewNodeLister(nodeInformer.GetIndexer()), zoneGetter, svcKey, klog.TODO(), &tc.network)
+		ec := NewLocalL4EndpointsCalculator(listers.NewNodeLister(nodeInformer.GetIndexer()), zoneGetter, svcKey, klog.TODO(), &tc.network, negtypes.L4InternalLB)
 		updateNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeAnnotationsMap, tc.nodeReadyStatusMap, nodeInformer.GetIndexer())
 		retSet, _, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
 		if err != nil {
@@ -168,7 +168,7 @@ func nodeInterfacesAnnotation(t *testing.T, network, ip string) string {
 	return annotation
 }
 
-// TestClusterGetEndpointSet verifies the GetEndpointSet method implemented by the ClusterL4ILBEndpointsCalculator.
+// TestClusterGetEndpointSet verifies the GetEndpointSet method implemented by the ClusterL4EndpointsCalculator.
 func TestClusterGetEndpointSet(t *testing.T) {
 	t.Parallel()
 	nodeInformer := zonegetter.FakeNodeInformer()
@@ -272,7 +272,7 @@ func TestClusterGetEndpointSet(t *testing.T) {
 	}
 	svcKey := fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace)
 	for _, tc := range testCases {
-		ec := NewClusterL4ILBEndpointsCalculator(listers.NewNodeLister(nodeInformer.GetIndexer()), zoneGetter, svcKey, klog.TODO(), &tc.network)
+		ec := NewClusterL4EndpointsCalculator(listers.NewNodeLister(nodeInformer.GetIndexer()), zoneGetter, svcKey, klog.TODO(), &tc.network, negtypes.L4InternalLB)
 		updateNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeAnnotationsMap, tc.nodeReadyStatusMap, nodeInformer.GetIndexer())
 		retSet, _, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
 		if err != nil {
@@ -352,8 +352,8 @@ func TestValidateEndpoints(t *testing.T) {
 	zoneGetterMSC := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, defaultTestSubnetURL, true)
 	L7EndpointsCalculatorMSC := NewL7EndpointsCalculator(zoneGetterMSC, podLister, nodeLister, serviceLister, svcPort, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics())
 	L7EndpointsCalculatorMSC.enableMultiSubnetCluster = true
-	L4LocalEndpointCalculator := NewLocalL4ILBEndpointsCalculator(listers.NewNodeLister(nodeLister), zoneGetter, fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace), klog.TODO(), &network.NetworkInfo{})
-	L4ClusterEndpointCalculator := NewClusterL4ILBEndpointsCalculator(listers.NewNodeLister(nodeLister), zoneGetter, fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace), klog.TODO(), &network.NetworkInfo{})
+	L4LocalEndpointCalculator := NewLocalL4EndpointsCalculator(listers.NewNodeLister(nodeLister), zoneGetter, fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace), klog.TODO(), &network.NetworkInfo{}, negtypes.L4InternalLB)
+	L4ClusterEndpointCalculator := NewClusterL4EndpointsCalculator(listers.NewNodeLister(nodeLister), zoneGetter, fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace), klog.TODO(), &network.NetworkInfo{}, negtypes.L4InternalLB)
 
 	l7TestEPS := []*discovery.EndpointSlice{
 		{

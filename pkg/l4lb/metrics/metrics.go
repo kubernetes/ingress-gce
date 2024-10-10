@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/klog/v2"
 )
 
@@ -51,6 +52,11 @@ var (
 		"sync_type",       // whether this is a new service, update or delete
 		"periodic_resync", // whether the sync was periodic resync or a update caused by a resource change
 	}
+
+	l4SyncLatencyNetLBSpecificMetricLabels = []string{
+		"backend_type", // type of the backends of the LB (IG or NEG)
+	}
+
 	l4LBSyncLatencyMetricsLabels          = append(l4LBSyncLatencyCommonMetricLabels, l4WeightedLBPodsPerNodeMetricName)
 	l4LBDualStackSyncLatencyMetricsLabels = append(l4LBSyncLatencyCommonMetricLabels, "ip_families")
 	l4LBSyncErrorMetricLabels             = []string{
@@ -113,7 +119,7 @@ var (
 			// using funny starter bucket, 0.9375s will only add buckets to existing metric, this is a safe operation in most time series db
 			Buckets: prometheus.ExponentialBuckets(0.9375, 2, 15),
 		},
-		l4LBSyncLatencyMetricsLabels,
+		append(l4LBSyncLatencyMetricsLabels, l4SyncLatencyNetLBSpecificMetricLabels...),
 	)
 	l4NetLBDualStackSyncLatency = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -248,8 +254,8 @@ func PublishL4ILBMultiNetSyncLatency(success bool, syncType string, startTime ti
 }
 
 // PublishNetLBSyncMetrics exports metrics related to the L4 NetLB sync.
-func PublishNetLBSyncMetrics(success bool, syncType, gceResource, errType string, startTime time.Time, isResync bool, isWeightedLB bool) {
-	publishL4NetLBSync(success, syncType, startTime, isResync, isWeightedLB)
+func PublishNetLBSyncMetrics(success bool, syncType, gceResource, errType string, startTime time.Time, isResync bool, isWeightedLB bool, l4BackendType metrics.L4BackendType) {
+	publishL4NetLBSync(success, syncType, startTime, isResync, isWeightedLB, l4BackendType)
 	if !success {
 		publishL4NetLBSyncErrorCount(syncType, gceResource, errType, isWeightedLB)
 	}
@@ -270,12 +276,12 @@ func publishL4ILBSyncErrorCount(syncType, gceResource, errorType string, isWeigh
 }
 
 // publishL4NetLBSync exports latency metrics for L4 NetLB service after sync.
-func publishL4NetLBSync(success bool, syncType string, startTime time.Time, isResync bool, isWeightedLB bool) {
+func publishL4NetLBSync(success bool, syncType string, startTime time.Time, isResync bool, isWeightedLB bool, backendType metrics.L4BackendType) {
 	status := statusSuccess
 	if !success {
 		status = statusError
 	}
-	l4NetLBSyncLatency.WithLabelValues(status, syncType, strconv.FormatBool(isResync), strconv.FormatBool(isWeightedLB)).Observe(time.Since(startTime).Seconds())
+	l4NetLBSyncLatency.WithLabelValues(status, syncType, strconv.FormatBool(isResync), strconv.FormatBool(isWeightedLB), string(backendType)).Observe(time.Since(startTime).Seconds())
 }
 
 // PublishL4NetLBDualStackSyncLatency exports the given sync latency datapoint.

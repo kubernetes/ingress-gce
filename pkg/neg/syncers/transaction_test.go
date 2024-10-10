@@ -1327,13 +1327,14 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 	}
 }
 
-// TestUpdateInitStatus iterates over different zone transition situation, and
-// check if NEG Object Reference in the corresponding zone has the expected State.
-func TestUpdateInitStatus(t *testing.T) {
-	t.Parallel()
+// TestUpdateInitStatusWithMultiSubnetCluster iterates over different zone
+// transition situation, and checks if NEG Object Reference in the corresponding
+// zone has the expected State.
+func TestUpdateInitStatusWithMultiSubnetCluster(t *testing.T) {
 	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
 	testSubnetwork := cloud.ResourcePath("subnetwork", &meta.Key{Name: "test-subnetwork"})
 	testNegType := negtypes.VmIpPortEndpointType
+	flags.F.EnableMultiSubnetClusterPhase1 = true
 
 	// Active zones: zone1, zone2.
 	// Inactive zones: zone3
@@ -2456,7 +2457,7 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 		testContext.SvcNegInformer.GetIndexer(),
 		reflector,
 		GetEndpointsCalculator(testContext.PodInformer.GetIndexer(), testContext.NodeInformer.GetIndexer(), testContext.ServiceInformer.GetIndexer(),
-			fakeZoneGetter, svcPort, mode, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics(), &network.NetworkInfo{IsDefault: true}),
+			fakeZoneGetter, svcPort, mode, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics(), &network.NetworkInfo{IsDefault: true}, negtypes.L4InternalLB),
 		string(kubeSystemUID),
 		testContext.SvcNegClient,
 		metricscollector.FakeSyncerMetrics(),
@@ -2619,13 +2620,16 @@ func negObjectReferences(cloud negtypes.NetworkEndpointGroupCloud, state negv1be
 
 // getNegObjectReference returns objectReference for NEG CRs from NEG Object
 func getNegObjectReference(neg *composite.NetworkEndpointGroup, negState negv1beta1.NegState) negv1beta1.NegObjectReference {
-	return negv1beta1.NegObjectReference{
+	negRef := negv1beta1.NegObjectReference{
 		Id:                  fmt.Sprint(neg.Id),
 		SelfLink:            neg.SelfLink,
 		NetworkEndpointType: negv1beta1.NetworkEndpointType(neg.NetworkEndpointType),
-		State:               negState,
-		SubnetURL:           neg.Subnetwork,
 	}
+	if flags.F.EnableMultiSubnetClusterPhase1 {
+		negRef.State = negState
+		negRef.SubnetURL = neg.Subnetwork
+	}
+	return negRef
 }
 
 // checks the NEG Description on the cloud NEG Object and verifies with expected

@@ -49,8 +49,6 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 	informerfrontendconfig "k8s.io/ingress-gce/pkg/frontendconfig/client/informers/externalversions/frontendconfig/v1beta1"
-	ingparamsclient "k8s.io/ingress-gce/pkg/ingparams/client/clientset/versioned"
-	informeringparams "k8s.io/ingress-gce/pkg/ingparams/client/informers/externalversions/ingparams/v1beta1"
 	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/metrics"
 	serviceattachmentclient "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned"
@@ -99,8 +97,6 @@ type ControllerContext struct {
 	EndpointSliceInformer    cache.SharedIndexInformer
 	ConfigMapInformer        cache.SharedIndexInformer
 	SvcNegInformer           cache.SharedIndexInformer
-	IngClassInformer         cache.SharedIndexInformer
-	IngParamsInformer        cache.SharedIndexInformer
 	SAInformer               cache.SharedIndexInformer
 	FirewallInformer         cache.SharedIndexInformer
 	NetworkInformer          cache.SharedIndexInformer
@@ -150,6 +146,8 @@ type ControllerContextConfig struct {
 	EnableWeightedL4NetLB         bool
 	EnableZonalAffinity           bool
 	DisableL4LBFirewall           bool
+	EnableL4NetLBNEGs             bool
+	EnableL4NetLBNEGsDefault      bool
 }
 
 // NewControllerContext returns a new shared set of informers.
@@ -159,7 +157,6 @@ func NewControllerContext(
 	frontendConfigClient frontendconfigclient.Interface,
 	firewallClient firewallclient.Interface,
 	svcnegClient svcnegclient.Interface,
-	ingParamsClient ingparamsclient.Interface,
 	saClient serviceattachmentclient.Interface,
 	networkClient networkclient.Interface,
 	nodeTopologyClient nodetopologyclient.Interface,
@@ -211,10 +208,6 @@ func NewControllerContext(
 	if config.FrontendConfigEnabled {
 		context.FrontendConfigInformer = informerfrontendconfig.NewFrontendConfigInformer(frontendConfigClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
 	}
-	if ingParamsClient != nil {
-		context.IngClassInformer = informernetworking.NewIngressClassInformer(kubeClient, config.ResyncPeriod, utils.NewNamespaceIndexer())
-		context.IngParamsInformer = informeringparams.NewGCPIngressParamsInformer(ingParamsClient, config.ResyncPeriod, utils.NewNamespaceIndexer())
-	}
 
 	if saClient != nil {
 		context.SAInformer = informerserviceattachment.NewServiceAttachmentInformer(saClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
@@ -229,8 +222,12 @@ func NewControllerContext(
 		context.RegionalCluster = true
 	}
 
-	if flags.F.EnableMultiSubnetClusterPhase1 && nodeTopologyClient != nil {
-		context.NodeTopologyInformer = informernodetopology.NewNodeTopologyInformer(nodeTopologyClient, config.ResyncPeriod, utils.NewNamespaceIndexer())
+	if flags.F.EnableMultiSubnetClusterPhase1 {
+		if nodeTopologyClient != nil {
+			context.NodeTopologyInformer = informernodetopology.NewFilteredNodeTopologyInformer(nodeTopologyClient, config.ResyncPeriod, utils.NewNamespaceIndexer(), func(listOptions *metav1.ListOptions) {
+				listOptions.FieldSelector = fmt.Sprintf("metadata.name=%s", flags.F.NodeTopologyCRName)
+			})
+		}
 	}
 
 	// Do not trigger periodic resync on EndpointSlices object.
@@ -316,14 +313,6 @@ func (ctx *ControllerContext) HasSynced() bool {
 
 	if ctx.ConfigMapInformer != nil {
 		funcs = append(funcs, ctx.ConfigMapInformer.HasSynced)
-	}
-
-	if ctx.IngClassInformer != nil {
-		funcs = append(funcs, ctx.IngClassInformer.HasSynced)
-	}
-
-	if ctx.IngParamsInformer != nil {
-		funcs = append(funcs, ctx.IngParamsInformer.HasSynced)
 	}
 
 	if ctx.SAInformer != nil {
@@ -418,12 +407,6 @@ func (ctx *ControllerContext) Start(stopCh <-chan struct{}) {
 	if ctx.SvcNegInformer != nil {
 		go ctx.SvcNegInformer.Run(stopCh)
 	}
-	if ctx.IngClassInformer != nil {
-		go ctx.IngClassInformer.Run(stopCh)
-	}
-	if ctx.IngParamsInformer != nil {
-		go ctx.IngParamsInformer.Run(stopCh)
-	}
 	if ctx.SAInformer != nil {
 		go ctx.SAInformer.Run(stopCh)
 	}
@@ -432,6 +415,9 @@ func (ctx *ControllerContext) Start(stopCh <-chan struct{}) {
 	}
 	if ctx.GKENetworkParamsInformer != nil {
 		go ctx.GKENetworkParamsInformer.Run(stopCh)
+	}
+	if ctx.NodeTopologyInformer != nil {
+		go ctx.NodeTopologyInformer.Run(stopCh)
 	}
 	// Export ingress usage metrics.
 	go ctx.ControllerMetrics.Run(stopCh)
