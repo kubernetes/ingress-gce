@@ -287,6 +287,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service, svcLo
 		EnableWeightedLB:                 l4c.ctx.EnableWeightedL4ILB,
 		DisableNodesFirewallProvisioning: l4c.ctx.DisableL4LBFirewall,
 		EnableMixedProtocol:              l4c.ctx.EnableL4ILBMixedProtocol,
+		EnableZonalAffinity:              l4c.ctx.EnableL4ILBZonalAffinity,
 	}
 	l4 := loadbalancers.NewL4Handler(l4ilbParams, svcLogger)
 	syncResult := l4.EnsureInternalLoadBalancer(utils.GetNodeNames(nodes), service)
@@ -369,6 +370,7 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service, svc
 		EnableWeightedLB:                 l4c.ctx.EnableWeightedL4ILB,
 		DisableNodesFirewallProvisioning: l4c.ctx.DisableL4LBFirewall,
 		EnableMixedProtocol:              l4c.ctx.EnableL4ILBMixedProtocol,
+		EnableZonalAffinity:              l4c.ctx.EnableL4ILBZonalAffinity,
 	}
 	l4 := loadbalancers.NewL4Handler(l4ilbParams, svcLogger)
 	l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer", "Deleting load balancer for %s", key)
@@ -577,6 +579,11 @@ func (l4c *L4Controller) needsUpdate(oldService *v1.Service, newService *v1.Serv
 	if oldService.Spec.HealthCheckNodePort != newService.Spec.HealthCheckNodePort {
 		recorder.Eventf(newService, v1.EventTypeNormal, "HealthCheckNodePort", "%v -> %v",
 			oldService.Spec.HealthCheckNodePort, newService.Spec.HealthCheckNodePort)
+		return true
+	}
+	if oldService.Spec.TrafficDistribution != newService.Spec.TrafficDistribution {
+		recorder.Eventf(newService, v1.EventTypeNormal, "TrafficDistribution", "%v -> %v",
+			oldService.Spec.TrafficDistribution, newService.Spec.TrafficDistribution)
 		return true
 	}
 	if l4c.enableDualStack && !reflect.DeepEqual(oldService.Spec.IPFamilies, newService.Spec.IPFamilies) {
