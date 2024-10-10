@@ -1354,7 +1354,7 @@ func assertNetLBResources(t *testing.T, l4NetLB *L4NetLB, nodeNames []string) {
 
 	backendService, err := getAndVerifyNetLBBackendService(l4NetLB, healthcheck)
 	if err != nil {
-		t.Errorf("getAndVerifyNetLBBackendService(_, %v) returned error %v, want nil", healthcheck, err)
+		t.Fatalf("getAndVerifyNetLBBackendService(_, %v) returned error %v, want nil", healthcheck, err)
 	}
 
 	err = verifyNetLBIPv4ForwardingRule(l4NetLB, backendService.SelfLink)
