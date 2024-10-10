@@ -30,6 +30,7 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
@@ -112,7 +113,7 @@ func (l4 *L4) buildExpectedIPv6ForwardingRule(bsLink string, options gce.ILBOpti
 		AllowGlobalAccess:   options.AllowGlobalAccess,
 		NetworkTier:         cloud.NetworkTierPremium.ToGCEValue(),
 	}
-	if len(ports) > maxL4ILBPorts {
+	if len(ports) > maxForwardedPorts {
 		fr.Ports = nil
 		fr.AllPorts = true
 	}
@@ -252,18 +253,24 @@ func (l4netlb *L4NetLB) buildExpectedIPv6ForwardingRule(bsLink, ipv6AddressToUse
 	}
 
 	svcPorts := l4netlb.Service.Spec.Ports
-	portRange, protocol := utils.MinMaxPortRangeAndProtocol(svcPorts)
+	ports := utils.GetPorts(svcPorts)
+	portRange := utils.MinMaxPortRange(svcPorts)
+	protocol := utils.GetProtocol(svcPorts)
 	fr := &composite.ForwardingRule{
 		Name:                frName,
 		Description:         frDesc,
 		IPAddress:           ipv6AddressToUse,
-		IPProtocol:          protocol,
+		IPProtocol:          string(protocol),
 		PortRange:           portRange,
 		LoadBalancingScheme: string(cloud.SchemeExternal),
 		BackendService:      bsLink,
 		IpVersion:           IPVersionIPv6,
 		NetworkTier:         netTier.ToGCEValue(),
 		Subnetwork:          subnetworkURL,
+	}
+	if len(ports) <= maxForwardedPorts && flags.F.EnableDiscretePortForwarding {
+		fr.Ports = utils.GetPorts(svcPorts)
+		fr.PortRange = ""
 	}
 
 	return fr, nil
@@ -292,7 +299,7 @@ func EqualIPv6ForwardingRules(fr1, fr2 *composite.ForwardingRule) (bool, error) 
 	}
 	return fr1.IPProtocol == fr2.IPProtocol &&
 		fr1.LoadBalancingScheme == fr2.LoadBalancingScheme &&
-		utils.EqualStringSets(fr1.Ports, fr2.Ports) &&
+		equalPorts(fr1.Ports, fr2.Ports, fr1.PortRange, fr2.PortRange) &&
 		utils.EqualCloudResourceIDs(id1, id2) &&
 		fr1.AllowGlobalAccess == fr2.AllowGlobalAccess &&
 		fr1.AllPorts == fr2.AllPorts &&
