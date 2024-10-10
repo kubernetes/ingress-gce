@@ -35,6 +35,9 @@ const (
 	DefaultConnectionDrainingTimeoutSeconds = 30
 	defaultTrackingMode                     = "PER_CONNECTION"
 	PerSessionTrackingMode                  = "PER_SESSION" // the only one supported with strong session affinity
+	ZonalAffinityEnabledSpillover           = "ZONAL_AFFINITY_SPILL_CROSS_ZONE"
+	DefaultZonalAffinitySpilloverRatio      = 0
+	ZonalAffinityDisabledSpillover          = "ZONAL_AFFINITY_DISABLED"
 )
 
 // LocalityLBPolicyType is the type of locality lb policy the backend service should use.
@@ -90,6 +93,36 @@ type L4BackendServiceParams struct {
 	NetworkInfo              *network.NetworkInfo
 	ConnectionTrackingPolicy *composite.BackendServiceConnectionTrackingPolicy
 	LocalityLbPolicy         LocalityLBPolicyType
+	EnableZonalAffinity      bool
+}
+
+var versionPrecedence = map[meta.Version]int{
+	meta.VersionAlpha: 2,
+	meta.VersionBeta:  1,
+	meta.VersionGA:    0,
+}
+
+// selectApiVersionForUpdate selects the appropriate API version for updating a backend service.
+// It compares the current API version (potentially retrieved from the service's description) with the expected API version.
+// The function returns the API version with the higher feature set to ensure no functionality is lost during the update.
+func selectApiVersionForUpdate(current, expected meta.Version) meta.Version {
+	precedenceCurrent, okCurrent := versionPrecedence[current]
+	precedenceExpected, okExpected := versionPrecedence[expected]
+
+	if !okCurrent {
+		precedenceCurrent = 0
+		current = meta.VersionGA
+	}
+
+	if !okExpected {
+		precedenceExpected = 0
+		expected = meta.VersionGA
+	}
+
+	if precedenceCurrent > precedenceExpected {
+		return current
+	}
+	return expected
 }
 
 // ensureDescription updates the BackendService Description with the expected value
@@ -327,6 +360,14 @@ func (p *Pool) DeleteSignedURLKey(be *composite.BackendService, keyName string, 
 	return nil
 }
 
+// apiVersionRequiredbyServiceFeatures to create a backend service with the given params
+func apiVersionRequiredbyServiceFeatures(params L4BackendServiceParams) meta.Version {
+	if params.EnableZonalAffinity {
+		return meta.VersionBeta
+	}
+	return meta.VersionGA
+}
+
 // EnsureL4BackendService creates or updates the backend service with the given name.
 func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger klog.Logger) (*composite.BackendService, utils.ResourceSyncStatus, error) {
 	start := time.Now()
@@ -342,11 +383,14 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 	if err != nil {
 		return nil, utils.ResourceResync, err
 	}
-	currentBS, err := composite.GetBackendService(p.cloud, key, meta.VersionGA, beLogger)
+	expectedVersion := apiVersionRequiredbyServiceFeatures(params)
+
+	currentBS, err := composite.GetBackendService(p.cloud, key, expectedVersion, beLogger)
 	if err != nil && !utils.IsNotFoundError(err) {
 		return nil, utils.ResourceResync, err
 	}
-	desc, err := utils.MakeL4LBServiceDescription(params.NamespacedName.String(), "", meta.VersionGA, false, utils.ILB)
+
+	expectedDesc, err := utils.MakeL4LBServiceDescription(params.NamespacedName.String(), "", expectedVersion, false, utils.ILB)
 	if err != nil {
 		beLogger.Info("EnsureL4BackendService: Failed to generate description for BackendService", "err", err)
 	}
@@ -354,11 +398,20 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 	expectedBS := &composite.BackendService{
 		Name:                params.Name,
 		Protocol:            params.Protocol,
-		Description:         desc,
+		Version:             expectedVersion,
+		Description:         expectedDesc,
 		HealthChecks:        []string{params.HealthCheckLink},
 		SessionAffinity:     utils.TranslateAffinityType(params.SessionAffinity, beLogger),
 		LoadBalancingScheme: params.Scheme,
 		LocalityLbPolicy:    string(params.LocalityLbPolicy),
+	}
+
+	if params.EnableZonalAffinity {
+		beLogger.V(2).Info("EnsureL4BackendService: using Zonal Affinity", "spillover", ZonalAffinityEnabledSpillover, "spilloverRatio", DefaultZonalAffinitySpilloverRatio)
+		expectedBS.NetworkPassThroughLbTrafficPolicy = zonalAffinityEnabledTrafficPolicy()
+	} else {
+		beLogger.V(2).Info("EnsureL4BackendService: not using Zonal Affinity", "spillover", ZonalAffinityDisabledSpillover, "spilloverRatio", DefaultZonalAffinitySpilloverRatio)
+		expectedBS.NetworkPassThroughLbTrafficPolicy = zonalAffinityDisabledTrafficPolicy()
 	}
 
 	// We need this configuration only for Strong Session Affinity feature
@@ -367,7 +420,7 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 		expectedBS.ConnectionTrackingPolicy = params.ConnectionTrackingPolicy
 	}
 	if params.NetworkInfo != nil && !params.NetworkInfo.IsDefault {
-		beLogger.V(2).Info(fmt.Sprintf("EnsureL4BackendService: using non-default network"))
+		beLogger.V(2).Info("EnsureL4BackendService: using non-default network")
 		expectedBS.Network = params.NetworkInfo.NetworkURL
 	}
 	if params.Protocol == string(api_v1.ProtocolTCP) {
@@ -388,7 +441,7 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 		// We need to perform a GCE call to re-fetch the object we just created
 		// so that the "Fingerprint" field is filled in. This is needed to update the
 		// object without error. The lookup is also needed to populate the selfLink.
-		createdBS, err := composite.GetBackendService(p.cloud, key, meta.VersionGA, beLogger)
+		createdBS, err := composite.GetBackendService(p.cloud, key, expectedBS.Version, beLogger)
 		return createdBS, utils.ResourceUpdate, err
 	} else {
 		// TODO(FelipeYepez) remove this check once LocalityLBPolicyMaglev does not require allow lisiting
@@ -398,6 +451,17 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 
 			expectedBS.LocalityLbPolicy = string(LocalityLBPolicyMaglev)
 		}
+
+		// Determine the appropriate API version to use for updating the backend service
+		currentVersion := meta.VersionGA
+		var currentDesc utils.L4LBResourceDescription
+		err = currentDesc.Unmarshal(currentBS.Description)
+		if err != nil {
+			beLogger.V(0).Error(err, "EnsureL4BackendService: error unmarshaling backend service description")
+		} else {
+			currentVersion = currentDesc.APIVersion
+		}
+		expectedBS.Version = selectApiVersionForUpdate(currentVersion, expectedBS.Version)
 	}
 
 	if backendSvcEqual(expectedBS, currentBS, p.useConnectionTrackingPolicy) {
@@ -418,7 +482,7 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 	}
 	beLogger.V(2).Info("EnsureL4BackendService: updated backend service successfully")
 
-	updatedBS, err := composite.GetBackendService(p.cloud, key, meta.VersionGA, beLogger)
+	updatedBS, err := composite.GetBackendService(p.cloud, key, expectedBS.Version, beLogger)
 	return updatedBS, utils.ResourceUpdate, err
 }
 
@@ -447,7 +511,27 @@ func backendSvcEqual(newBS, oldBS *composite.BackendService, compareConnectionTr
 			(newBS.LocalityLbPolicy == string(LocalityLBPolicyDefault) && oldBS.LocalityLbPolicy == string(LocalityLBPolicyMaglev)) ||
 			(newBS.LocalityLbPolicy == string(LocalityLBPolicyMaglev) && oldBS.LocalityLbPolicy == string(LocalityLBPolicyDefault)))
 
+	// If zonal affinity is set, needs to be equal
+	svcsEqual = svcsEqual && zonalAffinityEqual(newBS, oldBS)
 	return svcsEqual
+}
+
+func convertNetworkLbTrafficPolicyToZonalAffinity(trafficPolicy *composite.BackendServiceNetworkPassThroughLbTrafficPolicy) composite.BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity {
+	if trafficPolicy == nil || trafficPolicy.ZonalAffinity == nil {
+		return *zonalAffinityDisabledTrafficPolicy().ZonalAffinity
+	}
+
+	return *trafficPolicy.ZonalAffinity
+}
+
+func zonalAffinityEqual(a, b *composite.BackendService) bool {
+	aZonalAffinity := convertNetworkLbTrafficPolicyToZonalAffinity(a.NetworkPassThroughLbTrafficPolicy)
+	bZonalAffinity := convertNetworkLbTrafficPolicyToZonalAffinity(b.NetworkPassThroughLbTrafficPolicy)
+
+	spilloverEqual := aZonalAffinity.Spillover == bZonalAffinity.Spillover
+	spilloverRatioEqual := aZonalAffinity.SpilloverRatio == bZonalAffinity.SpilloverRatio
+
+	return spilloverEqual && spilloverRatioEqual
 }
 
 // connectionTrackingPolicyEqual returns true if both elements are equal
@@ -459,4 +543,22 @@ func connectionTrackingPolicyEqual(a, b *composite.BackendServiceConnectionTrack
 	return a.TrackingMode == b.TrackingMode &&
 		a.EnableStrongAffinity == b.EnableStrongAffinity &&
 		a.IdleTimeoutSec == b.IdleTimeoutSec
+}
+
+func zonalAffinityEnabledTrafficPolicy() *composite.BackendServiceNetworkPassThroughLbTrafficPolicy {
+	return &composite.BackendServiceNetworkPassThroughLbTrafficPolicy{
+		ZonalAffinity: &composite.BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity{
+			Spillover:      ZonalAffinityEnabledSpillover,
+			SpilloverRatio: DefaultZonalAffinitySpilloverRatio,
+		},
+	}
+}
+
+func zonalAffinityDisabledTrafficPolicy() *composite.BackendServiceNetworkPassThroughLbTrafficPolicy {
+	return &composite.BackendServiceNetworkPassThroughLbTrafficPolicy{
+		ZonalAffinity: &composite.BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity{
+			Spillover:      ZonalAffinityDisabledSpillover,
+			SpilloverRatio: DefaultZonalAffinitySpilloverRatio,
+		},
+	}
 }
