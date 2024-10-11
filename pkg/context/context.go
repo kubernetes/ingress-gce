@@ -223,7 +223,9 @@ func NewControllerContext(
 
 	if flags.F.EnableMultiSubnetClusterPhase1 {
 		if nodeTopologyClient != nil {
-			context.NodeTopologyInformer = informernodetopology.NewNodeTopologyInformer(nodeTopologyClient, config.ResyncPeriod, utils.NewNamespaceIndexer())
+			context.NodeTopologyInformer = informernodetopology.NewFilteredNodeTopologyInformer(nodeTopologyClient, config.ResyncPeriod, utils.NewNamespaceIndexer(), func(listOptions *metav1.ListOptions) {
+				listOptions.FieldSelector = fmt.Sprintf("metadata.name=%s", flags.F.NodeTopologyCRName)
+			})
 		}
 	}
 
@@ -412,6 +414,9 @@ func (ctx *ControllerContext) Start(stopCh <-chan struct{}) {
 	}
 	if ctx.GKENetworkParamsInformer != nil {
 		go ctx.GKENetworkParamsInformer.Run(stopCh)
+	}
+	if ctx.NodeTopologyInformer != nil {
+		go ctx.NodeTopologyInformer.Run(stopCh)
 	}
 	// Export ingress usage metrics.
 	go ctx.ControllerMetrics.Run(stopCh)

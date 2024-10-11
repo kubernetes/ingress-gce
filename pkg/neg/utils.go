@@ -19,7 +19,9 @@ package neg
 import (
 	"fmt"
 
+	nodetopologyv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/neg/types"
 )
@@ -57,4 +59,21 @@ func contains(ss []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func isZoneChanged(oldZones, newZones []string) bool {
+	return !sets.NewString(oldZones...).Equal(sets.NewString(newZones...))
+}
+
+func isSubnetChanged(oldSubnets, newSubnets []nodetopologyv1.SubnetConfig) bool {
+	oldSubnetSet := sets.NewString()
+	newSubnetSet := sets.NewString()
+	for _, oldSubnet := range oldSubnets {
+		oldSubnetSet.Insert(oldSubnet.SubnetPath)
+	}
+	for _, newSubnet := range newSubnets {
+		newSubnetSet.Insert(newSubnet.SubnetPath)
+	}
+
+	return !oldSubnetSet.Equal(newSubnetSet)
 }

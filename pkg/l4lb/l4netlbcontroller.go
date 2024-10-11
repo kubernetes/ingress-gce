@@ -533,6 +533,8 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 		svcLogger.Info("Finished syncing L4 NetLB RBS service", "timeTaken", time.Since(startTime))
 	}()
 
+	usesNegBackends := lc.shouldUseNEGBackends(service)
+
 	l4NetLBParams := &loadbalancers.L4NetLBParams{
 		Service:                          service,
 		Cloud:                            lc.ctx.Cloud,
@@ -543,10 +545,10 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 		NetworkResolver:                  lc.networkResolver,
 		EnableWeightedLB:                 lc.ctx.EnableWeightedL4NetLB,
 		DisableNodesFirewallProvisioning: lc.ctx.DisableL4LBFirewall,
+		UseNEGs:                          usesNegBackends,
 	}
 	l4netlb := loadbalancers.NewL4NetLB(l4NetLBParams, svcLogger)
 
-	usesNegBackends := lc.shouldUseNEGBackends(service)
 	finalizer := common.NetLBFinalizerV2
 	if usesNegBackends {
 		finalizer = common.NetLBFinalizerV3
@@ -819,5 +821,7 @@ func (lc *L4NetLBController) publishSyncMetrics(result *loadbalancers.L4NetLBSyn
 	l4metrics.PublishL4SyncDetails(l4NetLBControllerName, result.Error == nil, isResync, result.GCEResourceUpdate.WereAnyResourcesModified())
 
 	isWeightedLB := result.MetricsState.WeightedLBPodsPerNode
-	l4metrics.PublishNetLBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime, isResync, isWeightedLB)
+	backendType := result.MetricsState.BackendType
+
+	l4metrics.PublishNetLBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime, isResync, isWeightedLB, backendType)
 }

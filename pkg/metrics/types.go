@@ -51,6 +51,11 @@ const StatusUserError = L4ServiceStatus("UserError")
 const StatusError = L4ServiceStatus("Error")
 const StatusPersistentError = L4ServiceStatus("PersistentError")
 
+type L4BackendType string
+
+const L4BackendTypeInstanceGroup = L4BackendType("IG")
+const L4BackendTypeNEG = L4BackendType("NEG")
+
 // L4DualStackServiceLabels defines ipFamilies, ipFamilyPolicy
 // of L4 DualStack service
 type L4DualStackServiceLabels struct {
@@ -68,6 +73,8 @@ type L4FeaturesServiceLabels struct {
 	StrongSessionAffinity bool
 	// WeightedLBPodsPerNode is true if weighted load balancing is enabled by pods per node
 	WeightedLBPodsPerNode bool
+	// BackendType is the type of the backend the LB uses (IGs or NEGs).
+	BackendType L4BackendType
 }
 
 // L4ServiceState tracks the state of an L4 service. It includes data needed to fill various L4 metrics plus the status of the service.
