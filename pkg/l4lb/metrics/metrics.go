@@ -42,7 +42,7 @@ const (
 	l4LastSyncTimeName                             = "l4_last_sync_time"
 	l4LBRemovedFinalizerMetricName                 = "l4_removed_finalizer_count"
 	l4LBControllerPanicsMetricName                 = "l4_controllers_panics_count"
-	L4netlbSyncDetailsMetricName                   = "l4_netlb_sync_details_count"
+	L4SyncDetailsMetricName                        = "l4_sync_details_count"
 	l4WeightedLBPodsPerNodeMetricName              = "l4_weighted_lb_pods_per_node"
 )
 
@@ -183,8 +183,8 @@ var (
 
 	l4LBSyncDetails = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: L4netlbSyncDetailsMetricName,
-			Help: "Details of updates done during a resync",
+			Name: L4SyncDetailsMetricName,
+			Help: "Details of updates done during L4 LB ensure operations",
 		},
 		[]string{"controller_name", "success", "predicted_periodic_resync", "was_update"},
 	)

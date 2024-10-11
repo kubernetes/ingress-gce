@@ -18,7 +18,6 @@ package loadbalancers
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
@@ -89,45 +88,6 @@ type L4NetLBSyncResult struct {
 	SyncType           string
 	StartTime          time.Time
 	GCEResourceUpdate  ResourceUpdates
-}
-
-type ResourceUpdates struct {
-	backendServiceUpdate   utils.ResourceSyncStatus
-	forwardingRuleUpdate   utils.ResourceSyncStatus
-	healthCheckUpdate      utils.ResourceSyncStatus
-	firewallForNodesUpdate utils.ResourceSyncStatus
-	firewallForHCUpdate    utils.ResourceSyncStatus
-}
-
-func (ru *ResourceUpdates) WereAnyResourcesModified() bool {
-	return ru.forwardingRuleUpdate == utils.ResourceUpdate ||
-		ru.backendServiceUpdate == utils.ResourceUpdate ||
-		ru.healthCheckUpdate == utils.ResourceUpdate ||
-		ru.firewallForNodesUpdate == utils.ResourceUpdate ||
-		ru.firewallForHCUpdate == utils.ResourceUpdate
-}
-
-func (ru *ResourceUpdates) String() string {
-	if ru.WereAnyResourcesModified() {
-		var modifiedResources []string
-		if ru.forwardingRuleUpdate == utils.ResourceUpdate {
-			modifiedResources = append(modifiedResources, "forwarding rule")
-		}
-		if ru.backendServiceUpdate == utils.ResourceUpdate {
-			modifiedResources = append(modifiedResources, "backend service")
-		}
-		if ru.healthCheckUpdate == utils.ResourceUpdate {
-			modifiedResources = append(modifiedResources, "health check")
-		}
-		if ru.firewallForNodesUpdate == utils.ResourceUpdate {
-			modifiedResources = append(modifiedResources, "nodes firewall")
-		}
-		if ru.firewallForHCUpdate == utils.ResourceUpdate {
-			modifiedResources = append(modifiedResources, "health check firewall")
-		}
-		return strings.Join(modifiedResources, ",")
-	}
-	return "-"
 }
 
 func NewL4SyncResult(syncType string, svc *corev1.Service, isMultinet bool, enabledStrongSessionAffinity bool, isWeightedLBPodsPerNode bool, useNEGs bool) *L4NetLBSyncResult {
@@ -318,8 +278,8 @@ func (l4netlb *L4NetLB) provideHealthChecks(nodeNames []string, result *L4NetLBS
 func (l4netlb *L4NetLB) provideDualStackHealthChecks(nodeNames []string, result *L4NetLBSyncResult) string {
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(l4netlb.Service)
 	hcResult := l4netlb.healthChecks.EnsureHealthCheckWithDualStackFirewalls(l4netlb.Service, l4netlb.namer, sharedHC, l4netlb.scope, utils.XLB, nodeNames, utils.NeedsIPv4(l4netlb.Service), utils.NeedsIPv6(l4netlb.Service), l4netlb.networkInfo, l4netlb.svcLogger)
-	result.GCEResourceUpdate.healthCheckUpdate = hcResult.WasUpdated
-	result.GCEResourceUpdate.firewallForHCUpdate = hcResult.WasFirewallUpdated
+	result.GCEResourceUpdate.SetHealthCheck(hcResult.WasUpdated)
+	result.GCEResourceUpdate.SetFirewallForHealthCheck(hcResult.WasFirewallUpdated)
 	if hcResult.Err != nil {
 		result.GCEResourceInError = hcResult.GceResourceInError
 		result.Error = hcResult.Err
@@ -339,8 +299,8 @@ func (l4netlb *L4NetLB) provideDualStackHealthChecks(nodeNames []string, result 
 func (l4netlb *L4NetLB) provideIPv4HealthChecks(nodeNames []string, result *L4NetLBSyncResult) string {
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(l4netlb.Service)
 	hcResult := l4netlb.healthChecks.EnsureHealthCheckWithFirewall(l4netlb.Service, l4netlb.namer, sharedHC, l4netlb.scope, utils.XLB, nodeNames, l4netlb.networkInfo, l4netlb.svcLogger)
-	result.GCEResourceUpdate.healthCheckUpdate = hcResult.WasUpdated
-	result.GCEResourceUpdate.firewallForHCUpdate = hcResult.WasFirewallUpdated
+	result.GCEResourceUpdate.SetHealthCheck(hcResult.WasUpdated)
+	result.GCEResourceUpdate.SetFirewallForHealthCheck(hcResult.WasFirewallUpdated)
 	if hcResult.Err != nil {
 		result.GCEResourceInError = hcResult.GceResourceInError
 		result.Error = hcResult.Err
@@ -385,7 +345,7 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 	}
 
 	bs, wasUpdate, err := l4netlb.backendPool.EnsureL4BackendService(backendParams, l4netlb.svcLogger)
-	syncResult.GCEResourceUpdate.backendServiceUpdate = wasUpdate
+	syncResult.GCEResourceUpdate.SetBackendService(wasUpdate)
 	if err != nil {
 		if utils.IsUnsupportedFeatureError(err, strongSessionAffinityFeatureName) {
 			syncResult.GCEResourceInError = annotations.BackendServiceResource
@@ -421,7 +381,7 @@ func (l4netlb *L4NetLB) ensureDualStackResources(result *L4NetLBSyncResult, node
 // - IPv4 Firewall
 func (l4netlb *L4NetLB) ensureIPv4Resources(result *L4NetLBSyncResult, nodeNames []string, bsLink string) {
 	fr, ipAddrType, wasUpdate, err := l4netlb.ensureIPv4ForwardingRule(bsLink)
-	result.GCEResourceUpdate.forwardingRuleUpdate = wasUpdate
+	result.GCEResourceUpdate.SetForwardingRule(wasUpdate)
 	if err != nil {
 		// User can misconfigure the forwarding rule if Network Tier will not match service level Network Tier.
 		result.GCEResourceInError = annotations.ForwardingRuleResource
@@ -483,7 +443,9 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 		NodeNames:         nodeNames,
 		Network:           l4netlb.networkInfo,
 	}
-	result.GCEResourceUpdate.firewallForNodesUpdate, result.Error = firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, &nodesFWRParams, l4netlb.cloud, l4netlb.recorder, fwLogger)
+	var firewallForNodesUpdateStatus utils.ResourceSyncStatus
+	firewallForNodesUpdateStatus, result.Error = firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, &nodesFWRParams, l4netlb.cloud, l4netlb.recorder, fwLogger)
+	result.GCEResourceUpdate.SetFirewallForNodes(firewallForNodesUpdateStatus)
 	if result.Error != nil {
 		result.GCEResourceInError = annotations.FirewallRuleResource
 		result.Error = err
