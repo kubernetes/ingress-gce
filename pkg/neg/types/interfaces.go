@@ -43,6 +43,7 @@ type NetworkEndpointGroupCloud interface {
 // NetworkEndpointGroupNamer is an interface for generating network endpoint group name.
 type NetworkEndpointGroupNamer interface {
 	NEG(namespace, name string, port int32) string
+	NonDefaultSubnetNEG(namespace, name, subnetName string, port int32) string
 	IsNEG(name string) bool
 }
 

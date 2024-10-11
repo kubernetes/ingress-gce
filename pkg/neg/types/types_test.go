@@ -43,6 +43,10 @@ func (*negNamer) IsNEG(name string) bool {
 	return false
 }
 
+func (*negNamer) NonDefaultSubnetNEG(namespace, name, subnetName string, svcPort int32) string {
+	return fmt.Sprintf("%v-%v-%v-%v", namespace, name, svcPort, subnetName)
+}
+
 func TestPortInfoMapMerge(t *testing.T) {
 	namer := &negNamer{}
 	namespace := "namespace"

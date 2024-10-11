@@ -57,6 +57,9 @@ type BackendNamer interface {
 	// NEG returns the gce neg name based on the service namespace, name
 	// and target port.
 	NEG(namespace, name string, Port int32) string
+	// NonDefaultSubnetNEG returns the gce neg name for NEGs created in non-default
+	// subnet.
+	NonDefaultSubnetNEG(namespace, name, subnetName string, port int32) string
 	// RXLBBackendName returns the Regional External Ingress backend name,
 	// based on the service namespace, name and target port.
 	RXLBBackendName(namespace, name string, port int32) string
