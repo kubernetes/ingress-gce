@@ -180,6 +180,10 @@ func NewController(
 		apiv1.EventSource{Component: "neg-controller"})
 
 	syncerMetrics := syncMetrics.NewNegMetricsCollector(flags.F.NegMetricsExportInterval, logger)
+	var nodeTopologyIndexer cache.Indexer
+	if flags.F.EnableMultiSubnetClusterPhase1 {
+		nodeTopologyIndexer = nodeTopologyInformer.GetIndexer()
+	}
 	manager := newSyncerManager(
 		namer,
 		recorder,
@@ -192,6 +196,7 @@ func NewController(
 		endpointSliceInformer.GetIndexer(),
 		nodeInformer.GetIndexer(),
 		svcNegInformer.GetIndexer(),
+		nodeTopologyIndexer,
 		syncerMetrics,
 		enableNonGcpMode,
 		enableDualStackNEG,

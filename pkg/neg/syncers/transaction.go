@@ -81,6 +81,7 @@ type transactionSyncer struct {
 	endpointSliceLister cache.Indexer
 	nodeLister          cache.Indexer
 	svcNegLister        cache.Indexer
+	nodeTopologyLister  cache.Indexer
 	recorder            record.EventRecorder
 	cloud               negtypes.NetworkEndpointGroupCloud
 	zoneGetter          *zonegetter.ZoneGetter
@@ -144,6 +145,7 @@ func NewTransactionSyncer(
 	endpointSliceLister cache.Indexer,
 	nodeLister cache.Indexer,
 	svcNegLister cache.Indexer,
+	nodeTopologyLister cache.Indexer,
 	reflector readiness.Reflector,
 	epc negtypes.NetworkEndpointsCalculator,
 	kubeSystemUID string,
@@ -169,6 +171,7 @@ func NewTransactionSyncer(
 		serviceLister:             serviceLister,
 		endpointSliceLister:       endpointSliceLister,
 		svcNegLister:              svcNegLister,
+		nodeTopologyLister:        nodeTopologyLister,
 		recorder:                  recorder,
 		cloud:                     cloud,
 		zoneGetter:                zoneGetter,
