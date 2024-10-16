@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Run glbc. First run `run-local.sh` to set things up.
+# Run glbc. First run `setup-local.sh` to set things up.
 #
 # Files touched: /tmp/kubectl-proxy.log /tmp/glbc.log
 
