@@ -18,12 +18,13 @@ package instancegroups
 
 import (
 	"fmt"
-	apiv1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/ingress-gce/pkg/utils"
 	"net/http"
 	"strings"
 	"testing"
+
+	apiv1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/ingress-gce/pkg/utils"
 
 	"google.golang.org/api/googleapi"
 	"k8s.io/klog/v2"
@@ -60,6 +61,103 @@ func newNodePool(f Provider, maxIGSize int) Manager {
 		MaxIGSize:  maxIGSize,
 	})
 	return pool
+}
+
+func getNodeNames(nodes map[string]string) []string {
+	names := make([]string, 0)
+	for name, _ := range nodes {
+		names = append(names, name)
+	}
+	return names
+}
+
+func TestNodePoolSyncWithEmptyZone(t *testing.T) {
+
+	testCases := []struct {
+		desc                   string
+		instanceGroupVMs       []string          // VMs present before the sync, all in defaultTestZone
+		kubeNodes              map[string]string // map of node:zone during the sync "ensure instance group"
+		wantedInstanceGroupVMs []string          // VMs that should be there at the end of the updates
+	}{
+		{
+			desc:             "Both nodes have zone during update do not get deleted",
+			instanceGroupVMs: []string{"n1", "n2"},
+			kubeNodes: map[string]string{
+				"n1": defaultTestZone,
+				"n2": defaultTestZone,
+			},
+			wantedInstanceGroupVMs: []string{"n1", "n2"},
+		},
+		{
+			desc:             "Create node when zone ready and do not delete node when zone empty",
+			instanceGroupVMs: []string{"n1"},
+			kubeNodes: map[string]string{
+				"n1": "",
+				"n2": defaultTestZone,
+			},
+			wantedInstanceGroupVMs: []string{"n1", "n2"},
+		},
+		{
+			desc:             "Do not delete nodes if zone is empty but delete if node not there",
+			instanceGroupVMs: []string{"n1", "n2", "n3"},
+			kubeNodes: map[string]string{
+				"n2": "",
+				"n3": defaultTestZone,
+			},
+			wantedInstanceGroupVMs: []string{"n2", "n3"},
+		},
+		{
+			desc:             "Do not create one Node without zone assigned",
+			instanceGroupVMs: []string{"n1"},
+			kubeNodes: map[string]string{
+				"n1": defaultTestZone,
+				"n2": "",
+			},
+			wantedInstanceGroupVMs: []string{"n1"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			// create fake gce node pool with nodes in instanceGroupVMs
+			ig := &compute.InstanceGroup{Name: defaultNamer.InstanceGroup()}
+			zonesToIGs := map[string]IGsToInstances{
+				defaultTestZone: {
+					ig: sets.NewString(tc.instanceGroupVMs...),
+				},
+			}
+			fakeGCEInstanceGroups := NewFakeInstanceGroups(zonesToIGs, 10)
+
+			// assigne zones to nodes in kubeNodes
+			pool := newNodePool(fakeGCEInstanceGroups, 10)
+			for name, zone := range tc.kubeNodes {
+				manager := pool.(*manager)
+				zonegetter.AddFakeNodes(manager.ZoneGetter, zone, name)
+			}
+
+			// run sync step
+			nodeNames := getNodeNames(tc.kubeNodes)
+			err := pool.Sync(nodeNames, klog.TODO())
+			if err != nil {
+				t.Fatalf("pool.Sync(%v) returned error %v, want nil", nodeNames, err)
+			}
+
+			instancesList, err := fakeGCEInstanceGroups.ListInstancesInInstanceGroup(ig.Name, defaultTestZone, allInstances)
+			if err != nil {
+				t.Fatalf("fakeGCEInstanceGroups.ListInstancesInInstanceGroup(%s, %s, %s) returned error %v, want nil", ig.Name, defaultTestZone, allInstances, err)
+			}
+			instances, err := test.InstancesListToNameSet(instancesList)
+			if err != nil {
+				t.Fatalf("test.InstancesListToNameSet(%v) returned error %v, want nil", ig, err)
+			}
+
+			// check nodes are exactly the ones we expect to have in the instance group after the sync
+			wantedIGVMsSet := sets.NewString(tc.wantedInstanceGroupVMs...)
+			if !wantedIGVMsSet.Equal(instances) {
+				t.Errorf("Expected kubeNodeSet = %v is not equal to instance set = %v", wantedIGVMsSet, instances)
+			}
+		})
+	}
 }
 
 func TestNodePoolSync(t *testing.T) {
