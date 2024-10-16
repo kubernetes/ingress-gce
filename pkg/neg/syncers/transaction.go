@@ -259,7 +259,16 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	}
 	s.logger.V(2).Info("Sync NEG", "negSyncerKey", s.NegSyncerKey.String(), "endpointsCalculatorMode", s.endpointsCalculator.Mode())
 
-	currentMap, currentPodLabelMap, err := retrieveExistingZoneNetworkEndpointMap(s.NegSyncerKey.NegName, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode(), s.enableDualStackNEG, s.logger)
+	var defaultSubnet string
+	var err error
+	if !flags.F.EnableMultiSubnetCluster {
+		defaultSubnet, err = utils.KeyName(s.networkInfo.SubnetworkURL)
+		if err != nil {
+			s.logger.Error(err, "Errored getting default subnet from NetworkInfo")
+		}
+	}
+
+	currentMap, currentPodLabelMap, err := retrieveExistingZoneNetworkEndpointMap(s.NegSyncerKey.NegName, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode(), s.enableDualStackNEG, defaultSubnet, s.logger)
 	if err != nil {
 		return fmt.Errorf("%w: %w", negtypes.ErrCurrentNegEPNotFound, err)
 	}
@@ -497,6 +506,8 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 			}
 
 			if operation == attachOp {
+				// TODO(sawsa307): Pass in subnet to help distinguish which NEGs needs
+				// update(in default/non-default subnets).
 				go s.attachNetworkEndpoints(zone, batch)
 			}
 			if operation == detachOp {
@@ -505,6 +516,8 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 					// is already in progress.
 					s.dsMigrator.Pause()
 				}
+				// TODO(sawsa307): Pass in subnet to help distinguish which NEGs needs
+				// update(in default/non-default subnets).
 				go s.detachNetworkEndpoints(zone, batch, zone == migrationZone.Zone && subnet == migrationZone.Subnet)
 			}
 		}

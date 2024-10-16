@@ -56,6 +56,7 @@ func NewLocalL4EndpointsCalculator(nodeLister listers.NodeLister, zoneGetter *zo
 	if lbType == negtypes.L4ExternalLB {
 		subsetSize = maxSubsetSizeNetLBLocal
 	}
+
 	return &LocalL4EndpointsCalculator{
 		nodeLister:      nodeLister,
 		zoneGetter:      zoneGetter,
@@ -106,7 +107,7 @@ func (l *LocalL4EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsDat
 				l.logger.Info("Node not connected to service network", "nodeName", node.Name, "network", l.networkInfo.K8sNetwork)
 				continue
 			}
-			zone, err := l.zoneGetter.ZoneForNode(node.Name, l.logger)
+			zone, _, err := l.zoneGetter.ZoneAndSubnetForNode(node.Name, l.logger)
 			if err != nil {
 				l.logger.Error(err, "Unable to find zone for node, skipping", "nodeName", node.Name)
 				metrics.PublishNegControllerErrorCountMetrics(err, true)
@@ -121,7 +122,10 @@ func (l *LocalL4EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsDat
 	}
 	// Compute the networkEndpoints, with total endpoints count <= l.subsetSizeLimit
 	l.logger.V(2).Info("Got zoneNodeMap as input for service", "zoneNodeMap", nodeMapToString(zoneNodeMap), "serviceID", l.svcId)
+	// TODO(sawsa307): Make sure to include logic for subsetting endpoints in non-default subnets.
+	// Currently we only select endpoints from the default subnet.
 	subsetMap, err := getSubsetPerZone(zoneNodeMap, l.subsetSizeLimit, l.svcId, currentMap, l.logger, l.networkInfo)
+
 	return subsetMap, nil, 0, err
 }
 
@@ -182,7 +186,7 @@ func (l *ClusterL4EndpointsCalculator) CalculateEndpoints(_ []types.EndpointsDat
 			l.logger.Info("Node not connected to service network", "nodeName", node.Name, "network", l.networkInfo.K8sNetwork)
 			continue
 		}
-		zone, err := l.zoneGetter.ZoneForNode(node.Name, l.logger)
+		zone, _, err := l.zoneGetter.ZoneAndSubnetForNode(node.Name, l.logger)
 		if err != nil {
 			l.logger.Error(err, "Unable to find zone for node skipping", "nodeName", node.Name)
 			metrics.PublishNegControllerErrorCountMetrics(err, true)
@@ -192,6 +196,8 @@ func (l *ClusterL4EndpointsCalculator) CalculateEndpoints(_ []types.EndpointsDat
 	}
 	l.logger.V(2).Info("Got zoneNodeMap as input for service", "zoneNodeMap", nodeMapToString(zoneNodeMap), "serviceID", l.svcId)
 	// Compute the networkEndpoints, with total endpoints <= l.subsetSizeLimit.
+	// TODO(sawsa307): Make sure to include logic for subsetting endpoints in non-default subnets.
+	// Currently we only select endpoints from the default subnet.
 	subsetMap, err := getSubsetPerZone(zoneNodeMap, l.subsetSizeLimit, l.svcId, currentMap, l.logger, l.networkInfo)
 	return subsetMap, nil, 0, err
 }
