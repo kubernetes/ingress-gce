@@ -23,7 +23,6 @@ import (
 	"sort"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/ingress-gce/pkg/flags"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -174,13 +173,9 @@ func getSubsetPerZone(nodesPerZone map[string][]*v1.Node, totalLimit int, svcID 
 	// Sort zones in increasing order of node count.
 	zoneList := sortZones(nodesPerZone)
 
-	var defaultSubnet string
-	var err error
-	if !flags.F.EnableMultiSubnetCluster {
-		defaultSubnet, err = utils.KeyName(networkInfo.SubnetworkURL)
-		if err != nil {
-			logger.Error(err, "Errored getting default subnet from NetworkInfo")
-		}
+	defaultSubnet, err := utils.KeyName(networkInfo.SubnetworkURL)
+	if err != nil {
+		logger.Error(err, "Errored getting default subnet from NetworkInfo")
 	}
 
 	for _, zone := range zoneList {
