@@ -636,12 +636,13 @@ func TestValidateEndpoints(t *testing.T) {
 		testEndpointSlices []*discovery.EndpointSlice
 		currentMap         map[string]negtypes.NetworkEndpointSet
 		// Use mutation to inject error into that we cannot trigger currently.
-		mutation func([]negtypes.EndpointsData, negtypes.EndpointPodMap) ([]negtypes.EndpointsData, negtypes.EndpointPodMap)
-		expect   error
+		mutation             func([]negtypes.EndpointsData, negtypes.EndpointPodMap) ([]negtypes.EndpointsData, negtypes.EndpointPodMap)
+		expectCalculationErr error
+		expectValidationErr  error
 	}{
 		{
 			desc:  "ValidateEndpoints for L7 Endpoint Calculator. Endpoint counts equal, endpointData has an endpoint corresponds to node without PodCIDR",
-			ecMSC: L7EndpointsCalculator,
+			ecMSC: L7EndpointsCalculatorMSC,
 			testEndpointSlices: []*discovery.EndpointSlice{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -687,9 +688,10 @@ func TestValidateEndpoints(t *testing.T) {
 					},
 				},
 			},
-			mutation:   noopMutation,
-			currentMap: nil,
-			expect:     nil,
+			mutation:             noopMutation,
+			currentMap:           nil,
+			expectCalculationErr: zonegetter.ErrNodePodCIDRNotSet,
+			expectValidationErr:  negtypes.ErrEPCalculationCountZero,
 		},
 		{
 			desc:  "ValidateEndpoints for L7 Endpoint Calculator. Endpoint counts equal, endpointData has non-default subnet endpoint",
@@ -739,9 +741,10 @@ func TestValidateEndpoints(t *testing.T) {
 					},
 				},
 			},
-			mutation:   noopMutation,
-			currentMap: nil,
-			expect:     nil,
+			mutation:             noopMutation,
+			currentMap:           nil,
+			expectCalculationErr: nil,
+			expectValidationErr:  nil,
 		},
 	}
 
@@ -749,12 +752,12 @@ func TestValidateEndpoints(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			endpointData := negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices)
 			_, endpointPodMap, endpointsExcludedInCalculation, err := tc.ecMSC.CalculateEndpoints(endpointData, tc.currentMap)
-			if err != nil {
+			if !errors.Is(err, tc.expectCalculationErr) {
 				t.Errorf("With multi-subnet cluster enabled, received error when calculating endpoint: %v", err)
 			}
 			endpointData, endpointPodMap = tc.mutation(endpointData, endpointPodMap)
-			if got := tc.ecMSC.ValidateEndpoints(endpointData, endpointPodMap, endpointsExcludedInCalculation); !errors.Is(got, tc.expect) {
-				t.Errorf("With multi-subnet cluster enabled, ValidateEndpoints() = %v, expected %v", got, tc.expect)
+			if got := tc.ecMSC.ValidateEndpoints(endpointData, endpointPodMap, endpointsExcludedInCalculation); !errors.Is(got, tc.expectValidationErr) {
+				t.Errorf("With multi-subnet cluster enabled, ValidateEndpoints() = %v, expected %v", got, tc.expectValidationErr)
 			}
 		})
 	}
