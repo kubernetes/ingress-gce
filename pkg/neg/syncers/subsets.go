@@ -173,13 +173,21 @@ func getSubsetPerZone(nodesPerZone map[string][]*v1.Node, totalLimit int, svcID 
 	// Sort zones in increasing order of node count.
 	zoneList := sortZones(nodesPerZone)
 
+	defaultSubnet, err := utils.KeyName(networkInfo.SubnetworkURL)
+	if err != nil {
+		logger.Error(err, "Errored getting default subnet from NetworkInfo")
+		return nil, err
+	}
+
 	for _, zone := range zoneList {
 		// split the limit across the leftover zones.
 		subsetSize = totalLimit / zonesRemaining
 		logger.Info("Picking subset for a zone", "subsetSize", subsetSize, "zone", zone, "svcID", svcID)
-		result[negtypes.EndpointGroupInfo{Zone: zone.Name}] = negtypes.NewNetworkEndpointSet()
+		// TODO(sawsa307): Make sure to include logic for subsetting endpoints in non-default subnets.
+		// Currently we only select endpoints from the default subnet.
+		result[negtypes.EndpointGroupInfo{Zone: zone.Name, Subnet: defaultSubnet}] = negtypes.NewNetworkEndpointSet()
 		if currentMap != nil {
-			if zset, ok := currentMap[negtypes.EndpointGroupInfo{Zone: zone.Name}]; ok && zset != nil {
+			if zset, ok := currentMap[negtypes.EndpointGroupInfo{Zone: zone.Name, Subnet: defaultSubnet}]; ok && zset != nil {
 				currentList = zset.List()
 			} else {
 				currentList = nil
@@ -193,7 +201,7 @@ func getSubsetPerZone(nodesPerZone map[string][]*v1.Node, totalLimit int, svcID 
 			} else {
 				ip = utils.GetNodePrimaryIP(node, logger)
 			}
-			result[negtypes.EndpointGroupInfo{Zone: zone.Name}].Insert(negtypes.NetworkEndpoint{Node: node.Name, IP: ip})
+			result[negtypes.EndpointGroupInfo{Zone: zone.Name, Subnet: defaultSubnet}].Insert(negtypes.NetworkEndpoint{Node: node.Name, IP: ip})
 		}
 		totalLimit -= len(subset)
 		zonesRemaining--

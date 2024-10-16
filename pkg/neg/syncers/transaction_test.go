@@ -70,12 +70,16 @@ const (
 	testInstance6        = "instance6"
 	testUnreadyInstance1 = "unready-instance1"
 	testUnreadyInstance2 = "unready-instance2"
+
+	defaultTestSubnet = "default"
 )
 
 func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 	t.Parallel()
 
-	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	vals := gce.DefaultTestClusterValues()
+	vals.SubnetworkURL = defaultTestSubnetURL
+	fakeGCE := gce.NewFakeGCECloud(vals)
 	negtypes.MockNetworkEndpointAPIs(fakeGCE)
 	fakeCloud := negtypes.NewAdapter(fakeGCE)
 	testNegTypes := []negtypes.NetworkEndpointType{
@@ -383,7 +387,9 @@ func TestSyncNetworkEndpointLabel(t *testing.T) {
 
 	for _, tc := range testCases {
 		flags.F.EnableNEGLabelPropagation = tc.labelPropagationEnabled
-		fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+		vals := gce.DefaultTestClusterValues()
+		vals.SubnetworkURL = defaultTestSubnetURL
+		fakeGCE := gce.NewFakeGCECloud(vals)
 		negtypes.MockNetworkEndpointAPIs(fakeGCE)
 		fakeCloud := negtypes.NewAdapter(fakeGCE)
 		_, transactionSyncer := newTestTransactionSyncer(fakeCloud, tc.negType, false)
@@ -415,7 +421,9 @@ func TestSyncNetworkEndpointLabel(t *testing.T) {
 
 func TestCommitTransaction(t *testing.T) {
 	t.Parallel()
-	s, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType, false)
+	vals := gce.DefaultTestClusterValues()
+	vals.SubnetworkURL = defaultTestSubnetURL
+	s, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(vals)), negtypes.VmIpPortEndpointType, false)
 	// use testSyncer to track the number of Sync got triggered
 	testSyncer := &testSyncer{s.(*syncer), 0}
 	testRetryer := &testRetryHandler{testSyncer, 0}
@@ -829,7 +837,9 @@ func TestFilterEndpointByTransaction(t *testing.T) {
 func TestCommitPods(t *testing.T) {
 	t.Parallel()
 
-	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType, false)
+	vals := gce.DefaultTestClusterValues()
+	vals.SubnetworkURL = defaultTestSubnetURL
+	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(vals)), negtypes.VmIpPortEndpointType, false)
 	reflector := &testReflector{}
 	transactionSyncer.reflector = reflector
 
@@ -1036,7 +1046,8 @@ func TestCommitPods(t *testing.T) {
 
 func TestTransactionSyncerWithNegCR(t *testing.T) {
 	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
-	testSubnetwork := cloud.ResourcePath("subnetwork", &meta.Key{Name: "test-subnetwork"})
+	testSubnetwork := defaultTestSubnetURL
+
 	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
 	testNegType := negtypes.VmIpPortEndpointType
 
@@ -1332,9 +1343,11 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 // zone has the expected State.
 func TestUpdateInitStatusWithMultiSubnetCluster(t *testing.T) {
 	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
-	testSubnetwork := cloud.ResourcePath("subnetwork", &meta.Key{Name: "test-subnetwork"})
 	testNegType := negtypes.VmIpPortEndpointType
 	flags.F.EnableMultiSubnetClusterPhase1 = true
+	defer func() {
+		flags.F.EnableMultiSubnetClusterPhase1 = false
+	}()
 
 	// Active zones: zone1, zone2.
 	// Inactive zones: zone3
@@ -1364,9 +1377,7 @@ func TestUpdateInitStatusWithMultiSubnetCluster(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			t.Parallel()
-
-			fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
+			fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(defaultTestSubnetURL, testNetwork)
 			_, syncer := newTestTransactionSyncer(fakeCloud, testNegType, false)
 			svcNegClient := syncer.svcNegClient
 
@@ -1453,7 +1464,6 @@ func TestUpdateInitStatusWithMultiSubnetCluster(t *testing.T) {
 
 func TestUpdateStatus(t *testing.T) {
 	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
-	testSubnetwork := cloud.ResourcePath("subnetwork", &meta.Key{Name: "test-subnetwork"})
 	testNegType := negtypes.VmIpPortEndpointType
 	testNegRefs := []negv1beta1.NegObjectReference{
 		{
@@ -1524,7 +1534,7 @@ func TestUpdateStatus(t *testing.T) {
 	for _, syncErr := range []error{nil, fmt.Errorf("error")} {
 		for _, tc := range testCases {
 			t.Run(tc.desc, func(t *testing.T) {
-				fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
+				fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(defaultTestSubnetURL, testNetwork)
 				_, syncer := newTestTransactionSyncer(fakeCloud, testNegType, false)
 				svcNegClient := syncer.svcNegClient
 				syncer.needInit = false
@@ -1582,7 +1592,7 @@ func TestUpdateStatus(t *testing.T) {
 
 func TestIsZoneChange(t *testing.T) {
 	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
-	testSubnetwork := cloud.ResourcePath("subnetwork", &meta.Key{Name: "test-subnetwork"})
+	testSubnetwork := defaultTestSubnetURL
 	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
 	testNegType := negtypes.VmIpPortEndpointType
 
@@ -1722,7 +1732,7 @@ func TestUnknownNodes(t *testing.T) {
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
 	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
 	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
-	testSubnetwork := cloud.ResourcePath("subnetwork", &meta.Key{Name: "test-subnetwork"})
+	testSubnetwork := defaultTestSubnetURL
 	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
 
 	testIP1 := "10.100.1.1"
@@ -1790,7 +1800,7 @@ func TestUnknownNodes(t *testing.T) {
 	}
 
 	// Check that unknown zone did not cause endpoints to be removed
-	out, _, err := retrieveExistingZoneNetworkEndpointMap(testNegName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO())
+	out, _, err := retrieveExistingZoneNetworkEndpointMap(testNegName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, "", klog.TODO())
 	if err != nil {
 		t.Errorf("errored retrieving existing network endpoints")
 	}
@@ -1814,11 +1824,12 @@ func TestUnknownNodes(t *testing.T) {
 
 // TestEnableDegradedMode verifies if DegradedMode has been correctly enabled for L7 endpoint calculator
 func TestEnableDegradedMode(t *testing.T) {
-	t.Parallel()
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
 	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
-	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	vals := gce.DefaultTestClusterValues()
+	vals.SubnetworkURL = defaultTestSubnetURL
+	fakeGCE := gce.NewFakeGCECloud(vals)
 	negtypes.MockNetworkEndpointAPIs(fakeGCE)
 	fakeCloud := negtypes.NewAdapter(fakeGCE)
 	mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
@@ -2087,7 +2098,7 @@ func TestEnableDegradedMode(t *testing.T) {
 			(s.syncer.(*syncer)).stopped = false
 			tc.modify(s)
 
-			out, _, err := retrieveExistingZoneNetworkEndpointMap(tc.negName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO())
+			out, _, err := retrieveExistingZoneNetworkEndpointMap(tc.negName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, "", klog.TODO())
 			if err != nil {
 				t.Errorf("errored retrieving existing network endpoints")
 			}
@@ -2100,7 +2111,7 @@ func TestEnableDegradedMode(t *testing.T) {
 				t.Errorf("syncInternal returned %v, expected %v", err, tc.expectErr)
 			}
 			err = wait.PollImmediate(time.Second, 3*time.Second, func() (bool, error) {
-				out, _, err = retrieveExistingZoneNetworkEndpointMap(tc.negName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO())
+				out, _, err = retrieveExistingZoneNetworkEndpointMap(tc.negName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, "", klog.TODO())
 				if err != nil {
 					return false, nil
 				}
@@ -2457,7 +2468,7 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 		testContext.SvcNegInformer.GetIndexer(),
 		reflector,
 		GetEndpointsCalculator(testContext.PodInformer.GetIndexer(), testContext.NodeInformer.GetIndexer(), testContext.ServiceInformer.GetIndexer(),
-			fakeZoneGetter, svcPort, mode, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics(), &network.NetworkInfo{IsDefault: true}, negtypes.L4InternalLB),
+			fakeZoneGetter, svcPort, mode, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics(), &network.NetworkInfo{IsDefault: true, SubnetworkURL: defaultTestSubnetURL}, negtypes.L4InternalLB),
 		string(kubeSystemUID),
 		testContext.SvcNegClient,
 		metricscollector.FakeSyncerMetrics(),

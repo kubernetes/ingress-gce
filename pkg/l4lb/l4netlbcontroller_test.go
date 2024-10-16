@@ -74,6 +74,8 @@ const (
 
 	shortSessionAffinityIdleTimeout = int32(20)     // 20 sec could be used for regular Session Affinity
 	longSessionAffinityIdleTimeout  = int32(2 * 60) // 2 min or 120 sec for Strong Session Affinity
+
+	defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/default"
 )
 
 var (
@@ -323,8 +325,13 @@ func buildContext(vals gce.TestClusterValues) *ingctx.ControllerContext {
 }
 
 func newL4NetLBServiceController() *L4NetLBController {
-	stopCh := make(chan struct{})
 	vals := gce.DefaultTestClusterValues()
+	vals.SubnetworkURL = defaultTestSubnetURL
+	return createL4NetLBServiceController(vals)
+}
+
+func createL4NetLBServiceController(vals gce.TestClusterValues) *L4NetLBController {
+	stopCh := make(chan struct{})
 	ctx := buildContext(vals)
 	nodes, err := test.CreateAndInsertNodes(ctx.Cloud, []string{"instance-1", "instance-2"}, vals.ZoneName)
 	if err != nil {
@@ -1663,7 +1670,7 @@ func TestDualStackServiceNeedsUpdate(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 
-			controller := newL4NetLBServiceController()
+			controller := createL4NetLBServiceController(gce.DefaultTestClusterValues())
 			controller.enableDualStack = true
 			oldSvc := test.NewL4NetLBRBSService(8080)
 			oldSvc.Spec.IPFamilies = tc.initialIPFamilies
@@ -1862,7 +1869,7 @@ func TestCreateDeleteDualStackNetLBService(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			controller := newL4NetLBServiceController()
+			controller := createL4NetLBServiceController(gce.DefaultTestClusterValues())
 			controller.enableDualStack = true
 			svc := test.NewL4NetLBRBSService(8080)
 			svc.Spec.IPFamilies = tc.ipFamilies
@@ -1907,7 +1914,7 @@ func TestCreateDeleteDualStackNetLBService(t *testing.T) {
 }
 func TestProcessDualStackNetLBServiceOnUserError(t *testing.T) {
 	t.Parallel()
-	controller := newL4NetLBServiceController()
+	controller := createL4NetLBServiceController(gce.DefaultTestClusterValues())
 	controller.enableDualStack = true
 	svc := test.NewL4NetLBRBSService(8080)
 	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}

@@ -15,6 +15,8 @@ import (
 	clocktesting "k8s.io/utils/clock/testing"
 )
 
+const defaultTestSubnet = "default"
+
 func TestFilter(t *testing.T) {
 	testCases := []struct {
 		desc                string
@@ -34,29 +36,29 @@ func TestFilter(t *testing.T) {
 				return m
 			}(),
 			addEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "a", IPv6: "A"}, // migrating
 					{IP: "b"},
 				}...),
 			},
 			removeEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "a"}, // migrating
 					{IP: "c", IPv6: "C"},
 				}...),
 			},
 			committedEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IPv6: "D"},
 				}...),
 			},
 			wantAddEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "b"},
 				}...),
 			},
 			wantRemoveEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					// Migration-endpoints were filtered out but no new migration
 					// detachment was started.
 					{IP: "c", IPv6: "C"},
@@ -67,29 +69,29 @@ func TestFilter(t *testing.T) {
 			desc:     "unpaused migrator should filter migration endpoints AND also start detachment",
 			migrator: newMigratorForTest(t, true),
 			addEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "a", IPv6: "A"}, // migrating
 					{IP: "b"},
 				}...),
 			},
 			removeEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "a"}, // migrating
 					{IP: "c", IPv6: "C"},
 				}...),
 			},
 			committedEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IPv6: "D"},
 				}...),
 			},
 			wantAddEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "b"},
 				}...),
 			},
 			wantRemoveEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "a"}, // Migration detachment started.
 					{IP: "c", IPv6: "C"},
 				}...),
@@ -100,30 +102,30 @@ func TestFilter(t *testing.T) {
 			desc:     "migrator should do nothing if enableDualStack is false",
 			migrator: newMigratorForTest(t, false),
 			addEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "a", IPv6: "A"}, // migrating
 					{IP: "b"},
 				}...),
 			},
 			removeEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "a"}, // migrating
 					{IP: "c", IPv6: "C"},
 				}...),
 			},
 			committedEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IPv6: "D"},
 				}...),
 			},
 			wantAddEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "a", IPv6: "A"}, // migrating
 					{IP: "b"},
 				}...),
 			},
 			wantRemoveEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "a"}, // migrating
 					{IP: "c", IPv6: "C"},
 				}...),
@@ -297,16 +299,16 @@ func TestFilter_FunctionalTest(t *testing.T) {
 			removeEndpoints := make(map[types.EndpointGroupInfo]types.NetworkEndpointSet)    // Contains single-stack endpoints which are to be removed from the NEG.
 			committedEndpoints := make(map[types.EndpointGroupInfo]types.NetworkEndpointSet) // Initially empty.
 			for i := 0; i < tc.initialNEGEndpointsCount; i++ {
-				zone := types.EndpointGroupInfo{Zone: fmt.Sprintf("zone-%v", i%tc.zonesCount)}
+				epGroupInfo := types.EndpointGroupInfo{Zone: fmt.Sprintf("zone-%v", i%tc.zonesCount), Subnet: defaultTestSubnet}
 				ipv4 := fmt.Sprintf("ipv4-%v", 2*i+1)
 				ipv6 := fmt.Sprintf("ipv6-%v", 2*i+2)
-				if addEndpoints[zone] == nil {
-					addEndpoints[zone] = types.NewNetworkEndpointSet()
-					removeEndpoints[zone] = types.NewNetworkEndpointSet()
-					committedEndpoints[zone] = types.NewNetworkEndpointSet()
+				if addEndpoints[epGroupInfo] == nil {
+					addEndpoints[epGroupInfo] = types.NewNetworkEndpointSet()
+					removeEndpoints[epGroupInfo] = types.NewNetworkEndpointSet()
+					committedEndpoints[epGroupInfo] = types.NewNetworkEndpointSet()
 				}
-				addEndpoints[zone].Insert(types.NetworkEndpoint{IP: ipv4, IPv6: ipv6})
-				removeEndpoints[zone].Insert(types.NetworkEndpoint{IP: ipv4})
+				addEndpoints[epGroupInfo].Insert(types.NetworkEndpoint{IP: ipv4, IPv6: ipv6})
+				removeEndpoints[epGroupInfo].Insert(types.NetworkEndpoint{IP: ipv4})
 			}
 
 			tc.migrator.errorStateChecker.(*fakeErrorStateChecker).errorState = tc.errorState
@@ -351,7 +353,7 @@ func TestFilter_FunctionalTest(t *testing.T) {
 
 func TestPause(t *testing.T) {
 	addEndpoints := map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-		{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+		{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 			{IP: "a", IPv6: "A"}, // migrating
 			{IP: "b"},
 			{IP: "c", IPv6: "C"},
@@ -359,7 +361,7 @@ func TestPause(t *testing.T) {
 		}...),
 	}
 	removeEndpoints := map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-		{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+		{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 			{IP: "a"}, // migrating
 			{IP: "e", IPv6: "E"},
 			{IP: "d", IPv6: "D"}, // migrating
@@ -377,7 +379,7 @@ func TestPause(t *testing.T) {
 		{IP: "a"},            // migrating
 		{IP: "d", IPv6: "D"}, // migrating
 	}
-	if !clonedRemoveEndpoints[types.EndpointGroupInfo{Zone: "zone1"}].HasAny(possibleMigrationDetachments...) {
+	if !clonedRemoveEndpoints[types.EndpointGroupInfo{Zone: "zone1", Subnet: defaultTestSubnet}].HasAny(possibleMigrationDetachments...) {
 		t.Fatalf("Precondition to verify the behaviour of Pause() not satisfied; Filter() should start migration-detachments; got removeEndpoints=%+v; want non-empty union with %+v", clonedRemoveEndpoints, possibleMigrationDetachments)
 	}
 
@@ -393,7 +395,7 @@ func TestPause(t *testing.T) {
 	// any migration-detachments when paused.
 	migrator.Filter(addEndpoints, removeEndpoints, map[types.EndpointGroupInfo]types.NetworkEndpointSet{})
 	wantRemoveEndpoints := map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-		types.EndpointGroupInfo{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+		types.EndpointGroupInfo{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 			// Since we don't expect any migration-detachments, this set should be
 			// missing all migration endpoints.
 			{IP: "e", IPv6: "E"},
@@ -535,12 +537,12 @@ func TestCalculateMigrationEndpointsToDetach(t *testing.T) {
 			addEndpoints:    map[types.EndpointGroupInfo]types.NetworkEndpointSet{},
 			removeEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{},
 			committedEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "1"}, {IP: "2"}, {IP: "3"}, {IP: "4"}, {IP: "5"},
 				}...),
 			},
 			migrationEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "6"}, {IP: "7"}, {IP: "8"}, {IP: "9"}, {IP: "10"},
 				}...),
 			},
@@ -552,12 +554,12 @@ func TestCalculateMigrationEndpointsToDetach(t *testing.T) {
 			addEndpoints:    map[types.EndpointGroupInfo]types.NetworkEndpointSet{},
 			removeEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{},
 			committedEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "1"}, {IP: "2"}, {IP: "3"}, {IP: "4"}, {IP: "5"},
 				}...),
 			},
 			migrationEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "6"}, {IP: "7"}, {IP: "8"}, {IP: "9"}, {IP: "10"},
 					{IP: "11"},
 				}...),
@@ -571,18 +573,18 @@ func TestCalculateMigrationEndpointsToDetach(t *testing.T) {
 			// detachments since we wait for the pending attaches to complete
 			desc: "many endpoints are waiting to be attached AND previous migration was quite recent",
 			addEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "1"}, {IP: "2"}, {IP: "3"}, {IP: "4"}, {IP: "5"},
 				}...),
 			},
 			removeEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{},
 			committedEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "6"},
 				}...),
 			},
 			migrationEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "7"},
 				}...),
 			},
@@ -599,18 +601,18 @@ func TestCalculateMigrationEndpointsToDetach(t *testing.T) {
 			// start any new detachments since we wait to get out of error state.
 			desc: "many endpoints are waiting to be attached AND previous migration was too long ago BUT in error state",
 			addEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "1"}, {IP: "2"}, {IP: "3"}, {IP: "4"}, {IP: "5"},
 				}...),
 			},
 			removeEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{},
 			committedEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "6"},
 				}...),
 			},
 			migrationEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "7"},
 				}...),
 			},
@@ -628,18 +630,18 @@ func TestCalculateMigrationEndpointsToDetach(t *testing.T) {
 			// with the detachments.
 			desc: "many endpoints are waiting to be attached BUT previous migration was too long ago AND not in error state",
 			addEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "1"}, {IP: "2"}, {IP: "3"}, {IP: "4"}, {IP: "5"},
 				}...),
 			},
 			removeEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{},
 			committedEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "6"},
 				}...),
 			},
 			migrationEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "7"},
 				}...),
 			},
@@ -649,17 +651,17 @@ func TestCalculateMigrationEndpointsToDetach(t *testing.T) {
 		{
 			desc: "no detachments started since nothing to migrate",
 			addEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "1"},
 				}...),
 			},
 			removeEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "2"},
 				}...),
 			},
 			committedEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "3"}, {IP: "4"}, {IP: "5"}, {IP: "6"},
 				}...),
 			},
@@ -675,18 +677,18 @@ func TestCalculateMigrationEndpointsToDetach(t *testing.T) {
 			addEndpoints:    map[types.EndpointGroupInfo]types.NetworkEndpointSet{},
 			removeEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{},
 			committedEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "1"}, {IP: "2"}, {IP: "3"}, {IP: "4"},
 				}...),
-				{Zone: "zone2"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone2", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "5"}, {IP: "6"}, {IP: "7"}, {IP: "8"},
 				}...),
 			},
 			migrationEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "9"}, {IP: "10"},
 				}...),
-				{Zone: "zone2"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone2", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "11"}, {IP: "12"},
 				}...),
 			},
@@ -752,41 +754,41 @@ func TestFindAndFilterMigrationEndpoints(t *testing.T) {
 		{
 			name: "detect multiple migrating endpoints",
 			addEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "a", IPv6: "A"}, // migrating
 					{IP: "b"},
 					{IP: "c", IPv6: "C"},
 					{IP: "d"}, // migrating
 				}...),
-				{Zone: "zone2"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone2", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "e", IPv6: "E"}, // migrating
 				}...),
 			},
 			removeEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "a"}, // migrating
 					{IP: "f", IPv6: "F"},
 					{IP: "d", IPv6: "D"}, // migrating
 				}...),
-				{Zone: "zone2"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone2", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IPv6: "E"}, // migrating
 				}...),
 			},
 			wantMigrationEndpointsInAddSet: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "a", IPv6: "A"},
 					{IP: "d"},
 				}...),
-				{Zone: "zone2"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone2", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "e", IPv6: "E"},
 				}...),
 			},
 			wantMigrationEndpointsInRemoveSet: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "a"},
 					{IP: "d", IPv6: "D"},
 				}...),
-				{Zone: "zone2"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone2", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IPv6: "E"},
 				}...),
 			},
@@ -794,12 +796,12 @@ func TestFindAndFilterMigrationEndpoints(t *testing.T) {
 		{
 			name: "partial IP change without stack change is not considered migrating",
 			addEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "a", IPv6: "A"},
 				}...),
 			},
 			removeEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "a", Port: "B"},
 				}...),
 			},
@@ -809,13 +811,13 @@ func TestFindAndFilterMigrationEndpoints(t *testing.T) {
 		{
 			name: "difference in port or node is not considered migrating",
 			addEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "a", IPv6: "A", Port: "80"},
 					{IP: "b", Node: "node2"},
 				}...),
 			},
 			removeEndpoints: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "a", Port: "81"},
 					{IP: "b", IPv6: "B", Node: "node1"},
 				}...),
@@ -854,114 +856,114 @@ func TestMoveEndpoint(t *testing.T) {
 			name:     "completely valid input, shoud successfully move",
 			endpoint: types.NetworkEndpoint{IP: "a", IPv6: "A"},
 			inputSource: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "a", IPv6: "A"},
 					{IP: "b", IPv6: "B"},
 				}...),
 			},
 			inputDest: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "c", IPv6: "C"},
 				}...),
 			},
 			wantSource: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "b", IPv6: "B"},
 				}...),
 			},
 			wantDest: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "a", IPv6: "A"},
 					{IP: "c", IPv6: "C"},
 				}...),
 			},
-			endpointGroupInfo: types.EndpointGroupInfo{Zone: "zone1"},
+			endpointGroupInfo: types.EndpointGroupInfo{Zone: "zone1", Subnet: defaultTestSubnet},
 			wantSuccess:       true,
 		},
 		{
 			name:     "zone does not exist in source",
 			endpoint: types.NetworkEndpoint{IP: "a", IPv6: "A"},
 			inputSource: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "a", IPv6: "A"},
 				}...),
 			},
 			inputDest: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone3"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone3", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "c", IPv6: "C"},
 				}...),
 			},
 			wantSource: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "a", IPv6: "A"},
 				}...),
 			},
 			wantDest: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone3"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone3", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "c", IPv6: "C"},
 				}...),
 			},
-			endpointGroupInfo: types.EndpointGroupInfo{Zone: "zone3"},
+			endpointGroupInfo: types.EndpointGroupInfo{Zone: "zone3", Subnet: defaultTestSubnet},
 		},
 		{
 			name:     "zone does not exist in destination, shoud successfully move",
 			endpoint: types.NetworkEndpoint{IP: "a", IPv6: "A"},
 			inputSource: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "a", IPv6: "A"},
 					{IP: "b", IPv6: "B"},
 				}...),
 			},
 			inputDest: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone2"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone2", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "c", IPv6: "C"},
 				}...),
 			},
 			wantSource: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "b", IPv6: "B"},
 				}...),
 			},
 			wantDest: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "a", IPv6: "A"},
 				}...),
-				{Zone: "zone2"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone2", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "c", IPv6: "C"},
 				}...),
 			},
-			endpointGroupInfo: types.EndpointGroupInfo{Zone: "zone1"},
+			endpointGroupInfo: types.EndpointGroupInfo{Zone: "zone1", Subnet: defaultTestSubnet},
 			wantSuccess:       true,
 		},
 		{
 			name:     "source is nil",
 			endpoint: types.NetworkEndpoint{IP: "a", IPv6: "A"},
 			inputDest: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone3"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone3", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "c", IPv6: "C"},
 				}...),
 			},
 			wantDest: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone3"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone3", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "c", IPv6: "C"},
 				}...),
 			},
-			endpointGroupInfo: types.EndpointGroupInfo{Zone: "zone3"},
+			endpointGroupInfo: types.EndpointGroupInfo{Zone: "zone3", Subnet: defaultTestSubnet},
 		},
 		{
 			name:     "destination is nil",
 			endpoint: types.NetworkEndpoint{IP: "a", IPv6: "A"},
 			inputSource: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone3"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone3", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "c", IPv6: "C"},
 				}...),
 			},
 			wantSource: map[types.EndpointGroupInfo]types.NetworkEndpointSet{
-				{Zone: "zone3"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+				{Zone: "zone3", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 					{IP: "c", IPv6: "C"},
 				}...),
 			},
-			endpointGroupInfo: types.EndpointGroupInfo{Zone: "zone3"},
+			endpointGroupInfo: types.EndpointGroupInfo{Zone: "zone3", Subnet: defaultTestSubnet},
 		},
 	}
 
