@@ -94,17 +94,6 @@ func (z *ZoneGetter) ZoneAndSubnetForNode(name string, logger klog.Logger) (stri
 		nodeLogger.Error(err, "Failed to get node")
 		return "", "", fmt.Errorf("%w: failed to get node %s", ErrNodeNotFound, name)
 	}
-	if z.onlyIncludeDefaultSubnetNodes {
-		isInDefaultSubnet, err := isNodeInDefaultSubnet(node, z.defaultSubnetURL, nodeLogger)
-		if err != nil {
-			nodeLogger.Error(err, "Failed to verify if the node is in default subnet.")
-			return "", "", err
-		}
-		if !isInDefaultSubnet {
-			nodeLogger.Error(ErrNodeNotInDefaultSubnet, "Node is invalid since it is not in the default subnet")
-			return "", "", ErrNodeNotInDefaultSubnet
-		}
-	}
 	if node.Spec.ProviderID == "" {
 		nodeLogger.Error(ErrProviderIDNotFound, "Node does not have providerID")
 		return "", "", ErrProviderIDNotFound
@@ -119,6 +108,16 @@ func (z *ZoneGetter) ZoneAndSubnetForNode(name string, logger klog.Logger) (stri
 	if err != nil {
 		nodeLogger.Error(err, "Failed to get subnet from node's LabelNodeSubnet")
 		return "", "", err
+	}
+	if z.onlyIncludeDefaultSubnetNodes {
+		defaultSubnet, err := utils.KeyName(z.defaultSubnetURL)
+		if err != nil {
+			nodeLogger.Error(err, "Failed to extract default subnet information from URL", "defaultSubnetURL", z.defaultSubnetURL)
+			return "", "", err
+		}
+		if subnet != defaultSubnet {
+			return "", "", ErrNodeNotInDefaultSubnet
+		}
 	}
 	return zone, subnet, nil
 }
@@ -299,22 +298,11 @@ func (z *ZoneGetter) IsDefaultSubnetNode(nodeName string, logger klog.Logger) (b
 // existing nodes, they will not have label and can only be in the default
 // subnet.
 func isNodeInDefaultSubnet(node *api_v1.Node, defaultSubnetURL string, nodeLogger klog.Logger) (bool, error) {
-	if node.Spec.PodCIDR == "" {
-		nodeLogger.Info("Node does not have PodCIDR set")
-		return false, ErrNodePodCIDRNotSet
+	nodeSubnet, err := getSubnet(node, defaultSubnetURL)
+	if err != nil {
+		nodeLogger.Error(err, "Failed to get node subnet", "nodeName", node.Name)
+		return false, err
 	}
-
-	nodeSubnet, exist := node.Labels[utils.LabelNodeSubnet]
-	if !exist {
-		nodeLogger.Info("Node does not have subnet label key, assumed to be in the default subnet", "subnet label key", utils.LabelNodeSubnet)
-		return true, nil
-	}
-	if nodeSubnet == "" {
-		nodeLogger.Info("Node has empty value for subnet label key, assumed to be in the default subnet", "subnet label key", utils.LabelNodeSubnet)
-		return true, nil
-	}
-	nodeLogger.Info("Node has an non-empty value for subnet label key", "subnet label key", utils.LabelNodeSubnet, "subnet label value", nodeSubnet)
-
 	defaultSubnet, err := utils.KeyName(defaultSubnetURL)
 	if err != nil {
 		nodeLogger.Error(err, "Failed to extract default subnet information from URL", "defaultSubnetURL", defaultSubnetURL)
