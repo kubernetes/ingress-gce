@@ -70,12 +70,16 @@ const (
 	testInstance6        = "instance6"
 	testUnreadyInstance1 = "unready-instance1"
 	testUnreadyInstance2 = "unready-instance2"
+
+	defaultTestSubnet = "default"
 )
 
 func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 	t.Parallel()
 
-	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	vals := gce.DefaultTestClusterValues()
+	vals.SubnetworkURL = defaultTestSubnetURL
+	fakeGCE := gce.NewFakeGCECloud(vals)
 	negtypes.MockNetworkEndpointAPIs(fakeGCE)
 	fakeCloud := negtypes.NewAdapter(fakeGCE)
 	testNegTypes := []negtypes.NetworkEndpointType{
@@ -128,84 +132,84 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 
 		testCases := []struct {
 			desc            string
-			addEndpoints    map[string]negtypes.NetworkEndpointSet
-			removeEndpoints map[string]negtypes.NetworkEndpointSet
-			expectEndpoints map[string]negtypes.NetworkEndpointSet
+			addEndpoints    map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet
+			removeEndpoints map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet
+			expectEndpoints map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet
 		}{
 			{
 				"empty input",
-				map[string]negtypes.NetworkEndpointSet{},
-				map[string]negtypes.NetworkEndpointSet{},
-				map[string]negtypes.NetworkEndpointSet{},
+				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
+				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
+				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
 			},
 			{
 				"add some endpoints",
-				map[string]negtypes.NetworkEndpointSet{
-					testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, targetPort)),
-					testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
+				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+					{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, targetPort)),
+					{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
 				},
-				map[string]negtypes.NetworkEndpointSet{},
-				map[string]negtypes.NetworkEndpointSet{
-					testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, targetPort)),
-					testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
+				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
+				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+					{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, targetPort)),
+					{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
 				},
 			},
 			{
 				"remove some endpoints",
-				map[string]negtypes.NetworkEndpointSet{},
-				map[string]negtypes.NetworkEndpointSet{
-					testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, targetPort)),
+				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
+				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+					{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, targetPort)),
 				},
-				map[string]negtypes.NetworkEndpointSet{
-					testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
+				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+					{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
 				},
 			},
 			{
 				"add duplicate endpoints",
-				map[string]negtypes.NetworkEndpointSet{
-					testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
+				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+					{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
 				},
-				map[string]negtypes.NetworkEndpointSet{},
-				map[string]negtypes.NetworkEndpointSet{
-					testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
+				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
+				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+					{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
 				},
 			},
 			{
 				"add and remove endpoints",
-				map[string]negtypes.NetworkEndpointSet{
-					testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, targetPort)),
+				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+					{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, targetPort)),
 				},
-				map[string]negtypes.NetworkEndpointSet{
-					testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
+				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+					{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
 				},
-				map[string]negtypes.NetworkEndpointSet{
-					testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, targetPort)),
+				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+					{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, targetPort)),
 				},
 			},
 			{
 				"add more endpoints",
-				map[string]negtypes.NetworkEndpointSet{
-					testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)),
+				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+					{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)),
 				},
-				map[string]negtypes.NetworkEndpointSet{},
-				map[string]negtypes.NetworkEndpointSet{
-					testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, targetPort)),
-					testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)),
+				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
+				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+					{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, targetPort)),
+					{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)),
 				},
 			},
 			{
 				"add and remove endpoints in both zones",
-				map[string]negtypes.NetworkEndpointSet{
-					testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, targetPort)),
-					testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
+				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+					{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, targetPort)),
+					{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
 				},
-				map[string]negtypes.NetworkEndpointSet{
-					testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, targetPort)),
-					testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)),
+				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+					{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, targetPort)),
+					{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)),
 				},
-				map[string]negtypes.NetworkEndpointSet{
-					testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, targetPort)),
-					testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
+				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+					{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, targetPort)),
+					{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
 				},
 			},
 		}
@@ -214,7 +218,7 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 			// TODO(gauravkghildiyal): When the DualStack Migrator is fully
 			// implemented, check if we need to cover scenarios where `migrationZone`
 			// is not empty.
-			err := transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, tc.removeEndpoints, labels.EndpointPodLabelMap{}, "")
+			err := transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, tc.removeEndpoints, labels.EndpointPodLabelMap{}, negtypes.EndpointGroupInfo{})
 			if err != nil {
 				t.Errorf("For case %q, syncNetworkEndpoints() got %v, want nil", tc.desc, err)
 			}
@@ -223,8 +227,8 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 				t.Errorf("For case %q, waitForTransactions() got %v, want nil", tc.desc, err)
 			}
 
-			for zone, endpoints := range tc.expectEndpoints {
-				list, err := fakeCloud.ListNetworkEndpoints(transactionSyncer.NegSyncerKey.NegName, zone, false, transactionSyncer.NegSyncerKey.GetAPIVersion(), klog.TODO())
+			for endpointGroupInfo, endpoints := range tc.expectEndpoints {
+				list, err := fakeCloud.ListNetworkEndpoints(transactionSyncer.NegSyncerKey.NegName, endpointGroupInfo.Zone, false, transactionSyncer.NegSyncerKey.GetAPIVersion(), klog.TODO())
 				if err != nil {
 					t.Errorf("For case %q, ListNetworkEndpoints() got %v, want nil", tc.desc, err)
 				}
@@ -239,7 +243,7 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 				}
 
 				if !endpoints.Equal(endpointSet) {
-					t.Errorf("For case %q, in zone %q, negType %q, endpointSets endpoints == %v, but got %v, difference: \n(want - got) = %v\n(got - want) = %v", tc.desc, zone, testNegType, endpoints, endpointSet, endpoints.Difference(endpointSet), endpointSet.Difference(endpoints))
+					t.Errorf("For case %q, in zone %q, negType %q, endpointSets endpoints == %v, but got %v, difference: \n(want - got) = %v\n(got - want) = %v", tc.desc, endpointGroupInfo.Zone, testNegType, endpoints, endpointSet, endpoints.Difference(endpointSet), endpointSet.Difference(endpoints))
 				}
 			}
 		}
@@ -270,7 +274,7 @@ func TestSyncNetworkEndpointLabel(t *testing.T) {
 		desc                    string
 		labelPropagationEnabled bool
 		negType                 negtypes.NetworkEndpointType
-		addEndpoints            map[string]negtypes.NetworkEndpointSet
+		addEndpoints            map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet
 		endpointPodLabelMap     labels.EndpointPodLabelMap
 		expectedNEAnnotation    labels.PodLabelMap
 	}{
@@ -278,7 +282,7 @@ func TestSyncNetworkEndpointLabel(t *testing.T) {
 			"empty input",
 			true,
 			negtypes.VmIpPortEndpointType,
-			map[string]negtypes.NetworkEndpointSet{},
+			map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
 			labels.EndpointPodLabelMap{},
 			nil,
 		},
@@ -286,9 +290,9 @@ func TestSyncNetworkEndpointLabel(t *testing.T) {
 			"add L4 endpoints with label map populated",
 			true,
 			negtypes.VmIpEndpointType,
-			map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet().Union(l4EndpointSet1).Union(l4EndpointSet2),
-				testZone2: negtypes.NewNetworkEndpointSet().Union(l4EndpointSet3).Union(l4EndpointSet4),
+			map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(l4EndpointSet1).Union(l4EndpointSet2),
+				{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(l4EndpointSet3).Union(l4EndpointSet4),
 			},
 			generateEndpointPodLabelMap(
 				map[string]negtypes.NetworkEndpointSet{
@@ -306,9 +310,9 @@ func TestSyncNetworkEndpointLabel(t *testing.T) {
 			"add L4 endpoints with empty label map",
 			true,
 			negtypes.VmIpEndpointType,
-			map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet().Union(l4EndpointSet1).Union(l4EndpointSet2),
-				testZone2: negtypes.NewNetworkEndpointSet().Union(l4EndpointSet3).Union(l4EndpointSet4),
+			map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(l4EndpointSet1).Union(l4EndpointSet2),
+				{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(l4EndpointSet3).Union(l4EndpointSet4),
 			},
 			generateEndpointPodLabelMap(
 				map[string]negtypes.NetworkEndpointSet{
@@ -323,9 +327,9 @@ func TestSyncNetworkEndpointLabel(t *testing.T) {
 			"add L7 endpoints label map populated",
 			true,
 			negtypes.VmIpPortEndpointType,
-			map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet().Union(l7EndpointSet1).Union(l7EndpointSet2),
-				testZone2: negtypes.NewNetworkEndpointSet().Union(l7EndpointSet3).Union(l7EndpointSet4),
+			map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(l7EndpointSet1).Union(l7EndpointSet2),
+				{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(l7EndpointSet3).Union(l7EndpointSet4),
 			},
 			generateEndpointPodLabelMap(
 				map[string]negtypes.NetworkEndpointSet{
@@ -346,9 +350,9 @@ func TestSyncNetworkEndpointLabel(t *testing.T) {
 			"add L7 endpoints with empty label map",
 			true,
 			negtypes.VmIpPortEndpointType,
-			map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet().Union(l7EndpointSet1).Union(l7EndpointSet2),
-				testZone2: negtypes.NewNetworkEndpointSet().Union(l7EndpointSet3).Union(l7EndpointSet4),
+			map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(l7EndpointSet1).Union(l7EndpointSet2),
+				{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(l7EndpointSet3).Union(l7EndpointSet4),
 			},
 			generateEndpointPodLabelMap(
 				map[string]negtypes.NetworkEndpointSet{
@@ -363,9 +367,9 @@ func TestSyncNetworkEndpointLabel(t *testing.T) {
 			"add L7 endpoints label map populated, but EnableNEGLabelPropagation flag disabled",
 			false,
 			negtypes.VmIpPortEndpointType,
-			map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet().Union(l7EndpointSet1).Union(l7EndpointSet2),
-				testZone2: negtypes.NewNetworkEndpointSet().Union(l7EndpointSet3).Union(l7EndpointSet4),
+			map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(l7EndpointSet1).Union(l7EndpointSet2),
+				{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(l7EndpointSet3).Union(l7EndpointSet4),
 			},
 			generateEndpointPodLabelMap(
 				map[string]negtypes.NetworkEndpointSet{
@@ -383,14 +387,16 @@ func TestSyncNetworkEndpointLabel(t *testing.T) {
 
 	for _, tc := range testCases {
 		flags.F.EnableNEGLabelPropagation = tc.labelPropagationEnabled
-		fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+		vals := gce.DefaultTestClusterValues()
+		vals.SubnetworkURL = defaultTestSubnetURL
+		fakeGCE := gce.NewFakeGCECloud(vals)
 		negtypes.MockNetworkEndpointAPIs(fakeGCE)
 		fakeCloud := negtypes.NewAdapter(fakeGCE)
 		_, transactionSyncer := newTestTransactionSyncer(fakeCloud, tc.negType, false)
 		if err := transactionSyncer.ensureNetworkEndpointGroups(); err != nil {
 			t.Errorf("Expect error == nil, but got %v", err)
 		}
-		err := transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, map[string]negtypes.NetworkEndpointSet{}, tc.endpointPodLabelMap, "")
+		err := transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{}, tc.endpointPodLabelMap, negtypes.EndpointGroupInfo{})
 		if err != nil {
 			t.Errorf("For case %q, syncNetworkEndpoints() got %v, want nil", tc.desc, err)
 		}
@@ -398,8 +404,8 @@ func TestSyncNetworkEndpointLabel(t *testing.T) {
 			t.Errorf("For case %q, waitForTransactions() got %v, want nil", tc.desc, err)
 		}
 
-		for zone := range tc.addEndpoints {
-			list, err := fakeCloud.ListNetworkEndpoints(transactionSyncer.NegSyncerKey.NegName, zone, false, transactionSyncer.NegSyncerKey.GetAPIVersion(), klog.TODO())
+		for endpointGroupInfo := range tc.addEndpoints {
+			list, err := fakeCloud.ListNetworkEndpoints(transactionSyncer.NegSyncerKey.NegName, endpointGroupInfo.Zone, false, transactionSyncer.NegSyncerKey.GetAPIVersion(), klog.TODO())
 			if err != nil {
 				t.Errorf("For case %q, ListNetworkEndpoints() got %v, want nil", tc.desc, err)
 			}
@@ -415,7 +421,9 @@ func TestSyncNetworkEndpointLabel(t *testing.T) {
 
 func TestCommitTransaction(t *testing.T) {
 	t.Parallel()
-	s, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType, false)
+	vals := gce.DefaultTestClusterValues()
+	vals.SubnetworkURL = defaultTestSubnetURL
+	s, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(vals)), negtypes.VmIpPortEndpointType, false)
 	// use testSyncer to track the number of Sync got triggered
 	testSyncer := &testSyncer{s.(*syncer), 0}
 	testRetryer := &testRetryHandler{testSyncer, 0}
@@ -595,31 +603,31 @@ func TestCommitTransaction(t *testing.T) {
 func TestMergeTransactionIntoZoneEndpointMap(t *testing.T) {
 	testCases := []struct {
 		desc              string
-		endpointMap       map[string]negtypes.NetworkEndpointSet
+		endpointMap       map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet
 		table             func() networkEndpointTransactionTable
-		expectEndpointMap map[string]negtypes.NetworkEndpointSet
+		expectEndpointMap map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet
 	}{
 		{
 			"empty map and transactions",
-			map[string]negtypes.NetworkEndpointSet{},
+			map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
 			func() networkEndpointTransactionTable { return NewTransactionTable() },
-			map[string]negtypes.NetworkEndpointSet{},
+			map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
 		},
 		{
 			"empty transactions",
-			map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")),
-				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
+			map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")),
+				{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
 			},
 			func() networkEndpointTransactionTable { return NewTransactionTable() },
-			map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")),
-				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
+			map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")),
+				{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
 			},
 		},
 		{
 			"empty map",
-			map[string]negtypes.NetworkEndpointSet{},
+			map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
 			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{
@@ -639,16 +647,16 @@ func TestMergeTransactionIntoZoneEndpointMap(t *testing.T) {
 				}, net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
 				return table
 			},
-			map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
-				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
+			map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
+				{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
 			},
 		},
 		{
 			"add existing endpoints",
-			map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
-				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
+			map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
+				{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
 			},
 			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
@@ -669,16 +677,16 @@ func TestMergeTransactionIntoZoneEndpointMap(t *testing.T) {
 				}, net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
 				return table
 			},
-			map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
-				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
+			map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
+				{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
 			},
 		},
 		{
 			"add non-existing endpoints",
-			map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
-				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
+			map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
+				{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
 			},
 			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
@@ -699,16 +707,16 @@ func TestMergeTransactionIntoZoneEndpointMap(t *testing.T) {
 				}, net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
 				return table
 			},
-			map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 20, testInstance1, "8080")),
-				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 20, testInstance3, "8080")),
+			map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 20, testInstance1, "8080")),
+				{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 20, testInstance3, "8080")),
 			},
 		},
 		{
 			"remove existing endpoints",
-			map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
-				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
+			map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
+				{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
 			},
 			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
@@ -719,16 +727,16 @@ func TestMergeTransactionIntoZoneEndpointMap(t *testing.T) {
 				}, net.ParseIP("1.1.1.1"), 5, testInstance1, "8080")
 				return table
 			},
-			map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.6"), 5, testInstance1, "8080")),
-				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
+			map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.6"), 5, testInstance1, "8080")),
+				{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
 			},
 		},
 		{
 			"add non-existing endpoints and remove existing endpoints",
-			map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
-				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
+			map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
+				{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
 			},
 			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
@@ -744,9 +752,9 @@ func TestMergeTransactionIntoZoneEndpointMap(t *testing.T) {
 				}, net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
 				return table
 			},
-			map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.6"), 5, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")),
-				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
+			map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.6"), 5, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")),
+				{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
 			},
 		},
 	}
@@ -762,19 +770,19 @@ func TestMergeTransactionIntoZoneEndpointMap(t *testing.T) {
 func TestFilterEndpointByTransaction(t *testing.T) {
 	testCases := []struct {
 		desc              string
-		endpointMap       map[string]negtypes.NetworkEndpointSet
+		endpointMap       map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet
 		table             func() networkEndpointTransactionTable
-		expectEndpointMap map[string]negtypes.NetworkEndpointSet
+		expectEndpointMap map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet
 	}{
 		{
 			"both empty",
-			map[string]negtypes.NetworkEndpointSet{},
+			map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
 			func() networkEndpointTransactionTable { return NewTransactionTable() },
-			map[string]negtypes.NetworkEndpointSet{},
+			map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
 		},
 		{
 			"empty map",
-			map[string]negtypes.NetworkEndpointSet{},
+			map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
 			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{
@@ -789,30 +797,30 @@ func TestFilterEndpointByTransaction(t *testing.T) {
 				}, net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
 				return table
 			},
-			map[string]negtypes.NetworkEndpointSet{},
+			map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
 		},
 		{
 			"empty transaction",
-			map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
-				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
+			map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
+				{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
 			},
 			func() networkEndpointTransactionTable { return NewTransactionTable() },
-			map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
-				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
+			map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
+				{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
 			},
 		},
 		{
 			"empty transaction",
-			map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.6"), 5, testInstance1, "8080")),
-				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
+			map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.6"), 5, testInstance1, "8080")),
+				{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
 			},
 			func() networkEndpointTransactionTable { return NewTransactionTable() },
-			map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.6"), 5, testInstance1, "8080")),
-				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
+			map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.6"), 5, testInstance1, "8080")),
+				{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
 			},
 		},
 	}
@@ -829,27 +837,29 @@ func TestFilterEndpointByTransaction(t *testing.T) {
 func TestCommitPods(t *testing.T) {
 	t.Parallel()
 
-	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType, false)
+	vals := gce.DefaultTestClusterValues()
+	vals.SubnetworkURL = defaultTestSubnetURL
+	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(vals)), negtypes.VmIpPortEndpointType, false)
 	reflector := &testReflector{}
 	transactionSyncer.reflector = reflector
 
 	for _, tc := range []struct {
 		desc         string
-		input        func() (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap)
+		input        func() (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap)
 		expectOutput func() map[string]negtypes.EndpointPodMap
 	}{
 		{
 			desc: "empty input",
-			input: func() (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
+			input: func() (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
 				return nil, nil
 			},
 			expectOutput: func() map[string]negtypes.EndpointPodMap { return map[string]negtypes.EndpointPodMap{} },
 		},
 		{
 			desc: "10 endpoints from 1 instance in 1 zone",
-			input: func() (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
+			input: func() (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
 				endpointSet, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
-				return map[string]negtypes.NetworkEndpointSet{testZone1: endpointSet}, endpointMap
+				return map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{{Zone: testZone1}: endpointSet}, endpointMap
 			},
 			expectOutput: func() map[string]negtypes.EndpointPodMap {
 				_, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
@@ -858,23 +868,23 @@ func TestCommitPods(t *testing.T) {
 		},
 		{
 			desc: "40 endpoints from 4 instances in 2 zone",
-			input: func() (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
-				retSet := map[string]negtypes.NetworkEndpointSet{
-					testZone1: negtypes.NewNetworkEndpointSet(),
-					testZone2: negtypes.NewNetworkEndpointSet(),
+			input: func() (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
+				retSet := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+					{Zone: testZone1}: negtypes.NewNetworkEndpointSet(),
+					{Zone: testZone2}: negtypes.NewNetworkEndpointSet(),
 				}
 				retMap := negtypes.EndpointPodMap{}
 				endpointSet, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
-				retSet[testZone1] = retSet[testZone1].Union(endpointSet)
+				retSet[negtypes.EndpointGroupInfo{Zone: testZone1}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone1}].Union(endpointSet)
 				retMap = unionEndpointMap(retMap, endpointMap)
 				endpointSet, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
-				retSet[testZone1] = retSet[testZone1].Union(endpointSet)
+				retSet[negtypes.EndpointGroupInfo{Zone: testZone1}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone1}].Union(endpointSet)
 				retMap = unionEndpointMap(retMap, endpointMap)
 				endpointSet, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
-				retSet[testZone2] = retSet[testZone2].Union(endpointSet)
+				retSet[negtypes.EndpointGroupInfo{Zone: testZone2}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone2}].Union(endpointSet)
 				retMap = unionEndpointMap(retMap, endpointMap)
 				endpointSet, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")
-				retSet[testZone2] = retSet[testZone2].Union(endpointSet)
+				retSet[negtypes.EndpointGroupInfo{Zone: testZone2}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone2}].Union(endpointSet)
 				retMap = unionEndpointMap(retMap, endpointMap)
 				return retSet, retMap
 			},
@@ -896,30 +906,30 @@ func TestCommitPods(t *testing.T) {
 		},
 		{
 			desc: "40 endpoints from 4 instances in 2 zone, but half of the endpoints does not have corresponding pod mapping",
-			input: func() (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
-				retSet := map[string]negtypes.NetworkEndpointSet{
-					testZone1: negtypes.NewNetworkEndpointSet(),
-					testZone2: negtypes.NewNetworkEndpointSet(),
+			input: func() (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
+				retSet := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+					{Zone: testZone1}: negtypes.NewNetworkEndpointSet(),
+					{Zone: testZone2}: negtypes.NewNetworkEndpointSet(),
 				}
 				retMap := negtypes.EndpointPodMap{}
 
 				endpointSet, _ := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
-				retSet[testZone1] = retSet[testZone1].Union(endpointSet)
+				retSet[negtypes.EndpointGroupInfo{Zone: testZone1}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone1}].Union(endpointSet)
 				_, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 5, testInstance1, "8080")
 				retMap = unionEndpointMap(retMap, endpointMap)
 
 				endpointSet, _ = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
-				retSet[testZone1] = retSet[testZone1].Union(endpointSet)
+				retSet[negtypes.EndpointGroupInfo{Zone: testZone1}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone1}].Union(endpointSet)
 				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 5, testInstance2, "8080")
 				retMap = unionEndpointMap(retMap, endpointMap)
 
 				endpointSet, _ = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
-				retSet[testZone2] = retSet[testZone2].Union(endpointSet)
+				retSet[negtypes.EndpointGroupInfo{Zone: testZone2}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone2}].Union(endpointSet)
 				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 5, testInstance3, "8080")
 				retMap = unionEndpointMap(retMap, endpointMap)
 
 				endpointSet, _ = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")
-				retSet[testZone2] = retSet[testZone2].Union(endpointSet)
+				retSet[negtypes.EndpointGroupInfo{Zone: testZone2}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone2}].Union(endpointSet)
 				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 5, testInstance4, "8080")
 				retMap = unionEndpointMap(retMap, endpointMap)
 				return retSet, retMap
@@ -942,30 +952,30 @@ func TestCommitPods(t *testing.T) {
 		},
 		{
 			desc: "40 endpoints from 4 instances in 2 zone, and more endpoints are in pod mapping",
-			input: func() (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
-				retSet := map[string]negtypes.NetworkEndpointSet{
-					testZone1: negtypes.NewNetworkEndpointSet(),
-					testZone2: negtypes.NewNetworkEndpointSet(),
+			input: func() (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
+				retSet := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+					{Zone: testZone1}: negtypes.NewNetworkEndpointSet(),
+					{Zone: testZone2}: negtypes.NewNetworkEndpointSet(),
 				}
 				retMap := negtypes.EndpointPodMap{}
 
 				endpointSet, _ := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
-				retSet[testZone1] = retSet[testZone1].Union(endpointSet)
+				retSet[negtypes.EndpointGroupInfo{Zone: testZone1}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone1}].Union(endpointSet)
 				_, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 15, testInstance1, "8080")
 				retMap = unionEndpointMap(retMap, endpointMap)
 
 				endpointSet, _ = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
-				retSet[testZone1] = retSet[testZone1].Union(endpointSet)
+				retSet[negtypes.EndpointGroupInfo{Zone: testZone1}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone1}].Union(endpointSet)
 				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 15, testInstance2, "8080")
 				retMap = unionEndpointMap(retMap, endpointMap)
 
 				endpointSet, _ = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
-				retSet[testZone2] = retSet[testZone2].Union(endpointSet)
+				retSet[negtypes.EndpointGroupInfo{Zone: testZone2}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone2}].Union(endpointSet)
 				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 15, testInstance3, "8080")
 				retMap = unionEndpointMap(retMap, endpointMap)
 
 				endpointSet, _ = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")
-				retSet[testZone2] = retSet[testZone2].Union(endpointSet)
+				retSet[negtypes.EndpointGroupInfo{Zone: testZone2}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone2}].Union(endpointSet)
 				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 15, testInstance4, "8080")
 				retMap = unionEndpointMap(retMap, endpointMap)
 				return retSet, retMap
@@ -988,22 +998,22 @@ func TestCommitPods(t *testing.T) {
 		},
 		{
 			desc: "40 endpoints from 4 instances in 2 zone, but some nodes do not have endpoint pod mapping",
-			input: func() (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
-				retSet := map[string]negtypes.NetworkEndpointSet{
-					testZone1: negtypes.NewNetworkEndpointSet(),
-					testZone2: negtypes.NewNetworkEndpointSet(),
+			input: func() (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
+				retSet := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+					{Zone: testZone1}: negtypes.NewNetworkEndpointSet(),
+					{Zone: testZone2}: negtypes.NewNetworkEndpointSet(),
 				}
 				retMap := negtypes.EndpointPodMap{}
 				endpointSet, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
-				retSet[testZone1] = retSet[testZone1].Union(endpointSet)
+				retSet[negtypes.EndpointGroupInfo{Zone: testZone1}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone1}].Union(endpointSet)
 				retMap = unionEndpointMap(retMap, endpointMap)
 				endpointSet, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
-				retSet[testZone1] = retSet[testZone1].Union(endpointSet)
+				retSet[negtypes.EndpointGroupInfo{Zone: testZone1}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone1}].Union(endpointSet)
 				endpointSet, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
-				retSet[testZone2] = retSet[testZone2].Union(endpointSet)
+				retSet[negtypes.EndpointGroupInfo{Zone: testZone2}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone2}].Union(endpointSet)
 				retMap = unionEndpointMap(retMap, endpointMap)
 				endpointSet, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")
-				retSet[testZone2] = retSet[testZone2].Union(endpointSet)
+				retSet[negtypes.EndpointGroupInfo{Zone: testZone2}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone2}].Union(endpointSet)
 				return retSet, retMap
 			},
 			expectOutput: func() map[string]negtypes.EndpointPodMap {
@@ -1036,7 +1046,8 @@ func TestCommitPods(t *testing.T) {
 
 func TestTransactionSyncerWithNegCR(t *testing.T) {
 	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
-	testSubnetwork := cloud.ResourcePath("subnetwork", &meta.Key{Name: "test-subnetwork"})
+	testSubnetwork := defaultTestSubnetURL
+
 	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
 	testNegType := negtypes.VmIpPortEndpointType
 
@@ -1332,9 +1343,11 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 // zone has the expected State.
 func TestUpdateInitStatusWithMultiSubnetCluster(t *testing.T) {
 	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
-	testSubnetwork := cloud.ResourcePath("subnetwork", &meta.Key{Name: "test-subnetwork"})
 	testNegType := negtypes.VmIpPortEndpointType
 	flags.F.EnableMultiSubnetClusterPhase1 = true
+	defer func() {
+		flags.F.EnableMultiSubnetClusterPhase1 = false
+	}()
 
 	// Active zones: zone1, zone2.
 	// Inactive zones: zone3
@@ -1364,9 +1377,7 @@ func TestUpdateInitStatusWithMultiSubnetCluster(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			t.Parallel()
-
-			fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
+			fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(defaultTestSubnetURL, testNetwork)
 			_, syncer := newTestTransactionSyncer(fakeCloud, testNegType, false)
 			svcNegClient := syncer.svcNegClient
 
@@ -1453,7 +1464,6 @@ func TestUpdateInitStatusWithMultiSubnetCluster(t *testing.T) {
 
 func TestUpdateStatus(t *testing.T) {
 	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
-	testSubnetwork := cloud.ResourcePath("subnetwork", &meta.Key{Name: "test-subnetwork"})
 	testNegType := negtypes.VmIpPortEndpointType
 	testNegRefs := []negv1beta1.NegObjectReference{
 		{
@@ -1524,7 +1534,7 @@ func TestUpdateStatus(t *testing.T) {
 	for _, syncErr := range []error{nil, fmt.Errorf("error")} {
 		for _, tc := range testCases {
 			t.Run(tc.desc, func(t *testing.T) {
-				fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
+				fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(defaultTestSubnetURL, testNetwork)
 				_, syncer := newTestTransactionSyncer(fakeCloud, testNegType, false)
 				svcNegClient := syncer.svcNegClient
 				syncer.needInit = false
@@ -1582,7 +1592,7 @@ func TestUpdateStatus(t *testing.T) {
 
 func TestIsZoneChange(t *testing.T) {
 	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
-	testSubnetwork := cloud.ResourcePath("subnetwork", &meta.Key{Name: "test-subnetwork"})
+	testSubnetwork := defaultTestSubnetURL
 	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
 	testNegType := negtypes.VmIpPortEndpointType
 
@@ -1722,7 +1732,7 @@ func TestUnknownNodes(t *testing.T) {
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
 	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
 	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
-	testSubnetwork := cloud.ResourcePath("subnetwork", &meta.Key{Name: "test-subnetwork"})
+	testSubnetwork := defaultTestSubnetURL
 	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
 
 	testIP1 := "10.100.1.1"
@@ -1732,20 +1742,20 @@ func TestUnknownNodes(t *testing.T) {
 
 	testEndpointSlices := getDefaultEndpointSlices()
 	testEndpointSlices[0].Endpoints[0].NodeName = utilpointer.StringPtr("unknown-node")
-	testEndpointMap := map[string]*composite.NetworkEndpoint{
-		negtypes.TestZone1: &composite.NetworkEndpoint{
+	testEndpointMap := map[negtypes.EndpointGroupInfo]*composite.NetworkEndpoint{
+		{Zone: negtypes.TestZone1}: &composite.NetworkEndpoint{
 			Instance:  negtypes.TestInstance1,
 			IpAddress: testIP1,
 			Port:      testPort,
 		},
 
-		negtypes.TestZone2: &composite.NetworkEndpoint{
+		{Zone: negtypes.TestZone2}: &composite.NetworkEndpoint{
 			Instance:  negtypes.TestInstance3,
 			IpAddress: testIP2,
 			Port:      testPort,
 		},
 
-		negtypes.TestZone4: &composite.NetworkEndpoint{
+		{Zone: negtypes.TestZone4}: &composite.NetworkEndpoint{
 			Instance:  negtypes.TestUpgradeInstance1,
 			IpAddress: testIP3,
 			Port:      testPort,
@@ -1754,10 +1764,10 @@ func TestUnknownNodes(t *testing.T) {
 
 	// Create initial NetworkEndpointGroups in cloud
 	var objRefs []negv1beta1.NegObjectReference
-	for zone, endpoint := range testEndpointMap {
-		fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: testNegName, Version: meta.VersionGA}, zone, klog.TODO())
-		fakeCloud.AttachNetworkEndpoints(testNegName, zone, []*composite.NetworkEndpoint{endpoint}, meta.VersionGA, klog.TODO())
-		neg, err := fakeCloud.GetNetworkEndpointGroup(testNegName, zone, meta.VersionGA, klog.TODO())
+	for endpointGroupInfo, endpoint := range testEndpointMap {
+		fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: testNegName, Version: meta.VersionGA}, endpointGroupInfo.Zone, klog.TODO())
+		fakeCloud.AttachNetworkEndpoints(testNegName, endpointGroupInfo.Zone, []*composite.NetworkEndpoint{endpoint}, meta.VersionGA, klog.TODO())
+		neg, err := fakeCloud.GetNetworkEndpointGroup(testNegName, endpointGroupInfo.Zone, meta.VersionGA, klog.TODO())
 		if err != nil {
 			t.Fatalf("failed to get neg from fake cloud: %s", err)
 		}
@@ -1790,19 +1800,19 @@ func TestUnknownNodes(t *testing.T) {
 	}
 
 	// Check that unknown zone did not cause endpoints to be removed
-	out, _, err := retrieveExistingZoneNetworkEndpointMap(testNegName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO())
+	out, _, err := retrieveExistingZoneNetworkEndpointMap(testNegName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, "", klog.TODO())
 	if err != nil {
 		t.Errorf("errored retrieving existing network endpoints")
 	}
 
-	expectedEndpoints := map[string]negtypes.NetworkEndpointSet{
-		negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+	expectedEndpoints := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+		{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(
 			negtypes.NetworkEndpoint{IP: testIP1, Node: negtypes.TestInstance1, Port: strconv.Itoa(int(testPort))},
 		),
-		negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
+		{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet(
 			negtypes.NetworkEndpoint{IP: testIP2, Node: negtypes.TestInstance3, Port: strconv.Itoa(int(testPort))},
 		),
-		negtypes.TestZone4: negtypes.NewNetworkEndpointSet(
+		{Zone: negtypes.TestZone4}: negtypes.NewNetworkEndpointSet(
 			negtypes.NetworkEndpoint{IP: testIP3, Node: negtypes.TestUpgradeInstance1, Port: strconv.Itoa(int(testPort))},
 		),
 	}
@@ -1814,11 +1824,12 @@ func TestUnknownNodes(t *testing.T) {
 
 // TestEnableDegradedMode verifies if DegradedMode has been correctly enabled for L7 endpoint calculator
 func TestEnableDegradedMode(t *testing.T) {
-	t.Parallel()
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
 	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
-	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	vals := gce.DefaultTestClusterValues()
+	vals.SubnetworkURL = defaultTestSubnetURL
+	fakeGCE := gce.NewFakeGCECloud(vals)
 	negtypes.MockNetworkEndpointAPIs(fakeGCE)
 	fakeCloud := negtypes.NewAdapter(fakeGCE)
 	mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
@@ -1864,39 +1875,39 @@ func TestEnableDegradedMode(t *testing.T) {
 		},
 	}
 
-	initialEndpoints := map[string]negtypes.NetworkEndpointSet{
-		negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+	initialEndpoints := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+		{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(
 			networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"),
 		),
-		negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
+		{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet(
 			networkEndpointFromEncodedEndpoint("10.100.1.2||instance3||80"),
 		),
-		negtypes.TestZone4: negtypes.NewNetworkEndpointSet(
+		{Zone: negtypes.TestZone4}: negtypes.NewNetworkEndpointSet(
 			networkEndpointFromEncodedEndpoint("10.100.2.1||upgrade-instance1||80"),
 		),
 	}
 
-	updateSucceedEndpoints := map[string]negtypes.NetworkEndpointSet{
-		negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+	updateSucceedEndpoints := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+		{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(
 			networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"),
 			networkEndpointFromEncodedEndpoint("10.100.1.2||instance1||80"),
 			networkEndpointFromEncodedEndpoint("10.100.2.1||instance2||80"),
 			networkEndpointFromEncodedEndpoint("10.100.1.3||instance1||80"),
 			networkEndpointFromEncodedEndpoint("10.100.1.4||instance1||80")),
-		negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
+		{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet(
 			networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80")),
-		negtypes.TestZone4: negtypes.NewNetworkEndpointSet(),
+		{Zone: negtypes.TestZone4}: negtypes.NewNetworkEndpointSet(),
 	}
 
-	updateFailedEndpoints := map[string]negtypes.NetworkEndpointSet{
-		negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+	updateFailedEndpoints := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+		{Zone: negtypes.TestZone1}: negtypes.NewNetworkEndpointSet(
 			networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"),
 			networkEndpointFromEncodedEndpoint("10.100.1.2||instance1||80"),
 			networkEndpointFromEncodedEndpoint("10.100.2.1||instance2||80"),
 			networkEndpointFromEncodedEndpoint("10.100.1.3||instance1||80"),
 			networkEndpointFromEncodedEndpoint("10.100.1.4||instance1||80")),
-		negtypes.TestZone2: negtypes.NewNetworkEndpointSet(),
-		negtypes.TestZone4: negtypes.NewNetworkEndpointSet(),
+		{Zone: negtypes.TestZone2}: negtypes.NewNetworkEndpointSet(),
+		{Zone: negtypes.TestZone4}: negtypes.NewNetworkEndpointSet(),
 	}
 
 	testCases := []struct {
@@ -1904,7 +1915,7 @@ func TestEnableDegradedMode(t *testing.T) {
 		modify               func(ts *transactionSyncer)
 		negName              string // to distinguish endpoints in differnt NEGs
 		testEndpointSlices   []*discovery.EndpointSlice
-		expectedEndpoints    map[string]negtypes.NetworkEndpointSet
+		expectedEndpoints    map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet
 		expectedInErrorState bool
 		expectErr            error
 	}{
@@ -2087,7 +2098,7 @@ func TestEnableDegradedMode(t *testing.T) {
 			(s.syncer.(*syncer)).stopped = false
 			tc.modify(s)
 
-			out, _, err := retrieveExistingZoneNetworkEndpointMap(tc.negName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO())
+			out, _, err := retrieveExistingZoneNetworkEndpointMap(tc.negName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, "", klog.TODO())
 			if err != nil {
 				t.Errorf("errored retrieving existing network endpoints")
 			}
@@ -2100,7 +2111,7 @@ func TestEnableDegradedMode(t *testing.T) {
 				t.Errorf("syncInternal returned %v, expected %v", err, tc.expectErr)
 			}
 			err = wait.PollImmediate(time.Second, 3*time.Second, func() (bool, error) {
-				out, _, err = retrieveExistingZoneNetworkEndpointMap(tc.negName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO())
+				out, _, err = retrieveExistingZoneNetworkEndpointMap(tc.negName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, "", klog.TODO())
 				if err != nil {
 					return false, nil
 				}
@@ -2245,13 +2256,13 @@ func TestGetEndpointPodLabelMap(t *testing.T) {
 
 	for _, tc := range []struct {
 		desc   string
-		input  func() (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap)
+		input  func() (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap)
 		expect func() labels.EndpointPodLabelMap
 	}{
 		{
 			desc: "empty inputs",
-			input: func() (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
-				return map[string]negtypes.NetworkEndpointSet{}, negtypes.EndpointPodMap{}
+			input: func() (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
+				return map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{}, negtypes.EndpointPodMap{}
 			},
 			expect: func() labels.EndpointPodLabelMap {
 				return labels.EndpointPodLabelMap{}
@@ -2259,10 +2270,10 @@ func TestGetEndpointPodLabelMap(t *testing.T) {
 		},
 		{
 			desc: "Add endpoints in diferent zones",
-			input: func() (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
-				retSet := map[string]negtypes.NetworkEndpointSet{
-					testZone1: negtypes.NewNetworkEndpointSet().Union(endpointSet1),
-					testZone2: negtypes.NewNetworkEndpointSet().Union(endpointSet2),
+			input: func() (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
+				retSet := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+					{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(endpointSet1),
+					{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(endpointSet2),
 				}
 				retMap := negtypes.EndpointPodMap{}
 				retMap = unionEndpointMap(retMap, endpointPodMap1)
@@ -2282,10 +2293,10 @@ func TestGetEndpointPodLabelMap(t *testing.T) {
 		},
 		{
 			desc: "Add endpoints in diferent zones with pod not found",
-			input: func() (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
-				retSet := map[string]negtypes.NetworkEndpointSet{
-					testZone1: negtypes.NewNetworkEndpointSet().Union(endpointSet1),
-					testZone2: negtypes.NewNetworkEndpointSet().Union(endpointSet2).Union(endpointSet3),
+			input: func() (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
+				retSet := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+					{Zone: testZone1}: negtypes.NewNetworkEndpointSet().Union(endpointSet1),
+					{Zone: testZone2}: negtypes.NewNetworkEndpointSet().Union(endpointSet2).Union(endpointSet3),
 				}
 				retMap := negtypes.EndpointPodMap{}
 				retMap = unionEndpointMap(retMap, endpointPodMap1)
@@ -2331,14 +2342,14 @@ func TestCollectLabelStats(t *testing.T) {
 		desc              string
 		curLabelMap       labels.EndpointPodLabelMap
 		addLabelMap       labels.EndpointPodLabelMap
-		targetEndpointMap map[string]negtypes.NetworkEndpointSet
+		targetEndpointMap map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet
 		expect            metricscollector.LabelPropagationStats
 	}{
 		{
 			desc:              "Empty inputs",
 			curLabelMap:       labels.EndpointPodLabelMap{},
 			addLabelMap:       labels.EndpointPodLabelMap{},
-			targetEndpointMap: map[string]negtypes.NetworkEndpointSet{},
+			targetEndpointMap: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
 			expect: metricscollector.LabelPropagationStats{
 				EndpointsWithAnnotation: 0,
 				NumberOfEndpoints:       0,
@@ -2352,8 +2363,8 @@ func TestCollectLabelStats(t *testing.T) {
 				},
 			},
 			addLabelMap: labels.EndpointPodLabelMap{},
-			targetEndpointMap: map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet(
+			targetEndpointMap: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				{Zone: testZone1}: negtypes.NewNetworkEndpointSet(
 					endpoint1,
 					endpoint2,
 				),
@@ -2375,12 +2386,12 @@ func TestCollectLabelStats(t *testing.T) {
 					"foo": "bar",
 				},
 			},
-			targetEndpointMap: map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet(
+			targetEndpointMap: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				{Zone: testZone1}: negtypes.NewNetworkEndpointSet(
 					endpoint1,
 					endpoint2,
 				),
-				testZone2: negtypes.NewNetworkEndpointSet(
+				{Zone: testZone2}: negtypes.NewNetworkEndpointSet(
 					endpoint3,
 					endpoint4,
 				),
@@ -2398,8 +2409,8 @@ func TestCollectLabelStats(t *testing.T) {
 					"foo": "bar",
 				},
 			},
-			targetEndpointMap: map[string]negtypes.NetworkEndpointSet{
-				testZone2: negtypes.NewNetworkEndpointSet(
+			targetEndpointMap: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				{Zone: testZone2}: negtypes.NewNetworkEndpointSet(
 					endpoint3,
 					endpoint4,
 				),
@@ -2457,7 +2468,7 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 		testContext.SvcNegInformer.GetIndexer(),
 		reflector,
 		GetEndpointsCalculator(testContext.PodInformer.GetIndexer(), testContext.NodeInformer.GetIndexer(), testContext.ServiceInformer.GetIndexer(),
-			fakeZoneGetter, svcPort, mode, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics(), &network.NetworkInfo{IsDefault: true}, negtypes.L4InternalLB),
+			fakeZoneGetter, svcPort, mode, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics(), &network.NetworkInfo{IsDefault: true, SubnetworkURL: defaultTestSubnetURL}, negtypes.L4InternalLB),
 		string(kubeSystemUID),
 		testContext.SvcNegClient,
 		metricscollector.FakeSyncerMetrics(),

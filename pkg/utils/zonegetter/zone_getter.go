@@ -78,41 +78,48 @@ type ZoneGetter struct {
 	defaultSubnetURL string
 }
 
-// ZoneForNode returns the zone for a given node by looking up providerID.
-func (z *ZoneGetter) ZoneForNode(name string, logger klog.Logger) (string, error) {
+// ZoneAndSubnetForNode returns the zone and subnet for a given node by looking up providerID.
+func (z *ZoneGetter) ZoneAndSubnetForNode(name string, logger klog.Logger) (string, string, error) {
 	// Return the single stored zone if the zoneGetter is in non-gcp mode.
+	// In non-gcp mode, the subnet will be empty, so it matches the behavior
+	// for non-gcp NEGs since their SubnetworkURL is empty.
 	if z.mode == NonGCP {
 		logger.Info("ZoneGetter in non-gcp mode, return the single stored zone", "zone", z.singleStoredZone)
-		return z.singleStoredZone, nil
+		return z.singleStoredZone, "", nil
 	}
 
 	nodeLogger := logger.WithValues("nodeName", name)
 	node, err := listers.NewNodeLister(z.nodeLister).Get(name)
 	if err != nil {
 		nodeLogger.Error(err, "Failed to get node")
-		return "", fmt.Errorf("%w: failed to get node %s", ErrNodeNotFound, name)
-	}
-	if z.onlyIncludeDefaultSubnetNodes {
-		isInDefaultSubnet, err := isNodeInDefaultSubnet(node, z.defaultSubnetURL, nodeLogger)
-		if err != nil {
-			nodeLogger.Error(err, "Failed to verify if the node is in default subnet.")
-			return "", err
-		}
-		if !isInDefaultSubnet {
-			nodeLogger.Error(ErrNodeNotInDefaultSubnet, "Node is invalid since it is not in the default subnet")
-			return "", ErrNodeNotInDefaultSubnet
-		}
+		return "", "", fmt.Errorf("%w: failed to get node %s", ErrNodeNotFound, name)
 	}
 	if node.Spec.ProviderID == "" {
 		nodeLogger.Error(ErrProviderIDNotFound, "Node does not have providerID")
-		return "", ErrProviderIDNotFound
+		return "", "", ErrProviderIDNotFound
 	}
 	zone, err := getZone(node)
 	if err != nil {
 		nodeLogger.Error(err, "Failed to get zone from the providerID")
-		return "", err
+		return "", "", err
 	}
-	return zone, nil
+
+	subnet, err := getSubnet(node, z.defaultSubnetURL)
+	if err != nil {
+		nodeLogger.Error(err, "Failed to get subnet from node's LabelNodeSubnet")
+		return "", "", err
+	}
+	if z.onlyIncludeDefaultSubnetNodes {
+		defaultSubnet, err := utils.KeyName(z.defaultSubnetURL)
+		if err != nil {
+			nodeLogger.Error(err, "Failed to extract default subnet information from URL", "defaultSubnetURL", z.defaultSubnetURL)
+			return "", "", err
+		}
+		if subnet != defaultSubnet {
+			return "", "", ErrNodeNotInDefaultSubnet
+		}
+	}
+	return zone, subnet, nil
 }
 
 // ListNodes returns a list of nodes that satisfy the given node filtering mode.
@@ -291,22 +298,11 @@ func (z *ZoneGetter) IsDefaultSubnetNode(nodeName string, logger klog.Logger) (b
 // existing nodes, they will not have label and can only be in the default
 // subnet.
 func isNodeInDefaultSubnet(node *api_v1.Node, defaultSubnetURL string, nodeLogger klog.Logger) (bool, error) {
-	if node.Spec.PodCIDR == "" {
-		nodeLogger.Info("Node does not have PodCIDR set")
-		return false, ErrNodePodCIDRNotSet
+	nodeSubnet, err := getSubnet(node, defaultSubnetURL)
+	if err != nil {
+		nodeLogger.Error(err, "Failed to get node subnet", "nodeName", node.Name)
+		return false, err
 	}
-
-	nodeSubnet, exist := node.Labels[utils.LabelNodeSubnet]
-	if !exist {
-		nodeLogger.Info("Node does not have subnet label key, assumed to be in the default subnet", "subnet label key", utils.LabelNodeSubnet)
-		return true, nil
-	}
-	if nodeSubnet == "" {
-		nodeLogger.Info("Node has empty value for subnet label key, assumed to be in the default subnet", "subnet label key", utils.LabelNodeSubnet)
-		return true, nil
-	}
-	nodeLogger.Info("Node has an non-empty value for subnet label key", "subnet label key", utils.LabelNodeSubnet, "subnet label value", nodeSubnet)
-
 	defaultSubnet, err := utils.KeyName(defaultSubnetURL)
 	if err != nil {
 		nodeLogger.Error(err, "Failed to extract default subnet information from URL", "defaultSubnetURL", defaultSubnetURL)
@@ -331,6 +327,26 @@ func getZone(node *api_v1.Node) (string, error) {
 	return matches[2], nil
 }
 
+// getSubnet gets subnet information from node's LabelNodeSubnet.
+// If a node doesn't have this label, or the label value is empty, it means
+// this node is in the defaultSubnet and we will parse the subnet from the
+// defaultSubnetURL.
+func getSubnet(node *api_v1.Node, defaultSubnetURL string) (string, error) {
+	if node.Spec.PodCIDR == "" {
+		return "", ErrNodePodCIDRNotSet
+	}
+
+	nodeSubnet, exist := node.Labels[utils.LabelNodeSubnet]
+	if exist && nodeSubnet != "" {
+		return nodeSubnet, nil
+	}
+	defaultSubnet, err := utils.KeyName(defaultSubnetURL)
+	if err != nil {
+		return "", err
+	}
+	return defaultSubnet, nil
+}
+
 // NewNonGCPZoneGetter initialize a ZoneGetter in Non-GCP mode.
 func NewNonGCPZoneGetter(zone string) *ZoneGetter {
 	return &ZoneGetter{
@@ -344,7 +360,7 @@ func NewZoneGetter(nodeInformer cache.SharedIndexInformer, defaultSubnetURL stri
 	return &ZoneGetter{
 		mode:                          GCP,
 		nodeLister:                    nodeInformer.GetIndexer(),
-		onlyIncludeDefaultSubnetNodes: flags.F.EnableMultiSubnetCluster,
+		onlyIncludeDefaultSubnetNodes: flags.F.EnableMultiSubnetCluster && !flags.F.EnableMultiSubnetClusterPhase1,
 		defaultSubnetURL:              defaultSubnetURL,
 	}
 }
