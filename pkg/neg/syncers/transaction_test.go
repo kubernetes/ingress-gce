@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	nodetopologyv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/google/go-cmp/cmp"
@@ -1335,6 +1336,151 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 		syncer.cloud.DeleteNetworkEndpointGroup(testNegName, negtypes.TestZone3, syncer.NegSyncerKey.GetAPIVersion(), klog.TODO())
 		syncer.cloud.DeleteNetworkEndpointGroup(testNegName, negtypes.TestZone4, syncer.NegSyncerKey.GetAPIVersion(), klog.TODO())
 
+	}
+}
+
+func TestEnsureNetworkEndpointGroupsFromNodeTopology(t *testing.T) {
+	zones := []string{negtypes.TestZone1, negtypes.TestZone2, negtypes.TestZone3}
+	testNetworkURL := cloud.SelfLink(meta.VersionGA, "mock-project", "networks", meta.GlobalKey(defaultTestSubnet))
+	testSubnetworkURL := cloud.SelfLink(meta.VersionGA, "mock-project", "subnetworks", meta.RegionalKey(defaultTestSubnet, "test-region"))
+	testNegType := negtypes.VmIpPortEndpointType
+	additionalTestSubnet := "additional-subnet"
+	additionalTestSubnetworkURL := cloud.SelfLink(meta.VersionGA, "mock-project", "subnetworks", meta.RegionalKey(additionalTestSubnet, "test-region"))
+
+	nodeTopologyCrWithDefaultSubnetOnly := nodetopologyv1.NodeTopology{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "NodeTopology",
+			APIVersion: "networking.gke.io/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "default",
+		},
+		Status: nodetopologyv1.NodeTopologyStatus{
+			Subnets: []nodetopologyv1.SubnetConfig{
+				{Name: defaultTestSubnet, SubnetPath: fmt.Sprintf("projects/mock-project/regions/test-region/subnetworks/%s", defaultTestSubnet)},
+			},
+		},
+	}
+	nodeTopologyCrWithAdditionalSubnets := nodeTopologyCrWithDefaultSubnetOnly
+	nodeTopologyCrWithAdditionalSubnets.Status.Subnets = append(nodeTopologyCrWithAdditionalSubnets.Status.Subnets,
+		nodetopologyv1.SubnetConfig{
+			Name:       additionalTestSubnet,
+			SubnetPath: fmt.Sprintf("projects/mock-project/regions/test-region/subnetworks/%s", additionalTestSubnet),
+		},
+	)
+
+	currNodeTopologyCRName := flags.F.NodeTopologyCRName
+	prevFlag := flags.F.EnableMultiSubnetClusterPhase1
+	defer func() {
+		flags.F.NodeTopologyCRName = currNodeTopologyCRName
+		flags.F.EnableMultiSubnetClusterPhase1 = prevFlag
+	}()
+	flags.F.NodeTopologyCRName = "default"
+	flags.F.EnableMultiSubnetClusterPhase1 = true
+
+	testCases := []struct {
+		desc           string
+		customNEGName  string
+		nodeTopologyCr *nodetopologyv1.NodeTopology
+		negDesc        string
+		expectError    bool
+		// expectNeedToUpdate indicates whether there is any conflicting NEG description.
+		// When there is conflict, we do not update NEG Object Ref.
+		expectNeedToUpdate bool
+	}{
+		{
+			desc:               "NodeTopology CR doesn't exist",
+			expectError:        true,
+			expectNeedToUpdate: true,
+		},
+		{
+			desc:               "NodeTopology CR only contains default subnet",
+			nodeTopologyCr:     &nodeTopologyCrWithDefaultSubnetOnly,
+			expectNeedToUpdate: true,
+		},
+		{
+			desc:               "NodeTopology CR contains additional subnets, auto-generated NEG name",
+			nodeTopologyCr:     &nodeTopologyCrWithAdditionalSubnets,
+			expectNeedToUpdate: true,
+		},
+		{
+			desc:               "NodeTopology CR contains additional subnets, custom NEG name not exceeding character limit",
+			customNEGName:      "custom-neg",
+			nodeTopologyCr:     &nodeTopologyCrWithAdditionalSubnets,
+			expectError:        false,
+			expectNeedToUpdate: true,
+		},
+		{
+			desc:               "NodeTopology CR contains additional subnets, custom NEG name exceeding character limit",
+			customNEGName:      "012345678901234567890123456789012345678901234567890123456", // 57 characters
+			nodeTopologyCr:     &nodeTopologyCrWithAdditionalSubnets,
+			expectError:        true,
+			expectNeedToUpdate: true,
+		},
+		{
+			desc:           "NodeTopology CR contains additional subnets, conflicting NEG description",
+			nodeTopologyCr: &nodeTopologyCrWithAdditionalSubnets,
+			negDesc: utils.NegDescription{
+				ClusterUID:  kubeSystemUID,
+				Namespace:   testServiceNamespace,
+				ServiceName: testServiceName,
+				Port:        "81", // Expected port to be 80
+			}.String(),
+			expectError:        true,
+			expectNeedToUpdate: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetworkURL, testNetworkURL)
+
+			_, syncer := newTestTransactionSyncer(fakeCloud, testNegType, tc.customNEGName != "")
+			if tc.customNEGName != "" {
+				syncer.NegSyncerKey.NegName = tc.customNEGName
+			}
+			if tc.negDesc != "" {
+				negName := syncer.namer.NonDefaultSubnetNEG(syncer.Namespace, syncer.Name, additionalTestSubnet, syncer.PortTuple.Port)
+				for _, zone := range zones {
+					err := fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
+						Version:             syncer.NegSyncerKey.GetAPIVersion(),
+						Name:                negName,
+						NetworkEndpointType: string(syncer.NegSyncerKey.NegType),
+						Network:             fakeCloud.NetworkURL(),
+						Subnetwork:          fakeCloud.SubnetworkURL(),
+						Description:         tc.negDesc,
+					}, zone, klog.TODO())
+					if err != nil {
+						t.Fatalf("Failed to create NEG: %v", err)
+					}
+				}
+			}
+
+			negsByLocation := make(map[string]int)
+			if tc.nodeTopologyCr != nil {
+				if err := syncer.nodeTopologyLister.Add(tc.nodeTopologyCr); err != nil {
+					t.Fatalf("Failed to create Node Topology CR: %v", err)
+				}
+			}
+			negObjRefs, needToUpdate, errs := syncer.ensureNetworkEndpointGroupsFromNodeTopology(zones, negsByLocation)
+
+			if tc.expectError && len(errs) == 0 {
+				t.Errorf("Got no errors after ensureNetworkEndpointGroupsFromNodeTopology(), expected errors")
+			}
+			if !tc.expectError && len(errs) != 0 {
+				t.Errorf("Got errors %v after ensureNetworkEndpointGroupsFromNodeTopology(), expected no errors", errs)
+			}
+			if needToUpdate != tc.expectNeedToUpdate {
+				t.Errorf("Got needToUpdate = %v, expected %v", needToUpdate, tc.expectNeedToUpdate)
+			}
+			if needToUpdate {
+				for _, negObjRef := range negObjRefs {
+					if negObjRef.SubnetURL != additionalTestSubnetworkURL {
+						t.Errorf("Got subnetURL = %s for NEG %s, expected %s", negObjRef.SubnetURL, negObjRef.SelfLink, additionalTestSubnetworkURL)
+					}
+				}
+			}
+		})
 	}
 }
 

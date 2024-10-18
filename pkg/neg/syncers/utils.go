@@ -43,6 +43,8 @@ import (
 	"k8s.io/klog/v2"
 )
 
+var ErrCustomNEGNameTooLong = fmt.Errorf("custom NEG name exceeds 56 characters limit")
+
 const (
 	MAX_NETWORK_ENDPOINTS_PER_BATCH = 500
 	// For each NEG, only retries 15 times to process it.
@@ -148,6 +150,7 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 			ServiceName: svcName,
 			Port:        port,
 		}
+		fmt.Printf("remove me: expectedDesc = %v \n", expectedDesc)
 		if customName && neg.Description == "" {
 			negLogger.Error(nil, "Found Neg with custom name but empty description")
 			return negv1beta1.NegObjectReference{}, fmt.Errorf("found a custom named neg %s with an empty description", negName)
