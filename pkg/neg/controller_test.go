@@ -2115,6 +2115,7 @@ func newTestNode(name string, unschedulable bool) *apiv1.Node {
 			Name: name,
 		},
 		Spec: apiv1.NodeSpec{
+			PodCIDR:       "10.100.1.0/24",
 			Unschedulable: unschedulable,
 		},
 	}
