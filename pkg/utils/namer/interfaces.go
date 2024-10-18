@@ -63,6 +63,9 @@ type BackendNamer interface {
 	// RXLBBackendName returns the Regional External Ingress backend name,
 	// based on the service namespace, name and target port.
 	RXLBBackendName(namespace, name string, port int32) string
+	// NonDefaultSubnetCustomNEG returns the gce neg name for custom NEGs created
+	// in non-default subnets.
+	NonDefaultSubnetCustomNEG(customNEGName, subnetName string) (string, error)
 	// L4Backend returns the name for L4 LB backend resources, based on the service namespace and name.
 	// It supports ILB with subsetting enabled (VM_IP_NEGs) and NetLB with RBS enabled.
 	// The second output parameter indicates if the namer is supported.

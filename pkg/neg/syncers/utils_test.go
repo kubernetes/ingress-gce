@@ -46,7 +46,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
-const defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/default"
+const defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/mock-project/regions/test-region/subnetworks/default"
 
 func TestEncodeDecodeEndpoint(t *testing.T) {
 	ip := "10.0.0.10"

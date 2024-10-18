@@ -35,7 +35,7 @@ import (
 )
 
 const (
-	defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/default"
+	defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/mock-project/regions/test-region/subnetworks/default"
 
 	defaultTestSubnet    = "default"
 	nonDefaultTestSubnet = "non-default"

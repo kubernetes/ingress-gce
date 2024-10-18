@@ -85,7 +85,11 @@ const (
 
 	// Length of the subnet hash for non default subnet NEGs.
 	subnetHashLength = 6
+
+	MaxDefaultSubnetNegNameLength = 56
 )
+
+var ErrCustomNEGNameTooLong = fmt.Errorf("custom NEG name exceeds %v characters limit", MaxDefaultSubnetNegNameLength)
 
 // NamerProtocol is an enum for the different protocols given as
 // parameters to Namer.
@@ -482,6 +486,16 @@ func (n *Namer) RXLBBackendName(namespace, name string, port int32) string {
 	truncName := truncFields[1]
 	truncPort := truncFields[2]
 	return fmt.Sprintf("%s-e-%s-%s-%s-%s", n.negPrefix(), truncNamespace, truncName, truncPort, negSuffix(n.shortUID(), namespace, name, portStr, ""))
+}
+
+// NonDefaultSubnetCustomNEG returns the gce neg name in the non-default subnet
+// when the NEG name is a custom one.
+// It will be shared between L4 and L7 NEGs.
+func (n *Namer) NonDefaultSubnetCustomNEG(customNEGName, subnetName string) (string, error) {
+	if len(customNEGName) > MaxDefaultSubnetNegNameLength {
+		return "", ErrCustomNEGNameTooLong
+	}
+	return fmt.Sprintf("%s-%s", customNEGName, subnetHash(subnetName)), nil
 }
 
 // IsNEG returns true if the name is a NEG owned by this cluster.

@@ -44,6 +44,7 @@ type NetworkEndpointGroupCloud interface {
 type NetworkEndpointGroupNamer interface {
 	NEG(namespace, name string, port int32) string
 	NonDefaultSubnetNEG(namespace, name, subnetName string, port int32) string
+	NonDefaultSubnetCustomNEG(customNEGName, subnetName string) (string, error)
 	IsNEG(name string) bool
 }
 

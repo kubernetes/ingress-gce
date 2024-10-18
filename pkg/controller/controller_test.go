@@ -58,7 +58,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 )
 
-const defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/default"
+const defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/mock-project/regions/test-region/subnetworks/default"
 
 var (
 	nodePortCounter = 30000

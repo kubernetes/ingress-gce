@@ -69,6 +69,8 @@ const (
 	// L4LBTypes are used to mark what type of LB the calculator is determinig endpoints for.
 	L4InternalLB = L4LBType("INTERNAL")
 	L4ExternalLB = L4LBType("EXTERNAL")
+
+	MaxDefaultSubnetNegNameLength = 56
 )
 
 // SvcPortTuple is the tuple representing one service port
