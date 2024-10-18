@@ -360,7 +360,7 @@ func NewZoneGetter(nodeInformer cache.SharedIndexInformer, defaultSubnetURL stri
 	return &ZoneGetter{
 		mode:                          GCP,
 		nodeLister:                    nodeInformer.GetIndexer(),
-		onlyIncludeDefaultSubnetNodes: flags.F.EnableMultiSubnetCluster && flags.F.EnableMultiSubnetClusterPhase1,
+		onlyIncludeDefaultSubnetNodes: flags.F.EnableMultiSubnetCluster && !flags.F.EnableMultiSubnetClusterPhase1,
 		defaultSubnetURL:              defaultSubnetURL,
 	}
 }
