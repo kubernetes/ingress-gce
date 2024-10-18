@@ -176,6 +176,7 @@ func getSubsetPerZone(nodesPerZone map[string][]*v1.Node, totalLimit int, svcID 
 	defaultSubnet, err := utils.KeyName(networkInfo.SubnetworkURL)
 	if err != nil {
 		logger.Error(err, "Errored getting default subnet from NetworkInfo")
+		return nil, err
 	}
 
 	for _, zone := range zoneList {

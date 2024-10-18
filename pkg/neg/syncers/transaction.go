@@ -262,6 +262,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	defaultSubnet, err := utils.KeyName(s.networkInfo.SubnetworkURL)
 	if err != nil {
 		s.logger.Error(err, "Errored getting default subnet from NetworkInfo")
+		return err
 	}
 
 	currentMap, currentPodLabelMap, err := retrieveExistingZoneNetworkEndpointMap(s.NegSyncerKey.NegName, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode(), s.enableDualStackNEG, defaultSubnet, s.logger)
