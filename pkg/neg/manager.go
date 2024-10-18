@@ -73,6 +73,7 @@ type syncerManager struct {
 	serviceLister       cache.Indexer
 	endpointSliceLister cache.Indexer
 	svcNegLister        cache.Indexer
+	nodeTopologyLister  cache.Indexer
 
 	// TODO: lock per service instead of global lock
 	mu sync.Mutex
@@ -128,6 +129,7 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 	endpointSliceLister cache.Indexer,
 	nodeLister cache.Indexer,
 	svcNegLister cache.Indexer,
+	nodeTopologyLister cache.Indexer,
 	syncerMetrics *metricscollector.SyncerMetrics,
 	enableNonGcpMode bool,
 	enableDualStackNEG bool,
@@ -148,6 +150,7 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 		serviceLister:       serviceLister,
 		endpointSliceLister: endpointSliceLister,
 		svcNegLister:        svcNegLister,
+		nodeTopologyLister:  nodeTopologyLister,
 		svcPortMap:          make(map[serviceKey]negtypes.PortInfoMap),
 		syncerMap:           make(map[negtypes.NegSyncerKey]negtypes.NegSyncer),
 		syncerMetrics:       syncerMetrics,
@@ -238,6 +241,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				manager.endpointSliceLister,
 				manager.nodeLister,
 				manager.svcNegLister,
+				manager.nodeTopologyLister,
 				manager.reflector,
 				epc,
 				string(manager.kubeSystemUID),
@@ -248,6 +252,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				manager.lpConfig,
 				manager.enableDualStackNEG,
 				portInfo.NetworkInfo,
+				manager.namer,
 			)
 			manager.syncerMap[syncerKey] = syncer
 		}

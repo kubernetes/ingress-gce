@@ -50,6 +50,7 @@ func TestTransactionTable(t *testing.T) {
 		entry := transactionEntry{
 			attachOp,
 			fmt.Sprintf("%s%d", zonePrefix, i),
+			defaultTestSubnet,
 		}
 		table.Put(key, entry)
 		testKeyMap[key] = entry
@@ -63,6 +64,7 @@ func TestTransactionTable(t *testing.T) {
 		newEntry := transactionEntry{
 			detachOp,
 			fmt.Sprintf("%s%d", zonePrefix, i),
+			defaultTestSubnet,
 		}
 		table.Put(key, newEntry)
 		testKeyMap[key] = newEntry

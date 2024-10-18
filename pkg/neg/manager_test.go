@@ -81,7 +81,8 @@ const (
 	labelValue2 = "v2"
 	negName1    = "neg1"
 
-	defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/default"
+	defaultTestSubnet    = "default"
+	defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/mock-project/regions/test-region/subnetworks/default"
 )
 
 func NewTestSyncerManager(kubeClient kubernetes.Interface) (*syncerManager, *gce.Cloud, *negtypes.TestContext) {
@@ -101,6 +102,7 @@ func NewTestSyncerManager(kubeClient kubernetes.Interface) (*syncerManager, *gce
 		testContext.EndpointSliceInformer.GetIndexer(),
 		testContext.NodeInformer.GetIndexer(),
 		testContext.SvcNegInformer.GetIndexer(),
+		testContext.NodeTopologyInformer.GetIndexer(),
 		metricscollector.FakeSyncerMetrics(),
 		false, //enableNonGcpMode
 		testContext.EnableDualStackNEG,

@@ -74,7 +74,7 @@ func (namer *L4Namer) L4NonDefaultSubnetNEG(namespace, name, subnetName string) 
 		namer.v2Prefix,
 		namer.v2ClusterUID,
 		getTrimmedNamespacedName(namespace, name, maximumL4CombinedLength-subnetHashLength-1),
-		subnetHash(subnetName),
+		SubnetHash(subnetName),
 		namer.getClusterSuffix(namespace, name),
 	}, "-")
 }

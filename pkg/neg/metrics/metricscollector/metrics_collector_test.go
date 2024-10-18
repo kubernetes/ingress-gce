@@ -118,13 +118,13 @@ func TestUpdateMigrationStartAndEndTime(t *testing.T) {
 
 func TestUpdateEndpointsCountPerType(t *testing.T) {
 	syncerKey := syncerKey(1)
-	inputCommittedEndpoints := map[string]types.NetworkEndpointSet{
-		"zone1": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+	inputCommittedEndpoints := map[negtypes.EndpointGroupInfo]types.NetworkEndpointSet{
+		{Zone: "zone1"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 			{IP: "ipv4only-1"}, {IP: "ipv4only-2"}, {IP: "ipv4only-3"},
 			{IPv6: "ipv6only-1"},
 			{IP: "dualStack-1a", IPv6: "dualStack-1b"}, {IP: "dualStack-2a", IPv6: "dualStack-2b"},
 		}...),
-		"zone2": types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+		{Zone: "zone2"}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 			{IP: "ipv4only-4"},
 			{IP: "dualStack-3a", IPv6: "dualStack-3b"},
 		}...),
