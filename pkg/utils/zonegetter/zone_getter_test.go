@@ -26,6 +26,7 @@ import (
 	api_v1 "k8s.io/api/core/v1"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
@@ -199,62 +200,80 @@ func TestListNodesMultipleSubnets(t *testing.T) {
 	}
 }
 
-func TestZoneForNode(t *testing.T) {
-	t.Parallel()
-
+func TestZoneAndSubnetForNode(t *testing.T) {
 	nodeInformer := FakeNodeInformer()
 	PopulateFakeNodeInformer(nodeInformer, false)
 	zoneGetter := NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
 
 	testCases := []struct {
-		desc       string
-		nodeName   string
-		expectZone string
-		expectErr  error
+		desc           string
+		nodeName       string
+		expectZone     string
+		expectedSubnet string
+		expectErr      error
 	}{
 		{
-			desc:       "Node not found",
-			nodeName:   "fooNode",
-			expectZone: "",
-			expectErr:  ErrNodeNotFound,
+			desc:           "Node not found",
+			nodeName:       "fooNode",
+			expectZone:     "",
+			expectedSubnet: "",
+			expectErr:      ErrNodeNotFound,
 		},
 		{
-			desc:       "Node with valid provider ID",
-			nodeName:   "instance1",
-			expectZone: "zone1",
-			expectErr:  nil,
+			desc:           "Node with valid provider ID",
+			nodeName:       "instance1",
+			expectZone:     "zone1",
+			expectedSubnet: defaultTestSubnet,
+			expectErr:      nil,
 		},
 		{
-			desc:       "Node with invalid provider ID",
-			nodeName:   "instance-invalid-providerID",
-			expectZone: "",
-			expectErr:  ErrSplitProviderID,
+			desc:           "Node with invalid provider ID",
+			nodeName:       "instance-invalid-providerID",
+			expectZone:     "",
+			expectedSubnet: "",
+			expectErr:      ErrSplitProviderID,
 		},
 		{
-			desc:       "Node with no provider ID",
-			nodeName:   "instance-empty-providerID",
-			expectZone: "",
-			expectErr:  ErrProviderIDNotFound,
+			desc:           "Node with no provider ID",
+			nodeName:       "instance-empty-providerID",
+			expectZone:     "",
+			expectedSubnet: "",
+			expectErr:      ErrProviderIDNotFound,
 		},
 		{
-			desc:       "Node with empty zone in providerID",
-			nodeName:   "instance-empty-zone-providerID",
-			expectZone: "",
-			expectErr:  ErrSplitProviderID,
+			desc:           "Node with empty zone in providerID",
+			nodeName:       "instance-empty-zone-providerID",
+			expectZone:     "",
+			expectedSubnet: "",
+			expectErr:      ErrSplitProviderID,
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			for _, enableMultiSubnetCluster := range []bool{true, false} {
 				zoneGetter.onlyIncludeDefaultSubnetNodes = enableMultiSubnetCluster
-				zone, err := zoneGetter.ZoneForNode(tc.nodeName, klog.TODO())
+				zone, _, err := zoneGetter.ZoneAndSubnetForNode(tc.nodeName, klog.TODO())
 				if zone != tc.expectZone {
 					t.Errorf("For test case %q with onlyIncludeDefaultSubnetNodes = %v , got zone: %s, want: %s,", tc.desc, enableMultiSubnetCluster, zone, tc.expectZone)
 				}
+
 				if !errors.Is(err, tc.expectErr) {
 					t.Errorf("For test case %q with onlyIncludeDefaultSubnetNodes = %v, got error: %s, want: %s,", tc.desc, enableMultiSubnetCluster, err, tc.expectErr)
 				}
+			}
 
+			for _, enableMultiSubnetClusterPhase1 := range []bool{true, false} {
+				flags.F.EnableMultiSubnetClusterPhase1 = enableMultiSubnetClusterPhase1
+				zone, subnet, err := zoneGetter.ZoneAndSubnetForNode(tc.nodeName, klog.TODO())
+				if zone != tc.expectZone {
+					t.Errorf("For test case %q with EnableMultiSubnetClusterPhase1 = %v , got zone: %s, want: %s,", tc.desc, enableMultiSubnetClusterPhase1, zone, tc.expectZone)
+				}
+				if enableMultiSubnetClusterPhase1 && subnet != tc.expectedSubnet {
+					t.Errorf("For test case %q with EnableMultiSubnetClusterPhase1 = %v , got subnet: %s, want: %s,", tc.desc, enableMultiSubnetClusterPhase1, subnet, tc.expectedSubnet)
+				}
+				if !errors.Is(err, tc.expectErr) {
+					t.Errorf("For test case %q with EnableMultiSubnetClusterPhase1 = %v, got error: %s, want: %s,", tc.desc, enableMultiSubnetClusterPhase1, err, tc.expectErr)
+				}
 			}
 		})
 	}
@@ -300,7 +319,7 @@ func TestZoneForNodeMultipleSubnets(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			zone, err := zoneGetter.ZoneForNode(tc.nodeName, klog.TODO())
+			zone, _, err := zoneGetter.ZoneAndSubnetForNode(tc.nodeName, klog.TODO())
 			if zone != tc.expectZone {
 				t.Errorf("For test case %q with multi-subnet cluster enabled, got zone: %s, want: %s,", tc.desc, zone, tc.expectZone)
 			}
@@ -369,8 +388,76 @@ func TestGetZone(t *testing.T) {
 	}
 }
 
+func TestGetSubnet(t *testing.T) {
+	for _, tc := range []struct {
+		desc         string
+		node         apiv1.Node
+		expectSubnet string
+		expectErr    error
+	}{
+		{
+			desc: "Node with subnet label value as defaultSubnet",
+			node: apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						utils.LabelNodeSubnet: defaultTestSubnet,
+					},
+				},
+				Spec: apiv1.NodeSpec{
+					PodCIDR:  "10.100.1.0/24",
+					PodCIDRs: []string{"10.100.1.0/24"},
+				},
+			},
+			expectSubnet: defaultTestSubnet,
+			expectErr:    nil,
+		},
+		{
+			desc: "Node with subnet label value as empty string",
+			node: apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						utils.LabelNodeSubnet: "",
+					},
+				},
+				Spec: apiv1.NodeSpec{
+					PodCIDR:  "10.100.1.0/24",
+					PodCIDRs: []string{"10.100.1.0/24"},
+				},
+			},
+			expectSubnet: defaultTestSubnet,
+			expectErr:    nil,
+		},
+		{
+			desc: "Node without subnet label",
+			node: apiv1.Node{
+				Spec: apiv1.NodeSpec{
+					PodCIDR:  "10.100.1.0/24",
+					PodCIDRs: []string{"10.100.1.0/24"},
+				},
+			},
+			expectSubnet: defaultTestSubnet,
+			expectErr:    nil,
+		},
+		{
+			desc:         "Node without PodCIDR",
+			node:         apiv1.Node{},
+			expectSubnet: "",
+			expectErr:    ErrNodePodCIDRNotSet,
+		},
+	} {
+		subnet, err := getSubnet(&tc.node, defaultTestSubnetURL)
+		if subnet != tc.expectSubnet {
+			t.Errorf("For test case %q, got subnet: %s, want: %s,", tc.desc, subnet, tc.expectSubnet)
+		}
+		if !errors.Is(err, tc.expectErr) {
+			t.Errorf("For test case %q, got error: %s, want: %s,", tc.desc, err, tc.expectErr)
+		}
+	}
+}
+
 func TestNonGCPZoneGetter(t *testing.T) {
 	zone := "foo"
+	subnet := ""
 	zoneGetter := NewNonGCPZoneGetter(zone)
 	ret, err := zoneGetter.ListZones(AllNodesFilter, klog.TODO())
 	if err != nil {
@@ -382,13 +469,17 @@ func TestNonGCPZoneGetter(t *testing.T) {
 	}
 
 	validateGetZoneForNode := func(node string) {
-		retZone, err := zoneGetter.ZoneForNode(node, klog.TODO())
+		retZone, retSubnet, err := zoneGetter.ZoneAndSubnetForNode(node, klog.TODO())
 		if err != nil {
 			t.Errorf("expect err = nil, but got %v", err)
 		}
 
 		if retZone != zone {
 			t.Errorf("expect zone = %q, but got %q", zone, retZone)
+		}
+
+		if retSubnet != subnet {
+			t.Errorf("expect subnet = %q, but got %q", subnet, retSubnet)
 		}
 	}
 	validateGetZoneForNode("foo-node")
