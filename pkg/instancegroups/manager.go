@@ -240,7 +240,7 @@ func (m *manager) List(logger klog.Logger) ([]string, error) {
 func (m *manager) splitNodesByZone(names []string, logger klog.Logger) map[string][]string {
 	nodesByZone := map[string][]string{}
 	for _, name := range names {
-		zone, err := m.ZoneGetter.ZoneForNode(name, logger)
+		zone, _, err := m.ZoneGetter.ZoneAndSubnetForNode(name, logger)
 		if err != nil {
 			logger.Error(err, "Failed to get zones for instance node, skipping", "name", name)
 			continue
