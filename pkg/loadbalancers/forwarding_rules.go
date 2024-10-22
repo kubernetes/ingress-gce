@@ -429,25 +429,52 @@ func (l4netlb *L4NetLB) tearDownResourcesWithWrongNetworkTier(existingFwdRule *c
 	return am.TearDownAddressIPIfNetworkTierMismatch()
 }
 
-func Equal(fr1, fr2 *composite.ForwardingRule) (bool, error) {
-	id1, err := cloud.ParseResourceURL(fr1.BackendService)
-	if err != nil {
-		return false, fmt.Errorf("forwardingRulesEqual(): failed to parse backend resource URL from FR, err - %w", err)
+func filterPatchableFields(existing, new *composite.ForwardingRule) (*composite.ForwardingRule, bool) {
+	existingCopy := *existing
+	newCopy := *new
+
+	// Set AllowGlobalAccess and NetworkTier fields to the same value in both copies
+	existingCopy.AllowGlobalAccess = new.AllowGlobalAccess
+	existingCopy.NetworkTier = new.NetworkTier
+
+	equal, err := Equal(&existingCopy, &newCopy)
+
+	// Something is different other than AllowGlobalAccess and NetworkTier
+	if err != nil || !equal {
+		return nil, false
 	}
-	id2, err := cloud.ParseResourceURL(fr2.BackendService)
-	if err != nil {
-		return false, fmt.Errorf("forwardingRulesEqual(): failed to parse resource URL from FR, err - %w", err)
+
+	filtered := &composite.ForwardingRule{}
+	filtered.Id = existing.Id
+	filtered.Name = existing.Name
+	// AllowGlobalAccess is in the ForceSendFields list, it always need to have the right value
+	filtered.AllowGlobalAccess = new.AllowGlobalAccess
+	// Send NetworkTier in the patch request only if it has been updated
+	if existing.NetworkTier != new.NetworkTier {
+		filtered.NetworkTier = new.NetworkTier
 	}
-	return fr1.IPAddress == fr2.IPAddress &&
-		fr1.IPProtocol == fr2.IPProtocol &&
-		fr1.LoadBalancingScheme == fr2.LoadBalancingScheme &&
-		equalPorts(fr1.Ports, fr2.Ports, fr1.PortRange, fr2.PortRange) &&
-		utils.EqualCloudResourceIDs(id1, id2) &&
-		fr1.AllowGlobalAccess == fr2.AllowGlobalAccess &&
-		fr1.AllPorts == fr2.AllPorts &&
-		equalResourcePaths(fr1.Subnetwork, fr2.Subnetwork) &&
-		equalResourcePaths(fr1.Network, fr2.Network) &&
-		fr1.NetworkTier == fr2.NetworkTier, nil
+	return filtered, true
+}
+
+func Equal(existingFwdRule, newFwdRule *composite.ForwardingRule) (bool, error) {
+	existingID, err := cloud.ParseResourceURL(existingFwdRule.BackendService)
+	if err != nil {
+		return false, fmt.Errorf("forwardingRulesEqual(): failed to parse backend resource URL from existing FR, err - %w", err)
+	}
+	newID, err := cloud.ParseResourceURL(newFwdRule.BackendService)
+	if err != nil {
+		return false, fmt.Errorf("forwardingRulesEqual(): failed to parse backend resource URL from new FR, err - %w", err)
+	}
+	return existingFwdRule.IPAddress == newFwdRule.IPAddress &&
+		existingFwdRule.IPProtocol == newFwdRule.IPProtocol &&
+		existingFwdRule.LoadBalancingScheme == newFwdRule.LoadBalancingScheme &&
+		equalPorts(existingFwdRule.Ports, newFwdRule.Ports, existingFwdRule.PortRange, newFwdRule.PortRange) &&
+		utils.EqualCloudResourceIDs(existingID, newID) &&
+		existingFwdRule.AllowGlobalAccess == newFwdRule.AllowGlobalAccess &&
+		existingFwdRule.AllPorts == newFwdRule.AllPorts &&
+		equalResourcePaths(existingFwdRule.Subnetwork, newFwdRule.Subnetwork) &&
+		equalResourcePaths(existingFwdRule.Network, newFwdRule.Network) &&
+		existingFwdRule.NetworkTier == newFwdRule.NetworkTier, nil
 }
 
 // equalPorts compares two port ranges or slices of ports. Before comparison,
@@ -455,17 +482,16 @@ func Equal(fr1, fr2 *composite.ForwardingRule) (bool, error) {
 // port. This is done so we don't unnecessarily recreate forwarding rules
 // when upgrading from port ranges to distinct ports, because recreating
 // forwarding rules is traffic impacting.
-func equalPorts(ports1, ports2 []string, portRange1, portRange2 string) bool {
-	if !flags.F.EnableDiscretePortForwarding {
-		return utils.EqualStringSets(ports1, ports2) && portRange1 == portRange2
+func equalPorts(existingPorts, newPorts []string, existingPortRange, newPortRange string) bool {
+	if !flags.F.EnableDiscretePortForwarding || len(existingPorts) != 0 {
+		return utils.EqualStringSets(existingPorts, newPorts) && existingPortRange == newPortRange
 	}
-	if len(ports1) != 0 && portRange1 == "" {
-		portRange1 = utils.MinMaxPortRange(ports1)
+	// Existing forwarding rule contains a port range. To keep it that way,
+	// compare new list of ports as if it was a port range, too.
+	if len(newPorts) != 0 {
+		newPortRange = utils.MinMaxPortRange(newPorts)
 	}
-	if len(ports2) != 0 && portRange2 == "" {
-		portRange2 = utils.MinMaxPortRange(ports2)
-	}
-	return portRange1 == portRange2
+	return existingPortRange == newPortRange
 }
 
 func equalResourcePaths(rp1, rp2 string) bool {
