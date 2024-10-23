@@ -21,6 +21,9 @@ import (
 	"testing"
 	"time"
 
+	nodetopologyv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1"
+	nodetopologyfake "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned/fake"
+	informernodetopology "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions/nodetopology/v1"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -40,6 +43,10 @@ const (
 
 func FakeNodeInformer() cache.SharedIndexInformer {
 	return informerv1.NewNodeInformer(fake.NewSimpleClientset(), 1*time.Second, utils.NewNamespaceIndexer())
+}
+
+func FakeNodeTopologyInformer() cache.SharedIndexInformer {
+	return informernodetopology.NewNodeTopologyInformer(nodetopologyfake.NewSimpleClientset(), 1*time.Second, utils.NewNamespaceIndexer())
 }
 
 // DeleteFakeNodesInZone deletes all nodes in a zone.
@@ -586,4 +593,13 @@ func PopulateFakeNodeInformer(nodeInformer cache.SharedIndexInformer, addMSCNode
 			fmt.Printf("Failed to add node non-default-subnet-instance: %v\n", err)
 		}
 	}
+}
+
+// AddNodeTopologyCR adds fake node topology CR to the ZoneGetter.
+func AddNodeTopologyCR(zoneGetter *ZoneGetter, nodeTopologyCR *nodetopologyv1.NodeTopology) error {
+	return zoneGetter.nodeTopologyInformer.GetIndexer().Add(nodeTopologyCR)
+}
+
+func SetNodeTopologyHasSynced(zoneGetter *ZoneGetter, f func() bool) {
+	zoneGetter.nodeTopologyHasSynced = f
 }

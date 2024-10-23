@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/googleapi"
 	apiv1 "k8s.io/api/core/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -35,6 +36,7 @@ import (
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -130,6 +132,8 @@ type transactionSyncer struct {
 	// networkInfo contains the network information to use in GCP resources (VPC URL, Subnetwork URL).
 	// and the k8s network name (can be used in endpoints calculation).
 	networkInfo network.NetworkInfo
+
+	namer negtypes.NetworkEndpointGroupNamer
 }
 
 func NewTransactionSyncer(
@@ -152,6 +156,7 @@ func NewTransactionSyncer(
 	lpConfig labels.PodLabelPropagationConfig,
 	enableDualStackNEG bool,
 	networkInfo network.NetworkInfo,
+	namer negtypes.NetworkEndpointGroupNamer,
 ) negtypes.NegSyncer {
 
 	logger := log.WithName("Syncer").WithValues("service", klog.KRef(negSyncerKey.Namespace, negSyncerKey.Name), "negName", negSyncerKey.NegName)
@@ -182,6 +187,7 @@ func NewTransactionSyncer(
 		enableDualStackNEG:        enableDualStackNEG,
 		podLabelPropagationConfig: lpConfig,
 		networkInfo:               networkInfo,
+		namer:                     namer,
 	}
 	// Syncer implements life cycle logic
 	syncer := newSyncer(negSyncerKey, serviceLister, recorder, ts, logger)
@@ -467,12 +473,101 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 		}
 	}
 
+	if flags.F.EnableMultiSubnetClusterPhase1 {
+		negs, needToUpdate, errs := s.ensureNetworkEndpointGroupsFromNodeTopology(zones, negsByLocation)
+		negObjRefs = append(negObjRefs, negs...)
+		updateNEGStatus = updateNEGStatus && needToUpdate
+		errList = append(errList, errs...)
+	}
+
 	if updateNEGStatus {
 		s.updateInitStatus(negObjRefs, errList)
 	}
 
 	s.syncMetricsCollector.UpdateSyncerNegCount(s.NegSyncerKey, negsByLocation)
 	return utilerrors.NewAggregate(errList)
+}
+
+func (s *transactionSyncer) ensureNetworkEndpointGroupsFromNodeTopology(zones []string, negsByLocation map[string]int) ([]negv1beta1.NegObjectReference, bool, []error) {
+	var errList []error
+	var negObjRefs []negv1beta1.NegObjectReference
+
+	// Get subnets from NodeTopologyCRD.
+	subnetConfigs, err := s.zoneGetter.ListSubnets(s.logger)
+	if err != nil {
+		errList = append(errList, err)
+		return nil, true, errList
+	}
+
+	defaultSubnet, err := utils.KeyName(s.networkInfo.SubnetworkURL)
+	if err != nil {
+		s.logger.Error(err, "Errored getting default subnet from NetworkInfo")
+		errList = append(errList, err)
+		return nil, true, errList
+	}
+
+	for _, subnetConfig := range subnetConfigs {
+		// Skip default subnet since it has already been ensured.
+		if subnetConfig.Name == defaultSubnet {
+			continue
+		}
+
+		// Determine the NEG name for the non-default subnet NEGs.
+		negName := s.namer.NonDefaultSubnetNEG(s.NegSyncerKey.Namespace, s.NegSyncerKey.Name, subnetConfig.Name, s.NegSyncerKey.PortTuple.Port)
+		if s.customName {
+			if len(s.NegSyncerKey.NegName) > 56 {
+				s.logger.Error(err, "Unable to create custom NEGs in non-default subnet", "customNegName", s.NegSyncerKey.Name)
+				errList = append(errList, ErrCustomNEGNameTooLong)
+				continue
+			}
+			negName = fmt.Sprintf("%s-%s", s.NegSyncerKey.Name, namer.SubnetHash(subnetConfig.Name))
+		}
+
+		// Use a networkInfo with non-default subnet as subnetURL.
+		networkInfoInNonDefaultSubnet := s.networkInfo
+		resourceID, err := cloud.ParseResourceURL(subnetConfig.SubnetPath)
+		if err != nil {
+			s.logger.Error(err, "Failed to parse subnet path", "subnetPath", subnetConfig.SubnetPath)
+			errList = append(errList, err)
+			continue
+		}
+
+		// Add compute and version GA prefix.
+		networkInfoInNonDefaultSubnet.SubnetworkURL = cloud.SelfLink(meta.VersionGA, resourceID.ProjectID, "subnetworks", resourceID.Key)
+
+		for _, zone := range zones {
+			negObj, err := ensureNetworkEndpointGroup(
+				s.Namespace,
+				s.Name,
+				negName,
+				zone,
+				s.NegSyncerKey.String(),
+				s.kubeSystemUID,
+				fmt.Sprint(s.NegSyncerKey.PortTuple.Port),
+				s.NegSyncerKey.NegType,
+				s.cloud,
+				s.serviceLister,
+				s.recorder,
+				s.NegSyncerKey.GetAPIVersion(),
+				s.customName,
+				networkInfoInNonDefaultSubnet,
+				s.logger,
+			)
+			if err != nil {
+				errList = append(errList, err)
+				if errors.Is(err, utils.ErrNEGUsedByAnotherSyncer) {
+					return nil, false, errList
+				}
+			}
+
+			if s.svcNegClient != nil && err == nil {
+				negObjRefs = append(negObjRefs, negObj)
+				negsByLocation[zone]++
+			}
+		}
+	}
+	return negObjRefs, true, errList
+
 }
 
 // syncNetworkEndpoints spins off go routines to execute NEG operations

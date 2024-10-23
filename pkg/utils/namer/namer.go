@@ -460,7 +460,7 @@ func (n *Namer) NEG(namespace, name string, port int32) string {
 // subnets(e.g.: us-central1-subnet, us-central2-subnet).
 func (n *Namer) NonDefaultSubnetNEG(namespace, name, subnetName string, port int32) string {
 	portStr := fmt.Sprintf("%v", port)
-	hashedSubnet := subnetHash(subnetName)
+	hashedSubnet := SubnetHash(subnetName)
 	truncFields := TrimFieldsEvenly(maxNEGDescriptiveLabel-subnetHashLength-1, namespace, name, portStr)
 	truncNamespace := truncFields[0]
 	truncName := truncFields[1]
@@ -511,8 +511,8 @@ func negSuffix(uid, namespace, name, port, subset string) string {
 	return negHash[:8]
 }
 
-// subnetHash returns hash code with 6 characters
-func subnetHash(subnetName string) string {
+// SubnetHash returns hash code with 6 characters
+func SubnetHash(subnetName string) string {
 	subnetHash := fmt.Sprintf("%x", sha256.Sum256([]byte(subnetName)))
 	return subnetHash[:6]
 }

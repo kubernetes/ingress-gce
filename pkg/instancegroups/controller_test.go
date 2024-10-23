@@ -98,7 +98,7 @@ func TestSync(t *testing.T) {
 	config.HasSynced = func() bool {
 		return true
 	}
-	config.ZoneGetter = zonegetter.NewFakeZoneGetter(informer, defaultTestSubnetURL, false)
+	config.ZoneGetter = zonegetter.NewFakeZoneGetter(informer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
 
 	controller := NewController(config, logr.Logger{})
 
