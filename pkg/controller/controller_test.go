@@ -71,7 +71,9 @@ func newLoadBalancerController() *LoadBalancerController {
 	kubeClient := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	svcNegClient := svcnegclient.NewSimpleClientset()
-	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	vals := gce.DefaultTestClusterValues()
+	vals.SubnetworkURL = defaultTestSubnetURL
+	fakeGCE := gce.NewFakeGCECloud(vals)
 	nodeInformer := zonegetter.FakeNodeInformer()
 	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
 	zonegetter.AddFakeNodes(fakeZoneGetter, fakeZone, "test-node")
