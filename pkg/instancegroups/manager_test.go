@@ -18,12 +18,13 @@ package instancegroups
 
 import (
 	"fmt"
-	apiv1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/ingress-gce/pkg/utils"
 	"net/http"
 	"strings"
 	"testing"
+
+	apiv1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/ingress-gce/pkg/utils"
 
 	"google.golang.org/api/googleapi"
 	"k8s.io/klog/v2"
@@ -49,7 +50,7 @@ var defaultNamer = namer.NewNamer("uid1", "fw1", klog.TODO())
 
 func newNodePool(f Provider, maxIGSize int) Manager {
 	nodeInformer := zonegetter.FakeNodeInformer()
-	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
+	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
 
 	pool := NewManager(&ManagerConfig{
 		Cloud:      f,
