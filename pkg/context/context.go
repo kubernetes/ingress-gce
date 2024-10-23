@@ -328,10 +328,6 @@ func (ctx *ControllerContext) HasSynced() bool {
 		funcs = append(funcs, ctx.FirewallInformer.HasSynced)
 	}
 
-	if ctx.NodeTopologyInformer != nil {
-		funcs = append(funcs, ctx.NodeTopologyInformer.HasSynced)
-	}
-
 	for _, f := range funcs {
 		if !f() {
 			return false
