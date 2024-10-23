@@ -62,7 +62,8 @@ var providerIDRE = regexp.MustCompile(`^` + "gce" + `://([^/]+)/([^/]+)/([^/]+)$
 
 // ZoneGetter manages lookups for GCE instances to zones.
 type ZoneGetter struct {
-	nodeLister cache.Indexer
+	nodeLister           cache.Indexer
+	nodeTopologyInformer cache.SharedIndexInformer
 	// Mode indicates if the ZoneGetter is in GCP or Non-GCP mode
 	// GCP mode ZoneGetter fetches zones from k8s node resource objects.
 	// Non-GCP mode ZoneGetter always return its one single stored zone
@@ -356,20 +357,22 @@ func NewNonGCPZoneGetter(zone string) *ZoneGetter {
 }
 
 // NewZoneGetter initialize a ZoneGetter in GCP mode.
-func NewZoneGetter(nodeInformer cache.SharedIndexInformer, defaultSubnetURL string) *ZoneGetter {
+func NewZoneGetter(nodeInformer, nodeTopologyInformer cache.SharedIndexInformer, defaultSubnetURL string) *ZoneGetter {
 	return &ZoneGetter{
 		mode:                          GCP,
 		nodeLister:                    nodeInformer.GetIndexer(),
+		nodeTopologyInformer:          nodeTopologyInformer,
 		onlyIncludeDefaultSubnetNodes: flags.F.EnableMultiSubnetCluster && !flags.F.EnableMultiSubnetClusterPhase1,
 		defaultSubnetURL:              defaultSubnetURL,
 	}
 }
 
 // NewFakeZoneGetter initialize a fake ZoneGetter in GCP mode to use in test.
-func NewFakeZoneGetter(nodeInformer cache.SharedIndexInformer, defaultSubnetURL string, onlyIncludeDefaultSubnetNodes bool) *ZoneGetter {
+func NewFakeZoneGetter(nodeInformer, nodeTopologyInformer cache.SharedIndexInformer, defaultSubnetURL string, onlyIncludeDefaultSubnetNodes bool) *ZoneGetter {
 	return &ZoneGetter{
 		mode:                          GCP,
 		nodeLister:                    nodeInformer.GetIndexer(),
+		nodeTopologyInformer:          nodeTopologyInformer,
 		onlyIncludeDefaultSubnetNodes: onlyIncludeDefaultSubnetNodes,
 		defaultSubnetURL:              defaultSubnetURL,
 	}

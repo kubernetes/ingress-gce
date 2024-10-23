@@ -1730,7 +1730,7 @@ func TestIsZoneChange(t *testing.T) {
 func TestUnknownNodes(t *testing.T) {
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
-	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
+	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
 	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
 	testSubnetwork := defaultTestSubnetURL
 	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
@@ -1826,7 +1826,7 @@ func TestUnknownNodes(t *testing.T) {
 func TestEnableDegradedMode(t *testing.T) {
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
-	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
+	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
 	vals := gce.DefaultTestClusterValues()
 	vals.SubnetworkURL = defaultTestSubnetURL
 	fakeGCE := gce.NewFakeGCECloud(vals)
@@ -2455,7 +2455,7 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 	reflector := &readiness.NoopReflector{}
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
-	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
+	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
 
 	negsyncer := NewTransactionSyncer(svcPort,
 		record.NewFakeRecorder(100),

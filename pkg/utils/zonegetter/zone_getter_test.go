@@ -36,7 +36,7 @@ func TestListZones(t *testing.T) {
 
 	nodeInformer := FakeNodeInformer()
 	PopulateFakeNodeInformer(nodeInformer, false)
-	zoneGetter := NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
+	zoneGetter := NewFakeZoneGetter(nodeInformer, FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
 	testCases := []struct {
 		desc      string
 		filter    Filter
@@ -82,7 +82,7 @@ func TestListZonesMultipleSubnets(t *testing.T) {
 
 	nodeInformer := FakeNodeInformer()
 	PopulateFakeNodeInformer(nodeInformer, true)
-	zoneGetter := NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, true)
+	zoneGetter := NewFakeZoneGetter(nodeInformer, FakeNodeTopologyInformer(), defaultTestSubnetURL, true)
 
 	testCases := []struct {
 		desc      string
@@ -126,7 +126,7 @@ func TestListNodes(t *testing.T) {
 
 	nodeInformer := FakeNodeInformer()
 	PopulateFakeNodeInformer(nodeInformer, false)
-	zoneGetter := NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
+	zoneGetter := NewFakeZoneGetter(nodeInformer, FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
 
 	testCases := []struct {
 		desc      string
@@ -167,7 +167,7 @@ func TestListNodesMultipleSubnets(t *testing.T) {
 
 	nodeInformer := FakeNodeInformer()
 	PopulateFakeNodeInformer(nodeInformer, true)
-	zoneGetter := NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, true)
+	zoneGetter := NewFakeZoneGetter(nodeInformer, FakeNodeTopologyInformer(), defaultTestSubnetURL, true)
 
 	testCases := []struct {
 		desc      string
@@ -203,7 +203,7 @@ func TestListNodesMultipleSubnets(t *testing.T) {
 func TestZoneAndSubnetForNode(t *testing.T) {
 	nodeInformer := FakeNodeInformer()
 	PopulateFakeNodeInformer(nodeInformer, false)
-	zoneGetter := NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
+	zoneGetter := NewFakeZoneGetter(nodeInformer, FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
 
 	testCases := []struct {
 		desc           string
@@ -284,7 +284,7 @@ func TestZoneForNodeMultipleSubnets(t *testing.T) {
 
 	nodeInformer := FakeNodeInformer()
 	PopulateFakeNodeInformer(nodeInformer, true)
-	zoneGetter := NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, true)
+	zoneGetter := NewFakeZoneGetter(nodeInformer, FakeNodeTopologyInformer(), defaultTestSubnetURL, true)
 
 	testCases := []struct {
 		desc       string
@@ -488,7 +488,7 @@ func TestNonGCPZoneGetter(t *testing.T) {
 
 func TestIsNodeSelectedByFilter(t *testing.T) {
 	fakeNodeInformer := FakeNodeInformer()
-	zoneGetter := NewFakeZoneGetter(fakeNodeInformer, defaultTestSubnetURL, true)
+	zoneGetter := NewFakeZoneGetter(fakeNodeInformer, FakeNodeTopologyInformer(), defaultTestSubnetURL, true)
 
 	testCases := []struct {
 		node                    apiv1.Node
