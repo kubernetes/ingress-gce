@@ -481,9 +481,17 @@ func TestForwardingRuleWithPortRange(t *testing.T) {
 			expectedPortRange: "",
 		},
 		{
+			svcName:           "DiscretePortsEqualMax",
+			ports:             []int32{8081, 80, 8080, 500, 123},
+			discretePorts:     true,
+			expectedPorts:     []string{"80", "123", "500", "8080", "8081"},
+			expectedPortRange: "",
+		},
+		{
 			svcName:           "DiscretePortsMoreThanMax",
 			ports:             []int32{8081, 80, 8080, 123, 666, 555},
 			discretePorts:     true,
+			expectedPorts:     []string{},
 			expectedPortRange: "80-8081",
 		},
 	} {
