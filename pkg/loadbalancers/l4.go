@@ -42,7 +42,8 @@ import (
 )
 
 const (
-	subnetInternalIPv6AccessType          = "INTERNAL"
+	subnetInternalAccessType = "INTERNAL"
+
 	WeightedLBPodsPerNodeAllowlistMessage = "Weighted Load Balancing for L4 " +
 		"Internal Passthrough Load Balancers requires project allowlisting. If " +
 		"you need access to this feature please contact Google Cloud support team"
