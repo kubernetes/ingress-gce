@@ -3,7 +3,6 @@ package namespacedinformer
 import (
 	"time"
 
-	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -59,13 +58,4 @@ func (i *NamespacedInformer) GetIndexer() cache.Indexer {
 		Indexer:   i.SharedIndexInformer.GetIndexer(),
 		namespace: i.namespace,
 	}
-}
-
-// isObjectInNamespace is a helper function to filter objects by namespace.
-func isObjectInNamespace(obj interface{}, namespace string) bool {
-	metaObj, err := meta.Accessor(obj)
-	if err != nil {
-		return false
-	}
-	return metaObj.GetNamespace() == namespace
 }

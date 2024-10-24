@@ -19,9 +19,7 @@ func (n *namespacedStore) ListKeys() []string {
 	var keys []string
 	for _, item := range items {
 		if key, err := cache.MetaNamespaceKeyFunc(item); err == nil {
-			if isObjectInNamespace(item, n.namespace) {
-				keys = append(keys, key)
-			}
+			keys = append(keys, key)
 		}
 	}
 	return keys

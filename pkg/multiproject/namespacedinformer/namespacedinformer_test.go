@@ -5,55 +5,8 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
 )
-
-func TestIsObjectInNamespace(t *testing.T) {
-	testCases := []struct {
-		desc            string
-		namespace       string
-		object          interface{}
-		expectedToMatch bool
-	}{
-		{
-			desc:            "Object in namespace should return true",
-			namespace:       "test-namespace",
-			object:          &metav1.ObjectMeta{Namespace: "test-namespace", Name: "obj1"},
-			expectedToMatch: true,
-		},
-		{
-			desc:            "Object in different namespace should return false",
-			namespace:       "test-namespace",
-			object:          &metav1.ObjectMeta{Namespace: "other-namespace", Name: "obj2"},
-			expectedToMatch: false,
-		},
-		{
-			desc:            "Object with no namespace should return false",
-			namespace:       "test-namespace",
-			object:          &metav1.ObjectMeta{Name: "obj3"},
-			expectedToMatch: false,
-		},
-		{
-			desc:            "Invalid object should return false",
-			namespace:       "test-namespace",
-			object:          "invalid-object",
-			expectedToMatch: false,
-		},
-	}
-
-	for _, tc := range testCases {
-		tc := tc
-		t.Run(tc.desc, func(t *testing.T) {
-			t.Parallel()
-
-			result := isObjectInNamespace(tc.object, tc.namespace)
-			if result != tc.expectedToMatch {
-				t.Errorf("Expected isObjectInNamespace to return %v, got %v", tc.expectedToMatch, result)
-			}
-		})
-	}
-}
 
 // TestNamespacedInformer_AddEventHandler verifies that the
 // namespacedinformer.AddEventHandler method does not return an error.
