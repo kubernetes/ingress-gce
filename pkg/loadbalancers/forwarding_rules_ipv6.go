@@ -169,6 +169,12 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 	netTier, isFromAnnotation := utils.GetNetworkTier(l4netlb.Service)
 	frLogger.V(2).Info("network tier for service", "networkTier", netTier, "isFromAnnotation", isFromAnnotation)
 
+	// IPv6 address is not supported for External Regional Network Load Balancing with Standard network tier.
+	if netTier == cloud.NetworkTierStandard {
+		resourceErr := "IPv6 External Load Balancer"
+		return nil, utils.NewUnsupportedNetworkTierErr(resourceErr, string(cloud.NetworkTierStandard))
+	}
+
 	// Only for IPv6, address reservation is not supported on Standard Tier
 	if !l4netlb.cloud.IsLegacyNetwork() && netTier == cloud.NetworkTierPremium {
 		nm := types.NamespacedName{Namespace: l4netlb.Service.Namespace, Name: l4netlb.Service.Name}.String()
