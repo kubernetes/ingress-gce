@@ -677,11 +677,15 @@ func (l4 *L4) getServiceSubnetworkURL(options gce.ILBOptions) (string, error) {
 }
 
 func (l4 *L4) getSubnetworkURLByName(subnetName string) (string, error) {
-	subnetKey, err := l4.CreateKey(subnetName)
+	subnetwork, err := l4.cloud.GetSubnetwork(l4.cloud.Region(), subnetName)
 	if err != nil {
+		if utils.IsNotFoundError(err) {
+			return "", utils.NewInvalidSubnetConfigurationError(l4.cloud.ProjectID(), subnetName)
+		}
 		return "", err
 	}
-	return cloud.SelfLink(meta.VersionGA, l4.cloud.NetworkProjectID(), "subnetworks", subnetKey), nil
+
+	return subnetwork.SelfLink, nil
 }
 
 func (l4 *L4) hasAnnotation(annotationKey string) bool {

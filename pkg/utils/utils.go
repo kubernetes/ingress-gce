@@ -138,6 +138,20 @@ func NewIPConfigurationError(ip, reason string) *IPConfigurationError {
 	return &IPConfigurationError{ip: ip, reason: reason}
 }
 
+// InvalidSubnetConfigurationError is a struct to define error caused by User misconfiguration of Load Balancer's subnet.
+type InvalidSubnetConfigurationError struct {
+	projectName string
+	subnetName  string
+}
+
+func (e *InvalidSubnetConfigurationError) Error() string {
+	return fmt.Sprintf("Subnetwork \"%s\" can't be found for project %s", e.subnetName, e.projectName)
+}
+
+func NewInvalidSubnetConfigurationError(projectName, subnetName string) *InvalidSubnetConfigurationError {
+	return &InvalidSubnetConfigurationError{projectName: projectName, subnetName: subnetName}
+}
+
 // L4LBType indicates if L4 LoadBalancer is Internal or External
 type L4LBType int
 
@@ -243,6 +257,12 @@ func IsIPConfigurationError(err error) bool {
 	return errors.As(err, &ipConfigError)
 }
 
+// IsInvalidSubnetConfigurationError checks if wrapped error is an Invalid Subnet Configuration error.
+func IsInvalidSubnetConfigurationError(err error) bool {
+	var invalidSubnetConfigError *InvalidSubnetConfigurationError
+	return errors.As(err, &invalidSubnetConfigError)
+}
+
 // IsInvalidLoadBalancerSourceRangesSpecError checks if wrapped error is an InvalidLoadBalancerSourceRangesSpecError error.
 func IsInvalidLoadBalancerSourceRangesSpecError(err error) bool {
 	var invalidLoadBalancerSourceRangesSpecError *InvalidLoadBalancerSourceRangesSpecError
@@ -262,6 +282,7 @@ func IsUserError(err error) bool {
 	var userError *UserError
 	return IsNetworkTierError(err) ||
 		IsIPConfigurationError(err) ||
+		IsInvalidSubnetConfigurationError(err) ||
 		IsInvalidLoadBalancerSourceRangesSpecError(err) ||
 		IsInvalidLoadBalancerSourceRangesAnnotationError(err) ||
 		IsUnsupportedNetworkTierError(err) ||
