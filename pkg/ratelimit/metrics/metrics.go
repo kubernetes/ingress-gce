@@ -26,7 +26,7 @@ import (
 
 var register sync.Once
 
-const negControllerSubsystem = "neg_controller"
+const rateLimiterSubsystem = "rate_limiter"
 
 var (
 	metricsLabels = []string{
@@ -35,7 +35,7 @@ var (
 
 	RateLimitLatency = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Subsystem: negControllerSubsystem,
+			Subsystem: rateLimiterSubsystem,
 			Name:      "rate_limit_delay_seconds",
 			Help:      "Latency of the RateLimiter Accept Operation",
 			// custom buckets = [0.5s, 1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s(~4min), 512s(~8min), 1024s(~17min), 2048s(~34min), 4096s(~68min), +Inf]
@@ -46,7 +46,7 @@ var (
 
 	StrategyLatency = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Subsystem: negControllerSubsystem,
+			Subsystem: rateLimiterSubsystem,
 			Name:      "strategy_delay_seconds",
 			Help:      "Latency of the strategyRateLimiter Accept Operation",
 			// custom buckets = [0.5s, 1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s(~4min), 512s(~8min), 1024s(~17min), 2048s(~34min), 4096s(~68min), +Inf]
@@ -57,7 +57,7 @@ var (
 
 	StrategyUsedDelay = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Subsystem: negControllerSubsystem,
+			Subsystem: rateLimiterSubsystem,
 			Name:      "strategy_used_delay_seconds",
 			Help:      "Delay in seconds used by the throttling strategy",
 			// custom buckets = [0.1, 0.2s, 04.s, 0.8s, 1.6s, 3.2s, 6.4s, 12.8s, 25.6s, 51.2s, 102.4s, 204.8s(~3min), 409.6s(~7min), 819.2s(~14min), +Inf]
@@ -68,7 +68,7 @@ var (
 
 	StrategyLockLatency = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Subsystem: negControllerSubsystem,
+			Subsystem: rateLimiterSubsystem,
 			Name:      "strategy_lock_delay_seconds",
 			Help:      "Latency of the lock acquisition for the StrategyRateLimiter",
 			// custom buckets = [1e-9s, 1e-8s, 1e-7s, 1e-6s, 1e-5s, 1e-4s, 0.001s, 0.01s, 0.1s, 0.2s, 04.s, 0.8s, 1.6s, 3.2s, 6.4s, 12.8s, 25.6s, 51.2s, 102.4s, 204.8s(~3min), 409.6s(~7min), 819.2s(~14min), +Inf]
@@ -79,7 +79,7 @@ var (
 
 	ErrorsCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Subsystem: negControllerSubsystem,
+			Subsystem: rateLimiterSubsystem,
 			Name:      "errors_counter",
 			Help:      "Number of different errors in the rate limiter",
 		},
