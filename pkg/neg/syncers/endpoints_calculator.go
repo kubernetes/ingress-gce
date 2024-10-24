@@ -108,7 +108,7 @@ func (l *LocalL4EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsDat
 				continue
 			}
 			zone, _, err := l.zoneGetter.ZoneAndSubnetForNode(node.Name, l.logger)
-			if err != nil {
+			if err != nil || zone == zonegetter.EmptyZone {
 				l.logger.Error(err, "Unable to find zone for node, skipping", "nodeName", node.Name)
 				metrics.PublishNegControllerErrorCountMetrics(err, true)
 				continue
@@ -187,7 +187,7 @@ func (l *ClusterL4EndpointsCalculator) CalculateEndpoints(_ []types.EndpointsDat
 			continue
 		}
 		zone, _, err := l.zoneGetter.ZoneAndSubnetForNode(node.Name, l.logger)
-		if err != nil {
+		if err != nil || zone == zonegetter.EmptyZone {
 			l.logger.Error(err, "Unable to find zone for node skipping", "nodeName", node.Name)
 			metrics.PublishNegControllerErrorCountMetrics(err, true)
 			continue
