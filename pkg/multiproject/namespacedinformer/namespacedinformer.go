@@ -47,14 +47,14 @@ func (i *NamespacedInformer) namespaceFilter(obj interface{}) bool {
 }
 
 func (i *NamespacedInformer) GetStore() cache.Store {
-	return &namespacedStore{
-		Store:     i.SharedIndexInformer.GetStore(),
+	return &namespacedCache{
+		Indexer:   i.SharedIndexInformer.GetIndexer(),
 		namespace: i.namespace,
 	}
 }
 
 func (i *NamespacedInformer) GetIndexer() cache.Indexer {
-	return &namespacedIndexer{
+	return &namespacedCache{
 		Indexer:   i.SharedIndexInformer.GetIndexer(),
 		namespace: i.namespace,
 	}
