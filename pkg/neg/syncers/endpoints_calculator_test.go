@@ -134,25 +134,47 @@ func TestLocalGetEndpointSet(t *testing.T) {
 					negtypes.NetworkEndpoint{IP: "20.2.3.3", Node: testInstance3}),
 			},
 		},
+		{
+			desc:          "endpoints with MSC nodes",
+			endpointsData: negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()),
+			nodeLabelsMap: map[string]map[string]string{
+				testInstance1: {utils.LabelNodeSubnet: secondaryTestSubnet1},
+				testInstance2: {utils.LabelNodeSubnet: secondaryTestSubnet2},
+				testInstance3: {utils.LabelNodeSubnet: secondaryTestSubnet1},
+			},
+			// only 4 out of 6 nodes are picked since there are > 4 endpoints, but they are found only on 4 nodes.
+			wantEndpointSets: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}:    negtypes.NewNetworkEndpointSet(),
+				{Zone: negtypes.TestZone1, Subnet: secondaryTestSubnet1}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}),
+				{Zone: negtypes.TestZone1, Subnet: secondaryTestSubnet2}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
+				{Zone: negtypes.TestZone2, Subnet: secondaryTestSubnet1}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.3", Node: testInstance3}),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}:    negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4}),
+			},
+			networkEndpointType: negtypes.VmIpEndpointType,
+			nodeNames:           []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
+			network:             defaultNetwork,
+		},
 	}
 	svcKey := fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace)
 	for _, tc := range testCases {
-		ec := NewLocalL4EndpointsCalculator(listers.NewNodeLister(nodeInformer.GetIndexer()), zoneGetter, svcKey, klog.TODO(), &tc.network, negtypes.L4InternalLB)
-		updateNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeAnnotationsMap, tc.nodeReadyStatusMap, nodeInformer.GetIndexer())
-		retSet, _, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
-		if err != nil {
-			t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
-		}
-		if diff := cmp.Diff(retSet, tc.wantEndpointSets); diff != "" {
-			t.Errorf("For case %q, expecting endpoint set %v, but got %v.\nDiff: (-want +got):\n%s", tc.desc, tc.wantEndpointSets, retSet, diff)
-		}
-		degradedSet, _, err := ec.CalculateEndpointsDegradedMode(tc.endpointsData, nil)
-		if err != nil {
-			t.Errorf("For degraded mode case %q, expect nil error, but got %v.", tc.desc, err)
-		}
-		if diff := cmp.Diff(degradedSet, tc.wantEndpointSets); diff != "" {
-			t.Errorf("For degraded mode case %q, expecting endpoint set %v, but got %v.\nDiff: (-want +got):\n%s", tc.desc, tc.wantEndpointSets, retSet, diff)
-		}
+		t.Run(tc.desc, func(t *testing.T) {
+			ec := NewLocalL4EndpointsCalculator(listers.NewNodeLister(nodeInformer.GetIndexer()), zoneGetter, svcKey, klog.TODO(), &tc.network, negtypes.L4InternalLB)
+			updateNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeAnnotationsMap, tc.nodeReadyStatusMap, nodeInformer.GetIndexer())
+			retSet, _, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
+			if err != nil {
+				t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
+			}
+			if diff := cmp.Diff(retSet, tc.wantEndpointSets); diff != "" {
+				t.Errorf("For case %q, expecting endpoint set %v, but got %v.\nDiff: (-want +got):\n%s", tc.desc, tc.wantEndpointSets, retSet, diff)
+			}
+			degradedSet, _, err := ec.CalculateEndpointsDegradedMode(tc.endpointsData, nil)
+			if err != nil {
+				t.Errorf("For degraded mode case %q, expect nil error, but got %v.", tc.desc, err)
+			}
+			if diff := cmp.Diff(degradedSet, tc.wantEndpointSets); diff != "" {
+				t.Errorf("For degraded mode case %q, expecting endpoint set %v, but got %v.\nDiff: (-want +got):\n%s", tc.desc, tc.wantEndpointSets, retSet, diff)
+			}
+		})
 	}
 }
 
@@ -275,25 +297,49 @@ func TestClusterGetEndpointSet(t *testing.T) {
 			networkEndpointType: negtypes.VmIpEndpointType,
 			nodeNames:           []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
 		},
+		{
+			desc:          "endpoints with MSC nodes",
+			endpointsData: negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()),
+			// all nodes are picked up, but since nodes are spread across subnets there is a separate endpoint set per zone/subnet.
+			wantEndpointSets: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}:    negtypes.NewNetworkEndpointSet(),
+				{Zone: negtypes.TestZone1, Subnet: secondaryTestSubnet1}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}),
+				{Zone: negtypes.TestZone1, Subnet: secondaryTestSubnet2}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
+				{Zone: negtypes.TestZone2, Subnet: secondaryTestSubnet1}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.3", Node: testInstance3}),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4},
+					negtypes.NetworkEndpoint{IP: "1.2.3.5", Node: testInstance5}, negtypes.NetworkEndpoint{IP: "1.2.3.6", Node: testInstance6}),
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.7", Node: testUnreadyInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.8", Node: testUnreadyInstance2}),
+			},
+			networkEndpointType: negtypes.VmIpEndpointType,
+			nodeNames:           []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
+			nodeLabelsMap: map[string]map[string]string{
+				testInstance1: {utils.LabelNodeSubnet: secondaryTestSubnet1},
+				testInstance2: {utils.LabelNodeSubnet: secondaryTestSubnet2},
+				testInstance3: {utils.LabelNodeSubnet: secondaryTestSubnet1},
+			},
+			network: defaultNetwork,
+		},
 	}
 	svcKey := fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace)
 	for _, tc := range testCases {
-		ec := NewClusterL4EndpointsCalculator(listers.NewNodeLister(nodeInformer.GetIndexer()), zoneGetter, svcKey, klog.TODO(), &tc.network, negtypes.L4InternalLB)
-		updateNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeAnnotationsMap, tc.nodeReadyStatusMap, nodeInformer.GetIndexer())
-		retSet, _, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
-		if err != nil {
-			t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
-		}
-		if !reflect.DeepEqual(retSet, tc.wantEndpointSets) {
-			t.Errorf("For case %q, expecting endpoint set %v, but got %v.", tc.desc, tc.wantEndpointSets, retSet)
-		}
-		degradedSet, _, err := ec.CalculateEndpointsDegradedMode(tc.endpointsData, nil)
-		if err != nil {
-			t.Errorf("For degraded mode case %q, expect nil error, but got %v.", tc.desc, err)
-		}
-		if !reflect.DeepEqual(degradedSet, tc.wantEndpointSets) {
-			t.Errorf("For degraded mode case %q, expecting endpoint set %v, but got %v.", tc.desc, tc.wantEndpointSets, retSet)
-		}
+		t.Run(tc.desc, func(t *testing.T) {
+			ec := NewClusterL4EndpointsCalculator(listers.NewNodeLister(nodeInformer.GetIndexer()), zoneGetter, svcKey, klog.TODO(), &tc.network, negtypes.L4InternalLB)
+			updateNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeAnnotationsMap, tc.nodeReadyStatusMap, nodeInformer.GetIndexer())
+			retSet, _, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
+			if err != nil {
+				t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
+			}
+			if !reflect.DeepEqual(retSet, tc.wantEndpointSets) {
+				t.Errorf("For case %q, expecting endpoint set %v, but got %v.", tc.desc, tc.wantEndpointSets, retSet)
+			}
+			degradedSet, _, err := ec.CalculateEndpointsDegradedMode(tc.endpointsData, nil)
+			if err != nil {
+				t.Errorf("For degraded mode case %q, expect nil error, but got %v.", tc.desc, err)
+			}
+			if !reflect.DeepEqual(degradedSet, tc.wantEndpointSets) {
+				t.Errorf("For degraded mode case %q, expecting endpoint set %v, but got %v.", tc.desc, tc.wantEndpointSets, retSet)
+			}
+		})
 	}
 }
 
