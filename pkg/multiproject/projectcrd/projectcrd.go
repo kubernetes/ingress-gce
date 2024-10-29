@@ -14,9 +14,9 @@ type Project struct {
 	Status ProjectStatus
 }
 
-// ProjectNamespace returns the namespace of the project which this CRD represents.
-func (p *Project) ProjectNamespace() string {
-	return p.ObjectMeta.Labels[flags.F.MultiProjectCRDNamespaceLabel]
+// ProjectName returns the name of the project which this CRD represents.
+func (p *Project) ProjectName() string {
+	return p.ObjectMeta.Labels[flags.F.MultiProjectCRDProjectNameLabel]
 }
 
 // ProjectList contains a list of Projects.
