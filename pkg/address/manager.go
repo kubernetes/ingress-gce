@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package loadbalancers
+package address
 
 import (
 	"fmt"
@@ -54,7 +54,7 @@ const (
 )
 
 // Original file in https://github.com/kubernetes/legacy-cloud-providers/blob/6aa80146c33550e908aed072618bd7f9998837f6/gce/gce_address_manager.go
-type addressManager struct {
+type Manager struct {
 	svc         gce.CloudAddressService
 	name        string
 	serviceName string
@@ -69,7 +69,7 @@ type addressManager struct {
 	frLogger klog.Logger
 }
 
-func newAddressManager(svc gce.CloudAddressService, serviceName, region, subnetURL, name, targetIP string, addressType cloud.LbScheme, networkTier cloud.NetworkTier, ipVersion IPVersion, frLogger klog.Logger) *addressManager {
+func NewManager(svc gce.CloudAddressService, serviceName, region, subnetURL, name, targetIP string, addressType cloud.LbScheme, networkTier cloud.NetworkTier, ipVersion IPVersion, frLogger klog.Logger) *Manager {
 	if targetIP != "" {
 		// Store address in normalized format.
 		// This is required for IPv6 addresses, to be able to filter by exact address,
@@ -77,7 +77,7 @@ func newAddressManager(svc gce.CloudAddressService, serviceName, region, subnetU
 		targetIP = net.ParseIP(targetIP).String()
 	}
 	// We don't have verification that targetIP matches IPVersion, we will rely on Google cloud API verification
-	return &addressManager{
+	return &Manager{
 		svc:         svc,
 		region:      region,
 		serviceName: serviceName,
@@ -95,92 +95,92 @@ func newAddressManager(svc gce.CloudAddressService, serviceName, region, subnetU
 // HoldAddress will ensure that the IP is reserved with an address - either owned by the controller
 // or by a user. If the address is not the addressManager.name, then it's assumed to be a user's address.
 // The string returned is the reserved IP address and IPAddressType indicating if IP address is managed by controller.
-func (am *addressManager) HoldAddress() (string, IPAddressType, error) {
+func (m *Manager) HoldAddress() (string, IPAddressType, error) {
 	// HoldAddress starts with retrieving the address that we use for this load balancer (by name).
 	// Retrieving an address by IP will indicate if the IP is reserved and if reserved by the user
 	// or the controller, but won't tell us the current state of the controller's IP. The address
 	// could be reserving another address; therefore, it would need to be deleted. In the normal
 	// case of using a controller address, retrieving the address by name results in the fewest API
 	// calls since it indicates whether a Delete is necessary before Reserve.
-	am.frLogger.V(4).Info("Attempting hold of IP", "ip", am.targetIP, "addressType", am.addressType)
+	m.frLogger.V(4).Info("Attempting hold of IP", "ip", m.targetIP, "addressType", m.addressType)
 	// Get the address in case it was orphaned earlier
-	addr, err := am.svc.GetRegionAddress(am.name, am.region)
+	addr, err := m.svc.GetRegionAddress(m.name, m.region)
 	if err != nil && !utils.IsNotFoundError(err) {
 		return "", IPAddrUndefined, err
 	}
 
 	if addr != nil {
 		// If address exists, check if the address had the expected attributes.
-		validationError := am.validateAddress(addr)
+		validationError := m.validateAddress(addr)
 		if validationError == nil {
-			am.frLogger.V(4).Info("Address already reserves IP. No further action required.", "addressName", addr.Name, "ip", addr.Address, "type", addr.AddressType)
+			m.frLogger.V(4).Info("Address already reserves IP. No further action required.", "addressName", addr.Name, "ip", addr.Address, "type", addr.AddressType)
 			return addr.Address, IPAddrManaged, nil
 		}
 
-		am.frLogger.V(2).Info("Deleting existing address", "reason", validationError)
-		err := am.svc.DeleteRegionAddress(addr.Name, am.region)
+		m.frLogger.V(2).Info("Deleting existing address", "reason", validationError)
+		err := m.svc.DeleteRegionAddress(addr.Name, m.region)
 		if err != nil {
 			if utils.IsNotFoundError(err) {
-				am.frLogger.V(4).Info("Address was not found. Ignoring.", "addressName", addr.Name)
+				m.frLogger.V(4).Info("Address was not found. Ignoring.", "addressName", addr.Name)
 			} else {
 				return "", IPAddrUndefined, err
 			}
 		} else {
-			am.frLogger.V(4).Info("Successfully deleted previous address", "addressName", addr.Name)
+			m.frLogger.V(4).Info("Successfully deleted previous address", "addressName", addr.Name)
 		}
 	}
 
-	return am.ensureAddressReservation()
+	return m.ensureAddressReservation()
 }
 
 // ReleaseAddress will release the address if it's owned by the controller.
-func (am *addressManager) ReleaseAddress() error {
-	if !am.tryRelease {
-		am.frLogger.V(4).Info("Not attempting release of address", "ip", am.targetIP)
+func (m *Manager) ReleaseAddress() error {
+	if !m.tryRelease {
+		m.frLogger.V(4).Info("Not attempting release of address", "ip", m.targetIP)
 		return nil
 	}
 
-	am.frLogger.V(4).Info("Releasing address", "ip", am.targetIP, "addressName", am.name)
+	m.frLogger.V(4).Info("Releasing address", "ip", m.targetIP, "addressName", m.name)
 	// Controller only ever tries to unreserve the address named with the load balancer's name.
-	err := am.svc.DeleteRegionAddress(am.name, am.region)
+	err := m.svc.DeleteRegionAddress(m.name, m.region)
 	if err != nil {
 		if utils.IsNotFoundError(err) {
-			am.frLogger.Info("Address was not found. Ignoring.", "addressName", am.name)
+			m.frLogger.Info("Address was not found. Ignoring.", "addressName", m.name)
 			return nil
 		}
 
 		return err
 	}
 
-	am.frLogger.V(4).Info("Successfully released IP named", "ip", am.targetIP, "addressName", am.name)
+	m.frLogger.V(4).Info("Successfully released IP named", "ip", m.targetIP, "addressName", m.name)
 	return nil
 }
 
 // ensureAddressReservation reserves ip address and returns address as a string,
 // IPAddressType indicating whether ip address is managed by controller and error.
-func (am *addressManager) ensureAddressReservation() (string, IPAddressType, error) {
+func (m *Manager) ensureAddressReservation() (string, IPAddressType, error) {
 	// Try reserving the IP with controller-owned address name
 	// If am.targetIP is an empty string, a new IP will be created.
 	newAddr := &compute.Address{
-		Name:        am.name,
-		Description: fmt.Sprintf(`{"kubernetes.io/service-name":"%s"}`, am.serviceName),
-		Address:     am.targetIP,
-		AddressType: string(am.addressType),
-		Subnetwork:  am.subnetURL,
+		Name:        m.name,
+		Description: fmt.Sprintf(`{"kubernetes.io/service-name":"%s"}`, m.serviceName),
+		Address:     m.targetIP,
+		AddressType: string(m.addressType),
+		Subnetwork:  m.subnetURL,
 	}
 	// NetworkTier is supported only for External IP Address
-	if am.addressType == cloud.SchemeExternal {
-		newAddr.NetworkTier = am.networkTier.ToGCEValue()
+	if m.addressType == cloud.SchemeExternal {
+		newAddr.NetworkTier = m.networkTier.ToGCEValue()
 	}
 
 	// This block mitigates inconsistencies in the gcloud API, as revealed through experimentation.
-	if am.ipVersion == IPv6Version {
+	if m.ipVersion == IPv6Version {
 		// Empty targetIP covers reserving new static address.
-		if am.targetIP == "" {
+		if m.targetIP == "" {
 			// The IpVersion should be set to IPv6 only when creating a new IPv6 address.
 			// Setting it to IPv4 or setting it while promoting an existing load balancer IPv6 address to static can cause errors.
 			newAddr.IpVersion = IPv6Version
-			if am.addressType == cloud.SchemeExternal {
+			if m.addressType == cloud.SchemeExternal {
 				// Ipv6EndpointType is required only when creating a new external IPv6 address.
 				newAddr.Ipv6EndpointType = IPv6EndpointTypeNetLB
 			}
@@ -189,42 +189,42 @@ func (am *addressManager) ensureAddressReservation() (string, IPAddressType, err
 
 			// PrefixLength is only required when converting an existing IPv6 load balancer address to a static one.
 			newAddr.PrefixLength = IPv6LBAddressPrefixLength
-			if am.addressType == cloud.SchemeExternal {
+			if m.addressType == cloud.SchemeExternal {
 				// Specifying a Subnetwork will return error when promoting an existing external IPv6 forwarding rule IP to static.
 				newAddr.Subnetwork = ""
 			}
 		}
 	}
 
-	reserveErr := am.svc.ReserveRegionAddress(newAddr, am.region)
+	reserveErr := m.svc.ReserveRegionAddress(newAddr, m.region)
 	if reserveErr == nil {
 		if newAddr.Address != "" {
-			am.frLogger.V(4).Info("Successfully reserved IP", "ip", newAddr.Address, "addressName", newAddr.Name)
+			m.frLogger.V(4).Info("Successfully reserved IP", "ip", newAddr.Address, "addressName", newAddr.Name)
 			return newAddr.Address, IPAddrManaged, nil
 		}
 
 		// If an ip address was not specified, get the newly created address resource to determine the assigned address.
-		addr, err := am.svc.GetRegionAddress(newAddr.Name, am.region)
+		addr, err := m.svc.GetRegionAddress(newAddr.Name, m.region)
 		if err != nil {
 			return "", IPAddrUndefined, err
 		}
 
-		am.frLogger.V(4).Info("Successfully created address which reserved IP", "addressName", addr.Name, "ip", addr.Address)
+		m.frLogger.V(4).Info("Successfully created address which reserved IP", "addressName", addr.Name, "ip", addr.Address)
 		return addr.Address, IPAddrManaged, nil
 	}
 
-	am.frLogger.V(2).Info("Address reserve error", "err", reserveErr)
+	m.frLogger.V(2).Info("Address reserve error", "err", reserveErr)
 
 	if utils.IsNetworkTierMismatchGCEError(reserveErr) {
 		receivedNetworkTier := cloud.NetworkTierPremium
-		if receivedNetworkTier == am.networkTier {
+		if receivedNetworkTier == m.networkTier {
 			// We don't have information of current ephemeral IP address Network Tier since
 			// we try to reserve the address so we need to check against desired Network Tier and set the opposite one.
 			// This is just for error message.
 			receivedNetworkTier = cloud.NetworkTierStandard
 		}
-		resource := fmt.Sprintf("Reserved static IP (%v)", am.name)
-		networkTierError := utils.NewNetworkTierErr(resource, string(am.networkTier), string(receivedNetworkTier))
+		resource := fmt.Sprintf("Reserved static IP (%v)", m.name)
+		networkTierError := utils.NewNetworkTierErr(resource, string(m.networkTier), string(receivedNetworkTier))
 		return "", IPAddrUndefined, networkTierError
 	}
 
@@ -240,47 +240,47 @@ func (am *addressManager) ensureAddressReservation() (string, IPAddressType, err
 
 	// If the target IP was empty, we cannot try to find which IP caused a conflict.
 	// If the name was already used, then the next sync will attempt deletion of that address.
-	if am.targetIP == "" {
-		return "", IPAddrUndefined, fmt.Errorf("failed to reserve address %q with no specific IP, err: %v", am.name, reserveErr)
+	if m.targetIP == "" {
+		return "", IPAddrUndefined, fmt.Errorf("failed to reserve address %q with no specific IP, err: %v", m.name, reserveErr)
 	}
 
 	// Reserving the address failed due to a conflict or bad request. The address manager just checked that no address
 	// exists with the name, so it may belong to the user.
-	addr, err := am.svc.GetRegionAddressByIP(am.region, am.targetIP)
+	addr, err := m.svc.GetRegionAddressByIP(m.region, m.targetIP)
 	if err != nil {
 		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
-			return "", IPAddrUndefined, utils.NewIPConfigurationError(am.targetIP, "address not found. Check if the IP is valid and is reserved in your VPC.")
+			return "", IPAddrUndefined, utils.NewIPConfigurationError(m.targetIP, "address not found. Check if the IP is valid and is reserved in your VPC.")
 		}
-		return "", IPAddrUndefined, fmt.Errorf("failed to get address by IP %q after reservation attempt, err: %q, reservation err: %q", am.targetIP, err, reserveErr)
+		return "", IPAddrUndefined, fmt.Errorf("failed to get address by IP %q after reservation attempt, err: %q, reservation err: %q", m.targetIP, err, reserveErr)
 	}
 
 	// Check that the address attributes are as required.
-	if err := am.validateAddress(addr); err != nil {
+	if err := m.validateAddress(addr); err != nil {
 		return "", IPAddrUndefined, fmt.Errorf("address (%q) validation failed, err: %w", addr.Name, err)
 	}
 
-	if am.isManagedAddress(addr) {
+	if m.isManagedAddress(addr) {
 		// The address with this name is checked at the beginning of 'HoldAddress()', but for some reason
 		// it was re-created by this point. May be possible that two controllers are running.
-		am.frLogger.Info("Address %q unexpectedly existed with IP %q.", "addressName", addr.Name, "ip", am.targetIP)
+		m.frLogger.Info("Address %q unexpectedly existed with IP %q.", "addressName", addr.Name, "ip", m.targetIP)
 		return addr.Address, IPAddrManaged, nil
 	}
 	// If the retrieved address is not named with the loadbalancer name, then the controller does not own it, but will allow use of it.
-	am.frLogger.V(4).Info("Address was already reserved with name: %q, description: %q", "ip", am.targetIP, "addressName", addr.Name, "addressDescription", addr.Description)
-	am.tryRelease = false
+	m.frLogger.V(4).Info("Address was already reserved with name: %q, description: %q", "ip", m.targetIP, "addressName", addr.Name, "addressDescription", addr.Description)
+	m.tryRelease = false
 	return addr.Address, IPAddrUnmanaged, nil
 
 }
 
-func (am *addressManager) validateAddress(addr *compute.Address) error {
-	if am.targetIP != "" && !IsSameIP(am.targetIP, addr.Address) {
-		return fmt.Errorf("IP mismatch, expected %q, actual: %q", am.targetIP, addr.Address)
+func (m *Manager) validateAddress(addr *compute.Address) error {
+	if m.targetIP != "" && !IsSameIP(m.targetIP, addr.Address) {
+		return fmt.Errorf("IP mismatch, expected %q, actual: %q", m.targetIP, addr.Address)
 	}
-	if addr.AddressType != string(am.addressType) {
-		return utils.NewIPConfigurationError(am.targetIP, fmt.Sprintf("address type mismatch, expected %q, actual: %q", am.addressType, addr.AddressType))
+	if addr.AddressType != string(m.addressType) {
+		return utils.NewIPConfigurationError(m.targetIP, fmt.Sprintf("address type mismatch, expected %q, actual: %q", m.addressType, addr.AddressType))
 	}
-	if addr.NetworkTier != am.networkTier.ToGCEValue() {
-		return utils.NewNetworkTierErr(fmt.Sprintf("Static IP (%v)", am.name), am.networkTier.ToGCEValue(), addr.NetworkTier)
+	if addr.NetworkTier != m.networkTier.ToGCEValue() {
+		return utils.NewNetworkTierErr(fmt.Sprintf("Static IP (%v)", m.name), m.networkTier.ToGCEValue(), addr.NetworkTier)
 	}
 	return nil
 }
@@ -295,33 +295,33 @@ func IsSameIP(ip1 string, ip2 string) bool {
 	return parsedIP1.Equal(parsedIP2)
 }
 
-func (am *addressManager) isManagedAddress(addr *compute.Address) bool {
-	return addr.Name == am.name
+func (m *Manager) isManagedAddress(addr *compute.Address) bool {
+	return addr.Name == m.name
 }
 
-func ensureAddressDeleted(svc gce.CloudAddressService, name, region string) error {
+func EnsureDeleted(svc gce.CloudAddressService, name, region string) error {
 	return utils.IgnoreHTTPNotFound(svc.DeleteRegionAddress(name, region))
 }
 
 // TearDownAddressIPIfNetworkTierMismatch this function tear down controller managed address IP if it has a wrong Network Tier
-func (am *addressManager) TearDownAddressIPIfNetworkTierMismatch() error {
-	if am.targetIP == "" {
+func (m *Manager) TearDownAddressIPIfNetworkTierMismatch() error {
+	if m.targetIP == "" {
 		return nil
 	}
-	addr, err := am.svc.GetRegionAddressByIP(am.region, am.targetIP)
+	addr, err := m.svc.GetRegionAddressByIP(m.region, m.targetIP)
 	if utils.IsNotFoundError(err) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	if addr != nil && addr.NetworkTier != am.networkTier.ToGCEValue() {
-		if !am.isManagedAddress(addr) {
-			return utils.NewNetworkTierErr(fmt.Sprintf("User specific address IP (%v)", am.name), string(am.networkTier), addr.NetworkTier)
+	if addr != nil && addr.NetworkTier != m.networkTier.ToGCEValue() {
+		if !m.isManagedAddress(addr) {
+			return utils.NewNetworkTierErr(fmt.Sprintf("User specific address IP (%v)", m.name), string(m.networkTier), addr.NetworkTier)
 		}
-		am.frLogger.V(3).Info("Deleting IP address because it has a wrong network tier", "ip", am.targetIP)
-		if err := am.svc.DeleteRegionAddress(addr.Name, am.targetIP); err != nil {
-			am.frLogger.Error(err, "Unable to delete region address on target ip", "addressName", addr.Name, "ip", am.targetIP)
+		m.frLogger.V(3).Info("Deleting IP address because it has a wrong network tier", "ip", m.targetIP)
+		if err := m.svc.DeleteRegionAddress(addr.Name, m.targetIP); err != nil {
+			m.frLogger.Error(err, "Unable to delete region address on target ip", "addressName", addr.Name, "ip", m.targetIP)
 		}
 	}
 	return nil

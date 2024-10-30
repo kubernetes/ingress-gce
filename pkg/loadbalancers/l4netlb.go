@@ -27,6 +27,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/cloud-provider/service/helpers"
+	"k8s.io/ingress-gce/pkg/address"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -394,7 +395,7 @@ func (l4netlb *L4NetLB) ensureIPv4Resources(result *L4NetLBSyncResult, nodeNames
 	} else {
 		result.Annotations[annotations.UDPForwardingRuleKey] = fr.Name
 	}
-	result.MetricsLegacyState.IsManagedIP = ipAddrType == IPAddrManaged
+	result.MetricsLegacyState.IsManagedIP = ipAddrType == address.IPAddrManaged
 	result.MetricsLegacyState.IsPremiumTier = fr.NetworkTier == cloud.NetworkTierPremium.ToGCEValue()
 
 	l4netlb.ensureIPv4NodesFirewall(nodeNames, fr.IPAddress, result)
@@ -556,7 +557,7 @@ func (l4netlb *L4NetLB) deleteIPv4Address() error {
 		l4netlb.svcLogger.V(2).Info("Finished deleting IPv4 external static address for L4 NetLB service", "addressName", addressName, "timeTaken", time.Since(start))
 	}()
 
-	return ensureAddressDeleted(l4netlb.cloud, addressName, l4netlb.cloud.Region())
+	return address.EnsureDeleted(l4netlb.cloud, addressName, l4netlb.cloud.Region())
 }
 
 func (l4netlb *L4NetLB) deleteIPv4NodesFirewall() error {
