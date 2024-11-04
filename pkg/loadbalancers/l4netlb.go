@@ -22,6 +22,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	compute "google.golang.org/api/compute/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -434,10 +435,14 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 
 	// Add firewall rule for L4 External LoadBalancer traffic to nodes
 	nodesFWRParams := firewalls.FirewallParams{
-		PortRanges:        portRanges,
+		Allowed: []*compute.FirewallAllowed{
+			{
+				IPProtocol: string(protocol),
+				Ports:      portRanges,
+			},
+		},
 		SourceRanges:      sourceRanges,
 		DestinationRanges: []string{ipAddress},
-		Protocol:          string(protocol),
 		Name:              firewallName,
 		IP:                l4netlb.Service.Spec.LoadBalancerIP,
 		NodeNames:         nodeNames,

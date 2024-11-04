@@ -41,11 +41,15 @@ func TestEnsureL4FirewallRule(t *testing.T) {
 				DestinationRanges: []string{
 					"10.1.2.16/29",
 				},
-				PortRanges: []string{"8080"},
-				NodeNames:  []string{"k8s-test-node"},
-				Protocol:   "TCP",
-				L4Type:     utils.ILB,
-				Network:    network.NetworkInfo{IsDefault: true},
+				Allowed: []*compute.FirewallAllowed{
+					{
+						IPProtocol: "TCP",
+						Ports:      []string{"8080"},
+					},
+				},
+				NodeNames: []string{"k8s-test-node"},
+				L4Type:    utils.ILB,
+				Network:   network.NetworkInfo{IsDefault: true},
 			},
 			shared: false,
 			want: &compute.Firewall{
@@ -77,11 +81,15 @@ func TestEnsureL4FirewallRule(t *testing.T) {
 				DestinationRanges: []string{
 					"10.1.2.16/29",
 				},
-				PortRanges: []string{"8080"},
-				NodeNames:  []string{"k8s-test-node"},
-				Protocol:   "TCP",
-				L4Type:     utils.ILB,
-				Network:    network.NetworkInfo{IsDefault: true},
+				Allowed: []*compute.FirewallAllowed{
+					{
+						IPProtocol: "TCP",
+						Ports:      []string{"8080"},
+					},
+				},
+				NodeNames: []string{"k8s-test-node"},
+				L4Type:    utils.ILB,
+				Network:   network.NetworkInfo{IsDefault: true},
 			},
 			shared: false,
 			existingRule: &compute.Firewall{
@@ -125,10 +133,14 @@ func TestEnsureL4FirewallRule(t *testing.T) {
 				SourceRanges: []string{
 					"10.1.2.8/29",
 				},
-				PortRanges: []string{"8080"},
-				NodeNames:  []string{"k8s-test-node"},
-				Protocol:   "TCP",
-				L4Type:     utils.ILB,
+				Allowed: []*compute.FirewallAllowed{
+					{
+						IPProtocol: "TCP",
+						Ports:      []string{"8080"},
+					},
+				},
+				NodeNames: []string{"k8s-test-node"},
+				L4Type:    utils.ILB,
 				Network: network.NetworkInfo{
 					IsDefault:  false,
 					NetworkURL: "https://www.googleapis.com/compute/v1/projects/test-poject/global/networks/test-vpc",

@@ -1355,10 +1355,14 @@ func TestEnsureInternalFirewallPortRanges(t *testing.T) {
 		Name:              fwName,
 		SourceRanges:      []string{"10.0.0.0/20"},
 		DestinationRanges: []string{"20.0.0.0/20"},
-		PortRanges:        utils.GetPortRanges(tc.Input),
-		NodeNames:         nodeNames,
-		Protocol:          string(v1.ProtocolTCP),
-		IP:                "1.2.3.4",
+		Allowed: []*compute.FirewallAllowed{
+			{
+				IPProtocol: string(v1.ProtocolTCP),
+				Ports:      utils.GetPortRanges(tc.Input),
+			},
+		},
+		NodeNames: nodeNames,
+		IP:        "1.2.3.4",
 	}
 	_, err = firewalls.EnsureL4FirewallRule(l4.cloud, utils.ServiceKeyFunc(svc.Namespace, svc.Name), &fwrParams /*sharedRule = */, false, klog.TODO())
 	if err != nil {

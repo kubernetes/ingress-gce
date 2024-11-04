@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/api/compute/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -147,10 +148,14 @@ func (l4 *L4) ensureIPv6NodesFirewall(ipAddress string, nodeNames []string, resu
 	}
 
 	ipv6nodesFWRParams := firewalls.FirewallParams{
-		PortRanges:        portRanges,
+		Allowed: []*compute.FirewallAllowed{
+			{
+				IPProtocol: string(protocol),
+				Ports:      portRanges,
+			},
+		},
 		SourceRanges:      ipv6SourceRanges,
 		DestinationRanges: []string{ipAddress},
-		Protocol:          string(protocol),
 		Name:              firewallName,
 		NodeNames:         nodeNames,
 		L4Type:            utils.ILB,
