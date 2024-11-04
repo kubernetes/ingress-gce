@@ -281,7 +281,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 			if subnetConfig.Name == defaultSubnet {
 				continue
 			}
-			nonDefaultNegName, err := s.getNonDefaultSubnetName(subnetConfig.Name)
+			nonDefaultNegName, err := s.getNonDefaultSubnetNEGName(subnetConfig.Name)
 			if err != nil {
 				s.logger.Error(err, "Errored when getting NEG name from non-default subnets when retrieving existing endpoints")
 				return err
@@ -477,7 +477,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 
 		if subnetConfig.Name != defaultSubnet {
 			// Determine the NEG name for the non-default subnet NEGs.
-			negName, err = s.getNonDefaultSubnetName(subnetConfig.Name)
+			negName, err = s.getNonDefaultSubnetNEGName(subnetConfig.Name)
 			if err != nil {
 				s.logger.Error(err, "Unable to get the name of the additional NEG based on the subnet name", "subnetName", subnetConfig.Name)
 				errList = append(errList, err)
@@ -947,8 +947,8 @@ func (s *transactionSyncer) computeEPSStaleness(endpointSlices []*discovery.Endp
 	}
 }
 
-// getNonDefaultSubnetName returns the name of the NEG based on the subnet name.
-func (s *transactionSyncer) getNonDefaultSubnetName(subnet string) (string, error) {
+// getNonDefaultSubnetNEGName returns the name of the NEG based on the subnet name.
+func (s *transactionSyncer) getNonDefaultSubnetNEGName(subnet string) (string, error) {
 	if s.customName {
 		negName, err := s.namer.NonDefaultSubnetCustomNEG(s.NegSyncerKey.NegName, subnet)
 		if err != nil {
