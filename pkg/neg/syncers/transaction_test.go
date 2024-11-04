@@ -839,8 +839,6 @@ func TestFilterEndpointByTransaction(t *testing.T) {
 }
 
 func TestCommitPods(t *testing.T) {
-	t.Parallel()
-
 	vals := gce.DefaultTestClusterValues()
 	vals.SubnetworkURL = defaultTestSubnetURL
 	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(vals)), negtypes.VmIpPortEndpointType, false)
@@ -849,192 +847,349 @@ func TestCommitPods(t *testing.T) {
 
 	syncerKey := transactionSyncer.NegSyncerKey
 	negName := transactionSyncer.NegName
+	prevFlag := flags.F.EnableMultiSubnetClusterPhase1
+	defer func() { flags.F.EnableMultiSubnetClusterPhase1 = prevFlag }()
+
+	for _, enableMultiSubnetPhase1 := range []bool{true, false} {
+		flags.F.EnableMultiSubnetClusterPhase1 = enableMultiSubnetPhase1
+		for _, tc := range []struct {
+			desc         string
+			input        func() (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap)
+			expectOutput func() map[negMeta]negtypes.EndpointPodMap
+		}{
+			{
+				desc: "empty input",
+				input: func() (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
+					return nil, nil
+				},
+				expectOutput: func() map[negMeta]negtypes.EndpointPodMap {
+					return map[negMeta]negtypes.EndpointPodMap{}
+				},
+			},
+			{
+				desc: "10 endpoints from 1 instance in 1 zone",
+				input: func() (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
+					endpointSet, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
+					return map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{{Zone: testZone1, Subnet: defaultTestSubnet}: endpointSet}, endpointMap
+				},
+				expectOutput: func() map[negMeta]negtypes.EndpointPodMap {
+					_, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
+					return map[negMeta]negtypes.EndpointPodMap{
+						{SyncerKey: syncerKey, Name: negName, Zone: testZone1}: endpointMap,
+					}
+				},
+			},
+			{
+				desc: "40 endpoints from 4 instances in 2 zone",
+				input: func() (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
+					retSet := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+						{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+						{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+					}
+					retMap := negtypes.EndpointPodMap{}
+					endpointSet, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
+					retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}].Union(endpointSet)
+					retMap = unionEndpointMap(retMap, endpointMap)
+					endpointSet, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
+					retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}].Union(endpointSet)
+					retMap = unionEndpointMap(retMap, endpointMap)
+					endpointSet, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
+					retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}].Union(endpointSet)
+					retMap = unionEndpointMap(retMap, endpointMap)
+					endpointSet, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")
+					retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}].Union(endpointSet)
+					retMap = unionEndpointMap(retMap, endpointMap)
+					return retSet, retMap
+				},
+				expectOutput: func() map[negMeta]negtypes.EndpointPodMap {
+					retMap := map[negMeta]negtypes.EndpointPodMap{
+						{SyncerKey: syncerKey, Name: negName, Zone: testZone1}: {},
+						{SyncerKey: syncerKey, Name: negName, Zone: testZone2}: {},
+					}
+					_, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
+					retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone1}] = unionEndpointMap(retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone1}], endpointMap)
+					_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
+					retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone1}] = unionEndpointMap(retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone1}], endpointMap)
+					_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
+					retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone2}] = unionEndpointMap(retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone2}], endpointMap)
+					_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")
+					retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone2}] = unionEndpointMap(retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone2}], endpointMap)
+					return retMap
+				},
+			},
+			{
+				desc: "40 endpoints from 4 instances in 2 zone, but half of the endpoints does not have corresponding pod mapping",
+				input: func() (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
+					retSet := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+						{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+						{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+					}
+					retMap := negtypes.EndpointPodMap{}
+
+					endpointSet, _ := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
+					retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}].Union(endpointSet)
+					_, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 5, testInstance1, "8080")
+					retMap = unionEndpointMap(retMap, endpointMap)
+
+					endpointSet, _ = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
+					retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}].Union(endpointSet)
+					_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 5, testInstance2, "8080")
+					retMap = unionEndpointMap(retMap, endpointMap)
+
+					endpointSet, _ = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
+					retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}].Union(endpointSet)
+					_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 5, testInstance3, "8080")
+					retMap = unionEndpointMap(retMap, endpointMap)
+
+					endpointSet, _ = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")
+					retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}].Union(endpointSet)
+					_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 5, testInstance4, "8080")
+					retMap = unionEndpointMap(retMap, endpointMap)
+					return retSet, retMap
+				},
+				expectOutput: func() map[negMeta]negtypes.EndpointPodMap {
+					retMap := map[negMeta]negtypes.EndpointPodMap{
+						{SyncerKey: syncerKey, Name: negName, Zone: testZone1}: {},
+						{SyncerKey: syncerKey, Name: negName, Zone: testZone2}: {},
+					}
+					_, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 5, testInstance1, "8080")
+					retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone1}] = unionEndpointMap(retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone1}], endpointMap)
+					_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 5, testInstance2, "8080")
+					retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone1}] = unionEndpointMap(retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone1}], endpointMap)
+					_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 5, testInstance3, "8080")
+					retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone2}] = unionEndpointMap(retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone2}], endpointMap)
+					_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 5, testInstance4, "8080")
+					retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone2}] = unionEndpointMap(retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone2}], endpointMap)
+					return retMap
+				},
+			},
+			{
+				desc: "40 endpoints from 4 instances in 2 zone, and more endpoints are in pod mapping",
+				input: func() (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
+					retSet := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+						{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+						{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+					}
+					retMap := negtypes.EndpointPodMap{}
+
+					endpointSet, _ := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
+					retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}].Union(endpointSet)
+					_, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 15, testInstance1, "8080")
+					retMap = unionEndpointMap(retMap, endpointMap)
+
+					endpointSet, _ = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
+					retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}].Union(endpointSet)
+					_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 15, testInstance2, "8080")
+					retMap = unionEndpointMap(retMap, endpointMap)
+
+					endpointSet, _ = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
+					retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}].Union(endpointSet)
+					_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 15, testInstance3, "8080")
+					retMap = unionEndpointMap(retMap, endpointMap)
+
+					endpointSet, _ = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")
+					retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}].Union(endpointSet)
+					_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 15, testInstance4, "8080")
+					retMap = unionEndpointMap(retMap, endpointMap)
+					return retSet, retMap
+				},
+				expectOutput: func() map[negMeta]negtypes.EndpointPodMap {
+					retMap := map[negMeta]negtypes.EndpointPodMap{
+						{SyncerKey: syncerKey, Name: negName, Zone: testZone1}: {},
+						{SyncerKey: syncerKey, Name: negName, Zone: testZone2}: {},
+					}
+					_, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
+					retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone1}] = unionEndpointMap(retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone1}], endpointMap)
+					_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
+					retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone1}] = unionEndpointMap(retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone1}], endpointMap)
+					_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
+					retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone2}] = unionEndpointMap(retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone2}], endpointMap)
+					_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")
+					retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone2}] = unionEndpointMap(retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone2}], endpointMap)
+					return retMap
+				},
+			},
+			{
+				desc: "40 endpoints from 4 instances in 2 zone, but some nodes do not have endpoint pod mapping",
+				input: func() (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
+					retSet := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+						{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+						{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+					}
+					retMap := negtypes.EndpointPodMap{}
+					endpointSet, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
+					retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}].Union(endpointSet)
+					retMap = unionEndpointMap(retMap, endpointMap)
+					endpointSet, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
+					retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}].Union(endpointSet)
+					endpointSet, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
+					retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}].Union(endpointSet)
+					retMap = unionEndpointMap(retMap, endpointMap)
+					endpointSet, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")
+					retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}].Union(endpointSet)
+					return retSet, retMap
+				},
+				expectOutput: func() map[negMeta]negtypes.EndpointPodMap {
+					retMap := map[negMeta]negtypes.EndpointPodMap{
+						{SyncerKey: syncerKey, Name: negName, Zone: testZone1}: {},
+						{SyncerKey: syncerKey, Name: negName, Zone: testZone2}: {},
+					}
+					_, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
+					retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone1}] = unionEndpointMap(retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone1}], endpointMap)
+					_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
+					retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone2}] = unionEndpointMap(retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone2}], endpointMap)
+					return retMap
+				},
+			},
+		} {
+			reflector.Flush()
+			endpointMap, endpointPodMap := tc.input()
+			expectOutput := tc.expectOutput()
+			transactionSyncer.commitPods(endpointMap, endpointPodMap)
+			negNameSet := sets.NewString(reflector.negNames...)
+			if len(expectOutput) != 0 && !(negNameSet.Len() == 1 && negNameSet.Has(transactionSyncer.NegSyncerKey.NegName)) {
+				t.Errorf("For test case %q, expect neg name to be %v, but got %v", tc.desc, transactionSyncer.NegSyncerKey.NegName, negNameSet.List())
+			}
+
+			if !reflect.DeepEqual(expectOutput, reflector.pollMap) {
+				t.Errorf("For test case %q, expect endpoint map to be %v, but got %v", tc.desc, expectOutput, reflector.pollMap)
+			}
+		}
+	}
+}
+
+func TestCommitPodsMSC(t *testing.T) {
+	vals := gce.DefaultTestClusterValues()
+	vals.SubnetworkURL = defaultTestSubnetURL
+	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(vals)), negtypes.VmIpPortEndpointType, false)
+	reflector := &testReflector{}
+	transactionSyncer.reflector = reflector
+
+	prevFlag := flags.F.EnableMultiSubnetClusterPhase1
+	defer func() { flags.F.EnableMultiSubnetClusterPhase1 = prevFlag }()
+	flags.F.EnableMultiSubnetClusterPhase1 = true
+
+	defaultSubnetNegName := transactionSyncer.NegName
+	defaultSubnetSyncerKey := transactionSyncer.NegSyncerKey
+
+	nonDefaultSubnetNegName := transactionSyncer.namer.NonDefaultSubnetNEG(transactionSyncer.NegSyncerKey.Namespace, transactionSyncer.NegSyncerKey.Name, additionalTestSubnet, transactionSyncer.NegSyncerKey.PortTuple.Port)
+	nonDefaultSubnetSyncerKey := transactionSyncer.NegSyncerKey
+	nonDefaultSubnetSyncerKey.NegName = nonDefaultSubnetNegName
+
 	for _, tc := range []struct {
 		desc         string
 		input        func() (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap)
 		expectOutput func() map[negMeta]negtypes.EndpointPodMap
 	}{
 		{
-			desc: "empty input",
-			input: func() (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
-				return nil, nil
-			},
-			expectOutput: func() map[negMeta]negtypes.EndpointPodMap {
-				return map[negMeta]negtypes.EndpointPodMap{}
-			},
-		},
-		{
-			desc: "10 endpoints from 1 instance in 1 zone",
-			input: func() (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
-				endpointSet, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
-				return map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{{Zone: testZone1, Subnet: defaultTestSubnet}: endpointSet}, endpointMap
-			},
-			expectOutput: func() map[negMeta]negtypes.EndpointPodMap {
-				_, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
-				return map[negMeta]negtypes.EndpointPodMap{
-					{SyncerKey: syncerKey, Name: negName, Zone: testZone1}: endpointMap,
-				}
-			},
-		},
-		{
-			desc: "40 endpoints from 4 instances in 2 zone",
+			desc: "20 endpoints from 2 instance in different subnets, in 1 zone",
 			input: func() (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
 				retSet := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
-					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+					{Zone: testZone1, Subnet: defaultTestSubnet}:    negtypes.NewNetworkEndpointSet(),
+					{Zone: testZone1, Subnet: additionalTestSubnet}: negtypes.NewNetworkEndpointSet(),
 				}
 				retMap := negtypes.EndpointPodMap{}
 				endpointSet, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
 				retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}].Union(endpointSet)
 				retMap = unionEndpointMap(retMap, endpointMap)
 				endpointSet, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
-				retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}].Union(endpointSet)
-				retMap = unionEndpointMap(retMap, endpointMap)
-				endpointSet, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
-				retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}].Union(endpointSet)
-				retMap = unionEndpointMap(retMap, endpointMap)
-				endpointSet, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")
-				retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}].Union(endpointSet)
+				retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: additionalTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: additionalTestSubnet}].Union(endpointSet)
 				retMap = unionEndpointMap(retMap, endpointMap)
 				return retSet, retMap
 			},
 			expectOutput: func() map[negMeta]negtypes.EndpointPodMap {
 				retMap := map[negMeta]negtypes.EndpointPodMap{
-					{SyncerKey: syncerKey, Name: negName, Zone: testZone1}: {},
-					{SyncerKey: syncerKey, Name: negName, Zone: testZone2}: {},
+					{SyncerKey: defaultSubnetSyncerKey, Name: defaultSubnetNegName, Zone: testZone1}:       {},
+					{SyncerKey: nonDefaultSubnetSyncerKey, Name: nonDefaultSubnetNegName, Zone: testZone1}: {},
 				}
 				_, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
-				retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone1}] = unionEndpointMap(retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone1}], endpointMap)
+				retMap[negMeta{SyncerKey: defaultSubnetSyncerKey, Name: defaultSubnetNegName, Zone: testZone1}] = unionEndpointMap(retMap[negMeta{SyncerKey: defaultSubnetSyncerKey, Name: defaultSubnetNegName, Zone: testZone1}], endpointMap)
 				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
-				retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone1}] = unionEndpointMap(retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone1}], endpointMap)
-				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
-				retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone2}] = unionEndpointMap(retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone2}], endpointMap)
-				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")
-				retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone2}] = unionEndpointMap(retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone2}], endpointMap)
+				retMap[negMeta{SyncerKey: nonDefaultSubnetSyncerKey, Name: nonDefaultSubnetNegName, Zone: testZone1}] = unionEndpointMap(retMap[negMeta{SyncerKey: nonDefaultSubnetSyncerKey, Name: nonDefaultSubnetNegName, Zone: testZone1}], endpointMap)
 				return retMap
 			},
 		},
 		{
-			desc: "40 endpoints from 4 instances in 2 zone, but half of the endpoints does not have corresponding pod mapping",
+			desc: "40 endpoints from 4 instance in different subnets, in 2 zones",
 			input: func() (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
 				retSet := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
-					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
-				}
-				retMap := negtypes.EndpointPodMap{}
-
-				endpointSet, _ := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
-				retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}].Union(endpointSet)
-				_, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 5, testInstance1, "8080")
-				retMap = unionEndpointMap(retMap, endpointMap)
-
-				endpointSet, _ = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
-				retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}].Union(endpointSet)
-				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 5, testInstance2, "8080")
-				retMap = unionEndpointMap(retMap, endpointMap)
-
-				endpointSet, _ = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
-				retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}].Union(endpointSet)
-				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 5, testInstance3, "8080")
-				retMap = unionEndpointMap(retMap, endpointMap)
-
-				endpointSet, _ = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")
-				retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}].Union(endpointSet)
-				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 5, testInstance4, "8080")
-				retMap = unionEndpointMap(retMap, endpointMap)
-				return retSet, retMap
-			},
-			expectOutput: func() map[negMeta]negtypes.EndpointPodMap {
-				retMap := map[negMeta]negtypes.EndpointPodMap{
-					{SyncerKey: syncerKey, Name: negName, Zone: testZone1}: {},
-					{SyncerKey: syncerKey, Name: negName, Zone: testZone2}: {},
-				}
-				_, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 5, testInstance1, "8080")
-				retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone1}] = unionEndpointMap(retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone1}], endpointMap)
-				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 5, testInstance2, "8080")
-				retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone1}] = unionEndpointMap(retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone1}], endpointMap)
-				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 5, testInstance3, "8080")
-				retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone2}] = unionEndpointMap(retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone2}], endpointMap)
-				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 5, testInstance4, "8080")
-				retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone2}] = unionEndpointMap(retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone2}], endpointMap)
-				return retMap
-			},
-		},
-		{
-			desc: "40 endpoints from 4 instances in 2 zone, and more endpoints are in pod mapping",
-			input: func() (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
-				retSet := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
-					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
-				}
-				retMap := negtypes.EndpointPodMap{}
-
-				endpointSet, _ := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
-				retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}].Union(endpointSet)
-				_, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 15, testInstance1, "8080")
-				retMap = unionEndpointMap(retMap, endpointMap)
-
-				endpointSet, _ = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
-				retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}].Union(endpointSet)
-				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 15, testInstance2, "8080")
-				retMap = unionEndpointMap(retMap, endpointMap)
-
-				endpointSet, _ = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
-				retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}].Union(endpointSet)
-				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 15, testInstance3, "8080")
-				retMap = unionEndpointMap(retMap, endpointMap)
-
-				endpointSet, _ = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")
-				retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}].Union(endpointSet)
-				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 15, testInstance4, "8080")
-				retMap = unionEndpointMap(retMap, endpointMap)
-				return retSet, retMap
-			},
-			expectOutput: func() map[negMeta]negtypes.EndpointPodMap {
-				retMap := map[negMeta]negtypes.EndpointPodMap{
-					{SyncerKey: syncerKey, Name: negName, Zone: testZone1}: {},
-					{SyncerKey: syncerKey, Name: negName, Zone: testZone2}: {},
-				}
-				_, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
-				retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone1}] = unionEndpointMap(retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone1}], endpointMap)
-				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
-				retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone1}] = unionEndpointMap(retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone1}], endpointMap)
-				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
-				retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone2}] = unionEndpointMap(retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone2}], endpointMap)
-				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")
-				retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone2}] = unionEndpointMap(retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone2}], endpointMap)
-				return retMap
-			},
-		},
-		{
-			desc: "40 endpoints from 4 instances in 2 zone, but some nodes do not have endpoint pod mapping",
-			input: func() (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
-				retSet := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
-					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
-					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+					{Zone: testZone1, Subnet: defaultTestSubnet}:    negtypes.NewNetworkEndpointSet(),
+					{Zone: testZone1, Subnet: additionalTestSubnet}: negtypes.NewNetworkEndpointSet(),
+					{Zone: testZone2, Subnet: defaultTestSubnet}:    negtypes.NewNetworkEndpointSet(),
+					{Zone: testZone2, Subnet: additionalTestSubnet}: negtypes.NewNetworkEndpointSet(),
 				}
 				retMap := negtypes.EndpointPodMap{}
 				endpointSet, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
 				retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}].Union(endpointSet)
 				retMap = unionEndpointMap(retMap, endpointMap)
 				endpointSet, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
-				retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}].Union(endpointSet)
+				retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: additionalTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: additionalTestSubnet}].Union(endpointSet)
+				retMap = unionEndpointMap(retMap, endpointMap)
 				endpointSet, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
 				retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}].Union(endpointSet)
 				retMap = unionEndpointMap(retMap, endpointMap)
 				endpointSet, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")
-				retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}].Union(endpointSet)
+				retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: additionalTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: additionalTestSubnet}].Union(endpointSet)
+				retMap = unionEndpointMap(retMap, endpointMap)
 				return retSet, retMap
 			},
 			expectOutput: func() map[negMeta]negtypes.EndpointPodMap {
 				retMap := map[negMeta]negtypes.EndpointPodMap{
-					{SyncerKey: syncerKey, Name: negName, Zone: testZone1}: {},
-					{SyncerKey: syncerKey, Name: negName, Zone: testZone2}: {},
+					{SyncerKey: defaultSubnetSyncerKey, Name: defaultSubnetNegName, Zone: testZone1}:       {},
+					{SyncerKey: nonDefaultSubnetSyncerKey, Name: nonDefaultSubnetNegName, Zone: testZone1}: {},
+					{SyncerKey: defaultSubnetSyncerKey, Name: defaultSubnetNegName, Zone: testZone2}:       {},
+					{SyncerKey: nonDefaultSubnetSyncerKey, Name: nonDefaultSubnetNegName, Zone: testZone2}: {},
 				}
 				_, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
-				retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone1}] = unionEndpointMap(retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone1}], endpointMap)
+				retMap[negMeta{SyncerKey: defaultSubnetSyncerKey, Name: defaultSubnetNegName, Zone: testZone1}] = unionEndpointMap(retMap[negMeta{SyncerKey: defaultSubnetSyncerKey, Name: defaultSubnetNegName, Zone: testZone1}], endpointMap)
+				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
+				retMap[negMeta{SyncerKey: nonDefaultSubnetSyncerKey, Name: nonDefaultSubnetNegName, Zone: testZone1}] = unionEndpointMap(retMap[negMeta{SyncerKey: nonDefaultSubnetSyncerKey, Name: nonDefaultSubnetNegName, Zone: testZone1}], endpointMap)
 				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
-				retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone2}] = unionEndpointMap(retMap[negMeta{SyncerKey: syncerKey, Name: negName, Zone: testZone2}], endpointMap)
+				retMap[negMeta{SyncerKey: defaultSubnetSyncerKey, Name: defaultSubnetNegName, Zone: testZone2}] = unionEndpointMap(retMap[negMeta{SyncerKey: defaultSubnetSyncerKey, Name: defaultSubnetNegName, Zone: testZone2}], endpointMap)
+				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")
+				retMap[negMeta{SyncerKey: nonDefaultSubnetSyncerKey, Name: nonDefaultSubnetNegName, Zone: testZone2}] = unionEndpointMap(retMap[negMeta{SyncerKey: nonDefaultSubnetSyncerKey, Name: nonDefaultSubnetNegName, Zone: testZone2}], endpointMap)
+				return retMap
+			},
+		},
+		{
+			desc: "40 endpoints from 4 instance in different subnets, in 2 zones",
+			input: func() (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
+				retSet := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+					{Zone: testZone1, Subnet: defaultTestSubnet}:    negtypes.NewNetworkEndpointSet(),
+					{Zone: testZone1, Subnet: additionalTestSubnet}: negtypes.NewNetworkEndpointSet(),
+					{Zone: testZone2, Subnet: defaultTestSubnet}:    negtypes.NewNetworkEndpointSet(),
+					{Zone: testZone2, Subnet: additionalTestSubnet}: negtypes.NewNetworkEndpointSet(),
+				}
+				retMap := negtypes.EndpointPodMap{}
+				endpointSet, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
+				retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: defaultTestSubnet}].Union(endpointSet)
+				retMap = unionEndpointMap(retMap, endpointMap)
+				endpointSet, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
+				retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: additionalTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone1, Subnet: additionalTestSubnet}].Union(endpointSet)
+				retMap = unionEndpointMap(retMap, endpointMap)
+				endpointSet, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
+				retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: defaultTestSubnet}].Union(endpointSet)
+				retMap = unionEndpointMap(retMap, endpointMap)
+				endpointSet, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")
+				retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: additionalTestSubnet}] = retSet[negtypes.EndpointGroupInfo{Zone: testZone2, Subnet: additionalTestSubnet}].Union(endpointSet)
+				retMap = unionEndpointMap(retMap, endpointMap)
+				return retSet, retMap
+			},
+			expectOutput: func() map[negMeta]negtypes.EndpointPodMap {
+				retMap := map[negMeta]negtypes.EndpointPodMap{
+					{SyncerKey: defaultSubnetSyncerKey, Name: defaultSubnetNegName, Zone: testZone1}:       {},
+					{SyncerKey: nonDefaultSubnetSyncerKey, Name: nonDefaultSubnetNegName, Zone: testZone1}: {},
+					{SyncerKey: defaultSubnetSyncerKey, Name: defaultSubnetNegName, Zone: testZone2}:       {},
+					{SyncerKey: nonDefaultSubnetSyncerKey, Name: nonDefaultSubnetNegName, Zone: testZone2}: {},
+				}
+				_, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
+				retMap[negMeta{SyncerKey: defaultSubnetSyncerKey, Name: defaultSubnetNegName, Zone: testZone1}] = unionEndpointMap(retMap[negMeta{SyncerKey: defaultSubnetSyncerKey, Name: defaultSubnetNegName, Zone: testZone1}], endpointMap)
+				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
+				retMap[negMeta{SyncerKey: nonDefaultSubnetSyncerKey, Name: nonDefaultSubnetNegName, Zone: testZone1}] = unionEndpointMap(retMap[negMeta{SyncerKey: nonDefaultSubnetSyncerKey, Name: nonDefaultSubnetNegName, Zone: testZone1}], endpointMap)
+				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
+				retMap[negMeta{SyncerKey: defaultSubnetSyncerKey, Name: defaultSubnetNegName, Zone: testZone2}] = unionEndpointMap(retMap[negMeta{SyncerKey: defaultSubnetSyncerKey, Name: defaultSubnetNegName, Zone: testZone2}], endpointMap)
+				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")
+				retMap[negMeta{SyncerKey: nonDefaultSubnetSyncerKey, Name: nonDefaultSubnetNegName, Zone: testZone2}] = unionEndpointMap(retMap[negMeta{SyncerKey: nonDefaultSubnetSyncerKey, Name: nonDefaultSubnetNegName, Zone: testZone2}], endpointMap)
 				return retMap
 			},
 		},
@@ -1044,12 +1199,12 @@ func TestCommitPods(t *testing.T) {
 		expectOutput := tc.expectOutput()
 		transactionSyncer.commitPods(endpointMap, endpointPodMap)
 		negNameSet := sets.NewString(reflector.negNames...)
-		if len(expectOutput) != 0 && !(negNameSet.Len() == 1 && negNameSet.Has(transactionSyncer.NegSyncerKey.NegName)) {
-			t.Errorf("For test case %q, expect neg name to be %v, but got %v", tc.desc, transactionSyncer.NegSyncerKey.NegName, negNameSet.List())
+		if len(expectOutput) != 0 && negNameSet.Len() != 2 {
+			t.Errorf("For test case %q, expect two negs, but got %v", tc.desc, negNameSet.List())
 		}
 
-		if !reflect.DeepEqual(expectOutput, reflector.pollMap) {
-			t.Errorf("For test case %q, expect endpoint map to be %v, but got %v", tc.desc, expectOutput, reflector.pollMap)
+		if diff := cmp.Diff(expectOutput, reflector.pollMap); diff != "" {
+			t.Errorf("For test case %q, expect endpoint map to be %v, but got %v, diff = %q", tc.desc, expectOutput, reflector.pollMap, diff)
 		}
 	}
 }
@@ -2631,7 +2786,7 @@ func TestCollectLabelStats(t *testing.T) {
 	}
 }
 
-func TestgetNonDefaultSubnetNEGName(t *testing.T) {
+func TestGetNonDefaultSubnetNEGName(t *testing.T) {
 	t.Parallel()
 	vals := gce.DefaultTestClusterValues()
 	vals.SubnetworkURL = defaultTestSubnetURL

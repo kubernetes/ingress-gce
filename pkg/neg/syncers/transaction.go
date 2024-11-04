@@ -754,9 +754,26 @@ func (s *transactionSyncer) commitPods(endpointMap map[negtypes.EndpointGroupInf
 			}
 			zoneEndpointMap[endpoint] = podName
 		}
-		// TODO(sawsa307): Make sure commitPods is called for non-default subnet NEGs.
-		// Only zone is needed because NEGs from non-default subnet have different names.
-		s.reflector.CommitPods(s.NegSyncerKey, s.NegSyncerKey.NegName, endpointGroupInfo.Zone, zoneEndpointMap)
+		negName := s.NegSyncerKey.NegName
+		syncerKey := s.NegSyncerKey
+		if flags.F.EnableMultiSubnetClusterPhase1 {
+			defaultSubnet, err := utils.KeyName(s.networkInfo.SubnetworkURL)
+			if err != nil {
+				s.logger.Error(err, "Errored getting default subnet from NetworkInfo when committing pods")
+				continue
+			}
+
+			if endpointGroupInfo.Subnet != defaultSubnet {
+				negName, err = s.getNonDefaultSubnetNEGName(endpointGroupInfo.Subnet)
+				if err != nil {
+					s.logger.Error(err, "Errored getting non-default subnet NEG name when committing pods")
+					continue
+				}
+			}
+			// To ensure syncerKey has the same information as the passed in NEG name.
+			syncerKey.NegName = negName
+		}
+		s.reflector.CommitPods(syncerKey, negName, endpointGroupInfo.Zone, zoneEndpointMap)
 	}
 }
 
