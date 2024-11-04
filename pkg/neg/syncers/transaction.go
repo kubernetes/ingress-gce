@@ -567,9 +567,7 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 			}
 
 			if operation == attachOp {
-				// TODO(sawsa307): Pass in subnet to help distinguish which NEGs needs
-				// update(in default/non-default subnets).
-				go s.attachNetworkEndpoints(zone, batch)
+				go s.attachNetworkEndpoints(endpointGroupInfo, batch)
 			}
 			if operation == detachOp {
 				if zone == migrationZone.Zone && subnet == migrationZone.Subnet {
@@ -577,9 +575,7 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 					// is already in progress.
 					s.dsMigrator.Pause()
 				}
-				// TODO(sawsa307): Pass in subnet to help distinguish which NEGs needs
-				// update(in default/non-default subnets).
-				go s.detachNetworkEndpoints(zone, batch, zone == migrationZone.Zone && subnet == migrationZone.Subnet)
+				go s.detachNetworkEndpoints(endpointGroupInfo, batch, zone == migrationZone.Zone && subnet == migrationZone.Subnet)
 			}
 		}
 		return nil
@@ -596,18 +592,18 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 }
 
 // attachNetworkEndpoints runs operation for attaching network endpoints.
-func (s *transactionSyncer) attachNetworkEndpoints(zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
-	s.logger.V(2).Info("Attaching endpoints to NEG.", "countOfEndpointsBeingAttached", len(networkEndpointMap), "negSyncerKey", s.NegSyncerKey.String(), "zone", zone)
-	err := s.operationInternal(attachOp, zone, networkEndpointMap, s.logger)
+func (s *transactionSyncer) attachNetworkEndpoints(epGroupInfo negtypes.EndpointGroupInfo, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
+	s.logger.V(2).Info("Attaching endpoints to NEG.", "countOfEndpointsBeingAttached", len(networkEndpointMap), "negSyncerKey", s.NegSyncerKey.String(), "zone", epGroupInfo.Zone, "subnet", epGroupInfo.Subnet)
+	err := s.operationInternal(attachOp, epGroupInfo, networkEndpointMap, s.logger)
 
 	// WARNING: commitTransaction must be called at last for analyzing the operation result
 	s.commitTransaction(err, networkEndpointMap)
 }
 
 // detachNetworkEndpoints runs operation for detaching network endpoints.
-func (s *transactionSyncer) detachNetworkEndpoints(zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, hasMigrationDetachments bool) {
-	s.logger.V(2).Info("Detaching endpoints from NEG.", "countOfEndpointsBeingDetached", len(networkEndpointMap), "negSyncerKey", s.NegSyncerKey.String(), "zone", zone)
-	err := s.operationInternal(detachOp, zone, networkEndpointMap, s.logger)
+func (s *transactionSyncer) detachNetworkEndpoints(epGroupInfo negtypes.EndpointGroupInfo, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, hasMigrationDetachments bool) {
+	s.logger.V(2).Info("Detaching endpoints from NEG.", "countOfEndpointsBeingDetached", len(networkEndpointMap), "negSyncerKey", s.NegSyncerKey.String(), "zone", epGroupInfo.Zone, "subnet", epGroupInfo.Subnet)
+	err := s.operationInternal(detachOp, epGroupInfo, networkEndpointMap, s.logger)
 
 	if hasMigrationDetachments {
 		// Unpause the migration since the ongoing migration-detachments have
@@ -622,26 +618,42 @@ func (s *transactionSyncer) detachNetworkEndpoints(zone string, networkEndpointM
 // operationInternal executes NEG API call and commits the transactions
 // It will record events when operations are completed
 // If error occurs or any transaction entry requires reconciliation, it will trigger resync
-func (s *transactionSyncer) operationInternal(operation transactionOp, zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, logger klog.Logger) error {
+func (s *transactionSyncer) operationInternal(operation transactionOp, epGroupInfo negtypes.EndpointGroupInfo, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, logger klog.Logger) error {
 	var err error
 	start := time.Now()
 	networkEndpoints := []*composite.NetworkEndpoint{}
 	for _, ne := range networkEndpointMap {
 		networkEndpoints = append(networkEndpoints, ne)
 	}
+	zone := epGroupInfo.Zone
+	negName := s.NegSyncerKey.NegName
+	if flags.F.EnableMultiSubnetClusterPhase1 {
+		defaultSubnet, err := utils.KeyName(s.networkInfo.SubnetworkURL)
+		if err != nil {
+			s.logger.Error(err, "Errored getting default subnet from NetworkInfo when updating NEG endpoints")
+			return err
+		}
 
+		if epGroupInfo.Subnet != defaultSubnet {
+			negName, err = s.getNonDefaultSubnetName(epGroupInfo.Subnet)
+			if err != nil {
+				s.logger.Error(err, "Errored getting non-default subnet NEG name when updating NEG endpoints")
+				return err
+			}
+		}
+	}
 	if operation == attachOp {
-		err = s.cloud.AttachNetworkEndpoints(s.NegSyncerKey.NegName, zone, networkEndpoints, s.NegSyncerKey.GetAPIVersion(), logger)
+		err = s.cloud.AttachNetworkEndpoints(negName, zone, networkEndpoints, s.NegSyncerKey.GetAPIVersion(), logger)
 	}
 	if operation == detachOp {
-		err = s.cloud.DetachNetworkEndpoints(s.NegSyncerKey.NegName, zone, networkEndpoints, s.NegSyncerKey.GetAPIVersion(), logger)
+		err = s.cloud.DetachNetworkEndpoints(negName, zone, networkEndpoints, s.NegSyncerKey.GetAPIVersion(), logger)
 	}
 
 	if err == nil {
-		s.recordEvent(apiv1.EventTypeNormal, operation.String(), fmt.Sprintf("%s %d network endpoint(s) (NEG %q in zone %q)", operation.String(), len(networkEndpointMap), s.NegSyncerKey.NegName, zone))
+		s.recordEvent(apiv1.EventTypeNormal, operation.String(), fmt.Sprintf("%s %d network endpoint(s) (NEG %q in zone %q)", operation.String(), len(networkEndpointMap), negName, zone))
 		s.syncMetricsCollector.UpdateSyncerStatusInMetrics(s.NegSyncerKey, nil, s.inErrorState())
 	} else {
-		s.recordEvent(apiv1.EventTypeWarning, operation.String()+"Failed", fmt.Sprintf("Failed to %s %d network endpoint(s) (NEG %q in zone %q): %v", operation.String(), len(networkEndpointMap), s.NegSyncerKey.NegName, zone, err))
+		s.recordEvent(apiv1.EventTypeWarning, operation.String()+"Failed", fmt.Sprintf("Failed to %s %d network endpoint(s) (NEG %q in zone %q): %v", operation.String(), len(networkEndpointMap), negName, zone, err))
 		err := checkEndpointBatchErr(err, operation)
 		syncErr := negtypes.ClassifyError(err)
 		// If the API call fails for invalid endpoint update request in any goroutine,
