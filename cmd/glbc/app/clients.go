@@ -78,30 +78,44 @@ func NewKubeConfig(logger klog.Logger) (*rest.Config, error) {
 	return config, nil
 }
 
+// GCEConfString returns the default GCE cluster config file content as a string.
+func GCEConfString(logger klog.Logger) (string, error) {
+	if flags.F.ConfigFilePath == "" {
+		return "", fmt.Errorf("config file path is not specified")
+	}
+
+	logger.Info("Reading config from the specified path", "path", flags.F.ConfigFilePath)
+	configBytes, err := os.ReadFile(flags.F.ConfigFilePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read config file: %v", err)
+	}
+
+	configString := string(configBytes)
+	logger.V(4).Info("Cloudprovider config file", "config", configString)
+
+	return configString, nil
+}
+
 // NewGCEClient returns a client to the GCE environment. This will block until
 // a valid configuration file can be read.
 func NewGCEClient(logger klog.Logger) *gce.Cloud {
 	var configReader func() io.Reader
 	if flags.F.ConfigFilePath != "" {
-		logger.Info("Reading config from the specified path", "path", flags.F.ConfigFilePath)
-		config, err := os.Open(flags.F.ConfigFilePath)
+		allConfig, err := GCEConfString(logger)
 		if err != nil {
-			klog.Fatalf("%v", err)
+			klog.Fatalf("Error getting default cluster GCE config: %v", err)
 		}
-		defer config.Close()
 
-		allConfig, err := io.ReadAll(config)
-		if err != nil {
-			klog.Fatalf("Error while reading config (%q): %v", flags.F.ConfigFilePath, err)
-		}
-		logger.V(4).Info("Cloudprovider config file", "config", string(allConfig))
-
-		configReader = generateConfigReaderFunc(allConfig)
+		configReader = generateConfigReaderFunc([]byte(allConfig))
 	} else {
 		logger.V(2).Info("No cloudprovider config file provided, using default values")
 		configReader = func() io.Reader { return nil }
 	}
 
+	return GCEClientForConfigReader(configReader, logger)
+}
+
+func GCEClientForConfigReader(configReader func() io.Reader, logger klog.Logger) *gce.Cloud {
 	// Creating the cloud interface involves resolving the metadata server to get
 	// an oauth token. If this fails, the token provider assumes it's not on GCE.
 	// No errors are thrown. So we need to keep retrying till it works because

@@ -8,6 +8,7 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/ingress-gce/cmd/glbc/app"
 	ingresscontext "k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/flags"
 	_ "k8s.io/ingress-gce/pkg/klog"
@@ -18,6 +19,7 @@ import (
 )
 
 type SharedContext struct {
+	DefaultCloudConfig      string
 	KubeClient              kubernetes.Interface
 	KubeSystemUID           types.UID
 	EventRecorderClient     kubernetes.Interface
@@ -55,7 +57,13 @@ func NewSharedContext(
 		ResyncPeriod: flags.F.ResyncPeriod,
 	}
 
+	defaultGCEConfig, err := app.GCEConfString(logger)
+	if err != nil {
+		klog.Fatalf("Error getting default cluster GCE config: %v", err)
+	}
+
 	context := &SharedContext{
+		DefaultCloudConfig:      defaultGCEConfig,
 		KubeClient:              kubeClient,
 		KubeSystemUID:           kubeSystemUID,
 		EventRecorderClient:     eventRecorderClient,
