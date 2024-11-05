@@ -62,7 +62,7 @@ func TestEnsureL4FirewallRule(t *testing.T) {
 				Description: firewallDescription,
 				Allowed: []*compute.FirewallAllowed{
 					{
-						IPProtocol: "tcp",
+						IPProtocol: "TCP",
 						Ports:      []string{"8080"},
 					},
 				},
@@ -102,7 +102,7 @@ func TestEnsureL4FirewallRule(t *testing.T) {
 				Description: firewallDescription,
 				Allowed: []*compute.FirewallAllowed{
 					{
-						IPProtocol: "tcp",
+						IPProtocol: "TCP",
 						Ports:      []string{"8080"},
 					},
 				},
@@ -117,7 +117,7 @@ func TestEnsureL4FirewallRule(t *testing.T) {
 				Description: firewallDescription,
 				Allowed: []*compute.FirewallAllowed{
 					{
-						IPProtocol: "tcp",
+						IPProtocol: "TCP",
 						Ports:      []string{"8080"},
 					},
 				},
@@ -157,7 +157,7 @@ func TestEnsureL4FirewallRule(t *testing.T) {
 				Description: firewallDescription,
 				Allowed: []*compute.FirewallAllowed{
 					{
-						IPProtocol: "tcp",
+						IPProtocol: "TCP",
 						Ports:      []string{"8080"},
 					},
 				},

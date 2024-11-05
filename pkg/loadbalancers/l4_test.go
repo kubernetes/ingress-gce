@@ -986,7 +986,7 @@ func TestEnsureInternalLoadBalancerErrors(t *testing.T) {
 			l4 := NewL4Handler(l4ilbParams, klog.TODO())
 			l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
 
-			//lbName :=l4.namer.L4Backend(params.service.Namespace, params.service.Name)
+			// lbName :=l4.namer.L4Backend(params.service.Namespace, params.service.Name)
 			frName := l4.GetFRName()
 			key, err := composite.CreateKey(l4.cloud, frName, meta.Regional)
 			if err != nil {
@@ -1883,7 +1883,7 @@ func TestEnsureIPv4Firewall4Nodes(t *testing.T) {
 	}
 	expectedAllowed := &compute.FirewallAllowed{
 		Ports:      []string{"8080"},
-		IPProtocol: "tcp",
+		IPProtocol: "TCP",
 	}
 	allowed := firewall.Allowed[0]
 	if diff := cmp.Diff(expectedAllowed, allowed); diff != "" {
@@ -1937,7 +1937,7 @@ func TestEnsureIPv6Firewall4Nodes(t *testing.T) {
 	}
 	expectedAllowed := &compute.FirewallAllowed{
 		Ports:      []string{"8080"},
-		IPProtocol: "tcp",
+		IPProtocol: "TCP",
 	}
 	allowed := firewall.Allowed[0]
 	if diff := cmp.Diff(expectedAllowed, allowed); diff != "" {
@@ -2312,7 +2312,6 @@ func TestWeightedILB(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 func TestDisableILBIngressFirewall(t *testing.T) {
