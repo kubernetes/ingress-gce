@@ -27,12 +27,12 @@ import (
 // RegionalInstanceGroupLinker handles linking backends to InstanceGroups.
 type RegionalInstanceGroupLinker struct {
 	instancePool instancegroups.Manager
-	backendPool  Pool
+	backendPool  *Pool
 
 	logger klog.Logger
 }
 
-func NewRegionalInstanceGroupLinker(instancePool instancegroups.Manager, backendPool Pool, logger klog.Logger) *RegionalInstanceGroupLinker {
+func NewRegionalInstanceGroupLinker(instancePool instancegroups.Manager, backendPool *Pool, logger klog.Logger) *RegionalInstanceGroupLinker {
 	return &RegionalInstanceGroupLinker{
 		instancePool: instancePool,
 		backendPool:  backendPool,

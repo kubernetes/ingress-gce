@@ -48,15 +48,13 @@ const (
 		"you need access to this feature please contact Google Cloud support team"
 )
 
-var (
-	noConnectionTrackingPolicy *composite.BackendServiceConnectionTrackingPolicy = nil
-)
+var noConnectionTrackingPolicy *composite.BackendServiceConnectionTrackingPolicy = nil
 
 // Many of the functions in this file are re-implemented from gce_loadbalancer_internal.go
 // L4 handles the resource creation/deletion/update for a given L4 ILB service.
 type L4 struct {
 	cloud       *gce.Cloud
-	backendPool *backends.Backends
+	backendPool *backends.Pool
 	scope       meta.KeyType
 	namer       namer.L4ResourcesNamer
 	// recorder is used to generate k8s Events.
@@ -132,8 +130,10 @@ func NewL4Handler(params *L4ILBParams, logger klog.Logger) *L4 {
 	}
 	l4.NamespacedName = types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace}
 	l4.backendPool = backends.NewPool(l4.cloud, l4.namer)
-	l4.ServicePort = utils.ServicePort{ID: utils.ServicePortID{Service: l4.NamespacedName}, BackendNamer: l4.namer,
-		VMIPNEGEnabled: true}
+	l4.ServicePort = utils.ServicePort{
+		ID: utils.ServicePortID{Service: l4.NamespacedName}, BackendNamer: l4.namer,
+		VMIPNEGEnabled: true,
+	}
 	return l4
 }
 
@@ -149,8 +149,10 @@ func (l4 *L4) getILBOptions() gce.ILBOptions {
 		return gce.ILBOptions{}
 	}
 
-	return gce.ILBOptions{AllowGlobalAccess: gce.GetLoadBalancerAnnotationAllowGlobalAccess(l4.Service),
-		SubnetName: annotations.FromService(l4.Service).GetInternalLoadBalancerAnnotationSubnet()}
+	return gce.ILBOptions{
+		AllowGlobalAccess: gce.GetLoadBalancerAnnotationAllowGlobalAccess(l4.Service),
+		SubnetName:        annotations.FromService(l4.Service).GetInternalLoadBalancerAnnotationSubnet(),
+	}
 }
 
 // EnsureInternalLoadBalancerDeleted performs a cleanup of all GCE resources for the given loadbalancer service.

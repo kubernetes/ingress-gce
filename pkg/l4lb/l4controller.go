@@ -68,7 +68,7 @@ type L4Controller struct {
 	zoneGetter *zonegetter.ZoneGetter
 	// needed for linking the NEG with the backend service for each ILB service.
 	NegLinker   backends.Linker
-	backendPool *backends.Backends
+	backendPool *backends.Pool
 	namer       namer.L4ResourcesNamer
 	// enqueueTracker tracks the latest time an update was enqueued
 	enqueueTracker utils.TimeTracker

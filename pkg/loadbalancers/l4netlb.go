@@ -56,7 +56,7 @@ const (
 // L4NetLB handles the resource creation/deletion/update for a given L4 External LoadBalancer service.
 type L4NetLB struct {
 	cloud       *gce.Cloud
-	backendPool *backends.Backends
+	backendPool *backends.Pool
 	scope       meta.KeyType
 	namer       namer.L4ResourcesNamer
 	// recorder is used to generate k8s Events.

@@ -31,7 +31,7 @@ import (
 
 // backendSyncer manages the lifecycle of backends.
 type backendSyncer struct {
-	backendPool   Pool
+	backendPool   *Pool
 	healthChecker healthchecks.HealthChecker
 	prober        ProbeProvider
 	cloud         *gce.Cloud
@@ -41,9 +41,10 @@ type backendSyncer struct {
 var _ Syncer = (*backendSyncer)(nil)
 
 func NewBackendSyncer(
-	backendPool Pool,
+	backendPool *Pool,
 	healthChecker healthchecks.HealthChecker,
-	cloud *gce.Cloud) Syncer {
+	cloud *gce.Cloud,
+) Syncer {
 	return &backendSyncer{
 		backendPool:   backendPool,
 		healthChecker: healthChecker,
@@ -148,7 +149,6 @@ func (s *backendSyncer) ensureBackendService(sp utils.ServicePort, ingLogger klo
 }
 
 func (s *backendSyncer) ensureBackendSignedUrlKeys(sp utils.ServicePort, be *composite.BackendService, beLogger klog.Logger) error {
-
 	existingKeyNames := map[string]bool{}
 	if be.CdnPolicy != nil && be.CdnPolicy.SignedUrlKeyNames != nil {
 		for _, key := range be.CdnPolicy.SignedUrlKeyNames {
