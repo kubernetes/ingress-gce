@@ -71,7 +71,9 @@ const (
 	testUnreadyInstance1 = "unready-instance1"
 	testUnreadyInstance2 = "unready-instance2"
 
-	defaultTestSubnet = "default"
+	defaultTestSubnet    = "default"
+	secondaryTestSubnet1 = "secondary1"
+	secondaryTestSubnet2 = "secondary2"
 )
 
 func TestTransactionSyncNetworkEndpoints(t *testing.T) {
