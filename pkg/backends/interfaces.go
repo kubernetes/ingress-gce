@@ -31,21 +31,6 @@ type GroupKey struct {
 	Name string
 }
 
-// Syncer is an interface to sync Kubernetes services to GCE BackendServices.
-type Syncer interface {
-	// Init an implementation of ProbeProvider.
-	Init(p ProbeProvider)
-	// Sync a BackendService. Implementations should only create the BackendService
-	// but not its groups.
-	Sync(svcPorts []utils.ServicePort, logger klog.Logger) error
-	// GC garbage collects unused BackendService's
-	GC(svcPorts []utils.ServicePort, logger klog.Logger) error
-	// Status returns the status of a BackendService given its name.
-	Status(name string, version meta.Version, scope meta.KeyType, logger klog.Logger) (string, error)
-	// Shutdown cleans up all BackendService's previously synced.
-	Shutdown() error
-}
-
 // Linker is an interface to link backends with their associated groups.
 type Linker interface {
 	// Link a BackendService to its groups.

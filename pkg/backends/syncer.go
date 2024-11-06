@@ -29,36 +29,31 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// backendSyncer manages the lifecycle of backends.
-type backendSyncer struct {
+// Syncer manages the lifecycle of GCE BackendServices based on Kubernetes services.
+type Syncer struct {
 	backendPool   *Pool
 	healthChecker healthchecks.HealthChecker
 	prober        ProbeProvider
 	cloud         *gce.Cloud
 }
 
-// backendSyncer is a Syncer
-var _ Syncer = (*backendSyncer)(nil)
-
 func NewBackendSyncer(
 	backendPool *Pool,
 	healthChecker healthchecks.HealthChecker,
 	cloud *gce.Cloud,
-) Syncer {
-	return &backendSyncer{
+	prober ProbeProvider,
+) *Syncer {
+	return &Syncer{
 		backendPool:   backendPool,
 		healthChecker: healthChecker,
 		cloud:         cloud,
+		prober:        prober,
 	}
 }
 
-// Init implements Syncer.
-func (s *backendSyncer) Init(pp ProbeProvider) {
-	s.prober = pp
-}
-
-// Sync implements Syncer.
-func (s *backendSyncer) Sync(svcPorts []utils.ServicePort, ingLogger klog.Logger) error {
+// Sync a BackendService. Implementations should only create the BackendService
+// but not its groups.
+func (s *Syncer) Sync(svcPorts []utils.ServicePort, ingLogger klog.Logger) error {
 	for _, sp := range svcPorts {
 		ingLogger.Info("Sync backend", "servicePort", fmt.Sprintf("%v", sp))
 		if err := s.ensureBackendService(sp, ingLogger); err != nil {
@@ -69,7 +64,7 @@ func (s *backendSyncer) Sync(svcPorts []utils.ServicePort, ingLogger klog.Logger
 }
 
 // ensureBackendService will update or create a BackendService for the given port.
-func (s *backendSyncer) ensureBackendService(sp utils.ServicePort, ingLogger klog.Logger) error {
+func (s *Syncer) ensureBackendService(sp utils.ServicePort, ingLogger klog.Logger) error {
 	// We must track the ports even if creating the backends failed, because
 	// we might've created health-check for them.
 	be := &composite.BackendService{}
@@ -148,7 +143,7 @@ func (s *backendSyncer) ensureBackendService(sp utils.ServicePort, ingLogger klo
 	return nil
 }
 
-func (s *backendSyncer) ensureBackendSignedUrlKeys(sp utils.ServicePort, be *composite.BackendService, beLogger klog.Logger) error {
+func (s *Syncer) ensureBackendSignedUrlKeys(sp utils.ServicePort, be *composite.BackendService, beLogger klog.Logger) error {
 	existingKeyNames := map[string]bool{}
 	if be.CdnPolicy != nil && be.CdnPolicy.SignedUrlKeyNames != nil {
 		for _, key := range be.CdnPolicy.SignedUrlKeyNames {
@@ -191,8 +186,8 @@ func (s *backendSyncer) ensureBackendSignedUrlKeys(sp utils.ServicePort, be *com
 	return nil
 }
 
-// GC implements Syncer.
-func (s *backendSyncer) GC(svcPorts []utils.ServicePort, ingLogger klog.Logger) error {
+// GC garbage collects unused BackendService's
+func (s *Syncer) GC(svcPorts []utils.ServicePort, ingLogger klog.Logger) error {
 	knownPorts, err := knownPortsFromServicePorts(s.cloud, svcPorts)
 	if err != nil {
 		return err
@@ -232,7 +227,7 @@ func (s *backendSyncer) GC(svcPorts []utils.ServicePort, ingLogger klog.Logger) 
 }
 
 // gc deletes the provided backends
-func (s *backendSyncer) gc(backends []*composite.BackendService, knownPorts sets.String, ingLogger klog.Logger) error {
+func (s *Syncer) gc(backends []*composite.BackendService, knownPorts sets.String, ingLogger klog.Logger) error {
 	for _, be := range backends {
 		// Skip L4 LB backend services
 		// backendSyncer currently only GC backend services for L7 XLB/ILB.
@@ -288,8 +283,8 @@ func knownPortsFromServicePorts(cloud *gce.Cloud, svcPorts []utils.ServicePort) 
 	return knownPorts, nil
 }
 
-// Status implements Syncer.
-func (s *backendSyncer) Status(name string, version meta.Version, scope meta.KeyType, ingLogger klog.Logger) (string, error) {
+// Status returns the status of a BackendService given its name.
+func (s *Syncer) Status(name string, version meta.Version, scope meta.KeyType, ingLogger klog.Logger) (string, error) {
 	beLogger := ingLogger.WithValues(
 		"backendName", name,
 		"backendVersion", version,
@@ -298,16 +293,16 @@ func (s *backendSyncer) Status(name string, version meta.Version, scope meta.Key
 	return s.backendPool.Health(name, version, scope, beLogger)
 }
 
-// Shutdown implements Syncer.
+// Shutdown cleans up all BackendService's previously synced.
 // TODO(cheungdavid): Shutdown() should be deprecated after the removal of delateAll option.
-func (s *backendSyncer) Shutdown() error {
+func (s *Syncer) Shutdown() error {
 	if err := s.GC([]utils.ServicePort{}, klog.TODO()); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (s *backendSyncer) ensureHealthCheck(sp utils.ServicePort, beLogger klog.Logger) (string, error) {
+func (s *Syncer) ensureHealthCheck(sp utils.ServicePort, beLogger klog.Logger) (string, error) {
 	var probe *v1.Probe
 	var err error
 
