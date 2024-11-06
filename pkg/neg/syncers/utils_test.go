@@ -1072,7 +1072,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 	for _, tc := range testCases {
 		tc.mutate(negCloud)
 		// tc.mode of "" will result in the default node predicate being selected, which is ok for this test.
-		endpointSets, annotationMap, err := retrieveExistingZoneNetworkEndpointMap(negName, zoneGetter, negCloud, meta.VersionGA, tc.mode, false, defaultTestSubnet, klog.TODO())
+		endpointSets, annotationMap, err := retrieveExistingZoneNetworkEndpointMap(map[string]string{defaultTestSubnet: negName}, zoneGetter, negCloud, meta.VersionGA, tc.mode, false, klog.TODO())
 
 		if tc.expectErr {
 			if err == nil {
