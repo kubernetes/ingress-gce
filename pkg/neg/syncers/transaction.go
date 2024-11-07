@@ -271,6 +271,24 @@ func (s *transactionSyncer) syncInternalImpl() error {
 		return err
 	}
 	subnetToNegMapping := map[string]string{defaultSubnet: s.NegSyncerKey.NegName}
+	if flags.F.EnableMultiSubnetClusterPhase1 {
+		subnetConfigs, err := s.zoneGetter.ListSubnets(s.logger)
+		if err != nil {
+			s.logger.Error(err, "Errored when listing subnets from zoneGetter")
+			return err
+		}
+		for _, subnetConfig := range subnetConfigs {
+			if subnetConfig.Name == defaultSubnet {
+				continue
+			}
+			nonDefaultNegName, err := s.getNonDefaultSubnetName(subnetConfig.Name)
+			if err != nil {
+				s.logger.Error(err, "Errored when getting NEG name from non-default subnets when retrieving existing endpoints")
+				return err
+			}
+			subnetToNegMapping[subnetConfig.Name] = nonDefaultNegName
+		}
+	}
 
 	currentMap, currentPodLabelMap, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode(), s.enableDualStackNEG, s.logger)
 	if err != nil {

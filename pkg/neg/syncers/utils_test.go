@@ -751,7 +751,8 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
 	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
 	negCloud := negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
-	negName := "test-neg-name"
+	defaultSubnetNegName := "test-neg-name"
+	nonDefaultSubnetNegName := "non-default-neg-name"
 	irrelevantNegName := "irrelevant"
 	testIP1 := "1.2.3.4"
 	testIP2 := "1.2.3.5"
@@ -760,6 +761,8 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 	testIP5 := "1.2.3.8"
 	testIP6 := "1.2.3.9"
 	testIP7 := "1.2.3.10"
+	testIP8 := "1.2.3.11"
+	testIP9 := "1.2.3.12"
 	testPort := int64(80)
 
 	endpoint1 := negtypes.NetworkEndpoint{IP: testIP1, Node: negtypes.TestInstance1, Port: strconv.Itoa(int(testPort))}
@@ -769,33 +772,44 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 	endpoint5 := negtypes.NetworkEndpoint{IP: testIP5, Node: negtypes.TestUnreadyInstance1, Port: strconv.Itoa(int(testPort))}
 	endpoint6 := negtypes.NetworkEndpoint{IP: testIP6, Node: negtypes.TestUpgradeInstance1, Port: strconv.Itoa(int(testPort))}
 	endpoint7 := negtypes.NetworkEndpoint{IP: testIP7, Node: negtypes.TestUpgradeInstance2, Port: strconv.Itoa(int(testPort))}
+	endpoint8 := negtypes.NetworkEndpoint{IP: testIP8, Node: negtypes.TestInstance5, Port: strconv.Itoa(int(testPort))}
+	endpoint9 := negtypes.NetworkEndpoint{IP: testIP9, Node: negtypes.TestInstance6, Port: strconv.Itoa(int(testPort))}
 
+	mappingWithDefaultSubnetOnly := map[string]string{defaultTestSubnet: defaultSubnetNegName}
+	mappingWithAdditionalSubnet := map[string]string{
+		defaultTestSubnet:    defaultSubnetNegName,
+		additionalTestSubnet: nonDefaultSubnetNegName,
+	}
 	testCases := []struct {
 		desc                string
 		mutate              func(cloud negtypes.NetworkEndpointGroupCloud)
 		mode                negtypes.EndpointsCalculatorMode
+		subnetToNegMapping  map[string]string
 		expect              map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet
 		expectAnnotationMap labels.EndpointPodLabelMap
 		expectErr           bool
 	}{
 		{
-			desc:      "neg does not exist",
-			mutate:    func(cloud negtypes.NetworkEndpointGroupCloud) {},
-			expectErr: true,
+			desc:               "neg does not exist",
+			mutate:             func(cloud negtypes.NetworkEndpointGroupCloud) {},
+			subnetToNegMapping: mappingWithDefaultSubnetOnly,
+			expectErr:          true,
 		},
 		{
 			desc: "neg only exists in one of the zone",
 			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
 				cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: testNegName, Version: meta.VersionGA}, negtypes.TestZone1, klog.TODO())
 			},
-			expectErr: true,
+			subnetToNegMapping: mappingWithDefaultSubnetOnly,
+			expectErr:          true,
 		},
 		{
 			desc: "neg only exists in one of the zone plus irrelevant negs",
 			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
 				cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: irrelevantNegName, Version: meta.VersionGA}, negtypes.TestZone2, klog.TODO())
 			},
-			expectErr: true,
+			subnetToNegMapping: mappingWithDefaultSubnetOnly,
+			expectErr:          true,
 		},
 		{
 			desc: "empty negs exists in all 3 zones",
@@ -803,6 +817,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 				cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: testNegName, Version: meta.VersionGA}, negtypes.TestZone2, klog.TODO())
 				cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: testNegName, Version: meta.VersionGA}, negtypes.TestZone4, klog.TODO())
 			},
+			subnetToNegMapping: mappingWithDefaultSubnetOnly,
 			expect: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
 				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
@@ -825,6 +840,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 					},
 				}, meta.VersionGA, klog.TODO())
 			},
+			subnetToNegMapping: mappingWithDefaultSubnetOnly,
 			expect: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(endpoint1),
 				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
@@ -851,6 +867,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 					},
 				}, meta.VersionGA, klog.TODO())
 			},
+			subnetToNegMapping: mappingWithDefaultSubnetOnly,
 			expect: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					endpoint1,
@@ -891,6 +908,145 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 					},
 				}, meta.VersionGA, klog.TODO())
 			},
+			subnetToNegMapping: mappingWithDefaultSubnetOnly,
+			expect: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
+					endpoint1,
+					endpoint2,
+				),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
+					endpoint3,
+					endpoint4,
+				),
+				{Zone: negtypes.TestZone4, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+			},
+			expectAnnotationMap: labels.EndpointPodLabelMap{
+				endpoint1: labels.PodLabelMap{
+					"foo": "bar",
+				},
+				endpoint2: labels.PodLabelMap{
+					"foo": "bar",
+				},
+				endpoint3: labels.PodLabelMap{
+					"foo": "bar",
+				},
+				endpoint4: labels.PodLabelMap{
+					"foo": "bar",
+				},
+			},
+			expectErr: false,
+		},
+		{
+			desc: "2 empty negs in an addtional subnet, and 2 negs in the default subnet with multiple endpoints",
+			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
+				cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: nonDefaultSubnetNegName, Version: meta.VersionGA}, negtypes.TestZone1, klog.TODO())
+				cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: nonDefaultSubnetNegName, Version: meta.VersionGA}, negtypes.TestZone2, klog.TODO())
+				cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: nonDefaultSubnetNegName, Version: meta.VersionGA}, negtypes.TestZone4, klog.TODO())
+			},
+			subnetToNegMapping: mappingWithAdditionalSubnet,
+			expect: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
+					endpoint1,
+					endpoint2,
+				),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
+					endpoint3,
+					endpoint4,
+				),
+				{Zone: negtypes.TestZone4, Subnet: defaultTestSubnet}:    negtypes.NewNetworkEndpointSet(),
+				{Zone: negtypes.TestZone1, Subnet: additionalTestSubnet}: negtypes.NewNetworkEndpointSet(),
+				{Zone: negtypes.TestZone2, Subnet: additionalTestSubnet}: negtypes.NewNetworkEndpointSet(),
+				{Zone: negtypes.TestZone4, Subnet: additionalTestSubnet}: negtypes.NewNetworkEndpointSet(),
+			},
+			expectAnnotationMap: labels.EndpointPodLabelMap{
+				endpoint1: labels.PodLabelMap{
+					"foo": "bar",
+				},
+				endpoint2: labels.PodLabelMap{
+					"foo": "bar",
+				},
+				endpoint3: labels.PodLabelMap{
+					"foo": "bar",
+				},
+				endpoint4: labels.PodLabelMap{
+					"foo": "bar",
+				},
+			},
+			expectErr: false,
+		},
+		{
+			desc: "2 negs in an addtional subnet, and 2 negs in the default subnet, both with multiple endpoints",
+			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
+				cloud.AttachNetworkEndpoints(nonDefaultSubnetNegName, negtypes.TestZone1, []*composite.NetworkEndpoint{
+					{
+						Instance:  negtypes.TestInstance5,
+						IpAddress: testIP8,
+						Port:      testPort,
+						Annotations: map[string]string{
+							"foo": "bar",
+						},
+					},
+				}, meta.VersionGA, klog.TODO())
+				cloud.AttachNetworkEndpoints(nonDefaultSubnetNegName, negtypes.TestZone2, []*composite.NetworkEndpoint{
+					{
+						Instance:  negtypes.TestInstance6,
+						IpAddress: testIP9,
+						Port:      testPort,
+						Annotations: map[string]string{
+							"foo": "bar",
+						},
+					},
+				}, meta.VersionGA, klog.TODO())
+			},
+			subnetToNegMapping: mappingWithAdditionalSubnet,
+			expect: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
+					endpoint1,
+					endpoint2,
+				),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
+					endpoint3,
+					endpoint4,
+				),
+				{Zone: negtypes.TestZone4, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+				{Zone: negtypes.TestZone1, Subnet: additionalTestSubnet}: negtypes.NewNetworkEndpointSet(
+					endpoint8,
+				),
+				{Zone: negtypes.TestZone2, Subnet: additionalTestSubnet}: negtypes.NewNetworkEndpointSet(
+					endpoint9,
+				),
+				{Zone: negtypes.TestZone4, Subnet: additionalTestSubnet}: negtypes.NewNetworkEndpointSet(),
+			},
+			expectAnnotationMap: labels.EndpointPodLabelMap{
+				endpoint1: labels.PodLabelMap{
+					"foo": "bar",
+				},
+				endpoint2: labels.PodLabelMap{
+					"foo": "bar",
+				},
+				endpoint3: labels.PodLabelMap{
+					"foo": "bar",
+				},
+				endpoint4: labels.PodLabelMap{
+					"foo": "bar",
+				},
+				endpoint8: labels.PodLabelMap{
+					"foo": "bar",
+				},
+				endpoint9: labels.PodLabelMap{
+					"foo": "bar",
+				},
+			},
+			expectErr: false,
+		},
+		{
+			desc: "negs in the addtional subnet are deleted, and 2 negs in the default subnet with multiple endpoints",
+			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
+				cloud.DeleteNetworkEndpointGroup(nonDefaultSubnetNegName, negtypes.TestZone1, meta.VersionGA, klog.TODO())
+				cloud.DeleteNetworkEndpointGroup(nonDefaultSubnetNegName, negtypes.TestZone2, meta.VersionGA, klog.TODO())
+				cloud.DeleteNetworkEndpointGroup(nonDefaultSubnetNegName, negtypes.TestZone4, meta.VersionGA, klog.TODO())
+			},
+			subnetToNegMapping: mappingWithDefaultSubnetOnly,
 			expect: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					endpoint1,
@@ -934,6 +1090,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 					},
 				}, meta.VersionGA, klog.TODO())
 			},
+			subnetToNegMapping: mappingWithDefaultSubnetOnly,
 			expect: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					endpoint1,
@@ -977,6 +1134,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 					},
 				}, meta.VersionGA, klog.TODO())
 			},
+			subnetToNegMapping: mappingWithDefaultSubnetOnly,
 			expect: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					endpoint1,
@@ -1022,7 +1180,8 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 				}, meta.VersionGA, klog.TODO())
 			},
 			// set mode to L4 since this scenario applies more to VM_IP NEGs.
-			mode: negtypes.L4LocalMode,
+			mode:               negtypes.L4LocalMode,
+			subnetToNegMapping: mappingWithDefaultSubnetOnly,
 			expect: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 				// NEGs in zone1, zone2 and zone4 are created from previous test case.
 				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
@@ -1065,14 +1224,15 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
 				cloud.DeleteNetworkEndpointGroup(testNegName, negtypes.TestZone2, meta.VersionGA, klog.TODO())
 			},
-			expectErr: true,
+			subnetToNegMapping: mappingWithDefaultSubnetOnly,
+			expectErr:          true,
 		},
 	}
 
 	for _, tc := range testCases {
 		tc.mutate(negCloud)
 		// tc.mode of "" will result in the default node predicate being selected, which is ok for this test.
-		endpointSets, annotationMap, err := retrieveExistingZoneNetworkEndpointMap(map[string]string{defaultTestSubnet: negName}, zoneGetter, negCloud, meta.VersionGA, tc.mode, false, klog.TODO())
+		endpointSets, annotationMap, err := retrieveExistingZoneNetworkEndpointMap(tc.subnetToNegMapping, zoneGetter, negCloud, meta.VersionGA, tc.mode, false, klog.TODO())
 
 		if tc.expectErr {
 			if err == nil {
