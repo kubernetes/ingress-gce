@@ -217,7 +217,8 @@ func (p *Pool) Delete(name string, version meta.Version, scope meta.KeyType, beL
 	return nil
 }
 
-// Get the health of a BackendService given its name.
+// Health checks the health of a BackendService given its name.
+// Returns ("HEALTHY", nil) if healthy, otherwise ("Unknown", err)
 func (p *Pool) Health(name string, version meta.Version, scope meta.KeyType, beLogger klog.Logger) (string, error) {
 	be, err := p.Get(name, version, scope, beLogger)
 	if err != nil {
@@ -288,8 +289,8 @@ func (p *Pool) List(key *meta.Key, version meta.Version, beLogger klog.Logger) (
 	return clusterBackends, nil
 }
 
-// AddSignedUrlKey adds a SignedUrlKey to a BackendService
-func (p *Pool) AddSignedUrlKey(be *composite.BackendService, signedurlkey *composite.SignedUrlKey, urlKeyLogger klog.Logger) error {
+// AddSignedURLKey adds a SignedUrlKey to a BackendService
+func (p *Pool) AddSignedURLKey(be *composite.BackendService, signedurlkey *composite.SignedUrlKey, urlKeyLogger klog.Logger) error {
 	urlKeyLogger.Info("Adding SignedUrlKey")
 
 	scope, err := composite.ScopeFromSelfLink(be.SelfLink)
@@ -307,8 +308,8 @@ func (p *Pool) AddSignedUrlKey(be *composite.BackendService, signedurlkey *compo
 	return nil
 }
 
-// DeleteSignedUrlKey deletes a SignedUrlKey from BackendService
-func (p *Pool) DeleteSignedUrlKey(be *composite.BackendService, keyName string, urlKeyLogger klog.Logger) error {
+// DeleteSignedURLKey deletes a SignedUrlKey from BackendService
+func (p *Pool) DeleteSignedURLKey(be *composite.BackendService, keyName string, urlKeyLogger klog.Logger) error {
 	urlKeyLogger.Info("Deleting SignedUrlKey")
 
 	scope, err := composite.ScopeFromSelfLink(be.SelfLink)

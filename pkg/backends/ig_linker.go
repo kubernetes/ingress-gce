@@ -72,6 +72,7 @@ type instanceGroupLinker struct {
 // instanceGroupLinker is a Linker
 var _ Linker = (*instanceGroupLinker)(nil)
 
+// NewInstanceGroupLinker creates a new instance of Linker
 func NewInstanceGroupLinker(instancePool instancegroups.Manager, backendPool *Pool, logger klog.Logger) Linker {
 	return &instanceGroupLinker{
 		instancePool: instancePool,

@@ -126,7 +126,7 @@ func (s *Syncer) ensureBackendService(sp utils.ServicePort, ingLogger klog.Logge
 		}
 	}
 
-	if err := s.ensureBackendSignedUrlKeys(sp, be, beLogger); err != nil {
+	if err := s.ensureBackendSignedURLKeys(sp, be, beLogger); err != nil {
 		return err
 	}
 
@@ -143,7 +143,7 @@ func (s *Syncer) ensureBackendService(sp utils.ServicePort, ingLogger klog.Logge
 	return nil
 }
 
-func (s *Syncer) ensureBackendSignedUrlKeys(sp utils.ServicePort, be *composite.BackendService, beLogger klog.Logger) error {
+func (s *Syncer) ensureBackendSignedURLKeys(sp utils.ServicePort, be *composite.BackendService, beLogger klog.Logger) error {
 	existingKeyNames := map[string]bool{}
 	if be.CdnPolicy != nil && be.CdnPolicy.SignedUrlKeyNames != nil {
 		for _, key := range be.CdnPolicy.SignedUrlKeyNames {
@@ -170,7 +170,7 @@ func (s *Syncer) ensureBackendSignedUrlKeys(sp utils.ServicePort, be *composite.
 		urlKeyLogger := beLogger.WithValues("SignedUrlKey", keyName)
 		if !found {
 			urlKeyLogger.Info("Removing SignedUrlKey")
-			if err := s.backendPool.DeleteSignedUrlKey(be, keyName, urlKeyLogger); err != nil {
+			if err := s.backendPool.DeleteSignedURLKey(be, keyName, urlKeyLogger); err != nil {
 				return err
 			}
 		}
@@ -179,7 +179,7 @@ func (s *Syncer) ensureBackendSignedUrlKeys(sp utils.ServicePort, be *composite.
 	for _, key := range newSignedUrlKeys {
 		urlKeyLogger := beLogger.WithValues("SignedUrlKey", key.KeyName)
 		urlKeyLogger.Info("Adding SignedUrlKey")
-		if err := s.backendPool.AddSignedUrlKey(be, key, urlKeyLogger); err != nil {
+		if err := s.backendPool.AddSignedURLKey(be, key, urlKeyLogger); err != nil {
 			return err
 		}
 	}

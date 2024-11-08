@@ -32,6 +32,7 @@ type RegionalInstanceGroupLinker struct {
 	logger klog.Logger
 }
 
+// NewRegionalInstanceGroupLinker creates an instance of RegionalInstanceGroupLinker
 func NewRegionalInstanceGroupLinker(instancePool instancegroups.Manager, backendPool *Pool, logger klog.Logger) *RegionalInstanceGroupLinker {
 	return &RegionalInstanceGroupLinker{
 		instancePool: instancePool,
