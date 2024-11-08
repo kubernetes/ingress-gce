@@ -53,98 +53,97 @@ const (
 	DefaultLockObjectName = "ingress-gce-lock"
 )
 
-var (
-	// F are global flags for the controller.
-	F = struct {
-		APIServerHost                    string
-		ASMConfigMapBasedConfigCMName    string
-		ASMConfigMapBasedConfigNamespace string
-		ClusterName                      string
-		ConfigFilePath                   string
-		DefaultSvc                       string
-		DefaultSvcHealthCheckPath        string
-		DefaultSvcPortName               string
-		GCEOperationPollInterval         time.Duration
-		GCERateLimit                     RateLimitSpecs
-		GCERateLimitScale                float64
-		GKEClusterName                   string
-		GKEClusterHash                   string
-		GKEClusterType                   string
-		HealthCheckPath                  string
-		HealthzPort                      int
-		THCPort                          int
-		InCluster                        bool
-		IngressClass                     string
-		KubeConfigFile                   string
-		NegGCPeriod                      time.Duration
-		NumNegGCWorkers                  int
-		NodePortRanges                   PortRanges
-		ResyncPeriod                     time.Duration
-		L4NetLBProvisionDeadline         time.Duration
-		NumL4Workers                     int
-		NumL4NetLBWorkers                int
-		NumIngressWorkers                int
-		RunIngressController             bool
-		RunL4Controller                  bool
-		RunL4NetLBController             bool
-		EnableIGController               bool
-		Version                          bool
-		WatchNamespace                   string
-		LeaderElection                   LeaderElectionConfiguration
-		MetricsExportInterval            time.Duration
-		NegMetricsExportInterval         time.Duration
-		KubeClientQPS                    float32
-		KubeClientBurst                  int
+// F are global flags for the controller.
+var F = struct {
+	APIServerHost                    string
+	ASMConfigMapBasedConfigCMName    string
+	ASMConfigMapBasedConfigNamespace string
+	ClusterName                      string
+	ConfigFilePath                   string
+	DefaultSvc                       string
+	DefaultSvcHealthCheckPath        string
+	DefaultSvcPortName               string
+	GCEOperationPollInterval         time.Duration
+	GCERateLimit                     RateLimitSpecs
+	GCERateLimitScale                float64
+	GKEClusterName                   string
+	GKEClusterHash                   string
+	GKEClusterType                   string
+	HealthCheckPath                  string
+	HealthzPort                      int
+	THCPort                          int
+	InCluster                        bool
+	IngressClass                     string
+	KubeConfigFile                   string
+	NegGCPeriod                      time.Duration
+	NumNegGCWorkers                  int
+	NodePortRanges                   PortRanges
+	ResyncPeriod                     time.Duration
+	L4NetLBProvisionDeadline         time.Duration
+	NumL4Workers                     int
+	NumL4NetLBWorkers                int
+	NumIngressWorkers                int
+	RunIngressController             bool
+	RunL4Controller                  bool
+	RunL4NetLBController             bool
+	EnableIGController               bool
+	Version                          bool
+	WatchNamespace                   string
+	LeaderElection                   LeaderElectionConfiguration
+	MetricsExportInterval            time.Duration
+	NegMetricsExportInterval         time.Duration
+	KubeClientQPS                    float32
+	KubeClientBurst                  int
 
-		// Feature flags should be named Enablexxx.
-		EnableASMConfigMapBasedConfig            bool
-		EnableDeleteUnusedFrontends              bool
-		EnableFrontendConfig                     bool
-		EnableNonGCPMode                         bool
-		EnableReadinessReflector                 bool
-		EnableV2FrontendNamer                    bool
-		FinalizerAdd                             bool // Should have been named Enablexxx.
-		FinalizerRemove                          bool // Should have been named Enablexxx.
-		EnablePSC                                bool
-		EnableTrafficScaling                     bool
-		EnableRecalculateUHCOnBCRemoval          bool
-		EnableTransparentHealthChecks            bool
-		EnableUpdateCustomHealthCheckDescription bool
-		EnablePinhole                            bool
-		EnableL4ILBDualStack                     bool
-		EnableL4NetLBDualStack                   bool
-		EnableNEGController                      bool
-		EnableL4NEG                              bool
-		EnableL4NetLBNEG                         bool
-		EnableL4NetLBNEGDefault                  bool
-		GateNEGByLock                            bool
-		EnableMultipleIGs                        bool
-		EnableL4StrongSessionAffinity            bool
-		EnableNEGLabelPropagation                bool
-		EnableMultiNetworking                    bool
-		MaxIGSize                                int
-		EnableDegradedMode                       bool
-		EnableDegradedModeMetrics                bool
-		EnableDualStackNEG                       bool
-		EnableFirewallCR                         bool
-		DisableFWEnforcement                     bool
-		DisableL4LBFirewall                      bool
-		EnableIngressRegionalExternal            bool
-		EnableIngressGlobalExternal              bool
-		OverrideComputeAPIEndpoint               string
-		EnableIGMultiSubnetCluster               bool
-		EnableMultiSubnetCluster                 bool
-		EnableMultiSubnetClusterPhase1           bool
-		NodeTopologyCRName                       string
-		EnableWeightedL4ILB                      bool
-		EnableWeightedL4NetLB                    bool
-		EnableDiscretePortForwarding             bool
-		EnableMultiProjectMode                   bool
-		MultiProjectCRDProjectNameLabel          string
-	}{
-		GCERateLimitScale: 1.0,
-	}
-)
+	// Feature flags should be named Enablexxx.
+	EnableASMConfigMapBasedConfig            bool
+	EnableDeleteUnusedFrontends              bool
+	EnableFrontendConfig                     bool
+	EnableNonGCPMode                         bool
+	EnableReadinessReflector                 bool
+	EnableV2FrontendNamer                    bool
+	FinalizerAdd                             bool // Should have been named Enablexxx.
+	FinalizerRemove                          bool // Should have been named Enablexxx.
+	EnablePSC                                bool
+	EnableTrafficScaling                     bool
+	EnableRecalculateUHCOnBCRemoval          bool
+	EnableTransparentHealthChecks            bool
+	EnableUpdateCustomHealthCheckDescription bool
+	EnablePinhole                            bool
+	EnableL4ILBDualStack                     bool
+	EnableL4NetLBDualStack                   bool
+	EnableNEGController                      bool
+	EnableL4NEG                              bool
+	EnableL4NetLBNEG                         bool
+	EnableL4NetLBNEGDefault                  bool
+	GateNEGByLock                            bool
+	EnableMultipleIGs                        bool
+	EnableL4StrongSessionAffinity            bool
+	EnableNEGLabelPropagation                bool
+	EnableMultiNetworking                    bool
+	MaxIGSize                                int
+	EnableDegradedMode                       bool
+	EnableDegradedModeMetrics                bool
+	EnableDualStackNEG                       bool
+	EnableFirewallCR                         bool
+	DisableFWEnforcement                     bool
+	DisableL4LBFirewall                      bool
+	EnableIngressRegionalExternal            bool
+	EnableIngressGlobalExternal              bool
+	OverrideComputeAPIEndpoint               string
+	EnableIGMultiSubnetCluster               bool
+	EnableMultiSubnetCluster                 bool
+	EnableMultiSubnetClusterPhase1           bool
+	NodeTopologyCRName                       string
+	EnableWeightedL4ILB                      bool
+	EnableWeightedL4NetLB                    bool
+	EnableDiscretePortForwarding             bool
+	EnableMultiProjectMode                   bool
+	MultiProjectCRDProjectNameLabel          string
+	EnableL4MixedProtocol                    bool
+}{
+	GCERateLimitScale: 1.0,
+}
 
 type LeaderElectionConfiguration struct {
 	config.LeaderElectionConfiguration
@@ -330,6 +329,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableDiscretePortForwarding, "enable-discrete-port-forwarding", false, "Enable forwarding of individual ports instead of port ranges.")
 	flag.BoolVar(&F.EnableMultiProjectMode, "enable-multi-project-mode", false, "Enable running in multi-project mode.")
 	flag.StringVar(&F.MultiProjectCRDProjectNameLabel, "multi-project-crd-project-name-label", "", "The label key for project name of Project in a Project CRD in the Multi-Project cluster.")
+	flag.BoolVar(&F.EnableL4MixedProtocol, "enable-l4-mixed-protocol", false, "Enable support for mixed protocol L4 load balancers.")
 }
 
 func Validate() {
