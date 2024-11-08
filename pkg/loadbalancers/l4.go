@@ -49,9 +49,7 @@ const (
 		"you need access to this feature please contact Google Cloud support team"
 )
 
-var (
-	noConnectionTrackingPolicy *composite.BackendServiceConnectionTrackingPolicy = nil
-)
+var noConnectionTrackingPolicy *composite.BackendServiceConnectionTrackingPolicy = nil
 
 // Many of the functions in this file are re-implemented from gce_loadbalancer_internal.go
 // L4 handles the resource creation/deletion/update for a given L4 ILB service.
@@ -71,6 +69,7 @@ type L4 struct {
 	network                          network.NetworkInfo
 	networkResolver                  network.Resolver
 	enableWeightedLB                 bool
+	enableMixedProtocol              bool
 	disableNodesFirewallProvisioning bool
 	svcLogger                        klog.Logger
 }
@@ -110,6 +109,7 @@ type L4ILBParams struct {
 	NetworkResolver                  network.Resolver
 	EnableWeightedLB                 bool
 	DisableNodesFirewallProvisioning bool
+	EnableMixedProtocol              bool
 }
 
 // NewL4Handler creates a new L4Handler for the given L4 service.
@@ -128,13 +128,16 @@ func NewL4Handler(params *L4ILBParams, logger klog.Logger) *L4 {
 		enableDualStack:                  params.DualStackEnabled,
 		networkResolver:                  params.NetworkResolver,
 		enableWeightedLB:                 params.EnableWeightedLB,
+		enableMixedProtocol:              params.EnableMixedProtocol,
 		disableNodesFirewallProvisioning: params.DisableNodesFirewallProvisioning,
 		svcLogger:                        logger,
 	}
 	l4.NamespacedName = types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace}
 	l4.backendPool = backends.NewPool(l4.cloud, l4.namer)
-	l4.ServicePort = utils.ServicePort{ID: utils.ServicePortID{Service: l4.NamespacedName}, BackendNamer: l4.namer,
-		VMIPNEGEnabled: true}
+	l4.ServicePort = utils.ServicePort{
+		ID: utils.ServicePortID{Service: l4.NamespacedName}, BackendNamer: l4.namer,
+		VMIPNEGEnabled: true,
+	}
 	return l4
 }
 
@@ -150,8 +153,10 @@ func (l4 *L4) getILBOptions() gce.ILBOptions {
 		return gce.ILBOptions{}
 	}
 
-	return gce.ILBOptions{AllowGlobalAccess: gce.GetLoadBalancerAnnotationAllowGlobalAccess(l4.Service),
-		SubnetName: annotations.FromService(l4.Service).GetInternalLoadBalancerAnnotationSubnet()}
+	return gce.ILBOptions{
+		AllowGlobalAccess: gce.GetLoadBalancerAnnotationAllowGlobalAccess(l4.Service),
+		SubnetName:        annotations.FromService(l4.Service).GetInternalLoadBalancerAnnotationSubnet(),
+	}
 }
 
 // EnsureInternalLoadBalancerDeleted performs a cleanup of all GCE resources for the given loadbalancer service.
@@ -462,12 +467,15 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	}
 
 	servicePorts := l4.Service.Spec.Ports
-	protocol := utils.GetProtocol(servicePorts)
+	backendProtocol := string(utils.GetProtocol(servicePorts))
+	if l4.enableMixedProtocol {
+		backendProtocol = backends.GetProtocol(servicePorts, existingBS)
+	}
 
 	// if Service protocol changed, we must delete forwarding rule before changing backend service,
 	// otherwise, on updating backend service, google cloud api will return error
-	if existingBS != nil && existingBS.Protocol != string(protocol) {
-		l4.svcLogger.Info("Protocol changed for service", "existingProtocol", existingBS.Protocol, "newProtocol", string(protocol))
+	if existingBS != nil && existingBS.Protocol != backendProtocol {
+		l4.svcLogger.Info("Protocol changed for service", "existingProtocol", existingBS.Protocol, "newProtocol", backendProtocol)
 		if existingIPv4FR != nil {
 			// Delete ipv4 forwarding rule if it exists
 			err = l4.forwardingRules.Delete(existingIPv4FR.Name)
@@ -491,7 +499,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	backendParams := backends.L4BackendServiceParams{
 		Name:                     bsName,
 		HealthCheckLink:          hcLink,
-		Protocol:                 string(protocol),
+		Protocol:                 backendProtocol,
 		SessionAffinity:          string(l4.Service.Spec.SessionAffinity),
 		Scheme:                   string(cloud.SchemeInternal),
 		NamespacedName:           l4.NamespacedName,
