@@ -14,6 +14,7 @@ func TestEqual(t *testing.T) {
 		b               *compute.Firewall
 		skipDescription bool
 		want            bool
+		wantErr         bool
 	}{
 		{
 			desc: "same, complete example",
@@ -263,12 +264,96 @@ func TestEqual(t *testing.T) {
 			skipDescription: false,
 			want:            false,
 		},
+		{
+			desc: "incorrect ports, one extra dash",
+			a: &compute.Firewall{
+				Allowed: []*compute.FirewallAllowed{
+					{
+						IPProtocol: "TCP",
+						Ports:      []string{"1-1-1"},
+					},
+				},
+			},
+			b: &compute.Firewall{
+				Allowed: []*compute.FirewallAllowed{
+					{
+						IPProtocol: "TCP",
+						Ports:      []string{"1-1-1"},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			desc: "incorrect ports, empty",
+			a: &compute.Firewall{
+				Allowed: []*compute.FirewallAllowed{
+					{
+						IPProtocol: "TCP",
+						Ports:      []string{""},
+					},
+				},
+			},
+			b: &compute.Firewall{
+				Allowed: []*compute.FirewallAllowed{
+					{
+						IPProtocol: "TCP",
+						Ports:      []string{""},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			desc: "incorrect ports, not a int",
+			a: &compute.Firewall{
+				Allowed: []*compute.FirewallAllowed{
+					{
+						IPProtocol: "TCP",
+						Ports:      []string{"abc"},
+					},
+				},
+			},
+			b: &compute.Firewall{
+				Allowed: []*compute.FirewallAllowed{
+					{
+						IPProtocol: "TCP",
+						Ports:      []string{"abc"},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			desc: "incorrect ports, not a int in range",
+			a: &compute.Firewall{
+				Allowed: []*compute.FirewallAllowed{
+					{
+						IPProtocol: "TCP",
+						Ports:      []string{"0-abc"},
+					},
+				},
+			},
+			b: &compute.Firewall{
+				Allowed: []*compute.FirewallAllowed{
+					{
+						IPProtocol: "TCP",
+						Ports:      []string{"abc-0"},
+					},
+				},
+			},
+			wantErr: true,
+		},
 	}
 	for _, tC := range testCases {
 		t.Run(tC.desc, func(t *testing.T) {
-			got := firewalls.Equal(tC.a, tC.b, tC.skipDescription)
-			if got != tC.want {
-				t.Errorf("firewalls.Equal(%v, %v, %v) = %v, want %v", tC.a, tC.b, tC.skipDescription, got, tC.want)
+			got, gotErr := firewalls.Equal(tC.a, tC.b, tC.skipDescription)
+			if got != tC.want || (gotErr != nil) != tC.wantErr {
+				wantErr := "and no error"
+				if tC.wantErr {
+					wantErr = "and error"
+				}
+				t.Errorf("firewalls.Equal(%v, %v) = %v %v, want %v %s", tC.desc, tC.skipDescription, got, gotErr, tC.want, wantErr)
 			}
 		})
 	}

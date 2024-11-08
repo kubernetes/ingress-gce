@@ -81,8 +81,8 @@ func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParam
 	}
 
 	// Don't compare the "description" field for shared firewall rules
-	if Equal(expectedFw, existingFw, sharedRule) {
-		return utils.ResourceResync, nil
+	if eq, err := Equal(expectedFw, existingFw, sharedRule); eq || err != nil {
+		return utils.ResourceResync, err
 	}
 
 	fwLogger.V(2).Info("EnsureL4FirewallRule: patching L4 firewall")
