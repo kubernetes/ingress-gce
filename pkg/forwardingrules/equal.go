@@ -2,6 +2,7 @@ package forwardingrules
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 
@@ -10,6 +11,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
+// TODO: change names of errors
 func Equal(existing, wanted *composite.ForwardingRule) (bool, error) {
 	existingID, err := cloud.ParseResourceURL(existing.BackendService)
 	if err != nil {
@@ -20,7 +22,7 @@ func Equal(existing, wanted *composite.ForwardingRule) (bool, error) {
 		return false, fmt.Errorf("forwardingRulesEqual(): failed to parse backend resource URL from wanted FR, err - %w", err)
 	}
 	return existing.IPAddress == wanted.IPAddress &&
-		existing.IPProtocol == wanted.IPProtocol &&
+		strings.ToLower(existing.IPProtocol) == strings.ToLower(wanted.IPProtocol) &&
 		existing.LoadBalancingScheme == wanted.LoadBalancingScheme &&
 		equalPorts(existing.Ports, wanted.Ports, existing.PortRange, wanted.PortRange) &&
 		utils.EqualCloudResourceIDs(existingID, newID) &&
@@ -31,6 +33,7 @@ func Equal(existing, wanted *composite.ForwardingRule) (bool, error) {
 		existing.NetworkTier == wanted.NetworkTier, nil
 }
 
+// TODO: make Equal and EqualIPv6 similar
 func EqualIPv6(fr1, fr2 *composite.ForwardingRule) (bool, error) {
 	id1, err := cloud.ParseResourceURL(fr1.BackendService)
 	if err != nil {
@@ -40,7 +43,7 @@ func EqualIPv6(fr1, fr2 *composite.ForwardingRule) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("EqualIPv6ForwardingRules(): failed to parse resource URL from FR, err - %w", err)
 	}
-	return fr1.IPProtocol == fr2.IPProtocol &&
+	return strings.ToLower(fr1.IPProtocol) == strings.ToLower(fr2.IPProtocol) &&
 		fr1.LoadBalancingScheme == fr2.LoadBalancingScheme &&
 		equalPorts(fr1.Ports, fr2.Ports, fr1.PortRange, fr2.PortRange) &&
 		utils.EqualCloudResourceIDs(id1, id2) &&

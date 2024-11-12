@@ -3,6 +3,7 @@ package forwardingrules
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
@@ -160,7 +161,7 @@ func buildWanted(cfg *EnsureConfig, name, protocol string) (*composite.Forwardin
 	return &composite.ForwardingRule{
 		Name:                name,
 		IPAddress:           cfg.IP,
-		Ports:               utils.GetPorts(cfg.Service.Spec.Ports),
+		Ports:               GetPorts(cfg.Service.Spec.Ports, api_v1.Protocol(strings.ToUpper(protocol))),
 		IPProtocol:          protocol,
 		LoadBalancingScheme: scheme,
 		Subnetwork:          cfg.SubnetworkURL,
