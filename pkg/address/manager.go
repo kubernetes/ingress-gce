@@ -38,6 +38,8 @@ const (
 	IPAddrUnmanaged
 )
 
+const Shared = "SHARED_LOADBALANCER_VIP"
+
 // IPVersion represents compute.Address IpVersion field
 type IPVersion = string
 
@@ -173,6 +175,11 @@ func (m *Manager) ensureAddressReservation() (string, IPAddressType, error) {
 		newAddr.NetworkTier = m.networkTier.ToGCEValue()
 	}
 
+	if m.addressType == cloud.SchemeInternal {
+		// Enables an IP to be used by multiple fwd rules in mixed protocol mode
+		newAddr.Purpose = Shared
+	}
+
 	// This block mitigates inconsistencies in the gcloud API, as revealed through experimentation.
 	if m.ipVersion == IPv6Version {
 		// Empty targetIP covers reserving new static address.
@@ -269,7 +276,6 @@ func (m *Manager) ensureAddressReservation() (string, IPAddressType, error) {
 	m.frLogger.V(4).Info("Address was already reserved with name: %q, description: %q", "ip", m.targetIP, "addressName", addr.Name, "addressDescription", addr.Description)
 	m.tryRelease = false
 	return addr.Address, IPAddrUnmanaged, nil
-
 }
 
 func (m *Manager) validateAddress(addr *compute.Address) error {
