@@ -2,7 +2,7 @@ package forwardingrules
 
 import "k8s.io/ingress-gce/pkg/composite"
 
-func FilterPatchableFields(existing, new *composite.ForwardingRule) (*composite.ForwardingRule, bool) {
+func Patchable(existing, new *composite.ForwardingRule) (bool, *composite.ForwardingRule) {
 	existingCopy := *existing
 	newCopy := *new
 
@@ -14,7 +14,7 @@ func FilterPatchableFields(existing, new *composite.ForwardingRule) (*composite.
 
 	// Something is different other than AllowGlobalAccess and NetworkTier
 	if err != nil || !equal {
-		return nil, false
+		return false, nil
 	}
 
 	filtered := &composite.ForwardingRule{}
@@ -26,5 +26,5 @@ func FilterPatchableFields(existing, new *composite.ForwardingRule) (*composite.
 	if existing.NetworkTier != new.NetworkTier {
 		filtered.NetworkTier = new.NetworkTier
 	}
-	return filtered, true
+	return true, filtered
 }

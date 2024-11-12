@@ -2,18 +2,25 @@ package forwardingrules
 
 import (
 	"errors"
+	"fmt"
 
 	api_v1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/tools/record"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"github.com/go-logr/logr"
+	"github.com/google/go-cmp/cmp"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
 type EnsureConfig struct {
 	Namer    Namer
-	Provider ForwardingRules
+	Provider *ForwardingRules
+	Recorder record.EventRecorder
+	Logger   logr.Logger
 
 	BackendServiceLink string
 	SubnetworkURL      string
@@ -21,7 +28,7 @@ type EnsureConfig struct {
 	IP                 string
 	AllowGlobalAccess  bool
 
-	Service api_v1.Service
+	Service *api_v1.Service
 }
 
 type EnsureResult struct {
@@ -35,50 +42,109 @@ type Namer interface {
 }
 
 func EnsureILBIPv4(cfg *EnsureConfig) (*EnsureResult, error) {
+	cfg.Logger.V(2).Info("forwardingrules.EnsureILBIPv4")
 	var tcpErr, udpErr error
+	var tcpSync, udpSync utils.ResourceSyncStatus
+
 	svcPorts := cfg.Service.Spec.Ports
+	res := &EnsureResult{
+		SyncStatus: utils.ResourceResync,
+	}
 
 	if NeedsTCP(svcPorts) {
-		_, tcpErr = ensure(cfg, "TCP")
+		cfg.Logger.V(2).Info("forwardingrules.EnsureILBIPv4: Needs TCP")
+		res.TCPFwdRule, tcpSync, tcpErr = ensure(cfg, "tcp")
 	} else {
+		cfg.Logger.V(2).Info("forwardingrules.EnsureILBIPv4: Delete TCP")
 		tcpErr = delete(cfg, "TCP")
 	}
 
 	if NeedsUDP(svcPorts) {
-		_, udpErr = ensure(cfg, "UDP")
+		cfg.Logger.V(2).Info("forwardingrules.EnsureILBIPv4: Needs UDP")
+		res.UDPFwdRule, udpSync, udpErr = ensure(cfg, "udp")
 	} else {
+		cfg.Logger.V(2).Info("forwardingrules.EnsureILBIPv4: Delete UDP")
 		udpErr = delete(cfg, "UDP")
 	}
 
-	return nil, errors.Join(tcpErr, udpErr)
+	if udpSync == utils.ResourceUpdate || tcpSync == utils.ResourceUpdate {
+		res.SyncStatus = utils.ResourceUpdate
+	}
+
+	return res, errors.Join(tcpErr, udpErr)
 }
 
-func ensure(cfg *EnsureConfig, protocol string) (*composite.ForwardingRule, error) {
+func ensure(cfg *EnsureConfig, protocol string) (*composite.ForwardingRule, utils.ResourceSyncStatus, error) {
 	name := cfg.Namer.L4ForwardingRule(cfg.Service.Namespace, cfg.Service.Name, protocol)
+	const resync = utils.ResourceResync
+	const update = utils.ResourceUpdate
 
 	existing, err := cfg.Provider.Get(name)
 	if err != nil {
-		return existing, err
+		return nil, resync, err
 	}
 
 	wanted, err := buildWanted(cfg, name, protocol)
 	if err != nil {
-		return existing, err
+		return nil, resync, err
 	}
 
-	switch {
-	case existing == nil:
-		// Create wanted
-	case Equal():
-		continue
-	case Patchable():
-		// patch
-	default: // Needs to be recreated
-		// delete existing
-		// create wanted
+	if existing == nil {
+		if err := cfg.Provider.Create(wanted); err != nil {
+			return nil, update, err
+		}
+		cfg.recordf("ForwardingRule %s created", name)
+		return cfg.find(name)
 	}
 
-	return nil, nil
+	if equal, err := Equal(existing, wanted); err != nil {
+		return nil, resync, err
+	} else if equal {
+		// Nothing to do
+		cfg.Logger.V(2).Info("forwardingrules.ensure: Skipping update of unchanged forwarding rule")
+		return existing, resync, err
+	}
+
+	cfg.Logger.V(2).Info(
+		"forwardingrules.ensure: Forwarding rule changed.",
+		"existing", fmt.Sprintf("%+v", existing),
+		"wanted", fmt.Sprintf("%+v", wanted),
+		"diff", cmp.Diff(existing, wanted),
+	)
+
+	if patchable, filtered := Patchable(existing, wanted); patchable {
+		if err := cfg.Provider.Patch(filtered); err != nil {
+			return nil, update, err
+		}
+		cfg.recordf("ForwardingRule %s patched", name)
+		return cfg.find(name)
+	}
+
+	// Needs to be recreated
+	if err := cfg.Provider.Delete(name); err != nil {
+		return nil, update, err
+	}
+	cfg.recordf("ForwardingRule %s deleted", name)
+
+	if err := cfg.Provider.Create(wanted); err != nil {
+		return nil, update, err
+	}
+	cfg.recordf("ForwardingRule %s recreated", name)
+
+	return cfg.find(name)
+}
+
+func (ec *EnsureConfig) find(name string) (*composite.ForwardingRule, utils.ResourceSyncStatus, error) {
+	found, err := ec.Provider.Get(name)
+	if err != nil {
+		return nil, utils.ResourceUpdate, err
+	}
+
+	if found == nil {
+		return nil, utils.ResourceUpdate, fmt.Errorf("Forwarding Rule %s not found", name)
+	}
+
+	return found, utils.ResourceUpdate, err
 }
 
 func buildWanted(cfg *EnsureConfig, name, protocol string) (*composite.ForwardingRule, error) {
@@ -108,7 +174,11 @@ func buildWanted(cfg *EnsureConfig, name, protocol string) (*composite.Forwardin
 }
 
 func delete(cfg *EnsureConfig, protocol string) error {
-	frName := cfg.Namer.L4ForwardingRule(cfg.Service.Namespace, cfg.Service.Name, protocol)
+	name := cfg.Namer.L4ForwardingRule(cfg.Service.Namespace, cfg.Service.Name, protocol)
 
-	return cfg.Provider.Delete(frName)
+	return utils.IgnoreHTTPNotFound(cfg.Provider.Delete(name))
+}
+
+func (ec *EnsureConfig) recordf(messageFmt string, args ...interface{}) {
+	ec.Recorder.Eventf(ec.Service, api_v1.EventTypeNormal, events.SyncIngress, messageFmt, args)
 }

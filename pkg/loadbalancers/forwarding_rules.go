@@ -269,7 +269,7 @@ func (l4 *L4) ensureIPv4ForwardingRule(bsLink string, options gce.ILBOptions, ex
 		frLogger.V(2).Info("ensureIPv4ForwardingRule: forwarding rule changed.",
 			"existingForwardingRule", fmt.Sprintf("%+v", existingFwdRule), "newForwardingRule", fmt.Sprintf("%+v", newFwdRule), "diff", frDiff)
 
-		filtered, patchable := forwardingrules.FilterPatchableFields(existingFwdRule, newFwdRule)
+		patchable, filtered := forwardingrules.Patchable(existingFwdRule, newFwdRule)
 		if patchable {
 			if err = l4.forwardingRules.Patch(filtered); err != nil {
 				return nil, utils.ResourceUpdate, err
@@ -424,7 +424,7 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 		frLogger.V(2).Info("ensureIPv4ForwardingRule: forwarding rule changed.",
 			"existingForwardingRule", fmt.Sprintf("%+v", existingFwdRule), "newForwardingRule", fmt.Sprintf("%+v", newFwdRule), "diff", frDiff)
 
-		filtered, patchable := forwardingrules.FilterPatchableFields(existingFwdRule, newFwdRule)
+		patchable, filtered := forwardingrules.Patchable(existingFwdRule, newFwdRule)
 		if patchable {
 			if err = l4netlb.forwardingRules.Patch(filtered); err != nil {
 				return nil, address.IPAddrUndefined, utils.ResourceUpdate, err

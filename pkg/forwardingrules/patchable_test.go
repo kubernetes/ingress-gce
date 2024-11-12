@@ -188,7 +188,7 @@ func TestFilterPatchableFields(t *testing.T) {
 
 	for _, tC := range testCases {
 		t.Run(tC.desc, func(t *testing.T) {
-			gotFiltered, gotPatchable := forwardingrules.FilterPatchableFields(tC.existing, tC.new)
+			gotPatchable, gotFiltered := forwardingrules.Patchable(tC.existing, tC.new)
 			if gotPatchable != tC.patchable {
 				t.Errorf("FilterPatchableFields(_, _) = %t, want %t", gotPatchable, tC.patchable)
 			}

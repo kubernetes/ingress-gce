@@ -604,27 +604,59 @@ func (l4 *L4) ensureDualStackResources(result *L4ILBSyncResult, nodeNames []stri
 // - IPv4 Forwarding Rule
 // - IPv4 Firewall
 func (l4 *L4) ensureIPv4Resources(result *L4ILBSyncResult, nodeNames []string, options gce.ILBOptions, bs *composite.BackendService, existingFR *composite.ForwardingRule, subnetworkURL, ipToUse string) {
-	fr, fwdRuleSyncStatus, err := l4.ensureIPv4ForwardingRule(bs.SelfLink, options, existingFR, subnetworkURL, ipToUse)
-	result.ResourceUpdates.SetForwardingRule(fwdRuleSyncStatus)
-	if err != nil {
-		l4.svcLogger.Error(err, "ensureIPv4Resources: Failed to ensure forwarding rule for L4 ILB Service")
-		result.GCEResourceInError = annotations.ForwardingRuleResource
-		result.Error = err
-		return
-	}
-	if fr.IPProtocol == string(corev1.ProtocolTCP) {
-		result.Annotations[annotations.TCPForwardingRuleKey] = fr.Name
+	if l4.enableMixedProtocol {
+		l4.svcLogger.V(2).Info("Mixed protocol enabled, ensuring forwarding rules")
+		cfg := &forwardingrules.EnsureConfig{
+			Namer:    l4.namer,
+			Provider: l4.forwardingRules.(*forwardingrules.ForwardingRules),
+			Recorder: l4.recorder,
+			Logger:   l4.svcLogger,
+
+			BackendServiceLink: bs.SelfLink,
+			NetworkURL:         l4.network.NetworkURL,
+			SubnetworkURL:      subnetworkURL,
+			IP:                 ipToUse,
+			AllowGlobalAccess:  options.AllowGlobalAccess,
+
+			Service: l4.Service,
+		}
+		res, err := forwardingrules.EnsureILBIPv4(cfg)
+		if err != nil {
+			l4.svcLogger.Error(err, "ensureIPv4Resources: Failed to ensure forwarding rule for L4 ILB Service")
+			result.GCEResourceInError = annotations.ForwardingRuleResource
+			result.Error = err
+			return
+		}
+
+		if res.TCPFwdRule != nil {
+			result.Annotations[annotations.TCPForwardingRuleKey] = res.TCPFwdRule.Name
+		}
+		if res.UDPFwdRule != nil {
+			result.Annotations[annotations.UDPForwardingRuleKey] = res.UDPFwdRule.Name
+		}
 	} else {
-		result.Annotations[annotations.UDPForwardingRuleKey] = fr.Name
+		fr, fwdRuleSyncStatus, err := l4.ensureIPv4ForwardingRule(bs.SelfLink, options, existingFR, subnetworkURL, ipToUse)
+		result.ResourceUpdates.SetForwardingRule(fwdRuleSyncStatus)
+		if err != nil {
+			l4.svcLogger.Error(err, "ensureIPv4Resources: Failed to ensure forwarding rule for L4 ILB Service")
+			result.GCEResourceInError = annotations.ForwardingRuleResource
+			result.Error = err
+			return
+		}
+		if fr.IPProtocol == string(corev1.ProtocolTCP) {
+			result.Annotations[annotations.TCPForwardingRuleKey] = fr.Name
+		} else {
+			result.Annotations[annotations.UDPForwardingRuleKey] = fr.Name
+		}
 	}
 
-	l4.ensureIPv4NodesFirewall(nodeNames, fr.IPAddress, result)
+	l4.ensureIPv4NodesFirewall(nodeNames, ipToUse, result)
 	if result.Error != nil {
-		l4.svcLogger.Error(err, "ensureIPv4Resources: Failed to ensure nodes firewall for L4 ILB Service")
+		l4.svcLogger.Error(result.Error, "ensureIPv4Resources: Failed to ensure nodes firewall for L4 ILB Service")
 		return
 	}
 
-	result.Status = utils.AddIPToLBStatus(result.Status, fr.IPAddress)
+	result.Status = utils.AddIPToLBStatus(result.Status, ipToUse)
 }
 
 func (l4 *L4) ensureIPv4NodesFirewall(nodeNames []string, ipAddress string, result *L4ILBSyncResult) {
