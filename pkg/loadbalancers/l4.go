@@ -276,6 +276,18 @@ func (l4 *L4) deleteIPv4ForwardingRule() error {
 		l4.svcLogger.Info("Finished deleting IPv4 forwarding rule for L4 ILB Service", "forwardingRuleName", frName, "timeTaken", time.Since(start))
 	}()
 
+	if l4.enableMixedProtocol {
+		fwdRulesManager := &forwardingrules.Manager{
+			Namer:    l4.namer,
+			Provider: l4.forwardingRules.(*forwardingrules.ForwardingRules),
+			Recorder: l4.recorder,
+			Logger:   l4.svcLogger,
+			Service: l4.Service,
+		}
+
+		return fwdRulesManager.DeleteILBIPv4()
+	}
+
 	return l4.forwardingRules.Delete(frName)
 }
 
@@ -606,21 +618,20 @@ func (l4 *L4) ensureDualStackResources(result *L4ILBSyncResult, nodeNames []stri
 func (l4 *L4) ensureIPv4Resources(result *L4ILBSyncResult, nodeNames []string, options gce.ILBOptions, bs *composite.BackendService, existingFR *composite.ForwardingRule, subnetworkURL, ipToUse string) {
 	if l4.enableMixedProtocol {
 		l4.svcLogger.V(2).Info("Mixed protocol enabled, ensuring forwarding rules")
-		cfg := &forwardingrules.EnsureConfig{
+		fwdRulesManager := &forwardingrules.Manager{
 			Namer:    l4.namer,
 			Provider: l4.forwardingRules.(*forwardingrules.ForwardingRules),
 			Recorder: l4.recorder,
 			Logger:   l4.svcLogger,
-
+			Service:  l4.Service,
+		}
+		res, err := fwdRulesManager.EnsureILBIPv4(&forwardingrules.EnsureConfig{
 			BackendServiceLink: bs.SelfLink,
 			NetworkURL:         l4.network.NetworkURL,
 			SubnetworkURL:      subnetworkURL,
 			IP:                 ipToUse,
 			AllowGlobalAccess:  options.AllowGlobalAccess,
-
-			Service: l4.Service,
-		}
-		res, err := forwardingrules.EnsureILBIPv4(cfg)
+		})
 		if err != nil {
 			l4.svcLogger.Error(err, "ensureIPv4Resources: Failed to ensure forwarding rule for L4 ILB Service")
 			result.GCEResourceInError = annotations.ForwardingRuleResource
