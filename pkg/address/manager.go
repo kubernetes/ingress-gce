@@ -51,6 +51,9 @@ const (
 	// IPv6EndpointTypeNetLB is a value on Address.Ipv6EndpointType used specify
 	// that IPv6 address will be used for NetLB. Required for new IPv6 NetLB address creation.
 	IPv6EndpointTypeNetLB = "NETLB"
+	// Purpose for internal IP address that allows to use the same address
+	// in multiple forwarding rules.
+	PurposeShared = "SHARED_LOADBALANCER_VIP"
 )
 
 // Original file in https://github.com/kubernetes/legacy-cloud-providers/blob/6aa80146c33550e908aed072618bd7f9998837f6/gce/gce_address_manager.go
@@ -173,6 +176,10 @@ func (m *Manager) ensureAddressReservation() (string, IPAddressType, error) {
 		newAddr.NetworkTier = m.networkTier.ToGCEValue()
 	}
 
+	if m.addressType == cloud.SchemeInternal {
+		newAddr.Purpose = PurposeShared
+	}
+
 	// This block mitigates inconsistencies in the gcloud API, as revealed through experimentation.
 	if m.ipVersion == IPv6Version {
 		// Empty targetIP covers reserving new static address.
@@ -269,7 +276,6 @@ func (m *Manager) ensureAddressReservation() (string, IPAddressType, error) {
 	m.frLogger.V(4).Info("Address was already reserved with name: %q, description: %q", "ip", m.targetIP, "addressName", addr.Name, "addressDescription", addr.Description)
 	m.tryRelease = false
 	return addr.Address, IPAddrUnmanaged, nil
-
 }
 
 func (m *Manager) validateAddress(addr *compute.Address) error {

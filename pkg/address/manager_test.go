@@ -243,6 +243,36 @@ func TestAddressManagerIPv6(t *testing.T) {
 	}
 }
 
+func TestInternalSharedPurpose(t *testing.T) {
+	svc, err := fakeGCECloud(vals)
+	require.NoError(t, err)
+	targetIP := ""
+
+	mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeInternal, cloud.NetworkTierDefault, address.IPv4Version, klog.TODO())
+	_, _, err = mgr.HoldAddress()
+	require.NoError(t, err)
+
+	addr, err := svc.GetRegionAddress(testLBName, vals.Region)
+	require.NoError(t, err)
+
+	assert.EqualValues(t, addr.Purpose, address.PurposeShared)
+}
+
+func TestExternalSharedPurpose(t *testing.T) {
+	svc, err := fakeGCECloud(vals)
+	require.NoError(t, err)
+	targetIP := ""
+
+	mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeExternal, cloud.NetworkTierDefault, address.IPv4Version, klog.TODO())
+	_, _, err = mgr.HoldAddress()
+	require.NoError(t, err)
+
+	addr, err := svc.GetRegionAddress(testLBName, vals.Region)
+	require.NoError(t, err)
+
+	assert.Empty(t, addr.Purpose)
+}
+
 func testHoldAddress(t *testing.T, mgr *address.Manager, svc gce.CloudAddressService, name, region, targetIP, scheme, netTier string) {
 	ipToUse, ipType, err := mgr.HoldAddress()
 	require.NoError(t, err)
