@@ -458,6 +458,9 @@ func TestRegionalXLBILBTransition(t *testing.T) {
 				t.Fatalf("error updating ingress spec: %v", err)
 			}
 
+			// Sleep to ensure that the ingress is updated. WaitForIngress is not checking
+			// that address was changed from External IP to Internal IP.
+			time.Sleep(10 * time.Minute)
 			// Verify everything works
 			ing2, err := e2e.WaitForIngress(s, tc.ingUpdate, nil, nil)
 			if err != nil {
@@ -465,19 +468,6 @@ func TestRegionalXLBILBTransition(t *testing.T) {
 			}
 			t.Logf("GCLB resources created (%s/%s)", s.Namespace, tc.ingUpdate.Name)
 
-			// Sleep before getting gclb resources, even after ingress is considered
-			// to be "ready".
-			// In the validator we don't check for default backend to be ready, if it
-			// is not specified in Ingress Spec. However, if default backend is not
-			// specified in Spec -- controller will use default 404 service. But it
-			// takes time to provision it, specifically because "SyncBackends" guarded
-			// by global lock.
-			// If we don't sleep, verification that backend services count on the URLMap
-			// equals to tc.numBackendServicesUpdate will be very flaky.
-			// This is still a quick solution. Properly, we should wait for
-			// 404 service to be ready, if no defaultBackend specified in Ingress.Spec.
-			time.Sleep(5 * time.Minute)
-			// Perform whitebox testing.
 			if len(ing2.Status.LoadBalancer.Ingress) < 1 {
 				t.Fatalf("Ingress does not have an IP: %+v", ing2.Status)
 			}
