@@ -17,8 +17,6 @@ limitations under the License.
 package firewalls
 
 import (
-	"strings"
-
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
 	v1 "k8s.io/api/core/v1"
@@ -36,9 +34,8 @@ type FirewallParams struct {
 	IP                string
 	SourceRanges      []string
 	DestinationRanges []string
-	PortRanges        []string
 	NodeNames         []string
-	Protocol          string
+	Allowed           []*compute.FirewallAllowed
 	L4Type            utils.L4LBType
 	Network           network.NetworkInfo
 }
@@ -59,18 +56,14 @@ func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParam
 	if err != nil {
 		fwLogger.Info("EnsureL4FirewallRule: failed to generate description for L4 rule", "err", err)
 	}
+
 	expectedFw := &compute.Firewall{
 		Name:         params.Name,
 		Description:  fwDesc,
 		Network:      params.Network.NetworkURL,
 		SourceRanges: params.SourceRanges,
 		TargetTags:   nodeTags,
-		Allowed: []*compute.FirewallAllowed{
-			{
-				IPProtocol: strings.ToLower(params.Protocol),
-				Ports:      params.PortRanges,
-			},
-		},
+		Allowed:      params.Allowed,
 	}
 	if flags.F.EnablePinhole {
 		expectedFw.DestinationRanges = params.DestinationRanges
@@ -88,8 +81,8 @@ func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParam
 	}
 
 	// Don't compare the "description" field for shared firewall rules
-	if firewallRuleEqual(expectedFw, existingFw, sharedRule) {
-		return utils.ResourceResync, nil
+	if eq, err := Equal(expectedFw, existingFw, sharedRule); eq || err != nil {
+		return utils.ResourceResync, err
 	}
 
 	fwLogger.V(2).Info("EnsureL4FirewallRule: patching L4 firewall")
@@ -113,39 +106,6 @@ func EnsureL4FirewallRuleDeleted(cloud *gce.Cloud, fwName string, fwLogger klog.
 		return err
 	}
 	return nil
-}
-
-func firewallRuleEqual(a, b *compute.Firewall, skipDescription bool) bool {
-	if len(a.Allowed) != len(b.Allowed) {
-		return false
-	}
-	for i := range a.Allowed {
-		if !allowRulesEqual(a.Allowed[i], b.Allowed[i]) {
-			return false
-		}
-	}
-
-	if !utils.EqualStringSets(a.DestinationRanges, b.DestinationRanges) {
-		return false
-	}
-
-	if !utils.EqualStringSets(a.SourceRanges, b.SourceRanges) {
-		return false
-	}
-
-	if !utils.EqualStringSets(a.TargetTags, b.TargetTags) {
-		return false
-	}
-
-	if !skipDescription && a.Description != b.Description {
-		return false
-	}
-	return true
-}
-
-func allowRulesEqual(a *compute.FirewallAllowed, b *compute.FirewallAllowed) bool {
-	return a.IPProtocol == b.IPProtocol &&
-		utils.EqualStringSets(a.Ports, b.Ports)
 }
 
 func ensureFirewall(svc *v1.Service, shared bool, params *FirewallParams, cloud *gce.Cloud, recorder record.EventRecorder, fwLogger klog.Logger) (utils.ResourceSyncStatus, error) {

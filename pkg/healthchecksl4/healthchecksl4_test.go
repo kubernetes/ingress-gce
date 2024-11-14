@@ -387,7 +387,6 @@ func TestCompareHealthChecks(t *testing.T) {
 
 // Checks that newL4HealthCheck() returns correct CheckInterval and UnhealthyThreshold
 func TestSharedHealthChecks(t *testing.T) {
-
 	t.Parallel()
 	testCases := []struct {
 		desc                   string
@@ -561,7 +560,7 @@ func TestEnsureHealthCheckWithDualStackFirewalls(t *testing.T) {
 		TargetTags:   []string{"k8s-test"},
 		Allowed: []*compute.FirewallAllowed{
 			{
-				IPProtocol: "tcp",
+				IPProtocol: "TCP",
 				Ports:      []string{"1234"},
 			},
 		},
@@ -574,7 +573,7 @@ func TestEnsureHealthCheckWithDualStackFirewalls(t *testing.T) {
 		TargetTags:   []string{"k8s-test"},
 		Allowed: []*compute.FirewallAllowed{
 			{
-				IPProtocol: "tcp",
+				IPProtocol: "TCP",
 				Ports:      []string{"1234"},
 			},
 		},

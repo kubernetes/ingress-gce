@@ -23,6 +23,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	compute "google.golang.org/api/compute/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/firewalls"
@@ -134,10 +135,14 @@ func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipAddress string, nodeNames []st
 	}
 
 	ipv6nodesFWRParams := firewalls.FirewallParams{
-		PortRanges:        portRanges,
+		Allowed: []*compute.FirewallAllowed{
+			{
+				IPProtocol: string(protocol),
+				Ports:      portRanges,
+			},
+		},
 		SourceRanges:      ipv6SourceRanges,
 		DestinationRanges: []string{ipAddress},
-		Protocol:          string(protocol),
 		Name:              firewallName,
 		NodeNames:         nodeNames,
 		L4Type:            utils.XLB,

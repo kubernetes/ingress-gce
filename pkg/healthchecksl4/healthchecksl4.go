@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"google.golang.org/api/compute/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -51,10 +52,8 @@ const (
 	L4NetLBIPv6HCRange            = "2600:1901:8001::/48"
 )
 
-var (
-	// sharedLock used to prevent race condition between shared health checks and firewalls.
-	sharedLock = &sync.Mutex{}
-)
+// sharedLock used to prevent race condition between shared health checks and firewalls.
+var sharedLock = &sync.Mutex{}
 
 type l4HealthChecks struct {
 	// sharedResourceLock serializes operations on the healthcheck and firewall
@@ -224,9 +223,13 @@ func (l4hc *l4HealthChecks) ensureIPv4Firewall(svc *corev1.Service, namer namer.
 	}()
 
 	hcFWRParams := firewalls.FirewallParams{
-		PortRanges:   []string{strconv.Itoa(int(hcPort))},
+		Allowed: []*compute.FirewallAllowed{
+			{
+				IPProtocol: string(corev1.ProtocolTCP),
+				Ports:      []string{strconv.Itoa(int(hcPort))},
+			},
+		},
 		SourceRanges: gce.L4LoadBalancerSrcRanges(),
-		Protocol:     string(corev1.ProtocolTCP),
 		Name:         hcFwName,
 		NodeNames:    nodeNames,
 		Network:      svcNetwork,
@@ -253,9 +256,13 @@ func (l4hc *l4HealthChecks) ensureIPv6Firewall(svc *corev1.Service, namer namer.
 	}()
 
 	hcFWRParams := firewalls.FirewallParams{
-		PortRanges:   []string{strconv.Itoa(int(hcPort))},
+		Allowed: []*compute.FirewallAllowed{
+			{
+				IPProtocol: string(corev1.ProtocolTCP),
+				Ports:      []string{strconv.Itoa(int(hcPort))},
+			},
+		},
 		SourceRanges: getIPv6HCFirewallSourceRanges(l4Type),
-		Protocol:     string(corev1.ProtocolTCP),
 		Name:         ipv6HCFWName,
 		NodeNames:    nodeNames,
 		Network:      svcNetwork,

@@ -32,6 +32,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
 	"github.com/golang/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/api/compute/v1"
 	ga "google.golang.org/api/compute/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
@@ -342,8 +343,12 @@ func TestEnsureNetLBFirewallDestinations(t *testing.T) {
 		SourceRanges:      []string{"10.0.0.0/20"},
 		DestinationRanges: []string{"20.0.0.0/20"},
 		NodeNames:         nodeNames,
-		Protocol:          string(v1.ProtocolTCP),
-		IP:                "1.2.3.4",
+		Allowed: []*compute.FirewallAllowed{
+			{
+				IPProtocol: string(v1.ProtocolTCP),
+			},
+		},
+		IP: "1.2.3.4",
 	}
 
 	_, err := firewalls.EnsureL4FirewallRule(l4netlb.cloud, utils.ServiceKeyFunc(svc.Namespace, svc.Name), &fwrParams /*sharedRule = */, false, klog.TODO())
@@ -1247,7 +1252,6 @@ func TestWeightedNetLB(t *testing.T) {
 			backendServiceName := l4NetLB.namer.L4Backend(l4NetLB.Service.Namespace, l4NetLB.Service.Name)
 			key := meta.RegionalKey(backendServiceName, l4NetLB.cloud.Region())
 			bs, err := composite.GetBackendService(l4NetLB.cloud, key, meta.VersionGA, klog.TODO())
-
 			if err != nil {
 				t.Fatalf("failed to read BackendService, %v", err)
 			}
@@ -1364,6 +1368,7 @@ func assertNetLBResources(t *testing.T, l4NetLB *L4NetLB, nodeNames []string) {
 		t.Errorf("Expected annotations %v, got %v, diff %v", expectedAnnotations, l4NetLB.Service.Annotations, diff)
 	}
 }
+
 func assertDualStackNetLBResources(t *testing.T, l4NetLB *L4NetLB, nodeNames []string) {
 	t.Helper()
 	assertDualStackNetLBResourcesWithCustomIPv6Subnet(t, l4NetLB, nodeNames, l4NetLB.cloud.SubnetworkURL())

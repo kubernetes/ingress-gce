@@ -23,6 +23,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"google.golang.org/api/compute/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -49,9 +50,7 @@ const (
 		"you need access to this feature please contact Google Cloud support team"
 )
 
-var (
-	noConnectionTrackingPolicy *composite.BackendServiceConnectionTrackingPolicy = nil
-)
+var noConnectionTrackingPolicy *composite.BackendServiceConnectionTrackingPolicy = nil
 
 // Many of the functions in this file are re-implemented from gce_loadbalancer_internal.go
 // L4 handles the resource creation/deletion/update for a given L4 ILB service.
@@ -133,8 +132,10 @@ func NewL4Handler(params *L4ILBParams, logger klog.Logger) *L4 {
 	}
 	l4.NamespacedName = types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace}
 	l4.backendPool = backends.NewPool(l4.cloud, l4.namer)
-	l4.ServicePort = utils.ServicePort{ID: utils.ServicePortID{Service: l4.NamespacedName}, BackendNamer: l4.namer,
-		VMIPNEGEnabled: true}
+	l4.ServicePort = utils.ServicePort{
+		ID: utils.ServicePortID{Service: l4.NamespacedName}, BackendNamer: l4.namer,
+		VMIPNEGEnabled: true,
+	}
 	return l4
 }
 
@@ -150,8 +151,10 @@ func (l4 *L4) getILBOptions() gce.ILBOptions {
 		return gce.ILBOptions{}
 	}
 
-	return gce.ILBOptions{AllowGlobalAccess: gce.GetLoadBalancerAnnotationAllowGlobalAccess(l4.Service),
-		SubnetName: annotations.FromService(l4.Service).GetInternalLoadBalancerAnnotationSubnet()}
+	return gce.ILBOptions{
+		AllowGlobalAccess: gce.GetLoadBalancerAnnotationAllowGlobalAccess(l4.Service),
+		SubnetName:        annotations.FromService(l4.Service).GetInternalLoadBalancerAnnotationSubnet(),
+	}
 }
 
 // EnsureInternalLoadBalancerDeleted performs a cleanup of all GCE resources for the given loadbalancer service.
@@ -647,10 +650,14 @@ func (l4 *L4) ensureIPv4NodesFirewall(nodeNames []string, ipAddress string, resu
 	}
 	// Add firewall rule for ILB traffic to nodes
 	nodesFWRParams := firewalls.FirewallParams{
-		PortRanges:        portRanges,
+		Allowed: []*compute.FirewallAllowed{
+			{
+				IPProtocol: string(protocol),
+				Ports:      portRanges,
+			},
+		},
 		SourceRanges:      ipv4SourceRanges,
 		DestinationRanges: []string{ipAddress},
-		Protocol:          string(protocol),
 		Name:              firewallName,
 		NodeNames:         nodeNames,
 		L4Type:            utils.ILB,
