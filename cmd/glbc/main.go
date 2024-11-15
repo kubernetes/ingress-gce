@@ -264,6 +264,7 @@ func main() {
 		DisableL4LBFirewall:           flags.F.DisableL4LBFirewall,
 		EnableL4NetLBNEGs:             flags.F.EnableL4NetLBNEG,
 		EnableL4NetLBNEGsDefault:      flags.F.EnableL4NetLBNEGDefault,
+		EnableL4MixedProtocol:         flags.F.EnableL4MixedProtocol,
 	}
 	ctx := ingctx.NewControllerContext(kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, svcAttachmentClient, networkClient, nodeTopologyClient, eventRecorderKubeClient, cloud, namer, kubeSystemUID, ctxConfig, rootLogger)
 	go app.RunHTTPServer(ctx.HealthCheck, rootLogger)
