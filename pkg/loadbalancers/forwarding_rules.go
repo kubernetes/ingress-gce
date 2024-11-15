@@ -37,6 +37,7 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -170,7 +171,6 @@ func (l7 *L7) checkForwardingRule(protocol namer.NamerProtocol, name, proxyLink,
 // forwarding rules, a boolean indicating if this is an IP the controller
 // should manage or not and an error if the specified IP was not found.
 func (l7 *L7) getEffectiveIP() (string, bool, error) {
-
 	// A note on IP management:
 	// User specifies a different IP on startup:
 	//	- We create a forwarding rule with the given IP.
@@ -256,7 +256,7 @@ func (l4 *L4) ensureIPv4ForwardingRule(bsLink string, options gce.ILBOptions, ex
 	}
 
 	if existingFwdRule != nil {
-		equal, err := Equal(existingFwdRule, newFwdRule)
+		equal, err := forwardingrules.EqualIPv4(existingFwdRule, newFwdRule)
 		if err != nil {
 			return nil, utils.ResourceResync, err
 		}
@@ -269,7 +269,7 @@ func (l4 *L4) ensureIPv4ForwardingRule(bsLink string, options gce.ILBOptions, ex
 		frLogger.V(2).Info("ensureIPv4ForwardingRule: forwarding rule changed.",
 			"existingForwardingRule", fmt.Sprintf("%+v", existingFwdRule), "newForwardingRule", fmt.Sprintf("%+v", newFwdRule), "diff", frDiff)
 
-		filtered, patchable := filterPatchableFields(existingFwdRule, newFwdRule)
+		patchable, filtered := forwardingrules.PatchableIPv4(existingFwdRule, newFwdRule)
 		if patchable {
 			if err = l4.forwardingRules.Patch(filtered); err != nil {
 				return nil, utils.ResourceUpdate, err
@@ -411,7 +411,7 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 			networkTierMismatchError := utils.NewNetworkTierErr(resource, existingFwdRule.NetworkTier, newFwdRule.NetworkTier)
 			return nil, address.IPAddrUndefined, utils.ResourceUpdate, networkTierMismatchError
 		}
-		equal, err := Equal(existingFwdRule, newFwdRule)
+		equal, err := forwardingrules.EqualIPv4(existingFwdRule, newFwdRule)
 		if err != nil {
 			return existingFwdRule, address.IPAddrUndefined, utils.ResourceResync, err
 		}
@@ -424,7 +424,7 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 		frLogger.V(2).Info("ensureIPv4ForwardingRule: forwarding rule changed.",
 			"existingForwardingRule", fmt.Sprintf("%+v", existingFwdRule), "newForwardingRule", fmt.Sprintf("%+v", newFwdRule), "diff", frDiff)
 
-		filtered, patchable := filterPatchableFields(existingFwdRule, newFwdRule)
+		patchable, filtered := forwardingrules.PatchableIPv4(existingFwdRule, newFwdRule)
 		if patchable {
 			if err = l4netlb.forwardingRules.Patch(filtered); err != nil {
 				return nil, address.IPAddrUndefined, utils.ResourceUpdate, err
@@ -485,75 +485,6 @@ func (l4netlb *L4NetLB) tearDownResourcesWithWrongNetworkTier(existingFwdRule *c
 		}
 	}
 	return am.TearDownAddressIPIfNetworkTierMismatch()
-}
-
-func filterPatchableFields(existing, new *composite.ForwardingRule) (*composite.ForwardingRule, bool) {
-	existingCopy := *existing
-	newCopy := *new
-
-	// Set AllowGlobalAccess and NetworkTier fields to the same value in both copies
-	existingCopy.AllowGlobalAccess = new.AllowGlobalAccess
-	existingCopy.NetworkTier = new.NetworkTier
-
-	equal, err := Equal(&existingCopy, &newCopy)
-
-	// Something is different other than AllowGlobalAccess and NetworkTier
-	if err != nil || !equal {
-		return nil, false
-	}
-
-	filtered := &composite.ForwardingRule{}
-	filtered.Id = existing.Id
-	filtered.Name = existing.Name
-	// AllowGlobalAccess is in the ForceSendFields list, it always need to have the right value
-	filtered.AllowGlobalAccess = new.AllowGlobalAccess
-	// Send NetworkTier in the patch request only if it has been updated
-	if existing.NetworkTier != new.NetworkTier {
-		filtered.NetworkTier = new.NetworkTier
-	}
-	return filtered, true
-}
-
-func Equal(existingFwdRule, newFwdRule *composite.ForwardingRule) (bool, error) {
-	existingID, err := cloud.ParseResourceURL(existingFwdRule.BackendService)
-	if err != nil {
-		return false, fmt.Errorf("forwardingRulesEqual(): failed to parse backend resource URL from existing FR, err - %w", err)
-	}
-	newID, err := cloud.ParseResourceURL(newFwdRule.BackendService)
-	if err != nil {
-		return false, fmt.Errorf("forwardingRulesEqual(): failed to parse backend resource URL from new FR, err - %w", err)
-	}
-	return existingFwdRule.IPAddress == newFwdRule.IPAddress &&
-		existingFwdRule.IPProtocol == newFwdRule.IPProtocol &&
-		existingFwdRule.LoadBalancingScheme == newFwdRule.LoadBalancingScheme &&
-		equalPorts(existingFwdRule.Ports, newFwdRule.Ports, existingFwdRule.PortRange, newFwdRule.PortRange) &&
-		utils.EqualCloudResourceIDs(existingID, newID) &&
-		existingFwdRule.AllowGlobalAccess == newFwdRule.AllowGlobalAccess &&
-		existingFwdRule.AllPorts == newFwdRule.AllPorts &&
-		equalResourcePaths(existingFwdRule.Subnetwork, newFwdRule.Subnetwork) &&
-		equalResourcePaths(existingFwdRule.Network, newFwdRule.Network) &&
-		existingFwdRule.NetworkTier == newFwdRule.NetworkTier, nil
-}
-
-// equalPorts compares two port ranges or slices of ports. Before comparison,
-// slices of ports are converted into a port range from smallest to largest
-// port. This is done so we don't unnecessarily recreate forwarding rules
-// when upgrading from port ranges to distinct ports, because recreating
-// forwarding rules is traffic impacting.
-func equalPorts(existingPorts, newPorts []string, existingPortRange, newPortRange string) bool {
-	if !flags.F.EnableDiscretePortForwarding || len(existingPorts) != 0 {
-		return utils.EqualStringSets(existingPorts, newPorts) && existingPortRange == newPortRange
-	}
-	// Existing forwarding rule contains a port range. To keep it that way,
-	// compare new list of ports as if it was a port range, too.
-	if len(newPorts) != 0 {
-		newPortRange = utils.MinMaxPortRange(newPorts)
-	}
-	return existingPortRange == newPortRange
-}
-
-func equalResourcePaths(rp1, rp2 string) bool {
-	return rp1 == rp2 || utils.EqualResourceIDs(rp1, rp2)
 }
 
 // ipv4AddrToUse determines which IPv4 address needs to be used in the ForwardingRule,
