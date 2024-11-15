@@ -36,6 +36,7 @@ import (
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -132,7 +133,7 @@ type transactionSyncer struct {
 	// and the k8s network name (can be used in endpoints calculation).
 	networkInfo network.NetworkInfo
 
-	namer negtypes.NetworkEndpointGroupNamer
+	namer namer.NonDefaultSubnetNEGNamer
 }
 
 func NewTransactionSyncer(
@@ -155,7 +156,7 @@ func NewTransactionSyncer(
 	lpConfig labels.PodLabelPropagationConfig,
 	enableDualStackNEG bool,
 	networkInfo network.NetworkInfo,
-	namer negtypes.NetworkEndpointGroupNamer,
+	namer namer.NonDefaultSubnetNEGNamer,
 ) negtypes.NegSyncer {
 
 	logger := log.WithName("Syncer").WithValues("service", klog.KRef(negSyncerKey.Namespace, negSyncerKey.Name), "negName", negSyncerKey.NegName)
@@ -929,17 +930,15 @@ func (s *transactionSyncer) computeEPSStaleness(endpointSlices []*discovery.Endp
 
 // getNonDefaultSubnetName returns the name of the NEG based on the subnet name.
 func (s *transactionSyncer) getNonDefaultSubnetName(subnet string) (string, error) {
-	negNamer := s.namer
 	if s.customName {
-		negName, err := negNamer.NonDefaultSubnetCustomNEG(s.NegSyncerKey.NegName, subnet)
+		negName, err := s.namer.NonDefaultSubnetCustomNEG(s.NegSyncerKey.NegName, subnet)
 		if err != nil {
 			return "", err
 		}
 		return negName, nil
 	}
 
-	negName := negNamer.NonDefaultSubnetNEG(s.NegSyncerKey.Namespace, s.NegSyncerKey.Name, subnet, s.NegSyncerKey.PortTuple.Port)
-	return negName, nil
+	return s.namer.NonDefaultSubnetNEG(s.NegSyncerKey.Namespace, s.NegSyncerKey.Name, subnet, s.NegSyncerKey.PortTuple.Port), nil
 }
 
 // computeDegradedModeCorrectness computes degraded mode correctness metrics based on the difference between degraded mode and normal calculation

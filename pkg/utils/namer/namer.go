@@ -490,7 +490,6 @@ func (n *Namer) RXLBBackendName(namespace, name string, port int32) string {
 
 // NonDefaultSubnetCustomNEG returns the gce neg name in the non-default subnet
 // when the NEG name is a custom one.
-// It will be shared between L4 and L7 NEGs.
 func (n *Namer) NonDefaultSubnetCustomNEG(customNEGName, subnetName string) (string, error) {
 	if len(customNEGName) > MaxDefaultSubnetNegNameLength {
 		return "", ErrCustomNEGNameTooLong

@@ -2641,25 +2641,28 @@ func TestGetNonDefaultSubnetName(t *testing.T) {
 		customNEGName     string
 		expectedL4NegName string
 		expectedL7NegName string
-		expectError       bool
+		expectL4Error     bool
+		expectL7Error     bool
 	}{
 		{
 			desc:              "auto-generated NEG name",
-			expectedL4NegName: "k8s1-clusteri-test-ns-test-name-0-cc51aa-8a665f6c",
+			expectedL4NegName: "k8s2-s7nrwkif-test-ns-test-name-cc51aa-qvmwlr7g",
 			expectedL7NegName: "k8s1-clusteri-test-ns-test-name-80-cc51aa-137ee03a",
-			expectError:       false,
+			expectL4Error:     false,
+			expectL7Error:     false,
 		},
 		{
 			desc:              "custom NEG name not exceeding character limit",
 			customNEGName:     "custom-neg",
-			expectedL4NegName: "custom-neg-cc51aa",
 			expectedL7NegName: "custom-neg-cc51aa",
-			expectError:       false,
+			expectL4Error:     true,
+			expectL7Error:     false,
 		},
 		{
 			desc:          " custom NEG name exceeding character limit",
 			customNEGName: "012345678901234567890123456789012345678901234567890123456", // 57 characters
-			expectError:   true,
+			expectL4Error: true,
+			expectL7Error: true,
 		},
 	}
 
@@ -2672,19 +2675,29 @@ func TestGetNonDefaultSubnetName(t *testing.T) {
 				}
 				got, err := syncer.getNonDefaultSubnetName(additionalTestSubnet)
 				t.Logf("NEG name: %q, custom Name: %v", syncer.NegSyncerKey.NegName, syncer.customName)
-				if err == nil && tc.expectError {
-					t.Errorf("For NEG type %q, got err == nil, expected err != nil", testNegType)
-				}
-				if err != nil && !tc.expectError {
-					t.Errorf("For NEG type %q, got err = %v, expected err == nil", testNegType, err)
-				}
-				if !tc.expectError {
-					if testNegType == negtypes.VmIpEndpointType && got != tc.expectedL4NegName {
-						t.Errorf("For NEG type %q, got NEG name %q, expected %q", testNegType, got, tc.expectedL4NegName)
+				if err == nil {
+					if testNegType == negtypes.VmIpEndpointType && tc.expectL4Error {
+						t.Errorf("For NEG type %q, got err == nil, expected err != nil", testNegType)
 					}
-					if testNegType == negtypes.VmIpPortEndpointType && got != tc.expectedL7NegName {
-						t.Errorf("For NEG type %q, got NEG name %q, expected %q", testNegType, got, tc.expectedL7NegName)
+					if testNegType == negtypes.VmIpPortEndpointType && tc.expectL7Error {
+						t.Errorf("For NEG type %q, got err == nil, expected err != nil", testNegType)
 					}
+				}
+				if err != nil {
+					if testNegType == negtypes.VmIpEndpointType && !tc.expectL4Error {
+						t.Errorf("For NEG type %q, got err = %v, expected err == nil", testNegType, err)
+					}
+					if testNegType == negtypes.VmIpPortEndpointType && !tc.expectL7Error {
+						t.Errorf("For NEG type %q, got err = %v, expected err == nil", testNegType, err)
+					}
+				}
+
+				if testNegType == negtypes.VmIpEndpointType && !tc.expectL4Error && got != tc.expectedL4NegName {
+					t.Errorf("For NEG type %q, got NEG name %q, expected %q", testNegType, got, tc.expectedL4NegName)
+				}
+
+				if testNegType == negtypes.VmIpPortEndpointType && !tc.expectL7Error && got != tc.expectedL7NegName {
+					t.Errorf("For NEG type %q, got NEG name %q, expected %q", testNegType, got, tc.expectedL7NegName)
 				}
 			})
 		}
@@ -2720,6 +2733,10 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
 	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
 
+	negNamer := testContext.NegNamer
+	if svcPort.NegType == negtypes.VmIpEndpointType {
+		negNamer = testContext.L4Namer
+	}
 	negsyncer := NewTransactionSyncer(svcPort,
 		record.NewFakeRecorder(100),
 		fakeGCE,
@@ -2740,7 +2757,7 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 		labels.PodLabelPropagationConfig{},
 		testContext.EnableDualStackNEG,
 		network.NetworkInfo{NetworkURL: fakeGCE.NetworkURL(), SubnetworkURL: fakeGCE.SubnetworkURL()},
-		testContext.NegNamer,
+		negNamer,
 	)
 	transactionSyncer := negsyncer.(*syncer).core.(*transactionSyncer)
 	indexers := map[string]cache.IndexFunc{

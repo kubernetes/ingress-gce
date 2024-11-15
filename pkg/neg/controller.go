@@ -49,7 +49,7 @@ import (
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
-	namer2 "k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
@@ -68,7 +68,7 @@ type Controller struct {
 	gcPeriod        time.Duration
 	recorder        record.EventRecorder
 	namer           negtypes.NetworkEndpointGroupNamer
-	l4Namer         namer2.L4ResourcesNamer
+	l4Namer         namer.L4ResourcesNamer
 	zoneGetter      *zonegetter.ZoneGetter
 	networkResolver network.Resolver
 
@@ -135,7 +135,7 @@ func NewController(
 	gkeNetworkParamSetInformer cache.SharedIndexInformer,
 	nodeTopologyInformer cache.SharedIndexInformer,
 	hasSynced func() bool,
-	l4Namer namer2.L4ResourcesNamer,
+	l4Namer namer.L4ResourcesNamer,
 	defaultBackendService utils.ServicePort,
 	cloud negtypes.NetworkEndpointGroupCloud,
 	zoneGetter *zonegetter.ZoneGetter,
@@ -182,6 +182,7 @@ func NewController(
 	syncerMetrics := syncMetrics.NewNegMetricsCollector(flags.F.NegMetricsExportInterval, logger)
 	manager := newSyncerManager(
 		namer,
+		l4Namer,
 		recorder,
 		cloud,
 		zoneGetter,

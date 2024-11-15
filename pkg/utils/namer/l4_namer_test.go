@@ -118,7 +118,7 @@ func TestL4Namer(t *testing.T) {
 		frName := newNamer.L4ForwardingRule(tc.namespace, tc.name, strings.ToLower(tc.proto))
 		ipv6FrName := newNamer.L4IPv6ForwardingRule(tc.namespace, tc.name, strings.ToLower(tc.proto))
 		negName := newNamer.L4Backend(tc.namespace, tc.name)
-		nonDefaultNegName := newNamer.L4NonDefaultSubnetNEG(tc.namespace, tc.name, tc.subnetName)
+		nonDefaultNegName := newNamer.NonDefaultSubnetNEG(tc.namespace, tc.name, tc.subnetName, 0) // Port is not used for L4 NEG
 		fwName := newNamer.L4Firewall(tc.namespace, tc.name)
 		ipv6FWName := newNamer.L4IPv6Firewall(tc.namespace, tc.name)
 		hcName := newNamer.L4HealthCheck(tc.namespace, tc.name, tc.sharedHC)
