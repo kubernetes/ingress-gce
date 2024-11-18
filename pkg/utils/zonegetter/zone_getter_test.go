@@ -68,7 +68,7 @@ func TestListZones(t *testing.T) {
 					t.Errorf("For test case %q with onlyIncludeDefaultSubnetNodes = %v, got %d zones, want %d zones", tc.desc, enableMultiSubnetCluster, len(zones), tc.expectLen)
 				}
 				for _, zone := range zones {
-					if zone == "" {
+					if zone == EmptyZone {
 						t.Errorf("For test case %q with onlyIncludeDefaultSubnetNodes = %v, got an empty zone,", tc.desc, enableMultiSubnetCluster)
 					}
 				}
@@ -113,7 +113,7 @@ func TestListZonesMultipleSubnets(t *testing.T) {
 				t.Errorf("For test case %q with multi subnet cluster enabled, got %d zones, want %d zones", tc.desc, len(zones), tc.expectLen)
 			}
 			for _, zone := range zones {
-				if zone == "" {
+				if zone == EmptyZone {
 					t.Errorf("For test case %q with multi subnet cluster enabled, got an empty zone,", tc.desc)
 				}
 			}
@@ -245,7 +245,7 @@ func TestZoneAndSubnetForNode(t *testing.T) {
 			nodeName:       "instance-empty-zone-providerID",
 			expectZone:     "",
 			expectedSubnet: "",
-			expectErr:      ErrSplitProviderID,
+			expectErr:      nil,
 		},
 	}
 	for _, tc := range testCases {
@@ -374,8 +374,8 @@ func TestGetZone(t *testing.T) {
 					ProviderID: "gce://foo-project//bar-node",
 				},
 			},
-			expectZone: "",
-			expectErr:  ErrSplitProviderID,
+			expectZone: EmptyZone,
+			expectErr:  nil,
 		},
 	} {
 		zone, err := getZone(&tc.node)
