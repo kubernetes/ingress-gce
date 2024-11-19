@@ -189,7 +189,7 @@ func getSubsetPerZone(nodesPerZone map[string][]*nodeWithSubnet, totalLimit int,
 
 	defaultSubnet, err := utils.KeyName(networkInfo.SubnetworkURL)
 	if err != nil {
-		logger.Error(err, "Errored getting default subnet from NetworkInfo")
+		logger.Error(err, "Errored getting default subnet from NetworkInfo when calculating L4 endpoints")
 		return nil, err
 	}
 

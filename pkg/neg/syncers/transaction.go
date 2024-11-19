@@ -267,7 +267,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 
 	defaultSubnet, err := utils.KeyName(s.networkInfo.SubnetworkURL)
 	if err != nil {
-		s.logger.Error(err, "Errored getting default subnet from NetworkInfo")
+		s.logger.Error(err, "Errored getting default subnet from NetworkInfo when retrieving existing endpoints")
 		return err
 	}
 	subnetToNegMapping := map[string]string{defaultSubnet: s.NegSyncerKey.NegName}
@@ -460,7 +460,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 	// Get default subnet from syncer's networkInfo.
 	defaultSubnet, err := utils.KeyName(s.networkInfo.SubnetworkURL)
 	if err != nil {
-		s.logger.Error(err, "Errored getting default subnet from NetworkInfo")
+		s.logger.Error(err, "Errored getting default subnet from NetworkInfo when ensuring NEGs")
 		return err
 	}
 
