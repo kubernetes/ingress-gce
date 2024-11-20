@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	nodetopologyv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/googleapi"
@@ -513,7 +514,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 	}
 
 	if updateNEGStatus {
-		s.updateInitStatus(negObjRefs, errList)
+		s.updateInitStatus(negObjRefs, subnetConfigs, errList)
 	}
 
 	s.syncMetricsCollector.UpdateSyncerNegCount(s.NegSyncerKey, negsByLocation)
@@ -835,7 +836,7 @@ func (s *transactionSyncer) logEndpoints(endpointMap map[negtypes.EndpointGroupI
 // Before patching the NEG CR, it also includes NEG refs for NEGs are no longer
 // needed and change status as INACTIVE.
 // If neg client is nil, will return immediately.
-func (s *transactionSyncer) updateInitStatus(negObjRefs []negv1beta1.NegObjectReference, errList []error) {
+func (s *transactionSyncer) updateInitStatus(negObjRefs []negv1beta1.NegObjectReference, subnetConfigs []nodetopologyv1.SubnetConfig, errList []error) {
 	if s.svcNegClient == nil {
 		return
 	}
@@ -849,8 +850,8 @@ func (s *transactionSyncer) updateInitStatus(negObjRefs []negv1beta1.NegObjectRe
 
 	neg := origNeg.DeepCopy()
 	if flags.F.EnableMultiSubnetClusterPhase1 {
-		inactiveNegObjRefs := getInactiveNegRefs(origNeg.Status.NetworkEndpointGroups, negObjRefs, s.logger)
-		negObjRefs = append(negObjRefs, inactiveNegObjRefs...)
+		additionalNegObjRefs := getInactiveAndTBDNegRefs(origNeg.Status.NetworkEndpointGroups, negObjRefs, subnetConfigs, s.logger)
+		negObjRefs = append(negObjRefs, additionalNegObjRefs...)
 	}
 	neg.Status.NetworkEndpointGroups = negObjRefs
 
@@ -998,9 +999,11 @@ func ensureCondition(neg *negv1beta1.ServiceNetworkEndpointGroup, expectedCondit
 	return expectedCondition
 }
 
-// getInactiveNegRefs creates NEG references for NEGs in Inactive State.
-// Inactive NEG are NEGs that are no longer needed.
-func getInactiveNegRefs(oldNegRefs []negv1beta1.NegObjectReference, currentNegRefs []negv1beta1.NegObjectReference, logger klog.Logger) []negv1beta1.NegObjectReference {
+// getInactiveAndTBDNegRefs creates NEG references for NEGs in Inactive and
+// to-be-deleted State.
+// Inactive NEGs are NEGs that are no longer needed, while to-be-deleted
+// NEGs are NEGs in a subnet that no longer in the cluster.
+func getInactiveAndTBDNegRefs(oldNegRefs []negv1beta1.NegObjectReference, currentNegRefs []negv1beta1.NegObjectReference, subnetConfigs []nodetopologyv1.SubnetConfig, logger klog.Logger) []negv1beta1.NegObjectReference {
 	activeNegs := make(map[negtypes.NegInfo]struct{})
 	for _, negRef := range currentNegRefs {
 		negInfo, err := negtypes.NegInfoFromNegRef(negRef)
@@ -1011,11 +1014,29 @@ func getInactiveNegRefs(oldNegRefs []negv1beta1.NegObjectReference, currentNegRe
 		activeNegs[negInfo] = struct{}{}
 	}
 
-	var inactiveNegRefs []negv1beta1.NegObjectReference
+	clusterSubnets := make(map[string]struct{})
+	for _, subnetConfig := range subnetConfigs {
+		clusterSubnets[subnetConfig.Name] = struct{}{}
+	}
+
+	var updatedNegRefs []negv1beta1.NegObjectReference
 	for _, origNegRef := range oldNegRefs {
 		negInfo, err := negtypes.NegInfoFromNegRef(origNegRef)
 		if err != nil {
-			logger.Error(err, "Failed to extract name and zone information of a neg from the previous snapshot, skipping validating if it is an Inactive NEG", "negId", origNegRef.Id, "negSelfLink", origNegRef.SelfLink)
+			logger.Error(err, "Failed to extract name and zone information of a neg from the previous snapshot, skipping validating if it is an Inactive or to-be-deleted NEG", "negId", origNegRef.Id, "negSelfLink", origNegRef.SelfLink)
+			continue
+		}
+
+		resourceID, err := cloud.ParseResourceURL(origNegRef.SubnetURL)
+		if err != nil {
+			logger.Error(err, "Failed to extract subnet information from the previous snapshot, skipping validating if it is an Inactive or to-be-deleted NEG", "negId", origNegRef.Id, "negSelfLink", origNegRef.SelfLink)
+			continue
+		}
+		negSubnet := resourceID.Key.Name
+		if _, exists := clusterSubnets[negSubnet]; !exists {
+			toBeDeletedNegRef := origNegRef.DeepCopy()
+			toBeDeletedNegRef.State = negv1beta1.ToBeDeletedState
+			updatedNegRefs = append(updatedNegRefs, *toBeDeletedNegRef)
 			continue
 		}
 
@@ -1027,10 +1048,10 @@ func getInactiveNegRefs(oldNegRefs []negv1beta1.NegObjectReference, currentNegRe
 		if _, exists := activeNegs[negInfo]; !exists {
 			inactiveNegRef := origNegRef.DeepCopy()
 			inactiveNegRef.State = negv1beta1.InactiveState
-			inactiveNegRefs = append(inactiveNegRefs, *inactiveNegRef)
+			updatedNegRefs = append(updatedNegRefs, *inactiveNegRef)
 		}
 	}
-	return inactiveNegRefs
+	return updatedNegRefs
 }
 
 // getSyncedCondition returns the expected synced condition based on given error
