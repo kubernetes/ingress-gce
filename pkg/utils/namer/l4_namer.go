@@ -14,12 +14,13 @@ import (
 // value is 63 - 24 = 39
 // for forwarding rule, 4 more chars need to be subtracted.
 const (
-	maximumL4CombinedLength = 39
-	sharedHcSuffix          = "l4-shared-hc"
-	firewallHcSuffix        = "-fw"
-	ipv6Suffix              = "ipv6"
-	sharedFirewallHcSuffix  = sharedHcSuffix + firewallHcSuffix
-	maxResourceNameLength   = 63
+	maximumL4CombinedLength     = 39
+	sharedHcSuffix              = "l4-shared-hc"
+	firewallHcSuffix            = "-fw"
+	ipv6Suffix                  = "ipv6"
+	sharedFirewallHcSuffix      = sharedHcSuffix + firewallHcSuffix
+	maxResourceNameLength       = 63
+	l3ProtocolWithoutUnderscore = "l3"
 )
 
 // L4Namer implements naming scheme for L4 LoadBalancer resources.
@@ -107,6 +108,11 @@ func (namer *L4Namer) L4IPv6Firewall(namespace, name string) string {
 //
 // Output name is at most 63 characters.
 func (namer *L4Namer) L4ForwardingRule(namespace, name, protocol string) string {
+	protocol = strings.ToLower(protocol)
+	if protocol == "l3_default" {
+		protocol = l3ProtocolWithoutUnderscore
+	}
+
 	// add 1 for hyphen
 	protoLen := len(protocol) + 1
 	return strings.Join([]string{
