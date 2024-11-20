@@ -81,7 +81,7 @@ type LoadBalancerController struct {
 	l7Pool       loadbalancers.LoadBalancerPool
 
 	// syncer implementation for backends
-	backendSyncer backends.Syncer
+	backendSyncer *backends.Syncer
 	// backendLock locks the SyncBackend function to avoid conflicts between
 	// multiple ingress workers.
 	backendLock sync.Mutex
@@ -136,7 +136,7 @@ func NewLoadBalancerController(
 		hasSynced:                      ctx.HasSynced,
 		instancePool:                   ctx.InstancePool,
 		l7Pool:                         loadbalancers.NewLoadBalancerPool(ctx.Cloud, ctx.ClusterNamer, ctx, namer.NewFrontendNamerFactory(ctx.ClusterNamer, ctx.KubeSystemUID, logger), logger),
-		backendSyncer:                  backends.NewBackendSyncer(backendPool, healthChecker, ctx.Cloud),
+		backendSyncer:                  backends.NewBackendSyncer(backendPool, healthChecker, ctx.Cloud, ctx.Translator),
 		negLinker:                      backends.NewNEGLinker(backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer(), logger),
 		igLinker:                       backends.NewInstanceGroupLinker(ctx.InstancePool, backendPool, logger),
 		metrics:                        ctx.ControllerMetrics,
@@ -147,7 +147,6 @@ func NewLoadBalancerController(
 
 	lbc.ingSyncer = ingsync.NewIngressSyncer(&lbc, logger)
 	lbc.ingQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("ingress", "ingresses", flags.F.NumIngressWorkers, lbc.sync, logger)
-	lbc.backendSyncer.Init(lbc.Translator)
 
 	// Ingress event handlers.
 	ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -280,7 +279,6 @@ func NewLoadBalancerController(
 				feConfig := obj.(*frontendconfigv1beta1.FrontendConfig)
 				ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesFrontendConfig(feConfig).AsList()
 				lbc.ingQueue.Enqueue(convert(ings)...)
-
 			},
 			UpdateFunc: func(old, cur interface{}) {
 				if !reflect.DeepEqual(old, cur) {

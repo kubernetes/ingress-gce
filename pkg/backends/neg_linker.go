@@ -32,7 +32,7 @@ import (
 
 // negLinker handles linking backends to NEG's.
 type negLinker struct {
-	backendPool                    Pool
+	backendPool                    *Pool
 	negGetter                      NEGGetter
 	cloud                          *gce.Cloud
 	svcNegLister                   cache.Indexer
@@ -45,7 +45,7 @@ type negLinker struct {
 var _ Linker = (*negLinker)(nil)
 
 func NewNEGLinker(
-	backendPool Pool,
+	backendPool *Pool,
 	negGetter NEGGetter,
 	cloud *gce.Cloud,
 	svcNegLister cache.Indexer,

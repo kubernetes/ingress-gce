@@ -49,7 +49,7 @@ func linkerTestClusterValues() gce.TestClusterValues {
 	}
 }
 
-func newTestRegionalIgLinker(fakeGCE *gce.Cloud, backendPool *Backends, l4Namer *namer.L4Namer) *RegionalInstanceGroupLinker {
+func newTestRegionalIgLinker(fakeGCE *gce.Cloud, backendPool *Pool, l4Namer *namer.L4Namer) *RegionalInstanceGroupLinker {
 	fakeIGs := instancegroups.NewEmptyFakeInstanceGroups()
 
 	nodeInformer := zonegetter.FakeNodeInformer()
@@ -233,7 +233,7 @@ func TestRegionalUpdateLinkWithRemovedBackends(t *testing.T) {
 	}
 }
 
-func createBackendService(t *testing.T, sp utils.ServicePort, backendPool *Backends) {
+func createBackendService(t *testing.T, sp utils.ServicePort, backendPool *Pool) {
 	t.Helper()
 	backendParams := L4BackendServiceParams{
 		Name:                     sp.BackendName(),

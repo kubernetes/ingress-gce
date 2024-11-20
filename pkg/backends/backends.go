@@ -49,21 +49,18 @@ const (
 	LocalityLBPolicyMaglev LocalityLBPolicyType = "MAGLEV"
 )
 
-// Backends handles CRUD operations for backends.
-type Backends struct {
+// Pool handles CRUD operations on a pool of GCE Backend Services.
+type Pool struct {
 	cloud                       *gce.Cloud
 	namer                       namer.BackendNamer
 	useConnectionTrackingPolicy bool
 }
 
-// Backends is a Pool.
-var _ Pool = (*Backends)(nil)
-
 // NewPool returns a new backend pool.
 // - cloud: implements BackendServices
 // - namer: produces names for backends.
-func NewPool(cloud *gce.Cloud, namer namer.BackendNamer) *Backends {
-	return &Backends{
+func NewPool(cloud *gce.Cloud, namer namer.BackendNamer) *Pool {
+	return &Pool{
 		cloud: cloud,
 		namer: namer,
 	}
@@ -74,8 +71,8 @@ func NewPool(cloud *gce.Cloud, namer namer.BackendNamer) *Backends {
 // - cloud: implements BackendServices
 // - namer: produces names for backends.
 // - useConnectionTrackingPolicy: specifies the need in Connection Tracking Policy configuration
-func NewPoolWithConnectionTrackingPolicy(cloud *gce.Cloud, namer namer.BackendNamer, useConnectionTrackingPolicy bool) *Backends {
-	return &Backends{
+func NewPoolWithConnectionTrackingPolicy(cloud *gce.Cloud, namer namer.BackendNamer, useConnectionTrackingPolicy bool) *Pool {
+	return &Pool{
 		cloud:                       cloud,
 		namer:                       namer,
 		useConnectionTrackingPolicy: useConnectionTrackingPolicy,
@@ -107,11 +104,11 @@ func ensureDescription(be *composite.BackendService, sp *utils.ServicePort) (nee
 	return true
 }
 
-// Create implements Pool.
-func (b *Backends) Create(sp utils.ServicePort, hcLink string, beLogger klog.Logger) (*composite.BackendService, error) {
+// Create a composite BackendService and returns it.
+func (p *Pool) Create(sp utils.ServicePort, hcLink string, beLogger klog.Logger) (*composite.BackendService, error) {
 	name := sp.BackendName()
 	namedPort := &compute.NamedPort{
-		Name: b.namer.NamedPort(sp.NodePort),
+		Name: p.namer.NamedPort(sp.NodePort),
 		Port: sp.NodePort,
 	}
 
@@ -140,22 +137,22 @@ func (b *Backends) Create(sp utils.ServicePort, hcLink string, beLogger klog.Log
 
 	ensureDescription(be, &sp)
 	scope := features.ScopeFromServicePort(&sp)
-	key, err := composite.CreateKey(b.cloud, name, scope)
+	key, err := composite.CreateKey(p.cloud, name, scope)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := composite.CreateBackendService(b.cloud, key, be, beLogger); err != nil {
+	if err := composite.CreateBackendService(p.cloud, key, be, beLogger); err != nil {
 		return nil, err
 	}
 	// Note: We need to perform a GCE call to re-fetch the object we just created
 	// so that the "Fingerprint" field is filled in. This is needed to update the
 	// object without error.
-	return b.Get(name, version, scope, beLogger)
+	return p.Get(name, version, scope, beLogger)
 }
 
-// Update implements Pool.
-func (b *Backends) Update(be *composite.BackendService, beLogger klog.Logger) error {
+// Update a BackendService given the composite type.
+func (p *Pool) Update(be *composite.BackendService, beLogger klog.Logger) error {
 	// Ensure the backend service has the proper version before updating.
 	be.Version = features.VersionFromDescription(be.Description)
 	scope, err := composite.ScopeFromSelfLink(be.SelfLink)
@@ -163,23 +160,23 @@ func (b *Backends) Update(be *composite.BackendService, beLogger klog.Logger) er
 		return err
 	}
 
-	key, err := composite.CreateKey(b.cloud, be.Name, scope)
+	key, err := composite.CreateKey(p.cloud, be.Name, scope)
 	if err != nil {
 		return err
 	}
-	if err := composite.UpdateBackendService(b.cloud, key, be, beLogger); err != nil {
+	if err := composite.UpdateBackendService(p.cloud, key, be, beLogger); err != nil {
 		return err
 	}
 	return nil
 }
 
-// Get implements Pool.
-func (b *Backends) Get(name string, version meta.Version, scope meta.KeyType, beLogger klog.Logger) (*composite.BackendService, error) {
-	key, err := composite.CreateKey(b.cloud, name, scope)
+// Get a composite BackendService given a required version.
+func (p *Pool) Get(name string, version meta.Version, scope meta.KeyType, beLogger klog.Logger) (*composite.BackendService, error) {
+	key, err := composite.CreateKey(p.cloud, name, scope)
 	if err != nil {
 		return nil, err
 	}
-	be, err := composite.GetBackendService(b.cloud, key, version, beLogger)
+	be, err := composite.GetBackendService(p.cloud, key, version, beLogger)
 	if err != nil {
 		return nil, err
 	}
@@ -189,7 +186,7 @@ func (b *Backends) Get(name string, version meta.Version, scope meta.KeyType, be
 	versionRequired := features.VersionFromDescription(be.Description)
 
 	if features.IsLowerVersion(versionRequired, version) {
-		be, err = composite.GetBackendService(b.cloud, key, versionRequired, beLogger)
+		be, err = composite.GetBackendService(p.cloud, key, versionRequired, beLogger)
 		if err != nil {
 			return nil, err
 		}
@@ -197,16 +194,16 @@ func (b *Backends) Get(name string, version meta.Version, scope meta.KeyType, be
 	return be, nil
 }
 
-// Delete implements Pool.
-func (b *Backends) Delete(name string, version meta.Version, scope meta.KeyType, beLogger klog.Logger) error {
+// Delete a BackendService given its name.
+func (p *Pool) Delete(name string, version meta.Version, scope meta.KeyType, beLogger klog.Logger) error {
 	beLogger.Info("Deleting backend service")
 
-	key, err := composite.CreateKey(b.cloud, name, scope)
+	key, err := composite.CreateKey(p.cloud, name, scope)
 	if err != nil {
 		return err
 	}
 	beLogger = beLogger.WithValues("backendKey", key)
-	err = composite.DeleteBackendService(b.cloud, key, version, beLogger)
+	err = composite.DeleteBackendService(p.cloud, key, version, beLogger)
 	if err != nil {
 		if utils.IsHTTPErrorCode(err, http.StatusNotFound) || utils.IsInUsedByError(err) {
 			// key also contains region information.
@@ -220,9 +217,10 @@ func (b *Backends) Delete(name string, version meta.Version, scope meta.KeyType,
 	return nil
 }
 
-// Health implements Pool.
-func (b *Backends) Health(name string, version meta.Version, scope meta.KeyType, beLogger klog.Logger) (string, error) {
-	be, err := b.Get(name, version, scope, beLogger)
+// Health checks the health of a BackendService given its name.
+// Returns ("HEALTHY", nil) if healthy, otherwise ("Unknown", err)
+func (p *Pool) Health(name string, version meta.Version, scope meta.KeyType, beLogger klog.Logger) (string, error) {
+	be, err := p.Get(name, version, scope, beLogger)
 	if err != nil {
 		return "Unknown", fmt.Errorf("error getting backend service %s: %w", name, err)
 	}
@@ -237,9 +235,9 @@ func (b *Backends) Health(name string, version meta.Version, scope meta.KeyType,
 		var hs *compute.BackendServiceGroupHealth
 		switch scope {
 		case meta.Global:
-			hs, err = b.cloud.GetGlobalBackendServiceHealth(name, backend.Group)
+			hs, err = p.cloud.GetGlobalBackendServiceHealth(name, backend.Group)
 		case meta.Regional:
-			hs, err = b.cloud.GetRegionalBackendServiceHealth(name, b.cloud.Region(), backend.Group)
+			hs, err = p.cloud.GetRegionalBackendServiceHealth(name, p.cloud.Region(), backend.Group)
 		default:
 			return "Unknown", fmt.Errorf("invalid scope for Health(): %s", scope)
 		}
@@ -263,14 +261,14 @@ func (b *Backends) Health(name string, version meta.Version, scope meta.KeyType,
 	return ret, nil
 }
 
-// List lists all backends managed by this controller.
-func (b *Backends) List(key *meta.Key, version meta.Version, beLogger klog.Logger) ([]*composite.BackendService, error) {
+// List BackendService names that are managed by this pool.
+func (p *Pool) List(key *meta.Key, version meta.Version, beLogger klog.Logger) ([]*composite.BackendService, error) {
 	// TODO: for consistency with the rest of this sub-package this method
 	// should return a list of backend ports.
 	var backends []*composite.BackendService
 	var err error
 
-	backends, err = composite.ListBackendServices(b.cloud, key, version, beLogger)
+	backends, err = composite.ListBackendServices(p.cloud, key, version, beLogger)
 	if err != nil {
 		return nil, err
 	}
@@ -278,7 +276,7 @@ func (b *Backends) List(key *meta.Key, version meta.Version, beLogger klog.Logge
 	var clusterBackends []*composite.BackendService
 
 	for _, bs := range backends {
-		if b.namer.NameBelongsToCluster(bs.Name) {
+		if p.namer.NameBelongsToCluster(bs.Name) {
 			scope, err := composite.ScopeFromSelfLink(bs.SelfLink)
 			if err != nil {
 				return nil, err
@@ -291,8 +289,8 @@ func (b *Backends) List(key *meta.Key, version meta.Version, beLogger klog.Logge
 	return clusterBackends, nil
 }
 
-// AddSignedUrlKey adds a SignedUrlKey to a BackendService
-func (b *Backends) AddSignedUrlKey(be *composite.BackendService, signedurlkey *composite.SignedUrlKey, urlKeyLogger klog.Logger) error {
+// AddSignedURLKey adds a SignedUrlKey to a BackendService
+func (p *Pool) AddSignedURLKey(be *composite.BackendService, signedurlkey *composite.SignedUrlKey, urlKeyLogger klog.Logger) error {
 	urlKeyLogger.Info("Adding SignedUrlKey")
 
 	scope, err := composite.ScopeFromSelfLink(be.SelfLink)
@@ -300,18 +298,18 @@ func (b *Backends) AddSignedUrlKey(be *composite.BackendService, signedurlkey *c
 		return err
 	}
 
-	key, err := composite.CreateKey(b.cloud, be.Name, scope)
+	key, err := composite.CreateKey(p.cloud, be.Name, scope)
 	if err != nil {
 		return err
 	}
-	if err := composite.AddSignedUrlKey(b.cloud, key, be, signedurlkey, urlKeyLogger); err != nil {
+	if err := composite.AddSignedUrlKey(p.cloud, key, be, signedurlkey, urlKeyLogger); err != nil {
 		return err
 	}
 	return nil
 }
 
-// DeleteSignedUrlKey deletes a SignedUrlKey from BackendService
-func (b *Backends) DeleteSignedUrlKey(be *composite.BackendService, keyName string, urlKeyLogger klog.Logger) error {
+// DeleteSignedURLKey deletes a SignedUrlKey from BackendService
+func (p *Pool) DeleteSignedURLKey(be *composite.BackendService, keyName string, urlKeyLogger klog.Logger) error {
 	urlKeyLogger.Info("Deleting SignedUrlKey")
 
 	scope, err := composite.ScopeFromSelfLink(be.SelfLink)
@@ -319,18 +317,18 @@ func (b *Backends) DeleteSignedUrlKey(be *composite.BackendService, keyName stri
 		return err
 	}
 
-	key, err := composite.CreateKey(b.cloud, be.Name, scope)
+	key, err := composite.CreateKey(p.cloud, be.Name, scope)
 	if err != nil {
 		return err
 	}
-	if err := composite.DeleteSignedUrlKey(b.cloud, key, be, keyName, urlKeyLogger); err != nil {
+	if err := composite.DeleteSignedUrlKey(p.cloud, key, be, keyName, urlKeyLogger); err != nil {
 		return err
 	}
 	return nil
 }
 
 // EnsureL4BackendService creates or updates the backend service with the given name.
-func (b *Backends) EnsureL4BackendService(params L4BackendServiceParams, beLogger klog.Logger) (*composite.BackendService, utils.ResourceSyncStatus, error) {
+func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger klog.Logger) (*composite.BackendService, utils.ResourceSyncStatus, error) {
 	start := time.Now()
 	beLogger = beLogger.WithValues("L4BackendServiceParams", params)
 	beLogger.V(2).Info("EnsureL4BackendService started")
@@ -340,11 +338,11 @@ func (b *Backends) EnsureL4BackendService(params L4BackendServiceParams, beLogge
 
 	beLogger.V(2).Info("EnsureL4BackendService: checking existing backend service")
 
-	key, err := composite.CreateKey(b.cloud, params.Name, meta.Regional)
+	key, err := composite.CreateKey(p.cloud, params.Name, meta.Regional)
 	if err != nil {
 		return nil, utils.ResourceResync, err
 	}
-	currentBS, err := composite.GetBackendService(b.cloud, key, meta.VersionGA, beLogger)
+	currentBS, err := composite.GetBackendService(p.cloud, key, meta.VersionGA, beLogger)
 	if err != nil && !utils.IsNotFoundError(err) {
 		return nil, utils.ResourceResync, err
 	}
@@ -364,7 +362,7 @@ func (b *Backends) EnsureL4BackendService(params L4BackendServiceParams, beLogge
 	}
 
 	// We need this configuration only for Strong Session Affinity feature
-	if b.useConnectionTrackingPolicy {
+	if p.useConnectionTrackingPolicy {
 		beLogger.V(2).Info(fmt.Sprintf("EnsureL4BackendService: using connection tracking policy: %+v", params.ConnectionTrackingPolicy))
 		expectedBS.ConnectionTrackingPolicy = params.ConnectionTrackingPolicy
 	}
@@ -382,7 +380,7 @@ func (b *Backends) EnsureL4BackendService(params L4BackendServiceParams, beLogge
 	// Create backend service if none was found
 	if currentBS == nil {
 		beLogger.V(2).Info("EnsureL4BackendService: creating backend service")
-		err := composite.CreateBackendService(b.cloud, key, expectedBS, beLogger)
+		err := composite.CreateBackendService(p.cloud, key, expectedBS, beLogger)
 		if err != nil {
 			return nil, utils.ResourceResync, err
 		}
@@ -390,7 +388,7 @@ func (b *Backends) EnsureL4BackendService(params L4BackendServiceParams, beLogge
 		// We need to perform a GCE call to re-fetch the object we just created
 		// so that the "Fingerprint" field is filled in. This is needed to update the
 		// object without error. The lookup is also needed to populate the selfLink.
-		createdBS, err := composite.GetBackendService(b.cloud, key, meta.VersionGA, beLogger)
+		createdBS, err := composite.GetBackendService(p.cloud, key, meta.VersionGA, beLogger)
 		return createdBS, utils.ResourceUpdate, err
 	} else {
 		// TODO(FelipeYepez) remove this check once LocalityLBPolicyMaglev does not require allow lisiting
@@ -402,7 +400,7 @@ func (b *Backends) EnsureL4BackendService(params L4BackendServiceParams, beLogge
 		}
 	}
 
-	if backendSvcEqual(expectedBS, currentBS, b.useConnectionTrackingPolicy) {
+	if backendSvcEqual(expectedBS, currentBS, p.useConnectionTrackingPolicy) {
 		beLogger.V(2).Info("EnsureL4BackendService: backend service did not change, skipping update")
 		return currentBS, utils.ResourceResync, nil
 	}
@@ -415,12 +413,12 @@ func (b *Backends) EnsureL4BackendService(params L4BackendServiceParams, beLogge
 	expectedBS.Fingerprint = currentBS.Fingerprint
 	// Copy backends to avoid detaching them during update. This could be replaced with a patch call in the future.
 	expectedBS.Backends = currentBS.Backends
-	if err := composite.UpdateBackendService(b.cloud, key, expectedBS, beLogger); err != nil {
+	if err := composite.UpdateBackendService(p.cloud, key, expectedBS, beLogger); err != nil {
 		return nil, utils.ResourceUpdate, err
 	}
 	beLogger.V(2).Info("EnsureL4BackendService: updated backend service successfully")
 
-	updatedBS, err := composite.GetBackendService(b.cloud, key, meta.VersionGA, beLogger)
+	updatedBS, err := composite.GetBackendService(p.cloud, key, meta.VersionGA, beLogger)
 	return updatedBS, utils.ResourceUpdate, err
 }
 

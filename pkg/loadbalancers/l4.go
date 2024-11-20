@@ -56,7 +56,7 @@ var noConnectionTrackingPolicy *composite.BackendServiceConnectionTrackingPolicy
 // L4 handles the resource creation/deletion/update for a given L4 ILB service.
 type L4 struct {
 	cloud       *gce.Cloud
-	backendPool *backends.Backends
+	backendPool *backends.Pool
 	scope       meta.KeyType
 	namer       namer.L4ResourcesNamer
 	// recorder is used to generate k8s Events.
