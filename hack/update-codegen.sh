@@ -108,6 +108,20 @@ ${OPENAPI_PKG}/openapi-gen \
   --output-package k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1 \
   --go-header-file ${SCRIPT_ROOT}/boilerplate.go.txt
 
+echo "Performing code generation for ClusterSlice CRD"
+${CODEGEN_PKG}/generate-groups.sh \
+  "deepcopy,client,informer,lister" \
+  k8s.io/ingress-gce/pkg/clusterslice/client k8s.io/ingress-gce/pkg/apis \
+  "clusterslice:v1" \
+  --go-header-file ${SCRIPT_ROOT}/boilerplate.go.txt
+
+echo "Generating openapi for ClusterSlice v1"
+${OPENAPI_PKG}/openapi-gen \
+  --output-file-base zz_generated.openapi \
+  --input-dirs k8s.io/ingress-gce/pkg/apis/clusterslice/v1 \
+  --output-package k8s.io/ingress-gce/pkg/apis/clusterslice/v1 \
+  --go-header-file ${SCRIPT_ROOT}/boilerplate.go.txt
+
 echo "Performing code generation for ServiceAttachment CRD"
 ${CODEGEN_PKG}/generate-groups.sh \
   "deepcopy,client,informer,lister" \
