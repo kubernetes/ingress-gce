@@ -577,6 +577,13 @@ func (manager *syncerManager) garbageCollectNEGWithCRD() error {
 				// neither the neg nor CR will not be deleted. In the situation a neg config is not in the svcPortMap,
 				// but the CR does not have a deletion timestamp, both CR and neg will be deleted.
 				if _, ok := deletionCandidates[portInfo.NegName]; ok {
+					// When the service still exists, we won't do GC unless it contains
+					// to-be-deleted NEGs.
+					svcNegCR := deletionCandidates[portInfo.NegName].svcNegCR
+					if flags.F.EnableMultiSubnetClusterPhase1 && containsTBDNeg(svcNegCR) {
+						deletionCandidates[portInfo.NegName] = negDeletionCandidate{svcNegCR: svcNegCR, isPartialDelete: true}
+						continue
+					}
 					delete(deletionCandidates, portInfo.NegName)
 				}
 			}
@@ -624,6 +631,16 @@ func (manager *syncerManager) garbageCollectNEGWithCRD() error {
 	wg.Wait()
 
 	return utilerrors.NewAggregate(errList)
+}
+
+// containsTBDNeg returns if the given NEG CR contains NEG refs in
+// to-be-deleted state.
+func containsTBDNeg(svcNegCR *negv1beta1.ServiceNetworkEndpointGroup) bool {
+	contains := false
+	for _, negRef := range svcNegCR.Status.NetworkEndpointGroups {
+		contains = contains || negRef.State == negv1beta1.ToBeDeletedState
+	}
+	return contains
 }
 
 // processNEGDeletionCandidate attempts to delete `svcNegCR` and all NEGs
