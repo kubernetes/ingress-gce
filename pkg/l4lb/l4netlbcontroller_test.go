@@ -56,6 +56,7 @@ import (
 	"k8s.io/ingress-gce/pkg/metrics"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
 
+	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -876,6 +877,80 @@ func TestProcessNEGServiceDeletion(t *testing.T) {
 		t.Errorf("RBS Service annotations have NOT been deleted. Error: %v", err)
 	}
 	deleteNetLBService(lc, svc)
+}
+
+func TestServiceNeedsDeletionChecks(t *testing.T) {
+	testCases := []struct {
+		desc                    string
+		deletionTimestamp       *metav1.Time
+		finalizers              []string
+		removeRBSForwardingRule bool
+		needsDeletion           bool
+	}{
+		{
+			desc:                    "Without deletion timestamp",
+			deletionTimestamp:       nil,
+			finalizers:              []string{common.NetLBFinalizerV2},
+			removeRBSForwardingRule: false,
+			needsDeletion:           false,
+		},
+		{
+			desc:                    "Without finalizers and forwarding rules",
+			deletionTimestamp:       &metav1.Time{},
+			finalizers:              []string{},
+			removeRBSForwardingRule: true,
+			needsDeletion:           false,
+		},
+		{
+			desc:                    "FinalizerV2 without forwarding rule",
+			deletionTimestamp:       &metav1.Time{},
+			finalizers:              []string{common.NetLBFinalizerV2},
+			removeRBSForwardingRule: true,
+			needsDeletion:           true,
+		},
+		{
+			desc:                    "FinalizerV3 without forwarding rule",
+			deletionTimestamp:       &metav1.Time{},
+			finalizers:              []string{common.NetLBFinalizerV3},
+			removeRBSForwardingRule: true,
+			needsDeletion:           true,
+		},
+		{
+			desc:                    "Forwarding rule without finalizers",
+			deletionTimestamp:       &metav1.Time{},
+			finalizers:              []string{},
+			removeRBSForwardingRule: false,
+			needsDeletion:           true,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			lc := newL4NetLBServiceController()
+			svc := createAndSyncNetLBSvcWithInstanceGroups(t, lc)
+			frName := utils.LegacyForwardingRuleName(svc)
+
+			svc.DeletionTimestamp = tc.deletionTimestamp
+			svc.ObjectMeta.Finalizers = tc.finalizers
+
+			if tc.removeRBSForwardingRule {
+				lc.forwardingRules.(*forwardingrules.ForwardingRules).Delete(frName)
+				delete(svc.Annotations, annotations.TCPForwardingRuleKey)
+			}
+
+			if tc.needsDeletion && !lc.needsDeletion(svc, klog.TODO()) {
+				t.Errorf("Service should be marked for deletion")
+			}
+
+			if !tc.needsDeletion && lc.needsDeletion(svc, klog.TODO()) {
+				t.Errorf("Service should not be marked for deletion")
+			}
+		})
+	}
 }
 
 func TestProcessRBSServiceTypeTransition(t *testing.T) {
