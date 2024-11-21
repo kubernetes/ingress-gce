@@ -90,7 +90,8 @@ type L4NetLBController struct {
 func NewL4NetLBController(
 	ctx *context.ControllerContext,
 	stopCh <-chan struct{},
-	logger klog.Logger) *L4NetLBController {
+	logger klog.Logger,
+) *L4NetLBController {
 	logger = logger.WithName("L4NetLBController")
 	if ctx.NumL4NetLBWorkers <= 0 {
 		logger.Info("External L4 worker count has not been set, setting to 1")
@@ -448,6 +449,7 @@ func (lc *L4NetLBController) shutdown() {
 	lc.logger.Info("Shutting down l4NetLBController")
 	lc.svcQueue.Shutdown()
 }
+
 func (lc *L4NetLBController) syncWrapper(key string) (err error) {
 	syncTrackingId := rand.Int31()
 	svcLogger := lc.logger.WithValues("serviceKey", key, "syncId", syncTrackingId)
@@ -730,6 +732,7 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service,
 		StrongSessionAffinityEnabled:     lc.enableStrongSessionAffinity,
 		NetworkResolver:                  lc.networkResolver,
 		EnableWeightedLB:                 lc.ctx.EnableWeightedL4NetLB,
+		EnableMixedProtocol:              lc.ctx.EnableL4MixedProtocol,
 		DisableNodesFirewallProvisioning: lc.ctx.DisableL4LBFirewall,
 	}
 	l4netLB := loadbalancers.NewL4NetLB(l4NetLBParams, svcLogger)

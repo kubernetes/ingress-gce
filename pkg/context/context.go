@@ -147,6 +147,7 @@ type ControllerContextConfig struct {
 	DisableL4LBFirewall           bool
 	EnableL4NetLBNEGs             bool
 	EnableL4NetLBNEGsDefault      bool
+	EnableL4MixedProtocol         bool
 }
 
 // NewControllerContext returns a new shared set of informers.
@@ -164,7 +165,8 @@ func NewControllerContext(
 	clusterNamer *namer.Namer,
 	kubeSystemUID types.UID,
 	config ControllerContextConfig,
-	logger klog.Logger) *ControllerContext {
+	logger klog.Logger,
+) *ControllerContext {
 	logger = logger.WithName("ControllerContext")
 
 	podInformer := informerv1.NewPodInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
