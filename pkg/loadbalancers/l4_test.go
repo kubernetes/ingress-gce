@@ -1188,9 +1188,23 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 		t.Errorf("Unexpected subnet value %s in ILB ForwardingRule", fwdRule.Subnetwork)
 	}
 
+	subnetNames := []string{
+		"test-subnet",
+		"another-subnet",
+		"even-one-more-subnet",
+	}
+	for _, subnetName := range subnetNames {
+		key := meta.RegionalKey(subnetName, l4.cloud.Region())
+		subnetToCreate := &ga.Subnetwork{}
+		err := l4.cloud.Compute().(*cloud.MockGCE).Subnetworks().Insert(context.TODO(), key, subnetToCreate)
+		if err != nil {
+			t.Fatalf("failed to create subnet %v, error: %v", subnetToCreate, err)
+		}
+	}
+
 	// Change service to include the global access annotation and request static ip
 	requestedIP := "4.5.6.7"
-	svc.Annotations[gce.ServiceAnnotationILBSubnet] = "test-subnet"
+	svc.Annotations[gce.ServiceAnnotationILBSubnet] = subnetNames[0]
 	svc.Spec.LoadBalancerIP = requestedIP
 	result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
 	if err != nil {
@@ -1199,13 +1213,13 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
-	assertILBResourcesWithCustomSubnet(t, l4, nodeNames, result.Annotations, "test-subnet")
+	assertILBResourcesWithCustomSubnet(t, l4, nodeNames, result.Annotations, subnetNames[0])
 	if result.Status.Ingress[0].IP != requestedIP {
 		t.Fatalf("Reserved IP %s not propagated, Got '%s'", requestedIP, result.Status.Ingress[0].IP)
 	}
 
 	// Change to a different subnet
-	svc.Annotations[gce.ServiceAnnotationILBSubnet] = "another-subnet"
+	svc.Annotations[gce.ServiceAnnotationILBSubnet] = subnetNames[1]
 	result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
@@ -1213,13 +1227,13 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
-	assertILBResourcesWithCustomSubnet(t, l4, nodeNames, result.Annotations, "another-subnet")
+	assertILBResourcesWithCustomSubnet(t, l4, nodeNames, result.Annotations, subnetNames[1])
 	if result.Status.Ingress[0].IP != requestedIP {
 		t.Errorf("Reserved IP %s not propagated, Got %s", requestedIP, result.Status.Ingress[0].IP)
 	}
 
 	// Verify new annotation "networking.gke.io/load-balancer-subnet" works and get prioritized.
-	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "even-one-more-subnet"
+	svc.Annotations[annotations.CustomSubnetAnnotationKey] = subnetNames[2]
 	result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
@@ -1227,7 +1241,7 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
-	assertILBResourcesWithCustomSubnet(t, l4, nodeNames, result.Annotations, "even-one-more-subnet")
+	assertILBResourcesWithCustomSubnet(t, l4, nodeNames, result.Annotations, subnetNames[2])
 	if result.Status.Ingress[0].IP != requestedIP {
 		t.Errorf("Reserved IP %s not propagated, Got %s", requestedIP, result.Status.Ingress[0].IP)
 	}
@@ -1310,6 +1324,65 @@ func TestDualStackILBBadCustomSubnet(t *testing.T) {
 			}
 			if !noInternalIPv6InSubnetError.MatchString(result.Error.Error()) {
 				t.Errorf("Expected error to match %v regexp, got %v", noInternalIPv6InSubnetError.String(), result.Error)
+			}
+		})
+	}
+}
+
+func TestInternalLBBadCustomSubnet(t *testing.T) {
+	t.Parallel()
+	nodeNames := []string{"test-node-1"}
+
+	testCases := []struct {
+		desc               string
+		subnetName         string
+		existingSubnetwork bool
+	}{
+		{
+			desc:               "Specifying existing subnetwork should work as intended",
+			subnetName:         "valid",
+			existingSubnetwork: true,
+		},
+		{
+			desc:               "Specifying non-existing subnetwork should return error marked as user one",
+			subnetName:         "invalid",
+			existingSubnetwork: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			svc := test.NewL4ILBService(true, 8080)
+			svc.Annotations[annotations.CustomSubnetAnnotationKey] = tc.subnetName
+			l4 := mustSetupILBTestHandler(t, svc, nodeNames)
+
+			if tc.existingSubnetwork {
+				key := meta.RegionalKey(tc.subnetName, l4.cloud.Region())
+				subnetToCreate := &ga.Subnetwork{}
+				err := l4.cloud.Compute().(*cloud.MockGCE).Subnetworks().Insert(context.TODO(), key, subnetToCreate)
+				if err != nil {
+					t.Fatalf("failed to create subnet %v, error: %v", subnetToCreate, err)
+				}
+			}
+
+			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			if tc.existingSubnetwork {
+				if result.Error != nil {
+					t.Errorf("Unexpected error when existing subnet specified: %v", result.Error)
+				}
+			} else {
+				if result.Error == nil {
+					t.Fatalf("Expected error ensuring internal loadbalancer with non-existing subnet, got: %v", result.Error)
+				}
+				if !utils.IsUserError(result.Error) {
+					t.Errorf("Expected to get user error if non-existing subnet specified for internal loadbalancer, got %v", result.Error)
+				}
+				expectedError := fmt.Sprintf("Subnetwork \"%s\" can't be found for project %s", tc.subnetName, l4.cloud.ProjectID())
+				if result.Error.Error() != expectedError {
+					t.Errorf("Wrong error: \"%s\" expected, got \"%s\"", expectedError, result.Error.Error())
+				}
 			}
 		})
 	}
