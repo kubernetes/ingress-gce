@@ -548,16 +548,21 @@ func (manager *syncerManager) garbageCollectNEG() error {
 	return nil
 }
 
+type negDeletionCandidate struct {
+	svcNegCR        *negv1beta1.ServiceNetworkEndpointGroup
+	isPartialDelete bool
+}
+
 // garbageCollectNEGWithCRD uses the NEG CRs and the svcPortMap to determine which NEGs
 // need to be garbage collected. Neg CRs that do not have a configuration in the svcPortMap will deleted
 // along with all corresponding NEGs in the CR's list of NetworkEndpointGroups. If NEG deletion fails in
 // the cloud, the corresponding Neg CR will not be deleted
 func (manager *syncerManager) garbageCollectNEGWithCRD() error {
-	deletionCandidates := map[string]*negv1beta1.ServiceNetworkEndpointGroup{}
+	deletionCandidates := make(map[string]negDeletionCandidate)
 	negCRs := manager.svcNegLister.List()
 	for _, obj := range negCRs {
 		neg := obj.(*negv1beta1.ServiceNetworkEndpointGroup)
-		deletionCandidates[neg.Name] = neg
+		deletionCandidates[neg.Name] = negDeletionCandidate{svcNegCR: neg, isPartialDelete: false}
 	}
 
 	func() {
@@ -595,7 +600,7 @@ func (manager *syncerManager) garbageCollectNEGWithCRD() error {
 		errList = append(errList, fmt.Errorf("failed to get zones during garbage collection: %w", err))
 	}
 
-	deletionCandidatesChan := make(chan *negv1beta1.ServiceNetworkEndpointGroup, len(deletionCandidates))
+	deletionCandidatesChan := make(chan negDeletionCandidate, len(deletionCandidates))
 	for _, dc := range deletionCandidates {
 		deletionCandidatesChan <- dc
 	}
@@ -605,8 +610,8 @@ func (manager *syncerManager) garbageCollectNEGWithCRD() error {
 	wg.Add(len(deletionCandidates))
 	for i := 0; i < manager.numGCWorkers; i++ {
 		go func() {
-			for svcNegCR := range deletionCandidatesChan {
-				errs := manager.processNEGDeletionCandidate(svcNegCR, zones)
+			for negToDelete := range deletionCandidatesChan {
+				errs := manager.processNEGDeletionCandidate(negToDelete, zones)
 
 				errListMutex.Lock()
 				errList = append(errList, errs...)
@@ -625,7 +630,9 @@ func (manager *syncerManager) garbageCollectNEGWithCRD() error {
 // associated with it. In case when `svcNegCR` does not have ample information
 // about the zones associated with this NEG, it will attempt to delete the NEG
 // from all zones specified through the `zones` slice.
-func (manager *syncerManager) processNEGDeletionCandidate(svcNegCR *negv1beta1.ServiceNetworkEndpointGroup, zones []string) []error {
+func (manager *syncerManager) processNEGDeletionCandidate(negToDelete negDeletionCandidate, zones []string) []error {
+	svcNegCR := negToDelete.svcNegCR
+
 	manager.logger.V(2).Info("Count of NEGs referenced by SvcNegCR", "svcneg", klog.KObj(svcNegCR), "count", len(svcNegCR.Status.NetworkEndpointGroups))
 	var errList []error
 	shouldDeleteNegCR := true
@@ -635,6 +642,11 @@ func (manager *syncerManager) processNEGDeletionCandidate(svcNegCR *negv1beta1.S
 	deletedNegs := make(map[negtypes.NegInfo]struct{})
 
 	for _, negRef := range svcNegCR.Status.NetworkEndpointGroups {
+		if flags.F.EnableMultiSubnetClusterPhase1 {
+			if negToDelete.isPartialDelete && negRef.State != negv1beta1.ToBeDeletedState {
+				continue
+			}
+		}
 		resourceID, err := cloud.ParseResourceURL(negRef.SelfLink)
 		if err != nil {
 			errList = append(errList, fmt.Errorf("failed to parse selflink for neg cr %s/%s: %s", svcNegCR.Namespace, svcNegCR.Name, err))
@@ -648,14 +660,23 @@ func (manager *syncerManager) processNEGDeletionCandidate(svcNegCR *negv1beta1.S
 		shouldDeleteNegCR = shouldDeleteNegCR && negDeleted
 	}
 
+	// If there is no NEG ref in the NEG CR, our best attempt is to get all existing subnets
+	// and delete NEGs in these subnets in a full service deletion.
+	// We will skip in the case of partial deletion. We cannot reconstruct the name of
+	// the NEG that needs to be deleted since that subnet is no longer available in
+	// Node Topology CR.
 	if deleteByZone {
 		manager.logger.V(2).Info("Deletion candidate has 0 NEG reference", "svcneg", klog.KObj(svcNegCR), "svcNegCR", svcNegCR)
-		for _, zone := range zones {
-			negDeleted := manager.deleteNegOrReportErr(svcNegCR.Name, zone, svcNegCR, &errList)
-			if negDeleted {
-				deletedNegs[negtypes.NegInfo{Name: svcNegCR.Name, Zone: zone}] = struct{}{}
+		// When EnableMultiSubnetClusterPhase1=false, we should always process deletion.
+		// Otherwise, we should only process full deletion.
+		if !flags.F.EnableMultiSubnetClusterPhase1 || !negToDelete.isPartialDelete {
+			for _, zone := range zones {
+				negDeleted := manager.deleteNegOrReportErr(svcNegCR.Name, zone, svcNegCR, &errList)
+				if negDeleted {
+					deletedNegs[negtypes.NegInfo{Name: svcNegCR.Name, Zone: zone}] = struct{}{}
+				}
+				shouldDeleteNegCR = shouldDeleteNegCR && negDeleted
 			}
-			shouldDeleteNegCR = shouldDeleteNegCR && negDeleted
 		}
 	}
 	// Since no more NEG deletion will be happening at this point, and NEG
