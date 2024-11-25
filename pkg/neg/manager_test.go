@@ -29,6 +29,7 @@ import (
 	"google.golang.org/api/googleapi"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 
@@ -1315,6 +1316,7 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 			desiredConfig:     true,
 			expectNegGC:       false,
 			expectCrGC:        false,
+			negDesc:           matchingDesc.String(),
 			expectedNegCount:  2,
 		},
 		{desc: "negs don't exist, config not in svcPortMap",
@@ -1415,7 +1417,7 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 
 					if !tc.emptyNegRefList {
 						if !tc.malformedNegSelflink {
-							cr.Status.NetworkEndpointGroups = getNegObjectRefs(t, fakeNegCloud, zones, negName, version)
+							cr.Status.NetworkEndpointGroups = getNegObjectRefs(t, fakeNegCloud, zones, negName, version, negv1beta1.ActiveState)
 						} else {
 							cr.Status.NetworkEndpointGroups = []negv1beta1.NegObjectReference{{SelfLink: ""}}
 						}
@@ -1425,7 +1427,6 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 						t.Fatalf("failed to create neg cr: %v", err)
 					}
 
-					crs := getNegCRs(t, svcNegClient, testServiceNamespace)
 					populateSvcNegCache(t, manager, svcNegClient, testServiceNamespace)
 
 					if tc.desiredConfig {
@@ -1465,7 +1466,7 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 						t.Errorf("failed getting negs from cloud: %s", err)
 					}
 
-					numExistingNegs := checkForNegDeletions(negs, negName)
+					numExistingNegs := len(negs)
 
 					expectNegGC := tc.expectNegGC || (tc.expectGenNamedNegGC && !customName)
 					if tc.negsExist && expectNegGC && numExistingNegs != 0 {
@@ -1475,7 +1476,7 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 						t.Errorf("expected %d negs in the cloud, but found %d", tc.expectedNegCount, numExistingNegs)
 					}
 
-					crs = getNegCRs(t, svcNegClient, testServiceNamespace)
+					crs := getNegCRs(t, svcNegClient, testServiceNamespace)
 					crDeleted := checkForNegCRDeletion(crs, negName)
 
 					if tc.expectCrGC && !crDeleted {
@@ -1754,7 +1755,7 @@ func (s *fakeSyncer) IsStopped() bool      { return s.isStopped }
 func (s *fakeSyncer) IsShuttingDown() bool { return false }
 
 // getNegObjectRefs generates the NegObjectReference list of all negs with the specified negName in the specified zones
-func getNegObjectRefs(t *testing.T, cloud negtypes.NetworkEndpointGroupCloud, zones []string, negName string, version meta.Version) []negv1beta1.NegObjectReference {
+func getNegObjectRefs(t *testing.T, cloud negtypes.NetworkEndpointGroupCloud, zones []string, negName string, version meta.Version, negState negv1beta1.NegState) []negv1beta1.NegObjectReference {
 	var negRefs []negv1beta1.NegObjectReference
 	for _, zone := range zones {
 		neg, err := cloud.GetNetworkEndpointGroup(negName, zone, version, klog.TODO())
@@ -1762,25 +1763,18 @@ func getNegObjectRefs(t *testing.T, cloud negtypes.NetworkEndpointGroupCloud, zo
 			t.Errorf("failed to get neg %s, from zone %s", negName, zone)
 			continue
 		}
-		negRefs = append(negRefs, negv1beta1.NegObjectReference{
+		negRef := negv1beta1.NegObjectReference{
 			Id:                  fmt.Sprint(neg.Id),
 			SelfLink:            neg.SelfLink,
 			NetworkEndpointType: negv1beta1.NetworkEndpointType(neg.NetworkEndpointType),
-		})
+		}
+		if flags.F.EnableMultiSubnetClusterPhase1 {
+			negRef.State = negState
+			negRef.SubnetURL = neg.Subnetwork
+		}
+		negRefs = append(negRefs, negRef)
 	}
 	return negRefs
-}
-
-// checkForNegDeletions gets the count of neg objects in negs that has the provided negName.
-func checkForNegDeletions(negs map[*meta.Key]*composite.NetworkEndpointGroup, negName string) int {
-	foundNegs := 0
-	for _, neg := range negs {
-		if neg.Name == negName {
-			foundNegs += 1
-		}
-	}
-
-	return foundNegs
 }
 
 // checkForNegCRDeletion verifies that either no cr with name `negName` exists or a cr withe name `negName` has its deletion timestamp set
