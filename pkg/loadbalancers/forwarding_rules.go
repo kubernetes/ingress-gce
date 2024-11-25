@@ -227,7 +227,20 @@ func (l4 *L4) ensureIPv4ForwardingRule(bsLink string, options gce.ILBOptions, ex
 
 	servicePorts := l4.Service.Spec.Ports
 	ports := utils.GetPorts(servicePorts)
-	protocol := utils.GetProtocol(servicePorts)
+	protocol := string(utils.GetProtocol(servicePorts))
+	allPorts := false
+	if l4.enableMixedProtocol {
+		protocol = forwardingrules.GetILBProtocol(servicePorts)
+		if protocol == forwardingrules.ProtocolL3 {
+			allPorts = true
+			ports = nil
+		}
+	}
+	if len(ports) > maxForwardedPorts {
+		allPorts = true
+		ports = nil
+	}
+
 	// Create the forwarding rule
 	frDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(l4.Service.Namespace, l4.Service.Name), ipToUse,
 		version, false, utils.ILB)
@@ -240,7 +253,8 @@ func (l4 *L4) ensureIPv4ForwardingRule(bsLink string, options gce.ILBOptions, ex
 		Name:                frName,
 		IPAddress:           ipToUse,
 		Ports:               ports,
-		IPProtocol:          string(protocol),
+		AllPorts:            allPorts,
+		IPProtocol:          protocol,
 		LoadBalancingScheme: string(cloud.SchemeInternal),
 		Subnetwork:          subnetworkURL,
 		Network:             l4.network.NetworkURL,
@@ -249,10 +263,6 @@ func (l4 *L4) ensureIPv4ForwardingRule(bsLink string, options gce.ILBOptions, ex
 		BackendService:      bsLink,
 		AllowGlobalAccess:   options.AllowGlobalAccess,
 		Description:         frDesc,
-	}
-	if len(ports) > maxForwardedPorts {
-		newFwdRule.Ports = nil
-		newFwdRule.AllPorts = true
 	}
 
 	if existingFwdRule != nil {
