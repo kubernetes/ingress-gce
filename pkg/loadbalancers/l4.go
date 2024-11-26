@@ -238,7 +238,10 @@ func (l4 *L4) deleteIPv4ResourcesOnDelete(result *L4ILBSyncResult) {
 // This function does not delete Backend Service and Health Check, because they are shared between IPv4 and IPv6.
 // IPv4 Firewall Rule for Health Check also will not be deleted here, and will be left till the Service Deletion.
 func (l4 *L4) deleteIPv4ResourcesAnnotationBased(result *L4ILBSyncResult, shouldIgnoreAnnotations bool) {
-	if shouldIgnoreAnnotations || l4.hasAnnotation(annotations.TCPForwardingRuleKey) || l4.hasAnnotation(annotations.UDPForwardingRuleKey) {
+	hasFwdRuleAnnotation := l4.hasAnnotation(annotations.TCPForwardingRuleKey) ||
+		l4.hasAnnotation(annotations.UDPForwardingRuleKey) ||
+		l4.hasAnnotation(annotations.L3ForwardingRuleKey)
+	if shouldIgnoreAnnotations || hasFwdRuleAnnotation {
 		err := l4.deleteIPv4ForwardingRule()
 		if err != nil {
 			l4.svcLogger.Error(err, "Failed to delete forwarding rule for internal loadbalancer service")
@@ -322,8 +325,12 @@ func (l4 *L4) deleteFirewall(name string, fwLogger klog.Logger) error {
 // This appends the protocol to the forwarding rule name, which will help supporting multiple protocols in the same ILB
 // service.
 func (l4 *L4) GetFRName() string {
-	protocol := utils.GetProtocol(l4.Service.Spec.Ports)
-	return l4.getFRNameWithProtocol(string(protocol))
+	ports := l4.Service.Spec.Ports
+	protocol := string(utils.GetProtocol(ports))
+	if l4.enableMixedProtocol {
+		protocol = forwardingrules.GetILBProtocol(ports)
+	}
+	return l4.getFRNameWithProtocol(protocol)
 }
 
 func (l4 *L4) getFRNameWithProtocol(protocol string) string {
@@ -613,10 +620,14 @@ func (l4 *L4) ensureIPv4Resources(result *L4ILBSyncResult, nodeNames []string, o
 		result.Error = err
 		return
 	}
-	if fr.IPProtocol == string(corev1.ProtocolTCP) {
+
+	switch fr.IPProtocol {
+	case forwardingrules.ProtocolTCP:
 		result.Annotations[annotations.TCPForwardingRuleKey] = fr.Name
-	} else {
+	case forwardingrules.ProtocolUDP:
 		result.Annotations[annotations.UDPForwardingRuleKey] = fr.Name
+	case forwardingrules.ProtocolL3:
+		result.Annotations[annotations.L3ForwardingRuleKey] = fr.Name
 	}
 
 	l4.ensureIPv4NodesFirewall(nodeNames, fr.IPAddress, result)
@@ -714,11 +725,19 @@ func (l4 *L4) hasAnnotation(annotationKey string) bool {
 // because forwarding rule name depends on the protocol, and we need to get forwarding rule from the old protocol name.
 func (l4 *L4) getOldIPv4ForwardingRule(existingBS *composite.BackendService) (*composite.ForwardingRule, error) {
 	servicePorts := l4.Service.Spec.Ports
-	protocol := utils.GetProtocol(servicePorts)
+	bsProtocol := string(utils.GetProtocol(servicePorts))
+
+	if l4.enableMixedProtocol {
+		bsProtocol = backends.GetProtocol(servicePorts)
+	}
 
 	oldFRName := l4.GetFRName()
-	if existingBS != nil && existingBS.Protocol != string(protocol) {
-		oldFRName = l4.getFRNameWithProtocol(existingBS.Protocol)
+	if existingBS != nil && existingBS.Protocol != bsProtocol {
+		fwdRuleProtocol := existingBS.Protocol
+		if existingBS.Protocol == backends.ProtocolL3 {
+			fwdRuleProtocol = forwardingrules.ProtocolL3
+		}
+		oldFRName = l4.getFRNameWithProtocol(fwdRuleProtocol)
 	}
 
 	return l4.forwardingRules.Get(oldFRName)

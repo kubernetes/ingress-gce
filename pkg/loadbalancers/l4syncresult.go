@@ -29,6 +29,7 @@ var L4ResourceAnnotationKeys = []string{
 	annotations.BackendServiceKey,
 	annotations.TCPForwardingRuleKey,
 	annotations.UDPForwardingRuleKey,
+	annotations.L3ForwardingRuleKey,
 	annotations.HealthcheckKey,
 	annotations.FirewallRuleKey,
 	annotations.FirewallRuleForHealthcheckKey,
@@ -39,5 +40,6 @@ var l4IPv6ResourceAnnotationKeys = []string{
 	annotations.FirewallRuleForHealthcheckIPv6Key,
 	annotations.TCPForwardingRuleIPv6Key,
 	annotations.UDPForwardingRuleIPv6Key,
+	annotations.L3ForwardingRuleIPv6Key,
 }
 var L4DualStackResourceAnnotationKeys = append(L4ResourceAnnotationKeys, l4IPv6ResourceAnnotationKeys...)
