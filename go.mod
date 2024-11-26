@@ -5,6 +5,7 @@ go 1.22.8
 require (
 	github.com/GoogleCloudPlatform/gke-networking-api v0.1.2-0.20240909212819-4b1bab7c69ea
 	github.com/GoogleCloudPlatform/k8s-cloud-provider v1.32.0
+	github.com/go-ini/ini v1.67.0
 	github.com/go-logr/logr v1.4.2
 	github.com/golang/protobuf v1.5.4
 	github.com/google/go-cmp v0.6.0
