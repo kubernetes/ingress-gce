@@ -732,6 +732,7 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service,
 		StrongSessionAffinityEnabled:     lc.enableStrongSessionAffinity,
 		NetworkResolver:                  lc.networkResolver,
 		EnableWeightedLB:                 lc.ctx.EnableWeightedL4NetLB,
+		EnableMixedProtocol:              lc.ctx.EnableL4MixedProtocol,
 		DisableNodesFirewallProvisioning: lc.ctx.DisableL4LBFirewall,
 	}
 	l4netLB := loadbalancers.NewL4NetLB(l4NetLBParams, svcLogger)

@@ -73,6 +73,7 @@ type L4NetLB struct {
 	networkInfo                      network.NetworkInfo
 	networkResolver                  network.Resolver
 	enableWeightedLB                 bool
+	enableMixedProtocol              bool
 	disableNodesFirewallProvisioning bool
 	svcLogger                        klog.Logger
 	useNEGs                          bool
@@ -126,6 +127,7 @@ type L4NetLBParams struct {
 	StrongSessionAffinityEnabled     bool
 	NetworkResolver                  network.Resolver
 	EnableWeightedLB                 bool
+	EnableMixedProtocol              bool
 	DisableNodesFirewallProvisioning bool
 	UseNEGs                          bool
 }
@@ -147,6 +149,7 @@ func NewL4NetLB(params *L4NetLBParams, logger klog.Logger) *L4NetLB {
 		enableStrongSessionAffinity:      params.StrongSessionAffinityEnabled,
 		networkResolver:                  params.NetworkResolver,
 		enableWeightedLB:                 params.EnableWeightedLB,
+		enableMixedProtocol:              params.EnableMixedProtocol,
 		disableNodesFirewallProvisioning: params.DisableNodesFirewallProvisioning,
 		useNEGs:                          params.UseNEGs,
 		svcLogger:                        logger,
@@ -421,6 +424,15 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 	servicePorts := l4netlb.Service.Spec.Ports
 	portRanges := utils.GetServicePortRanges(servicePorts)
 	protocol := utils.GetProtocol(servicePorts)
+	allowed := []*compute.FirewallAllowed{
+		{
+			IPProtocol: string(protocol),
+			Ports:      portRanges,
+		},
+	}
+	if l4netlb.enableMixedProtocol {
+		allowed = firewalls.AllowedForService(servicePorts)
+	}
 
 	fwLogger := l4netlb.svcLogger.WithValues("firewallName", firewallName)
 	fwLogger.V(2).Info("Ensuring nodes firewall for L4 NetLB Service", "ipAddress", ipAddress, "protocol", protocol, "len(nodeNames)", len(nodeNames), "portRanges", portRanges)
@@ -436,12 +448,7 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 
 	// Add firewall rule for L4 External LoadBalancer traffic to nodes
 	nodesFWRParams := firewalls.FirewallParams{
-		Allowed: []*compute.FirewallAllowed{
-			{
-				IPProtocol: string(protocol),
-				Ports:      portRanges,
-			},
-		},
+		Allowed:           allowed,
 		SourceRanges:      sourceRanges,
 		DestinationRanges: []string{ipAddress},
 		Name:              firewallName,
