@@ -22,11 +22,12 @@ import (
 	"time"
 
 	"google.golang.org/api/compute/v1"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
+	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -44,10 +45,13 @@ func (l4 *L4) ensureIPv6Resources(syncResult *L4ILBSyncResult, nodeNames []strin
 		return
 	}
 
-	if ipv6fr.IPProtocol == string(corev1.ProtocolTCP) {
+	switch ipv6fr.IPProtocol {
+	case forwardingrules.ProtocolTCP:
 		syncResult.Annotations[annotations.TCPForwardingRuleIPv6Key] = ipv6fr.Name
-	} else {
+	case forwardingrules.ProtocolUDP:
 		syncResult.Annotations[annotations.UDPForwardingRuleIPv6Key] = ipv6fr.Name
+	case forwardingrules.ProtocolL3:
+		syncResult.Annotations[annotations.L3ForwardingRuleIPv6Key] = ipv6fr.Name
 	}
 
 	// Google Cloud creates ipv6 forwarding rules with IPAddress in CIDR form. We will take only first address
@@ -91,7 +95,11 @@ func (l4 *L4) deleteIPv6ResourcesOnDelete(syncResult *L4ILBSyncResult) {
 // This function does not delete Backend Service and Health Check, because they are shared between IPv4 and IPv6.
 // IPv6 Firewall Rule for Health Check also will not be deleted here, and will be left till the Service Deletion.
 func (l4 *L4) deleteIPv6ResourcesAnnotationBased(syncResult *L4ILBSyncResult, shouldCheckAnnotations bool) {
-	if !shouldCheckAnnotations || l4.hasAnnotation(annotations.TCPForwardingRuleIPv6Key) || l4.hasAnnotation(annotations.UDPForwardingRuleIPv6Key) {
+	hasFwdRuleAnnotation := l4.hasAnnotation(annotations.TCPForwardingRuleIPv6Key) ||
+		l4.hasAnnotation(annotations.UDPForwardingRuleIPv6Key) ||
+		l4.hasAnnotation(annotations.L3ForwardingRuleIPv6Key)
+
+	if !shouldCheckAnnotations || hasFwdRuleAnnotation {
 		err := l4.deleteIPv6ForwardingRule()
 		if err != nil {
 			l4.svcLogger.Error(err, "Failed to delete ipv6 forwarding rule for internal loadbalancer service")
@@ -111,8 +119,11 @@ func (l4 *L4) deleteIPv6ResourcesAnnotationBased(syncResult *L4ILBSyncResult, sh
 }
 
 func (l4 *L4) getIPv6FRName() string {
-	protocol := utils.GetProtocol(l4.Service.Spec.Ports)
-	return l4.getIPv6FRNameWithProtocol(string(protocol))
+	protocol := string(utils.GetProtocol(l4.Service.Spec.Ports))
+	if l4.enableMixedProtocol {
+		protocol = forwardingrules.GetILBProtocol(l4.Service.Spec.Ports)
+	}
+	return l4.getIPv6FRNameWithProtocol(protocol)
 }
 
 func (l4 *L4) getIPv6FRNameWithProtocol(protocol string) string {
@@ -133,6 +144,16 @@ func (l4 *L4) ensureIPv6NodesFirewall(ipAddress string, nodeNames []string, resu
 	svcPorts := l4.Service.Spec.Ports
 	portRanges := utils.GetServicePortRanges(svcPorts)
 	protocol := utils.GetProtocol(svcPorts)
+	allowed := []*compute.FirewallAllowed{
+		{
+			IPProtocol: string(protocol),
+			Ports:      portRanges,
+		},
+	}
+
+	if l4.enableMixedProtocol {
+		allowed = firewalls.AllowedForService(svcPorts)
+	}
 
 	fwLogger := l4.svcLogger.WithValues("firewallName", firewallName)
 	fwLogger.V(2).Info("Ensuring IPv6 nodes firewall for L4 ILB Service", "ipAddress", ipAddress, "protocol", protocol, "len(nodeNames)", len(nodeNames), "portRanges", portRanges)
@@ -148,12 +169,7 @@ func (l4 *L4) ensureIPv6NodesFirewall(ipAddress string, nodeNames []string, resu
 	}
 
 	ipv6nodesFWRParams := firewalls.FirewallParams{
-		Allowed: []*compute.FirewallAllowed{
-			{
-				IPProtocol: string(protocol),
-				Ports:      portRanges,
-			},
-		},
+		Allowed:           allowed,
 		SourceRanges:      ipv6SourceRanges,
 		DestinationRanges: []string{ipAddress},
 		Name:              firewallName,
@@ -203,11 +219,19 @@ func (l4 *L4) deleteIPv6NodesFirewall() error {
 // because forwarding rule name depends on the protocol, and we need to get forwarding rule from the old protocol name.
 func (l4 *L4) getOldIPv6ForwardingRule(existingBS *composite.BackendService) (*composite.ForwardingRule, error) {
 	servicePorts := l4.Service.Spec.Ports
-	protocol := utils.GetProtocol(servicePorts)
+	bsProtocol := string(utils.GetProtocol(servicePorts))
+
+	if l4.enableMixedProtocol {
+		bsProtocol = backends.GetProtocol(servicePorts)
+	}
 
 	oldIPv6FRName := l4.getIPv6FRName()
-	if existingBS != nil && existingBS.Protocol != string(protocol) {
-		oldIPv6FRName = l4.getIPv6FRNameWithProtocol(existingBS.Protocol)
+	if existingBS != nil && existingBS.Protocol != bsProtocol {
+		fwdRuleProtocol := existingBS.Protocol
+		if existingBS.Protocol == backends.ProtocolL3 {
+			fwdRuleProtocol = forwardingrules.ProtocolL3
+		}
+		oldIPv6FRName = l4.getIPv6FRNameWithProtocol(fwdRuleProtocol)
 	}
 
 	return l4.forwardingRules.Get(oldIPv6FRName)
