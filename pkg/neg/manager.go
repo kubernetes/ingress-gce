@@ -46,6 +46,7 @@ import (
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
@@ -64,6 +65,7 @@ func (k serviceKey) Key() string {
 // syncerManager contains all the active syncer goroutines and manage their lifecycle.
 type syncerManager struct {
 	namer      negtypes.NetworkEndpointGroupNamer
+	l4Namer    namer.L4ResourcesNamer
 	recorder   record.EventRecorder
 	cloud      negtypes.NetworkEndpointGroupCloud
 	zoneGetter *zonegetter.ZoneGetter
@@ -118,6 +120,7 @@ type syncerManager struct {
 }
 
 func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
+	l4Namer namer.L4ResourcesNamer,
 	recorder record.EventRecorder,
 	cloud negtypes.NetworkEndpointGroupCloud,
 	zoneGetter *zonegetter.ZoneGetter,
@@ -140,6 +143,7 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 
 	return &syncerManager{
 		namer:               namer,
+		l4Namer:             l4Namer,
 		recorder:            recorder,
 		cloud:               cloud,
 		zoneGetter:          zoneGetter,
@@ -228,6 +232,11 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				&portInfo.NetworkInfo,
 				portInfo.L4LBType,
 			)
+			nonDefaultSubnetNEGNamer := manager.namer
+			if syncerKey.NegType == negtypes.VmIpEndpointType {
+				nonDefaultSubnetNEGNamer = manager.l4Namer
+			}
+
 			syncer = negsyncer.NewTransactionSyncer(
 				syncerKey,
 				manager.recorder,
@@ -243,11 +252,12 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				string(manager.kubeSystemUID),
 				manager.svcNegClient,
 				manager.syncerMetrics,
-				!manager.namer.IsNEG(portInfo.NegName),
+				syncerKey.NegType == negtypes.VmIpPortEndpointType && !manager.namer.IsNEG(portInfo.NegName),
 				manager.logger,
 				manager.lpConfig,
 				manager.enableDualStackNEG,
 				portInfo.NetworkInfo,
+				nonDefaultSubnetNEGNamer,
 			)
 			manager.syncerMap[syncerKey] = syncer
 		}

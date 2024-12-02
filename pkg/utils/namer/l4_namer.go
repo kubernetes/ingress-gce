@@ -1,6 +1,7 @@
 package namer
 
 import (
+	"fmt"
 	"strings"
 
 	"k8s.io/ingress-gce/pkg/utils/common"
@@ -62,7 +63,7 @@ func (namer *L4Namer) L4Backend(namespace, name string) string {
 	}, "-")
 }
 
-// L4NonDefaultSubnetNEG returns the gce NEG name for L4 NEGs in non default
+// NonDefaultSubnetNEG returns the gce NEG name for L4 NEGs in non default
 // subnet based on the service namespace, name, and subnet name.
 // Naming convention:
 //
@@ -70,7 +71,7 @@ func (namer *L4Namer) L4Backend(namespace, name string) string {
 //
 // subnetHash length = 6, suffix length = 8, and the remainings are trimmed evenly.
 // Output name is at most 63 characters.
-func (namer *L4Namer) L4NonDefaultSubnetNEG(namespace, name, subnetName string) string {
+func (namer *L4Namer) NonDefaultSubnetNEG(namespace, name, subnetName string, _ int32) string {
 	return strings.Join([]string{
 		namer.v2Prefix,
 		namer.v2ClusterUID,
@@ -78,6 +79,13 @@ func (namer *L4Namer) L4NonDefaultSubnetNEG(namespace, name, subnetName string) 
 		subnetHash(subnetName),
 		namer.getClusterSuffix(namespace, name),
 	}, "-")
+}
+
+// NonDefaultSubnetCustomNEG returns the gce neg name in the non-default subnet
+// when the NEG name is a custom one.
+// Custom Name NEG for L4 NEG is not allowed.
+func (n *L4Namer) NonDefaultSubnetCustomNEG(customNEGName, subnetName string) (string, error) {
+	return "", fmt.Errorf("Custom NEG is not allowed for L4")
 }
 
 // L4Firewall returns the gce Firewall name based on the service namespace and name

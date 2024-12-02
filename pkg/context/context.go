@@ -250,7 +250,7 @@ func NewControllerContext(
 		logger,
 	)
 	// The subnet specified in gce.conf is considered as the default subnet.
-	context.ZoneGetter = zonegetter.NewZoneGetter(context.NodeInformer, context.Cloud.SubnetworkURL())
+	context.ZoneGetter = zonegetter.NewZoneGetter(context.NodeInformer, context.NodeTopologyInformer, context.Cloud.SubnetworkURL())
 	context.InstancePool = instancegroups.NewManager(&instancegroups.ManagerConfig{
 		Cloud:      context.Cloud,
 		Namer:      context.ClusterNamer,
@@ -328,10 +328,6 @@ func (ctx *ControllerContext) HasSynced() bool {
 
 	if ctx.FirewallInformer != nil {
 		funcs = append(funcs, ctx.FirewallInformer.HasSynced)
-	}
-
-	if ctx.NodeTopologyInformer != nil {
-		funcs = append(funcs, ctx.NodeTopologyInformer.HasSynced)
 	}
 
 	for _, f := range funcs {

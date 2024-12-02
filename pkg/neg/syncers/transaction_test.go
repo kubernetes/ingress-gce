@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	nodetopologyv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/google/go-cmp/cmp"
@@ -72,6 +73,7 @@ const (
 	testUnreadyInstance2 = "unready-instance2"
 
 	defaultTestSubnet    = "default"
+	additionalTestSubnet = "additional-subnet"
 	secondaryTestSubnet1 = "secondary1"
 	secondaryTestSubnet2 = "secondary2"
 )
@@ -1227,7 +1229,7 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 						Description:         tc.negDesc,
 					}, zone, klog.TODO())
 				}
-				expectedNegRefs, err = negObjectReferences(fakeCloud, negv1beta1.ActiveState, expectZones)
+				expectedNegRefs, err = negObjectReferences(fakeCloud, negv1beta1.ActiveState, expectZones, syncer.NegSyncerKey.NegName)
 				if err != nil {
 					t.Errorf("Failed to get negObjRef from NEG CR: %v", err)
 				}
@@ -1262,7 +1264,7 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 				t.Errorf("Failed to get NEG from neg client: %s", err)
 			}
 			if !tc.expectErr {
-				expectedNegRefs, err = negObjectReferences(fakeCloud, negv1beta1.ActiveState, expectZones)
+				expectedNegRefs, err = negObjectReferences(fakeCloud, negv1beta1.ActiveState, expectZones, syncer.NegSyncerKey.NegName)
 				if err != nil {
 					t.Errorf("Failed to get negObjRef from NEG CR: %v", err)
 				}
@@ -1337,6 +1339,198 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 		syncer.cloud.DeleteNetworkEndpointGroup(testNegName, negtypes.TestZone3, syncer.NegSyncerKey.GetAPIVersion(), klog.TODO())
 		syncer.cloud.DeleteNetworkEndpointGroup(testNegName, negtypes.TestZone4, syncer.NegSyncerKey.GetAPIVersion(), klog.TODO())
 
+	}
+}
+
+func TestEnsureNetworkEndpointGroupsMSC(t *testing.T) {
+	zones := []string{negtypes.TestZone1, negtypes.TestZone2, negtypes.TestZone3}
+	testNetworkURL := cloud.SelfLink(meta.VersionGA, "mock-project", "networks", meta.GlobalKey(defaultTestSubnet))
+	testSubnetworkURL := cloud.SelfLink(meta.VersionGA, "mock-project", "subnetworks", meta.RegionalKey(defaultTestSubnet, "test-region"))
+	testNegType := negtypes.VmIpPortEndpointType
+	additionalTestSubnetworkURL := cloud.SelfLink(meta.VersionGA, "mock-project", "subnetworks", meta.RegionalKey(additionalTestSubnet, "test-region"))
+
+	nodeTopologyCrWithDefaultSubnetOnly := nodetopologyv1.NodeTopology{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "NodeTopology",
+			APIVersion: "networking.gke.io/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "default",
+		},
+		Status: nodetopologyv1.NodeTopologyStatus{
+			Subnets: []nodetopologyv1.SubnetConfig{
+				{Name: defaultTestSubnet, SubnetPath: fmt.Sprintf("projects/mock-project/regions/test-region/subnetworks/%s", defaultTestSubnet)},
+			},
+		},
+	}
+	nodeTopologyCrWithAdditionalSubnets := nodeTopologyCrWithDefaultSubnetOnly
+	nodeTopologyCrWithAdditionalSubnets.Status.Subnets = append(nodeTopologyCrWithAdditionalSubnets.Status.Subnets,
+		nodetopologyv1.SubnetConfig{
+			Name:       additionalTestSubnet,
+			SubnetPath: fmt.Sprintf("projects/mock-project/regions/test-region/subnetworks/%s", additionalTestSubnet),
+		},
+	)
+
+	currNodeTopologyCRName := flags.F.NodeTopologyCRName
+	prevFlag := flags.F.EnableMultiSubnetClusterPhase1
+	defer func() {
+		flags.F.NodeTopologyCRName = currNodeTopologyCRName
+		flags.F.EnableMultiSubnetClusterPhase1 = prevFlag
+	}()
+	flags.F.NodeTopologyCRName = "default"
+	flags.F.EnableMultiSubnetClusterPhase1 = true
+
+	negDesc := utils.NegDescription{
+		ClusterUID:  kubeSystemUID,
+		Namespace:   testServiceNamespace,
+		ServiceName: testServiceName,
+		Port:        "80",
+	}.String()
+	testCases := []struct {
+		desc           string
+		customNEGName  string
+		nodeTopologyCr *nodetopologyv1.NodeTopology
+		negDesc        string
+		expectError    bool
+		// expectNeedToUpdate indicates whether there is any conflicting NEG description.
+		// When there is conflict, we do not update NEG Object Ref.
+		expectNeedToUpdate bool
+	}{
+		{
+			desc:               "NodeTopology CR doesn't exist",
+			expectError:        true,
+			negDesc:            negDesc,
+			expectNeedToUpdate: false,
+		},
+		{
+			desc:               "NodeTopology CR only contains default subnet",
+			nodeTopologyCr:     &nodeTopologyCrWithDefaultSubnetOnly,
+			negDesc:            negDesc,
+			expectNeedToUpdate: true,
+		},
+		{
+			desc:               "NodeTopology CR contains additional subnets, auto-generated NEG name",
+			nodeTopologyCr:     &nodeTopologyCrWithAdditionalSubnets,
+			negDesc:            negDesc,
+			expectNeedToUpdate: true,
+		},
+		{
+			desc:               "NodeTopology CR contains additional subnets, custom NEG name not exceeding character limit",
+			customNEGName:      "custom-neg",
+			nodeTopologyCr:     &nodeTopologyCrWithAdditionalSubnets,
+			negDesc:            negDesc,
+			expectError:        false,
+			expectNeedToUpdate: true,
+		},
+		{
+			desc:               "NodeTopology CR contains additional subnets, custom NEG name exceeding character limit",
+			customNEGName:      "012345678901234567890123456789012345678901234567890123456", // 57 characters
+			nodeTopologyCr:     &nodeTopologyCrWithAdditionalSubnets,
+			negDesc:            negDesc,
+			expectError:        true,
+			expectNeedToUpdate: true,
+		},
+		{
+			desc:           "NodeTopology CR contains additional subnets, conflicting NEG description",
+			nodeTopologyCr: &nodeTopologyCrWithAdditionalSubnets,
+			negDesc: utils.NegDescription{
+				ClusterUID:  kubeSystemUID,
+				Namespace:   testServiceNamespace,
+				ServiceName: testServiceName,
+				Port:        "81", // Expected port to be 80
+			}.String(),
+			expectError:        true,
+			expectNeedToUpdate: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetworkURL, testNetworkURL)
+
+			_, syncer := newTestTransactionSyncer(fakeCloud, testNegType, tc.customNEGName != "")
+			if tc.customNEGName != "" {
+				syncer.NegSyncerKey.NegName = tc.customNEGName
+			}
+			zonegetter.SetNodeTopologyHasSynced(syncer.zoneGetter, func() bool { return true })
+
+			negName := syncer.NegSyncerKey.NegName
+
+			for _, zone := range zones {
+				err := fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
+					Version:             syncer.NegSyncerKey.GetAPIVersion(),
+					Name:                negName,
+					NetworkEndpointType: string(syncer.NegSyncerKey.NegType),
+					Network:             fakeCloud.NetworkURL(),
+					Subnetwork:          fakeCloud.SubnetworkURL(),
+					Description:         tc.negDesc,
+				}, zone, klog.TODO())
+				if err != nil {
+					t.Fatalf("Failed to create NEG: %v", err)
+				}
+			}
+
+			negClient := syncer.svcNegClient
+			negRefByZone, err := negObjectReferences(fakeCloud, negv1beta1.ActiveState, sets.NewString(zones...), syncer.NegSyncerKey.NegName)
+			if err != nil {
+				t.Errorf("Failed to get negObjRef from NEG CR: %v", err)
+			}
+			var refs []negv1beta1.NegObjectReference
+			for _, neg := range negRefByZone {
+				refs = append(refs, neg)
+			}
+			origCR := createNegCR(negName, v1.Now(), true, true, refs)
+			initialNegCr, err := negClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Create(context.Background(), origCR, v1.CreateOptions{})
+			if err != nil {
+				t.Fatalf("Failed to create test NEG CR: %s", err)
+			}
+			syncer.svcNegLister.Add(initialNegCr)
+
+			if tc.nodeTopologyCr != nil {
+				if err := zonegetter.AddNodeTopologyCR(syncer.zoneGetter, tc.nodeTopologyCr); err != nil {
+					t.Fatalf("Failed to create Node Topology CR: %v", err)
+				}
+			}
+
+			err = syncer.ensureNetworkEndpointGroups()
+
+			if tc.expectError && err == nil {
+				t.Errorf("Got no errors after ensureNetworkEndpointGroupsFromNodeTopology(), expected errors")
+			}
+			if !tc.expectError && err != nil {
+				t.Errorf("Got errors %v after ensureNetworkEndpointGroupsFromNodeTopology(), expected no errors", err)
+			}
+
+			syncedNegCR, err := negClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Get(context.Background(), negName, v1.GetOptions{})
+			if err != nil {
+				t.Fatalf("Failed to get NEG from neg client: %s", err)
+			}
+			if tc.expectNeedToUpdate {
+				if reflect.DeepEqual(initialNegCr.Status, syncedNegCR.Status) {
+					t.Errorf("Detected no updates on NEG CR status after ensureNetworkEndpointGroups(), expected updates:\nNEG CR Status: %v", syncedNegCR.Status)
+				}
+
+				for _, neg := range syncedNegCR.Status.NetworkEndpointGroups {
+					expectedNegSubnetUrl := testSubnetworkURL
+					// If this NEG is not in the default subnets
+					resourceID, err := cloud.ParseResourceURL(neg.SelfLink)
+					if err != nil {
+						t.Fatalf("Failed to parse NEG SelfLink %q: %v", neg.SelfLink, err)
+					}
+					if resourceID.Key.Name != negName {
+						expectedNegSubnetUrl = additionalTestSubnetworkURL
+					}
+					if neg.SubnetURL != expectedNegSubnetUrl {
+						t.Errorf("For neg %q, got subnet URL = %q, expected %q", neg.SelfLink, neg.SubnetURL, expectedNegSubnetUrl)
+					}
+				}
+
+			} else {
+				if !reflect.DeepEqual(initialNegCr.Status, syncedNegCR.Status) {
+					t.Errorf("Detected updates on NEG CR status after ensureNetworkEndpointGroups(), expected no updates:\nbefore %+v,\n after %+v", initialNegCr.Status, syncedNegCR.Status)
+				}
+			}
+		})
 	}
 }
 
@@ -1656,7 +1850,7 @@ func TestIsZoneChange(t *testing.T) {
 					Subnetwork:          fakeCloud.SubnetworkURL(),
 				}, zone, klog.TODO())
 			}
-			negRefMap, err := negObjectReferences(fakeCloud, negv1beta1.ActiveState, sets.NewString(origZones...))
+			negRefMap, err := negObjectReferences(fakeCloud, negv1beta1.ActiveState, sets.NewString(origZones...), syncer.NegSyncerKey.NegName)
 			if err != nil {
 				t.Errorf("Failed to get negObjRef from NEG CR: %v", err)
 			}
@@ -1732,7 +1926,7 @@ func TestIsZoneChange(t *testing.T) {
 func TestUnknownNodes(t *testing.T) {
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
-	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
+	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
 	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
 	testSubnetwork := defaultTestSubnetURL
 	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
@@ -1828,7 +2022,7 @@ func TestUnknownNodes(t *testing.T) {
 func TestEnableDegradedMode(t *testing.T) {
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
-	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
+	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
 	vals := gce.DefaultTestClusterValues()
 	vals.SubnetworkURL = defaultTestSubnetURL
 	fakeGCE := gce.NewFakeGCECloud(vals)
@@ -2430,6 +2624,86 @@ func TestCollectLabelStats(t *testing.T) {
 	}
 }
 
+func TestGetNonDefaultSubnetName(t *testing.T) {
+	t.Parallel()
+	vals := gce.DefaultTestClusterValues()
+	vals.SubnetworkURL = defaultTestSubnetURL
+	fakeGCE := gce.NewFakeGCECloud(vals)
+	negtypes.MockNetworkEndpointAPIs(fakeGCE)
+	fakeCloud := negtypes.NewAdapter(fakeGCE)
+	testNegTypes := []negtypes.NetworkEndpointType{
+		negtypes.VmIpEndpointType,
+		negtypes.VmIpPortEndpointType,
+	}
+
+	testCases := []struct {
+		desc              string
+		customNEGName     string
+		expectedL4NegName string
+		expectedL7NegName string
+		expectL4Error     bool
+		expectL7Error     bool
+	}{
+		{
+			desc:              "auto-generated NEG name",
+			expectedL4NegName: "k8s2-s7nrwkif-test-ns-test-name-cc51aa-qvmwlr7g",
+			expectedL7NegName: "k8s1-clusteri-test-ns-test-name-80-cc51aa-137ee03a",
+			expectL4Error:     false,
+			expectL7Error:     false,
+		},
+		{
+			desc:              "custom NEG name not exceeding character limit",
+			customNEGName:     "custom-neg",
+			expectedL7NegName: "custom-neg-cc51aa",
+			expectL4Error:     true,
+			expectL7Error:     false,
+		},
+		{
+			desc:          " custom NEG name exceeding character limit",
+			customNEGName: "012345678901234567890123456789012345678901234567890123456", // 57 characters
+			expectL4Error: true,
+			expectL7Error: true,
+		},
+	}
+
+	for _, testNegType := range testNegTypes {
+		for _, tc := range testCases {
+			t.Run(tc.desc, func(t *testing.T) {
+				_, syncer := newTestTransactionSyncer(fakeCloud, testNegType, tc.customNEGName != "")
+				if tc.customNEGName != "" {
+					syncer.NegSyncerKey.NegName = tc.customNEGName
+				}
+				got, err := syncer.getNonDefaultSubnetName(additionalTestSubnet)
+				t.Logf("NEG name: %q, custom Name: %v", syncer.NegSyncerKey.NegName, syncer.customName)
+				if err == nil {
+					if testNegType == negtypes.VmIpEndpointType && tc.expectL4Error {
+						t.Errorf("For NEG type %q, got err == nil, expected err != nil", testNegType)
+					}
+					if testNegType == negtypes.VmIpPortEndpointType && tc.expectL7Error {
+						t.Errorf("For NEG type %q, got err == nil, expected err != nil", testNegType)
+					}
+				}
+				if err != nil {
+					if testNegType == negtypes.VmIpEndpointType && !tc.expectL4Error {
+						t.Errorf("For NEG type %q, got err = %v, expected err == nil", testNegType, err)
+					}
+					if testNegType == negtypes.VmIpPortEndpointType && !tc.expectL7Error {
+						t.Errorf("For NEG type %q, got err = %v, expected err == nil", testNegType, err)
+					}
+				}
+
+				if testNegType == negtypes.VmIpEndpointType && !tc.expectL4Error && got != tc.expectedL4NegName {
+					t.Errorf("For NEG type %q, got NEG name %q, expected %q", testNegType, got, tc.expectedL4NegName)
+				}
+
+				if testNegType == negtypes.VmIpPortEndpointType && !tc.expectL7Error && got != tc.expectedL7NegName {
+					t.Errorf("For NEG type %q, got NEG name %q, expected %q", testNegType, got, tc.expectedL7NegName)
+				}
+			})
+		}
+	}
+}
+
 func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negType negtypes.NetworkEndpointType, customName bool) (negtypes.NegSyncer, *transactionSyncer) {
 	testContext := negtypes.NewTestContext()
 	svcPort := negtypes.NegSyncerKey{
@@ -2457,8 +2731,12 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 	reflector := &readiness.NoopReflector{}
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
-	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
+	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
 
+	negNamer := testContext.NegNamer
+	if svcPort.NegType == negtypes.VmIpEndpointType {
+		negNamer = testContext.L4Namer
+	}
 	negsyncer := NewTransactionSyncer(svcPort,
 		record.NewFakeRecorder(100),
 		fakeGCE,
@@ -2479,6 +2757,7 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 		labels.PodLabelPropagationConfig{},
 		testContext.EnableDualStackNEG,
 		network.NetworkInfo{NetworkURL: fakeGCE.NetworkURL(), SubnetworkURL: fakeGCE.SubnetworkURL()},
+		negNamer,
 	)
 	transactionSyncer := negsyncer.(*syncer).core.(*transactionSyncer)
 	indexers := map[string]cache.IndexFunc{
@@ -2618,10 +2897,10 @@ func waitForTransactions(syncer *transactionSyncer) error {
 }
 
 // negObjectReferences returns objectReferences for NEG CRs from NEG Objects
-func negObjectReferences(cloud negtypes.NetworkEndpointGroupCloud, state negv1beta1.NegState, zones sets.String) (map[string]negv1beta1.NegObjectReference, error) {
+func negObjectReferences(cloud negtypes.NetworkEndpointGroupCloud, state negv1beta1.NegState, zones sets.String, negName string) (map[string]negv1beta1.NegObjectReference, error) {
 	negObjs := make(map[string]negv1beta1.NegObjectReference)
 	for zone := range zones {
-		neg, err := cloud.GetNetworkEndpointGroup(testNegName, zone, meta.VersionGA, klog.TODO())
+		neg, err := cloud.GetNetworkEndpointGroup(negName, zone, meta.VersionGA, klog.TODO())
 		if err != nil {
 			return nil, err
 		}
@@ -2751,14 +3030,14 @@ func checkNegCR(t *testing.T, negCR *negv1beta1.ServiceNetworkEndpointGroup, pre
 	expectedNegRefs := make(map[string]negv1beta1.NegObjectReference)
 
 	if expectPopulatedNegRefs {
-		ret, err := negObjectReferences(cloud, negv1beta1.ActiveState, activeZones)
+		ret, err := negObjectReferences(cloud, negv1beta1.ActiveState, activeZones, negCR.Name)
 		if err != nil {
 			t.Fatalf("Failed to get negObjRef: %v", err)
 		}
 		for k, v := range ret {
 			expectedNegRefs[k] = v
 		}
-		ret, err = negObjectReferences(cloud, negv1beta1.InactiveState, inactiveZones)
+		ret, err = negObjectReferences(cloud, negv1beta1.InactiveState, inactiveZones, negCR.Name)
 		if err != nil {
 			t.Fatalf("Failed to get negObjRef: %v", err)
 		}

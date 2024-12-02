@@ -31,7 +31,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
-const defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/default"
+const defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/mock-project/regions/test-region/subnetworks/default"
 
 type negNamer struct{}
 
@@ -41,6 +41,14 @@ func (*negNamer) NEG(namespace, name string, svcPort int32) string {
 
 func (*negNamer) IsNEG(name string) bool {
 	return false
+}
+
+func (*negNamer) NonDefaultSubnetNEG(namespace, name, subnetName string, svcPort int32) string {
+	return fmt.Sprintf("%v-%v-%v-%v", namespace, name, svcPort, subnetName)
+}
+
+func (*negNamer) NonDefaultSubnetCustomNEG(customNEGName, subnetName string) (string, error) {
+	return fmt.Sprintf("%v-%v", customNEGName, subnetName), nil
 }
 
 func TestPortInfoMapMerge(t *testing.T) {
@@ -756,7 +764,7 @@ func TestNodePredicateForEndpointCalculatorMode(t *testing.T) {
 			predicate := NodeFilterForEndpointCalculatorMode(tc.epCalculatorMode)
 			nodeInformer := zonegetter.FakeNodeInformer()
 			zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
-			zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
+			zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
 			zones, err := zoneGetter.ListZones(predicate, klog.TODO())
 			if err != nil {
 				t.Errorf("Failed listing zones with predicate, err - %v", err)

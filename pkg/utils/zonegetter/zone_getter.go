@@ -25,6 +25,8 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	nodetopologyv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/flags"
@@ -63,7 +65,8 @@ var providerIDRE = regexp.MustCompile(`^` + "gce" + `://([^/]+)/([^/]*)/([^/]+)$
 
 // ZoneGetter manages lookups for GCE instances to zones.
 type ZoneGetter struct {
-	nodeLister cache.Indexer
+	nodeLister           cache.Indexer
+	nodeTopologyInformer cache.SharedIndexInformer
 	// Mode indicates if the ZoneGetter is in GCP or Non-GCP mode
 	// GCP mode ZoneGetter fetches zones from k8s node resource objects.
 	// Non-GCP mode ZoneGetter always return its one single stored zone
@@ -73,10 +76,15 @@ type ZoneGetter struct {
 	singleStoredZone string
 
 	// Whether zoneGetter should only list default subnet nodes.
+	// onlyIncludeDefaultSubnetNodes is a static value that only depends on the phase/flags.
 	onlyIncludeDefaultSubnetNodes bool
 
 	// The subnetURL of the cluster's default subnet.
 	defaultSubnetURL string
+
+	// nodeTopologyHasSynced is a function that is evaluated every time to
+	// check if we can trust nodeTopology Informer.
+	nodeTopologyHasSynced func() bool
 }
 
 // ZoneAndSubnetForNode returns the zone and subnet for a given node by looking up providerID.
@@ -113,7 +121,11 @@ func (z *ZoneGetter) ZoneAndSubnetForNode(name string, logger klog.Logger) (stri
 		nodeLogger.Error(err, "Failed to get subnet from node's LabelNodeSubnet")
 		return "", "", err
 	}
-	if z.onlyIncludeDefaultSubnetNodes {
+
+	nodeTopologySynced := z.nodeTopologyHasSynced()
+	if z.onlyIncludeDefaultSubnetNodes || !nodeTopologySynced {
+		logger.Info("Falling back to only using default subnet when getting subnet for node", "z.onlyIncludeDefaultSubnetNodes", z.onlyIncludeDefaultSubnetNodes, "nodeTopologySynced", nodeTopologySynced)
+
 		defaultSubnet, err := utils.KeyName(z.defaultSubnetURL)
 		if err != nil {
 			nodeLogger.Error(err, "Failed to extract default subnet information from URL", "defaultSubnetURL", z.defaultSubnetURL)
@@ -181,6 +193,42 @@ func (z *ZoneGetter) ListZones(filter Filter, logger klog.Logger) ([]string, err
 	return zones.List(), nil
 }
 
+// ListSubnets returns the lists of subnets in the cluster based on the
+// NodeTopology CR.
+// If the CR does not exist or it is not ready, ListSubnets will return only the
+// default subnet.
+func (z *ZoneGetter) ListSubnets(logger klog.Logger) ([]nodetopologyv1.SubnetConfig, error) {
+	nodeTopologyCRName := flags.F.NodeTopologyCRName
+	nodeTopologySynced := z.nodeTopologyHasSynced()
+	if z.onlyIncludeDefaultSubnetNodes || !nodeTopologySynced {
+		logger.Info("Falling back to only using default subnet when listing subnets", "z.onlyIncludeDefaultSubnetNodes", z.onlyIncludeDefaultSubnetNodes, "nodeTopologySynced", nodeTopologySynced)
+
+		// Parse from https://compute.googleapis.com/v1/projects/... to projects/... format.
+		resourceID, err := cloud.ParseResourceURL(z.defaultSubnetURL)
+		if err != nil {
+			logger.Error(err, "Failed to parse defaultSubnetURL", "defaultSubnetURL", z.defaultSubnetURL)
+			return nil, err
+		}
+		defaultSubnetName := resourceID.Key.Name
+		defaultSubnetPath := cloud.RelativeResourceName(resourceID.ProjectID, resourceID.Resource, resourceID.Key)
+		return []nodetopologyv1.SubnetConfig{{Name: defaultSubnetName, SubnetPath: defaultSubnetPath}}, nil
+	}
+
+	n, exists, err := z.nodeTopologyInformer.GetIndexer().GetByKey(nodeTopologyCRName)
+	if err != nil {
+		return nil, fmt.Errorf("error getting node topology CR %s from cache: %w", nodeTopologyCRName, err)
+	}
+	if !exists {
+		return nil, fmt.Errorf("node topology CR %s is not in store", nodeTopologyCRName)
+	}
+
+	nodeTopologyCR, ok := n.(*nodetopologyv1.NodeTopology)
+	if !ok {
+		return nil, fmt.Errorf("failed to cast %v to node topology type", n)
+	}
+	return nodeTopologyCR.Status.Subnets, nil
+}
+
 // IsNodeSelectedByFilter checks if the node matches the node filter mode.
 func (z *ZoneGetter) IsNodeSelectedByFilter(node *api_v1.Node, filter Filter, filterLogger klog.Logger) bool {
 	nodeAndFilterLogger := filterLogger.WithValues("nodeName", node.Name)
@@ -198,7 +246,10 @@ func (z *ZoneGetter) IsNodeSelectedByFilter(node *api_v1.Node, filter Filter, fi
 
 // allNodesPredicate selects all nodes.
 func (z *ZoneGetter) allNodesPredicate(node *api_v1.Node, nodeLogger klog.Logger) bool {
-	if z.onlyIncludeDefaultSubnetNodes {
+	nodeTopologySynced := z.nodeTopologyHasSynced()
+	if z.onlyIncludeDefaultSubnetNodes || !nodeTopologySynced {
+		nodeLogger.Info("Falling back to only using default subnet when listing all nodes", "z.onlyIncludeDefaultSubnetNodes", z.onlyIncludeDefaultSubnetNodes, "nodeTopologySynced", nodeTopologySynced)
+
 		isInDefaultSubnet, err := isNodeInDefaultSubnet(node, z.defaultSubnetURL, nodeLogger)
 		if err != nil {
 			nodeLogger.Error(err, "Failed to verify if the node is in default subnet")
@@ -226,7 +277,10 @@ func (z *ZoneGetter) candidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes(
 }
 
 func (z *ZoneGetter) nodePredicateInternal(node *api_v1.Node, includeUnreadyNodes, excludeUpgradingNodes bool, nodeAndFilterLogger klog.Logger) bool {
-	if z.onlyIncludeDefaultSubnetNodes {
+	nodeTopologySynced := z.nodeTopologyHasSynced()
+	if z.onlyIncludeDefaultSubnetNodes || !nodeTopologySynced {
+		nodeAndFilterLogger.Info("Falling back to only using default subnet when listing nodes", "z.onlyIncludeDefaultSubnetNodes", z.onlyIncludeDefaultSubnetNodes, "nodeTopologySynced", nodeTopologySynced)
+
 		isInDefaultSubnet, err := isNodeInDefaultSubnet(node, z.defaultSubnetURL, nodeAndFilterLogger)
 		if err != nil {
 			nodeAndFilterLogger.Error(err, "Failed to verify if the node is in default subnet")
@@ -357,21 +411,29 @@ func NewNonGCPZoneGetter(zone string) *ZoneGetter {
 }
 
 // NewZoneGetter initialize a ZoneGetter in GCP mode.
-func NewZoneGetter(nodeInformer cache.SharedIndexInformer, defaultSubnetURL string) *ZoneGetter {
+func NewZoneGetter(nodeInformer, nodeTopologyInformer cache.SharedIndexInformer, defaultSubnetURL string) *ZoneGetter {
 	return &ZoneGetter{
 		mode:                          GCP,
 		nodeLister:                    nodeInformer.GetIndexer(),
+		nodeTopologyInformer:          nodeTopologyInformer,
 		onlyIncludeDefaultSubnetNodes: flags.F.EnableMultiSubnetCluster && !flags.F.EnableMultiSubnetClusterPhase1,
 		defaultSubnetURL:              defaultSubnetURL,
+		nodeTopologyHasSynced: func() bool {
+			return nodeTopologyInformer != nil && nodeTopologyInformer.HasSynced()
+		},
 	}
 }
 
 // NewFakeZoneGetter initialize a fake ZoneGetter in GCP mode to use in test.
-func NewFakeZoneGetter(nodeInformer cache.SharedIndexInformer, defaultSubnetURL string, onlyIncludeDefaultSubnetNodes bool) *ZoneGetter {
+func NewFakeZoneGetter(nodeInformer, nodeTopologyInformer cache.SharedIndexInformer, defaultSubnetURL string, onlyIncludeDefaultSubnetNodes bool) *ZoneGetter {
 	return &ZoneGetter{
 		mode:                          GCP,
 		nodeLister:                    nodeInformer.GetIndexer(),
+		nodeTopologyInformer:          nodeTopologyInformer,
 		onlyIncludeDefaultSubnetNodes: onlyIncludeDefaultSubnetNodes,
 		defaultSubnetURL:              defaultSubnetURL,
+		nodeTopologyHasSynced: func() bool {
+			return nodeTopologyInformer != nil && nodeTopologyInformer.HasSynced()
+		},
 	}
 }

@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/googleapi"
 	apiv1 "k8s.io/api/core/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -35,6 +36,7 @@ import (
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -130,6 +132,8 @@ type transactionSyncer struct {
 	// networkInfo contains the network information to use in GCP resources (VPC URL, Subnetwork URL).
 	// and the k8s network name (can be used in endpoints calculation).
 	networkInfo network.NetworkInfo
+
+	namer namer.NonDefaultSubnetNEGNamer
 }
 
 func NewTransactionSyncer(
@@ -152,6 +156,7 @@ func NewTransactionSyncer(
 	lpConfig labels.PodLabelPropagationConfig,
 	enableDualStackNEG bool,
 	networkInfo network.NetworkInfo,
+	namer namer.NonDefaultSubnetNEGNamer,
 ) negtypes.NegSyncer {
 
 	logger := log.WithName("Syncer").WithValues("service", klog.KRef(negSyncerKey.Namespace, negSyncerKey.Name), "negName", negSyncerKey.NegName)
@@ -182,6 +187,7 @@ func NewTransactionSyncer(
 		enableDualStackNEG:        enableDualStackNEG,
 		podLabelPropagationConfig: lpConfig,
 		networkInfo:               networkInfo,
+		namer:                     namer,
 	}
 	// Syncer implements life cycle logic
 	syncer := newSyncer(negSyncerKey, serviceLister, recorder, ts, logger)
@@ -421,7 +427,6 @@ func (s *transactionSyncer) resetErrorState() {
 
 // ensureNetworkEndpointGroups ensures NEGs are created and configured correctly in the corresponding zones.
 func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
-	var err error
 	// NEGs should be created in zones with candidate nodes only.
 	zones, err := s.zoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(s.EpCalculatorMode), s.logger)
 	if err != nil {
@@ -432,38 +437,78 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 	var negObjRefs []negv1beta1.NegObjectReference
 	updateNEGStatus := true
 	negsByLocation := make(map[string]int)
-	for _, zone := range zones {
-		var negObj negv1beta1.NegObjectReference
-		negObj, err = ensureNetworkEndpointGroup(
-			s.Namespace,
-			s.Name,
-			s.NegSyncerKey.NegName,
-			zone,
-			s.NegSyncerKey.String(),
-			s.kubeSystemUID,
-			fmt.Sprint(s.NegSyncerKey.PortTuple.Port),
-			s.NegSyncerKey.NegType,
-			s.cloud,
-			s.serviceLister,
-			s.recorder,
-			s.NegSyncerKey.GetAPIVersion(),
-			s.customName,
-			s.networkInfo,
-			s.logger,
-		)
-		if err != nil {
-			errList = append(errList, err)
-			// Do not modify NEG Status if there is conflict within the same cluster
-			// and namespace because the CR is owned by a different syncer.
-			if errors.Is(err, utils.ErrNEGUsedByAnotherSyncer) {
-				updateNEGStatus = false
-				break
+
+	// Get default subnet from syncer's networkInfo.
+	defaultSubnet, err := utils.KeyName(s.networkInfo.SubnetworkURL)
+	if err != nil {
+		s.logger.Error(err, "Errored getting default subnet from NetworkInfo")
+		return err
+	}
+
+	// List all existing subnets from the cluster.
+	subnetConfigs, err := s.zoneGetter.ListSubnets(s.logger)
+	if err != nil {
+		s.logger.Error(err, "Failed to list subnets from zoneGetter")
+		return err
+	}
+
+	for _, subnetConfig := range subnetConfigs {
+		negName := s.NegSyncerKey.NegName
+		networkInfo := s.networkInfo
+
+		if subnetConfig.Name != defaultSubnet {
+			// Determine the NEG name for the non-default subnet NEGs.
+			negName, err = s.getNonDefaultSubnetName(subnetConfig.Name)
+			if err != nil {
+				s.logger.Error(err, "Unable to get the name of the additional NEG based on the subnet name", "subnetName", subnetConfig.Name)
+				errList = append(errList, err)
+				continue
 			}
+
+			// Determine the networkInfo for the non-default subnet NEGs.
+			resourceID, err := cloud.ParseResourceURL(subnetConfig.SubnetPath)
+			if err != nil {
+				s.logger.Error(err, "Failed to parse subnet path", "subnetPath", subnetConfig.SubnetPath)
+				errList = append(errList, err)
+				continue
+			}
+			// Add compute and version GA prefix.
+			networkInfo.SubnetworkURL = cloud.SelfLink(meta.VersionGA, resourceID.ProjectID, resourceID.Resource, resourceID.Key)
 		}
 
-		if s.svcNegClient != nil && err == nil {
-			negObjRefs = append(negObjRefs, negObj)
-			negsByLocation[zone]++
+		for _, zone := range zones {
+			var negObj negv1beta1.NegObjectReference
+			negObj, err = ensureNetworkEndpointGroup(
+				s.Namespace,
+				s.Name,
+				negName,
+				zone,
+				s.NegSyncerKey.String(),
+				s.kubeSystemUID,
+				fmt.Sprint(s.NegSyncerKey.PortTuple.Port),
+				s.NegSyncerKey.NegType,
+				s.cloud,
+				s.serviceLister,
+				s.recorder,
+				s.NegSyncerKey.GetAPIVersion(),
+				s.customName,
+				networkInfo,
+				s.logger,
+			)
+			if err != nil {
+				errList = append(errList, err)
+				// Do not modify NEG Status if there is conflict within the same cluster
+				// and namespace because the CR is owned by a different syncer.
+				if errors.Is(err, utils.ErrNEGUsedByAnotherSyncer) {
+					updateNEGStatus = false
+					break
+				}
+			}
+
+			if s.svcNegClient != nil && err == nil {
+				negObjRefs = append(negObjRefs, negObj)
+				negsByLocation[zone]++
+			}
 		}
 	}
 
@@ -881,6 +926,19 @@ func (s *transactionSyncer) computeEPSStaleness(endpointSlices []*discovery.Endp
 		metrics.PublishNegEPSStalenessMetrics(epsStaleness)
 		s.logger.V(3).Info("Endpoint slice syncs", "Namespace", endpointSlice.Namespace, "Name", endpointSlice.Name, "staleness", epsStaleness)
 	}
+}
+
+// getNonDefaultSubnetName returns the name of the NEG based on the subnet name.
+func (s *transactionSyncer) getNonDefaultSubnetName(subnet string) (string, error) {
+	if s.customName {
+		negName, err := s.namer.NonDefaultSubnetCustomNEG(s.NegSyncerKey.NegName, subnet)
+		if err != nil {
+			return "", err
+		}
+		return negName, nil
+	}
+
+	return s.namer.NonDefaultSubnetNEG(s.NegSyncerKey.Namespace, s.NegSyncerKey.Name, subnet, s.NegSyncerKey.PortTuple.Port), nil
 }
 
 // computeDegradedModeCorrectness computes degraded mode correctness metrics based on the difference between degraded mode and normal calculation
