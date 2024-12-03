@@ -28,11 +28,13 @@ BINARIES=${BINARIES:-"e2e-test"}
 ALL_ARCH=${ALL_ARCH:-"amd64 arm64"}
 REGISTRY=${REGISTRY:-"gcr.io/example"}
 VERSION=${VERSION:-"test"}
+ADDITIONAL_TAGS=${ADDITIONAL_TAGS:-""}
 
 echo BINARIES=${BINARIES}
 echo ALL_ARCH=${ALL_ARCH}
 echo REGISTRY=${REGISTRY}
 echo VERSION=${VERSION}
+echo ADDITIONAL_TAGS=${ADDITIONAL_TAGS}
 
 echo "building all binaries"
 make all-build ALL_ARCH="${ALL_ARCH}" CONTAINER_BINARIES="${BINARIES}"
@@ -47,22 +49,33 @@ curl -sL "https://github.com/google/go-containerregistry/releases/download/v0.15
 
 for binary in ${BINARIES}
 do
-    # "arm64 amd64" ---> "linux/arm64,linux/amd64" 
+    # "arm64 amd64" ---> "linux/arm64,linux/amd64"
     PLATFORMS="linux/$(echo ${ALL_ARCH} | sed 's~ ~,linux/~g')"
     echo "docker buildx platform parameters: ${PLATFORMS}"
     MULTIARCH_IMAGE="${REGISTRY}/ingress-gce-${binary}:${VERSION}"
     echo "building ${MULTIARCH_IMAGE} image.."
+
+    tags="--tag ${MULTIARCH_IMAGE}"
+    for tag in ${ADDITIONAL_TAGS}
+    do
+        tags+=" --tag ${REGISTRY}/ingress-gce-${binary}:${tag}"
+    done
+
     docker buildx build --push  \
         --platform ${PLATFORMS}  \
-        --tag  ${MULTIARCH_IMAGE} \
+        ${tags} \
         -f Dockerfile.${binary} .
     echo "done, pushed $MULTIARCH_IMAGE image"
 
-    # Tag arch specific images for the legacy registries
-    for arch in ${ALL_ARCH}
-    do
-        # krane is a variation of crane that supports k8s auth
-        ./krane copy --platform linux/${arch} ${MULTIARCH_IMAGE} ${REGISTRY}/ingress-gce-${binary}-${arch}:${VERSION}
-    done
-    echo "images are copied to arch specific registries"
+   # Tag arch specific images for the legacy registries
+   for arch in ${ALL_ARCH}
+   do
+       # krane is a variation of crane that supports k8s auth
+       ./krane copy --platform linux/${arch} ${MULTIARCH_IMAGE} ${REGISTRY}/ingress-gce-${binary}-${arch}:${VERSION}
+       for tag in ${ADDITIONAL_TAGS}
+       do
+           ./krane copy --platform linux/${arch} ${MULTIARCH_IMAGE} ${REGISTRY}/ingress-gce-${binary}-${arch}:${tag}
+       done
+   done
+  echo "images are copied to arch specific registries"
 done
