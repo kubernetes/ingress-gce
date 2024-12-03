@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/kr/pretty"
 	"google.golang.org/api/compute/v1"
@@ -36,6 +37,8 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
+
+const cdnTestPollTimeout = 30 * time.Minute
 
 // TestCDN is for ingress versions before the CDN config was expanded
 func TestCDN(t *testing.T) {
@@ -961,7 +964,7 @@ func updateConfigAndValidate(
 
 	// wait and validate the changes
 	var lastError error
-	waitErr := wait.Poll(transitionPollInterval, transitionPollTimeout, func() (bool, error) {
+	waitErr := wait.Poll(transitionPollInterval, cdnTestPollTimeout, func() (bool, error) {
 		lastError = validateBackend(ing, namespace, serviceName, expected)
 		if lastError == nil {
 			return true, nil
