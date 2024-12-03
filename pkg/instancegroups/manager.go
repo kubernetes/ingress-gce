@@ -312,6 +312,16 @@ func (m *manager) Sync(nodes []string, logger klog.Logger) (err error) {
 	zonedNodes := m.splitNodesByZone(nodes, iglogger)
 	iglogger.Info(fmt.Sprintf("Syncing nodes: %d nodes over %d zones", len(nodes), len(zonedNodes)))
 
+	zones, err := m.ZoneGetter.ListZones(zonegetter.AllNodesFilter, iglogger)
+	if err != nil {
+		iglogger.Error(err, "Failed to list zones")
+	}
+	for _, zone := range zones {
+		if _, ok := zonedNodes[zone]; !ok {
+			zonedNodes[zone] = []string{}
+		}
+	}
+
 	emptyZoneNodesNames := sets.NewString(zonedNodes[zonegetter.EmptyZone]...)
 	if len(emptyZoneNodesNames) > 0 {
 		iglogger.Info(fmt.Sprintf("%d nodes have empty zone: %v. They will not be removed from instance group as long as zone is missing", len(emptyZoneNodesNames), emptyZoneNodesNames))
