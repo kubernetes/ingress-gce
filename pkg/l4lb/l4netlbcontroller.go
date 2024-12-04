@@ -184,7 +184,7 @@ func (lc *L4NetLBController) needsAddition(newSvc, oldSvc *v1.Service) bool {
 // needsDeletion return true if svc required deleting RBS based NetLB
 func (lc *L4NetLBController) needsDeletion(svc *v1.Service, svcLogger klog.Logger) bool {
 	// Check if service was provisioned by RBS controller before -- if it has rbs finalizer or rbs forwarding rule
-	if !utils.HasL4NetLBFinalizerV2(svc) && !lc.hasRBSForwardingRule(svc, svcLogger) {
+	if !utils.HasL4NetLBFinalizerV2(svc) && !utils.HasL4NetLBFinalizerV3(svc) && !lc.hasRBSForwardingRule(svc, svcLogger) {
 		return false
 	}
 	// handles service deletion
@@ -326,7 +326,7 @@ func (lc *L4NetLBController) isRBSBasedService(svc *v1.Service, svcLogger klog.L
 
 func (lc *L4NetLBController) preventLegacyServiceHandling(service *v1.Service, key string, svcLogger klog.Logger) (bool, error) {
 	if annotations.HasRBSAnnotation(service) && lc.hasTargetPoolForwardingRule(service, svcLogger) {
-		if utils.HasL4NetLBFinalizerV2(service) {
+		if utils.HasL4NetLBFinalizerV2(service) || utils.HasL4NetLBFinalizerV3(service) {
 			// If we found that RBS finalizer was attached to service, it means that RBS controller
 			// had a race condition on Service creation with Legacy Controller.
 			// It should only happen during service creation, and we should clean up RBS resources
