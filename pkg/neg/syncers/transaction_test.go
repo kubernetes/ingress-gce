@@ -2844,6 +2844,15 @@ func (r *testRetryHandler) Reset() {
 	return
 }
 
+// negMeta references a GCE NEG resource
+type negMeta struct {
+	SyncerKey negtypes.NegSyncerKey
+	// Name is the name of the NEG
+	Name string
+	// Zone is the zone of the NEG resource
+	Zone string
+}
+
 type testReflector struct {
 	*readiness.NoopReflector
 	keys     []negtypes.NegSyncerKey
