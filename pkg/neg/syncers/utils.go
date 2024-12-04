@@ -698,8 +698,7 @@ func podBelongsToService(pod *apiv1.Pod, service *apiv1.Service) error {
 }
 
 // retrieveExistingZoneNetworkEndpointMap lists existing network endpoints in the neg and return the zone and endpoints map.
-// TODO(sawsa307): Make sure to include endpoints from non-default NEGs after syncers create non-default subnet NEGs.
-func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter *zonegetter.ZoneGetter, cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, mode negtypes.EndpointsCalculatorMode, enableDualStackNEG bool, subnet string, logger klog.Logger) (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, labels.EndpointPodLabelMap, error) {
+func retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping map[string]string, zoneGetter *zonegetter.ZoneGetter, cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, mode negtypes.EndpointsCalculatorMode, enableDualStackNEG bool, logger klog.Logger) (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, labels.EndpointPodLabelMap, error) {
 	// Include zones that have non-candidate nodes currently. It is possible that NEGs were created in those zones previously and the endpoints now became non-candidates.
 	// Endpoints in those NEGs now need to be removed. This mostly applies to VM_IP_NEGs where the endpoints are nodes.
 	zones, err := zoneGetter.ListZones(zonegetter.AllNodesFilter, logger)
@@ -715,29 +714,31 @@ func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter *zonegett
 
 	zoneNetworkEndpointMap := map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{}
 	endpointPodLabelMap := labels.EndpointPodLabelMap{}
-	for _, zone := range zones {
-		networkEndpointsWithHealthStatus, err := cloud.ListNetworkEndpoints(negName, zone, false, version, logger)
-		if err != nil {
-			// It is possible for a NEG to be missing in a zone without candidate nodes. Log and ignore this error.
-			// NEG not found in a candidate zone is an error.
-			if utils.IsNotFoundError(err) && !candidateZonesMap.Has(zone) {
-				logger.Info("Ignoring NotFound error for NEG", "negName", negName, "zone", zone)
-				metrics.PublishNegControllerErrorCountMetrics(err, true)
-				continue
+	for subnet, negName := range subnetToNegMapping {
+		for _, zone := range zones {
+			networkEndpointsWithHealthStatus, err := cloud.ListNetworkEndpoints(negName, zone, false, version, logger)
+			if err != nil {
+				// It is possible for a NEG to be missing in a zone without candidate nodes. Log and ignore this error.
+				// NEG not found in a candidate zone is an error.
+				if utils.IsNotFoundError(err) && !candidateZonesMap.Has(zone) {
+					logger.Info("Ignoring NotFound error for NEG", "negName", negName, "zone", zone)
+					metrics.PublishNegControllerErrorCountMetrics(err, true)
+					continue
+				}
+				return nil, nil, fmt.Errorf("Failed to lookup NEG in zone %q, candidate zones %v, err - %w", zone, candidateZonesMap, err)
 			}
-			return nil, nil, fmt.Errorf("Failed to lookup NEG in zone %q, candidate zones %v, err - %w", zone, candidateZonesMap, err)
-		}
-		zoneNetworkEndpointMap[negtypes.EndpointGroupInfo{Zone: zone, Subnet: subnet}] = negtypes.NewNetworkEndpointSet()
-		for _, ne := range networkEndpointsWithHealthStatus {
-			newNE := negtypes.NetworkEndpoint{IP: ne.NetworkEndpoint.IpAddress, Node: ne.NetworkEndpoint.Instance}
-			if ne.NetworkEndpoint.Port != 0 {
-				newNE.Port = strconv.FormatInt(ne.NetworkEndpoint.Port, 10)
+			zoneNetworkEndpointMap[negtypes.EndpointGroupInfo{Zone: zone, Subnet: subnet}] = negtypes.NewNetworkEndpointSet()
+			for _, ne := range networkEndpointsWithHealthStatus {
+				newNE := negtypes.NetworkEndpoint{IP: ne.NetworkEndpoint.IpAddress, Node: ne.NetworkEndpoint.Instance}
+				if ne.NetworkEndpoint.Port != 0 {
+					newNE.Port = strconv.FormatInt(ne.NetworkEndpoint.Port, 10)
+				}
+				if enableDualStackNEG {
+					newNE.IPv6 = ne.NetworkEndpoint.Ipv6Address
+				}
+				zoneNetworkEndpointMap[negtypes.EndpointGroupInfo{Zone: zone, Subnet: subnet}].Insert(newNE)
+				endpointPodLabelMap[newNE] = ne.NetworkEndpoint.Annotations
 			}
-			if enableDualStackNEG {
-				newNE.IPv6 = ne.NetworkEndpoint.Ipv6Address
-			}
-			zoneNetworkEndpointMap[negtypes.EndpointGroupInfo{Zone: zone, Subnet: subnet}].Insert(newNE)
-			endpointPodLabelMap[newNE] = ne.NetworkEndpoint.Annotations
 		}
 	}
 	return zoneNetworkEndpointMap, endpointPodLabelMap, nil

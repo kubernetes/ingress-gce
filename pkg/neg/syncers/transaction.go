@@ -267,11 +267,30 @@ func (s *transactionSyncer) syncInternalImpl() error {
 
 	defaultSubnet, err := utils.KeyName(s.networkInfo.SubnetworkURL)
 	if err != nil {
-		s.logger.Error(err, "Errored getting default subnet from NetworkInfo")
+		s.logger.Error(err, "Errored getting default subnet from NetworkInfo when retrieving existing endpoints")
 		return err
 	}
+	subnetToNegMapping := map[string]string{defaultSubnet: s.NegSyncerKey.NegName}
+	if flags.F.EnableMultiSubnetClusterPhase1 {
+		subnetConfigs, err := s.zoneGetter.ListSubnets(s.logger)
+		if err != nil {
+			s.logger.Error(err, "Errored when listing subnets from zoneGetter")
+			return err
+		}
+		for _, subnetConfig := range subnetConfigs {
+			if subnetConfig.Name == defaultSubnet {
+				continue
+			}
+			nonDefaultNegName, err := s.getNonDefaultSubnetName(subnetConfig.Name)
+			if err != nil {
+				s.logger.Error(err, "Errored when getting NEG name from non-default subnets when retrieving existing endpoints")
+				return err
+			}
+			subnetToNegMapping[subnetConfig.Name] = nonDefaultNegName
+		}
+	}
 
-	currentMap, currentPodLabelMap, err := retrieveExistingZoneNetworkEndpointMap(s.NegSyncerKey.NegName, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode(), s.enableDualStackNEG, defaultSubnet, s.logger)
+	currentMap, currentPodLabelMap, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode(), s.enableDualStackNEG, s.logger)
 	if err != nil {
 		return fmt.Errorf("%w: %w", negtypes.ErrCurrentNegEPNotFound, err)
 	}
@@ -441,7 +460,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 	// Get default subnet from syncer's networkInfo.
 	defaultSubnet, err := utils.KeyName(s.networkInfo.SubnetworkURL)
 	if err != nil {
-		s.logger.Error(err, "Errored getting default subnet from NetworkInfo")
+		s.logger.Error(err, "Errored getting default subnet from NetworkInfo when ensuring NEGs")
 		return err
 	}
 
