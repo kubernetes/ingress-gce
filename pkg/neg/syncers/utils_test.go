@@ -937,7 +937,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 			expectErr: false,
 		},
 		{
-			desc: "2 empty negs in an addtional subnet, and 2 negs in the default subnet with multiple endpoints",
+			desc: "no changes to negs in the default subnet, negs in non-default subnet are newly created without any endpoints",
 			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
 				cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: nonDefaultSubnetNegName, Version: meta.VersionGA}, negtypes.TestZone1, klog.TODO())
 				cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: nonDefaultSubnetNegName, Version: meta.VersionGA}, negtypes.TestZone2, klog.TODO())
@@ -975,7 +975,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 			expectErr: false,
 		},
 		{
-			desc: "2 negs in an addtional subnet, and 2 negs in the default subnet, both with multiple endpoints",
+			desc: "no changes to negs in the default subnet, negs in non-default subnet have newly added endpoints",
 			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
 				cloud.AttachNetworkEndpoints(nonDefaultSubnetNegName, negtypes.TestZone1, []*composite.NetworkEndpoint{
 					{
