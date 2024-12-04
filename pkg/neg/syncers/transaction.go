@@ -281,7 +281,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 			if subnetConfig.Name == defaultSubnet {
 				continue
 			}
-			nonDefaultNegName, err := s.getNonDefaultSubnetName(subnetConfig.Name)
+			nonDefaultNegName, err := s.getNonDefaultSubnetNEGName(subnetConfig.Name)
 			if err != nil {
 				s.logger.Error(err, "Errored when getting NEG name from non-default subnets when retrieving existing endpoints")
 				return err
@@ -477,7 +477,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 
 		if subnetConfig.Name != defaultSubnet {
 			// Determine the NEG name for the non-default subnet NEGs.
-			negName, err = s.getNonDefaultSubnetName(subnetConfig.Name)
+			negName, err = s.getNonDefaultSubnetNEGName(subnetConfig.Name)
 			if err != nil {
 				s.logger.Error(err, "Unable to get the name of the additional NEG based on the subnet name", "subnetName", subnetConfig.Name)
 				errList = append(errList, err)
@@ -754,9 +754,26 @@ func (s *transactionSyncer) commitPods(endpointMap map[negtypes.EndpointGroupInf
 			}
 			zoneEndpointMap[endpoint] = podName
 		}
-		// TODO(sawsa307): Make sure commitPods is called for non-default subnet NEGs.
-		// Only zone is needed because NEGs from non-default subnet have different names.
-		s.reflector.CommitPods(s.NegSyncerKey, s.NegSyncerKey.NegName, endpointGroupInfo.Zone, zoneEndpointMap)
+		negName := s.NegSyncerKey.NegName
+		syncerKey := s.NegSyncerKey
+		if flags.F.EnableMultiSubnetClusterPhase1 {
+			defaultSubnet, err := utils.KeyName(s.networkInfo.SubnetworkURL)
+			if err != nil {
+				s.logger.Error(err, "Errored getting default subnet from NetworkInfo when committing pods")
+				continue
+			}
+
+			if endpointGroupInfo.Subnet != defaultSubnet {
+				negName, err = s.getNonDefaultSubnetNEGName(endpointGroupInfo.Subnet)
+				if err != nil {
+					s.logger.Error(err, "Errored getting non-default subnet NEG name when committing pods")
+					continue
+				}
+			}
+			// To ensure syncerKey has the same information as the passed in NEG name.
+			syncerKey.NegName = negName
+		}
+		s.reflector.CommitPods(syncerKey, negName, endpointGroupInfo.Zone, zoneEndpointMap)
 	}
 }
 
@@ -947,8 +964,8 @@ func (s *transactionSyncer) computeEPSStaleness(endpointSlices []*discovery.Endp
 	}
 }
 
-// getNonDefaultSubnetName returns the name of the NEG based on the subnet name.
-func (s *transactionSyncer) getNonDefaultSubnetName(subnet string) (string, error) {
+// getNonDefaultSubnetNEGName returns the name of the NEG based on the subnet name.
+func (s *transactionSyncer) getNonDefaultSubnetNEGName(subnet string) (string, error) {
 	if s.customName {
 		negName, err := s.namer.NonDefaultSubnetCustomNEG(s.NegSyncerKey.NegName, subnet)
 		if err != nil {
