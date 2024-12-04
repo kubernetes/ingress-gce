@@ -111,6 +111,9 @@ func nodeStatusChanged(old, cur *apiv1.Node) bool {
 	if utils.NodeIsReady(old) != utils.NodeIsReady(cur) {
 		return true
 	}
+	if old.Spec.PodCIDR != cur.Spec.PodCIDR {
+		return true
+	}
 	return false
 }
 
