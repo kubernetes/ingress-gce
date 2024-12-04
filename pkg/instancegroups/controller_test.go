@@ -18,44 +18,68 @@ import (
 
 func TestNodeStatusChanged(t *testing.T) {
 	testCases := []struct {
-		desc   string
-		mutate func(node *api_v1.Node)
-		expect bool
+		desc        string
+		initialNode *api_v1.Node
+		mutate      func(node *api_v1.Node)
+		expect      bool
 	}{
 		{
-			"no change",
-			func(node *api_v1.Node) {},
-			false,
+			desc:   "no change",
+			mutate: func(node *api_v1.Node) {},
+			expect: false,
 		},
 		{
-			"unSchedulable changes",
-			func(node *api_v1.Node) {
+			desc: "become_unSchedulable",
+			mutate: func(node *api_v1.Node) {
 				node.Spec.Unschedulable = true
 			},
-			true,
+			expect: true,
 		},
 		{
-			"readiness changes",
-			func(node *api_v1.Node) {
+			desc:        "become_schedulable",
+			initialNode: testNode(withUnschedulable(true)),
+			mutate:      withUnschedulable(false),
+			expect:      true,
+		},
+		{
+			desc: "readiness changes",
+			mutate: func(node *api_v1.Node) {
 				node.Status.Conditions[0].Status = api_v1.ConditionFalse
 				node.Status.Conditions[0].LastTransitionTime = meta_v1.NewTime(time.Now())
 			},
-			true,
+			expect: true,
 		},
 		{
-			"new heartbeat",
-			func(node *api_v1.Node) {
+			desc: "new heartbeat",
+			mutate: func(node *api_v1.Node) {
 				node.Status.Conditions[0].LastHeartbeatTime = meta_v1.NewTime(time.Now())
 			},
-			false,
+			expect: false,
+		},
+		{
+			desc: "PodCIDR_added",
+			mutate: func(node *api_v1.Node) {
+				node.Spec.PodCIDR = "10.0.0.0/16"
+			},
+			expect: true,
+		},
+		{
+			desc:        "PodCIDR_changed",
+			initialNode: testNode(withPodCIDR("192.168.0.0/24")),
+			mutate:      withPodCIDR("10.0.0.0/24"),
+			expect:      true,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			node := testNode()
-			tc.mutate(node)
-			res := nodeStatusChanged(testNode(), node)
+			initialNode := tc.initialNode
+			if initialNode == nil {
+				initialNode = testNode()
+			}
+			currentNode := initialNode.DeepCopy()
+			tc.mutate(currentNode)
+			res := nodeStatusChanged(initialNode, currentNode)
 			if res != tc.expect {
 				t.Fatalf("Test case %q got: %v, expected: %v", tc.desc, res, tc.expect)
 			}
@@ -63,8 +87,8 @@ func TestNodeStatusChanged(t *testing.T) {
 	}
 }
 
-func testNode() *api_v1.Node {
-	return &api_v1.Node{
+func testNode(modifiers ...func(node *api_v1.Node)) *api_v1.Node {
+	node := &api_v1.Node{
 		ObjectMeta: meta_v1.ObjectMeta{
 			Name: "node",
 			Annotations: map[string]string{
@@ -84,6 +108,24 @@ func testNode() *api_v1.Node {
 				},
 			},
 		},
+	}
+
+	for _, modifier := range modifiers {
+		modifier(node)
+	}
+
+	return node
+}
+
+func withPodCIDR(podCIDR string) func(node *api_v1.Node) {
+	return func(node *api_v1.Node) {
+		node.Spec.PodCIDR = podCIDR
+	}
+}
+
+func withUnschedulable(value bool) func(node *api_v1.Node) {
+	return func(node *api_v1.Node) {
+		node.Spec.Unschedulable = value
 	}
 }
 
