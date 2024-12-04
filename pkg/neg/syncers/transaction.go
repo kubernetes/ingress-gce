@@ -635,7 +635,7 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, epGroupIn
 		}
 
 		if epGroupInfo.Subnet != defaultSubnet {
-			negName, err = s.getNonDefaultSubnetName(epGroupInfo.Subnet)
+			negName, err = s.getNonDefaultSubnetNEGName(epGroupInfo.Subnet)
 			if err != nil {
 				s.logger.Error(err, "Errored getting non-default subnet NEG name when updating NEG endpoints")
 				return err

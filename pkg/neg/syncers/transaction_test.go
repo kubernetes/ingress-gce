@@ -141,77 +141,77 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 			expectEndpoints map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet
 		}{
 			{
-				"empty input",
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
+				desc:            "no endpoints to add or remove",
+				addEndpoints:    map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
+				removeEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
+				expectEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
 			},
 			{
-				"add some endpoints",
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				desc: "add some endpoints",
+				addEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, targetPort)),
 					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
 				},
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				removeEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
+				expectEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, targetPort)),
 					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
 				},
 			},
 			{
-				"remove some endpoints",
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				desc:         "remove some endpoints",
+				addEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
+				removeEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, targetPort)),
 				},
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				expectEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
 				},
 			},
 			{
-				"add duplicate endpoints",
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				desc: "add duplicate endpoints",
+				addEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
 				},
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				removeEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
+				expectEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
 				},
 			},
 			{
-				"add and remove endpoints",
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				desc: "add and remove endpoints",
+				addEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, targetPort)),
 				},
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				removeEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
 				},
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				expectEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, targetPort)),
 				},
 			},
 			{
-				"add more endpoints",
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				desc: "add more endpoints",
+				addEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)),
 				},
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				removeEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
+				expectEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, targetPort)),
 					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)),
 				},
 			},
 			{
-				"add and remove endpoints in both zones",
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				desc: "add and remove endpoints in both zones",
+				addEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, targetPort)),
 					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
 				},
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				removeEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, targetPort)),
 					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)),
 				},
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				expectEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, targetPort)),
 					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
 				},
@@ -300,7 +300,7 @@ func TestTransactionSyncNetworkEndpointsMSC(t *testing.T) {
 			t.Fatalf("Failed to add node topology CR: %v", err)
 		}
 		zonegetter.SetNodeTopologyHasSynced(transactionSyncer.zoneGetter, func() bool { return true })
-		nonDefaultNegName, err := transactionSyncer.getNonDefaultSubnetName(additionalTestSubnet)
+		nonDefaultNegName, err := transactionSyncer.getNonDefaultSubnetNEGName(additionalTestSubnet)
 		if err != nil {
 			t.Fatalf("Failed to get non-default subnet NEG name: %v", err)
 		}
@@ -350,93 +350,105 @@ func TestTransactionSyncNetworkEndpointsMSC(t *testing.T) {
 			expectEndpoints map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet
 		}{
 			{
-				"empty input",
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
+				desc:            "no endpoints to add or remove",
+				addEndpoints:    map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
+				removeEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
+				expectEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
 			},
 			{
-				"add some endpoints",
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				desc: "add some endpoints",
+				addEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, targetPort)),
 					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
 				},
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				removeEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
+				expectEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, targetPort)),
 					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
 				},
 			},
 			{
-				"remove some endpoints",
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				desc:         "remove some endpoints",
+				addEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
+				removeEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, targetPort)),
 				},
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				expectEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
 				},
 			},
 			{
-				"add duplicate endpoints",
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				desc: "add duplicate endpoints",
+				addEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
 				},
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				removeEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
+				expectEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
 				},
 			},
 			{
-				"add and remove endpoints",
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				desc: "add and remove endpoints",
+				addEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, targetPort)),
 				},
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				removeEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
 				},
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				expectEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, targetPort)),
 				},
 			},
 			{
-				"add more endpoints",
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				desc: "add more endpoints",
+				addEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)),
 				},
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				removeEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
+				expectEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, targetPort)),
 					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)),
 				},
 			},
 			{
-				"add and remove endpoints in both zones",
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				desc: "add and remove endpoints in both zones",
+				addEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, targetPort)),
 					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
 				},
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				removeEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, targetPort)),
 					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, targetPort)),
 				},
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				expectEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, targetPort)),
 					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
 				},
 			},
 			{
-				"add endpoints in non-default subnets",
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				desc: "add endpoints in non-default subnets",
+				addEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 					{Zone: testZone1, Subnet: additionalTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.2.1.1"), 10, testInstance5, targetPort)),
 					{Zone: testZone2, Subnet: additionalTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.2.2.1"), 10, testInstance6, targetPort)),
 				},
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
-				map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+				removeEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
+				expectEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
 					{Zone: testZone1, Subnet: defaultTestSubnet}:    negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, targetPort)),
 					{Zone: testZone2, Subnet: defaultTestSubnet}:    negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
 					{Zone: testZone1, Subnet: additionalTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.2.1.1"), 10, testInstance5, targetPort)),
 					{Zone: testZone2, Subnet: additionalTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.2.2.1"), 10, testInstance6, targetPort)),
+				},
+			},
+			{
+				desc:         "remove endpoints in non-default subnets",
+				addEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{},
+				removeEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+					{Zone: testZone1, Subnet: additionalTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.2.1.1"), 10, testInstance5, targetPort)),
+					{Zone: testZone2, Subnet: additionalTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.2.2.1"), 10, testInstance6, targetPort)),
+				},
+				expectEndpoints: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, targetPort)),
+					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
 				},
 			},
 		}
