@@ -139,7 +139,7 @@ var F = struct {
 	EnableWeightedL4NetLB                    bool
 	EnableDiscretePortForwarding             bool
 	EnableMultiProjectMode                   bool
-	MultiProjectCRDProjectNameLabel          string
+	ClusterSliceNameLabelKey                 string
 	ClusterSliceAPIGroup                     string
 	EnableL4MixedProtocol                    bool
 }{
@@ -329,7 +329,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.IntVar(&F.KubeClientBurst, "kube-client-burst", 0, "The burst QPS that the controllers' kube client should adhere to through client side throttling. If zero, client will be created with default settings.")
 	flag.BoolVar(&F.EnableDiscretePortForwarding, "enable-discrete-port-forwarding", false, "Enable forwarding of individual ports instead of port ranges.")
 	flag.BoolVar(&F.EnableMultiProjectMode, "enable-multi-project-mode", false, "Enable running in multi-project mode.")
-	flag.StringVar(&F.MultiProjectCRDProjectNameLabel, "multi-project-crd-project-name-label", "", "The label key for project name of Project in a Project CRD in the Multi-Project cluster.")
+	flag.StringVar(&F.ClusterSliceNameLabelKey, "cluster-slice-name-label-key", "", "The label key for cluster-slice name, which is used to identify the cluster slice of objects in multi-project mode.")
 	flag.BoolVar(&F.EnableL4MixedProtocol, "enable-l4-mixed-protocol", false, "Enable support for mixed protocol L4 load balancers.")
 	flag.StringVar(&F.ClusterSliceAPIGroup, "cluster-slice-api-group", "", "The API group for the ClusterSlice CRD.")
 }
