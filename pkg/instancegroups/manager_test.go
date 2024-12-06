@@ -169,9 +169,10 @@ func TestNodePoolSync(t *testing.T) {
 	}
 
 	testCases := []struct {
-		gceNodes       sets.String
-		kubeNodes      sets.String
-		shouldSkipSync bool
+		gceNodes               sets.String
+		kubeNodes              sets.String
+		kubeNodesNotCandidates sets.Set[string]
+		shouldSkipSync         bool
 	}{
 		{
 			gceNodes:  sets.NewString("n1"),
@@ -194,6 +195,11 @@ func TestNodePoolSync(t *testing.T) {
 			gceNodes:  sets.NewString("n0", "n1"),
 			kubeNodes: sets.NewString(names1001...),
 		},
+		{
+			gceNodes:               sets.NewString("n1"),
+			kubeNodes:              sets.NewString(),
+			kubeNodesNotCandidates: sets.New("n1"),
+		},
 	}
 
 	for _, testCase := range testCases {
@@ -207,9 +213,12 @@ func TestNodePoolSync(t *testing.T) {
 		fakeGCEInstanceGroups := NewFakeInstanceGroups(zonesToIGs, maxIGSize)
 
 		pool := newNodePool(fakeGCEInstanceGroups, maxIGSize)
+		manager := pool.(*manager)
 		for _, kubeNode := range testCase.kubeNodes.List() {
-			manager := pool.(*manager)
 			zonegetter.AddFakeNodes(manager.ZoneGetter, defaultTestZone, kubeNode)
+		}
+		for node := range testCase.kubeNodesNotCandidates {
+			zonegetter.AddFakeNodes(manager.ZoneGetter, defaultTestZone, node)
 		}
 
 		igName := defaultNamer.InstanceGroup()
