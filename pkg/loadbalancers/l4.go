@@ -17,6 +17,7 @@ limitations under the License.
 package loadbalancers
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -242,7 +243,12 @@ func (l4 *L4) deleteIPv4ResourcesAnnotationBased(result *L4ILBSyncResult, should
 		l4.hasAnnotation(annotations.UDPForwardingRuleKey) ||
 		l4.hasAnnotation(annotations.L3ForwardingRuleKey)
 	if shouldIgnoreAnnotations || hasFwdRuleAnnotation {
-		err := l4.deleteIPv4ForwardingRule()
+		var err error
+		if l4.enableDualStack && l4.enableMixedProtocol {
+			err = l4.deleteAllIPv4ForwardingRules()
+		} else {
+			err = l4.deleteIPv4ForwardingRule()
+		}
 		if err != nil {
 			l4.svcLogger.Error(err, "Failed to delete forwarding rule for internal loadbalancer service")
 			result.Error = err
@@ -281,6 +287,29 @@ func (l4 *L4) deleteIPv4ForwardingRule() error {
 	}()
 
 	return l4.forwardingRules.Delete(frName)
+}
+
+// When switching from for example IPv4 TCP to IPv6 UDP, simply using GetFRName()
+// to delete won't be accurate since it will try to delete *IPv4 UDP* name not *TCP*,
+// and the UDP forwarding rule will be leaked.
+func (l4 *L4) deleteAllIPv4ForwardingRules() error {
+	start := time.Now()
+
+	frNameTCP := l4.getFRNameWithProtocol(forwardingrules.ProtocolTCP)
+	frNameUDP := l4.getFRNameWithProtocol(forwardingrules.ProtocolUDP)
+	frNameL3 := l4.getFRNameWithProtocol(forwardingrules.ProtocolL3)
+
+	l4.svcLogger.Info("Deleting all potential IPv4 forwarding rule for L4 ILB Service",
+		"forwardingRuleNameTCP", frNameTCP, "forwardingRuleNameUDP", frNameUDP, "forwardingRuleNameL3", frNameL3)
+	defer func() {
+		l4.svcLogger.Info("Finished deleting all IPv4 forwarding rule for L4 ILB Service", "forwardingRuleNameTCP", frNameTCP, "forwardingRuleNameUDP", frNameUDP, "forwardingRuleNameL3", frNameL3, "timeTaken", time.Since(start))
+	}()
+
+	errTCP := l4.forwardingRules.Delete(frNameTCP)
+	errUDP := l4.forwardingRules.Delete(frNameUDP)
+	errL3 := l4.forwardingRules.Delete(frNameL3)
+
+	return errors.Join(errTCP, errUDP, errL3)
 }
 
 func (l4 *L4) deleteIPv4Address() error {
