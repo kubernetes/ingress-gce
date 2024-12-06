@@ -17,6 +17,7 @@ limitations under the License.
 package loadbalancers
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -100,7 +101,12 @@ func (l4 *L4) deleteIPv6ResourcesAnnotationBased(syncResult *L4ILBSyncResult, sh
 		l4.hasAnnotation(annotations.L3ForwardingRuleIPv6Key)
 
 	if !shouldCheckAnnotations || hasFwdRuleAnnotation {
-		err := l4.deleteIPv6ForwardingRule()
+		var err error
+		if l4.enableDualStack && l4.enableMixedProtocol {
+			err = l4.deleteAllIPv6ForwardingRules()
+		} else {
+			err = l4.deleteIPv6ForwardingRule()
+		}
 		if err != nil {
 			l4.svcLogger.Error(err, "Failed to delete ipv6 forwarding rule for internal loadbalancer service")
 			syncResult.Error = err
@@ -199,6 +205,29 @@ func (l4 *L4) deleteIPv6ForwardingRule() error {
 	}()
 
 	return l4.forwardingRules.Delete(ipv6FrName)
+}
+
+// When switching from for example IPv6 TCP to IPv4 UDP, simply using GetFRName()
+// to delete won't be accurate since it will try to delete *IPv6 UDP* name not *TCP*,
+// and the UDP forwarding rule will be leaked.
+func (l4 *L4) deleteAllIPv6ForwardingRules() error {
+	start := time.Now()
+
+	frNameTCP := l4.getIPv6FRNameWithProtocol(forwardingrules.ProtocolTCP)
+	frNameUDP := l4.getIPv6FRNameWithProtocol(forwardingrules.ProtocolUDP)
+	frNameL3 := l4.getIPv6FRNameWithProtocol(forwardingrules.ProtocolL3)
+
+	l4.svcLogger.Info("Deleting all potential IPv6 forwarding rule for L4 ILB Service",
+		"forwardingRuleNameTCP", frNameTCP, "forwardingRuleNameUDP", frNameUDP, "forwardingRuleNameL3", frNameL3)
+	defer func() {
+		l4.svcLogger.Info("Finished deleting all IPv6 forwarding rule for L4 ILB Service", "forwardingRuleNameTCP", frNameTCP, "forwardingRuleNameUDP", frNameUDP, "forwardingRuleNameL3", frNameL3, "timeTaken", time.Since(start))
+	}()
+
+	errTCP := l4.forwardingRules.Delete(frNameTCP)
+	errUDP := l4.forwardingRules.Delete(frNameUDP)
+	errL3 := l4.forwardingRules.Delete(frNameL3)
+
+	return errors.Join(errTCP, errUDP, errL3)
 }
 
 func (l4 *L4) deleteIPv6NodesFirewall() error {
