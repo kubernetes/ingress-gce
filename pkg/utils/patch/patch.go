@@ -14,15 +14,19 @@ limitations under the License.
 package patch
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/jsonmergepatch"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	coreclient "k8s.io/client-go/kubernetes/typed/core/v1"
 	svchelpers "k8s.io/cloud-provider/service/helpers"
+	clusterslice "k8s.io/ingress-gce/pkg/apis/clusterslice/v1"
+	clustersliceclient "k8s.io/ingress-gce/pkg/clusterslice/client/clientset/versioned/typed/clusterslice/v1"
 )
 
 // StrategicMergePatchBytes returns a patch between the old and new object using a strategic merge patch.
@@ -83,4 +87,41 @@ func PatchServiceLoadBalancerStatus(client coreclient.CoreV1Interface, svc *core
 	newSvc.Status.LoadBalancer = newStatus
 	_, err := svchelpers.PatchService(client, svc, newSvc)
 	return err
+}
+
+// PatchClusterSliceObjectMetadata patches the given ClusterSlice's metadata based on new metadata.
+func PatchClusterSliceObjectMetadata(client clustersliceclient.ClusterSliceInterface, cs *clusterslice.ClusterSlice, newObjectMetadata metav1.ObjectMeta) error {
+	// Reset Spec to ensure only ObjectMeta is patched.
+	newCS := cs.DeepCopy()
+	newCS.Spec = cs.Spec
+
+	newCS.ObjectMeta = newObjectMetadata
+
+	patchBytes, err := getClusterSlicePatchBytes(cs, newCS)
+	if err != nil {
+		return err
+	}
+
+	_, err = client.Patch(context.Background(), newCS.Name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
+	return err
+}
+
+// getClusterSlicePatchBytes generates the patch bytes for updating a ClusterSlice.
+func getClusterSlicePatchBytes(oldCS, newCS *clusterslice.ClusterSlice) ([]byte, error) {
+	oldData, err := json.Marshal(oldCS)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal old object: %v", err)
+	}
+
+	newData, err := json.Marshal(newCS)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal new object: %v", err)
+	}
+
+	patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldData, newData, clusterslice.ClusterSlice{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create patch: %v", err)
+	}
+
+	return patchBytes, nil
 }
