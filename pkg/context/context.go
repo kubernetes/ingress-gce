@@ -147,7 +147,8 @@ type ControllerContextConfig struct {
 	DisableL4LBFirewall           bool
 	EnableL4NetLBNEGs             bool
 	EnableL4NetLBNEGsDefault      bool
-	EnableL4MixedProtocol         bool
+	EnableL4ILBMixedProtocol      bool
+	EnableL4NetLBMixedProtocol    bool
 }
 
 // NewControllerContext returns a new shared set of informers.
