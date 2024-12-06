@@ -350,3 +350,44 @@ func DeleteSignedUrlKey(gceCloud *gce.Cloud, key *meta.Key, backendService *Back
 		return mc.Observe(gceCloud.Compute().BackendServices().DeleteSignedUrlKey(ctx, key, keyName))
 	}
 }
+
+// SetLabelsForForwardingRule() sets the labels on a forwarding rule
+func SetLabelsForwardingRule(gceCloud *gce.Cloud, key *meta.Key, forwardingRule *ForwardingRule, labels map[string]string, logger klog.Logger) error {
+	ctx, cancel := cloud.ContextWithCallTimeout()
+	defer cancel()
+	mc := metrics.NewMetricContext("ForwardingRule", "set_labels", key.Region, key.Zone, string(forwardingRule.Version))
+
+	// Set name in case it is not present in the key
+	key.Name = forwardingRule.Name
+	logger.V(3).Info("setting labels for forwarding rule", "key", key)
+
+	switch forwardingRule.Version {
+	case meta.VersionAlpha:
+		switch key.Type() {
+		case meta.Regional:
+			req := &computealpha.RegionSetLabelsRequest{Labels: labels, LabelFingerprint: forwardingRule.LabelFingerprint}
+			return mc.Observe(gceCloud.Compute().AlphaForwardingRules().SetLabels(ctx, key, req))
+		default:
+			req := &computealpha.GlobalSetLabelsRequest{Labels: labels, LabelFingerprint: forwardingRule.LabelFingerprint}
+			return mc.Observe(gceCloud.Compute().AlphaGlobalForwardingRules().SetLabels(ctx, key, req))
+		}
+	case meta.VersionBeta:
+		switch key.Type() {
+		case meta.Regional:
+			req := &computebeta.RegionSetLabelsRequest{Labels: labels, LabelFingerprint: forwardingRule.LabelFingerprint}
+			return mc.Observe(gceCloud.Compute().BetaForwardingRules().SetLabels(ctx, key, req))
+		default:
+			req := &computebeta.GlobalSetLabelsRequest{Labels: labels, LabelFingerprint: forwardingRule.LabelFingerprint}
+			return mc.Observe(gceCloud.Compute().BetaGlobalForwardingRules().SetLabels(ctx, key, req))
+		}
+	default:
+		switch key.Type() {
+		case meta.Regional:
+			req := &compute.RegionSetLabelsRequest{Labels: labels, LabelFingerprint: forwardingRule.LabelFingerprint}
+			return mc.Observe(gceCloud.Compute().ForwardingRules().SetLabels(ctx, key, req))
+		default:
+			req := &compute.GlobalSetLabelsRequest{Labels: labels, LabelFingerprint: forwardingRule.LabelFingerprint}
+			return mc.Observe(gceCloud.Compute().GlobalForwardingRules().SetLabels(ctx, key, req))
+		}
+	}
+}

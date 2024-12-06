@@ -18,6 +18,7 @@ package loadbalancers
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -38,4 +39,17 @@ func InsertForwardingRuleHook(ctx context.Context, key *meta.Key, obj *compute.F
 		obj.IPAddress = "10.0.0.1"
 	}
 	return false, nil
+}
+
+func SetLabelsHook(ctx context.Context, key *meta.Key, req *compute.GlobalSetLabelsRequest, m *cloud.MockGlobalForwardingRules, options ...cloud.Option) error {
+	m.Lock.Lock()
+	defer m.Lock.Unlock()
+	var fr *compute.ForwardingRule
+	if obj, ok := m.Objects[*key]; ok {
+		fr = obj.ToGA()
+		fr.Labels = req.Labels
+		m.Objects[*key] = &cloud.MockGlobalForwardingRulesObj{Obj: fr}
+		return nil
+	}
+	return fmt.Errorf("failed to find the forwarding rule with key %v", key)
 }
