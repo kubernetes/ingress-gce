@@ -22,26 +22,41 @@ const (
 	maxForwardedPorts = 5
 )
 
+// Namer is used to get names for forwarding rules.
 type Namer interface {
 	L4ForwardingRule(namespace, name, protocol string) string
 }
 
-type MixedManagerELB struct {
+// Provider is the interface for the ForwardingRules provider.
+// We can't use the *ForwardingRules directly, since L4NetLB uses interface.
+type Provider interface {
+	Get(name string) (*composite.ForwardingRule, error)
+	Create(forwardingRule *composite.ForwardingRule) error
+	Delete(name string) error
+	Patch(forwardingRule *composite.ForwardingRule) error
+}
+
+// MixedManagerNetLB is responsible for Ensuring and Deleting Forwarding Rules
+// for mixed protocol NetLBs.
+type MixedManagerNetLB struct {
 	Namer    Namer
-	Provider *ForwardingRules
+	Provider Provider
 	Recorder record.EventRecorder
 	Logger   logr.Logger
 
 	Service *api_v1.Service
 }
 
-type EnsureELBConfig struct {
+// EnsureNetLBConfig contains fields specific to ensuring proper Forwarding Rules
+// for mixed protocol NetLBs.
+type EnsureNetLBConfig struct {
 	// BackendServiceLink to the L3 (UNDEFINED) Protocol Backend Service.
 	BackendServiceLink string
 	IP                 string
 }
 
-type EnsureELBResult struct {
+// EnsureNetLBResult contains relevant results for Ensure method
+type EnsureNetLBResult struct {
 	UDPFwdRule *composite.ForwardingRule
 	TCPFwdRule *composite.ForwardingRule
 	IPManaged  bool
@@ -49,23 +64,25 @@ type EnsureELBResult struct {
 }
 
 // EnsureIPv4 will try to create or update forwarding rules for mixed protocol service.
-func (m *MixedManagerELB) EnsureIPv4(cfg *EnsureELBConfig) (*EnsureELBResult, error) {
+func (m *MixedManagerNetLB) EnsureIPv4(cfg EnsureNetLBConfig) (EnsureNetLBResult, error) {
 	svcPorts := m.Service.Spec.Ports
-	needsMixed := NeedsTCP(svcPorts) && NeedsUDP(svcPorts)
-	if !needsMixed {
-		return nil, fmt.Errorf("MixedManagerELB shouldn't be used to ensure single protocol forwarding rules to be backwards compatible")
+	res := EnsureNetLBResult{
+		SyncStatus: utils.ResourceResync,
+	}
+
+	if !NeedsMixed(svcPorts) {
+		return res, fmt.Errorf("MixedManagerELB shouldn't be used to ensure single protocol forwarding rules to be backwards compatible")
 	}
 
 	var tcpErr, udpErr error
 	var tcpSync, udpSync utils.ResourceSyncStatus
-	res := &EnsureELBResult{
-		SyncStatus: utils.ResourceResync,
-	}
 
 	res.TCPFwdRule, tcpSync, tcpErr = m.ensure(cfg, "TCP")
 	res.UDPFwdRule, udpSync, udpErr = m.ensure(cfg, "UDP")
 
-	res.SyncStatus = tcpSync || udpSync
+	if tcpSync == utils.ResourceUpdate || udpSync == utils.ResourceUpdate {
+		res.SyncStatus = utils.ResourceUpdate
+	}
 	err := errors.Join(tcpErr, udpErr)
 
 	return res, err
@@ -79,7 +96,7 @@ func (m *MixedManagerELB) EnsureIPv4(cfg *EnsureELBConfig) (*EnsureELBResult, er
 // * if equal 			-> do nothing
 // * if can be patched 	-> patch
 // * else 				-> delete and recreate
-func (m *MixedManagerELB) ensure(cfg *EnsureELBConfig, protocol string) (*composite.ForwardingRule, utils.ResourceSyncStatus, error) {
+func (m *MixedManagerNetLB) ensure(cfg EnsureNetLBConfig, protocol string) (*composite.ForwardingRule, utils.ResourceSyncStatus, error) {
 	name := m.name(protocol)
 	start := time.Now()
 	log := m.Logger.
@@ -141,7 +158,7 @@ func (m *MixedManagerELB) ensure(cfg *EnsureELBConfig, protocol string) (*compos
 	return m.getAfterUpdate(name)
 }
 
-func (m *MixedManagerELB) recreate(wanted *composite.ForwardingRule) error {
+func (m *MixedManagerNetLB) recreate(wanted *composite.ForwardingRule) error {
 	if err := m.Provider.Delete(wanted.Name); err != nil {
 		return err
 	}
@@ -153,7 +170,7 @@ func (m *MixedManagerELB) recreate(wanted *composite.ForwardingRule) error {
 	return nil
 }
 
-func (m *MixedManagerELB) buildWanted(cfg *EnsureELBConfig, name, protocol string) (*composite.ForwardingRule, error) {
+func (m *MixedManagerNetLB) buildWanted(cfg EnsureNetLBConfig, name, protocol string) (*composite.ForwardingRule, error) {
 	const version = meta.VersionGA
 	const scheme = string(cloud.SchemeExternal)
 	protocol = strings.ToUpper(protocol)
@@ -189,7 +206,7 @@ func (m *MixedManagerELB) buildWanted(cfg *EnsureELBConfig, name, protocol strin
 	}, nil
 }
 
-func (m *MixedManagerELB) getAfterUpdate(name string) (*composite.ForwardingRule, utils.ResourceSyncStatus, error) {
+func (m *MixedManagerNetLB) getAfterUpdate(name string) (*composite.ForwardingRule, utils.ResourceSyncStatus, error) {
 	found, err := m.Provider.Get(name)
 	if err != nil {
 		return nil, utils.ResourceUpdate, err
@@ -201,24 +218,24 @@ func (m *MixedManagerELB) getAfterUpdate(name string) (*composite.ForwardingRule
 	return found, utils.ResourceUpdate, nil
 }
 
-func (m *MixedManagerELB) DeleteIPv4() error {
+func (m *MixedManagerNetLB) DeleteIPv4() error {
 	tcpErr := m.delete("tcp")
 	udpErr := m.delete("udp")
 
 	return errors.Join(tcpErr, udpErr)
 }
 
-func (m *MixedManagerELB) delete(protocol string) error {
+func (m *MixedManagerNetLB) delete(protocol string) error {
 	name := m.name(protocol)
 	return m.Provider.Delete(name)
 }
 
-func (m *MixedManagerELB) name(protocol string) string {
+func (m *MixedManagerNetLB) name(protocol string) string {
 	return m.Namer.L4ForwardingRule(
 		m.Service.Namespace, m.Service.Name, strings.ToLower(protocol),
 	)
 }
 
-func (m *MixedManagerELB) recordf(messageFmt string, args ...any) {
+func (m *MixedManagerNetLB) recordf(messageFmt string, args ...any) {
 	m.Recorder.Eventf(m.Service, api_v1.EventTypeNormal, events.SyncIngress, messageFmt, args)
 }

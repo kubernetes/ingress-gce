@@ -332,7 +332,11 @@ func (l4netlb *L4NetLB) connectionTrackingPolicy() *composite.BackendServiceConn
 func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcLink string) string {
 	bsName := l4netlb.namer.L4Backend(l4netlb.Service.Namespace, l4netlb.Service.Name)
 	servicePorts := l4netlb.Service.Spec.Ports
-	protocol := utils.GetProtocol(servicePorts)
+
+	protocol := string(utils.GetProtocol(servicePorts))
+	if l4netlb.enableMixedProtocol {
+		protocol = backends.GetProtocol(servicePorts)
+	}
 
 	localityLbPolicy := l4netlb.determineBackendServiceLocalityPolicy()
 
@@ -340,7 +344,7 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 	backendParams := backends.L4BackendServiceParams{
 		Name:                     bsName,
 		HealthCheckLink:          hcLink,
-		Protocol:                 string(protocol),
+		Protocol:                 protocol,
 		SessionAffinity:          string(l4netlb.Service.Spec.SessionAffinity),
 		Scheme:                   string(cloud.SchemeExternal),
 		NamespacedName:           l4netlb.NamespacedName,
@@ -385,7 +389,15 @@ func (l4netlb *L4NetLB) ensureDualStackResources(result *L4NetLBSyncResult, node
 // - IPv4 Forwarding Rule
 // - IPv4 Firewall
 func (l4netlb *L4NetLB) ensureIPv4Resources(result *L4NetLBSyncResult, nodeNames []string, bsLink string) {
+	if l4netlb.enableMixedProtocol && forwardingrules.NeedsMixed(l4netlb.Service.Spec.Ports) {
+		l4netlb.ensureIPv4MixedResources(result, nodeNames, bsLink)
+		return
+	}
+
+	err := l4netlb.deleteIPv4MixedProtocolForwardingRules()
+	// TODO(dwysocki): handle error
 	fr, ipAddrType, wasUpdate, err := l4netlb.ensureIPv4ForwardingRule(bsLink)
+
 	result.GCEResourceUpdate.SetForwardingRule(wasUpdate)
 	if err != nil {
 		// User can misconfigure the forwarding rule if Network Tier will not match service level Network Tier.
@@ -409,6 +421,75 @@ func (l4netlb *L4NetLB) ensureIPv4Resources(result *L4NetLBSyncResult, nodeNames
 	}
 
 	result.Status = utils.AddIPToLBStatus(result.Status, fr.IPAddress)
+}
+
+func (l4netlb *L4NetLB) ensureIPv4MixedResources(result *L4NetLBSyncResult, nodeNames []string, bsLink string) {
+	// We need to clean up existing forwarding rule so that there isn't a port collision.
+	// This means deleting forwarding rule with legacy name - starting with 'a'
+	// and using protocol specific names identical to those used by ILB.
+	err := l4netlb.deleteIPv4ForwardingRule()
+	if err != nil {
+		// User can misconfigure the forwarding rule if Network Tier will not match service level Network Tier.
+		result.GCEResourceInError = annotations.ForwardingRuleResource
+		result.Error = fmt.Errorf("failed to clean up single protocol forwarding rule - %w", err)
+		result.MetricsLegacyState.IsUserError = utils.IsUserError(err)
+		return
+	}
+
+	mgr := &forwardingrules.MixedManagerNetLB{
+		Namer:    l4netlb.namer,
+		Provider: l4netlb.forwardingRules,
+		Recorder: l4netlb.recorder,
+		Logger:   l4netlb.svcLogger,
+		Service:  l4netlb.Service,
+	}
+
+	ip, err := address.IPv4ToUse(l4netlb.cloud, l4netlb.recorder, l4netlb.Service, nil, "")
+	if err != nil {
+		// User can misconfigure the forwarding rule if Network Tier will not match service level Network Tier.
+		result.GCEResourceInError = annotations.ForwardingRuleResource
+		result.Error = fmt.Errorf("failed to clean up single protocol forwarding rule - %w", err)
+		result.MetricsLegacyState.IsUserError = utils.IsUserError(err)
+		return
+	}
+
+	res, err := mgr.EnsureIPv4(forwardingrules.EnsureNetLBConfig{
+		BackendServiceLink: bsLink,
+		IP:                 ip,
+	})
+
+	result.GCEResourceUpdate.SetForwardingRule(res.SyncStatus)
+	if err != nil {
+		// User can misconfigure the forwarding rule if Network Tier will not match service level Network Tier.
+		result.GCEResourceInError = annotations.ForwardingRuleResource
+		result.Error = fmt.Errorf("failed to ensure mixed protocol forwarding rules - %w", err)
+		result.MetricsLegacyState.IsUserError = utils.IsUserError(err)
+		return
+	}
+
+	var ipAddr string
+	if res.UDPFwdRule != nil {
+		result.Annotations[annotations.UDPForwardingRuleKey] = res.UDPFwdRule.Name
+		if res.TCPFwdRule.NetworkTier == cloud.NetworkTierPremium.ToGCEValue() {
+			result.MetricsLegacyState.IsPremiumTier = true
+		}
+		ipAddr = res.UDPFwdRule.IPAddress
+	}
+	if res.TCPFwdRule != nil {
+		result.Annotations[annotations.TCPForwardingRuleKey] = res.TCPFwdRule.Name
+		if res.TCPFwdRule.NetworkTier == cloud.NetworkTierPremium.ToGCEValue() {
+			result.MetricsLegacyState.IsPremiumTier = true
+		}
+		ipAddr = res.TCPFwdRule.IPAddress
+	}
+
+	l4netlb.ensureIPv4NodesFirewall(nodeNames, ipAddr, result)
+	if result.Error != nil {
+		l4netlb.svcLogger.Error(err, "ensureIPv4MixedResources: Failed to ensure nodes firewall for L4 NetLB Service")
+		return
+	}
+
+	result.Status = utils.AddIPToLBStatus(result.Status, ipAddr)
 }
 
 func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress string, result *L4NetLBSyncResult) {
@@ -525,6 +606,12 @@ func (l4netlb *L4NetLB) deleteIPv4ResourcesAnnotationBased(result *L4NetLBSyncRe
 			result.Error = err
 			result.GCEResourceInError = annotations.ForwardingRuleResource
 		}
+		err = l4netlb.deleteIPv4MixedProtocolForwardingRules()
+		if err != nil {
+			l4netlb.svcLogger.Error(err, "Failed to delete mixed protocol forwarding rules for NetLB RBS service")
+			result.Error = err
+			result.GCEResourceInError = annotations.ForwardingRuleResource
+		}
 	}
 
 	// Deleting non-existent address do not print error audit logs, and we don't store address in annotations
@@ -558,6 +645,19 @@ func (l4netlb *L4NetLB) deleteIPv4ForwardingRule() error {
 	}()
 
 	return l4netlb.forwardingRules.Delete(frName)
+}
+
+// We want to delete resources related to mixed protocol even when the controller doesn't have them enabled.
+// This way we can disable the mixed protocol feature flag and not leak any resources.
+func (l4netlb *L4NetLB) deleteIPv4MixedProtocolForwardingRules() error {
+	manager := &forwardingrules.MixedManagerNetLB{
+		Namer:    l4netlb.namer,
+		Provider: l4netlb.forwardingRules,
+		Recorder: l4netlb.recorder,
+		Logger:   l4netlb.svcLogger,
+		Service:  l4netlb.Service,
+	}
+	return manager.DeleteIPv4()
 }
 
 func (l4netlb *L4NetLB) deleteIPv4Address() error {
