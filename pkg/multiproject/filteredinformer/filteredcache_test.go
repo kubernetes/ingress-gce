@@ -1,4 +1,4 @@
-package projectinformer
+package filteredinformer
 
 import (
 	"testing"
@@ -9,32 +9,32 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 )
 
-func TestProjectCache_ByIndex(t *testing.T) {
-	flags.F.MultiProjectCRDProjectNameLabel = "project-name-label"
+func TestClusterSliceFilteredCache_ByIndex(t *testing.T) {
+	flags.F.ClusterSliceNameLabelKey = "cluster-slice-name-label"
 
 	testCases := []struct {
 		desc              string
-		cacheProject      string
+		cacheClusterSlice string
 		objectsInCache    []interface{}
 		queryName         string
 		expectedItemNames []string
 	}{
 		{
-			desc:         "Retrieve items by index in project",
-			cacheProject: "p123456-abc",
+			desc:              "Retrieve items by index in cluster slice",
+			cacheClusterSlice: "cs123456-abc",
 			objectsInCache: []interface{}{
-				&v1.ObjectMeta{Labels: map[string]string{flags.F.MultiProjectCRDProjectNameLabel: "p123456-abc"}, Namespace: "p123456-abc-namespace", Name: "obj1"},
-				&v1.ObjectMeta{Labels: map[string]string{flags.F.MultiProjectCRDProjectNameLabel: "p123456-abc"}, Namespace: "p123456-abc-namespace", Name: "obj2"},
-				&v1.ObjectMeta{Labels: map[string]string{flags.F.MultiProjectCRDProjectNameLabel: "p654321-edf"}, Namespace: "p654321-edf-namespace", Name: "obj1"},
+				&v1.ObjectMeta{Labels: map[string]string{flags.F.ClusterSliceNameLabelKey: "cs123456-abc"}, Namespace: "cs123456-abc-namespace", Name: "obj1"},
+				&v1.ObjectMeta{Labels: map[string]string{flags.F.ClusterSliceNameLabelKey: "cs123456-abc"}, Namespace: "cs123456-abc-namespace", Name: "obj2"},
+				&v1.ObjectMeta{Labels: map[string]string{flags.F.ClusterSliceNameLabelKey: "cs654321-edf"}, Namespace: "cs654321-edf-namespace", Name: "obj1"},
 			},
 			queryName:         "obj1",
 			expectedItemNames: []string{"obj1"},
 		},
 		{
-			desc:         "No items when index key does not match",
-			cacheProject: "p123456-abc",
+			desc:              "No items when index key does not match",
+			cacheClusterSlice: "cs123456-abc",
 			objectsInCache: []interface{}{
-				&v1.ObjectMeta{Labels: map[string]string{flags.F.MultiProjectCRDProjectNameLabel: "p123456-abc"}, Name: "obj1"},
+				&v1.ObjectMeta{Labels: map[string]string{flags.F.ClusterSliceNameLabelKey: "cs123456-abc"}, Name: "obj1"},
 			},
 			queryName:         "nonexistent",
 			expectedItemNames: []string{},
@@ -53,9 +53,9 @@ func TestProjectCache_ByIndex(t *testing.T) {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, indexers)
-			nsCache := &projectCache{
-				Indexer:     indexer,
-				projectName: tc.cacheProject,
+			nsCache := &clusterSliceFilteredCache{
+				Indexer:          indexer,
+				clusterSliceName: tc.cacheClusterSlice,
 			}
 
 			for _, obj := range tc.objectsInCache {
@@ -80,29 +80,29 @@ func TestProjectCache_ByIndex(t *testing.T) {
 	}
 }
 
-func TestProjectCache_List(t *testing.T) {
-	flags.F.MultiProjectCRDProjectNameLabel = "project-name-label"
+func TestClusterSliceFilteredCache_List(t *testing.T) {
+	flags.F.ClusterSliceNameLabelKey = "cluster-slice-name-label"
 
 	testCases := []struct {
 		desc              string
-		cacheProject      string
+		cacheClusterSlice string
 		objectsInCache    []interface{}
 		expectedItemNames []string
 	}{
 		{
-			desc:         "List items in the project",
-			cacheProject: "p123456-abc",
+			desc:              "List items in the cluster slice",
+			cacheClusterSlice: "p123456-abc",
 			objectsInCache: []interface{}{
-				&v1.ObjectMeta{Labels: map[string]string{flags.F.MultiProjectCRDProjectNameLabel: "p123456-abc"}, Name: "obj1"},
-				&v1.ObjectMeta{Labels: map[string]string{flags.F.MultiProjectCRDProjectNameLabel: "p654321-edf"}, Name: "obj2"},
+				&v1.ObjectMeta{Labels: map[string]string{flags.F.ClusterSliceNameLabelKey: "p123456-abc"}, Name: "obj1"},
+				&v1.ObjectMeta{Labels: map[string]string{flags.F.ClusterSliceNameLabelKey: "p654321-edf"}, Name: "obj2"},
 			},
 			expectedItemNames: []string{"obj1"},
 		},
 		{
-			desc:         "List no items when project has no objects",
-			cacheProject: "p123456-abc",
+			desc:              "List no items when cluster slice has no objects",
+			cacheClusterSlice: "p123456-abc",
 			objectsInCache: []interface{}{
-				&v1.ObjectMeta{Labels: map[string]string{flags.F.MultiProjectCRDProjectNameLabel: "p654321-edf"}, Name: "obj1"},
+				&v1.ObjectMeta{Labels: map[string]string{flags.F.ClusterSliceNameLabelKey: "p654321-edf"}, Name: "obj1"},
 			},
 			expectedItemNames: []string{},
 		},
@@ -112,9 +112,9 @@ func TestProjectCache_List(t *testing.T) {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, nil)
-			nsCache := &projectCache{
-				Indexer:     indexer,
-				projectName: tc.cacheProject,
+			nsCache := &clusterSliceFilteredCache{
+				Indexer:          indexer,
+				clusterSliceName: tc.cacheClusterSlice,
 			}
 
 			for _, obj := range tc.objectsInCache {
@@ -136,23 +136,23 @@ func TestProjectCache_List(t *testing.T) {
 	}
 }
 
-func TestProjectCache_GetByKey(t *testing.T) {
-	flags.F.MultiProjectCRDProjectNameLabel = "project-name-label"
+func TestClusterSliceFilteredCache_GetByKey(t *testing.T) {
+	flags.F.ClusterSliceNameLabelKey = "cluster-slice-name-label"
 
 	testCases := []struct {
-		desc           string
-		cacheProject   string
-		queryKey       string
-		objectsInCache []interface{}
-		expectedExist  bool
-		expectedName   string
+		desc              string
+		cacheClusterSlice string
+		queryKey          string
+		objectsInCache    []interface{}
+		expectedExist     bool
+		expectedName      string
 	}{
 		{
-			desc:         "Get existing item by key in project",
-			cacheProject: "p123456-abc",
-			queryKey:     "p123456-abc-namespace/obj1",
+			desc:              "Get existing item by key in cluster slice",
+			cacheClusterSlice: "p123456-abc",
+			queryKey:          "p123456-abc-namespace/obj1",
 			objectsInCache: []interface{}{&v1.ObjectMeta{
-				Labels:    map[string]string{flags.F.MultiProjectCRDProjectNameLabel: "p123456-abc"},
+				Labels:    map[string]string{flags.F.ClusterSliceNameLabelKey: "p123456-abc"},
 				Namespace: "p123456-abc-namespace",
 				Name:      "obj1",
 			}},
@@ -160,21 +160,21 @@ func TestProjectCache_GetByKey(t *testing.T) {
 			expectedName:  "obj1",
 		},
 		{
-			desc:         "Item exists but in different project",
-			cacheProject: "p123456-abc",
-			queryKey:     "p654321-edf-namespace/obj1",
+			desc:              "Item exists but in different cluster slice",
+			cacheClusterSlice: "p123456-abc",
+			queryKey:          "p654321-edf-namespace/obj1",
 			objectsInCache: []interface{}{&v1.ObjectMeta{
-				Labels:    map[string]string{flags.F.MultiProjectCRDProjectNameLabel: "p654321-edf"},
+				Labels:    map[string]string{flags.F.ClusterSliceNameLabelKey: "p654321-edf"},
 				Namespace: "p654321-edf-namespace",
 				Name:      "obj1",
 			}},
 			expectedExist: false,
 		},
 		{
-			desc:         "Item does not exist",
-			cacheProject: "p123456-abc",
+			desc:              "Item does not exist",
+			cacheClusterSlice: "p123456-abc",
 			objectsInCache: []interface{}{&v1.ObjectMeta{
-				Labels:    map[string]string{flags.F.MultiProjectCRDProjectNameLabel: "p123456-abc"},
+				Labels:    map[string]string{flags.F.ClusterSliceNameLabelKey: "p123456-abc"},
 				Namespace: "p123456-abc-namespace",
 				Name:      "obj1",
 			}},
@@ -187,9 +187,9 @@ func TestProjectCache_GetByKey(t *testing.T) {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, nil)
-			nsCache := &projectCache{
-				Indexer:     indexer,
-				projectName: tc.cacheProject,
+			nsCache := &clusterSliceFilteredCache{
+				Indexer:          indexer,
+				clusterSliceName: tc.cacheClusterSlice,
 			}
 
 			for _, obj := range tc.objectsInCache {
