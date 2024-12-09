@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	reservedIPv4    = "35.193.28.0"
-	notReservedIPv4 = "35.193.28.1"
+	reservedIPv4Name = "reserved-ipv4"
+	reservedIPv4     = "35.193.28.0"
+	notReservedIPv4  = "35.193.28.1"
 )
 
 func TestIPv4ToUse(t *testing.T) {
@@ -25,7 +26,6 @@ func TestIPv4ToUse(t *testing.T) {
 		svc  apiv1.Service
 		fwd  *composite.ForwardingRule
 		want string
-		err  bool
 	}{
 		{
 			desc: "nothing exists",
@@ -55,7 +55,7 @@ func TestIPv4ToUse(t *testing.T) {
 			svc: apiv1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						"networking.gke.io/load-balancer-ip-addresses": reservedIPv4,
+						"networking.gke.io/load-balancer-ip-addresses": reservedIPv4Name,
 					},
 				},
 			},
@@ -69,7 +69,7 @@ func TestIPv4ToUse(t *testing.T) {
 			svc: apiv1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						"networking.gke.io/load-balancer-ip-addresses": reservedIPv4,
+						"networking.gke.io/load-balancer-ip-addresses": reservedIPv4Name,
 					},
 				},
 				Spec: apiv1.ServiceSpec{
@@ -95,11 +95,11 @@ func TestIPv4ToUse(t *testing.T) {
 			svc: apiv1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						"networking.gke.io/load-balancer-ip-addresses": notReservedIPv4,
+						"networking.gke.io/load-balancer-ip-addresses": "not-existing",
 					},
 				},
 			},
-			err: true,
+			want: "",
 		},
 	}
 
@@ -109,12 +109,8 @@ func TestIPv4ToUse(t *testing.T) {
 			cloud, recorder := arrange(t)
 
 			got, err := address.IPv4ToUse(cloud, recorder, &tc.svc, tc.fwd, "")
-			if tc.err != (err != nil) {
-				if tc.err {
-					t.Fatalf("expected err")
-				} else {
-					t.Fatalf("unexpected err - %v", err)
-				}
+			if err != nil {
+				t.Fatalf("unexpected err: %v", err)
 			}
 
 			if got != tc.want {
@@ -130,6 +126,7 @@ func arrange(t *testing.T) (*gce.Cloud, record.EventRecorder) {
 	vals := gce.DefaultTestClusterValues()
 	fakeCloud := gce.NewFakeGCECloud(vals)
 	addr := &compute.Address{
+		Name:    reservedIPv4Name,
 		Address: reservedIPv4,
 	}
 	err := fakeCloud.ReserveRegionAddress(addr, vals.Region)
