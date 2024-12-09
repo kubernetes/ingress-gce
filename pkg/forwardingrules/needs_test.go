@@ -9,10 +9,11 @@ import (
 
 func TestNeeds(t *testing.T) {
 	testCases := []struct {
-		desc     string
-		svcPorts []api_v1.ServicePort
-		wantTCP  bool
-		wantUDP  bool
+		desc      string
+		svcPorts  []api_v1.ServicePort
+		wantTCP   bool
+		wantUDP   bool
+		wantMixed bool
 	}{
 		{
 			desc:     "No ports",
@@ -45,8 +46,9 @@ func TestNeeds(t *testing.T) {
 				{Protocol: api_v1.ProtocolTCP},
 				{Protocol: api_v1.ProtocolUDP},
 			},
-			wantTCP: true,
-			wantUDP: true,
+			wantTCP:   true,
+			wantUDP:   true,
+			wantMixed: true,
 		},
 	}
 	for _, tC := range testCases {
@@ -55,11 +57,15 @@ func TestNeeds(t *testing.T) {
 			if gotTCP != tC.wantTCP {
 				t.Errorf("NeedsTCP(%v) = %v, want %v", tC.svcPorts, gotTCP, tC.wantTCP)
 			}
-		})
-		t.Run(tC.desc, func(t *testing.T) {
+
 			gotUDP := forwardingrules.NeedsUDP(tC.svcPorts)
 			if gotUDP != tC.wantUDP {
 				t.Errorf("NeedsUDP(%v) = %v, want %v", tC.svcPorts, gotUDP, tC.wantUDP)
+			}
+
+			gotMixed := forwardingrules.NeedsMixed(tC.svcPorts)
+			if gotMixed != tC.wantMixed {
+				t.Errorf("NeedsMixed(%v) = %v, want %v", tC.svcPorts, gotMixed, tC.wantMixed)
 			}
 		})
 	}
