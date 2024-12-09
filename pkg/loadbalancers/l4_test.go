@@ -1612,7 +1612,7 @@ func TestDualStackInternalLoadBalancerModifyProtocol(t *testing.T) {
 
 			svc := test.NewL4ILBDualStackService(8080, v1.ProtocolTCP, tc.ipFamilies, v1.ServiceExternalTrafficPolicyTypeCluster)
 			l4 := mustSetupILBTestHandler(t, svc, nodeNames)
-			var vals = gce.DefaultTestClusterValues()
+			vals := gce.DefaultTestClusterValues()
 
 			// This function simulates the error where backend service protocol cannot be changed
 			// before deleting the forwarding rule.
