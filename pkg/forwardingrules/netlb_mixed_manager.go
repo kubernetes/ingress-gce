@@ -4,9 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	api_v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/cloud-provider-gcp/providers/gce"
+	"k8s.io/ingress-gce/pkg/address"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -29,6 +33,8 @@ type Namer interface {
 
 // Provider is the interface for the ForwardingRules provider.
 // We can't use the *ForwardingRules directly, since L4NetLB uses interface.
+//
+// It is assumed that delete doesn't return 404 errors when forwarding rule doesn't exist.
 type Provider interface {
 	Get(name string) (*composite.ForwardingRule, error)
 	Create(forwardingRule *composite.ForwardingRule) error
@@ -43,6 +49,7 @@ type MixedManagerNetLB struct {
 	Provider Provider
 	Recorder record.EventRecorder
 	Logger   logr.Logger
+	Cloud    *gce.Cloud
 
 	Service *api_v1.Service
 }
@@ -52,14 +59,13 @@ type MixedManagerNetLB struct {
 type EnsureNetLBConfig struct {
 	// BackendServiceLink to the L3 (UNDEFINED) Protocol Backend Service.
 	BackendServiceLink string
-	IP                 string
 }
 
 // EnsureNetLBResult contains relevant results for Ensure method
 type EnsureNetLBResult struct {
 	UDPFwdRule *composite.ForwardingRule
 	TCPFwdRule *composite.ForwardingRule
-	IPManaged  bool
+	IPManaged  address.IPAddressType
 	SyncStatus utils.ResourceSyncStatus
 }
 
@@ -74,16 +80,37 @@ func (m *MixedManagerNetLB) EnsureIPv4(cfg EnsureNetLBConfig) (EnsureNetLBResult
 		return res, fmt.Errorf("MixedManagerELB shouldn't be used to ensure single protocol forwarding rules to be backwards compatible")
 	}
 
+	existing, err := m.AllRules()
+	if err != nil {
+		return res, err
+	}
+
+	ip, release, err := m.getAddress(existing)
+	if err != nil {
+		return res, err
+	}
+	defer func() {
+		err = release()
+		if err != nil {
+			m.Logger.Error(err, "failed to release address reservation, possibly causing an orphan")
+		}
+	}()
+
+	// We need to delete legacy named forwarding rule to avoid port collisions
+	if err := m.deleteLegacy(); err != nil {
+		return res, err
+	}
+
 	var tcpErr, udpErr error
 	var tcpSync, udpSync utils.ResourceSyncStatus
 
-	res.TCPFwdRule, tcpSync, tcpErr = m.ensure(cfg, "TCP")
-	res.UDPFwdRule, udpSync, udpErr = m.ensure(cfg, "UDP")
+	res.TCPFwdRule, tcpSync, tcpErr = m.ensure(cfg, existing.TCP, "TCP", ip)
+	res.UDPFwdRule, udpSync, udpErr = m.ensure(cfg, existing.UDP, "UDP", ip)
 
 	if tcpSync == utils.ResourceUpdate || udpSync == utils.ResourceUpdate {
 		res.SyncStatus = utils.ResourceUpdate
 	}
-	err := errors.Join(tcpErr, udpErr)
+	err = errors.Join(tcpErr, udpErr)
 
 	return res, err
 }
@@ -96,7 +123,7 @@ func (m *MixedManagerNetLB) EnsureIPv4(cfg EnsureNetLBConfig) (EnsureNetLBResult
 // * if equal 			-> do nothing
 // * if can be patched 	-> patch
 // * else 				-> delete and recreate
-func (m *MixedManagerNetLB) ensure(cfg EnsureNetLBConfig, protocol string) (*composite.ForwardingRule, utils.ResourceSyncStatus, error) {
+func (m *MixedManagerNetLB) ensure(cfg EnsureNetLBConfig, existing *composite.ForwardingRule, protocol, ip string) (*composite.ForwardingRule, utils.ResourceSyncStatus, error) {
 	name := m.name(protocol)
 	start := time.Now()
 	log := m.Logger.
@@ -107,13 +134,7 @@ func (m *MixedManagerNetLB) ensure(cfg EnsureNetLBConfig, protocol string) (*com
 		log.Info("Finished ensuring external forwarding rule for L4 NetLB Service", "timeTaken", time.Since(start))
 	}()
 
-	existing, err := m.Provider.Get(name)
-	if err != nil {
-		log.Error(err, "Provider.Get returned error")
-		return nil, utils.ResourceResync, err
-	}
-
-	wanted, err := m.buildWanted(cfg, name, protocol)
+	wanted, err := m.buildWanted(cfg, name, protocol, ip)
 	if err != nil {
 		log.Error(err, "buildWanted returned error")
 		return nil, utils.ResourceResync, err
@@ -170,7 +191,7 @@ func (m *MixedManagerNetLB) recreate(wanted *composite.ForwardingRule) error {
 	return nil
 }
 
-func (m *MixedManagerNetLB) buildWanted(cfg EnsureNetLBConfig, name, protocol string) (*composite.ForwardingRule, error) {
+func (m *MixedManagerNetLB) buildWanted(cfg EnsureNetLBConfig, name, protocol, ip string) (*composite.ForwardingRule, error) {
 	const version = meta.VersionGA
 	const scheme = string(cloud.SchemeExternal)
 	protocol = strings.ToUpper(protocol)
@@ -179,7 +200,7 @@ func (m *MixedManagerNetLB) buildWanted(cfg EnsureNetLBConfig, name, protocol st
 	}
 
 	svcKey := utils.ServiceKeyFunc(m.Service.Namespace, m.Service.Name)
-	desc, err := utils.MakeL4LBServiceDescription(svcKey, cfg.IP, version, false, utils.XLB)
+	desc, err := utils.MakeL4LBServiceDescription(svcKey, ip, version, false, utils.XLB)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to compute description for forwarding rule %s, err: %w", name, err)
 	}
@@ -196,7 +217,7 @@ func (m *MixedManagerNetLB) buildWanted(cfg EnsureNetLBConfig, name, protocol st
 	return &composite.ForwardingRule{
 		Name:                name,
 		Description:         desc,
-		IPAddress:           cfg.IP,
+		IPAddress:           ip,
 		IPProtocol:          protocol,
 		Ports:               ports,
 		PortRange:           portRange,
@@ -218,6 +239,94 @@ func (m *MixedManagerNetLB) getAfterUpdate(name string) (*composite.ForwardingRu
 	return found, utils.ResourceUpdate, nil
 }
 
+type ELBManagedRules struct {
+	// TCP forwarding rule with '-tcp-' in a name
+	TCP *composite.ForwardingRule
+	// UDP forwarding rule with '-udp-' in a name
+	UDP *composite.ForwardingRule
+	// Legacy named forwarding rule (staring with 'a')
+	Legacy *composite.ForwardingRule
+}
+
+// AllRules returns all forwarding rules for a service specified in the manager
+func (m *MixedManagerNetLB) AllRules() (ELBManagedRules, error) {
+	var wg sync.WaitGroup
+	var tcp, udp, legacy *composite.ForwardingRule
+	var tcpErr, udpErr, legacyErr error
+
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		tcp, tcpErr = m.Provider.Get(m.name("tcp"))
+	}()
+	go func() {
+		defer wg.Done()
+		udp, udpErr = m.Provider.Get(m.name("udp"))
+	}()
+	go func() {
+		defer wg.Done()
+		legacy, legacyErr = m.Provider.Get(m.nameLegacy())
+	}()
+	wg.Wait()
+
+	return ELBManagedRules{
+		TCP: tcp, UDP: udp, Legacy: legacy,
+	}, errors.Join(tcpErr, udpErr, legacyErr)
+}
+
+func (m *MixedManagerNetLB) getAddress(rules ELBManagedRules) (string, func() error, error) {
+	rule := pickForwardingRuleToInferIP(rules)
+	ip, err := address.IPv4ToUse(m.Cloud, m.Recorder, m.Service, rule, "")
+	if err != nil {
+		return "", nil, err
+	}
+
+	if m.Cloud.IsLegacyNetwork() {
+		return ip, func() error { return nil }, nil
+	}
+
+	netTier, isFromAnnotation := utils.GetNetworkTier(m.Service)
+	nm := types.NamespacedName{Namespace: m.Service.Namespace, Name: m.Service.Name}.String()
+	name := m.nameLegacy()
+	addrMgr := address.NewManager(
+		m.Cloud, nm, m.Cloud.Region() /*subnetURL = */, "",
+		name, ip, cloud.SchemeExternal, netTier,
+		address.IPv4Version, m.Logger)
+
+	// If network tier annotation in Service Spec is present
+	// check if it matches network tiers from forwarding rule and external ip Address.
+	// If they do not match, tear down the existing resources with the wrong tier.
+	if isFromAnnotation {
+		if err := m.tearDownResourcesWithWrongNetworkTier(rules, netTier, addrMgr); err != nil {
+			m.Logger.Error(err, "failed to tear down resources with wrong network tier")
+			return "", nil, err
+		}
+	}
+
+	ip, _, err = addrMgr.HoldAddress()
+	if err != nil {
+		return "", nil, err
+	}
+	release := func() error {
+		return addrMgr.ReleaseAddress()
+	}
+
+	return ip, release, nil
+}
+
+func pickForwardingRuleToInferIP(rules ELBManagedRules) *composite.ForwardingRule {
+	switch {
+	case rules.Legacy != nil:
+		return rules.Legacy
+	case rules.TCP != nil:
+		return rules.TCP
+	case rules.UDP != nil:
+		return rules.UDP
+	default:
+		return nil
+	}
+}
+
 func (m *MixedManagerNetLB) DeleteIPv4() error {
 	tcpErr := m.delete("tcp")
 	udpErr := m.delete("udp")
@@ -230,10 +339,34 @@ func (m *MixedManagerNetLB) delete(protocol string) error {
 	return m.Provider.Delete(name)
 }
 
+// We need to clean up existing forwarding rule so that there isn't a port collision.
+// This means deleting forwarding rule with legacy name - starting with 'a'
+// and using protocol specific names identical to those used by ILB.
+func (m *MixedManagerNetLB) deleteLegacy() error {
+	return m.Provider.Delete(m.nameLegacy())
+}
+
 func (m *MixedManagerNetLB) name(protocol string) string {
 	return m.Namer.L4ForwardingRule(
 		m.Service.Namespace, m.Service.Name, strings.ToLower(protocol),
 	)
+}
+
+func (m *MixedManagerNetLB) nameLegacy() string {
+	return utils.LegacyForwardingRuleName(m.Service)
+}
+
+func (m *MixedManagerNetLB) tearDownResourcesWithWrongNetworkTier(rules ELBManagedRules, netTier cloud.NetworkTier, addressMgr *address.Manager) error {
+	var tcpErr, udpErr error
+	if rules.TCP != nil && rules.TCP.NetworkTier != netTier.ToGCEValue() {
+		tcpErr = m.delete("TCP")
+	}
+	if rules.UDP != nil && rules.UDP.NetworkTier != netTier.ToGCEValue() {
+		udpErr = m.delete("UDP")
+	}
+	addressErr := addressMgr.TearDownAddressIPIfNetworkTierMismatch()
+
+	return errors.Join(tcpErr, udpErr, addressErr)
 }
 
 func (m *MixedManagerNetLB) recordf(messageFmt string, args ...any) {

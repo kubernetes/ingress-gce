@@ -424,38 +424,17 @@ func (l4netlb *L4NetLB) ensureIPv4Resources(result *L4NetLBSyncResult, nodeNames
 }
 
 func (l4netlb *L4NetLB) ensureIPv4MixedResources(result *L4NetLBSyncResult, nodeNames []string, bsLink string) {
-	// We need to clean up existing forwarding rule so that there isn't a port collision.
-	// This means deleting forwarding rule with legacy name - starting with 'a'
-	// and using protocol specific names identical to those used by ILB.
-	err := l4netlb.deleteIPv4ForwardingRule()
-	if err != nil {
-		// User can misconfigure the forwarding rule if Network Tier will not match service level Network Tier.
-		result.GCEResourceInError = annotations.ForwardingRuleResource
-		result.Error = fmt.Errorf("failed to clean up single protocol forwarding rule - %w", err)
-		result.MetricsLegacyState.IsUserError = utils.IsUserError(err)
-		return
-	}
-
 	mgr := &forwardingrules.MixedManagerNetLB{
 		Namer:    l4netlb.namer,
 		Provider: l4netlb.forwardingRules,
 		Recorder: l4netlb.recorder,
 		Logger:   l4netlb.svcLogger,
 		Service:  l4netlb.Service,
-	}
-
-	ip, err := address.IPv4ToUse(l4netlb.cloud, l4netlb.recorder, l4netlb.Service, nil, "")
-	if err != nil {
-		// User can misconfigure the forwarding rule if Network Tier will not match service level Network Tier.
-		result.GCEResourceInError = annotations.ForwardingRuleResource
-		result.Error = fmt.Errorf("failed to clean up single protocol forwarding rule - %w", err)
-		result.MetricsLegacyState.IsUserError = utils.IsUserError(err)
-		return
+		Cloud:    l4netlb.cloud,
 	}
 
 	res, err := mgr.EnsureIPv4(forwardingrules.EnsureNetLBConfig{
 		BackendServiceLink: bsLink,
-		IP:                 ip,
 	})
 
 	result.GCEResourceUpdate.SetForwardingRule(res.SyncStatus)
