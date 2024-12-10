@@ -143,6 +143,7 @@ var F = struct {
 	ProviderConfigAPIGroup                   string
 	EnableL4ILBMixedProtocol                 bool
 	EnableL4NetLBMixedProtocol               bool
+	EnableIPV6OnlyNEG                        bool
 }{
 	GCERateLimitScale: 1.0,
 }
@@ -334,6 +335,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableL4NetLBMixedProtocol, "enable-l4netlb-mixed-protocol", false, "Enable support for mixed protocol L4 external load balancers.")
 	flag.StringVar(&F.ProviderConfigAPIGroup, "provider-config-api-group", "", "The API group for the ProviderConfig CRD.")
 	flag.StringVar(&F.ProviderConfigNameLabelKey, "provider-config-name-label-key", "", "The label key for provider-config name, which is used to identify the provider-config of objects in multi-project mode.")
+	flag.BoolVar(&F.EnableIPV6OnlyNEG, "enable-ipv6-only-neg", false, "Enable support for IPV6 Only NEG's.")
 }
 
 func Validate() {
