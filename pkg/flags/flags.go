@@ -143,6 +143,7 @@ var F = struct {
 	ClusterSliceAPIGroup                     string
 	EnableL4ILBMixedProtocol                 bool
 	EnableL4NetLBMixedProtocol               bool
+	EnableIPV6NEG                            bool
 }{
 	GCERateLimitScale: 1.0,
 }
@@ -334,6 +335,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableL4ILBMixedProtocol, "enable-l4ilb-mixed-protocol", false, "Enable support for mixed protocol L4 internal load balancers.")
 	flag.BoolVar(&F.EnableL4NetLBMixedProtocol, "enable-l4netlb-mixed-protocol", false, "Enable support for mixed protocol L4 external load balancers.")
 	flag.StringVar(&F.ClusterSliceAPIGroup, "cluster-slice-api-group", "", "The API group for the ClusterSlice CRD.")
+	flag.BoolVar(&F.EnableIPV6NEG, "enable-ipv6-neg", false, "Enable support for IPV6 NEG's.")
 }
 
 func Validate() {
