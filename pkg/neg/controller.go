@@ -561,7 +561,7 @@ func (c *Controller) processService(key string) error {
 	}
 	if len(svcPortInfoMap) != 0 {
 		c.logger.V(2).Info("Syncing service", "service", key)
-		if !flags.F.EnableIPV6NEG {
+		if !flags.F.EnableIPV6OnlyNEG {
 			if service.Spec.Type != apiv1.ServiceTypeLoadBalancer && isSingleStackIPv6Service(service) {
 				return fmt.Errorf("NEG is not supported for ipv6 only service (%T)", service)
 			}

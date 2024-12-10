@@ -1590,9 +1590,9 @@ func TestServiceIPFamilies(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			if tc.enableIPV6OnlyNEG {
-				flags.F.EnableIPV6NEG = true
+				flags.F.EnableIPV6OnlyNEG = true
 				defer func() {
-					flags.F.EnableIPV6NEG = false
+					flags.F.EnableIPV6OnlyNEG = false
 				}()
 			}
 			controller := newTestController(fake.NewSimpleClientset())
