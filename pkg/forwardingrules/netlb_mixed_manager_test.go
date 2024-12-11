@@ -25,6 +25,73 @@ const (
 	legacyName    = "aksuid123"
 )
 
+func TestMixedManagerNetLB_AllRules(t *testing.T) {
+	testCases := []struct {
+		desc   string
+		tcp    *compute.ForwardingRule
+		udp    *compute.ForwardingRule
+		legacy *compute.ForwardingRule
+	}{
+		{
+			desc: "no rules",
+		},
+		{
+			desc:   "single protocol exists",
+			legacy: &compute.ForwardingRule{Name: legacyName},
+		},
+		{
+			desc: "mixed protocol exists",
+			tcp:  &compute.ForwardingRule{Name: tcpName},
+			udp:  &compute.ForwardingRule{Name: udpName},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			vals := gce.DefaultTestClusterValues()
+			fakeGCE := gce.NewFakeGCECloud(vals)
+			for _, rule := range []*compute.ForwardingRule{tc.tcp, tc.udp, tc.legacy} {
+				if rule != nil {
+					fakeGCE.CreateRegionForwardingRule(rule, vals.Region)
+				}
+			}
+
+			m := &forwardingrules.MixedManagerNetLB{
+				Namer:    namer.NewL4Namer(kubeSystemUID, nil),
+				Provider: forwardingrules.New(fakeGCE, meta.VersionGA, meta.Regional, klog.TODO()),
+				Recorder: &record.FakeRecorder{},
+				Logger:   klog.TODO(),
+				Cloud:    fakeGCE,
+				Service: &api_v1.Service{
+					ObjectMeta: meta_v1.ObjectMeta{
+						UID:       kubeSystemUID,
+						Namespace: namespace,
+						Name:      name,
+					},
+				},
+			}
+			// Act
+			rules, err := m.AllRules()
+			// Assert
+			if err != nil {
+				t.Errorf("AllRules() error = %v", err)
+			}
+			if tc.legacy != nil && rules.Legacy == nil {
+				t.Errorf("single protocol named forwarding rule was not found")
+			}
+			if tc.tcp != nil && rules.TCP == nil {
+				t.Errorf("tcp forwarding rule for mixed protocol was not found")
+			}
+			if tc.udp != nil && rules.UDP == nil {
+				t.Errorf("udp forwarding rule for mixed protocol was not found")
+			}
+		})
+	}
+}
+
 func TestMixedManagerNetLB_DeleteIPv4(t *testing.T) {
 	testCases := []struct {
 		desc   string
@@ -65,7 +132,6 @@ func TestMixedManagerNetLB_DeleteIPv4(t *testing.T) {
 				Recorder: &record.FakeRecorder{},
 				Logger:   klog.TODO(),
 				Cloud:    fakeGCE,
-
 				Service: &api_v1.Service{
 					ObjectMeta: meta_v1.ObjectMeta{
 						UID:       kubeSystemUID,
