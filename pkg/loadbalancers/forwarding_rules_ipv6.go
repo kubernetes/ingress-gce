@@ -100,13 +100,26 @@ func (l4 *L4) buildExpectedIPv6ForwardingRule(bsLink string, options gce.ILBOpti
 
 	svcPorts := l4.Service.Spec.Ports
 	ports := utils.GetPorts(svcPorts)
-	protocol := utils.GetProtocol(svcPorts)
+	protocol := string(utils.GetProtocol(svcPorts))
+	allPorts := false
+	if l4.enableMixedProtocol {
+		protocol = forwardingrules.GetILBProtocol(svcPorts)
+		if protocol == forwardingrules.ProtocolL3 {
+			allPorts = true
+			ports = nil
+		}
+	}
+	if len(ports) > maxForwardedPorts {
+		ports = nil
+		allPorts = true
+	}
 
 	fr := &composite.ForwardingRule{
 		Name:                frName,
 		Description:         frDesc,
 		IPAddress:           ipv6AddressToUse,
-		IPProtocol:          string(protocol),
+		IPProtocol:          protocol,
+		AllPorts:            allPorts,
 		Ports:               ports,
 		LoadBalancingScheme: string(cloud.SchemeInternal),
 		BackendService:      bsLink,
@@ -115,10 +128,6 @@ func (l4 *L4) buildExpectedIPv6ForwardingRule(bsLink string, options gce.ILBOpti
 		Subnetwork:          subnetworkURL,
 		AllowGlobalAccess:   options.AllowGlobalAccess,
 		NetworkTier:         cloud.NetworkTierPremium.ToGCEValue(),
-	}
-	if len(ports) > maxForwardedPorts {
-		fr.Ports = nil
-		fr.AllPorts = true
 	}
 
 	return fr, nil
