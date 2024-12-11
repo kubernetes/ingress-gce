@@ -31,7 +31,7 @@ steps:
   - HOME=/root
   - USER=root
   - BINARIES=e2e-test
-  - ADDITIONAL_TAGS=infrastructure-public-image-$_PULL_BASE_REF
+  - ADDITIONAL_TAGS=infrastructure-public-image-$_GIT_TAG
   args:
   - -c
   - |
