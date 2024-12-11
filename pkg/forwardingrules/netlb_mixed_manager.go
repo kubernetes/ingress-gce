@@ -380,16 +380,19 @@ func (m *MixedManagerNetLB) nameLegacy() string {
 }
 
 func (m *MixedManagerNetLB) tearDownResourcesWithWrongNetworkTier(rules ELBManagedRules, netTier cloud.NetworkTier, addressMgr *address.Manager) error {
-	var tcpErr, udpErr error
+	var tcpErr, udpErr, legacyErr error
 	if rules.TCP != nil && rules.TCP.NetworkTier != netTier.ToGCEValue() {
 		tcpErr = m.delete("TCP")
 	}
 	if rules.UDP != nil && rules.UDP.NetworkTier != netTier.ToGCEValue() {
 		udpErr = m.delete("UDP")
 	}
+	if rules.Legacy != nil && rules.Legacy.NetworkTier != netTier.ToGCEValue() {
+		legacyErr = m.deleteLegacy()
+	}
 	addressErr := addressMgr.TearDownAddressIPIfNetworkTierMismatch()
 
-	return errors.Join(tcpErr, udpErr, addressErr)
+	return errors.Join(tcpErr, udpErr, legacyErr, addressErr)
 }
 
 func (m *MixedManagerNetLB) recordf(messageFmt string, args ...any) {

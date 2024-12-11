@@ -18,6 +18,7 @@ package l4lb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -107,7 +108,8 @@ func getLoadBalancerSourceRanges() []string {
 func getPorts() []v1.ServicePort {
 	return []v1.ServicePort{
 		{Name: "port1", Port: 8084, Protocol: "TCP", NodePort: 30323},
-		{Name: "port2", Port: 8082, Protocol: "TCP", NodePort: 30323}}
+		{Name: "port2", Port: 8082, Protocol: "TCP", NodePort: 30323},
+	}
 }
 
 func getStrongSessionAffinityAnnotations() map[string]string {
@@ -191,8 +193,8 @@ func createAndSyncNetLBSvcWithNEGs(t *testing.T, lc *L4NetLBController) (svc *v1
 	addNEGAndSvcNegL4NetLBController(lc, svc)
 	return syncNetLBSvc(t, lc, svc)
 }
-func syncNetLBSvc(t *testing.T, lc *L4NetLBController, svc *v1.Service) (syncedSvc *v1.Service) {
 
+func syncNetLBSvc(t *testing.T, lc *L4NetLBController, svc *v1.Service) (syncedSvc *v1.Service) {
 	addNetLBService(lc, svc)
 	key, _ := common.KeyFunc(svc)
 	err := lc.sync(key, klog.TODO())
@@ -440,7 +442,6 @@ func TestProcessMultipleNetLBServices(t *testing.T) {
 				}
 				deleteNetLBService(lc, svc)
 			}
-
 		})
 	}
 }
@@ -836,7 +837,6 @@ func TestProcessServiceDeletion(t *testing.T) {
 }
 
 func TestProcessNEGServiceDeletion(t *testing.T) {
-
 	lc := newL4NetLBServiceController()
 	lc.enableNEGSupport = true
 	lc.enableNEGAsDefault = true
@@ -1135,7 +1135,8 @@ func TestMetricsWithSyncError(t *testing.T) {
 	}
 	expectMetrics := &test.L4LBErrorMetricInfo{
 		ByGCEResource: map[string]uint64{annotations.ForwardingRuleResource: 1},
-		ByErrorType:   map[string]uint64{http.StatusText(http.StatusInternalServerError): 1}}
+		ByErrorType:   map[string]uint64{http.StatusText(http.StatusInternalServerError): 1},
+	}
 	received, errMetrics := test.GetL4NetLBErrorMetric()
 	if errMetrics != nil {
 		t.Errorf("Error getting L4 NetLB error metrics err: %v", errMetrics)
@@ -1148,16 +1149,26 @@ func TestProcessServiceDeletionFailed(t *testing.T) {
 		addMockFunc   func(*cloud.MockGCE)
 		expectedError string
 	}{
-		{addMockFunc: func(c *cloud.MockGCE) { c.MockForwardingRules.DeleteHook = test.DeleteForwardingRulesErrorHook },
-			expectedError: "Failed to delete forwarding rule a, err: DeleteForwardingRulesErrorHook"},
-		{addMockFunc: func(c *cloud.MockGCE) { c.MockAddresses.DeleteHook = test.DeleteAddressErrorHook },
-			expectedError: "DeleteAddressErrorHook"},
-		{addMockFunc: func(c *cloud.MockGCE) { c.MockFirewalls.DeleteHook = test.DeleteFirewallsErrorHook },
-			expectedError: "DeleteFirewallsErrorHook"},
-		{addMockFunc: func(c *cloud.MockGCE) { c.MockRegionBackendServices.DeleteHook = test.DeleteBackendServicesErrorHook },
-			expectedError: "DeleteBackendServicesErrorHook"},
-		{addMockFunc: func(c *cloud.MockGCE) { c.MockRegionHealthChecks.DeleteHook = test.DeleteHealthCheckErrorHook },
-			expectedError: "DeleteHealthCheckErrorHook"},
+		{
+			addMockFunc:   func(c *cloud.MockGCE) { c.MockForwardingRules.DeleteHook = test.DeleteForwardingRulesErrorHook },
+			expectedError: "Failed to delete forwarding rule a, err: DeleteForwardingRulesErrorHook",
+		},
+		{
+			addMockFunc:   func(c *cloud.MockGCE) { c.MockAddresses.DeleteHook = test.DeleteAddressErrorHook },
+			expectedError: "DeleteAddressErrorHook",
+		},
+		{
+			addMockFunc:   func(c *cloud.MockGCE) { c.MockFirewalls.DeleteHook = test.DeleteFirewallsErrorHook },
+			expectedError: "DeleteFirewallsErrorHook",
+		},
+		{
+			addMockFunc:   func(c *cloud.MockGCE) { c.MockRegionBackendServices.DeleteHook = test.DeleteBackendServicesErrorHook },
+			expectedError: "DeleteBackendServicesErrorHook",
+		},
+		{
+			addMockFunc:   func(c *cloud.MockGCE) { c.MockRegionHealthChecks.DeleteHook = test.DeleteHealthCheckErrorHook },
+			expectedError: "DeleteHealthCheckErrorHook",
+		},
 	} {
 		lc := newL4NetLBServiceController()
 		svc := createAndSyncNetLBSvcWithInstanceGroups(t, lc)
@@ -1172,7 +1183,7 @@ func TestProcessServiceDeletionFailed(t *testing.T) {
 		param.addMockFunc((lc.ctx.Cloud.Compute().(*cloud.MockGCE)))
 		key, _ := common.KeyFunc(svc)
 		err := lc.sync(key, klog.TODO())
-		if err == nil || err.Error() != param.expectedError {
+		if err == nil || errors.Is(err, errors.New(param.expectedError)) {
 			t.Errorf("Error mismatch '%v' != '%v'", err, param.expectedError)
 		}
 	}
@@ -1995,6 +2006,7 @@ func TestCreateDeleteDualStackNetLBService(t *testing.T) {
 		})
 	}
 }
+
 func TestProcessDualStackNetLBServiceOnUserError(t *testing.T) {
 	t.Parallel()
 	controller := createL4NetLBServiceController(gce.DefaultTestClusterValues())
