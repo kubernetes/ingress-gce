@@ -85,16 +85,17 @@ func (m *MixedManagerNetLB) EnsureIPv4(cfg EnsureNetLBConfig) (EnsureNetLBResult
 		return res, err
 	}
 
-	ip, release, err := m.getAddress(existing)
+	addressHandle, err := m.Address(existing)
 	if err != nil {
 		return res, err
 	}
 	defer func() {
-		err = release()
+		err = addressHandle.Release()
 		if err != nil {
 			m.Logger.Error(err, "failed to release address reservation, possibly causing an orphan")
 		}
 	}()
+	res.IPManaged = addressHandle.Managed
 
 	// We need to delete legacy named forwarding rule to avoid port collisions
 	if err := m.deleteLegacy(); err != nil {
@@ -103,10 +104,18 @@ func (m *MixedManagerNetLB) EnsureIPv4(cfg EnsureNetLBConfig) (EnsureNetLBResult
 
 	var tcpErr, udpErr error
 	var tcpSync, udpSync utils.ResourceSyncStatus
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		res.TCPFwdRule, tcpSync, tcpErr = m.ensure(cfg, existing.TCP, "TCP", addressHandle.IP)
+	}()
+	go func() {
+		defer wg.Done()
+		res.UDPFwdRule, udpSync, udpErr = m.ensure(cfg, existing.UDP, "UDP", addressHandle.IP)
+	}()
 
-	res.TCPFwdRule, tcpSync, tcpErr = m.ensure(cfg, existing.TCP, "TCP", ip)
-	res.UDPFwdRule, udpSync, udpErr = m.ensure(cfg, existing.UDP, "UDP", ip)
-
+	wg.Wait()
 	if tcpSync == utils.ResourceUpdate || udpSync == utils.ResourceUpdate {
 		res.SyncStatus = utils.ResourceUpdate
 	}
@@ -274,15 +283,29 @@ func (m *MixedManagerNetLB) AllRules() (ELBManagedRules, error) {
 	}, errors.Join(tcpErr, udpErr, legacyErr)
 }
 
-func (m *MixedManagerNetLB) getAddress(rules ELBManagedRules) (string, func() error, error) {
+type AddressResult struct {
+	IP      string
+	Managed address.IPAddressType
+	Release func() error
+}
+
+func (m *MixedManagerNetLB) Address(rules ELBManagedRules) (AddressResult, error) {
+	res := AddressResult{
+		Managed: address.IPAddrUndefined,
+		Release: func() error { return nil },
+	}
+	var err error
 	rule := pickForwardingRuleToInferIP(rules)
-	ip, err := address.IPv4ToUse(m.Cloud, m.Recorder, m.Service, rule, "")
+	// Determine IP which will be used for this LB. If no forwarding rule has been established
+	// or specified in the Service spec, then requestedIP = "".
+	res.IP, err = address.IPv4ToUse(m.Cloud, m.Recorder, m.Service, rule, "")
 	if err != nil {
-		return "", nil, err
+		m.Logger.Error(err, "ipv4AddrToUse for service returned error")
+		return res, err
 	}
 
 	if m.Cloud.IsLegacyNetwork() {
-		return ip, func() error { return nil }, nil
+		return res, nil
 	}
 
 	netTier, isFromAnnotation := utils.GetNetworkTier(m.Service)
@@ -290,7 +313,7 @@ func (m *MixedManagerNetLB) getAddress(rules ELBManagedRules) (string, func() er
 	name := m.nameLegacy()
 	addrMgr := address.NewManager(
 		m.Cloud, nm, m.Cloud.Region() /*subnetURL = */, "",
-		name, ip, cloud.SchemeExternal, netTier,
+		name, res.IP, cloud.SchemeExternal, netTier,
 		address.IPv4Version, m.Logger)
 
 	// If network tier annotation in Service Spec is present
@@ -299,19 +322,19 @@ func (m *MixedManagerNetLB) getAddress(rules ELBManagedRules) (string, func() er
 	if isFromAnnotation {
 		if err := m.tearDownResourcesWithWrongNetworkTier(rules, netTier, addrMgr); err != nil {
 			m.Logger.Error(err, "failed to tear down resources with wrong network tier")
-			return "", nil, err
+			return res, err
 		}
 	}
 
-	ip, _, err = addrMgr.HoldAddress()
+	res.IP, res.Managed, err = addrMgr.HoldAddress()
 	if err != nil {
-		return "", nil, err
+		return res, err
 	}
-	release := func() error {
+	res.Release = func() error {
 		return addrMgr.ReleaseAddress()
 	}
 
-	return ip, release, nil
+	return res, nil
 }
 
 func pickForwardingRuleToInferIP(rules ELBManagedRules) *composite.ForwardingRule {

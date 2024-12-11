@@ -122,6 +122,13 @@ func TestL4CreateExternalForwardingRuleAddressAlreadyInUse(t *testing.T) {
 			},
 		},
 	}
+	l4.mixedManager = &forwardingrules.MixedManagerNetLB{
+		Namer:    l4.namer,
+		Provider: l4.forwardingRules,
+		Cloud:    l4.cloud,
+		Service:  l4.Service,
+		Recorder: l4.recorder,
+	}
 
 	addr := &compute.Address{Name: "my-important-address", Address: targetIP, AddressType: string(cloud.SchemeExternal)}
 	fakeGCE.ReserveRegionAddress(addr, fakeGCE.Region())

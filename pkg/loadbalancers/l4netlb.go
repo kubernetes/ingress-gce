@@ -67,6 +67,7 @@ type L4NetLB struct {
 	NamespacedName  types.NamespacedName
 	healthChecks    healthchecksl4.L4HealthChecks
 	forwardingRules ForwardingRulesProvider
+	mixedManager    *forwardingrules.MixedManagerNetLB
 	enableDualStack bool
 	// represents if `enable strong session affinity` flag was set
 	enableStrongSessionAffinity      bool
@@ -153,6 +154,14 @@ func NewL4NetLB(params *L4NetLBParams, logger klog.Logger) *L4NetLB {
 		disableNodesFirewallProvisioning: params.DisableNodesFirewallProvisioning,
 		useNEGs:                          params.UseNEGs,
 		svcLogger:                        logger,
+	}
+	l4netlb.mixedManager = &forwardingrules.MixedManagerNetLB{
+		Namer:    l4netlb.namer,
+		Provider: l4netlb.forwardingRules,
+		Recorder: l4netlb.recorder,
+		Logger:   l4netlb.svcLogger,
+		Service:  l4netlb.Service,
+		Cloud:    l4netlb.cloud,
 	}
 	return l4netlb
 }
@@ -394,8 +403,6 @@ func (l4netlb *L4NetLB) ensureIPv4Resources(result *L4NetLBSyncResult, nodeNames
 		return
 	}
 
-	err := l4netlb.deleteIPv4MixedProtocolForwardingRules()
-	// TODO(dwysocki): handle error
 	fr, ipAddrType, wasUpdate, err := l4netlb.ensureIPv4ForwardingRule(bsLink)
 
 	result.GCEResourceUpdate.SetForwardingRule(wasUpdate)
@@ -585,7 +592,7 @@ func (l4netlb *L4NetLB) deleteIPv4ResourcesAnnotationBased(result *L4NetLBSyncRe
 			result.Error = err
 			result.GCEResourceInError = annotations.ForwardingRuleResource
 		}
-		err = l4netlb.deleteIPv4MixedProtocolForwardingRules()
+		err = l4netlb.mixedManager.DeleteIPv4()
 		if err != nil {
 			l4netlb.svcLogger.Error(err, "Failed to delete mixed protocol forwarding rules for NetLB RBS service")
 			result.Error = err
@@ -624,19 +631,6 @@ func (l4netlb *L4NetLB) deleteIPv4ForwardingRule() error {
 	}()
 
 	return l4netlb.forwardingRules.Delete(frName)
-}
-
-// We want to delete resources related to mixed protocol even when the controller doesn't have them enabled.
-// This way we can disable the mixed protocol feature flag and not leak any resources.
-func (l4netlb *L4NetLB) deleteIPv4MixedProtocolForwardingRules() error {
-	manager := &forwardingrules.MixedManagerNetLB{
-		Namer:    l4netlb.namer,
-		Provider: l4netlb.forwardingRules,
-		Recorder: l4netlb.recorder,
-		Logger:   l4netlb.svcLogger,
-		Service:  l4netlb.Service,
-	}
-	return manager.DeleteIPv4()
 }
 
 func (l4netlb *L4NetLB) deleteIPv4Address() error {
