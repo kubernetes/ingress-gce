@@ -431,16 +431,7 @@ func (l4netlb *L4NetLB) ensureIPv4Resources(result *L4NetLBSyncResult, nodeNames
 }
 
 func (l4netlb *L4NetLB) ensureIPv4MixedResources(result *L4NetLBSyncResult, nodeNames []string, bsLink string) {
-	mgr := &forwardingrules.MixedManagerNetLB{
-		Namer:    l4netlb.namer,
-		Provider: l4netlb.forwardingRules,
-		Recorder: l4netlb.recorder,
-		Logger:   l4netlb.svcLogger,
-		Service:  l4netlb.Service,
-		Cloud:    l4netlb.cloud,
-	}
-
-	res, err := mgr.EnsureIPv4(forwardingrules.EnsureNetLBConfig{
+	res, err := l4netlb.mixedManager.EnsureIPv4(forwardingrules.EnsureNetLBConfig{
 		BackendServiceLink: bsLink,
 	})
 

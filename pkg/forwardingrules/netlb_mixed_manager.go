@@ -350,10 +350,22 @@ func pickForwardingRuleToInferIP(rules ELBManagedRules) *composite.ForwardingRul
 	}
 }
 
+// DeleteIPv4 will try to delete forwarding rules for mixed protocol NetLB service.
 func (m *MixedManagerNetLB) DeleteIPv4() error {
-	tcpErr := m.delete("tcp")
-	udpErr := m.delete("udp")
+	var wg sync.WaitGroup
+	var tcpErr, udpErr error
+	wg.Add(2)
 
+	go func() {
+		defer wg.Done()
+		tcpErr = m.delete("tcp")
+	}()
+	go func() {
+		defer wg.Done()
+		udpErr = m.delete("udp")
+	}()
+
+	wg.Wait()
 	return errors.Join(tcpErr, udpErr)
 }
 
