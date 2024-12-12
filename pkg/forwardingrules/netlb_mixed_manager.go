@@ -54,13 +54,6 @@ type MixedManagerNetLB struct {
 	Service *api_v1.Service
 }
 
-// EnsureNetLBConfig contains fields specific to ensuring proper Forwarding Rules
-// for mixed protocol NetLBs.
-type EnsureNetLBConfig struct {
-	// BackendServiceLink to the L3 (UNDEFINED) Protocol Backend Service.
-	BackendServiceLink string
-}
-
 // EnsureNetLBResult contains relevant results for Ensure method
 type EnsureNetLBResult struct {
 	UDPFwdRule *composite.ForwardingRule
@@ -70,7 +63,7 @@ type EnsureNetLBResult struct {
 }
 
 // EnsureIPv4 will try to create or update forwarding rules for mixed protocol service.
-func (m *MixedManagerNetLB) EnsureIPv4(cfg EnsureNetLBConfig) (EnsureNetLBResult, error) {
+func (m *MixedManagerNetLB) EnsureIPv4(backendServiceLink string) (EnsureNetLBResult, error) {
 	svcPorts := m.Service.Spec.Ports
 	res := EnsureNetLBResult{
 		SyncStatus: utils.ResourceResync,
@@ -108,11 +101,11 @@ func (m *MixedManagerNetLB) EnsureIPv4(cfg EnsureNetLBConfig) (EnsureNetLBResult
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		res.TCPFwdRule, tcpSync, tcpErr = m.ensure(cfg, existing.TCP, "TCP", addressHandle.IP)
+		res.TCPFwdRule, tcpSync, tcpErr = m.ensure(existing.TCP, backendServiceLink, "TCP", addressHandle.IP)
 	}()
 	go func() {
 		defer wg.Done()
-		res.UDPFwdRule, udpSync, udpErr = m.ensure(cfg, existing.UDP, "UDP", addressHandle.IP)
+		res.UDPFwdRule, udpSync, udpErr = m.ensure(existing.UDP, backendServiceLink, "UDP", addressHandle.IP)
 	}()
 
 	wg.Wait()
@@ -132,18 +125,18 @@ func (m *MixedManagerNetLB) EnsureIPv4(cfg EnsureNetLBConfig) (EnsureNetLBResult
 // * if equal 			-> do nothing
 // * if can be patched 	-> patch
 // * else 				-> delete and recreate
-func (m *MixedManagerNetLB) ensure(cfg EnsureNetLBConfig, existing *composite.ForwardingRule, protocol, ip string) (*composite.ForwardingRule, utils.ResourceSyncStatus, error) {
+func (m *MixedManagerNetLB) ensure(existing *composite.ForwardingRule, backendServiceLink, protocol, ip string) (*composite.ForwardingRule, utils.ResourceSyncStatus, error) {
 	name := m.name(protocol)
 	start := time.Now()
 	log := m.Logger.
 		WithValues("forwardingRuleName", name).
 		WithValues("protocol", protocol).V(2)
-	log.Info("Ensuring external forwarding rule for L4 NetLB Service", "backendServiceLink", cfg.BackendServiceLink)
+	log.Info("Ensuring external forwarding rule for L4 NetLB Service", "backendServiceLink", backendServiceLink)
 	defer func() {
 		log.Info("Finished ensuring external forwarding rule for L4 NetLB Service", "timeTaken", time.Since(start))
 	}()
 
-	wanted, err := m.buildWanted(cfg, name, protocol, ip)
+	wanted, err := m.buildWanted(backendServiceLink, name, protocol, ip)
 	if err != nil {
 		log.Error(err, "buildWanted returned error")
 		return nil, utils.ResourceResync, err
@@ -200,7 +193,7 @@ func (m *MixedManagerNetLB) recreate(wanted *composite.ForwardingRule) error {
 	return nil
 }
 
-func (m *MixedManagerNetLB) buildWanted(cfg EnsureNetLBConfig, name, protocol, ip string) (*composite.ForwardingRule, error) {
+func (m *MixedManagerNetLB) buildWanted(backendServiceLink, name, protocol, ip string) (*composite.ForwardingRule, error) {
 	const version = meta.VersionGA
 	const scheme = string(cloud.SchemeExternal)
 	protocol = strings.ToUpper(protocol)
@@ -231,7 +224,7 @@ func (m *MixedManagerNetLB) buildWanted(cfg EnsureNetLBConfig, name, protocol, i
 		Ports:               ports,
 		PortRange:           portRange,
 		LoadBalancingScheme: scheme,
-		BackendService:      cfg.BackendServiceLink,
+		BackendService:      backendServiceLink,
 		NetworkTier:         netTier.ToGCEValue(),
 	}, nil
 }

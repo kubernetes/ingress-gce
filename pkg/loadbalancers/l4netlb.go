@@ -431,9 +431,7 @@ func (l4netlb *L4NetLB) ensureIPv4Resources(result *L4NetLBSyncResult, nodeNames
 }
 
 func (l4netlb *L4NetLB) ensureIPv4MixedResources(result *L4NetLBSyncResult, nodeNames []string, bsLink string) {
-	res, err := l4netlb.mixedManager.EnsureIPv4(forwardingrules.EnsureNetLBConfig{
-		BackendServiceLink: bsLink,
-	})
+	res, err := l4netlb.mixedManager.EnsureIPv4(bsLink)
 
 	result.GCEResourceUpdate.SetForwardingRule(res.SyncStatus)
 	if err != nil {
