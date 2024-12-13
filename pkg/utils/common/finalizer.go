@@ -15,6 +15,7 @@ package common
 
 import (
 	"fmt"
+	"slices"
 
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/networking/v1"
@@ -64,7 +65,7 @@ func HasFinalizer(m meta_v1.ObjectMeta) bool {
 
 // HasGivenFinalizer is true if the passed in meta has the specified finalizer.
 func HasGivenFinalizer(m meta_v1.ObjectMeta, key string) bool {
-	return slice.ContainsString(m.Finalizers, key, nil)
+	return slices.Contains(m.Finalizers, key)
 }
 
 // EnsureFinalizer ensures that the specified finalizer exists on given Ingress.
