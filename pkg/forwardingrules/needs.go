@@ -16,6 +16,13 @@ func NeedsUDP(svcPorts []api_v1.ServicePort) bool {
 	return needs(api_v1.ProtocolUDP, svcPorts)
 }
 
+// NeedsMixed returns true if the controller should have
+// both a UPD and TCP forwarding rules for a givens set
+// of service ports. Otherwise returns false.
+func NeedsMixed(svcPorts []api_v1.ServicePort) bool {
+	return NeedsTCP(svcPorts) && NeedsUDP(svcPorts)
+}
+
 func needs(protocol api_v1.Protocol, svcPorts []api_v1.ServicePort) bool {
 	for _, port := range svcPorts {
 		p := port.Protocol
