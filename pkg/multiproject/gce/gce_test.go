@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	v1 "k8s.io/ingress-gce/pkg/apis/clusterslice/v1"
+	v1 "k8s.io/ingress-gce/pkg/apis/providerconfig/v1"
 )
 
 func TestReplaceProjectNumberInTokenURL(t *testing.T) {
@@ -123,16 +123,16 @@ func TestUpdateTokenBodyField(t *testing.T) {
 	}
 }
 
-func TestGenerateConfigForClusterSlice(t *testing.T) {
+func TestGenerateConfigForProviderConfig(t *testing.T) {
 	testCases := []struct {
 		name                 string
 		defaultConfigContent string
-		clusterSlice         *v1.ClusterSlice
+		providerConfig       *v1.ProviderConfig
 		expectedConfig       string
 		expectError          bool
 	}{
 		{
-			name: "Nil clusterSlice returns default config content",
+			name: "Nil providerConfig returns default config content",
 			defaultConfigContent: `
 [global]
 project-id = default-project-id
@@ -141,7 +141,7 @@ token-body = default-token-body
 network-name = default-network
 subnetwork-name = default-subnetwork
 `,
-			clusterSlice: nil,
+			providerConfig: nil,
 			expectedConfig: `[global]
 project-id = default-project-id
 token-url = default-token-url
@@ -152,7 +152,7 @@ subnetwork-name = default-subnetwork
 			expectError: false,
 		},
 		{
-			name: "Valid clusterSlice modifies config",
+			name: "Valid providerConfig modifies config",
 			defaultConfigContent: `
 [global]
 project-id = default-project-id
@@ -161,27 +161,27 @@ token-body = {"projectNumber":12345,"clusterId":"example-cluster"}
 network-name = default-network
 subnetwork-name = default-subnetwork
 `,
-			clusterSlice: &v1.ClusterSlice{
-				Spec: v1.ClusterSliceSpec{
-					ProjectID:     "clusterslice-project-id",
+			providerConfig: &v1.ProviderConfig{
+				Spec: v1.ProviderConfigSpec{
+					ProjectID:     "providerconfig-project-id",
 					ProjectNumber: 654321,
 					NetworkConfig: &v1.NetworkConfig{
-						Network:           "clusterslice-network-url",
-						DefaultSubnetwork: "clusterslice-subnetwork-url",
+						Network:           "providerconfig-network-url",
+						DefaultSubnetwork: "providerconfig-subnetwork-url",
 					},
 				},
 			},
 			expectedConfig: `[global]
-project-id = clusterslice-project-id
+project-id = providerconfig-project-id
 token-url = https://gkeauth.googleapis.com/v1/projects/654321/locations/us-central1/clusters/example-cluster:generateToken
 token-body = {"clusterId":"example-cluster","projectNumber":654321}
-network-name = clusterslice-network-url
-subnetwork-name = clusterslice-subnetwork-url
+network-name = providerconfig-network-url
+subnetwork-name = providerconfig-subnetwork-url
 `,
 			expectError: false,
 		},
 		{
-			name: "Valid clusterSlice modifies config, does not modify other fields",
+			name: "Valid providerConfig modifies config, does not modify other fields",
 			defaultConfigContent: `
 [global]
 project-id = default-project-id
@@ -192,23 +192,23 @@ network-name = default-network
 subnetwork-name = default-subnetwork
 other-field = other-value
 `,
-			clusterSlice: &v1.ClusterSlice{
-				Spec: v1.ClusterSliceSpec{
-					ProjectID:     "clusterslice-project-id",
+			providerConfig: &v1.ProviderConfig{
+				Spec: v1.ProviderConfigSpec{
+					ProjectID:     "providerconfig-project-id",
 					ProjectNumber: 654321,
 					NetworkConfig: &v1.NetworkConfig{
-						Network:           "clusterslice-network-url",
-						DefaultSubnetwork: "clusterslice-subnetwork-url",
+						Network:           "providerconfig-network-url",
+						DefaultSubnetwork: "providerconfig-subnetwork-url",
 					},
 				},
 			},
 			expectedConfig: `[global]
-project-id = clusterslice-project-id
+project-id = providerconfig-project-id
 some-other-field = some-other-value
 token-url = https://gkeauth.googleapis.com/v1/projects/654321/locations/us-central1/clusters/example-cluster:generateToken
 token-body = {"clusterId":"example-cluster","projectNumber":654321}
-network-name = clusterslice-network-url
-subnetwork-name = clusterslice-subnetwork-url
+network-name = providerconfig-network-url
+subnetwork-name = providerconfig-subnetwork-url
 other-field = other-value
 `,
 			expectError: false,
@@ -219,9 +219,9 @@ other-field = other-value
 [global]
 token-body = {"projectNumber":12345,"clusterId":"example-cluster"
 `,
-			clusterSlice: &v1.ClusterSlice{
-				Spec: v1.ClusterSliceSpec{
-					ProjectID:     "clusterslice-project-id",
+			providerConfig: &v1.ProviderConfig{
+				Spec: v1.ProviderConfigSpec{
+					ProjectID:     "providerconfig-project-id",
 					ProjectNumber: 654321,
 				},
 			},
@@ -234,9 +234,9 @@ token-body = {"projectNumber":12345,"clusterId":"example-cluster"
 [other]
 key = value
 `,
-			clusterSlice: &v1.ClusterSlice{
-				Spec: v1.ClusterSliceSpec{
-					ProjectID:     "clusterslice-project-id",
+			providerConfig: &v1.ProviderConfig{
+				Spec: v1.ProviderConfigSpec{
+					ProjectID:     "providerconfig-project-id",
 					ProjectNumber: 654321,
 				},
 			},
@@ -247,7 +247,7 @@ key = value
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			modifiedConfig, err := generateConfigForClusterSlice(tc.defaultConfigContent, tc.clusterSlice)
+			modifiedConfig, err := generateConfigForProviderConfig(tc.defaultConfigContent, tc.providerConfig)
 			if tc.expectError != (err != nil) {
 				t.Errorf("Expected error: %v, got: %v", tc.expectError, err)
 			}

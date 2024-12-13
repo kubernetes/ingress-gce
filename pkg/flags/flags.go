@@ -140,7 +140,7 @@ var F = struct {
 	EnableDiscretePortForwarding             bool
 	EnableMultiProjectMode                   bool
 	MultiProjectCRDProjectNameLabel          string
-	ClusterSliceAPIGroup                     string
+	ProviderConfigAPIGroup                   string
 	EnableL4ILBMixedProtocol                 bool
 	EnableL4NetLBMixedProtocol               bool
 }{
@@ -333,7 +333,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.StringVar(&F.MultiProjectCRDProjectNameLabel, "multi-project-crd-project-name-label", "", "The label key for project name of Project in a Project CRD in the Multi-Project cluster.")
 	flag.BoolVar(&F.EnableL4ILBMixedProtocol, "enable-l4ilb-mixed-protocol", false, "Enable support for mixed protocol L4 internal load balancers.")
 	flag.BoolVar(&F.EnableL4NetLBMixedProtocol, "enable-l4netlb-mixed-protocol", false, "Enable support for mixed protocol L4 external load balancers.")
-	flag.StringVar(&F.ClusterSliceAPIGroup, "cluster-slice-api-group", "", "The API group for the ClusterSlice CRD.")
+	flag.StringVar(&F.ProviderConfigAPIGroup, "provider-config-api-group", "", "The API group for the ProviderConfig CRD.")
 }
 
 func Validate() {
