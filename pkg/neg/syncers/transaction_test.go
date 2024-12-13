@@ -3161,7 +3161,7 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 		klog.TODO(),
 		labels.PodLabelPropagationConfig{},
 		testContext.EnableDualStackNEG,
-		network.NetworkInfo{NetworkURL: fakeGCE.NetworkURL(), SubnetworkURL: fakeGCE.SubnetworkURL()},
+		network.NetworkInfo{IsDefault: true, NetworkURL: fakeGCE.NetworkURL(), SubnetworkURL: fakeGCE.SubnetworkURL()},
 		negNamer,
 	)
 	transactionSyncer := negsyncer.(*syncer).core.(*transactionSyncer)

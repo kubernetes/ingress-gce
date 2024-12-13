@@ -34,10 +34,12 @@ import (
 	discovery "k8s.io/api/discovery/v1"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/network"
+	"k8s.io/ingress-gce/pkg/nodetopology"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 
+	nodetopologyv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -464,11 +466,30 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 		return err
 	}
 
-	// List all existing subnets from the cluster.
-	subnetConfigs, err := s.zoneGetter.ListSubnets(s.logger)
-	if err != nil {
-		s.logger.Error(err, "Failed to list subnets from zoneGetter")
-		return err
+	var subnetConfigs []nodetopologyv1.SubnetConfig
+	// Handle scenario for multi-networking
+	if s.networkInfo.IsDefault {
+		// This is the non-multi-networking case. Evaluate all subnets using the
+		// zoneGetter.
+
+		var err error
+		// List all existing subnets from the cluster.
+		subnetConfigs, err = s.zoneGetter.ListSubnets(s.logger)
+		if err != nil {
+			s.logger.Error(err, "Failed to list subnets from zoneGetter")
+			return err
+		}
+	} else {
+		// This is the multi-networking case where the VPC under consideration
+		// is not the default. Use the pre configured subnet from the
+		// networkInfo, effectively disregarding any concept of multi-subnets in
+		// this case.
+
+		subnetConfig, err := nodetopology.SubnetConfigFromSubnetURL(s.networkInfo.SubnetworkURL)
+		if err != nil {
+			return err
+		}
+		subnetConfigs = []nodetopologyv1.SubnetConfig{subnetConfig}
 	}
 
 	for _, subnetConfig := range subnetConfigs {
