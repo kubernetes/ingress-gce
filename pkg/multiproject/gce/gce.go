@@ -10,7 +10,7 @@ import (
 	"github.com/go-ini/ini"
 	cloudgce "k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/cmd/glbc/app"
-	v1 "k8s.io/ingress-gce/pkg/apis/clusterslice/v1"
+	v1 "k8s.io/ingress-gce/pkg/apis/providerconfig/v1"
 	"k8s.io/klog/v2"
 )
 
@@ -21,11 +21,11 @@ func init() {
 	ini.PrettySection = true
 }
 
-// NewGCEForClusterSlice returns a new GCE client for the given project.
-// If clusterSlice is nil, it returns the default cloud associated with the cluster's project.
-// It modifies the default configuration when a clusterSlice is provided.
-func NewGCEForClusterSlice(defaultConfigContent string, clusterSlice *v1.ClusterSlice, logger klog.Logger) (*cloudgce.Cloud, error) {
-	modifiedConfigContent, err := generateConfigForClusterSlice(defaultConfigContent, clusterSlice)
+// NewGCEForProviderConfig returns a new GCE client for the given project.
+// If providerConfig is nil, it returns the default cloud associated with the cluster's project.
+// It modifies the default configuration when a providerConfig is provided.
+func NewGCEForProviderConfig(defaultConfigContent string, providerConfig *v1.ProviderConfig, logger klog.Logger) (*cloudgce.Cloud, error) {
+	modifiedConfigContent, err := generateConfigForProviderConfig(defaultConfigContent, providerConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to modify config content: %v", err)
 	}
@@ -37,8 +37,8 @@ func NewGCEForClusterSlice(defaultConfigContent string, clusterSlice *v1.Cluster
 	), nil
 }
 
-func generateConfigForClusterSlice(defaultConfigContent string, clusterSlice *v1.ClusterSlice) (string, error) {
-	if clusterSlice == nil {
+func generateConfigForProviderConfig(defaultConfigContent string, providerConfig *v1.ProviderConfig) (string, error) {
+	if providerConfig == nil {
 		return defaultConfigContent, nil
 	}
 
@@ -55,12 +55,12 @@ func generateConfigForClusterSlice(defaultConfigContent string, clusterSlice *v1
 
 	// Update ProjectID
 	projectIDKey := "project-id"
-	globalSection.Key(projectIDKey).SetValue(clusterSlice.Spec.ProjectID)
+	globalSection.Key(projectIDKey).SetValue(providerConfig.Spec.ProjectID)
 
 	// Update TokenURL
 	tokenURLKey := "token-url"
 	tokenURL := globalSection.Key(tokenURLKey).String()
-	projectNumberInt := clusterSlice.Spec.ProjectNumber
+	projectNumberInt := providerConfig.Spec.ProjectNumber
 	projectNumberStr := fmt.Sprintf("%d", projectNumberInt)
 	newTokenURL := replaceProjectNumberInTokenURL(tokenURL, projectNumberStr)
 	globalSection.Key(tokenURLKey).SetValue(newTokenURL)
@@ -75,12 +75,12 @@ func generateConfigForClusterSlice(defaultConfigContent string, clusterSlice *v1
 	globalSection.Key(tokenBodyKey).SetValue(newTokenBody)
 
 	// Update NetworkName and SubnetworkName
-	if clusterSlice.Spec.NetworkConfig != nil {
+	if providerConfig.Spec.NetworkConfig != nil {
 		networkNameKey := "network-name"
-		globalSection.Key(networkNameKey).SetValue(clusterSlice.Spec.NetworkConfig.Network)
+		globalSection.Key(networkNameKey).SetValue(providerConfig.Spec.NetworkConfig.Network)
 
 		subnetworkNameKey := "subnetwork-name"
-		globalSection.Key(subnetworkNameKey).SetValue(clusterSlice.Spec.NetworkConfig.DefaultSubnetwork)
+		globalSection.Key(subnetworkNameKey).SetValue(providerConfig.Spec.NetworkConfig.DefaultSubnetwork)
 	}
 
 	// Write the modified config content to a string with custom options
