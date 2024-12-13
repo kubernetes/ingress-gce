@@ -105,7 +105,7 @@ type errorStateChecker interface {
 }
 
 type MetricsCollector interface {
-	CollectDualStackMigrationMetrics(key types.NegSyncerKey, committedEndpoints map[negtypes.EndpointGroupInfo]types.NetworkEndpointSet, migrationCount int)
+	CollectDualStackMigrationMetrics(key types.NegSyncerKey, committedEndpoints map[negtypes.NEGLocation]types.NetworkEndpointSet, migrationCount int)
 }
 
 func NewMigrator(enableDualStackNEG bool, syncer syncable, syncerKey types.NegSyncerKey, metricsCollector MetricsCollector, errorStateChecker errorStateChecker, logger klog.Logger) *Migrator {
@@ -135,9 +135,9 @@ func NewMigrator(enableDualStackNEG bool, syncer syncable, syncerKey types.NegSy
 // detachment was started on. An empty subnet and zone value signifies that
 // detachment was not started (which is the case when there were no
 // migration-endpoints to begin with, or the migrator was paused.)
-func (d *Migrator) Filter(addEndpoints, removeEndpoints, committedEndpoints map[negtypes.EndpointGroupInfo]types.NetworkEndpointSet) negtypes.EndpointGroupInfo {
+func (d *Migrator) Filter(addEndpoints, removeEndpoints, committedEndpoints map[negtypes.NEGLocation]types.NetworkEndpointSet) negtypes.NEGLocation {
 	if !d.enableDualStack {
-		return negtypes.EndpointGroupInfo{}
+		return negtypes.NEGLocation{}
 	}
 
 	_, migrationEndpointsInRemoveSet := findAndFilterMigrationEndpoints(addEndpoints, removeEndpoints)
@@ -148,7 +148,7 @@ func (d *Migrator) Filter(addEndpoints, removeEndpoints, committedEndpoints map[
 	paused := d.isPaused()
 	if migrationCount == 0 || paused {
 		d.logger.V(2).Info("Not starting migration detachments", "migrationCount", migrationCount, "paused", paused)
-		return negtypes.EndpointGroupInfo{}
+		return negtypes.NEGLocation{}
 	}
 
 	return d.calculateMigrationEndpointsToDetach(addEndpoints, removeEndpoints, committedEndpoints, migrationEndpointsInRemoveSet)
@@ -244,7 +244,7 @@ func (d *Migrator) isPaused() bool {
 //     function) AND (2) we are in degraded mode OR the previous successful
 //     detach was quite recent (as determined by the
 //     tooLongSincePreviousDetach() function)
-func (d *Migrator) calculateMigrationEndpointsToDetach(addEndpoints, removeEndpoints, committedEndpoints, migrationEndpoints map[negtypes.EndpointGroupInfo]types.NetworkEndpointSet) negtypes.EndpointGroupInfo {
+func (d *Migrator) calculateMigrationEndpointsToDetach(addEndpoints, removeEndpoints, committedEndpoints, migrationEndpoints map[negtypes.NEGLocation]types.NetworkEndpointSet) negtypes.NEGLocation {
 	addCount := endpointsCount(addEndpoints)
 	committedCount := endpointsCount(committedEndpoints)
 	migrationCount := endpointsCount(migrationEndpoints)
@@ -259,19 +259,19 @@ func (d *Migrator) calculateMigrationEndpointsToDetach(addEndpoints, removeEndpo
 			"previousDetach", d.previousDetach,
 			"previousDetachThreshold", d.previousDetachThreshold,
 		)
-		return negtypes.EndpointGroupInfo{}
+		return negtypes.NEGLocation{}
 	}
 
 	// Find the zone and subnet which has the maximum number of migration-endpoints.
-	endpointGroupInfo, maxZoneEndpointCount := negtypes.EndpointGroupInfo{}, 0
+	negLocation, maxZoneEndpointCount := negtypes.NEGLocation{}, 0
 	for curEndpointInfo, endpointSet := range migrationEndpoints {
 		if endpointSet.Len() > maxZoneEndpointCount {
 			maxZoneEndpointCount = endpointSet.Len()
-			endpointGroupInfo = curEndpointInfo
+			negLocation = curEndpointInfo
 		}
 	}
-	if endpointGroupInfo.Zone == "" && endpointGroupInfo.Subnet == "" {
-		return negtypes.EndpointGroupInfo{}
+	if negLocation.Zone == "" && negLocation.Subnet == "" {
+		return negtypes.NEGLocation{}
 	}
 
 	currentlyMigratingCount := int(math.Ceil(float64(committedCount+migrationCount) * d.fractionOfMigratingEndpoints))
@@ -280,18 +280,18 @@ func (d *Migrator) calculateMigrationEndpointsToDetach(addEndpoints, removeEndpo
 	}
 	d.logger.V(2).Info("Result of migration heuristic calculations", "currentlyMigratingCount", currentlyMigratingCount, "totalMigrationCount", migrationCount)
 
-	if removeEndpoints[endpointGroupInfo] == nil {
-		removeEndpoints[endpointGroupInfo] = types.NewNetworkEndpointSet()
+	if removeEndpoints[negLocation] == nil {
+		removeEndpoints[negLocation] = types.NewNetworkEndpointSet()
 	}
 	for i := 0; i < currentlyMigratingCount; i++ {
-		endpoint, ok := migrationEndpoints[endpointGroupInfo].PopAny()
+		endpoint, ok := migrationEndpoints[negLocation].PopAny()
 		if !ok {
 			break
 		}
-		removeEndpoints[endpointGroupInfo].Insert(endpoint)
+		removeEndpoints[negLocation].Insert(endpoint)
 	}
 
-	return endpointGroupInfo
+	return negLocation
 }
 
 // Returns true if there are many endpoints waiting to be attached.
@@ -315,18 +315,18 @@ func (d *Migrator) tooLongSincePreviousDetach() bool {
 // modified. The returned value will be two endpoints sets which will contain
 // the values that were filtered out from the `addEndpoints` and
 // `removeEndpoints` sets respectively.
-func findAndFilterMigrationEndpoints(addEndpoints, removeEndpoints map[negtypes.EndpointGroupInfo]types.NetworkEndpointSet) (map[negtypes.EndpointGroupInfo]types.NetworkEndpointSet, map[negtypes.EndpointGroupInfo]types.NetworkEndpointSet) {
-	allEndpoints := make(map[negtypes.EndpointGroupInfo]types.NetworkEndpointSet)
-	for endpointGroupInfo, endpointSet := range addEndpoints {
-		allEndpoints[endpointGroupInfo] = allEndpoints[endpointGroupInfo].Union(endpointSet)
+func findAndFilterMigrationEndpoints(addEndpoints, removeEndpoints map[negtypes.NEGLocation]types.NetworkEndpointSet) (map[negtypes.NEGLocation]types.NetworkEndpointSet, map[negtypes.NEGLocation]types.NetworkEndpointSet) {
+	allEndpoints := make(map[negtypes.NEGLocation]types.NetworkEndpointSet)
+	for negLocation, endpointSet := range addEndpoints {
+		allEndpoints[negLocation] = allEndpoints[negLocation].Union(endpointSet)
 	}
-	for endpointGroupInfo, endpointSet := range removeEndpoints {
-		allEndpoints[endpointGroupInfo] = allEndpoints[endpointGroupInfo].Union(endpointSet)
+	for negLocation, endpointSet := range removeEndpoints {
+		allEndpoints[negLocation] = allEndpoints[negLocation].Union(endpointSet)
 	}
 
-	migrationEndpointsInAddSet := make(map[negtypes.EndpointGroupInfo]types.NetworkEndpointSet)
-	migrationEndpointsInRemoveSet := make(map[negtypes.EndpointGroupInfo]types.NetworkEndpointSet)
-	for endpointGroupInfo, endpointSet := range allEndpoints {
+	migrationEndpointsInAddSet := make(map[negtypes.NEGLocation]types.NetworkEndpointSet)
+	migrationEndpointsInRemoveSet := make(map[negtypes.NEGLocation]types.NetworkEndpointSet)
+	for negLocation, endpointSet := range allEndpoints {
 		for endpoint := range endpointSet {
 			if endpoint.IP == "" || endpoint.IPv6 == "" {
 				// Endpoint is not dual-stack so continue.
@@ -347,15 +347,15 @@ func findAndFilterMigrationEndpoints(addEndpoints, removeEndpoints map[negtypes.
 
 			isMigrating := false
 			// Check if endpoint is migrating from dual-stack to single-stack.
-			isMigrating = isMigrating || moveEndpoint(ipv4Only, addEndpoints, migrationEndpointsInAddSet, endpointGroupInfo)
-			isMigrating = isMigrating || moveEndpoint(ipv6Only, addEndpoints, migrationEndpointsInAddSet, endpointGroupInfo)
+			isMigrating = isMigrating || moveEndpoint(ipv4Only, addEndpoints, migrationEndpointsInAddSet, negLocation)
+			isMigrating = isMigrating || moveEndpoint(ipv6Only, addEndpoints, migrationEndpointsInAddSet, negLocation)
 			// Check if endpoint is migrating from single-stack to dual-stack.
-			isMigrating = isMigrating || moveEndpoint(ipv4Only, removeEndpoints, migrationEndpointsInRemoveSet, endpointGroupInfo)
-			isMigrating = isMigrating || moveEndpoint(ipv6Only, removeEndpoints, migrationEndpointsInRemoveSet, endpointGroupInfo)
+			isMigrating = isMigrating || moveEndpoint(ipv4Only, removeEndpoints, migrationEndpointsInRemoveSet, negLocation)
+			isMigrating = isMigrating || moveEndpoint(ipv6Only, removeEndpoints, migrationEndpointsInRemoveSet, negLocation)
 
 			if isMigrating {
-				moveEndpoint(endpoint, addEndpoints, migrationEndpointsInAddSet, endpointGroupInfo)
-				moveEndpoint(endpoint, removeEndpoints, migrationEndpointsInRemoveSet, endpointGroupInfo)
+				moveEndpoint(endpoint, addEndpoints, migrationEndpointsInAddSet, negLocation)
+				moveEndpoint(endpoint, removeEndpoints, migrationEndpointsInRemoveSet, negLocation)
 			}
 		}
 	}
@@ -363,26 +363,26 @@ func findAndFilterMigrationEndpoints(addEndpoints, removeEndpoints map[negtypes.
 	return migrationEndpointsInAddSet, migrationEndpointsInRemoveSet
 }
 
-// moveEndpoint deletes endpoint `e` from `source[endpointGroupInfo]` and adds it to
-// `dest[endpointGroupInfo]`. If the move was successful, `true` is returned. A return value
+// moveEndpoint deletes endpoint `e` from `source[negLocation]` and adds it to
+// `dest[negLocation]`. If the move was successful, `true` is returned. A return value
 // of `false` denotes that nothing was moved and no input variable were
 // modified.
-func moveEndpoint(e types.NetworkEndpoint, source, dest map[negtypes.EndpointGroupInfo]types.NetworkEndpointSet, endpointGroupInfo negtypes.EndpointGroupInfo) bool {
+func moveEndpoint(e types.NetworkEndpoint, source, dest map[negtypes.NEGLocation]types.NetworkEndpointSet, negLocation negtypes.NEGLocation) bool {
 	if source == nil || dest == nil {
 		return false
 	}
-	if source[endpointGroupInfo].Has(e) {
-		source[endpointGroupInfo].Delete(e)
-		if dest[endpointGroupInfo] == nil {
-			dest[endpointGroupInfo] = types.NewNetworkEndpointSet()
+	if source[negLocation].Has(e) {
+		source[negLocation].Delete(e)
+		if dest[negLocation] == nil {
+			dest[negLocation] = types.NewNetworkEndpointSet()
 		}
-		dest[endpointGroupInfo].Insert(e)
+		dest[negLocation].Insert(e)
 		return true
 	}
 	return false
 }
 
-func endpointsCount(endpointSets map[negtypes.EndpointGroupInfo]types.NetworkEndpointSet) int {
+func endpointsCount(endpointSets map[negtypes.NEGLocation]types.NetworkEndpointSet) int {
 	var count int
 	for _, endpointSet := range endpointSets {
 		count += endpointSet.Len()
