@@ -864,12 +864,14 @@ func mergeTransactionIntoZoneEndpointMap(endpointMap map[negtypes.EndpointGroupI
 
 // logStats logs aggregated stats of the input endpointMap
 func (s *transactionSyncer) logStats(endpointMap map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, desc string) {
-	var stats []interface{}
-	stats = append(stats, "description", desc)
+	var keyAndValues []any
+	keyAndValues = append(keyAndValues, "description" /* key */, desc /* value */)
 	for endpointGroupInfo, endpointSet := range endpointMap {
-		stats = append(stats, endpointGroupInfo.Zone, endpointGroupInfo.Subnet, fmt.Sprintf("%d endpoints", endpointSet.Len()))
+		key := fmt.Sprintf("{zone:'%v',subnet:'%v'}", endpointGroupInfo.Zone, endpointGroupInfo.Subnet)
+		value := fmt.Sprintf("%d endpoints", endpointSet.Len())
+		keyAndValues = append(keyAndValues, key, value)
 	}
-	s.logger.V(3).Info("Stats for NEG", stats...)
+	s.logger.V(3).Info("Stats for NEGs", keyAndValues...)
 }
 
 // logEndpoints logs individual endpoint in the input endpointMap
