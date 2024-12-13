@@ -761,7 +761,7 @@ func (s *transactionSyncer) commitPods(endpointMap map[negtypes.EndpointGroupInf
 		for _, endpoint := range endpointSet.List() {
 			podName, ok := endpointPodMap[endpoint]
 			if !ok {
-				s.logger.Error(nil, "Endpoint is not included in the endpointPodMap", "endpoint", endpoint, "endpointPodMap", endpointPodMap)
+				s.logger.Error(nil, "Endpoint is not included in the endpointPodMap", "endpoint", endpoint, "endpointPodMap", fmt.Sprintf("%+v", endpointPodMap))
 				continue
 			}
 			zoneEndpointMap[endpoint] = podName
@@ -874,7 +874,7 @@ func (s *transactionSyncer) logStats(endpointMap map[negtypes.EndpointGroupInfo]
 
 // logEndpoints logs individual endpoint in the input endpointMap
 func (s *transactionSyncer) logEndpoints(endpointMap map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, desc string) {
-	s.logger.V(3).Info("Endpoints for NEG", "description", desc, "endpointMap", endpointMap)
+	s.logger.V(3).Info("Endpoints for NEG", "description", desc, "endpointMap", fmt.Sprintf("%+v", endpointMap))
 }
 
 // updateInitStatus takes in the NEG refs based on the existing node zones,
@@ -991,7 +991,7 @@ func (s *transactionSyncer) getNonDefaultSubnetNEGName(subnet string) (string, e
 
 // computeDegradedModeCorrectness computes degraded mode correctness metrics based on the difference between degraded mode and normal calculation
 func computeDegradedModeCorrectness(notInDegraded, onlyInDegraded map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, negType string, logger klog.Logger) {
-	logger.Info("Exporting degraded mode correctness metrics", "notInDegraded", notInDegraded, "onlyInDegraded", onlyInDegraded)
+	logger.Info("Exporting degraded mode correctness metrics", "notInDegraded", fmt.Sprintf("%+v", notInDegraded), "onlyInDegraded", fmt.Sprintf("%+v", onlyInDegraded))
 	notInDegradedEndpoints := 0
 	for _, val := range notInDegraded {
 		notInDegradedEndpoints += len(val)

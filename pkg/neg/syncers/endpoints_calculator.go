@@ -279,7 +279,7 @@ func (l *L7EndpointsCalculator) ValidateEndpoints(endpointData []types.Endpoints
 	// Endpoint count from EndpointPodMap
 	countFromPodMap := len(endpointPodMap) + endpointsExcludedInCalculation
 	if countFromPodMap == 0 {
-		l.logger.Info("Detected endpoint count from endpointPodMap going to zero", "endpointPodMap", endpointPodMap)
+		l.logger.Info("Detected endpoint count from endpointPodMap going to zero", "endpointPodMap", fmt.Sprintf("%+v", endpointPodMap))
 		return fmt.Errorf("%w: Detect endpoint count goes to zero", types.ErrEPCalculationCountZero)
 	}
 	// Endpoint count from EndpointData
@@ -293,7 +293,13 @@ func (l *L7EndpointsCalculator) ValidateEndpoints(endpointData []types.Endpoints
 	}
 
 	if countFromEndpointData != countFromPodMap {
-		l.logger.Info("Detected error when comparing endpoint counts", "countFromEndpointData", countFromEndpointData, "countFromPodMap", countFromPodMap, "endpointData", endpointData, "endpointPodMap", endpointPodMap, "endpointsExcludedInCalculation", endpointsExcludedInCalculation)
+		l.logger.Info("Detected error when comparing endpoint counts",
+			"countFromEndpointData", countFromEndpointData,
+			"countFromPodMap", countFromPodMap,
+			"endpointData", endpointData,
+			"endpointPodMap", fmt.Sprintf("%+v", endpointPodMap),
+			"endpointsExcludedInCalculation", endpointsExcludedInCalculation,
+		)
 		return fmt.Errorf("%w: Detect endpoint mismatch, count from endpoint slice=%d, count after calculation=%d", types.ErrEPCountsDiffer, countFromEndpointData, countFromPodMap)
 	}
 	return nil
