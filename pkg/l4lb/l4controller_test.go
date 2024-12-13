@@ -510,12 +510,12 @@ func TestProcessMultipleServices(t *testing.T) {
 				t.Errorf("Error getting L4 ILB latency metrics err: %v", metricErr)
 			}
 			prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{CreateCount: 20, UpperBoundSeconds: 1}, t)
-
 		})
 	}
 }
 
 func TestProcessServiceWithDelayedNEGAdd(t *testing.T) {
+
 	l4c := newServiceController(t, newFakeGCE())
 	go l4c.Run()
 	newSvc := test.NewL4ILBService(false, 8080)
@@ -532,6 +532,7 @@ func TestProcessServiceWithDelayedNEGAdd(t *testing.T) {
 	}); err != nil {
 		t.Error(err)
 	}
+
 	time.Sleep(5 * time.Second)
 	// add the NEG with a delay to simulate NEG controller delays. The L4 Controller is multi-threaded with 5 goroutines.
 	// The NEG controller is single-threaded. It is possible for NEG creation to take longer, causing the L4 controller to
@@ -571,7 +572,8 @@ func TestProcessServiceOnError(t *testing.T) {
 	}
 	expectMetrics := &test.L4LBErrorMetricInfo{
 		ByGCEResource: map[string]uint64{annotations.ForwardingRuleResource: 1},
-		ByErrorType:   map[string]uint64{http.StatusText(http.StatusInternalServerError): 1}}
+		ByErrorType:   map[string]uint64{http.StatusText(http.StatusInternalServerError): 1},
+	}
 	currMetrics, errMetrics := test.GetL4ILBErrorMetric()
 	if errMetrics != nil {
 		t.Errorf("Error getting L4 ILB error metrics err: %v", errMetrics)

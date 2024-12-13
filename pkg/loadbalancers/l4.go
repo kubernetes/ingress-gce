@@ -441,7 +441,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	var ipv4AddressToUse string
 	if !l4.enableDualStack || utils.NeedsIPv4(l4.Service) {
 		existingIPv4FR, err = l4.getOldIPv4ForwardingRule(existingBS)
-		ipv4AddressToUse, err = ipv4AddrToUse(l4.cloud, l4.recorder, l4.Service, existingIPv4FR, subnetworkURL)
+		ipv4AddressToUse, err = address.IPv4ToUse(l4.cloud, l4.recorder, l4.Service, existingIPv4FR, subnetworkURL)
 		if err != nil {
 			result.Error = fmt.Errorf("EnsureInternalLoadBalancer error: ipv4AddrToUse returned error: %w", err)
 			return result
