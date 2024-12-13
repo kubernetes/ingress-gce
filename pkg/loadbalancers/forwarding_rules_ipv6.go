@@ -28,13 +28,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/address"
-	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/klog/v2"
 )
 
 const (
@@ -170,9 +168,9 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 
 	// Determine IP which will be used for this LB. If no forwarding rule has been established
 	// or specified in the Service spec, then requestedIP = "".
-	ipv6AddrToUse, err := ipv6AddressToUse(l4netlb.cloud, l4netlb.Service, existingIPv6FwdRule, subnetworkURL, frLogger)
+	ipv6AddrToUse, err := address.IPv6ToUse(l4netlb.cloud, l4netlb.Service, existingIPv6FwdRule, subnetworkURL, frLogger)
 	if err != nil {
-		frLogger.Error(err, "ipv6AddressToUse for service returned error")
+		frLogger.Error(err, "address.IPv6ToUse for service returned error")
 		return nil, utils.ResourceResync, err
 	}
 	frLogger.V(2).Info("ipv6AddressToUse for service", "ipv6AddressToUse", ipv6AddrToUse)
@@ -307,43 +305,4 @@ func (l4netlb *L4NetLB) deleteChangedIPv6ForwardingRule(existingFwdRule *composi
 	}
 	l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeNormal, events.SyncIngress, "External ForwardingRule %q deleted", existingFwdRule.Name)
 	return nil
-}
-
-// ipv6AddrToUse determines which IPv4 address needs to be used in the ForwardingRule,
-// address evaluated in the following order:
-//
-//  1. Use static addresses annotation "networking.gke.io/load-balancer-ip-addresses".
-//  2. Use existing forwarding rule IP. If subnetwork was changed (or no existing IP),
-//     reset the IP (by returning empty string).
-func ipv6AddressToUse(cloud *gce.Cloud, svc *corev1.Service, ipv6FwdRule *composite.ForwardingRule, requestedSubnet string, logger klog.Logger) (string, error) {
-	// Get value from new annotation which support both IPv4 and IPv6
-	ipv6AddressFromAnnotation, err := annotations.FromService(svc).IPv6AddressAnnotation(cloud)
-	if err != nil {
-		return "", err
-	}
-	if ipv6AddressFromAnnotation != "" {
-		// Google Cloud stores ipv6 addresses in CIDR form,
-		// but to create static address you need to specify address without range
-		addr := ipv6AddressWithoutRange(ipv6AddressFromAnnotation)
-		logger.V(2).Info("ipv6AddressToUse: using IPv6 Address from annotation", "address", addr)
-		return addr, nil
-	}
-	if ipv6FwdRule == nil {
-		logger.V(2).Info("ipv6AddressToUse: use any IPv6 Address")
-		return "", nil
-	}
-	if requestedSubnet != ipv6FwdRule.Subnetwork {
-		logger.V(2).Info("ipv6AddressToUse: reset IPv6 Address due to changed subnet")
-		return "", nil
-	}
-
-	// Google Cloud creates ipv6 forwarding rules with IPAddress in CIDR form,
-	// but to create static address you need to specify address without range
-	addr := ipv6AddressWithoutRange(ipv6FwdRule.IPAddress)
-	logger.V(2).Info("ipv6AddressToUse: using IPv6 Address from existing forwarding rule", "forwardingRuleName", ipv6FwdRule.Name, "address", addr)
-	return addr, nil
-}
-
-func ipv6AddressWithoutRange(ipv6Address string) string {
-	return strings.Split(ipv6Address, "/")[0]
 }
