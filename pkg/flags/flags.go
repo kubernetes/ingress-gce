@@ -139,7 +139,7 @@ var F = struct {
 	EnableWeightedL4NetLB                    bool
 	EnableDiscretePortForwarding             bool
 	EnableMultiProjectMode                   bool
-	MultiProjectCRDProjectNameLabel          string
+	ProviderConfigNameLabelKey               string
 	ProviderConfigAPIGroup                   string
 	EnableL4ILBMixedProtocol                 bool
 	EnableL4NetLBMixedProtocol               bool
@@ -330,10 +330,10 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.IntVar(&F.KubeClientBurst, "kube-client-burst", 0, "The burst QPS that the controllers' kube client should adhere to through client side throttling. If zero, client will be created with default settings.")
 	flag.BoolVar(&F.EnableDiscretePortForwarding, "enable-discrete-port-forwarding", false, "Enable forwarding of individual ports instead of port ranges.")
 	flag.BoolVar(&F.EnableMultiProjectMode, "enable-multi-project-mode", false, "Enable running in multi-project mode.")
-	flag.StringVar(&F.MultiProjectCRDProjectNameLabel, "multi-project-crd-project-name-label", "", "The label key for project name of Project in a Project CRD in the Multi-Project cluster.")
 	flag.BoolVar(&F.EnableL4ILBMixedProtocol, "enable-l4ilb-mixed-protocol", false, "Enable support for mixed protocol L4 internal load balancers.")
 	flag.BoolVar(&F.EnableL4NetLBMixedProtocol, "enable-l4netlb-mixed-protocol", false, "Enable support for mixed protocol L4 external load balancers.")
 	flag.StringVar(&F.ProviderConfigAPIGroup, "provider-config-api-group", "", "The API group for the ProviderConfig CRD.")
+	flag.StringVar(&F.ProviderConfigNameLabelKey, "provider-config-name-label-key", "", "The label key for provider-config name, which is used to identify the provider-config of objects in multi-project mode.")
 }
 
 func Validate() {

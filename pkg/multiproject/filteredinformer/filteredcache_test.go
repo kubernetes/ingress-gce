@@ -1,4 +1,4 @@
-package projectinformer
+package filteredinformer
 
 import (
 	"testing"
@@ -9,32 +9,32 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 )
 
-func TestProjectCache_ByIndex(t *testing.T) {
-	flags.F.MultiProjectCRDProjectNameLabel = "project-name-label"
+func TestProviderConfigFilteredCache_ByIndex(t *testing.T) {
+	flags.F.ProviderConfigNameLabelKey = "provider-config-name-label"
 
 	testCases := []struct {
-		desc              string
-		cacheProject      string
-		objectsInCache    []interface{}
-		queryName         string
-		expectedItemNames []string
+		desc                string
+		cacheProviderConfig string
+		objectsInCache      []interface{}
+		queryName           string
+		expectedItemNames   []string
 	}{
 		{
-			desc:         "Retrieve items by index in project",
-			cacheProject: "p123456-abc",
+			desc:                "Retrieve items by index in provider config",
+			cacheProviderConfig: "cs123456-abc",
 			objectsInCache: []interface{}{
-				&v1.ObjectMeta{Labels: map[string]string{flags.F.MultiProjectCRDProjectNameLabel: "p123456-abc"}, Namespace: "p123456-abc-namespace", Name: "obj1"},
-				&v1.ObjectMeta{Labels: map[string]string{flags.F.MultiProjectCRDProjectNameLabel: "p123456-abc"}, Namespace: "p123456-abc-namespace", Name: "obj2"},
-				&v1.ObjectMeta{Labels: map[string]string{flags.F.MultiProjectCRDProjectNameLabel: "p654321-edf"}, Namespace: "p654321-edf-namespace", Name: "obj1"},
+				&v1.ObjectMeta{Labels: map[string]string{flags.F.ProviderConfigNameLabelKey: "cs123456-abc"}, Namespace: "cs123456-abc-namespace", Name: "obj1"},
+				&v1.ObjectMeta{Labels: map[string]string{flags.F.ProviderConfigNameLabelKey: "cs123456-abc"}, Namespace: "cs123456-abc-namespace", Name: "obj2"},
+				&v1.ObjectMeta{Labels: map[string]string{flags.F.ProviderConfigNameLabelKey: "cs654321-edf"}, Namespace: "cs654321-edf-namespace", Name: "obj1"},
 			},
 			queryName:         "obj1",
 			expectedItemNames: []string{"obj1"},
 		},
 		{
-			desc:         "No items when index key does not match",
-			cacheProject: "p123456-abc",
+			desc:                "No items when index key does not match",
+			cacheProviderConfig: "cs123456-abc",
 			objectsInCache: []interface{}{
-				&v1.ObjectMeta{Labels: map[string]string{flags.F.MultiProjectCRDProjectNameLabel: "p123456-abc"}, Name: "obj1"},
+				&v1.ObjectMeta{Labels: map[string]string{flags.F.ProviderConfigNameLabelKey: "cs123456-abc"}, Name: "obj1"},
 			},
 			queryName:         "nonexistent",
 			expectedItemNames: []string{},
@@ -53,9 +53,9 @@ func TestProjectCache_ByIndex(t *testing.T) {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, indexers)
-			nsCache := &projectCache{
-				Indexer:     indexer,
-				projectName: tc.cacheProject,
+			nsCache := &providerConfigFilteredCache{
+				Indexer:            indexer,
+				providerConfigName: tc.cacheProviderConfig,
 			}
 
 			for _, obj := range tc.objectsInCache {
@@ -80,29 +80,29 @@ func TestProjectCache_ByIndex(t *testing.T) {
 	}
 }
 
-func TestProjectCache_List(t *testing.T) {
-	flags.F.MultiProjectCRDProjectNameLabel = "project-name-label"
+func TestProviderConfigFilteredCache_List(t *testing.T) {
+	flags.F.ProviderConfigNameLabelKey = "provider-config-name-label"
 
 	testCases := []struct {
-		desc              string
-		cacheProject      string
-		objectsInCache    []interface{}
-		expectedItemNames []string
+		desc                string
+		cacheProviderConfig string
+		objectsInCache      []interface{}
+		expectedItemNames   []string
 	}{
 		{
-			desc:         "List items in the project",
-			cacheProject: "p123456-abc",
+			desc:                "List items in the provider config",
+			cacheProviderConfig: "p123456-abc",
 			objectsInCache: []interface{}{
-				&v1.ObjectMeta{Labels: map[string]string{flags.F.MultiProjectCRDProjectNameLabel: "p123456-abc"}, Name: "obj1"},
-				&v1.ObjectMeta{Labels: map[string]string{flags.F.MultiProjectCRDProjectNameLabel: "p654321-edf"}, Name: "obj2"},
+				&v1.ObjectMeta{Labels: map[string]string{flags.F.ProviderConfigNameLabelKey: "p123456-abc"}, Name: "obj1"},
+				&v1.ObjectMeta{Labels: map[string]string{flags.F.ProviderConfigNameLabelKey: "p654321-edf"}, Name: "obj2"},
 			},
 			expectedItemNames: []string{"obj1"},
 		},
 		{
-			desc:         "List no items when project has no objects",
-			cacheProject: "p123456-abc",
+			desc:                "List no items when provider config has no objects",
+			cacheProviderConfig: "p123456-abc",
 			objectsInCache: []interface{}{
-				&v1.ObjectMeta{Labels: map[string]string{flags.F.MultiProjectCRDProjectNameLabel: "p654321-edf"}, Name: "obj1"},
+				&v1.ObjectMeta{Labels: map[string]string{flags.F.ProviderConfigNameLabelKey: "p654321-edf"}, Name: "obj1"},
 			},
 			expectedItemNames: []string{},
 		},
@@ -112,9 +112,9 @@ func TestProjectCache_List(t *testing.T) {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, nil)
-			nsCache := &projectCache{
-				Indexer:     indexer,
-				projectName: tc.cacheProject,
+			nsCache := &providerConfigFilteredCache{
+				Indexer:            indexer,
+				providerConfigName: tc.cacheProviderConfig,
 			}
 
 			for _, obj := range tc.objectsInCache {
@@ -136,23 +136,23 @@ func TestProjectCache_List(t *testing.T) {
 	}
 }
 
-func TestProjectCache_GetByKey(t *testing.T) {
-	flags.F.MultiProjectCRDProjectNameLabel = "project-name-label"
+func TestProviderConfigFilteredCache_GetByKey(t *testing.T) {
+	flags.F.ProviderConfigNameLabelKey = "provider-config-name-label"
 
 	testCases := []struct {
-		desc           string
-		cacheProject   string
-		queryKey       string
-		objectsInCache []interface{}
-		expectedExist  bool
-		expectedName   string
+		desc                string
+		cacheProviderConfig string
+		queryKey            string
+		objectsInCache      []interface{}
+		expectedExist       bool
+		expectedName        string
 	}{
 		{
-			desc:         "Get existing item by key in project",
-			cacheProject: "p123456-abc",
-			queryKey:     "p123456-abc-namespace/obj1",
+			desc:                "Get existing item by key in provider config",
+			cacheProviderConfig: "p123456-abc",
+			queryKey:            "p123456-abc-namespace/obj1",
 			objectsInCache: []interface{}{&v1.ObjectMeta{
-				Labels:    map[string]string{flags.F.MultiProjectCRDProjectNameLabel: "p123456-abc"},
+				Labels:    map[string]string{flags.F.ProviderConfigNameLabelKey: "p123456-abc"},
 				Namespace: "p123456-abc-namespace",
 				Name:      "obj1",
 			}},
@@ -160,21 +160,21 @@ func TestProjectCache_GetByKey(t *testing.T) {
 			expectedName:  "obj1",
 		},
 		{
-			desc:         "Item exists but in different project",
-			cacheProject: "p123456-abc",
-			queryKey:     "p654321-edf-namespace/obj1",
+			desc:                "Item exists but in different provider config",
+			cacheProviderConfig: "p123456-abc",
+			queryKey:            "p654321-edf-namespace/obj1",
 			objectsInCache: []interface{}{&v1.ObjectMeta{
-				Labels:    map[string]string{flags.F.MultiProjectCRDProjectNameLabel: "p654321-edf"},
+				Labels:    map[string]string{flags.F.ProviderConfigNameLabelKey: "p654321-edf"},
 				Namespace: "p654321-edf-namespace",
 				Name:      "obj1",
 			}},
 			expectedExist: false,
 		},
 		{
-			desc:         "Item does not exist",
-			cacheProject: "p123456-abc",
+			desc:                "Item does not exist",
+			cacheProviderConfig: "p123456-abc",
 			objectsInCache: []interface{}{&v1.ObjectMeta{
-				Labels:    map[string]string{flags.F.MultiProjectCRDProjectNameLabel: "p123456-abc"},
+				Labels:    map[string]string{flags.F.ProviderConfigNameLabelKey: "p123456-abc"},
 				Namespace: "p123456-abc-namespace",
 				Name:      "obj1",
 			}},
@@ -187,9 +187,9 @@ func TestProjectCache_GetByKey(t *testing.T) {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, nil)
-			nsCache := &projectCache{
-				Indexer:     indexer,
-				projectName: tc.cacheProject,
+			nsCache := &providerConfigFilteredCache{
+				Indexer:            indexer,
+				providerConfigName: tc.cacheProviderConfig,
 			}
 
 			for _, obj := range tc.objectsInCache {
