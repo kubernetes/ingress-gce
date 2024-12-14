@@ -156,8 +156,6 @@ func NewController(
 	stopCh <-chan struct{},
 	logger klog.Logger,
 ) *Controller {
-	logger = logger.WithName("NEGController")
-
 	// init event recorder
 	// TODO: move event recorder initializer to main. Reuse it among controllers.
 	eventBroadcaster := record.NewBroadcaster()

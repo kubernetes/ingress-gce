@@ -293,7 +293,7 @@ func main() {
 
 	enableOtherControllers := flags.F.RunIngressController || flags.F.RunL4Controller || flags.F.RunL4NetLBController || flags.F.EnableIGController || flags.F.EnablePSC
 	runNEG := func() {
-		logger := rootLogger.WithName("NEG Controller")
+		logger := rootLogger.WithName("NEGController")
 		logger.Info("Start running the enabled controllers",
 			"NEG controller", flags.F.EnableNEGController,
 		)
@@ -313,7 +313,7 @@ func main() {
 
 	if flags.F.LeaderElection.LeaderElect {
 		runNEG = func() {
-			logger := rootLogger.WithName("NEG Controller")
+			logger := rootLogger.WithName("NEGController")
 			logger.Info("Start running NEG leader election",
 				"NEG controller", flags.F.EnableNEGController,
 			)
