@@ -26,10 +26,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	nodetopologyv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1"
-	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/nodetopology"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
@@ -203,15 +203,11 @@ func (z *ZoneGetter) ListSubnets(logger klog.Logger) ([]nodetopologyv1.SubnetCon
 	if z.onlyIncludeDefaultSubnetNodes || !nodeTopologySynced {
 		logger.Info("Falling back to only using default subnet when listing subnets", "z.onlyIncludeDefaultSubnetNodes", z.onlyIncludeDefaultSubnetNodes, "nodeTopologySynced", nodeTopologySynced)
 
-		// Parse from https://compute.googleapis.com/v1/projects/... to projects/... format.
-		resourceID, err := cloud.ParseResourceURL(z.defaultSubnetURL)
+		subnetConfig, err := nodetopology.SubnetConfigFromSubnetURL(z.defaultSubnetURL)
 		if err != nil {
-			logger.Error(err, "Failed to parse defaultSubnetURL", "defaultSubnetURL", z.defaultSubnetURL)
 			return nil, err
 		}
-		defaultSubnetName := resourceID.Key.Name
-		defaultSubnetPath := cloud.RelativeResourceName(resourceID.ProjectID, resourceID.Resource, resourceID.Key)
-		return []nodetopologyv1.SubnetConfig{{Name: defaultSubnetName, SubnetPath: defaultSubnetPath}}, nil
+		return []nodetopologyv1.SubnetConfig{subnetConfig}, nil
 	}
 
 	n, exists, err := z.nodeTopologyInformer.GetIndexer().GetByKey(nodeTopologyCRName)
