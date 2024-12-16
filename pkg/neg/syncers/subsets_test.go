@@ -263,7 +263,7 @@ func TestGetSubsetPerZoneMultinetwork(t *testing.T) {
 		// expectEmpty indicates that some zones can have empty subsets
 		expectEmpty      bool
 		networkInfo      network.NetworkInfo
-		expectedNodesMap map[negtypes.EndpointGroupInfo]map[string]string
+		expectedNodesMap map[negtypes.NEGLocation]map[string]string
 	}{
 		{
 			description: "Default network, gets primary interface",
@@ -277,7 +277,7 @@ func TestGetSubsetPerZoneMultinetwork(t *testing.T) {
 				SubnetworkURL: defaultTestSubnetURL,
 			},
 			// empty IPs since test can't get the primary IP
-			expectedNodesMap: map[negtypes.EndpointGroupInfo]map[string]string{
+			expectedNodesMap: map[negtypes.NEGLocation]map[string]string{
 				{Zone: "zone1", Subnet: defaultTestSubnet}: {"n1_1": "", "n1_2": ""},
 				{Zone: "zone2", Subnet: defaultTestSubnet}: {"n2_1": "", "n2_2": ""},
 				{Zone: "zone3", Subnet: defaultTestSubnet}: {"n3_1": ""},
@@ -296,7 +296,7 @@ func TestGetSubsetPerZoneMultinetwork(t *testing.T) {
 				K8sNetwork:    "net1",
 				SubnetworkURL: defaultTestSubnetURL,
 			},
-			expectedNodesMap: map[negtypes.EndpointGroupInfo]map[string]string{
+			expectedNodesMap: map[negtypes.NEGLocation]map[string]string{
 				{Zone: "zone1", Subnet: defaultTestSubnet}: {"n1_1": "172.168.1.1", "n1_2": "172.168.1.2"},
 				{Zone: "zone2", Subnet: defaultTestSubnet}: {"n2_1": "172.168.2.1", "n2_2": "172.168.2.2"},
 				{Zone: "zone3", Subnet: defaultTestSubnet}: {"n3_1": "172.168.3.1"},

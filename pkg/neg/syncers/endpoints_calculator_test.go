@@ -53,7 +53,7 @@ func TestLocalGetEndpointSet(t *testing.T) {
 	testCases := []struct {
 		desc                string
 		endpointsData       []negtypes.EndpointsData
-		wantEndpointSets    map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet
+		wantEndpointSets    map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
 		networkEndpointType negtypes.NetworkEndpointType
 		nodeLabelsMap       map[string]map[string]string
 		nodeAnnotationsMap  map[string]map[string]string
@@ -65,7 +65,7 @@ func TestLocalGetEndpointSet(t *testing.T) {
 			desc:          "default endpoints",
 			endpointsData: negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()),
 			// only 4 out of 6 nodes are picked since there are > 4 endpoints, but they are found only on 4 nodes.
-			wantEndpointSets: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+			wantEndpointSets: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
 				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
 				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4}),
 			},
@@ -77,7 +77,7 @@ func TestLocalGetEndpointSet(t *testing.T) {
 			desc:          "default endpoints, all nodes unready",
 			endpointsData: negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()),
 			// only 4 out of 6 nodes are picked since there are > 4 endpoints, but they are found only on 4 nodes.
-			wantEndpointSets: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+			wantEndpointSets: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
 				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
 				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4}),
 			},
@@ -99,7 +99,7 @@ func TestLocalGetEndpointSet(t *testing.T) {
 			},
 			nodeNames: []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
 			// only 2 out of 6 nodes are picked since there are > 4 endpoints, but they are found only on 4 nodes. 2 out of those 4 are non-candidates.
-			wantEndpointSets: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+			wantEndpointSets: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
 				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
 				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4}),
 			},
@@ -127,7 +127,7 @@ func TestLocalGetEndpointSet(t *testing.T) {
 			//networkEndpointType: negtypes.VmIpEndpointType,
 			nodeNames: []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
 			// only 3 out of 6 nodes are picked because only 3 have multi-nic annotation with a matching network name
-			wantEndpointSets: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+			wantEndpointSets: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
 				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					negtypes.NetworkEndpoint{IP: "20.2.3.1", Node: testInstance1},
 					negtypes.NetworkEndpoint{IP: "20.2.3.2", Node: testInstance2}),
@@ -144,7 +144,7 @@ func TestLocalGetEndpointSet(t *testing.T) {
 				testInstance3: {utils.LabelNodeSubnet: secondaryTestSubnet1},
 			},
 			// only 4 out of 6 nodes are picked since there are > 4 endpoints, but they are found only on 4 nodes.
-			wantEndpointSets: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+			wantEndpointSets: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
 				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}:    negtypes.NewNetworkEndpointSet(),
 				{Zone: negtypes.TestZone1, Subnet: secondaryTestSubnet1}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}),
 				{Zone: negtypes.TestZone1, Subnet: secondaryTestSubnet2}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
@@ -208,7 +208,7 @@ func TestClusterGetEndpointSet(t *testing.T) {
 	testCases := []struct {
 		desc                string
 		endpointsData       []negtypes.EndpointsData
-		wantEndpointSets    map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet
+		wantEndpointSets    map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
 		networkEndpointType negtypes.NetworkEndpointType
 		nodeLabelsMap       map[string]map[string]string
 		nodeAnnotationsMap  map[string]map[string]string
@@ -220,7 +220,7 @@ func TestClusterGetEndpointSet(t *testing.T) {
 			desc:          "default endpoints",
 			endpointsData: negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()),
 			// all nodes are picked since, in this mode, endpoints running do not need to run on the selected node.
-			wantEndpointSets: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+			wantEndpointSets: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
 				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
 				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4},
 					negtypes.NetworkEndpoint{IP: "1.2.3.5", Node: testInstance5}, negtypes.NetworkEndpoint{IP: "1.2.3.6", Node: testInstance6}),
@@ -234,7 +234,7 @@ func TestClusterGetEndpointSet(t *testing.T) {
 			desc:          "default endpoints, all nodes unready",
 			endpointsData: negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()),
 			// all nodes are picked since, in this mode, endpoints running do not need to run on the selected node.
-			wantEndpointSets: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+			wantEndpointSets: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
 				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
 				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4},
 					negtypes.NetworkEndpoint{IP: "1.2.3.5", Node: testInstance5}, negtypes.NetworkEndpoint{IP: "1.2.3.6", Node: testInstance6}),
@@ -251,7 +251,7 @@ func TestClusterGetEndpointSet(t *testing.T) {
 			desc:          "default endpoints, some nodes marked as non-candidates",
 			endpointsData: negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()),
 			// all valid candidate nodes are picked since, in this mode, endpoints running do not need to run on the selected node.
-			wantEndpointSets: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+			wantEndpointSets: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
 				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
 				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4},
 					negtypes.NetworkEndpoint{IP: "1.2.3.5", Node: testInstance5}, negtypes.NetworkEndpoint{IP: "1.2.3.6", Node: testInstance6}),
@@ -272,7 +272,7 @@ func TestClusterGetEndpointSet(t *testing.T) {
 			// all nodes are picked since, in this mode, endpoints running do not need to run on the selected node.
 			// Even when there are no service endpoints, nodes are selected at random.
 			endpointsData: []negtypes.EndpointsData{},
-			wantEndpointSets: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+			wantEndpointSets: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
 				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
 				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4},
 					negtypes.NetworkEndpoint{IP: "1.2.3.5", Node: testInstance5}, negtypes.NetworkEndpoint{IP: "1.2.3.6", Node: testInstance6}),
@@ -285,7 +285,7 @@ func TestClusterGetEndpointSet(t *testing.T) {
 		{
 			desc:          "multinetwork endpoints, only for nodes connected to the specified network",
 			endpointsData: negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()),
-			wantEndpointSets: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+			wantEndpointSets: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
 				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "20.2.3.1", Node: testInstance1}, negtypes.NetworkEndpoint{IP: "20.2.3.2", Node: testInstance2}),
 				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "20.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "20.2.3.6", Node: testInstance6}),
 			},
@@ -303,7 +303,7 @@ func TestClusterGetEndpointSet(t *testing.T) {
 			desc:          "endpoints with MSC nodes",
 			endpointsData: negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()),
 			// all nodes are picked up, but since nodes are spread across subnets there is a separate endpoint set per zone/subnet.
-			wantEndpointSets: map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet{
+			wantEndpointSets: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
 				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}:    negtypes.NewNetworkEndpointSet(),
 				{Zone: negtypes.TestZone1, Subnet: secondaryTestSubnet1}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}),
 				{Zone: negtypes.TestZone1, Subnet: secondaryTestSubnet2}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
@@ -458,7 +458,7 @@ func TestValidateEndpoints(t *testing.T) {
 		ec                 negtypes.NetworkEndpointsCalculator
 		ecMSC              negtypes.NetworkEndpointsCalculator
 		testEndpointSlices []*discovery.EndpointSlice
-		currentMap         map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet
+		currentMap         map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
 		// Use mutation to inject error into that we cannot trigger currently.
 		mutation func([]negtypes.EndpointsData, negtypes.EndpointPodMap) ([]negtypes.EndpointsData, negtypes.EndpointPodMap)
 		expect   error
@@ -691,7 +691,7 @@ func TestValidateEndpoints(t *testing.T) {
 		desc               string
 		ecMSC              negtypes.NetworkEndpointsCalculator
 		testEndpointSlices []*discovery.EndpointSlice
-		currentMap         map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet
+		currentMap         map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
 		// Use mutation to inject error into that we cannot trigger currently.
 		mutation             func([]negtypes.EndpointsData, negtypes.EndpointPodMap) ([]negtypes.EndpointsData, negtypes.EndpointPodMap)
 		expectCalculationErr error

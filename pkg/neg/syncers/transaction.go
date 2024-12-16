@@ -303,7 +303,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	mergeTransactionIntoZoneEndpointMap(currentMap, s.transactions, s.logger)
 	s.logStats(currentMap, "after in-progress operations have completed, NEG endpoints")
 
-	var targetMap map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet
+	var targetMap map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
 	var endpointPodMap negtypes.EndpointPodMap
 	slices, err := s.endpointSliceLister.ByIndex(endpointslices.EndpointSlicesByServiceIndex, endpointslices.FormatEndpointSlicesServiceKey(s.Namespace, s.Name))
 	if err != nil {
@@ -319,7 +319,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	endpointsData := negtypes.EndpointsDataFromEndpointSlices(endpointSlices)
 	targetMap, endpointPodMap, err = s.getEndpointsCalculation(endpointsData, currentMap)
 
-	var degradedTargetMap, notInDegraded, onlyInDegraded map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet
+	var degradedTargetMap, notInDegraded, onlyInDegraded map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
 	var degradedPodMap negtypes.EndpointPodMap
 	var degradedModeErr error
 	if s.enableDegradedModeMetrics || s.enableDegradedMode {
@@ -411,8 +411,8 @@ func (s *transactionSyncer) syncInternalImpl() error {
 
 func (s *transactionSyncer) getEndpointsCalculation(
 	endpointsData []negtypes.EndpointsData,
-	currentMap map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet,
-) (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, error) {
+	currentMap map[negtypes.NEGLocation]negtypes.NetworkEndpointSet,
+) (map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, error) {
 	targetMap, endpointPodMap, endpointsExcludedInCalculation, err := s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
 	if err != nil {
 		return nil, nil, err
@@ -561,11 +561,11 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 }
 
 // syncNetworkEndpoints spins off go routines to execute NEG operations
-func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, endpointPodLabelMap labels.EndpointPodLabelMap, migrationZone negtypes.EndpointGroupInfo) error {
-	syncFunc := func(endpointMap map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, operation transactionOp) error {
-		for endpointGroupInfo, endpointSet := range endpointMap {
-			zone := endpointGroupInfo.Zone
-			subnet := endpointGroupInfo.Subnet
+func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, endpointPodLabelMap labels.EndpointPodLabelMap, migrationZone negtypes.NEGLocation) error {
+	syncFunc := func(endpointMap map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, operation transactionOp) error {
+		for negLocation, endpointSet := range endpointMap {
+			zone := negLocation.Zone
+			subnet := negLocation.Subnet
 			if endpointSet.Len() == 0 {
 				s.logger.V(2).Info("0 endpoints in the endpoint list. Skipping operation", "operation", attachOp, "negSyncerKey", s.NegSyncerKey.String(), "zone", zone, "subnet", subnet)
 				continue
@@ -588,7 +588,7 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 			}
 
 			if operation == attachOp {
-				go s.attachNetworkEndpoints(endpointGroupInfo, batch)
+				go s.attachNetworkEndpoints(negLocation, batch)
 			}
 			if operation == detachOp {
 				if zone == migrationZone.Zone && subnet == migrationZone.Subnet {
@@ -596,7 +596,7 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 					// is already in progress.
 					s.dsMigrator.Pause()
 				}
-				go s.detachNetworkEndpoints(endpointGroupInfo, batch, zone == migrationZone.Zone && subnet == migrationZone.Subnet)
+				go s.detachNetworkEndpoints(negLocation, batch, zone == migrationZone.Zone && subnet == migrationZone.Subnet)
 			}
 		}
 		return nil
@@ -613,7 +613,7 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 }
 
 // attachNetworkEndpoints runs operation for attaching network endpoints.
-func (s *transactionSyncer) attachNetworkEndpoints(epGroupInfo negtypes.EndpointGroupInfo, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
+func (s *transactionSyncer) attachNetworkEndpoints(epGroupInfo negtypes.NEGLocation, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
 	s.logger.V(2).Info("Attaching endpoints to NEG.", "countOfEndpointsBeingAttached", len(networkEndpointMap), "negSyncerKey", s.NegSyncerKey.String(), "zone", epGroupInfo.Zone, "subnet", epGroupInfo.Subnet)
 	err := s.operationInternal(attachOp, epGroupInfo, networkEndpointMap, s.logger)
 
@@ -622,7 +622,7 @@ func (s *transactionSyncer) attachNetworkEndpoints(epGroupInfo negtypes.Endpoint
 }
 
 // detachNetworkEndpoints runs operation for detaching network endpoints.
-func (s *transactionSyncer) detachNetworkEndpoints(epGroupInfo negtypes.EndpointGroupInfo, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, hasMigrationDetachments bool) {
+func (s *transactionSyncer) detachNetworkEndpoints(epGroupInfo negtypes.NEGLocation, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, hasMigrationDetachments bool) {
 	s.logger.V(2).Info("Detaching endpoints from NEG.", "countOfEndpointsBeingDetached", len(networkEndpointMap), "negSyncerKey", s.NegSyncerKey.String(), "zone", epGroupInfo.Zone, "subnet", epGroupInfo.Subnet)
 	err := s.operationInternal(detachOp, epGroupInfo, networkEndpointMap, s.logger)
 
@@ -639,7 +639,7 @@ func (s *transactionSyncer) detachNetworkEndpoints(epGroupInfo negtypes.Endpoint
 // operationInternal executes NEG API call and commits the transactions
 // It will record events when operations are completed
 // If error occurs or any transaction entry requires reconciliation, it will trigger resync
-func (s *transactionSyncer) operationInternal(operation transactionOp, epGroupInfo negtypes.EndpointGroupInfo, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, logger klog.Logger) error {
+func (s *transactionSyncer) operationInternal(operation transactionOp, epGroupInfo negtypes.NEGLocation, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, logger klog.Logger) error {
 	var err error
 	start := time.Now()
 	networkEndpoints := []*composite.NetworkEndpoint{}
@@ -776,8 +776,8 @@ func (s *transactionSyncer) needCommit() bool {
 }
 
 // commitPods groups the endpoints by zone and signals the readiness reflector to poll pods of the NEG
-func (s *transactionSyncer) commitPods(endpointMap map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, endpointPodMap negtypes.EndpointPodMap) {
-	for endpointGroupInfo, endpointSet := range endpointMap {
+func (s *transactionSyncer) commitPods(endpointMap map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, endpointPodMap negtypes.EndpointPodMap) {
+	for negLocation, endpointSet := range endpointMap {
 		zoneEndpointMap := negtypes.EndpointPodMap{}
 		for _, endpoint := range endpointSet.List() {
 			podName, ok := endpointPodMap[endpoint]
@@ -796,8 +796,8 @@ func (s *transactionSyncer) commitPods(endpointMap map[negtypes.EndpointGroupInf
 				continue
 			}
 
-			if endpointGroupInfo.Subnet != defaultSubnet {
-				negName, err = s.getNonDefaultSubnetNEGName(endpointGroupInfo.Subnet)
+			if negLocation.Subnet != defaultSubnet {
+				negName, err = s.getNonDefaultSubnetNEGName(negLocation.Subnet)
 				if err != nil {
 					s.logger.Error(err, "Errored getting non-default subnet NEG name when committing pods")
 					continue
@@ -806,7 +806,7 @@ func (s *transactionSyncer) commitPods(endpointMap map[negtypes.EndpointGroupInf
 			// To ensure syncerKey has the same information as the passed in NEG name.
 			syncerKey.NegName = negName
 		}
-		s.reflector.CommitPods(syncerKey, negName, endpointGroupInfo.Zone, zoneEndpointMap)
+		s.reflector.CommitPods(syncerKey, negName, negLocation.Zone, zoneEndpointMap)
 	}
 }
 
@@ -843,7 +843,7 @@ func (s *transactionSyncer) isZoneChange() bool {
 }
 
 // filterEndpointByTransaction removes the all endpoints from endpoint map if they exists in the transaction table
-func filterEndpointByTransaction(endpointMap map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, table networkEndpointTransactionTable, logger klog.Logger) {
+func filterEndpointByTransaction(endpointMap map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, table networkEndpointTransactionTable, logger klog.Logger) {
 	for _, endpointSet := range endpointMap {
 		for _, endpoint := range endpointSet.List() {
 			if entry, ok := table.Get(endpoint); ok {
@@ -856,7 +856,7 @@ func filterEndpointByTransaction(endpointMap map[negtypes.EndpointGroupInfo]negt
 
 // mergeTransactionIntoZoneEndpointMap merges the ongoing transaction into the endpointMap.
 // This converts the existing endpointMap to the state when all transactions completed
-func mergeTransactionIntoZoneEndpointMap(endpointMap map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, transactions networkEndpointTransactionTable, logger klog.Logger) {
+func mergeTransactionIntoZoneEndpointMap(endpointMap map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, transactions networkEndpointTransactionTable, logger klog.Logger) {
 	for _, endpointKey := range transactions.Keys() {
 		entry, ok := transactions.Get(endpointKey)
 		// If called in syncInternal, as the transaction table
@@ -864,7 +864,7 @@ func mergeTransactionIntoZoneEndpointMap(endpointMap map[negtypes.EndpointGroupI
 			logger.V(2).Info("Transaction entry of key was not found.", "endpointKey", endpointKey)
 			continue
 		}
-		key := negtypes.EndpointGroupInfo{Zone: entry.Zone, Subnet: entry.Subnet}
+		key := negtypes.NEGLocation{Zone: entry.Zone, Subnet: entry.Subnet}
 		// Add endpoints in attach transaction
 		if entry.Operation == attachOp {
 			if _, ok := endpointMap[key]; !ok {
@@ -884,11 +884,11 @@ func mergeTransactionIntoZoneEndpointMap(endpointMap map[negtypes.EndpointGroupI
 }
 
 // logStats logs aggregated stats of the input endpointMap
-func (s *transactionSyncer) logStats(endpointMap map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, desc string) {
+func (s *transactionSyncer) logStats(endpointMap map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, desc string) {
 	var keyAndValues []any
 	keyAndValues = append(keyAndValues, "description" /* key */, desc /* value */)
-	for endpointGroupInfo, endpointSet := range endpointMap {
-		key := fmt.Sprintf("{zone:'%v',subnet:'%v'}", endpointGroupInfo.Zone, endpointGroupInfo.Subnet)
+	for negLocation, endpointSet := range endpointMap {
+		key := fmt.Sprintf("{zone:'%v',subnet:'%v'}", negLocation.Zone, negLocation.Subnet)
 		value := fmt.Sprintf("%d endpoints", endpointSet.Len())
 		keyAndValues = append(keyAndValues, key, value)
 	}
@@ -896,7 +896,7 @@ func (s *transactionSyncer) logStats(endpointMap map[negtypes.EndpointGroupInfo]
 }
 
 // logEndpoints logs individual endpoint in the input endpointMap
-func (s *transactionSyncer) logEndpoints(endpointMap map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, desc string) {
+func (s *transactionSyncer) logEndpoints(endpointMap map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, desc string) {
 	s.logger.V(3).Info("Endpoints for NEG", "description", desc, "endpointMap", fmt.Sprintf("%+v", endpointMap))
 }
 
@@ -1013,7 +1013,7 @@ func (s *transactionSyncer) getNonDefaultSubnetNEGName(subnet string) (string, e
 }
 
 // computeDegradedModeCorrectness computes degraded mode correctness metrics based on the difference between degraded mode and normal calculation
-func computeDegradedModeCorrectness(notInDegraded, onlyInDegraded map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, negType string, logger klog.Logger) {
+func computeDegradedModeCorrectness(notInDegraded, onlyInDegraded map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, negType string, logger klog.Logger) {
 	logger.Info("Exporting degraded mode correctness metrics", "notInDegraded", fmt.Sprintf("%+v", notInDegraded), "onlyInDegraded", fmt.Sprintf("%+v", onlyInDegraded))
 	notInDegradedEndpoints := 0
 	for _, val := range notInDegraded {
@@ -1157,7 +1157,7 @@ func findCondition(conditions []negv1beta1.Condition, conditionType string) (neg
 }
 
 // getEndpointPodLabelMap goes through all the endpoints to be attached and fetches the labels from the endpoint pods.
-func getEndpointPodLabelMap(endpoints map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, endpointPodMap negtypes.EndpointPodMap, podLister cache.Store, lpConfig labels.PodLabelPropagationConfig, recorder record.EventRecorder, logger klog.Logger) labels.EndpointPodLabelMap {
+func getEndpointPodLabelMap(endpoints map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, endpointPodMap negtypes.EndpointPodMap, podLister cache.Store, lpConfig labels.PodLabelPropagationConfig, recorder record.EventRecorder, logger klog.Logger) labels.EndpointPodLabelMap {
 	endpointPodLabelMap := labels.EndpointPodLabelMap{}
 	for _, endpointSet := range endpoints {
 		for endpoint := range endpointSet {
@@ -1188,7 +1188,7 @@ func getEndpointPodLabelMap(endpoints map[negtypes.EndpointGroupInfo]negtypes.Ne
 
 // publishAnnotationSizeMetrics goes through all the endpoints to be attached
 // and publish annotation size metrics.
-func publishAnnotationSizeMetrics(endpoints map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, endpointPodLabelMap labels.EndpointPodLabelMap) {
+func publishAnnotationSizeMetrics(endpoints map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, endpointPodLabelMap labels.EndpointPodLabelMap) {
 	for _, endpointSet := range endpoints {
 		for endpoint := range endpointSet {
 			labelMap := endpointPodLabelMap[endpoint]
@@ -1198,7 +1198,7 @@ func publishAnnotationSizeMetrics(endpoints map[negtypes.EndpointGroupInfo]negty
 }
 
 // collectLabelStats calculate the number of endpoints and the number of endpoints with annotations.
-func collectLabelStats(currentPodLabelMap, addPodLabelMap labels.EndpointPodLabelMap, targetEndpointMap map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet) metricscollector.LabelPropagationStats {
+func collectLabelStats(currentPodLabelMap, addPodLabelMap labels.EndpointPodLabelMap, targetEndpointMap map[negtypes.NEGLocation]negtypes.NetworkEndpointSet) metricscollector.LabelPropagationStats {
 	labelPropagationStats := metricscollector.LabelPropagationStats{}
 	for _, endpointSet := range targetEndpointMap {
 		for endpoint := range endpointSet {

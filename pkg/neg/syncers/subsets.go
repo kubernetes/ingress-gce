@@ -178,8 +178,8 @@ func newNodeWithSubnet(node *v1.Node, subnet string) *nodeWithSubnet {
 //	Since the number of nodes will keep increasing in successive zones due to the sorting, even if fewer nodes were
 //	present in some zones, more nodes will be picked from other nodes, taking the total subset size to the given limit
 //	whenever possible.
-func getSubsetPerZone(nodesPerZone map[string][]*nodeWithSubnet, totalLimit int, svcID string, currentMap map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, logger klog.Logger, networkInfo *network.NetworkInfo) (map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet, error) {
-	result := make(map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet)
+func getSubsetPerZone(nodesPerZone map[string][]*nodeWithSubnet, totalLimit int, svcID string, currentMap map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, logger klog.Logger, networkInfo *network.NetworkInfo) (map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, error) {
+	result := make(map[negtypes.NEGLocation]negtypes.NetworkEndpointSet)
 
 	subsetSize := 0
 	// initialize zonesRemaining to the total number of zones.
@@ -195,7 +195,7 @@ func getSubsetPerZone(nodesPerZone map[string][]*nodeWithSubnet, totalLimit int,
 
 	for _, zone := range zoneList {
 		// make sure there is an entry for the defaultSubnet in each zone, even if there will be no endpoints in there (maintains the old behavior).
-		result[negtypes.EndpointGroupInfo{Zone: zone.Name, Subnet: defaultSubnet}] = negtypes.NewNetworkEndpointSet()
+		result[negtypes.NEGLocation{Zone: zone.Name, Subnet: defaultSubnet}] = negtypes.NewNetworkEndpointSet()
 		// split the limit across the leftover zones.
 		subsetSize = totalLimit / zonesRemaining
 		logger.Info("Picking subset for a zone", "subsetSize", subsetSize, "zone", zone, "svcID", svcID)
@@ -211,7 +211,7 @@ func getSubsetPerZone(nodesPerZone map[string][]*nodeWithSubnet, totalLimit int,
 			} else {
 				ip = utils.GetNodePrimaryIP(nodeAndSubnet.node, logger)
 			}
-			egi := negtypes.EndpointGroupInfo{Zone: zone.Name, Subnet: nodeAndSubnet.subnet}
+			egi := negtypes.NEGLocation{Zone: zone.Name, Subnet: nodeAndSubnet.subnet}
 			if _, ok := result[egi]; !ok {
 				result[egi] = negtypes.NewNetworkEndpointSet()
 			}
@@ -225,10 +225,10 @@ func getSubsetPerZone(nodesPerZone map[string][]*nodeWithSubnet, totalLimit int,
 
 // getNetworkEndpointsForZone gets all endpoints for a matching zone.
 // it will get all nodes in the zone no matter which subnet the nodes are in.
-func getNetworkEndpointsForZone(zone string, currentMap map[negtypes.EndpointGroupInfo]negtypes.NetworkEndpointSet) []negtypes.NetworkEndpoint {
+func getNetworkEndpointsForZone(zone string, currentMap map[negtypes.NEGLocation]negtypes.NetworkEndpointSet) []negtypes.NetworkEndpoint {
 	var results [][]negtypes.NetworkEndpoint
-	for endpointGroupInfo, endpointSet := range currentMap {
-		if endpointGroupInfo.Zone == zone {
+	for negLocation, endpointSet := range currentMap {
+		if negLocation.Zone == zone {
 			results = append(results, endpointSet.List())
 		}
 	}

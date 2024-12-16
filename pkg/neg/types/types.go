@@ -415,7 +415,7 @@ func NegInfoFromNegRef(negRef negv1beta1.NegObjectReference) (NegInfo, error) {
 	return NegInfo{Name: resourceID.Key.Name, Zone: resourceID.Key.Zone}, nil
 }
 
-type EndpointGroupInfo struct {
+type NEGLocation struct {
 	Zone   string
 	Subnet string
 }
