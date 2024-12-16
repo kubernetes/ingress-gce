@@ -1575,7 +1575,7 @@ func verifyNetLBForwardingRule(l4netlb *L4NetLB, frName string, backendServiceLi
 		return fmt.Errorf("unexpected backend service link '%s' for forwarding rule, expected '%s'", fwdRule.BackendService, backendServiceLink)
 	}
 
-	serviceNetTier, _ := utils.GetNetworkTier(l4netlb.Service)
+	serviceNetTier, _ := annotations.NetworkTier(l4netlb.Service)
 	if fwdRule.NetworkTier != serviceNetTier.ToGCEValue() {
 		return fmt.Errorf("unexpected network tier '%s' for forwarding rule, expected '%s'", fwdRule.NetworkTier, serviceNetTier.ToGCEValue())
 	}

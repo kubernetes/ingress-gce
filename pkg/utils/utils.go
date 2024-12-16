@@ -226,6 +226,7 @@ func IsInUsedByError(err error) bool {
 	}
 	return strings.Contains(apiErr.Message, "being used by")
 }
+
 func IsMemberAlreadyExistsError(err error) bool {
 	apiErr, ok := err.(*googleapi.Error)
 	if !ok || apiErr.Code != http.StatusBadRequest {
@@ -840,25 +841,6 @@ func GetBasePath(cloud *gce.Cloud) string {
 		return fmt.Sprintf("%sprojects/%s/", basePath, cloud.ProjectID())
 	}
 	return fmt.Sprintf("%s%s/", basePath, cloud.ProjectID())
-}
-
-// GetNetworkTier returns Network Tier from service and stays if this is a service annotation.
-// If the annotation is not present then default Network Tier is returned.
-func GetNetworkTier(service *api_v1.Service) (cloud.NetworkTier, bool) {
-	l, ok := service.Annotations[annotations.NetworkTierAnnotationKey]
-	if !ok {
-		return cloud.NetworkTierDefault, false
-	}
-
-	v := cloud.NetworkTier(l)
-	switch v {
-	case cloud.NetworkTierStandard:
-		return v, true
-	case cloud.NetworkTierPremium:
-		return v, true
-	default:
-		return cloud.NetworkTierDefault, false
-	}
 }
 
 // IsLoadBalancerServiceType checks if kubernetes service is type of LoadBalancer.
