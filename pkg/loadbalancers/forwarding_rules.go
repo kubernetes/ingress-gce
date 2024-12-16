@@ -358,7 +358,7 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 	}
 	frLogger.V(2).Info("ensureIPv4ForwardingRule: Got LoadBalancer IP", "ip", ipToUse)
 
-	netTier, isFromAnnotation := utils.GetNetworkTier(l4netlb.Service)
+	netTier, isFromAnnotation := annotations.NetworkTier(l4netlb.Service)
 	var isIPManaged address.IPAddressType
 	// If the network is not a legacy network, use the address manager
 	if !l4netlb.cloud.IsLegacyNetwork() {
