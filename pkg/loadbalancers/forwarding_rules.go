@@ -28,7 +28,6 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/address"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -349,45 +348,28 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 		return nil, address.IPAddrUndefined, utils.ResourceResync, err
 	}
 
-	// Determine IP which will be used for this LB. If no forwarding rule has been established
-	// or specified in the Service spec, then requestedIP = "".
-	ipToUse, err := address.IPv4ToUse(l4netlb.cloud, l4netlb.recorder, l4netlb.Service, existingFwdRule, "")
+	addrHandle, err := address.HoldExternalIPv4(address.HoldConfig{
+		Cloud:                 l4netlb.cloud,
+		Recorder:              l4netlb.recorder,
+		Logger:                l4netlb.svcLogger,
+		Service:               l4netlb.Service,
+		ExistingRules:         []*composite.ForwardingRule{existingFwdRule},
+		ForwardingRuleDeleter: l4netlb.forwardingRules,
+	})
 	if err != nil {
-		frLogger.Error(err, "address.IPv4ToUse for service returned error")
+		frLogger.Error(err, "address.HoldExternalIPv4 returned error")
 		return nil, address.IPAddrUndefined, utils.ResourceResync, err
 	}
-	frLogger.V(2).Info("ensureIPv4ForwardingRule: Got LoadBalancer IP", "ip", ipToUse)
-
-	netTier, isFromAnnotation := annotations.NetworkTier(l4netlb.Service)
-	var isIPManaged address.IPAddressType
-	// If the network is not a legacy network, use the address manager
-	if !l4netlb.cloud.IsLegacyNetwork() {
-		nm := types.NamespacedName{Namespace: l4netlb.Service.Namespace, Name: l4netlb.Service.Name}.String()
-		addrMgr := address.NewManager(l4netlb.cloud, nm, l4netlb.cloud.Region() /*subnetURL = */, "", frName, ipToUse, cloud.SchemeExternal, netTier, address.IPv4Version, frLogger)
-
-		// If network tier annotation in Service Spec is present
-		// check if it matches network tiers from forwarding rule and external ip Address.
-		// If they do not match, tear down the existing resources with the wrong tier.
-		if isFromAnnotation {
-			if err := l4netlb.tearDownResourcesWithWrongNetworkTier(existingFwdRule, netTier, addrMgr, frLogger); err != nil {
-				return nil, address.IPAddrUndefined, utils.ResourceResync, err
-			}
-		}
-
-		ipToUse, isIPManaged, err = addrMgr.HoldAddress()
+	defer func() {
+		err = addrHandle.Release()
 		if err != nil {
-			return nil, address.IPAddrUndefined, utils.ResourceResync, err
+			frLogger.Error(err, "addrHandle.Release returned error")
 		}
-		frLogger.V(2).Info("ensureIPv4ForwardingRule: reserved IP for the forwarding rule", "ip", ipToUse)
-		defer func() {
-			// Release the address that was reserved, in all cases. If the forwarding rule was successfully created,
-			// the ephemeral IP is not needed anymore. If it was not created, the address should be released to prevent leaks.
-			if err := addrMgr.ReleaseAddress(); err != nil {
-				frLogger.Error(err, "ensureIPv4ForwardingRule: failed to release address reservation, possibly causing an orphan")
-			}
-		}()
-	}
+	}()
 
+	ipToUse := addrHandle.IP
+	isIPManaged := addrHandle.Managed
+	netTier, _ := annotations.NetworkTier(l4netlb.Service)
 	svcPorts := l4netlb.Service.Spec.Ports
 	ports := utils.GetPorts(svcPorts)
 	portRange := utils.MinMaxPortRange(svcPorts)
