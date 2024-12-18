@@ -41,6 +41,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
@@ -1500,11 +1501,12 @@ func TestServiceIPFamilies(t *testing.T) {
 	preferDualStack := apiv1.IPFamilyPolicyPreferDualStack
 	requireDualStack := apiv1.IPFamilyPolicyRequireDualStack
 	testCases := []struct {
-		desc           string
-		serviceType    v1.ServiceType
-		ipFamilies     []v1.IPFamily
-		ipFamilyPolicy *apiv1.IPFamilyPolicy
-		expectNil      bool
+		desc              string
+		serviceType       v1.ServiceType
+		ipFamilies        []v1.IPFamily
+		ipFamilyPolicy    *apiv1.IPFamilyPolicy
+		expectNil         bool
+		enableIPV6OnlyNEG bool
 	}{
 		{
 			desc:           "ipv6 only service with l7 load balancer, ipFamilyPolicy is singleStack",
@@ -1512,6 +1514,14 @@ func TestServiceIPFamilies(t *testing.T) {
 			ipFamilies:     []v1.IPFamily{v1.IPv6Protocol},
 			ipFamilyPolicy: &singleStack,
 			expectNil:      false,
+		},
+		{
+			desc:              "ipv6 only service with l7 load balancer, ipFamilyPolicy is singleStack, ipv6 neg enabled",
+			serviceType:       v1.ServiceTypeClusterIP,
+			ipFamilies:        []v1.IPFamily{v1.IPv6Protocol},
+			ipFamilyPolicy:    &singleStack,
+			expectNil:         true,
+			enableIPV6OnlyNEG: true,
 		},
 		{
 			desc:           "ipv4 only service with l7 load balancer, ipFamilyPolicy is singleStack",
@@ -1579,6 +1589,13 @@ func TestServiceIPFamilies(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
+			if tc.enableIPV6OnlyNEG {
+				origEnableIPV6OnlyNEG := flags.F.EnableIPV6OnlyNEG
+				flags.F.EnableIPV6OnlyNEG = true
+				defer func() {
+					flags.F.EnableIPV6OnlyNEG = origEnableIPV6OnlyNEG
+				}()
+			}
 			controller := newTestController(fake.NewSimpleClientset())
 			defer controller.stop()
 			testService := newTestService(controller, false, []int32{80})
