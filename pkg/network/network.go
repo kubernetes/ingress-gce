@@ -128,11 +128,6 @@ func (nr *NetworksResolver) ServiceNetwork(service *apiv1.Service) (*NetworkInfo
 		return DefaultNetwork(nr.cloudProvider), nil
 	}
 
-	// TODO: remove this check once DPv2 supports externalTrafficPolicy=Cluster services.
-	if service.Spec.ExternalTrafficPolicy != apiv1.ServiceExternalTrafficPolicyLocal {
-		return nil, utils.NewUserError(fmt.Errorf("multinetwork services with externalTrafficPolicy='%s' are not supported, only externalTrafficPolicy=Local services are supported", service.Spec.ExternalTrafficPolicy))
-	}
-
 	obj, exists, err := nr.networkLister.GetByKey(networkName)
 	if err != nil {
 		return nil, err
