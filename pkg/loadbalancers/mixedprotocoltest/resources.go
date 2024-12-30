@@ -4,16 +4,39 @@ import (
 	"google.golang.org/api/compute/v1"
 )
 
-// GCEResources collects all GCE resources that are managed by the mixed protocol ILB
+// // GCEResources collects all GCE resources that are managed by the mixed protocol ILB
+// type GCEResources struct {
+// 	FwdRuleIPv4    *compute.ForwardingRule
+// 	FirewallIPv4   *compute.Firewall
+// 	FwdRuleIPv6    *compute.ForwardingRule
+// 	FirewallIPv6   *compute.Firewall
+// 	HC             *compute.HealthCheck
+// 	HCFirewallIPv4 *compute.Firewall
+// 	HCFirewallIPv6 *compute.Firewall
+// 	BS             *compute.BackendService
+// }
+
+const (
+	ForwardingRuleTCPIPv4Name   = "k8s2-tcp-axyqjz2d-test-namespace-test-name-yuvhdy7i"
+	ForwardingRuleTCPIPv6Name   = "k8s2-tcp-axyqjz2d-test-namespace-test-name-yuvhdy7i-ipv6"
+	ForwardingRuleUDPIPv4Name   = "k8s2-udp-axyqjz2d-test-namespace-test-name-yuvhdy7i"
+	ForwardingRuleUDPIPv6Name   = "k8s2-udp-axyqjz2d-test-namespace-test-name-yuvhdy7i-ipv6"
+	ForwardingRuleL3IPv4Name    = "k8s2-l3-axyqjz2d-test-namespace-test-name-yuvhdy7i"
+	ForwardingRuleL3IPv6Name    = "k8s2-l3-axyqjz2d-test-namespace-test-name-yuvhdy7i-ipv6"
+	BackendServiceName          = "k8s2-axyqjz2d-test-namespace-test-name-yuvhdy7i"
+	FirewallIPv4Name            = "k8s2-axyqjz2d-test-namespace-test-name-yuvhdy7i"
+	FirewallIPv6Name            = "k8s2-axyqjz2d-test-namespace-test-name-yuvhdy7i-ipv6"
+	HealthCheckFirewallIPv4Name = "k8s2-axyqjz2d-l4-shared-hc-fw"
+	HealthCheckFirewallIPv6Name = "k8s2-axyqjz2d-l4-shared-hc-fw-ipv6"
+	HealthCheckName             = "k8s2-axyqjz2d-l4-shared-hc"
+)
+
+// GCEResources collects all GCE resources that are managed by the mixed protocol LBs
 type GCEResources struct {
-	FwdRuleIPv4    *compute.ForwardingRule
-	FirewallIPv4   *compute.Firewall
-	FwdRuleIPv6    *compute.ForwardingRule
-	FirewallIPv6   *compute.Firewall
-	HC             *compute.HealthCheck
-	HCFirewallIPv4 *compute.Firewall
-	HCFirewallIPv6 *compute.Firewall
-	BS             *compute.BackendService
+	ForwardingRules map[string]*compute.ForwardingRule
+	Firewalls       map[string]*compute.Firewall
+	HealthChecks    map[string]*compute.HealthCheck
+	BackendServices map[string]*compute.BackendService
 }
 
 // TCPResources returns GCE resources for a TCP IPv4 ILB that listens on ports 80 and 443
@@ -155,7 +178,7 @@ func L3ResourcesDualStack() GCEResources {
 // HealthCheck returns shared HealthCheck
 func HealthCheck() *compute.HealthCheck {
 	return &compute.HealthCheck{
-		Name:               "k8s2-axyqjz2d-l4-shared-hc",
+		Name:               HealthCheckName,
 		CheckIntervalSec:   8,
 		TimeoutSec:         1,
 		HealthyThreshold:   1,
@@ -169,7 +192,7 @@ func HealthCheck() *compute.HealthCheck {
 // HealthCheckFirewall returns Firewall for HealthCheck
 func HealthCheckFirewall() *compute.Firewall {
 	return &compute.Firewall{
-		Name:    "k8s2-axyqjz2d-l4-shared-hc-fw",
+		Name:    HealthCheckFirewallIPv4Name,
 		Allowed: []*compute.FirewallAllowed{{IPProtocol: "TCP", Ports: []string{"10256"}}},
 		// GCE defined health check ranges
 		SourceRanges: []string{"130.211.0.0/22", "35.191.0.0/16", "209.85.152.0/22", "209.85.204.0/22"},
@@ -181,7 +204,7 @@ func HealthCheckFirewall() *compute.Firewall {
 // HealthCheckFirewallIPv6 returns Firewall for HealthCheck
 func HealthCheckFirewallIPv6() *compute.Firewall {
 	return &compute.Firewall{
-		Name:    "k8s2-axyqjz2d-l4-shared-hc-fw-ipv6",
+		Name:    HealthCheckFirewallIPv6Name,
 		Allowed: []*compute.FirewallAllowed{{IPProtocol: "TCP", Ports: []string{"10256"}}},
 		// GCE defined health check ranges
 		SourceRanges: []string{"2600:2d00:1:b029::/64"},
@@ -193,7 +216,7 @@ func HealthCheckFirewallIPv6() *compute.Firewall {
 // ForwardingRuleL3 returns an L3 Forwarding Rule for ILB
 func ForwardingRuleL3() *compute.ForwardingRule {
 	return &compute.ForwardingRule{
-		Name:                "k8s2-l3-axyqjz2d-test-namespace-test-name-yuvhdy7i",
+		Name:                ForwardingRuleL3IPv4Name,
 		Region:              "us-central1",
 		IPProtocol:          "L3_DEFAULT",
 		AllPorts:            true,
@@ -207,7 +230,7 @@ func ForwardingRuleL3() *compute.ForwardingRule {
 // ForwardingRuleL3IPv6 returns an L3 Forwarding Rule for ILB
 func ForwardingRuleL3IPv6() *compute.ForwardingRule {
 	return &compute.ForwardingRule{
-		Name:                "k8s2-l3-axyqjz2d-test-namespace-test-name-yuvhdy7i-ipv6",
+		Name:                ForwardingRuleL3IPv6Name,
 		Region:              "us-central1",
 		IPProtocol:          "L3_DEFAULT",
 		IpVersion:           "IPV6",
@@ -222,7 +245,7 @@ func ForwardingRuleL3IPv6() *compute.ForwardingRule {
 // ForwardingRuleUDP returns a UDP Forwarding Rule with specified ports
 func ForwardingRuleUDP(ports []string) *compute.ForwardingRule {
 	return &compute.ForwardingRule{
-		Name:                "k8s2-udp-axyqjz2d-test-namespace-test-name-yuvhdy7i",
+		Name:                ForwardingRuleUDPIPv4Name,
 		Region:              "us-central1",
 		IPProtocol:          "UDP",
 		Ports:               ports,
@@ -236,7 +259,7 @@ func ForwardingRuleUDP(ports []string) *compute.ForwardingRule {
 // ForwardingRuleUDPIPv6 returns a UDP Forwarding Rule with specified ports
 func ForwardingRuleUDPIPv6(ports []string) *compute.ForwardingRule {
 	return &compute.ForwardingRule{
-		Name:                "k8s2-udp-axyqjz2d-test-namespace-test-name-yuvhdy7i-ipv6",
+		Name:                ForwardingRuleUDPIPv6Name,
 		Region:              "us-central1",
 		IPProtocol:          "UDP",
 		IpVersion:           "IPV6",
@@ -251,7 +274,7 @@ func ForwardingRuleUDPIPv6(ports []string) *compute.ForwardingRule {
 // ForwardingRuleTCP returns a TCP Forwarding Rule with specified ports
 func ForwardingRuleTCP(ports []string) *compute.ForwardingRule {
 	return &compute.ForwardingRule{
-		Name:                "k8s2-tcp-axyqjz2d-test-namespace-test-name-yuvhdy7i",
+		Name:                ForwardingRuleTCPIPv4Name,
 		Region:              "us-central1",
 		IPProtocol:          "TCP",
 		Ports:               ports,
@@ -265,7 +288,7 @@ func ForwardingRuleTCP(ports []string) *compute.ForwardingRule {
 // ForwardingrukeRuleTCPIPv6 returns a TCP Forwarding Rule with specified ports
 func ForwardingrukeRuleTCPIPv6(ports []string) *compute.ForwardingRule {
 	return &compute.ForwardingRule{
-		Name:                "k8s2-tcp-axyqjz2d-test-namespace-test-name-yuvhdy7i-ipv6",
+		Name:                ForwardingRuleTCPIPv6Name,
 		Region:              "us-central1",
 		IPProtocol:          "TCP",
 		IpVersion:           "IPV6",
@@ -284,7 +307,7 @@ func ForwardingrukeRuleTCPIPv6(ports []string) *compute.ForwardingRule {
 // - `UDP` for UDP only
 func BackendService(protocol string) *compute.BackendService {
 	return &compute.BackendService{
-		Name:                "k8s2-axyqjz2d-test-namespace-test-name-yuvhdy7i",
+		Name:                BackendServiceName,
 		Region:              "us-central1",
 		Protocol:            protocol,
 		SessionAffinity:     "NONE",
@@ -297,7 +320,7 @@ func BackendService(protocol string) *compute.BackendService {
 // Firewall returns ILB Firewall with specified allowed rules
 func Firewall(allowed []*compute.FirewallAllowed) *compute.Firewall {
 	return &compute.Firewall{
-		Name:         "k8s2-axyqjz2d-test-namespace-test-name-yuvhdy7i",
+		Name:         FirewallIPv4Name,
 		Allowed:      allowed,
 		Description:  `{"networking.gke.io/service-name":"test-namespace/test-name","networking.gke.io/api-version":"ga"}`,
 		SourceRanges: []string{"0.0.0.0/0"},
@@ -308,7 +331,7 @@ func Firewall(allowed []*compute.FirewallAllowed) *compute.Firewall {
 // FirewallIPv6 returns ILB Firewall with specified allowed rules
 func FirewallIPv6(allowed []*compute.FirewallAllowed) *compute.Firewall {
 	return &compute.Firewall{
-		Name:         "k8s2-axyqjz2d-test-namespace-test-name-yuvhdy7i-ipv6",
+		Name:         FirewallIPv6Name,
 		Allowed:      allowed,
 		Description:  `{"networking.gke.io/service-name":"test-namespace/test-name","networking.gke.io/api-version":"ga"}`,
 		SourceRanges: []string{"0::0/0"},
