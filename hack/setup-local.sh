@@ -33,9 +33,9 @@ fi
 
 fmt='value(networkConfig.network,networkConfig.subnetwork,zone,selfLink,name)'
 if [ -z "$clusterLocation" ]; then
-    clusters=$(gcloud container clusters list --format="${fmt}" --filter="name=${clusterName}")
+    clusters=$(gcloud container clusters list --format="${fmt}" --filter="name:${clusterName}")
 else
-    clusters=$(gcloud container clusters list --format="${fmt}" --filter="name=${clusterName} location=${clusterLocation}")
+    clusters=$(gcloud container clusters list --format="${fmt}" --filter="name:${clusterName} location:${clusterLocation}")
 fi
 if [ $(echo "${cluster}" | wc -l) -gt 1 ]; then
     echo "ERROR: more than one cluster matches '${clusterName}'"
