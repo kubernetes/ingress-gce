@@ -330,6 +330,7 @@ func (l4 *L4) createFwdRule(newFr *composite.ForwardingRule, frLogger klog.Logge
 
 // ensureIPv4ForwardingRule creates a forwarding rule with the given name for L4NetLB,
 // if it does not exist. It updates the existing forwarding rule if needed.
+// This should only handle single protocol forwarding rules.
 func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.ForwardingRule, address.IPAddressType, utils.ResourceSyncStatus, error) {
 	frName := l4netlb.frName()
 
@@ -342,9 +343,9 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 
 	// version used for creating the existing forwarding rule.
 	version := meta.VersionGA
-	existingFwdRule, err := l4netlb.forwardingRules.Get(frName)
+	rules, err := l4netlb.mixedManager.AllRules()
 	if err != nil {
-		frLogger.Error(err, "l4netlb.forwardingRules.Get returned error")
+		frLogger.Error(err, "l4netlb.mixedManager.AllRules returned error")
 		return nil, address.IPAddrUndefined, utils.ResourceResync, err
 	}
 
@@ -353,7 +354,7 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 		Recorder:              l4netlb.recorder,
 		Logger:                l4netlb.svcLogger,
 		Service:               l4netlb.Service,
-		ExistingRules:         []*composite.ForwardingRule{existingFwdRule},
+		ExistingRules:         []*composite.ForwardingRule{rules.Legacy, rules.TCP, rules.UDP},
 		ForwardingRuleDeleter: l4netlb.forwardingRules,
 	})
 	if err != nil {
@@ -367,6 +368,17 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 		}
 	}()
 
+	// Leaving this without feature flag, so after rollback
+	// forwarding rules will be cleaned up
+	mixedRulesExist := rules.TCP != nil || rules.UDP != nil
+	if mixedRulesExist {
+		if err := l4netlb.mixedManager.DeleteIPv4(); err != nil {
+			frLogger.Error(err, "l4netlb.mixedManager.DeleteIPv4 returned an error")
+			return nil, address.IPAddrUndefined, utils.ResourceResync, err
+		}
+	}
+
+	existingFwdRule := rules.Legacy
 	ipToUse := addrHandle.IP
 	isIPManaged := addrHandle.Managed
 	netTier, _ := annotations.NetworkTier(l4netlb.Service)

@@ -7,8 +7,9 @@ import (
 // SpecIPv4 returns a specification for a IPv6 LB with specified tcp and udp ports
 func SpecIPv4(tcpPorts []int32, udpPorts []int32) api_v1.ServiceSpec {
 	return api_v1.ServiceSpec{
-		Type:  api_v1.ServiceTypeLoadBalancer,
-		Ports: getPorts(tcpPorts, udpPorts),
+		Type:            api_v1.ServiceTypeLoadBalancer,
+		Ports:           getPorts(tcpPorts, udpPorts),
+		SessionAffinity: api_v1.ServiceAffinityNone,
 	}
 }
 
@@ -17,10 +18,11 @@ func SpecIPv6(tcpPorts []int32, udpPorts []int32) api_v1.ServiceSpec {
 	policy := api_v1.IPFamilyPolicySingleStack
 
 	return api_v1.ServiceSpec{
-		IPFamilies:     []api_v1.IPFamily{"IPv6"},
-		IPFamilyPolicy: &policy,
-		Type:           api_v1.ServiceTypeLoadBalancer,
-		Ports:          getPorts(tcpPorts, udpPorts),
+		IPFamilies:      []api_v1.IPFamily{"IPv6"},
+		IPFamilyPolicy:  &policy,
+		Type:            api_v1.ServiceTypeLoadBalancer,
+		Ports:           getPorts(tcpPorts, udpPorts),
+		SessionAffinity: api_v1.ServiceAffinityNone,
 	}
 }
 
@@ -29,10 +31,11 @@ func SpecDualStack(tcpPorts []int32, udpPorts []int32) api_v1.ServiceSpec {
 	policy := api_v1.IPFamilyPolicyRequireDualStack
 
 	return api_v1.ServiceSpec{
-		IPFamilies:     []api_v1.IPFamily{"IPv4", "IPv6"},
-		IPFamilyPolicy: &policy,
-		Type:           api_v1.ServiceTypeLoadBalancer,
-		Ports:          getPorts(tcpPorts, udpPorts),
+		IPFamilies:      []api_v1.IPFamily{"IPv4", "IPv6"},
+		IPFamilyPolicy:  &policy,
+		Type:            api_v1.ServiceTypeLoadBalancer,
+		Ports:           getPorts(tcpPorts, udpPorts),
+		SessionAffinity: api_v1.ServiceAffinityNone,
 	}
 }
 
