@@ -1,3 +1,4 @@
+// Package mixedprotocoltest contains common helpers for testing mixed protocol L4 load balancers
 package mixedprotocoltest
 
 import (
@@ -12,18 +13,20 @@ import (
 )
 
 const (
-	ForwardingRuleTCPIPv4Name   = "k8s2-tcp-axyqjz2d-test-namespace-test-name-yuvhdy7i"
-	ForwardingRuleTCPIPv6Name   = "k8s2-tcp-axyqjz2d-test-namespace-test-name-yuvhdy7i-ipv6"
-	ForwardingRuleUDPIPv4Name   = "k8s2-udp-axyqjz2d-test-namespace-test-name-yuvhdy7i"
-	ForwardingRuleUDPIPv6Name   = "k8s2-udp-axyqjz2d-test-namespace-test-name-yuvhdy7i-ipv6"
-	ForwardingRuleL3IPv4Name    = "k8s2-l3-axyqjz2d-test-namespace-test-name-yuvhdy7i"
-	ForwardingRuleL3IPv6Name    = "k8s2-l3-axyqjz2d-test-namespace-test-name-yuvhdy7i-ipv6"
-	BackendServiceName          = "k8s2-axyqjz2d-test-namespace-test-name-yuvhdy7i"
-	FirewallIPv4Name            = "k8s2-axyqjz2d-test-namespace-test-name-yuvhdy7i"
-	FirewallIPv6Name            = "k8s2-axyqjz2d-test-namespace-test-name-yuvhdy7i-ipv6"
-	HealthCheckFirewallIPv4Name = "k8s2-axyqjz2d-l4-shared-hc-fw"
-	HealthCheckFirewallIPv6Name = "k8s2-axyqjz2d-l4-shared-hc-fw-ipv6"
-	HealthCheckName             = "k8s2-axyqjz2d-l4-shared-hc"
+	ForwardingRuleTCPIPv4Name    = "k8s2-tcp-axyqjz2d-test-namespace-test-name-yuvhdy7i"
+	ForwardingRuleTCPIPv6Name    = "k8s2-tcp-axyqjz2d-test-namespace-test-name-yuvhdy7i-ipv6"
+	ForwardingRuleUDPIPv4Name    = "k8s2-udp-axyqjz2d-test-namespace-test-name-yuvhdy7i"
+	ForwardingRuleUDPIPv6Name    = "k8s2-udp-axyqjz2d-test-namespace-test-name-yuvhdy7i-ipv6"
+	ForwardingRuleL3IPv4Name     = "k8s2-l3-axyqjz2d-test-namespace-test-name-yuvhdy7i"
+	ForwardingRuleL3IPv6Name     = "k8s2-l3-axyqjz2d-test-namespace-test-name-yuvhdy7i-ipv6"
+	ForwardingRuleLegacyName     = "a" + TestUID
+	ForwardingRuleLegacyIPv6Name = "a" + TestUID + "-ipv6"
+	BackendServiceName           = "k8s2-axyqjz2d-test-namespace-test-name-yuvhdy7i"
+	FirewallIPv4Name             = "k8s2-axyqjz2d-test-namespace-test-name-yuvhdy7i"
+	FirewallIPv6Name             = "k8s2-axyqjz2d-test-namespace-test-name-yuvhdy7i-ipv6"
+	HealthCheckFirewallIPv4Name  = "k8s2-axyqjz2d-l4-shared-hc-fw"
+	HealthCheckFirewallIPv6Name  = "k8s2-axyqjz2d-l4-shared-hc-fw-ipv6"
+	HealthCheckName              = "k8s2-axyqjz2d-l4-shared-hc"
 )
 
 // GCEResources collects all GCE resources that are managed by the mixed protocol LBs
@@ -168,20 +171,6 @@ func VerifyResourcesCleanedUp(t *testing.T, cloud *gce.Cloud, old, want GCEResou
 		if bs != nil {
 			t.Errorf("found backend service %v, which should have been deleted", bs.Name)
 		}
-	}
-}
-
-// HealthCheck returns shared HealthCheck
-func HealthCheck() *compute.HealthCheck {
-	return &compute.HealthCheck{
-		Name:               HealthCheckName,
-		CheckIntervalSec:   8,
-		TimeoutSec:         1,
-		HealthyThreshold:   1,
-		UnhealthyThreshold: 3,
-		Type:               "HTTP",
-		HttpHealthCheck:    &compute.HTTPHealthCheck{Port: 10256, RequestPath: "/healthz"},
-		Description:        `{"networking.gke.io/service-name":"","networking.gke.io/api-version":"ga","networking.gke.io/resource-description":"This resource is shared by all L4 ILB Services using ExternalTrafficPolicy: Cluster."}`,
 	}
 }
 

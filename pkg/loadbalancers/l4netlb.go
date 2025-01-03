@@ -583,6 +583,9 @@ func (l4netlb *L4NetLB) deleteIPv4ResourcesAnnotationBased(result *L4NetLBSyncRe
 			result.Error = err
 			result.GCEResourceInError = annotations.ForwardingRuleResource
 		}
+		if err = l4netlb.mixedManager.DeleteIPv4(); err != nil {
+			l4netlb.svcLogger.Error(err, "Failed to delete mixed protocol forwarding rules for NetLB RBS service")
+		}
 	}
 
 	// Deleting non-existent address do not print error audit logs, and we don't store address in annotations

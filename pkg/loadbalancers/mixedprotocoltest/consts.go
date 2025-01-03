@@ -7,4 +7,6 @@ const (
 	TestName = "test-name"
 	// TestNamespace is the name of the Kubernetes namespace used for mixed protocol tests
 	TestNamespace = "test-namespace"
+	// TestUID is the UID for services. It is used by legacy naming scheme to generate name
+	TestUID = "1234567890"
 )

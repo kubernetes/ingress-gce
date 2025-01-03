@@ -17,7 +17,7 @@ func TCPResources() mixedprotocoltest.GCEResources {
 			}),
 			mixedprotocoltest.HealthCheckFirewallIPv4Name: mixedprotocoltest.HealthCheckFirewall(),
 		},
-		HealthCheck:    mixedprotocoltest.HealthCheck(),
+		HealthCheck:    HealthCheck(),
 		BackendService: BackendService("TCP"),
 	}
 }
@@ -34,7 +34,7 @@ func UDPResources() mixedprotocoltest.GCEResources {
 			}),
 			mixedprotocoltest.HealthCheckFirewallIPv4Name: mixedprotocoltest.HealthCheckFirewall(),
 		},
-		HealthCheck:    mixedprotocoltest.HealthCheck(),
+		HealthCheck:    HealthCheck(),
 		BackendService: BackendService("UDP"),
 	}
 }
@@ -52,7 +52,7 @@ func L3Resources() mixedprotocoltest.GCEResources {
 			}),
 			mixedprotocoltest.HealthCheckFirewallIPv4Name: mixedprotocoltest.HealthCheckFirewall(),
 		},
-		HealthCheck:    mixedprotocoltest.HealthCheck(),
+		HealthCheck:    HealthCheck(),
 		BackendService: BackendService("UNSPECIFIED"),
 	}
 }
@@ -69,7 +69,7 @@ func TCPResourcesIPv6() mixedprotocoltest.GCEResources {
 			}),
 			mixedprotocoltest.HealthCheckFirewallIPv6Name: mixedprotocoltest.HealthCheckFirewallIPv6(),
 		},
-		HealthCheck:    mixedprotocoltest.HealthCheck(),
+		HealthCheck:    HealthCheck(),
 		BackendService: BackendService("TCP"),
 	}
 }
@@ -86,7 +86,7 @@ func UDPResourcesIPv6() mixedprotocoltest.GCEResources {
 			}),
 			mixedprotocoltest.HealthCheckFirewallIPv6Name: mixedprotocoltest.HealthCheckFirewallIPv6(),
 		},
-		HealthCheck:    mixedprotocoltest.HealthCheck(),
+		HealthCheck:    HealthCheck(),
 		BackendService: BackendService("UDP"),
 	}
 }
@@ -104,7 +104,7 @@ func L3ResourcesIPv6() mixedprotocoltest.GCEResources {
 			}),
 			mixedprotocoltest.HealthCheckFirewallIPv6Name: mixedprotocoltest.HealthCheckFirewallIPv6(),
 		},
-		HealthCheck:    mixedprotocoltest.HealthCheck(),
+		HealthCheck:    HealthCheck(),
 		BackendService: BackendService("UNSPECIFIED"),
 	}
 }
@@ -126,7 +126,7 @@ func TCPResourcesDualStack() mixedprotocoltest.GCEResources {
 			mixedprotocoltest.HealthCheckFirewallIPv4Name: mixedprotocoltest.HealthCheckFirewall(),
 			mixedprotocoltest.HealthCheckFirewallIPv6Name: mixedprotocoltest.HealthCheckFirewallIPv6(),
 		},
-		HealthCheck:    mixedprotocoltest.HealthCheck(),
+		HealthCheck:    HealthCheck(),
 		BackendService: BackendService("TCP"),
 	}
 }
@@ -148,7 +148,7 @@ func UDPResourcesDualStack() mixedprotocoltest.GCEResources {
 			mixedprotocoltest.HealthCheckFirewallIPv4Name: mixedprotocoltest.HealthCheckFirewall(),
 			mixedprotocoltest.HealthCheckFirewallIPv6Name: mixedprotocoltest.HealthCheckFirewallIPv6(),
 		},
-		HealthCheck:    mixedprotocoltest.HealthCheck(),
+		HealthCheck:    HealthCheck(),
 		BackendService: BackendService("UDP"),
 	}
 }
@@ -172,7 +172,7 @@ func L3ResourcesDualStack() mixedprotocoltest.GCEResources {
 			mixedprotocoltest.HealthCheckFirewallIPv4Name: mixedprotocoltest.HealthCheckFirewall(),
 			mixedprotocoltest.HealthCheckFirewallIPv6Name: mixedprotocoltest.HealthCheckFirewallIPv6(),
 		},
-		HealthCheck:    mixedprotocoltest.HealthCheck(),
+		HealthCheck:    HealthCheck(),
 		BackendService: BackendService("UNSPECIFIED"),
 	}
 }
@@ -278,5 +278,19 @@ func BackendService(protocol string) *compute.BackendService {
 		LoadBalancingScheme: "INTERNAL",
 		HealthChecks:        []string{"https://www.googleapis.com/compute/v1/projects/test-project/global/healthChecks/k8s2-axyqjz2d-l4-shared-hc"},
 		Description:         `{"networking.gke.io/service-name":"test-namespace/test-name","networking.gke.io/api-version":"ga"}`,
+	}
+}
+
+// HealthCheck returns shared HealthCheck
+func HealthCheck() *compute.HealthCheck {
+	return &compute.HealthCheck{
+		Name:               mixedprotocoltest.HealthCheckName,
+		CheckIntervalSec:   8,
+		TimeoutSec:         1,
+		HealthyThreshold:   1,
+		UnhealthyThreshold: 3,
+		Type:               "HTTP",
+		HttpHealthCheck:    &compute.HTTPHealthCheck{Port: 10256, RequestPath: "/healthz"},
+		Description:        `{"networking.gke.io/service-name":"","networking.gke.io/api-version":"ga","networking.gke.io/resource-description":"This resource is shared by all L4 ILB Services using ExternalTrafficPolicy: Cluster."}`,
 	}
 }
