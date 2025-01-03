@@ -106,9 +106,7 @@ func TestGetEffectiveIP(t *testing.T) {
 func TestL4CreateExternalForwardingRuleAddressAlreadyInUse(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	targetIP := "1.1.1.1"
-	l4 := L4NetLB{
-		cloud:           fakeGCE,
-		forwardingRules: forwardingrules.New(fakeGCE, meta.VersionGA, meta.Regional, klog.TODO()),
+	l4 := NewL4NetLB(&L4NetLBParams{
 		Service: &corev1.Service{
 			ObjectMeta: metav1.ObjectMeta{Name: "testService", Namespace: "default", UID: types.UID("1")},
 			Spec: corev1.ServiceSpec{
@@ -121,7 +119,10 @@ func TestL4CreateExternalForwardingRuleAddressAlreadyInUse(t *testing.T) {
 				LoadBalancerIP: targetIP,
 			},
 		},
-	}
+		Cloud:    fakeGCE,
+		Recorder: &record.FakeRecorder{},
+		Namer:    namer.NewL4Namer(kubeSystemUID, nil),
+	}, klog.TODO())
 
 	addr := &compute.Address{Name: "my-important-address", Address: targetIP, AddressType: string(cloud.SchemeExternal)}
 	fakeGCE.ReserveRegionAddress(addr, fakeGCE.Region())
@@ -254,12 +255,12 @@ func TestL4CreateExternalForwardingRule(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-			l4 := L4NetLB{
-				cloud:           fakeGCE,
-				forwardingRules: forwardingrules.New(fakeGCE, meta.VersionGA, meta.Regional, klog.TODO()),
-				Service:         tc.svc,
-				recorder:        &record.FakeRecorder{},
-			}
+			l4 := NewL4NetLB(&L4NetLBParams{
+				Cloud:    fakeGCE,
+				Service:  tc.svc,
+				Recorder: &record.FakeRecorder{},
+				Namer:    namer.NewL4Namer(kubeSystemUID, nil),
+			}, klog.TODO())
 			tc.wantRule.Name = utils.LegacyForwardingRuleName(tc.svc)
 			if tc.namedAddress != nil {
 				fakeGCE.ReserveRegionAddress(tc.namedAddress, fakeGCE.Region())
@@ -371,12 +372,12 @@ func TestL4CreateExternalForwardingRuleUpdate(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-			l4 := L4NetLB{
-				cloud:           fakeGCE,
-				forwardingRules: forwardingrules.New(fakeGCE, meta.VersionGA, meta.Regional, klog.TODO()),
-				Service:         tc.svc,
-				recorder:        &record.FakeRecorder{},
-			}
+			l4 := NewL4NetLB(&L4NetLBParams{
+				Cloud:    fakeGCE,
+				Service:  tc.svc,
+				Recorder: &record.FakeRecorder{},
+				Namer:    namer.NewL4Namer(kubeSystemUID, nil),
+			}, klog.TODO())
 			tc.wantRule.Name = utils.LegacyForwardingRuleName(tc.svc)
 			tc.existingRule.Name = utils.LegacyForwardingRuleName(tc.svc)
 			if tc.existingRule != nil {

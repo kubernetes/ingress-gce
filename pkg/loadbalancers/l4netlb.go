@@ -62,10 +62,12 @@ type L4NetLB struct {
 	scope       meta.KeyType
 	namer       namer.L4ResourcesNamer
 	// recorder is used to generate k8s Events.
-	recorder        record.EventRecorder
-	Service         *corev1.Service
-	NamespacedName  types.NamespacedName
-	healthChecks    healthchecksl4.L4HealthChecks
+	recorder       record.EventRecorder
+	Service        *corev1.Service
+	NamespacedName types.NamespacedName
+	healthChecks   healthchecksl4.L4HealthChecks
+	// mixedManager is responsible for managing forwarding rules for mixed protocol lbs
+	mixedManager    *forwardingrules.MixedManagerNetLB
 	forwardingRules ForwardingRulesProvider
 	enableDualStack bool
 	// represents if `enable strong session affinity` flag was set
@@ -135,6 +137,15 @@ type L4NetLBParams struct {
 // NewL4NetLB creates a new Handler for the given L4NetLB service.
 func NewL4NetLB(params *L4NetLBParams, logger klog.Logger) *L4NetLB {
 	logger = logger.WithName("L4NetLBHandler")
+	forwardingRulesProvider := forwardingrules.New(params.Cloud, meta.VersionGA, meta.Regional, logger)
+	mixedManager := &forwardingrules.MixedManagerNetLB{
+		Namer:    params.Namer,
+		Provider: forwardingRulesProvider,
+		Recorder: params.Recorder,
+		Logger:   logger,
+		Cloud:    params.Cloud,
+		Service:  params.Service,
+	}
 	l4netlb := &L4NetLB{
 		cloud:                            params.Cloud,
 		scope:                            meta.Regional,
@@ -144,7 +155,8 @@ func NewL4NetLB(params *L4NetLBParams, logger klog.Logger) *L4NetLB {
 		NamespacedName:                   types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace},
 		backendPool:                      backends.NewPoolWithConnectionTrackingPolicy(params.Cloud, params.Namer, params.StrongSessionAffinityEnabled),
 		healthChecks:                     healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder, logger),
-		forwardingRules:                  forwardingrules.New(params.Cloud, meta.VersionGA, meta.Regional, logger),
+		forwardingRules:                  forwardingRulesProvider,
+		mixedManager:                     mixedManager,
 		enableDualStack:                  params.DualStackEnabled,
 		enableStrongSessionAffinity:      params.StrongSessionAffinityEnabled,
 		networkResolver:                  params.NetworkResolver,
@@ -332,7 +344,11 @@ func (l4netlb *L4NetLB) connectionTrackingPolicy() *composite.BackendServiceConn
 func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcLink string) string {
 	bsName := l4netlb.namer.L4Backend(l4netlb.Service.Namespace, l4netlb.Service.Name)
 	servicePorts := l4netlb.Service.Spec.Ports
-	protocol := utils.GetProtocol(servicePorts)
+
+	protocol := string(utils.GetProtocol(servicePorts))
+	if l4netlb.enableMixedProtocol {
+		protocol = backends.GetProtocol(servicePorts)
+	}
 
 	localityLbPolicy := l4netlb.determineBackendServiceLocalityPolicy()
 
@@ -340,7 +356,7 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 	backendParams := backends.L4BackendServiceParams{
 		Name:                     bsName,
 		HealthCheckLink:          hcLink,
-		Protocol:                 string(protocol),
+		Protocol:                 protocol,
 		SessionAffinity:          string(l4netlb.Service.Spec.SessionAffinity),
 		Scheme:                   string(cloud.SchemeExternal),
 		NamespacedName:           l4netlb.NamespacedName,
@@ -385,6 +401,11 @@ func (l4netlb *L4NetLB) ensureDualStackResources(result *L4NetLBSyncResult, node
 // - IPv4 Forwarding Rule
 // - IPv4 Firewall
 func (l4netlb *L4NetLB) ensureIPv4Resources(result *L4NetLBSyncResult, nodeNames []string, bsLink string) {
+	if l4netlb.enableMixedProtocol && forwardingrules.NeedsMixed(l4netlb.Service.Spec.Ports) {
+		l4netlb.ensureIPv4MixedResources(result, nodeNames, bsLink)
+		return
+	}
+
 	fr, ipAddrType, wasUpdate, err := l4netlb.ensureIPv4ForwardingRule(bsLink)
 	result.GCEResourceUpdate.SetForwardingRule(wasUpdate)
 	if err != nil {
@@ -409,6 +430,43 @@ func (l4netlb *L4NetLB) ensureIPv4Resources(result *L4NetLBSyncResult, nodeNames
 	}
 
 	result.Status = utils.AddIPToLBStatus(result.Status, fr.IPAddress)
+}
+
+func (l4netlb *L4NetLB) ensureIPv4MixedResources(result *L4NetLBSyncResult, nodeNames []string, bsLink string) {
+	res, err := l4netlb.mixedManager.EnsureIPv4(bsLink)
+
+	result.GCEResourceUpdate.SetForwardingRule(res.SyncStatus)
+	if err != nil {
+		// User can misconfigure the forwarding rule if Network Tier will not match service level Network Tier.
+		result.GCEResourceInError = annotations.ForwardingRuleResource
+		result.Error = fmt.Errorf("failed to ensure mixed protocol forwarding rules - %w", err)
+		result.MetricsLegacyState.IsUserError = utils.IsUserError(err)
+		return
+	}
+
+	var ipAddr string
+	if res.UDPFwdRule != nil {
+		result.Annotations[annotations.UDPForwardingRuleKey] = res.UDPFwdRule.Name
+		if res.TCPFwdRule.NetworkTier == cloud.NetworkTierPremium.ToGCEValue() {
+			result.MetricsLegacyState.IsPremiumTier = true
+		}
+		ipAddr = res.UDPFwdRule.IPAddress
+	}
+	if res.TCPFwdRule != nil {
+		result.Annotations[annotations.TCPForwardingRuleKey] = res.TCPFwdRule.Name
+		if res.TCPFwdRule.NetworkTier == cloud.NetworkTierPremium.ToGCEValue() {
+			result.MetricsLegacyState.IsPremiumTier = true
+		}
+		ipAddr = res.TCPFwdRule.IPAddress
+	}
+
+	l4netlb.ensureIPv4NodesFirewall(nodeNames, ipAddr, result)
+	if result.Error != nil {
+		l4netlb.svcLogger.Error(err, "ensureIPv4MixedResources: Failed to ensure nodes firewall for L4 NetLB Service")
+		return
+	}
+
+	result.Status = utils.AddIPToLBStatus(result.Status, ipAddr)
 }
 
 func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress string, result *L4NetLBSyncResult) {
@@ -524,6 +582,9 @@ func (l4netlb *L4NetLB) deleteIPv4ResourcesAnnotationBased(result *L4NetLBSyncRe
 			l4netlb.svcLogger.Error(err, "Failed to delete forwarding rule for NetLB RBS service")
 			result.Error = err
 			result.GCEResourceInError = annotations.ForwardingRuleResource
+		}
+		if err = l4netlb.mixedManager.DeleteIPv4(); err != nil {
+			l4netlb.svcLogger.Error(err, "Failed to delete mixed protocol forwarding rules for NetLB RBS service")
 		}
 	}
 
