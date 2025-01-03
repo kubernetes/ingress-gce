@@ -1,3 +1,4 @@
+// Package mixedprotocolnetlbtests contains helpers specific for testing external mixed protocol L4 load balancers
 package mixedprotocolnetlbtest
 
 const (

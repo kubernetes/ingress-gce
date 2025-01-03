@@ -1,3 +1,4 @@
+// Package mixedprotocoltest contains common helpers for testing mixed protocol L4 load balancers
 package mixedprotocoltest
 
 // AnnotationsTCP returns annotations for TCP ILB
