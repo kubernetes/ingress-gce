@@ -43,7 +43,7 @@ func StartNEGController(
 	globalStopCh <-chan struct{},
 	logger klog.Logger,
 	providerConfig *providerconfig.ProviderConfig,
-) (<-chan struct{}, error) {
+) (chan<- struct{}, error) {
 	cloud, err := multiprojectgce.NewGCEForProviderConfig(defaultCloudConfig, providerConfig, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GCE client for provider config %+v: %v", providerConfig, err)

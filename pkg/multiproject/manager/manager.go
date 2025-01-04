@@ -40,7 +40,7 @@ type ProviderConfigControllersManager struct {
 }
 
 type ControllerSet struct {
-	stopCh chan struct{}
+	stopCh chan<- struct{}
 }
 
 func NewProviderConfigControllerManager(
