@@ -1,7 +1,9 @@
 package mixedprotocolnetlbtest
 
 import (
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/loadbalancers/mixedprotocoltest"
 )
 
@@ -112,8 +114,8 @@ func BackendService(protocol string) *compute.BackendService {
 }
 
 // HealthCheck returns shared HealthCheck
-func HealthCheck() *compute.HealthCheck {
-	return &compute.HealthCheck{
+func HealthCheck() *composite.HealthCheck {
+	return &composite.HealthCheck{
 		Name:               mixedprotocoltest.HealthCheckName,
 		CheckIntervalSec:   8,
 		TimeoutSec:         1,
@@ -121,7 +123,9 @@ func HealthCheck() *compute.HealthCheck {
 		UnhealthyThreshold: 3,
 		Type:               "HTTP",
 		Region:             "us-central1",
-		HttpHealthCheck:    &compute.HTTPHealthCheck{Port: 10256, RequestPath: "/healthz"},
-		Description:        `{"networking.gke.io/service-name":"","networking.gke.io/api-version":"ga","networking.gke.io/resource-description":"This resource is shared by all L4 ILB Services using ExternalTrafficPolicy: Cluster."}`,
+		Scope:              meta.Regional,
+		Version:            meta.VersionGA,
+		HttpHealthCheck:    &composite.HTTPHealthCheck{Port: 10256, RequestPath: "/healthz"},
+		Description:        `{"networking.gke.io/service-name":"","networking.gke.io/api-version":"ga","networking.gke.io/resource-description":"This resource is shared by all L4 XLB Services using ExternalTrafficPolicy: Cluster."}`,
 	}
 }

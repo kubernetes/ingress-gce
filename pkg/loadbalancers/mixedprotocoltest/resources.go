@@ -5,11 +5,15 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"google.golang.org/api/compute/v1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
+	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/healthchecksprovider"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -33,7 +37,7 @@ const (
 type GCEResources struct {
 	ForwardingRules map[string]*compute.ForwardingRule
 	Firewalls       map[string]*compute.Firewall
-	HealthCheck     *compute.HealthCheck
+	HealthCheck     *composite.HealthCheck
 	BackendService  *compute.BackendService
 }
 
@@ -46,8 +50,9 @@ func (r GCEResources) Create(cloud *gce.Cloud) error {
 	}
 
 	if r.HealthCheck != nil {
-		if err := cloud.CreateHealthCheck(r.HealthCheck); err != nil {
-			return fmt.Errorf("fakeGCE.CreateHealthCheck() returned error %w", err)
+		provider := healthchecksprovider.NewHealthChecks(cloud, meta.VersionGA, klog.TODO())
+		if err := provider.Create(r.HealthCheck); err != nil {
+			return fmt.Errorf("healthCheckProvider.Create() returned error %w", err)
 		}
 	}
 
@@ -74,7 +79,7 @@ func VerifyResourcesExist(t *testing.T, cloud *gce.Cloud, want GCEResources) {
 	for frName, wantFr := range want.ForwardingRules {
 		fr, err := cloud.GetRegionForwardingRule(frName, wantFr.Region)
 		if err != nil {
-			t.Errorf("cloud.GetForwardingRule() returned error %v", err)
+			t.Errorf("cloud.GetForwardingRule(%v) returned error %v", frName, err)
 		}
 		ignoreFields := cmpopts.IgnoreFields(compute.ForwardingRule{}, "SelfLink")
 		if diff := cmp.Diff(wantFr, fr, ignoreFields); diff != "" {
@@ -85,7 +90,7 @@ func VerifyResourcesExist(t *testing.T, cloud *gce.Cloud, want GCEResources) {
 	for fwName, wantFw := range want.Firewalls {
 		fw, err := cloud.GetFirewall(fwName)
 		if err != nil {
-			t.Errorf("cloud.GetFirewall() returned error %v", err)
+			t.Errorf("cloud.GetFirewall(%v) returned error %v", fwName, err)
 		}
 		ignoreFields := cmpopts.IgnoreFields(compute.Firewall{}, "SelfLink")
 		sortSourceRanges := cmpopts.SortSlices(func(x, y string) bool { return x < y })
@@ -95,11 +100,12 @@ func VerifyResourcesExist(t *testing.T, cloud *gce.Cloud, want GCEResources) {
 	}
 
 	if want.HealthCheck != nil {
-		hc, err := cloud.GetHealthCheck(want.HealthCheck.Name)
+		provider := healthchecksprovider.NewHealthChecks(cloud, meta.VersionGA, klog.TODO())
+		hc, err := provider.Get(want.HealthCheck.Name, want.HealthCheck.Scope)
 		if err != nil {
-			t.Errorf("cloud.GetHealthCheck() returned error %v", err)
+			t.Errorf("healthCheckProvider.Get(%v) got err: %v", want.HealthCheck.Name, err)
 		}
-		ignoreFields := cmpopts.IgnoreFields(compute.HealthCheck{}, "SelfLink")
+		ignoreFields := cmpopts.IgnoreFields(composite.HealthCheck{}, "SelfLink", "Scope")
 		if diff := cmp.Diff(want.HealthCheck, hc, ignoreFields); diff != "" {
 			t.Errorf("Health check mismatch (-want +got):\n%s", diff)
 		}

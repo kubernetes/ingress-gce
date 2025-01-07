@@ -92,6 +92,7 @@ func TestEnsureMixedNetLB(t *testing.T) {
 		},
 	}
 
+	// this flag is for single protocol only, mixed protocol use DiscretePortForwarding by default
 	flags.F.EnableDiscretePortForwarding = true
 	for _, s := range startState {
 		for _, e := range endState {
