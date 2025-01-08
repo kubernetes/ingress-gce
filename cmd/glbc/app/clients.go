@@ -171,13 +171,13 @@ func addKubeClientQPSSettings(config *rest.Config, logger klog.Logger) {
 	if flags.F.KubeClientQPS == 0 {
 		logger.Info("Setting Kubernetes Client QPS to default by setting to 0")
 	} else {
-		logger.Info("Setting Kubernetes Client QPS to %d", flags.F.KubeClientQPS)
+		logger.Info("Setting Kubernetes Client QPS", "qps", flags.F.KubeClientQPS)
 	}
 
 	if flags.F.KubeClientBurst == 0 {
 		logger.Info("Setting Kubernetes Client Burst to default by setting to 0")
 	} else {
-		logger.Info("Setting Kubernetes Client Burst to %d", flags.F.KubeClientBurst)
+		logger.Info("Setting Kubernetes Client Burst", "burst", flags.F.KubeClientBurst)
 	}
 
 	config.QPS = flags.F.KubeClientQPS
