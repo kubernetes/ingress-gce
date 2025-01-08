@@ -43,7 +43,7 @@ import (
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/l4lb"
-	"k8s.io/ingress-gce/pkg/multiproject/sharedcontext"
+	multiprojectstart "k8s.io/ingress-gce/pkg/multiproject/start"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/psc"
 	"k8s.io/ingress-gce/pkg/serviceattachment"
@@ -235,16 +235,27 @@ func main() {
 	go app.RunHTTPServer(systemHealth.HealthCheck, rootLogger)
 
 	if flags.F.EnableMultiProjectMode {
-		_ = sharedcontext.NewSharedContext(
-			kubeClient,
-			svcNegClient,
-			kubeSystemUID,
-			eventRecorderKubeClient,
-			namer,
-			rootLogger,
-			stopCh,
-		)
 		rootLogger.Info("Multi-project mode is enabled, starting project-syncer")
+
+		runWithWg(func() {
+			multiprojectstart.Start(
+				context.Background(),
+				kubeConfig,
+				rootLogger,
+				kubeClient,
+				svcNegClient,
+				kubeSystemUID,
+				eventRecorderKubeClient,
+				namer,
+				stopCh,
+			)
+		}, rOption.wg)
+
+		// Wait for the multi-project syncer to finish.
+		waitWithTimeout(rOption.wg, rootLogger)
+
+		// Since we only want multi-project mode functionality, exit here
+		return
 	}
 
 	cloud := app.NewGCEClient(rootLogger)
