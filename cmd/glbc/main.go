@@ -323,11 +323,11 @@ func main() {
 			logger.Info("Start running NEG leader election",
 				"NEG controller", flags.F.EnableNEGController,
 			)
-			negElectionConfig, err := makeNEGLeaderElectionConfig(ctx, systemHealth, rOption, leOption, logger)
+			negRunner, err := makeNEGRunnerWithLeaderElection(ctx, systemHealth, rOption, leOption, logger)
 			if err != nil {
 				klog.Fatalf("makeNEGLeaderElectionConfig()=%v, want nil", err)
 			}
-			leaderelection.RunOrDie(context.Background(), *negElectionConfig)
+			leaderelection.RunOrDie(context.Background(), *negRunner)
 			logger.Info("NEG Controller exited.")
 		}
 		runIngress = func() {
@@ -339,11 +339,11 @@ func main() {
 				"InstanceGroup controller", flags.F.EnableIGController,
 				"PSC controller", flags.F.EnablePSC,
 			)
-			electionConfig, err := makeLeaderElectionConfig(ctx, systemHealth, rOption, leOption, logger)
+			ingressRunner, err := makeIngressRunnerWithLeaderElection(ctx, systemHealth, rOption, leOption, logger)
 			if err != nil {
 				klog.Fatalf("makeLeaderElectionConfig()=%v, want nil", err)
 			}
-			leaderelection.RunOrDie(context.Background(), *electionConfig)
+			leaderelection.RunOrDie(context.Background(), *ingressRunner)
 		}
 	}
 
@@ -370,18 +370,55 @@ type leaderElectionOption struct {
 	id       string
 }
 
-// makeLeaderElectionConfig builds a leader election configuration. It will
-// create a new resource lock associated with the configuration.
-func makeLeaderElectionConfig(
+func makeNEGRunnerWithLeaderElection(
 	ctx *ingctx.ControllerContext,
 	systemHealth *systemhealth.SystemHealth,
 	runOption runOption,
 	leOption leaderElectionOption,
 	logger klog.Logger,
 ) (*leaderelection.LeaderElectionConfig, error) {
+	return makeRunnerWithLeaderElection(
+		leOption,
+		negLockName,
+		func(context.Context) {
+			runNEGController(ctx, systemHealth, runOption, logger)
+		},
+		func() {
+			logger.Info("Stop running NEG Leader election")
+		},
+	)
+}
+
+func makeIngressRunnerWithLeaderElection(
+	ctx *ingctx.ControllerContext,
+	systemHealth *systemhealth.SystemHealth,
+	runOption runOption,
+	leOption leaderElectionOption,
+	logger klog.Logger,
+) (*leaderelection.LeaderElectionConfig, error) {
+	return makeRunnerWithLeaderElection(
+		leOption,
+		flags.F.LeaderElection.LockObjectName,
+		func(context.Context) {
+			runControllers(ctx, systemHealth, runOption, logger)
+		},
+		func() {
+			logger.Info("lost master")
+		},
+	)
+}
+
+// makeRunnerWithLeaderElection creates a LeaderElectionConfig with the provided options and callbacks.
+// It will create a new resource lock associated with the configuration.
+func makeRunnerWithLeaderElection(
+	leOption leaderElectionOption,
+	leaderElectionLockName string,
+	onStartedLeading func(context.Context),
+	onStoppedLeading func(),
+) (*leaderelection.LeaderElectionConfig, error) {
 	rl, err := resourcelock.New(resourcelock.LeasesResourceLock,
 		flags.F.LeaderElection.LockObjectNamespace,
-		flags.F.LeaderElection.LockObjectName,
+		leaderElectionLockName,
 		leOption.client.CoreV1(),
 		leOption.client.CoordinationV1(),
 		resourcelock.ResourceLockConfig{
@@ -398,14 +435,8 @@ func makeLeaderElectionConfig(
 		RenewDeadline: flags.F.LeaderElection.RenewDeadline.Duration,
 		RetryPeriod:   flags.F.LeaderElection.RetryPeriod.Duration,
 		Callbacks: leaderelection.LeaderCallbacks{
-			OnStartedLeading: func(context.Context) {
-				// Since we are committing a suicide after losing
-				// mastership, we can safely ignore the argument.
-				runControllers(ctx, systemHealth, runOption, logger)
-			},
-			OnStoppedLeading: func() {
-				logger.Info("lost master")
-			},
+			OnStartedLeading: onStartedLeading,
+			OnStoppedLeading: onStoppedLeading,
 		},
 	}, nil
 }
@@ -463,42 +494,6 @@ func runControllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.Sy
 		runWithWg(l4netlbController.Run, option.wg)
 		logger.V(0).Info("L4NetLB controller started")
 	}
-}
-
-func makeNEGLeaderElectionConfig(
-	ctx *ingctx.ControllerContext,
-	systemHealth *systemhealth.SystemHealth,
-	runOption runOption,
-	leOption leaderElectionOption,
-	logger klog.Logger,
-) (*leaderelection.LeaderElectionConfig, error) {
-	negLock, err := resourcelock.New(resourcelock.LeasesResourceLock,
-		flags.F.LeaderElection.LockObjectNamespace,
-		negLockName,
-		leOption.client.CoreV1(),
-		leOption.client.CoordinationV1(),
-		resourcelock.ResourceLockConfig{
-			Identity:      leOption.id,
-			EventRecorder: leOption.recorder,
-		})
-	if err != nil {
-		return nil, fmt.Errorf("couldn't create resource lock: %v", err)
-	}
-
-	return &leaderelection.LeaderElectionConfig{
-		Lock:          negLock,
-		LeaseDuration: flags.F.LeaderElection.LeaseDuration.Duration,
-		RenewDeadline: flags.F.LeaderElection.RenewDeadline.Duration,
-		RetryPeriod:   flags.F.LeaderElection.RetryPeriod.Duration,
-		Callbacks: leaderelection.LeaderCallbacks{
-			OnStartedLeading: func(context.Context) {
-				runNEGController(ctx, systemHealth, runOption, logger)
-			},
-			OnStoppedLeading: func() {
-				logger.Info("Stop running NEG Leader election")
-			},
-		},
-	}, nil
 }
 
 func runNEGController(ctx *ingctx.ControllerContext, systemHealth *systemhealth.SystemHealth, option runOption, logger klog.Logger) {
