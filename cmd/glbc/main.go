@@ -277,11 +277,16 @@ func main() {
 	if err != nil {
 		klog.Fatalf("unable to get hostname: %v", err)
 	}
-	option := runOption{
+
+	leOption := leaderElectionOption{
 		client:   leaderElectKubeClient,
 		recorder: ctx.Recorder(flags.F.LeaderElection.LockObjectNamespace),
-		wg:       &sync.WaitGroup{},
-		stopCh:   stopCh,
+		// add a uniquifier so that two processes on the same host don't accidentally both become active
+		id: fmt.Sprintf("%v_%x", hostname, rand.Intn(1e6)),
+	}
+	rOption := runOption{
+		wg:     &sync.WaitGroup{},
+		stopCh: stopCh,
 		// This ensures that stopCh is only closed once.
 		// Right now, we have three callers.
 		// One is triggered when the ASM configmap changes, and the other two are
@@ -289,8 +294,6 @@ func main() {
 		closeStopCh: func() {
 			once.Do(func() { close(stopCh) })
 		},
-		// add a uniquifier so that two processes on the same host don't accidentally both become active
-		id: fmt.Sprintf("%v_%x", hostname, rand.Intn(1e6)),
 	}
 	ctx.Init()
 
@@ -300,7 +303,7 @@ func main() {
 		logger.Info("Start running the enabled controllers",
 			"NEG controller", flags.F.EnableNEGController,
 		)
-		runNEGController(ctx, systemHealth, option, logger)
+		runNEGController(ctx, systemHealth, rOption, logger)
 	}
 	runIngress := func() {
 		logger := rootLogger.WithName("Other controllers")
@@ -311,7 +314,7 @@ func main() {
 			"InstanceGroup controller", flags.F.EnableIGController,
 			"PSC controller", flags.F.EnablePSC,
 		)
-		runControllers(ctx, systemHealth, option, logger)
+		runControllers(ctx, systemHealth, rOption, logger)
 	}
 
 	if flags.F.LeaderElection.LeaderElect {
@@ -320,7 +323,7 @@ func main() {
 			logger.Info("Start running NEG leader election",
 				"NEG controller", flags.F.EnableNEGController,
 			)
-			negElectionConfig, err := makeNEGLeaderElectionConfig(ctx, systemHealth, option, logger)
+			negElectionConfig, err := makeNEGLeaderElectionConfig(ctx, systemHealth, rOption, leOption, logger)
 			if err != nil {
 				klog.Fatalf("makeNEGLeaderElectionConfig()=%v, want nil", err)
 			}
@@ -336,7 +339,7 @@ func main() {
 				"InstanceGroup controller", flags.F.EnableIGController,
 				"PSC controller", flags.F.EnablePSC,
 			)
-			electionConfig, err := makeLeaderElectionConfig(ctx, systemHealth, option, logger)
+			electionConfig, err := makeLeaderElectionConfig(ctx, systemHealth, rOption, leOption, logger)
 			if err != nil {
 				klog.Fatalf("makeLeaderElectionConfig()=%v, want nil", err)
 			}
@@ -351,30 +354,39 @@ func main() {
 		go runIngress()
 	}
 
-	<-option.stopCh
-	waitWithTimeout(option.wg, rootLogger)
+	<-rOption.stopCh
+	waitWithTimeout(rOption.wg, rootLogger)
 }
 
 type runOption struct {
-	client      clientset.Interface
-	recorder    record.EventRecorder
 	stopCh      chan struct{}
 	wg          *sync.WaitGroup
 	closeStopCh func()
-	id          string
+}
+
+type leaderElectionOption struct {
+	client   clientset.Interface
+	recorder record.EventRecorder
+	id       string
 }
 
 // makeLeaderElectionConfig builds a leader election configuration. It will
 // create a new resource lock associated with the configuration.
-func makeLeaderElectionConfig(ctx *ingctx.ControllerContext, systemHealth *systemhealth.SystemHealth, option runOption, logger klog.Logger) (*leaderelection.LeaderElectionConfig, error) {
+func makeLeaderElectionConfig(
+	ctx *ingctx.ControllerContext,
+	systemHealth *systemhealth.SystemHealth,
+	runOption runOption,
+	leOption leaderElectionOption,
+	logger klog.Logger,
+) (*leaderelection.LeaderElectionConfig, error) {
 	rl, err := resourcelock.New(resourcelock.LeasesResourceLock,
 		flags.F.LeaderElection.LockObjectNamespace,
 		flags.F.LeaderElection.LockObjectName,
-		option.client.CoreV1(),
-		option.client.CoordinationV1(),
+		leOption.client.CoreV1(),
+		leOption.client.CoordinationV1(),
 		resourcelock.ResourceLockConfig{
-			Identity:      option.id,
-			EventRecorder: option.recorder,
+			Identity:      leOption.id,
+			EventRecorder: leOption.recorder,
 		})
 	if err != nil {
 		return nil, fmt.Errorf("couldn't create resource lock: %v", err)
@@ -389,7 +401,7 @@ func makeLeaderElectionConfig(ctx *ingctx.ControllerContext, systemHealth *syste
 			OnStartedLeading: func(context.Context) {
 				// Since we are committing a suicide after losing
 				// mastership, we can safely ignore the argument.
-				runControllers(ctx, systemHealth, option, logger)
+				runControllers(ctx, systemHealth, runOption, logger)
 			},
 			OnStoppedLeading: func() {
 				logger.Info("lost master")
@@ -453,15 +465,21 @@ func runControllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.Sy
 	}
 }
 
-func makeNEGLeaderElectionConfig(ctx *ingctx.ControllerContext, systemHealth *systemhealth.SystemHealth, option runOption, logger klog.Logger) (*leaderelection.LeaderElectionConfig, error) {
+func makeNEGLeaderElectionConfig(
+	ctx *ingctx.ControllerContext,
+	systemHealth *systemhealth.SystemHealth,
+	runOption runOption,
+	leOption leaderElectionOption,
+	logger klog.Logger,
+) (*leaderelection.LeaderElectionConfig, error) {
 	negLock, err := resourcelock.New(resourcelock.LeasesResourceLock,
 		flags.F.LeaderElection.LockObjectNamespace,
 		negLockName,
-		option.client.CoreV1(),
-		option.client.CoordinationV1(),
+		leOption.client.CoreV1(),
+		leOption.client.CoordinationV1(),
 		resourcelock.ResourceLockConfig{
-			Identity:      option.id,
-			EventRecorder: option.recorder,
+			Identity:      leOption.id,
+			EventRecorder: leOption.recorder,
 		})
 	if err != nil {
 		return nil, fmt.Errorf("couldn't create resource lock: %v", err)
@@ -474,7 +492,7 @@ func makeNEGLeaderElectionConfig(ctx *ingctx.ControllerContext, systemHealth *sy
 		RetryPeriod:   flags.F.LeaderElection.RetryPeriod.Duration,
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(context.Context) {
-				runNEGController(ctx, systemHealth, option, logger)
+				runNEGController(ctx, systemHealth, runOption, logger)
 			},
 			OnStoppedLeading: func() {
 				logger.Info("Stop running NEG Leader election")
