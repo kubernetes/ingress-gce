@@ -218,6 +218,19 @@ func main() {
 	var once sync.Once
 	stopCh := make(chan struct{})
 
+	rOption := runOption{
+		wg:     &sync.WaitGroup{},
+		stopCh: stopCh,
+		// This ensures that stopCh is only closed once.
+		// Right now, we have three callers.
+		// One is triggered when the ASM configmap changes, and the other two are
+		// triggered by the SIGTERM handler.
+		closeStopCh: func() {
+			once.Do(func() { close(stopCh) })
+		},
+	}
+	go app.RunSIGTERMHandler(rOption.closeStopCh, rootLogger)
+
 	systemHealth := systemhealth.NewSystemHealth(rootLogger)
 	go app.RunHTTPServer(systemHealth.HealthCheck, rootLogger)
 
@@ -283,17 +296,6 @@ func main() {
 		recorder: ctx.Recorder(flags.F.LeaderElection.LockObjectNamespace),
 		// add a uniquifier so that two processes on the same host don't accidentally both become active
 		id: fmt.Sprintf("%v_%x", hostname, rand.Intn(1e6)),
-	}
-	rOption := runOption{
-		wg:     &sync.WaitGroup{},
-		stopCh: stopCh,
-		// This ensures that stopCh is only closed once.
-		// Right now, we have three callers.
-		// One is triggered when the ASM configmap changes, and the other two are
-		// triggered by the SIGTERM handler.
-		closeStopCh: func() {
-			once.Do(func() { close(stopCh) })
-		},
 	}
 	ctx.Init()
 
@@ -475,8 +477,6 @@ func runControllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.Sy
 		logger.V(0).Info("PSC Controller started")
 	}
 
-	go app.RunSIGTERMHandler(option.closeStopCh, logger)
-
 	ctx.Start(option.stopCh)
 
 	if flags.F.EnableIGController {
@@ -519,8 +519,6 @@ func runNEGController(ctx *ingctx.ControllerContext, systemHealth *systemhealth.
 		go runWithWg(negController.Run, option.wg)
 		logger.V(0).Info("negController started")
 	}
-
-	go app.RunSIGTERMHandler(option.closeStopCh, logger)
 
 	// TODO(sawsa307): Find a better approach to start informers.
 	// If Ingress and NEG controller run together, since they share the same
