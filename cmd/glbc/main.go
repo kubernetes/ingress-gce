@@ -365,9 +365,15 @@ type runOption struct {
 }
 
 type leaderElectionOption struct {
-	client   clientset.Interface
+	// client is the Kubernetes client used for creating and removing resource locks,
+	// facilitating ownership of the resource for leader election.
+	client clientset.Interface
+	// recorder is used to record events (e.g., leader election transitions)
+	// in the Kubernetes cluster.
 	recorder record.EventRecorder
-	id       string
+	// id is the unique identifier for this particular leader election instance,
+	// distinguishing it from other processes that might be competing for leadership.
+	id string
 }
 
 func makeNEGRunnerWithLeaderElection(
