@@ -49,7 +49,7 @@ import (
 const (
 	// The max tolerated delay between update being enqueued and sync being invoked.
 	enqueueToSyncDelayThreshold  = 15 * time.Minute
-	l4ILBControllerName          = "l4-ilb-subsetting-controller"
+	L4ILBControllerName          = "l4-ilb-subsetting-controller"
 	l4ILBDualStackControllerName = "l4-ilb-dualstack-controller"
 )
 
@@ -172,13 +172,11 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 			}
 		},
 	})
-	// TODO enhance this by looking at some metric from service controller to ensure it is up.
-	// We cannot use existence of a backend service or other resource, since those are on a per-service basis.
-	ctx.AddHealthCheck(l4ILBControllerName, l4c.checkHealth)
+
 	return l4c
 }
 
-func (l4c *L4Controller) checkHealth() error {
+func (l4c *L4Controller) SystemHealth() error {
 	lastEnqueueTime := l4c.enqueueTracker.Get()
 	lastSyncTime := l4c.syncTracker.Get()
 	// if lastEnqueue time is more than 30 minutes before the last sync time, the controller is falling behind.
@@ -189,7 +187,7 @@ func (l4c *L4Controller) checkHealth() error {
 		msg := fmt.Sprintf("L4 ILB Sync happened at time %v, %v after enqueue time, last enqueue time %v, threshold is %v", lastSyncTime, lastSyncTime.Sub(lastEnqueueTime), lastEnqueueTime, enqueueToSyncDelayThreshold)
 		// Log here, context/http handler do no log the error.
 		l4c.logger.Error(nil, msg)
-		l4metrics.PublishL4FailedHealthCheckCount(l4ILBControllerName)
+		l4metrics.PublishL4FailedHealthCheckCount(L4ILBControllerName)
 		controllerHealth = l4metrics.ControllerUnhealthyStatus
 		// Reset trackers. Otherwise, if there is nothing in the queue then it will report the FailedHealthCheckCount every time the checkHealth is called
 		// If checkHealth returned error (as it is meant to) then container would be restarted and trackers would be reset either
@@ -437,7 +435,7 @@ func (l4c *L4Controller) syncWrapper(key string) (err error) {
 		if r := recover(); r != nil {
 			errMessage := fmt.Sprintf("Panic in L4 ILB sync worker goroutine: %v", r)
 			svcLogger.Error(nil, errMessage)
-			l4metrics.PublishL4ControllerPanicCount(l4ILBControllerName)
+			l4metrics.PublishL4ControllerPanicCount(L4ILBControllerName)
 			err = fmt.Errorf(errMessage)
 		}
 	}()
@@ -447,7 +445,7 @@ func (l4c *L4Controller) syncWrapper(key string) (err error) {
 
 func (l4c *L4Controller) sync(key string, svcLogger klog.Logger) error {
 	l4c.syncTracker.Track()
-	l4metrics.PublishL4controllerLastSyncTime(l4ILBControllerName)
+	l4metrics.PublishL4controllerLastSyncTime(L4ILBControllerName)
 
 	svc, exists, err := l4c.ctx.Services().GetByKey(key)
 	if err != nil {
@@ -608,7 +606,7 @@ func (l4c *L4Controller) publishMetrics(result *loadbalancers.L4ILBSyncResult, n
 		if result.MetricsState.Multinetwork {
 			l4metrics.PublishL4ILBMultiNetSyncLatency(result.Error == nil, result.SyncType, result.StartTime, isResync)
 		}
-		l4metrics.PublishL4SyncDetails(l4ILBControllerName, result.Error == nil, isResync, result.ResourceUpdates.WereAnyResourcesModified())
+		l4metrics.PublishL4SyncDetails(L4ILBControllerName, result.Error == nil, isResync, result.ResourceUpdates.WereAnyResourcesModified())
 
 	case loadbalancers.SyncTypeDelete:
 		// if service is successfully deleted, remove it from cache

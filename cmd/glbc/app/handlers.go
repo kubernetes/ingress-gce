@@ -29,14 +29,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"k8s.io/klog/v2"
 
-	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/systemhealth"
 	"k8s.io/ingress-gce/pkg/version"
 )
 
 // RunHTTPServer starts an HTTP server. `healthChecker` returns a mapping of component/controller
 // name to the result of its healthcheck.
-func RunHTTPServer(healthChecker func() context.HealthCheckResults, logger klog.Logger) {
+func RunHTTPServer(healthChecker func() systemhealth.HealthCheckResults, logger klog.Logger) {
 	http.HandleFunc("/healthz", healthCheckHandler(healthChecker, logger))
 	http.HandleFunc("/flag", flagHandler)
 	http.Handle("/metrics", promhttp.Handler())
@@ -56,7 +56,7 @@ func RunSIGTERMHandler(closeStopCh func(), logger klog.Logger) {
 	closeStopCh()
 }
 
-func healthCheckHandler(checker func() context.HealthCheckResults, logger klog.Logger) http.HandlerFunc {
+func healthCheckHandler(checker func() systemhealth.HealthCheckResults, logger klog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var hasErr bool
 		var s strings.Builder

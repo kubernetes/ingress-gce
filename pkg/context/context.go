@@ -105,9 +105,6 @@ type ControllerContext struct {
 
 	ControllerMetrics *metrics.ControllerMetrics
 
-	hcLock       sync.Mutex
-	healthChecks map[string]func() error
-
 	recorderLock sync.Mutex
 	// Map of namespace => record.EventRecorder.
 	recorders map[string]record.EventRecorder
@@ -201,7 +198,6 @@ func NewControllerContext(
 		NodeInformer:            nodeInformer,
 		SvcNegInformer:          informersvcneg.NewServiceNetworkEndpointGroupInformer(svcnegClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		recorders:               map[string]record.EventRecorder{},
-		healthChecks:            make(map[string]func() error),
 		logger:                  logger,
 	}
 	if firewallClient != nil {
@@ -356,30 +352,6 @@ func (ctx *ControllerContext) Recorder(ns string) record.EventRecorder {
 	ctx.recorders[ns] = rec
 
 	return rec
-}
-
-// AddHealthCheck registers function to be called for healthchecking.
-func (ctx *ControllerContext) AddHealthCheck(id string, hc func() error) {
-	ctx.hcLock.Lock()
-	defer ctx.hcLock.Unlock()
-
-	ctx.healthChecks[id] = hc
-}
-
-// HealthCheckResults contains a mapping of component -> health check results.
-type HealthCheckResults map[string]error
-
-// HealthCheck runs all registered healthcheck functions.
-func (ctx *ControllerContext) HealthCheck() HealthCheckResults {
-	ctx.hcLock.Lock()
-	defer ctx.hcLock.Unlock()
-
-	healthChecks := make(map[string]error)
-	for component, f := range ctx.healthChecks {
-		healthChecks[component] = f()
-	}
-
-	return healthChecks
 }
 
 // Start all of the informers.
