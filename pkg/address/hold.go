@@ -1,6 +1,8 @@
 package address
 
 import (
+	"fmt"
+
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -9,6 +11,7 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
 )
 
@@ -19,6 +22,8 @@ type HoldConfig struct {
 	Service               *api_v1.Service
 	ExistingRules         []*composite.ForwardingRule
 	ForwardingRuleDeleter ForwardingRuleDeleter
+	IPVersion             IPVersion
+	SubnetworkURL         string
 }
 
 type ForwardingRuleDeleter interface {
@@ -31,32 +36,47 @@ type HoldResult struct {
 	Release func() error
 }
 
-// HoldExternalIPv4 will determine which IP to use for forwarding rules
+// Determine IP which will be used for this LB. If no forwarding rule has been established
+// or specified in the Service spec, then requestedIP = "".
+// ipv6AddrToUse, err := address.IPv6ToUse(l4netlb.cloud, l4netlb.Service, existingIPv6FwdRule, subnetworkURL, frLogger)
+// if err != nil {
+// 	frLogger.Error(err, "address.IPv6ToUse for service returned error")
+// 	return nil, utils.ResourceResync, err
+// }
+// frLogger.V(2).Info("ipv6AddressToUse for service", "ipv6AddressToUse", ipv6AddrToUse)
+
+// HoldExternal will determine which IP to use for forwarding rules
 // and will hold it for future forwarding rules. After binding
 // IP to a forwarding rule call Release to prevent leaks.
-func HoldExternalIPv4(cfg HoldConfig) (HoldResult, error) {
+func HoldExternal(cfg HoldConfig) (HoldResult, error) {
 	var err error
 	res := HoldResult{
 		Release: func() error { return nil },
 	}
-	log := cfg.Logger.WithName("HoldIPv4")
-
-	// external specific
-	subnet := ""
-	name := utils.LegacyForwardingRuleName(cfg.Service)
+	log := cfg.Logger.WithName("HoldExternal")
 
 	// Determine IP which will be used for this LB. If no forwarding rule has been established
 	// or specified in the Service spec, then requestedIP = "".
 	rule := pickForwardingRuleToInferIP(cfg.ExistingRules)
-	res.IP, err = IPv4ToUse(cfg.Cloud, cfg.Recorder, cfg.Service, rule, subnet)
+
+	switch cfg.IPVersion {
+	case IPv4Version:
+		res.IP, err = IPv4ToUse(cfg.Cloud, cfg.Recorder, cfg.Service, rule, cfg.SubnetworkURL)
+	case IPv6Version:
+		res.IP, err = IPv6ToUse(cfg.Cloud, cfg.Service, rule, cfg.SubnetworkURL, cfg.Logger)
+	default:
+		return res, fmt.Errorf("unsupported IP version: '%s', only IPv4 and IPv6 are supported", cfg.IPVersion)
+	}
+
 	if err != nil {
-		log.Error(err, "IPv4ToUse for service returned error")
+		log.Error(err, "IPvXToUse for service returned error")
 		return res, err
 	}
+	log.V(2).Info("IP for service", "ip", res.IP)
 
 	// We can't use manager for legacy networks
 	if cfg.Cloud.IsLegacyNetwork() {
-		return res, nil
+		return res, err
 	}
 
 	netTier, isFromAnnotation := annotations.NetworkTier(cfg.Service)
@@ -67,8 +87,8 @@ func HoldExternalIPv4(cfg HoldConfig) (HoldResult, error) {
 
 	addrMgr := NewManager(
 		cfg.Cloud, nm, cfg.Cloud.Region(),
-		subnet, name, res.IP,
-		cloud.SchemeExternal, netTier, IPv4Version, cfg.Logger,
+		cfg.SubnetworkURL, name(cfg), res.IP,
+		cloud.SchemeExternal, netTier, cfg.IPVersion, cfg.Logger,
 	)
 
 	// If network tier annotation in Service Spec is present
@@ -123,4 +143,12 @@ func tearDownRulesIfNetworkTierMismatch(deleter ForwardingRuleDeleter, existingR
 		}
 	}
 	return nil
+}
+
+func name(cfg HoldConfig) string {
+	name := utils.LegacyForwardingRuleName(cfg.Service)
+	if cfg.IPVersion == IPv6Version {
+		name = namer.GetSuffixedName(name, "-ipv6")
+	}
+	return name
 }
