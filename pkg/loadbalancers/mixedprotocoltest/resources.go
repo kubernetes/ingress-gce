@@ -1,175 +1,190 @@
+// Package mixedprotocoltest contains common helpers for testing mixed protocol L4 load balancers
 package mixedprotocoltest
 
 import (
+	"fmt"
+	"testing"
+
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"google.golang.org/api/compute/v1"
+	"k8s.io/cloud-provider-gcp/providers/gce"
+	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/healthchecksprovider"
+	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog/v2"
 )
 
-// GCEResources collects all GCE resources that are managed by the mixed protocol ILB
+// Name for fake GCE resource
+const (
+	ForwardingRuleTCPIPv4Name    = "k8s2-tcp-axyqjz2d-test-namespace-test-name-yuvhdy7i"
+	ForwardingRuleTCPIPv6Name    = "k8s2-tcp-axyqjz2d-test-namespace-test-name-yuvhdy7i-ipv6"
+	ForwardingRuleUDPIPv4Name    = "k8s2-udp-axyqjz2d-test-namespace-test-name-yuvhdy7i"
+	ForwardingRuleUDPIPv6Name    = "k8s2-udp-axyqjz2d-test-namespace-test-name-yuvhdy7i-ipv6"
+	ForwardingRuleL3IPv4Name     = "k8s2-l3-axyqjz2d-test-namespace-test-name-yuvhdy7i"
+	ForwardingRuleL3IPv6Name     = "k8s2-l3-axyqjz2d-test-namespace-test-name-yuvhdy7i-ipv6"
+	ForwardingRuleLegacyName     = "a" + TestUID
+	ForwardingRuleLegacyIPv6Name = "a" + TestUID + "-ipv6"
+	BackendServiceName           = "k8s2-axyqjz2d-test-namespace-test-name-yuvhdy7i"
+	FirewallIPv4Name             = "k8s2-axyqjz2d-test-namespace-test-name-yuvhdy7i"
+	FirewallIPv6Name             = "k8s2-axyqjz2d-test-namespace-test-name-yuvhdy7i-ipv6"
+	HealthCheckFirewallIPv4Name  = "k8s2-axyqjz2d-l4-shared-hc-fw"
+	HealthCheckFirewallIPv6Name  = "k8s2-axyqjz2d-l4-shared-hc-fw-ipv6"
+	HealthCheckName              = "k8s2-axyqjz2d-l4-shared-hc"
+)
+
+// GCEResources collects all GCE resources that are managed by the mixed protocol LBs
 type GCEResources struct {
-	FwdRuleIPv4    *compute.ForwardingRule
-	FirewallIPv4   *compute.Firewall
-	FwdRuleIPv6    *compute.ForwardingRule
-	FirewallIPv6   *compute.Firewall
-	HC             *compute.HealthCheck
-	HCFirewallIPv4 *compute.Firewall
-	HCFirewallIPv6 *compute.Firewall
-	BS             *compute.BackendService
+	ForwardingRules map[string]*compute.ForwardingRule
+	Firewalls       map[string]*compute.Firewall
+	HealthCheck     *composite.HealthCheck
+	BackendService  *compute.BackendService
 }
 
-// TCPResources returns GCE resources for a TCP IPv4 ILB that listens on ports 80 and 443
-func TCPResources() GCEResources {
-	return GCEResources{
-		FwdRuleIPv4: ForwardingRuleTCP([]string{"80", "443"}),
-		FirewallIPv4: Firewall([]*compute.FirewallAllowed{
-			{IPProtocol: "tcp", Ports: []string{"80", "443"}},
-		}),
-		BS:             BackendService("TCP"),
-		HC:             HealthCheck(),
-		HCFirewallIPv4: HealthCheckFirewall(),
+// Create creates resources in the specified cloud
+func (r GCEResources) Create(cloud *gce.Cloud) error {
+	if r.BackendService != nil {
+		if err := cloud.CreateRegionBackendService(r.BackendService, cloud.Region()); err != nil {
+			return fmt.Errorf("fakeGCE.CreateBackendService() returned error %w", err)
+		}
+	}
+
+	if r.HealthCheck != nil {
+		provider := healthchecksprovider.NewHealthChecks(cloud, meta.VersionGA, klog.TODO())
+		if err := provider.Create(r.HealthCheck); err != nil {
+			return fmt.Errorf("healthCheckProvider.Create() returned error %w", err)
+		}
+	}
+
+	for _, fw := range r.Firewalls {
+		if err := cloud.CreateFirewall(fw); err != nil {
+			return fmt.Errorf("fakeGCE.CreateFirewall() returned error %w", err)
+		}
+	}
+
+	for _, fr := range r.ForwardingRules {
+		if err := cloud.CreateRegionForwardingRule(fr, cloud.Region()); err != nil {
+			return fmt.Errorf("fakeGCE.CreateForwardingRule() returned error %w", err)
+		}
+	}
+
+	return nil
+}
+
+// VerifyResourcesExist checks if the resources are in the cloud.
+// We use testing.T to return multiple nicely formatted errors.
+func VerifyResourcesExist(t *testing.T, cloud *gce.Cloud, want GCEResources) {
+	t.Helper()
+
+	for frName, wantFr := range want.ForwardingRules {
+		fr, err := cloud.GetRegionForwardingRule(frName, wantFr.Region)
+		if err != nil {
+			t.Errorf("cloud.GetForwardingRule(%v) returned error %v", frName, err)
+		}
+		ignoreFields := cmpopts.IgnoreFields(compute.ForwardingRule{}, "SelfLink")
+		if diff := cmp.Diff(wantFr, fr, ignoreFields); diff != "" {
+			t.Errorf("Forwarding rule mismatch (-want +got):\n%s", diff)
+		}
+	}
+
+	for fwName, wantFw := range want.Firewalls {
+		fw, err := cloud.GetFirewall(fwName)
+		if err != nil {
+			t.Errorf("cloud.GetFirewall(%v) returned error %v", fwName, err)
+		}
+		ignoreFields := cmpopts.IgnoreFields(compute.Firewall{}, "SelfLink")
+		sortSourceRanges := cmpopts.SortSlices(func(x, y string) bool { return x < y })
+		if diff := cmp.Diff(wantFw, fw, ignoreFields, sortSourceRanges); diff != "" {
+			t.Errorf("Firewall mismatch (-want +got):\n%s", diff)
+		}
+	}
+
+	if want.HealthCheck != nil {
+		provider := healthchecksprovider.NewHealthChecks(cloud, meta.VersionGA, klog.TODO())
+		hc, err := provider.Get(want.HealthCheck.Name, want.HealthCheck.Scope)
+		if err != nil {
+			t.Errorf("healthCheckProvider.Get(%v) got err: %v", want.HealthCheck.Name, err)
+		}
+		ignoreFields := cmpopts.IgnoreFields(composite.HealthCheck{}, "SelfLink", "Scope")
+		if diff := cmp.Diff(want.HealthCheck, hc, ignoreFields); diff != "" {
+			t.Errorf("Health check mismatch (-want +got):\n%s", diff)
+		}
+	}
+
+	if want.BackendService != nil {
+		bs, err := cloud.GetRegionBackendService(want.BackendService.Name, want.BackendService.Region)
+		if err != nil {
+			t.Errorf("cloud.GetBackendService() returned error %v", err)
+		}
+		ignoreFields := cmpopts.IgnoreFields(compute.BackendService{}, "SelfLink", "ConnectionDraining", "Region")
+		if diff := cmp.Diff(want.BackendService, bs, ignoreFields); diff != "" {
+			t.Errorf("Backend service mismatch (-want +got):\n%s", diff)
+		}
 	}
 }
 
-// UDPResources returns GCE resources for an UDP IPv4 ILB that listens on port 53
-func UDPResources() GCEResources {
-	return GCEResources{
-		FwdRuleIPv4: ForwardingRuleUDP([]string{"53"}),
-		FirewallIPv4: Firewall([]*compute.FirewallAllowed{
-			{IPProtocol: "udp", Ports: []string{"53"}},
-		}),
-		BS:             BackendService("UDP"),
-		HC:             HealthCheck(),
-		HCFirewallIPv4: HealthCheckFirewall(),
-	}
-}
+// VerifyResourcesCleanedUp checks if the old resources are removed from the cloud.
+// We use testing.T to return multiple nicely formatted errors.
+// We don't need to clean up firewall for health checks, since they are shared
+func VerifyResourcesCleanedUp(t *testing.T, cloud *gce.Cloud, old, want GCEResources) {
+	t.Helper()
 
-// L3Resources returns GCE resources for a mixed protocol IPv4 ILB, that listens on tcp:80, tcp:443 and udp:53
-func L3Resources() GCEResources {
-	return GCEResources{
-		FwdRuleIPv4: ForwardingRuleL3(),
-		FirewallIPv4: Firewall([]*compute.FirewallAllowed{
-			{IPProtocol: "udp", Ports: []string{"53"}},
-			{IPProtocol: "tcp", Ports: []string{"80", "443"}},
-		}),
-		BS:             BackendService("UNSPECIFIED"),
-		HC:             HealthCheck(),
-		HCFirewallIPv4: HealthCheckFirewall(),
+	for frName := range old.ForwardingRules {
+		if _, ok := want.ForwardingRules[frName]; ok {
+			continue
+		}
+		fr, err := cloud.GetRegionForwardingRule(frName, cloud.Region())
+		if utils.IgnoreHTTPNotFound(err) != nil {
+			t.Errorf("cloud.GetForwardingRule() returned error %v", err)
+		}
+		if fr != nil {
+			t.Errorf("found forwarding rule %v, which should have been deleted", fr.Name)
+		}
 	}
-}
 
-// TCPResourcesIPv6 returns GCE resources for a TCP IPv6 ILB that listens on ports 80 and 443
-func TCPResourcesIPv6() GCEResources {
-	return GCEResources{
-		FwdRuleIPv6: ForwardingrukeRuleTCPIPv6([]string{"80", "443"}),
-		FirewallIPv6: FirewallIPv6([]*compute.FirewallAllowed{
-			{IPProtocol: "tcp", Ports: []string{"80", "443"}},
-		}),
-		BS:             BackendService("TCP"),
-		HC:             HealthCheck(),
-		HCFirewallIPv6: HealthCheckFirewallIPv6(),
+	for fwName := range old.Firewalls {
+		isShared := fwName == HealthCheckFirewallIPv4Name || fwName == HealthCheckFirewallIPv6Name
+		if isShared {
+			continue
+		}
+		if _, ok := want.Firewalls[fwName]; ok {
+			continue
+		}
+		fw, err := cloud.GetFirewall(fwName)
+		if utils.IgnoreHTTPNotFound(err) != nil {
+			t.Errorf("cloud.GetFirewall() returned error %v", err)
+		}
+		if fw != nil {
+			t.Errorf("found firewall %v, which should have been deleted", fw.Name)
+		}
 	}
-}
 
-// UDPResourcesIPv6 returns GCE resources for an UDP IPv6 ILB that listens on port 53
-func UDPResourcesIPv6() GCEResources {
-	return GCEResources{
-		FwdRuleIPv6: ForwardingRuleUDPIPv6([]string{"53"}),
-		FirewallIPv6: FirewallIPv6([]*compute.FirewallAllowed{
-			{IPProtocol: "udp", Ports: []string{"53"}},
-		}),
-		BS:             BackendService("UDP"),
-		HC:             HealthCheck(),
-		HCFirewallIPv6: HealthCheckFirewallIPv6(),
+	if old.HealthCheck != nil && (want.HealthCheck == nil || want.HealthCheck.Name != old.HealthCheck.Name) {
+		hc, err := cloud.GetHealthCheck(old.HealthCheck.Name)
+		if utils.IgnoreHTTPNotFound(err) != nil {
+			t.Errorf("cloud.GetHealthCheck() returned error %v", err)
+		}
+		if hc != nil {
+			t.Errorf("found health check %v, which should have been deleted", hc.Name)
+		}
 	}
-}
 
-// L3ResourcesIPv6 returns GCE resources for a mixed protocol IPv6 ILB, that listens on tcp:80, tcp:443 and udp:53
-func L3ResourcesIPv6() GCEResources {
-	return GCEResources{
-		FwdRuleIPv6: ForwardingRuleL3IPv6(),
-		FirewallIPv6: FirewallIPv6([]*compute.FirewallAllowed{
-			{IPProtocol: "udp", Ports: []string{"53"}},
-			{IPProtocol: "tcp", Ports: []string{"80", "443"}},
-		}),
-		BS:             BackendService("UNSPECIFIED"),
-		HC:             HealthCheck(),
-		HCFirewallIPv6: HealthCheckFirewallIPv6(),
-	}
-}
-
-// TCPResourcesDualStack returns GCE resources for a TCP dual stack ILB that listens on ports 80 and 443
-func TCPResourcesDualStack() GCEResources {
-	return GCEResources{
-		FwdRuleIPv4: ForwardingRuleTCP([]string{"80", "443"}),
-		FirewallIPv4: Firewall([]*compute.FirewallAllowed{
-			{IPProtocol: "tcp", Ports: []string{"80", "443"}},
-		}),
-		FwdRuleIPv6: ForwardingrukeRuleTCPIPv6([]string{"80", "443"}),
-		FirewallIPv6: FirewallIPv6([]*compute.FirewallAllowed{
-			{IPProtocol: "tcp", Ports: []string{"80", "443"}},
-		}),
-		BS:             BackendService("TCP"),
-		HC:             HealthCheck(),
-		HCFirewallIPv4: HealthCheckFirewall(),
-		HCFirewallIPv6: HealthCheckFirewallIPv6(),
-	}
-}
-
-// UDPResourcesDualStack returns GCE resources for an UDP dual stack ILB that listens on port 53
-func UDPResourcesDualStack() GCEResources {
-	return GCEResources{
-		FwdRuleIPv4: ForwardingRuleUDP([]string{"53"}),
-		FirewallIPv4: Firewall([]*compute.FirewallAllowed{
-			{IPProtocol: "udp", Ports: []string{"53"}},
-		}),
-		FwdRuleIPv6: ForwardingRuleUDPIPv6([]string{"53"}),
-		FirewallIPv6: FirewallIPv6([]*compute.FirewallAllowed{
-			{IPProtocol: "udp", Ports: []string{"53"}},
-		}),
-		BS:             BackendService("UDP"),
-		HC:             HealthCheck(),
-		HCFirewallIPv4: HealthCheckFirewall(),
-		HCFirewallIPv6: HealthCheckFirewallIPv6(),
-	}
-}
-
-// L3ResourcesDualStack returns GCE resources for a mixed protocol dual stack ILB, that listens on tcp:80, tcp:443 and udp:53
-func L3ResourcesDualStack() GCEResources {
-	return GCEResources{
-		FwdRuleIPv4: ForwardingRuleL3(),
-		FirewallIPv4: Firewall([]*compute.FirewallAllowed{
-			{IPProtocol: "udp", Ports: []string{"53"}},
-			{IPProtocol: "tcp", Ports: []string{"80", "443"}},
-		}),
-		FwdRuleIPv6: ForwardingRuleL3IPv6(),
-		FirewallIPv6: FirewallIPv6([]*compute.FirewallAllowed{
-			{IPProtocol: "udp", Ports: []string{"53"}},
-			{IPProtocol: "tcp", Ports: []string{"80", "443"}},
-		}),
-		BS:             BackendService("UNSPECIFIED"),
-		HC:             HealthCheck(),
-		HCFirewallIPv4: HealthCheckFirewall(),
-		HCFirewallIPv6: HealthCheckFirewallIPv6(),
-	}
-}
-
-// HealthCheck returns shared HealthCheck
-func HealthCheck() *compute.HealthCheck {
-	return &compute.HealthCheck{
-		Name:               "k8s2-axyqjz2d-l4-shared-hc",
-		CheckIntervalSec:   8,
-		TimeoutSec:         1,
-		HealthyThreshold:   1,
-		UnhealthyThreshold: 3,
-		Type:               "HTTP",
-		HttpHealthCheck:    &compute.HTTPHealthCheck{Port: 10256, RequestPath: "/healthz"},
-		Description:        `{"networking.gke.io/service-name":"","networking.gke.io/api-version":"ga","networking.gke.io/resource-description":"This resource is shared by all L4 ILB Services using ExternalTrafficPolicy: Cluster."}`,
+	if old.BackendService != nil && (want.BackendService == nil || want.BackendService.Name != old.BackendService.Name) {
+		bs, err := cloud.GetRegionBackendService(old.BackendService.Name, old.BackendService.Region)
+		if utils.IgnoreHTTPNotFound(err) != nil {
+			t.Errorf("cloud.GetBackendService() returned error %v", err)
+		}
+		if bs != nil {
+			t.Errorf("found backend service %v, which should have been deleted", bs.Name)
+		}
 	}
 }
 
 // HealthCheckFirewall returns Firewall for HealthCheck
 func HealthCheckFirewall() *compute.Firewall {
 	return &compute.Firewall{
-		Name:    "k8s2-axyqjz2d-l4-shared-hc-fw",
+		Name:    HealthCheckFirewallIPv4Name,
 		Allowed: []*compute.FirewallAllowed{{IPProtocol: "TCP", Ports: []string{"10256"}}},
 		// GCE defined health check ranges
 		SourceRanges: []string{"130.211.0.0/22", "35.191.0.0/16", "209.85.152.0/22", "209.85.204.0/22"},
@@ -181,7 +196,7 @@ func HealthCheckFirewall() *compute.Firewall {
 // HealthCheckFirewallIPv6 returns Firewall for HealthCheck
 func HealthCheckFirewallIPv6() *compute.Firewall {
 	return &compute.Firewall{
-		Name:    "k8s2-axyqjz2d-l4-shared-hc-fw-ipv6",
+		Name:    HealthCheckFirewallIPv6Name,
 		Allowed: []*compute.FirewallAllowed{{IPProtocol: "TCP", Ports: []string{"10256"}}},
 		// GCE defined health check ranges
 		SourceRanges: []string{"2600:2d00:1:b029::/64"},
@@ -190,114 +205,10 @@ func HealthCheckFirewallIPv6() *compute.Firewall {
 	}
 }
 
-// ForwardingRuleL3 returns an L3 Forwarding Rule for ILB
-func ForwardingRuleL3() *compute.ForwardingRule {
-	return &compute.ForwardingRule{
-		Name:                "k8s2-l3-axyqjz2d-test-namespace-test-name-yuvhdy7i",
-		Region:              "us-central1",
-		IPProtocol:          "L3_DEFAULT",
-		AllPorts:            true,
-		BackendService:      "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/backendServices/k8s2-axyqjz2d-test-namespace-test-name-yuvhdy7i",
-		LoadBalancingScheme: "INTERNAL",
-		NetworkTier:         "PREMIUM",
-		Description:         `{"networking.gke.io/service-name":"test-namespace/test-name","networking.gke.io/api-version":"ga"}`,
-	}
-}
-
-// ForwardingRuleL3IPv6 returns an L3 Forwarding Rule for ILB
-func ForwardingRuleL3IPv6() *compute.ForwardingRule {
-	return &compute.ForwardingRule{
-		Name:                "k8s2-l3-axyqjz2d-test-namespace-test-name-yuvhdy7i-ipv6",
-		Region:              "us-central1",
-		IPProtocol:          "L3_DEFAULT",
-		IpVersion:           "IPV6",
-		AllPorts:            true,
-		BackendService:      "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/backendServices/k8s2-axyqjz2d-test-namespace-test-name-yuvhdy7i",
-		LoadBalancingScheme: "INTERNAL",
-		NetworkTier:         "PREMIUM",
-		Description:         `{"networking.gke.io/service-name":"test-namespace/test-name"}`,
-	}
-}
-
-// ForwardingRuleUDP returns a UDP Forwarding Rule with specified ports
-func ForwardingRuleUDP(ports []string) *compute.ForwardingRule {
-	return &compute.ForwardingRule{
-		Name:                "k8s2-udp-axyqjz2d-test-namespace-test-name-yuvhdy7i",
-		Region:              "us-central1",
-		IPProtocol:          "UDP",
-		Ports:               ports,
-		BackendService:      "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/backendServices/k8s2-axyqjz2d-test-namespace-test-name-yuvhdy7i",
-		LoadBalancingScheme: "INTERNAL",
-		NetworkTier:         "PREMIUM",
-		Description:         `{"networking.gke.io/service-name":"test-namespace/test-name","networking.gke.io/api-version":"ga"}`,
-	}
-}
-
-// ForwardingRuleUDPIPv6 returns a UDP Forwarding Rule with specified ports
-func ForwardingRuleUDPIPv6(ports []string) *compute.ForwardingRule {
-	return &compute.ForwardingRule{
-		Name:                "k8s2-udp-axyqjz2d-test-namespace-test-name-yuvhdy7i-ipv6",
-		Region:              "us-central1",
-		IPProtocol:          "UDP",
-		IpVersion:           "IPV6",
-		Ports:               ports,
-		BackendService:      "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/backendServices/k8s2-axyqjz2d-test-namespace-test-name-yuvhdy7i",
-		LoadBalancingScheme: "INTERNAL",
-		NetworkTier:         "PREMIUM",
-		Description:         `{"networking.gke.io/service-name":"test-namespace/test-name"}`,
-	}
-}
-
-// ForwardingRuleTCP returns a TCP Forwarding Rule with specified ports
-func ForwardingRuleTCP(ports []string) *compute.ForwardingRule {
-	return &compute.ForwardingRule{
-		Name:                "k8s2-tcp-axyqjz2d-test-namespace-test-name-yuvhdy7i",
-		Region:              "us-central1",
-		IPProtocol:          "TCP",
-		Ports:               ports,
-		BackendService:      "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/backendServices/k8s2-axyqjz2d-test-namespace-test-name-yuvhdy7i",
-		LoadBalancingScheme: "INTERNAL",
-		NetworkTier:         "PREMIUM",
-		Description:         `{"networking.gke.io/service-name":"test-namespace/test-name","networking.gke.io/api-version":"ga"}`,
-	}
-}
-
-// ForwardingrukeRuleTCPIPv6 returns a TCP Forwarding Rule with specified ports
-func ForwardingrukeRuleTCPIPv6(ports []string) *compute.ForwardingRule {
-	return &compute.ForwardingRule{
-		Name:                "k8s2-tcp-axyqjz2d-test-namespace-test-name-yuvhdy7i-ipv6",
-		Region:              "us-central1",
-		IPProtocol:          "TCP",
-		IpVersion:           "IPV6",
-		Ports:               ports,
-		BackendService:      "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/backendServices/k8s2-axyqjz2d-test-namespace-test-name-yuvhdy7i",
-		LoadBalancingScheme: "INTERNAL",
-		NetworkTier:         "PREMIUM",
-		Description:         `{"networking.gke.io/service-name":"test-namespace/test-name"}`,
-	}
-}
-
-// BackendService returns Backend Service for ILB
-// protocol should be set to:
-// - `UNSPECIFIED` for mixed protocol (L3)
-// - `TCP` for TCP only
-// - `UDP` for UDP only
-func BackendService(protocol string) *compute.BackendService {
-	return &compute.BackendService{
-		Name:                "k8s2-axyqjz2d-test-namespace-test-name-yuvhdy7i",
-		Region:              "us-central1",
-		Protocol:            protocol,
-		SessionAffinity:     "NONE",
-		LoadBalancingScheme: "INTERNAL",
-		HealthChecks:        []string{"https://www.googleapis.com/compute/v1/projects/test-project/global/healthChecks/k8s2-axyqjz2d-l4-shared-hc"},
-		Description:         `{"networking.gke.io/service-name":"test-namespace/test-name","networking.gke.io/api-version":"ga"}`,
-	}
-}
-
 // Firewall returns ILB Firewall with specified allowed rules
 func Firewall(allowed []*compute.FirewallAllowed) *compute.Firewall {
 	return &compute.Firewall{
-		Name:         "k8s2-axyqjz2d-test-namespace-test-name-yuvhdy7i",
+		Name:         FirewallIPv4Name,
 		Allowed:      allowed,
 		Description:  `{"networking.gke.io/service-name":"test-namespace/test-name","networking.gke.io/api-version":"ga"}`,
 		SourceRanges: []string{"0.0.0.0/0"},
@@ -308,7 +219,7 @@ func Firewall(allowed []*compute.FirewallAllowed) *compute.Firewall {
 // FirewallIPv6 returns ILB Firewall with specified allowed rules
 func FirewallIPv6(allowed []*compute.FirewallAllowed) *compute.Firewall {
 	return &compute.Firewall{
-		Name:         "k8s2-axyqjz2d-test-namespace-test-name-yuvhdy7i-ipv6",
+		Name:         FirewallIPv6Name,
 		Allowed:      allowed,
 		Description:  `{"networking.gke.io/service-name":"test-namespace/test-name","networking.gke.io/api-version":"ga"}`,
 		SourceRanges: []string{"0::0/0"},
