@@ -234,12 +234,19 @@ func main() {
 	systemHealth := systemhealth.NewSystemHealth(rootLogger)
 	go app.RunHTTPServer(systemHealth.HealthCheck, rootLogger)
 
+	hostname, err := os.Hostname()
+	if err != nil {
+		klog.Fatalf("unable to get hostname: %v", err)
+	}
+
 	if flags.F.EnableMultiProjectMode {
 		rootLogger.Info("Multi-project mode is enabled, starting project-syncer")
 
 		runWithWg(func() {
-			multiprojectstart.Start(
+			err := multiprojectstart.StartWithLeaderElection(
 				context.Background(),
+				leaderElectKubeClient,
+				hostname,
 				kubeConfig,
 				rootLogger,
 				kubeClient,
@@ -249,6 +256,9 @@ func main() {
 				namer,
 				stopCh,
 			)
+			if err != nil {
+				rootLogger.Error(err, "Failed to start multi-project syncer")
+			}
 		}, rOption.wg)
 
 		// Wait for the multi-project syncer to finish.
@@ -296,11 +306,6 @@ func main() {
 		EnableL4NetLBMixedProtocol:    flags.F.EnableL4NetLBMixedProtocol,
 	}
 	ctx := ingctx.NewControllerContext(kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, svcAttachmentClient, networkClient, nodeTopologyClient, eventRecorderKubeClient, cloud, namer, kubeSystemUID, ctxConfig, rootLogger)
-
-	hostname, err := os.Hostname()
-	if err != nil {
-		klog.Fatalf("unable to get hostname: %v", err)
-	}
 
 	leOption := leaderElectionOption{
 		client:   leaderElectKubeClient,
