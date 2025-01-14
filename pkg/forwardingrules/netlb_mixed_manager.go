@@ -79,13 +79,14 @@ func (m *MixedManagerNetLB) EnsureIPv4(backendServiceLink string) (EnsureNetLBRe
 		return res, err
 	}
 
-	addressHandle, err := address.HoldExternalIPv4(address.HoldConfig{
+	addressHandle, err := address.HoldExternal(address.HoldConfig{
 		Cloud:                 m.Cloud,
 		Recorder:              m.Recorder,
 		Logger:                m.Logger,
 		Service:               m.Service,
 		ExistingRules:         []*composite.ForwardingRule{existing.Legacy, existing.TCP, existing.UDP},
 		ForwardingRuleDeleter: m.Provider,
+		IPVersion:             address.IPv4Version,
 	})
 	if err != nil {
 		return res, err

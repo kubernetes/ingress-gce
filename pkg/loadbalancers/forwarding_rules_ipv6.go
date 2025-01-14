@@ -25,7 +25,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/address"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -167,15 +166,6 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 	}
 	frLogger.V(2).Info("subnetworkURL for service", "subnetworkURL", subnetworkURL)
 
-	// Determine IP which will be used for this LB. If no forwarding rule has been established
-	// or specified in the Service spec, then requestedIP = "".
-	ipv6AddrToUse, err := address.IPv6ToUse(l4netlb.cloud, l4netlb.Service, existingIPv6FwdRule, subnetworkURL, frLogger)
-	if err != nil {
-		frLogger.Error(err, "address.IPv6ToUse for service returned error")
-		return nil, utils.ResourceResync, err
-	}
-	frLogger.V(2).Info("ipv6AddressToUse for service", "ipv6AddressToUse", ipv6AddrToUse)
-
 	netTier, isFromAnnotation := annotations.NetworkTier(l4netlb.Service)
 	frLogger.V(2).Info("network tier for service", "networkTier", netTier, "isFromAnnotation", isFromAnnotation)
 
@@ -185,33 +175,35 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 		return nil, utils.ResourceResync, utils.NewUnsupportedNetworkTierErr(resourceErr, string(cloud.NetworkTierStandard))
 	}
 
-	// Only for IPv6, address reservation is not supported on Standard Tier
-	if !l4netlb.cloud.IsLegacyNetwork() && netTier == cloud.NetworkTierPremium {
-		nm := types.NamespacedName{Namespace: l4netlb.Service.Namespace, Name: l4netlb.Service.Name}.String()
-		addrMgr := address.NewManager(l4netlb.cloud, nm, l4netlb.cloud.Region(), subnetworkURL, expectedIPv6FrName, ipv6AddrToUse, cloud.SchemeExternal, netTier, address.IPv6Version, frLogger)
-
-		// If network tier annotation in Service Spec is present
-		// check if it matches network tiers from forwarding rule and external ip Address.
-		// If they do not match, tear down the existing resources with the wrong tier.
-		if isFromAnnotation {
-			if err := l4netlb.tearDownResourcesWithWrongNetworkTier(existingIPv6FwdRule, netTier, addrMgr, frLogger); err != nil {
-				return nil, utils.ResourceResync, err
-			}
-		}
-
-		ipv6AddrToUse, _, err = addrMgr.HoldAddress()
+	addrHandle, err := address.HoldExternal(address.HoldConfig{
+		Cloud:                 l4netlb.cloud,
+		Recorder:              l4netlb.recorder,
+		Logger:                l4netlb.svcLogger,
+		Service:               l4netlb.Service,
+		ExistingRules:         []*composite.ForwardingRule{existingIPv6FwdRule},
+		ForwardingRuleDeleter: l4netlb.forwardingRules,
+		IPVersion:             IPVersionIPv6,
+		SubnetworkURL:         subnetworkURL,
+	})
+	if err != nil {
+		frLogger.Error(err, "address.HoldExternal returned error")
+		return nil, utils.ResourceResync, err
+	}
+	frLogger.V(2).Info("ipv6AddressToUse for service", "ipv6AddressToUse", addrHandle.IP)
+	ipv6AddrToUse := addrHandle.IP
+	defer func() {
+		// Release the address that was reserved, in all cases. If the forwarding rule was successfully created,
+		// the ephemeral IP is not needed anymore. If it was not created, the address should be released to prevent leaks.
+		err = addrHandle.Release()
 		if err != nil {
-			return nil, utils.ResourceResync, err
+			frLogger.Error(err, "addrHandle.Release returned error: failed to release address reservation, possibly causing an orphan")
 		}
-		frLogger.V(2).Info("ensureIPv6ForwardingRule: reserved IP for the forwarding rule", "ip", ipv6AddrToUse)
-		defer func() {
-			// Release the address that was reserved, in all cases. If the forwarding rule was successfully created,
-			// the ephemeral IP is not needed anymore. If it was not created, the address should be released to prevent leaks.
-			if err := addrMgr.ReleaseAddress(); err != nil {
-				frLogger.Error(err, "ensureIPv6ForwardingRule: failed to release address reservation, possibly causing an orphan")
-			}
-		}()
-	} else if existingIPv6FwdRule != nil && existingIPv6FwdRule.NetworkTier != netTier.ToGCEValue() {
+	}()
+
+	// If there is an IPv6 Standard Forwarding Rule, tear it down.
+	// This shouldn't be possible, but there was a bug that allowed this in the past.
+	if (l4netlb.cloud.IsLegacyNetwork() || netTier != cloud.NetworkTierPremium) &&
+		existingIPv6FwdRule != nil && existingIPv6FwdRule.NetworkTier != netTier.ToGCEValue() {
 		frLogger.V(2).Info("deleting forwarding rule for service due to network tier mismatch", "existingTier", existingIPv6FwdRule.NetworkTier, "expectedTier", netTier)
 		err := l4netlb.forwardingRules.Delete(existingIPv6FwdRule.Name)
 		if err != nil {
