@@ -48,7 +48,7 @@ import (
 )
 
 const (
-	l4NetLBControllerName          = "l4netlb-controller"
+	L4NetLBControllerName          = "l4netlb-controller"
 	l4NetLBDualStackControllerName = "l4netlb-dualstack-controller"
 
 	instanceGroupLink backendLinkType = 0
@@ -169,7 +169,7 @@ func NewL4NetLBController(
 			}
 		},
 	})
-	ctx.AddHealthCheck(l4NetLBControllerName, l4netLBc.checkHealth)
+
 	return l4netLBc
 }
 
@@ -406,7 +406,7 @@ func (lc *L4NetLBController) hasRBSForwardingRule(svc *v1.Service, svcLogger klo
 	return existingFR != nil && existingFR.LoadBalancingScheme == string(cloud.SchemeExternal) && existingFR.BackendService != ""
 }
 
-func (lc *L4NetLBController) checkHealth() error {
+func (lc *L4NetLBController) SystemHealth() error {
 	lastEnqueueTime := lc.enqueueTracker.Get()
 	lastSyncTime := lc.syncTracker.Get()
 	// if lastEnqueue time is more than 15 minutes before the last sync time, the controller is falling behind.
@@ -417,7 +417,7 @@ func (lc *L4NetLBController) checkHealth() error {
 		msg := fmt.Sprintf("L4 NetLB Sync happened at time %v, %v after enqueue time, last enqueue time %v, threshold is %v", lastSyncTime, lastSyncTime.Sub(lastEnqueueTime), lastEnqueueTime, enqueueToSyncDelayThreshold)
 		// Log here, context/http handler do no log the error.
 		lc.logger.Error(nil, msg)
-		l4metrics.PublishL4FailedHealthCheckCount(l4NetLBControllerName)
+		l4metrics.PublishL4FailedHealthCheckCount(L4NetLBControllerName)
 		controllerHealth = l4metrics.ControllerUnhealthyStatus
 		// Reset trackers. Otherwise, if there is nothing in the queue then it will report the FailedHealthCheckCount every time the checkHealth is called
 		// If checkHealth returned error (as it is meant to) then container would be restarted and trackers would be reset either
@@ -458,7 +458,7 @@ func (lc *L4NetLBController) syncWrapper(key string) (err error) {
 		if r := recover(); r != nil {
 			errMessage := fmt.Sprintf("Panic in L4 NetLB sync worker goroutine: %v", r)
 			svcLogger.Error(nil, errMessage)
-			l4metrics.PublishL4ControllerPanicCount(l4NetLBControllerName)
+			l4metrics.PublishL4ControllerPanicCount(L4NetLBControllerName)
 			err = fmt.Errorf(errMessage)
 		}
 	}()
@@ -468,7 +468,7 @@ func (lc *L4NetLBController) syncWrapper(key string) (err error) {
 
 func (lc *L4NetLBController) sync(key string, svcLogger klog.Logger) error {
 	lc.syncTracker.Track()
-	l4metrics.PublishL4controllerLastSyncTime(l4NetLBControllerName)
+	l4metrics.PublishL4controllerLastSyncTime(L4NetLBControllerName)
 
 	svc, exists, err := lc.ctx.Services().GetByKey(key)
 	if err != nil {
@@ -822,7 +822,7 @@ func (lc *L4NetLBController) publishSyncMetrics(result *loadbalancers.L4NetLBSyn
 	if result.MetricsState.Multinetwork {
 		l4metrics.PublishL4NetLBMultiNetSyncLatency(result.Error == nil, result.SyncType, result.StartTime, isResync)
 	}
-	l4metrics.PublishL4SyncDetails(l4NetLBControllerName, result.Error == nil, isResync, result.GCEResourceUpdate.WereAnyResourcesModified())
+	l4metrics.PublishL4SyncDetails(L4NetLBControllerName, result.Error == nil, isResync, result.GCEResourceUpdate.WereAnyResourcesModified())
 
 	isWeightedLB := result.MetricsState.WeightedLBPodsPerNode
 	backendType := result.MetricsState.BackendType

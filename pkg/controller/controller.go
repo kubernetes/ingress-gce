@@ -103,6 +103,8 @@ type LoadBalancerController struct {
 
 	enableMultiSubnetClusterPhase1 bool
 
+	backendPool *backends.Pool
+
 	logger klog.Logger
 }
 
@@ -142,6 +144,7 @@ func NewLoadBalancerController(
 		metrics:                        ctx.ControllerMetrics,
 		ZoneGetter:                     ctx.ZoneGetter,
 		enableMultiSubnetClusterPhase1: enableMultiSubnetClusterPhase1,
+		backendPool:                    backendPool,
 		logger:                         logger,
 	}
 
@@ -330,27 +333,27 @@ func NewLoadBalancerController(
 		})
 	}
 
-	// Register health check on controller context.
-	ctx.AddHealthCheck("ingress", func() error {
-		name := "k8s-ingress-svc-acct-permission-check-probe"
-		version := meta.VersionGA
-		var scope meta.KeyType = meta.Global
-		beLogger := logger.WithValues("backendServiceName", name, "backendVersion", version, "backendScope", scope)
-		_, err := backendPool.Get(name, meta.VersionGA, meta.Global, beLogger)
-
-		// If this container is scheduled on a node without compute/rw it is
-		// effectively useless, but it is healthy. Reporting it as unhealthy
-		// will lead to container crashlooping.
-		if utils.IsHTTPErrorCode(err, http.StatusForbidden) {
-			logger.Info("Reporting cluster as healthy, but unable to list backends", "err", err)
-			return nil
-		}
-		return utils.IgnoreHTTPNotFound(err)
-	})
-
 	logger.Info("Created new loadbalancer controller")
 
 	return &lbc
+}
+
+// SystemHealth performs a health check showing if ingress controller is healthy.
+func (lbc *LoadBalancerController) SystemHealth() error {
+	name := "k8s-ingress-svc-acct-permission-check-probe"
+	version := meta.VersionGA
+	var scope meta.KeyType = meta.Global
+	beLogger := lbc.logger.WithValues("backendServiceName", name, "backendVersion", version, "backendScope", scope)
+	_, err := lbc.backendPool.Get(name, meta.VersionGA, meta.Global, beLogger)
+
+	// If this container is scheduled on a node without compute/rw it is
+	// effectively useless, but it is healthy. Reporting it as unhealthy
+	// will lead to container crashlooping.
+	if utils.IsHTTPErrorCode(err, http.StatusForbidden) {
+		lbc.logger.Info("Reporting cluster as healthy, but unable to list backends", "err", err)
+		return nil
+	}
+	return utils.IgnoreHTTPNotFound(err)
 }
 
 // Run starts the loadbalancer controller.
