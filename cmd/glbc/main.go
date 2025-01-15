@@ -222,8 +222,8 @@ func main() {
 		wg:     &sync.WaitGroup{},
 		stopCh: stopCh,
 		// This ensures that stopCh is only closed once.
-		// Right now, we have three callers.
-		// One is triggered when the ASM configmap changes, and the other two are
+		// Right now, we have two callers.
+		// One is triggered when the ASM configmap changes, and the other one is
 		// triggered by the SIGTERM handler.
 		closeStopCh: func() {
 			once.Do(func() { close(stopCh) })
