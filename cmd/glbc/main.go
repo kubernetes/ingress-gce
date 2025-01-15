@@ -218,6 +218,19 @@ func main() {
 	var once sync.Once
 	stopCh := make(chan struct{})
 
+	rOption := runOption{
+		wg:     &sync.WaitGroup{},
+		stopCh: stopCh,
+		// This ensures that stopCh is only closed once.
+		// Right now, we have two callers.
+		// One is triggered when the ASM configmap changes, and the other one is
+		// triggered by the SIGTERM handler.
+		closeStopCh: func() {
+			once.Do(func() { close(stopCh) })
+		},
+	}
+	go app.RunSIGTERMHandler(rOption.closeStopCh, rootLogger)
+
 	systemHealth := systemhealth.NewSystemHealth(rootLogger)
 	go app.RunHTTPServer(systemHealth.HealthCheck, rootLogger)
 
@@ -277,18 +290,10 @@ func main() {
 	if err != nil {
 		klog.Fatalf("unable to get hostname: %v", err)
 	}
-	option := runOption{
+
+	leOption := leaderElectionOption{
 		client:   leaderElectKubeClient,
 		recorder: ctx.Recorder(flags.F.LeaderElection.LockObjectNamespace),
-		wg:       &sync.WaitGroup{},
-		stopCh:   stopCh,
-		// This ensures that stopCh is only closed once.
-		// Right now, we have three callers.
-		// One is triggered when the ASM configmap changes, and the other two are
-		// triggered by the SIGTERM handler.
-		closeStopCh: func() {
-			once.Do(func() { close(stopCh) })
-		},
 		// add a uniquifier so that two processes on the same host don't accidentally both become active
 		id: fmt.Sprintf("%v_%x", hostname, rand.Intn(1e6)),
 	}
@@ -300,7 +305,7 @@ func main() {
 		logger.Info("Start running the enabled controllers",
 			"NEG controller", flags.F.EnableNEGController,
 		)
-		runNEGController(ctx, systemHealth, option, logger)
+		runNEGController(ctx, systemHealth, rOption, logger)
 	}
 	runIngress := func() {
 		logger := rootLogger.WithName("Other controllers")
@@ -311,7 +316,7 @@ func main() {
 			"InstanceGroup controller", flags.F.EnableIGController,
 			"PSC controller", flags.F.EnablePSC,
 		)
-		runControllers(ctx, systemHealth, option, logger)
+		runControllers(ctx, systemHealth, rOption, logger)
 	}
 
 	if flags.F.LeaderElection.LeaderElect {
@@ -320,11 +325,11 @@ func main() {
 			logger.Info("Start running NEG leader election",
 				"NEG controller", flags.F.EnableNEGController,
 			)
-			negElectionConfig, err := makeNEGLeaderElectionConfig(ctx, systemHealth, option, logger)
+			negRunner, err := makeNEGRunnerWithLeaderElection(ctx, systemHealth, rOption, leOption, logger)
 			if err != nil {
 				klog.Fatalf("makeNEGLeaderElectionConfig()=%v, want nil", err)
 			}
-			leaderelection.RunOrDie(context.Background(), *negElectionConfig)
+			leaderelection.RunOrDie(context.Background(), *negRunner)
 			logger.Info("NEG Controller exited.")
 		}
 		runIngress = func() {
@@ -336,11 +341,11 @@ func main() {
 				"InstanceGroup controller", flags.F.EnableIGController,
 				"PSC controller", flags.F.EnablePSC,
 			)
-			electionConfig, err := makeLeaderElectionConfig(ctx, systemHealth, option, logger)
+			ingressRunner, err := makeIngressRunnerWithLeaderElection(ctx, systemHealth, rOption, leOption, logger)
 			if err != nil {
 				klog.Fatalf("makeLeaderElectionConfig()=%v, want nil", err)
 			}
-			leaderelection.RunOrDie(context.Background(), *electionConfig)
+			leaderelection.RunOrDie(context.Background(), *ingressRunner)
 		}
 	}
 
@@ -351,30 +356,82 @@ func main() {
 		go runIngress()
 	}
 
-	<-option.stopCh
-	waitWithTimeout(option.wg, rootLogger)
+	<-rOption.stopCh
+	waitWithTimeout(rOption.wg, rootLogger)
 }
 
 type runOption struct {
-	client      clientset.Interface
-	recorder    record.EventRecorder
 	stopCh      chan struct{}
 	wg          *sync.WaitGroup
 	closeStopCh func()
-	id          string
 }
 
-// makeLeaderElectionConfig builds a leader election configuration. It will
-// create a new resource lock associated with the configuration.
-func makeLeaderElectionConfig(ctx *ingctx.ControllerContext, systemHealth *systemhealth.SystemHealth, option runOption, logger klog.Logger) (*leaderelection.LeaderElectionConfig, error) {
+type leaderElectionOption struct {
+	// client is the Kubernetes client used for creating and removing resource locks,
+	// facilitating ownership of the resource for leader election.
+	client clientset.Interface
+	// recorder is used to record events (e.g., leader election transitions)
+	// in the Kubernetes cluster.
+	recorder record.EventRecorder
+	// id is the unique identifier for this particular leader election instance,
+	// distinguishing it from other processes that might be competing for leadership.
+	id string
+}
+
+func makeNEGRunnerWithLeaderElection(
+	ctx *ingctx.ControllerContext,
+	systemHealth *systemhealth.SystemHealth,
+	runOption runOption,
+	leOption leaderElectionOption,
+	logger klog.Logger,
+) (*leaderelection.LeaderElectionConfig, error) {
+	return makeRunnerWithLeaderElection(
+		leOption,
+		negLockName,
+		func(context.Context) {
+			runNEGController(ctx, systemHealth, runOption, logger)
+		},
+		func() {
+			logger.Info("Stop running NEG Leader election")
+		},
+	)
+}
+
+func makeIngressRunnerWithLeaderElection(
+	ctx *ingctx.ControllerContext,
+	systemHealth *systemhealth.SystemHealth,
+	runOption runOption,
+	leOption leaderElectionOption,
+	logger klog.Logger,
+) (*leaderelection.LeaderElectionConfig, error) {
+	return makeRunnerWithLeaderElection(
+		leOption,
+		flags.F.LeaderElection.LockObjectName,
+		func(context.Context) {
+			runControllers(ctx, systemHealth, runOption, logger)
+		},
+		func() {
+			logger.Info("lost master")
+		},
+	)
+}
+
+// makeRunnerWithLeaderElection creates a LeaderElectionConfig with the provided options and callbacks.
+// It will create a new resource lock associated with the configuration.
+func makeRunnerWithLeaderElection(
+	leOption leaderElectionOption,
+	leaderElectionLockName string,
+	onStartedLeading func(context.Context),
+	onStoppedLeading func(),
+) (*leaderelection.LeaderElectionConfig, error) {
 	rl, err := resourcelock.New(resourcelock.LeasesResourceLock,
 		flags.F.LeaderElection.LockObjectNamespace,
-		flags.F.LeaderElection.LockObjectName,
-		option.client.CoreV1(),
-		option.client.CoordinationV1(),
+		leaderElectionLockName,
+		leOption.client.CoreV1(),
+		leOption.client.CoordinationV1(),
 		resourcelock.ResourceLockConfig{
-			Identity:      option.id,
-			EventRecorder: option.recorder,
+			Identity:      leOption.id,
+			EventRecorder: leOption.recorder,
 		})
 	if err != nil {
 		return nil, fmt.Errorf("couldn't create resource lock: %v", err)
@@ -386,14 +443,8 @@ func makeLeaderElectionConfig(ctx *ingctx.ControllerContext, systemHealth *syste
 		RenewDeadline: flags.F.LeaderElection.RenewDeadline.Duration,
 		RetryPeriod:   flags.F.LeaderElection.RetryPeriod.Duration,
 		Callbacks: leaderelection.LeaderCallbacks{
-			OnStartedLeading: func(context.Context) {
-				// Since we are committing a suicide after losing
-				// mastership, we can safely ignore the argument.
-				runControllers(ctx, systemHealth, option, logger)
-			},
-			OnStoppedLeading: func() {
-				logger.Info("lost master")
-			},
+			OnStartedLeading: onStartedLeading,
+			OnStoppedLeading: onStoppedLeading,
 		},
 	}, nil
 }
@@ -426,8 +477,6 @@ func runControllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.Sy
 		logger.V(0).Info("PSC Controller started")
 	}
 
-	go app.RunSIGTERMHandler(option.closeStopCh, logger)
-
 	ctx.Start(option.stopCh)
 
 	if flags.F.EnableIGController {
@@ -453,36 +502,6 @@ func runControllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.Sy
 	}
 }
 
-func makeNEGLeaderElectionConfig(ctx *ingctx.ControllerContext, systemHealth *systemhealth.SystemHealth, option runOption, logger klog.Logger) (*leaderelection.LeaderElectionConfig, error) {
-	negLock, err := resourcelock.New(resourcelock.LeasesResourceLock,
-		flags.F.LeaderElection.LockObjectNamespace,
-		negLockName,
-		option.client.CoreV1(),
-		option.client.CoordinationV1(),
-		resourcelock.ResourceLockConfig{
-			Identity:      option.id,
-			EventRecorder: option.recorder,
-		})
-	if err != nil {
-		return nil, fmt.Errorf("couldn't create resource lock: %v", err)
-	}
-
-	return &leaderelection.LeaderElectionConfig{
-		Lock:          negLock,
-		LeaseDuration: flags.F.LeaderElection.LeaseDuration.Duration,
-		RenewDeadline: flags.F.LeaderElection.RenewDeadline.Duration,
-		RetryPeriod:   flags.F.LeaderElection.RetryPeriod.Duration,
-		Callbacks: leaderelection.LeaderCallbacks{
-			OnStartedLeading: func(context.Context) {
-				runNEGController(ctx, systemHealth, option, logger)
-			},
-			OnStoppedLeading: func() {
-				logger.Info("Stop running NEG Leader election")
-			},
-		},
-	}, nil
-}
-
 func runNEGController(ctx *ingctx.ControllerContext, systemHealth *systemhealth.SystemHealth, option runOption, logger klog.Logger) {
 	lockLogger := logger.WithValues("lockName", negLockName)
 	lockLogger.Info("Attempting to grab lock", "lockName", negLockName)
@@ -500,8 +519,6 @@ func runNEGController(ctx *ingctx.ControllerContext, systemHealth *systemhealth.
 		go runWithWg(negController.Run, option.wg)
 		logger.V(0).Info("negController started")
 	}
-
-	go app.RunSIGTERMHandler(option.closeStopCh, logger)
 
 	// TODO(sawsa307): Find a better approach to start informers.
 	// If Ingress and NEG controller run together, since they share the same
