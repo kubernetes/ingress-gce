@@ -349,13 +349,14 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 		return nil, address.IPAddrUndefined, utils.ResourceResync, err
 	}
 
-	addrHandle, err := address.HoldExternalIPv4(address.HoldConfig{
+	addrHandle, err := address.HoldExternal(address.HoldConfig{
 		Cloud:                 l4netlb.cloud,
 		Recorder:              l4netlb.recorder,
 		Logger:                l4netlb.svcLogger,
 		Service:               l4netlb.Service,
 		ExistingRules:         []*composite.ForwardingRule{rules.Legacy, rules.TCP, rules.UDP},
 		ForwardingRuleDeleter: l4netlb.forwardingRules,
+		IPVersion:             address.IPv4Version,
 	})
 	if err != nil {
 		frLogger.Error(err, "address.HoldExternalIPv4 returned error")
@@ -476,17 +477,6 @@ func (l4netlb *L4NetLB) createFwdRule(newFr *composite.ForwardingRule, frLogger 
 		return err
 	}
 	return nil
-}
-
-// tearDownResourcesWithWrongNetworkTier removes forwarding rule or IP address if its Network Tier differs from desired.
-func (l4netlb *L4NetLB) tearDownResourcesWithWrongNetworkTier(existingFwdRule *composite.ForwardingRule, svcNetTier cloud.NetworkTier, am *address.Manager, frLogger klog.Logger) error {
-	if existingFwdRule != nil && existingFwdRule.NetworkTier != svcNetTier.ToGCEValue() {
-		err := l4netlb.forwardingRules.Delete(existingFwdRule.Name)
-		if err != nil {
-			frLogger.Error(err, "l4netlb.forwardingRules.Delete returned error, want nil")
-		}
-	}
-	return am.TearDownAddressIPIfNetworkTierMismatch()
 }
 
 func isAddressAlreadyInUseError(err error) bool {
