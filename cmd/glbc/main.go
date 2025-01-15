@@ -43,7 +43,7 @@ import (
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/l4lb"
-	"k8s.io/ingress-gce/pkg/multiproject/sharedcontext"
+	multiprojectstart "k8s.io/ingress-gce/pkg/multiproject/start"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/psc"
 	"k8s.io/ingress-gce/pkg/serviceattachment"
@@ -234,17 +234,38 @@ func main() {
 	systemHealth := systemhealth.NewSystemHealth(rootLogger)
 	go app.RunHTTPServer(systemHealth.HealthCheck, rootLogger)
 
+	hostname, err := os.Hostname()
+	if err != nil {
+		klog.Fatalf("unable to get hostname: %v", err)
+	}
+
 	if flags.F.EnableMultiProjectMode {
-		_ = sharedcontext.NewSharedContext(
-			kubeClient,
-			svcNegClient,
-			kubeSystemUID,
-			eventRecorderKubeClient,
-			namer,
-			rootLogger,
-			stopCh,
-		)
 		rootLogger.Info("Multi-project mode is enabled, starting project-syncer")
+
+		runWithWg(func() {
+			err := multiprojectstart.StartWithLeaderElection(
+				context.Background(),
+				leaderElectKubeClient,
+				hostname,
+				kubeConfig,
+				rootLogger,
+				kubeClient,
+				svcNegClient,
+				kubeSystemUID,
+				eventRecorderKubeClient,
+				namer,
+				stopCh,
+			)
+			if err != nil {
+				rootLogger.Error(err, "Failed to start multi-project syncer")
+			}
+		}, rOption.wg)
+
+		// Wait for the multi-project syncer to finish.
+		waitWithTimeout(rOption.wg, rootLogger)
+
+		// Since we only want multi-project mode functionality, exit here
+		return
 	}
 
 	cloud := app.NewGCEClient(rootLogger)
@@ -285,11 +306,6 @@ func main() {
 		EnableL4NetLBMixedProtocol:    flags.F.EnableL4NetLBMixedProtocol,
 	}
 	ctx := ingctx.NewControllerContext(kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, svcAttachmentClient, networkClient, nodeTopologyClient, eventRecorderKubeClient, cloud, namer, kubeSystemUID, ctxConfig, rootLogger)
-
-	hostname, err := os.Hostname()
-	if err != nil {
-		klog.Fatalf("unable to get hostname: %v", err)
-	}
 
 	leOption := leaderElectionOption{
 		client:   leaderElectKubeClient,
