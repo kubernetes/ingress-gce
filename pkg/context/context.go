@@ -15,7 +15,6 @@ package context
 
 import (
 	"fmt"
-	"sync"
 	"time"
 
 	firewallclient "github.com/GoogleCloudPlatform/gke-networking-api/client/gcpfirewall/clientset/versioned"
@@ -24,23 +23,17 @@ import (
 	informernetwork "github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions/network/v1"
 	nodetopologyclient "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned"
 	informernodetopology "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions/nodetopology/v1"
-	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	informers "k8s.io/client-go/informers"
 	informerv1 "k8s.io/client-go/informers/core/v1"
 	discoveryinformer "k8s.io/client-go/informers/discovery/v1"
 	informernetworking "k8s.io/client-go/informers/networking/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/scheme"
-	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
-	sav1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1"
-	sav1beta1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	informerbackendconfig "k8s.io/ingress-gce/pkg/backendconfig/client/informers/externalversions/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/cmconfig"
@@ -51,6 +44,7 @@ import (
 	informerfrontendconfig "k8s.io/ingress-gce/pkg/frontendconfig/client/informers/externalversions/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/metrics"
+	"k8s.io/ingress-gce/pkg/recorders"
 	serviceattachmentclient "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned"
 	informerserviceattachment "k8s.io/ingress-gce/pkg/serviceattachment/client/informers/externalversions/serviceattachment/v1"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
@@ -105,10 +99,6 @@ type ControllerContext struct {
 
 	ControllerMetrics *metrics.ControllerMetrics
 
-	recorderLock sync.Mutex
-	// Map of namespace => record.EventRecorder.
-	recorders map[string]record.EventRecorder
-
 	// NOTE: If the flag GKEClusterType is empty, then cluster will default to zonal. This field should not be used for
 	// controller logic and should only be used for providing additional information to the user.
 	RegionalCluster bool
@@ -116,6 +106,8 @@ type ControllerContext struct {
 	InstancePool instancegroups.Manager
 	Translator   *translator.Translator
 	ZoneGetter   *zonegetter.ZoneGetter
+
+	recordersManager *recorders.Manager
 
 	logger klog.Logger
 }
@@ -197,7 +189,7 @@ func NewControllerContext(
 		PodInformer:             podInformer,
 		NodeInformer:            nodeInformer,
 		SvcNegInformer:          informersvcneg.NewServiceNetworkEndpointGroupInformer(svcnegClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
-		recorders:               map[string]record.EventRecorder{},
+		recordersManager:        recorders.NewManager(eventRecorderClient, logger),
 		logger:                  logger,
 	}
 	if firewallClient != nil {
@@ -260,6 +252,10 @@ func NewControllerContext(
 	return context
 }
 
+func (ctx *ControllerContext) Recorder(ns string) record.EventRecorder {
+	return ctx.recordersManager.Recorder(ns)
+}
+
 // Init inits the Context, so that we can defers some config until the main thread enter actually get the leader hcLock.
 func (ctx *ControllerContext) Init() {
 	ctx.logger.V(2).Info(fmt.Sprintf("Controller Context initializing with %+v", ctx.ControllerContextConfig))
@@ -275,7 +271,7 @@ func (ctx *ControllerContext) Init() {
 				listOptions.FieldSelector = fmt.Sprintf("metadata.name=%s", ctx.ASMConfigMapName)
 			}))
 		ctx.ConfigMapInformer = informerFactory.Core().V1().ConfigMaps().Informer()
-		ctx.ASMConfigController = cmconfig.NewConfigMapConfigController(ctx.KubeClient, ctx.Recorder(ctx.ASMConfigMapNamespace), ctx.ASMConfigMapNamespace, ctx.ASMConfigMapName, ctx.logger)
+		ctx.ASMConfigController = cmconfig.NewConfigMapConfigController(ctx.KubeClient, ctx.recordersManager.Recorder(ctx.ASMConfigMapNamespace), ctx.ASMConfigMapNamespace, ctx.ASMConfigMapName, ctx.logger)
 
 		cmConfig := ctx.ASMConfigController.GetConfig()
 		if cmConfig.EnableASM {
@@ -333,25 +329,6 @@ func (ctx *ControllerContext) HasSynced() bool {
 		}
 	}
 	return true
-}
-
-// Recorder return the event recorder for the given namespace.
-func (ctx *ControllerContext) Recorder(ns string) record.EventRecorder {
-	ctx.recorderLock.Lock()
-	defer ctx.recorderLock.Unlock()
-	if rec, ok := ctx.recorders[ns]; ok {
-		return rec
-	}
-
-	broadcaster := record.NewBroadcaster()
-	broadcaster.StartLogging(klog.Infof)
-	broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{
-		Interface: ctx.EventRecorderClient.CoreV1().Events(ns),
-	})
-	rec := broadcaster.NewRecorder(ctx.generateScheme(), apiv1.EventSource{Component: "loadbalancer-controller"})
-	ctx.recorders[ns] = rec
-
-	return rec
 }
 
 // Start all of the informers.
@@ -414,22 +391,6 @@ func (ctx *ControllerContext) FrontendConfigs() *typed.FrontendConfigStore {
 		return typed.WrapFrontendConfigStore(nil)
 	}
 	return typed.WrapFrontendConfigStore(ctx.FrontendConfigInformer.GetStore())
-}
-
-// generateScheme creates a scheme and adds relevant CRD schemes that will be used
-// for events
-func (ctx *ControllerContext) generateScheme() *runtime.Scheme {
-	controllerScheme := scheme.Scheme
-
-	if ctx.SAInformer != nil {
-		if err := sav1beta1.AddToScheme(controllerScheme); err != nil {
-			ctx.logger.Error(err, "Failed to add v1beta1 ServiceAttachment CRD scheme to event recorder")
-		}
-		if err := sav1.AddToScheme(controllerScheme); err != nil {
-			ctx.logger.Error(err, "Failed to add v1 ServiceAttachment CRD scheme to event recorder: %s")
-		}
-	}
-	return controllerScheme
 }
 
 // preserveNeeded returns the obj preserving fields needed for memory efficiency.
