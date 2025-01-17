@@ -14,7 +14,6 @@ import (
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/ingress-gce/cmd/glbc/app"
-	ingresscontext "k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/flags"
 	_ "k8s.io/ingress-gce/pkg/klog"
 	pccontroller "k8s.io/ingress-gce/pkg/multiproject/controller"
@@ -93,7 +92,7 @@ func makeLeaderElectionConfig(
 		RetryPeriod:   flags.F.LeaderElection.RetryPeriod.Duration,
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(context.Context) {
-				start(kubeConfig, logger, kubeClient, svcNegClient, kubeSystemUID, eventRecorderKubeClient, rootNamer, stopCh)
+				Start(kubeConfig, logger, kubeClient, svcNegClient, kubeSystemUID, eventRecorderKubeClient, rootNamer, stopCh)
 			},
 			OnStoppedLeading: func() {
 				logger.Info("Stop running multi-project leader election")
@@ -102,7 +101,7 @@ func makeLeaderElectionConfig(
 	}, nil
 }
 
-func start(
+func Start(
 	kubeConfig *rest.Config,
 	logger klog.Logger,
 	kubeClient kubernetes.Interface,
@@ -125,18 +124,14 @@ func start(
 		}
 	}
 
-	ctxConfig := ingresscontext.ControllerContextConfig{
-		ResyncPeriod: flags.F.ResyncPeriod,
-	}
-
 	defaultGCEConfig, err := app.GCEConfString(logger)
 	if err != nil {
 		klog.Fatalf("Error getting default cluster GCE config: %v", err)
 	}
 
-	informersFactory := informers.NewSharedInformerFactoryWithOptions(kubeClient, ctxConfig.ResyncPeriod)
+	informersFactory := informers.NewSharedInformerFactoryWithOptions(kubeClient, flags.F.ResyncPeriod)
 
-	providerConfigInformer := providerconfiginformers.NewSharedInformerFactory(providerConfigClient, ctxConfig.ResyncPeriod).Providerconfig().V1().ProviderConfigs().Informer()
+	providerConfigInformer := providerconfiginformers.NewSharedInformerFactory(providerConfigClient, flags.F.ResyncPeriod).Providerconfig().V1().ProviderConfigs().Informer()
 
 	manager := manager.NewProviderConfigControllerManager(
 		kubeClient,

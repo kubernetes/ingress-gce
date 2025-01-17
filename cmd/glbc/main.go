@@ -243,21 +243,34 @@ func main() {
 		rootLogger.Info("Multi-project mode is enabled, starting project-syncer")
 
 		runWithWg(func() {
-			err := multiprojectstart.StartWithLeaderElection(
-				context.Background(),
-				leaderElectKubeClient,
-				hostname,
-				kubeConfig,
-				rootLogger,
-				kubeClient,
-				svcNegClient,
-				kubeSystemUID,
-				eventRecorderKubeClient,
-				namer,
-				stopCh,
-			)
-			if err != nil {
-				rootLogger.Error(err, "Failed to start multi-project syncer")
+			if flags.F.LeaderElection.LeaderElect {
+				err := multiprojectstart.StartWithLeaderElection(
+					context.Background(),
+					leaderElectKubeClient,
+					hostname,
+					kubeConfig,
+					rootLogger,
+					kubeClient,
+					svcNegClient,
+					kubeSystemUID,
+					eventRecorderKubeClient,
+					namer,
+					stopCh,
+				)
+				if err != nil {
+					rootLogger.Error(err, "Failed to start multi-project syncer with leader election")
+				}
+			} else {
+				multiprojectstart.Start(
+					kubeConfig,
+					rootLogger,
+					kubeClient,
+					svcNegClient,
+					kubeSystemUID,
+					eventRecorderKubeClient,
+					namer,
+					stopCh,
+				)
 			}
 		}, rOption.wg)
 
