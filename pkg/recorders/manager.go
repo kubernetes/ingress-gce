@@ -6,12 +6,12 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/record"
 	sav1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1"
 	sav1beta1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1"
 	"k8s.io/ingress-gce/pkg/flags"
-	"k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/scheme"
 	"k8s.io/klog/v2"
 )
 
