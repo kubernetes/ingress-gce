@@ -9,7 +9,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 	providerconfig "k8s.io/ingress-gce/pkg/apis/providerconfig/v1"
-	"k8s.io/ingress-gce/pkg/multiproject/manager"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
@@ -19,8 +18,13 @@ const (
 	workersNum                   = 5
 )
 
+type ProviderConfigControllerManager interface {
+	StartControllersForProviderConfig(pc *providerconfig.ProviderConfig) error
+	StopControllersForProviderConfig(pc *providerconfig.ProviderConfig)
+}
+
 type ProviderConfigController struct {
-	manager *manager.ProviderConfigControllersManager
+	manager ProviderConfigControllerManager
 
 	providerConfigLister cache.Indexer
 	providerConfigQueue  utils.TaskQueue
@@ -31,7 +35,7 @@ type ProviderConfigController struct {
 }
 
 // NewProviderConfigController creates a new instance of the ProviderConfig controller.
-func NewProviderConfigController(manager *manager.ProviderConfigControllersManager, providerConfigInformer cache.SharedIndexInformer, stopCh <-chan struct{}, logger klog.Logger) *ProviderConfigController {
+func NewProviderConfigController(manager ProviderConfigControllerManager, providerConfigInformer cache.SharedIndexInformer, stopCh <-chan struct{}, logger klog.Logger) *ProviderConfigController {
 	logger = logger.WithName(providerConfigControllerName)
 	pcc := &ProviderConfigController{
 		providerConfigLister: providerConfigInformer.GetIndexer(),
@@ -50,28 +54,31 @@ func NewProviderConfigController(manager *manager.ProviderConfigControllersManag
 			UpdateFunc: func(old, cur interface{}) { pcc.providerConfigQueue.Enqueue(cur) },
 		})
 
+	pcc.logger.Info("ProviderConfig controller created")
 	return pcc
 }
 
 func (pcc *ProviderConfigController) Run() {
 	defer pcc.shutdown()
 
+	pcc.logger.Info("Starting ProviderConfig controller")
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		<-pcc.stopCh
 		cancel()
 	}()
 
-	err := wait.PollUntilContextCancel(ctx, 5*time.Second, false, func(ctx context.Context) (bool, error) {
-		pcc.logger.V(2).Info("Waiting for initial cache sync before starting ProviderConfig Controller")
+	err := wait.PollUntilContextCancel(ctx, 5*time.Second, true, func(ctx context.Context) (bool, error) {
+		pcc.logger.Info("Waiting for initial cache sync before starting ProviderConfig Controller")
 		return pcc.hasSynced(), nil
 	})
 	if err != nil {
 		pcc.logger.Error(err, "Failed to wait for initial cache sync before starting ProviderConfig Controller")
 	}
 
-	pcc.logger.Info("Running ProviderConfig Controller", "numWorkers", pcc.numWorkers)
+	pcc.logger.Info("Started ProviderConfig Controller", "numWorkers", pcc.numWorkers)
 	pcc.providerConfigQueue.Run()
+
 	<-pcc.stopCh
 }
 
