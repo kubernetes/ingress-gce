@@ -33,6 +33,7 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -40,8 +41,8 @@ import (
 )
 
 const (
-	// maxL4ILBPorts is the maximum number of ports that can be specified in an L4 ILB Forwarding Rule
-	maxL4ILBPorts = 5
+	// maxForwardedPorts is the maximum number of ports that can be specified in an Forwarding Rule
+	maxForwardedPorts = 5
 	// addressAlreadyInUseMessageExternal is the error message string returned by the compute API
 	// when creating an external forwarding rule that uses a conflicting IP address.
 	addressAlreadyInUseMessageExternal = "Specified IP address is in-use and would result in a conflict."
@@ -245,7 +246,7 @@ func (l4 *L4) ensureIPv4ForwardingRule(bsLink string, options gce.ILBOptions, ex
 		AllowGlobalAccess:   options.AllowGlobalAccess,
 		Description:         frDesc,
 	}
-	if len(ports) > maxL4ILBPorts {
+	if len(ports) > maxForwardedPorts {
 		fr.Ports = nil
 		fr.AllPorts = true
 	}
@@ -345,8 +346,10 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 		}()
 	}
 
-	portRange, protocol := utils.MinMaxPortRangeAndProtocol(l4netlb.Service.Spec.Ports)
-
+	svcPorts := l4netlb.Service.Spec.Ports
+	ports := utils.GetPorts(svcPorts)
+	portRange := utils.MinMaxPortRange(svcPorts)
+	protocol := utils.GetProtocol(svcPorts)
 	serviceKey := utils.ServiceKeyFunc(l4netlb.Service.Namespace, l4netlb.Service.Name)
 	frDesc, err := utils.MakeL4LBServiceDescription(serviceKey, ipToUse, version, false, utils.XLB)
 	if err != nil {
@@ -357,11 +360,15 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 		Name:                frName,
 		Description:         frDesc,
 		IPAddress:           ipToUse,
-		IPProtocol:          protocol,
+		IPProtocol:          string(protocol),
 		PortRange:           portRange,
 		LoadBalancingScheme: string(cloud.SchemeExternal),
 		BackendService:      bsLink,
 		NetworkTier:         netTier.ToGCEValue(),
+	}
+	if len(ports) <= maxForwardedPorts && flags.F.EnableDiscretePortForwarding {
+		fr.Ports = ports
+		fr.PortRange = ""
 	}
 
 	if existingFwdRule != nil {
@@ -416,26 +423,42 @@ func (l4netlb *L4NetLB) tearDownResourcesWithWrongNetworkTier(existingFwdRule *c
 	return am.TearDownAddressIPIfNetworkTierMismatch()
 }
 
-func Equal(fr1, fr2 *composite.ForwardingRule) (bool, error) {
-	id1, err := cloud.ParseResourceURL(fr1.BackendService)
+func Equal(existingFwdRule, newFwdRule *composite.ForwardingRule) (bool, error) {
+	existingID, err := cloud.ParseResourceURL(existingFwdRule.BackendService)
 	if err != nil {
-		return false, fmt.Errorf("forwardingRulesEqual(): failed to parse backend resource URL from FR, err - %w", err)
+		return false, fmt.Errorf("forwardingRulesEqual(): failed to parse backend resource URL from existing FR, err - %w", err)
 	}
-	id2, err := cloud.ParseResourceURL(fr2.BackendService)
+	newID, err := cloud.ParseResourceURL(newFwdRule.BackendService)
 	if err != nil {
-		return false, fmt.Errorf("forwardingRulesEqual(): failed to parse resource URL from FR, err - %w", err)
+		return false, fmt.Errorf("forwardingRulesEqual(): failed to parse backend resource URL from new FR, err - %w", err)
 	}
-	return fr1.IPAddress == fr2.IPAddress &&
-		fr1.IPProtocol == fr2.IPProtocol &&
-		fr1.LoadBalancingScheme == fr2.LoadBalancingScheme &&
-		utils.EqualStringSets(fr1.Ports, fr2.Ports) &&
-		fr1.PortRange == fr2.PortRange &&
-		utils.EqualCloudResourceIDs(id1, id2) &&
-		fr1.AllowGlobalAccess == fr2.AllowGlobalAccess &&
-		fr1.AllPorts == fr2.AllPorts &&
-		equalResourcePaths(fr1.Subnetwork, fr2.Subnetwork) &&
-		equalResourcePaths(fr1.Network, fr2.Network) &&
-		fr1.NetworkTier == fr2.NetworkTier, nil
+	return existingFwdRule.IPAddress == newFwdRule.IPAddress &&
+		existingFwdRule.IPProtocol == newFwdRule.IPProtocol &&
+		existingFwdRule.LoadBalancingScheme == newFwdRule.LoadBalancingScheme &&
+		equalPorts(existingFwdRule.Ports, newFwdRule.Ports, existingFwdRule.PortRange, newFwdRule.PortRange) &&
+		utils.EqualCloudResourceIDs(existingID, newID) &&
+		existingFwdRule.AllowGlobalAccess == newFwdRule.AllowGlobalAccess &&
+		existingFwdRule.AllPorts == newFwdRule.AllPorts &&
+		equalResourcePaths(existingFwdRule.Subnetwork, newFwdRule.Subnetwork) &&
+		equalResourcePaths(existingFwdRule.Network, newFwdRule.Network) &&
+		existingFwdRule.NetworkTier == newFwdRule.NetworkTier, nil
+}
+
+// equalPorts compares two port ranges or slices of ports. Before comparison,
+// slices of ports are converted into a port range from smallest to largest
+// port. This is done so we don't unnecessarily recreate forwarding rules
+// when upgrading from port ranges to distinct ports, because recreating
+// forwarding rules is traffic impacting.
+func equalPorts(existingPorts, newPorts []string, existingPortRange, newPortRange string) bool {
+	if !flags.F.EnableDiscretePortForwarding || len(existingPorts) != 0 {
+		return utils.EqualStringSets(existingPorts, newPorts) && existingPortRange == newPortRange
+	}
+	// Existing forwarding rule contains a port range. To keep it that way,
+	// compare new list of ports as if it was a port range, too.
+	if len(newPorts) != 0 {
+		newPortRange = utils.MinMaxPortRange(newPorts)
+	}
+	return existingPortRange == newPortRange
 }
 
 func equalResourcePaths(rp1, rp2 string) bool {
