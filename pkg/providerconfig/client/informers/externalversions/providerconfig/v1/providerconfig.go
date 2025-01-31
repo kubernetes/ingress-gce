@@ -1,5 +1,5 @@
 /*
-Copyright 2024 The Kubernetes Authors.
+Copyright 2025 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -62,13 +62,13 @@ func NewFilteredProviderConfigInformer(client versioned.Interface, namespace str
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.FlagsV1().ProviderConfigs(namespace).List(context.TODO(), options)
+				return client.ProviderconfigV1().ProviderConfigs(namespace).List(context.TODO(), options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.FlagsV1().ProviderConfigs(namespace).Watch(context.TODO(), options)
+				return client.ProviderconfigV1().ProviderConfigs(namespace).Watch(context.TODO(), options)
 			},
 		},
 		&providerconfigv1.ProviderConfig{},

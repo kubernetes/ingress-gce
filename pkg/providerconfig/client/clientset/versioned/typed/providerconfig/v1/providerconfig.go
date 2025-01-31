@@ -1,5 +1,5 @@
 /*
-Copyright 2024 The Kubernetes Authors.
+Copyright 2025 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -56,7 +56,7 @@ type providerConfigs struct {
 }
 
 // newProviderConfigs returns a ProviderConfigs
-func newProviderConfigs(c *FlagsV1Client, namespace string) *providerConfigs {
+func newProviderConfigs(c *ProviderconfigV1Client, namespace string) *providerConfigs {
 	return &providerConfigs{
 		client: c.RESTClient(),
 		ns:     namespace,

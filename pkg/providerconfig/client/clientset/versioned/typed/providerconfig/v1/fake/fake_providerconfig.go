@@ -1,5 +1,5 @@
 /*
-Copyright 2024 The Kubernetes Authors.
+Copyright 2025 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -32,13 +32,13 @@ import (
 
 // FakeProviderConfigs implements ProviderConfigInterface
 type FakeProviderConfigs struct {
-	Fake *FakeFlagsV1
+	Fake *FakeProviderconfigV1
 	ns   string
 }
 
-var providerconfigsResource = schema.GroupVersionResource{Group: "flags.F.ProviderConfigAPIGroup", Version: "v1", Resource: "providerconfigs"}
+var providerconfigsResource = schema.GroupVersionResource{Group: "providerconfig.gke.io", Version: "v1", Resource: "providerconfigs"}
 
-var providerconfigsKind = schema.GroupVersionKind{Group: "flags.F.ProviderConfigAPIGroup", Version: "v1", Kind: "ProviderConfig"}
+var providerconfigsKind = schema.GroupVersionKind{Group: "providerconfig.gke.io", Version: "v1", Kind: "ProviderConfig"}
 
 // Get takes name of the providerConfig, and returns the corresponding providerConfig object, and an error if there is any.
 func (c *FakeProviderConfigs) Get(ctx context.Context, name string, options v1.GetOptions) (result *providerconfigv1.ProviderConfig, err error) {

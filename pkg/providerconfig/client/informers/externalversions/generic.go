@@ -1,5 +1,5 @@
 /*
-Copyright 2024 The Kubernetes Authors.
+Copyright 2025 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -52,9 +52,9 @@ func (f *genericInformer) Lister() cache.GenericLister {
 // TODO extend this to unknown resources with a client pool
 func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource) (GenericInformer, error) {
 	switch resource {
-	// Group=flags.F.ProviderConfigAPIGroup, Version=v1
+	// Group=providerconfig.gke.io, Version=v1
 	case v1.SchemeGroupVersion.WithResource("providerconfigs"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Flags().V1().ProviderConfigs().Informer()}, nil
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Providerconfig().V1().ProviderConfigs().Informer()}, nil
 
 	}
 

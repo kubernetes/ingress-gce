@@ -1,5 +1,5 @@
 /*
-Copyright 2024 The Kubernetes Authors.
+Copyright 2025 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -172,9 +172,9 @@ type SharedInformerFactory interface {
 	ForResource(resource schema.GroupVersionResource) (GenericInformer, error)
 	WaitForCacheSync(stopCh <-chan struct{}) map[reflect.Type]bool
 
-	Flags() providerconfig.Interface
+	Providerconfig() providerconfig.Interface
 }
 
-func (f *sharedInformerFactory) Flags() providerconfig.Interface {
+func (f *sharedInformerFactory) Providerconfig() providerconfig.Interface {
 	return providerconfig.New(f, f.namespace, f.tweakListOptions)
 }

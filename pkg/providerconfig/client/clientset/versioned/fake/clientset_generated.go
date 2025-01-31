@@ -1,5 +1,5 @@
 /*
-Copyright 2024 The Kubernetes Authors.
+Copyright 2025 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -25,8 +25,8 @@ import (
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/testing"
 	clientset "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned"
-	flagsv1 "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned/typed/providerconfig/v1"
-	fakeflagsv1 "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned/typed/providerconfig/v1/fake"
+	providerconfigv1 "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned/typed/providerconfig/v1"
+	fakeproviderconfigv1 "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned/typed/providerconfig/v1/fake"
 )
 
 // NewSimpleClientset returns a clientset that will respond with the provided objects.
@@ -79,7 +79,7 @@ var (
 	_ testing.FakeClient  = &Clientset{}
 )
 
-// FlagsV1 retrieves the FlagsV1Client
-func (c *Clientset) FlagsV1() flagsv1.FlagsV1Interface {
-	return &fakeflagsv1.FakeFlagsV1{Fake: &c.Fake}
+// ProviderconfigV1 retrieves the ProviderconfigV1Client
+func (c *Clientset) ProviderconfigV1() providerconfigv1.ProviderconfigV1Interface {
+	return &fakeproviderconfigv1.FakeProviderconfigV1{Fake: &c.Fake}
 }
