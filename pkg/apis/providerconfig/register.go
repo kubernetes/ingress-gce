@@ -14,8 +14,6 @@ limitations under the License.
 */
 package providerconfig
 
-import "k8s.io/ingress-gce/pkg/flags"
-
 var (
-	GroupName = flags.F.ProviderConfigAPIGroup
+	GroupName = "providerconfig.gke.io"
 )
