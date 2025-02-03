@@ -51,6 +51,7 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
+	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
@@ -81,9 +82,7 @@ const (
 func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 	t.Parallel()
 
-	vals := gce.DefaultTestClusterValues()
-	vals.SubnetworkURL = defaultTestSubnetURL
-	fakeGCE := gce.NewFakeGCECloud(vals)
+	fakeGCE := gce.NewFakeGCECloud(test.DefaultTestClusterValues())
 	negtypes.MockNetworkEndpointAPIs(fakeGCE)
 	fakeCloud := negtypes.NewAdapter(fakeGCE)
 	testNegTypes := []negtypes.NetworkEndpointType{
@@ -92,7 +91,10 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 	}
 
 	for _, testNegType := range testNegTypes {
-		_, transactionSyncer := newTestTransactionSyncer(fakeCloud, testNegType, false)
+		_, transactionSyncer, err := newTestTransactionSyncer(fakeCloud, testNegType, false)
+		if err != nil {
+			t.Fatalf("failed to initialize transaction syncer: %v", err)
+		}
 		if err := transactionSyncer.ensureNetworkEndpointGroups(); err != nil {
 			t.Errorf("Expect error == nil, but got %v", err)
 		}
@@ -295,7 +297,10 @@ func TestTransactionSyncNetworkEndpointsMSC(t *testing.T) {
 	}
 
 	for _, testNegType := range testNegTypes {
-		_, transactionSyncer := newTestTransactionSyncer(fakeCloud, testNegType, false)
+		_, transactionSyncer, err := newTestTransactionSyncer(fakeCloud, testNegType, false)
+		if err != nil {
+			t.Fatalf("failed to initialize transaction syncer: %v", err)
+		}
 		if err := zonegetter.AddNodeTopologyCR(transactionSyncer.zoneGetter, &nodeTopologyCrWithAdditionalSubnets); err != nil {
 			t.Fatalf("Failed to add node topology CR: %v", err)
 		}
@@ -639,11 +644,14 @@ func TestSyncNetworkEndpointLabel(t *testing.T) {
 		fakeGCE := gce.NewFakeGCECloud(vals)
 		negtypes.MockNetworkEndpointAPIs(fakeGCE)
 		fakeCloud := negtypes.NewAdapter(fakeGCE)
-		_, transactionSyncer := newTestTransactionSyncer(fakeCloud, tc.negType, false)
+		_, transactionSyncer, err := newTestTransactionSyncer(fakeCloud, tc.negType, false)
+		if err != nil {
+			t.Fatalf("failed to initialize transaction syncer: %v", err)
+		}
 		if err := transactionSyncer.ensureNetworkEndpointGroups(); err != nil {
 			t.Errorf("Expect error == nil, but got %v", err)
 		}
-		err := transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{}, tc.endpointPodLabelMap, negtypes.NEGLocation{})
+		err = transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{}, tc.endpointPodLabelMap, negtypes.NEGLocation{})
 		if err != nil {
 			t.Errorf("For case %q, syncNetworkEndpoints() got %v, want nil", tc.desc, err)
 		}
@@ -670,7 +678,10 @@ func TestCommitTransaction(t *testing.T) {
 	t.Parallel()
 	vals := gce.DefaultTestClusterValues()
 	vals.SubnetworkURL = defaultTestSubnetURL
-	s, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(vals)), negtypes.VmIpPortEndpointType, false)
+	s, transactionSyncer, err := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(vals)), negtypes.VmIpPortEndpointType, false)
+	if err != nil {
+		t.Fatalf("failed to initialize transaction syncer: %v", err)
+	}
 	// use testSyncer to track the number of Sync got triggered
 	testSyncer := &testSyncer{s.(*syncer), 0}
 	testRetryer := &testRetryHandler{testSyncer, 0}
@@ -1084,7 +1095,10 @@ func TestFilterEndpointByTransaction(t *testing.T) {
 func TestCommitPods(t *testing.T) {
 	vals := gce.DefaultTestClusterValues()
 	vals.SubnetworkURL = defaultTestSubnetURL
-	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(vals)), negtypes.VmIpPortEndpointType, false)
+	_, transactionSyncer, err := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(vals)), negtypes.VmIpPortEndpointType, false)
+	if err != nil {
+		t.Fatalf("failed to initialize transaction syncer: %v", err)
+	}
 	reflector := &testReflector{}
 	transactionSyncer.reflector = reflector
 
@@ -1304,7 +1318,10 @@ func TestCommitPods(t *testing.T) {
 func TestCommitPodsMSC(t *testing.T) {
 	vals := gce.DefaultTestClusterValues()
 	vals.SubnetworkURL = defaultTestSubnetURL
-	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(vals)), negtypes.VmIpPortEndpointType, false)
+	_, transactionSyncer, err := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(vals)), negtypes.VmIpPortEndpointType, false)
+	if err != nil {
+		t.Fatalf("failed to initialize transaction syncer: %v", err)
+	}
 	reflector := &testReflector{}
 	transactionSyncer.reflector = reflector
 
@@ -1614,7 +1631,10 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		_, syncer := newTestTransactionSyncer(fakeCloud, testNegType, tc.customName)
+		_, syncer, err := newTestTransactionSyncer(fakeCloud, testNegType, tc.customName)
+		if err != nil {
+			t.Fatalf("failed to initialize transaction syncer: %v", err)
+		}
 		negClient := syncer.svcNegClient
 		t.Run(tc.desc, func(t *testing.T) {
 			// fakeZoneGetter will list 3 zones for VM_IP_PORT NEGs.
@@ -1802,9 +1822,9 @@ func TestEnsureNetworkEndpointGroupsMSC(t *testing.T) {
 	}{
 		{
 			desc:               "NodeTopology CR doesn't exist",
-			expectError:        true,
+			expectError:        false,
 			negDesc:            negDesc,
-			expectNeedToUpdate: false,
+			expectNeedToUpdate: true,
 		},
 		{
 			desc:               "NodeTopology CR only contains default subnet",
@@ -1852,7 +1872,10 @@ func TestEnsureNetworkEndpointGroupsMSC(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetworkURL, testNetworkURL)
 
-			_, syncer := newTestTransactionSyncer(fakeCloud, testNegType, tc.customNEGName != "")
+			_, syncer, err := newTestTransactionSyncer(fakeCloud, testNegType, tc.customNEGName != "")
+			if err != nil {
+				t.Fatalf("failed to initialize transaction syncer: %v", err)
+			}
 			if tc.customNEGName != "" {
 				syncer.NegSyncerKey.NegName = tc.customNEGName
 			}
@@ -1978,7 +2001,10 @@ func TestUpdateInitStatusWithMultiSubnetCluster(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(defaultTestSubnetURL, testNetwork)
-			_, syncer := newTestTransactionSyncer(fakeCloud, testNegType, false)
+			_, syncer, err := newTestTransactionSyncer(fakeCloud, testNegType, false)
+			if err != nil {
+				t.Fatalf("failed to initialize transaction syncer: %v", err)
+			}
 			svcNegClient := syncer.svcNegClient
 
 			// Create initial NEGs, and get their Object Ref to be used in NEG CR.
@@ -2135,7 +2161,10 @@ func TestUpdateStatus(t *testing.T) {
 		for _, tc := range testCases {
 			t.Run(tc.desc, func(t *testing.T) {
 				fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(defaultTestSubnetURL, testNetwork)
-				_, syncer := newTestTransactionSyncer(fakeCloud, testNegType, false)
+				_, syncer, err := newTestTransactionSyncer(fakeCloud, testNegType, false)
+				if err != nil {
+					t.Fatalf("failed to initialize transaction syncer: %v", err)
+				}
 				svcNegClient := syncer.svcNegClient
 				syncer.needInit = false
 				if len(tc.negRefs) == 0 {
@@ -2157,7 +2186,7 @@ func TestUpdateStatus(t *testing.T) {
 				// Since timestamp gets truncated to the second, there is a chance that the timestamps will be the same as LastTransitionTime or LastSyncTime so use creation TS from an earlier date
 				creationTS := v1.Date(2020, time.July, 23, 0, 0, 0, 0, time.UTC)
 				origCR := createNegCR(testNegName, creationTS, tc.populateConditions[negv1beta1.Initialized], tc.populateConditions[negv1beta1.Synced], tc.negRefs)
-				origCR, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Create(context.Background(), origCR, v1.CreateOptions{})
+				origCR, err = svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Create(context.Background(), origCR, v1.CreateOptions{})
 				if err != nil {
 					t.Errorf("Failed to create test NEG CR: %s", err)
 				}
@@ -2238,7 +2267,10 @@ func TestIsZoneChange(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			_, syncer := newTestTransactionSyncer(fakeCloud, testNegType, false)
+			_, syncer, err := newTestTransactionSyncer(fakeCloud, testNegType, false)
+			if err != nil {
+				t.Fatalf("failed to initialize transaction syncer: %v", err)
+			}
 			fakeZoneGetter := syncer.zoneGetter
 			origZones, err := fakeZoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(syncer.EpCalculatorMode), klog.TODO())
 			if err != nil {
@@ -2330,7 +2362,10 @@ func TestIsZoneChange(t *testing.T) {
 func TestUnknownNodes(t *testing.T) {
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
-	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter: %v", err)
+	}
 	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
 	testSubnetwork := defaultTestSubnetURL
 	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
@@ -2384,7 +2419,10 @@ func TestUnknownNodes(t *testing.T) {
 		},
 	}
 
-	_, s := newTestTransactionSyncer(fakeCloud, negtypes.VmIpPortEndpointType, false)
+	_, s, err := newTestTransactionSyncer(fakeCloud, negtypes.VmIpPortEndpointType, false)
+	if err != nil {
+		t.Fatalf("failed to initialize transaction syncer: %v", err)
+	}
 	s.needInit = false
 
 	for _, eps := range testEndpointSlices {
@@ -2394,7 +2432,7 @@ func TestUnknownNodes(t *testing.T) {
 	// mark syncer as started without starting the syncer routine
 	(s.syncer.(*syncer)).stopped = false
 
-	err := s.syncInternal()
+	err = s.syncInternal()
 	if err == nil {
 		t.Errorf("syncInternal returned nil, expected an error")
 	}
@@ -2426,10 +2464,11 @@ func TestUnknownNodes(t *testing.T) {
 func TestEnableDegradedMode(t *testing.T) {
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
-	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
-	vals := gce.DefaultTestClusterValues()
-	vals.SubnetworkURL = defaultTestSubnetURL
-	fakeGCE := gce.NewFakeGCECloud(vals)
+	zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), test.DefaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter: %v", err)
+	}
+	fakeGCE := gce.NewFakeGCECloud(test.DefaultTestClusterValues())
 	negtypes.MockNetworkEndpointAPIs(fakeGCE)
 	fakeCloud := negtypes.NewAdapter(fakeGCE)
 	mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
@@ -2663,7 +2702,10 @@ func TestEnableDegradedMode(t *testing.T) {
 					NetworkEndpointGroups: objRefs,
 				},
 			}
-			_, s := newTestTransactionSyncer(fakeCloud, negtypes.VmIpPortEndpointType, false)
+			_, s, err := newTestTransactionSyncer(fakeCloud, negtypes.VmIpPortEndpointType, false)
+			if err != nil {
+				t.Fatalf("failed to initialize transaction syncer: %v", err)
+			}
 			s.NegSyncerKey.NegName = tc.negName
 			s.needInit = false
 			addPodsToLister(s.podLister, getDefaultEndpointSlices())
@@ -2719,10 +2761,7 @@ func TestEnableDegradedMode(t *testing.T) {
 				if !reflect.DeepEqual(tc.expectedEndpoints, out) {
 					return false, nil
 				}
-				s.syncLock.Lock()
-				errorState := s.inErrorState()
-				s.syncLock.Unlock()
-				if errorState != tc.expectedInErrorState {
+				if getErrorState(s) != tc.expectedInErrorState {
 					return false, nil
 				}
 				return true, nil
@@ -2732,6 +2771,13 @@ func TestEnableDegradedMode(t *testing.T) {
 			}
 		})
 	}
+}
+
+func getErrorState(s *transactionSyncer) bool {
+	s.syncLock.Lock()
+	errorState := s.inErrorState()
+	s.syncLock.Unlock()
+	return errorState
 }
 
 func TestCheckEndpointBatchErr(t *testing.T) {
@@ -3031,9 +3077,7 @@ func TestCollectLabelStats(t *testing.T) {
 
 func TestGetNonDefaultSubnetNEGName(t *testing.T) {
 	t.Parallel()
-	vals := gce.DefaultTestClusterValues()
-	vals.SubnetworkURL = defaultTestSubnetURL
-	fakeGCE := gce.NewFakeGCECloud(vals)
+	fakeGCE := gce.NewFakeGCECloud(test.DefaultTestClusterValues())
 	negtypes.MockNetworkEndpointAPIs(fakeGCE)
 	fakeCloud := negtypes.NewAdapter(fakeGCE)
 	testNegTypes := []negtypes.NetworkEndpointType{
@@ -3074,7 +3118,10 @@ func TestGetNonDefaultSubnetNEGName(t *testing.T) {
 	for _, testNegType := range testNegTypes {
 		for _, tc := range testCases {
 			t.Run(tc.desc, func(t *testing.T) {
-				_, syncer := newTestTransactionSyncer(fakeCloud, testNegType, tc.customNEGName != "")
+				_, syncer, err := newTestTransactionSyncer(fakeCloud, testNegType, tc.customNEGName != "")
+				if err != nil {
+					t.Fatalf("failed to initialize transaction syncer: %v", err)
+				}
 				if tc.customNEGName != "" {
 					syncer.NegSyncerKey.NegName = tc.customNEGName
 				}
@@ -3109,7 +3156,7 @@ func TestGetNonDefaultSubnetNEGName(t *testing.T) {
 	}
 }
 
-func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negType negtypes.NetworkEndpointType, customName bool) (negtypes.NegSyncer, *transactionSyncer) {
+func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negType negtypes.NetworkEndpointType, customName bool) (negtypes.NegSyncer, *transactionSyncer, error) {
 	testContext := negtypes.NewTestContext()
 	svcPort := negtypes.NegSyncerKey{
 		Namespace: testServiceNamespace,
@@ -3136,7 +3183,10 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 	reflector := &readiness.NoopReflector{}
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
-	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	fakeZoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to initialize zone getter: %v", err)
+	}
 
 	negNamer := testContext.NegNamer
 	if svcPort.NegType == negtypes.VmIpEndpointType {
@@ -3153,7 +3203,7 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 		testContext.SvcNegInformer.GetIndexer(),
 		reflector,
 		GetEndpointsCalculator(testContext.PodInformer.GetIndexer(), testContext.NodeInformer.GetIndexer(), testContext.ServiceInformer.GetIndexer(),
-			fakeZoneGetter, svcPort, mode, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics(), &network.NetworkInfo{IsDefault: true, SubnetworkURL: defaultTestSubnetURL}, negtypes.L4InternalLB),
+			fakeZoneGetter, svcPort, mode, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics(), &network.NetworkInfo{IsDefault: true, SubnetworkURL: test.DefaultTestSubnetURL}, negtypes.L4InternalLB),
 		string(kubeSystemUID),
 		testContext.SvcNegClient,
 		metricscollector.FakeSyncerMetrics(),
@@ -3169,7 +3219,7 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 		endpointslices.EndpointSlicesByServiceIndex: endpointslices.EndpointSlicesByServiceFunc,
 	}
 	transactionSyncer.endpointSliceLister.AddIndexers(indexers)
-	return negsyncer, transactionSyncer
+	return negsyncer, transactionSyncer, nil
 }
 
 func generateTransaction(table networkEndpointTransactionTable, entry transactionEntry, initialIp net.IP, num int, instance string, targetPort string) {

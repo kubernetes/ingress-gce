@@ -272,24 +272,21 @@ func (s *transactionSyncer) syncInternalImpl() error {
 		s.logger.Error(err, "Errored getting default subnet from NetworkInfo when retrieving existing endpoints")
 		return err
 	}
-	subnetToNegMapping := map[string]string{defaultSubnet: s.NegSyncerKey.NegName}
-	if flags.F.EnableMultiSubnetClusterPhase1 {
-		subnetConfigs, err := s.zoneGetter.ListSubnets(s.logger)
+
+	subnetToNegMapping := map[string]string{}
+	subnetConfigs := s.zoneGetter.ListSubnets(s.logger)
+	for _, subnetConfig := range subnetConfigs {
+		// negs in default subnet have a different naming scheme from other subnets
+		if subnetConfig.Name == defaultSubnet {
+			subnetToNegMapping[defaultSubnet] = s.NegSyncerKey.NegName
+			continue
+		}
+		nonDefaultNegName, err := s.getNonDefaultSubnetNEGName(subnetConfig.Name)
 		if err != nil {
-			s.logger.Error(err, "Errored when listing subnets from zoneGetter")
+			s.logger.Error(err, "Errored when getting NEG name from non-default subnets when retrieving existing endpoints")
 			return err
 		}
-		for _, subnetConfig := range subnetConfigs {
-			if subnetConfig.Name == defaultSubnet {
-				continue
-			}
-			nonDefaultNegName, err := s.getNonDefaultSubnetNEGName(subnetConfig.Name)
-			if err != nil {
-				s.logger.Error(err, "Errored when getting NEG name from non-default subnets when retrieving existing endpoints")
-				return err
-			}
-			subnetToNegMapping[subnetConfig.Name] = nonDefaultNegName
-		}
+		subnetToNegMapping[subnetConfig.Name] = nonDefaultNegName
 	}
 
 	currentMap, currentPodLabelMap, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode(), s.enableDualStackNEG, s.logger)
@@ -472,13 +469,8 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 		// This is the non-multi-networking case. Evaluate all subnets using the
 		// zoneGetter.
 
-		var err error
 		// List all existing subnets from the cluster.
-		subnetConfigs, err = s.zoneGetter.ListSubnets(s.logger)
-		if err != nil {
-			s.logger.Error(err, "Failed to list subnets from zoneGetter")
-			return err
-		}
+		subnetConfigs = s.zoneGetter.ListSubnets(s.logger)
 	} else {
 		// This is the multi-networking case where the VPC under consideration
 		// is not the default. Use the pre configured subnet from the

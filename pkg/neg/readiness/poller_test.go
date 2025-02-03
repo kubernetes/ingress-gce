@@ -67,17 +67,23 @@ func (p *testPatcher) Eval(t *testing.T, pod string, negKey, bsKey *meta.Key) {
 	}
 }
 
-func newFakePoller() *poller {
-	reflector := newTestReadinessReflector(negtypes.NewTestContext(), false)
+func newFakePoller() (*poller, error) {
+	reflector, err := newTestReadinessReflector(negtypes.NewTestContext(), false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize reflector: %s", err)
+	}
 	poller := reflector.poller
 	poller.patcher = &testPatcher{}
-	return poller
+	return poller, nil
 }
 
 func TestPollerEndpointRegistrationAndScanForWork(t *testing.T) {
 	t.Parallel()
 
-	poller := newFakePoller()
+	poller, err := newFakePoller()
+	if err != nil {
+		t.Fatalf("failed to create fake poller")
+	}
 	podLister := poller.podLister
 	fakeLookup := poller.lookup.(*fakeLookUp)
 	namespace := "ns"
@@ -353,7 +359,10 @@ func TestPollerEndpointRegistrationAndScanForWork(t *testing.T) {
 func TestPoll(t *testing.T) {
 	t.Parallel()
 
-	poller := newFakePoller()
+	poller, err := newFakePoller()
+	if err != nil {
+		t.Fatalf("failed to create fake poller")
+	}
 	fakeClock := clocktesting.NewFakeClock(time.Now())
 	poller.clock = fakeClock
 	patcherTester := poller.patcher.(*testPatcher)
@@ -553,7 +562,10 @@ func TestPoll(t *testing.T) {
 
 func TestProcessHealthStatus_shouldNotCrashWhenMissingKeyFromPollMap(t *testing.T) {
 	t.Parallel()
-	poller := newFakePoller()
+	poller, err := newFakePoller()
+	if err != nil {
+		t.Fatalf("failed to create fake poller")
+	}
 
 	// key was not in pollMap
 	key := negMeta{
@@ -693,7 +705,10 @@ func TestProcessHealthStatus_dualStackNEGs(t *testing.T) {
 			// Set common fields shared by all input values in testCases.
 			tc.healthStatus.Healths[0].BackendService = &composite.BackendServiceReference{BackendService: backendServiceURL}
 
-			poller := newFakePoller()
+			poller, err := newFakePoller()
+			if err != nil {
+				t.Fatalf("failed to create fake poller")
+			}
 			poller.pollMap[neg] = &pollTarget{
 				endpointMap: tc.endpointPodMap,
 				polling:     true,

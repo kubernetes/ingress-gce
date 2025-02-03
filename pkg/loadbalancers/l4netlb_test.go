@@ -951,7 +951,7 @@ func TestDualStackNetLBStaticIPAnnotation(t *testing.T) {
 func mustSetupNetLBTestHandler(t *testing.T, svc *v1.Service, nodeNames []string) *L4NetLB {
 	t.Helper()
 
-	vals := gce.DefaultTestClusterValues()
+	vals := test.DefaultTestClusterValues()
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 	fakeGCE := getFakeGCECloud(vals)
 
@@ -970,7 +970,7 @@ func mustSetupNetLBTestHandler(t *testing.T, svc *v1.Service, nodeNames []string
 		t.Fatalf("unexpected error when adding nodes %v", err)
 	}
 
-	// Create cluster subnet. Mock GCE uses subnet with empty string name.
+	// Create cluster subnet. Mock GCE uses test.DefaultSubnetURL.
 	test.MustCreateDualStackClusterSubnet(t, l4NetLB.cloud, subnetExternalIPv6AccessType)
 	return l4NetLB
 }

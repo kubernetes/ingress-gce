@@ -843,7 +843,7 @@ func newServiceController(t *testing.T, fakeGCE *gce.Cloud) *L4Controller {
 	kubeClient := fake.NewSimpleClientset()
 	svcNegClient := svcnegclient.NewSimpleClientset()
 
-	vals := gce.DefaultTestClusterValues()
+	vals := test.DefaultTestClusterValues()
 	namer := namer.NewNamer(clusterUID, "", klog.TODO())
 
 	stopCh := make(chan struct{})
@@ -852,8 +852,14 @@ func newServiceController(t *testing.T, fakeGCE *gce.Cloud) *L4Controller {
 		ResyncPeriod: 1 * time.Minute,
 		NumL4Workers: 5,
 	}
-	ctx := context.NewControllerContext(kubeClient, nil, nil, nil, svcNegClient, nil, nil, nil, kubeClient /*kube client to be used for events*/, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
-	ctx.ZoneGetter = zonegetter.NewFakeZoneGetter(ctx.NodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	ctx, err := context.NewControllerContext(kubeClient, nil, nil, nil, svcNegClient, nil, nil, nil, kubeClient /*kube client to be used for events*/, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
+	if err != nil {
+		t.Fatalf("failed to initialize controller context: %v", err)
+	}
+	ctx.ZoneGetter, err = zonegetter.NewFakeZoneGetter(ctx.NodeInformer, zonegetter.FakeNodeTopologyInformer(), test.DefaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter: %v", err)
+	}
 	// Add some nodes so that NEG linker kicks in during ILB creation.
 	nodes, err := test.CreateAndInsertNodes(ctx.Cloud, []string{"instance-1"}, vals.ZoneName)
 	if err != nil {
@@ -868,21 +874,21 @@ func newServiceController(t *testing.T, fakeGCE *gce.Cloud) *L4Controller {
 }
 
 func newFakeGCE() *gce.Cloud {
-	vals := gce.DefaultTestClusterValues()
+	vals := test.DefaultTestClusterValues()
 	fakeGCE := gce.NewFakeGCECloud(vals)
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = loadbalancers.InsertForwardingRuleHook
 	return fakeGCE
 }
 
 func newFakeGCEWithInsertError() *gce.Cloud {
-	vals := gce.DefaultTestClusterValues()
+	vals := test.DefaultTestClusterValues()
 	fakeGCE := gce.NewFakeGCECloud(vals)
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = mock.InsertForwardingRulesInternalErrHook
 	return fakeGCE
 }
 
 func newFakeGCEWithUserInsertError() *gce.Cloud {
-	vals := gce.DefaultTestClusterValues()
+	vals := test.DefaultTestClusterValues()
 	fakeGCE := gce.NewFakeGCECloud(vals)
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = test.InsertForwardingRuleErrorHook(&googleapi.Error{Code: http.StatusConflict, Message: "IP_IN_USE_BY_ANOTHER_RESOURCE - IP '1.1.1.1' is already being used by another resource."})
 	return fakeGCE

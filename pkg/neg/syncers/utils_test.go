@@ -495,7 +495,11 @@ func TestToZoneNetworkEndpointMap(t *testing.T) {
 	t.Parallel()
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
-	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter: %v", err)
+	}
+
 	podLister := negtypes.NewTestContext().PodInformer.GetIndexer()
 	testEndpointSlice := getDefaultEndpointSlices()
 	addPodsToLister(podLister, testEndpointSlice)
@@ -749,7 +753,10 @@ func TestIpsForPod(t *testing.T) {
 func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
-	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter: %v", err)
+	}
 	negCloud := negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
 	defaultSubnetNegName := "test-neg-name"
 	nonDefaultSubnetNegName := "non-default-neg-name"
@@ -1732,7 +1739,10 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
-	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	fakeZoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter: %v", err)
+	}
 	testContext := negtypes.NewTestContext()
 	podLister := testContext.PodInformer.GetIndexer()
 	addPodsToLister(podLister, getDefaultEndpointSlices())
@@ -1962,7 +1972,10 @@ func TestValidateEndpointFields(t *testing.T) {
 	addPodsToLister(podLister, getDefaultEndpointSlices())
 	nodeLister := testContext.NodeInformer.GetIndexer()
 	zonegetter.PopulateFakeNodeInformer(testContext.NodeInformer, false)
-	fakeZoneGetter := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, testContext.NodeTopologyInformer, defaultTestSubnetURL, false)
+	fakeZoneGetter, err := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, testContext.NodeTopologyInformer, defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter: %v", err)
+	}
 
 	// Add the pod that corresponds to empty zone instance.
 	podLister.Add(&v1.Pod{
@@ -2598,7 +2611,10 @@ func TestValidateEndpointFieldsMultipleSubnets(t *testing.T) {
 	addPodsToLister(podLister, getDefaultEndpointSlices())
 	nodeLister := testContext.NodeInformer.GetIndexer()
 	zonegetter.PopulateFakeNodeInformer(testContext.NodeInformer, true)
-	fakeZoneGetter := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, testContext.NodeTopologyInformer, defaultTestSubnetURL, true)
+	fakeZoneGetter, err := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, testContext.NodeTopologyInformer, defaultTestSubnetURL, true)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter: %v", err)
+	}
 
 	// Add defaultSubnetLabelPod that corresponds to defaultSubnetLabelInstance.
 	podLister.Add(&v1.Pod{

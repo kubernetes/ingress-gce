@@ -103,7 +103,11 @@ func StartNEGController(
 		return synced
 	}
 
-	zoneGetter := zonegetter.NewZoneGetter(nodeInformer, providerConfigFilteredNodeTopologyInformer, cloud.SubnetworkURL())
+	zoneGetter, err := zonegetter.NewZoneGetter(nodeInformer, providerConfigFilteredNodeTopologyInformer, cloud.SubnetworkURL())
+	if err != nil {
+		logger.Error(err, "failed to initialize zone getter")
+		return nil, fmt.Errorf("failed to initialize zonegetter: %v", err)
+	}
 
 	// Create a channel to stop the controller for this specific provider config.
 	providerConfigStopCh := make(chan struct{})

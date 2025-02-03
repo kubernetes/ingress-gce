@@ -197,7 +197,10 @@ func TestServiceAttachmentCreation(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			controller := newTestController("ZONAL")
+			controller, err := newTestController("ZONAL")
+			if err != nil {
+				t.Fatalf("failed to initialize the controller: %v", err)
+			}
 			fakeCloud := controller.cloud
 
 			var frName string
@@ -277,7 +280,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 			controller.saClient.NetworkingV1().ServiceAttachments(testNamespace).Create(context2.TODO(), saCR, metav1.CreateOptions{})
 			syncServiceAttachmentLister(controller)
 
-			err := controller.processServiceAttachment(SvcAttachmentKeyFunc(testNamespace, saName))
+			err = controller.processServiceAttachment(SvcAttachmentKeyFunc(testNamespace, saName))
 			if tc.expectErr && err == nil {
 				t.Errorf("expected an error when process service attachment")
 			} else if !tc.expectErr && err != nil {
@@ -353,7 +356,10 @@ func TestServiceAttachmentConsumers(t *testing.T) {
 	svcName := "my-service"
 	saUID := "service-attachment-uid"
 	frIPAddr := "1.2.3.4"
-	controller := newTestController("ZONAL")
+	controller, err := newTestController("ZONAL")
+	if err != nil {
+		t.Fatalf("failed to initialize the controller: %v", err)
+	}
 	gceSAName := controller.saNamer.ServiceAttachment(testNamespace, saName, saUID)
 	_, frName, err := createSvc(controller, svcName, "svc-uid", frIPAddr, annotations.TCPForwardingRuleKey)
 	if err != nil {
@@ -479,7 +485,11 @@ func TestServiceAttachmentUpdate(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.desc, func(t *testing.T) {
-			controller := newTestController("REGIONAL")
+			controller, err := newTestController("REGIONAL")
+			if err != nil {
+				t.Fatalf("failed to initialize the controller: %v", err)
+			}
+
 			gceSAName := controller.saNamer.ServiceAttachment(testNamespace, saName, saUID)
 			_, frName, err := createSvc(controller, svcName, "svc-uid", frIPAddr, annotations.TCPForwardingRuleKey)
 			if err != nil {
@@ -728,7 +738,10 @@ func TestServiceAttachmentGarbageCollection(t *testing.T) {
 	for _, tc := range testcases {
 		t.Run(tc.desc, func(t *testing.T) {
 
-			controller := newTestController("ZONAL")
+			controller, err := newTestController("ZONAL")
+			if err != nil {
+				t.Fatalf("failed to initialize the controller: %v", err)
+			}
 
 			if _, err := createNatSubnet(controller.cloud, "my-subnet"); err != nil {
 				t.Errorf("failed to create subnet: %s", err)
@@ -1026,7 +1039,10 @@ func TestGetSubnetURLs(t *testing.T) {
 	}
 	for _, tc := range testcases {
 		t.Run(tc.desc, func(t *testing.T) {
-			controller := newTestController("ZONAL")
+			controller, err := newTestController("ZONAL")
+			if err != nil {
+				t.Fatalf("failed to initialize the controller: %v", err)
+			}
 
 			if tc.createSubnet {
 				_, err := createNatSubnet(controller.cloud, tc.subnet)
@@ -1056,9 +1072,9 @@ func TestGetSubnetURLs(t *testing.T) {
 }
 
 // newTestController returns a test psc controller
-func newTestController(clusterType string) *Controller {
+func newTestController(clusterType string) (*Controller, error) {
 	kubeClient := fake.NewSimpleClientset()
-	gceClient := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	gceClient := gce.NewFakeGCECloud(test.DefaultTestClusterValues())
 
 	fakeGCE := gceClient.Compute().(*cloud.MockGCE)
 	mockSA := fakeGCE.ServiceAttachments().(*cloud.MockServiceAttachments)
@@ -1097,9 +1113,12 @@ func newTestController(clusterType string) *Controller {
 
 	flags.F.GKEClusterName = ClusterName
 	flags.F.GKEClusterType = clusterType
-	ctx := context.NewControllerContext(kubeClient, nil, nil, nil, nil, saClient, nil, nil, kubeClient /*kube client to be used for events*/, gceClient, resourceNamer, kubeSystemUID, ctxConfig, klog.TODO())
+	ctx, err := context.NewControllerContext(kubeClient, nil, nil, nil, nil, saClient, nil, nil, kubeClient /*kube client to be used for events*/, gceClient, resourceNamer, kubeSystemUID, ctxConfig, klog.TODO())
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize controller context")
+	}
 
-	return NewController(ctx, make(<-chan struct{}), klog.TODO())
+	return NewController(ctx, make(<-chan struct{}), klog.TODO()), nil
 }
 
 // createSvc creates a test K8s Service resource and adds it to the controller's svcAttachmentLister. If forwardingRuleKey is empty, no annotations will be added to the service.
