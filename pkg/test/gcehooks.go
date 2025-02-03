@@ -26,13 +26,15 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
+	"k8s.io/cloud-provider-gcp/providers/gce"
 )
 
 const (
 	FwIPAddress = "10.0.0.1"
 	// backend-service url, was created based on project and region set in test function DefaultTestClusterValues().
 	// We need whole url for forwarding rule validation.
-	bsUrl = "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/backendServices/k8s2-axyqjz2d-default-netbtest-hgray14h"
+	bsUrl                = "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/backendServices/k8s2-axyqjz2d-default-netbtest-hgray14h"
+	DefaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/default"
 )
 
 func ListErrorHook(ctx context.Context, zone string, fl *filter.F, m *cloud.MockInstanceGroups, options ...cloud.Option) (bool, []*compute.InstanceGroup, error) {
@@ -127,4 +129,10 @@ func InsertAddressNetworkErrorHook(ctx context.Context, key *meta.Key, obj *comp
 
 func InsertAddressNotAllocatedToProjectErrorHook(ctx context.Context, key *meta.Key, obj *compute.Address, m *cloud.MockAddresses, options ...cloud.Option) (bool, error) {
 	return true, &googleapi.Error{Code: http.StatusBadRequest, Message: "Specified IP address is not allocated to the project or does not belong to the specified scope."}
+}
+
+func DefaultTestClusterValues() gce.TestClusterValues {
+	values := gce.DefaultTestClusterValues()
+	values.SubnetworkURL = DefaultTestSubnetURL
+	return values
 }

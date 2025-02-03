@@ -79,11 +79,11 @@ func StartNEGController(
 		return nil, err
 	}
 
-	zoneGetter := zonegetter.NewZoneGetter(
-		informers.nodeInformer,
-		informers.providerConfigFilteredNodeTopologyInformer,
-		cloud.SubnetworkURL(),
-	)
+	zoneGetter, err := zonegetter.NewZoneGetter(informers.nodeInformer, informers.providerConfigFilteredNodeTopologyInformer, cloud.SubnetworkURL())
+	if err != nil {
+		logger.Error(err, "failed to initialize zone getter")
+		return nil, fmt.Errorf("failed to initialize zonegetter: %v", err)
+	}
 
 	negController := createNEGController(
 		kubeClient,

@@ -85,11 +85,14 @@ const (
 	defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/mock-project/regions/test-region/subnetworks/default"
 )
 
-func NewTestSyncerManager(kubeClient kubernetes.Interface) (*syncerManager, *gce.Cloud, *negtypes.TestContext) {
+func NewTestSyncerManager(kubeClient kubernetes.Interface) (*syncerManager, *gce.Cloud, *negtypes.TestContext, error) {
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
-	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	manager := newSyncerManager(
 		testContext.NegNamer,
 		testContext.L4Namer,
@@ -110,13 +113,16 @@ func NewTestSyncerManager(kubeClient kubernetes.Interface) (*syncerManager, *gce
 		labels.PodLabelPropagationConfig{},
 		klog.TODO(),
 	)
-	return manager, testContext.Cloud, testContext
+	return manager, testContext.Cloud, testContext, nil
 }
 
 func TestEnsureAndStopSyncer(t *testing.T) {
 	t.Parallel()
 
-	manager, _, _ := NewTestSyncerManager(fake.NewSimpleClientset())
+	manager, _, _, err := NewTestSyncerManager(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("failed to create test syncer manager: %v", err)
+	}
 	namer := manager.namer
 
 	svcName := "n1"
@@ -338,7 +344,10 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 func TestGarbageCollectionSyncer(t *testing.T) {
 	t.Parallel()
 
-	manager, _, _ := NewTestSyncerManager(fake.NewSimpleClientset())
+	manager, _, _, err := NewTestSyncerManager(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("failed to create test syncer manager: %v", err)
+	}
 	namer := manager.namer
 	namespace := testServiceNamespace
 	name := testServiceName
@@ -383,7 +392,10 @@ func TestGarbageCollectionSyncer(t *testing.T) {
 }
 
 func TestEnsureSyncersWithMissingSyncer(t *testing.T) {
-	manager, _, _ := NewTestSyncerManager(fake.NewSimpleClientset())
+	manager, _, _, err := NewTestSyncerManager(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("failed to create test syncer manager: %v", err)
+	}
 	namer := manager.namer
 	namespace := testServiceNamespace
 	name := testServiceName
@@ -420,7 +432,10 @@ func TestGarbageCollectionNEG(t *testing.T) {
 	if _, err := kubeClient.CoreV1().Endpoints(testServiceNamespace).Create(context2.TODO(), getDefaultEndpoint(), metav1.CreateOptions{}); err != nil {
 		t.Fatalf("Failed to create endpoint: %v", err)
 	}
-	manager, _, _ := NewTestSyncerManager(kubeClient)
+	manager, _, _, err := NewTestSyncerManager(kubeClient)
+	if err != nil {
+		t.Fatalf("failed to create test syncer manager: %v", err)
+	}
 	svcPort := int32(80)
 	ports := make(types.PortInfoMap)
 	manager.serviceLister.Add(&v1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: testServiceNamespace, Name: testServiceName}})
@@ -476,7 +491,10 @@ func TestReadinessGateEnabledNegs(t *testing.T) {
 	t.Parallel()
 
 	kubeClient := fake.NewSimpleClientset()
-	manager, _, _ := NewTestSyncerManager(kubeClient)
+	manager, _, _, err := NewTestSyncerManager(kubeClient)
+	if err != nil {
+		t.Fatalf("failed to create test syncer manager: %v", err)
+	}
 	populateSyncerManager(manager, kubeClient)
 
 	testCases := []struct {
@@ -560,7 +578,10 @@ func TestReadinessGateEnabled(t *testing.T) {
 	t.Parallel()
 
 	kubeClient := fake.NewSimpleClientset()
-	manager, _, _ := NewTestSyncerManager(kubeClient)
+	manager, _, _, err := NewTestSyncerManager(kubeClient)
+	if err != nil {
+		t.Fatalf("failed to create test syncer manager: %v", err)
+	}
 	populateSyncerManager(manager, kubeClient)
 
 	testCases := []struct {
@@ -693,7 +714,10 @@ func TestFilterCommonPorts(t *testing.T) {
 	t.Parallel()
 	namer := namer_util.NewNamer(ClusterID, "", klog.TODO())
 	kubeClient := fake.NewSimpleClientset()
-	manager, _, _ := NewTestSyncerManager(kubeClient)
+	manager, _, _, err := NewTestSyncerManager(kubeClient)
+	if err != nil {
+		t.Fatalf("failed to create test syncer manager: %v", err)
+	}
 
 	for _, tc := range []struct {
 		desc     string
@@ -762,7 +786,10 @@ func TestFilterCommonPorts(t *testing.T) {
 
 func TestNegCRCreations(t *testing.T) {
 	t.Parallel()
-	manager, _, _ := NewTestSyncerManager(fake.NewSimpleClientset())
+	manager, _, _, err := NewTestSyncerManager(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("failed to create test syncer manager: %v", err)
+	}
 	svcNegClient := manager.svcNegClient
 	namer := manager.namer
 
@@ -984,7 +1011,10 @@ func TestNegCRDuplicateCreations(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			manager, _, _ := NewTestSyncerManager(fake.NewSimpleClientset())
+			manager, _, _, err := NewTestSyncerManager(fake.NewSimpleClientset())
+			if err != nil {
+				t.Fatalf("failed to create test syncer manager: %v", err)
+			}
 			svcNegClient := manager.svcNegClient
 
 			namer := manager.namer
@@ -1031,7 +1061,7 @@ func TestNegCRDuplicateCreations(t *testing.T) {
 			portInfoMap := negtypes.NewPortInfoMap(namespace, svc1.Name, types.NewSvcPortTupleSet(svcTuple1), namer, false, map[negtypes.SvcPortTuple]string{svcTuple1: customNegName}, defaultNetwork)
 
 			rebuildSvcNegCache(t, manager, manager.svcNegClient, namespace)
-			_, _, err := manager.EnsureSyncers(namespace, svc1.Name, portInfoMap)
+			_, _, err = manager.EnsureSyncers(namespace, svc1.Name, portInfoMap)
 			if tc.expectErr && err == nil {
 				t.Errorf("expected error when ensuring syncer %s/%s %+v", namespace, svc1.Name, portInfoMap)
 			} else if !tc.expectErr && err != nil {
@@ -1109,7 +1139,10 @@ func TestNegCRDeletions(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			manager, _, _ := NewTestSyncerManager(fake.NewSimpleClientset())
+			manager, _, _, err := NewTestSyncerManager(fake.NewSimpleClientset())
+			if err != nil {
+				t.Fatalf("failed to create test syncer manager: %v", err)
+			}
 			svcNegClient := manager.svcNegClient
 
 			if err := manager.serviceLister.Add(svc); err != nil {
@@ -1373,7 +1406,10 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 				for _, networkEndpointType := range []negtypes.NetworkEndpointType{negtypes.VmIpPortEndpointType, negtypes.NonGCPPrivateEndpointType, negtypes.VmIpEndpointType} {
 
 					kubeClient := fake.NewSimpleClientset()
-					manager, testCloud, _ := NewTestSyncerManager(kubeClient)
+					manager, testCloud, _, err := NewTestSyncerManager(kubeClient)
+					if err != nil {
+						t.Fatalf("failed to create test syncer manager: %v", err)
+					}
 					svcNegClient := manager.svcNegClient
 
 					if tc.negCrGCError != nil {
@@ -1452,7 +1488,7 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 						}
 					}
 
-					err := manager.GC()
+					err = manager.GC()
 					if !tc.expectErr && err != nil {
 						t.Fatalf("failed to GC: %v", err)
 					}
@@ -1565,7 +1601,10 @@ func TestSyncNodesConditions(t *testing.T) {
 				return false
 			}
 
-			manager, _, _ := NewTestSyncerManager(fake.NewSimpleClientset())
+			manager, _, _, err := NewTestSyncerManager(fake.NewSimpleClientset())
+			if err != nil {
+				t.Fatalf("failed to create test syncer manager: %v", err)
+			}
 
 			syncer := &fakeSyncer{
 				isStopped: tc.syncerStopped,
@@ -1677,7 +1716,10 @@ func TestL4SyncerUpdates(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 
-			manager, _, testContext := NewTestSyncerManager(fake.NewSimpleClientset())
+			manager, _, testContext, err := NewTestSyncerManager(fake.NewSimpleClientset())
+			if err != nil {
+				t.Fatalf("failed to create test syncer manager: %v", err)
+			}
 			defer manager.ShutDown()
 
 			svcNamespace := "ns1"
@@ -1686,7 +1728,7 @@ func TestL4SyncerUpdates(t *testing.T) {
 
 			initialPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(svcNamespace, svcName, testContext.L4Namer, bool(tc.fromTrafficPolicy), defaultNetwork, tc.fromLBType)
 
-			_, _, err := manager.EnsureSyncers(svcNamespace, svcName, initialPortInfoMap)
+			_, _, err = manager.EnsureSyncers(svcNamespace, svcName, initialPortInfoMap)
 			if err != nil {
 				t.Fatalf("manager.EnsureSyncers() err: %v", err)
 			}

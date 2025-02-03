@@ -82,6 +82,9 @@ type ZoneGetter struct {
 	// The subnetURL of the cluster's default subnet.
 	defaultSubnetURL string
 
+	// The default subnet config
+	defaultSubnetConfig nodetopologyv1.SubnetConfig
+
 	// nodeTopologyHasSynced is a function that is evaluated every time to
 	// check if we can trust nodeTopology Informer.
 	nodeTopologyHasSynced func() bool
@@ -197,32 +200,29 @@ func (z *ZoneGetter) ListZones(filter Filter, logger klog.Logger) ([]string, err
 // NodeTopology CR.
 // If the CR does not exist or it is not ready, ListSubnets will return only the
 // default subnet.
-func (z *ZoneGetter) ListSubnets(logger klog.Logger) ([]nodetopologyv1.SubnetConfig, error) {
+func (z *ZoneGetter) ListSubnets(logger klog.Logger) []nodetopologyv1.SubnetConfig {
 	nodeTopologyCRName := flags.F.NodeTopologyCRName
 	nodeTopologySynced := z.nodeTopologyHasSynced()
 	if z.onlyIncludeDefaultSubnetNodes || !nodeTopologySynced {
 		logger.Info("Falling back to only using default subnet when listing subnets", "z.onlyIncludeDefaultSubnetNodes", z.onlyIncludeDefaultSubnetNodes, "nodeTopologySynced", nodeTopologySynced)
-
-		subnetConfig, err := nodetopology.SubnetConfigFromSubnetURL(z.defaultSubnetURL)
-		if err != nil {
-			return nil, err
-		}
-		return []nodetopologyv1.SubnetConfig{subnetConfig}, nil
+		return []nodetopologyv1.SubnetConfig{z.defaultSubnetConfig}
 	}
 
 	n, exists, err := z.nodeTopologyInformer.GetIndexer().GetByKey(nodeTopologyCRName)
 	if err != nil {
-		return nil, fmt.Errorf("error getting node topology CR %s from cache: %w", nodeTopologyCRName, err)
+		logger.Error(err, "Failed trying to get node topology CR in the store", "nodeTopologyCRName", nodeTopologyCRName)
+		return []nodetopologyv1.SubnetConfig{z.defaultSubnetConfig}
 	}
 	if !exists {
-		return nil, fmt.Errorf("node topology CR %s is not in store", nodeTopologyCRName)
+		logger.Info("Unable to find node topology CR in the store", "nodeTopologyCRName", nodeTopologyCRName)
+		return []nodetopologyv1.SubnetConfig{z.defaultSubnetConfig}
 	}
-
 	nodeTopologyCR, ok := n.(*nodetopologyv1.NodeTopology)
 	if !ok {
-		return nil, fmt.Errorf("failed to cast %v to node topology type", n)
+		logger.Error(err, "failed to cast topology CR to node topology type", "nodeTopologyCRName", nodeTopologyCRName)
+		return []nodetopologyv1.SubnetConfig{z.defaultSubnetConfig}
 	}
-	return nodeTopologyCR.Status.Subnets, nil
+	return nodeTopologyCR.Status.Subnets
 }
 
 // IsNodeSelectedByFilter checks if the node matches the node filter mode.
@@ -407,29 +407,42 @@ func NewNonGCPZoneGetter(zone string) *ZoneGetter {
 }
 
 // NewZoneGetter initialize a ZoneGetter in GCP mode.
-func NewZoneGetter(nodeInformer, nodeTopologyInformer cache.SharedIndexInformer, defaultSubnetURL string) *ZoneGetter {
+func NewZoneGetter(nodeInformer, nodeTopologyInformer cache.SharedIndexInformer, defaultSubnetURL string) (*ZoneGetter, error) {
+
+	subnetConfig, err := nodetopology.SubnetConfigFromSubnetURL(defaultSubnetURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate subnet config from default subnet url: %w", err)
+	}
+
 	return &ZoneGetter{
 		mode:                          GCP,
 		nodeLister:                    nodeInformer.GetIndexer(),
 		nodeTopologyInformer:          nodeTopologyInformer,
 		onlyIncludeDefaultSubnetNodes: flags.F.EnableMultiSubnetCluster && !flags.F.EnableMultiSubnetClusterPhase1,
 		defaultSubnetURL:              defaultSubnetURL,
+		defaultSubnetConfig:           subnetConfig,
 		nodeTopologyHasSynced: func() bool {
 			return nodeTopologyInformer != nil && nodeTopologyInformer.HasSynced()
 		},
-	}
+	}, nil
 }
 
 // NewFakeZoneGetter initialize a fake ZoneGetter in GCP mode to use in test.
-func NewFakeZoneGetter(nodeInformer, nodeTopologyInformer cache.SharedIndexInformer, defaultSubnetURL string, onlyIncludeDefaultSubnetNodes bool) *ZoneGetter {
+func NewFakeZoneGetter(nodeInformer, nodeTopologyInformer cache.SharedIndexInformer, defaultSubnetURL string, onlyIncludeDefaultSubnetNodes bool) (*ZoneGetter, error) {
+	subnetConfig, err := nodetopology.SubnetConfigFromSubnetURL(defaultSubnetURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate subnet config from default subnet url: %w", err)
+	}
+
 	return &ZoneGetter{
 		mode:                          GCP,
 		nodeLister:                    nodeInformer.GetIndexer(),
 		nodeTopologyInformer:          nodeTopologyInformer,
 		onlyIncludeDefaultSubnetNodes: onlyIncludeDefaultSubnetNodes,
 		defaultSubnetURL:              defaultSubnetURL,
+		defaultSubnetConfig:           subnetConfig,
 		nodeTopologyHasSynced: func() bool {
 			return nodeTopologyInformer != nil && nodeTopologyInformer.HasSynced()
 		},
-	}
+	}, nil
 }

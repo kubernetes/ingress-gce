@@ -42,7 +42,10 @@ import (
 // The L7 implementation is tested in TestToZoneNetworkEndpointMapUtil.
 func TestLocalGetEndpointSet(t *testing.T) {
 	nodeInformer := zonegetter.FakeNodeInformer()
-	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter: %v", err)
+	}
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
 	zonegetter.SetNodeTopologyHasSynced(zoneGetter, func() bool { return true })
 	defaultNetwork := network.NetworkInfo{IsDefault: true, K8sNetwork: "default", SubnetworkURL: defaultTestSubnetURL}
@@ -197,7 +200,10 @@ func nodeInterfacesAnnotation(t *testing.T, network, ip string) string {
 // TestClusterGetEndpointSet verifies the GetEndpointSet method implemented by the ClusterL4EndpointsCalculator.
 func TestClusterGetEndpointSet(t *testing.T) {
 	nodeInformer := zonegetter.FakeNodeInformer()
-	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter: %v", err)
+	}
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
 	zonegetter.SetNodeTopologyHasSynced(zoneGetter, func() bool { return true })
 	defaultNetwork := network.NetworkInfo{IsDefault: true, K8sNetwork: "default", SubnetworkURL: defaultTestSubnetURL}
@@ -399,10 +405,16 @@ func TestValidateEndpoints(t *testing.T) {
 	nodeLister := testContext.NodeInformer.GetIndexer()
 	serviceLister := testContext.ServiceInformer.GetIndexer()
 	zonegetter.PopulateFakeNodeInformer(testContext.NodeInformer, true)
-	zoneGetter := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	zoneGetter, err := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter: %v", err)
+	}
 	L7EndpointsCalculator := NewL7EndpointsCalculator(zoneGetter, podLister, nodeLister, serviceLister, svcPort, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics())
 
-	zoneGetterMSC := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, true)
+	zoneGetterMSC, err := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, true)
+	if err != nil {
+		t.Fatalf("failed to initialize msc zone getter: %v", err)
+	}
 	L7EndpointsCalculatorMSC := NewL7EndpointsCalculator(zoneGetterMSC, podLister, nodeLister, serviceLister, svcPort, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics())
 	L7EndpointsCalculatorMSC.enableMultiSubnetCluster = true
 	L4LocalEndpointCalculator := NewLocalL4EndpointsCalculator(listers.NewNodeLister(nodeLister), zoneGetter, fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace), klog.TODO(), &network.NetworkInfo{SubnetworkURL: defaultTestSubnetURL}, negtypes.L4InternalLB)
