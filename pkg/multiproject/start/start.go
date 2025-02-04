@@ -134,7 +134,8 @@ func Start(
 
 	informersFactory := informers.NewSharedInformerFactoryWithOptions(kubeClient, flags.F.ResyncPeriod)
 
-	providerConfigInformer := providerconfiginformers.NewSharedInformerFactory(providerConfigClient, flags.F.ResyncPeriod).Providerconfig().V1().ProviderConfigs().Informer()
+	providerConfigInformer := providerconfiginformers.NewSharedInformerFactory(providerConfigClient, flags.F.ResyncPeriod).Cloud().V1().ProviderConfigs().Informer()
+	go providerConfigInformer.Run(stopCh)
 
 	manager := manager.NewProviderConfigControllerManager(
 		kubeClient,
