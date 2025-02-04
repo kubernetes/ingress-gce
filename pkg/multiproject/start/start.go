@@ -29,6 +29,7 @@ import (
 
 const multiProjectLeaderElectionLockName = "ingress-gce-multi-project-lock"
 
+// StartWithLeaderElection starts the ProviderConfig controller with leader election.
 func StartWithLeaderElection(
 	ctx context.Context,
 	leaderElectKubeClient kubernetes.Interface,
@@ -101,6 +102,8 @@ func makeLeaderElectionConfig(
 	}, nil
 }
 
+// Start starts the ProviderConfig controller.
+// It builds required clients, context and starts the controller.
 func Start(
 	kubeConfig *rest.Config,
 	logger klog.Logger,

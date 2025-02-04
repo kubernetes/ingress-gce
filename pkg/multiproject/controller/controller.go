@@ -1,3 +1,4 @@
+// Package controller implements the ProviderConfig controller that starts and stops controllers for each ProviderConfig.
 package controller
 
 import (
@@ -18,11 +19,15 @@ const (
 	workersNum                   = 5
 )
 
+// ProviderConfigControllerManager implements the logic for starting and stopping controllers for each ProviderConfig.
 type ProviderConfigControllerManager interface {
 	StartControllersForProviderConfig(pc *providerconfig.ProviderConfig) error
 	StopControllersForProviderConfig(pc *providerconfig.ProviderConfig)
 }
 
+// ProviderConfigController is a controller that manages the ProviderConfig resource.
+// It is responsible for starting and stopping controllers for each ProviderConfig.
+// Currently, it only manages the NEG controller using the ProviderConfigControllerManager.
 type ProviderConfigController struct {
 	manager ProviderConfigControllerManager
 
