@@ -52,9 +52,9 @@ func (f *genericInformer) Lister() cache.GenericLister {
 // TODO extend this to unknown resources with a client pool
 func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource) (GenericInformer, error) {
 	switch resource {
-	// Group=providerconfig.gke.io, Version=v1
+	// Group=cloud.gke.io, Version=v1
 	case v1.SchemeGroupVersion.WithResource("providerconfigs"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Providerconfig().V1().ProviderConfigs().Informer()}, nil
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Cloud().V1().ProviderConfigs().Informer()}, nil
 
 	}
 

@@ -24,24 +24,24 @@ import (
 	discovery "k8s.io/client-go/discovery"
 	rest "k8s.io/client-go/rest"
 	flowcontrol "k8s.io/client-go/util/flowcontrol"
-	providerconfigv1 "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned/typed/providerconfig/v1"
+	cloudv1 "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned/typed/providerconfig/v1"
 )
 
 type Interface interface {
 	Discovery() discovery.DiscoveryInterface
-	ProviderconfigV1() providerconfigv1.ProviderconfigV1Interface
+	CloudV1() cloudv1.CloudV1Interface
 }
 
 // Clientset contains the clients for groups. Each group has exactly one
 // version included in a Clientset.
 type Clientset struct {
 	*discovery.DiscoveryClient
-	providerconfigV1 *providerconfigv1.ProviderconfigV1Client
+	cloudV1 *cloudv1.CloudV1Client
 }
 
-// ProviderconfigV1 retrieves the ProviderconfigV1Client
-func (c *Clientset) ProviderconfigV1() providerconfigv1.ProviderconfigV1Interface {
-	return c.providerconfigV1
+// CloudV1 retrieves the CloudV1Client
+func (c *Clientset) CloudV1() cloudv1.CloudV1Interface {
+	return c.cloudV1
 }
 
 // Discovery retrieves the DiscoveryClient
@@ -65,7 +65,7 @@ func NewForConfig(c *rest.Config) (*Clientset, error) {
 	}
 	var cs Clientset
 	var err error
-	cs.providerconfigV1, err = providerconfigv1.NewForConfig(&configShallowCopy)
+	cs.cloudV1, err = cloudv1.NewForConfig(&configShallowCopy)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +81,7 @@ func NewForConfig(c *rest.Config) (*Clientset, error) {
 // panics if there is an error in the config.
 func NewForConfigOrDie(c *rest.Config) *Clientset {
 	var cs Clientset
-	cs.providerconfigV1 = providerconfigv1.NewForConfigOrDie(c)
+	cs.cloudV1 = cloudv1.NewForConfigOrDie(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClientForConfigOrDie(c)
 	return &cs
@@ -90,7 +90,7 @@ func NewForConfigOrDie(c *rest.Config) *Clientset {
 // New creates a new Clientset for the given RESTClient.
 func New(c rest.Interface) *Clientset {
 	var cs Clientset
-	cs.providerconfigV1 = providerconfigv1.New(c)
+	cs.cloudV1 = cloudv1.New(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClient(c)
 	return &cs

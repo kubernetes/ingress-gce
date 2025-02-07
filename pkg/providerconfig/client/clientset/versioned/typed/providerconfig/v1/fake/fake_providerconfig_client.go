@@ -24,17 +24,17 @@ import (
 	v1 "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned/typed/providerconfig/v1"
 )
 
-type FakeProviderconfigV1 struct {
+type FakeCloudV1 struct {
 	*testing.Fake
 }
 
-func (c *FakeProviderconfigV1) ProviderConfigs(namespace string) v1.ProviderConfigInterface {
+func (c *FakeCloudV1) ProviderConfigs(namespace string) v1.ProviderConfigInterface {
 	return &FakeProviderConfigs{c, namespace}
 }
 
 // RESTClient returns a RESTClient that is used to communicate
 // with API server by this client implementation.
-func (c *FakeProviderconfigV1) RESTClient() rest.Interface {
+func (c *FakeCloudV1) RESTClient() rest.Interface {
 	var ret *rest.RESTClient
 	return ret
 }

@@ -25,8 +25,8 @@ import (
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/testing"
 	clientset "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned"
-	providerconfigv1 "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned/typed/providerconfig/v1"
-	fakeproviderconfigv1 "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned/typed/providerconfig/v1/fake"
+	cloudv1 "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned/typed/providerconfig/v1"
+	fakecloudv1 "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned/typed/providerconfig/v1/fake"
 )
 
 // NewSimpleClientset returns a clientset that will respond with the provided objects.
@@ -79,7 +79,7 @@ var (
 	_ testing.FakeClient  = &Clientset{}
 )
 
-// ProviderconfigV1 retrieves the ProviderconfigV1Client
-func (c *Clientset) ProviderconfigV1() providerconfigv1.ProviderconfigV1Interface {
-	return &fakeproviderconfigv1.FakeProviderconfigV1{Fake: &c.Fake}
+// CloudV1 retrieves the CloudV1Client
+func (c *Clientset) CloudV1() cloudv1.CloudV1Interface {
+	return &fakecloudv1.FakeCloudV1{Fake: &c.Fake}
 }

@@ -330,7 +330,7 @@ func TestPatchProviderConfigObjectMetadata(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			csKey := fmt.Sprintf("%s/%s", tc.cs.Namespace, tc.cs.Name)
 			csClient := providerconfigfake.NewSimpleClientset()
-			if _, err := csClient.ProviderconfigV1().ProviderConfigs(tc.cs.Namespace).Create(context.TODO(), tc.cs, metav1.CreateOptions{}); err != nil {
+			if _, err := csClient.CloudV1().ProviderConfigs(tc.cs.Namespace).Create(context.TODO(), tc.cs, metav1.CreateOptions{}); err != nil {
 				t.Fatalf("Create(%s) = %v, want nil", csKey, err)
 			}
 			expectCS := tc.updateObjectMetaFunc(tc.cs)
@@ -339,7 +339,7 @@ func TestPatchProviderConfigObjectMetadata(t *testing.T) {
 				t.Fatalf("PatchProviderConfigObjectMetadata(%s) = %v, want nil", csKey, err)
 			}
 
-			gotCS, err := csClient.ProviderconfigV1().ProviderConfigs(tc.cs.Namespace).Get(context.TODO(), tc.cs.Name, metav1.GetOptions{})
+			gotCS, err := csClient.CloudV1().ProviderConfigs(tc.cs.Namespace).Get(context.TODO(), tc.cs.Name, metav1.GetOptions{})
 			if err != nil {
 				t.Fatalf("Get(%s) = %v, want nil", csKey, err)
 			}

@@ -15,5 +15,5 @@ limitations under the License.
 package providerconfig
 
 var (
-	GroupName = "providerconfig.gke.io"
+	GroupName = "cloud.gke.io"
 )

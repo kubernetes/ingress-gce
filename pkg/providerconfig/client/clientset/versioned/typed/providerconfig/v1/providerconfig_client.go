@@ -24,22 +24,22 @@ import (
 	"k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned/scheme"
 )
 
-type ProviderconfigV1Interface interface {
+type CloudV1Interface interface {
 	RESTClient() rest.Interface
 	ProviderConfigsGetter
 }
 
-// ProviderconfigV1Client is used to interact with features provided by the providerconfig.gke.io group.
-type ProviderconfigV1Client struct {
+// CloudV1Client is used to interact with features provided by the cloud.gke.io group.
+type CloudV1Client struct {
 	restClient rest.Interface
 }
 
-func (c *ProviderconfigV1Client) ProviderConfigs(namespace string) ProviderConfigInterface {
+func (c *CloudV1Client) ProviderConfigs(namespace string) ProviderConfigInterface {
 	return newProviderConfigs(c, namespace)
 }
 
-// NewForConfig creates a new ProviderconfigV1Client for the given config.
-func NewForConfig(c *rest.Config) (*ProviderconfigV1Client, error) {
+// NewForConfig creates a new CloudV1Client for the given config.
+func NewForConfig(c *rest.Config) (*CloudV1Client, error) {
 	config := *c
 	if err := setConfigDefaults(&config); err != nil {
 		return nil, err
@@ -48,12 +48,12 @@ func NewForConfig(c *rest.Config) (*ProviderconfigV1Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &ProviderconfigV1Client{client}, nil
+	return &CloudV1Client{client}, nil
 }
 
-// NewForConfigOrDie creates a new ProviderconfigV1Client for the given config and
+// NewForConfigOrDie creates a new CloudV1Client for the given config and
 // panics if there is an error in the config.
-func NewForConfigOrDie(c *rest.Config) *ProviderconfigV1Client {
+func NewForConfigOrDie(c *rest.Config) *CloudV1Client {
 	client, err := NewForConfig(c)
 	if err != nil {
 		panic(err)
@@ -61,9 +61,9 @@ func NewForConfigOrDie(c *rest.Config) *ProviderconfigV1Client {
 	return client
 }
 
-// New creates a new ProviderconfigV1Client for the given RESTClient.
-func New(c rest.Interface) *ProviderconfigV1Client {
-	return &ProviderconfigV1Client{c}
+// New creates a new CloudV1Client for the given RESTClient.
+func New(c rest.Interface) *CloudV1Client {
+	return &CloudV1Client{c}
 }
 
 func setConfigDefaults(config *rest.Config) error {
@@ -81,7 +81,7 @@ func setConfigDefaults(config *rest.Config) error {
 
 // RESTClient returns a RESTClient that is used to communicate
 // with API server by this client implementation.
-func (c *ProviderconfigV1Client) RESTClient() rest.Interface {
+func (c *CloudV1Client) RESTClient() rest.Interface {
 	if c == nil {
 		return nil
 	}

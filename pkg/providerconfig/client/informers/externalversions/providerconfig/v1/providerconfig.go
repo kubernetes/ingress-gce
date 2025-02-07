@@ -62,13 +62,13 @@ func NewFilteredProviderConfigInformer(client versioned.Interface, namespace str
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.ProviderconfigV1().ProviderConfigs(namespace).List(context.TODO(), options)
+				return client.CloudV1().ProviderConfigs(namespace).List(context.TODO(), options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.ProviderconfigV1().ProviderConfigs(namespace).Watch(context.TODO(), options)
+				return client.CloudV1().ProviderConfigs(namespace).Watch(context.TODO(), options)
 			},
 		},
 		&providerconfigv1.ProviderConfig{},
