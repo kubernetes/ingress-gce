@@ -46,7 +46,7 @@ func TestEnsureProviderConfigNEGCleanupFinalizer(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			csClient := providerconfigfake.NewSimpleClientset()
-			csInterface := csClient.ProviderconfigV1().ProviderConfigs(tc.cs.Namespace)
+			csInterface := csClient.CloudV1().ProviderConfigs(tc.cs.Namespace)
 
 			// Create the initial ProviderConfig object
 			_, err := csInterface.Create(context.TODO(), tc.cs, metav1.CreateOptions{})
@@ -111,7 +111,7 @@ func TestDeleteProviderConfigNEGCleanupFinalizer(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			csClient := providerconfigfake.NewSimpleClientset()
-			csInterface := csClient.ProviderconfigV1().ProviderConfigs(tc.cs.Namespace)
+			csInterface := csClient.CloudV1().ProviderConfigs(tc.cs.Namespace)
 
 			// Create the initial ProviderConfig object
 			_, err := csInterface.Create(context.TODO(), tc.cs, metav1.CreateOptions{})
