@@ -23,6 +23,7 @@ import (
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	informersvcneg "k8s.io/ingress-gce/pkg/svcneg/client/informers/externalversions/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
@@ -47,12 +48,13 @@ func StartNEGController(
 	logger klog.Logger,
 	providerConfig *providerconfig.ProviderConfig,
 ) (chan<- struct{}, error) {
+	providerConfigName := providerConfig.Name
+	logger.V(2).Info("Initializing NEG controller", "providerConfig", providerConfigName)
+
 	cloud, err := multiprojectgce.NewGCEForProviderConfig(defaultCloudConfig, providerConfig, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GCE client for provider config %+v: %v", providerConfig, err)
 	}
-
-	providerConfigName := providerConfig.Name
 
 	// The ProviderConfig-specific stop channel. We close this in StopControllersForProviderConfig.
 	providerConfigStopCh := make(chan struct{})
@@ -107,6 +109,7 @@ func StartNEGController(
 		logger,
 	)
 
+	logger.V(2).Info("Starting NEG controller run loop", "providerConfig", providerConfigName)
 	go negController.Run()
 	return providerConfigStopCh, nil
 }
@@ -138,11 +141,22 @@ func initializeInformers(
 	serviceInformer := filteredinformer.NewProviderConfigFilteredInformer(informersFactory.Core().V1().Services().Informer(), providerConfigName)
 	podInformer := filteredinformer.NewProviderConfigFilteredInformer(informersFactory.Core().V1().Pods().Informer(), providerConfigName)
 	nodeInformer := filteredinformer.NewProviderConfigFilteredInformer(informersFactory.Core().V1().Nodes().Informer(), providerConfigName)
-	endpointSliceInformer := filteredinformer.NewProviderConfigFilteredInformer(informersFactory.Discovery().V1().EndpointSlices().Informer(), providerConfigName)
+
+	endpointSliceInformer := filteredinformer.NewProviderConfigFilteredInformer(
+		informersFactory.Discovery().V1().EndpointSlices().Informer(),
+		providerConfigName,
+	)
+	err := endpointSliceInformer.AddIndexers(map[string]cache.IndexFunc{
+		endpointslices.EndpointSlicesByServiceIndex: endpointslices.EndpointSlicesByServiceFunc,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to add indexers to endpointSliceInformer: %v", err)
+	}
 
 	var providerConfigFilteredSvcNegInformer cache.SharedIndexInformer
 	if svcNegClient != nil {
 		svcNegInformer := informersvcneg.NewServiceNetworkEndpointGroupInformer(svcNegClient, flags.F.WatchNamespace, flags.F.ResyncPeriod, utils.NewNamespaceIndexer())
+		svcNegInformer.GetIndexer()
 		providerConfigFilteredSvcNegInformer = filteredinformer.NewProviderConfigFilteredInformer(svcNegInformer, providerConfigName)
 	}
 
