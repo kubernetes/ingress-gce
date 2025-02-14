@@ -71,6 +71,7 @@ import (
 )
 
 const negLockName = "ingress-gce-neg-lock"
+const l4LockName = "l4-lb-controller-gce-lock"
 
 func main() {
 	flags.Register()
@@ -316,7 +317,7 @@ func main() {
 			"InstanceGroup controller", flags.F.EnableIGController,
 			"PSC controller", flags.F.EnablePSC,
 		)
-		runControllers(ctx, systemHealth, rOption, logger)
+		runControllers(ctx, systemHealth, rOption, leOption, logger)
 	}
 
 	if flags.F.LeaderElection.LeaderElect {
@@ -408,7 +409,7 @@ func makeIngressRunnerWithLeaderElection(
 		leOption,
 		flags.F.LeaderElection.LockObjectName,
 		func(context.Context) {
-			runControllers(ctx, systemHealth, runOption, logger)
+			runControllers(ctx, systemHealth, runOption, leOption, logger)
 		},
 		func() {
 			logger.Info("lost master")
@@ -449,7 +450,7 @@ func makeRunnerWithLeaderElection(
 	}, nil
 }
 
-func runControllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.SystemHealth, option runOption, logger klog.Logger) {
+func runControllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.SystemHealth, option runOption, leOption leaderElectionOption, logger klog.Logger) {
 	if flags.F.RunIngressController {
 		lbc := controller.NewLoadBalancerController(ctx, option.stopCh, logger)
 		systemHealth.AddHealthCheck("ingress", lbc.SystemHealth)
@@ -464,42 +465,71 @@ func runControllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.Sy
 		logger.V(0).Info("firewall controller started")
 	}
 
-	if flags.F.RunL4Controller {
-		l4Controller := l4lb.NewILBController(ctx, option.stopCh, logger)
-		systemHealth.AddHealthCheck(l4lb.L4ILBControllerName, l4Controller.SystemHealth)
-		runWithWg(l4Controller.Run, option.wg)
-		logger.V(0).Info("L4 controller started")
-	}
-
-	if flags.F.EnablePSC {
-		pscController := psc.NewController(ctx, option.stopCh, logger)
-		runWithWg(pscController.Run, option.wg)
-		logger.V(0).Info("PSC Controller started")
-	}
+	runL4Controllers(ctx, systemHealth, option, leOption, logger)
 
 	ctx.Start(option.stopCh)
+}
 
-	if flags.F.EnableIGController {
-		igControllerParams := &instancegroups.ControllerConfig{
-			NodeInformer:             ctx.NodeInformer,
-			ZoneGetter:               ctx.ZoneGetter,
-			IGManager:                ctx.InstancePool,
-			HasSynced:                ctx.HasSynced,
-			EnableMultiSubnetCluster: flags.F.EnableIGMultiSubnetCluster,
-			StopCh:                   option.stopCh,
+func runL4Controllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.SystemHealth, option runOption, leOption leaderElectionOption, logger klog.Logger) {
+	if !flags.F.RunL4Controller && !flags.F.EnablePSC && !flags.F.EnableIGController && !flags.F.RunL4NetLBController {
+		return
+	}
+	run := func() {
+		if flags.F.RunL4Controller {
+			l4Controller := l4lb.NewILBController(ctx, option.stopCh, logger)
+			systemHealth.AddHealthCheck(l4lb.L4ILBControllerName, l4Controller.SystemHealth)
+			runWithWg(l4Controller.Run, option.wg)
+			logger.V(0).Info("L4 controller started")
 		}
-		igController := instancegroups.NewController(igControllerParams, logger)
-		runWithWg(igController.Run, option.wg)
-	}
 
-	// The L4NetLbController will be run when RbsMode flag is Set
-	if flags.F.RunL4NetLBController {
-		l4netlbController := l4lb.NewL4NetLBController(ctx, option.stopCh, logger)
-		systemHealth.AddHealthCheck(l4lb.L4NetLBControllerName, l4netlbController.SystemHealth)
+		if flags.F.EnablePSC {
+			pscController := psc.NewController(ctx, option.stopCh, logger)
+			runWithWg(pscController.Run, option.wg)
+			logger.V(0).Info("PSC Controller started")
+		}
 
-		runWithWg(l4netlbController.Run, option.wg)
-		logger.V(0).Info("L4NetLB controller started")
+		if flags.F.EnableIGController {
+			igControllerParams := &instancegroups.ControllerConfig{
+				NodeInformer:             ctx.NodeInformer,
+				ZoneGetter:               ctx.ZoneGetter,
+				IGManager:                ctx.InstancePool,
+				HasSynced:                ctx.HasSynced,
+				EnableMultiSubnetCluster: flags.F.EnableIGMultiSubnetCluster,
+				StopCh:                   option.stopCh,
+			}
+			igController := instancegroups.NewController(igControllerParams, logger)
+			runWithWg(igController.Run, option.wg)
+		}
+
+		// The L4NetLbController will be run when RbsMode flag is Set
+		if flags.F.RunL4NetLBController {
+			l4netlbController := l4lb.NewL4NetLBController(ctx, option.stopCh, logger)
+			systemHealth.AddHealthCheck(l4lb.L4NetLBControllerName, l4netlbController.SystemHealth)
+
+			runWithWg(l4netlbController.Run, option.wg)
+			logger.V(0).Info("L4NetLB controller started")
+		}
 	}
+	if !flags.F.LeaderElection.LeaderElect || !flags.F.GateL4ByLock {
+		run()
+		return
+	}
+	lockLogger := logger.WithValues("lock", l4LockName)
+	runner, err := makeRunnerWithLeaderElection(leOption, l4LockName, func(ctx context.Context) {
+		lockLogger.V(0).Info("Acquired L4 Leader election lock")
+		go collectLockAvailabilityMetrics(l4LockName, flags.F.GKEClusterType, option.stopCh, lockLogger)
+		run()
+	}, func() {
+		lockLogger.V(0).Info("Stop running L4 Leader election")
+	})
+	if err != nil {
+		klog.Fatalf("L4 makeLeaderElectionConfig()=%v, want nil", err)
+	}
+	// run in a separate goroutine to not block further operation if lock can't be acquired.
+	go func() {
+		lockLogger.V(0).Info("Attempt to acquire L4 Leader election lock")
+		leaderelection.RunOrDie(context.Background(), *runner)
+	}()
 }
 
 func runNEGController(ctx *ingctx.ControllerContext, systemHealth *systemhealth.SystemHealth, option runOption, logger klog.Logger) {
