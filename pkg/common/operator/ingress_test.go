@@ -48,7 +48,7 @@ func TestReferencesSvcNeg(t *testing.T) {
 	t.Parallel()
 
 	kubeClient := fake.NewSimpleClientset()
-	gceClient := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	gceClient := gce.NewFakeGCECloud(test.DefaultTestClusterValues())
 	namer := namer_util.NewNamer(clusterUID, "", klog.TODO())
 	ctxConfig := context.ControllerContextConfig{
 		Namespace:                     apiv1.NamespaceAll,
@@ -57,7 +57,10 @@ func TestReferencesSvcNeg(t *testing.T) {
 		HealthCheckPath:               "/",
 		EnableIngressRegionalExternal: true,
 	}
-	ctx := context.NewControllerContext(kubeClient, nil, nil, nil, nil, nil, nil, nil, kubeClient /*kube client to be used for events*/, gceClient, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
+	ctx, err := context.NewControllerContext(kubeClient, nil, nil, nil, nil, nil, nil, nil, kubeClient /*kube client to be used for events*/, gceClient, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
+	if err != nil {
+		t.Fatalf("Failed to initialize controller context: %v", err)
+	}
 
 	if err := addTestService(ctx); err != nil {
 		t.Fatalf("Failed to add test service: %v", err)

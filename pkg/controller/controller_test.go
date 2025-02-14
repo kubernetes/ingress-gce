@@ -67,7 +67,7 @@ var (
 )
 
 // newLoadBalancerController create a loadbalancer controller.
-func newLoadBalancerController() *LoadBalancerController {
+func newLoadBalancerController() (*LoadBalancerController, error) {
 	kubeClient := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	svcNegClient := svcnegclient.NewSimpleClientset()
@@ -75,7 +75,10 @@ func newLoadBalancerController() *LoadBalancerController {
 	vals.SubnetworkURL = defaultTestSubnetURL
 	fakeGCE := gce.NewFakeGCECloud(vals)
 	nodeInformer := zonegetter.FakeNodeInformer()
-	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	fakeZoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize fake zone getter")
+	}
 	zonegetter.AddFakeNodes(fakeZoneGetter, fakeZone, "test-node")
 
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockGlobalForwardingRules.InsertHook = loadbalancers.InsertGlobalForwardingRuleHook
@@ -89,7 +92,10 @@ func newLoadBalancerController() *LoadBalancerController {
 		HealthCheckPath:               "/",
 		EnableIngressRegionalExternal: true,
 	}
-	ctx := context.NewControllerContext(kubeClient, backendConfigClient, nil, nil, svcNegClient, nil, nil, nil, kubeClient /*kube client to be used for events*/, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
+	ctx, err := context.NewControllerContext(kubeClient, backendConfigClient, nil, nil, svcNegClient, nil, nil, nil, kubeClient /*kube client to be used for events*/, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize controller context")
+	}
 	lbc := NewLoadBalancerController(ctx, stopCh, klog.TODO())
 	// TODO(rramkumar): Fix this so we don't have to override with our fake
 	lbc.instancePool = instancegroups.NewManager(&instancegroups.ManagerConfig{
@@ -116,7 +122,7 @@ func newLoadBalancerController() *LoadBalancerController {
 	})
 	addService(lbc, defaultSvc)
 
-	return lbc
+	return lbc, nil
 }
 
 func addService(lbc *LoadBalancerController, svc *api_v1.Service) {
@@ -186,7 +192,10 @@ func backend(name string, port networkingv1.ServiceBackendPort) networkingv1.Ing
 // TestIngressSyncError asserts that `sync` will bubble an error when an ingress cannot be synced
 // due to configuration problems.
 func TestIngressSyncError(t *testing.T) {
-	lbc := newLoadBalancerController()
+	lbc, err := newLoadBalancerController()
+	if err != nil {
+		t.Fatalf("failed to initialize load balancer controller")
+	}
 
 	someBackend := backend("my-service", networkingv1.ServiceBackendPort{Number: 80})
 	ing := test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"},
@@ -196,7 +205,7 @@ func TestIngressSyncError(t *testing.T) {
 	addIngress(lbc, ing)
 
 	ingStoreKey := getKey(ing, t)
-	err := lbc.sync(ingStoreKey)
+	err = lbc.sync(ingStoreKey)
 	if err == nil {
 		t.Fatalf("lbc.sync(%v) = nil, want error", ingStoreKey)
 	}
@@ -208,7 +217,10 @@ func TestIngressSyncError(t *testing.T) {
 
 // TestNEGOnlyIngress asserts that `sync` will not create IG when there is only NEG backends for the ingress
 func TestNEGOnlyIngress(t *testing.T) {
-	lbc := newLoadBalancerController()
+	lbc, err := newLoadBalancerController()
+	if err != nil {
+		t.Fatalf("failed to initialize load balancer controller")
+	}
 	namespace := "namespace"
 	ingressName := "my-ingress"
 	ensureNEGIngress(t, lbc, namespace, ingressName, "")
@@ -262,7 +274,10 @@ func TestIngressCreateDeleteFinalizer(t *testing.T) {
 			flags.F.FinalizerAdd = tc.enableFinalizerAdd
 			flags.F.FinalizerRemove = tc.enableFinalizerRemove
 
-			lbc := newLoadBalancerController()
+			lbc, err := newLoadBalancerController()
+			if err != nil {
+				t.Fatalf("failed to initialize load balancer controller")
+			}
 			svc := test.NewService(types.NamespacedName{Name: "my-service", Namespace: "default"}, api_v1.ServiceSpec{
 				Type:  api_v1.ServiceTypeNodePort,
 				Ports: []api_v1.ServicePort{{Port: 80}},
@@ -355,7 +370,10 @@ func TestIngressClassChangeWithFinalizer(t *testing.T) {
 	flags.F.FinalizerAdd = true
 	flags.F.FinalizerRemove = true
 	flags.F.EnableIngressGlobalExternal = true
-	lbc := newLoadBalancerController()
+	lbc, err := newLoadBalancerController()
+	if err != nil {
+		t.Fatalf("failed to initialize load balancer controller")
+	}
 	svc := test.NewService(types.NamespacedName{Name: "my-service", Namespace: "default"}, api_v1.ServiceSpec{
 		Type:  api_v1.ServiceTypeNodePort,
 		Ports: []api_v1.ServicePort{{Port: 80}},
@@ -412,7 +430,10 @@ func TestIngressesWithSharedResourcesWithFinalizer(t *testing.T) {
 	defer flagSaver.Reset(test.FinalizerRemoveFlag, &flags.F.FinalizerRemove)
 	flags.F.FinalizerAdd = true
 	flags.F.FinalizerRemove = true
-	lbc := newLoadBalancerController()
+	lbc, err := newLoadBalancerController()
+	if err != nil {
+		t.Fatalf("failed to initialize load balancer controller")
+	}
 	svc := test.NewService(types.NamespacedName{Name: "my-service", Namespace: "default"}, api_v1.ServiceSpec{
 		Type:  api_v1.ServiceTypeNodePort,
 		Ports: []api_v1.ServicePort{{Port: 80}},
@@ -479,7 +500,10 @@ func TestEnableFinalizer(t *testing.T) {
 	flagSaver := test.NewFlagSaver()
 	flagSaver.Save(test.FinalizerAddFlag, &flags.F.FinalizerAdd)
 	defer flagSaver.Reset(test.FinalizerAddFlag, &flags.F.FinalizerAdd)
-	lbc := newLoadBalancerController()
+	lbc, err := newLoadBalancerController()
+	if err != nil {
+		t.Fatalf("failed to initialize load balancer controller")
+	}
 	svc := test.NewService(types.NamespacedName{Name: "my-service", Namespace: "namespace1"}, api_v1.ServiceSpec{
 		Type:  api_v1.ServiceTypeNodePort,
 		Ports: []api_v1.ServicePort{{Port: 80}},
@@ -527,7 +551,10 @@ func TestEnableFinalizer(t *testing.T) {
 // TestIngressClassChange asserts that `sync` will not return an error for a good ingress config
 // status is updated and LB is deleted after class change.
 func TestIngressClassChange(t *testing.T) {
-	lbc := newLoadBalancerController()
+	lbc, err := newLoadBalancerController()
+	if err != nil {
+		t.Fatalf("failed to initialize load balancer controller")
+	}
 	svc := test.NewService(types.NamespacedName{Name: "my-service", Namespace: "default"}, api_v1.ServiceSpec{
 		Type:  api_v1.ServiceTypeNodePort,
 		Ports: []api_v1.ServicePort{{Port: 80}},
@@ -561,7 +588,10 @@ func TestIngressClassChange(t *testing.T) {
 
 // TestEnsureMCIngress asserts a multi-cluster ingress will result with correct status annotations.
 func TestEnsureMCIngress(t *testing.T) {
-	lbc := newLoadBalancerController()
+	lbc, err := newLoadBalancerController()
+	if err != nil {
+		t.Fatalf("failed to initialize load balancer controller")
+	}
 
 	svc := test.NewService(types.NamespacedName{Name: "my-service", Namespace: "default"}, api_v1.ServiceSpec{
 		Type:  api_v1.ServiceTypeNodePort,
@@ -595,7 +625,10 @@ func TestEnsureMCIngress(t *testing.T) {
 
 // TestMCIngressIG asserts that instances groups are deleted only after multi-cluster ingresses are cleaned up.
 func TestMCIngressIG(t *testing.T) {
-	lbc := newLoadBalancerController()
+	lbc, err := newLoadBalancerController()
+	if err != nil {
+		t.Fatalf("failed to initialize load balancer controller")
+	}
 
 	svc := test.NewService(types.NamespacedName{Name: "my-service", Namespace: "default"}, api_v1.ServiceSpec{
 		Type:  api_v1.ServiceTypeNodePort,
@@ -684,7 +717,10 @@ func TestMCIngressIG(t *testing.T) {
 // TestToRuntimeInfoCerts asserts that both pre-shared and secret-based certs
 // are included in the RuntimeInfo.
 func TestToRuntimeInfoCerts(t *testing.T) {
-	lbc := newLoadBalancerController()
+	lbc, err := newLoadBalancerController()
+	if err != nil {
+		t.Fatalf("failed to initialize load balancer controller")
+	}
 	secretsMap := map[string]*api_v1.Secret{
 		"tlsCert": {
 			ObjectMeta: meta_v1.ObjectMeta{
@@ -768,7 +804,10 @@ func TestIngressTagging(t *testing.T) {
 			flags.F.FinalizerAdd = tc.enableFinalizerAdd
 			flags.F.EnableV2FrontendNamer = tc.enableV2Namer
 
-			lbc := newLoadBalancerController()
+			lbc, err := newLoadBalancerController()
+			if err != nil {
+				t.Fatalf("failed to initialize load balancer controller")
+			}
 			svc := test.NewService(types.NamespacedName{Name: "my-service", Namespace: "default"}, api_v1.ServiceSpec{
 				Type:  api_v1.ServiceTypeNodePort,
 				Ports: []api_v1.ServicePort{{Port: 80}},
@@ -835,7 +874,10 @@ func TestGCMultiple(t *testing.T) {
 	for _, ingName := range ings {
 		expectedIngressKeys = append(expectedIngressKeys, fmt.Sprintf("%s/%s", namespace, ingName))
 	}
-	lbc := newLoadBalancerController()
+	lbc, err := newLoadBalancerController()
+	if err != nil {
+		t.Fatalf("failed to initialize load balancer controller")
+	}
 	// Create ingresses and run sync on them.
 	var updatedIngs []*networkingv1.Ingress
 	for _, ing := range ings {
@@ -934,7 +976,10 @@ func TestGC(t *testing.T) {
 			for _, ingName := range tc.v2IngressNames {
 				expectedIngressKeys = append(expectedIngressKeys, fmt.Sprintf("%s/%s", namespace, ingName))
 			}
-			lbc := newLoadBalancerController()
+			lbc, err := newLoadBalancerController()
+			if err != nil {
+				t.Fatalf("failed to initialize load balancer controller")
+			}
 			// Create ingresses and run sync on them.
 			var v1Ingresses, v2Ingresses []*networkingv1.Ingress
 			for _, ing := range tc.v1IngressNames {
@@ -1025,7 +1070,10 @@ func TestGCRegionalIngressResources(t *testing.T) {
 			for _, ingName := range ingressesToCreate {
 				expectedIngressKeys = append(expectedIngressKeys, fmt.Sprintf("%s/%s", namespace, ingName))
 			}
-			lbc := newLoadBalancerController()
+			lbc, err := newLoadBalancerController()
+			if err != nil {
+				t.Fatalf("failed to initialize load balancer controller")
+			}
 			lbc.ctx.EnableIngressRegionalExternal = true
 			// Create ingresses and run sync on them.
 			var existingIngresses []*networkingv1.Ingress

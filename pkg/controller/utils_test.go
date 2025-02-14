@@ -34,7 +34,10 @@ import (
 )
 
 func TestZoneListing(t *testing.T) {
-	lbc := newLoadBalancerController()
+	lbc, err := newLoadBalancerController()
+	if err != nil {
+		t.Fatalf("failed to initialize load balancer controller: %v", err)
+	}
 	zoneToNode := map[string][]string{
 		"zone-1": {"n1"},
 		"zone-2": {"n2"},

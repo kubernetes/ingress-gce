@@ -140,7 +140,11 @@ func TestSync(t *testing.T) {
 	config.HasSynced = func() bool {
 		return true
 	}
-	config.ZoneGetter = zonegetter.NewFakeZoneGetter(informer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	var err error
+	config.ZoneGetter, err = zonegetter.NewFakeZoneGetter(informer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter: %v", err)
+	}
 
 	controller := NewController(config, logr.Logger{})
 
