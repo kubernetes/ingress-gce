@@ -139,9 +139,7 @@ func initializeInformers(
 		informersFactory.Discovery().V1().EndpointSlices().Informer(),
 		providerConfigName,
 	)
-	err := endpointSliceInformer.AddIndexers(map[string]cache.IndexFunc{
-		endpointslices.EndpointSlicesByServiceIndex: endpointslices.EndpointSlicesByServiceFunc,
-	})
+	err := addIndexerIfNotPresent(endpointSliceInformer.GetIndexer(), endpointslices.EndpointSlicesByServiceIndex, endpointslices.EndpointSlicesByServiceFunc)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to add indexers to endpointSliceInformer: %v", err)
 	}
@@ -221,6 +219,14 @@ func initializeInformers(
 	}
 
 	return informers, hasSynced, nil
+}
+
+func addIndexerIfNotPresent(indexer cache.Indexer, indexName string, indexFunc cache.IndexFunc) error {
+	indexers := indexer.GetIndexers()
+	if _, ok := indexers[indexName]; ok {
+		return nil
+	}
+	return indexer.AddIndexers(cache.Indexers{indexName: indexFunc})
 }
 
 func createNEGController(
