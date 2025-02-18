@@ -74,11 +74,10 @@ func StartNEGController(
 		}
 	}()
 
-	informers, err := initializeInformers(informersFactory, svcNegClient, networkClient, nodeTopologyClient, providerConfigName, logger, joinedStopCh)
+	informers, hasSynced, err := initializeInformers(informersFactory, svcNegClient, networkClient, nodeTopologyClient, providerConfigName, logger, joinedStopCh)
 	if err != nil {
 		return nil, err
 	}
-	hasSynced := createHasSyncedFunc(informers)
 
 	zoneGetter := zonegetter.NewZoneGetter(
 		informers.nodeInformer,
@@ -136,7 +135,7 @@ func initializeInformers(
 	providerConfigName string,
 	logger klog.Logger,
 	joinedStopCh <-chan struct{},
-) (*negInformers, error) {
+) (*negInformers, func() bool, error) {
 	ingressInformer := filteredinformer.NewProviderConfigFilteredInformer(informersFactory.Networking().V1().Ingresses().Informer(), providerConfigName)
 	serviceInformer := filteredinformer.NewProviderConfigFilteredInformer(informersFactory.Core().V1().Services().Informer(), providerConfigName)
 	podInformer := filteredinformer.NewProviderConfigFilteredInformer(informersFactory.Core().V1().Pods().Informer(), providerConfigName)
@@ -150,7 +149,7 @@ func initializeInformers(
 		endpointslices.EndpointSlicesByServiceIndex: endpointslices.EndpointSlicesByServiceFunc,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to add indexers to endpointSliceInformer: %v", err)
+		return nil, nil, fmt.Errorf("failed to add indexers to endpointSliceInformer: %v", err)
 	}
 
 	var providerConfigFilteredSvcNegInformer cache.SharedIndexInformer
@@ -177,6 +176,13 @@ func initializeInformers(
 	}
 
 	// Start them with the joinedStopCh so they properly stop
+	hasSyncedList := []func() bool{
+		ingressInformer.HasSynced,
+		serviceInformer.HasSynced,
+		podInformer.HasSynced,
+		nodeInformer.HasSynced,
+		endpointSliceInformer.HasSynced,
+	}
 	go ingressInformer.Run(joinedStopCh)
 	go serviceInformer.Run(joinedStopCh)
 	go podInformer.Run(joinedStopCh)
@@ -184,19 +190,23 @@ func initializeInformers(
 	go endpointSliceInformer.Run(joinedStopCh)
 	if providerConfigFilteredSvcNegInformer != nil {
 		go providerConfigFilteredSvcNegInformer.Run(joinedStopCh)
+		hasSyncedList = append(hasSyncedList, providerConfigFilteredSvcNegInformer.HasSynced)
 	}
 	if providerConfigFilteredNetworkInformer != nil {
 		go providerConfigFilteredNetworkInformer.Run(joinedStopCh)
+		hasSyncedList = append(hasSyncedList, providerConfigFilteredNetworkInformer.HasSynced)
 	}
 	if providerConfigFilteredGkeNetworkParamsInformer != nil {
 		go providerConfigFilteredGkeNetworkParamsInformer.Run(joinedStopCh)
+		hasSyncedList = append(hasSyncedList, providerConfigFilteredGkeNetworkParamsInformer.HasSynced)
 	}
 	if providerConfigFilteredNodeTopologyInformer != nil {
 		go providerConfigFilteredNodeTopologyInformer.Run(joinedStopCh)
+		hasSyncedList = append(hasSyncedList, providerConfigFilteredNodeTopologyInformer.HasSynced)
 	}
 
 	logger.V(2).Info("NEG informers initialized", "providerConfigName", providerConfigName)
-	return &negInformers{
+	informers := &negInformers{
 		ingressInformer:                                ingressInformer,
 		serviceInformer:                                serviceInformer,
 		podInformer:                                    podInformer,
@@ -206,31 +216,17 @@ func initializeInformers(
 		providerConfigFilteredNetworkInformer:          providerConfigFilteredNetworkInformer,
 		providerConfigFilteredGkeNetworkParamsInformer: providerConfigFilteredGkeNetworkParamsInformer,
 		providerConfigFilteredNodeTopologyInformer:     providerConfigFilteredNodeTopologyInformer,
-	}, nil
-}
-
-func createHasSyncedFunc(informers *negInformers) func() bool {
-	return func() bool {
-		synced := informers.ingressInformer.HasSynced() &&
-			informers.serviceInformer.HasSynced() &&
-			informers.podInformer.HasSynced() &&
-			informers.nodeInformer.HasSynced() &&
-			informers.endpointSliceInformer.HasSynced()
-
-		if informers.providerConfigFilteredSvcNegInformer != nil {
-			synced = synced && informers.providerConfigFilteredSvcNegInformer.HasSynced()
-		}
-		if informers.providerConfigFilteredNetworkInformer != nil {
-			synced = synced && informers.providerConfigFilteredNetworkInformer.HasSynced()
-		}
-		if informers.providerConfigFilteredGkeNetworkParamsInformer != nil {
-			synced = synced && informers.providerConfigFilteredGkeNetworkParamsInformer.HasSynced()
-		}
-		if informers.providerConfigFilteredNodeTopologyInformer != nil {
-			synced = synced && informers.providerConfigFilteredNodeTopologyInformer.HasSynced()
-		}
-		return synced
 	}
+	hasSynced := func() bool {
+		for _, hasSynced := range hasSyncedList {
+			if !hasSynced() {
+				return false
+			}
+		}
+		return true
+	}
+
+	return informers, hasSynced, nil
 }
 
 func createNEGController(

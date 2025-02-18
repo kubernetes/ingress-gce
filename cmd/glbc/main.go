@@ -275,6 +275,7 @@ func main() {
 		}, rOption.wg)
 
 		// Wait for the multi-project syncer to finish.
+		<-rOption.stopCh
 		waitWithTimeout(rOption.wg, rootLogger)
 
 		// Since we only want multi-project mode functionality, exit here
