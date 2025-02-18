@@ -21,11 +21,29 @@ func init() {
 	ini.PrettySection = true
 }
 
+type GCECreator interface {
+	NewGCEForProviderConfig(providerConfig *v1.ProviderConfig, logger klog.Logger) (*cloudgce.Cloud, error)
+}
+
+type GCEFromFileStringCreator struct {
+	defaultConfigFileString string
+}
+
+func NewGCEFromFileStringCreator(logger klog.Logger) (*GCEFromFileStringCreator, error) {
+	defaultGCEConfig, err := app.GCEConfString(logger)
+	if err != nil {
+		return nil, fmt.Errorf("error getting default cluster GCE config: %v", err)
+	}
+	return &GCEFromFileStringCreator{
+		defaultConfigFileString: defaultGCEConfig,
+	}, nil
+}
+
 // NewGCEForProviderConfig returns a new GCE client for the given project.
 // If providerConfig is nil, it returns the default cloud associated with the cluster's project.
 // It modifies the default configuration when a providerConfig is provided.
-func NewGCEForProviderConfig(defaultConfigContent string, providerConfig *v1.ProviderConfig, logger klog.Logger) (*cloudgce.Cloud, error) {
-	modifiedConfigContent, err := generateConfigForProviderConfig(defaultConfigContent, providerConfig)
+func (g *GCEFromFileStringCreator) NewGCEForProviderConfig(providerConfig *v1.ProviderConfig, logger klog.Logger) (*cloudgce.Cloud, error) {
+	modifiedConfigContent, err := generateConfigForProviderConfig(g.defaultConfigFileString, providerConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to modify config content: %v", err)
 	}

@@ -15,7 +15,6 @@ import (
 	providerconfig "k8s.io/ingress-gce/pkg/apis/providerconfig/v1"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/multiproject/filteredinformer"
-	multiprojectgce "k8s.io/ingress-gce/pkg/multiproject/gce"
 	"k8s.io/ingress-gce/pkg/neg"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
@@ -43,18 +42,13 @@ func StartNEGController(
 	clusterNamer *namer.Namer,
 	l4Namer *namer.L4Namer,
 	lpConfig labels.PodLabelPropagationConfig,
-	defaultCloudConfig string,
+	cloud *gce.Cloud,
 	globalStopCh <-chan struct{},
 	logger klog.Logger,
 	providerConfig *providerconfig.ProviderConfig,
 ) (chan<- struct{}, error) {
 	providerConfigName := providerConfig.Name
 	logger.V(2).Info("Initializing NEG controller", "providerConfig", providerConfigName)
-
-	cloud, err := multiprojectgce.NewGCEForProviderConfig(defaultCloudConfig, providerConfig, logger)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create GCE client for provider config %+v: %v", providerConfig, err)
-	}
 
 	// The ProviderConfig-specific stop channel. We close this in StopControllersForProviderConfig.
 	providerConfigStopCh := make(chan struct{})

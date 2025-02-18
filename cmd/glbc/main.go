@@ -32,6 +32,7 @@ import (
 	flag "github.com/spf13/pflag"
 	crdclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	informers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	clientset "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
@@ -43,8 +44,10 @@ import (
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/l4lb"
+	multiprojectgce "k8s.io/ingress-gce/pkg/multiproject/gce"
 	multiprojectstart "k8s.io/ingress-gce/pkg/multiproject/start"
 	"k8s.io/ingress-gce/pkg/network"
+	providerconfigclient "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/psc"
 	"k8s.io/ingress-gce/pkg/serviceattachment"
 	serviceattachmentclient "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned"
@@ -243,17 +246,26 @@ func main() {
 		rootLogger.Info("Multi-project mode is enabled, starting project-syncer")
 
 		runWithWg(func() {
+			gceCreator, err := multiprojectgce.NewGCEFromFileStringCreator(rootLogger)
+			if err != nil {
+				klog.Fatalf("Failed to create GCE creator: %v", err)
+			}
+			providerConfigClient, err := providerconfigclient.NewForConfig(kubeConfig)
+			if err != nil {
+				klog.Fatalf("Failed to create ProviderConfig client: %v", err)
+			}
 			if flags.F.LeaderElection.LeaderElect {
 				err := multiprojectstart.StartWithLeaderElection(
 					context.Background(),
 					leaderElectKubeClient,
 					hostname,
-					kubeConfig,
 					rootLogger,
 					kubeClient,
 					svcNegClient,
 					kubeSystemUID,
 					eventRecorderKubeClient,
+					providerConfigClient,
+					gceCreator,
 					namer,
 					stopCh,
 				)
@@ -261,13 +273,16 @@ func main() {
 					rootLogger.Error(err, "Failed to start multi-project syncer with leader election")
 				}
 			} else {
+				informersFactory := informers.NewSharedInformerFactory(kubeClient, flags.F.ResyncPeriod)
 				multiprojectstart.Start(
-					kubeConfig,
 					rootLogger,
 					kubeClient,
 					svcNegClient,
 					kubeSystemUID,
 					eventRecorderKubeClient,
+					providerConfigClient,
+					informersFactory,
+					gceCreator,
 					namer,
 					stopCh,
 				)

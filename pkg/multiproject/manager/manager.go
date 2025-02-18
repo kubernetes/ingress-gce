@@ -11,6 +11,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	providerconfig "k8s.io/ingress-gce/pkg/apis/providerconfig/v1"
 	"k8s.io/ingress-gce/pkg/multiproject/finalizer"
+	"k8s.io/ingress-gce/pkg/multiproject/gce"
 	"k8s.io/ingress-gce/pkg/multiproject/neg"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	providerconfigclient "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned"
@@ -35,7 +36,7 @@ type ProviderConfigControllersManager struct {
 	clusterNamer         *namer.Namer
 	l4Namer              *namer.L4Namer
 	lpConfig             labels.PodLabelPropagationConfig
-	defaultCloudConfig   string
+	gceCreator           gce.GCECreator
 	globalStopCh         <-chan struct{}
 }
 
@@ -53,7 +54,7 @@ func NewProviderConfigControllerManager(
 	clusterNamer *namer.Namer,
 	l4Namer *namer.L4Namer,
 	lpConfig labels.PodLabelPropagationConfig,
-	defaultCloudConfig string,
+	gceCreator gce.GCECreator,
 	globalStopCh <-chan struct{},
 	logger klog.Logger,
 ) *ProviderConfigControllersManager {
@@ -69,7 +70,7 @@ func NewProviderConfigControllerManager(
 		clusterNamer:         clusterNamer,
 		l4Namer:              l4Namer,
 		lpConfig:             lpConfig,
-		defaultCloudConfig:   defaultCloudConfig,
+		gceCreator:           gceCreator,
 		globalStopCh:         globalStopCh,
 	}
 }
@@ -83,6 +84,8 @@ func (pccm *ProviderConfigControllersManager) StartControllersForProviderConfig(
 	defer pccm.mu.Unlock()
 
 	pcKey := providerConfigKey(pc)
+
+	pccm.logger.Info("Starting controllers for provider config", "providerConfigId", pcKey)
 	if _, exists := pccm.controllers[pcKey]; exists {
 		pccm.logger.Info("Controllers for provider config already exist, skipping start", "providerConfigId", pcKey)
 		return nil
@@ -91,6 +94,11 @@ func (pccm *ProviderConfigControllersManager) StartControllersForProviderConfig(
 	err := finalizer.EnsureProviderConfigNEGCleanupFinalizer(pc, pccm.providerConfigClient, pccm.logger)
 	if err != nil {
 		return fmt.Errorf("failed to ensure NEG cleanup finalizer for project %s: %v", pcKey, err)
+	}
+
+	cloud, err := pccm.gceCreator.NewGCEForProviderConfig(pc, pccm.logger)
+	if err != nil {
+		return fmt.Errorf("failed to create GCE client for provider config %+v: %v", pc, err)
 	}
 
 	negControllerStopCh, err := neg.StartNEGController(
@@ -104,7 +112,7 @@ func (pccm *ProviderConfigControllersManager) StartControllersForProviderConfig(
 		pccm.clusterNamer,
 		pccm.l4Namer,
 		pccm.lpConfig,
-		pccm.defaultCloudConfig,
+		cloud,
 		pccm.globalStopCh,
 		pccm.logger,
 		pc,
