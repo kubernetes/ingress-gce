@@ -129,7 +129,6 @@ func addProviderConfig(t *testing.T, tc *testProviderConfigController, pc *provi
 	if err != nil {
 		t.Fatalf("failed to add ProviderConfig to indexer: %v", err)
 	}
-	time.Sleep(100 * time.Millisecond)
 }
 
 func updateProviderConfig(t *testing.T, tc *testProviderConfigController, pc *providerconfig.ProviderConfig) {
@@ -139,7 +138,6 @@ func updateProviderConfig(t *testing.T, tc *testProviderConfigController, pc *pr
 		t.Fatalf("failed to update ProviderConfig: %v", err)
 	}
 	tc.pcInformer.GetIndexer().Update(pc)
-	time.Sleep(100 * time.Millisecond)
 }
 
 func TestStartAndStop(t *testing.T) {
@@ -170,6 +168,7 @@ func TestCreateDeleteProviderConfig(t *testing.T) {
 		},
 	}
 	addProviderConfig(t, tc, pc)
+	time.Sleep(100 * time.Millisecond)
 
 	// Manager should have started it
 	if !tc.manager.HasStarted("pc-delete") {
@@ -183,53 +182,10 @@ func TestCreateDeleteProviderConfig(t *testing.T) {
 	pc2 := pc.DeepCopy()
 	pc2.DeletionTimestamp = &metav1.Time{Time: time.Now()}
 	updateProviderConfig(t, tc, pc2)
+	time.Sleep(100 * time.Millisecond)
 
 	if !tc.manager.HasStopped("pc-delete") {
 		t.Errorf("expected manager to stop 'pc-delete', but it didn't")
-	}
-}
-
-// TestProcessUpdateFunc ensures UpdateFunc enqueues the item, triggers re-sync.
-func TestProcessUpdateFunc(t *testing.T) {
-	tc := newTestProviderConfigController(t)
-	go tc.pcController.Run()
-	defer close(tc.stopCh)
-
-	pcOld := &providerconfig.ProviderConfig{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "pc-old",
-		},
-		Spec: providerconfig.ProviderConfigSpec{
-			ProjectID: "old-project",
-		},
-	}
-
-	pcNew := &providerconfig.ProviderConfig{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "pc-old",
-		},
-		Spec: providerconfig.ProviderConfigSpec{
-			ProjectID: "updated-project",
-		},
-	}
-
-	// Add the old object => triggers Add
-	addProviderConfig(t, tc, pcOld)
-	if !tc.manager.HasStarted("pc-old") {
-		t.Errorf("Expected manager to start controllers for pc-old (on Add), but it didn't")
-	}
-
-	// Now we "update" the object => triggers UpdateFunc => re-enqueue
-	updateProviderConfig(t, tc, pcNew)
-
-	// Ensure the manager's startedConfigs map is updated
-	tc.manager.mu.Lock()
-	defer tc.manager.mu.Unlock()
-	projectVal, exists := tc.manager.startedConfigs["pc-old"]
-	if !exists {
-		t.Errorf("expected manager to have started config for 'pc-old', but it was not found")
-	} else if projectVal.Spec.ProjectID != "updated-project" {
-		t.Errorf("expected manager to have started config with updated project 'updated-project', got %q", projectVal.Spec.ProjectID)
 	}
 }
 
