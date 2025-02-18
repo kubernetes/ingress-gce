@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"runtime/debug"
 	"time"
 
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -55,8 +56,14 @@ func NewProviderConfigController(manager ProviderConfigControllerManager, provid
 
 	providerConfigInformer.AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
-			AddFunc:    func(obj interface{}) { pcc.providerConfigQueue.Enqueue(obj) },
-			UpdateFunc: func(old, cur interface{}) { pcc.providerConfigQueue.Enqueue(cur) },
+			AddFunc: func(obj interface{}) {
+				pcc.logger.V(4).Info("Enqueue add event", "object", obj)
+				pcc.providerConfigQueue.Enqueue(obj)
+			},
+			UpdateFunc: func(old, cur interface{}) {
+				pcc.logger.V(4).Info("Enqueue update event", "old", old, "new", cur)
+				pcc.providerConfigQueue.Enqueue(cur)
+			},
 		})
 
 	pcc.logger.Info("ProviderConfig controller created")
@@ -70,6 +77,7 @@ func (pcc *ProviderConfigController) Run() {
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		<-pcc.stopCh
+		pcc.logger.Info("Stop channel closed, cancelling context")
 		cancel()
 	}()
 
@@ -98,7 +106,8 @@ func (pcc *ProviderConfigController) syncWrapper(key string) error {
 
 	defer func() {
 		if r := recover(); r != nil {
-			svcLogger.Error(fmt.Errorf("panic in ProviderConfig sync worker goroutine: %v", r), "Recovered from panic")
+			stack := string(debug.Stack())
+			svcLogger.Error(fmt.Errorf("panic in ProviderConfig sync worker goroutine: %v, stack: %s", r, stack), "Recovered from panic")
 		}
 	}()
 	err := pcc.sync(key, svcLogger)
@@ -131,12 +140,12 @@ func (pcc *ProviderConfigController) sync(key string, logger klog.Logger) error 
 		return nil
 	}
 
-	logger.V(2).Info("Syncing providerConfig", "providerConfig", pc)
+	logger.Info("Syncing providerConfig", "providerConfig", pc)
 	err = pcc.manager.StartControllersForProviderConfig(pc)
 	if err != nil {
 		return fmt.Errorf("failed to start controllers for providerConfig %v: %w", pc, err)
 	}
 
-	logger.V(2).Info("Successfully synced providerConfig", "providerConfig", pc)
+	logger.Info("Successfully synced providerConfig", "providerConfig", pc)
 	return nil
 }

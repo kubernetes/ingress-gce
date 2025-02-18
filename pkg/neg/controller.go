@@ -178,6 +178,12 @@ func NewController(
 		apiv1.EventSource{Component: "neg-controller"})
 
 	syncerMetrics := syncMetrics.NewNegMetricsCollector(flags.F.NegMetricsExportInterval, logger)
+
+	allNodes := nodeInformer.GetIndexer().List()
+	klog.Infof("All Nodes in NewController: %+v", allNodes)
+	for _, node := range allNodes {
+		klog.Infof("Node: %v", node)
+	}
 	manager := newSyncerManager(
 		namer,
 		l4Namer,
@@ -394,10 +400,12 @@ func (c *Controller) Run() {
 		go wait.Until(c.nodeTopologyWorker, time.Second, c.stopCh)
 	}
 	go func() {
+		c.logger.Info("Waiting for gcPeriod to run the first GC", "gcPeriod", c.gcPeriod)
 		// Wait for gcPeriod to run the first GC
 		// This is to make sure that all services are fully processed before running GC.
 		time.Sleep(c.gcPeriod)
 		wait.Until(c.gc, c.gcPeriod, c.stopCh)
+		c.logger.Info("First GC completed")
 	}()
 	go c.reflector.Run(c.stopCh)
 	go c.syncerMetrics.Run(c.stopCh)
