@@ -912,8 +912,8 @@ func (s *transactionSyncer) updateInitStatus(negObjRefs []negv1beta1.NegObjectRe
 
 	neg := origNeg.DeepCopy()
 	if flags.F.EnableMultiSubnetClusterPhase1 {
-		inactiveNegObjRefs := getInactiveNegRefs(origNeg.Status.NetworkEndpointGroups, negObjRefs, s.logger)
-		negObjRefs = append(negObjRefs, inactiveNegObjRefs...)
+		nonActiveNegRefs := getNonActiveNegRefs(origNeg.Status.NetworkEndpointGroups, negObjRefs, s.zoneGetter.ListSubnets(s.logger), s.networkInfo.SubnetworkURL, s.logger)
+		negObjRefs = append(negObjRefs, nonActiveNegRefs...)
 	}
 	neg.Status.NetworkEndpointGroups = negObjRefs
 
@@ -1061,9 +1061,16 @@ func ensureCondition(neg *negv1beta1.ServiceNetworkEndpointGroup, expectedCondit
 	return expectedCondition
 }
 
-// getInactiveNegRefs creates NEG references for NEGs in Inactive State.
-// Inactive NEG are NEGs that are no longer needed.
-func getInactiveNegRefs(oldNegRefs []negv1beta1.NegObjectReference, currentNegRefs []negv1beta1.NegObjectReference, logger klog.Logger) []negv1beta1.NegObjectReference {
+// getNonActiveNegRefs creates NEG references for NEGs in Inactive State and ToBeDeleted state.
+// Inactive NEG are NEGs that are in zones that cluster is no longer in.
+// ToBeDeleted NEGs are NEGs in subnets that no longer exist on the Topology CRD
+func getNonActiveNegRefs(oldNegRefs []negv1beta1.NegObjectReference, currentNegRefs []negv1beta1.NegObjectReference, subnetConfigs []nodetopologyv1.SubnetConfig, defaultSubnetURL string, logger klog.Logger) []negv1beta1.NegObjectReference {
+
+	subnetMap := make(map[string]struct{})
+	for _, subnet := range subnetConfigs {
+		subnetMap[subnet.Name] = struct{}{}
+	}
+
 	activeNegs := make(map[negtypes.NegInfo]struct{})
 	for _, negRef := range currentNegRefs {
 		negInfo, err := negtypes.NegInfoFromNegRef(negRef)
@@ -1074,7 +1081,7 @@ func getInactiveNegRefs(oldNegRefs []negv1beta1.NegObjectReference, currentNegRe
 		activeNegs[negInfo] = struct{}{}
 	}
 
-	var inactiveNegRefs []negv1beta1.NegObjectReference
+	var nonActiveNegRefs []negv1beta1.NegObjectReference
 	for _, origNegRef := range oldNegRefs {
 		negInfo, err := negtypes.NegInfoFromNegRef(origNegRef)
 		if err != nil {
@@ -1082,18 +1089,38 @@ func getInactiveNegRefs(oldNegRefs []negv1beta1.NegObjectReference, currentNegRe
 			continue
 		}
 
+		if _, exists := activeNegs[negInfo]; exists {
+			continue
+		}
 		// NEGs are listed based on the current node zones. If a NEG no longer
 		// exists in the current list, it means there are no nodes/endpoints
 		// in that specific zone, and we mark it as INACTIVE.
 		// We use SelfLink as identifier since it contains the unique NEG zone
 		// and name pair.
-		if _, exists := activeNegs[negInfo]; !exists {
-			inactiveNegRef := origNegRef.DeepCopy()
-			inactiveNegRef.State = negv1beta1.InactiveState
-			inactiveNegRefs = append(inactiveNegRefs, *inactiveNegRef)
+
+		nonActiveNegRef := origNegRef.DeepCopy()
+		nonActiveNegRef.State = negv1beta1.InactiveState
+
+		// Empty subnet is a remanent from a previous version and is only possible
+		// with a NEG from the default subnet. The ref should be updated with default
+		// subnet.
+		if nonActiveNegRef.SubnetURL == "" {
+			nonActiveNegRef.SubnetURL = defaultSubnetURL
 		}
+
+		resID, err := cloud.ParseResourceURL(nonActiveNegRef.SubnetURL)
+		if err != nil {
+			logger.Error(err, "Failed to extract subnet information from the previous snapshot, skipping validating if it is an Inactive or to-be-deleted NEG", "negId", nonActiveNegRef.Id, "negSelfLink", nonActiveNegRef.SelfLink)
+			continue
+		}
+
+		if _, exists := subnetMap[resID.Key.Name]; !exists {
+			nonActiveNegRef.State = negv1beta1.ToBeDeletedState
+		}
+
+		nonActiveNegRefs = append(nonActiveNegRefs, *nonActiveNegRef)
 	}
-	return inactiveNegRefs
+	return nonActiveNegRefs
 }
 
 // getSyncedCondition returns the expected synced condition based on given error
