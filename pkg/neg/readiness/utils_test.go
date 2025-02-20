@@ -445,7 +445,10 @@ func TestNeedToProcess(t *testing.T) {
 }
 
 func TestNeedToPoll(t *testing.T) {
-	poller := newFakePoller()
+	poller, err := newFakePoller()
+	if err != nil {
+		t.Fatalf("failed to create fake poller")
+	}
 	fakeLookUp := poller.lookup.(*fakeLookUp)
 	podLister := poller.podLister
 	namespace := "ns"

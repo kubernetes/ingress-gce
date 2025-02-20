@@ -43,7 +43,7 @@ type Jig struct {
 	syncer           *Syncer
 }
 
-func newTestJig(fakeGCE *gce.Cloud) *Jig {
+func newTestJig(fakeGCE *gce.Cloud) (*Jig, error) {
 	fakeHealthChecks := healthchecks.NewHealthChecker(fakeGCE, "/", defaultBackendSvc, healthchecks.NewFakeRecorderGetter(0), healthchecks.NewFakeServiceGetter(), healthchecks.HealthcheckFlags{
 		EnableTHC: flags.F.EnableTransparentHealthChecks,
 		EnableRecalculationOnBackendConfigRemoval: flags.F.EnableRecalculateUHCOnBCRemoval,
@@ -53,7 +53,10 @@ func newTestJig(fakeGCE *gce.Cloud) *Jig {
 	fakeIGs := instancegroups.NewEmptyFakeInstanceGroups()
 
 	nodeInformer := zonegetter.FakeNodeInformer()
-	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	fakeZoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		return nil, err
+	}
 	zonegetter.AddFakeNodes(fakeZoneGetter, defaultTestZone, "test-instance")
 
 	fakeInstancePool := instancegroups.NewManager(&instancegroups.ManagerConfig{
@@ -77,15 +80,18 @@ func newTestJig(fakeGCE *gce.Cloud) *Jig {
 		fakeInstancePool: fakeInstancePool,
 		linker:           NewInstanceGroupLinker(fakeInstancePool, fakeBackendPool, klog.TODO()),
 		syncer:           NewBackendSyncer(fakeBackendPool, fakeHealthChecks, fakeGCE, NewFakeProbeProvider(nil)),
-	}
+	}, nil
 }
 
 func TestBackendInstanceGroupClobbering(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	jig := newTestJig(fakeGCE)
+	jig, err := newTestJig(fakeGCE)
+	if err != nil {
+		t.Fatalf("failed to generate test jig: %v", err)
+	}
 
 	sp := utils.ServicePort{NodePort: 80, BackendNamer: defaultNamer, Protocol: annotations.ProtocolHTTP}
-	_, err := jig.fakeInstancePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort}, klog.TODO())
+	_, err = jig.fakeInstancePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort}, klog.TODO())
 	if err != nil {
 		t.Fatalf("Did not expect error when ensuring IG for ServicePort %+v: %v", sp, err)
 	}
@@ -154,11 +160,14 @@ func TestBackendInstanceGroupClobbering(t *testing.T) {
 
 func TestSyncChaosMonkey(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	jig := newTestJig(fakeGCE)
+	jig, err := newTestJig(fakeGCE)
+	if err != nil {
+		t.Fatalf("failed to generate test jig: %v", err)
+	}
 
 	sp := utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP, BackendNamer: defaultNamer}
 
-	_, err := jig.fakeInstancePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort}, klog.TODO())
+	_, err = jig.fakeInstancePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort}, klog.TODO())
 	if err != nil {
 		t.Fatalf("Did not expect error when ensuring IG for ServicePort %+v, err %v", sp, err)
 	}

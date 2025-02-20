@@ -48,9 +48,12 @@ const (
 
 var defaultNamer = namer.NewNamer("uid1", "fw1", klog.TODO())
 
-func newNodePool(f Provider, maxIGSize int) Manager {
+func newNodePool(f Provider, maxIGSize int) (Manager, error) {
 	nodeInformer := zonegetter.FakeNodeInformer()
-	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	fakeZoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		return nil, err
+	}
 
 	pool := NewManager(&ManagerConfig{
 		Cloud:      f,
@@ -60,7 +63,7 @@ func newNodePool(f Provider, maxIGSize int) Manager {
 		ZoneGetter: fakeZoneGetter,
 		MaxIGSize:  maxIGSize,
 	})
-	return pool
+	return pool, nil
 }
 
 func getNodeNames(nodes map[string]string) []string {
@@ -129,7 +132,10 @@ func TestNodePoolSyncWithEmptyZone(t *testing.T) {
 			fakeGCEInstanceGroups := NewFakeInstanceGroups(zonesToIGs, 10)
 
 			// assigne zones to nodes in kubeNodes
-			pool := newNodePool(fakeGCEInstanceGroups, 10)
+			pool, err := newNodePool(fakeGCEInstanceGroups, 10)
+			if err != nil {
+				t.Fatalf("failed to create node pool: %s", err)
+			}
 			for name, zone := range tc.kubeNodes {
 				manager := pool.(*manager)
 				zonegetter.AddFakeNodes(manager.ZoneGetter, zone, name)
@@ -137,7 +143,7 @@ func TestNodePoolSyncWithEmptyZone(t *testing.T) {
 
 			// run sync step
 			nodeNames := getNodeNames(tc.kubeNodes)
-			err := pool.Sync(nodeNames, klog.TODO())
+			err = pool.Sync(nodeNames, klog.TODO())
 			if err != nil {
 				t.Fatalf("pool.Sync(%v) returned error %v, want nil", nodeNames, err)
 			}
@@ -212,7 +218,10 @@ func TestNodePoolSync(t *testing.T) {
 		}
 		fakeGCEInstanceGroups := NewFakeInstanceGroups(zonesToIGs, maxIGSize)
 
-		pool := newNodePool(fakeGCEInstanceGroups, maxIGSize)
+		pool, err := newNodePool(fakeGCEInstanceGroups, maxIGSize)
+		if err != nil {
+			t.Fatalf("failed to create node pool: %s", err)
+		}
 		manager := pool.(*manager)
 		for _, kubeNode := range testCase.kubeNodes.List() {
 			zonegetter.AddFakeNodes(manager.ZoneGetter, defaultTestZone, kubeNode)
@@ -223,7 +232,7 @@ func TestNodePoolSync(t *testing.T) {
 
 		igName := defaultNamer.InstanceGroup()
 		ports := []int64{80}
-		_, err := pool.EnsureInstanceGroupsAndPorts(igName, ports, klog.TODO())
+		_, err = pool.EnsureInstanceGroupsAndPorts(igName, ports, klog.TODO())
 		if err != nil {
 			t.Fatalf("pool.EnsureInstanceGroupsAndPorts(%s, %v) returned error %v, want nil", igName, ports, err)
 		}
@@ -283,7 +292,10 @@ func TestInstanceAlreadyMemberOfIG(t *testing.T) {
 	fakeInstanceGroups := new(fakeIGAlreadyExists)
 	fakeInstanceGroups.FakeInstanceGroups = NewFakeInstanceGroups(map[string]IGsToInstances{}, maxIGSize)
 
-	pool := newNodePool(fakeInstanceGroups, maxIGSize)
+	pool, err := newNodePool(fakeInstanceGroups, maxIGSize)
+	if err != nil {
+		t.Fatalf("failed to create node pool: %s", err)
+	}
 	for _, kubeNode := range kubeNodes.List() {
 		manager := pool.(*manager)
 		zonegetter.AddFakeNodes(manager.ZoneGetter, defaultTestZone, kubeNode)
@@ -291,7 +303,7 @@ func TestInstanceAlreadyMemberOfIG(t *testing.T) {
 
 	igName := defaultNamer.InstanceGroup()
 	ports := []int64{80}
-	_, err := pool.EnsureInstanceGroupsAndPorts(igName, ports, klog.TODO())
+	_, err = pool.EnsureInstanceGroupsAndPorts(igName, ports, klog.TODO())
 	if err != nil {
 		t.Fatalf("pool.EnsureInstanceGroupsAndPorts(%s, %v) returned error %v, want nil", igName, ports, err)
 	}
@@ -370,14 +382,17 @@ func TestNodePoolSyncHugeCluster(t *testing.T) {
 
 			igName := defaultNamer.InstanceGroup()
 			fakeGCEInstanceGroups := NewFakeInstanceGroups(map[string]IGsToInstances{}, maxIGSize)
-			pool := newNodePool(fakeGCEInstanceGroups, maxIGSize)
+			pool, err := newNodePool(fakeGCEInstanceGroups, maxIGSize)
+			if err != nil {
+				t.Fatalf("failed to create node pool: %s", err)
+			}
 			manager := pool.(*manager)
 			zonegetter.AddFakeNodes(manager.ZoneGetter, testZoneA, tc.gceNodesZoneA.List()...)
 			zonegetter.AddFakeNodes(manager.ZoneGetter, testZoneB, tc.gceNodesZoneB.List()...)
 			zonegetter.AddFakeNodes(manager.ZoneGetter, testZoneC, tc.gceNodesZoneC.List()...)
 
 			ports := []int64{80}
-			_, err := pool.EnsureInstanceGroupsAndPorts(igName, ports, klog.TODO())
+			_, err = pool.EnsureInstanceGroupsAndPorts(igName, ports, klog.TODO())
 			if err != nil {
 				t.Fatalf("pool.EnsureInstanceGroupsAndPorts(%s, %v) returned error %v, want nil", igName, ports, err)
 			}
@@ -427,12 +442,15 @@ func TestInstanceTruncatingOrder(t *testing.T) {
 
 	igName := defaultNamer.InstanceGroup()
 	fakeGCEInstanceGroups := NewFakeInstanceGroups(map[string]IGsToInstances{}, maxIGSize)
-	pool := newNodePool(fakeGCEInstanceGroups, maxIGSize)
+	pool, err := newNodePool(fakeGCEInstanceGroups, maxIGSize)
+	if err != nil {
+		t.Fatalf("failed to create node pool: %s", err)
+	}
 	manager := pool.(*manager)
 	zonegetter.AddFakeNodes(manager.ZoneGetter, testZoneA, gceNodesZoneA...)
 
 	ports := []int64{80}
-	_, err := pool.EnsureInstanceGroupsAndPorts(igName, ports, klog.TODO())
+	_, err = pool.EnsureInstanceGroupsAndPorts(igName, ports, klog.TODO())
 	if err != nil {
 		t.Fatalf("pool.EnsureInstanceGroupsAndPorts(%s, %v) returned error %v, want nil", igName, ports, err)
 	}
@@ -463,7 +481,10 @@ func TestEnsureInstanceGroupsAndPortsCreatesGroupForAllNodes(t *testing.T) {
 
 	igName := defaultNamer.InstanceGroup()
 	fakeGCEInstanceGroups := NewFakeInstanceGroups(map[string]IGsToInstances{}, maxIGSize)
-	pool := newNodePool(fakeGCEInstanceGroups, maxIGSize)
+	pool, err := newNodePool(fakeGCEInstanceGroups, maxIGSize)
+	if err != nil {
+		t.Fatalf("failed to create node pool: %s", err)
+	}
 	manager := pool.(*manager)
 	zonegetter.AddFakeNodes(manager.ZoneGetter, testZoneA, gceNodesZoneA...)
 	// add an unready node in the zone B
@@ -490,7 +511,7 @@ func TestEnsureInstanceGroupsAndPortsCreatesGroupForAllNodes(t *testing.T) {
 	})
 
 	ports := []int64{80}
-	_, err := pool.EnsureInstanceGroupsAndPorts(igName, ports, klog.TODO())
+	_, err = pool.EnsureInstanceGroupsAndPorts(igName, ports, klog.TODO())
 	if err != nil {
 		t.Fatalf("pool.EnsureInstanceGroupsAndPorts(%s, %v) returned error %v, want nil", igName, ports, err)
 	}
@@ -528,7 +549,10 @@ func TestSetNamedPorts(t *testing.T) {
 		},
 	}
 	fakeIGs := NewFakeInstanceGroups(zonesToIGs, maxIGSize)
-	pool := newNodePool(fakeIGs, maxIGSize)
+	pool, err := newNodePool(fakeIGs, maxIGSize)
+	if err != nil {
+		t.Fatalf("failed to create node pool: %s", err)
+	}
 	manager := pool.(*manager)
 	zonegetter.AddFakeNodes(manager.ZoneGetter, defaultTestZone, "test-node")
 
@@ -585,7 +609,10 @@ func TestGetInstanceReferences(t *testing.T) {
 			&compute.InstanceGroup{Name: "ig"}: sets.NewString("ig"),
 		},
 	}
-	pool := newNodePool(NewFakeInstanceGroups(zonesToIGs, maxIGSize), maxIGSize)
+	pool, err := newNodePool(NewFakeInstanceGroups(zonesToIGs, maxIGSize), maxIGSize)
+	if err != nil {
+		t.Fatalf("failed to create node pool: %s", err)
+	}
 	instances := pool.(*manager)
 
 	nodeNames := []string{"node-1", "node-2", "node-3", "node-4.region.zone"}

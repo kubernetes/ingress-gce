@@ -570,8 +570,9 @@ func InstancesListToNameSet(instancesList []*compute.InstanceWithNamedPorts) (se
 func MustCreateDualStackClusterSubnet(t *testing.T, gcecloud *gce.Cloud, ipv6AccessType string) {
 	t.Helper()
 	// Mock GCE uses subnet with empty string name.
-	MustCreateDualStackSubnet(t, gcecloud, "", ipv6AccessType)
+	MustCreateDualStackSubnetWithURL(t, gcecloud, DefaultTestSubnetURL, ipv6AccessType)
 }
+
 func MustCreateDualStackSubnet(t *testing.T, gcecloud *gce.Cloud, subnetName, ipv6AccessType string) {
 	t.Helper()
 
@@ -581,6 +582,25 @@ func MustCreateDualStackSubnet(t *testing.T, gcecloud *gce.Cloud, subnetName, ip
 		StackType:      "IPV4_IPV6",
 	}
 	err := gcecloud.Compute().(*cloud.MockGCE).Subnetworks().Insert(context2.TODO(), subnetKey, subnetToCreate)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// MustCreateSubnet an empty subnet with a key generated from the provided subnetURLinto GCE
+func MustCreateDualStackSubnetWithURL(t *testing.T, gcecloud *gce.Cloud, subnetURL, ipv6AccessType string) {
+	t.Helper()
+
+	resID, err := cloud.ParseResourceURL(subnetURL)
+	if err != nil {
+		t.Fatalf("failed to parse subnet URL : %v", err)
+	}
+
+	subnetToCreate := &compute.Subnetwork{
+		Ipv6AccessType: ipv6AccessType,
+		StackType:      "IPV4_IPV6",
+	}
+	err = gcecloud.Compute().(*cloud.MockGCE).Subnetworks().Insert(context2.TODO(), resID.Key, subnetToCreate)
 	if err != nil {
 		t.Fatal(err)
 	}

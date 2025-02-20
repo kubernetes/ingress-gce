@@ -23,10 +23,13 @@ import (
 	"testing"
 	"time"
 
+	nodetopologyv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1"
+	"github.com/google/go-cmp/cmp"
 	api_v1 "k8s.io/api/core/v1"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/nodetopology"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
@@ -36,7 +39,10 @@ func TestListZones(t *testing.T) {
 
 	nodeInformer := FakeNodeInformer()
 	PopulateFakeNodeInformer(nodeInformer, false)
-	zoneGetter := NewFakeZoneGetter(nodeInformer, FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	zoneGetter, err := NewFakeZoneGetter(nodeInformer, FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter")
+	}
 	testCases := []struct {
 		desc      string
 		filter    Filter
@@ -82,7 +88,10 @@ func TestListZonesMultipleSubnets(t *testing.T) {
 
 	nodeInformer := FakeNodeInformer()
 	PopulateFakeNodeInformer(nodeInformer, true)
-	zoneGetter := NewFakeZoneGetter(nodeInformer, FakeNodeTopologyInformer(), defaultTestSubnetURL, true)
+	zoneGetter, err := NewFakeZoneGetter(nodeInformer, FakeNodeTopologyInformer(), defaultTestSubnetURL, true)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter")
+	}
 
 	testCases := []struct {
 		desc      string
@@ -126,7 +135,10 @@ func TestListNodes(t *testing.T) {
 
 	nodeInformer := FakeNodeInformer()
 	PopulateFakeNodeInformer(nodeInformer, false)
-	zoneGetter := NewFakeZoneGetter(nodeInformer, FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	zoneGetter, err := NewFakeZoneGetter(nodeInformer, FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter")
+	}
 
 	testCases := []struct {
 		desc      string
@@ -167,7 +179,10 @@ func TestListNodesMultipleSubnets(t *testing.T) {
 
 	nodeInformer := FakeNodeInformer()
 	PopulateFakeNodeInformer(nodeInformer, true)
-	zoneGetter := NewFakeZoneGetter(nodeInformer, FakeNodeTopologyInformer(), defaultTestSubnetURL, true)
+	zoneGetter, err := NewFakeZoneGetter(nodeInformer, FakeNodeTopologyInformer(), defaultTestSubnetURL, true)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter")
+	}
 
 	testCases := []struct {
 		desc      string
@@ -203,7 +218,10 @@ func TestListNodesMultipleSubnets(t *testing.T) {
 func TestZoneAndSubnetForNode(t *testing.T) {
 	nodeInformer := FakeNodeInformer()
 	PopulateFakeNodeInformer(nodeInformer, false)
-	zoneGetter := NewFakeZoneGetter(nodeInformer, FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	zoneGetter, err := NewFakeZoneGetter(nodeInformer, FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter")
+	}
 
 	testCases := []struct {
 		desc           string
@@ -284,7 +302,10 @@ func TestZoneForNodeMultipleSubnets(t *testing.T) {
 
 	nodeInformer := FakeNodeInformer()
 	PopulateFakeNodeInformer(nodeInformer, true)
-	zoneGetter := NewFakeZoneGetter(nodeInformer, FakeNodeTopologyInformer(), defaultTestSubnetURL, true)
+	zoneGetter, err := NewFakeZoneGetter(nodeInformer, FakeNodeTopologyInformer(), defaultTestSubnetURL, true)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter")
+	}
 
 	testCases := []struct {
 		desc       string
@@ -488,7 +509,10 @@ func TestNonGCPZoneGetter(t *testing.T) {
 
 func TestIsNodeSelectedByFilter(t *testing.T) {
 	fakeNodeInformer := FakeNodeInformer()
-	zoneGetter := NewFakeZoneGetter(fakeNodeInformer, FakeNodeTopologyInformer(), defaultTestSubnetURL, true)
+	zoneGetter, err := NewFakeZoneGetter(fakeNodeInformer, FakeNodeTopologyInformer(), defaultTestSubnetURL, true)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter")
+	}
 
 	testCases := []struct {
 		node                    apiv1.Node
@@ -869,6 +893,93 @@ func TestIsNodeInDefaultSubnet(t *testing.T) {
 			}
 			if gotInDefaultSubnet != tc.expectInDefaultSubnet {
 				t.Errorf("isNodeInDefaultSubnet(%v, %s) = %v, want %v", tc.node, defaultTestSubnetURL, gotInDefaultSubnet, tc.expectInDefaultSubnet)
+			}
+		})
+	}
+}
+
+func TestListSubnets(t *testing.T) {
+	prevTopologyCRName := flags.F.NodeTopologyCRName
+	defer func() {
+		flags.F.NodeTopologyCRName = prevTopologyCRName
+	}()
+
+	flags.F.NodeTopologyCRName = "default-topology-cr"
+
+	defaultSubnetConfig, err := nodetopology.SubnetConfigFromSubnetURL(defaultTestSubnetURL)
+	if err != nil {
+		t.Fatalf("errored generating default subnet config: %v", err)
+	}
+
+	defaultSubnet := []nodetopologyv1.SubnetConfig{defaultSubnetConfig}
+
+	multipleSubnetConfigs := []nodetopologyv1.SubnetConfig{
+		defaultSubnetConfig,
+		{Name: "subnet1", SubnetPath: "path/to/gcp/subnet1"},
+	}
+
+	topologyCR := &nodetopologyv1.NodeTopology{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: flags.F.NodeTopologyCRName,
+		},
+
+		Status: nodetopologyv1.NodeTopologyStatus{
+			Subnets: multipleSubnetConfigs,
+		},
+	}
+
+	testcases := []struct {
+		desc               string
+		nodeTopologySynced bool
+		enableMSC          bool
+		populateTopologyCR bool
+		wantSubnets        []nodetopologyv1.SubnetConfig
+	}{
+		{
+			desc:        "MSC is not enabled",
+			enableMSC:   false,
+			wantSubnets: defaultSubnet,
+		},
+		{
+			desc:               "node topology crd has not synced",
+			enableMSC:          true,
+			nodeTopologySynced: false,
+			wantSubnets:        defaultSubnet,
+		},
+		{
+			desc:               "default topology crd doesn't exist",
+			enableMSC:          true,
+			nodeTopologySynced: true,
+			populateTopologyCR: false,
+			wantSubnets:        defaultSubnet,
+		},
+		{
+			desc:               "default topology CR exists",
+			enableMSC:          true,
+			nodeTopologySynced: true,
+			populateTopologyCR: true,
+			wantSubnets:        multipleSubnetConfigs,
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.desc, func(t *testing.T) {
+			fakeTopologyInformer := FakeNodeTopologyInformer()
+			zoneGetter, err := NewFakeZoneGetter(FakeNodeInformer(), fakeTopologyInformer, defaultTestSubnetURL, !tc.enableMSC)
+			if err != nil {
+				t.Fatalf("failed to initialize zone getter")
+			}
+
+			zoneGetter.nodeTopologyHasSynced = func() bool { return tc.nodeTopologySynced }
+
+			if tc.populateTopologyCR {
+				fakeTopologyInformer.GetIndexer().Add(topologyCR)
+			}
+
+			gotSubnets := zoneGetter.ListSubnets(klog.TODO())
+
+			if diff := cmp.Diff(gotSubnets, tc.wantSubnets); diff != "" {
+				t.Errorf("Got mismatch for List Subnets (-got, +want)= %s", diff)
 			}
 		})
 	}

@@ -156,7 +156,7 @@ func NewControllerContext(
 	kubeSystemUID types.UID,
 	config ControllerContextConfig,
 	logger klog.Logger,
-) *ControllerContext {
+) (*ControllerContext, error) {
 	logger = logger.WithName("ControllerContext")
 
 	podInformer := informerv1.NewPodInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
@@ -239,7 +239,8 @@ func NewControllerContext(
 		logger,
 	)
 	// The subnet specified in gce.conf is considered as the default subnet.
-	context.ZoneGetter = zonegetter.NewZoneGetter(context.NodeInformer, context.NodeTopologyInformer, context.Cloud.SubnetworkURL())
+	var err error
+	context.ZoneGetter, err = zonegetter.NewZoneGetter(context.NodeInformer, context.NodeTopologyInformer, context.Cloud.SubnetworkURL())
 	context.InstancePool = instancegroups.NewManager(&instancegroups.ManagerConfig{
 		Cloud:      context.Cloud,
 		Namer:      context.ClusterNamer,
@@ -249,7 +250,7 @@ func NewControllerContext(
 		MaxIGSize:  config.MaxIGSize,
 	})
 
-	return context
+	return context, err
 }
 
 func (ctx *ControllerContext) Recorder(ns string) record.EventRecorder {
