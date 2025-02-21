@@ -1,6 +1,7 @@
 package namer
 
 import (
+	"fmt"
 	"strings"
 
 	"k8s.io/ingress-gce/pkg/utils/common"
@@ -14,12 +15,13 @@ import (
 // value is 63 - 24 = 39
 // for forwarding rule, 4 more chars need to be subtracted.
 const (
-	maximumL4CombinedLength = 39
-	sharedHcSuffix          = "l4-shared-hc"
-	firewallHcSuffix        = "-fw"
-	ipv6Suffix              = "ipv6"
-	sharedFirewallHcSuffix  = sharedHcSuffix + firewallHcSuffix
-	maxResourceNameLength   = 63
+	maximumL4CombinedLength     = 39
+	sharedHcSuffix              = "l4-shared-hc"
+	firewallHcSuffix            = "-fw"
+	ipv6Suffix                  = "ipv6"
+	sharedFirewallHcSuffix      = sharedHcSuffix + firewallHcSuffix
+	maxResourceNameLength       = 63
+	l3ProtocolWithoutUnderscore = "l3"
 )
 
 // L4Namer implements naming scheme for L4 LoadBalancer resources.
@@ -35,7 +37,7 @@ const (
 type L4Namer struct {
 	// Namer is needed to implement all methods required by BackendNamer interface.
 	*Namer
-	// v2Prefix is the string 'k8sv2'
+	// v2Prefix is the string 'k8s2'
 	v2Prefix string
 	// v2ClusterUID is the kube-system UID.
 	v2ClusterUID string
@@ -59,6 +61,31 @@ func (namer *L4Namer) L4Backend(namespace, name string) string {
 		getTrimmedNamespacedName(namespace, name, maximumL4CombinedLength),
 		namer.getClusterSuffix(namespace, name),
 	}, "-")
+}
+
+// NonDefaultSubnetNEG returns the gce NEG name for L4 NEGs in non default
+// subnet based on the service namespace, name, and subnet name.
+// Naming convention:
+//
+//	k8s2-{uid}-{ns}-{name}-{subnetHash}-{suffix}
+//
+// subnetHash length = 6, suffix length = 8, and the remainings are trimmed evenly.
+// Output name is at most 63 characters.
+func (namer *L4Namer) NonDefaultSubnetNEG(namespace, name, subnetName string, _ int32) string {
+	return strings.Join([]string{
+		namer.v2Prefix,
+		namer.v2ClusterUID,
+		getTrimmedNamespacedName(namespace, name, maximumL4CombinedLength-subnetHashLength-1),
+		subnetHash(subnetName),
+		namer.getClusterSuffix(namespace, name),
+	}, "-")
+}
+
+// NonDefaultSubnetCustomNEG returns the gce neg name in the non-default subnet
+// when the NEG name is a custom one.
+// Custom Name NEG for L4 NEG is not allowed.
+func (n *L4Namer) NonDefaultSubnetCustomNEG(customNEGName, subnetName string) (string, error) {
+	return "", fmt.Errorf("Custom NEG is not allowed for L4")
 }
 
 // L4Firewall returns the gce Firewall name based on the service namespace and name
@@ -89,6 +116,11 @@ func (namer *L4Namer) L4IPv6Firewall(namespace, name string) string {
 //
 // Output name is at most 63 characters.
 func (namer *L4Namer) L4ForwardingRule(namespace, name, protocol string) string {
+	protocol = strings.ToLower(protocol)
+	if protocol == "l3_default" {
+		protocol = l3ProtocolWithoutUnderscore
+	}
+
 	// add 1 for hyphen
 	protoLen := len(protocol) + 1
 	return strings.Join([]string{

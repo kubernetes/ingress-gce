@@ -42,9 +42,6 @@ func (*ILBFeature) Name() string {
 // ILBValidator is an example validator.
 type ILBValidator struct {
 	fuzz.NullValidator
-
-	ing *v1.Ingress
-	env fuzz.ValidatorEnv
 }
 
 // Name implements fuzz.FeatureValidator.
@@ -54,9 +51,6 @@ func (*ILBValidator) Name() string {
 
 // ConfigureAttributes implements fuzz.FeatureValidator.
 func (v *ILBValidator) ConfigureAttributes(env fuzz.ValidatorEnv, ing *v1.Ingress, a *fuzz.IngressValidatorAttributes) error {
-	// Capture the env for use later in CheckResponse.
-	v.ing = ing
-	v.env = env
 	return nil
 }
 

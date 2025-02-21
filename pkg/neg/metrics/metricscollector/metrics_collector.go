@@ -294,7 +294,7 @@ func (sm *SyncerMetrics) computeEndpointStateMetrics() (negtypes.StateCountMap, 
 
 // CollectDualStackMigrationMetrics will be used by dualstack.Migrator to export
 // metrics.
-func (sm *SyncerMetrics) CollectDualStackMigrationMetrics(key negtypes.NegSyncerKey, committedEndpoints map[string]negtypes.NetworkEndpointSet, migrationCount int) {
+func (sm *SyncerMetrics) CollectDualStackMigrationMetrics(key negtypes.NegSyncerKey, committedEndpoints map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, migrationCount int) {
 	sm.updateMigrationStartAndEndTime(key, migrationCount)
 	sm.updateEndpointsCountPerType(key, committedEndpoints, migrationCount)
 }
@@ -337,7 +337,7 @@ func (sm *SyncerMetrics) updateMigrationStartAndEndTime(key negtypes.NegSyncerKe
 	sm.dualStackMigrationStartTime[key] = sm.clock.Now()
 }
 
-func (sm *SyncerMetrics) updateEndpointsCountPerType(key negtypes.NegSyncerKey, committedEndpoints map[string]negtypes.NetworkEndpointSet, migrationCount int) {
+func (sm *SyncerMetrics) updateEndpointsCountPerType(key negtypes.NegSyncerKey, committedEndpoints map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, migrationCount int) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 

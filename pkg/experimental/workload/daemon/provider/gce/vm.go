@@ -42,7 +42,6 @@ type VM struct {
 	instanceName string
 	hostname     string
 	internalIP   string
-	externalIP   string
 	projectID    string
 	region       string
 	zone         string
@@ -256,7 +255,6 @@ func NewVM(logger klog.Logger) (vm *VM, err error) {
 		instanceName: getAttrOrPanic(metadata.InstanceName, "InstanceName", logger),
 		hostname:     getAttrOrPanic(metadata.Hostname, "Hostname", logger),
 		internalIP:   getAttrOrPanic(metadata.InternalIP, "InternalIP", logger),
-		externalIP:   getAttrOrPanic(metadata.ExternalIP, "ExternalIP", logger),
 		projectID:    getAttrOrPanic(metadata.ProjectID, "ProjectID", logger),
 		zone:         getAttrOrPanic(metadata.Zone, "Zone", logger),
 		// Fetch the cluster name and zone

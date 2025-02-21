@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"google.golang.org/api/compute/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -51,10 +52,8 @@ const (
 	L4NetLBIPv6HCRange            = "2600:1901:8001::/48"
 )
 
-var (
-	// sharedLock used to prevent race condition between shared health checks and firewalls.
-	sharedLock = &sync.Mutex{}
-)
+// sharedLock used to prevent race condition between shared health checks and firewalls.
+var sharedLock = &sync.Mutex{}
 
 type l4HealthChecks struct {
 	// sharedResourceLock serializes operations on the healthcheck and firewall
@@ -133,18 +132,20 @@ func (l4hc *l4HealthChecks) EnsureHealthCheckWithDualStackFirewalls(svc *corev1.
 	}
 	hcLogger.V(3).Info("L4 Healthcheck", "expectedPath", hcPath, "expectedPort", hcPort)
 
-	hcLink, err := l4hc.ensureHealthCheck(hcName, namespacedName, sharedHC, hcPath, hcPort, scope, l4Type, hcLogger)
+	hcLink, wasUpdate, err := l4hc.ensureHealthCheck(hcName, namespacedName, sharedHC, hcPath, hcPort, scope, l4Type, hcLogger)
 	if err != nil {
 		hcLogger.Error(err, "Error while ensuring hc")
 		return &EnsureHealthCheckResult{
 			GceResourceInError: annotations.HealthcheckResource,
 			Err:                err,
+			WasUpdated:         utils.ResourceResync,
 		}
 	}
 
 	hcResult := &EnsureHealthCheckResult{
-		HCName: hcName,
-		HCLink: hcLink,
+		HCName:     hcName,
+		HCLink:     hcLink,
+		WasUpdated: wasUpdate,
 	}
 
 	if needsIPv4 {
@@ -160,7 +161,7 @@ func (l4hc *l4HealthChecks) EnsureHealthCheckWithDualStackFirewalls(svc *corev1.
 	return hcResult
 }
 
-func (l4hc *l4HealthChecks) ensureHealthCheck(hcName string, svcName types.NamespacedName, shared bool, path string, port int32, scope meta.KeyType, l4Type utils.L4LBType, hcLogger klog.Logger) (string, error) {
+func (l4hc *l4HealthChecks) ensureHealthCheck(hcName string, svcName types.NamespacedName, shared bool, path string, port int32, scope meta.KeyType, l4Type utils.L4LBType, hcLogger klog.Logger) (string, utils.ResourceSyncStatus, error) {
 	start := time.Now()
 	hcLogger.V(2).Info("Ensuring healthcheck for service", "shared", shared, "path", path, "port", port, "scope", scope, "l4Type", l4Type.ToString())
 	defer func() {
@@ -169,7 +170,7 @@ func (l4hc *l4HealthChecks) ensureHealthCheck(hcName string, svcName types.Names
 
 	hc, err := l4hc.hcProvider.Get(hcName, scope)
 	if err != nil {
-		return "", err
+		return "", utils.ResourceResync, err
 	}
 
 	var region string
@@ -183,27 +184,27 @@ func (l4hc *l4HealthChecks) ensureHealthCheck(hcName string, svcName types.Names
 		hcLogger.V(2).Info("Creating healthcheck for service", "shared", shared, "expectedHealthcheck", expectedHC)
 		err = l4hc.hcProvider.Create(expectedHC)
 		if err != nil {
-			return "", err
+			return "", utils.ResourceResync, err
 		}
 		selfLink, err := l4hc.hcProvider.SelfLink(expectedHC.Name, scope)
 		if err != nil {
-			return "", err
+			return "", utils.ResourceResync, err
 		}
-		return selfLink, nil
+		return selfLink, utils.ResourceUpdate, nil
 	}
 	selfLink := hc.SelfLink
 	if !needToUpdateHealthChecks(hc, expectedHC) {
 		// nothing to do
 		hcLogger.V(3).Info("Healthcheck already exists and does not require update")
-		return selfLink, nil
+		return selfLink, utils.ResourceResync, nil
 	}
 	mergeHealthChecks(hc, expectedHC)
 	hcLogger.V(2).Info("Updating healthcheck for service", "updatedHealthcheck", expectedHC)
 	err = l4hc.hcProvider.Update(expectedHC.Name, scope, expectedHC)
 	if err != nil {
-		return selfLink, err
+		return selfLink, utils.ResourceUpdate, err
 	}
-	return selfLink, err
+	return selfLink, utils.ResourceUpdate, err
 }
 
 // ensureIPv4Firewall rule for `svc`.
@@ -222,14 +223,19 @@ func (l4hc *l4HealthChecks) ensureIPv4Firewall(svc *corev1.Service, namer namer.
 	}()
 
 	hcFWRParams := firewalls.FirewallParams{
-		PortRanges:   []string{strconv.Itoa(int(hcPort))},
+		Allowed: []*compute.FirewallAllowed{
+			{
+				IPProtocol: string(corev1.ProtocolTCP),
+				Ports:      []string{strconv.Itoa(int(hcPort))},
+			},
+		},
 		SourceRanges: gce.L4LoadBalancerSrcRanges(),
-		Protocol:     string(corev1.ProtocolTCP),
 		Name:         hcFwName,
 		NodeNames:    nodeNames,
 		Network:      svcNetwork,
 	}
-	err := firewalls.EnsureL4LBFirewallForHc(svc, isSharedHC, &hcFWRParams, l4hc.cloud, l4hc.recorder, fwLogger)
+	wasUpdated, err := firewalls.EnsureL4LBFirewallForHc(svc, isSharedHC, &hcFWRParams, l4hc.cloud, l4hc.recorder, fwLogger)
+	hcResult.WasFirewallUpdated = wasUpdated == utils.ResourceUpdate || hcResult.WasFirewallUpdated == utils.ResourceUpdate
 	if err != nil {
 		fwLogger.Error(err, "Error ensuring IPv4 Firewall for health check for service")
 		hcResult.GceResourceInError = annotations.FirewallForHealthcheckResource
@@ -250,14 +256,19 @@ func (l4hc *l4HealthChecks) ensureIPv6Firewall(svc *corev1.Service, namer namer.
 	}()
 
 	hcFWRParams := firewalls.FirewallParams{
-		PortRanges:   []string{strconv.Itoa(int(hcPort))},
+		Allowed: []*compute.FirewallAllowed{
+			{
+				IPProtocol: string(corev1.ProtocolTCP),
+				Ports:      []string{strconv.Itoa(int(hcPort))},
+			},
+		},
 		SourceRanges: getIPv6HCFirewallSourceRanges(l4Type),
-		Protocol:     string(corev1.ProtocolTCP),
 		Name:         ipv6HCFWName,
 		NodeNames:    nodeNames,
 		Network:      svcNetwork,
 	}
-	err := firewalls.EnsureL4LBFirewallForHc(svc, isSharedHC, &hcFWRParams, l4hc.cloud, l4hc.recorder, fwLogger)
+	wasUpdated, err := firewalls.EnsureL4LBFirewallForHc(svc, isSharedHC, &hcFWRParams, l4hc.cloud, l4hc.recorder, fwLogger)
+	hcResult.WasFirewallUpdated = wasUpdated == utils.ResourceUpdate || hcResult.WasFirewallUpdated == utils.ResourceUpdate
 	if err != nil {
 		fwLogger.Error(err, "Error ensuring IPv6 Firewall for health check for service")
 		hcResult.GceResourceInError = annotations.FirewallForHealthcheckIPv6Resource

@@ -23,6 +23,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	compute "google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/klog/v2"
@@ -200,9 +201,13 @@ func (f *FakeNetworkEndpointGroupCloud) SubnetworkURL() string {
 }
 
 func (f *FakeNetworkEndpointGroupCloud) NetworkProjectID() string {
-	return "test-network-project-id"
+	return "mock-project"
 }
 
 func (f *FakeNetworkEndpointGroupCloud) Region() string {
 	return "test-region"
+}
+
+func (f *FakeNetworkEndpointGroupCloud) GetNetwork(networkName string) (*compute.Network, error) {
+	return nil, fmt.Errorf("Not Implemented")
 }

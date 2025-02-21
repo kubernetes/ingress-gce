@@ -35,11 +35,13 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	apitypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
@@ -47,6 +49,7 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/types"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
+	negfake "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
@@ -78,16 +81,21 @@ const (
 	labelValue2 = "v2"
 	negName1    = "neg1"
 
-	defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/default"
+	defaultTestSubnet    = "default"
+	defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/mock-project/regions/test-region/subnetworks/default"
 )
 
-func NewTestSyncerManager(kubeClient kubernetes.Interface) (*syncerManager, *gce.Cloud) {
+func NewTestSyncerManager(kubeClient kubernetes.Interface) (*syncerManager, *gce.Cloud, *negtypes.TestContext, error) {
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
-	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
+	zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	manager := newSyncerManager(
 		testContext.NegNamer,
+		testContext.L4Namer,
 		record.NewFakeRecorder(100),
 		negtypes.NewAdapter(testContext.Cloud),
 		zoneGetter,
@@ -105,13 +113,16 @@ func NewTestSyncerManager(kubeClient kubernetes.Interface) (*syncerManager, *gce
 		labels.PodLabelPropagationConfig{},
 		klog.TODO(),
 	)
-	return manager, testContext.Cloud
+	return manager, testContext.Cloud, testContext, nil
 }
 
 func TestEnsureAndStopSyncer(t *testing.T) {
 	t.Parallel()
 
-	manager, _ := NewTestSyncerManager(fake.NewSimpleClientset())
+	manager, _, _, err := NewTestSyncerManager(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("failed to create test syncer manager: %v", err)
+	}
 	namer := manager.namer
 
 	svcName := "n1"
@@ -333,7 +344,10 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 func TestGarbageCollectionSyncer(t *testing.T) {
 	t.Parallel()
 
-	manager, _ := NewTestSyncerManager(fake.NewSimpleClientset())
+	manager, _, _, err := NewTestSyncerManager(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("failed to create test syncer manager: %v", err)
+	}
 	namer := manager.namer
 	namespace := testServiceNamespace
 	name := testServiceName
@@ -377,13 +391,51 @@ func TestGarbageCollectionSyncer(t *testing.T) {
 	}
 }
 
+func TestEnsureSyncersWithMissingSyncer(t *testing.T) {
+	manager, _, _, err := NewTestSyncerManager(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("failed to create test syncer manager: %v", err)
+	}
+	namer := manager.namer
+	namespace := testServiceNamespace
+	name := testServiceName
+	portName := ""
+	svcPort := int32(3000)
+	targetPort := "80"
+	negName := namer.NEG(namespace, name, svcPort)
+	portMap := make(types.PortInfoMap)
+	portInfo := types.PortInfo{PortTuple: negtypes.SvcPortTuple{Name: portName, Port: svcPort, TargetPort: targetPort}, NegName: negName}
+
+	portMap[negtypes.PortInfoMapKey{ServicePort: svcPort}] = portInfo
+
+	manager.serviceLister.Add(&v1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name}})
+
+	svcKey := serviceKey{namespace: namespace, name: name}
+	negSyncerKey := manager.getSyncerKey(namespace, name, negtypes.PortInfoMapKey{ServicePort: svcPort}, portInfo)
+	manager.svcPortMap[svcKey] = portMap
+
+	if _, _, err := manager.EnsureSyncers(namespace, name, portMap); err != nil {
+		t.Fatalf("Failed to ensure syncer: %v", err)
+	}
+	if syncer, ok := manager.syncerMap[negSyncerKey]; !ok {
+		t.Error("No syncer found for the service port")
+	} else if syncer.IsShuttingDown() || syncer.IsStopped() {
+		t.Errorf("Syner is not started, current status: IsShuttingDown: %v, IsStopped: %v", syncer.IsShuttingDown(), syncer.IsStopped())
+	}
+	// make sure there is no leaking go routine
+	manager.StopSyncer(namespace, name)
+}
+
 func TestGarbageCollectionNEG(t *testing.T) {
 	t.Parallel()
 	kubeClient := fake.NewSimpleClientset()
 	if _, err := kubeClient.CoreV1().Endpoints(testServiceNamespace).Create(context2.TODO(), getDefaultEndpoint(), metav1.CreateOptions{}); err != nil {
 		t.Fatalf("Failed to create endpoint: %v", err)
 	}
-	manager, _ := NewTestSyncerManager(kubeClient)
+	manager, _, _, err := NewTestSyncerManager(kubeClient)
+	if err != nil {
+		t.Fatalf("failed to create test syncer manager: %v", err)
+	}
 	svcPort := int32(80)
 	ports := make(types.PortInfoMap)
 	manager.serviceLister.Add(&v1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: testServiceNamespace, Name: testServiceName}})
@@ -439,7 +491,10 @@ func TestReadinessGateEnabledNegs(t *testing.T) {
 	t.Parallel()
 
 	kubeClient := fake.NewSimpleClientset()
-	manager, _ := NewTestSyncerManager(kubeClient)
+	manager, _, _, err := NewTestSyncerManager(kubeClient)
+	if err != nil {
+		t.Fatalf("failed to create test syncer manager: %v", err)
+	}
 	populateSyncerManager(manager, kubeClient)
 
 	testCases := []struct {
@@ -523,7 +578,10 @@ func TestReadinessGateEnabled(t *testing.T) {
 	t.Parallel()
 
 	kubeClient := fake.NewSimpleClientset()
-	manager, _ := NewTestSyncerManager(kubeClient)
+	manager, _, _, err := NewTestSyncerManager(kubeClient)
+	if err != nil {
+		t.Fatalf("failed to create test syncer manager: %v", err)
+	}
 	populateSyncerManager(manager, kubeClient)
 
 	testCases := []struct {
@@ -656,7 +714,10 @@ func TestFilterCommonPorts(t *testing.T) {
 	t.Parallel()
 	namer := namer_util.NewNamer(ClusterID, "", klog.TODO())
 	kubeClient := fake.NewSimpleClientset()
-	manager, _ := NewTestSyncerManager(kubeClient)
+	manager, _, _, err := NewTestSyncerManager(kubeClient)
+	if err != nil {
+		t.Fatalf("failed to create test syncer manager: %v", err)
+	}
 
 	for _, tc := range []struct {
 		desc     string
@@ -725,7 +786,10 @@ func TestFilterCommonPorts(t *testing.T) {
 
 func TestNegCRCreations(t *testing.T) {
 	t.Parallel()
-	manager, _ := NewTestSyncerManager(fake.NewSimpleClientset())
+	manager, _, _, err := NewTestSyncerManager(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("failed to create test syncer manager: %v", err)
+	}
 	svcNegClient := manager.svcNegClient
 	namer := manager.namer
 
@@ -947,7 +1011,10 @@ func TestNegCRDuplicateCreations(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			manager, _ := NewTestSyncerManager(fake.NewSimpleClientset())
+			manager, _, _, err := NewTestSyncerManager(fake.NewSimpleClientset())
+			if err != nil {
+				t.Fatalf("failed to create test syncer manager: %v", err)
+			}
 			svcNegClient := manager.svcNegClient
 
 			namer := manager.namer
@@ -994,7 +1061,7 @@ func TestNegCRDuplicateCreations(t *testing.T) {
 			portInfoMap := negtypes.NewPortInfoMap(namespace, svc1.Name, types.NewSvcPortTupleSet(svcTuple1), namer, false, map[negtypes.SvcPortTuple]string{svcTuple1: customNegName}, defaultNetwork)
 
 			rebuildSvcNegCache(t, manager, manager.svcNegClient, namespace)
-			_, _, err := manager.EnsureSyncers(namespace, svc1.Name, portInfoMap)
+			_, _, err = manager.EnsureSyncers(namespace, svc1.Name, portInfoMap)
 			if tc.expectErr && err == nil {
 				t.Errorf("expected error when ensuring syncer %s/%s %+v", namespace, svc1.Name, portInfoMap)
 			} else if !tc.expectErr && err != nil {
@@ -1072,7 +1139,10 @@ func TestNegCRDeletions(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			manager, _ := NewTestSyncerManager(fake.NewSimpleClientset())
+			manager, _, _, err := NewTestSyncerManager(fake.NewSimpleClientset())
+			if err != nil {
+				t.Fatalf("failed to create test syncer manager: %v", err)
+			}
 			svcNegClient := manager.svcNegClient
 
 			if err := manager.serviceLister.Add(svc); err != nil {
@@ -1189,7 +1259,10 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 		expectNegGC          bool
 		expectCrGC           bool
 		expectErr            bool
-		gcError              error
+		negGCError           error
+		negGCErrorZone       []string
+		negCrGCError         error
+		expectedNegCount     int
 
 		// expectGenNamedNegGC indicates that the Neg GC only occurs if using a generated name
 		// expectNegGC will take precedence over this value
@@ -1250,6 +1323,7 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 			expectNegGC:       false,
 			expectCrGC:        true,
 			negDesc:           wrongDesc.String(),
+			expectedNegCount:  2,
 		},
 		{desc: "neg config not in svcPortMap, empty neg list, neg has empty description",
 			negsExist:           true,
@@ -1258,6 +1332,7 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 			expectGenNamedNegGC: true,
 			expectCrGC:          true,
 			negDesc:             "",
+			expectedNegCount:    2,
 		},
 		{desc: "neg config in svcPortMap, marked for deletion",
 			negsExist:         true,
@@ -1265,6 +1340,7 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 			desiredConfig:     true,
 			expectNegGC:       false,
 			expectCrGC:        false,
+			expectedNegCount:  2,
 		},
 		{desc: "neg config in svcPortMap",
 			negsExist:         true,
@@ -1272,6 +1348,7 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 			desiredConfig:     true,
 			expectNegGC:       false,
 			expectCrGC:        false,
+			expectedNegCount:  2,
 		},
 		{desc: "negs don't exist, config not in svcPortMap",
 			negsExist:         false,
@@ -1288,16 +1365,38 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 			markedForDeletion: true,
 			expectCrGC:        true,
 			expectErr:         false,
-			gcError:           &googleapi.Error{Code: http.StatusBadRequest},
+			negGCError:        &googleapi.Error{Code: http.StatusBadRequest},
+			negGCErrorZone:    []string{negtypes.TestZone1, negtypes.TestZone2},
 			negDesc:           matchingDesc.String(),
 		},
-		{desc: "error during neg gc, config not in svcPortMap",
+		{desc: "error on all NEG deletions during neg gc, config not in svcPortMap, NEG CR should still have all NEG ref",
 			negsExist:         true,
 			markedForDeletion: true,
 			expectCrGC:        true,
 			expectErr:         true,
-			gcError:           fmt.Errorf("gc-error"),
+			negGCError:        fmt.Errorf("neg-gc-error"),
+			negGCErrorZone:    []string{negtypes.TestZone1, negtypes.TestZone2},
 			negDesc:           matchingDesc.String(),
+			expectedNegCount:  2,
+		},
+		{desc: "error on one NEG deletion during neg gc, config not in svcPortMap, NEG CR should not have the deleted NEG ref",
+			negsExist:         true,
+			markedForDeletion: true,
+			expectCrGC:        true,
+			expectErr:         true,
+			negGCError:        fmt.Errorf("neg-gc-error"),
+			negGCErrorZone:    []string{negtypes.TestZone1},
+			negDesc:           matchingDesc.String(),
+			expectedNegCount:  1,
+		},
+		{desc: "error when deleting NEG CR during neg gc, config not in svcPortMap, NEG CR should not have any stale NEG ref",
+			negsExist:         true,
+			markedForDeletion: false, // Make sure deletion timestamp is not set so we will trigger error when delete NEG CR
+			expectErr:         true,
+			expectCrGC:        false, // NEG CR deletion should fail due to error from deletion API call
+			negCrGCError:      fmt.Errorf("neg-cr-gc-error"),
+			negDesc:           matchingDesc.String(),
+			expectedNegCount:  0,
 		},
 	}
 
@@ -1307,8 +1406,18 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 				for _, networkEndpointType := range []negtypes.NetworkEndpointType{negtypes.VmIpPortEndpointType, negtypes.NonGCPPrivateEndpointType, negtypes.VmIpEndpointType} {
 
 					kubeClient := fake.NewSimpleClientset()
-					manager, testCloud := NewTestSyncerManager(kubeClient)
+					manager, testCloud, _, err := NewTestSyncerManager(kubeClient)
+					if err != nil {
+						t.Fatalf("failed to create test syncer manager: %v", err)
+					}
 					svcNegClient := manager.svcNegClient
+
+					if tc.negCrGCError != nil {
+						svcNegClientFake := svcNegClient.(*negfake.Clientset)
+						svcNegClientFake.PrependReactor("delete", "servicenetworkendpointgroups", func(action k8stesting.Action) (handled bool, ret runtime.Object, err error) {
+							return true, &negv1beta1.ServiceNetworkEndpointGroup{}, tc.negCrGCError
+						})
+					}
 
 					manager.serviceLister.Add(svc)
 					fakeNegCloud := manager.cloud
@@ -1349,7 +1458,7 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 					}
 
 					if _, err := manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(cr.Namespace).Create(context2.TODO(), &cr, metav1.CreateOptions{}); err != nil {
-						t.Fatalf("failed to create neg cr")
+						t.Fatalf("failed to create neg cr: %v", err)
 					}
 
 					crs := getNegCRs(t, svcNegClient, testServiceNamespace)
@@ -1370,19 +1479,20 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 						}
 					}
 
-					if tc.gcError != nil {
+					if tc.negGCError != nil {
 						mockCloud := testCloud.Compute().(*cloud.MockGCE)
 						mockNEG := mockCloud.NetworkEndpointGroups().(*cloud.MockNetworkEndpointGroups)
 
-						for _, zone := range []string{negtypes.TestZone1, negtypes.TestZone2} {
-							mockNEG.DeleteError[*meta.ZonalKey(negName, zone)] = tc.gcError
+						for _, zone := range tc.negGCErrorZone {
+							mockNEG.DeleteError[*meta.ZonalKey(negName, zone)] = tc.negGCError
 						}
 					}
 
-					err := manager.GC()
+					err = manager.GC()
 					if !tc.expectErr && err != nil {
 						t.Fatalf("failed to GC: %v", err)
-					} else if tc.expectErr && err == nil {
+					}
+					if tc.expectErr && err == nil {
 						t.Errorf("expected GC to error")
 					}
 
@@ -1391,13 +1501,14 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 						t.Errorf("failed getting negs from cloud: %s", err)
 					}
 
-					numExistingNegs, negsDeleted := checkForNegDeletions(negs, negName)
+					numExistingNegs := checkForNegDeletions(negs, negName)
 
 					expectNegGC := tc.expectNegGC || (tc.expectGenNamedNegGC && !customName)
-					if tc.negsExist && expectNegGC && !negsDeleted {
+					if tc.negsExist && expectNegGC && numExistingNegs != 0 {
 						t.Errorf("expected negs to be GCed, but found %d", numExistingNegs)
-					} else if tc.negsExist && !expectNegGC && numExistingNegs != 2 {
-						t.Errorf("expected two negs in the cloud, but found %d", numExistingNegs)
+					}
+					if tc.negsExist && !expectNegGC && numExistingNegs != tc.expectedNegCount {
+						t.Errorf("expected %d negs in the cloud, but found %d", tc.expectedNegCount, numExistingNegs)
 					}
 
 					crs = getNegCRs(t, svcNegClient, testServiceNamespace)
@@ -1405,7 +1516,8 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 
 					if tc.expectCrGC && !crDeleted {
 						t.Errorf("expected neg %s to be deleted", negName)
-					} else if !tc.expectCrGC && crDeleted && !tc.markedForDeletion {
+					}
+					if !tc.expectCrGC && crDeleted && !tc.markedForDeletion {
 						t.Errorf("expected neg %s to not be deleted", negName)
 					}
 				}
@@ -1489,7 +1601,10 @@ func TestSyncNodesConditions(t *testing.T) {
 				return false
 			}
 
-			manager, _ := NewTestSyncerManager(fake.NewSimpleClientset())
+			manager, _, _, err := NewTestSyncerManager(fake.NewSimpleClientset())
+			if err != nil {
+				t.Fatalf("failed to create test syncer manager: %v", err)
+			}
 
 			syncer := &fakeSyncer{
 				isStopped: tc.syncerStopped,
@@ -1530,6 +1645,145 @@ func TestSyncNodesConditions(t *testing.T) {
 	}
 }
 
+func TestL4SyncerUpdates(t *testing.T) {
+	t.Parallel()
+
+	type trafficPolicy bool
+	const local trafficPolicy = true
+	const cluster trafficPolicy = false
+
+	// L4 services always use this empty key
+	vmIpPortInfoMapKey := negtypes.PortInfoMapKey{}
+
+	testCases := []struct {
+		desc              string
+		fromLBType        negtypes.L4LBType
+		fromTrafficPolicy trafficPolicy
+		toLBType          negtypes.L4LBType
+		toTrafficPolicy   trafficPolicy
+		expectNewSyncer   bool
+	}{
+		{
+			desc:              "ILB cluster to ILB cluster",
+			fromLBType:        negtypes.L4InternalLB,
+			fromTrafficPolicy: cluster,
+			toLBType:          negtypes.L4InternalLB,
+			toTrafficPolicy:   cluster,
+			expectNewSyncer:   false,
+		},
+		{
+			desc:              "NetLB cluster to NetLB cluster",
+			fromLBType:        negtypes.L4ExternalLB,
+			fromTrafficPolicy: cluster,
+			toLBType:          negtypes.L4ExternalLB,
+			toTrafficPolicy:   cluster,
+			expectNewSyncer:   false,
+		},
+		{
+			desc:              "NetLB local to NetLB cluster",
+			fromLBType:        negtypes.L4ExternalLB,
+			fromTrafficPolicy: local,
+			toLBType:          negtypes.L4ExternalLB,
+			toTrafficPolicy:   cluster,
+			expectNewSyncer:   true,
+		},
+		{
+			desc:              "ILB cluster to ILB local",
+			fromLBType:        negtypes.L4InternalLB,
+			fromTrafficPolicy: cluster,
+			toLBType:          negtypes.L4InternalLB,
+			toTrafficPolicy:   local,
+			expectNewSyncer:   true,
+		},
+		{
+			desc:              "ILB cluster to NetLB cluster",
+			fromLBType:        negtypes.L4InternalLB,
+			fromTrafficPolicy: cluster,
+			toLBType:          negtypes.L4ExternalLB,
+			toTrafficPolicy:   cluster,
+			expectNewSyncer:   true,
+		},
+		{
+			desc:              "NetLB cluster to ILB cluster",
+			fromLBType:        negtypes.L4ExternalLB,
+			fromTrafficPolicy: cluster,
+			toLBType:          negtypes.L4InternalLB,
+			toTrafficPolicy:   cluster,
+			expectNewSyncer:   true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+
+			manager, _, testContext, err := NewTestSyncerManager(fake.NewSimpleClientset())
+			if err != nil {
+				t.Fatalf("failed to create test syncer manager: %v", err)
+			}
+			defer manager.ShutDown()
+
+			svcNamespace := "ns1"
+			svcName := "svc1"
+			manager.serviceLister.Add(&v1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: svcNamespace, Name: svcName}})
+
+			initialPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(svcNamespace, svcName, testContext.L4Namer, bool(tc.fromTrafficPolicy), defaultNetwork, tc.fromLBType)
+
+			_, _, err = manager.EnsureSyncers(svcNamespace, svcName, initialPortInfoMap)
+			if err != nil {
+				t.Fatalf("manager.EnsureSyncers() err: %v", err)
+			}
+
+			initialSyncer, ok := manager.syncerMap[manager.getSyncerKey(svcNamespace, svcName, vmIpPortInfoMapKey, initialPortInfoMap[vmIpPortInfoMapKey])]
+			if !ok {
+				t.Errorf("initialSyncer for LB type: %s, local: %v, was not created", tc.fromLBType, tc.fromTrafficPolicy)
+			}
+			if initialSyncer.IsStopped() {
+				t.Errorf("initialSyncer for LB type: %s, local: %v, was expected to be running but is is not", tc.fromLBType, tc.fromTrafficPolicy)
+			}
+
+			updatedPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(svcNamespace, svcName, testContext.L4Namer, bool(tc.toTrafficPolicy), defaultNetwork, tc.toLBType)
+
+			rebuildSvcNegCache(t, manager, manager.svcNegClient, svcNamespace)
+
+			_, _, err = manager.EnsureSyncers(svcNamespace, svcName, updatedPortInfoMap)
+			if err != nil {
+				t.Errorf("manager.EnsureSyncers() err: %v", err)
+			}
+
+			updatedSyncer, ok := manager.syncerMap[manager.getSyncerKey(svcNamespace, svcName, vmIpPortInfoMapKey, updatedPortInfoMap[vmIpPortInfoMapKey])]
+			if !ok {
+				t.Errorf("updatedSyncer for LB type: %s, local: %v, was not created", tc.toLBType, tc.toTrafficPolicy)
+			}
+			if updatedSyncer.IsStopped() {
+				t.Errorf("updatedSyncer for LB type: %s, local: %v, was expected to be running but is is not", tc.toLBType, tc.toTrafficPolicy)
+			}
+			if tc.expectNewSyncer {
+				if !initialSyncer.IsStopped() {
+					t.Errorf("initialSyncer for LB type: %s, local: %v,  should not be running anymore", tc.fromLBType, tc.fromTrafficPolicy)
+				}
+			} else {
+				if initialSyncer != updatedSyncer {
+					t.Errorf("expected that the syncer would not be recreated but it has been")
+				}
+			}
+
+			// Test that when the Ports for service are removed we stop the syncers.
+			emptyPortInfoMap := negtypes.PortInfoMap{}
+			rebuildSvcNegCache(t, manager, manager.svcNegClient, svcNamespace)
+			_, _, err = manager.EnsureSyncers(svcNamespace, svcName, emptyPortInfoMap)
+			if err != nil {
+				t.Errorf("manager.EnsureSyncers() err: %v", err)
+			}
+			if !initialSyncer.IsStopped() {
+				t.Errorf("initialSyncer for LB type: %s, local: %v, should not be running anymore", tc.fromLBType, tc.fromTrafficPolicy)
+			}
+			if !updatedSyncer.IsStopped() {
+				t.Errorf("updatedSyncer for LB type: %s, local: %v, should not be running anymore", tc.toLBType, tc.toTrafficPolicy)
+			}
+		})
+	}
+}
+
 type fakeSyncer struct {
 	isStopped bool
 	syncFunc  func() bool
@@ -1559,8 +1813,8 @@ func getNegObjectRefs(t *testing.T, cloud negtypes.NetworkEndpointGroupCloud, zo
 	return negRefs
 }
 
-// checkForNegDeletions checks that negs does not have a neg with the provided negName. If none exists, returns true, otherwise returns false the number of negs found with the name
-func checkForNegDeletions(negs map[*meta.Key]*composite.NetworkEndpointGroup, negName string) (int, bool) {
+// checkForNegDeletions gets the count of neg objects in negs that has the provided negName.
+func checkForNegDeletions(negs map[*meta.Key]*composite.NetworkEndpointGroup, negName string) int {
 	foundNegs := 0
 	for _, neg := range negs {
 		if neg.Name == negName {
@@ -1568,7 +1822,7 @@ func checkForNegDeletions(negs map[*meta.Key]*composite.NetworkEndpointGroup, ne
 		}
 	}
 
-	return foundNegs, foundNegs == 0
+	return foundNegs
 }
 
 // checkForNegCRDeletion verifies that either no cr with name `negName` exists or a cr withe name `negName` has its deletion timestamp set

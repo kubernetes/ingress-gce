@@ -7,6 +7,7 @@ linters:
   enable:
     - errcheck
     - forbidigo
+    - unused
 
 issues:
   exclude-rules:

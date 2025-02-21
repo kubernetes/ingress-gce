@@ -29,6 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
@@ -37,19 +38,25 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// TestLocalGetEndpointSet verifies the GetEndpointSet method implemented by the LocalL4ILBEndpointsCalculator.
+// TestLocalGetEndpointSet verifies the GetEndpointSet method implemented by the LocalL4EndpointsCalculator.
 // The L7 implementation is tested in TestToZoneNetworkEndpointMapUtil.
 func TestLocalGetEndpointSet(t *testing.T) {
-	t.Parallel()
 	nodeInformer := zonegetter.FakeNodeInformer()
-	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
+	zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter: %v", err)
+	}
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
-	defaultNetwork := network.NetworkInfo{IsDefault: true, K8sNetwork: "default"}
+	zonegetter.SetNodeTopologyHasSynced(zoneGetter, func() bool { return true })
+	defaultNetwork := network.NetworkInfo{IsDefault: true, K8sNetwork: "default", SubnetworkURL: defaultTestSubnetURL}
+	prevFlag := flags.F.EnableMultiSubnetCluster
+	defer func() { flags.F.EnableMultiSubnetCluster = prevFlag }()
+	flags.F.EnableMultiSubnetCluster = false
 
 	testCases := []struct {
 		desc                string
 		endpointsData       []negtypes.EndpointsData
-		wantEndpointSets    map[string]negtypes.NetworkEndpointSet
+		wantEndpointSets    map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
 		networkEndpointType negtypes.NetworkEndpointType
 		nodeLabelsMap       map[string]map[string]string
 		nodeAnnotationsMap  map[string]map[string]string
@@ -61,9 +68,9 @@ func TestLocalGetEndpointSet(t *testing.T) {
 			desc:          "default endpoints",
 			endpointsData: negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()),
 			// only 4 out of 6 nodes are picked since there are > 4 endpoints, but they are found only on 4 nodes.
-			wantEndpointSets: map[string]negtypes.NetworkEndpointSet{
-				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
-				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4}),
+			wantEndpointSets: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4}),
 			},
 			networkEndpointType: negtypes.VmIpEndpointType,
 			nodeNames:           []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
@@ -73,9 +80,9 @@ func TestLocalGetEndpointSet(t *testing.T) {
 			desc:          "default endpoints, all nodes unready",
 			endpointsData: negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()),
 			// only 4 out of 6 nodes are picked since there are > 4 endpoints, but they are found only on 4 nodes.
-			wantEndpointSets: map[string]negtypes.NetworkEndpointSet{
-				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
-				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4}),
+			wantEndpointSets: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4}),
 			},
 			networkEndpointType: negtypes.VmIpEndpointType,
 			nodeNames:           []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
@@ -95,9 +102,9 @@ func TestLocalGetEndpointSet(t *testing.T) {
 			},
 			nodeNames: []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
 			// only 2 out of 6 nodes are picked since there are > 4 endpoints, but they are found only on 4 nodes. 2 out of those 4 are non-candidates.
-			wantEndpointSets: map[string]negtypes.NetworkEndpointSet{
-				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
-				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4}),
+			wantEndpointSets: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4}),
 			},
 			networkEndpointType: negtypes.VmIpEndpointType,
 			network:             defaultNetwork,
@@ -114,7 +121,7 @@ func TestLocalGetEndpointSet(t *testing.T) {
 		{
 			desc:          "multinetwork, endpoints only for nodes connected to a matching non-default network",
 			endpointsData: negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()),
-			network:       network.NetworkInfo{IsDefault: false, K8sNetwork: "other"},
+			network:       network.NetworkInfo{IsDefault: false, K8sNetwork: "other", SubnetworkURL: defaultTestSubnetURL},
 			nodeAnnotationsMap: map[string]map[string]string{
 				testInstance1: {networkv1.NorthInterfacesAnnotationKey: nodeInterfacesAnnotation(t, "other", "20.2.3.1")},
 				testInstance2: {networkv1.NorthInterfacesAnnotationKey: nodeInterfacesAnnotation(t, "other", "20.2.3.2")},
@@ -123,33 +130,55 @@ func TestLocalGetEndpointSet(t *testing.T) {
 			//networkEndpointType: negtypes.VmIpEndpointType,
 			nodeNames: []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
 			// only 3 out of 6 nodes are picked because only 3 have multi-nic annotation with a matching network name
-			wantEndpointSets: map[string]negtypes.NetworkEndpointSet{
-				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+			wantEndpointSets: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					negtypes.NetworkEndpoint{IP: "20.2.3.1", Node: testInstance1},
 					negtypes.NetworkEndpoint{IP: "20.2.3.2", Node: testInstance2}),
-				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
 					negtypes.NetworkEndpoint{IP: "20.2.3.3", Node: testInstance3}),
 			},
+		},
+		{
+			desc:          "endpoints with MSC nodes",
+			endpointsData: negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()),
+			nodeLabelsMap: map[string]map[string]string{
+				testInstance1: {utils.LabelNodeSubnet: secondaryTestSubnet1},
+				testInstance2: {utils.LabelNodeSubnet: secondaryTestSubnet2},
+				testInstance3: {utils.LabelNodeSubnet: secondaryTestSubnet1},
+			},
+			// only 4 out of 6 nodes are picked since there are > 4 endpoints, but they are found only on 4 nodes.
+			wantEndpointSets: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}:    negtypes.NewNetworkEndpointSet(),
+				{Zone: negtypes.TestZone1, Subnet: secondaryTestSubnet1}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}),
+				{Zone: negtypes.TestZone1, Subnet: secondaryTestSubnet2}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
+				{Zone: negtypes.TestZone2, Subnet: secondaryTestSubnet1}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.3", Node: testInstance3}),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}:    negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4}),
+			},
+			networkEndpointType: negtypes.VmIpEndpointType,
+			nodeNames:           []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
+			network:             defaultNetwork,
 		},
 	}
 	svcKey := fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace)
 	for _, tc := range testCases {
-		ec := NewLocalL4ILBEndpointsCalculator(listers.NewNodeLister(nodeInformer.GetIndexer()), zoneGetter, svcKey, klog.TODO(), &tc.network)
-		updateNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeAnnotationsMap, tc.nodeReadyStatusMap, nodeInformer.GetIndexer())
-		retSet, _, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
-		if err != nil {
-			t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
-		}
-		if diff := cmp.Diff(retSet, tc.wantEndpointSets); diff != "" {
-			t.Errorf("For case %q, expecting endpoint set %v, but got %v.\nDiff: (-want +got):\n%s", tc.desc, tc.wantEndpointSets, retSet, diff)
-		}
-		degradedSet, _, err := ec.CalculateEndpointsDegradedMode(tc.endpointsData, nil)
-		if err != nil {
-			t.Errorf("For degraded mode case %q, expect nil error, but got %v.", tc.desc, err)
-		}
-		if diff := cmp.Diff(degradedSet, tc.wantEndpointSets); diff != "" {
-			t.Errorf("For degraded mode case %q, expecting endpoint set %v, but got %v.\nDiff: (-want +got):\n%s", tc.desc, tc.wantEndpointSets, retSet, diff)
-		}
+		t.Run(tc.desc, func(t *testing.T) {
+			ec := NewLocalL4EndpointsCalculator(listers.NewNodeLister(nodeInformer.GetIndexer()), zoneGetter, svcKey, klog.TODO(), &tc.network, negtypes.L4InternalLB)
+			updateNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeAnnotationsMap, tc.nodeReadyStatusMap, nodeInformer.GetIndexer())
+			retSet, _, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
+			if err != nil {
+				t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
+			}
+			if diff := cmp.Diff(retSet, tc.wantEndpointSets); diff != "" {
+				t.Errorf("For case %q, expecting endpoint set %v, but got %v.\nDiff: (-want +got):\n%s", tc.desc, tc.wantEndpointSets, retSet, diff)
+			}
+			degradedSet, _, err := ec.CalculateEndpointsDegradedMode(tc.endpointsData, nil)
+			if err != nil {
+				t.Errorf("For degraded mode case %q, expect nil error, but got %v.", tc.desc, err)
+			}
+			if diff := cmp.Diff(degradedSet, tc.wantEndpointSets); diff != "" {
+				t.Errorf("For degraded mode case %q, expecting endpoint set %v, but got %v.\nDiff: (-want +got):\n%s", tc.desc, tc.wantEndpointSets, retSet, diff)
+			}
+		})
 	}
 }
 
@@ -168,17 +197,24 @@ func nodeInterfacesAnnotation(t *testing.T, network, ip string) string {
 	return annotation
 }
 
-// TestClusterGetEndpointSet verifies the GetEndpointSet method implemented by the ClusterL4ILBEndpointsCalculator.
+// TestClusterGetEndpointSet verifies the GetEndpointSet method implemented by the ClusterL4EndpointsCalculator.
 func TestClusterGetEndpointSet(t *testing.T) {
-	t.Parallel()
 	nodeInformer := zonegetter.FakeNodeInformer()
-	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
+	zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter: %v", err)
+	}
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
-	defaultNetwork := network.NetworkInfo{IsDefault: true, K8sNetwork: "default"}
+	zonegetter.SetNodeTopologyHasSynced(zoneGetter, func() bool { return true })
+	defaultNetwork := network.NetworkInfo{IsDefault: true, K8sNetwork: "default", SubnetworkURL: defaultTestSubnetURL}
+	prevFlag := flags.F.EnableMultiSubnetCluster
+	defer func() { flags.F.EnableMultiSubnetCluster = prevFlag }()
+	flags.F.EnableMultiSubnetCluster = false
+
 	testCases := []struct {
 		desc                string
 		endpointsData       []negtypes.EndpointsData
-		wantEndpointSets    map[string]negtypes.NetworkEndpointSet
+		wantEndpointSets    map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
 		networkEndpointType negtypes.NetworkEndpointType
 		nodeLabelsMap       map[string]map[string]string
 		nodeAnnotationsMap  map[string]map[string]string
@@ -190,11 +226,11 @@ func TestClusterGetEndpointSet(t *testing.T) {
 			desc:          "default endpoints",
 			endpointsData: negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()),
 			// all nodes are picked since, in this mode, endpoints running do not need to run on the selected node.
-			wantEndpointSets: map[string]negtypes.NetworkEndpointSet{
-				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
-				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4},
+			wantEndpointSets: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4},
 					negtypes.NetworkEndpoint{IP: "1.2.3.5", Node: testInstance5}, negtypes.NetworkEndpoint{IP: "1.2.3.6", Node: testInstance6}),
-				negtypes.TestZone3: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.7", Node: testUnreadyInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.8", Node: testUnreadyInstance2}),
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.7", Node: testUnreadyInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.8", Node: testUnreadyInstance2}),
 			},
 			networkEndpointType: negtypes.VmIpEndpointType,
 			nodeNames:           []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
@@ -204,11 +240,11 @@ func TestClusterGetEndpointSet(t *testing.T) {
 			desc:          "default endpoints, all nodes unready",
 			endpointsData: negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()),
 			// all nodes are picked since, in this mode, endpoints running do not need to run on the selected node.
-			wantEndpointSets: map[string]negtypes.NetworkEndpointSet{
-				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
-				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4},
+			wantEndpointSets: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4},
 					negtypes.NetworkEndpoint{IP: "1.2.3.5", Node: testInstance5}, negtypes.NetworkEndpoint{IP: "1.2.3.6", Node: testInstance6}),
-				negtypes.TestZone3: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.7", Node: testUnreadyInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.8", Node: testUnreadyInstance2}),
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.7", Node: testUnreadyInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.8", Node: testUnreadyInstance2}),
 			},
 			networkEndpointType: negtypes.VmIpEndpointType,
 			nodeNames:           []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
@@ -221,11 +257,11 @@ func TestClusterGetEndpointSet(t *testing.T) {
 			desc:          "default endpoints, some nodes marked as non-candidates",
 			endpointsData: negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()),
 			// all valid candidate nodes are picked since, in this mode, endpoints running do not need to run on the selected node.
-			wantEndpointSets: map[string]negtypes.NetworkEndpointSet{
-				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
-				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4},
+			wantEndpointSets: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4},
 					negtypes.NetworkEndpoint{IP: "1.2.3.5", Node: testInstance5}, negtypes.NetworkEndpoint{IP: "1.2.3.6", Node: testInstance6}),
-				negtypes.TestZone3: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.7", Node: testUnreadyInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.8", Node: testUnreadyInstance2}),
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.7", Node: testUnreadyInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.8", Node: testUnreadyInstance2}),
 			},
 			networkEndpointType: negtypes.VmIpEndpointType,
 			nodeNames:           []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
@@ -242,11 +278,11 @@ func TestClusterGetEndpointSet(t *testing.T) {
 			// all nodes are picked since, in this mode, endpoints running do not need to run on the selected node.
 			// Even when there are no service endpoints, nodes are selected at random.
 			endpointsData: []negtypes.EndpointsData{},
-			wantEndpointSets: map[string]negtypes.NetworkEndpointSet{
-				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
-				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4},
+			wantEndpointSets: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4},
 					negtypes.NetworkEndpoint{IP: "1.2.3.5", Node: testInstance5}, negtypes.NetworkEndpoint{IP: "1.2.3.6", Node: testInstance6}),
-				negtypes.TestZone3: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.7", Node: testUnreadyInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.8", Node: testUnreadyInstance2}),
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.7", Node: testUnreadyInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.8", Node: testUnreadyInstance2}),
 			},
 			networkEndpointType: negtypes.VmIpEndpointType,
 			nodeNames:           []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
@@ -255,11 +291,11 @@ func TestClusterGetEndpointSet(t *testing.T) {
 		{
 			desc:          "multinetwork endpoints, only for nodes connected to the specified network",
 			endpointsData: negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()),
-			wantEndpointSets: map[string]negtypes.NetworkEndpointSet{
-				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "20.2.3.1", Node: testInstance1}, negtypes.NetworkEndpoint{IP: "20.2.3.2", Node: testInstance2}),
-				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "20.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "20.2.3.6", Node: testInstance6}),
+			wantEndpointSets: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "20.2.3.1", Node: testInstance1}, negtypes.NetworkEndpoint{IP: "20.2.3.2", Node: testInstance2}),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "20.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "20.2.3.6", Node: testInstance6}),
 			},
-			network: network.NetworkInfo{IsDefault: false, K8sNetwork: "other"},
+			network: network.NetworkInfo{IsDefault: false, K8sNetwork: "other", SubnetworkURL: defaultTestSubnetURL},
 			nodeAnnotationsMap: map[string]map[string]string{
 				testInstance1: {networkv1.NorthInterfacesAnnotationKey: nodeInterfacesAnnotation(t, "other", "20.2.3.1")},
 				testInstance2: {networkv1.NorthInterfacesAnnotationKey: nodeInterfacesAnnotation(t, "other", "20.2.3.2")},
@@ -269,30 +305,53 @@ func TestClusterGetEndpointSet(t *testing.T) {
 			networkEndpointType: negtypes.VmIpEndpointType,
 			nodeNames:           []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
 		},
+		{
+			desc:          "endpoints with MSC nodes",
+			endpointsData: negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()),
+			// all nodes are picked up, but since nodes are spread across subnets there is a separate endpoint set per zone/subnet.
+			wantEndpointSets: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}:    negtypes.NewNetworkEndpointSet(),
+				{Zone: negtypes.TestZone1, Subnet: secondaryTestSubnet1}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}),
+				{Zone: negtypes.TestZone1, Subnet: secondaryTestSubnet2}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
+				{Zone: negtypes.TestZone2, Subnet: secondaryTestSubnet1}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.3", Node: testInstance3}),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4},
+					negtypes.NetworkEndpoint{IP: "1.2.3.5", Node: testInstance5}, negtypes.NetworkEndpoint{IP: "1.2.3.6", Node: testInstance6}),
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.7", Node: testUnreadyInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.8", Node: testUnreadyInstance2}),
+			},
+			networkEndpointType: negtypes.VmIpEndpointType,
+			nodeNames:           []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
+			nodeLabelsMap: map[string]map[string]string{
+				testInstance1: {utils.LabelNodeSubnet: secondaryTestSubnet1},
+				testInstance2: {utils.LabelNodeSubnet: secondaryTestSubnet2},
+				testInstance3: {utils.LabelNodeSubnet: secondaryTestSubnet1},
+			},
+			network: defaultNetwork,
+		},
 	}
 	svcKey := fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace)
 	for _, tc := range testCases {
-		ec := NewClusterL4ILBEndpointsCalculator(listers.NewNodeLister(nodeInformer.GetIndexer()), zoneGetter, svcKey, klog.TODO(), &tc.network)
-		updateNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeAnnotationsMap, tc.nodeReadyStatusMap, nodeInformer.GetIndexer())
-		retSet, _, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
-		if err != nil {
-			t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
-		}
-		if !reflect.DeepEqual(retSet, tc.wantEndpointSets) {
-			t.Errorf("For case %q, expecting endpoint set %v, but got %v.", tc.desc, tc.wantEndpointSets, retSet)
-		}
-		degradedSet, _, err := ec.CalculateEndpointsDegradedMode(tc.endpointsData, nil)
-		if err != nil {
-			t.Errorf("For degraded mode case %q, expect nil error, but got %v.", tc.desc, err)
-		}
-		if !reflect.DeepEqual(degradedSet, tc.wantEndpointSets) {
-			t.Errorf("For degraded mode case %q, expecting endpoint set %v, but got %v.", tc.desc, tc.wantEndpointSets, retSet)
-		}
+		t.Run(tc.desc, func(t *testing.T) {
+			ec := NewClusterL4EndpointsCalculator(listers.NewNodeLister(nodeInformer.GetIndexer()), zoneGetter, svcKey, klog.TODO(), &tc.network, negtypes.L4InternalLB)
+			updateNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeAnnotationsMap, tc.nodeReadyStatusMap, nodeInformer.GetIndexer())
+			retSet, _, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
+			if err != nil {
+				t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
+			}
+			if !reflect.DeepEqual(retSet, tc.wantEndpointSets) {
+				t.Errorf("For case %q, expecting endpoint set %v, but got %v.", tc.desc, tc.wantEndpointSets, retSet)
+			}
+			degradedSet, _, err := ec.CalculateEndpointsDegradedMode(tc.endpointsData, nil)
+			if err != nil {
+				t.Errorf("For degraded mode case %q, expect nil error, but got %v.", tc.desc, err)
+			}
+			if !reflect.DeepEqual(degradedSet, tc.wantEndpointSets) {
+				t.Errorf("For degraded mode case %q, expecting endpoint set %v, but got %v.", tc.desc, tc.wantEndpointSets, retSet)
+			}
+		})
 	}
 }
 
 func TestValidateEndpoints(t *testing.T) {
-	t.Parallel()
 	testPortName := ""
 	emptyNamedPort := ""
 	protocolTCP := v1.ProtocolTCP
@@ -346,14 +405,20 @@ func TestValidateEndpoints(t *testing.T) {
 	nodeLister := testContext.NodeInformer.GetIndexer()
 	serviceLister := testContext.ServiceInformer.GetIndexer()
 	zonegetter.PopulateFakeNodeInformer(testContext.NodeInformer, true)
-	zoneGetter := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, defaultTestSubnetURL, false)
+	zoneGetter, err := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter: %v", err)
+	}
 	L7EndpointsCalculator := NewL7EndpointsCalculator(zoneGetter, podLister, nodeLister, serviceLister, svcPort, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics())
 
-	zoneGetterMSC := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, defaultTestSubnetURL, true)
+	zoneGetterMSC, err := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, true)
+	if err != nil {
+		t.Fatalf("failed to initialize msc zone getter: %v", err)
+	}
 	L7EndpointsCalculatorMSC := NewL7EndpointsCalculator(zoneGetterMSC, podLister, nodeLister, serviceLister, svcPort, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics())
 	L7EndpointsCalculatorMSC.enableMultiSubnetCluster = true
-	L4LocalEndpointCalculator := NewLocalL4ILBEndpointsCalculator(listers.NewNodeLister(nodeLister), zoneGetter, fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace), klog.TODO(), &network.NetworkInfo{})
-	L4ClusterEndpointCalculator := NewClusterL4ILBEndpointsCalculator(listers.NewNodeLister(nodeLister), zoneGetter, fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace), klog.TODO(), &network.NetworkInfo{})
+	L4LocalEndpointCalculator := NewLocalL4EndpointsCalculator(listers.NewNodeLister(nodeLister), zoneGetter, fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace), klog.TODO(), &network.NetworkInfo{SubnetworkURL: defaultTestSubnetURL}, negtypes.L4InternalLB)
+	L4ClusterEndpointCalculator := NewClusterL4EndpointsCalculator(listers.NewNodeLister(nodeLister), zoneGetter, fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace), klog.TODO(), &network.NetworkInfo{SubnetworkURL: defaultTestSubnetURL}, negtypes.L4InternalLB)
 
 	l7TestEPS := []*discovery.EndpointSlice{
 		{
@@ -396,12 +461,16 @@ func TestValidateEndpoints(t *testing.T) {
 		return ed, podMap
 	}
 
+	prevFlag := flags.F.EnableMultiSubnetCluster
+	defer func() { flags.F.EnableMultiSubnetCluster = prevFlag }()
+	flags.F.EnableMultiSubnetCluster = true
+
 	testCases := []struct {
 		desc               string
 		ec                 negtypes.NetworkEndpointsCalculator
 		ecMSC              negtypes.NetworkEndpointsCalculator
 		testEndpointSlices []*discovery.EndpointSlice
-		currentMap         map[string]negtypes.NetworkEndpointSet
+		currentMap         map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
 		// Use mutation to inject error into that we cannot trigger currently.
 		mutation func([]negtypes.EndpointsData, negtypes.EndpointPodMap) ([]negtypes.EndpointsData, negtypes.EndpointPodMap)
 		expect   error
@@ -634,14 +703,15 @@ func TestValidateEndpoints(t *testing.T) {
 		desc               string
 		ecMSC              negtypes.NetworkEndpointsCalculator
 		testEndpointSlices []*discovery.EndpointSlice
-		currentMap         map[string]negtypes.NetworkEndpointSet
+		currentMap         map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
 		// Use mutation to inject error into that we cannot trigger currently.
-		mutation func([]negtypes.EndpointsData, negtypes.EndpointPodMap) ([]negtypes.EndpointsData, negtypes.EndpointPodMap)
-		expect   error
+		mutation             func([]negtypes.EndpointsData, negtypes.EndpointPodMap) ([]negtypes.EndpointsData, negtypes.EndpointPodMap)
+		expectCalculationErr error
+		expectValidationErr  error
 	}{
 		{
 			desc:  "ValidateEndpoints for L7 Endpoint Calculator. Endpoint counts equal, endpointData has an endpoint corresponds to node without PodCIDR",
-			ecMSC: L7EndpointsCalculator,
+			ecMSC: L7EndpointsCalculatorMSC,
 			testEndpointSlices: []*discovery.EndpointSlice{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -687,9 +757,10 @@ func TestValidateEndpoints(t *testing.T) {
 					},
 				},
 			},
-			mutation:   noopMutation,
-			currentMap: nil,
-			expect:     nil,
+			mutation:             noopMutation,
+			currentMap:           nil,
+			expectCalculationErr: zonegetter.ErrNodePodCIDRNotSet,
+			expectValidationErr:  negtypes.ErrEPCalculationCountZero,
 		},
 		{
 			desc:  "ValidateEndpoints for L7 Endpoint Calculator. Endpoint counts equal, endpointData has non-default subnet endpoint",
@@ -739,9 +810,10 @@ func TestValidateEndpoints(t *testing.T) {
 					},
 				},
 			},
-			mutation:   noopMutation,
-			currentMap: nil,
-			expect:     nil,
+			mutation:             noopMutation,
+			currentMap:           nil,
+			expectCalculationErr: nil,
+			expectValidationErr:  nil,
 		},
 	}
 
@@ -749,12 +821,12 @@ func TestValidateEndpoints(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			endpointData := negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices)
 			_, endpointPodMap, endpointsExcludedInCalculation, err := tc.ecMSC.CalculateEndpoints(endpointData, tc.currentMap)
-			if err != nil {
+			if !errors.Is(err, tc.expectCalculationErr) {
 				t.Errorf("With multi-subnet cluster enabled, received error when calculating endpoint: %v", err)
 			}
 			endpointData, endpointPodMap = tc.mutation(endpointData, endpointPodMap)
-			if got := tc.ecMSC.ValidateEndpoints(endpointData, endpointPodMap, endpointsExcludedInCalculation); !errors.Is(got, tc.expect) {
-				t.Errorf("With multi-subnet cluster enabled, ValidateEndpoints() = %v, expected %v", got, tc.expect)
+			if got := tc.ecMSC.ValidateEndpoints(endpointData, endpointPodMap, endpointsExcludedInCalculation); !errors.Is(got, tc.expectValidationErr) {
+				t.Errorf("With multi-subnet cluster enabled, ValidateEndpoints() = %v, expected %v", got, tc.expectValidationErr)
 			}
 		})
 	}
@@ -800,18 +872,4 @@ func updateNodes(t *testing.T, nodeNames []string, nodeLabels map[string]map[str
 		}
 	}
 
-}
-
-func deleteNodes(t *testing.T, nodeNames []string, nodeIndexer cache.Indexer) {
-	t.Helper()
-	for _, nodeName := range nodeNames {
-		node, exists, err := nodeIndexer.GetByKey(nodeName)
-		if err != nil || !exists {
-			t.Errorf("Could not lookup node %q, err - %v", nodeName, err)
-			continue
-		}
-		if err := nodeIndexer.Delete(node); err != nil {
-			t.Errorf("Failed to delete node %q, err - %v", nodeName, err)
-		}
-	}
 }

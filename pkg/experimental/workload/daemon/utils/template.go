@@ -41,23 +41,3 @@ users:
         expiry-key: '{.token_expiry}'
         token-key: '{.access_token}'
       name: {{.authProvider}}`
-
-const kubeConfigKsaTemp = `
-apiVersion: v1
-clusters:
-- cluster:
-    certificate-authority-data: {{.clusterCa}}
-    server: https://{{.clusterIP}}
-  name: {{.clusterName}}
-contexts:
-- context:
-    cluster: {{.clusterName}}
-    user: {{.saName}}
-  name: {{.clusterName}}
-current-context: {{.clusterName}}
-kind: Config
-preferences: {}
-users:
-- name: {{.saName}}
-  user:
-    token: {{.accessToken}}`

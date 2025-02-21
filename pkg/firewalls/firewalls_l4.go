@@ -17,8 +17,6 @@ limitations under the License.
 package firewalls
 
 import (
-	"strings"
-
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
 	v1 "k8s.io/api/core/v1"
@@ -36,41 +34,36 @@ type FirewallParams struct {
 	IP                string
 	SourceRanges      []string
 	DestinationRanges []string
-	PortRanges        []string
 	NodeNames         []string
-	Protocol          string
+	Allowed           []*compute.FirewallAllowed
 	L4Type            utils.L4LBType
 	Network           network.NetworkInfo
 }
 
-func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParams, sharedRule bool, fwLogger klog.Logger) error {
+func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParams, sharedRule bool, fwLogger klog.Logger) (utils.ResourceSyncStatus, error) {
 	fwLogger = fwLogger.WithValues("l4Type", params.L4Type.ToString())
 	fa := NewFirewallAdapter(cloud)
 	existingFw, err := fa.GetFirewall(params.Name)
 	if err != nil && !utils.IsNotFoundError(err) {
-		return err
+		return utils.ResourceResync, err
 	}
 
 	nodeTags, err := cloud.GetNodeTags(params.NodeNames)
 	if err != nil {
-		return err
+		return utils.ResourceResync, err
 	}
 	fwDesc, err := utils.MakeL4LBFirewallDescription(nsName, params.IP, meta.VersionGA, sharedRule)
 	if err != nil {
 		fwLogger.Info("EnsureL4FirewallRule: failed to generate description for L4 rule", "err", err)
 	}
+
 	expectedFw := &compute.Firewall{
 		Name:         params.Name,
 		Description:  fwDesc,
 		Network:      params.Network.NetworkURL,
 		SourceRanges: params.SourceRanges,
 		TargetTags:   nodeTags,
-		Allowed: []*compute.FirewallAllowed{
-			{
-				IPProtocol: strings.ToLower(params.Protocol),
-				Ports:      params.PortRanges,
-			},
-		},
+		Allowed:      params.Allowed,
 	}
 	if flags.F.EnablePinhole {
 		expectedFw.DestinationRanges = params.DestinationRanges
@@ -82,14 +75,14 @@ func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParam
 			gcloudCmd := gce.FirewallToGCloudCreateCmd(expectedFw, cloud.NetworkProjectID())
 
 			fwLogger.V(3).Info("EnsureL4FirewallRule: Could not create L4 firewall on XPN cluster. Raising event for cmd", "err", err, "gcloudCmd", gcloudCmd)
-			return newFirewallXPNError(err, gcloudCmd)
+			return utils.ResourceUpdate, newFirewallXPNError(err, gcloudCmd)
 		}
-		return err
+		return utils.ResourceUpdate, err
 	}
 
 	// Don't compare the "description" field for shared firewall rules
-	if firewallRuleEqual(expectedFw, existingFw, sharedRule) {
-		return nil
+	if eq, err := Equal(expectedFw, existingFw, sharedRule); eq || err != nil {
+		return utils.ResourceResync, err
 	}
 
 	fwLogger.V(2).Info("EnsureL4FirewallRule: patching L4 firewall")
@@ -97,9 +90,9 @@ func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParam
 	if utils.IsForbiddenError(err) && cloud.OnXPN() {
 		gcloudCmd := gce.FirewallToGCloudUpdateCmd(expectedFw, cloud.NetworkProjectID())
 		fwLogger.V(3).Info("EnsureL4FirewallRule: Could not patch L4 firewall on XPN cluster. Raising event for cmd", "err", err, "gcloudCmd", gcloudCmd)
-		return newFirewallXPNError(err, gcloudCmd)
+		return utils.ResourceUpdate, newFirewallXPNError(err, gcloudCmd)
 	}
-	return err
+	return utils.ResourceUpdate, err
 }
 
 func EnsureL4FirewallRuleDeleted(cloud *gce.Cloud, fwName string, fwLogger klog.Logger) error {
@@ -115,58 +108,25 @@ func EnsureL4FirewallRuleDeleted(cloud *gce.Cloud, fwName string, fwLogger klog.
 	return nil
 }
 
-func firewallRuleEqual(a, b *compute.Firewall, skipDescription bool) bool {
-	if len(a.Allowed) != len(b.Allowed) {
-		return false
-	}
-	for i := range a.Allowed {
-		if !allowRulesEqual(a.Allowed[i], b.Allowed[i]) {
-			return false
-		}
-	}
-
-	if !utils.EqualStringSets(a.DestinationRanges, b.DestinationRanges) {
-		return false
-	}
-
-	if !utils.EqualStringSets(a.SourceRanges, b.SourceRanges) {
-		return false
-	}
-
-	if !utils.EqualStringSets(a.TargetTags, b.TargetTags) {
-		return false
-	}
-
-	if !skipDescription && a.Description != b.Description {
-		return false
-	}
-	return true
-}
-
-func allowRulesEqual(a *compute.FirewallAllowed, b *compute.FirewallAllowed) bool {
-	return a.IPProtocol == b.IPProtocol &&
-		utils.EqualStringSets(a.Ports, b.Ports)
-}
-
-func ensureFirewall(svc *v1.Service, shared bool, params *FirewallParams, cloud *gce.Cloud, recorder record.EventRecorder, fwLogger klog.Logger) error {
+func ensureFirewall(svc *v1.Service, shared bool, params *FirewallParams, cloud *gce.Cloud, recorder record.EventRecorder, fwLogger klog.Logger) (utils.ResourceSyncStatus, error) {
 	nsName := utils.ServiceKeyFunc(svc.Namespace, svc.Name)
-	err := EnsureL4FirewallRule(cloud, nsName, params, shared, fwLogger)
+	updateStatus, err := EnsureL4FirewallRule(cloud, nsName, params, shared, fwLogger)
 	if err != nil {
 		if fwErr, ok := err.(*FirewallXPNError); ok {
 			recorder.Eventf(svc, v1.EventTypeNormal, "XPN", fwErr.Message)
-			return nil
+			return updateStatus, nil
 		}
-		return err
+		return updateStatus, err
 	}
-	return nil
+	return updateStatus, nil
 }
 
 // EnsureL4LBFirewallForHc creates or updates firewall rule for shared or non-shared health check to nodes
-func EnsureL4LBFirewallForHc(svc *v1.Service, shared bool, params *FirewallParams, cloud *gce.Cloud, recorder record.EventRecorder, fwLogger klog.Logger) error {
+func EnsureL4LBFirewallForHc(svc *v1.Service, shared bool, params *FirewallParams, cloud *gce.Cloud, recorder record.EventRecorder, fwLogger klog.Logger) (utils.ResourceSyncStatus, error) {
 	return ensureFirewall(svc, shared, params, cloud, recorder, fwLogger)
 }
 
 // EnsureL4LBFirewallForNodes creates or updates firewall rule for LB traffic to nodes
-func EnsureL4LBFirewallForNodes(svc *v1.Service, params *FirewallParams, cloud *gce.Cloud, recorder record.EventRecorder, fwLogger klog.Logger) error {
+func EnsureL4LBFirewallForNodes(svc *v1.Service, params *FirewallParams, cloud *gce.Cloud, recorder record.EventRecorder, fwLogger klog.Logger) (utils.ResourceSyncStatus, error) {
 	return ensureFirewall(svc /*shared = */, false, params, cloud, recorder, fwLogger)
 }

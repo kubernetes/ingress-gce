@@ -1203,11 +1203,7 @@ func hcFromBC(bchcc *backendconfigv1.HealthCheckConfig, neg bool, json bool) *co
 func (f *syncSPFixture) hcs() *compute.HealthCheck  { return f.toS(f.hc()) }
 func (f *syncSPFixture) hc2() *compute.HealthCheck  { return f.to2(f.hc()) }
 func (f *syncSPFixture) negs() *compute.HealthCheck { return f.toS(f.neg()) }
-func (f *syncSPFixture) neg2() *compute.HealthCheck { return f.to2(f.neg()) }
 func (f *syncSPFixture) ilbs() *compute.HealthCheck { return f.toS(f.ilb()) }
-func (f *syncSPFixture) ilb2() *compute.HealthCheck { return f.to2(f.ilb()) }
-func (f *syncSPFixture) thcs() *compute.HealthCheck { panic("no such thing exists") }
-func (f *syncSPFixture) thc2() *compute.HealthCheck { panic("no such thing exists") }
 
 func (f *syncSPFixture) toS(h *compute.HealthCheck) *compute.HealthCheck {
 	h.Type = "HTTPS"

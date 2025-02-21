@@ -15,31 +15,25 @@ package context
 
 import (
 	"fmt"
-	"sync"
 	"time"
 
 	firewallclient "github.com/GoogleCloudPlatform/gke-networking-api/client/gcpfirewall/clientset/versioned"
 	informerfirewall "github.com/GoogleCloudPlatform/gke-networking-api/client/gcpfirewall/informers/externalversions/gcpfirewall/v1"
 	networkclient "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned"
 	informernetwork "github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions/network/v1"
-	apiv1 "k8s.io/api/core/v1"
+	nodetopologyclient "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned"
+	informernodetopology "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions/nodetopology/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	informers "k8s.io/client-go/informers"
 	informerv1 "k8s.io/client-go/informers/core/v1"
 	discoveryinformer "k8s.io/client-go/informers/discovery/v1"
 	informernetworking "k8s.io/client-go/informers/networking/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/scheme"
-	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
-	sav1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1"
-	sav1beta1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	informerbackendconfig "k8s.io/ingress-gce/pkg/backendconfig/client/informers/externalversions/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/cmconfig"
@@ -48,10 +42,9 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 	informerfrontendconfig "k8s.io/ingress-gce/pkg/frontendconfig/client/informers/externalversions/frontendconfig/v1beta1"
-	ingparamsclient "k8s.io/ingress-gce/pkg/ingparams/client/clientset/versioned"
-	informeringparams "k8s.io/ingress-gce/pkg/ingparams/client/informers/externalversions/ingparams/v1beta1"
 	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/metrics"
+	"k8s.io/ingress-gce/pkg/recorders"
 	serviceattachmentclient "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned"
 	informerserviceattachment "k8s.io/ingress-gce/pkg/serviceattachment/client/informers/externalversions/serviceattachment/v1"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
@@ -73,12 +66,12 @@ const (
 
 // ControllerContext holds the state needed for the execution of the controller.
 type ControllerContext struct {
-	KubeConfig          *rest.Config
 	KubeClient          kubernetes.Interface
 	SvcNegClient        svcnegclient.Interface
 	SAClient            serviceattachmentclient.Interface
 	FirewallClient      firewallclient.Interface
 	EventRecorderClient kubernetes.Interface
+	NodeTopologyClient  nodetopologyclient.Interface
 
 	Cloud *gce.Cloud
 
@@ -98,21 +91,13 @@ type ControllerContext struct {
 	EndpointSliceInformer    cache.SharedIndexInformer
 	ConfigMapInformer        cache.SharedIndexInformer
 	SvcNegInformer           cache.SharedIndexInformer
-	IngClassInformer         cache.SharedIndexInformer
-	IngParamsInformer        cache.SharedIndexInformer
 	SAInformer               cache.SharedIndexInformer
 	FirewallInformer         cache.SharedIndexInformer
 	NetworkInformer          cache.SharedIndexInformer
 	GKENetworkParamsInformer cache.SharedIndexInformer
+	NodeTopologyInformer     cache.SharedIndexInformer
 
 	ControllerMetrics *metrics.ControllerMetrics
-
-	hcLock       sync.Mutex
-	healthChecks map[string]func() error
-
-	recorderLock sync.Mutex
-	// Map of namespace => record.EventRecorder.
-	recorders map[string]record.EventRecorder
 
 	// NOTE: If the flag GKEClusterType is empty, then cluster will default to zonal. This field should not be used for
 	// controller logic and should only be used for providing additional information to the user.
@@ -121,6 +106,8 @@ type ControllerContext struct {
 	InstancePool instancegroups.Manager
 	Translator   *translator.Translator
 	ZoneGetter   *zonegetter.ZoneGetter
+
+	recordersManager *recorders.Manager
 
 	logger klog.Logger
 }
@@ -146,25 +133,30 @@ type ControllerContextConfig struct {
 	EnableIngressRegionalExternal bool
 	EnableWeightedL4ILB           bool
 	EnableWeightedL4NetLB         bool
+	DisableL4LBFirewall           bool
+	EnableL4NetLBNEGs             bool
+	EnableL4NetLBNEGsDefault      bool
+	EnableL4ILBMixedProtocol      bool
+	EnableL4NetLBMixedProtocol    bool
 }
 
 // NewControllerContext returns a new shared set of informers.
 func NewControllerContext(
-	kubeConfig *rest.Config,
 	kubeClient kubernetes.Interface,
 	backendConfigClient backendconfigclient.Interface,
 	frontendConfigClient frontendconfigclient.Interface,
 	firewallClient firewallclient.Interface,
 	svcnegClient svcnegclient.Interface,
-	ingParamsClient ingparamsclient.Interface,
 	saClient serviceattachmentclient.Interface,
 	networkClient networkclient.Interface,
+	nodeTopologyClient nodetopologyclient.Interface,
 	eventRecorderClient kubernetes.Interface,
 	cloud *gce.Cloud,
 	clusterNamer *namer.Namer,
 	kubeSystemUID types.UID,
 	config ControllerContextConfig,
-	logger klog.Logger) *ControllerContext {
+	logger klog.Logger,
+) (*ControllerContext, error) {
 	logger = logger.WithName("ControllerContext")
 
 	podInformer := informerv1.NewPodInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
@@ -179,12 +171,12 @@ func NewControllerContext(
 	}
 
 	context := &ControllerContext{
-		KubeConfig:              kubeConfig,
 		KubeClient:              kubeClient,
 		FirewallClient:          firewallClient,
 		SvcNegClient:            svcnegClient,
 		SAClient:                saClient,
 		EventRecorderClient:     eventRecorderClient,
+		NodeTopologyClient:      nodeTopologyClient,
 		Cloud:                   cloud,
 		ClusterNamer:            clusterNamer,
 		L4Namer:                 namer.NewL4Namer(string(kubeSystemUID), clusterNamer),
@@ -197,8 +189,7 @@ func NewControllerContext(
 		PodInformer:             podInformer,
 		NodeInformer:            nodeInformer,
 		SvcNegInformer:          informersvcneg.NewServiceNetworkEndpointGroupInformer(svcnegClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
-		recorders:               map[string]record.EventRecorder{},
-		healthChecks:            make(map[string]func() error),
+		recordersManager:        recorders.NewManager(eventRecorderClient, logger),
 		logger:                  logger,
 	}
 	if firewallClient != nil {
@@ -206,10 +197,6 @@ func NewControllerContext(
 	}
 	if config.FrontendConfigEnabled {
 		context.FrontendConfigInformer = informerfrontendconfig.NewFrontendConfigInformer(frontendConfigClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
-	}
-	if ingParamsClient != nil {
-		context.IngClassInformer = informernetworking.NewIngressClassInformer(kubeClient, config.ResyncPeriod, utils.NewNamespaceIndexer())
-		context.IngParamsInformer = informeringparams.NewGCPIngressParamsInformer(ingParamsClient, config.ResyncPeriod, utils.NewNamespaceIndexer())
 	}
 
 	if saClient != nil {
@@ -223,6 +210,14 @@ func NewControllerContext(
 
 	if flags.F.GKEClusterType == ClusterTypeRegional {
 		context.RegionalCluster = true
+	}
+
+	if flags.F.EnableMultiSubnetClusterPhase1 {
+		if nodeTopologyClient != nil {
+			context.NodeTopologyInformer = informernodetopology.NewFilteredNodeTopologyInformer(nodeTopologyClient, config.ResyncPeriod, utils.NewNamespaceIndexer(), func(listOptions *metav1.ListOptions) {
+				listOptions.FieldSelector = fmt.Sprintf("metadata.name=%s", flags.F.NodeTopologyCRName)
+			})
+		}
 	}
 
 	// Do not trigger periodic resync on EndpointSlices object.
@@ -244,7 +239,8 @@ func NewControllerContext(
 		logger,
 	)
 	// The subnet specified in gce.conf is considered as the default subnet.
-	context.ZoneGetter = zonegetter.NewZoneGetter(context.NodeInformer, context.Cloud.SubnetworkURL())
+	var err error
+	context.ZoneGetter, err = zonegetter.NewZoneGetter(context.NodeInformer, context.NodeTopologyInformer, context.Cloud.SubnetworkURL())
 	context.InstancePool = instancegroups.NewManager(&instancegroups.ManagerConfig{
 		Cloud:      context.Cloud,
 		Namer:      context.ClusterNamer,
@@ -254,7 +250,11 @@ func NewControllerContext(
 		MaxIGSize:  config.MaxIGSize,
 	})
 
-	return context
+	return context, err
+}
+
+func (ctx *ControllerContext) Recorder(ns string) record.EventRecorder {
+	return ctx.recordersManager.Recorder(ns)
 }
 
 // Init inits the Context, so that we can defers some config until the main thread enter actually get the leader hcLock.
@@ -272,7 +272,7 @@ func (ctx *ControllerContext) Init() {
 				listOptions.FieldSelector = fmt.Sprintf("metadata.name=%s", ctx.ASMConfigMapName)
 			}))
 		ctx.ConfigMapInformer = informerFactory.Core().V1().ConfigMaps().Informer()
-		ctx.ASMConfigController = cmconfig.NewConfigMapConfigController(ctx.KubeClient, ctx.Recorder(ctx.ASMConfigMapNamespace), ctx.ASMConfigMapNamespace, ctx.ASMConfigMapName, ctx.logger)
+		ctx.ASMConfigController = cmconfig.NewConfigMapConfigController(ctx.KubeClient, ctx.recordersManager.Recorder(ctx.ASMConfigMapNamespace), ctx.ASMConfigMapNamespace, ctx.ASMConfigMapName, ctx.logger)
 
 		cmConfig := ctx.ASMConfigController.GetConfig()
 		if cmConfig.EnableASM {
@@ -310,14 +310,6 @@ func (ctx *ControllerContext) HasSynced() bool {
 		funcs = append(funcs, ctx.ConfigMapInformer.HasSynced)
 	}
 
-	if ctx.IngClassInformer != nil {
-		funcs = append(funcs, ctx.IngClassInformer.HasSynced)
-	}
-
-	if ctx.IngParamsInformer != nil {
-		funcs = append(funcs, ctx.IngParamsInformer.HasSynced)
-	}
-
 	if ctx.SAInformer != nil {
 		funcs = append(funcs, ctx.SAInformer.HasSynced)
 	}
@@ -338,49 +330,6 @@ func (ctx *ControllerContext) HasSynced() bool {
 		}
 	}
 	return true
-}
-
-// Recorder return the event recorder for the given namespace.
-func (ctx *ControllerContext) Recorder(ns string) record.EventRecorder {
-	ctx.recorderLock.Lock()
-	defer ctx.recorderLock.Unlock()
-	if rec, ok := ctx.recorders[ns]; ok {
-		return rec
-	}
-
-	broadcaster := record.NewBroadcaster()
-	broadcaster.StartLogging(klog.Infof)
-	broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{
-		Interface: ctx.EventRecorderClient.CoreV1().Events(ns),
-	})
-	rec := broadcaster.NewRecorder(ctx.generateScheme(), apiv1.EventSource{Component: "loadbalancer-controller"})
-	ctx.recorders[ns] = rec
-
-	return rec
-}
-
-// AddHealthCheck registers function to be called for healthchecking.
-func (ctx *ControllerContext) AddHealthCheck(id string, hc func() error) {
-	ctx.hcLock.Lock()
-	defer ctx.hcLock.Unlock()
-
-	ctx.healthChecks[id] = hc
-}
-
-// HealthCheckResults contains a mapping of component -> health check results.
-type HealthCheckResults map[string]error
-
-// HealthCheck runs all registered healthcheck functions.
-func (ctx *ControllerContext) HealthCheck() HealthCheckResults {
-	ctx.hcLock.Lock()
-	defer ctx.hcLock.Unlock()
-
-	healthChecks := make(map[string]error)
-	for component, f := range ctx.healthChecks {
-		healthChecks[component] = f()
-	}
-
-	return healthChecks
 }
 
 // Start all of the informers.
@@ -406,12 +355,6 @@ func (ctx *ControllerContext) Start(stopCh <-chan struct{}) {
 	if ctx.SvcNegInformer != nil {
 		go ctx.SvcNegInformer.Run(stopCh)
 	}
-	if ctx.IngClassInformer != nil {
-		go ctx.IngClassInformer.Run(stopCh)
-	}
-	if ctx.IngParamsInformer != nil {
-		go ctx.IngParamsInformer.Run(stopCh)
-	}
 	if ctx.SAInformer != nil {
 		go ctx.SAInformer.Run(stopCh)
 	}
@@ -420,6 +363,9 @@ func (ctx *ControllerContext) Start(stopCh <-chan struct{}) {
 	}
 	if ctx.GKENetworkParamsInformer != nil {
 		go ctx.GKENetworkParamsInformer.Run(stopCh)
+	}
+	if ctx.NodeTopologyInformer != nil {
+		go ctx.NodeTopologyInformer.Run(stopCh)
 	}
 	// Export ingress usage metrics.
 	go ctx.ControllerMetrics.Run(stopCh)
@@ -446,22 +392,6 @@ func (ctx *ControllerContext) FrontendConfigs() *typed.FrontendConfigStore {
 		return typed.WrapFrontendConfigStore(nil)
 	}
 	return typed.WrapFrontendConfigStore(ctx.FrontendConfigInformer.GetStore())
-}
-
-// generateScheme creates a scheme and adds relevant CRD schemes that will be used
-// for events
-func (ctx *ControllerContext) generateScheme() *runtime.Scheme {
-	controllerScheme := scheme.Scheme
-
-	if ctx.SAInformer != nil {
-		if err := sav1beta1.AddToScheme(controllerScheme); err != nil {
-			ctx.logger.Error(err, "Failed to add v1beta1 ServiceAttachment CRD scheme to event recorder")
-		}
-		if err := sav1.AddToScheme(controllerScheme); err != nil {
-			ctx.logger.Error(err, "Failed to add v1 ServiceAttachment CRD scheme to event recorder: %s")
-		}
-	}
-	return controllerScheme
 }
 
 // preserveNeeded returns the obj preserving fields needed for memory efficiency.

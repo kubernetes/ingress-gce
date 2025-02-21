@@ -18,6 +18,7 @@ package firewalls
 
 import (
 	context2 "context"
+	"fmt"
 	"strconv"
 	"testing"
 	"time"
@@ -43,29 +44,35 @@ import (
 )
 
 // newFirewallController creates a firewall controller.
-func newFirewallController() *FirewallController {
+func newFirewallController() (*FirewallController, error) {
 	kubeClient := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	firewallClient := firewallclient.NewSimpleClientset()
-	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	fakeGCE := gce.NewFakeGCECloud(test.DefaultTestClusterValues())
 
 	ctxConfig := context.ControllerContextConfig{
 		Namespace:             api_v1.NamespaceAll,
 		ResyncPeriod:          1 * time.Minute,
 		DefaultBackendSvcPort: test.DefaultBeSvcPort,
 	}
-	ctx := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, firewallClient, nil, nil, nil, nil, kubeClient /*kube client to be used for events*/, fakeGCE, defaultNamer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
+	ctx, err := context.NewControllerContext(kubeClient, backendConfigClient, nil, firewallClient, nil, nil, nil, nil, kubeClient /*kube client to be used for events*/, fakeGCE, defaultNamer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize controller context: %v", err)
+	}
 	fwc := NewFirewallController(ctx, []string{"30000-32767"}, false, false, true, make(chan struct{}), klog.TODO())
 	fwc.hasSynced = func() bool { return true }
 
-	return fwc
+	return fwc, nil
 }
 
 // TestFirewallCreateDelete asserts that `sync` will ensure the L7 firewall with
 // the correct ports. It also asserts that when no ingresses exist, that the
 // firewall rule is deleted.
 func TestFirewallCreateDelete(t *testing.T) {
-	fwc := newFirewallController()
+	fwc, err := newFirewallController()
+	if err != nil {
+		t.Fatalf("failed to initialize firewall controller: %v", err)
+	}
 
 	// Create the default-backend service.
 	defaultSvc := test.NewService(test.DefaultBeSvcPort.ID.Service, api_v1.ServiceSpec{
@@ -92,7 +99,7 @@ func TestFirewallCreateDelete(t *testing.T) {
 	}
 
 	// Verify a firewall rule was created.
-	_, err := fwc.ctx.Cloud.GetFirewall(ruleName)
+	_, err = fwc.ctx.Cloud.GetFirewall(ruleName)
 	if err != nil {
 		t.Fatalf("cloud.GetFirewall(%v) = _, %v, want _, nil", ruleName, err)
 	}
@@ -160,7 +167,10 @@ func TestGetCustomHealthCheckPorts(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			flags.F.EnableTransparentHealthChecks = tc.enableTHC
-			fwc := newFirewallController()
+			fwc, err := newFirewallController()
+			if err != nil {
+				t.Fatalf("failed to initialize firewall controller: %v", err)
+			}
 			result := fwc.getCustomHealthCheckPorts(tc.svcPorts)
 			if diff := cmp.Diff(tc.expect, result); diff != "" {
 				t.Errorf("unexpected diff of ports (-want +got): \n%s", diff)

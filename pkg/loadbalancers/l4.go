@@ -17,17 +17,20 @@ limitations under the License.
 package loadbalancers
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"google.golang.org/api/compute/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/cloud-provider/service/helpers"
+	"k8s.io/ingress-gce/pkg/address"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -48,29 +51,29 @@ const (
 		"you need access to this feature please contact Google Cloud support team"
 )
 
-var (
-	noConnectionTrackingPolicy *composite.BackendServiceConnectionTrackingPolicy = nil
-)
+var noConnectionTrackingPolicy *composite.BackendServiceConnectionTrackingPolicy = nil
 
 // Many of the functions in this file are re-implemented from gce_loadbalancer_internal.go
 // L4 handles the resource creation/deletion/update for a given L4 ILB service.
 type L4 struct {
 	cloud       *gce.Cloud
-	backendPool *backends.Backends
+	backendPool *backends.Pool
 	scope       meta.KeyType
 	namer       namer.L4ResourcesNamer
 	// recorder is used to generate k8s Events.
-	recorder         record.EventRecorder
-	Service          *corev1.Service
-	ServicePort      utils.ServicePort
-	NamespacedName   types.NamespacedName
-	forwardingRules  ForwardingRulesProvider
-	healthChecks     healthchecksl4.L4HealthChecks
-	enableDualStack  bool
-	network          network.NetworkInfo
-	networkResolver  network.Resolver
-	enableWeightedLB bool
-	svcLogger        klog.Logger
+	recorder                         record.EventRecorder
+	Service                          *corev1.Service
+	ServicePort                      utils.ServicePort
+	NamespacedName                   types.NamespacedName
+	forwardingRules                  ForwardingRulesProvider
+	healthChecks                     healthchecksl4.L4HealthChecks
+	enableDualStack                  bool
+	network                          network.NetworkInfo
+	networkResolver                  network.Resolver
+	enableWeightedLB                 bool
+	enableMixedProtocol              bool
+	disableNodesFirewallProvisioning bool
+	svcLogger                        klog.Logger
 }
 
 // L4ILBSyncResult contains information about the outcome of an L4 ILB sync. It stores the list of resource name annotations,
@@ -84,34 +87,31 @@ type L4ILBSyncResult struct {
 	MetricsState       metrics.L4ServiceState
 	SyncType           string
 	StartTime          time.Time
+	ResourceUpdates    ResourceUpdates
 }
 
-func NewL4ILBSyncResult(syncType string, startTime time.Time, svc *corev1.Service, isMultinetService bool) *L4ILBSyncResult {
+func NewL4ILBSyncResult(syncType string, startTime time.Time, svc *corev1.Service, isMultinetService bool, isWeightedLBPodsPerNode bool) *L4ILBSyncResult {
+	enabledStrongSessionAffinity := false
 	result := &L4ILBSyncResult{
 		Annotations: make(map[string]string),
 		StartTime:   startTime,
 		SyncType:    syncType,
 		// Internal Load Balancer doesn't support strong session affinity (passing `false` all along)
-		MetricsState: metrics.InitServiceMetricsState(svc, &startTime, isMultinetService, false),
-	}
-
-	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
-	// This will also cover cases where an external LB is updated to an ILB, which is technically a create for ILB.
-	// But this is still the easiest way to identify create vs update in the common case.
-	if syncType == SyncTypeCreate && len(svc.Status.LoadBalancer.Ingress) > 0 {
-		result.SyncType = SyncTypeUpdate
+		MetricsState: metrics.InitServiceMetricsState(svc, &startTime, isMultinetService, enabledStrongSessionAffinity, isWeightedLBPodsPerNode, metrics.L4BackendTypeNEG),
 	}
 	return result
 }
 
 type L4ILBParams struct {
-	Service          *corev1.Service
-	Cloud            *gce.Cloud
-	Namer            namer.L4ResourcesNamer
-	Recorder         record.EventRecorder
-	DualStackEnabled bool
-	NetworkResolver  network.Resolver
-	EnableWeightedLB bool
+	Service                          *corev1.Service
+	Cloud                            *gce.Cloud
+	Namer                            namer.L4ResourcesNamer
+	Recorder                         record.EventRecorder
+	DualStackEnabled                 bool
+	NetworkResolver                  network.Resolver
+	EnableWeightedLB                 bool
+	DisableNodesFirewallProvisioning bool
+	EnableMixedProtocol              bool
 }
 
 // NewL4Handler creates a new L4Handler for the given L4 service.
@@ -120,22 +120,26 @@ func NewL4Handler(params *L4ILBParams, logger klog.Logger) *L4 {
 
 	var scope meta.KeyType = meta.Regional
 	l4 := &L4{
-		cloud:            params.Cloud,
-		scope:            scope,
-		namer:            params.Namer,
-		recorder:         params.Recorder,
-		Service:          params.Service,
-		healthChecks:     healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder, logger),
-		forwardingRules:  forwardingrules.New(params.Cloud, meta.VersionGA, scope, logger),
-		enableDualStack:  params.DualStackEnabled,
-		networkResolver:  params.NetworkResolver,
-		enableWeightedLB: params.EnableWeightedLB,
-		svcLogger:        logger,
+		cloud:                            params.Cloud,
+		scope:                            scope,
+		namer:                            params.Namer,
+		recorder:                         params.Recorder,
+		Service:                          params.Service,
+		healthChecks:                     healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder, logger),
+		forwardingRules:                  forwardingrules.New(params.Cloud, meta.VersionGA, scope, logger),
+		enableDualStack:                  params.DualStackEnabled,
+		networkResolver:                  params.NetworkResolver,
+		enableWeightedLB:                 params.EnableWeightedLB,
+		enableMixedProtocol:              params.EnableMixedProtocol,
+		disableNodesFirewallProvisioning: params.DisableNodesFirewallProvisioning,
+		svcLogger:                        logger,
 	}
 	l4.NamespacedName = types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace}
 	l4.backendPool = backends.NewPool(l4.cloud, l4.namer)
-	l4.ServicePort = utils.ServicePort{ID: utils.ServicePortID{Service: l4.NamespacedName}, BackendNamer: l4.namer,
-		VMIPNEGEnabled: true}
+	l4.ServicePort = utils.ServicePort{
+		ID: utils.ServicePortID{Service: l4.NamespacedName}, BackendNamer: l4.namer,
+		VMIPNEGEnabled: true,
+	}
 	return l4
 }
 
@@ -151,15 +155,18 @@ func (l4 *L4) getILBOptions() gce.ILBOptions {
 		return gce.ILBOptions{}
 	}
 
-	return gce.ILBOptions{AllowGlobalAccess: gce.GetLoadBalancerAnnotationAllowGlobalAccess(l4.Service),
-		SubnetName: annotations.FromService(l4.Service).GetInternalLoadBalancerAnnotationSubnet()}
+	return gce.ILBOptions{
+		AllowGlobalAccess: gce.GetLoadBalancerAnnotationAllowGlobalAccess(l4.Service),
+		SubnetName:        annotations.FromService(l4.Service).GetInternalLoadBalancerAnnotationSubnet(),
+	}
 }
 
 // EnsureInternalLoadBalancerDeleted performs a cleanup of all GCE resources for the given loadbalancer service.
 func (l4 *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4ILBSyncResult {
 	l4.svcLogger.V(2).Info("EnsureInternalLoadBalancerDeleted: deleting L4 ILB LoadBalancer resources")
 	isMultinetService := l4.networkResolver.IsMultinetService(svc)
-	result := NewL4ILBSyncResult(SyncTypeDelete, time.Now(), svc, isMultinetService)
+	isWeightedLBPodsPerNode := l4.isWeightedLBPodsPerNode()
+	result := NewL4ILBSyncResult(SyncTypeDelete, time.Now(), svc, isMultinetService, isWeightedLBPodsPerNode)
 
 	l4.deleteIPv4ResourcesOnDelete(result)
 	if l4.enableDualStack {
@@ -232,8 +239,16 @@ func (l4 *L4) deleteIPv4ResourcesOnDelete(result *L4ILBSyncResult) {
 // This function does not delete Backend Service and Health Check, because they are shared between IPv4 and IPv6.
 // IPv4 Firewall Rule for Health Check also will not be deleted here, and will be left till the Service Deletion.
 func (l4 *L4) deleteIPv4ResourcesAnnotationBased(result *L4ILBSyncResult, shouldIgnoreAnnotations bool) {
-	if shouldIgnoreAnnotations || l4.hasAnnotation(annotations.TCPForwardingRuleKey) || l4.hasAnnotation(annotations.UDPForwardingRuleKey) {
-		err := l4.deleteIPv4ForwardingRule()
+	hasFwdRuleAnnotation := l4.hasAnnotation(annotations.TCPForwardingRuleKey) ||
+		l4.hasAnnotation(annotations.UDPForwardingRuleKey) ||
+		l4.hasAnnotation(annotations.L3ForwardingRuleKey)
+	if shouldIgnoreAnnotations || hasFwdRuleAnnotation {
+		var err error
+		if l4.enableDualStack && l4.enableMixedProtocol {
+			err = l4.deleteAllIPv4ForwardingRules()
+		} else {
+			err = l4.deleteIPv4ForwardingRule()
+		}
 		if err != nil {
 			l4.svcLogger.Error(err, "Failed to delete forwarding rule for internal loadbalancer service")
 			result.Error = err
@@ -274,6 +289,29 @@ func (l4 *L4) deleteIPv4ForwardingRule() error {
 	return l4.forwardingRules.Delete(frName)
 }
 
+// When switching from for example IPv4 TCP to IPv6 UDP, simply using GetFRName()
+// to delete won't be accurate since it will try to delete *IPv4 UDP* name not *TCP*,
+// and the UDP forwarding rule will be leaked.
+func (l4 *L4) deleteAllIPv4ForwardingRules() error {
+	start := time.Now()
+
+	frNameTCP := l4.getFRNameWithProtocol(forwardingrules.ProtocolTCP)
+	frNameUDP := l4.getFRNameWithProtocol(forwardingrules.ProtocolUDP)
+	frNameL3 := l4.getFRNameWithProtocol(forwardingrules.ProtocolL3)
+
+	l4.svcLogger.Info("Deleting all potential IPv4 forwarding rule for L4 ILB Service",
+		"forwardingRuleNameTCP", frNameTCP, "forwardingRuleNameUDP", frNameUDP, "forwardingRuleNameL3", frNameL3)
+	defer func() {
+		l4.svcLogger.Info("Finished deleting all IPv4 forwarding rule for L4 ILB Service", "forwardingRuleNameTCP", frNameTCP, "forwardingRuleNameUDP", frNameUDP, "forwardingRuleNameL3", frNameL3, "timeTaken", time.Since(start))
+	}()
+
+	errTCP := l4.forwardingRules.Delete(frNameTCP)
+	errUDP := l4.forwardingRules.Delete(frNameUDP)
+	errL3 := l4.forwardingRules.Delete(frNameL3)
+
+	return errors.Join(errTCP, errUDP, errL3)
+}
+
 func (l4 *L4) deleteIPv4Address() error {
 	addressName := l4.GetFRName()
 
@@ -283,7 +321,7 @@ func (l4 *L4) deleteIPv4Address() error {
 		l4.svcLogger.Info("Finished deleting IPv4 address for L4 ILB Service", "addressName", addressName, "timeTaken", time.Since(start))
 	}()
 
-	return ensureAddressDeleted(l4.cloud, addressName, l4.cloud.Region())
+	return address.EnsureDeleted(l4.cloud, addressName, l4.cloud.Region())
 }
 
 func (l4 *L4) deleteIPv4NodesFirewall() error {
@@ -316,8 +354,12 @@ func (l4 *L4) deleteFirewall(name string, fwLogger klog.Logger) error {
 // This appends the protocol to the forwarding rule name, which will help supporting multiple protocols in the same ILB
 // service.
 func (l4 *L4) GetFRName() string {
-	protocol := utils.GetProtocol(l4.Service.Spec.Ports)
-	return l4.getFRNameWithProtocol(string(protocol))
+	ports := l4.Service.Spec.Ports
+	protocol := string(utils.GetProtocol(ports))
+	if l4.enableMixedProtocol {
+		protocol = forwardingrules.GetILBProtocol(ports)
+	}
+	return l4.getFRNameWithProtocol(protocol)
 }
 
 func (l4 *L4) getFRNameWithProtocol(protocol string) string {
@@ -340,13 +382,21 @@ func (l4 *L4) subnetName() string {
 // EnsureInternalLoadBalancer ensures that all GCE resources for the given loadbalancer service have
 // been created. It returns a LoadBalancerStatus with the updated ForwardingRule IP address.
 func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service) *L4ILBSyncResult {
-	l4.svcLogger.V(2).Info("EnsureInternalLoadBalancer")
-
 	l4.Service = svc
 
 	startTime := time.Now()
 	isMultinetService := l4.networkResolver.IsMultinetService(svc)
-	result := NewL4ILBSyncResult(SyncTypeCreate, startTime, svc, isMultinetService)
+	isWeightedLBPodsPerNode := l4.isWeightedLBPodsPerNode()
+	result := NewL4ILBSyncResult(SyncTypeCreate, startTime, svc, isMultinetService, isWeightedLBPodsPerNode)
+
+	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
+	// This will also cover cases where an external LB is updated to an ILB, which is technically a create for ILB.
+	// But this is still the easiest way to identify create vs update in the common case.
+	if len(svc.Status.LoadBalancer.Ingress) > 0 {
+		result.SyncType = SyncTypeUpdate
+	}
+
+	l4.svcLogger.V(2).Info("EnsureInternalLoadBalancer", "syncType", result.SyncType)
 
 	svcNetwork, err := l4.networkResolver.ServiceNetwork(svc)
 	if err != nil {
@@ -391,9 +441,9 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	var ipv4AddressToUse string
 	if !l4.enableDualStack || utils.NeedsIPv4(l4.Service) {
 		existingIPv4FR, err = l4.getOldIPv4ForwardingRule(existingBS)
-		ipv4AddressToUse, err = ipv4AddrToUse(l4.cloud, l4.recorder, l4.Service, existingIPv4FR, subnetworkURL)
+		ipv4AddressToUse, err = address.IPv4ToUse(l4.cloud, l4.recorder, l4.Service, existingIPv4FR, subnetworkURL)
 		if err != nil {
-			result.Error = fmt.Errorf("EnsureInternalLoadBalancer error: ipv4AddrToUse returned error: %w", err)
+			result.Error = fmt.Errorf("EnsureInternalLoadBalancer error: address.IPv4ToUse returned error: %w", err)
 			return result
 		}
 		expectedFRName := l4.GetFRName()
@@ -403,7 +453,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 
 			nm := types.NamespacedName{Namespace: l4.Service.Namespace, Name: l4.Service.Name}.String()
 			// ILB can be created only in Premium Tier
-			addrMgr := newAddressManager(l4.cloud, nm, l4.cloud.Region(), subnetworkURL, expectedFRName, ipv4AddressToUse, cloud.SchemeInternal, cloud.NetworkTierPremium, IPv4Version, l4.svcLogger)
+			addrMgr := address.NewManager(l4.cloud, nm, l4.cloud.Region(), subnetworkURL, expectedFRName, ipv4AddressToUse, cloud.SchemeInternal, cloud.NetworkTierPremium, address.IPv4Version, l4.svcLogger)
 			ipv4AddressToUse, _, err = addrMgr.HoldAddress()
 			if err != nil {
 				result.Error = fmt.Errorf("EnsureInternalLoadBalancer error: addrMgr.HoldAddress() returned error %w", err)
@@ -425,9 +475,9 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	var ipv6AddrToUse string
 	if l4.enableDualStack && utils.NeedsIPv6(l4.Service) {
 		existingIPv6FR, err = l4.getOldIPv6ForwardingRule(existingBS)
-		ipv6AddrToUse, err = ipv6AddressToUse(l4.cloud, l4.Service, existingIPv6FR, subnetworkURL, l4.svcLogger)
+		ipv6AddrToUse, err = address.IPv6ToUse(l4.cloud, l4.Service, existingIPv6FR, subnetworkURL, l4.svcLogger)
 		if err != nil {
-			result.Error = fmt.Errorf("EnsureInternalLoadBalancer error: ipv6IPToUse returned error: %w", err)
+			result.Error = fmt.Errorf("EnsureInternalLoadBalancer error: address.IPv6ToUse returned error: %w", err)
 			return result
 		}
 		expectedIPv6FRName := l4.getIPv6FRName()
@@ -436,7 +486,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		if !l4.cloud.IsLegacyNetwork() {
 			nm := types.NamespacedName{Namespace: l4.Service.Namespace, Name: l4.Service.Name}.String()
 			// ILB can be created only in Premium Tier
-			ipv6AddrMgr := newAddressManager(l4.cloud, nm, l4.cloud.Region(), subnetworkURL, expectedIPv6FRName, ipv6AddrToUse, cloud.SchemeInternal, cloud.NetworkTierPremium, IPv6Version, l4.svcLogger)
+			ipv6AddrMgr := address.NewManager(l4.cloud, nm, l4.cloud.Region(), subnetworkURL, expectedIPv6FRName, ipv6AddrToUse, cloud.SchemeInternal, cloud.NetworkTierPremium, address.IPv6Version, l4.svcLogger)
 			ipv6AddrToUse, _, err = ipv6AddrMgr.HoldAddress()
 			if err != nil {
 				result.Error = fmt.Errorf("EnsureInternalLoadBalancer error: ipv6AddrMgr.HoldAddress() returned error %w", err)
@@ -454,12 +504,15 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	}
 
 	servicePorts := l4.Service.Spec.Ports
-	protocol := utils.GetProtocol(servicePorts)
+	backendProtocol := string(utils.GetProtocol(servicePorts))
+	if l4.enableMixedProtocol {
+		backendProtocol = backends.GetProtocol(servicePorts)
+	}
 
 	// if Service protocol changed, we must delete forwarding rule before changing backend service,
 	// otherwise, on updating backend service, google cloud api will return error
-	if existingBS != nil && existingBS.Protocol != string(protocol) {
-		l4.svcLogger.Info("Protocol changed for service", "existingProtocol", existingBS.Protocol, "newProtocol", string(protocol))
+	if existingBS != nil && existingBS.Protocol != backendProtocol {
+		l4.svcLogger.Info("Protocol changed for service", "existingProtocol", existingBS.Protocol, "newProtocol", backendProtocol)
 		if existingIPv4FR != nil {
 			// Delete ipv4 forwarding rule if it exists
 			err = l4.forwardingRules.Delete(existingIPv4FR.Name)
@@ -483,7 +536,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	backendParams := backends.L4BackendServiceParams{
 		Name:                     bsName,
 		HealthCheckLink:          hcLink,
-		Protocol:                 string(protocol),
+		Protocol:                 backendProtocol,
 		SessionAffinity:          string(l4.Service.Spec.SessionAffinity),
 		Scheme:                   string(cloud.SchemeInternal),
 		NamespacedName:           l4.NamespacedName,
@@ -491,7 +544,8 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		ConnectionTrackingPolicy: noConnectionTrackingPolicy,
 		LocalityLbPolicy:         localityLbPolicy,
 	}
-	bs, err := l4.backendPool.EnsureL4BackendService(backendParams, l4.svcLogger)
+	bs, bsSyncStatus, err := l4.backendPool.EnsureL4BackendService(backendParams, l4.svcLogger)
+	result.ResourceUpdates.SetBackendService(bsSyncStatus)
 	if err != nil {
 		if utils.IsUnsupportedFeatureError(err, string(backends.LocalityLBPolicyMaglev)) {
 			result.GCEResourceInError = annotations.BackendServiceResource
@@ -558,6 +612,8 @@ func (l4 *L4) provideDualStackHealthChecks(nodeNames []string, result *L4ILBSync
 func (l4 *L4) provideIPv4HealthChecks(nodeNames []string, result *L4ILBSyncResult) string {
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(l4.Service)
 	hcResult := l4.healthChecks.EnsureHealthCheckWithFirewall(l4.Service, l4.namer, sharedHC, meta.Global, utils.ILB, nodeNames, l4.network, l4.svcLogger)
+	result.ResourceUpdates.SetHealthCheck(hcResult.WasUpdated)
+	result.ResourceUpdates.SetFirewallForHealthCheck(hcResult.WasFirewallUpdated)
 	if hcResult.Err != nil {
 		result.GCEResourceInError = hcResult.GceResourceInError
 		result.Error = hcResult.Err
@@ -585,17 +641,22 @@ func (l4 *L4) ensureDualStackResources(result *L4ILBSyncResult, nodeNames []stri
 // - IPv4 Forwarding Rule
 // - IPv4 Firewall
 func (l4 *L4) ensureIPv4Resources(result *L4ILBSyncResult, nodeNames []string, options gce.ILBOptions, bs *composite.BackendService, existingFR *composite.ForwardingRule, subnetworkURL, ipToUse string) {
-	fr, err := l4.ensureIPv4ForwardingRule(bs.SelfLink, options, existingFR, subnetworkURL, ipToUse)
+	fr, fwdRuleSyncStatus, err := l4.ensureIPv4ForwardingRule(bs.SelfLink, options, existingFR, subnetworkURL, ipToUse)
+	result.ResourceUpdates.SetForwardingRule(fwdRuleSyncStatus)
 	if err != nil {
 		l4.svcLogger.Error(err, "ensureIPv4Resources: Failed to ensure forwarding rule for L4 ILB Service")
 		result.GCEResourceInError = annotations.ForwardingRuleResource
 		result.Error = err
 		return
 	}
-	if fr.IPProtocol == string(corev1.ProtocolTCP) {
+
+	switch fr.IPProtocol {
+	case forwardingrules.ProtocolTCP:
 		result.Annotations[annotations.TCPForwardingRuleKey] = fr.Name
-	} else {
+	case forwardingrules.ProtocolUDP:
 		result.Annotations[annotations.UDPForwardingRuleKey] = fr.Name
+	case forwardingrules.ProtocolL3:
+		result.Annotations[annotations.L3ForwardingRuleKey] = fr.Name
 	}
 
 	l4.ensureIPv4NodesFirewall(nodeNames, fr.IPAddress, result)
@@ -608,12 +669,28 @@ func (l4 *L4) ensureIPv4Resources(result *L4ILBSyncResult, nodeNames []string, o
 }
 
 func (l4 *L4) ensureIPv4NodesFirewall(nodeNames []string, ipAddress string, result *L4ILBSyncResult) {
+	// DisableL4LBFirewall flag disables L4 FW enforcment to remove conflicts with firewall policies
+	if l4.disableNodesFirewallProvisioning {
+		l4.svcLogger.Info("Skipped ensuring IPv4 nodes firewall for L4 ILB Service to enable compatibility with firewall policies. " +
+			"Be sure this cluster has a manually created global firewall policy in place.")
+		return
+	}
 	start := time.Now()
 
 	firewallName := l4.namer.L4Firewall(l4.Service.Namespace, l4.Service.Name)
 	servicePorts := l4.Service.Spec.Ports
 	protocol := utils.GetProtocol(servicePorts)
 	portRanges := utils.GetServicePortRanges(servicePorts)
+	allowed := []*compute.FirewallAllowed{
+		{
+			IPProtocol: string(protocol),
+			Ports:      portRanges,
+		},
+	}
+
+	if l4.enableMixedProtocol {
+		allowed = firewalls.AllowedForService(servicePorts)
+	}
 
 	fwLogger := l4.svcLogger.WithValues("firewallName", firewallName)
 	fwLogger.V(2).Info("Ensuring IPv4 nodes firewall for L4 ILB Service", "ipAddress", ipAddress, "protocol", protocol, "len(nodeNames)", len(nodeNames), "portRanges", portRanges)
@@ -629,17 +706,17 @@ func (l4 *L4) ensureIPv4NodesFirewall(nodeNames []string, ipAddress string, resu
 	}
 	// Add firewall rule for ILB traffic to nodes
 	nodesFWRParams := firewalls.FirewallParams{
-		PortRanges:        portRanges,
+		Allowed:           allowed,
 		SourceRanges:      ipv4SourceRanges,
 		DestinationRanges: []string{ipAddress},
-		Protocol:          string(protocol),
 		Name:              firewallName,
 		NodeNames:         nodeNames,
 		L4Type:            utils.ILB,
 		Network:           l4.network,
 	}
 
-	err = firewalls.EnsureL4LBFirewallForNodes(l4.Service, &nodesFWRParams, l4.cloud, l4.recorder, fwLogger)
+	fwSyncStatus, err := firewalls.EnsureL4LBFirewallForNodes(l4.Service, &nodesFWRParams, l4.cloud, l4.recorder, fwLogger)
+	result.ResourceUpdates.SetFirewallForNodes(fwSyncStatus)
 	if err != nil {
 		result.GCEResourceInError = annotations.FirewallRuleResource
 		result.Error = err
@@ -659,11 +736,15 @@ func (l4 *L4) getServiceSubnetworkURL(options gce.ILBOptions) (string, error) {
 }
 
 func (l4 *L4) getSubnetworkURLByName(subnetName string) (string, error) {
-	subnetKey, err := l4.CreateKey(subnetName)
+	subnetwork, err := l4.cloud.GetSubnetwork(l4.cloud.Region(), subnetName)
 	if err != nil {
+		if utils.IsNotFoundError(err) {
+			return "", utils.NewInvalidSubnetConfigurationError(l4.cloud.ProjectID(), subnetName)
+		}
 		return "", err
 	}
-	return cloud.SelfLink(meta.VersionGA, l4.cloud.NetworkProjectID(), "subnetworks", subnetKey), nil
+
+	return subnetwork.SelfLink, nil
 }
 
 func (l4 *L4) hasAnnotation(annotationKey string) bool {
@@ -678,11 +759,19 @@ func (l4 *L4) hasAnnotation(annotationKey string) bool {
 // because forwarding rule name depends on the protocol, and we need to get forwarding rule from the old protocol name.
 func (l4 *L4) getOldIPv4ForwardingRule(existingBS *composite.BackendService) (*composite.ForwardingRule, error) {
 	servicePorts := l4.Service.Spec.Ports
-	protocol := utils.GetProtocol(servicePorts)
+	bsProtocol := string(utils.GetProtocol(servicePorts))
+
+	if l4.enableMixedProtocol {
+		bsProtocol = backends.GetProtocol(servicePorts)
+	}
 
 	oldFRName := l4.GetFRName()
-	if existingBS != nil && existingBS.Protocol != string(protocol) {
-		oldFRName = l4.getFRNameWithProtocol(existingBS.Protocol)
+	if existingBS != nil && existingBS.Protocol != bsProtocol {
+		fwdRuleProtocol := existingBS.Protocol
+		if existingBS.Protocol == backends.ProtocolL3 {
+			fwdRuleProtocol = forwardingrules.ProtocolL3
+		}
+		oldFRName = l4.getFRNameWithProtocol(fwdRuleProtocol)
 	}
 
 	return l4.forwardingRules.Get(oldFRName)
@@ -711,4 +800,8 @@ func (l4 *L4) determineBackendServiceLocalityPolicy() backends.LocalityLBPolicyT
 	// If the service has weighted load balancing disabled, the default locality policy is used.
 	// If the service disables Weighted Load Balancing the logic to use MAGLEV is handled by backends.go
 	return backends.LocalityLBPolicyDefault
+}
+
+func (l4 *L4) isWeightedLBPodsPerNode() bool {
+	return backends.LocalityLBPolicyWeightedMaglev == l4.determineBackendServiceLocalityPolicy()
 }

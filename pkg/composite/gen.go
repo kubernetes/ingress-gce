@@ -1,5 +1,5 @@
 /*
-Copyright 2024 The Kubernetes Authors.
+Copyright 2025 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -228,6 +228,9 @@ type Backend struct {
 	// don't support using a balancingMode. This includes backends such as
 	// global internet NEGs, regional serverless NEGs, and PSC NEGs.
 	CapacityScaler float64 `json:"capacityScaler,omitempty"`
+	// List of custom metrics that are used for CUSTOM_METRICS
+	// BalancingMode.
+	CustomMetrics []*BackendCustomMetric `json:"customMetrics,omitempty"`
 	// An optional description of this resource. Provide this property when
 	// you create the resource.
 	Description string `json:"description,omitempty"`
@@ -282,6 +285,28 @@ type Backend struct {
 	NullFields      []string `json:"-"`
 }
 
+// BackendCustomMetric is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type BackendCustomMetric struct {
+	// If true, the metric data is collected and reported to Cloud
+	// Monitoring, but is not used for load balancing.
+	DryRun bool `json:"dryRun,omitempty"`
+	// Optional parameter to define a target utilization for the Custom
+	// Metrics balancing mode. The valid range is [0.0, 1.0].
+	MaxUtilization float64 `json:"maxUtilization,omitempty"`
+	// Name of a custom utilization signal. The name must be 1-64 characters
+	// long and match the regular expression [a-z]([-_.a-z0-9]*[a-z0-9])?
+	// which means the first character must be a lowercase letter, and all
+	// following characters must be a dash, period, underscore, lowercase
+	// letter, or digit, except the last character, which cannot be a dash,
+	// period, or underscore. For usage guidelines, see Custom Metrics
+	// balancing mode. This field can only be used for a global or regional
+	// backend service with the loadBalancingScheme set to EXTERNAL_MANAGED,
+	// INTERNAL_MANAGED INTERNAL_SELF_MANAGED.
+	Name            string   `json:"name,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
 // BackendService is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
 type BackendService struct {
 	// Version keeps track of the intended compute version for this BackendService.
@@ -330,6 +355,9 @@ type BackendService struct {
 	ConsistentHash *ConsistentHashLoadBalancerSettings `json:"consistentHash,omitempty"`
 	// [Output Only] Creation timestamp in RFC3339 text format.
 	CreationTimestamp string `json:"creationTimestamp,omitempty"`
+	// List of custom metrics that are used for the WEIGHTED_ROUND_ROBIN
+	// locality_lb_policy.
+	CustomMetrics []*BackendServiceCustomMetric `json:"customMetrics,omitempty"`
 	// Headers that the load balancer adds to proxied requests. See
 	// [Creating custom
 	// headers](https://cloud.google.com/load-balancing/docs/custom-headers).
@@ -462,11 +490,14 @@ type BackendService struct {
 	// HTTP, HTTPS, or HTTP2, and load_balancing_scheme set to
 	// INTERNAL_MANAGED. - A global backend service with the
 	// load_balancing_scheme set to INTERNAL_SELF_MANAGED, INTERNAL_MANAGED,
-	// or EXTERNAL_MANAGED. If sessionAffinity is not NONE, and this field
-	// is not set to MAGLEV or RING_HASH, session affinity settings will not
-	// take effect. Only ROUND_ROBIN and RING_HASH are supported when the
-	// backend service is referenced by a URL map that is bound to target
-	// gRPC proxy that has validateForProxyless field set to true.
+	// or EXTERNAL_MANAGED. If sessionAffinity is not configured—that is,
+	// if session affinity remains at the default value of NONE—then the
+	// default value for localityLbPolicy is ROUND_ROBIN. If session
+	// affinity is set to a value other than NONE, then the default value
+	// for localityLbPolicy is MAGLEV. Only ROUND_ROBIN and RING_HASH are
+	// supported when the backend service is referenced by a URL map that is
+	// bound to target gRPC proxy that has validateForProxyless field set to
+	// true.
 	LocalityLbPolicy string `json:"localityLbPolicy,omitempty"`
 	// This field denotes the logging options for the load balancer traffic
 	// served by this backend service. If logging is enabled, logs will be
@@ -595,8 +626,12 @@ type BackendService struct {
 	// service is referenced by a URL map that is bound to target gRPC proxy
 	// that has validateForProxyless field set to true. Instead, use
 	// maxStreamDuration.
-	TimeoutSec int64                   `json:"timeoutSec,omitempty"`
-	UsedBy     []*BackendServiceUsedBy `json:"usedBy,omitempty"`
+	TimeoutSec int64 `json:"timeoutSec,omitempty"`
+	// Configuration for Backend Authenticated TLS and mTLS. May only be
+	// specified when the backend protocol is SSL, HTTPS or HTTP2.
+	TlsSettings *BackendServiceTlsSettings `json:"tlsSettings,omitempty"`
+	// [Output Only] List of resources referencing given backend service.
+	UsedBy []*BackendServiceUsedBy `json:"usedBy,omitempty"`
 	// The network scope of the backends that can be added to the backend
 	// service. This field can be either GLOBAL_VPC_NETWORK or
 	// REGIONAL_VPC_NETWORK. A backend service with the VPC scope set to
@@ -791,6 +826,24 @@ type BackendServiceConnectionTrackingPolicy struct {
 	// Balancing](https://cloud.google.com/load-balancing/docs/internal#track
 	// ing-mode).
 	TrackingMode    string   `json:"trackingMode,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// BackendServiceCustomMetric is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type BackendServiceCustomMetric struct {
+	// If true, the metric data is not used for load balancing.
+	DryRun bool `json:"dryRun,omitempty"`
+	// Name of a custom utilization signal. The name must be 1-64 characters
+	// long and match the regular expression [a-z]([-_.a-z0-9]*[a-z0-9])?
+	// which means the first character must be a lowercase letter, and all
+	// following characters must be a dash, period, underscore, lowercase
+	// letter, or digit, except the last character, which cannot be a dash,
+	// period, or underscore. For usage guidelines, see Custom Metrics
+	// balancing mode. This field can only be used for a global or regional
+	// backend service with the loadBalancingScheme set to EXTERNAL_MANAGED,
+	// INTERNAL_MANAGED INTERNAL_SELF_MANAGED.
+	Name            string   `json:"name,omitempty"`
 	ForceSendFields []string `json:"-"`
 	NullFields      []string `json:"-"`
 }
@@ -1016,8 +1069,52 @@ type BackendServiceReference struct {
 	NullFields      []string `json:"-"`
 }
 
+// BackendServiceTlsSettings is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type BackendServiceTlsSettings struct {
+	// Reference to the BackendAuthenticationConfig resource from the
+	// networksecurity.googleapis.com namespace. Can be used in
+	// authenticating TLS connections to the backend, as specified by the
+	// authenticationMode field. Can only be specified if authenticationMode
+	// is not NONE.
+	AuthenticationConfig string `json:"authenticationConfig,omitempty"`
+	// Server Name Indication - see RFC3546 section 3.1. If set, the load
+	// balancer sends this string as the SNI hostname in the TLS connection
+	// to the backend, and requires that this string match a Subject
+	// Alternative Name (SAN) in the backend's server certificate. With a
+	// Regional Internet NEG backend, if the SNI is specified here, the load
+	// balancer uses it regardless of whether the Regional Internet NEG is
+	// specified with FQDN or IP address and port. When both sni and
+	// subjectAltNames[] are specified, the load balancer matches the
+	// backend certificate's SAN only to subjectAltNames[].
+	Sni string `json:"sni,omitempty"`
+	// A list of Subject Alternative Names (SANs) that the Load Balancer
+	// verifies during a TLS handshake with the backend. When the server
+	// presents its X.509 certificate to the Load Balancer, the Load
+	// Balancer inspects the certificate's SAN field, and requires that at
+	// least one SAN match one of the subjectAltNames in the list. This
+	// field is limited to 5 entries. When both sni and subjectAltNames[]
+	// are specified, the load balancer matches the backend certificate's
+	// SAN only to subjectAltNames[].
+	SubjectAltNames []*BackendServiceTlsSettingsSubjectAltName `json:"subjectAltNames,omitempty"`
+	ForceSendFields []string                                   `json:"-"`
+	NullFields      []string                                   `json:"-"`
+}
+
+// BackendServiceTlsSettingsSubjectAltName is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type BackendServiceTlsSettingsSubjectAltName struct {
+	// The SAN specified as a DNS Name.
+	DnsName string `json:"dnsName,omitempty"`
+	// The SAN specified as a URI.
+	UniformResourceIdentifier string   `json:"uniformResourceIdentifier,omitempty"`
+	ForceSendFields           []string `json:"-"`
+	NullFields                []string `json:"-"`
+}
+
 // BackendServiceUsedBy is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
 type BackendServiceUsedBy struct {
+	// [Output Only] Server-defined URL for resources referencing given
+	// BackendService like UrlMaps, TargetTcpProxies, TargetSslProxies and
+	// ForwardingRule.
 	Reference       string   `json:"reference,omitempty"`
 	ForceSendFields []string `json:"-"`
 	NullFields      []string `json:"-"`
@@ -2628,10 +2725,6 @@ type NetworkEndpoint struct {
 	// valid for network endpoint groups created with GCE_VM_IP_PORTMAP
 	// endpoint type.
 	ClientDestinationPort int64 `json:"clientDestinationPort,omitempty"`
-	// Represents the port number to which PSC consumer sends packets. Only
-	// valid for network endpoint groups created with
-	// CLIENT_PORT_PER_ENDPOINT mapping mode.
-	ClientPort int64 `json:"clientPort,omitempty"`
 	// Optional fully qualified domain name of network endpoint. This can
 	// only be specified when NetworkEndpointGroup.network_endpoint_type is
 	// NON_GCP_FQDN_PORT.
@@ -2687,9 +2780,6 @@ type NetworkEndpointGroup struct {
 	// Only valid when networkEndpointType is SERVERLESS. Only one of
 	// cloudRun, appEngine or cloudFunction may be set.
 	AppEngine *NetworkEndpointGroupAppEngine `json:"appEngine,omitempty"`
-	// Only valid when networkEndpointType is GCE_VM_IP_PORT and the NEG is
-	// regional.
-	ClientPortMappingMode string `json:"clientPortMappingMode,omitempty"`
 	// Only valid when networkEndpointType is SERVERLESS. Only one of
 	// cloudRun, appEngine or cloudFunction may be set.
 	CloudFunction *NetworkEndpointGroupCloudFunction `json:"cloudFunction,omitempty"`
@@ -3309,7 +3399,9 @@ type RequestMirrorPolicy struct {
 	// reference backends that are of the same type as the original backend
 	// service matched in the URL map. Serverless NEG backends are not
 	// currently supported as a mirrored backend service.
-	BackendService  string   `json:"backendService,omitempty"`
+	BackendService string `json:"backendService,omitempty"`
+	// The percentage of requests to be mirrored to `backend_service`.
+	MirrorPercent   float64  `json:"mirrorPercent,omitempty"`
 	ForceSendFields []string `json:"-"`
 	NullFields      []string `json:"-"`
 }
@@ -3690,9 +3782,11 @@ type TargetHttpsProxy struct {
 	// currently has no impact.
 	AuthorizationPolicy string `json:"authorizationPolicy,omitempty"`
 	// URL of a certificate map that identifies a certificate map associated
-	// with the given target proxy. This field can only be set for global
-	// target proxies. If set, sslCertificates will be ignored. Accepted
-	// format is //certificatemanager.googleapis.com/projects/{project
+	// with the given target proxy. This field can only be set for Global
+	// external Application Load Balancer or Classic Application Load
+	// Balancer. For other products use Certificate Manager Certificates
+	// instead. If set, sslCertificates will be ignored. Accepted format is
+	// //certificatemanager.googleapis.com/projects/{project
 	// }/locations/{location}/certificateMaps/{resourceName}.
 	CertificateMap string `json:"certificateMap,omitempty"`
 	// [Output Only] Creation timestamp in RFC3339 text format.
@@ -3773,9 +3867,20 @@ type TargetHttpsProxy struct {
 	ServerTlsPolicy string `json:"serverTlsPolicy,omitempty"`
 	// URLs to SslCertificate resources that are used to authenticate
 	// connections between users and the load balancer. At least one SSL
-	// certificate must be specified. Currently, you may specify up to 15
-	// SSL certificates. sslCertificates do not apply when the load
-	// balancing scheme is set to INTERNAL_SELF_MANAGED.
+	// certificate must be specified. SslCertificates do not apply when the
+	// load balancing scheme is set to INTERNAL_SELF_MANAGED. The URLs
+	// should refer to a SSL Certificate resource or Certificate Manager
+	// Certificate resource. Mixing Classic Certificates and Certificate
+	// Manager Certificates is not allowed. Certificate Manager Certificates
+	// must include the certificatemanager API. Certificate Manager
+	// Certificates are not supported by Global external Application Load
+	// Balancer or Classic Application Load Balancer, use certificate_map
+	// instead. Currently, you may specify up to 15 Classic SSL
+	// Certificates. Certificate Manager Certificates accepted formats are:
+	// - //certificatemanager.googleapis.com/projects/{project}/locations/{
+	// location}/certificates/{resourceName}. -
+	// https://certificatemanager.googleapis.com/v1alpha1/projects/{project
+	// }/locations/{location}/certificates/{resourceName}.
 	SslCertificates []string `json:"sslCertificates,omitempty"`
 	// URL of SslPolicy resource that will be associated with the
 	// TargetHttpsProxy resource. If not set, the TargetHttpsProxy resource
@@ -3933,8 +4038,9 @@ type UrlMap struct {
 	// defaultRouteAction is also specified, advanced routing actions, such
 	// as URL rewrites, take effect before sending the request to the
 	// backend. However, if defaultService is specified, defaultRouteAction
-	// cannot contain any weightedBackendServices. Conversely, if
-	// routeAction specifies any weightedBackendServices, service must not
+	// cannot contain any defaultRouteAction.weightedBackendServices.
+	// Conversely, if defaultRouteAction specifies any
+	// defaultRouteAction.weightedBackendServices, defaultService must not
 	// be specified. If defaultService is specified, then set either
 	// defaultUrlRedirect , or defaultRouteAction.weightedBackendService
 	// Don't set both. defaultService has no effect when the URL map is
@@ -4829,6 +4935,59 @@ func CreateForwardingRule(gceCloud *gce.Cloud, key *meta.Key, forwardingRule *Fo
 		default:
 			gaLogger.Info("Creating ga ForwardingRule")
 			return mc.Observe(gceCloud.Compute().GlobalForwardingRules().Insert(ctx, key, ga))
+		}
+	}
+}
+
+func PatchForwardingRule(gceCloud *gce.Cloud, key *meta.Key, forwardingRule *ForwardingRule, logger klog.Logger) error {
+	ctx, cancel := cloudprovider.ContextWithCallTimeout()
+	defer cancel()
+	mc := compositemetrics.NewMetricContext("ForwardingRule", "patch", key.Region, key.Zone, string(forwardingRule.Version))
+	switch forwardingRule.Version {
+	case meta.VersionAlpha:
+		alpha, err := forwardingRule.ToAlpha()
+		if err != nil {
+			return err
+		}
+		alpha.ForceSendFields = append(alpha.ForceSendFields, "AllowGlobalAccess")
+		alphaLogger := logger.WithValues("name", alpha.Name)
+		switch key.Type() {
+		case meta.Regional:
+			alphaLogger.Info("Updating alpha region ForwardingRule")
+			return mc.Observe(gceCloud.Compute().AlphaForwardingRules().Patch(ctx, key, alpha))
+		default:
+			alphaLogger.Info("Updating alpha ForwardingRule")
+			return mc.Observe(gceCloud.Compute().AlphaGlobalForwardingRules().Patch(ctx, key, alpha))
+		}
+	case meta.VersionBeta:
+		beta, err := forwardingRule.ToBeta()
+		if err != nil {
+			return err
+		}
+		beta.ForceSendFields = append(beta.ForceSendFields, "AllowGlobalAccess")
+		betaLogger := logger.WithValues("name", beta.Name)
+		switch key.Type() {
+		case meta.Regional:
+			betaLogger.Info("Updating beta region ForwardingRule")
+			return mc.Observe(gceCloud.Compute().BetaForwardingRules().Patch(ctx, key, beta))
+		default:
+			betaLogger.Info("Updating beta ForwardingRule")
+			return mc.Observe(gceCloud.Compute().BetaGlobalForwardingRules().Patch(ctx, key, beta))
+		}
+	default:
+		ga, err := forwardingRule.ToGA()
+		if err != nil {
+			return err
+		}
+		ga.ForceSendFields = append(ga.ForceSendFields, "AllowGlobalAccess")
+		gaLogger := logger.WithValues("name", ga.Name)
+		switch key.Type() {
+		case meta.Regional:
+			gaLogger.Info("Updating ga region ForwardingRule")
+			return mc.Observe(gceCloud.Compute().ForwardingRules().Patch(ctx, key, ga))
+		default:
+			gaLogger.Info("Updating ga ForwardingRule")
+			return mc.Observe(gceCloud.Compute().GlobalForwardingRules().Patch(ctx, key, ga))
 		}
 	}
 }

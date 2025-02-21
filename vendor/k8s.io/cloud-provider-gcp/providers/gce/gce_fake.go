@@ -39,6 +39,8 @@ type TestClusterValues struct {
 	OnXPN             bool
 	Regional          bool
 	NetworkURL        string
+	SubnetworkURL     string
+	StackType         StackType
 }
 
 // DefaultTestClusterValues Creates a reasonable set of default cluster values
@@ -51,6 +53,7 @@ func DefaultTestClusterValues() TestClusterValues {
 		SecondaryZoneName: "us-central1-c",
 		ClusterID:         "test-cluster-id",
 		ClusterName:       "Test-Cluster-Name",
+		StackType:         clusterStackIPV4,
 	}
 }
 
@@ -72,18 +75,20 @@ func NewFakeGCECloud(vals TestClusterValues) *Cloud {
 		panic(err)
 	}
 	gce := &Cloud{
-		region:           vals.Region,
-		service:          service,
-		managedZones:     []string{vals.ZoneName},
-		localZone:        vals.ZoneName,
-		projectID:        vals.ProjectID,
-		networkProjectID: vals.ProjectID,
-		ClusterID:        fakeClusterID(vals.ClusterID),
-		onXPN:            vals.OnXPN,
-		metricsCollector: newLoadBalancerMetrics(),
-		projectsBasePath: getProjectsBasePath(service.BasePath),
-		regional:         vals.Regional,
-		networkURL:       vals.NetworkURL,
+		region:              vals.Region,
+		service:             service,
+		managedZones:        []string{vals.ZoneName},
+		localZone:           vals.ZoneName,
+		projectID:           vals.ProjectID,
+		networkProjectID:    vals.ProjectID,
+		ClusterID:           fakeClusterID(vals.ClusterID),
+		onXPN:               vals.OnXPN,
+		metricsCollector:    newLoadBalancerMetrics(),
+		projectsBasePath:    getProjectsBasePath(service.BasePath),
+		regional:            vals.Regional,
+		networkURL:          vals.NetworkURL,
+		unsafeSubnetworkURL: vals.SubnetworkURL,
+		stackType:           vals.StackType,
 	}
 	c := cloud.NewMockGCE(&gceProjectRouter{gce})
 	gce.c = c
@@ -93,4 +98,9 @@ func NewFakeGCECloud(vals TestClusterValues) *Cloud {
 // UpdateFakeGCECloud updates the fake GCE cloud with the specified values. Currently only the onXPN value is updated.
 func UpdateFakeGCECloud(g *Cloud, vals TestClusterValues) {
 	g.onXPN = vals.OnXPN
+}
+
+// SetFakeStackType updates the fake GCE cloud with the specified stack type.
+func SetFakeStackType(g *Cloud, stackType StackType) {
+	g.stackType = stackType
 }

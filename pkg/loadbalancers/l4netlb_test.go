@@ -32,6 +32,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
 	"github.com/golang/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/api/compute/v1"
 	ga "google.golang.org/api/compute/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
@@ -342,11 +343,15 @@ func TestEnsureNetLBFirewallDestinations(t *testing.T) {
 		SourceRanges:      []string{"10.0.0.0/20"},
 		DestinationRanges: []string{"20.0.0.0/20"},
 		NodeNames:         nodeNames,
-		Protocol:          string(v1.ProtocolTCP),
-		IP:                "1.2.3.4",
+		Allowed: []*compute.FirewallAllowed{
+			{
+				IPProtocol: string(v1.ProtocolTCP),
+			},
+		},
+		IP: "1.2.3.4",
 	}
 
-	err := firewalls.EnsureL4FirewallRule(l4netlb.cloud, utils.ServiceKeyFunc(svc.Namespace, svc.Name), &fwrParams /*sharedRule = */, false, klog.TODO())
+	_, err := firewalls.EnsureL4FirewallRule(l4netlb.cloud, utils.ServiceKeyFunc(svc.Namespace, svc.Name), &fwrParams /*sharedRule = */, false, klog.TODO())
 	if err != nil {
 		t.Errorf("Unexpected error %v when ensuring firewall rule %s for svc %+v", err, fwName, svc)
 	}
@@ -357,7 +362,7 @@ func TestEnsureNetLBFirewallDestinations(t *testing.T) {
 	oldDestinationRanges := existingFirewall.DestinationRanges
 
 	fwrParams.DestinationRanges = []string{"30.0.0.0/20"}
-	err = firewalls.EnsureL4FirewallRule(l4netlb.cloud, utils.ServiceKeyFunc(svc.Namespace, svc.Name), &fwrParams /*sharedRule = */, false, klog.TODO())
+	_, err = firewalls.EnsureL4FirewallRule(l4netlb.cloud, utils.ServiceKeyFunc(svc.Namespace, svc.Name), &fwrParams /*sharedRule = */, false, klog.TODO())
 	if err != nil {
 		t.Errorf("Unexpected error %v when ensuring firewall rule %s for svc %+v", err, fwName, svc)
 	}
@@ -442,17 +447,11 @@ func TestEnsureDualStackNetLBNetworkTierChange(t *testing.T) {
 	svc.Annotations[annotations.NetworkTierAnnotationKey] = "Standard"
 	l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
 
-	// Ensure dualstack load balancer with Standard Network Tier and verify it synced successfully.
+	// Ensure dualstack load balancer with Standard Network Tier and verify it did not synced successfully.
 	result := l4NetLB.EnsureFrontend(nodeNames, svc)
-	if result.Error != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+	if _, ok := result.Error.(*utils.UnsupportedNetworkTierError); !ok {
+		t.Errorf("Expected error to be of type *utils.UnsupportedNetworkTierError, got %T", result.Error)
 	}
-	if len(result.Status.Ingress) == 0 {
-		t.Errorf("Got empty loadBalancer status using handler %v", l4NetLB)
-	}
-	l4NetLB.Service.Annotations = result.Annotations
-	l4NetLB.Service.Annotations[annotations.NetworkTierAnnotationKey] = "Standard"
-	assertDualStackNetLBResources(t, l4NetLB, nodeNames)
 
 	// Change network Tier to Premium, and trigger sync.
 	svc.Annotations[annotations.NetworkTierAnnotationKey] = "Premium"
@@ -792,6 +791,71 @@ func TestDualStackNetLBBadCustomSubnet(t *testing.T) {
 	}
 }
 
+func TestDualStackNetLBNetworkTier(t *testing.T) {
+	t.Parallel()
+	nodeNames := []string{"test-node-1"}
+
+	testCases := []struct {
+		desc        string
+		ipFamilies  []v1.IPFamily
+		networkTier string
+		returnError bool
+	}{
+		{
+			desc:        "Should not return error on ipv4 with Standard NetworkTier",
+			ipFamilies:  []v1.IPFamily{v1.IPv4Protocol},
+			networkTier: string(cloud.NetworkTierStandard),
+			returnError: false,
+		},
+		{
+			desc:        "Should not return error on ipv4 with Premium NetworkTier",
+			ipFamilies:  []v1.IPFamily{v1.IPv4Protocol},
+			networkTier: string(cloud.NetworkTierPremium),
+			returnError: false,
+		},
+		{
+			desc:        "Should return error on Dualstack with Standard NetworkTier",
+			ipFamilies:  []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+			networkTier: string(cloud.NetworkTierStandard),
+			returnError: true,
+		},
+		{
+			desc:        "Should not return error on Dualstack with Premium NetworkTier",
+			ipFamilies:  []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+			networkTier: string(cloud.NetworkTierPremium),
+			returnError: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			svc := test.NewL4NetLBRBSService(8080)
+			l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
+
+			svc.Annotations[annotations.NetworkTierAnnotationKey] = tc.networkTier
+			svc.Spec.IPFamilies = tc.ipFamilies
+
+			result := l4NetLB.EnsureFrontend(nodeNames, svc)
+			if tc.returnError {
+				if result.Error == nil {
+					t.Fatalf("Expected an error to be returned when ensuring the external load balancer, but the call succeeded unexpectedly.")
+				}
+				if !utils.IsUserError(result.Error) {
+					t.Fatalf("Expected to get user error if ensuring external IPv6 service, got %v", result.Error)
+				}
+			} else {
+				if result.Error != nil {
+					t.Fatalf("Unexpected error ensuring external load balancer: %v", result.Error)
+				}
+			}
+		})
+	}
+}
+
 func TestDualStackNetLBStaticIPAnnotation(t *testing.T) {
 	t.Parallel()
 	nodeNames := []string{"test-node-1"}
@@ -887,7 +951,7 @@ func TestDualStackNetLBStaticIPAnnotation(t *testing.T) {
 func mustSetupNetLBTestHandler(t *testing.T, svc *v1.Service, nodeNames []string) *L4NetLB {
 	t.Helper()
 
-	vals := gce.DefaultTestClusterValues()
+	vals := test.DefaultTestClusterValues()
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 	fakeGCE := getFakeGCECloud(vals)
 
@@ -906,7 +970,7 @@ func mustSetupNetLBTestHandler(t *testing.T, svc *v1.Service, nodeNames []string
 		t.Fatalf("unexpected error when adding nodes %v", err)
 	}
 
-	// Create cluster subnet. Mock GCE uses subnet with empty string name.
+	// Create cluster subnet. Mock GCE uses test.DefaultSubnetURL.
 	test.MustCreateDualStackClusterSubnet(t, l4NetLB.cloud, subnetExternalIPv6AccessType)
 	return l4NetLB
 }
@@ -1188,7 +1252,6 @@ func TestWeightedNetLB(t *testing.T) {
 			backendServiceName := l4NetLB.namer.L4Backend(l4NetLB.Service.Namespace, l4NetLB.Service.Name)
 			key := meta.RegionalKey(backendServiceName, l4NetLB.cloud.Region())
 			bs, err := composite.GetBackendService(l4NetLB.cloud, key, meta.VersionGA, klog.TODO())
-
 			if err != nil {
 				t.Fatalf("failed to read BackendService, %v", err)
 			}
@@ -1197,6 +1260,49 @@ func TestWeightedNetLB(t *testing.T) {
 				t.Errorf("Unexpected BackendService LocalityLbPolicy value, got: %v, want: %v", bs.LocalityLbPolicy, tc.wantLocalityLBPolicy)
 			}
 		})
+	}
+}
+
+func TestDisableNetLBIngressFirewall(t *testing.T) {
+	t.Parallel()
+	fakeGCE := getFakeGCECloud(gce.DefaultTestClusterValues())
+	nodeNames := []string{"test-node-1"}
+	// create a test VM so that target tags can be found
+	createVMInstanceWithTag(t, fakeGCE, "test-node-1", "test-node-1")
+
+	svc := test.NewL4NetLBRBSService(8080)
+	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+
+	l4netlbParams := &L4NetLBParams{
+		Service:                          svc,
+		Cloud:                            fakeGCE,
+		Namer:                            namer,
+		DisableNodesFirewallProvisioning: true,
+	}
+	l4netlb := NewL4NetLB(l4netlbParams, klog.TODO())
+	syncResult := &L4NetLBSyncResult{
+		Annotations: make(map[string]string),
+	}
+
+	l4netlb.ensureIPv4NodesFirewall(nodeNames, "10.0.0.7", syncResult)
+	if syncResult.Error != nil {
+		t.Fatalf("ensureIPv4NodesFirewall() error %+v", syncResult)
+	}
+
+	ipv4FirewallName := l4netlb.namer.L4Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)
+	err := verifyFirewallNotExists(l4netlb.cloud, ipv4FirewallName)
+	if err != nil {
+		t.Errorf("verifyFirewallNotExists(_, %s) for IPv4 NetLB firewall returned error %v, want nil", ipv4FirewallName, err)
+	}
+
+	l4netlb.ensureIPv6NodesFirewall("2001:db8::ff00:42:8329", nodeNames, syncResult)
+	if syncResult.Error != nil {
+		t.Fatalf("ensureIPv6NodesFirewall() error %+v", syncResult)
+	}
+	ipv6firewallName := l4netlb.namer.L4IPv6Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)
+	err = verifyFirewallNotExists(l4netlb.cloud, ipv6firewallName)
+	if err != nil {
+		t.Errorf("verifyFirewallNotExists(_, %s) for IPv6 NetLB firewall returned error %v, want nil", ipv6firewallName, err)
 	}
 }
 
@@ -1262,6 +1368,7 @@ func assertNetLBResources(t *testing.T, l4NetLB *L4NetLB, nodeNames []string) {
 		t.Errorf("Expected annotations %v, got %v, diff %v", expectedAnnotations, l4NetLB.Service.Annotations, diff)
 	}
 }
+
 func assertDualStackNetLBResources(t *testing.T, l4NetLB *L4NetLB, nodeNames []string) {
 	t.Helper()
 	assertDualStackNetLBResourcesWithCustomIPv6Subnet(t, l4NetLB, nodeNames, l4NetLB.cloud.SubnetworkURL())
@@ -1468,7 +1575,7 @@ func verifyNetLBForwardingRule(l4netlb *L4NetLB, frName string, backendServiceLi
 		return fmt.Errorf("unexpected backend service link '%s' for forwarding rule, expected '%s'", fwdRule.BackendService, backendServiceLink)
 	}
 
-	serviceNetTier, _ := utils.GetNetworkTier(l4netlb.Service)
+	serviceNetTier, _ := annotations.NetworkTier(l4netlb.Service)
 	if fwdRule.NetworkTier != serviceNetTier.ToGCEValue() {
 		return fmt.Errorf("unexpected network tier '%s' for forwarding rule, expected '%s'", fwdRule.NetworkTier, serviceNetTier.ToGCEValue())
 	}

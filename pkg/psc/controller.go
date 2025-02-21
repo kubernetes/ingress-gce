@@ -33,7 +33,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
@@ -85,8 +84,6 @@ var (
 // It watches ServiceAttachment resources and creates, deletes, and manages
 // corresponding GCE Service Attachment resources
 type Controller struct {
-	client kubernetes.Interface
-
 	cloud              *gce.Cloud
 	saClient           serviceattachmentclient.Interface
 	svcAttachmentQueue workqueue.RateLimitingInterface
@@ -118,7 +115,6 @@ func NewController(ctx *context.ControllerContext, stopCh <-chan struct{}, logge
 	logger = logger.WithName("PSCController")
 	saNamer := namer.NewServiceAttachmentNamer(ctx.ClusterNamer, string(ctx.KubeSystemUID))
 	controller := &Controller{
-		client:              ctx.KubeClient,
 		cloud:               ctx.Cloud,
 		saClient:            ctx.SAClient,
 		saNamer:             saNamer,

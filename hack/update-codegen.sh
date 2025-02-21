@@ -108,6 +108,20 @@ ${OPENAPI_PKG}/openapi-gen \
   --output-package k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1 \
   --go-header-file ${SCRIPT_ROOT}/boilerplate.go.txt
 
+echo "Performing code generation for ProviderConfig CRD"
+${CODEGEN_PKG}/generate-groups.sh \
+  "deepcopy,client,informer,lister" \
+  k8s.io/ingress-gce/pkg/providerconfig/client k8s.io/ingress-gce/pkg/apis \
+  "providerconfig:v1" \
+  --go-header-file ${SCRIPT_ROOT}/boilerplate.go.txt
+
+echo "Generating openapi for ProviderConfig v1"
+${OPENAPI_PKG}/openapi-gen \
+  --output-file-base zz_generated.openapi \
+  --input-dirs k8s.io/ingress-gce/pkg/apis/providerconfig/v1 \
+  --output-package k8s.io/ingress-gce/pkg/apis/providerconfig/v1 \
+  --go-header-file ${SCRIPT_ROOT}/boilerplate.go.txt
+
 echo "Performing code generation for ServiceAttachment CRD"
 ${CODEGEN_PKG}/generate-groups.sh \
   "deepcopy,client,informer,lister" \
@@ -127,26 +141,4 @@ ${OPENAPI_PKG}/openapi-gen \
   --output-file-base zz_generated.openapi \
   --input-dirs k8s.io/ingress-gce/pkg/apis/serviceattachment/v1 \
   --output-package k8s.io/ingress-gce/pkg/apis/serviceattachment/v1 \
-  --go-header-file ${SCRIPT_ROOT}/boilerplate.go.txt
-
-echo "Performing code generation for GCPIngressParams CRD"
-${CODEGEN_PKG}/generate-groups.sh \
-  "deepcopy,informer,lister" \
-  k8s.io/ingress-gce/pkg/ingparams/client k8s.io/ingress-gce/pkg/apis \
-  "ingparams:v1beta1" \
-  --go-header-file ${SCRIPT_ROOT}/boilerplate.go.txt
-
-# Separate client generation to overwrite default Plural name
-${CODEGEN_PKG}/generate-groups.sh \
-  "client, informer, lister" \
-  k8s.io/ingress-gce/pkg/ingparams/client k8s.io/ingress-gce/pkg/apis \
-  "ingparams:v1beta1" \
-  --go-header-file ${SCRIPT_ROOT}/boilerplate.go.txt \
-  --plural-exceptions=GCPIngressParams:GCPIngressParams
-
-echo "Generating openapi for GCPIngressParams v1beta1"
-${OPENAPI_PKG}/openapi-gen \
-  --output-file-base zz_generated.openapi \
-  --input-dirs k8s.io/ingress-gce/pkg/apis/ingparams/v1beta1 \
-  --output-package k8s.io/ingress-gce/pkg/apis/ingparams/v1beta1 \
   --go-header-file ${SCRIPT_ROOT}/boilerplate.go.txt

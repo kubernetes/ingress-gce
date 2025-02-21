@@ -40,6 +40,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	cloudprovider "k8s.io/cloud-provider"
+	utilnet "k8s.io/utils/net"
 )
 
 const (
@@ -92,6 +93,34 @@ func (g *Cloud) ToInstanceReferences(zone string, instanceNames []string) (refs 
 	return refs
 }
 
+// orderAddresses orders node IP addresses:
+//   - In single-stack IPv6 clusters IPv6 addresses before the IPv4 addresses.
+//   - In other clusters IPv4 addresses before IPv6 addresses.
+func (g *Cloud) orderAddresses(addresses []v1.NodeAddress) []v1.NodeAddress {
+	preferIPv6 := g.stackType == clusterStackIPV6
+	sortedAddresses := make([]v1.NodeAddress, 0, len(addresses))
+
+	// Add the IP addresses with the preferred ip family first.
+	for _, address := range addresses {
+		ip := net.ParseIP(address.Address)
+		// Non IP addresses as hostname will get a nil ip.
+		if ip == nil || utilnet.IsIPv6(ip) == preferIPv6 {
+			sortedAddresses = append(sortedAddresses, address)
+		}
+	}
+
+	// Add the addresses that are not of the prefered ip family.
+	for _, address := range addresses {
+		ip := net.ParseIP(address.Address)
+		// Non IP addresses as hostname will get a nil ip.
+		if ip != nil && utilnet.IsIPv6(ip) != preferIPv6 {
+			sortedAddresses = append(sortedAddresses, address)
+		}
+	}
+
+	return sortedAddresses
+}
+
 // NodeAddresses is an implementation of Instances.NodeAddresses.
 func (g *Cloud) NodeAddresses(ctx context.Context, nodeName types.NodeName) ([]v1.NodeAddress, error) {
 	timeoutCtx, cancel := context.WithTimeout(ctx, 1*time.Hour)
@@ -100,6 +129,7 @@ func (g *Cloud) NodeAddresses(ctx context.Context, nodeName types.NodeName) ([]v
 	instanceName := string(nodeName)
 
 	if g.useMetadataServer {
+
 		// Use metadata server if possible
 		if g.isCurrentInstance(instanceName) {
 
@@ -121,12 +151,17 @@ func (g *Cloud) NodeAddresses(ctx context.Context, nodeName types.NodeName) ([]v
 				if err != nil {
 					return nil, fmt.Errorf("couldn't get internal IP: %v", err)
 				}
-				nodeAddresses = append(nodeAddresses, v1.NodeAddress{Type: v1.NodeInternalIP, Address: internalIP})
+
+				if internalIP == "" {
+					klog.Infof("No internal IPv4 address found for node %v.", nodeName)
+				} else {
+					nodeAddresses = append(nodeAddresses, v1.NodeAddress{Type: v1.NodeInternalIP, Address: internalIP})
+				}
 
 				// Both internal and external IPv6 addresses are written to this array
 				ipv6s, err := metadata.Get(fmt.Sprintf(networkInterfaceIPV6, nic))
 				if err != nil || ipv6s == "" {
-					klog.Infof("no internal IPV6 addresses found for node %v: %v", nodeName, err)
+					klog.Infof("No internal IPV6 addresses found for node %v: %v.", nodeName, err)
 				} else {
 					ipv6Arr := strings.Split(ipv6s, "/\n")
 					var internalIPV6 string
@@ -140,7 +175,7 @@ func (g *Cloud) NodeAddresses(ctx context.Context, nodeName types.NodeName) ([]v
 					if internalIPV6 != "" {
 						nodeAddresses = append(nodeAddresses, v1.NodeAddress{Type: v1.NodeInternalIP, Address: internalIPV6})
 					} else {
-						klog.Warningf("internal IPV6 range is empty for node %v", nodeName)
+						klog.Warningf("Internal IPv6 range is empty for node %v.", nodeName)
 					}
 				}
 
@@ -170,14 +205,14 @@ func (g *Cloud) NodeAddresses(ctx context.Context, nodeName types.NodeName) ([]v
 
 			internalDNSFull, err := metadata.Get("instance/hostname")
 			if err != nil {
-				klog.Warningf("couldn't get full internal DNS name: %v", err)
+				klog.Warningf("Couldn't get full internal DNS name: %v.", err)
 			} else {
 				nodeAddresses = append(nodeAddresses,
 					v1.NodeAddress{Type: v1.NodeInternalDNS, Address: internalDNSFull},
 					v1.NodeAddress{Type: v1.NodeHostName, Address: internalDNSFull},
 				)
 			}
-			return nodeAddresses, nil
+			return g.orderAddresses(nodeAddresses), nil
 		}
 	}
 
@@ -249,7 +284,9 @@ func (g *Cloud) nodeAddressesFromInstance(instance *compute.Instance) ([]v1.Node
 	}
 	nodeAddresses := []v1.NodeAddress{}
 	for _, nic := range instance.NetworkInterfaces {
-		nodeAddresses = append(nodeAddresses, v1.NodeAddress{Type: v1.NodeInternalIP, Address: nic.NetworkIP})
+		if nic.NetworkIP != "" {
+			nodeAddresses = append(nodeAddresses, v1.NodeAddress{Type: v1.NodeInternalIP, Address: nic.NetworkIP})
+		}
 		for _, config := range nic.AccessConfigs {
 			nodeAddresses = append(nodeAddresses, v1.NodeAddress{Type: v1.NodeExternalIP, Address: config.NatIP})
 		}
@@ -259,7 +296,7 @@ func (g *Cloud) nodeAddressesFromInstance(instance *compute.Instance) ([]v1.Node
 		}
 	}
 
-	return nodeAddresses, nil
+	return g.orderAddresses(nodeAddresses), nil
 }
 
 func getIPV6AddressFromInterface(nic *compute.NetworkInterface) string {
@@ -702,6 +739,8 @@ func (g *Cloud) getFoundInstanceByNames(names []string) ([]*gceInstance, error) 
 
 // Gets the named instance, returning cloudprovider.InstanceNotFound if the instance is not found
 func (g *Cloud) getInstanceByName(name string) (*gceInstance, error) {
+	klog.Infof("Searching node %s in managed zones %v", name, g.managedZones)
+
 	// Avoid changing behaviour when not managing multiple zones
 	for _, zone := range g.managedZones {
 		instance, err := g.getInstanceFromProjectInZoneByName(g.projectID, zone, name)

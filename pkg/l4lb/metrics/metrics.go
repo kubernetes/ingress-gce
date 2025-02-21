@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/klog/v2"
 )
 
@@ -41,21 +42,30 @@ const (
 	l4LastSyncTimeName                             = "l4_last_sync_time"
 	l4LBRemovedFinalizerMetricName                 = "l4_removed_finalizer_count"
 	l4LBControllerPanicsMetricName                 = "l4_controllers_panics_count"
+	L4SyncDetailsMetricName                        = "l4_sync_details_count"
+	l4WeightedLBPodsPerNodeMetricName              = "l4_weighted_lb_pods_per_node"
 )
 
 var (
-	l4LBSyncLatencyMetricsLabels = []string{
+	l4LBSyncLatencyCommonMetricLabels = []string{
 		"sync_result",     // result of the sync
 		"sync_type",       // whether this is a new service, update or delete
 		"periodic_resync", // whether the sync was periodic resync or a update caused by a resource change
 	}
-	l4LBDualStackSyncLatencyMetricsLabels = append(l4LBSyncLatencyMetricsLabels, "ip_families")
+
+	l4SyncLatencyNetLBSpecificMetricLabels = []string{
+		"backend_type", // type of the backends of the LB (IG or NEG)
+	}
+
+	l4LBSyncLatencyMetricsLabels          = append(l4LBSyncLatencyCommonMetricLabels, l4WeightedLBPodsPerNodeMetricName)
+	l4LBDualStackSyncLatencyMetricsLabels = append(l4LBSyncLatencyCommonMetricLabels, "ip_families")
 	l4LBSyncErrorMetricLabels             = []string{
 		"sync_type",    // whether this is a new service, update or delete
 		"gce_resource", // The GCE resource whose update caused the error
 		// max number of values for error_type = 18 k8s error reasons + 60 http status errors.
 		// In production, we will see much fewer number, since many of the error codes are not applicable.
-		"error_type", // what type of error it was
+		"error_type",                      // what type of error it was
+		l4WeightedLBPodsPerNodeMetricName, // whether the service uses weighted load balancing by pods-per-node
 	}
 	l4ILBSyncLatency = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -63,7 +73,7 @@ var (
 			Help: "Latency of an L4 ILB Sync",
 			// custom buckets - [0.9375s, 1.875s, 3.75s, 7.5s, 30s, 60s, 120s, 240s(4min), 480s(8min), 960s(16m), 3840s(64min), 7680s(128m) +Inf]
 			// using funny starter bucket, 0.9375s will only add buckets to existing metric, this is a safe operation in most time series db
-			Buckets: prometheus.ExponentialBuckets(0.9375, 2, 12),
+			Buckets: prometheus.ExponentialBuckets(0.9375, 2, 15),
 		},
 		l4LBSyncLatencyMetricsLabels,
 	)
@@ -82,7 +92,7 @@ var (
 			Help:    "Latency of an L4 ILB Multinet Sync",
 			Buckets: prometheus.ExponentialBuckets(0.5, 2, 15),
 		},
-		l4LBSyncLatencyMetricsLabels,
+		l4LBSyncLatencyCommonMetricLabels,
 	)
 	l4NetLBMultiNetSyncLatency = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -90,7 +100,7 @@ var (
 			Help:    "Latency of an L4 NetLB Multinet Sync",
 			Buckets: prometheus.ExponentialBuckets(0.5, 2, 15),
 		},
-		l4LBSyncLatencyMetricsLabels,
+		l4LBSyncLatencyCommonMetricLabels,
 	)
 	l4ILBSyncErrorCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -107,9 +117,9 @@ var (
 			Help: "Latency of an L4 NetLB Sync",
 			// custom buckets - [0.9375s, 1.875s, 3.75s, 7.5s, 30s, 60s, 120s, 240s(4min), 480s(8min), 960s(16m), 3840s(64min), 7680s(128m) +Inf]
 			// using funny starter bucket, 0.9375s will only add buckets to existing metric, this is a safe operation in most time series db
-			Buckets: prometheus.ExponentialBuckets(0.9375, 2, 12),
+			Buckets: prometheus.ExponentialBuckets(0.9375, 2, 15),
 		},
-		l4LBSyncLatencyMetricsLabels,
+		append(l4LBSyncLatencyMetricsLabels, l4SyncLatencyNetLBSpecificMetricLabels...),
 	)
 	l4NetLBDualStackSyncLatency = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -170,6 +180,14 @@ var (
 		},
 		[]string{"controller_name"},
 	)
+
+	l4LBSyncDetails = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: L4SyncDetailsMetricName,
+			Help: "Details of updates done during L4 LB ensure operations",
+		},
+		[]string{"controller_name", "success", "predicted_periodic_resync", "was_update"},
+	)
 )
 
 // init registers l4 ilb and netlb sync metrics.
@@ -184,7 +202,7 @@ func init() {
 	prometheus.MustRegister(l4NetLBDualStackSyncLatency)
 	klog.V(3).Infof("Registering L4 ILB MultiNet controller metrics %v", l4ILBMultiNetSyncLatency)
 	prometheus.MustRegister(l4ILBMultiNetSyncLatency)
-	klog.V(3).Infof("Registering L4 NetLB MultiNet controller metrics %v", l4ILBMultiNetSyncLatency)
+	klog.V(3).Infof("Registering L4 NetLB MultiNet controller metrics %v", l4NetLBMultiNetSyncLatency)
 	prometheus.MustRegister(l4NetLBMultiNetSyncLatency)
 	klog.V(3).Infof("Registering L4 healthcheck failures count metric: %v", l4FailedHealthCheckCount)
 	prometheus.MustRegister(l4FailedHealthCheckCount)
@@ -196,23 +214,25 @@ func init() {
 	prometheus.MustRegister(l4LBRemovedFinalizers)
 	klog.V(3).Infof("Registering L4 controller panics metric: %v", l4LBControllerPanics)
 	prometheus.MustRegister(l4LBControllerPanics)
+	klog.V(3).Infof("Registering L4 controller sync details metric: %v", l4LBSyncDetails)
+	prometheus.MustRegister(l4LBSyncDetails)
 }
 
 // PublishILBSyncMetrics exports metrics related to the L4 ILB sync.
-func PublishILBSyncMetrics(success bool, syncType, gceResource, errType string, startTime time.Time, isResync bool) {
-	publishL4ILBSyncLatency(success, syncType, startTime, isResync)
+func PublishILBSyncMetrics(success bool, syncType, gceResource, errType string, startTime time.Time, isResync bool, isWeightedLB bool) {
+	publishL4ILBSyncLatency(success, syncType, startTime, isResync, isWeightedLB)
 	if !success {
-		publishL4ILBSyncErrorCount(syncType, gceResource, errType)
+		publishL4ILBSyncErrorCount(syncType, gceResource, errType, isWeightedLB)
 	}
 }
 
 // publishL4ILBSyncLatency exports the given sync latency datapoint.
-func publishL4ILBSyncLatency(success bool, syncType string, startTime time.Time, isResync bool) {
+func publishL4ILBSyncLatency(success bool, syncType string, startTime time.Time, isResync bool, isWeightedLB bool) {
 	status := statusSuccess
 	if !success {
 		status = statusError
 	}
-	l4ILBSyncLatency.WithLabelValues(status, syncType, strconv.FormatBool(isResync)).Observe(time.Since(startTime).Seconds())
+	l4ILBSyncLatency.WithLabelValues(status, syncType, strconv.FormatBool(isResync), strconv.FormatBool(isWeightedLB)).Observe(time.Since(startTime).Seconds())
 }
 
 // PublishL4ILBDualStackSyncLatency exports the given sync latency datapoint.
@@ -233,6 +253,14 @@ func PublishL4ILBMultiNetSyncLatency(success bool, syncType string, startTime ti
 	l4ILBMultiNetSyncLatency.WithLabelValues(status, syncType, strconv.FormatBool(isResync)).Observe(time.Since(startTime).Seconds())
 }
 
+// PublishNetLBSyncMetrics exports metrics related to the L4 NetLB sync.
+func PublishNetLBSyncMetrics(success bool, syncType, gceResource, errType string, startTime time.Time, isResync bool, isWeightedLB bool, l4BackendType metrics.L4BackendType) {
+	publishL4NetLBSync(success, syncType, startTime, isResync, isWeightedLB, l4BackendType)
+	if !success {
+		publishL4NetLBSyncErrorCount(syncType, gceResource, errType, isWeightedLB)
+	}
+}
+
 // PublishL4NetLBMultiNetSyncLatency exports the given sync latency datapoint.
 func PublishL4NetLBMultiNetSyncLatency(success bool, syncType string, startTime time.Time, isResync bool) {
 	status := statusSuccess
@@ -243,13 +271,17 @@ func PublishL4NetLBMultiNetSyncLatency(success bool, syncType string, startTime 
 }
 
 // publishL4ILBSyncLatency exports the given sync latency datapoint.
-func publishL4ILBSyncErrorCount(syncType, gceResource, errorType string) {
-	l4ILBSyncErrorCount.WithLabelValues(syncType, gceResource, errorType).Inc()
+func publishL4ILBSyncErrorCount(syncType, gceResource, errorType string, isWeightedLB bool) {
+	l4ILBSyncErrorCount.WithLabelValues(syncType, gceResource, errorType, strconv.FormatBool(isWeightedLB)).Inc()
 }
 
-// PublishL4NetLBSyncSuccess exports latency metrics for L4 NetLB service after successful sync.
-func PublishL4NetLBSyncSuccess(syncType string, startTime time.Time, isResync bool) {
-	l4NetLBSyncLatency.WithLabelValues(statusSuccess, syncType, strconv.FormatBool(isResync)).Observe(time.Since(startTime).Seconds())
+// publishL4NetLBSync exports latency metrics for L4 NetLB service after sync.
+func publishL4NetLBSync(success bool, syncType string, startTime time.Time, isResync bool, isWeightedLB bool, backendType metrics.L4BackendType) {
+	status := statusSuccess
+	if !success {
+		status = statusError
+	}
+	l4NetLBSyncLatency.WithLabelValues(status, syncType, strconv.FormatBool(isResync), strconv.FormatBool(isWeightedLB), string(backendType)).Observe(time.Since(startTime).Seconds())
 }
 
 // PublishL4NetLBDualStackSyncLatency exports the given sync latency datapoint.
@@ -261,10 +293,9 @@ func PublishL4NetLBDualStackSyncLatency(success bool, syncType, ipFamilies strin
 	l4NetLBDualStackSyncLatency.WithLabelValues(status, syncType, strconv.FormatBool(isResync), ipFamilies).Observe(time.Since(startTime).Seconds())
 }
 
-// PublishL4NetLBSyncError exports latency and error count metrics for L4 NetLB after error sync.
-func PublishL4NetLBSyncError(syncType, gceResource, errType string, startTime time.Time, isResync bool) {
-	l4NetLBSyncLatency.WithLabelValues(statusError, syncType, strconv.FormatBool(isResync)).Observe(time.Since(startTime).Seconds())
-	l4NetLBSyncErrorCount.WithLabelValues(syncType, gceResource, errType).Inc()
+// publishL4NetLBSyncErrorCount exports error count metrics for L4 NetLB after error sync.
+func publishL4NetLBSyncErrorCount(syncType, gceResource, errType string, isWeightedLB bool) {
+	l4NetLBSyncErrorCount.WithLabelValues(syncType, gceResource, errType, strconv.FormatBool(isWeightedLB)).Inc()
 }
 
 func PublishL4RemovedILBLegacyFinalizer() {
@@ -316,4 +347,8 @@ func IncreaseL4NetLBTargetPoolRaceWithRBS() {
 // PublishL4controllerLastSyncTime records timestamp when L4 controller STARTED to sync an item
 func PublishL4controllerLastSyncTime(controllerName string) {
 	l4LastSyncTime.WithLabelValues(controllerName).SetToCurrentTime()
+}
+
+func PublishL4SyncDetails(controllerName string, success, isPredictedResync, wasUpdated bool) {
+	l4LBSyncDetails.WithLabelValues(controllerName, strconv.FormatBool(success), strconv.FormatBool(isPredictedResync), strconv.FormatBool(wasUpdated)).Inc()
 }

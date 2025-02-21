@@ -31,8 +31,6 @@ type CRDMeta struct {
 	singular   string
 	plural     string
 	shortNames []string
-	typeSource string
-	fn         common.GetOpenAPIDefinitions
 }
 
 // NewCRDMeta creates a CRDMeta type which can be passed to a CRDHandler in

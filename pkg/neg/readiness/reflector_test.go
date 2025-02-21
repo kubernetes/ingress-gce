@@ -35,7 +35,7 @@ import (
 )
 
 const (
-	defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/default"
+	defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/mock-project/regions/test-region/subnetworks/default"
 
 	defaultTestSubnet    = "default"
 	nonDefaultTestSubnet = "non-default"
@@ -58,8 +58,11 @@ func (f *fakeLookUp) ReadinessGateEnabled(syncerKey negtypes.NegSyncerKey) bool 
 	return f.readinessGateEnabled
 }
 
-func newTestReadinessReflector(testContext *negtypes.TestContext, enableMultiSubnetCluster bool) *readinessReflector {
-	fakeZoneGetter := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, defaultTestSubnetURL, enableMultiSubnetCluster)
+func newTestReadinessReflector(testContext *negtypes.TestContext, enableMultiSubnetCluster bool) (*readinessReflector, error) {
+	fakeZoneGetter, err := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, testContext.NodeTopologyInformer, defaultTestSubnetURL, enableMultiSubnetCluster)
+	if err != nil {
+		return nil, err
+	}
 	reflector := NewReadinessReflector(
 		testContext.KubeClient,
 		testContext.KubeClient,
@@ -72,7 +75,7 @@ func newTestReadinessReflector(testContext *negtypes.TestContext, enableMultiSub
 		klog.TODO(),
 	)
 	ret := reflector.(*readinessReflector)
-	return ret
+	return ret, nil
 }
 
 func TestSyncPod(t *testing.T) {
@@ -82,7 +85,10 @@ func TestSyncPod(t *testing.T) {
 	podLister := fakeContext.PodInformer.GetIndexer()
 	nodeLister := fakeContext.NodeInformer.GetIndexer()
 	fakeClock := clocktesting.NewFakeClock(time.Now())
-	testReadinessReflector := newTestReadinessReflector(fakeContext, false)
+	testReadinessReflector, err := newTestReadinessReflector(fakeContext, false)
+	if err != nil {
+		t.Fatalf("failed to initialize readiness reflector")
+	}
 	testReadinessReflector.clock = fakeClock
 	testlookUp := testReadinessReflector.lookup.(*fakeLookUp)
 
@@ -413,7 +419,10 @@ func TestSyncPodMultipleSubnets(t *testing.T) {
 	client := fakeContext.KubeClient
 	podLister := fakeContext.PodInformer.GetIndexer()
 	fakeClock := clocktesting.NewFakeClock(time.Now())
-	testReadinessReflector := newTestReadinessReflector(fakeContext, true)
+	testReadinessReflector, err := newTestReadinessReflector(fakeContext, true)
+	if err != nil {
+		t.Fatalf("failed to initialize readiness reflector")
+	}
 	testReadinessReflector.clock = fakeClock
 	testlookUp := testReadinessReflector.lookup.(*fakeLookUp)
 	testlookUp.readinessGateEnabledNegs = []string{"neg1", "neg2"}

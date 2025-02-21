@@ -86,12 +86,18 @@ const (
 	// UDPForwardingRuleKey is the annotation key used by l4 controller to record
 	// GCP UDP forwarding rule name.
 	UDPForwardingRuleKey = ServiceStatusPrefix + "/udp-" + ForwardingRuleResource
+	// L3ForwardingRuleKey is the annotation key used by l4 controller to record
+	// GCP L3_DEFAULT forwarding rule name.
+	L3ForwardingRuleKey = ServiceStatusPrefix + "/l3-" + ForwardingRuleResource
 	// TCPForwardingRuleIPv6Key is the annotation key used by l4 controller to record
 	// GCP IPv6 TCP forwarding rule name.
 	TCPForwardingRuleIPv6Key = TCPForwardingRuleKey + IPv6Suffix
 	// UDPForwardingRuleIPv6Key is the annotation key used by l4 controller to record
 	// GCP IPv6 UDP forwarding rule name.
 	UDPForwardingRuleIPv6Key = UDPForwardingRuleKey + IPv6Suffix
+	// L3ForwardingRuleIPv6Key is the annotation key used by l4 controller to record
+	// GCP IPv6 L3_DEFAULT forwarding rule name.
+	L3ForwardingRuleIPv6Key = L3ForwardingRuleKey + IPv6Suffix
 	// BackendServiceKey is the annotation key used by l4 controller to record
 	// GCP Backend service name.
 	BackendServiceKey = ServiceStatusPrefix + "/" + BackendServiceResource

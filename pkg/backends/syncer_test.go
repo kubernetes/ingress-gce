@@ -61,7 +61,7 @@ func newPortset(ports []utils.ServicePort) *portset {
 
 func (p *portset) existingPorts() []utils.ServicePort {
 	var result []utils.ServicePort
-	for sp, _ := range p.existing {
+	for sp := range p.existing {
 		result = append(result, sp)
 	}
 	return result
@@ -94,7 +94,7 @@ func (p *portset) del(ports []utils.ServicePort) error {
 // check() iterates through all and checks that the ports in 'existing' exist in gce, and that those
 // that are not in 'existing' do not exist
 func (p *portset) check(fakeGCE *gce.Cloud) error {
-	for sp, _ := range p.all {
+	for sp := range p.all {
 		_, found := p.existing[sp]
 		beName := sp.BackendName()
 		key, err := composite.CreateKey(fakeGCE, beName, features.ScopeFromServicePort(&sp))
@@ -122,6 +122,7 @@ func (p *portset) check(fakeGCE *gce.Cloud) error {
 
 var (
 	defaultNamer      = namer.NewNamer("uid1", "fw1", klog.TODO())
+	defaultL4Namer    = namer.NewL4Namer("uid1", nil)
 	defaultBackendSvc = types.NamespacedName{Namespace: "system", Name: "default"}
 	existingProbe     = &api_v1.Probe{
 		ProbeHandler: api_v1.ProbeHandler{
@@ -137,19 +138,18 @@ var (
 	}
 )
 
-func newTestSyncer(fakeGCE *gce.Cloud) *backendSyncer {
+func newTestSyncer(fakeGCE *gce.Cloud) *Syncer {
 	fakeHealthChecks := healthchecks.NewHealthChecker(fakeGCE, "/", defaultBackendSvc, healthchecks.NewFakeRecorderGetter(0), healthchecks.NewFakeServiceGetter(), healthchecks.HealthcheckFlags{})
 
 	fakeBackendPool := NewPool(fakeGCE, defaultNamer)
 
-	syncer := &backendSyncer{
+	probes := map[utils.ServicePort]*api_v1.Probe{{NodePort: 443, Protocol: annotations.ProtocolHTTPS, BackendNamer: defaultNamer}: existingProbe}
+	syncer := &Syncer{
 		backendPool:   fakeBackendPool,
 		healthChecker: fakeHealthChecks,
 		cloud:         fakeGCE,
+		prober:        NewFakeProbeProvider(probes),
 	}
-
-	probes := map[utils.ServicePort]*api_v1.Probe{{NodePort: 443, Protocol: annotations.ProtocolHTTPS, BackendNamer: defaultNamer}: existingProbe}
-	syncer.Init(NewFakeProbeProvider(probes))
 
 	// Add standard hooks for mocking update calls. Each test can set a different update hook if it chooses to.
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaBackendServices.UpdateHook = mock.UpdateAlphaBackendServiceHook
@@ -469,7 +469,7 @@ func TestSyncQuota(t *testing.T) {
 			quota := len(tc.newPorts)
 
 			// Add hooks to simulate quota changes & errors.
-			insertFunc := func(ctx context.Context, key *meta.Key, beName string) (bool, error) {
+			insertFunc := func(_ context.Context, _ *meta.Key, beName string) (bool, error) {
 				if bsCreated+1 > quota {
 					return true, &googleapi.Error{Code: http.StatusForbidden, Body: beName}
 				}
@@ -598,7 +598,6 @@ func TestEnsureBackendServiceProtocol(t *testing.T) {
 						if needsProtocolUpdate {
 							t.Fatalf("Expected ensureProtocol for the same port to return false, got %v", needsProtocolUpdate)
 						}
-
 					} else {
 						if !needsProtocolUpdate {
 							t.Fatalf("Expected ensureProtocol for updating to a new port to return true, got %v", needsProtocolUpdate)
@@ -642,7 +641,6 @@ func TestEnsureBackendServiceDescription(t *testing.T) {
 						if needsDescriptionUpdate {
 							t.Fatalf("Expected ensureDescription for the same port to return false, got %v", needsDescriptionUpdate)
 						}
-
 					} else {
 						if !needsDescriptionUpdate {
 							t.Fatalf("Expected ensureDescription for updating to a new port to return true, got %v", needsDescriptionUpdate)

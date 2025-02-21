@@ -1,5 +1,5 @@
 /*
-Copyright 2024 The Kubernetes Authors.
+Copyright 2025 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -136,6 +136,14 @@ func TestBackend(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestBackendCustomMetric(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendCustomMetric{})
+	alphaType := reflect.TypeOf(computealpha.BackendCustomMetric{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
 func TestBackendService(t *testing.T) {
 	// Use reflection to verify that our composite type contains all the
 	// same fields as the alpha type.
@@ -240,6 +248,14 @@ func TestBackendServiceCdnPolicyNegativeCachingPolicy(t *testing.T) {
 func TestBackendServiceConnectionTrackingPolicy(t *testing.T) {
 	compositeType := reflect.TypeOf(BackendServiceConnectionTrackingPolicy{})
 	alphaType := reflect.TypeOf(computealpha.BackendServiceConnectionTrackingPolicy{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBackendServiceCustomMetric(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendServiceCustomMetric{})
+	alphaType := reflect.TypeOf(computealpha.BackendServiceCustomMetric{})
 	if err := typeEquality(compositeType, alphaType, true); err != nil {
 		t.Fatal(err)
 	}
@@ -352,6 +368,22 @@ func TestBackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity(t *testing
 func TestBackendServiceReference(t *testing.T) {
 	compositeType := reflect.TypeOf(BackendServiceReference{})
 	alphaType := reflect.TypeOf(computealpha.BackendServiceReference{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBackendServiceTlsSettings(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendServiceTlsSettings{})
+	alphaType := reflect.TypeOf(computealpha.BackendServiceTlsSettings{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBackendServiceTlsSettingsSubjectAltName(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendServiceTlsSettingsSubjectAltName{})
+	alphaType := reflect.TypeOf(computealpha.BackendServiceTlsSettingsSubjectAltName{})
 	if err := typeEquality(compositeType, alphaType, true); err != nil {
 		t.Fatal(err)
 	}

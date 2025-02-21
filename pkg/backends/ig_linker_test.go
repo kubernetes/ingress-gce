@@ -40,7 +40,7 @@ import (
 
 const (
 	defaultTestZone      = "zone-a"
-	defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/default"
+	defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/mock-project/regions/test-region/subnetworks/default"
 )
 
 func newTestIGLinker(fakeGCE *gce.Cloud, fakeInstancePool instancegroups.Manager) *instanceGroupLinker {
@@ -59,7 +59,10 @@ func TestLink(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 
 	nodeInformer := zonegetter.FakeNodeInformer()
-	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
+	fakeZoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter: %v", err)
+	}
 	zonegetter.AddFakeNodes(fakeZoneGetter, defaultTestZone, "test-instance")
 
 	fakeNodePool := instancegroups.NewManager(&instancegroups.ManagerConfig{
@@ -101,7 +104,10 @@ func TestLinkWithCreationModeError(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 
 	nodeInformer := zonegetter.FakeNodeInformer()
-	fakeZoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
+	fakeZoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter: %v", err)
+	}
 	zonegetter.AddFakeNodes(fakeZoneGetter, defaultTestZone, "test-instance")
 
 	fakeNodePool := instancegroups.NewManager(&instancegroups.ManagerConfig{

@@ -22,14 +22,10 @@ import (
 	"testing"
 	"time"
 
-	v1 "k8s.io/api/networking/v1"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/backoff"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
-	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
 
@@ -41,19 +37,6 @@ const (
 	testNamedPort        = "named-Port"
 	clusterID            = "clusterid"
 	kubeSystemUID        = "kube-system-id"
-)
-
-var (
-	defaultBackend = utils.ServicePort{
-		ID: utils.ServicePortID{
-			Service: types.NamespacedName{
-				Name:      "default-http-backend",
-				Namespace: "kube-system",
-			},
-			Port: v1.ServiceBackendPort{Name: "http"},
-		},
-		TargetPort: intstr.FromInt(9376),
-	}
 )
 
 type syncerTester struct {

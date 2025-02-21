@@ -41,9 +41,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
-var (
-	errAllProtocolsDisabled = errors.New("invalid configuration: both HTTP and HTTPS are disabled (kubernetes.io/ingress.allow-http is false and there is no valid TLS configuration); your Ingress will not be able to serve any traffic")
-)
+var errAllProtocolsDisabled = errors.New("invalid configuration: both HTTP and HTTPS are disabled (kubernetes.io/ingress.allow-http is false and there is no valid TLS configuration); your Ingress will not be able to serve any traffic")
 
 // L7RuntimeInfo is info passed to this module from the controller runtime.
 type L7RuntimeInfo struct {
@@ -463,7 +461,7 @@ func (l7 *L7) getFrontendAnnotations(existing map[string]string) map[string]stri
 }
 
 // GetLBAnnotations returns the annotations of an l7. This includes it's current status.
-func GetLBAnnotations(l7 *L7, existing map[string]string, backendSyncer backends.Syncer, ingLogger klog.Logger) (map[string]string, error) {
+func GetLBAnnotations(l7 *L7, existing map[string]string, backendSyncer *backends.Syncer, ingLogger klog.Logger) (map[string]string, error) {
 	backends, err := getBackendNames(l7.um)
 	if err != nil {
 		return nil, err

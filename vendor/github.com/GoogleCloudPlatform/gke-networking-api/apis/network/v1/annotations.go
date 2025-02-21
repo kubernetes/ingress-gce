@@ -63,8 +63,12 @@ const (
 	AutoGenAnnotationValTrue = "true"
 	// NorthInterfacesAnnotationKey is the annotation key used to hold interfaces data per node.
 	NorthInterfacesAnnotationKey = "networking.gke.io/north-interfaces"
-	// NICInfoAnnotationKey specifies the mapping between the fist IP addresse and the PCI BDF number on the node.
+	// NICInfoAnnotationKey specifies the mapping between the fist IP address and the PCI BDF number on the node.
 	NICInfoAnnotationKey = "networking.gke.io/nic-info"
+	// InterfaceStatusAnnotationKey is the key of the annotation which shows information of each interface of a pod.
+	InterfaceStatusAnnotationKey = "networking.gke.io/interface-status"
+	// NetworkGatewayIPAnnotationKey is the network annotation key used to hold egress NAT gateway IP.
+	NetworkGatewayIPAnnotationKey = "networking.gke.io/gateway-ip"
 )
 
 // InterfaceAnnotation is the value of the interface annotation.
@@ -125,6 +129,10 @@ type NodeNetworkAnnotation []NodeNetworkStatus
 // +kubebuilder:object:generate:=false
 type PodIPsAnnotation []PodIP
 
+// InterfaceStatusAnnotation is the value of the network interface status annotation.
+// +kubebuilder:object:generate:=false
+type InterfaceStatusAnnotation []InterfaceStatus
+
 // MultiNetworkAnnotation is the value of networks annotation.
 // +kubebuilder:object:generate:=false
 type MultiNetworkAnnotation []NodeNetwork
@@ -177,6 +185,32 @@ type NorthInterface struct {
 	IpAddress string `json:"ipAddress"`
 }
 
+// InterfaceStatus holds information of a NIC of a pod.
+// +kubebuilder:object:generate:=false
+type InterfaceStatus struct {
+	// NetworkName refers to the network object associated with this NIC.
+	NetworkName string `json:"networkName"`
+
+	// IPAddresses are the IP addresses assigned to this NIC.
+	// Can be either IPv4 or IPv6.
+	IPAddresses []string `json:"ipAddresses"`
+
+	// MACAddress is the MAC address assigned to the NIC.
+	MACAddress string `json:"macAddress"`
+
+	// Routes contains a list of routes for the network this interface connects to.
+	Routes []Route `json:"routes,omitempty"`
+
+	// Gateway4 defines the gateway IPv4 address for the network this interface connects to.
+	Gateway4 *string `json:"gateway4,omitempty"`
+
+	// DNSConfig specifies the DNS configuration of the network this interface connects to.
+	DNSConfig *DNSConfig `json:"dnsConfig,omitempty"`
+
+	// DHCPServerIP is the IP of the DHCP server.
+	DHCPServerIP *string `json:"dhcpServerIP,omitempty"`
+}
+
 // ParseNodeNetworkAnnotation parses the given annotation to NodeNetworkAnnotation.
 func ParseNodeNetworkAnnotation(annotation string) (NodeNetworkAnnotation, error) {
 	ret := &NodeNetworkAnnotation{}
@@ -208,6 +242,13 @@ func ParseNorthInterfacesAnnotation(annotation string) (NorthInterfacesAnnotatio
 // ParseNICInfoAnnotation parses given annotation to NicInfoAnnotation
 func ParseNICInfoAnnotation(annotation string) (NICInfoAnnotation, error) {
 	ret := &NICInfoAnnotation{}
+	err := json.Unmarshal([]byte(annotation), ret)
+	return *ret, err
+}
+
+// ParseInterfaceStatusAnnotation parses the given annotation to InterfaceStatusAnnotation
+func ParseInterfaceStatusAnnotation(annotation string) (InterfaceStatusAnnotation, error) {
+	ret := &InterfaceStatusAnnotation{}
 	err := json.Unmarshal([]byte(annotation), ret)
 	return *ret, err
 }

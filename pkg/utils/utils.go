@@ -110,6 +110,20 @@ func NewNetworkTierErr(resourceInErr, desired, received string) *NetworkTierErro
 	return &NetworkTierError{resource: resourceInErr, desiredNT: desired, receivedNT: received}
 }
 
+type UnsupportedNetworkTierError struct {
+	resource      string
+	unsupportedNT string
+}
+
+// Error function prints out Network Tier error.
+func (e *UnsupportedNetworkTierError) Error() string {
+	return fmt.Sprintf("Network tier %s is not supported for %s", e.unsupportedNT, e.resource)
+}
+
+func NewUnsupportedNetworkTierErr(resourceInErr, networkTier string) *UnsupportedNetworkTierError {
+	return &UnsupportedNetworkTierError{resource: resourceInErr, unsupportedNT: networkTier}
+}
+
 // IPConfigurationError is a struct to define error caused by User misconfiguration the Load Balancer IP.
 type IPConfigurationError struct {
 	ip     string
@@ -122,6 +136,20 @@ func (e *IPConfigurationError) Error() string {
 
 func NewIPConfigurationError(ip, reason string) *IPConfigurationError {
 	return &IPConfigurationError{ip: ip, reason: reason}
+}
+
+// InvalidSubnetConfigurationError is a struct to define error caused by User misconfiguration of Load Balancer's subnet.
+type InvalidSubnetConfigurationError struct {
+	projectName string
+	subnetName  string
+}
+
+func (e *InvalidSubnetConfigurationError) Error() string {
+	return fmt.Sprintf("Subnetwork \"%s\" can't be found for project %s", e.subnetName, e.projectName)
+}
+
+func NewInvalidSubnetConfigurationError(projectName, subnetName string) *InvalidSubnetConfigurationError {
+	return &InvalidSubnetConfigurationError{projectName: projectName, subnetName: subnetName}
 }
 
 // L4LBType indicates if L4 LoadBalancer is Internal or External
@@ -198,6 +226,7 @@ func IsInUsedByError(err error) bool {
 	}
 	return strings.Contains(apiErr.Message, "being used by")
 }
+
 func IsMemberAlreadyExistsError(err error) bool {
 	apiErr, ok := err.(*googleapi.Error)
 	if !ok || apiErr.Code != http.StatusBadRequest {
@@ -217,10 +246,22 @@ func IsNetworkTierError(err error) bool {
 	return errors.As(err, &netTierError)
 }
 
+// IsUnsupportedNetworkTierError checks if wrapped error is an Unsupported Network Tier error
+func IsUnsupportedNetworkTierError(err error) bool {
+	var netTierError *UnsupportedNetworkTierError
+	return errors.As(err, &netTierError)
+}
+
 // IsIPConfigurationError checks if wrapped error is an IP configuration error.
 func IsIPConfigurationError(err error) bool {
 	var ipConfigError *IPConfigurationError
 	return errors.As(err, &ipConfigError)
+}
+
+// IsInvalidSubnetConfigurationError checks if wrapped error is an Invalid Subnet Configuration error.
+func IsInvalidSubnetConfigurationError(err error) bool {
+	var invalidSubnetConfigError *InvalidSubnetConfigurationError
+	return errors.As(err, &invalidSubnetConfigError)
 }
 
 // IsInvalidLoadBalancerSourceRangesSpecError checks if wrapped error is an InvalidLoadBalancerSourceRangesSpecError error.
@@ -242,8 +283,10 @@ func IsUserError(err error) bool {
 	var userError *UserError
 	return IsNetworkTierError(err) ||
 		IsIPConfigurationError(err) ||
+		IsInvalidSubnetConfigurationError(err) ||
 		IsInvalidLoadBalancerSourceRangesSpecError(err) ||
 		IsInvalidLoadBalancerSourceRangesAnnotationError(err) ||
+		IsUnsupportedNetworkTierError(err) ||
 		errors.As(err, &userError)
 }
 
@@ -494,54 +537,6 @@ func NodeIsReady(node *api_v1.Node) bool {
 	return false
 }
 
-func nodePredicateInternal(node *api_v1.Node, includeUnreadyNodes, excludeUpgradingNodes bool, logger klog.Logger) bool {
-	// Get all nodes that have a taint with NoSchedule effect
-	for _, taint := range node.Spec.Taints {
-		if taint.Key == ToBeDeletedTaint {
-			return false
-		}
-	}
-
-	// As of 1.6, we will taint the master, but not necessarily mark it unschedulable.
-	// Recognize nodes labeled as master, and filter them also, as we were doing previously.
-	if _, hasMasterRoleLabel := node.Labels[LabelNodeRoleMaster]; hasMasterRoleLabel {
-		return false
-	}
-
-	// Will be removed in 1.18
-	if _, hasExcludeBalancerLabel := node.Labels[LabelAlphaNodeRoleExcludeBalancer]; hasExcludeBalancerLabel {
-		return false
-	}
-
-	if _, hasExcludeBalancerLabel := node.Labels[LabelNodeRoleExcludeBalancer]; hasExcludeBalancerLabel {
-		return false
-	}
-	if excludeUpgradingNodes {
-		// This node is about to be upgraded or deleted as part of resize.
-		if operation, _ := node.Labels[GKECurrentOperationLabel]; operation == NodeDrain {
-			return false
-		}
-	}
-
-	// If we have no info, don't accept
-	if len(node.Status.Conditions) == 0 {
-		return false
-	}
-	if includeUnreadyNodes {
-		return true
-	}
-	for _, cond := range node.Status.Conditions {
-		// We consider the node for load balancing only when its NodeReady condition status
-		// is ConditionTrue
-		if cond.Type == api_v1.NodeReady && cond.Status != api_v1.ConditionTrue {
-			logger.V(4).Info("Ignoring node", "nodeName", node.Name, "conditionType", cond.Type, "conditionStatus", cond.Status)
-			return false
-		}
-	}
-	return true
-
-}
-
 // GetNodePrimaryIP returns a primary internal IP address of the node.
 func GetNodePrimaryIP(inputNode *api_v1.Node, logger klog.Logger) string {
 	ip, err := getPreferredNodeAddress(inputNode, []api_v1.NodeAddressType{api_v1.NodeInternalIP})
@@ -768,6 +763,11 @@ func HasL4NetLBFinalizerV2(svc *api_v1.Service) bool {
 	return slice.ContainsString(svc.ObjectMeta.Finalizers, common.NetLBFinalizerV2, nil)
 }
 
+// HasL4NetLBFinalizerV3 returns true if the given Service has NetLBFinalizerV3
+func HasL4NetLBFinalizerV3(svc *api_v1.Service) bool {
+	return slice.ContainsString(svc.ObjectMeta.Finalizers, common.NetLBFinalizerV3, nil)
+}
+
 func LegacyForwardingRuleName(svc *api_v1.Service) string {
 	return cloudprovider.DefaultLoadBalancerName(svc)
 }
@@ -841,25 +841,6 @@ func GetBasePath(cloud *gce.Cloud) string {
 		return fmt.Sprintf("%sprojects/%s/", basePath, cloud.ProjectID())
 	}
 	return fmt.Sprintf("%s%s/", basePath, cloud.ProjectID())
-}
-
-// GetNetworkTier returns Network Tier from service and stays if this is a service annotation.
-// If the annotation is not present then default Network Tier is returned.
-func GetNetworkTier(service *api_v1.Service) (cloud.NetworkTier, bool) {
-	l, ok := service.Annotations[annotations.NetworkTierAnnotationKey]
-	if !ok {
-		return cloud.NetworkTierDefault, false
-	}
-
-	v := cloud.NetworkTier(l)
-	switch v {
-	case cloud.NetworkTierStandard:
-		return v, true
-	case cloud.NetworkTierPremium:
-		return v, true
-	default:
-		return cloud.NetworkTierDefault, false
-	}
 }
 
 // IsLoadBalancerServiceType checks if kubernetes service is type of LoadBalancer.

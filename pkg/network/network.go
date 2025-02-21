@@ -23,6 +23,7 @@ import (
 	networkv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	compute "google.golang.org/api/compute/v1"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -45,13 +46,52 @@ type Resolver interface {
 type NetworksResolver struct {
 	networkLister            cache.Indexer
 	gkeNetworkParamSetLister cache.Indexer
-	cloudProvider            cloudNetworkProvider
+	cloudProvider            CloudNetworkProvider
 	enableMultinetworking    bool
 	logger                   klog.Logger
 }
 
+type CloudNetworkProviderAdapterWithSelfLink struct {
+	cloud      CloudNetworkProvider
+	networkURL string
+}
+
+// CloudNetworkProviderAdapterWithSelfLink uses the network selfLink as networkUrl.
+func NewAdapterNetworkSelfLink(cloudProvider CloudNetworkProvider) (CloudNetworkProvider, error) {
+	url, err := GetNetworkSelfLink(cloudProvider)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &CloudNetworkProviderAdapterWithSelfLink{
+		cloud:      cloudProvider,
+		networkURL: url,
+	}, nil
+}
+
+func (adapter *CloudNetworkProviderAdapterWithSelfLink) NetworkURL() string {
+	return adapter.networkURL
+}
+
+func (adapter *CloudNetworkProviderAdapterWithSelfLink) SubnetworkURL() string {
+	return adapter.cloud.SubnetworkURL()
+}
+
+func (adapter *CloudNetworkProviderAdapterWithSelfLink) NetworkProjectID() string {
+	return adapter.cloud.NetworkProjectID()
+}
+
+func (adapter *CloudNetworkProviderAdapterWithSelfLink) Region() string {
+	return adapter.cloud.Region()
+}
+
+func (a *CloudNetworkProviderAdapterWithSelfLink) GetNetwork(networkName string) (*compute.Network, error) {
+	return a.cloud.GetNetwork(networkName)
+}
+
 // NewNetworksResolver creates a new instance of the NetworksResolver.
-func NewNetworksResolver(networkLister, gkeNetworkParamSetLister cache.Indexer, cloudProvider cloudNetworkProvider, enableMultinetworking bool, logger klog.Logger) *NetworksResolver {
+func NewNetworksResolver(networkLister, gkeNetworkParamSetLister cache.Indexer, cloudProvider CloudNetworkProvider, enableMultinetworking bool, logger klog.Logger) *NetworksResolver {
 	return &NetworksResolver{
 		networkLister:            networkLister,
 		gkeNetworkParamSetLister: gkeNetworkParamSetLister,
@@ -59,6 +99,21 @@ func NewNetworksResolver(networkLister, gkeNetworkParamSetLister cache.Indexer, 
 		enableMultinetworking:    enableMultinetworking,
 		logger:                   logger,
 	}
+}
+
+func GetNetworkSelfLink(cloudProvider CloudNetworkProvider) (string, error) {
+	if cloudProvider == nil {
+		return "", fmt.Errorf("Network resolver: provided cloud is nil")
+	}
+	url := cloudProvider.NetworkURL()
+	lastIndex := strings.LastIndex(url, "/")
+	networkId := url[lastIndex+1:]
+
+	networkResource, err := cloudProvider.GetNetwork(networkId)
+	if err != nil || networkResource == nil || networkResource.SelfLink == "" {
+		return "", fmt.Errorf("Network resolver error: %v", err)
+	}
+	return networkResource.SelfLink, nil
 }
 
 // ServiceNetwork determines the network data to be used for the L4 LB resources.
@@ -71,11 +126,6 @@ func (nr *NetworksResolver) ServiceNetwork(service *apiv1.Service) (*NetworkInfo
 	networkName, ok := service.Spec.Selector[networkSelector]
 	if !ok || networkName == "" || networkName == networkv1.DefaultPodNetworkName {
 		return DefaultNetwork(nr.cloudProvider), nil
-	}
-
-	// TODO: remove this check once DPv2 supports externalTrafficPolicy=Cluster services.
-	if service.Spec.ExternalTrafficPolicy != apiv1.ServiceExternalTrafficPolicyLocal {
-		return nil, utils.NewUserError(fmt.Errorf("multinetwork services with externalTrafficPolicy='%s' are not supported, only externalTrafficPolicy=Local services are supported", service.Spec.ExternalTrafficPolicy))
 	}
 
 	obj, exists, err := nr.networkLister.GetByKey(networkName)
@@ -137,7 +187,7 @@ func (nr *NetworksResolver) IsMultinetService(service *apiv1.Service) bool {
 }
 
 // DefaultNetwork creates network information struct of the default network. Default network is the main cluster network.
-func DefaultNetwork(cloudProvider cloudNetworkProvider) *NetworkInfo {
+func DefaultNetwork(cloudProvider CloudNetworkProvider) *NetworkInfo {
 	return &NetworkInfo{
 		IsDefault:     true,
 		K8sNetwork:    networkv1.DefaultPodNetworkName,
@@ -154,12 +204,12 @@ func refersGKENetworkParamSet(parametersRef *networkv1.NetworkParametersReferenc
 		parametersRef.Name != ""
 }
 
-func networkURL(cloudProvider cloudNetworkProvider, vpc string) string {
+func networkURL(cloudProvider CloudNetworkProvider, vpc string) string {
 	key := meta.GlobalKey(vpc)
 	return cloud.SelfLink(meta.VersionGA, cloudProvider.NetworkProjectID(), "networks", key)
 }
 
-func subnetworkURL(cloudProvider cloudNetworkProvider, subnetwork string) string {
+func subnetworkURL(cloudProvider CloudNetworkProvider, subnetwork string) string {
 	key := meta.RegionalKey(subnetwork, cloudProvider.Region())
 	return cloud.SelfLink(meta.VersionGA, cloudProvider.NetworkProjectID(), "subnetworks", key)
 }
@@ -183,11 +233,12 @@ func GetNodeIPForNetwork(node *apiv1.Node, network string) string {
 	return ""
 }
 
-type cloudNetworkProvider interface {
+type CloudNetworkProvider interface {
 	NetworkURL() string
 	SubnetworkURL() string
 	NetworkProjectID() string
 	Region() string
+	GetNetwork(networkName string) (*compute.Network, error)
 }
 
 // NetworkInfo contains the information about the network the LB resources should be created in.

@@ -21,6 +21,7 @@ import (
 	"reflect"
 	"strconv"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	apiv1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
@@ -28,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/annotations"
+	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -36,6 +38,8 @@ import (
 
 type NetworkEndpointType string
 type EndpointsCalculatorMode string
+
+type L4LBType string
 
 const (
 	VmIpPortEndpointType      = NetworkEndpointType("GCE_VM_IP_PORT")
@@ -61,6 +65,12 @@ const (
 
 	// NEG CRD Enabled Garbage Collection Event Reasons
 	NegGCError = "NegCRError"
+
+	// L4LBTypes are used to mark what type of LB the calculator is determinig endpoints for.
+	L4InternalLB = L4LBType("INTERNAL")
+	L4ExternalLB = L4LBType("EXTERNAL")
+
+	MaxDefaultSubnetNegNameLength = 56
 )
 
 // SvcPortTuple is the tuple representing one service port
@@ -128,6 +138,8 @@ type PortInfo struct {
 	EpCalculatorMode EndpointsCalculatorMode
 	// NetworkInfo specifies the network (K8s and VPC) and subnetwork the service port belongs to.
 	NetworkInfo network.NetworkInfo
+	// The type of the L4 LB. For L7 this should be left empty.
+	L4LBType L4LBType
 }
 
 // PortInfoMapKey is the Key of PortInfoMap
@@ -158,7 +170,7 @@ func NewPortInfoMap(namespace, name string, svcPortTupleSet SvcPortTupleSet, nam
 
 // NewPortInfoMapForVMIPNEG creates PortInfoMap with empty port tuple. Since VM_IP NEGs target
 // the node instead of the pod, there is no port info to be stored.
-func NewPortInfoMapForVMIPNEG(namespace, name string, namer namer.L4ResourcesNamer, local bool, networkInfo *network.NetworkInfo) PortInfoMap {
+func NewPortInfoMapForVMIPNEG(namespace, name string, namer namer.L4ResourcesNamer, local bool, networkInfo *network.NetworkInfo, l4LBType L4LBType) PortInfoMap {
 	ret := PortInfoMap{}
 	svcPortSet := make(SvcPortTupleSet)
 	svcPortSet.Insert(
@@ -176,6 +188,7 @@ func NewPortInfoMapForVMIPNEG(namespace, name string, namer namer.L4ResourcesNam
 			NegName:          negName,
 			EpCalculatorMode: mode,
 			NetworkInfo:      *networkInfo,
+			L4LBType:         l4LBType,
 		}
 	}
 	return ret
@@ -209,6 +222,7 @@ func (p1 PortInfoMap) Merge(p2 PortInfoMap) error {
 		mergedInfo.ReadinessGate = mergedInfo.ReadinessGate || portInfo.ReadinessGate
 		mergedInfo.EpCalculatorMode = portInfo.EpCalculatorMode
 		mergedInfo.NetworkInfo = portInfo.NetworkInfo
+		mergedInfo.L4LBType = portInfo.L4LBType
 
 		p1[mapKey] = mergedInfo
 	}
@@ -279,6 +293,9 @@ type NegSyncerKey struct {
 	//   The endpoints are nodes selected at random in case of Cluster trafficPolicy(L4ClusterMode).
 	//   The endpoints are nodes running backends of this service in case of Local trafficPolicy(L4LocalMode).
 	EpCalculatorMode EndpointsCalculatorMode
+
+	// L4LBType indicates which L4 LB this syncer is running for. For non L4 GCE_GM_IP NEGs this should be empty.
+	L4LBType L4LBType
 }
 
 func (key NegSyncerKey) String() string {
@@ -381,4 +398,24 @@ func NodeFilterForNetworkEndpointType(negType NetworkEndpointType) zonegetter.Fi
 		return zonegetter.CandidateAndUnreadyNodesFilter
 	}
 	return zonegetter.CandidateNodesFilter
+}
+
+// NegInfo holds the identifying information regarding a NEG.
+type NegInfo struct {
+	Name string
+	Zone string
+}
+
+// NegInfoFromNegRef returns NegInfo by parsing the NEG selflink.
+func NegInfoFromNegRef(negRef negv1beta1.NegObjectReference) (NegInfo, error) {
+	resourceID, err := cloud.ParseResourceURL(negRef.SelfLink)
+	if err != nil {
+		return NegInfo{}, fmt.Errorf("failed to parse selflink: %v", err)
+	}
+	return NegInfo{Name: resourceID.Key.Name, Zone: resourceID.Key.Zone}, nil
+}
+
+type NEGLocation struct {
+	Zone   string
+	Subnet string
 }

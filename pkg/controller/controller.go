@@ -63,8 +63,6 @@ import (
 type LoadBalancerController struct {
 	ctx *context.ControllerContext
 
-	nodeLister cache.Indexer
-
 	// TODO: Watch secrets
 	ingQueue   utils.TaskQueue
 	Translator *legacytranslator.Translator
@@ -83,7 +81,7 @@ type LoadBalancerController struct {
 	l7Pool       loadbalancers.LoadBalancerPool
 
 	// syncer implementation for backends
-	backendSyncer backends.Syncer
+	backendSyncer *backends.Syncer
 	// backendLock locks the SyncBackend function to avoid conflicts between
 	// multiple ingress workers.
 	backendLock sync.Mutex
@@ -101,10 +99,11 @@ type LoadBalancerController struct {
 	// Ingress usage metrics.
 	metrics metrics.IngressMetricsCollector
 
-	ingClassLister  cache.Indexer
-	ingParamsLister cache.Indexer
-
 	ZoneGetter *zonegetter.ZoneGetter
+
+	enableMultiSubnetClusterPhase1 bool
+
+	backendPool *backends.Pool
 
 	logger klog.Logger
 }
@@ -130,30 +129,27 @@ func NewLoadBalancerController(
 	})
 	backendPool := backends.NewPool(ctx.Cloud, ctx.ClusterNamer)
 
-	lbc := LoadBalancerController{
-		ctx:           ctx,
-		nodeLister:    ctx.NodeInformer.GetIndexer(),
-		Translator:    ctx.Translator,
-		stopCh:        stopCh,
-		hasSynced:     ctx.HasSynced,
-		instancePool:  ctx.InstancePool,
-		l7Pool:        loadbalancers.NewLoadBalancerPool(ctx.Cloud, ctx.ClusterNamer, ctx, namer.NewFrontendNamerFactory(ctx.ClusterNamer, ctx.KubeSystemUID, logger), logger),
-		backendSyncer: backends.NewBackendSyncer(backendPool, healthChecker, ctx.Cloud),
-		negLinker:     backends.NewNEGLinker(backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer(), logger),
-		igLinker:      backends.NewInstanceGroupLinker(ctx.InstancePool, backendPool, logger),
-		metrics:       ctx.ControllerMetrics,
-		ZoneGetter:    ctx.ZoneGetter,
-		logger:        logger,
-	}
+	enableMultiSubnetClusterPhase1 := flags.F.EnableMultiSubnetClusterPhase1
 
-	if ctx.IngClassInformer != nil {
-		lbc.ingClassLister = ctx.IngClassInformer.GetIndexer()
-		lbc.ingParamsLister = ctx.IngParamsInformer.GetIndexer()
+	lbc := LoadBalancerController{
+		ctx:                            ctx,
+		Translator:                     ctx.Translator,
+		stopCh:                         stopCh,
+		hasSynced:                      ctx.HasSynced,
+		instancePool:                   ctx.InstancePool,
+		l7Pool:                         loadbalancers.NewLoadBalancerPool(ctx.Cloud, ctx.ClusterNamer, ctx, namer.NewFrontendNamerFactory(ctx.ClusterNamer, ctx.KubeSystemUID, logger), logger),
+		backendSyncer:                  backends.NewBackendSyncer(backendPool, healthChecker, ctx.Cloud, ctx.Translator),
+		negLinker:                      backends.NewNEGLinker(backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer(), logger),
+		igLinker:                       backends.NewInstanceGroupLinker(ctx.InstancePool, backendPool, logger),
+		metrics:                        ctx.ControllerMetrics,
+		ZoneGetter:                     ctx.ZoneGetter,
+		enableMultiSubnetClusterPhase1: enableMultiSubnetClusterPhase1,
+		backendPool:                    backendPool,
+		logger:                         logger,
 	}
 
 	lbc.ingSyncer = ingsync.NewIngressSyncer(&lbc, logger)
 	lbc.ingQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("ingress", "ingresses", flags.F.NumIngressWorkers, lbc.sync, logger)
-	lbc.backendSyncer.Init(lbc.Translator)
 
 	// Ingress event handlers.
 	ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -286,7 +282,6 @@ func NewLoadBalancerController(
 				feConfig := obj.(*frontendconfigv1beta1.FrontendConfig)
 				ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesFrontendConfig(feConfig).AsList()
 				lbc.ingQueue.Enqueue(convert(ings)...)
-
 			},
 			UpdateFunc: func(old, cur interface{}) {
 				if !reflect.DeepEqual(old, cur) {
@@ -321,7 +316,7 @@ func NewLoadBalancerController(
 		})
 	}
 
-	if flags.F.EnableMultiSubnetClusterPhase1 {
+	if enableMultiSubnetClusterPhase1 {
 		// SvcNeg event handlers.
 		ctx.SvcNegInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			UpdateFunc: func(old, cur interface{}) {
@@ -338,27 +333,27 @@ func NewLoadBalancerController(
 		})
 	}
 
-	// Register health check on controller context.
-	ctx.AddHealthCheck("ingress", func() error {
-		name := "k8s-ingress-svc-acct-permission-check-probe"
-		version := meta.VersionGA
-		var scope meta.KeyType = meta.Global
-		beLogger := logger.WithValues("backendServiceName", name, "backendVersion", version, "backendScope", scope)
-		_, err := backendPool.Get(name, meta.VersionGA, meta.Global, beLogger)
-
-		// If this container is scheduled on a node without compute/rw it is
-		// effectively useless, but it is healthy. Reporting it as unhealthy
-		// will lead to container crashlooping.
-		if utils.IsHTTPErrorCode(err, http.StatusForbidden) {
-			logger.Info("Reporting cluster as healthy, but unable to list backends", "err", err)
-			return nil
-		}
-		return utils.IgnoreHTTPNotFound(err)
-	})
-
 	logger.Info("Created new loadbalancer controller")
 
 	return &lbc
+}
+
+// SystemHealth performs a health check showing if ingress controller is healthy.
+func (lbc *LoadBalancerController) SystemHealth() error {
+	name := "k8s-ingress-svc-acct-permission-check-probe"
+	version := meta.VersionGA
+	var scope meta.KeyType = meta.Global
+	beLogger := lbc.logger.WithValues("backendServiceName", name, "backendVersion", version, "backendScope", scope)
+	_, err := lbc.backendPool.Get(name, meta.VersionGA, meta.Global, beLogger)
+
+	// If this container is scheduled on a node without compute/rw it is
+	// effectively useless, but it is healthy. Reporting it as unhealthy
+	// will lead to container crashlooping.
+	if utils.IsHTTPErrorCode(err, http.StatusForbidden) {
+		lbc.logger.Info("Reporting cluster as healthy, but unable to list backends", "err", err)
+		return nil
+	}
+	return utils.IgnoreHTTPNotFound(err)
 }
 
 // Run starts the loadbalancer controller.

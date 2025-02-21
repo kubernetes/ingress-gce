@@ -21,7 +21,6 @@ import (
 	"math/rand"
 	"reflect"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
@@ -50,7 +49,7 @@ import (
 const (
 	// The max tolerated delay between update being enqueued and sync being invoked.
 	enqueueToSyncDelayThreshold  = 15 * time.Minute
-	l4ILBControllerName          = "l4-ilb-subsetting-controller"
+	L4ILBControllerName          = "l4-ilb-subsetting-controller"
 	l4ILBDualStackControllerName = "l4-ilb-dualstack-controller"
 )
 
@@ -61,7 +60,6 @@ type L4Controller struct {
 	client                   kubernetes.Interface
 	svcQueue                 utils.TaskQueue
 	numWorkers               int
-	serviceLister            cache.Indexer
 	networkLister            cache.Indexer
 	gkeNetworkParamSetLister cache.Indexer
 	networkResolver          network.Resolver
@@ -70,15 +68,14 @@ type L4Controller struct {
 	zoneGetter *zonegetter.ZoneGetter
 	// needed for linking the NEG with the backend service for each ILB service.
 	NegLinker   backends.Linker
-	backendPool *backends.Backends
+	backendPool *backends.Pool
 	namer       namer.L4ResourcesNamer
 	// enqueueTracker tracks the latest time an update was enqueued
 	enqueueTracker utils.TimeTracker
 	// syncTracker tracks the latest time an enqueued service was synced
-	syncTracker         utils.TimeTracker
-	forwardingRules     ForwardingRulesGetter
-	sharedResourcesLock sync.Mutex
-	enableDualStack     bool
+	syncTracker     utils.TimeTracker
+	forwardingRules ForwardingRulesGetter
+	enableDualStack bool
 
 	hasSynced func() bool
 
@@ -97,7 +94,6 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 	l4c := &L4Controller{
 		ctx:             ctx,
 		client:          ctx.KubeClient,
-		serviceLister:   ctx.ServiceInformer.GetIndexer(),
 		stopCh:          stopCh,
 		numWorkers:      ctx.NumL4Workers,
 		namer:           ctx.L4Namer,
@@ -119,7 +115,18 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 	if ctx.GKENetworkParamsInformer != nil {
 		l4c.gkeNetworkParamSetLister = ctx.GKENetworkParamsInformer.GetIndexer()
 	}
-	l4c.networkResolver = network.NewNetworksResolver(l4c.networkLister, l4c.gkeNetworkParamSetLister, ctx.Cloud, ctx.EnableMultinetworking, logger)
+
+	// The following adapter will use Network Selflink as Network Url instead of the NetworkUrl itself.
+	// Network Selflink is always composed by the network name even if the cluster was initialized with Network Id.
+	// All the components created from it will be consistent and always use the Url with network name and not the url with netowork Id
+	adapter, err := network.NewAdapterNetworkSelfLink(ctx.Cloud)
+	if err != nil {
+		logger.Error(err, "Failed to create network adapter with SelfLink")
+		// if it was not possible to retrieve network information use standard context as cloud network provider
+		adapter = ctx.Cloud
+	}
+
+	l4c.networkResolver = network.NewNetworksResolver(l4c.networkLister, l4c.gkeNetworkParamSetLister, adapter, ctx.EnableMultinetworking, logger)
 	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			addSvc := obj.(*v1.Service)
@@ -165,13 +172,11 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 			}
 		},
 	})
-	// TODO enhance this by looking at some metric from service controller to ensure it is up.
-	// We cannot use existence of a backend service or other resource, since those are on a per-service basis.
-	ctx.AddHealthCheck(l4ILBControllerName, l4c.checkHealth)
+
 	return l4c
 }
 
-func (l4c *L4Controller) checkHealth() error {
+func (l4c *L4Controller) SystemHealth() error {
 	lastEnqueueTime := l4c.enqueueTracker.Get()
 	lastSyncTime := l4c.syncTracker.Get()
 	// if lastEnqueue time is more than 30 minutes before the last sync time, the controller is falling behind.
@@ -182,7 +187,7 @@ func (l4c *L4Controller) checkHealth() error {
 		msg := fmt.Sprintf("L4 ILB Sync happened at time %v, %v after enqueue time, last enqueue time %v, threshold is %v", lastSyncTime, lastSyncTime.Sub(lastEnqueueTime), lastEnqueueTime, enqueueToSyncDelayThreshold)
 		// Log here, context/http handler do no log the error.
 		l4c.logger.Error(nil, msg)
-		l4metrics.PublishL4FailedHealthCheckCount(l4ILBControllerName)
+		l4metrics.PublishL4FailedHealthCheckCount(L4ILBControllerName)
 		controllerHealth = l4metrics.ControllerUnhealthyStatus
 		// Reset trackers. Otherwise, if there is nothing in the queue then it will report the FailedHealthCheckCount every time the checkHealth is called
 		// If checkHealth returned error (as it is meant to) then container would be restarted and trackers would be reset either
@@ -273,13 +278,15 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service, svcLo
 	// Use the same function for both create and updates. If controller crashes and restarts,
 	// all existing services will show up as Service Adds.
 	l4ilbParams := &loadbalancers.L4ILBParams{
-		Service:          service,
-		Cloud:            l4c.ctx.Cloud,
-		Namer:            l4c.namer,
-		Recorder:         l4c.ctx.Recorder(service.Namespace),
-		DualStackEnabled: l4c.enableDualStack,
-		NetworkResolver:  l4c.networkResolver,
-		EnableWeightedLB: l4c.ctx.EnableWeightedL4ILB,
+		Service:                          service,
+		Cloud:                            l4c.ctx.Cloud,
+		Namer:                            l4c.namer,
+		Recorder:                         l4c.ctx.Recorder(service.Namespace),
+		DualStackEnabled:                 l4c.enableDualStack,
+		NetworkResolver:                  l4c.networkResolver,
+		EnableWeightedLB:                 l4c.ctx.EnableWeightedL4ILB,
+		DisableNodesFirewallProvisioning: l4c.ctx.DisableL4LBFirewall,
+		EnableMixedProtocol:              l4c.ctx.EnableL4ILBMixedProtocol,
 	}
 	l4 := loadbalancers.NewL4Handler(l4ilbParams, svcLogger)
 	syncResult := l4.EnsureInternalLoadBalancer(utils.GetNodeNames(nodes), service)
@@ -353,13 +360,15 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service, svc
 	}()
 
 	l4ilbParams := &loadbalancers.L4ILBParams{
-		Service:          svc,
-		Cloud:            l4c.ctx.Cloud,
-		Namer:            l4c.namer,
-		Recorder:         l4c.ctx.Recorder(svc.Namespace),
-		DualStackEnabled: l4c.enableDualStack,
-		NetworkResolver:  l4c.networkResolver,
-		EnableWeightedLB: l4c.ctx.EnableWeightedL4ILB,
+		Service:                          svc,
+		Cloud:                            l4c.ctx.Cloud,
+		Namer:                            l4c.namer,
+		Recorder:                         l4c.ctx.Recorder(svc.Namespace),
+		DualStackEnabled:                 l4c.enableDualStack,
+		NetworkResolver:                  l4c.networkResolver,
+		EnableWeightedLB:                 l4c.ctx.EnableWeightedL4ILB,
+		DisableNodesFirewallProvisioning: l4c.ctx.DisableL4LBFirewall,
+		EnableMixedProtocol:              l4c.ctx.EnableL4ILBMixedProtocol,
 	}
 	l4 := loadbalancers.NewL4Handler(l4ilbParams, svcLogger)
 	l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer", "Deleting load balancer for %s", key)
@@ -426,7 +435,7 @@ func (l4c *L4Controller) syncWrapper(key string) (err error) {
 		if r := recover(); r != nil {
 			errMessage := fmt.Sprintf("Panic in L4 ILB sync worker goroutine: %v", r)
 			svcLogger.Error(nil, errMessage)
-			l4metrics.PublishL4ControllerPanicCount(l4ILBControllerName)
+			l4metrics.PublishL4ControllerPanicCount(L4ILBControllerName)
 			err = fmt.Errorf(errMessage)
 		}
 	}()
@@ -436,7 +445,7 @@ func (l4c *L4Controller) syncWrapper(key string) (err error) {
 
 func (l4c *L4Controller) sync(key string, svcLogger klog.Logger) error {
 	l4c.syncTracker.Track()
-	l4metrics.PublishL4controllerLastSyncTime(l4ILBControllerName)
+	l4metrics.PublishL4controllerLastSyncTime(L4ILBControllerName)
 
 	svc, exists, err := l4c.ctx.Services().GetByKey(key)
 	if err != nil {
@@ -470,6 +479,12 @@ func (l4c *L4Controller) sync(key string, svcLogger klog.Logger) error {
 		if result == nil {
 			// result will be nil if the service was ignored(due to presence of service controller finalizer).
 			return nil
+		}
+		svcLogger.V(3).Info("Resources modified in the sync", "modifiedResources", result.ResourceUpdates.String(), "wasResync", isResync)
+		if isResync {
+			if result.ResourceUpdates.WereAnyResourcesModified() {
+				svcLogger.V(3).Error(nil, "Resources were modified but this was not expected for a resync.", "modifiedResources", result.ResourceUpdates.String())
+			}
 		}
 		l4c.publishMetrics(result, namespacedName, isResync, svcLogger)
 		l4c.serviceVersions.SetProcessed(key, svc.ResourceVersion, result.Error == nil, isResync, svcLogger)
@@ -582,7 +597,8 @@ func (l4c *L4Controller) publishMetrics(result *loadbalancers.L4ILBSyncResult, n
 		svcLogger.V(2).Info("Internal L4 Loadbalancer for Service ensured, updating its state in metrics cache", "serviceState", result.MetricsLegacyState)
 		l4c.ctx.ControllerMetrics.SetL4ILBServiceForLegacyMetric(namespacedName, result.MetricsLegacyState)
 		l4c.ctx.ControllerMetrics.SetL4ILBService(namespacedName, result.MetricsState)
-		l4metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime, isResync)
+		isWeightedLB := result.MetricsState.WeightedLBPodsPerNode
+		l4metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime, isResync, isWeightedLB)
 		if l4c.enableDualStack {
 			svcLogger.V(2).Info("Internal L4 DualStack Loadbalancer for Service ensured, updating its state in metrics cache", "serviceState", result.MetricsState)
 			l4metrics.PublishL4ILBDualStackSyncLatency(result.Error == nil, result.SyncType, result.MetricsState.IPFamilies, result.StartTime, isResync)
@@ -590,6 +606,7 @@ func (l4c *L4Controller) publishMetrics(result *loadbalancers.L4ILBSyncResult, n
 		if result.MetricsState.Multinetwork {
 			l4metrics.PublishL4ILBMultiNetSyncLatency(result.Error == nil, result.SyncType, result.StartTime, isResync)
 		}
+		l4metrics.PublishL4SyncDetails(L4ILBControllerName, result.Error == nil, isResync, result.ResourceUpdates.WereAnyResourcesModified())
 
 	case loadbalancers.SyncTypeDelete:
 		// if service is successfully deleted, remove it from cache
@@ -598,7 +615,8 @@ func (l4c *L4Controller) publishMetrics(result *loadbalancers.L4ILBSyncResult, n
 			l4c.ctx.ControllerMetrics.DeleteL4ILBServiceForLegacyMetric(namespacedName)
 			l4c.ctx.ControllerMetrics.DeleteL4ILBService(namespacedName)
 		}
-		l4metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime, false)
+		isWeightedLB := result.MetricsState.WeightedLBPodsPerNode
+		l4metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime, false, isWeightedLB)
 		if l4c.enableDualStack {
 			l4metrics.PublishL4ILBDualStackSyncLatency(result.Error == nil, result.SyncType, result.MetricsState.IPFamilies, result.StartTime, false)
 		}

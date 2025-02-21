@@ -31,7 +31,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
-const defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/default"
+const defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/mock-project/regions/test-region/subnetworks/default"
 
 type negNamer struct{}
 
@@ -41,6 +41,14 @@ func (*negNamer) NEG(namespace, name string, svcPort int32) string {
 
 func (*negNamer) IsNEG(name string) bool {
 	return false
+}
+
+func (*negNamer) NonDefaultSubnetNEG(namespace, name, subnetName string, svcPort int32) string {
+	return fmt.Sprintf("%v-%v-%v-%v", namespace, name, svcPort, subnetName)
+}
+
+func (*negNamer) NonDefaultSubnetCustomNEG(customNEGName, subnetName string) (string, error) {
+	return fmt.Sprintf("%v-%v", customNEGName, subnetName), nil
 }
 
 func TestPortInfoMapMerge(t *testing.T) {
@@ -724,8 +732,10 @@ func TestEndpointsCalculatorMode(t *testing.T) {
 		portInfoMap PortInfoMap
 		expectMode  EndpointsCalculatorMode
 	}{
-		{"L4 Local Mode", NewPortInfoMapForVMIPNEG("testns", "testsvc", testContext.L4Namer, true, defaultNetwork), L4LocalMode},
-		{"L4 Cluster Mode", NewPortInfoMapForVMIPNEG("testns", "testsvc", testContext.L4Namer, false, defaultNetwork), L4ClusterMode},
+		{"L4 ILB Local Mode", NewPortInfoMapForVMIPNEG("testns", "testsvc", testContext.L4Namer, true, defaultNetwork, L4InternalLB), L4LocalMode},
+		{"L4 ILB Cluster Mode", NewPortInfoMapForVMIPNEG("testns", "testsvc", testContext.L4Namer, false, defaultNetwork, L4InternalLB), L4ClusterMode},
+		{"L4 NetLB Local Mode", NewPortInfoMapForVMIPNEG("testns", "testsvc", testContext.L4Namer, true, defaultNetwork, L4ExternalLB), L4LocalMode},
+		{"L4 NetLB Cluster Mode", NewPortInfoMapForVMIPNEG("testns", "testsvc", testContext.L4Namer, false, defaultNetwork, L4ExternalLB), L4ClusterMode},
 		{"L7 Mode", NewPortInfoMap("testns", "testsvc", NewSvcPortTupleSet(SvcPortTuple{Name: "http", Port: 80, TargetPort: "targetPort"}), testContext.NegNamer, false, nil, defaultNetwork), L7Mode},
 		{"Empty tupleset returns L7 Mode", NewPortInfoMap("testns", "testsvc", nil, testContext.NegNamer, false, nil, defaultNetwork), L7Mode},
 	} {
@@ -754,7 +764,10 @@ func TestNodePredicateForEndpointCalculatorMode(t *testing.T) {
 			predicate := NodeFilterForEndpointCalculatorMode(tc.epCalculatorMode)
 			nodeInformer := zonegetter.FakeNodeInformer()
 			zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
-			zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
+			zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+			if err != nil {
+				t.Errorf("failed to initalize zone getter: %v", err)
+			}
 			zones, err := zoneGetter.ListZones(predicate, klog.TODO())
 			if err != nil {
 				t.Errorf("Failed listing zones with predicate, err - %v", err)

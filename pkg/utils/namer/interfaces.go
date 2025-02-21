@@ -52,6 +52,8 @@ type IngressFrontendNamerFactory interface {
 // BackendNamer is an interface to name GCE backend resources. It wraps backend
 // naming policy of namer.Namer.
 type BackendNamer interface {
+	NonDefaultSubnetNEGNamer
+
 	// IGBackend constructs the name for a backend service targeting instance groups.
 	IGBackend(nodePort int64) string
 	// NEG returns the gce neg name based on the service namespace, name
@@ -71,6 +73,15 @@ type BackendNamer interface {
 	// NameBelongsToCluster checks if a given backend resource name is tagged with
 	// this cluster's UID.
 	NameBelongsToCluster(resourceName string) bool
+}
+
+type NonDefaultSubnetNEGNamer interface {
+	// NonDefaultSubnetNEG returns the gce neg name for NEGs created in non-default
+	// subnet.
+	NonDefaultSubnetNEG(namespace, name, subnetName string, port int32) string
+	// NonDefaultSubnetCustomNEG returns the gce neg name for custom NEGs created
+	// in non-default subnets.
+	NonDefaultSubnetCustomNEG(customNEGName, subnetName string) (string, error)
 }
 
 // V1FrontendNamer wraps frontend naming policy helper functions of namer.Namer.

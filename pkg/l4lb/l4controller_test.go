@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	computebeta "google.golang.org/api/compute/v0.beta"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
@@ -34,17 +35,22 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
 	api_v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/util/retry"
 	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
+	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/context"
+	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 )
 
 const (
@@ -81,7 +87,8 @@ func TestProcessCreateOrUpdate(t *testing.T) {
 	}
 	newSvc := test.NewL4ILBService(false, 8080)
 	addILBService(l4c, newSvc)
-	addNEG(l4c, newSvc)
+	addNEGAndSvcNegL4Controller(l4c, newSvc)
+
 	err = l4c.sync(getKeyForSvc(newSvc, t), klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to sync newly added service %s, err %v", newSvc.Name, err)
@@ -158,7 +165,7 @@ func TestProcessUpdateExternalTrafficPolicy(t *testing.T) {
 	// Create svc with ExternalTrafficPolicy Local.
 	svc := test.NewL4ILBService(true, 8080)
 	addILBService(l4c, svc)
-	addNEG(l4c, svc)
+	addNEGAndSvcNegL4Controller(l4c, svc)
 	err := l4c.sync(getKeyForSvc(svc, t), klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to sync newly added service %s, err %v", svc.Name, err)
@@ -214,7 +221,7 @@ func TestProcessDeletion(t *testing.T) {
 	}
 	newSvc := test.NewL4ILBService(false, 8080)
 	addILBService(l4c, newSvc)
-	addNEG(l4c, newSvc)
+	addNEGAndSvcNegL4Controller(l4c, newSvc)
 	err = l4c.sync(getKeyForSvc(newSvc, t), klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to sync newly added service %s, err %v", newSvc.Name, err)
@@ -297,7 +304,7 @@ func TestProcessCreateServiceWithLegacyInternalForwardingRule(t *testing.T) {
 	addILBService(l4c, newSvc)
 	// Mimic addition of NEG. This will not actually happen, but this test verifies that sync is skipped
 	// even if a NEG got added.
-	addNEG(l4c, newSvc)
+	addNEGAndSvcNegL4Controller(l4c, newSvc)
 	// Create legacy forwarding rule to mimic service controller.
 	// A service can have the v1 finalizer reset due to a buggy script/manual operation.
 	// Subsetting controller should only process the service if it doesn't already have a forwarding rule.
@@ -336,7 +343,7 @@ func TestCreateServiceNoLegacyForwordingRule(t *testing.T) {
 	addILBService(l4c, newSvc)
 	// Mimic addition of NEG. This will not actually happen, but this test verifies that sync is skipped
 	// even if a NEG got added.
-	addNEG(l4c, newSvc)
+	addNEGAndSvcNegL4Controller(l4c, newSvc)
 
 	// Call sync and expect service not provisioned as existing forwarding rule can not be verified
 	err := l4c.sync(getKeyForSvc(newSvc, t), klog.TODO())
@@ -361,7 +368,7 @@ func TestCreateServiceUnknownLegacyForwordingRule(t *testing.T) {
 	addILBService(l4c, newSvc)
 	// Mimic addition of NEG. This will not actually happen, but this test verifies that sync is skipped
 	// even if a NEG got added.
-	addNEG(l4c, newSvc)
+	addNEGAndSvcNegL4Controller(l4c, newSvc)
 
 	// Call sync and expect service not provisioned as existing forwarding rule can not be verified
 	err := l4c.sync(getKeyForSvc(newSvc, t), klog.TODO())
@@ -385,7 +392,7 @@ func TestProcessCreateServiceWithLegacyExternalForwardingRule(t *testing.T) {
 	newSvc := test.NewL4ILBService(false, 8080)
 	addILBService(l4c, newSvc)
 	// Mimic addition of NEG. This will happen in parallel with ILB sync, by the NEG controller.
-	addNEG(l4c, newSvc)
+	addNEGAndSvcNegL4Controller(l4c, newSvc)
 	// Create legacy external forwarding rule to mimic transition from external to internal LB.
 	// Service processing should succeed in that case. The external forwarding rule will be deleted
 	// by service controller.
@@ -435,7 +442,7 @@ func TestProcessUpdateClusterIPToILBService(t *testing.T) {
 	if !l4c.needsUpdate(clusterSvc, newSvc) {
 		t.Errorf("Incorrectly marked service %v as not needing update", newSvc)
 	}
-	addNEG(l4c, newSvc)
+	addNEGAndSvcNegL4Controller(l4c, newSvc)
 	err = l4c.sync(getKeyForSvc(newSvc, t), klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to sync newly updated service %s, err %v", newSvc.Name, err)
@@ -475,7 +482,7 @@ func TestProcessMultipleServices(t *testing.T) {
 				testNs = newSvc.Namespace
 				addILBService(l4c, newSvc)
 				// add the NEG so that link to backendService works.
-				addNEG(l4c, newSvc)
+				addNEGAndSvcNegL4Controller(l4c, newSvc)
 				l4c.svcQueue.Enqueue(newSvc)
 			}
 			if err := retry.OnError(backoff, func(error) bool { return true }, func() error {
@@ -530,7 +537,7 @@ func TestProcessServiceWithDelayedNEGAdd(t *testing.T) {
 	// The NEG controller is single-threaded. It is possible for NEG creation to take longer, causing the L4 controller to
 	// error out. This test verifies that the service eventually reaches success state.
 	t.Logf("Adding NEG for service %s", newSvc.Name)
-	addNEG(l4c, newSvc)
+	addNEGAndSvcNegL4Controller(l4c, newSvc)
 
 	var svcErr error
 	if err := retry.OnError(backoff, func(error) bool { return true }, func() error {
@@ -557,7 +564,7 @@ func TestProcessServiceOnError(t *testing.T) {
 	}
 	newSvc := test.NewL4ILBService(false, 8080)
 	addILBService(l4c, newSvc)
-	addNEG(l4c, newSvc)
+	addNEGAndSvcNegL4Controller(l4c, newSvc)
 	err = l4c.sync(getKeyForSvc(newSvc, t), klog.TODO())
 	if err == nil {
 		t.Fatalf("Failed to generate error when syncing service %s", newSvc.Name)
@@ -577,7 +584,7 @@ func TestProcessServiceOnUserError(t *testing.T) {
 	l4c := newServiceController(t, newFakeGCEWithUserInsertError())
 	newSvc := test.NewL4ILBService(false, 8080)
 	addILBService(l4c, newSvc)
-	addNEG(l4c, newSvc)
+	addNEGAndSvcNegL4Controller(l4c, newSvc)
 	syncResult := l4c.processServiceCreateOrUpdate(newSvc, klog.TODO())
 	if syncResult.Error == nil {
 		t.Fatalf("Failed to generate error when syncing service %s", newSvc.Name)
@@ -629,7 +636,7 @@ func TestCreateDeleteDualStackService(t *testing.T) {
 
 			test.MustCreateDualStackClusterSubnet(t, l4c.ctx.Cloud, "INTERNAL")
 			addILBService(l4c, newSvc)
-			addNEG(l4c, newSvc)
+			addNEGAndSvcNegL4Controller(l4c, newSvc)
 			err = l4c.sync(getKeyForSvc(newSvc, t), klog.TODO())
 			if err != nil {
 				t.Errorf("Failed to sync newly added service %s, err %v", newSvc.Name, err)
@@ -685,7 +692,7 @@ func TestProcessDualStackServiceOnUserError(t *testing.T) {
 
 	newSvc := test.NewL4ILBDualStackService(8080, api_v1.ProtocolTCP, []api_v1.IPFamily{api_v1.IPv4Protocol, api_v1.IPv6Protocol}, api_v1.ServiceExternalTrafficPolicyTypeCluster)
 	addILBService(l4c, newSvc)
-	addNEG(l4c, newSvc)
+	addNEGAndSvcNegL4Controller(l4c, newSvc)
 	syncResult := l4c.processServiceCreateOrUpdate(newSvc, klog.TODO())
 	if syncResult.Error == nil {
 		t.Fatalf("Failed to generate error when syncing service %s", newSvc.Name)
@@ -708,7 +715,7 @@ func TestDualStackILBStatusForErrorSync(t *testing.T) {
 
 	newSvc := test.NewL4ILBDualStackService(8080, api_v1.ProtocolTCP, []api_v1.IPFamily{api_v1.IPv4Protocol, api_v1.IPv6Protocol}, api_v1.ServiceExternalTrafficPolicyTypeCluster)
 	addILBService(l4c, newSvc)
-	addNEG(l4c, newSvc)
+	addNEGAndSvcNegL4Controller(l4c, newSvc)
 	syncResult := l4c.processServiceCreateOrUpdate(newSvc, klog.TODO())
 	if syncResult.Error == nil {
 		t.Fatalf("Failed to generate error when syncing service %s", newSvc.Name)
@@ -778,7 +785,7 @@ func TestProcessUpdateILBIPFamilies(t *testing.T) {
 
 			svc := test.NewL4ILBDualStackService(8080, api_v1.ProtocolTCP, tc.initialIPFamilies, api_v1.ServiceExternalTrafficPolicyTypeCluster)
 			addILBService(l4c, svc)
-			addNEG(l4c, svc)
+			addNEGAndSvcNegL4Controller(l4c, svc)
 			err := l4c.sync(getKeyForSvc(svc, t), klog.TODO())
 			if err != nil {
 				t.Errorf("Failed to sync newly added service %s, err %v", svc.Name, err)
@@ -834,8 +841,9 @@ func TestProcessCreateServiceWithLoadBalancerClass(t *testing.T) {
 
 func newServiceController(t *testing.T, fakeGCE *gce.Cloud) *L4Controller {
 	kubeClient := fake.NewSimpleClientset()
+	svcNegClient := svcnegclient.NewSimpleClientset()
 
-	vals := gce.DefaultTestClusterValues()
+	vals := test.DefaultTestClusterValues()
 	namer := namer.NewNamer(clusterUID, "", klog.TODO())
 
 	stopCh := make(chan struct{})
@@ -844,7 +852,14 @@ func newServiceController(t *testing.T, fakeGCE *gce.Cloud) *L4Controller {
 		ResyncPeriod: 1 * time.Minute,
 		NumL4Workers: 5,
 	}
-	ctx := context.NewControllerContext(nil, kubeClient, nil, nil, nil, nil, nil, nil, nil, kubeClient /*kube client to be used for events*/, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
+	ctx, err := context.NewControllerContext(kubeClient, nil, nil, nil, svcNegClient, nil, nil, nil, kubeClient /*kube client to be used for events*/, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
+	if err != nil {
+		t.Fatalf("failed to initialize controller context: %v", err)
+	}
+	ctx.ZoneGetter, err = zonegetter.NewFakeZoneGetter(ctx.NodeInformer, zonegetter.FakeNodeTopologyInformer(), test.DefaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter: %v", err)
+	}
 	// Add some nodes so that NEG linker kicks in during ILB creation.
 	nodes, err := test.CreateAndInsertNodes(ctx.Cloud, []string{"instance-1"}, vals.ZoneName)
 	if err != nil {
@@ -859,21 +874,21 @@ func newServiceController(t *testing.T, fakeGCE *gce.Cloud) *L4Controller {
 }
 
 func newFakeGCE() *gce.Cloud {
-	vals := gce.DefaultTestClusterValues()
+	vals := test.DefaultTestClusterValues()
 	fakeGCE := gce.NewFakeGCECloud(vals)
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = loadbalancers.InsertForwardingRuleHook
 	return fakeGCE
 }
 
 func newFakeGCEWithInsertError() *gce.Cloud {
-	vals := gce.DefaultTestClusterValues()
+	vals := test.DefaultTestClusterValues()
 	fakeGCE := gce.NewFakeGCECloud(vals)
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = mock.InsertForwardingRulesInternalErrHook
 	return fakeGCE
 }
 
 func newFakeGCEWithUserInsertError() *gce.Cloud {
-	vals := gce.DefaultTestClusterValues()
+	vals := test.DefaultTestClusterValues()
 	fakeGCE := gce.NewFakeGCECloud(vals)
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = test.InsertForwardingRuleErrorHook(&googleapi.Error{Code: http.StatusConflict, Message: "IP_IN_USE_BY_ANOTHER_RESOURCE - IP '1.1.1.1' is already being used by another resource."})
 	return fakeGCE
@@ -894,12 +909,25 @@ func deleteILBService(l4c *L4Controller, svc *api_v1.Service) {
 	l4c.ctx.ServiceInformer.GetIndexer().Delete(svc)
 }
 
-func addNEG(l4c *L4Controller, svc *api_v1.Service) {
+func addNEGAndSvcNegL4Controller(l4c *L4Controller, svc *api_v1.Service) {
 	// Also create a fake NEG for this service since the sync code will try to link the backend service to NEG
 	negName := l4c.namer.L4Backend(svc.Namespace, svc.Name)
-	neg := &composite.NetworkEndpointGroup{Name: negName}
-	key := meta.ZonalKey(negName, testGCEZone)
-	composite.CreateNetworkEndpointGroup(l4c.ctx.Cloud, key, neg, klog.TODO())
+	neg := &computebeta.NetworkEndpointGroup{Name: negName}
+	l4c.ctx.Cloud.CreateNetworkEndpointGroup(neg, testGCEZone)
+
+	newSvcNeg := test.NewSvcNeg(types.NamespacedName{
+		Namespace: svc.Namespace, Name: negName,
+	}, negv1beta1.ServiceNetworkEndpointGroupStatus{
+		NetworkEndpointGroups: []negv1beta1.NegObjectReference{
+			{SelfLink: fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/mock-project/zones/%s/networkEndpointGroups/%s", testGCEZone, negName)},
+		},
+	})
+	addSvcNegL4Controller(l4c, newSvcNeg)
+}
+
+func addSvcNegL4Controller(l4c *L4Controller, svcneg *negv1beta1.ServiceNetworkEndpointGroup) {
+	l4c.ctx.SvcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcneg.Namespace).Create(context2.TODO(), svcneg, metav1.CreateOptions{})
+	l4c.ctx.SvcNegInformer.GetIndexer().Add(svcneg)
 }
 
 func getKeyForSvc(svc *api_v1.Service, t *testing.T) string {

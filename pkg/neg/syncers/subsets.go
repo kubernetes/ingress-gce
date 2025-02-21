@@ -20,6 +20,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"sort"
 
 	v1 "k8s.io/api/core/v1"
@@ -34,6 +35,10 @@ const (
 	maxSubsetSizeLocal = 250
 	// Max number of subsets in ExternalTrafficPolicy:Cluster, which is the default mode.
 	maxSubsetSizeDefault = 25
+	// Max number of subsets for NetLB in ExternalTrafficPolicy:Local
+	maxSubsetSizeNetLBLocal = 1000
+	// Max number of subsets for NetLB in ExternalTrafficPolicy:Cluster
+	maxSubsetSizeNetLBCluster = 250
 )
 
 // NodeInfo stores node metadata used to sort nodes and pick a subset.
@@ -75,15 +80,15 @@ func getHashedName(nodeName, salt string) string {
 // nodes = [node1 node2 node4 node5, node6], Current subset - [node3, node2, node5, node4], count 4
 // sorted list is [node6 node2 node5 node4 node1]
 // Output [node2, node5, node4 node6]
-func pickSubsetsMinRemovals(nodes []*v1.Node, salt string, count int, current []negtypes.NetworkEndpoint) []*v1.Node {
+func pickSubsetsMinRemovals(nodes []*nodeWithSubnet, salt string, count int, current []negtypes.NetworkEndpoint) []*nodeWithSubnet {
 	if len(nodes) < count {
 		return nodes
 	}
-	subset := make([]*v1.Node, 0, count)
+	subset := make([]*nodeWithSubnet, 0, count)
 	info := make([]*NodeInfo, len(nodes))
 	// Generate hashed names for all cluster nodes and sort them alphabetically, based on the hashed string.
-	for i, node := range nodes {
-		info[i] = &NodeInfo{i, getHashedName(node.Name, salt), false}
+	for i, nodeAndSubnet := range nodes {
+		info[i] = &NodeInfo{i, getHashedName(nodeAndSubnet.node.Name, salt), false}
 	}
 	sort.Slice(info, func(i, j int) bool {
 		return info[i].hashedName < info[j].hashedName
@@ -139,13 +144,27 @@ func (a ByNodeCount) Less(i, j int) bool { return a[i].NodeCount < a[j].NodeCoun
 
 // sortZones takes a map of zone to nodes list and returns a list of ZoneInfo.
 // The ZoneInfo list is sorted in increasing order of the number of nodes in that zone.
-func sortZones(nodesPerZone map[string][]*v1.Node) []ZoneInfo {
+func sortZones(nodesPerZone map[string][]*nodeWithSubnet) []ZoneInfo {
 	input := []ZoneInfo{}
 	for zone, nodes := range nodesPerZone {
 		input = append(input, ZoneInfo{zone, len(nodes)})
 	}
 	sort.Sort(ByNodeCount(input))
 	return input
+}
+
+// nodeWithSubnet holds the node object + the subnet the node is in.
+// This is to avoid having to resolve node subnets again in the subset calculations.
+type nodeWithSubnet struct {
+	node   *v1.Node
+	subnet string
+}
+
+func newNodeWithSubnet(node *v1.Node, subnet string) *nodeWithSubnet {
+	return &nodeWithSubnet{
+		node:   node,
+		subnet: subnet,
+	}
 }
 
 // getSubsetPerZone creates a subset of nodes from the given list of nodes, for each zone provided.
@@ -159,9 +178,8 @@ func sortZones(nodesPerZone map[string][]*v1.Node) []ZoneInfo {
 //	Since the number of nodes will keep increasing in successive zones due to the sorting, even if fewer nodes were
 //	present in some zones, more nodes will be picked from other nodes, taking the total subset size to the given limit
 //	whenever possible.
-func getSubsetPerZone(nodesPerZone map[string][]*v1.Node, totalLimit int, svcID string, currentMap map[string]negtypes.NetworkEndpointSet, logger klog.Logger, networkInfo *network.NetworkInfo) (map[string]negtypes.NetworkEndpointSet, error) {
-	result := make(map[string]negtypes.NetworkEndpointSet)
-	var currentList []negtypes.NetworkEndpoint
+func getSubsetPerZone(nodesPerZone map[string][]*nodeWithSubnet, totalLimit int, svcID string, currentMap map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, logger klog.Logger, networkInfo *network.NetworkInfo) (map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, error) {
+	result := make(map[negtypes.NEGLocation]negtypes.NetworkEndpointSet)
 
 	subsetSize := 0
 	// initialize zonesRemaining to the total number of zones.
@@ -169,30 +187,54 @@ func getSubsetPerZone(nodesPerZone map[string][]*v1.Node, totalLimit int, svcID 
 	// Sort zones in increasing order of node count.
 	zoneList := sortZones(nodesPerZone)
 
+	defaultSubnet, err := utils.KeyName(networkInfo.SubnetworkURL)
+	if err != nil {
+		logger.Error(err, "Errored getting default subnet from NetworkInfo when calculating L4 endpoints")
+		return nil, err
+	}
+
 	for _, zone := range zoneList {
+		// make sure there is an entry for the defaultSubnet in each zone, even if there will be no endpoints in there (maintains the old behavior).
+		result[negtypes.NEGLocation{Zone: zone.Name, Subnet: defaultSubnet}] = negtypes.NewNetworkEndpointSet()
 		// split the limit across the leftover zones.
 		subsetSize = totalLimit / zonesRemaining
 		logger.Info("Picking subset for a zone", "subsetSize", subsetSize, "zone", zone, "svcID", svcID)
-		result[zone.Name] = negtypes.NewNetworkEndpointSet()
+		var currentList []negtypes.NetworkEndpoint
 		if currentMap != nil {
-			if zset, ok := currentMap[zone.Name]; ok && zset != nil {
-				currentList = zset.List()
-			} else {
-				currentList = nil
-			}
+			currentList = getNetworkEndpointsForZone(zone.Name, currentMap)
 		}
 		subset := pickSubsetsMinRemovals(nodesPerZone[zone.Name], svcID, subsetSize, currentList)
-		for _, node := range subset {
+		for _, nodeAndSubnet := range subset {
 			var ip string
 			if !networkInfo.IsDefault {
-				ip = network.GetNodeIPForNetwork(node, networkInfo.K8sNetwork)
+				ip = network.GetNodeIPForNetwork(nodeAndSubnet.node, networkInfo.K8sNetwork)
 			} else {
-				ip = utils.GetNodePrimaryIP(node, logger)
+				ip = utils.GetNodePrimaryIP(nodeAndSubnet.node, logger)
 			}
-			result[zone.Name].Insert(negtypes.NetworkEndpoint{Node: node.Name, IP: ip})
+			egi := negtypes.NEGLocation{Zone: zone.Name, Subnet: nodeAndSubnet.subnet}
+			if _, ok := result[egi]; !ok {
+				result[egi] = negtypes.NewNetworkEndpointSet()
+			}
+			result[egi].Insert(negtypes.NetworkEndpoint{Node: nodeAndSubnet.node.Name, IP: ip})
 		}
 		totalLimit -= len(subset)
 		zonesRemaining--
 	}
 	return result, nil
+}
+
+// getNetworkEndpointsForZone gets all endpoints for a matching zone.
+// it will get all nodes in the zone no matter which subnet the nodes are in.
+func getNetworkEndpointsForZone(zone string, currentMap map[negtypes.NEGLocation]negtypes.NetworkEndpointSet) []negtypes.NetworkEndpoint {
+	var results [][]negtypes.NetworkEndpoint
+	for negLocation, endpointSet := range currentMap {
+		if negLocation.Zone == zone {
+			results = append(results, endpointSet.List())
+		}
+	}
+	// Non MSC clusters will have only one result per zone, avoid iterative appends in that case.
+	if len(results) == 1 {
+		return results[0]
+	}
+	return slices.Concat(results...)
 }

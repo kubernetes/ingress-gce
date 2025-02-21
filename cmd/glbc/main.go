@@ -27,6 +27,7 @@ import (
 
 	firewallcrclient "github.com/GoogleCloudPlatform/gke-networking-api/client/gcpfirewall/clientset/versioned"
 	networkclient "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned"
+	nodetopologyclient "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned"
 	k8scp "github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	flag "github.com/spf13/pflag"
 	crdclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -40,15 +41,16 @@ import (
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/frontendconfig"
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
-	"k8s.io/ingress-gce/pkg/ingparams"
-	ingparamsclient "k8s.io/ingress-gce/pkg/ingparams/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/l4lb"
+	multiprojectstart "k8s.io/ingress-gce/pkg/multiproject/start"
+	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/psc"
 	"k8s.io/ingress-gce/pkg/serviceattachment"
 	serviceattachmentclient "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/svcneg"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
+	"k8s.io/ingress-gce/pkg/systemhealth"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 
@@ -190,16 +192,11 @@ func main() {
 		}
 	}
 
-	ingClassEnabled := flags.F.EnableIngressGAFields && app.IngressClassEnabled(kubeClient, rootLogger)
-	var ingParamsClient ingparamsclient.Interface
-	if ingClassEnabled {
-		ingParamsCRDMeta := ingparams.CRDMeta()
-		if _, err := crdHandler.EnsureCRD(ingParamsCRDMeta, false); err != nil {
-			klog.Fatalf("Failed to ensure GCPIngressParams CRD: %v", err)
-		}
-
-		if ingParamsClient, err = ingparamsclient.NewForConfig(kubeConfig); err != nil {
-			klog.Fatalf("Failed to create GCPIngressParams client: %v", err)
+	var nodeTopologyClient nodetopologyclient.Interface
+	if flags.F.EnableMultiSubnetClusterPhase1 {
+		nodeTopologyClient, err = nodetopologyclient.NewForConfig(kubeConfig)
+		if err != nil {
+			klog.Fatalf("Failed to create Node Topology Client: %v", err)
 		}
 	}
 
@@ -217,6 +214,73 @@ func main() {
 		klog.Fatalf("Error getting kube-system namespace: %v", err)
 	}
 	kubeSystemUID := kubeSystemNS.GetUID()
+
+	var once sync.Once
+	stopCh := make(chan struct{})
+
+	rOption := runOption{
+		wg:     &sync.WaitGroup{},
+		stopCh: stopCh,
+		// This ensures that stopCh is only closed once.
+		// Right now, we have two callers.
+		// One is triggered when the ASM configmap changes, and the other one is
+		// triggered by the SIGTERM handler.
+		closeStopCh: func() {
+			once.Do(func() { close(stopCh) })
+		},
+	}
+	go app.RunSIGTERMHandler(rOption.closeStopCh, rootLogger)
+
+	systemHealth := systemhealth.NewSystemHealth(rootLogger)
+	go app.RunHTTPServer(systemHealth.HealthCheck, rootLogger)
+
+	hostname, err := os.Hostname()
+	if err != nil {
+		klog.Fatalf("unable to get hostname: %v", err)
+	}
+
+	if flags.F.EnableMultiProjectMode {
+		rootLogger.Info("Multi-project mode is enabled, starting project-syncer")
+
+		runWithWg(func() {
+			if flags.F.LeaderElection.LeaderElect {
+				err := multiprojectstart.StartWithLeaderElection(
+					context.Background(),
+					leaderElectKubeClient,
+					hostname,
+					kubeConfig,
+					rootLogger,
+					kubeClient,
+					svcNegClient,
+					kubeSystemUID,
+					eventRecorderKubeClient,
+					namer,
+					stopCh,
+				)
+				if err != nil {
+					rootLogger.Error(err, "Failed to start multi-project syncer with leader election")
+				}
+			} else {
+				multiprojectstart.Start(
+					kubeConfig,
+					rootLogger,
+					kubeClient,
+					svcNegClient,
+					kubeSystemUID,
+					eventRecorderKubeClient,
+					namer,
+					stopCh,
+				)
+			}
+		}, rOption.wg)
+
+		// Wait for the multi-project syncer to finish.
+		<-rOption.stopCh
+		waitWithTimeout(rOption.wg, rootLogger)
+
+		// Since we only want multi-project mode functionality, exit here
+		return
+	}
 
 	cloud := app.NewGCEClient(rootLogger)
 
@@ -249,29 +313,20 @@ func main() {
 		EnableIngressRegionalExternal: flags.F.EnableIngressRegionalExternal,
 		EnableWeightedL4ILB:           flags.F.EnableWeightedL4ILB,
 		EnableWeightedL4NetLB:         flags.F.EnableWeightedL4NetLB,
+		DisableL4LBFirewall:           flags.F.DisableL4LBFirewall,
+		EnableL4NetLBNEGs:             flags.F.EnableL4NetLBNEG,
+		EnableL4NetLBNEGsDefault:      flags.F.EnableL4NetLBNEGDefault,
+		EnableL4ILBMixedProtocol:      flags.F.EnableL4ILBMixedProtocol,
+		EnableL4NetLBMixedProtocol:    flags.F.EnableL4NetLBMixedProtocol,
 	}
-	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, ingParamsClient, svcAttachmentClient, networkClient, eventRecorderKubeClient, cloud, namer, kubeSystemUID, ctxConfig, rootLogger)
-	go app.RunHTTPServer(ctx.HealthCheck, rootLogger)
-
-	var once sync.Once
-	// This ensures that stopCh is only closed once.
-	// Right now, we have three callers.
-	// One is triggered when the ASM configmap changes, and the other two are
-	// triggered by the SIGTERM handler.
-	stopCh := make(chan struct{})
-
-	hostname, err := os.Hostname()
+	ctx, err := ingctx.NewControllerContext(kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, svcAttachmentClient, networkClient, nodeTopologyClient, eventRecorderKubeClient, cloud, namer, kubeSystemUID, ctxConfig, rootLogger)
 	if err != nil {
-		klog.Fatalf("unable to get hostname: %v", err)
+		klog.Fatalf("unable to set up controller context: %v", err)
 	}
-	option := runOption{
+
+	leOption := leaderElectionOption{
 		client:   leaderElectKubeClient,
 		recorder: ctx.Recorder(flags.F.LeaderElection.LockObjectNamespace),
-		wg:       &sync.WaitGroup{},
-		stopCh:   stopCh,
-		closeStopCh: func() {
-			once.Do(func() { close(stopCh) })
-		},
 		// add a uniquifier so that two processes on the same host don't accidentally both become active
 		id: fmt.Sprintf("%v_%x", hostname, rand.Intn(1e6)),
 	}
@@ -279,11 +334,11 @@ func main() {
 
 	enableOtherControllers := flags.F.RunIngressController || flags.F.RunL4Controller || flags.F.RunL4NetLBController || flags.F.EnableIGController || flags.F.EnablePSC
 	runNEG := func() {
-		logger := rootLogger.WithName("NEG Controller")
+		logger := rootLogger.WithName("NEGController")
 		logger.Info("Start running the enabled controllers",
 			"NEG controller", flags.F.EnableNEGController,
 		)
-		runNEGController(ctx, option, logger)
+		runNEGController(ctx, systemHealth, rOption, logger)
 	}
 	runIngress := func() {
 		logger := rootLogger.WithName("Other controllers")
@@ -294,20 +349,20 @@ func main() {
 			"InstanceGroup controller", flags.F.EnableIGController,
 			"PSC controller", flags.F.EnablePSC,
 		)
-		runControllers(ctx, option, logger)
+		runControllers(ctx, systemHealth, rOption, logger)
 	}
 
 	if flags.F.LeaderElection.LeaderElect {
 		runNEG = func() {
-			logger := rootLogger.WithName("NEG Controller")
+			logger := rootLogger.WithName("NEGController")
 			logger.Info("Start running NEG leader election",
 				"NEG controller", flags.F.EnableNEGController,
 			)
-			negElectionConfig, err := makeNEGLeaderElectionConfig(ctx, option, logger)
+			negRunner, err := makeNEGRunnerWithLeaderElection(ctx, systemHealth, rOption, leOption, logger)
 			if err != nil {
 				klog.Fatalf("makeNEGLeaderElectionConfig()=%v, want nil", err)
 			}
-			leaderelection.RunOrDie(context.Background(), *negElectionConfig)
+			leaderelection.RunOrDie(context.Background(), *negRunner)
 			logger.Info("NEG Controller exited.")
 		}
 		runIngress = func() {
@@ -319,11 +374,11 @@ func main() {
 				"InstanceGroup controller", flags.F.EnableIGController,
 				"PSC controller", flags.F.EnablePSC,
 			)
-			electionConfig, err := makeLeaderElectionConfig(ctx, option, logger)
+			ingressRunner, err := makeIngressRunnerWithLeaderElection(ctx, systemHealth, rOption, leOption, logger)
 			if err != nil {
 				klog.Fatalf("makeLeaderElectionConfig()=%v, want nil", err)
 			}
-			leaderelection.RunOrDie(context.Background(), *electionConfig)
+			leaderelection.RunOrDie(context.Background(), *ingressRunner)
 		}
 	}
 
@@ -334,30 +389,82 @@ func main() {
 		go runIngress()
 	}
 
-	<-option.stopCh
-	waitWithTimeout(option.wg, rootLogger)
+	<-rOption.stopCh
+	waitWithTimeout(rOption.wg, rootLogger)
 }
 
 type runOption struct {
-	client      clientset.Interface
-	recorder    record.EventRecorder
 	stopCh      chan struct{}
 	wg          *sync.WaitGroup
 	closeStopCh func()
-	id          string
 }
 
-// makeLeaderElectionConfig builds a leader election configuration. It will
-// create a new resource lock associated with the configuration.
-func makeLeaderElectionConfig(ctx *ingctx.ControllerContext, option runOption, logger klog.Logger) (*leaderelection.LeaderElectionConfig, error) {
+type leaderElectionOption struct {
+	// client is the Kubernetes client used for creating and removing resource locks,
+	// facilitating ownership of the resource for leader election.
+	client clientset.Interface
+	// recorder is used to record events (e.g., leader election transitions)
+	// in the Kubernetes cluster.
+	recorder record.EventRecorder
+	// id is the unique identifier for this particular leader election instance,
+	// distinguishing it from other processes that might be competing for leadership.
+	id string
+}
+
+func makeNEGRunnerWithLeaderElection(
+	ctx *ingctx.ControllerContext,
+	systemHealth *systemhealth.SystemHealth,
+	runOption runOption,
+	leOption leaderElectionOption,
+	logger klog.Logger,
+) (*leaderelection.LeaderElectionConfig, error) {
+	return makeRunnerWithLeaderElection(
+		leOption,
+		negLockName,
+		func(context.Context) {
+			runNEGController(ctx, systemHealth, runOption, logger)
+		},
+		func() {
+			logger.Info("Stop running NEG Leader election")
+		},
+	)
+}
+
+func makeIngressRunnerWithLeaderElection(
+	ctx *ingctx.ControllerContext,
+	systemHealth *systemhealth.SystemHealth,
+	runOption runOption,
+	leOption leaderElectionOption,
+	logger klog.Logger,
+) (*leaderelection.LeaderElectionConfig, error) {
+	return makeRunnerWithLeaderElection(
+		leOption,
+		flags.F.LeaderElection.LockObjectName,
+		func(context.Context) {
+			runControllers(ctx, systemHealth, runOption, logger)
+		},
+		func() {
+			logger.Info("lost master")
+		},
+	)
+}
+
+// makeRunnerWithLeaderElection creates a LeaderElectionConfig with the provided options and callbacks.
+// It will create a new resource lock associated with the configuration.
+func makeRunnerWithLeaderElection(
+	leOption leaderElectionOption,
+	leaderElectionLockName string,
+	onStartedLeading func(context.Context),
+	onStoppedLeading func(),
+) (*leaderelection.LeaderElectionConfig, error) {
 	rl, err := resourcelock.New(resourcelock.LeasesResourceLock,
 		flags.F.LeaderElection.LockObjectNamespace,
-		flags.F.LeaderElection.LockObjectName,
-		option.client.CoreV1(),
-		option.client.CoordinationV1(),
+		leaderElectionLockName,
+		leOption.client.CoreV1(),
+		leOption.client.CoordinationV1(),
 		resourcelock.ResourceLockConfig{
-			Identity:      option.id,
-			EventRecorder: option.recorder,
+			Identity:      leOption.id,
+			EventRecorder: leOption.recorder,
 		})
 	if err != nil {
 		return nil, fmt.Errorf("couldn't create resource lock: %v", err)
@@ -369,21 +476,16 @@ func makeLeaderElectionConfig(ctx *ingctx.ControllerContext, option runOption, l
 		RenewDeadline: flags.F.LeaderElection.RenewDeadline.Duration,
 		RetryPeriod:   flags.F.LeaderElection.RetryPeriod.Duration,
 		Callbacks: leaderelection.LeaderCallbacks{
-			OnStartedLeading: func(context.Context) {
-				// Since we are committing a suicide after losing
-				// mastership, we can safely ignore the argument.
-				runControllers(ctx, option, logger)
-			},
-			OnStoppedLeading: func() {
-				logger.Info("lost master")
-			},
+			OnStartedLeading: onStartedLeading,
+			OnStoppedLeading: onStoppedLeading,
 		},
 	}, nil
 }
 
-func runControllers(ctx *ingctx.ControllerContext, option runOption, logger klog.Logger) {
+func runControllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.SystemHealth, option runOption, logger klog.Logger) {
 	if flags.F.RunIngressController {
 		lbc := controller.NewLoadBalancerController(ctx, option.stopCh, logger)
+		systemHealth.AddHealthCheck("ingress", lbc.SystemHealth)
 		runWithWg(lbc.Run, option.wg)
 		logger.V(0).Info("ingress controller started")
 
@@ -397,6 +499,7 @@ func runControllers(ctx *ingctx.ControllerContext, option runOption, logger klog
 
 	if flags.F.RunL4Controller {
 		l4Controller := l4lb.NewILBController(ctx, option.stopCh, logger)
+		systemHealth.AddHealthCheck(l4lb.L4ILBControllerName, l4Controller.SystemHealth)
 		runWithWg(l4Controller.Run, option.wg)
 		logger.V(0).Info("L4 controller started")
 	}
@@ -406,8 +509,6 @@ func runControllers(ctx *ingctx.ControllerContext, option runOption, logger klog
 		runWithWg(pscController.Run, option.wg)
 		logger.V(0).Info("PSC Controller started")
 	}
-
-	go app.RunSIGTERMHandler(option.closeStopCh, logger)
 
 	ctx.Start(option.stopCh)
 
@@ -427,43 +528,14 @@ func runControllers(ctx *ingctx.ControllerContext, option runOption, logger klog
 	// The L4NetLbController will be run when RbsMode flag is Set
 	if flags.F.RunL4NetLBController {
 		l4netlbController := l4lb.NewL4NetLBController(ctx, option.stopCh, logger)
+		systemHealth.AddHealthCheck(l4lb.L4NetLBControllerName, l4netlbController.SystemHealth)
 
 		runWithWg(l4netlbController.Run, option.wg)
 		logger.V(0).Info("L4NetLB controller started")
 	}
 }
 
-func makeNEGLeaderElectionConfig(ctx *ingctx.ControllerContext, option runOption, logger klog.Logger) (*leaderelection.LeaderElectionConfig, error) {
-	negLock, err := resourcelock.New(resourcelock.LeasesResourceLock,
-		flags.F.LeaderElection.LockObjectNamespace,
-		negLockName,
-		option.client.CoreV1(),
-		option.client.CoordinationV1(),
-		resourcelock.ResourceLockConfig{
-			Identity:      option.id,
-			EventRecorder: option.recorder,
-		})
-	if err != nil {
-		return nil, fmt.Errorf("couldn't create resource lock: %v", err)
-	}
-
-	return &leaderelection.LeaderElectionConfig{
-		Lock:          negLock,
-		LeaseDuration: flags.F.LeaderElection.LeaseDuration.Duration,
-		RenewDeadline: flags.F.LeaderElection.RenewDeadline.Duration,
-		RetryPeriod:   flags.F.LeaderElection.RetryPeriod.Duration,
-		Callbacks: leaderelection.LeaderCallbacks{
-			OnStartedLeading: func(context.Context) {
-				runNEGController(ctx, option, logger)
-			},
-			OnStoppedLeading: func() {
-				logger.Info("Stop running NEG Leader election")
-			},
-		},
-	}, nil
-}
-
-func runNEGController(ctx *ingctx.ControllerContext, option runOption, logger klog.Logger) {
+func runNEGController(ctx *ingctx.ControllerContext, systemHealth *systemhealth.SystemHealth, option runOption, logger klog.Logger) {
 	lockLogger := logger.WithValues("lockName", negLockName)
 	lockLogger.Info("Attempting to grab lock", "lockName", negLockName)
 	go collectLockAvailabilityMetrics(negLockName, flags.F.GKEClusterType, option.stopCh, logger)
@@ -476,12 +548,10 @@ func runNEGController(ctx *ingctx.ControllerContext, option runOption, logger kl
 	}
 
 	if flags.F.EnableNEGController {
-		negController := createNEGController(ctx, option.stopCh, logger)
+		negController := createNEGController(ctx, systemHealth, option.stopCh, logger)
 		go runWithWg(negController.Run, option.wg)
 		logger.V(0).Info("negController started")
 	}
-
-	go app.RunSIGTERMHandler(option.closeStopCh, logger)
 
 	// TODO(sawsa307): Find a better approach to start informers.
 	// If Ingress and NEG controller run together, since they share the same
@@ -491,7 +561,7 @@ func runNEGController(ctx *ingctx.ControllerContext, option runOption, logger kl
 	ctx.Start(option.stopCh)
 }
 
-func createNEGController(ctx *ingctx.ControllerContext, stopCh <-chan struct{}, logger klog.Logger) *neg.Controller {
+func createNEGController(ctx *ingctx.ControllerContext, systemHealth *systemhealth.SystemHealth, stopCh <-chan struct{}, logger klog.Logger) *neg.Controller {
 	zoneGetter := ctx.ZoneGetter
 
 	// In NonGCP mode, use the zone specified in gce.conf directly.
@@ -515,6 +585,17 @@ func createNEGController(ctx *ingctx.ControllerContext, stopCh <-chan struct{}, 
 			logger.Error(err, "Failed to retrieve pod label propagation config")
 		}
 	}
+
+	// The following adapter will use Network Selflink as Network Url instead of the NetworkUrl itself.
+	// Network Selflink is always composed by the network name even if the cluster was initialized with Network Id.
+	// All the components created from it will be consistent and always use the Url with network name and not the url with netowork Id
+	adapter, err := network.NewAdapterNetworkSelfLink(ctx.Cloud)
+	if err != nil {
+		logger.Error(err, "Failed to create network adapter with SelfLink")
+		// if it was not possible to retrieve network information use standard context as cloud network provider
+		adapter = ctx.Cloud
+	}
+
 	// TODO: Refactor NEG to use cloud mocks so ctx.Cloud can be referenced within NewController.
 	negController := neg.NewController(
 		ctx.KubeClient,
@@ -529,10 +610,11 @@ func createNEGController(ctx *ingctx.ControllerContext, stopCh <-chan struct{}, 
 		ctx.SvcNegInformer,
 		ctx.NetworkInformer,
 		ctx.GKENetworkParamsInformer,
+		ctx.NodeTopologyInformer,
 		ctx.HasSynced,
 		ctx.L4Namer,
 		ctx.DefaultBackendSvcPort,
-		negtypes.NewAdapterWithRateLimitSpecs(ctx.Cloud, flags.F.GCERateLimit.Values()),
+		negtypes.NewAdapterWithRateLimitSpecs(ctx.Cloud, flags.F.GCERateLimit.Values(), adapter),
 		zoneGetter,
 		ctx.ClusterNamer,
 		flags.F.ResyncPeriod,
@@ -547,11 +629,12 @@ func createNEGController(ctx *ingctx.ControllerContext, stopCh <-chan struct{}, 
 		lpConfig,
 		flags.F.EnableMultiNetworking,
 		ctx.EnableIngressRegionalExternal,
+		flags.F.EnableL4NetLBNEG,
 		stopCh,
 		logger,
 	)
 
-	ctx.AddHealthCheck("neg-controller", negController.IsHealthy)
+	systemHealth.AddHealthCheck("neg-controller", negController.IsHealthy)
 	return negController
 }
 

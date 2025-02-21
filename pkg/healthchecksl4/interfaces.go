@@ -29,6 +29,8 @@ type EnsureHealthCheckResult struct {
 	HCFirewallRuleIPv6Name string
 	GceResourceInError     string
 	Err                    error
+	WasUpdated             utils.ResourceSyncStatus
+	WasFirewallUpdated     utils.ResourceSyncStatus
 }
 
 type healthChecksProvider interface {

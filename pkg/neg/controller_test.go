@@ -41,6 +41,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
@@ -60,8 +61,7 @@ const (
 )
 
 var (
-	metricsInterval = 10 * time.Minute
-	defaultBackend  = utils.ServicePort{
+	defaultBackend = utils.ServicePort{
 		ID: utils.ServicePortID{
 			Service: types.NamespacedName{
 				Name:      "default-http-backend",
@@ -119,13 +119,16 @@ var (
 	}
 )
 
-func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, testContext *negtypes.TestContext, runL4 bool, enableASM bool) *Controller {
+func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, testContext *negtypes.TestContext, runL4 bool, enableASM bool) (*Controller, error) {
 	if enableASM {
 		kubeClient.CoreV1().ConfigMaps("kube-system").Create(context.TODO(), &apiv1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "ingress-controller-config-test"}, Data: map[string]string{"enable-asm": "true"}}, metav1.CreateOptions{})
 	}
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
-	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
+	zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		return nil, err
+	}
 
 	return NewController(
 		kubeClient,
@@ -140,6 +143,7 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		testContext.SvcNegInformer,
 		testContext.NetworkInformer,
 		testContext.GKENetworkParamSetInformer,
+		testContext.NodeTopologyInformer,
 		func() bool { return true },
 		testContext.L4Namer,
 		defaultBackend,
@@ -159,15 +163,16 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		labels.PodLabelPropagationConfig{},
 		true,
 		false,
+		false,
 		make(<-chan struct{}),
 		klog.TODO(),
-	)
+	), nil
 }
-func newTestControllerWithASM(kubeClient kubernetes.Interface) *Controller {
+func newTestControllerWithASM(kubeClient kubernetes.Interface) (*Controller, error) {
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
 	return newTestControllerWithParamsAndContext(kubeClient, testContext, false, true)
 }
-func newTestController(kubeClient kubernetes.Interface) *Controller {
+func newTestController(kubeClient kubernetes.Interface) (*Controller, error) {
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
 	return newTestControllerWithParamsAndContext(kubeClient, testContext, false, false)
 }
@@ -186,10 +191,13 @@ func TestIsHealthy(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			controller := newTestControllerWithParamsAndContext(kubeClient, testContext, false, false)
+			controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, false, false)
+			if err != nil {
+				t.Fatalf("failed to create test controller %s", err)
+			}
 			defer controller.stop()
 
-			err := controller.IsHealthy()
+			err = controller.IsHealthy()
 			if err != nil {
 				t.Errorf("Expect controller to be healthy initially: %v", err)
 			}
@@ -213,11 +221,14 @@ func TestIsHealthy(t *testing.T) {
 func TestNewNonNEGService(t *testing.T) {
 	t.Parallel()
 
-	controller := newTestController(fake.NewSimpleClientset())
+	controller, err := newTestController(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("failed to create test controller %s", err)
+	}
 	defer controller.stop()
 	controller.serviceLister.Add(newTestService(controller, false, []int32{}))
 	controller.ingressLister.Add(newTestIngress(testServiceName))
-	err := controller.processService(utils.ServiceKeyFunc(testServiceNamespace, testServiceName))
+	err = controller.processService(utils.ServiceKeyFunc(testServiceNamespace, testServiceName))
 	if err != nil {
 		t.Fatalf("Failed to process service: %v", err)
 	}
@@ -282,7 +293,10 @@ func TestNewNEGService(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			controller := newTestController(fake.NewSimpleClientset())
+			controller, err := newTestController(fake.NewSimpleClientset())
+			if err != nil {
+				t.Fatalf("failed to create test controller %s", err)
+			}
 			defer controller.stop()
 			svcKey := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
 			controller.serviceLister.Add(newTestService(controller, tc.ingress, tc.exposedPorts))
@@ -291,7 +305,7 @@ func TestNewNEGService(t *testing.T) {
 				controller.ingressLister.Add(newTestIngress(testServiceName))
 			}
 
-			err := controller.processService(svcKey)
+			err = controller.processService(svcKey)
 			if err != nil {
 				t.Fatalf("Failed to process service: %v", err)
 			}
@@ -318,13 +332,16 @@ func TestNewNEGService(t *testing.T) {
 func TestEnableNEGServiceWithIngress(t *testing.T) {
 	t.Parallel()
 
-	controller := newTestController(fake.NewSimpleClientset())
+	controller, err := newTestController(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("failed to create test controller %s", err)
+	}
 	defer controller.stop()
 	controller.serviceLister.Add(newTestService(controller, false, []int32{}))
 	controller.ingressLister.Add(newTestIngress(testServiceName))
 	svcClient := controller.client.CoreV1().Services(testServiceNamespace)
 	svcKey := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
-	err := controller.processService(svcKey)
+	err = controller.processService(svcKey)
 	if err != nil {
 		t.Fatalf("Failed to process service: %v", err)
 	}
@@ -354,7 +371,10 @@ func TestEnableNEGServiceWithIngress(t *testing.T) {
 func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 	kubeClient := fake.NewSimpleClientset()
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-	controller := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false)
+	controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false)
+	if err != nil {
+		t.Fatalf("failed to create test controller %s", err)
+	}
 	manager := controller.manager.(*syncerManager)
 	// L4 ILB NEGs will be created in zones with ready and unready nodes. Zones with upgrading nodes will be skipped.
 	expectZones := []string{negtypes.TestZone1, negtypes.TestZone2, negtypes.TestZone3}
@@ -364,7 +384,7 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 	controller.serviceLister.Add(newTestILBService(controller, false, 80))
 	svcClient := controller.client.CoreV1().Services(testServiceNamespace)
 	svcKey := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
-	err := controller.processService(svcKey)
+	err = controller.processService(svcKey)
 	if err != nil {
 		t.Fatalf("Failed to process service: %v", err)
 	}
@@ -389,7 +409,7 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Service was not created.(*apiv1.Service) successfully, err: %v", err)
 	}
-	expectedPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, false, defaultNetwork)
+	expectedPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, false, defaultNetwork, negtypes.L4InternalLB)
 	// There will be only one entry in the map
 	for key, val := range expectedPortInfoMap {
 		prevSyncerKey = manager.getSyncerKey(testServiceNamespace, testServiceName, key, val)
@@ -410,7 +430,7 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 	if err = controller.processService(svcKey); err != nil {
 		t.Fatalf("Failed to process updated L4 ILB service: %v", err)
 	}
-	expectedPortInfoMap = negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, defaultNetwork)
+	expectedPortInfoMap = negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, defaultNetwork, negtypes.L4InternalLB)
 	// There will be only one entry in the map
 	for key, val := range expectedPortInfoMap {
 		updatedSyncerKey = manager.getSyncerKey(testServiceNamespace, testServiceName, key, val)
@@ -428,7 +448,10 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 func TestEnqueueNodeWithILBSubsetting(t *testing.T) {
 	kubeClient := fake.NewSimpleClientset()
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-	controller := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false)
+	controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false)
+	if err != nil {
+		t.Fatalf("failed to create test controller %s", err)
+	}
 	stopChan := make(chan struct{}, 1)
 	// start the informer directly, without starting the entire controller.
 	go testContext.NodeInformer.Run(stopChan)
@@ -466,7 +489,10 @@ func TestEnqueueNodeWithILBSubsetting(t *testing.T) {
 func TestEnqueueNodeWhenProviderIDPopulated(t *testing.T) {
 	kubeClient := fake.NewSimpleClientset()
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-	controller := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false)
+	controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false)
+	if err != nil {
+		t.Fatalf("failed to create test controller %s", err)
+	}
 	stopChan := make(chan struct{}, 1)
 	// start the informer directly, without starting the entire controller.
 	go testContext.NodeInformer.Run(stopChan)
@@ -514,7 +540,10 @@ func TestEnqueueNodeWhenProviderIDPopulated(t *testing.T) {
 func TestEnableNEGServiceWithILBIngress(t *testing.T) {
 	t.Parallel()
 
-	controller := newTestController(fake.NewSimpleClientset())
+	controller, err := newTestController(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("failed to create test controller %s", err)
+	}
 	defer controller.stop()
 	controller.serviceLister.Add(newTestService(controller, false, []int32{}))
 	ing := newTestIngress("ilb-ingress")
@@ -523,7 +552,7 @@ func TestEnableNEGServiceWithILBIngress(t *testing.T) {
 	controller.ingressLister.Add(ing)
 	svcClient := controller.client.CoreV1().Services(testServiceNamespace)
 	svcKey := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
-	err := controller.processService(svcKey)
+	err = controller.processService(svcKey)
 	if err != nil {
 		t.Fatalf("Failed to process service: %v", err)
 	}
@@ -550,11 +579,14 @@ func TestEnableNEGServiceWithILBIngress(t *testing.T) {
 func TestDisableNEGServiceWithIngress(t *testing.T) {
 	t.Parallel()
 
-	controller := newTestController(fake.NewSimpleClientset())
+	controller, err := newTestController(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("failed to create test controller %s", err)
+	}
 	defer controller.stop()
 	controller.serviceLister.Add(newTestService(controller, true, []int32{}))
 	controller.ingressLister.Add(newTestIngress(testServiceName))
-	err := controller.processService(utils.ServiceKeyFunc(testServiceNamespace, testServiceName))
+	err = controller.processService(utils.ServiceKeyFunc(testServiceNamespace, testServiceName))
 	if err != nil {
 		t.Fatalf("Failed to process service: %v", err)
 	}
@@ -707,7 +739,10 @@ func TestGatherPortMappingUsedByIngress(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		controller := newTestController(fake.NewSimpleClientset())
+		controller, err := newTestController(fake.NewSimpleClientset())
+		if err != nil {
+			t.Fatalf("failed to create test controller %s", err)
+		}
 		defer controller.stop()
 		portTupleSet := gatherPortMappingUsedByIngress(tc.ings, newTestService(controller, true, []int32{}), klog.TODO())
 		if len(portTupleSet) != len(tc.expect) {
@@ -735,7 +770,10 @@ func TestSyncNegAnnotation(t *testing.T) {
 	t.Parallel()
 	// TODO: test that c.serviceLister.Update is called whenever the annotation
 	// is changed. When there is no change, Update should not be called.
-	controller := newTestController(fake.NewSimpleClientset())
+	controller, err := newTestController(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("failed to create test controller %s", err)
+	}
 	defer controller.stop()
 	svcClient := controller.client.CoreV1().Services(testServiceNamespace)
 	svc := newTestService(controller, false, []int32{})
@@ -818,7 +856,10 @@ func TestSyncNegAnnotation(t *testing.T) {
 
 func TestDefaultBackendServicePortInfoMapForL7ILB(t *testing.T) {
 	// Not using t.Parallel() since we are sharing the controller
-	controller := newTestController(fake.NewSimpleClientset())
+	controller, err := newTestController(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("failed to create test controller %s", err)
+	}
 	defer controller.stop()
 	newTestService(controller, false, []int32{})
 
@@ -915,7 +956,10 @@ func TestDefaultBackendServicePortInfoMapForL7ILB(t *testing.T) {
 
 func TestDefaultBackendServicePortInfoMapForL7RXLB(t *testing.T) {
 	// Not using t.Parallel() since we are sharing the controller
-	controller := newTestController(fake.NewSimpleClientset())
+	controller, err := newTestController(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("failed to create test controller %s", err)
+	}
 	controller.enableIngressRegionalExternal = true
 	defer controller.stop()
 	newTestService(controller, false, []int32{})
@@ -1136,7 +1180,10 @@ func TestMergeDefaultBackendServicePortInfoMap(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 
-			controller := newTestController(fake.NewSimpleClientset())
+			controller, err := newTestController(fake.NewSimpleClientset())
+			if err != nil {
+				t.Fatalf("failed to create test controller %s", err)
+			}
 			controller.enableIngressRegionalExternal = tc.enableIngressRegionalExternal
 			controller.defaultBackendService = defaultBackend
 			newTestService(controller, false, []int32{})
@@ -1169,7 +1216,10 @@ func TestMergeDefaultBackendServicePortInfoMap(t *testing.T) {
 }
 
 func TestEnableASM(t *testing.T) {
-	controller := newTestControllerWithASM(fake.NewSimpleClientset())
+	controller, err := newTestControllerWithASM(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("failed to create test controller %s", err)
+	}
 	defer controller.stop()
 	testSvc := newTestServiceCus(t, controller, "namespace1", "service1", []int32{80, 90})
 	wantSvcPortMap := negtypes.NewPortInfoMap("namespace1", "service1", negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Name: "port80", Port: 80, TargetPort: "80"}, negtypes.SvcPortTuple{Name: "port90", Port: 90, TargetPort: "90"}), controller.namer, false, nil, defaultNetwork)
@@ -1182,7 +1232,7 @@ func TestEnableASM(t *testing.T) {
 	expectedPortInfoMap := negtypes.PortInfoMap{}
 	expectedPortInfoMap.Merge(wantSvcPortMap)
 
-	err := controller.processService(svcKey)
+	err = controller.processService(svcKey)
 	if err != nil {
 		t.Fatalf("Failed to process service: %v", err)
 	}
@@ -1199,7 +1249,10 @@ func TestEnableASM(t *testing.T) {
 }
 
 func TestMergeCSMPortInfoMap(t *testing.T) {
-	controller := newTestControllerWithASM(fake.NewSimpleClientset())
+	controller, err := newTestControllerWithASM(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("failed to create test controller %s", err)
+	}
 	defer controller.stop()
 	n1s1 := newTestServiceCus(t, controller, "namespace1", "service1", []int32{80, 90})
 	n2s1 := newTestServiceCus(t, controller, "namespace2", "service1", []int32{90})
@@ -1242,7 +1295,10 @@ func TestMergeCSMPortInfoMap(t *testing.T) {
 }
 
 func TestMergeVmIpNEGsPortInfo(t *testing.T) {
-	controller := newTestController(fake.NewSimpleClientset())
+	controller, err := newTestController(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("failed to create test controller %s", err)
+	}
 	secondaryNetwork := &network.NetworkInfo{
 		IsDefault:  false,
 		K8sNetwork: "secondaryNetwork",
@@ -1259,13 +1315,16 @@ func TestMergeVmIpNEGsPortInfo(t *testing.T) {
 		desc           string
 		svc            *apiv1.Service
 		networkInfo    *network.NetworkInfo
+		runL4ILB       bool
+		runL4NetLB     bool
 		wantSvcPortMap negtypes.PortInfoMap
 	}{
 		{
 			desc:           "ILB subsetting service",
 			svc:            serviceILBWithFinalizer,
 			networkInfo:    defaultNetwork,
-			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, false, defaultNetwork),
+			runL4ILB:       true,
+			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, false, defaultNetwork, negtypes.L4InternalLB),
 		},
 		{
 			desc:           "ILB legacy service",
@@ -1277,12 +1336,26 @@ func TestMergeVmIpNEGsPortInfo(t *testing.T) {
 			desc:           "RBS Multinet Service",
 			svc:            newTestRBSMultinetService(controller, true, 80),
 			networkInfo:    secondaryNetwork,
-			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, secondaryNetwork),
+			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, secondaryNetwork, negtypes.L4ExternalLB),
 		},
 		{
 			desc:           "RBS non-multinet Service",
-			svc:            newTestRBSMultinetService(controller, true, 80),
+			svc:            newTestRBSService(controller, true, 80, common.NetLBFinalizerV2),
 			networkInfo:    defaultNetwork,
+			wantSvcPortMap: nil,
+		},
+		{
+			desc:           "RBS non-multinet Service with NEG",
+			svc:            newTestRBSService(controller, true, 80, common.NetLBFinalizerV3),
+			networkInfo:    defaultNetwork,
+			runL4NetLB:     true,
+			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, defaultNetwork, negtypes.L4ExternalLB),
+		},
+		{
+			desc:           "RBS non-multinet Service with NEG but NEGs not enabled for NetLB",
+			svc:            newTestRBSService(controller, true, 80, common.NetLBFinalizerV3),
+			networkInfo:    defaultNetwork,
+			runL4NetLB:     false,
 			wantSvcPortMap: nil,
 		},
 		{
@@ -1295,6 +1368,8 @@ func TestMergeVmIpNEGsPortInfo(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
+			controller.runL4ForNetLB = tc.runL4NetLB
+			controller.runL4ForILB = tc.runL4ILB
 			portInfoMap := make(negtypes.PortInfoMap)
 			negUsage := metricscollector.NegServiceState{}
 			controller.mergeVmIpNEGsPortInfo(tc.svc, types.NamespacedName{Namespace: tc.svc.Namespace, Name: tc.svc.Name}, portInfoMap, &negUsage, tc.networkInfo)
@@ -1351,7 +1426,10 @@ func TestEnableNegCRD(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			controller := newTestController(fake.NewSimpleClientset())
+			controller, err := newTestController(fake.NewSimpleClientset())
+			if err != nil {
+				t.Fatalf("failed to create test controller %s", err)
+			}
 			svcNegClient := controller.manager.(*syncerManager).svcNegClient
 			manager := controller.manager.(*syncerManager)
 			defer controller.stop()
@@ -1359,7 +1437,7 @@ func TestEnableNegCRD(t *testing.T) {
 			service := newTestServiceCustomNamedNeg(controller, tc.exposedPortNames, tc.ingress)
 			controller.serviceLister.Add(service)
 
-			err := controller.processService(svcKey)
+			err = controller.processService(svcKey)
 			if !tc.expectErr && err != nil {
 				t.Fatalf("Failed to process service: %v", err)
 			} else if tc.expectErr && err == nil {
@@ -1448,7 +1526,10 @@ func TestEnqueueEndpoints(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			kubeClient := fake.NewSimpleClientset()
 			testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-			controller := newTestControllerWithParamsAndContext(kubeClient, testContext, false, false)
+			controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, false, false)
+			if err != nil {
+				t.Fatalf("failed to create test controller %s", err)
+			}
 			stopChan := make(chan struct{}, 1)
 			// start the informer directly, without starting the entire controller.
 			go testContext.EndpointSliceInformer.Run(stopChan)
@@ -1459,7 +1540,7 @@ func TestEnqueueEndpoints(t *testing.T) {
 			ctx := context.Background()
 			var informer cache.SharedIndexInformer
 			endpointSliceClient := controller.client.DiscoveryV1().EndpointSlices(namespace)
-			_, err := endpointSliceClient.Create(ctx, tc.endpointSlice, metav1.CreateOptions{})
+			_, err = endpointSliceClient.Create(ctx, tc.endpointSlice, metav1.CreateOptions{})
 			if err != nil {
 				t.Fatalf("Failed to create test endpoint slice, error - %v", err)
 			}
@@ -1480,11 +1561,12 @@ func TestServiceIPFamilies(t *testing.T) {
 	preferDualStack := apiv1.IPFamilyPolicyPreferDualStack
 	requireDualStack := apiv1.IPFamilyPolicyRequireDualStack
 	testCases := []struct {
-		desc           string
-		serviceType    v1.ServiceType
-		ipFamilies     []v1.IPFamily
-		ipFamilyPolicy *apiv1.IPFamilyPolicy
-		expectNil      bool
+		desc              string
+		serviceType       v1.ServiceType
+		ipFamilies        []v1.IPFamily
+		ipFamilyPolicy    *apiv1.IPFamilyPolicy
+		expectNil         bool
+		enableIPV6OnlyNEG bool
 	}{
 		{
 			desc:           "ipv6 only service with l7 load balancer, ipFamilyPolicy is singleStack",
@@ -1492,6 +1574,14 @@ func TestServiceIPFamilies(t *testing.T) {
 			ipFamilies:     []v1.IPFamily{v1.IPv6Protocol},
 			ipFamilyPolicy: &singleStack,
 			expectNil:      false,
+		},
+		{
+			desc:              "ipv6 only service with l7 load balancer, ipFamilyPolicy is singleStack, ipv6 neg enabled",
+			serviceType:       v1.ServiceTypeClusterIP,
+			ipFamilies:        []v1.IPFamily{v1.IPv6Protocol},
+			ipFamilyPolicy:    &singleStack,
+			expectNil:         true,
+			enableIPV6OnlyNEG: true,
 		},
 		{
 			desc:           "ipv4 only service with l7 load balancer, ipFamilyPolicy is singleStack",
@@ -1559,7 +1649,17 @@ func TestServiceIPFamilies(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			controller := newTestController(fake.NewSimpleClientset())
+			if tc.enableIPV6OnlyNEG {
+				origEnableIPV6OnlyNEG := flags.F.EnableIPV6OnlyNEG
+				flags.F.EnableIPV6OnlyNEG = true
+				defer func() {
+					flags.F.EnableIPV6OnlyNEG = origEnableIPV6OnlyNEG
+				}()
+			}
+			controller, err := newTestController(fake.NewSimpleClientset())
+			if err != nil {
+				t.Fatalf("failed to create test controller %s", err)
+			}
 			defer controller.stop()
 			testService := newTestService(controller, false, []int32{80})
 			testService.Spec.Type = tc.serviceType
@@ -1568,7 +1668,7 @@ func TestServiceIPFamilies(t *testing.T) {
 			controller.serviceLister.Add(testService)
 			controller.ingressLister.Add(newTestIngress(testServiceName))
 			svcKey := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
-			err := controller.processService(svcKey)
+			err = controller.processService(svcKey)
 			if tc.expectNil && err != nil {
 				t.Fatalf("Expecting nil when processing type %v service with ipFamily %v, got error %v", tc.serviceType, tc.ipFamilies, err)
 			}
@@ -1584,7 +1684,10 @@ func TestServiceIPFamilies(t *testing.T) {
 func TestEnableNEGServiceWithL4NetLB(t *testing.T) {
 	kubeClient := fake.NewSimpleClientset()
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-	controller := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false)
+	controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false)
+	if err != nil {
+		t.Fatalf("failed to create test controller %s", err)
+	}
 	manager := controller.manager.(*syncerManager)
 	// L4 ILB NEGs will be created in zones with ready and unready nodes. Zones with upgrading nodes will be skipped.
 	expectZones := []string{negtypes.TestZone1, negtypes.TestZone2, negtypes.TestZone3}
@@ -1602,7 +1705,7 @@ func TestEnableNEGServiceWithL4NetLB(t *testing.T) {
 	controller.serviceLister.Add(testSvc)
 	svcClient := controller.client.CoreV1().Services(testServiceNamespace)
 	svcKey := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
-	err := controller.processService(svcKey)
+	err = controller.processService(svcKey)
 	if err != nil {
 		t.Fatalf("Failed to process service: %v", err)
 	}
@@ -1610,7 +1713,7 @@ func TestEnableNEGServiceWithL4NetLB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Service was not created.(*apiv1.Service) successfully, err: %v", err)
 	}
-	expectedPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, networkInfo)
+	expectedPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, networkInfo, negtypes.L4ExternalLB)
 	// There will be only one entry in the map
 	for key, val := range expectedPortInfoMap {
 		prevSyncerKey = manager.getSyncerKey(testServiceNamespace, testServiceName, key, val)
@@ -1736,7 +1839,10 @@ func validateServiceAnnotationWithPortInfoMap(t *testing.T, svc *apiv1.Service, 
 
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
-	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
+	zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("Failed to initialize zone getter: %s", err)
+	}
 	zones, _ := zoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(portInfoMap.EndpointsCalculatorMode()), klog.TODO())
 	if !sets.NewString(expectZones...).Equal(sets.NewString(zones...)) {
 		t.Errorf("Unexpected zones listed by the predicate function, got %v, want %v", zones, expectZones)
@@ -1817,7 +1923,10 @@ func validateServiceStateAnnotationExceptNames(t *testing.T, svc *apiv1.Service,
 	}
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
-	zoneGetter := zonegetter.NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, false)
+	zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("Failed to initialize zone getter: %v", err)
+	}
 	// This routine is called from tests verifying L7 NEGs.
 	zones, _ := zoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(negtypes.L7Mode), klog.TODO())
 
@@ -2021,6 +2130,29 @@ func newTestRBSMultinetService(c *Controller, onlyLocal bool, port int) *apiv1.S
 	return svc
 }
 
+func newTestRBSService(c *Controller, onlyLocal bool, port int, finalizer string) *apiv1.Service {
+	svc := &apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        testServiceName,
+			Namespace:   testServiceNamespace,
+			Annotations: map[string]string{annotations.RBSAnnotationKey: annotations.RBSEnabled},
+			Finalizers:  []string{finalizer},
+		},
+		Spec: apiv1.ServiceSpec{
+			Type: apiv1.ServiceTypeLoadBalancer,
+			Ports: []apiv1.ServicePort{
+				{Name: "testport", Port: int32(port)},
+			},
+		},
+	}
+	if onlyLocal {
+		svc.Spec.ExternalTrafficPolicy = apiv1.ServiceExternalTrafficPolicyTypeLocal
+	}
+
+	c.client.CoreV1().Services(testServiceNamespace).Create(context.TODO(), svc, metav1.CreateOptions{})
+	return svc
+}
+
 func newTestService(c *Controller, negIngress bool, negSvcPorts []int32) *apiv1.Service {
 	svcAnnotations := map[string]string{}
 	if negIngress || len(negSvcPorts) > 0 {
@@ -2072,6 +2204,7 @@ func newTestNode(name string, unschedulable bool) *apiv1.Node {
 			Name: name,
 		},
 		Spec: apiv1.NodeSpec{
+			PodCIDR:       "10.100.1.0/24",
 			Unschedulable: unschedulable,
 		},
 	}

@@ -15,6 +15,7 @@ package common
 
 import (
 	"fmt"
+	"slices"
 
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/networking/v1"
@@ -41,6 +42,8 @@ const (
 	NegFinalizerKey = "networking.gke.io/neg-finalizer"
 	// NetLBFinalizerV2 is the finalizer used by newer controllers that manage L4 External LoadBalancer services.
 	NetLBFinalizerV2 = "gke.networking.io/l4-netlb-v2"
+	// NetLBFinalizerV3 is the finalizer used by the NEG backed variant of the L4 External LoadBalancer services.
+	NetLBFinalizerV3 = "gke.networking.io/l4-netlb-v3"
 	// LoadBalancerCleanupFinalizer added by original kubernetes service controller. This is not required in L4 RBS/ILB-subsetting services.
 	LoadBalancerCleanupFinalizer = "service.kubernetes.io/load-balancer-cleanup"
 )
@@ -62,7 +65,7 @@ func HasFinalizer(m meta_v1.ObjectMeta) bool {
 
 // HasGivenFinalizer is true if the passed in meta has the specified finalizer.
 func HasGivenFinalizer(m meta_v1.ObjectMeta, key string) bool {
-	return slice.ContainsString(m.Finalizers, key, nil)
+	return slices.Contains(m.Finalizers, key)
 }
 
 // EnsureFinalizer ensures that the specified finalizer exists on given Ingress.
@@ -97,6 +100,7 @@ func EnsureDeleteFinalizer(ing *v1.Ingress, ingClient client.IngressInterface, f
 }
 
 // EnsureServiceFinalizer patches the service to add finalizer.
+// This function will not modify the service object passed as the argument. Instead, a deep copy will be used to do a patch.
 func EnsureServiceFinalizer(service *corev1.Service, key string, kubeClient kubernetes.Interface, svcLogger klog.Logger) error {
 	if HasGivenFinalizer(service.ObjectMeta, key) {
 		return nil
@@ -110,7 +114,8 @@ func EnsureServiceFinalizer(service *corev1.Service, key string, kubeClient kube
 	return patch.PatchServiceObjectMetadata(kubeClient.CoreV1(), service, *updatedObjectMeta)
 }
 
-// removeFinalizer patches the service to remove finalizer.
+// EnsureDeleteServiceFinalizer patches the service to remove finalizer.
+// This function will not modify the service object passed as the argument. Instead, a deep copy will be used to do a patch.
 func EnsureDeleteServiceFinalizer(service *corev1.Service, key string, kubeClient kubernetes.Interface, svcLogger klog.Logger) error {
 	if !HasGivenFinalizer(service.ObjectMeta, key) {
 		return nil
@@ -121,5 +126,29 @@ func EnsureDeleteServiceFinalizer(service *corev1.Service, key string, kubeClien
 	updatedObjectMeta.Finalizers = slice.RemoveString(updatedObjectMeta.Finalizers, key, nil)
 
 	svcLogger.V(2).Info("Removing finalizer from service", "finalizerKey", key)
+	return patch.PatchServiceObjectMetadata(kubeClient.CoreV1(), service, *updatedObjectMeta)
+}
+
+// EnsureServiceDeleteFinalizers patches the service to ensure the specified finalizers are not present in the service finalizers list.
+// This function is needed if more than one finalizer has to be removed since you can't invoke the 1 param version multiple times.
+// This function will not modify the service object passed as the argument. Instead, a deep copy will be used to do a patch.
+func EnsureServiceDeleteFinalizers(service *corev1.Service, ensureRemoveKeys []string, kubeClient kubernetes.Interface, svcLogger klog.Logger) error {
+	var needToRemove []string
+	for _, key := range ensureRemoveKeys {
+		if HasGivenFinalizer(service.ObjectMeta, key) {
+			needToRemove = append(needToRemove, key)
+		}
+	}
+	if len(needToRemove) == 0 {
+		return nil
+	}
+
+	// Make a copy of object metadata so we don't mutate the shared informer cache.
+	updatedObjectMeta := service.ObjectMeta.DeepCopy()
+	for _, key := range needToRemove {
+		updatedObjectMeta.Finalizers = slice.RemoveString(updatedObjectMeta.Finalizers, key, nil)
+	}
+
+	svcLogger.V(2).Info("Removing finalizers from service", "finalizerKeys", ensureRemoveKeys)
 	return patch.PatchServiceObjectMetadata(kubeClient.CoreV1(), service, *updatedObjectMeta)
 }

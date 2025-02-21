@@ -18,7 +18,9 @@ package types
 
 import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	compute "google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
 )
 
@@ -36,12 +38,14 @@ type NetworkEndpointGroupCloud interface {
 	SubnetworkURL() string
 	NetworkProjectID() string
 	Region() string
+	GetNetwork(networkName string) (*compute.Network, error)
 }
 
 // NetworkEndpointGroupNamer is an interface for generating network endpoint group name.
 type NetworkEndpointGroupNamer interface {
 	NEG(namespace, name string, port int32) string
 	IsNEG(name string) bool
+	namer.NonDefaultSubnetNEGNamer
 }
 
 // NegSyncer is an interface to interact with syncer
@@ -74,14 +78,17 @@ type NegSyncerManager interface {
 	GC() error
 	// ShutDown shuts down the manager
 	ShutDown()
+	// SyncAllSyncer signals all syncers to sync. This call is asynchronous.
+	SyncAllSyncers()
 }
 
 type NetworkEndpointsCalculator interface {
-	// CalculateEndpoints computes the NEG endpoints based on service endpoints and the current NEG state and returns a
-	// map of zone name to network endpoint set
-	CalculateEndpoints(eds []EndpointsData, currentMap map[string]NetworkEndpointSet) (map[string]NetworkEndpointSet, EndpointPodMap, int, error)
+	// CalculateEndpoints computes the NEG endpoints based on service endpoints
+	// and the current NEG state. It returns a map of NEGLocation to network
+	// endpoint set for that NEGLocation.
+	CalculateEndpoints(eds []EndpointsData, currentMap map[NEGLocation]NetworkEndpointSet) (map[NEGLocation]NetworkEndpointSet, EndpointPodMap, int, error)
 	// CalculateEndpointsDegradedMode computes the NEG endpoints using degraded mode calculation
-	CalculateEndpointsDegradedMode(eds []EndpointsData, currentMap map[string]NetworkEndpointSet) (map[string]NetworkEndpointSet, EndpointPodMap, error)
+	CalculateEndpointsDegradedMode(eds []EndpointsData, currentMap map[NEGLocation]NetworkEndpointSet) (map[NEGLocation]NetworkEndpointSet, EndpointPodMap, error)
 	// Mode indicates the mode that the EndpointsCalculator is operating in.
 	Mode() EndpointsCalculatorMode
 	// ValidateEndpoints validates the NEG endpoint information is correct

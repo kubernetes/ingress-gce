@@ -27,6 +27,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/compute/v1"
+	ga "google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/firewalls"
@@ -62,11 +63,47 @@ func getFakeGCECloud(vals gce.TestClusterValues) *gce.Cloud {
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaAddresses.X = mock.AddressAttributes{}
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockAddresses.X = mock.AddressAttributes{}
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = mock.InsertFwdRuleHook
-
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.PatchHook = PatchForwardingRuleHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockRegionBackendServices.UpdateHook = mock.UpdateRegionBackendServiceHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockHealthChecks.UpdateHook = mock.UpdateHealthCheckHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockFirewalls.PatchHook = mock.UpdateFirewallHook
+
 	return fakeGCE
+}
+
+func contains(slice []string, target string) bool {
+	for _, item := range slice {
+		if item == target {
+			return true
+		}
+	}
+	return false
+}
+
+func PatchForwardingRuleHook(ctx context.Context, key *meta.Key, obj *ga.ForwardingRule, m *cloud.MockForwardingRules, options ...cloud.Option) error {
+	if !key.Valid() {
+		return fmt.Errorf("invalid GCE key (%+v)", key)
+	}
+
+	mRules := m.Objects
+	existingObj, ok := mRules[*key]
+	if !ok {
+		return fmt.Errorf("MockForwardingRule %v does not exists", key)
+	}
+
+	existingFr := existingObj.ToGA()
+
+	// Patch only patchable fields if not empty or in ForceSendFields ( simulating json omitempty)
+	if contains(obj.ForceSendFields, "AllowGlobalAccess") || obj.AllowGlobalAccess {
+		existingFr.AllowGlobalAccess = obj.AllowGlobalAccess
+	}
+
+	if contains(obj.ForceSendFields, "NetworkTier") || obj.NetworkTier != "" {
+		existingFr.NetworkTier = obj.NetworkTier
+	}
+
+	mRules[*key] = &cloud.MockForwardingRulesObj{Obj: existingFr}
+	return nil
 }
 
 func TestEnsureInternalBackendServiceUpdates(t *testing.T) {
@@ -96,16 +133,22 @@ func TestEnsureInternalBackendServiceUpdates(t *testing.T) {
 		NetworkInfo:              network.DefaultNetwork(fakeGCE),
 		ConnectionTrackingPolicy: noConnectionTrackingPolicy,
 	}
-	_, err := l4.backendPool.EnsureL4BackendService(backendParams, klog.TODO())
+	_, wasUpdate, err := l4.backendPool.EnsureL4BackendService(backendParams, klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to ensure backend service  %s - err %v", bsName, err)
+	}
+	if !wasUpdate {
+		t.Errorf("First ensure of a Backend Service %s should be an update/create", bsName)
 	}
 
 	backendParams.SessionAffinity = string(v1.ServiceAffinityNone)
 	// Update the Internal Backend Service with a new ServiceAffinity
-	_, err = l4.backendPool.EnsureL4BackendService(backendParams, klog.TODO())
+	_, wasUpdate, err = l4.backendPool.EnsureL4BackendService(backendParams, klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to ensure backend service  %s - err %v", bsName, err)
+	}
+	if !wasUpdate {
+		t.Errorf("A change in Backend Service %s should be reported as update but it was not ", bsName)
 	}
 	key := meta.RegionalKey(bsName, l4.cloud.Region())
 	bs, err := composite.GetBackendService(l4.cloud, key, meta.VersionGA, klog.TODO())
@@ -125,7 +168,7 @@ func TestEnsureInternalBackendServiceUpdates(t *testing.T) {
 		t.Errorf("Failed to update backend service with new connection draining timeout - err %v", err)
 	}
 	// ensure the backend back to previous params
-	bs, err = l4.backendPool.EnsureL4BackendService(backendParams, klog.TODO())
+	bs, _, err = l4.backendPool.EnsureL4BackendService(backendParams, klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to ensure backend service  %s - err %v", bsName, err)
 	}
@@ -134,6 +177,15 @@ func TestEnsureInternalBackendServiceUpdates(t *testing.T) {
 	}
 	if bs.ConnectionDraining.DrainingTimeoutSec != newTimeout {
 		t.Errorf("Connection Draining timeout got reconciled to %d, expected %d", bs.ConnectionDraining.DrainingTimeoutSec, newTimeout)
+	}
+
+	// check if triggering ensure with the same params does not cause an update
+	bs, wasUpdate, err = l4.backendPool.EnsureL4BackendService(backendParams, klog.TODO())
+	if err != nil {
+		t.Errorf("Failed to ensure backend service  %s - err %v", bsName, err)
+	}
+	if wasUpdate {
+		t.Errorf("Ensure with the same parameters should result in no update reported")
 	}
 }
 
@@ -314,7 +366,7 @@ func TestEnsureInternalLoadBalancerWithExistingResources(t *testing.T) {
 		NetworkInfo:              defaultNetwork,
 		ConnectionTrackingPolicy: noConnectionTrackingPolicy,
 	}
-	_, err := l4.backendPool.EnsureL4BackendService(backendParams, klog.TODO())
+	_, _, err := l4.backendPool.EnsureL4BackendService(backendParams, klog.TODO())
 	if err != nil {
 		t.Errorf("Failed to create backendservice, err %v", err)
 	}
@@ -854,21 +906,14 @@ func TestEnsureInternalLoadBalancerWithSpecialHealthCheck(t *testing.T) {
 }
 
 type EnsureILBParams struct {
-	clusterName     string
-	clusterID       string
 	service         *v1.Service
-	existingFwdRule *composite.ForwardingRule
 	networkResolver network.Resolver
 }
 
 // newEnsureILBParams is the constructor of EnsureILBParams.
 func newEnsureILBParams() *EnsureILBParams {
-	vals := gce.DefaultTestClusterValues()
 	return &EnsureILBParams{
-		vals.ClusterName,
-		vals.ClusterID,
 		test.NewL4ILBService(false, 8080),
-		nil,
 		nil,
 	}
 }
@@ -910,9 +955,6 @@ func TestEnsureInternalLoadBalancerErrors(t *testing.T) {
 			},
 		},
 		"Delete region forwarding rule failed": {
-			adjustParams: func(params *EnsureILBParams) {
-				params.existingFwdRule = &composite.ForwardingRule{BackendService: "badBackendService"}
-			},
 			injectMock: func(c *cloud.MockGCE) {
 				c.MockForwardingRules.DeleteHook = mock.DeleteForwardingRuleErrHook
 			},
@@ -944,7 +986,7 @@ func TestEnsureInternalLoadBalancerErrors(t *testing.T) {
 			l4 := NewL4Handler(l4ilbParams, klog.TODO())
 			l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
 
-			//lbName :=l4.namer.L4Backend(params.service.Namespace, params.service.Name)
+			// lbName :=l4.namer.L4Backend(params.service.Namespace, params.service.Name)
 			frName := l4.GetFRName()
 			key, err := composite.CreateKey(l4.cloud, frName, meta.Regional)
 			if err != nil {
@@ -1146,9 +1188,23 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 		t.Errorf("Unexpected subnet value %s in ILB ForwardingRule", fwdRule.Subnetwork)
 	}
 
+	subnetNames := []string{
+		"test-subnet",
+		"another-subnet",
+		"even-one-more-subnet",
+	}
+	for _, subnetName := range subnetNames {
+		key := meta.RegionalKey(subnetName, l4.cloud.Region())
+		subnetToCreate := &ga.Subnetwork{}
+		err := l4.cloud.Compute().(*cloud.MockGCE).Subnetworks().Insert(context.TODO(), key, subnetToCreate)
+		if err != nil {
+			t.Fatalf("failed to create subnet %v, error: %v", subnetToCreate, err)
+		}
+	}
+
 	// Change service to include the global access annotation and request static ip
 	requestedIP := "4.5.6.7"
-	svc.Annotations[gce.ServiceAnnotationILBSubnet] = "test-subnet"
+	svc.Annotations[gce.ServiceAnnotationILBSubnet] = subnetNames[0]
 	svc.Spec.LoadBalancerIP = requestedIP
 	result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
 	if err != nil {
@@ -1157,13 +1213,13 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
-	assertILBResourcesWithCustomSubnet(t, l4, nodeNames, result.Annotations, "test-subnet")
+	assertILBResourcesWithCustomSubnet(t, l4, nodeNames, result.Annotations, subnetNames[0])
 	if result.Status.Ingress[0].IP != requestedIP {
 		t.Fatalf("Reserved IP %s not propagated, Got '%s'", requestedIP, result.Status.Ingress[0].IP)
 	}
 
 	// Change to a different subnet
-	svc.Annotations[gce.ServiceAnnotationILBSubnet] = "another-subnet"
+	svc.Annotations[gce.ServiceAnnotationILBSubnet] = subnetNames[1]
 	result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
@@ -1171,13 +1227,13 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
-	assertILBResourcesWithCustomSubnet(t, l4, nodeNames, result.Annotations, "another-subnet")
+	assertILBResourcesWithCustomSubnet(t, l4, nodeNames, result.Annotations, subnetNames[1])
 	if result.Status.Ingress[0].IP != requestedIP {
 		t.Errorf("Reserved IP %s not propagated, Got %s", requestedIP, result.Status.Ingress[0].IP)
 	}
 
 	// Verify new annotation "networking.gke.io/load-balancer-subnet" works and get prioritized.
-	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "even-one-more-subnet"
+	svc.Annotations[annotations.CustomSubnetAnnotationKey] = subnetNames[2]
 	result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
@@ -1185,7 +1241,7 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
-	assertILBResourcesWithCustomSubnet(t, l4, nodeNames, result.Annotations, "even-one-more-subnet")
+	assertILBResourcesWithCustomSubnet(t, l4, nodeNames, result.Annotations, subnetNames[2])
 	if result.Status.Ingress[0].IP != requestedIP {
 		t.Errorf("Reserved IP %s not propagated, Got %s", requestedIP, result.Status.Ingress[0].IP)
 	}
@@ -1273,6 +1329,65 @@ func TestDualStackILBBadCustomSubnet(t *testing.T) {
 	}
 }
 
+func TestInternalLBBadCustomSubnet(t *testing.T) {
+	t.Parallel()
+	nodeNames := []string{"test-node-1"}
+
+	testCases := []struct {
+		desc               string
+		subnetName         string
+		existingSubnetwork bool
+	}{
+		{
+			desc:               "Specifying existing subnetwork should work as intended",
+			subnetName:         "valid",
+			existingSubnetwork: true,
+		},
+		{
+			desc:               "Specifying non-existing subnetwork should return error marked as user one",
+			subnetName:         "invalid",
+			existingSubnetwork: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			svc := test.NewL4ILBService(true, 8080)
+			svc.Annotations[annotations.CustomSubnetAnnotationKey] = tc.subnetName
+			l4 := mustSetupILBTestHandler(t, svc, nodeNames)
+
+			if tc.existingSubnetwork {
+				key := meta.RegionalKey(tc.subnetName, l4.cloud.Region())
+				subnetToCreate := &ga.Subnetwork{}
+				err := l4.cloud.Compute().(*cloud.MockGCE).Subnetworks().Insert(context.TODO(), key, subnetToCreate)
+				if err != nil {
+					t.Fatalf("failed to create subnet %v, error: %v", subnetToCreate, err)
+				}
+			}
+
+			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			if tc.existingSubnetwork {
+				if result.Error != nil {
+					t.Errorf("Unexpected error when existing subnet specified: %v", result.Error)
+				}
+			} else {
+				if result.Error == nil {
+					t.Fatalf("Expected error ensuring internal loadbalancer with non-existing subnet, got: %v", result.Error)
+				}
+				if !utils.IsUserError(result.Error) {
+					t.Errorf("Expected to get user error if non-existing subnet specified for internal loadbalancer, got %v", result.Error)
+				}
+				expectedError := fmt.Sprintf("Subnetwork \"%s\" can't be found for project %s", tc.subnetName, l4.cloud.ProjectID())
+				if result.Error.Error() != expectedError {
+					t.Errorf("Wrong error: \"%s\" expected, got \"%s\"", expectedError, result.Error.Error())
+				}
+			}
+		})
+	}
+}
+
 func TestEnsureInternalFirewallPortRanges(t *testing.T) {
 	vals := gce.DefaultTestClusterValues()
 	fakeGCE := getFakeGCECloud(vals)
@@ -1313,12 +1428,16 @@ func TestEnsureInternalFirewallPortRanges(t *testing.T) {
 		Name:              fwName,
 		SourceRanges:      []string{"10.0.0.0/20"},
 		DestinationRanges: []string{"20.0.0.0/20"},
-		PortRanges:        utils.GetPortRanges(tc.Input),
-		NodeNames:         nodeNames,
-		Protocol:          string(v1.ProtocolTCP),
-		IP:                "1.2.3.4",
+		Allowed: []*compute.FirewallAllowed{
+			{
+				IPProtocol: string(v1.ProtocolTCP),
+				Ports:      utils.GetPortRanges(tc.Input),
+			},
+		},
+		NodeNames: nodeNames,
+		IP:        "1.2.3.4",
 	}
-	err = firewalls.EnsureL4FirewallRule(l4.cloud, utils.ServiceKeyFunc(svc.Namespace, svc.Name), &fwrParams /*sharedRule = */, false, klog.TODO())
+	_, err = firewalls.EnsureL4FirewallRule(l4.cloud, utils.ServiceKeyFunc(svc.Namespace, svc.Name), &fwrParams /*sharedRule = */, false, klog.TODO())
 	if err != nil {
 		t.Errorf("Unexpected error %v when ensuring firewall rule %s for svc %+v", err, fwName, svc)
 	}
@@ -1493,6 +1612,7 @@ func TestDualStackInternalLoadBalancerModifyProtocol(t *testing.T) {
 
 			svc := test.NewL4ILBDualStackService(8080, v1.ProtocolTCP, tc.ipFamilies, v1.ServiceExternalTrafficPolicyTypeCluster)
 			l4 := mustSetupILBTestHandler(t, svc, nodeNames)
+			vals := gce.DefaultTestClusterValues()
 
 			// This function simulates the error where backend service protocol cannot be changed
 			// before deleting the forwarding rule.
@@ -1837,7 +1957,7 @@ func TestEnsureIPv4Firewall4Nodes(t *testing.T) {
 	}
 	expectedAllowed := &compute.FirewallAllowed{
 		Ports:      []string{"8080"},
-		IPProtocol: "tcp",
+		IPProtocol: "TCP",
 	}
 	allowed := firewall.Allowed[0]
 	if diff := cmp.Diff(expectedAllowed, allowed); diff != "" {
@@ -1891,7 +2011,7 @@ func TestEnsureIPv6Firewall4Nodes(t *testing.T) {
 	}
 	expectedAllowed := &compute.FirewallAllowed{
 		Ports:      []string{"8080"},
-		IPProtocol: "tcp",
+		IPProtocol: "TCP",
 	}
 	allowed := firewall.Allowed[0]
 	if diff := cmp.Diff(expectedAllowed, allowed); diff != "" {
@@ -2252,7 +2372,7 @@ func TestWeightedILB(t *testing.T) {
 
 			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
 			if result.Error != nil {
-				t.Fatalf("Failed to ensure interna;l loadBalancer, err %v", result.Error)
+				t.Fatalf("Failed to ensure internal loadBalancer, err %v", result.Error)
 			}
 			backendServiceName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
 			key := meta.RegionalKey(backendServiceName, l4.cloud.Region())
@@ -2266,7 +2386,49 @@ func TestWeightedILB(t *testing.T) {
 			}
 		})
 	}
+}
 
+func TestDisableILBIngressFirewall(t *testing.T) {
+	t.Parallel()
+	fakeGCE := getFakeGCECloud(gce.DefaultTestClusterValues())
+	nodeNames := []string{"test-node-1"}
+	// create a test VM so that target tags can be found
+	createVMInstanceWithTag(t, fakeGCE, "test-node-1", "test-node-1")
+
+	svc := test.NewL4ILBService(false, 8080)
+	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+
+	l4ilbParams := &L4ILBParams{
+		Service:                          svc,
+		Cloud:                            fakeGCE,
+		Namer:                            namer,
+		DisableNodesFirewallProvisioning: true,
+	}
+	l4 := NewL4Handler(l4ilbParams, klog.TODO())
+	syncResult := &L4ILBSyncResult{
+		Annotations: make(map[string]string),
+	}
+
+	l4.ensureIPv4NodesFirewall(nodeNames, "10.0.0.7", syncResult)
+	if syncResult.Error != nil {
+		t.Fatalf("ensureIPv4NodesFirewall() error %+v", syncResult)
+	}
+
+	ipv4FirewallName := l4.namer.L4Firewall(l4.Service.Namespace, l4.Service.Name)
+	err := verifyFirewallNotExists(l4.cloud, ipv4FirewallName)
+	if err != nil {
+		t.Errorf("verifyFirewallNotExists(_, %s) for IPv4 ILB firewall returned error %v, want nil", ipv4FirewallName, err)
+	}
+
+	l4.ensureIPv6NodesFirewall("2001:db8::ff00:42:8329", nodeNames, syncResult)
+	if syncResult.Error != nil {
+		t.Fatalf("ensureIPv6NodesFirewall() error %+v", syncResult)
+	}
+	ipv6firewallName := l4.namer.L4IPv6Firewall(l4.Service.Namespace, l4.Service.Name)
+	err = verifyFirewallNotExists(l4.cloud, ipv6firewallName)
+	if err != nil {
+		t.Errorf("verifyFirewallNotExists(_, %s) for IPv6 ILB firewall returned error %v, want nil", ipv6firewallName, err)
+	}
 }
 
 func mustSetupILBTestHandler(t *testing.T, svc *v1.Service, nodeNames []string) *L4 {

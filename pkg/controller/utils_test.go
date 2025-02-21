@@ -19,11 +19,9 @@ package controller
 import (
 	"reflect"
 	"testing"
-	"time"
 
 	"google.golang.org/api/compute/v1"
 
-	api_v1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
@@ -35,12 +33,11 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 )
 
-// Pods created in loops start from this time, for routines that
-// sort on timestamp.
-var firstPodCreationTime = time.Date(2006, 01, 02, 15, 04, 05, 0, time.UTC)
-
 func TestZoneListing(t *testing.T) {
-	lbc := newLoadBalancerController()
+	lbc, err := newLoadBalancerController()
+	if err != nil {
+		t.Fatalf("failed to initialize load balancer controller: %v", err)
+	}
 	zoneToNode := map[string][]string{
 		"zone-1": {"n1"},
 		"zone-2": {"n2"},
@@ -63,41 +60,6 @@ func TestZoneListing(t *testing.T) {
 			t.Fatalf("Expected zones %v; Got zones %v", zoneToNode, zones)
 		}
 	}
-}
-
-/*
-* TODO(rramkumar): Move to pkg/instances in another PR
-func TestInstancesAddedToZones(t *testing.T) {
-	lbc := newLoadBalancerController()
-	zoneToNode := map[string][]string{
-		"zone-1": {"n1", "n2"},
-		"zone-2": {"n3"},
-	}
-	addNodes(lbc, zoneToNode)
-
-	// Create 2 igs, one per zone.
-	testIG := "test-ig"
-	lbc.instancePool.EnsureInstanceGroupsAndPorts(testIG, []int64{int64(3001)})
-
-	// node pool syncs kube-nodes, this will add them to both igs.
-	lbc.instancePool.Sync([]string{"n1", "n2", "n3"})
-	gotZonesToNode := lbc.instancePool.GetInstancesByZone()
-
-	for z, nodeNames := range zoneToNode {
-		if ig, err := lbc.instancePool.GetInstanceGroup(testIG, z); err != nil {
-			t.Errorf("Failed to find ig %v in zone %v, found %+v: %v", testIG, z, ig, err)
-		}
-		expNodes := sets.NewString(nodeNames...)
-		gotNodes := sets.NewString(gotZonesToNode[z]...)
-		if !gotNodes.Equal(expNodes) {
-			t.Errorf("Nodes not added to zones, expected %+v got %+v", expNodes, gotNodes)
-		}
-	}
-}
-*/
-
-func getProbePath(p *api_v1.Probe) string {
-	return p.ProbeHandler.HTTPGet.Path
 }
 
 func TestAddInstanceGroupsAnnotation(t *testing.T) {

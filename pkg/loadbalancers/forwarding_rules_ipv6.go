@@ -27,12 +27,13 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/cloud-provider-gcp/providers/gce"
+	"k8s.io/ingress-gce/pkg/address"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/klog/v2"
 )
 
 const (
@@ -40,12 +41,12 @@ const (
 	prefix96range = "/96"
 )
 
-func (l4 *L4) ensureIPv6ForwardingRule(bsLink string, options gce.ILBOptions, existingIPv6FwdRule *composite.ForwardingRule, ipv6AddressToUse string) (*composite.ForwardingRule, error) {
+func (l4 *L4) ensureIPv6ForwardingRule(bsLink string, options gce.ILBOptions, existingIPv6FwdRule *composite.ForwardingRule, ipv6AddressToUse string) (*composite.ForwardingRule, utils.ResourceSyncStatus, error) {
 	start := time.Now()
 
 	expectedIPv6FwdRule, err := l4.buildExpectedIPv6ForwardingRule(bsLink, options, ipv6AddressToUse)
 	if err != nil {
-		return nil, fmt.Errorf("l4.buildExpectedIPv6ForwardingRule(%s, %v, %s) returned error %w, want nil", bsLink, options, ipv6AddressToUse, err)
+		return nil, utils.ResourceResync, fmt.Errorf("l4.buildExpectedIPv6ForwardingRule(%s, %v, %s) returned error %w, want nil", bsLink, options, ipv6AddressToUse, err)
 	}
 
 	frLogger := l4.svcLogger.WithValues("forwardingRuleName", expectedIPv6FwdRule.Name)
@@ -55,28 +56,28 @@ func (l4 *L4) ensureIPv6ForwardingRule(bsLink string, options gce.ILBOptions, ex
 	}()
 
 	if existingIPv6FwdRule != nil {
-		equal, err := EqualIPv6ForwardingRules(existingIPv6FwdRule, expectedIPv6FwdRule)
+		equal, err := forwardingrules.EqualIPv6(existingIPv6FwdRule, expectedIPv6FwdRule)
 		if err != nil {
-			return existingIPv6FwdRule, err
+			return existingIPv6FwdRule, utils.ResourceResync, err
 		}
 		if equal {
 			frLogger.V(2).Info("ensureIPv6ForwardingRule: Skipping update of unchanged ipv6 forwarding rule")
-			return existingIPv6FwdRule, nil
+			return existingIPv6FwdRule, utils.ResourceResync, nil
 		}
 		err = l4.deleteChangedIPv6ForwardingRule(existingIPv6FwdRule, expectedIPv6FwdRule)
 		if err != nil {
-			return nil, err
+			return nil, utils.ResourceUpdate, err
 		}
 	}
 
 	frLogger.V(2).Info("ensureIPv6ForwardingRule: Creating/Recreating forwarding rule")
 	err = l4.forwardingRules.Create(expectedIPv6FwdRule)
 	if err != nil {
-		return nil, err
+		return nil, utils.ResourceUpdate, err
 	}
 
 	createdFr, err := l4.forwardingRules.Get(expectedIPv6FwdRule.Name)
-	return createdFr, err
+	return createdFr, utils.ResourceUpdate, err
 }
 
 func (l4 *L4) buildExpectedIPv6ForwardingRule(bsLink string, options gce.ILBOptions, ipv6AddressToUse string) (*composite.ForwardingRule, error) {
@@ -98,13 +99,26 @@ func (l4 *L4) buildExpectedIPv6ForwardingRule(bsLink string, options gce.ILBOpti
 
 	svcPorts := l4.Service.Spec.Ports
 	ports := utils.GetPorts(svcPorts)
-	protocol := utils.GetProtocol(svcPorts)
+	protocol := string(utils.GetProtocol(svcPorts))
+	allPorts := false
+	if l4.enableMixedProtocol {
+		protocol = forwardingrules.GetILBProtocol(svcPorts)
+		if protocol == forwardingrules.ProtocolL3 {
+			allPorts = true
+			ports = nil
+		}
+	}
+	if len(ports) > maxForwardedPorts {
+		ports = nil
+		allPorts = true
+	}
 
 	fr := &composite.ForwardingRule{
 		Name:                frName,
 		Description:         frDesc,
 		IPAddress:           ipv6AddressToUse,
-		IPProtocol:          string(protocol),
+		IPProtocol:          protocol,
+		AllPorts:            allPorts,
 		Ports:               ports,
 		LoadBalancingScheme: string(cloud.SchemeInternal),
 		BackendService:      bsLink,
@@ -113,10 +127,6 @@ func (l4 *L4) buildExpectedIPv6ForwardingRule(bsLink string, options gce.ILBOpti
 		Subnetwork:          subnetworkURL,
 		AllowGlobalAccess:   options.AllowGlobalAccess,
 		NetworkTier:         cloud.NetworkTierPremium.ToGCEValue(),
-	}
-	if len(ports) > maxForwardedPorts {
-		fr.Ports = nil
-		fr.AllPorts = true
 	}
 
 	return fr, nil
@@ -135,7 +145,7 @@ func (l4 *L4) deleteChangedIPv6ForwardingRule(existingFwdRule *composite.Forward
 	return nil
 }
 
-func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.ForwardingRule, error) {
+func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.ForwardingRule, utils.ResourceSyncStatus, error) {
 	start := time.Now()
 	expectedIPv6FrName := l4netlb.ipv6FRName()
 
@@ -148,44 +158,50 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 	existingIPv6FwdRule, err := l4netlb.forwardingRules.Get(expectedIPv6FrName)
 	if err != nil {
 		frLogger.Error(err, "l4netlb.forwardingRules.Get returned error")
-		return nil, err
+		return nil, utils.ResourceResync, err
 	}
 
 	subnetworkURL, err := l4netlb.ipv6SubnetURL()
 	if err != nil {
-		return nil, fmt.Errorf("error getting ipv6 forwarding rule subnet: %w", err)
+		return nil, utils.ResourceResync, fmt.Errorf("error getting ipv6 forwarding rule subnet: %w", err)
 	}
 	frLogger.V(2).Info("subnetworkURL for service", "subnetworkURL", subnetworkURL)
 
 	// Determine IP which will be used for this LB. If no forwarding rule has been established
 	// or specified in the Service spec, then requestedIP = "".
-	ipv6AddrToUse, err := ipv6AddressToUse(l4netlb.cloud, l4netlb.Service, existingIPv6FwdRule, subnetworkURL, frLogger)
+	ipv6AddrToUse, err := address.IPv6ToUse(l4netlb.cloud, l4netlb.Service, existingIPv6FwdRule, subnetworkURL, frLogger)
 	if err != nil {
-		frLogger.Error(err, "ipv6AddressToUse for service returned error")
-		return nil, err
+		frLogger.Error(err, "address.IPv6ToUse for service returned error")
+		return nil, utils.ResourceResync, err
 	}
 	frLogger.V(2).Info("ipv6AddressToUse for service", "ipv6AddressToUse", ipv6AddrToUse)
 
-	netTier, isFromAnnotation := utils.GetNetworkTier(l4netlb.Service)
+	netTier, isFromAnnotation := annotations.NetworkTier(l4netlb.Service)
 	frLogger.V(2).Info("network tier for service", "networkTier", netTier, "isFromAnnotation", isFromAnnotation)
+
+	// IPv6 address is not supported for External Regional Network Load Balancing with Standard network tier.
+	if netTier == cloud.NetworkTierStandard {
+		resourceErr := "IPv6 External Load Balancer"
+		return nil, utils.ResourceResync, utils.NewUnsupportedNetworkTierErr(resourceErr, string(cloud.NetworkTierStandard))
+	}
 
 	// Only for IPv6, address reservation is not supported on Standard Tier
 	if !l4netlb.cloud.IsLegacyNetwork() && netTier == cloud.NetworkTierPremium {
 		nm := types.NamespacedName{Namespace: l4netlb.Service.Namespace, Name: l4netlb.Service.Name}.String()
-		addrMgr := newAddressManager(l4netlb.cloud, nm, l4netlb.cloud.Region(), subnetworkURL, expectedIPv6FrName, ipv6AddrToUse, cloud.SchemeExternal, netTier, IPv6Version, frLogger)
+		addrMgr := address.NewManager(l4netlb.cloud, nm, l4netlb.cloud.Region(), subnetworkURL, expectedIPv6FrName, ipv6AddrToUse, cloud.SchemeExternal, netTier, address.IPv6Version, frLogger)
 
 		// If network tier annotation in Service Spec is present
 		// check if it matches network tiers from forwarding rule and external ip Address.
 		// If they do not match, tear down the existing resources with the wrong tier.
 		if isFromAnnotation {
 			if err := l4netlb.tearDownResourcesWithWrongNetworkTier(existingIPv6FwdRule, netTier, addrMgr, frLogger); err != nil {
-				return nil, err
+				return nil, utils.ResourceResync, err
 			}
 		}
 
 		ipv6AddrToUse, _, err = addrMgr.HoldAddress()
 		if err != nil {
-			return nil, err
+			return nil, utils.ResourceResync, err
 		}
 		frLogger.V(2).Info("ensureIPv6ForwardingRule: reserved IP for the forwarding rule", "ip", ipv6AddrToUse)
 		defer func() {
@@ -205,7 +221,7 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 
 	expectedIPv6FwdRule, err := l4netlb.buildExpectedIPv6ForwardingRule(bsLink, ipv6AddrToUse, subnetworkURL, netTier)
 	if err != nil {
-		return nil, fmt.Errorf("l4netlb.buildExpectedIPv6ForwardingRule(%s, %s, %s, %v) returned error %w, want nil", bsLink, ipv6AddrToUse, subnetworkURL, netTier, err)
+		return nil, utils.ResourceResync, fmt.Errorf("l4netlb.buildExpectedIPv6ForwardingRule(%s, %s, %s, %v) returned error %w, want nil", bsLink, ipv6AddrToUse, subnetworkURL, netTier, err)
 	}
 	frLogger.V(2).Info("l4netlb.buildExpectedIPv6ForwardingRule(_,_,_,_) for service", "expectedIPv6FwdRule", expectedIPv6FwdRule)
 
@@ -213,30 +229,30 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 		if existingIPv6FwdRule.NetworkTier != expectedIPv6FwdRule.NetworkTier {
 			resource := fmt.Sprintf("Forwarding rule (%v)", existingIPv6FwdRule.Name)
 			networkTierMismatchError := utils.NewNetworkTierErr(resource, existingIPv6FwdRule.NetworkTier, expectedIPv6FwdRule.NetworkTier)
-			return nil, networkTierMismatchError
+			return nil, utils.ResourceResync, networkTierMismatchError
 		}
 
-		equal, err := EqualIPv6ForwardingRules(existingIPv6FwdRule, expectedIPv6FwdRule)
+		equal, err := forwardingrules.EqualIPv6(existingIPv6FwdRule, expectedIPv6FwdRule)
 		if err != nil {
-			return existingIPv6FwdRule, err
+			return existingIPv6FwdRule, utils.ResourceResync, err
 		}
 		if equal {
 			frLogger.V(2).Info("ensureIPv6ForwardingRule: Skipping update of unchanged ipv6 forwarding rule")
-			return existingIPv6FwdRule, nil
+			return existingIPv6FwdRule, utils.ResourceResync, nil
 		}
 		err = l4netlb.deleteChangedIPv6ForwardingRule(existingIPv6FwdRule, expectedIPv6FwdRule)
 		if err != nil {
-			return nil, err
+			return nil, utils.ResourceUpdate, err
 		}
 	}
 	frLogger.V(2).Info("ensureIPv6ForwardingRule: Creating/Recreating forwarding rule")
 	err = l4netlb.forwardingRules.Create(expectedIPv6FwdRule)
 	if err != nil {
-		return nil, err
+		return nil, utils.ResourceUpdate, err
 	}
 
 	createdFr, err := l4netlb.forwardingRules.Get(expectedIPv6FwdRule.Name)
-	return createdFr, err
+	return createdFr, utils.ResourceUpdate, err
 }
 
 func (l4netlb *L4NetLB) buildExpectedIPv6ForwardingRule(bsLink, ipv6AddressToUse, subnetworkURL string, netTier cloud.NetworkTier) (*composite.ForwardingRule, error) {
@@ -290,62 +306,4 @@ func (l4netlb *L4NetLB) deleteChangedIPv6ForwardingRule(existingFwdRule *composi
 	}
 	l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeNormal, events.SyncIngress, "External ForwardingRule %q deleted", existingFwdRule.Name)
 	return nil
-}
-
-func EqualIPv6ForwardingRules(fr1, fr2 *composite.ForwardingRule) (bool, error) {
-	id1, err := cloud.ParseResourceURL(fr1.BackendService)
-	if err != nil {
-		return false, fmt.Errorf("EqualIPv6ForwardingRules(): failed to parse backend resource URL from FR, err - %w", err)
-	}
-	id2, err := cloud.ParseResourceURL(fr2.BackendService)
-	if err != nil {
-		return false, fmt.Errorf("EqualIPv6ForwardingRules(): failed to parse resource URL from FR, err - %w", err)
-	}
-	return fr1.IPProtocol == fr2.IPProtocol &&
-		fr1.LoadBalancingScheme == fr2.LoadBalancingScheme &&
-		equalPorts(fr1.Ports, fr2.Ports, fr1.PortRange, fr2.PortRange) &&
-		utils.EqualCloudResourceIDs(id1, id2) &&
-		fr1.AllowGlobalAccess == fr2.AllowGlobalAccess &&
-		fr1.AllPorts == fr2.AllPorts &&
-		fr1.Subnetwork == fr2.Subnetwork &&
-		fr1.NetworkTier == fr2.NetworkTier, nil
-}
-
-// ipv6AddrToUse determines which IPv4 address needs to be used in the ForwardingRule,
-// address evaluated in the following order:
-//
-//  1. Use static addresses annotation "networking.gke.io/load-balancer-ip-addresses".
-//  2. Use existing forwarding rule IP. If subnetwork was changed (or no existing IP),
-//     reset the IP (by returning empty string).
-func ipv6AddressToUse(cloud *gce.Cloud, svc *corev1.Service, ipv6FwdRule *composite.ForwardingRule, requestedSubnet string, logger klog.Logger) (string, error) {
-	// Get value from new annotation which support both IPv4 and IPv6
-	ipv6AddressFromAnnotation, err := annotations.FromService(svc).IPv6AddressAnnotation(cloud)
-	if err != nil {
-		return "", err
-	}
-	if ipv6AddressFromAnnotation != "" {
-		// Google Cloud stores ipv6 addresses in CIDR form,
-		// but to create static address you need to specify address without range
-		addr := ipv6AddressWithoutRange(ipv6AddressFromAnnotation)
-		logger.V(2).Info("ipv6AddressToUse: using IPv6 Address from annotation", "address", addr)
-		return addr, nil
-	}
-	if ipv6FwdRule == nil {
-		logger.V(2).Info("ipv6AddressToUse: use any IPv6 Address")
-		return "", nil
-	}
-	if requestedSubnet != ipv6FwdRule.Subnetwork {
-		logger.V(2).Info("ipv6AddressToUse: reset IPv6 Address due to changed subnet")
-		return "", nil
-	}
-
-	// Google Cloud creates ipv6 forwarding rules with IPAddress in CIDR form,
-	// but to create static address you need to specify address without range
-	addr := ipv6AddressWithoutRange(ipv6FwdRule.IPAddress)
-	logger.V(2).Info("ipv6AddressToUse: using IPv6 Address from existing forwarding rule", "forwardingRuleName", ipv6FwdRule.Name, "address", addr)
-	return addr, nil
-}
-
-func ipv6AddressWithoutRange(ipv6Address string) string {
-	return strings.Split(ipv6Address, "/")[0]
 }
