@@ -75,9 +75,11 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 					Spec: providerconfigv1.ProviderConfigSpec{
 						ProjectID:     "my-project",
 						ProjectNumber: 12345,
-						NetworkConfig: &providerconfigv1.NetworkConfig{
-							Network:           "my-network",
-							DefaultSubnetwork: "my-subnetwork",
+						NetworkConfig: providerconfigv1.ProviderNetworkConfig{
+							Network: "my-network",
+							SubnetInfo: providerconfigv1.ProviderConfigSubnetInfo{
+								Subnetwork: "my-subnetwork",
+							},
 						},
 					},
 				},
@@ -112,9 +114,11 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 					Spec: providerconfigv1.ProviderConfigSpec{
 						ProjectID:     "project-1",
 						ProjectNumber: 1111,
-						NetworkConfig: &providerconfigv1.NetworkConfig{
-							Network:           "my-network-1",
-							DefaultSubnetwork: "my-subnetwork-1",
+						NetworkConfig: providerconfigv1.ProviderNetworkConfig{
+							Network: "my-network-1",
+							SubnetInfo: providerconfigv1.ProviderConfigSubnetInfo{
+								Subnetwork: "my-subnetwork-1",
+							},
 						},
 					},
 				},
@@ -126,9 +130,11 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 					Spec: providerconfigv1.ProviderConfigSpec{
 						ProjectID:     "project-2",
 						ProjectNumber: 2222,
-						NetworkConfig: &providerconfigv1.NetworkConfig{
-							Network:           "my-network-2",
-							DefaultSubnetwork: "my-subnetwork-2",
+						NetworkConfig: providerconfigv1.ProviderNetworkConfig{
+							Network: "my-network-2",
+							SubnetInfo: providerconfigv1.ProviderConfigSubnetInfo{
+								Subnetwork: "my-subnetwork-2",
+							},
 						},
 					},
 				},

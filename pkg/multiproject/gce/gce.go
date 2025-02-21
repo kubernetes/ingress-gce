@@ -93,13 +93,11 @@ func generateConfigForProviderConfig(defaultConfigContent string, providerConfig
 	globalSection.Key(tokenBodyKey).SetValue(newTokenBody)
 
 	// Update NetworkName and SubnetworkName
-	if providerConfig.Spec.NetworkConfig != nil {
-		networkNameKey := "network-name"
-		globalSection.Key(networkNameKey).SetValue(providerConfig.Spec.NetworkConfig.Network)
+	networkNameKey := "network-name"
+	globalSection.Key(networkNameKey).SetValue(providerConfig.Spec.NetworkConfig.Network)
 
-		subnetworkNameKey := "subnetwork-name"
-		globalSection.Key(subnetworkNameKey).SetValue(providerConfig.Spec.NetworkConfig.DefaultSubnetwork)
-	}
+	subnetworkNameKey := "subnetwork-name"
+	globalSection.Key(subnetworkNameKey).SetValue(providerConfig.Spec.NetworkConfig.SubnetInfo.Subnetwork)
 
 	// Write the modified config content to a string with custom options
 	var modifiedConfigContent bytes.Buffer
