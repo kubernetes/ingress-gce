@@ -135,7 +135,6 @@ func NewFirewallCR(name string, ports, srcRanges, dstRanges []string, enforced b
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 		},
-		Description: DefaultFirewallDescription,
 		Spec: gcpfirewallv1.GCPFirewallSpec{
 			Action:   gcpfirewallv1.ActionAllow,
 			Disabled: !enforced,
