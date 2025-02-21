@@ -117,6 +117,7 @@ var F = struct {
 	EnableL4NetLBNEG                         bool
 	EnableL4NetLBNEGDefault                  bool
 	GateNEGByLock                            bool
+	GateL4ByLock                             bool
 	EnableMultipleIGs                        bool
 	EnableL4StrongSessionAffinity            bool
 	EnableNEGLabelPropagation                bool
@@ -288,6 +289,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableL4NetLBNEG, "enable-l4-netlb-neg", false, `Optional, if enabled then the NetLB controller can create L4 NetLB services with NEG backends.`)
 	flag.BoolVar(&F.EnableL4NetLBNEGDefault, "enable-l4-netlb-neg-default", false, `Optional, if enabled then newly created L4 NetLB services will use NEG backends. Has effect only if '--enable-l4-netlb-neg' is set to true.`)
 	flag.BoolVar(&F.GateNEGByLock, "gate-neg-by-lock", false, "If enabled then the NEG controller will be run via leader election with NEG resource lock")
+	flag.BoolVar(&F.GateL4ByLock, "gate-l4-by-lock", false, "If enabled then the L4 controllers will be run via leader election with L4 resource lock")
 	flag.BoolVar(&F.EnableIGController, "enable-ig-controller", true, `Optional, if enabled then the IG controller will be run.`)
 	flag.BoolVar(&F.EnablePSC, "enable-psc", false, "Enable PSC controller")
 	flag.StringVar(&F.GKEClusterName, "gke-cluster-name", "", "The name of the GKE cluster this Ingress Controller will be interacting with")
