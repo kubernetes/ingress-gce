@@ -165,9 +165,11 @@ subnetwork-name = default-subnetwork
 				Spec: v1.ProviderConfigSpec{
 					ProjectID:     "providerconfig-project-id",
 					ProjectNumber: 654321,
-					NetworkConfig: &v1.NetworkConfig{
-						Network:           "providerconfig-network-url",
-						DefaultSubnetwork: "providerconfig-subnetwork-url",
+					NetworkConfig: v1.ProviderNetworkConfig{
+						Network: "providerconfig-network-url",
+						SubnetInfo: v1.ProviderConfigSubnetInfo{
+							Subnetwork: "providerconfig-subnetwork-url",
+						},
 					},
 				},
 			},
@@ -196,9 +198,11 @@ other-field = other-value
 				Spec: v1.ProviderConfigSpec{
 					ProjectID:     "providerconfig-project-id",
 					ProjectNumber: 654321,
-					NetworkConfig: &v1.NetworkConfig{
-						Network:           "providerconfig-network-url",
-						DefaultSubnetwork: "providerconfig-subnetwork-url",
+					NetworkConfig: v1.ProviderNetworkConfig{
+						Network: "providerconfig-network-url",
+						SubnetInfo: v1.ProviderConfigSubnetInfo{
+							Subnetwork: "providerconfig-subnetwork-url",
+						},
 					},
 				},
 			},

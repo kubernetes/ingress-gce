@@ -40,14 +40,14 @@ func (g *GCEFake) GCEForProviderConfig(providerConfig *v1.ProviderConfig, logger
 	updatedConfig := g.defaultTestClusterValues
 	updatedConfig.ProjectID = providerConfig.Spec.ProjectID
 	updatedConfig.NetworkURL = fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/global/networks/%s", providerConfig.Spec.ProjectID, providerConfig.Spec.NetworkConfig.Network)
-	updatedConfig.SubnetworkURL = fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/regions/%s/subnetworks/%s", providerConfig.Spec.ProjectID, updatedConfig.Region, providerConfig.Spec.NetworkConfig.DefaultSubnetwork)
+	updatedConfig.SubnetworkURL = fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/regions/%s/subnetworks/%s", providerConfig.Spec.ProjectID, updatedConfig.Region, providerConfig.Spec.NetworkConfig.SubnetInfo.Subnetwork)
 	logger.Info("Creating GCEFake for provider config", "providerConfig", providerConfig.Name, "updatedConfig", updatedConfig)
 	fakeCloud := cloudgce.NewFakeGCECloud(updatedConfig)
 	_, err := createNetwork(fakeCloud, providerConfig.Spec.NetworkConfig.Network)
 	if err != nil {
 		return nil, err
 	}
-	_, err = createSubnetwork(fakeCloud, providerConfig.Spec.NetworkConfig.DefaultSubnetwork, providerConfig.Spec.NetworkConfig.Network)
+	_, err = createSubnetwork(fakeCloud, providerConfig.Spec.NetworkConfig.SubnetInfo.Subnetwork, providerConfig.Spec.NetworkConfig.Network)
 	if err != nil {
 		return nil, err
 	}
