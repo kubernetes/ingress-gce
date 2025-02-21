@@ -96,7 +96,7 @@ func (pccm *ProviderConfigControllersManager) StartControllersForProviderConfig(
 		return fmt.Errorf("failed to ensure NEG cleanup finalizer for project %s: %v", pcKey, err)
 	}
 
-	cloud, err := pccm.gceCreator.NewGCEForProviderConfig(pc, pccm.logger)
+	cloud, err := pccm.gceCreator.GCEForProviderConfig(pc, pccm.logger)
 	if err != nil {
 		return fmt.Errorf("failed to create GCE client for provider config %+v: %v", pc, err)
 	}

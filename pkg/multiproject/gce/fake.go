@@ -36,7 +36,7 @@ func (g *GCEFake) GetGCEForProviderConfig(providerConfig *v1.ProviderConfig) (*c
 	return g.clientsForProviderConfigs[pcKey], nil
 }
 
-func (g *GCEFake) NewGCEForProviderConfig(providerConfig *v1.ProviderConfig, logger klog.Logger) (*cloudgce.Cloud, error) {
+func (g *GCEFake) GCEForProviderConfig(providerConfig *v1.ProviderConfig, logger klog.Logger) (*cloudgce.Cloud, error) {
 	pcKey := providerConfigKey(providerConfig)
 	if g.clientsForProviderConfigs[pcKey] != nil {
 		return g.clientsForProviderConfigs[pcKey], nil

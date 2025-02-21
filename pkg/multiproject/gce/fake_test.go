@@ -25,7 +25,7 @@ func TestNewGCEForProviderConfig(t *testing.T) {
 	}
 
 	logger := klog.TODO()
-	cloud, err := fake.NewGCEForProviderConfig(providerConfig, logger)
+	cloud, err := fake.GCEForProviderConfig(providerConfig, logger)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
