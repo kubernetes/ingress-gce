@@ -15,7 +15,6 @@ import (
 	providerconfig "k8s.io/ingress-gce/pkg/apis/providerconfig/v1"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/multiproject/filteredinformer"
-	multiprojectgce "k8s.io/ingress-gce/pkg/multiproject/gce"
 	"k8s.io/ingress-gce/pkg/neg"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
@@ -43,18 +42,13 @@ func StartNEGController(
 	clusterNamer *namer.Namer,
 	l4Namer *namer.L4Namer,
 	lpConfig labels.PodLabelPropagationConfig,
-	defaultCloudConfig string,
+	cloud *gce.Cloud,
 	globalStopCh <-chan struct{},
 	logger klog.Logger,
 	providerConfig *providerconfig.ProviderConfig,
 ) (chan<- struct{}, error) {
 	providerConfigName := providerConfig.Name
 	logger.V(2).Info("Initializing NEG controller", "providerConfig", providerConfigName)
-
-	cloud, err := multiprojectgce.NewGCEForProviderConfig(defaultCloudConfig, providerConfig, logger)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create GCE client for provider config %+v: %v", providerConfig, err)
-	}
 
 	// The ProviderConfig-specific stop channel. We close this in StopControllersForProviderConfig.
 	providerConfigStopCh := make(chan struct{})
@@ -145,9 +139,10 @@ func initializeInformers(
 		informersFactory.Discovery().V1().EndpointSlices().Informer(),
 		providerConfigName,
 	)
-	err := endpointSliceInformer.AddIndexers(map[string]cache.IndexFunc{
-		endpointslices.EndpointSlicesByServiceIndex: endpointslices.EndpointSlicesByServiceFunc,
-	})
+	// Even though we created separate "provider-config-filtered" informer, informers from the same
+	// factory will share indexers. That's why we need to add the indexer only if it's not present.
+	// This basically means we will only add indexer to the first provider config's informer.
+	err := addIndexerIfNotPresent(endpointSliceInformer.GetIndexer(), endpointslices.EndpointSlicesByServiceIndex, endpointslices.EndpointSlicesByServiceFunc)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to add indexers to endpointSliceInformer: %v", err)
 	}
@@ -227,6 +222,16 @@ func initializeInformers(
 	}
 
 	return informers, hasSynced, nil
+}
+
+// addIndexerIfNotPresent adds an indexer to the indexer if it's not present.
+// This is needed because informers from the same factory will share indexers.
+func addIndexerIfNotPresent(indexer cache.Indexer, indexName string, indexFunc cache.IndexFunc) error {
+	indexers := indexer.GetIndexers()
+	if _, ok := indexers[indexName]; ok {
+		return nil
+	}
+	return indexer.AddIndexers(cache.Indexers{indexName: indexFunc})
 }
 
 func createNEGController(

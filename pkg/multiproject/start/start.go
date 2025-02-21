@@ -10,13 +10,12 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
-	"k8s.io/ingress-gce/cmd/glbc/app"
 	"k8s.io/ingress-gce/pkg/flags"
 	_ "k8s.io/ingress-gce/pkg/klog"
 	pccontroller "k8s.io/ingress-gce/pkg/multiproject/controller"
+	"k8s.io/ingress-gce/pkg/multiproject/gce"
 	"k8s.io/ingress-gce/pkg/multiproject/manager"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	providerconfigclient "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned"
@@ -34,18 +33,20 @@ func StartWithLeaderElection(
 	ctx context.Context,
 	leaderElectKubeClient kubernetes.Interface,
 	hostname string,
-	kubeConfig *rest.Config,
 	logger klog.Logger,
 	kubeClient kubernetes.Interface,
 	svcNegClient svcnegclient.Interface,
 	kubeSystemUID types.UID,
 	eventRecorderKubeClient kubernetes.Interface,
+	providerConfigClient providerconfigclient.Interface,
+	informersFactory informers.SharedInformerFactory,
+	gceCreator gce.GCECreator,
 	rootNamer *namer.Namer,
 	stopCh <-chan struct{},
 ) error {
 	recordersManager := recorders.NewManager(eventRecorderKubeClient, logger)
 
-	leConfig, err := makeLeaderElectionConfig(leaderElectKubeClient, hostname, recordersManager, kubeConfig, logger, kubeClient, svcNegClient, kubeSystemUID, eventRecorderKubeClient, rootNamer, stopCh)
+	leConfig, err := makeLeaderElectionConfig(leaderElectKubeClient, hostname, recordersManager, logger, kubeClient, svcNegClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, informersFactory, gceCreator, rootNamer, stopCh)
 	if err != nil {
 		return err
 	}
@@ -60,12 +61,14 @@ func makeLeaderElectionConfig(
 	leaderElectKubeClient kubernetes.Interface,
 	hostname string,
 	recordersManager *recorders.Manager,
-	kubeConfig *rest.Config,
 	logger klog.Logger,
 	kubeClient kubernetes.Interface,
 	svcNegClient svcnegclient.Interface,
 	kubeSystemUID types.UID,
 	eventRecorderKubeClient kubernetes.Interface,
+	providerConfigClient providerconfigclient.Interface,
+	informersFactory informers.SharedInformerFactory,
+	gceCreator gce.GCECreator,
 	rootNamer *namer.Namer,
 	stopCh <-chan struct{},
 ) (*leaderelection.LeaderElectionConfig, error) {
@@ -93,7 +96,7 @@ func makeLeaderElectionConfig(
 		RetryPeriod:   flags.F.LeaderElection.RetryPeriod.Duration,
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(context.Context) {
-				Start(kubeConfig, logger, kubeClient, svcNegClient, kubeSystemUID, eventRecorderKubeClient, rootNamer, stopCh)
+				Start(logger, kubeClient, svcNegClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, informersFactory, gceCreator, rootNamer, stopCh)
 			},
 			OnStoppedLeading: func() {
 				logger.Info("Stop running multi-project leader election")
@@ -103,22 +106,19 @@ func makeLeaderElectionConfig(
 }
 
 // Start starts the ProviderConfig controller.
-// It builds required clients, context and starts the controller.
+// It builds required context and starts the controller.
 func Start(
-	kubeConfig *rest.Config,
 	logger klog.Logger,
 	kubeClient kubernetes.Interface,
 	svcNegClient svcnegclient.Interface,
 	kubeSystemUID types.UID,
 	eventRecorderKubeClient kubernetes.Interface,
+	providerConfigClient providerconfigclient.Interface,
+	informersFactory informers.SharedInformerFactory,
+	gceCreator gce.GCECreator,
 	rootNamer *namer.Namer,
 	stopCh <-chan struct{},
 ) {
-	providerConfigClient, err := providerconfigclient.NewForConfig(kubeConfig)
-	if err != nil {
-		klog.Fatalf("Failed to create ProviderConfig client: %v", err)
-	}
-
 	lpConfig := labels.PodLabelPropagationConfig{}
 	if flags.F.EnableNEGLabelPropagation {
 		lpConfigEnvVar := os.Getenv("LABEL_PROPAGATION_CONFIG")
@@ -126,13 +126,6 @@ func Start(
 			logger.Error(err, "Failed to retrieve pod label propagation config")
 		}
 	}
-
-	defaultGCEConfig, err := app.GCEConfString(logger)
-	if err != nil {
-		klog.Fatalf("Error getting default cluster GCE config: %v", err)
-	}
-
-	informersFactory := informers.NewSharedInformerFactoryWithOptions(kubeClient, flags.F.ResyncPeriod)
 
 	providerConfigInformer := providerconfiginformers.NewSharedInformerFactory(providerConfigClient, flags.F.ResyncPeriod).Cloud().V1().ProviderConfigs().Informer()
 	go providerConfigInformer.Run(stopCh)
@@ -147,7 +140,7 @@ func Start(
 		rootNamer,
 		namer.NewL4Namer(string(kubeSystemUID), rootNamer),
 		lpConfig,
-		defaultGCEConfig,
+		gceCreator,
 		stopCh,
 		logger,
 	)
