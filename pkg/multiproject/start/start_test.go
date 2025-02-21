@@ -180,6 +180,7 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 			svcNegClient := svcnegfake.NewSimpleClientset()
 
 			// This simulates the automatic labeling that the real environment does.
+			// ProviderConfig name label is set to the namespace of the object.
 			testutil.EmulateProviderConfigLabelingWebhook(svcNegClient.Tracker(), &svcNegClient.Fake, "servicenetworkendpointgroups")
 
 			logger := klog.TODO()
@@ -294,7 +295,7 @@ func validateService(
 			t.Errorf("Svc NEG on Service %q is not in the expected state: %v", svc.Name, err)
 		}
 
-		gce, err := gceCreator.GetGCEForProviderConfig(pc)
+		gce, err := gceCreator.GCEForProviderConfig(pc, klog.TODO())
 		if err != nil {
 			t.Errorf("Failed to get GCE for ProviderConfig %q: %v", pc.Name, err)
 			continue

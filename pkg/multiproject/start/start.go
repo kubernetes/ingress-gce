@@ -39,13 +39,12 @@ func StartWithLeaderElection(
 	kubeSystemUID types.UID,
 	eventRecorderKubeClient kubernetes.Interface,
 	providerConfigClient providerconfigclient.Interface,
+	informersFactory informers.SharedInformerFactory,
 	gceCreator gce.GCECreator,
 	rootNamer *namer.Namer,
 	stopCh <-chan struct{},
 ) error {
 	recordersManager := recorders.NewManager(eventRecorderKubeClient, logger)
-
-	informersFactory := informers.NewSharedInformerFactoryWithOptions(kubeClient, flags.F.ResyncPeriod)
 
 	leConfig, err := makeLeaderElectionConfig(leaderElectKubeClient, hostname, recordersManager, logger, kubeClient, svcNegClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, informersFactory, gceCreator, rootNamer, stopCh)
 	if err != nil {

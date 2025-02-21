@@ -17,6 +17,10 @@ type FakeTracker interface {
 // It will set the providerconfig name label on the object, on creation.
 // This is needed, as in unit/integration tests, when we create objects, we expect
 // the providerconfig name label to be set.
+//
+// Important: this function sets ProviderConfig name label to the namespace of the object.
+// However, in the real world, multiple namespaces can have the same providerconfig name.
+//
 // The function takes a fake client and the name of the CRD.
 func EmulateProviderConfigLabelingWebhook(tracker FakeTracker, fake *testing.Fake, crName string) {
 	fake.PrependReactor("create", crName, func(action testing.Action) (handled bool, ret runtime.Object, err error) {

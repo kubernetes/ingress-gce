@@ -246,7 +246,7 @@ func main() {
 		rootLogger.Info("Multi-project mode is enabled, starting project-syncer")
 
 		runWithWg(func() {
-			gceCreator, err := multiprojectgce.NewGCEFromFileStringCreator(rootLogger)
+			gceCreator, err := multiprojectgce.NewDefaultGCECreator(rootLogger)
 			if err != nil {
 				klog.Fatalf("Failed to create GCE creator: %v", err)
 			}
@@ -254,6 +254,7 @@ func main() {
 			if err != nil {
 				klog.Fatalf("Failed to create ProviderConfig client: %v", err)
 			}
+			informersFactory := informers.NewSharedInformerFactory(kubeClient, flags.F.ResyncPeriod)
 			if flags.F.LeaderElection.LeaderElect {
 				err := multiprojectstart.StartWithLeaderElection(
 					context.Background(),
@@ -265,6 +266,7 @@ func main() {
 					kubeSystemUID,
 					eventRecorderKubeClient,
 					providerConfigClient,
+					informersFactory,
 					gceCreator,
 					namer,
 					stopCh,
@@ -273,7 +275,6 @@ func main() {
 					rootLogger.Error(err, "Failed to start multi-project syncer with leader election")
 				}
 			} else {
-				informersFactory := informers.NewSharedInformerFactory(kubeClient, flags.F.ResyncPeriod)
 				multiprojectstart.Start(
 					rootLogger,
 					kubeClient,

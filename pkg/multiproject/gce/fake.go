@@ -28,14 +28,8 @@ func providerConfigKey(providerConfig *v1.ProviderConfig) string {
 	return fmt.Sprintf("%s/%s", providerConfig.Namespace, providerConfig.Name)
 }
 
-func (g *GCEFake) GetGCEForProviderConfig(providerConfig *v1.ProviderConfig) (*cloudgce.Cloud, error) {
-	pcKey := providerConfigKey(providerConfig)
-	if g.clientsForProviderConfigs[pcKey] == nil {
-		return nil, fmt.Errorf("GCEFake does not have a client for provider config %q", pcKey)
-	}
-	return g.clientsForProviderConfigs[pcKey], nil
-}
-
+// GCEForProviderConfig returns a new Fake GCE client for the given provider config.
+// It stores the client in the GCEFake and returns it if the same provider config is requested again.
 func (g *GCEFake) GCEForProviderConfig(providerConfig *v1.ProviderConfig, logger klog.Logger) (*cloudgce.Cloud, error) {
 	pcKey := providerConfigKey(providerConfig)
 	if g.clientsForProviderConfigs[pcKey] != nil {
@@ -57,7 +51,7 @@ func (g *GCEFake) GCEForProviderConfig(providerConfig *v1.ProviderConfig, logger
 	if err != nil {
 		return nil, err
 	}
-	if err := g.CreateAndInsertNodes(fakeCloud, []string{"test-node-1"}, updatedConfig.ZoneName); err != nil {
+	if err := createAndInsertNodes(fakeCloud, []string{"test-node-1"}, updatedConfig.ZoneName); err != nil {
 		return nil, err
 	}
 
@@ -65,7 +59,7 @@ func (g *GCEFake) GCEForProviderConfig(providerConfig *v1.ProviderConfig, logger
 	return fakeCloud, nil
 }
 
-func (g *GCEFake) CreateAndInsertNodes(cloud *cloudgce.Cloud, nodeNames []string, zone string) error {
+func createAndInsertNodes(cloud *cloudgce.Cloud, nodeNames []string, zone string) error {
 	if _, err := test.CreateAndInsertNodes(cloud, nodeNames, zone); err != nil {
 		return err
 	}

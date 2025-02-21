@@ -178,7 +178,6 @@ func NewController(
 		apiv1.EventSource{Component: "neg-controller"})
 
 	syncerMetrics := syncMetrics.NewNegMetricsCollector(flags.F.NegMetricsExportInterval, logger)
-
 	manager := newSyncerManager(
 		namer,
 		l4Namer,

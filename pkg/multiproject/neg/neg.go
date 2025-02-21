@@ -139,6 +139,9 @@ func initializeInformers(
 		informersFactory.Discovery().V1().EndpointSlices().Informer(),
 		providerConfigName,
 	)
+	// Even though we created separate "provider-config-filtered" informer, informers from the same
+	// factory will share indexers. That's why we need to add the indexer only if it's not present.
+	// This basically means we will only add indexer to the first provider config's informer.
 	err := addIndexerIfNotPresent(endpointSliceInformer.GetIndexer(), endpointslices.EndpointSlicesByServiceIndex, endpointslices.EndpointSlicesByServiceFunc)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to add indexers to endpointSliceInformer: %v", err)
@@ -221,6 +224,8 @@ func initializeInformers(
 	return informers, hasSynced, nil
 }
 
+// addIndexerIfNotPresent adds an indexer to the indexer if it's not present.
+// This is needed because informers from the same factory will share indexers.
 func addIndexerIfNotPresent(indexer cache.Indexer, indexName string, indexFunc cache.IndexFunc) error {
 	indexers := indexer.GetIndexers()
 	if _, ok := indexers[indexName]; ok {
