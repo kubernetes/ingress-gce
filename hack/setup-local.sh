@@ -78,4 +78,4 @@ node-tags = ${nodeTag}
 local-zone = ${zone}
 EOF
 
-echo "Run glbc with hack/run-glbc.sh"
+echo "Run glbc with hack/run-local-glbc.sh"
