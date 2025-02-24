@@ -507,6 +507,64 @@ func TestTransactionSyncNetworkEndpointsMSC(t *testing.T) {
 	}
 }
 
+func TestNegNameMultiNetworking(t *testing.T) {
+	t.Parallel()
+
+	fakeGCE := gce.NewFakeGCECloud(test.DefaultTestClusterValues())
+	negtypes.MockNetworkEndpointAPIs(fakeGCE)
+	fakeCloud := negtypes.NewAdapter(fakeGCE)
+	nonDefaultSubnetURL := "projects/mock-project/regions/test-region/subnetworks/non-default"
+	netInfo := network.NetworkInfo{IsDefault: false, NetworkURL: fakeGCE.NetworkURL(), SubnetworkURL: nonDefaultSubnetURL}
+
+	_, transactionSyncer, err := newTestTransactionSyncerWithNetInfo(fakeCloud, negtypes.VmIpEndpointType, false, netInfo)
+	if err != nil {
+		t.Fatalf("failed to initialize transaction syncer: %v", err)
+	}
+
+	// Start syncer without starting syncer goroutine
+	(transactionSyncer.syncer.(*syncer)).stopped = false
+	if err := transactionSyncer.ensureNetworkEndpointGroups(); err != nil {
+		t.Errorf("Expect error == nil, but got %v", err)
+	}
+
+	// Verify the NEGs are created as expected
+	ret, _ := transactionSyncer.cloud.AggregatedListNetworkEndpointGroup(transactionSyncer.NegSyncerKey.GetAPIVersion(), klog.TODO())
+	// Though the test cases below only add instances in zone1 and zone2, NEGs will be created in zone3 or zone4 as well since fakeZoneGetter includes those zones.
+	expectZones := []string{negtypes.TestZone1, negtypes.TestZone2, negtypes.TestZone3}
+	retZones := sets.NewString()
+
+	for key := range ret {
+		retZones.Insert(key.Zone)
+	}
+	for _, zone := range expectZones {
+		_, ok := retZones[zone]
+		if !ok {
+			t.Errorf("Failed to find zone %q from ret %v for negType %v", zone, ret, negtypes.VmIpEndpointType)
+			continue
+		}
+	}
+
+	err = transactionSyncer.syncInternal()
+	if err != nil {
+		t.Errorf("unexpected error when syncing: %s", err)
+	}
+
+	for _, neg := range ret {
+		if neg.Name != transactionSyncer.NegName {
+			t.Errorf("Unexpected neg %q, expected %q", neg.Name, transactionSyncer.NegName)
+		}
+		if neg.NetworkEndpointType != string(negtypes.VmIpEndpointType) {
+			t.Errorf("Unexpected neg type %q, expected %q", neg.NetworkEndpointType, negtypes.VmIpEndpointType)
+		}
+		if neg.Description == "" {
+			t.Errorf("Neg Description should be populated when NEG CRD is enabled")
+		}
+		if neg.Subnetwork != nonDefaultSubnetURL {
+			t.Errorf("Neg subnetwork URL is incorrect. Got %s, Expected %s", neg.Subnetwork, nonDefaultSubnetURL)
+		}
+	}
+}
+
 func TestSyncNetworkEndpointLabel(t *testing.T) {
 
 	var (
@@ -3340,10 +3398,20 @@ func TestGetNonDefaultSubnetNEGName(t *testing.T) {
 }
 
 func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negType negtypes.NetworkEndpointType, customName bool) (negtypes.NegSyncer, *transactionSyncer, error) {
-	return newTestTransactionSyncerWithTopologyInformer(fakeGCE, negType, customName, zonegetter.FakeNodeTopologyInformer())
+	netInfo := network.NetworkInfo{IsDefault: true, NetworkURL: fakeGCE.NetworkURL(), SubnetworkURL: fakeGCE.SubnetworkURL()}
+	return newCustomTestTransactionSyncer(fakeGCE, negType, customName, zonegetter.FakeNodeTopologyInformer(), netInfo)
+}
+
+func newTestTransactionSyncerWithNetInfo(fakeGCE negtypes.NetworkEndpointGroupCloud, negType negtypes.NetworkEndpointType, customName bool, netInfo network.NetworkInfo) (negtypes.NegSyncer, *transactionSyncer, error) {
+	return newCustomTestTransactionSyncer(fakeGCE, negType, customName, zonegetter.FakeNodeTopologyInformer(), netInfo)
 }
 
 func newTestTransactionSyncerWithTopologyInformer(fakeGCE negtypes.NetworkEndpointGroupCloud, negType negtypes.NetworkEndpointType, customName bool, nodeTopologyInformer cache.SharedIndexInformer) (negtypes.NegSyncer, *transactionSyncer, error) {
+	netInfo := network.NetworkInfo{IsDefault: true, NetworkURL: fakeGCE.NetworkURL(), SubnetworkURL: fakeGCE.SubnetworkURL()}
+	return newCustomTestTransactionSyncer(fakeGCE, negType, customName, nodeTopologyInformer, netInfo)
+}
+
+func newCustomTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negType negtypes.NetworkEndpointType, customName bool, nodeTopologyInformer cache.SharedIndexInformer, netInfo network.NetworkInfo) (negtypes.NegSyncer, *transactionSyncer, error) {
 	testContext := negtypes.NewTestContext()
 	svcPort := negtypes.NegSyncerKey{
 		Namespace: testServiceNamespace,
@@ -3398,7 +3466,7 @@ func newTestTransactionSyncerWithTopologyInformer(fakeGCE negtypes.NetworkEndpoi
 		klog.TODO(),
 		labels.PodLabelPropagationConfig{},
 		testContext.EnableDualStackNEG,
-		network.NetworkInfo{IsDefault: true, NetworkURL: fakeGCE.NetworkURL(), SubnetworkURL: fakeGCE.SubnetworkURL()},
+		netInfo,
 		negNamer,
 	)
 	transactionSyncer := negsyncer.(*syncer).core.(*transactionSyncer)
