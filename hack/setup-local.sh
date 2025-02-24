@@ -15,12 +15,6 @@ parseCluster() {
     project=$(echo ${selfLink} | sed 's+.*/projects/\([-a-z0-9]*\)/.*+\1+')
 }
 
-parseInstance() {
-    local name=$1
-    # Globals.
-    nodeTag=$(gcloud compute instances describe ${name} --zone ${zone} --format='value(tags.items[0])')
-}
-
 clusterName="$1"
 clusterLocation="$2"
 
@@ -37,7 +31,7 @@ if [ -z "$clusterLocation" ]; then
 else
     clusters=$(gcloud container clusters list --format="${fmt}" --filter="name:${clusterName} location:${clusterLocation}")
 fi
-if [ $(echo "${cluster}" | wc -l) -gt 1 ]; then
+if [ "$(echo "${clusters}" | wc -l)" -gt 1 ]; then
     echo "ERROR: more than one cluster matches '${clusterName}'"
 fi
 parseCluster ${clusters}
@@ -48,20 +42,27 @@ fi
 
 # VM instances names created by gke are truncated up to 24 characters
 nodesPrefix=$(echo "gke-$clusterName" | head -c 24)
-# Get one instance from cluster's instance group 
-instance=$(gcloud  container  clusters describe $clusterName --zone $zone --format='value(instanceGroupUrls)' | awk -F"/" '{print $NF}' | xargs -I {} gcloud compute instance-groups list-instances {} --zone $zone | grep  RUNNING | awk '{print $1}' | tail -n 1)
 
+# Get URL of the last instance group from the instance group URLs list
+instanceGroupUrl=$(gcloud  container  clusters describe "$clusterName" --zone "$zone" --format='value(instanceGroupUrls)' | awk -F";" '{print $NF}')
+if [ -z "${instanceGroupUrl}" ]; then
+  echo "ERROR: No instance group for cluster"
+  exit 1;
+fi
+# Get instance group name from the URL
+instanceGroupName=$(echo "${instanceGroupUrl}" | awk -F"/" '{print $NF}')
+# Get zone of the instance group from the URL
+instanceGroupZone=$(echo "${instanceGroupUrl}" | awk -F"/" '{print $(NF-2)}')
+instance=$(gcloud compute instance-groups list-instances "${instanceGroupName}" --zone "${instanceGroupZone}" | grep  RUNNING | awk '{print $1}' | tail -n 1)
 if [ -z "${instance}" ]; then
   echo "ERROR: No running instances for cluster"
   exit 1;
 fi
-
-parseInstance ${instance} 
-
 if [ -z  "${instance}" ]; then
     echo "ERROR: No nodes matching '${clusterName}' found"
     exit 1
 fi
+nodeTag=$(gcloud compute instances describe "${instance}" --zone "${instanceGroupZone}" --format='value(tags.items[0])')
 
 gceConf="/tmp/gce.conf"
 echo "Writing ${gceConf}"
