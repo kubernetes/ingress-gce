@@ -17,9 +17,11 @@ func TestNewGCEForProviderConfig(t *testing.T) {
 		},
 		Spec: v1.ProviderConfigSpec{
 			ProjectID: "custom-project-id",
-			NetworkConfig: &v1.NetworkConfig{
-				Network:           "custom-network",
-				DefaultSubnetwork: "custom-subnetwork",
+			NetworkConfig: v1.ProviderNetworkConfig{
+				Network: "custom-network",
+				SubnetInfo: v1.ProviderConfigSubnetInfo{
+					Subnetwork: "custom-subnetwork",
+				},
 			},
 		},
 	}
