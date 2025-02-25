@@ -166,9 +166,9 @@ subnetwork-name = default-subnetwork
 					ProjectID:     "providerconfig-project-id",
 					ProjectNumber: 654321,
 					NetworkConfig: v1.ProviderNetworkConfig{
-						Network: "providerconfig-network-url",
+						Network: "projects/providerconfig-project-id/global/networks/providerconfig-network-url",
 						SubnetInfo: v1.ProviderConfigSubnetInfo{
-							Subnetwork: "providerconfig-subnetwork-url",
+							Subnetwork: "projects/providerconfig-project-id/regions/us-central1/subnetworks/providerconfig-subnetwork-url",
 						},
 					},
 				},
@@ -179,6 +179,38 @@ token-url = https://gkeauth.googleapis.com/v1/projects/654321/locations/us-centr
 token-body = {"clusterId":"example-cluster","projectNumber":654321}
 network-name = providerconfig-network-url
 subnetwork-name = providerconfig-subnetwork-url
+`,
+			expectError: false,
+		},
+		{
+			// This is a bit of defensive coding, just in case the network and subnetwork names are used instead of URLs.
+			name: "ProviderConfig with network and subnetwork names, instead of URLs",
+			defaultConfigContent: `
+[global]
+project-id = default-project-id
+token-url = https://gkeauth.googleapis.com/v1/projects/12345/locations/us-central1/clusters/example-cluster:generateToken
+token-body = {"projectNumber":12345,"clusterId":"example-cluster"}
+network-name = providerconfig-network-name
+subnetwork-name = providerconfig-subnetwork-name
+`,
+			providerConfig: &v1.ProviderConfig{
+				Spec: v1.ProviderConfigSpec{
+					ProjectID:     "providerconfig-project-id",
+					ProjectNumber: 654321,
+					NetworkConfig: v1.ProviderNetworkConfig{
+						Network: "providerconfig-network-name",
+						SubnetInfo: v1.ProviderConfigSubnetInfo{
+							Subnetwork: "providerconfig-subnetwork-name",
+						},
+					},
+				},
+			},
+			expectedConfig: `[global]
+project-id = providerconfig-project-id
+token-url = https://gkeauth.googleapis.com/v1/projects/654321/locations/us-central1/clusters/example-cluster:generateToken
+token-body = {"clusterId":"example-cluster","projectNumber":654321}
+network-name = providerconfig-network-name
+subnetwork-name = providerconfig-subnetwork-name
 `,
 			expectError: false,
 		},
