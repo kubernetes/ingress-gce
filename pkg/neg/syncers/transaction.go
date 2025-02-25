@@ -255,8 +255,10 @@ func (s *transactionSyncer) syncInternal() error {
 }
 
 func (s *transactionSyncer) syncInternalImpl() error {
-	if s.syncer.IsStopped() || s.syncer.IsShuttingDown() {
-		s.logger.V(3).Info("Skip syncing NEG", "negSyncerKey", s.NegSyncerKey.String())
+	isStopped := s.syncer.IsStopped()
+	isShuttingDown := s.syncer.IsShuttingDown()
+	if isStopped || isShuttingDown {
+		s.logger.Info("Skip syncing NEG", "negSyncerKey", s.NegSyncerKey.String(), "syncerStopped", isStopped, "syncerShuttingDown", isShuttingDown)
 		return nil
 	}
 	if s.needInit || s.isZoneChange() {
@@ -267,26 +269,11 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	}
 	s.logger.V(2).Info("Sync NEG", "negSyncerKey", s.NegSyncerKey.String(), "endpointsCalculatorMode", s.endpointsCalculator.Mode())
 
-	defaultSubnet, err := utils.KeyName(s.networkInfo.SubnetworkURL)
-	if err != nil {
-		s.logger.Error(err, "Errored getting default subnet from NetworkInfo when retrieving existing endpoints")
-		return err
-	}
-
-	subnetToNegMapping := map[string]string{}
 	subnetConfigs := s.zoneGetter.ListSubnets(s.logger)
-	for _, subnetConfig := range subnetConfigs {
-		// negs in default subnet have a different naming scheme from other subnets
-		if subnetConfig.Name == defaultSubnet {
-			subnetToNegMapping[defaultSubnet] = s.NegSyncerKey.NegName
-			continue
-		}
-		nonDefaultNegName, err := s.getNonDefaultSubnetNEGName(subnetConfig.Name)
-		if err != nil {
-			s.logger.Error(err, "Errored when getting NEG name from non-default subnets when retrieving existing endpoints")
-			return err
-		}
-		subnetToNegMapping[subnetConfig.Name] = nonDefaultNegName
+	subnetToNegMapping, err := s.generateSubnetToNegNameMap(subnetConfigs)
+	if err != nil {
+		s.logger.Error(err, "failed to generate subnet to neg name mapping")
+		return err
 	}
 
 	currentMap, currentPodLabelMap, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode(), s.enableDualStackNEG, s.logger)
@@ -404,6 +391,41 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	s.logEndpoints(removeEndpoints, "removing endpoint")
 
 	return s.syncNetworkEndpoints(addEndpoints, removeEndpoints, endpointPodLabelMap, migrationZone)
+}
+
+func (s *transactionSyncer) generateSubnetToNegNameMap(subnetConfigs []nodetopologyv1.SubnetConfig) (map[string]string, error) {
+	defaultSubnet, err := utils.KeyName(s.networkInfo.SubnetworkURL)
+	if err != nil {
+		s.logger.Error(err, "Errored getting default subnet from NetworkInfo when retrieving existing endpoints")
+		return nil, err
+	}
+
+	subnetToNegMapping := make(map[string]string)
+	// If networkInfo is not on the default subnet, then this service is using
+	// multi-networking which cannot be used with multi subnet clusters. Even though
+	// multi-networking subnet is using a non default subnet name, we use the default
+	// neg naming which differs from how multi subnet cluster non default NEG names are
+	// handled.
+	if !s.networkInfo.IsDefault {
+		subnetToNegMapping[defaultSubnet] = s.NegSyncerKey.NegName
+		return subnetToNegMapping, nil
+	}
+
+	for _, subnetConfig := range subnetConfigs {
+		// negs in default subnet have a different naming scheme from other subnets
+		if subnetConfig.Name == defaultSubnet {
+			subnetToNegMapping[defaultSubnet] = s.NegSyncerKey.NegName
+			continue
+		}
+		nonDefaultNegName, err := s.getNonDefaultSubnetNEGName(subnetConfig.Name)
+		if err != nil {
+			s.logger.Error(err, "Errored when getting NEG name from non-default subnets when retrieving existing endpoints")
+			return nil, err
+		}
+		subnetToNegMapping[subnetConfig.Name] = nonDefaultNegName
+	}
+
+	return subnetToNegMapping, nil
 }
 
 func (s *transactionSyncer) getEndpointsCalculation(
