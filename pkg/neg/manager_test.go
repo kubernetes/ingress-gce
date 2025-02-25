@@ -1520,6 +1520,12 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 					if !tc.expectCrGC && crDeleted && !tc.markedForDeletion {
 						t.Errorf("expected neg %s to not be deleted", negName)
 					}
+
+					if !tc.expectCrGC && !crDeleted && tc.negCrGCError == nil {
+						if len(crs[0].Status.NetworkEndpointGroups) != tc.expectedNegCount {
+							t.Errorf("SvcNeg CR contains %d Negs, expected %d", len(crs[0].Status.NetworkEndpointGroups), tc.expectedNegCount)
+						}
+					}
 				}
 			}
 		})
