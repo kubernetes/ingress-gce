@@ -94,10 +94,18 @@ func generateConfigForProviderConfig(defaultConfigContent string, providerConfig
 
 	// Update NetworkName and SubnetworkName
 	networkNameKey := "network-name"
-	globalSection.Key(networkNameKey).SetValue(providerConfig.Spec.NetworkConfig.Network)
+	// Network name is the last part of the network path
+	// e.g. projects/my-project/global/networks/my-network -> my-network
+	networkParts := strings.Split(providerConfig.Spec.NetworkConfig.Network, "/")
+	networkName := networkParts[len(networkParts)-1]
+	globalSection.Key(networkNameKey).SetValue(networkName)
 
 	subnetworkNameKey := "subnetwork-name"
-	globalSection.Key(subnetworkNameKey).SetValue(providerConfig.Spec.NetworkConfig.SubnetInfo.Subnetwork)
+	// Subnetwork name is the last part of the subnetwork path
+	// e.g. projects/my-project/regions/us-central1/subnetworks/my-subnetwork -> my-subnetwork
+	subnetworkParts := strings.Split(providerConfig.Spec.NetworkConfig.SubnetInfo.Subnetwork, "/")
+	subnetworkName := subnetworkParts[len(subnetworkParts)-1]
+	globalSection.Key(subnetworkNameKey).SetValue(subnetworkName)
 
 	// Write the modified config content to a string with custom options
 	var modifiedConfigContent bytes.Buffer
