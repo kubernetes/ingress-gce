@@ -547,16 +547,23 @@ func (manager *syncerManager) garbageCollectNEG() error {
 	return nil
 }
 
+type deletionCandidate struct {
+	neg *negv1beta1.ServiceNetworkEndpointGroup
+	// tbdOnly indicates that only the NEGs that are in the TBD state should be deleted
+	tbdOnly bool
+}
+
 // garbageCollectNEGWithCRD uses the NEG CRs and the svcPortMap to determine which NEGs
 // need to be garbage collected. Neg CRs that do not have a configuration in the svcPortMap will deleted
 // along with all corresponding NEGs in the CR's list of NetworkEndpointGroups. If NEG deletion fails in
 // the cloud, the corresponding Neg CR will not be deleted
 func (manager *syncerManager) garbageCollectNEGWithCRD() error {
-	deletionCandidates := map[string]*negv1beta1.ServiceNetworkEndpointGroup{}
+
+	deletionCandidates := map[string]deletionCandidate{}
 	negCRs := manager.svcNegLister.List()
 	for _, obj := range negCRs {
 		neg := obj.(*negv1beta1.ServiceNetworkEndpointGroup)
-		deletionCandidates[neg.Name] = neg
+		deletionCandidates[neg.Name] = deletionCandidate{neg: neg, tbdOnly: false}
 	}
 
 	func() {
@@ -570,8 +577,13 @@ func (manager *syncerManager) garbageCollectNEGWithCRD() error {
 				// In the situation a neg config is in the svcPortMap but the CR has a deletion timestamp, then
 				// neither the neg nor CR will not be deleted. In the situation a neg config is not in the svcPortMap,
 				// but the CR does not have a deletion timestamp, both CR and neg will be deleted.
-				if _, ok := deletionCandidates[portInfo.NegName]; ok {
-					delete(deletionCandidates, portInfo.NegName)
+				candidate, ok := deletionCandidates[portInfo.NegName]
+				if ok {
+					if !containsTBDNeg(candidate.neg) {
+						delete(deletionCandidates, portInfo.NegName)
+					} else {
+						deletionCandidates[portInfo.NegName] = deletionCandidate{neg: candidate.neg, tbdOnly: true}
+					}
 				}
 			}
 		}
@@ -594,7 +606,7 @@ func (manager *syncerManager) garbageCollectNEGWithCRD() error {
 		errList = append(errList, fmt.Errorf("failed to get zones during garbage collection: %w", err))
 	}
 
-	deletionCandidatesChan := make(chan *negv1beta1.ServiceNetworkEndpointGroup, len(deletionCandidates))
+	deletionCandidatesChan := make(chan deletionCandidate, len(deletionCandidates))
 	for _, dc := range deletionCandidates {
 		deletionCandidatesChan <- dc
 	}
@@ -620,23 +632,49 @@ func (manager *syncerManager) garbageCollectNEGWithCRD() error {
 	return utilerrors.NewAggregate(errList)
 }
 
+func containsTBDNeg(negCR *negv1beta1.ServiceNetworkEndpointGroup) bool {
+	for _, negRef := range negCR.Status.NetworkEndpointGroups {
+		if negRef.State == negv1beta1.ToBeDeletedState {
+			return true
+		}
+	}
+	return false
+}
+
 // processNEGDeletionCandidate attempts to delete `svcNegCR` and all NEGs
 // associated with it. In case when `svcNegCR` does not have ample information
 // about the zones associated with this NEG, it will attempt to delete the NEG
-// from all zones specified through the `zones` slice.
-func (manager *syncerManager) processNEGDeletionCandidate(svcNegCR *negv1beta1.ServiceNetworkEndpointGroup, zones []string) []error {
-	manager.logger.V(2).Info("Count of NEGs referenced by SvcNegCR", "svcneg", klog.KObj(svcNegCR), "count", len(svcNegCR.Status.NetworkEndpointGroups))
+// from all zones specified through the `zones` slice. If the candidate has the
+// tbdObly flag set to true, then only the NEGs in the candidate that have the
+// state TO_BE_DELETED will be deleted. At the end, the SvcNeg resource is updated
+// with the current state of NEGs that the neg controller is aware about.
+func (manager *syncerManager) processNEGDeletionCandidate(candidate deletionCandidate, zones []string) []error {
+	svcNegCR := candidate.neg
+	manager.logger.Info("Count of NEGs referenced by SvcNegCR", "svcneg", klog.KObj(svcNegCR), "count", len(svcNegCR.Status.NetworkEndpointGroups), "tbdOnly", candidate.tbdOnly)
 	var errList []error
 	shouldDeleteNegCR := true
+
 	deleteByZone := len(svcNegCR.Status.NetworkEndpointGroups) == 0
 	// Change this to a map from NEG name to sets once we allow multiple NEGs
 	// in a specific zone(multi-subnet cluster).
 	deletedNegs := make(map[negtypes.NegInfo]struct{})
 
 	for _, negRef := range svcNegCR.Status.NetworkEndpointGroups {
+		if candidate.tbdOnly && negRef.State != negv1beta1.ToBeDeletedState {
+			continue
+		}
 		resourceID, err := cloud.ParseResourceURL(negRef.SelfLink)
 		if err != nil {
 			errList = append(errList, fmt.Errorf("failed to parse selflink for neg cr %s/%s: %s", svcNegCR.Namespace, svcNegCR.Name, err))
+			if candidate.tbdOnly {
+
+				// This case should not be possible and likely means someone has manually manipulated the
+				// svcneg resource. We do not have a good way of detecting what is wrong and believe user
+				// intervention is safer than accidentally deleting a NEG that is being used.
+				eventMsg := fmt.Sprintf("Detected TO_BE_DELETED NEGs, but unable to parse selflink %s. Please manually delete the NEG and remove the corresponding reference from the svcneg resource", negRef.SelfLink)
+				manager.recorder.Eventf(svcNegCR, v1.EventTypeWarning, negtypes.NegGCError, eventMsg)
+				continue
+			}
 			deleteByZone = true
 			continue
 		}
@@ -658,7 +696,7 @@ func (manager *syncerManager) processNEGDeletionCandidate(svcNegCR *negv1beta1.S
 		}
 	}
 
-	if !shouldDeleteNegCR {
+	if !shouldDeleteNegCR || candidate.tbdOnly {
 		// Since no more NEG deletion will be happening at this point, and NEG
 		// CR will not be deleted, clear the reference for deleted NEGs in the
 		// NEG CR.
@@ -877,18 +915,21 @@ func deleteSvcNegCR(svcNegClient svcnegclient.Interface, negCR *negv1beta1.Servi
 	updatedCR := negCR.DeepCopy()
 	updatedCR.Finalizers = []string{}
 	if _, err := patchNegStatus(svcNegClient, *negCR, *updatedCR); err != nil {
-		return err
+		return fmt.Errorf("failed to patch neg status: %w", err)
 	}
 
-	logger.V(2).Info("Removed finalizer on ServiceNetworkEndpointGroup CR", "svcneg", klog.KRef(negCR.Namespace, negCR.Name))
+	logger.Info("Removed finalizer on ServiceNetworkEndpointGroup CR", "svcneg", klog.KRef(negCR.Namespace, negCR.Name))
 
 	// If CR does not have a deletion timestamp, delete
 	if negCR.GetDeletionTimestamp().IsZero() {
-		logger.V(2).Info("Deleting ServiceNetworkEndpointGroup CR", "svcneg", klog.KRef(negCR.Namespace, negCR.Name))
+		logger.Info("Deleting ServiceNetworkEndpointGroup CR", "svcneg", klog.KRef(negCR.Namespace, negCR.Name))
 		start := time.Now()
 		err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(negCR.Namespace).Delete(context.Background(), negCR.Name, metav1.DeleteOptions{})
 		metrics.PublishK8sRequestCountMetrics(start, metrics.DeleteRequest, err)
-		return err
+		if err != nil {
+			logger.Error(err, "Failed to delete ServiceNetworkEndpointGroup CR", "svcneg", klog.KRef(negCR.Namespace, negCR.Name))
+			return err
+		}
 	}
 	return nil
 }
