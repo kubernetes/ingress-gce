@@ -174,7 +174,7 @@ $ kubectl exec test-701078429-s5kca -- curl --cacert /var/run/secrets/kubernetes
     "/apis/certificates.k8s.io",
     "/apis/certificates.k8s.io/v1alpha1",
     "/apis/extensions",
-    "/apis/extensions/v1beta1",
+    "/apis/networking.k8s.io/v1",
     "/apis/policy",
     "/apis/policy/v1alpha1",
     "/apis/rbac.authorization.k8s.io",
