@@ -53,7 +53,7 @@ type LocalL4EndpointsCalculator struct {
 func NewLocalL4EndpointsCalculator(nodeLister listers.NodeLister, zoneGetter *zonegetter.ZoneGetter, svcId string, logger klog.Logger, networkInfo *network.NetworkInfo, lbType types.L4LBType) *LocalL4EndpointsCalculator {
 	subsetSize := maxSubsetSizeLocal
 	if lbType == negtypes.L4ExternalLB {
-		subsetSize = maxSubsetSizeNetLBLocal
+		subsetSize = flags.F.L4NetLBLocalSubsetSize
 	}
 
 	return &LocalL4EndpointsCalculator{
@@ -157,7 +157,7 @@ type ClusterL4EndpointsCalculator struct {
 func NewClusterL4EndpointsCalculator(nodeLister listers.NodeLister, zoneGetter *zonegetter.ZoneGetter, svcId string, logger klog.Logger, networkInfo *network.NetworkInfo, l4LBtype negtypes.L4LBType) *ClusterL4EndpointsCalculator {
 	subsetSize := maxSubsetSizeDefault
 	if l4LBtype == negtypes.L4ExternalLB {
-		subsetSize = maxSubsetSizeNetLBCluster
+		subsetSize = flags.F.L4NetLBClusterSubsetSize
 	}
 	return &ClusterL4EndpointsCalculator{
 		zoneGetter:      zoneGetter,
