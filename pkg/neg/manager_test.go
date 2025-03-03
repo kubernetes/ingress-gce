@@ -1501,7 +1501,7 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 						t.Errorf("failed getting negs from cloud: %s", err)
 					}
 
-					numExistingNegs := checkForNegDeletions(negs, negName)
+					numExistingNegs := checkForNegs(negs, negName)
 
 					expectNegGC := tc.expectNegGC || (tc.expectGenNamedNegGC && !customName)
 					if tc.negsExist && expectNegGC && numExistingNegs != 0 {
@@ -1819,8 +1819,8 @@ func getNegObjectRefs(t *testing.T, cloud negtypes.NetworkEndpointGroupCloud, zo
 	return negRefs
 }
 
-// checkForNegDeletions gets the count of neg objects in negs that has the provided negName.
-func checkForNegDeletions(negs map[*meta.Key]*composite.NetworkEndpointGroup, negName string) int {
+// checkForNegs gets the count of neg objects in negs that has the provided negName.
+func checkForNegs(negs map[*meta.Key]*composite.NetworkEndpointGroup, negName string) int {
 	foundNegs := 0
 	for _, neg := range negs {
 		if neg.Name == negName {
