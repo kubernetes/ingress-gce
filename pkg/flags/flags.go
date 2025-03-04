@@ -143,6 +143,8 @@ var F = struct {
 	EnableL4ILBMixedProtocol                 bool
 	EnableL4NetLBMixedProtocol               bool
 	EnableIPV6OnlyNEG                        bool
+	L4NetLBLocalSubsetSize                   int
+	L4NetLBClusterSubsetSize                 int
 }{
 	GCERateLimitScale: 1.0,
 }
@@ -334,6 +336,8 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableL4NetLBMixedProtocol, "enable-l4netlb-mixed-protocol", false, "Enable support for mixed protocol L4 external load balancers.")
 	flag.StringVar(&F.ProviderConfigNameLabelKey, "provider-config-name-label-key", "cloud.gke.io/provider-config-name", "The label key for provider-config name, which is used to identify the provider-config of objects in multi-project mode.")
 	flag.BoolVar(&F.EnableIPV6OnlyNEG, "enable-ipv6-only-neg", false, "Enable support for IPV6 Only NEG's.")
+	flag.IntVar(&F.L4NetLBLocalSubsetSize, "l4-netlb-local-subset-size", 1000, "The size of the subset to use for endpoints calculation for L4NetLB with externalTrafficPolicy:Local")
+	flag.IntVar(&F.L4NetLBClusterSubsetSize, "l4-netlb-cluster-subset-size", 250, "The size of the subset to use for endpoints calculation for L4NetLB with externalTrafficPolicy:Cluster")
 }
 
 func Validate() {
