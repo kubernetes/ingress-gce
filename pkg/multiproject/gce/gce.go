@@ -80,9 +80,15 @@ func generateConfigForProviderConfig(defaultConfigContent string, providerConfig
 	oldValue := globalSection.Key(tokenURLKey).String()
 	// Extract location from the old token URL
 	location := extractLocationFromTokenURL(oldValue)
-	// Format: https://gkeauth.googleapis.com/v1/projects/{TENANT_PROJECT_NUMBER}/locations/{TENANT_LOCATION}/tenants/{TENANT_ID}:generateTenantToken"
-	formatString := "https://gkeauth.googleapis.com/v1/projects/%d/locations/%s/tenants/%s:generateTenantToken"
-	tokenURL := fmt.Sprintf(formatString, providerConfig.Spec.ProjectNumber, location, providerConfig.Name)
+	// Extract the baseURL before "/projects/"
+	tokenURLParts := strings.SplitN(oldValue, "/projects/", 2)
+	if len(tokenURLParts) != 2 {
+		return "", fmt.Errorf("invalid token URL format")
+	}
+	baseURL := tokenURLParts[0]
+	// Format: {BASE_URL}/projects/{TENANT_PROJECT_NUMBER}/locations/{TENANT_LOCATION}/tenants/{TENANT_ID}:generateTenantToken"
+	formatString := "%s/projects/%d/locations/%s/tenants/%s:generateTenantToken"
+	tokenURL := fmt.Sprintf(formatString, baseURL, providerConfig.Spec.ProjectNumber, location, providerConfig.Name)
 	globalSection.Key(tokenURLKey).SetValue(tokenURL)
 
 	// Update TokenBody
