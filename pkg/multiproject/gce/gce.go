@@ -77,16 +77,24 @@ func generateConfigForProviderConfig(defaultConfigContent string, providerConfig
 
 	// Update TokenURL
 	tokenURLKey := "token-url"
-	tokenURL := globalSection.Key(tokenURLKey).String()
-	projectNumberInt := providerConfig.Spec.ProjectNumber
-	projectNumberStr := fmt.Sprintf("%d", projectNumberInt)
-	newTokenURL := replaceProjectNumberInTokenURL(tokenURL, projectNumberStr)
-	globalSection.Key(tokenURLKey).SetValue(newTokenURL)
+	oldValue := globalSection.Key(tokenURLKey).String()
+	// Extract location from the old token URL
+	location := extractLocationFromTokenURL(oldValue)
+	// Extract the baseURL before "/projects/"
+	tokenURLParts := strings.SplitN(oldValue, "/projects/", 2)
+	if len(tokenURLParts) != 2 {
+		return "", fmt.Errorf("invalid token URL format")
+	}
+	baseURL := tokenURLParts[0]
+	// Format: {BASE_URL}/projects/{TENANT_PROJECT_NUMBER}/locations/{TENANT_LOCATION}/tenants/{TENANT_ID}:generateTenantToken"
+	formatString := "%s/projects/%d/locations/%s/tenants/%s:generateTenantToken"
+	tokenURL := fmt.Sprintf(formatString, baseURL, providerConfig.Spec.ProjectNumber, location, providerConfig.Name)
+	globalSection.Key(tokenURLKey).SetValue(tokenURL)
 
 	// Update TokenBody
 	tokenBodyKey := "token-body"
 	tokenBody := globalSection.Key(tokenBodyKey).String()
-	newTokenBody, err := updateTokenProjectNumber(tokenBody, int(projectNumberInt))
+	newTokenBody, err := updateTokenProjectNumber(tokenBody, int(providerConfig.Spec.ProjectNumber))
 	if err != nil {
 		return "", fmt.Errorf("failed to update TokenBody: %v", err)
 	}
@@ -117,18 +125,6 @@ func generateConfigForProviderConfig(defaultConfigContent string, providerConfig
 	return modifiedConfigContent.String(), nil
 }
 
-// replaceProjectNumberInTokenURL replaces the project number in the token URL.
-func replaceProjectNumberInTokenURL(tokenURL string, projectNumber string) string {
-	parts := strings.Split(tokenURL, "/")
-	for i, part := range parts {
-		if part == "projects" && i+1 < len(parts) {
-			parts[i+1] = projectNumber
-			break
-		}
-	}
-	return strings.Join(parts, "/")
-}
-
 func updateTokenProjectNumber(tokenBody string, projectNumber int) (string, error) {
 	var bodyMap map[string]interface{}
 
@@ -147,4 +143,17 @@ func updateTokenProjectNumber(tokenBody string, projectNumber int) (string, erro
 	}
 
 	return string(newTokenBodyBytes), nil
+}
+
+// extractLocationFromTokenURL extracts the location from a GKE token URL.
+// Example input: https://gkeauth.googleapis.com/v1/projects/654321/locations/us-central1/clusters/example-cluster:generateToken
+// Returns: us-central1
+func extractLocationFromTokenURL(tokenURL string) string {
+	parts := strings.Split(tokenURL, "/")
+	for i, part := range parts {
+		if part == "locations" && i+1 < len(parts) {
+			return parts[i+1]
+		}
+	}
+	return ""
 }

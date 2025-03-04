@@ -6,51 +6,9 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/ingress-gce/pkg/apis/providerconfig/v1"
 )
-
-func TestReplaceProjectNumberInTokenURL(t *testing.T) {
-	testCases := []struct {
-		name           string
-		tokenURL       string
-		projectNumber  string
-		expectedResult string
-	}{
-		{
-			name:           "Replace project number in URL",
-			tokenURL:       "https://gkeauth.googleapis.com/v1/projects/12345/locations/us-central1/clusters/example-cluster:generateToken",
-			projectNumber:  "654321",
-			expectedResult: "https://gkeauth.googleapis.com/v1/projects/654321/locations/us-central1/clusters/example-cluster:generateToken",
-		},
-		{
-			name:           "URL without 'projects' segment",
-			tokenURL:       "https://api.example.com/v1/locations/us-central1/clusters/example-cluster:generateToken",
-			projectNumber:  "654321",
-			expectedResult: "https://api.example.com/v1/locations/us-central1/clusters/example-cluster:generateToken",
-		},
-		{
-			name:           "Empty token URL",
-			tokenURL:       "",
-			projectNumber:  "654321",
-			expectedResult: "",
-		},
-		{
-			name:           "URL with multiple 'projects' segments",
-			tokenURL:       "https://api.example.com/v1/projects/12345/resources/projects/67890/details",
-			projectNumber:  "654321",
-			expectedResult: "https://api.example.com/v1/projects/654321/resources/projects/67890/details",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			result := replaceProjectNumberInTokenURL(tc.tokenURL, tc.projectNumber)
-			if result != tc.expectedResult {
-				t.Errorf("replaceProjectNumberInTokenURL(%q, %q) = %q; want %q", tc.tokenURL, tc.projectNumber, result, tc.expectedResult)
-			}
-		})
-	}
-}
 
 func TestUpdateTokenBodyField(t *testing.T) {
 	testCases := []struct {
@@ -162,6 +120,9 @@ network-name = default-network
 subnetwork-name = default-subnetwork
 `,
 			providerConfig: &v1.ProviderConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "example-provider-config",
+				},
 				Spec: v1.ProviderConfigSpec{
 					ProjectID:     "providerconfig-project-id",
 					ProjectNumber: 654321,
@@ -175,7 +136,41 @@ subnetwork-name = default-subnetwork
 			},
 			expectedConfig: `[global]
 project-id = providerconfig-project-id
-token-url = https://gkeauth.googleapis.com/v1/projects/654321/locations/us-central1/clusters/example-cluster:generateToken
+token-url = https://gkeauth.googleapis.com/v1/projects/654321/locations/us-central1/tenants/example-provider-config:generateTenantToken
+token-body = {"clusterId":"example-cluster","projectNumber":654321}
+network-name = providerconfig-network-url
+subnetwork-name = providerconfig-subnetwork-url
+`,
+			expectError: false,
+		},
+		{
+			name: "Non standard base URL in token-url, providerConfig modifies config",
+			defaultConfigContent: `
+[global]
+project-id = default-project-id
+token-url = https://staging-gkeauth.googleapis.com/v60/projects/12345/locations/us-central1/clusters/example-cluster:generateToken
+token-body = {"projectNumber":12345,"clusterId":"example-cluster"}
+network-name = default-network
+subnetwork-name = default-subnetwork
+`,
+			providerConfig: &v1.ProviderConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "example-provider-config",
+				},
+				Spec: v1.ProviderConfigSpec{
+					ProjectID:     "providerconfig-project-id",
+					ProjectNumber: 654321,
+					NetworkConfig: v1.ProviderNetworkConfig{
+						Network: "projects/providerconfig-project-id/global/networks/providerconfig-network-url",
+						SubnetInfo: v1.ProviderConfigSubnetInfo{
+							Subnetwork: "projects/providerconfig-project-id/regions/us-central1/subnetworks/providerconfig-subnetwork-url",
+						},
+					},
+				},
+			},
+			expectedConfig: `[global]
+project-id = providerconfig-project-id
+token-url = https://staging-gkeauth.googleapis.com/v60/projects/654321/locations/us-central1/tenants/example-provider-config:generateTenantToken
 token-body = {"clusterId":"example-cluster","projectNumber":654321}
 network-name = providerconfig-network-url
 subnetwork-name = providerconfig-subnetwork-url
@@ -194,6 +189,9 @@ network-name = providerconfig-network-name
 subnetwork-name = providerconfig-subnetwork-name
 `,
 			providerConfig: &v1.ProviderConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "example-provider-config",
+				},
 				Spec: v1.ProviderConfigSpec{
 					ProjectID:     "providerconfig-project-id",
 					ProjectNumber: 654321,
@@ -207,7 +205,7 @@ subnetwork-name = providerconfig-subnetwork-name
 			},
 			expectedConfig: `[global]
 project-id = providerconfig-project-id
-token-url = https://gkeauth.googleapis.com/v1/projects/654321/locations/us-central1/clusters/example-cluster:generateToken
+token-url = https://gkeauth.googleapis.com/v1/projects/654321/locations/us-central1/tenants/example-provider-config:generateTenantToken
 token-body = {"clusterId":"example-cluster","projectNumber":654321}
 network-name = providerconfig-network-name
 subnetwork-name = providerconfig-subnetwork-name
@@ -227,6 +225,9 @@ subnetwork-name = default-subnetwork
 other-field = other-value
 `,
 			providerConfig: &v1.ProviderConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "example-provider-config",
+				},
 				Spec: v1.ProviderConfigSpec{
 					ProjectID:     "providerconfig-project-id",
 					ProjectNumber: 654321,
@@ -241,7 +242,7 @@ other-field = other-value
 			expectedConfig: `[global]
 project-id = providerconfig-project-id
 some-other-field = some-other-value
-token-url = https://gkeauth.googleapis.com/v1/projects/654321/locations/us-central1/clusters/example-cluster:generateToken
+token-url = https://gkeauth.googleapis.com/v1/projects/654321/locations/us-central1/tenants/example-provider-config:generateTenantToken
 token-body = {"clusterId":"example-cluster","projectNumber":654321}
 network-name = providerconfig-network-url
 subnetwork-name = providerconfig-subnetwork-url
