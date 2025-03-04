@@ -23,6 +23,8 @@ cd "${REPO_ROOT}"
 
 hack/verify-gofmt.sh
 hack/verify-govet.sh
-hack/verify-lint.sh
+# TODO: re-enable this after g1.24 linters work in this project
+echo "Linters temporarily disabled, please run \`hack/verify-lint.sh\` manually using go version <1.24 to verify"
+# hack/verify-lint.sh
 hack/verify-codegen.sh
 hack/verify-vendor.sh
