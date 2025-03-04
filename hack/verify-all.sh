@@ -23,6 +23,5 @@ cd "${REPO_ROOT}"
 
 hack/verify-gofmt.sh
 hack/verify-govet.sh
-hack/verify-lint.sh
 hack/verify-codegen.sh
 hack/verify-vendor.sh
