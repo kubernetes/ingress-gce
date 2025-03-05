@@ -261,7 +261,11 @@ func (s *transactionSyncer) syncInternalImpl() error {
 		s.logger.Info("Skip syncing NEG", "negSyncerKey", s.NegSyncerKey.String(), "syncerStopped", isStopped, "syncerShuttingDown", isShuttingDown)
 		return nil
 	}
-	if s.needInit || s.isZoneChange() {
+	zoneChange := s.isZoneChange()
+	subnetChange := s.isSubnetChange()
+
+	if s.needInit || zoneChange || subnetChange {
+		s.logger.Info("Need to ensure network endpoint groups", "needInit", s.needInit, "zoneChange", zoneChange, "subnetChange", subnetChange)
 		if err := s.ensureNetworkEndpointGroups(); err != nil {
 			return fmt.Errorf("%w: %v", negtypes.ErrNegNotFound, err)
 		}
@@ -854,6 +858,34 @@ func (s *transactionSyncer) isZoneChange() bool {
 	currZones := sets.NewString(zones...)
 
 	return !currZones.Equal(existingZones)
+}
+
+func (s *transactionSyncer) isSubnetChange() bool {
+	negCR, err := getNegFromStore(s.svcNegLister, s.Namespace, s.NegSyncerKey.NegName)
+	if err != nil {
+		s.logger.Error(err, "unable to retrieve neg from the store", "neg", klog.KRef(s.Namespace, s.NegName))
+		metrics.PublishNegControllerErrorCountMetrics(err, true)
+		return false
+	}
+
+	existingSubnets := sets.NewString()
+	for _, ref := range negCR.Status.NetworkEndpointGroups {
+		id, err := cloud.ParseResourceURL(ref.SubnetURL)
+		if err != nil {
+			s.logger.Error(err, "unable to parse subnet url", "url", ref.SubnetURL)
+			metrics.PublishNegControllerErrorCountMetrics(err, true)
+			continue
+		}
+		existingSubnets.Insert(id.Key.Name)
+	}
+
+	currSubnets := sets.NewString()
+	subnets := s.zoneGetter.ListSubnets(s.logger)
+	for _, subnet := range subnets {
+		currSubnets.Insert(subnet.Name)
+	}
+
+	return !currSubnets.Equal(existingSubnets)
 }
 
 // filterEndpointByTransaction removes the all endpoints from endpoint map if they exists in the transaction table
