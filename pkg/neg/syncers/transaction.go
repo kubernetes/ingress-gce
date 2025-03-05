@@ -261,7 +261,11 @@ func (s *transactionSyncer) syncInternalImpl() error {
 		s.logger.Info("Skip syncing NEG", "negSyncerKey", s.NegSyncerKey.String(), "syncerStopped", isStopped, "syncerShuttingDown", isShuttingDown)
 		return nil
 	}
-	if s.needInit || s.isZoneChange() {
+	zoneChange := s.isZoneChange()
+	subnetChange := s.isSubnetChange()
+
+	if s.needInit || zoneChange || subnetChange {
+		s.logger.Info("Need to ensure network endpoint groups", "needInit", s.needInit, "zoneChange", zoneChange, "subnetChange", subnetChange)
 		if err := s.ensureNetworkEndpointGroups(); err != nil {
 			return fmt.Errorf("%w: %v", negtypes.ErrNegNotFound, err)
 		}
@@ -854,6 +858,43 @@ func (s *transactionSyncer) isZoneChange() bool {
 	currZones := sets.NewString(zones...)
 
 	return !currZones.Equal(existingZones)
+}
+
+func (s *transactionSyncer) isSubnetChange() bool {
+	negCR, err := getNegFromStore(s.svcNegLister, s.Namespace, s.NegSyncerKey.NegName)
+	if err != nil {
+		s.logger.Error(err, "unable to retrieve neg from the store", "neg", klog.KRef(s.Namespace, s.NegName))
+		metrics.PublishNegControllerErrorCountMetrics(err, true)
+		return false
+	}
+
+	existingSubnets := sets.New[string]()
+	for _, ref := range negCR.Status.NetworkEndpointGroups {
+		// If the subnet url is empty it means that the reference was created before
+		// Subnets were populated by the controller. This is only possible with the subnetwork
+		// that is specificed in networkInfo, and therefore we can assume which subnetwork was
+		// used for this NEG
+		subnetURL := s.networkInfo.SubnetworkURL
+		if ref.SubnetURL != "" {
+			subnetURL = ref.SubnetURL
+		}
+		id, err := cloud.ParseResourceURL(subnetURL)
+		if err != nil {
+			s.logger.Error(err, "unable to parse subnet url", "url", ref.SubnetURL)
+			metrics.PublishNegControllerErrorCountMetrics(err, true)
+			continue
+		}
+
+		existingSubnets.Insert(id.Key.Name)
+	}
+
+	currSubnets := sets.New[string]()
+	subnets := s.zoneGetter.ListSubnets(s.logger)
+	for _, subnet := range subnets {
+		currSubnets.Insert(subnet.Name)
+	}
+
+	return !currSubnets.Equal(existingSubnets)
 }
 
 // filterEndpointByTransaction removes the all endpoints from endpoint map if they exists in the transaction table

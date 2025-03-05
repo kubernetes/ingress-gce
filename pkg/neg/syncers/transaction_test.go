@@ -2280,13 +2280,243 @@ func TestUpdateInitStatusTransitions(t *testing.T) {
 	checkNegCRWithParams(t, fakeCloud, params)
 }
 
-func generateNonDefaultSubnetNegNameMap(t *testing.T, syncer *transactionSyncer, subnetConfigs []nodetopologyv1.SubnetConfig) map[nodetopologyv1.SubnetConfig]string {
+// Test transition from only having the default subnet to multiple subnets
+func TestSubnetChanges(t *testing.T) {
+	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
+	testNegType := negtypes.VmIpPortEndpointType
+	prevEnableMultiSubnetClusterPhase1 := flags.F.EnableMultiSubnetClusterPhase1
+	prevNodeTopologyCRName := flags.F.NodeTopologyCRName
+	defer func() {
+		flags.F.EnableMultiSubnetClusterPhase1 = prevEnableMultiSubnetClusterPhase1
+		flags.F.NodeTopologyCRName = prevNodeTopologyCRName
+	}()
+	flags.F.EnableMultiSubnetClusterPhase1 = true
+	flags.F.NodeTopologyCRName = "default"
+
+	// to match the nodes populated into zoneGetter
+	allZones := sets.NewString(negtypes.TestZone1, negtypes.TestZone2, negtypes.TestZone4)
+
+	defaultSubnetConfig := nodetopologyv1.SubnetConfig{Name: defaultTestSubnet, SubnetPath: fmt.Sprintf("projects/mock-project/regions/test-region/subnetworks/%s", defaultTestSubnet)}
+	secondarySubnetConfig1 := nodetopologyv1.SubnetConfig{Name: secondaryTestSubnet1, SubnetPath: fmt.Sprintf("projects/mock-project/regions/test-region/subnetworks/%s", secondaryTestSubnet1)}
+
+	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(defaultTestSubnetURL, testNetwork)
+	nodeTopologyInformer := zonegetter.FakeNodeTopologyInformer()
+	_, ts, err := newTestTransactionSyncerWithTopologyInformer(fakeCloud, testNegType, false, nodeTopologyInformer)
+	if err != nil {
+		t.Fatalf("failed to initialize transaction syncer: %v", err)
+	}
+
+	// mark syncer as started without starting the syncer routine
+	(ts.syncer.(*syncer)).stopped = false
+	ts.needInit = false
+	zonegetter.SetNodeTopologyHasSynced(ts.zoneGetter, func() bool { return true })
+
+	svcNegClient := ts.svcNegClient
+	currentSubnets := []nodetopologyv1.SubnetConfig{defaultSubnetConfig}
+
+	subnetToNameMap := make(map[nodetopologyv1.SubnetConfig]string)
+	subnetToNameMap[defaultSubnetConfig] = testNegName
+
+	// Add topology to relect new state (default + non default subnets)
+	nodeTopologyInformer.GetIndexer().Add(&nodetopologyv1.NodeTopology{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "NodeTopology",
+			APIVersion: "networking.gke.io/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: flags.F.NodeTopologyCRName,
+		},
+
+		Status: nodetopologyv1.NodeTopologyStatus{
+			Subnets: currentSubnets,
+		},
+	})
+
+	allRefs := createNEGs(t, ts, fakeCloud, testNegName, defaultTestSubnetURL, allZones, negv1beta1.ActiveState)
+	// create negs in the removed subnet in the current zones
+	allRefs = append(allRefs, createNEGs(t, ts, fakeCloud, subnetToNameMap[secondarySubnetConfig1], secondarySubnetConfig1.SubnetPath, allZones, negv1beta1.ActiveState)...)
+
+	// Create NEG CR.
+	creationTS := v1.Date(2020, time.July, 23, 0, 0, 0, 0, time.UTC)
+	origCR := createNegCR(testNegName, creationTS, true, true, allRefs)
+	svcNeg, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Create(context.Background(), origCR, v1.CreateOptions{})
+	if err != nil {
+		t.Errorf("Failed to create test NEG CR: %s", err)
+	}
+	ts.svcNegLister.Add(svcNeg)
+
+	// Inactive NEG refs should be added if there is any.
+	ts.sync()
+
+	// gather negCR to validate the updates
+	negCR, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Get(context.Background(), testNegName, v1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to create test NEG CR: %s", err)
+	}
+
+	params := checkCRParams{
+		negCR:                  negCR,
+		previousLastSyncTime:   creationTS,
+		activeZones:            allZones,
+		expectPopulatedNegRefs: true,
+		expectSyncTimeUpdate:   true,
+		subnetToNegName:        subnetToNameMap,
+		previousSubnets:        []nodetopologyv1.SubnetConfig{defaultSubnetConfig, secondarySubnetConfig1},
+		currentSubnets:         currentSubnets,
+		previousZones:          allZones,
+	}
+
+	checkNegCRWithParams(t, fakeCloud, params)
+}
+
+func TestIsSubnetChange(t *testing.T) {
+	//Create all VPC and Subnets needed
+	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
+	testSubnetwork := defaultTestSubnetURL
+	defaultSubnetConfig := nodetopologyv1.SubnetConfig{Name: defaultTestSubnet, SubnetPath: fmt.Sprintf("projects/mock-project/regions/test-region/subnetworks/%s", defaultTestSubnet)}
+	secondarySubnetConfig1 := nodetopologyv1.SubnetConfig{Name: secondaryTestSubnet1, SubnetPath: fmt.Sprintf("projects/mock-project/regions/test-region/subnetworks/%s", secondaryTestSubnet1)}
+
+	// Save old flags to reset at end of test
+	prevNodeTopologyCRName := flags.F.NodeTopologyCRName
+	defer func() {
+		flags.F.NodeTopologyCRName = prevNodeTopologyCRName
+	}()
+	flags.F.NodeTopologyCRName = "default"
+
+	testCases := []struct {
+		desc            string
+		originalSubnets []nodetopologyv1.SubnetConfig
+		currentSubnets  []nodetopologyv1.SubnetConfig
+		enableMSCPhase1 bool
+		// emptySubnetURL refers to whether the origRefs have subnetURL populated. If this is true,
+		// originalSubnets can only include the defaultSubnetConfig
+		emptySubnetURL bool
+		expectedResult bool
+	}{
+		{
+			desc:            "subnet was added",
+			originalSubnets: []nodetopologyv1.SubnetConfig{defaultSubnetConfig},
+			currentSubnets:  []nodetopologyv1.SubnetConfig{defaultSubnetConfig, secondarySubnetConfig1},
+			enableMSCPhase1: true,
+			expectedResult:  true,
+		},
+		{
+			desc:            "subnet was deleted",
+			originalSubnets: []nodetopologyv1.SubnetConfig{secondarySubnetConfig1, defaultSubnetConfig},
+			currentSubnets:  []nodetopologyv1.SubnetConfig{defaultSubnetConfig},
+			enableMSCPhase1: true,
+			expectedResult:  true,
+		},
+		{
+			desc:            "no subnet change occurred",
+			originalSubnets: []nodetopologyv1.SubnetConfig{defaultSubnetConfig, secondarySubnetConfig1},
+			currentSubnets:  []nodetopologyv1.SubnetConfig{defaultSubnetConfig, secondarySubnetConfig1},
+			enableMSCPhase1: true,
+			expectedResult:  false,
+		},
+		{
+			desc:            "no subnet change occurred, origRefs have empty URLs",
+			originalSubnets: []nodetopologyv1.SubnetConfig{defaultSubnetConfig},
+			currentSubnets:  []nodetopologyv1.SubnetConfig{defaultSubnetConfig},
+			enableMSCPhase1: true,
+			emptySubnetURL:  true,
+			expectedResult:  false,
+		},
+		{
+			desc:            "subnet was added and MSC is disabled",
+			originalSubnets: []nodetopologyv1.SubnetConfig{defaultSubnetConfig},
+			currentSubnets:  []nodetopologyv1.SubnetConfig{defaultSubnetConfig, secondarySubnetConfig1},
+			enableMSCPhase1: false,
+			expectedResult:  false,
+		},
+
+		// In this case NEGs allready exist in secondary subnet previously. We assume that MSC was
+		// disabled after a controller update, so the controller should recognize it as a subnet change.
+		{
+			desc:            "subnet was deleted and MSC is disabled",
+			originalSubnets: []nodetopologyv1.SubnetConfig{defaultSubnetConfig, secondarySubnetConfig1},
+			currentSubnets:  []nodetopologyv1.SubnetConfig{defaultSubnetConfig},
+			enableMSCPhase1: false,
+			expectedResult:  true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			// Initialize syncer
+			fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
+			nodeTopologyInformer := zonegetter.FakeNodeTopologyInformer()
+			testNegType := negtypes.VmIpPortEndpointType
+			_, ts, err := newTestTransactionSyncerWithTopologyInformer(fakeCloud, testNegType, false, nodeTopologyInformer)
+			if err != nil {
+				t.Fatalf("failed to initialize transaction syncer: %v", err)
+			}
+
+			// overwrite the ZoneGetter to pipe in flag gate value
+			nodeInformer := zonegetter.FakeNodeInformer()
+			zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
+			fakeZoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, nodeTopologyInformer, defaultTestSubnetURL, !tc.enableMSCPhase1)
+			if err != nil {
+				t.Errorf("failed to initialize zone getter: %v", err)
+			}
+
+			ts.zoneGetter = fakeZoneGetter
+			//Make sure NodeTopologyInformer is considered as synced, otherwise only defaultSubnet is returned
+			zonegetter.SetNodeTopologyHasSynced(ts.zoneGetter, func() bool { return true })
+			origZones, err := fakeZoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(ts.EpCalculatorMode), klog.TODO())
+			if err != nil {
+				t.Errorf("errored when retrieving zones: %s", err)
+			}
+
+			var allRefs []negv1beta1.NegObjectReference
+			for _, subnet := range tc.originalSubnets {
+				negName := fmt.Sprintf("testNegName-%s", subnet.Name)
+				refs := createNEGs(t, ts, fakeCloud, negName, subnet.SubnetPath, sets.NewString(origZones...), negv1beta1.ActiveState)
+
+				if !tc.emptySubnetURL {
+					allRefs = append(allRefs, refs...)
+					continue
+				}
+				for _, ref := range refs {
+					ref.SubnetURL = ""
+					allRefs = append(allRefs, ref)
+				}
+			}
+
+			negCR := createNegCR(ts.NegName, v1.Now(), true, true, allRefs)
+			if err = ts.svcNegLister.Add(negCR); err != nil {
+				t.Errorf("failed to add neg to store:%s", err)
+			}
+			// Add topology to relect new state
+			nodeTopologyInformer.GetIndexer().Add(&nodetopologyv1.NodeTopology{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "NodeTopology",
+					APIVersion: "networking.gke.io/v1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name: flags.F.NodeTopologyCRName,
+				},
+
+				Status: nodetopologyv1.NodeTopologyStatus{
+					Subnets: tc.currentSubnets,
+				},
+			})
+
+			isSubnetChange := ts.isSubnetChange()
+			if isSubnetChange != tc.expectedResult {
+				t.Errorf("isSubnetChange() returned %t, wanted %t", isSubnetChange, tc.expectedResult)
+			}
+		})
+	}
+}
+
+func generateNonDefaultSubnetNegNameMap(t *testing.T, ts *transactionSyncer, subnetConfigs []nodetopologyv1.SubnetConfig) map[nodetopologyv1.SubnetConfig]string {
 	t.Helper()
 	negNameSubnetMap := make(map[nodetopologyv1.SubnetConfig]string)
 
 	for _, subnet := range subnetConfigs {
 
-		negName, err := syncer.getNonDefaultSubnetNEGName(subnet.Name)
+		negName, err := ts.getNonDefaultSubnetNEGName(subnet.Name)
 		if err != nil {
 			t.Fatalf("failed to generate non default subnet name: %v", err)
 		}
@@ -2296,16 +2526,16 @@ func generateNonDefaultSubnetNegNameMap(t *testing.T, syncer *transactionSyncer,
 }
 
 // createNEGs creates NEG in the specified zones and creates relevant NegRefs with the provided Neg state
-func createNEGs(t *testing.T, syncer *transactionSyncer, cloud negtypes.NetworkEndpointGroupCloud, negName, subnetURL string, zones sets.String, negRefState negv1beta1.NegState) []negv1beta1.NegObjectReference {
+func createNEGs(t *testing.T, ts *transactionSyncer, cloud negtypes.NetworkEndpointGroupCloud, negName, subnetURL string, zones sets.String, negRefState negv1beta1.NegState) []negv1beta1.NegObjectReference {
 	t.Helper()
 
 	var refs []negv1beta1.NegObjectReference
 
 	for zone := range zones {
 		err := cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
-			Version:             syncer.NegSyncerKey.GetAPIVersion(),
+			Version:             ts.NegSyncerKey.GetAPIVersion(),
 			Name:                negName,
-			NetworkEndpointType: string(syncer.NegSyncerKey.NegType),
+			NetworkEndpointType: string(ts.NegSyncerKey.NegType),
 			Network:             cloud.NetworkURL(),
 			Subnetwork:          subnetURL,
 			Zone:                zone,
@@ -2648,7 +2878,7 @@ func TestUnknownNodes(t *testing.T) {
 			t.Fatalf("failed to get neg from fake cloud: %s", err)
 		}
 
-		objRefs = append(objRefs, negv1beta1.NegObjectReference{SelfLink: neg.SelfLink})
+		objRefs = append(objRefs, negv1beta1.NegObjectReference{SelfLink: neg.SelfLink, SubnetURL: defaultTestSubnetURL})
 	}
 	neg := &negv1beta1.ServiceNetworkEndpointGroup{
 		ObjectMeta: metav1.ObjectMeta{
