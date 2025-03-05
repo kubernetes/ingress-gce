@@ -8,6 +8,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/ingress-gce/pkg/apis/providerconfig/v1"
+	"k8s.io/ingress-gce/pkg/flags"
 )
 
 func TestUpdateTokenBodyField(t *testing.T) {
@@ -122,6 +123,9 @@ subnetwork-name = default-subnetwork
 			providerConfig: &v1.ProviderConfig{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "example-provider-config",
+					Labels: map[string]string{
+						flags.F.MultiProjectOwnerLabelKey: "example-owner",
+					},
 				},
 				Spec: v1.ProviderConfigSpec{
 					ProjectID:     "providerconfig-project-id",
@@ -144,6 +148,40 @@ subnetwork-name = providerconfig-subnetwork-url
 			expectError: false,
 		},
 		{
+			name: "Valid providerConfig without owner label does not modify token-url",
+			defaultConfigContent: `
+[global]
+project-id = default-project-id
+token-url = https://gkeauth.googleapis.com/v1/projects/12345/locations/us-central1/clusters/example-cluster:generateToken
+token-body = {"projectNumber":12345,"clusterId":"example-cluster"}
+network-name = default-network
+subnetwork-name = default-subnetwork
+`,
+			providerConfig: &v1.ProviderConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "example-provider-config",
+				},
+				Spec: v1.ProviderConfigSpec{
+					ProjectID:     "default-project-id",
+					ProjectNumber: 12345,
+					NetworkConfig: v1.ProviderNetworkConfig{
+						Network: "projects/default-project-id/global/networks/providerconfig-network-url",
+						SubnetInfo: v1.ProviderConfigSubnetInfo{
+							Subnetwork: "projects/default-project-id/regions/us-central1/subnetworks/providerconfig-subnetwork-url",
+						},
+					},
+				},
+			},
+			expectedConfig: `[global]
+project-id = default-project-id
+token-url = https://gkeauth.googleapis.com/v1/projects/12345/locations/us-central1/clusters/example-cluster:generateToken
+token-body = {"clusterId":"example-cluster","projectNumber":12345}
+network-name = providerconfig-network-url
+subnetwork-name = providerconfig-subnetwork-url
+`,
+			expectError: false,
+		},
+		{
 			name: "Non standard base URL in token-url, providerConfig modifies config",
 			defaultConfigContent: `
 [global]
@@ -156,6 +194,9 @@ subnetwork-name = default-subnetwork
 			providerConfig: &v1.ProviderConfig{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "example-provider-config",
+					Labels: map[string]string{
+						flags.F.MultiProjectOwnerLabelKey: "example-owner",
+					},
 				},
 				Spec: v1.ProviderConfigSpec{
 					ProjectID:     "providerconfig-project-id",
@@ -191,6 +232,9 @@ subnetwork-name = providerconfig-subnetwork-name
 			providerConfig: &v1.ProviderConfig{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "example-provider-config",
+					Labels: map[string]string{
+						flags.F.MultiProjectOwnerLabelKey: "example-owner",
+					},
 				},
 				Spec: v1.ProviderConfigSpec{
 					ProjectID:     "providerconfig-project-id",
@@ -227,6 +271,9 @@ other-field = other-value
 			providerConfig: &v1.ProviderConfig{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "example-provider-config",
+					Labels: map[string]string{
+						flags.F.MultiProjectOwnerLabelKey: "example-owner",
+					},
 				},
 				Spec: v1.ProviderConfigSpec{
 					ProjectID:     "providerconfig-project-id",
