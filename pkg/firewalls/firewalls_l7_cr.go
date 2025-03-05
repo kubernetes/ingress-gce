@@ -169,6 +169,15 @@ func NewFirewallCR(name string, ports, srcRanges, dstRanges []string, enforced b
 		}
 		protocolPorts = append(protocolPorts, protocolPort)
 	}
+
+	// TCP:all is the default if the ports' list is empty.
+	if len(protocolPorts) == 0 {
+		protocolPort := gcpfirewallv1.ProtocolPort{
+			Protocol: gcpfirewallv1.ProtocolTCP,
+		}
+		protocolPorts = append(protocolPorts, protocolPort)
+	}
+
 	firewallCR.Spec.Ports = protocolPorts
 
 	var src_cidrs, dst_cidrs []gcpfirewallv1.CIDR
