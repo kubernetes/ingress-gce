@@ -71,6 +71,9 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      providerConfigName1,
 						Namespace: providerConfigName1,
+						Labels: map[string]string{
+							flags.F.MultiProjectOwnerLabelKey: "example-owner",
+						},
 					},
 					Spec: providerconfigv1.ProviderConfigSpec{
 						ProjectID:     "my-project",
@@ -110,6 +113,9 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      providerConfigName1,
 						Namespace: providerConfigName1,
+						Labels: map[string]string{
+							flags.F.MultiProjectOwnerLabelKey: "example-owner",
+						},
 					},
 					Spec: providerconfigv1.ProviderConfigSpec{
 						ProjectID:     "project-1",
@@ -126,6 +132,9 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      providerConfigName2,
 						Namespace: providerConfigName2,
+						Labels: map[string]string{
+							flags.F.MultiProjectOwnerLabelKey: "example-owner-2",
+						},
 					},
 					Spec: providerconfigv1.ProviderConfigSpec{
 						ProjectID:     "project-2",

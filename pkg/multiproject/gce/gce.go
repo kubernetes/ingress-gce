@@ -11,6 +11,7 @@ import (
 	cloudgce "k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/cmd/glbc/app"
 	v1 "k8s.io/ingress-gce/pkg/apis/providerconfig/v1"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/klog/v2"
 )
 
@@ -78,17 +79,10 @@ func generateConfigForProviderConfig(defaultConfigContent string, providerConfig
 	// Update TokenURL
 	tokenURLKey := "token-url"
 	oldValue := globalSection.Key(tokenURLKey).String()
-	// Extract location from the old token URL
-	location := extractLocationFromTokenURL(oldValue)
-	// Extract the baseURL before "/projects/"
-	tokenURLParts := strings.SplitN(oldValue, "/projects/", 2)
-	if len(tokenURLParts) != 2 {
-		return "", fmt.Errorf("invalid token URL format")
+	tokenURL, err := tokenURLForProviderConfig(oldValue, providerConfig)
+	if err != nil {
+		return "", fmt.Errorf("failed to update TokenURL: %v", err)
 	}
-	baseURL := tokenURLParts[0]
-	// Format: {BASE_URL}/projects/{TENANT_PROJECT_NUMBER}/locations/{TENANT_LOCATION}/tenants/{TENANT_ID}:generateTenantToken"
-	formatString := "%s/projects/%d/locations/%s/tenants/%s:generateTenantToken"
-	tokenURL := fmt.Sprintf(formatString, baseURL, providerConfig.Spec.ProjectNumber, location, providerConfig.Name)
 	globalSection.Key(tokenURLKey).SetValue(tokenURL)
 
 	// Update TokenBody
@@ -123,6 +117,26 @@ func generateConfigForProviderConfig(defaultConfigContent string, providerConfig
 	}
 
 	return modifiedConfigContent.String(), nil
+}
+
+func tokenURLForProviderConfig(existingTokenURL string, providerConfig *v1.ProviderConfig) (string, error) {
+	if _, ok := providerConfig.Labels[flags.F.MultiProjectOwnerLabelKey]; !ok {
+		// If no owner label is set, assume token URL belongs to the default project.
+		return existingTokenURL, nil
+	}
+
+	// Extract location from the old token URL
+	location := extractLocationFromTokenURL(existingTokenURL)
+	// Extract the baseURL before "/projects/"
+	tokenURLParts := strings.SplitN(existingTokenURL, "/projects/", 2)
+	if len(tokenURLParts) != 2 {
+		return "", fmt.Errorf("invalid token URL format")
+	}
+	baseURL := tokenURLParts[0]
+	// Format: {BASE_URL}/projects/{TENANT_PROJECT_NUMBER}/locations/{TENANT_LOCATION}/tenants/{TENANT_ID}:generateTenantToken"
+	formatString := "%s/projects/%d/locations/%s/tenants/%s:generateTenantToken"
+	tokenURL := fmt.Sprintf(formatString, baseURL, providerConfig.Spec.ProjectNumber, location, providerConfig.Name)
+	return tokenURL, nil
 }
 
 func updateTokenProjectNumber(tokenBody string, projectNumber int) (string, error) {
