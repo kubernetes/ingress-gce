@@ -41,5 +41,5 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 
 // ProviderConfigs returns a ProviderConfigInformer.
 func (v *version) ProviderConfigs() ProviderConfigInformer {
-	return &providerConfigInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+	return &providerConfigInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }

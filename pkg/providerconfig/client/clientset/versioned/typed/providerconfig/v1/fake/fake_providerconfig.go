@@ -33,7 +33,6 @@ import (
 // FakeProviderConfigs implements ProviderConfigInterface
 type FakeProviderConfigs struct {
 	Fake *FakeCloudV1
-	ns   string
 }
 
 var providerconfigsResource = schema.GroupVersionResource{Group: "cloud.gke.io", Version: "v1", Resource: "providerconfigs"}
@@ -43,8 +42,7 @@ var providerconfigsKind = schema.GroupVersionKind{Group: "cloud.gke.io", Version
 // Get takes name of the providerConfig, and returns the corresponding providerConfig object, and an error if there is any.
 func (c *FakeProviderConfigs) Get(ctx context.Context, name string, options v1.GetOptions) (result *providerconfigv1.ProviderConfig, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewGetAction(providerconfigsResource, c.ns, name), &providerconfigv1.ProviderConfig{})
-
+		Invokes(testing.NewRootGetAction(providerconfigsResource, name), &providerconfigv1.ProviderConfig{})
 	if obj == nil {
 		return nil, err
 	}
@@ -54,8 +52,7 @@ func (c *FakeProviderConfigs) Get(ctx context.Context, name string, options v1.G
 // List takes label and field selectors, and returns the list of ProviderConfigs that match those selectors.
 func (c *FakeProviderConfigs) List(ctx context.Context, opts v1.ListOptions) (result *providerconfigv1.ProviderConfigList, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewListAction(providerconfigsResource, providerconfigsKind, c.ns, opts), &providerconfigv1.ProviderConfigList{})
-
+		Invokes(testing.NewRootListAction(providerconfigsResource, providerconfigsKind, opts), &providerconfigv1.ProviderConfigList{})
 	if obj == nil {
 		return nil, err
 	}
@@ -76,15 +73,13 @@ func (c *FakeProviderConfigs) List(ctx context.Context, opts v1.ListOptions) (re
 // Watch returns a watch.Interface that watches the requested providerConfigs.
 func (c *FakeProviderConfigs) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
-		InvokesWatch(testing.NewWatchAction(providerconfigsResource, c.ns, opts))
-
+		InvokesWatch(testing.NewRootWatchAction(providerconfigsResource, opts))
 }
 
 // Create takes the representation of a providerConfig and creates it.  Returns the server's representation of the providerConfig, and an error, if there is any.
 func (c *FakeProviderConfigs) Create(ctx context.Context, providerConfig *providerconfigv1.ProviderConfig, opts v1.CreateOptions) (result *providerconfigv1.ProviderConfig, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewCreateAction(providerconfigsResource, c.ns, providerConfig), &providerconfigv1.ProviderConfig{})
-
+		Invokes(testing.NewRootCreateAction(providerconfigsResource, providerConfig), &providerconfigv1.ProviderConfig{})
 	if obj == nil {
 		return nil, err
 	}
@@ -94,8 +89,7 @@ func (c *FakeProviderConfigs) Create(ctx context.Context, providerConfig *provid
 // Update takes the representation of a providerConfig and updates it. Returns the server's representation of the providerConfig, and an error, if there is any.
 func (c *FakeProviderConfigs) Update(ctx context.Context, providerConfig *providerconfigv1.ProviderConfig, opts v1.UpdateOptions) (result *providerconfigv1.ProviderConfig, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewUpdateAction(providerconfigsResource, c.ns, providerConfig), &providerconfigv1.ProviderConfig{})
-
+		Invokes(testing.NewRootUpdateAction(providerconfigsResource, providerConfig), &providerconfigv1.ProviderConfig{})
 	if obj == nil {
 		return nil, err
 	}
@@ -105,14 +99,13 @@ func (c *FakeProviderConfigs) Update(ctx context.Context, providerConfig *provid
 // Delete takes name of the providerConfig and deletes it. Returns an error if one occurs.
 func (c *FakeProviderConfigs) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewDeleteAction(providerconfigsResource, c.ns, name), &providerconfigv1.ProviderConfig{})
-
+		Invokes(testing.NewRootDeleteAction(providerconfigsResource, name), &providerconfigv1.ProviderConfig{})
 	return err
 }
 
 // DeleteCollection deletes a collection of objects.
 func (c *FakeProviderConfigs) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
-	action := testing.NewDeleteCollectionAction(providerconfigsResource, c.ns, listOpts)
+	action := testing.NewRootDeleteCollectionAction(providerconfigsResource, listOpts)
 
 	_, err := c.Fake.Invokes(action, &providerconfigv1.ProviderConfigList{})
 	return err
@@ -121,8 +114,7 @@ func (c *FakeProviderConfigs) DeleteCollection(ctx context.Context, opts v1.Dele
 // Patch applies the patch and returns the patched providerConfig.
 func (c *FakeProviderConfigs) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *providerconfigv1.ProviderConfig, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(providerconfigsResource, c.ns, name, pt, data, subresources...), &providerconfigv1.ProviderConfig{})
-
+		Invokes(testing.NewRootPatchSubresourceAction(providerconfigsResource, name, pt, data, subresources...), &providerconfigv1.ProviderConfig{})
 	if obj == nil {
 		return nil, err
 	}

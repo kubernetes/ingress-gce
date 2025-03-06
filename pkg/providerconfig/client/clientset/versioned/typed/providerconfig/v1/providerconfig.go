@@ -33,7 +33,7 @@ import (
 // ProviderConfigsGetter has a method to return a ProviderConfigInterface.
 // A group's client should implement this interface.
 type ProviderConfigsGetter interface {
-	ProviderConfigs(namespace string) ProviderConfigInterface
+	ProviderConfigs() ProviderConfigInterface
 }
 
 // ProviderConfigInterface has methods to work with ProviderConfig resources.
@@ -52,14 +52,12 @@ type ProviderConfigInterface interface {
 // providerConfigs implements ProviderConfigInterface
 type providerConfigs struct {
 	client rest.Interface
-	ns     string
 }
 
 // newProviderConfigs returns a ProviderConfigs
-func newProviderConfigs(c *CloudV1Client, namespace string) *providerConfigs {
+func newProviderConfigs(c *CloudV1Client) *providerConfigs {
 	return &providerConfigs{
 		client: c.RESTClient(),
-		ns:     namespace,
 	}
 }
 
@@ -67,7 +65,6 @@ func newProviderConfigs(c *CloudV1Client, namespace string) *providerConfigs {
 func (c *providerConfigs) Get(ctx context.Context, name string, options metav1.GetOptions) (result *v1.ProviderConfig, err error) {
 	result = &v1.ProviderConfig{}
 	err = c.client.Get().
-		Namespace(c.ns).
 		Resource("providerconfigs").
 		Name(name).
 		VersionedParams(&options, scheme.ParameterCodec).
@@ -84,7 +81,6 @@ func (c *providerConfigs) List(ctx context.Context, opts metav1.ListOptions) (re
 	}
 	result = &v1.ProviderConfigList{}
 	err = c.client.Get().
-		Namespace(c.ns).
 		Resource("providerconfigs").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Timeout(timeout).
@@ -101,7 +97,6 @@ func (c *providerConfigs) Watch(ctx context.Context, opts metav1.ListOptions) (w
 	}
 	opts.Watch = true
 	return c.client.Get().
-		Namespace(c.ns).
 		Resource("providerconfigs").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Timeout(timeout).
@@ -112,7 +107,6 @@ func (c *providerConfigs) Watch(ctx context.Context, opts metav1.ListOptions) (w
 func (c *providerConfigs) Create(ctx context.Context, providerConfig *v1.ProviderConfig, opts metav1.CreateOptions) (result *v1.ProviderConfig, err error) {
 	result = &v1.ProviderConfig{}
 	err = c.client.Post().
-		Namespace(c.ns).
 		Resource("providerconfigs").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Body(providerConfig).
@@ -125,7 +119,6 @@ func (c *providerConfigs) Create(ctx context.Context, providerConfig *v1.Provide
 func (c *providerConfigs) Update(ctx context.Context, providerConfig *v1.ProviderConfig, opts metav1.UpdateOptions) (result *v1.ProviderConfig, err error) {
 	result = &v1.ProviderConfig{}
 	err = c.client.Put().
-		Namespace(c.ns).
 		Resource("providerconfigs").
 		Name(providerConfig.Name).
 		VersionedParams(&opts, scheme.ParameterCodec).
@@ -138,7 +131,6 @@ func (c *providerConfigs) Update(ctx context.Context, providerConfig *v1.Provide
 // Delete takes name of the providerConfig and deletes it. Returns an error if one occurs.
 func (c *providerConfigs) Delete(ctx context.Context, name string, opts metav1.DeleteOptions) error {
 	return c.client.Delete().
-		Namespace(c.ns).
 		Resource("providerconfigs").
 		Name(name).
 		Body(&opts).
@@ -153,7 +145,6 @@ func (c *providerConfigs) DeleteCollection(ctx context.Context, opts metav1.Dele
 		timeout = time.Duration(*listOpts.TimeoutSeconds) * time.Second
 	}
 	return c.client.Delete().
-		Namespace(c.ns).
 		Resource("providerconfigs").
 		VersionedParams(&listOpts, scheme.ParameterCodec).
 		Timeout(timeout).
@@ -166,7 +157,6 @@ func (c *providerConfigs) DeleteCollection(ctx context.Context, opts metav1.Dele
 func (c *providerConfigs) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *v1.ProviderConfig, err error) {
 	result = &v1.ProviderConfig{}
 	err = c.client.Patch(pt).
-		Namespace(c.ns).
 		Resource("providerconfigs").
 		Name(name).
 		SubResource(subresources...).

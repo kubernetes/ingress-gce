@@ -69,8 +69,7 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 			providerConfigs: []*providerconfigv1.ProviderConfig{
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      providerConfigName1,
-						Namespace: providerConfigName1,
+						Name: providerConfigName1,
 						Labels: map[string]string{
 							flags.F.MultiProjectOwnerLabelKey: "example-owner",
 						},
@@ -111,8 +110,7 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 			providerConfigs: []*providerconfigv1.ProviderConfig{
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      providerConfigName1,
-						Namespace: providerConfigName1,
+						Name: providerConfigName1,
 						Labels: map[string]string{
 							flags.F.MultiProjectOwnerLabelKey: "example-owner",
 						},
@@ -130,8 +128,7 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 				},
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      providerConfigName2,
-						Namespace: providerConfigName2,
+						Name: providerConfigName2,
 						Labels: map[string]string{
 							flags.F.MultiProjectOwnerLabelKey: "example-owner-2",
 						},
@@ -241,7 +238,7 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 					addressPrefix,
 				)
 
-				if _, err := pcClient.CloudV1().ProviderConfigs(pc.Namespace).Create(ctx, pc, metav1.CreateOptions{}); err != nil {
+				if _, err := pcClient.CloudV1().ProviderConfigs().Create(ctx, pc, metav1.CreateOptions{}); err != nil {
 					t.Fatalf("Failed to create ProviderConfig %q: %v", pc.Name, err)
 				}
 			}
@@ -403,7 +400,7 @@ func waitForProviderConfigFinalizer(
 	t.Helper()
 
 	return wait.PollImmediate(time.Second, 10*time.Second, func() (bool, error) {
-		pcCheck, err := pcClient.CloudV1().ProviderConfigs(pc.Namespace).Get(ctx, pc.Name, metav1.GetOptions{})
+		pcCheck, err := pcClient.CloudV1().ProviderConfigs().Get(ctx, pc.Name, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
