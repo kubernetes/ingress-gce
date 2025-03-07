@@ -31,8 +31,9 @@ type ProviderConfigLister interface {
 	// List lists all ProviderConfigs in the indexer.
 	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1.ProviderConfig, err error)
-	// ProviderConfigs returns an object that can list and get ProviderConfigs.
-	ProviderConfigs(namespace string) ProviderConfigNamespaceLister
+	// Get retrieves the ProviderConfig from the index for a given name.
+	// Objects returned here must be treated as read-only.
+	Get(name string) (*v1.ProviderConfig, error)
 	ProviderConfigListerExpansion
 }
 
@@ -54,41 +55,9 @@ func (s *providerConfigLister) List(selector labels.Selector) (ret []*v1.Provide
 	return ret, err
 }
 
-// ProviderConfigs returns an object that can list and get ProviderConfigs.
-func (s *providerConfigLister) ProviderConfigs(namespace string) ProviderConfigNamespaceLister {
-	return providerConfigNamespaceLister{indexer: s.indexer, namespace: namespace}
-}
-
-// ProviderConfigNamespaceLister helps list and get ProviderConfigs.
-// All objects returned here must be treated as read-only.
-type ProviderConfigNamespaceLister interface {
-	// List lists all ProviderConfigs in the indexer for a given namespace.
-	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1.ProviderConfig, err error)
-	// Get retrieves the ProviderConfig from the indexer for a given namespace and name.
-	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1.ProviderConfig, error)
-	ProviderConfigNamespaceListerExpansion
-}
-
-// providerConfigNamespaceLister implements the ProviderConfigNamespaceLister
-// interface.
-type providerConfigNamespaceLister struct {
-	indexer   cache.Indexer
-	namespace string
-}
-
-// List lists all ProviderConfigs in the indexer for a given namespace.
-func (s providerConfigNamespaceLister) List(selector labels.Selector) (ret []*v1.ProviderConfig, err error) {
-	err = cache.ListAllByNamespace(s.indexer, s.namespace, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1.ProviderConfig))
-	})
-	return ret, err
-}
-
-// Get retrieves the ProviderConfig from the indexer for a given namespace and name.
-func (s providerConfigNamespaceLister) Get(name string) (*v1.ProviderConfig, error) {
-	obj, exists, err := s.indexer.GetByKey(s.namespace + "/" + name)
+// Get retrieves the ProviderConfig from the index for a given name.
+func (s *providerConfigLister) Get(name string) (*v1.ProviderConfig, error) {
+	obj, exists, err := s.indexer.GetByKey(name)
 	if err != nil {
 		return nil, err
 	}

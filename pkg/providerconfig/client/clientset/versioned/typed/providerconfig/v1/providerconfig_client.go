@@ -34,8 +34,8 @@ type CloudV1Client struct {
 	restClient rest.Interface
 }
 
-func (c *CloudV1Client) ProviderConfigs(namespace string) ProviderConfigInterface {
-	return newProviderConfigs(c, namespace)
+func (c *CloudV1Client) ProviderConfigs() ProviderConfigInterface {
+	return newProviderConfigs(c)
 }
 
 // NewForConfig creates a new CloudV1Client for the given config.

@@ -75,8 +75,8 @@ func NewProviderConfigControllerManager(
 	}
 }
 
-func providerConfigKey(cs *providerconfig.ProviderConfig) string {
-	return cs.Namespace + "/" + cs.Name
+func providerConfigKey(pc *providerconfig.ProviderConfig) string {
+	return pc.Name
 }
 
 func (pccm *ProviderConfigControllersManager) StartControllersForProviderConfig(pc *providerconfig.ProviderConfig) error {

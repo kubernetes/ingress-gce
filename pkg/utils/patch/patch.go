@@ -101,7 +101,7 @@ func PatchProviderConfigObjectMetadata(client providerconfigclient.Interface, pc
 		return err
 	}
 
-	_, err = client.CloudV1().ProviderConfigs(newPC.Namespace).Patch(context.Background(), newPC.Name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
+	_, err = client.CloudV1().ProviderConfigs().Patch(context.Background(), newPC.Name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
 	return err
 }
 
