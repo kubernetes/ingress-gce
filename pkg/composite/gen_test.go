@@ -1,5 +1,5 @@
 /*
-Copyright 2024 The Kubernetes Authors.
+Copyright 2025 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -256,6 +256,22 @@ func TestBackendServiceConnectionTrackingPolicy(t *testing.T) {
 func TestBackendServiceCustomMetric(t *testing.T) {
 	compositeType := reflect.TypeOf(BackendServiceCustomMetric{})
 	alphaType := reflect.TypeOf(computealpha.BackendServiceCustomMetric{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBackendServiceDynamicForwarding(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendServiceDynamicForwarding{})
+	alphaType := reflect.TypeOf(computealpha.BackendServiceDynamicForwarding{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBackendServiceDynamicForwardingIpPortSelection(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendServiceDynamicForwardingIpPortSelection{})
+	alphaType := reflect.TypeOf(computealpha.BackendServiceDynamicForwardingIpPortSelection{})
 	if err := typeEquality(compositeType, alphaType, true); err != nil {
 		t.Fatal(err)
 	}
