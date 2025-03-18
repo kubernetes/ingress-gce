@@ -8,8 +8,8 @@ parseCluster() {
     # These are all globals.
     net=$1
     subnet=$2
-    selfLink=$3
-    name=$4
+    zone=$3
+    selfLink=$4
     net=$(echo ${net} | sed 's+.*networks/\([-a-z0-9]*\).*$+\1+')
     subnet=$(echo ${subnet} | sed 's+.*subnetworks/\([-a-z0-9]*\)$+\1+')
     project=$(echo ${selfLink} | sed 's+.*/projects/\([-a-z0-9]*\)/.*+\1+')
@@ -26,7 +26,7 @@ if [ -z "${clusterName}" ]; then
     exit 1
 fi
 
-fmt='value(networkConfig.network,networkConfig.subnetwork,selfLink,name)'
+fmt='value(networkConfig.network,networkConfig.subnetwork,zone,selfLink,name)'
 if [ -z "$clusterLocation" ]; then
     clusters=$(gcloud container clusters list --format="${fmt}" --filter="name:${clusterName}")
 else
@@ -35,20 +35,23 @@ fi
 
 if [ "$(echo "${clusters}" | wc -l)" -gt 1 ]; then
     echo "ERROR: more than one cluster matches '${clusterName}'"
+    exit 1
 fi
-parseCluster ${clusters}
 if [ -z  "${clusters}" ]; then
     echo "ERROR: No cluster '${clusterName}' found"
     exit 1
 fi
 
+parseCluster ${clusters}
+
+
 zone_regex="^[a-z]+-[a-z]+[0-9]-[a-z]$"
 region_regex="^[a-z]+-[a-z]+[0-9]$"
 
 # Find running instance and instanceGroupZone
-if [[ ${clusterLocation} =~ $zone_regex ]]; then
-    echo "Zonal cluster: ${clusterLocation}"
-    instanceGroupUrl=$(gcloud  container  clusters describe "$clusterName" --zone "$clusterLocation" --format='value(instanceGroupUrls)' | awk -F";" '{print $NF}')
+if [[ ${zone} =~ $zone_regex ]]; then
+    echo "Zonal cluster: ${zone}"
+    instanceGroupUrl=$(gcloud  container  clusters describe "$clusterName" --zone "$zone" --format='value(instanceGroupUrls)' | awk -F";" '{print $NF}')
     if [ -z "${instanceGroupUrl}" ]; then
         echo "ERROR: No instance group for cluster"
         exit 1;
@@ -57,7 +60,7 @@ if [[ ${clusterLocation} =~ $zone_regex ]]; then
     instanceGroupName=$(echo "${instanceGroupUrl}" | awk -F"/" '{print $NF}')
     # Get zone of the instance group from the URL
     instanceGroupZone=$(echo "${instanceGroupUrl}" | awk -F"/" '{print $(NF-2)}')
-    instance=$(gcloud compute instance-groups list-instances "${instanceGroupName}" --zone "${instanceGroupZone}" --format='value(instance)' --filter='status:RUNNING')
+    instance=$(gcloud compute instance-groups list-instances "${instanceGroupName}" --zone "${instanceGroupZone}" --format='value(instance)' --filter='status:RUNNING' | head -n 1)
 
 elif [[ ${clusterLocation} =~ $region_regex ]]; then
     echo "Regional cluster: ${clusterLocation}"
@@ -82,7 +85,7 @@ else
 fi
 
 if [ -z "${instance}" ]; then
-    echo "ERROR: No running instance found for cluster ${clusterName} in location ${clusterLocation}"
+    echo "ERROR: No running instance found for cluster ${clusterName}"
     exit 1;
 fi
 
