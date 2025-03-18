@@ -91,36 +91,14 @@ func PatchServiceLoadBalancerStatus(client coreclient.CoreV1Interface, svc *core
 
 // PatchProviderConfigObjectMetadata patches the given ProviderConfig's metadata based on new metadata.
 func PatchProviderConfigObjectMetadata(client providerconfigclient.Interface, pc *providerconfig.ProviderConfig, newObjectMetadata metav1.ObjectMeta) error {
-	// Reset Spec to ensure only ObjectMeta is patched.
 	newPC := pc.DeepCopy()
-
 	newPC.ObjectMeta = newObjectMetadata
 
-	patchBytes, err := getProviderConfigPatchBytes(pc, newPC)
+	patchBytes, err := MergePatchBytes(pc, newPC)
 	if err != nil {
 		return err
 	}
 
-	_, err = client.CloudV1().ProviderConfigs().Patch(context.Background(), newPC.Name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
+	_, err = client.CloudV1().ProviderConfigs().Patch(context.Background(), newPC.Name, types.MergePatchType, patchBytes, metav1.PatchOptions{})
 	return err
-}
-
-// getProviderConfigPatchBytes generates the patch bytes for updating a ProviderConfig.
-func getProviderConfigPatchBytes(oldCS, newCS *providerconfig.ProviderConfig) ([]byte, error) {
-	oldData, err := json.Marshal(oldCS)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal old object: %v", err)
-	}
-
-	newData, err := json.Marshal(newCS)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal new object: %v", err)
-	}
-
-	patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldData, newData, providerconfig.ProviderConfig{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create patch: %v", err)
-	}
-
-	return patchBytes, nil
 }
