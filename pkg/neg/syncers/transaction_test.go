@@ -36,7 +36,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -1336,12 +1335,12 @@ func TestCommitPods(t *testing.T) {
 					endpointSet, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
 					retSet[negtypes.NEGLocation{Zone: testZone1, Subnet: defaultTestSubnet}] = retSet[negtypes.NEGLocation{Zone: testZone1, Subnet: defaultTestSubnet}].Union(endpointSet)
 					retMap = unionEndpointMap(retMap, endpointMap)
-					endpointSet, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
+					endpointSet, _ = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
 					retSet[negtypes.NEGLocation{Zone: testZone1, Subnet: defaultTestSubnet}] = retSet[negtypes.NEGLocation{Zone: testZone1, Subnet: defaultTestSubnet}].Union(endpointSet)
 					endpointSet, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
 					retSet[negtypes.NEGLocation{Zone: testZone2, Subnet: defaultTestSubnet}] = retSet[negtypes.NEGLocation{Zone: testZone2, Subnet: defaultTestSubnet}].Union(endpointSet)
 					retMap = unionEndpointMap(retMap, endpointMap)
-					endpointSet, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")
+					endpointSet, _ = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")
 					retSet[negtypes.NEGLocation{Zone: testZone2, Subnet: defaultTestSubnet}] = retSet[negtypes.NEGLocation{Zone: testZone2, Subnet: defaultTestSubnet}].Union(endpointSet)
 					return retSet, retMap
 				},
@@ -1725,10 +1724,10 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 			}
 
 			// Since timestamp gets truncated to the second, there is a chance that the timestamps will be the same as LastTransitionTime or LastSyncTime so use creation TS from an earlier date.
-			creationTS := v1.Date(2020, time.July, 23, 0, 0, 0, 0, time.UTC)
+			creationTS := metav1.Date(2020, time.July, 23, 0, 0, 0, 0, time.UTC)
 			//Create NEG CR for Syncer to update status on
 			origCR := createNegCR(testNegName, creationTS, tc.crStatusPopulated, tc.crStatusPopulated, refs)
-			neg, err := negClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Create(context.Background(), origCR, v1.CreateOptions{})
+			neg, err := negClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Create(context.Background(), origCR, metav1.CreateOptions{})
 			if err != nil {
 				t.Errorf("Failed to create test NEG CR: %s", err)
 			}
@@ -1742,7 +1741,7 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 				t.Errorf("Expected error, but got none")
 			}
 
-			negCR, err := negClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Get(context.Background(), testNegName, v1.GetOptions{})
+			negCR, err := negClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Get(context.Background(), testNegName, metav1.GetOptions{})
 			if err != nil {
 				t.Errorf("Failed to get NEG from neg client: %s", err)
 			}
@@ -1815,7 +1814,7 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 			}
 		})
 
-		negClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Delete(context.TODO(), testNegName, v1.DeleteOptions{})
+		negClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Delete(context.TODO(), testNegName, metav1.DeleteOptions{})
 
 		syncer.cloud.DeleteNetworkEndpointGroup(testNegName, negtypes.TestZone1, syncer.NegSyncerKey.GetAPIVersion(), klog.TODO())
 		syncer.cloud.DeleteNetworkEndpointGroup(testNegName, negtypes.TestZone2, syncer.NegSyncerKey.GetAPIVersion(), klog.TODO())
@@ -1965,8 +1964,8 @@ func TestEnsureNetworkEndpointGroupsMSC(t *testing.T) {
 			for _, neg := range negRefByZone {
 				refs = append(refs, neg)
 			}
-			origCR := createNegCR(negName, v1.Now(), true, true, refs)
-			initialNegCr, err := negClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Create(context.Background(), origCR, v1.CreateOptions{})
+			origCR := createNegCR(negName, metav1.Now(), true, true, refs)
+			initialNegCr, err := negClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Create(context.Background(), origCR, metav1.CreateOptions{})
 			if err != nil {
 				t.Fatalf("Failed to create test NEG CR: %s", err)
 			}
@@ -1987,7 +1986,7 @@ func TestEnsureNetworkEndpointGroupsMSC(t *testing.T) {
 				t.Errorf("Got errors %v after ensureNetworkEndpointGroupsFromNodeTopology(), expected no errors", err)
 			}
 
-			syncedNegCR, err := negClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Get(context.Background(), negName, v1.GetOptions{})
+			syncedNegCR, err := negClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Get(context.Background(), negName, metav1.GetOptions{})
 			if err != nil {
 				t.Fatalf("Failed to get NEG from neg client: %s", err)
 			}
@@ -2126,9 +2125,9 @@ func TestUpdateInitStatusWithMultiSubnetCluster(t *testing.T) {
 			}
 
 			// Create NEG CR.
-			creationTS := v1.Now()
+			creationTS := metav1.Now()
 			origCR := createNegCR(testNegName, creationTS, true, true, initialNegRefs)
-			svcNeg, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Create(context.Background(), origCR, v1.CreateOptions{})
+			svcNeg, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Create(context.Background(), origCR, metav1.CreateOptions{})
 			if err != nil {
 				t.Errorf("Failed to create test NEG CR: %s", err)
 			}
@@ -2160,7 +2159,7 @@ func TestUpdateInitStatusWithMultiSubnetCluster(t *testing.T) {
 			syncer.updateInitStatus(activeNegList, nil)
 
 			// gather negCR to validate the updates
-			negCR, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Get(context.Background(), testNegName, v1.GetOptions{})
+			negCR, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Get(context.Background(), testNegName, metav1.GetOptions{})
 			if err != nil {
 				t.Errorf("Failed to create test NEG CR: %s", err)
 			}
@@ -2244,9 +2243,9 @@ func TestUpdateInitStatusTransitions(t *testing.T) {
 	allRefs := createNEGs(t, syncer, fakeCloud, testNegName, defaultTestSubnetURL, allZones, negv1beta1.ActiveState)
 
 	// Create NEG CR.
-	creationTS := v1.Now()
+	creationTS := metav1.Now()
 	origCR := createNegCR(testNegName, creationTS, true, true, initialNegRefs)
-	svcNeg, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Create(context.Background(), origCR, v1.CreateOptions{})
+	svcNeg, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Create(context.Background(), origCR, metav1.CreateOptions{})
 	if err != nil {
 		t.Errorf("Failed to create test NEG CR: %s", err)
 	}
@@ -2259,7 +2258,7 @@ func TestUpdateInitStatusTransitions(t *testing.T) {
 	syncer.updateInitStatus(allRefs, nil)
 
 	// gather negCR to validate the updates
-	negCR, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Get(context.Background(), testNegName, v1.GetOptions{})
+	negCR, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Get(context.Background(), testNegName, metav1.GetOptions{})
 	if err != nil {
 		t.Errorf("Failed to create test NEG CR: %s", err)
 	}
@@ -2337,9 +2336,9 @@ func TestSubnetChanges(t *testing.T) {
 	allRefs = append(allRefs, createNEGs(t, ts, fakeCloud, subnetToNameMap[secondarySubnetConfig1], secondarySubnetConfig1.SubnetPath, allZones, negv1beta1.ActiveState)...)
 
 	// Create NEG CR.
-	creationTS := v1.Date(2020, time.July, 23, 0, 0, 0, 0, time.UTC)
+	creationTS := metav1.Date(2020, time.July, 23, 0, 0, 0, 0, time.UTC)
 	origCR := createNegCR(testNegName, creationTS, true, true, allRefs)
-	svcNeg, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Create(context.Background(), origCR, v1.CreateOptions{})
+	svcNeg, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Create(context.Background(), origCR, metav1.CreateOptions{})
 	if err != nil {
 		t.Errorf("Failed to create test NEG CR: %s", err)
 	}
@@ -2349,7 +2348,7 @@ func TestSubnetChanges(t *testing.T) {
 	ts.sync()
 
 	// gather negCR to validate the updates
-	negCR, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Get(context.Background(), testNegName, v1.GetOptions{})
+	negCR, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Get(context.Background(), testNegName, metav1.GetOptions{})
 	if err != nil {
 		t.Errorf("Failed to create test NEG CR: %s", err)
 	}
@@ -2483,7 +2482,7 @@ func TestIsSubnetChange(t *testing.T) {
 				}
 			}
 
-			negCR := createNegCR(ts.NegName, v1.Now(), true, true, allRefs)
+			negCR := createNegCR(ts.NegName, metav1.Now(), true, true, allRefs)
 			if err = ts.svcNegLister.Add(negCR); err != nil {
 				t.Errorf("failed to add neg to store:%s", err)
 			}
@@ -2647,6 +2646,9 @@ func TestUpdateStatus(t *testing.T) {
 						Subnetwork:          fakeCloud.SubnetworkURL(),
 						Description:         "",
 					}, testZone1, klog.TODO())
+					if err != nil {
+						t.Errorf("failed to create test NEG: %s", err)
+					}
 
 					_, err = fakeCloud.GetNetworkEndpointGroup(testNegName, testZone1, syncer.NegSyncerKey.GetAPIVersion(), klog.TODO())
 					if err != nil {
@@ -2655,9 +2657,9 @@ func TestUpdateStatus(t *testing.T) {
 				}
 
 				// Since timestamp gets truncated to the second, there is a chance that the timestamps will be the same as LastTransitionTime or LastSyncTime so use creation TS from an earlier date
-				creationTS := v1.Date(2020, time.July, 23, 0, 0, 0, 0, time.UTC)
+				creationTS := metav1.Date(2020, time.July, 23, 0, 0, 0, 0, time.UTC)
 				origCR := createNegCR(testNegName, creationTS, tc.populateConditions[negv1beta1.Initialized], tc.populateConditions[negv1beta1.Synced], tc.negRefs)
-				origCR, err = svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Create(context.Background(), origCR, v1.CreateOptions{})
+				origCR, err = svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Create(context.Background(), origCR, metav1.CreateOptions{})
 				if err != nil {
 					t.Errorf("Failed to create test NEG CR: %s", err)
 				}
@@ -2665,7 +2667,7 @@ func TestUpdateStatus(t *testing.T) {
 
 				syncer.updateStatus(syncErr)
 
-				negCR, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Get(context.Background(), testNegName, v1.GetOptions{})
+				negCR, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Get(context.Background(), testNegName, metav1.GetOptions{})
 				if err != nil {
 					t.Errorf("Failed to create test NEG CR: %s", err)
 				}
@@ -2766,7 +2768,7 @@ func TestIsZoneChange(t *testing.T) {
 			for _, neg := range negRefMap {
 				refs = append(refs, neg)
 			}
-			negCR := createNegCR(syncer.NegName, v1.Now(), true, true, refs)
+			negCR := createNegCR(syncer.NegName, metav1.Now(), true, true, refs)
 			if err = syncer.svcNegLister.Add(negCR); err != nil {
 				t.Errorf("failed to add neg to store:%s", err)
 			}
@@ -2849,19 +2851,19 @@ func TestUnknownNodes(t *testing.T) {
 	testEndpointSlices := getDefaultEndpointSlices()
 	testEndpointSlices[0].Endpoints[0].NodeName = utilpointer.StringPtr("unknown-node")
 	testEndpointMap := map[negtypes.NEGLocation]*composite.NetworkEndpoint{
-		{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: &composite.NetworkEndpoint{
+		{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: {
 			Instance:  negtypes.TestInstance1,
 			IpAddress: testIP1,
 			Port:      testPort,
 		},
 
-		{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: &composite.NetworkEndpoint{
+		{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: {
 			Instance:  negtypes.TestInstance3,
 			IpAddress: testIP2,
 			Port:      testPort,
 		},
 
-		{Zone: negtypes.TestZone4, Subnet: defaultTestSubnet}: &composite.NetworkEndpoint{
+		{Zone: negtypes.TestZone4, Subnet: defaultTestSubnet}: {
 			Instance:  negtypes.TestUpgradeInstance1,
 			IpAddress: testIP3,
 			Port:      testPort,
@@ -3780,7 +3782,6 @@ func (r *testRetryHandler) Retry() error {
 }
 
 func (r *testRetryHandler) Reset() {
-	return
 }
 
 // negMeta references a GCE NEG resource
