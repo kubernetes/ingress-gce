@@ -261,6 +261,22 @@ func TestBackendServiceCustomMetric(t *testing.T) {
 	}
 }
 
+func TestBackendServiceDynamicForwarding(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendServiceDynamicForwarding{})
+	alphaType := reflect.TypeOf(computealpha.BackendServiceDynamicForwarding{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBackendServiceDynamicForwardingIpPortSelection(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendServiceDynamicForwardingIpPortSelection{})
+	alphaType := reflect.TypeOf(computealpha.BackendServiceDynamicForwardingIpPortSelection{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBackendServiceFailoverPolicy(t *testing.T) {
 	compositeType := reflect.TypeOf(BackendServiceFailoverPolicy{})
 	alphaType := reflect.TypeOf(computealpha.BackendServiceFailoverPolicy{})

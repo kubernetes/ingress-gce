@@ -1,4 +1,4 @@
-// Copyright 2024 Google LLC.
+// Copyright 2025 Google LLC.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -57,11 +57,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 
+	"github.com/googleapis/gax-go/v2/internallog"
 	googleapi "google.golang.org/api/googleapi"
 	internal "google.golang.org/api/internal"
 	gensupport "google.golang.org/api/internal/gensupport"
@@ -85,6 +87,7 @@ var _ = strings.Replace
 var _ = context.Canceled
 var _ = internaloption.WithDefaultEndpoint
 var _ = internal.Version
+var _ = internallog.New
 
 const apiId = "container:v1"
 const apiName = "container"
@@ -115,7 +118,8 @@ func NewService(ctx context.Context, opts ...option.ClientOption) (*Service, err
 	if err != nil {
 		return nil, err
 	}
-	s, err := New(client)
+	s := &Service{client: client, BasePath: basePath, logger: internaloption.GetLogger(opts)}
+	s.Projects = NewProjectsService(s)
 	if err != nil {
 		return nil, err
 	}
@@ -134,13 +138,12 @@ func New(client *http.Client) (*Service, error) {
 	if client == nil {
 		return nil, errors.New("client is nil")
 	}
-	s := &Service{client: client, BasePath: basePath}
-	s.Projects = NewProjectsService(s)
-	return s, nil
+	return NewService(context.TODO(), option.WithHTTPClient(client))
 }
 
 type Service struct {
 	client    *http.Client
+	logger    *slog.Logger
 	BasePath  string // API endpoint base URL
 	UserAgent string // optional additional User-Agent fragment
 
@@ -456,6 +459,9 @@ type AddonsConfig struct {
 	// whether the addon is enabled or not on the Master, it does not track whether
 	// network policy is enabled for the nodes.
 	NetworkPolicyConfig *NetworkPolicyConfig `json:"networkPolicyConfig,omitempty"`
+	// ParallelstoreCsiDriverConfig: Configuration for the Cloud Storage
+	// Parallelstore CSI driver.
+	ParallelstoreCsiDriverConfig *ParallelstoreCsiDriverConfig `json:"parallelstoreCsiDriverConfig,omitempty"`
 	// RayOperatorConfig: Optional. Configuration for Ray Operator addon.
 	RayOperatorConfig *RayOperatorConfig `json:"rayOperatorConfig,omitempty"`
 	// StatefulHaConfig: Optional. Configuration for the StatefulHA add-on.
@@ -566,6 +572,34 @@ func (s AuthenticatorGroupsConfig) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
+// AutoMonitoringConfig: AutoMonitoringConfig defines the configuration for GKE
+// Workload Auto-Monitoring.
+type AutoMonitoringConfig struct {
+	// Scope: Scope for GKE Workload Auto-Monitoring.
+	//
+	// Possible values:
+	//   "SCOPE_UNSPECIFIED" - Not set.
+	//   "ALL" - Auto-Monitoring is enabled for all supported applications.
+	//   "NONE" - Disable Auto-Monitoring.
+	Scope string `json:"scope,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "Scope") to unconditionally
+	// include in API requests. By default, fields with empty or default values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Scope") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s AutoMonitoringConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod AutoMonitoringConfig
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
 // AutoUpgradeOptions: AutoUpgradeOptions defines the set of options for the
 // user to control how the Auto Upgrades will proceed.
 type AutoUpgradeOptions struct {
@@ -599,7 +633,8 @@ func (s AutoUpgradeOptions) MarshalJSON() ([]byte, error) {
 type Autopilot struct {
 	// Enabled: Enable Autopilot
 	Enabled bool `json:"enabled,omitempty"`
-	// WorkloadPolicyConfig: Workload policy configuration for Autopilot.
+	// WorkloadPolicyConfig: WorkloadPolicyConfig is the configuration related to
+	// GCW workload policy
 	WorkloadPolicyConfig *WorkloadPolicyConfig `json:"workloadPolicyConfig,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "Enabled") to unconditionally
 	// include in API requests. By default, fields with empty or default values are
@@ -626,7 +661,7 @@ type AutopilotCompatibilityIssue struct {
 	ConstraintType string `json:"constraintType,omitempty"`
 	// Description: The description of the issue.
 	Description string `json:"description,omitempty"`
-	// DocumentationUrl: A URL to a public documnetation, which addresses resolving
+	// DocumentationUrl: A URL to a public documentation, which addresses resolving
 	// this issue.
 	DocumentationUrl string `json:"documentationUrl,omitempty"`
 	// IncompatibilityType: The incompatibility type of this issue.
@@ -660,6 +695,29 @@ type AutopilotCompatibilityIssue struct {
 
 func (s AutopilotCompatibilityIssue) MarshalJSON() ([]byte, error) {
 	type NoMethod AutopilotCompatibilityIssue
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// AutopilotConfig: AutopilotConfig contains configuration of autopilot feature
+// for this nodepool.
+type AutopilotConfig struct {
+	// Enabled: Denotes that nodes belonging to this node pool are Autopilot nodes.
+	Enabled bool `json:"enabled,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "Enabled") to unconditionally
+	// include in API requests. By default, fields with empty or default values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Enabled") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s AutopilotConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod AutopilotConfig
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
@@ -925,7 +983,7 @@ func (s CancelOperationRequest) MarshalJSON() ([]byte, error) {
 // certificate.
 type CertificateAuthorityDomainConfig struct {
 	// Fqdns: List of fully qualified domain names (FQDN). Specifying port is
-	// supported. Wilcards are NOT supported. Examples: - my.customdomain.com -
+	// supported. Wildcards are NOT supported. Examples: - my.customdomain.com -
 	// 10.0.1.2:5000
 	Fqdns []string `json:"fqdns,omitempty"`
 	// GcpSecretManagerCertificateConfig: Google Secret Manager (GCP) certificate
@@ -1084,6 +1142,9 @@ type Cluster struct {
 	// ConfidentialNodes: Configuration of Confidential Nodes. All the nodes in the
 	// cluster will be Confidential VM once enabled.
 	ConfidentialNodes *ConfidentialNodes `json:"confidentialNodes,omitempty"`
+	// ControlPlaneEndpointsConfig: Configuration for all cluster's control plane
+	// endpoints.
+	ControlPlaneEndpointsConfig *ControlPlaneEndpointsConfig `json:"controlPlaneEndpointsConfig,omitempty"`
 	// CostManagementConfig: Configuration for the fine-grained cost management
 	// feature.
 	CostManagementConfig *CostManagementConfig `json:"costManagementConfig,omitempty"`
@@ -1119,7 +1180,9 @@ type Cluster struct {
 	// disabled. Alpha enabled clusters are automatically deleted thirty days after
 	// creation.
 	EnableKubernetesAlpha bool `json:"enableKubernetesAlpha,omitempty"`
-	// EnableTpu: Enable the ability to use Cloud TPUs in this cluster.
+	// EnableTpu: Enable the ability to use Cloud TPUs in this cluster. This field
+	// is deprecated due to the deprecation of 2VM TPU. The end of life date for
+	// 2VM TPU is 2025-04-25.
 	EnableTpu bool `json:"enableTpu,omitempty"`
 	// Endpoint: Output only. The IP address of this cluster's master endpoint. The
 	// endpoint can be accessed from the internet at
@@ -1171,12 +1234,7 @@ type Cluster struct {
 	LabelFingerprint string `json:"labelFingerprint,omitempty"`
 	// LegacyAbac: Configuration for the legacy ABAC authorization mode.
 	LegacyAbac *LegacyAbac `json:"legacyAbac,omitempty"`
-	// Location: Output only. The name of the Google Compute Engine zone
-	// (https://cloud.google.com/compute/docs/regions-zones/regions-zones#available)
-	// or region
-	// (https://cloud.google.com/compute/docs/regions-zones/regions-zones#available)
-	// in which the cluster resides.
-	Location string `json:"location,omitempty"`
+	Location   string      `json:"location,omitempty"`
 	// Locations: The list of Google Compute Engine zones
 	// (https://cloud.google.com/compute/docs/zones#available) in which the
 	// cluster's nodes should be located. This field provides a default value if
@@ -1205,7 +1263,9 @@ type Cluster struct {
 	// password will be generated, and a client certificate will be issued.
 	MasterAuth *MasterAuth `json:"masterAuth,omitempty"`
 	// MasterAuthorizedNetworksConfig: The configuration options for master
-	// authorized networks feature.
+	// authorized networks feature. Deprecated: Use
+	// ControlPlaneEndpointsConfig.IPEndpointsConfig.authorized_networks_config
+	// instead.
 	MasterAuthorizedNetworksConfig *MasterAuthorizedNetworksConfig `json:"masterAuthorizedNetworksConfig,omitempty"`
 	// MeshCertificates: Configuration for issuance of mTLS keys and certificates
 	// to Kubernetes pods.
@@ -1330,8 +1390,11 @@ type Cluster struct {
 	// TpuIpv4CidrBlock: Output only. The IP address range of the Cloud TPUs in
 	// this cluster, in CIDR
 	// (http://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing) notation (e.g.
-	// `1.2.3.4/29`).
+	// `1.2.3.4/29`). This field is deprecated due to the deprecation of 2VM TPU.
+	// The end of life date for 2VM TPU is 2025-04-25.
 	TpuIpv4CidrBlock string `json:"tpuIpv4CidrBlock,omitempty"`
+	// UserManagedKeysConfig: The Custom keys configuration for the cluster.
+	UserManagedKeysConfig *UserManagedKeysConfig `json:"userManagedKeysConfig,omitempty"`
 	// VerticalPodAutoscaling: Cluster-level Vertical Pod Autoscaling
 	// configuration.
 	VerticalPodAutoscaling *VerticalPodAutoscaling `json:"verticalPodAutoscaling,omitempty"`
@@ -1445,8 +1508,8 @@ type ClusterUpdate struct {
 	// DesiredAuthenticatorGroupsConfig: The desired authenticator groups config
 	// for the cluster.
 	DesiredAuthenticatorGroupsConfig *AuthenticatorGroupsConfig `json:"desiredAuthenticatorGroupsConfig,omitempty"`
-	// DesiredAutopilotWorkloadPolicyConfig: The desired workload policy
-	// configuration for the autopilot cluster.
+	// DesiredAutopilotWorkloadPolicyConfig: WorkloadPolicyConfig is the
+	// configuration related to GCW workload policy
 	DesiredAutopilotWorkloadPolicyConfig *WorkloadPolicyConfig `json:"desiredAutopilotWorkloadPolicyConfig,omitempty"`
 	// DesiredBinaryAuthorization: The desired configuration options for the Binary
 	// Authorization feature.
@@ -1458,6 +1521,8 @@ type ClusterUpdate struct {
 	DesiredCompliancePostureConfig *CompliancePostureConfig `json:"desiredCompliancePostureConfig,omitempty"`
 	// DesiredContainerdConfig: The desired containerd config for the cluster.
 	DesiredContainerdConfig *ContainerdConfig `json:"desiredContainerdConfig,omitempty"`
+	// DesiredControlPlaneEndpointsConfig: Control plane endpoints configuration.
+	DesiredControlPlaneEndpointsConfig *ControlPlaneEndpointsConfig `json:"desiredControlPlaneEndpointsConfig,omitempty"`
 	// DesiredCostManagementConfig: The desired configuration for the fine-grained
 	// cost management feature.
 	DesiredCostManagementConfig *CostManagementConfig `json:"desiredCostManagementConfig,omitempty"`
@@ -1473,9 +1538,16 @@ type ClusterUpdate struct {
 	// documentation](https://cloud.google.com/kubernetes-engine/docs/how-to/datapla
 	// ne-v2) for more.
 	DesiredDatapathProvider string `json:"desiredDatapathProvider,omitempty"`
+	// DesiredDefaultEnablePrivateNodes: Override the default setting of whether
+	// future created nodes have private IP addresses only, namely
+	// NetworkConfig.default_enable_private_nodes
+	DesiredDefaultEnablePrivateNodes bool `json:"desiredDefaultEnablePrivateNodes,omitempty"`
 	// DesiredDefaultSnatStatus: The desired status of whether to disable default
 	// sNAT for this cluster.
 	DesiredDefaultSnatStatus *DefaultSnatStatus `json:"desiredDefaultSnatStatus,omitempty"`
+	// DesiredDisableL4LbFirewallReconciliation: Enable/Disable L4 LB VPC firewall
+	// reconciliation for the cluster.
+	DesiredDisableL4LbFirewallReconciliation bool `json:"desiredDisableL4LbFirewallReconciliation,omitempty"`
 	// DesiredDnsConfig: DNSConfig contains clusterDNS config for this cluster.
 	DesiredDnsConfig *DNSConfig `json:"desiredDnsConfig,omitempty"`
 	// DesiredEnableCiliumClusterwideNetworkPolicy: Enable/Disable Cilium
@@ -1488,8 +1560,14 @@ type ClusterUpdate struct {
 	// cluster
 	DesiredEnableMultiNetworking bool `json:"desiredEnableMultiNetworking,omitempty"`
 	// DesiredEnablePrivateEndpoint: Enable/Disable private endpoint for the
-	// cluster's master.
+	// cluster's master. Deprecated: Use
+	// desired_control_plane_endpoints_config.ip_endpoints_config.enable_public_endp
+	// oint instead. Note that the value of enable_public_endpoint is reversed: if
+	// enable_private_endpoint is false, then enable_public_endpoint will be true.
 	DesiredEnablePrivateEndpoint bool `json:"desiredEnablePrivateEndpoint,omitempty"`
+	// DesiredEnterpriseConfig: The desired enterprise configuration for the
+	// cluster.
+	DesiredEnterpriseConfig *DesiredEnterpriseConfig `json:"desiredEnterpriseConfig,omitempty"`
 	// DesiredFleet: The desired fleet configuration for the cluster.
 	DesiredFleet *Fleet `json:"desiredFleet,omitempty"`
 	// DesiredGatewayApiConfig: The desired config of Gateway API on this cluster.
@@ -1538,7 +1616,9 @@ type ClusterUpdate struct {
 	// be used for GKE 1.14+ or `logging.googleapis.com` for earlier versions.
 	DesiredLoggingService string `json:"desiredLoggingService,omitempty"`
 	// DesiredMasterAuthorizedNetworksConfig: The desired configuration options for
-	// master authorized networks feature.
+	// master authorized networks feature. Deprecated: Use
+	// desired_control_plane_endpoints_config.ip_endpoints_config.authorized_network
+	// s_config instead.
 	DesiredMasterAuthorizedNetworksConfig *MasterAuthorizedNetworksConfig `json:"desiredMasterAuthorizedNetworksConfig,omitempty"`
 	// DesiredMasterVersion: The Kubernetes version to change the master to. Users
 	// may specify either explicit versions offered by Kubernetes Engine or version
@@ -1570,6 +1650,11 @@ type ClusterUpdate struct {
 	// all auto-provisioned node pools in autopilot clusters and node
 	// auto-provisioning enabled clusters.
 	DesiredNodePoolAutoConfigKubeletConfig *NodeKubeletConfig `json:"desiredNodePoolAutoConfigKubeletConfig,omitempty"`
+	// DesiredNodePoolAutoConfigLinuxNodeConfig: The desired Linux node config for
+	// all auto-provisioned node pools in autopilot clusters and node
+	// auto-provisioning enabled clusters. Currently only `cgroup_mode` can be set
+	// here.
+	DesiredNodePoolAutoConfigLinuxNodeConfig *LinuxNodeConfig `json:"desiredNodePoolAutoConfigLinuxNodeConfig,omitempty"`
 	// DesiredNodePoolAutoConfigNetworkTags: The desired network tags that apply to
 	// all auto-provisioned node pools in autopilot clusters and node
 	// auto-provisioning enabled clusters.
@@ -1607,7 +1692,9 @@ type ClusterUpdate struct {
 	// DesiredPrivateClusterConfig: The desired private cluster configuration.
 	// master_global_access_config is the only field that can be changed via this
 	// field. See also ClusterUpdate.desired_enable_private_endpoint for modifying
-	// other fields within PrivateClusterConfig.
+	// other fields within PrivateClusterConfig. Deprecated: Use
+	// desired_control_plane_endpoints_config.ip_endpoints_config.global_access
+	// instead.
 	DesiredPrivateClusterConfig *PrivateClusterConfig `json:"desiredPrivateClusterConfig,omitempty"`
 	// DesiredPrivateIpv6GoogleAccess: The desired state of IPv6 connectivity to
 	// Google Services.
@@ -1664,6 +1751,8 @@ type ClusterUpdate struct {
 	// removed from the cluster. The pod ranges specified here must have been
 	// specified earlier in the 'additional_pod_ranges_config' argument.
 	RemovedAdditionalPodRangesConfig *AdditionalPodRangesConfig `json:"removedAdditionalPodRangesConfig,omitempty"`
+	// UserManagedKeysConfig: The Custom keys configuration for the cluster.
+	UserManagedKeysConfig *UserManagedKeysConfig `json:"userManagedKeysConfig,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "AdditionalPodRangesConfig")
 	// to unconditionally include in API requests. By default, fields with empty or
 	// default values are omitted from API requests. See
@@ -1869,6 +1958,31 @@ func (s ContainerdConfig) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
+// ControlPlaneEndpointsConfig: Configuration for all of the cluster's control
+// plane endpoints.
+type ControlPlaneEndpointsConfig struct {
+	// DnsEndpointConfig: DNS endpoint configuration.
+	DnsEndpointConfig *DNSEndpointConfig `json:"dnsEndpointConfig,omitempty"`
+	// IpEndpointsConfig: IP endpoints configuration.
+	IpEndpointsConfig *IPEndpointsConfig `json:"ipEndpointsConfig,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "DnsEndpointConfig") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "DnsEndpointConfig") to include in
+	// API requests with the JSON null value. By default, fields with empty values
+	// are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s ControlPlaneEndpointsConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod ControlPlaneEndpointsConfig
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
 // CostManagementConfig: Configuration for fine-grained cost management
 // feature.
 type CostManagementConfig struct {
@@ -2011,6 +2125,35 @@ func (s DNSConfig) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
+// DNSEndpointConfig: Describes the configuration of a DNS endpoint.
+type DNSEndpointConfig struct {
+	// AllowExternalTraffic: Controls whether user traffic is allowed over this
+	// endpoint. Note that GCP-managed services may still use the endpoint even if
+	// this is false.
+	AllowExternalTraffic bool `json:"allowExternalTraffic,omitempty"`
+	// Endpoint: Output only. The cluster's DNS endpoint configuration. A DNS
+	// format address. This is accessible from the public internet. Ex:
+	// uid.us-central1.gke.goog. Always present, but the behavior may change
+	// according to the value of DNSEndpointConfig.allow_external_traffic.
+	Endpoint string `json:"endpoint,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "AllowExternalTraffic") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "AllowExternalTraffic") to include
+	// in API requests with the JSON null value. By default, fields with empty
+	// values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s DNSEndpointConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod DNSEndpointConfig
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
 // DailyMaintenanceWindow: Time window specified for daily maintenance
 // operations.
 type DailyMaintenanceWindow struct {
@@ -2119,6 +2262,35 @@ func (s DefaultSnatStatus) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
+// DesiredEnterpriseConfig: DesiredEnterpriseConfig is a wrapper used for
+// updating enterprise_config.
+type DesiredEnterpriseConfig struct {
+	// DesiredTier: desired_tier specifies the desired tier of the cluster.
+	//
+	// Possible values:
+	//   "CLUSTER_TIER_UNSPECIFIED" - CLUSTER_TIER_UNSPECIFIED is when cluster_tier
+	// is not set.
+	//   "STANDARD" - STANDARD indicates a standard GKE cluster.
+	//   "ENTERPRISE" - ENTERPRISE indicates a GKE Enterprise cluster.
+	DesiredTier string `json:"desiredTier,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "DesiredTier") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "DesiredTier") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s DesiredEnterpriseConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod DesiredEnterpriseConfig
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
 // DnsCacheConfig: Configuration for NodeLocal DNSCache
 type DnsCacheConfig struct {
 	// Enabled: Whether NodeLocal DNSCache is enabled for this cluster.
@@ -2161,6 +2333,14 @@ type EnterpriseConfig struct {
 	//   "STANDARD" - STANDARD indicates a standard GKE cluster.
 	//   "ENTERPRISE" - ENTERPRISE indicates a GKE Enterprise cluster.
 	ClusterTier string `json:"clusterTier,omitempty"`
+	// DesiredTier: desired_tier specifies the desired tier of the cluster.
+	//
+	// Possible values:
+	//   "CLUSTER_TIER_UNSPECIFIED" - CLUSTER_TIER_UNSPECIFIED is when cluster_tier
+	// is not set.
+	//   "STANDARD" - STANDARD indicates a standard GKE cluster.
+	//   "ENTERPRISE" - ENTERPRISE indicates a GKE Enterprise cluster.
+	DesiredTier string `json:"desiredTier,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "ClusterTier") to
 	// unconditionally include in API requests. By default, fields with empty or
 	// default values are omitted from API requests. See
@@ -2249,6 +2429,7 @@ type Filter struct {
 	//   "UPGRADE_AVAILABLE_EVENT" - Corresponds with UpgradeAvailableEvent.
 	//   "UPGRADE_EVENT" - Corresponds with UpgradeEvent.
 	//   "SECURITY_BULLETIN_EVENT" - Corresponds with SecurityBulletinEvent.
+	//   "UPGRADE_INFO_EVENT" - Corresponds with UpgradeInfoEvent.
 	EventType []string `json:"eventType,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "EventType") to
 	// unconditionally include in API requests. By default, fields with empty or
@@ -2512,7 +2693,7 @@ func (s GcsFuseCsiDriverConfig) MarshalJSON() ([]byte, error) {
 }
 
 // GetJSONWebKeysResponse: GetJSONWebKeysResponse is a valid JSON Web Key Set
-// as specififed in rfc 7517
+// as specified in rfc 7517
 type GetJSONWebKeysResponse struct {
 	// CacheHeader: For HTTP requests, this field is automatically extracted into
 	// the Cache-Control HTTP header.
@@ -2832,7 +3013,9 @@ type IPAllocationPolicy struct {
 	// range chosen with a specific netmask. Set to a CIDR
 	// (http://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing) notation (e.g.
 	// `10.96.0.0/14`) from the RFC-1918 private networks (e.g. `10.0.0.0/8`,
-	// `172.16.0.0/12`, `192.168.0.0/16`) to pick a specific range to use.
+	// `172.16.0.0/12`, `192.168.0.0/16`) to pick a specific range to use. This
+	// field is deprecated due to the deprecation of 2VM TPU. The end of life date
+	// for 2VM TPU is 2025-04-25.
 	TpuIpv4CidrBlock string `json:"tpuIpv4CidrBlock,omitempty"`
 	// UseIpAliases: Whether alias IPs will be used for pod IPs in the cluster.
 	// This is used in conjunction with use_routes. It cannot be true if use_routes
@@ -2874,6 +3057,54 @@ func (s *IPAllocationPolicy) UnmarshalJSON(data []byte) error {
 	}
 	s.DefaultPodIpv4RangeUtilization = float64(s1.DefaultPodIpv4RangeUtilization)
 	return nil
+}
+
+// IPEndpointsConfig: IP endpoints configuration.
+type IPEndpointsConfig struct {
+	// AuthorizedNetworksConfig: Configuration of authorized networks. If enabled,
+	// restricts access to the control plane based on source IP. It is invalid to
+	// specify both Cluster.masterAuthorizedNetworksConfig and this field at the
+	// same time.
+	AuthorizedNetworksConfig *MasterAuthorizedNetworksConfig `json:"authorizedNetworksConfig,omitempty"`
+	// EnablePublicEndpoint: Controls whether the control plane allows access
+	// through a public IP. It is invalid to specify both
+	// PrivateClusterConfig.enablePrivateEndpoint and this field at the same time.
+	EnablePublicEndpoint bool `json:"enablePublicEndpoint,omitempty"`
+	// Enabled: Controls whether to allow direct IP access.
+	Enabled bool `json:"enabled,omitempty"`
+	// GlobalAccess: Controls whether the control plane's private endpoint is
+	// accessible from sources in other regions. It is invalid to specify both
+	// PrivateClusterMasterGlobalAccessConfig.enabled and this field at the same
+	// time.
+	GlobalAccess bool `json:"globalAccess,omitempty"`
+	// PrivateEndpoint: Output only. The internal IP address of this cluster's
+	// control plane. Only populated if enabled.
+	PrivateEndpoint string `json:"privateEndpoint,omitempty"`
+	// PrivateEndpointSubnetwork: Subnet to provision the master's private endpoint
+	// during cluster creation. Specified in projects/*/regions/*/subnetworks/*
+	// format. It is invalid to specify both
+	// PrivateClusterConfig.privateEndpointSubnetwork and this field at the same
+	// time.
+	PrivateEndpointSubnetwork string `json:"privateEndpointSubnetwork,omitempty"`
+	// PublicEndpoint: Output only. The external IP address of this cluster's
+	// control plane. Only populated if enabled.
+	PublicEndpoint string `json:"publicEndpoint,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "AuthorizedNetworksConfig")
+	// to unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "AuthorizedNetworksConfig") to
+	// include in API requests with the JSON null value. By default, fields with
+	// empty values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s IPEndpointsConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod IPEndpointsConfig
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
 // IdentityServiceConfig: IdentityServiceConfig is configuration for Identity
@@ -3049,9 +3280,15 @@ type LinuxNodeConfig struct {
 	// Sysctls: The Linux kernel parameters to be applied to the nodes and all pods
 	// running on the nodes. The following parameters are supported.
 	// net.core.busy_poll net.core.busy_read net.core.netdev_max_backlog
-	// net.core.rmem_max net.core.wmem_default net.core.wmem_max
-	// net.core.optmem_max net.core.somaxconn net.ipv4.tcp_rmem net.ipv4.tcp_wmem
-	// net.ipv4.tcp_tw_reuse
+	// net.core.rmem_max net.core.rmem_default net.core.wmem_default
+	// net.core.wmem_max net.core.optmem_max net.core.somaxconn net.ipv4.tcp_rmem
+	// net.ipv4.tcp_wmem net.ipv4.tcp_tw_reuse net.netfilter.nf_conntrack_max
+	// net.netfilter.nf_conntrack_buckets
+	// net.netfilter.nf_conntrack_tcp_timeout_close_wait
+	// net.netfilter.nf_conntrack_tcp_timeout_time_wait
+	// net.netfilter.nf_conntrack_tcp_timeout_established
+	// net.netfilter.nf_conntrack_acct kernel.shmmni kernel.shmmax kernel.shmall
+	// vm.max_map_count
 	Sysctls map[string]string `json:"sysctls,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "CgroupMode") to
 	// unconditionally include in API requests. By default, fields with empty or
@@ -3235,6 +3472,9 @@ type LoggingComponentConfig struct {
 	//   "APISERVER" - kube-apiserver
 	//   "SCHEDULER" - kube-scheduler
 	//   "CONTROLLER_MANAGER" - kube-controller-manager
+	//   "KCP_SSHD" - kcp-sshd
+	//   "KCP_CONNECTION" - kcp connection logs
+	//   "KCP_HPA" - horizontal pod autoscaler decision logs
 	EnableComponents []string `json:"enableComponents,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "EnableComponents") to
 	// unconditionally include in API requests. By default, fields with empty or
@@ -3401,17 +3641,19 @@ func (s MaintenanceWindow) MarshalJSON() ([]byte, error) {
 // ManagedPrometheusConfig: ManagedPrometheusConfig defines the configuration
 // for Google Cloud Managed Service for Prometheus.
 type ManagedPrometheusConfig struct {
+	// AutoMonitoringConfig: GKE Workload Auto-Monitoring Configuration.
+	AutoMonitoringConfig *AutoMonitoringConfig `json:"autoMonitoringConfig,omitempty"`
 	// Enabled: Enable Managed Collection.
 	Enabled bool `json:"enabled,omitempty"`
-	// ForceSendFields is a list of field names (e.g. "Enabled") to unconditionally
-	// include in API requests. By default, fields with empty or default values are
-	// omitted from API requests. See
+	// ForceSendFields is a list of field names (e.g. "AutoMonitoringConfig") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
 	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
 	// details.
 	ForceSendFields []string `json:"-"`
-	// NullFields is a list of field names (e.g. "Enabled") to include in API
-	// requests with the JSON null value. By default, fields with empty values are
-	// omitted from API requests. See
+	// NullFields is a list of field names (e.g. "AutoMonitoringConfig") to include
+	// in API requests with the JSON null value. By default, fields with empty
+	// values are omitted from API requests. See
 	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
 	NullFields []string `json:"-"`
 }
@@ -3484,9 +3726,12 @@ type MasterAuthorizedNetworksConfig struct {
 	CidrBlocks []*CidrBlock `json:"cidrBlocks,omitempty"`
 	// Enabled: Whether or not master authorized networks is enabled.
 	Enabled bool `json:"enabled,omitempty"`
-	// GcpPublicCidrsAccessEnabled: Whether master is accessbile via Google Compute
+	// GcpPublicCidrsAccessEnabled: Whether master is accessible via Google Compute
 	// Engine Public IP addresses.
 	GcpPublicCidrsAccessEnabled bool `json:"gcpPublicCidrsAccessEnabled,omitempty"`
+	// PrivateEndpointEnforcementEnabled: Whether master authorized networks is
+	// enforced on private endpoint or not.
+	PrivateEndpointEnforcementEnabled bool `json:"privateEndpointEnforcementEnabled,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "CidrBlocks") to
 	// unconditionally include in API requests. By default, fields with empty or
 	// default values are omitted from API requests. See
@@ -3617,6 +3862,7 @@ type MonitoringComponentConfig struct {
 	//   "CADVISOR" - CADVISOR
 	//   "KUBELET" - KUBELET
 	//   "DCGM" - NVIDIA Data Center GPU Manager (DCGM)
+	//   "JOBSET" - JobSet
 	EnableComponents []string `json:"enableComponents,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "EnableComponents") to
 	// unconditionally include in API requests. By default, fields with empty or
@@ -3680,11 +3926,20 @@ type NetworkConfig struct {
 	// documentation](https://cloud.google.com/kubernetes-engine/docs/how-to/datapla
 	// ne-v2) for more.
 	DatapathProvider string `json:"datapathProvider,omitempty"`
+	// DefaultEnablePrivateNodes: Controls whether by default nodes have private IP
+	// addresses only. It is invalid to specify both
+	// PrivateClusterConfig.enablePrivateNodes and this field at the same time. To
+	// update the default setting, use
+	// ClusterUpdate.desired_default_enable_private_nodes
+	DefaultEnablePrivateNodes bool `json:"defaultEnablePrivateNodes,omitempty"`
 	// DefaultSnatStatus: Whether the cluster disables default in-node sNAT rules.
 	// In-node sNAT rules will be disabled when default_snat_status is disabled.
 	// When disabled is set to false, default IP masquerade rules will be applied
 	// to the nodes to prevent sNAT on cluster internal traffic.
 	DefaultSnatStatus *DefaultSnatStatus `json:"defaultSnatStatus,omitempty"`
+	// DisableL4LbFirewallReconciliation: Disable L4 load balancer VPC firewalls to
+	// enable firewall policies.
+	DisableL4LbFirewallReconciliation bool `json:"disableL4LbFirewallReconciliation,omitempty"`
 	// DnsConfig: DNSConfig contains clusterDNS config for this cluster.
 	DnsConfig *DNSConfig `json:"dnsConfig,omitempty"`
 	// EnableCiliumClusterwideNetworkPolicy: Whether CiliumClusterwideNetworkPolicy
@@ -3713,9 +3968,9 @@ type NetworkConfig struct {
 	//   "IN_TRANSIT_ENCRYPTION_INTER_NODE_TRANSPARENT" - Data in-transit is
 	// encrypted using inter-node transparent encryption.
 	InTransitEncryptionConfig string `json:"inTransitEncryptionConfig,omitempty"`
-	// Network: Output only. The relative name of the Google Compute Engine
-	// network(https://cloud.google.com/compute/docs/networks-and-firewalls#networks
-	// ) to which the cluster is connected. Example:
+	// Network: Output only. The relative name of the Google Compute Engine network
+	// (https://cloud.google.com/compute/docs/networks-and-firewalls#networks) to
+	// which the cluster is connected. Example:
 	// projects/my-project/global/networks/my-network
 	Network string `json:"network,omitempty"`
 	// NetworkPerformanceConfig: Network bandwidth tier configuration.
@@ -3925,6 +4180,20 @@ type NodeConfig struct {
 	// 'pd-ssd' or 'pd-balanced') If unspecified, the default disk type is
 	// 'pd-standard'
 	DiskType string `json:"diskType,omitempty"`
+	// EffectiveCgroupMode: Output only. effective_cgroup_mode is the cgroup mode
+	// actually used by the node pool. It is determined by the cgroup mode
+	// specified in the LinuxNodeConfig or the default cgroup mode based on the
+	// cluster creation version.
+	//
+	// Possible values:
+	//   "EFFECTIVE_CGROUP_MODE_UNSPECIFIED" - EFFECTIVE_CGROUP_MODE_UNSPECIFIED
+	// means the cgroup configuration for the node pool is unspecified, i.e. the
+	// node pool is a Windows node pool.
+	//   "EFFECTIVE_CGROUP_MODE_V1" - CGROUP_MODE_V1 means the node pool is
+	// configured to use cgroupv1 for the cgroup configuration.
+	//   "EFFECTIVE_CGROUP_MODE_V2" - CGROUP_MODE_V2 means the node pool is
+	// configured to use cgroupv2 for the cgroup configuration.
+	EffectiveCgroupMode string `json:"effectiveCgroupMode,omitempty"`
 	// EnableConfidentialStorage: Optional. Reserved for future use.
 	EnableConfidentialStorage bool `json:"enableConfidentialStorage,omitempty"`
 	// EphemeralStorageLocalSsdConfig: Parameters for the node ephemeral storage
@@ -3961,12 +4230,29 @@ type NodeConfig struct {
 	// on a machine per zone. See:
 	// https://cloud.google.com/compute/docs/disks/local-ssd for more information.
 	LocalSsdCount int64 `json:"localSsdCount,omitempty"`
+	// LocalSsdEncryptionMode: Specifies which method should be used for encrypting
+	// the Local SSDs attached to the node.
+	//
+	// Possible values:
+	//   "LOCAL_SSD_ENCRYPTION_MODE_UNSPECIFIED" - The given node will be encrypted
+	// using keys managed by Google infrastructure and the keys will be deleted
+	// when the node is deleted.
+	//   "STANDARD_ENCRYPTION" - The given node will be encrypted using keys
+	// managed by Google infrastructure and the keys will be deleted when the node
+	// is deleted.
+	//   "EPHEMERAL_KEY_ENCRYPTION" - The given node will opt-in for using
+	// ephemeral key for encryption of Local SSDs. The Local SSDs will not be able
+	// to recover data in case of node crash.
+	LocalSsdEncryptionMode string `json:"localSsdEncryptionMode,omitempty"`
 	// LoggingConfig: Logging configuration.
 	LoggingConfig *NodePoolLoggingConfig `json:"loggingConfig,omitempty"`
 	// MachineType: The name of a Google Compute Engine machine type
 	// (https://cloud.google.com/compute/docs/machine-types) If unspecified, the
 	// default machine type is `e2-medium`.
 	MachineType string `json:"machineType,omitempty"`
+	// MaxRunDuration: The maximum duration for the nodes to exist. If unspecified,
+	// the nodes can exist indefinitely.
+	MaxRunDuration string `json:"maxRunDuration,omitempty"`
 	// Metadata: The metadata key/value pairs assigned to instances in the cluster.
 	// Keys must conform to the regexp `[a-zA-Z0-9-_]+` and be less than 128 bytes
 	// in length. These are reflected as part of a URL in the metadata server.
@@ -4105,6 +4391,31 @@ func (s NodeConfigDefaults) MarshalJSON() ([]byte, error) {
 
 // NodeKubeletConfig: Node kubelet configs.
 type NodeKubeletConfig struct {
+	// AllowedUnsafeSysctls: Optional. Defines a comma-separated allowlist of
+	// unsafe sysctls or sysctl patterns (ending in `*`). The unsafe namespaced
+	// sysctl groups are `kernel.shm*`, `kernel.msg*`, `kernel.sem`, `fs.mqueue.*`,
+	// and `net.*`. Leaving this allowlist empty means they cannot be set on Pods.
+	// To allow certain sysctls or sysctl patterns to be set on Pods, list them
+	// separated by commas. For example: `kernel.msg*,net.ipv4.route.min_pmtu`. See
+	// https://kubernetes.io/docs/tasks/administer-cluster/sysctl-cluster/ for more
+	// details.
+	AllowedUnsafeSysctls []string `json:"allowedUnsafeSysctls,omitempty"`
+	// ContainerLogMaxFiles: Optional. Defines the maximum number of container log
+	// files that can be present for a container. See
+	// https://kubernetes.io/docs/concepts/cluster-administration/logging/#log-rotation
+	// The value must be an integer between 2 and 10, inclusive. The default value
+	// is 5 if unspecified.
+	ContainerLogMaxFiles int64 `json:"containerLogMaxFiles,omitempty"`
+	// ContainerLogMaxSize: Optional. Defines the maximum size of the container log
+	// file before it is rotated. See
+	// https://kubernetes.io/docs/concepts/cluster-administration/logging/#log-rotation
+	// Valid format is positive number + unit, e.g. 100Ki, 10Mi. Valid units are
+	// Ki, Mi, Gi. The value must be between 10Mi and 500Mi, inclusive. Note that
+	// the total container log size (container_log_max_size *
+	// container_log_max_files) cannot exceed 1% of the total storage of the node,
+	// to avoid disk pressure caused by log files. The default value is 10Mi if
+	// unspecified.
+	ContainerLogMaxSize string `json:"containerLogMaxSize,omitempty"`
 	// CpuCfsQuota: Enable CPU CFS quota enforcement for containers that specify
 	// CPU limits. This option is enabled by default which makes kubelet use CFS
 	// quota (https://www.kernel.org/doc/Documentation/scheduler/sched-bwc.txt) to
@@ -4125,6 +4436,34 @@ type NodeKubeletConfig struct {
 	// resource characteristics to be granted increased CPU affinity and
 	// exclusivity on the node. The default value is 'none' if unspecified.
 	CpuManagerPolicy string `json:"cpuManagerPolicy,omitempty"`
+	// ImageGcHighThresholdPercent: Optional. Defines the percent of disk usage
+	// after which image garbage collection is always run. The percent is
+	// calculated as this field value out of 100. The value must be between 10 and
+	// 85, inclusive and greater than image_gc_low_threshold_percent. The default
+	// value is 85 if unspecified.
+	ImageGcHighThresholdPercent int64 `json:"imageGcHighThresholdPercent,omitempty"`
+	// ImageGcLowThresholdPercent: Optional. Defines the percent of disk usage
+	// before which image garbage collection is never run. Lowest disk usage to
+	// garbage collect to. The percent is calculated as this field value out of
+	// 100. The value must be between 10 and 85, inclusive and smaller than
+	// image_gc_high_threshold_percent. The default value is 80 if unspecified.
+	ImageGcLowThresholdPercent int64 `json:"imageGcLowThresholdPercent,omitempty"`
+	// ImageMaximumGcAge: Optional. Defines the maximum age an image can be unused
+	// before it is garbage collected. The string must be a sequence of decimal
+	// numbers, each with optional fraction and a unit suffix, such as "300s",
+	// "1.5h", and "2h45m". Valid time units are "ns", "us" (or "µs"), "ms", "s",
+	// "m", "h". The value must be a positive duration greater than
+	// image_minimum_gc_age or "0s". The default value is "0s" if unspecified,
+	// which disables this field, meaning images won't be garbage collected based
+	// on being unused for too long.
+	ImageMaximumGcAge string `json:"imageMaximumGcAge,omitempty"`
+	// ImageMinimumGcAge: Optional. Defines the minimum age for an unused image
+	// before it is garbage collected. The string must be a sequence of decimal
+	// numbers, each with optional fraction and a unit suffix, such as "300s",
+	// "1.5h", and "2h45m". Valid time units are "ns", "us" (or "µs"), "ms", "s",
+	// "m", "h". The value must be a positive duration less than or equal to 2
+	// minutes. The default value is "2m0s" if unspecified.
+	ImageMinimumGcAge string `json:"imageMinimumGcAge,omitempty"`
 	// InsecureKubeletReadonlyPortEnabled: Enable or disable Kubelet read only
 	// port.
 	InsecureKubeletReadonlyPortEnabled bool `json:"insecureKubeletReadonlyPortEnabled,omitempty"`
@@ -4133,15 +4472,15 @@ type NodeKubeletConfig struct {
 	// Controls the maximum number of processes allowed to run in a pod. The value
 	// must be greater than or equal to 1024 and less than 4194304.
 	PodPidsLimit int64 `json:"podPidsLimit,omitempty,string"`
-	// ForceSendFields is a list of field names (e.g. "CpuCfsQuota") to
+	// ForceSendFields is a list of field names (e.g. "AllowedUnsafeSysctls") to
 	// unconditionally include in API requests. By default, fields with empty or
 	// default values are omitted from API requests. See
 	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
 	// details.
 	ForceSendFields []string `json:"-"`
-	// NullFields is a list of field names (e.g. "CpuCfsQuota") to include in API
-	// requests with the JSON null value. By default, fields with empty values are
-	// omitted from API requests. See
+	// NullFields is a list of field names (e.g. "AllowedUnsafeSysctls") to include
+	// in API requests with the JSON null value. By default, fields with empty
+	// values are omitted from API requests. See
 	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
 	NullFields []string `json:"-"`
 }
@@ -4226,7 +4565,7 @@ type NodeNetworkConfig struct {
 	CreatePodRange bool `json:"createPodRange,omitempty"`
 	// EnablePrivateNodes: Whether nodes have internal IP addresses only. If
 	// enable_private_nodes is not specified, then the value is derived from
-	// cluster.privateClusterConfig.enablePrivateNodes
+	// Cluster.NetworkConfig.default_enable_private_nodes
 	EnablePrivateNodes bool `json:"enablePrivateNodes,omitempty"`
 	// NetworkPerformanceConfig: Network bandwidth tier configuration.
 	NetworkPerformanceConfig *NetworkPerformanceConfig `json:"networkPerformanceConfig,omitempty"`
@@ -4297,6 +4636,10 @@ func (s *NodeNetworkConfig) UnmarshalJSON(data []byte) error {
 // them during pod scheduling. They may also be resized up or down, to
 // accommodate the workload.
 type NodePool struct {
+	// AutopilotConfig: Specifies the autopilot configuration for this node pool.
+	// This field is exclusively reserved for Cluster Autoscaler to implement
+	// go/gke-managed-nodes-ccc-api
+	AutopilotConfig *AutopilotConfig `json:"autopilotConfig,omitempty"`
 	// Autoscaling: Autoscaler configuration for this NodePool. Autoscaler is
 	// enabled only if a valid configuration is present.
 	Autoscaling *NodePoolAutoscaling `json:"autoscaling,omitempty"`
@@ -4384,15 +4727,15 @@ type NodePool struct {
 
 	// ServerResponse contains the HTTP response code and headers from the server.
 	googleapi.ServerResponse `json:"-"`
-	// ForceSendFields is a list of field names (e.g. "Autoscaling") to
+	// ForceSendFields is a list of field names (e.g. "AutopilotConfig") to
 	// unconditionally include in API requests. By default, fields with empty or
 	// default values are omitted from API requests. See
 	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
 	// details.
 	ForceSendFields []string `json:"-"`
-	// NullFields is a list of field names (e.g. "Autoscaling") to include in API
-	// requests with the JSON null value. By default, fields with empty values are
-	// omitted from API requests. See
+	// NullFields is a list of field names (e.g. "AutopilotConfig") to include in
+	// API requests with the JSON null value. By default, fields with empty values
+	// are omitted from API requests. See
 	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
 	NullFields []string `json:"-"`
 }
@@ -4406,6 +4749,8 @@ func (s NodePool) MarshalJSON() ([]byte, error) {
 // node pools in autopilot clusters and node auto-provisioning enabled
 // clusters.
 type NodePoolAutoConfig struct {
+	// LinuxNodeConfig: Output only. Configuration options for Linux nodes.
+	LinuxNodeConfig *LinuxNodeConfig `json:"linuxNodeConfig,omitempty"`
 	// NetworkTags: The list of instance tags applied to all nodes. Tags are used
 	// to identify valid sources or targets for network firewalls and are specified
 	// by the client during cluster creation. Each tag within the list must comply
@@ -4419,15 +4764,15 @@ type NodePoolAutoConfig struct {
 	// the nodes for managing Compute Engine firewalls using Network Firewall
 	// Policies.
 	ResourceManagerTags *ResourceManagerTags `json:"resourceManagerTags,omitempty"`
-	// ForceSendFields is a list of field names (e.g. "NetworkTags") to
+	// ForceSendFields is a list of field names (e.g. "LinuxNodeConfig") to
 	// unconditionally include in API requests. By default, fields with empty or
 	// default values are omitted from API requests. See
 	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
 	// details.
 	ForceSendFields []string `json:"-"`
-	// NullFields is a list of field names (e.g. "NetworkTags") to include in API
-	// requests with the JSON null value. By default, fields with empty values are
-	// omitted from API requests. See
+	// NullFields is a list of field names (e.g. "LinuxNodeConfig") to include in
+	// API requests with the JSON null value. By default, fields with empty values
+	// are omitted from API requests. See
 	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
 	NullFields []string `json:"-"`
 }
@@ -4453,20 +4798,22 @@ type NodePoolAutoscaling struct {
 	// sizes of different zones.
 	//   "ANY" - ANY policy picks zones that have the highest capacity available.
 	LocationPolicy string `json:"locationPolicy,omitempty"`
-	// MaxNodeCount: Maximum number of nodes for one location in the NodePool. Must
-	// be >= min_node_count. There has to be enough quota to scale up the cluster.
+	// MaxNodeCount: Maximum number of nodes for one location in the node pool.
+	// Must be >= min_node_count. There has to be enough quota to scale up the
+	// cluster.
 	MaxNodeCount int64 `json:"maxNodeCount,omitempty"`
-	// MinNodeCount: Minimum number of nodes for one location in the NodePool. Must
-	// be >= 1 and <= max_node_count.
+	// MinNodeCount: Minimum number of nodes for one location in the node pool.
+	// Must be greater than or equal to 0 and less than or equal to max_node_count.
 	MinNodeCount int64 `json:"minNodeCount,omitempty"`
 	// TotalMaxNodeCount: Maximum number of nodes in the node pool. Must be greater
-	// than total_min_node_count. There has to be enough quota to scale up the
-	// cluster. The total_*_node_count fields are mutually exclusive with the
-	// *_node_count fields.
+	// than or equal to total_min_node_count. There has to be enough quota to scale
+	// up the cluster. The total_*_node_count fields are mutually exclusive with
+	// the *_node_count fields.
 	TotalMaxNodeCount int64 `json:"totalMaxNodeCount,omitempty"`
 	// TotalMinNodeCount: Minimum number of nodes in the node pool. Must be greater
-	// than 1 less than total_max_node_count. The total_*_node_count fields are
-	// mutually exclusive with the *_node_count fields.
+	// than or equal to 0 and less than or equal to total_max_node_count. The
+	// total_*_node_count fields are mutually exclusive with the *_node_count
+	// fields.
 	TotalMinNodeCount int64 `json:"totalMinNodeCount,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "Autoprovisioned") to
 	// unconditionally include in API requests. By default, fields with empty or
@@ -4842,6 +5189,30 @@ func (s OperationProgress) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
+// ParallelstoreCsiDriverConfig: Configuration for the Cloud Storage
+// Parallelstore CSI driver.
+type ParallelstoreCsiDriverConfig struct {
+	// Enabled: Whether the Cloud Storage Parallelstore CSI driver is enabled for
+	// this cluster.
+	Enabled bool `json:"enabled,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "Enabled") to unconditionally
+	// include in API requests. By default, fields with empty or default values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Enabled") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s ParallelstoreCsiDriverConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod ParallelstoreCsiDriverConfig
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
 // ParentProductConfig: ParentProductConfig is the configuration of the parent
 // product of the cluster. This field is used by Google internal products that
 // are built on top of a GKE cluster and take the ownership of the cluster.
@@ -4931,13 +5302,19 @@ func (s PodCIDROverprovisionConfig) MarshalJSON() ([]byte, error) {
 // PrivateClusterConfig: Configuration options for private clusters.
 type PrivateClusterConfig struct {
 	// EnablePrivateEndpoint: Whether the master's internal IP address is used as
-	// the cluster endpoint.
+	// the cluster endpoint. Deprecated: Use
+	// ControlPlaneEndpointsConfig.IPEndpointsConfig.enable_public_endpoint
+	// instead. Note that the value of enable_public_endpoint is reversed: if
+	// enable_private_endpoint is false, then enable_public_endpoint will be true.
 	EnablePrivateEndpoint bool `json:"enablePrivateEndpoint,omitempty"`
 	// EnablePrivateNodes: Whether nodes have internal IP addresses only. If
 	// enabled, all nodes are given only RFC 1918 private addresses and communicate
-	// with the master via private networking.
+	// with the master via private networking. Deprecated: Use
+	// NetworkConfig.default_enable_private_nodes instead.
 	EnablePrivateNodes bool `json:"enablePrivateNodes,omitempty"`
 	// MasterGlobalAccessConfig: Controls master global access settings.
+	// Deprecated: Use
+	// ControlPlaneEndpointsConfig.IPEndpointsConfig.enable_global_access instead.
 	MasterGlobalAccessConfig *PrivateClusterMasterGlobalAccessConfig `json:"masterGlobalAccessConfig,omitempty"`
 	// MasterIpv4CidrBlock: The IP range in CIDR notation to use for the hosted
 	// master network. This range will be used for assigning internal IP addresses
@@ -4948,14 +5325,18 @@ type PrivateClusterConfig struct {
 	// cluster.
 	PeeringName string `json:"peeringName,omitempty"`
 	// PrivateEndpoint: Output only. The internal IP address of this cluster's
-	// master endpoint.
+	// master endpoint. Deprecated: Use
+	// ControlPlaneEndpointsConfig.IPEndpointsConfig.private_endpoint instead.
 	PrivateEndpoint string `json:"privateEndpoint,omitempty"`
 	// PrivateEndpointSubnetwork: Subnet to provision the master's private endpoint
 	// during cluster creation. Specified in projects/*/regions/*/subnetworks/*
-	// format.
+	// format. Deprecated: Use
+	// ControlPlaneEndpointsConfig.IPEndpointsConfig.private_endpoint_subnetwork
+	// instead.
 	PrivateEndpointSubnetwork string `json:"privateEndpointSubnetwork,omitempty"`
 	// PublicEndpoint: Output only. The external IP address of this cluster's
-	// master endpoint.
+	// master endpoint. Deprecated:Use
+	// ControlPlaneEndpointsConfig.IPEndpointsConfig.public_endpoint instead.
 	PublicEndpoint string `json:"publicEndpoint,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "EnablePrivateEndpoint") to
 	// unconditionally include in API requests. By default, fields with empty or
@@ -5325,6 +5706,9 @@ type ReleaseChannelConfig struct {
 	// DefaultVersion: The default version for newly created clusters on the
 	// channel.
 	DefaultVersion string `json:"defaultVersion,omitempty"`
+	// UpgradeTargetVersion: The auto upgrade target version for clusters on the
+	// channel.
+	UpgradeTargetVersion string `json:"upgradeTargetVersion,omitempty"`
 	// ValidVersions: List of valid versions for the channel.
 	ValidVersions []string `json:"validVersions,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "Channel") to unconditionally
@@ -6599,6 +6983,8 @@ type StatusCondition struct {
 	//   "CLOUD_KMS_KEY_ERROR" - Unable to perform an encrypt operation against the
 	// CloudKMS key used for etcd level encryption.
 	//   "CA_EXPIRING" - Cluster CA is expiring soon.
+	//   "NODE_SERVICE_ACCOUNT_MISSING_PERMISSIONS" - Node service account is
+	// missing permissions.
 	Code string `json:"code,omitempty"`
 	// Message: Human-friendly representation of the condition
 	Message string `json:"message,omitempty"`
@@ -6812,6 +7198,9 @@ type UpdateNodePoolRequest struct {
 	// pool. Initiates an upgrade operation that migrates the nodes in the node
 	// pool to the specified machine type.
 	MachineType string `json:"machineType,omitempty"`
+	// MaxRunDuration: The maximum duration for the nodes to exist. If unspecified,
+	// the nodes can exist indefinitely.
+	MaxRunDuration string `json:"maxRunDuration,omitempty"`
 	// Name: The name (project, location, cluster, node pool) of the node pool to
 	// update. Specified in the format
 	// `projects/*/locations/*/clusters/*/nodePools/*`.
@@ -6958,6 +7347,76 @@ type UpgradeEvent struct {
 
 func (s UpgradeEvent) MarshalJSON() ([]byte, error) {
 	type NoMethod UpgradeEvent
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// UpgradeInfoEvent: UpgradeInfoEvent is a notification sent to customers about
+// the upgrade information of a resource.
+type UpgradeInfoEvent struct {
+	// CurrentVersion: The current version before the upgrade.
+	CurrentVersion string `json:"currentVersion,omitempty"`
+	// Description: A brief description of the event.
+	Description string `json:"description,omitempty"`
+	// EndTime: The time when the operation ended.
+	EndTime string `json:"endTime,omitempty"`
+	// EventType: The type of the event.
+	//
+	// Possible values:
+	//   "EVENT_TYPE_UNSPECIFIED" - EVENT_TYPE_UNSPECIFIED indicates the event type
+	// is unspecified.
+	//   "END_OF_SUPPORT" - END_OF_SUPPORT indicates GKE version reaches end of
+	// support, check standard_support_end_time and extended_support_end_time for
+	// more details.
+	//   "COS_MILESTONE_VERSION_UPDATE" - COS_MILESTONE_VERSION_UPDATE indicates
+	// that the COS node image will update COS milestone version for new patch
+	// versions starting with the one in the description.
+	EventType string `json:"eventType,omitempty"`
+	// ExtendedSupportEndTime: The end of extended support timestamp.
+	ExtendedSupportEndTime string `json:"extendedSupportEndTime,omitempty"`
+	// Operation: The operation associated with this upgrade.
+	Operation string `json:"operation,omitempty"`
+	// Resource: Optional relative path to the resource. For example in node pool
+	// upgrades, the relative path of the node pool.
+	Resource string `json:"resource,omitempty"`
+	// ResourceType: The resource type associated with the upgrade.
+	//
+	// Possible values:
+	//   "UPGRADE_RESOURCE_TYPE_UNSPECIFIED" - Default value. This shouldn't be
+	// used.
+	//   "MASTER" - Master / control plane
+	//   "NODE_POOL" - Node pool
+	ResourceType string `json:"resourceType,omitempty"`
+	// StandardSupportEndTime: The end of standard support timestamp.
+	StandardSupportEndTime string `json:"standardSupportEndTime,omitempty"`
+	// StartTime: The time when the operation was started.
+	StartTime string `json:"startTime,omitempty"`
+	// State: Output only. The state of the upgrade.
+	//
+	// Possible values:
+	//   "STATE_UNSPECIFIED" - STATE_UNSPECIFIED indicates the state is
+	// unspecified.
+	//   "STARTED" - STARTED indicates the upgrade has started.
+	//   "SUCCEEDED" - SUCCEEDED indicates the upgrade has completed successfully.
+	//   "FAILED" - FAILED indicates the upgrade has failed.
+	//   "CANCELED" - CANCELED indicates the upgrade has canceled.
+	State string `json:"state,omitempty"`
+	// TargetVersion: The target version for the upgrade.
+	TargetVersion string `json:"targetVersion,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "CurrentVersion") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "CurrentVersion") to include in
+	// API requests with the JSON null value. By default, fields with empty values
+	// are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s UpgradeInfoEvent) MarshalJSON() ([]byte, error) {
+	type NoMethod UpgradeInfoEvent
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
@@ -7109,6 +7568,56 @@ func (s UsableSubnetworkSecondaryRange) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
+// UserManagedKeysConfig: UserManagedKeysConfig holds the resource address to
+// Keys which are used for signing certs and token that are used for
+// communication within cluster.
+type UserManagedKeysConfig struct {
+	// AggregationCa: The Certificate Authority Service caPool to use for the
+	// aggregation CA in this cluster.
+	AggregationCa string `json:"aggregationCa,omitempty"`
+	// ClusterCa: The Certificate Authority Service caPool to use for the cluster
+	// CA in this cluster.
+	ClusterCa string `json:"clusterCa,omitempty"`
+	// ControlPlaneDiskEncryptionKey: The Cloud KMS cryptoKey to use for
+	// Confidential Hyperdisk on the control plane nodes.
+	ControlPlaneDiskEncryptionKey string `json:"controlPlaneDiskEncryptionKey,omitempty"`
+	// EtcdApiCa: Resource path of the Certificate Authority Service caPool to use
+	// for the etcd API CA in this cluster.
+	EtcdApiCa string `json:"etcdApiCa,omitempty"`
+	// EtcdPeerCa: Resource path of the Certificate Authority Service caPool to use
+	// for the etcd peer CA in this cluster.
+	EtcdPeerCa string `json:"etcdPeerCa,omitempty"`
+	// GkeopsEtcdBackupEncryptionKey: Resource path of the Cloud KMS cryptoKey to
+	// use for encryption of internal etcd backups.
+	GkeopsEtcdBackupEncryptionKey string `json:"gkeopsEtcdBackupEncryptionKey,omitempty"`
+	// ServiceAccountSigningKeys: The Cloud KMS cryptoKeyVersions to use for
+	// signing service account JWTs issued by this cluster. Format:
+	// `projects/{project}/locations/{location}/keyRings/{keyring}/cryptoKeys/{crypt
+	// oKey}/cryptoKeyVersions/{cryptoKeyVersion}`
+	ServiceAccountSigningKeys []string `json:"serviceAccountSigningKeys,omitempty"`
+	// ServiceAccountVerificationKeys: The Cloud KMS cryptoKeyVersions to use for
+	// verifying service account JWTs issued by this cluster. Format:
+	// `projects/{project}/locations/{location}/keyRings/{keyring}/cryptoKeys/{crypt
+	// oKey}/cryptoKeyVersions/{cryptoKeyVersion}`
+	ServiceAccountVerificationKeys []string `json:"serviceAccountVerificationKeys,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "AggregationCa") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "AggregationCa") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s UserManagedKeysConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod UserManagedKeysConfig
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
 // VerticalPodAutoscaling: VerticalPodAutoscaling contains global, per-cluster
 // information required by Vertical Pod Autoscaler to automatically adjust the
 // resources of pods controlled by it.
@@ -7244,11 +7753,14 @@ func (s WorkloadMetadataConfig) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
-// WorkloadPolicyConfig: WorkloadPolicyConfig is the configuration of workload
-// policy for autopilot clusters.
+// WorkloadPolicyConfig: WorkloadPolicyConfig is the configuration related to
+// GCW workload policy
 type WorkloadPolicyConfig struct {
 	// AllowNetAdmin: If true, workloads can use NET_ADMIN capability.
 	AllowNetAdmin bool `json:"allowNetAdmin,omitempty"`
+	// AutopilotCompatibilityAuditingEnabled: If true, enables the GCW Auditor that
+	// audits workloads on standard clusters.
+	AutopilotCompatibilityAuditingEnabled bool `json:"autopilotCompatibilityAuditingEnabled,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "AllowNetAdmin") to
 	// unconditionally include in API requests. By default, fields with empty or
 	// default values are omitted from API requests. See
@@ -7349,12 +7861,11 @@ func (c *ProjectsAggregatedUsableSubnetworksListCall) doRequest(alt string) (*ht
 	if c.ifNoneMatch_ != "" {
 		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
 	}
-	var body io.Reader = nil
 	c.urlParams_.Set("alt", alt)
 	c.urlParams_.Set("prettyPrint", "false")
 	urls := googleapi.ResolveRelative(c.s.BasePath, "v1/{+parent}/aggregated/usableSubnetworks")
 	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("GET", urls, body)
+	req, err := http.NewRequest("GET", urls, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -7362,6 +7873,7 @@ func (c *ProjectsAggregatedUsableSubnetworksListCall) doRequest(alt string) (*ht
 	googleapi.Expand(req.URL, map[string]string{
 		"parent": c.parent,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.aggregated.usableSubnetworks.list", "request", internallog.HTTPRequest(req, nil))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -7397,9 +7909,11 @@ func (c *ProjectsAggregatedUsableSubnetworksListCall) Do(opts ...googleapi.CallO
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.aggregated.usableSubnetworks.list", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -7498,12 +8012,11 @@ func (c *ProjectsLocationsGetServerConfigCall) doRequest(alt string) (*http.Resp
 	if c.ifNoneMatch_ != "" {
 		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
 	}
-	var body io.Reader = nil
 	c.urlParams_.Set("alt", alt)
 	c.urlParams_.Set("prettyPrint", "false")
 	urls := googleapi.ResolveRelative(c.s.BasePath, "v1/{+name}/serverConfig")
 	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("GET", urls, body)
+	req, err := http.NewRequest("GET", urls, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -7511,6 +8024,7 @@ func (c *ProjectsLocationsGetServerConfigCall) doRequest(alt string) (*http.Resp
 	googleapi.Expand(req.URL, map[string]string{
 		"name": c.name,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.getServerConfig", "request", internallog.HTTPRequest(req, nil))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -7545,9 +8059,11 @@ func (c *ProjectsLocationsGetServerConfigCall) Do(opts ...googleapi.CallOption) 
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.getServerConfig", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -7607,12 +8123,11 @@ func (c *ProjectsLocationsClustersCheckAutopilotCompatibilityCall) doRequest(alt
 	if c.ifNoneMatch_ != "" {
 		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
 	}
-	var body io.Reader = nil
 	c.urlParams_.Set("alt", alt)
 	c.urlParams_.Set("prettyPrint", "false")
 	urls := googleapi.ResolveRelative(c.s.BasePath, "v1/{+name}:checkAutopilotCompatibility")
 	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("GET", urls, body)
+	req, err := http.NewRequest("GET", urls, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -7620,6 +8135,7 @@ func (c *ProjectsLocationsClustersCheckAutopilotCompatibilityCall) doRequest(alt
 	googleapi.Expand(req.URL, map[string]string{
 		"name": c.name,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.checkAutopilotCompatibility", "request", internallog.HTTPRequest(req, nil))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -7655,9 +8171,11 @@ func (c *ProjectsLocationsClustersCheckAutopilotCompatibilityCall) Do(opts ...go
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.checkAutopilotCompatibility", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -7707,8 +8225,7 @@ func (c *ProjectsLocationsClustersCompleteIpRotationCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersCompleteIpRotationCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.completeiprotationrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.completeiprotationrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -7724,6 +8241,7 @@ func (c *ProjectsLocationsClustersCompleteIpRotationCall) doRequest(alt string) 
 	googleapi.Expand(req.URL, map[string]string{
 		"name": c.name,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.completeIpRotation", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -7758,9 +8276,11 @@ func (c *ProjectsLocationsClustersCompleteIpRotationCall) Do(opts ...googleapi.C
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.completeIpRotation", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -7817,8 +8337,7 @@ func (c *ProjectsLocationsClustersCreateCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersCreateCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.createclusterrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.createclusterrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -7834,6 +8353,7 @@ func (c *ProjectsLocationsClustersCreateCall) doRequest(alt string) (*http.Respo
 	googleapi.Expand(req.URL, map[string]string{
 		"parent": c.parent,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.create", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -7868,9 +8388,11 @@ func (c *ProjectsLocationsClustersCreateCall) Do(opts ...googleapi.CallOption) (
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.create", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -7947,12 +8469,11 @@ func (c *ProjectsLocationsClustersDeleteCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersDeleteCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "", c.header_)
-	var body io.Reader = nil
 	c.urlParams_.Set("alt", alt)
 	c.urlParams_.Set("prettyPrint", "false")
 	urls := googleapi.ResolveRelative(c.s.BasePath, "v1/{+name}")
 	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("DELETE", urls, body)
+	req, err := http.NewRequest("DELETE", urls, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -7960,6 +8481,7 @@ func (c *ProjectsLocationsClustersDeleteCall) doRequest(alt string) (*http.Respo
 	googleapi.Expand(req.URL, map[string]string{
 		"name": c.name,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.delete", "request", internallog.HTTPRequest(req, nil))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -7994,9 +8516,11 @@ func (c *ProjectsLocationsClustersDeleteCall) Do(opts ...googleapi.CallOption) (
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.delete", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -8081,12 +8605,11 @@ func (c *ProjectsLocationsClustersGetCall) doRequest(alt string) (*http.Response
 	if c.ifNoneMatch_ != "" {
 		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
 	}
-	var body io.Reader = nil
 	c.urlParams_.Set("alt", alt)
 	c.urlParams_.Set("prettyPrint", "false")
 	urls := googleapi.ResolveRelative(c.s.BasePath, "v1/{+name}")
 	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("GET", urls, body)
+	req, err := http.NewRequest("GET", urls, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -8094,6 +8617,7 @@ func (c *ProjectsLocationsClustersGetCall) doRequest(alt string) (*http.Response
 	googleapi.Expand(req.URL, map[string]string{
 		"name": c.name,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.get", "request", internallog.HTTPRequest(req, nil))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -8128,9 +8652,11 @@ func (c *ProjectsLocationsClustersGetCall) Do(opts ...googleapi.CallOption) (*Cl
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.get", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -8190,12 +8716,11 @@ func (c *ProjectsLocationsClustersGetJwksCall) doRequest(alt string) (*http.Resp
 	if c.ifNoneMatch_ != "" {
 		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
 	}
-	var body io.Reader = nil
 	c.urlParams_.Set("alt", alt)
 	c.urlParams_.Set("prettyPrint", "false")
 	urls := googleapi.ResolveRelative(c.s.BasePath, "v1/{+parent}/jwks")
 	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("GET", urls, body)
+	req, err := http.NewRequest("GET", urls, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -8203,6 +8728,7 @@ func (c *ProjectsLocationsClustersGetJwksCall) doRequest(alt string) (*http.Resp
 	googleapi.Expand(req.URL, map[string]string{
 		"parent": c.parent,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.getJwks", "request", internallog.HTTPRequest(req, nil))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -8238,9 +8764,11 @@ func (c *ProjectsLocationsClustersGetJwksCall) Do(opts ...googleapi.CallOption) 
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.getJwks", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -8319,12 +8847,11 @@ func (c *ProjectsLocationsClustersListCall) doRequest(alt string) (*http.Respons
 	if c.ifNoneMatch_ != "" {
 		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
 	}
-	var body io.Reader = nil
 	c.urlParams_.Set("alt", alt)
 	c.urlParams_.Set("prettyPrint", "false")
 	urls := googleapi.ResolveRelative(c.s.BasePath, "v1/{+parent}/clusters")
 	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("GET", urls, body)
+	req, err := http.NewRequest("GET", urls, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -8332,6 +8859,7 @@ func (c *ProjectsLocationsClustersListCall) doRequest(alt string) (*http.Respons
 	googleapi.Expand(req.URL, map[string]string{
 		"parent": c.parent,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.list", "request", internallog.HTTPRequest(req, nil))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -8367,9 +8895,11 @@ func (c *ProjectsLocationsClustersListCall) Do(opts ...googleapi.CallOption) (*L
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.list", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -8418,8 +8948,7 @@ func (c *ProjectsLocationsClustersSetAddonsCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersSetAddonsCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.setaddonsconfigrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.setaddonsconfigrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -8435,6 +8964,7 @@ func (c *ProjectsLocationsClustersSetAddonsCall) doRequest(alt string) (*http.Re
 	googleapi.Expand(req.URL, map[string]string{
 		"name": c.name,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.setAddons", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -8469,9 +8999,11 @@ func (c *ProjectsLocationsClustersSetAddonsCall) Do(opts ...googleapi.CallOption
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.setAddons", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -8521,8 +9053,7 @@ func (c *ProjectsLocationsClustersSetLegacyAbacCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersSetLegacyAbacCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.setlegacyabacrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.setlegacyabacrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -8538,6 +9069,7 @@ func (c *ProjectsLocationsClustersSetLegacyAbacCall) doRequest(alt string) (*htt
 	googleapi.Expand(req.URL, map[string]string{
 		"name": c.name,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.setLegacyAbac", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -8572,9 +9104,11 @@ func (c *ProjectsLocationsClustersSetLegacyAbacCall) Do(opts ...googleapi.CallOp
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.setLegacyAbac", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -8626,8 +9160,7 @@ func (c *ProjectsLocationsClustersSetLocationsCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersSetLocationsCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.setlocationsrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.setlocationsrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -8643,6 +9176,7 @@ func (c *ProjectsLocationsClustersSetLocationsCall) doRequest(alt string) (*http
 	googleapi.Expand(req.URL, map[string]string{
 		"name": c.name,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.setLocations", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -8677,9 +9211,11 @@ func (c *ProjectsLocationsClustersSetLocationsCall) Do(opts ...googleapi.CallOpt
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.setLocations", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -8728,8 +9264,7 @@ func (c *ProjectsLocationsClustersSetLoggingCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersSetLoggingCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.setloggingservicerequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.setloggingservicerequest)
 	if err != nil {
 		return nil, err
 	}
@@ -8745,6 +9280,7 @@ func (c *ProjectsLocationsClustersSetLoggingCall) doRequest(alt string) (*http.R
 	googleapi.Expand(req.URL, map[string]string{
 		"name": c.name,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.setLogging", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -8779,9 +9315,11 @@ func (c *ProjectsLocationsClustersSetLoggingCall) Do(opts ...googleapi.CallOptio
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.setLogging", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -8831,8 +9369,7 @@ func (c *ProjectsLocationsClustersSetMaintenancePolicyCall) Header() http.Header
 
 func (c *ProjectsLocationsClustersSetMaintenancePolicyCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.setmaintenancepolicyrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.setmaintenancepolicyrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -8848,6 +9385,7 @@ func (c *ProjectsLocationsClustersSetMaintenancePolicyCall) doRequest(alt string
 	googleapi.Expand(req.URL, map[string]string{
 		"name": c.name,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.setMaintenancePolicy", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -8882,9 +9420,11 @@ func (c *ProjectsLocationsClustersSetMaintenancePolicyCall) Do(opts ...googleapi
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.setMaintenancePolicy", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -8935,8 +9475,7 @@ func (c *ProjectsLocationsClustersSetMasterAuthCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersSetMasterAuthCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.setmasterauthrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.setmasterauthrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -8952,6 +9491,7 @@ func (c *ProjectsLocationsClustersSetMasterAuthCall) doRequest(alt string) (*htt
 	googleapi.Expand(req.URL, map[string]string{
 		"name": c.name,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.setMasterAuth", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -8986,9 +9526,11 @@ func (c *ProjectsLocationsClustersSetMasterAuthCall) Do(opts ...googleapi.CallOp
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.setMasterAuth", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -9037,8 +9579,7 @@ func (c *ProjectsLocationsClustersSetMonitoringCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersSetMonitoringCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.setmonitoringservicerequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.setmonitoringservicerequest)
 	if err != nil {
 		return nil, err
 	}
@@ -9054,6 +9595,7 @@ func (c *ProjectsLocationsClustersSetMonitoringCall) doRequest(alt string) (*htt
 	googleapi.Expand(req.URL, map[string]string{
 		"name": c.name,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.setMonitoring", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -9088,9 +9630,11 @@ func (c *ProjectsLocationsClustersSetMonitoringCall) Do(opts ...googleapi.CallOp
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.setMonitoring", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -9140,8 +9684,7 @@ func (c *ProjectsLocationsClustersSetNetworkPolicyCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersSetNetworkPolicyCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.setnetworkpolicyrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.setnetworkpolicyrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -9157,6 +9700,7 @@ func (c *ProjectsLocationsClustersSetNetworkPolicyCall) doRequest(alt string) (*
 	googleapi.Expand(req.URL, map[string]string{
 		"name": c.name,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.setNetworkPolicy", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -9191,9 +9735,11 @@ func (c *ProjectsLocationsClustersSetNetworkPolicyCall) Do(opts ...googleapi.Cal
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.setNetworkPolicy", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -9242,8 +9788,7 @@ func (c *ProjectsLocationsClustersSetResourceLabelsCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersSetResourceLabelsCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.setlabelsrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.setlabelsrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -9259,6 +9804,7 @@ func (c *ProjectsLocationsClustersSetResourceLabelsCall) doRequest(alt string) (
 	googleapi.Expand(req.URL, map[string]string{
 		"name": c.name,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.setResourceLabels", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -9293,9 +9839,11 @@ func (c *ProjectsLocationsClustersSetResourceLabelsCall) Do(opts ...googleapi.Ca
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.setResourceLabels", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -9344,8 +9892,7 @@ func (c *ProjectsLocationsClustersStartIpRotationCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersStartIpRotationCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.startiprotationrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.startiprotationrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -9361,6 +9908,7 @@ func (c *ProjectsLocationsClustersStartIpRotationCall) doRequest(alt string) (*h
 	googleapi.Expand(req.URL, map[string]string{
 		"name": c.name,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.startIpRotation", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -9395,9 +9943,11 @@ func (c *ProjectsLocationsClustersStartIpRotationCall) Do(opts ...googleapi.Call
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.startIpRotation", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -9446,8 +9996,7 @@ func (c *ProjectsLocationsClustersUpdateCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersUpdateCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.updateclusterrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.updateclusterrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -9463,6 +10012,7 @@ func (c *ProjectsLocationsClustersUpdateCall) doRequest(alt string) (*http.Respo
 	googleapi.Expand(req.URL, map[string]string{
 		"name": c.name,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.update", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -9497,9 +10047,11 @@ func (c *ProjectsLocationsClustersUpdateCall) Do(opts ...googleapi.CallOption) (
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.update", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -9548,8 +10100,7 @@ func (c *ProjectsLocationsClustersUpdateMasterCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersUpdateMasterCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.updatemasterrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.updatemasterrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -9565,6 +10116,7 @@ func (c *ProjectsLocationsClustersUpdateMasterCall) doRequest(alt string) (*http
 	googleapi.Expand(req.URL, map[string]string{
 		"name": c.name,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.updateMaster", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -9599,9 +10151,11 @@ func (c *ProjectsLocationsClustersUpdateMasterCall) Do(opts ...googleapi.CallOpt
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.updateMaster", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -9652,8 +10206,7 @@ func (c *ProjectsLocationsClustersNodePoolsCompleteUpgradeCall) Header() http.He
 
 func (c *ProjectsLocationsClustersNodePoolsCompleteUpgradeCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.completenodepoolupgraderequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.completenodepoolupgraderequest)
 	if err != nil {
 		return nil, err
 	}
@@ -9669,6 +10222,7 @@ func (c *ProjectsLocationsClustersNodePoolsCompleteUpgradeCall) doRequest(alt st
 	googleapi.Expand(req.URL, map[string]string{
 		"name": c.name,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.nodePools.completeUpgrade", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -9703,9 +10257,11 @@ func (c *ProjectsLocationsClustersNodePoolsCompleteUpgradeCall) Do(opts ...googl
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.nodePools.completeUpgrade", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -9755,8 +10311,7 @@ func (c *ProjectsLocationsClustersNodePoolsCreateCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersNodePoolsCreateCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.createnodepoolrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.createnodepoolrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -9772,6 +10327,7 @@ func (c *ProjectsLocationsClustersNodePoolsCreateCall) doRequest(alt string) (*h
 	googleapi.Expand(req.URL, map[string]string{
 		"parent": c.parent,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.nodePools.create", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -9806,9 +10362,11 @@ func (c *ProjectsLocationsClustersNodePoolsCreateCall) Do(opts ...googleapi.Call
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.nodePools.create", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -9889,12 +10447,11 @@ func (c *ProjectsLocationsClustersNodePoolsDeleteCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersNodePoolsDeleteCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "", c.header_)
-	var body io.Reader = nil
 	c.urlParams_.Set("alt", alt)
 	c.urlParams_.Set("prettyPrint", "false")
 	urls := googleapi.ResolveRelative(c.s.BasePath, "v1/{+name}")
 	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("DELETE", urls, body)
+	req, err := http.NewRequest("DELETE", urls, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -9902,6 +10459,7 @@ func (c *ProjectsLocationsClustersNodePoolsDeleteCall) doRequest(alt string) (*h
 	googleapi.Expand(req.URL, map[string]string{
 		"name": c.name,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.nodePools.delete", "request", internallog.HTTPRequest(req, nil))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -9936,9 +10494,11 @@ func (c *ProjectsLocationsClustersNodePoolsDeleteCall) Do(opts ...googleapi.Call
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.nodePools.delete", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -10031,12 +10591,11 @@ func (c *ProjectsLocationsClustersNodePoolsGetCall) doRequest(alt string) (*http
 	if c.ifNoneMatch_ != "" {
 		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
 	}
-	var body io.Reader = nil
 	c.urlParams_.Set("alt", alt)
 	c.urlParams_.Set("prettyPrint", "false")
 	urls := googleapi.ResolveRelative(c.s.BasePath, "v1/{+name}")
 	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("GET", urls, body)
+	req, err := http.NewRequest("GET", urls, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -10044,6 +10603,7 @@ func (c *ProjectsLocationsClustersNodePoolsGetCall) doRequest(alt string) (*http
 	googleapi.Expand(req.URL, map[string]string{
 		"name": c.name,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.nodePools.get", "request", internallog.HTTPRequest(req, nil))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -10078,9 +10638,11 @@ func (c *ProjectsLocationsClustersNodePoolsGetCall) Do(opts ...googleapi.CallOpt
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.nodePools.get", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -10166,12 +10728,11 @@ func (c *ProjectsLocationsClustersNodePoolsListCall) doRequest(alt string) (*htt
 	if c.ifNoneMatch_ != "" {
 		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
 	}
-	var body io.Reader = nil
 	c.urlParams_.Set("alt", alt)
 	c.urlParams_.Set("prettyPrint", "false")
 	urls := googleapi.ResolveRelative(c.s.BasePath, "v1/{+parent}/nodePools")
 	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("GET", urls, body)
+	req, err := http.NewRequest("GET", urls, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -10179,6 +10740,7 @@ func (c *ProjectsLocationsClustersNodePoolsListCall) doRequest(alt string) (*htt
 	googleapi.Expand(req.URL, map[string]string{
 		"parent": c.parent,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.nodePools.list", "request", internallog.HTTPRequest(req, nil))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -10214,9 +10776,11 @@ func (c *ProjectsLocationsClustersNodePoolsListCall) Do(opts ...googleapi.CallOp
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.nodePools.list", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -10267,8 +10831,7 @@ func (c *ProjectsLocationsClustersNodePoolsRollbackCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersNodePoolsRollbackCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.rollbacknodepoolupgraderequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.rollbacknodepoolupgraderequest)
 	if err != nil {
 		return nil, err
 	}
@@ -10284,6 +10847,7 @@ func (c *ProjectsLocationsClustersNodePoolsRollbackCall) doRequest(alt string) (
 	googleapi.Expand(req.URL, map[string]string{
 		"name": c.name,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.nodePools.rollback", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -10318,9 +10882,11 @@ func (c *ProjectsLocationsClustersNodePoolsRollbackCall) Do(opts ...googleapi.Ca
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.nodePools.rollback", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -10370,8 +10936,7 @@ func (c *ProjectsLocationsClustersNodePoolsSetAutoscalingCall) Header() http.Hea
 
 func (c *ProjectsLocationsClustersNodePoolsSetAutoscalingCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.setnodepoolautoscalingrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.setnodepoolautoscalingrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -10387,6 +10952,7 @@ func (c *ProjectsLocationsClustersNodePoolsSetAutoscalingCall) doRequest(alt str
 	googleapi.Expand(req.URL, map[string]string{
 		"name": c.name,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.nodePools.setAutoscaling", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -10421,9 +10987,11 @@ func (c *ProjectsLocationsClustersNodePoolsSetAutoscalingCall) Do(opts ...google
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.nodePools.setAutoscaling", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -10473,8 +11041,7 @@ func (c *ProjectsLocationsClustersNodePoolsSetManagementCall) Header() http.Head
 
 func (c *ProjectsLocationsClustersNodePoolsSetManagementCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.setnodepoolmanagementrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.setnodepoolmanagementrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -10490,6 +11057,7 @@ func (c *ProjectsLocationsClustersNodePoolsSetManagementCall) doRequest(alt stri
 	googleapi.Expand(req.URL, map[string]string{
 		"name": c.name,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.nodePools.setManagement", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -10524,9 +11092,11 @@ func (c *ProjectsLocationsClustersNodePoolsSetManagementCall) Do(opts ...googlea
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.nodePools.setManagement", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -10578,8 +11148,7 @@ func (c *ProjectsLocationsClustersNodePoolsSetSizeCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersNodePoolsSetSizeCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.setnodepoolsizerequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.setnodepoolsizerequest)
 	if err != nil {
 		return nil, err
 	}
@@ -10595,6 +11164,7 @@ func (c *ProjectsLocationsClustersNodePoolsSetSizeCall) doRequest(alt string) (*
 	googleapi.Expand(req.URL, map[string]string{
 		"name": c.name,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.nodePools.setSize", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -10629,9 +11199,11 @@ func (c *ProjectsLocationsClustersNodePoolsSetSizeCall) Do(opts ...googleapi.Cal
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.nodePools.setSize", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -10681,8 +11253,7 @@ func (c *ProjectsLocationsClustersNodePoolsUpdateCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersNodePoolsUpdateCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.updatenodepoolrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.updatenodepoolrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -10698,6 +11269,7 @@ func (c *ProjectsLocationsClustersNodePoolsUpdateCall) doRequest(alt string) (*h
 	googleapi.Expand(req.URL, map[string]string{
 		"name": c.name,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.nodePools.update", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -10732,9 +11304,11 @@ func (c *ProjectsLocationsClustersNodePoolsUpdateCall) Do(opts ...googleapi.Call
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.nodePools.update", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -10795,12 +11369,11 @@ func (c *ProjectsLocationsClustersWellKnownGetOpenidConfigurationCall) doRequest
 	if c.ifNoneMatch_ != "" {
 		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
 	}
-	var body io.Reader = nil
 	c.urlParams_.Set("alt", alt)
 	c.urlParams_.Set("prettyPrint", "false")
 	urls := googleapi.ResolveRelative(c.s.BasePath, "v1/{+parent}/.well-known/openid-configuration")
 	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("GET", urls, body)
+	req, err := http.NewRequest("GET", urls, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -10808,6 +11381,7 @@ func (c *ProjectsLocationsClustersWellKnownGetOpenidConfigurationCall) doRequest
 	googleapi.Expand(req.URL, map[string]string{
 		"parent": c.parent,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.well-known.getOpenid-configuration", "request", internallog.HTTPRequest(req, nil))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -10843,9 +11417,11 @@ func (c *ProjectsLocationsClustersWellKnownGetOpenidConfigurationCall) Do(opts .
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.well-known.getOpenid-configuration", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -10894,8 +11470,7 @@ func (c *ProjectsLocationsOperationsCancelCall) Header() http.Header {
 
 func (c *ProjectsLocationsOperationsCancelCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.canceloperationrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.canceloperationrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -10911,6 +11486,7 @@ func (c *ProjectsLocationsOperationsCancelCall) doRequest(alt string) (*http.Res
 	googleapi.Expand(req.URL, map[string]string{
 		"name": c.name,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.operations.cancel", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -10945,9 +11521,11 @@ func (c *ProjectsLocationsOperationsCancelCall) Do(opts ...googleapi.CallOption)
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.operations.cancel", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -11032,12 +11610,11 @@ func (c *ProjectsLocationsOperationsGetCall) doRequest(alt string) (*http.Respon
 	if c.ifNoneMatch_ != "" {
 		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
 	}
-	var body io.Reader = nil
 	c.urlParams_.Set("alt", alt)
 	c.urlParams_.Set("prettyPrint", "false")
 	urls := googleapi.ResolveRelative(c.s.BasePath, "v1/{+name}")
 	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("GET", urls, body)
+	req, err := http.NewRequest("GET", urls, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -11045,6 +11622,7 @@ func (c *ProjectsLocationsOperationsGetCall) doRequest(alt string) (*http.Respon
 	googleapi.Expand(req.URL, map[string]string{
 		"name": c.name,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.operations.get", "request", internallog.HTTPRequest(req, nil))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -11079,9 +11657,11 @@ func (c *ProjectsLocationsOperationsGetCall) Do(opts ...googleapi.CallOption) (*
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.operations.get", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -11159,12 +11739,11 @@ func (c *ProjectsLocationsOperationsListCall) doRequest(alt string) (*http.Respo
 	if c.ifNoneMatch_ != "" {
 		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
 	}
-	var body io.Reader = nil
 	c.urlParams_.Set("alt", alt)
 	c.urlParams_.Set("prettyPrint", "false")
 	urls := googleapi.ResolveRelative(c.s.BasePath, "v1/{+parent}/operations")
 	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("GET", urls, body)
+	req, err := http.NewRequest("GET", urls, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -11172,6 +11751,7 @@ func (c *ProjectsLocationsOperationsListCall) doRequest(alt string) (*http.Respo
 	googleapi.Expand(req.URL, map[string]string{
 		"parent": c.parent,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.operations.list", "request", internallog.HTTPRequest(req, nil))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -11207,9 +11787,11 @@ func (c *ProjectsLocationsOperationsListCall) Do(opts ...googleapi.CallOption) (
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.operations.list", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -11284,12 +11866,11 @@ func (c *ProjectsZonesGetServerconfigCall) doRequest(alt string) (*http.Response
 	if c.ifNoneMatch_ != "" {
 		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
 	}
-	var body io.Reader = nil
 	c.urlParams_.Set("alt", alt)
 	c.urlParams_.Set("prettyPrint", "false")
 	urls := googleapi.ResolveRelative(c.s.BasePath, "v1/projects/{projectId}/zones/{zone}/serverconfig")
 	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("GET", urls, body)
+	req, err := http.NewRequest("GET", urls, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -11298,6 +11879,7 @@ func (c *ProjectsZonesGetServerconfigCall) doRequest(alt string) (*http.Response
 		"projectId": c.projectId,
 		"zone":      c.zone,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.getServerconfig", "request", internallog.HTTPRequest(req, nil))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -11332,9 +11914,11 @@ func (c *ProjectsZonesGetServerconfigCall) Do(opts ...googleapi.CallOption) (*Se
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.getServerconfig", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -11395,8 +11979,7 @@ func (c *ProjectsZonesClustersAddonsCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersAddonsCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.setaddonsconfigrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.setaddonsconfigrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -11414,6 +11997,7 @@ func (c *ProjectsZonesClustersAddonsCall) doRequest(alt string) (*http.Response,
 		"zone":      c.zone,
 		"clusterId": c.clusterId,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.addons", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -11448,9 +12032,11 @@ func (c *ProjectsZonesClustersAddonsCall) Do(opts ...googleapi.CallOption) (*Ope
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.addons", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -11511,8 +12097,7 @@ func (c *ProjectsZonesClustersCompleteIpRotationCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersCompleteIpRotationCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.completeiprotationrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.completeiprotationrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -11530,6 +12115,7 @@ func (c *ProjectsZonesClustersCompleteIpRotationCall) doRequest(alt string) (*ht
 		"zone":      c.zone,
 		"clusterId": c.clusterId,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.completeIpRotation", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -11564,9 +12150,11 @@ func (c *ProjectsZonesClustersCompleteIpRotationCall) Do(opts ...googleapi.CallO
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.completeIpRotation", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -11631,8 +12219,7 @@ func (c *ProjectsZonesClustersCreateCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersCreateCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.createclusterrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.createclusterrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -11649,6 +12236,7 @@ func (c *ProjectsZonesClustersCreateCall) doRequest(alt string) (*http.Response,
 		"projectId": c.projectId,
 		"zone":      c.zone,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.create", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -11683,9 +12271,11 @@ func (c *ProjectsZonesClustersCreateCall) Do(opts ...googleapi.CallOption) (*Ope
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.create", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -11756,12 +12346,11 @@ func (c *ProjectsZonesClustersDeleteCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersDeleteCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "", c.header_)
-	var body io.Reader = nil
 	c.urlParams_.Set("alt", alt)
 	c.urlParams_.Set("prettyPrint", "false")
 	urls := googleapi.ResolveRelative(c.s.BasePath, "v1/projects/{projectId}/zones/{zone}/clusters/{clusterId}")
 	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("DELETE", urls, body)
+	req, err := http.NewRequest("DELETE", urls, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -11771,6 +12360,7 @@ func (c *ProjectsZonesClustersDeleteCall) doRequest(alt string) (*http.Response,
 		"zone":      c.zone,
 		"clusterId": c.clusterId,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.delete", "request", internallog.HTTPRequest(req, nil))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -11805,9 +12395,11 @@ func (c *ProjectsZonesClustersDeleteCall) Do(opts ...googleapi.CallOption) (*Ope
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.delete", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -11886,12 +12478,11 @@ func (c *ProjectsZonesClustersGetCall) doRequest(alt string) (*http.Response, er
 	if c.ifNoneMatch_ != "" {
 		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
 	}
-	var body io.Reader = nil
 	c.urlParams_.Set("alt", alt)
 	c.urlParams_.Set("prettyPrint", "false")
 	urls := googleapi.ResolveRelative(c.s.BasePath, "v1/projects/{projectId}/zones/{zone}/clusters/{clusterId}")
 	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("GET", urls, body)
+	req, err := http.NewRequest("GET", urls, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -11901,6 +12492,7 @@ func (c *ProjectsZonesClustersGetCall) doRequest(alt string) (*http.Response, er
 		"zone":      c.zone,
 		"clusterId": c.clusterId,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.get", "request", internallog.HTTPRequest(req, nil))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -11935,9 +12527,11 @@ func (c *ProjectsZonesClustersGetCall) Do(opts ...googleapi.CallOption) (*Cluste
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.get", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -11999,8 +12593,7 @@ func (c *ProjectsZonesClustersLegacyAbacCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersLegacyAbacCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.setlegacyabacrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.setlegacyabacrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -12018,6 +12611,7 @@ func (c *ProjectsZonesClustersLegacyAbacCall) doRequest(alt string) (*http.Respo
 		"zone":      c.zone,
 		"clusterId": c.clusterId,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.legacyAbac", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -12052,9 +12646,11 @@ func (c *ProjectsZonesClustersLegacyAbacCall) Do(opts ...googleapi.CallOption) (
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.legacyAbac", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -12130,12 +12726,11 @@ func (c *ProjectsZonesClustersListCall) doRequest(alt string) (*http.Response, e
 	if c.ifNoneMatch_ != "" {
 		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
 	}
-	var body io.Reader = nil
 	c.urlParams_.Set("alt", alt)
 	c.urlParams_.Set("prettyPrint", "false")
 	urls := googleapi.ResolveRelative(c.s.BasePath, "v1/projects/{projectId}/zones/{zone}/clusters")
 	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("GET", urls, body)
+	req, err := http.NewRequest("GET", urls, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -12144,6 +12739,7 @@ func (c *ProjectsZonesClustersListCall) doRequest(alt string) (*http.Response, e
 		"projectId": c.projectId,
 		"zone":      c.zone,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.list", "request", internallog.HTTPRequest(req, nil))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -12179,9 +12775,11 @@ func (c *ProjectsZonesClustersListCall) Do(opts ...googleapi.CallOption) (*ListC
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.list", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -12245,8 +12843,7 @@ func (c *ProjectsZonesClustersLocationsCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersLocationsCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.setlocationsrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.setlocationsrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -12264,6 +12861,7 @@ func (c *ProjectsZonesClustersLocationsCall) doRequest(alt string) (*http.Respon
 		"zone":      c.zone,
 		"clusterId": c.clusterId,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.locations", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -12298,9 +12896,11 @@ func (c *ProjectsZonesClustersLocationsCall) Do(opts ...googleapi.CallOption) (*
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.locations", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -12361,8 +12961,7 @@ func (c *ProjectsZonesClustersLoggingCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersLoggingCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.setloggingservicerequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.setloggingservicerequest)
 	if err != nil {
 		return nil, err
 	}
@@ -12380,6 +12979,7 @@ func (c *ProjectsZonesClustersLoggingCall) doRequest(alt string) (*http.Response
 		"zone":      c.zone,
 		"clusterId": c.clusterId,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.logging", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -12414,9 +13014,11 @@ func (c *ProjectsZonesClustersLoggingCall) Do(opts ...googleapi.CallOption) (*Op
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.logging", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -12477,8 +13079,7 @@ func (c *ProjectsZonesClustersMasterCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersMasterCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.updatemasterrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.updatemasterrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -12496,6 +13097,7 @@ func (c *ProjectsZonesClustersMasterCall) doRequest(alt string) (*http.Response,
 		"zone":      c.zone,
 		"clusterId": c.clusterId,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.master", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -12530,9 +13132,11 @@ func (c *ProjectsZonesClustersMasterCall) Do(opts ...googleapi.CallOption) (*Ope
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.master", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -12593,8 +13197,7 @@ func (c *ProjectsZonesClustersMonitoringCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersMonitoringCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.setmonitoringservicerequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.setmonitoringservicerequest)
 	if err != nil {
 		return nil, err
 	}
@@ -12612,6 +13215,7 @@ func (c *ProjectsZonesClustersMonitoringCall) doRequest(alt string) (*http.Respo
 		"zone":      c.zone,
 		"clusterId": c.clusterId,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.monitoring", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -12646,9 +13250,11 @@ func (c *ProjectsZonesClustersMonitoringCall) Do(opts ...googleapi.CallOption) (
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.monitoring", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -12709,8 +13315,7 @@ func (c *ProjectsZonesClustersResourceLabelsCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersResourceLabelsCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.setlabelsrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.setlabelsrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -12728,6 +13333,7 @@ func (c *ProjectsZonesClustersResourceLabelsCall) doRequest(alt string) (*http.R
 		"zone":      c.zone,
 		"clusterId": c.clusterId,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.resourceLabels", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -12762,9 +13368,11 @@ func (c *ProjectsZonesClustersResourceLabelsCall) Do(opts ...googleapi.CallOptio
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.resourceLabels", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -12821,8 +13429,7 @@ func (c *ProjectsZonesClustersSetMaintenancePolicyCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersSetMaintenancePolicyCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.setmaintenancepolicyrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.setmaintenancepolicyrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -12840,6 +13447,7 @@ func (c *ProjectsZonesClustersSetMaintenancePolicyCall) doRequest(alt string) (*
 		"zone":      c.zone,
 		"clusterId": c.clusterId,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.setMaintenancePolicy", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -12874,9 +13482,11 @@ func (c *ProjectsZonesClustersSetMaintenancePolicyCall) Do(opts ...googleapi.Cal
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.setMaintenancePolicy", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -12939,8 +13549,7 @@ func (c *ProjectsZonesClustersSetMasterAuthCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersSetMasterAuthCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.setmasterauthrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.setmasterauthrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -12958,6 +13567,7 @@ func (c *ProjectsZonesClustersSetMasterAuthCall) doRequest(alt string) (*http.Re
 		"zone":      c.zone,
 		"clusterId": c.clusterId,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.setMasterAuth", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -12992,9 +13602,11 @@ func (c *ProjectsZonesClustersSetMasterAuthCall) Do(opts ...googleapi.CallOption
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.setMasterAuth", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -13055,8 +13667,7 @@ func (c *ProjectsZonesClustersSetNetworkPolicyCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersSetNetworkPolicyCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.setnetworkpolicyrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.setnetworkpolicyrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -13074,6 +13685,7 @@ func (c *ProjectsZonesClustersSetNetworkPolicyCall) doRequest(alt string) (*http
 		"zone":      c.zone,
 		"clusterId": c.clusterId,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.setNetworkPolicy", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -13108,9 +13720,11 @@ func (c *ProjectsZonesClustersSetNetworkPolicyCall) Do(opts ...googleapi.CallOpt
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.setNetworkPolicy", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -13171,8 +13785,7 @@ func (c *ProjectsZonesClustersStartIpRotationCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersStartIpRotationCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.startiprotationrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.startiprotationrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -13190,6 +13803,7 @@ func (c *ProjectsZonesClustersStartIpRotationCall) doRequest(alt string) (*http.
 		"zone":      c.zone,
 		"clusterId": c.clusterId,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.startIpRotation", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -13224,9 +13838,11 @@ func (c *ProjectsZonesClustersStartIpRotationCall) Do(opts ...googleapi.CallOpti
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.startIpRotation", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -13287,8 +13903,7 @@ func (c *ProjectsZonesClustersUpdateCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersUpdateCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.updateclusterrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.updateclusterrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -13306,6 +13921,7 @@ func (c *ProjectsZonesClustersUpdateCall) doRequest(alt string) (*http.Response,
 		"zone":      c.zone,
 		"clusterId": c.clusterId,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.update", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -13340,9 +13956,11 @@ func (c *ProjectsZonesClustersUpdateCall) Do(opts ...googleapi.CallOption) (*Ope
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.update", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -13407,8 +14025,7 @@ func (c *ProjectsZonesClustersNodePoolsAutoscalingCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersNodePoolsAutoscalingCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.setnodepoolautoscalingrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.setnodepoolautoscalingrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -13427,6 +14044,7 @@ func (c *ProjectsZonesClustersNodePoolsAutoscalingCall) doRequest(alt string) (*
 		"clusterId":  c.clusterId,
 		"nodePoolId": c.nodePoolId,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.nodePools.autoscaling", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -13461,9 +14079,11 @@ func (c *ProjectsZonesClustersNodePoolsAutoscalingCall) Do(opts ...googleapi.Cal
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.nodePools.autoscaling", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -13524,8 +14144,7 @@ func (c *ProjectsZonesClustersNodePoolsCreateCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersNodePoolsCreateCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.createnodepoolrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.createnodepoolrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -13543,6 +14162,7 @@ func (c *ProjectsZonesClustersNodePoolsCreateCall) doRequest(alt string) (*http.
 		"zone":      c.zone,
 		"clusterId": c.clusterId,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.nodePools.create", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -13577,9 +14197,11 @@ func (c *ProjectsZonesClustersNodePoolsCreateCall) Do(opts ...googleapi.CallOpti
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.nodePools.create", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -13650,12 +14272,11 @@ func (c *ProjectsZonesClustersNodePoolsDeleteCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersNodePoolsDeleteCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "", c.header_)
-	var body io.Reader = nil
 	c.urlParams_.Set("alt", alt)
 	c.urlParams_.Set("prettyPrint", "false")
 	urls := googleapi.ResolveRelative(c.s.BasePath, "v1/projects/{projectId}/zones/{zone}/clusters/{clusterId}/nodePools/{nodePoolId}")
 	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("DELETE", urls, body)
+	req, err := http.NewRequest("DELETE", urls, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -13666,6 +14287,7 @@ func (c *ProjectsZonesClustersNodePoolsDeleteCall) doRequest(alt string) (*http.
 		"clusterId":  c.clusterId,
 		"nodePoolId": c.nodePoolId,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.nodePools.delete", "request", internallog.HTTPRequest(req, nil))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -13700,9 +14322,11 @@ func (c *ProjectsZonesClustersNodePoolsDeleteCall) Do(opts ...googleapi.CallOpti
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.nodePools.delete", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -13785,12 +14409,11 @@ func (c *ProjectsZonesClustersNodePoolsGetCall) doRequest(alt string) (*http.Res
 	if c.ifNoneMatch_ != "" {
 		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
 	}
-	var body io.Reader = nil
 	c.urlParams_.Set("alt", alt)
 	c.urlParams_.Set("prettyPrint", "false")
 	urls := googleapi.ResolveRelative(c.s.BasePath, "v1/projects/{projectId}/zones/{zone}/clusters/{clusterId}/nodePools/{nodePoolId}")
 	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("GET", urls, body)
+	req, err := http.NewRequest("GET", urls, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -13801,6 +14424,7 @@ func (c *ProjectsZonesClustersNodePoolsGetCall) doRequest(alt string) (*http.Res
 		"clusterId":  c.clusterId,
 		"nodePoolId": c.nodePoolId,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.nodePools.get", "request", internallog.HTTPRequest(req, nil))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -13835,9 +14459,11 @@ func (c *ProjectsZonesClustersNodePoolsGetCall) Do(opts ...googleapi.CallOption)
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.nodePools.get", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -13916,12 +14542,11 @@ func (c *ProjectsZonesClustersNodePoolsListCall) doRequest(alt string) (*http.Re
 	if c.ifNoneMatch_ != "" {
 		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
 	}
-	var body io.Reader = nil
 	c.urlParams_.Set("alt", alt)
 	c.urlParams_.Set("prettyPrint", "false")
 	urls := googleapi.ResolveRelative(c.s.BasePath, "v1/projects/{projectId}/zones/{zone}/clusters/{clusterId}/nodePools")
 	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("GET", urls, body)
+	req, err := http.NewRequest("GET", urls, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -13931,6 +14556,7 @@ func (c *ProjectsZonesClustersNodePoolsListCall) doRequest(alt string) (*http.Re
 		"zone":      c.zone,
 		"clusterId": c.clusterId,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.nodePools.list", "request", internallog.HTTPRequest(req, nil))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -13966,9 +14592,11 @@ func (c *ProjectsZonesClustersNodePoolsListCall) Do(opts ...googleapi.CallOption
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.nodePools.list", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -14034,8 +14662,7 @@ func (c *ProjectsZonesClustersNodePoolsRollbackCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersNodePoolsRollbackCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.rollbacknodepoolupgraderequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.rollbacknodepoolupgraderequest)
 	if err != nil {
 		return nil, err
 	}
@@ -14054,6 +14681,7 @@ func (c *ProjectsZonesClustersNodePoolsRollbackCall) doRequest(alt string) (*htt
 		"clusterId":  c.clusterId,
 		"nodePoolId": c.nodePoolId,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.nodePools.rollback", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -14088,9 +14716,11 @@ func (c *ProjectsZonesClustersNodePoolsRollbackCall) Do(opts ...googleapi.CallOp
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.nodePools.rollback", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -14155,8 +14785,7 @@ func (c *ProjectsZonesClustersNodePoolsSetManagementCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersNodePoolsSetManagementCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.setnodepoolmanagementrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.setnodepoolmanagementrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -14175,6 +14804,7 @@ func (c *ProjectsZonesClustersNodePoolsSetManagementCall) doRequest(alt string) 
 		"clusterId":  c.clusterId,
 		"nodePoolId": c.nodePoolId,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.nodePools.setManagement", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -14209,9 +14839,11 @@ func (c *ProjectsZonesClustersNodePoolsSetManagementCall) Do(opts ...googleapi.C
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.nodePools.setManagement", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -14278,8 +14910,7 @@ func (c *ProjectsZonesClustersNodePoolsSetSizeCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersNodePoolsSetSizeCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.setnodepoolsizerequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.setnodepoolsizerequest)
 	if err != nil {
 		return nil, err
 	}
@@ -14298,6 +14929,7 @@ func (c *ProjectsZonesClustersNodePoolsSetSizeCall) doRequest(alt string) (*http
 		"clusterId":  c.clusterId,
 		"nodePoolId": c.nodePoolId,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.nodePools.setSize", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -14332,9 +14964,11 @@ func (c *ProjectsZonesClustersNodePoolsSetSizeCall) Do(opts ...googleapi.CallOpt
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.nodePools.setSize", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -14399,8 +15033,7 @@ func (c *ProjectsZonesClustersNodePoolsUpdateCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersNodePoolsUpdateCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.updatenodepoolrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.updatenodepoolrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -14419,6 +15052,7 @@ func (c *ProjectsZonesClustersNodePoolsUpdateCall) doRequest(alt string) (*http.
 		"clusterId":  c.clusterId,
 		"nodePoolId": c.nodePoolId,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.nodePools.update", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -14453,9 +15087,11 @@ func (c *ProjectsZonesClustersNodePoolsUpdateCall) Do(opts ...googleapi.CallOpti
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.nodePools.update", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -14516,8 +15152,7 @@ func (c *ProjectsZonesOperationsCancelCall) Header() http.Header {
 
 func (c *ProjectsZonesOperationsCancelCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	var body io.Reader = nil
-	body, err := googleapi.WithoutDataWrapper.JSONReader(c.canceloperationrequest)
+	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.canceloperationrequest)
 	if err != nil {
 		return nil, err
 	}
@@ -14535,6 +15170,7 @@ func (c *ProjectsZonesOperationsCancelCall) doRequest(alt string) (*http.Respons
 		"zone":        c.zone,
 		"operationId": c.operationId,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.operations.cancel", "request", internallog.HTTPRequest(req, body.Bytes()))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -14569,9 +15205,11 @@ func (c *ProjectsZonesOperationsCancelCall) Do(opts ...googleapi.CallOption) (*E
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.operations.cancel", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -14650,12 +15288,11 @@ func (c *ProjectsZonesOperationsGetCall) doRequest(alt string) (*http.Response, 
 	if c.ifNoneMatch_ != "" {
 		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
 	}
-	var body io.Reader = nil
 	c.urlParams_.Set("alt", alt)
 	c.urlParams_.Set("prettyPrint", "false")
 	urls := googleapi.ResolveRelative(c.s.BasePath, "v1/projects/{projectId}/zones/{zone}/operations/{operationId}")
 	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("GET", urls, body)
+	req, err := http.NewRequest("GET", urls, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -14665,6 +15302,7 @@ func (c *ProjectsZonesOperationsGetCall) doRequest(alt string) (*http.Response, 
 		"zone":        c.zone,
 		"operationId": c.operationId,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.operations.get", "request", internallog.HTTPRequest(req, nil))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -14699,9 +15337,11 @@ func (c *ProjectsZonesOperationsGetCall) Do(opts ...googleapi.CallOption) (*Oper
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.operations.get", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -14776,12 +15416,11 @@ func (c *ProjectsZonesOperationsListCall) doRequest(alt string) (*http.Response,
 	if c.ifNoneMatch_ != "" {
 		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
 	}
-	var body io.Reader = nil
 	c.urlParams_.Set("alt", alt)
 	c.urlParams_.Set("prettyPrint", "false")
 	urls := googleapi.ResolveRelative(c.s.BasePath, "v1/projects/{projectId}/zones/{zone}/operations")
 	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("GET", urls, body)
+	req, err := http.NewRequest("GET", urls, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -14790,6 +15429,7 @@ func (c *ProjectsZonesOperationsListCall) doRequest(alt string) (*http.Response,
 		"projectId": c.projectId,
 		"zone":      c.zone,
 	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.operations.list", "request", internallog.HTTPRequest(req, nil))
 	return gensupport.SendRequest(c.ctx_, c.s.client, req)
 }
 
@@ -14825,8 +15465,10 @@ func (c *ProjectsZonesOperationsListCall) Do(opts ...googleapi.CallOption) (*Lis
 		},
 	}
 	target := &ret
-	if err := gensupport.DecodeResponse(target, res); err != nil {
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
 		return nil, err
 	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.operations.list", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
