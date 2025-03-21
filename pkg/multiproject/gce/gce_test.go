@@ -353,6 +353,48 @@ alpha-features = ILBSubsets
 `,
 			expectError: false,
 		},
+
+		{
+			name: "Multiple keys (alpha-features) with the same name",
+			defaultConfigContent: `
+[global]
+project-id = default-project-id
+token-url = https://gkeauth.googleapis.com/v1/projects/12345/locations/us-central1/clusters/example-cluster:generateToken
+token-body = {"projectNumber":12345,"clusterId":"example-cluster"}
+network-name = default-network
+subnetwork-name = default-subnetwork
+alpha-features = ILBSubsets
+alpha-features = ILBCustomSubnet
+`,
+			providerConfig: &v1.ProviderConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "example-provider-config",
+					Labels: map[string]string{
+						flags.F.MultiProjectOwnerLabelKey: "example-owner",
+					},
+				},
+				Spec: v1.ProviderConfigSpec{
+					ProjectID:     "providerconfig-project-id",
+					ProjectNumber: 654321,
+					NetworkConfig: v1.ProviderNetworkConfig{
+						Network: "projects/providerconfig-project-id/global/networks/providerconfig-network-url",
+						SubnetInfo: v1.ProviderConfigSubnetInfo{
+							Subnetwork: "projects/providerconfig-project-id/regions/us-central1/subnetworks/providerconfig-subnetwork-url",
+						},
+					},
+				},
+			},
+			expectedConfig: `[global]
+project-id = providerconfig-project-id
+token-url = https://gkeauth.googleapis.com/v1/projects/654321/locations/us-central1/tenants/example-provider-config:generateTenantToken
+token-body = {"clusterId":"example-cluster","projectNumber":654321}
+network-name = providerconfig-network-url
+subnetwork-name = providerconfig-subnetwork-url
+alpha-features = ILBSubsets
+alpha-features = ILBCustomSubnet
+`,
+			expectError: false,
+		},
 		{
 			name: "Error updating TokenBody due to invalid JSON",
 			defaultConfigContent: `

@@ -63,7 +63,9 @@ func generateConfigForProviderConfig(defaultConfigContent string, providerConfig
 	}
 
 	// Load the config content into an INI file
-	cfg, err := ini.Load([]byte(defaultConfigContent))
+	cfg, err := ini.LoadSources(ini.LoadOptions{
+		AllowShadows: true, // This allows multiple keys with the same name
+	}, []byte(defaultConfigContent))
 	if err != nil {
 		return "", fmt.Errorf("failed to parse default config content: %w", err)
 	}
