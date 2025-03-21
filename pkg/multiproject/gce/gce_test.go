@@ -54,6 +54,13 @@ func TestUpdateTokenBodyField(t *testing.T) {
 			expectedResult: `{"clusterId":"example-cluster","data":{"projectNumber":12345},"projectNumber":654321}`,
 			expectError:    false,
 		},
+		{
+			name:           "Quoted token-body",
+			tokenBody:      `"{\"projectNumber\":12345,\"clusterId\":\"example-cluster\"}"`,
+			value:          654321,
+			expectedResult: `"{\"projectNumber\":654321,\"clusterId\":\"example-cluster\"}"`,
+			expectError:    false,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -96,7 +103,7 @@ func TestGenerateConfigForProviderConfig(t *testing.T) {
 [global]
 project-id = default-project-id
 token-url = default-token-url
-token-body = default-token-body
+token-body = "{\"projectNumber\":12345,\"clusterId\":\"example-cluster\"}"
 network-name = default-network
 subnetwork-name = default-subnetwork
 `,
@@ -104,7 +111,7 @@ subnetwork-name = default-subnetwork
 			expectedConfig: `[global]
 project-id = default-project-id
 token-url = default-token-url
-token-body = default-token-body
+token-body = "{\"projectNumber\":12345,\"clusterId\":\"example-cluster\"}"
 network-name = default-network
 subnetwork-name = default-subnetwork
 `,
@@ -298,6 +305,55 @@ other-field = other-value
 			expectError: false,
 		},
 		{
+			name: "Quoted token-body",
+			defaultConfigContent: `
+[global]
+token-url = https://customgkeauth.googleapis.com/v1/projects/12345/locations/us-central1/clusters/example-cluster:generateToken
+token-body = "{\"projectNumber\":12345,\"clusterId\":\"example-cluster\"}"
+project-id = default-project-id
+stack-type = IPV4_IPV6
+network-name = default-network
+subnetwork-name = default-subnetwork
+node-instance-prefix = example-cluster
+node-tags = example-cluster-0e4cae0a-node
+multizone = true
+regional = true
+alpha-features = ILBSubsets
+`,
+			providerConfig: &v1.ProviderConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "example-provider-config",
+					Labels: map[string]string{
+						flags.F.MultiProjectOwnerLabelKey: "example-owner",
+					},
+				},
+				Spec: v1.ProviderConfigSpec{
+					ProjectID:     "providerconfig-project-id",
+					ProjectNumber: 654321,
+					NetworkConfig: v1.ProviderNetworkConfig{
+						Network: "providerconfig-network-url",
+						SubnetInfo: v1.ProviderConfigSubnetInfo{
+							Subnetwork: "providerconfig-subnetwork-url",
+						},
+					},
+				},
+			},
+			expectedConfig: `[global]
+token-url = https://customgkeauth.googleapis.com/v1/projects/654321/locations/us-central1/tenants/example-provider-config:generateTenantToken
+token-body = "{\"projectNumber\":654321,\"clusterId\":\"example-cluster\"}"
+project-id = providerconfig-project-id
+stack-type = IPV4_IPV6
+network-name = providerconfig-network-url
+subnetwork-name = providerconfig-subnetwork-url
+node-instance-prefix = example-cluster
+node-tags = example-cluster-0e4cae0a-node
+multizone = true
+regional = true
+alpha-features = ILBSubsets
+`,
+			expectError: false,
+		},
+		{
 			name: "Error updating TokenBody due to invalid JSON",
 			defaultConfigContent: `
 [global]
@@ -336,11 +392,11 @@ key = value
 				t.Errorf("Expected error: %v, got: %v", tc.expectError, err)
 			}
 			if !tc.expectError {
-				// Remove whitespace differences for comparison
-				expectedConfig := strings.TrimSpace(tc.expectedConfig)
-				modifiedConfig = strings.TrimSpace(modifiedConfig)
+				// Compare configs by normalizing each line
+				expectedLines := normalizeConfig(t, tc.expectedConfig)
+				actualLines := normalizeConfig(t, modifiedConfig)
 
-				if diff := cmp.Diff(expectedConfig, modifiedConfig); diff != "" {
+				if diff := cmp.Diff(expectedLines, actualLines); diff != "" {
 					t.Errorf("Modified config mismatch (-want +got):\n%s", diff)
 				}
 			}
@@ -348,15 +404,60 @@ key = value
 	}
 }
 
+// normalizeConfig splits config into lines and normalizes the token-body JSON if present
+func normalizeConfig(t *testing.T, config string) []string {
+	t.Helper()
+	lines := strings.Split(strings.TrimSpace(config), "\n")
+	result := make([]string, 0, len(lines))
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "token-body =") {
+			// Handle token-body line - normalize the JSON part
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				tokenBody := strings.TrimSpace(parts[1])
+
+				// Use mustNormalizeJSON which now handles quoted strings
+				normalized := mustNormalizeJSON(t, tokenBody)
+
+				line = "token-body = " + normalized
+			}
+		}
+		result = append(result, line)
+	}
+
+	return result
+}
+
 func mustNormalizeJSON(t *testing.T, jsonString string) string {
 	t.Helper()
-	var temp interface{}
+
+	// Check if the string is a quoted JSON string (starts and ends with quotes)
+	isQuoted := false
+	if len(jsonString) >= 2 && jsonString[0] == '"' && jsonString[len(jsonString)-1] == '"' {
+		isQuoted = true
+		// Remove outer quotes and unescape internal quotes
+		jsonString = jsonString[1 : len(jsonString)-1]
+		jsonString = strings.ReplaceAll(jsonString, "\\\"", "\"")
+	}
+
+	var temp any
 	if err := json.Unmarshal([]byte(jsonString), &temp); err != nil {
 		t.Fatalf("Invalid JSON string: %v", err)
 	}
+
 	normalizedBytes, err := json.Marshal(temp)
 	if err != nil {
 		t.Fatalf("Error marshaling JSON: %v", err)
 	}
-	return string(normalizedBytes)
+
+	normalizedString := string(normalizedBytes)
+
+	// If the original was quoted, requote and escape the normalized result
+	if isQuoted {
+		normalizedString = "\"" + strings.ReplaceAll(normalizedString, "\"", "\\\"") + "\""
+	}
+
+	return normalizedString
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/go-ini/ini"
@@ -99,14 +100,20 @@ func generateConfigForProviderConfig(defaultConfigContent string, providerConfig
 	// Network name is the last part of the network path
 	// e.g. projects/my-project/global/networks/my-network -> my-network
 	networkParts := strings.Split(providerConfig.Spec.NetworkConfig.Network, "/")
-	networkName := networkParts[len(networkParts)-1]
+	networkName := providerConfig.Spec.NetworkConfig.Network
+	if len(networkParts) > 1 {
+		networkName = networkParts[len(networkParts)-1]
+	}
 	globalSection.Key(networkNameKey).SetValue(networkName)
 
 	subnetworkNameKey := "subnetwork-name"
 	// Subnetwork name is the last part of the subnetwork path
 	// e.g. projects/my-project/regions/us-central1/subnetworks/my-subnetwork -> my-subnetwork
 	subnetworkParts := strings.Split(providerConfig.Spec.NetworkConfig.SubnetInfo.Subnetwork, "/")
-	subnetworkName := subnetworkParts[len(subnetworkParts)-1]
+	subnetworkName := providerConfig.Spec.NetworkConfig.SubnetInfo.Subnetwork
+	if len(subnetworkParts) > 1 {
+		subnetworkName = subnetworkParts[len(subnetworkParts)-1]
+	}
 	globalSection.Key(subnetworkNameKey).SetValue(subnetworkName)
 
 	// Write the modified config content to a string with custom options
@@ -140,10 +147,25 @@ func tokenURLForProviderConfig(existingTokenURL string, providerConfig *v1.Provi
 }
 
 func updateTokenProjectNumber(tokenBody string, projectNumber int) (string, error) {
-	var bodyMap map[string]interface{}
+	// Check if the token body is a quoted JSON string
+	isQuoted := len(tokenBody) > 0 && tokenBody[0] == '"' && tokenBody[len(tokenBody)-1] == '"'
+
+	var jsonStr string
+	if isQuoted {
+		// Unquote the JSON string
+		var err error
+		jsonStr, err = strconv.Unquote(tokenBody)
+		if err != nil {
+			return "", fmt.Errorf("error unquoting TokenBody: %v", err)
+		}
+	} else {
+		jsonStr = tokenBody
+	}
+
+	var bodyMap map[string]any
 
 	// Unmarshal the JSON string into a map
-	if err := json.Unmarshal([]byte(tokenBody), &bodyMap); err != nil {
+	if err := json.Unmarshal([]byte(jsonStr), &bodyMap); err != nil {
 		return "", fmt.Errorf("error unmarshaling TokenBody: %v", err)
 	}
 
@@ -154,6 +176,11 @@ func updateTokenProjectNumber(tokenBody string, projectNumber int) (string, erro
 	newTokenBodyBytes, err := json.Marshal(bodyMap)
 	if err != nil {
 		return "", fmt.Errorf("error marshaling TokenBody: %v", err)
+	}
+
+	if isQuoted {
+		// Re-quote the JSON string if the original was quoted
+		return strconv.Quote(string(newTokenBodyBytes)), nil
 	}
 
 	return string(newTokenBodyBytes), nil
