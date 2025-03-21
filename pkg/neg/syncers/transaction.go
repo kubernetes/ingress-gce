@@ -28,8 +28,6 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/googleapi"
-	apiv1 "k8s.io/api/core/v1"
-	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
 	"k8s.io/ingress-gce/pkg/flags"
@@ -243,7 +241,7 @@ func (s *transactionSyncer) syncInternal() error {
 		if syncErr := negtypes.ClassifyError(err); syncErr.IsErrorState {
 			s.logger.Info("Enter degraded mode", "reason", syncErr.Reason)
 			if s.enableDegradedMode {
-				s.recordEvent(apiv1.EventTypeWarning, "EnterDegradedMode", fmt.Sprintf("Entering degraded mode for NEG %s due to sync err: %v", s.NegSyncerKey.String(), syncErr))
+				s.recordEvent(v1.EventTypeWarning, "EnterDegradedMode", fmt.Sprintf("Entering degraded mode for NEG %s due to sync err: %v", s.NegSyncerKey.String(), syncErr))
 			}
 			s.setErrorState()
 		}
@@ -349,7 +347,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	if len(notInDegraded) == 0 && len(onlyInDegraded) == 0 {
 		s.logger.Info("Exit degraded mode")
 		if s.enableDegradedMode && s.inErrorState() {
-			s.recordEvent(apiv1.EventTypeNormal, "ExitDegradedMode", fmt.Sprintf("NEG %s is no longer in degraded mode", s.NegSyncerKey.String()))
+			s.recordEvent(v1.EventTypeNormal, "ExitDegradedMode", fmt.Sprintf("NEG %s is no longer in degraded mode", s.NegSyncerKey.String()))
 		}
 		s.resetErrorState()
 	}
@@ -689,10 +687,10 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, epGroupIn
 	}
 
 	if err == nil {
-		s.recordEvent(apiv1.EventTypeNormal, operation.String(), fmt.Sprintf("%s %d network endpoint(s) (NEG %q in zone %q)", operation.String(), len(networkEndpointMap), negName, zone))
+		s.recordEvent(v1.EventTypeNormal, operation.String(), fmt.Sprintf("%s %d network endpoint(s) (NEG %q in zone %q)", operation.String(), len(networkEndpointMap), negName, zone))
 		s.syncMetricsCollector.UpdateSyncerStatusInMetrics(s.NegSyncerKey, nil, s.inErrorState())
 	} else {
-		s.recordEvent(apiv1.EventTypeWarning, operation.String()+"Failed", fmt.Sprintf("Failed to %s %d network endpoint(s) (NEG %q in zone %q): %v", operation.String(), len(networkEndpointMap), negName, zone, err))
+		s.recordEvent(v1.EventTypeWarning, operation.String()+"Failed", fmt.Sprintf("Failed to %s %d network endpoint(s) (NEG %q in zone %q): %v", operation.String(), len(networkEndpointMap), negName, zone, err))
 		err := checkEndpointBatchErr(err, operation)
 		syncErr := negtypes.ClassifyError(err)
 		// If the API call fails for invalid endpoint update request in any goroutine,
@@ -703,7 +701,7 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, epGroupIn
 			s.syncLock.Lock()
 			s.logger.Info("Enter degraded mode", "reason", syncErr.Reason)
 			if s.enableDegradedMode {
-				s.recordEvent(apiv1.EventTypeWarning, "EnterDegradedMode", fmt.Sprintf("Entering degraded mode for NEG %s due to sync err: %v", s.NegSyncerKey.String(), syncErr))
+				s.recordEvent(v1.EventTypeWarning, "EnterDegradedMode", fmt.Sprintf("Entering degraded mode for NEG %s due to sync err: %v", s.NegSyncerKey.String(), syncErr))
 			}
 			s.setErrorState()
 			s.syncLock.Unlock()
@@ -776,7 +774,7 @@ func (s *transactionSyncer) commitTransaction(err error, networkEndpointMap map[
 			s.syncer.Sync()
 		} else {
 			if retryErr := s.retry.Retry(); retryErr != nil {
-				s.recordEvent(apiv1.EventTypeWarning, "RetryFailed", fmt.Sprintf("Failed to retry NEG sync for %q: %v", s.NegSyncerKey.String(), retryErr))
+				s.recordEvent(v1.EventTypeWarning, "RetryFailed", fmt.Sprintf("Failed to retry NEG sync for %q: %v", s.NegSyncerKey.String(), retryErr))
 				metrics.PublishNegControllerErrorCountMetrics(retryErr, false)
 			}
 		}
@@ -935,7 +933,6 @@ func mergeTransactionIntoZoneEndpointMap(endpointMap map[negtypes.NEGLocation]ne
 			endpointMap[key].Delete(endpointKey)
 		}
 	}
-	return
 }
 
 // logStats logs aggregated stats of the input endpointMap
@@ -1086,7 +1083,7 @@ func computeDegradedModeCorrectness(notInDegraded, onlyInDegraded map[negtypes.N
 func getNegFromStore(svcNegLister cache.Indexer, namespace, negName string) (*negv1beta1.ServiceNetworkEndpointGroup, error) {
 	n, exists, err := svcNegLister.GetByKey(fmt.Sprintf("%s/%s", namespace, negName))
 	if err != nil {
-		return nil, fmt.Errorf("Error getting neg %s/%s from cache: %w", namespace, negName, err)
+		return nil, fmt.Errorf("error getting neg %s/%s from cache: %w", namespace, negName, err)
 	}
 	if !exists {
 		return nil, fmt.Errorf("neg %s/%s is not in store", namespace, negName)
@@ -1191,7 +1188,7 @@ func getSyncedCondition(err error) negv1beta1.Condition {
 	if err != nil {
 		return negv1beta1.Condition{
 			Type:               negv1beta1.Synced,
-			Status:             corev1.ConditionFalse,
+			Status:             v1.ConditionFalse,
 			Reason:             negtypes.NegSyncFailed,
 			LastTransitionTime: metav1.Now(),
 			Message:            err.Error(),
@@ -1200,7 +1197,7 @@ func getSyncedCondition(err error) negv1beta1.Condition {
 
 	return negv1beta1.Condition{
 		Type:               negv1beta1.Synced,
-		Status:             corev1.ConditionTrue,
+		Status:             v1.ConditionTrue,
 		Reason:             negtypes.NegSyncSuccessful,
 		LastTransitionTime: metav1.Now(),
 	}
@@ -1211,7 +1208,7 @@ func getInitializedCondition(err error) negv1beta1.Condition {
 	if err != nil {
 		return negv1beta1.Condition{
 			Type:               negv1beta1.Initialized,
-			Status:             corev1.ConditionFalse,
+			Status:             v1.ConditionFalse,
 			Reason:             negtypes.NegInitializationFailed,
 			LastTransitionTime: metav1.Now(),
 			Message:            err.Error(),
@@ -1220,7 +1217,7 @@ func getInitializedCondition(err error) negv1beta1.Condition {
 
 	return negv1beta1.Condition{
 		Type:               negv1beta1.Initialized,
-		Status:             corev1.ConditionTrue,
+		Status:             v1.ConditionTrue,
 		Reason:             negtypes.NegInitializationSuccessful,
 		LastTransitionTime: metav1.Now(),
 	}
@@ -1259,7 +1256,7 @@ func getEndpointPodLabelMap(endpoints map[negtypes.NEGLocation]negtypes.NetworkE
 			}
 			labelMap, err := labels.GetPodLabelMap(pod, lpConfig)
 			if err != nil {
-				recorder.Eventf(pod, apiv1.EventTypeWarning, "LabelsExceededLimit", "Label Propagation Error: %v", err)
+				recorder.Eventf(pod, v1.EventTypeWarning, "LabelsExceededLimit", "Label Propagation Error: %v", err)
 				metrics.PublishNegControllerErrorCountMetrics(err, true)
 			}
 			endpointPodLabelMap[endpoint] = labelMap

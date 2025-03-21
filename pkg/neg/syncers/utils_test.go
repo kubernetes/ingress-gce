@@ -64,109 +64,109 @@ func TestCalculateDifference(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
-		targetSet  map[string]sets.String
-		currentSet map[string]sets.String
-		addSet     map[string]sets.String
-		removeSet  map[string]sets.String
+		targetSet  map[string]sets.Set[string]
+		currentSet map[string]sets.Set[string]
+		addSet     map[string]sets.Set[string]
+		removeSet  map[string]sets.Set[string]
 	}{
 		// unchanged
 		{
-			targetSet: map[string]sets.String{
-				negtypes.TestZone1: sets.NewString("a", "b", "c"),
+			targetSet: map[string]sets.Set[string]{
+				negtypes.TestZone1: sets.New("a", "b", "c"),
 			},
-			currentSet: map[string]sets.String{
-				negtypes.TestZone1: sets.NewString("a", "b", "c"),
+			currentSet: map[string]sets.Set[string]{
+				negtypes.TestZone1: sets.New("a", "b", "c"),
 			},
-			addSet:    map[string]sets.String{},
-			removeSet: map[string]sets.String{},
+			addSet:    map[string]sets.Set[string]{},
+			removeSet: map[string]sets.Set[string]{},
 		},
 		// unchanged
 		{
-			targetSet:  map[string]sets.String{},
-			currentSet: map[string]sets.String{},
-			addSet:     map[string]sets.String{},
-			removeSet:  map[string]sets.String{},
+			targetSet:  map[string]sets.Set[string]{},
+			currentSet: map[string]sets.Set[string]{},
+			addSet:     map[string]sets.Set[string]{},
+			removeSet:  map[string]sets.Set[string]{},
 		},
 		// add in one zone
 		{
-			targetSet: map[string]sets.String{
-				negtypes.TestZone1: sets.NewString("a", "b", "c"),
+			targetSet: map[string]sets.Set[string]{
+				negtypes.TestZone1: sets.New("a", "b", "c"),
 			},
-			currentSet: map[string]sets.String{},
-			addSet: map[string]sets.String{
-				negtypes.TestZone1: sets.NewString("a", "b", "c"),
+			currentSet: map[string]sets.Set[string]{},
+			addSet: map[string]sets.Set[string]{
+				negtypes.TestZone1: sets.New("a", "b", "c"),
 			},
-			removeSet: map[string]sets.String{},
+			removeSet: map[string]sets.Set[string]{},
 		},
 		// add in 2 zones
 		{
-			targetSet: map[string]sets.String{
-				negtypes.TestZone1: sets.NewString("a", "b", "c"),
-				negtypes.TestZone2: sets.NewString("e", "f", "g"),
+			targetSet: map[string]sets.Set[string]{
+				negtypes.TestZone1: sets.New("a", "b", "c"),
+				negtypes.TestZone2: sets.New("e", "f", "g"),
 			},
-			currentSet: map[string]sets.String{},
-			addSet: map[string]sets.String{
-				negtypes.TestZone1: sets.NewString("a", "b", "c"),
-				negtypes.TestZone2: sets.NewString("e", "f", "g"),
+			currentSet: map[string]sets.Set[string]{},
+			addSet: map[string]sets.Set[string]{
+				negtypes.TestZone1: sets.New("a", "b", "c"),
+				negtypes.TestZone2: sets.New("e", "f", "g"),
 			},
-			removeSet: map[string]sets.String{},
+			removeSet: map[string]sets.Set[string]{},
 		},
 		// remove in one zone
 		{
-			targetSet: map[string]sets.String{},
-			currentSet: map[string]sets.String{
-				negtypes.TestZone1: sets.NewString("a", "b", "c"),
+			targetSet: map[string]sets.Set[string]{},
+			currentSet: map[string]sets.Set[string]{
+				negtypes.TestZone1: sets.New("a", "b", "c"),
 			},
-			addSet: map[string]sets.String{},
-			removeSet: map[string]sets.String{
-				negtypes.TestZone1: sets.NewString("a", "b", "c"),
+			addSet: map[string]sets.Set[string]{},
+			removeSet: map[string]sets.Set[string]{
+				negtypes.TestZone1: sets.New("a", "b", "c"),
 			},
 		},
 		// remove in 2 zones
 		{
-			targetSet: map[string]sets.String{},
-			currentSet: map[string]sets.String{
-				negtypes.TestZone1: sets.NewString("a", "b", "c"),
-				negtypes.TestZone2: sets.NewString("e", "f", "g"),
+			targetSet: map[string]sets.Set[string]{},
+			currentSet: map[string]sets.Set[string]{
+				negtypes.TestZone1: sets.New("a", "b", "c"),
+				negtypes.TestZone2: sets.New("e", "f", "g"),
 			},
-			addSet: map[string]sets.String{},
-			removeSet: map[string]sets.String{
-				negtypes.TestZone1: sets.NewString("a", "b", "c"),
-				negtypes.TestZone2: sets.NewString("e", "f", "g"),
+			addSet: map[string]sets.Set[string]{},
+			removeSet: map[string]sets.Set[string]{
+				negtypes.TestZone1: sets.New("a", "b", "c"),
+				negtypes.TestZone2: sets.New("e", "f", "g"),
 			},
 		},
 		// add and delete in one zone
 		{
-			targetSet: map[string]sets.String{
-				negtypes.TestZone1: sets.NewString("a", "b", "c"),
+			targetSet: map[string]sets.Set[string]{
+				negtypes.TestZone1: sets.New("a", "b", "c"),
 			},
-			currentSet: map[string]sets.String{
-				negtypes.TestZone1: sets.NewString("b", "c", "d"),
+			currentSet: map[string]sets.Set[string]{
+				negtypes.TestZone1: sets.New("b", "c", "d"),
 			},
-			addSet: map[string]sets.String{
-				negtypes.TestZone1: sets.NewString("a"),
+			addSet: map[string]sets.Set[string]{
+				negtypes.TestZone1: sets.New("a"),
 			},
-			removeSet: map[string]sets.String{
-				negtypes.TestZone1: sets.NewString("d"),
+			removeSet: map[string]sets.Set[string]{
+				negtypes.TestZone1: sets.New("d"),
 			},
 		},
 		// add and delete in 2 zones
 		{
-			targetSet: map[string]sets.String{
-				negtypes.TestZone1: sets.NewString("a", "b", "c"),
-				negtypes.TestZone2: sets.NewString("a", "b", "c"),
+			targetSet: map[string]sets.Set[string]{
+				negtypes.TestZone1: sets.New("a", "b", "c"),
+				negtypes.TestZone2: sets.New("a", "b", "c"),
 			},
-			currentSet: map[string]sets.String{
-				negtypes.TestZone1: sets.NewString("b", "c", "d"),
-				negtypes.TestZone2: sets.NewString("b", "c", "d"),
+			currentSet: map[string]sets.Set[string]{
+				negtypes.TestZone1: sets.New("b", "c", "d"),
+				negtypes.TestZone2: sets.New("b", "c", "d"),
 			},
-			addSet: map[string]sets.String{
-				negtypes.TestZone1: sets.NewString("a"),
-				negtypes.TestZone2: sets.NewString("a"),
+			addSet: map[string]sets.Set[string]{
+				negtypes.TestZone1: sets.New("a"),
+				negtypes.TestZone2: sets.New("a"),
 			},
-			removeSet: map[string]sets.String{
-				negtypes.TestZone1: sets.NewString("d"),
-				negtypes.TestZone2: sets.NewString("d"),
+			removeSet: map[string]sets.Set[string]{
+				negtypes.TestZone1: sets.New("d"),
+				negtypes.TestZone2: sets.New("d"),
 			},
 		},
 	}
