@@ -138,9 +138,16 @@ func (z ZoneInfo) String() string {
 // the node count.
 type ByNodeCount []ZoneInfo
 
-func (a ByNodeCount) Len() int           { return len(a) }
-func (a ByNodeCount) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a ByNodeCount) Less(i, j int) bool { return a[i].NodeCount < a[j].NodeCount }
+func (a ByNodeCount) Len() int      { return len(a) }
+func (a ByNodeCount) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a ByNodeCount) Less(i, j int) bool {
+	// To solve ties and always return the same order between process restarts
+	if a[i].NodeCount == a[j].NodeCount {
+		return a[i].Name < a[j].Name
+	}
+
+	return a[i].NodeCount < a[j].NodeCount
+}
 
 // sortZones takes a map of zone to nodes list and returns a list of ZoneInfo.
 // The ZoneInfo list is sorted in increasing order of the number of nodes in that zone.
