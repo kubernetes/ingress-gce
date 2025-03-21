@@ -33,7 +33,7 @@ It takes ~1m to spin up a loadbalancer (this includes acquiring the public IP), 
 
 Assume one creates the following simple Ingress:
 ```yaml
-apiVersion: extensions/v1beta1
+apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: test-ingress
