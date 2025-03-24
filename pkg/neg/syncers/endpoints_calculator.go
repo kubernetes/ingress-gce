@@ -149,6 +149,8 @@ type ClusterL4EndpointsCalculator struct {
 	// svcId is the unique identifier for the service, that is used as a salt when hashing nodenames.
 	svcId       string
 	networkInfo *network.NetworkInfo
+	// lbType denotes the type of underlying LoadBalancer. Either EXTERNAL or INTERNAL.
+	lbType types.L4LBType
 
 	logger klog.Logger
 }
@@ -162,6 +164,7 @@ func NewClusterL4EndpointsCalculator(nodeLister listers.NodeLister, zoneGetter *
 		zoneGetter:      zoneGetter,
 		subsetSizeLimit: subsetSize,
 		svcId:           svcId,
+		lbType:          l4LBtype,
 		logger:          logger.WithName("ClusterL4EndpointsCalculator"),
 		networkInfo:     networkInfo,
 	}
@@ -173,10 +176,11 @@ func (l *ClusterL4EndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 }
 
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
-func (l *ClusterL4EndpointsCalculator) CalculateEndpoints(_ []types.EndpointsData, currentMap map[types.NEGLocation]types.NetworkEndpointSet) (map[types.NEGLocation]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
+func (l *ClusterL4EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, currentMap map[types.NEGLocation]types.NetworkEndpointSet) (map[types.NEGLocation]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
 	// In this mode, any of the cluster nodes can be part of the subset, whether or not a matching pod runs on it.
 	nodes, _ := l.zoneGetter.ListNodes(zonegetter.CandidateAndUnreadyNodesFilter, l.logger)
 	zoneNodeMap := make(map[string][]*nodeWithSubnet)
+	zoneSubnetPairs := make(map[string]any)
 	for _, node := range nodes {
 		if !l.networkInfo.IsNodeConnected(node) {
 			l.logger.Info("Node not connected to service network", "nodeName", node.Name, "network", l.networkInfo.K8sNetwork)
@@ -189,11 +193,71 @@ func (l *ClusterL4EndpointsCalculator) CalculateEndpoints(_ []types.EndpointsDat
 			continue
 		}
 		zoneNodeMap[zone] = append(zoneNodeMap[zone], newNodeWithSubnet(node, subnet))
+		zoneSubnetPairs[zone+":"+subnet] = struct{}{}
 	}
 	l.logger.V(2).Info("Got zoneNodeMap as input for service", "zoneNodeMap", nodeMapToString(zoneNodeMap), "serviceID", l.svcId)
-	// Compute the networkEndpoints, with total endpoints <= l.subsetSizeLimit.
-	subsetMap, err := getSubsetPerZone(zoneNodeMap, l.subsetSizeLimit, l.svcId, currentMap, l.logger, l.networkInfo)
+
+	wanted := l.subsetSizeLimit
+	if l.lbType == types.L4ExternalLB {
+		wanted = l.wantedNEGsCount(eds, currentMap, len(zoneSubnetPairs))
+	}
+
+	subsetMap, err := getSubsetPerZone(zoneNodeMap, wanted, l.svcId, currentMap, l.logger, l.networkInfo)
 	return subsetMap, nil, 0, err
+}
+
+// wantedNEGsCount will determine the amount of NEGs that:
+// * scales linearly based on the number of pods
+// * won't over provision NEGs over the nodes or pods count
+// * won't delete already existing NEGs, as that requires connection draining
+// * will provide at least 3 NEGs per zone/subnet pair
+// * takes into account limits for passthrough NetLB and ILB
+func (l *ClusterL4EndpointsCalculator) wantedNEGsCount(eds []types.EndpointsData, currentMap map[types.NEGLocation]types.NetworkEndpointSet, zoneSubnetPairCount int) int {
+	// Compute the networkEndpoints, with total endpoints <= l.subsetSizeLimit.
+	optimal := linearEndpointsPerPods(zoneSubnetPairCount, edsLen(eds), l.subsetSizeLimit)
+
+	// Decreasing the number of Endpoints requires connection draining, so we want to avoid that.
+	used := negsLen(currentMap)
+	wanted := max(optimal, used)
+
+	l.logger.V(2).Info("Calculated wanted endpoints", "optimal", optimal, "used", used, "wanted", wanted)
+
+	return wanted
+}
+
+func linearEndpointsPerPods(zoneSubnetPairCount, endpointsCount, subsetSizeLimit int) int {
+	const minCountPerZoneSubnetPair = 3
+	lowerZonalBasedBound := zoneSubnetPairCount * minCountPerZoneSubnetPair
+	upperLimit := subsetSizeLimit
+
+	return min(
+		upperLimit,
+		max(
+			endpointsCount,
+			lowerZonalBasedBound,
+		),
+	)
+}
+
+func negsLen(m map[types.NEGLocation]types.NetworkEndpointSet) int {
+	total := 0
+	for _, v := range m {
+		total += v.Len()
+	}
+	return total
+}
+
+func edsLen(eds []types.EndpointsData) int {
+	total := 0
+	for _, ed := range eds {
+		for _, addr := range ed.Addresses {
+			if addr.NodeName == nil || addr.TargetRef == nil {
+				continue
+			}
+			total++
+		}
+	}
+	return total
 }
 
 func (l *ClusterL4EndpointsCalculator) CalculateEndpointsDegradedMode(eps []types.EndpointsData, currentMap map[types.NEGLocation]types.NetworkEndpointSet) (map[types.NEGLocation]types.NetworkEndpointSet, types.EndpointPodMap, error) {
