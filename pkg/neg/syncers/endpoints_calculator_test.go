@@ -36,6 +36,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
 )
 
 // TestLocalGetEndpointSet verifies the GetEndpointSet method implemented by the LocalL4EndpointsCalculator.
@@ -212,15 +213,14 @@ func TestClusterGetEndpointSet(t *testing.T) {
 	flags.F.EnableMultiSubnetCluster = false
 
 	testCases := []struct {
-		desc                string
-		endpointsData       []negtypes.EndpointsData
-		wantEndpointSets    map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
-		networkEndpointType negtypes.NetworkEndpointType
-		nodeLabelsMap       map[string]map[string]string
-		nodeAnnotationsMap  map[string]map[string]string
-		nodeReadyStatusMap  map[string]v1.ConditionStatus
-		nodeNames           []string
-		network             network.NetworkInfo
+		desc               string
+		endpointsData      []negtypes.EndpointsData
+		wantEndpointSets   map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
+		nodeLabelsMap      map[string]map[string]string
+		nodeAnnotationsMap map[string]map[string]string
+		nodeReadyStatusMap map[string]v1.ConditionStatus
+		nodeNames          []string
+		network            network.NetworkInfo
 	}{
 		{
 			desc:          "default endpoints",
@@ -232,9 +232,8 @@ func TestClusterGetEndpointSet(t *testing.T) {
 					negtypes.NetworkEndpoint{IP: "1.2.3.5", Node: testInstance5}, negtypes.NetworkEndpoint{IP: "1.2.3.6", Node: testInstance6}),
 				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.7", Node: testUnreadyInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.8", Node: testUnreadyInstance2}),
 			},
-			networkEndpointType: negtypes.VmIpEndpointType,
-			nodeNames:           []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
-			network:             defaultNetwork,
+			nodeNames: []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
+			network:   defaultNetwork,
 		},
 		{
 			desc:          "default endpoints, all nodes unready",
@@ -246,8 +245,7 @@ func TestClusterGetEndpointSet(t *testing.T) {
 					negtypes.NetworkEndpoint{IP: "1.2.3.5", Node: testInstance5}, negtypes.NetworkEndpoint{IP: "1.2.3.6", Node: testInstance6}),
 				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.7", Node: testUnreadyInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.8", Node: testUnreadyInstance2}),
 			},
-			networkEndpointType: negtypes.VmIpEndpointType,
-			nodeNames:           []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
+			nodeNames: []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
 			nodeReadyStatusMap: map[string]v1.ConditionStatus{
 				testInstance1: v1.ConditionFalse, testInstance2: v1.ConditionFalse, testInstance3: v1.ConditionFalse, testInstance4: v1.ConditionFalse, testInstance5: v1.ConditionFalse, testInstance6: v1.ConditionFalse,
 			},
@@ -263,8 +261,7 @@ func TestClusterGetEndpointSet(t *testing.T) {
 					negtypes.NetworkEndpoint{IP: "1.2.3.5", Node: testInstance5}, negtypes.NetworkEndpoint{IP: "1.2.3.6", Node: testInstance6}),
 				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.7", Node: testUnreadyInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.8", Node: testUnreadyInstance2}),
 			},
-			networkEndpointType: negtypes.VmIpEndpointType,
-			nodeNames:           []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
+			nodeNames: []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
 			nodeLabelsMap: map[string]map[string]string{
 				testInstance1: {utils.LabelNodeRoleExcludeBalancer: "true"},
 				testInstance3: {utils.GKECurrentOperationLabel: utils.NodeDrain},
@@ -284,9 +281,8 @@ func TestClusterGetEndpointSet(t *testing.T) {
 					negtypes.NetworkEndpoint{IP: "1.2.3.5", Node: testInstance5}, negtypes.NetworkEndpoint{IP: "1.2.3.6", Node: testInstance6}),
 				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.7", Node: testUnreadyInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.8", Node: testUnreadyInstance2}),
 			},
-			networkEndpointType: negtypes.VmIpEndpointType,
-			nodeNames:           []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
-			network:             defaultNetwork,
+			nodeNames: []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
+			network:   defaultNetwork,
 		},
 		{
 			desc:          "multinetwork endpoints, only for nodes connected to the specified network",
@@ -302,8 +298,7 @@ func TestClusterGetEndpointSet(t *testing.T) {
 				testInstance3: {networkv1.NorthInterfacesAnnotationKey: nodeInterfacesAnnotation(t, "other", "20.2.3.3")},
 				testInstance6: {networkv1.NorthInterfacesAnnotationKey: nodeInterfacesAnnotation(t, "other", "20.2.3.6")},
 			},
-			networkEndpointType: negtypes.VmIpEndpointType,
-			nodeNames:           []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
+			nodeNames: []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
 		},
 		{
 			desc:          "endpoints with MSC nodes",
@@ -318,8 +313,7 @@ func TestClusterGetEndpointSet(t *testing.T) {
 					negtypes.NetworkEndpoint{IP: "1.2.3.5", Node: testInstance5}, negtypes.NetworkEndpoint{IP: "1.2.3.6", Node: testInstance6}),
 				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.7", Node: testUnreadyInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.8", Node: testUnreadyInstance2}),
 			},
-			networkEndpointType: negtypes.VmIpEndpointType,
-			nodeNames:           []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
+			nodeNames: []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
 			nodeLabelsMap: map[string]map[string]string{
 				testInstance1: {utils.LabelNodeSubnet: secondaryTestSubnet1},
 				testInstance2: {utils.LabelNodeSubnet: secondaryTestSubnet2},
@@ -346,6 +340,279 @@ func TestClusterGetEndpointSet(t *testing.T) {
 			}
 			if !reflect.DeepEqual(degradedSet, tc.wantEndpointSets) {
 				t.Errorf("For degraded mode case %q, expecting endpoint set %v, but got %v.", tc.desc, tc.wantEndpointSets, retSet)
+			}
+		})
+	}
+}
+
+// TestClusterWantedNEGsCount verifies logic for
+func TestClusterWantedNEGsCount(t *testing.T) {
+	// we care only about total numbers in this test
+	testCases := []struct {
+		desc             string
+		internal         bool
+		podsCount        int
+		currentNEGsCount map[negtypes.NEGLocation]int
+		nodesCount       map[negtypes.NEGLocation]int
+		wantCount        map[negtypes.NEGLocation]int
+	}{
+		{
+			desc:             "1 zone, 1 pod",
+			podsCount:        1,
+			currentNEGsCount: map[negtypes.NEGLocation]int{},
+			nodesCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 3,
+			},
+			wantCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 3,
+			},
+		},
+		{
+			desc:             "4 zones, 1 pod",
+			podsCount:        1,
+			currentNEGsCount: map[negtypes.NEGLocation]int{},
+			nodesCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 3,
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: 3,
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: 3,
+				{Zone: negtypes.TestZone4, Subnet: defaultTestSubnet}: 3,
+			},
+			wantCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 3,
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: 3,
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: 3,
+				{Zone: negtypes.TestZone4, Subnet: defaultTestSubnet}: 3,
+			},
+		},
+		{
+			desc:             "2 zones, 2 subnets, 1 pod",
+			podsCount:        1,
+			currentNEGsCount: map[negtypes.NEGLocation]int{},
+			nodesCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}:    3,
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}:    3,
+				{Zone: negtypes.TestZone1, Subnet: secondaryTestSubnet1}: 3,
+				{Zone: negtypes.TestZone2, Subnet: secondaryTestSubnet1}: 3,
+			},
+			wantCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}:    3,
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}:    3,
+				{Zone: negtypes.TestZone1, Subnet: secondaryTestSubnet1}: 3,
+				{Zone: negtypes.TestZone2, Subnet: secondaryTestSubnet1}: 3,
+			},
+		},
+		{
+			desc:             "1 zone, 1 pod, 3 nodes, ILB",
+			podsCount:        1,
+			internal:         true,
+			currentNEGsCount: map[negtypes.NEGLocation]int{},
+			nodesCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 3,
+			},
+			wantCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 3,
+			},
+		},
+		{
+			desc:             "1 zone, 1 pod, 100 nodes, ILB",
+			podsCount:        1,
+			internal:         true,
+			currentNEGsCount: map[negtypes.NEGLocation]int{},
+			nodesCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 100,
+			},
+			wantCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 25,
+			},
+		},
+		{
+			desc:             "1 zone, 50 pods, 100 nodes",
+			podsCount:        50,
+			currentNEGsCount: map[negtypes.NEGLocation]int{},
+			nodesCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 100,
+			},
+			wantCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 50,
+			},
+		},
+		{
+			desc:             "1 zone, 100 pods, 100 nodes",
+			podsCount:        100,
+			currentNEGsCount: map[negtypes.NEGLocation]int{},
+			nodesCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 100,
+			},
+			wantCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 100,
+			},
+		},
+		{
+			desc:             "1 zone, 150 pods, 100 nodes",
+			podsCount:        150,
+			currentNEGsCount: map[negtypes.NEGLocation]int{},
+			nodesCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 100,
+			},
+			wantCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 100,
+			},
+		},
+		{
+			desc:      "1 zone, 100 -> 10 pods, 100 nodes, keep NEGs",
+			podsCount: 10,
+			currentNEGsCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 100,
+			},
+			nodesCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 100,
+			},
+			wantCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 100,
+			},
+		},
+		{
+			desc:      "1 zone, 10 -> 10 pods, 100 nodes, keep NEGs",
+			podsCount: 10,
+			currentNEGsCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 10,
+			},
+			nodesCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 100,
+			},
+			wantCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 10,
+			},
+		},
+		{
+			desc:      "1 zone, 10 -> 100 pods, 100 nodes, increase NEGs",
+			podsCount: 100,
+			currentNEGsCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 10,
+			},
+			nodesCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 100,
+			},
+			wantCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 100,
+			},
+		},
+		{
+			desc:             "3 zone, 10k pods, 30k nodes, NetLB",
+			podsCount:        10_000,
+			currentNEGsCount: map[negtypes.NEGLocation]int{},
+			nodesCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 10_000,
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: 10_000,
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: 10_000,
+			},
+			// We split 250 between 3 zones
+			wantCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 83,
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: 83,
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: 84,
+			},
+		},
+		{
+			desc:             "3 zone, 10k pods, 30k nodes, ILB",
+			internal:         true,
+			podsCount:        10_000,
+			currentNEGsCount: map[negtypes.NEGLocation]int{},
+			nodesCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 10_000,
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: 10_000,
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: 10_000,
+			},
+			// We split 25 between 3 zones
+			wantCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 8,
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: 8,
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: 9,
+			},
+		},
+		{
+			desc:             "3 zone, 10k pods, 30k+1 nodes, ILB",
+			internal:         true,
+			podsCount:        10_000,
+			currentNEGsCount: map[negtypes.NEGLocation]int{},
+			nodesCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 10_000,
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: 10_001,
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: 10_000,
+			},
+			// We split 25 between 3 zones
+			wantCount: map[negtypes.NEGLocation]int{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 8,
+				// this zone should get one more, since it has the most nodes
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: 9,
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: 8,
+			},
+		},
+	}
+	for _, tC := range testCases {
+		t.Run(tC.desc, func(t *testing.T) {
+			// Arrange
+			nodeInformer := zonegetter.FakeNodeInformer()
+			zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, nodeInformer, defaultTestSubnetURL, false)
+			if err != nil {
+				t.Fatalf("failed to initialize zone getter: %v", err)
+			}
+			for loc, count := range tC.nodesCount {
+				zonegetter.AddFakeNodesCount(zoneGetter, nodeInformer, loc.Zone, loc.Subnet, count)
+			}
+			zonegetter.SetNodeTopologyHasSynced(zoneGetter, func() bool { return true })
+			defaultNetwork := network.NetworkInfo{IsDefault: true, K8sNetwork: "default", SubnetworkURL: defaultTestSubnetURL}
+			svcKey := "testSvc"
+
+			prevFlag := flags.F.EnableMultiSubnetCluster
+			defer func() { flags.F.EnableMultiSubnetCluster = prevFlag }()
+			flags.F.EnableMultiSubnetCluster = false
+
+			lbType := negtypes.L4ExternalLB
+			if tC.internal {
+				lbType = negtypes.L4InternalLB
+			}
+			currentMap := make(map[negtypes.NEGLocation]negtypes.NetworkEndpointSet)
+			for loc, count := range tC.currentNEGsCount {
+				set := negtypes.NewNetworkEndpointSet()
+				for i := range count {
+					// This will overflow the IP, but for this test this doesn't matter
+					set.Insert(negtypes.NetworkEndpoint{IP: fmt.Sprintf("1.2.3.%d", i)})
+				}
+				currentMap[loc] = set
+			}
+
+			eds := make([]negtypes.EndpointsData, tC.podsCount)
+			for i := range tC.podsCount {
+				eds[i] = negtypes.EndpointsData{
+					Addresses: []negtypes.AddressData{
+						{
+							Ready:    true,
+							NodeName: ptr.To("this-is-duplicated-but-thats-okay"),
+							TargetRef: &v1.ObjectReference{
+								Namespace: testServiceNamespace,
+							},
+						},
+					},
+				}
+			}
+
+			ec := NewClusterL4EndpointsCalculator(listers.NewNodeLister(nodeInformer.GetIndexer()), zoneGetter, svcKey, klog.TODO(), &defaultNetwork, lbType)
+
+			// Act
+			res, _, _, err := ec.CalculateEndpoints(eds, currentMap)
+
+			// Assert
+			if err != nil {
+				t.Errorf("expected no err, got %v", err)
+			}
+
+			resCount := make(map[negtypes.NEGLocation]int)
+			for loc, set := range res {
+				resCount[loc] = set.Len()
+			}
+			if diff := cmp.Diff(tC.wantCount, resCount); diff != "" {
+				t.Errorf("unexpected result, - want, + got: %s", diff)
 			}
 		})
 	}
