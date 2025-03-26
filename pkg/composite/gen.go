@@ -1,5 +1,5 @@
 /*
-Copyright 2024 The Kubernetes Authors.
+Copyright 2025 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -369,6 +369,10 @@ type BackendService struct {
 	// An optional description of this resource. Provide this property when
 	// you create the resource.
 	Description string `json:"description,omitempty"`
+	// Dynamic forwarding configuration. This field is used to configure the
+	// backend service with dynamic forwarding feature which together with
+	// Service Extension allows customized and complex routing logic.
+	DynamicForwarding *BackendServiceDynamicForwarding `json:"dynamicForwarding,omitempty"`
 	// [Output Only] The resource URL for the edge security policy
 	// associated with this backend service.
 	EdgeSecurityPolicy string `json:"edgeSecurityPolicy,omitempty"`
@@ -668,7 +672,8 @@ type BackendServiceCdnPolicy struct {
 	// including common image formats, media (video and audio), and web
 	// assets (JavaScript and CSS). Requests and responses that are marked
 	// as uncacheable, as well as dynamic content (including HTML), will not
-	// be cached.
+	// be cached. If no value is provided for cdnPolicy.cacheMode, it
+	// defaults to CACHE_ALL_STATIC.
 	CacheMode string `json:"cacheMode,omitempty"`
 	// Specifies a separate client (e.g. browser client) maximum TTL. This
 	// is used to clamp the max-age (or Expires) value sent to the client.
@@ -844,6 +849,22 @@ type BackendServiceCustomMetric struct {
 	// backend service with the loadBalancingScheme set to EXTERNAL_MANAGED,
 	// INTERNAL_MANAGED INTERNAL_SELF_MANAGED.
 	Name            string   `json:"name,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// BackendServiceDynamicForwarding is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type BackendServiceDynamicForwarding struct {
+	// IP:PORT based dynamic forwarding configuration.
+	IpPortSelection *BackendServiceDynamicForwardingIpPortSelection `json:"ipPortSelection,omitempty"`
+	ForceSendFields []string                                        `json:"-"`
+	NullFields      []string                                        `json:"-"`
+}
+
+// BackendServiceDynamicForwardingIpPortSelection is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type BackendServiceDynamicForwardingIpPortSelection struct {
+	// A boolean flag enabling IP:PORT based dynamic forwarding.
+	Enabled         bool     `json:"enabled,omitempty"`
 	ForceSendFields []string `json:"-"`
 	NullFields      []string `json:"-"`
 }
@@ -2517,26 +2538,22 @@ type HttpRouteRule struct {
 	// In response to a matching matchRule, the load balancer performs
 	// advanced routing actions, such as URL rewrites and header
 	// transformations, before forwarding the request to the selected
-	// backend. If routeAction specifies any weightedBackendServices,
-	// service must not be set. Conversely if service is set, routeAction
-	// cannot contain any weightedBackendServices. Only one of urlRedirect,
-	// service or routeAction.weightedBackendService must be set. URL maps
-	// for classic Application Load Balancers only support the urlRewrite
-	// action within a route rule's routeAction.
+	// backend. Only one of urlRedirect, service or
+	// routeAction.weightedBackendService can be set. URL maps for classic
+	// Application Load Balancers only support the urlRewrite action within
+	// a route rule's routeAction.
 	RouteAction *HttpRouteAction `json:"routeAction,omitempty"`
 	// The full or partial URL of the backend service resource to which
 	// traffic is directed if this rule is matched. If routeAction is also
 	// specified, advanced routing actions, such as URL rewrites, take
-	// effect before sending the request to the backend. However, if service
-	// is specified, routeAction cannot contain any weightedBackendServices.
-	// Conversely, if routeAction specifies any weightedBackendServices,
-	// service must not be specified. Only one of urlRedirect, service or
-	// routeAction.weightedBackendService must be set.
+	// effect before sending the request to the backend. Only one of
+	// urlRedirect, service or routeAction.weightedBackendService can be
+	// set.
 	Service string `json:"service,omitempty"`
 	// When this rule is matched, the request is redirected to a URL
-	// specified by urlRedirect. If urlRedirect is specified, service or
-	// routeAction must not be set. Not supported when the URL map is bound
-	// to a target gRPC proxy.
+	// specified by urlRedirect. Only one of urlRedirect, service or
+	// routeAction.weightedBackendService can be set. Not supported when the
+	// URL map is bound to a target gRPC proxy.
 	UrlRedirect     *HttpRedirectAction `json:"urlRedirect,omitempty"`
 	ForceSendFields []string            `json:"-"`
 	NullFields      []string            `json:"-"`
@@ -2719,24 +2736,24 @@ type NetworkEndpoint struct {
 	// This is also an internal field purely for bookkeeping purposes
 	Scope meta.KeyType `json:"-"`
 
-	// Metadata defined as annotations on the network endpoint.
+	// Optional metadata defined as annotations on the network endpoint.
 	Annotations map[string]string `json:"annotations,omitempty"`
-	// Represents the port number to which PSC consumer sends packets. Only
-	// valid for network endpoint groups created with GCE_VM_IP_PORTMAP
-	// endpoint type.
+	// Represents the port number to which PSC consumer sends packets.
+	// Optional. Only valid for network endpoint groups created with
+	// GCE_VM_IP_PORTMAP endpoint type.
 	ClientDestinationPort int64 `json:"clientDestinationPort,omitempty"`
 	// Optional fully qualified domain name of network endpoint. This can
 	// only be specified when NetworkEndpointGroup.network_endpoint_type is
 	// NON_GCP_FQDN_PORT.
 	Fqdn string `json:"fqdn,omitempty"`
-	// The name or a URL of VM instance of this network endpoint. This field
-	// is required for network endpoints of type GCE_VM_IP and
-	// GCE_VM_IP_PORT. The instance must be in the same zone of network
-	// endpoint group (for zonal NEGs) or in the zone within the region of
-	// the NEG (for regional NEGs). If the ipAddress is specified, it must
-	// belongs to the VM instance. The name must be 1-63 characters long,
-	// and comply with RFC1035 or be a valid URL pointing to an existing
-	// instance.
+	// The name or a URL of VM instance of this network endpoint. Optional,
+	// the field presence depends on the network endpoint type. The field is
+	// required for network endpoints of type GCE_VM_IP and GCE_VM_IP_PORT.
+	// The instance must be in the same zone of network endpoint group (for
+	// zonal NEGs) or in the zone within the region of the NEG (for regional
+	// NEGs). If the ipAddress is specified, it must belongs to the VM
+	// instance. The name must be 1-63 characters long, and comply with
+	// RFC1035 or be a valid URL pointing to an existing instance.
 	Instance string `json:"instance,omitempty"`
 	// Optional IPv4 address of network endpoint. The IP address must belong
 	// to a VM in Compute Engine (either the primary IP or as part of an
@@ -2755,12 +2772,7 @@ type NetworkEndpoint struct {
 	// Optional port number of network endpoint. If not specified, the
 	// defaultPort for the network endpoint group will be used. This field
 	// can not be set for network endpoints of type GCE_VM_IP.
-	Port int64 `json:"port,omitempty"`
-	// The name of the zone where the instance hosting the network endpoint
-	// is located (valid only for regional GCE_VM_IP_PORT NEGs). It should
-	// comply with RFC1035. The zone must belong to the region of the
-	// Network Endpoint Group.
-	Zone            string   `json:"zone,omitempty"`
+	Port            int64    `json:"port,omitempty"`
 	ForceSendFields []string `json:"-"`
 	NullFields      []string `json:"-"`
 }
@@ -2775,23 +2787,24 @@ type NetworkEndpointGroup struct {
 	// This is also an internal field purely for bookkeeping purposes
 	Scope meta.KeyType `json:"-"`
 
-	// Metadata defined as annotations on the network endpoint group.
+	// Optional. Metadata defined as annotations on the network endpoint
+	// group.
 	Annotations map[string]string `json:"annotations,omitempty"`
-	// Only valid when networkEndpointType is SERVERLESS. Only one of
-	// cloudRun, appEngine or cloudFunction may be set.
+	// Optional. Only valid when networkEndpointType is SERVERLESS. Only one
+	// of cloudRun, appEngine or cloudFunction may be set.
 	AppEngine *NetworkEndpointGroupAppEngine `json:"appEngine,omitempty"`
-	// Only valid when networkEndpointType is SERVERLESS. Only one of
-	// cloudRun, appEngine or cloudFunction may be set.
+	// Optional. Only valid when networkEndpointType is SERVERLESS. Only one
+	// of cloudRun, appEngine or cloudFunction may be set.
 	CloudFunction *NetworkEndpointGroupCloudFunction `json:"cloudFunction,omitempty"`
-	// Only valid when networkEndpointType is SERVERLESS. Only one of
-	// cloudRun, appEngine or cloudFunction may be set.
+	// Optional. Only valid when networkEndpointType is SERVERLESS. Only one
+	// of cloudRun, appEngine or cloudFunction may be set.
 	CloudRun *NetworkEndpointGroupCloudRun `json:"cloudRun,omitempty"`
 	// [Output Only] Creation timestamp in RFC3339 text format.
 	CreationTimestamp string `json:"creationTimestamp,omitempty"`
 	// The default port used if the port number is not specified in the
-	// network endpoint. If the network endpoint type is either GCE_VM_IP,
-	// SERVERLESS or PRIVATE_SERVICE_CONNECT, this field must not be
-	// specified.
+	// network endpoint. Optional. If the network endpoint type is either
+	// GCE_VM_IP, SERVERLESS or PRIVATE_SERVICE_CONNECT, this field must not
+	// be specified.
 	DefaultPort int64 `json:"defaultPort,omitempty"`
 	// An optional description of this resource. Provide this property when
 	// you create the resource.
@@ -2820,11 +2833,14 @@ type NetworkEndpointGroup struct {
 	// of GCE_VM_IP, GCE_VM_IP_PORT, NON_GCP_PRIVATE_IP_PORT,
 	// INTERNET_FQDN_PORT, INTERNET_IP_PORT, SERVERLESS,
 	// PRIVATE_SERVICE_CONNECT, GCE_VM_IP_PORTMAP.
-	NetworkEndpointType string                       `json:"networkEndpointType,omitempty"`
-	PscData             *NetworkEndpointGroupPscData `json:"pscData,omitempty"`
+	NetworkEndpointType string `json:"networkEndpointType,omitempty"`
+	// Optional. Only valid when networkEndpointType is
+	// PRIVATE_SERVICE_CONNECT.
+	PscData *NetworkEndpointGroupPscData `json:"pscData,omitempty"`
 	// The target service url used to set up private service connection to a
 	// Google API or a PSC Producer Service Attachment. An example value is:
-	// asia-northeast3-cloudkms.googleapis.com
+	// asia-northeast3-cloudkms.googleapis.com. Optional. Only valid when
+	// networkEndpointType is PRIVATE_SERVICE_CONNECT.
 	PscTargetService string `json:"pscTargetService,omitempty"`
 	// [Output Only] The URL of the region where the network endpoint group
 	// is located.
@@ -3064,9 +3080,11 @@ type NetworkEndpointWithHealthStatus struct {
 	// This is also an internal field purely for bookkeeping purposes
 	Scope meta.KeyType `json:"-"`
 
-	// [Output only] The health status of network endpoint;
+	// [Output only] The health status of network endpoint. Optional.
+	// Displayed only if the network endpoint has centralized health
+	// checking configured.
 	Healths []*HealthStatusForNetworkEndpoint `json:"healths,omitempty"`
-	// [Output only] The network endpoint;
+	// [Output only] The network endpoint.
 	NetworkEndpoint *NetworkEndpoint `json:"networkEndpoint,omitempty"`
 	ForceSendFields []string         `json:"-"`
 	NullFields      []string         `json:"-"`
@@ -3182,15 +3200,11 @@ type PathMatcher struct {
 	// defaultRouteAction takes effect when none of the pathRules or
 	// routeRules match. The load balancer performs advanced routing
 	// actions, such as URL rewrites and header transformations, before
-	// forwarding the request to the selected backend. If defaultRouteAction
-	// specifies any weightedBackendServices, defaultService must not be
-	// set. Conversely if defaultService is set, defaultRouteAction cannot
-	// contain any weightedBackendServices. If defaultRouteAction is
-	// specified, don't set defaultUrlRedirect. If
-	// defaultRouteAction.weightedBackendServices is specified, don't set
-	// defaultService. URL maps for classic Application Load Balancers only
-	// support the urlRewrite action within a path matcher's
-	// defaultRouteAction.
+	// forwarding the request to the selected backend. Only one of
+	// defaultUrlRedirect, defaultService or
+	// defaultRouteAction.weightedBackendService can be set. URL maps for
+	// classic Application Load Balancers only support the urlRewrite action
+	// within a path matcher's defaultRouteAction.
 	DefaultRouteAction *HttpRouteAction `json:"defaultRouteAction,omitempty"`
 	// The full or partial URL to the BackendService resource. This URL is
 	// used if none of the pathRules or routeRules defined by this
@@ -3201,21 +3215,18 @@ type PathMatcher struct {
 	// compute/v1/projects/project/global/backendServices/backendService -
 	// global/backendServices/backendService If defaultRouteAction is also
 	// specified, advanced routing actions, such as URL rewrites, take
-	// effect before sending the request to the backend. However, if
-	// defaultService is specified, defaultRouteAction cannot contain any
-	// weightedBackendServices. Conversely, if defaultRouteAction specifies
-	// any weightedBackendServices, defaultService must not be specified. If
-	// defaultService is specified, then set either defaultUrlRedirect or
-	// defaultRouteAction.weightedBackendService. Don't set both.
-	// Authorization requires one or more of the following Google IAM
-	// permissions on the specified resource default_service: -
-	// compute.backendBuckets.use - compute.backendServices.use
+	// effect before sending the request to the backend. Only one of
+	// defaultUrlRedirect, defaultService or
+	// defaultRouteAction.weightedBackendService can be set. Authorization
+	// requires one or more of the following Google IAM permissions on the
+	// specified resource default_service: - compute.backendBuckets.use -
+	// compute.backendServices.use
 	DefaultService string `json:"defaultService,omitempty"`
 	// When none of the specified pathRules or routeRules match, the request
-	// is redirected to a URL specified by defaultUrlRedirect. If
-	// defaultUrlRedirect is specified, then set either defaultService or
-	// defaultRouteAction. Don't set both. Not supported when the URL map is
-	// bound to a target gRPC proxy.
+	// is redirected to a URL specified by defaultUrlRedirect. Only one of
+	// defaultUrlRedirect, defaultService or
+	// defaultRouteAction.weightedBackendService can be set. Not supported
+	// when the URL map is bound to a target gRPC proxy.
 	DefaultUrlRedirect *HttpRedirectAction `json:"defaultUrlRedirect,omitempty"`
 	// An optional description of this resource. Provide this property when
 	// you create the resource.
@@ -3279,26 +3290,22 @@ type PathRule struct {
 	Paths []string `json:"paths,omitempty"`
 	// In response to a matching path, the load balancer performs advanced
 	// routing actions, such as URL rewrites and header transformations,
-	// before forwarding the request to the selected backend. If routeAction
-	// specifies any weightedBackendServices, service must not be set.
-	// Conversely if service is set, routeAction cannot contain any
-	// weightedBackendServices. Only one of routeAction or urlRedirect must
-	// be set. URL maps for classic Application Load Balancers only support
-	// the urlRewrite action within a path rule's routeAction.
+	// before forwarding the request to the selected backend. Only one of
+	// urlRedirect, service or routeAction.weightedBackendService can be
+	// set. URL maps for classic Application Load Balancers only support the
+	// urlRewrite action within a path rule's routeAction.
 	RouteAction *HttpRouteAction `json:"routeAction,omitempty"`
 	// The full or partial URL of the backend service resource to which
 	// traffic is directed if this rule is matched. If routeAction is also
 	// specified, advanced routing actions, such as URL rewrites, take
-	// effect before sending the request to the backend. However, if service
-	// is specified, routeAction cannot contain any weightedBackendServices.
-	// Conversely, if routeAction specifies any weightedBackendServices,
-	// service must not be specified. Only one of urlRedirect, service or
-	// routeAction.weightedBackendService must be set.
+	// effect before sending the request to the backend. Only one of
+	// urlRedirect, service or routeAction.weightedBackendService can be
+	// set.
 	Service string `json:"service,omitempty"`
 	// When a path pattern is matched, the request is redirected to a URL
-	// specified by urlRedirect. If urlRedirect is specified, service or
-	// routeAction must not be set. Not supported when the URL map is bound
-	// to a target gRPC proxy.
+	// specified by urlRedirect. Only one of urlRedirect, service or
+	// routeAction.weightedBackendService can be set. Not supported when the
+	// URL map is bound to a target gRPC proxy.
 	UrlRedirect     *HttpRedirectAction `json:"urlRedirect,omitempty"`
 	ForceSendFields []string            `json:"-"`
 	NullFields      []string            `json:"-"`
@@ -3859,9 +3866,12 @@ type TargetHttpsProxy struct {
 	// resource that describes how the proxy should authenticate inbound
 	// traffic. serverTlsPolicy only applies to a global TargetHttpsProxy
 	// attached to globalForwardingRules with the loadBalancingScheme set to
-	// INTERNAL_SELF_MANAGED or EXTERNAL or EXTERNAL_MANAGED. For details
-	// which ServerTlsPolicy resources are accepted with
-	// INTERNAL_SELF_MANAGED and which with EXTERNAL, EXTERNAL_MANAGED
+	// INTERNAL_SELF_MANAGED or EXTERNAL or EXTERNAL_MANAGED or
+	// INTERNAL_MANAGED. It also applies to a regional TargetHttpsProxy
+	// attached to regional forwardingRules with the loadBalancingScheme set
+	// to EXTERNAL_MANAGED or INTERNAL_MANAGED. For details which
+	// ServerTlsPolicy resources are accepted with INTERNAL_SELF_MANAGED and
+	// which with EXTERNAL, INTERNAL_MANAGED, EXTERNAL_MANAGED
 	// loadBalancingScheme consult ServerTlsPolicy documentation. If left
 	// blank, communications are not encrypted.
 	ServerTlsPolicy string `json:"serverTlsPolicy,omitempty"`
@@ -3872,10 +3882,11 @@ type TargetHttpsProxy struct {
 	// should refer to a SSL Certificate resource or Certificate Manager
 	// Certificate resource. Mixing Classic Certificates and Certificate
 	// Manager Certificates is not allowed. Certificate Manager Certificates
-	// must include the certificatemanager API. Certificate Manager
-	// Certificates are not supported by Global external Application Load
-	// Balancer or Classic Application Load Balancer, use certificate_map
-	// instead. Currently, you may specify up to 15 Classic SSL
+	// must include the certificatemanager API namespace. Using Certificate
+	// Manager Certificates in this field is not supported by Global
+	// external Application Load Balancer or Classic Application Load
+	// Balancer, use certificate_map instead. Currently, you may specify up
+	// to 15 Classic SSL Certificates or up to 100 Certificate Manager
 	// Certificates. Certificate Manager Certificates accepted formats are:
 	// - //certificatemanager.googleapis.com/projects/{project}/locations/{
 	// location}/certificates/{resourceName}. -
@@ -4023,34 +4034,27 @@ type UrlMap struct {
 	// defaultRouteAction takes effect when none of the hostRules match. The
 	// load balancer performs advanced routing actions, such as URL rewrites
 	// and header transformations, before forwarding the request to the
-	// selected backend. If defaultRouteAction specifies any
-	// weightedBackendServices, defaultService must not be set. Conversely
-	// if defaultService is set, defaultRouteAction cannot contain any
-	// weightedBackendServices. Only one of defaultRouteAction or
-	// defaultUrlRedirect must be set. URL maps for classic Application Load
-	// Balancers only support the urlRewrite action within
-	// defaultRouteAction. defaultRouteAction has no effect when the URL map
-	// is bound to a target gRPC proxy that has the validateForProxyless
-	// field set to true.
+	// selected backend. Only one of defaultUrlRedirect, defaultService or
+	// defaultRouteAction.weightedBackendService can be set. URL maps for
+	// classic Application Load Balancers only support the urlRewrite action
+	// within defaultRouteAction. defaultRouteAction has no effect when the
+	// URL map is bound to a target gRPC proxy that has the
+	// validateForProxyless field set to true.
 	DefaultRouteAction *HttpRouteAction `json:"defaultRouteAction,omitempty"`
 	// The full or partial URL of the defaultService resource to which
 	// traffic is directed if none of the hostRules match. If
 	// defaultRouteAction is also specified, advanced routing actions, such
 	// as URL rewrites, take effect before sending the request to the
-	// backend. However, if defaultService is specified, defaultRouteAction
-	// cannot contain any defaultRouteAction.weightedBackendServices.
-	// Conversely, if defaultRouteAction specifies any
-	// defaultRouteAction.weightedBackendServices, defaultService must not
-	// be specified. If defaultService is specified, then set either
-	// defaultUrlRedirect , or defaultRouteAction.weightedBackendService
-	// Don't set both. defaultService has no effect when the URL map is
-	// bound to a target gRPC proxy that has the validateForProxyless field
-	// set to true.
+	// backend. Only one of defaultUrlRedirect, defaultService or
+	// defaultRouteAction.weightedBackendService can be set. defaultService
+	// has no effect when the URL map is bound to a target gRPC proxy that
+	// has the validateForProxyless field set to true.
 	DefaultService string `json:"defaultService,omitempty"`
 	// When none of the specified hostRules match, the request is redirected
-	// to a URL specified by defaultUrlRedirect. If defaultUrlRedirect is
-	// specified, defaultService or defaultRouteAction must not be set. Not
-	// supported when the URL map is bound to a target gRPC proxy.
+	// to a URL specified by defaultUrlRedirect. Only one of
+	// defaultUrlRedirect, defaultService or
+	// defaultRouteAction.weightedBackendService can be set. Not supported
+	// when the URL map is bound to a target gRPC proxy.
 	DefaultUrlRedirect *HttpRedirectAction `json:"defaultUrlRedirect,omitempty"`
 	// An optional description of this resource. Provide this property when
 	// you create the resource.

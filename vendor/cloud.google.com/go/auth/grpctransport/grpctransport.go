@@ -21,17 +21,21 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
+	"sync"
 
 	"cloud.google.com/go/auth"
 	"cloud.google.com/go/auth/credentials"
 	"cloud.google.com/go/auth/internal"
 	"cloud.google.com/go/auth/internal/transport"
-	"go.opencensus.io/plugin/ocgrpc"
+	"github.com/googleapis/gax-go/v2/internallog"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	grpccreds "google.golang.org/grpc/credentials"
 	grpcinsecure "google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/stats"
 )
 
 const (
@@ -48,6 +52,27 @@ var (
 	// Set at init time by dial_socketopt.go. If nil, socketopt is not supported.
 	timeoutDialerOption grpc.DialOption
 )
+
+// otelStatsHandler is a singleton otelgrpc.clientHandler to be used across
+// all dial connections to avoid the memory leak documented in
+// https://github.com/open-telemetry/opentelemetry-go-contrib/issues/4226
+//
+// TODO: When this module depends on a version of otelgrpc containing the fix,
+// replace this singleton with inline usage for simplicity.
+// The fix should be in https://github.com/open-telemetry/opentelemetry-go/pull/5797.
+var (
+	initOtelStatsHandlerOnce sync.Once
+	otelStatsHandler         stats.Handler
+)
+
+// otelGRPCStatsHandler returns singleton otelStatsHandler for reuse across all
+// dial connections.
+func otelGRPCStatsHandler() stats.Handler {
+	initOtelStatsHandlerOnce.Do(func() {
+		otelStatsHandler = otelgrpc.NewClientHandler()
+	})
+	return otelStatsHandler
+}
 
 // ClientCertProvider is a function that returns a TLS client certificate to be
 // used when opening TLS connections. It follows the same semantics as
@@ -93,6 +118,11 @@ type Options struct {
 	// APIKey specifies an API key to be used as the basis for authentication.
 	// If set DetectOpts are ignored.
 	APIKey string
+	// Logger is used for debug logging. If provided, logging will be enabled
+	// at the loggers configured level. By default logging is disabled unless
+	// enabled by setting GOOGLE_SDK_GO_LOGGING_LEVEL in which case a default
+	// logger will be used. Optional.
+	Logger *slog.Logger
 
 	// InternalOptions are NOT meant to be set directly by consumers of this
 	// package, they should only be set by generated client code.
@@ -106,6 +136,10 @@ func (o *Options) client() *http.Client {
 		return o.DetectOpts.Client
 	}
 	return nil
+}
+
+func (o *Options) logger() *slog.Logger {
+	return internallog.New(o.Logger)
 }
 
 func (o *Options) validate() error {
@@ -149,6 +183,9 @@ func (o *Options) resolveDetectOptions() *credentials.DetectOptions {
 		do.Client = transport.DefaultHTTPClientWithTLS(tlsConfig)
 		do.TokenURL = credentials.GoogleMTLSTokenURL
 	}
+	if do.Logger == nil {
+		do.Logger = o.logger()
+	}
 	return do
 }
 
@@ -167,6 +204,10 @@ type InternalOptions struct {
 	EnableDirectPathXds bool
 	// EnableJWTWithScope specifies if scope can be used with self-signed JWT.
 	EnableJWTWithScope bool
+	// AllowHardBoundTokens allows libraries to request a hard-bound token.
+	// Obtaining hard-bound tokens requires the connection to be established
+	// using either ALTS or mTLS with S2A.
+	AllowHardBoundTokens []string
 	// DefaultAudience specifies a default audience to be used as the audience
 	// field ("aud") for the JWT token authentication.
 	DefaultAudience string
@@ -217,6 +258,7 @@ func dial(ctx context.Context, secure bool, opts *Options) (*grpc.ClientConn, er
 		ClientCertProvider: opts.ClientCertProvider,
 		Client:             opts.client(),
 		UniverseDomain:     opts.UniverseDomain,
+		Logger:             opts.logger(),
 	}
 	if io := opts.InternalOptions; io != nil {
 		tOpts.DefaultEndpointTemplate = io.DefaultEndpointTemplate
@@ -224,13 +266,13 @@ func dial(ctx context.Context, secure bool, opts *Options) (*grpc.ClientConn, er
 		tOpts.EnableDirectPath = io.EnableDirectPath
 		tOpts.EnableDirectPathXds = io.EnableDirectPathXds
 	}
-	transportCreds, endpoint, err := transport.GetGRPCTransportCredsAndEndpoint(tOpts)
+	transportCreds, err := transport.GetGRPCTransportCredsAndEndpoint(tOpts)
 	if err != nil {
 		return nil, err
 	}
 
 	if !secure {
-		transportCreds = grpcinsecure.NewCredentials()
+		transportCreds.TransportCredentials = grpcinsecure.NewCredentials()
 	}
 
 	// Initialize gRPC dial options with transport-level security options.
@@ -259,6 +301,18 @@ func dial(ctx context.Context, secure bool, opts *Options) (*grpc.ClientConn, er
 		if opts.Credentials != nil {
 			creds = opts.Credentials
 		} else {
+			// This condition is only met for non-DirectPath clients because
+			// TransportTypeMTLSS2A is used only when InternalOptions.EnableDirectPath
+			// is false.
+			if transportCreds.TransportType == transport.TransportTypeMTLSS2A {
+				// Check that the client allows requesting hard-bound token for the transport type mTLS using S2A.
+				for _, ev := range opts.InternalOptions.AllowHardBoundTokens {
+					if ev == "MTLS_S2A" {
+						opts.DetectOpts.TokenBindingType = credentials.MTLSHardBinding
+						break
+					}
+				}
+			}
 			var err error
 			creds, err = credentials.DetectDefault(opts.resolveDetectOptions())
 			if err != nil {
@@ -286,18 +340,17 @@ func dial(ctx context.Context, secure bool, opts *Options) (*grpc.ClientConn, er
 				clientUniverseDomain: opts.UniverseDomain,
 			}),
 		)
-
 		// Attempt Direct Path
-		grpcOpts, endpoint = configureDirectPath(grpcOpts, opts, endpoint, creds)
+		grpcOpts, transportCreds.Endpoint = configureDirectPath(grpcOpts, opts, transportCreds.Endpoint, creds)
 	}
 
 	// Add tracing, but before the other options, so that clients can override the
 	// gRPC stats handler.
 	// This assumes that gRPC options are processed in order, left to right.
-	grpcOpts = addOCStatsHandler(grpcOpts, opts)
+	grpcOpts = addOpenTelemetryStatsHandler(grpcOpts, opts)
 	grpcOpts = append(grpcOpts, opts.GRPCDialOpts...)
 
-	return grpc.NewClient(endpoint, grpcOpts...)
+	return grpc.Dial(transportCreds.Endpoint, grpcOpts...)
 }
 
 // grpcKeyProvider satisfies https://pkg.go.dev/google.golang.org/grpc/credentials#PerRPCCredentials.
@@ -392,9 +445,9 @@ func (c *grpcCredentialsProvider) RequireTransportSecurity() bool {
 	return c.secure
 }
 
-func addOCStatsHandler(dialOpts []grpc.DialOption, opts *Options) []grpc.DialOption {
+func addOpenTelemetryStatsHandler(dialOpts []grpc.DialOption, opts *Options) []grpc.DialOption {
 	if opts.DisableTelemetry {
 		return dialOpts
 	}
-	return append(dialOpts, grpc.WithStatsHandler(&ocgrpc.ClientHandler{}))
+	return append(dialOpts, grpc.WithStatsHandler(otelGRPCStatsHandler()))
 }
