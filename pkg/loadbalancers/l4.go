@@ -92,14 +92,14 @@ type L4ILBSyncResult struct {
 	ResourceUpdates    ResourceUpdates
 }
 
-func NewL4ILBSyncResult(syncType string, startTime time.Time, svc *corev1.Service, isMultinetService bool, isWeightedLBPodsPerNode bool) *L4ILBSyncResult {
+func NewL4ILBSyncResult(syncType string, startTime time.Time, svc *corev1.Service, isMultinetService bool, isWeightedLBPodsPerNode bool, isLBWithZonalAffinity bool) *L4ILBSyncResult {
 	enabledStrongSessionAffinity := false
 	result := &L4ILBSyncResult{
 		Annotations: make(map[string]string),
 		StartTime:   startTime,
 		SyncType:    syncType,
 		// Internal Load Balancer doesn't support strong session affinity (passing `false` all along)
-		MetricsState: metrics.InitServiceMetricsState(svc, &startTime, isMultinetService, enabledStrongSessionAffinity, isWeightedLBPodsPerNode, metrics.L4BackendTypeNEG),
+		MetricsState: metrics.InitServiceMetricsState(svc, &startTime, isMultinetService, enabledStrongSessionAffinity, isWeightedLBPodsPerNode, isLBWithZonalAffinity, metrics.L4BackendTypeNEG),
 	}
 	return result
 }
@@ -170,7 +170,8 @@ func (l4 *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4ILBSyncR
 	l4.svcLogger.V(2).Info("EnsureInternalLoadBalancerDeleted: deleting L4 ILB LoadBalancer resources")
 	isMultinetService := l4.networkResolver.IsMultinetService(svc)
 	isWeightedLBPodsPerNode := l4.isWeightedLBPodsPerNode()
-	result := NewL4ILBSyncResult(SyncTypeDelete, time.Now(), svc, isMultinetService, isWeightedLBPodsPerNode)
+	isLBWithZonalAffinity := l4.isLBWithZonalAffinity()
+	result := NewL4ILBSyncResult(SyncTypeDelete, time.Now(), svc, isMultinetService, isWeightedLBPodsPerNode, isLBWithZonalAffinity)
 
 	l4.deleteIPv4ResourcesOnDelete(result)
 	if l4.enableDualStack {
@@ -391,7 +392,8 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	startTime := time.Now()
 	isMultinetService := l4.networkResolver.IsMultinetService(svc)
 	isWeightedLBPodsPerNode := l4.isWeightedLBPodsPerNode()
-	result := NewL4ILBSyncResult(SyncTypeCreate, startTime, svc, isMultinetService, isWeightedLBPodsPerNode)
+	isWithZonalAffinity := l4.isLBWithZonalAffinity()
+	result := NewL4ILBSyncResult(SyncTypeCreate, startTime, svc, isMultinetService, isWeightedLBPodsPerNode, isWithZonalAffinity)
 
 	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
 	// This will also cover cases where an external LB is updated to an ILB, which is technically a create for ILB.
@@ -817,4 +819,8 @@ func (l4 *L4) determineBackendServiceLocalityPolicy() backends.LocalityLBPolicyT
 
 func (l4 *L4) isWeightedLBPodsPerNode() bool {
 	return backends.LocalityLBPolicyWeightedMaglev == l4.determineBackendServiceLocalityPolicy()
+}
+
+func (l4 *L4) isLBWithZonalAffinity() bool {
+	return l4.enableZonalAffinity && l4.requireZonalAffinity(l4.Service)
 }
