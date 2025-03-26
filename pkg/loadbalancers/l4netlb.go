@@ -544,7 +544,7 @@ func (l4netlb *L4NetLB) deleteBackendService(result *L4NetLBSyncResult) {
 	start := time.Now()
 	klog.V(2).Infof("Deleting backend service %s, for L4 NetLB Service %s/%s", bsName, l4netlb.Service.Namespace, l4netlb.Service.Name)
 	defer func() {
-		klog.V(2).Infof("Finished deleting backend service %s, for L4 NetLB Service %s/%s, time taken", bsName, l4netlb.Service.Namespace, l4netlb.Service.Name, time.Since(start))
+		klog.V(2).Infof("Finished deleting backend service %s, for L4 NetLB Service %s/%s, time taken %d ", bsName, l4netlb.Service.Namespace, l4netlb.Service.Name, time.Since(start))
 	}()
 
 	// TODO(cheungdavid): Create backend logger that contains backendName,

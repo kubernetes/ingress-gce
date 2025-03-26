@@ -411,7 +411,7 @@ func (lc *L4NetLBController) Run() {
 		return lc.hasSynced(), nil
 	}, lc.stopCh)
 
-	klog.Infof("Running L4 Net Controller", "numWorkers", lc.ctx.NumL4NetLBWorkers)
+	klog.Info("Running L4 Net Controller", "numWorkers", lc.ctx.NumL4NetLBWorkers)
 	lc.svcQueue.Run()
 
 	<-lc.stopCh

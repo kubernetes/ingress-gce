@@ -259,7 +259,7 @@ func (m *manager) getInstanceReferences(zone string, nodeNames []string) (refs [
 // Add adds the given instances to the appropriately zoned Instance Group.
 func (m *manager) add(groupName string, nodeNames []string, zone string) error {
 	events.GlobalEventf(m.recorder, core.EventTypeNormal, events.AddNodes, "Adding %s to InstanceGroup %q", events.TruncatedStringList(nodeNames), groupName)
-	klog.Infof("Adding nodes to instance group in zone", "nodeCount", len(nodeNames), "name", groupName, "zone", zone)
+	klog.Info("Adding nodes to instance group in zone", "nodeCount", len(nodeNames), "name", groupName, "zone", zone)
 	err := m.cloud.AddInstancesToInstanceGroup(groupName, zone, m.getInstanceReferences(zone, nodeNames))
 	if err != nil && !utils.IsMemberAlreadyExistsError(err) {
 		events.GlobalEventf(m.recorder, core.EventTypeWarning, events.AddNodes, "Error adding %s to InstanceGroup %q: %v", events.TruncatedStringList(nodeNames), groupName, err)
@@ -272,7 +272,7 @@ func (m *manager) add(groupName string, nodeNames []string, zone string) error {
 func (m *manager) remove(groupName string, nodeNames []string, zone string) error {
 	events.GlobalEventf(m.recorder, core.EventTypeNormal, events.RemoveNodes, "Removing %s from InstanceGroup %q", events.TruncatedStringList(nodeNames), groupName)
 
-	klog.Infof("Removing nodes from instance group in zone", "nodeCount", len(nodeNames), "name", groupName, "zone", zone)
+	klog.Info("Removing nodes from instance group in zone", "nodeCount", len(nodeNames), "name", groupName, "zone", zone)
 	if err := m.cloud.RemoveInstancesFromInstanceGroup(groupName, zone, m.getInstanceReferences(zone, nodeNames)); err != nil {
 		events.GlobalEventf(m.recorder, core.EventTypeWarning, events.RemoveNodes, "Error removing nodes %s from InstanceGroup %q: %v", events.TruncatedStringList(nodeNames), groupName, err)
 		return err
@@ -282,7 +282,7 @@ func (m *manager) remove(groupName string, nodeNames []string, zone string) erro
 
 // Sync nodes with the instances in the instance group.
 func (m *manager) Sync(nodes []string) (err error) {
-	klog.Infof("Syncing nodes", "nodes", events.TruncatedStringList(nodes))
+	klog.Info("Syncing nodes", "nodes", events.TruncatedStringList(nodes))
 
 	defer func() {
 		// The node pool is only responsible for syncing nodes to instance
@@ -317,13 +317,13 @@ func (m *manager) Sync(nodes []string) (err error) {
 		gceNodes := sets.NewString()
 		instances, err := m.cloud.ListInstancesInInstanceGroup(igName, zone, allInstances)
 		if err != nil {
-			klog.Errorf("Failed to list instance from instance group", "zone", zone, "igName", igName)
+			klog.Error("Failed to list instance from instance group", "zone", zone, "igName", igName)
 			return err
 		}
 		for _, ins := range instances {
 			instance, err := utils.KeyName(ins.Instance)
 			if err != nil {
-				klog.Errorf("Failed to read instance name from ULR, skipping single instance", "Instance URL", ins.Instance)
+				klog.Error("Failed to read instance name from ULR, skipping single instance", "Instance URL", ins.Instance)
 			}
 			gceNodes.Insert(instance)
 		}
@@ -331,13 +331,13 @@ func (m *manager) Sync(nodes []string) (err error) {
 		removeNodes := gceNodes.Difference(kubeNodes).List()
 		addNodes := kubeNodes.Difference(gceNodes).List()
 
-		klog.Infof("Removing nodes", "removeNodes", events.TruncatedStringList(removeNodes))
-		klog.Infof("Adding nodes", "addNodes", events.TruncatedStringList(removeNodes))
+		klog.Info("Removing nodes", "removeNodes", events.TruncatedStringList(removeNodes))
+		klog.Info("Adding nodes", "addNodes", events.TruncatedStringList(removeNodes))
 
 		start := time.Now()
 		if len(removeNodes) != 0 {
 			err = m.remove(igName, removeNodes, zone)
-			klog.Infof("Remove finished", "name", igName, "err", err, "timeTaken", time.Now().Sub(start), "removeNodes", events.TruncatedStringList(removeNodes))
+			klog.Info("Remove finished", "name", igName, "err", err, "timeTaken", time.Now().Sub(start), "removeNodes", events.TruncatedStringList(removeNodes))
 			if err != nil {
 				return err
 			}
@@ -346,7 +346,7 @@ func (m *manager) Sync(nodes []string) (err error) {
 		start = time.Now()
 		if len(addNodes) != 0 {
 			err = m.add(igName, addNodes, zone)
-			klog.Infof("Add finished", "name", igName, "err", err, "timeTaken", time.Now().Sub(start), "addNodes", events.TruncatedStringList(addNodes))
+			klog.Info("Add finished", "name", igName, "err", err, "timeTaken", time.Now().Sub(start), "addNodes", events.TruncatedStringList(addNodes))
 			if err != nil {
 				return err
 			}
