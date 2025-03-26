@@ -44,6 +44,7 @@ const (
 	l4LBControllerPanicsMetricName                 = "l4_controllers_panics_count"
 	L4SyncDetailsMetricName                        = "l4_sync_details_count"
 	l4WeightedLBPodsPerNodeMetricName              = "l4_weighted_lb_pods_per_node"
+	l4ILBZonalAffinityMetricName                   = "l4_ilb_zonal_affinity"
 )
 
 var (
@@ -55,6 +56,10 @@ var (
 
 	l4SyncLatencyNetLBSpecificMetricLabels = []string{
 		"backend_type", // type of the backends of the LB (IG or NEG)
+	}
+
+	l4SyncILBSpecificMetricLabels = []string{
+		l4ILBZonalAffinityMetricName, // whether the service uses zonal affinity
 	}
 
 	l4LBSyncLatencyMetricsLabels          = append(l4LBSyncLatencyCommonMetricLabels, l4WeightedLBPodsPerNodeMetricName)
@@ -75,7 +80,7 @@ var (
 			// using funny starter bucket, 0.9375s will only add buckets to existing metric, this is a safe operation in most time series db
 			Buckets: prometheus.ExponentialBuckets(0.9375, 2, 15),
 		},
-		l4LBSyncLatencyMetricsLabels,
+		append(l4LBSyncLatencyMetricsLabels, l4SyncILBSpecificMetricLabels...),
 	)
 	l4ILBDualStackSyncLatency = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -107,7 +112,7 @@ var (
 			Name: L4ilbErrorMetricName,
 			Help: "Count of L4 ILB Sync errors",
 		},
-		l4LBSyncErrorMetricLabels,
+		append(l4LBSyncErrorMetricLabels, l4SyncILBSpecificMetricLabels...),
 	)
 	// l4NetLBSyncLatency is a metric that represents the time spent processing L4NetLB service.
 	// The metric is labeled with synchronization type and its result.
@@ -219,20 +224,20 @@ func init() {
 }
 
 // PublishILBSyncMetrics exports metrics related to the L4 ILB sync.
-func PublishILBSyncMetrics(success bool, syncType, gceResource, errType string, startTime time.Time, isResync bool, isWeightedLB bool) {
-	publishL4ILBSyncLatency(success, syncType, startTime, isResync, isWeightedLB)
+func PublishILBSyncMetrics(success bool, syncType, gceResource, errType string, startTime time.Time, isResync bool, isWeightedLB bool, isZonalAffinityLB bool) {
+	publishL4ILBSyncLatency(success, syncType, startTime, isResync, isWeightedLB, isZonalAffinityLB)
 	if !success {
-		publishL4ILBSyncErrorCount(syncType, gceResource, errType, isWeightedLB)
+		publishL4ILBSyncErrorCount(syncType, gceResource, errType, isWeightedLB, isZonalAffinityLB)
 	}
 }
 
 // publishL4ILBSyncLatency exports the given sync latency datapoint.
-func publishL4ILBSyncLatency(success bool, syncType string, startTime time.Time, isResync bool, isWeightedLB bool) {
+func publishL4ILBSyncLatency(success bool, syncType string, startTime time.Time, isResync bool, isWeightedLB bool, isZonalAffinityLB bool) {
 	status := statusSuccess
 	if !success {
 		status = statusError
 	}
-	l4ILBSyncLatency.WithLabelValues(status, syncType, strconv.FormatBool(isResync), strconv.FormatBool(isWeightedLB)).Observe(time.Since(startTime).Seconds())
+	l4ILBSyncLatency.WithLabelValues(status, syncType, strconv.FormatBool(isResync), strconv.FormatBool(isWeightedLB), strconv.FormatBool(isZonalAffinityLB)).Observe(time.Since(startTime).Seconds())
 }
 
 // PublishL4ILBDualStackSyncLatency exports the given sync latency datapoint.
@@ -271,8 +276,8 @@ func PublishL4NetLBMultiNetSyncLatency(success bool, syncType string, startTime 
 }
 
 // publishL4ILBSyncLatency exports the given sync latency datapoint.
-func publishL4ILBSyncErrorCount(syncType, gceResource, errorType string, isWeightedLB bool) {
-	l4ILBSyncErrorCount.WithLabelValues(syncType, gceResource, errorType, strconv.FormatBool(isWeightedLB)).Inc()
+func publishL4ILBSyncErrorCount(syncType, gceResource, errorType string, isWeightedLB bool, isZonalAffinityLB bool) {
+	l4ILBSyncErrorCount.WithLabelValues(syncType, gceResource, errorType, strconv.FormatBool(isWeightedLB), strconv.FormatBool(isZonalAffinityLB)).Inc()
 }
 
 // publishL4NetLBSync exports latency metrics for L4 NetLB service after sync.
