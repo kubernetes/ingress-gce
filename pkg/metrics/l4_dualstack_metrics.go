@@ -35,7 +35,7 @@ func (im *ControllerMetrics) exportL4ILBDualStackMetrics() {
 	klog.V(3).Infof("Exporting L4 ILB DualStack usage metrics")
 
 	for key, state := range im.l4ILBServiceMap {
-		klog.V(6).Infof("ILB Service %s has IPFamilies: %v, IPFamilyPolicy: %t, Status: %v", key, state.IPFamilies, state.IPFamilyPolicy, state.Status)
+		klog.V(6).Infof("ILB Service %s has IPFamilies: %v, IPFamilyPolicy: %s, Status: %v", key, state.IPFamilies, state.IPFamilyPolicy, state.Status)
 		l4ILBDualStackCount.With(prometheus.Labels{
 			"ip_families":      state.IPFamilies,
 			"ip_family_policy": state.IPFamilyPolicy,
@@ -59,7 +59,7 @@ func (im *ControllerMetrics) exportL4NetLBDualStackMetrics() {
 	klog.V(3).Infof("Exporting L4 NetLB DualStack usage metrics")
 
 	for key, state := range im.l4NetLBServiceMap {
-		klog.V(6).Infof("NetLB Service %s has IPFamilies: %v, IPFamilyPolicy: %t, Status: %v", key, state.IPFamilies, state.IPFamilyPolicy, state.Status)
+		klog.V(6).Infof("NetLB Service %s has IPFamilies: %v, IPFamilyPolicy: %s, Status: %v", key, state.IPFamilies, state.IPFamilyPolicy, state.Status)
 		l4NetLBDualStackCount.With(prometheus.Labels{
 			"ip_families":      state.IPFamilies,
 			"ip_family_policy": state.IPFamilyPolicy,

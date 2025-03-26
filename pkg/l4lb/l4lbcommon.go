@@ -114,7 +114,7 @@ func isHealthCheckDeleted(cloud *gce.Cloud, hcName string) bool {
 
 func skipUserError(err error) error {
 	if utils.IsUserError(err) {
-		klog.Warning("Sync failed with user-caused error: %v", err)
+		klog.Warningf("Sync failed with user-caused error: %v", err)
 		return nil
 	}
 	return err

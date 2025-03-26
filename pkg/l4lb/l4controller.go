@@ -191,7 +191,7 @@ func (l4c *L4Controller) Run() {
 		return l4c.hasSynced(), nil
 	}, l4c.stopCh)
 
-	klog.Infof("Running L4 Controller", "numWorkers", l4c.numWorkers)
+	klog.Info("Running L4 Controller", "numWorkers", l4c.numWorkers)
 	l4c.svcQueue.Run()
 	<-l4c.stopCh
 }
@@ -222,11 +222,11 @@ func (l4c *L4Controller) shouldProcessService(service *v1.Service) bool {
 	// The external forwarding rule might not be deleted by the time this controller starts processing the service.
 	fr, err := l4c.forwardingRules.Get(frName)
 	if utils.IsNotFoundError(err) {
-		klog.Info("Legacy ForwardingRule not found, start processing service %s, LegacyForwardingRuleName: %s", klog.KRef(service.Namespace, service.Name), frName)
+		klog.Infof("Legacy ForwardingRule not found, start processing service %s, LegacyForwardingRuleName: %s", klog.KRef(service.Namespace, service.Name), frName)
 		return true
 	}
 	if err != nil {
-		klog.Error("Error getting l4 forwarding rule for service: %s. Ignore update until forwarding rule: %s can be read.", klog.KRef(service.Namespace, service.Name), frName)
+		klog.Errorf("Error getting l4 forwarding rule for service: %s. Ignore update until forwarding rule: %s can be read.", klog.KRef(service.Namespace, service.Name), frName)
 		return false
 	}
 	if fr != nil && fr.LoadBalancingScheme == string(cloud.SchemeInternal) {
