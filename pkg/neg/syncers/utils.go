@@ -69,9 +69,9 @@ func decodeEndpoint(str string) (string, string, string) {
 }
 
 // calculateDifference determines what endpoints needs to be added and removed in order to move current state to target state.
-func calculateDifference(targetMap, currentMap map[string]sets.String) (map[string]sets.String, map[string]sets.String) {
-	addSet := map[string]sets.String{}
-	removeSet := map[string]sets.String{}
+func calculateDifference(targetMap, currentMap map[string]sets.Set[string]) (map[string]sets.Set[string], map[string]sets.Set[string]) {
+	addSet := map[string]sets.Set[string]{}
+	removeSet := map[string]sets.Set[string]{}
 	for zone, endpointSet := range targetMap {
 		diff := endpointSet.Difference(currentMap[zone])
 		if len(diff) > 0 {
@@ -725,7 +725,7 @@ func retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping map[string]string
 					metrics.PublishNegControllerErrorCountMetrics(err, true)
 					continue
 				}
-				return nil, nil, fmt.Errorf("Failed to lookup NEG in zone %q, candidate zones %v, err - %w", zone, candidateZonesMap, err)
+				return nil, nil, fmt.Errorf("failed to lookup NEG in zone %q, candidate zones %v, err - %w", zone, candidateZonesMap, err)
 			}
 			zoneNetworkEndpointMap[negtypes.NEGLocation{Zone: zone, Subnet: subnet}] = negtypes.NewNetworkEndpointSet()
 			for _, ne := range networkEndpointsWithHealthStatus {
