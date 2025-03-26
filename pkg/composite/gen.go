@@ -1,5 +1,5 @@
 /*
-Copyright 2023 The Kubernetes Authors.
+Copyright 2025 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -77,7 +77,7 @@ type Address struct {
 	// is defined by the server.
 	Id uint64 `json:"id,omitempty,string"`
 	// The IP version that will be used by this address. Valid options are
-	// IPV4 or IPV6. This can only be specified for a global address.
+	// IPV4 or IPV6.
 	IpVersion string `json:"ipVersion,omitempty"`
 	// The endpoint type of this address, which should be VM or NETLB. This
 	// is used for deciding which type of endpoint this address can be used
@@ -228,6 +228,9 @@ type Backend struct {
 	// don't support using a balancingMode. This includes backends such as
 	// global internet NEGs, regional serverless NEGs, and PSC NEGs.
 	CapacityScaler float64 `json:"capacityScaler,omitempty"`
+	// List of custom metrics that are used for CUSTOM_METRICS
+	// BalancingMode.
+	CustomMetrics []*BackendCustomMetric `json:"customMetrics,omitempty"`
 	// An optional description of this resource. Provide this property when
 	// you create the resource.
 	Description string `json:"description,omitempty"`
@@ -269,7 +272,37 @@ type Backend struct {
 	// Optional parameter to define a target capacity for the UTILIZATION
 	// balancing mode. The valid range is [0.0, 1.0]. For usage guidelines,
 	// see Utilization balancing mode.
-	MaxUtilization  float64  `json:"maxUtilization,omitempty"`
+	MaxUtilization float64 `json:"maxUtilization,omitempty"`
+	// This field indicates whether this backend should be fully utilized
+	// before sending traffic to backends with default preference. The
+	// possible values are: - PREFERRED: Backends with this preference level
+	// will be filled up to their capacity limits first, based on RTT. -
+	// DEFAULT: If preferred backends don't have enough capacity, backends
+	// in this layer would be used and traffic would be assigned based on
+	// the load balancing algorithm you use. This is the default
+	Preference      string   `json:"preference,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// BackendCustomMetric is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type BackendCustomMetric struct {
+	// If true, the metric data is collected and reported to Cloud
+	// Monitoring, but is not used for load balancing.
+	DryRun bool `json:"dryRun,omitempty"`
+	// Optional parameter to define a target utilization for the Custom
+	// Metrics balancing mode. The valid range is [0.0, 1.0].
+	MaxUtilization float64 `json:"maxUtilization,omitempty"`
+	// Name of a custom utilization signal. The name must be 1-64 characters
+	// long and match the regular expression [a-z]([-_.a-z0-9]*[a-z0-9])?
+	// which means the first character must be a lowercase letter, and all
+	// following characters must be a dash, period, underscore, lowercase
+	// letter, or digit, except the last character, which cannot be a dash,
+	// period, or underscore. For usage guidelines, see Custom Metrics
+	// balancing mode. This field can only be used for a global or regional
+	// backend service with the loadBalancingScheme set to EXTERNAL_MANAGED,
+	// INTERNAL_MANAGED INTERNAL_SELF_MANAGED.
+	Name            string   `json:"name,omitempty"`
 	ForceSendFields []string `json:"-"`
 	NullFields      []string `json:"-"`
 }
@@ -285,12 +318,12 @@ type BackendService struct {
 	Scope meta.KeyType `json:"-"`
 
 	// Lifetime of cookies in seconds. This setting is applicable to
-	// external and internal HTTP(S) load balancers and Traffic Director and
-	// requires GENERATED_COOKIE or HTTP_COOKIE session affinity. If set to
-	// 0, the cookie is non-persistent and lasts only until the end of the
-	// browser session (or equivalent). The maximum allowed value is two
-	// weeks (1,209,600). Not supported when the backend service is
-	// referenced by a URL map that is bound to target gRPC proxy that has
+	// Application Load Balancers and Traffic Director and requires
+	// GENERATED_COOKIE or HTTP_COOKIE session affinity. If set to 0, the
+	// cookie is non-persistent and lasts only until the end of the browser
+	// session (or equivalent). The maximum allowed value is two weeks
+	// (1,209,600). Not supported when the backend service is referenced by
+	// a URL map that is bound to target gRPC proxy that has
 	// validateForProxyless field set to true.
 	AffinityCookieTtlSec int64 `json:"affinityCookieTtlSec,omitempty"`
 	// The list of backends that serve this BackendService.
@@ -304,8 +337,9 @@ type BackendService struct {
 	CompressionMode    string              `json:"compressionMode,omitempty"`
 	ConnectionDraining *ConnectionDraining `json:"connectionDraining,omitempty"`
 	// Connection Tracking configuration for this BackendService. Connection
-	// tracking policy settings are only available for Network Load
-	// Balancing and Internal TCP/UDP Load Balancing.
+	// tracking policy settings are only available for external passthrough
+	// Network Load Balancers and internal passthrough Network Load
+	// Balancers.
 	ConnectionTrackingPolicy *BackendServiceConnectionTrackingPolicy `json:"connectionTrackingPolicy,omitempty"`
 	// Consistent Hash-based load balancing can be used to provide soft
 	// session affinity based on HTTP headers, cookies or other properties.
@@ -321,6 +355,9 @@ type BackendService struct {
 	ConsistentHash *ConsistentHashLoadBalancerSettings `json:"consistentHash,omitempty"`
 	// [Output Only] Creation timestamp in RFC3339 text format.
 	CreationTimestamp string `json:"creationTimestamp,omitempty"`
+	// List of custom metrics that are used for the WEIGHTED_ROUND_ROBIN
+	// locality_lb_policy.
+	CustomMetrics []*BackendServiceCustomMetric `json:"customMetrics,omitempty"`
 	// Headers that the load balancer adds to proxied requests. See
 	// [Creating custom
 	// headers](https://cloud.google.com/load-balancing/docs/custom-headers).
@@ -332,18 +369,45 @@ type BackendService struct {
 	// An optional description of this resource. Provide this property when
 	// you create the resource.
 	Description string `json:"description,omitempty"`
+	// Dynamic forwarding configuration. This field is used to configure the
+	// backend service with dynamic forwarding feature which together with
+	// Service Extension allows customized and complex routing logic.
+	DynamicForwarding *BackendServiceDynamicForwarding `json:"dynamicForwarding,omitempty"`
 	// [Output Only] The resource URL for the edge security policy
 	// associated with this backend service.
 	EdgeSecurityPolicy string `json:"edgeSecurityPolicy,omitempty"`
-	// If true, enables Cloud CDN for the backend service of an external
-	// HTTP(S) load balancer.
+	// If true, enables Cloud CDN for the backend service of a global
+	// external Application Load Balancer.
 	EnableCDN bool `json:"enableCDN,omitempty"`
+	// Specifies the canary migration state. Possible values are PREPARE,
+	// TEST_BY_PERCENTAGE, and TEST_ALL_TRAFFIC. To begin the migration from
+	// EXTERNAL to EXTERNAL_MANAGED, the state must be changed to PREPARE.
+	// The state must be changed to TEST_ALL_TRAFFIC before the
+	// loadBalancingScheme can be changed to EXTERNAL_MANAGED. Optionally,
+	// the TEST_BY_PERCENTAGE state can be used to migrate traffic by
+	// percentage using externalManagedMigrationTestingPercentage. Rolling
+	// back a migration requires the states to be set in reverse order. So
+	// changing the scheme from EXTERNAL_MANAGED to EXTERNAL requires the
+	// state to be set to TEST_ALL_TRAFFIC at the same time. Optionally, the
+	// TEST_BY_PERCENTAGE state can be used to migrate some traffic back to
+	// EXTERNAL or PREPARE can be used to migrate all traffic back to
+	// EXTERNAL.
+	ExternalManagedMigrationState string `json:"externalManagedMigrationState,omitempty"`
+	// Determines the fraction of requests that should be processed by the
+	// Global external Application Load Balancer. The value of this field
+	// must be in the range [0, 100]. Session affinity options will slightly
+	// affect this routing behavior, for more details, see: Session
+	// Affinity. This value can only be set if the loadBalancingScheme in
+	// the BackendService is set to EXTERNAL (when using the classic
+	// Application Load Balancer) and the migration state is
+	// TEST_BY_PERCENTAGE.
+	ExternalManagedMigrationTestingPercentage float64 `json:"externalManagedMigrationTestingPercentage,omitempty"`
 	// Requires at least one backend instance group to be defined as a
 	// backup (failover) backend. For load balancers that have configurable
-	// failover: [Internal TCP/UDP Load
-	// Balancing](https://cloud.google.com/load-balancing/docs/internal/failo
-	// ver-overview) and [external TCP/UDP Load
-	// Balancing](https://cloud.google.com/load-balancing/docs/network/networ
+	// failover: [Internal passthrough Network Load
+	// Balancers](https://cloud.google.com/load-balancing/docs/internal/failo
+	// ver-overview) and [external passthrough Network Load
+	// Balancers](https://cloud.google.com/load-balancing/docs/network/networ
 	// klb-failover-overview).
 	FailoverPolicy *BackendServiceFailoverPolicy `json:"failoverPolicy,omitempty"`
 	// Fingerprint of this resource. A hash of the contents stored in this
@@ -353,6 +417,8 @@ type BackendService struct {
 	// request will fail with error 412 conditionNotMet. To see the latest
 	// fingerprint, make a get() request to retrieve a BackendService.
 	Fingerprint string `json:"fingerprint,omitempty"`
+	// Configuring haPolicy is not supported.
+	HaPolicy *BackendServiceHAPolicy `json:"haPolicy,omitempty"`
 	// The list of URLs to the healthChecks, httpHealthChecks (legacy), or
 	// httpsHealthChecks (legacy) resource for health checking this backend
 	// service. Not all backend services support legacy health checks. See
@@ -363,31 +429,32 @@ type BackendService struct {
 	// health check.
 	HealthChecks []string `json:"healthChecks,omitempty"`
 	// The configurations for Identity-Aware Proxy on this resource. Not
-	// available for Internal TCP/UDP Load Balancing and Network Load
-	// Balancing.
+	// available for internal passthrough Network Load Balancers and
+	// external passthrough Network Load Balancers.
 	Iap *BackendServiceIAP `json:"iap,omitempty"`
 	// [Output Only] The unique identifier for the resource. This identifier
 	// is defined by the server.
 	Id uint64 `json:"id,omitempty,string"`
-	// Specifies preference of traffic to the backend (from the proxy and
-	// from the client for proxyless gRPC). The possible values are: -
-	// IPV4_ONLY: Only send IPv4 traffic to the backends of the Backend
-	// Service (Instance Group, Managed Instance Group, Network Endpoint
-	// Group) regardless of traffic from the client to the proxy. Only IPv4
-	// health-checks are used to check the health of the backends. This is
-	// the default setting. - PREFER_IPV6: Prioritize the connection to the
-	// endpoints IPv6 address over its IPv4 address (provided there is a
-	// healthy IPv6 address). - IPV6_ONLY: Only send IPv6 traffic to the
-	// backends of the Backend Service (Instance Group, Managed Instance
-	// Group, Network Endpoint Group) regardless of traffic from the client
-	// to the proxy. Only IPv6 health-checks are used to check the health of
-	// the backends. This field is applicable to either: - Advanced Global
-	// External HTTPS Load Balancing (load balancing scheme
-	// EXTERNAL_MANAGED), - Regional External HTTPS Load Balancing, -
-	// Internal TCP Proxy (load balancing scheme INTERNAL_MANAGED), -
-	// Regional Internal HTTPS Load Balancing (load balancing scheme
-	// INTERNAL_MANAGED), - Traffic Director with Envoy proxies and
-	// proxyless gRPC (load balancing scheme INTERNAL_SELF_MANAGED).
+	// Specifies a preference for traffic sent from the proxy to the backend
+	// (or from the client to the backend for proxyless gRPC). The possible
+	// values are: - IPV4_ONLY: Only send IPv4 traffic to the backends of
+	// the backend service (Instance Group, Managed Instance Group, Network
+	// Endpoint Group), regardless of traffic from the client to the proxy.
+	// Only IPv4 health checks are used to check the health of the backends.
+	// This is the default setting. - PREFER_IPV6: Prioritize the connection
+	// to the endpoint's IPv6 address over its IPv4 address (provided there
+	// is a healthy IPv6 address). - IPV6_ONLY: Only send IPv6 traffic to
+	// the backends of the backend service (Instance Group, Managed Instance
+	// Group, Network Endpoint Group), regardless of traffic from the client
+	// to the proxy. Only IPv6 health checks are used to check the health of
+	// the backends. This field is applicable to either: - Advanced global
+	// external Application Load Balancer (load balancing scheme
+	// EXTERNAL_MANAGED), - Regional external Application Load Balancer, -
+	// Internal proxy Network Load Balancer (load balancing scheme
+	// INTERNAL_MANAGED), - Regional internal Application Load Balancer
+	// (load balancing scheme INTERNAL_MANAGED), - Traffic Director with
+	// Envoy proxies and proxyless gRPC (load balancing scheme
+	// INTERNAL_SELF_MANAGED).
 	IpAddressSelectionPolicy string `json:"ipAddressSelectionPolicy,omitempty"`
 	// [Output Only] Type of resource. Always compute#backendService for
 	// backend services.
@@ -426,12 +493,15 @@ type BackendService struct {
 	// either: - A regional backend service with the service_protocol set to
 	// HTTP, HTTPS, or HTTP2, and load_balancing_scheme set to
 	// INTERNAL_MANAGED. - A global backend service with the
-	// load_balancing_scheme set to INTERNAL_SELF_MANAGED. If
-	// sessionAffinity is not NONE, and this field is not set to MAGLEV or
-	// RING_HASH, session affinity settings will not take effect. Only
-	// ROUND_ROBIN and RING_HASH are supported when the backend service is
-	// referenced by a URL map that is bound to target gRPC proxy that has
-	// validateForProxyless field set to true.
+	// load_balancing_scheme set to INTERNAL_SELF_MANAGED, INTERNAL_MANAGED,
+	// or EXTERNAL_MANAGED. If sessionAffinity is not configured—that is,
+	// if session affinity remains at the default value of NONE—then the
+	// default value for localityLbPolicy is ROUND_ROBIN. If session
+	// affinity is set to a value other than NONE, then the default value
+	// for localityLbPolicy is MAGLEV. Only ROUND_ROBIN and RING_HASH are
+	// supported when the backend service is referenced by a URL map that is
+	// bound to target gRPC proxy that has validateForProxyless field set to
+	// true.
 	LocalityLbPolicy string `json:"localityLbPolicy,omitempty"`
 	// This field denotes the logging options for the load balancer traffic
 	// served by this backend service. If logging is enabled, logs will be
@@ -462,25 +532,48 @@ type BackendService struct {
 	// field can only be specified when the load balancing scheme is set to
 	// INTERNAL.
 	Network string `json:"network,omitempty"`
-	// Settings controlling the eviction of unhealthy hosts from the load
-	// balancing pool for the backend service. If not set, this feature is
-	// considered disabled. This field is applicable to either: - A regional
-	// backend service with the service_protocol set to HTTP, HTTPS, HTTP2,
-	// or GRPC, and load_balancing_scheme set to INTERNAL_MANAGED. - A
-	// global backend service with the load_balancing_scheme set to
-	// INTERNAL_SELF_MANAGED.
+	// Configures traffic steering properties of internal passthrough
+	// Network Load Balancers.
+	NetworkPassThroughLbTrafficPolicy *BackendServiceNetworkPassThroughLbTrafficPolicy `json:"networkPassThroughLbTrafficPolicy,omitempty"`
+	// Settings controlling the ejection of unhealthy backend endpoints from
+	// the load balancing pool of each individual proxy instance that
+	// processes the traffic for the given backend service. If not set, this
+	// feature is considered disabled. Results of the outlier detection
+	// algorithm (ejection of endpoints from the load balancing pool and
+	// returning them back to the pool) are executed independently by each
+	// proxy instance of the load balancer. In most cases, more than one
+	// proxy instance handles the traffic received by a backend service.
+	// Thus, it is possible that an unhealthy endpoint is detected and
+	// ejected by only some of the proxies, and while this happens, other
+	// proxies may continue to send requests to the same unhealthy endpoint
+	// until they detect and eject the unhealthy endpoint. Applicable
+	// backend endpoints can be: - VM instances in an Instance Group -
+	// Endpoints in a Zonal NEG (GCE_VM_IP, GCE_VM_IP_PORT) - Endpoints in a
+	// Hybrid Connectivity NEG (NON_GCP_PRIVATE_IP_PORT) - Serverless NEGs,
+	// that resolve to Cloud Run, App Engine, or Cloud Functions Services -
+	// Private Service Connect NEGs, that resolve to Google-managed regional
+	// API endpoints or managed services published using Private Service
+	// Connect Applicable backend service types can be: - A global backend
+	// service with the loadBalancingScheme set to INTERNAL_SELF_MANAGED or
+	// EXTERNAL_MANAGED. - A regional backend service with the
+	// serviceProtocol set to HTTP, HTTPS, or HTTP2, and loadBalancingScheme
+	// set to INTERNAL_MANAGED or EXTERNAL_MANAGED. Not supported for
+	// Serverless NEGs. Not supported when the backend service is referenced
+	// by a URL map that is bound to target gRPC proxy that has
+	// validateForProxyless field set to true.
 	OutlierDetection *OutlierDetection `json:"outlierDetection,omitempty"`
 	// Deprecated in favor of portName. The TCP port to connect on the
-	// backend. The default value is 80. For Internal TCP/UDP Load Balancing
-	// and Network Load Balancing, omit port.
+	// backend. The default value is 80. For internal passthrough Network
+	// Load Balancers and external passthrough Network Load Balancers, omit
+	// port.
 	Port int64 `json:"port,omitempty"`
 	// A named port on a backend instance group representing the port for
 	// communication to the backend VMs in that group. The named port must
 	// be [defined on each backend instance
 	// group](https://cloud.google.com/load-balancing/docs/backend-service#na
 	// med_ports). This parameter has no meaning if the backends are NEGs.
-	// For Internal TCP/UDP Load Balancing and Network Load Balancing, omit
-	// port_name.
+	// For internal passthrough Network Load Balancers and external
+	// passthrough Network Load Balancers, omit port_name.
 	PortName string `json:"portName,omitempty"`
 	// The protocol this BackendService uses to communicate with backends.
 	// Possible values are HTTP, HTTPS, HTTP2, TCP, SSL, UDP or GRPC.
@@ -512,10 +605,8 @@ type BackendService struct {
 	// backends and health checks must be both empty.
 	ServiceBindings []string `json:"serviceBindings,omitempty"`
 	// URL to networkservices.ServiceLbPolicy resource. Can only be set if
-	// load balancing scheme is EXTERNAL, INTERNAL_MANAGED or
-	// INTERNAL_SELF_MANAGED. If used with a backend service, must reference
-	// a global policy. If used with a regional backend service, must
-	// reference a regional policy.
+	// load balancing scheme is EXTERNAL, EXTERNAL_MANAGED, INTERNAL_MANAGED
+	// or INTERNAL_SELF_MANAGED and the scope is global.
 	ServiceLbPolicy string `json:"serviceLbPolicy,omitempty"`
 	// Type of session affinity to use. The default is NONE. Only NONE and
 	// HEADER_FIELD are supported when the backend service is referenced by
@@ -524,8 +615,12 @@ type BackendService struct {
 	// [Session
 	// Affinity](https://cloud.google.com/load-balancing/docs/backend-service
 	// #session_affinity).
-	SessionAffinity string      `json:"sessionAffinity,omitempty"`
-	Subsetting      *Subsetting `json:"subsetting,omitempty"`
+	SessionAffinity string `json:"sessionAffinity,omitempty"`
+	// Describes the HTTP cookie used for stateful session affinity. This
+	// field is applicable and required if the sessionAffinity is set to
+	// STRONG_COOKIE_AFFINITY.
+	StrongSessionAffinityCookie *BackendServiceHttpCookie `json:"strongSessionAffinityCookie,omitempty"`
+	Subsetting                  *Subsetting               `json:"subsetting,omitempty"`
 	// The backend service timeout has a different meaning depending on the
 	// type of load balancer. For more information see, Backend service
 	// settings. The default is 30 seconds. The full range of timeout values
@@ -536,6 +631,11 @@ type BackendService struct {
 	// that has validateForProxyless field set to true. Instead, use
 	// maxStreamDuration.
 	TimeoutSec int64 `json:"timeoutSec,omitempty"`
+	// Configuration for Backend Authenticated TLS and mTLS. May only be
+	// specified when the backend protocol is SSL, HTTPS or HTTP2.
+	TlsSettings *BackendServiceTlsSettings `json:"tlsSettings,omitempty"`
+	// [Output Only] List of resources referencing given backend service.
+	UsedBy []*BackendServiceUsedBy `json:"usedBy,omitempty"`
 	// The network scope of the backends that can be added to the backend
 	// service. This field can be either GLOBAL_VPC_NETWORK or
 	// REGIONAL_VPC_NETWORK. A backend service with the VPC scope set to
@@ -572,7 +672,8 @@ type BackendServiceCdnPolicy struct {
 	// including common image formats, media (video and audio), and web
 	// assets (JavaScript and CSS). Requests and responses that are marked
 	// as uncacheable, as well as dynamic content (including HTML), will not
-	// be cached.
+	// be cached. If no value is provided for cdnPolicy.cacheMode, it
+	// defaults to CACHE_ALL_STATIC.
 	CacheMode string `json:"cacheMode,omitempty"`
 	// Specifies a separate client (e.g. browser client) maximum TTL. This
 	// is used to clamp the max-age (or Expires) value sent to the client.
@@ -705,17 +806,17 @@ type BackendServiceConnectionTrackingPolicy struct {
 	// Balancing](https://cloud.google.com/load-balancing/docs/internal#conne
 	// ction-persistence).
 	ConnectionPersistenceOnUnhealthyBackends string `json:"connectionPersistenceOnUnhealthyBackends,omitempty"`
-	// Enable Strong Session Affinity for Network Load Balancing. This
-	// option is not available publicly.
+	// Enable Strong Session Affinity for external passthrough Network Load
+	// Balancers. This option is not available publicly.
 	EnableStrongAffinity bool `json:"enableStrongAffinity,omitempty"`
 	// Specifies how long to keep a Connection Tracking entry while there is
-	// no matching traffic (in seconds). For Internal TCP/UDP Load
-	// Balancing: - The minimum (default) is 10 minutes and the maximum is
-	// 16 hours. - It can be set only if Connection Tracking is less than
+	// no matching traffic (in seconds). For internal passthrough Network
+	// Load Balancers: - The minimum (default) is 10 minutes and the maximum
+	// is 16 hours. - It can be set only if Connection Tracking is less than
 	// 5-tuple (i.e. Session Affinity is CLIENT_IP_NO_DESTINATION, CLIENT_IP
-	// or CLIENT_IP_PROTO, and Tracking Mode is PER_SESSION). For Network
-	// Load Balancer the default is 60 seconds. This option is not available
-	// publicly.
+	// or CLIENT_IP_PROTO, and Tracking Mode is PER_SESSION). For external
+	// passthrough Network Load Balancers the default is 60 seconds. This
+	// option is not available publicly.
 	IdleTimeoutSec int64 `json:"idleTimeoutSec,omitempty"`
 	// Specifies the key used for connection tracking. There are two
 	// options: - PER_CONNECTION: This is the default mode. The Connection
@@ -734,6 +835,40 @@ type BackendServiceConnectionTrackingPolicy struct {
 	NullFields      []string `json:"-"`
 }
 
+// BackendServiceCustomMetric is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type BackendServiceCustomMetric struct {
+	// If true, the metric data is not used for load balancing.
+	DryRun bool `json:"dryRun,omitempty"`
+	// Name of a custom utilization signal. The name must be 1-64 characters
+	// long and match the regular expression [a-z]([-_.a-z0-9]*[a-z0-9])?
+	// which means the first character must be a lowercase letter, and all
+	// following characters must be a dash, period, underscore, lowercase
+	// letter, or digit, except the last character, which cannot be a dash,
+	// period, or underscore. For usage guidelines, see Custom Metrics
+	// balancing mode. This field can only be used for a global or regional
+	// backend service with the loadBalancingScheme set to EXTERNAL_MANAGED,
+	// INTERNAL_MANAGED INTERNAL_SELF_MANAGED.
+	Name            string   `json:"name,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// BackendServiceDynamicForwarding is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type BackendServiceDynamicForwarding struct {
+	// IP:PORT based dynamic forwarding configuration.
+	IpPortSelection *BackendServiceDynamicForwardingIpPortSelection `json:"ipPortSelection,omitempty"`
+	ForceSendFields []string                                        `json:"-"`
+	NullFields      []string                                        `json:"-"`
+}
+
+// BackendServiceDynamicForwardingIpPortSelection is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type BackendServiceDynamicForwardingIpPortSelection struct {
+	// A boolean flag enabling IP:PORT based dynamic forwarding.
+	Enabled         bool     `json:"enabled,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
 // BackendServiceFailoverPolicy is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
 type BackendServiceFailoverPolicy struct {
 	// This can be set to true only if the protocol is TCP. The default is
@@ -743,10 +878,10 @@ type BackendServiceFailoverPolicy struct {
 	// primary and all backup backend VMs are unhealthy.If set to false,
 	// connections are distributed among all primary VMs when all primary
 	// and all backup backend VMs are unhealthy. For load balancers that
-	// have configurable failover: [Internal TCP/UDP Load
-	// Balancing](https://cloud.google.com/load-balancing/docs/internal/failo
-	// ver-overview) and [external TCP/UDP Load
-	// Balancing](https://cloud.google.com/load-balancing/docs/network/networ
+	// have configurable failover: [Internal passthrough Network Load
+	// Balancers](https://cloud.google.com/load-balancing/docs/internal/failo
+	// ver-overview) and [external passthrough Network Load
+	// Balancers](https://cloud.google.com/load-balancing/docs/network/networ
 	// klb-failover-overview). The default is false.
 	DropTrafficIfUnhealthy bool `json:"dropTrafficIfUnhealthy,omitempty"`
 	// The value of the field must be in the range [0, 1]. If the value is
@@ -764,11 +899,50 @@ type BackendServiceFailoverPolicy struct {
 	NullFields      []string `json:"-"`
 }
 
+// BackendServiceHAPolicy is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type BackendServiceHAPolicy struct {
+	// Enabling fastIPMove is not supported.
+	FastIPMove string `json:"fastIPMove,omitempty"`
+	// Setting a leader is not supported.
+	Leader          *BackendServiceHAPolicyLeader `json:"leader,omitempty"`
+	ForceSendFields []string                      `json:"-"`
+	NullFields      []string                      `json:"-"`
+}
+
+// BackendServiceHAPolicyLeader is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type BackendServiceHAPolicyLeader struct {
+	// Setting backendGroup is not supported.
+	BackendGroup string `json:"backendGroup,omitempty"`
+	// Setting a network endpoint as leader is not supported.
+	NetworkEndpoint *BackendServiceHAPolicyLeaderNetworkEndpoint `json:"networkEndpoint,omitempty"`
+	ForceSendFields []string                                     `json:"-"`
+	NullFields      []string                                     `json:"-"`
+}
+
+// BackendServiceHAPolicyLeaderNetworkEndpoint is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type BackendServiceHAPolicyLeaderNetworkEndpoint struct {
+	// Specifying the instance name of a leader is not supported.
+	Instance        string   `json:"instance,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// BackendServiceHttpCookie is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type BackendServiceHttpCookie struct {
+	// Name of the cookie.
+	Name string `json:"name,omitempty"`
+	// Path to set for the cookie.
+	Path string `json:"path,omitempty"`
+	// Lifetime of the cookie.
+	Ttl             *Duration `json:"ttl,omitempty"`
+	ForceSendFields []string  `json:"-"`
+	NullFields      []string  `json:"-"`
+}
+
 // BackendServiceIAP is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
 type BackendServiceIAP struct {
 	// Whether the serving infrastructure will authenticate and authorize
-	// all incoming requests. If true, the oauth2ClientId and
-	// oauth2ClientSecret fields must be non-empty.
+	// all incoming requests.
 	Enabled bool `json:"enabled,omitempty"`
 	// OAuth2 client ID to use for the authentication flow.
 	Oauth2ClientId string `json:"oauth2ClientId,omitempty"`
@@ -870,9 +1044,99 @@ type BackendServiceLogConfig struct {
 	NullFields      []string `json:"-"`
 }
 
+// BackendServiceNetworkPassThroughLbTrafficPolicy is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type BackendServiceNetworkPassThroughLbTrafficPolicy struct {
+	// When configured, new connections are load balanced across healthy
+	// backend endpoints in the local zone.
+	ZonalAffinity   *BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity `json:"zonalAffinity,omitempty"`
+	ForceSendFields []string                                                      `json:"-"`
+	NullFields      []string                                                      `json:"-"`
+}
+
+// BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity struct {
+	// This field indicates whether zonal affinity is enabled or not. The
+	// possible values are: - ZONAL_AFFINITY_DISABLED: Default Value. Zonal
+	// Affinity is disabled. The load balancer distributes new connections
+	// to all healthy backend endpoints across all zones. -
+	// ZONAL_AFFINITY_STAY_WITHIN_ZONE: Zonal Affinity is enabled. The load
+	// balancer distributes new connections to all healthy backend endpoints
+	// in the local zone only. If there are no healthy backend endpoints in
+	// the local zone, the load balancer distributes new connections to all
+	// backend endpoints in the local zone. -
+	// ZONAL_AFFINITY_SPILL_CROSS_ZONE: Zonal Affinity is enabled. The load
+	// balancer distributes new connections to all healthy backend endpoints
+	// in the local zone only. If there aren't enough healthy backend
+	// endpoints in the local zone, the load balancer distributes new
+	// connections to all healthy backend endpoints across all zones.
+	Spillover string `json:"spillover,omitempty"`
+	// The value of the field must be in [0, 1]. When the ratio of the count
+	// of healthy backend endpoints in a zone to the count of backend
+	// endpoints in that same zone is equal to or above this threshold, the
+	// load balancer distributes new connections to all healthy endpoints in
+	// the local zone only. When the ratio of the count of healthy backend
+	// endpoints in a zone to the count of backend endpoints in that same
+	// zone is below this threshold, the load balancer distributes all new
+	// connections to all healthy endpoints across all zones.
+	SpilloverRatio  float64  `json:"spilloverRatio,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
 // BackendServiceReference is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
 type BackendServiceReference struct {
 	BackendService  string   `json:"backendService,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// BackendServiceTlsSettings is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type BackendServiceTlsSettings struct {
+	// Reference to the BackendAuthenticationConfig resource from the
+	// networksecurity.googleapis.com namespace. Can be used in
+	// authenticating TLS connections to the backend, as specified by the
+	// authenticationMode field. Can only be specified if authenticationMode
+	// is not NONE.
+	AuthenticationConfig string `json:"authenticationConfig,omitempty"`
+	// Server Name Indication - see RFC3546 section 3.1. If set, the load
+	// balancer sends this string as the SNI hostname in the TLS connection
+	// to the backend, and requires that this string match a Subject
+	// Alternative Name (SAN) in the backend's server certificate. With a
+	// Regional Internet NEG backend, if the SNI is specified here, the load
+	// balancer uses it regardless of whether the Regional Internet NEG is
+	// specified with FQDN or IP address and port. When both sni and
+	// subjectAltNames[] are specified, the load balancer matches the
+	// backend certificate's SAN only to subjectAltNames[].
+	Sni string `json:"sni,omitempty"`
+	// A list of Subject Alternative Names (SANs) that the Load Balancer
+	// verifies during a TLS handshake with the backend. When the server
+	// presents its X.509 certificate to the Load Balancer, the Load
+	// Balancer inspects the certificate's SAN field, and requires that at
+	// least one SAN match one of the subjectAltNames in the list. This
+	// field is limited to 5 entries. When both sni and subjectAltNames[]
+	// are specified, the load balancer matches the backend certificate's
+	// SAN only to subjectAltNames[].
+	SubjectAltNames []*BackendServiceTlsSettingsSubjectAltName `json:"subjectAltNames,omitempty"`
+	ForceSendFields []string                                   `json:"-"`
+	NullFields      []string                                   `json:"-"`
+}
+
+// BackendServiceTlsSettingsSubjectAltName is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type BackendServiceTlsSettingsSubjectAltName struct {
+	// The SAN specified as a DNS Name.
+	DnsName string `json:"dnsName,omitempty"`
+	// The SAN specified as a URI.
+	UniformResourceIdentifier string   `json:"uniformResourceIdentifier,omitempty"`
+	ForceSendFields           []string `json:"-"`
+	NullFields                []string `json:"-"`
+}
+
+// BackendServiceUsedBy is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type BackendServiceUsedBy struct {
+	// [Output Only] Server-defined URL for resources referencing given
+	// BackendService like UrlMaps, TargetTcpProxies, TargetSslProxies and
+	// ForwardingRule.
+	Reference       string   `json:"reference,omitempty"`
 	ForceSendFields []string `json:"-"`
 	NullFields      []string `json:"-"`
 }
@@ -1050,18 +1314,17 @@ type CorsPolicy struct {
 	// Specifies the content for the Access-Control-Allow-Methods header.
 	AllowMethods []string `json:"allowMethods,omitempty"`
 	// Specifies a regular expression that matches allowed origins. For more
-	// information about the regular expression syntax, see Syntax. An
-	// origin is allowed if it matches either an item in allowOrigins or an
-	// item in allowOriginRegexes. Regular expressions can only be used when
-	// the loadBalancingScheme is set to INTERNAL_SELF_MANAGED.
+	// information, see regular expression syntax . An origin is allowed if
+	// it matches either an item in allowOrigins or an item in
+	// allowOriginRegexes. Regular expressions can only be used when the
+	// loadBalancingScheme is set to INTERNAL_SELF_MANAGED.
 	AllowOriginRegexes []string `json:"allowOriginRegexes,omitempty"`
 	// Specifies the list of origins that is allowed to do CORS requests. An
 	// origin is allowed if it matches either an item in allowOrigins or an
 	// item in allowOriginRegexes.
 	AllowOrigins []string `json:"allowOrigins,omitempty"`
-	// If true, the setting specifies the CORS policy is disabled. The
-	// default value of false, which indicates that the CORS policy is in
-	// effect.
+	// If true, disables the CORS policy. The default value is false, which
+	// indicates that the CORS policy is in effect.
 	Disabled bool `json:"disabled,omitempty"`
 	// Specifies the content for the Access-Control-Expose-Headers header.
 	ExposeHeaders []string `json:"exposeHeaders,omitempty"`
@@ -1144,39 +1407,74 @@ type ForwardingRule struct {
 	// This is also an internal field purely for bookkeeping purposes
 	Scope meta.KeyType `json:"-"`
 
-	// This field can only be used: - If IPProtocol is one of TCP, UDP, or
-	// SCTP. - By internal TCP/UDP load balancers, backend service-based
-	// network load balancers, and internal and external protocol
-	// forwarding. Set this field to true to allow packets addressed to any
-	// port or packets lacking destination port information (for example,
-	// UDP fragments after the first fragment) to be forwarded to the
-	// backends configured with this forwarding rule. The ports, port_range,
-	// and allPorts fields are mutually exclusive.
+	// The ports, portRange, and allPorts fields are mutually exclusive.
+	// Only packets addressed to ports in the specified range will be
+	// forwarded to the backends configured with this forwarding rule. The
+	// allPorts field has the following limitations: - It requires that the
+	// forwarding rule IPProtocol be TCP, UDP, SCTP, or L3_DEFAULT. - It's
+	// applicable only to the following products: internal passthrough
+	// Network Load Balancers, backend service-based external passthrough
+	// Network Load Balancers, and internal and external protocol
+	// forwarding. - Set this field to true to allow packets addressed to
+	// any port or packets lacking destination port information (for
+	// example, UDP fragments after the first fragment) to be forwarded to
+	// the backends configured with this forwarding rule. The L3_DEFAULT
+	// protocol requires allPorts be set to true.
 	AllPorts bool `json:"allPorts,omitempty"`
-	// This field is used along with the backend_service field for internal
-	// load balancing or with the target field for internal TargetInstance.
-	// If the field is set to TRUE, clients can access ILB from all regions.
-	// Otherwise only allows access from clients in the same region as the
-	// internal load balancer.
+	// If set to true, clients can access the internal passthrough Network
+	// Load Balancers, the regional internal Application Load Balancer, and
+	// the regional internal proxy Network Load Balancer from all regions.
+	// If false, only allows access from the local region the load balancer
+	// is located at. Note that for INTERNAL_MANAGED forwarding rules, this
+	// field cannot be changed after the forwarding rule is created.
 	AllowGlobalAccess bool `json:"allowGlobalAccess,omitempty"`
 	// This is used in PSC consumer ForwardingRule to control whether the
 	// PSC endpoint can be accessed from another region.
 	AllowPscGlobalAccess bool `json:"allowPscGlobalAccess,omitempty"`
+	// This is used in PSC consumer ForwardingRule to control whether the
+	// producer is allowed to inject packets into the consumer's network. If
+	// set to true, the target service attachment must have tunneling
+	// enabled and TunnelingConfig.RoutingMode set to PACKET_INJECTION
+	// Non-PSC forwarding rules should not use this field.
+	AllowPscPacketInjection bool `json:"allowPscPacketInjection,omitempty"`
 	// Identifies the backend service to which the forwarding rule sends
-	// traffic. Required for Internal TCP/UDP Load Balancing and Network
-	// Load Balancing; must be omitted for all other load balancer types.
+	// traffic. Required for internal and external passthrough Network Load
+	// Balancers; must be omitted for all other load balancer types.
 	BackendService string `json:"backendService,omitempty"`
-	// [Output Only] The URL for the corresponding base Forwarding Rule. By
-	// base Forwarding Rule, we mean the Forwarding Rule that has the same
-	// IP address, protocol, and port settings with the current Forwarding
-	// Rule, but without sourceIPRanges specified. Always empty if the
-	// current Forwarding Rule does not have sourceIPRanges specified.
+	// [Output Only] The URL for the corresponding base forwarding rule. By
+	// base forwarding rule, we mean the forwarding rule that has the same
+	// IP address, protocol, and port settings with the current forwarding
+	// rule, but without sourceIPRanges specified. Always empty if the
+	// current forwarding rule does not have sourceIPRanges specified.
 	BaseForwardingRule string `json:"baseForwardingRule,omitempty"`
 	// [Output Only] Creation timestamp in RFC3339 text format.
 	CreationTimestamp string `json:"creationTimestamp,omitempty"`
 	// An optional description of this resource. Provide this property when
 	// you create the resource.
 	Description string `json:"description,omitempty"`
+	// Specifies the canary migration state for the backend buckets attached
+	// to this forwarding rule. Possible values are PREPARE,
+	// TEST_BY_PERCENTAGE, and TEST_ALL_TRAFFIC. To begin the migration from
+	// EXTERNAL to EXTERNAL_MANAGED, the state must be changed to PREPARE.
+	// The state must be changed to TEST_ALL_TRAFFIC before the
+	// loadBalancingScheme can be changed to EXTERNAL_MANAGED. Optionally,
+	// the TEST_BY_PERCENTAGE state can be used to migrate traffic to
+	// backend buckets attached to this forwarding rule by percentage using
+	// externalManagedBackendBucketMigrationTestingPercentage. Rolling back
+	// a migration requires the states to be set in reverse order. So
+	// changing the scheme from EXTERNAL_MANAGED to EXTERNAL requires the
+	// state to be set to TEST_ALL_TRAFFIC at the same time. Optionally, the
+	// TEST_BY_PERCENTAGE state can be used to migrate some traffic back to
+	// EXTERNAL or PREPARE can be used to migrate all traffic back to
+	// EXTERNAL.
+	ExternalManagedBackendBucketMigrationState string `json:"externalManagedBackendBucketMigrationState,omitempty"`
+	// Determines the fraction of requests to backend buckets that should be
+	// processed by the global external Application Load Balancer. The value
+	// of this field must be in the range [0, 100]. This value can only be
+	// set if the loadBalancingScheme in the BackendService is set to
+	// EXTERNAL (when using the classic Application Load Balancer) and the
+	// migration state is TEST_BY_PERCENTAGE.
+	ExternalManagedBackendBucketMigrationTestingPercentage float64 `json:"externalManagedBackendBucketMigrationTestingPercentage,omitempty"`
 	// Fingerprint of this resource. A hash of the contents stored in this
 	// object. This field is used in optimistic locking. This field will be
 	// ignored when inserting a ForwardingRule. Include the fingerprint in
@@ -1220,6 +1518,12 @@ type ForwardingRule struct {
 	// [Output Only] The unique identifier for the resource. This identifier
 	// is defined by the server.
 	Id uint64 `json:"id,omitempty,string"`
+	// Resource reference of a PublicDelegatedPrefix. The PDP must be a
+	// sub-PDP in EXTERNAL_IPV6_FORWARDING_RULE_CREATION mode. Use one of
+	// the following formats to specify a sub-PDP when creating an IPv6
+	// NetLB forwarding rule using BYOIP: Full resource URL, as in
+	// https://www.googleapis.com/compute/v1/projects/project_id/regions/region /publicDelegatedPrefixes/sub-pdp-name Partial URL, as in: - projects/project_id/regions/region/publicDelegatedPrefixes/sub-pdp-name - regions/region/publicDelegatedPrefixes/sub-pdp-name
+	IpCollection string `json:"ipCollection,omitempty"`
 	// The IP Version that will be used by this forwarding rule. Valid
 	// options are IPV4 or IPV6.
 	IpVersion string `json:"ipVersion,omitempty"`
@@ -1231,7 +1535,7 @@ type ForwardingRule struct {
 	// INTERNAL.
 	IsMirroringCollector bool `json:"isMirroringCollector,omitempty"`
 	// [Output Only] Type of the resource. Always compute#forwardingRule for
-	// Forwarding Rule resources.
+	// forwarding rule resources.
 	Kind string `json:"kind,omitempty"`
 	// A fingerprint for the labels being applied to this resource, which is
 	// essentially a hash of the labels set used for optimistic locking. The
@@ -1278,13 +1582,14 @@ type ForwardingRule struct {
 	// rule name must be a 1-20 characters string with lowercase letters and
 	// numbers and must start with a letter.
 	Name string `json:"name,omitempty"`
-	// This field is not used for external load balancing. For Internal
-	// TCP/UDP Load Balancing, this field identifies the network that the
-	// load balanced IP should belong to for this Forwarding Rule. If the
-	// subnetwork is specified, the network of the subnetwork will be used.
-	// If neither subnetwork nor this field is specified, the default
-	// network will be used. For Private Service Connect forwarding rules
-	// that forward traffic to Google APIs, a network must be provided.
+	// This field is not used for global external load balancing. For
+	// internal passthrough Network Load Balancers, this field identifies
+	// the network that the load balanced IP should belong to for this
+	// forwarding rule. If the subnetwork is specified, the network of the
+	// subnetwork will be used. If neither subnetwork nor this field is
+	// specified, the default network will be used. For Private Service
+	// Connect forwarding rules that forward traffic to Google APIs, a
+	// network must be provided.
 	Network string `json:"network,omitempty"`
 	// This signifies the networking tier used for configuring this load
 	// balancer and can only take the following values: PREMIUM, STANDARD.
@@ -1296,38 +1601,42 @@ type ForwardingRule struct {
 	NetworkTier string `json:"networkTier,omitempty"`
 	// This is used in PSC consumer ForwardingRule to control whether it
 	// should try to auto-generate a DNS zone or not. Non-PSC forwarding
-	// rules do not use this field.
+	// rules do not use this field. Once set, this field is not mutable.
 	NoAutomateDnsZone bool `json:"noAutomateDnsZone,omitempty"`
-	// This field can only be used: - If IPProtocol is one of TCP, UDP, or
-	// SCTP. - By backend service-based network load balancers, target
-	// pool-based network load balancers, internal proxy load balancers,
-	// external proxy load balancers, Traffic Director, external protocol
-	// forwarding, and Classic VPN. Some products have restrictions on what
-	// ports can be used. See port specifications for details. Only packets
-	// addressed to ports in the specified range will be forwarded to the
-	// backends configured with this forwarding rule. The ports, port_range,
-	// and allPorts fields are mutually exclusive. For external forwarding
-	// rules, two or more forwarding rules cannot use the same [IPAddress,
-	// IPProtocol] pair, and cannot have overlapping portRanges. For
-	// internal forwarding rules within the same VPC network, two or more
-	// forwarding rules cannot use the same [IPAddress, IPProtocol] pair,
-	// and cannot have overlapping portRanges. @pattern: \\d+(?:-\\d+)?
+	// The ports, portRange, and allPorts fields are mutually exclusive.
+	// Only packets addressed to ports in the specified range will be
+	// forwarded to the backends configured with this forwarding rule. The
+	// portRange field has the following limitations: - It requires that the
+	// forwarding rule IPProtocol be TCP, UDP, or SCTP, and - It's
+	// applicable only to the following products: external passthrough
+	// Network Load Balancers, internal and external proxy Network Load
+	// Balancers, internal and external Application Load Balancers, external
+	// protocol forwarding, and Classic VPN. - Some products have
+	// restrictions on what ports can be used. See port specifications for
+	// details. For external forwarding rules, two or more forwarding rules
+	// cannot use the same [IPAddress, IPProtocol] pair, and cannot have
+	// overlapping portRanges. For internal forwarding rules within the same
+	// VPC network, two or more forwarding rules cannot use the same
+	// [IPAddress, IPProtocol] pair, and cannot have overlapping portRanges.
+	// @pattern: \\d+(?:-\\d+)?
 	PortRange string `json:"portRange,omitempty"`
-	// This field can only be used: - If IPProtocol is one of TCP, UDP, or
-	// SCTP. - By internal TCP/UDP load balancers, backend service-based
-	// network load balancers, and internal protocol forwarding. You can
+	// The ports, portRange, and allPorts fields are mutually exclusive.
+	// Only packets addressed to ports in the specified range will be
+	// forwarded to the backends configured with this forwarding rule. The
+	// ports field has the following limitations: - It requires that the
+	// forwarding rule IPProtocol be TCP, UDP, or SCTP, and - It's
+	// applicable only to the following products: internal passthrough
+	// Network Load Balancers, backend service-based external passthrough
+	// Network Load Balancers, and internal protocol forwarding. - You can
 	// specify a list of up to five ports by number, separated by commas.
-	// The ports can be contiguous or discontiguous. Only packets addressed
-	// to these ports will be forwarded to the backends configured with this
-	// forwarding rule. For external forwarding rules, two or more
-	// forwarding rules cannot use the same [IPAddress, IPProtocol] pair,
-	// and cannot share any values defined in ports. For internal forwarding
-	// rules within the same VPC network, two or more forwarding rules
-	// cannot use the same [IPAddress, IPProtocol] pair, and cannot share
-	// any values defined in ports. The ports, port_range, and allPorts
-	// fields are mutually exclusive. @pattern: \\d+(?:-\\d+)?
+	// The ports can be contiguous or discontiguous. For external forwarding
+	// rules, two or more forwarding rules cannot use the same [IPAddress,
+	// IPProtocol] pair if they share at least one port number. For internal
+	// forwarding rules within the same VPC network, two or more forwarding
+	// rules cannot use the same [IPAddress, IPProtocol] pair if they share
+	// at least one port number. @pattern: \\d+(?:-\\d+)?
 	Ports []string `json:"ports,omitempty"`
-	// [Output Only] The PSC connection id of the PSC Forwarding Rule.
+	// [Output Only] The PSC connection id of the PSC forwarding rule.
 	PscConnectionId     uint64 `json:"pscConnectionId,omitempty,string"`
 	PscConnectionStatus string `json:"pscConnectionStatus,omitempty"`
 	// [Output Only] URL of the region where the regional forwarding rule
@@ -1343,7 +1652,7 @@ type ForwardingRule struct {
 	// Service Directory resources to register this forwarding rule with.
 	// Currently, only supports a single Service Directory resource.
 	ServiceDirectoryRegistrations []*ForwardingRuleServiceDirectoryRegistration `json:"serviceDirectoryRegistrations,omitempty"`
-	// An optional prefix to the service name for this Forwarding Rule. If
+	// An optional prefix to the service name for this forwarding rule. If
 	// specified, the prefix is the first label of the fully qualified
 	// service name. The label must be 1-63 characters long, and comply with
 	// RFC1035. Specifically, the label must be 1-63 characters long and
@@ -1354,22 +1663,22 @@ type ForwardingRule struct {
 	// internal load balancing.
 	ServiceLabel string `json:"serviceLabel,omitempty"`
 	// [Output Only] The internal fully qualified service name for this
-	// Forwarding Rule. This field is only used for internal load balancing.
+	// forwarding rule. This field is only used for internal load balancing.
 	ServiceName string `json:"serviceName,omitempty"`
-	// If not empty, this Forwarding Rule will only forward the traffic when
+	// If not empty, this forwarding rule will only forward the traffic when
 	// the source IP address matches one of the IP addresses or CIDR ranges
-	// set here. Note that a Forwarding Rule can only have up to 64 source
-	// IP ranges, and this field can only be used with a regional Forwarding
-	// Rule whose scheme is EXTERNAL. Each source_ip_range entry should be
+	// set here. Note that a forwarding rule can only have up to 64 source
+	// IP ranges, and this field can only be used with a regional forwarding
+	// rule whose scheme is EXTERNAL. Each source_ip_range entry should be
 	// either an IP address (for example, 1.2.3.4) or a CIDR range (for
 	// example, 1.2.3.0/24).
 	SourceIpRanges []string `json:"sourceIpRanges,omitempty"`
 	// This field identifies the subnetwork that the load balanced IP should
-	// belong to for this Forwarding Rule, used in internal load balancing
-	// and network load balancing with IPv6. If the network specified is in
-	// auto subnet mode, this field is optional. However, a subnetwork must
-	// be specified if the network is in custom subnet mode or when creating
-	// external forwarding rule with IPv6.
+	// belong to for this forwarding rule, used with internal load balancers
+	// and external passthrough Network Load Balancers with IPv6. If the
+	// network specified is in auto subnet mode, this field is optional.
+	// However, a subnetwork must be specified if the network is in custom
+	// subnet mode or when creating external forwarding rule with IPv6.
 	Subnetwork string `json:"subnetwork,omitempty"`
 	// The URL of the target resource to receive the matched traffic. For
 	// regional forwarding rules, this target must be in the same region as
@@ -1383,7 +1692,8 @@ type ForwardingRule struct {
 	// the name of a supported Google API bundle: - vpc-sc - APIs that
 	// support VPC Service Controls. - all-apis - All supported Google APIs.
 	// - For Private Service Connect forwarding rules that forward traffic
-	// to managed services, the target must be a service attachment.
+	// to managed services, the target must be a service attachment. The
+	// target is not mutable once set as a service attachment.
 	Target                   string `json:"target,omitempty"`
 	googleapi.ServerResponse `json:"-"`
 	ForceSendFields          []string `json:"-"`
@@ -1405,7 +1715,7 @@ type ForwardingRuleServiceDirectoryRegistration struct {
 	Service string `json:"service,omitempty"`
 	// [Optional] Service Directory region to register this global
 	// forwarding rule under. Default to "us-central1". Only used for PSC
-	// for Google APIs. All PSC for Google APIs Forwarding Rules on the same
+	// for Google APIs. All PSC for Google APIs forwarding rules on the same
 	// network should use the same Service Directory region.
 	ServiceDirectoryRegion string   `json:"serviceDirectoryRegion,omitempty"`
 	ForceSendFields        []string `json:"-"`
@@ -1429,7 +1739,7 @@ type GRPCHealthCheck struct {
 	// Specifies how a port is selected for health checking. Can be one of
 	// the following values: USE_FIXED_PORT: Specifies a port number
 	// explicitly using the port field in the health check. Supported by
-	// backend services for pass-through load balancers and backend services
+	// backend services for passthrough load balancers and backend services
 	// for proxy load balancers. Not supported by target pools. The health
 	// check supports all backends supported by the backend service provided
 	// the backend can be health checked. For example, GCE_VM_IP network
@@ -1438,7 +1748,44 @@ type GRPCHealthCheck struct {
 	// Provides an indirect method of specifying the health check port by
 	// referring to the backend service. Only supported by backend services
 	// for proxy load balancers. Not supported by target pools. Not
-	// supported by backend services for pass-through load balancers.
+	// supported by backend services for passthrough load balancers.
+	// Supports all backends that can be health checked; for example,
+	// GCE_VM_IP_PORT network endpoint groups and instance group backends.
+	// For GCE_VM_IP_PORT network endpoint group backends, the health check
+	// uses the port number specified for each endpoint in the network
+	// endpoint group. For instance group backends, the health check uses
+	// the port number determined by looking up the backend service's named
+	// port in the instance group's list of named ports.
+	PortSpecification string   `json:"portSpecification,omitempty"`
+	ForceSendFields   []string `json:"-"`
+	NullFields        []string `json:"-"`
+}
+
+// GRPCTLSHealthCheck is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type GRPCTLSHealthCheck struct {
+	// The gRPC service name for the health check. This field is optional.
+	// The value of grpc_service_name has the following meanings by
+	// convention: - Empty service_name means the overall status of all
+	// services at the backend. - Non-empty service_name means the health of
+	// that gRPC service, as defined by the owner of the service. The
+	// grpc_service_name can only be ASCII.
+	GrpcServiceName string `json:"grpcServiceName,omitempty"`
+	// The TCP port number to which the health check prober sends packets.
+	// Valid values are 1 through 65535.
+	Port int64 `json:"port,omitempty"`
+	// Specifies how a port is selected for health checking. Can be one of
+	// the following values: USE_FIXED_PORT: Specifies a port number
+	// explicitly using the port field in the health check. Supported by
+	// backend services for passthrough load balancers and backend services
+	// for proxy load balancers. Not supported by target pools. The health
+	// check supports all backends supported by the backend service provided
+	// the backend can be health checked. For example, GCE_VM_IP network
+	// endpoint groups, GCE_VM_IP_PORT network endpoint groups, and instance
+	// group backends. USE_NAMED_PORT: Not supported. USE_SERVING_PORT:
+	// Provides an indirect method of specifying the health check port by
+	// referring to the backend service. Only supported by backend services
+	// for proxy load balancers. Not supported by target pools. Not
+	// supported by backend services for passthrough load balancers.
 	// Supports all backends that can be health checked; for example,
 	// GCE_VM_IP_PORT network endpoint groups and instance group backends.
 	// For GCE_VM_IP_PORT network endpoint group backends, the health check
@@ -1479,7 +1826,7 @@ type HTTP2HealthCheck struct {
 	// Specifies how a port is selected for health checking. Can be one of
 	// the following values: USE_FIXED_PORT: Specifies a port number
 	// explicitly using the port field in the health check. Supported by
-	// backend services for pass-through load balancers and backend services
+	// backend services for passthrough load balancers and backend services
 	// for proxy load balancers. Not supported by target pools. The health
 	// check supports all backends supported by the backend service provided
 	// the backend can be health checked. For example, GCE_VM_IP network
@@ -1488,7 +1835,7 @@ type HTTP2HealthCheck struct {
 	// Provides an indirect method of specifying the health check port by
 	// referring to the backend service. Only supported by backend services
 	// for proxy load balancers. Not supported by target pools. Not
-	// supported by backend services for pass-through load balancers.
+	// supported by backend services for passthrough load balancers.
 	// Supports all backends that can be health checked; for example,
 	// GCE_VM_IP_PORT network endpoint groups and instance group backends.
 	// For GCE_VM_IP_PORT network endpoint group backends, the health check
@@ -1501,7 +1848,7 @@ type HTTP2HealthCheck struct {
 	// the backend, either NONE or PROXY_V1. The default is NONE.
 	ProxyHeader string `json:"proxyHeader,omitempty"`
 	// The request path of the HTTP/2 health check request. The default
-	// value is /.
+	// value is /. Must comply with RFC3986.
 	RequestPath string `json:"requestPath,omitempty"`
 	// Creates a content-based HTTP/2 health check. In addition to the
 	// required HTTP 200 (OK) status code, you can configure the health
@@ -1532,7 +1879,7 @@ type HTTPHealthCheck struct {
 	// Specifies how a port is selected for health checking. Can be one of
 	// the following values: USE_FIXED_PORT: Specifies a port number
 	// explicitly using the port field in the health check. Supported by
-	// backend services for pass-through load balancers and backend services
+	// backend services for passthrough load balancers and backend services
 	// for proxy load balancers. Also supported in legacy HTTP health checks
 	// for target pools. The health check supports all backends supported by
 	// the backend service provided the backend can be health checked. For
@@ -1555,7 +1902,7 @@ type HTTPHealthCheck struct {
 	// the backend, either NONE or PROXY_V1. The default is NONE.
 	ProxyHeader string `json:"proxyHeader,omitempty"`
 	// The request path of the HTTP health check request. The default value
-	// is /.
+	// is /. Must comply with RFC3986.
 	RequestPath string `json:"requestPath,omitempty"`
 	// Creates a content-based HTTP health check. In addition to the
 	// required HTTP 200 (OK) status code, you can configure the health
@@ -1586,7 +1933,7 @@ type HTTPSHealthCheck struct {
 	// Specifies how a port is selected for health checking. Can be one of
 	// the following values: USE_FIXED_PORT: Specifies a port number
 	// explicitly using the port field in the health check. Supported by
-	// backend services for pass-through load balancers and backend services
+	// backend services for passthrough load balancers and backend services
 	// for proxy load balancers. Not supported by target pools. The health
 	// check supports all backends supported by the backend service provided
 	// the backend can be health checked. For example, GCE_VM_IP network
@@ -1595,7 +1942,7 @@ type HTTPSHealthCheck struct {
 	// Provides an indirect method of specifying the health check port by
 	// referring to the backend service. Only supported by backend services
 	// for proxy load balancers. Not supported by target pools. Not
-	// supported by backend services for pass-through load balancers.
+	// supported by backend services for passthrough load balancers.
 	// Supports all backends that can be health checked; for example,
 	// GCE_VM_IP_PORT network endpoint groups and instance group backends.
 	// For GCE_VM_IP_PORT network endpoint group backends, the health check
@@ -1608,7 +1955,7 @@ type HTTPSHealthCheck struct {
 	// the backend, either NONE or PROXY_V1. The default is NONE.
 	ProxyHeader string `json:"proxyHeader,omitempty"`
 	// The request path of the HTTPS health check request. The default value
-	// is /.
+	// is /. Must comply with RFC3986.
 	RequestPath string `json:"requestPath,omitempty"`
 	// Creates a content-based HTTPS health check. In addition to the
 	// required HTTP 200 (OK) status code, you can configure the health
@@ -1640,8 +1987,9 @@ type HealthCheck struct {
 	CreationTimestamp string `json:"creationTimestamp,omitempty"`
 	// An optional description of this resource. Provide this property when
 	// you create the resource.
-	Description     string           `json:"description,omitempty"`
-	GrpcHealthCheck *GRPCHealthCheck `json:"grpcHealthCheck,omitempty"`
+	Description        string              `json:"description,omitempty"`
+	GrpcHealthCheck    *GRPCHealthCheck    `json:"grpcHealthCheck,omitempty"`
+	GrpcTlsHealthCheck *GRPCTLSHealthCheck `json:"grpcTlsHealthCheck,omitempty"`
 	// A so-far unhealthy instance will be marked healthy after this many
 	// consecutive successes. The default value is 2.
 	HealthyThreshold int64             `json:"healthyThreshold,omitempty"`
@@ -1674,15 +2022,15 @@ type HealthCheck struct {
 	SelfLinkWithId string `json:"selfLinkWithId,omitempty"`
 	// The list of cloud regions from which health checks are performed. If
 	// any regions are specified, then exactly 3 regions should be
-	// specified. The region names must be valid names of GCP regions. This
-	// can only be set for global health check. If this list is non-empty,
-	// then there are restrictions on what other health check fields are
-	// supported and what other resources can use this health check: - SSL,
-	// HTTP2, and GRPC protocols are not supported. - The TCP request field
-	// is not supported. - The proxyHeader field for HTTP, HTTPS, and TCP is
-	// not supported. - The checkIntervalSec field must be at least 30. -
-	// The health check cannot be used with BackendService nor with managed
-	// instance group auto-healing.
+	// specified. The region names must be valid names of Google Cloud
+	// regions. This can only be set for global health check. If this list
+	// is non-empty, then there are restrictions on what other health check
+	// fields are supported and what other resources can use this health
+	// check: - SSL, HTTP2, and GRPC protocols are not supported. - The TCP
+	// request field is not supported. - The proxyHeader field for HTTP,
+	// HTTPS, and TCP is not supported. - The checkIntervalSec field must be
+	// at least 30. - The health check cannot be used with BackendService
+	// nor with managed instance group auto-healing.
 	SourceRegions  []string        `json:"sourceRegions,omitempty"`
 	SslHealthCheck *SSLHealthCheck `json:"sslHealthCheck,omitempty"`
 	TcpHealthCheck *TCPHealthCheck `json:"tcpHealthCheck,omitempty"`
@@ -2054,9 +2402,9 @@ type HttpRouteAction struct {
 	// clients that are configured with a fault_injection_policy if: 1. The
 	// traffic is generated by fault injection AND 2. The fault injection is
 	// not a delay fault injection. Fault injection is not supported with
-	// the global external HTTP(S) load balancer (classic). To see which
-	// load balancers support fault injection, see Load balancing: Routing
-	// and traffic management features.
+	// the classic Application Load Balancer . To see which load balancers
+	// support fault injection, see Load balancing: Routing and traffic
+	// management features.
 	FaultInjectionPolicy *HttpFaultInjection `json:"faultInjectionPolicy,omitempty"`
 	// Specifies the maximum duration (timeout) for streams on the selected
 	// route. Unlike the timeout field where the timeout duration starts
@@ -2090,7 +2438,7 @@ type HttpRouteAction struct {
 	Timeout *Duration `json:"timeout,omitempty"`
 	// The spec to modify the URL of the request, before forwarding the
 	// request to the matched service. urlRewrite is the only action
-	// supported in UrlMaps for external HTTP(S) load balancers. Not
+	// supported in UrlMaps for classic Application Load Balancers. Not
 	// supported when the URL map is bound to a target gRPC proxy that has
 	// the validateForProxyless field set to true.
 	UrlRewrite *UrlRewrite `json:"urlRewrite,omitempty"`
@@ -2135,8 +2483,8 @@ type HttpRouteRule struct {
 	// applied. While attempting a retry, if load balancer is successful in
 	// reaching the service, the customErrorResponsePolicy is ignored and
 	// the response from the service is returned to the client.
-	// customErrorResponsePolicy is supported only for Global External
-	// HTTP(S) load balancing.
+	// customErrorResponsePolicy is supported only for global external
+	// Application Load Balancers.
 	CustomErrorResponsePolicy *CustomErrorResponsePolicy `json:"customErrorResponsePolicy,omitempty"`
 	// The short description conveying the intent of this routeRule. The
 	// description can have a maximum length of 1024 characters.
@@ -2190,26 +2538,22 @@ type HttpRouteRule struct {
 	// In response to a matching matchRule, the load balancer performs
 	// advanced routing actions, such as URL rewrites and header
 	// transformations, before forwarding the request to the selected
-	// backend. If routeAction specifies any weightedBackendServices,
-	// service must not be set. Conversely if service is set, routeAction
-	// cannot contain any weightedBackendServices. Only one of urlRedirect,
-	// service or routeAction.weightedBackendService must be set. URL maps
-	// for Classic external HTTP(S) load balancers only support the
-	// urlRewrite action within a route rule's routeAction.
+	// backend. Only one of urlRedirect, service or
+	// routeAction.weightedBackendService can be set. URL maps for classic
+	// Application Load Balancers only support the urlRewrite action within
+	// a route rule's routeAction.
 	RouteAction *HttpRouteAction `json:"routeAction,omitempty"`
 	// The full or partial URL of the backend service resource to which
 	// traffic is directed if this rule is matched. If routeAction is also
 	// specified, advanced routing actions, such as URL rewrites, take
-	// effect before sending the request to the backend. However, if service
-	// is specified, routeAction cannot contain any weightedBackendServices.
-	// Conversely, if routeAction specifies any weightedBackendServices,
-	// service must not be specified. Only one of urlRedirect, service or
-	// routeAction.weightedBackendService must be set.
+	// effect before sending the request to the backend. Only one of
+	// urlRedirect, service or routeAction.weightedBackendService can be
+	// set.
 	Service string `json:"service,omitempty"`
 	// When this rule is matched, the request is redirected to a URL
-	// specified by urlRedirect. If urlRedirect is specified, service or
-	// routeAction must not be set. Not supported when the URL map is bound
-	// to a target gRPC proxy.
+	// specified by urlRedirect. Only one of urlRedirect, service or
+	// routeAction.weightedBackendService can be set. Not supported when the
+	// URL map is bound to a target gRPC proxy.
 	UrlRedirect     *HttpRedirectAction `json:"urlRedirect,omitempty"`
 	ForceSendFields []string            `json:"-"`
 	NullFields      []string            `json:"-"`
@@ -2392,27 +2736,42 @@ type NetworkEndpoint struct {
 	// This is also an internal field purely for bookkeeping purposes
 	Scope meta.KeyType `json:"-"`
 
-	// Metadata defined as annotations on the network endpoint.
+	// Optional metadata defined as annotations on the network endpoint.
 	Annotations map[string]string `json:"annotations,omitempty"`
+	// Represents the port number to which PSC consumer sends packets.
+	// Optional. Only valid for network endpoint groups created with
+	// GCE_VM_IP_PORTMAP endpoint type.
+	ClientDestinationPort int64 `json:"clientDestinationPort,omitempty"`
 	// Optional fully qualified domain name of network endpoint. This can
 	// only be specified when NetworkEndpointGroup.network_endpoint_type is
 	// NON_GCP_FQDN_PORT.
 	Fqdn string `json:"fqdn,omitempty"`
-	// The name for a specific VM instance that the IP address belongs to.
-	// This is required for network endpoints of type GCE_VM_IP_PORT. The
-	// instance must be in the same zone of network endpoint group. The name
-	// must be 1-63 characters long, and comply with RFC1035.
+	// The name or a URL of VM instance of this network endpoint. Optional,
+	// the field presence depends on the network endpoint type. The field is
+	// required for network endpoints of type GCE_VM_IP and GCE_VM_IP_PORT.
+	// The instance must be in the same zone of network endpoint group (for
+	// zonal NEGs) or in the zone within the region of the NEG (for regional
+	// NEGs). If the ipAddress is specified, it must belongs to the VM
+	// instance. The name must be 1-63 characters long, and comply with
+	// RFC1035 or be a valid URL pointing to an existing instance.
 	Instance string `json:"instance,omitempty"`
 	// Optional IPv4 address of network endpoint. The IP address must belong
 	// to a VM in Compute Engine (either the primary IP or as part of an
 	// aliased IP range). If the IP address is not specified, then the
 	// primary IP address for the VM instance in the network that the
-	// network endpoint group belongs to will be used.
+	// network endpoint group belongs to will be used. This field is
+	// redundant and need not be set for network endpoints of type
+	// GCE_VM_IP. If set, it must be set to the primary internal IP address
+	// of the attached VM instance that matches the subnetwork of the NEG.
+	// The primary internal IP address from any NIC of a multi-NIC VM
+	// instance can be added to a NEG as long as it matches the NEG
+	// subnetwork.
 	IpAddress string `json:"ipAddress,omitempty"`
 	// Optional IPv6 address of network endpoint.
 	Ipv6Address string `json:"ipv6Address,omitempty"`
 	// Optional port number of network endpoint. If not specified, the
-	// defaultPort for the network endpoint group will be used.
+	// defaultPort for the network endpoint group will be used. This field
+	// can not be set for network endpoints of type GCE_VM_IP.
 	Port            int64    `json:"port,omitempty"`
 	ForceSendFields []string `json:"-"`
 	NullFields      []string `json:"-"`
@@ -2428,21 +2787,24 @@ type NetworkEndpointGroup struct {
 	// This is also an internal field purely for bookkeeping purposes
 	Scope meta.KeyType `json:"-"`
 
-	// Metadata defined as annotations on the network endpoint group.
+	// Optional. Metadata defined as annotations on the network endpoint
+	// group.
 	Annotations map[string]string `json:"annotations,omitempty"`
-	// Only valid when networkEndpointType is "SERVERLESS". Only one of
-	// cloudRun, appEngine or cloudFunction may be set.
+	// Optional. Only valid when networkEndpointType is SERVERLESS. Only one
+	// of cloudRun, appEngine or cloudFunction may be set.
 	AppEngine *NetworkEndpointGroupAppEngine `json:"appEngine,omitempty"`
-	// Only valid when networkEndpointType is "SERVERLESS". Only one of
-	// cloudRun, appEngine or cloudFunction may be set.
+	// Optional. Only valid when networkEndpointType is SERVERLESS. Only one
+	// of cloudRun, appEngine or cloudFunction may be set.
 	CloudFunction *NetworkEndpointGroupCloudFunction `json:"cloudFunction,omitempty"`
-	// Only valid when networkEndpointType is "SERVERLESS". Only one of
-	// cloudRun, appEngine or cloudFunction may be set.
+	// Optional. Only valid when networkEndpointType is SERVERLESS. Only one
+	// of cloudRun, appEngine or cloudFunction may be set.
 	CloudRun *NetworkEndpointGroupCloudRun `json:"cloudRun,omitempty"`
 	// [Output Only] Creation timestamp in RFC3339 text format.
 	CreationTimestamp string `json:"creationTimestamp,omitempty"`
 	// The default port used if the port number is not specified in the
-	// network endpoint.
+	// network endpoint. Optional. If the network endpoint type is either
+	// GCE_VM_IP, SERVERLESS or PRIVATE_SERVICE_CONNECT, this field must not
+	// be specified.
 	DefaultPort int64 `json:"defaultPort,omitempty"`
 	// An optional description of this resource. Provide this property when
 	// you create the resource.
@@ -2465,17 +2827,20 @@ type NetworkEndpointGroup struct {
 	// last character, which cannot be a dash.
 	Name string `json:"name,omitempty"`
 	// The URL of the network to which all network endpoints in the NEG
-	// belong. Uses "default" project network if unspecified.
+	// belong. Uses default project network if unspecified.
 	Network string `json:"network,omitempty"`
 	// Type of network endpoints in this network endpoint group. Can be one
 	// of GCE_VM_IP, GCE_VM_IP_PORT, NON_GCP_PRIVATE_IP_PORT,
 	// INTERNET_FQDN_PORT, INTERNET_IP_PORT, SERVERLESS,
+	// PRIVATE_SERVICE_CONNECT, GCE_VM_IP_PORTMAP.
+	NetworkEndpointType string `json:"networkEndpointType,omitempty"`
+	// Optional. Only valid when networkEndpointType is
 	// PRIVATE_SERVICE_CONNECT.
-	NetworkEndpointType string                       `json:"networkEndpointType,omitempty"`
-	PscData             *NetworkEndpointGroupPscData `json:"pscData,omitempty"`
+	PscData *NetworkEndpointGroupPscData `json:"pscData,omitempty"`
 	// The target service url used to set up private service connection to a
 	// Google API or a PSC Producer Service Attachment. An example value is:
-	// "asia-northeast3-cloudkms.googleapis.com"
+	// asia-northeast3-cloudkms.googleapis.com. Optional. Only valid when
+	// networkEndpointType is PRIVATE_SERVICE_CONNECT.
 	PscTargetService string `json:"pscTargetService,omitempty"`
 	// [Output Only] The URL of the region where the network endpoint group
 	// is located.
@@ -2485,7 +2850,7 @@ type NetworkEndpointGroup struct {
 	// [Output Only] Server-defined URL for this resource with the resource
 	// id.
 	SelfLinkWithId string `json:"selfLinkWithId,omitempty"`
-	// Only valid when networkEndpointType is "SERVERLESS". Only one of
+	// Only valid when networkEndpointType is SERVERLESS. Only one of
 	// cloudRun, appEngine, cloudFunction or serverlessDeployment may be
 	// set.
 	ServerlessDeployment *NetworkEndpointGroupServerlessDeployment `json:"serverlessDeployment,omitempty"`
@@ -2509,21 +2874,21 @@ type NetworkEndpointGroup struct {
 // NetworkEndpointGroupAppEngine is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
 type NetworkEndpointGroupAppEngine struct {
 	// Optional serving service. The service name is case-sensitive and must
-	// be 1-63 characters long. Example value: "default", "my-service".
+	// be 1-63 characters long. Example value: default, my-service.
 	Service string `json:"service,omitempty"`
-	// A template to parse service and version fields from a request URL.
-	// URL mask allows for routing to multiple App Engine services without
+	// An URL mask is one of the main components of the Cloud Function. A
+	// template to parse service and version fields from a request URL. URL
+	// mask allows for routing to multiple App Engine services without
 	// having to create multiple Network Endpoint Groups and backend
 	// services. For example, the request URLs
-	// "foo1-dot-appname.appspot.com/v1" and
-	// "foo1-dot-appname.appspot.com/v2" can be backed by the same
-	// Serverless NEG with URL mask
-	// "<service>-dot-appname.appspot.com/<version>". The URL mask will
-	// parse them to { service = "foo1", version = "v1" } and { service =
-	// "foo1", version = "v2" } respectively.
+	// foo1-dot-appname.appspot.com/v1 and foo1-dot-appname.appspot.com/v2
+	// can be backed by the same Serverless NEG with URL mask
+	// <service>-dot-appname.appspot.com/<version>. The URL mask will parse
+	// them to { service = "foo1", version = "v1" } and { service = "foo1",
+	// version = "v2" } respectively.
 	UrlMask string `json:"urlMask,omitempty"`
 	// Optional serving version. The version name is case-sensitive and must
-	// be 1-100 characters long. Example value: "v1", "v2".
+	// be 1-100 characters long. Example value: v1, v2.
 	Version         string   `json:"version,omitempty"`
 	ForceSendFields []string `json:"-"`
 	NullFields      []string `json:"-"`
@@ -2533,15 +2898,16 @@ type NetworkEndpointGroupAppEngine struct {
 type NetworkEndpointGroupCloudFunction struct {
 	// A user-defined name of the Cloud Function. The function name is
 	// case-sensitive and must be 1-63 characters long. Example value:
-	// "func1".
+	// func1.
 	Function string `json:"function,omitempty"`
-	// A template to parse function field from a request URL. URL mask
-	// allows for routing to multiple Cloud Functions without having to
-	// create multiple Network Endpoint Groups and backend services. For
-	// example, request URLs " mydomain.com/function1" and
-	// "mydomain.com/function2" can be backed by the same Serverless NEG
-	// with URL mask "/<function>". The URL mask will parse them to {
-	// function = "function1" } and { function = "function2" } respectively.
+	// An URL mask is one of the main components of the Cloud Function. A
+	// template to parse function field from a request URL. URL mask allows
+	// for routing to multiple Cloud Functions without having to create
+	// multiple Network Endpoint Groups and backend services. For example,
+	// request URLs mydomain.com/function1 and mydomain.com/function2 can be
+	// backed by the same Serverless NEG with URL mask /<function>. The URL
+	// mask will parse them to { function = "function1" } and { function =
+	// "function2" } respectively.
 	UrlMask         string   `json:"urlMask,omitempty"`
 	ForceSendFields []string `json:"-"`
 	NullFields      []string `json:"-"`
@@ -2558,14 +2924,15 @@ type NetworkEndpointGroupCloudRun struct {
 	// 1-63 characters long, and comply with RFC1035. Example value:
 	// "revision-0010".
 	Tag string `json:"tag,omitempty"`
-	// A template to parse <service> and <tag> fields from a request URL.
-	// URL mask allows for routing to multiple Run services without having
-	// to create multiple network endpoint groups and backend services. For
-	// example, request URLs "foo1.domain.com/bar1" and
-	// "foo1.domain.com/bar2" can be backed by the same Serverless Network
-	// Endpoint Group (NEG) with URL mask "<tag>.domain.com/<service>". The
-	// URL mask will parse them to { service="bar1", tag="foo1" } and {
-	// service="bar2", tag="foo2" } respectively.
+	// An URL mask is one of the main components of the Cloud Function. A
+	// template to parse <service> and <tag> fields from a request URL. URL
+	// mask allows for routing to multiple Run services without having to
+	// create multiple network endpoint groups and backend services. For
+	// example, request URLs foo1.domain.com/bar1 and foo1.domain.com/bar2
+	// can be backed by the same Serverless Network Endpoint Group (NEG)
+	// with URL mask <tag>.domain.com/<service>. The URL mask will parse
+	// them to { service="bar1", tag="foo1" } and { service="bar2",
+	// tag="foo2" } respectively.
 	UrlMask         string   `json:"urlMask,omitempty"`
 	ForceSendFields []string `json:"-"`
 	NullFields      []string `json:"-"`
@@ -2574,10 +2941,12 @@ type NetworkEndpointGroupCloudRun struct {
 // NetworkEndpointGroupLbNetworkEndpointGroup is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
 type NetworkEndpointGroupLbNetworkEndpointGroup struct {
 	// The default port used if the port number is not specified in the
-	// network endpoint. [Deprecated] This field is deprecated.
+	// network endpoint. If the network endpoint type is either GCE_VM_IP,
+	// SERVERLESS or PRIVATE_SERVICE_CONNECT, this field must not be
+	// specified. [Deprecated] This field is deprecated.
 	DefaultPort int64 `json:"defaultPort,omitempty"`
 	// The URL of the network to which all network endpoints in the NEG
-	// belong. Uses "default" project network if unspecified. [Deprecated]
+	// belong. Uses default project network if unspecified. [Deprecated]
 	// This field is deprecated.
 	Network string `json:"network,omitempty"`
 	// Optional URL of the subnetwork to which all network endpoints in the
@@ -2596,6 +2965,10 @@ type NetworkEndpointGroupPscData struct {
 	// IP address acts as a VIP for a PSC NEG, allowing it to act as an
 	// endpoint in L7 PSC-XLB.
 	ConsumerPscAddress string `json:"consumerPscAddress,omitempty"`
+	// The psc producer port is used to connect PSC NEG with specific port
+	// on the PSC Producer side; should only be used for the
+	// PRIVATE_SERVICE_CONNECT NEG type
+	ProducerPort int64 `json:"producerPort,omitempty"`
 	// [Output Only] The PSC connection id of the PSC Network Endpoint Group
 	// Consumer.
 	PscConnectionId uint64 `json:"pscConnectionId,omitempty,string"`
@@ -2616,7 +2989,8 @@ type NetworkEndpointGroupServerlessDeployment struct {
 	// The gateway ID 2. App Engine: The service name 3. Cloud Functions:
 	// The function name 4. Cloud Run: The service name
 	Resource string `json:"resource,omitempty"`
-	// A template to parse platform-specific fields from a request URL. URL
+	// An URL mask is one of the main components of the Cloud Function. A
+	// template to parse platform-specific fields from a request URL. URL
 	// mask allows for routing to multiple resources on the same serverless
 	// platform without having to create multiple Network Endpoint Groups
 	// and backend resources. The fields parsed by this template are
@@ -2706,9 +3080,11 @@ type NetworkEndpointWithHealthStatus struct {
 	// This is also an internal field purely for bookkeeping purposes
 	Scope meta.KeyType `json:"-"`
 
-	// [Output only] The health status of network endpoint;
+	// [Output only] The health status of network endpoint. Optional.
+	// Displayed only if the network endpoint has centralized health
+	// checking configured.
 	Healths []*HealthStatusForNetworkEndpoint `json:"healths,omitempty"`
-	// [Output only] The network endpoint;
+	// [Output only] The network endpoint.
 	NetworkEndpoint *NetworkEndpoint `json:"networkEndpoint,omitempty"`
 	ForceSendFields []string         `json:"-"`
 	NullFields      []string         `json:"-"`
@@ -2723,67 +3099,68 @@ type OriginAuthenticationMethod struct {
 
 // OutlierDetection is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
 type OutlierDetection struct {
-	// The base time that a host is ejected for. The real ejection time is
-	// equal to the base ejection time multiplied by the number of times the
-	// host has been ejected. Defaults to 30000ms or 30s.
+	// The base time that a backend endpoint is ejected for. Defaults to
+	// 30000ms or 30s. After a backend endpoint is returned back to the load
+	// balancing pool, it can be ejected again in another ejection analysis.
+	// Thus, the total ejection time is equal to the base ejection time
+	// multiplied by the number of times the backend endpoint has been
+	// ejected. Defaults to 30000ms or 30s.
 	BaseEjectionTime *Duration `json:"baseEjectionTime,omitempty"`
-	// Number of errors before a host is ejected from the connection pool.
-	// When the backend host is accessed over HTTP, a 5xx return code
-	// qualifies as an error. Defaults to 5. Not supported when the backend
-	// service is referenced by a URL map that is bound to target gRPC proxy
-	// that has validateForProxyless field set to true.
+	// Number of consecutive errors before a backend endpoint is ejected
+	// from the load balancing pool. When the backend endpoint is accessed
+	// over HTTP, a 5xx return code qualifies as an error. Defaults to 5.
 	ConsecutiveErrors int64 `json:"consecutiveErrors,omitempty"`
 	// The number of consecutive gateway failures (502, 503, 504 status or
 	// connection errors that are mapped to one of those status codes)
 	// before a consecutive gateway failure ejection occurs. Defaults to 3.
-	// Not supported when the backend service is referenced by a URL map
-	// that is bound to target gRPC proxy that has validateForProxyless
-	// field set to true.
 	ConsecutiveGatewayFailure int64 `json:"consecutiveGatewayFailure,omitempty"`
-	// The percentage chance that a host will be actually ejected when an
+	// The percentage chance that a backend endpoint will be ejected when an
 	// outlier status is detected through consecutive 5xx. This setting can
 	// be used to disable ejection or to ramp it up slowly. Defaults to 0.
-	// Not supported when the backend service is referenced by a URL map
-	// that is bound to target gRPC proxy that has validateForProxyless
-	// field set to true.
 	EnforcingConsecutiveErrors int64 `json:"enforcingConsecutiveErrors,omitempty"`
-	// The percentage chance that a host will be actually ejected when an
+	// The percentage chance that a backend endpoint will be ejected when an
 	// outlier status is detected through consecutive gateway failures. This
 	// setting can be used to disable ejection or to ramp it up slowly.
-	// Defaults to 100. Not supported when the backend service is referenced
-	// by a URL map that is bound to target gRPC proxy that has
-	// validateForProxyless field set to true.
+	// Defaults to 100.
 	EnforcingConsecutiveGatewayFailure int64 `json:"enforcingConsecutiveGatewayFailure,omitempty"`
-	// The percentage chance that a host will be actually ejected when an
+	// The percentage chance that a backend endpoint will be ejected when an
 	// outlier status is detected through success rate statistics. This
 	// setting can be used to disable ejection or to ramp it up slowly.
-	// Defaults to 100.
+	// Defaults to 100. Not supported when the backend service uses
+	// Serverless NEG.
 	EnforcingSuccessRate int64 `json:"enforcingSuccessRate,omitempty"`
 	// Time interval between ejection analysis sweeps. This can result in
-	// both new ejections as well as hosts being returned to service.
-	// Defaults to 1 second.
+	// both new ejections and backend endpoints being returned to service.
+	// The interval is equal to the number of seconds as defined in
+	// outlierDetection.interval.seconds plus the number of nanoseconds as
+	// defined in outlierDetection.interval.nanos. Defaults to 1 second.
 	Interval *Duration `json:"interval,omitempty"`
-	// Maximum percentage of hosts in the load balancing pool for the
-	// backend service that can be ejected. Defaults to 50%.
+	// Maximum percentage of backend endpoints in the load balancing pool
+	// for the backend service that can be ejected if the ejection
+	// conditions are met. Defaults to 50%.
 	MaxEjectionPercent int64 `json:"maxEjectionPercent,omitempty"`
-	// The number of hosts in a cluster that must have enough request volume
-	// to detect success rate outliers. If the number of hosts is less than
-	// this setting, outlier detection via success rate statistics is not
-	// performed for any host in the cluster. Defaults to 5.
+	// The number of backend endpoints in the load balancing pool that must
+	// have enough request volume to detect success rate outliers. If the
+	// number of backend endpoints is fewer than this setting, outlier
+	// detection via success rate statistics is not performed for any
+	// backend endpoint in the load balancing pool. Defaults to 5. Not
+	// supported when the backend service uses Serverless NEG.
 	SuccessRateMinimumHosts int64 `json:"successRateMinimumHosts,omitempty"`
 	// The minimum number of total requests that must be collected in one
 	// interval (as defined by the interval duration above) to include this
-	// host in success rate based outlier detection. If the volume is lower
-	// than this setting, outlier detection via success rate statistics is
-	// not performed for that host. Defaults to 100.
+	// backend endpoint in success rate based outlier detection. If the
+	// volume is lower than this setting, outlier detection via success rate
+	// statistics is not performed for that backend endpoint. Defaults to
+	// 100. Not supported when the backend service uses Serverless NEG.
 	SuccessRateRequestVolume int64 `json:"successRateRequestVolume,omitempty"`
 	// This factor is used to determine the ejection threshold for success
 	// rate outlier ejection. The ejection threshold is the difference
 	// between the mean success rate, and the product of this factor and the
 	// standard deviation of the mean success rate: mean - (stdev *
-	// success_rate_stdev_factor). This factor is divided by a thousand to
-	// get a double. That is, if the desired factor is 1.9, the runtime
-	// value should be 1900. Defaults to 1900.
+	// successRateStdevFactor). This factor is divided by a thousand to get
+	// a double. That is, if the desired factor is 1.9, the runtime value
+	// should be 1900. Defaults to 1900. Not supported when the backend
+	// service uses Serverless NEG.
 	SuccessRateStdevFactor int64    `json:"successRateStdevFactor,omitempty"`
 	ForceSendFields        []string `json:"-"`
 	NullFields             []string `json:"-"`
@@ -2818,18 +3195,16 @@ type PathMatcher struct {
 	// retry, if load balancer is successful in reaching the service, the
 	// defaultCustomErrorResponsePolicy is ignored and the response from the
 	// service is returned to the client. defaultCustomErrorResponsePolicy
-	// is supported only for Global External HTTP(S) load balancing.
+	// is supported only for global external Application Load Balancers.
 	DefaultCustomErrorResponsePolicy *CustomErrorResponsePolicy `json:"defaultCustomErrorResponsePolicy,omitempty"`
 	// defaultRouteAction takes effect when none of the pathRules or
 	// routeRules match. The load balancer performs advanced routing
 	// actions, such as URL rewrites and header transformations, before
-	// forwarding the request to the selected backend. If defaultRouteAction
-	// specifies any weightedBackendServices, defaultService must not be
-	// set. Conversely if defaultService is set, defaultRouteAction cannot
-	// contain any weightedBackendServices. Only one of defaultRouteAction
-	// or defaultUrlRedirect must be set. URL maps for Classic external
-	// HTTP(S) load balancers only support the urlRewrite action within a
-	// path matcher's defaultRouteAction.
+	// forwarding the request to the selected backend. Only one of
+	// defaultUrlRedirect, defaultService or
+	// defaultRouteAction.weightedBackendService can be set. URL maps for
+	// classic Application Load Balancers only support the urlRewrite action
+	// within a path matcher's defaultRouteAction.
 	DefaultRouteAction *HttpRouteAction `json:"defaultRouteAction,omitempty"`
 	// The full or partial URL to the BackendService resource. This URL is
 	// used if none of the pathRules or routeRules defined by this
@@ -2840,21 +3215,18 @@ type PathMatcher struct {
 	// compute/v1/projects/project/global/backendServices/backendService -
 	// global/backendServices/backendService If defaultRouteAction is also
 	// specified, advanced routing actions, such as URL rewrites, take
-	// effect before sending the request to the backend. However, if
-	// defaultService is specified, defaultRouteAction cannot contain any
-	// weightedBackendServices. Conversely, if defaultRouteAction specifies
-	// any weightedBackendServices, defaultService must not be specified.
-	// Only one of defaultService, defaultUrlRedirect , or
-	// defaultRouteAction.weightedBackendService must be set. Authorization
+	// effect before sending the request to the backend. Only one of
+	// defaultUrlRedirect, defaultService or
+	// defaultRouteAction.weightedBackendService can be set. Authorization
 	// requires one or more of the following Google IAM permissions on the
 	// specified resource default_service: - compute.backendBuckets.use -
 	// compute.backendServices.use
 	DefaultService string `json:"defaultService,omitempty"`
 	// When none of the specified pathRules or routeRules match, the request
-	// is redirected to a URL specified by defaultUrlRedirect. If
-	// defaultUrlRedirect is specified, defaultService or defaultRouteAction
-	// must not be set. Not supported when the URL map is bound to a target
-	// gRPC proxy.
+	// is redirected to a URL specified by defaultUrlRedirect. Only one of
+	// defaultUrlRedirect, defaultService or
+	// defaultRouteAction.weightedBackendService can be set. Not supported
+	// when the URL map is bound to a target gRPC proxy.
 	DefaultUrlRedirect *HttpRedirectAction `json:"defaultUrlRedirect,omitempty"`
 	// An optional description of this resource. Provide this property when
 	// you create the resource.
@@ -2908,8 +3280,8 @@ type PathRule struct {
 	// encounters a 404, the policy in PathRule.customErrorResponsePolicy
 	// takes effect. If any of the requests in this example encounter a 500
 	// error code, the policy at UrlMap.defaultCustomErrorResponsePolicy
-	// takes effect. customErrorResponsePolicy is supported only for Global
-	// External HTTP(S) load balancing.
+	// takes effect. customErrorResponsePolicy is supported only for global
+	// external Application Load Balancers.
 	CustomErrorResponsePolicy *CustomErrorResponsePolicy `json:"customErrorResponsePolicy,omitempty"`
 	// The list of path patterns to match. Each must start with / and the
 	// only place a * is allowed is at the end following a /. The string fed
@@ -2918,26 +3290,22 @@ type PathRule struct {
 	Paths []string `json:"paths,omitempty"`
 	// In response to a matching path, the load balancer performs advanced
 	// routing actions, such as URL rewrites and header transformations,
-	// before forwarding the request to the selected backend. If routeAction
-	// specifies any weightedBackendServices, service must not be set.
-	// Conversely if service is set, routeAction cannot contain any
-	// weightedBackendServices. Only one of routeAction or urlRedirect must
-	// be set. URL maps for Classic external HTTP(S) load balancers only
-	// support the urlRewrite action within a path rule's routeAction.
+	// before forwarding the request to the selected backend. Only one of
+	// urlRedirect, service or routeAction.weightedBackendService can be
+	// set. URL maps for classic Application Load Balancers only support the
+	// urlRewrite action within a path rule's routeAction.
 	RouteAction *HttpRouteAction `json:"routeAction,omitempty"`
 	// The full or partial URL of the backend service resource to which
 	// traffic is directed if this rule is matched. If routeAction is also
 	// specified, advanced routing actions, such as URL rewrites, take
-	// effect before sending the request to the backend. However, if service
-	// is specified, routeAction cannot contain any weightedBackendServices.
-	// Conversely, if routeAction specifies any weightedBackendServices,
-	// service must not be specified. Only one of urlRedirect, service or
-	// routeAction.weightedBackendService must be set.
+	// effect before sending the request to the backend. Only one of
+	// urlRedirect, service or routeAction.weightedBackendService can be
+	// set.
 	Service string `json:"service,omitempty"`
 	// When a path pattern is matched, the request is redirected to a URL
-	// specified by urlRedirect. If urlRedirect is specified, service or
-	// routeAction must not be set. Not supported when the URL map is bound
-	// to a target gRPC proxy.
+	// specified by urlRedirect. Only one of urlRedirect, service or
+	// routeAction.weightedBackendService can be set. Not supported when the
+	// URL map is bound to a target gRPC proxy.
 	UrlRedirect     *HttpRedirectAction `json:"urlRedirect,omitempty"`
 	ForceSendFields []string            `json:"-"`
 	NullFields      []string            `json:"-"`
@@ -3038,7 +3406,9 @@ type RequestMirrorPolicy struct {
 	// reference backends that are of the same type as the original backend
 	// service matched in the URL map. Serverless NEG backends are not
 	// currently supported as a mirrored backend service.
-	BackendService  string   `json:"backendService,omitempty"`
+	BackendService string `json:"backendService,omitempty"`
+	// The percentage of requests to be mirrored to `backend_service`.
+	MirrorPercent   float64  `json:"mirrorPercent,omitempty"`
 	ForceSendFields []string `json:"-"`
 	NullFields      []string `json:"-"`
 }
@@ -3053,7 +3423,7 @@ type SSLHealthCheck struct {
 	// Specifies how a port is selected for health checking. Can be one of
 	// the following values: USE_FIXED_PORT: Specifies a port number
 	// explicitly using the port field in the health check. Supported by
-	// backend services for pass-through load balancers and backend services
+	// backend services for passthrough load balancers and backend services
 	// for proxy load balancers. Not supported by target pools. The health
 	// check supports all backends supported by the backend service provided
 	// the backend can be health checked. For example, GCE_VM_IP network
@@ -3062,7 +3432,7 @@ type SSLHealthCheck struct {
 	// Provides an indirect method of specifying the health check port by
 	// referring to the backend service. Only supported by backend services
 	// for proxy load balancers. Not supported by target pools. Not
-	// supported by backend services for pass-through load balancers.
+	// supported by backend services for passthrough load balancers.
 	// Supports all backends that can be health checked; for example,
 	// GCE_VM_IP_PORT network endpoint groups and instance group backends.
 	// For GCE_VM_IP_PORT network endpoint group backends, the health check
@@ -3118,7 +3488,7 @@ type SecuritySettings struct {
 	// service's backends. clientTlsPolicy only applies to a global
 	// BackendService with the loadBalancingScheme set to
 	// INTERNAL_SELF_MANAGED. If left blank, communications are not
-	// encrypted. Note: This field currently has no impact.
+	// encrypted.
 	ClientTlsPolicy string `json:"clientTlsPolicy,omitempty"`
 	// [Deprecated] TLS Settings for the backend service.
 	ClientTlsSettings *ClientTlsSettings `json:"clientTlsSettings,omitempty"`
@@ -3134,8 +3504,7 @@ type SecuritySettings struct {
 	// which provisions server identities. Only applies to a global
 	// BackendService with loadBalancingScheme set to INTERNAL_SELF_MANAGED.
 	// Only applies when BackendService has an attached clientTlsPolicy with
-	// clientCertificate (mTLS mode). Note: This field currently has no
-	// impact.
+	// clientCertificate (mTLS mode).
 	SubjectAltNames []string `json:"subjectAltNames,omitempty"`
 	ForceSendFields []string `json:"-"`
 	NullFields      []string `json:"-"`
@@ -3287,7 +3656,7 @@ type TCPHealthCheck struct {
 	// Specifies how a port is selected for health checking. Can be one of
 	// the following values: USE_FIXED_PORT: Specifies a port number
 	// explicitly using the port field in the health check. Supported by
-	// backend services for pass-through load balancers and backend services
+	// backend services for passthrough load balancers and backend services
 	// for proxy load balancers. Not supported by target pools. The health
 	// check supports all backends supported by the backend service provided
 	// the backend can be health checked. For example, GCE_VM_IP network
@@ -3296,7 +3665,7 @@ type TCPHealthCheck struct {
 	// Provides an indirect method of specifying the health check port by
 	// referring to the backend service. Only supported by backend services
 	// for proxy load balancers. Not supported by target pools. Not
-	// supported by backend services for pass-through load balancers.
+	// supported by backend services for passthrough load balancers.
 	// Supports all backends that can be health checked; for example,
 	// GCE_VM_IP_PORT network endpoint groups and instance group backends.
 	// For GCE_VM_IP_PORT network endpoint group backends, the health check
@@ -3352,10 +3721,10 @@ type TargetHttpProxy struct {
 	// Specifies how long to keep a connection open, after completing a
 	// response, while there is no matching traffic (in seconds). If an HTTP
 	// keep-alive is not specified, a default value (610 seconds) will be
-	// used. For Global external HTTP(S) load balancer, the minimum allowed
-	// value is 5 seconds and the maximum allowed value is 1200 seconds. For
-	// Global external HTTP(S) load balancer (classic), this option is not
-	// available publicly.
+	// used. For global external Application Load Balancers, the minimum
+	// allowed value is 5 seconds and the maximum allowed value is 1200
+	// seconds. For classic Application Load Balancers, this option is not
+	// supported.
 	HttpKeepAliveTimeoutSec int64 `json:"httpKeepAliveTimeoutSec,omitempty"`
 	// [Output Only] The unique identifier for the resource. This identifier
 	// is defined by the server.
@@ -3420,9 +3789,11 @@ type TargetHttpsProxy struct {
 	// currently has no impact.
 	AuthorizationPolicy string `json:"authorizationPolicy,omitempty"`
 	// URL of a certificate map that identifies a certificate map associated
-	// with the given target proxy. This field can only be set for global
-	// target proxies. If set, sslCertificates will be ignored. Accepted
-	// format is //certificatemanager.googleapis.com/projects/{project
+	// with the given target proxy. This field can only be set for Global
+	// external Application Load Balancer or Classic Application Load
+	// Balancer. For other products use Certificate Manager Certificates
+	// instead. If set, sslCertificates will be ignored. Accepted format is
+	// //certificatemanager.googleapis.com/projects/{project
 	// }/locations/{location}/certificateMaps/{resourceName}.
 	CertificateMap string `json:"certificateMap,omitempty"`
 	// [Output Only] Creation timestamp in RFC3339 text format.
@@ -3440,16 +3811,16 @@ type TargetHttpsProxy struct {
 	Fingerprint string `json:"fingerprint,omitempty"`
 	// URLs to networkservices.HttpFilter resources enabled for xDS clients
 	// using this configuration. For example,
-	// https://networkservices.googleapis.com/beta/projects/project/locations/ locationhttpFilters/httpFilter Only filters that handle outbound connection and stream events may be specified. These filters work in conjunction with a default set of HTTP filters that may already be configured by Traffic Director. Traffic Director will determine the final location of these filters within xDS configuration based on the name of the HTTP filter. If Traffic Director positions multiple filters at the same location, those filters will be in the same order as specified in this list. httpFilters only applies for loadbalancers with loadBalancingScheme set to INTERNAL_SELF_MANAGED. See ForwardingRule for more
+	// https://networkservices.googleapis.com/beta/projects/project/locations/ location/httpFilters/httpFilter Only filters that handle outbound connection and stream events may be specified. These filters work in conjunction with a default set of HTTP filters that may already be configured by Traffic Director. Traffic Director will determine the final location of these filters within xDS configuration based on the name of the HTTP filter. If Traffic Director positions multiple filters at the same location, those filters will be in the same order as specified in this list. httpFilters only applies for loadbalancers with loadBalancingScheme set to INTERNAL_SELF_MANAGED. See ForwardingRule for more
 	// details.
 	HttpFilters []string `json:"httpFilters,omitempty"`
 	// Specifies how long to keep a connection open, after completing a
 	// response, while there is no matching traffic (in seconds). If an HTTP
 	// keep-alive is not specified, a default value (610 seconds) will be
-	// used. For Global external HTTP(S) load balancer, the minimum allowed
-	// value is 5 seconds and the maximum allowed value is 1200 seconds. For
-	// Global external HTTP(S) load balancer (classic), this option is not
-	// available publicly.
+	// used. For global external Application Load Balancers, the minimum
+	// allowed value is 5 seconds and the maximum allowed value is 1200
+	// seconds. For classic Application Load Balancers, this option is not
+	// supported.
 	HttpKeepAliveTimeoutSec int64 `json:"httpKeepAliveTimeoutSec,omitempty"`
 	// [Output Only] The unique identifier for the resource. This identifier
 	// is defined by the server.
@@ -3495,22 +3866,55 @@ type TargetHttpsProxy struct {
 	// resource that describes how the proxy should authenticate inbound
 	// traffic. serverTlsPolicy only applies to a global TargetHttpsProxy
 	// attached to globalForwardingRules with the loadBalancingScheme set to
-	// INTERNAL_SELF_MANAGED or EXTERNAL or EXTERNAL_MANAGED. For details
-	// which ServerTlsPolicy resources are accepted with
-	// INTERNAL_SELF_MANAGED and which with EXTERNAL, EXTERNAL_MANAGED
+	// INTERNAL_SELF_MANAGED or EXTERNAL or EXTERNAL_MANAGED or
+	// INTERNAL_MANAGED. It also applies to a regional TargetHttpsProxy
+	// attached to regional forwardingRules with the loadBalancingScheme set
+	// to EXTERNAL_MANAGED or INTERNAL_MANAGED. For details which
+	// ServerTlsPolicy resources are accepted with INTERNAL_SELF_MANAGED and
+	// which with EXTERNAL, INTERNAL_MANAGED, EXTERNAL_MANAGED
 	// loadBalancingScheme consult ServerTlsPolicy documentation. If left
 	// blank, communications are not encrypted.
 	ServerTlsPolicy string `json:"serverTlsPolicy,omitempty"`
 	// URLs to SslCertificate resources that are used to authenticate
 	// connections between users and the load balancer. At least one SSL
-	// certificate must be specified. Currently, you may specify up to 15
-	// SSL certificates. sslCertificates do not apply when the load
-	// balancing scheme is set to INTERNAL_SELF_MANAGED.
+	// certificate must be specified. SslCertificates do not apply when the
+	// load balancing scheme is set to INTERNAL_SELF_MANAGED. The URLs
+	// should refer to a SSL Certificate resource or Certificate Manager
+	// Certificate resource. Mixing Classic Certificates and Certificate
+	// Manager Certificates is not allowed. Certificate Manager Certificates
+	// must include the certificatemanager API namespace. Using Certificate
+	// Manager Certificates in this field is not supported by Global
+	// external Application Load Balancer or Classic Application Load
+	// Balancer, use certificate_map instead. Currently, you may specify up
+	// to 15 Classic SSL Certificates or up to 100 Certificate Manager
+	// Certificates. Certificate Manager Certificates accepted formats are:
+	// - //certificatemanager.googleapis.com/projects/{project}/locations/{
+	// location}/certificates/{resourceName}. -
+	// https://certificatemanager.googleapis.com/v1alpha1/projects/{project
+	// }/locations/{location}/certificates/{resourceName}.
 	SslCertificates []string `json:"sslCertificates,omitempty"`
 	// URL of SslPolicy resource that will be associated with the
 	// TargetHttpsProxy resource. If not set, the TargetHttpsProxy resource
 	// has no SSL policy configured.
 	SslPolicy string `json:"sslPolicy,omitempty"`
+	//  Specifies whether TLS 1.3 0-RTT Data ("Early Data") should be
+	// accepted for this service. Early Data allows a TLS resumption
+	// handshake to include the initial application payload (a HTTP request)
+	// alongside the handshake, reducing the effective round trips to
+	// "zero". This applies to TLS 1.3 connections over TCP (HTTP/2) as well
+	// as over UDP (QUIC/h3). This can improve application performance,
+	// especially on networks where interruptions may be common, such as on
+	// mobile. Requests with Early Data will have the "Early-Data" HTTP
+	// header set on the request, with a value of "1", to allow the backend
+	// to determine whether Early Data was included. Note: TLS Early Data
+	// may allow requests to be replayed, as the data is sent to the backend
+	// before the handshake has fully completed. Applications that allow
+	// idempotent HTTP methods to make non-idempotent changes, such as a GET
+	// request updating a database, should not accept Early Data on those
+	// requests, and reject requests with the "Early-Data: 1" HTTP header by
+	// returning a HTTP 425 (Too Early) status code, in order to remain RFC
+	// compliant. The default value is DISABLED.
+	TlsEarlyData string `json:"tlsEarlyData,omitempty"`
 	// A fully-qualified or valid partial URL to the UrlMap resource that
 	// defines the mapping from URL to the BackendService. For example, the
 	// following are all valid URLs for specifying a URL map: -
@@ -3605,7 +4009,7 @@ type UrlMap struct {
 	CreationTimestamp string `json:"creationTimestamp,omitempty"`
 	// defaultCustomErrorResponsePolicy specifies how the Load Balancer
 	// returns error responses when BackendServiceor BackendBucket responds
-	// with an error. This policy takes effect at the Load Balancer level
+	// with an error. This policy takes effect at the load balancer level
 	// and applies only when no policy has been defined for the error code
 	// at lower levels like PathMatcher, RouteRule and PathRule within this
 	// UrlMap. For example, consider a UrlMap with the following
@@ -3625,37 +4029,32 @@ type UrlMap struct {
 	// retry, if load balancer is successful in reaching the service, the
 	// defaultCustomErrorResponsePolicy is ignored and the response from the
 	// service is returned to the client. defaultCustomErrorResponsePolicy
-	// is supported only for Global External HTTP(S) load balancing.
+	// is supported only for global external Application Load Balancers.
 	DefaultCustomErrorResponsePolicy *CustomErrorResponsePolicy `json:"defaultCustomErrorResponsePolicy,omitempty"`
 	// defaultRouteAction takes effect when none of the hostRules match. The
 	// load balancer performs advanced routing actions, such as URL rewrites
 	// and header transformations, before forwarding the request to the
-	// selected backend. If defaultRouteAction specifies any
-	// weightedBackendServices, defaultService must not be set. Conversely
-	// if defaultService is set, defaultRouteAction cannot contain any
-	// weightedBackendServices. Only one of defaultRouteAction or
-	// defaultUrlRedirect must be set. URL maps for Classic external HTTP(S)
-	// load balancers only support the urlRewrite action within
-	// defaultRouteAction. defaultRouteAction has no effect when the URL map
-	// is bound to a target gRPC proxy that has the validateForProxyless
-	// field set to true.
+	// selected backend. Only one of defaultUrlRedirect, defaultService or
+	// defaultRouteAction.weightedBackendService can be set. URL maps for
+	// classic Application Load Balancers only support the urlRewrite action
+	// within defaultRouteAction. defaultRouteAction has no effect when the
+	// URL map is bound to a target gRPC proxy that has the
+	// validateForProxyless field set to true.
 	DefaultRouteAction *HttpRouteAction `json:"defaultRouteAction,omitempty"`
 	// The full or partial URL of the defaultService resource to which
 	// traffic is directed if none of the hostRules match. If
 	// defaultRouteAction is also specified, advanced routing actions, such
 	// as URL rewrites, take effect before sending the request to the
-	// backend. However, if defaultService is specified, defaultRouteAction
-	// cannot contain any weightedBackendServices. Conversely, if
-	// routeAction specifies any weightedBackendServices, service must not
-	// be specified. Only one of defaultService, defaultUrlRedirect , or
-	// defaultRouteAction.weightedBackendService must be set. defaultService
+	// backend. Only one of defaultUrlRedirect, defaultService or
+	// defaultRouteAction.weightedBackendService can be set. defaultService
 	// has no effect when the URL map is bound to a target gRPC proxy that
 	// has the validateForProxyless field set to true.
 	DefaultService string `json:"defaultService,omitempty"`
 	// When none of the specified hostRules match, the request is redirected
-	// to a URL specified by defaultUrlRedirect. If defaultUrlRedirect is
-	// specified, defaultService or defaultRouteAction must not be set. Not
-	// supported when the URL map is bound to a target gRPC proxy.
+	// to a URL specified by defaultUrlRedirect. Only one of
+	// defaultUrlRedirect, defaultService or
+	// defaultRouteAction.weightedBackendService can be set. Not supported
+	// when the URL map is bound to a target gRPC proxy.
 	DefaultUrlRedirect *HttpRedirectAction `json:"defaultUrlRedirect,omitempty"`
 	// An optional description of this resource. Provide this property when
 	// you create the resource.
@@ -3816,8 +4215,10 @@ type WeightedBackendService struct {
 	// routeAction) . The selection of a backend service is determined only
 	// for new traffic. Once a user's request has been directed to a backend
 	// service, subsequent requests are sent to the same backend service as
-	// determined by the backend service's session affinity policy. The
-	// value must be from 0 to 1000.
+	// determined by the backend service's session affinity policy. Don't
+	// configure session affinity if you're using weighted traffic
+	// splitting. If you do, the weighted traffic splitting configuration
+	// takes precedence. The value must be from 0 to 1000.
 	Weight          int64    `json:"weight,omitempty"`
 	ForceSendFields []string `json:"-"`
 	NullFields      []string `json:"-"`
