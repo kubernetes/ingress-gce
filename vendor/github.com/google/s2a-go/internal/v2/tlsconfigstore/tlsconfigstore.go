@@ -29,10 +29,10 @@ import (
 	"github.com/google/s2a-go/internal/tokenmanager"
 	"github.com/google/s2a-go/internal/v2/certverifier"
 	"github.com/google/s2a-go/internal/v2/remotesigner"
+	"github.com/google/s2a-go/stream"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/grpclog"
 
-	commonpbv1 "github.com/google/s2a-go/internal/proto/common_go_proto"
 	commonpb "github.com/google/s2a-go/internal/proto/v2/common_go_proto"
 	s2av2pb "github.com/google/s2a-go/internal/proto/v2/s2a_go_proto"
 )
@@ -43,14 +43,14 @@ const (
 )
 
 // GetTLSConfigurationForClient returns a tls.Config instance for use by a client application.
-func GetTLSConfigurationForClient(serverHostname string, cstream s2av2pb.S2AService_SetUpSessionClient, tokenManager tokenmanager.AccessTokenManager, localIdentity *commonpbv1.Identity, verificationMode s2av2pb.ValidatePeerCertificateChainReq_VerificationMode) (*tls.Config, error) {
-	authMechanisms := getAuthMechanisms(tokenManager, []*commonpbv1.Identity{localIdentity})
+func GetTLSConfigurationForClient(serverHostname string, s2AStream stream.S2AStream, tokenManager tokenmanager.AccessTokenManager, localIdentity *commonpb.Identity, verificationMode s2av2pb.ValidatePeerCertificateChainReq_VerificationMode, serverAuthorizationPolicy []byte) (*tls.Config, error) {
+	authMechanisms := getAuthMechanisms(tokenManager, []*commonpb.Identity{localIdentity})
 
 	if grpclog.V(1) {
 		grpclog.Infof("Sending request to S2Av2 for client TLS config.")
 	}
 	// Send request to S2Av2 for config.
-	if err := cstream.Send(&s2av2pb.SessionReq{
+	if err := s2AStream.Send(&s2av2pb.SessionReq{
 		LocalIdentity:            localIdentity,
 		AuthenticationMechanisms: authMechanisms,
 		ReqOneof: &s2av2pb.SessionReq_GetTlsConfigurationReq{
@@ -64,7 +64,7 @@ func GetTLSConfigurationForClient(serverHostname string, cstream s2av2pb.S2AServ
 	}
 
 	// Get the response containing config from S2Av2.
-	resp, err := cstream.Recv()
+	resp, err := s2AStream.Recv()
 	if err != nil {
 		grpclog.Infof("Failed to receive client TLS config response from S2Av2.")
 		return nil, err
@@ -75,7 +75,7 @@ func GetTLSConfigurationForClient(serverHostname string, cstream s2av2pb.S2AServ
 		return nil, fmt.Errorf("failed to get TLS configuration from S2A: %d, %v", resp.GetStatus().Code, resp.GetStatus().Details)
 	}
 
-	// Extract TLS configiguration from SessionResp.
+	// Extract TLS configuration from SessionResp.
 	tlsConfig := resp.GetGetTlsConfigurationResp().GetClientTlsConfiguration()
 
 	var cert tls.Certificate
@@ -96,7 +96,7 @@ func GetTLSConfigurationForClient(serverHostname string, cstream s2av2pb.S2AServ
 	}
 
 	if len(tlsConfig.CertificateChain) > 0 {
-		cert.PrivateKey = remotesigner.New(cert.Leaf, cstream)
+		cert.PrivateKey = remotesigner.New(cert.Leaf, s2AStream)
 		if cert.PrivateKey == nil {
 			return nil, errors.New("failed to retrieve Private Key from Remote Signer Library")
 		}
@@ -109,7 +109,7 @@ func GetTLSConfigurationForClient(serverHostname string, cstream s2av2pb.S2AServ
 
 	// Create mTLS credentials for client.
 	config := &tls.Config{
-		VerifyPeerCertificate:  certverifier.VerifyServerCertificateChain(serverHostname, verificationMode, cstream),
+		VerifyPeerCertificate:  certverifier.VerifyServerCertificateChain(serverHostname, verificationMode, s2AStream, serverAuthorizationPolicy),
 		ServerName:             serverHostname,
 		InsecureSkipVerify:     true, // NOLINT
 		ClientSessionCache:     nil,
@@ -125,9 +125,9 @@ func GetTLSConfigurationForClient(serverHostname string, cstream s2av2pb.S2AServ
 }
 
 // GetTLSConfigurationForServer returns a tls.Config instance for use by a server application.
-func GetTLSConfigurationForServer(cstream s2av2pb.S2AService_SetUpSessionClient, tokenManager tokenmanager.AccessTokenManager, localIdentities []*commonpbv1.Identity, verificationMode s2av2pb.ValidatePeerCertificateChainReq_VerificationMode) (*tls.Config, error) {
+func GetTLSConfigurationForServer(s2AStream stream.S2AStream, tokenManager tokenmanager.AccessTokenManager, localIdentities []*commonpb.Identity, verificationMode s2av2pb.ValidatePeerCertificateChainReq_VerificationMode) (*tls.Config, error) {
 	return &tls.Config{
-		GetConfigForClient: ClientConfig(tokenManager, localIdentities, verificationMode, cstream),
+		GetConfigForClient: ClientConfig(tokenManager, localIdentities, verificationMode, s2AStream),
 	}, nil
 }
 
@@ -135,9 +135,9 @@ func GetTLSConfigurationForServer(cstream s2av2pb.S2AService_SetUpSessionClient,
 // connection with a client, based on SNI communicated during ClientHello.
 // Ensures that server presents the correct certificate to establish a TLS
 // connection.
-func ClientConfig(tokenManager tokenmanager.AccessTokenManager, localIdentities []*commonpbv1.Identity, verificationMode s2av2pb.ValidatePeerCertificateChainReq_VerificationMode, cstream s2av2pb.S2AService_SetUpSessionClient) func(chi *tls.ClientHelloInfo) (*tls.Config, error) {
+func ClientConfig(tokenManager tokenmanager.AccessTokenManager, localIdentities []*commonpb.Identity, verificationMode s2av2pb.ValidatePeerCertificateChainReq_VerificationMode, s2AStream stream.S2AStream) func(chi *tls.ClientHelloInfo) (*tls.Config, error) {
 	return func(chi *tls.ClientHelloInfo) (*tls.Config, error) {
-		tlsConfig, err := getServerConfigFromS2Av2(tokenManager, localIdentities, chi.ServerName, cstream)
+		tlsConfig, err := getServerConfigFromS2Av2(tokenManager, localIdentities, chi.ServerName, s2AStream)
 		if err != nil {
 			return nil, err
 		}
@@ -159,7 +159,7 @@ func ClientConfig(tokenManager tokenmanager.AccessTokenManager, localIdentities 
 			}
 		}
 
-		cert.PrivateKey = remotesigner.New(cert.Leaf, cstream)
+		cert.PrivateKey = remotesigner.New(cert.Leaf, s2AStream)
 		if cert.PrivateKey == nil {
 			return nil, errors.New("failed to retrieve Private Key from Remote Signer Library")
 		}
@@ -177,7 +177,7 @@ func ClientConfig(tokenManager tokenmanager.AccessTokenManager, localIdentities 
 		// Create mTLS credentials for server.
 		return &tls.Config{
 			Certificates:           []tls.Certificate{cert},
-			VerifyPeerCertificate:  certverifier.VerifyClientCertificateChain(verificationMode, cstream),
+			VerifyPeerCertificate:  certverifier.VerifyClientCertificateChain(verificationMode, s2AStream),
 			ClientAuth:             clientAuth,
 			CipherSuites:           cipherSuites,
 			SessionTicketsDisabled: true,
@@ -218,14 +218,14 @@ func getTLSCipherSuite(tlsCipherSuite commonpb.Ciphersuite) uint16 {
 	}
 }
 
-func getServerConfigFromS2Av2(tokenManager tokenmanager.AccessTokenManager, localIdentities []*commonpbv1.Identity, sni string, cstream s2av2pb.S2AService_SetUpSessionClient) (*s2av2pb.GetTlsConfigurationResp_ServerTlsConfiguration, error) {
+func getServerConfigFromS2Av2(tokenManager tokenmanager.AccessTokenManager, localIdentities []*commonpb.Identity, sni string, s2AStream stream.S2AStream) (*s2av2pb.GetTlsConfigurationResp_ServerTlsConfiguration, error) {
 	authMechanisms := getAuthMechanisms(tokenManager, localIdentities)
-	var locID *commonpbv1.Identity
+	var locID *commonpb.Identity
 	if localIdentities != nil {
 		locID = localIdentities[0]
 	}
 
-	if err := cstream.Send(&s2av2pb.SessionReq{
+	if err := s2AStream.Send(&s2av2pb.SessionReq{
 		LocalIdentity:            locID,
 		AuthenticationMechanisms: authMechanisms,
 		ReqOneof: &s2av2pb.SessionReq_GetTlsConfigurationReq{
@@ -238,7 +238,7 @@ func getServerConfigFromS2Av2(tokenManager tokenmanager.AccessTokenManager, loca
 		return nil, err
 	}
 
-	resp, err := cstream.Recv()
+	resp, err := s2AStream.Recv()
 	if err != nil {
 		return nil, err
 	}
@@ -282,7 +282,7 @@ func getTLSClientAuthType(tlsConfig *s2av2pb.GetTlsConfigurationResp_ServerTlsCo
 	return clientAuth
 }
 
-func getAuthMechanisms(tokenManager tokenmanager.AccessTokenManager, localIdentities []*commonpbv1.Identity) []*s2av2pb.AuthenticationMechanism {
+func getAuthMechanisms(tokenManager tokenmanager.AccessTokenManager, localIdentities []*commonpb.Identity) []*s2av2pb.AuthenticationMechanism {
 	if tokenManager == nil {
 		return nil
 	}
