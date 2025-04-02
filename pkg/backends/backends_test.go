@@ -626,6 +626,105 @@ func TestBackendSvcEqual(t *testing.T) {
 			},
 			wantEqual: false,
 		},
+		{
+			desc: "Test existing backend service diff with zonal affinity feature enabled",
+			oldBackendService: &composite.BackendService{
+				NetworkPassThroughLbTrafficPolicy: &composite.BackendServiceNetworkPassThroughLbTrafficPolicy{
+					ZonalAffinity: &composite.BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity{
+						Spillover:      "ZONAL_AFFINITY_SPILL_CROSS_ZONE",
+						SpilloverRatio: 0.7,
+					},
+				},
+			},
+			newBackendService: &composite.BackendService{
+				NetworkPassThroughLbTrafficPolicy: &composite.BackendServiceNetworkPassThroughLbTrafficPolicy{
+					ZonalAffinity: &composite.BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity{
+						Spillover:      "ZONAL_AFFINITY_SPILL_CROSS_ZONE",
+						SpilloverRatio: 0.7,
+					},
+				},
+			},
+			wantEqual: true,
+		},
+		{
+			desc: "Test existing backend service diff with zonal affinity feature enabled but different ratio",
+			oldBackendService: &composite.BackendService{
+				NetworkPassThroughLbTrafficPolicy: &composite.BackendServiceNetworkPassThroughLbTrafficPolicy{
+					ZonalAffinity: &composite.BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity{
+						Spillover:      "ZONAL_AFFINITY_SPILL_CROSS_ZONE",
+						SpilloverRatio: 0.7,
+					},
+				},
+			},
+			newBackendService: &composite.BackendService{
+				NetworkPassThroughLbTrafficPolicy: &composite.BackendServiceNetworkPassThroughLbTrafficPolicy{
+					ZonalAffinity: &composite.BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity{
+						Spillover:      "ZONAL_AFFINITY_SPILL_CROSS_ZONE",
+						SpilloverRatio: 0.3,
+					},
+				},
+			},
+			wantEqual: false,
+		},
+		{
+			desc: "Test existing backend service diff with zonal affinity feature enabled but different spillover strategy",
+			oldBackendService: &composite.BackendService{
+				NetworkPassThroughLbTrafficPolicy: &composite.BackendServiceNetworkPassThroughLbTrafficPolicy{
+					ZonalAffinity: &composite.BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity{
+						Spillover:      "ZONAL_AFFINITY_STAY_WITHIN_ZONE",
+						SpilloverRatio: 0.3,
+					},
+				},
+			},
+			newBackendService: &composite.BackendService{
+				NetworkPassThroughLbTrafficPolicy: &composite.BackendServiceNetworkPassThroughLbTrafficPolicy{
+					ZonalAffinity: &composite.BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity{
+						Spillover:      "ZONAL_AFFINITY_SPILL_CROSS_ZONE",
+						SpilloverRatio: 0.3,
+					},
+				},
+			},
+			wantEqual: false,
+		},
+		{
+			desc:              "Test existing backend service diff enabling zonal affinity feature",
+			oldBackendService: &composite.BackendService{},
+			newBackendService: &composite.BackendService{
+				NetworkPassThroughLbTrafficPolicy: &composite.BackendServiceNetworkPassThroughLbTrafficPolicy{
+					ZonalAffinity: &composite.BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity{
+						Spillover:      "ZONAL_AFFINITY_SPILL_CROSS_ZONE",
+						SpilloverRatio: 0.3,
+					},
+				},
+			},
+			wantEqual: false,
+		},
+		{
+			desc: "Test existing backend service diff enabling zonal affinity feature",
+			oldBackendService: &composite.BackendService{
+				NetworkPassThroughLbTrafficPolicy: &composite.BackendServiceNetworkPassThroughLbTrafficPolicy{
+					ZonalAffinity: &composite.BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity{
+						Spillover:      "ZONAL_AFFINITY_SPILL_CROSS_ZONE",
+						SpilloverRatio: 0.3,
+					},
+				},
+			},
+			newBackendService: &composite.BackendService{},
+			wantEqual:         false,
+		},
+		{
+			desc: "Test existing backend service diff with zonal affinity disables",
+			oldBackendService: &composite.BackendService{
+				NetworkPassThroughLbTrafficPolicy: &composite.BackendServiceNetworkPassThroughLbTrafficPolicy{
+					ZonalAffinity: &composite.BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity{
+						Spillover:      "ZONAL_AFFINITY_DISABLED",
+						SpilloverRatio: 0,
+					},
+				},
+			},
+			newBackendService: &composite.BackendService{},
+			wantEqual:         true,
+		},
 	} {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
@@ -730,6 +829,208 @@ func TestUpdateLocalityLBPolicy(t *testing.T) {
 			updatedBS, _, err := backendPool.EnsureL4BackendService(updateBackendParams, klog.TODO())
 			if updatedBS.LocalityLbPolicy != string(tc.wantBSLocalityLbPolicy) {
 				t.Errorf("Update LocalityLbPolicy failed, got: %v, want %v", updatedBS.LocalityLbPolicy, tc.wantBSLocalityLbPolicy)
+			}
+		})
+	}
+}
+
+func TestSelectAPIVersionForUpdate(t *testing.T) {
+	testCases := []struct {
+		desc     string
+		versionA meta.Version
+		versionB meta.Version
+		want     meta.Version
+	}{
+		{
+			desc:     "Alpha wins over GA",
+			versionA: meta.VersionAlpha,
+			versionB: meta.VersionGA,
+			want:     meta.VersionAlpha,
+		},
+		{
+			desc:     "Alpha wins over Beta",
+			versionA: meta.VersionAlpha,
+			versionB: meta.VersionBeta,
+			want:     meta.VersionAlpha,
+		},
+		{
+			desc:     "Beta wins over GA",
+			versionA: meta.VersionBeta,
+			versionB: meta.VersionGA,
+			want:     meta.VersionBeta,
+		},
+		{
+			desc:     "GA when both are GA",
+			versionA: meta.VersionGA,
+			versionB: meta.VersionGA,
+			want:     meta.VersionGA,
+		},
+		{
+			desc:     "Alpha when both are Alpha",
+			versionA: meta.VersionAlpha,
+			versionB: meta.VersionAlpha,
+			want:     meta.VersionAlpha,
+		},
+		{
+			desc:     "Invalid version defaults to GA precedence",
+			versionA: "invalid",
+			versionB: meta.VersionGA,
+			want:     meta.VersionGA,
+		},
+		{
+			desc:     "Alpha wins over invalid",
+			versionA: meta.VersionAlpha,
+			versionB: "invalid",
+			want:     meta.VersionAlpha,
+		},
+		{
+			desc:     "Beta wins over invalid",
+			versionA: meta.VersionBeta,
+			versionB: "invalid",
+			want:     meta.VersionBeta,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			result := selectApiVersionForUpdate(tc.versionA, tc.versionB)
+			if result != tc.want {
+				t.Errorf("selectApiVersionForUpdate(%s, %s) = %s, want %s", tc.versionA, tc.versionB, result, tc.want)
+			}
+
+			// Test symmetry - order of arguments shouldn't matter
+			reverseResult := selectApiVersionForUpdate(tc.versionB, tc.versionA)
+			if reverseResult != result {
+				t.Errorf("selectApiVersionForUpdate not symmetric: selectApiVersionForUpdate(%s, %s) = %s, but selectApiVersionForUpdate(%s, %s) = %s",
+					tc.versionA, tc.versionB, result, tc.versionB, tc.versionA, reverseResult)
+			}
+		})
+	}
+}
+
+func TestFeatureVersionRequirements(t *testing.T) {
+	testCases := []struct {
+		desc                string
+		enableZonalAffinity bool
+		expectedVersion     meta.Version
+	}{
+		{
+			desc:                "Zonal affinity requires Beta",
+			enableZonalAffinity: true,
+			expectedVersion:     meta.VersionBeta,
+		},
+		{
+			desc:                "No special features defaults to GA",
+			enableZonalAffinity: false,
+			expectedVersion:     meta.VersionGA,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			params := L4BackendServiceParams{
+				EnableZonalAffinity: tc.enableZonalAffinity,
+			}
+
+			version := apiVersionRequiredbyServiceFeatures(params)
+			if version != tc.expectedVersion {
+				t.Errorf("apiVersionRequiredbyServiceFeatures returned %s, want %s", version, tc.expectedVersion)
+			}
+		})
+	}
+}
+
+func TestVersionSelectionInUpdate(t *testing.T) {
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockRegionBackendServices.UpdateHook = mock.UpdateRegionBackendServiceHook
+	l4namer := namer.NewL4Namer(kubeSystemUID, nil)
+	backendPool := NewPool(fakeGCE, l4namer)
+
+	serviceName := "test-service"
+	serviceNamespace := "test-ns"
+	namespacedName := types.NamespacedName{Name: serviceName, Namespace: serviceNamespace}
+	bsName := l4namer.L4Backend(serviceNamespace, serviceName)
+
+	testCases := []struct {
+		desc                string
+		initialVersion      meta.Version
+		descriptionVersion  meta.Version
+		enableZonalAffinity bool
+		expectedVersion     meta.Version
+	}{
+		{
+			desc:                "Version from description is higher",
+			initialVersion:      meta.VersionGA,
+			descriptionVersion:  meta.VersionAlpha,
+			enableZonalAffinity: false,
+			expectedVersion:     meta.VersionAlpha,
+		},
+		{
+			desc:                "Version from features is higher",
+			initialVersion:      meta.VersionGA,
+			descriptionVersion:  meta.VersionGA,
+			enableZonalAffinity: true,
+			expectedVersion:     meta.VersionBeta,
+		},
+		{
+			desc:                "Max version when both high",
+			initialVersion:      meta.VersionGA,
+			descriptionVersion:  meta.VersionBeta,
+			enableZonalAffinity: true,
+			expectedVersion:     meta.VersionBeta,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			// Create backend service with initial version
+			key, err := composite.CreateKey(fakeGCE, bsName, meta.Regional)
+			if err != nil {
+				t.Fatalf("Failed to create key: %v", err)
+			}
+
+			// Create description with specified version
+			desc, err := utils.MakeL4LBServiceDescription(namespacedName.String(), "", tc.descriptionVersion, false, utils.ILB)
+			if err != nil {
+				t.Fatalf("Failed to create description: %v", err)
+			}
+
+			existingBS := &composite.BackendService{
+				Name:         bsName,
+				Version:      tc.initialVersion,
+				Description:  desc,
+				HealthChecks: []string{""},
+			}
+
+			// Create or update the backend service
+			if err := composite.CreateBackendService(fakeGCE, key, existingBS, klog.TODO()); err != nil {
+				// If it already exists, try updating it
+				if err := composite.UpdateBackendService(fakeGCE, key, existingBS, klog.TODO()); err != nil {
+					t.Fatalf("Failed to create/update backend service: %v", err)
+				}
+			}
+
+			// Use EnsureL4BackendService with zonal affinity param
+			backendParams := L4BackendServiceParams{
+				Name:                bsName,
+				HealthCheckLink:     "health-check-link",
+				Protocol:            "TCP",
+				SessionAffinity:     "NONE",
+				Scheme:              string(cloud.SchemeInternal),
+				NamespacedName:      namespacedName,
+				EnableZonalAffinity: tc.enableZonalAffinity,
+			}
+
+			updatedBS, _, err := backendPool.EnsureL4BackendService(backendParams, klog.TODO())
+			if err != nil {
+				t.Fatalf("EnsureL4BackendService failed: %v", err)
+			}
+
+			// Verify that the version was correctly selected
+			if updatedBS.Version != tc.expectedVersion {
+				t.Errorf("EnsureL4BackendService set version to %s, want %s", updatedBS.Version, tc.expectedVersion)
 			}
 		})
 	}

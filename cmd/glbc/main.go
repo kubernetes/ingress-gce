@@ -335,6 +335,7 @@ func main() {
 		EnableL4NetLBNEGsDefault:      flags.F.EnableL4NetLBNEGDefault,
 		EnableL4ILBMixedProtocol:      flags.F.EnableL4ILBMixedProtocol,
 		EnableL4NetLBMixedProtocol:    flags.F.EnableL4NetLBMixedProtocol,
+		EnableL4ILBZonalAffinity:      flags.F.EnableL4ILBZonalAffinity,
 	}
 	ctx, err := ingctx.NewControllerContext(kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, svcAttachmentClient, networkClient, nodeTopologyClient, eventRecorderKubeClient, cloud, namer, kubeSystemUID, ctxConfig, rootLogger)
 	if err != nil {
