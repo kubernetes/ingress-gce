@@ -31,6 +31,7 @@ const (
 	l4LabelMultinet              = "multinet"
 	l4LabelStrongSessionAffinity = "strong_session_affinity"
 	l4LabelWeightedLBPodsPerNode = "weighted_lb_pods_per_node"
+	l4LabelZonalAffinity         = "zonal_affinity"
 	l4LabelBackendType           = "backend_type"
 )
 
@@ -40,7 +41,7 @@ var (
 			Name: "l4_ilbs_count",
 			Help: "Metric containing the number of ILBs that can be filtered by feature labels and status",
 		},
-		[]string{l4LabelStatus, l4LabelMultinet, l4LabelWeightedLBPodsPerNode},
+		[]string{l4LabelStatus, l4LabelMultinet, l4LabelWeightedLBPodsPerNode, l4LabelZonalAffinity},
 	)
 
 	l4NetLBCount = prometheus.NewGaugeVec(
@@ -57,7 +58,7 @@ func (im *ControllerMetrics) exportL4Metrics() {
 	im.exportL4NetLBsMetrics()
 }
 
-func InitServiceMetricsState(svc *corev1.Service, startTime *time.Time, isMultinetwork bool, enabledStrongSessionAffinity bool, isWeightedLBPodsPerNode bool, backendType L4BackendType) L4ServiceState {
+func InitServiceMetricsState(svc *corev1.Service, startTime *time.Time, isMultinetwork bool, enabledStrongSessionAffinity bool, isWeightedLBPodsPerNode bool, isLBWithZonalAffinity bool, backendType L4BackendType) L4ServiceState {
 	state := L4ServiceState{
 		L4DualStackServiceLabels: L4DualStackServiceLabels{
 			IPFamilies: ipFamiliesToString(svc.Spec.IPFamilies),
@@ -67,6 +68,7 @@ func InitServiceMetricsState(svc *corev1.Service, startTime *time.Time, isMultin
 			StrongSessionAffinity: enabledStrongSessionAffinity,
 			WeightedLBPodsPerNode: isWeightedLBPodsPerNode,
 			BackendType:           backendType,
+			ZonalAffinity:         isLBWithZonalAffinity,
 		},
 		// Always init status with error, and update with Success when service was provisioned
 		Status:             StatusError,
@@ -148,6 +150,7 @@ func (im *ControllerMetrics) exportL4ILBsMetrics() {
 			l4LabelStatus:                string(getStatusConsideringPersistentError(&svcState)),
 			l4LabelMultinet:              strconv.FormatBool(svcState.Multinetwork),
 			l4LabelWeightedLBPodsPerNode: strconv.FormatBool(svcState.WeightedLBPodsPerNode),
+			l4LabelZonalAffinity:         strconv.FormatBool(svcState.ZonalAffinity),
 		}).Inc()
 	}
 	im.logger.V(3).Info("L4 ILB usage metrics exported")
