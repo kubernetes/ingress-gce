@@ -44,7 +44,6 @@ const (
 	l4LBControllerPanicsMetricName                 = "l4_controllers_panics_count"
 	L4SyncDetailsMetricName                        = "l4_sync_details_count"
 	l4WeightedLBPodsPerNodeMetricName              = "l4_weighted_lb_pods_per_node"
-	l4ILBZonalAffinityMetricName                   = "l4_ilb_zonal_affinity"
 )
 
 var (
@@ -59,7 +58,7 @@ var (
 	}
 
 	l4SyncILBSpecificMetricLabels = []string{
-		l4ILBZonalAffinityMetricName, // whether the service uses zonal affinity
+		"zonal_affinity", // whether the service uses zonal affinity
 	}
 
 	l4LBSyncLatencyMetricsLabels          = append(l4LBSyncLatencyCommonMetricLabels, l4WeightedLBPodsPerNodeMetricName)
