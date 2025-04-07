@@ -37,3 +37,4 @@ bin/
 .*-push
 bin/
 docs/deploy/resources/*.gen
+__debug_bin*
