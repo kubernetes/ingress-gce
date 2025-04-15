@@ -26,8 +26,8 @@ import (
 	computebeta "google.golang.org/api/compute/v0.beta"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
+	"k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
-	"k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 
