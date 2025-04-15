@@ -53,8 +53,8 @@ import (
 	ingctx "k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/healthchecksl4"
+	"k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
-	"k8s.io/ingress-gce/pkg/metrics"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
 
 	"k8s.io/ingress-gce/pkg/forwardingrules"
