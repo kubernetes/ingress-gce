@@ -222,6 +222,10 @@ func (z *ZoneGetter) ListSubnets(logger klog.Logger) []nodetopologyv1.SubnetConf
 		logger.Error(err, "failed to cast topology CR to node topology type", "nodeTopologyCRName", nodeTopologyCRName)
 		return []nodetopologyv1.SubnetConfig{z.defaultSubnetConfig}
 	}
+	if len(nodeTopologyCR.Status.Subnets) == 0 {
+		logger.Info("NodeTopology resource has no subnets; assuming that it has atleast the default subnet", "nodeTopologyCRName", nodeTopologyCRName)
+		return []nodetopologyv1.SubnetConfig{z.defaultSubnetConfig}
+	}
 	return nodeTopologyCR.Status.Subnets
 }
 
