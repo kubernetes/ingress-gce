@@ -910,29 +910,13 @@ func TestListSubnets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("errored generating default subnet config: %v", err)
 	}
-
 	defaultSubnet := []nodetopologyv1.SubnetConfig{defaultSubnetConfig}
-
-	multipleSubnetConfigs := []nodetopologyv1.SubnetConfig{
-		defaultSubnetConfig,
-		{Name: "subnet1", SubnetPath: "path/to/gcp/subnet1"},
-	}
-
-	topologyCR := &nodetopologyv1.NodeTopology{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: flags.F.NodeTopologyCRName,
-		},
-
-		Status: nodetopologyv1.NodeTopologyStatus{
-			Subnets: multipleSubnetConfigs,
-		},
-	}
 
 	testcases := []struct {
 		desc               string
 		nodeTopologySynced bool
 		enableMSC          bool
-		populateTopologyCR bool
+		existingTopologyCR *nodetopologyv1.NodeTopology
 		wantSubnets        []nodetopologyv1.SubnetConfig
 	}{
 		{
@@ -950,15 +934,41 @@ func TestListSubnets(t *testing.T) {
 			desc:               "default topology crd doesn't exist",
 			enableMSC:          true,
 			nodeTopologySynced: true,
-			populateTopologyCR: false,
 			wantSubnets:        defaultSubnet,
 		},
 		{
-			desc:               "default topology CR exists",
+			desc:               "default topology CR exists with correct subnets",
 			enableMSC:          true,
 			nodeTopologySynced: true,
-			populateTopologyCR: true,
-			wantSubnets:        multipleSubnetConfigs,
+			existingTopologyCR: &nodetopologyv1.NodeTopology{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: flags.F.NodeTopologyCRName,
+				},
+				Status: nodetopologyv1.NodeTopologyStatus{
+					Subnets: []nodetopologyv1.SubnetConfig{
+						defaultSubnetConfig,
+						{Name: "subnet1", SubnetPath: "path/to/gcp/subnet1"},
+					},
+				},
+			},
+			wantSubnets: []nodetopologyv1.SubnetConfig{
+				defaultSubnetConfig,
+				{Name: "subnet1", SubnetPath: "path/to/gcp/subnet1"},
+			},
+		},
+		{
+			desc:               "should atleast return default subnet if topology CR is empty",
+			enableMSC:          true,
+			nodeTopologySynced: true,
+			existingTopologyCR: &nodetopologyv1.NodeTopology{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: flags.F.NodeTopologyCRName,
+				},
+				// Empty NodeTopology Status (without any subnets)
+			},
+			wantSubnets: []nodetopologyv1.SubnetConfig{
+				defaultSubnetConfig,
+			},
 		},
 	}
 
@@ -972,8 +982,8 @@ func TestListSubnets(t *testing.T) {
 
 			zoneGetter.nodeTopologyHasSynced = func() bool { return tc.nodeTopologySynced }
 
-			if tc.populateTopologyCR {
-				fakeTopologyInformer.GetIndexer().Add(topologyCR)
+			if tc.existingTopologyCR != nil {
+				fakeTopologyInformer.GetIndexer().Add(tc.existingTopologyCR)
 			}
 
 			gotSubnets := zoneGetter.ListSubnets(klog.TODO())
