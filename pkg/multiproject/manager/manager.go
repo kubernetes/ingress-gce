@@ -83,20 +83,22 @@ func (pccm *ProviderConfigControllersManager) StartControllersForProviderConfig(
 	pccm.mu.Lock()
 	defer pccm.mu.Unlock()
 
+	logger := pccm.logger.WithValues("providerConfigId", pc.Name)
+
 	pcKey := providerConfigKey(pc)
 
-	pccm.logger.Info("Starting controllers for provider config", "providerConfigId", pcKey)
+	logger.Info("Starting controllers for provider config")
 	if _, exists := pccm.controllers[pcKey]; exists {
-		pccm.logger.Info("Controllers for provider config already exist, skipping start", "providerConfigId", pcKey)
+		logger.Info("Controllers for provider config already exist, skipping start")
 		return nil
 	}
 
-	err := finalizer.EnsureProviderConfigNEGCleanupFinalizer(pc, pccm.providerConfigClient, pccm.logger)
+	err := finalizer.EnsureProviderConfigNEGCleanupFinalizer(pc, pccm.providerConfigClient, logger)
 	if err != nil {
 		return fmt.Errorf("failed to ensure NEG cleanup finalizer for project %s: %v", pcKey, err)
 	}
 
-	cloud, err := pccm.gceCreator.GCEForProviderConfig(pc, pccm.logger)
+	cloud, err := pccm.gceCreator.GCEForProviderConfig(pc, logger)
 	if err != nil {
 		return fmt.Errorf("failed to create GCE client for provider config %+v: %v", pc, err)
 	}
@@ -114,14 +116,13 @@ func (pccm *ProviderConfigControllersManager) StartControllersForProviderConfig(
 		pccm.lpConfig,
 		cloud,
 		pccm.globalStopCh,
-		pccm.logger,
+		logger,
 		pc,
 	)
 	if err != nil {
-		cleanupErr := finalizer.DeleteProviderConfigNEGCleanupFinalizer(pc, pccm.providerConfigClient, pccm.logger)
+		cleanupErr := finalizer.DeleteProviderConfigNEGCleanupFinalizer(pc, pccm.providerConfigClient, logger)
 		if cleanupErr != nil {
-			pccm.logger.Error(cleanupErr, "failed to clean up NEG finalizer after controller start failure",
-				"providerConfigId", pcKey, "originalError", err)
+			logger.Error(cleanupErr, "failed to clean up NEG finalizer after controller start failure", "originalError", err)
 		}
 		return fmt.Errorf("failed to start NEG controller for project %s: %v", pcKey, err)
 	}
@@ -130,7 +131,7 @@ func (pccm *ProviderConfigControllersManager) StartControllersForProviderConfig(
 		stopCh: negControllerStopCh,
 	}
 
-	pccm.logger.Info("Started controllers for provider config", "providerConfigId", pcKey)
+	logger.Info("Started controllers for provider config")
 	return nil
 }
 
@@ -138,19 +139,21 @@ func (pccm *ProviderConfigControllersManager) StopControllersForProviderConfig(p
 	pccm.mu.Lock()
 	defer pccm.mu.Unlock()
 
+	logger := pccm.logger.WithValues("providerConfigId", pc.Name)
+
 	csKey := providerConfigKey(pc)
 	_, exists := pccm.controllers[csKey]
 	if !exists {
-		pccm.logger.Info("Controllers for provider config do not exist", "providerConfigId", csKey)
+		logger.Info("Controllers for provider config do not exist")
 		return
 	}
 
 	close(pccm.controllers[csKey].stopCh)
 
 	delete(pccm.controllers, csKey)
-	err := finalizer.DeleteProviderConfigNEGCleanupFinalizer(pc, pccm.providerConfigClient, pccm.logger)
+	err := finalizer.DeleteProviderConfigNEGCleanupFinalizer(pc, pccm.providerConfigClient, logger)
 	if err != nil {
-		pccm.logger.Error(err, "failed to delete NEG cleanup finalizer for project", "providerConfigId", csKey)
+		logger.Error(err, "failed to delete NEG cleanup finalizer for project")
 	}
-	pccm.logger.Info("Stopped controllers for provider config", "providerConfigId", csKey)
+	logger.Info("Stopped controllers for provider config")
 }
