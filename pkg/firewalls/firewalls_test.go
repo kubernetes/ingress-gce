@@ -27,6 +27,7 @@ import (
 
 	firewallclient "github.com/GoogleCloudPlatform/gke-networking-api/client/gcpfirewall/clientset/versioned/fake"
 	"google.golang.org/api/compute/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/cloud-provider-gcp/providers/gce"
@@ -282,9 +283,9 @@ func TestFirewallPoolGC(t *testing.T) {
 	}
 
 	fw := fwClient.NetworkingV1().GCPFirewalls()
-	fcr, err := fw.Get(context.TODO(), ruleName, metav1.GetOptions{})
-	if err == nil || fcr != nil {
-		t.Fatalf("Get() = %v, %v, expected nil, (error)", fcr, err)
+	_, err = fw.Get(context.TODO(), ruleName, metav1.GetOptions{})
+	if !k8serrors.IsNotFound(err) {
+		t.Fatalf("Expected error to be 'NotFound', but got: %v", err)
 	}
 }
 

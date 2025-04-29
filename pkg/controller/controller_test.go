@@ -34,6 +34,7 @@ import (
 	"google.golang.org/api/compute/v1"
 	api_v1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
@@ -327,7 +328,7 @@ func TestIngressCreateDeleteFinalizer(t *testing.T) {
 				updatedIng, _ := lbc.ctx.KubeClient.NetworkingV1().Ingresses("default").Get(context2.TODO(), name, meta_v1.GetOptions{})
 				deleteIngress(lbc, updatedIng)
 
-				updatedIng, _ = lbc.ctx.KubeClient.NetworkingV1().Ingresses("default").Get(context2.TODO(), name, meta_v1.GetOptions{})
+				updatedIng, err = lbc.ctx.KubeClient.NetworkingV1().Ingresses("default").Get(context2.TODO(), name, meta_v1.GetOptions{})
 				if tc.enableFinalizerAdd && !tc.enableFinalizerRemove {
 					if updatedIng == nil {
 						t.Fatalf("Expected Ingress not to be deleted")
@@ -339,8 +340,8 @@ func TestIngressCreateDeleteFinalizer(t *testing.T) {
 					continue
 				}
 
-				if updatedIng != nil {
-					t.Fatalf("Ingress was not deleted, got: %+v", updatedIng)
+				if !errors.IsNotFound(err) {
+					t.Fatalf("expected NotFound error when fetching deleted Ingress, but got error: %v, object: %+v", err, updatedIng)
 				}
 
 				remainingIngresses, err := lbc.ctx.KubeClient.NetworkingV1().Ingresses("default").List(context2.TODO(), meta_v1.ListOptions{})
