@@ -102,12 +102,15 @@ func NewL4SyncResult(syncType string, svc *corev1.Service, isMultinet bool, enab
 		backendType = metrics.L4BackendTypeNEG
 	}
 
+	// External Load Balancer doesn't support zonal affinity (passing `false` all along)
+	isLBWithZonalAffinity := false
+
 	result := &L4NetLBSyncResult{
 		Annotations:        make(map[string]string),
 		StartTime:          startTime,
 		SyncType:           syncType,
 		MetricsLegacyState: metrics.InitL4NetLBServiceLegacyState(&startTime),
-		MetricsState:       metrics.InitServiceMetricsState(svc, &startTime, isMultinet, enabledStrongSessionAffinity, isWeightedLBPodsPerNode, backendType),
+		MetricsState:       metrics.InitServiceMetricsState(svc, &startTime, isMultinet, enabledStrongSessionAffinity, isWeightedLBPodsPerNode, isLBWithZonalAffinity, backendType),
 	}
 	return result
 }

@@ -28,8 +28,6 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/googleapi"
-	apiv1 "k8s.io/api/core/v1"
-	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
 	"k8s.io/ingress-gce/pkg/flags"
@@ -243,7 +241,7 @@ func (s *transactionSyncer) syncInternal() error {
 		if syncErr := negtypes.ClassifyError(err); syncErr.IsErrorState {
 			s.logger.Info("Enter degraded mode", "reason", syncErr.Reason)
 			if s.enableDegradedMode {
-				s.recordEvent(apiv1.EventTypeWarning, "EnterDegradedMode", fmt.Sprintf("Entering degraded mode for NEG %s due to sync err: %v", s.NegSyncerKey.String(), syncErr))
+				s.recordEvent(v1.EventTypeWarning, "EnterDegradedMode", fmt.Sprintf("Entering degraded mode for NEG %s due to sync err: %v", s.NegSyncerKey.String(), syncErr))
 			}
 			s.setErrorState()
 		}
@@ -255,11 +253,17 @@ func (s *transactionSyncer) syncInternal() error {
 }
 
 func (s *transactionSyncer) syncInternalImpl() error {
-	if s.syncer.IsStopped() || s.syncer.IsShuttingDown() {
-		s.logger.V(3).Info("Skip syncing NEG", "negSyncerKey", s.NegSyncerKey.String())
+	isStopped := s.syncer.IsStopped()
+	isShuttingDown := s.syncer.IsShuttingDown()
+	if isStopped || isShuttingDown {
+		s.logger.Info("Skip syncing NEG", "negSyncerKey", s.NegSyncerKey.String(), "syncerStopped", isStopped, "syncerShuttingDown", isShuttingDown)
 		return nil
 	}
-	if s.needInit || s.isZoneChange() {
+	zoneChange := s.isZoneChange()
+	subnetChange := s.isSubnetChange()
+
+	if s.needInit || zoneChange || subnetChange {
+		s.logger.Info("Need to ensure network endpoint groups", "needInit", s.needInit, "zoneChange", zoneChange, "subnetChange", subnetChange)
 		if err := s.ensureNetworkEndpointGroups(); err != nil {
 			return fmt.Errorf("%w: %v", negtypes.ErrNegNotFound, err)
 		}
@@ -267,26 +271,11 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	}
 	s.logger.V(2).Info("Sync NEG", "negSyncerKey", s.NegSyncerKey.String(), "endpointsCalculatorMode", s.endpointsCalculator.Mode())
 
-	defaultSubnet, err := utils.KeyName(s.networkInfo.SubnetworkURL)
-	if err != nil {
-		s.logger.Error(err, "Errored getting default subnet from NetworkInfo when retrieving existing endpoints")
-		return err
-	}
-
-	subnetToNegMapping := map[string]string{}
 	subnetConfigs := s.zoneGetter.ListSubnets(s.logger)
-	for _, subnetConfig := range subnetConfigs {
-		// negs in default subnet have a different naming scheme from other subnets
-		if subnetConfig.Name == defaultSubnet {
-			subnetToNegMapping[defaultSubnet] = s.NegSyncerKey.NegName
-			continue
-		}
-		nonDefaultNegName, err := s.getNonDefaultSubnetNEGName(subnetConfig.Name)
-		if err != nil {
-			s.logger.Error(err, "Errored when getting NEG name from non-default subnets when retrieving existing endpoints")
-			return err
-		}
-		subnetToNegMapping[subnetConfig.Name] = nonDefaultNegName
+	subnetToNegMapping, err := s.generateSubnetToNegNameMap(subnetConfigs)
+	if err != nil {
+		s.logger.Error(err, "failed to generate subnet to neg name mapping")
+		return err
 	}
 
 	currentMap, currentPodLabelMap, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode(), s.enableDualStackNEG, s.logger)
@@ -358,7 +347,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	if len(notInDegraded) == 0 && len(onlyInDegraded) == 0 {
 		s.logger.Info("Exit degraded mode")
 		if s.enableDegradedMode && s.inErrorState() {
-			s.recordEvent(apiv1.EventTypeNormal, "ExitDegradedMode", fmt.Sprintf("NEG %s is no longer in degraded mode", s.NegSyncerKey.String()))
+			s.recordEvent(v1.EventTypeNormal, "ExitDegradedMode", fmt.Sprintf("NEG %s is no longer in degraded mode", s.NegSyncerKey.String()))
 		}
 		s.resetErrorState()
 	}
@@ -404,6 +393,41 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	s.logEndpoints(removeEndpoints, "removing endpoint")
 
 	return s.syncNetworkEndpoints(addEndpoints, removeEndpoints, endpointPodLabelMap, migrationZone)
+}
+
+func (s *transactionSyncer) generateSubnetToNegNameMap(subnetConfigs []nodetopologyv1.SubnetConfig) (map[string]string, error) {
+	defaultSubnet, err := utils.KeyName(s.networkInfo.SubnetworkURL)
+	if err != nil {
+		s.logger.Error(err, "Errored getting default subnet from NetworkInfo when retrieving existing endpoints")
+		return nil, err
+	}
+
+	subnetToNegMapping := make(map[string]string)
+	// If networkInfo is not on the default subnet, then this service is using
+	// multi-networking which cannot be used with multi subnet clusters. Even though
+	// multi-networking subnet is using a non default subnet name, we use the default
+	// neg naming which differs from how multi subnet cluster non default NEG names are
+	// handled.
+	if !s.networkInfo.IsDefault {
+		subnetToNegMapping[defaultSubnet] = s.NegSyncerKey.NegName
+		return subnetToNegMapping, nil
+	}
+
+	for _, subnetConfig := range subnetConfigs {
+		// negs in default subnet have a different naming scheme from other subnets
+		if subnetConfig.Name == defaultSubnet {
+			subnetToNegMapping[defaultSubnet] = s.NegSyncerKey.NegName
+			continue
+		}
+		nonDefaultNegName, err := s.getNonDefaultSubnetNEGName(subnetConfig.Name)
+		if err != nil {
+			s.logger.Error(err, "Errored when getting NEG name from non-default subnets when retrieving existing endpoints")
+			return nil, err
+		}
+		subnetToNegMapping[subnetConfig.Name] = nonDefaultNegName
+	}
+
+	return subnetToNegMapping, nil
 }
 
 func (s *transactionSyncer) getEndpointsCalculation(
@@ -663,10 +687,10 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, epGroupIn
 	}
 
 	if err == nil {
-		s.recordEvent(apiv1.EventTypeNormal, operation.String(), fmt.Sprintf("%s %d network endpoint(s) (NEG %q in zone %q)", operation.String(), len(networkEndpointMap), negName, zone))
+		s.recordEvent(v1.EventTypeNormal, operation.String(), fmt.Sprintf("%s %d network endpoint(s) (NEG %q in zone %q)", operation.String(), len(networkEndpointMap), negName, zone))
 		s.syncMetricsCollector.UpdateSyncerStatusInMetrics(s.NegSyncerKey, nil, s.inErrorState())
 	} else {
-		s.recordEvent(apiv1.EventTypeWarning, operation.String()+"Failed", fmt.Sprintf("Failed to %s %d network endpoint(s) (NEG %q in zone %q): %v", operation.String(), len(networkEndpointMap), negName, zone, err))
+		s.recordEvent(v1.EventTypeWarning, operation.String()+"Failed", fmt.Sprintf("Failed to %s %d network endpoint(s) (NEG %q in zone %q): %v", operation.String(), len(networkEndpointMap), negName, zone, err))
 		err := checkEndpointBatchErr(err, operation)
 		syncErr := negtypes.ClassifyError(err)
 		// If the API call fails for invalid endpoint update request in any goroutine,
@@ -677,7 +701,7 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, epGroupIn
 			s.syncLock.Lock()
 			s.logger.Info("Enter degraded mode", "reason", syncErr.Reason)
 			if s.enableDegradedMode {
-				s.recordEvent(apiv1.EventTypeWarning, "EnterDegradedMode", fmt.Sprintf("Entering degraded mode for NEG %s due to sync err: %v", s.NegSyncerKey.String(), syncErr))
+				s.recordEvent(v1.EventTypeWarning, "EnterDegradedMode", fmt.Sprintf("Entering degraded mode for NEG %s due to sync err: %v", s.NegSyncerKey.String(), syncErr))
 			}
 			s.setErrorState()
 			s.syncLock.Unlock()
@@ -750,7 +774,7 @@ func (s *transactionSyncer) commitTransaction(err error, networkEndpointMap map[
 			s.syncer.Sync()
 		} else {
 			if retryErr := s.retry.Retry(); retryErr != nil {
-				s.recordEvent(apiv1.EventTypeWarning, "RetryFailed", fmt.Sprintf("Failed to retry NEG sync for %q: %v", s.NegSyncerKey.String(), retryErr))
+				s.recordEvent(v1.EventTypeWarning, "RetryFailed", fmt.Sprintf("Failed to retry NEG sync for %q: %v", s.NegSyncerKey.String(), retryErr))
 				metrics.PublishNegControllerErrorCountMetrics(retryErr, false)
 			}
 		}
@@ -834,6 +858,43 @@ func (s *transactionSyncer) isZoneChange() bool {
 	return !currZones.Equal(existingZones)
 }
 
+func (s *transactionSyncer) isSubnetChange() bool {
+	negCR, err := getNegFromStore(s.svcNegLister, s.Namespace, s.NegSyncerKey.NegName)
+	if err != nil {
+		s.logger.Error(err, "unable to retrieve neg from the store", "neg", klog.KRef(s.Namespace, s.NegName))
+		metrics.PublishNegControllerErrorCountMetrics(err, true)
+		return false
+	}
+
+	existingSubnets := sets.New[string]()
+	for _, ref := range negCR.Status.NetworkEndpointGroups {
+		// If the subnet url is empty it means that the reference was created before
+		// Subnets were populated by the controller. This is only possible with the subnetwork
+		// that is specificed in networkInfo, and therefore we can assume which subnetwork was
+		// used for this NEG
+		subnetURL := s.networkInfo.SubnetworkURL
+		if ref.SubnetURL != "" {
+			subnetURL = ref.SubnetURL
+		}
+		id, err := cloud.ParseResourceURL(subnetURL)
+		if err != nil {
+			s.logger.Error(err, "unable to parse subnet url", "url", ref.SubnetURL)
+			metrics.PublishNegControllerErrorCountMetrics(err, true)
+			continue
+		}
+
+		existingSubnets.Insert(id.Key.Name)
+	}
+
+	currSubnets := sets.New[string]()
+	subnets := s.zoneGetter.ListSubnets(s.logger)
+	for _, subnet := range subnets {
+		currSubnets.Insert(subnet.Name)
+	}
+
+	return !currSubnets.Equal(existingSubnets)
+}
+
 // filterEndpointByTransaction removes the all endpoints from endpoint map if they exists in the transaction table
 func filterEndpointByTransaction(endpointMap map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, table networkEndpointTransactionTable, logger klog.Logger) {
 	for _, endpointSet := range endpointMap {
@@ -872,7 +933,6 @@ func mergeTransactionIntoZoneEndpointMap(endpointMap map[negtypes.NEGLocation]ne
 			endpointMap[key].Delete(endpointKey)
 		}
 	}
-	return
 }
 
 // logStats logs aggregated stats of the input endpointMap
@@ -1023,7 +1083,7 @@ func computeDegradedModeCorrectness(notInDegraded, onlyInDegraded map[negtypes.N
 func getNegFromStore(svcNegLister cache.Indexer, namespace, negName string) (*negv1beta1.ServiceNetworkEndpointGroup, error) {
 	n, exists, err := svcNegLister.GetByKey(fmt.Sprintf("%s/%s", namespace, negName))
 	if err != nil {
-		return nil, fmt.Errorf("Error getting neg %s/%s from cache: %w", namespace, negName, err)
+		return nil, fmt.Errorf("error getting neg %s/%s from cache: %w", namespace, negName, err)
 	}
 	if !exists {
 		return nil, fmt.Errorf("neg %s/%s is not in store", namespace, negName)
@@ -1128,7 +1188,7 @@ func getSyncedCondition(err error) negv1beta1.Condition {
 	if err != nil {
 		return negv1beta1.Condition{
 			Type:               negv1beta1.Synced,
-			Status:             corev1.ConditionFalse,
+			Status:             v1.ConditionFalse,
 			Reason:             negtypes.NegSyncFailed,
 			LastTransitionTime: metav1.Now(),
 			Message:            err.Error(),
@@ -1137,7 +1197,7 @@ func getSyncedCondition(err error) negv1beta1.Condition {
 
 	return negv1beta1.Condition{
 		Type:               negv1beta1.Synced,
-		Status:             corev1.ConditionTrue,
+		Status:             v1.ConditionTrue,
 		Reason:             negtypes.NegSyncSuccessful,
 		LastTransitionTime: metav1.Now(),
 	}
@@ -1148,7 +1208,7 @@ func getInitializedCondition(err error) negv1beta1.Condition {
 	if err != nil {
 		return negv1beta1.Condition{
 			Type:               negv1beta1.Initialized,
-			Status:             corev1.ConditionFalse,
+			Status:             v1.ConditionFalse,
 			Reason:             negtypes.NegInitializationFailed,
 			LastTransitionTime: metav1.Now(),
 			Message:            err.Error(),
@@ -1157,7 +1217,7 @@ func getInitializedCondition(err error) negv1beta1.Condition {
 
 	return negv1beta1.Condition{
 		Type:               negv1beta1.Initialized,
-		Status:             corev1.ConditionTrue,
+		Status:             v1.ConditionTrue,
 		Reason:             negtypes.NegInitializationSuccessful,
 		LastTransitionTime: metav1.Now(),
 	}
@@ -1196,7 +1256,7 @@ func getEndpointPodLabelMap(endpoints map[negtypes.NEGLocation]negtypes.NetworkE
 			}
 			labelMap, err := labels.GetPodLabelMap(pod, lpConfig)
 			if err != nil {
-				recorder.Eventf(pod, apiv1.EventTypeWarning, "LabelsExceededLimit", "Label Propagation Error: %v", err)
+				recorder.Eventf(pod, v1.EventTypeWarning, "LabelsExceededLimit", "Label Propagation Error: %v", err)
 				metrics.PublishNegControllerErrorCountMetrics(err, true)
 			}
 			endpointPodLabelMap[endpoint] = labelMap

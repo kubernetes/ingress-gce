@@ -54,7 +54,7 @@ type syncer struct {
 	shuttingDown bool
 
 	// sync signal and retry handling
-	syncCh  chan interface{}
+	syncCh  chan any
 	clock   clock.Clock
 	backoff backoff.BackoffHandler
 
@@ -77,10 +77,10 @@ func newSyncer(negSyncerKey negtypes.NegSyncerKey, serviceLister cache.Indexer, 
 
 func (s *syncer) Start() error {
 	if !s.IsStopped() {
-		return fmt.Errorf("NEG syncer for %s is already running.", s.NegSyncerKey.String())
+		return fmt.Errorf("NEG syncer for %s is already running", s.NegSyncerKey.String())
 	}
 	if s.IsShuttingDown() {
-		return fmt.Errorf("NEG syncer for %s is shutting down. ", s.NegSyncerKey.String())
+		return fmt.Errorf("NEG syncer for %s is shutting down", s.NegSyncerKey.String())
 	}
 
 	s.logger.V(2).Info("Starting NEG syncer for service port", "negSyncerKey", s.NegSyncerKey.String())

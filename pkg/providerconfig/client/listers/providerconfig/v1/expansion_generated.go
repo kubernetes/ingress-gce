@@ -21,7 +21,3 @@ package v1
 // ProviderConfigListerExpansion allows custom methods to be added to
 // ProviderConfigLister.
 type ProviderConfigListerExpansion interface{}
-
-// ProviderConfigNamespaceListerExpansion allows custom methods to be added to
-// ProviderConfigNamespaceLister.
-type ProviderConfigNamespaceListerExpansion interface{}

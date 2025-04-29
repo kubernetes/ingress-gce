@@ -1,7 +1,6 @@
 package finalizer
 
 import (
-	"fmt"
 	"slices"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,19 +32,19 @@ func ensureProviderConfigFinalizer(pc *providerconfig.ProviderConfig, key string
 	updatedObjectMeta := pc.ObjectMeta.DeepCopy()
 	updatedObjectMeta.Finalizers = append(updatedObjectMeta.Finalizers, key)
 
-	logger.V(2).Info("Adding finalizer to ProviderConfig", "finalizerKey", key, "providerConfig", fmt.Sprintf("%s/%s", pc.Namespace, pc.Name))
+	logger.V(2).Info("Adding finalizer to ProviderConfig", "finalizerKey", key, "providerConfig", pc.Name)
 	return patch.PatchProviderConfigObjectMetadata(csClient, pc, *updatedObjectMeta)
 }
 
-func deleteProviderConfigFinalizer(cs *providerconfig.ProviderConfig, key string, csClient providerconfigclient.Interface, logger klog.Logger) error {
-	if !HasGivenFinalizer(cs.ObjectMeta, key) {
+func deleteProviderConfigFinalizer(pc *providerconfig.ProviderConfig, key string, csClient providerconfigclient.Interface, logger klog.Logger) error {
+	if !HasGivenFinalizer(pc.ObjectMeta, key) {
 		return nil
 	}
 
-	updatedObjectMeta := cs.ObjectMeta.DeepCopy()
+	updatedObjectMeta := pc.ObjectMeta.DeepCopy()
 	updatedObjectMeta.Finalizers = slice.RemoveString(updatedObjectMeta.Finalizers, key, nil)
-	logger.V(2).Info("Deleting finalizer from ProviderConfig", "finalizerKey", key, "providerConfig", fmt.Sprintf("%s/%s", cs.Namespace, cs.Name))
-	return patch.PatchProviderConfigObjectMetadata(csClient, cs, *updatedObjectMeta)
+	logger.V(2).Info("Deleting finalizer from ProviderConfig", "finalizerKey", key, "providerConfig", pc.Name)
+	return patch.PatchProviderConfigObjectMetadata(csClient, pc, *updatedObjectMeta)
 }
 
 // HasGivenFinalizer is true if the passed in meta has the specified finalizer.

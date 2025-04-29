@@ -256,12 +256,12 @@ func TestPatchServiceLoadBalancerStatus(t *testing.T) {
 func TestPatchProviderConfigObjectMetadata(t *testing.T) {
 	for _, tc := range []struct {
 		desc                 string
-		cs                   *providerconfig.ProviderConfig
+		pc                   *providerconfig.ProviderConfig
 		updateObjectMetaFunc func(*providerconfig.ProviderConfig) *providerconfig.ProviderConfig
 	}{
 		{
 			desc: "add annotation",
-			cs:   &providerconfig.ProviderConfig{ObjectMeta: metav1.ObjectMeta{Name: "add-annotation-cs", Namespace: "ns1"}},
+			pc:   &providerconfig.ProviderConfig{ObjectMeta: metav1.ObjectMeta{Name: "add-annotation-cs"}},
 			updateObjectMetaFunc: func(cs *providerconfig.ProviderConfig) *providerconfig.ProviderConfig {
 				ret := cs.DeepCopy()
 				if ret.Annotations == nil {
@@ -273,7 +273,7 @@ func TestPatchProviderConfigObjectMetadata(t *testing.T) {
 		},
 		{
 			desc: "delete annotation",
-			cs:   &providerconfig.ProviderConfig{ObjectMeta: metav1.ObjectMeta{Name: "delete-annotation-cs", Namespace: "ns2"}},
+			pc:   &providerconfig.ProviderConfig{ObjectMeta: metav1.ObjectMeta{Name: "delete-annotation-cs"}},
 			updateObjectMetaFunc: func(cs *providerconfig.ProviderConfig) *providerconfig.ProviderConfig {
 				ret := cs.DeepCopy()
 				delete(ret.Annotations, testAnnotationKey)
@@ -282,7 +282,7 @@ func TestPatchProviderConfigObjectMetadata(t *testing.T) {
 		},
 		{
 			desc: "delete all annotations",
-			cs:   &providerconfig.ProviderConfig{ObjectMeta: metav1.ObjectMeta{Name: "delete-all-annotations-cs", Namespace: "ns3"}},
+			pc:   &providerconfig.ProviderConfig{ObjectMeta: metav1.ObjectMeta{Name: "delete-all-annotations-cs"}},
 			updateObjectMetaFunc: func(cs *providerconfig.ProviderConfig) *providerconfig.ProviderConfig {
 				ret := cs.DeepCopy()
 				ret.Annotations = nil
@@ -291,7 +291,7 @@ func TestPatchProviderConfigObjectMetadata(t *testing.T) {
 		},
 		{
 			desc: "add finalizer",
-			cs:   &providerconfig.ProviderConfig{ObjectMeta: metav1.ObjectMeta{Name: "add-finalizer-cs", Namespace: "ns4"}},
+			pc:   &providerconfig.ProviderConfig{ObjectMeta: metav1.ObjectMeta{Name: "add-finalizer-cs"}},
 			updateObjectMetaFunc: func(cs *providerconfig.ProviderConfig) *providerconfig.ProviderConfig {
 				ret := cs.DeepCopy()
 				ret.Finalizers = append(ret.Finalizers, "new-test-finalizer")
@@ -300,7 +300,7 @@ func TestPatchProviderConfigObjectMetadata(t *testing.T) {
 		},
 		{
 			desc: "delete finalizer",
-			cs:   &providerconfig.ProviderConfig{ObjectMeta: metav1.ObjectMeta{Name: "delete-finalizer-cs", Namespace: "ns5"}},
+			pc:   &providerconfig.ProviderConfig{ObjectMeta: metav1.ObjectMeta{Name: "delete-finalizer-cs"}},
 			updateObjectMetaFunc: func(cs *providerconfig.ProviderConfig) *providerconfig.ProviderConfig {
 				ret := cs.DeepCopy()
 				ret.Finalizers = slice.RemoveString(ret.Finalizers, testFinalizer, nil)
@@ -309,7 +309,7 @@ func TestPatchProviderConfigObjectMetadata(t *testing.T) {
 		},
 		{
 			desc: "delete all finalizers",
-			cs:   &providerconfig.ProviderConfig{ObjectMeta: metav1.ObjectMeta{Name: "delete-all-finalizers-cs", Namespace: "ns6"}},
+			pc:   &providerconfig.ProviderConfig{ObjectMeta: metav1.ObjectMeta{Name: "delete-all-finalizers-cs"}},
 			updateObjectMetaFunc: func(cs *providerconfig.ProviderConfig) *providerconfig.ProviderConfig {
 				ret := cs.DeepCopy()
 				ret.Finalizers = nil
@@ -318,7 +318,7 @@ func TestPatchProviderConfigObjectMetadata(t *testing.T) {
 		},
 		{
 			desc: "delete both annotation and finalizer",
-			cs:   &providerconfig.ProviderConfig{ObjectMeta: metav1.ObjectMeta{Name: "delete-annotation-and-finalizer-cs", Namespace: "ns7"}},
+			pc:   &providerconfig.ProviderConfig{ObjectMeta: metav1.ObjectMeta{Name: "delete-annotation-and-finalizer-cs"}},
 			updateObjectMetaFunc: func(cs *providerconfig.ProviderConfig) *providerconfig.ProviderConfig {
 				ret := cs.DeepCopy()
 				ret.Finalizers = slice.RemoveString(ret.Finalizers, testFinalizer, nil)
@@ -328,22 +328,22 @@ func TestPatchProviderConfigObjectMetadata(t *testing.T) {
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			csKey := fmt.Sprintf("%s/%s", tc.cs.Namespace, tc.cs.Name)
-			csClient := providerconfigfake.NewSimpleClientset()
-			if _, err := csClient.CloudV1().ProviderConfigs(tc.cs.Namespace).Create(context.TODO(), tc.cs, metav1.CreateOptions{}); err != nil {
-				t.Fatalf("Create(%s) = %v, want nil", csKey, err)
+			pcKey := tc.pc.Name
+			pcClient := providerconfigfake.NewSimpleClientset()
+			if _, err := pcClient.CloudV1().ProviderConfigs().Create(context.TODO(), tc.pc, metav1.CreateOptions{}); err != nil {
+				t.Fatalf("Create(%s) = %v, want nil", pcKey, err)
 			}
-			expectCS := tc.updateObjectMetaFunc(tc.cs)
-			err := PatchProviderConfigObjectMetadata(csClient, tc.cs, expectCS.ObjectMeta)
+			expectPC := tc.updateObjectMetaFunc(tc.pc)
+			err := PatchProviderConfigObjectMetadata(pcClient, tc.pc, expectPC.ObjectMeta)
 			if err != nil {
-				t.Fatalf("PatchProviderConfigObjectMetadata(%s) = %v, want nil", csKey, err)
+				t.Fatalf("PatchProviderConfigObjectMetadata(%s) = %v, want nil", pcKey, err)
 			}
 
-			gotCS, err := csClient.CloudV1().ProviderConfigs(tc.cs.Namespace).Get(context.TODO(), tc.cs.Name, metav1.GetOptions{})
+			gotPC, err := pcClient.CloudV1().ProviderConfigs().Get(context.TODO(), tc.pc.Name, metav1.GetOptions{})
 			if err != nil {
-				t.Fatalf("Get(%s) = %v, want nil", csKey, err)
+				t.Fatalf("Get(%s) = %v, want nil", pcKey, err)
 			}
-			if diff := cmp.Diff(expectCS.ObjectMeta, gotCS.ObjectMeta); diff != "" {
+			if diff := cmp.Diff(expectPC.ObjectMeta, gotPC.ObjectMeta); diff != "" {
 				t.Errorf("Got mismatch for ProviderConfig ObjectMeta (-want +got):\n%s", diff)
 			}
 		})

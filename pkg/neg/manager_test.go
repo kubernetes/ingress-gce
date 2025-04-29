@@ -26,6 +26,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/googleapi"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -1501,7 +1502,7 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 						t.Errorf("failed getting negs from cloud: %s", err)
 					}
 
-					numExistingNegs := checkForNegDeletions(negs, negName)
+					numExistingNegs := checkForNegs(negs, negName)
 
 					expectNegGC := tc.expectNegGC || (tc.expectGenNamedNegGC && !customName)
 					if tc.negsExist && expectNegGC && numExistingNegs != 0 {
@@ -1520,7 +1521,197 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 					if !tc.expectCrGC && crDeleted && !tc.markedForDeletion {
 						t.Errorf("expected neg %s to not be deleted", negName)
 					}
+
+					if !tc.expectCrGC && !crDeleted && tc.negCrGCError == nil {
+						if len(crs[0].Status.NetworkEndpointGroups) != tc.expectedNegCount {
+							t.Errorf("SvcNeg CR contains %d Negs, expected %d", len(crs[0].Status.NetworkEndpointGroups), tc.expectedNegCount)
+						}
+					}
 				}
+			}
+		})
+	}
+}
+
+func TestGarbageCollectTBDNegs(t *testing.T) {
+	svc := &v1.Service{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Service",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testServiceNamespace,
+			Name:      testServiceName,
+			UID:       "svc-uid",
+		},
+	}
+	port80 := int32(80)
+	matchingDesc := utils.NegDescription{
+		ClusterUID:  KubeSystemUID,
+		Namespace:   testServiceNamespace,
+		ServiceName: testServiceName,
+		Port:        fmt.Sprintf("%v", port80),
+	}
+
+	defaultNegName := "default-neg-name"
+	defaultNeg := &composite.NetworkEndpointGroup{
+		Version:     meta.VersionGA,
+		Name:        defaultNegName,
+		Description: matchingDesc.String(),
+		Zone:        negtypes.TestZone1,
+	}
+	tbdNegName := "tbd-neg-name"
+	tbdNeg := &composite.NetworkEndpointGroup{
+		Version:     meta.VersionGA,
+		Name:        tbdNegName,
+		Description: matchingDesc.String(),
+		Zone:        negtypes.TestZone1,
+	}
+
+	testcases := []struct {
+		desc               string
+		negDesired         bool
+		activeNegs         []*composite.NetworkEndpointGroup
+		tbdNegs            []*composite.NetworkEndpointGroup
+		expectedActiveNegs []*composite.NetworkEndpointGroup
+		expectedTBDNegs    []*composite.NetworkEndpointGroup
+		negGCError         error
+		// if expectCR is true, then we expect that the NEG CR was not deleted
+		expectCR bool
+	}{
+		{
+			desc:               "neg is desired, no TBD Negs",
+			negDesired:         true,
+			activeNegs:         []*composite.NetworkEndpointGroup{defaultNeg},
+			expectedActiveNegs: []*composite.NetworkEndpointGroup{defaultNeg},
+			expectCR:           true,
+		},
+		{
+			desc:               "neg is desired, has TBD Negs",
+			negDesired:         true,
+			activeNegs:         []*composite.NetworkEndpointGroup{defaultNeg},
+			tbdNegs:            []*composite.NetworkEndpointGroup{tbdNeg},
+			expectedActiveNegs: []*composite.NetworkEndpointGroup{defaultNeg},
+			expectCR:           true,
+		},
+		{
+			desc:               "neg is desired, has TBD Negs, but fails deletion",
+			negDesired:         true,
+			activeNegs:         []*composite.NetworkEndpointGroup{defaultNeg},
+			tbdNegs:            []*composite.NetworkEndpointGroup{tbdNeg},
+			expectedActiveNegs: []*composite.NetworkEndpointGroup{defaultNeg},
+			expectedTBDNegs:    []*composite.NetworkEndpointGroup{tbdNeg},
+			negGCError:         fmt.Errorf("neg-in-use"),
+			expectCR:           true,
+		},
+		{
+			desc:       "neg is not desired",
+			negDesired: false,
+			activeNegs: []*composite.NetworkEndpointGroup{defaultNeg},
+			tbdNegs:    []*composite.NetworkEndpointGroup{tbdNeg},
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.desc, func(t *testing.T) {
+			kubeClient := fake.NewSimpleClientset()
+			manager, testCloud, _, err := NewTestSyncerManager(kubeClient)
+			fakeNegCloud := manager.cloud
+			if err != nil {
+				t.Fatalf("failed to create test syncer manager: %v", err)
+			}
+
+			var negRefs []negv1beta1.NegObjectReference
+			for _, negRes := range tc.activeNegs {
+				err := fakeNegCloud.CreateNetworkEndpointGroup(negRes, negRes.Zone, klog.TODO())
+				if err != nil {
+					t.Fatalf("failed to create neg: %s", err)
+				}
+				negRefs = append(negRefs, getNegObjectRefsWithState(t, fakeNegCloud, []string{negRes.Zone}, negRes.Name, meta.VersionGA, negv1beta1.ActiveState)...)
+			}
+			for _, negRes := range tc.tbdNegs {
+				err := fakeNegCloud.CreateNetworkEndpointGroup(negRes, negRes.Zone, klog.TODO())
+				if err != nil {
+					t.Fatalf("failed to create neg: %s", err)
+				}
+				negRefs = append(negRefs, getNegObjectRefsWithState(t, fakeNegCloud, []string{negRes.Zone}, negRes.Name, meta.VersionGA, negv1beta1.ToBeDeletedState)...)
+			}
+
+			gcPortInfo := negtypes.PortInfo{PortTuple: negtypes.SvcPortTuple{Port: port80}, NegName: defaultNegName}
+			cr := createNegCR(svc, serviceKey{namespace: svc.Namespace, name: svc.Name}, gcPortInfo)
+			cr.Status.NetworkEndpointGroups = negRefs
+
+			if tc.negDesired {
+				manager.serviceLister.Add(svc)
+				// Create and Update manager svcPortMap to indicate Service is desired
+				portMap := make(types.PortInfoMap)
+				portMap[negtypes.PortInfoMapKey{ServicePort: port80}] = gcPortInfo
+				svcKey := serviceKey{namespace: svc.Namespace, name: svc.Name}
+				manager.svcPortMap[svcKey] = portMap
+			}
+
+			if _, err := manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(cr.Namespace).Create(context2.TODO(), &cr, metav1.CreateOptions{}); err != nil {
+				t.Fatalf("failed to create neg cr: %v", err)
+			}
+			populateSvcNegCache(t, manager, manager.svcNegClient, cr.Namespace)
+
+			if tc.negGCError != nil {
+				mockCloud := testCloud.Compute().(*cloud.MockGCE)
+				mockNEG := mockCloud.NetworkEndpointGroups().(*cloud.MockNetworkEndpointGroups)
+
+				mockNEG.DeleteError[*meta.ZonalKey(tbdNegName, negtypes.TestZone1)] = tc.negGCError
+			}
+
+			err = manager.GC()
+			if tc.negGCError == nil && err != nil {
+				t.Fatalf("failed to GC: %v", err)
+			}
+			if tc.negGCError != nil && err == nil {
+				t.Errorf("expected GC to error")
+			}
+
+			negs, err := fakeNegCloud.AggregatedListNetworkEndpointGroup(meta.VersionGA, klog.TODO())
+			if err != nil {
+				t.Errorf("failed getting negs from cloud: %s", err)
+			}
+
+			expectedNegCount := len(tc.expectedActiveNegs) + len(tc.expectedTBDNegs)
+
+			if len(negs) != expectedNegCount {
+				t.Errorf("got %d NEGs, expected %d Negs", len(negs), expectedNegCount)
+			}
+
+			var expectedNegRefs []negv1beta1.NegObjectReference
+			for _, negRes := range tc.expectedActiveNegs {
+				count := checkForNegs(negs, negRes.Name)
+				if count != 1 {
+					t.Errorf("got %d NEGs with name %s, expected only 1 Neg", count, negRes.Name)
+				}
+
+				expectedNegRefs = append(expectedNegRefs, getNegObjectRefsWithState(t, fakeNegCloud, []string{negRes.Zone}, negRes.Name, meta.VersionGA, negv1beta1.ActiveState)...)
+			}
+			for _, negRes := range tc.expectedTBDNegs {
+				count := checkForNegs(negs, negRes.Name)
+				if count != 1 {
+					t.Errorf("got %d NEGs with name %s, expected only 1 Neg", count, negRes.Name)
+				}
+
+				expectedNegRefs = append(expectedNegRefs, getNegObjectRefsWithState(t, fakeNegCloud, []string{negRes.Zone}, negRes.Name, meta.VersionGA, negv1beta1.ToBeDeletedState)...)
+			}
+
+			updatedCR, err := manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svc.Namespace).Get(context2.TODO(), cr.Name, metav1.GetOptions{})
+			if tc.expectCR && err != nil {
+				t.Errorf("failed to get neg cr: %s", err)
+			} else if !tc.expectCR && err == nil {
+				t.Error("expected no CR, but recieved no error")
+			}
+
+			if updatedCR == nil {
+				return
+			}
+
+			if diff := cmp.Diff(updatedCR.Status.NetworkEndpointGroups, expectedNegRefs); diff != "" {
+				t.Errorf("Unexpected neg refs. (got-, want+): %s", diff)
 			}
 		})
 	}
@@ -1797,6 +1988,11 @@ func (s *fakeSyncer) IsShuttingDown() bool { return false }
 
 // getNegObjectRefs generates the NegObjectReference list of all negs with the specified negName in the specified zones
 func getNegObjectRefs(t *testing.T, cloud negtypes.NetworkEndpointGroupCloud, zones []string, negName string, version meta.Version) []negv1beta1.NegObjectReference {
+	return getNegObjectRefsWithState(t, cloud, zones, negName, version, negv1beta1.ActiveState)
+}
+
+func getNegObjectRefsWithState(t *testing.T, cloud negtypes.NetworkEndpointGroupCloud, zones []string, negName string, version meta.Version, state negv1beta1.NegState) []negv1beta1.NegObjectReference {
+	t.Helper()
 	var negRefs []negv1beta1.NegObjectReference
 	for _, zone := range zones {
 		neg, err := cloud.GetNetworkEndpointGroup(negName, zone, version, klog.TODO())
@@ -1808,13 +2004,14 @@ func getNegObjectRefs(t *testing.T, cloud negtypes.NetworkEndpointGroupCloud, zo
 			Id:                  fmt.Sprint(neg.Id),
 			SelfLink:            neg.SelfLink,
 			NetworkEndpointType: negv1beta1.NetworkEndpointType(neg.NetworkEndpointType),
+			State:               state,
 		})
 	}
 	return negRefs
 }
 
-// checkForNegDeletions gets the count of neg objects in negs that has the provided negName.
-func checkForNegDeletions(negs map[*meta.Key]*composite.NetworkEndpointGroup, negName string) int {
+// checkForNegs gets the count of neg objects in negs that has the provided negName.
+func checkForNegs(negs map[*meta.Key]*composite.NetworkEndpointGroup, negName string) int {
 	foundNegs := 0
 	for _, neg := range negs {
 		if neg.Name == negName {

@@ -95,6 +95,43 @@ func AddFakeNodes(zoneGetter *ZoneGetter, newZone string, instances ...string) e
 	return nil
 }
 
+// AddFakeNodesCount creates a set of `count` nodes in a `zone` and `subnet` and populates them in `zonegetter` and `nodeinformer`.
+func AddFakeNodesCount(zoneGetter *ZoneGetter, nodeInformer cache.SharedIndexInformer, zone, subnet string, count int) error {
+	for i := 0; i < count; i++ {
+		name := fmt.Sprintf("instance-%s-%s-%d", zone, subnet, i)
+		node := &apiv1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: name,
+				Labels: map[string]string{
+					utils.LabelNodeSubnet: subnet,
+				},
+			},
+			Spec: apiv1.NodeSpec{
+				ProviderID: fmt.Sprintf("gce://foo-project/%s/%s", zone, name),
+				// This will overflow for large number of instances,
+				// but that should be fine for the tests.
+				PodCIDR:  fmt.Sprintf("10.100.%d.0/24", i),
+				PodCIDRs: []string{fmt.Sprintf("10.100.%d.0/24", i)},
+			},
+			Status: apiv1.NodeStatus{
+				Conditions: []apiv1.NodeCondition{
+					{
+						Type:   apiv1.NodeReady,
+						Status: apiv1.ConditionTrue,
+					},
+				},
+			},
+		}
+		if err := nodeInformer.GetIndexer().Add(node); err != nil {
+			return err
+		}
+		if err := zoneGetter.nodeLister.Add(node); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // AddFakeNode adds fake node to the ZoneGetter.
 func AddFakeNode(zoneGetter *ZoneGetter, node *apiv1.Node) error {
 	if err := zoneGetter.nodeLister.Add(node); err != nil {

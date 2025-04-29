@@ -287,6 +287,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service, svcLo
 		EnableWeightedLB:                 l4c.ctx.EnableWeightedL4ILB,
 		DisableNodesFirewallProvisioning: l4c.ctx.DisableL4LBFirewall,
 		EnableMixedProtocol:              l4c.ctx.EnableL4ILBMixedProtocol,
+		EnableZonalAffinity:              l4c.ctx.EnableL4ILBZonalAffinity,
 	}
 	l4 := loadbalancers.NewL4Handler(l4ilbParams, svcLogger)
 	syncResult := l4.EnsureInternalLoadBalancer(utils.GetNodeNames(nodes), service)
@@ -369,6 +370,7 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service, svc
 		EnableWeightedLB:                 l4c.ctx.EnableWeightedL4ILB,
 		DisableNodesFirewallProvisioning: l4c.ctx.DisableL4LBFirewall,
 		EnableMixedProtocol:              l4c.ctx.EnableL4ILBMixedProtocol,
+		EnableZonalAffinity:              l4c.ctx.EnableL4ILBZonalAffinity,
 	}
 	l4 := loadbalancers.NewL4Handler(l4ilbParams, svcLogger)
 	l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer", "Deleting load balancer for %s", key)
@@ -579,6 +581,11 @@ func (l4c *L4Controller) needsUpdate(oldService *v1.Service, newService *v1.Serv
 			oldService.Spec.HealthCheckNodePort, newService.Spec.HealthCheckNodePort)
 		return true
 	}
+	if oldService.Spec.TrafficDistribution != newService.Spec.TrafficDistribution {
+		recorder.Eventf(newService, v1.EventTypeNormal, "TrafficDistribution", "%v -> %v",
+			oldService.Spec.TrafficDistribution, newService.Spec.TrafficDistribution)
+		return true
+	}
 	if l4c.enableDualStack && !reflect.DeepEqual(oldService.Spec.IPFamilies, newService.Spec.IPFamilies) {
 		recorder.Eventf(newService, v1.EventTypeNormal, "IPFamilies", "%v -> %v",
 			oldService.Spec.IPFamilies, newService.Spec.IPFamilies)
@@ -598,7 +605,8 @@ func (l4c *L4Controller) publishMetrics(result *loadbalancers.L4ILBSyncResult, n
 		l4c.ctx.ControllerMetrics.SetL4ILBServiceForLegacyMetric(namespacedName, result.MetricsLegacyState)
 		l4c.ctx.ControllerMetrics.SetL4ILBService(namespacedName, result.MetricsState)
 		isWeightedLB := result.MetricsState.WeightedLBPodsPerNode
-		l4metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime, isResync, isWeightedLB)
+		isZonalAffinityLB := result.MetricsState.ZonalAffinity
+		l4metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime, isResync, isWeightedLB, isZonalAffinityLB)
 		if l4c.enableDualStack {
 			svcLogger.V(2).Info("Internal L4 DualStack Loadbalancer for Service ensured, updating its state in metrics cache", "serviceState", result.MetricsState)
 			l4metrics.PublishL4ILBDualStackSyncLatency(result.Error == nil, result.SyncType, result.MetricsState.IPFamilies, result.StartTime, isResync)
@@ -616,7 +624,8 @@ func (l4c *L4Controller) publishMetrics(result *loadbalancers.L4ILBSyncResult, n
 			l4c.ctx.ControllerMetrics.DeleteL4ILBService(namespacedName)
 		}
 		isWeightedLB := result.MetricsState.WeightedLBPodsPerNode
-		l4metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime, false, isWeightedLB)
+		isZonalAffinityLB := result.MetricsState.ZonalAffinity
+		l4metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime, false, isWeightedLB, isZonalAffinityLB)
 		if l4c.enableDualStack {
 			l4metrics.PublishL4ILBDualStackSyncLatency(result.Error == nil, result.SyncType, result.MetricsState.IPFamilies, result.StartTime, false)
 		}

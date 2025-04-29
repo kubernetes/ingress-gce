@@ -28,8 +28,8 @@ type FakeCloudV1 struct {
 	*testing.Fake
 }
 
-func (c *FakeCloudV1) ProviderConfigs(namespace string) v1.ProviderConfigInterface {
-	return &FakeProviderConfigs{c, namespace}
+func (c *FakeCloudV1) ProviderConfigs() v1.ProviderConfigInterface {
+	return &FakeProviderConfigs{c}
 }
 
 // RESTClient returns a RESTClient that is used to communicate

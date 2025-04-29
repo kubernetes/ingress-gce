@@ -24,7 +24,6 @@ import (
 
 	networkv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1"
 	"k8s.io/ingress-gce/pkg/neg/types"
-	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
@@ -230,7 +229,7 @@ func TestUnevenNodesInZones(t *testing.T) {
 				t.Errorf("Failed to get subset for test '%s', err %v", tc.description, err)
 			}
 			zones := make(map[string]struct{})
-			for egi, _ := range subsetMap {
+			for egi := range subsetMap {
 				zones[egi.Zone] = struct{}{}
 			}
 			if len(zones) != len(tc.nodesMap) {
@@ -238,7 +237,7 @@ func TestUnevenNodesInZones(t *testing.T) {
 					subsetMap, tc.nodesMap, tc.description)
 			}
 			totalSubsetSize := 0
-			for zone, _ := range zones {
+			for zone := range zones {
 				subset := getNetworkEndpointsForZone(zone, subsetMap)
 				if len(subset) == 0 && !tc.expectEmpty {
 					t.Errorf("Got empty subset in zone %s for test '%s'", zone, tc.description)
@@ -263,7 +262,7 @@ func TestGetSubsetPerZoneMultinetwork(t *testing.T) {
 		// expectEmpty indicates that some zones can have empty subsets
 		expectEmpty      bool
 		networkInfo      network.NetworkInfo
-		expectedNodesMap map[negtypes.NEGLocation]map[string]string
+		expectedNodesMap map[types.NEGLocation]map[string]string
 	}{
 		{
 			description: "Default network, gets primary interface",
@@ -277,7 +276,7 @@ func TestGetSubsetPerZoneMultinetwork(t *testing.T) {
 				SubnetworkURL: defaultTestSubnetURL,
 			},
 			// empty IPs since test can't get the primary IP
-			expectedNodesMap: map[negtypes.NEGLocation]map[string]string{
+			expectedNodesMap: map[types.NEGLocation]map[string]string{
 				{Zone: "zone1", Subnet: defaultTestSubnet}: {"n1_1": "", "n1_2": ""},
 				{Zone: "zone2", Subnet: defaultTestSubnet}: {"n2_1": "", "n2_2": ""},
 				{Zone: "zone3", Subnet: defaultTestSubnet}: {"n3_1": ""},
@@ -296,7 +295,7 @@ func TestGetSubsetPerZoneMultinetwork(t *testing.T) {
 				K8sNetwork:    "net1",
 				SubnetworkURL: defaultTestSubnetURL,
 			},
-			expectedNodesMap: map[negtypes.NEGLocation]map[string]string{
+			expectedNodesMap: map[types.NEGLocation]map[string]string{
 				{Zone: "zone1", Subnet: defaultTestSubnet}: {"n1_1": "172.168.1.1", "n1_2": "172.168.1.2"},
 				{Zone: "zone2", Subnet: defaultTestSubnet}: {"n2_1": "172.168.2.1", "n2_2": "172.168.2.2"},
 				{Zone: "zone3", Subnet: defaultTestSubnet}: {"n3_1": "172.168.3.1"},

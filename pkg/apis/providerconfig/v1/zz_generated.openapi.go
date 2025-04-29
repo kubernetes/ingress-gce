@@ -86,33 +86,44 @@ func schema_pkg_apis_providerconfig_v1_ProviderConfigSpec(ref common.ReferenceCa
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
-				Description: "ProviderConfigSpec is the spec for a  resource",
+				Description: "ProviderConfigSpec defines the desired state of ProviderConfig.",
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
+					"projectNumber": {
+						SchemaProps: spec.SchemaProps{
+							Description: "ProjectNumber is the GCP project number.",
+							Default:     0,
+							Type:        []string{"integer"},
+							Format:      "int64",
+						},
+					},
 					"projectID": {
 						SchemaProps: spec.SchemaProps{
-							Description: "The ID of the project where the provider config is to be created.",
+							Description: "ProjectID is the GCP Project ID.",
+							Default:     "",
 							Type:        []string{"string"},
 							Format:      "",
 						},
 					},
-					"projectNumber": {
+					"pscConnectionID": {
 						SchemaProps: spec.SchemaProps{
-							Description: "The project number where the provider config is to be created.",
+							Description: "PSC connection ID of the PSC endpoint.",
+							Default:     0,
 							Type:        []string{"integer"},
 							Format:      "int64",
 						},
 					},
 					"networkConfig": {
 						SchemaProps: spec.SchemaProps{
-							Description: "The network configuration for the provider config.",
-							Ref:         ref("k8s.io/ingress-gce/pkg/apis/providerconfig/v1.NetworkConfig"),
+							Default: map[string]interface{}{},
+							Ref:     ref("k8s.io/ingress-gce/pkg/apis/providerconfig/v1.ProviderNetworkConfig"),
 						},
 					},
 				},
+				Required: []string{"projectNumber", "projectID", "pscConnectionID", "networkConfig"},
 			},
 		},
 		Dependencies: []string{
-			"k8s.io/ingress-gce/pkg/apis/providerconfig/v1.NetworkConfig"},
+			"k8s.io/ingress-gce/pkg/apis/providerconfig/v1.ProviderNetworkConfig"},
 	}
 }

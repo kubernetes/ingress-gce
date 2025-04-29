@@ -121,7 +121,7 @@ func newTestProviderConfigController(t *testing.T) *testProviderConfigController
 
 func addProviderConfig(t *testing.T, tc *testProviderConfigController, pc *providerconfig.ProviderConfig) {
 	t.Helper()
-	_, err := tc.pcClient.CloudV1().ProviderConfigs(pc.Namespace).Create(context.TODO(), pc, metav1.CreateOptions{})
+	_, err := tc.pcClient.CloudV1().ProviderConfigs().Create(context.TODO(), pc, metav1.CreateOptions{})
 	if err != nil {
 		t.Fatalf("failed to create ProviderConfig: %v", err)
 	}
@@ -133,7 +133,7 @@ func addProviderConfig(t *testing.T, tc *testProviderConfigController, pc *provi
 
 func updateProviderConfig(t *testing.T, tc *testProviderConfigController, pc *providerconfig.ProviderConfig) {
 	t.Helper()
-	_, err := tc.pcClient.CloudV1().ProviderConfigs(pc.Namespace).Update(context.TODO(), pc, metav1.UpdateOptions{})
+	_, err := tc.pcClient.CloudV1().ProviderConfigs().Update(context.TODO(), pc, metav1.UpdateOptions{})
 	if err != nil {
 		t.Fatalf("failed to update ProviderConfig: %v", err)
 	}
@@ -163,8 +163,7 @@ func TestCreateDeleteProviderConfig(t *testing.T) {
 
 	pc := &providerconfig.ProviderConfig{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "pc-delete",
-			Namespace: "test-namespace",
+			Name: "pc-delete",
 		},
 	}
 	addProviderConfig(t, tc, pc)

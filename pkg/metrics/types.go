@@ -75,6 +75,8 @@ type L4FeaturesServiceLabels struct {
 	WeightedLBPodsPerNode bool
 	// BackendType is the type of the backend the LB uses (IGs or NEGs).
 	BackendType L4BackendType
+	// ZonalAffinity is true if Zonal Affinity is enabled
+	ZonalAffinity bool
 }
 
 // L4ServiceState tracks the state of an L4 service. It includes data needed to fill various L4 metrics plus the status of the service.

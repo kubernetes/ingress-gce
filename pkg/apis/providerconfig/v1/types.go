@@ -21,6 +21,7 @@ import (
 // ProviderConfig is the Schema for the ProviderConfig resource in the Multi-Project cluster.
 // +genclient
 // +genclient:noStatus
+// +genclient:nonNamespaced
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 //
 // +k8s:openapi-gen=true
@@ -32,27 +33,62 @@ type ProviderConfig struct {
 	Status ProviderConfigStatus `json:"status,omitempty"`
 }
 
-// ProviderConfigSpec is the spec for a  resource
+// ProviderConfigSpec defines the desired state of ProviderConfig.
 // +k8s:openapi-gen=true
 type ProviderConfigSpec struct {
-	// The ID of the project where the provider config is to be created.
-	ProjectID string `json:"projectID,omitempty"`
-	// The project number where the provider config is to be created.
-	ProjectNumber int64 `json:"projectNumber,omitempty"`
-	// The network configuration for the provider config.
-	NetworkConfig *NetworkConfig `json:"networkConfig,omitempty"`
+	// ProjectNumber is the GCP project number.
+	//
+	// +kubebuilder:validation:Minimum=0
+	// +(Validation done in accordance with go/elysium/project_ids#project-number)
+	ProjectNumber int64 `json:"projectNumber"`
+	// ProjectID is the GCP Project ID.
+	//
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=30
+	// +(Validation done in accordance with https://cloud.google.com/resource-manager/docs/creating-managing-projects#before_you_begin)
+	ProjectID string `json:"projectID"`
+	// PSC connection ID of the PSC endpoint.
+	//
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Optional
+	PSCConnectionID int64                 `json:"pscConnectionID"`
+	NetworkConfig   ProviderNetworkConfig `json:"networkConfig"`
 }
 
-// NetworkConfig specifies the network configuration for the provider config.
-type NetworkConfig struct {
+// ProviderNetworkConfig specifies the network configuration for the provider config.
+type ProviderNetworkConfig struct {
 	// The network where the provider config is to be created.
 	Network string `json:"network,omitempty"`
 	// The default subnetwork where the provider config is to be created.
-	DefaultSubnetwork string `json:"defaultSubnetwork,omitempty"`
+	SubnetInfo ProviderConfigSubnetInfo `json:"subnetInfo"`
 }
 
-// ProviderConfigStatus is the status for a ProviderConfig resource
+// ProviderConfigSubnetInfo defines the subnet configuration.
+type ProviderConfigSubnetInfo struct {
+	// Subnetwork is the name of the subnetwork in the format projects/{project}/regions/{region}/subnetworks/{subnet}.
+	Subnetwork string `json:"subnetwork"`
+	// The primary IP range of the subnet in CIDR notation (e.g.,`10.0.0.0/16`).
+	CIDR string `json:"cidr"`
+	// PodRanges contains the Pod CIDR ranges that are part of this Subnet.
+	PodRanges []ProviderConfigSecondaryRange `json:"podRanges"`
+}
+
+// ProviderConfigSecondaryRange describes the configuration of a SecondaryRange.
+type ProviderConfigSecondaryRange struct {
+	// The name of the secondary range.
+	Name string `json:"name"`
+	// The secondary IP range in CIDR notation (e.g.,`10.0.0.0/16`).
+	CIDR string `json:"cidr"`
+}
+
+// ProviderConfigStatus defines the current state of ProviderConfig.
 type ProviderConfigStatus struct {
+	// Conditions describe the current conditions of the ProviderConfig.
+	//
+	// +listType=map
+	// +listMapKey=type
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

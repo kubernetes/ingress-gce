@@ -117,6 +117,7 @@ var F = struct {
 	EnableL4NetLBNEG                         bool
 	EnableL4NetLBNEGDefault                  bool
 	GateNEGByLock                            bool
+	GateL4ByLock                             bool
 	EnableMultipleIGs                        bool
 	EnableL4StrongSessionAffinity            bool
 	EnableNEGLabelPropagation                bool
@@ -139,10 +140,12 @@ var F = struct {
 	EnableWeightedL4NetLB                    bool
 	EnableDiscretePortForwarding             bool
 	EnableMultiProjectMode                   bool
+	EnableL4ILBZonalAffinity                 bool
 	ProviderConfigNameLabelKey               string
 	EnableL4ILBMixedProtocol                 bool
 	EnableL4NetLBMixedProtocol               bool
 	EnableIPV6OnlyNEG                        bool
+	MultiProjectOwnerLabelKey                string
 }{
 	GCERateLimitScale: 1.0,
 }
@@ -288,6 +291,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableL4NetLBNEG, "enable-l4-netlb-neg", false, `Optional, if enabled then the NetLB controller can create L4 NetLB services with NEG backends.`)
 	flag.BoolVar(&F.EnableL4NetLBNEGDefault, "enable-l4-netlb-neg-default", false, `Optional, if enabled then newly created L4 NetLB services will use NEG backends. Has effect only if '--enable-l4-netlb-neg' is set to true.`)
 	flag.BoolVar(&F.GateNEGByLock, "gate-neg-by-lock", false, "If enabled then the NEG controller will be run via leader election with NEG resource lock")
+	flag.BoolVar(&F.GateL4ByLock, "gate-l4-by-lock", false, "If enabled then the L4 controllers will be run via leader election with L4 resource lock")
 	flag.BoolVar(&F.EnableIGController, "enable-ig-controller", true, `Optional, if enabled then the IG controller will be run.`)
 	flag.BoolVar(&F.EnablePSC, "enable-psc", false, "Enable PSC controller")
 	flag.StringVar(&F.GKEClusterName, "gke-cluster-name", "", "The name of the GKE cluster this Ingress Controller will be interacting with")
@@ -326,14 +330,16 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.StringVar(&F.NodeTopologyCRName, "node-topology-cr-name", "default", "The name of the Node Topology CR.")
 	flag.BoolVar(&F.EnableWeightedL4ILB, "enable-weighted-l4-ilb", false, "Enable Weighted Load balancing for L4 ILB.")
 	flag.BoolVar(&F.EnableWeightedL4NetLB, "enable-weighted-l4-netlb", false, "EnableWeighted Load balancing for  L4 NetLB .")
+	flag.BoolVar(&F.EnableL4ILBZonalAffinity, "enable-l4ilb-zonal-affinity", false, "Enable Zonal Affinity for L4 ILB.")
 	flag.Float32Var(&F.KubeClientQPS, "kube-client-qps", 0.0, "The QPS that the controllers' kube client should adhere to through client side throttling. If zero, client will be created with default settings.")
 	flag.IntVar(&F.KubeClientBurst, "kube-client-burst", 0, "The burst QPS that the controllers' kube client should adhere to through client side throttling. If zero, client will be created with default settings.")
 	flag.BoolVar(&F.EnableDiscretePortForwarding, "enable-discrete-port-forwarding", false, "Enable forwarding of individual ports instead of port ranges.")
 	flag.BoolVar(&F.EnableMultiProjectMode, "enable-multi-project-mode", false, "Enable running in multi-project mode.")
 	flag.BoolVar(&F.EnableL4ILBMixedProtocol, "enable-l4ilb-mixed-protocol", false, "Enable support for mixed protocol L4 internal load balancers.")
 	flag.BoolVar(&F.EnableL4NetLBMixedProtocol, "enable-l4netlb-mixed-protocol", false, "Enable support for mixed protocol L4 external load balancers.")
-	flag.StringVar(&F.ProviderConfigNameLabelKey, "provider-config-name-label-key", "", "The label key for provider-config name, which is used to identify the provider-config of objects in multi-project mode.")
+	flag.StringVar(&F.ProviderConfigNameLabelKey, "provider-config-name-label-key", "cloud.gke.io/provider-config-name", "The label key for provider-config name, which is used to identify the provider-config of objects in multi-project mode.")
 	flag.BoolVar(&F.EnableIPV6OnlyNEG, "enable-ipv6-only-neg", false, "Enable support for IPV6 Only NEG's.")
+	flag.StringVar(&F.MultiProjectOwnerLabelKey, "multi-project-owner-label-key", "multiproject.gke.io/owner", "The label key for multi-project owner, which is used to identify the owner of objects in multi-project mode.")
 }
 
 func Validate() {
