@@ -194,6 +194,27 @@ func NewL4NetLBRBSServiceMultiplePorts(name string, ports []int32) *api_v1.Servi
 	return svc
 }
 
+// NewL4LBServiceWithLoadBalancerClass creates a Service of type LoadBalancer with a given loadBalancerClass
+func NewL4LBServiceWithLoadBalancerClass(lbClass string) *api_v1.Service {
+	svc := &api_v1.Service{
+		ObjectMeta: meta_v1.ObjectMeta{
+			Name:      netLbServiceName,
+			Namespace: testServiceNamespace,
+			// Internal lb annotation should be ignored since loadBalancerClass has precedence
+			Annotations: map[string]string{gce.ServiceAnnotationLoadBalancerType: string(gce.LBTypeInternal)},
+		},
+		Spec: api_v1.ServiceSpec{
+			LoadBalancerClass:     &lbClass,
+			Type:                  api_v1.ServiceTypeLoadBalancer,
+			ExternalTrafficPolicy: api_v1.ServiceExternalTrafficPolicyTypeCluster,
+			Ports: []api_v1.ServicePort{
+				{Name: "testport", Port: int32(8080), Protocol: "TCP"},
+			},
+		},
+	}
+	return svc
+}
+
 // NewBackendConfig returns a BackendConfig with the given spec.
 func NewBackendConfig(name types.NamespacedName, spec backendconfig.BackendConfigSpec) *backendconfig.BackendConfig {
 	return &backendconfig.BackendConfig{

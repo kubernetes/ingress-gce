@@ -394,6 +394,49 @@ func validateAnnotationsDeleted(svc *v1.Service) error {
 	return nil
 }
 
+func verifyNetLBServiceProvisioned(t *testing.T, svc *v1.Service) {
+	t.Helper()
+
+	if !utils.HasL4NetLBFinalizerV2(svc) && !utils.HasL4NetLBFinalizerV3(svc) {
+		t.Errorf("Expected %q or %q finalizer in Finalizer list - %v", common.NetLBFinalizerV2, common.NetLBFinalizerV3, svc.Finalizers)
+	}
+
+	ingressIPs := svc.Status.LoadBalancer.Ingress
+	expectedIPsLen := len(svc.Spec.IPFamilies)
+	// non dualstack tests do not set IPFamilies,
+	if expectedIPsLen == 0 {
+		expectedIPsLen = 1
+	}
+	if len(ingressIPs) != expectedIPsLen {
+		t.Errorf("Expected len(ingressIPs) = %d, got %d", expectedIPsLen, len(ingressIPs))
+	}
+	for _, ingress := range ingressIPs {
+		if ingress.IP == "" {
+			t.Errorf("Ingress VIP not assigned to service")
+		}
+	}
+
+	if err := validateAnnotations(svc); err != nil {
+		t.Errorf("%v", err)
+	}
+}
+
+func verifyNetLBServiceNotProvisioned(t *testing.T, svc *v1.Service) {
+	t.Helper()
+
+	if utils.HasL4NetLBFinalizerV2(svc) || utils.HasL4NetLBFinalizerV3(svc) {
+		t.Errorf("Unexpected %q or %q finalizer in Finalizer list - %v", common.NetLBFinalizerV2, common.NetLBFinalizerV3, svc.Finalizers)
+	}
+
+	if len(svc.Status.LoadBalancer.Ingress) > 0 {
+		t.Errorf("Expected LoadBalancer status to be empty, Got %v", svc.Status.LoadBalancer)
+	}
+
+	if err := validateAnnotationsDeleted(svc); err != nil {
+		t.Errorf("%v", err)
+	}
+}
+
 func TestProcessMultipleNetLBServices(t *testing.T) {
 	backoff := retry.DefaultRetry
 	backoff.Duration = 3 * time.Second
@@ -1608,13 +1651,20 @@ func TestShouldProcessService(t *testing.T) {
 	svcWithRBSAnnotationAndFinalizer.ObjectMeta.Finalizers = append(svcWithRBSAnnotationAndFinalizer.ObjectMeta.Finalizers, common.NetLBFinalizerV2)
 	svcWithRBSAnnotationAndFinalizer.Annotations = map[string]string{annotations.RBSAnnotationKey: annotations.RBSEnabled}
 
-	svcWithLoadBalancerClass, err := l4netController.ctx.KubeClient.CoreV1().Services(legacyNetLBSvc.Namespace).Get(context.TODO(), legacyNetLBSvc.Name, metav1.GetOptions{})
+	svcWithCustomLoadBalancerClass, err := l4netController.ctx.KubeClient.CoreV1().Services(legacyNetLBSvc.Namespace).Get(context.TODO(), legacyNetLBSvc.Name, metav1.GetOptions{})
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err: %v", legacyNetLBSvc.Name, err)
 	}
-	svcWithLoadBalancerClass.Annotations = map[string]string{annotations.RBSAnnotationKey: annotations.RBSEnabled}
+	svcWithCustomLoadBalancerClass.Annotations = map[string]string{annotations.RBSAnnotationKey: annotations.RBSEnabled}
 	testLBClass := "testLBClass"
-	svcWithLoadBalancerClass.Spec.LoadBalancerClass = &testLBClass
+	svcWithCustomLoadBalancerClass.Spec.LoadBalancerClass = &testLBClass
+
+	svcWithExternalLoadBalancerClass, err := l4netController.ctx.KubeClient.CoreV1().Services(legacyNetLBSvc.Namespace).Get(context.TODO(), legacyNetLBSvc.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err: %v", legacyNetLBSvc.Name, err)
+	}
+	lbClass := annotations.RegionalExternalLoadBalancerClass
+	svcWithExternalLoadBalancerClass.Spec.LoadBalancerClass = &lbClass
 
 	for _, testCase := range []struct {
 		oldSvc        *v1.Service
@@ -1644,8 +1694,13 @@ func TestShouldProcessService(t *testing.T) {
 		},
 		{
 			oldSvc:        nil,
-			newSvc:        svcWithLoadBalancerClass,
+			newSvc:        svcWithCustomLoadBalancerClass,
 			shouldProcess: false,
+		},
+		{
+			oldSvc:        nil,
+			newSvc:        svcWithExternalLoadBalancerClass,
+			shouldProcess: true,
 		},
 		{
 			// We do not support migration only by finalizer
@@ -2091,5 +2146,105 @@ func TestEnsureBackendLinkingWithInstanceGroups(t *testing.T) {
 
 	if negLinker.called {
 		t.Errorf("IG linking should not use NEG linker")
+	}
+}
+
+func TestEnsureExternalLoadBalancerClass(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		desc              string
+		loadBalancerClass string
+		shouldProcess     bool
+	}{
+		{
+			desc:              "Custom loadBalancerClass should not process",
+			loadBalancerClass: "customLBClass",
+			shouldProcess:     false,
+		},
+		{
+			desc:              "Use ILB loadBalancerClass",
+			loadBalancerClass: annotations.RegionalInternalLoadBalancerClass,
+			shouldProcess:     false,
+		},
+		{
+			desc:              "Use NetLB loadBalancerClass",
+			loadBalancerClass: annotations.RegionalExternalLoadBalancerClass,
+			shouldProcess:     true,
+		},
+		{
+			desc:              "Unset loadBalancerClass",
+			loadBalancerClass: "",
+			shouldProcess:     true,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			lc := newL4NetLBServiceController()
+
+			svc := test.NewL4LBServiceWithLoadBalancerClass(tc.loadBalancerClass)
+			if tc.loadBalancerClass == "" {
+				svc = test.NewL4NetLBRBSService(8080)
+			}
+
+			// Create NetLB
+			addNetLBService(lc, svc)
+			key, _ := common.KeyFunc(svc)
+			err := lc.sync(key, klog.TODO())
+			if err != nil {
+				t.Errorf("Failed to sync service %s, err %v", svc.Name, err)
+			}
+			svc, err = lc.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
+			if err != nil {
+				t.Errorf("Failed to lookup service %s, err %v", svc.Name, err)
+			}
+
+			if tc.shouldProcess {
+				verifyNetLBServiceProvisioned(t, svc)
+			} else {
+				verifyNetLBServiceNotProvisioned(t, svc)
+			}
+
+			// Update NetLB
+			svc.Spec.ExternalTrafficPolicy = v1.ServiceExternalTrafficPolicyTypeLocal
+			updateNetLBService(lc, svc)
+			if err = lc.sync(key, klog.TODO()); err != nil {
+				t.Errorf("Failed to sync service %s, err %v", svc.Name, err)
+			}
+			svc, err = lc.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
+			if err != nil {
+				t.Errorf("Failed to lookup service %s, err %v", svc.Name, err)
+			}
+
+			if tc.shouldProcess {
+				if svc.Spec.ExternalTrafficPolicy != v1.ServiceExternalTrafficPolicyTypeLocal {
+					t.Errorf("Failed to update service. ExternalTrafficPolicy mismatch %v != %v", svc.Spec.ExternalTrafficPolicy, v1.ServiceExternalTrafficPolicyTypeLocal)
+				}
+				verifyNetLBServiceProvisioned(t, svc)
+			} else {
+				verifyNetLBServiceNotProvisioned(t, svc)
+			}
+
+			// Delete ILB
+			svc.DeletionTimestamp = &metav1.Time{}
+			updateNetLBService(lc, svc)
+			if tc.shouldProcess {
+				if !lc.needsDeletion(svc, klog.TODO()) {
+					t.Errorf("Service should be marked for deletion")
+				}
+			} else {
+				if lc.needsDeletion(svc, klog.TODO()) {
+					t.Errorf("Service should not be marked for deletion")
+				}
+			}
+			if err = lc.sync(key, klog.TODO()); err != nil {
+				t.Errorf("Failed to sync service %s, err %v", svc.Name, err)
+			}
+			svc, err = lc.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
+			if err != nil {
+				t.Errorf("Failed to lookup service %s, err %v", svc.Name, err)
+			}
+			verifyNetLBServiceNotProvisioned(t, svc)
+			deleteNetLBService(lc, svc)
+		})
 	}
 }
