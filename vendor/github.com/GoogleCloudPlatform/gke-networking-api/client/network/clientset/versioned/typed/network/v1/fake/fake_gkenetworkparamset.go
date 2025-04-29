@@ -40,20 +40,22 @@ var gkenetworkparamsetsKind = v1.SchemeGroupVersion.WithKind("GKENetworkParamSet
 
 // Get takes name of the gKENetworkParamSet, and returns the corresponding gKENetworkParamSet object, and an error if there is any.
 func (c *FakeGKENetworkParamSets) Get(ctx context.Context, name string, options metav1.GetOptions) (result *v1.GKENetworkParamSet, err error) {
+	emptyResult := &v1.GKENetworkParamSet{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootGetAction(gkenetworkparamsetsResource, name), &v1.GKENetworkParamSet{})
+		Invokes(testing.NewRootGetActionWithOptions(gkenetworkparamsetsResource, name, options), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.GKENetworkParamSet), err
 }
 
 // List takes label and field selectors, and returns the list of GKENetworkParamSets that match those selectors.
 func (c *FakeGKENetworkParamSets) List(ctx context.Context, opts metav1.ListOptions) (result *v1.GKENetworkParamSetList, err error) {
+	emptyResult := &v1.GKENetworkParamSetList{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootListAction(gkenetworkparamsetsResource, gkenetworkparamsetsKind, opts), &v1.GKENetworkParamSetList{})
+		Invokes(testing.NewRootListActionWithOptions(gkenetworkparamsetsResource, gkenetworkparamsetsKind, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 
 	label, _, _ := testing.ExtractFromListOptions(opts)
@@ -72,36 +74,39 @@ func (c *FakeGKENetworkParamSets) List(ctx context.Context, opts metav1.ListOpti
 // Watch returns a watch.Interface that watches the requested gKENetworkParamSets.
 func (c *FakeGKENetworkParamSets) Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
-		InvokesWatch(testing.NewRootWatchAction(gkenetworkparamsetsResource, opts))
+		InvokesWatch(testing.NewRootWatchActionWithOptions(gkenetworkparamsetsResource, opts))
 }
 
 // Create takes the representation of a gKENetworkParamSet and creates it.  Returns the server's representation of the gKENetworkParamSet, and an error, if there is any.
 func (c *FakeGKENetworkParamSets) Create(ctx context.Context, gKENetworkParamSet *v1.GKENetworkParamSet, opts metav1.CreateOptions) (result *v1.GKENetworkParamSet, err error) {
+	emptyResult := &v1.GKENetworkParamSet{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootCreateAction(gkenetworkparamsetsResource, gKENetworkParamSet), &v1.GKENetworkParamSet{})
+		Invokes(testing.NewRootCreateActionWithOptions(gkenetworkparamsetsResource, gKENetworkParamSet, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.GKENetworkParamSet), err
 }
 
 // Update takes the representation of a gKENetworkParamSet and updates it. Returns the server's representation of the gKENetworkParamSet, and an error, if there is any.
 func (c *FakeGKENetworkParamSets) Update(ctx context.Context, gKENetworkParamSet *v1.GKENetworkParamSet, opts metav1.UpdateOptions) (result *v1.GKENetworkParamSet, err error) {
+	emptyResult := &v1.GKENetworkParamSet{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateAction(gkenetworkparamsetsResource, gKENetworkParamSet), &v1.GKENetworkParamSet{})
+		Invokes(testing.NewRootUpdateActionWithOptions(gkenetworkparamsetsResource, gKENetworkParamSet, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.GKENetworkParamSet), err
 }
 
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeGKENetworkParamSets) UpdateStatus(ctx context.Context, gKENetworkParamSet *v1.GKENetworkParamSet, opts metav1.UpdateOptions) (*v1.GKENetworkParamSet, error) {
+func (c *FakeGKENetworkParamSets) UpdateStatus(ctx context.Context, gKENetworkParamSet *v1.GKENetworkParamSet, opts metav1.UpdateOptions) (result *v1.GKENetworkParamSet, err error) {
+	emptyResult := &v1.GKENetworkParamSet{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateSubresourceAction(gkenetworkparamsetsResource, "status", gKENetworkParamSet), &v1.GKENetworkParamSet{})
+		Invokes(testing.NewRootUpdateSubresourceActionWithOptions(gkenetworkparamsetsResource, "status", gKENetworkParamSet, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.GKENetworkParamSet), err
 }
@@ -115,7 +120,7 @@ func (c *FakeGKENetworkParamSets) Delete(ctx context.Context, name string, opts 
 
 // DeleteCollection deletes a collection of objects.
 func (c *FakeGKENetworkParamSets) DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error {
-	action := testing.NewRootDeleteCollectionAction(gkenetworkparamsetsResource, listOpts)
+	action := testing.NewRootDeleteCollectionActionWithOptions(gkenetworkparamsetsResource, opts, listOpts)
 
 	_, err := c.Fake.Invokes(action, &v1.GKENetworkParamSetList{})
 	return err
@@ -123,10 +128,11 @@ func (c *FakeGKENetworkParamSets) DeleteCollection(ctx context.Context, opts met
 
 // Patch applies the patch and returns the patched gKENetworkParamSet.
 func (c *FakeGKENetworkParamSets) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *v1.GKENetworkParamSet, err error) {
+	emptyResult := &v1.GKENetworkParamSet{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(gkenetworkparamsetsResource, name, pt, data, subresources...), &v1.GKENetworkParamSet{})
+		Invokes(testing.NewRootPatchSubresourceActionWithOptions(gkenetworkparamsetsResource, name, pt, data, opts, subresources...), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.GKENetworkParamSet), err
 }
