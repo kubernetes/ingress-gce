@@ -7,6 +7,8 @@ import (
 	"math/rand"
 	"os"
 
+	informernetwork "github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions"
+	informernodetopology "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
@@ -22,6 +24,7 @@ import (
 	providerconfiginformers "k8s.io/ingress-gce/pkg/providerconfig/client/informers/externalversions"
 	"k8s.io/ingress-gce/pkg/recorders"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
+	informersvcneg "k8s.io/ingress-gce/pkg/svcneg/client/informers/externalversions"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
 )
@@ -40,13 +43,16 @@ func StartWithLeaderElection(
 	eventRecorderKubeClient kubernetes.Interface,
 	providerConfigClient providerconfigclient.Interface,
 	informersFactory informers.SharedInformerFactory,
+	svcNegFactory informersvcneg.SharedInformerFactory,
+	networkFactory informernetwork.SharedInformerFactory,
+	nodeTopologyFactory informernodetopology.SharedInformerFactory,
 	gceCreator gce.GCECreator,
 	rootNamer *namer.Namer,
 	stopCh <-chan struct{},
 ) error {
 	recordersManager := recorders.NewManager(eventRecorderKubeClient, logger)
 
-	leConfig, err := makeLeaderElectionConfig(leaderElectKubeClient, hostname, recordersManager, logger, kubeClient, svcNegClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, informersFactory, gceCreator, rootNamer, stopCh)
+	leConfig, err := makeLeaderElectionConfig(leaderElectKubeClient, hostname, recordersManager, logger, kubeClient, svcNegClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, informersFactory, svcNegFactory, networkFactory, nodeTopologyFactory, gceCreator, rootNamer, stopCh)
 	if err != nil {
 		return err
 	}
@@ -68,6 +74,9 @@ func makeLeaderElectionConfig(
 	eventRecorderKubeClient kubernetes.Interface,
 	providerConfigClient providerconfigclient.Interface,
 	informersFactory informers.SharedInformerFactory,
+	svcNegFactory informersvcneg.SharedInformerFactory,
+	networkFactory informernetwork.SharedInformerFactory,
+	nodeTopologyFactory informernodetopology.SharedInformerFactory,
 	gceCreator gce.GCECreator,
 	rootNamer *namer.Namer,
 	stopCh <-chan struct{},
@@ -96,7 +105,7 @@ func makeLeaderElectionConfig(
 		RetryPeriod:   flags.F.LeaderElection.RetryPeriod.Duration,
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(context.Context) {
-				Start(logger, kubeClient, svcNegClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, informersFactory, gceCreator, rootNamer, stopCh)
+				Start(logger, kubeClient, svcNegClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, informersFactory, svcNegFactory, networkFactory, nodeTopologyFactory, gceCreator, rootNamer, stopCh)
 			},
 			OnStoppedLeading: func() {
 				logger.Info("Stop running multi-project leader election")
@@ -115,6 +124,9 @@ func Start(
 	eventRecorderKubeClient kubernetes.Interface,
 	providerConfigClient providerconfigclient.Interface,
 	informersFactory informers.SharedInformerFactory,
+	svcNegFactory informersvcneg.SharedInformerFactory,
+	networkFactory informernetwork.SharedInformerFactory,
+	nodeTopologyFactory informernodetopology.SharedInformerFactory,
 	gceCreator gce.GCECreator,
 	rootNamer *namer.Namer,
 	stopCh <-chan struct{},
@@ -133,6 +145,9 @@ func Start(
 	manager := manager.NewProviderConfigControllerManager(
 		kubeClient,
 		informersFactory,
+		svcNegFactory,
+		networkFactory,
+		nodeTopologyFactory,
 		providerConfigClient,
 		svcNegClient,
 		eventRecorderKubeClient,

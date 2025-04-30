@@ -5,7 +5,9 @@ import (
 	"sync"
 
 	networkclient "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned"
+	informernetwork "github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions"
 	nodetopologyclient "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned"
+	informernodetopology "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions"
 	"k8s.io/apimachinery/pkg/types"
 	informers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
@@ -16,6 +18,7 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	providerconfigclient "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
+	informersvcneg "k8s.io/ingress-gce/pkg/svcneg/client/informers/externalversions"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
 )
@@ -27,6 +30,9 @@ type ProviderConfigControllersManager struct {
 	logger               klog.Logger
 	providerConfigClient providerconfigclient.Interface
 	informersFactory     informers.SharedInformerFactory
+	svcNegFactory        informersvcneg.SharedInformerFactory
+	networkFactory       informernetwork.SharedInformerFactory
+	nodeTopologyFactory  informernodetopology.SharedInformerFactory
 	kubeClient           kubernetes.Interface
 	svcNegClient         svcnegclient.Interface
 	eventRecorderClient  kubernetes.Interface
@@ -47,6 +53,9 @@ type ControllerSet struct {
 func NewProviderConfigControllerManager(
 	kubeClient kubernetes.Interface,
 	informersFactory informers.SharedInformerFactory,
+	svcNegFactory informersvcneg.SharedInformerFactory,
+	networkFactory informernetwork.SharedInformerFactory,
+	nodeTopologyFactory informernodetopology.SharedInformerFactory,
 	providerConfigClient providerconfigclient.Interface,
 	svcNegClient svcnegclient.Interface,
 	eventRecorderClient kubernetes.Interface,
@@ -63,6 +72,9 @@ func NewProviderConfigControllerManager(
 		logger:               logger,
 		providerConfigClient: providerConfigClient,
 		informersFactory:     informersFactory,
+		svcNegFactory:        svcNegFactory,
+		networkFactory:       networkFactory,
+		nodeTopologyFactory:  nodeTopologyFactory,
 		kubeClient:           kubeClient,
 		svcNegClient:         svcNegClient,
 		eventRecorderClient:  eventRecorderClient,
@@ -105,9 +117,12 @@ func (pccm *ProviderConfigControllersManager) StartControllersForProviderConfig(
 
 	negControllerStopCh, err := neg.StartNEGController(
 		pccm.informersFactory,
+		pccm.svcNegFactory,
+		pccm.networkFactory,
+		pccm.nodeTopologyFactory,
 		pccm.kubeClient,
-		pccm.svcNegClient,
 		pccm.eventRecorderClient,
+		pccm.svcNegClient,
 		pccm.networkClient,
 		pccm.nodetopologyClient,
 		pccm.kubeSystemUID,
