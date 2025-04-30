@@ -35,6 +35,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
 	api_v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -262,8 +263,8 @@ func TestProcessDeletion(t *testing.T) {
 	prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{CreateCount: 1, DeleteCount: 1, UpperBoundSeconds: 1}, t)
 	deleteILBService(l4c, newSvc)
 	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
-	if newSvc != nil {
-		t.Errorf("Expected service to be deleted, but was found - %v", newSvc)
+	if !errors.IsNotFound(err) {
+		t.Errorf("Expected to get not found error, but got %v, service: %+v", err, newSvc)
 	}
 }
 

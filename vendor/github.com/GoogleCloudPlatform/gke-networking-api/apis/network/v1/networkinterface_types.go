@@ -43,6 +43,10 @@ type NetworkInterfaceSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	NetworkName string `json:"networkName"`
 
+	// SubnetworkName refers to a subnetwork of a network within the cluster.
+	// +optional
+	SubnetworkName *string `json:"subnetworkName,omitempty"`
+
 	// IpAddresses specifies the static IP addresses on this NetworkInterface.
 	// Each IPAddress may contain subnet mask. If subnet mask is not included, /32 is taken as default.
 	// For example, IPAddress input 1.2.3.4 will be taken as 1.2.3.4/32. Alternatively, the input can be 1.2.3.4/24
@@ -80,8 +84,6 @@ type NetworkInterfaceStatus struct {
 	// Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
-// +genclient
-// +genclient:onlyVerbs=get
 // +kubebuilder:object:root=true
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 

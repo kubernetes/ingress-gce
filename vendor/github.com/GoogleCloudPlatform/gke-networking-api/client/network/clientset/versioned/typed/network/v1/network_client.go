@@ -29,11 +29,9 @@ import (
 type NetworkingV1Interface interface {
 	RESTClient() rest.Interface
 	GKENetworkParamSetsGetter
-	GKENetworkParamSetListsGetter
 	NetworksGetter
 	NetworkInterfacesGetter
-	NetworkInterfaceListsGetter
-	NetworkListsGetter
+	SubnetworksGetter
 }
 
 // NetworkingV1Client is used to interact with features provided by the networking.gke.io group.
@@ -45,10 +43,6 @@ func (c *NetworkingV1Client) GKENetworkParamSets() GKENetworkParamSetInterface {
 	return newGKENetworkParamSets(c)
 }
 
-func (c *NetworkingV1Client) GKENetworkParamSetLists() GKENetworkParamSetListInterface {
-	return newGKENetworkParamSetLists(c)
-}
-
 func (c *NetworkingV1Client) Networks() NetworkInterface {
 	return newNetworks(c)
 }
@@ -57,12 +51,8 @@ func (c *NetworkingV1Client) NetworkInterfaces(namespace string) NetworkInterfac
 	return newNetworkInterfaces(c, namespace)
 }
 
-func (c *NetworkingV1Client) NetworkInterfaceLists(namespace string) NetworkInterfaceListInterface {
-	return newNetworkInterfaceLists(c, namespace)
-}
-
-func (c *NetworkingV1Client) NetworkLists() NetworkListInterface {
-	return newNetworkLists(c)
+func (c *NetworkingV1Client) Subnetworks() SubnetworkInterface {
+	return newSubnetworks(c)
 }
 
 // NewForConfig creates a new NetworkingV1Client for the given config.

@@ -33,3 +33,7 @@ type NetworkInterfaceListerExpansion interface{}
 // NetworkInterfaceNamespaceListerExpansion allows custom methods to be added to
 // NetworkInterfaceNamespaceLister.
 type NetworkInterfaceNamespaceListerExpansion interface{}
+
+// SubnetworkListerExpansion allows custom methods to be added to
+// SubnetworkLister.
+type SubnetworkListerExpansion interface{}

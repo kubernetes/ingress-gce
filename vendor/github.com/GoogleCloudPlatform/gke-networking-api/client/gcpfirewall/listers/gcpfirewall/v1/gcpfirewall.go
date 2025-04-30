@@ -20,8 +20,8 @@ package v1
 
 import (
 	v1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/gcpfirewall/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/listers"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -39,30 +39,10 @@ type GCPFirewallLister interface {
 
 // gCPFirewallLister implements the GCPFirewallLister interface.
 type gCPFirewallLister struct {
-	indexer cache.Indexer
+	listers.ResourceIndexer[*v1.GCPFirewall]
 }
 
 // NewGCPFirewallLister returns a new GCPFirewallLister.
 func NewGCPFirewallLister(indexer cache.Indexer) GCPFirewallLister {
-	return &gCPFirewallLister{indexer: indexer}
-}
-
-// List lists all GCPFirewalls in the indexer.
-func (s *gCPFirewallLister) List(selector labels.Selector) (ret []*v1.GCPFirewall, err error) {
-	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1.GCPFirewall))
-	})
-	return ret, err
-}
-
-// Get retrieves the GCPFirewall from the index for a given name.
-func (s *gCPFirewallLister) Get(name string) (*v1.GCPFirewall, error) {
-	obj, exists, err := s.indexer.GetByKey(name)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errors.NewNotFound(v1.Resource("gcpfirewall"), name)
-	}
-	return obj.(*v1.GCPFirewall), nil
+	return &gCPFirewallLister{listers.New[*v1.GCPFirewall](indexer, v1.Resource("gcpfirewall"))}
 }
