@@ -141,7 +141,12 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 				l4c.svcQueue.Enqueue(addSvc)
 				l4c.enqueueTracker.Track()
 			} else {
-				svcLogger.V(4).Info("Ignoring add for non-lb service", "serviceType", svcType)
+				// We already know that LoadBalancerClass is different than "networking.gke.io/l4-regional-internal"
+				if addSvc.Spec.LoadBalancerClass != nil {
+					svcLogger.V(4).Info("Ignoring service managed by another controller", "serviceLoadBalancerClass", *addSvc.Spec.LoadBalancerClass)
+				} else {
+					svcLogger.V(4).Info("Ignoring add for non-lb service", "serviceType", svcType)
+				}
 			}
 		},
 		// Deletes will be handled in the Update when the deletion timestamp is set.
@@ -224,10 +229,16 @@ func (l4c *L4Controller) shutdown() {
 // the subsetting controller will not process it. Processing it will fail forwarding rule creation with the same IP anyway.
 // This check prevents processing of v1-implemented services whose finalizer field got wiped out.
 func (l4c *L4Controller) shouldProcessService(service *v1.Service, svcLogger klog.Logger) bool {
-	// Ignore services with LoadBalancerClass set. LoadBalancerClass can't be updated (see the field API doc) so we don't need to worry about cleaning up services that changed the class.
+	// Ignore services with LoadBalancerClass different than "networking.gke.io/l4-regional-internal" used for this controller.
+	// LoadBalancerClass can't be updated (see the field API doc) so we don't need to worry about cleaning up services that changed the class.
+	// Services with a different loadBalancerClass shouldn't even be added to the queue
 	if service.Spec.LoadBalancerClass != nil {
-		svcLogger.Info("Ignoring service managed by another controller", "serviceLoadBalancerClass", *service.Spec.LoadBalancerClass)
-		return false
+		if annotations.HasLoadBalancerClass(service, annotations.RegionalInternalLoadBalancerClass) {
+			return true
+		} else {
+			svcLogger.Info("Ignoring service managed by another controller", "serviceLoadBalancerClass", *service.Spec.LoadBalancerClass)
+			return false
+		}
 	}
 	// skip services that are being handled by the legacy service controller.
 	if utils.IsLegacyL4ILBService(service) {
@@ -509,6 +520,13 @@ func (l4c *L4Controller) needsDeletion(svc *v1.Service) bool {
 
 // needsUpdate checks if load balancer needs to be updated due to change in attributes.
 func (l4c *L4Controller) needsUpdate(oldService *v1.Service, newService *v1.Service) bool {
+	// Ignore services not handled by this controller.
+	// LoadBalancerClass can't be updated so we know if this controller should not process the ILB.
+	// We don't need to clean any resources if service is controlled by another controller.
+	if newService.Spec.LoadBalancerClass != nil && !annotations.HasLoadBalancerClass(newService, annotations.RegionalInternalLoadBalancerClass) {
+		return false
+	}
+
 	warnL4FinalizerRemoved(l4c.ctx, oldService, newService)
 
 	oldSvcWantsILB, oldType := annotations.WantsL4ILB(oldService)

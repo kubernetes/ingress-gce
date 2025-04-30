@@ -184,8 +184,10 @@ func (lc *L4NetLBController) needsAddition(newSvc, oldSvc *v1.Service) bool {
 
 // needsDeletion return true if svc required deleting RBS based NetLB
 func (lc *L4NetLBController) needsDeletion(svc *v1.Service, svcLogger klog.Logger) bool {
-	// Check if service was provisioned by RBS controller before -- if it has rbs finalizer or rbs forwarding rule
-	if !utils.HasL4NetLBFinalizerV2(svc) && !utils.HasL4NetLBFinalizerV3(svc) && !lc.hasRBSForwardingRule(svc, svcLogger) {
+	// Check if service was provisioned by RBS controller before -- if it has rbs finalizer, rbs loadBalancerClass or rbs forwarding rule
+	if !utils.HasL4NetLBFinalizerV2(svc) && !utils.HasL4NetLBFinalizerV3(svc) &&
+		!lc.hasRBSForwardingRule(svc, svcLogger) &&
+		!annotations.HasLoadBalancerClass(svc, annotations.RegionalExternalLoadBalancerClass) {
 		return false
 	}
 	// handles service deletion
@@ -286,10 +288,18 @@ func (lc *L4NetLBController) needsUpdate(newSvc, oldSvc *v1.Service) bool {
 
 // shouldProcessService checks if given service should be process by controller
 func (lc *L4NetLBController) shouldProcessService(newSvc, oldSvc *v1.Service, svcLogger klog.Logger) (shouldProcess bool, isResync bool) {
-	// Ignore services with LoadBalancerClass set. LoadBalancerClass can't be updated (see the field API doc) so we don't need to worry about cleaning up services that changed the class.
+	// Ignore services with LoadBalancerClass different than "networking.gke.io/l4-regional-external" used for this controller.
+	// LoadBalancerClass can't be updated (see the field API doc) so we don't need to worry about cleaning up services that changed the class.
 	if newSvc.Spec.LoadBalancerClass != nil {
-		svcLogger.Info("Ignoring service managed by another controller", "serviceLoadBalancerClass", *newSvc.Spec.LoadBalancerClass)
-		return false, false
+		if annotations.HasLoadBalancerClass(newSvc, annotations.RegionalExternalLoadBalancerClass) {
+			if newSvc.Annotations[annotations.ServiceAnnotationLoadBalancerType] == string(annotations.LBTypeInternal) {
+				lc.ctx.Recorder(newSvc.Namespace).Eventf(newSvc, v1.EventTypeWarning, "ConflictingConfiguration",
+					fmt.Sprintf("loadBalancerClass conflicts with %s: %q annotation. External LoadBalancer Service provisioned.", annotations.ServiceAnnotationLoadBalancerType, string(annotations.LBTypeInternal)))
+			}
+		} else {
+			svcLogger.Info("Ignoring service managed by another controller", "serviceLoadBalancerClass", *newSvc.Spec.LoadBalancerClass)
+			return false, false
+		}
 	}
 
 	warnL4FinalizerRemoved(lc.ctx, oldSvc, newSvc)
@@ -315,18 +325,21 @@ func (lc *L4NetLBController) hasForwardingRuleAnnotation(svc *v1.Service, frName
 	return false
 }
 
-// isRBSBasedService checks if service has either RBS annotation, finalizer or RBSForwardingRule
+// isRBSBasedService checks if service has either RBS annotation, loadBalancerClass, finalizer or RBSForwardingRule
 func (lc *L4NetLBController) isRBSBasedService(svc *v1.Service, svcLogger klog.Logger) bool {
 	// Check if the type=LoadBalancer, so we don't execute API calls o non-LB services
 	// this call is nil-safe
 	if !utils.IsLoadBalancerServiceType(svc) {
 		return false
 	}
+	if svc.Spec.LoadBalancerClass != nil {
+		return annotations.HasLoadBalancerClass(svc, annotations.RegionalExternalLoadBalancerClass)
+	}
 	return annotations.HasRBSAnnotation(svc) || utils.HasL4NetLBFinalizerV2(svc) || utils.HasL4NetLBFinalizerV3(svc) || lc.hasRBSForwardingRule(svc, svcLogger)
 }
 
 func (lc *L4NetLBController) preventLegacyServiceHandling(service *v1.Service, key string, svcLogger klog.Logger) (bool, error) {
-	if annotations.HasRBSAnnotation(service) && lc.hasTargetPoolForwardingRule(service, svcLogger) {
+	if (annotations.HasRBSAnnotation(service) || annotations.HasLoadBalancerClass(service, annotations.RegionalExternalLoadBalancerClass)) && lc.hasTargetPoolForwardingRule(service, svcLogger) {
 		if utils.HasL4NetLBFinalizerV2(service) || utils.HasL4NetLBFinalizerV3(service) {
 			// If we found that RBS finalizer was attached to service, it means that RBS controller
 			// had a race condition on Service creation with Legacy Controller.
