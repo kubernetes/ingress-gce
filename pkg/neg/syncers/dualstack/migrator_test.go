@@ -299,16 +299,16 @@ func TestFilter_FunctionalTest(t *testing.T) {
 			removeEndpoints := make(map[types.NEGLocation]types.NetworkEndpointSet)    // Contains single-stack endpoints which are to be removed from the NEG.
 			committedEndpoints := make(map[types.NEGLocation]types.NetworkEndpointSet) // Initially empty.
 			for i := 0; i < tc.initialNEGEndpointsCount; i++ {
-				epGroupInfo := types.NEGLocation{Zone: fmt.Sprintf("zone-%v", i%tc.zonesCount), Subnet: defaultTestSubnet}
+				negLocation := types.NEGLocation{Zone: fmt.Sprintf("zone-%v", i%tc.zonesCount), Subnet: defaultTestSubnet}
 				ipv4 := fmt.Sprintf("ipv4-%v", 2*i+1)
 				ipv6 := fmt.Sprintf("ipv6-%v", 2*i+2)
-				if addEndpoints[epGroupInfo] == nil {
-					addEndpoints[epGroupInfo] = types.NewNetworkEndpointSet()
-					removeEndpoints[epGroupInfo] = types.NewNetworkEndpointSet()
-					committedEndpoints[epGroupInfo] = types.NewNetworkEndpointSet()
+				if addEndpoints[negLocation] == nil {
+					addEndpoints[negLocation] = types.NewNetworkEndpointSet()
+					removeEndpoints[negLocation] = types.NewNetworkEndpointSet()
+					committedEndpoints[negLocation] = types.NewNetworkEndpointSet()
 				}
-				addEndpoints[epGroupInfo].Insert(types.NetworkEndpoint{IP: ipv4, IPv6: ipv6})
-				removeEndpoints[epGroupInfo].Insert(types.NetworkEndpoint{IP: ipv4})
+				addEndpoints[negLocation].Insert(types.NetworkEndpoint{IP: ipv4, IPv6: ipv6})
+				removeEndpoints[negLocation].Insert(types.NetworkEndpoint{IP: ipv4})
 			}
 
 			tc.migrator.errorStateChecker.(*fakeErrorStateChecker).errorState = tc.errorState
