@@ -671,7 +671,12 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, epGroupIn
 			return err
 		}
 
-		if epGroupInfo.Subnet != defaultSubnet {
+		// In the case where this is the default network of the cluster
+		// (s.networkInfo.IsDefault) but the subnet of the NEG
+		// (epGroupInfo.Subnet) is not the defaultSubnet, we are dealing with
+		// the Multi-Subnet Cluster use case, wherein the name of the NEG would
+		// need to be different.
+		if s.networkInfo.IsDefault && epGroupInfo.Subnet != defaultSubnet {
 			negName, err = s.getNonDefaultSubnetNEGName(epGroupInfo.Subnet)
 			if err != nil {
 				s.logger.Error(err, "Errored getting non-default subnet NEG name when updating NEG endpoints")
