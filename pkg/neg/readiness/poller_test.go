@@ -68,7 +68,7 @@ func (p *testPatcher) Eval(t *testing.T, pod string, negKey, bsKey *meta.Key) {
 }
 
 func newFakePoller() (*poller, error) {
-	reflector, err := newTestReadinessReflector(negtypes.NewTestContext(), false)
+	reflector, err := newTestReadinessReflector(negtypes.NewTestContext())
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize reflector: %s", err)
 	}
