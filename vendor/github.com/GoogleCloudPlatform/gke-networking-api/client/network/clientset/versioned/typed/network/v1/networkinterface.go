@@ -20,14 +20,13 @@ package v1
 
 import (
 	"context"
-	"time"
 
 	v1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1"
 	scheme "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned/scheme"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
-	rest "k8s.io/client-go/rest"
+	gentype "k8s.io/client-go/gentype"
 )
 
 // NetworkInterfacesGetter has a method to return a NetworkInterfaceInterface.
@@ -40,6 +39,7 @@ type NetworkInterfacesGetter interface {
 type NetworkInterfaceInterface interface {
 	Create(ctx context.Context, networkInterface *v1.NetworkInterface, opts metav1.CreateOptions) (*v1.NetworkInterface, error)
 	Update(ctx context.Context, networkInterface *v1.NetworkInterface, opts metav1.UpdateOptions) (*v1.NetworkInterface, error)
+	// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
 	UpdateStatus(ctx context.Context, networkInterface *v1.NetworkInterface, opts metav1.UpdateOptions) (*v1.NetworkInterface, error)
 	Delete(ctx context.Context, name string, opts metav1.DeleteOptions) error
 	DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error
@@ -52,144 +52,18 @@ type NetworkInterfaceInterface interface {
 
 // networkInterfaces implements NetworkInterfaceInterface
 type networkInterfaces struct {
-	client rest.Interface
-	ns     string
+	*gentype.ClientWithList[*v1.NetworkInterface, *v1.NetworkInterfaceList]
 }
 
 // newNetworkInterfaces returns a NetworkInterfaces
 func newNetworkInterfaces(c *NetworkingV1Client, namespace string) *networkInterfaces {
 	return &networkInterfaces{
-		client: c.RESTClient(),
-		ns:     namespace,
+		gentype.NewClientWithList[*v1.NetworkInterface, *v1.NetworkInterfaceList](
+			"networkinterfaces",
+			c.RESTClient(),
+			scheme.ParameterCodec,
+			namespace,
+			func() *v1.NetworkInterface { return &v1.NetworkInterface{} },
+			func() *v1.NetworkInterfaceList { return &v1.NetworkInterfaceList{} }),
 	}
-}
-
-// Get takes name of the networkInterface, and returns the corresponding networkInterface object, and an error if there is any.
-func (c *networkInterfaces) Get(ctx context.Context, name string, options metav1.GetOptions) (result *v1.NetworkInterface, err error) {
-	result = &v1.NetworkInterface{}
-	err = c.client.Get().
-		Namespace(c.ns).
-		Resource("networkinterfaces").
-		Name(name).
-		VersionedParams(&options, scheme.ParameterCodec).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// List takes label and field selectors, and returns the list of NetworkInterfaces that match those selectors.
-func (c *networkInterfaces) List(ctx context.Context, opts metav1.ListOptions) (result *v1.NetworkInterfaceList, err error) {
-	var timeout time.Duration
-	if opts.TimeoutSeconds != nil {
-		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
-	}
-	result = &v1.NetworkInterfaceList{}
-	err = c.client.Get().
-		Namespace(c.ns).
-		Resource("networkinterfaces").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Timeout(timeout).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Watch returns a watch.Interface that watches the requested networkInterfaces.
-func (c *networkInterfaces) Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
-	var timeout time.Duration
-	if opts.TimeoutSeconds != nil {
-		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
-	}
-	opts.Watch = true
-	return c.client.Get().
-		Namespace(c.ns).
-		Resource("networkinterfaces").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Timeout(timeout).
-		Watch(ctx)
-}
-
-// Create takes the representation of a networkInterface and creates it.  Returns the server's representation of the networkInterface, and an error, if there is any.
-func (c *networkInterfaces) Create(ctx context.Context, networkInterface *v1.NetworkInterface, opts metav1.CreateOptions) (result *v1.NetworkInterface, err error) {
-	result = &v1.NetworkInterface{}
-	err = c.client.Post().
-		Namespace(c.ns).
-		Resource("networkinterfaces").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(networkInterface).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Update takes the representation of a networkInterface and updates it. Returns the server's representation of the networkInterface, and an error, if there is any.
-func (c *networkInterfaces) Update(ctx context.Context, networkInterface *v1.NetworkInterface, opts metav1.UpdateOptions) (result *v1.NetworkInterface, err error) {
-	result = &v1.NetworkInterface{}
-	err = c.client.Put().
-		Namespace(c.ns).
-		Resource("networkinterfaces").
-		Name(networkInterface.Name).
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(networkInterface).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// UpdateStatus was generated because the type contains a Status member.
-// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *networkInterfaces) UpdateStatus(ctx context.Context, networkInterface *v1.NetworkInterface, opts metav1.UpdateOptions) (result *v1.NetworkInterface, err error) {
-	result = &v1.NetworkInterface{}
-	err = c.client.Put().
-		Namespace(c.ns).
-		Resource("networkinterfaces").
-		Name(networkInterface.Name).
-		SubResource("status").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(networkInterface).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Delete takes name of the networkInterface and deletes it. Returns an error if one occurs.
-func (c *networkInterfaces) Delete(ctx context.Context, name string, opts metav1.DeleteOptions) error {
-	return c.client.Delete().
-		Namespace(c.ns).
-		Resource("networkinterfaces").
-		Name(name).
-		Body(&opts).
-		Do(ctx).
-		Error()
-}
-
-// DeleteCollection deletes a collection of objects.
-func (c *networkInterfaces) DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error {
-	var timeout time.Duration
-	if listOpts.TimeoutSeconds != nil {
-		timeout = time.Duration(*listOpts.TimeoutSeconds) * time.Second
-	}
-	return c.client.Delete().
-		Namespace(c.ns).
-		Resource("networkinterfaces").
-		VersionedParams(&listOpts, scheme.ParameterCodec).
-		Timeout(timeout).
-		Body(&opts).
-		Do(ctx).
-		Error()
-}
-
-// Patch applies the patch and returns the patched networkInterface.
-func (c *networkInterfaces) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *v1.NetworkInterface, err error) {
-	result = &v1.NetworkInterface{}
-	err = c.client.Patch(pt).
-		Namespace(c.ns).
-		Resource("networkinterfaces").
-		Name(name).
-		SubResource(subresources...).
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(data).
-		Do(ctx).
-		Into(result)
-	return
 }

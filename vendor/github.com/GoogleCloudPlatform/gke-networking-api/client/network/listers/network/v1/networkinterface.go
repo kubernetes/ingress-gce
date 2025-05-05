@@ -20,8 +20,8 @@ package v1
 
 import (
 	v1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/listers"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -38,25 +38,17 @@ type NetworkInterfaceLister interface {
 
 // networkInterfaceLister implements the NetworkInterfaceLister interface.
 type networkInterfaceLister struct {
-	indexer cache.Indexer
+	listers.ResourceIndexer[*v1.NetworkInterface]
 }
 
 // NewNetworkInterfaceLister returns a new NetworkInterfaceLister.
 func NewNetworkInterfaceLister(indexer cache.Indexer) NetworkInterfaceLister {
-	return &networkInterfaceLister{indexer: indexer}
-}
-
-// List lists all NetworkInterfaces in the indexer.
-func (s *networkInterfaceLister) List(selector labels.Selector) (ret []*v1.NetworkInterface, err error) {
-	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1.NetworkInterface))
-	})
-	return ret, err
+	return &networkInterfaceLister{listers.New[*v1.NetworkInterface](indexer, v1.Resource("networkinterface"))}
 }
 
 // NetworkInterfaces returns an object that can list and get NetworkInterfaces.
 func (s *networkInterfaceLister) NetworkInterfaces(namespace string) NetworkInterfaceNamespaceLister {
-	return networkInterfaceNamespaceLister{indexer: s.indexer, namespace: namespace}
+	return networkInterfaceNamespaceLister{listers.NewNamespaced[*v1.NetworkInterface](s.ResourceIndexer, namespace)}
 }
 
 // NetworkInterfaceNamespaceLister helps list and get NetworkInterfaces.
@@ -74,26 +66,5 @@ type NetworkInterfaceNamespaceLister interface {
 // networkInterfaceNamespaceLister implements the NetworkInterfaceNamespaceLister
 // interface.
 type networkInterfaceNamespaceLister struct {
-	indexer   cache.Indexer
-	namespace string
-}
-
-// List lists all NetworkInterfaces in the indexer for a given namespace.
-func (s networkInterfaceNamespaceLister) List(selector labels.Selector) (ret []*v1.NetworkInterface, err error) {
-	err = cache.ListAllByNamespace(s.indexer, s.namespace, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1.NetworkInterface))
-	})
-	return ret, err
-}
-
-// Get retrieves the NetworkInterface from the indexer for a given namespace and name.
-func (s networkInterfaceNamespaceLister) Get(name string) (*v1.NetworkInterface, error) {
-	obj, exists, err := s.indexer.GetByKey(s.namespace + "/" + name)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errors.NewNotFound(v1.Resource("networkinterface"), name)
-	}
-	return obj.(*v1.NetworkInterface), nil
+	listers.ResourceIndexer[*v1.NetworkInterface]
 }

@@ -681,14 +681,18 @@ func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.Na
 		return nil
 	}
 	// Only process ILB services after L4 controller has marked it with v2 finalizer.
-	if needsNEGForILB && !utils.IsSubsettingL4ILBService(service) {
+	if needsNEGForILB && !utils.HasL4ILBFinalizerV2(service) {
 		msg := fmt.Sprintf("Ignoring ILB Service %s, namespace %s as it does not have the v2 finalizer", service.Name, service.Namespace)
 		c.logger.Info(msg)
 		c.recorder.Eventf(service, apiv1.EventTypeWarning, "ProcessServiceSkipped", msg)
 		return nil
 	}
 
-	if service.Spec.LoadBalancerClass != nil {
+	// Ignore services with LoadBalancerClass different than "networking.gke.io/l4-regional-external" or
+	// "networking.gke.io/l4-regional-internal" used for L4 controllers that use GCE_VM_IP NEGs.
+	if service.Spec.LoadBalancerClass != nil &&
+		!annotations.HasLoadBalancerClass(service, annotations.RegionalExternalLoadBalancerClass) &&
+		!annotations.HasLoadBalancerClass(service, annotations.RegionalInternalLoadBalancerClass) {
 		msg := fmt.Sprintf("Ignoring Service %s, namespace %s as it uses a LoadBalancerClass %s", service.Name, service.Namespace, *service.Spec.LoadBalancerClass)
 		c.logger.Info(msg)
 		return nil
@@ -716,7 +720,7 @@ func (c *Controller) netLBServiceNeedsNEG(service *apiv1.Service, networkInfo *n
 	if !wantsNetLB {
 		return false
 	}
-	if !annotations.HasRBSAnnotation(service) {
+	if !annotations.HasRBSAnnotation(service) && !annotations.HasLoadBalancerClass(service, annotations.RegionalExternalLoadBalancerClass) {
 		return false
 	}
 	if !networkInfo.IsDefault {

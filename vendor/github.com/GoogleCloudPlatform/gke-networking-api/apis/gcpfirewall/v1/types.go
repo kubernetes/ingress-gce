@@ -24,8 +24,8 @@ import (
 type Protocol string
 
 // CIDR defines a IP block.
-// TODO(sugangli) Modify the validation to include IPv6 CIDRs with FW 3.0 support.
-// +kubebuilder:validation:Pattern=`^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(/(3[0-2]|2[0-9]|1[0-9]|[0-9]))?$`
+// +kubebuilder:validation:XValidation:message="Please provide valid IPv4 or IPv6 CIDR value",rule="isIP(self) || isCIDR(self)"
+// +kubebuilder:validation:MaxLength=64
 type CIDR string
 
 // +genclient
@@ -40,6 +40,11 @@ type CIDR string
 type GCPFirewall struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	// Description describes a GCP firewall in a human-readable way. Usually it
+	// provides also information on the producer of this GCPFirewall
+	// custom resource.
+	Description string `json:"description,omitempty"`
 
 	// Spec is the desired configuration for GCP firewall
 	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status

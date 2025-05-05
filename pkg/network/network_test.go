@@ -27,8 +27,8 @@ import (
 
 	networkv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1"
 	netfake "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned/fake"
+	informergkenetworkparamset "github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions/network/v1"
 	informernetwork "github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions/network/v1"
-	informergkenetworkparamset "github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions/network/v1alpha1"
 	compute "google.golang.org/api/compute/v1"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

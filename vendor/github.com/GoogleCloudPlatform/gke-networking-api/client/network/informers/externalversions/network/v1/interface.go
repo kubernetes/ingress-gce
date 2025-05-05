@@ -30,6 +30,8 @@ type Interface interface {
 	Networks() NetworkInformer
 	// NetworkInterfaces returns a NetworkInterfaceInformer.
 	NetworkInterfaces() NetworkInterfaceInformer
+	// Subnetworks returns a SubnetworkInformer.
+	Subnetworks() SubnetworkInformer
 }
 
 type version struct {
@@ -56,4 +58,9 @@ func (v *version) Networks() NetworkInformer {
 // NetworkInterfaces returns a NetworkInterfaceInformer.
 func (v *version) NetworkInterfaces() NetworkInterfaceInformer {
 	return &networkInterfaceInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+}
+
+// Subnetworks returns a SubnetworkInformer.
+func (v *version) Subnetworks() SubnetworkInformer {
+	return &subnetworkInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }

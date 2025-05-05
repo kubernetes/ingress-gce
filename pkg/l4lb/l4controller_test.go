@@ -35,7 +35,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
 	api_v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
@@ -262,8 +262,8 @@ func TestProcessDeletion(t *testing.T) {
 	prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{CreateCount: 1, DeleteCount: 1, UpperBoundSeconds: 1}, t)
 	deleteILBService(l4c, newSvc)
 	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
-	if newSvc != nil {
-		t.Errorf("Expected service to be deleted, but was found - %v", newSvc)
+	if !errors.IsNotFound(err) {
+		t.Errorf("Expected to get not found error, but got %v, service: %+v", err, newSvc)
 	}
 }
 
@@ -839,6 +839,109 @@ func TestProcessCreateServiceWithLoadBalancerClass(t *testing.T) {
 	verifyILBServiceNotProvisioned(t, svc)
 }
 
+func TestEnsureInternalLoadBalancerClass(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		desc              string
+		loadBalancerClass string
+		shouldProcess     bool
+	}{
+		{
+			desc:              "Custom loadBalancerClass should not process",
+			loadBalancerClass: "customLBClass",
+			shouldProcess:     false,
+		},
+		{
+			desc:              "Use ILB loadBalancerClass",
+			loadBalancerClass: annotations.RegionalInternalLoadBalancerClass,
+			shouldProcess:     true,
+		},
+		{
+			desc:              "Use NetLB loadBalancerClass",
+			loadBalancerClass: annotations.RegionalExternalLoadBalancerClass,
+			shouldProcess:     false,
+		},
+		{
+			desc:              "Unset loadBalancerClass",
+			loadBalancerClass: "",
+			shouldProcess:     true,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			l4c := newServiceController(t, newFakeGCE())
+
+			svc := test.NewL4LBServiceWithLoadBalancerClass(tc.loadBalancerClass)
+			if tc.loadBalancerClass == "" {
+				svc = test.NewL4ILBService(false, 8080)
+			}
+
+			// Create ILB and add NEGs
+			addILBService(l4c, svc)
+			addNEGAndSvcNegL4Controller(l4c, svc)
+			key := getKeyForSvc(svc, t)
+			err := l4c.sync(key, klog.TODO())
+			if err != nil {
+				t.Errorf("Failed to sync service %s, err %v", svc.Name, err)
+			}
+			svc, err = l4c.client.CoreV1().Services(svc.Namespace).Get(context2.TODO(), svc.Name, v1.GetOptions{})
+			if err != nil {
+				t.Errorf("Failed to lookup service %s, err: %v", svc.Name, err)
+			}
+
+			if tc.shouldProcess {
+				verifyILBServiceProvisioned(t, svc)
+			} else {
+				verifyILBServiceNotProvisioned(t, svc)
+			}
+
+			// Update ILB
+			svc.Spec.ExternalTrafficPolicy = api_v1.ServiceExternalTrafficPolicyTypeLocal
+			updateILBService(l4c, svc)
+			err = l4c.sync(key, klog.TODO())
+			if err != nil {
+				t.Errorf("Failed to sync updated service %s, err %v", svc.Name, err)
+			}
+			svc, err = l4c.client.CoreV1().Services(svc.Namespace).Get(context2.TODO(), svc.Name, v1.GetOptions{})
+			if err != nil {
+				t.Errorf("Failed to lookup service %s, err: %v", svc.Name, err)
+			}
+
+			if tc.shouldProcess {
+				if svc.Spec.ExternalTrafficPolicy != api_v1.ServiceExternalTrafficPolicyTypeLocal {
+					t.Errorf("Failed to update service. ExternalTrafficPolicy mismatch %v != %v", svc.Spec.ExternalTrafficPolicy, api_v1.ServiceExternalTrafficPolicyTypeLocal)
+				}
+				verifyILBServiceProvisioned(t, svc)
+			} else {
+				verifyILBServiceNotProvisioned(t, svc)
+			}
+
+			// Delete ILB
+			svc.DeletionTimestamp = &v1.Time{}
+			updateILBService(l4c, svc)
+			if tc.shouldProcess {
+				if !l4c.needsDeletion(svc) {
+					t.Errorf("Service should be marked for deletion")
+				}
+			} else {
+				if l4c.needsDeletion(svc) {
+					t.Errorf("Service should not be marked for deletion")
+				}
+			}
+			err = l4c.sync(key, klog.TODO())
+			if err != nil {
+				t.Errorf("Failed to sync updated service %s, err %v", svc.Name, err)
+			}
+			svc, err = l4c.client.CoreV1().Services(svc.Namespace).Get(context2.TODO(), svc.Name, v1.GetOptions{})
+			if err != nil {
+				t.Errorf("Failed to lookup service %s, err: %v", svc.Name, err)
+			}
+			verifyILBServiceNotProvisioned(t, svc)
+			deleteILBService(l4c, svc)
+		})
+	}
+}
+
 func newServiceController(t *testing.T, fakeGCE *gce.Cloud) *L4Controller {
 	kubeClient := fake.NewSimpleClientset()
 	svcNegClient := svcnegclient.NewSimpleClientset()
@@ -926,7 +1029,7 @@ func addNEGAndSvcNegL4Controller(l4c *L4Controller, svc *api_v1.Service) {
 }
 
 func addSvcNegL4Controller(l4c *L4Controller, svcneg *negv1beta1.ServiceNetworkEndpointGroup) {
-	l4c.ctx.SvcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcneg.Namespace).Create(context2.TODO(), svcneg, metav1.CreateOptions{})
+	l4c.ctx.SvcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcneg.Namespace).Create(context2.TODO(), svcneg, v1.CreateOptions{})
 	l4c.ctx.SvcNegInformer.GetIndexer().Add(svcneg)
 }
 

@@ -507,13 +507,17 @@ func TestTransactionSyncNetworkEndpointsMSC(t *testing.T) {
 }
 
 func TestNegNameMultiNetworking(t *testing.T) {
-	t.Parallel()
+	prevFlag := flags.F.EnableMultiSubnetClusterPhase1
+	defer func() { flags.F.EnableMultiSubnetClusterPhase1 = prevFlag }()
+	flags.F.EnableMultiSubnetClusterPhase1 = true
 
 	fakeGCE := gce.NewFakeGCECloud(test.DefaultTestClusterValues())
 	negtypes.MockNetworkEndpointAPIs(fakeGCE)
 	fakeCloud := negtypes.NewAdapter(fakeGCE)
-	nonDefaultSubnetURL := "projects/mock-project/regions/test-region/subnetworks/non-default"
-	netInfo := network.NetworkInfo{IsDefault: false, NetworkURL: fakeGCE.NetworkURL(), SubnetworkURL: nonDefaultSubnetURL}
+	subnetInDefaultNetwork := fakeCloud.SubnetworkURL()
+	secondaryNetwork := "projects/mock-project/global/networks/multi-net-secondary-network"
+	subnetInSecondaryNetwork := "projects/mock-project/regions/test-region/subnetworks/multi-net-secondary-subnet"
+	netInfo := network.NetworkInfo{IsDefault: false, NetworkURL: secondaryNetwork, SubnetworkURL: subnetInSecondaryNetwork}
 
 	_, transactionSyncer, err := newTestTransactionSyncerWithNetInfo(fakeCloud, negtypes.VmIpEndpointType, false, netInfo)
 	if err != nil {
@@ -558,9 +562,30 @@ func TestNegNameMultiNetworking(t *testing.T) {
 		if neg.Description == "" {
 			t.Errorf("Neg Description should be populated when NEG CRD is enabled")
 		}
-		if neg.Subnetwork != nonDefaultSubnetURL {
-			t.Errorf("Neg subnetwork URL is incorrect. Got %s, Expected %s", neg.Subnetwork, nonDefaultSubnetURL)
+		if neg.Subnetwork != subnetInSecondaryNetwork {
+			t.Errorf("Neg subnetwork URL is incorrect. Got %s, Expected %s", neg.Subnetwork, subnetInSecondaryNetwork)
 		}
+	}
+
+	// Ensure that endpoints get correctly added to the NEGs in the secondary
+	// VPC under multi-networking scenario.
+	wantEndpointsCount := 3
+	addEndpoints := map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+		{Zone: negtypes.TestZone1, Subnet: subnetInDefaultNetwork}: generateEndpointSet(net.ParseIP("1.1.1.1"), wantEndpointsCount, "instance-name", "8080"),
+	}
+	err = transactionSyncer.syncNetworkEndpoints(addEndpoints, nil, nil, negtypes.NEGLocation{})
+	if err != nil {
+		t.Errorf("syncNetworkEndpoints(...) returned unexpected error: %v", err)
+	}
+	if err := waitForTransactions(transactionSyncer); err != nil {
+		t.Fatalf("Errored while waiting for the syncNetworkEndpoint transactions to complete: %v", err)
+	}
+	gotEndpoints, err := transactionSyncer.cloud.ListNetworkEndpoints(transactionSyncer.NegName, negtypes.TestZone1, false, transactionSyncer.NegSyncerKey.GetAPIVersion(), klog.TODO())
+	if err != nil {
+		t.Fatalf("transactionSyncer.cloud.ListNetworkEndpoints(%v, %v, ...) returned unexpected error: %v", transactionSyncer.NegName, negtypes.TestZone1, err)
+	}
+	if len(gotEndpoints) != wantEndpointsCount {
+		t.Errorf("NEG %q in zone %q has %v endpoints; want %v endpionts", transactionSyncer.NegName, negtypes.TestZone1, len(gotEndpoints), wantEndpointsCount)
 	}
 }
 

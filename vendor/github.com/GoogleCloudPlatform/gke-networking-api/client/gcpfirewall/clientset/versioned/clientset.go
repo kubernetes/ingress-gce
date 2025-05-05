@@ -23,7 +23,6 @@ import (
 	"net/http"
 
 	networkingv1 "github.com/GoogleCloudPlatform/gke-networking-api/client/gcpfirewall/clientset/versioned/typed/gcpfirewall/v1"
-	networkingv1beta1 "github.com/GoogleCloudPlatform/gke-networking-api/client/gcpfirewall/clientset/versioned/typed/gcpfirewall/v1beta1"
 	discovery "k8s.io/client-go/discovery"
 	rest "k8s.io/client-go/rest"
 	flowcontrol "k8s.io/client-go/util/flowcontrol"
@@ -32,24 +31,17 @@ import (
 type Interface interface {
 	Discovery() discovery.DiscoveryInterface
 	NetworkingV1() networkingv1.NetworkingV1Interface
-	NetworkingV1beta1() networkingv1beta1.NetworkingV1beta1Interface
 }
 
 // Clientset contains the clients for groups.
 type Clientset struct {
 	*discovery.DiscoveryClient
-	networkingV1      *networkingv1.NetworkingV1Client
-	networkingV1beta1 *networkingv1beta1.NetworkingV1beta1Client
+	networkingV1 *networkingv1.NetworkingV1Client
 }
 
 // NetworkingV1 retrieves the NetworkingV1Client
 func (c *Clientset) NetworkingV1() networkingv1.NetworkingV1Interface {
 	return c.networkingV1
-}
-
-// NetworkingV1beta1 retrieves the NetworkingV1beta1Client
-func (c *Clientset) NetworkingV1beta1() networkingv1beta1.NetworkingV1beta1Interface {
-	return c.networkingV1beta1
 }
 
 // Discovery retrieves the DiscoveryClient
@@ -100,10 +92,6 @@ func NewForConfigAndClient(c *rest.Config, httpClient *http.Client) (*Clientset,
 	if err != nil {
 		return nil, err
 	}
-	cs.networkingV1beta1, err = networkingv1beta1.NewForConfigAndClient(&configShallowCopy, httpClient)
-	if err != nil {
-		return nil, err
-	}
 
 	cs.DiscoveryClient, err = discovery.NewDiscoveryClientForConfigAndClient(&configShallowCopy, httpClient)
 	if err != nil {
@@ -126,7 +114,6 @@ func NewForConfigOrDie(c *rest.Config) *Clientset {
 func New(c rest.Interface) *Clientset {
 	var cs Clientset
 	cs.networkingV1 = networkingv1.New(c)
-	cs.networkingV1beta1 = networkingv1beta1.New(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClient(c)
 	return &cs

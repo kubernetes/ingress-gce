@@ -67,8 +67,6 @@ const (
 	NICInfoAnnotationKey = "networking.gke.io/nic-info"
 	// InterfaceStatusAnnotationKey is the key of the annotation which shows information of each interface of a pod.
 	InterfaceStatusAnnotationKey = "networking.gke.io/interface-status"
-	// NetworkGatewayIPAnnotationKey is the network annotation key used to hold egress NAT gateway IP.
-	NetworkGatewayIPAnnotationKey = "networking.gke.io/gateway-ip"
 )
 
 // InterfaceAnnotation is the value of the interface annotation.

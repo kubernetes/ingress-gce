@@ -40,20 +40,22 @@ var networksKind = v1.SchemeGroupVersion.WithKind("Network")
 
 // Get takes name of the network, and returns the corresponding network object, and an error if there is any.
 func (c *FakeNetworks) Get(ctx context.Context, name string, options metav1.GetOptions) (result *v1.Network, err error) {
+	emptyResult := &v1.Network{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootGetAction(networksResource, name), &v1.Network{})
+		Invokes(testing.NewRootGetActionWithOptions(networksResource, name, options), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.Network), err
 }
 
 // List takes label and field selectors, and returns the list of Networks that match those selectors.
 func (c *FakeNetworks) List(ctx context.Context, opts metav1.ListOptions) (result *v1.NetworkList, err error) {
+	emptyResult := &v1.NetworkList{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootListAction(networksResource, networksKind, opts), &v1.NetworkList{})
+		Invokes(testing.NewRootListActionWithOptions(networksResource, networksKind, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 
 	label, _, _ := testing.ExtractFromListOptions(opts)
@@ -72,36 +74,39 @@ func (c *FakeNetworks) List(ctx context.Context, opts metav1.ListOptions) (resul
 // Watch returns a watch.Interface that watches the requested networks.
 func (c *FakeNetworks) Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
-		InvokesWatch(testing.NewRootWatchAction(networksResource, opts))
+		InvokesWatch(testing.NewRootWatchActionWithOptions(networksResource, opts))
 }
 
 // Create takes the representation of a network and creates it.  Returns the server's representation of the network, and an error, if there is any.
 func (c *FakeNetworks) Create(ctx context.Context, network *v1.Network, opts metav1.CreateOptions) (result *v1.Network, err error) {
+	emptyResult := &v1.Network{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootCreateAction(networksResource, network), &v1.Network{})
+		Invokes(testing.NewRootCreateActionWithOptions(networksResource, network, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.Network), err
 }
 
 // Update takes the representation of a network and updates it. Returns the server's representation of the network, and an error, if there is any.
 func (c *FakeNetworks) Update(ctx context.Context, network *v1.Network, opts metav1.UpdateOptions) (result *v1.Network, err error) {
+	emptyResult := &v1.Network{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateAction(networksResource, network), &v1.Network{})
+		Invokes(testing.NewRootUpdateActionWithOptions(networksResource, network, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.Network), err
 }
 
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeNetworks) UpdateStatus(ctx context.Context, network *v1.Network, opts metav1.UpdateOptions) (*v1.Network, error) {
+func (c *FakeNetworks) UpdateStatus(ctx context.Context, network *v1.Network, opts metav1.UpdateOptions) (result *v1.Network, err error) {
+	emptyResult := &v1.Network{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateSubresourceAction(networksResource, "status", network), &v1.Network{})
+		Invokes(testing.NewRootUpdateSubresourceActionWithOptions(networksResource, "status", network, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.Network), err
 }
@@ -115,7 +120,7 @@ func (c *FakeNetworks) Delete(ctx context.Context, name string, opts metav1.Dele
 
 // DeleteCollection deletes a collection of objects.
 func (c *FakeNetworks) DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error {
-	action := testing.NewRootDeleteCollectionAction(networksResource, listOpts)
+	action := testing.NewRootDeleteCollectionActionWithOptions(networksResource, opts, listOpts)
 
 	_, err := c.Fake.Invokes(action, &v1.NetworkList{})
 	return err
@@ -123,10 +128,11 @@ func (c *FakeNetworks) DeleteCollection(ctx context.Context, opts metav1.DeleteO
 
 // Patch applies the patch and returns the patched network.
 func (c *FakeNetworks) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *v1.Network, err error) {
+	emptyResult := &v1.Network{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(networksResource, name, pt, data, subresources...), &v1.Network{})
+		Invokes(testing.NewRootPatchSubresourceActionWithOptions(networksResource, name, pt, data, opts, subresources...), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.Network), err
 }

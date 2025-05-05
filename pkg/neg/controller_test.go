@@ -1306,10 +1306,16 @@ func TestMergeVmIpNEGsPortInfo(t *testing.T) {
 	serviceILBWithFinalizer := newTestILBService(controller, false, 80)
 	serviceILBWithFinalizer.Finalizers = append(serviceILBWithFinalizer.Finalizers, common.ILBFinalizerV2)
 
-	serviceWithLoadBalancerClass := newTestILBService(controller, false, 80)
+	serviceCustomLoadBalancerClass := newTestILBService(controller, false, 80)
 	testLBClass := "testClass"
-	serviceWithLoadBalancerClass.Spec.LoadBalancerClass = &testLBClass
-	serviceWithLoadBalancerClass.Finalizers = append(serviceILBWithFinalizer.Finalizers, common.ILBFinalizerV2)
+	serviceCustomLoadBalancerClass.Spec.LoadBalancerClass = &testLBClass
+	serviceCustomLoadBalancerClass.Finalizers = append(serviceILBWithFinalizer.Finalizers, common.ILBFinalizerV2)
+
+	serviceExternalLoadBalancerClass := newL4LBServiceWithLoadBalancerClass(controller, annotations.RegionalExternalLoadBalancerClass)
+	serviceExternalLoadBalancerClass.Finalizers = append(serviceExternalLoadBalancerClass.Finalizers, common.NetLBFinalizerV3)
+
+	serviceInternalLoadBalancerClass := newL4LBServiceWithLoadBalancerClass(controller, annotations.RegionalInternalLoadBalancerClass)
+	serviceInternalLoadBalancerClass.Finalizers = append(serviceInternalLoadBalancerClass.Finalizers, common.ILBFinalizerV2)
 
 	testCases := []struct {
 		desc           string
@@ -1360,9 +1366,25 @@ func TestMergeVmIpNEGsPortInfo(t *testing.T) {
 		},
 		{
 			desc:           "Service with load balancer class",
-			svc:            serviceWithLoadBalancerClass,
+			svc:            serviceCustomLoadBalancerClass,
 			networkInfo:    defaultNetwork,
+			runL4ILB:       true,
+			runL4NetLB:     true,
 			wantSvcPortMap: nil,
+		},
+		{
+			desc:           "Service with NetLB loadBalancerClass",
+			svc:            serviceExternalLoadBalancerClass,
+			networkInfo:    defaultNetwork,
+			runL4NetLB:     true,
+			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, defaultNetwork, negtypes.L4ExternalLB),
+		},
+		{
+			desc:           "Service with ILB loadBalancerClass",
+			svc:            serviceInternalLoadBalancerClass,
+			networkInfo:    defaultNetwork,
+			runL4ILB:       true,
+			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, defaultNetwork, negtypes.L4InternalLB),
 		},
 	}
 
@@ -2194,6 +2216,28 @@ func newTestService(c *Controller, negIngress bool, negSvcPorts []int32) *apiv1.
 		},
 	}
 
+	c.client.CoreV1().Services(testServiceNamespace).Create(context.TODO(), svc, metav1.CreateOptions{})
+	return svc
+}
+
+// newL4LBServiceWithLoadBalancerClass creates a Service of type LoadBalancer with a given loadBalancerClass
+func newL4LBServiceWithLoadBalancerClass(c *Controller, lbClass string) *apiv1.Service {
+	svc := &apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      testServiceName,
+			Namespace: testServiceNamespace,
+			// Internal lb annotation should be ignored since loadBalancerClass has precedence
+			Annotations: map[string]string{gce.ServiceAnnotationLoadBalancerType: string(gce.LBTypeInternal)},
+		},
+		Spec: apiv1.ServiceSpec{
+			LoadBalancerClass:     &lbClass,
+			Type:                  apiv1.ServiceTypeLoadBalancer,
+			ExternalTrafficPolicy: apiv1.ServiceExternalTrafficPolicyTypeLocal,
+			Ports: []apiv1.ServicePort{
+				{Name: "testport", Port: int32(8080), Protocol: "TCP"},
+			},
+		},
+	}
 	c.client.CoreV1().Services(testServiceNamespace).Create(context.TODO(), svc, metav1.CreateOptions{})
 	return svc
 }
