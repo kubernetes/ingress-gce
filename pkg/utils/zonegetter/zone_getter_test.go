@@ -801,6 +801,7 @@ func TestIsNodeInDefaultSubnet(t *testing.T) {
 		node                  *apiv1.Node
 		expectInDefaultSubnet bool
 		expectNil             bool
+		defaultSubnetURL      string
 	}{
 		{
 			desc: "Node in the default subnet",
@@ -818,6 +819,7 @@ func TestIsNodeInDefaultSubnet(t *testing.T) {
 			},
 			expectInDefaultSubnet: true,
 			expectNil:             true,
+			defaultSubnetURL:      defaultTestSubnetURL,
 		},
 		{
 			desc: "Node without PodCIDR",
@@ -832,6 +834,7 @@ func TestIsNodeInDefaultSubnet(t *testing.T) {
 			},
 			expectInDefaultSubnet: false,
 			expectNil:             false,
+			defaultSubnetURL:      defaultTestSubnetURL,
 		},
 		{
 			desc: "Node with PodCIDR, without subnet label",
@@ -846,6 +849,7 @@ func TestIsNodeInDefaultSubnet(t *testing.T) {
 			},
 			expectInDefaultSubnet: true,
 			expectNil:             true,
+			defaultSubnetURL:      defaultTestSubnetURL,
 		},
 		{
 			desc: "Node with PodCIDR, with empty Label",
@@ -863,6 +867,7 @@ func TestIsNodeInDefaultSubnet(t *testing.T) {
 			},
 			expectInDefaultSubnet: true,
 			expectNil:             true,
+			defaultSubnetURL:      defaultTestSubnetURL,
 		},
 		{
 			desc: "Node in non-default subnet",
@@ -880,19 +885,35 @@ func TestIsNodeInDefaultSubnet(t *testing.T) {
 			},
 			expectInDefaultSubnet: false,
 			expectNil:             true,
+			defaultSubnetURL:      defaultTestSubnetURL,
+		},
+		{
+			desc: "Legacy Networks - empty defaultSubnetURL",
+			node: &apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "NodeWithoutSubnetLabel",
+				},
+				Spec: apiv1.NodeSpec{
+					PodCIDR:  "10.100.1.0/24",
+					PodCIDRs: []string{"10.100.1.0/24"},
+				},
+			},
+			expectInDefaultSubnet: true,
+			expectNil:             true,
+			defaultSubnetURL:      "",
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			gotInDefaultSubnet, gotErr := isNodeInDefaultSubnet(tc.node, defaultTestSubnetURL, klog.TODO())
+			gotInDefaultSubnet, gotErr := isNodeInDefaultSubnet(tc.node, tc.defaultSubnetURL, klog.TODO())
 			if gotErr != nil && tc.expectNil {
-				t.Errorf("isNodeInDefaultSubnet(%v, %s) = err %v, want nil", tc.node, defaultTestSubnetURL, gotErr)
+				t.Errorf("isNodeInDefaultSubnet(%v, %s) = err %v, want nil", tc.node, tc.defaultSubnetURL, gotErr)
 			}
 			if gotErr == nil && !tc.expectNil {
-				t.Errorf("isNodeInDefaultSubnet(%v, %s) = err nil, want not nil", tc.node, defaultTestSubnetURL)
+				t.Errorf("isNodeInDefaultSubnet(%v, %s) = err nil, want not nil", tc.node, tc.defaultSubnetURL)
 			}
 			if gotInDefaultSubnet != tc.expectInDefaultSubnet {
-				t.Errorf("isNodeInDefaultSubnet(%v, %s) = %v, want %v", tc.node, defaultTestSubnetURL, gotInDefaultSubnet, tc.expectInDefaultSubnet)
+				t.Errorf("isNodeInDefaultSubnet(%v, %s) = %v, want %v", tc.node, tc.defaultSubnetURL, gotInDefaultSubnet, tc.expectInDefaultSubnet)
 			}
 		})
 	}
