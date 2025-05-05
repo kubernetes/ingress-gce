@@ -681,7 +681,7 @@ func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.Na
 		return nil
 	}
 	// Only process ILB services after L4 controller has marked it with v2 finalizer.
-	if needsNEGForILB && !utils.HasL4ILBFinalizerV2(service) {
+	if needsNEGForILB && !annotations.HasL4ILBFinalizerV2(service) {
 		msg := fmt.Sprintf("Ignoring ILB Service %s, namespace %s as it does not have the v2 finalizer", service.Name, service.Namespace)
 		c.logger.Info(msg)
 		c.recorder.Eventf(service, apiv1.EventTypeWarning, "ProcessServiceSkipped", msg)
@@ -726,7 +726,7 @@ func (c *Controller) netLBServiceNeedsNEG(service *apiv1.Service, networkInfo *n
 	if !networkInfo.IsDefault {
 		return true
 	}
-	return c.runL4ForNetLB && utils.HasL4NetLBFinalizerV3(service)
+	return c.runL4ForNetLB && annotations.HasL4NetLBFinalizerV3(service)
 }
 
 // mergeDefaultBackendServicePortInfoMap merge the PortInfoMap for the default backend service into portInfoMap

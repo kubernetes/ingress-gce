@@ -24,6 +24,8 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
+	"k8s.io/ingress-gce/pkg/utils/common"
+	"k8s.io/ingress-gce/pkg/utils/slice"
 )
 
 const (
@@ -256,10 +258,17 @@ func WantsL4ILB(service *v1.Service) (bool, string) {
 	if service.Spec.Type != v1.ServiceTypeLoadBalancer {
 		return false, fmt.Sprintf("Type : %s", service.Spec.Type)
 	}
+
+	ltype := GetLoadBalancerAnnotationType(service)
+	// Prevents race condition when switching from NetLB to ILB
+	if IsRBSL4NetLB(service) {
+		return false, fmt.Sprintf("Type : %s, LBType : %s, HasNetLBResources : %t", service.Spec.Type, ltype, true)
+	}
+
 	if service.Spec.LoadBalancerClass != nil {
 		return HasLoadBalancerClass(service, RegionalInternalLoadBalancerClass), fmt.Sprintf("Type : %s", service.Spec.Type)
 	}
-	ltype := GetLoadBalancerAnnotationType(service)
+
 	if ltype == LBTypeInternal {
 		return true, fmt.Sprintf("Type : %s, LBType : %s", service.Spec.Type, ltype)
 	}
@@ -274,10 +283,16 @@ func WantsL4NetLB(service *v1.Service) (bool, string) {
 	if service.Spec.Type != v1.ServiceTypeLoadBalancer {
 		return false, fmt.Sprintf("Type : %s", service.Spec.Type)
 	}
+
+	ltype := GetLoadBalancerAnnotationType(service)
+	// Prevents race condition when switching from ILB to NetLB
+	if IsSubsettingL4ILBService(service) {
+		return false, fmt.Sprintf("Type : %s, LBType : %s, HasILBResources : %t", service.Spec.Type, ltype, true)
+	}
+
 	if service.Spec.LoadBalancerClass != nil {
 		return HasLoadBalancerClass(service, RegionalExternalLoadBalancerClass), fmt.Sprintf("Type : %s", service.Spec.Type)
 	}
-	ltype := GetLoadBalancerAnnotationType(service)
 	return ltype != LBTypeInternal, fmt.Sprintf("Type : %s, LBType : %s", service.Spec.Type, ltype)
 }
 
@@ -491,4 +506,40 @@ func (svc *Service) GetInternalLoadBalancerAnnotationSubnet() string {
 		return val
 	}
 	return ""
+}
+
+// IsLegacyL4ILBService returns true if the given LoadBalancer service is managed by service controller.
+func IsLegacyL4ILBService(svc *v1.Service) bool {
+	if svc.Spec.LoadBalancerClass != nil {
+		return HasLoadBalancerClass(svc, LegacyRegionalInternalLoadBalancerClass)
+	}
+	return slice.ContainsString(svc.ObjectMeta.Finalizers, common.LegacyILBFinalizer, nil)
+}
+
+// IsSubsettingL4ILBService returns true if the given LoadBalancer service is managed by NEG and L4 controller.
+func IsSubsettingL4ILBService(svc *v1.Service) bool {
+	if svc.Spec.LoadBalancerClass != nil {
+		return HasLoadBalancerClass(svc, RegionalInternalLoadBalancerClass)
+	}
+	return HasL4ILBFinalizerV2(svc)
+}
+
+// HasL4ILBFinalizerV2 returns true if the given Service has ILBFinalizerV2
+func HasL4ILBFinalizerV2(svc *v1.Service) bool {
+	return slice.ContainsString(svc.ObjectMeta.Finalizers, common.ILBFinalizerV2, nil)
+}
+
+// HasL4NetLBFinalizerV2 returns true if the given Service has NetLBFinalizerV2
+func HasL4NetLBFinalizerV2(svc *v1.Service) bool {
+	return slice.ContainsString(svc.ObjectMeta.Finalizers, common.NetLBFinalizerV2, nil)
+}
+
+// HasL4NetLBFinalizerV3 returns true if the given Service has NetLBFinalizerV3
+func HasL4NetLBFinalizerV3(svc *v1.Service) bool {
+	return slice.ContainsString(svc.ObjectMeta.Finalizers, common.NetLBFinalizerV3, nil)
+}
+
+// IsRBSL4NetLB returns true if the given service is managed by RBS L4NetLB controller.
+func IsRBSL4NetLB(svc *v1.Service) bool {
+	return HasL4NetLBFinalizerV3(svc) || HasL4NetLBFinalizerV2(svc) || HasLoadBalancerClass(svc, RegionalExternalLoadBalancerClass)
 }

@@ -241,7 +241,7 @@ func (l4c *L4Controller) shouldProcessService(service *v1.Service, svcLogger klo
 		}
 	}
 	// skip services that are being handled by the legacy service controller.
-	if utils.IsLegacyL4ILBService(service) {
+	if annotations.IsLegacyL4ILBService(service) {
 		svcLogger.Info("Ignoring update for service managed by service controller")
 		return false
 	}
@@ -508,7 +508,7 @@ func (l4c *L4Controller) sync(key string, svcLogger klog.Logger) error {
 }
 
 func (l4c *L4Controller) needsDeletion(svc *v1.Service) bool {
-	if !utils.IsSubsettingL4ILBService(svc) {
+	if !annotations.IsSubsettingL4ILBService(svc) {
 		return false
 	}
 	if common.IsDeletionCandidateForGivenFinalizer(svc.ObjectMeta, common.ILBFinalizerV2) {

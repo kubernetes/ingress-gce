@@ -185,7 +185,7 @@ func (lc *L4NetLBController) needsAddition(newSvc, oldSvc *v1.Service) bool {
 // needsDeletion return true if svc required deleting RBS based NetLB
 func (lc *L4NetLBController) needsDeletion(svc *v1.Service, svcLogger klog.Logger) bool {
 	// Check if service was provisioned by RBS controller before -- if it has rbs finalizer, rbs loadBalancerClass or rbs forwarding rule
-	if !utils.HasL4NetLBFinalizerV2(svc) && !utils.HasL4NetLBFinalizerV3(svc) &&
+	if !annotations.HasL4NetLBFinalizerV2(svc) && !annotations.HasL4NetLBFinalizerV3(svc) &&
 		!lc.hasRBSForwardingRule(svc, svcLogger) &&
 		!annotations.HasLoadBalancerClass(svc, annotations.RegionalExternalLoadBalancerClass) {
 		return false
@@ -335,12 +335,12 @@ func (lc *L4NetLBController) isRBSBasedService(svc *v1.Service, svcLogger klog.L
 	if svc.Spec.LoadBalancerClass != nil {
 		return annotations.HasLoadBalancerClass(svc, annotations.RegionalExternalLoadBalancerClass)
 	}
-	return annotations.HasRBSAnnotation(svc) || utils.HasL4NetLBFinalizerV2(svc) || utils.HasL4NetLBFinalizerV3(svc) || lc.hasRBSForwardingRule(svc, svcLogger)
+	return annotations.HasRBSAnnotation(svc) || annotations.HasL4NetLBFinalizerV2(svc) || annotations.HasL4NetLBFinalizerV3(svc) || lc.hasRBSForwardingRule(svc, svcLogger)
 }
 
 func (lc *L4NetLBController) preventLegacyServiceHandling(service *v1.Service, key string, svcLogger klog.Logger) (bool, error) {
 	if (annotations.HasRBSAnnotation(service) || annotations.HasLoadBalancerClass(service, annotations.RegionalExternalLoadBalancerClass)) && lc.hasTargetPoolForwardingRule(service, svcLogger) {
-		if utils.HasL4NetLBFinalizerV2(service) || utils.HasL4NetLBFinalizerV3(service) {
+		if annotations.HasL4NetLBFinalizerV2(service) || annotations.HasL4NetLBFinalizerV3(service) {
 			// If we found that RBS finalizer was attached to service, it means that RBS controller
 			// had a race condition on Service creation with Legacy Controller.
 			// It should only happen during service creation, and we should clean up RBS resources
@@ -647,10 +647,10 @@ func (lc *L4NetLBController) shouldUseNEGBackends(service *v1.Service) bool {
 	if !lc.enableNEGSupport {
 		return false
 	}
-	if utils.HasL4NetLBFinalizerV2(service) {
+	if annotations.HasL4NetLBFinalizerV2(service) {
 		return false
 	}
-	if utils.HasL4NetLBFinalizerV3(service) {
+	if annotations.HasL4NetLBFinalizerV3(service) {
 		return true
 	}
 	return lc.enableNEGAsDefault
