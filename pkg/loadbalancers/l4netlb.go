@@ -356,6 +356,14 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 	localityLbPolicy := l4netlb.determineBackendServiceLocalityPolicy()
 
 	connectionTrackingPolicy := l4netlb.connectionTrackingPolicy()
+
+	logConfig, err := annotations.GetL4LBLoggingConfig(l4netlb.Service)
+	if err != nil {
+		syncResult.GCEResourceInError = annotations.BackendServiceResource
+		syncResult.Error = utils.NewUserError(err)
+		return ""
+	}
+
 	backendParams := backends.L4BackendServiceParams{
 		Name:                     bsName,
 		HealthCheckLink:          hcLink,
@@ -366,6 +374,7 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 		NetworkInfo:              network.DefaultNetwork(l4netlb.cloud),
 		ConnectionTrackingPolicy: connectionTrackingPolicy,
 		LocalityLbPolicy:         localityLbPolicy,
+		LogConfig:                logConfig,
 	}
 
 	bs, wasUpdate, err := l4netlb.backendPool.EnsureL4BackendService(backendParams, l4netlb.svcLogger)

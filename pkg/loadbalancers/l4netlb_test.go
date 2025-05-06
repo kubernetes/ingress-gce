@@ -1744,3 +1744,118 @@ func assertAddressOldReservedHook(t *testing.T, gceCloud *gce.Cloud) func(ctx co
 		return false, nil
 	}
 }
+
+func TestNetLBLogging(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		desc                        string
+		includeLoggingAnnotation    bool
+		enableLogging               bool
+		includeSampleRateAnnotation bool
+		sampleRate                  string
+		logConfigExpected           bool
+		expectedSampleRate          float64
+		errorExpected               bool
+	}{
+		{
+			desc:              "None of logging annotations added",
+			logConfigExpected: false,
+			errorExpected:     false,
+		},
+		{
+			desc:                     "Logging explicitly disabled",
+			includeLoggingAnnotation: true,
+			enableLogging:            false,
+			logConfigExpected:        false,
+		},
+		{
+			desc:                        "Only sample rate provided, logging not enabled",
+			includeSampleRateAnnotation: true,
+			sampleRate:                  "1",
+			logConfigExpected:           false,
+			errorExpected:               false,
+		},
+		{
+			desc:                        "Invalid sample rate provided, logging not enabled",
+			includeSampleRateAnnotation: true,
+			sampleRate:                  "invalid",
+			errorExpected:               false,
+		},
+		{
+			desc:                     "Logging enabled, sample rate not specified",
+			includeLoggingAnnotation: true,
+			enableLogging:            true,
+			logConfigExpected:        true,
+			expectedSampleRate:       1,
+		},
+		{
+			desc:                        "Logging enabled, sample rate provided",
+			includeLoggingAnnotation:    true,
+			enableLogging:               true,
+			includeSampleRateAnnotation: true,
+			sampleRate:                  "0.5",
+			logConfigExpected:           true,
+			expectedSampleRate:          0.5,
+		},
+		{
+			desc:                        "Logging enabled, invalid sample rate",
+			includeLoggingAnnotation:    true,
+			enableLogging:               true,
+			includeSampleRateAnnotation: true,
+			sampleRate:                  "invalid",
+			errorExpected:               true,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			svc := test.NewL4NetLBRBSService(8080)
+			if tc.includeLoggingAnnotation {
+				svc.Annotations[annotations.L4LBLoggingAnnotationKey] = ""
+				if tc.enableLogging {
+					svc.Annotations[annotations.L4LBLoggingAnnotationKey] = annotations.L4LBLoggingEnabled
+				}
+			}
+			if tc.includeSampleRateAnnotation {
+				svc.Annotations[annotations.L4LBLoggingSampleRateAnnotationKey] = tc.sampleRate
+			}
+
+			nodeNames := []string{"test-node-1"}
+			l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
+
+			result := l4NetLB.EnsureFrontend(nodeNames, svc)
+			if result.Error != nil {
+				if !tc.errorExpected {
+					t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+				}
+				return
+			}
+			if tc.errorExpected {
+				t.Errorf("Expected error during ensuring internal loadBalancer, got nil")
+			}
+
+			backendServiceName := l4NetLB.namer.L4Backend(l4NetLB.Service.Namespace, l4NetLB.Service.Name)
+			key := meta.RegionalKey(backendServiceName, l4NetLB.cloud.Region())
+			bs, err := composite.GetBackendService(l4NetLB.cloud, key, meta.VersionGA, klog.TODO())
+			if err != nil {
+				t.Fatalf("failed to read BackendService, %v", err)
+			}
+
+			if bs.LogConfig == nil {
+				if tc.logConfigExpected {
+					t.Errorf("LogConfig expected to be populated")
+				}
+				return
+			}
+
+			if tc.includeLoggingAnnotation && bs.LogConfig.Enable != tc.enableLogging {
+				t.Errorf("Invalid logging state: expected to be enabled: %v, got %v", tc.enableLogging, bs.LogConfig.Enable)
+			}
+			if bs.LogConfig.SampleRate != tc.expectedSampleRate {
+				t.Errorf("Invalid logging sample rate: expected %v, got %v", tc.expectedSampleRate, bs.LogConfig.SampleRate)
+			}
+		})
+	}
+}
