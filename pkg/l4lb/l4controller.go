@@ -32,6 +32,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
+	"k8s.io/ingress-gce/pkg/common/operator"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/forwardingrules"
@@ -190,7 +191,43 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 		logger.V(3).Info("set up SvcNegInformer event handlers")
 	}
 
+	if flags.F.ManageL4LBLogging {
+		ctx.ConfigMapInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				configMap, ok := obj.(*v1.ConfigMap)
+				if ok {
+					l4c.enqueueServicesReferencingConfigMap(configMap)
+				}
+			},
+			UpdateFunc: func(_, obj interface{}) {
+				configMap, ok := obj.(*v1.ConfigMap)
+				if ok {
+					l4c.enqueueServicesReferencingConfigMap(configMap)
+				}
+			},
+			DeleteFunc: func(obj interface{}) {
+				configMap, ok := obj.(*v1.ConfigMap)
+				if ok {
+					l4c.enqueueServicesReferencingConfigMap(configMap)
+				}
+			},
+		})
+	}
+
 	return l4c
+}
+
+func (l4c *L4Controller) enqueueServicesReferencingConfigMap(configMap *v1.ConfigMap) {
+	services := operator.Services(l4c.ctx.Services().List(), l4c.logger).ReferencesL4LoggingConfigMap(configMap).AsList()
+	for _, svc := range services {
+		svcKey := utils.ServiceKeyFunc(svc.Namespace, svc.Name)
+		svcLogger := l4c.logger.WithValues("serviceKey", svcKey)
+		if l4c.shouldProcessService(svc, svcLogger) {
+			l4c.serviceVersions.SetLastUpdateSeen(svcKey, svc.ResourceVersion, svcLogger)
+			l4c.svcQueue.Enqueue(svc)
+		}
+	}
+	l4c.enqueueTracker.Track()
 }
 
 func (l4c *L4Controller) SystemHealth() error {
@@ -312,6 +349,10 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service, svcLo
 		EnableMixedProtocol:              l4c.ctx.EnableL4ILBMixedProtocol,
 		EnableZonalAffinity:              l4c.ctx.EnableL4ILBZonalAffinity,
 	}
+	if l4c.ctx.ConfigMapInformer != nil {
+		l4ilbParams.ConfigMapLister = l4c.ctx.ConfigMapInformer.GetIndexer()
+	}
+
 	l4 := loadbalancers.NewL4Handler(l4ilbParams, svcLogger)
 	syncResult := l4.EnsureInternalLoadBalancer(utils.GetNodeNames(nodes), service)
 	// syncResult will not be nil
@@ -395,6 +436,10 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service, svc
 		EnableMixedProtocol:              l4c.ctx.EnableL4ILBMixedProtocol,
 		EnableZonalAffinity:              l4c.ctx.EnableL4ILBZonalAffinity,
 	}
+	if l4c.ctx.ConfigMapInformer != nil {
+		l4ilbParams.ConfigMapLister = l4c.ctx.ConfigMapInformer.GetIndexer()
+	}
+
 	l4 := loadbalancers.NewL4Handler(l4ilbParams, svcLogger)
 	l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer", "Deleting load balancer for %s", key)
 	result := l4.EnsureInternalLoadBalancerDeleted(svc)

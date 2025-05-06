@@ -27,6 +27,7 @@ import (
 	"google.golang.org/api/compute/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/cloud-provider/service/helpers"
@@ -77,6 +78,7 @@ type L4 struct {
 	disableNodesFirewallProvisioning bool
 	enableZonalAffinity              bool
 	svcLogger                        klog.Logger
+	configMapLister                  cache.Store
 }
 
 // L4ILBSyncResult contains information about the outcome of an L4 ILB sync. It stores the list of resource name annotations,
@@ -116,6 +118,7 @@ type L4ILBParams struct {
 	EnableZonalAffinity              bool
 	DisableNodesFirewallProvisioning bool
 	EnableMixedProtocol              bool
+	ConfigMapLister                  cache.Store
 }
 
 // NewL4Handler creates a new L4Handler for the given L4 service.
@@ -138,6 +141,7 @@ func NewL4Handler(params *L4ILBParams, logger klog.Logger) *L4 {
 		disableNodesFirewallProvisioning: params.DisableNodesFirewallProvisioning,
 		enableZonalAffinity:              params.EnableZonalAffinity,
 		svcLogger:                        logger,
+		configMapLister:                  params.ConfigMapLister,
 	}
 	l4.NamespacedName = types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace}
 	l4.backendPool = backends.NewPool(l4.cloud, l4.namer)
@@ -543,8 +547,8 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 
 	// ensure backend service
 	var logConfig *composite.BackendServiceLogConfig
-	if flags.F.EnableL4LBLoggingAnnotations {
-		logConfig, err = annotations.GetL4LBLoggingConfig(l4.Service)
+	if flags.F.ManageL4LBLogging && l4.configMapLister != nil {
+		logConfig, err = GetL4LoggingConfig(l4.Service, l4.configMapLister)
 		if err != nil {
 			result.GCEResourceInError = annotations.BackendServiceResource
 			result.Error = utils.NewUserError(err)

@@ -213,6 +213,10 @@ func NewControllerContext(
 		}
 	}
 
+	if flags.F.ManageL4LBLogging {
+		context.ConfigMapInformer = informerv1.NewConfigMapInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
+	}
+
 	// Do not trigger periodic resync on EndpointSlices object.
 	// This aims improve NEG controller performance by avoiding unnecessary NEG sync that triggers for each NEG syncer.
 	// As periodic resync may temporary starve NEG API ratelimit quota.
@@ -312,6 +316,10 @@ func (ctx *ControllerContext) Start(stopCh <-chan struct{}) {
 	go ctx.PodInformer.Run(stopCh)
 	go ctx.NodeInformer.Run(stopCh)
 	go ctx.EndpointSliceInformer.Run(stopCh)
+
+	if ctx.ConfigMapInformer != nil {
+		go ctx.ConfigMapInformer.Run(stopCh)
+	}
 
 	if ctx.FirewallInformer != nil {
 		go ctx.FirewallInformer.Run(stopCh)

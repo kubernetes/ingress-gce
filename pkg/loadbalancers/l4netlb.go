@@ -25,6 +25,7 @@ import (
 	compute "google.golang.org/api/compute/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/cloud-provider/service/helpers"
@@ -80,6 +81,7 @@ type L4NetLB struct {
 	disableNodesFirewallProvisioning bool
 	svcLogger                        klog.Logger
 	useNEGs                          bool
+	configMapLister                  cache.Store
 }
 
 // L4NetLBSyncResult contains information about the outcome of an L4 NetLB sync. It stores the list of resource name annotations,
@@ -136,6 +138,7 @@ type L4NetLBParams struct {
 	EnableMixedProtocol              bool
 	DisableNodesFirewallProvisioning bool
 	UseNEGs                          bool
+	ConfigMapLister                  cache.Store
 }
 
 // NewL4NetLB creates a new Handler for the given L4NetLB service.
@@ -169,6 +172,7 @@ func NewL4NetLB(params *L4NetLBParams, logger klog.Logger) *L4NetLB {
 		disableNodesFirewallProvisioning: params.DisableNodesFirewallProvisioning,
 		useNEGs:                          params.UseNEGs,
 		svcLogger:                        logger,
+		configMapLister:                  params.ConfigMapLister,
 	}
 	return l4netlb
 }
@@ -359,9 +363,9 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 	connectionTrackingPolicy := l4netlb.connectionTrackingPolicy()
 
 	var logConfig *composite.BackendServiceLogConfig
-	if flags.F.EnableL4LBLoggingAnnotations {
+	if flags.F.ManageL4LBLogging && l4netlb.configMapLister != nil {
 		var err error
-		logConfig, err = annotations.GetL4LBLoggingConfig(l4netlb.Service)
+		logConfig, err = GetL4LoggingConfig(l4netlb.Service, l4netlb.configMapLister)
 		if err != nil {
 			syncResult.GCEResourceInError = annotations.BackendServiceResource
 			syncResult.Error = utils.NewUserError(err)
