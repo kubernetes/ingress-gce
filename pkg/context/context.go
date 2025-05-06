@@ -184,6 +184,7 @@ func NewControllerContext(
 		PodInformer:             podInformer,
 		NodeInformer:            nodeInformer,
 		SvcNegInformer:          informersvcneg.NewServiceNetworkEndpointGroupInformer(svcnegClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
+		ConfigMapInformer:       informerv1.NewConfigMapInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		recordersManager:        recorders.NewManager(eventRecorderClient, logger),
 		logger:                  logger,
 	}
@@ -312,6 +313,7 @@ func (ctx *ControllerContext) Start(stopCh <-chan struct{}) {
 	go ctx.PodInformer.Run(stopCh)
 	go ctx.NodeInformer.Run(stopCh)
 	go ctx.EndpointSliceInformer.Run(stopCh)
+	go ctx.ConfigMapInformer.Run(stopCh)
 
 	if ctx.FirewallInformer != nil {
 		go ctx.FirewallInformer.Run(stopCh)

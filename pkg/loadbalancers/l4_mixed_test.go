@@ -185,7 +185,7 @@ func TestEnsureMixedILB(t *testing.T) {
 				}
 				l4, fakeGCE := arrange(t, s.resources, svc)
 
-				result := l4.EnsureInternalLoadBalancer([]string{mixedprotocoltest.TestNode}, svc)
+				result := l4.EnsureInternalLoadBalancer([]string{mixedprotocoltest.TestNode}, svc, nil)
 
 				wantResult := &L4ILBSyncResult{
 					Annotations: e.annotations,
