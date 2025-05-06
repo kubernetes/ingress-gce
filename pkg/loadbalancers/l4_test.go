@@ -45,6 +45,7 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	servicehelper "k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/test"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 )
@@ -3041,5 +3042,157 @@ func createVMInstanceWithTag(t *testing.T, fakeGCE *gce.Cloud, name, tag string)
 		})
 	if err != nil {
 		t.Errorf("failed to create instance err=%v", err)
+	}
+}
+
+func TestILBLogging(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		desc           string
+		annotations    map[string]string
+		wantLogConfig  bool
+		wantSampleRate float64
+		wantError      bool
+	}{
+		{
+			desc:          "None of logging annotations added",
+			wantLogConfig: false,
+			wantError:     false,
+		},
+		{
+			desc: "Logging explicitly disabled",
+			annotations: map[string]string{
+				annotations.L4LBLoggingAnnotationKey: "",
+			},
+			wantLogConfig: false,
+			wantError:     false,
+		},
+		{
+			desc: "Only sample rate provided, logging not enabled",
+			annotations: map[string]string{
+				annotations.L4LBLoggingSampleRateAnnotationKey: "1",
+			},
+			wantLogConfig: false,
+			wantError:     false,
+		},
+		{
+			desc: "Invalid sample rate provided, logging not enabled",
+			annotations: map[string]string{
+				annotations.L4LBLoggingSampleRateAnnotationKey: "invalid",
+			},
+			wantLogConfig: false,
+			wantError:     false,
+		},
+		{
+			desc: "Logging enabled, sample rate not specified",
+			annotations: map[string]string{
+				annotations.L4LBLoggingAnnotationKey: annotations.L4LBLoggingEnabled,
+			},
+			wantLogConfig:  true,
+			wantSampleRate: 1,
+		},
+		{
+			desc: "Logging enabled, sample rate provided",
+			annotations: map[string]string{
+				annotations.L4LBLoggingAnnotationKey:           annotations.L4LBLoggingEnabled,
+				annotations.L4LBLoggingSampleRateAnnotationKey: "0.5",
+			},
+			wantLogConfig:  true,
+			wantSampleRate: 0.5,
+		},
+		{
+			desc: "Logging enabled, invalid sample rate",
+			annotations: map[string]string{
+				annotations.L4LBLoggingAnnotationKey:           annotations.L4LBLoggingEnabled,
+				annotations.L4LBLoggingSampleRateAnnotationKey: "invalid",
+			},
+			wantError: true,
+		},
+		{
+			desc: "Logging enabled, negative sample rate",
+			annotations: map[string]string{
+				annotations.L4LBLoggingAnnotationKey:           annotations.L4LBLoggingEnabled,
+				annotations.L4LBLoggingSampleRateAnnotationKey: "-0.1",
+			},
+			wantError: true,
+		},
+		{
+			desc: "Logging enabled, sample rate exceeds 100%",
+			annotations: map[string]string{
+				annotations.L4LBLoggingAnnotationKey:           annotations.L4LBLoggingEnabled,
+				annotations.L4LBLoggingSampleRateAnnotationKey: "1.1",
+			},
+			wantError: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			flags.F.EnableL4LBLoggingAnnotations = true
+
+			svc := test.NewL4ILBService(false, 8080)
+			for annotation, value := range tc.annotations {
+				svc.Annotations[annotation] = value
+			}
+
+			nodeNames := []string{"test-node-1"}
+			vals := gce.DefaultTestClusterValues()
+			fakeGCE := getFakeGCECloud(vals)
+
+			namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+
+			networkInfo := network.DefaultNetwork(fakeGCE)
+
+			l4ilbParams := &L4ILBParams{
+				Service:         svc,
+				Cloud:           fakeGCE,
+				Namer:           namer,
+				Recorder:        record.NewFakeRecorder(100),
+				NetworkResolver: network.NewFakeResolver(networkInfo),
+			}
+			l4 := NewL4Handler(l4ilbParams, klog.TODO())
+			l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
+
+			if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
+				t.Errorf("Unexpected error when adding nodes %v", err)
+			}
+
+			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			if result.Error != nil {
+				if !tc.wantError {
+					t.Errorf("Failed to ensure internal loadBalancer, err %v", result.Error)
+				}
+				return
+			}
+			if tc.wantError {
+				t.Errorf("Want error during ensuring internal loadBalancer, got nil")
+			}
+
+			backendServiceName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
+			key := meta.RegionalKey(backendServiceName, l4.cloud.Region())
+			bs, err := composite.GetBackendService(l4.cloud, key, meta.VersionGA, klog.TODO())
+			if err != nil {
+				t.Fatalf("Failed to read BackendService, %v", err)
+			}
+
+			if bs.LogConfig == nil {
+				if tc.wantLogConfig {
+					t.Errorf("Want LogConfig to be populated")
+				}
+				return
+			}
+
+			enableLoggingString := tc.annotations[annotations.L4LBLoggingAnnotationKey]
+			wantEnableLogging := enableLoggingString == annotations.L4LBLoggingEnabled
+			if bs.LogConfig.Enable != wantEnableLogging {
+				t.Errorf("Invalid logging state: want to be enabled: %v, got %v", wantEnableLogging, bs.LogConfig.Enable)
+			}
+			if bs.LogConfig.SampleRate != tc.wantSampleRate {
+				t.Errorf("Invalid logging sample rate: want %v, got %v", tc.wantSampleRate, bs.LogConfig.SampleRate)
+			}
+		})
 	}
 }
