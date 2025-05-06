@@ -516,7 +516,7 @@ func backendSvcEqual(newBS, oldBS *composite.BackendService, compareConnectionTr
 		svcsEqual = svcsEqual && connectionTrackingPolicyEqual(newBS.ConnectionTrackingPolicy, oldBS.ConnectionTrackingPolicy)
 	}
 
-	if flags.F.EnableL4LBLoggingAnnotations {
+	if flags.F.ManageL4LBLogging {
 		svcsEqual = svcsEqual && backendServiceLogConfigEqual(oldBS.LogConfig, newBS.LogConfig)
 	}
 
@@ -531,6 +531,8 @@ func backendSvcEqual(newBS, oldBS *composite.BackendService, compareConnectionTr
 	return svcsEqual
 }
 
+// backendServiceLogConfigEqual returns true if both elements are equal
+// and return false if at least one parameter is different
 func backendServiceLogConfigEqual(oldLC, newLC *composite.BackendServiceLogConfig) bool {
 	if oldLC == nil {
 		oldLC = &composite.BackendServiceLogConfig{}

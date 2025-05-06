@@ -45,7 +45,6 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	servicehelper "k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/test"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 )
@@ -239,7 +238,7 @@ func TestEnsureInternalLoadBalancer(t *testing.T) {
 				t.Errorf("Unexpected error when adding nodes %v", err)
 			}
 
-			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			result := l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 			if result.Error != nil {
 				t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 			}
@@ -264,7 +263,7 @@ func TestEnsureInternalLoadBalancer(t *testing.T) {
 				t.Errorf("Failed updating backend service, err %v", err)
 			}
 			// Simulate a periodic sync. The backends list should not be reconciled.
-			result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			result = l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 			if result.Error != nil {
 				t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 			}
@@ -305,7 +304,7 @@ func TestEnsureInternalLoadBalancerTypeChange(t *testing.T) {
 	if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
-	result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	result := l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 	if result.Error != nil {
 		t.Errorf("Unexpected error %v", result.Error)
 	}
@@ -371,7 +370,7 @@ func TestEnsureInternalLoadBalancerWithExistingResources(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to create backendservice, err %v", err)
 	}
-	result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	result := l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
@@ -472,7 +471,7 @@ func TestEnsureInternalLoadBalancerClearPreviousResources(t *testing.T) {
 	if err = composite.CreateForwardingRule(fakeGCE, key, existingFwdRule, klog.TODO()); err != nil {
 		t.Errorf("Failed to update forwarding rule with new BS link, err %v", err)
 	}
-	if result := l4.EnsureInternalLoadBalancer(nodeNames, svc); result.Error != nil {
+	if result := l4.EnsureInternalLoadBalancer(nodeNames, svc, nil); result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer %s, err %v", lbName, result.Error)
 	}
 	key.Name = frName
@@ -575,7 +574,7 @@ func TestUpdateResourceLinks(t *testing.T) {
 	if !reflect.DeepEqual(bs.HealthChecks, []string{"hc1", "hc2"}) {
 		t.Errorf("Unexpected healthchecks in backend service - %v", bs.HealthChecks)
 	}
-	result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	result := l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer %s, err %v", lbName, result.Error)
 	}
@@ -638,7 +637,7 @@ func TestEnsureInternalLoadBalancerHealthCheckConfigurable(t *testing.T) {
 		t.Errorf("Failed to create fake healthcheck %s, err %v", hcName, err)
 	}
 
-	if result := l4.EnsureInternalLoadBalancer(nodeNames, svc); result.Error != nil {
+	if result := l4.EnsureInternalLoadBalancer(nodeNames, svc, nil); result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer %s, err %v", lbName, result.Error)
 	}
 
@@ -674,7 +673,7 @@ func TestEnsureInternalLoadBalancerDeleted(t *testing.T) {
 	if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
-	result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	result := l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
@@ -714,7 +713,7 @@ func TestEnsureInternalLoadBalancerDeletedTwiceDoesNotError(t *testing.T) {
 	if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
-	result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	result := l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
@@ -794,7 +793,7 @@ func TestHealthCheckFirewallDeletionWithNetLB(t *testing.T) {
 	l4NetLB.healthChecks = l4.healthChecks
 
 	// create netlb resources
-	xlbResult := l4NetLB.EnsureFrontend(nodeNames, netlbSvc)
+	xlbResult := l4NetLB.EnsureFrontend(nodeNames, netlbSvc, nil)
 	if xlbResult.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", xlbResult.Error)
 	}
@@ -844,7 +843,7 @@ func ensureService(fakeGCE *gce.Cloud, namer *namer_util.L4Namer, nodeNames []st
 	if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, zoneName); err != nil {
 		return nil, nil, &L4ILBSyncResult{Error: fmt.Errorf("Unexpected error when adding nodes %v", err)}
 	}
-	result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	result := l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 	if result.Error != nil {
 		return nil, nil, result
 	}
@@ -883,7 +882,7 @@ func TestEnsureInternalLoadBalancerWithSpecialHealthCheck(t *testing.T) {
 	svc.Spec.Type = v1.ServiceTypeLoadBalancer
 	svc.Spec.ExternalTrafficPolicy = v1.ServiceExternalTrafficPolicyTypeLocal
 
-	result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	result := l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
@@ -1005,7 +1004,7 @@ func TestEnsureInternalLoadBalancerErrors(t *testing.T) {
 			if tc.injectMock != nil {
 				tc.injectMock(fakeGCE.Compute().(*cloud.MockGCE))
 			}
-			result := l4.EnsureInternalLoadBalancer(nodeNames, params.service)
+			result := l4.EnsureInternalLoadBalancer(nodeNames, params.service, nil)
 			if result.Error == nil {
 				t.Errorf("Expected error when %s", desc)
 			}
@@ -1082,7 +1081,7 @@ func TestEnsureInternalLoadBalancerEnableGlobalAccess(t *testing.T) {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
 	frName := l4.GetFRName()
-	result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	result := l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
@@ -1093,7 +1092,7 @@ func TestEnsureInternalLoadBalancerEnableGlobalAccess(t *testing.T) {
 
 	// Change service to include the global access annotation
 	svc.Annotations[gce.ServiceAnnotationILBAllowGlobalAccess] = "true"
-	result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	result = l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
@@ -1121,7 +1120,7 @@ func TestEnsureInternalLoadBalancerEnableGlobalAccess(t *testing.T) {
 	}
 	// remove the annotation and disable global access.
 	delete(svc.Annotations, gce.ServiceAnnotationILBAllowGlobalAccess)
-	result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	result = l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
@@ -1171,7 +1170,7 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 	if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
-	result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	result := l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
@@ -1207,7 +1206,7 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 	requestedIP := "4.5.6.7"
 	svc.Annotations[gce.ServiceAnnotationILBSubnet] = subnetNames[0]
 	svc.Spec.LoadBalancerIP = requestedIP
-	result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	result = l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 	if err != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", err)
 	}
@@ -1221,7 +1220,7 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 
 	// Change to a different subnet
 	svc.Annotations[gce.ServiceAnnotationILBSubnet] = subnetNames[1]
-	result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	result = l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
@@ -1235,7 +1234,7 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 
 	// Verify new annotation "networking.gke.io/load-balancer-subnet" works and get prioritized.
 	svc.Annotations[annotations.CustomSubnetAnnotationKey] = subnetNames[2]
-	result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	result = l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
@@ -1250,7 +1249,7 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 	// remove both annotations - ILB should revert to default subnet.
 	delete(svc.Annotations, gce.ServiceAnnotationILBSubnet)
 	delete(svc.Annotations, annotations.CustomSubnetAnnotationKey)
-	result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	result = l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
@@ -1316,7 +1315,7 @@ func TestDualStackILBBadCustomSubnet(t *testing.T) {
 
 			svc.Annotations[annotations.CustomSubnetAnnotationKey] = customBadSubnetName
 
-			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			result := l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 			if result.Error == nil {
 				t.Fatalf("Expected error ensuring internal dualstack loadbalancer in bad subnet, got: %v", result.Error)
 			}
@@ -1369,7 +1368,7 @@ func TestInternalLBBadCustomSubnet(t *testing.T) {
 				}
 			}
 
-			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			result := l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 			if tc.existingSubnetwork {
 				if result.Error != nil {
 					t.Errorf("Unexpected error when existing subnet specified: %v", result.Error)
@@ -1522,7 +1521,7 @@ func TestEnsureInternalLoadBalancerModifyProtocol(t *testing.T) {
 	}
 
 	frName := l4.getFRNameWithProtocol("TCP")
-	result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	result := l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
@@ -1543,7 +1542,7 @@ func TestEnsureInternalLoadBalancerModifyProtocol(t *testing.T) {
 	}
 	// change the protocol to UDP
 	svc.Spec.Ports[0].Protocol = v1.ProtocolUDP
-	result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	result = l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
@@ -1665,7 +1664,7 @@ func TestDualStackInternalLoadBalancerModifyProtocol(t *testing.T) {
 				t.Errorf("Unexpected error when adding nodes %v", err)
 			}
 
-			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			result := l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 			if result.Error != nil {
 				t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 			}
@@ -1674,7 +1673,7 @@ func TestDualStackInternalLoadBalancerModifyProtocol(t *testing.T) {
 
 			// Change Protocol and trigger sync
 			svc.Spec.Ports[0].Protocol = v1.ProtocolUDP
-			result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			result = l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 			if result.Error != nil {
 				t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 			}
@@ -1726,7 +1725,7 @@ func TestDualStackInternalLoadBalancerModifyPorts(t *testing.T) {
 			svc := test.NewL4ILBDualStackService(8080, v1.ProtocolTCP, tc.ipFamilies, v1.ServiceExternalTrafficPolicyTypeCluster)
 			l4 := mustSetupILBTestHandler(t, svc, nodeNames)
 
-			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			result := l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 			if result.Error != nil {
 				t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 			}
@@ -1735,7 +1734,7 @@ func TestDualStackInternalLoadBalancerModifyPorts(t *testing.T) {
 
 			// Change Protocol and trigger sync
 			svc.Spec.Ports[0].Port = 80
-			result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			result = l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 			if result.Error != nil {
 				t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 			}
@@ -1771,7 +1770,7 @@ func TestEnsureInternalLoadBalancerAllPorts(t *testing.T) {
 	if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
-	result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	result := l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
@@ -1800,7 +1799,7 @@ func TestEnsureInternalLoadBalancerAllPorts(t *testing.T) {
 		{Name: "testport", Port: int32(8300), Protocol: "TCP"},
 		{Name: "testport", Port: int32(8400), Protocol: "TCP"},
 	}
-	result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	result = l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
@@ -1826,7 +1825,7 @@ func TestEnsureInternalLoadBalancerAllPorts(t *testing.T) {
 		{Name: "testport", Port: int32(8400), Protocol: "TCP"},
 	}
 	expectPorts := []string{"8090", "8100", "8300", "8400"}
-	result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	result = l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
@@ -1897,7 +1896,7 @@ func TestEnsureInternalDualStackLoadBalancer(t *testing.T) {
 			svc := test.NewL4ILBDualStackService(8080, v1.ProtocolTCP, tc.ipFamilies, tc.trafficPolicy)
 			l4 := mustSetupILBTestHandler(t, svc, nodeNames)
 
-			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			result := l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 			if result.Error != nil {
 				t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 			}
@@ -2083,7 +2082,7 @@ func TestDualStackILBTransitions(t *testing.T) {
 
 			l4 := mustSetupILBTestHandler(t, svc, nodeNames)
 
-			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			result := l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 			svc.Annotations = result.Annotations
 			assertDualStackILBResources(t, l4, nodeNames)
 
@@ -2091,7 +2090,7 @@ func TestDualStackILBTransitions(t *testing.T) {
 			finalSvc.Annotations = svc.Annotations
 			l4.Service = finalSvc
 
-			result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			result = l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 			finalSvc.Annotations = result.Annotations
 			assertDualStackILBResources(t, l4, nodeNames)
 
@@ -2129,7 +2128,7 @@ func TestDualStackILBSyncIgnoresNoAnnotationIPv6Resources(t *testing.T) {
 	l4 := mustSetupILBTestHandler(t, svc, nodeNames)
 
 	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol}
-	result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	result := l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 	svc.Annotations = result.Annotations
 	assertDualStackILBResources(t, l4, nodeNames)
 
@@ -2141,7 +2140,7 @@ func TestDualStackILBSyncIgnoresNoAnnotationIPv6Resources(t *testing.T) {
 	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv4Protocol}
 
 	// Run new sync. Controller should not delete resources, if they don't exist in annotation
-	result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	result = l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 	svc.Annotations = result.Annotations
 
 	ipv6FWName := l4.namer.L4IPv6Firewall(l4.Service.Namespace, l4.Service.Name)
@@ -2170,7 +2169,7 @@ func TestDualStackILBSyncIgnoresNoAnnotationIPv4Resources(t *testing.T) {
 	l4 := mustSetupILBTestHandler(t, svc, nodeNames)
 
 	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
-	result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	result := l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 	svc.Annotations = result.Annotations
 	assertDualStackILBResources(t, l4, nodeNames)
 
@@ -2182,7 +2181,7 @@ func TestDualStackILBSyncIgnoresNoAnnotationIPv4Resources(t *testing.T) {
 	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol}
 
 	// Run new sync. Controller should not delete resources, if they don't exist in annotation
-	result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	result = l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 	svc.Annotations = result.Annotations
 
 	// Verify IPv6 Firewall was not deleted
@@ -2261,7 +2260,7 @@ func TestDualStackILBStaticIPAnnotation(t *testing.T) {
 			svc.Annotations[annotations.StaticL4AddressesAnnotationKey] = tc.staticAnnotationVal
 
 			svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
-			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			result := l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 			if result.Error != nil {
 				t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 			}
@@ -2372,7 +2371,7 @@ func TestWeightedILB(t *testing.T) {
 				t.Errorf("Unexpected error when adding nodes %v", err)
 			}
 
-			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			result := l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 			if result.Error != nil {
 				t.Fatalf("Failed to ensure internal loadBalancer, err %v", result.Error)
 			}
@@ -2458,7 +2457,7 @@ func TestZonalAffinity(t *testing.T) {
 				t.Errorf("Unexpected error when adding nodes %v", err)
 			}
 
-			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			result := l4.EnsureInternalLoadBalancer(nodeNames, svc, nil)
 			if result.Error != nil {
 				t.Fatalf("Failed to ensure internal loadBalancer, err %v", result.Error)
 			}
@@ -3042,157 +3041,5 @@ func createVMInstanceWithTag(t *testing.T, fakeGCE *gce.Cloud, name, tag string)
 		})
 	if err != nil {
 		t.Errorf("failed to create instance err=%v", err)
-	}
-}
-
-func TestILBLogging(t *testing.T) {
-	t.Parallel()
-
-	testCases := []struct {
-		desc           string
-		annotations    map[string]string
-		wantLogConfig  bool
-		wantSampleRate float64
-		wantError      bool
-	}{
-		{
-			desc:          "None of logging annotations added",
-			wantLogConfig: false,
-			wantError:     false,
-		},
-		{
-			desc: "Logging explicitly disabled",
-			annotations: map[string]string{
-				annotations.L4LBLoggingAnnotationKey: "",
-			},
-			wantLogConfig: false,
-			wantError:     false,
-		},
-		{
-			desc: "Only sample rate provided, logging not enabled",
-			annotations: map[string]string{
-				annotations.L4LBLoggingSampleRateAnnotationKey: "1",
-			},
-			wantLogConfig: false,
-			wantError:     false,
-		},
-		{
-			desc: "Invalid sample rate provided, logging not enabled",
-			annotations: map[string]string{
-				annotations.L4LBLoggingSampleRateAnnotationKey: "invalid",
-			},
-			wantLogConfig: false,
-			wantError:     false,
-		},
-		{
-			desc: "Logging enabled, sample rate not specified",
-			annotations: map[string]string{
-				annotations.L4LBLoggingAnnotationKey: annotations.L4LBLoggingEnabled,
-			},
-			wantLogConfig:  true,
-			wantSampleRate: 1,
-		},
-		{
-			desc: "Logging enabled, sample rate provided",
-			annotations: map[string]string{
-				annotations.L4LBLoggingAnnotationKey:           annotations.L4LBLoggingEnabled,
-				annotations.L4LBLoggingSampleRateAnnotationKey: "0.5",
-			},
-			wantLogConfig:  true,
-			wantSampleRate: 0.5,
-		},
-		{
-			desc: "Logging enabled, invalid sample rate",
-			annotations: map[string]string{
-				annotations.L4LBLoggingAnnotationKey:           annotations.L4LBLoggingEnabled,
-				annotations.L4LBLoggingSampleRateAnnotationKey: "invalid",
-			},
-			wantError: true,
-		},
-		{
-			desc: "Logging enabled, negative sample rate",
-			annotations: map[string]string{
-				annotations.L4LBLoggingAnnotationKey:           annotations.L4LBLoggingEnabled,
-				annotations.L4LBLoggingSampleRateAnnotationKey: "-0.1",
-			},
-			wantError: true,
-		},
-		{
-			desc: "Logging enabled, sample rate exceeds 100%",
-			annotations: map[string]string{
-				annotations.L4LBLoggingAnnotationKey:           annotations.L4LBLoggingEnabled,
-				annotations.L4LBLoggingSampleRateAnnotationKey: "1.1",
-			},
-			wantError: true,
-		},
-	}
-
-	for _, tc := range testCases {
-		tc := tc
-		t.Run(tc.desc, func(t *testing.T) {
-			t.Parallel()
-			flags.F.EnableL4LBLoggingAnnotations = true
-
-			svc := test.NewL4ILBService(false, 8080)
-			for annotation, value := range tc.annotations {
-				svc.Annotations[annotation] = value
-			}
-
-			nodeNames := []string{"test-node-1"}
-			vals := gce.DefaultTestClusterValues()
-			fakeGCE := getFakeGCECloud(vals)
-
-			namer := namer_util.NewL4Namer(kubeSystemUID, nil)
-
-			networkInfo := network.DefaultNetwork(fakeGCE)
-
-			l4ilbParams := &L4ILBParams{
-				Service:         svc,
-				Cloud:           fakeGCE,
-				Namer:           namer,
-				Recorder:        record.NewFakeRecorder(100),
-				NetworkResolver: network.NewFakeResolver(networkInfo),
-			}
-			l4 := NewL4Handler(l4ilbParams, klog.TODO())
-			l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
-
-			if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
-				t.Errorf("Unexpected error when adding nodes %v", err)
-			}
-
-			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
-			if result.Error != nil {
-				if !tc.wantError {
-					t.Errorf("Failed to ensure internal loadBalancer, err %v", result.Error)
-				}
-				return
-			}
-			if tc.wantError {
-				t.Errorf("Want error during ensuring internal loadBalancer, got nil")
-			}
-
-			backendServiceName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
-			key := meta.RegionalKey(backendServiceName, l4.cloud.Region())
-			bs, err := composite.GetBackendService(l4.cloud, key, meta.VersionGA, klog.TODO())
-			if err != nil {
-				t.Fatalf("Failed to read BackendService, %v", err)
-			}
-
-			if bs.LogConfig == nil {
-				if tc.wantLogConfig {
-					t.Errorf("Want LogConfig to be populated")
-				}
-				return
-			}
-
-			enableLoggingString := tc.annotations[annotations.L4LBLoggingAnnotationKey]
-			wantEnableLogging := enableLoggingString == annotations.L4LBLoggingEnabled
-			if bs.LogConfig.Enable != wantEnableLogging {
-				t.Errorf("Invalid logging state: want to be enabled: %v, got %v", wantEnableLogging, bs.LogConfig.Enable)
-			}
-			if bs.LogConfig.SampleRate != tc.wantSampleRate {
-				t.Errorf("Invalid logging sample rate: want %v, got %v", tc.wantSampleRate, bs.LogConfig.SampleRate)
-			}
-		})
 	}
 }

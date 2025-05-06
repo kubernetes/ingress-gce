@@ -32,6 +32,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
+	"k8s.io/ingress-gce/pkg/common/operator"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/instancegroups"
@@ -173,7 +174,41 @@ func NewL4NetLBController(
 		},
 	})
 
+	ctx.ConfigMapInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			configMap, ok := obj.(*v1.ConfigMap)
+			if ok {
+				l4netLBc.enqueueServicesReferencingConfigMap(configMap)
+			}
+		},
+		UpdateFunc: func(_, obj interface{}) {
+			configMap, ok := obj.(*v1.ConfigMap)
+			if ok {
+				l4netLBc.enqueueServicesReferencingConfigMap(configMap)
+			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			configMap, ok := obj.(*v1.ConfigMap)
+			if ok {
+				l4netLBc.enqueueServicesReferencingConfigMap(configMap)
+			}
+		},
+	})
+
 	return l4netLBc
+}
+
+func (lc *L4NetLBController) enqueueServicesReferencingConfigMap(configMap *v1.ConfigMap) {
+	services := operator.Services(lc.ctx.Services().List(), lc.logger).ReferencesL4LoggingConfigMap(configMap).AsList()
+	for _, svc := range services {
+		svcKey := utils.ServiceKeyFunc(svc.Namespace, svc.Name)
+		svcLogger := lc.logger.WithValues("serviceKey", svcKey)
+		if shouldProcess, _ := lc.shouldProcessService(svc, nil, svcLogger); shouldProcess {
+			lc.serviceVersions.SetLastUpdateSeen(svcKey, svc.ResourceVersion, svcLogger)
+			lc.svcQueue.Enqueue(svc)
+		}
+	}
+	lc.enqueueTracker.Track()
 }
 
 // needsAddition checks if given service should be added by controller
@@ -599,7 +634,7 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 
 	// Use the same function for both create and updates. If controller crashes and restarts,
 	// all existing services will show up as Service Adds.
-	syncResult := l4netlb.EnsureFrontend(nodeNames, service)
+	syncResult := l4netlb.EnsureFrontend(nodeNames, service, lc.ctx.ConfigMapInformer.GetIndexer())
 	if syncResult.Error != nil {
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
 			"Error ensuring Resource for L4 External LoadBalancer, err: %v", syncResult.Error)

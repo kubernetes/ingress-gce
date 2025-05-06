@@ -27,6 +27,7 @@ import (
 	"google.golang.org/api/compute/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/cloud-provider/service/helpers"
@@ -387,7 +388,7 @@ func (l4 *L4) subnetName() string {
 
 // EnsureInternalLoadBalancer ensures that all GCE resources for the given loadbalancer service have
 // been created. It returns a LoadBalancerStatus with the updated ForwardingRule IP address.
-func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service) *L4ILBSyncResult {
+func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service, configMapLister cache.Store) *L4ILBSyncResult {
 	l4.Service = svc
 
 	startTime := time.Now()
@@ -543,8 +544,8 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 
 	// ensure backend service
 	var logConfig *composite.BackendServiceLogConfig
-	if flags.F.EnableL4LBLoggingAnnotations {
-		logConfig, err = annotations.GetL4LBLoggingConfig(l4.Service)
+	if flags.F.ManageL4LBLogging && configMapLister != nil {
+		logConfig, err = GetL4LoggingConfig(l4.Service, configMapLister)
 		if err != nil {
 			result.GCEResourceInError = annotations.BackendServiceResource
 			result.Error = utils.NewUserError(err)

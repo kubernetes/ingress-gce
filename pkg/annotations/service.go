@@ -20,12 +20,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
-	"k8s.io/ingress-gce/pkg/composite"
 )
 
 const (
@@ -144,11 +142,8 @@ const (
 	// Service annotation value for using pods-per-node Weighted load balancing in both ILB and NetlB
 	WeightedL4AnnotationPodsPerNode = "pods-per-node"
 
-	// Service annotation key for enabling logging for both ILB and NetLB backends
-	L4LBLoggingAnnotationKey = "networking.gke.io/l4lb-logging"
-	L4LBLoggingEnabled       = "enabled"
-	// Service annotation key for specifying sample rate for both ILB and NetLB backends
-	L4LBLoggingSampleRateAnnotationKey = "networking.gke.io/l4lb-logging-sample-rate"
+	// Service annotation key for specifying config map which contains logging config
+	L4LoggingConfigMapKey = "networking.gke.io/l4-logging-config-map"
 )
 
 // NegAnnotation is the format of the annotation associated with the
@@ -334,55 +329,6 @@ func HasLoadBalancerClass(service *v1.Service, key string) bool {
 	return false
 }
 
-// HasL4LBLoggingAnnotation checks if given service has the L4 ILB/NetLB logging annotation
-func HasL4LBLoggingAnnotation(service *v1.Service) bool {
-	if service == nil {
-		return false
-	}
-	if val, ok := service.Annotations[L4LBLoggingAnnotationKey]; ok && val == L4LBLoggingEnabled {
-		return true
-	}
-	return false
-}
-
-// GetL4LBLoggingSampleRate parses logging sample rate for the given service with default equal to 1.
-// If service is nil or sample rate is outside of the [0, 1] range error returned.
-// Note: non-zero sample rate shouldn't enable logging, this should be done explicitly by the L4 ILB/NetLB logging annotation.
-func GetL4LBLoggingSampleRate(service *v1.Service) (float64, error) {
-	if service == nil {
-		return -1, fmt.Errorf("service can't be nil")
-	}
-	strVal, ok := service.Annotations[L4LBLoggingSampleRateAnnotationKey]
-	if !ok {
-		return 1, nil
-	}
-	val, err := strconv.ParseFloat(strVal, 64)
-	if err != nil {
-		return -1, fmt.Errorf("can't parse sample rate \"%s\" - must be value within [0, 1] range", strVal)
-	}
-	if val < 0 || val > 1 {
-		return -1, fmt.Errorf("invalid sample rate: %v - must be within [0, 1] range", val)
-	}
-	return val, nil
-}
-
-// GetL4LBLoggingConfig creates backend service log config based on annotations of the service
-func GetL4LBLoggingConfig(service *v1.Service) (*composite.BackendServiceLogConfig, error) {
-	if !HasL4LBLoggingAnnotation(service) {
-		return nil, nil
-	}
-
-	sampleRate, err := GetL4LBLoggingSampleRate(service)
-	if err != nil {
-		return nil, err
-	}
-	logConfig := &composite.BackendServiceLogConfig{
-		Enable:     true,
-		SampleRate: sampleRate,
-	}
-	return logConfig, nil
-}
-
 // OnlyStatusAnnotationsChanged returns true if the only annotation change between the 2 services is the NEG or ILB
 // resources annotations.
 // Note : This assumes that the annotations in old and new service are different. If they are identical, this will
@@ -524,6 +470,16 @@ func (svc *Service) getBackendConfigAnnotation() (string, bool) {
 		if ok {
 			return val, ok
 		}
+	}
+	return "", false
+}
+
+// GetL4LoggingConfigMapAnnotation returns name of the config map which contains logging config.
+// Returns false if annotation with the name is not specified.
+func (svc *Service) GetL4LoggingConfigMapAnnotation() (string, bool) {
+	val, ok := svc.v[L4LoggingConfigMapKey]
+	if ok {
+		return val, ok
 	}
 	return "", false
 }

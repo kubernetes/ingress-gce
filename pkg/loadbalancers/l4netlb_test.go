@@ -79,7 +79,7 @@ func TestEnsureL4NetLoadBalancer(t *testing.T) {
 	if _, err := test.CreateAndInsertNodes(l4netlb.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
-	result := l4netlb.EnsureFrontend(nodeNames, svc)
+	result := l4netlb.EnsureFrontend(nodeNames, svc, nil)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
@@ -120,7 +120,7 @@ func TestEnsureMultinetL4NetLoadBalancer(t *testing.T) {
 	if _, err := test.CreateAndInsertNodes(l4netlb.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
-	result := l4netlb.EnsureFrontend(nodeNames, svc)
+	result := l4netlb.EnsureFrontend(nodeNames, svc, nil)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
@@ -156,7 +156,7 @@ func TestDeleteL4NetLoadBalancer(t *testing.T) {
 	if _, err := test.CreateAndInsertNodes(l4NetLB.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
-	result := l4NetLB.EnsureFrontend(nodeNames, svc)
+	result := l4NetLB.EnsureFrontend(nodeNames, svc, nil)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
@@ -222,7 +222,7 @@ func TestHealthCheckFirewallDeletionWithILB(t *testing.T) {
 	l4NetLB.healthChecks = l4ilb.healthChecks
 
 	// create netlb resources
-	result := l4NetLB.EnsureFrontend(nodeNames, netlbSvc)
+	result := l4NetLB.EnsureFrontend(nodeNames, netlbSvc, nil)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
@@ -280,7 +280,7 @@ func TestMetricsForStandardNetworkTier(t *testing.T) {
 	if _, err := test.CreateAndInsertNodes(l4netlb.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
-	result := l4netlb.EnsureFrontend(nodeNames, svc)
+	result := l4netlb.EnsureFrontend(nodeNames, svc, nil)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
@@ -289,7 +289,7 @@ func TestMetricsForStandardNetworkTier(t *testing.T) {
 	}
 	// Check that service sync will return error if User Address IP Network Tier mismatch with service Network Tier.
 	svc.ObjectMeta.Annotations[annotations.NetworkTierAnnotationKey] = string(cloud.NetworkTierPremium)
-	result = l4netlb.EnsureFrontend(nodeNames, svc)
+	result = l4netlb.EnsureFrontend(nodeNames, svc, nil)
 	if result.Error == nil || !utils.IsNetworkTierError(result.Error) {
 		t.Errorf("LoadBalancer sync should return Network Tier error, err %v", result.Error)
 	}
@@ -305,7 +305,7 @@ func TestMetricsForStandardNetworkTier(t *testing.T) {
 	svc.Spec.LoadBalancerIP = usersIPPremium
 	delete(svc.ObjectMeta.Annotations, annotations.NetworkTierAnnotationKey)
 
-	result = l4netlb.EnsureFrontend(nodeNames, svc)
+	result = l4netlb.EnsureFrontend(nodeNames, svc, nil)
 	if result.Error == nil || !utils.IsNetworkTierError(result.Error) {
 		t.Errorf("LoadBalancer sync should return Network Tier error, err %v", result.Error)
 	}
@@ -422,7 +422,7 @@ func TestEnsureExternalDualStackLoadBalancer(t *testing.T) {
 			svc := test.NewL4NetLBRBSDualStackService(v1.ProtocolTCP, tc.ipFamilies, tc.trafficPolicy)
 			l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
 
-			result := l4NetLB.EnsureFrontend(nodeNames, svc)
+			result := l4NetLB.EnsureFrontend(nodeNames, svc, nil)
 			if result.Error != nil {
 				t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 			}
@@ -448,14 +448,14 @@ func TestEnsureDualStackNetLBNetworkTierChange(t *testing.T) {
 	l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
 
 	// Ensure dualstack load balancer with Standard Network Tier and verify it did not synced successfully.
-	result := l4NetLB.EnsureFrontend(nodeNames, svc)
+	result := l4NetLB.EnsureFrontend(nodeNames, svc, nil)
 	if _, ok := result.Error.(*utils.UnsupportedNetworkTierError); !ok {
 		t.Errorf("Expected error to be of type *utils.UnsupportedNetworkTierError, got %T", result.Error)
 	}
 
 	// Change network Tier to Premium, and trigger sync.
 	svc.Annotations[annotations.NetworkTierAnnotationKey] = "Premium"
-	result = l4NetLB.EnsureFrontend(nodeNames, svc)
+	result = l4NetLB.EnsureFrontend(nodeNames, svc, nil)
 	if result.Error == nil {
 		// This is buggy existing behaviour. Switching Network Tier (even before DualStack),
 		// returns error on the first sync. However, after that it immediately resyncs,
@@ -463,7 +463,7 @@ func TestEnsureDualStackNetLBNetworkTierChange(t *testing.T) {
 		// but in separate PR.
 		t.Errorf("Expected error on the first sync after switching network tier, got %v", result.Error)
 	}
-	result = l4NetLB.EnsureFrontend(nodeNames, svc)
+	result = l4NetLB.EnsureFrontend(nodeNames, svc, nil)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
@@ -542,7 +542,7 @@ func TestDualStackNetLBTransitions(t *testing.T) {
 
 			l4NetLB.cloud.Compute().(*cloud.MockGCE).MockForwardingRules.DeleteHook = assertAddressOldReservedHook(t, l4NetLB.cloud)
 
-			result := l4NetLB.EnsureFrontend(nodeNames, svc)
+			result := l4NetLB.EnsureFrontend(nodeNames, svc, nil)
 			svc.Annotations = result.Annotations
 			assertDualStackNetLBResources(t, l4NetLB, nodeNames)
 
@@ -550,7 +550,7 @@ func TestDualStackNetLBTransitions(t *testing.T) {
 			finalSvc.Annotations = svc.Annotations
 			l4NetLB.Service = finalSvc
 
-			result = l4NetLB.EnsureFrontend(nodeNames, svc)
+			result = l4NetLB.EnsureFrontend(nodeNames, svc, nil)
 			finalSvc.Annotations = result.Annotations
 			assertDualStackNetLBResources(t, l4NetLB, nodeNames)
 
@@ -589,7 +589,7 @@ func TestDualStackNetLBSyncIgnoresNoAnnotationIPv6Resources(t *testing.T) {
 	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol}
 	l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
 
-	result := l4NetLB.EnsureFrontend(nodeNames, svc)
+	result := l4NetLB.EnsureFrontend(nodeNames, svc, nil)
 	svc.Annotations = result.Annotations
 
 	// Delete IPv4 resources annotation
@@ -600,7 +600,7 @@ func TestDualStackNetLBSyncIgnoresNoAnnotationIPv6Resources(t *testing.T) {
 	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol}
 
 	// Run new sync. Controller should not delete resources, if they don't exist in annotation
-	result = l4NetLB.EnsureFrontend(nodeNames, svc)
+	result = l4NetLB.EnsureFrontend(nodeNames, svc, nil)
 	svc.Annotations = result.Annotations
 
 	// Verify IPv4 Firewall was not deleted
@@ -630,7 +630,7 @@ func TestDualStackNetLBSyncIgnoresNoAnnotationIPv4Resources(t *testing.T) {
 	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
 	l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
 
-	result := l4NetLB.EnsureFrontend(nodeNames, svc)
+	result := l4NetLB.EnsureFrontend(nodeNames, svc, nil)
 	svc.Annotations = result.Annotations
 	assertDualStackNetLBResources(t, l4NetLB, nodeNames)
 
@@ -642,7 +642,7 @@ func TestDualStackNetLBSyncIgnoresNoAnnotationIPv4Resources(t *testing.T) {
 	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol}
 
 	// Run new sync. Controller should not delete resources, if they don't exist in annotation
-	result = l4NetLB.EnsureFrontend(nodeNames, svc)
+	result = l4NetLB.EnsureFrontend(nodeNames, svc, nil)
 	svc.Annotations = result.Annotations
 
 	// Verify IPv4 Firewall was not deleted
@@ -677,7 +677,7 @@ func TestEnsureIPv6ExternalLoadBalancerCustomSubnet(t *testing.T) {
 	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
 	l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
 
-	result := l4NetLB.EnsureFrontend(nodeNames, l4NetLB.Service)
+	result := l4NetLB.EnsureFrontend(nodeNames, l4NetLB.Service, nil)
 	if result.Error != nil {
 		t.Fatalf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
@@ -696,7 +696,7 @@ func TestEnsureIPv6ExternalLoadBalancerCustomSubnet(t *testing.T) {
 		t.Fatalf("Failed to create subnet, error: %v", err)
 	}
 	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "test-subnet"
-	result = l4NetLB.EnsureFrontend(nodeNames, svc)
+	result = l4NetLB.EnsureFrontend(nodeNames, svc, nil)
 	if result.Error != nil {
 		t.Fatalf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
@@ -710,7 +710,7 @@ func TestEnsureIPv6ExternalLoadBalancerCustomSubnet(t *testing.T) {
 		t.Fatalf("Failed to create subnet, error: %v", err)
 	}
 	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "another-subnet"
-	result = l4NetLB.EnsureFrontend(nodeNames, svc)
+	result = l4NetLB.EnsureFrontend(nodeNames, svc, nil)
 	if result.Error != nil {
 		t.Fatalf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
@@ -719,7 +719,7 @@ func TestEnsureIPv6ExternalLoadBalancerCustomSubnet(t *testing.T) {
 
 	// remove the annotation - NetLB should revert to default subnet.
 	delete(svc.Annotations, annotations.CustomSubnetAnnotationKey)
-	result = l4NetLB.EnsureFrontend(nodeNames, svc)
+	result = l4NetLB.EnsureFrontend(nodeNames, svc, nil)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
@@ -777,7 +777,7 @@ func TestDualStackNetLBBadCustomSubnet(t *testing.T) {
 
 			svc.Annotations[annotations.CustomSubnetAnnotationKey] = customBadSubnetName
 
-			result := l4NetLB.EnsureFrontend(nodeNames, svc)
+			result := l4NetLB.EnsureFrontend(nodeNames, svc, nil)
 			if result.Error == nil {
 				t.Fatalf("Expected error ensuring external dualstack loadbalancer in bad subnet, got: %v", result.Error)
 			}
@@ -839,7 +839,7 @@ func TestDualStackNetLBNetworkTier(t *testing.T) {
 			svc.Annotations[annotations.NetworkTierAnnotationKey] = tc.networkTier
 			svc.Spec.IPFamilies = tc.ipFamilies
 
-			result := l4NetLB.EnsureFrontend(nodeNames, svc)
+			result := l4NetLB.EnsureFrontend(nodeNames, svc, nil)
 			if tc.returnError {
 				if result.Error == nil {
 					t.Fatalf("Expected an error to be returned when ensuring the external load balancer, but the call succeeded unexpectedly.")
@@ -911,7 +911,7 @@ func TestDualStackNetLBStaticIPAnnotation(t *testing.T) {
 			svc.Annotations[annotations.StaticL4AddressesAnnotationKey] = tc.staticAnnotationVal
 			svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol}
 
-			result := l4NetLB.EnsureFrontend(nodeNames, svc)
+			result := l4NetLB.EnsureFrontend(nodeNames, svc, nil)
 			if result.Error != nil {
 				t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 			}
@@ -1090,7 +1090,7 @@ func ensureLoadBalancer(port int, vals gce.TestClusterValues, fakeGCE *gce.Cloud
 	l4NetLB := NewL4NetLB(l4NetLBParams, klog.TODO())
 	l4NetLB.healthChecks = healthchecksl4.Fake(fakeGCE, l4NetLBParams.Recorder)
 
-	result := l4NetLB.EnsureFrontend(emptyNodes, svc)
+	result := l4NetLB.EnsureFrontend(emptyNodes, svc, nil)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
@@ -1244,7 +1244,7 @@ func TestWeightedNetLB(t *testing.T) {
 			l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
 			l4NetLB.enableWeightedLB = tc.weightedFlagEnabled
 
-			result := l4NetLB.EnsureFrontend(nodeNames, svc)
+			result := l4NetLB.EnsureFrontend(nodeNames, svc, nil)
 			if result.Error != nil {
 				t.Fatalf("Failed to ensure loadBalancer, err %v", result.Error)
 			}
@@ -1742,137 +1742,5 @@ func assertAddressOldReservedHook(t *testing.T, gceCloud *gce.Cloud) func(ctx co
 		}
 
 		return false, nil
-	}
-}
-
-func TestNetLBLogging(t *testing.T) {
-	t.Parallel()
-
-	testCases := []struct {
-		desc           string
-		annotations    map[string]string
-		wantLogConfig  bool
-		wantSampleRate float64
-		wantError      bool
-	}{
-		{
-			desc:          "None of logging annotations added",
-			wantLogConfig: false,
-			wantError:     false,
-		},
-		{
-			desc: "Logging explicitly disabled",
-			annotations: map[string]string{
-				annotations.L4LBLoggingAnnotationKey: "",
-			},
-			wantLogConfig: false,
-			wantError:     false,
-		},
-		{
-			desc: "Only sample rate provided, logging not enabled",
-			annotations: map[string]string{
-				annotations.L4LBLoggingSampleRateAnnotationKey: "1",
-			},
-			wantLogConfig: false,
-			wantError:     false,
-		},
-		{
-			desc: "Invalid sample rate provided, logging not enabled",
-			annotations: map[string]string{
-				annotations.L4LBLoggingSampleRateAnnotationKey: "invalid",
-			},
-			wantLogConfig: false,
-			wantError:     false,
-		},
-		{
-			desc: "Logging enabled, sample rate not specified",
-			annotations: map[string]string{
-				annotations.L4LBLoggingAnnotationKey: annotations.L4LBLoggingEnabled,
-			},
-			wantLogConfig:  true,
-			wantSampleRate: 1,
-		},
-		{
-			desc: "Logging enabled, sample rate provided",
-			annotations: map[string]string{
-				annotations.L4LBLoggingAnnotationKey:           annotations.L4LBLoggingEnabled,
-				annotations.L4LBLoggingSampleRateAnnotationKey: "0.5",
-			},
-			wantLogConfig:  true,
-			wantSampleRate: 0.5,
-		},
-		{
-			desc: "Logging enabled, invalid sample rate",
-			annotations: map[string]string{
-				annotations.L4LBLoggingAnnotationKey:           annotations.L4LBLoggingEnabled,
-				annotations.L4LBLoggingSampleRateAnnotationKey: "invalid",
-			},
-			wantError: true,
-		},
-		{
-			desc: "Logging enabled, negative sample rate",
-			annotations: map[string]string{
-				annotations.L4LBLoggingAnnotationKey:           annotations.L4LBLoggingEnabled,
-				annotations.L4LBLoggingSampleRateAnnotationKey: "-0.1",
-			},
-			wantError: true,
-		},
-		{
-			desc: "Logging enabled, sample rate exceeds 100%",
-			annotations: map[string]string{
-				annotations.L4LBLoggingAnnotationKey:           annotations.L4LBLoggingEnabled,
-				annotations.L4LBLoggingSampleRateAnnotationKey: "1.1",
-			},
-			wantError: true,
-		},
-	}
-
-	for _, tc := range testCases {
-		tc := tc
-		t.Run(tc.desc, func(t *testing.T) {
-			flags.F.EnableL4LBLoggingAnnotations = true
-
-			svc := test.NewL4NetLBRBSService(8080)
-			for annotation, value := range tc.annotations {
-				svc.Annotations[annotation] = value
-			}
-
-			nodeNames := []string{"test-node-1"}
-			l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
-
-			result := l4NetLB.EnsureFrontend(nodeNames, svc)
-			if result.Error != nil {
-				if !tc.wantError {
-					t.Errorf("Failed to ensure internal loadBalancer, err %v", result.Error)
-				}
-				return
-			}
-			if tc.wantError {
-				t.Errorf("Want error during ensuring internal loadBalancer, got nil")
-			}
-
-			backendServiceName := l4NetLB.namer.L4Backend(l4NetLB.Service.Namespace, l4NetLB.Service.Name)
-			key := meta.RegionalKey(backendServiceName, l4NetLB.cloud.Region())
-			bs, err := composite.GetBackendService(l4NetLB.cloud, key, meta.VersionGA, klog.TODO())
-			if err != nil {
-				t.Fatalf("Failed to read BackendService, %v", err)
-			}
-
-			if bs.LogConfig == nil {
-				if tc.wantLogConfig {
-					t.Errorf("Want LogConfig to be populated")
-				}
-				return
-			}
-
-			enableLoggingString := tc.annotations[annotations.L4LBLoggingAnnotationKey]
-			wantEnableLogging := enableLoggingString == annotations.L4LBLoggingEnabled
-			if bs.LogConfig.Enable != wantEnableLogging {
-				t.Errorf("Invalid logging state: want to be enabled: %v, got %v", wantEnableLogging, bs.LogConfig.Enable)
-			}
-			if bs.LogConfig.SampleRate != tc.wantSampleRate {
-				t.Errorf("Invalid logging sample rate: want %v, got %v", tc.wantSampleRate, bs.LogConfig.SampleRate)
-			}
-		})
 	}
 }
