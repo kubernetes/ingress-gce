@@ -35,6 +35,7 @@ import (
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/healthchecksl4"
 	"k8s.io/ingress-gce/pkg/metrics"
@@ -541,6 +542,16 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	enableZonalAffinity := l4.requireZonalAffinity(svc)
 
 	// ensure backend service
+	var logConfig *composite.BackendServiceLogConfig
+	if flags.F.EnableL4LBLoggingAnnotations {
+		logConfig, err = annotations.GetL4LBLoggingConfig(l4.Service)
+		if err != nil {
+			result.GCEResourceInError = annotations.BackendServiceResource
+			result.Error = utils.NewUserError(err)
+			return result
+		}
+	}
+
 	backendParams := backends.L4BackendServiceParams{
 		Name:                     bsName,
 		HealthCheckLink:          hcLink,
@@ -552,7 +563,9 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		ConnectionTrackingPolicy: noConnectionTrackingPolicy,
 		EnableZonalAffinity:      enableZonalAffinity,
 		LocalityLbPolicy:         localityLbPolicy,
+		LogConfig:                logConfig,
 	}
+
 	bs, bsSyncStatus, err := l4.backendPool.EnsureL4BackendService(backendParams, l4.svcLogger)
 	result.ResourceUpdates.SetBackendService(bsSyncStatus)
 	if err != nil {
