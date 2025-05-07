@@ -27,7 +27,9 @@ import (
 
 	firewallcrclient "github.com/GoogleCloudPlatform/gke-networking-api/client/gcpfirewall/clientset/versioned"
 	networkclient "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned"
+	informernetwork "github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions"
 	nodetopologyclient "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned"
+	informernodetopology "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions"
 	k8scp "github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	flag "github.com/spf13/pflag"
 	crdclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -53,6 +55,7 @@ import (
 	serviceattachmentclient "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/svcneg"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
+	informersvcneg "k8s.io/ingress-gce/pkg/svcneg/client/informers/externalversions"
 	"k8s.io/ingress-gce/pkg/systemhealth"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
@@ -256,6 +259,18 @@ func main() {
 				klog.Fatalf("Failed to create ProviderConfig client: %v", err)
 			}
 			informersFactory := informers.NewSharedInformerFactory(kubeClient, flags.F.ResyncPeriod)
+			var svcNegFactory informersvcneg.SharedInformerFactory
+			if svcNegClient != nil {
+				svcNegFactory = informersvcneg.NewSharedInformerFactory(svcNegClient, flags.F.ResyncPeriod)
+			}
+			var networkFactory informernetwork.SharedInformerFactory
+			if networkClient != nil {
+				networkFactory = informernetwork.NewSharedInformerFactory(networkClient, flags.F.ResyncPeriod)
+			}
+			var nodeTopologyFactory informernodetopology.SharedInformerFactory
+			if nodeTopologyClient != nil {
+				nodeTopologyFactory = informernodetopology.NewSharedInformerFactory(nodeTopologyClient, flags.F.ResyncPeriod)
+			}
 			if flags.F.LeaderElection.LeaderElect {
 				err := multiprojectstart.StartWithLeaderElection(
 					context.Background(),
@@ -268,6 +283,9 @@ func main() {
 					eventRecorderKubeClient,
 					providerConfigClient,
 					informersFactory,
+					svcNegFactory,
+					networkFactory,
+					nodeTopologyFactory,
 					gceCreator,
 					namer,
 					stopCh,
@@ -284,6 +302,9 @@ func main() {
 					eventRecorderKubeClient,
 					providerConfigClient,
 					informersFactory,
+					svcNegFactory,
+					networkFactory,
+					nodeTopologyFactory,
 					gceCreator,
 					namer,
 					stopCh,

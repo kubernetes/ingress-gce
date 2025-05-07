@@ -4,9 +4,9 @@ import (
 	"fmt"
 
 	networkclient "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned"
-	informernetwork "github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions/network/v1"
+	informernetwork "github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions"
 	nodetopologyclient "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned"
-	informernodetopology "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions/nodetopology/v1"
+	informernodetopology "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
@@ -20,7 +20,7 @@ import (
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
-	informersvcneg "k8s.io/ingress-gce/pkg/svcneg/client/informers/externalversions/svcneg/v1beta1"
+	informersvcneg "k8s.io/ingress-gce/pkg/svcneg/client/informers/externalversions"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -33,9 +33,12 @@ import (
 // specific to this ProviderConfig's controller.
 func StartNEGController(
 	informersFactory informers.SharedInformerFactory,
+	svcNegFactory informersvcneg.SharedInformerFactory,
+	networkFactory informernetwork.SharedInformerFactory,
+	nodeTopologyFactory informernodetopology.SharedInformerFactory,
 	kubeClient kubernetes.Interface,
-	svcNegClient svcnegclient.Interface,
 	eventRecorderClient kubernetes.Interface,
+	svcNegClient svcnegclient.Interface,
 	networkClient networkclient.Interface,
 	nodeTopologyClient nodetopologyclient.Interface,
 	kubeSystemUID types.UID,
@@ -68,7 +71,7 @@ func StartNEGController(
 		}
 	}()
 
-	informers, hasSynced, err := initializeInformers(informersFactory, svcNegClient, networkClient, nodeTopologyClient, providerConfigName, logger, joinedStopCh)
+	informers, hasSynced, err := initializeInformers(informersFactory, svcNegFactory, networkFactory, nodeTopologyFactory, providerConfigName, logger, joinedStopCh)
 	if err != nil {
 		return nil, err
 	}
@@ -123,9 +126,9 @@ type negInformers struct {
 // and runs them.
 func initializeInformers(
 	informersFactory informers.SharedInformerFactory,
-	svcNegClient svcnegclient.Interface,
-	networkClient networkclient.Interface,
-	nodeTopologyClient nodetopologyclient.Interface,
+	svcNegFactory informersvcneg.SharedInformerFactory,
+	networkFactory informernetwork.SharedInformerFactory,
+	nodeTopologyFactory informernodetopology.SharedInformerFactory,
 	providerConfigName string,
 	logger klog.Logger,
 	joinedStopCh <-chan struct{},
@@ -148,25 +151,24 @@ func initializeInformers(
 	}
 
 	var providerConfigFilteredSvcNegInformer cache.SharedIndexInformer
-	if svcNegClient != nil {
-		svcNegInformer := informersvcneg.NewServiceNetworkEndpointGroupInformer(svcNegClient, flags.F.WatchNamespace, flags.F.ResyncPeriod, utils.NewNamespaceIndexer())
-		svcNegInformer.GetIndexer()
+	if svcNegFactory != nil {
+		svcNegInformer := svcNegFactory.Networking().V1beta1().ServiceNetworkEndpointGroups().Informer()
 		providerConfigFilteredSvcNegInformer = filteredinformer.NewProviderConfigFilteredInformer(svcNegInformer, providerConfigName)
 	}
 
 	var providerConfigFilteredNetworkInformer cache.SharedIndexInformer
 	var providerConfigFilteredGkeNetworkParamsInformer cache.SharedIndexInformer
-	if networkClient != nil {
-		networkInformer := informernetwork.NewNetworkInformer(networkClient, flags.F.ResyncPeriod, utils.NewNamespaceIndexer())
+	if networkFactory != nil {
+		networkInformer := networkFactory.Networking().V1().Networks().Informer()
 		providerConfigFilteredNetworkInformer = filteredinformer.NewProviderConfigFilteredInformer(networkInformer, providerConfigName)
 
-		gkeNetworkParamsInformer := informernetwork.NewGKENetworkParamSetInformer(networkClient, flags.F.ResyncPeriod, utils.NewNamespaceIndexer())
+		gkeNetworkParamsInformer := networkFactory.Networking().V1().GKENetworkParamSets().Informer()
 		providerConfigFilteredGkeNetworkParamsInformer = filteredinformer.NewProviderConfigFilteredInformer(gkeNetworkParamsInformer, providerConfigName)
 	}
 
 	var providerConfigFilteredNodeTopologyInformer cache.SharedIndexInformer
-	if nodeTopologyClient != nil {
-		nodeTopologyInformer := informernodetopology.NewNodeTopologyInformer(nodeTopologyClient, flags.F.ResyncPeriod, utils.NewNamespaceIndexer())
+	if nodeTopologyFactory != nil {
+		nodeTopologyInformer := nodeTopologyFactory.Networking().V1().NodeTopologies().Informer()
 		providerConfigFilteredNodeTopologyInformer = filteredinformer.NewProviderConfigFilteredInformer(nodeTopologyInformer, providerConfigName)
 	}
 

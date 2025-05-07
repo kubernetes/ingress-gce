@@ -8,6 +8,10 @@ import (
 	"testing"
 	"time"
 
+	networkfake "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned/fake"
+	informernetwork "github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions"
+	nodetopologyfake "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned/fake"
+	informernodetopology "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions"
 	corev1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -28,6 +32,7 @@ import (
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	pcclientfake "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned/fake"
 	svcnegfake "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
+	informersvcneg "k8s.io/ingress-gce/pkg/svcneg/client/informers/externalversions"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	klog "k8s.io/klog/v2"
 )
@@ -190,6 +195,8 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 			kubeClient := fake.NewSimpleClientset()
 			pcClient := pcclientfake.NewSimpleClientset()
 			svcNegClient := svcnegfake.NewSimpleClientset()
+			networkClient := networkfake.NewSimpleClientset()
+			nodeTopologyClient := nodetopologyfake.NewSimpleClientset()
 
 			// This simulates the automatic labeling that the real environment does.
 			// ProviderConfig name label is set to the namespace of the object.
@@ -198,6 +205,9 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 			logger := klog.TODO()
 			gceCreator := multiprojectgce.NewGCEFake()
 			informersFactory := informers.NewSharedInformerFactoryWithOptions(kubeClient, flags.F.ResyncPeriod)
+			svcNegFactory := informersvcneg.NewSharedInformerFactoryWithOptions(svcNegClient, flags.F.ResyncPeriod)
+			networkFactory := informernetwork.NewSharedInformerFactoryWithOptions(networkClient, flags.F.ResyncPeriod)
+			nodeTopologyFactory := informernodetopology.NewSharedInformerFactoryWithOptions(nodeTopologyClient, flags.F.ResyncPeriod)
 
 			rootNamer := namer.NewNamer("test-clusteruid", "", logger)
 			kubeSystemUID := types.UID("test-kube-system-uid")
@@ -219,6 +229,9 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 					kubeClient, // eventRecorderKubeClient can be the same as main client
 					pcClient,
 					informersFactory,
+					svcNegFactory,
+					networkFactory,
+					nodeTopologyFactory,
 					gceCreator,
 					rootNamer,
 					stopCh,
