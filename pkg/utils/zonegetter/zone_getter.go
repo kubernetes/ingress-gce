@@ -44,6 +44,11 @@ const (
 	// In NonGCP mode, the ZoneGetter will only return the zone specified
 	// in gce.conf directly.
 	NonGCP
+	// Legacy mode indicates that the cluster is attached to a legacy GCE
+	// network. This is detected when the provided subnetURL is empty.
+	// ZoneGetter will not do any subnet checks and assumes that all nodes
+	// are relevant.
+	Legacy
 )
 
 const (
@@ -51,6 +56,7 @@ const (
 	CandidateNodesFilter           = Filter("CandidateNodesFilter")
 	CandidateAndUnreadyNodesFilter = Filter("CandidateAndUnreadyNodesFilter")
 	EmptyZone                      = ""
+	EmptySubnet                    = ""
 )
 
 var ErrProviderIDNotFound = errors.New("providerID not found")
@@ -117,6 +123,10 @@ func (z *ZoneGetter) ZoneAndSubnetForNode(name string, logger klog.Logger) (stri
 	}
 	if zone == EmptyZone {
 		return EmptyZone, "", nil
+	}
+
+	if z.mode == Legacy {
+		return zone, EmptySubnet, nil
 	}
 
 	subnet, err := getSubnet(node, z.defaultSubnetURL)
@@ -201,6 +211,11 @@ func (z *ZoneGetter) ListZones(filter Filter, logger klog.Logger) ([]string, err
 // If the CR does not exist or it is not ready, ListSubnets will return only the
 // default subnet.
 func (z *ZoneGetter) ListSubnets(logger klog.Logger) []nodetopologyv1.SubnetConfig {
+	if z.mode == Legacy {
+		logger.Info("ListSubnets is being called with legacy zone getter. Ignoring error")
+		return nil
+	}
+
 	nodeTopologyCRName := flags.F.NodeTopologyCRName
 	nodeTopologySynced := z.nodeTopologyHasSynced()
 	if z.onlyIncludeDefaultSubnetNodes || !nodeTopologySynced {
@@ -242,7 +257,13 @@ func (z *ZoneGetter) IsNodeSelectedByFilter(node *api_v1.Node, filter Filter, fi
 
 // allNodesPredicate selects all nodes.
 func (z *ZoneGetter) allNodesPredicate(node *api_v1.Node, nodeLogger klog.Logger) bool {
+	// For legacy networks, no subnets exists, so always return true for every node.
+	if z.mode == Legacy {
+		return true
+	}
+
 	nodeTopologySynced := z.nodeTopologyHasSynced()
+
 	if z.onlyIncludeDefaultSubnetNodes || !nodeTopologySynced {
 		nodeLogger.Info("Falling back to only using default subnet when listing all nodes", "z.onlyIncludeDefaultSubnetNodes", z.onlyIncludeDefaultSubnetNodes, "nodeTopologySynced", nodeTopologySynced)
 
@@ -273,18 +294,20 @@ func (z *ZoneGetter) candidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes(
 }
 
 func (z *ZoneGetter) nodePredicateInternal(node *api_v1.Node, includeUnreadyNodes, excludeUpgradingNodes bool, nodeAndFilterLogger klog.Logger) bool {
-	nodeTopologySynced := z.nodeTopologyHasSynced()
-	if z.onlyIncludeDefaultSubnetNodes || !nodeTopologySynced {
-		nodeAndFilterLogger.Info("Falling back to only using default subnet when listing nodes", "z.onlyIncludeDefaultSubnetNodes", z.onlyIncludeDefaultSubnetNodes, "nodeTopologySynced", nodeTopologySynced)
+	if z.mode != Legacy {
+		nodeTopologySynced := z.nodeTopologyHasSynced()
+		if z.onlyIncludeDefaultSubnetNodes || !nodeTopologySynced {
+			nodeAndFilterLogger.Info("Falling back to only using default subnet when listing nodes", "z.onlyIncludeDefaultSubnetNodes", z.onlyIncludeDefaultSubnetNodes, "nodeTopologySynced", nodeTopologySynced)
 
-		isInDefaultSubnet, err := isNodeInDefaultSubnet(node, z.defaultSubnetURL, nodeAndFilterLogger)
-		if err != nil {
-			nodeAndFilterLogger.Error(err, "Failed to verify if the node is in default subnet")
-			return false
-		}
-		if !isInDefaultSubnet {
-			nodeAndFilterLogger.Error(ErrNodeNotInDefaultSubnet, "Ignoring node since it is not in the default subnet")
-			return false
+			isInDefaultSubnet, err := isNodeInDefaultSubnet(node, z.defaultSubnetURL, nodeAndFilterLogger)
+			if err != nil {
+				nodeAndFilterLogger.Error(err, "Failed to verify if the node is in default subnet")
+				return false
+			}
+			if !isInDefaultSubnet {
+				nodeAndFilterLogger.Error(ErrNodeNotInDefaultSubnet, "Ignoring node since it is not in the default subnet")
+				return false
+			}
 		}
 	}
 
@@ -425,6 +448,16 @@ func NewZoneGetter(nodeInformer, nodeTopologyInformer cache.SharedIndexInformer,
 			return nodeTopologyInformer != nil && nodeTopologyInformer.HasSynced()
 		},
 	}, nil
+}
+
+// NewZoneGetter initialize a ZoneGetter in Legacy mode.
+func NewLegacyZoneGetter(nodeInformer, nodeTopologyInformer cache.SharedIndexInformer) *ZoneGetter {
+
+	return &ZoneGetter{
+		mode:                 Legacy,
+		nodeLister:           nodeInformer.GetIndexer(),
+		nodeTopologyInformer: nodeTopologyInformer,
+	}
 }
 
 // NewFakeZoneGetter initialize a fake ZoneGetter in GCP mode to use in test.
