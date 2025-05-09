@@ -338,17 +338,6 @@ func (z *ZoneGetter) nodePredicateInternal(node *api_v1.Node, includeUnreadyNode
 	return true
 }
 
-// ZoneForNode returns if the given node is in default subnet.
-func (z *ZoneGetter) IsDefaultSubnetNode(nodeName string, logger klog.Logger) (bool, error) {
-	nodeLogger := logger.WithValues("nodeName", nodeName)
-	node, err := listers.NewNodeLister(z.nodeLister).Get(nodeName)
-	if err != nil {
-		nodeLogger.Error(err, "Failed to get node")
-		return false, err
-	}
-	return isNodeInDefaultSubnet(node, z.defaultSubnetURL, logger)
-}
-
 // isNodeInDefaultSubnet checks if the node is in the default subnet.
 //
 // For any new nodes created after multi-subnet cluster is enabled, they are
