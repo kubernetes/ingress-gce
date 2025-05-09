@@ -381,7 +381,9 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 	defer controller.stop()
 	var prevSyncerKey, updatedSyncerKey negtypes.NegSyncerKey
 	t.Logf("Creating L4 ILB service with ExternalTrafficPolicy:Cluster")
-	controller.serviceLister.Add(newTestILBService(controller, false, 80))
+	svcILB := newTestILBService(controller, false, 80)
+	svcILB.Finalizers = []string{gce.ILBFinalizerV1}
+	controller.serviceLister.Add(svcILB)
 	svcClient := controller.client.CoreV1().Services(testServiceNamespace)
 	svcKey := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
 	err = controller.processService(svcKey)
@@ -1749,6 +1751,99 @@ func TestEnableNEGServiceWithL4NetLB(t *testing.T) {
 	// check the port info map after all stale syncers have been deleted.
 	validateSyncerManagerWithPortInfoMap(t, controller, testServiceNamespace, testServiceName, expectedPortInfoMap)
 	validateServiceAnnotationWithPortInfoMap(t, svc, expectedPortInfoMap, expectZones)
+}
+
+// TestRequeueL4LBEnableNEGServiceWhenReady tests L4 services being requeued by
+// NEG controller until finalizer is provisioned (service ready) with NEGs enabled.
+func TestRequeueL4LBEnableNEGServiceWhenReady(t *testing.T) {
+	testCases := []struct {
+		desc             string
+		finalizers       []string
+		wantL4InternalLB bool
+		wantL4ExternalLB bool
+	}{
+		{
+			desc:             "ILB service",
+			finalizers:       []string{common.ILBFinalizerV2},
+			wantL4InternalLB: true,
+		},
+		{
+			desc:             "NetLB service",
+			finalizers:       []string{common.NetLBFinalizerV3},
+			wantL4ExternalLB: true,
+		},
+	}
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			kubeClient := fake.NewSimpleClientset()
+			testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
+			controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false)
+			if err != nil {
+				t.Fatalf("failed to create test controller %s", err)
+			}
+			manager := controller.manager.(*syncerManager)
+			controller.runL4ForNetLB = true
+			controller.runL4ForILB = true
+			// L4 NEGs will be created in zones with ready and unready nodes. Zones with upgrading nodes will be skipped.
+			expectZones := []string{negtypes.TestZone1, negtypes.TestZone2, negtypes.TestZone3}
+			defer controller.stop()
+			var prevSyncerKey negtypes.NegSyncerKey
+			var svc *apiv1.Service
+			t.Logf("Creating L4 service")
+			if tc.wantL4InternalLB {
+				svc = newTestILBService(controller, false, 80)
+			} else if tc.wantL4ExternalLB {
+				svc = newTestRBSService(controller, false, 80, "")
+			}
+			controller.serviceLister.Add(svc)
+			svcClient := controller.client.CoreV1().Services(testServiceNamespace)
+			svcName := svc.Name
+			svcKey := utils.ServiceKeyFunc(testServiceNamespace, svcName)
+			err = controller.processService(svcKey)
+			if err == nil {
+				t.Fatalf("Unready service without finalizer should be requeued until ready: %v", err)
+			}
+			svc, err = svcClient.Get(context.TODO(), svcName, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("Service was not created.(*apiv1.Service) successfully, err: %v", err)
+			}
+			// No syncers created yet, because the service does not have the right finalizer.
+			validateSyncers(t, controller, 0, true)
+			// Update service with finalizer (service ready)
+			svc.Finalizers = tc.finalizers
+			if svc, err = controller.client.CoreV1().Services(svc.Namespace).Update(context.TODO(), svc, metav1.UpdateOptions{}); err != nil {
+				t.Fatalf("Failed to update test L4 service with V2 finalizer: %v", err)
+			}
+			if err = controller.serviceLister.Update(svc); err != nil {
+				t.Fatalf("Failed to update service lister: %v", err)
+			}
+			if err = controller.processService(svcKey); err != nil {
+				t.Fatalf("Failed to process updated L4 service with finalizer: %v", err)
+			}
+			// GET the service with the latest annotations.
+			svc, err = svcClient.Get(context.TODO(), svcName, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("Service was not created.(*apiv1.Service) successfully, err: %v", err)
+			}
+			var expectedPortInfoMap negtypes.PortInfoMap
+			if tc.wantL4InternalLB {
+				expectedPortInfoMap = negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, svcName, controller.l4Namer, false, defaultNetwork, negtypes.L4InternalLB)
+			} else if tc.wantL4ExternalLB {
+				expectedPortInfoMap = negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, svcName, controller.l4Namer, false, defaultNetwork, negtypes.L4ExternalLB)
+			}
+			// There will be only one entry in the map
+			for key, val := range expectedPortInfoMap {
+				prevSyncerKey = manager.getSyncerKey(testServiceNamespace, svcName, key, val)
+			}
+			ValidateSyncerByKey(t, controller, 1, prevSyncerKey, false)
+			time.Sleep(1 * time.Second)
+			controller.manager.(*syncerManager).GC()
+			validateSyncerManagerWithPortInfoMap(t, controller, testServiceNamespace, svcName, expectedPortInfoMap)
+			validateServiceAnnotationWithPortInfoMap(t, svc, expectedPortInfoMap, expectZones)
+		})
+	}
 }
 
 func getEvent(eventChan chan string, queue *workqueue.RateLimitingInterface) {

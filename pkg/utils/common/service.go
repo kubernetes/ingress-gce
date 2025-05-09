@@ -54,6 +54,7 @@ func IsLegacyL4ILBService(svc *v1.Service) bool {
 	return HasLegacyL4ILBFinalizerV1(svc)
 }
 
+// HasLegacyL4ILBFinalizerV1 returns true if the given Service has ILBFinalizerV1
 func HasLegacyL4ILBFinalizerV1(svc *v1.Service) bool {
 	return slice.ContainsString(svc.ObjectMeta.Finalizers, LegacyILBFinalizer, nil)
 }
@@ -69,6 +70,11 @@ func IsSubsettingL4ILBService(svc *v1.Service) bool {
 // HasL4ILBFinalizerV2 returns true if the given Service has ILBFinalizerV2
 func HasL4ILBFinalizerV2(svc *v1.Service) bool {
 	return slice.ContainsString(svc.ObjectMeta.Finalizers, ILBFinalizerV2, nil)
+}
+
+// HasLegacyL4NetLBFinalizerV1 returns true if the given Service has NetLBFinalizerV1
+func HasLegacyL4NetLBFinalizerV1(svc *v1.Service) bool {
+	return slice.ContainsString(svc.ObjectMeta.Finalizers, LegacyNetLBFinalizerV1, nil)
 }
 
 // HasL4NetLBFinalizerV2 returns true if the given Service has NetLBFinalizerV2
