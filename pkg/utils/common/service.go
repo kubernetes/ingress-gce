@@ -71,6 +71,11 @@ func HasL4ILBFinalizerV2(svc *v1.Service) bool {
 	return slice.ContainsString(svc.ObjectMeta.Finalizers, ILBFinalizerV2, nil)
 }
 
+// HasLegacyL4NetLBFinalizerV1 returns true if the given Service has NetLBFinalizerV1
+func HasLegacyL4NetLBFinalizerV1(svc *v1.Service) bool {
+	return slice.ContainsString(svc.ObjectMeta.Finalizers, LegacyNetLBFinalizerV1, nil)
+}
+
 // HasL4NetLBFinalizerV2 returns true if the given Service has NetLBFinalizerV2
 func HasL4NetLBFinalizerV2(svc *v1.Service) bool {
 	return slice.ContainsString(svc.ObjectMeta.Finalizers, NetLBFinalizerV2, nil)

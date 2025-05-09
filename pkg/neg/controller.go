@@ -673,61 +673,99 @@ func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name ty
 	return nil
 }
 
-// mergeVmIpNEGsPortInfo merges the PortInfo for ILB, multinet NetLB and NetLB V3 (variant with NEG default) services using GCE_VM_IP NEGs into portInfoMap
+// mergeVmIpNEGsPortInfo merges the PortInfo for ILB and NetLB services using GCE_VM_IP NEGs into portInfoMap
 func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap, negUsage *metricscollector.NegServiceState, networkInfo *network.NetworkInfo) error {
-	wantsILB, _ := annotations.WantsL4ILB(service)
-	needsNEGForILB := c.runL4ForILB && wantsILB
-	needsNEGForNetLB := c.netLBServiceNeedsNEG(service, networkInfo)
-	if !needsNEGForILB && !needsNEGForNetLB {
-		return nil
-	}
-	// Only process ILB services after L4 controller has marked it with v2 finalizer.
-	if needsNEGForILB && !common.HasL4ILBFinalizerV2(service) {
-		msg := fmt.Sprintf("Ignoring ILB Service %s, namespace %s as it does not have the v2 finalizer", service.Name, service.Namespace)
-		c.logger.Info(msg)
-		c.recorder.Eventf(service, apiv1.EventTypeWarning, "ProcessServiceSkipped", msg)
-		return nil
-	}
-
 	// Ignore services with LoadBalancerClass different than "networking.gke.io/l4-regional-external" or
 	// "networking.gke.io/l4-regional-internal" used for L4 controllers that use GCE_VM_IP NEGs.
 	if service.Spec.LoadBalancerClass != nil &&
 		!common.HasLoadBalancerClass(service, common.RegionalExternalLoadBalancerClass) &&
 		!common.HasLoadBalancerClass(service, common.RegionalInternalLoadBalancerClass) {
-		msg := fmt.Sprintf("Ignoring Service %s, namespace %s as it uses a LoadBalancerClass %s", service.Name, service.Namespace, *service.Spec.LoadBalancerClass)
+		msg := fmt.Sprintf("Ignoring Service %s/%s for GCE_VM_IP NEGs as it uses an incompatible LoadBalancerClass %q", service.Name, service.Namespace, *service.Spec.LoadBalancerClass)
 		c.logger.Info(msg)
+		return nil
+	}
+
+	wantsILB, _ := annotations.WantsL4ILB(service)
+	wantsNetLB, _ := annotations.WantsL4NetLB(service)
+
+	effectiveNeedsILB := false
+	if c.runL4ForILB && wantsILB {
+		if !common.HasL4ILBFinalizerV2(service) {
+			if service.ObjectMeta.DeletionTimestamp != nil {
+				// Service is being deleted, and ILB v2 finalizer is gone (or was never there).
+				// ILB NEGs are no longer needed for this deleting service.
+				c.logger.Info("ILB service %s/%s is being deleted and L4 ILB v2 finalizer is not present. ILB NEGs will not be processed.", service.Namespace, service.Name)
+				return nil
+			} else if common.HasLegacyL4ILBFinalizerV1(service) {
+				c.logger.Info("Skipping legacy ILB service %s/%s. ILB NEGs will not be processed.", service.Namespace, service.Name)
+				return nil
+			} else {
+				// Requeue service and wait for the v2 finalizer.
+				// Return an error to trigger RateLimited requeue via handleErr in case NetLB -> ILB migration.
+				msg := fmt.Sprintf("ILB service %s/%s might require NEGs but is missing the L4 ILB v2 finalizer. Will retry.", service.Namespace, service.Name)
+				c.logger.Info(msg)
+				c.recorder.Eventf(service, apiv1.EventTypeNormal, "WaitingForL4Finalizer", msg)
+				return fmt.Errorf(msg)
+			}
+		} else {
+			// Only process ILB services after L4 controller has marked it with v2 finalizer.
+			effectiveNeedsILB = true
+		}
+	}
+
+	effectiveNeedsNetLB := false
+	if wantsNetLB {
+		hasRequiredNetLBAnnotations := annotations.HasRBSAnnotation(service) || common.HasLoadBalancerClass(service, common.RegionalExternalLoadBalancerClass)
+		if !hasRequiredNetLBAnnotations {
+			c.logger.Info("Skipping NetLB service %s/%s since it lacks RBS annotation or the %q LoadBalancerClass.", service.Namespace, service.Name, common.RegionalExternalLoadBalancerClass)
+			return nil
+		} else {
+			if !networkInfo.IsDefault {
+				// NEGs are needed for multinet NetLB without finalizer check.
+				effectiveNeedsNetLB = true
+			} else {
+				if c.runL4ForNetLB {
+					if !common.HasL4NetLBFinalizerV3(service) {
+						if service.ObjectMeta.DeletionTimestamp != nil {
+							// Service is being deleted, and NetLB v3 finalizer is gone (or was never there).
+							// NetLB NEGs are no longer needed for this deleting service.
+							c.logger.Info("NetLB service %s/%s is being deleted and L4 NetLB v3 finalizer is not present. NetLB NEGs will not be processed.", service.Namespace, service.Name)
+							return nil
+						} else if common.HasL4NetLBFinalizerV2(service) {
+							c.logger.Info("Skipping NetLB v2 service %s/%s. NetLB NEGs will not be processed.", service.Namespace, service.Name)
+							return nil
+						} else {
+							// Requeue service and wait for the V3 finalizer.
+							// Return an error to trigger RateLimited requeue via handleErr in case ILB -> NetLB migration.
+							msg := fmt.Sprintf("NetLB service %s/%s might require NEGs but is missing the L4 NetLB v3 finalizer. Will retry.", service.Namespace, service.Name)
+							c.logger.Info(msg)
+							c.recorder.Eventf(service, apiv1.EventTypeNormal, "WaitingForL4Finalizer", msg)
+							return fmt.Errorf(msg)
+						}
+					} else {
+						// Only process NetLB services after L4NetLB controller has marked it with v3 finalizer.
+						effectiveNeedsNetLB = true
+					}
+				}
+			}
+		}
+	}
+
+	var l4LBType negtypes.L4LBType
+	if effectiveNeedsILB {
+		l4LBType = negtypes.L4InternalLB
+	} else if effectiveNeedsNetLB {
+		l4LBType = negtypes.L4ExternalLB
+	} else {
+		// Exit if neither type of L4 LB needs NEGs after all checks.
 		return nil
 	}
 
 	onlyLocal := helpers.RequestsOnlyLocalTraffic(service)
 	// Update usage metrics.
 	negUsage.VmIpNeg = metricscollector.NewVmIpNegType(onlyLocal)
-	var l4LBType negtypes.L4LBType
-	if needsNEGForILB {
-		l4LBType = negtypes.L4InternalLB
-	} else {
-		l4LBType = negtypes.L4ExternalLB
-	}
 
 	return portInfoMap.Merge(negtypes.NewPortInfoMapForVMIPNEG(name.Namespace, name.Name, c.l4Namer, onlyLocal, networkInfo, l4LBType))
-}
-
-// netLBServiceNeedsNEG determines if NEGs need to be created for L4 NetLB.
-// - service must be an L4 External Load Balancer service
-// - service must have the RBS annotation
-// - service is a multinetwork service on a non default network OR NEGs are enabled and V3 finalizer is present.
-func (c *Controller) netLBServiceNeedsNEG(service *apiv1.Service, networkInfo *network.NetworkInfo) bool {
-	wantsNetLB, _ := annotations.WantsL4NetLB(service)
-	if !wantsNetLB {
-		return false
-	}
-	if !annotations.HasRBSAnnotation(service) && !common.HasLoadBalancerClass(service, common.RegionalExternalLoadBalancerClass) {
-		return false
-	}
-	if !networkInfo.IsDefault {
-		return true
-	}
-	return c.runL4ForNetLB && common.HasL4NetLBFinalizerV3(service)
 }
 
 // mergeDefaultBackendServicePortInfoMap merge the PortInfoMap for the default backend service into portInfoMap
