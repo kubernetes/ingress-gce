@@ -48,6 +48,7 @@ import (
 	"k8s.io/ingress-gce/pkg/network"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/patch"
@@ -681,7 +682,7 @@ func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.Na
 		return nil
 	}
 	// Only process ILB services after L4 controller has marked it with v2 finalizer.
-	if needsNEGForILB && !utils.HasL4ILBFinalizerV2(service) {
+	if needsNEGForILB && !common.HasL4ILBFinalizerV2(service) {
 		msg := fmt.Sprintf("Ignoring ILB Service %s, namespace %s as it does not have the v2 finalizer", service.Name, service.Namespace)
 		c.logger.Info(msg)
 		c.recorder.Eventf(service, apiv1.EventTypeWarning, "ProcessServiceSkipped", msg)
@@ -691,8 +692,8 @@ func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.Na
 	// Ignore services with LoadBalancerClass different than "networking.gke.io/l4-regional-external" or
 	// "networking.gke.io/l4-regional-internal" used for L4 controllers that use GCE_VM_IP NEGs.
 	if service.Spec.LoadBalancerClass != nil &&
-		!annotations.HasLoadBalancerClass(service, annotations.RegionalExternalLoadBalancerClass) &&
-		!annotations.HasLoadBalancerClass(service, annotations.RegionalInternalLoadBalancerClass) {
+		!common.HasLoadBalancerClass(service, common.RegionalExternalLoadBalancerClass) &&
+		!common.HasLoadBalancerClass(service, common.RegionalInternalLoadBalancerClass) {
 		msg := fmt.Sprintf("Ignoring Service %s, namespace %s as it uses a LoadBalancerClass %s", service.Name, service.Namespace, *service.Spec.LoadBalancerClass)
 		c.logger.Info(msg)
 		return nil
@@ -720,13 +721,13 @@ func (c *Controller) netLBServiceNeedsNEG(service *apiv1.Service, networkInfo *n
 	if !wantsNetLB {
 		return false
 	}
-	if !annotations.HasRBSAnnotation(service) && !annotations.HasLoadBalancerClass(service, annotations.RegionalExternalLoadBalancerClass) {
+	if !annotations.HasRBSAnnotation(service) && !common.HasLoadBalancerClass(service, common.RegionalExternalLoadBalancerClass) {
 		return false
 	}
 	if !networkInfo.IsDefault {
 		return true
 	}
-	return c.runL4ForNetLB && utils.HasL4NetLBFinalizerV3(service)
+	return c.runL4ForNetLB && common.HasL4NetLBFinalizerV3(service)
 }
 
 // mergeDefaultBackendServicePortInfoMap merge the PortInfoMap for the default backend service into portInfoMap

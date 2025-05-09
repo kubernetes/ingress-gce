@@ -185,9 +185,9 @@ func (lc *L4NetLBController) needsAddition(newSvc, oldSvc *v1.Service) bool {
 // needsDeletion return true if svc required deleting RBS based NetLB
 func (lc *L4NetLBController) needsDeletion(svc *v1.Service, svcLogger klog.Logger) bool {
 	// Check if service was provisioned by RBS controller before -- if it has rbs finalizer, rbs loadBalancerClass or rbs forwarding rule
-	if !utils.HasL4NetLBFinalizerV2(svc) && !utils.HasL4NetLBFinalizerV3(svc) &&
+	if !common.HasL4NetLBFinalizerV2(svc) && !common.HasL4NetLBFinalizerV3(svc) &&
 		!lc.hasRBSForwardingRule(svc, svcLogger) &&
-		!annotations.HasLoadBalancerClass(svc, annotations.RegionalExternalLoadBalancerClass) {
+		!common.HasLoadBalancerClass(svc, common.RegionalExternalLoadBalancerClass) {
 		return false
 	}
 	// handles service deletion
@@ -291,7 +291,7 @@ func (lc *L4NetLBController) shouldProcessService(newSvc, oldSvc *v1.Service, sv
 	// Ignore services with LoadBalancerClass different than "networking.gke.io/l4-regional-external" used for this controller.
 	// LoadBalancerClass can't be updated (see the field API doc) so we don't need to worry about cleaning up services that changed the class.
 	if newSvc.Spec.LoadBalancerClass != nil {
-		if annotations.HasLoadBalancerClass(newSvc, annotations.RegionalExternalLoadBalancerClass) {
+		if common.HasLoadBalancerClass(newSvc, common.RegionalExternalLoadBalancerClass) {
 			if newSvc.Annotations[annotations.ServiceAnnotationLoadBalancerType] == string(annotations.LBTypeInternal) {
 				lc.ctx.Recorder(newSvc.Namespace).Eventf(newSvc, v1.EventTypeWarning, "ConflictingConfiguration",
 					fmt.Sprintf("loadBalancerClass conflicts with %s: %q annotation. External LoadBalancer Service provisioned.", annotations.ServiceAnnotationLoadBalancerType, string(annotations.LBTypeInternal)))
@@ -333,14 +333,14 @@ func (lc *L4NetLBController) isRBSBasedService(svc *v1.Service, svcLogger klog.L
 		return false
 	}
 	if svc.Spec.LoadBalancerClass != nil {
-		return annotations.HasLoadBalancerClass(svc, annotations.RegionalExternalLoadBalancerClass)
+		return common.HasLoadBalancerClass(svc, common.RegionalExternalLoadBalancerClass)
 	}
-	return annotations.HasRBSAnnotation(svc) || utils.HasL4NetLBFinalizerV2(svc) || utils.HasL4NetLBFinalizerV3(svc) || lc.hasRBSForwardingRule(svc, svcLogger)
+	return annotations.HasRBSAnnotation(svc) || common.HasL4NetLBFinalizerV2(svc) || common.HasL4NetLBFinalizerV3(svc) || lc.hasRBSForwardingRule(svc, svcLogger)
 }
 
 func (lc *L4NetLBController) preventLegacyServiceHandling(service *v1.Service, key string, svcLogger klog.Logger) (bool, error) {
-	if (annotations.HasRBSAnnotation(service) || annotations.HasLoadBalancerClass(service, annotations.RegionalExternalLoadBalancerClass)) && lc.hasTargetPoolForwardingRule(service, svcLogger) {
-		if utils.HasL4NetLBFinalizerV2(service) || utils.HasL4NetLBFinalizerV3(service) {
+	if (annotations.HasRBSAnnotation(service) || common.HasLoadBalancerClass(service, common.RegionalExternalLoadBalancerClass)) && lc.hasTargetPoolForwardingRule(service, svcLogger) {
+		if common.HasL4NetLBFinalizerV2(service) || common.HasL4NetLBFinalizerV3(service) {
 			// If we found that RBS finalizer was attached to service, it means that RBS controller
 			// had a race condition on Service creation with Legacy Controller.
 			// It should only happen during service creation, and we should clean up RBS resources
@@ -647,10 +647,10 @@ func (lc *L4NetLBController) shouldUseNEGBackends(service *v1.Service) bool {
 	if !lc.enableNEGSupport {
 		return false
 	}
-	if utils.HasL4NetLBFinalizerV2(service) {
+	if common.HasL4NetLBFinalizerV2(service) {
 		return false
 	}
-	if utils.HasL4NetLBFinalizerV3(service) {
+	if common.HasL4NetLBFinalizerV3(service) {
 		return true
 	}
 	return lc.enableNEGAsDefault

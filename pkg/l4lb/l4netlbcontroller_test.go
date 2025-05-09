@@ -397,7 +397,7 @@ func validateAnnotationsDeleted(svc *v1.Service) error {
 func verifyNetLBServiceProvisioned(t *testing.T, svc *v1.Service) {
 	t.Helper()
 
-	if !utils.HasL4NetLBFinalizerV2(svc) && !utils.HasL4NetLBFinalizerV3(svc) {
+	if !common.HasL4NetLBFinalizerV2(svc) && !common.HasL4NetLBFinalizerV3(svc) {
 		t.Errorf("Expected %q or %q finalizer in Finalizer list - %v", common.NetLBFinalizerV2, common.NetLBFinalizerV3, svc.Finalizers)
 	}
 
@@ -424,7 +424,7 @@ func verifyNetLBServiceProvisioned(t *testing.T, svc *v1.Service) {
 func verifyNetLBServiceNotProvisioned(t *testing.T, svc *v1.Service) {
 	t.Helper()
 
-	if utils.HasL4NetLBFinalizerV2(svc) || utils.HasL4NetLBFinalizerV3(svc) {
+	if common.HasL4NetLBFinalizerV2(svc) || common.HasL4NetLBFinalizerV3(svc) {
 		t.Errorf("Unexpected %q or %q finalizer in Finalizer list - %v", common.NetLBFinalizerV2, common.NetLBFinalizerV3, svc.Finalizers)
 	}
 
@@ -659,7 +659,7 @@ func TestProcessNEGServiceCreate(t *testing.T) {
 	prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{CreateCount: 1, UpperBoundSeconds: 1}, t)
 
 	validateNetLBSvcStatus(svc, t)
-	if !utils.HasL4NetLBFinalizerV3(svc) {
+	if !common.HasL4NetLBFinalizerV3(svc) {
 		t.Errorf("the service %s should have the V3 finalizer but instead it had %v", svc.Name, svc.Finalizers)
 	}
 	if err := checkBackendServiceWithNEG(lc, svc); err != nil {
@@ -689,7 +689,7 @@ func TestProcessNEGServiceUpdateAfterNEGFlagTurnOff(t *testing.T) {
 
 	svc = syncNetLBSvc(t, lc, svc)
 
-	if !utils.HasL4NetLBFinalizerV2(svc) {
+	if !common.HasL4NetLBFinalizerV2(svc) {
 		t.Errorf("the service %s should have the V2 finalizer but instead it had %v", svc.Name, svc.Finalizers)
 	}
 	// validate that IG is attached
@@ -720,10 +720,10 @@ func TestProcessNEGServiceUpdateAfterDefaultFlagTurnOff(t *testing.T) {
 	svc = syncNetLBSvc(t, lc, svc)
 
 	validateNetLBSvcStatus(svc, t)
-	if !utils.HasL4NetLBFinalizerV3(svc) {
+	if !common.HasL4NetLBFinalizerV3(svc) {
 		t.Errorf("the service %s should have the V3 finalizer but instead it had %v", svc.Name, svc.Finalizers)
 	}
-	if utils.HasL4NetLBFinalizerV2(svc) {
+	if common.HasL4NetLBFinalizerV2(svc) {
 		t.Errorf("the service %s should not have the V2 finalizer but instead it had %v", svc.Name, svc.Finalizers)
 	}
 	// validate that NEG is still attached
@@ -762,10 +762,10 @@ func TestProcessIGServiceWhenNEGIsEnabled(t *testing.T) {
 	prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{CreateCount: 1, UpperBoundSeconds: 1}, t)
 
 	validateNetLBSvcStatus(svc, t)
-	if !utils.HasL4NetLBFinalizerV2(svc) {
+	if !common.HasL4NetLBFinalizerV2(svc) {
 		t.Errorf("the service %s should have the V2 finalizer but instead it had %v", svc.Name, svc.Finalizers)
 	}
-	if utils.HasL4NetLBFinalizerV3(svc) {
+	if common.HasL4NetLBFinalizerV3(svc) {
 		t.Errorf("the service %s should not have the V3 finalizer but instead it had %v", svc.Name, svc.Finalizers)
 	}
 	validateNetLBSvcStatus(svc, t)
@@ -1663,7 +1663,7 @@ func TestShouldProcessService(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err: %v", legacyNetLBSvc.Name, err)
 	}
-	lbClass := annotations.RegionalExternalLoadBalancerClass
+	lbClass := common.RegionalExternalLoadBalancerClass
 	svcWithExternalLoadBalancerClass.Spec.LoadBalancerClass = &lbClass
 
 	for _, testCase := range []struct {
@@ -1893,7 +1893,7 @@ func TestPreventTargetPoolToRBSMigration(t *testing.T) {
 			if err != nil {
 				t.Fatalf("controller.ctx.KubeClient.CoreV1().Services(%s).Get(_, %s, _) returned error %v, want nil", svc.Namespace, svc.Name, err)
 			}
-			hasV2Finalizer := utils.HasL4NetLBFinalizerV2(resultSvc)
+			hasV2Finalizer := common.HasL4NetLBFinalizerV2(resultSvc)
 			if hasV2Finalizer != testCase.expectV2NetLBFinalizerAfterSync {
 				t.Errorf("After preventLegacyServiceHandling, hasV2Finalizer = %t, testCase.expectV2NetLBFinalizerAfterSync = %t, want equal", hasV2Finalizer, testCase.expectV2NetLBFinalizerAfterSync)
 			}
@@ -1921,7 +1921,7 @@ func TestPreventTargetPoolToRBSMigration(t *testing.T) {
 			if err != nil {
 				t.Fatalf("controller.ctx.KubeClient.CoreV1().Services(%s).Get(_, %s, _) returned error %v, want nil", svc2.Namespace, svc2.Name, err)
 			}
-			hasV2Finalizer = utils.HasL4NetLBFinalizerV2(resultSvc)
+			hasV2Finalizer = common.HasL4NetLBFinalizerV2(resultSvc)
 			if hasV2Finalizer != testCase.expectV2NetLBFinalizerAfterSync {
 				t.Errorf("After sync, hasV2NetLBFinalizer = %t, testCase.expectV2NetLBFinalizerAfterSync = %t, want equal", hasV2Finalizer, testCase.expectV2NetLBFinalizerAfterSync)
 			}
@@ -2164,12 +2164,12 @@ func TestEnsureExternalLoadBalancerClass(t *testing.T) {
 		},
 		{
 			desc:              "Use ILB loadBalancerClass",
-			loadBalancerClass: annotations.RegionalInternalLoadBalancerClass,
+			loadBalancerClass: common.RegionalInternalLoadBalancerClass,
 			shouldProcess:     false,
 		},
 		{
 			desc:              "Use NetLB loadBalancerClass",
-			loadBalancerClass: annotations.RegionalExternalLoadBalancerClass,
+			loadBalancerClass: common.RegionalExternalLoadBalancerClass,
 			shouldProcess:     true,
 		},
 		{

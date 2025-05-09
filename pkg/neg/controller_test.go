@@ -1311,10 +1311,10 @@ func TestMergeVmIpNEGsPortInfo(t *testing.T) {
 	serviceCustomLoadBalancerClass.Spec.LoadBalancerClass = &testLBClass
 	serviceCustomLoadBalancerClass.Finalizers = append(serviceILBWithFinalizer.Finalizers, common.ILBFinalizerV2)
 
-	serviceExternalLoadBalancerClass := newL4LBServiceWithLoadBalancerClass(controller, annotations.RegionalExternalLoadBalancerClass)
+	serviceExternalLoadBalancerClass := newL4LBServiceWithLoadBalancerClass(controller, common.RegionalExternalLoadBalancerClass)
 	serviceExternalLoadBalancerClass.Finalizers = append(serviceExternalLoadBalancerClass.Finalizers, common.NetLBFinalizerV3)
 
-	serviceInternalLoadBalancerClass := newL4LBServiceWithLoadBalancerClass(controller, annotations.RegionalInternalLoadBalancerClass)
+	serviceInternalLoadBalancerClass := newL4LBServiceWithLoadBalancerClass(controller, common.RegionalInternalLoadBalancerClass)
 	serviceInternalLoadBalancerClass.Finalizers = append(serviceInternalLoadBalancerClass.Finalizers, common.ILBFinalizerV2)
 
 	testCases := []struct {

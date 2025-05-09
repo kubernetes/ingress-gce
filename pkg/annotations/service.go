@@ -24,6 +24,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
+	"k8s.io/ingress-gce/pkg/utils/common"
 )
 
 const (
@@ -257,7 +258,7 @@ func WantsL4ILB(service *v1.Service) (bool, string) {
 		return false, fmt.Sprintf("Type : %s", service.Spec.Type)
 	}
 	if service.Spec.LoadBalancerClass != nil {
-		return HasLoadBalancerClass(service, RegionalInternalLoadBalancerClass), fmt.Sprintf("Type : %s", service.Spec.Type)
+		return common.HasLoadBalancerClass(service, common.RegionalInternalLoadBalancerClass), fmt.Sprintf("Type : %s", service.Spec.Type)
 	}
 	ltype := GetLoadBalancerAnnotationType(service)
 	if ltype == LBTypeInternal {
@@ -275,7 +276,7 @@ func WantsL4NetLB(service *v1.Service) (bool, string) {
 		return false, fmt.Sprintf("Type : %s", service.Spec.Type)
 	}
 	if service.Spec.LoadBalancerClass != nil {
-		return HasLoadBalancerClass(service, RegionalExternalLoadBalancerClass), fmt.Sprintf("Type : %s", service.Spec.Type)
+		return common.HasLoadBalancerClass(service, common.RegionalExternalLoadBalancerClass), fmt.Sprintf("Type : %s", service.Spec.Type)
 	}
 	ltype := GetLoadBalancerAnnotationType(service)
 	return ltype != LBTypeInternal, fmt.Sprintf("Type : %s, LBType : %s", service.Spec.Type, ltype)
@@ -312,16 +313,6 @@ func HasWeightedLBPodsPerNodeAnnotation(service *v1.Service) bool {
 	}
 	if val, ok := service.Annotations[WeightedL4AnnotationKey]; ok && val == WeightedL4AnnotationPodsPerNode {
 		return true
-	}
-	return false
-}
-
-// HasLoadBalancerClass checks if the given service has a specific loadBalancerClass set.
-func HasLoadBalancerClass(service *v1.Service, key string) bool {
-	if service.Spec.LoadBalancerClass != nil {
-		if *service.Spec.LoadBalancerClass == key {
-			return true
-		}
 	}
 	return false
 }
