@@ -366,8 +366,17 @@ func (z *ZoneGetter) nodePredicateInternal(node *api_v1.Node, includeUnreadyNode
 // For any new nodes created after multi-subnet cluster is enabled, they are
 // guaranteed to have the subnet label if PodCIDR is populated. For any
 // existing nodes, they will not have label and can only be in the default
-// subnet.
+// subnet. If defaultSubnetURL is empty, then consider as part of legacy GCE
+// network and return true.
 func isNodeInDefaultSubnet(node *api_v1.Node, defaultSubnetURL string, nodeLogger klog.Logger) (bool, error) {
+
+	// Defaut Subnet URL can only be empty with legacy GCE networks.
+	// No subnets exist for legacy GCE Networks, and all nodes should be included, so always
+	// return true for the node.
+	if defaultSubnetURL == "" {
+		return true, nil
+	}
+
 	nodeSubnet, err := getSubnet(node, defaultSubnetURL)
 	if err != nil {
 		nodeLogger.Error(err, "Failed to get node subnet", "nodeName", node.Name)
