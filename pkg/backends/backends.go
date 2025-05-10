@@ -94,6 +94,7 @@ type L4BackendServiceParams struct {
 	ConnectionTrackingPolicy *composite.BackendServiceConnectionTrackingPolicy
 	LocalityLbPolicy         LocalityLBPolicyType
 	EnableZonalAffinity      bool
+	LogConfig                *composite.BackendServiceLogConfig
 }
 
 var versionPrecedence = map[meta.Version]int{
@@ -404,6 +405,7 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 		SessionAffinity:     utils.TranslateAffinityType(params.SessionAffinity, beLogger),
 		LoadBalancingScheme: params.Scheme,
 		LocalityLbPolicy:    string(params.LocalityLbPolicy),
+		LogConfig:           params.LogConfig,
 	}
 
 	if params.EnableZonalAffinity {
@@ -498,7 +500,8 @@ func backendSvcEqual(newBS, oldBS *composite.BackendService, compareConnectionTr
 		newBS.SessionAffinity == oldBS.SessionAffinity &&
 		newBS.LoadBalancingScheme == oldBS.LoadBalancingScheme &&
 		utils.EqualStringSets(newBS.HealthChecks, oldBS.HealthChecks) &&
-		newBS.Network == oldBS.Network
+		newBS.Network == oldBS.Network &&
+		backendServiceLogConfigEqual(oldBS.LogConfig, newBS.LogConfig)
 
 	// Compare only for backendSvc that uses Strong Session Affinity feature
 	if compareConnectionTracking {
@@ -514,6 +517,21 @@ func backendSvcEqual(newBS, oldBS *composite.BackendService, compareConnectionTr
 	// If zonal affinity is set, needs to be equal
 	svcsEqual = svcsEqual && zonalAffinityEqual(newBS, oldBS)
 	return svcsEqual
+}
+
+func backendServiceLogConfigEqual(oldLC, newLC *composite.BackendServiceLogConfig) bool {
+	if oldLC == nil && newLC == nil {
+		return true
+	}
+	if oldLC == nil && newLC != nil || oldLC != nil && newLC == nil {
+		return false
+	}
+	return oldLC.Enable == newLC.Enable &&
+		oldLC.SampleRate == newLC.SampleRate &&
+		oldLC.OptionalMode == newLC.OptionalMode &&
+		utils.EqualStringSets(oldLC.OptionalFields, newLC.OptionalFields) &&
+		utils.EqualStringSets(oldLC.ForceSendFields, newLC.ForceSendFields) &&
+		utils.EqualStringSets(oldLC.NullFields, newLC.NullFields)
 }
 
 func convertNetworkLbTrafficPolicyToZonalAffinity(trafficPolicy *composite.BackendServiceNetworkPassThroughLbTrafficPolicy) composite.BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity {

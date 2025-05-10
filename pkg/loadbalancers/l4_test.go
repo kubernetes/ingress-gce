@@ -3042,3 +3042,139 @@ func createVMInstanceWithTag(t *testing.T, fakeGCE *gce.Cloud, name, tag string)
 		t.Errorf("failed to create instance err=%v", err)
 	}
 }
+
+func TestILBLogging(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		desc                        string
+		includeLoggingAnnotation    bool
+		enableLogging               bool
+		includeSampleRateAnnotation bool
+		sampleRate                  string
+		logConfigExpected           bool
+		expectedSampleRate          float64
+		errorExpected               bool
+	}{
+		{
+			desc:              "None of logging annotations added",
+			logConfigExpected: false,
+			errorExpected:     false,
+		},
+		{
+			desc:                     "Logging explicitly disabled",
+			includeLoggingAnnotation: true,
+			enableLogging:            false,
+			logConfigExpected:        false,
+		},
+		{
+			desc:                        "Only sample rate provided, logging not enabled",
+			includeSampleRateAnnotation: true,
+			sampleRate:                  "1",
+			logConfigExpected:           false,
+			errorExpected:               false,
+		},
+		{
+			desc:                        "Invalid sample rate provided, logging not enabled",
+			includeSampleRateAnnotation: true,
+			sampleRate:                  "invalid",
+			errorExpected:               false,
+		},
+		{
+			desc:                     "Logging enabled, sample rate not specified",
+			includeLoggingAnnotation: true,
+			enableLogging:            true,
+			logConfigExpected:        true,
+			expectedSampleRate:       1,
+		},
+		{
+			desc:                        "Logging enabled, sample rate provided",
+			includeLoggingAnnotation:    true,
+			enableLogging:               true,
+			includeSampleRateAnnotation: true,
+			sampleRate:                  "0.5",
+			logConfigExpected:           true,
+			expectedSampleRate:          0.5,
+		},
+		{
+			desc:                        "Logging enabled, invalid sample rate",
+			includeLoggingAnnotation:    true,
+			enableLogging:               true,
+			includeSampleRateAnnotation: true,
+			sampleRate:                  "invalid",
+			errorExpected:               true,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			svc := test.NewL4ILBService(false, 8080)
+			if tc.includeLoggingAnnotation {
+				svc.Annotations[annotations.L4LBLoggingAnnotationKey] = ""
+				if tc.enableLogging {
+					svc.Annotations[annotations.L4LBLoggingAnnotationKey] = annotations.L4LBLoggingEnabled
+				}
+			}
+			if tc.includeSampleRateAnnotation {
+				svc.Annotations[annotations.L4LBLoggingSampleRateAnnotationKey] = tc.sampleRate
+			}
+
+			nodeNames := []string{"test-node-1"}
+			vals := gce.DefaultTestClusterValues()
+			fakeGCE := getFakeGCECloud(vals)
+
+			namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+
+			networkInfo := network.DefaultNetwork(fakeGCE)
+
+			l4ilbParams := &L4ILBParams{
+				Service:         svc,
+				Cloud:           fakeGCE,
+				Namer:           namer,
+				Recorder:        record.NewFakeRecorder(100),
+				NetworkResolver: network.NewFakeResolver(networkInfo),
+			}
+			l4 := NewL4Handler(l4ilbParams, klog.TODO())
+			l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
+
+			if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
+				t.Errorf("Unexpected error when adding nodes %v", err)
+			}
+
+			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			if result.Error != nil {
+				if !tc.errorExpected {
+					t.Errorf("Failed to ensure internal loadBalancer, err %v", result.Error)
+				}
+				return
+			}
+			if tc.errorExpected {
+				t.Errorf("Expected error during ensuring internal loadBalancer, got nil")
+			}
+
+			backendServiceName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
+			key := meta.RegionalKey(backendServiceName, l4.cloud.Region())
+			bs, err := composite.GetBackendService(l4.cloud, key, meta.VersionGA, klog.TODO())
+			if err != nil {
+				t.Fatalf("failed to read BackendService, %v", err)
+			}
+
+			if bs.LogConfig == nil {
+				if tc.logConfigExpected {
+					t.Errorf("LogConfig expected to be populated")
+				}
+				return
+			}
+
+			if tc.includeLoggingAnnotation && bs.LogConfig.Enable != tc.enableLogging {
+				t.Errorf("Invalid logging state: expected to be enabled: %v, got %v", tc.enableLogging, bs.LogConfig.Enable)
+			}
+			if bs.LogConfig.SampleRate != tc.expectedSampleRate {
+				t.Errorf("Invalid logging sample rate: expected %v, got %v", tc.expectedSampleRate, bs.LogConfig.SampleRate)
+			}
+		})
+	}
+}
