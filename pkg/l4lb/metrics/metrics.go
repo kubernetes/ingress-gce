@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/klog/v2"
 )
 
@@ -44,6 +43,14 @@ const (
 	l4LBControllerPanicsMetricName                 = "l4_controllers_panics_count"
 	L4SyncDetailsMetricName                        = "l4_sync_details_count"
 	l4WeightedLBPodsPerNodeMetricName              = "l4_weighted_lb_pods_per_node"
+)
+
+const (
+	label = "feature"
+
+	// Dummy float so we can used bool based timeseries
+	versionValue                 = 1.0
+	persistentErrorThresholdTime = 20 * time.Minute
 )
 
 var (
@@ -220,6 +227,18 @@ func init() {
 	prometheus.MustRegister(l4LBControllerPanics)
 	klog.V(3).Infof("Registering L4 controller sync details metric: %v", l4LBSyncDetails)
 	prometheus.MustRegister(l4LBSyncDetails)
+	klog.V(3).Infof("Registering L4 ILB usage legacy metrics %v", l4ILBLegacyCount)
+	prometheus.MustRegister(l4ILBLegacyCount)
+	klog.V(3).Infof("Registering L4 ILB Dual Stack usage metrics %v", l4ILBDualStackCount)
+	prometheus.MustRegister(l4ILBDualStackCount)
+	klog.V(3).Infof("Registering L4 NetLB usage legacy metrics %v", l4NetLBLegacyCount)
+	prometheus.MustRegister(l4NetLBLegacyCount)
+	klog.V(3).Infof("Registering L4 NetLB Dual Stack usage metrics %v", l4NetLBDualStackCount)
+	prometheus.MustRegister(l4NetLBDualStackCount)
+	klog.V(3).Infof("Registering L4 ILB usage metrics %v", l4ILBCount)
+	prometheus.MustRegister(l4ILBCount)
+	klog.V(3).Infof("Registering L4 NetLB usage metrics %v", l4NetLBCount)
+	prometheus.MustRegister(l4NetLBCount)
 }
 
 // PublishILBSyncMetrics exports metrics related to the L4 ILB sync.
@@ -258,7 +277,7 @@ func PublishL4ILBMultiNetSyncLatency(success bool, syncType string, startTime ti
 }
 
 // PublishNetLBSyncMetrics exports metrics related to the L4 NetLB sync.
-func PublishNetLBSyncMetrics(success bool, syncType, gceResource, errType string, startTime time.Time, isResync bool, isWeightedLB bool, l4BackendType metrics.L4BackendType) {
+func PublishNetLBSyncMetrics(success bool, syncType, gceResource, errType string, startTime time.Time, isResync bool, isWeightedLB bool, l4BackendType L4BackendType) {
 	publishL4NetLBSync(success, syncType, startTime, isResync, isWeightedLB, l4BackendType)
 	if !success {
 		publishL4NetLBSyncErrorCount(syncType, gceResource, errType, isWeightedLB)
@@ -280,7 +299,7 @@ func publishL4ILBSyncErrorCount(syncType, gceResource, errorType string, isWeigh
 }
 
 // publishL4NetLBSync exports latency metrics for L4 NetLB service after sync.
-func publishL4NetLBSync(success bool, syncType string, startTime time.Time, isResync bool, isWeightedLB bool, backendType metrics.L4BackendType) {
+func publishL4NetLBSync(success bool, syncType string, startTime time.Time, isResync bool, isWeightedLB bool, backendType L4BackendType) {
 	status := statusSuccess
 	if !success {
 		status = statusError

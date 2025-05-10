@@ -91,24 +91,6 @@ func init() {
 	klog.V(3).Infof("Registering Ingress usage metrics %v and %v", ingressCount, servicePortCount)
 	prometheus.MustRegister(ingressCount, servicePortCount)
 
-	klog.V(3).Infof("Registering L4 ILB usage legacy metrics %v", l4ILBLegacyCount)
-	prometheus.MustRegister(l4ILBLegacyCount)
-
-	klog.V(3).Infof("Registering L4 ILB Dual Stack usage metrics %v", l4ILBDualStackCount)
-	prometheus.MustRegister(l4ILBDualStackCount)
-
-	klog.V(3).Infof("Registering L4 NetLB usage legacy metrics %v", l4NetLBLegacyCount)
-	prometheus.MustRegister(l4NetLBLegacyCount)
-
-	klog.V(3).Infof("Registering L4 NetLB Dual Stack usage metrics %v", l4NetLBDualStackCount)
-	prometheus.MustRegister(l4NetLBDualStackCount)
-
-	klog.V(3).Infof("Registering L4 ILB usage metrics %v", l4ILBCount)
-	prometheus.MustRegister(l4ILBCount)
-
-	klog.V(3).Infof("Registering L4 NetLB usage metrics %v", l4NetLBCount)
-	prometheus.MustRegister(l4NetLBCount)
-
 	klog.V(3).Infof("Registering PSC usage metrics %v", serviceAttachmentCount)
 	prometheus.MustRegister(serviceAttachmentCount)
 	prometheus.MustRegister(serviceCount)
@@ -131,16 +113,6 @@ func NewIngressState(ing *v1.Ingress, fc *frontendconfigv1beta1.FrontendConfig, 
 type ControllerMetrics struct {
 	// ingressMap is a map between ingress key to ingress state
 	ingressMap map[string]IngressState
-	// l4ILBServiceLegacyMap is a map between service key and L4 ILB service state. It's used in the legacy metric.
-	l4ILBServiceLegacyMap map[string]L4ILBServiceLegacyState
-	// l4NetLBServiceLegacyMap is a map between service key and L4 NetLB service state. It's used in the legacy metric.
-	l4NetLBServiceLegacyMap map[string]L4NetLBServiceLegacyState
-	// l4NetLBProvisionDeadlineForLegacyMetric is a time after which a failing NetLB will be marked as persistent error in the legacy metric.
-	l4NetLBProvisionDeadlineForLegacyMetric time.Duration
-	// l4ILBServiceMap is a map between service key and L4 ILB service state.
-	l4ILBServiceMap map[string]L4ServiceState
-	// l4NetLBServiceMap is a map between service key and L4 NetLB service state.
-	l4NetLBServiceMap map[string]L4ServiceState
 	// pscMap is a map between the service attachment key and PSC state
 	pscMap map[string]pscmetrics.PSCState
 	// ServiceMap track the number of services in this cluster
@@ -148,34 +120,25 @@ type ControllerMetrics struct {
 	//TODO(kl52752) remove mutex and change map to sync.map
 	sync.Mutex
 	// duration between metrics exports
-	metricsInterval      time.Duration
-	enableILBDualStack   bool
-	enableNetLBDualStack bool
+	metricsInterval time.Duration
 
 	logger klog.Logger
 }
 
 // NewControllerMetrics initializes ControllerMetrics and starts a go routine to compute and export metrics periodically.
-func NewControllerMetrics(exportInterval, l4NetLBProvisionDeadline time.Duration, enableNetLBDualStack, enableILBDualStack bool, logger klog.Logger) *ControllerMetrics {
+func NewControllerMetrics(exportInterval time.Duration, logger klog.Logger) *ControllerMetrics {
 	return &ControllerMetrics{
-		ingressMap:                              make(map[string]IngressState),
-		l4ILBServiceLegacyMap:                   make(map[string]L4ILBServiceLegacyState),
-		l4NetLBServiceLegacyMap:                 make(map[string]L4NetLBServiceLegacyState),
-		l4ILBServiceMap:                         make(map[string]L4ServiceState),
-		l4NetLBServiceMap:                       make(map[string]L4ServiceState),
-		pscMap:                                  make(map[string]pscmetrics.PSCState),
-		serviceMap:                              make(map[string]struct{}),
-		metricsInterval:                         exportInterval,
-		l4NetLBProvisionDeadlineForLegacyMetric: l4NetLBProvisionDeadline,
-		enableILBDualStack:                      enableILBDualStack,
-		enableNetLBDualStack:                    enableNetLBDualStack,
-		logger:                                  logger.WithName("ControllerMetrics"),
+		ingressMap:      make(map[string]IngressState),
+		pscMap:          make(map[string]pscmetrics.PSCState),
+		serviceMap:      make(map[string]struct{}),
+		metricsInterval: exportInterval,
+		logger:          logger.WithName("ControllerMetrics"),
 	}
 }
 
 // FakeControllerMetrics creates new ControllerMetrics with fixed 10 minutes metricsInterval, to be used in tests
 func FakeControllerMetrics() *ControllerMetrics {
-	return NewControllerMetrics(10*time.Minute, 20*time.Minute, true, true, klog.TODO())
+	return NewControllerMetrics(10*time.Minute, klog.TODO())
 }
 
 // servicePortKey defines a service port uniquely.
@@ -288,13 +251,6 @@ func (im *ControllerMetrics) export() {
 	}
 
 	im.logger.V(3).Info("Ingress usage metrics exported")
-
-	// Export L4 metrics.
-	im.exportL4LegacyMetrics()
-	im.exportL4Metrics()
-
-	im.exportL4ILBDualStackMetrics()
-	im.exportL4NetLBDualStackMetrics()
 
 	saCount := im.computePSCMetrics()
 	im.logger.V(3).Info("Exporting PSC Usage Metrics", "serviceAttachmentsCount", saCount)
