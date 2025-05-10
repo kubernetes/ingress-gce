@@ -957,33 +957,6 @@ func TestGetNodePrimaryIP(t *testing.T) {
 	}
 }
 
-func TestIsLegacyL4ILBService(t *testing.T) {
-	t.Parallel()
-	svc := &api_v1.Service{
-		ObjectMeta: v1.ObjectMeta{
-			Name:        "testsvc",
-			Namespace:   "default",
-			Annotations: map[string]string{gce.ServiceAnnotationLoadBalancerType: string(gce.LBTypeInternal)},
-			Finalizers:  []string{common.LegacyILBFinalizer},
-		},
-		Spec: api_v1.ServiceSpec{
-			Type: api_v1.ServiceTypeLoadBalancer,
-			Ports: []api_v1.ServicePort{
-				{Name: "testport", Port: int32(80)},
-			},
-		},
-	}
-	if !IsLegacyL4ILBService(svc) {
-		t.Errorf("Expected True for Legacy service %s, got False", svc.Name)
-	}
-
-	// Remove the finalizer and ensure the check returns False.
-	svc.ObjectMeta.Finalizers = nil
-	if IsLegacyL4ILBService(svc) {
-		t.Errorf("Expected False for Legacy service %s, got True", svc.Name)
-	}
-}
-
 func TestGetPortRanges(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
