@@ -505,6 +505,18 @@ func IsGCEL7ILBIngress(ing *networkingv1.Ingress) bool {
 	return class == annotations.GceL7ILBIngressClass
 }
 
+// IsGCEL7ILBIngressGlobalAccessEnabled returns true if the given Ingress has
+// ingress.class annotation set to "gce-l7-ilb" and has Global Access enabled
+func IsGCEL7ILBIngressGlobalAccessEnabled(ing *networkingv1.Ingress) bool {
+	if !IsGCEL7ILBIngress(ing) {
+		return false
+	}
+	if ilbGlobalAccess, ilbGAExists := ing.Annotations[annotations.ILBGlobalAccessKey]; ilbGAExists && ilbGlobalAccess == "true" {
+		return true
+	}
+	return false
+}
+
 // IsGCEL7XLBRegionalIngress returns true if the given Ingress has
 // ingress.class annotation set to "gce-regional-external"
 func IsGCEL7XLBRegionalIngress(ing *networkingv1.Ingress) bool {
