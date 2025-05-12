@@ -377,7 +377,10 @@ func main() {
 		logger.Info("Start running the enabled controllers",
 			"NEG controller", flags.F.EnableNEGController,
 		)
-		runNEGController(ctx, systemHealth, rOption, logger)
+		err := runNEGController(ctx, systemHealth, rOption, logger)
+		if err != nil {
+			klog.Fatalf("failed to run NEG controller: %s", err)
+		}
 	}
 	runIngress := func() {
 		logger := rootLogger.WithName("Other controllers")
@@ -461,7 +464,10 @@ func makeNEGRunnerWithLeaderElection(
 		leOption,
 		negLockName,
 		func(context.Context) {
-			runNEGController(ctx, systemHealth, runOption, logger)
+			err := runNEGController(ctx, systemHealth, runOption, logger)
+			if err != nil {
+				klog.Fatalf("failed to run NEG controller: %s", err)
+			}
 		},
 		func() {
 			logger.Info("Stop running NEG Leader election")
@@ -603,7 +609,7 @@ func runL4Controllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.
 	}()
 }
 
-func runNEGController(ctx *ingctx.ControllerContext, systemHealth *systemhealth.SystemHealth, option runOption, logger klog.Logger) {
+func runNEGController(ctx *ingctx.ControllerContext, systemHealth *systemhealth.SystemHealth, option runOption, logger klog.Logger) error {
 	lockLogger := logger.WithValues("lockName", negLockName)
 	lockLogger.Info("Attempting to grab lock", "lockName", negLockName)
 	go collectLockAvailabilityMetrics(negLockName, flags.F.GKEClusterType, option.stopCh, logger)
@@ -616,7 +622,10 @@ func runNEGController(ctx *ingctx.ControllerContext, systemHealth *systemhealth.
 	}
 
 	if flags.F.EnableNEGController {
-		negController := createNEGController(ctx, systemHealth, option.stopCh, logger)
+		negController, err := createNEGController(ctx, systemHealth, option.stopCh, logger)
+		if err != nil {
+			return fmt.Errorf("failed to create NEG controller: %w", err)
+		}
 		go runWithWg(negController.Run, option.wg)
 		logger.V(0).Info("negController started")
 	}
@@ -627,9 +636,10 @@ func runNEGController(ctx *ingctx.ControllerContext, systemHealth *systemhealth.
 	// will be skipped with the following warnings:
 	//    The sharedIndexInformer has started, run more than once is not allowed
 	ctx.Start(option.stopCh)
+	return nil
 }
 
-func createNEGController(ctx *ingctx.ControllerContext, systemHealth *systemhealth.SystemHealth, stopCh <-chan struct{}, logger klog.Logger) *neg.Controller {
+func createNEGController(ctx *ingctx.ControllerContext, systemHealth *systemhealth.SystemHealth, stopCh <-chan struct{}, logger klog.Logger) (*neg.Controller, error) {
 	zoneGetter := ctx.ZoneGetter
 
 	// In NonGCP mode, use the zone specified in gce.conf directly.
@@ -665,7 +675,7 @@ func createNEGController(ctx *ingctx.ControllerContext, systemHealth *systemheal
 	}
 
 	// TODO: Refactor NEG to use cloud mocks so ctx.Cloud can be referenced within NewController.
-	negController := neg.NewController(
+	negController, err := neg.NewController(
 		ctx.KubeClient,
 		ctx.SvcNegClient,
 		ctx.EventRecorderClient,
@@ -701,9 +711,12 @@ func createNEGController(ctx *ingctx.ControllerContext, systemHealth *systemheal
 		stopCh,
 		logger,
 	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create NEG controller: %w", err)
+	}
 
 	systemHealth.AddHealthCheck("neg-controller", negController.IsHealthy)
-	return negController
+	return negController, nil
 }
 
 // runWithWg is a convenience wrapper that do a wg.Add(1), and runs the given
