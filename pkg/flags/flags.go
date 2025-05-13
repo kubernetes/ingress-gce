@@ -144,6 +144,7 @@ var F = struct {
 	EnableL4NetLBForwardingRulesOptimizations bool
 	EnableIPV6OnlyNEG                         bool
 	MultiProjectOwnerLabelKey                 string
+	OverrideHealthCheckSourceCIDRs            string
 
 	// DEPRECATED: ASM ConfigMap based config is no longer used and will be removed in a future release.
 	EnableASMConfigMapBasedConfig    bool
@@ -344,6 +345,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableL4NetLBForwardingRulesOptimizations, "enable-l4netlb-forwarding-rules-optimizations", false, "Enable optimized processing of forwarding rules for L4 NetLB.")
 	flag.BoolVar(&F.EnableIPV6OnlyNEG, "enable-ipv6-only-neg", false, "Enable support for IPV6 Only NEG's.")
 	flag.StringVar(&F.MultiProjectOwnerLabelKey, "multi-project-owner-label-key", "multiproject.gke.io/owner", "The label key for multi-project owner, which is used to identify the owner of objects in multi-project mode.")
+	flag.StringVar(&F.OverrideHealthCheckSourceCIDRs, "override-health-check-src-cidrs", "", "Overrides the default source IP ranges used when configuring firewall rules to allow health check probes for L7 load balancers. Provide the ranges as a comma-separated list of CIDRs.")
 }
 
 func Validate() {

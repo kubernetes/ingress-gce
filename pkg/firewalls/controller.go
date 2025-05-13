@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"strings"
 	"time"
 
 	gcpfirewallv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/gcpfirewall/v1"
@@ -102,12 +103,14 @@ func NewFirewallController(
 ) *FirewallController {
 	logger = logger.WithName("FirewallController")
 	compositeFirewallPool := &compositeFirewallPool{}
+	sourceRanges := lbSourceRanges(logger, flags.F.OverrideHealthCheckSourceCIDRs)
+	logger.Info("Using source ranges", "ranges", sourceRanges)
 	if enableCR {
-		firewallCRPool := NewFirewallCRPool(ctx.FirewallClient, ctx.Cloud, ctx.ClusterNamer, gce.L7LoadBalancerSrcRanges(), portRanges, disableFWEnforcement, logger)
+		firewallCRPool := NewFirewallCRPool(ctx.FirewallClient, ctx.Cloud, ctx.ClusterNamer, sourceRanges, portRanges, disableFWEnforcement, logger)
 		compositeFirewallPool.pools = append(compositeFirewallPool.pools, firewallCRPool)
 	}
 	if !disableFWEnforcement {
-		firewallPool := NewFirewallPool(ctx.Cloud, ctx.ClusterNamer, gce.L7LoadBalancerSrcRanges(), portRanges, logger)
+		firewallPool := NewFirewallPool(ctx.Cloud, ctx.ClusterNamer, sourceRanges, portRanges, logger)
 		compositeFirewallPool.pools = append(compositeFirewallPool.pools, firewallPool)
 	}
 
@@ -193,6 +196,21 @@ func NewFirewallController(
 	}
 
 	return fwc
+}
+
+func lbSourceRanges(logger klog.Logger, overrideRanges string) []string {
+	if overrideRanges != "" {
+		logger.Info("Overriding load balancer source ranges", "ranges", overrideRanges)
+		var sourceRanges []string
+
+		ranges := strings.Split(overrideRanges, ",")
+		for _, sourceRange := range ranges {
+			sourceRanges = append(sourceRanges, strings.TrimSpace(sourceRange))
+		}
+		return sourceRanges
+	}
+
+	return gce.L7LoadBalancerSrcRanges()
 }
 
 // ToSvcPorts is a helper method over translator.TranslateIngress to process a list of ingresses.
