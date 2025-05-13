@@ -143,6 +143,7 @@ var F = struct {
 	EnableL4NetLBForwardingRulesOptimizations bool
 	EnableIPV6OnlyNEG                         bool
 	MultiProjectOwnerLabelKey                 string
+	OverrideHealthCheckSourceCIDRs            string
 	EnableL4LBLoggingAnnotations              bool
 	OverrideHealthCheckSourceCIDRs            string
 
