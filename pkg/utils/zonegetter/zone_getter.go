@@ -212,7 +212,7 @@ func (z *ZoneGetter) ListZones(filter Filter, logger klog.Logger) ([]string, err
 // default subnet.
 func (z *ZoneGetter) ListSubnets(logger klog.Logger) []nodetopologyv1.SubnetConfig {
 	if z.mode == Legacy {
-		logger.Info("ListSubnets is being called with legacy zone getter. Ignoring error")
+		logger.Info("ListSubnets is being called with legacy zone getter. Returning empty list of subnets")
 		return nil
 	}
 
