@@ -358,7 +358,13 @@ func (z *ZoneGetter) nodePredicateInternal(node *api_v1.Node, includeUnreadyNode
 }
 
 // ZoneForNode returns if the given node is in default subnet.
+// In Legacy mode, there are no subnets, so all nodes can be considered
+// as "default", therefore always return true.
 func (z *ZoneGetter) IsDefaultSubnetNode(nodeName string, logger klog.Logger) (bool, error) {
+	if z.mode == Legacy {
+		return true, nil
+	}
+
 	nodeLogger := logger.WithValues("nodeName", nodeName)
 	node, err := listers.NewNodeLister(z.nodeLister).Get(nodeName)
 	if err != nil {
