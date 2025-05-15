@@ -854,12 +854,12 @@ func TestEnsureInternalLoadBalancerClass(t *testing.T) {
 		},
 		{
 			desc:              "Use ILB loadBalancerClass",
-			loadBalancerClass: annotations.RegionalInternalLoadBalancerClass,
+			loadBalancerClass: common.RegionalInternalLoadBalancerClass,
 			shouldProcess:     true,
 		},
 		{
 			desc:              "Use NetLB loadBalancerClass",
-			loadBalancerClass: annotations.RegionalExternalLoadBalancerClass,
+			loadBalancerClass: common.RegionalExternalLoadBalancerClass,
 			shouldProcess:     false,
 		},
 		{

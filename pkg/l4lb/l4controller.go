@@ -233,7 +233,7 @@ func (l4c *L4Controller) shouldProcessService(service *v1.Service, svcLogger klo
 	// LoadBalancerClass can't be updated (see the field API doc) so we don't need to worry about cleaning up services that changed the class.
 	// Services with a different loadBalancerClass shouldn't even be added to the queue
 	if service.Spec.LoadBalancerClass != nil {
-		if annotations.HasLoadBalancerClass(service, annotations.RegionalInternalLoadBalancerClass) {
+		if common.HasLoadBalancerClass(service, common.RegionalInternalLoadBalancerClass) {
 			return true
 		} else {
 			svcLogger.Info("Ignoring service managed by another controller", "serviceLoadBalancerClass", *service.Spec.LoadBalancerClass)
@@ -241,7 +241,7 @@ func (l4c *L4Controller) shouldProcessService(service *v1.Service, svcLogger klo
 		}
 	}
 	// skip services that are being handled by the legacy service controller.
-	if utils.IsLegacyL4ILBService(service) {
+	if common.IsLegacyL4ILBService(service) {
 		svcLogger.Info("Ignoring update for service managed by service controller")
 		return false
 	}
@@ -508,7 +508,7 @@ func (l4c *L4Controller) sync(key string, svcLogger klog.Logger) error {
 }
 
 func (l4c *L4Controller) needsDeletion(svc *v1.Service) bool {
-	if !utils.IsSubsettingL4ILBService(svc) {
+	if !common.IsSubsettingL4ILBService(svc) {
 		return false
 	}
 	if common.IsDeletionCandidateForGivenFinalizer(svc.ObjectMeta, common.ILBFinalizerV2) {
@@ -523,7 +523,7 @@ func (l4c *L4Controller) needsUpdate(oldService *v1.Service, newService *v1.Serv
 	// Ignore services not handled by this controller.
 	// LoadBalancerClass can't be updated so we know if this controller should not process the ILB.
 	// We don't need to clean any resources if service is controlled by another controller.
-	if newService.Spec.LoadBalancerClass != nil && !annotations.HasLoadBalancerClass(newService, annotations.RegionalInternalLoadBalancerClass) {
+	if newService.Spec.LoadBalancerClass != nil && !common.HasLoadBalancerClass(newService, common.RegionalInternalLoadBalancerClass) {
 		return false
 	}
 
