@@ -96,56 +96,57 @@ var F = struct {
 	KubeClientBurst                  int
 
 	// Feature flags should be named Enablexxx.
-	EnableASMConfigMapBasedConfig            bool
-	EnableDeleteUnusedFrontends              bool
-	EnableFrontendConfig                     bool
-	EnableNonGCPMode                         bool
-	EnableReadinessReflector                 bool
-	EnableV2FrontendNamer                    bool
-	FinalizerAdd                             bool // Should have been named Enablexxx.
-	FinalizerRemove                          bool // Should have been named Enablexxx.
-	EnablePSC                                bool
-	EnableTrafficScaling                     bool
-	EnableRecalculateUHCOnBCRemoval          bool
-	EnableTransparentHealthChecks            bool
-	EnableUpdateCustomHealthCheckDescription bool
-	EnablePinhole                            bool
-	EnableL4ILBDualStack                     bool
-	EnableL4NetLBDualStack                   bool
-	EnableNEGController                      bool
-	EnableL4NEG                              bool
-	EnableL4NetLBNEG                         bool
-	EnableL4NetLBNEGDefault                  bool
-	GateNEGByLock                            bool
-	GateL4ByLock                             bool
-	EnableMultipleIGs                        bool
-	EnableL4StrongSessionAffinity            bool
-	EnableNEGLabelPropagation                bool
-	EnableMultiNetworking                    bool
-	MaxIGSize                                int
-	EnableDegradedMode                       bool
-	EnableDegradedModeMetrics                bool
-	EnableDualStackNEG                       bool
-	EnableFirewallCR                         bool
-	DisableFWEnforcement                     bool
-	DisableL4LBFirewall                      bool
-	EnableIngressRegionalExternal            bool
-	EnableIngressGlobalExternal              bool
-	OverrideComputeAPIEndpoint               string
-	EnableIGMultiSubnetCluster               bool
-	EnableMultiSubnetCluster                 bool
-	EnableMultiSubnetClusterPhase1           bool
-	NodeTopologyCRName                       string
-	EnableWeightedL4ILB                      bool
-	EnableWeightedL4NetLB                    bool
-	EnableDiscretePortForwarding             bool
-	EnableMultiProjectMode                   bool
-	EnableL4ILBZonalAffinity                 bool
-	ProviderConfigNameLabelKey               string
-	EnableL4ILBMixedProtocol                 bool
-	EnableL4NetLBMixedProtocol               bool
-	EnableIPV6OnlyNEG                        bool
-	MultiProjectOwnerLabelKey                string
+	EnableASMConfigMapBasedConfig             bool
+	EnableDeleteUnusedFrontends               bool
+	EnableFrontendConfig                      bool
+	EnableNonGCPMode                          bool
+	EnableReadinessReflector                  bool
+	EnableV2FrontendNamer                     bool
+	FinalizerAdd                              bool // Should have been named Enablexxx.
+	FinalizerRemove                           bool // Should have been named Enablexxx.
+	EnablePSC                                 bool
+	EnableTrafficScaling                      bool
+	EnableRecalculateUHCOnBCRemoval           bool
+	EnableTransparentHealthChecks             bool
+	EnableUpdateCustomHealthCheckDescription  bool
+	EnablePinhole                             bool
+	EnableL4ILBDualStack                      bool
+	EnableL4NetLBDualStack                    bool
+	EnableNEGController                       bool
+	EnableL4NEG                               bool
+	EnableL4NetLBNEG                          bool
+	EnableL4NetLBNEGDefault                   bool
+	GateNEGByLock                             bool
+	GateL4ByLock                              bool
+	EnableMultipleIGs                         bool
+	EnableL4StrongSessionAffinity             bool
+	EnableNEGLabelPropagation                 bool
+	EnableMultiNetworking                     bool
+	MaxIGSize                                 int
+	EnableDegradedMode                        bool
+	EnableDegradedModeMetrics                 bool
+	EnableDualStackNEG                        bool
+	EnableFirewallCR                          bool
+	DisableFWEnforcement                      bool
+	DisableL4LBFirewall                       bool
+	EnableIngressRegionalExternal             bool
+	EnableIngressGlobalExternal               bool
+	OverrideComputeAPIEndpoint                string
+	EnableIGMultiSubnetCluster                bool
+	EnableMultiSubnetCluster                  bool
+	EnableMultiSubnetClusterPhase1            bool
+	NodeTopologyCRName                        string
+	EnableWeightedL4ILB                       bool
+	EnableWeightedL4NetLB                     bool
+	EnableDiscretePortForwarding              bool
+	EnableMultiProjectMode                    bool
+	EnableL4ILBZonalAffinity                  bool
+	ProviderConfigNameLabelKey                string
+	EnableL4ILBMixedProtocol                  bool
+	EnableL4NetLBMixedProtocol                bool
+	EnableL4NetLBForwardingRulesOptimizations bool
+	EnableIPV6OnlyNEG                         bool
+	MultiProjectOwnerLabelKey                 string
 }{
 	GCERateLimitScale: 1.0,
 }
@@ -338,6 +339,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableL4ILBMixedProtocol, "enable-l4ilb-mixed-protocol", false, "Enable support for mixed protocol L4 internal load balancers.")
 	flag.BoolVar(&F.EnableL4NetLBMixedProtocol, "enable-l4netlb-mixed-protocol", false, "Enable support for mixed protocol L4 external load balancers.")
 	flag.StringVar(&F.ProviderConfigNameLabelKey, "provider-config-name-label-key", "cloud.gke.io/provider-config-name", "The label key for provider-config name, which is used to identify the provider-config of objects in multi-project mode.")
+	flag.BoolVar(&F.EnableL4NetLBForwardingRulesOptimizations, "enable-l4netlb-forwarding-rules-optimizations", false, "Enable optimized processing of forwarding rules for L4 NetLB.")
 	flag.BoolVar(&F.EnableIPV6OnlyNEG, "enable-ipv6-only-neg", false, "Enable support for IPV6 Only NEG's.")
 	flag.StringVar(&F.MultiProjectOwnerLabelKey, "multi-project-owner-label-key", "multiproject.gke.io/owner", "The label key for multi-project owner, which is used to identify the owner of objects in multi-project mode.")
 }
