@@ -29,6 +29,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/utils/ptr"
 
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -621,7 +622,7 @@ func TestToCompositeTargetHttpsProxy(t *testing.T) {
 			desc:      "https xlb with ssl policy",
 			urlMapKey: meta.GlobalKey("my-url-map"),
 			version:   meta.VersionGA,
-			sslPolicy: utils.NewStringPointer("test-policy"),
+			sslPolicy: ptr.To("test-policy"),
 			want: &composite.TargetHttpsProxy{
 				Name:        "foo-tp",
 				Description: description,
@@ -758,19 +759,19 @@ func TestSslPolicyLink(t *testing.T) {
 		},
 		{
 			desc: "frontendconfig with ssl policy",
-			fc:   &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: utils.NewStringPointer("test-policy")}},
-			want: utils.NewStringPointer("global/sslPolicies/test-policy"),
+			fc:   &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: ptr.To("test-policy")}},
+			want: ptr.To("global/sslPolicies/test-policy"),
 		},
 		{
 			desc: "frontendconfig with empty string ssl policy",
-			fc:   &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: utils.NewStringPointer("")}},
-			want: utils.NewStringPointer(""),
+			fc:   &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: ptr.To("")}},
+			want: ptr.To(""),
 		},
 		{
 			desc:       "frontendconfig with ssl policy",
-			fc:         &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: utils.NewStringPointer("test-policy")}},
+			fc:         &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: ptr.To("test-policy")}},
 			isRegional: true,
-			want:       utils.NewStringPointer(fmt.Sprintf("regions/%s/sslPolicies/test-policy", testRegion)),
+			want:       ptr.To(fmt.Sprintf("regions/%s/sslPolicies/test-policy", testRegion)),
 		},
 	}
 
