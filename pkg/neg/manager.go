@@ -400,11 +400,7 @@ func (manager *syncerManager) GC() error {
 
 	// Garbage collect NEGs
 	var err error
-	if manager.svcNegClient != nil {
-		err = manager.garbageCollectNEGWithCRD()
-	} else {
-		err = manager.garbageCollectNEG()
-	}
+	err = manager.garbageCollectNEGWithCRD()
 	if err != nil {
 		err = fmt.Errorf("failed to garbage collect negs: %w", err)
 	}
@@ -464,9 +460,6 @@ func (manager *syncerManager) ReadinessGateEnabled(syncerKey negtypes.NegSyncerK
 // on the given neg name. If the Deletion timestamp has already been set on the CR, no
 // change will occur.
 func (manager *syncerManager) ensureDeleteSvcNegCR(namespace, negName string) error {
-	if manager.svcNegClient == nil {
-		return nil
-	}
 	obj, exists, err := manager.svcNegLister.GetByKey(fmt.Sprintf("%s/%s", namespace, negName))
 	if err != nil {
 		return fmt.Errorf("failed retrieving neg %s/%s to delete: %w", namespace, negName, err)
@@ -498,53 +491,6 @@ func (manager *syncerManager) garbageCollectSyncer() {
 			manager.syncerMetrics.DeleteSyncer(key)
 		}
 	}
-}
-
-func (manager *syncerManager) garbageCollectNEG() error {
-	// Retrieve aggregated NEG list from cloud
-	// Compare against svcPortMap and Remove unintended NEGs by best effort
-	negList, err := manager.cloud.AggregatedListNetworkEndpointGroup(meta.VersionGA, manager.logger)
-	if err != nil {
-		return fmt.Errorf("failed to retrieve aggregated NEG list: %w", err)
-	}
-
-	deleteCandidates := map[string][]string{}
-	for key, neg := range negList {
-		if key.Type() != meta.Zonal {
-			// covers the case when key.Zone is not populated
-			manager.logger.V(4).Info("Ignoring key as it is not zonal", "key", key)
-			continue
-		}
-		if manager.namer.IsNEG(neg.Name) {
-			if _, ok := deleteCandidates[neg.Name]; !ok {
-				deleteCandidates[neg.Name] = []string{}
-			}
-			deleteCandidates[neg.Name] = append(deleteCandidates[neg.Name], key.Zone)
-		}
-	}
-
-	func() {
-		manager.mu.Lock()
-		defer manager.mu.Unlock()
-		for _, portInfoMap := range manager.svcPortMap {
-			for _, portInfo := range portInfoMap {
-				delete(deleteCandidates, portInfo.NegName)
-			}
-		}
-	}()
-
-	// This section includes a potential race condition between deleting neg here and users adds the neg annotation.
-	// The worst outcome of the race condition is that neg is deleted in the end but user actually specifies a neg.
-	// This would be resolved (sync neg) when the next endpoint update or resync arrives.
-	// TODO: avoid race condition here
-	for name, zones := range deleteCandidates {
-		for _, zone := range zones {
-			if err := manager.ensureDeleteNetworkEndpointGroup(name, zone, nil); err != nil {
-				return fmt.Errorf("failed to delete NEG %q in %q: %w", name, zone, err)
-			}
-		}
-	}
-	return nil
 }
 
 type deletionCandidate struct {
@@ -815,10 +761,6 @@ func (manager *syncerManager) ensureDeleteNetworkEndpointGroup(name, zone string
 // desired Neg if it does not already exist. If an NEG CR already exists, and has the required labels
 // its Object Meta will be updated if necessary. If the NEG CR does not have required labels an error is thrown.
 func (manager *syncerManager) ensureSvcNegCR(svcKey serviceKey, portInfo negtypes.PortInfo) error {
-	if manager.svcNegClient == nil {
-		return nil
-	}
-
 	obj, exists, err := manager.serviceLister.GetByKey(svcKey.Key())
 	if err != nil {
 		manager.logger.Error(err, "Failed to retrieve service from store", "service", svcKey.Key())

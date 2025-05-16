@@ -82,7 +82,7 @@ func StartNEGController(
 		return nil, fmt.Errorf("failed to initialize zonegetter: %v", err)
 	}
 
-	negController := createNEGController(
+	negController, err := createNEGController(
 		kubeClient,
 		svcNegClient,
 		eventRecorderClient,
@@ -104,6 +104,10 @@ func StartNEGController(
 		joinedStopCh,
 		logger,
 	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to create NEG controller: %w", err)
+	}
 
 	logger.V(2).Info("Starting NEG controller run loop", "providerConfig", providerConfigName)
 	go negController.Run()
@@ -257,7 +261,7 @@ func createNEGController(
 	lpConfig labels.PodLabelPropagationConfig,
 	stopCh <-chan struct{},
 	logger klog.Logger,
-) *neg.Controller {
+) (*neg.Controller, error) {
 
 	// The adapter uses Network SelfLink
 	adapter, err := network.NewAdapterNetworkSelfLink(cloud)
@@ -272,7 +276,7 @@ func createNEGController(
 	asmServiceNEGSkipNamespaces := []string{}
 	enableASM := false
 
-	negController := neg.NewController(
+	negController, err := neg.NewController(
 		kubeClient,
 		svcNegClient,
 		eventRecorderClient,
@@ -308,6 +312,8 @@ func createNEGController(
 		stopCh,
 		logger,
 	)
-
-	return negController
+	if err != nil {
+		return nil, fmt.Errorf("failed to create NEG controller: %w", err)
+	}
+	return negController, nil
 }

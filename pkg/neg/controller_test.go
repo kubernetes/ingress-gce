@@ -166,7 +166,7 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		false,
 		make(<-chan struct{}),
 		klog.TODO(),
-	), nil
+	)
 }
 func newTestControllerWithASM(kubeClient kubernetes.Interface) (*Controller, error) {
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
