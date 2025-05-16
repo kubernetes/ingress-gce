@@ -57,7 +57,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/klog/v2"
-	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"k8s.io/utils/strings/slices"
 )
 
@@ -951,7 +951,7 @@ func CheckNegOwnerRef(svc *v1.Service, svcNeg negv1beta1.ServiceNetworkEndpointG
 
 	gvk := schema.GroupVersionKind{Version: "v1", Kind: "Service"}
 	expectedOwnerReference := metav1.NewControllerRef(svc, gvk)
-	expectedOwnerReference.BlockOwnerDeletion = utilpointer.BoolPtr(false)
+	expectedOwnerReference.BlockOwnerDeletion = ptr.To(false)
 
 	if !reflect.DeepEqual(*expectedOwnerReference, svcNeg.OwnerReferences[0]) {
 		return fmt.Errorf("CheckNegOwnerRef: neg %s/%s owner reference is %+v expected %+v", svcNeg.Namespace, svcNeg.Name, svcNeg.OwnerReferences[0], expectedOwnerReference)

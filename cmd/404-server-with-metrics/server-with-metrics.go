@@ -225,7 +225,9 @@ func (s *server) shutdownHandler() http.HandlerFunc {
 
 // notFoundHandler uses the default http NotFoundHandler which returns a 404 status code
 func (s *server) notFoundHandler() http.HandlerFunc {
-	rand.Seed(1)
+	src := rand.NewSource(1)
+	rng := rand.New(src)
+
 	return func(w http.ResponseWriter, r *http.Request) {
 		// compute the duration of handling the request
 		dt := prometheus.NewTimer(prometheus.ObserverFunc(func(value float64) {
@@ -243,7 +245,7 @@ func (s *server) notFoundHandler() http.HandlerFunc {
 		// we log 1 out of 10 requests (by default) to the logs
 		fmt.Fprintf(w, "response 404 (backend NotFound), service rules for the path non-existent \n")
 		s.idleChannel <- true
-		if rand.Float64() < *logSampleRequests {
+		if rng.Float64() < *logSampleRequests {
 			klog.Infof("response 404 (backend NotFound), service rules for [ %s ] non-existent \n", path)
 		}
 	}

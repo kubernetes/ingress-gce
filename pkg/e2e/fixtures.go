@@ -49,7 +49,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/cmd/echo/app"
 	"k8s.io/klog/v2"
-	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -578,7 +578,7 @@ func EnsureServiceAttachment(s *Sandbox, saName, svcName, subnetName string) (*s
 			ConnectionPreference: "ACCEPT_AUTOMATIC",
 			NATSubnets:           []string{subnetName},
 			ResourceRef: v1.TypedLocalObjectReference{
-				APIGroup: utilpointer.StringPtr(""),
+				APIGroup: ptr.To(""),
 				Kind:     "service",
 				Name:     svcName,
 			},

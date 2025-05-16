@@ -45,7 +45,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	sautils "k8s.io/ingress-gce/pkg/utils/serviceattachment"
 	"k8s.io/klog/v2"
-	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -155,7 +155,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 			svcExists:            false,
 			connectionPreference: "ACCEPT_AUTOMATIC",
 			resourceRef: v1.TypedLocalObjectReference{
-				APIGroup: utilpointer.StringPtr("apiGroup"),
+				APIGroup: ptr.To("apiGroup"),
 				Kind:     "not-service",
 				Name:     svcName,
 			},

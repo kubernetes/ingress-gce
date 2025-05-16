@@ -49,7 +49,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
-	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 type serviceKey struct {
@@ -832,7 +832,7 @@ func (manager *syncerManager) ensureSvcNegCR(svcKey serviceKey, portInfo negtype
 
 	gvk := schema.GroupVersionKind{Version: "v1", Kind: "Service"}
 	ownerReference := metav1.NewControllerRef(service, gvk)
-	ownerReference.BlockOwnerDeletion = utilpointer.BoolPtr(false)
+	ownerReference.BlockOwnerDeletion = ptr.To(false)
 	labels := map[string]string{
 		negtypes.NegCRManagedByKey:   negtypes.NegCRControllerValue,
 		negtypes.NegCRServiceNameKey: svcKey.name,

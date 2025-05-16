@@ -17,6 +17,7 @@ limitations under the License.
 package command
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -42,9 +43,9 @@ var rootCmd = &cobra.Command{
 			os.Exit(1)
 		}
 		client, err := kube.NewClientSet(kubecontext, kubeconfig)
-		beconfigClient, err := kube.NewBackendConfigClientSet(kubecontext, kubeconfig)
-		feConfigClient, err := kube.NewFrontendConfigClientSet(kubecontext, kubeconfig)
-		if err != nil {
+		beconfigClient, errBackend := kube.NewBackendConfigClientSet(kubecontext, kubeconfig)
+		feConfigClient, errFrontend := kube.NewFrontendConfigClientSet(kubecontext, kubeconfig)
+		if errors.Join(err, errBackend, errFrontend) != nil {
 			fmt.Fprintf(os.Stderr, "Error connecting to Kubernetes: %v", err)
 			os.Exit(1)
 		}

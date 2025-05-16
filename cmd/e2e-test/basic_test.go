@@ -304,7 +304,7 @@ func TestFrontendResourceDeletion(t *testing.T) {
 			if err := e2e.WaitForFrontendResourceDeletion(ctx, Framework.Cloud, gclb, deleteOptions); err != nil {
 				t.Errorf("e2e.WaitForFrontendResourceDeletion(..., %q, _) = %v, want nil", ingKey, err)
 			}
-			if gclb, err = e2e.WhiteboxTest(ing, nil, Framework.Cloud, "", s); err != nil {
+			if _, err = e2e.WhiteboxTest(ing, nil, Framework.Cloud, "", s); err != nil {
 				t.Fatalf("e2e.WhiteboxTest(%s, ...) = %v, want nil", ingKey, err)
 			}
 
