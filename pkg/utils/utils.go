@@ -826,16 +826,6 @@ func MakeL4IPv6ForwardingRuleDescription(service *api_v1.Service) (string, error
 	return (&L4LBResourceDescription{ServiceName: ServiceKeyFunc(service.Namespace, service.Name)}).Marshal()
 }
 
-// NewStringPointer returns a pointer to the provided string literal
-func NewStringPointer(s string) *string {
-	return &s
-}
-
-// NewInt64Pointer returns a pointer to the provided int64 literal
-func NewInt64Pointer(i int64) *int64 {
-	return &i
-}
-
 // GetBasePath returns the compute API endpoint with the `projects/<project-id>` element
 // compute API v0.36 changed basepath and dropped the `projects/` suffix, therefore suffix
 // must be added back when generating compute resource urls.

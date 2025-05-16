@@ -18,9 +18,10 @@ package metrics
 
 import (
 	"fmt"
-	"k8s.io/klog/v2"
 	"strconv"
 	"testing"
+
+	"k8s.io/klog/v2"
 
 	"github.com/google/go-cmp/cmp"
 	v1 "k8s.io/api/networking/v1"
@@ -31,6 +32,7 @@ import (
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	pscmetrics "k8s.io/ingress-gce/pkg/psc/metrics"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/utils/ptr"
 )
 
 var (
@@ -61,7 +63,7 @@ var (
 					ConnectionDraining: &backendconfigv1.ConnectionDrainingConfig{
 						DrainingTimeoutSec: testTTL,
 					},
-					HealthCheck: &backendconfigv1.HealthCheckConfig{RequestPath: utils.NewStringPointer("/foo")},
+					HealthCheck: &backendconfigv1.HealthCheckConfig{RequestPath: ptr.To("/foo")},
 				},
 			},
 		},
@@ -651,7 +653,7 @@ var (
 			},
 			&frontendconfigv1beta1.FrontendConfig{
 				Spec: frontendconfigv1beta1.FrontendConfigSpec{
-					SslPolicy: utils.NewStringPointer("test-policy"),
+					SslPolicy: ptr.To("test-policy"),
 				},
 			},
 			[]feature{ingress, externalIngress, httpEnabled,
@@ -779,7 +781,7 @@ var (
 			},
 			&frontendconfigv1beta1.FrontendConfig{
 				Spec: frontendconfigv1beta1.FrontendConfigSpec{
-					SslPolicy: utils.NewStringPointer(""),
+					SslPolicy: ptr.To(""),
 				},
 			},
 			[]feature{ingress, externalIngress, httpEnabled,
