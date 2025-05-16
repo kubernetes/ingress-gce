@@ -167,6 +167,9 @@ func TestAddressManagerWrongTypeReserved(t *testing.T) {
 
 	addr := &compute.Address{Name: "my-important-address", Address: targetIP, AddressType: string(cloud.SchemeInternal)}
 	err = svc.ReserveRegionAddress(addr, vals.Region)
+	if err != nil {
+		t.Errorf("svc.ReserveRegionAddress returned err: %v", err)
+	}
 
 	mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeExternal, cloud.NetworkTierPremium, address.IPv4Version, klog.TODO())
 

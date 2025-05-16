@@ -335,8 +335,10 @@ func TestServiceNetworkWithNetworkId(t *testing.T) {
 	for _, tc := range cases {
 
 		t.Run(tc.desc, func(t *testing.T) {
-
 			adapter, err := NewAdapterNetworkSelfLink(fakeCloudWithNetworkId{})
+			if err != nil {
+				t.Errorf("failed to create adapter network self link %v", err)
+			}
 
 			networkClient := netfake.NewSimpleClientset()
 
