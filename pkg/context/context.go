@@ -119,26 +119,27 @@ type ControllerContextConfig struct {
 	NumL4Workers      int
 	NumL4NetLBWorkers int
 	// DefaultBackendSvcPortID is the ServicePort for the system default backend.
-	DefaultBackendSvcPort         utils.ServicePort
-	HealthCheckPath               string
-	FrontendConfigEnabled         bool
-	EnableASMConfigMap            bool
-	ASMConfigMapNamespace         string
-	ASMConfigMapName              string
-	MaxIGSize                     int
-	EnableL4ILBDualStack          bool
-	EnableL4NetLBDualStack        bool
-	EnableL4StrongSessionAffinity bool // flag that enables strong session affinity feature
-	EnableMultinetworking         bool
-	EnableIngressRegionalExternal bool
-	EnableWeightedL4ILB           bool
-	EnableWeightedL4NetLB         bool
-	EnableL4ILBZonalAffinity      bool
-	DisableL4LBFirewall           bool
-	EnableL4NetLBNEGs             bool
-	EnableL4NetLBNEGsDefault      bool
-	EnableL4ILBMixedProtocol      bool
-	EnableL4NetLBMixedProtocol    bool
+	DefaultBackendSvcPort                     utils.ServicePort
+	HealthCheckPath                           string
+	FrontendConfigEnabled                     bool
+	EnableASMConfigMap                        bool
+	ASMConfigMapNamespace                     string
+	ASMConfigMapName                          string
+	MaxIGSize                                 int
+	EnableL4ILBDualStack                      bool
+	EnableL4NetLBDualStack                    bool
+	EnableL4StrongSessionAffinity             bool
+	EnableMultinetworking                     bool
+	EnableIngressRegionalExternal             bool
+	EnableWeightedL4ILB                       bool
+	EnableWeightedL4NetLB                     bool
+	EnableL4ILBZonalAffinity                  bool
+	DisableL4LBFirewall                       bool
+	EnableL4NetLBNEGs                         bool
+	EnableL4NetLBNEGsDefault                  bool
+	EnableL4ILBMixedProtocol                  bool
+	EnableL4NetLBMixedProtocol                bool
+	EnableL4NetLBForwardingRulesOptimizations bool
 }
 
 // NewControllerContext returns a new shared set of informers.
