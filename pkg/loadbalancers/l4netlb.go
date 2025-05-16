@@ -239,7 +239,7 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 		l4netlb.svcLogger.Error(err, "Failed to get network for service")
 		result.Error = err
 		result.MetricsState.Status = metrics.StatusError
-		if utils.IsUserError(err) {
+		if IsUserError(err) {
 			result.MetricsLegacyState.IsUserError = true
 			result.MetricsState.Status = metrics.StatusUserError
 		}
@@ -253,7 +253,7 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 	if err := l4netlb.checkStrongSessionAffinityRequirements(); err != nil {
 		result.Error = err
 		result.MetricsState.Status = metrics.StatusError
-		if utils.IsUserError(err) {
+		if IsUserError(err) {
 			result.MetricsLegacyState.IsUserError = true
 			result.MetricsState.Status = metrics.StatusUserError
 		}
@@ -415,7 +415,7 @@ func (l4netlb *L4NetLB) ensureIPv4Resources(result *L4NetLBSyncResult, nodeNames
 		// User can misconfigure the forwarding rule if Network Tier will not match service level Network Tier.
 		result.GCEResourceInError = annotations.ForwardingRuleResource
 		result.Error = fmt.Errorf("failed to ensure forwarding rule - %w", err)
-		result.MetricsLegacyState.IsUserError = utils.IsUserError(err)
+		result.MetricsLegacyState.IsUserError = IsUserError(err)
 		return
 	}
 	if fr.IPProtocol == string(corev1.ProtocolTCP) {
@@ -443,7 +443,7 @@ func (l4netlb *L4NetLB) ensureIPv4MixedResources(result *L4NetLBSyncResult, node
 		// User can misconfigure the forwarding rule if Network Tier will not match service level Network Tier.
 		result.GCEResourceInError = annotations.ForwardingRuleResource
 		result.Error = fmt.Errorf("failed to ensure mixed protocol forwarding rules - %w", err)
-		result.MetricsLegacyState.IsUserError = utils.IsUserError(err)
+		result.MetricsLegacyState.IsUserError = IsUserError(err)
 		return
 	}
 

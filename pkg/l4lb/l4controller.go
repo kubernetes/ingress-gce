@@ -306,7 +306,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service, svcLo
 	if syncResult.Error != nil {
 		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
 			"Error syncing load balancer: %v", syncResult.Error)
-		if utils.IsUserError(syncResult.Error) {
+		if loadbalancers.IsUserError(syncResult.Error) {
 			syncResult.MetricsLegacyState.IsUserError = true
 			if l4c.enableDualStack {
 				syncResult.MetricsState.Status = metrics.StatusUserError
