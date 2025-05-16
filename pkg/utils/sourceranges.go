@@ -58,7 +58,7 @@ func getAllSourceRanges(service *v1.Service) (net.IPNetSet, error) {
 		}
 		ipnets, err := net.ParseIPNets(specs...)
 		if err != nil {
-			return nil, NewInvalidSpecLoadBalancerSourceRangesError(specs, err)
+			return nil, NewInvalidLoadBalancerSourceRangesSpecError(specs, err)
 		}
 		return ipnets, err
 	}
@@ -89,7 +89,7 @@ func (e *InvalidLoadBalancerSourceRangesSpecError) Error() string {
 	return fmt.Sprintf("service.Spec.LoadBalancerSourceRanges: %v is not valid. Expecting a list of IP ranges. For example, 10.0.0.0/24. Error msg: %v", e.LoadBalancerSourceRangesSpec, e.ParseErr)
 }
 
-func NewInvalidSpecLoadBalancerSourceRangesError(specLoadBalancerSourceRanges []string, err error) *InvalidLoadBalancerSourceRangesSpecError {
+func NewInvalidLoadBalancerSourceRangesSpecError(specLoadBalancerSourceRanges []string, err error) *InvalidLoadBalancerSourceRangesSpecError {
 	return &InvalidLoadBalancerSourceRangesSpecError{
 		specLoadBalancerSourceRanges,
 		err,

@@ -593,7 +593,7 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 	if syncResult.Error != nil {
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
 			"Error ensuring Resource for L4 External LoadBalancer, err: %v", syncResult.Error)
-		if utils.IsUserError(syncResult.Error) {
+		if loadbalancers.IsUserError(syncResult.Error) {
 			syncResult.MetricsLegacyState.IsUserError = true
 			syncResult.MetricsState.Status = metrics.StatusUserError
 		}

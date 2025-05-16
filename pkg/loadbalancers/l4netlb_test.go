@@ -781,7 +781,7 @@ func TestDualStackNetLBBadCustomSubnet(t *testing.T) {
 			if result.Error == nil {
 				t.Fatalf("Expected error ensuring external dualstack loadbalancer in bad subnet, got: %v", result.Error)
 			}
-			if !utils.IsUserError(result.Error) {
+			if !IsUserError(result.Error) {
 				t.Errorf("Expected to get user error if internal IPv6 subnet specified for external IPv6 service, got %v", result.Error)
 			}
 			if !noExternalIPv6InSubnetError.MatchString(result.Error.Error()) {
@@ -844,7 +844,7 @@ func TestDualStackNetLBNetworkTier(t *testing.T) {
 				if result.Error == nil {
 					t.Fatalf("Expected an error to be returned when ensuring the external load balancer, but the call succeeded unexpectedly.")
 				}
-				if !utils.IsUserError(result.Error) {
+				if !IsUserError(result.Error) {
 					t.Fatalf("Expected to get user error if ensuring external IPv6 service, got %v", result.Error)
 				}
 			} else {

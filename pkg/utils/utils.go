@@ -276,20 +276,6 @@ func IsInvalidLoadBalancerSourceRangesAnnotationError(err error) bool {
 	return errors.As(err, &invalidLoadBalancerSourceRangesAnnotationError)
 }
 
-// IsUserError checks if given error is cause by User.
-// Right now User Error might be caused by Network Tier misconfiguration
-// or specifying non-existent or already used IP address.
-func IsUserError(err error) bool {
-	var userError *UserError
-	return IsNetworkTierError(err) ||
-		IsIPConfigurationError(err) ||
-		IsInvalidSubnetConfigurationError(err) ||
-		IsInvalidLoadBalancerSourceRangesSpecError(err) ||
-		IsInvalidLoadBalancerSourceRangesAnnotationError(err) ||
-		IsUnsupportedNetworkTierError(err) ||
-		errors.As(err, &userError)
-}
-
 // UserError is a struct to define error caused by User misconfiguration.
 type UserError struct {
 	err error
