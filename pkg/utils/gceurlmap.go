@@ -133,7 +133,7 @@ func (g *GCEURLMap) AllServicePorts() (svcPorts []ServicePort) {
 	uniqueServerPorts := make(map[ServicePortID]bool)
 	if g.DefaultBackend != nil {
 		svcPorts = append(svcPorts, *g.DefaultBackend)
-		uniqueServerPorts[*&g.DefaultBackend.ID] = true
+		uniqueServerPorts[g.DefaultBackend.ID] = true
 	}
 
 	for _, rules := range g.HostRules {
