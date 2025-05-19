@@ -1358,6 +1358,13 @@ func TestMergeVmIpNEGsPortInfo(t *testing.T) {
 			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, defaultNetwork, negtypes.L4ExternalLB),
 		},
 		{
+			desc:           "RBS non-multinet Service with NEG without RBS annotations",
+			svc:            svcWithAnnotations(newTestRBSService(controller, true, 80, common.NetLBFinalizerV3), nil),
+			networkInfo:    defaultNetwork,
+			runL4NetLB:     true,
+			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, defaultNetwork, negtypes.L4ExternalLB),
+		},
+		{
 			desc:           "RBS non-multinet Service with NEG but NEGs not enabled for NetLB",
 			svc:            newTestRBSService(controller, true, 80, common.NetLBFinalizerV3),
 			networkInfo:    defaultNetwork,
@@ -2172,6 +2179,11 @@ func newTestRBSService(c *Controller, onlyLocal bool, port int, finalizer string
 	}
 
 	c.client.CoreV1().Services(testServiceNamespace).Create(context.TODO(), svc, metav1.CreateOptions{})
+	return svc
+}
+
+func svcWithAnnotations(svc *apiv1.Service, annotations map[string]string) *apiv1.Service {
+	svc.Annotations = annotations
 	return svc
 }
 
