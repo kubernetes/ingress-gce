@@ -1,14 +1,29 @@
 package namer
 
 import (
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 // TestL4Namer verifies that all L4 resource names are of the expected length and format.
 func TestL4Namer(t *testing.T) {
 	longstring1 := "012345678901234567890123456789012345678901234567890123456789abc"
 	longstring2 := "012345678901234567890123456789012345678901234567890123456789pqr"
+	type names struct {
+		FRName            string
+		IPv6FRName        string
+		NEGName           string
+		NonDefaultNEGName string
+		FWName            string
+		IPv6FWName        string
+		HcFwName          string
+		IPv6HcFName       string
+		HcName            string
+	}
+
 	testCases := []struct {
 		desc                    string
 		namespace               string
@@ -16,15 +31,7 @@ func TestL4Namer(t *testing.T) {
 		subnetName              string
 		proto                   string
 		sharedHC                bool
-		expectFRName            string
-		expectIPv6FRName        string
-		expectNEGName           string
-		expectNonDefaultNEGName string
-		expectFWName            string
-		expectIPv6FWName        string
-		expectHcFwName          string
-		expectIPv6HcFName       string
-		expectHcName            string
+		want names
 	}{
 		{
 			desc:                    "simple case",
@@ -33,15 +40,17 @@ func TestL4Namer(t *testing.T) {
 			subnetName:              "subnet",
 			proto:                   "TCP",
 			sharedHC:                false,
-			expectFRName:            "k8s2-tcp-7kpbhpki-namespace-name-956p2p7x",
-			expectIPv6FRName:        "k8s2-tcp-7kpbhpki-namespace-name-956p2p7x-ipv6",
-			expectNEGName:           "k8s2-7kpbhpki-namespace-name-956p2p7x",
-			expectNonDefaultNEGName: "k8s2-7kpbhpki-namespace-name-185075-956p2p7x",
-			expectFWName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
-			expectIPv6FWName:        "k8s2-7kpbhpki-namespace-name-956p2p7x-ipv6",
-			expectHcFwName:          "k8s2-7kpbhpki-namespace-name-956p2p7x-fw",
-			expectIPv6HcFName:       "k8s2-7kpbhpki-namespace-name-956p2p7x-fw-ipv6",
-			expectHcName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
+			want: names{
+				FRName:            "k8s2-tcp-7kpbhpki-namespace-name-956p2p7x",
+				IPv6FRName:        "k8s2-tcp-7kpbhpki-namespace-name-956p2p7x-ipv6",
+				NEGName:           "k8s2-7kpbhpki-namespace-name-956p2p7x",
+				NonDefaultNEGName: "k8s2-7kpbhpki-namespace-name-185075-956p2p7x",
+				FWName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
+				IPv6FWName:        "k8s2-7kpbhpki-namespace-name-956p2p7x-ipv6",
+				HcFwName:          "k8s2-7kpbhpki-namespace-name-956p2p7x-fw",
+				IPv6HcFName:       "k8s2-7kpbhpki-namespace-name-956p2p7x-fw-ipv6",
+				HcName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
+			},
 		},
 		{
 			desc:                    "simple case, shared healthcheck",
@@ -50,15 +59,17 @@ func TestL4Namer(t *testing.T) {
 			subnetName:              "subnet",
 			proto:                   "TCP",
 			sharedHC:                true,
-			expectFRName:            "k8s2-tcp-7kpbhpki-namespace-name-956p2p7x",
-			expectIPv6FRName:        "k8s2-tcp-7kpbhpki-namespace-name-956p2p7x-ipv6",
-			expectNEGName:           "k8s2-7kpbhpki-namespace-name-956p2p7x",
-			expectNonDefaultNEGName: "k8s2-7kpbhpki-namespace-name-185075-956p2p7x",
-			expectFWName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
-			expectIPv6FWName:        "k8s2-7kpbhpki-namespace-name-956p2p7x-ipv6",
-			expectHcFwName:          "k8s2-7kpbhpki-l4-shared-hc-fw",
-			expectIPv6HcFName:       "k8s2-7kpbhpki-l4-shared-hc-fw-ipv6",
-			expectHcName:            "k8s2-7kpbhpki-l4-shared-hc",
+			want: names{
+				FRName:            "k8s2-tcp-7kpbhpki-namespace-name-956p2p7x",
+				IPv6FRName:        "k8s2-tcp-7kpbhpki-namespace-name-956p2p7x-ipv6",
+				NEGName:           "k8s2-7kpbhpki-namespace-name-956p2p7x",
+				NonDefaultNEGName: "k8s2-7kpbhpki-namespace-name-185075-956p2p7x",
+				FWName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
+				IPv6FWName:        "k8s2-7kpbhpki-namespace-name-956p2p7x-ipv6",
+				HcFwName:          "k8s2-7kpbhpki-l4-shared-hc-fw",
+				IPv6HcFName:       "k8s2-7kpbhpki-l4-shared-hc-fw-ipv6",
+				HcName:            "k8s2-7kpbhpki-l4-shared-hc",
+			},
 		},
 		{
 			desc:                    "long svc and namespace name",
@@ -67,15 +78,17 @@ func TestL4Namer(t *testing.T) {
 			subnetName:              "subnet",
 			proto:                   "UDP",
 			sharedHC:                false,
-			expectFRName:            "k8s2-udp-7kpbhpki-012345678901234567-01234567890123456-hwm400mg",
-			expectIPv6FRName:        "k8s2-udp-7kpbhpki-012345678901234567-01234567890123456-hwm-ipv6",
-			expectNEGName:           "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm400mg",
-			expectNonDefaultNEGName: "k8s2-7kpbhpki-0123456789012345-0123456789012345-185075-hwm400mg",
-			expectFWName:            "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm400mg",
-			expectIPv6FWName:        "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm-ipv6",
-			expectHcFwName:          "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm40-fw",
-			expectIPv6HcFName:       "k8s2-7kpbhpki-01234567890123456789-0123456789012345678--fw-ipv6",
-			expectHcName:            "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm400mg",
+			want: names{
+				FRName:            "k8s2-udp-7kpbhpki-012345678901234567-01234567890123456-hwm400mg",
+				IPv6FRName:        "k8s2-udp-7kpbhpki-012345678901234567-01234567890123456-hwm-ipv6",
+				NEGName:           "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm400mg",
+				NonDefaultNEGName: "k8s2-7kpbhpki-0123456789012345-0123456789012345-185075-hwm400mg",
+				FWName:            "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm400mg",
+				IPv6FWName:        "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm-ipv6",
+				HcFwName:          "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm40-fw",
+				IPv6HcFName:       "k8s2-7kpbhpki-01234567890123456789-0123456789012345678--fw-ipv6",
+				HcName:            "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm400mg",
+			},
 		},
 		{
 			desc:                    "long svc and namespace name, shared healthcheck",
@@ -84,15 +97,17 @@ func TestL4Namer(t *testing.T) {
 			subnetName:              "subnet",
 			proto:                   "UDP",
 			sharedHC:                true,
-			expectFRName:            "k8s2-udp-7kpbhpki-012345678901234567-01234567890123456-hwm400mg",
-			expectIPv6FRName:        "k8s2-udp-7kpbhpki-012345678901234567-01234567890123456-hwm-ipv6",
-			expectNEGName:           "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm400mg",
-			expectNonDefaultNEGName: "k8s2-7kpbhpki-0123456789012345-0123456789012345-185075-hwm400mg",
-			expectFWName:            "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm400mg",
-			expectIPv6FWName:        "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm-ipv6",
-			expectHcFwName:          "k8s2-7kpbhpki-l4-shared-hc-fw",
-			expectIPv6HcFName:       "k8s2-7kpbhpki-l4-shared-hc-fw-ipv6",
-			expectHcName:            "k8s2-7kpbhpki-l4-shared-hc",
+			want: names{
+				FRName:            "k8s2-udp-7kpbhpki-012345678901234567-01234567890123456-hwm400mg",
+				IPv6FRName:        "k8s2-udp-7kpbhpki-012345678901234567-01234567890123456-hwm-ipv6",
+				NEGName:           "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm400mg",
+				NonDefaultNEGName: "k8s2-7kpbhpki-0123456789012345-0123456789012345-185075-hwm400mg",
+				FWName:            "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm400mg",
+				IPv6FWName:        "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm-ipv6",
+				HcFwName:          "k8s2-7kpbhpki-l4-shared-hc-fw",
+				IPv6HcFName:       "k8s2-7kpbhpki-l4-shared-hc-fw-ipv6",
+				HcName:            "k8s2-7kpbhpki-l4-shared-hc",
+			},
 		},
 		{
 			desc:                    "long subnet name",
@@ -101,15 +116,17 @@ func TestL4Namer(t *testing.T) {
 			subnetName:              longstring1,
 			proto:                   "TCP",
 			sharedHC:                false,
-			expectFRName:            "k8s2-tcp-7kpbhpki-namespace-name-956p2p7x",
-			expectIPv6FRName:        "k8s2-tcp-7kpbhpki-namespace-name-956p2p7x-ipv6",
-			expectNEGName:           "k8s2-7kpbhpki-namespace-name-956p2p7x",
-			expectNonDefaultNEGName: "k8s2-7kpbhpki-namespace-name-1fd834-956p2p7x",
-			expectFWName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
-			expectIPv6FWName:        "k8s2-7kpbhpki-namespace-name-956p2p7x-ipv6",
-			expectHcFwName:          "k8s2-7kpbhpki-namespace-name-956p2p7x-fw",
-			expectIPv6HcFName:       "k8s2-7kpbhpki-namespace-name-956p2p7x-fw-ipv6",
-			expectHcName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
+			want: names{
+				FRName:            "k8s2-tcp-7kpbhpki-namespace-name-956p2p7x",
+				IPv6FRName:        "k8s2-tcp-7kpbhpki-namespace-name-956p2p7x-ipv6",
+				NEGName:           "k8s2-7kpbhpki-namespace-name-956p2p7x",
+				NonDefaultNEGName: "k8s2-7kpbhpki-namespace-name-1fd834-956p2p7x",
+				FWName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
+				IPv6FWName:        "k8s2-7kpbhpki-namespace-name-956p2p7x-ipv6",
+				HcFwName:          "k8s2-7kpbhpki-namespace-name-956p2p7x-fw",
+				IPv6HcFName:       "k8s2-7kpbhpki-namespace-name-956p2p7x-fw-ipv6",
+				HcName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
+			},
 		},
 		{
 			desc:                    "l3 protocol",
@@ -118,15 +135,17 @@ func TestL4Namer(t *testing.T) {
 			subnetName:              longstring1,
 			proto:                   "L3_DEFAULT",
 			sharedHC:                false,
-			expectFRName:            "k8s2-l3-7kpbhpki-namespace-name-956p2p7x",
-			expectIPv6FRName:        "k8s2-l3-7kpbhpki-namespace-name-956p2p7x-ipv6",
-			expectNEGName:           "k8s2-7kpbhpki-namespace-name-956p2p7x",
-			expectNonDefaultNEGName: "k8s2-7kpbhpki-namespace-name-1fd834-956p2p7x",
-			expectFWName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
-			expectIPv6FWName:        "k8s2-7kpbhpki-namespace-name-956p2p7x-ipv6",
-			expectHcFwName:          "k8s2-7kpbhpki-namespace-name-956p2p7x-fw",
-			expectIPv6HcFName:       "k8s2-7kpbhpki-namespace-name-956p2p7x-fw-ipv6",
-			expectHcName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
+			want: names{
+				FRName:            "k8s2-l3-7kpbhpki-namespace-name-956p2p7x",
+				IPv6FRName:        "k8s2-l3-7kpbhpki-namespace-name-956p2p7x-ipv6",
+				NEGName:           "k8s2-7kpbhpki-namespace-name-956p2p7x",
+				NonDefaultNEGName: "k8s2-7kpbhpki-namespace-name-1fd834-956p2p7x",
+				FWName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
+				IPv6FWName:        "k8s2-7kpbhpki-namespace-name-956p2p7x-ipv6",
+				HcFwName:          "k8s2-7kpbhpki-namespace-name-956p2p7x-fw",
+				IPv6HcFName:       "k8s2-7kpbhpki-namespace-name-956p2p7x-fw-ipv6",
+				HcName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
+			},
 		},
 		{
 			desc:                    "l3 protocol with long svc and namespace name",
@@ -135,58 +154,54 @@ func TestL4Namer(t *testing.T) {
 			subnetName:              "subnet",
 			proto:                   "L3_DEFAULT",
 			sharedHC:                true,
-			expectFRName:            "k8s2-l3-7kpbhpki-012345678901234567-012345678901234567-hwm400mg",
-			expectIPv6FRName:        "k8s2-l3-7kpbhpki-012345678901234567-012345678901234567-hwm-ipv6",
-			expectNEGName:           "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm400mg",
-			expectNonDefaultNEGName: "k8s2-7kpbhpki-0123456789012345-0123456789012345-185075-hwm400mg",
-			expectFWName:            "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm400mg",
-			expectIPv6FWName:        "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm-ipv6",
-			expectHcFwName:          "k8s2-7kpbhpki-l4-shared-hc-fw",
-			expectIPv6HcFName:       "k8s2-7kpbhpki-l4-shared-hc-fw-ipv6",
-			expectHcName:            "k8s2-7kpbhpki-l4-shared-hc",
+			want: names{
+				FRName:            "k8s2-l3-7kpbhpki-012345678901234567-012345678901234567-hwm400mg",
+				IPv6FRName:        "k8s2-l3-7kpbhpki-012345678901234567-012345678901234567-hwm-ipv6",
+				NEGName:           "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm400mg",
+				NonDefaultNEGName: "k8s2-7kpbhpki-0123456789012345-0123456789012345-185075-hwm400mg",
+				FWName:            "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm400mg",
+				IPv6FWName:        "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm-ipv6",
+				HcFwName:          "k8s2-7kpbhpki-l4-shared-hc-fw",
+				IPv6HcFName:       "k8s2-7kpbhpki-l4-shared-hc-fw-ipv6",
+				HcName:            "k8s2-7kpbhpki-l4-shared-hc",
+			},
 		},
 	}
 
-	newNamer := NewL4Namer(kubeSystemUID, nil)
+	namer := NewL4Namer(kubeSystemUID, nil)
 	for _, tc := range testCases {
-		frName := newNamer.L4ForwardingRule(tc.namespace, tc.name, strings.ToLower(tc.proto))
-		ipv6FrName := newNamer.L4IPv6ForwardingRule(tc.namespace, tc.name, strings.ToLower(tc.proto))
-		negName := newNamer.L4Backend(tc.namespace, tc.name)
-		nonDefaultNegName := newNamer.NonDefaultSubnetNEG(tc.namespace, tc.name, tc.subnetName, 0) // Port is not used for L4 NEG
-		fwName := newNamer.L4Firewall(tc.namespace, tc.name)
-		ipv6FWName := newNamer.L4IPv6Firewall(tc.namespace, tc.name)
-		hcName := newNamer.L4HealthCheck(tc.namespace, tc.name, tc.sharedHC)
-		hcFwName := newNamer.L4HealthCheckFirewall(tc.namespace, tc.name, tc.sharedHC)
-		ipv6hcFwName := newNamer.L4IPv6HealthCheckFirewall(tc.namespace, tc.name, tc.sharedHC)
-		if len(frName) > maxResourceNameLength || len(ipv6FrName) > maxResourceNameLength || len(negName) > maxResourceNameLength || len(fwName) > maxResourceNameLength || len(ipv6FWName) > maxResourceNameLength || len(hcName) > maxResourceNameLength || len(hcFwName) > maxResourceNameLength || len(ipv6hcFwName) > maxResourceNameLength {
-			t.Errorf("%s: got len(frName) == %v, got len(ipv6FrName) == %v, len(negName) == %v, len(fwName) == %v, len(ipv6FWName) == %v, len(hcName) == %v, len(hcFwName) == %v, len(ipv6hcFwName) == %v want <= %d", tc.desc, len(frName), len(ipv6FrName), len(negName), len(fwName), len(ipv6FWName), len(hcName), len(hcFwName), len(ipv6hcFwName), maxResourceNameLength)
-		}
-		if frName != tc.expectFRName {
-			t.Errorf("%s ForwardingRuleName: got %q, want %q", tc.desc, frName, tc.expectFRName)
-		}
-		if ipv6FrName != tc.expectIPv6FRName {
-			t.Errorf("%s IPv6 ForwardingRuleName: got %q, want %q", tc.desc, ipv6FrName, tc.expectIPv6FRName)
-		}
-		if negName != tc.expectNEGName {
-			t.Errorf("%s VMIPNEGName: got %q, want %q", tc.desc, negName, tc.expectNEGName)
-		}
-		if nonDefaultNegName != tc.expectNonDefaultNEGName {
-			t.Errorf("%s non default subnet VMIPNEGName: got %q, want %q", tc.desc, nonDefaultNegName, tc.expectNonDefaultNEGName)
-		}
-		if fwName != tc.expectFWName {
-			t.Errorf("%s FirewallName: got %q, want %q", tc.desc, fwName, tc.expectFWName)
-		}
-		if ipv6FWName != tc.expectIPv6FWName {
-			t.Errorf("%s IPv6 FirewallName: got %q, want %q", tc.desc, ipv6FWName, tc.expectIPv6FWName)
-		}
-		if hcFwName != tc.expectHcFwName {
-			t.Errorf("%s FirewallName For Healthcheck: got %q, want %q", tc.desc, hcFwName, tc.expectHcFwName)
-		}
-		if ipv6hcFwName != tc.expectIPv6HcFName {
-			t.Errorf("%s IPv6 FirewallName For Healthcheck: got %q, want %q", tc.desc, ipv6hcFwName, tc.expectIPv6HcFName)
-		}
-		if hcName != tc.expectHcName {
-			t.Errorf("%s HealthCheckName: got %q, want %q", tc.desc, hcName, tc.expectHcName)
-		}
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			// Act
+			got := names{
+				FRName:            namer.L4ForwardingRule(tc.namespace, tc.name, strings.ToLower(tc.proto)),
+				IPv6FRName:        namer.L4IPv6ForwardingRule(tc.namespace, tc.name, strings.ToLower(tc.proto)),
+				NEGName:           namer.L4Backend(tc.namespace, tc.name),
+				NonDefaultNEGName: namer.NonDefaultSubnetNEG(tc.namespace, tc.name, tc.subnetName, 0), // Port is not used for L4 NEG
+				FWName:            namer.L4Firewall(tc.namespace, tc.name),
+				IPv6FWName:        namer.L4IPv6Firewall(tc.namespace, tc.name),
+				HcName:            namer.L4HealthCheck(tc.namespace, tc.name, tc.sharedHC),
+				HcFwName:          namer.L4HealthCheckFirewall(tc.namespace, tc.name, tc.sharedHC),
+				IPv6HcFName:       namer.L4IPv6HealthCheckFirewall(tc.namespace, tc.name, tc.sharedHC),
+			}
+
+			// Assert
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("got != want, (-want, +got):\n%s", diff)
+			}
+
+			// Extra check for naming length
+			v := reflect.ValueOf(got)
+			for i := 0; i < v.NumField(); i++ {
+				field := v.Field(i)
+				if field.Kind() == reflect.String {
+					fieldName := v.Type().Field(i).Name
+					if len(field.String()) > maxResourceNameLength {
+						t.Errorf("%s: got len(%s) == %v, want <= %d", tc.desc, fieldName, len(field.String()), maxResourceNameLength)
+					}
+				}
+			}
+		})
 	}
 }
