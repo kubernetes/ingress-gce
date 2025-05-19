@@ -155,7 +155,10 @@ func NewController(
 	runL4ForNetLB bool,
 	stopCh <-chan struct{},
 	logger klog.Logger,
-) *Controller {
+) (*Controller, error) {
+	if svcNegClient == nil {
+		return nil, fmt.Errorf("svcNegClient is nil")
+	}
 	// init event recorder
 	// TODO: move event recorder initializer to main. Reuse it among controllers.
 	eventBroadcaster := record.NewBroadcaster()
@@ -369,7 +372,7 @@ func NewController(
 		negController.enableASM = enableAsm
 		negController.asmServiceNEGSkipNamespaces = asmServiceNEGSkipNamespaces
 	}
-	return negController
+	return negController, nil
 }
 
 func (c *Controller) Run() {
