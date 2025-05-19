@@ -711,20 +711,30 @@ func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.Na
 
 // netLBServiceNeedsNEG determines if NEGs need to be created for L4 NetLB.
 // - service must be an L4 External Load Balancer service
-// - service must have the RBS annotation
 // - service is a multinetwork service on a non default network OR NEGs are enabled and V3 finalizer is present.
+// - service has the ExternalLoadBalancer class (these will always use NEGs).
+// - service has the V3 finalizer
+// otherwise the service does not need NEGs.
 func (c *Controller) netLBServiceNeedsNEG(service *apiv1.Service, networkInfo *network.NetworkInfo) bool {
 	wantsNetLB, _ := annotations.WantsL4NetLB(service)
 	if !wantsNetLB {
 		return false
 	}
-	if !annotations.HasRBSAnnotation(service) && !annotations.HasLoadBalancerClass(service, annotations.RegionalExternalLoadBalancerClass) {
-		return false
-	}
 	if !networkInfo.IsDefault {
 		return true
 	}
-	return c.runL4ForNetLB && utils.HasL4NetLBFinalizerV3(service)
+	// The multinet check should be above because the runL4ForNetLB decides if NEGs
+	// should be used for non multinet services.
+	if !c.runL4ForNetLB {
+		return false
+	}
+	if annotations.HasLoadBalancerClass(service, annotations.RegionalExternalLoadBalancerClass) {
+		return true
+	}
+	if utils.HasL4NetLBFinalizerV3(service) {
+		return true
+	}
+	return false
 }
 
 // mergeDefaultBackendServicePortInfoMap merge the PortInfoMap for the default backend service into portInfoMap
