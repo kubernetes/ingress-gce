@@ -222,6 +222,93 @@ func TestListNodes(t *testing.T) {
 	}
 }
 
+func TestListNodesInDefaultSubnet(t *testing.T) {
+	t.Parallel()
+
+	nodeInformer := FakeNodeInformer()
+	PopulateFakeNodeInformer(nodeInformer, true)
+	zoneGetter, err := NewFakeZoneGetterWithNodeTopologyHasSynced(nodeInformer, FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter")
+	}
+
+	testCases := []struct {
+		desc      string
+		filter    Filter
+		expectLen int
+	}{
+		{
+			desc:      "List with AllNodesFilter",
+			filter:    AllNodesFilter,
+			expectLen: 15,
+		},
+		{
+			desc:      "List with CandidateNodesFilter",
+			filter:    CandidateNodesFilter,
+			expectLen: 13,
+		},
+		{
+			desc:      "List with CandidateAndUnreadyNodesFilter",
+			filter:    CandidateAndUnreadyNodesFilter,
+			expectLen: 11,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			nodes, _ := zoneGetter.ListNodesInDefaultSubnet(tc.filter, klog.TODO())
+			if len(nodes) != tc.expectLen {
+				t.Errorf("For test case %q, got %d nodes, want %d,", tc.desc, len(nodes), tc.expectLen)
+			}
+		})
+	}
+}
+
+func TestListZonesInDefaultSubnets(t *testing.T) {
+	t.Parallel()
+
+	nodeInformer := FakeNodeInformer()
+	PopulateFakeNodeInformer(nodeInformer, true)
+	zoneGetter, err := NewFakeZoneGetterWithNodeTopologyHasSynced(nodeInformer, FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter")
+	}
+	testCases := []struct {
+		desc      string
+		filter    Filter
+		expectLen int
+	}{
+		{
+			desc:      "List with AllNodesFilter",
+			filter:    AllNodesFilter,
+			expectLen: 6,
+		},
+		{
+			desc:      "List with CandidateNodesFilter",
+			filter:    CandidateNodesFilter,
+			expectLen: 5,
+		},
+		{
+			desc:      "List with CandidateAndUnreadyNodesFilter",
+			filter:    CandidateAndUnreadyNodesFilter,
+			expectLen: 5,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			zones, _ := zoneGetter.ListZonesInDefaultSubnet(tc.filter, klog.TODO())
+			if len(zones) != tc.expectLen {
+				t.Errorf("For test case %q, got %d zones, want %d zones", tc.desc, len(zones), tc.expectLen)
+			}
+			for _, zone := range zones {
+				if zone == EmptyZone {
+					t.Errorf("For test case %q, got an empty zone,", tc.desc)
+				}
+			}
+		})
+	}
+}
+
 func TestListNodesMultipleSubnets(t *testing.T) {
 	t.Parallel()
 
