@@ -2,6 +2,7 @@ package namer
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"k8s.io/ingress-gce/pkg/utils/common"
@@ -22,6 +23,10 @@ const (
 	sharedFirewallHcSuffix      = sharedHcSuffix + firewallHcSuffix
 	maxResourceNameLength       = 63
 	l3ProtocolWithoutUnderscore = "l3"
+	// base36 is used to encode numbers using smaller footprint than decimal
+	// GCP resources can use 0-9a-z which is base36: 10 nums and 26 letters
+	// See: https://cloud.google.com/compute/docs/naming-resources#resource-name-format
+	base36 = 36
 )
 
 // L4Namer implements naming scheme for L4 LoadBalancer resources.
@@ -132,6 +137,22 @@ func (namer *L4Namer) L4ForwardingRule(namespace, name, protocol string) string 
 	}, "-")
 }
 
+// L4NetLBForwardingRule returns the name of the L4NetLB forwarding rule based on the service's name, namespace and protocol.
+// Since there can be multiple Forwarding Rules for a single service we use additional num.
+// Naming convention:
+//
+//	k8s2-{protocol}-{uid}-{ns}-{name}-{suffix}-{num}
+//
+// Output name is at most 63 characters.
+func (namer *L4Namer) L4NetLBForwardingRule(namespace, name, protocol string, num uint) string {
+	encodedNum := strconv.FormatUint(uint64(num), base36)
+
+	return GetSuffixedName(
+		namer.L4ForwardingRule(namespace, name, protocol),
+		"-"+encodedNum,
+	)
+}
+
 // L4HealthCheck returns the name of the L4 LB Healthcheck
 func (namer *L4Namer) L4HealthCheck(namespace, name string, shared bool) string {
 	if shared {
@@ -153,11 +174,28 @@ func (namer *L4Namer) L4HealthCheckFirewall(namespace, name string, shared bool)
 // L4IPv6ForwardingRule returns the name of the L4 forwarding rule name based on the service namespace, name and protocol.
 // Naming convention:
 //
-//	k8s2-{protocol}-{uid}-{ns}-{name}-{suffix}
+//	k8s2-{protocol}-{uid}-{ns}-{name}-{suffix}-ipv6
 //
 // Output name is at most 63 characters.
 func (namer *L4Namer) L4IPv6ForwardingRule(namespace, name, protocol string) string {
 	return GetSuffixedName(namer.L4ForwardingRule(namespace, name, protocol), "-"+ipv6Suffix)
+}
+
+// L4NetLBIPv6ForwardingRule returns the name of the IPv6 L4NetLB forwarding rule based on the service's name, namespace and protocol.
+// Since there can be multiple Forwarding Rules for a single service we use additional num.
+// Naming convention:
+//
+//	k8s2-{protocol}-{uid}-{ns}-{name}-{suffix}-{num}-ipv6
+//
+// Output name is at most 63 characters.
+func (namer *L4Namer) L4NetLBIPv6ForwardingRule(namespace, name, protocol string, num uint) string {
+	encodedNum := strconv.FormatUint(uint64(num), base36)
+	// We cannot use L4IPv6ForwardingRule or L4IPv6ForwardingRule,
+	// as they may end up causing name collisions for longer service names.
+	return GetSuffixedName(
+		namer.L4ForwardingRule(namespace, name, protocol),
+		"-"+encodedNum+"-"+ipv6Suffix,
+	)
 }
 
 // L4IPv6HealthCheckFirewall returns the name of the IPv6 L4 LB health check firewall rule.
