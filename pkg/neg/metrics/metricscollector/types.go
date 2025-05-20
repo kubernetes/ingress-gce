@@ -26,8 +26,6 @@ type NegServiceState struct {
 	StandaloneNeg int
 	// ingressNeg is the count of NEGs created for ingress
 	IngressNeg int
-	// asmNeg is the count of NEGs created for ASM
-	AsmNeg int
 	// VmIpNeg specifies if a service uses GCE_VM_IP NEG.
 	VmIpNeg *VmIpNegType
 	// CustomNamedNeg is the count of standalone negs with custom names

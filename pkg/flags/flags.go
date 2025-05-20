@@ -55,48 +55,45 @@ const (
 
 // F are global flags for the controller.
 var F = struct {
-	APIServerHost                    string
-	ASMConfigMapBasedConfigCMName    string
-	ASMConfigMapBasedConfigNamespace string
-	ClusterName                      string
-	ConfigFilePath                   string
-	DefaultSvc                       string
-	DefaultSvcHealthCheckPath        string
-	DefaultSvcPortName               string
-	GCEOperationPollInterval         time.Duration
-	GCERateLimit                     RateLimitSpecs
-	GCERateLimitScale                float64
-	GKEClusterName                   string
-	GKEClusterHash                   string
-	GKEClusterType                   string
-	HealthCheckPath                  string
-	HealthzPort                      int
-	THCPort                          int
-	InCluster                        bool
-	IngressClass                     string
-	KubeConfigFile                   string
-	NegGCPeriod                      time.Duration
-	NumNegGCWorkers                  int
-	NodePortRanges                   PortRanges
-	ResyncPeriod                     time.Duration
-	L4NetLBProvisionDeadline         time.Duration
-	NumL4Workers                     int
-	NumL4NetLBWorkers                int
-	NumIngressWorkers                int
-	RunIngressController             bool
-	RunL4Controller                  bool
-	RunL4NetLBController             bool
-	EnableIGController               bool
-	Version                          bool
-	WatchNamespace                   string
-	LeaderElection                   LeaderElectionConfiguration
-	MetricsExportInterval            time.Duration
-	NegMetricsExportInterval         time.Duration
-	KubeClientQPS                    float32
-	KubeClientBurst                  int
+	APIServerHost             string
+	ClusterName               string
+	ConfigFilePath            string
+	DefaultSvc                string
+	DefaultSvcHealthCheckPath string
+	DefaultSvcPortName        string
+	GCEOperationPollInterval  time.Duration
+	GCERateLimit              RateLimitSpecs
+	GCERateLimitScale         float64
+	GKEClusterName            string
+	GKEClusterHash            string
+	GKEClusterType            string
+	HealthCheckPath           string
+	HealthzPort               int
+	THCPort                   int
+	InCluster                 bool
+	IngressClass              string
+	KubeConfigFile            string
+	NegGCPeriod               time.Duration
+	NumNegGCWorkers           int
+	NodePortRanges            PortRanges
+	ResyncPeriod              time.Duration
+	L4NetLBProvisionDeadline  time.Duration
+	NumL4Workers              int
+	NumL4NetLBWorkers         int
+	NumIngressWorkers         int
+	RunIngressController      bool
+	RunL4Controller           bool
+	RunL4NetLBController      bool
+	EnableIGController        bool
+	Version                   bool
+	WatchNamespace            string
+	LeaderElection            LeaderElectionConfiguration
+	MetricsExportInterval     time.Duration
+	NegMetricsExportInterval  time.Duration
+	KubeClientQPS             float32
+	KubeClientBurst           int
 
 	// Feature flags should be named Enablexxx.
-	EnableASMConfigMapBasedConfig             bool
 	EnableDeleteUnusedFrontends               bool
 	EnableFrontendConfig                      bool
 	EnableNonGCPMode                          bool
@@ -147,6 +144,11 @@ var F = struct {
 	EnableL4NetLBForwardingRulesOptimizations bool
 	EnableIPV6OnlyNEG                         bool
 	MultiProjectOwnerLabelKey                 string
+
+	// DEPRECATED: ASM ConfigMap based config is no longer used and will be removed in a future release.
+	EnableASMConfigMapBasedConfig    bool
+	ASMConfigMapBasedConfigCMName    string
+	ASMConfigMapBasedConfigNamespace string
 }{
 	GCERateLimitScale: 1.0,
 }
@@ -278,9 +280,9 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 		F.FinalizerAdd, "Enable adding Finalizer to Ingress.")
 	flag.BoolVar(&F.FinalizerRemove, "enable-finalizer-remove",
 		F.FinalizerRemove, "Enable removing Finalizer from Ingress.")
-	flag.BoolVar(&F.EnableASMConfigMapBasedConfig, "enable-asm-config-map-config", false, "Enable ASMConfigMapBasedConfig")
-	flag.StringVar(&F.ASMConfigMapBasedConfigNamespace, "asm-configmap-based-config-namespace", "kube-system", "ASM Configmap based config: configmap namespace")
-	flag.StringVar(&F.ASMConfigMapBasedConfigCMName, "asm-configmap-based-config-cmname", "ingress-controller-asm-cm-config", "ASM Configmap based config: configmap name")
+	flag.BoolVar(&F.EnableASMConfigMapBasedConfig, "enable-asm-config-map-config", false, "DEPRECATED: Enable ASMConfigMapBasedConfig")
+	flag.StringVar(&F.ASMConfigMapBasedConfigNamespace, "asm-configmap-based-config-namespace", "kube-system", "DEPRECATED: ASM Configmap based config: configmap namespace")
+	flag.StringVar(&F.ASMConfigMapBasedConfigCMName, "asm-configmap-based-config-cmname", "ingress-controller-asm-cm-config", "DEPRECATED: ASM Configmap based config: configmap name")
 	flag.BoolVar(&F.EnableNonGCPMode, "enable-non-gcp-mode", false, "Set to true when running on a non-GCP cluster.")
 	flag.BoolVar(&F.EnableDeleteUnusedFrontends, "enable-delete-unused-frontends", false, "Enable deleting unused gce frontend resources.")
 	flag.BoolVar(&F.EnableV2FrontendNamer, "enable-v2-frontend-namer", false, "Enable v2 ingress frontend naming policy.")

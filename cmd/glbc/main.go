@@ -229,9 +229,6 @@ func main() {
 		wg:     &sync.WaitGroup{},
 		stopCh: stopCh,
 		// This ensures that stopCh is only closed once.
-		// Right now, we have two callers.
-		// One is triggered when the ASM configmap changes, and the other one is
-		// triggered by the SIGTERM handler.
 		closeStopCh: func() {
 			once.Do(func() { close(stopCh) })
 		},
@@ -340,9 +337,6 @@ func main() {
 		DefaultBackendSvcPort:                     defaultBackendServicePort,
 		HealthCheckPath:                           flags.F.HealthCheckPath,
 		FrontendConfigEnabled:                     flags.F.EnableFrontendConfig,
-		EnableASMConfigMap:                        flags.F.EnableASMConfigMapBasedConfig,
-		ASMConfigMapNamespace:                     flags.F.ASMConfigMapBasedConfigNamespace,
-		ASMConfigMapName:                          flags.F.ASMConfigMapBasedConfigCMName,
 		MaxIGSize:                                 flags.F.MaxIGSize,
 		EnableL4ILBDualStack:                      flags.F.EnableL4ILBDualStack,
 		EnableL4NetLBDualStack:                    flags.F.EnableL4NetLBDualStack,
@@ -370,7 +364,6 @@ func main() {
 		// add a uniquifier so that two processes on the same host don't accidentally both become active
 		id: fmt.Sprintf("%v_%x", hostname, rand.Intn(1e6)),
 	}
-	ctx.Init()
 
 	enableOtherControllers := flags.F.RunIngressController || flags.F.RunL4Controller || flags.F.RunL4NetLBController || flags.F.EnableIGController || flags.F.EnablePSC
 	runNEG := func() {
@@ -615,13 +608,6 @@ func runNEGController(ctx *ingctx.ControllerContext, systemHealth *systemhealth.
 	lockLogger.Info("Attempting to grab lock", "lockName", negLockName)
 	go collectLockAvailabilityMetrics(negLockName, flags.F.GKEClusterType, option.stopCh, logger)
 
-	if ctx.EnableASMConfigMap {
-		ctx.ASMConfigController.RegisterInformer(ctx.ConfigMapInformer, func() {
-			// We want to trigger a restart.
-			option.closeStopCh()
-		})
-	}
-
 	if flags.F.EnableNEGController {
 		negController, err := createNEGController(ctx, systemHealth, option.stopCh, logger)
 		if err != nil {
@@ -647,14 +633,6 @@ func createNEGController(ctx *ingctx.ControllerContext, systemHealth *systemheal
 	// This overrides the zone/fault-domain label on nodes for NEG controller.
 	if flags.F.EnableNonGCPMode {
 		zoneGetter = zonegetter.NewNonGCPZoneGetter(ctx.Cloud.LocalZone())
-	}
-
-	enableAsm := false
-	asmServiceNEGSkipNamespaces := []string{}
-	if ctx.EnableASMConfigMap {
-		cmconfig := ctx.ASMConfigController.GetConfig()
-		enableAsm = cmconfig.EnableASM
-		asmServiceNEGSkipNamespaces = cmconfig.ASMServiceNEGSkipNamespaces
 	}
 
 	lpConfig := labels.PodLabelPropagationConfig{}
@@ -703,8 +681,6 @@ func createNEGController(ctx *ingctx.ControllerContext, systemHealth *systemheal
 		flags.F.EnableL4NEG,
 		flags.F.EnableNonGCPMode,
 		flags.F.EnableDualStackNEG,
-		enableAsm,
-		asmServiceNEGSkipNamespaces,
 		lpConfig,
 		flags.F.EnableMultiNetworking,
 		ctx.EnableIngressRegionalExternal,

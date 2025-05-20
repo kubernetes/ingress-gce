@@ -26,7 +26,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	informers "k8s.io/client-go/informers"
 	informerv1 "k8s.io/client-go/informers/core/v1"
 	discoveryinformer "k8s.io/client-go/informers/discovery/v1"
 	informernetworking "k8s.io/client-go/informers/networking/v1"
@@ -36,7 +35,6 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	informerbackendconfig "k8s.io/ingress-gce/pkg/backendconfig/client/informers/externalversions/backendconfig/v1"
-	"k8s.io/ingress-gce/pkg/cmconfig"
 	"k8s.io/ingress-gce/pkg/common/typed"
 	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/flags"
@@ -80,7 +78,6 @@ type ControllerContext struct {
 	L4Namer       namer.L4ResourcesNamer
 
 	ControllerContextConfig
-	ASMConfigController *cmconfig.ConfigMapConfigController
 
 	IngressInformer          cache.SharedIndexInformer
 	ServiceInformer          cache.SharedIndexInformer
@@ -122,9 +119,6 @@ type ControllerContextConfig struct {
 	DefaultBackendSvcPort                     utils.ServicePort
 	HealthCheckPath                           string
 	FrontendConfigEnabled                     bool
-	EnableASMConfigMap                        bool
-	ASMConfigMapNamespace                     string
-	ASMConfigMapName                          string
 	MaxIGSize                                 int
 	EnableL4ILBDualStack                      bool
 	EnableL4NetLBDualStack                    bool
@@ -272,39 +266,6 @@ func (ctx *ControllerContext) Recorder(ns string) record.EventRecorder {
 	return ctx.recordersManager.Recorder(ns)
 }
 
-// Init inits the Context, so that we can defers some config until the main thread enter actually get the leader hcLock.
-func (ctx *ControllerContext) Init() {
-	ctx.logger.V(2).Info(fmt.Sprintf("Controller Context initializing with %+v", ctx.ControllerContextConfig))
-	// Initialize controller context internals based on ASMConfigMap
-	if ctx.EnableASMConfigMap {
-		ctx.logger.Info("ASMConfigMap is enabled")
-
-		informerFactory := informers.NewSharedInformerFactoryWithOptions(
-			ctx.KubeClient,
-			ctx.ResyncPeriod,
-			informers.WithNamespace(ctx.ASMConfigMapNamespace),
-			informers.WithTweakListOptions(func(listOptions *metav1.ListOptions) {
-				listOptions.FieldSelector = fmt.Sprintf("metadata.name=%s", ctx.ASMConfigMapName)
-			}))
-		ctx.ConfigMapInformer = informerFactory.Core().V1().ConfigMaps().Informer()
-		ctx.ASMConfigController = cmconfig.NewConfigMapConfigController(ctx.KubeClient, ctx.recordersManager.Recorder(ctx.ASMConfigMapNamespace), ctx.ASMConfigMapNamespace, ctx.ASMConfigMapName, ctx.logger)
-
-		cmConfig := ctx.ASMConfigController.GetConfig()
-		if cmConfig.EnableASM {
-			ctx.initEnableASM()
-		} else {
-			ctx.ASMConfigController.SetASMReadyFalse()
-		}
-	}
-}
-
-func (ctx *ControllerContext) initEnableASM() {
-	ctx.logger.V(0).Info("ASM mode is enabled from ConfigMap")
-
-	ctx.ASMConfigController.RecordEvent("Normal", "ASMModeOn", "NEG controller is running in ASM Mode")
-	ctx.ASMConfigController.SetASMReadyTrue()
-}
-
 // HasSynced returns true if all relevant informers has been synced.
 func (ctx *ControllerContext) HasSynced() bool {
 	funcs := []func() bool{
@@ -363,9 +324,6 @@ func (ctx *ControllerContext) Start(stopCh <-chan struct{}) {
 	}
 	if ctx.FrontendConfigInformer != nil {
 		go ctx.FrontendConfigInformer.Run(stopCh)
-	}
-	if ctx.EnableASMConfigMap && ctx.ConfigMapInformer != nil {
-		go ctx.ConfigMapInformer.Run(stopCh)
 	}
 	if ctx.SvcNegInformer != nil {
 		go ctx.SvcNegInformer.Run(stopCh)

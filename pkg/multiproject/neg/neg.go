@@ -273,9 +273,6 @@ func createNEGController(
 	noDefaultBackendServicePort := utils.ServicePort{}
 	var noNodeTopologyInformer cache.SharedIndexInformer
 
-	asmServiceNEGSkipNamespaces := []string{}
-	enableASM := false
-
 	negController, err := neg.NewController(
 		kubeClient,
 		svcNegClient,
@@ -303,8 +300,6 @@ func createNEGController(
 		flags.F.EnableL4NEG,
 		flags.F.EnableNonGCPMode,
 		flags.F.EnableDualStackNEG,
-		enableASM,
-		asmServiceNEGSkipNamespaces,
 		lpConfig,
 		flags.F.EnableMultiNetworking,
 		flags.F.EnableIngressRegionalExternal,

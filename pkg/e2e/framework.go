@@ -33,9 +33,7 @@ import (
 	computebeta "google.golang.org/api/compute/v0.beta"
 	compute "google.golang.org/api/compute/v1"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -58,14 +56,6 @@ type Options struct {
 	GceEndpointOverride string
 	CreateILBSubnet     bool
 }
-
-const (
-	destinationRuleGroup      = "networking.istio.io"
-	destinationRuleAPIVersion = "v1alpha3"
-	destinationRulePlural     = "destinationrules"
-	// This must match the spec fields below, and be in the form: <plural>.<group>
-	destinationRuleCRDName = "destinationrules.networking.istio.io"
-)
 
 // NewFramework returns a new test framework to run.
 func NewFramework(config *rest.Config, options Options) *Framework {
@@ -112,27 +102,6 @@ func NewFramework(config *rest.Config, options Options) *Framework {
 	}
 	f.statusManager = NewStatusManager(f)
 
-	// Preparing dynamic client if Istio:DestinationRule CRD exists and matches the required version.
-	// The client is used by the ASM e2e tests.
-	destinationRuleCRD, err := f.crdClient.ApiextensionsV1().CustomResourceDefinitions().Get(context.TODO(), destinationRuleCRDName, metav1.GetOptions{})
-	if err != nil {
-		if errors.IsNotFound(err) {
-			klog.Infof("Cannot load DestinationRule CRD, Istio is disabled on this cluster.")
-		} else {
-			klog.Fatalf("Failed to load DestinationRule CRD, error: %s", err)
-		}
-	} else {
-		if destinationRuleCRD.Spec.Versions[0].Name != destinationRuleAPIVersion {
-			klog.Fatalf("The cluster Istio version not meet the testing requirement, want: %s, got: %s.", destinationRuleAPIVersion, destinationRuleCRD.Spec.Versions[0].Name)
-		} else {
-			dynamicClient, err := dynamic.NewForConfig(config)
-			if err != nil {
-				klog.Fatalf("Failed to create Dynamic client: %v", err)
-			}
-			destinationGVR := schema.GroupVersionResource{Group: destinationRuleGroup, Version: destinationRuleAPIVersion, Resource: destinationRulePlural}
-			f.DestinationRuleClient = dynamicClient.Resource(destinationGVR)
-		}
-	}
 	return f
 }
 

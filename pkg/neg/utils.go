@@ -52,15 +52,6 @@ func negServicePorts(ann *annotations.NegAnnotation, knownSvcTupleSet types.SvcP
 	return svcPortTupleSet, customNameMap, utilerrors.NewAggregate(errList)
 }
 
-func contains(ss []string, target string) bool {
-	for _, s := range ss {
-		if s == target {
-			return true
-		}
-	}
-	return false
-}
-
 func isZoneChanged(oldZones, newZones []string) bool {
 	return !sets.NewString(oldZones...).Equal(sets.NewString(newZones...))
 }
