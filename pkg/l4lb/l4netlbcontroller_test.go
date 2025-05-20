@@ -735,6 +735,107 @@ func TestProcessIGServiceWhenNEGIsEnabled(t *testing.T) {
 	deleteNetLBService(lc, svc)
 }
 
+func TestFinalizerRemovalIGServiceWhenNEGIsEnabled(t *testing.T) {
+	lc := newL4NetLBServiceController()
+	lc.enableNEGSupport = true
+	lc.enableNEGAsDefault = true
+
+	svc := test.NewL4NetLBRBSService(8080)
+	// add a finalizer that marks the service as IG service.
+	svc.Finalizers = append(svc.Finalizers, common.NetLBFinalizerV2)
+
+	prevMetrics, err := test.GetL4NetLBLatencyMetric()
+	if err != nil {
+		t.Errorf("Error getting L4 NetLB latency metrics err: %v", err)
+	}
+	if prevMetrics == nil {
+		t.Fatalf("Cannot get prometheus metrics for L4NetLB latency")
+	}
+
+	svc = syncNetLBSvc(t, lc, svc)
+
+	currMetrics, metricErr := test.GetL4NetLBLatencyMetric()
+	if metricErr != nil {
+		t.Errorf("Error getting L4 NetLB latency metrics err: %v", metricErr)
+	}
+	prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{CreateCount: 1, UpperBoundSeconds: 1}, t)
+
+	if !utils.HasL4NetLBFinalizerV2(svc) {
+		t.Errorf("the service %s should have the V2 finalizer but instead it had %v", svc.Name, svc.Finalizers)
+	}
+	if utils.HasL4NetLBFinalizerV3(svc) {
+		t.Errorf("the service %s should not have the V3 finalizer but instead it had %v", svc.Name, svc.Finalizers)
+	}
+	validateNetLBSvcStatus(svc, t)
+	if err := checkBackendService(lc, svc); err != nil {
+		t.Errorf("UnexpectedError %v", err)
+	}
+	if err := validateAnnotations(svc); err != nil {
+		t.Errorf("%v", err)
+	}
+
+	// Update the service with all annotations and all finalizers removed.
+	svc.Finalizers = []string{}
+	svc.Annotations = make(map[string]string)
+
+	updateNetLBService(lc, svc)
+	svc = syncNetLBSvc(t, lc, svc)
+	if !utils.HasL4NetLBFinalizerV2(svc) {
+		t.Errorf("the service %s should have the V2 finalizer but instead it had %v", svc.Name, svc.Finalizers)
+	}
+	if utils.HasL4NetLBFinalizerV3(svc) {
+		t.Errorf("the service %s should not have the V3 finalizer but instead it had %v", svc.Name, svc.Finalizers)
+	}
+	validateNetLBSvcStatus(svc, t)
+	if err := checkBackendService(lc, svc); err != nil {
+		t.Errorf("UnexpectedError %v", err)
+	}
+	if err := validateAnnotations(svc); err != nil {
+		t.Errorf("%v", err)
+	}
+}
+
+// Test the scenario when the finalizers are removed along with all annotations.
+func TestFinalizerRemoveNEGServiceUpdate(t *testing.T) {
+	lc := newL4NetLBServiceController()
+	lc.enableNEGSupport = true
+	lc.enableNEGAsDefault = true
+
+	svc := createAndSyncNetLBSvcWithNEGs(t, lc)
+	if err := checkBackendServiceWithNEG(lc, svc); err != nil {
+		t.Errorf("UnexpectedError %v", err)
+	}
+	if !utils.HasL4NetLBFinalizerV3(svc) {
+		t.Errorf("the service %s should have the V3 finalizer but instead it had %v", svc.Name, svc.Finalizers)
+	}
+	if utils.HasL4NetLBFinalizerV2(svc) {
+		t.Errorf("the service %s should not have the V2 finalizer but instead it had %v", svc.Name, svc.Finalizers)
+	}
+
+	// Update the service with all annotations and all finalizers removed.
+	svc.Finalizers = []string{}
+	svc.Annotations = make(map[string]string)
+
+	// Refresh the informer content
+	updateNetLBService(lc, svc)
+	svc = syncNetLBSvc(t, lc, svc)
+
+	validateNetLBSvcStatus(svc, t)
+	if !utils.HasL4NetLBFinalizerV3(svc) {
+		t.Errorf("the service %s should have the V3 finalizer but instead it had %v", svc.Name, svc.Finalizers)
+	}
+	if utils.HasL4NetLBFinalizerV2(svc) {
+		t.Errorf("the service %s should not have the V2 finalizer but instead it had %v", svc.Name, svc.Finalizers)
+	}
+	// validate that NEG is still attached
+	if err := checkBackendServiceWithNEG(lc, svc); err != nil {
+		t.Errorf("UnexpectedError %v", err)
+	}
+	if err := validateAnnotations(svc); err != nil {
+		t.Errorf("%v", err)
+	}
+}
+
 func TestProcessServiceCreateWithUsersProvidedIP(t *testing.T) {
 	lc := newL4NetLBServiceController()
 
