@@ -573,7 +573,14 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 		return &loadbalancers.L4NetLBSyncResult{Error: fmt.Errorf("Failed to attach L4 External LoadBalancer finalizer to service %s/%s, err %w", service.Namespace, service.Name, err)}
 	}
 
-	nodes, err := lc.zoneGetter.ListNodes(zonegetter.CandidateNodesFilter, svcLogger)
+	var nodes []*v1.Node
+	var err error
+	if usesNegBackends {
+		nodes, err = lc.zoneGetter.ListNodes(zonegetter.CandidateNodesFilter, svcLogger)
+	} else {
+		// For instance group based backends, ignore nodes in additional subnets.
+		nodes, err = lc.zoneGetter.ListNodesInDefaultSubnet(zonegetter.CandidateNodesFilter, svcLogger)
+	}
 	if err != nil {
 		return &loadbalancers.L4NetLBSyncResult{Error: err}
 	}
@@ -699,7 +706,7 @@ func (lc *L4NetLBController) ensureBackendLinking(service *v1.Service, linkType 
 		// The BackendService should be linked with zones of all nodes that's why AllNodesFilter is used.
 		// This is to prevent zones with unready nodes to be removed from the load balancer.
 		// The unready nodes will not be added to the group by the IG syncer but removing a group can cause 10 min outage if done because of a temporarily unready node.
-		zones, err := lc.zoneGetter.ListZones(zonegetter.AllNodesFilter, svcLogger)
+		zones, err := lc.zoneGetter.ListZonesInDefaultSubnet(zonegetter.AllNodesFilter, svcLogger)
 		if err != nil {
 			return err
 		}
