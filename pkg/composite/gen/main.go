@@ -598,7 +598,7 @@ func Get{{.Name}}(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logg
   	return compositeType, nil
 }
 
-func List{{.GetCloudProviderName}}(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger) ([]*{{.Name}}, error) {
+func List{{.GetCloudProviderName}}(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, logger klog.Logger, filter *filter.F) ([]*{{.Name}}, error) {
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("{{.Name}}", "list", key.Region, key.Zone, string(version))
@@ -618,43 +618,43 @@ func List{{.GetCloudProviderName}}(gceCloud *gce.Cloud, key *meta.Key, version m
 	case meta.VersionAlpha:
 	{{- if $onlyZonalKeySupported}}
 		logger.Info("Listing alpha zone{{.Name}}")
-		gceObjs, err = gceCloud.Compute().Alpha{{.GetCloudProviderName}}().List(ctx, key.Zone, filter.None)
+		gceObjs, err = gceCloud.Compute().Alpha{{.GetCloudProviderName}}().List(ctx, key.Zone, filter)
 	{{- else}}
 		switch key.Type() {
 		case meta.Regional:
 			logger.Info("Listing alpha region {{.Name}}")
-			gceObjs, err = gceCloud.Compute().Alpha{{$regionalKeyFiller}}{{.GetCloudProviderName}}().List(ctx, key.Region, filter.None)
+			gceObjs, err = gceCloud.Compute().Alpha{{$regionalKeyFiller}}{{.GetCloudProviderName}}().List(ctx, key.Region, filter)
 		default:
 			logger.Info("Listing alpha {{.Name}}")
-			gceObjs, err = gceCloud.Compute().Alpha{{$globalKeyFiller}}{{.GetCloudProviderName}}().List(ctx, filter.None)
+			gceObjs, err = gceCloud.Compute().Alpha{{$globalKeyFiller}}{{.GetCloudProviderName}}().List(ctx, filter)
 		}
 	{{- end}} {{/* $onlyZonalKeySupported*/}}
 	case meta.VersionBeta:
 	{{- if $onlyZonalKeySupported}}
 		logger.Info("Listing beta zone{{.Name}}")
-		gceObjs, err = gceCloud.Compute().Beta{{.GetCloudProviderName}}().List(ctx, key.Zone, filter.None)
+		gceObjs, err = gceCloud.Compute().Beta{{.GetCloudProviderName}}().List(ctx, key.Zone, filter)
 	{{- else}}
 		switch key.Type() {
 		case meta.Regional:
 			logger.Info("Listing beta region {{.Name}}")
-			gceObjs, err = gceCloud.Compute().Beta{{$regionalKeyFiller}}{{.GetCloudProviderName}}().List(ctx, key.Region, filter.None)
+			gceObjs, err = gceCloud.Compute().Beta{{$regionalKeyFiller}}{{.GetCloudProviderName}}().List(ctx, key.Region, filter)
 		default:
 			logger.Info("Listing beta {{.Name}}")
-			gceObjs, err = gceCloud.Compute().Beta{{$globalKeyFiller}}{{.GetCloudProviderName}}().List(ctx, filter.None)
+			gceObjs, err = gceCloud.Compute().Beta{{$globalKeyFiller}}{{.GetCloudProviderName}}().List(ctx, filter)
 		}
 	{{- end}} {{/* $onlyZonalKeySupported*/}}
 	default:
 	{{- if $onlyZonalKeySupported}}
 		logger.Info("Listing ga zone{{.Name}}")
-		gceObjs, err = gceCloud.Compute().{{.GetCloudProviderName}}().List(ctx, key.Zone, filter.None)
+		gceObjs, err = gceCloud.Compute().{{.GetCloudProviderName}}().List(ctx, key.Zone, filter)
     {{- else}}
 		switch key.Type() {
 		case meta.Regional:
 			logger.Info("Listing ga region {{.Name}}")
-			gceObjs, err = gceCloud.Compute().{{$regionalKeyFiller}}{{.GetCloudProviderName}}().List(ctx, key.Region, filter.None)
+			gceObjs, err = gceCloud.Compute().{{$regionalKeyFiller}}{{.GetCloudProviderName}}().List(ctx, key.Region, filter)
 		default:
 			logger.Info("Listing ga {{.Name}}")
-			gceObjs, err = gceCloud.Compute().{{$globalKeyFiller}}{{.GetCloudProviderName}}().List(ctx, filter.None)
+			gceObjs, err = gceCloud.Compute().{{$globalKeyFiller}}{{.GetCloudProviderName}}().List(ctx, filter)
 		}
     {{- end}} {{/* $onlyZonalKeySupported*/}}
 	}
