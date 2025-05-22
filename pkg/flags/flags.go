@@ -94,7 +94,6 @@ var F = struct {
 	KubeClientBurst           int
 
 	// Feature flags should be named Enablexxx.
-	EnableFrontendConfig                      bool
 	EnableNonGCPMode                          bool
 	EnableReadinessReflector                  bool
 	EnableV2FrontendNamer                     bool
@@ -153,6 +152,8 @@ var F = struct {
 	ASMConfigMapBasedConfigNamespace string
 	// DEPRECATED: EnableDeleteUnusedFrontends is on by default and will be removed in a future release.
 	EnableDeleteUnusedFrontends bool
+	// DEPRECATED: EnableFrontendConfig is on by default and will be removed in a future release.
+	EnableFrontendConfig bool
 }{
 	GCERateLimitScale: 1.0,
 }
@@ -214,7 +215,7 @@ form namespace/name.`)
 	flag.StringVar(&F.DefaultSvcPortName, "default-backend-service-port", "http",
 		`Specify the default service's port used to serve a 404 page for the default backend. Takes
 only the port's name - not its number.`)
-	flag.BoolVar(&F.EnableFrontendConfig, "enable-frontend-config", false,
+	flag.BoolVar(&F.EnableFrontendConfig, "enable-frontend-config", true,
 		`Optional, whether or not to enable FrontendConfig.`)
 	flag.Var(&F.GCERateLimit, "gce-ratelimit",
 		`Optional, can be used to rate limit certain GCE API calls. Example usage:

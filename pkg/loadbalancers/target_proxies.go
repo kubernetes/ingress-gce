@@ -22,7 +22,6 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
-	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -39,15 +38,11 @@ func (l7 *L7) checkProxy() (err error) {
 	// Get UrlMap Name, could be the url map or the redirect url map
 	// TODO(shance): move to translator
 	var umName string
-	if flags.F.EnableFrontendConfig {
-		if l7.redirectUm != nil &&
-			l7.runtimeInfo.FrontendConfig != nil &&
-			l7.runtimeInfo.FrontendConfig.Spec.RedirectToHttps != nil &&
-			l7.runtimeInfo.FrontendConfig.Spec.RedirectToHttps.Enabled {
-			umName = l7.redirectUm.Name
-		} else {
-			umName = l7.um.Name
-		}
+	if l7.redirectUm != nil &&
+		l7.runtimeInfo.FrontendConfig != nil &&
+		l7.runtimeInfo.FrontendConfig.Spec.RedirectToHttps != nil &&
+		l7.runtimeInfo.FrontendConfig.Spec.RedirectToHttps.Enabled {
+		umName = l7.redirectUm.Name
 	} else {
 		umName = l7.um.Name
 	}
@@ -190,7 +185,7 @@ func (l7 *L7) checkHttpsProxy() (err error) {
 		l7.recorder.Eventf(l7.runtimeInfo.Ingress, corev1.EventTypeNormal, events.SyncIngress, "TargetProxy %q certs updated", key.Name)
 	}
 
-	if flags.F.EnableFrontendConfig && sslPolicySet {
+	if sslPolicySet {
 		if err := l7.ensureSslPolicy(env, currentProxy, proxy.SslPolicy); err != nil {
 			return err
 		}

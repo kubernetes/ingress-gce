@@ -38,7 +38,6 @@ import (
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
-	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -1096,9 +1095,6 @@ func TestStaticIP(t *testing.T) {
 
 // Test setting frontendconfig Ssl policy
 func TestFrontendConfigSslPolicy(t *testing.T) {
-	flags.F.EnableFrontendConfig = true
-	defer func() { flags.F.EnableFrontendConfig = false }()
-
 	j := newTestJig(t)
 
 	gceUrlMap := utils.NewGCEURLMap(klog.TODO())
@@ -1134,9 +1130,6 @@ func TestFrontendConfigSslPolicy(t *testing.T) {
 }
 
 func TestFrontendConfigRedirects(t *testing.T) {
-	flags.F.EnableFrontendConfig = true
-	defer func() { flags.F.EnableFrontendConfig = false }()
-
 	j := newTestJig(t)
 	ing := newIngress()
 
