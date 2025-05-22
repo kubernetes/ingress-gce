@@ -147,16 +147,14 @@ func main() {
 	}
 
 	var frontendConfigClient frontendconfigclient.Interface
-	if flags.F.EnableFrontendConfig {
-		frontendConfigCRDMeta := frontendconfig.CRDMeta()
-		if _, err := crdHandler.EnsureCRD(frontendConfigCRDMeta, true); err != nil {
-			klog.Fatalf("Failed to ensure FrontendConfig CRD: %v", err)
-		}
+	frontendConfigCRDMeta := frontendconfig.CRDMeta()
+	if _, err := crdHandler.EnsureCRD(frontendConfigCRDMeta, true); err != nil {
+		klog.Fatalf("Failed to ensure FrontendConfig CRD: %v", err)
+	}
 
-		frontendConfigClient, err = frontendconfigclient.NewForConfig(kubeConfig)
-		if err != nil {
-			klog.Fatalf("Failed to create FrontendConfig client: %v", err)
-		}
+	frontendConfigClient, err = frontendconfigclient.NewForConfig(kubeConfig)
+	if err != nil {
+		klog.Fatalf("Failed to create FrontendConfig client: %v", err)
 	}
 
 	var firewallCRClient firewallcrclient.Interface
@@ -336,7 +334,6 @@ func main() {
 		NumL4NetLBWorkers:                         flags.F.NumL4NetLBWorkers,
 		DefaultBackendSvcPort:                     defaultBackendServicePort,
 		HealthCheckPath:                           flags.F.HealthCheckPath,
-		FrontendConfigEnabled:                     flags.F.EnableFrontendConfig,
 		MaxIGSize:                                 flags.F.MaxIGSize,
 		EnableL4ILBDualStack:                      flags.F.EnableL4ILBDualStack,
 		EnableL4NetLBDualStack:                    flags.F.EnableL4NetLBDualStack,
