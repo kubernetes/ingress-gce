@@ -26,7 +26,6 @@ const (
 	neg            = feature("NEG")
 	standaloneNeg  = feature("StandaloneNEG")
 	ingressNeg     = feature("IngressNEG")
-	asmNeg         = feature("AsmNEG")
 	vmIpNeg        = feature("VmIpNEG")
 	vmIpNegLocal   = feature("VmIpNegLocal")
 	vmIpNegCluster = feature("VmIpNegCluster")

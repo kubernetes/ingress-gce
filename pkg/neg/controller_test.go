@@ -119,10 +119,7 @@ var (
 	}
 )
 
-func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, testContext *negtypes.TestContext, runL4 bool, enableASM bool) (*Controller, error) {
-	if enableASM {
-		kubeClient.CoreV1().ConfigMaps("kube-system").Create(context.TODO(), &apiv1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "ingress-controller-config-test"}, Data: map[string]string{"enable-asm": "true"}}, metav1.CreateOptions{})
-	}
+func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, testContext *negtypes.TestContext, runL4 bool) (*Controller, error) {
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
 	zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
@@ -158,8 +155,6 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		runL4, //runL4Controller
 		false, //enableNonGcpMode
 		testContext.EnableDualStackNEG,
-		enableASM, //enableAsm
-		[]string{},
 		labels.PodLabelPropagationConfig{},
 		true,
 		false,
@@ -168,13 +163,10 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		klog.TODO(),
 	)
 }
-func newTestControllerWithASM(kubeClient kubernetes.Interface) (*Controller, error) {
-	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-	return newTestControllerWithParamsAndContext(kubeClient, testContext, false, true)
-}
+
 func newTestController(kubeClient kubernetes.Interface) (*Controller, error) {
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-	return newTestControllerWithParamsAndContext(kubeClient, testContext, false, false)
+	return newTestControllerWithParamsAndContext(kubeClient, testContext, false)
 }
 
 func TestIsHealthy(t *testing.T) {
@@ -191,7 +183,7 @@ func TestIsHealthy(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, false, false)
+			controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, false)
 			if err != nil {
 				t.Fatalf("failed to create test controller %s", err)
 			}
@@ -371,7 +363,7 @@ func TestEnableNEGServiceWithIngress(t *testing.T) {
 func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 	kubeClient := fake.NewSimpleClientset()
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-	controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false)
+	controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, true)
 	if err != nil {
 		t.Fatalf("failed to create test controller %s", err)
 	}
@@ -448,7 +440,7 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 func TestEnqueueNodeWithILBSubsetting(t *testing.T) {
 	kubeClient := fake.NewSimpleClientset()
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-	controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false)
+	controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, true)
 	if err != nil {
 		t.Fatalf("failed to create test controller %s", err)
 	}
@@ -489,7 +481,7 @@ func TestEnqueueNodeWithILBSubsetting(t *testing.T) {
 func TestEnqueueNodeWhenProviderIDPopulated(t *testing.T) {
 	kubeClient := fake.NewSimpleClientset()
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-	controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false)
+	controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, true)
 	if err != nil {
 		t.Fatalf("failed to create test controller %s", err)
 	}
@@ -1215,85 +1207,6 @@ func TestMergeDefaultBackendServicePortInfoMap(t *testing.T) {
 	}
 }
 
-func TestEnableASM(t *testing.T) {
-	controller, err := newTestControllerWithASM(fake.NewSimpleClientset())
-	if err != nil {
-		t.Fatalf("failed to create test controller %s", err)
-	}
-	defer controller.stop()
-	testSvc := newTestServiceCus(t, controller, "namespace1", "service1", []int32{80, 90})
-	wantSvcPortMap := negtypes.NewPortInfoMap("namespace1", "service1", negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Name: "port80", Port: 80, TargetPort: "80"}, negtypes.SvcPortTuple{Name: "port90", Port: 90, TargetPort: "90"}), controller.namer, false, nil, defaultNetwork)
-
-	svcKey := utils.ServiceKeyFunc(testSvc.GetNamespace(), testSvc.GetName())
-
-	controller.serviceLister.Add(testSvc)
-	controller.client.CoreV1().Services(testSvc.GetNamespace()).Create(context.TODO(), testSvc, metav1.CreateOptions{})
-
-	expectedPortInfoMap := negtypes.PortInfoMap{}
-	expectedPortInfoMap.Merge(wantSvcPortMap)
-
-	err = controller.processService(svcKey)
-	if err != nil {
-		t.Fatalf("Failed to process service: %v", err)
-	}
-
-	validateSyncerManagerWithPortInfoMap(t, controller, testSvc.GetNamespace(), testSvc.GetName(), expectedPortInfoMap)
-
-	svcClient := controller.client.CoreV1().Services(testSvc.GetNamespace())
-	svc, err := svcClient.Get(context.TODO(), testSvc.GetName(), metav1.GetOptions{})
-	if err != nil {
-		t.Fatalf("Service was not created successfully, err: %v", err)
-	}
-	// zones with unready nodes will be skipped.
-	validateServiceAnnotationWithPortInfoMap(t, svc, wantSvcPortMap, []string{negtypes.TestZone1, negtypes.TestZone2, negtypes.TestZone4})
-}
-
-func TestMergeCSMPortInfoMap(t *testing.T) {
-	controller, err := newTestControllerWithASM(fake.NewSimpleClientset())
-	if err != nil {
-		t.Fatalf("failed to create test controller %s", err)
-	}
-	defer controller.stop()
-	n1s1 := newTestServiceCus(t, controller, "namespace1", "service1", []int32{80, 90})
-	n2s1 := newTestServiceCus(t, controller, "namespace2", "service1", []int32{90})
-
-	testcases := []struct {
-		desc           string
-		srvNamespace   string
-		srvName        string
-		service        *apiv1.Service
-		wantSvcPortMap negtypes.PortInfoMap
-	}{
-		{
-			desc:           "controller should create NEGs for services and destinationrules",
-			srvNamespace:   "namespace1",
-			srvName:        "service1",
-			service:        n1s1,
-			wantSvcPortMap: negtypes.NewPortInfoMap("namespace1", "service1", negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Name: "port80", Port: 80, TargetPort: "80"}, negtypes.SvcPortTuple{Name: "port90", Port: 90, TargetPort: "90"}), controller.namer, false, nil, defaultNetwork),
-		},
-		{
-			desc:           "controller should create NEGs for services",
-			srvNamespace:   "namespace2",
-			srvName:        "service1",
-			service:        n2s1,
-			wantSvcPortMap: negtypes.NewPortInfoMap("namespace2", "service1", negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Name: "port90", Port: 90, TargetPort: "90"}), controller.namer, false, nil, defaultNetwork),
-		},
-	}
-
-	for _, tc := range testcases {
-		t.Run(tc.desc, func(t *testing.T) {
-			portInfoMap := make(negtypes.PortInfoMap)
-			portInfoMap, err := controller.getCSMPortInfoMap(tc.srvNamespace, tc.srvName, tc.service, defaultNetwork)
-			if err != nil {
-				t.Fatalf("Failed to run mergeCSMPortInfoMap: %v", err)
-			}
-			if !reflect.DeepEqual(tc.wantSvcPortMap, portInfoMap) {
-				t.Fatalf("Wrong services PortInfoMap, got %+v, want %+v", portInfoMap, tc.wantSvcPortMap)
-			}
-		})
-	}
-}
-
 func TestMergeVmIpNEGsPortInfo(t *testing.T) {
 	controller, err := newTestController(fake.NewSimpleClientset())
 	if err != nil {
@@ -1555,7 +1468,7 @@ func TestEnqueueEndpoints(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			kubeClient := fake.NewSimpleClientset()
 			testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-			controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, false, false)
+			controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, false)
 			if err != nil {
 				t.Fatalf("failed to create test controller %s", err)
 			}
@@ -1713,7 +1626,7 @@ func TestServiceIPFamilies(t *testing.T) {
 func TestEnableNEGServiceWithL4NetLB(t *testing.T) {
 	kubeClient := fake.NewSimpleClientset()
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-	controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false)
+	controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, true)
 	if err != nil {
 		t.Fatalf("failed to create test controller %s", err)
 	}
@@ -2309,31 +2222,5 @@ func newTestServiceCustomNamedNeg(c *Controller, negSvcPorts map[int32]string, i
 	}
 
 	c.client.CoreV1().Services(testServiceNamespace).Create(context.TODO(), svc, metav1.CreateOptions{})
-	return svc
-}
-
-func newTestServiceCus(t *testing.T, c *Controller, namespace, name string, ports []int32) *apiv1.Service {
-	svcPorts := []apiv1.ServicePort{}
-	for _, port := range ports {
-		svcPorts = append(svcPorts,
-			apiv1.ServicePort{
-				Name:       fmt.Sprintf("port%v", port),
-				Port:       port,
-				TargetPort: intstr.FromString(fmt.Sprintf("%v", port)),
-			},
-		)
-	}
-
-	svc := &apiv1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-		Spec: apiv1.ServiceSpec{
-			Ports:    svcPorts,
-			Selector: map[string]string{"v": "v1"},
-		},
-	}
-	c.client.CoreV1().Services(namespace).Create(context.TODO(), svc, metav1.CreateOptions{})
 	return svc
 }
