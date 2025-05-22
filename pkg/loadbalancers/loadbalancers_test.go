@@ -25,6 +25,7 @@ import (
 	"testing"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
 	"github.com/google/go-cmp/cmp"
@@ -621,7 +622,7 @@ func TestUpgradeToNewCertNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create Target proxy %v - %v", newProxy, err)
 	}
-	proxyCerts, err := composite.ListSslCertificates(j.fakeGCE, key, defaultVersion, klog.TODO())
+	proxyCerts, err := composite.ListSslCertificates(j.fakeGCE, key, defaultVersion, klog.TODO(), filter.None)
 	if err != nil {
 		t.Fatalf("Failed to list certs for load balancer %v - %v", j, err)
 	}
@@ -930,7 +931,7 @@ func verifyCertAndProxyLink(expectCerts map[string]string, expectCertsProxy map[
 	if err != nil {
 		t.Fatal(err)
 	}
-	allCerts, err := composite.ListSslCertificates(j.fakeGCE, key, defaultVersion, klog.TODO())
+	allCerts, err := composite.ListSslCertificates(j.fakeGCE, key, defaultVersion, klog.TODO(), filter.None)
 	if err != nil {
 		t.Fatalf("Failed to list certificates for %v - %v", j, err)
 	}
