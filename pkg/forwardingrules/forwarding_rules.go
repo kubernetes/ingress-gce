@@ -3,6 +3,7 @@ package forwardingrules
 import (
 	"fmt"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -55,6 +56,20 @@ func (frc *ForwardingRules) Get(name string) (*composite.ForwardingRule, error) 
 		return nil, fmt.Errorf("Failed to get existing forwarding rule %s, err: %w", name, err)
 	}
 	return fr, nil
+}
+
+// List will list all of the Forwarding Rules in GCE matching the filter.
+func (frc *ForwardingRules) List(filter *filter.F) ([]*composite.ForwardingRule, error) {
+	key, err := frc.createKey("")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create key for listing forwarding rules, err: %w", err)
+	}
+
+	frs, err := composite.ListForwardingRules(frc.cloud, key, frc.version, frc.logger, filter)
+	if utils.IgnoreHTTPNotFound(err) != nil {
+		return nil, fmt.Errorf("failed to list forwarding rules with filter %v: %w", filter, err)
+	}
+	return frs, nil
 }
 
 func (frc *ForwardingRules) Delete(name string) error {

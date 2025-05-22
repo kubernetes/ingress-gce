@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -108,6 +109,119 @@ func TestGetForwardingRule(t *testing.T) {
 			if !cmp.Equal(fr, tc.expectedFwdRule, ignoreFields) {
 				diff := cmp.Diff(fr, tc.expectedFwdRule, ignoreFields)
 				t.Errorf("frc.Get(s) returned %v, not equal to expectedFwdRule %v, diff: %v", fr, tc.expectedFwdRule, diff)
+			}
+		})
+	}
+}
+
+func TestListForwardingRules(t *testing.T) {
+	netlb1 := &composite.ForwardingRule{
+		Name:                "netlb1",
+		LoadBalancingScheme: string(cloud.SchemeExternal),
+		BackendService:      "us-west1/backendServices/k8s2-netlb1",
+		Version:             meta.VersionGA,
+	}
+	netlb2TCP := &composite.ForwardingRule{
+		Name:                "netlb2-tcp",
+		LoadBalancingScheme: string(cloud.SchemeExternal),
+		BackendService:      "us-west1/backendServices/k8s2-netlb2",
+		IPProtocol:          "TCP",
+		Version:             meta.VersionGA,
+	}
+	netlb2UDP := &composite.ForwardingRule{
+		Name:                "netlb2-udp",
+		LoadBalancingScheme: string(cloud.SchemeExternal),
+		BackendService:      "us-west1/backendServices/k8s2-netlb2",
+		IPProtocol:          "UDP",
+		Version:             meta.VersionGA,
+	}
+	netLBForwardingRules := []*composite.ForwardingRule{netlb1, netlb2TCP, netlb2UDP}
+
+	ilb := &composite.ForwardingRule{
+		Name:                "ilb",
+		LoadBalancingScheme: string(cloud.SchemeInternal),
+		BackendService:      "us-west1/backendServices/k8s2-ilb",
+		Version:             meta.VersionGA,
+	}
+	allForwardingRules := append(netLBForwardingRules, ilb)
+
+	testCases := []struct {
+		desc             string
+		existingFwdRules []*composite.ForwardingRule
+		filter           *filter.F
+		want             []*composite.ForwardingRule
+	}{
+		{
+			desc:             "empty",
+			existingFwdRules: nil,
+			filter:           filter.None,
+			want:             nil,
+		},
+		{
+			desc:             "all",
+			existingFwdRules: allForwardingRules,
+			filter:           filter.None,
+			want:             allForwardingRules,
+		},
+		{
+			desc:             "NetLB1 from Name",
+			existingFwdRules: allForwardingRules,
+			filter:           filter.Regexp("Name", "^netlb1$"),
+			want:             []*composite.ForwardingRule{netlb1},
+		},
+		{
+			desc:             "NetLB2 from BackendService",
+			existingFwdRules: allForwardingRules,
+			filter:           filter.Regexp("BackendService", "^us-west1/backendServices/k8s2-netlb2$"),
+			want:             []*composite.ForwardingRule{netlb2TCP, netlb2UDP},
+		},
+		{
+			desc:             "BackendService doesn't exist",
+			existingFwdRules: []*composite.ForwardingRule{netlb1, ilb},
+			filter:           filter.Regexp("BackendService", "^us-west1/backendServices/k8s2-netlb2$"),
+			want:             nil,
+		},
+		{
+			desc:             "contains lb",
+			existingFwdRules: allForwardingRules,
+			filter:           filter.Regexp("Name", "lb"),
+			want:             allForwardingRules,
+		},
+		{
+			desc:             "ILB and NetLB1 (impossible)",
+			existingFwdRules: allForwardingRules,
+			filter:           filter.Regexp("Name", "^netlb1$").AndRegexp("Name", "^ilb$"),
+			want:             nil,
+		},
+		{
+			desc:             "External BackendService",
+			existingFwdRules: allForwardingRules,
+			filter:           filter.Regexp("BackendService", "^us-west1/backendServices/k8s2-netlb1$").AndRegexp("LoadBalancingScheme", "^EXTERNAL$"),
+			want:             []*composite.ForwardingRule{netlb1},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			// Arrange
+			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+			frc := New(fakeGCE, meta.VersionGA, meta.Regional, klog.TODO())
+			mustCreateForwardingRules(t, fakeGCE, tc.existingFwdRules)
+
+			// Act
+			got, err := frc.List(tc.filter)
+
+			// Assert
+			if err != nil {
+				t.Fatalf("frc.List(%v), returned error %v, want nil", tc.filter, err)
+			}
+
+			ignore := cmpopts.IgnoreFields(composite.ForwardingRule{}, "SelfLink", "Region")
+			sort := cmpopts.SortSlices(func(x, y *composite.ForwardingRule) bool {
+				return x.Name < y.Name
+			})
+			if diff := cmp.Diff(got, tc.want, ignore, sort); diff != "" {
+				t.Errorf("frc.List(%v) mismatch (-want +got):\n%s", tc.filter, diff)
 			}
 		})
 	}
