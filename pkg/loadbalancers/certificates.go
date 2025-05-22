@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -153,7 +154,7 @@ func (l7 *L7) getIngressManagedSslCerts() ([]*composite.SslCertificate, error) {
 		return nil, err
 	}
 	version := l7.Versions().SslCertificate
-	certs, err := composite.ListSslCertificates(l7.cloud, key, version, l7.logger)
+	certs, err := composite.ListSslCertificates(l7.cloud, key, version, l7.logger, filter.None)
 	if err != nil {
 		return nil, err
 	}

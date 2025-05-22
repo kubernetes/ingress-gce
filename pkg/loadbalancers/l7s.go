@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/networking/v1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
@@ -108,7 +109,7 @@ func (l7s *L7s) delete(namer namer_util.IngressFrontendNamer, versions *features
 // list returns a list of urlMaps (the top level LB resource) that belong to the cluster.
 func (l7s *L7s) list(key *meta.Key, version meta.Version) ([]*composite.UrlMap, error) {
 	var result []*composite.UrlMap
-	urlMaps, err := composite.ListUrlMaps(l7s.cloud, key, version, l7s.logger)
+	urlMaps, err := composite.ListUrlMaps(l7s.cloud, key, version, l7s.logger, filter.None)
 	if err != nil {
 		return nil, err
 	}
