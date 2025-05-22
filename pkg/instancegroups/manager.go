@@ -85,7 +85,7 @@ func NewManager(config *ManagerConfig) Manager {
 func (m *manager) EnsureInstanceGroupsAndPorts(name string, ports []int64, logger klog.Logger) (igs []*compute.InstanceGroup, err error) {
 	iglogger := logger.WithName("InstanceGroupsManager")
 	// Instance groups need to be created in all zones that nodes are in.
-	zones, err := m.ZoneGetter.ListZones(zonegetter.AllNodesFilter, iglogger)
+	zones, err := m.ZoneGetter.ListZonesInDefaultSubnet(zonegetter.AllNodesFilter, iglogger)
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +168,7 @@ func (m *manager) DeleteInstanceGroup(name string, logger klog.Logger) error {
 	iglogger := logger.WithName("InstanceGroupsManager")
 	var errs []error
 
-	zones, err := m.ZoneGetter.ListZones(zonegetter.AllNodesFilter, iglogger)
+	zones, err := m.ZoneGetter.ListZonesInDefaultSubnet(zonegetter.AllNodesFilter, iglogger)
 	if err != nil {
 		return err
 	}
@@ -209,7 +209,7 @@ func (m *manager) List(logger klog.Logger) ([]string, error) {
 
 	iglogger := logger.WithName("InstanceGroupsManager")
 
-	zones, err := m.ZoneGetter.ListZones(zonegetter.AllNodesFilter, iglogger)
+	zones, err := m.ZoneGetter.ListZonesInDefaultSubnet(zonegetter.AllNodesFilter, iglogger)
 	if err != nil {
 		return nil, err
 	}
@@ -312,7 +312,7 @@ func (m *manager) Sync(nodes []string, logger klog.Logger) (err error) {
 	zonedNodes := m.splitNodesByZone(nodes, iglogger)
 	iglogger.Info(fmt.Sprintf("Syncing nodes: %d nodes over %d zones", len(nodes), len(zonedNodes)))
 
-	zones, err := m.ZoneGetter.ListZones(zonegetter.AllNodesFilter, iglogger)
+	zones, err := m.ZoneGetter.ListZonesInDefaultSubnet(zonegetter.AllNodesFilter, iglogger)
 	if err != nil {
 		iglogger.Error(err, "Failed to list zones")
 	}

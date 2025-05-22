@@ -418,15 +418,29 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}, ingLogger klo
 		return err
 	}
 
-	// Get the zones our groups live in.
+	// Get the zones in the default subnet our groups live in.
+	// These zones will be used for instance group based backends
+	// since multi-subnet feature do not support instance groups.
+	defaultSubnetZones, err := lbc.ZoneGetter.ListZonesInDefaultSubnet(zonegetter.CandidateNodesFilter, lbc.logger)
+	if err != nil {
+		ingLogger.Error(err, "lbc.ZoneGetter.List(zonegetter.CandidateNodesFilter)")
+		return err
+	}
+	var igGroupKeys []backends.GroupKey
+	for _, zone := range defaultSubnetZones {
+		igGroupKeys = append(igGroupKeys, backends.GroupKey{Zone: zone})
+	}
+
+	// Get all the zones our groups live in.
+	// These zones will be used for NEG based backends.
 	zones, err := lbc.ZoneGetter.ListZones(zonegetter.CandidateNodesFilter, lbc.logger)
 	if err != nil {
 		ingLogger.Error(err, "lbc.ZoneGetter.List(zonegetter.CandidateNodesFilter)")
 		return err
 	}
-	var groupKeys []backends.GroupKey
+	var negGroupKeys []backends.GroupKey
 	for _, zone := range zones {
-		groupKeys = append(groupKeys, backends.GroupKey{Zone: zone})
+		negGroupKeys = append(negGroupKeys, backends.GroupKey{Zone: zone})
 	}
 
 	// Link backends to groups.
@@ -434,10 +448,10 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}, ingLogger klo
 		var linkErr error
 		if sp.NEGEnabled {
 			// Link backend to NEG's if the backend has NEG enabled.
-			linkErr = lbc.negLinker.Link(sp, groupKeys)
+			linkErr = lbc.negLinker.Link(sp, igGroupKeys)
 		} else {
 			// Otherwise, link backend to IG's.
-			linkErr = lbc.igLinker.Link(sp, groupKeys)
+			linkErr = lbc.igLinker.Link(sp, negGroupKeys)
 		}
 		if linkErr != nil {
 			return linkErr
@@ -456,7 +470,7 @@ func (lbc *LoadBalancerController) syncInstanceGroup(ing *v1.Ingress, ingSvcPort
 		return err
 	}
 
-	nodes, err := lbc.ZoneGetter.ListNodes(zonegetter.CandidateNodesFilter, lbc.logger)
+	nodes, err := lbc.ZoneGetter.ListNodesInDefaultSubnet(zonegetter.CandidateNodesFilter, lbc.logger)
 	if err != nil {
 		return err
 	}
