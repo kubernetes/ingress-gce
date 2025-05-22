@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"strings"
 
-	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/translator"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -156,10 +155,8 @@ func (l7 *L7) edgeHop() error {
 		return err
 	}
 
-	if flags.F.EnableFrontendConfig {
-		if err := l7.ensureRedirectURLMap(); err != nil {
-			return fmt.Errorf("ensureRedirectUrlMap() = %v", err)
-		}
+	if err := l7.ensureRedirectURLMap(); err != nil {
+		return fmt.Errorf("ensureRedirectUrlMap() = %v", err)
 	}
 
 	if l7.runtimeInfo.AllowHTTP {
@@ -385,20 +382,18 @@ func (l7 *L7) Cleanup(versions *features.ResourceVersions) error {
 	}
 
 	// Delete RedirectUrlMap if exists
-	if flags.F.EnableFrontendConfig {
-		umName, supported := l7.namer.RedirectUrlMap()
-		if !supported {
-			// Skip deletion
-			return nil
-		}
-		l7.logger.V(2).Info("Deleting Redirect URL Map", "urlMapName", umName)
-		key, err := l7.CreateKey(umName)
-		if err != nil {
-			return err
-		}
-		if err := utils.IgnoreHTTPNotFound(composite.DeleteUrlMap(l7.cloud, key, versions.UrlMap, l7.logger)); err != nil {
-			return err
-		}
+	umName, supported := l7.namer.RedirectUrlMap()
+	if !supported {
+		// Skip deletion
+		return nil
+	}
+	l7.logger.V(2).Info("Deleting Redirect URL Map", "urlMapName", umName)
+	key, err = l7.CreateKey(umName)
+	if err != nil {
+		return err
+	}
+	if err := utils.IgnoreHTTPNotFound(composite.DeleteUrlMap(l7.cloud, key, versions.UrlMap, l7.logger)); err != nil {
+		return err
 	}
 	return nil
 }
@@ -438,12 +433,10 @@ func (l7 *L7) getFrontendAnnotations(existing map[string]string) map[string]stri
 	}
 
 	// Handle Https Redirect Map
-	if flags.F.EnableFrontendConfig {
-		if l7.redirectUm != nil {
-			existing[annotations.RedirectUrlMapKey] = l7.redirectUm.Name
-		} else {
-			delete(existing, annotations.RedirectUrlMapKey)
-		}
+	if l7.redirectUm != nil {
+		existing[annotations.RedirectUrlMapKey] = l7.redirectUm.Name
+	} else {
+		delete(existing, annotations.RedirectUrlMapKey)
 	}
 
 	// Note that ingress IP annotation is not deleted when user disables one of http/https.
