@@ -296,7 +296,6 @@ func createNEGController(
 		flags.F.ResyncPeriod,
 		flags.F.NegGCPeriod,
 		flags.F.NumNegGCWorkers,
-		flags.F.EnableReadinessReflector,
 		flags.F.EnableL4NEG,
 		flags.F.EnableNonGCPMode,
 		flags.F.EnableDualStackNEG,

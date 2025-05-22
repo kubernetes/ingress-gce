@@ -95,7 +95,6 @@ var F = struct {
 
 	// Feature flags should be named Enablexxx.
 	EnableNonGCPMode                          bool
-	EnableReadinessReflector                  bool
 	EnableV2FrontendNamer                     bool
 	FinalizerAdd                              bool // Should have been named Enablexxx.
 	FinalizerRemove                           bool // Should have been named Enablexxx.
@@ -154,6 +153,8 @@ var F = struct {
 	EnableDeleteUnusedFrontends bool
 	// DEPRECATED: EnableFrontendConfig is on by default and will be removed in a future release.
 	EnableFrontendConfig bool
+	// DEPRECATED: EnableReadinessReflector is on by default and will be removed in a future release.
+	EnableReadinessReflector bool
 }{
 	GCERateLimitScale: 1.0,
 }
