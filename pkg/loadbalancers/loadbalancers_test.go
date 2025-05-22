@@ -1764,7 +1764,6 @@ func TestSecretBasedToPreSharedCertUpdateWithErrors(t *testing.T) {
 // on updating ingress configuration to disable http/https traffic.
 func TestResourceDeletionWithProtocol(t *testing.T) {
 	// TODO(smatti): Add flag saver to capture current value and reset back.
-	flags.F.EnableDeleteUnusedFrontends = true
 	j := newTestJig(t)
 
 	gceUrlMap := utils.NewGCEURLMap(klog.TODO())

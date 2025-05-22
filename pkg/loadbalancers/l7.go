@@ -166,7 +166,7 @@ func (l7 *L7) edgeHop() error {
 		if err := l7.edgeHopHttp(); err != nil {
 			return err
 		}
-	} else if flags.F.EnableDeleteUnusedFrontends && requireDeleteFrontend(l7.ingress, namer.HTTPProtocol, l7.logger) {
+	} else if requireDeleteFrontend(l7.ingress, namer.HTTPProtocol, l7.logger) {
 		if err := l7.deleteHttp(features.VersionsFromIngress(&l7.ingress)); err != nil {
 			return err
 		}
@@ -184,7 +184,7 @@ func (l7 *L7) edgeHop() error {
 		if err := l7.edgeHopHttps(); err != nil {
 			return err
 		}
-	} else if flags.F.EnableDeleteUnusedFrontends && requireDeleteFrontend(l7.ingress, namer.HTTPSProtocol, l7.logger) {
+	} else if requireDeleteFrontend(l7.ingress, namer.HTTPSProtocol, l7.logger) {
 		if err := l7.deleteHttps(features.VersionsFromIngress(&l7.ingress)); err != nil {
 			return err
 		}
