@@ -30,7 +30,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 )
@@ -330,15 +329,13 @@ func (t *Translator) ToCompositeTargetHttpsProxy(env *Env, description string, v
 		Version:         version,
 	}
 	var sslPolicySet bool
-	if flags.F.EnableFrontendConfig {
-		sslPolicy, err := sslPolicyLink(env, t.IsL7XLBRegional)
-		if err != nil {
-			return nil, sslPolicySet, err
-		}
-		if sslPolicy != nil {
-			proxy.SslPolicy = *sslPolicy
-			sslPolicySet = true
-		}
+	sslPolicy, err := sslPolicyLink(env, t.IsL7XLBRegional)
+	if err != nil {
+		return nil, sslPolicySet, err
+	}
+	if sslPolicy != nil {
+		proxy.SslPolicy = *sslPolicy
+		sslPolicySet = true
 	}
 
 	return proxy, sslPolicySet, nil

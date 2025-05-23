@@ -141,7 +141,6 @@ func NewController(
 	resyncPeriod time.Duration,
 	gcPeriod time.Duration,
 	numGCWorkers int,
-	enableReadinessReflector bool,
 	runL4Controller bool,
 	enableNonGcpMode bool,
 	enableDualStackNEG bool,
@@ -198,19 +197,15 @@ func NewController(
 		logger)
 
 	var reflector readiness.Reflector
-	if enableReadinessReflector {
-		reflector = readiness.NewReadinessReflector(
-			kubeClient,
-			eventRecorderClient,
-			podInformer.GetIndexer(),
-			cloud,
-			manager,
-			enableDualStackNEG,
-			logger,
-		)
-	} else {
-		reflector = &readiness.NoopReflector{}
-	}
+	reflector = readiness.NewReadinessReflector(
+		kubeClient,
+		eventRecorderClient,
+		podInformer.GetIndexer(),
+		cloud,
+		manager,
+		enableDualStackNEG,
+		logger,
+	)
 	manager.reflector = reflector
 
 	var networkIndexer cache.Indexer
