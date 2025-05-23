@@ -97,6 +97,7 @@ func TestEnsureMixedNetLB(t *testing.T) {
 	for _, s := range startState {
 		for _, e := range endState {
 			desc := s.desc + " -> " + e.desc
+			s, e := s, e
 			t.Run(desc, func(t *testing.T) {
 				t.Parallel()
 				svc := &api_v1.Service{
@@ -226,6 +227,7 @@ func TestDeleteMixedNetLB(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 			svc := &api_v1.Service{

@@ -111,6 +111,7 @@ func TestIPv4ToUse(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 			cloud, recorder := arrangeIPv4(t)
@@ -203,6 +204,7 @@ func TestIPv6ToUse(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 			cloud := arrangeIPv6(t)
