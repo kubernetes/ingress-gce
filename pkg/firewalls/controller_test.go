@@ -38,6 +38,7 @@ import (
 	test "k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
+	"k8s.io/utils/ptr"
 
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/ingress-gce/pkg/context"
@@ -137,19 +138,19 @@ func TestGetCustomHealthCheckPorts(t *testing.T) {
 	}{
 		{
 			desc:     "One service port with custom port",
-			svcPorts: []utils.ServicePort{utils.ServicePort{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: utils.NewInt64Pointer(8000)}}}}},
+			svcPorts: []utils.ServicePort{{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: ptr.To(int64(8000))}}}}},
 			expect:   []string{"8000"},
 		},
 		{
 			desc: "Two service ports with custom port",
-			svcPorts: []utils.ServicePort{utils.ServicePort{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: utils.NewInt64Pointer(8000)}}}},
-				utils.ServicePort{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: utils.NewInt64Pointer(9000)}}}}},
+			svcPorts: []utils.ServicePort{{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: ptr.To(int64(8000))}}}},
+				{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: ptr.To(int64(9000))}}}}},
 			expect: []string{"8000", "9000"},
 		},
 		{
 			desc: "Two service ports with custom port THC enabled",
-			svcPorts: []utils.ServicePort{utils.ServicePort{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: utils.NewInt64Pointer(8000)}}}},
-				utils.ServicePort{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: utils.NewInt64Pointer(9000)}}}}},
+			svcPorts: []utils.ServicePort{{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: ptr.To(int64(8000))}}}},
+				{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: ptr.To(int64(9000))}}}}},
 			enableTHC: true,
 			expect:    []string{"8000", "9000", strconv.FormatInt(thcPort, 10)},
 		},
