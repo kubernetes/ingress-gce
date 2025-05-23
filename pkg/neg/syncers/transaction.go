@@ -629,18 +629,18 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 }
 
 // attachNetworkEndpoints runs operation for attaching network endpoints.
-func (s *transactionSyncer) attachNetworkEndpoints(epGroupInfo negtypes.NEGLocation, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
-	s.logger.V(2).Info("Attaching endpoints to NEG.", "countOfEndpointsBeingAttached", len(networkEndpointMap), "negSyncerKey", s.NegSyncerKey.String(), "zone", epGroupInfo.Zone, "subnet", epGroupInfo.Subnet)
-	err := s.operationInternal(attachOp, epGroupInfo, networkEndpointMap, s.logger)
+func (s *transactionSyncer) attachNetworkEndpoints(negLocation negtypes.NEGLocation, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
+	s.logger.V(2).Info("Attaching endpoints to NEG.", "countOfEndpointsBeingAttached", len(networkEndpointMap), "negSyncerKey", s.NegSyncerKey.String(), "zone", negLocation.Zone, "subnet", negLocation.Subnet)
+	err := s.operationInternal(attachOp, negLocation, networkEndpointMap, s.logger)
 
 	// WARNING: commitTransaction must be called at last for analyzing the operation result
 	s.commitTransaction(err, networkEndpointMap)
 }
 
 // detachNetworkEndpoints runs operation for detaching network endpoints.
-func (s *transactionSyncer) detachNetworkEndpoints(epGroupInfo negtypes.NEGLocation, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, hasMigrationDetachments bool) {
-	s.logger.V(2).Info("Detaching endpoints from NEG.", "countOfEndpointsBeingDetached", len(networkEndpointMap), "negSyncerKey", s.NegSyncerKey.String(), "zone", epGroupInfo.Zone, "subnet", epGroupInfo.Subnet)
-	err := s.operationInternal(detachOp, epGroupInfo, networkEndpointMap, s.logger)
+func (s *transactionSyncer) detachNetworkEndpoints(negLocation negtypes.NEGLocation, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, hasMigrationDetachments bool) {
+	s.logger.V(2).Info("Detaching endpoints from NEG.", "countOfEndpointsBeingDetached", len(networkEndpointMap), "negSyncerKey", s.NegSyncerKey.String(), "zone", negLocation.Zone, "subnet", negLocation.Subnet)
+	err := s.operationInternal(detachOp, negLocation, networkEndpointMap, s.logger)
 
 	if hasMigrationDetachments {
 		// Unpause the migration since the ongoing migration-detachments have
@@ -655,14 +655,14 @@ func (s *transactionSyncer) detachNetworkEndpoints(epGroupInfo negtypes.NEGLocat
 // operationInternal executes NEG API call and commits the transactions
 // It will record events when operations are completed
 // If error occurs or any transaction entry requires reconciliation, it will trigger resync
-func (s *transactionSyncer) operationInternal(operation transactionOp, epGroupInfo negtypes.NEGLocation, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, logger klog.Logger) error {
+func (s *transactionSyncer) operationInternal(operation transactionOp, negLocation negtypes.NEGLocation, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, logger klog.Logger) error {
 	var err error
 	start := time.Now()
 	networkEndpoints := []*composite.NetworkEndpoint{}
 	for _, ne := range networkEndpointMap {
 		networkEndpoints = append(networkEndpoints, ne)
 	}
-	zone := epGroupInfo.Zone
+	zone := negLocation.Zone
 	negName := s.NegSyncerKey.NegName
 	if flags.F.EnableMultiSubnetClusterPhase1 {
 		defaultSubnet, err := utils.KeyName(s.networkInfo.SubnetworkURL)
@@ -676,8 +676,8 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, epGroupIn
 		// (epGroupInfo.Subnet) is not the defaultSubnet, we are dealing with
 		// the Multi-Subnet Cluster use case, wherein the name of the NEG would
 		// need to be different.
-		if s.networkInfo.IsDefault && epGroupInfo.Subnet != defaultSubnet {
-			negName, err = s.getNonDefaultSubnetNEGName(epGroupInfo.Subnet)
+		if s.networkInfo.IsDefault && negLocation.Subnet != defaultSubnet {
+			negName, err = s.getNonDefaultSubnetNEGName(negLocation.Subnet)
 			if err != nil {
 				s.logger.Error(err, "Errored getting non-default subnet NEG name when updating NEG endpoints")
 				return err
