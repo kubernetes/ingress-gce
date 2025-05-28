@@ -28,7 +28,6 @@ import (
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
-	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/utils/ptr"
 
 	"k8s.io/ingress-gce/pkg/composite"
@@ -574,7 +573,6 @@ func TestToCompositeTargetHttpProxy(t *testing.T) {
 
 func TestToCompositeTargetHttpsProxy(t *testing.T) {
 	t.Parallel()
-	flags.F.EnableFrontendConfig = true
 	description := "foo"
 
 	testCases := []struct {
