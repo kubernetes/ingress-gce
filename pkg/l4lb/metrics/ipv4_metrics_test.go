@@ -37,7 +37,7 @@ const (
 )
 
 func TestExportILBMetric(t *testing.T) {
-	newMetrics := FakeControllerMetrics()
+	newMetrics := NewFakeCollector()
 	pastPersistentErrorThresholdTime := time.Now().Add(-1*persistentErrorThresholdTime - time.Minute)
 	notExceedingPersistentErrorThresholdTime := time.Now().Add(-1*persistentErrorThresholdTime + 5*time.Minute)
 
@@ -116,7 +116,7 @@ func verifyL4ILBMetric(t *testing.T, expectedCount int, status L4ServiceStatus, 
 }
 
 func TestExportNetLBMetric(t *testing.T) {
-	newMetrics := FakeControllerMetrics()
+	newMetrics := NewFakeCollector()
 	pastPersistentErrorThresholdTime := time.Now().Add(-1*persistentErrorThresholdTime - time.Minute)
 	notExceedingPersistentErrorThresholdTime := time.Now().Add(-1*persistentErrorThresholdTime + 5*time.Minute)
 
