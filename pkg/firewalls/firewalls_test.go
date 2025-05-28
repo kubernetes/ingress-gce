@@ -131,12 +131,29 @@ func TestFirewallPoolSyncSrcRanges(t *testing.T) {
 func TestFirewallPoolSyncPorts(t *testing.T) {
 	fwp := NewFakeFirewallsProvider(false, false)
 	fwClient := firewallclient.NewSimpleClientset()
-	fp := NewFirewallPool(fwp, defaultNamer, srcRanges, portRanges(), klog.TODO())
-	fcrp := NewFirewallCRPool(fwClient, fwp, defaultNamer, srcRanges, portRanges(), true, klog.TODO())
 	nodes := []string{"node-a", "node-b", "node-c"}
+	emptyPortRanges := make([]string, 0)
+
+	// Verify empty ports' list
+	fp := NewFirewallPool(fwp, defaultNamer, srcRanges, emptyPortRanges, klog.TODO())
+	fcrp := NewFirewallCRPool(fwClient, fwp, defaultNamer, srcRanges, emptyPortRanges, true, klog.TODO())
 
 	if err := fp.Sync(nodes, nil, nil, true); err != nil {
 		t.Fatal(err)
+	}
+	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, emptyPortRanges, t)
+
+	if err := fcrp.Sync(nodes, nil, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	verifyFirewallCR(fwClient, ruleName, srcRanges, emptyPortRanges, true, t)
+
+	// Verify a preset ports' list
+	fp = NewFirewallPool(fwp, defaultNamer, srcRanges, portRanges(), klog.TODO())
+	fcrp = NewFirewallCRPool(fwClient, fwp, defaultNamer, srcRanges, portRanges(), true, klog.TODO())
+
+	if err := fp.Sync(nodes, nil, nil, true); err != nil {
+		t.Errorf("unexpected err when syncing firewall, err: %v", err)
 	}
 	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
 
@@ -399,6 +416,12 @@ func verifyFirewallCR(firewallclient *firewallclient.Clientset, ruleName string,
 	ports := sets.NewString(expectedPorts...)
 	srcranges := sets.NewString(sourceRanges...)
 
+	// Empty ports' list would mean that all protocols are permitted
+	// (not only TCP)
+	if len(actualFW.Spec.Ports) == 0 {
+		t.Errorf("Empty list of allowed protocols is not permited")
+	}
+
 	actualPorts := sets.NewString()
 	for _, protocolports := range actualFW.Spec.Ports {
 		if protocolports.Protocol != "TCP" {
@@ -406,7 +429,7 @@ func verifyFirewallCR(firewallclient *firewallclient.Clientset, ruleName string,
 		}
 		if protocolports.EndPort != nil {
 			actualPorts.Insert(fmt.Sprintf("%d-%d", *protocolports.StartPort, *protocolports.EndPort))
-		} else {
+		} else if protocolports.StartPort != nil {
 			actualPorts.Insert(fmt.Sprintf("%d", *protocolports.StartPort))
 		}
 
