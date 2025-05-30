@@ -2,6 +2,7 @@ package firewalls
 
 import (
 	"fmt"
+	"net"
 	"reflect"
 	"strconv"
 	"strings"
@@ -22,9 +23,9 @@ func Equal(a, b *compute.Firewall, skipDescription bool) (bool, error) {
 		return true, nil
 	case (a == nil && b != nil) || (a != nil && b == nil):
 		return false, nil
-	case !utils.EqualStringSets(a.DestinationRanges, b.DestinationRanges):
+	case !equalIPRangeSet(a.DestinationRanges, b.DestinationRanges):
 		return false, nil
-	case !utils.EqualStringSets(a.SourceRanges, b.SourceRanges):
+	case !equalIPRangeSet(a.SourceRanges, b.SourceRanges):
 		return false, nil
 	case !utils.EqualStringSets(a.TargetTags, b.TargetTags):
 		return false, nil
@@ -33,6 +34,44 @@ func Equal(a, b *compute.Firewall, skipDescription bool) (bool, error) {
 	default:
 		return equalAllowRules(a.Allowed, b.Allowed)
 	}
+}
+
+// Check if two sets of IP addresses or CIDRs are equal.
+// Correctly handles equality of IPv6 addresses that use 'shortcuts'.
+func equalIPRangeSet(a, b []string) bool {
+	var aParsed []string
+	for _, ip := range a {
+		aParsed = append(aParsed, unifyIPRange(ip))
+	}
+	var bParsed []string
+	for _, ip := range b {
+		bParsed = append(bParsed, unifyIPRange(ip))
+	}
+	return utils.EqualStringSets(aParsed, bParsed)
+}
+
+// unifyIPRange converts the IPv6 IPRanges and addresses to canonical form.
+// IPv6 can use shortcuts to represent an IP skipping :0:0: sections.
+// This will parse the CIDR or IP and use it's representation.
+func unifyIPRange(ipStr string) string {
+	// if it's not IPv6 addr or CIDR just return the string.
+	if !strings.Contains(ipStr, ":") {
+		return ipStr
+	}
+	if strings.Contains(ipStr, "/") {
+		// this is a CIDR
+		_, ipNet, err := net.ParseCIDR(ipStr)
+		if err != nil {
+			return ipStr
+		}
+		return ipNet.String()
+	}
+	// this is an IP (equivalent of IPv4/32 or IPv6/128
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return ipStr
+	}
+	return ip.String()
 }
 
 // EqualAllowRules compares the FirewallAllowed arrays and returns whether they are equal.
