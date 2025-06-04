@@ -589,6 +589,86 @@ func TestNegNameMultiNetworking(t *testing.T) {
 	}
 }
 
+func TestGenerateSubnetToNegNameMapMultiNetworking(t *testing.T) {
+	fakeGCE := gce.NewFakeGCECloud(test.DefaultTestClusterValues())
+	fakeCloud := negtypes.NewAdapter(fakeGCE)
+	subnetInDefaultNetwork := fakeCloud.SubnetworkURL()
+	secondaryNetwork := "projects/mock-project/global/networks/multi-net-secondary-network"
+	subnetInSecondaryNetwork := "projects/mock-project/regions/test-region/subnetworks/multi-net-secondary-subnet"
+	netInfo := network.NetworkInfo{IsDefault: false, NetworkURL: secondaryNetwork, SubnetworkURL: subnetInSecondaryNetwork}
+
+	_, transactionSyncer, err := newTestTransactionSyncerWithNetInfo(fakeCloud, negtypes.VmIpEndpointType, false, netInfo)
+	if err != nil {
+		t.Fatalf("failed to initialize transaction syncer: %v", err)
+	}
+
+	subnetConfigs := []nodetopologyv1.SubnetConfig{
+		{
+			Name:       "default",
+			SubnetPath: "projects/mock-project/regions/test-region/subnetworks/someClusterDefaultNetwork",
+		},
+	}
+	nameMap, err := transactionSyncer.generateSubnetToNegNameMap(subnetConfigs)
+	if err != nil {
+		t.Errorf("generateSubnetToNegNameMap() failed, err=%v", err)
+	}
+	expectedNetwork, err := utils.KeyName(subnetInDefaultNetwork)
+	if err != nil {
+		t.Errorf("utils.KeyName(%s) failed, err=%v", subnetInDefaultNetwork, err)
+	}
+	if nameMap[expectedNetwork] != transactionSyncer.NegName {
+		t.Errorf("wrong subnet to NEG name map, wanted key=%s to be %s but got=%s, %+v", expectedNetwork, transactionSyncer.NegName, nameMap[expectedNetwork], nameMap)
+	}
+}
+
+func TestGenerateSubnetToNegNameMap(t *testing.T) {
+	fakeGCE := gce.NewFakeGCECloud(test.DefaultTestClusterValues())
+	fakeCloud := negtypes.NewAdapter(fakeGCE)
+	subnetInDefaultNetwork := fakeCloud.SubnetworkURL()
+	secondaryNetwork := "projects/mock-project/global/networks/default"
+	netInfo := network.NetworkInfo{IsDefault: true, NetworkURL: secondaryNetwork, SubnetworkURL: subnetInDefaultNetwork}
+
+	_, transactionSyncer, err := newTestTransactionSyncerWithNetInfo(fakeCloud, negtypes.VmIpEndpointType, false, netInfo)
+	if err != nil {
+		t.Fatalf("failed to initialize transaction syncer: %v", err)
+	}
+	mscSecondSubnetworkPath := "projects/mock-project/regions/test-region/subnetworks/msc-second"
+	subnetConfigs := []nodetopologyv1.SubnetConfig{
+		{
+			Name:       "default",
+			SubnetPath: subnetInDefaultNetwork,
+		},
+		{
+			Name:       "msc-second",
+			SubnetPath: mscSecondSubnetworkPath,
+		},
+	}
+	nameMap, err := transactionSyncer.generateSubnetToNegNameMap(subnetConfigs)
+	if err != nil {
+		t.Errorf("generateSubnetToNegNameMap() failed, err=%v", err)
+	}
+	expectedNetworkDefault, err := utils.KeyName(subnetInDefaultNetwork)
+	if err != nil {
+		t.Errorf("utils.KeyName(%s) failed, err=%v", subnetInDefaultNetwork, err)
+	}
+	if nameMap[expectedNetworkDefault] != transactionSyncer.NegName {
+		t.Errorf("wrong subnet to NEG name map, wanted key=%s to be %s but got=%s, %+v", expectedNetworkDefault, transactionSyncer.NegName, nameMap[expectedNetworkDefault], nameMap)
+	}
+
+	expectedNetworkMSCSecond, err := utils.KeyName(mscSecondSubnetworkPath)
+	if err != nil {
+		t.Errorf("utils.KeyName(%s) failed, err=%v", mscSecondSubnetworkPath, err)
+	}
+	mscSecondNEGName, err := transactionSyncer.getNonDefaultSubnetNEGName(expectedNetworkMSCSecond)
+	if err != nil {
+		t.Errorf("transactionSyncer.getNonDefaultSubnetNEGName(%s) failed, err=%v", expectedNetworkMSCSecond, err)
+	}
+	if nameMap[expectedNetworkMSCSecond] != mscSecondNEGName {
+		t.Errorf("wrong subnet to NEG name map, wanted key=%s to be %s but got=%s, %+v", expectedNetworkDefault, mscSecondNEGName, nameMap[expectedNetworkDefault], nameMap)
+	}
+
+}
+
 func TestSyncNetworkEndpointLabel(t *testing.T) {
 
 	var (

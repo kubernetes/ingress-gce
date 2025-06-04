@@ -396,7 +396,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 }
 
 func (s *transactionSyncer) generateSubnetToNegNameMap(subnetConfigs []nodetopologyv1.SubnetConfig) (map[string]string, error) {
-	defaultSubnet, err := utils.KeyName(s.networkInfo.SubnetworkURL)
+	defaultSubnet, err := utils.KeyName(s.cloud.SubnetworkURL())
 	if err != nil {
 		s.logger.Error(err, "Errored getting default subnet from NetworkInfo when retrieving existing endpoints")
 		return nil, err
