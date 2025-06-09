@@ -45,6 +45,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -535,7 +536,7 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 		svcLogger.Info("Finished syncing L4 NetLB RBS service", "timeTaken", time.Since(startTime))
 	}()
 
-	usesNegBackends := lc.shouldUseNEGBackends(service)
+	usesNegBackends := lc.shouldUseNEGBackends(service, svcLogger)
 
 	l4NetLBParams := &loadbalancers.L4NetLBParams{
 		Service:                          service,
@@ -630,7 +631,7 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 	return syncResult
 }
 
-func (lc *L4NetLBController) shouldUseNEGBackends(service *v1.Service) bool {
+func (lc *L4NetLBController) shouldUseNEGBackends(service *v1.Service, svcLogger klog.Logger) bool {
 	if !lc.enableNEGSupport {
 		return false
 	}
@@ -640,7 +641,51 @@ func (lc *L4NetLBController) shouldUseNEGBackends(service *v1.Service) bool {
 	if utils.HasL4NetLBFinalizerV3(service) {
 		return true
 	}
-	return lc.enableNEGAsDefault
+	if !lc.enableNEGAsDefault {
+		return false
+	}
+	// Do an extra check in case the customer removes the required finalizers
+	// Get the backend service if one exists and see what kind of backend
+	// is attached. If it's an IG keep using IGs.
+	backendType, err := lc.getBackendLinkType(service, svcLogger)
+	if err != nil {
+		svcLogger.Error(err, "Could not determine the backend type of the existing backend service, deferring to default")
+		return true
+	}
+	if backendType != nil && *backendType == instanceGroupLink {
+		return false
+	}
+	return backendType == nil || *backendType == negLink
+}
+
+func (lc *L4NetLBController) getBackendLinkType(service *v1.Service, svcLogger klog.Logger) (*backendLinkType, error) {
+	bsName := lc.namer.L4Backend(service.Namespace, service.Name)
+	backendService, err := lc.backendPool.Get(bsName, meta.VersionGA, meta.Regional, svcLogger)
+	if err != nil {
+		if utils.IsNotFoundError(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if backendService == nil {
+		return nil, nil
+	}
+	// When moving from subsetting ILB the BackendService could exist with
+	// a different load balancing scheme. Here we should treat this as
+	// a non-existent Backend Service.
+	if backendService.LoadBalancingScheme != string(cloud.SchemeExternal) {
+		return nil, nil
+	}
+	if len(backendService.Backends) > 0 {
+		firstBackend := backendService.Backends[0]
+		if strings.Contains(firstBackend.Group, "/instanceGroups/") {
+			return ptr.To(instanceGroupLink), nil
+		}
+		if strings.Contains(firstBackend.Group, "/networkEndpointGroups/") {
+			return ptr.To(negLink), nil
+		}
+	}
+	return nil, nil
 }
 
 func (lc *L4NetLBController) emitEnsuredDualStackEvent(service *v1.Service) {
