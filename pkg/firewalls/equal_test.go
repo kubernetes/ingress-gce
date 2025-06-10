@@ -1,10 +1,9 @@
-package firewalls_test
+package firewalls
 
 import (
 	"testing"
 
 	"google.golang.org/api/compute/v1"
-	"k8s.io/ingress-gce/pkg/firewalls"
 )
 
 func TestEqual(t *testing.T) {
@@ -344,16 +343,153 @@ func TestEqual(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			desc: "same ipv6 source ranges with shortcut",
+			a: &compute.Firewall{
+				SourceRanges: []string{
+					"2600:2900:3070:be4:6000:0:0:0/128",
+				},
+			},
+			b: &compute.Firewall{
+				SourceRanges: []string{
+					"2600:2900:3070:be4:6000::/128",
+				},
+			},
+			want: true,
+		},
 	}
 	for _, tC := range testCases {
 		t.Run(tC.desc, func(t *testing.T) {
-			got, gotErr := firewalls.Equal(tC.a, tC.b, tC.skipDescription)
+			got, gotErr := Equal(tC.a, tC.b, tC.skipDescription)
 			if got != tC.want || (gotErr != nil) != tC.wantErr {
 				wantErr := "and no error"
 				if tC.wantErr {
 					wantErr = "and error"
 				}
 				t.Errorf("firewalls.Equal(%v, %v) = %v %v, want %v %s", tC.desc, tC.skipDescription, got, gotErr, tC.want, wantErr)
+			}
+		})
+	}
+}
+
+func TestEqualIPRangeSet(t *testing.T) {
+	tcs := []struct {
+		desc      string
+		a         []string
+		b         []string
+		wantEqual bool
+	}{
+		{
+			desc:      "same IPv4 ranges",
+			a:         []string{"1.2.3.4/24"},
+			b:         []string{"1.2.3.4/24"},
+			wantEqual: true,
+		},
+		{
+			desc:      "same IPv4 ranges different ordering",
+			a:         []string{"1.2.3.4/24", "5.6.7.8/24"},
+			b:         []string{"5.6.7.8/24", "1.2.3.4/24"},
+			wantEqual: true,
+		},
+		{
+			desc:      "different IPv4 ranges",
+			a:         []string{"1.2.3.4/24", "5.6.7.8/24"},
+			b:         []string{"1.2.3.4/24", "5.5.5.5/24"},
+			wantEqual: false,
+		},
+		{
+			desc:      "same IPv6 ranges",
+			a:         []string{"2600:2900:3070:be4:6000:0:0:0/128"},
+			b:         []string{"2600:2900:3070:be4:6000:0:0:0/128"},
+			wantEqual: true,
+		},
+		{
+			desc:      "same IPv6 range sets",
+			a:         []string{"2600:2900:3070:be4:6000:0:0:1/128", "2600:2900:3070:be4:6000:0:0:2/128"},
+			b:         []string{"2600:2900:3070:be4:6000:0:0:2/128", "2600:2900:3070:be4:6000:0:0:1/128"},
+			wantEqual: true,
+		},
+		{
+			desc:      "same IPv6 addresses",
+			a:         []string{"2600:2900:3070:be4:6000:0:0:0"},
+			b:         []string{"2600:2900:3070:be4:6000:0:0:0"},
+			wantEqual: true,
+		},
+		{
+			desc:      "same IPv6 addresses and range sets",
+			a:         []string{"2600:2900:3070:be4:6000:0:0:1/96", "2600:2900:3070:be4:6000:0:0:0"},
+			b:         []string{"2600:2900:3070:be4:6000:0:0:0", "2600:2900:3070:be4:6000:0:0:1/96"},
+			wantEqual: true,
+		},
+		{
+			desc:      "same IPv6 addresses with shortcuts",
+			a:         []string{"2600:2900:3070:be4:6000:0:0:0"},
+			b:         []string{"2600:2900:3070:be4:6000::"},
+			wantEqual: true,
+		},
+		{
+			desc:      "same IPv6 ranges with shortcuts",
+			a:         []string{"2600:2900:3070:be4:6000::/128"},
+			b:         []string{"2600:2900:3070:be4:6000:0:0:0/128"},
+			wantEqual: true,
+		},
+		{
+			desc:      "different IPv6 ranges with shortcuts",
+			a:         []string{"2600:2900:3070:be4:6000::/96"},
+			b:         []string{"2600:2900:3070:be4:6000:0:0:0/128"},
+			wantEqual: false,
+		},
+		{
+			desc:      "different IPv6 ranges with shortcuts",
+			a:         []string{"2600:2900:3070:be4:6000:0:0:0/96"},
+			b:         []string{"2600:2900:3070:be4:6000:0:0:0/128"},
+			wantEqual: false,
+		},
+		{
+			desc:      "different IPv6 addresses",
+			a:         []string{"2600:2900:3070:be4:6000:0:0:1"},
+			b:         []string{"2600:2900:3070:be4:6000:0:0:2"},
+			wantEqual: false,
+		},
+		{
+			desc:      "different IPv6 addresses with shortcuts",
+			a:         []string{"2600:2900:3070:be4:6000:0:0:1"},
+			b:         []string{"2600:2900:3070:be4:6000::2"},
+			wantEqual: false,
+		},
+		{
+			desc:      "same IPv6 addresses with uppercase letters",
+			a:         []string{"2600:2900:3070:be4:6000:0:0:0"},
+			b:         []string{"2600:2900:3070:BE4:6000:0:0:0"},
+			wantEqual: true,
+		},
+		{
+			desc:      "same IPv6 ranges with shortcuts and uppercase letters",
+			a:         []string{"2600:2900:3070:be4:6000::/128"},
+			b:         []string{"2600:2900:3070:BE4:6000:0:0:0/128"},
+			wantEqual: true,
+		},
+		{
+			// fallback in case we get some non address value from the API, we should treat these as strings then
+			desc:      "same unparseable addresses",
+			a:         []string{"invalid/128"},
+			b:         []string{"invalid/128"},
+			wantEqual: true,
+		},
+		{
+			// fallback in case we get some non address value from the API, we should treat these as strings then
+			desc:      "different unparseable addresses",
+			a:         []string{"invalid1/128"},
+			b:         []string{"invalid2/128"},
+			wantEqual: false,
+		},
+	}
+
+	for _, tc := range tcs {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := equalIPRangeSet(tc.a, tc.b)
+			if got != tc.wantEqual {
+				t.Errorf("equalIPRangeSet(%v, %v), want %v got %v", tc.a, tc.b, tc.wantEqual, got)
 			}
 		})
 	}
