@@ -122,7 +122,7 @@ func TestLocalGetEndpointSet(t *testing.T) {
 		{
 			desc:          "multinetwork, endpoints only for nodes connected to a matching non-default network",
 			endpointsData: negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()),
-			network:       network.NetworkInfo{IsDefault: false, K8sNetwork: "other", SubnetworkURL: defaultTestSubnetURL},
+			network:       network.NetworkInfo{IsDefault: false, K8sNetwork: "other", SubnetworkURL: multinetworkingTestSubnetURL},
 			nodeAnnotationsMap: map[string]map[string]string{
 				testInstance1: {networkv1.NorthInterfacesAnnotationKey: nodeInterfacesAnnotation(t, "other", "20.2.3.1")},
 				testInstance2: {networkv1.NorthInterfacesAnnotationKey: nodeInterfacesAnnotation(t, "other", "20.2.3.2")},
@@ -132,10 +132,10 @@ func TestLocalGetEndpointSet(t *testing.T) {
 			nodeNames: []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
 			// only 3 out of 6 nodes are picked because only 3 have multi-nic annotation with a matching network name
 			wantEndpointSets: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone1, Subnet: multinetworkingTestSubnetName}: negtypes.NewNetworkEndpointSet(
 					negtypes.NetworkEndpoint{IP: "20.2.3.1", Node: testInstance1},
 					negtypes.NetworkEndpoint{IP: "20.2.3.2", Node: testInstance2}),
-				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
+				{Zone: negtypes.TestZone2, Subnet: multinetworkingTestSubnetName}: negtypes.NewNetworkEndpointSet(
 					negtypes.NetworkEndpoint{IP: "20.2.3.3", Node: testInstance3}),
 			},
 		},
@@ -288,10 +288,10 @@ func TestClusterGetEndpointSet(t *testing.T) {
 			desc:          "multinetwork endpoints, only for nodes connected to the specified network",
 			endpointsData: negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()),
 			wantEndpointSets: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
-				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "20.2.3.1", Node: testInstance1}, negtypes.NetworkEndpoint{IP: "20.2.3.2", Node: testInstance2}),
-				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "20.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "20.2.3.6", Node: testInstance6}),
+				{Zone: negtypes.TestZone1, Subnet: multinetworkingTestSubnetName}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "20.2.3.1", Node: testInstance1}, negtypes.NetworkEndpoint{IP: "20.2.3.2", Node: testInstance2}),
+				{Zone: negtypes.TestZone2, Subnet: multinetworkingTestSubnetName}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "20.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "20.2.3.6", Node: testInstance6}),
 			},
-			network: network.NetworkInfo{IsDefault: false, K8sNetwork: "other", SubnetworkURL: defaultTestSubnetURL},
+			network: network.NetworkInfo{IsDefault: false, K8sNetwork: "other", SubnetworkURL: multinetworkingTestSubnetURL},
 			nodeAnnotationsMap: map[string]map[string]string{
 				testInstance1: {networkv1.NorthInterfacesAnnotationKey: nodeInterfacesAnnotation(t, "other", "20.2.3.1")},
 				testInstance2: {networkv1.NorthInterfacesAnnotationKey: nodeInterfacesAnnotation(t, "other", "20.2.3.2")},
