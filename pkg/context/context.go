@@ -118,7 +118,6 @@ type ControllerContextConfig struct {
 	// DefaultBackendSvcPortID is the ServicePort for the system default backend.
 	DefaultBackendSvcPort                     utils.ServicePort
 	HealthCheckPath                           string
-	FrontendConfigEnabled                     bool
 	MaxIGSize                                 int
 	EnableL4ILBDualStack                      bool
 	EnableL4NetLBDualStack                    bool
@@ -191,9 +190,7 @@ func NewControllerContext(
 	if firewallClient != nil {
 		context.FirewallInformer = informerfirewall.NewGCPFirewallInformer(firewallClient, config.ResyncPeriod, utils.NewNamespaceIndexer())
 	}
-	if config.FrontendConfigEnabled {
-		context.FrontendConfigInformer = informerfrontendconfig.NewFrontendConfigInformer(frontendConfigClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
-	}
+	context.FrontendConfigInformer = informerfrontendconfig.NewFrontendConfigInformer(frontendConfigClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
 
 	if saClient != nil {
 		context.SAInformer = informerserviceattachment.NewServiceAttachmentInformer(saClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
