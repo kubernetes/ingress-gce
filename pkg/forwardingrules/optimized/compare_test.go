@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/forwardingrules/optimized"
@@ -198,7 +199,11 @@ func TestCompare(t *testing.T) {
 				t.Fatalf("optimized.Compare() error = %v", err)
 			}
 
-			if diff := cmp.Diff(ops, tC.wantCalls); diff != "" {
+			// We execute those in parallel so we don't care about the order at each stage
+			sortFROpt := cmpopts.SortSlices(func(a, b *composite.ForwardingRule) bool { return a.Name < b.Name })
+			sortDeletesOpt := cmpopts.SortSlices(func(a, b string) bool { return a < b })
+
+			if diff := cmp.Diff(ops, tC.wantCalls, sortFROpt, sortDeletesOpt); diff != "" {
 				t.Errorf("want != got, (-want, +got):\n%s", diff)
 			}
 		})

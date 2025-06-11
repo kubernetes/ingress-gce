@@ -89,7 +89,9 @@ func TestFetch(t *testing.T) {
 			}
 
 			ignoreOpts := cmpopts.IgnoreFields(composite.ForwardingRule{}, "Version", "SelfLink", "Region")
-			if diff := cmp.Diff(tC.want, got, ignoreOpts); diff != "" {
+			sortOpt := cmpopts.SortSlices(func(a, b *composite.ForwardingRule) bool { return a.Name < b.Name })
+
+			if diff := cmp.Diff(tC.want, got, ignoreOpts, sortOpt); diff != "" {
 				t.Errorf("Fetch(%q) returned diff (-want +got):\n%s", tC.link, diff)
 			}
 		})
