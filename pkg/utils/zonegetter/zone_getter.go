@@ -199,7 +199,7 @@ func (z *ZoneGetter) ListNodesInDefaultSubnet(filter Filter, logger klog.Logger)
 	var filteredOut []string
 	for _, node := range nodes {
 		// Filter out nodes in additional subnets regardless of the zonegetter setting.
-		isInDefaultSubnet, err := isNodeInDefaultSubnet(node, z.defaultSubnetURL, logger)
+		isInDefaultSubnet, err := z.isNodeInDefaultSubnet(node, logger)
 		if err != nil {
 			logger.Error(err, "Failed to verify if the node is in default subnet, filter it out")
 		}
@@ -297,6 +297,17 @@ func (z *ZoneGetter) ListSubnets(logger klog.Logger) []nodetopologyv1.SubnetConf
 	return nodeTopologyCR.Status.Subnets
 }
 
+// IsNodeInDefaultSubnet returns if the given node is in default subnet.
+func (z *ZoneGetter) IsNodeInDefaultSubnet(nodeName string, logger klog.Logger) (bool, error) {
+	nodeLogger := logger.WithValues("nodeName", nodeName)
+	node, err := listers.NewNodeLister(z.nodeLister).Get(nodeName)
+	if err != nil {
+		nodeLogger.Error(err, "Failed to get node")
+		return false, err
+	}
+	return z.isNodeInDefaultSubnet(node, logger)
+}
+
 // IsNodeSelectedByFilter checks if the node matches the node filter mode.
 func (z *ZoneGetter) IsNodeSelectedByFilter(node *api_v1.Node, filter Filter, filterLogger klog.Logger) bool {
 	nodeAndFilterLogger := filterLogger.WithValues("nodeName", node.Name)
@@ -324,7 +335,7 @@ func (z *ZoneGetter) allNodesPredicate(node *api_v1.Node, nodeLogger klog.Logger
 	if z.onlyIncludeDefaultSubnetNodes || !nodeTopologySynced {
 		nodeLogger.Info("Falling back to only using default subnet when listing all nodes", "z.onlyIncludeDefaultSubnetNodes", z.onlyIncludeDefaultSubnetNodes, "nodeTopologySynced", nodeTopologySynced)
 
-		isInDefaultSubnet, err := isNodeInDefaultSubnet(node, z.defaultSubnetURL, nodeLogger)
+		isInDefaultSubnet, err := z.isNodeInDefaultSubnet(node, nodeLogger)
 		if err != nil {
 			nodeLogger.Error(err, "Failed to verify if the node is in default subnet, filter it out.")
 			return false
@@ -356,7 +367,7 @@ func (z *ZoneGetter) nodePredicateInternal(node *api_v1.Node, includeUnreadyNode
 		if z.onlyIncludeDefaultSubnetNodes || !nodeTopologySynced {
 			nodeAndFilterLogger.Info("Falling back to only using default subnet when listing nodes", "z.onlyIncludeDefaultSubnetNodes", z.onlyIncludeDefaultSubnetNodes, "nodeTopologySynced", nodeTopologySynced)
 
-			isInDefaultSubnet, err := isNodeInDefaultSubnet(node, z.defaultSubnetURL, nodeAndFilterLogger)
+			isInDefaultSubnet, err := z.isNodeInDefaultSubnet(node, nodeAndFilterLogger)
 			if err != nil {
 				nodeAndFilterLogger.Error(err, "Failed to verify if the node is in default subnet, filter it out")
 				return false
@@ -420,15 +431,19 @@ func (z *ZoneGetter) nodePredicateInternal(node *api_v1.Node, includeUnreadyNode
 // guaranteed to have the subnet label if PodCIDR is populated. For any
 // existing nodes, they will not have label and can only be in the default
 // subnet.
-func isNodeInDefaultSubnet(node *api_v1.Node, defaultSubnetURL string, nodeLogger klog.Logger) (bool, error) {
-	nodeSubnet, err := getSubnet(node, defaultSubnetURL)
+func (z *ZoneGetter) isNodeInDefaultSubnet(node *api_v1.Node, nodeLogger klog.Logger) (bool, error) {
+	if z.mode == Legacy {
+		nodeLogger.Info("IsDefaultSubnetNode is being called with legacy zone getter. Returning true.")
+		return true, nil
+	}
+	nodeSubnet, err := getSubnet(node, z.defaultSubnetURL)
 	if err != nil {
 		nodeLogger.Error(err, "Failed to get node subnet", "nodeName", node.Name)
 		return false, err
 	}
-	defaultSubnet, err := utils.KeyName(defaultSubnetURL)
+	defaultSubnet, err := utils.KeyName(z.defaultSubnetURL)
 	if err != nil {
-		nodeLogger.Error(err, "Failed to extract default subnet information from URL", "defaultSubnetURL", defaultSubnetURL)
+		nodeLogger.Error(err, "Failed to extract default subnet information from URL", "defaultSubnetURL", z.defaultSubnetURL)
 		return false, err
 	}
 	return nodeSubnet == defaultSubnet, nil
