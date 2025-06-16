@@ -207,7 +207,7 @@ func NewController(
 			manager,
 			zoneGetter,
 			enableDualStackNEG,
-			flags.F.EnableMultiSubnetCluster,
+			flags.F.EnableMultiSubnetCluster && !flags.F.EnableMultiSubnetClusterPhase1,
 			logger,
 		)
 	} else {

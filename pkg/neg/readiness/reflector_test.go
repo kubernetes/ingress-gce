@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"github.com/google/go-cmp/cmp"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
@@ -58,8 +59,8 @@ func (f *fakeLookUp) ReadinessGateEnabled(syncerKey negtypes.NegSyncerKey) bool 
 	return f.readinessGateEnabled
 }
 
-func newTestReadinessReflector(testContext *negtypes.TestContext, enableMultiSubnetCluster bool) (*readinessReflector, error) {
-	fakeZoneGetter, err := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, testContext.NodeTopologyInformer, defaultTestSubnetURL, enableMultiSubnetCluster)
+func newTestReadinessReflector(testContext *negtypes.TestContext, markNonDefaultSubnetPodsReady bool) (*readinessReflector, error) {
+	fakeZoneGetter, err := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, testContext.NodeTopologyInformer, defaultTestSubnetURL, markNonDefaultSubnetPodsReady)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +72,7 @@ func newTestReadinessReflector(testContext *negtypes.TestContext, enableMultiSub
 		&fakeLookUp{},
 		fakeZoneGetter,
 		false,
-		enableMultiSubnetCluster,
+		markNonDefaultSubnetPodsReady,
 		klog.TODO(),
 	)
 	ret := reflector.(*readinessReflector)
@@ -389,23 +390,23 @@ func TestSyncPod(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			for _, enableMultiSubnetCluster := range []bool{true, false} {
-				testReadinessReflector.enableMultiSubnetCluster = enableMultiSubnetCluster
+			for _, markNonDefaultSubnetPodsReady := range []bool{true, false} {
+				testReadinessReflector.markNonDefaultSubnetPodsReady = markNonDefaultSubnetPodsReady
 				tc.mutateState(testlookUp)
 				err := testReadinessReflector.syncPod(tc.inputKey, tc.inputNeg, tc.inputBackendService)
 				if err != nil {
-					t.Errorf("For test case %q with enableMultiSubnetCluster = %v, expect syncPod() return nil, but got %v", tc.desc, enableMultiSubnetCluster, err)
+					t.Errorf("For test case %q with markNonDefaultSubnetPodsReady = %v, expect syncPod() return nil, but got %v", tc.desc, markNonDefaultSubnetPodsReady, err)
 				}
 
 				if tc.expectExists {
 					pod, err := fakeContext.KubeClient.CoreV1().Pods(testServiceNamespace).Get(context.TODO(), tc.expectPod.Name, metav1.GetOptions{})
 					if err != nil {
-						t.Errorf("For test case %q with enableMultiSubnetCluster = %v, expect GetPod() to return nil, but got %v", tc.desc, enableMultiSubnetCluster, err)
+						t.Errorf("For test case %q with markNonDefaultSubnetPodsReady = %v, expect GetPod() to return nil, but got %v", tc.desc, markNonDefaultSubnetPodsReady, err)
 					}
 					// ignore creation timestamp for comparison
 					pod.CreationTimestamp = tc.expectPod.CreationTimestamp
 					if !reflect.DeepEqual(pod, tc.expectPod) {
-						t.Errorf("For test case %q with enableMultiSubnetCluster = %v, expect pod to be %v, but got %v", tc.desc, enableMultiSubnetCluster, tc.expectPod, pod)
+						t.Errorf("For test case %q with markNonDefaultSubnetPodsReady = %v, expect pod to be %v, but got %v", tc.desc, markNonDefaultSubnetPodsReady, tc.expectPod, pod)
 					}
 				}
 			}
@@ -640,8 +641,8 @@ func TestSyncPodMultipleSubnets(t *testing.T) {
 			}
 			// ignore creation timestamp for comparison
 			pod.CreationTimestamp = tc.expectPod.CreationTimestamp
-			if !reflect.DeepEqual(pod, tc.expectPod) {
-				t.Errorf("For test case %q with multi-subnet cluster enabled, expect pod to be %v, but got %v", tc.desc, tc.expectPod, pod)
+			if diff := cmp.Diff(tc.expectPod, pod); diff != "" {
+				t.Errorf("For test case %q with multi-subnet cluster enabled, found diff in unexpected state of pod; (-want,+got)=\n%v", tc.desc, diff)
 			}
 		})
 	}
