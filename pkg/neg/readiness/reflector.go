@@ -34,6 +34,7 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
+	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
 )
@@ -73,10 +74,16 @@ type readinessReflector struct {
 
 	queue workqueue.RateLimitingInterface
 
+	zoneGetter *zonegetter.ZoneGetter
+
+	// If enabled, the reflector will mark pods that are from the non-default
+	// subnet as ready without processing.
+	enableMultiSubnetCluster bool
+
 	logger klog.Logger
 }
 
-func NewReadinessReflector(kubeClient, eventRecorderClient kubernetes.Interface, podLister cache.Indexer, negCloud negtypes.NetworkEndpointGroupCloud, lookup NegLookup, enableDualStackNEG bool, logger klog.Logger) Reflector {
+func NewReadinessReflector(kubeClient, eventRecorderClient kubernetes.Interface, podLister cache.Indexer, negCloud negtypes.NetworkEndpointGroupCloud, lookup NegLookup, zoneGetter *zonegetter.ZoneGetter, enableDualStackNEG, enableMultiSubnetCluster bool, logger klog.Logger) Reflector {
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartLogging(klog.Infof)
 	broadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
@@ -85,13 +92,15 @@ func NewReadinessReflector(kubeClient, eventRecorderClient kubernetes.Interface,
 	recorder := broadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "neg-readiness-reflector"})
 	logger = logger.WithName("ReadinessReflector")
 	reflector := &readinessReflector{
-		client:        kubeClient,
-		podLister:     podLister,
-		clock:         clock.RealClock{},
-		lookup:        lookup,
-		eventRecorder: recorder,
-		queue:         workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
-		logger:        logger,
+		client:                   kubeClient,
+		podLister:                podLister,
+		clock:                    clock.RealClock{},
+		lookup:                   lookup,
+		eventRecorder:            recorder,
+		queue:                    workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
+		zoneGetter:               zoneGetter,
+		enableMultiSubnetCluster: enableMultiSubnetCluster,
+		logger:                   logger,
 	}
 	poller := NewPoller(podLister, lookup, reflector, negCloud, enableDualStackNEG, logger)
 	reflector.poller = poller
@@ -209,6 +218,28 @@ func (r *readinessReflector) getExpectedNegCondition(pod *v1.Pod, neg, backendSe
 		expectedCondition.Reason = negReadyTimedOutReason
 		expectedCondition.Message = fmt.Sprintf("Timeout waiting for pod to become healthy in at least one of the NEG(s): %v. Marking condition %q to True.", negs, shared.NegReadinessGate)
 		return expectedCondition
+	}
+
+	if r.enableMultiSubnetCluster {
+		if pod.Spec.NodeName == "" {
+			r.logger.Error(nil, "Unable to determine the pod's node name.", "podNamespace", pod.Namespace, "podName", pod.Name)
+			expectedCondition.Reason = negNotReadyReason
+			expectedCondition.Message = "Unable to determine the pod's node name."
+			return expectedCondition
+		}
+		isInDefaultSubnet, err := r.zoneGetter.IsDefaultSubnetNode(pod.Spec.NodeName, r.logger)
+		if err != nil {
+			r.logger.Error(err, "Unable to determine if the pod is in the default subnet.", "podNamespace", pod.Namespace, "podName", pod.Name)
+			expectedCondition.Reason = negNotReadyReason
+			expectedCondition.Message = "Unable to determine if the pod is in the default subnet."
+			return expectedCondition
+		}
+		if !isInDefaultSubnet {
+			expectedCondition.Status = v1.ConditionTrue
+			expectedCondition.Reason = negReadyReason
+			expectedCondition.Message = fmt.Sprintf("Pod belongs to a node in non-default subnet. Marking condition %q to True.", shared.NegReadinessGate)
+			return expectedCondition
+		}
 	}
 
 	// do not patch condition status in this case to prevent race condition:
