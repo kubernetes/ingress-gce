@@ -266,9 +266,10 @@ func main() {
 			if nodeTopologyClient != nil {
 				nodeTopologyFactory = informernodetopology.NewSharedInformerFactory(nodeTopologyClient, flags.F.ResyncPeriod)
 			}
+			ctx := context.Background()
 			if flags.F.LeaderElection.LeaderElect {
 				err := multiprojectstart.StartWithLeaderElection(
-					context.Background(),
+					ctx,
 					leaderElectKubeClient,
 					hostname,
 					rootLogger,
@@ -288,6 +289,7 @@ func main() {
 				if err != nil {
 					rootLogger.Error(err, "Failed to start multi-project syncer with leader election")
 				}
+				rOption.closeStopCh()
 			} else {
 				multiprojectstart.Start(
 					rootLogger,
