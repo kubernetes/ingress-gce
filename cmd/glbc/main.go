@@ -290,6 +290,7 @@ func main() {
 				if err != nil {
 					rootLogger.Error(err, "Failed to start multi-project syncer with leader election")
 				}
+				rOption.closeStopCh()
 			} else {
 				multiprojectstart.Start(
 					rootLogger,
