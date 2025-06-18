@@ -1320,7 +1320,6 @@ func TestLegacyIsNodeSelectedByFilter(t *testing.T) {
 }
 
 func TestIsNodeInDefaultSubnet(t *testing.T) {
-	t.Parallel()
 	testCases := []struct {
 		desc                  string
 		node                  *apiv1.Node
@@ -1409,7 +1408,16 @@ func TestIsNodeInDefaultSubnet(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			gotInDefaultSubnet, gotErr := isNodeInDefaultSubnet(tc.node, defaultTestSubnetURL, klog.TODO())
+			fakeNodeInformer := FakeNodeInformer()
+			if err := fakeNodeInformer.GetIndexer().Add(tc.node); err != nil {
+				t.Fatalf("Failed to add node %v to the fakeNodeInformer: %v", tc.node.GetName(), err)
+			}
+			zoneGetter, err := NewFakeZoneGetter(fakeNodeInformer, FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+			if err != nil {
+				t.Fatalf("failed to initialize zone getter")
+			}
+
+			gotInDefaultSubnet, gotErr := zoneGetter.IsNodeInDefaultSubnet(tc.node.GetName(), klog.TODO())
 			if gotErr != nil && tc.expectNil {
 				t.Errorf("isNodeInDefaultSubnet(%v, %s) = err %v, want nil", tc.node, defaultTestSubnetURL, gotErr)
 			}
@@ -1420,6 +1428,34 @@ func TestIsNodeInDefaultSubnet(t *testing.T) {
 				t.Errorf("isNodeInDefaultSubnet(%v, %s) = %v, want %v", tc.node, defaultTestSubnetURL, gotInDefaultSubnet, tc.expectInDefaultSubnet)
 			}
 		})
+	}
+}
+
+func TestIsNodeInDefaultSubnet_forLegacyVPCAllNodesAreAssumedInDefaultSubnet(t *testing.T) {
+	fakeNodeInformer := FakeNodeInformer()
+	zoneGetter := NewLegacyZoneGetter(fakeNodeInformer, FakeNodeTopologyInformer())
+	node := &apiv1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "NodeInDefaultSubnet",
+			Labels: map[string]string{
+				utils.LabelNodeSubnet: defaultTestSubnet,
+			},
+		},
+		Spec: apiv1.NodeSpec{
+			PodCIDR:  "10.100.1.0/24",
+			PodCIDRs: []string{"10.100.1.0/24"},
+		},
+	}
+	if err := fakeNodeInformer.GetIndexer().Add(node); err != nil {
+		t.Fatalf("Failed to add node %v to the fakeNodeInformer: %v", node.GetName(), err)
+	}
+
+	got, err := zoneGetter.IsNodeInDefaultSubnet(node.GetName(), klog.TODO())
+	if err != nil {
+		t.Fatalf("IsNodeInDefaultSubnet(%v) returned error = %v; want no error", node.GetName(), err)
+	}
+	if got != true {
+		t.Errorf("IsNodeInDefaultSubnet(%v) = false; When using Legacy VPCs, IsNodeInDefaultSubnet is expected to return true for all Nodes", node.GetName())
 	}
 }
 
