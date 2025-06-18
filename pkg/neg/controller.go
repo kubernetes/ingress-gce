@@ -205,7 +205,9 @@ func NewController(
 			podInformer.GetIndexer(),
 			cloud,
 			manager,
+			zoneGetter,
 			enableDualStackNEG,
+			flags.F.EnableMultiSubnetCluster && !flags.F.EnableMultiSubnetClusterPhase1,
 			logger,
 		)
 	} else {
