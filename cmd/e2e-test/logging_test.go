@@ -170,9 +170,11 @@ func TestLogging(t *testing.T) {
 				gclb, err = fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
 				if err != nil {
 					t.Logf("Failed to GCP resources for LB with IP = %q: %v", vip, err)
+					err = fmt.Errorf("failed to GCP resources for LB with IP = %q: %v", vip, err)
 					return false, nil
 				}
-				if err := verifyLogging(t, gclb, s.Namespace, svcName, tc.transition); err != nil {
+				if err = verifyLogging(t, gclb, s.Namespace, svcName, tc.transition); err != nil {
+					err = fmt.Errorf("failed to verify logging for LB with IP = %q: %v", vip, err)
 					return false, nil
 				}
 				return true, nil
