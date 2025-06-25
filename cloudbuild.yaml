@@ -4,7 +4,7 @@ options:
   substitution_option: ALLOW_LOOSE
   machineType: E2_HIGHCPU_8
 steps:
-- name: gcr.io/k8s-staging-test-infra/gcb-docker-gcloud:v20230206-8160eea68e
+- name: gcr.io/k8s-staging-test-infra/gcb-docker-gcloud:v20250513-9264efb079
   id: push-images
   entrypoint: bash
   env:
@@ -20,7 +20,7 @@ steps:
     # Build and push every image except e2e-test 
     make all-push ALL_ARCH="amd64 arm64" \
       CONTAINER_BINARIES="glbc 404-server 404-server-with-metrics echo fuzzer"
-- name: gcr.io/k8s-staging-test-infra/gcb-docker-gcloud:v20230206-8160eea68e
+- name: gcr.io/k8s-staging-test-infra/gcb-docker-gcloud:v20250513-9264efb079
   id: push-e2e-test-image
   entrypoint: bash
   env:
