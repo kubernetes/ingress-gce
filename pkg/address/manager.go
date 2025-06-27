@@ -213,7 +213,7 @@ func (m *Manager) ensureAddressReservation() (string, IPAddressType, error) {
 		return addr.Address, IPAddrManaged, nil
 	}
 
-	m.frLogger.V(2).Info("Address reserve error", "err", reserveErr)
+	m.frLogger.V(2).Info("Unable to reserve address (could be expected). Checking for conflict", "err", reserveErr)
 
 	if utils.IsNetworkTierMismatchGCEError(reserveErr) {
 		receivedNetworkTier := cloud.NetworkTierPremium
