@@ -288,9 +288,16 @@ func (l4c *L4Controller) shouldProcessService(service *v1.Service, svcLogger klo
 			return false
 		}
 	}
+
+	// Prevent race condition with legacy controller
+	service = l4c.handleCreationRace(service, svcLogger)
+	if service == nil {
+		return false
+	}
+
 	// skip services that are being handled by the legacy service controller.
 	if utils.IsLegacyL4ILBService(service) {
-		svcLogger.Info("Ignoring update for service managed by service controller")
+		svcLogger.Info("Ignoring update for service managed by service controller, has finalizer v1")
 		return false
 	}
 	frName := utils.LegacyForwardingRuleName(service)
@@ -716,4 +723,34 @@ func (l4c *L4Controller) publishMetrics(result *loadbalancers.L4ILBSyncResult, n
 	default:
 		svcLogger.Info("Unknown sync type, skipping metrics for service", "syncType", result.SyncType)
 	}
+}
+
+// handleCreationRace prevents a race condition between the legacy and new L4 ILB controllers
+// when a service is created, ensuring the L4 controller processes the most recent service
+// state and avoids conflicting operations..
+func (l4c *L4Controller) handleCreationRace(service *v1.Service, svcLogger klog.Logger) *v1.Service {
+	hasLegacyILBFinalizer := utils.HasLegacyL4ILBFinalizerV1(service)
+	hasILBFinalizerV2 := utils.HasL4ILBFinalizerV2(service)
+	l4ILBLegacyHeadStartTime := flags.F.L4ILBLegacyHeadStartTime
+
+	// Prevent controllers race on creation
+	if !hasLegacyILBFinalizer && !hasILBFinalizerV2 && l4ILBLegacyHeadStartTime > 0*time.Second {
+		svcLogger.Info("Service has no finalizers, waiting %d seconds to prevent controllers race on creation.", l4ILBLegacyHeadStartTime/time.Second)
+		time.Sleep(l4ILBLegacyHeadStartTime)
+
+		// Get current service from store, so we can verify most recent state.
+		svcKey := utils.ServiceKeyFunc(service.Namespace, service.Name)
+		svc, exists, err := l4c.ctx.Services().GetByKey(svcKey)
+		if err != nil {
+			svcLogger.Info("Could not get service from store, using existing one, error: ", err)
+		} else if exists {
+			service = svc
+			svcLogger.Info("finalizer Found service in informer store after wait, using it.")
+		} else {
+			// Service might have been deleted during the wait, return to avoid processing a non-existing service.
+			svcLogger.Info("Service not found in informer store after wait, ignoring processing.")
+			return nil
+		}
+	}
+	return service
 }
