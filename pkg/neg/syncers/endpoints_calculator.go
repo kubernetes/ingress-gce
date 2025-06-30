@@ -28,6 +28,7 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
 )
@@ -76,6 +77,10 @@ func (l *LocalL4EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsDat
 	zoneNodeMap := make(map[string][]*nodeWithSubnet)
 	processedNodes := sets.String{}
 	numEndpoints := 0
+	networkInfoSubnetName, err := utils.KeyName(l.networkInfo.SubnetworkURL)
+	if err != nil {
+		return nil, nil, 0, err
+	}
 	for _, ed := range eds {
 		for _, addr := range ed.Addresses {
 			if addr.NodeName == nil {
@@ -110,6 +115,10 @@ func (l *LocalL4EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsDat
 				l.logger.Error(err, "Unable to find zone for node, skipping", "nodeName", node.Name)
 				metrics.PublishNegControllerErrorCountMetrics(err, true)
 				continue
+			}
+			// For MN services, use the MN subnet as the subnet for the NEG.
+			if !l.networkInfo.IsDefault {
+				subnet = networkInfoSubnetName
 			}
 			zoneNodeMap[zone] = append(zoneNodeMap[zone], newNodeWithSubnet(node, subnet))
 		}
@@ -177,6 +186,10 @@ func (l *ClusterL4EndpointsCalculator) CalculateEndpoints(_ []types.EndpointsDat
 	// In this mode, any of the cluster nodes can be part of the subset, whether or not a matching pod runs on it.
 	nodes, _ := l.zoneGetter.ListNodes(zonegetter.CandidateAndUnreadyNodesFilter, l.logger)
 	zoneNodeMap := make(map[string][]*nodeWithSubnet)
+	networkInfoSubnetName, err := utils.KeyName(l.networkInfo.SubnetworkURL)
+	if err != nil {
+		return nil, nil, 0, err
+	}
 	for _, node := range nodes {
 		if !l.networkInfo.IsNodeConnected(node) {
 			l.logger.Info("Node not connected to service network", "nodeName", node.Name, "network", l.networkInfo.K8sNetwork)
@@ -187,6 +200,10 @@ func (l *ClusterL4EndpointsCalculator) CalculateEndpoints(_ []types.EndpointsDat
 			l.logger.Error(err, "Unable to find zone for node skipping", "nodeName", node.Name)
 			metrics.PublishNegControllerErrorCountMetrics(err, true)
 			continue
+		}
+		// For MN services, use the MN subnet as the subnet for the NEG.
+		if !l.networkInfo.IsDefault {
+			subnet = networkInfoSubnetName
 		}
 		zoneNodeMap[zone] = append(zoneNodeMap[zone], newNodeWithSubnet(node, subnet))
 	}
