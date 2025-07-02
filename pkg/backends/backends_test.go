@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -347,6 +348,7 @@ func TestBackendSvcEqual(t *testing.T) {
 		oldBackendService         *composite.BackendService
 		newBackendService         *composite.BackendService
 		compareConnectionTracking bool
+		withZonalAffinityEnabled  bool
 		wantEqual                 bool
 	}{
 		{
@@ -477,6 +479,72 @@ func TestBackendSvcEqual(t *testing.T) {
 				HealthChecks: []string{"abc", "xyz"},
 			},
 			wantEqual: false,
+		},
+		{
+			desc: "Test with changed health-checks with Zonal Affinity Enabled",
+			oldBackendService: &composite.BackendService{
+				HealthChecks: []string{"abc"},
+			},
+			newBackendService: &composite.BackendService{
+				HealthChecks: []string{"abc", "xyz"},
+			},
+			withZonalAffinityEnabled: true,
+			wantEqual:                false,
+		},
+		{
+			desc: "Test with same health-checks version v1-beta",
+			oldBackendService: &composite.BackendService{
+				HealthChecks: []string{"https://www.googleapis.com/compute/v1/abc"},
+			},
+			newBackendService: &composite.BackendService{
+				HealthChecks: []string{"https://www.googleapis.com/compute/beta/abc"},
+			},
+			withZonalAffinityEnabled: true,
+			wantEqual:                true,
+		},
+		{
+			desc: "Test with same health-checks version beta-v1",
+			oldBackendService: &composite.BackendService{
+				HealthChecks: []string{"https://www.googleapis.com/compute/beta/abc"},
+			},
+			newBackendService: &composite.BackendService{
+				HealthChecks: []string{"https://www.googleapis.com/compute/v1/abc"},
+			},
+			withZonalAffinityEnabled: true,
+			wantEqual:                true,
+		},
+		{
+			desc: "Test with changed health-checks version beta-beta",
+			oldBackendService: &composite.BackendService{
+				HealthChecks: []string{"https://www.googleapis.com/compute/beta/abc"},
+			},
+			newBackendService: &composite.BackendService{
+				HealthChecks: []string{"https://www.googleapis.com/compute/beta/abcd"},
+			},
+			withZonalAffinityEnabled: true,
+			wantEqual:                false,
+		},
+		{
+			desc: "Test with changed first part of health-checks version v1-v1",
+			oldBackendService: &composite.BackendService{
+				HealthChecks: []string{"https://www.googleapis.com/compute/v1/abc"},
+			},
+			newBackendService: &composite.BackendService{
+				HealthChecks: []string{"https://www.google.com/compute/v1/abc"},
+			},
+			withZonalAffinityEnabled: true,
+			wantEqual:                false,
+		},
+		{
+			desc: "Test with changed health-checks version beta-v1",
+			oldBackendService: &composite.BackendService{
+				HealthChecks: []string{"https://www.googleapis.com/compute/v1/abc"},
+			},
+			newBackendService: &composite.BackendService{
+				HealthChecks: []string{"https://www.googleapis.com/compute/beta/abcd"},
+			},
+			withZonalAffinityEnabled: true,
+			wantEqual:                false,
 		},
 		{
 			desc: "Test with deleted network",
@@ -728,7 +796,11 @@ func TestBackendSvcEqual(t *testing.T) {
 	} {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
-			t.Parallel()
+			oldFlag := flags.F.EnableL4ILBZonalAffinity
+			flags.F.EnableL4ILBZonalAffinity = tc.withZonalAffinityEnabled
+			defer func() {
+				flags.F.EnableL4ILBZonalAffinity = oldFlag
+			}()
 			result := backendSvcEqual(tc.newBackendService, tc.oldBackendService, tc.compareConnectionTracking)
 			if result != tc.wantEqual {
 				t.Errorf("backendSvcEqual() returned %v, expected %v. Diff(oldScv, newSvc): %s",

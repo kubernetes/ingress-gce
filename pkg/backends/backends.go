@@ -25,6 +25,7 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -493,12 +494,19 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 // since that is handled by the neg-linker.
 // The list of backends is not checked, since that is handled by the neg-linker.
 func backendSvcEqual(newBS, oldBS *composite.BackendService, compareConnectionTracking bool) bool {
+
 	svcsEqual := newBS.Protocol == oldBS.Protocol &&
 		newBS.Description == oldBS.Description &&
 		newBS.SessionAffinity == oldBS.SessionAffinity &&
 		newBS.LoadBalancingScheme == oldBS.LoadBalancingScheme &&
-		utils.EqualStringSets(newBS.HealthChecks, oldBS.HealthChecks) &&
 		newBS.Network == oldBS.Network
+
+	if flags.F.EnableL4ILBZonalAffinity {
+		// Compare healthChecks sets ignoring api version
+		svcsEqual = svcsEqual && healthChecksEqual(newBS.HealthChecks, oldBS.HealthChecks)
+	} else {
+		svcsEqual = svcsEqual && utils.EqualStringSets(newBS.HealthChecks, oldBS.HealthChecks)
+	}
 
 	// Compare only for backendSvc that uses Strong Session Affinity feature
 	if compareConnectionTracking {
@@ -516,12 +524,31 @@ func backendSvcEqual(newBS, oldBS *composite.BackendService, compareConnectionTr
 	return svcsEqual
 }
 
+// removeAPIVersionFromHealthChecks converts a slice of full health check URLs
+// into a slice of their URL without the API version
+func removeAPIVersionFromHealthChecks(hcLinks []string) []string {
+	hcResourcePaths := make([]string, 0, len(hcLinks))
+	for _, hcLink := range hcLinks {
+		resourcePath := utils.FilterAPIversionFromResourcePath(hcLink)
+		hcResourcePaths = append(hcResourcePaths, resourcePath)
+	}
+	return hcResourcePaths
+}
+
 func convertNetworkLbTrafficPolicyToZonalAffinity(trafficPolicy *composite.BackendServiceNetworkPassThroughLbTrafficPolicy) composite.BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity {
 	if trafficPolicy == nil || trafficPolicy.ZonalAffinity == nil {
 		return *zonalAffinityDisabledTrafficPolicy().ZonalAffinity
 	}
 
 	return *trafficPolicy.ZonalAffinity
+}
+
+// healthCheckEqual compare healthcheck URL ignoring the API version used
+func healthChecksEqual(hcLinksA, hcLinksB []string) bool {
+	healthChecksA := removeAPIVersionFromHealthChecks(hcLinksA)
+	healthChecksB := removeAPIVersionFromHealthChecks(hcLinksB)
+
+	return utils.EqualStringSets(healthChecksA, healthChecksB)
 }
 
 func zonalAffinityEqual(a, b *composite.BackendService) bool {
