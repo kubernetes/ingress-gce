@@ -23,6 +23,7 @@ import (
 	"strings"
 	"testing"
 
+	gcpfirewallv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/gcpfirewall/v1"
 	"k8s.io/klog/v2"
 
 	firewallclient "github.com/GoogleCloudPlatform/gke-networking-api/client/gcpfirewall/clientset/versioned/fake"
@@ -58,7 +59,7 @@ func TestFirewallPoolSync(t *testing.T) {
 	if err := fcrp.Sync(nodes, nil, nil, true); err != nil {
 		t.Fatal(err)
 	}
-	verifyFirewallCR(fwClient, ruleName, srcRanges, portRanges(), true, t)
+	verifyFirewallCR(fwClient, ruleName, srcRanges, portRanges(), true, true, t)
 
 }
 
@@ -76,7 +77,7 @@ func TestFirewallPoolSyncNodes(t *testing.T) {
 	if err := fcrp.Sync(nodes, nil, nil, true); err != nil {
 		t.Fatal(err)
 	}
-	verifyFirewallCR(fwClient, ruleName, srcRanges, portRanges(), true, t)
+	verifyFirewallCR(fwClient, ruleName, srcRanges, portRanges(), true, true, t)
 
 	// Add nodes
 	nodes = append(nodes, "node-d", "node-e")
@@ -84,7 +85,7 @@ func TestFirewallPoolSyncNodes(t *testing.T) {
 		t.Errorf("unexpected err when syncing firewall, err: %v", err)
 	}
 	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
-	verifyFirewallCR(fwClient, ruleName, srcRanges, portRanges(), true, t)
+	verifyFirewallCR(fwClient, ruleName, srcRanges, portRanges(), true, true, t)
 
 	// Remove nodes
 	nodes = []string{"node-a", "node-c"}
@@ -92,7 +93,7 @@ func TestFirewallPoolSyncNodes(t *testing.T) {
 		t.Errorf("unexpected err when syncing firewall, err: %v", err)
 	}
 	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
-	verifyFirewallCR(fwClient, ruleName, srcRanges, portRanges(), true, t)
+	verifyFirewallCR(fwClient, ruleName, srcRanges, portRanges(), true, true, t)
 }
 
 func TestFirewallPoolSyncSrcRanges(t *testing.T) {
@@ -112,7 +113,7 @@ func TestFirewallPoolSyncSrcRanges(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	verifyFirewallCR(fwClient, ruleName, srcRanges, portRanges(), true, t)
+	verifyFirewallCR(fwClient, ruleName, srcRanges, portRanges(), true, true, t)
 
 	// Manually modify source ranges to bad values.
 	f, _ := fwp.GetFirewall(ruleName)
@@ -125,7 +126,7 @@ func TestFirewallPoolSyncSrcRanges(t *testing.T) {
 		t.Errorf("unexpected err when syncing firewall, err: %v", err)
 	}
 	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
-	verifyFirewallCR(fwClient, ruleName, srcRanges, portRanges(), true, t)
+	verifyFirewallCR(fwClient, ruleName, srcRanges, portRanges(), true, true, t)
 }
 
 func TestFirewallPoolSyncPorts(t *testing.T) {
@@ -146,7 +147,7 @@ func TestFirewallPoolSyncPorts(t *testing.T) {
 	if err := fcrp.Sync(nodes, nil, nil, true); err != nil {
 		t.Fatal(err)
 	}
-	verifyFirewallCR(fwClient, ruleName, srcRanges, emptyPortRanges, true, t)
+	verifyFirewallCR(fwClient, ruleName, srcRanges, emptyPortRanges, true, true, t)
 
 	// Verify a preset ports' list
 	fp = NewFirewallPool(fwp, defaultNamer, srcRanges, portRanges(), klog.TODO())
@@ -160,7 +161,7 @@ func TestFirewallPoolSyncPorts(t *testing.T) {
 	if err := fcrp.Sync(nodes, nil, nil, true); err != nil {
 		t.Fatal(err)
 	}
-	verifyFirewallCR(fwClient, ruleName, srcRanges, portRanges(), true, t)
+	verifyFirewallCR(fwClient, ruleName, srcRanges, portRanges(), true, true, t)
 
 	// Manually modify port list to bad values.
 	f, _ := fwp.GetFirewall(ruleName)
@@ -178,7 +179,7 @@ func TestFirewallPoolSyncPorts(t *testing.T) {
 	if err := fcrp.Sync(nodes, nil, nil, true); err != nil {
 		t.Fatal(err)
 	}
-	verifyFirewallCR(fwClient, ruleName, srcRanges, portRanges(), true, t)
+	verifyFirewallCR(fwClient, ruleName, srcRanges, portRanges(), true, true, t)
 
 	// Verify additional ports are included
 	negTargetports := []string{"80", "443", "8080"}
@@ -190,7 +191,7 @@ func TestFirewallPoolSyncPorts(t *testing.T) {
 	if err := fcrp.Sync(nodes, negTargetports, nil, true); err != nil {
 		t.Fatal(err)
 	}
-	verifyFirewallCR(fwClient, ruleName, srcRanges, append(portRanges(), negTargetports...), true, t)
+	verifyFirewallCR(fwClient, ruleName, srcRanges, append(portRanges(), negTargetports...), true, true, t)
 
 	if err := fp.Sync(nodes, negTargetports, nil, false); err != nil {
 		t.Errorf("unexpected err when syncing firewall, err: %v", err)
@@ -200,7 +201,50 @@ func TestFirewallPoolSyncPorts(t *testing.T) {
 	if err := fcrp.Sync(nodes, negTargetports, nil, false); err != nil {
 		t.Fatal(err)
 	}
-	verifyFirewallCR(fwClient, ruleName, srcRanges, negTargetports, true, t)
+	verifyFirewallCR(fwClient, ruleName, srcRanges, negTargetports, true, true, t)
+}
+
+func TestFirewallCRSyncDryRun(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		desc      string
+		dryRun    bool
+		wantError bool
+	}{
+		{
+			desc:      "dry run",
+			dryRun:    true,
+			wantError: false,
+		},
+		{
+			desc:      "full mode",
+			dryRun:    false,
+			wantError: true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			fwp := NewFakeFirewallsProvider(false, false)
+			nodes := []string{"node-a", "node-b", "node-c"}
+
+			fwClient := firewallclient.NewSimpleClientset()
+			fcrp := NewFirewallCRPool(fwClient, fwp, defaultNamer, srcRanges, portRanges(), tc.dryRun, klog.TODO())
+			// Create CR
+			if err := fcrp.Sync(nodes, nil, nil, true); err != nil {
+				t.Fatal(err)
+			}
+			verifyFirewallCR(fwClient, ruleName, srcRanges, portRanges(), true, tc.dryRun, t)
+
+			markCRWithReconciliationError(fwClient, t)
+
+			err := fcrp.Sync(nodes, nil, nil, true)
+			if (err != nil) != tc.wantError {
+				t.Errorf("Sync() = %v, want error %v", err, tc.wantError)
+			}
+			verifyFirewallCR(fwClient, ruleName, srcRanges, portRanges(), true, tc.dryRun, t)
+		})
+	}
+
 }
 
 func TestFirewallPoolSyncGetServerError(t *testing.T) {
@@ -266,7 +310,7 @@ func TestFirewallPoolSyncRanges(t *testing.T) {
 			if err := fcrp.Sync(nodes, nil, tc.additionalRanges, true); err != nil {
 				t.Fatal(err)
 			}
-			verifyFirewallCR(fwClient, ruleName, resultRanges, portRanges(), true, t)
+			verifyFirewallCR(fwClient, ruleName, resultRanges, portRanges(), true, true, t)
 		})
 	}
 }
@@ -285,7 +329,7 @@ func TestFirewallPoolGC(t *testing.T) {
 	if err := fcrp.Sync(nodes, nil, nil, true); err != nil {
 		t.Fatal(err)
 	}
-	verifyFirewallCR(fwClient, ruleName, srcRanges, portRanges(), true, t)
+	verifyFirewallCR(fwClient, ruleName, srcRanges, portRanges(), true, true, t)
 
 	if err := fp.GC(); err != nil {
 		t.Fatal(err)
@@ -394,7 +438,7 @@ func validateXPNError(err error, op string, t *testing.T) {
 	}
 }
 
-func verifyFirewallCR(firewallclient *firewallclient.Clientset, ruleName string, sourceRanges, expectedPorts []string, crEnabled bool, t *testing.T) {
+func verifyFirewallCR(firewallclient *firewallclient.Clientset, ruleName string, sourceRanges, expectedPorts []string, crEnabled bool, dryRun bool, t *testing.T) {
 	if !crEnabled {
 		fw := firewallclient.NetworkingV1().GCPFirewalls()
 		actualFW, _ := fw.Get(context.TODO(), ruleName, metav1.GetOptions{})
@@ -413,6 +457,11 @@ func verifyFirewallCR(firewallclient *firewallclient.Clientset, ruleName string,
 	if actualFW.Spec.Action != "ALLOW" {
 		t.Errorf("Action isn't ALLOW")
 	}
+
+	if actualFW.Spec.Disabled != dryRun {
+		t.Errorf("Spec.Disabled should equal {%v}", dryRun)
+	}
+
 	ports := sets.NewString(expectedPorts...)
 	srcranges := sets.NewString(sourceRanges...)
 
@@ -470,5 +519,17 @@ func verifyFirewallRule(fwp *fakeFirewallsProvider, ruleName string, expectedNod
 
 	if !sets.NewString(f.SourceRanges...).Equal(sets.NewString(sourceRanges...)) {
 		t.Errorf("source CIDRs doesn't equal expected CIDRs. Actual: %v, Expected: %v", f.SourceRanges, sourceRanges)
+	}
+}
+
+func markCRWithReconciliationError(firewallclient *firewallclient.Clientset, t *testing.T) {
+	fw, _ := firewallclient.NetworkingV1().GCPFirewalls().Get(context.TODO(), ruleName, metav1.GetOptions{})
+	if fw == nil {
+		t.Errorf("firewallCR not found")
+	}
+	fw.Status.Conditions = []metav1.Condition{{Reason: string(gcpfirewallv1.FirewallRuleReasonSyncError)}}
+	_, err := firewallclient.NetworkingV1().GCPFirewalls().Update(context.TODO(), fw, metav1.UpdateOptions{})
+	if err != nil {
+		t.Errorf("could not update firewall CR, err %v", err)
 	}
 }
