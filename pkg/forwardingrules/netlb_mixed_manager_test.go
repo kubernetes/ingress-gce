@@ -177,6 +177,7 @@ func TestMixedManagerNetLB_EnsureIPv4(t *testing.T) {
 	for _, start := range startingState {
 		for _, end := range endState {
 			desc := start.desc + " -> " + end.desc
+			start, end := start, end
 			t.Run(desc, func(t *testing.T) {
 				t.Parallel()
 
@@ -267,6 +268,7 @@ func TestMixedManagerNetLB_AllRules(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 
@@ -320,6 +322,7 @@ func TestMixedManagerNetLB_DeleteIPv4(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 

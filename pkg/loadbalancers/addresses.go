@@ -23,7 +23,6 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 )
@@ -41,11 +40,9 @@ func (l7 *L7) checkStaticIP() (err error) {
 	}
 	if !manageStaticIP {
 		l7.logger.V(3).Info("Not managing user specified static IP", "ip", address)
-		if flags.F.EnableDeleteUnusedFrontends {
-			// Delete ingress controller managed static ip if exists.
-			if ip, ok := l7.ingress.Annotations[annotations.StaticIPKey]; ok && ip == managedStaticIPName {
-				return l7.deleteStaticIP()
-			}
+		// Delete ingress controller managed static ip if exists.
+		if ip, ok := l7.ingress.Annotations[annotations.StaticIPKey]; ok && ip == managedStaticIPName {
+			return l7.deleteStaticIP()
 		}
 		return nil
 	}

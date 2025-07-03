@@ -19,6 +19,7 @@ package firewalls
 import (
 	context2 "context"
 	"fmt"
+	"sort"
 	"strconv"
 	"testing"
 	"time"
@@ -38,6 +39,7 @@ import (
 	test "k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
+	"k8s.io/utils/ptr"
 
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/ingress-gce/pkg/context"
@@ -137,19 +139,19 @@ func TestGetCustomHealthCheckPorts(t *testing.T) {
 	}{
 		{
 			desc:     "One service port with custom port",
-			svcPorts: []utils.ServicePort{utils.ServicePort{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: utils.NewInt64Pointer(8000)}}}}},
+			svcPorts: []utils.ServicePort{{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: ptr.To(int64(8000))}}}}},
 			expect:   []string{"8000"},
 		},
 		{
 			desc: "Two service ports with custom port",
-			svcPorts: []utils.ServicePort{utils.ServicePort{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: utils.NewInt64Pointer(8000)}}}},
-				utils.ServicePort{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: utils.NewInt64Pointer(9000)}}}}},
+			svcPorts: []utils.ServicePort{{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: ptr.To(int64(8000))}}}},
+				{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: ptr.To(int64(9000))}}}}},
 			expect: []string{"8000", "9000"},
 		},
 		{
 			desc: "Two service ports with custom port THC enabled",
-			svcPorts: []utils.ServicePort{utils.ServicePort{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: utils.NewInt64Pointer(8000)}}}},
-				utils.ServicePort{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: utils.NewInt64Pointer(9000)}}}}},
+			svcPorts: []utils.ServicePort{{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: ptr.To(int64(8000))}}}},
+				{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: ptr.To(int64(9000))}}}}},
 			enableTHC: true,
 			expect:    []string{"8000", "9000", strconv.FormatInt(thcPort, 10)},
 		},
@@ -174,6 +176,56 @@ func TestGetCustomHealthCheckPorts(t *testing.T) {
 			result := fwc.getCustomHealthCheckPorts(tc.svcPorts)
 			if diff := cmp.Diff(tc.expect, result); diff != "" {
 				t.Errorf("unexpected diff of ports (-want +got): \n%s", diff)
+			}
+		})
+	}
+}
+
+func TestLBSourceRanges(t *testing.T) {
+	t.Parallel()
+	defaultSourceRanges := gce.L7LoadBalancerSrcRanges()
+
+	testCases := []struct {
+		desc           string
+		overrideRanges string
+		want           []string
+	}{
+		{
+			desc:           "Empty overrideRanges",
+			overrideRanges: "",
+			want:           defaultSourceRanges,
+		},
+		{
+			desc:           "Single override range",
+			overrideRanges: "10.0.0.0/8",
+			want:           []string{"10.0.0.0/8"},
+		},
+		{
+			desc:           "Multiple override ranges",
+			overrideRanges: "10.0.0.0/8,192.168.0.0/16",
+			want:           []string{"10.0.0.0/8", "192.168.0.0/16"},
+		},
+		{
+			desc:           "Multiple override ranges with spaces",
+			overrideRanges: " 10.0.0.0/8 , 192.168.0.0/16 ",
+			want:           []string{"10.0.0.0/8", "192.168.0.0/16"},
+		},
+		{
+			desc:           "IPv6 override range",
+			overrideRanges: "2001:db8::/32",
+			want:           []string{"2001:db8::/32"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			got := lbSourceRanges(klog.TODO(), tc.overrideRanges)
+			sort.Strings(got)
+			sort.Strings(tc.want)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("lbSourceRanges(%q) returned diff (-want +got):\\n%s", tc.overrideRanges, diff)
 			}
 		})
 	}

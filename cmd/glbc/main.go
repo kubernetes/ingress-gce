@@ -147,16 +147,14 @@ func main() {
 	}
 
 	var frontendConfigClient frontendconfigclient.Interface
-	if flags.F.EnableFrontendConfig {
-		frontendConfigCRDMeta := frontendconfig.CRDMeta()
-		if _, err := crdHandler.EnsureCRD(frontendConfigCRDMeta, true); err != nil {
-			klog.Fatalf("Failed to ensure FrontendConfig CRD: %v", err)
-		}
+	frontendConfigCRDMeta := frontendconfig.CRDMeta()
+	if _, err := crdHandler.EnsureCRD(frontendConfigCRDMeta, true); err != nil {
+		klog.Fatalf("Failed to ensure FrontendConfig CRD: %v", err)
+	}
 
-		frontendConfigClient, err = frontendconfigclient.NewForConfig(kubeConfig)
-		if err != nil {
-			klog.Fatalf("Failed to create FrontendConfig client: %v", err)
-		}
+	frontendConfigClient, err = frontendconfigclient.NewForConfig(kubeConfig)
+	if err != nil {
+		klog.Fatalf("Failed to create FrontendConfig client: %v", err)
 	}
 
 	var firewallCRClient firewallcrclient.Interface
@@ -229,9 +227,6 @@ func main() {
 		wg:     &sync.WaitGroup{},
 		stopCh: stopCh,
 		// This ensures that stopCh is only closed once.
-		// Right now, we have two callers.
-		// One is triggered when the ASM configmap changes, and the other one is
-		// triggered by the SIGTERM handler.
 		closeStopCh: func() {
 			once.Do(func() { close(stopCh) })
 		},
@@ -333,30 +328,27 @@ func main() {
 
 	defaultBackendServicePort := app.DefaultBackendServicePort(kubeClient, rootLogger)
 	ctxConfig := ingctx.ControllerContextConfig{
-		Namespace:                     flags.F.WatchNamespace,
-		ResyncPeriod:                  flags.F.ResyncPeriod,
-		NumL4Workers:                  flags.F.NumL4Workers,
-		NumL4NetLBWorkers:             flags.F.NumL4NetLBWorkers,
-		DefaultBackendSvcPort:         defaultBackendServicePort,
-		HealthCheckPath:               flags.F.HealthCheckPath,
-		FrontendConfigEnabled:         flags.F.EnableFrontendConfig,
-		EnableASMConfigMap:            flags.F.EnableASMConfigMapBasedConfig,
-		ASMConfigMapNamespace:         flags.F.ASMConfigMapBasedConfigNamespace,
-		ASMConfigMapName:              flags.F.ASMConfigMapBasedConfigCMName,
-		MaxIGSize:                     flags.F.MaxIGSize,
-		EnableL4ILBDualStack:          flags.F.EnableL4ILBDualStack,
-		EnableL4NetLBDualStack:        flags.F.EnableL4NetLBDualStack,
-		EnableL4StrongSessionAffinity: flags.F.EnableL4StrongSessionAffinity,
-		EnableMultinetworking:         flags.F.EnableMultiNetworking,
-		EnableIngressRegionalExternal: flags.F.EnableIngressRegionalExternal,
-		EnableWeightedL4ILB:           flags.F.EnableWeightedL4ILB,
-		EnableWeightedL4NetLB:         flags.F.EnableWeightedL4NetLB,
-		DisableL4LBFirewall:           flags.F.DisableL4LBFirewall,
-		EnableL4NetLBNEGs:             flags.F.EnableL4NetLBNEG,
-		EnableL4NetLBNEGsDefault:      flags.F.EnableL4NetLBNEGDefault,
-		EnableL4ILBMixedProtocol:      flags.F.EnableL4ILBMixedProtocol,
-		EnableL4NetLBMixedProtocol:    flags.F.EnableL4NetLBMixedProtocol,
-		EnableL4ILBZonalAffinity:      flags.F.EnableL4ILBZonalAffinity,
+		Namespace:                                 flags.F.WatchNamespace,
+		ResyncPeriod:                              flags.F.ResyncPeriod,
+		NumL4Workers:                              flags.F.NumL4Workers,
+		NumL4NetLBWorkers:                         flags.F.NumL4NetLBWorkers,
+		DefaultBackendSvcPort:                     defaultBackendServicePort,
+		HealthCheckPath:                           flags.F.HealthCheckPath,
+		MaxIGSize:                                 flags.F.MaxIGSize,
+		EnableL4ILBDualStack:                      flags.F.EnableL4ILBDualStack,
+		EnableL4NetLBDualStack:                    flags.F.EnableL4NetLBDualStack,
+		EnableL4StrongSessionAffinity:             flags.F.EnableL4StrongSessionAffinity,
+		EnableMultinetworking:                     flags.F.EnableMultiNetworking,
+		EnableIngressRegionalExternal:             flags.F.EnableIngressRegionalExternal,
+		EnableWeightedL4ILB:                       flags.F.EnableWeightedL4ILB,
+		EnableWeightedL4NetLB:                     flags.F.EnableWeightedL4NetLB,
+		DisableL4LBFirewall:                       flags.F.DisableL4LBFirewall,
+		EnableL4NetLBNEGs:                         flags.F.EnableL4NetLBNEG,
+		EnableL4NetLBNEGsDefault:                  flags.F.EnableL4NetLBNEGDefault,
+		EnableL4ILBMixedProtocol:                  flags.F.EnableL4ILBMixedProtocol,
+		EnableL4NetLBMixedProtocol:                flags.F.EnableL4NetLBMixedProtocol,
+		EnableL4ILBZonalAffinity:                  flags.F.EnableL4ILBZonalAffinity,
+		EnableL4NetLBForwardingRulesOptimizations: flags.F.EnableL4NetLBForwardingRulesOptimizations,
 	}
 	ctx, err := ingctx.NewControllerContext(kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, svcAttachmentClient, networkClient, nodeTopologyClient, eventRecorderKubeClient, cloud, namer, kubeSystemUID, ctxConfig, rootLogger)
 	if err != nil {
@@ -369,7 +361,6 @@ func main() {
 		// add a uniquifier so that two processes on the same host don't accidentally both become active
 		id: fmt.Sprintf("%v_%x", hostname, rand.Intn(1e6)),
 	}
-	ctx.Init()
 
 	enableOtherControllers := flags.F.RunIngressController || flags.F.RunL4Controller || flags.F.RunL4NetLBController || flags.F.EnableIGController || flags.F.EnablePSC
 	runNEG := func() {
@@ -377,7 +368,10 @@ func main() {
 		logger.Info("Start running the enabled controllers",
 			"NEG controller", flags.F.EnableNEGController,
 		)
-		runNEGController(ctx, systemHealth, rOption, logger)
+		err := runNEGController(ctx, systemHealth, rOption, logger)
+		if err != nil {
+			klog.Fatalf("failed to run NEG controller: %s", err)
+		}
 	}
 	runIngress := func() {
 		logger := rootLogger.WithName("Other controllers")
@@ -461,7 +455,10 @@ func makeNEGRunnerWithLeaderElection(
 		leOption,
 		negLockName,
 		func(context.Context) {
-			runNEGController(ctx, systemHealth, runOption, logger)
+			err := runNEGController(ctx, systemHealth, runOption, logger)
+			if err != nil {
+				klog.Fatalf("failed to run NEG controller: %s", err)
+			}
 		},
 		func() {
 			logger.Info("Stop running NEG Leader election")
@@ -603,20 +600,16 @@ func runL4Controllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.
 	}()
 }
 
-func runNEGController(ctx *ingctx.ControllerContext, systemHealth *systemhealth.SystemHealth, option runOption, logger klog.Logger) {
+func runNEGController(ctx *ingctx.ControllerContext, systemHealth *systemhealth.SystemHealth, option runOption, logger klog.Logger) error {
 	lockLogger := logger.WithValues("lockName", negLockName)
 	lockLogger.Info("Attempting to grab lock", "lockName", negLockName)
 	go collectLockAvailabilityMetrics(negLockName, flags.F.GKEClusterType, option.stopCh, logger)
 
-	if ctx.EnableASMConfigMap {
-		ctx.ASMConfigController.RegisterInformer(ctx.ConfigMapInformer, func() {
-			// We want to trigger a restart.
-			option.closeStopCh()
-		})
-	}
-
 	if flags.F.EnableNEGController {
-		negController := createNEGController(ctx, systemHealth, option.stopCh, logger)
+		negController, err := createNEGController(ctx, systemHealth, option.stopCh, logger)
+		if err != nil {
+			return fmt.Errorf("failed to create NEG controller: %w", err)
+		}
 		go runWithWg(negController.Run, option.wg)
 		logger.V(0).Info("negController started")
 	}
@@ -627,23 +620,16 @@ func runNEGController(ctx *ingctx.ControllerContext, systemHealth *systemhealth.
 	// will be skipped with the following warnings:
 	//    The sharedIndexInformer has started, run more than once is not allowed
 	ctx.Start(option.stopCh)
+	return nil
 }
 
-func createNEGController(ctx *ingctx.ControllerContext, systemHealth *systemhealth.SystemHealth, stopCh <-chan struct{}, logger klog.Logger) *neg.Controller {
+func createNEGController(ctx *ingctx.ControllerContext, systemHealth *systemhealth.SystemHealth, stopCh <-chan struct{}, logger klog.Logger) (*neg.Controller, error) {
 	zoneGetter := ctx.ZoneGetter
 
 	// In NonGCP mode, use the zone specified in gce.conf directly.
 	// This overrides the zone/fault-domain label on nodes for NEG controller.
 	if flags.F.EnableNonGCPMode {
 		zoneGetter = zonegetter.NewNonGCPZoneGetter(ctx.Cloud.LocalZone())
-	}
-
-	enableAsm := false
-	asmServiceNEGSkipNamespaces := []string{}
-	if ctx.EnableASMConfigMap {
-		cmconfig := ctx.ASMConfigController.GetConfig()
-		enableAsm = cmconfig.EnableASM
-		asmServiceNEGSkipNamespaces = cmconfig.ASMServiceNEGSkipNamespaces
 	}
 
 	lpConfig := labels.PodLabelPropagationConfig{}
@@ -665,7 +651,7 @@ func createNEGController(ctx *ingctx.ControllerContext, systemHealth *systemheal
 	}
 
 	// TODO: Refactor NEG to use cloud mocks so ctx.Cloud can be referenced within NewController.
-	negController := neg.NewController(
+	negController, err := neg.NewController(
 		ctx.KubeClient,
 		ctx.SvcNegClient,
 		ctx.EventRecorderClient,
@@ -692,8 +678,6 @@ func createNEGController(ctx *ingctx.ControllerContext, systemHealth *systemheal
 		flags.F.EnableL4NEG,
 		flags.F.EnableNonGCPMode,
 		flags.F.EnableDualStackNEG,
-		enableAsm,
-		asmServiceNEGSkipNamespaces,
 		lpConfig,
 		flags.F.EnableMultiNetworking,
 		ctx.EnableIngressRegionalExternal,
@@ -701,9 +685,12 @@ func createNEGController(ctx *ingctx.ControllerContext, systemHealth *systemheal
 		stopCh,
 		logger,
 	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create NEG controller: %w", err)
+	}
 
 	systemHealth.AddHealthCheck("neg-controller", negController.IsHealthy)
-	return negController
+	return negController, nil
 }
 
 // runWithWg is a convenience wrapper that do a wg.Add(1), and runs the given

@@ -55,97 +55,106 @@ const (
 
 // F are global flags for the controller.
 var F = struct {
-	APIServerHost                    string
-	ASMConfigMapBasedConfigCMName    string
-	ASMConfigMapBasedConfigNamespace string
-	ClusterName                      string
-	ConfigFilePath                   string
-	DefaultSvc                       string
-	DefaultSvcHealthCheckPath        string
-	DefaultSvcPortName               string
-	GCEOperationPollInterval         time.Duration
-	GCERateLimit                     RateLimitSpecs
-	GCERateLimitScale                float64
-	GKEClusterName                   string
-	GKEClusterHash                   string
-	GKEClusterType                   string
-	HealthCheckPath                  string
-	HealthzPort                      int
-	THCPort                          int
-	InCluster                        bool
-	IngressClass                     string
-	KubeConfigFile                   string
-	NegGCPeriod                      time.Duration
-	NumNegGCWorkers                  int
-	NodePortRanges                   PortRanges
-	ResyncPeriod                     time.Duration
-	L4NetLBProvisionDeadline         time.Duration
-	NumL4Workers                     int
-	NumL4NetLBWorkers                int
-	NumIngressWorkers                int
-	RunIngressController             bool
-	RunL4Controller                  bool
-	RunL4NetLBController             bool
-	EnableIGController               bool
-	Version                          bool
-	WatchNamespace                   string
-	LeaderElection                   LeaderElectionConfiguration
-	MetricsExportInterval            time.Duration
-	NegMetricsExportInterval         time.Duration
-	KubeClientQPS                    float32
-	KubeClientBurst                  int
+	APIServerHost             string
+	ClusterName               string
+	ConfigFilePath            string
+	DefaultSvc                string
+	DefaultSvcHealthCheckPath string
+	DefaultSvcPortName        string
+	GCEOperationPollInterval  time.Duration
+	GCERateLimit              RateLimitSpecs
+	GCERateLimitScale         float64
+	GKEClusterName            string
+	GKEClusterHash            string
+	GKEClusterType            string
+	HealthCheckPath           string
+	HealthzPort               int
+	THCPort                   int
+	InCluster                 bool
+	IngressClass              string
+	KubeConfigFile            string
+	NegGCPeriod               time.Duration
+	NumNegGCWorkers           int
+	NodePortRanges            PortRanges
+	ResyncPeriod              time.Duration
+	L4NetLBProvisionDeadline  time.Duration
+	NumL4Workers              int
+	NumL4NetLBWorkers         int
+	NumIngressWorkers         int
+	RunIngressController      bool
+	RunL4Controller           bool
+	RunL4NetLBController      bool
+	EnableIGController        bool
+	Version                   bool
+	WatchNamespace            string
+	LeaderElection            LeaderElectionConfiguration
+	MetricsExportInterval     time.Duration
+	NegMetricsExportInterval  time.Duration
+	KubeClientQPS             float32
+	KubeClientBurst           int
 
 	// Feature flags should be named Enablexxx.
-	EnableASMConfigMapBasedConfig            bool
-	EnableDeleteUnusedFrontends              bool
-	EnableFrontendConfig                     bool
-	EnableNonGCPMode                         bool
-	EnableReadinessReflector                 bool
-	EnableV2FrontendNamer                    bool
-	FinalizerAdd                             bool // Should have been named Enablexxx.
-	FinalizerRemove                          bool // Should have been named Enablexxx.
-	EnablePSC                                bool
-	EnableTrafficScaling                     bool
-	EnableRecalculateUHCOnBCRemoval          bool
-	EnableTransparentHealthChecks            bool
-	EnableUpdateCustomHealthCheckDescription bool
-	EnablePinhole                            bool
-	EnableL4ILBDualStack                     bool
-	EnableL4NetLBDualStack                   bool
-	EnableNEGController                      bool
-	EnableL4NEG                              bool
-	EnableL4NetLBNEG                         bool
-	EnableL4NetLBNEGDefault                  bool
-	GateNEGByLock                            bool
-	GateL4ByLock                             bool
-	EnableMultipleIGs                        bool
-	EnableL4StrongSessionAffinity            bool
-	EnableNEGLabelPropagation                bool
-	EnableMultiNetworking                    bool
-	MaxIGSize                                int
-	EnableDegradedMode                       bool
-	EnableDegradedModeMetrics                bool
-	EnableDualStackNEG                       bool
-	EnableFirewallCR                         bool
-	DisableFWEnforcement                     bool
-	DisableL4LBFirewall                      bool
-	EnableIngressRegionalExternal            bool
-	EnableIngressGlobalExternal              bool
-	OverrideComputeAPIEndpoint               string
-	EnableIGMultiSubnetCluster               bool
-	EnableMultiSubnetCluster                 bool
-	EnableMultiSubnetClusterPhase1           bool
-	NodeTopologyCRName                       string
-	EnableWeightedL4ILB                      bool
-	EnableWeightedL4NetLB                    bool
-	EnableDiscretePortForwarding             bool
-	EnableMultiProjectMode                   bool
-	EnableL4ILBZonalAffinity                 bool
-	ProviderConfigNameLabelKey               string
-	EnableL4ILBMixedProtocol                 bool
-	EnableL4NetLBMixedProtocol               bool
-	EnableIPV6OnlyNEG                        bool
-	MultiProjectOwnerLabelKey                string
+	EnableNonGCPMode                          bool
+	EnableReadinessReflector                  bool
+	EnableV2FrontendNamer                     bool
+	FinalizerAdd                              bool // Should have been named Enablexxx.
+	FinalizerRemove                           bool // Should have been named Enablexxx.
+	EnablePSC                                 bool
+	EnableTrafficScaling                      bool
+	EnableRecalculateUHCOnBCRemoval           bool
+	EnableTransparentHealthChecks             bool
+	EnableUpdateCustomHealthCheckDescription  bool
+	EnablePinhole                             bool
+	EnableL4ILBDualStack                      bool
+	EnableL4NetLBDualStack                    bool
+	EnableNEGController                       bool
+	EnableL4NEG                               bool
+	EnableL4NetLBNEG                          bool
+	EnableL4NetLBNEGDefault                   bool
+	GateNEGByLock                             bool
+	GateL4ByLock                              bool
+	EnableMultipleIGs                         bool
+	EnableL4StrongSessionAffinity             bool
+	EnableNEGLabelPropagation                 bool
+	EnableMultiNetworking                     bool
+	MaxIGSize                                 int
+	EnableDegradedMode                        bool
+	EnableDegradedModeMetrics                 bool
+	EnableDualStackNEG                        bool
+	EnableFirewallCR                          bool
+	DisableFWEnforcement                      bool
+	DisableL4LBFirewall                       bool
+	EnableIngressRegionalExternal             bool
+	EnableIngressGlobalExternal               bool
+	OverrideComputeAPIEndpoint                string
+	EnableIGMultiSubnetCluster                bool
+	EnableMultiSubnetCluster                  bool
+	EnableMultiSubnetClusterPhase1            bool
+	NodeTopologyCRName                        string
+	EnableWeightedL4ILB                       bool
+	EnableWeightedL4NetLB                     bool
+	EnableDiscretePortForwarding              bool
+	EnableMultiProjectMode                    bool
+	EnableL4ILBZonalAffinity                  bool
+	ProviderConfigNameLabelKey                string
+	EnableL4ILBMixedProtocol                  bool
+	EnableL4NetLBMixedProtocol                bool
+	EnableL4NetLBForwardingRulesOptimizations bool
+	EnableIPV6OnlyNEG                         bool
+	MultiProjectOwnerLabelKey                 string
+	OverrideHealthCheckSourceCIDRs            string
+
+	// ===============================
+	// DEPRECATED FLAGS
+	// ===============================
+	// DEPRECATED: ASM ConfigMap based config is no longer used and will be removed in a future release.
+	DeprecatedEnableASMConfigMapBasedConfig    bool
+	DeprecatedASMConfigMapBasedConfigCMName    string
+	DeprecatedASMConfigMapBasedConfigNamespace string
+	// DEPRECATED: DeprecatedEnableDeleteUnusedFrontends is on by default and will be removed in a future release.
+	DeprecatedEnableDeleteUnusedFrontends bool
+	// DEPRECATED: DeprecatedEnableFrontendConfig is on by default and will be removed in a future release.
+	DeprecatedEnableFrontendConfig bool
 }{
 	GCERateLimitScale: 1.0,
 }
@@ -207,8 +216,8 @@ form namespace/name.`)
 	flag.StringVar(&F.DefaultSvcPortName, "default-backend-service-port", "http",
 		`Specify the default service's port used to serve a 404 page for the default backend. Takes
 only the port's name - not its number.`)
-	flag.BoolVar(&F.EnableFrontendConfig, "enable-frontend-config", false,
-		`Optional, whether or not to enable FrontendConfig.`)
+	flag.BoolVar(&F.DeprecatedEnableFrontendConfig, "enable-frontend-config", true,
+		`DEPCREATED: Optional, whether or not to enable FrontendConfig.`)
 	flag.Var(&F.GCERateLimit, "gce-ratelimit",
 		`Optional, can be used to rate limit certain GCE API calls. Example usage:
 --gce-ratelimit=ga.Addresses.Get,qps,1.5,5
@@ -277,11 +286,11 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 		F.FinalizerAdd, "Enable adding Finalizer to Ingress.")
 	flag.BoolVar(&F.FinalizerRemove, "enable-finalizer-remove",
 		F.FinalizerRemove, "Enable removing Finalizer from Ingress.")
-	flag.BoolVar(&F.EnableASMConfigMapBasedConfig, "enable-asm-config-map-config", false, "Enable ASMConfigMapBasedConfig")
-	flag.StringVar(&F.ASMConfigMapBasedConfigNamespace, "asm-configmap-based-config-namespace", "kube-system", "ASM Configmap based config: configmap namespace")
-	flag.StringVar(&F.ASMConfigMapBasedConfigCMName, "asm-configmap-based-config-cmname", "ingress-controller-asm-cm-config", "ASM Configmap based config: configmap name")
+	flag.BoolVar(&F.DeprecatedEnableASMConfigMapBasedConfig, "enable-asm-config-map-config", false, "DEPRECATED: Enable ASMConfigMapBasedConfig")
+	flag.StringVar(&F.DeprecatedASMConfigMapBasedConfigNamespace, "asm-configmap-based-config-namespace", "kube-system", "DEPRECATED: ASM Configmap based config: configmap namespace")
+	flag.StringVar(&F.DeprecatedASMConfigMapBasedConfigCMName, "asm-configmap-based-config-cmname", "ingress-controller-asm-cm-config", "DEPRECATED: ASM Configmap based config: configmap name")
 	flag.BoolVar(&F.EnableNonGCPMode, "enable-non-gcp-mode", false, "Set to true when running on a non-GCP cluster.")
-	flag.BoolVar(&F.EnableDeleteUnusedFrontends, "enable-delete-unused-frontends", false, "Enable deleting unused gce frontend resources.")
+	flag.BoolVar(&F.DeprecatedEnableDeleteUnusedFrontends, "enable-delete-unused-frontends", true, "DEPRECATED: Enable deleting unused gce frontend resources.")
 	flag.BoolVar(&F.EnableV2FrontendNamer, "enable-v2-frontend-namer", false, "Enable v2 ingress frontend naming policy.")
 	flag.BoolVar(&F.RunIngressController, "run-ingress-controller", true, `Optional, if enabled then the ingress controller will be run.`)
 	flag.BoolVar(&F.RunL4Controller, "run-l4-controller", false, `Optional, whether or not to run L4 Service Controller as part of glbc. If set to true, services of Type:LoadBalancer with Internal annotation will be processed by this controller.`)
@@ -338,8 +347,10 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableL4ILBMixedProtocol, "enable-l4ilb-mixed-protocol", false, "Enable support for mixed protocol L4 internal load balancers.")
 	flag.BoolVar(&F.EnableL4NetLBMixedProtocol, "enable-l4netlb-mixed-protocol", false, "Enable support for mixed protocol L4 external load balancers.")
 	flag.StringVar(&F.ProviderConfigNameLabelKey, "provider-config-name-label-key", "cloud.gke.io/provider-config-name", "The label key for provider-config name, which is used to identify the provider-config of objects in multi-project mode.")
+	flag.BoolVar(&F.EnableL4NetLBForwardingRulesOptimizations, "enable-l4netlb-forwarding-rules-optimizations", false, "Enable optimized processing of forwarding rules for L4 NetLB.")
 	flag.BoolVar(&F.EnableIPV6OnlyNEG, "enable-ipv6-only-neg", false, "Enable support for IPV6 Only NEG's.")
 	flag.StringVar(&F.MultiProjectOwnerLabelKey, "multi-project-owner-label-key", "multiproject.gke.io/owner", "The label key for multi-project owner, which is used to identify the owner of objects in multi-project mode.")
+	flag.StringVar(&F.OverrideHealthCheckSourceCIDRs, "override-health-check-src-cidrs", "", "Overrides the default source IP ranges used when configuring firewall rules to allow health check probes for L7 load balancers. Provide the ranges as a comma-separated list of CIDRs.")
 }
 
 func Validate() {

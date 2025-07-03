@@ -468,7 +468,6 @@ func (sm *SyncerMetrics) computeNegMetrics() map[feature]int {
 	counts := map[feature]int{
 		standaloneNeg:  0,
 		ingressNeg:     0,
-		asmNeg:         0,
 		neg:            0,
 		vmIpNeg:        0,
 		vmIpNegLocal:   0,
@@ -479,12 +478,11 @@ func (sm *SyncerMetrics) computeNegMetrics() map[feature]int {
 	}
 
 	for key, negState := range sm.negMap {
-		klog.V(6).Infof("For service %s, it has standaloneNegs:%d, ingressNegs:%d, asmNeg:%d and vmPrimaryNeg:%v",
-			key, negState.StandaloneNeg, negState.IngressNeg, negState.AsmNeg, negState.VmIpNeg)
+		klog.V(6).Infof("For service %s, it has standaloneNegs:%d, ingressNegs:%d and vmPrimaryNeg:%v",
+			key, negState.StandaloneNeg, negState.IngressNeg, negState.VmIpNeg)
 		counts[standaloneNeg] += negState.StandaloneNeg
 		counts[ingressNeg] += negState.IngressNeg
-		counts[asmNeg] += negState.AsmNeg
-		counts[neg] += negState.AsmNeg + negState.StandaloneNeg + negState.IngressNeg
+		counts[neg] += negState.StandaloneNeg + negState.IngressNeg
 		counts[customNamedNeg] += negState.CustomNamedNeg
 		counts[negInSuccess] += negState.SuccessfulNeg
 		counts[negInError] += negState.ErrorNeg

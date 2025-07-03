@@ -964,6 +964,7 @@ func TestSelectAPIVersionForUpdate(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 			result := selectApiVersionForUpdate(tc.versionA, tc.versionB)
@@ -1000,6 +1001,7 @@ func TestFeatureVersionRequirements(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 			params := L4BackendServiceParams{

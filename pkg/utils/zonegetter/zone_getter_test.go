@@ -222,6 +222,93 @@ func TestListNodes(t *testing.T) {
 	}
 }
 
+func TestListNodesInDefaultSubnet(t *testing.T) {
+	t.Parallel()
+
+	nodeInformer := FakeNodeInformer()
+	PopulateFakeNodeInformer(nodeInformer, true)
+	zoneGetter, err := NewFakeZoneGetterWithNodeTopologyHasSynced(nodeInformer, FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter")
+	}
+
+	testCases := []struct {
+		desc      string
+		filter    Filter
+		expectLen int
+	}{
+		{
+			desc:      "List with AllNodesFilter",
+			filter:    AllNodesFilter,
+			expectLen: 15,
+		},
+		{
+			desc:      "List with CandidateNodesFilter",
+			filter:    CandidateNodesFilter,
+			expectLen: 13,
+		},
+		{
+			desc:      "List with CandidateAndUnreadyNodesFilter",
+			filter:    CandidateAndUnreadyNodesFilter,
+			expectLen: 11,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			nodes, _ := zoneGetter.ListNodesInDefaultSubnet(tc.filter, klog.TODO())
+			if len(nodes) != tc.expectLen {
+				t.Errorf("For test case %q, got %d nodes, want %d,", tc.desc, len(nodes), tc.expectLen)
+			}
+		})
+	}
+}
+
+func TestListZonesInDefaultSubnets(t *testing.T) {
+	t.Parallel()
+
+	nodeInformer := FakeNodeInformer()
+	PopulateFakeNodeInformer(nodeInformer, true)
+	zoneGetter, err := NewFakeZoneGetterWithNodeTopologyHasSynced(nodeInformer, FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter")
+	}
+	testCases := []struct {
+		desc      string
+		filter    Filter
+		expectLen int
+	}{
+		{
+			desc:      "List with AllNodesFilter",
+			filter:    AllNodesFilter,
+			expectLen: 6,
+		},
+		{
+			desc:      "List with CandidateNodesFilter",
+			filter:    CandidateNodesFilter,
+			expectLen: 5,
+		},
+		{
+			desc:      "List with CandidateAndUnreadyNodesFilter",
+			filter:    CandidateAndUnreadyNodesFilter,
+			expectLen: 5,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			zones, _ := zoneGetter.ListZonesInDefaultSubnet(tc.filter, klog.TODO())
+			if len(zones) != tc.expectLen {
+				t.Errorf("For test case %q, got %d zones, want %d zones", tc.desc, len(zones), tc.expectLen)
+			}
+			for _, zone := range zones {
+				if zone == EmptyZone {
+					t.Errorf("For test case %q, got an empty zone,", tc.desc)
+				}
+			}
+		})
+	}
+}
+
 func TestListNodesMultipleSubnets(t *testing.T) {
 	t.Parallel()
 
@@ -1233,7 +1320,6 @@ func TestLegacyIsNodeSelectedByFilter(t *testing.T) {
 }
 
 func TestIsNodeInDefaultSubnet(t *testing.T) {
-	t.Parallel()
 	testCases := []struct {
 		desc                  string
 		node                  *apiv1.Node
@@ -1322,7 +1408,16 @@ func TestIsNodeInDefaultSubnet(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			gotInDefaultSubnet, gotErr := isNodeInDefaultSubnet(tc.node, defaultTestSubnetURL, klog.TODO())
+			fakeNodeInformer := FakeNodeInformer()
+			if err := fakeNodeInformer.GetIndexer().Add(tc.node); err != nil {
+				t.Fatalf("Failed to add node %v to the fakeNodeInformer: %v", tc.node.GetName(), err)
+			}
+			zoneGetter, err := NewFakeZoneGetter(fakeNodeInformer, FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+			if err != nil {
+				t.Fatalf("failed to initialize zone getter")
+			}
+
+			gotInDefaultSubnet, gotErr := zoneGetter.IsNodeInDefaultSubnet(tc.node.GetName(), klog.TODO())
 			if gotErr != nil && tc.expectNil {
 				t.Errorf("isNodeInDefaultSubnet(%v, %s) = err %v, want nil", tc.node, defaultTestSubnetURL, gotErr)
 			}
@@ -1333,6 +1428,34 @@ func TestIsNodeInDefaultSubnet(t *testing.T) {
 				t.Errorf("isNodeInDefaultSubnet(%v, %s) = %v, want %v", tc.node, defaultTestSubnetURL, gotInDefaultSubnet, tc.expectInDefaultSubnet)
 			}
 		})
+	}
+}
+
+func TestIsNodeInDefaultSubnet_forLegacyVPCAllNodesAreAssumedInDefaultSubnet(t *testing.T) {
+	fakeNodeInformer := FakeNodeInformer()
+	zoneGetter := NewLegacyZoneGetter(fakeNodeInformer, FakeNodeTopologyInformer())
+	node := &apiv1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "NodeInDefaultSubnet",
+			Labels: map[string]string{
+				utils.LabelNodeSubnet: defaultTestSubnet,
+			},
+		},
+		Spec: apiv1.NodeSpec{
+			PodCIDR:  "10.100.1.0/24",
+			PodCIDRs: []string{"10.100.1.0/24"},
+		},
+	}
+	if err := fakeNodeInformer.GetIndexer().Add(node); err != nil {
+		t.Fatalf("Failed to add node %v to the fakeNodeInformer: %v", node.GetName(), err)
+	}
+
+	got, err := zoneGetter.IsNodeInDefaultSubnet(node.GetName(), klog.TODO())
+	if err != nil {
+		t.Fatalf("IsNodeInDefaultSubnet(%v) returned error = %v; want no error", node.GetName(), err)
+	}
+	if got != true {
+		t.Errorf("IsNodeInDefaultSubnet(%v) = false; When using Legacy VPCs, IsNodeInDefaultSubnet is expected to return true for all Nodes", node.GetName())
 	}
 }
 

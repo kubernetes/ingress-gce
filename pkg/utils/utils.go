@@ -276,20 +276,6 @@ func IsInvalidLoadBalancerSourceRangesAnnotationError(err error) bool {
 	return errors.As(err, &invalidLoadBalancerSourceRangesAnnotationError)
 }
 
-// IsUserError checks if given error is cause by User.
-// Right now User Error might be caused by Network Tier misconfiguration
-// or specifying non-existent or already used IP address.
-func IsUserError(err error) bool {
-	var userError *UserError
-	return IsNetworkTierError(err) ||
-		IsIPConfigurationError(err) ||
-		IsInvalidSubnetConfigurationError(err) ||
-		IsInvalidLoadBalancerSourceRangesSpecError(err) ||
-		IsInvalidLoadBalancerSourceRangesAnnotationError(err) ||
-		IsUnsupportedNetworkTierError(err) ||
-		errors.As(err, &userError)
-}
-
 // UserError is a struct to define error caused by User misconfiguration.
 type UserError struct {
 	err error
@@ -824,16 +810,6 @@ func MakeL4LBServiceDescription(svcName, ip string, version meta.Version, shared
 
 func MakeL4IPv6ForwardingRuleDescription(service *api_v1.Service) (string, error) {
 	return (&L4LBResourceDescription{ServiceName: ServiceKeyFunc(service.Namespace, service.Name)}).Marshal()
-}
-
-// NewStringPointer returns a pointer to the provided string literal
-func NewStringPointer(s string) *string {
-	return &s
-}
-
-// NewInt64Pointer returns a pointer to the provided int64 literal
-func NewInt64Pointer(i int64) *int64 {
-	return &i
 }
 
 // GetBasePath returns the compute API endpoint with the `projects/<project-id>` element

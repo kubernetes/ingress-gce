@@ -18,7 +18,6 @@ package main
 
 import (
 	"fmt"
-	"math/rand"
 	"os"
 	"time"
 
@@ -37,7 +36,6 @@ import (
 
 func main() {
 	flags.Register()
-	rand.Seed(time.Now().UTC().UnixNano())
 	flag.Parse()
 
 	if flags.F.Version {

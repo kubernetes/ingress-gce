@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
@@ -89,7 +90,7 @@ func (a *cloudProviderAdapter) GetNetworkEndpointGroup(name string, zone string,
 // ListNetworkEndpointGroup implements NetworkEndpointGroupCloud.
 func (a *cloudProviderAdapter) ListNetworkEndpointGroup(zone string, version meta.Version, logger klog.Logger) ([]*composite.NetworkEndpointGroup, error) {
 	start := time.Now()
-	negs, err := composite.ListNetworkEndpointGroups(a.c, meta.ZonalKey("", zone), version, logger)
+	negs, err := composite.ListNetworkEndpointGroups(a.c, meta.ZonalKey("", zone), version, logger, filter.None)
 	metrics.PublishGCERequestCountMetrics(start, metrics.ListRequest, err)
 	return negs, err
 }

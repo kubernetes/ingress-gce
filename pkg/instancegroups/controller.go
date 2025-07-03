@@ -129,7 +129,7 @@ func (c *Controller) sync(key string) error {
 		c.logger.V(4).Info("Instance groups controller: Processing key finished", "key", key, "timeTaken", time.Since(start))
 	}()
 
-	nodes, err := c.zoneGetter.ListNodes(zonegetter.CandidateNodesFilter, c.logger)
+	nodes, err := c.zoneGetter.ListNodesInDefaultSubnet(zonegetter.CandidateNodesFilter, c.logger)
 	if err != nil {
 		return err
 	}

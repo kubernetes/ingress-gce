@@ -56,7 +56,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
-	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -2874,7 +2874,7 @@ func TestUnknownNodes(t *testing.T) {
 	testPort := int64(80)
 
 	testEndpointSlices := getDefaultEndpointSlices()
-	testEndpointSlices[0].Endpoints[0].NodeName = utilpointer.StringPtr("unknown-node")
+	testEndpointSlices[0].Endpoints[0].NodeName = ptr.To("unknown-node")
 	testEndpointMap := map[negtypes.NEGLocation]*composite.NetworkEndpoint{
 		{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: {
 			Instance:  negtypes.TestInstance1,

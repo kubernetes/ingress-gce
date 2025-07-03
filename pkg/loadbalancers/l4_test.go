@@ -1319,7 +1319,7 @@ func TestDualStackILBBadCustomSubnet(t *testing.T) {
 			if result.Error == nil {
 				t.Fatalf("Expected error ensuring internal dualstack loadbalancer in bad subnet, got: %v", result.Error)
 			}
-			if !utils.IsUserError(result.Error) {
+			if !IsUserError(result.Error) {
 				t.Errorf("Expected to get user error if external IPv6 subnet specified for internal IPv6 service, got %v", result.Error)
 			}
 			if !noInternalIPv6InSubnetError.MatchString(result.Error.Error()) {
@@ -1351,6 +1351,7 @@ func TestInternalLBBadCustomSubnet(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 
@@ -1376,7 +1377,7 @@ func TestInternalLBBadCustomSubnet(t *testing.T) {
 				if result.Error == nil {
 					t.Fatalf("Expected error ensuring internal loadbalancer with non-existing subnet, got: %v", result.Error)
 				}
-				if !utils.IsUserError(result.Error) {
+				if !IsUserError(result.Error) {
 					t.Errorf("Expected to get user error if non-existing subnet specified for internal loadbalancer, got %v", result.Error)
 				}
 				expectedError := fmt.Sprintf("Subnetwork \"%s\" can't be found for project %s", tc.subnetName, l4.cloud.ProjectID())

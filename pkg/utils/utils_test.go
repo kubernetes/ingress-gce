@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package utils
+package utils_test
 
 import (
 	"context"
@@ -41,6 +41,7 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
 )
 
@@ -65,7 +66,7 @@ func TestResourcePath(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		res, _ := ResourcePath(tc.url)
+		res, _ := utils.ResourcePath(tc.url)
 		if res != tc.want {
 			t.Errorf("ResourcePath(%q) = %q, want %q", tc.url, res, tc.want)
 		}
@@ -94,7 +95,7 @@ func TestToNamespacedName(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.input, func(t *testing.T) {
-			gotOut, gotErr := ToNamespacedName(tc.input)
+			gotOut, gotErr := utils.ToNamespacedName(tc.input)
 			if tc.wantErr != (gotErr != nil) {
 				t.Errorf("ToNamespacedName(%v) = _, %v, want err? %v", tc.input, gotErr, tc.wantErr)
 			}
@@ -170,7 +171,7 @@ func TestEqualResourcePaths(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			if got := EqualResourcePaths(tc.a, tc.b); got != tc.want {
+			if got := utils.EqualResourcePaths(tc.a, tc.b); got != tc.want {
 				t.Errorf("EqualResourcePathsOfURLs(%q, %q) = %v, want %v", tc.a, tc.b, got, tc.want)
 			}
 		})
@@ -238,7 +239,7 @@ func TestEqualResourceIDs(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			if got := EqualResourceIDs(tc.a, tc.b); got != tc.want {
+			if got := utils.EqualResourceIDs(tc.a, tc.b); got != tc.want {
 				t.Errorf("EqualResourceIDs(%q, %q) = %v, want %v", tc.a, tc.b, got, tc.want)
 			}
 		})
@@ -508,7 +509,7 @@ func TestTraverseIngressBackends(t *testing.T) {
 
 	for _, tc := range testCases {
 		counter := 0
-		TraverseIngressBackends(tc.ing, func(id ServicePortID) bool {
+		utils.TraverseIngressBackends(tc.ing, func(id utils.ServicePortID) bool {
 			if tc.expectBackends[counter].Service.Name != id.Service.Name || tc.expectBackends[counter].Service.Port != id.Port {
 				t.Errorf("Test case %q, for backend %v, expecting service name %q and service port %+v, but got %q, %q", tc.desc, counter, tc.expectBackends[counter].Service.Name, tc.expectBackends[counter].Service.Port, id.Service.Name, id.Port.String())
 			}
@@ -664,7 +665,7 @@ func TestIsGCEIngress(t *testing.T) {
 			flags.F.EnableIngressRegionalExternal = tc.xlbRegionalEnabledFlag
 			flags.F.EnableIngressGlobalExternal = tc.enableIngressGlobalExternalFlag
 
-			result := IsGCEIngress(tc.ingress)
+			result := utils.IsGCEIngress(tc.ingress)
 			if result != tc.expected {
 				t.Fatalf("want %v, got %v", tc.expected, result)
 			}
@@ -721,7 +722,7 @@ func TestIsGCEL7ILBIngress(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			result := IsGCEL7ILBIngress(tc.ingress)
+			result := utils.IsGCEL7ILBIngress(tc.ingress)
 			if result != tc.expected {
 				t.Fatalf("want %v, got %v", tc.expected, result)
 			}
@@ -785,7 +786,7 @@ func TestIsGCEL7XLBRegionalIngress(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			result := IsGCEL7XLBRegionalIngress(tc.ingress)
+			result := utils.IsGCEL7XLBRegionalIngress(tc.ingress)
 			if result != tc.expected {
 				t.Fatalf("want %v, got %v", tc.expected, result)
 			}
@@ -846,7 +847,7 @@ func TestNeedsCleanup(t *testing.T) {
 				ingress.SetDeletionTimestamp(&ts)
 			}
 
-			if gotNeedsCleanup := NeedsCleanup(ingress); gotNeedsCleanup != tc.expectNeedsCleanup {
+			if gotNeedsCleanup := utils.NeedsCleanup(ingress); gotNeedsCleanup != tc.expectNeedsCleanup {
 				t.Errorf("NeedsCleanup() = %t, want %t (tc = %+v)", gotNeedsCleanup, tc.expectNeedsCleanup, tc)
 			}
 		})
@@ -916,7 +917,7 @@ func TestHasVIP(t *testing.T) {
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			if gotHasVIP := HasVIP(tc.ing); tc.expectHasVIP != gotHasVIP {
+			if gotHasVIP := utils.HasVIP(tc.ing); tc.expectHasVIP != gotHasVIP {
 				t.Errorf("Got diff HasVIP, expected %t got %t", tc.expectHasVIP, gotHasVIP)
 			}
 		})
@@ -936,7 +937,7 @@ func TestGetNodePrimaryIP(t *testing.T) {
 			},
 		},
 	}
-	out := GetNodePrimaryIP(node, klog.TODO())
+	out := utils.GetNodePrimaryIP(node, klog.TODO())
 	if out != internalIP {
 		t.Errorf("Expected Primary IP %s, got %s", internalIP, out)
 	}
@@ -951,7 +952,7 @@ func TestGetNodePrimaryIP(t *testing.T) {
 			},
 		},
 	}
-	out = GetNodePrimaryIP(node, klog.TODO())
+	out = utils.GetNodePrimaryIP(node, klog.TODO())
 	if out != "" {
 		t.Errorf("Expected Primary IP '', got %s", out)
 	}
@@ -973,13 +974,13 @@ func TestIsLegacyL4ILBService(t *testing.T) {
 			},
 		},
 	}
-	if !IsLegacyL4ILBService(svc) {
+	if !utils.IsLegacyL4ILBService(svc) {
 		t.Errorf("Expected True for Legacy service %s, got False", svc.Name)
 	}
 
 	// Remove the finalizer and ensure the check returns False.
 	svc.ObjectMeta.Finalizers = nil
-	if IsLegacyL4ILBService(svc) {
+	if utils.IsLegacyL4ILBService(svc) {
 		t.Errorf("Expected False for Legacy service %s, got True", svc.Name)
 	}
 }
@@ -1002,7 +1003,7 @@ func TestGetPortRanges(t *testing.T) {
 		{Desc: "One value", Input: []int{12}, Result: []string{"12"}},
 		{Desc: "Empty", Input: []int{}, Result: nil},
 	} {
-		result := GetPortRanges(tc.Input)
+		result := utils.GetPortRanges(tc.Input)
 		if diff := cmp.Diff(result, tc.Result); diff != "" {
 			t.Errorf("GetPortRanges(%s) mismatch, (-want +got): \n%s", tc.Desc, diff)
 		}
@@ -1025,7 +1026,7 @@ func TestIsHTTPErrorCode(t *testing.T) {
 		{"Wrapped error with code 200", fmt.Errorf("%w", &googleapi.Error{Code: 200}), 400, false},
 		{"Wrapped error with code 400", fmt.Errorf("%w", &googleapi.Error{Code: 400}), 400, true},
 	} {
-		got := IsHTTPErrorCode(tc.err, tc.code)
+		got := utils.IsHTTPErrorCode(tc.err, tc.code)
 		if got != tc.want {
 			t.Errorf("IsHTTPErrorCode(%v, %d) = %t; want %t", tc.err, tc.code, got, tc.want)
 		}
@@ -1050,18 +1051,18 @@ func TestIsQuotaExceededError(t *testing.T) {
 			Code:    403,
 			Message: "Quota exceeded",
 			Errors: []googleapi.ErrorItem{{
-				Reason: gceRateLimitExceeded,
+				Reason: "rateLimitExceeded",
 			}},
 		}, true},
 		{"Wrapped error with code 403 and reason rateLimitExceeded", fmt.Errorf("%w", &googleapi.Error{
 			Code:    403,
 			Message: "Quota exceeded",
 			Errors: []googleapi.ErrorItem{{
-				Reason: gceRateLimitExceeded,
+				Reason: "rateLimitExceeded",
 			}},
 		}), true},
 	} {
-		got := IsQuotaExceededError(tc.err)
+		got := utils.IsQuotaExceededError(tc.err)
 		if got != tc.want {
 			t.Errorf("IsQuotaExceededError(%v) = %t; want %t", tc.err, got, tc.want)
 		}
@@ -1084,7 +1085,7 @@ func TestGetErrorType(t *testing.T) {
 		{desc: "unknown error", err: fmt.Errorf("Got unknown error"), errType: ""},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			if errType := GetErrorType(tc.err); errType != tc.errType {
+			if errType := utils.GetErrorType(tc.err); errType != tc.errType {
 				t.Errorf("Unexpected errType %q, want %q", errType, tc.errType)
 			}
 		})
@@ -1117,16 +1118,16 @@ func TestBackendToServicePortID(t *testing.T) {
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
 
-			svcPortID, err := BackendToServicePortID(tc.backend, testNS)
+			svcPortID, err := utils.BackendToServicePortID(tc.backend, testNS)
 			if !tc.expectErr && err != nil {
 				t.Errorf("unexpected error: %q", err)
 			} else if tc.expectErr && err == nil {
 				t.Errorf("expected an error, but got none")
 			}
 
-			expectedID := ServicePortID{}
+			expectedID := utils.ServicePortID{}
 			if !tc.expectErr {
-				expectedID = ServicePortID{
+				expectedID = utils.ServicePortID{
 					Service: types.NamespacedName{
 						Name:      tc.backend.Service.Name,
 						Namespace: testNS,
@@ -1172,7 +1173,7 @@ func TestGetBasePath(t *testing.T) {
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
 			fakeGCE.ComputeServices().GA.BasePath = tc.basePath
-			path := GetBasePath(fakeGCE)
+			path := utils.GetBasePath(fakeGCE)
 			if path != tc.expectedBasePath {
 				t.Errorf("wanted %s, but got %s", tc.expectedBasePath, path)
 			}
@@ -1237,7 +1238,7 @@ func TestMinMaxPortRange(t *testing.T) {
 			expectedRange: "",
 		},
 	} {
-		portsRange := MinMaxPortRange(tc.svcPorts)
+		portsRange := utils.MinMaxPortRange(tc.svcPorts)
 		if portsRange != tc.expectedRange {
 			t.Errorf("PortRange mismatch %v != %v", tc.expectedRange, portsRange)
 		}
@@ -1270,14 +1271,14 @@ func TestIsNetworkMismatchGCEError(t *testing.T) {
 			want: false,
 		},
 	} {
-		if got := IsNetworkTierMismatchGCEError(tc.err); got != tc.want {
+		if got := utils.IsNetworkTierMismatchGCEError(tc.err); got != tc.want {
 			t.Errorf("IsNetworkTierMismatchGCEError(%v) = %v, want %v", tc.err, got, tc.want)
 		}
 	}
 }
 
 func TestIsNetworkMismatchError(t *testing.T) {
-	netTierMismatchError := NewNetworkTierErr("forwarding-rule", "premium", "standard")
+	netTierMismatchError := utils.NewNetworkTierErr("forwarding-rule", "premium", "standard")
 	for _, tc := range []struct {
 		description string
 		err         error
@@ -1299,7 +1300,7 @@ func TestIsNetworkMismatchError(t *testing.T) {
 			want:        false,
 		},
 	} {
-		if got := IsNetworkTierError(tc.err); got != tc.want {
+		if got := utils.IsNetworkTierError(tc.err); got != tc.want {
 			t.Errorf("IsNetworkTierError(%v) = %v, want %v", tc.err, got, tc.want)
 		}
 	}
@@ -1341,7 +1342,7 @@ func TestIsLoadBalancerType(t *testing.T) {
 				},
 			}
 
-			isLoadBalancer := IsLoadBalancerServiceType(svc)
+			isLoadBalancer := utils.IsLoadBalancerServiceType(svc)
 
 			if isLoadBalancer != tc.wantIsLoadBalancerType {
 				t.Errorf("IsLoadBalancerServiceType(%v) returned %t, expected %t", svc, isLoadBalancer, tc.wantIsLoadBalancerType)
@@ -1389,7 +1390,7 @@ func TestGetProtocol(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			protocol := GetProtocol(tc.ports)
+			protocol := utils.GetProtocol(tc.ports)
 
 			if protocol != tc.expectedProtocol {
 				t.Errorf("GetProtocol returned %v, not equal to expected protocol = %v", protocol, tc.expectedProtocol)
@@ -1420,7 +1421,7 @@ func TestGetPorts(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			ports := GetPorts(tc.ports)
+			ports := utils.GetPorts(tc.ports)
 
 			if !reflect.DeepEqual(ports, tc.expectedPorts) {
 				t.Errorf("GetPorts returned %v, not equal to expected ports = %v", ports, tc.expectedPorts)
@@ -1506,7 +1507,7 @@ func TestGetServicePortRanges(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			ranges := GetServicePortRanges(tc.ports)
+			ranges := utils.GetServicePortRanges(tc.ports)
 
 			if !reflect.DeepEqual(ranges, tc.expectedRanges) {
 				t.Errorf("GetServicePortRanges returned %v, not equal to expected ranges = %v", ranges, tc.expectedRanges)
@@ -1550,7 +1551,7 @@ func TestAddIPToLBStatus(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			newStatus := AddIPToLBStatus(tc.status, tc.ipsToAdd...)
+			newStatus := utils.AddIPToLBStatus(tc.status, tc.ipsToAdd...)
 
 			if !reflect.DeepEqual(tc.expectedStatus, newStatus) {
 				t.Errorf("newStatus = %v, not equal to expectedStatus = %v", newStatus, tc.expectedStatus)
@@ -1612,8 +1613,8 @@ func TestIsUnsupportedFeatureError(t *testing.T) {
 				Message: tc.errorMessage,
 				Code:    tc.errorCode,
 			}
-			if IsUnsupportedFeatureError(&err, tc.featureName) != tc.expectedReturnValue {
-				t.Errorf("IsUnsupportedFeatureError returned unexpected result: %v, expectations: %v for error: %v", IsUnsupportedFeatureError(&err, tc.featureName), tc.expectedReturnValue, err)
+			if utils.IsUnsupportedFeatureError(&err, tc.featureName) != tc.expectedReturnValue {
+				t.Errorf("IsUnsupportedFeatureError returned unexpected result: %v, expectations: %v for error: %v", utils.IsUnsupportedFeatureError(&err, tc.featureName), tc.expectedReturnValue, err)
 			}
 		})
 	}
@@ -1659,7 +1660,7 @@ func TestIsGCEServerError(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.desc, func(t *testing.T) {
-			got := IsGCEServerError(tc.err)
+			got := utils.IsGCEServerError(tc.err)
 			if got != tc.want {
 				t.Errorf("Got %+v, expected %+v", got, tc.want)
 			}
@@ -1707,7 +1708,7 @@ func TestIsK8sServerError(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.desc, func(t *testing.T) {
-			got := IsK8sServerError(tc.err)
+			got := utils.IsK8sServerError(tc.err)
 			if got != tc.want {
 				t.Errorf("Got %+v, expected %+v", got, tc.want)
 			}
@@ -1748,7 +1749,7 @@ func TestGetDomainFromGABasePath(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			if got := GetDomainFromGABasePath(tc.basePath); got != tc.want {
+			if got := utils.GetDomainFromGABasePath(tc.basePath); got != tc.want {
 				t.Errorf("GetDomainFromGABasePath(%s) = %s, want %s", tc.basePath, got, tc.want)
 			}
 		})

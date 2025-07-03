@@ -25,7 +25,10 @@ import (
 func TestCreateOnlyConfigMap(t *testing.T) {
 	vault := NewFakeConfigMapVault(api.NamespaceSystem, "ingress-uid")
 	// Get value from an empty vault.
-	val, exists, err := vault.Get(UIDDataKey)
+	_, exists, err := vault.Get(UIDDataKey)
+	if err != nil {
+		t.Errorf("Failed to retrieve value from vault: %v", err)
+	}
 	if exists {
 		t.Errorf("Got value from an empty vault")
 	}
@@ -36,7 +39,7 @@ func TestCreateOnlyConfigMap(t *testing.T) {
 	if err != nil {
 		t.Errorf("expect err == nil, got %v", err)
 	}
-	val, exists, err = vault.Get(UIDDataKey)
+	val, exists, err := vault.Get(UIDDataKey)
 	if !exists || err != nil {
 		t.Errorf("Failed to retrieve value from vault: %v", err)
 	}
@@ -68,7 +71,10 @@ func TestCreateOnlyConfigMap(t *testing.T) {
 func TestFakeConfigMapValue(t *testing.T) {
 	vault := NewFakeConfigMapVault(api.NamespaceSystem, "ingress-uid")
 	// Get value from an empty vault.
-	val, exists, err := vault.Get(UIDDataKey)
+	_, exists, err := vault.Get(UIDDataKey)
+	if err != nil {
+		t.Errorf("Failed to retrieve value from vault: %v", err)
+	}
 	if exists {
 		t.Errorf("Got value from an empty vault")
 	}
@@ -76,7 +82,7 @@ func TestFakeConfigMapValue(t *testing.T) {
 	// Store empty value for UIDDataKey.
 	uid := ""
 	vault.Put(UIDDataKey, uid, false)
-	val, exists, err = vault.Get(UIDDataKey)
+	val, exists, err := vault.Get(UIDDataKey)
 	if !exists || err != nil {
 		t.Errorf("Failed to retrieve value from vault: %v", err)
 	}

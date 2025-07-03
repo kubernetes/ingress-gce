@@ -25,6 +25,7 @@ import (
 	"testing"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
 	"github.com/google/go-cmp/cmp"
@@ -37,7 +38,6 @@ import (
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
-	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -45,6 +45,7 @@ import (
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/slice"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -621,7 +622,7 @@ func TestUpgradeToNewCertNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create Target proxy %v - %v", newProxy, err)
 	}
-	proxyCerts, err := composite.ListSslCertificates(j.fakeGCE, key, defaultVersion, klog.TODO())
+	proxyCerts, err := composite.ListSslCertificates(j.fakeGCE, key, defaultVersion, klog.TODO(), filter.None)
 	if err != nil {
 		t.Fatalf("Failed to list certs for load balancer %v - %v", j, err)
 	}
@@ -930,7 +931,7 @@ func verifyCertAndProxyLink(expectCerts map[string]string, expectCertsProxy map[
 	if err != nil {
 		t.Fatal(err)
 	}
-	allCerts, err := composite.ListSslCertificates(j.fakeGCE, key, defaultVersion, klog.TODO())
+	allCerts, err := composite.ListSslCertificates(j.fakeGCE, key, defaultVersion, klog.TODO(), filter.None)
 	if err != nil {
 		t.Fatalf("Failed to list certificates for %v - %v", j, err)
 	}
@@ -1095,9 +1096,6 @@ func TestStaticIP(t *testing.T) {
 
 // Test setting frontendconfig Ssl policy
 func TestFrontendConfigSslPolicy(t *testing.T) {
-	flags.F.EnableFrontendConfig = true
-	defer func() { flags.F.EnableFrontendConfig = false }()
-
 	j := newTestJig(t)
 
 	gceUrlMap := utils.NewGCEURLMap(klog.TODO())
@@ -1108,7 +1106,7 @@ func TestFrontendConfigSslPolicy(t *testing.T) {
 		TLS:            []*translator.TLSCerts{createCert("key", "cert", "name")},
 		UrlMap:         gceUrlMap,
 		Ingress:        newIngress(),
-		FrontendConfig: &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: utils.NewStringPointer("test-policy")}},
+		FrontendConfig: &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: ptr.To("test-policy")}},
 	}
 
 	l7, err := j.pool.Ensure(lbInfo)
@@ -1133,9 +1131,6 @@ func TestFrontendConfigSslPolicy(t *testing.T) {
 }
 
 func TestFrontendConfigRedirects(t *testing.T) {
-	flags.F.EnableFrontendConfig = true
-	defer func() { flags.F.EnableFrontendConfig = false }()
-
 	j := newTestJig(t)
 	ing := newIngress()
 
@@ -1209,14 +1204,14 @@ func TestEnsureSslPolicy(t *testing.T) {
 		},
 		{
 			desc:       "frontendconfig with ssl policy",
-			fc:         &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: utils.NewStringPointer("test-policy")}},
+			fc:         &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: ptr.To("test-policy")}},
 			proxy:      &composite.TargetHttpsProxy{Name: "test-proxy-2"},
 			policyLink: "global/sslPolicies/test-policy",
 			want:       "global/sslPolicies/test-policy",
 		},
 		{
 			desc:       "proxy with different ssl policy",
-			fc:         &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: utils.NewStringPointer("test-policy")}},
+			fc:         &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: ptr.To("test-policy")}},
 			proxy:      &composite.TargetHttpsProxy{Name: "test-proxy-3", SslPolicy: "global/sslPolicies/wrong-policy"},
 			policyLink: "global/sslPolicies/test-policy",
 			want:       "global/sslPolicies/test-policy",
@@ -1230,7 +1225,7 @@ func TestEnsureSslPolicy(t *testing.T) {
 		},
 		{
 			desc:  "remove ssl policy",
-			fc:    &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: utils.NewStringPointer("")}},
+			fc:    &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: ptr.To("")}},
 			proxy: &composite.TargetHttpsProxy{Name: "test-proxy-5", SslPolicy: "global/sslPolicies/wrong-policy"},
 			want:  "",
 		},
@@ -1762,8 +1757,6 @@ func TestSecretBasedToPreSharedCertUpdateWithErrors(t *testing.T) {
 // TestResourceDeletionWithProtocol asserts that unused resources are cleaned up
 // on updating ingress configuration to disable http/https traffic.
 func TestResourceDeletionWithProtocol(t *testing.T) {
-	// TODO(smatti): Add flag saver to capture current value and reset back.
-	flags.F.EnableDeleteUnusedFrontends = true
 	j := newTestJig(t)
 
 	gceUrlMap := utils.NewGCEURLMap(klog.TODO())

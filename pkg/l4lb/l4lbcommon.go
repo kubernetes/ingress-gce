@@ -115,7 +115,7 @@ func isHealthCheckDeleted(cloud *gce.Cloud, hcName string, logger klog.Logger) b
 }
 
 func skipUserError(err error, svcLogger klog.Logger) error {
-	if utils.IsUserError(err) {
+	if loadbalancers.IsUserError(err) {
 		svcLogger.Info("Sync failed with user-caused error", "err", err)
 		return nil
 	}

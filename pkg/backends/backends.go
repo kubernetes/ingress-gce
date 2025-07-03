@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
 	api_v1 "k8s.io/api/core/v1"
@@ -302,7 +303,7 @@ func (p *Pool) List(key *meta.Key, version meta.Version, beLogger klog.Logger) (
 	var backends []*composite.BackendService
 	var err error
 
-	backends, err = composite.ListBackendServices(p.cloud, key, version, beLogger)
+	backends, err = composite.ListBackendServices(p.cloud, key, version, beLogger, filter.None)
 	if err != nil {
 		return nil, err
 	}

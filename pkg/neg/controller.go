@@ -72,13 +72,11 @@ type Controller struct {
 	zoneGetter      *zonegetter.ZoneGetter
 	networkResolver network.Resolver
 
-	hasSynced                   func() bool
-	ingressLister               cache.Indexer
-	serviceLister               cache.Indexer
-	client                      kubernetes.Interface
-	defaultBackendService       utils.ServicePort
-	enableASM                   bool
-	asmServiceNEGSkipNamespaces []string
+	hasSynced             func() bool
+	ingressLister         cache.Indexer
+	serviceLister         cache.Indexer
+	client                kubernetes.Interface
+	defaultBackendService utils.ServicePort
 
 	// serviceQueue takes service key as work item. Service key with format "namespace/name".
 	serviceQueue workqueue.RateLimitingInterface
@@ -147,15 +145,16 @@ func NewController(
 	runL4Controller bool,
 	enableNonGcpMode bool,
 	enableDualStackNEG bool,
-	enableAsm bool,
-	asmServiceNEGSkipNamespaces []string,
 	lpConfig labels.PodLabelPropagationConfig,
 	enableMultiNetworking bool,
 	enableIngressRegionalExternal bool,
 	runL4ForNetLB bool,
 	stopCh <-chan struct{},
 	logger klog.Logger,
-) *Controller {
+) (*Controller, error) {
+	if svcNegClient == nil {
+		return nil, fmt.Errorf("svcNegClient is nil")
+	}
 	// init event recorder
 	// TODO: move event recorder initializer to main. Reuse it among controllers.
 	eventBroadcaster := record.NewBroadcaster()
@@ -206,7 +205,9 @@ func NewController(
 			podInformer.GetIndexer(),
 			cloud,
 			manager,
+			zoneGetter,
 			enableDualStackNEG,
+			flags.F.EnableMultiSubnetCluster && !flags.F.EnableMultiSubnetClusterPhase1,
 			logger,
 		)
 	} else {
@@ -365,11 +366,7 @@ func NewController(
 		})
 	}
 
-	if enableAsm {
-		negController.enableASM = enableAsm
-		negController.asmServiceNEGSkipNamespaces = asmServiceNEGSkipNamespaces
-	}
-	return negController
+	return negController, nil
 }
 
 func (c *Controller) Run() {
@@ -538,19 +535,6 @@ func (c *Controller) processService(key string) error {
 	}
 	negUsage.StandaloneNeg = len(svcPortInfoMap) - negUsage.IngressNeg
 
-	if c.enableASM {
-		csmSVCPortInfoMap, err := c.getCSMPortInfoMap(namespace, name, service, networkInfo)
-		if err != nil {
-			return err
-		}
-		negUsage.AsmNeg = len(csmSVCPortInfoMap)
-
-		// merges csmSVCPortInfoMap, because eventually those NEG will sync with the service annotation.
-		if err := svcPortInfoMap.Merge(csmSVCPortInfoMap); err != nil {
-			return fmt.Errorf("failed to merge CSM service PortInfoMap: %v, error: %w", csmSVCPortInfoMap, err)
-		}
-	}
-
 	// Create L4 PortInfo if ILB subsetting is enabled or a NetLB service needs NEG backends.
 	if err := c.mergeVmIpNEGsPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap, &negUsage, networkInfo); err != nil {
 		return err
@@ -711,20 +695,30 @@ func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.Na
 
 // netLBServiceNeedsNEG determines if NEGs need to be created for L4 NetLB.
 // - service must be an L4 External Load Balancer service
-// - service must have the RBS annotation
 // - service is a multinetwork service on a non default network OR NEGs are enabled and V3 finalizer is present.
+// - service has the ExternalLoadBalancer class (these will always use NEGs).
+// - service has the V3 finalizer
+// otherwise the service does not need NEGs.
 func (c *Controller) netLBServiceNeedsNEG(service *apiv1.Service, networkInfo *network.NetworkInfo) bool {
 	wantsNetLB, _ := annotations.WantsL4NetLB(service)
 	if !wantsNetLB {
 		return false
 	}
-	if !annotations.HasRBSAnnotation(service) && !annotations.HasLoadBalancerClass(service, annotations.RegionalExternalLoadBalancerClass) {
-		return false
-	}
 	if !networkInfo.IsDefault {
 		return true
 	}
-	return c.runL4ForNetLB && utils.HasL4NetLBFinalizerV3(service)
+	// The multinet check should be above because the runL4ForNetLB decides if NEGs
+	// should be used for non multinet services.
+	if !c.runL4ForNetLB {
+		return false
+	}
+	if annotations.HasLoadBalancerClass(service, annotations.RegionalExternalLoadBalancerClass) {
+		return true
+	}
+	if utils.HasL4NetLBFinalizerV3(service) {
+		return true
+	}
+	return false
 }
 
 // mergeDefaultBackendServicePortInfoMap merge the PortInfoMap for the default backend service into portInfoMap
@@ -777,24 +771,6 @@ func (c *Controller) mergeDefaultBackendServicePortInfoMap(key string, service *
 		return nil
 	}
 	return scanIngress(utils.IsGCEIngress)
-}
-
-// getCSMPortInfoMap returns the PortInfoMap used when ASM is enabled. The controller will create NEGs for every port of the service
-// NOTE: The output of this function should only be used when enableASM = true.
-func (c *Controller) getCSMPortInfoMap(namespace, name string, service *apiv1.Service, networkInfo *network.NetworkInfo) (negtypes.PortInfoMap, error) {
-	servicePortInfoMap := make(negtypes.PortInfoMap)
-	// Fill all service ports into portinfomap
-	servicePorts := gatherPortMappingFromService(service)
-
-	// Create NEGs for every port of the services.
-	if service.Spec.Selector == nil || len(service.Spec.Selector) == 0 {
-		c.logger.Info("Skip NEG creation for services that with no selector", "service", klog.KRef(namespace, name))
-	} else if contains(c.asmServiceNEGSkipNamespaces, namespace) {
-		c.logger.Info("Skip NEG creation for services in namespace", "namespace", namespace)
-	} else {
-		servicePortInfoMap = negtypes.NewPortInfoMap(namespace, name, servicePorts, c.namer, false, nil, networkInfo)
-	}
-	return servicePortInfoMap, nil
 }
 
 // syncNegStatusAnnotation syncs the neg status annotation
@@ -999,20 +975,6 @@ func getIngressServicesFromStore(store cache.Store, svc *apiv1.Service) (ings []
 
 	}
 	return
-}
-
-// gatherPortMappingFromService returns PortMapping for all ports of the service.
-// GSM uses all ports
-func gatherPortMappingFromService(svc *apiv1.Service) negtypes.SvcPortTupleSet {
-	svcPortTupleSet := make(negtypes.SvcPortTupleSet)
-	for _, svcPort := range svc.Spec.Ports {
-		svcPortTupleSet.Insert(negtypes.SvcPortTuple{
-			Port:       svcPort.Port,
-			Name:       svcPort.Name,
-			TargetPort: svcPort.TargetPort.String(),
-		})
-	}
-	return svcPortTupleSet
 }
 
 // isSingleStackIPv6Service returns true if the given service is a single stack ipv6 service

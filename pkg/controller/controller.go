@@ -276,45 +276,43 @@ func NewLoadBalancerController(
 	})
 
 	// FrontendConfig event handlers.
-	if ctx.FrontendConfigEnabled {
-		ctx.FrontendConfigInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc: func(obj interface{}) {
-				feConfig := obj.(*frontendconfigv1beta1.FrontendConfig)
+	ctx.FrontendConfigInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			feConfig := obj.(*frontendconfigv1beta1.FrontendConfig)
+			ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesFrontendConfig(feConfig).AsList()
+			lbc.ingQueue.Enqueue(convert(ings)...)
+		},
+		UpdateFunc: func(old, cur interface{}) {
+			if !reflect.DeepEqual(old, cur) {
+				feConfig := cur.(*frontendconfigv1beta1.FrontendConfig)
+				logger.Info("FrontendConfig updated", "feConfigName", klog.KRef(feConfig.Namespace, feConfig.Name))
 				ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesFrontendConfig(feConfig).AsList()
 				lbc.ingQueue.Enqueue(convert(ings)...)
-			},
-			UpdateFunc: func(old, cur interface{}) {
-				if !reflect.DeepEqual(old, cur) {
-					feConfig := cur.(*frontendconfigv1beta1.FrontendConfig)
-					logger.Info("FrontendConfig updated", "feConfigName", klog.KRef(feConfig.Namespace, feConfig.Name))
-					ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesFrontendConfig(feConfig).AsList()
-					lbc.ingQueue.Enqueue(convert(ings)...)
-				}
-			},
-			DeleteFunc: func(obj interface{}) {
-				var feConfig *frontendconfigv1beta1.FrontendConfig
-				var ok, feOk bool
-				feConfig, ok = obj.(*frontendconfigv1beta1.FrontendConfig)
-				if !ok {
-					// This can happen if the watch is closed and misses the delete event
-					state, stateOk := obj.(cache.DeletedFinalStateUnknown)
-					if !stateOk {
-						logger.Error(nil, "Wanted cache.DeleteFinalStateUnknown of frontendconfig obj", "got", fmt.Sprintf("%+v", obj), "gotType", fmt.Sprintf("%T", obj))
-						return
-					}
-
-					feConfig, feOk = state.Obj.(*frontendconfigv1beta1.FrontendConfig)
-					if !feOk {
-						logger.Error(nil, "Wanted frontendconfig obj", "got", fmt.Sprintf("%+v", state.Obj), "gotType", fmt.Sprintf("%T", state.Obj))
-						return
-					}
+			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			var feConfig *frontendconfigv1beta1.FrontendConfig
+			var ok, feOk bool
+			feConfig, ok = obj.(*frontendconfigv1beta1.FrontendConfig)
+			if !ok {
+				// This can happen if the watch is closed and misses the delete event
+				state, stateOk := obj.(cache.DeletedFinalStateUnknown)
+				if !stateOk {
+					logger.Error(nil, "Wanted cache.DeleteFinalStateUnknown of frontendconfig obj", "got", fmt.Sprintf("%+v", obj), "gotType", fmt.Sprintf("%T", obj))
+					return
 				}
 
-				ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesFrontendConfig(feConfig).AsList()
-				lbc.ingQueue.Enqueue(convert(ings)...)
-			},
-		})
-	}
+				feConfig, feOk = state.Obj.(*frontendconfigv1beta1.FrontendConfig)
+				if !feOk {
+					logger.Error(nil, "Wanted frontendconfig obj", "got", fmt.Sprintf("%+v", state.Obj), "gotType", fmt.Sprintf("%T", state.Obj))
+					return
+				}
+			}
+
+			ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesFrontendConfig(feConfig).AsList()
+			lbc.ingQueue.Enqueue(convert(ings)...)
+		},
+	})
 
 	if enableMultiSubnetClusterPhase1 {
 		// SvcNeg event handlers.
@@ -418,15 +416,29 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}, ingLogger klo
 		return err
 	}
 
-	// Get the zones our groups live in.
+	// Get the zones in the default subnet our groups live in.
+	// These zones will be used for instance group based backends
+	// since multi-subnet feature do not support instance groups.
+	defaultSubnetZones, err := lbc.ZoneGetter.ListZonesInDefaultSubnet(zonegetter.CandidateNodesFilter, lbc.logger)
+	if err != nil {
+		ingLogger.Error(err, "lbc.ZoneGetter.List(zonegetter.CandidateNodesFilter)")
+		return err
+	}
+	var igGroupKeys []backends.GroupKey
+	for _, zone := range defaultSubnetZones {
+		igGroupKeys = append(igGroupKeys, backends.GroupKey{Zone: zone})
+	}
+
+	// Get all the zones our groups live in.
+	// These zones will be used for NEG based backends.
 	zones, err := lbc.ZoneGetter.ListZones(zonegetter.CandidateNodesFilter, lbc.logger)
 	if err != nil {
 		ingLogger.Error(err, "lbc.ZoneGetter.List(zonegetter.CandidateNodesFilter)")
 		return err
 	}
-	var groupKeys []backends.GroupKey
+	var negGroupKeys []backends.GroupKey
 	for _, zone := range zones {
-		groupKeys = append(groupKeys, backends.GroupKey{Zone: zone})
+		negGroupKeys = append(negGroupKeys, backends.GroupKey{Zone: zone})
 	}
 
 	// Link backends to groups.
@@ -434,10 +446,10 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}, ingLogger klo
 		var linkErr error
 		if sp.NEGEnabled {
 			// Link backend to NEG's if the backend has NEG enabled.
-			linkErr = lbc.negLinker.Link(sp, groupKeys)
+			linkErr = lbc.negLinker.Link(sp, igGroupKeys)
 		} else {
 			// Otherwise, link backend to IG's.
-			linkErr = lbc.igLinker.Link(sp, groupKeys)
+			linkErr = lbc.igLinker.Link(sp, negGroupKeys)
 		}
 		if linkErr != nil {
 			return linkErr
@@ -456,7 +468,7 @@ func (lbc *LoadBalancerController) syncInstanceGroup(ing *v1.Ingress, ingSvcPort
 		return err
 	}
 
-	nodes, err := lbc.ZoneGetter.ListNodes(zonegetter.CandidateNodesFilter, lbc.logger)
+	nodes, err := lbc.ZoneGetter.ListNodesInDefaultSubnet(zonegetter.CandidateNodesFilter, lbc.logger)
 	if err != nil {
 		return err
 	}
@@ -724,11 +736,9 @@ func (lbc *LoadBalancerController) sync(key string) error {
 	} else {
 		// Insert/update the ingress state for metrics after successful sync.
 		var fc *frontendconfigv1beta1.FrontendConfig
-		if flags.F.EnableFrontendConfig {
-			fc, err = frontendconfig.FrontendConfigForIngress(lbc.ctx.FrontendConfigs().List(), ing)
-			if err != nil {
-				return err
-			}
+		fc, err = frontendconfig.FrontendConfigForIngress(lbc.ctx.FrontendConfigs().List(), ing)
+		if err != nil {
+			return err
 		}
 		lbc.metrics.SetIngress(key, metrics.NewIngressState(ing, fc, urlMap.AllServicePorts()))
 	}
@@ -811,15 +821,13 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ing *v1.Ingress, urlMap *utils.
 	}
 
 	var feConfig *frontendconfigv1beta1.FrontendConfig
-	if lbc.ctx.FrontendConfigEnabled {
-		feConfig, err = frontendconfig.FrontendConfigForIngress(lbc.ctx.FrontendConfigs().List(), ing)
-		if err != nil {
-			lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, events.SyncIngress, "Error: %v", err)
-		}
-		// Object in cache could be changed in-flight. Deepcopy to
-		// reduce race conditions.
-		feConfig = feConfig.DeepCopy()
+	feConfig, err = frontendconfig.FrontendConfigForIngress(lbc.ctx.FrontendConfigs().List(), ing)
+	if err != nil {
+		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, events.SyncIngress, "Error: %v", err)
 	}
+	// Object in cache could be changed in-flight. Deepcopy to
+	// reduce race conditions.
+	feConfig = feConfig.DeepCopy()
 
 	staticIPName, err := annotations.StaticIPName()
 	if err != nil {
