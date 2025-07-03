@@ -884,3 +884,33 @@ func GetDomainFromGABasePath(basePath string) string {
 	domain = strings.TrimSuffix(domain, "/compute/v1")
 	return domain
 }
+
+// FilterAPIVersionFromResourcePath removes the /v1 /beta /alpha from the resource path
+func FilterAPIVersionFromResourcePath(url string) string {
+	computeIndex := strings.Index(url, "/compute/")
+	if computeIndex == -1 {
+		return url
+	}
+
+	pathStartIndex := computeIndex + len("/compute/")
+
+	// if the URL ends with "/compute/" there is no version to remove
+	if pathStartIndex >= len(url) {
+		return url
+	}
+
+	baseUrlPart := url[:pathStartIndex]
+	pathAfterCompute := url[pathStartIndex:]
+
+	firstSlashIndex := strings.Index(pathAfterCompute, "/")
+	if firstSlashIndex == -1 {
+		// This case would mean the url is something like ".../compute/v1", without a resource path.
+		// in this case with return the first part of the url ".../compute/"
+		return baseUrlPart
+	}
+
+	// reconstruct the URL removing the version segment
+	resourcePathPart := pathAfterCompute[firstSlashIndex+1:]
+
+	return baseUrlPart + resourcePathPart
+}
