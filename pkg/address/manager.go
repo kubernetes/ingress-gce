@@ -58,6 +58,7 @@ type Manager struct {
 	svc         gce.CloudAddressService
 	name        string
 	serviceName string
+	addressName string
 	targetIP    string
 	addressType cloud.LbScheme
 	region      string
@@ -69,7 +70,7 @@ type Manager struct {
 	frLogger klog.Logger
 }
 
-func NewManager(svc gce.CloudAddressService, serviceName, region, subnetURL, name, targetIP string, addressType cloud.LbScheme, networkTier cloud.NetworkTier, ipVersion IPVersion, frLogger klog.Logger) *Manager {
+func NewManager(svc gce.CloudAddressService, serviceName, region, subnetURL, name, addressName, targetIP string, addressType cloud.LbScheme, networkTier cloud.NetworkTier, ipVersion IPVersion, frLogger klog.Logger) *Manager {
 	if targetIP != "" {
 		// Store address in normalized format.
 		// This is required for IPv6 addresses, to be able to filter by exact address,
@@ -82,6 +83,7 @@ func NewManager(svc gce.CloudAddressService, serviceName, region, subnetURL, nam
 		region:      region,
 		serviceName: serviceName,
 		name:        name,
+		addressName: addressName,
 		targetIP:    targetIP,
 		addressType: addressType,
 		tryRelease:  true,
@@ -103,12 +105,17 @@ func (m *Manager) HoldAddress() (string, IPAddressType, error) {
 	// case of using a controller address, retrieving the address by name results in the fewest API
 	// calls since it indicates whether a Delete is necessary before Reserve.
 	m.frLogger.V(4).Info("Attempting hold of IP", "ip", m.targetIP, "addressType", m.addressType)
-	// Get the address in case it was orphaned earlier
+
+	if m.addressName != "" {
+		// IP is reserved by user with custom name, controller should not manage it
+		m.tryRelease = false
+	}
+
+	// Get the address in case it was orphaned earlier (with default forwarding rule based name)
 	addr, err := m.svc.GetRegionAddress(m.name, m.region)
 	if err != nil && !utils.IsNotFoundError(err) {
 		return "", IPAddrUndefined, err
 	}
-
 	if addr != nil {
 		// If address exists, check if the address had the expected attributes.
 		validationError := m.validateAddress(addr)
@@ -128,6 +135,10 @@ func (m *Manager) HoldAddress() (string, IPAddressType, error) {
 		} else {
 			m.frLogger.V(4).Info("Successfully deleted previous address", "addressName", addr.Name)
 		}
+	}
+
+	if m.addressName != "" {
+		return m.targetIP, IPAddrUnmanaged, nil
 	}
 
 	return m.ensureAddressReservation()

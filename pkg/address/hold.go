@@ -48,7 +48,7 @@ func HoldExternalIPv4(cfg HoldConfig) (HoldResult, error) {
 	// Determine IP which will be used for this LB. If no forwarding rule has been established
 	// or specified in the Service spec, then requestedIP = "".
 	rule := pickForwardingRuleToInferIP(cfg.ExistingRules)
-	res.IP, err = IPv4ToUse(cfg.Cloud, cfg.Recorder, cfg.Service, rule, subnet)
+	res.IP, _, err = IPv4ToUse(cfg.Cloud, cfg.Recorder, cfg.Service, rule, subnet)
 	if err != nil {
 		log.Error(err, "IPv4ToUse for service returned error")
 		return res, err
@@ -67,7 +67,7 @@ func HoldExternalIPv4(cfg HoldConfig) (HoldResult, error) {
 
 	addrMgr := NewManager(
 		cfg.Cloud, nm, cfg.Cloud.Region(),
-		subnet, name, res.IP,
+		subnet, name, "", res.IP,
 		cloud.SchemeExternal, netTier, IPv4Version, cfg.Logger,
 	)
 
