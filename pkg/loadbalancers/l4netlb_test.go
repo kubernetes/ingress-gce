@@ -865,9 +865,10 @@ func TestDualStackNetLBStaticIPAnnotation(t *testing.T) {
 		Address: "111.111.111.111",
 	}
 	ipv6Address := &ga.Address{
-		Name:      "ipv6-address",
-		Address:   "2::2/80",
-		IpVersion: "IPV6",
+		Name:         "ipv6-address",
+		Address:      "2::2",
+		IpVersion:    "IPV6",
+		PrefixLength: 96,
 	}
 
 	testCases := []struct {

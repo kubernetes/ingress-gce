@@ -65,7 +65,7 @@ func TestHoldExternalIPv4(t *testing.T) {
 			},
 			want: address.HoldResult{
 				IP:      reservedIPv4,
-				Managed: address.IPAddrManaged,
+				Managed: address.IPAddrUnmanaged,
 			},
 		},
 		{
@@ -266,6 +266,7 @@ func arrange(t *testing.T, existingRules []*composite.ForwardingRule, service *a
 		Region:      vals.Region,
 		Address:     reservedIPv4,
 		AddressType: "EXTERNAL",
+		NetworkTier: "PREMIUM",
 	}
 	if err := fakeGCE.ReserveRegionAddress(addr, vals.Region); err != nil {
 		t.Fatal(err)
