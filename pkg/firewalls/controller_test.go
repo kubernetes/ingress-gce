@@ -61,7 +61,10 @@ func newFirewallController() (*FirewallController, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize controller context: %v", err)
 	}
-	fwc := NewFirewallController(ctx, []string{"30000-32767"}, false, false, true, make(chan struct{}), klog.TODO())
+	fwc, err := NewFirewallController(ctx, []string{"30000-32767"}, false, false, true, make(chan struct{}), klog.TODO())
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize firewall controller: %v", err)
+	}
 	fwc.hasSynced = func() bool { return true }
 
 	return fwc, nil
@@ -221,7 +224,10 @@ func TestLBSourceRanges(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 
-			got := lbSourceRanges(klog.TODO(), tc.overrideRanges)
+			got, err := lbSourceRanges(klog.TODO(), tc.overrideRanges)
+			if err != nil {
+				t.Fatalf("lbSourceRanges(%q) returned error: %v", tc.overrideRanges, err)
+			}
 			sort.Strings(got)
 			sort.Strings(tc.want)
 			if diff := cmp.Diff(tc.want, got); diff != "" {
