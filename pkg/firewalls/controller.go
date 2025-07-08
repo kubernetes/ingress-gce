@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
-	"strings"
 	"time"
 
 	gcpfirewallv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/gcpfirewall/v1"
@@ -39,6 +38,7 @@ import (
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
+	"k8s.io/ingress-gce/pkg/validation"
 	"k8s.io/klog/v2"
 )
 
@@ -100,10 +100,13 @@ func NewFirewallController(
 	enableCR, disableFWEnforcement, enableRegionalXLB bool,
 	stopCh <-chan struct{},
 	logger klog.Logger,
-) *FirewallController {
+) (*FirewallController, error) {
 	logger = logger.WithName("FirewallController")
 	compositeFirewallPool := &compositeFirewallPool{}
-	sourceRanges := lbSourceRanges(logger, flags.F.OverrideHealthCheckSourceCIDRs)
+	sourceRanges, err := lbSourceRanges(logger, flags.F.OverrideHealthCheckSourceCIDRs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get source ranges: %w", err)
+	}
 	logger.Info("Using source ranges", "ranges", sourceRanges)
 	if enableCR {
 		firewallCRPool := NewFirewallCRPool(ctx.FirewallClient, ctx.Cloud, ctx.ClusterNamer, sourceRanges, portRanges, disableFWEnforcement, logger)
@@ -195,22 +198,20 @@ func NewFirewallController(
 		})
 	}
 
-	return fwc
+	return fwc, nil
 }
 
-func lbSourceRanges(logger klog.Logger, overrideRanges string) []string {
+func lbSourceRanges(logger klog.Logger, overrideRanges string) ([]string, error) {
 	if overrideRanges != "" {
 		logger.Info("Overriding load balancer source ranges", "ranges", overrideRanges)
-		var sourceRanges []string
-
-		ranges := strings.Split(overrideRanges, ",")
-		for _, sourceRange := range ranges {
-			sourceRanges = append(sourceRanges, strings.TrimSpace(sourceRange))
+		sourceRanges, err := validation.ParseHealthCheckSourceCIDRs(overrideRanges)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse override ranges: %w", err)
 		}
-		return sourceRanges
+		return sourceRanges, nil
 	}
 
-	return gce.L7LoadBalancerSrcRanges()
+	return gce.L7LoadBalancerSrcRanges(), nil
 }
 
 // ToSvcPorts is a helper method over translator.TranslateIngress to process a list of ingresses.
