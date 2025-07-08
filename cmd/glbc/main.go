@@ -36,7 +36,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	informers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
-	clientset "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
@@ -435,7 +434,7 @@ type runOption struct {
 type leaderElectionOption struct {
 	// client is the Kubernetes client used for creating and removing resource locks,
 	// facilitating ownership of the resource for leader election.
-	client clientset.Interface
+	client kubernetes.Interface
 	// recorder is used to record events (e.g., leader election transitions)
 	// in the Kubernetes cluster.
 	recorder record.EventRecorder
@@ -528,7 +527,10 @@ func runControllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.Sy
 		if !flags.F.EnableFirewallCR && flags.F.DisableFWEnforcement {
 			klog.Fatalf("We can only disable the ingress controller FW enforcement when enabling the FW CR")
 		}
-		fwc := firewalls.NewFirewallController(ctx, flags.F.NodePortRanges.Values(), flags.F.EnableFirewallCR, flags.F.DisableFWEnforcement, ctx.EnableIngressRegionalExternal, option.stopCh, logger)
+		fwc, err := firewalls.NewFirewallController(ctx, flags.F.NodePortRanges.Values(), flags.F.EnableFirewallCR, flags.F.DisableFWEnforcement, ctx.EnableIngressRegionalExternal, option.stopCh, logger)
+		if err != nil {
+			klog.Fatalf("failed to create firewall controller: %v", err)
+		}
 		runWithWg(fwc.Run, option.wg)
 		logger.V(0).Info("firewall controller started")
 	}
