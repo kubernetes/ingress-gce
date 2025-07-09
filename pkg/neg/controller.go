@@ -113,6 +113,9 @@ type Controller struct {
 	// runL4ForNetLB indicates if the controller can create NEGs for L4 NetLB services.
 	runL4ForNetLB bool
 
+	// readOnlyMode indicates wheter or not the controller will run in read only mode
+	readOnlyMode bool
+
 	stopCh <-chan struct{}
 	logger klog.Logger
 }
@@ -149,6 +152,7 @@ func NewController(
 	enableMultiNetworking bool,
 	enableIngressRegionalExternal bool,
 	runL4ForNetLB bool,
+	readOnlyMode bool,
 	stopCh <-chan struct{},
 	logger klog.Logger,
 ) (*Controller, error) {
@@ -248,6 +252,7 @@ func NewController(
 		enableIngressRegionalExternal:  enableIngressRegionalExternal,
 		enableMultiSubnetClusterPhase1: enableMultiSubnetClusterPhase1,
 		runL4ForNetLB:                  runL4ForNetLB,
+		readOnlyMode:                   readOnlyMode,
 		stopCh:                         stopCh,
 		logger:                         logger,
 	}
@@ -456,6 +461,11 @@ func (c *Controller) processNode() {
 		now := c.nodeSyncTracker.Track()
 		metrics.LastSyncTimestamp.Set(float64(now.UTC().UnixNano()))
 	}()
+
+	if c.readOnlyMode {
+		c.logger.V(3).Info("Skipping syncing nodes since NEG controller is in read-only mode")
+	}
+
 	c.manager.SyncNodes()
 }
 
@@ -466,12 +476,22 @@ func (c *Controller) processEndpoint(key string) {
 		metrics.LastSyncTimestamp.Set(float64(now.UTC().UnixNano()))
 	}()
 
+	if c.readOnlyMode {
+		c.logger.V(3).Info("Skipping syncing endpoint since NEG controller is in read-only mode", "key", key)
+	}
+
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		c.logger.Error(err, "Failed to split endpoint namespaced key", "key", key)
 		metrics.PublishNegControllerErrorCountMetrics(err, true)
 		return
 	}
+
+	if c.readOnlyMode {
+		c.logger.V(3).Info("Skipping syncing endpoint since NEG controller is in read-only mode", "key", key)
+		return
+	}
+
 	c.manager.Sync(namespace, name)
 }
 
@@ -499,6 +519,11 @@ func (c *Controller) processService(key string) error {
 		c.logger.V(3).Info("Finished processing service", "service", key)
 	}()
 
+	if c.readOnlyMode {
+		c.logger.V(3).Info("Skipping syncing service since NEG controller is in read-only mode", "service", key)
+		return nil
+	}
+
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		return err
@@ -507,6 +532,13 @@ func (c *Controller) processService(key string) error {
 	if err != nil {
 		return err
 	}
+
+	if c.readOnlyMode {
+		c.manager.StopSyncer(namespace, name)
+		c.logger.V(3).Info("Skipping syncing service since NEG controller is in read-only mode", "service", key)
+		return nil
+	}
+
 	if !exists {
 		c.syncerMetrics.DeleteNegService(key)
 		c.manager.StopSyncer(namespace, name)
@@ -539,6 +571,7 @@ func (c *Controller) processService(key string) error {
 	if err := c.mergeVmIpNEGsPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap, &negUsage, networkInfo); err != nil {
 		return err
 	}
+
 	if len(svcPortInfoMap) != 0 {
 		c.logger.V(2).Info("Syncing service", "service", key)
 		if !flags.F.EnableIPV6OnlyNEG {

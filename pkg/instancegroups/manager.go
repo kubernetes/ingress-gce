@@ -50,6 +50,7 @@ type manager struct {
 	recorder           record.EventRecorder
 	instanceLinkFormat string
 	maxIGSize          int
+	readOnlyMode       bool
 }
 
 type recorderSource interface {
@@ -59,12 +60,13 @@ type recorderSource interface {
 // ManagerConfig is used for Manager constructor.
 type ManagerConfig struct {
 	// Cloud implements Provider, used to sync Kubernetes nodes with members of the cloud InstanceGroup.
-	Cloud      Provider
-	Namer      namer.BackendNamer
-	Recorders  recorderSource
-	BasePath   string
-	ZoneGetter *zonegetter.ZoneGetter
-	MaxIGSize  int
+	Cloud        Provider
+	Namer        namer.BackendNamer
+	Recorders    recorderSource
+	BasePath     string
+	ZoneGetter   *zonegetter.ZoneGetter
+	MaxIGSize    int
+	ReadOnlyMode bool
 }
 
 // NewManager creates a new node pool using ManagerConfig.
@@ -76,6 +78,7 @@ func NewManager(config *ManagerConfig) Manager {
 		instanceLinkFormat: config.BasePath + "zones/%s/instances/%s",
 		ZoneGetter:         config.ZoneGetter,
 		maxIGSize:          config.MaxIGSize,
+		readOnlyMode:       config.ReadOnlyMode,
 	}
 }
 
@@ -88,6 +91,12 @@ func (m *manager) EnsureInstanceGroupsAndPorts(name string, ports []int64, logge
 	zones, err := m.ZoneGetter.ListZonesInDefaultSubnet(zonegetter.AllNodesFilter, iglogger)
 	if err != nil {
 		return nil, err
+	}
+
+	if m.readOnlyMode {
+		iglogger.Info("Skipping ensuring instance groups and ports since ig manager is in read-only mode")
+		var emptyIgs []*compute.InstanceGroup
+		return emptyIgs, nil
 	}
 
 	for _, zone := range zones {
@@ -325,6 +334,11 @@ func (m *manager) Sync(nodes []string, logger klog.Logger) (err error) {
 	emptyZoneNodesNames := sets.NewString(zonedNodes[zonegetter.EmptyZone]...)
 	if len(emptyZoneNodesNames) > 0 {
 		iglogger.Info(fmt.Sprintf("%d nodes have empty zone: %v. They will not be removed from instance group as long as zone is missing", len(emptyZoneNodesNames), emptyZoneNodesNames))
+	}
+
+	if m.readOnlyMode {
+		iglogger.Info("Skipping syncing nodes since controller is in read-only mode")
+		return nil
 	}
 
 	for zone, kubeNodesFromZone := range zonedNodes {
