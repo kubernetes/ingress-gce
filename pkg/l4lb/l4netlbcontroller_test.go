@@ -308,7 +308,7 @@ func getFakeGCECloud(vals gce.TestClusterValues) *gce.Cloud {
 	return fakeGCE
 }
 
-func buildContext(vals gce.TestClusterValues) (*ingctx.ControllerContext, error) {
+func buildContext(vals gce.TestClusterValues, readOnlyMode bool) (*ingctx.ControllerContext, error) {
 	fakeGCE := getFakeGCECloud(vals)
 	kubeClient := fake.NewSimpleClientset()
 	networkClient := netfake.NewSimpleClientset()
@@ -321,17 +321,18 @@ func buildContext(vals gce.TestClusterValues) (*ingctx.ControllerContext, error)
 		ResyncPeriod:      1 * time.Minute,
 		NumL4NetLBWorkers: 5,
 		MaxIGSize:         1000,
+		ReadOnlyMode:      readOnlyMode,
 	}
 	return ingctx.NewControllerContext(kubeClient, nil, nil, nil, svcNegClient, nil, networkClient, nil, kubeClient /*kube client to be used for events*/, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
 }
 
 func newL4NetLBServiceController() *L4NetLBController {
-	return createL4NetLBServiceController(test.DefaultTestClusterValues())
+	return createL4NetLBServiceController(test.DefaultTestClusterValues(), false)
 }
 
-func createL4NetLBServiceController(vals gce.TestClusterValues) *L4NetLBController {
+func createL4NetLBServiceController(vals gce.TestClusterValues, readOnlyMode bool) *L4NetLBController {
 	stopCh := make(chan struct{})
-	ctx, err := buildContext(vals)
+	ctx, err := buildContext(vals, readOnlyMode)
 	if err != nil {
 		klog.Fatalf("Failed to build context: %v", err)
 	}
@@ -1351,6 +1352,19 @@ func TestServiceStatusForErrorSync(t *testing.T) {
 	}
 }
 
+func TestSyncResultReadOnlyMode(t *testing.T) {
+	lc := createL4NetLBServiceController(test.DefaultTestClusterValues(), true)
+
+	svc := test.NewL4NetLBRBSService(8080)
+	addNetLBService(lc, svc)
+
+	syncResult := lc.syncInternal(svc, klog.TODO())
+
+	if syncResult != nil {
+		t.Fatalf("Should have skipped the service sync since read only mode is active")
+	}
+}
+
 func TestServiceStatusForSuccessSync(t *testing.T) {
 	lc := newL4NetLBServiceController()
 
@@ -1919,7 +1933,7 @@ func TestDualStackServiceNeedsUpdate(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 
-			controller := createL4NetLBServiceController(test.DefaultTestClusterValues())
+			controller := newL4NetLBServiceController()
 			controller.enableDualStack = true
 			oldSvc := test.NewL4NetLBRBSService(8080)
 			oldSvc.Spec.IPFamilies = tc.initialIPFamilies
@@ -2118,7 +2132,7 @@ func TestCreateDeleteDualStackNetLBService(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			controller := createL4NetLBServiceController(test.DefaultTestClusterValues())
+			controller := newL4NetLBServiceController()
 			controller.enableDualStack = true
 			svc := test.NewL4NetLBRBSService(8080)
 			svc.Spec.IPFamilies = tc.ipFamilies
@@ -2165,7 +2179,7 @@ func TestCreateDeleteDualStackNetLBService(t *testing.T) {
 func TestProcessDualStackNetLBServiceOnUserError(t *testing.T) {
 	t.Parallel()
 
-	controller := createL4NetLBServiceController(test.DefaultTestClusterValues())
+	controller := newL4NetLBServiceController()
 	controller.enableDualStack = true
 	svc := test.NewL4NetLBRBSService(8080)
 	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
@@ -2254,33 +2268,50 @@ func TestEnsureExternalLoadBalancerClass(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
-		desc              string
-		loadBalancerClass string
-		shouldProcess     bool
+		desc                string
+		loadBalancerClass   string
+		readOnlyModeEnabled bool
+		shouldProcess       bool
 	}{
 		{
-			desc:              "Custom loadBalancerClass should not process",
-			loadBalancerClass: "customLBClass",
-			shouldProcess:     false,
+			desc:                "Custom loadBalancerClass should not process",
+			loadBalancerClass:   "customLBClass",
+			readOnlyModeEnabled: false,
+			shouldProcess:       false,
 		},
 		{
-			desc:              "Use ILB loadBalancerClass",
-			loadBalancerClass: annotations.RegionalInternalLoadBalancerClass,
-			shouldProcess:     false,
+			desc:                "Use ILB loadBalancerClass",
+			loadBalancerClass:   annotations.RegionalInternalLoadBalancerClass,
+			readOnlyModeEnabled: false,
+			shouldProcess:       false,
 		},
 		{
-			desc:              "Use NetLB loadBalancerClass",
-			loadBalancerClass: annotations.RegionalExternalLoadBalancerClass,
-			shouldProcess:     true,
+			desc:                "Use NetLB loadBalancerClass",
+			loadBalancerClass:   annotations.RegionalExternalLoadBalancerClass,
+			readOnlyModeEnabled: false,
+			shouldProcess:       true,
 		},
 		{
-			desc:              "Unset loadBalancerClass",
-			loadBalancerClass: "",
-			shouldProcess:     true,
+			desc:                "Unset loadBalancerClass",
+			readOnlyModeEnabled: false,
+			loadBalancerClass:   "",
+			shouldProcess:       true,
+		},
+		{
+			desc:                "[ReadOnly] Use NetLB loadBalancerClass",
+			loadBalancerClass:   annotations.RegionalExternalLoadBalancerClass,
+			readOnlyModeEnabled: true,
+			shouldProcess:       false,
+		},
+		{
+			desc:                "[ReadOnly] Unset loadBalancerClass",
+			loadBalancerClass:   "",
+			readOnlyModeEnabled: true,
+			shouldProcess:       false,
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			lc := newL4NetLBServiceController()
+			lc := createL4NetLBServiceController(test.DefaultTestClusterValues(), tc.readOnlyModeEnabled)
 
 			svc := test.NewL4LBServiceWithLoadBalancerClass(tc.loadBalancerClass)
 			if tc.loadBalancerClass == "" {

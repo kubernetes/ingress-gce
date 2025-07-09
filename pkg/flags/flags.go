@@ -92,6 +92,7 @@ var F = struct {
 	NegMetricsExportInterval  time.Duration
 	KubeClientQPS             float32
 	KubeClientBurst           int
+	ReadOnlyMode              bool
 
 	// Feature flags should be named Enablexxx.
 	EnableNonGCPMode                          bool
@@ -351,6 +352,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableIPV6OnlyNEG, "enable-ipv6-only-neg", false, "Enable support for IPV6 Only NEG's.")
 	flag.StringVar(&F.MultiProjectOwnerLabelKey, "multi-project-owner-label-key", "multiproject.gke.io/owner", "The label key for multi-project owner, which is used to identify the owner of objects in multi-project mode.")
 	flag.StringVar(&F.OverrideHealthCheckSourceCIDRs, "override-health-check-src-cidrs", "", "Overrides the default source IP ranges used when configuring firewall rules to allow health check probes for L7 load balancers. Provide the ranges as a comma-separated list of CIDRs.")
+	flag.BoolVar(&F.ReadOnlyMode, "read-only", false, "When enabled, the controller runs in a read-only mode, preventing it from executing any mutating API calls (create, update, delete). This is useful for safely observing controller behavior without modifying resources.")
 }
 
 func Validate() {

@@ -113,6 +113,9 @@ type Controller struct {
 	// runL4ForNetLB indicates if the controller can create NEGs for L4 NetLB services.
 	runL4ForNetLB bool
 
+	// readOnlyMode indicates wheter or not the controller will run in read only mode
+	readOnlyMode bool
+
 	stopCh <-chan struct{}
 	logger klog.Logger
 }
@@ -149,6 +152,7 @@ func NewController(
 	enableMultiNetworking bool,
 	enableIngressRegionalExternal bool,
 	runL4ForNetLB bool,
+	readOnlyMode bool,
 	stopCh <-chan struct{},
 	logger klog.Logger,
 ) (*Controller, error) {
@@ -248,6 +252,7 @@ func NewController(
 		enableIngressRegionalExternal:  enableIngressRegionalExternal,
 		enableMultiSubnetClusterPhase1: enableMultiSubnetClusterPhase1,
 		runL4ForNetLB:                  runL4ForNetLB,
+		readOnlyMode:                   readOnlyMode,
 		stopCh:                         stopCh,
 		logger:                         logger,
 	}
@@ -456,6 +461,11 @@ func (c *Controller) processNode() {
 		now := c.nodeSyncTracker.Track()
 		metrics.LastSyncTimestamp.Set(float64(now.UTC().UnixNano()))
 	}()
+
+	if c.readOnlyMode {
+		c.logger.V(3).Info("Skipping syncing nodes since NEG controller is in read-only mode")
+	}
+
 	c.manager.SyncNodes()
 }
 
@@ -465,6 +475,10 @@ func (c *Controller) processEndpoint(key string) {
 		now := c.syncTracker.Track()
 		metrics.LastSyncTimestamp.Set(float64(now.UTC().UnixNano()))
 	}()
+
+	if c.readOnlyMode {
+		c.logger.V(3).Info("Skipping syncing endpoint since NEG controller is in read-only mode", "key", key)
+	}
 
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
@@ -498,6 +512,11 @@ func (c *Controller) processService(key string) error {
 		metrics.LastSyncTimestamp.Set(float64(now.UTC().UnixNano()))
 		c.logger.V(3).Info("Finished processing service", "service", key)
 	}()
+
+	if c.readOnlyMode {
+		c.logger.V(3).Info("Skipping syncing service since NEG controller is in read-only mode", "service", key)
+		return nil
+	}
 
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
@@ -539,6 +558,7 @@ func (c *Controller) processService(key string) error {
 	if err := c.mergeVmIpNEGsPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap, &negUsage, networkInfo); err != nil {
 		return err
 	}
+
 	if len(svcPortInfoMap) != 0 {
 		c.logger.V(2).Info("Syncing service", "service", key)
 		if !flags.F.EnableIPV6OnlyNEG {
