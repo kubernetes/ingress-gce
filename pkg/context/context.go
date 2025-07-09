@@ -115,6 +115,7 @@ type ControllerContextConfig struct {
 	ResyncPeriod      time.Duration
 	NumL4Workers      int
 	NumL4NetLBWorkers int
+	ReadOnlyMode      bool
 	// DefaultBackendSvcPortID is the ServicePort for the system default backend.
 	DefaultBackendSvcPort                     utils.ServicePort
 	HealthCheckPath                           string
@@ -252,12 +253,13 @@ func NewControllerContext(
 	}
 
 	context.InstancePool = instancegroups.NewManager(&instancegroups.ManagerConfig{
-		Cloud:      context.Cloud,
-		Namer:      context.ClusterNamer,
-		Recorders:  context,
-		BasePath:   utils.GetBasePath(context.Cloud),
-		ZoneGetter: context.ZoneGetter,
-		MaxIGSize:  config.MaxIGSize,
+		Cloud:        context.Cloud,
+		Namer:        context.ClusterNamer,
+		Recorders:    context,
+		BasePath:     utils.GetBasePath(context.Cloud),
+		ZoneGetter:   context.ZoneGetter,
+		MaxIGSize:    config.MaxIGSize,
+		ReadOnlyMode: config.ReadOnlyMode,
 	})
 
 	return context, nil

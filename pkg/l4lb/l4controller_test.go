@@ -80,80 +80,125 @@ var (
 // This test adds a new service, then performs a valid update and then modifies the service type to External and ensures
 // that the status field is as expected in each case.
 func TestProcessCreateOrUpdate(t *testing.T) {
-	l4c := newServiceController(t, newFakeGCE())
-	prevMetrics, err := test.GetL4ILBLatencyMetric()
-	if err != nil {
-		t.Errorf("Error getting L4 ILB latency metrics err: %v", err)
-	}
-	newSvc := test.NewL4ILBService(false, 8080)
-	addILBService(l4c, newSvc)
-	addNEGAndSvcNegL4Controller(l4c, newSvc)
 
-	err = l4c.sync(getKeyForSvc(newSvc, t), klog.TODO())
-	if err != nil {
-		t.Errorf("Failed to sync newly added service %s, err %v", newSvc.Name, err)
-	}
-	// List the service and ensure that it contains the finalizer as well as Status field.
-	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
-	if err != nil {
-		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
-	}
-	verifyILBServiceProvisioned(t, newSvc)
-	currMetrics, metricErr := test.GetL4ILBLatencyMetric()
-	if metricErr != nil {
-		t.Errorf("Error getting L4 ILB latency metrics err: %v", metricErr)
-	}
-	prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{CreateCount: 1, UpperBoundSeconds: 1}, t)
-
-	// set the TrafficPolicy of the service to Local
-	newSvc.Spec.ExternalTrafficPolicy = api_v1.ServiceExternalTrafficPolicyTypeLocal
-	updateILBService(l4c, newSvc)
-	err = l4c.sync(getKeyForSvc(newSvc, t), klog.TODO())
-	if err != nil {
-		t.Errorf("Failed to sync updated service %s, err %v", newSvc.Name, err)
-	}
-	// List the service and ensure that it contains the finalizer as well as Status field.
-	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
-	if err != nil {
-		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
-	}
-	verifyILBServiceProvisioned(t, newSvc)
-	currMetrics, metricErr = test.GetL4ILBLatencyMetric()
-	if metricErr != nil {
-		t.Errorf("Error getting L4 ILB latency metrics err: %v", metricErr)
-	}
-	prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{CreateCount: 1, UpdateCount: 1, UpperBoundSeconds: 1}, t)
-	// Remove the Internal LoadBalancer annotation, this should trigger a cleanup.
-	delete(newSvc.Annotations, gce.ServiceAnnotationLoadBalancerType)
-	updateILBService(l4c, newSvc)
-	err = l4c.sync(getKeyForSvc(newSvc, t), klog.TODO())
-	if err != nil {
-		t.Errorf("Failed to sync updated service %s, err %v", newSvc.Name, err)
+	testCases := []struct {
+		desc                string
+		readOnlyModeEnabled bool
+	}{
+		{
+			desc:                "Create Update and Delete ILB",
+			readOnlyModeEnabled: false,
+		},
+		{
+			desc:                "[ReadOnly] Create Update and Delete ILB",
+			readOnlyModeEnabled: true,
+		},
 	}
 
-	// List the service and ensure that it doesn't contain the finalizer as well as Status field.
-	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
-	if err != nil {
-		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			l4c := newServiceController(t, newFakeGCE(), tc.readOnlyModeEnabled)
+			prevMetrics, err := test.GetL4ILBLatencyMetric()
+			if err != nil {
+				t.Errorf("Error getting L4 ILB latency metrics err: %v", err)
+			}
+			newSvc := test.NewL4ILBService(false, 8080)
+			addILBService(l4c, newSvc)
+			addNEGAndSvcNegL4Controller(l4c, newSvc)
+
+			err = l4c.sync(getKeyForSvc(newSvc, t), klog.TODO())
+			if err != nil {
+				t.Errorf("Failed to sync newly added service %s, err %v", newSvc.Name, err)
+			}
+			// List the service and ensure that it contains the finalizer as well as Status field.
+			newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
+			if err != nil {
+				t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
+			}
+			if tc.readOnlyModeEnabled {
+				verifyILBServiceNotProvisioned(t, newSvc)
+			} else {
+				verifyILBServiceProvisioned(t, newSvc)
+			}
+			currMetrics, metricErr := test.GetL4ILBLatencyMetric()
+			if metricErr != nil {
+				t.Errorf("Error getting L4 ILB latency metrics err: %v", metricErr)
+			}
+			if tc.readOnlyModeEnabled {
+				prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{CreateCount: 0, UpperBoundSeconds: 1}, t)
+			} else {
+				prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{CreateCount: 1, UpperBoundSeconds: 1}, t)
+			}
+
+			// set the TrafficPolicy of the service to Local
+			newSvc.Spec.ExternalTrafficPolicy = api_v1.ServiceExternalTrafficPolicyTypeLocal
+			updateILBService(l4c, newSvc)
+			err = l4c.sync(getKeyForSvc(newSvc, t), klog.TODO())
+			if err != nil {
+				t.Errorf("Failed to sync updated service %s, err %v", newSvc.Name, err)
+			}
+			// List the service and ensure that it contains the finalizer as well as Status field.
+			newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
+			if err != nil {
+				t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
+			}
+			if tc.readOnlyModeEnabled {
+				verifyILBServiceNotProvisioned(t, newSvc)
+			} else {
+				verifyILBServiceProvisioned(t, newSvc)
+			}
+			currMetrics, metricErr = test.GetL4ILBLatencyMetric()
+			if metricErr != nil {
+				t.Errorf("Error getting L4 ILB latency metrics err: %v", metricErr)
+			}
+			if tc.readOnlyModeEnabled {
+				prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{CreateCount: 0, UpdateCount: 0, UpperBoundSeconds: 1}, t)
+
+			} else {
+				prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{CreateCount: 1, UpdateCount: 1, UpperBoundSeconds: 1}, t)
+
+			}
+			// Remove the Internal LoadBalancer annotation, this should trigger a cleanup.
+			delete(newSvc.Annotations, gce.ServiceAnnotationLoadBalancerType)
+			updateILBService(l4c, newSvc)
+			err = l4c.sync(getKeyForSvc(newSvc, t), klog.TODO())
+			if err != nil {
+				t.Errorf("Failed to sync updated service %s, err %v", newSvc.Name, err)
+			}
+
+			// List the service and ensure that it doesn't contain the finalizer as well as Status field.
+			newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
+			if err != nil {
+				t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
+			}
+			verifyILBServiceNotProvisioned(t, newSvc)
+			currMetrics, metricErr = test.GetL4ILBLatencyMetric()
+			if metricErr != nil {
+				t.Errorf("Error getting L4 ILB latency metrics err: %v", metricErr)
+			}
+
+			if tc.readOnlyModeEnabled {
+				prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{CreateCount: 0, UpdateCount: 0, DeleteCount: 0, UpperBoundSeconds: 1}, t)
+			} else {
+				prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{CreateCount: 1, UpdateCount: 1, DeleteCount: 1, UpperBoundSeconds: 1}, t)
+			}
+
+			newSvc.DeletionTimestamp = &v1.Time{}
+			updateILBService(l4c, newSvc)
+			key, _ := common.KeyFunc(newSvc)
+			if err = l4c.sync(key, klog.TODO()); err != nil {
+				t.Errorf("Failed to sync deleted service %s, err %v", key, err)
+			}
+			for _, isShared := range []bool{true, false} {
+				hcName := l4c.namer.L4HealthCheck(newSvc.Namespace, newSvc.Name, isShared)
+				if !isHealthCheckDeleted(l4c.ctx.Cloud, hcName, klog.TODO()) {
+					t.Errorf("Health check %s should be deleted", hcName)
+				}
+			}
+
+		})
 	}
-	verifyILBServiceNotProvisioned(t, newSvc)
-	currMetrics, metricErr = test.GetL4ILBLatencyMetric()
-	if metricErr != nil {
-		t.Errorf("Error getting L4 ILB latency metrics err: %v", metricErr)
-	}
-	prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{CreateCount: 1, UpdateCount: 1, DeleteCount: 1, UpperBoundSeconds: 1}, t)
-	newSvc.DeletionTimestamp = &v1.Time{}
-	updateILBService(l4c, newSvc)
-	key, _ := common.KeyFunc(newSvc)
-	if err = l4c.sync(key, klog.TODO()); err != nil {
-		t.Errorf("Failed to sync deleted service %s, err %v", key, err)
-	}
-	for _, isShared := range []bool{true, false} {
-		hcName := l4c.namer.L4HealthCheck(newSvc.Namespace, newSvc.Name, isShared)
-		if !isHealthCheckDeleted(l4c.ctx.Cloud, hcName, klog.TODO()) {
-			t.Errorf("Health check %s should be deleted", hcName)
-		}
-	}
+
 }
 
 // TestProcessUpdateExternalTrafficPolicy verifies the processing loop in L4Controller.
@@ -161,7 +206,7 @@ func TestProcessCreateOrUpdate(t *testing.T) {
 // If health check is not shared among services then there is a leak.
 // When service is deleted all health checks should be cleaned up to prevent the leak.
 func TestProcessUpdateExternalTrafficPolicy(t *testing.T) {
-	l4c := newServiceController(t, newFakeGCE())
+	l4c := newServiceController(t, newFakeGCE(), false)
 	// Create svc with ExternalTrafficPolicy Local.
 	svc := test.NewL4ILBService(true, 8080)
 	addILBService(l4c, svc)
@@ -214,61 +259,95 @@ func TestProcessUpdateExternalTrafficPolicy(t *testing.T) {
 }
 
 func TestProcessDeletion(t *testing.T) {
-	l4c := newServiceController(t, newFakeGCE())
-	prevMetrics, err := test.GetL4ILBLatencyMetric()
-	if err != nil {
-		t.Errorf("Error getting L4 ILB latency metrics err: %v", err)
-	}
-	newSvc := test.NewL4ILBService(false, 8080)
-	addILBService(l4c, newSvc)
-	addNEGAndSvcNegL4Controller(l4c, newSvc)
-	err = l4c.sync(getKeyForSvc(newSvc, t), klog.TODO())
-	if err != nil {
-		t.Errorf("Failed to sync newly added service %s, err %v", newSvc.Name, err)
-	}
-	// List the service and ensure that it contains the finalizer and the status field
-	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
-	if err != nil {
-		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
-	}
-	verifyILBServiceProvisioned(t, newSvc)
-	currMetrics, metricErr := test.GetL4ILBLatencyMetric()
-	if metricErr != nil {
-		t.Errorf("Error getting L4 ILB latency metrics err: %v", metricErr)
-	}
-	prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{CreateCount: 1, UpperBoundSeconds: 1}, t)
-
-	// Mark the service for deletion by updating timestamp. Use svc instead of newSvc since that has the finalizer.
-	newSvc.DeletionTimestamp = &v1.Time{}
-	updateILBService(l4c, newSvc)
-	if !l4c.needsDeletion(newSvc) {
-		t.Errorf("Incorrectly marked service %v as not needing ILB deletion", newSvc)
-	}
-	err = l4c.sync(getKeyForSvc(newSvc, t), klog.TODO())
-	if err != nil {
-		t.Errorf("Failed to sync updated service %s, err %v", newSvc.Name, err)
+	testCases := []struct {
+		desc                string
+		readOnlyModeEnabled bool
+	}{
+		{
+			desc:                "Processe Deletion",
+			readOnlyModeEnabled: false,
+		},
+		{
+			desc:                "[ReadOnly] Processe Deletion",
+			readOnlyModeEnabled: true,
+		},
 	}
 
-	// List the service and ensure that it does not contain the finalizer or the status field
-	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
-	if err != nil {
-		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
-	}
-	verifyILBServiceNotProvisioned(t, newSvc)
-	currMetrics, metricErr = test.GetL4ILBLatencyMetric()
-	if metricErr != nil {
-		t.Errorf("Error getting L4 ILB latency metrics err: %v", metricErr)
-	}
-	prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{CreateCount: 1, DeleteCount: 1, UpperBoundSeconds: 1}, t)
-	deleteILBService(l4c, newSvc)
-	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
-	if !errors.IsNotFound(err) {
-		t.Errorf("Expected to get not found error, but got %v, service: %+v", err, newSvc)
+	for _, tc := range testCases {
+
+		l4c := newServiceController(t, newFakeGCE(), tc.readOnlyModeEnabled)
+		prevMetrics, err := test.GetL4ILBLatencyMetric()
+		if err != nil {
+			t.Errorf("Error getting L4 ILB latency metrics err: %v", err)
+		}
+		newSvc := test.NewL4ILBService(false, 8080)
+		addILBService(l4c, newSvc)
+		addNEGAndSvcNegL4Controller(l4c, newSvc)
+		err = l4c.sync(getKeyForSvc(newSvc, t), klog.TODO())
+		if err != nil {
+			t.Errorf("Failed to sync newly added service %s, err %v", newSvc.Name, err)
+		}
+		// List the service and ensure that it contains the finalizer and the status field
+		newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
+		if err != nil {
+			t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
+		}
+		if tc.readOnlyModeEnabled {
+			verifyILBServiceNotProvisioned(t, newSvc)
+		} else {
+			verifyILBServiceProvisioned(t, newSvc)
+		}
+		currMetrics, metricErr := test.GetL4ILBLatencyMetric()
+		if metricErr != nil {
+			t.Errorf("Error getting L4 ILB latency metrics err: %v", metricErr)
+		}
+
+		if tc.readOnlyModeEnabled {
+			prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{CreateCount: 0, UpperBoundSeconds: 1}, t)
+		} else {
+			prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{CreateCount: 1, UpperBoundSeconds: 1}, t)
+		}
+
+		// Mark the service for deletion by updating timestamp. Use svc instead of newSvc since that has the finalizer.
+		newSvc.DeletionTimestamp = &v1.Time{}
+		updateILBService(l4c, newSvc)
+		if !tc.readOnlyModeEnabled && !l4c.needsDeletion(newSvc) {
+			t.Errorf("Incorrectly marked service %v as not needing ILB deletion", newSvc)
+		}
+		if tc.readOnlyModeEnabled && l4c.needsDeletion(newSvc) {
+			t.Errorf("Incorrectly marked service %v as needing ILB deletion", newSvc)
+		}
+
+		err = l4c.sync(getKeyForSvc(newSvc, t), klog.TODO())
+		if err != nil {
+			t.Errorf("Failed to sync updated service %s, err %v", newSvc.Name, err)
+		}
+
+		// List the service and ensure that it does not contain the finalizer or the status field
+		newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
+		if err != nil {
+			t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
+		}
+		verifyILBServiceNotProvisioned(t, newSvc)
+		currMetrics, metricErr = test.GetL4ILBLatencyMetric()
+		if metricErr != nil {
+			t.Errorf("Error getting L4 ILB latency metrics err: %v", metricErr)
+		}
+		if tc.readOnlyModeEnabled {
+			prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{CreateCount: 0, DeleteCount: 0, UpperBoundSeconds: 1}, t)
+		} else {
+			prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{CreateCount: 1, DeleteCount: 1, UpperBoundSeconds: 1}, t)
+		}
+		deleteILBService(l4c, newSvc)
+		newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
+		if !errors.IsNotFound(err) {
+			t.Errorf("Expected to get not found error, but got %v, service: %+v", err, newSvc)
+		}
 	}
 }
 
 func TestProcessCreateLegacyService(t *testing.T) {
-	l4c := newServiceController(t, newFakeGCE())
+	l4c := newServiceController(t, newFakeGCE(), false)
 	prevMetrics, err := test.GetL4ILBLatencyMetric()
 	if err != nil {
 		t.Errorf("Error getting L4 ILB latency metrics err: %v", err)
@@ -295,7 +374,7 @@ func TestProcessCreateLegacyService(t *testing.T) {
 }
 
 func TestProcessCreateServiceWithLegacyInternalForwardingRule(t *testing.T) {
-	l4c := newServiceController(t, newFakeGCE())
+	l4c := newServiceController(t, newFakeGCE(), false)
 	prevMetrics, err := test.GetL4ILBLatencyMetric()
 	if err != nil {
 		t.Errorf("Error getting L4 ILB latency metrics err: %v", err)
@@ -328,7 +407,7 @@ func TestProcessCreateServiceWithLegacyInternalForwardingRule(t *testing.T) {
 
 func TestCreateServiceNoLegacyForwordingRule(t *testing.T) {
 	fakeGCE := newFakeGCE()
-	l4c := newServiceController(t, fakeGCE)
+	l4c := newServiceController(t, fakeGCE, false)
 	newSvc := test.NewL4ILBService(false, 8080)
 
 	firstHookCall := true
@@ -360,7 +439,7 @@ func TestCreateServiceNoLegacyForwordingRule(t *testing.T) {
 
 func TestCreateServiceUnknownLegacyForwordingRule(t *testing.T) {
 	fakeGCE := newFakeGCE()
-	l4c := newServiceController(t, fakeGCE)
+	l4c := newServiceController(t, fakeGCE, false)
 	newSvc := test.NewL4ILBService(false, 8080)
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.GetHook = func(ctx context2.Context, key *meta.Key, m *cloud.MockForwardingRules, options ...cloud.Option) (bool, *compute.ForwardingRule, error) {
 		return true, nil, fmt.Errorf("NON-404 error from mock API")
@@ -384,7 +463,7 @@ func TestCreateServiceUnknownLegacyForwordingRule(t *testing.T) {
 }
 
 func TestProcessCreateServiceWithLegacyExternalForwardingRule(t *testing.T) {
-	l4c := newServiceController(t, newFakeGCE())
+	l4c := newServiceController(t, newFakeGCE(), false)
 	prevMetrics, err := test.GetL4ILBLatencyMetric()
 	if err != nil {
 		t.Errorf("Error getting L4 ILB latency metrics err: %v", err)
@@ -415,7 +494,7 @@ func TestProcessCreateServiceWithLegacyExternalForwardingRule(t *testing.T) {
 }
 
 func TestProcessUpdateClusterIPToILBService(t *testing.T) {
-	l4c := newServiceController(t, newFakeGCE())
+	l4c := newServiceController(t, newFakeGCE(), false)
 	prevMetrics, err := test.GetL4ILBLatencyMetric()
 	if err != nil {
 		t.Errorf("Error getting L4 ILB latency metrics %v", err)
@@ -467,7 +546,7 @@ func TestProcessMultipleServices(t *testing.T) {
 	backoff.Duration = 3 * time.Second
 	for _, onlyLocal := range []bool{true, false} {
 		t.Run(fmt.Sprintf("L4 with LocalMode=%v", onlyLocal), func(t *testing.T) {
-			l4c := newServiceController(t, newFakeGCE())
+			l4c := newServiceController(t, newFakeGCE(), false)
 			prevMetrics, err := test.GetL4ILBLatencyMetric()
 			if err != nil {
 				t.Errorf("Error getting L4 ILB latency metrics %v", err)
@@ -516,7 +595,7 @@ func TestProcessMultipleServices(t *testing.T) {
 }
 
 func TestProcessServiceWithDelayedNEGAdd(t *testing.T) {
-	l4c := newServiceController(t, newFakeGCE())
+	l4c := newServiceController(t, newFakeGCE(), false)
 	go l4c.Run()
 	newSvc := test.NewL4ILBService(false, 8080)
 	addILBService(l4c, newSvc)
@@ -557,7 +636,7 @@ func TestProcessServiceWithDelayedNEGAdd(t *testing.T) {
 
 func TestProcessServiceOnError(t *testing.T) {
 	t.Parallel()
-	l4c := newServiceController(t, newFakeGCEWithInsertError())
+	l4c := newServiceController(t, newFakeGCEWithInsertError(), false)
 	prevMetrics, err := test.GetL4ILBErrorMetric()
 	if err != nil {
 		t.Errorf("Error getting L4 ILB error metrics err: %v", err)
@@ -581,7 +660,7 @@ func TestProcessServiceOnError(t *testing.T) {
 
 func TestProcessServiceOnUserError(t *testing.T) {
 	t.Parallel()
-	l4c := newServiceController(t, newFakeGCEWithUserInsertError())
+	l4c := newServiceController(t, newFakeGCEWithUserInsertError(), false)
 	newSvc := test.NewL4ILBService(false, 8080)
 	addILBService(l4c, newSvc)
 	addNEGAndSvcNegL4Controller(l4c, newSvc)
@@ -626,7 +705,7 @@ func TestCreateDeleteDualStackService(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			l4c := newServiceController(t, newFakeGCE())
+			l4c := newServiceController(t, newFakeGCE(), false)
 			l4c.enableDualStack = true
 			prevMetrics, err := test.GetL4ILBLatencyMetric()
 			if err != nil {
@@ -684,7 +763,7 @@ func TestCreateDeleteDualStackService(t *testing.T) {
 
 func TestProcessDualStackServiceOnUserError(t *testing.T) {
 	t.Parallel()
-	l4c := newServiceController(t, newFakeGCE())
+	l4c := newServiceController(t, newFakeGCE(), false)
 	l4c.enableDualStack = true
 
 	// Create cluster subnet with EXTERNAL ipv6 access type to trigger user error.
@@ -709,7 +788,7 @@ func TestProcessDualStackServiceOnUserError(t *testing.T) {
 }
 
 func TestDualStackILBStatusForErrorSync(t *testing.T) {
-	l4c := newServiceController(t, newFakeGCE())
+	l4c := newServiceController(t, newFakeGCE(), false)
 	l4c.enableDualStack = true
 	(l4c.ctx.Cloud.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = mock.InsertForwardingRulesInternalErrHook
 
@@ -778,7 +857,7 @@ func TestProcessUpdateILBIPFamilies(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 
-			l4c := newServiceController(t, newFakeGCE())
+			l4c := newServiceController(t, newFakeGCE(), false)
 			l4c.enableDualStack = true
 
 			test.MustCreateDualStackClusterSubnet(t, l4c.ctx.Cloud, "INTERNAL")
@@ -821,7 +900,7 @@ func TestProcessUpdateILBIPFamilies(t *testing.T) {
 }
 
 func TestProcessCreateServiceWithLoadBalancerClass(t *testing.T) {
-	l4c := newServiceController(t, newFakeGCE())
+	l4c := newServiceController(t, newFakeGCE(), false)
 	newSvc := test.NewL4ILBService(false, 8080)
 	// Set the legacy finalizer
 	testLBClass := "testClass"
@@ -869,7 +948,7 @@ func TestEnsureInternalLoadBalancerClass(t *testing.T) {
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			l4c := newServiceController(t, newFakeGCE())
+			l4c := newServiceController(t, newFakeGCE(), false)
 
 			svc := test.NewL4LBServiceWithLoadBalancerClass(tc.loadBalancerClass)
 			if tc.loadBalancerClass == "" {
@@ -942,7 +1021,7 @@ func TestEnsureInternalLoadBalancerClass(t *testing.T) {
 	}
 }
 
-func newServiceController(t *testing.T, fakeGCE *gce.Cloud) *L4Controller {
+func newServiceController(t *testing.T, fakeGCE *gce.Cloud, readOnlyMode bool) *L4Controller {
 	kubeClient := fake.NewSimpleClientset()
 	svcNegClient := svcnegclient.NewSimpleClientset()
 
@@ -954,6 +1033,7 @@ func newServiceController(t *testing.T, fakeGCE *gce.Cloud) *L4Controller {
 		Namespace:    api_v1.NamespaceAll,
 		ResyncPeriod: 1 * time.Minute,
 		NumL4Workers: 5,
+		ReadOnlyMode: readOnlyMode,
 	}
 	ctx, err := context.NewControllerContext(kubeClient, nil, nil, nil, svcNegClient, nil, nil, nil, kubeClient /*kube client to be used for events*/, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
 	if err != nil {
