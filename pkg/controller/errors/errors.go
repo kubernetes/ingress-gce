@@ -35,7 +35,7 @@ type ErrBadSvcType struct {
 
 // Error returns the service name & type and what are acceptable types.
 func (e ErrBadSvcType) Error() string {
-	return fmt.Sprintf("service %q is type %q, expected \"NodePort\" or \"LoadBalancer\"", e.Service, e.ServiceType)
+	return fmt.Sprintf("service %q is type %q, expected \"NodePort\" or \"LoadBalancer\" when not using NEGs", e.Service, e.ServiceType)
 }
 
 // ErrSvcNotFound is returned when a service is not found.
