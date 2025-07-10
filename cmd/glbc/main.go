@@ -349,6 +349,7 @@ func main() {
 		EnableL4NetLBMixedProtocol:                flags.F.EnableL4NetLBMixedProtocol,
 		EnableL4ILBZonalAffinity:                  flags.F.EnableL4ILBZonalAffinity,
 		EnableL4NetLBForwardingRulesOptimizations: flags.F.EnableL4NetLBForwardingRulesOptimizations,
+		ReadOnlyMode:                              flags.F.ReadOnlyMode,
 	}
 	ctx, err := ingctx.NewControllerContext(kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, svcAttachmentClient, networkClient, nodeTopologyClient, eventRecorderKubeClient, cloud, namer, kubeSystemUID, ctxConfig, rootLogger)
 	if err != nil {
@@ -563,6 +564,7 @@ func runL4Controllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.
 				IGManager:                ctx.InstancePool,
 				HasSynced:                ctx.HasSynced,
 				EnableMultiSubnetCluster: flags.F.EnableIGMultiSubnetCluster,
+				ReadOnlyMode:             flags.F.ReadOnlyMode,
 				StopCh:                   option.stopCh,
 			}
 			igController := instancegroups.NewController(igControllerParams, logger)
@@ -682,6 +684,7 @@ func createNEGController(ctx *ingctx.ControllerContext, systemHealth *systemheal
 		flags.F.EnableMultiNetworking,
 		ctx.EnableIngressRegionalExternal,
 		flags.F.EnableL4NetLBNEG,
+		flags.F.ReadOnlyMode,
 		stopCh,
 		logger,
 	)

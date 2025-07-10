@@ -278,6 +278,11 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service, svcLo
 		svcLogger.Info("Finished syncing L4 ILB service", "timeTaken", time.Since(startTime))
 	}()
 
+	if l4c.ctx.ReadOnlyMode {
+		svcLogger.Info("Skipping syncing L4 ILB service since the controller is in read-only mode")
+		return nil
+	}
+
 	// Ensure v2 finalizer
 	if err := common.EnsureServiceFinalizer(service, common.ILBFinalizerV2, l4c.ctx.KubeClient, svcLogger); err != nil {
 		return &loadbalancers.L4ILBSyncResult{Error: fmt.Errorf("Failed to attach finalizer to service %s/%s, err %w", service.Namespace, service.Name, err)}
@@ -508,6 +513,10 @@ func (l4c *L4Controller) sync(key string, svcLogger klog.Logger) error {
 }
 
 func (l4c *L4Controller) needsDeletion(svc *v1.Service) bool {
+	if l4c.ctx.ReadOnlyMode {
+		return false
+	}
+
 	if !utils.IsSubsettingL4ILBService(svc) {
 		return false
 	}
