@@ -812,8 +812,7 @@ func (l4 *L4) determineBackendServiceLocalityPolicy() backends.LocalityLBPolicyT
 			}
 		}
 	}
-	// If the service has weighted load balancing disabled, the default locality policy is used.
-	// If the service disables Weighted Load Balancing the logic to use MAGLEV is handled by backends.go
+	// The default unset locality lb policy is used to disable ILB Weighted Load Balancing
 	return backends.LocalityLBPolicyDefault
 }
 
