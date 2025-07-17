@@ -27,6 +27,7 @@ import (
 	"google.golang.org/api/compute/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/cloud-provider/service/helpers"
@@ -35,6 +36,7 @@ import (
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/healthchecksl4"
 	"k8s.io/ingress-gce/pkg/metrics"
@@ -386,7 +388,7 @@ func (l4 *L4) subnetName() string {
 
 // EnsureInternalLoadBalancer ensures that all GCE resources for the given loadbalancer service have
 // been created. It returns a LoadBalancerStatus with the updated ForwardingRule IP address.
-func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service) *L4ILBSyncResult {
+func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service, configMapLister cache.Store) *L4ILBSyncResult {
 	l4.Service = svc
 
 	startTime := time.Now()
@@ -541,6 +543,16 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	enableZonalAffinity := l4.requireZonalAffinity(svc)
 
 	// ensure backend service
+	var logConfig *composite.BackendServiceLogConfig
+	if flags.F.ManageL4LBLogging && configMapLister != nil {
+		logConfig, err = GetL4LoggingConfig(l4.Service, configMapLister)
+		if err != nil {
+			result.GCEResourceInError = annotations.BackendServiceResource
+			result.Error = utils.NewUserError(err)
+			return result
+		}
+	}
+
 	backendParams := backends.L4BackendServiceParams{
 		Name:                     bsName,
 		HealthCheckLink:          hcLink,
@@ -552,7 +564,9 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		ConnectionTrackingPolicy: noConnectionTrackingPolicy,
 		EnableZonalAffinity:      enableZonalAffinity,
 		LocalityLbPolicy:         localityLbPolicy,
+		LogConfig:                logConfig,
 	}
+
 	bs, bsSyncStatus, err := l4.backendPool.EnsureL4BackendService(backendParams, l4.svcLogger)
 	result.ResourceUpdates.SetBackendService(bsSyncStatus)
 	if err != nil {

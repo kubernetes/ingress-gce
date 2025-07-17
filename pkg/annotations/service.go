@@ -141,6 +141,9 @@ const (
 	WeightedL4AnnotationKey = "networking.gke.io/weighted-load-balancing"
 	// Service annotation value for using pods-per-node Weighted load balancing in both ILB and NetlB
 	WeightedL4AnnotationPodsPerNode = "pods-per-node"
+
+	// Service annotation key for specifying config map which contains logging config
+	L4LoggingConfigMapKey = "networking.gke.io/l4-logging-config-map"
 )
 
 // NegAnnotation is the format of the annotation associated with the
@@ -467,6 +470,16 @@ func (svc *Service) getBackendConfigAnnotation() (string, bool) {
 		if ok {
 			return val, ok
 		}
+	}
+	return "", false
+}
+
+// GetL4LoggingConfigMapAnnotation returns name of the config map which contains logging config.
+// Returns false if annotation with the name is not specified.
+func (svc *Service) GetL4LoggingConfigMapAnnotation() (string, bool) {
+	val, ok := svc.v[L4LoggingConfigMapKey]
+	if ok {
+		return val, ok
 	}
 	return "", false
 }

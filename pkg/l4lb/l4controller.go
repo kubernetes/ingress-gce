@@ -32,6 +32,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
+	"k8s.io/ingress-gce/pkg/common/operator"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/forwardingrules"
 	l4metrics "k8s.io/ingress-gce/pkg/l4lb/metrics"
@@ -178,7 +179,41 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 		},
 	})
 
+	ctx.ConfigMapInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			configMap, ok := obj.(*v1.ConfigMap)
+			if ok {
+				l4c.enqueueServicesReferencingConfigMap(configMap)
+			}
+		},
+		UpdateFunc: func(_, obj interface{}) {
+			configMap, ok := obj.(*v1.ConfigMap)
+			if ok {
+				l4c.enqueueServicesReferencingConfigMap(configMap)
+			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			configMap, ok := obj.(*v1.ConfigMap)
+			if ok {
+				l4c.enqueueServicesReferencingConfigMap(configMap)
+			}
+		},
+	})
+
 	return l4c
+}
+
+func (l4c *L4Controller) enqueueServicesReferencingConfigMap(configMap *v1.ConfigMap) {
+	services := operator.Services(l4c.ctx.Services().List(), l4c.logger).ReferencesL4LoggingConfigMap(configMap).AsList()
+	for _, svc := range services {
+		svcKey := utils.ServiceKeyFunc(svc.Namespace, svc.Name)
+		svcLogger := l4c.logger.WithValues("serviceKey", svcKey)
+		if l4c.shouldProcessService(svc, svcLogger) {
+			l4c.serviceVersions.SetLastUpdateSeen(svcKey, svc.ResourceVersion, svcLogger)
+			l4c.svcQueue.Enqueue(svc)
+		}
+	}
+	l4c.enqueueTracker.Track()
 }
 
 func (l4c *L4Controller) SystemHealth() error {
@@ -301,7 +336,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service, svcLo
 		EnableZonalAffinity:              l4c.ctx.EnableL4ILBZonalAffinity,
 	}
 	l4 := loadbalancers.NewL4Handler(l4ilbParams, svcLogger)
-	syncResult := l4.EnsureInternalLoadBalancer(utils.GetNodeNames(nodes), service)
+	syncResult := l4.EnsureInternalLoadBalancer(utils.GetNodeNames(nodes), service, l4c.ctx.ConfigMapInformer.GetIndexer())
 	// syncResult will not be nil
 	if syncResult.Error != nil {
 		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",

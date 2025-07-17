@@ -25,6 +25,7 @@ import (
 	compute "google.golang.org/api/compute/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/cloud-provider/service/helpers"
@@ -33,6 +34,7 @@ import (
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/healthchecksl4"
 	"k8s.io/ingress-gce/pkg/metrics"
@@ -221,7 +223,7 @@ func (l4netlb *L4NetLB) checkStrongSessionAffinityRequirements() *utils.UserErro
 // been created. It is health check, firewall rules, backend service and forwarding rule.
 // It returns a LoadBalancerStatus with the updated ForwardingRule IP address.
 // This function does not link instances to Backend Service.
-func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) *L4NetLBSyncResult {
+func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service, configMapLister cache.Store) *L4NetLBSyncResult {
 	isMultinetService := l4netlb.networkResolver.IsMultinetService(svc)
 	serviceUsesSSA := l4netlb.enableStrongSessionAffinity && annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service)
 	isWeightedLBPodsPerNode := l4netlb.isWeightedLBPodsPerNode()
@@ -274,7 +276,7 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 		return result
 	}
 
-	bsLink := l4netlb.provideBackendService(result, hcLink)
+	bsLink := l4netlb.provideBackendService(result, hcLink, configMapLister)
 	if result.Error != nil {
 		return result
 	}
@@ -344,7 +346,7 @@ func (l4netlb *L4NetLB) connectionTrackingPolicy() *composite.BackendServiceConn
 	return &connectionTrackingPolicy
 }
 
-func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcLink string) string {
+func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcLink string, configMapLister cache.Store) string {
 	bsName := l4netlb.namer.L4Backend(l4netlb.Service.Namespace, l4netlb.Service.Name)
 	servicePorts := l4netlb.Service.Spec.Ports
 
@@ -356,6 +358,18 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 	localityLbPolicy := l4netlb.determineBackendServiceLocalityPolicy()
 
 	connectionTrackingPolicy := l4netlb.connectionTrackingPolicy()
+
+	var logConfig *composite.BackendServiceLogConfig
+	if flags.F.ManageL4LBLogging && configMapLister != nil {
+		var err error
+		logConfig, err = GetL4LoggingConfig(l4netlb.Service, configMapLister)
+		if err != nil {
+			syncResult.GCEResourceInError = annotations.BackendServiceResource
+			syncResult.Error = utils.NewUserError(err)
+			return ""
+		}
+	}
+
 	backendParams := backends.L4BackendServiceParams{
 		Name:                     bsName,
 		HealthCheckLink:          hcLink,
@@ -366,6 +380,7 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 		NetworkInfo:              network.DefaultNetwork(l4netlb.cloud),
 		ConnectionTrackingPolicy: connectionTrackingPolicy,
 		LocalityLbPolicy:         localityLbPolicy,
+		LogConfig:                logConfig,
 	}
 
 	bs, wasUpdate, err := l4netlb.backendPool.EnsureL4BackendService(backendParams, l4netlb.svcLogger)

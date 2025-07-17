@@ -2,10 +2,11 @@ package operator
 
 import (
 	"fmt"
-	"k8s.io/klog/v2"
 
+	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog/v2"
 
 	api_v1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/networking/v1"
@@ -43,6 +44,26 @@ func (op *ServicesOperator) ReferencesBackendConfig(beConfig *backendconfigv1.Ba
 			dupes[key] = true
 		}
 	}
+	return Services(s, op.logger)
+}
+
+// ReferencesL4LoggingConfigMap returns the Services that reference the given ConfigMap.
+func (op *ServicesOperator) ReferencesL4LoggingConfigMap(configMap *api_v1.ConfigMap) *ServicesOperator {
+	var s []*api_v1.Service
+	if configMap == nil {
+		return Services(s, op.logger)
+	}
+
+	dupes := map[string]bool{}
+	for _, svc := range op.s {
+		key := fmt.Sprintf("%s/%s", svc.Namespace, svc.Name)
+		loggingConfigMapName, ok := annotations.FromService(svc).GetL4LoggingConfigMapAnnotation()
+		if !dupes[key] && ok && loggingConfigMapName == configMap.Name && svc.Namespace == configMap.Namespace {
+			s = append(s, svc)
+			dupes[key] = true
+		}
+	}
+
 	return Services(s, op.logger)
 }
 
