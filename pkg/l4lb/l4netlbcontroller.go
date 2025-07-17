@@ -33,6 +33,7 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/instancegroups"
 	l4metrics "k8s.io/ingress-gce/pkg/l4lb/metrics"
@@ -172,6 +173,17 @@ func NewL4NetLBController(
 			}
 		},
 	})
+
+	enableMultiSubnetClusterPhase1 := flags.F.EnableMultiSubnetClusterPhase1
+	if l4netLBc.enableNEGSupport && enableMultiSubnetClusterPhase1 {
+		ctx.SvcNegInformer.AddEventHandler(&svcNEGEventHandler{
+			ServiceInformer: ctx.ServiceInformer,
+			svcQueue:        l4netLBc.svcQueue,
+			svcFilterFunc:   isRBSNetLBServiceWithNEGs,
+			logger:          logger,
+		})
+		logger.V(3).Info("set up SvcNegInformer event handlers")
+	}
 
 	return l4netLBc
 }
