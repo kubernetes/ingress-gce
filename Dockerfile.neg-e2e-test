@@ -19,7 +19,7 @@
 FROM gcr.io/google.com/cloudsdktool/google-cloud-cli:debian_component_based
 
 ARG TARGETARCH
-ADD bin/${TARGETARCH}/e2e-test /e2e-test
-COPY cmd/e2e-test/run.sh /run.sh
+ADD bin/${TARGETARCH}/neg-e2e-test /neg-e2e-test
+COPY cmd/neg-e2e-test/run.sh /run.sh
 
 ENTRYPOINT ["/run.sh"]

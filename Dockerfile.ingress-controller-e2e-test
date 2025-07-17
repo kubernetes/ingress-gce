@@ -19,7 +19,7 @@
 FROM gcr.io/google.com/cloudsdktool/google-cloud-cli:debian_component_based
 
 ARG TARGETARCH
-ADD bin/${TARGETARCH}/psc-e2e-test /psc-e2e-test
-COPY cmd/psc-e2e-test/run.sh /run.sh
+ADD bin/${TARGETARCH}/ingress-controller-e2e-test /ingress-controller-e2e-test
+COPY cmd/ingress-controller-e2e-test/run.sh /run.sh
 
 ENTRYPOINT ["/run.sh"]
