@@ -26,6 +26,9 @@ CONTAINER_BINARIES ?= \
 	404-server \
 	404-server-with-metrics \
 	e2e-test \
+	neg-e2e-test \
+	psc-e2e-test \
+	ingress-controller-e2e-test \
 	echo \
 	fuzzer \
 	glbc \
