@@ -58,6 +58,7 @@ type Manager struct {
 	svc         gce.CloudAddressService
 	name        string
 	serviceName string
+	addressName string
 	targetIP    string
 	addressType cloud.LbScheme
 	region      string
@@ -69,7 +70,7 @@ type Manager struct {
 	frLogger klog.Logger
 }
 
-func NewManager(svc gce.CloudAddressService, serviceName, region, subnetURL, name, targetIP string, addressType cloud.LbScheme, networkTier cloud.NetworkTier, ipVersion IPVersion, frLogger klog.Logger) *Manager {
+func NewManager(svc gce.CloudAddressService, serviceName, region, subnetURL, name, addressName, targetIP string, addressType cloud.LbScheme, networkTier cloud.NetworkTier, ipVersion IPVersion, frLogger klog.Logger) *Manager {
 	if targetIP != "" {
 		// Store address in normalized format.
 		// This is required for IPv6 addresses, to be able to filter by exact address,
@@ -82,6 +83,7 @@ func NewManager(svc gce.CloudAddressService, serviceName, region, subnetURL, nam
 		region:      region,
 		serviceName: serviceName,
 		name:        name,
+		addressName: addressName,
 		targetIP:    targetIP,
 		addressType: addressType,
 		tryRelease:  true,
@@ -103,8 +105,31 @@ func (m *Manager) HoldAddress() (string, IPAddressType, error) {
 	// case of using a controller address, retrieving the address by name results in the fewest API
 	// calls since it indicates whether a Delete is necessary before Reserve.
 	m.frLogger.V(4).Info("Attempting hold of IP", "ip", m.targetIP, "addressType", m.addressType)
-	// Get the address in case it was orphaned earlier
-	addr, err := m.svc.GetRegionAddress(m.name, m.region)
+
+	// Name for default managed Address which is based on forwarding rule name
+	defaultName := m.name
+	addressName := defaultName
+	addressManagementType := IPAddrManaged
+
+	if m.addressName != "" {
+		// Name for custom unmanaged static Address which is reserved by user and specified in annotation
+		addressName = m.addressName
+		addressManagementType = IPAddrUnmanaged
+		m.tryRelease = false
+
+		// Custom reserved Address is specified so no possible orphaned default address should exist
+		if addressName != defaultName {
+			if addrDefault, _ := m.svc.GetRegionAddress(defaultName, m.region); addrDefault != nil {
+				releaseErr := m.removeAddress(defaultName, "address is orphaned and not needed anymore")
+				if releaseErr != nil {
+					m.frLogger.V(4).Info("Unable to release orphaned Address.", "addressName", defaultName, "err", releaseErr)
+				}
+			}
+		}
+	}
+
+	// Get and validate existing Address: user-specifed or default (orphaned)
+	addr, err := m.svc.GetRegionAddress(addressName, m.region)
 	if err != nil && !utils.IsNotFoundError(err) {
 		return "", IPAddrUndefined, err
 	}
@@ -114,19 +139,17 @@ func (m *Manager) HoldAddress() (string, IPAddressType, error) {
 		validationError := m.validateAddress(addr)
 		if validationError == nil {
 			m.frLogger.V(4).Info("Address already reserves IP. No further action required.", "addressName", addr.Name, "ip", addr.Address, "type", addr.AddressType)
-			return addr.Address, IPAddrManaged, nil
+			return addr.Address, addressManagementType, nil
 		}
 
-		m.frLogger.V(2).Info("Deleting existing address", "reason", validationError)
-		err := m.svc.DeleteRegionAddress(addr.Name, m.region)
-		if err != nil {
-			if utils.IsNotFoundError(err) {
-				m.frLogger.V(4).Info("Address was not found. Ignoring.", "addressName", addr.Name)
-			} else {
-				return "", IPAddrUndefined, err
-			}
+		if m.addressName != "" {
+			return "", IPAddrUndefined, fmt.Errorf("reserved address (%q) is not valid, err: %w", addr.Name, validationError)
 		} else {
-			m.frLogger.V(4).Info("Successfully deleted previous address", "addressName", addr.Name)
+			// Remove invalid orphaned default address. New Address will be reserved later in ensureAddressReservation()
+			releaseErr := m.removeAddress(defaultName, fmt.Sprintf("address is orphaned and not valid, err: %v", validationError))
+			if releaseErr != nil {
+				m.frLogger.V(4).Info("Unable to release orphaned Address.", "addressName", defaultName, "err", releaseErr)
+			}
 		}
 	}
 
@@ -140,19 +163,21 @@ func (m *Manager) ReleaseAddress() error {
 		return nil
 	}
 
-	m.frLogger.V(4).Info("Releasing address", "ip", m.targetIP, "addressName", m.name)
-	// Controller only ever tries to unreserve the address named with the load balancer's name.
-	err := m.svc.DeleteRegionAddress(m.name, m.region)
+	return m.removeAddress(m.name, "address was temporary reserved")
+}
+
+func (m *Manager) removeAddress(name, reason string) error {
+
+	m.frLogger.V(2).Info("Releasing existing address", "name", name, "reason", reason)
+	err := m.svc.DeleteRegionAddress(name, m.region)
 	if err != nil {
 		if utils.IsNotFoundError(err) {
-			m.frLogger.Info("Address was not found. Ignoring.", "addressName", m.name)
-			return nil
+			m.frLogger.V(4).Info("Address was not found. Ignoring.", "addressName", name)
+		} else {
+			return err
 		}
-
-		return err
 	}
-
-	m.frLogger.V(4).Info("Successfully released IP named", "ip", m.targetIP, "addressName", m.name)
+	m.frLogger.V(4).Info("Successfully released address", "addressName", name)
 	return nil
 }
 

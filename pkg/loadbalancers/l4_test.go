@@ -2213,10 +2213,11 @@ func TestDualStackILBStaticIPAnnotation(t *testing.T) {
 		AddressType: "INTERNAL",
 	}
 	ipv6Address := &compute.Address{
-		Name:        "ipv6-address",
-		Address:     "2::2/80",
-		IpVersion:   "IPV6",
-		AddressType: "INTERNAL",
+		Name:         "ipv6-address",
+		Address:      "2::2",
+		IpVersion:    "IPV6",
+		AddressType:  "INTERNAL",
+		PrefixLength: 96,
 	}
 
 	testCases := []struct {
