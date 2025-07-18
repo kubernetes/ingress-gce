@@ -115,6 +115,7 @@ type ControllerContextConfig struct {
 	ResyncPeriod      time.Duration
 	NumL4Workers      int
 	NumL4NetLBWorkers int
+	ReadOnlyMode      bool
 	// DefaultBackendSvcPortID is the ServicePort for the system default backend.
 	DefaultBackendSvcPort                     utils.ServicePort
 	HealthCheckPath                           string

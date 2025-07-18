@@ -290,6 +290,11 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service, svcLo
 		svcLogger.Info("Finished syncing L4 ILB service", "timeTaken", time.Since(startTime))
 	}()
 
+	if l4c.ctx.ReadOnlyMode {
+		svcLogger.Info("Skipping syncing L4 ILB service since the controller is in read-only mode", "service", service.Name)
+		return nil
+	}
+
 	// Ensure v2 finalizer
 	if err := common.EnsureServiceFinalizer(service, common.ILBFinalizerV2, l4c.ctx.KubeClient, svcLogger); err != nil {
 		return &loadbalancers.L4ILBSyncResult{Error: fmt.Errorf("Failed to attach finalizer to service %s/%s, err %w", service.Namespace, service.Name, err)}
@@ -482,6 +487,13 @@ func (l4c *L4Controller) sync(key string, svcLogger klog.Logger) error {
 		svcLogger.V(3).Info("Ignoring delete of service not managed by L4 controller")
 		return nil
 	}
+
+	if l4c.ctx.ReadOnlyMode {
+		l4c.serviceVersions.SetProcessed(key, svc.ResourceVersion, true, false, svcLogger)
+		svcLogger.Info("Skipping syncing L4 ILB service since the controller is in read-only mode", "service", svc.Name)
+		return nil
+	}
+
 	isResync := l4c.serviceVersions.IsResync(key, svc.ResourceVersion, svcLogger)
 	svcLogger.V(2).Info("Processing update operation for service", "resync", isResync, "resourceVersion", svc.ResourceVersion)
 	namespacedName := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}.String()
@@ -520,6 +532,10 @@ func (l4c *L4Controller) sync(key string, svcLogger klog.Logger) error {
 }
 
 func (l4c *L4Controller) needsDeletion(svc *v1.Service) bool {
+	if l4c.ctx.ReadOnlyMode {
+		return false
+	}
+
 	if !utils.IsSubsettingL4ILBService(svc) {
 		return false
 	}

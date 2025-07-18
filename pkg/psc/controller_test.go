@@ -76,6 +76,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 		invalidSubnet        bool
 		expectErr            bool
 		proxyProtocol        bool
+		readOnlyMode         bool
 	}{
 		{
 			desc:                 "valid service attachment with tcp ILB",
@@ -85,6 +86,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 			connectionPreference: "ACCEPT_AUTOMATIC",
 			resourceRef:          validRef,
 			expectErr:            false,
+			readOnlyMode:         false,
 		},
 		{
 			desc:                 "valid service attachment with udp ILB",
@@ -94,6 +96,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 			connectionPreference: "ACCEPT_AUTOMATIC",
 			resourceRef:          validRef,
 			expectErr:            false,
+			readOnlyMode:         false,
 		},
 		{
 			desc:                 "legacy ILB service",
@@ -103,6 +106,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 			connectionPreference: "ACCEPT_AUTOMATIC",
 			resourceRef:          validRef,
 			expectErr:            false,
+			readOnlyMode:         false,
 		},
 		{
 			desc:                 "legacy ILB service, forwarding rule has wrong IP",
@@ -113,6 +117,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 			resourceRef:          validRef,
 			incorrectIPAddr:      true,
 			expectErr:            true,
+			readOnlyMode:         false,
 		},
 		{
 			desc:                 "forwarding rule has wrong IP",
@@ -123,6 +128,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 			resourceRef:          validRef,
 			incorrectIPAddr:      true,
 			expectErr:            true,
+			readOnlyMode:         false,
 		},
 		{
 			desc:                 "service does not exist",
@@ -130,6 +136,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 			connectionPreference: "ACCEPT_AUTOMATIC",
 			resourceRef:          validRef,
 			expectErr:            true,
+			readOnlyMode:         false,
 		},
 		{
 			desc:                 "forwarding rule does not exist",
@@ -139,6 +146,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 			connectionPreference: "ACCEPT_AUTOMATIC",
 			resourceRef:          validRef,
 			expectErr:            true,
+			readOnlyMode:         false,
 		},
 		{
 			desc:                 "legacy ILB service, forwarding rule does not exist",
@@ -148,6 +156,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 			connectionPreference: "ACCEPT_AUTOMATIC",
 			resourceRef:          validRef,
 			expectErr:            true,
+			readOnlyMode:         false,
 		},
 		{
 			desc:                 "invalid resource reference",
@@ -159,7 +168,8 @@ func TestServiceAttachmentCreation(t *testing.T) {
 				Kind:     "not-service",
 				Name:     svcName,
 			},
-			expectErr: true,
+			expectErr:    true,
+			readOnlyMode: false,
 		},
 		{
 			desc:                 "valid resource reference with no api group",
@@ -170,7 +180,8 @@ func TestServiceAttachmentCreation(t *testing.T) {
 				Kind: "service",
 				Name: svcName,
 			},
-			expectErr: true,
+			expectErr:    true,
+			readOnlyMode: false,
 		},
 		{
 			desc:                 "valid resource reference with kind=Service",
@@ -181,7 +192,8 @@ func TestServiceAttachmentCreation(t *testing.T) {
 				Kind: "Service",
 				Name: svcName,
 			},
-			expectErr: true,
+			expectErr:    true,
+			readOnlyMode: false,
 		},
 		{
 			desc:                 "proxy protocol is true",
@@ -192,12 +204,141 @@ func TestServiceAttachmentCreation(t *testing.T) {
 			resourceRef:          validRef,
 			proxyProtocol:        true,
 			expectErr:            false,
+			readOnlyMode:         false,
+		},
+		{
+			desc:                 "[ReadOnly] valid service attachment with tcp ILB",
+			annotationKey:        annotations.TCPForwardingRuleKey,
+			svcExists:            true,
+			fwdRuleExists:        true,
+			connectionPreference: "ACCEPT_AUTOMATIC",
+			resourceRef:          validRef,
+			expectErr:            false,
+			readOnlyMode:         true,
+		},
+		{
+			desc:                 "[ReadOnly] valid service attachment with udp ILB",
+			annotationKey:        annotations.UDPForwardingRuleKey,
+			svcExists:            true,
+			fwdRuleExists:        true,
+			connectionPreference: "ACCEPT_AUTOMATIC",
+			resourceRef:          validRef,
+			expectErr:            false,
+			readOnlyMode:         true,
+		},
+		{
+			desc:                 "[ReadOnly] legacy ILB service",
+			legacySvc:            true,
+			svcExists:            true,
+			fwdRuleExists:        true,
+			connectionPreference: "ACCEPT_AUTOMATIC",
+			resourceRef:          validRef,
+			expectErr:            false,
+			readOnlyMode:         true,
+		},
+		{
+			desc:                 "[ReadOnly] legacy ILB service, forwarding rule has wrong IP",
+			legacySvc:            true,
+			svcExists:            true,
+			fwdRuleExists:        true,
+			connectionPreference: "ACCEPT_AUTOMATIC",
+			resourceRef:          validRef,
+			incorrectIPAddr:      true,
+			expectErr:            false,
+			readOnlyMode:         true,
+		},
+		{
+			desc:                 "[ReadOnly] forwarding rule has wrong IP",
+			annotationKey:        annotations.TCPForwardingRuleKey,
+			svcExists:            true,
+			fwdRuleExists:        true,
+			connectionPreference: "ACCEPT_AUTOMATIC",
+			resourceRef:          validRef,
+			incorrectIPAddr:      true,
+			expectErr:            false,
+			readOnlyMode:         true,
+		},
+		{
+			desc:                 "[ReadOnly] service does not exist",
+			svcExists:            false,
+			connectionPreference: "ACCEPT_AUTOMATIC",
+			resourceRef:          validRef,
+			expectErr:            false,
+			readOnlyMode:         true,
+		},
+		{
+			desc:                 "[ReadOnly] forwarding rule does not exist",
+			annotationKey:        annotations.TCPForwardingRuleKey,
+			svcExists:            true,
+			fwdRuleExists:        false,
+			connectionPreference: "ACCEPT_AUTOMATIC",
+			resourceRef:          validRef,
+			expectErr:            false,
+			readOnlyMode:         true,
+		},
+		{
+			desc:                 "[ReadOnly] legacy ILB service, forwarding rule does not exist",
+			legacySvc:            true,
+			svcExists:            true,
+			fwdRuleExists:        false,
+			connectionPreference: "ACCEPT_AUTOMATIC",
+			resourceRef:          validRef,
+			expectErr:            false,
+			readOnlyMode:         true,
+		},
+		{
+			desc:                 "[ReadOnly] invalid resource reference",
+			annotationKey:        annotations.TCPForwardingRuleKey,
+			svcExists:            false,
+			connectionPreference: "ACCEPT_AUTOMATIC",
+			resourceRef: v1.TypedLocalObjectReference{
+				APIGroup: ptr.To("apiGroup"),
+				Kind:     "not-service",
+				Name:     svcName,
+			},
+			expectErr:    false,
+			readOnlyMode: true,
+		},
+		{
+			desc:                 "[ReadOnly] valid resource reference with no api group",
+			annotationKey:        annotations.TCPForwardingRuleKey,
+			svcExists:            false,
+			connectionPreference: "ACCEPT_AUTOMATIC",
+			resourceRef: v1.TypedLocalObjectReference{
+				Kind: "service",
+				Name: svcName,
+			},
+			expectErr:    false,
+			readOnlyMode: true,
+		},
+		{
+			desc:                 "[ReadOnly] valid resource reference with kind=Service",
+			annotationKey:        annotations.TCPForwardingRuleKey,
+			svcExists:            false,
+			connectionPreference: "ACCEPT_AUTOMATIC",
+			resourceRef: v1.TypedLocalObjectReference{
+				Kind: "Service",
+				Name: svcName,
+			},
+			expectErr:    false,
+			readOnlyMode: true,
+		},
+		{
+			desc:                 "[ReadOnly] proxy protocol is true",
+			annotationKey:        annotations.TCPForwardingRuleKey,
+			svcExists:            true,
+			fwdRuleExists:        true,
+			connectionPreference: "ACCEPT_AUTOMATIC",
+			resourceRef:          validRef,
+			proxyProtocol:        true,
+			expectErr:            false,
+			readOnlyMode:         true,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			controller, err := newTestController("ZONAL")
+			controller, err := newTestController("ZONAL", tc.readOnlyMode)
 			if err != nil {
 				t.Fatalf("failed to initialize the controller: %v", err)
 			}
@@ -285,7 +426,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 				t.Errorf("expected an error when process service attachment")
 			} else if !tc.expectErr && err != nil {
 				t.Errorf("unexpected error processing Service Attachment: %s", err)
-			} else if !tc.expectErr {
+			} else if !tc.expectErr && !tc.readOnlyMode {
 				updatedCR, err := controller.saClient.NetworkingV1().ServiceAttachments(testNamespace).Get(context2.TODO(), saName, metav1.GetOptions{})
 				if err != nil {
 					t.Errorf("unexpected error while querying for service attachment %s: %q", saName, err)
@@ -345,6 +486,13 @@ func TestServiceAttachmentCreation(t *testing.T) {
 				if err = validateSAStatus(updatedCR.Status, sa, metav1.NewTime(time.Time{}), true); err != nil {
 					t.Errorf("ServiceAttachment CR does not match expected: %s", err)
 				}
+			} else if tc.readOnlyMode {
+				// in case of read only mode, verify there are no resources in GCE
+				sa, _ := controller.saClient.NetworkingV1().ServiceAttachments(testNamespace).Get(context2.TODO(), saName, metav1.GetOptions{})
+
+				if err := verifyGCEServiceAttachmentDeletion(controller, sa); err != nil {
+					t.Errorf("Expected gce sa %s to be deleted : %s", saName, err)
+				}
 			}
 		})
 	}
@@ -356,7 +504,7 @@ func TestServiceAttachmentConsumers(t *testing.T) {
 	svcName := "my-service"
 	saUID := "service-attachment-uid"
 	frIPAddr := "1.2.3.4"
-	controller, err := newTestController("ZONAL")
+	controller, err := newTestController("ZONAL", false)
 	if err != nil {
 		t.Fatalf("failed to initialize the controller: %v", err)
 	}
@@ -485,7 +633,7 @@ func TestServiceAttachmentUpdate(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.desc, func(t *testing.T) {
-			controller, err := newTestController("REGIONAL")
+			controller, err := newTestController("REGIONAL", false)
 			if err != nil {
 				t.Fatalf("failed to initialize the controller: %v", err)
 			}
@@ -738,7 +886,7 @@ func TestServiceAttachmentGarbageCollection(t *testing.T) {
 	for _, tc := range testcases {
 		t.Run(tc.desc, func(t *testing.T) {
 
-			controller, err := newTestController("ZONAL")
+			controller, err := newTestController("ZONAL", false)
 			if err != nil {
 				t.Fatalf("failed to initialize the controller: %v", err)
 			}
@@ -1039,7 +1187,7 @@ func TestGetSubnetURLs(t *testing.T) {
 	}
 	for _, tc := range testcases {
 		t.Run(tc.desc, func(t *testing.T) {
-			controller, err := newTestController("ZONAL")
+			controller, err := newTestController("ZONAL", false)
 			if err != nil {
 				t.Fatalf("failed to initialize the controller: %v", err)
 			}
@@ -1072,7 +1220,7 @@ func TestGetSubnetURLs(t *testing.T) {
 }
 
 // newTestController returns a test psc controller
-func newTestController(clusterType string) (*Controller, error) {
+func newTestController(clusterType string, readOnlyMode bool) (*Controller, error) {
 	kubeClient := fake.NewSimpleClientset()
 	gceClient := gce.NewFakeGCECloud(test.DefaultTestClusterValues())
 
@@ -1109,6 +1257,7 @@ func newTestController(clusterType string) (*Controller, error) {
 		ResyncPeriod:          1 * time.Minute,
 		DefaultBackendSvcPort: test.DefaultBeSvcPort,
 		HealthCheckPath:       "/",
+		ReadOnlyMode:          readOnlyMode,
 	}
 
 	flags.F.GKEClusterName = ClusterName

@@ -199,6 +199,11 @@ func (lc *L4NetLBController) needsAddition(newSvc, oldSvc *v1.Service) bool {
 
 // needsDeletion return true if svc required deleting RBS based NetLB
 func (lc *L4NetLBController) needsDeletion(svc *v1.Service, svcLogger klog.Logger) bool {
+	// Should not delete anything if controller is in read only mode
+	if lc.ctx.ReadOnlyMode {
+		return false
+	}
+
 	// Check if service was provisioned by RBS controller before -- if it has rbs finalizer, rbs loadBalancerClass or rbs forwarding rule
 	if !utils.HasL4NetLBFinalizerV2(svc) && !utils.HasL4NetLBFinalizerV3(svc) &&
 		!lc.hasRBSForwardingRule(svc, svcLogger) &&
@@ -506,6 +511,12 @@ func (lc *L4NetLBController) sync(key string, svcLogger klog.Logger) error {
 		svcLogger.V(3).Info("Ignoring sync of non-existent service")
 		return nil
 	}
+
+	if lc.ctx.ReadOnlyMode {
+		svcLogger.Info("Skipping syncing L4 NetLB RBS service since the controller is in read-only mode", "key", key)
+		return nil
+	}
+
 	isLegacyService, err := lc.preventLegacyServiceHandling(svc, key, svcLogger)
 	if err != nil {
 		svcLogger.Info("lc.preventLegacyServiceHandling returned error, want nil", "service", svc, "err", err)
@@ -562,6 +573,11 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 	defer func() {
 		svcLogger.Info("Finished syncing L4 NetLB RBS service", "timeTaken", time.Since(startTime))
 	}()
+
+	if lc.ctx.ReadOnlyMode {
+		svcLogger.Info("Skipping syncing L4 NetLB RBS service since the controller is in read-only mode", "service", service.Name)
+		return nil
+	}
 
 	usesNegBackends := lc.shouldUseNEGBackends(service, svcLogger)
 
