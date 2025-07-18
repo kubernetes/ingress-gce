@@ -446,14 +446,6 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 		createdBS, err := composite.GetBackendService(p.cloud, key, expectedBS.Version, beLogger)
 		return createdBS, utils.ResourceUpdate, err
 	} else {
-		// TODO(FelipeYepez) remove this check once LocalityLBPolicyMaglev does not require allow lisiting
-		// Use LocalityLBPolicyMaglev instead of LocalityLBPolicyDefault if ILB already uses MAGLEV or WEIGHTEDMAGLEV
-		if expectedBS.LocalityLbPolicy == string(LocalityLBPolicyDefault) &&
-			(currentBS.LocalityLbPolicy == string(LocalityLBPolicyWeightedMaglev) || currentBS.LocalityLbPolicy == string(LocalityLBPolicyMaglev)) {
-
-			expectedBS.LocalityLbPolicy = string(LocalityLBPolicyMaglev)
-		}
-
 		// Determine the appropriate API version to use for updating the backend service
 		currentVersion := meta.VersionGA
 		var currentDesc utils.L4LBResourceDescription

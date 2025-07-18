@@ -860,7 +860,7 @@ func TestUpdateLocalityLBPolicy(t *testing.T) {
 			desc:                       "from WEIGHTED_MAGLEV to empty",
 			existingBSLocalityLbPolicy: LocalityLBPolicyWeightedMaglev,
 			updatedBSLocalityLbPolicy:  LocalityLBPolicyDefault,
-			wantBSLocalityLbPolicy:     LocalityLBPolicyMaglev,
+			wantBSLocalityLbPolicy:     LocalityLBPolicyDefault,
 		},
 	}
 

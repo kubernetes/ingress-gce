@@ -749,7 +749,7 @@ func (l4netlb *L4NetLB) determineBackendServiceLocalityPolicy() backends.Localit
 			return backends.LocalityLBPolicyMaglev
 		}
 	}
-	// If the service has weighted load balancing disabled, the default locality policy is used.
+	// If the controller has weighted load balancing disabled, the default unset locality policy is used.
 	return backends.LocalityLBPolicyDefault
 }
 
