@@ -33,6 +33,7 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/forwardingrules"
 	l4metrics "k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
@@ -177,6 +178,17 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 			}
 		},
 	})
+
+	enableMultiSubnetClusterPhase1 := flags.F.EnableMultiSubnetClusterPhase1
+	if enableMultiSubnetClusterPhase1 {
+		ctx.SvcNegInformer.AddEventHandler(&svcNEGEventHandler{
+			ServiceInformer: ctx.ServiceInformer,
+			svcQueue:        l4c.svcQueue,
+			svcFilterFunc:   isSubsettingILBService,
+			logger:          logger,
+		})
+		logger.V(3).Info("set up SvcNegInformer event handlers")
+	}
 
 	return l4c
 }
