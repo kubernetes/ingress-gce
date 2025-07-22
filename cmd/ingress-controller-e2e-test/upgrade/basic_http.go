@@ -28,6 +28,7 @@ import (
 )
 
 var (
+	svcName = "svc1"
 	port80  = v1.ServiceBackendPort{Number: 80}
 	ingName = "ing1"
 )
