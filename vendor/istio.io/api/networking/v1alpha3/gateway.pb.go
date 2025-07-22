@@ -359,71 +359,59 @@ func (m *Gateway) GetSelector() map[string]string {
 // apiVersion: networking.istio.io/v1alpha3
 // kind: Gateway
 // metadata:
-//
-//	name: my-ingress
-//
+//   name: my-ingress
 // spec:
-//
-//	selector:
-//	  app: my-ingress-gateway
-//	servers:
-//	- port:
-//	    number: 80
-//	    name: http2
-//	    protocol: HTTP2
-//	  hosts:
-//	  - "*"
-//
+//   selector:
+//     app: my-ingress-gateway
+//   servers:
+//   - port:
+//       number: 80
+//       name: http2
+//       protocol: HTTP2
+//     hosts:
+//     - "*"
 // ```
 //
-// # Another example
+// Another example
 //
 // ```yaml
 // apiVersion: networking.istio.io/v1alpha3
 // kind: Gateway
 // metadata:
-//
-//	name: my-tcp-ingress
-//
+//   name: my-tcp-ingress
 // spec:
-//
-//	selector:
-//	  app: my-tcp-ingress-gateway
-//	servers:
-//	- port:
-//	    number: 27018
-//	    name: mongo
-//	    protocol: MONGO
-//	  hosts:
-//	  - "*"
-//
+//   selector:
+//     app: my-tcp-ingress-gateway
+//   servers:
+//   - port:
+//       number: 27018
+//       name: mongo
+//       protocol: MONGO
+//     hosts:
+//     - "*"
 // ```
 //
-// # The following is an example of TLS configuration for port 443
+// The following is an example of TLS configuration for port 443
 //
 // ```yaml
 // apiVersion: networking.istio.io/v1alpha3
 // kind: Gateway
 // metadata:
-//
-//	name: my-tls-ingress
-//
+//   name: my-tls-ingress
 // spec:
-//
-//	selector:
-//	  app: my-tls-ingress-gateway
-//	servers:
-//	- port:
-//	    number: 443
-//	    name: https
-//	    protocol: HTTPS
-//	  hosts:
-//	  - "*"
-//	  tls:
-//	    mode: SIMPLE
-//	    serverCertificate: /etc/certs/server.pem
-//	    privateKey: /etc/certs/privatekey.pem
-//
+//   selector:
+//     app: my-tls-ingress-gateway
+//   servers:
+//   - port:
+//       number: 443
+//       name: https
+//       protocol: HTTPS
+//     hosts:
+//     - "*"
+//     tls:
+//       mode: SIMPLE
+//       serverCertificate: /etc/certs/server.pem
+//       privateKey: /etc/certs/privatekey.pem
 // ```
 type Server struct {
 	// REQUIRED: The Port on which the proxy should listen for incoming

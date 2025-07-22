@@ -8,7 +8,7 @@ Package mergo merges same-type structs and maps by setting default values in zer
 
 Mergo won't merge unexported (private) fields but will do recursively any exported one. It also won't merge structs inside maps (because they are not addressable using Go reflection).
 
-# Usage
+Usage
 
 From my own work-in-progress project:
 
@@ -39,5 +39,6 @@ From my own work-in-progress project:
 	}
 
 	// More code [...]
+
 */
 package mergo

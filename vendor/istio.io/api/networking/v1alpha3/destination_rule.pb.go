@@ -515,23 +515,19 @@ func (m *TrafficPolicy_PortTrafficPolicy) GetTls() *TLSSettings {
 // apiVersion: networking.istio.io/v1alpha3
 // kind: DestinationRule
 // metadata:
-//
-//	name: bookinfo-ratings
-//
+//   name: bookinfo-ratings
 // spec:
-//
-//	host: ratings.prod.svc.cluster.local
-//	trafficPolicy:
-//	  loadBalancer:
-//	    simple: LEAST_CONN
-//	subsets:
-//	- name: testversion
-//	  labels:
-//	    version: v3
-//	  trafficPolicy:
-//	    loadBalancer:
-//	      simple: ROUND_ROBIN
-//
+//   host: ratings.prod.svc.cluster.local
+//   trafficPolicy:
+//     loadBalancer:
+//       simple: LEAST_CONN
+//   subsets:
+//   - name: testversion
+//     labels:
+//       version: v3
+//     trafficPolicy:
+//       loadBalancer:
+//         simple: ROUND_ROBIN
 // ```
 //
 // **Note:** Policies specified for subsets will not take effect until
@@ -625,16 +621,12 @@ func (m *Subset) GetTrafficPolicy() *TrafficPolicy {
 // apiVersion: networking.istio.io/v1alpha3
 // kind: DestinationRule
 // metadata:
-//
-//	name: bookinfo-ratings
-//
+//   name: bookinfo-ratings
 // spec:
-//
-//	host: ratings.prod.svc.cluster.local
-//	trafficPolicy:
-//	  loadBalancer:
-//	    simple: ROUND_ROBIN
-//
+//   host: ratings.prod.svc.cluster.local
+//   trafficPolicy:
+//     loadBalancer:
+//       simple: ROUND_ROBIN
 // ```
 //
 // The following example sets up sticky sessions for the ratings service
@@ -642,21 +634,20 @@ func (m *Subset) GetTrafficPolicy() *TrafficPolicy {
 // the User cookie as the hash key.
 //
 // ```yaml
-//
-//	apiVersion: networking.istio.io/v1alpha3
-//	kind: DestinationRule
-//	metadata:
-//	  name: bookinfo-ratings
-//	spec:
-//	  host: ratings.prod.svc.cluster.local
-//	  trafficPolicy:
-//	    loadBalancer:
-//	      consistentHash:
-//	        httpCookie:
-//	          name: user
-//	          ttl: 0s
-//
+//  apiVersion: networking.istio.io/v1alpha3
+//  kind: DestinationRule
+//  metadata:
+//    name: bookinfo-ratings
+//  spec:
+//    host: ratings.prod.svc.cluster.local
+//    trafficPolicy:
+//      loadBalancer:
+//        consistentHash:
+//          httpCookie:
+//            name: user
+//            ttl: 0s
 // ```
+//
 type LoadBalancerSettings struct {
 	// Upstream load balancing policy.
 	//
@@ -1098,21 +1089,17 @@ func (m *LoadBalancerSettings_ConsistentHashLB_HTTPCookie) GetTtl() *time.Durati
 // apiVersion: networking.istio.io/v1alpha3
 // kind: DestinationRule
 // metadata:
-//
-//	name: bookinfo-redis
-//
+//   name: bookinfo-redis
 // spec:
-//
-//	host: myredissrv.prod.svc.cluster.local
-//	trafficPolicy:
-//	  connectionPool:
-//	    tcp:
-//	      maxConnections: 100
-//	      connectTimeout: 30ms
-//	      tcpKeepalive:
-//	        time: 7200s
-//	        interval: 75s
-//
+//   host: myredissrv.prod.svc.cluster.local
+//   trafficPolicy:
+//     connectionPool:
+//       tcp:
+//         maxConnections: 100
+//         connectTimeout: 30ms
+//         tcpKeepalive:
+//           time: 7200s
+//           interval: 75s
 // ```
 type ConnectionPoolSettings struct {
 	// Settings common to both HTTP and TCP upstream connections.
@@ -1434,24 +1421,20 @@ func (m *ConnectionPoolSettings_HTTPSettings) GetH2UpgradePolicy() ConnectionPoo
 // apiVersion: networking.istio.io/v1alpha3
 // kind: DestinationRule
 // metadata:
-//
-//	name: reviews-cb-policy
-//
+//   name: reviews-cb-policy
 // spec:
-//
-//	host: reviews.prod.svc.cluster.local
-//	trafficPolicy:
-//	  connectionPool:
-//	    tcp:
-//	      maxConnections: 100
-//	    http:
-//	      http2MaxRequests: 1000
-//	      maxRequestsPerConnection: 10
-//	  outlierDetection:
-//	    consecutiveErrors: 7
-//	    interval: 5m
-//	    baseEjectionTime: 15m
-//
+//   host: reviews.prod.svc.cluster.local
+//   trafficPolicy:
+//     connectionPool:
+//       tcp:
+//         maxConnections: 100
+//       http:
+//         http2MaxRequests: 1000
+//         maxRequestsPerConnection: 10
+//     outlierDetection:
+//       consecutiveErrors: 7
+//       interval: 5m
+//       baseEjectionTime: 15m
 // ```
 type OutlierDetection struct {
 	// Number of errors before a host is ejected from the connection
@@ -1564,19 +1547,15 @@ func (m *OutlierDetection) GetMinHealthPercent() int32 {
 // apiVersion: networking.istio.io/v1alpha3
 // kind: DestinationRule
 // metadata:
-//
-//	name: db-mtls
-//
+//   name: db-mtls
 // spec:
-//
-//	host: mydbserver.prod.svc.cluster.local
-//	trafficPolicy:
-//	  tls:
-//	    mode: MUTUAL
-//	    clientCertificate: /etc/certs/myclientcert.pem
-//	    privateKey: /etc/certs/client_private_key.pem
-//	    caCertificates: /etc/certs/rootcacerts.pem
-//
+//   host: mydbserver.prod.svc.cluster.local
+//   trafficPolicy:
+//     tls:
+//       mode: MUTUAL
+//       clientCertificate: /etc/certs/myclientcert.pem
+//       privateKey: /etc/certs/client_private_key.pem
+//       caCertificates: /etc/certs/rootcacerts.pem
 // ```
 //
 // The following rule configures a client to use TLS when talking to a
@@ -1586,16 +1565,12 @@ func (m *OutlierDetection) GetMinHealthPercent() int32 {
 // apiVersion: networking.istio.io/v1alpha3
 // kind: DestinationRule
 // metadata:
-//
-//	name: tls-foo
-//
+//   name: tls-foo
 // spec:
-//
-//	host: "*.foo.com"
-//	trafficPolicy:
-//	  tls:
-//	    mode: SIMPLE
-//
+//   host: "*.foo.com"
+//   trafficPolicy:
+//     tls:
+//       mode: SIMPLE
 // ```
 //
 // The following rule configures a client to use Istio mutual TLS when talking
@@ -1605,16 +1580,12 @@ func (m *OutlierDetection) GetMinHealthPercent() int32 {
 // apiVersion: networking.istio.io/v1alpha3
 // kind: DestinationRule
 // metadata:
-//
-//	name: ratings-istio-mtls
-//
+//   name: ratings-istio-mtls
 // spec:
-//
-//	host: ratings.prod.svc.cluster.local
-//	trafficPolicy:
-//	  tls:
-//	    mode: ISTIO_MUTUAL
-//
+//   host: ratings.prod.svc.cluster.local
+//   trafficPolicy:
+//     tls:
+//       mode: ISTIO_MUTUAL
 // ```
 type TLSSettings struct {
 	// REQUIRED: Indicates whether connections to this port should be secured
