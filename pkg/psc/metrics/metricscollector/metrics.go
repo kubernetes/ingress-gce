@@ -29,6 +29,7 @@ const (
 	sa          = feature("ServiceAttachments")
 	saInSuccess = feature("ServiceAttachmentInSuccess")
 	saInError   = feature("ServiceAttachmentInError")
+	saUnsync    = feature("ServiceAttachmentInUnsync")
 	services    = feature("Services")
 )
 

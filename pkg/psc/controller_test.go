@@ -523,7 +523,7 @@ func TestServiceAttachmentConsumers(t *testing.T) {
 		t.Errorf("%s", err)
 	}
 
-	saCR := testServiceAttachmentCR(saName, svcName, saUID, []string{"my-subnet"}, false, false)
+	saCR := testServiceAttachmentCR(saName, svcName, saUID, []string{"my-subnet"}, false, false, nil)
 	beforeTS := metav1.NewTime(time.Time{})
 	saCR.Status.LastModifiedTimestamp = beforeTS
 	_, err = controller.saClient.NetworkingV1().ServiceAttachments(testNamespace).Create(context2.TODO(), saCR, metav1.CreateOptions{})
@@ -594,7 +594,7 @@ func TestServiceAttachmentUpdate(t *testing.T) {
 	subnet2 := "subnet-2"
 	subnet3 := "subnet-3"
 
-	saCRWithAnnotation := testServiceAttachmentCR(saName, svcName, saUID, []string{subnet1, subnet2}, true, false)
+	saCRWithAnnotation := testServiceAttachmentCR(saName, svcName, saUID, []string{subnet1, subnet2}, true, false, nil)
 	saCRWithAnnotation.Annotations = map[string]string{"some-key": "some-value"}
 
 	testcases := []struct {
@@ -612,20 +612,20 @@ func TestServiceAttachmentUpdate(t *testing.T) {
 		},
 		{
 			desc:            "update forwarding rule",
-			updatedSACR:     testServiceAttachmentCR(saName, otherServiceName, saUID, []string{subnet1, subnet2}, false, true),
+			updatedSACR:     testServiceAttachmentCR(saName, otherServiceName, saUID, []string{subnet1, subnet2}, false, true, nil),
 			expectSAUpdate:  false,
 			expectError:     true,
 			expectedSubnets: []string{subnet1, subnet2},
 		},
 		{
 			desc:            "update proxy protocol to false in the spec",
-			updatedSACR:     testServiceAttachmentCR(saName, svcName, saUID, []string{subnet1, subnet2}, false, false),
+			updatedSACR:     testServiceAttachmentCR(saName, svcName, saUID, []string{subnet1, subnet2}, false, true, nil),
 			expectSAUpdate:  true,
 			expectedSubnets: []string{subnet1, subnet2},
 		},
 		{ // though this case checks that the SA is updated, this would fail on the GCE update because subnets cannot be removed
 			desc:            "update one of the subnets",
-			updatedSACR:     testServiceAttachmentCR(saName, svcName, saUID, []string{subnet1, subnet3}, false, true),
+			updatedSACR:     testServiceAttachmentCR(saName, svcName, saUID, []string{subnet1, subnet3}, false, true, nil),
 			expectSAUpdate:  true,
 			expectedSubnets: []string{subnet1, subnet3},
 		},
@@ -661,7 +661,7 @@ func TestServiceAttachmentUpdate(t *testing.T) {
 				expectedSubnetURLs = append(expectedSubnetURLs, createdSubnets[subnetName])
 			}
 
-			saCR := testServiceAttachmentCR(saName, svcName, saUID, []string{subnet1, subnet2}, false, false)
+			saCR := testServiceAttachmentCR(saName, svcName, saUID, []string{subnet1, subnet2}, false, false, nil)
 			_, err = controller.saClient.NetworkingV1().ServiceAttachments(testNamespace).Create(context2.TODO(), saCR, metav1.CreateOptions{})
 			if err != nil {
 				t.Fatalf("Failed to create service attachment cr: %q", err)
@@ -712,6 +712,7 @@ func TestServiceAttachmentUpdate(t *testing.T) {
 			if !tc.expectSAUpdate {
 				expectedSA = createdSA
 			} else {
+
 				expectedSA = &ga.ServiceAttachment{
 					ConnectionPreference: saCR.Spec.ConnectionPreference,
 					Description:          createdSA.Description,
@@ -720,7 +721,9 @@ func TestServiceAttachmentUpdate(t *testing.T) {
 					TargetService:        createdSA.TargetService,
 					Region:               controller.cloud.Region(),
 					EnableProxyProtocol:  tc.updatedSACR.Spec.ProxyProtocol,
+					ReconcileConnections: tc.updatedSACR.Spec.ReconcileConnections != nil && *tc.updatedSACR.Spec.ReconcileConnections,
 					SelfLink:             createdSA.SelfLink,
+					// ForceSendFields:      forceSendFields,
 				}
 			}
 			updatedSA, err := getServiceAttachment(controller.cloud, gceSAName)
@@ -743,6 +746,245 @@ func TestServiceAttachmentUpdate(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestServiceAttachmentUpdateReconcileConnections test updates of new ReconcileConnections field including situations:
+// - initial UNSYNCED state
+// - transition to SYNCED state
+// - normal updates
+// - disabling of EnablePSCReconcileConnections flag
+func TestServiceAttachmentUpdateReconcileConnections(t *testing.T) {
+	saName := "my-sa"
+	svcName := "my-service"
+	saUID := "service-attachment-uid"
+	frIPAddr := "1.2.3.4"
+	subnetName := "my-subnet"
+
+	testCases := []struct {
+		desc                string
+		crReconcile         *bool
+		initialAnnotation   *string // nil means missing
+		expectAnnotation    string
+		initialGCEReconcile bool
+		expectGCEReconcile  bool
+		disableFieldSupport bool
+		crReconcileAfter    *bool
+	}{
+		{
+			desc:                "First sync: GCE false, CR nil -> SYNCED",
+			crReconcile:         nil,
+			initialAnnotation:   nil, // Missing annotation
+			expectAnnotation:    "",
+			initialGCEReconcile: false,
+			expectGCEReconcile:  false,
+		},
+
+		// Tests for initial missing field (ReconcileConnections = nil) which leads to UNSYNC state (unsynced_fields = "ReconcileConnections"):
+		//
+		{
+			desc:                "First sync: GCE true, CR nil -> Unsync detected",
+			crReconcile:         nil,
+			initialAnnotation:   nil, // Missing annotation
+			expectAnnotation:    "ReconcileConnections",
+			initialGCEReconcile: true,
+			expectGCEReconcile:  true,
+		},
+		{
+			desc:                "Subsequent sync: GCE true, CR nil, Annotation set -> Unsync persists",
+			crReconcile:         nil,
+			initialAnnotation:   ptr.To("ReconcileConnections"),
+			expectAnnotation:    "ReconcileConnections",
+			initialGCEReconcile: true,
+			expectGCEReconcile:  true,
+		},
+
+		// Tests for explicitly set field and which leads to SYNC state (unsynced_fields = ""):
+		{
+			desc:                "Resolution: GCE true, CR explicitly false, Annotation set -> Synced",
+			crReconcile:         ptr.To(false),
+			initialAnnotation:   ptr.To("ReconcileConnections"),
+			expectAnnotation:    "",
+			initialGCEReconcile: true,
+			expectGCEReconcile:  false,
+		},
+		{
+			desc:                "Resolution: GCE true, CR explicitly true, Annotation set -> Synced, disable field support",
+			crReconcile:         ptr.To(true),
+			initialAnnotation:   ptr.To("ReconcileConnections"),
+			expectAnnotation:    "",
+			initialGCEReconcile: true,
+			expectGCEReconcile:  true,
+			disableFieldSupport: true,
+			crReconcileAfter:    ptr.To(false),
+		},
+
+		// Tests for normal updates in SYNC state (when unsynced_fields = ""):
+		{
+			desc:                "Normal: GCE false, CR true -> Update",
+			crReconcile:         ptr.To(true),
+			initialAnnotation:   nil,
+			expectAnnotation:    "",
+			initialGCEReconcile: false,
+			expectGCEReconcile:  true,
+		},
+		{
+			desc:                "Normal reset to false when CR is false",
+			crReconcile:         ptr.To(false),
+			initialAnnotation:   ptr.To(""),
+			expectAnnotation:    "",
+			initialGCEReconcile: true,
+			expectGCEReconcile:  false,
+		},
+		{
+			desc:                "Normal reset to false when CR is nil",
+			crReconcile:         nil,
+			initialAnnotation:   ptr.To(""),
+			expectAnnotation:    "",
+			initialGCEReconcile: true,
+			expectGCEReconcile:  false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			controller, err := newTestController("ZONAL", false)
+			if err != nil {
+				t.Fatalf("failed to initialize the controller: %v", err)
+			}
+			controller.EnablePSCReconcileConnections = true
+
+			// Setup dependencies
+			_, frName, err := createSvc(controller, svcName, "svc-uid", frIPAddr, l4annotations.TCPForwardingRuleKey)
+			if err != nil {
+				t.Fatalf("createSvc: %v", err)
+			}
+			fr, err := createForwardingRule(controller.cloud, frName, frIPAddr)
+			if err != nil {
+				t.Fatalf("createForwardingRule: %v", err)
+			}
+			subnet, err := createNatSubnet(controller.cloud, subnetName)
+			if err != nil {
+				t.Fatalf("createNatSubnet: %v", err)
+			}
+
+			// Create initial GCE SA
+			gceSAName := controller.saNamer.ServiceAttachment(testNamespace, saName, saUID)
+			desc := sautils.NewServiceAttachmentDesc(testNamespace, saName, ClusterName, controller.cloud.LocalZone(), false)
+			initialSA := &ga.ServiceAttachment{
+				Name:                 gceSAName,
+				Region:               controller.cloud.Region(),
+				TargetService:        fr.SelfLink,
+				NatSubnets:           []string{subnet.SelfLink},
+				Description:          desc.String(),
+				ConnectionPreference: "ACCEPT_AUTOMATIC",
+				ReconcileConnections: tc.initialGCEReconcile,
+				EnableProxyProtocol:  false,
+			}
+			if err := insertServiceAttachment(controller.cloud, initialSA); err != nil {
+				t.Fatalf("insertServiceAttachment: %v", err)
+			}
+
+			// Override PatchHook to simulate ForceSendFields behavior
+			fakeGCE := controller.cloud.Compute().(*cloud.MockGCE)
+			mockSA := fakeGCE.ServiceAttachments().(*cloud.MockServiceAttachments)
+			mockSA.PatchHook = patchHookWithForceSendFields
+
+			// Create K8s CR
+			saCR := testServiceAttachmentCR(saName, svcName, saUID, []string{subnetName}, true, false, tc.crReconcile)
+			if tc.initialAnnotation != nil {
+				if saCR.Annotations == nil {
+					saCR.Annotations = make(map[string]string)
+				}
+				saCR.Annotations[UnsyncedFieldAnnotationKey] = *tc.initialAnnotation
+			}
+
+			_, err = controller.saClient.NetworkingV1().ServiceAttachments(testNamespace).Create(context2.TODO(), saCR, metav1.CreateOptions{})
+			if err != nil {
+				t.Fatalf("Create CR: %v", err)
+			}
+			syncServiceAttachmentLister(controller)
+
+			// Run processing
+			err = controller.processServiceAttachment(SvcAttachmentKeyFunc(testNamespace, saName))
+			if err != nil {
+				t.Fatalf("processServiceAttachment: %v", err)
+			}
+
+			// Verify GCE SA
+			gceSA, err := getServiceAttachment(controller.cloud, gceSAName)
+			if err != nil {
+				t.Fatalf("getServiceAttachment: %v", err)
+			}
+			if gceSA.ReconcileConnections != tc.expectGCEReconcile {
+				t.Errorf("GCE ReconcileConnections got %v, want %v", gceSA.ReconcileConnections, tc.expectGCEReconcile)
+			}
+
+			// Verify CR Annotation
+			updatedCR, err := controller.saClient.NetworkingV1().ServiceAttachments(testNamespace).Get(context2.TODO(), saName, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("Get CR: %v", err)
+			}
+			gotAnnotation := updatedCR.Annotations[UnsyncedFieldAnnotationKey]
+			if gotAnnotation != tc.expectAnnotation {
+				t.Errorf("CR Annotation got %q, want %q", gotAnnotation, tc.expectAnnotation)
+			}
+
+			// Disable EnablePSCReconcileConnections flag
+			if tc.disableFieldSupport {
+				controller.EnablePSCReconcileConnections = false
+
+				// change SA CR
+				updatedCR.Spec.ReconcileConnections = tc.crReconcileAfter
+				_, err = controller.saClient.NetworkingV1().ServiceAttachments(testNamespace).Update(context2.TODO(), updatedCR, metav1.UpdateOptions{})
+				if err != nil {
+					t.Fatalf("Updated CR: %v", err)
+				}
+
+				// Process again
+				err = controller.processServiceAttachment(SvcAttachmentKeyFunc(testNamespace, saName))
+				if err != nil {
+					t.Fatalf("processServiceAttachment (disabled): %v", err)
+				}
+
+				// Verify Annotation Removed
+				updatedCR2, err := controller.saClient.NetworkingV1().ServiceAttachments(testNamespace).Get(context2.TODO(), saName, metav1.GetOptions{})
+				if err != nil {
+					t.Fatalf("Get CR: %v", err)
+				}
+				if _, ok := updatedCR2.Annotations[UnsyncedFieldAnnotationKey]; ok {
+					t.Errorf("Expected annotation to be removed, but it exists: %v", updatedCR2.Annotations[UnsyncedFieldAnnotationKey])
+				}
+
+				// Verify GCE SA was not changed (not overwritten by false)
+				gceSA2, err := getServiceAttachment(controller.cloud, gceSAName)
+				if err != nil {
+					t.Fatalf("get SA: %v", err)
+				}
+				if gceSA2.ReconcileConnections != gceSA.ReconcileConnections {
+					t.Errorf("Expected GCE SA ReconcileConnections to remain true after feature disable")
+				}
+
+			}
+		})
+	}
+}
+
+func patchHookWithForceSendFields(ctx context2.Context, key *meta.Key, sa *ga.ServiceAttachment, fake *cloud.MockServiceAttachments, _ ...cloud.Option) error {
+	obj, ok := fake.Objects[*key]
+	if !ok {
+		return fmt.Errorf("object not found")
+	}
+	existing := obj.Obj.(*ga.ServiceAttachment)
+
+	// Simulate Patch behavior for ReconcileConnections
+	for _, field := range sa.ForceSendFields {
+		if field == "ReconcileConnections" {
+			existing.ReconcileConnections = sa.ReconcileConnections
+			break
+		}
+	}
+
+	return nil
 }
 
 func TestServiceAttachmentPatch(t *testing.T) {
@@ -778,7 +1020,7 @@ func TestServiceAttachmentPatch(t *testing.T) {
 	// Base ServiceAttachment CR with:
 	// ProxyProtocol: true
 	// ConsumerRejectList: [] (instead of nil) previously it causes problems for needsUpdate func and causes odd Patch requests
-	saCR := testServiceAttachmentCR(saName, svcName, saUID, []string{subnetName}, true, true)
+	saCR := testServiceAttachmentCR(saName, svcName, saUID, []string{subnetName}, true, true, nil)
 	saCR.Spec.ConsumerRejectList = []string{}
 
 	controller.saClient.NetworkingV1().ServiceAttachments(testNamespace).Create(context2.TODO(), saCR, metav1.CreateOptions{})
@@ -999,8 +1241,8 @@ func TestServiceAttachmentGarbageCollection(t *testing.T) {
 			}
 
 			// create a serviceAttachment that should not be deleted as part of GC
-			saToKeep := testServiceAttachmentCR("sa-to-keep", svcNamePrefix+"-keep", saUIDPrefix+"-keep", []string{"my-subnet"}, true, false)
-			saToBeDeleted := testServiceAttachmentCR("sa-to-be-deleted", svcNamePrefix+"-deleted", saUIDPrefix+"-deleted", []string{"my-subnet"}, true, false)
+			saToKeep := testServiceAttachmentCR("sa-to-keep", svcNamePrefix+"-keep", saUIDPrefix+"-keep", []string{"my-subnet"}, true, false, nil)
+			saToBeDeleted := testServiceAttachmentCR("sa-to-be-deleted", svcNamePrefix+"-deleted", saUIDPrefix+"-deleted", []string{"my-subnet"}, true, false, nil)
 			for _, sa := range []*sav1.ServiceAttachment{saToKeep, saToBeDeleted} {
 				svcName := sa.Spec.ResourceRef.Name
 				svc, frName, err := createSvc(controller, svcName, string(sa.UID), frIPAddr, l4annotations.TCPForwardingRuleKey)
@@ -1107,7 +1349,7 @@ func TestServiceAttachmentGarbageCollection(t *testing.T) {
 
 func TestShouldProcess(t *testing.T) {
 	now := metav1.Now()
-	originalSA := testServiceAttachmentCR("sa", "my-service", "service-attachment-uid", []string{"my-subnet"}, true, false)
+	originalSA := testServiceAttachmentCR("sa", "my-service", "service-attachment-uid", []string{"my-subnet"}, true, false, nil)
 
 	deletedSA := originalSA.DeepCopy()
 	deletedSA.SetDeletionTimestamp(&now)
@@ -1402,7 +1644,7 @@ func createSvc(controller *Controller, svcName, svcUID, ipAddr, forwardingRuleKe
 }
 
 // testServiceAttachmentCR creates a test ServiceAttachment CR with the provided name, uid and subnets
-func testServiceAttachmentCR(saName, svcName, svcUID string, subnets []string, withFinalizer, proxyProtocol bool) *sav1.ServiceAttachment {
+func testServiceAttachmentCR(saName, svcName, svcUID string, subnets []string, withFinalizer, proxyProtocol bool, reconcileConnections *bool) *sav1.ServiceAttachment {
 	cr := &sav1.ServiceAttachment{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: testNamespace,
@@ -1416,8 +1658,10 @@ func testServiceAttachmentCR(saName, svcName, svcUID string, subnets []string, w
 				Kind: "service",
 				Name: svcName,
 			},
-			ProxyProtocol: proxyProtocol,
+			ProxyProtocol:        proxyProtocol,
+			ReconcileConnections: reconcileConnections,
 		},
+		Status: sav1.ServiceAttachmentStatus{},
 	}
 
 	if withFinalizer {
@@ -1611,4 +1855,141 @@ func verifyGCEServiceAttachmentDeletion(controller *Controller, sa *sav1.Service
 		return fmt.Errorf("Service attachment: %q should have been deleted", gceSAName)
 	}
 	return nil
+}
+
+func Test_findForceSendFields(t *testing.T) {
+	tests := []struct {
+		name string // description of this test case
+		// Named input parameters for target function.
+		unsyncedFields []string
+		want           []string
+	}{
+		{
+			name:           "All fields are synced",
+			unsyncedFields: []string{},
+			want:           OptionalFields,
+		},
+		{
+			name:           "All fields are unsynced",
+			unsyncedFields: OptionalFields,
+			want:           nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := findForceSendFields(tt.unsyncedFields)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("findForceSendFields() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCheckUnsyncedFields(t *testing.T) {
+	trueVar := true
+	falseVar := false
+
+	tests := []struct {
+		desc       string
+		existingSA *ga.ServiceAttachment
+		updatedCR  *sav1.ServiceAttachment
+		want       []string
+	}{
+		{
+			desc: "First sync: ReconcileConnections nil in CR, true in GCE",
+			existingSA: &ga.ServiceAttachment{
+				ReconcileConnections: true,
+			},
+			updatedCR: &sav1.ServiceAttachment{
+				Spec: sav1.ServiceAttachmentSpec{
+					ReconcileConnections: nil,
+				},
+			},
+			want: []string{"ReconcileConnections"},
+		},
+		{
+			desc: "First sync: ReconcileConnections nil in CR, false in GCE",
+			existingSA: &ga.ServiceAttachment{
+				ReconcileConnections: false,
+			},
+			updatedCR: &sav1.ServiceAttachment{
+				Spec: sav1.ServiceAttachmentSpec{
+					ReconcileConnections: nil,
+				},
+			},
+			want: nil,
+		},
+		{
+			desc: "First sync: ReconcileConnections set in CR",
+			existingSA: &ga.ServiceAttachment{
+				ReconcileConnections: true,
+			},
+			updatedCR: &sav1.ServiceAttachment{
+				Spec: sav1.ServiceAttachmentSpec{
+					ReconcileConnections: &trueVar,
+				},
+			},
+			want: nil,
+		},
+		{
+			desc: "Subsequent sync: Annotation empty",
+			existingSA: &ga.ServiceAttachment{
+				ReconcileConnections: true,
+			},
+			updatedCR: &sav1.ServiceAttachment{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						UnsyncedFieldAnnotationKey: "",
+					},
+				},
+				Spec: sav1.ServiceAttachmentSpec{
+					ReconcileConnections: nil,
+				},
+			},
+			want: nil,
+		},
+		{
+			desc: "Subsequent sync: Annotation has ReconcileConnections, CR nil, GCE true",
+			existingSA: &ga.ServiceAttachment{
+				ReconcileConnections: true,
+			},
+			updatedCR: &sav1.ServiceAttachment{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						UnsyncedFieldAnnotationKey: "ReconcileConnections",
+					},
+				},
+				Spec: sav1.ServiceAttachmentSpec{
+					ReconcileConnections: nil,
+				},
+			},
+			want: []string{"ReconcileConnections"},
+		},
+		{
+			desc: "Subsequent sync: Annotation has ReconcileConnections, CR set",
+			existingSA: &ga.ServiceAttachment{
+				ReconcileConnections: true,
+			},
+			updatedCR: &sav1.ServiceAttachment{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						UnsyncedFieldAnnotationKey: "ReconcileConnections",
+					},
+				},
+				Spec: sav1.ServiceAttachmentSpec{
+					ReconcileConnections: &falseVar,
+				},
+			},
+			want: nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := detectUnsyncedFields(tc.existingSA, tc.updatedCR)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("checkUnsyncedFields() = %v, want %v", got, tc.want)
+			}
+		})
+	}
 }
