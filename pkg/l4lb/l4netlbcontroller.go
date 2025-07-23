@@ -32,6 +32,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
+	"k8s.io/ingress-gce/pkg/common/operator"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/forwardingrules"
@@ -185,7 +186,43 @@ func NewL4NetLBController(
 		logger.V(3).Info("set up SvcNegInformer event handlers")
 	}
 
+	if flags.F.ManageL4LBLogging {
+		ctx.ConfigMapInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				configMap, ok := obj.(*v1.ConfigMap)
+				if ok {
+					l4netLBc.enqueueServicesReferencingConfigMap(configMap)
+				}
+			},
+			UpdateFunc: func(_, obj interface{}) {
+				configMap, ok := obj.(*v1.ConfigMap)
+				if ok {
+					l4netLBc.enqueueServicesReferencingConfigMap(configMap)
+				}
+			},
+			DeleteFunc: func(obj interface{}) {
+				configMap, ok := obj.(*v1.ConfigMap)
+				if ok {
+					l4netLBc.enqueueServicesReferencingConfigMap(configMap)
+				}
+			},
+		})
+	}
+
 	return l4netLBc
+}
+
+func (lc *L4NetLBController) enqueueServicesReferencingConfigMap(configMap *v1.ConfigMap) {
+	services := operator.Services(lc.ctx.Services().List(), lc.logger).ReferencesL4LoggingConfigMap(configMap).AsList()
+	for _, svc := range services {
+		svcKey := utils.ServiceKeyFunc(svc.Namespace, svc.Name)
+		svcLogger := lc.logger.WithValues("serviceKey", svcKey)
+		if shouldProcess, _ := lc.shouldProcessService(svc, nil, svcLogger); shouldProcess {
+			lc.serviceVersions.SetLastUpdateSeen(svcKey, svc.ResourceVersion, svcLogger)
+			lc.svcQueue.Enqueue(svc)
+		}
+	}
+	lc.enqueueTracker.Track()
 }
 
 // needsAddition checks if given service should be added by controller
@@ -578,6 +615,9 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 		DisableNodesFirewallProvisioning: lc.ctx.DisableL4LBFirewall,
 		UseNEGs:                          usesNegBackends,
 	}
+	if lc.ctx.ConfigMapInformer != nil {
+		l4NetLBParams.ConfigMapLister = lc.ctx.ConfigMapInformer.GetIndexer()
+	}
 	l4netlb := loadbalancers.NewL4NetLB(l4NetLBParams, svcLogger)
 
 	finalizer := common.NetLBFinalizerV2
@@ -814,6 +854,9 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service,
 		EnableWeightedLB:                 lc.ctx.EnableWeightedL4NetLB,
 		EnableMixedProtocol:              lc.ctx.EnableL4NetLBMixedProtocol,
 		DisableNodesFirewallProvisioning: lc.ctx.DisableL4LBFirewall,
+	}
+	if lc.ctx.ConfigMapInformer != nil {
+		l4NetLBParams.ConfigMapLister = lc.ctx.ConfigMapInformer.GetIndexer()
 	}
 	l4netLB := loadbalancers.NewL4NetLB(l4NetLBParams, svcLogger)
 	lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer",

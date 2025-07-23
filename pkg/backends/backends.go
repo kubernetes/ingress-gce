@@ -96,6 +96,7 @@ type L4BackendServiceParams struct {
 	ConnectionTrackingPolicy *composite.BackendServiceConnectionTrackingPolicy
 	LocalityLbPolicy         LocalityLBPolicyType
 	EnableZonalAffinity      bool
+	LogConfig                *composite.BackendServiceLogConfig
 }
 
 var versionPrecedence = map[meta.Version]int{
@@ -406,6 +407,7 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 		SessionAffinity:     utils.TranslateAffinityType(params.SessionAffinity, beLogger),
 		LoadBalancingScheme: params.Scheme,
 		LocalityLbPolicy:    string(params.LocalityLbPolicy),
+		LogConfig:           params.LogConfig,
 	}
 
 	if params.EnableZonalAffinity {
@@ -506,6 +508,10 @@ func backendSvcEqual(newBS, oldBS *composite.BackendService, compareConnectionTr
 		svcsEqual = svcsEqual && connectionTrackingPolicyEqual(newBS.ConnectionTrackingPolicy, oldBS.ConnectionTrackingPolicy)
 	}
 
+	if flags.F.ManageL4LBLogging {
+		svcsEqual = svcsEqual && backendServiceLogConfigEqual(oldBS.LogConfig, newBS.LogConfig)
+	}
+
 	// If the locality lb policy is not set for existing services, no need to update to MAGLEV since it is the default now.
 	svcsEqual = svcsEqual &&
 		(newBS.LocalityLbPolicy == oldBS.LocalityLbPolicy ||
@@ -515,6 +521,22 @@ func backendSvcEqual(newBS, oldBS *composite.BackendService, compareConnectionTr
 	// If zonal affinity is set, needs to be equal
 	svcsEqual = svcsEqual && zonalAffinityEqual(newBS, oldBS)
 	return svcsEqual
+}
+
+// backendServiceLogConfigEqual returns true if both elements are equal
+// and return false if at least one parameter is different
+func backendServiceLogConfigEqual(oldLC, newLC *composite.BackendServiceLogConfig) bool {
+	if oldLC == nil {
+		oldLC = &composite.BackendServiceLogConfig{}
+	}
+	if newLC == nil {
+		newLC = &composite.BackendServiceLogConfig{}
+	}
+
+	return oldLC.Enable == newLC.Enable &&
+		oldLC.SampleRate == newLC.SampleRate &&
+		oldLC.OptionalMode == newLC.OptionalMode &&
+		utils.EqualStringSets(oldLC.OptionalFields, newLC.OptionalFields)
 }
 
 // removeAPIVersionFromHealthChecks converts a slice of full health check URLs
