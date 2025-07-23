@@ -1,6 +1,6 @@
 # End-to-end tests
 
-The executable built here (`e2e-test`) is intended to be run manually by a
+The executable built here (`ingress-controller-e2e-test`) is intended to be run manually by a
 developer using a cluster and GCP credentials as well as in a container from
 within a cluster that has the right service account credentials.
 
@@ -30,7 +30,7 @@ immediately within each call to `RunWithSandbox()`.
 
 ### Building the tests
 
-For Linux users, the `e2e-test` binary will be built in a container using the
+For Linux users, the `ingress-controller-e2e-test` binary will be built in a container using the
 build make target:
 
 ```console
@@ -39,7 +39,7 @@ make build
 
 For Mac Users, or to build the tests locally:
 ```console
-go test -c -o bin/amd64/e2e-test k8s.io/ingress-gce/cmd/e2e-test
+go test -c -o bin/amd64/ingress-controller-e2e-test k8s.io/ingress-gce/cmd/ingress-controller-e2e-test
 ```
 
 ### From the command line
@@ -48,7 +48,7 @@ Run tests against your cluster and GCP environment. This uses your default
 cluster credentials. `-v` and `-logtostderr` will enable verbose logging:
 
 ```go
-$ bin/amd64/e2e-test -run -project my-project -v 2 -logtostderr -region my-region -network my-network
+$ bin/amd64/ingress-controller-e2e-test -run -project my-project -v 2 -logtostderr -region my-region -network my-network
 
 Version: "v1.1.0-183-gfaefb0f2", Commit: "faefb0f257a6c591d19a4768e3a8bc776ad14d33"
 I0618 23:51:03.023843   62186 main_test.go:101] Using random seed = 1529391063023834550
@@ -63,7 +63,7 @@ To run a specific test case, you can use something similar to the command below:
 
 ```bash
 # Ref https://golang.org/cmd/go/#hdr-Testing_flags.
-$ bin/amd64/e2e-test -run -project my-project -v 2 -logtostderr -region my-region -network my-network -test.run=TestIAP
+$ bin/amd64/ingress-controller-e2e-test -run -project my-project -v 2 -logtostderr -region my-region -network my-network -test.run=TestIAP
 ```
 
 Note that killing the test with `CTRL-C` will cause the existing namespace
@@ -80,13 +80,13 @@ To prevent the test from cleaning up the namespace sandboxes (for debugging purp
 
 ### Within a cluster
 
-The YAML resource definition `cmd/e2e-test/e2e-test.yaml` will create RBAC
+The YAML resource definition `cmd/ingress-controller-e2e-test/e2e-test.yaml` will create RBAC
 bindings and a pod built with the end-to-end test binary. Build and push the
 image to your own registry:
 
 ```shell
 $ REGISTRY=gcr.io/my-reg make push
-$ sed 's/k8s-ingress-image-push/my-reg/g' cmd/e2e-test/e2e-test.yaml > my-e2e-test.yaml
+$ sed 's/k8s-ingress-image-push/my-reg/g' cmd/ingress-controller-e2e-test/e2e-test.yaml > my-e2e-test.yaml
 $ kubectl apply -f my-e2e-test.yaml
 
 # Check the test results:
