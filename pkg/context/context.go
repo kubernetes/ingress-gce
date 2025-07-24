@@ -239,8 +239,21 @@ func NewControllerContext(
 		logger,
 	)
 	// The subnet specified in gce.conf is considered as the default subnet.
-	var err error
-	context.ZoneGetter, err = zonegetter.NewZoneGetter(context.NodeInformer, context.NodeTopologyInformer, context.Cloud.SubnetworkURL())
+	subnet := context.Cloud.SubnetworkURL()
+	if subnet != "" {
+		logger.Info("Detected a non-empty subnet, using regular zoneGetter", "subnetURL", subnet)
+
+		var err error
+		context.ZoneGetter, err = zonegetter.NewZoneGetter(context.NodeInformer, context.NodeTopologyInformer, context.Cloud.SubnetworkURL())
+		if err != nil {
+			return context, fmt.Errorf("Failed to create zone getter: %w", err)
+		}
+
+	} else {
+		logger.Info("Detected a Legacy Network Cluster, using legacy zoneGetter", "subnetURL", subnet)
+		context.ZoneGetter = zonegetter.NewLegacyZoneGetter(context.NodeInformer, context.NodeTopologyInformer)
+	}
+
 	context.InstancePool = instancegroups.NewManager(&instancegroups.ManagerConfig{
 		Cloud:      context.Cloud,
 		Namer:      context.ClusterNamer,
@@ -250,7 +263,7 @@ func NewControllerContext(
 		MaxIGSize:  config.MaxIGSize,
 	})
 
-	return context, err
+	return context, nil
 }
 
 func (ctx *ControllerContext) Recorder(ns string) record.EventRecorder {
