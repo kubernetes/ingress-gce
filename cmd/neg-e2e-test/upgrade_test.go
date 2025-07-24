@@ -19,38 +19,14 @@ package main
 import (
 	"testing"
 
-	"k8s.io/ingress-gce/cmd/e2e-test/upgrade"
+	upgrade "k8s.io/ingress-gce/cmd/neg-e2e-test/upgrade"
 	"k8s.io/ingress-gce/pkg/e2e"
 )
 
 func TestGenericUpgrade(t *testing.T) {
 	t.Parallel()
-
-	for _, test := range []e2e.UpgradeTest{
-		upgrade.NewBasicHTTPUpgradeTest(),
-		upgrade.NewStandaloneNEGWithSvcNEGUpgradeTest(),
-	} {
-		test := test // Capture test as we are running this in parallel.
-		runUpgradeTest(t, test)
-	}
-}
-
-// TestUpgradeToV1dot7 runs upgrade tests for features that are introduced in v1.7.0.
-// Note that this test runs only when an upgrade results in enabling these features.
-func TestUpgradeToV1dot7(t *testing.T) {
-	runUpgradeTest(t, upgrade.NewFinalizerUpgradeTest())
-}
-
-// TestUpgradeToV1dot8 runs upgrade tests for features that are introduced in v1.8.0.
-// Note that this test runs only when an upgrade results in enabling these features.
-func TestUpgradeToV1dot8(t *testing.T) {
-	runUpgradeTest(t, upgrade.NewV2FrontendNamerTest())
-}
-
-// TestUpgradeToV1dot15 runs upgrade tests for features that are introduced in v1.15.0.
-// Note that this test runs only when an upgrade results in enabling these features.
-func TestUpgradeToV1dot15(t *testing.T) {
-	runUpgradeTest(t, upgrade.NewPSCUpgradeTest())
+	// Only run the NEG-related upgrade test.
+	runUpgradeTest(t, upgrade.NewStandaloneNEGWithSvcNEGUpgradeTest())
 }
 
 func runUpgradeTest(t *testing.T, test e2e.UpgradeTest) {
