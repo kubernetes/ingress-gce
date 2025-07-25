@@ -177,22 +177,22 @@ func newNodeWithSubnet(node *v1.Node, subnet string) *nodeWithSubnet {
 // getSubsetPerZone creates a subset of nodes from the given list of nodes, for each zone provided.
 // The output is a map of zone string to NEG subset.
 // In order to pick as many nodes as possible given the total limit, the following algorithm is used:
-// 1) The zones are sorted in increasing order of the total number of nodes.
-// 2) The number of nodes to be selected is divided equally among the zones. If there are 4 zones and the limit is 250,
+// A) Leave existing endpoints where they are. Detaching endpoints is time consuming and causes connection draining. We want to avoid that.
+// B) For the rest of endpoints following algorithm is used:
 //
-//	the algorithm attempts to pick 250/4 from the first zone. If 'n' nodes were selected from zone1, the limit for
-//	zone2 is (250 - n)/3. For the third zone, it is (250 - n - m)/2, if m nodes were picked from zone2.
-//	Since the number of nodes will keep increasing in successive zones due to the sorting, even if fewer nodes were
-//	present in some zones, more nodes will be picked from other nodes, taking the total subset size to the given limit
-//	whenever possible.
+//  1. The zones are sorted in increasing order of the total number of nodes.
+//
+//  2. The number of nodes to be selected is divided equally among the zones. If there are 4 zones and the limit is 250,
+//
+// the algorithm attempts to pick 250/4 from the first zone. If 'n' nodes were selected from zone1, the limit for
+// zone2 is (250 - n)/3. For the third zone, it is (250 - n - m)/2, if m nodes were picked from zone2.
+// Since the number of nodes will keep increasing in successive zones due to the sorting, even if fewer nodes were
+// present in some zones, more nodes will be picked from other nodes, taking the total subset size to the given limit
+// whenever possible.
 func getSubsetPerZone(nodesPerZone map[string][]*nodeWithSubnet, totalLimit int, svcID string, currentMap map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, logger klog.Logger, networkInfo *network.NetworkInfo) (map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, error) {
 	result := make(map[negtypes.NEGLocation]negtypes.NetworkEndpointSet)
 
 	subsetSize := 0
-	// initialize zonesRemaining to the total number of zones.
-	zonesRemaining := len(nodesPerZone)
-	// Sort zones in increasing order of node count.
-	zoneList := sortZones(nodesPerZone)
 
 	defaultSubnet, err := utils.KeyName(networkInfo.SubnetworkURL)
 	if err != nil {
@@ -200,9 +200,21 @@ func getSubsetPerZone(nodesPerZone map[string][]*nodeWithSubnet, totalLimit int,
 		return nil, err
 	}
 
+	// remove nodesPerZone that are already in use in currentMap
+	totalLimit = pickOutUsedEndpoints(currentMap, nodesPerZone, totalLimit, result)
+
+	// initialize zonesRemaining to the total number of zones.
+	zonesRemaining := len(nodesPerZone)
+	// Sort zones in increasing order of node count.
+	zoneList := sortZones(nodesPerZone)
+
 	for _, zone := range zoneList {
 		// make sure there is an entry for the defaultSubnet in each zone, even if there will be no endpoints in there (maintains the old behavior).
-		result[negtypes.NEGLocation{Zone: zone.Name, Subnet: defaultSubnet}] = negtypes.NewNetworkEndpointSet()
+		defaultSubnetLocation := negtypes.NEGLocation{Zone: zone.Name, Subnet: defaultSubnet}
+		if _, ok := result[defaultSubnetLocation]; !ok {
+			result[defaultSubnetLocation] = negtypes.NewNetworkEndpointSet()
+		}
+
 		// split the limit across the leftover zones.
 		subsetSize = totalLimit / zonesRemaining
 		logger.Info("Picking subset for a zone", "subsetSize", subsetSize, "zone", zone, "svcID", svcID)
@@ -228,6 +240,26 @@ func getSubsetPerZone(nodesPerZone map[string][]*nodeWithSubnet, totalLimit int,
 		zonesRemaining--
 	}
 	return result, nil
+}
+
+func pickOutUsedEndpoints(currentMap map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, nodesPerZone map[string][]*nodeWithSubnet, totalLimit int, result map[negtypes.NEGLocation]negtypes.NetworkEndpointSet) int {
+	for location, endpoints := range currentMap {
+		for endpoint := range endpoints {
+
+			for i, nodeAndSubnet := range nodesPerZone[location.Zone] {
+				if nodeAndSubnet.node.Name == endpoint.Node && nodeAndSubnet.subnet == location.Subnet {
+					nodesPerZone[location.Zone] = slices.Delete(nodesPerZone[location.Zone], i, i+1)
+					totalLimit--
+					if _, ok := result[location]; !ok {
+						result[location] = negtypes.NewNetworkEndpointSet()
+					}
+					result[location].Insert(endpoint)
+					break
+				}
+			}
+		}
+	}
+	return totalLimit
 }
 
 // getNetworkEndpointsForZone gets all endpoints for a matching zone.
