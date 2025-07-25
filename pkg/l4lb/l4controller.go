@@ -527,6 +527,13 @@ func (l4c *L4Controller) sync(key string, svcLogger klog.Logger) error {
 		svcLogger.V(3).Info("Ignoring delete of service not managed by L4 controller")
 		return nil
 	}
+
+	if l4c.ctx.ReadOnlyMode {
+		l4c.serviceVersions.SetProcessed(key, svc.ResourceVersion, true, false, svcLogger)
+		svcLogger.Info("Skipping syncing L4 ILB service since the controller is in read-only mode", "service", svc.Name)
+		return nil
+	}
+
 	isResync := l4c.serviceVersions.IsResync(key, svc.ResourceVersion, svcLogger)
 	svcLogger.V(2).Info("Processing update operation for service", "resync", isResync, "resourceVersion", svc.ResourceVersion)
 	namespacedName := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}.String()

@@ -27,6 +27,7 @@ import (
 	"time"
 
 	networkv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1"
+	"github.com/google/go-cmp/cmp"
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
@@ -119,7 +120,7 @@ var (
 	}
 )
 
-func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, testContext *negtypes.TestContext, runL4 bool) (*Controller, error) {
+func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, testContext *negtypes.TestContext, runL4 bool, readOnlyMode bool) (*Controller, error) {
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
 	zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
@@ -159,6 +160,7 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		true,
 		false,
 		false,
+		readOnlyMode,
 		make(<-chan struct{}),
 		klog.TODO(),
 	)
@@ -166,7 +168,12 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 
 func newTestController(kubeClient kubernetes.Interface) (*Controller, error) {
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-	return newTestControllerWithParamsAndContext(kubeClient, testContext, false)
+	return newTestControllerWithParamsAndContext(kubeClient, testContext, false, false)
+}
+
+func newTestReadOnlyController(kubeClient kubernetes.Interface) (*Controller, error) {
+	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
+	return newTestControllerWithParamsAndContext(kubeClient, testContext, false, true)
 }
 
 func TestIsHealthy(t *testing.T) {
@@ -183,7 +190,7 @@ func TestIsHealthy(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, false)
+			controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, false, false)
 			if err != nil {
 				t.Fatalf("failed to create test controller %s", err)
 			}
@@ -235,49 +242,106 @@ func TestNewNEGService(t *testing.T) {
 		exposedPorts   []int32
 		ingress        bool
 		expectNegPorts []int32
+		readOnlyMode   bool
 		desc           string
 	}{
 		{
 			[]int32{80, 443, 8081, 8080},
 			true,
 			[]int32{80, 443, 8081, 8080},
+			false,
 			"With ingress, 3 ports same as in ingress, 1 new port",
 		},
 		{
 			[]int32{80, 443, 8081, 8080, 1234, 5678},
 			true,
 			[]int32{80, 443, 8081, 8080, 1234, 5678},
+			false,
 			"With ingress, 3 ports same as ingress and 3 new ports",
 		},
 		{
 			[]int32{80, 1234, 5678},
 			true,
 			[]int32{80, 443, 8081, 1234, 5678},
+			false,
 			"With ingress, 1 port same as ingress and 2 new ports",
 		},
 		{
 			[]int32{},
 			true,
 			[]int32{80, 443, 8081},
+			false,
 			"With ingress, no additional ports",
 		},
 		{
 			[]int32{80, 443, 8081, 8080},
 			false,
 			[]int32{80, 443, 8081, 8080},
+			false,
 			"No ingress, 4 ports",
 		},
 		{
 			[]int32{80},
 			false,
 			[]int32{80},
+			false,
 			"No ingress, 1 port",
 		},
 		{
 			[]int32{},
 			false,
 			[]int32{},
+			false,
 			"No ingress, no ports",
+		},
+		{
+			[]int32{80, 443, 8081, 8080},
+			true,
+			[]int32{},
+			true,
+			"[ReadOnly] With ingress, 3 ports same as in ingress, 1 new port",
+		},
+		{
+			[]int32{80, 443, 8081, 8080, 1234, 5678},
+			true,
+			[]int32{},
+			true,
+			"[ReadOnly] With ingress, 3 ports same as ingress and 3 new ports",
+		},
+		{
+			[]int32{80, 1234, 5678},
+			true,
+			[]int32{},
+			true,
+			"[ReadOnly] With ingress, 1 port same as ingress and 2 new ports",
+		},
+		{
+			[]int32{},
+			true,
+			[]int32{},
+			true,
+			"[ReadOnly] With ingress, no additional ports",
+		},
+		{
+			[]int32{80, 443, 8081, 8080},
+			false,
+			[]int32{},
+			true,
+			"[ReadOnly] No ingress, 4 ports",
+		},
+		{
+			[]int32{80},
+			false,
+			[]int32{},
+			true,
+			"[ReadOnly] No ingress, 1 port",
+		},
+		{
+			[]int32{},
+			false,
+			[]int32{},
+			true,
+			"[ReadOnly] No ingress, no ports",
 		},
 	}
 
@@ -286,12 +350,16 @@ func TestNewNEGService(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			controller, err := newTestController(fake.NewSimpleClientset())
+			if tc.readOnlyMode {
+				controller, err = newTestReadOnlyController(fake.NewSimpleClientset())
+			}
 			if err != nil {
 				t.Fatalf("failed to create test controller %s", err)
 			}
 			defer controller.stop()
 			svcKey := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
-			controller.serviceLister.Add(newTestService(controller, tc.ingress, tc.exposedPorts))
+			testService := newTestService(controller, tc.ingress, tc.exposedPorts)
+			controller.serviceLister.Add(testService)
 
 			if tc.ingress {
 				controller.ingressLister.Add(newTestIngress(testServiceName))
@@ -310,13 +378,25 @@ func TestNewNEGService(t *testing.T) {
 				}
 				expectedSyncers = len(svcPorts.Union(testIngressPorts))
 			}
+
+			if tc.readOnlyMode {
+				expectedSyncers = 0
+			}
+
 			validateSyncers(t, controller, expectedSyncers, false)
 			svcClient := controller.client.CoreV1().Services(testServiceNamespace)
 			svc, err := svcClient.Get(context.TODO(), testServiceName, metav1.GetOptions{})
 			if err != nil {
 				t.Fatalf("Service was not created successfully, err: %v", err)
 			}
-			validateServiceStateAnnotation(t, svc, tc.expectNegPorts, controller.namer)
+
+			if tc.readOnlyMode {
+				if diff := cmp.Diff(testService, svc); diff != "" {
+					t.Fatalf("Service was modified by the controller when readOnlyMode was enabled. Diff (-old +new):\n%s", diff)
+				}
+			} else {
+				validateServiceStateAnnotation(t, svc, tc.expectNegPorts, controller.namer)
+			}
 		})
 	}
 }
@@ -363,7 +443,7 @@ func TestEnableNEGServiceWithIngress(t *testing.T) {
 func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 	kubeClient := fake.NewSimpleClientset()
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-	controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, true)
+	controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false)
 	if err != nil {
 		t.Fatalf("failed to create test controller %s", err)
 	}
@@ -440,7 +520,7 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 func TestEnqueueNodeWithILBSubsetting(t *testing.T) {
 	kubeClient := fake.NewSimpleClientset()
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-	controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, true)
+	controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false)
 	if err != nil {
 		t.Fatalf("failed to create test controller %s", err)
 	}
@@ -481,7 +561,7 @@ func TestEnqueueNodeWithILBSubsetting(t *testing.T) {
 func TestEnqueueNodeWhenProviderIDPopulated(t *testing.T) {
 	kubeClient := fake.NewSimpleClientset()
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-	controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, true)
+	controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false)
 	if err != nil {
 		t.Fatalf("failed to create test controller %s", err)
 	}
@@ -1468,7 +1548,7 @@ func TestEnqueueEndpoints(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			kubeClient := fake.NewSimpleClientset()
 			testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-			controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, false)
+			controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, false, false)
 			if err != nil {
 				t.Fatalf("failed to create test controller %s", err)
 			}
@@ -1626,7 +1706,7 @@ func TestServiceIPFamilies(t *testing.T) {
 func TestEnableNEGServiceWithL4NetLB(t *testing.T) {
 	kubeClient := fake.NewSimpleClientset()
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
-	controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, true)
+	controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false)
 	if err != nil {
 		t.Fatalf("failed to create test controller %s", err)
 	}
