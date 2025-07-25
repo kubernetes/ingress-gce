@@ -450,21 +450,20 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	// Reserve existing IP address before making any changes
 	var existingIPv4FR *composite.ForwardingRule
 	var ipv4AddressToUse string
+	var ipv4AddressName string
 	if !l4.enableDualStack || utils.NeedsIPv4(l4.Service) {
 		existingIPv4FR, err = l4.getOldIPv4ForwardingRule(existingBS)
-		ipv4AddressToUse, err = address.IPv4ToUse(l4.cloud, l4.recorder, l4.Service, existingIPv4FR, subnetworkURL)
+		ipv4AddressToUse, ipv4AddressName, err = address.IPv4ToUse(l4.cloud, l4.recorder, l4.Service, existingIPv4FR, subnetworkURL)
 		if err != nil {
 			result.Error = fmt.Errorf("EnsureInternalLoadBalancer error: address.IPv4ToUse returned error: %w", err)
 			return result
 		}
-		expectedFRName := l4.GetFRName()
 
 		if !l4.cloud.IsLegacyNetwork() {
 			l4.svcLogger.V(2).Info("EnsureInternalLoadBalancer, reserve existing IPv4 address before making any changes")
-
 			nm := types.NamespacedName{Namespace: l4.Service.Namespace, Name: l4.Service.Name}.String()
 			// ILB can be created only in Premium Tier
-			addrMgr := address.NewManager(l4.cloud, nm, l4.cloud.Region(), subnetworkURL, expectedFRName, ipv4AddressToUse, cloud.SchemeInternal, cloud.NetworkTierPremium, address.IPv4Version, l4.svcLogger)
+			addrMgr := address.NewManager(l4.cloud, nm, l4.cloud.Region(), subnetworkURL, l4.GetFRName(), ipv4AddressName, ipv4AddressToUse, cloud.SchemeInternal, cloud.NetworkTierPremium, address.IPv4Version, l4.svcLogger)
 			ipv4AddressToUse, _, err = addrMgr.HoldAddress()
 			if err != nil {
 				result.Error = fmt.Errorf("EnsureInternalLoadBalancer error: addrMgr.HoldAddress() returned error %w", err)
@@ -484,20 +483,21 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	// Reserve existing IPv6 address before making any changes
 	var existingIPv6FR *composite.ForwardingRule
 	var ipv6AddrToUse string
+	var ipv6AddressName string
 	if l4.enableDualStack && utils.NeedsIPv6(l4.Service) {
 		existingIPv6FR, err = l4.getOldIPv6ForwardingRule(existingBS)
-		ipv6AddrToUse, err = address.IPv6ToUse(l4.cloud, l4.Service, existingIPv6FR, subnetworkURL, l4.svcLogger)
+		ipv6AddrToUse, ipv6AddressName, err = address.IPv6ToUse(l4.cloud, l4.Service, existingIPv6FR, subnetworkURL, l4.svcLogger)
 		if err != nil {
 			result.Error = fmt.Errorf("EnsureInternalLoadBalancer error: address.IPv6ToUse returned error: %w", err)
 			return result
 		}
-		expectedIPv6FRName := l4.getIPv6FRName()
+
 		l4.svcLogger.V(2).Info("EnsureInternalLoadBalancer, reserve existing IPv6 address before making any changes", "ipAddress", ipv6AddrToUse)
 
 		if !l4.cloud.IsLegacyNetwork() {
 			nm := types.NamespacedName{Namespace: l4.Service.Namespace, Name: l4.Service.Name}.String()
 			// ILB can be created only in Premium Tier
-			ipv6AddrMgr := address.NewManager(l4.cloud, nm, l4.cloud.Region(), subnetworkURL, expectedIPv6FRName, ipv6AddrToUse, cloud.SchemeInternal, cloud.NetworkTierPremium, address.IPv6Version, l4.svcLogger)
+			ipv6AddrMgr := address.NewManager(l4.cloud, nm, l4.cloud.Region(), subnetworkURL, l4.getIPv6FRName(), ipv6AddressName, ipv6AddrToUse, cloud.SchemeInternal, cloud.NetworkTierPremium, address.IPv6Version, l4.svcLogger)
 			ipv6AddrToUse, _, err = ipv6AddrMgr.HoldAddress()
 			if err != nil {
 				result.Error = fmt.Errorf("EnsureInternalLoadBalancer error: ipv6AddrMgr.HoldAddress() returned error %w", err)

@@ -22,23 +22,23 @@ const (
 
 // IPv4AddressAnnotation return IPv4 address from networking.gke.io/load-balancer-ip-addresses annotation.
 // If no IPv4 address found, returns empty string.
-func (svc *Service) IPv4AddressAnnotation(cloud *gce.Cloud) (string, error) {
+func (svc *Service) IPv4AddressAnnotation(cloud *gce.Cloud) (ipAddress, ipName string, err error) {
 	return ipAddressFromAnnotation(svc, cloud, IPv4Version)
 }
 
 // IPv6AddressAnnotation return IPv6 address from networking.gke.io/load-balancer-ip-addresses annotation.
 // If no IPv6 address found, returns empty string.
-func (svc *Service) IPv6AddressAnnotation(cloud *gce.Cloud) (string, error) {
+func (svc *Service) IPv6AddressAnnotation(cloud *gce.Cloud) (ipAddress, ipName string, err error) {
 	return ipAddressFromAnnotation(svc, cloud, IPv6Version)
 }
 
 // ipAddressFromAnnotation checks annotation networking.gke.io/load-balancer-ip-addresses,
 // which should store comma separate names of IP Addresses reserved in google cloud,
-// and returns first address that matches required IpVersion (IPV4 or IPV6).
-func ipAddressFromAnnotation(svc *Service, cloud *gce.Cloud, ipVersion string) (string, error) {
+// and returns first address and its name that matches required IpVersion (IPV4 or IPV6).
+func ipAddressFromAnnotation(svc *Service, cloud *gce.Cloud, ipVersion string) (ipAddress, ipName string, err error) {
 	annotationVal, ok := svc.v[StaticL4AddressesAnnotationKey]
 	if !ok {
-		return "", nil
+		return "", "", nil
 	}
 
 	addressNames := strings.Split(annotationVal, ",")
@@ -56,17 +56,17 @@ func ipAddressFromAnnotation(svc *Service, cloud *gce.Cloud, ipVersion string) (
 			if isNotFoundError(err) {
 				continue
 			}
-			return "", err
+			return "", "", err
 		}
 		if cloudAddress.IpVersion == "" {
 			cloudAddress.IpVersion = IPv4Version
 		}
 
 		if cloudAddress.IpVersion == ipVersion {
-			return cloudAddress.Address, nil
+			return cloudAddress.Address, trimmedAddressName, nil
 		}
 	}
-	return "", nil
+	return "", "", nil
 }
 
 func isNotFoundError(err error) bool {

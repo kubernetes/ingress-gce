@@ -226,7 +226,7 @@ func TestL4CreateExternalForwardingRule(t *testing.T) {
 		},
 		{
 			desc:         "create with named address",
-			namedAddress: &compute.Address{Name: "my-addr", Address: "1.2.3.4", AddressType: string(cloud.SchemeExternal)},
+			namedAddress: &compute.Address{Name: "my-addr", Address: "1.2.3.4", AddressType: string(cloud.SchemeExternal), NetworkTier: "PREMIUM"},
 			svc: &corev1.Service{
 				ObjectMeta: metav1.ObjectMeta{Name: serviceName, Namespace: serviceNamespace, UID: types.UID("1"), Annotations: map[string]string{annotations.StaticL4AddressesAnnotationKey: "my-addr"}},
 				Spec: corev1.ServiceSpec{

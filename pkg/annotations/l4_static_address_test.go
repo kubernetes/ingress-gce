@@ -41,6 +41,8 @@ func TestAddressFromAnnotation(t *testing.T) {
 		annotationVal     string
 		wantIPv4Address   string
 		wantIPv6Address   string
+		wantIPv4Name      string
+		wantIPv6Name      string
 	}{
 		{
 			desc: "Single existing IPv4 address",
@@ -49,6 +51,7 @@ func TestAddressFromAnnotation(t *testing.T) {
 			},
 			annotationVal:   fmt.Sprintf("%s", ipv4Address.Name),
 			wantIPv4Address: ipv4Address.Address,
+			wantIPv4Name:    ipv4Address.Name,
 		},
 		{
 			desc: "Single existing IPv6 address",
@@ -57,6 +60,7 @@ func TestAddressFromAnnotation(t *testing.T) {
 			},
 			annotationVal:   fmt.Sprintf("%s", ipv6Address.Name),
 			wantIPv6Address: ipv6Address.Address,
+			wantIPv6Name:    ipv6Address.Name,
 		},
 		{
 			desc: "Single existing IPv4 address with no IpVersion",
@@ -65,6 +69,7 @@ func TestAddressFromAnnotation(t *testing.T) {
 			},
 			annotationVal:   fmt.Sprintf("%s", ipv4AddressNoVersion.Name),
 			wantIPv4Address: ipv4AddressNoVersion.Address,
+			wantIPv4Name:    ipv4AddressNoVersion.Name,
 		},
 		{
 			desc:              "Many non-existing IPv4 and IPv6 addresses",
@@ -80,6 +85,7 @@ func TestAddressFromAnnotation(t *testing.T) {
 			},
 			annotationVal:   fmt.Sprintf("%s, %s", ipv4Address.Name, ipv4Address.Name),
 			wantIPv4Address: ipv4Address.Address,
+			wantIPv4Name:    ipv4Address.Name,
 		},
 		{
 			desc: "IPv4 and IPv6 addresses",
@@ -90,6 +96,8 @@ func TestAddressFromAnnotation(t *testing.T) {
 			annotationVal:   fmt.Sprintf("%s, %s", ipv4Address.Name, ipv6Address.Name),
 			wantIPv4Address: ipv4Address.Address,
 			wantIPv6Address: ipv6Address.Address,
+			wantIPv4Name:    ipv4Address.Name,
+			wantIPv6Name:    ipv6Address.Name,
 		},
 	}
 
@@ -110,21 +118,27 @@ func TestAddressFromAnnotation(t *testing.T) {
 			}
 
 			// Verify getting expected IPv4 address from annotation.
-			ipv4Addr, err := FromService(svc).IPv4AddressAnnotation(fakeGCE)
+			ipv4Addr, ipv4Name, err := FromService(svc).IPv4AddressAnnotation(fakeGCE)
 			if err != nil {
 				t.Fatalf("IPv4AddressAnnotation(..., %s) returned error %v", tc.annotationVal, err)
 			}
 			if ipv4Addr != tc.wantIPv4Address {
 				t.Errorf("IPv4AddressAnnotation(..., %s) returned %s, not equal to expected = %s", tc.annotationVal, ipv4Addr, tc.wantIPv4Address)
 			}
+			if ipv4Name != tc.wantIPv4Name {
+				t.Errorf("IPv4AddressAnnotation(..., %s) returned %s, not equal to expected = %s", tc.annotationVal, ipv4Name, tc.wantIPv4Name)
+			}
 
 			// Verify getting expected IPv6 address from annotation.
-			ipv6Addr, err := FromService(svc).IPv6AddressAnnotation(fakeGCE)
+			ipv6Addr, ipv6Name, err := FromService(svc).IPv6AddressAnnotation(fakeGCE)
 			if err != nil {
 				t.Fatalf("IPv6AddressAnnotation(..., %s) returned error %v", tc.annotationVal, err)
 			}
 			if ipv6Addr != tc.wantIPv6Address {
 				t.Errorf("IPv6AddressAnnotation(..., %s) returned %s, not equal to expected = %s", tc.annotationVal, ipv6Addr, tc.wantIPv6Address)
+			}
+			if ipv6Name != tc.wantIPv6Name {
+				t.Errorf("IPv6AddressAnnotation(..., %s) returned %s, not equal to expected = %s", tc.annotationVal, ipv6Name, tc.wantIPv6Name)
 			}
 		})
 	}
