@@ -130,6 +130,54 @@ func TestListZonesMultipleSubnets(t *testing.T) {
 	}
 }
 
+func TestLegacyListZones(t *testing.T) {
+	t.Parallel()
+
+	nodeInformer := FakeNodeInformer()
+	// In production clusters nodes will not be part of different subnets. However to test that Legacy Zone Getter
+	// does not check subnets at all, set true.
+	PopulateFakeNodeInformer(nodeInformer, true)
+	zoneGetter := NewLegacyZoneGetter(nodeInformer, FakeNodeTopologyInformer())
+
+	// More zones are expected here than in the MultipleSubnets Case as 2 nodes would have
+	// been removed for errors like PodCIDR not set which is not relevant in Legacy mode.
+	testCases := []struct {
+		desc      string
+		filter    Filter
+		expectLen int
+	}{
+		{
+			desc:      "List with AllNodesFilter",
+			filter:    AllNodesFilter,
+			expectLen: 8,
+		},
+		{
+			desc:      "List with CandidateNodesFilter",
+			filter:    CandidateNodesFilter,
+			expectLen: 7,
+		},
+		{
+			desc:      "List with CandidateAndUnreadyNodesFilter",
+			filter:    CandidateAndUnreadyNodesFilter,
+			expectLen: 7,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			zones, _ := zoneGetter.ListZones(tc.filter, klog.TODO())
+			if len(zones) != tc.expectLen {
+				t.Errorf("For test case %q with legacy cluster, got %d zones, want %d zones", tc.desc, len(zones), tc.expectLen)
+			}
+			for _, zone := range zones {
+				if zone == EmptyZone {
+					t.Errorf("For test case %q with legacy cluster, got an empty zone,", tc.desc)
+				}
+			}
+		})
+	}
+}
+
 func TestListNodes(t *testing.T) {
 	t.Parallel()
 
@@ -210,6 +258,48 @@ func TestListNodesMultipleSubnets(t *testing.T) {
 			nodes, _ := zoneGetter.ListNodes(tc.filter, klog.TODO())
 			if len(nodes) != tc.expectLen {
 				t.Errorf("For test case %q with multi-subnet cluster enabled, got %d nodes, want %d,", tc.desc, len(nodes), tc.expectLen)
+			}
+		})
+	}
+}
+
+func TestLegacyListNodes(t *testing.T) {
+	t.Parallel()
+
+	nodeInformer := FakeNodeInformer()
+	// In production clusters nodes will not be part of different subnets. However to test that Legacy Zone Getter
+	// does not check subnets at all, set true.
+	PopulateFakeNodeInformer(nodeInformer, true)
+	zoneGetter := NewLegacyZoneGetter(nodeInformer, FakeNodeTopologyInformer())
+
+	// More nodes are expected here than in the MultipleSubnets Case as 2 nodes would have
+	// been removed for errors like PodCIDR not set which is not relevant in Legacy mode.
+	testCases := []struct {
+		desc      string
+		filter    Filter
+		expectLen int
+	}{
+		{
+			desc:      "List with AllNodesFilter",
+			filter:    AllNodesFilter,
+			expectLen: 17,
+		},
+		{
+			desc:      "List with CandidateNodesFilter",
+			filter:    CandidateNodesFilter,
+			expectLen: 15,
+		},
+		{
+			desc:      "List with CandidateAndUnreadyNodesFilter",
+			filter:    CandidateAndUnreadyNodesFilter,
+			expectLen: 13,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			nodes, _ := zoneGetter.ListNodes(tc.filter, klog.TODO())
+			if len(nodes) != tc.expectLen {
+				t.Errorf("For test case %q with legacy cluster, got %d nodes, want %d,", tc.desc, len(nodes), tc.expectLen)
 			}
 		})
 	}
@@ -346,6 +436,66 @@ func TestZoneForNodeMultipleSubnets(t *testing.T) {
 			}
 			if !errors.Is(err, tc.expectErr) {
 				t.Errorf("For test case %q with multi-subnet cluster enabled, got error: %s, want: %s,", tc.desc, err, tc.expectErr)
+			}
+		})
+	}
+}
+
+func TestLegacyZoneAndSubnetForNode(t *testing.T) {
+	t.Parallel()
+
+	nodeInformer := FakeNodeInformer()
+	// In production clusters nodes will not be part of different subnets. However to test that Legacy Zone Getter
+	// does not check subnets at all, set true.
+	PopulateFakeNodeInformer(nodeInformer, true)
+	zoneGetter := NewLegacyZoneGetter(nodeInformer, FakeNodeTopologyInformer())
+
+	testCases := []struct {
+		desc       string
+		nodeName   string
+		expectZone string
+		expectErr  error
+	}{
+		{
+			desc:       "Node with default Subnet Label",
+			nodeName:   "default-subnet-label-instance",
+			expectZone: "zone5",
+			expectErr:  nil,
+		},
+		{
+			desc:       "Node with empty Subnet Label",
+			nodeName:   "empty-subnet-label-instance",
+			expectZone: "zone6",
+			expectErr:  nil,
+		},
+		// PodCIDR check is because Nodes without it might not be label with the
+		// the right subnet. In Legacy network cases, since there are no subnets
+		// checking for the PodCIDR is unnecessary so it will not cause an error
+		// in legacy mode.
+		{
+			desc:       "Node without PodCIDR",
+			nodeName:   "no-podcidr-instance",
+			expectZone: "zone7",
+			expectErr:  nil,
+		},
+		{
+			desc:       "Node in non-default subnet",
+			nodeName:   "non-default-subnet-instance",
+			expectZone: "zone8",
+			expectErr:  nil,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			zone, subnet, err := zoneGetter.ZoneAndSubnetForNode(tc.nodeName, klog.TODO())
+			if zone != tc.expectZone {
+				t.Errorf("For test case %q with legacy cluster, got zone: %s, want: %s,", tc.desc, zone, tc.expectZone)
+			}
+			if subnet != "" {
+				t.Errorf("For test case %q with legacy cluster, got subnet: %s, want: \"\"", tc.desc, subnet)
+			}
+			if !errors.Is(err, tc.expectErr) {
+				t.Errorf("For test case %q with legacy cluster, got error: %s, want: %s,", tc.desc, err, tc.expectErr)
 			}
 		})
 	}
@@ -780,16 +930,304 @@ func TestIsNodeSelectedByFilter(t *testing.T) {
 	for _, tc := range testCases {
 		acceptByAll := zoneGetter.IsNodeSelectedByFilter(&tc.node, AllNodesFilter, klog.TODO())
 		if acceptByAll != tc.expectAcceptByAll {
-			t.Errorf("Test failed for %s, got %v, want %v", tc.name, acceptByAll, tc.expectAcceptByAll)
+			t.Errorf("Test failed for %s & allNodesPredicate, got %v, want %v", tc.name, acceptByAll, tc.expectAcceptByAll)
 		}
 
 		acceptByCandidate := zoneGetter.IsNodeSelectedByFilter(&tc.node, CandidateNodesFilter, klog.TODO())
 		if acceptByCandidate != tc.expectAcceptByCandidate {
-			t.Errorf("Test failed for %s, got %v, want %v", tc.name, acceptByCandidate, tc.expectAcceptByCandidate)
+			t.Errorf("Test failed for %s & candidateNodesPredicate , got %v, want %v", tc.name, acceptByCandidate, tc.expectAcceptByCandidate)
 		}
 		acceptByUnready := zoneGetter.IsNodeSelectedByFilter(&tc.node, CandidateAndUnreadyNodesFilter, klog.TODO())
 		if acceptByUnready != tc.expectAcceptByUnready {
-			t.Errorf("Test failed for unreadyNodesPredicate in case %s, got %v, want %v", tc.name, acceptByUnready, tc.expectAcceptByUnready)
+			t.Errorf("Test failed for %s & unreadyNodesPredicate, got %v, want %v", tc.name, acceptByUnready, tc.expectAcceptByUnready)
+		}
+	}
+}
+
+func TestLegacyIsNodeSelectedByFilter(t *testing.T) {
+	fakeNodeInformer := FakeNodeInformer()
+	zoneGetter := NewLegacyZoneGetter(fakeNodeInformer, FakeNodeTopologyInformer())
+
+	testCases := []struct {
+		name                    string
+		node                    apiv1.Node
+		expectAcceptByAll       bool
+		expectAcceptByCandidate bool
+		expectAcceptByUnready   bool
+	}{
+		{
+			name:                    "empty",
+			node:                    apiv1.Node{},
+			expectAcceptByAll:       true,
+			expectAcceptByCandidate: false,
+			expectAcceptByUnready:   false,
+		},
+		{
+			name: "ready node",
+			node: apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						utils.LabelNodeSubnet: defaultTestSubnet,
+					},
+				},
+				Spec: apiv1.NodeSpec{
+					PodCIDR:  "10.100.1.0/24",
+					PodCIDRs: []string{"10.100.1.0/24"},
+				},
+				Status: apiv1.NodeStatus{
+					Conditions: []apiv1.NodeCondition{
+						{Type: apiv1.NodeReady, Status: apiv1.ConditionTrue},
+					},
+				},
+			},
+			expectAcceptByAll:       true,
+			expectAcceptByCandidate: true,
+			expectAcceptByUnready:   true,
+		},
+		{
+			name: "unready node",
+			node: apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						utils.LabelNodeSubnet: defaultTestSubnet,
+					},
+				},
+				Spec: apiv1.NodeSpec{
+					PodCIDR:  "10.100.1.0/24",
+					PodCIDRs: []string{"10.100.1.0/24"},
+				},
+				Status: apiv1.NodeStatus{
+					Conditions: []apiv1.NodeCondition{
+						{Type: apiv1.NodeReady, Status: apiv1.ConditionFalse},
+					},
+				},
+			},
+			expectAcceptByAll:       true,
+			expectAcceptByCandidate: false,
+			expectAcceptByUnready:   true,
+		},
+		{
+			name: "ready status unknown",
+			node: apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						utils.LabelNodeSubnet: defaultTestSubnet,
+					},
+				},
+				Spec: apiv1.NodeSpec{
+					PodCIDR:  "10.100.1.0/24",
+					PodCIDRs: []string{"10.100.1.0/24"},
+				},
+				Status: apiv1.NodeStatus{
+					Conditions: []apiv1.NodeCondition{
+						{Type: apiv1.NodeReady, Status: apiv1.ConditionUnknown},
+					},
+				},
+			},
+			expectAcceptByAll:       true,
+			expectAcceptByCandidate: false,
+			expectAcceptByUnready:   true,
+		},
+		{
+			name: "ready node, excluded from loadbalancers",
+			node: apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node1",
+					Labels: map[string]string{
+						utils.LabelNodeRoleExcludeBalancer: "true",
+						utils.LabelNodeSubnet:              defaultTestSubnet,
+					},
+				},
+				Spec: apiv1.NodeSpec{
+					PodCIDR:  "10.100.1.0/24",
+					PodCIDRs: []string{"10.100.1.0/24"},
+				},
+				Status: apiv1.NodeStatus{
+					Conditions: []apiv1.NodeCondition{
+						{Type: apiv1.NodeReady, Status: apiv1.ConditionTrue},
+					},
+				},
+			},
+			expectAcceptByAll:       true,
+			expectAcceptByCandidate: false,
+			expectAcceptByUnready:   false,
+		},
+		{
+			name: "ready node, upgrade/drain in progress",
+			node: apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node1",
+					Labels: map[string]string{
+						utils.GKECurrentOperationLabel: utils.NodeDrain,
+						utils.LabelNodeSubnet:          defaultTestSubnet,
+					},
+				},
+				Spec: apiv1.NodeSpec{
+					PodCIDR:  "10.100.1.0/24",
+					PodCIDRs: []string{"10.100.1.0/24"},
+				},
+				Status: apiv1.NodeStatus{
+					Conditions: []apiv1.NodeCondition{
+						{Type: apiv1.NodeReady, Status: apiv1.ConditionTrue},
+					},
+				},
+			},
+			expectAcceptByAll:       true,
+			expectAcceptByCandidate: true,
+			expectAcceptByUnready:   false,
+		},
+		{
+			name: "ready node, non-drain operation",
+			node: apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node1",
+					Labels: map[string]string{
+						utils.GKECurrentOperationLabel: "random",
+						utils.LabelNodeSubnet:          defaultTestSubnet,
+					},
+				},
+				Spec: apiv1.NodeSpec{
+					PodCIDR:  "10.100.1.0/24",
+					PodCIDRs: []string{"10.100.1.0/24"},
+				},
+				Status: apiv1.NodeStatus{
+					Conditions: []apiv1.NodeCondition{
+						{Type: apiv1.NodeReady, Status: apiv1.ConditionTrue},
+					},
+				},
+			},
+			expectAcceptByAll:       true,
+			expectAcceptByCandidate: true,
+			expectAcceptByUnready:   true,
+		},
+		{
+			name: "unschedulable",
+			node: apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						utils.LabelNodeSubnet: defaultTestSubnet,
+					},
+				},
+				Spec: apiv1.NodeSpec{
+					Unschedulable: true,
+					PodCIDR:       "10.100.1.0/24",
+					PodCIDRs:      []string{"10.100.1.0/24"},
+				},
+				Status: apiv1.NodeStatus{
+					Conditions: []apiv1.NodeCondition{
+						{Type: apiv1.NodeReady, Status: apiv1.ConditionTrue},
+					},
+				},
+			},
+			expectAcceptByAll:       true,
+			expectAcceptByCandidate: true,
+			expectAcceptByUnready:   true,
+		},
+		{
+			name: "ToBeDeletedByClusterAutoscaler-taint",
+			node: apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						utils.LabelNodeSubnet: defaultTestSubnet,
+					},
+				},
+				Spec: apiv1.NodeSpec{
+					Taints: []apiv1.Taint{
+						{
+							Key:    utils.ToBeDeletedTaint,
+							Value:  fmt.Sprint(time.Now().Unix()),
+							Effect: apiv1.TaintEffectNoSchedule,
+						},
+					},
+					PodCIDR:  "10.100.1.0/24",
+					PodCIDRs: []string{"10.100.1.0/24"},
+				},
+				Status: apiv1.NodeStatus{
+					Conditions: []apiv1.NodeCondition{
+						{Type: apiv1.NodeReady, Status: apiv1.ConditionTrue},
+					},
+				},
+			},
+			expectAcceptByAll:       true,
+			expectAcceptByCandidate: false,
+			expectAcceptByUnready:   false,
+		},
+		// This case is not possible for legacy networks, but for comprehensive
+		// testing and understanding of the legacy network zone getter this test
+		// case is included.
+		{
+			name: "node in non-default subnet",
+			node: apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						utils.LabelNodeSubnet: nonDefaultTestSubnet,
+					},
+				},
+				Spec: apiv1.NodeSpec{
+					PodCIDR:  "10.100.1.0/24",
+					PodCIDRs: []string{"10.100.1.0/24"},
+				},
+				Status: apiv1.NodeStatus{
+					Conditions: []apiv1.NodeCondition{
+						{Type: apiv1.NodeReady, Status: apiv1.ConditionTrue},
+					},
+				},
+			},
+			expectAcceptByAll:       true,
+			expectAcceptByCandidate: true,
+			expectAcceptByUnready:   true,
+		},
+		{
+			name: "node without subnet label",
+			node: apiv1.Node{
+				Spec: apiv1.NodeSpec{
+					PodCIDR:  "10.100.1.0/24",
+					PodCIDRs: []string{"10.100.1.0/24"},
+				},
+				Status: apiv1.NodeStatus{
+					Conditions: []apiv1.NodeCondition{
+						{Type: apiv1.NodeReady, Status: apiv1.ConditionTrue},
+					},
+				},
+			},
+			expectAcceptByAll:       true,
+			expectAcceptByCandidate: true,
+			expectAcceptByUnready:   true,
+		},
+		// Pod CIDR is only checked when checking the subnet. For legacy networks no subnet exists, so nodes without PodCIDR are still included.
+		{
+			name: "node without PodCIDR",
+			node: apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						utils.LabelNodeSubnet: defaultTestSubnet,
+					},
+				},
+				Spec: apiv1.NodeSpec{},
+				Status: apiv1.NodeStatus{
+					Conditions: []apiv1.NodeCondition{
+						{Type: apiv1.NodeReady, Status: apiv1.ConditionTrue},
+					},
+				},
+			},
+			expectAcceptByAll:       true,
+			expectAcceptByCandidate: true,
+			expectAcceptByUnready:   true,
+		},
+	}
+	for _, tc := range testCases {
+		acceptByAll := zoneGetter.IsNodeSelectedByFilter(&tc.node, AllNodesFilter, klog.TODO())
+		if acceptByAll != tc.expectAcceptByAll {
+			t.Errorf("Test failed for %s & allNodesPredicate, got %v, want %v", tc.name, acceptByAll, tc.expectAcceptByAll)
+		}
+
+		acceptByCandidate := zoneGetter.IsNodeSelectedByFilter(&tc.node, CandidateNodesFilter, klog.TODO())
+		if acceptByCandidate != tc.expectAcceptByCandidate {
+			t.Errorf("Test failed for %s & candidateNodesPredicate , got %v, want %v", tc.name, acceptByCandidate, tc.expectAcceptByCandidate)
+		}
+		acceptByUnready := zoneGetter.IsNodeSelectedByFilter(&tc.node, CandidateAndUnreadyNodesFilter, klog.TODO())
+		if acceptByUnready != tc.expectAcceptByUnready {
+			t.Errorf("Test failed for %s & unreadyNodesPredicate, got %v, want %v", tc.name, acceptByUnready, tc.expectAcceptByUnready)
 		}
 	}
 }
@@ -982,5 +1420,17 @@ func TestListSubnets(t *testing.T) {
 				t.Errorf("Got mismatch for List Subnets (-got, +want)= %s", diff)
 			}
 		})
+	}
+}
+
+func TestLegacyListSubnets(t *testing.T) {
+	nodeInformer := FakeNodeInformer()
+	// In production clusters nodes will not be part of different subnets. However to test that Legacy Zone Getter
+	// does not check subnets at all, set true.
+	PopulateFakeNodeInformer(nodeInformer, true)
+	zoneGetter := NewLegacyZoneGetter(nodeInformer, FakeNodeTopologyInformer())
+	subnets := zoneGetter.ListSubnets(klog.TODO())
+	if len(subnets) != 0 {
+		t.Errorf("In legacy mode, ListSubnets() returned %d, expected 0 subnets", len(subnets))
 	}
 }
