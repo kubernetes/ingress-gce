@@ -64,7 +64,7 @@ func (netlbCount *netLBFeatureCount) record() {
 }
 
 // SetL4ILBServiceForLegacyMetric adds service to the L4 ILB Legacy Metrics states map.
-func (im *ControllerMetrics) SetL4ILBServiceForLegacyMetric(svcKey string, state L4ILBServiceLegacyState) {
+func (im *Collector) SetL4ILBServiceForLegacyMetric(svcKey string, state L4ILBServiceLegacyState) {
 	im.Lock()
 	defer im.Unlock()
 
@@ -75,7 +75,7 @@ func (im *ControllerMetrics) SetL4ILBServiceForLegacyMetric(svcKey string, state
 }
 
 // DeleteL4ILBServiceForLegacyMetric deletes service from L4 ILB Legacy Metrics states map.
-func (im *ControllerMetrics) DeleteL4ILBServiceForLegacyMetric(svcKey string) {
+func (im *Collector) DeleteL4ILBServiceForLegacyMetric(svcKey string) {
 	im.Lock()
 	defer im.Unlock()
 
@@ -83,25 +83,25 @@ func (im *ControllerMetrics) DeleteL4ILBServiceForLegacyMetric(svcKey string) {
 }
 
 // SetL4NetLBServiceForLegacyMetric adds service to the L4 NetLB Legacy Metrics states map.
-func (im *ControllerMetrics) SetL4NetLBServiceForLegacyMetric(svcKey string, state L4NetLBServiceLegacyState) {
-	im.Lock()
-	defer im.Unlock()
+func (c *Collector) SetL4NetLBServiceForLegacyMetric(svcKey string, state L4NetLBServiceLegacyState) {
+	c.Lock()
+	defer c.Unlock()
 
-	if im.l4NetLBServiceLegacyMap == nil {
+	if c.l4NetLBServiceLegacyMap == nil {
 		klog.Fatalf("L4 Net LB Legacy Metrics failed to initialize correctly.")
 	}
 
 	if !state.InSuccess {
-		if previousState, ok := im.l4NetLBServiceLegacyMap[svcKey]; ok && previousState.FirstSyncErrorTime != nil {
+		if previousState, ok := c.l4NetLBServiceLegacyMap[svcKey]; ok && previousState.FirstSyncErrorTime != nil {
 			// If service is in Error state and retry timestamp was set then do not update it.
 			state.FirstSyncErrorTime = previousState.FirstSyncErrorTime
 		}
 	}
-	im.l4NetLBServiceLegacyMap[svcKey] = state
+	c.l4NetLBServiceLegacyMap[svcKey] = state
 }
 
 // DeleteL4NetLBServiceForLegacyMetric deletes service from L4 ILB Legacy Metrics states map.
-func (im *ControllerMetrics) DeleteL4NetLBServiceForLegacyMetric(svcKey string) {
+func (im *Collector) DeleteL4NetLBServiceForLegacyMetric(svcKey string) {
 	im.Lock()
 	defer im.Unlock()
 
@@ -109,10 +109,10 @@ func (im *ControllerMetrics) DeleteL4NetLBServiceForLegacyMetric(svcKey string) 
 }
 
 // computeL4ILBLegacyMetrics aggregates L4 ILB metrics in the cache.
-func (im *ControllerMetrics) computeL4ILBLegacyMetrics() map[feature]int {
-	im.Lock()
-	defer im.Unlock()
-	im.logger.V(4).Info("Computing L4 ILB usage legacy metrics from service state map", "serviceStateMap", im.l4ILBServiceLegacyMap)
+func (c *Collector) computeL4ILBLegacyMetrics() map[feature]int {
+	c.Lock()
+	defer c.Unlock()
+	c.logger.V(4).Info("Computing L4 ILB usage legacy metrics from service state map", "serviceStateMap", c.l4ILBServiceLegacyMap)
 	counts := map[feature]int{
 		l4ILBService:      0,
 		l4ILBGlobalAccess: 0,
@@ -122,8 +122,8 @@ func (im *ControllerMetrics) computeL4ILBLegacyMetrics() map[feature]int {
 		l4ILBInUserError:  0,
 	}
 
-	for key, state := range im.l4ILBServiceLegacyMap {
-		im.logger.V(6).Info("Got ILB Service", "serviceKey", key, "enabledGlobalAccess", fmt.Sprintf("%t", state.EnabledGlobalAccess),
+	for key, state := range c.l4ILBServiceLegacyMap {
+		c.logger.V(6).Info("Got ILB Service", "serviceKey", key, "enabledGlobalAccess", fmt.Sprintf("%t", state.EnabledGlobalAccess),
 			"enabledCustomSubnet", fmt.Sprintf("%t", state.EnabledCustomSubnet), "inSuccess", fmt.Sprintf("%t", state.InSuccess))
 		counts[l4ILBService]++
 		if !state.InSuccess {
@@ -143,19 +143,19 @@ func (im *ControllerMetrics) computeL4ILBLegacyMetrics() map[feature]int {
 			counts[l4ILBCustomSubnet]++
 		}
 	}
-	im.logger.V(4).Info("L4 ILB usage legacy metrics computed")
+	c.logger.V(4).Info("L4 ILB usage legacy metrics computed")
 	return counts
 }
 
 // computeL4NetLBLegacyMetrics aggregates L4 NetLB metrics in the cache.
-func (im *ControllerMetrics) computeL4NetLBLegacyMetrics() netLBFeatureCount {
-	im.Lock()
-	defer im.Unlock()
-	im.logger.V(4).Info("Computing L4 NetLB usage legacy metrics from service state map", "serviceStateMap", im.l4NetLBServiceLegacyMap)
+func (c *Collector) computeL4NetLBLegacyMetrics() netLBFeatureCount {
+	c.Lock()
+	defer c.Unlock()
+	c.logger.V(4).Info("Computing L4 NetLB usage legacy metrics from service state map", "serviceStateMap", c.l4NetLBServiceLegacyMap)
 	var counts netLBFeatureCount
 
-	for key, state := range im.l4NetLBServiceLegacyMap {
-		im.logger.V(6).Info("NetLB Service", "serviceKey", key, "state", fmt.Sprintf("%+v", state))
+	for key, state := range c.l4NetLBServiceLegacyMap {
+		c.logger.V(6).Info("NetLB Service", "serviceKey", key, "state", fmt.Sprintf("%+v", state))
 		counts.service++
 		if state.IsUserError {
 			counts.inUserError++
@@ -163,7 +163,7 @@ func (im *ControllerMetrics) computeL4NetLBLegacyMetrics() netLBFeatureCount {
 			continue
 		}
 		if !state.InSuccess {
-			if time.Since(*state.FirstSyncErrorTime) >= im.l4NetLBProvisionDeadlineForLegacyMetric {
+			if time.Since(*state.FirstSyncErrorTime) >= c.l4NetLBProvisionDeadlineForLegacyMetric {
 				counts.inError++
 			}
 			// Skip counting other features if the service is in error state.
@@ -177,20 +177,20 @@ func (im *ControllerMetrics) computeL4NetLBLegacyMetrics() netLBFeatureCount {
 			counts.premiumNetworkTier++
 		}
 	}
-	im.logger.V(4).Info("L4 NetLB usage legacy metrics computed")
+	c.logger.V(4).Info("L4 NetLB usage legacy metrics computed")
 	return counts
 }
 
-func (im *ControllerMetrics) exportL4LegacyMetrics() {
-	ilbCount := im.computeL4ILBLegacyMetrics()
-	im.logger.V(3).Info("Exporting L4 ILB usage legacy metrics", "ilbCount", ilbCount)
+func (c *Collector) exportLegacy() {
+	ilbCount := c.computeL4ILBLegacyMetrics()
+	c.logger.V(3).Info("Exporting L4 ILB usage legacy metrics", "ilbCount", ilbCount)
 	for feature, count := range ilbCount {
 		l4ILBLegacyCount.With(prometheus.Labels{label: feature.String()}).Set(float64(count))
 	}
-	im.logger.V(3).Info("L4 ILB usage legacy metrics exported")
+	c.logger.V(3).Info("L4 ILB usage legacy metrics exported")
 
-	netlbCount := im.computeL4NetLBLegacyMetrics()
-	im.logger.V(3).Info("Exporting L4 NetLB usage legacy metrics", "netLBCount", netlbCount)
+	netlbCount := c.computeL4NetLBLegacyMetrics()
+	c.logger.V(3).Info("Exporting L4 NetLB usage legacy metrics", "netLBCount", netlbCount)
 	netlbCount.record()
-	im.logger.V(3).Info("L4 NetLB usage legacy metrics exported")
+	c.logger.V(3).Info("L4 NetLB usage legacy metrics exported")
 }

@@ -334,6 +334,8 @@ func main() {
 		DefaultBackendSvcPort:                     defaultBackendServicePort,
 		HealthCheckPath:                           flags.F.HealthCheckPath,
 		MaxIGSize:                                 flags.F.MaxIGSize,
+		RunL4ILBController:                        flags.F.RunL4Controller,
+		RunL4NetLBController:                      flags.F.RunL4NetLBController,
 		EnableL4ILBDualStack:                      flags.F.EnableL4ILBDualStack,
 		EnableL4NetLBDualStack:                    flags.F.EnableL4NetLBDualStack,
 		EnableL4StrongSessionAffinity:             flags.F.EnableL4StrongSessionAffinity,
