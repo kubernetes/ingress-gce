@@ -66,6 +66,25 @@ func newNodePool(f Provider, maxIGSize int) (Manager, error) {
 	return pool, nil
 }
 
+func newNodePoolWithReadOnly(f Provider, maxIGSize int, readOnly bool) (Manager, error) {
+	nodeInformer := zonegetter.FakeNodeInformer()
+	fakeZoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		return nil, err
+	}
+
+	pool := NewManager(&ManagerConfig{
+		Cloud:        f,
+		Namer:        defaultNamer,
+		Recorders:    &test.FakeRecorderSource{},
+		BasePath:     basePath,
+		ZoneGetter:   fakeZoneGetter,
+		MaxIGSize:    maxIGSize,
+		ReadOnlyMode: readOnly,
+	})
+	return pool, nil
+}
+
 func getNodeNames(nodes map[string]string) []string {
 	names := make([]string, 0)
 	for name, _ := range nodes {
@@ -179,6 +198,7 @@ func TestNodePoolSync(t *testing.T) {
 		kubeNodes              sets.String
 		kubeNodesNotCandidates sets.Set[string]
 		shouldSkipSync         bool
+		readOnlyMode           bool
 	}{
 		{
 			gceNodes:  sets.NewString("n1"),
@@ -206,6 +226,38 @@ func TestNodePoolSync(t *testing.T) {
 			kubeNodes:              sets.NewString(),
 			kubeNodesNotCandidates: sets.New("n1"),
 		},
+		{
+			gceNodes:     sets.NewString("n1"),
+			kubeNodes:    sets.NewString("n1", "n2"),
+			readOnlyMode: true,
+		},
+		{
+			gceNodes:     sets.NewString("n1", "n2"),
+			kubeNodes:    sets.NewString("n1"),
+			readOnlyMode: true,
+		},
+		{
+			gceNodes:       sets.NewString("n1", "n2"),
+			kubeNodes:      sets.NewString("n1", "n2"),
+			shouldSkipSync: true,
+			readOnlyMode:   true,
+		},
+		{
+			gceNodes:     sets.NewString(),
+			kubeNodes:    sets.NewString(names1001...),
+			readOnlyMode: true,
+		},
+		{
+			gceNodes:     sets.NewString("n0", "n1"),
+			kubeNodes:    sets.NewString(names1001...),
+			readOnlyMode: true,
+		},
+		{
+			gceNodes:               sets.NewString("n1"),
+			kubeNodes:              sets.NewString(),
+			kubeNodesNotCandidates: sets.New("n1"),
+			readOnlyMode:           true,
+		},
 	}
 
 	for _, testCase := range testCases {
@@ -217,8 +269,8 @@ func TestNodePoolSync(t *testing.T) {
 			},
 		}
 		fakeGCEInstanceGroups := NewFakeInstanceGroups(zonesToIGs, maxIGSize)
+		pool, err := newNodePoolWithReadOnly(fakeGCEInstanceGroups, maxIGSize, testCase.readOnlyMode)
 
-		pool, err := newNodePool(fakeGCEInstanceGroups, maxIGSize)
 		if err != nil {
 			t.Fatalf("failed to create node pool: %s", err)
 		}
@@ -246,7 +298,7 @@ func TestNodePoolSync(t *testing.T) {
 
 		// run assertions
 		apiCallsCountAfterSync := len(fakeGCEInstanceGroups.calls)
-		if testCase.shouldSkipSync && apiCallsCountBeforeSync != apiCallsCountAfterSync {
+		if (testCase.shouldSkipSync || testCase.readOnlyMode) && apiCallsCountBeforeSync != apiCallsCountAfterSync {
 			t.Errorf("Should skip sync. apiCallsCountBeforeSync = %d, apiCallsCountAfterSync = %d", apiCallsCountBeforeSync, apiCallsCountAfterSync)
 		}
 
@@ -260,16 +312,23 @@ func TestNodePoolSync(t *testing.T) {
 		}
 
 		expectedInstancesSize := testCase.kubeNodes.Len()
+
 		if testCase.kubeNodes.Len() > maxIGSize {
 			// If kubeNodes bigger than maximum instance group size, resulted instances
 			// should be truncated to flags.F.MaxIgSize
 			expectedInstancesSize = maxIGSize
 		}
+
+		if testCase.readOnlyMode {
+			expectedInstancesSize = testCase.gceNodes.Len()
+		} else {
+			if !testCase.kubeNodes.IsSuperset(instances) {
+				t.Errorf("kubeNodes = %v is not superset of instances = %v", testCase.kubeNodes, instances)
+			}
+		}
+
 		if instances.Len() != expectedInstancesSize {
 			t.Errorf("instances.Len() = %d not equal expectedInstancesSize = %d", instances.Len(), expectedInstancesSize)
-		}
-		if !testCase.kubeNodes.IsSuperset(instances) {
-			t.Errorf("kubeNodes = %v is not superset of instances = %v", testCase.kubeNodes, instances)
 		}
 
 		// call sync one more time and check that it will be no-op and will not cause any api calls

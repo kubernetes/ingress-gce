@@ -40,6 +40,9 @@ type Controller struct {
 
 	enableMultiSubnetCluster bool
 
+	// readOnlyMode is enabled when the controller should skip the sync
+	readOnlyMode bool
+
 	stopCh     <-chan struct{}
 	zoneGetter *zonegetter.ZoneGetter
 
@@ -52,6 +55,7 @@ type ControllerConfig struct {
 	IGManager                Manager
 	HasSynced                func() bool
 	EnableMultiSubnetCluster bool
+	ReadOnlyMode             bool
 	StopCh                   <-chan struct{}
 }
 
@@ -69,6 +73,7 @@ func NewController(config *ControllerConfig, logger klog.Logger) *Controller {
 		igManager:                config.IGManager,
 		hasSynced:                config.HasSynced,
 		enableMultiSubnetCluster: config.EnableMultiSubnetCluster,
+		readOnlyMode:             config.ReadOnlyMode,
 		stopCh:                   config.StopCh,
 		logger:                   logger,
 	}
