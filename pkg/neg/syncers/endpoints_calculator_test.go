@@ -618,6 +618,241 @@ func TestClusterWantedNEGsCount(t *testing.T) {
 	}
 }
 
+// TestClusterNEGsStability verifies that we limit the number of endpoints removal.
+// Removing endpoint from a node causes 30 second connection draining.
+// For that reason we should avoid removing endpoints for as long as possible.
+func TestClusterNEGsStability(t *testing.T) {
+	t.Parallel()
+
+	type stage struct {
+		desc  string
+		nodes map[string][]*nodeWithSubnet
+		want  map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
+	}
+
+	// For clarity of test cases we limit the size to 7 - which will still split unevenly in 3 zones
+	const subsetSize = 7
+
+	scenarios := []struct {
+		desc   string
+		stages []stage
+	}{{
+		desc: "equal nodes",
+		stages: []stage{{
+			desc: "start",
+			nodes: map[string][]*nodeWithSubnet{
+				"zone1": makeNodes(1000, 10),
+				"zone2": makeNodes(2000, 10),
+				"zone3": makeNodes(3000, 10),
+			},
+			want: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: "default"}: {{Node: "node1003"}: {}, {Node: "node1009"}: {}},
+				{Zone: "zone2", Subnet: "default"}: {{Node: "node2003"}: {}, {Node: "node2004"}: {}},
+				{Zone: "zone3", Subnet: "default"}: {{Node: "node3000"}: {}, {Node: "node3003"}: {}, {Node: "node3009"}: {}},
+			},
+		}, {
+			desc: "no change",
+			nodes: map[string][]*nodeWithSubnet{
+				"zone1": makeNodes(1000, 10),
+				"zone2": makeNodes(2000, 10),
+				"zone3": makeNodes(3000, 10),
+			},
+			want: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: "default"}: {{Node: "node1003"}: {}, {Node: "node1009"}: {}},
+				{Zone: "zone2", Subnet: "default"}: {{Node: "node2003"}: {}, {Node: "node2004"}: {}},
+				{Zone: "zone3", Subnet: "default"}: {{Node: "node3000"}: {}, {Node: "node3003"}: {}, {Node: "node3009"}: {}},
+			},
+		}, {
+			desc: "increase nodes in all zones, no change expected",
+			nodes: map[string][]*nodeWithSubnet{
+				"zone1": makeNodes(1000, 100),
+				"zone2": makeNodes(2000, 100),
+				"zone3": makeNodes(3000, 100),
+			},
+			want: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: "default"}: {{Node: "node1003"}: {}, {Node: "node1009"}: {}},
+				{Zone: "zone2", Subnet: "default"}: {{Node: "node2003"}: {}, {Node: "node2004"}: {}},
+				{Zone: "zone3", Subnet: "default"}: {{Node: "node3000"}: {}, {Node: "node3003"}: {}, {Node: "node3009"}: {}},
+			},
+		}, {
+			desc: "decrease all in all zones, no change expected",
+			nodes: map[string][]*nodeWithSubnet{
+				"zone1": makeNodes(1000, 10),
+				"zone2": makeNodes(2000, 10),
+				"zone3": makeNodes(3000, 100),
+			},
+			want: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: "default"}: {{Node: "node1003"}: {}, {Node: "node1009"}: {}},
+				{Zone: "zone2", Subnet: "default"}: {{Node: "node2003"}: {}, {Node: "node2004"}: {}},
+				{Zone: "zone3", Subnet: "default"}: {{Node: "node3000"}: {}, {Node: "node3003"}: {}, {Node: "node3009"}: {}},
+			},
+		}, {
+			desc: "decrease, node disapear, change expected",
+			nodes: map[string][]*nodeWithSubnet{
+				"zone1": makeNodes(1000, 5),
+				"zone2": makeNodes(2000, 5),
+				"zone3": makeNodes(3000, 5),
+			},
+			want: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: "default"}: {{Node: "node1002"}: {}, {Node: "node1003"}: {}},
+				{Zone: "zone2", Subnet: "default"}: {{Node: "node2003"}: {}, {Node: "node2004"}: {}},
+				{Zone: "zone3", Subnet: "default"}: {{Node: "node3000"}: {}, {Node: "node3002"}: {}, {Node: "node3003"}: {}},
+			},
+		}},
+	}, {
+		desc: "unequal nodes",
+		stages: []stage{{
+			desc: "start",
+			nodes: map[string][]*nodeWithSubnet{
+				"zone1": makeNodes(1000, 10),
+				"zone2": makeNodes(2000, 20),
+				"zone3": makeNodes(3000, 10),
+			},
+			want: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: "default"}: {{Node: "node1003"}: {}, {Node: "node1009"}: {}},
+				{Zone: "zone2", Subnet: "default"}: {{Node: "node2011"}: {}, {Node: "node2017"}: {}, {Node: "node2019"}: {}},
+				{Zone: "zone3", Subnet: "default"}: {{Node: "node3000"}: {}, {Node: "node3003"}: {}},
+			},
+		}, {
+			desc: "no change",
+			nodes: map[string][]*nodeWithSubnet{
+				"zone1": makeNodes(1000, 10),
+				"zone2": makeNodes(2000, 20),
+				"zone3": makeNodes(3000, 10),
+			},
+			want: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: "default"}: {{Node: "node1003"}: {}, {Node: "node1009"}: {}},
+				{Zone: "zone2", Subnet: "default"}: {{Node: "node2011"}: {}, {Node: "node2017"}: {}, {Node: "node2019"}: {}},
+				{Zone: "zone3", Subnet: "default"}: {{Node: "node3000"}: {}, {Node: "node3003"}: {}},
+			},
+		}, {
+			desc: "make zone1 largest, no change expected",
+			nodes: map[string][]*nodeWithSubnet{
+				"zone1": makeNodes(1000, 30),
+				"zone2": makeNodes(2000, 20),
+				"zone3": makeNodes(3000, 10),
+			},
+			want: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: "default"}: {{Node: "node1003"}: {}, {Node: "node1009"}: {}},
+				{Zone: "zone2", Subnet: "default"}: {{Node: "node2011"}: {}, {Node: "node2017"}: {}, {Node: "node2019"}: {}},
+				{Zone: "zone3", Subnet: "default"}: {{Node: "node3000"}: {}, {Node: "node3003"}: {}},
+			},
+		}, {
+			desc: "shrink zone1, move endpoints from zone1",
+			nodes: map[string][]*nodeWithSubnet{
+				"zone1": makeNodes(1000, 1),
+				"zone2": makeNodes(2000, 20),
+				"zone3": makeNodes(3000, 10),
+			},
+			want: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: "default"}: {},
+				{Zone: "zone2", Subnet: "default"}: {
+					{Node: "node2004"}: {}, // New
+					{Node: "node2011"}: {},
+					{Node: "node2017"}: {},
+					{Node: "node2019"}: {},
+				},
+				{Zone: "zone3", Subnet: "default"}: {
+					{Node: "node3000"}: {},
+					{Node: "node3003"}: {},
+					{Node: "node3009"}: {}, // New
+				},
+			},
+		}},
+	}, {
+		desc: "zones flickering under subsetlimit",
+		stages: []stage{{
+			desc: "start",
+			nodes: map[string][]*nodeWithSubnet{
+				"zone1": makeNodes(1000, 2),
+				"zone2": makeNodes(2000, 2),
+				"zone3": makeNodes(3000, 2),
+			},
+			want: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: "default"}: {{Node: "node1000"}: {}, {Node: "node1001"}: {}},
+				{Zone: "zone2", Subnet: "default"}: {{Node: "node2000"}: {}, {Node: "node2001"}: {}},
+				{Zone: "zone3", Subnet: "default"}: {{Node: "node3000"}: {}, {Node: "node3001"}: {}},
+			},
+		}, {
+			desc: "zone1 bump",
+			nodes: map[string][]*nodeWithSubnet{
+				"zone1": makeNodes(1000, 3),
+				"zone2": makeNodes(2000, 2),
+				"zone3": makeNodes(3000, 2),
+			},
+			want: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: "default"}: {{Node: "node1000"}: {}, {Node: "node1001"}: {}, {Node: "node1002"}: {}},
+				{Zone: "zone2", Subnet: "default"}: {{Node: "node2000"}: {}, {Node: "node2001"}: {}},
+				{Zone: "zone3", Subnet: "default"}: {{Node: "node3000"}: {}, {Node: "node3001"}: {}},
+			},
+		}, {
+			desc: "zone2 bump",
+			nodes: map[string][]*nodeWithSubnet{
+				"zone1": makeNodes(1000, 2),
+				"zone2": makeNodes(2000, 3),
+				"zone3": makeNodes(3000, 2),
+			},
+			want: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: "default"}: {{Node: "node1000"}: {}, {Node: "node1001"}: {}},
+				{Zone: "zone2", Subnet: "default"}: {{Node: "node2000"}: {}, {Node: "node2001"}: {}, {Node: "node2002"}: {}},
+				{Zone: "zone3", Subnet: "default"}: {{Node: "node3000"}: {}, {Node: "node3001"}: {}},
+			},
+		}},
+	}}
+
+	for _, tc := range scenarios {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			nodeInformer := zonegetter.FakeNodeInformer()
+			zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, nodeInformer, defaultTestSubnetURL, false)
+			if err != nil {
+				t.Fatalf("failed to initialize zone getter: %v", err)
+			}
+			defaultNetwork := network.NetworkInfo{IsDefault: true, K8sNetwork: "default", SubnetworkURL: defaultTestSubnetURL}
+
+			// We use ILB so that it doesn't trigger code that linearly calculates number of NEGs needed
+			// based on actual number of Pods.
+			c := NewClusterL4EndpointsCalculator(
+				listers.NewNodeLister(nodeInformer.GetIndexer()),
+				zoneGetter, "svc", klog.TODO(), &defaultNetwork, negtypes.L4InternalLB,
+			)
+			c.subsetSizeLimit = subsetSize
+
+			var endpointsMap map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
+			for _, stage := range tc.stages {
+				t.Run(stage.desc, func(t *testing.T) {
+					// Arrange
+					// Set up nodes
+					for zone, nodes := range stage.nodes {
+						zonegetter.DeleteFakeNodesInZone(t, zone, zoneGetter)
+						names := make([]string, 0, len(nodes))
+						for _, node := range nodes {
+							names = append(names, node.node.Name)
+						}
+						if err := zonegetter.AddFakeNodes(zoneGetter, zone, names...); err != nil {
+							t.Fatalf("failed to add fake node: %v", err)
+						}
+					}
+
+					// Act
+					res, _, _, err := c.CalculateEndpoints(nil, endpointsMap)
+					if err != nil {
+						t.Fatalf("expected no err, got %v", err)
+					}
+
+					// Assert
+					if diff := cmp.Diff(stage.want, res); diff != "" {
+						t.Errorf("want != got, -want +got:\n%s", diff)
+					}
+					endpointsMap = stage.want
+				})
+			}
+		})
+	}
+}
+
 func TestValidateEndpoints(t *testing.T) {
 	testPortName := ""
 	emptyNamedPort := ""
