@@ -121,6 +121,8 @@ type ControllerContextConfig struct {
 	DefaultBackendSvcPort                     utils.ServicePort
 	HealthCheckPath                           string
 	MaxIGSize                                 int
+	RunL4ILBController                        bool
+	RunL4NetLBController                      bool
 	EnableL4ILBDualStack                      bool
 	EnableL4NetLBDualStack                    bool
 	EnableL4StrongSessionAffinity             bool
@@ -350,8 +352,11 @@ func (ctx *ControllerContext) Start(stopCh <-chan struct{}) {
 	}
 	// Export ingress usage metrics.
 	go ctx.ControllerMetrics.Run(stopCh)
-	// Export L4LB usage metrics
-	go ctx.L4Metrics.Run(stopCh)
+
+	if runL4 := ctx.RunL4ILBController || ctx.RunL4NetLBController; runL4 {
+		// Export L4LB usage metrics
+		go ctx.L4Metrics.Run(stopCh)
+	}
 }
 
 // Ingresses returns the store of Ingresses.
