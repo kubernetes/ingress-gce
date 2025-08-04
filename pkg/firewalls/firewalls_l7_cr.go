@@ -41,7 +41,10 @@ type FirewallCR struct {
 	// all the port ranges to open with each call to Sync()
 	nodePortRanges []string
 	firewallClient firewallclient.Interface
-	dryRun         bool
+	// If set to true, CRs are marked as "disabled" and errors are not
+	// propagated. Firewalls should be still created/updated by L7LB, not the
+	// Platform Firewall
+	dryRun bool
 
 	logger klog.Logger
 }
@@ -85,13 +88,13 @@ func (fr *FirewallCR) Sync(nodeNames, additionalPorts, additionalRanges []string
 	if err != nil {
 		return err
 	}
-	return ensureFirewallCR(fr.firewallClient, expectedFirewallCR, fr.logger)
+	return ensureFirewallCR(fr.firewallClient, expectedFirewallCR, fr.logger, fr.dryRun)
 }
 
 // ensureFirewallCR creates/updates the firewall CR
 // On CR update, it will read the conditions to see if there are errors updated by PFW controller.
 // If the Spec was updated by others, it will reconcile the Spec.
-func ensureFirewallCR(client firewallclient.Interface, expectedFWCR *gcpfirewallv1.GCPFirewall, logger klog.Logger) error {
+func ensureFirewallCR(client firewallclient.Interface, expectedFWCR *gcpfirewallv1.GCPFirewall, logger klog.Logger, dryRun bool) error {
 	fw := client.NetworkingV1().GCPFirewalls()
 	currentFWCR, err := fw.Get(context.Background(), expectedFWCR.Name, metav1.GetOptions{})
 	logger.V(3).Info("ensureFirewallCR Get CR", "currentFirewallCR", fmt.Sprintf("%+v", currentFWCR), "err", err)
@@ -102,6 +105,10 @@ func ensureFirewallCR(client firewallclient.Interface, expectedFWCR *gcpfirewall
 			_, err = fw.Create(context.Background(), expectedFWCR, metav1.CreateOptions{})
 		}
 		return err
+	}
+	if currentFWCR.DeletionTimestamp != nil {
+		logger.V(3).Info("ensureFirewallCR: The CR contains DeletionTimestamp. Skipping Ensure", "currentFirewallDeletionTimestamp", fmt.Sprintf("%+v", currentFWCR.DeletionTimestamp))
+		return nil
 	}
 	if !reflect.DeepEqual(currentFWCR.Spec, expectedFWCR.Spec) {
 		// Update the current firewall CR
@@ -116,7 +123,11 @@ func ensureFirewallCR(client firewallclient.Interface, expectedFWCR *gcpfirewall
 			con.Reason == string(gcpfirewallv1.FirewallRuleReasonSyncError) {
 			// Use recorder to emit the cmd in Sync()
 			logger.V(3).Info("ensureFirewallCR: Could not enforce Firewall CR", "currentFirewallCRName", currentFWCR.Name, "reason", con.Reason)
-			return fmt.Errorf(con.Reason)
+			if dryRun {
+				return nil
+			} else {
+				return fmt.Errorf(con.Reason)
+			}
 		}
 	}
 	return nil
@@ -130,14 +141,14 @@ func deleteFirewallCR(client firewallclient.Interface, name string, logger klog.
 }
 
 // NewFirewallCR constructs the firewall CR from name, ports and ranges
-func NewFirewallCR(name string, ports, srcRanges, dstRanges []string, enforced bool) (*gcpfirewallv1.GCPFirewall, error) {
+func NewFirewallCR(name string, ports, srcRanges, dstRanges []string, dryRun bool) (*gcpfirewallv1.GCPFirewall, error) {
 	firewallCR := &gcpfirewallv1.GCPFirewall{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 		},
 		Spec: gcpfirewallv1.GCPFirewallSpec{
 			Action:   gcpfirewallv1.ActionAllow,
-			Disabled: !enforced,
+			Disabled: dryRun,
 		},
 	}
 	var protocolPorts []gcpfirewallv1.ProtocolPort
