@@ -29,6 +29,7 @@ CONTAINER_BINARIES ?= \
 	echo \
 	fuzzer \
 	glbc \
+	neg-e2e-test \
 	ingress-controller-e2e-test \
 	workload-controller \
 	workload-daemon \
