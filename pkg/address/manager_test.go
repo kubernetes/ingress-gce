@@ -48,7 +48,7 @@ func TestAddressManagerNoRequestedIP(t *testing.T) {
 	require.NoError(t, err)
 	targetIP := ""
 
-	mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeInternal, cloud.NetworkTierDefault, address.IPv4Version, klog.TODO())
+	mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, "", targetIP, cloud.SchemeInternal, cloud.NetworkTierDefault, address.IPv4Version, klog.TODO())
 	testHoldAddress(t, mgr, svc, testLBName, vals.Region, targetIP, string(cloud.SchemeInternal), cloud.NetworkTierDefault.ToGCEValue())
 	testReleaseAddress(t, mgr, svc, testLBName, vals.Region)
 }
@@ -59,7 +59,7 @@ func TestAddressManagerBasic(t *testing.T) {
 	require.NoError(t, err)
 	targetIP := "1.1.1.1"
 
-	mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeInternal, cloud.NetworkTierDefault, address.IPv4Version, klog.TODO())
+	mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, "", targetIP, cloud.SchemeInternal, cloud.NetworkTierDefault, address.IPv4Version, klog.TODO())
 	testHoldAddress(t, mgr, svc, testLBName, vals.Region, targetIP, string(cloud.SchemeInternal), cloud.NetworkTierDefault.ToGCEValue())
 	testReleaseAddress(t, mgr, svc, testLBName, vals.Region)
 }
@@ -75,7 +75,7 @@ func TestAddressManagerOrphaned(t *testing.T) {
 	err = svc.ReserveRegionAddress(addr, vals.Region)
 	require.NoError(t, err)
 
-	mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeInternal, cloud.NetworkTierDefault, address.IPv4Version, klog.TODO())
+	mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, "", targetIP, cloud.SchemeInternal, cloud.NetworkTierDefault, address.IPv4Version, klog.TODO())
 	testHoldAddress(t, mgr, svc, testLBName, vals.Region, targetIP, string(cloud.SchemeInternal), cloud.NetworkTierDefault.ToGCEValue())
 	testReleaseAddress(t, mgr, svc, testLBName, vals.Region)
 }
@@ -87,7 +87,7 @@ func TestAddressManagerStandardNetworkTier(t *testing.T) {
 	require.NoError(t, err)
 	targetIP := "1.1.1.1"
 
-	mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeExternal, cloud.NetworkTierStandard, address.IPv4Version, klog.TODO())
+	mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, "", targetIP, cloud.SchemeExternal, cloud.NetworkTierStandard, address.IPv4Version, klog.TODO())
 	testHoldAddress(t, mgr, svc, testLBName, vals.Region, targetIP, string(cloud.SchemeExternal), cloud.NetworkTierStandard.ToGCEValue())
 	testReleaseAddress(t, mgr, svc, testLBName, vals.Region)
 }
@@ -98,7 +98,7 @@ func TestAddressManagerStandardNetworkTierNotAvailableForInternalAddress(t *test
 	require.NoError(t, err)
 	targetIP := "1.1.1.1"
 
-	mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeInternal, cloud.NetworkTierStandard, address.IPv4Version, klog.TODO())
+	mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, "", targetIP, cloud.SchemeInternal, cloud.NetworkTierStandard, address.IPv4Version, klog.TODO())
 	testHoldAddress(t, mgr, svc, testLBName, vals.Region, targetIP, string(cloud.SchemeInternal), cloud.NetworkTierPremium.ToGCEValue())
 	testReleaseAddress(t, mgr, svc, testLBName, vals.Region)
 }
@@ -115,7 +115,7 @@ func TestAddressManagerOutdatedOrphan(t *testing.T) {
 	err = svc.ReserveRegionAddress(addr, vals.Region)
 	require.NoError(t, err)
 
-	mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeInternal, cloud.NetworkTierDefault, address.IPv4Version, klog.TODO())
+	mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, "", targetIP, cloud.SchemeInternal, cloud.NetworkTierDefault, address.IPv4Version, klog.TODO())
 	testHoldAddress(t, mgr, svc, testLBName, vals.Region, targetIP, string(cloud.SchemeInternal), cloud.NetworkTierDefault.ToGCEValue())
 	testReleaseAddress(t, mgr, svc, testLBName, vals.Region)
 }
@@ -131,7 +131,7 @@ func TestAddressManagerExternallyOwned(t *testing.T) {
 	err = svc.ReserveRegionAddress(addr, vals.Region)
 	require.NoError(t, err)
 
-	mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeInternal, cloud.NetworkTierPremium, address.IPv4Version, klog.TODO())
+	mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, "", targetIP, cloud.SchemeInternal, cloud.NetworkTierPremium, address.IPv4Version, klog.TODO())
 	ipToUse, ipType, err := mgr.HoldAddress()
 	require.NoError(t, err)
 	assert.NotEmpty(t, ipToUse)
@@ -144,6 +144,45 @@ func TestAddressManagerExternallyOwned(t *testing.T) {
 	testReleaseAddress(t, mgr, svc, testLBName, vals.Region)
 }
 
+// TestAddressManagerExternallyOwnedAndOrphaned tests the case where extrenal address is used
+// and obsolete orphaned address is removed
+func TestAddressManagerExternallyOwnedAndOrphaned(t *testing.T) {
+	svc, err := fakeGCECloud(vals)
+	require.NoError(t, err)
+
+	// ExternallyOwned IP
+	externalName := "my-important-address"
+	externalIP := "1.1.1.1"
+	addr := &compute.Address{Name: externalName, Address: externalIP, AddressType: string(cloud.SchemeInternal)}
+	err = svc.ReserveRegionAddress(addr, vals.Region)
+	require.NoError(t, err)
+
+	// Orphaned IP with default LBName name
+	orphanedName := testLBName
+	orphanedIP := "1.1.1.100"
+	orphaned_addr := &compute.Address{Name: orphanedName, Address: orphanedIP, AddressType: string(cloud.SchemeInternal)}
+	err = svc.ReserveRegionAddress(orphaned_addr, vals.Region)
+	require.NoError(t, err)
+
+	mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, externalName, externalIP, cloud.SchemeInternal, cloud.NetworkTierPremium, address.IPv4Version, klog.TODO())
+	ipToUse, ipType, err := mgr.HoldAddress()
+	require.NoError(t, err)
+	assert.Equal(t, ipToUse, externalIP)
+	assert.Equal(t, address.IPAddrUnmanaged, ipType, "IP Address should not be marked as controller's managed")
+
+	// Orphaned IP should be removed
+	_, err = svc.GetRegionAddress(testLBName, vals.Region)
+	assert.True(t, utils.IsNotFoundError(err), "Orphaned Address should be removed")
+
+	err = mgr.ReleaseAddress()
+	require.NoError(t, err)
+
+	// ExternallyOwned IP should stay untouched
+	addr, _ = svc.GetRegionAddress(externalName, vals.Region)
+	assert.NotNil(t, addr)
+
+}
+
 // TestAddressManagerNonExisting tests the case where the address can't be reserved
 // automatically and was not reserved by the user (external address case).
 func TestAddressManagerNonExisting(t *testing.T) {
@@ -151,7 +190,7 @@ func TestAddressManagerNonExisting(t *testing.T) {
 	require.NoError(t, err)
 	targetIP := "1.1.1.1"
 
-	mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeExternal, cloud.NetworkTierPremium, address.IPv4Version, klog.TODO())
+	mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, "", targetIP, cloud.SchemeExternal, cloud.NetworkTierPremium, address.IPv4Version, klog.TODO())
 
 	svc.Compute().(*cloud.MockGCE).MockAddresses.InsertHook = test.InsertAddressNotAllocatedToProjectErrorHook
 	_, _, err = mgr.HoldAddress()
@@ -171,7 +210,7 @@ func TestAddressManagerWrongTypeReserved(t *testing.T) {
 		t.Errorf("svc.ReserveRegionAddress returned err: %v", err)
 	}
 
-	mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeExternal, cloud.NetworkTierPremium, address.IPv4Version, klog.TODO())
+	mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, "", targetIP, cloud.SchemeExternal, cloud.NetworkTierPremium, address.IPv4Version, klog.TODO())
 
 	_, _, err = mgr.HoldAddress()
 	require.Error(t, err)
@@ -188,7 +227,7 @@ func TestAddressManagerExternallyOwnedWrongNetworkTier(t *testing.T) {
 	addr := &compute.Address{Name: "my-important-address", Address: targetIP, AddressType: string(cloud.SchemeInternal), NetworkTier: string(cloud.NetworkTierStandard)}
 	err = svc.ReserveRegionAddress(addr, vals.Region)
 	require.NoError(t, err, "")
-	mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeInternal, cloud.NetworkTierPremium, address.IPv4Version, klog.TODO())
+	mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, "", targetIP, cloud.SchemeInternal, cloud.NetworkTierPremium, address.IPv4Version, klog.TODO())
 	svc.Compute().(*cloud.MockGCE).MockAddresses.InsertHook = test.InsertAddressNetworkErrorHook
 	_, _, err = mgr.HoldAddress()
 	if err == nil || !utils.IsNetworkTierError(err) {
@@ -207,10 +246,38 @@ func TestAddressManagerBadExternallyOwned(t *testing.T) {
 	err = svc.ReserveRegionAddress(addr, vals.Region)
 	require.NoError(t, err)
 
-	mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeInternal, cloud.NetworkTierPremium, address.IPv4Version, klog.TODO())
+	mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, "", targetIP, cloud.SchemeInternal, cloud.NetworkTierPremium, address.IPv4Version, klog.TODO())
 	ad, _, err := mgr.HoldAddress()
 	assert.NotNil(t, err) // FIXME
 	require.Equal(t, ad, "")
+}
+
+// TestAddressManagerBadExternallyOwnedFromAnnotation tests the case where the address exists but isn't
+// owned by the controller. However, this address has the wrong type.
+func TestAddressManagerBadExternallyOwnedFromAnnotation(t *testing.T) {
+	svc, err := fakeGCECloud(vals)
+	require.NoError(t, err)
+	targetIP := "1.1.1.1"
+	addrName := "my-important-address"
+
+	addrExternal := &compute.Address{Name: addrName, Address: targetIP, AddressType: string(cloud.SchemeExternal)}
+	err = svc.ReserveRegionAddress(addrExternal, vals.Region)
+	require.NoError(t, err)
+
+	addrDefault := &compute.Address{Name: testLBName, Address: "1.1.1.100", AddressType: string(cloud.SchemeInternal)}
+	err = svc.ReserveRegionAddress(addrDefault, vals.Region)
+	require.NoError(t, err)
+
+	mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, addrName, targetIP, cloud.SchemeInternal, cloud.NetworkTierPremium, address.IPv4Version, klog.TODO())
+	ad, _, err := mgr.HoldAddress()
+	assert.NotNil(t, err) // FIXME
+	require.Equal(t, ad, "")
+
+	addrExternal, _ = svc.GetRegionAddress(addrName, vals.Region)
+	assert.NotNil(t, addrExternal, "ExternallyOwned IP should stay untouched")
+
+	_, err = svc.GetRegionAddress(testLBName, vals.Region)
+	assert.True(t, utils.IsNotFoundError(err), "Orphaned Address should be removed")
 }
 
 // TestAddressManagerIPv6 tests the typical case of reserving and releasing an IPv6 address.
@@ -239,7 +306,7 @@ func TestAddressManagerIPv6(t *testing.T) {
 				t.Fatalf("fakeGCECloud(%v) returned error %v", vals, err)
 			}
 
-			mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, tc.targetIP, cloud.SchemeInternal, cloud.NetworkTierDefault, address.IPv6Version, klog.TODO())
+			mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, "", tc.targetIP, cloud.SchemeInternal, cloud.NetworkTierDefault, address.IPv6Version, klog.TODO())
 			testHoldAddress(t, mgr, svc, testLBName, vals.Region, tc.targetIP, string(cloud.SchemeInternal), cloud.NetworkTierDefault.ToGCEValue())
 			testReleaseAddress(t, mgr, svc, testLBName, vals.Region)
 		})

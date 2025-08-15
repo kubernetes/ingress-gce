@@ -26,6 +26,7 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -95,6 +96,7 @@ type L4BackendServiceParams struct {
 	ConnectionTrackingPolicy *composite.BackendServiceConnectionTrackingPolicy
 	LocalityLbPolicy         LocalityLBPolicyType
 	EnableZonalAffinity      bool
+	LogConfig                *composite.BackendServiceLogConfig
 }
 
 var versionPrecedence = map[meta.Version]int{
@@ -405,6 +407,7 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 		SessionAffinity:     utils.TranslateAffinityType(params.SessionAffinity, beLogger),
 		LoadBalancingScheme: params.Scheme,
 		LocalityLbPolicy:    string(params.LocalityLbPolicy),
+		LogConfig:           params.LogConfig,
 	}
 
 	if params.EnableZonalAffinity {
@@ -445,14 +448,6 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 		createdBS, err := composite.GetBackendService(p.cloud, key, expectedBS.Version, beLogger)
 		return createdBS, utils.ResourceUpdate, err
 	} else {
-		// TODO(FelipeYepez) remove this check once LocalityLBPolicyMaglev does not require allow lisiting
-		// Use LocalityLBPolicyMaglev instead of LocalityLBPolicyDefault if ILB already uses MAGLEV or WEIGHTEDMAGLEV
-		if expectedBS.LocalityLbPolicy == string(LocalityLBPolicyDefault) &&
-			(currentBS.LocalityLbPolicy == string(LocalityLBPolicyWeightedMaglev) || currentBS.LocalityLbPolicy == string(LocalityLBPolicyMaglev)) {
-
-			expectedBS.LocalityLbPolicy = string(LocalityLBPolicyMaglev)
-		}
-
 		// Determine the appropriate API version to use for updating the backend service
 		currentVersion := meta.VersionGA
 		var currentDesc utils.L4LBResourceDescription
@@ -494,16 +489,27 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 // since that is handled by the neg-linker.
 // The list of backends is not checked, since that is handled by the neg-linker.
 func backendSvcEqual(newBS, oldBS *composite.BackendService, compareConnectionTracking bool) bool {
+
 	svcsEqual := newBS.Protocol == oldBS.Protocol &&
 		newBS.Description == oldBS.Description &&
 		newBS.SessionAffinity == oldBS.SessionAffinity &&
 		newBS.LoadBalancingScheme == oldBS.LoadBalancingScheme &&
-		utils.EqualStringSets(newBS.HealthChecks, oldBS.HealthChecks) &&
 		newBS.Network == oldBS.Network
+
+	if flags.F.EnableL4ILBZonalAffinity {
+		// Compare healthChecks sets ignoring api version
+		svcsEqual = svcsEqual && healthChecksEqual(newBS.HealthChecks, oldBS.HealthChecks)
+	} else {
+		svcsEqual = svcsEqual && utils.EqualStringSets(newBS.HealthChecks, oldBS.HealthChecks)
+	}
 
 	// Compare only for backendSvc that uses Strong Session Affinity feature
 	if compareConnectionTracking {
 		svcsEqual = svcsEqual && connectionTrackingPolicyEqual(newBS.ConnectionTrackingPolicy, oldBS.ConnectionTrackingPolicy)
+	}
+
+	if flags.F.ManageL4LBLogging {
+		svcsEqual = svcsEqual && backendServiceLogConfigEqual(oldBS.LogConfig, newBS.LogConfig)
 	}
 
 	// If the locality lb policy is not set for existing services, no need to update to MAGLEV since it is the default now.
@@ -517,12 +523,47 @@ func backendSvcEqual(newBS, oldBS *composite.BackendService, compareConnectionTr
 	return svcsEqual
 }
 
+// backendServiceLogConfigEqual returns true if both elements are equal
+// and return false if at least one parameter is different
+func backendServiceLogConfigEqual(oldLC, newLC *composite.BackendServiceLogConfig) bool {
+	if oldLC == nil {
+		oldLC = &composite.BackendServiceLogConfig{}
+	}
+	if newLC == nil {
+		newLC = &composite.BackendServiceLogConfig{}
+	}
+
+	return oldLC.Enable == newLC.Enable &&
+		oldLC.SampleRate == newLC.SampleRate &&
+		oldLC.OptionalMode == newLC.OptionalMode &&
+		utils.EqualStringSets(oldLC.OptionalFields, newLC.OptionalFields)
+}
+
+// removeAPIVersionFromHealthChecks converts a slice of full health check URLs
+// into a slice of their URL without the API version
+func removeAPIVersionFromHealthChecks(hcLinks []string) []string {
+	hcResourcePaths := make([]string, 0, len(hcLinks))
+	for _, hcLink := range hcLinks {
+		resourcePath := utils.FilterAPIVersionFromResourcePath(hcLink)
+		hcResourcePaths = append(hcResourcePaths, resourcePath)
+	}
+	return hcResourcePaths
+}
+
 func convertNetworkLbTrafficPolicyToZonalAffinity(trafficPolicy *composite.BackendServiceNetworkPassThroughLbTrafficPolicy) composite.BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity {
 	if trafficPolicy == nil || trafficPolicy.ZonalAffinity == nil {
 		return *zonalAffinityDisabledTrafficPolicy().ZonalAffinity
 	}
 
 	return *trafficPolicy.ZonalAffinity
+}
+
+// healthCheckEqual compare healthcheck URL ignoring the API version used
+func healthChecksEqual(hcLinksA, hcLinksB []string) bool {
+	healthChecksA := removeAPIVersionFromHealthChecks(hcLinksA)
+	healthChecksB := removeAPIVersionFromHealthChecks(hcLinksB)
+
+	return utils.EqualStringSets(healthChecksA, healthChecksB)
 }
 
 func zonalAffinityEqual(a, b *composite.BackendService) bool {

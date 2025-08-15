@@ -25,6 +25,7 @@ import (
 	compute "google.golang.org/api/compute/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/cloud-provider/service/helpers"
@@ -33,9 +34,10 @@ import (
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/healthchecksl4"
-	"k8s.io/ingress-gce/pkg/metrics"
+	"k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -79,6 +81,7 @@ type L4NetLB struct {
 	disableNodesFirewallProvisioning bool
 	svcLogger                        klog.Logger
 	useNEGs                          bool
+	configMapLister                  cache.Store
 }
 
 // L4NetLBSyncResult contains information about the outcome of an L4 NetLB sync. It stores the list of resource name annotations,
@@ -135,6 +138,7 @@ type L4NetLBParams struct {
 	EnableMixedProtocol              bool
 	DisableNodesFirewallProvisioning bool
 	UseNEGs                          bool
+	ConfigMapLister                  cache.Store
 }
 
 // NewL4NetLB creates a new Handler for the given L4NetLB service.
@@ -168,6 +172,7 @@ func NewL4NetLB(params *L4NetLBParams, logger klog.Logger) *L4NetLB {
 		disableNodesFirewallProvisioning: params.DisableNodesFirewallProvisioning,
 		useNEGs:                          params.UseNEGs,
 		svcLogger:                        logger,
+		configMapLister:                  params.ConfigMapLister,
 	}
 	return l4netlb
 }
@@ -356,6 +361,18 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 	localityLbPolicy := l4netlb.determineBackendServiceLocalityPolicy()
 
 	connectionTrackingPolicy := l4netlb.connectionTrackingPolicy()
+
+	var logConfig *composite.BackendServiceLogConfig
+	if flags.F.ManageL4LBLogging && l4netlb.configMapLister != nil {
+		var err error
+		logConfig, err = GetL4LoggingConfig(l4netlb.Service, l4netlb.configMapLister)
+		if err != nil {
+			syncResult.GCEResourceInError = annotations.BackendServiceResource
+			syncResult.Error = utils.NewUserError(err)
+			return ""
+		}
+	}
+
 	backendParams := backends.L4BackendServiceParams{
 		Name:                     bsName,
 		HealthCheckLink:          hcLink,
@@ -366,6 +383,7 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 		NetworkInfo:              network.DefaultNetwork(l4netlb.cloud),
 		ConnectionTrackingPolicy: connectionTrackingPolicy,
 		LocalityLbPolicy:         localityLbPolicy,
+		LogConfig:                logConfig,
 	}
 
 	bs, wasUpdate, err := l4netlb.backendPool.EnsureL4BackendService(backendParams, l4netlb.svcLogger)
@@ -749,7 +767,7 @@ func (l4netlb *L4NetLB) determineBackendServiceLocalityPolicy() backends.Localit
 			return backends.LocalityLBPolicyMaglev
 		}
 	}
-	// If the service has weighted load balancing disabled, the default locality policy is used.
+	// If the controller has weighted load balancing disabled, the default unset locality policy is used.
 	return backends.LocalityLBPolicyDefault
 }
 

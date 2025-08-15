@@ -27,6 +27,7 @@ import (
 	"google.golang.org/api/compute/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/cloud-provider/service/helpers"
@@ -35,9 +36,10 @@ import (
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/healthchecksl4"
-	"k8s.io/ingress-gce/pkg/metrics"
+	"k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -76,6 +78,7 @@ type L4 struct {
 	disableNodesFirewallProvisioning bool
 	enableZonalAffinity              bool
 	svcLogger                        klog.Logger
+	configMapLister                  cache.Store
 }
 
 // L4ILBSyncResult contains information about the outcome of an L4 ILB sync. It stores the list of resource name annotations,
@@ -115,6 +118,7 @@ type L4ILBParams struct {
 	EnableZonalAffinity              bool
 	DisableNodesFirewallProvisioning bool
 	EnableMixedProtocol              bool
+	ConfigMapLister                  cache.Store
 }
 
 // NewL4Handler creates a new L4Handler for the given L4 service.
@@ -137,6 +141,7 @@ func NewL4Handler(params *L4ILBParams, logger klog.Logger) *L4 {
 		disableNodesFirewallProvisioning: params.DisableNodesFirewallProvisioning,
 		enableZonalAffinity:              params.EnableZonalAffinity,
 		svcLogger:                        logger,
+		configMapLister:                  params.ConfigMapLister,
 	}
 	l4.NamespacedName = types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace}
 	l4.backendPool = backends.NewPool(l4.cloud, l4.namer)
@@ -445,21 +450,20 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	// Reserve existing IP address before making any changes
 	var existingIPv4FR *composite.ForwardingRule
 	var ipv4AddressToUse string
+	var ipv4AddressName string
 	if !l4.enableDualStack || utils.NeedsIPv4(l4.Service) {
 		existingIPv4FR, err = l4.getOldIPv4ForwardingRule(existingBS)
-		ipv4AddressToUse, err = address.IPv4ToUse(l4.cloud, l4.recorder, l4.Service, existingIPv4FR, subnetworkURL)
+		ipv4AddressToUse, ipv4AddressName, err = address.IPv4ToUse(l4.cloud, l4.recorder, l4.Service, existingIPv4FR, subnetworkURL)
 		if err != nil {
 			result.Error = fmt.Errorf("EnsureInternalLoadBalancer error: address.IPv4ToUse returned error: %w", err)
 			return result
 		}
-		expectedFRName := l4.GetFRName()
 
 		if !l4.cloud.IsLegacyNetwork() {
 			l4.svcLogger.V(2).Info("EnsureInternalLoadBalancer, reserve existing IPv4 address before making any changes")
-
 			nm := types.NamespacedName{Namespace: l4.Service.Namespace, Name: l4.Service.Name}.String()
 			// ILB can be created only in Premium Tier
-			addrMgr := address.NewManager(l4.cloud, nm, l4.cloud.Region(), subnetworkURL, expectedFRName, ipv4AddressToUse, cloud.SchemeInternal, cloud.NetworkTierPremium, address.IPv4Version, l4.svcLogger)
+			addrMgr := address.NewManager(l4.cloud, nm, l4.cloud.Region(), subnetworkURL, l4.GetFRName(), ipv4AddressName, ipv4AddressToUse, cloud.SchemeInternal, cloud.NetworkTierPremium, address.IPv4Version, l4.svcLogger)
 			ipv4AddressToUse, _, err = addrMgr.HoldAddress()
 			if err != nil {
 				result.Error = fmt.Errorf("EnsureInternalLoadBalancer error: addrMgr.HoldAddress() returned error %w", err)
@@ -479,20 +483,21 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	// Reserve existing IPv6 address before making any changes
 	var existingIPv6FR *composite.ForwardingRule
 	var ipv6AddrToUse string
+	var ipv6AddressName string
 	if l4.enableDualStack && utils.NeedsIPv6(l4.Service) {
 		existingIPv6FR, err = l4.getOldIPv6ForwardingRule(existingBS)
-		ipv6AddrToUse, err = address.IPv6ToUse(l4.cloud, l4.Service, existingIPv6FR, subnetworkURL, l4.svcLogger)
+		ipv6AddrToUse, ipv6AddressName, err = address.IPv6ToUse(l4.cloud, l4.Service, existingIPv6FR, subnetworkURL, l4.svcLogger)
 		if err != nil {
 			result.Error = fmt.Errorf("EnsureInternalLoadBalancer error: address.IPv6ToUse returned error: %w", err)
 			return result
 		}
-		expectedIPv6FRName := l4.getIPv6FRName()
+
 		l4.svcLogger.V(2).Info("EnsureInternalLoadBalancer, reserve existing IPv6 address before making any changes", "ipAddress", ipv6AddrToUse)
 
 		if !l4.cloud.IsLegacyNetwork() {
 			nm := types.NamespacedName{Namespace: l4.Service.Namespace, Name: l4.Service.Name}.String()
 			// ILB can be created only in Premium Tier
-			ipv6AddrMgr := address.NewManager(l4.cloud, nm, l4.cloud.Region(), subnetworkURL, expectedIPv6FRName, ipv6AddrToUse, cloud.SchemeInternal, cloud.NetworkTierPremium, address.IPv6Version, l4.svcLogger)
+			ipv6AddrMgr := address.NewManager(l4.cloud, nm, l4.cloud.Region(), subnetworkURL, l4.getIPv6FRName(), ipv6AddressName, ipv6AddrToUse, cloud.SchemeInternal, cloud.NetworkTierPremium, address.IPv6Version, l4.svcLogger)
 			ipv6AddrToUse, _, err = ipv6AddrMgr.HoldAddress()
 			if err != nil {
 				result.Error = fmt.Errorf("EnsureInternalLoadBalancer error: ipv6AddrMgr.HoldAddress() returned error %w", err)
@@ -541,6 +546,16 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	enableZonalAffinity := l4.requireZonalAffinity(svc)
 
 	// ensure backend service
+	var logConfig *composite.BackendServiceLogConfig
+	if flags.F.ManageL4LBLogging && l4.configMapLister != nil {
+		logConfig, err = GetL4LoggingConfig(l4.Service, l4.configMapLister)
+		if err != nil {
+			result.GCEResourceInError = annotations.BackendServiceResource
+			result.Error = utils.NewUserError(err)
+			return result
+		}
+	}
+
 	backendParams := backends.L4BackendServiceParams{
 		Name:                     bsName,
 		HealthCheckLink:          hcLink,
@@ -552,7 +567,9 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		ConnectionTrackingPolicy: noConnectionTrackingPolicy,
 		EnableZonalAffinity:      enableZonalAffinity,
 		LocalityLbPolicy:         localityLbPolicy,
+		LogConfig:                logConfig,
 	}
+
 	bs, bsSyncStatus, err := l4.backendPool.EnsureL4BackendService(backendParams, l4.svcLogger)
 	result.ResourceUpdates.SetBackendService(bsSyncStatus)
 	if err != nil {
@@ -812,8 +829,7 @@ func (l4 *L4) determineBackendServiceLocalityPolicy() backends.LocalityLBPolicyT
 			}
 		}
 	}
-	// If the service has weighted load balancing disabled, the default locality policy is used.
-	// If the service disables Weighted Load Balancing the logic to use MAGLEV is handled by backends.go
+	// The default unset locality lb policy is used to disable ILB Weighted Load Balancing
 	return backends.LocalityLBPolicyDefault
 }
 

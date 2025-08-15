@@ -28,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/component-base/config"
 	leaderelectionconfig "k8s.io/component-base/config/options"
+	"k8s.io/ingress-gce/pkg/validation"
 	"k8s.io/klog/v2"
 )
 
@@ -143,6 +144,7 @@ var F = struct {
 	EnableIPV6OnlyNEG                         bool
 	MultiProjectOwnerLabelKey                 string
 	OverrideHealthCheckSourceCIDRs            string
+	ManageL4LBLogging                         bool
 
 	// ===============================
 	// DEPRECATED FLAGS
@@ -350,7 +352,8 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableL4NetLBForwardingRulesOptimizations, "enable-l4netlb-forwarding-rules-optimizations", false, "Enable optimized processing of forwarding rules for L4 NetLB.")
 	flag.BoolVar(&F.EnableIPV6OnlyNEG, "enable-ipv6-only-neg", false, "Enable support for IPV6 Only NEG's.")
 	flag.StringVar(&F.MultiProjectOwnerLabelKey, "multi-project-owner-label-key", "multiproject.gke.io/owner", "The label key for multi-project owner, which is used to identify the owner of objects in multi-project mode.")
-	flag.StringVar(&F.OverrideHealthCheckSourceCIDRs, "override-health-check-src-cidrs", "", "Overrides the default source IP ranges used when configuring firewall rules to allow health check probes for L7 load balancers. Provide the ranges as a comma-separated list of CIDRs.")
+	flag.StringVar(&F.OverrideHealthCheckSourceCIDRs, "override-health-check-src-cidrs", "", "Overrides the default source IP ranges used when configuring firewall rules to allow health check probes for L7 load balancers. Provide the ranges as a comma-separated list of CIDRs. Example: --override-health-check-src-cidrs=130.211.0.0/22,35.191.0.0/16")
+	flag.BoolVar(&F.ManageL4LBLogging, "manage-l4lb-logging", false, "Manage L4 ILB/NetLB logging.")
 }
 
 func Validate() {
@@ -361,6 +364,10 @@ func Validate() {
 	// There is no information available whether --transparent-health-checks-port is set, but it is certainly set if F.THCPort stores a non-default value.
 	if F.THCPort != 7877 && !F.EnableTransparentHealthChecks {
 		klog.Fatalf("The flag --transparent-health-checks-port cannot be used without --enable-transparent-health-checks.")
+	}
+
+	if err := validation.ValidateHealthCheckSourceCIDRs(F.OverrideHealthCheckSourceCIDRs); err != nil {
+		klog.Fatalf("Invalid --override-health-check-src-cidrs flag: %v", err)
 	}
 }
 

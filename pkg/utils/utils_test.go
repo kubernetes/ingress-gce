@@ -1755,3 +1755,49 @@ func TestGetDomainFromGABasePath(t *testing.T) {
 		})
 	}
 }
+
+func TestFilterAPIVersionFromResourcePath(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		desc     string
+		basePath string
+		want     string
+	}{
+		{
+			desc: "empty string",
+		},
+		{
+			desc:     "v1 URL",
+			basePath: "https://www.googleapis.com/compute/v1/projects/my-project/global/backendServices/my-bs",
+			want:     "https://www.googleapis.com/compute/projects/my-project/global/backendServices/my-bs",
+		},
+		{
+			desc:     "beta URL",
+			basePath: "https://www.googleapis.com/compute/beta/projects/my-project/zones/us-central1-a/instanceGroups/my-ig",
+			want:     "https://www.googleapis.com/compute/projects/my-project/zones/us-central1-a/instanceGroups/my-ig",
+		},
+		{
+			desc:     "arbitrary path",
+			basePath: "mycompute.mydomain.com/mypath/compute/v1/abc/def",
+			want:     "mycompute.mydomain.com/mypath/compute/abc/def",
+		},
+		{
+			desc:     "path without compute",
+			basePath: "https://www.googleapis.com/storage/v1/b/my-bucket",
+			want:     "https://www.googleapis.com/storage/v1/b/my-bucket",
+		},
+		{
+			desc:     "path ends after version",
+			basePath: "https://www.googleapis.com/compute/v1/",
+			want:     "https://www.googleapis.com/compute/",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			if got := utils.FilterAPIVersionFromResourcePath(tc.basePath); got != tc.want {
+				t.Errorf("FilterAPIVersionFromResourcePath(%q) = %q, want %q", tc.basePath, got, tc.want)
+			}
+		})
+	}
+}

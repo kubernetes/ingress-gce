@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -343,11 +344,13 @@ func TestEnsureL4BackendServiceDoesNotDetachBackends(t *testing.T) {
 // return expected results for two resources compared.
 func TestBackendSvcEqual(t *testing.T) {
 	for _, tc := range []struct {
-		desc                      string
-		oldBackendService         *composite.BackendService
-		newBackendService         *composite.BackendService
-		compareConnectionTracking bool
-		wantEqual                 bool
+		desc                           string
+		oldBackendService              *composite.BackendService
+		newBackendService              *composite.BackendService
+		compareConnectionTracking      bool
+		withZonalAffinityEnabled       bool
+		withL4LoggingManagementEnabled bool
+		wantEqual                      bool
 	}{
 		{
 			desc:              "Test empty backend services are equal",
@@ -477,6 +480,210 @@ func TestBackendSvcEqual(t *testing.T) {
 				HealthChecks: []string{"abc", "xyz"},
 			},
 			wantEqual: false,
+		},
+		{
+			desc: "Test with changed health-checks with Zonal Affinity Enabled",
+			oldBackendService: &composite.BackendService{
+				HealthChecks: []string{"abc"},
+			},
+			newBackendService: &composite.BackendService{
+				HealthChecks: []string{"abc", "xyz"},
+			},
+			withZonalAffinityEnabled: true,
+			wantEqual:                false,
+		},
+		{
+			desc: "Test with same health-checks version v1-beta",
+			oldBackendService: &composite.BackendService{
+				HealthChecks: []string{"https://www.googleapis.com/compute/v1/abc"},
+			},
+			newBackendService: &composite.BackendService{
+				HealthChecks: []string{"https://www.googleapis.com/compute/beta/abc"},
+			},
+			withZonalAffinityEnabled: true,
+			wantEqual:                true,
+		},
+		{
+			desc: "Test with same health-checks version beta-v1",
+			oldBackendService: &composite.BackendService{
+				HealthChecks: []string{"https://www.googleapis.com/compute/beta/abc"},
+			},
+			newBackendService: &composite.BackendService{
+				HealthChecks: []string{"https://www.googleapis.com/compute/v1/abc"},
+			},
+			withZonalAffinityEnabled: true,
+			wantEqual:                true,
+		},
+		{
+			desc: "Test with changed health-checks version beta-beta",
+			oldBackendService: &composite.BackendService{
+				HealthChecks: []string{"https://www.googleapis.com/compute/beta/abc"},
+			},
+			newBackendService: &composite.BackendService{
+				HealthChecks: []string{"https://www.googleapis.com/compute/beta/abcd"},
+			},
+			withZonalAffinityEnabled: true,
+			wantEqual:                false,
+		},
+		{
+			desc: "Test with changed first part of health-checks version v1-v1",
+			oldBackendService: &composite.BackendService{
+				HealthChecks: []string{"https://www.googleapis.com/compute/v1/abc"},
+			},
+			newBackendService: &composite.BackendService{
+				HealthChecks: []string{"https://www.google.com/compute/v1/abc"},
+			},
+			withZonalAffinityEnabled: true,
+			wantEqual:                false,
+		},
+		{
+			desc: "Test with changed health-checks version beta-v1",
+			oldBackendService: &composite.BackendService{
+				HealthChecks: []string{"https://www.googleapis.com/compute/v1/abc"},
+			},
+			newBackendService: &composite.BackendService{
+				HealthChecks: []string{"https://www.googleapis.com/compute/beta/abcd"},
+			},
+			withZonalAffinityEnabled: true,
+			wantEqual:                false,
+		},
+		{
+			desc: "Test unmanaged logging changed",
+			oldBackendService: &composite.BackendService{
+				LogConfig: &composite.BackendServiceLogConfig{
+					Enable: false,
+				},
+			},
+			newBackendService: &composite.BackendService{
+				LogConfig: &composite.BackendServiceLogConfig{
+					Enable: true,
+				},
+			},
+			withL4LoggingManagementEnabled: false,
+			wantEqual:                      true,
+		},
+		{
+			desc: "Test managed logging - enable",
+			oldBackendService: &composite.BackendService{
+				LogConfig: &composite.BackendServiceLogConfig{
+					Enable: false,
+				},
+			},
+			newBackendService: &composite.BackendService{
+				LogConfig: &composite.BackendServiceLogConfig{
+					Enable: true,
+				},
+			},
+			withL4LoggingManagementEnabled: true,
+			wantEqual:                      false,
+		},
+		{
+			desc: "Test managed logging - sample rate",
+			oldBackendService: &composite.BackendService{
+				LogConfig: &composite.BackendServiceLogConfig{
+					SampleRate: 0.2,
+				},
+			},
+			newBackendService: &composite.BackendService{
+				LogConfig: &composite.BackendServiceLogConfig{
+					SampleRate: 0.3,
+				},
+			},
+			withL4LoggingManagementEnabled: true,
+			wantEqual:                      false,
+		},
+		{
+			desc: "Test managed logging - optional mode",
+			oldBackendService: &composite.BackendService{
+				LogConfig: &composite.BackendServiceLogConfig{
+					OptionalMode: "EXCLUDE_ALL_OPTIONAL",
+				},
+			},
+			newBackendService: &composite.BackendService{
+				LogConfig: &composite.BackendServiceLogConfig{
+					OptionalMode: "INCLUDE_ALL_OPTIONAL",
+				},
+			},
+			withL4LoggingManagementEnabled: true,
+			wantEqual:                      false,
+		},
+		{
+			desc: "Test managed logging - optional fields",
+			oldBackendService: &composite.BackendService{
+				LogConfig: &composite.BackendServiceLogConfig{
+					OptionalFields: []string{"field1"},
+				},
+			},
+			newBackendService: &composite.BackendService{
+				LogConfig: &composite.BackendServiceLogConfig{
+					OptionalFields: []string{"field1", "field2"},
+				},
+			},
+			withL4LoggingManagementEnabled: true,
+			wantEqual:                      false,
+		},
+		{
+			desc: "Test managed - logging config added",
+			oldBackendService: &composite.BackendService{
+				LogConfig: nil,
+			},
+			newBackendService: &composite.BackendService{
+				LogConfig: &composite.BackendServiceLogConfig{
+					Enable: true,
+				},
+			},
+			withL4LoggingManagementEnabled: true,
+			wantEqual:                      false,
+		},
+		{
+			desc: "Test unmanaged - logging config added",
+			oldBackendService: &composite.BackendService{
+				LogConfig: nil,
+			},
+			newBackendService: &composite.BackendService{
+				LogConfig: &composite.BackendServiceLogConfig{
+					Enable: true,
+				},
+			},
+			withL4LoggingManagementEnabled: false,
+			wantEqual:                      true,
+		},
+		{
+			desc: "Test managed - logging config removed",
+			oldBackendService: &composite.BackendService{
+				LogConfig: &composite.BackendServiceLogConfig{
+					Enable: true,
+				},
+			},
+			newBackendService: &composite.BackendService{
+				LogConfig: nil,
+			},
+			withL4LoggingManagementEnabled: true,
+			wantEqual:                      false,
+		},
+		{
+			desc: "Test unmanaged - logging config removed",
+			oldBackendService: &composite.BackendService{
+				LogConfig: &composite.BackendServiceLogConfig{
+					Enable: true,
+				},
+			},
+			newBackendService: &composite.BackendService{
+				LogConfig: nil,
+			},
+			withL4LoggingManagementEnabled: false,
+			wantEqual:                      true,
+		},
+		{
+			desc: "Test managed - no logging config",
+			oldBackendService: &composite.BackendService{
+				LogConfig: nil,
+			},
+			newBackendService: &composite.BackendService{
+				LogConfig: nil,
+			},
+			withL4LoggingManagementEnabled: true,
+			wantEqual:                      true,
 		},
 		{
 			desc: "Test with deleted network",
@@ -728,7 +935,15 @@ func TestBackendSvcEqual(t *testing.T) {
 	} {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
-			t.Parallel()
+			oldZonalAffinityFlag := flags.F.EnableL4ILBZonalAffinity
+			oldLoggingFlag := flags.F.ManageL4LBLogging
+			flags.F.EnableL4ILBZonalAffinity = tc.withZonalAffinityEnabled
+			flags.F.ManageL4LBLogging = tc.withL4LoggingManagementEnabled
+			defer func() {
+				flags.F.EnableL4ILBZonalAffinity = oldZonalAffinityFlag
+				flags.F.ManageL4LBLogging = oldLoggingFlag
+			}()
+
 			result := backendSvcEqual(tc.newBackendService, tc.oldBackendService, tc.compareConnectionTracking)
 			if result != tc.wantEqual {
 				t.Errorf("backendSvcEqual() returned %v, expected %v. Diff(oldScv, newSvc): %s",
@@ -788,7 +1003,7 @@ func TestUpdateLocalityLBPolicy(t *testing.T) {
 			desc:                       "from WEIGHTED_MAGLEV to empty",
 			existingBSLocalityLbPolicy: LocalityLBPolicyWeightedMaglev,
 			updatedBSLocalityLbPolicy:  LocalityLBPolicyDefault,
-			wantBSLocalityLbPolicy:     LocalityLBPolicyMaglev,
+			wantBSLocalityLbPolicy:     LocalityLBPolicyDefault,
 		},
 	}
 

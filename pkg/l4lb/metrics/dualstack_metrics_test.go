@@ -102,7 +102,7 @@ func TestComputeL4ILBDualStackMetrics(t *testing.T) {
 	} {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
-			newMetrics := FakeControllerMetrics()
+			newMetrics := NewFakeCollector()
 			for i, serviceState := range tc.serviceStates {
 				newMetrics.SetL4ILBService(fmt.Sprint(i), serviceState)
 			}
@@ -202,7 +202,7 @@ func TestComputeL4NetLBDualStackMetrics(t *testing.T) {
 	} {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
-			newMetrics := FakeControllerMetrics()
+			newMetrics := NewFakeCollector()
 			for i, serviceState := range tc.serviceStates {
 				newMetrics.SetL4NetLBService(fmt.Sprint(i), serviceState)
 			}
@@ -225,7 +225,7 @@ func TestRetryPeriodForL4ILBDualStackServices(t *testing.T) {
 	before5min := currTime.Add(-5 * time.Minute)
 
 	svcName1 := "svc1"
-	metrics := FakeControllerMetrics()
+	metrics := NewFakeCollector()
 
 	errorState := newL4ServiceState("IPv4", "SingleStack", StatusError, &currTime)
 	metrics.SetL4ILBService(svcName1, errorState)
@@ -251,7 +251,7 @@ func TestRetryPeriodForL4NetLBDualStackServices(t *testing.T) {
 	before5min := currTime.Add(-5 * time.Minute)
 
 	svcName1 := "svc1"
-	metrics := FakeControllerMetrics()
+	metrics := NewFakeCollector()
 
 	errorState := newL4ServiceState("IPv4", "SingleStack", StatusError, &currTime)
 	metrics.SetL4NetLBService(svcName1, errorState)

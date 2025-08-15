@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"fmt"
+
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -22,7 +23,12 @@ var (
 	)
 )
 
-func (im *ControllerMetrics) exportL4ILBDualStackMetrics() {
+func (c *Collector) exportDualStack() {
+	c.exportL4ILBDualStackMetrics()
+	c.exportL4NetLBDualStackMetrics()
+}
+
+func (im *Collector) exportL4ILBDualStackMetrics() {
 	// Do not report any dual stack information if it is not enabled.
 	if !im.enableILBDualStack {
 		return
@@ -47,7 +53,7 @@ func (im *ControllerMetrics) exportL4ILBDualStackMetrics() {
 	im.logger.V(3).Info("L4 ILB DualStack usage metrics exported")
 }
 
-func (im *ControllerMetrics) exportL4NetLBDualStackMetrics() {
+func (im *Collector) exportL4NetLBDualStackMetrics() {
 	// Do not report any dual stack information if it is not enabled.
 	if !im.enableNetLBDualStack {
 		return

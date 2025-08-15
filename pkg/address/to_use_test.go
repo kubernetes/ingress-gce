@@ -30,11 +30,13 @@ func TestIPv4ToUse(t *testing.T) {
 		svc  *apiv1.Service
 		fwd  *composite.ForwardingRule
 		want string
+		name string
 	}{
 		{
 			desc: "nothing exists",
 			svc:  &apiv1.Service{},
 			want: "",
+			name: "",
 		},
 		{
 			desc: "existing forwarding rule",
@@ -43,6 +45,7 @@ func TestIPv4ToUse(t *testing.T) {
 				IPAddress: notReservedIPv4,
 			},
 			want: notReservedIPv4,
+			name: "",
 		},
 		{
 			desc: "existing forwarding rule with spec",
@@ -55,6 +58,7 @@ func TestIPv4ToUse(t *testing.T) {
 				IPAddress: notReservedIPv4,
 			},
 			want: reservedIPv4,
+			name: "",
 		},
 		{
 			desc: "existing forwarding rule with annotation",
@@ -69,6 +73,7 @@ func TestIPv4ToUse(t *testing.T) {
 				IPAddress: notReservedIPv4,
 			},
 			want: reservedIPv4,
+			name: reservedIPv4Name,
 		},
 		{
 			desc: "spec and annotation exist",
@@ -87,6 +92,7 @@ func TestIPv4ToUse(t *testing.T) {
 			},
 			// prefer annotation
 			want: reservedIPv4,
+			name: reservedIPv4Name,
 		},
 		{
 			desc: "subnet change",
@@ -96,6 +102,7 @@ func TestIPv4ToUse(t *testing.T) {
 				IPAddress:  notReservedIPv4,
 			},
 			want: "",
+			name: "",
 		},
 		{
 			desc: "not reserved address",
@@ -107,6 +114,7 @@ func TestIPv4ToUse(t *testing.T) {
 				},
 			},
 			want: "",
+			name: "",
 		},
 	}
 
@@ -116,13 +124,16 @@ func TestIPv4ToUse(t *testing.T) {
 			t.Parallel()
 			cloud, recorder := arrangeIPv4(t)
 
-			got, err := address.IPv4ToUse(cloud, recorder, tc.svc, tc.fwd, "")
+			got, name, err := address.IPv4ToUse(cloud, recorder, tc.svc, tc.fwd, "")
 			if err != nil {
 				t.Fatalf("unexpected err: %v", err)
 			}
 
 			if got != tc.want {
 				t.Errorf("address.IPv4ToUse(_) = %q, want %q", got, tc.want)
+			}
+			if name != tc.name {
+				t.Errorf("address.IPv4ToUse(_) = %q, want %q", name, tc.name)
 			}
 		})
 	}
@@ -153,11 +164,13 @@ func TestIPv6ToUse(t *testing.T) {
 		svc  *apiv1.Service
 		fwd  *composite.ForwardingRule
 		want string
+		name string
 	}{
 		{
 			desc: "nothing exists",
 			svc:  &apiv1.Service{},
 			want: "",
+			name: "",
 		},
 		{
 			desc: "existing forwarding rule",
@@ -166,6 +179,7 @@ func TestIPv6ToUse(t *testing.T) {
 				IPAddress: notReservedIPv6,
 			},
 			want: notReservedIPv6,
+			name: "",
 		},
 		{
 			desc: "existing forwarding rule with annotation",
@@ -180,6 +194,7 @@ func TestIPv6ToUse(t *testing.T) {
 				IPAddress: notReservedIPv6,
 			},
 			want: reservedIPv6,
+			name: reservedIPv6Name,
 		},
 		{
 			desc: "subnet change",
@@ -189,6 +204,7 @@ func TestIPv6ToUse(t *testing.T) {
 				IPAddress:  notReservedIPv6,
 			},
 			want: "",
+			name: "",
 		},
 		{
 			desc: "not reserved address",
@@ -200,6 +216,7 @@ func TestIPv6ToUse(t *testing.T) {
 				},
 			},
 			want: "",
+			name: "",
 		},
 	}
 
@@ -209,13 +226,16 @@ func TestIPv6ToUse(t *testing.T) {
 			t.Parallel()
 			cloud := arrangeIPv6(t)
 
-			got, err := address.IPv6ToUse(cloud, tc.svc, tc.fwd, "", klog.TODO())
+			got, name, err := address.IPv6ToUse(cloud, tc.svc, tc.fwd, "", klog.TODO())
 			if err != nil {
 				t.Fatalf("unexpected err: %v", err)
 			}
 
 			if got != tc.want {
 				t.Errorf("address.IPv4ToUse(_) = %q, want %q", got, tc.want)
+			}
+			if name != tc.name {
+				t.Errorf("address.IPv4ToUse(_) = %q, want %q", name, tc.name)
 			}
 		})
 	}
