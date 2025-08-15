@@ -41,6 +41,7 @@ import (
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 	informerfrontendconfig "k8s.io/ingress-gce/pkg/frontendconfig/client/informers/externalversions/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/instancegroups"
+	l4metrics "k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/ingress-gce/pkg/recorders"
 	serviceattachmentclient "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned"
@@ -95,6 +96,7 @@ type ControllerContext struct {
 	NodeTopologyInformer     cache.SharedIndexInformer
 
 	ControllerMetrics *metrics.ControllerMetrics
+	L4Metrics         *l4metrics.Collector
 
 	// NOTE: If the flag GKEClusterType is empty, then cluster will default to zonal. This field should not be used for
 	// controller logic and should only be used for providing additional information to the user.
@@ -119,6 +121,8 @@ type ControllerContextConfig struct {
 	DefaultBackendSvcPort                     utils.ServicePort
 	HealthCheckPath                           string
 	MaxIGSize                                 int
+	RunL4ILBController                        bool
+	RunL4NetLBController                      bool
 	EnableL4ILBDualStack                      bool
 	EnableL4NetLBDualStack                    bool
 	EnableL4StrongSessionAffinity             bool
@@ -176,8 +180,9 @@ func NewControllerContext(
 		ClusterNamer:            clusterNamer,
 		L4Namer:                 namer.NewL4Namer(string(kubeSystemUID), clusterNamer),
 		KubeSystemUID:           kubeSystemUID,
-		ControllerMetrics:       metrics.NewControllerMetrics(flags.F.MetricsExportInterval, flags.F.L4NetLBProvisionDeadline, flags.F.EnableL4NetLBDualStack, flags.F.EnableL4ILBDualStack, logger),
+		ControllerMetrics:       metrics.NewControllerMetrics(flags.F.MetricsExportInterval, logger),
 		ControllerContextConfig: config,
+		L4Metrics:               l4metrics.NewCollector(flags.F.MetricsExportInterval, flags.F.L4NetLBProvisionDeadline, flags.F.EnableL4NetLBDualStack, flags.F.EnableL4ILBDualStack, logger),
 		IngressInformer:         informernetworking.NewIngressInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		ServiceInformer:         informerv1.NewServiceInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		BackendConfigInformer:   informerbackendconfig.NewBackendConfigInformer(backendConfigClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
@@ -211,6 +216,10 @@ func NewControllerContext(
 				listOptions.FieldSelector = fmt.Sprintf("metadata.name=%s", flags.F.NodeTopologyCRName)
 			})
 		}
+	}
+
+	if flags.F.ManageL4LBLogging {
+		context.ConfigMapInformer = informerv1.NewConfigMapInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
 	}
 
 	// Do not trigger periodic resync on EndpointSlices object.
@@ -313,6 +322,10 @@ func (ctx *ControllerContext) Start(stopCh <-chan struct{}) {
 	go ctx.NodeInformer.Run(stopCh)
 	go ctx.EndpointSliceInformer.Run(stopCh)
 
+	if ctx.ConfigMapInformer != nil {
+		go ctx.ConfigMapInformer.Run(stopCh)
+	}
+
 	if ctx.FirewallInformer != nil {
 		go ctx.FirewallInformer.Run(stopCh)
 	}
@@ -339,6 +352,11 @@ func (ctx *ControllerContext) Start(stopCh <-chan struct{}) {
 	}
 	// Export ingress usage metrics.
 	go ctx.ControllerMetrics.Run(stopCh)
+
+	if runL4 := ctx.RunL4ILBController || ctx.RunL4NetLBController; runL4 {
+		// Export L4LB usage metrics
+		go ctx.L4Metrics.Run(stopCh)
+	}
 }
 
 // Ingresses returns the store of Ingresses.

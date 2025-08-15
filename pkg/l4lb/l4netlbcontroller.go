@@ -32,12 +32,13 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
+	"k8s.io/ingress-gce/pkg/common/operator"
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/instancegroups"
-	l4metrics "k8s.io/ingress-gce/pkg/l4lb/metrics"
+	"k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
-	"k8s.io/ingress-gce/pkg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -173,7 +174,54 @@ func NewL4NetLBController(
 		},
 	})
 
+	enableMultiSubnetClusterPhase1 := flags.F.EnableMultiSubnetClusterPhase1
+	if l4netLBc.enableNEGSupport && enableMultiSubnetClusterPhase1 {
+		ctx.SvcNegInformer.AddEventHandler(&svcNEGEventHandler{
+			ServiceInformer: ctx.ServiceInformer,
+			svcQueue:        l4netLBc.svcQueue,
+			svcFilterFunc:   isRBSNetLBServiceWithNEGs,
+			logger:          logger,
+		})
+		logger.V(3).Info("set up SvcNegInformer event handlers")
+	}
+
+	if flags.F.ManageL4LBLogging {
+		ctx.ConfigMapInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				configMap, ok := obj.(*v1.ConfigMap)
+				if ok {
+					l4netLBc.enqueueServicesReferencingConfigMap(configMap)
+				}
+			},
+			UpdateFunc: func(_, obj interface{}) {
+				configMap, ok := obj.(*v1.ConfigMap)
+				if ok {
+					l4netLBc.enqueueServicesReferencingConfigMap(configMap)
+				}
+			},
+			DeleteFunc: func(obj interface{}) {
+				configMap, ok := obj.(*v1.ConfigMap)
+				if ok {
+					l4netLBc.enqueueServicesReferencingConfigMap(configMap)
+				}
+			},
+		})
+	}
+
 	return l4netLBc
+}
+
+func (lc *L4NetLBController) enqueueServicesReferencingConfigMap(configMap *v1.ConfigMap) {
+	services := operator.Services(lc.ctx.Services().List(), lc.logger).ReferencesL4LoggingConfigMap(configMap).AsList()
+	for _, svc := range services {
+		svcKey := utils.ServiceKeyFunc(svc.Namespace, svc.Name)
+		svcLogger := lc.logger.WithValues("serviceKey", svcKey)
+		if shouldProcess, _ := lc.shouldProcessService(svc, nil, svcLogger); shouldProcess {
+			lc.serviceVersions.SetLastUpdateSeen(svcKey, svc.ResourceVersion, svcLogger)
+			lc.svcQueue.Enqueue(svc)
+		}
+	}
+	lc.enqueueTracker.Track()
 }
 
 // needsAddition checks if given service should be added by controller
@@ -379,7 +427,7 @@ func (lc *L4NetLBController) preventTargetPoolRaceWithRBSOnCreation(service *v1.
 	lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "TargetPoolRaceWithRBS",
 		"Target Pool found on provisioned RBS service. Deleting RBS resources")
 
-	l4metrics.IncreaseL4NetLBTargetPoolRaceWithRBS()
+	metrics.IncreaseL4NetLBTargetPoolRaceWithRBS()
 	result := lc.garbageCollectRBSNetLB(key, service, svcLogger)
 	if result.Error != nil {
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "CleanRBSResourcesForLegacyService",
@@ -392,7 +440,7 @@ func (lc *L4NetLBController) preventTargetPoolRaceWithRBSOnCreation(service *v1.
 func (lc *L4NetLBController) preventExistingTargetPoolToRBSMigration(service *v1.Service, svcLogger klog.Logger) error {
 	lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "CanNotMigrateTargetPoolToRBS",
 		"RBS annotation was attached to the Legacy Target Pool service. Migration is not supported. Removing annotation")
-	l4metrics.IncreaseL4NetLBLegacyToRBSMigrationAttempts()
+	metrics.IncreaseL4NetLBLegacyToRBSMigrationAttempts()
 
 	return lc.deleteRBSAnnotation(service, svcLogger)
 }
@@ -428,20 +476,20 @@ func (lc *L4NetLBController) SystemHealth() error {
 	// if lastEnqueue time is more than 15 minutes before the last sync time, the controller is falling behind.
 	// This indicates that the controller was stuck handling a previous update, or sync function did not get invoked.
 	syncTimeLatest := lastEnqueueTime.Add(enqueueToSyncDelayThreshold)
-	controllerHealth := l4metrics.ControllerHealthyStatus
+	controllerHealth := metrics.ControllerHealthyStatus
 	if lastSyncTime.After(syncTimeLatest) {
 		msg := fmt.Sprintf("L4 NetLB Sync happened at time %v, %v after enqueue time, last enqueue time %v, threshold is %v", lastSyncTime, lastSyncTime.Sub(lastEnqueueTime), lastEnqueueTime, enqueueToSyncDelayThreshold)
 		// Log here, context/http handler do no log the error.
 		lc.logger.Error(nil, msg)
-		l4metrics.PublishL4FailedHealthCheckCount(L4NetLBControllerName)
-		controllerHealth = l4metrics.ControllerUnhealthyStatus
+		metrics.PublishL4FailedHealthCheckCount(L4NetLBControllerName)
+		controllerHealth = metrics.ControllerUnhealthyStatus
 		// Reset trackers. Otherwise, if there is nothing in the queue then it will report the FailedHealthCheckCount every time the checkHealth is called
 		// If checkHealth returned error (as it is meant to) then container would be restarted and trackers would be reset either
 		lc.enqueueTracker.Track()
 		lc.syncTracker.Track()
 	}
 	if lc.enableDualStack {
-		l4metrics.PublishL4ControllerHealthCheckStatus(l4NetLBDualStackControllerName, controllerHealth)
+		metrics.PublishL4ControllerHealthCheckStatus(l4NetLBDualStackControllerName, controllerHealth)
 	}
 	return nil
 }
@@ -474,7 +522,7 @@ func (lc *L4NetLBController) syncWrapper(key string) (err error) {
 		if r := recover(); r != nil {
 			errMessage := fmt.Sprintf("Panic in L4 NetLB sync worker goroutine: %v", r)
 			svcLogger.Error(nil, errMessage)
-			l4metrics.PublishL4ControllerPanicCount(L4NetLBControllerName)
+			metrics.PublishL4ControllerPanicCount(L4NetLBControllerName)
 			err = fmt.Errorf(errMessage)
 		}
 	}()
@@ -484,7 +532,7 @@ func (lc *L4NetLBController) syncWrapper(key string) (err error) {
 
 func (lc *L4NetLBController) sync(key string, svcLogger klog.Logger) error {
 	lc.syncTracker.Track()
-	l4metrics.PublishL4controllerLastSyncTime(L4NetLBControllerName)
+	metrics.PublishL4controllerLastSyncTime(L4NetLBControllerName)
 
 	svc, exists, err := lc.ctx.Services().GetByKey(key)
 	if err != nil {
@@ -565,6 +613,9 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 		EnableMixedProtocol:              lc.ctx.EnableL4NetLBMixedProtocol,
 		DisableNodesFirewallProvisioning: lc.ctx.DisableL4LBFirewall,
 		UseNEGs:                          usesNegBackends,
+	}
+	if lc.ctx.ConfigMapInformer != nil {
+		l4NetLBParams.ConfigMapLister = lc.ctx.ConfigMapInformer.GetIndexer()
 	}
 	l4netlb := loadbalancers.NewL4NetLB(l4NetLBParams, svcLogger)
 
@@ -803,6 +854,9 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service,
 		EnableMixedProtocol:              lc.ctx.EnableL4NetLBMixedProtocol,
 		DisableNodesFirewallProvisioning: lc.ctx.DisableL4LBFirewall,
 	}
+	if lc.ctx.ConfigMapInformer != nil {
+		l4NetLBParams.ConfigMapLister = lc.ctx.ConfigMapInformer.GetIndexer()
+	}
 	l4netLB := loadbalancers.NewL4NetLB(l4NetLBParams, svcLogger)
 	lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer",
 		"Deleting L4 External LoadBalancer for %s", key)
@@ -866,15 +920,15 @@ func (lc *L4NetLBController) publishMetrics(result *loadbalancers.L4NetLBSyncRes
 	switch result.SyncType {
 	case loadbalancers.SyncTypeCreate, loadbalancers.SyncTypeUpdate:
 		svcLogger.V(2).Info("External L4 Loadbalancer for Service ensured, updating its state in metrics cache", "serviceState", result.MetricsState, "serviceLegacyState", result.MetricsLegacyState)
-		lc.ctx.ControllerMetrics.SetL4NetLBServiceForLegacyMetric(namespacedName, result.MetricsLegacyState)
-		lc.ctx.ControllerMetrics.SetL4NetLBService(namespacedName, result.MetricsState)
+		lc.ctx.L4Metrics.SetL4NetLBServiceForLegacyMetric(namespacedName, result.MetricsLegacyState)
+		lc.ctx.L4Metrics.SetL4NetLBService(namespacedName, result.MetricsState)
 		lc.publishSyncMetrics(result, isResync)
 	case loadbalancers.SyncTypeDelete:
 		// if service is successfully deleted, remove it from cache
 		if result.Error == nil {
 			svcLogger.V(2).Info("External L4 Loadbalancer for Service deleted, removing its state from metrics cache")
-			lc.ctx.ControllerMetrics.DeleteL4NetLBServiceForLegacyMetric(namespacedName)
-			lc.ctx.ControllerMetrics.DeleteL4NetLBService(namespacedName)
+			lc.ctx.L4Metrics.DeleteL4NetLBServiceForLegacyMetric(namespacedName)
+			lc.ctx.L4Metrics.DeleteL4NetLBService(namespacedName)
 		}
 		lc.publishSyncMetrics(result, false)
 	default:
@@ -884,15 +938,15 @@ func (lc *L4NetLBController) publishMetrics(result *loadbalancers.L4NetLBSyncRes
 
 func (lc *L4NetLBController) publishSyncMetrics(result *loadbalancers.L4NetLBSyncResult, isResync bool) {
 	if lc.enableDualStack {
-		l4metrics.PublishL4NetLBDualStackSyncLatency(result.Error == nil, result.SyncType, result.MetricsState.IPFamilies, result.StartTime, isResync)
+		metrics.PublishL4NetLBDualStackSyncLatency(result.Error == nil, result.SyncType, result.MetricsState.IPFamilies, result.StartTime, isResync)
 	}
 	if result.MetricsState.Multinetwork {
-		l4metrics.PublishL4NetLBMultiNetSyncLatency(result.Error == nil, result.SyncType, result.StartTime, isResync)
+		metrics.PublishL4NetLBMultiNetSyncLatency(result.Error == nil, result.SyncType, result.StartTime, isResync)
 	}
-	l4metrics.PublishL4SyncDetails(L4NetLBControllerName, result.Error == nil, isResync, result.GCEResourceUpdate.WereAnyResourcesModified())
+	metrics.PublishL4SyncDetails(L4NetLBControllerName, result.Error == nil, isResync, result.GCEResourceUpdate.WereAnyResourcesModified())
 
 	isWeightedLB := result.MetricsState.WeightedLBPodsPerNode
 	backendType := result.MetricsState.BackendType
 
-	l4metrics.PublishNetLBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime, isResync, isWeightedLB, backendType)
+	metrics.PublishNetLBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime, isResync, isWeightedLB, backendType)
 }

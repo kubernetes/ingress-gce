@@ -183,7 +183,7 @@ func TestComputeL4ILBMetrics(t *testing.T) {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
-			newMetrics := FakeControllerMetrics()
+			newMetrics := NewFakeCollector()
 			for i, serviceState := range tc.serviceStates {
 				newMetrics.SetL4ILBServiceForLegacyMetric(fmt.Sprint(i), serviceState)
 			}
@@ -367,7 +367,7 @@ func TestComputeL4NetLBMetrics(t *testing.T) {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
-			newMetrics := FakeControllerMetrics()
+			newMetrics := NewFakeCollector()
 			for i, serviceState := range tc.serviceStates {
 				newMetrics.SetL4NetLBServiceForLegacyMetric(fmt.Sprint(i), serviceState)
 			}
@@ -397,7 +397,7 @@ func TestRetryPeriodForL4NetLBServices(t *testing.T) {
 
 	svcName1 := "svc1"
 	svcName2 := "svc2"
-	newMetrics := FakeControllerMetrics()
+	newMetrics := NewFakeCollector()
 	errorState := newL4NetLBServiceState(isError, managed, premium, noUserError, &currTime)
 	newMetrics.SetL4NetLBServiceForLegacyMetric(svcName1, errorState)
 
@@ -420,7 +420,7 @@ func TestRetryPeriodForL4NetLBServices(t *testing.T) {
 	}
 }
 
-func checkMetricsComputation(newMetrics *ControllerMetrics, expErrorCount, expSvcCount int) error {
+func checkMetricsComputation(newMetrics *Collector, expErrorCount, expSvcCount int) error {
 	got := newMetrics.computeL4NetLBLegacyMetrics()
 	if got.inError != expErrorCount {
 		return fmt.Errorf("Error count mismatch expected: %v got: %v", expErrorCount, got.inError)

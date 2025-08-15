@@ -30,6 +30,7 @@ CONTAINER_BINARIES ?= \
 	fuzzer \
 	glbc \
 	psc-e2e-test \
+	ingress-controller-e2e-test \
 	workload-controller \
 	workload-daemon \
 	check-gke-ingress

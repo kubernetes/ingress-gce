@@ -53,9 +53,9 @@ var (
 	)
 )
 
-func (im *ControllerMetrics) exportL4Metrics() {
-	im.exportL4ILBsMetrics()
-	im.exportL4NetLBsMetrics()
+func (c *Collector) exportIPv4() {
+	c.exportL4ILBsMetrics()
+	c.exportL4NetLBsMetrics()
 }
 
 func InitServiceMetricsState(svc *corev1.Service, startTime *time.Time, isMultinetwork bool, enabledStrongSessionAffinity bool, isWeightedLBPodsPerNode bool, isLBWithZonalAffinity bool, backendType L4BackendType) L4ServiceState {
@@ -82,24 +82,24 @@ func InitServiceMetricsState(svc *corev1.Service, startTime *time.Time, isMultin
 }
 
 // SetL4ILBService adds L4 ILB service state to L4 NetLB Metrics states map.
-func (im *ControllerMetrics) SetL4ILBService(svcKey string, state L4ServiceState) {
-	im.Lock()
-	defer im.Unlock()
+func (c *Collector) SetL4ILBService(svcKey string, state L4ServiceState) {
+	c.Lock()
+	defer c.Unlock()
 
-	if im.l4ILBServiceMap == nil {
+	if c.l4ILBServiceMap == nil {
 		klog.Fatalf("L4 ILB Metrics failed to initialize correctly.")
 	}
 	if state.Status == StatusError {
-		if previousState, ok := im.l4ILBServiceMap[svcKey]; ok && previousState.FirstSyncErrorTime != nil {
+		if previousState, ok := c.l4ILBServiceMap[svcKey]; ok && previousState.FirstSyncErrorTime != nil {
 			// If service is in Error state and retry timestamp was set then do not update it.
 			state.FirstSyncErrorTime = previousState.FirstSyncErrorTime
 		}
 	}
-	im.l4ILBServiceMap[svcKey] = state
+	c.l4ILBServiceMap[svcKey] = state
 }
 
 // DeleteL4ILBService deletes L4 ILB service state from L4 NetLB Metrics states map.
-func (im *ControllerMetrics) DeleteL4ILBService(svcKey string) {
+func (im *Collector) DeleteL4ILBService(svcKey string) {
 	im.Lock()
 	defer im.Unlock()
 
@@ -107,29 +107,29 @@ func (im *ControllerMetrics) DeleteL4ILBService(svcKey string) {
 }
 
 // SetL4NetLBService adds L4 NetLB service state to L4 NetLB Metrics states map.
-func (im *ControllerMetrics) SetL4NetLBService(svcKey string, state L4ServiceState) {
-	im.Lock()
-	defer im.Unlock()
+func (c *Collector) SetL4NetLBService(svcKey string, state L4ServiceState) {
+	c.Lock()
+	defer c.Unlock()
 
-	if im.l4NetLBServiceMap == nil {
+	if c.l4NetLBServiceMap == nil {
 		klog.Fatalf("L4 NetLB Metrics failed to initialize correctly.")
 	}
 
 	if state.Status == StatusError {
-		if previousState, ok := im.l4NetLBServiceMap[svcKey]; ok && previousState.FirstSyncErrorTime != nil {
+		if previousState, ok := c.l4NetLBServiceMap[svcKey]; ok && previousState.FirstSyncErrorTime != nil {
 			// If service is in Error state and retry timestamp was set then do not update it.
 			state.FirstSyncErrorTime = previousState.FirstSyncErrorTime
 		}
 	}
-	im.l4NetLBServiceMap[svcKey] = state
+	c.l4NetLBServiceMap[svcKey] = state
 }
 
 // DeleteL4NetLBService deletes L4 NetLB service state from L4 NetLB Metrics states map.
-func (im *ControllerMetrics) DeleteL4NetLBService(svcKey string) {
-	im.Lock()
-	defer im.Unlock()
+func (c *Collector) DeleteL4NetLBService(svcKey string) {
+	c.Lock()
+	defer c.Unlock()
 
-	delete(im.l4NetLBServiceMap, svcKey)
+	delete(c.l4NetLBServiceMap, svcKey)
 }
 
 func ipFamiliesToString(ipFamilies []corev1.IPFamily) string {
@@ -140,12 +140,12 @@ func ipFamiliesToString(ipFamilies []corev1.IPFamily) string {
 	return strings.Join(ipFamiliesStrings, ",")
 }
 
-func (im *ControllerMetrics) exportL4ILBsMetrics() {
-	im.Lock()
-	defer im.Unlock()
-	im.logger.V(3).Info("Exporting L4 ILB usage metrics for services", "serviceCount", len(im.l4ILBServiceMap))
+func (c *Collector) exportL4ILBsMetrics() {
+	c.Lock()
+	defer c.Unlock()
+	c.logger.V(3).Info("Exporting L4 ILB usage metrics for services", "serviceCount", len(c.l4ILBServiceMap))
 	l4ILBCount.Reset()
-	for _, svcState := range im.l4ILBServiceMap {
+	for _, svcState := range c.l4ILBServiceMap {
 		l4ILBCount.With(prometheus.Labels{
 			l4LabelStatus:                string(getStatusConsideringPersistentError(&svcState)),
 			l4LabelMultinet:              strconv.FormatBool(svcState.Multinetwork),
@@ -153,15 +153,15 @@ func (im *ControllerMetrics) exportL4ILBsMetrics() {
 			l4LabelZonalAffinity:         strconv.FormatBool(svcState.ZonalAffinity),
 		}).Inc()
 	}
-	im.logger.V(3).Info("L4 ILB usage metrics exported")
+	c.logger.V(3).Info("L4 ILB usage metrics exported")
 }
 
-func (im *ControllerMetrics) exportL4NetLBsMetrics() {
-	im.Lock()
-	defer im.Unlock()
-	im.logger.V(3).Info("Exporting L4 NetLB usage metrics for services", "serviceCount", len(im.l4NetLBServiceMap))
+func (c *Collector) exportL4NetLBsMetrics() {
+	c.Lock()
+	defer c.Unlock()
+	c.logger.V(3).Info("Exporting L4 NetLB usage metrics for services", "serviceCount", len(c.l4NetLBServiceMap))
 	l4NetLBCount.Reset()
-	for _, svcState := range im.l4NetLBServiceMap {
+	for _, svcState := range c.l4NetLBServiceMap {
 		l4NetLBCount.With(prometheus.Labels{
 			l4LabelStatus:                string(getStatusConsideringPersistentError(&svcState)),
 			l4LabelMultinet:              strconv.FormatBool(svcState.Multinetwork),
@@ -170,7 +170,7 @@ func (im *ControllerMetrics) exportL4NetLBsMetrics() {
 			l4LabelBackendType:           string(svcState.BackendType),
 		}).Inc()
 	}
-	im.logger.V(3).Info("L4 NetLB usage metrics exported")
+	c.logger.V(3).Info("L4 NetLB usage metrics exported")
 }
 
 func getStatusConsideringPersistentError(state *L4ServiceState) L4ServiceStatus {
