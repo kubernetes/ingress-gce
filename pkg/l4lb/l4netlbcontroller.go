@@ -523,7 +523,7 @@ func (lc *L4NetLBController) syncWrapper(key string) (err error) {
 			errMessage := fmt.Sprintf("Panic in L4 NetLB sync worker goroutine: %v", r)
 			svcLogger.Error(nil, errMessage)
 			metrics.PublishL4ControllerPanicCount(L4NetLBControllerName)
-			err = fmt.Errorf(errMessage)
+			err = fmt.Errorf("%s", errMessage)
 		}
 	}()
 	syncErr := lc.sync(key, svcLogger)

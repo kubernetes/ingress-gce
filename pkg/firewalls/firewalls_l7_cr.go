@@ -116,7 +116,7 @@ func ensureFirewallCR(client firewallclient.Interface, expectedFWCR *gcpfirewall
 			con.Reason == string(gcpfirewallv1.FirewallRuleReasonSyncError) {
 			// Use recorder to emit the cmd in Sync()
 			logger.V(3).Info("ensureFirewallCR: Could not enforce Firewall CR", "currentFirewallCRName", currentFWCR.Name, "reason", con.Reason)
-			return fmt.Errorf(con.Reason)
+			return fmt.Errorf("%s", con.Reason)
 		}
 	}
 	return nil
