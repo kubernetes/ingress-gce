@@ -422,7 +422,8 @@ func (l4netlb *L4NetLB) ensureDualStackResources(result *L4NetLBSyncResult, node
 // - IPv4 Forwarding Rule
 // - IPv4 Firewall
 func (l4netlb *L4NetLB) ensureIPv4Resources(result *L4NetLBSyncResult, nodeNames []string, bsLink string) {
-	if l4netlb.enableMixedProtocol && forwardingrules.NeedsMixed(l4netlb.Service.Spec.Ports) {
+	if l4netlb.enableMixedProtocol {
+		// This also handles single protocol
 		l4netlb.ensureIPv4MixedResources(result, nodeNames, bsLink)
 		return
 	}
@@ -468,7 +469,7 @@ func (l4netlb *L4NetLB) ensureIPv4MixedResources(result *L4NetLBSyncResult, node
 	var ipAddr string
 	if res.UDPFwdRule != nil {
 		result.Annotations[annotations.UDPForwardingRuleKey] = res.UDPFwdRule.Name
-		if res.TCPFwdRule.NetworkTier == cloud.NetworkTierPremium.ToGCEValue() {
+		if res.UDPFwdRule.NetworkTier == cloud.NetworkTierPremium.ToGCEValue() {
 			result.MetricsLegacyState.IsPremiumTier = true
 		}
 		ipAddr = res.UDPFwdRule.IPAddress
@@ -598,14 +599,10 @@ func (l4netlb *L4NetLB) deleteIPv4ResourcesOnDelete(result *L4NetLBSyncResult) {
 // IPv4 Firewall Rule for Health Check also will not be deleted here, and will be left till the Service Deletion.
 func (l4netlb *L4NetLB) deleteIPv4ResourcesAnnotationBased(result *L4NetLBSyncResult, shouldIgnoreAnnotations bool) {
 	if shouldIgnoreAnnotations || l4netlb.hasAnnotation(annotations.TCPForwardingRuleKey) || l4netlb.hasAnnotation(annotations.UDPForwardingRuleKey) {
-		err := l4netlb.deleteIPv4ForwardingRule()
-		if err != nil {
-			l4netlb.svcLogger.Error(err, "Failed to delete forwarding rule for NetLB RBS service")
+		if err := l4netlb.mixedManager.DeleteIPv4(); err != nil {
+			l4netlb.svcLogger.Error(err, "Failed to delete mixed protocol forwarding rules for NetLB RBS service")
 			result.Error = err
 			result.GCEResourceInError = annotations.ForwardingRuleResource
-		}
-		if err = l4netlb.mixedManager.DeleteIPv4(); err != nil {
-			l4netlb.svcLogger.Error(err, "Failed to delete mixed protocol forwarding rules for NetLB RBS service")
 		}
 	}
 
@@ -627,19 +624,6 @@ func (l4netlb *L4NetLB) deleteIPv4ResourcesAnnotationBased(result *L4NetLBSyncRe
 			result.Error = err
 		}
 	}
-}
-
-func (l4netlb *L4NetLB) deleteIPv4ForwardingRule() error {
-	start := time.Now()
-
-	frName := l4netlb.frName()
-
-	l4netlb.svcLogger.V(2).Info("Deleting IPv4 external forwarding rule for L4 NetLB Service", "forwardingRuleName", frName)
-	defer func() {
-		l4netlb.svcLogger.V(2).Info("Finished deleting IPv4 external forwarding rule for L4 NetLB Service", "forwardingRuleName", frName, "timeTaken", time.Since(start))
-	}()
-
-	return l4netlb.forwardingRules.Delete(frName)
 }
 
 func (l4netlb *L4NetLB) deleteIPv4Address() error {

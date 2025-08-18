@@ -248,22 +248,52 @@ func TestMixedManagerNetLB_EnsureIPv4_SingleProtocol(t *testing.T) {
 
 func TestMixedManagerNetLB_AllRules(t *testing.T) {
 	testCases := []struct {
-		desc   string
-		tcp    *compute.ForwardingRule
-		udp    *compute.ForwardingRule
-		legacy *compute.ForwardingRule
+		desc string
+		have []*compute.ForwardingRule
+		want forwardingrules.NetLBManagedRules
 	}{
 		{
 			desc: "no rules",
 		},
 		{
-			desc:   "single protocol exists",
-			legacy: &compute.ForwardingRule{Name: legacyName},
+			desc: "legacy tcp",
+			have: []*compute.ForwardingRule{
+				&compute.ForwardingRule{Name: legacyName, IPProtocol: "TCP"},
+			},
+			want: forwardingrules.NetLBManagedRules{
+				TCP: &composite.ForwardingRule{Name: legacyName, IPProtocol: "TCP"},
+			},
 		},
 		{
-			desc: "mixed protocol exists",
-			tcp:  &compute.ForwardingRule{Name: tcpName},
-			udp:  &compute.ForwardingRule{Name: udpName},
+			desc: "v2 udp",
+			have: []*compute.ForwardingRule{
+				&compute.ForwardingRule{Name: udpName, IPProtocol: "UDP"},
+			},
+			want: forwardingrules.NetLBManagedRules{
+				UDP: &composite.ForwardingRule{Name: udpName, IPProtocol: "UDP"},
+			},
+		},
+		{
+			desc: "v2 mixed protocol",
+			have: []*compute.ForwardingRule{
+				&compute.ForwardingRule{Name: tcpName, IPProtocol: "TCP"},
+				&compute.ForwardingRule{Name: udpName, IPProtocol: "UDP"},
+			},
+			want: forwardingrules.NetLBManagedRules{
+				TCP: &composite.ForwardingRule{Name: tcpName, IPProtocol: "TCP"},
+				UDP: &composite.ForwardingRule{Name: udpName, IPProtocol: "UDP"},
+			},
+		},
+		{
+			desc: "mixed naming scheme and protocol",
+			have: []*compute.ForwardingRule{
+				&compute.ForwardingRule{Name: tcpName, IPProtocol: "TCP"},
+				&compute.ForwardingRule{Name: legacyName, IPProtocol: "UDP"},
+			},
+			want: forwardingrules.NetLBManagedRules{
+				TCP: &composite.ForwardingRule{Name: tcpName, IPProtocol: "TCP"},
+				UDP: &composite.ForwardingRule{Name: legacyName, IPProtocol: "UDP"},
+			},
 		},
 	}
 
@@ -275,7 +305,7 @@ func TestMixedManagerNetLB_AllRules(t *testing.T) {
 			// Arrange
 			fakeGCE, mgr := arrange(nil)
 			region := fakeGCE.Region()
-			for _, rule := range []*compute.ForwardingRule{tc.tcp, tc.udp, tc.legacy} {
+			for _, rule := range tc.have {
 				if rule != nil {
 					fakeGCE.CreateRegionForwardingRule(rule, region)
 				}
@@ -287,14 +317,10 @@ func TestMixedManagerNetLB_AllRules(t *testing.T) {
 			if err != nil {
 				t.Errorf("AllRules() error = %v", err)
 			}
-			if tc.legacy != nil && rules.Legacy == nil {
-				t.Errorf("single protocol named forwarding rule was not found")
-			}
-			if tc.tcp != nil && rules.TCP == nil {
-				t.Errorf("tcp forwarding rule for mixed protocol was not found")
-			}
-			if tc.udp != nil && rules.UDP == nil {
-				t.Errorf("udp forwarding rule for mixed protocol was not found")
+
+			fwdRuleIgnoreFields := cmpopts.IgnoreFields(composite.ForwardingRule{}, "SelfLink")
+			if diff := cmp.Diff(tc.want, rules, fwdRuleIgnoreFields); diff != "" {
+				t.Errorf("AllRules() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

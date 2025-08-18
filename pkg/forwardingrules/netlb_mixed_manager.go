@@ -65,13 +65,8 @@ type EnsureNetLBResult struct {
 // EnsureIPv4 will try to create or update forwarding rules for mixed protocol service.
 func (m *MixedManagerNetLB) EnsureIPv4(backendServiceLink string) (EnsureNetLBResult, error) {
 	m.Logger = m.Logger.WithName("MixedManagerNetLB")
-	svcPorts := m.Service.Spec.Ports
 	res := EnsureNetLBResult{
 		SyncStatus: utils.ResourceResync,
-	}
-
-	if !NeedsMixed(svcPorts) {
-		return res, fmt.Errorf("MixedManagerELB shouldn't be used to ensure single protocol forwarding rules to be backwards compatible")
 	}
 
 	existing, err := m.AllRules()
@@ -84,7 +79,7 @@ func (m *MixedManagerNetLB) EnsureIPv4(backendServiceLink string) (EnsureNetLBRe
 		Recorder:              m.Recorder,
 		Logger:                m.Logger,
 		Service:               m.Service,
-		ExistingRules:         []*composite.ForwardingRule{existing.Legacy, existing.TCP, existing.UDP},
+		ExistingRules:         []*composite.ForwardingRule{existing.TCP, existing.UDP},
 		ForwardingRuleDeleter: m.Provider,
 	})
 	if err != nil {
@@ -97,11 +92,6 @@ func (m *MixedManagerNetLB) EnsureIPv4(backendServiceLink string) (EnsureNetLBRe
 		}
 	}()
 	res.IPManaged = addressHandle.Managed
-
-	// We need to delete legacy named forwarding rule to avoid port collisions
-	if err := m.deleteLegacy(); err != nil {
-		return res, err
-	}
 
 	var tcpErr, udpErr error
 	var tcpSync, udpSync utils.ResourceSyncStatus
@@ -117,17 +107,26 @@ func (m *MixedManagerNetLB) EnsureIPv4(backendServiceLink string) (EnsureNetLBRe
 	}()
 
 	wg.Wait()
-	if tcpSync == utils.ResourceUpdate || udpSync == utils.ResourceUpdate {
-		res.SyncStatus = utils.ResourceUpdate
-	}
+
+	res.SyncStatus = syncStatus(tcpSync, udpSync)
 	err = errors.Join(tcpErr, udpErr)
 
 	return res, err
 }
 
+func syncStatus(statuses ...utils.ResourceSyncStatus) utils.ResourceSyncStatus {
+	for _, s := range statuses {
+		if s == utils.ResourceUpdate {
+			return utils.ResourceUpdate
+		}
+	}
+	return utils.ResourceResync
+}
+
 // ensure has similar implementation to the L4NetLB.ensureIPv4ForwardingRule,
 // but can use multiple names for fwd rule.
 // This will:
+// * delete forwarding rule if it's not needed, otherwise:
 // * compare existing rule to wanted
 // * if doesnt exist 	-> create
 // * if equal 			-> do nothing
@@ -135,6 +134,9 @@ func (m *MixedManagerNetLB) EnsureIPv4(backendServiceLink string) (EnsureNetLBRe
 // * else 				-> delete and recreate
 func (m *MixedManagerNetLB) ensure(existing *composite.ForwardingRule, backendServiceLink, protocol, ip string) (*composite.ForwardingRule, utils.ResourceSyncStatus, error) {
 	name := m.name(protocol)
+	if existing != nil {
+		name = existing.Name
+	}
 	start := time.Now()
 	log := m.Logger.
 		WithName("ensure").
@@ -149,6 +151,15 @@ func (m *MixedManagerNetLB) ensure(existing *composite.ForwardingRule, backendSe
 	if err != nil {
 		log.Error(err, "buildWanted returned error")
 		return nil, utils.ResourceResync, err
+	}
+
+	// Forwarding Rule not needed
+	if wanted == nil {
+		if existing != nil {
+			err := m.Provider.Delete(name)
+			return nil, utils.ResourceUpdate, err
+		}
+		return nil, utils.ResourceResync, nil
 	}
 
 	// Exists
@@ -220,6 +231,11 @@ func (m *MixedManagerNetLB) buildWanted(backendServiceLink, name, protocol, ip s
 	}
 
 	ports := GetPorts(m.Service.Spec.Ports, api_v1.Protocol(protocol))
+	// We don't need a Forwarding Rule for this protocol
+	if len(ports) == 0 {
+		return nil, nil
+	}
+
 	var portRange string
 	if len(ports) > maxForwardedPorts {
 		portRange = utils.MinMaxPortRange(ports)
@@ -253,21 +269,19 @@ func (m *MixedManagerNetLB) getAfterUpdate(name string) (*composite.ForwardingRu
 	return found, utils.ResourceUpdate, nil
 }
 
-// NetLBManagedRules contains rules managed by NetLB loadbalancer.
-// Under normal conditions one of three results is possible:
-// a) TCP and UDP both present - rules have been created for mixed protocol
-// b) Legacy present - rule has been created for single protocol
-// c) empty - nothing has been yet created
+// NetLBManagedRules contains rules managed by NetLB loadbalancer. At most one will have legacy name.
 type NetLBManagedRules struct {
-	// TCP forwarding rule with '-tcp-' in a name
+	// TCP forwarding rule with '-tcp-' in a name or legacy named (with 'a')
 	TCP *composite.ForwardingRule
-	// UDP forwarding rule with '-udp-' in a name
+	// UDP forwarding rule with '-udp-' in a name or legacy named (with 'a')
 	UDP *composite.ForwardingRule
-	// Legacy named forwarding rule (staring with 'a')
-	Legacy *composite.ForwardingRule
 }
 
-// AllRules returns all forwarding rules for a service specified in the manager
+// AllRules returns all forwarding rules for a service specified in the manager.
+// At most there will be two Forwarding rules, one for TCP and one for UDP.
+// For new LBs we prefer to use v2 names, not legacy (the one that starts with "a").
+// However if a Forwarding Rule already exists with legacy name, we should use it to avoid recreation,
+// which will cause traffic drop.
 func (m *MixedManagerNetLB) AllRules() (NetLBManagedRules, error) {
 	var wg sync.WaitGroup
 	var tcp, udp, legacy *composite.ForwardingRule
@@ -288,17 +302,58 @@ func (m *MixedManagerNetLB) AllRules() (NetLBManagedRules, error) {
 	}()
 	wg.Wait()
 
-	return NetLBManagedRules{
-		TCP: tcp, UDP: udp, Legacy: legacy,
-	}, errors.Join(tcpErr, udpErr, legacyErr)
+	if err := errors.Join(tcpErr, udpErr, legacyErr); err != nil {
+		return NetLBManagedRules{}, fmt.Errorf("failed to get forwarding rules: %w", err)
+	}
+
+	return managedRules(tcp, udp, legacy)
 }
 
-// DeleteIPv4 will try to delete forwarding rules for mixed protocol NetLB service.
+// Legacy will return a legacy named Forwarding Rule if such exists for the LB.
+// Otherwise returns nil.
+func Legacy(rules NetLBManagedRules) *composite.ForwardingRule {
+	if rules.TCP != nil && isLegacy(rules.TCP) {
+		return rules.TCP
+	}
+	if rules.UDP != nil && isLegacy(rules.UDP) {
+		return rules.UDP
+	}
+	return nil
+}
+
+func isLegacy(fr *composite.ForwardingRule) bool {
+	return strings.HasPrefix(fr.Name, "a")
+}
+
+func managedRules(frs ...*composite.ForwardingRule) (NetLBManagedRules, error) {
+	// The key in the map will be the protocol. API returns them in UPPERCASE, either `TCP` or `UDP`
+	const tcpKey, udpKey = "TCP", "UDP"
+	m := make(map[string]*composite.ForwardingRule)
+
+	for _, fr := range frs {
+		if fr == nil {
+			continue
+		}
+		if found, ok := m[fr.IPProtocol]; ok {
+			return NetLBManagedRules{}, fmt.Errorf("duplicate forwarding rule for protocol %q: %v and %v", fr.IPProtocol, found, fr)
+		}
+
+		m[fr.IPProtocol] = fr
+	}
+
+	return NetLBManagedRules{
+		TCP: m[tcpKey],
+		UDP: m[udpKey],
+	}, nil
+}
+
+// DeleteIPv4 will try to delete ALL forwarding rules for mixed protocol NetLB service.
+// This includes "-tcp-", "-udp-" and legacy named ones.
 func (m *MixedManagerNetLB) DeleteIPv4() error {
 	var wg sync.WaitGroup
-	var tcpErr, udpErr error
-	wg.Add(2)
+	var tcpErr, udpErr, legacyErr error
 
+	wg.Add(3)
 	go func() {
 		defer wg.Done()
 		tcpErr = m.delete("tcp")
@@ -306,6 +361,36 @@ func (m *MixedManagerNetLB) DeleteIPv4() error {
 	go func() {
 		defer wg.Done()
 		udpErr = m.delete("udp")
+	}()
+	go func() {
+		defer wg.Done()
+		legacyErr = m.deleteLegacy()
+	}()
+
+	wg.Wait()
+	return errors.Join(tcpErr, udpErr, legacyErr)
+}
+
+// DeleteExclusivelyManaged will delete resources that can only be managed by MixedManager.
+//
+// This is meant to be called only in situations when MixedProtocol has been disabled, but has some leftover managed resources.
+// We check for existing ones, before deletion to prevent creating empty audit logs.
+func (m *MixedManagerNetLB) DeleteExclusivelyManaged(existing NetLBManagedRules) error {
+	var wg sync.WaitGroup
+	var tcpErr, udpErr error
+
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		if existing.TCP != nil {
+			tcpErr = m.Provider.Delete(existing.TCP.Name)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		if existing.UDP != nil {
+			udpErr = m.Provider.Delete(existing.UDP.Name)
+		}
 	}()
 
 	wg.Wait()
