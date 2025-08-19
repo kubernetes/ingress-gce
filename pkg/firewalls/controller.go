@@ -109,7 +109,7 @@ func NewFirewallController(
 	}
 	logger.Info("Using source ranges", "ranges", sourceRanges)
 	if enableCR {
-		firewallCRPool := NewFirewallCRPool(ctx.FirewallClient, ctx.Cloud, ctx.ClusterNamer, sourceRanges, portRanges, disableFWEnforcement, logger)
+		firewallCRPool := NewFirewallCRPool(ctx.FirewallClient, ctx.Cloud, ctx.ClusterNamer, sourceRanges, portRanges, !disableFWEnforcement, logger)
 		compositeFirewallPool.pools = append(compositeFirewallPool.pools, firewallCRPool)
 	}
 	if !disableFWEnforcement {
