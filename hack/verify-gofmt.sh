@@ -22,8 +22,6 @@ set -o pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." &> /dev/null && pwd -P)"
 cd "${REPO_ROOT}"
 
-echo -n "Checking gofmt: "
-
 function git_find() {
     # Similar to find but faster and easier to understand.  We want to include
     # modified and untracked files because this might be running against code

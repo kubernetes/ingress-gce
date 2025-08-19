@@ -328,7 +328,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service, svcLo
 
 	// Ensure v2 finalizer
 	if err := common.EnsureServiceFinalizer(service, common.ILBFinalizerV2, l4c.ctx.KubeClient, svcLogger); err != nil {
-		return &loadbalancers.L4ILBSyncResult{Error: fmt.Errorf("Failed to attach finalizer to service %s/%s, err %w", service.Namespace, service.Name, err)}
+		return &loadbalancers.L4ILBSyncResult{Error: fmt.Errorf("Failed to attach finalizer to service %s/%s, err %v", service.Namespace, service.Name, err)}
 	}
 	nodes, err := l4c.zoneGetter.ListNodes(zonegetter.CandidateNodesFilter, svcLogger)
 	if err != nil {
@@ -505,7 +505,7 @@ func (l4c *L4Controller) syncWrapper(key string) (err error) {
 			errMessage := fmt.Sprintf("Panic in L4 ILB sync worker goroutine: %v", r)
 			svcLogger.Error(nil, errMessage)
 			metrics.PublishL4ControllerPanicCount(L4ILBControllerName)
-			err = fmt.Errorf(errMessage)
+			err = fmt.Errorf("%s", errMessage)
 		}
 	}()
 	syncErr := l4c.sync(key, svcLogger)

@@ -50,19 +50,9 @@ fi
 echo "PASS"
 echo
 
-# Set gobin here, install dependencies after this
-cd "hack/tools"
-export GOBIN=$PWD/bin
-export PATH=$GOBIN:$PATH
-# Install golangci-lint
-echo "Installing golangci-lint"
-echo
-go install github.com/golangci/golangci-lint/cmd/golangci-lint > /dev/null
-cd "../.."
-
 export GOLANGCI_LINT_CACHE=$PWD/.cache
 echo -n "Checking linters: "
-ERRS=$(golangci-lint run ${TARGETS} 2>&1 || true)
+ERRS=$(go tool golangci-lint run ${TARGETS} 2>&1 || true)
 if [ -n "${ERRS}" ]; then
     echo "FAIL"
     echo "${ERRS}"
