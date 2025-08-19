@@ -30,7 +30,7 @@ steps:
   - VERBOSE=1
   - HOME=/root
   - USER=root
-  - BINARIES="e2e-test psc-e2e-test neg-e2e-test ingress-controller-e2e-test"
+  - BINARIES=e2e-test psc-e2e-test neg-e2e-test ingress-controller-e2e-test
   - ADDITIONAL_TAGS=infrastructure-public-image-$_GIT_TAG
   args:
   - -c
