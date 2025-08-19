@@ -745,6 +745,109 @@ func TestServiceAttachmentUpdate(t *testing.T) {
 	}
 }
 
+func TestServiceAttachmentPatch(t *testing.T) {
+	t.Parallel()
+
+	saName := "my-sa"
+	svcName := "my-service"
+	saUID := "uid-123"
+	frIPAddr := "10.1.2.3"
+	subnetName := "my-nat-subnet"
+
+	controller, err := newTestController("ZONAL", false)
+	if err != nil {
+		t.Fatalf("newTestController() failed: %v", err)
+	}
+
+	fakeGCE := controller.cloud.Compute().(*cloud.MockGCE)
+	mockSA := fakeGCE.ServiceAttachments().(*cloud.MockServiceAttachments)
+
+	_, frName, err := createSvc(controller, svcName, "svc-uid", frIPAddr, annotations.TCPForwardingRuleKey)
+	if err != nil {
+		t.Fatalf("createSvc failed: %v", err)
+	}
+	fr, err := createForwardingRule(controller.cloud, frName, frIPAddr)
+	if err != nil {
+		t.Fatalf("createForwardingRule failed: %v", err)
+	}
+	subnet, err := createNatSubnet(controller.cloud, subnetName)
+	if err != nil {
+		t.Fatalf("createNatSubnet failed: %v", err)
+	}
+
+	// Base ServiceAttachment CR with:
+	// ProxyProtocol: true
+	// ConsumerRejectList: [] (instead of nil) previously it causes problems for needsUpdate func and causes odd Patch requests
+	saCR := testServiceAttachmentCR(saName, svcName, saUID, []string{subnetName}, true, true)
+	saCR.Spec.ConsumerRejectList = []string{}
+
+	controller.saClient.NetworkingV1().ServiceAttachments(testNamespace).Create(context2.TODO(), saCR, metav1.CreateOptions{})
+	syncServiceAttachmentLister(controller)
+
+	// Existing GCE SA that is in sync with the CR (ProxyProtocol: true)
+	inSyncGceSA := &ga.ServiceAttachment{
+		ConnectionPreference: "ACCEPT_AUTOMATIC",
+		EnableProxyProtocol:  true,
+	}
+
+	// Existing GCE SA that is NOT in sync (ProxyProtocol: false)
+	outOfSyncGceSA := &ga.ServiceAttachment{
+		ConnectionPreference: "ACCEPT_AUTOMATIC",
+		EnableProxyProtocol:  false,
+	}
+
+	// Fill-in common data
+	for _, gceSA := range []*ga.ServiceAttachment{inSyncGceSA, outOfSyncGceSA} {
+		gceSAName := controller.saNamer.ServiceAttachment(testNamespace, saName, saUID)
+		desc := sautils.NewServiceAttachmentDesc(saCR.Namespace, saCR.Name, ClusterName, controller.cloud.LocalZone(), false)
+		gceSA.Name = gceSAName
+		gceSA.Region = controller.cloud.Region()
+		gceSA.TargetService = fr.SelfLink
+		gceSA.NatSubnets = []string{subnet.SelfLink}
+		gceSA.Description = desc.String()
+	}
+
+	testCases := []struct {
+		desc            string
+		existingGceSA   *ga.ServiceAttachment
+		expectPatchCall bool
+	}{
+		{
+			desc:            "GCE resource is in sync, Patch should not be called",
+			existingGceSA:   inSyncGceSA,
+			expectPatchCall: false,
+		},
+		{
+			desc:            "GCE resource is out of sync, Patch should be called",
+			existingGceSA:   outOfSyncGceSA,
+			expectPatchCall: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+
+			patchCalled := false
+
+			mockSA.GetHook = func(ctx context2.Context, key *meta.Key, m *cloud.MockServiceAttachments, options ...cloud.Option) (bool, *ga.ServiceAttachment, error) {
+				return true, tc.existingGceSA, nil
+			}
+			mockSA.PatchHook = func(ctx context2.Context, key *meta.Key, sa *ga.ServiceAttachment, fake *cloud.MockServiceAttachments, options ...cloud.Option) error {
+				patchCalled = true
+				return nil
+			}
+
+			if err := controller.processServiceAttachment(SvcAttachmentKeyFunc(testNamespace, saName)); err != nil {
+				t.Errorf("processServiceAttachment() returned an unexpected error: %v", err)
+			}
+
+			if patchCalled != tc.expectPatchCall {
+				t.Errorf("Patch call expectation mismatch: got called = %t, want = %t", patchCalled, tc.expectPatchCall)
+			}
+		})
+	}
+}
+
 func TestNeedsUpdate(t *testing.T) {
 	subnet1 := "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/subnet-1"
 	subnet2 := "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/subnet-2"
