@@ -53,6 +53,9 @@ type ProviderConfigSpec struct {
 	// +kubebuilder:validation:Optional
 	PSCConnectionID int64                 `json:"pscConnectionID"`
 	NetworkConfig   ProviderNetworkConfig `json:"networkConfig"`
+	// PrincipalInfo contains information about the principal entity associated with this configuration.
+	// This field is optional.
+	PrincipalInfo *PrincipalInfo `json:"principalInfo"`
 }
 
 // ProviderNetworkConfig specifies the network configuration for the provider config.
@@ -97,4 +100,13 @@ type ProviderConfigList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata"`
 	Items           []ProviderConfig `json:"items"`
+}
+
+// PrincipalInfo defines the identity associated with a ProviderConfig (usually Cluster or Tenant),
+// This information is sourced from the corresponding Tenant CR or the cluster configuration.
+type PrincipalInfo struct {
+	// A unique and stable identifier for the principal.
+	// Usecases include: adding tags to the metrics and logs, naming GCP resources.
+	// +kubebuilder:validation:MinLength=1
+	ID string `json:"id"`
 }

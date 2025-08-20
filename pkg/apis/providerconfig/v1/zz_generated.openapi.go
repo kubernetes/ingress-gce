@@ -119,11 +119,17 @@ func schema_pkg_apis_providerconfig_v1_ProviderConfigSpec(ref common.ReferenceCa
 							Ref:     ref("k8s.io/ingress-gce/pkg/apis/providerconfig/v1.ProviderNetworkConfig"),
 						},
 					},
+					"principalInfo": {
+						SchemaProps: spec.SchemaProps{
+							Description: "PrincipalInfo contains information about the principal entity associated with this configuration. This field is optional.",
+							Ref:         ref("k8s.io/ingress-gce/pkg/apis/providerconfig/v1.PrincipalInfo"),
+						},
+					},
 				},
-				Required: []string{"projectNumber", "projectID", "pscConnectionID", "networkConfig"},
+				Required: []string{"projectNumber", "projectID", "pscConnectionID", "networkConfig", "principalInfo"},
 			},
 		},
 		Dependencies: []string{
-			"k8s.io/ingress-gce/pkg/apis/providerconfig/v1.ProviderNetworkConfig"},
+			"k8s.io/ingress-gce/pkg/apis/providerconfig/v1.PrincipalInfo", "k8s.io/ingress-gce/pkg/apis/providerconfig/v1.ProviderNetworkConfig"},
 	}
 }
