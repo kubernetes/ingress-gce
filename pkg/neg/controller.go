@@ -113,6 +113,9 @@ type Controller struct {
 	// runL4ForNetLB indicates if the controller can create NEGs for L4 NetLB services.
 	runL4ForNetLB bool
 
+	// readOnlyMode indicates wheter or not the controller will run in read only mode
+	readOnlyMode bool
+
 	stopCh <-chan struct{}
 	logger klog.Logger
 
@@ -152,6 +155,7 @@ func NewController(
 	enableMultiNetworking bool,
 	enableIngressRegionalExternal bool,
 	runL4ForNetLB bool,
+	readOnlyMode bool,
 	stopCh <-chan struct{},
 	logger klog.Logger,
 	negMetrics *metrics.NegMetrics,
@@ -256,6 +260,7 @@ func NewController(
 		enableIngressRegionalExternal:  enableIngressRegionalExternal,
 		enableMultiSubnetClusterPhase1: enableMultiSubnetClusterPhase1,
 		runL4ForNetLB:                  runL4ForNetLB,
+		readOnlyMode:                   readOnlyMode,
 		stopCh:                         stopCh,
 		logger:                         logger,
 		negMetrics:                     negMetrics,
@@ -465,6 +470,12 @@ func (c *Controller) processNode() {
 		now := c.nodeSyncTracker.Track()
 		metrics.LastSyncTimestamp.Set(float64(now.UTC().UnixNano()))
 	}()
+
+	if c.readOnlyMode {
+		c.logger.V(3).Info("Skipping syncing nodes since NEG controller is in read-only mode")
+		return
+	}
+
 	c.manager.SyncNodes()
 }
 
@@ -474,6 +485,11 @@ func (c *Controller) processEndpoint(key string) {
 		now := c.syncTracker.Track()
 		metrics.LastSyncTimestamp.Set(float64(now.UTC().UnixNano()))
 	}()
+
+	if c.readOnlyMode {
+		c.logger.V(3).Info("Skipping syncing endpoint since NEG controller is in read-only mode", "key", key)
+		return
+	}
 
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
@@ -512,10 +528,18 @@ func (c *Controller) processService(key string) error {
 	if err != nil {
 		return err
 	}
+
+	if c.readOnlyMode {
+		c.manager.StopSyncer(namespace, name)
+		c.logger.V(3).Info("Skipping syncing service since NEG controller is in read-only mode", "service", key)
+		return nil
+	}
+
 	obj, exists, err := c.serviceLister.GetByKey(key)
 	if err != nil {
 		return err
 	}
+
 	if !exists {
 		c.syncerMetrics.DeleteNegService(key)
 		c.manager.StopSyncer(namespace, name)
@@ -597,6 +621,10 @@ func (c *Controller) processNodeTopology() {
 		now := c.syncTracker.Track()
 		metrics.LastSyncTimestamp.Set(float64(now.UTC().UnixNano()))
 	}()
+	if c.readOnlyMode {
+		c.logger.V(3).Info("Skipping syncing node topology since NEG controller is in read-only mode")
+		return
+	}
 	c.manager.SyncAllSyncers()
 }
 

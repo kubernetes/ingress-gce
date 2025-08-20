@@ -106,6 +106,8 @@ type Controller struct {
 	// regionalCluster indicates whether the cluster is regional or not.
 	regionalCluster bool
 
+	readOnlyMode bool
+
 	stopCh <-chan struct{}
 
 	logger klog.Logger
@@ -126,6 +128,7 @@ func NewController(ctx *context.ControllerContext, stopCh <-chan struct{}, logge
 		collector:           ctx.ControllerMetrics,
 		clusterName:         flags.F.GKEClusterName,
 		regionalCluster:     ctx.RegionalCluster,
+		readOnlyMode:        ctx.ReadOnlyMode,
 		stopCh:              stopCh,
 		logger:              logger,
 	}
@@ -290,6 +293,11 @@ func (c *Controller) processServiceAttachment(key string) error {
 	}
 	c.logger.V(2).Info("Processing Service attachment", "serviceKey", klog.KRef(namespace, name))
 	defer c.logger.V(4).Info("Finished processing service attachment", "serviceKey", klog.KRef(namespace, name))
+
+	if c.readOnlyMode {
+		c.logger.V(2).Info("Skipping processing service attachment since the controller is in read-only mode")
+		return nil
+	}
 
 	svcAttachment := obj.(*sav1.ServiceAttachment)
 	var updatedCR *sav1.ServiceAttachment
