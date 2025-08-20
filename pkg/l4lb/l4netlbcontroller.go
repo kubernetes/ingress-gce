@@ -542,6 +542,12 @@ func (lc *L4NetLBController) sync(key string, svcLogger klog.Logger) error {
 		svcLogger.V(3).Info("Ignoring sync of non-existent service")
 		return nil
 	}
+
+	if lc.ctx.ReadOnlyMode {
+		svcLogger.Info("Skipping syncing L4 NetLB RBS service since the controller is in read-only mode", "key", key)
+		return nil
+	}
+
 	isLegacyService, err := lc.preventLegacyServiceHandling(svc, key, svcLogger)
 	if err != nil {
 		svcLogger.Info("lc.preventLegacyServiceHandling returned error, want nil", "service", svc, "err", err)

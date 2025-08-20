@@ -50,6 +50,7 @@ type manager struct {
 	recorder           record.EventRecorder
 	instanceLinkFormat string
 	maxIGSize          int
+	readOnlyMode       bool
 }
 
 type recorderSource interface {
@@ -59,12 +60,13 @@ type recorderSource interface {
 // ManagerConfig is used for Manager constructor.
 type ManagerConfig struct {
 	// Cloud implements Provider, used to sync Kubernetes nodes with members of the cloud InstanceGroup.
-	Cloud      Provider
-	Namer      namer.BackendNamer
-	Recorders  recorderSource
-	BasePath   string
-	ZoneGetter *zonegetter.ZoneGetter
-	MaxIGSize  int
+	Cloud        Provider
+	Namer        namer.BackendNamer
+	Recorders    recorderSource
+	BasePath     string
+	ZoneGetter   *zonegetter.ZoneGetter
+	MaxIGSize    int
+	ReadOnlyMode bool
 }
 
 // NewManager creates a new node pool using ManagerConfig.
@@ -76,6 +78,7 @@ func NewManager(config *ManagerConfig) Manager {
 		instanceLinkFormat: config.BasePath + "zones/%s/instances/%s",
 		ZoneGetter:         config.ZoneGetter,
 		maxIGSize:          config.MaxIGSize,
+		readOnlyMode:       config.ReadOnlyMode,
 	}
 }
 
@@ -303,6 +306,11 @@ func (m *manager) Sync(nodes []string, logger klog.Logger) (err error) {
 			err = nil
 		}
 	}()
+
+	if m.readOnlyMode {
+		iglogger.Info("Skipping syncing nodes since controller is in read-only mode")
+		return nil
+	}
 
 	// For each zone add up to #m.maxIGSize number of nodes to the instance group
 	// If there is more then truncate last nodes (in alphabetical order)
