@@ -30,6 +30,7 @@ import (
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
@@ -53,6 +54,7 @@ func TestLocalGetEndpointSet(t *testing.T) {
 	prevFlag := flags.F.EnableMultiSubnetCluster
 	defer func() { flags.F.EnableMultiSubnetCluster = prevFlag }()
 	flags.F.EnableMultiSubnetCluster = false
+	negMetrics := metrics.NewNegMetrics("")
 
 	testCases := []struct {
 		desc                string
@@ -64,6 +66,7 @@ func TestLocalGetEndpointSet(t *testing.T) {
 		nodeReadyStatusMap  map[string]v1.ConditionStatus
 		nodeNames           []string
 		network             network.NetworkInfo
+		negMetrics          *metrics.NegMetrics
 	}{
 		{
 			desc:          "default endpoints",
@@ -76,6 +79,7 @@ func TestLocalGetEndpointSet(t *testing.T) {
 			networkEndpointType: negtypes.VmIpEndpointType,
 			nodeNames:           []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
 			network:             defaultNetwork,
+			negMetrics:          negMetrics,
 		},
 		{
 			desc:          "default endpoints, all nodes unready",
@@ -90,7 +94,8 @@ func TestLocalGetEndpointSet(t *testing.T) {
 			nodeReadyStatusMap: map[string]v1.ConditionStatus{
 				testInstance1: v1.ConditionFalse, testInstance2: v1.ConditionFalse, testInstance3: v1.ConditionFalse, testInstance4: v1.ConditionFalse, testInstance5: v1.ConditionFalse, testInstance6: v1.ConditionFalse,
 			},
-			network: defaultNetwork,
+			network:    defaultNetwork,
+			negMetrics: negMetrics,
 		},
 		{
 			desc:          "default endpoints, some nodes marked as non-candidates",
@@ -109,6 +114,7 @@ func TestLocalGetEndpointSet(t *testing.T) {
 			},
 			networkEndpointType: negtypes.VmIpEndpointType,
 			network:             defaultNetwork,
+			negMetrics:          negMetrics,
 		},
 		{
 			desc:          "no endpoints",
@@ -118,6 +124,7 @@ func TestLocalGetEndpointSet(t *testing.T) {
 			networkEndpointType: negtypes.VmIpEndpointType,
 			nodeNames:           []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
 			network:             defaultNetwork,
+			negMetrics:          negMetrics,
 		},
 		{
 			desc:          "multinetwork, endpoints only for nodes connected to a matching non-default network",
@@ -138,6 +145,7 @@ func TestLocalGetEndpointSet(t *testing.T) {
 				{Zone: negtypes.TestZone2, Subnet: multinetworkingTestSubnetName}: negtypes.NewNetworkEndpointSet(
 					negtypes.NetworkEndpoint{IP: "20.2.3.3", Node: testInstance3}),
 			},
+			negMetrics: negMetrics,
 		},
 		{
 			desc:          "endpoints with MSC nodes",
@@ -158,12 +166,13 @@ func TestLocalGetEndpointSet(t *testing.T) {
 			networkEndpointType: negtypes.VmIpEndpointType,
 			nodeNames:           []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
 			network:             defaultNetwork,
+			negMetrics:          negMetrics,
 		},
 	}
 	svcKey := fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace)
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			ec := NewLocalL4EndpointsCalculator(listers.NewNodeLister(nodeInformer.GetIndexer()), zoneGetter, svcKey, klog.TODO(), &tc.network, negtypes.L4InternalLB)
+			ec := NewLocalL4EndpointsCalculator(listers.NewNodeLister(nodeInformer.GetIndexer()), zoneGetter, svcKey, klog.TODO(), &tc.network, negtypes.L4InternalLB, tc.negMetrics)
 			updateNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeAnnotationsMap, tc.nodeReadyStatusMap, nodeInformer.GetIndexer())
 			retSet, _, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
 			if err != nil {
@@ -211,6 +220,7 @@ func TestClusterGetEndpointSet(t *testing.T) {
 	prevFlag := flags.F.EnableMultiSubnetCluster
 	defer func() { flags.F.EnableMultiSubnetCluster = prevFlag }()
 	flags.F.EnableMultiSubnetCluster = false
+	negMetrics := metrics.NewNegMetrics("")
 
 	testCases := []struct {
 		desc               string
@@ -221,6 +231,7 @@ func TestClusterGetEndpointSet(t *testing.T) {
 		nodeReadyStatusMap map[string]v1.ConditionStatus
 		nodeNames          []string
 		network            network.NetworkInfo
+		negMetrics         *metrics.NegMetrics
 	}{
 		{
 			desc:          "default endpoints",
@@ -232,8 +243,9 @@ func TestClusterGetEndpointSet(t *testing.T) {
 					negtypes.NetworkEndpoint{IP: "1.2.3.5", Node: testInstance5}, negtypes.NetworkEndpoint{IP: "1.2.3.6", Node: testInstance6}),
 				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.7", Node: testUnreadyInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.8", Node: testUnreadyInstance2}),
 			},
-			nodeNames: []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
-			network:   defaultNetwork,
+			nodeNames:  []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
+			network:    defaultNetwork,
+			negMetrics: negMetrics,
 		},
 		{
 			desc:          "default endpoints, all nodes unready",
@@ -249,7 +261,8 @@ func TestClusterGetEndpointSet(t *testing.T) {
 			nodeReadyStatusMap: map[string]v1.ConditionStatus{
 				testInstance1: v1.ConditionFalse, testInstance2: v1.ConditionFalse, testInstance3: v1.ConditionFalse, testInstance4: v1.ConditionFalse, testInstance5: v1.ConditionFalse, testInstance6: v1.ConditionFalse,
 			},
-			network: defaultNetwork,
+			network:    defaultNetwork,
+			negMetrics: negMetrics,
 		},
 		{
 			desc:          "default endpoints, some nodes marked as non-candidates",
@@ -268,7 +281,8 @@ func TestClusterGetEndpointSet(t *testing.T) {
 				// label for testInstance4 will not remove it from endpoints list, since operation value is "random".
 				testInstance4: {utils.GKECurrentOperationLabel: "random"},
 			},
-			network: defaultNetwork,
+			network:    defaultNetwork,
+			negMetrics: negMetrics,
 		},
 		{
 			desc: "no endpoints",
@@ -281,8 +295,9 @@ func TestClusterGetEndpointSet(t *testing.T) {
 					negtypes.NetworkEndpoint{IP: "1.2.3.5", Node: testInstance5}, negtypes.NetworkEndpoint{IP: "1.2.3.6", Node: testInstance6}),
 				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.7", Node: testUnreadyInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.8", Node: testUnreadyInstance2}),
 			},
-			nodeNames: []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
-			network:   defaultNetwork,
+			nodeNames:  []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
+			network:    defaultNetwork,
+			negMetrics: negMetrics,
 		},
 		{
 			desc:          "multinetwork endpoints, only for nodes connected to the specified network",
@@ -298,7 +313,8 @@ func TestClusterGetEndpointSet(t *testing.T) {
 				testInstance3: {networkv1.NorthInterfacesAnnotationKey: nodeInterfacesAnnotation(t, "other", "20.2.3.3")},
 				testInstance6: {networkv1.NorthInterfacesAnnotationKey: nodeInterfacesAnnotation(t, "other", "20.2.3.6")},
 			},
-			nodeNames: []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
+			nodeNames:  []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
+			negMetrics: negMetrics,
 		},
 		{
 			desc:          "endpoints with MSC nodes",
@@ -319,13 +335,14 @@ func TestClusterGetEndpointSet(t *testing.T) {
 				testInstance2: {utils.LabelNodeSubnet: secondaryTestSubnet2},
 				testInstance3: {utils.LabelNodeSubnet: secondaryTestSubnet1},
 			},
-			network: defaultNetwork,
+			network:    defaultNetwork,
+			negMetrics: negMetrics,
 		},
 	}
 	svcKey := fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace)
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			ec := NewClusterL4EndpointsCalculator(listers.NewNodeLister(nodeInformer.GetIndexer()), zoneGetter, svcKey, klog.TODO(), &tc.network, negtypes.L4InternalLB)
+			ec := NewClusterL4EndpointsCalculator(listers.NewNodeLister(nodeInformer.GetIndexer()), zoneGetter, svcKey, klog.TODO(), &tc.network, negtypes.L4InternalLB, tc.negMetrics)
 			updateNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeAnnotationsMap, tc.nodeReadyStatusMap, nodeInformer.GetIndexer())
 			retSet, _, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
 			if err != nil {
@@ -347,6 +364,7 @@ func TestClusterGetEndpointSet(t *testing.T) {
 
 // TestClusterWantedNEGsCount verifies logic for
 func TestClusterWantedNEGsCount(t *testing.T) {
+	negMetrics := metrics.NewNegMetrics("")
 	// we care only about total numbers in this test
 	testCases := []struct {
 		desc             string
@@ -355,6 +373,7 @@ func TestClusterWantedNEGsCount(t *testing.T) {
 		currentNEGsCount map[negtypes.NEGLocation]int
 		nodesCount       map[negtypes.NEGLocation]int
 		wantCount        map[negtypes.NEGLocation]int
+		negMetrics       *metrics.NegMetrics
 	}{
 		{
 			desc:             "1 zone, 1 pod",
@@ -366,6 +385,7 @@ func TestClusterWantedNEGsCount(t *testing.T) {
 			wantCount: map[negtypes.NEGLocation]int{
 				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 3,
 			},
+			negMetrics: negMetrics,
 		},
 		{
 			desc:             "4 zones, 1 pod",
@@ -383,6 +403,7 @@ func TestClusterWantedNEGsCount(t *testing.T) {
 				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: 3,
 				{Zone: negtypes.TestZone4, Subnet: defaultTestSubnet}: 3,
 			},
+			negMetrics: negMetrics,
 		},
 		{
 			desc:             "2 zones, 2 subnets, 1 pod",
@@ -400,6 +421,7 @@ func TestClusterWantedNEGsCount(t *testing.T) {
 				{Zone: negtypes.TestZone1, Subnet: secondaryTestSubnet1}: 3,
 				{Zone: negtypes.TestZone2, Subnet: secondaryTestSubnet1}: 3,
 			},
+			negMetrics: negMetrics,
 		},
 		{
 			desc:             "1 zone, 1 pod, 3 nodes, ILB",
@@ -412,6 +434,7 @@ func TestClusterWantedNEGsCount(t *testing.T) {
 			wantCount: map[negtypes.NEGLocation]int{
 				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 3,
 			},
+			negMetrics: negMetrics,
 		},
 		{
 			desc:             "1 zone, 1 pod, 100 nodes, ILB",
@@ -424,6 +447,7 @@ func TestClusterWantedNEGsCount(t *testing.T) {
 			wantCount: map[negtypes.NEGLocation]int{
 				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 25,
 			},
+			negMetrics: negMetrics,
 		},
 		{
 			desc:             "1 zone, 50 pods, 100 nodes",
@@ -435,6 +459,7 @@ func TestClusterWantedNEGsCount(t *testing.T) {
 			wantCount: map[negtypes.NEGLocation]int{
 				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 50,
 			},
+			negMetrics: negMetrics,
 		},
 		{
 			desc:             "1 zone, 100 pods, 100 nodes",
@@ -446,6 +471,7 @@ func TestClusterWantedNEGsCount(t *testing.T) {
 			wantCount: map[negtypes.NEGLocation]int{
 				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 100,
 			},
+			negMetrics: negMetrics,
 		},
 		{
 			desc:             "1 zone, 150 pods, 100 nodes",
@@ -457,6 +483,7 @@ func TestClusterWantedNEGsCount(t *testing.T) {
 			wantCount: map[negtypes.NEGLocation]int{
 				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 100,
 			},
+			negMetrics: negMetrics,
 		},
 		{
 			desc:      "1 zone, 100 -> 10 pods, 100 nodes, keep NEGs",
@@ -470,6 +497,7 @@ func TestClusterWantedNEGsCount(t *testing.T) {
 			wantCount: map[negtypes.NEGLocation]int{
 				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 100,
 			},
+			negMetrics: negMetrics,
 		},
 		{
 			desc:      "1 zone, 10 -> 10 pods, 100 nodes, keep NEGs",
@@ -483,6 +511,7 @@ func TestClusterWantedNEGsCount(t *testing.T) {
 			wantCount: map[negtypes.NEGLocation]int{
 				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 10,
 			},
+			negMetrics: negMetrics,
 		},
 		{
 			desc:      "1 zone, 10 -> 100 pods, 100 nodes, increase NEGs",
@@ -496,6 +525,7 @@ func TestClusterWantedNEGsCount(t *testing.T) {
 			wantCount: map[negtypes.NEGLocation]int{
 				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: 100,
 			},
+			negMetrics: negMetrics,
 		},
 		{
 			desc:             "3 zone, 10k pods, 30k nodes, NetLB",
@@ -512,6 +542,7 @@ func TestClusterWantedNEGsCount(t *testing.T) {
 				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: 83,
 				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: 84,
 			},
+			negMetrics: negMetrics,
 		},
 		{
 			desc:             "3 zone, 10k pods, 30k nodes, ILB",
@@ -529,6 +560,7 @@ func TestClusterWantedNEGsCount(t *testing.T) {
 				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: 8,
 				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: 9,
 			},
+			negMetrics: negMetrics,
 		},
 		{
 			desc:             "3 zone, 10k pods, 30k+1 nodes, ILB",
@@ -547,6 +579,7 @@ func TestClusterWantedNEGsCount(t *testing.T) {
 				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: 9,
 				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: 8,
 			},
+			negMetrics: negMetrics,
 		},
 	}
 	for _, tC := range testCases {
@@ -597,7 +630,7 @@ func TestClusterWantedNEGsCount(t *testing.T) {
 				}
 			}
 
-			ec := NewClusterL4EndpointsCalculator(listers.NewNodeLister(nodeInformer.GetIndexer()), zoneGetter, svcKey, klog.TODO(), &defaultNetwork, lbType)
+			ec := NewClusterL4EndpointsCalculator(listers.NewNodeLister(nodeInformer.GetIndexer()), zoneGetter, svcKey, klog.TODO(), &defaultNetwork, lbType, tC.negMetrics)
 
 			// Act
 			res, _, _, err := ec.CalculateEndpoints(eds, currentMap)
@@ -676,16 +709,16 @@ func TestValidateEndpoints(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to initialize zone getter: %v", err)
 	}
-	L7EndpointsCalculator := NewL7EndpointsCalculator(zoneGetter, podLister, nodeLister, serviceLister, svcPort, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics())
+	L7EndpointsCalculator := NewL7EndpointsCalculator(zoneGetter, podLister, nodeLister, serviceLister, svcPort, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics(), testContext.NegMetrics)
 
 	zoneGetterMSC, err := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, true)
 	if err != nil {
 		t.Fatalf("failed to initialize msc zone getter: %v", err)
 	}
-	L7EndpointsCalculatorMSC := NewL7EndpointsCalculator(zoneGetterMSC, podLister, nodeLister, serviceLister, svcPort, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics())
+	L7EndpointsCalculatorMSC := NewL7EndpointsCalculator(zoneGetterMSC, podLister, nodeLister, serviceLister, svcPort, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics(), testContext.NegMetrics)
 	L7EndpointsCalculatorMSC.enableMultiSubnetCluster = true
-	L4LocalEndpointCalculator := NewLocalL4EndpointsCalculator(listers.NewNodeLister(nodeLister), zoneGetter, fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace), klog.TODO(), &network.NetworkInfo{SubnetworkURL: defaultTestSubnetURL}, negtypes.L4InternalLB)
-	L4ClusterEndpointCalculator := NewClusterL4EndpointsCalculator(listers.NewNodeLister(nodeLister), zoneGetter, fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace), klog.TODO(), &network.NetworkInfo{SubnetworkURL: defaultTestSubnetURL}, negtypes.L4InternalLB)
+	L4LocalEndpointCalculator := NewLocalL4EndpointsCalculator(listers.NewNodeLister(nodeLister), zoneGetter, fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace), klog.TODO(), &network.NetworkInfo{SubnetworkURL: defaultTestSubnetURL}, negtypes.L4InternalLB, testContext.NegMetrics)
+	L4ClusterEndpointCalculator := NewClusterL4EndpointsCalculator(listers.NewNodeLister(nodeLister), zoneGetter, fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace), klog.TODO(), &network.NetworkInfo{SubnetworkURL: defaultTestSubnetURL}, negtypes.L4InternalLB, testContext.NegMetrics)
 
 	l7TestEPS := []*discovery.EndpointSlice{
 		{

@@ -66,10 +66,11 @@ var (
 			Buckets: prometheus.ExponentialBuckets(1, 2, 13),
 		},
 		[]string{
-			"operation",   // endpoint operation
-			"neg_type",    // type of neg
-			"api_version", // GCE API version
-			"result",      // result of the sync
+			"operation",         // endpoint operation
+			"neg_type",          // type of neg
+			"api_version",       // GCE API version
+			"result",            // result of the sync
+			"providerconfig_id", // provider config ID if multi-project NEG
 		},
 	)
 
@@ -82,9 +83,10 @@ var (
 			Buckets: prometheus.ExponentialBuckets(1, 2, 13),
 		},
 		[]string{
-			"operation", // endpoint operation
-			"neg_type",  // type of neg
-			"result",    // result of the sync
+			"operation",         // endpoint operation
+			"neg_type",          // type of neg
+			"result",            // result of the sync
+			"providerconfig_id", // provider config ID if multi-project NEG
 		},
 	)
 
@@ -100,6 +102,7 @@ var (
 			"neg_type",                 //type of neg
 			"endpoint_calculator_mode", // type of endpoint calculator used
 			"result",                   // result of the sync
+			"providerconfig_id",        // provider config ID if multi-project NEG
 		},
 	)
 
@@ -112,18 +115,22 @@ var (
 			Buckets: prometheus.ExponentialBuckets(1, 2, 13),
 		},
 		[]string{
-			"process", // type of manager process loop
-			"result",  // result of the process
+			"process",           // type of manager process loop
+			"result",            // result of the process
+			"providerconfig_id", // provider config ID if multi-project NEG
 		},
 	)
 
-	InitializationLatency = prometheus.NewHistogram(
+	InitializationLatency = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Subsystem: negControllerSubsystem,
 			Name:      "neg_initialization_duration_seconds",
 			Help:      "Initialization latency of a NEG",
 			// custom buckets - [1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s(~4min), 512s(~8min), 1024s(~17min), 2048 (~34min), 4096(~68min), +Inf]
 			Buckets: prometheus.ExponentialBuckets(1, 2, 13),
+		},
+		[]string{
+			"providerconfig_id", // provider config ID if multi-project NEG
 		},
 	)
 
@@ -166,8 +173,9 @@ var (
 			Buckets: append([]float64{0}, prometheus.ExponentialBuckets(1, 2, 20)...),
 		},
 		[]string{
-			"neg_type",      // type of neg
-			"endpoint_type", // type of endpoint
+			"neg_type",          // type of neg
+			"endpoint_type",     // type of endpoint
+			"providerconfig_id", // provider config ID if multi-project NEG
 		},
 	)
 
@@ -179,7 +187,9 @@ var (
 			Name:      "error_count",
 			Help:      "Counts of server errors and NEG controller errors.",
 		},
-		[]string{"error_type"},
+		[]string{"error_type",
+			"providerconfig_id", // provider config ID if multi-project NEG
+		},
 	)
 
 	LabelNumber = prometheus.NewHistogram(
@@ -218,7 +228,7 @@ var (
 			Name:      "gce_request_count",
 			Help:      "Number of requests sent by NEG Controller to Arcus.",
 		},
-		[]string{"request", "result"},
+		[]string{"request", "result", "providerconfig_id"},
 	)
 
 	// GCERequestLatency tracks the latency of GCE requests the neg controller sends to the NEG API
@@ -230,7 +240,7 @@ var (
 			// custom buckets - [0.001, 0.01, 0.1, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, +Inf]
 			Buckets: append([]float64{0.001, 0.01, 0.1}, prometheus.ExponentialBuckets(1, 2, 20)...),
 		},
-		[]string{"request", "result"},
+		[]string{"request", "result", "providerconfig_id"},
 	)
 
 	// K8sRequestCount tracks the number of K8s requests the neg controller sends to the K8s API
@@ -240,7 +250,7 @@ var (
 			Name:      "k8s_request_count",
 			Help:      "Number of requests sent by NEG Controller to Kubernetes API Server.",
 		},
-		[]string{"request", "result"},
+		[]string{"request", "result", "providerconfig_id"},
 	)
 
 	// K8sRequestLatency tracks the latency of K8s requests the neg controller sends to the K8s API
@@ -252,7 +262,7 @@ var (
 			// custom buckets - [0.001, 0.01, 0.1, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, +Inf]
 			Buckets: append([]float64{0.001, 0.01, 0.1}, prometheus.ExponentialBuckets(1, 2, 20)...),
 		},
-		[]string{"request", "result"},
+		[]string{"request", "result", "providerconfig_id"},
 	)
 )
 
@@ -280,30 +290,41 @@ func RegisterMetrics() {
 	})
 }
 
+// NegMetrics is a struct that holds the labels for multi-project NEG metrics
+type NegMetrics struct {
+	ProviderConfigID string // provider config ID for multi-project NEG, it is empty for standard project
+}
+
+func NewNegMetrics(providerConfigID string) *NegMetrics {
+	return &NegMetrics{
+		ProviderConfigID: providerConfigID,
+	}
+}
+
 // PublishNegOperationMetrics publishes collected metrics for neg operations
-func PublishNegOperationMetrics(operation, negType, apiVersion string, err error, numEndpoints int, start time.Time) {
+func (m *NegMetrics) PublishNegOperationMetrics(operation, negType, apiVersion string, err error, numEndpoints int, start time.Time) {
 	result := getResult(err)
 
-	NegOperationLatency.WithLabelValues(operation, negType, apiVersion, result).Observe(time.Since(start).Seconds())
-	NegOperationEndpoints.WithLabelValues(operation, negType, result).Observe(float64(numEndpoints))
+	NegOperationLatency.WithLabelValues(operation, negType, apiVersion, result, m.ProviderConfigID).Observe(time.Since(start).Seconds())
+	NegOperationEndpoints.WithLabelValues(operation, negType, result, m.ProviderConfigID).Observe(float64(numEndpoints))
 }
 
 // PublishNegSyncMetrics publishes collected metrics for the sync of NEG
-func PublishNegSyncMetrics(negType, endpointCalculator string, err error, start time.Time) {
+func (m *NegMetrics) PublishNegSyncMetrics(negType, endpointCalculator string, err error, start time.Time) {
 	result := getResult(err)
 
-	SyncerSyncLatency.WithLabelValues(negType, endpointCalculator, result).Observe(time.Since(start).Seconds())
+	SyncerSyncLatency.WithLabelValues(negType, endpointCalculator, result, m.ProviderConfigID).Observe(time.Since(start).Seconds())
 }
 
 // PublishNegManagerProcessMetrics publishes collected metrics for the neg manager loops
-func PublishNegManagerProcessMetrics(process string, err error, start time.Time) {
+func (m *NegMetrics) PublishNegManagerProcessMetrics(process string, err error, start time.Time) {
 	result := getResult(err)
-	ManagerProcessLatency.WithLabelValues(process, result).Observe(time.Since(start).Seconds())
+	ManagerProcessLatency.WithLabelValues(process, result, m.ProviderConfigID).Observe(time.Since(start).Seconds())
 }
 
 // PublishNegInitializationMetrics publishes collected metrics for time from request to initialization of NEG
-func PublishNegInitializationMetrics(latency time.Duration) {
-	InitializationLatency.Observe(latency.Seconds())
+func (m *NegMetrics) PublishNegInitializationMetrics(latency time.Duration) {
+	InitializationLatency.WithLabelValues(m.ProviderConfigID).Observe(latency.Seconds())
 }
 
 func PublishNegSyncerStalenessMetrics(syncerStaleness time.Duration) {
@@ -316,18 +337,18 @@ func PublishNegEPSStalenessMetrics(epsStaleness time.Duration) {
 
 // PublishDegradedModeCorrectnessMetrics publishes collected metrics
 // of the correctness of degraded mode calculations compared with the current one
-func PublishDegradedModeCorrectnessMetrics(count int, endpointType string, negType string) {
-	DegradeModeCorrectness.WithLabelValues(negType, endpointType).Observe(float64(count))
+func (m *NegMetrics) PublishDegradedModeCorrectnessMetrics(count int, endpointType string, negType string) {
+	DegradeModeCorrectness.WithLabelValues(negType, endpointType, m.ProviderConfigID).Observe(float64(count))
 }
 
 // PublishNegControllerErrorCountMetrics publishes collected metrics
 // for neg controller errors.
-func PublishNegControllerErrorCountMetrics(err error, isIgnored bool) {
+func (m *NegMetrics) PublishNegControllerErrorCountMetrics(err error, isIgnored bool) {
 	if err == nil {
 		return
 	}
-	NegControllerErrorCount.WithLabelValues(totalNegError).Inc()
-	NegControllerErrorCount.WithLabelValues(getErrorLabel(err, isIgnored)).Inc()
+	NegControllerErrorCount.WithLabelValues(totalNegError, m.ProviderConfigID).Inc()
+	NegControllerErrorCount.WithLabelValues(getErrorLabel(err, isIgnored), m.ProviderConfigID).Inc()
 }
 
 // PublishLabelPropagationError publishes error occured during label propagation.
@@ -342,7 +363,7 @@ func PublishAnnotationMetrics(annotationSize int, labelNumber int) {
 }
 
 // PublishGCERequestCountMetrics publishes collected metrics for GCE Request Counts
-func PublishGCERequestCountMetrics(start time.Time, requestType string, err error) {
+func (m *NegMetrics) PublishGCERequestCountMetrics(start time.Time, requestType string, err error) {
 	var result string
 	if err == nil {
 		result = resultSuccess
@@ -353,12 +374,12 @@ func PublishGCERequestCountMetrics(start time.Time, requestType string, err erro
 			result = otherError
 		}
 	}
-	GCERequestLatency.WithLabelValues(requestType, result).Observe(time.Since(start).Seconds())
-	GCERequestCount.WithLabelValues(requestType, result).Inc()
+	GCERequestLatency.WithLabelValues(requestType, result, m.ProviderConfigID).Observe(time.Since(start).Seconds())
+	GCERequestCount.WithLabelValues(requestType, result, m.ProviderConfigID).Inc()
 }
 
 // PublishK8sRequestCountMetrics publishes collected metrics for K8s Request Counts
-func PublishK8sRequestCountMetrics(start time.Time, requestType string, err error) {
+func (m *NegMetrics) PublishK8sRequestCountMetrics(start time.Time, requestType string, err error) {
 	var result string
 	if err == nil {
 		result = resultSuccess
@@ -369,8 +390,8 @@ func PublishK8sRequestCountMetrics(start time.Time, requestType string, err erro
 			result = otherError
 		}
 	}
-	K8sRequestLatency.WithLabelValues(requestType, result).Observe(time.Since(start).Seconds())
-	K8sRequestCount.WithLabelValues(requestType, result).Inc()
+	K8sRequestLatency.WithLabelValues(requestType, result, m.ProviderConfigID).Observe(time.Since(start).Seconds())
+	K8sRequestCount.WithLabelValues(requestType, result, m.ProviderConfigID).Inc()
 }
 
 func getResult(err error) string {
