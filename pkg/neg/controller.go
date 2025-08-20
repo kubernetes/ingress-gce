@@ -39,7 +39,7 @@ import (
 	svcnegv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/flags"
-	"k8s.io/ingress-gce/pkg/neg/metrics"
+	metrics "k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	syncMetrics "k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
@@ -115,6 +115,9 @@ type Controller struct {
 
 	stopCh <-chan struct{}
 	logger klog.Logger
+
+	// negMetrics is used to collect metrics for NEG
+	negMetrics *metrics.NegMetrics
 }
 
 // NewController returns a network endpoint group controller.
@@ -151,6 +154,7 @@ func NewController(
 	runL4ForNetLB bool,
 	stopCh <-chan struct{},
 	logger klog.Logger,
+	negMetrics *metrics.NegMetrics,
 ) (*Controller, error) {
 	if svcNegClient == nil {
 		return nil, fmt.Errorf("svcNegClient is nil")
@@ -166,17 +170,18 @@ func NewController(
 	err := scheme.AddToScheme(negScheme)
 	if err != nil {
 		logger.Error(err, "Errored adding default scheme to event recorder")
-		metrics.PublishNegControllerErrorCountMetrics(err, true)
+		negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 	}
 	err = svcnegv1beta1.AddToScheme(negScheme)
 	if err != nil {
 		logger.Error(err, "Errored adding NEG CRD scheme to event recorder")
-		metrics.PublishNegControllerErrorCountMetrics(err, true)
+		negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 	}
 	recorder := eventBroadcaster.NewRecorder(negScheme,
 		apiv1.EventSource{Component: "neg-controller"})
 
-	syncerMetrics := syncMetrics.NewNegMetricsCollector(flags.F.NegMetricsExportInterval, logger)
+	syncerMetrics := syncMetrics.NewNegMetricsCollector(flags.F.NegMetricsExportInterval, logger, negMetrics.ProviderConfigID)
+
 	manager := newSyncerManager(
 		namer,
 		l4Namer,
@@ -195,7 +200,9 @@ func NewController(
 		enableDualStackNEG,
 		numGCWorkers,
 		lpConfig,
-		logger)
+		logger,
+		negMetrics,
+	)
 
 	var reflector readiness.Reflector
 	if enableReadinessReflector {
@@ -209,6 +216,7 @@ func NewController(
 			enableDualStackNEG,
 			flags.F.EnableMultiSubnetCluster && !flags.F.EnableMultiSubnetClusterPhase1,
 			logger,
+			negMetrics,
 		)
 	} else {
 		reflector = &readiness.NoopReflector{}
@@ -250,6 +258,7 @@ func NewController(
 		runL4ForNetLB:                  runL4ForNetLB,
 		stopCh:                         stopCh,
 		logger:                         logger,
+		negMetrics:                     negMetrics,
 	}
 	if enableMultiSubnetClusterPhase1 {
 		negController.nodeTopologyQueue = workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_node_topology_queue")
@@ -469,7 +478,7 @@ func (c *Controller) processEndpoint(key string) {
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		c.logger.Error(err, "Failed to split endpoint namespaced key", "key", key)
-		metrics.PublishNegControllerErrorCountMetrics(err, true)
+		c.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 		return
 	}
 	c.manager.Sync(namespace, name)
@@ -485,7 +494,7 @@ func (c *Controller) serviceWorker() {
 			defer c.serviceQueue.Done(key)
 			err := c.processService(key.(string))
 			c.handleErr(err, key)
-			metrics.PublishNegControllerErrorCountMetrics(err, false)
+			c.negMetrics.PublishNegControllerErrorCountMetrics(err, false)
 		}()
 	}
 }
@@ -834,7 +843,7 @@ func (c *Controller) handleErr(err error, key interface{}) {
 	c.logger.Error(nil, msg)
 	if service, exists, err := c.serviceLister.GetByKey(key.(string)); err != nil {
 		c.logger.Error(err, "Failed to retrieve service from store", "service", key.(string))
-		metrics.PublishNegControllerErrorCountMetrics(err, true)
+		c.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 	} else if exists {
 		c.recorder.Eventf(service.(*apiv1.Service), apiv1.EventTypeWarning, "ProcessServiceFailed", msg)
 	}
@@ -857,7 +866,7 @@ func (c *Controller) enqueueEndpointSlice(obj interface{}) {
 	key, err := endpointslices.EndpointSlicesServiceKey(endpointSlice)
 	if err != nil {
 		c.logger.Error(err, "Failed to find a service label inside endpoint slice", "endpointSlice", klog.KObj(endpointSlice))
-		metrics.PublishNegControllerErrorCountMetrics(err, true)
+		c.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 		return
 	}
 	c.logger.V(3).Info("Adding EndpointSlice to endpointQueue for processing", "endpointSlice", key)
@@ -868,7 +877,7 @@ func (c *Controller) enqueueNode(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
 		c.logger.Error(err, "Failed to generate node key")
-		metrics.PublishNegControllerErrorCountMetrics(err, true)
+		c.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 		return
 	}
 	c.logger.V(3).Info("Adding Node to nodeQueue for processing", "node", key)
@@ -879,7 +888,7 @@ func (c *Controller) enqueueService(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
 		c.logger.Error(err, "Failed to generate service key")
-		metrics.PublishNegControllerErrorCountMetrics(err, true)
+		c.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 		return
 	}
 	c.logger.V(3).Info("Adding Service to serviceQueue for processing", "service", key)
@@ -903,7 +912,7 @@ func (c *Controller) enqueueNodeTopology(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
 		c.logger.Error(err, "Failed to generate Node Topology key")
-		metrics.PublishNegControllerErrorCountMetrics(err, true)
+		c.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 		return
 	}
 	c.logger.V(3).Info("Adding NodeTopology to nodeTopologyQueue for processing", "nodeTopology", key)
@@ -913,7 +922,7 @@ func (c *Controller) enqueueNodeTopology(obj interface{}) {
 func (c *Controller) gc() {
 	if err := c.manager.GC(); err != nil {
 		c.logger.Error(err, "NEG controller garbage collection failed")
-		metrics.PublishNegControllerErrorCountMetrics(err, true)
+		c.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 	}
 }
 

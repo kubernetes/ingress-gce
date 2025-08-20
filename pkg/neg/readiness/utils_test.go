@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -315,7 +316,7 @@ func TestPatchPodStatus(t *testing.T) {
 		if !reflect.DeepEqual(bytes, tc.expectedPatchBytes) {
 			t.Errorf("For test case %q, expect bytes: %q, got: %q\n", tc.description, tc.expectedPatchBytes, bytes)
 		}
-		_, patchBytes, err := patchPodStatus(client, ns, name, bytes)
+		_, patchBytes, err := patchPodStatus(client, ns, name, bytes, metrics.NewNegMetrics(""))
 		if err != nil {
 			t.Errorf("For test case %q, unexpect error from patchPodStatus: %v", tc.description, err)
 		}
@@ -571,7 +572,7 @@ func TestNeedToPoll(t *testing.T) {
 		},
 	} {
 		tc.mutateState()
-		ret := needToPoll(key, tc.inputMap, fakeLookUp, podLister, klog.TODO())
+		ret := needToPoll(key, tc.inputMap, fakeLookUp, podLister, klog.TODO(), metrics.NewNegMetrics(""))
 		if !reflect.DeepEqual(ret, tc.expectOutputMap) {
 			t.Errorf("For test case %q, expect %v, got: %v", tc.desc, tc.expectOutputMap, ret)
 		}

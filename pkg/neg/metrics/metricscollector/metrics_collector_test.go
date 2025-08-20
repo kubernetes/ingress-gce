@@ -238,7 +238,7 @@ func TestComputeDualStackMigrationCounts(t *testing.T) {
 }
 
 func TestComputeLabelMetrics(t *testing.T) {
-	collector := NewNegMetricsCollector(10*time.Second, klog.TODO())
+	collector := NewNegMetricsCollector(10*time.Second, klog.TODO(), "configId1")
 	syncer1 := negtypes.NegSyncerKey{
 		Namespace:        "ns1",
 		Name:             "svc-1",
@@ -308,7 +308,7 @@ func TestComputeLabelMetrics(t *testing.T) {
 }
 
 func TestComputeNegCounts(t *testing.T) {
-	collector := NewNegMetricsCollector(10*time.Second, klog.TODO())
+	collector := NewNegMetricsCollector(10*time.Second, klog.TODO(), "configId1")
 	l7Syncer1 := negtypes.NegSyncerKey{
 		Namespace:        "ns1",
 		Name:             "svc-1",
