@@ -56,6 +56,10 @@ func StartNEGController(
 
 	// This is the ID for tenant/cluster for which the NEG controller is created.
 	providerConfigID := ""
+	if providerConfig.Spec.PrincipalInfo != nil {
+		providerConfigID = providerConfig.Spec.PrincipalInfo.ID
+		logger.V(2).Info("Initializing NEG controller", "providerConfigID", providerConfigID)
+	}
 
 	// The ProviderConfig-specific stop channel. We close this in StopControllersForProviderConfig.
 	providerConfigStopCh := make(chan struct{})
