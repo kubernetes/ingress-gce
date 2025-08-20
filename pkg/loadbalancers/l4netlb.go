@@ -599,7 +599,7 @@ func (l4netlb *L4NetLB) deleteIPv4ResourcesOnDelete(result *L4NetLBSyncResult) {
 // IPv4 Firewall Rule for Health Check also will not be deleted here, and will be left till the Service Deletion.
 func (l4netlb *L4NetLB) deleteIPv4ResourcesAnnotationBased(result *L4NetLBSyncResult, shouldIgnoreAnnotations bool) {
 	if shouldIgnoreAnnotations || l4netlb.hasAnnotation(annotations.TCPForwardingRuleKey) || l4netlb.hasAnnotation(annotations.UDPForwardingRuleKey) {
-		if err := l4netlb.mixedManager.DeleteIPv4(); err != nil {
+		if err := l4netlb.mixedManager.DeleteIPv4(shouldIgnoreAnnotations, l4netlb.Service.Annotations); err != nil {
 			l4netlb.svcLogger.Error(err, "Failed to delete mixed protocol forwarding rules for NetLB RBS service")
 			result.Error = err
 			result.GCEResourceInError = annotations.ForwardingRuleResource

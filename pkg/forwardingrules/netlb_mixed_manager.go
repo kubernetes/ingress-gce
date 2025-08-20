@@ -347,28 +347,44 @@ func managedRules(frs ...*composite.ForwardingRule) (NetLBManagedRules, error) {
 	}, nil
 }
 
-// DeleteIPv4 will try to delete ALL forwarding rules for mixed protocol NetLB service.
-// This includes "-tcp-", "-udp-" and legacy named ones.
-func (m *MixedManagerNetLB) DeleteIPv4() error {
+// DeleteIPv4 will try to delete forwarding rules for mixed protocol NetLB service.
+// This includes "-tcp-", "-udp-" and legacy named ones, based on the annotations on the service.
+// Force can be set to true to force the deletion of all resources regardless of annotations.
+// This option should be used sparingly as it may cause 4XX errors being seen in customer facing audit logs.
+func (m *MixedManagerNetLB) DeleteIPv4(force bool, annotations map[string]string) error {
 	var wg sync.WaitGroup
-	var tcpErr, udpErr, legacyErr error
+	var errs []error
+	var mu sync.Mutex
+	toBeDeleted := m.namesToDelete(force, annotations)
 
-	wg.Add(3)
-	go func() {
-		defer wg.Done()
-		tcpErr = m.delete("tcp")
-	}()
-	go func() {
-		defer wg.Done()
-		udpErr = m.delete("udp")
-	}()
-	go func() {
-		defer wg.Done()
-		legacyErr = m.deleteLegacy()
-	}()
+	for _, name := range toBeDeleted {
+		wg.Add(1)
+		go func(name string) {
+			defer wg.Done()
+			if err := m.Provider.Delete(name); err != nil {
+				mu.Lock()
+				errs = append(errs, err)
+				mu.Unlock()
+			}
+		}(name)
+	}
 
 	wg.Wait()
-	return errors.Join(tcpErr, udpErr, legacyErr)
+	return errors.Join(errs...)
+}
+
+func (m *MixedManagerNetLB) namesToDelete(force bool, a map[string]string) []string {
+	if force {
+		return []string{m.name("tcp"), m.name("udp"), m.nameLegacy()}
+	}
+	var toBeDeleted []string
+	if v, ok := a[annotations.TCPForwardingRuleKey]; ok && len(v) > 0 {
+		toBeDeleted = append(toBeDeleted, v)
+	}
+	if v, ok := a[annotations.UDPForwardingRuleKey]; ok && len(v) > 0 {
+		toBeDeleted = append(toBeDeleted, v)
+	}
+	return toBeDeleted
 }
 
 // DeleteExclusivelyManaged will delete resources that can only be managed by MixedManager.
@@ -395,18 +411,6 @@ func (m *MixedManagerNetLB) DeleteExclusivelyManaged(existing NetLBManagedRules)
 
 	wg.Wait()
 	return errors.Join(tcpErr, udpErr)
-}
-
-func (m *MixedManagerNetLB) delete(protocol string) error {
-	name := m.name(protocol)
-	return m.Provider.Delete(name)
-}
-
-// We need to clean up existing forwarding rule so that there isn't a port collision.
-// This means deleting forwarding rule with legacy name - starting with 'a'
-// and using protocol specific names identical to those used by ILB.
-func (m *MixedManagerNetLB) deleteLegacy() error {
-	return m.Provider.Delete(m.nameLegacy())
 }
 
 func (m *MixedManagerNetLB) name(protocol string) string {

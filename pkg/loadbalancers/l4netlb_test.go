@@ -537,6 +537,7 @@ func TestDualStackNetLBTransitions(t *testing.T) {
 
 			nodeNames := []string{"test-node-1"}
 
+			// FIX by finding why the Forwarding Rules are provisioned without the protocol in tests
 			svc := test.NewL4NetLBRBSDualStackService(tc.initialProtocol, tc.initialIPFamily, tc.initialTrafficPolicy)
 			l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
 

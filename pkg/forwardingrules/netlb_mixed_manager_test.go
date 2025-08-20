@@ -13,6 +13,7 @@ import (
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -258,7 +259,7 @@ func TestMixedManagerNetLB_AllRules(t *testing.T) {
 		{
 			desc: "legacy tcp",
 			have: []*compute.ForwardingRule{
-				&compute.ForwardingRule{Name: legacyName, IPProtocol: "TCP"},
+				{Name: legacyName, IPProtocol: "TCP"},
 			},
 			want: forwardingrules.NetLBManagedRules{
 				TCP: &composite.ForwardingRule{Name: legacyName, IPProtocol: "TCP"},
@@ -267,7 +268,7 @@ func TestMixedManagerNetLB_AllRules(t *testing.T) {
 		{
 			desc: "v2 udp",
 			have: []*compute.ForwardingRule{
-				&compute.ForwardingRule{Name: udpName, IPProtocol: "UDP"},
+				{Name: udpName, IPProtocol: "UDP"},
 			},
 			want: forwardingrules.NetLBManagedRules{
 				UDP: &composite.ForwardingRule{Name: udpName, IPProtocol: "UDP"},
@@ -276,8 +277,8 @@ func TestMixedManagerNetLB_AllRules(t *testing.T) {
 		{
 			desc: "v2 mixed protocol",
 			have: []*compute.ForwardingRule{
-				&compute.ForwardingRule{Name: tcpName, IPProtocol: "TCP"},
-				&compute.ForwardingRule{Name: udpName, IPProtocol: "UDP"},
+				{Name: tcpName, IPProtocol: "TCP"},
+				{Name: udpName, IPProtocol: "UDP"},
 			},
 			want: forwardingrules.NetLBManagedRules{
 				TCP: &composite.ForwardingRule{Name: tcpName, IPProtocol: "TCP"},
@@ -287,8 +288,8 @@ func TestMixedManagerNetLB_AllRules(t *testing.T) {
 		{
 			desc: "mixed naming scheme and protocol",
 			have: []*compute.ForwardingRule{
-				&compute.ForwardingRule{Name: tcpName, IPProtocol: "TCP"},
-				&compute.ForwardingRule{Name: legacyName, IPProtocol: "UDP"},
+				{Name: tcpName, IPProtocol: "TCP"},
+				{Name: legacyName, IPProtocol: "UDP"},
 			},
 			want: forwardingrules.NetLBManagedRules{
 				TCP: &composite.ForwardingRule{Name: tcpName, IPProtocol: "TCP"},
@@ -318,7 +319,7 @@ func TestMixedManagerNetLB_AllRules(t *testing.T) {
 				t.Errorf("AllRules() error = %v", err)
 			}
 
-			fwdRuleIgnoreFields := cmpopts.IgnoreFields(composite.ForwardingRule{}, "SelfLink")
+			fwdRuleIgnoreFields := cmpopts.IgnoreFields(composite.ForwardingRule{}, "SelfLink", "Version", "Scope")
 			if diff := cmp.Diff(tc.want, rules, fwdRuleIgnoreFields); diff != "" {
 				t.Errorf("AllRules() mismatch (-want +got):\n%s", diff)
 			}
@@ -328,61 +329,97 @@ func TestMixedManagerNetLB_AllRules(t *testing.T) {
 
 func TestMixedManagerNetLB_DeleteIPv4(t *testing.T) {
 	testCases := []struct {
-		desc   string
-		tcp    *compute.ForwardingRule
-		udp    *compute.ForwardingRule
-		legacy *compute.ForwardingRule
+		desc        string
+		frs         []*compute.ForwardingRule
+		annotations map[string]string
 	}{
 		{
 			desc: "no rules",
 		},
 		{
-			desc:   "single protocol exists",
-			legacy: &compute.ForwardingRule{Name: legacyName},
+			desc: "single protocol legacy",
+			frs:  []*compute.ForwardingRule{{Name: legacyName}},
+			annotations: map[string]string{
+				annotations.TCPForwardingRuleKey: legacyName,
+			},
 		},
 		{
-			desc: "mixed protocol exists",
-			tcp:  &compute.ForwardingRule{Name: tcpName},
-			udp:  &compute.ForwardingRule{Name: udpName},
+			desc: "single protocol v2 name",
+			frs:  []*compute.ForwardingRule{{Name: udpName}},
+			annotations: map[string]string{
+				annotations.UDPForwardingRuleKey: udpName,
+			},
+		},
+		{
+			desc: "mixed protocol with legacy name",
+			frs:  []*compute.ForwardingRule{{Name: tcpName}, {Name: legacyName}},
+			annotations: map[string]string{
+				annotations.TCPForwardingRuleKey: tcpName,
+				annotations.UDPForwardingRuleKey: legacyName,
+			},
+		},
+		{
+			desc: "mixed protocol v2 names",
+			frs:  []*compute.ForwardingRule{{Name: tcpName}, {Name: udpName}},
+			annotations: map[string]string{
+				annotations.TCPForwardingRuleKey: tcpName,
+				annotations.UDPForwardingRuleKey: udpName,
+			},
 		},
 	}
 
 	for _, tc := range testCases {
 		tc := tc
-		t.Run(tc.desc, func(t *testing.T) {
+		t.Run(tc.desc+" annotation based", func(t *testing.T) {
 			t.Parallel()
 
 			// Arrange
 			fakeGCE, mgr := arrange(nil)
 			region := fakeGCE.Region()
-			for _, rule := range []*compute.ForwardingRule{tc.tcp, tc.udp, tc.legacy} {
+			for _, rule := range tc.frs {
 				if rule != nil {
 					fakeGCE.CreateRegionForwardingRule(rule, region)
 				}
 			}
 
 			// Act
-			err := mgr.DeleteIPv4()
+			err := mgr.DeleteIPv4(false, tc.annotations)
 			// Assert
 			if err != nil {
-				t.Errorf("DeleteIPv4() error = %v", err)
+				t.Errorf("DeleteIPv4(false, %v) error = %v", err, tc.annotations)
 			}
 
-			if tc.legacy != nil {
-				rule, err := fakeGCE.GetRegionForwardingRule(legacyName, region)
-				if err != nil || rule == nil {
-					t.Errorf("single protocol named forwarding rule was deleted by mixed manager")
+			for _, fr := range tc.frs {
+				fetched, err := fakeGCE.GetRegionForwardingRule(fr.Name, region)
+				if fetched != nil || !utils.IsNotFoundError(err) {
+					t.Errorf("forwarding rule %q wasn't deleted", fr.Name)
+				}
+			}
+		})
+		t.Run(tc.desc+" force", func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			fakeGCE, mgr := arrange(nil)
+			region := fakeGCE.Region()
+			for _, rule := range tc.frs {
+				if rule != nil {
+					fakeGCE.CreateRegionForwardingRule(rule, region)
 				}
 			}
 
-			ruleTCP, err := fakeGCE.GetRegionForwardingRule(tcpName, region)
-			if ruleTCP != nil || !utils.IsNotFoundError(err) {
-				t.Errorf("tcp forwarding rule for mixed protocol wasn't deleted")
+			// Act, annotations should not matter with force enabled
+			err := mgr.DeleteIPv4(true, nil)
+			// Assert
+			if err != nil {
+				t.Errorf("DeleteIPv4(true, _) error = %v", err)
 			}
 
-			ruleUDP, err := fakeGCE.GetRegionForwardingRule(udpName, region)
-			if ruleUDP != nil || !utils.IsNotFoundError(err) {
-				t.Errorf("udp forwarding rule for mixed protocol wasn't deleted")
+			for _, fr := range tc.frs {
+				fetched, err := fakeGCE.GetRegionForwardingRule(fr.Name, region)
+				if fetched != nil || !utils.IsNotFoundError(err) {
+					t.Errorf("forwarding rule %q wasn't deleted", fr.Name)
+				}
 			}
 		})
 	}

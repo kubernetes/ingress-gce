@@ -11,7 +11,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
-// EqualIPv4 compares IPv4 firewall rules and returns true if there are identical from LB point of view.
+// EqualIPv4 compares IPv4 forwarding rules and returns true if there are identical from LB point of view.
 // Returns an error when `.BackendService` url is invalid.
 func EqualIPv4(fr1, fr2 *composite.ForwardingRule) (bool, error) {
 	id1, err := cloud.ParseResourceURL(fr1.BackendService)
@@ -23,7 +23,7 @@ func EqualIPv4(fr1, fr2 *composite.ForwardingRule) (bool, error) {
 		return false, fmt.Errorf("Equal(): failed to parse backend resource URL from wanted FR, err - %w", err)
 	}
 	return fr1.IPAddress == fr2.IPAddress &&
-		strings.ToLower(fr1.IPProtocol) == strings.ToLower(fr2.IPProtocol) &&
+		strings.EqualFold(fr1.IPProtocol, fr2.IPProtocol) &&
 		fr1.LoadBalancingScheme == fr2.LoadBalancingScheme &&
 		equalPorts(fr1.Ports, fr2.Ports, fr1.PortRange, fr2.PortRange) &&
 		utils.EqualCloudResourceIDs(id1, id2) &&
@@ -34,7 +34,7 @@ func EqualIPv4(fr1, fr2 *composite.ForwardingRule) (bool, error) {
 		fr1.NetworkTier == fr2.NetworkTier, nil
 }
 
-// EqualIPv6 compares IPv6 firewall rules and returns true if there are identical from LB point of view.
+// EqualIPv6 compares IPv6 forwarding rules and returns true if there are identical from LB point of view.
 // Returns an error when `.BackendService` url is invalid.
 func EqualIPv6(fr1, fr2 *composite.ForwardingRule) (bool, error) {
 	id1, err := cloud.ParseResourceURL(fr1.BackendService)
@@ -45,7 +45,7 @@ func EqualIPv6(fr1, fr2 *composite.ForwardingRule) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("EqualIPv6(): failed to parse resource URL from FR, err - %w", err)
 	}
-	return strings.ToLower(fr1.IPProtocol) == strings.ToLower(fr2.IPProtocol) &&
+	return strings.EqualFold(fr1.IPProtocol, fr2.IPProtocol) &&
 		fr1.LoadBalancingScheme == fr2.LoadBalancingScheme &&
 		equalPorts(fr1.Ports, fr2.Ports, fr1.PortRange, fr2.PortRange) &&
 		utils.EqualCloudResourceIDs(id1, id2) &&
