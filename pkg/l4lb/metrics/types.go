@@ -1,6 +1,8 @@
 package metrics
 
-import "time"
+import (
+	"time"
+)
 
 // L4ILBServiceLegacyState defines if global access and subnet features are enabled
 // for an L4 ILB service.
@@ -35,6 +37,17 @@ const (
 	L4BackendTypeNEG           = L4BackendType("NEG")
 )
 
+// L4ProtocolType specifies the Protocol(s) that were recognized in the creation of LB
+type L4ProtocolType string
+
+// L4ProtocolType specifies the Protocol(s) that were recognized in the creation of LB
+const (
+	L4ProtocolTypeUnknown = L4ProtocolType("") // Shouldn't happen, but if it does something is wrong.
+	L4ProtocolTypeTCP     = L4ProtocolType("TCP")
+	L4ProtocolTypeUDP     = L4ProtocolType("UDP")
+	L4ProtocolTypeMixed   = L4ProtocolType("MIXED")
+)
+
 // L4DualStackServiceLabels defines ipFamilies, ipFamilyPolicy
 // of L4 DualStack service
 type L4DualStackServiceLabels struct {
@@ -56,6 +69,8 @@ type L4FeaturesServiceLabels struct {
 	BackendType L4BackendType
 	// ZonalAffinity is true if Zonal Affinity is enabled
 	ZonalAffinity bool
+	// Protocol should be either "TCP", "UDP" or when both are present - "MIXED". The default value is "" empty string, but shouldn't be used.
+	Protocol L4ProtocolType
 }
 
 // L4ServiceState tracks the state of an L4 service. It includes data needed to fill various L4 metrics plus the status of the service.
