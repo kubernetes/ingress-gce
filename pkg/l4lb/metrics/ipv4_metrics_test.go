@@ -17,12 +17,14 @@ limitations under the License.
 package metrics
 
 import (
+	"fmt"
 	"math"
 	"testing"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	corev1 "k8s.io/api/core/v1"
 )
 
 const (
@@ -108,6 +110,7 @@ func verifyL4ILBMetric(t *testing.T, expectedCount int, status L4ServiceStatus, 
 		l4LabelMultinet:              multinet,
 		l4LabelWeightedLBPodsPerNode: weightedLBPodsPerNode,
 		l4LabelZonalAffinity:         zonalAffinity,
+		l4LabelProtocol:              string(L4ProtocolTypeUnknown),
 	}))
 	actualCount := int(math.Round(countFloat))
 	if expectedCount != actualCount {
@@ -192,10 +195,75 @@ func verifyL4NetLBMetric(t *testing.T, expectedCount int, status L4ServiceStatus
 		l4LabelStrongSessionAffinity: strongSessionAffinity,
 		l4LabelWeightedLBPodsPerNode: weightedLBPodsPerNode,
 		l4LabelBackendType:           string(backendType),
+		l4LabelProtocol:              string(L4ProtocolTypeUnknown),
 	}))
 	actualCount := int(math.Round(countFloat))
 	if expectedCount != actualCount {
 		t.Errorf("expected value %d but got %d for status: %q, multinet: %q, ssa: %q, weightedLB: %q, backendType: %q",
 			expectedCount, actualCount, status, multinet, strongSessionAffinity, weightedLBPodsPerNode, backendType)
+	}
+}
+
+func TestMetricsWithProtocol(t *testing.T) {
+	// Arrange
+	c := NewFakeCollector()
+
+	svcs := []*corev1.Service{
+		{Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{
+			{Port: 80}, // TCP is the default port
+		}}},
+		{Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{
+			{Protocol: corev1.ProtocolTCP, Port: 80}, {Protocol: corev1.ProtocolTCP, Port: 443},
+		}}},
+		{Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{
+			{Protocol: corev1.ProtocolUDP, Port: 53}, {Protocol: corev1.ProtocolTCP, Port: 53},
+		}}},
+		{Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{
+			{Protocol: corev1.ProtocolUDP, Port: 12345}, {Protocol: corev1.ProtocolTCP, Port: 80},
+		}}},
+		{Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{
+			{Protocol: corev1.ProtocolUDP, Port: 80},
+		}}},
+	}
+
+	wants := map[L4ProtocolType]int{
+		L4ProtocolTypeTCP:     2,
+		L4ProtocolTypeUDP:     1,
+		L4ProtocolTypeMixed:   2,
+		L4ProtocolTypeUnknown: 0, // We never expect it to occur.
+	}
+
+	for i, svc := range svcs {
+		// Act
+		state := InitServiceMetricsState(svc, /* other fields were tested above */
+			nil, false, false, false, false, L4BackendTypeInstanceGroup)
+		c.SetL4ILBService(fmt.Sprintf("svc-ilb-%d", i), state)
+		c.SetL4NetLBService(fmt.Sprintf("svc-netlb-%d", i), state)
+	}
+
+	c.exportL4ILBsMetrics()
+	c.exportL4NetLBsMetrics()
+
+	for protocol, want := range wants {
+		t.Run(fmt.Sprintf("ILB %q", protocol), func(t *testing.T) {
+			countFloat := testutil.ToFloat64(l4ILBCount.With(prometheus.Labels{
+				l4LabelProtocol: string(protocol),
+				/* we test those above */ l4LabelStatus: string(StatusError), l4LabelMultinet: "false", l4LabelWeightedLBPodsPerNode: "false", l4LabelZonalAffinity: "false",
+			}))
+			actual := int(math.Round(countFloat))
+			if want != actual {
+				t.Errorf("expected value %d but got %d for protocol: %q", want, actual, protocol)
+			}
+		})
+		t.Run(fmt.Sprintf("NetLB %q", protocol), func(t *testing.T) {
+			countFloat := testutil.ToFloat64(l4NetLBCount.With(prometheus.Labels{
+				l4LabelProtocol: string(protocol),
+				/* we test those above */ l4LabelStatus: string(StatusError), l4LabelMultinet: "false", l4LabelStrongSessionAffinity: "false", l4LabelWeightedLBPodsPerNode: "false", l4LabelBackendType: string(L4BackendTypeInstanceGroup),
+			}))
+			actual := int(math.Round(countFloat))
+			if want != actual {
+				t.Errorf("expected value %d but got %d for protocol: %q", want, actual, protocol)
+			}
+		})
 	}
 }
