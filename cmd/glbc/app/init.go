@@ -35,6 +35,11 @@ import (
 // DefaultBackendServicePort returns the ServicePort which will be
 // used as the default backend for load balancers.
 func DefaultBackendServicePort(kubeClient kubernetes.Interface, logger klog.Logger) utils.ServicePort {
+	if !flags.F.RunIngressController && !flags.F.EnableNEGsForIngress {
+		noDefaultBackendServicePort := utils.ServicePort{}
+		return noDefaultBackendServicePort
+	}
+
 	if flags.F.DefaultSvc == "" {
 		klog.Fatalf("Please specify --default-backend-service")
 	}

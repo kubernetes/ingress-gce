@@ -161,6 +161,7 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		false,
 		false,
 		readOnlyMode,
+		true, // enableNEGsForIngress
 		make(<-chan struct{}),
 		klog.TODO(),
 	)
@@ -2303,4 +2304,176 @@ func newTestServiceCustomNamedNeg(c *Controller, negSvcPorts map[int32]string, i
 
 	c.client.CoreV1().Services(testServiceNamespace).Create(context.TODO(), svc, metav1.CreateOptions{})
 	return svc
+}
+
+func TestDefaultBackendServiceIgnoredWhenIngressControllerIsDisabled(t *testing.T) {
+	t.Parallel()
+	kubeClient := fake.NewSimpleClientset()
+	controller, err := newTestController(kubeClient)
+	if err != nil {
+		t.Fatalf("failed to create test controller %s", err)
+	}
+	controller.defaultBackendService = utils.ServicePort{}
+	defer controller.stop()
+
+	// Create the default backend service
+	_, err = kubeClient.CoreV1().Services(defaultBackend.ID.Service.Namespace).Create(context.TODO(), defaultBackendService, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("Failed to create default backend service: %v", err)
+	}
+
+	// Add an Ingress without a default backend to trigger the processing logic
+	ing := newTestIngress("test-ingress")
+	ing.Annotations = map[string]string{annotations.IngressClassKey: annotations.GceL7ILBIngressClass}
+	ing.Spec.DefaultBackend = nil
+	newIng, err := controller.client.NetworkingV1().Ingresses(testServiceNamespace).Create(context.TODO(), ing, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Add to cache directly since the cache doesn't get updated
+	if err := controller.ingressLister.Add(newIng); err != nil {
+		t.Fatal(err)
+	}
+
+	svcKey := utils.ServiceKeyFunc(defaultBackend.ID.Service.Namespace, defaultBackend.ID.Service.Name)
+	portMap := make(negtypes.PortInfoMap)
+	err = controller.mergeDefaultBackendServicePortInfoMap(svcKey, defaultBackendService, portMap, defaultNetwork)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectEmptyPortmap := make(negtypes.PortInfoMap)
+	if !reflect.DeepEqual(expectEmptyPortmap, portMap) {
+		t.Fatalf("got %+v, want %+v", portMap, expectEmptyPortmap)
+	}
+
+	// Add the default backend service to the service lister, even though it's empty in the controller's config
+	controller.serviceLister.Add(defaultBackendService)
+
+	// Process the default backend service
+	err = controller.processService(svcKey)
+	if err != nil {
+		t.Errorf("Expected no error when processing the default backend service, but got: %v", err)
+	}
+
+	// Verify that no syncers were created
+	validateSyncers(t, controller, 0, true)
+
+	// Verify that the service does not have the NEGStatusKey annotation
+	svc, err := kubeClient.CoreV1().Services(defaultBackend.ID.Service.Namespace).Get(context.TODO(), defaultBackend.ID.Service.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Failed to get default backend service: %v", err)
+	}
+	if _, ok := svc.Annotations[annotations.NEGStatusKey]; ok {
+		t.Errorf("Expected no NEG status annotation, but found one: %v", svc.Annotations[annotations.NEGStatusKey])
+	}
+}
+
+func TestIngressNEGsDisabled(t *testing.T) {
+	t.Parallel()
+
+	controller, err := newTestController(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("failed to create test controller %s", err)
+	}
+	// Disable NEGs for Ingress
+	controller.enableNEGsForIngress = false
+	defer controller.stop()
+
+	// Verify no syncers are created when NEGs for Ingress are disabled.
+	controller.serviceLister.Add(newTestService(controller, true, []int32{}))
+	controller.ingressLister.Add(newTestIngress(testServiceName))
+	err = controller.processService(utils.ServiceKeyFunc(testServiceNamespace, testServiceName))
+	if err != nil {
+		t.Fatalf("Failed to process service: %v", err)
+	}
+	validateSyncers(t, controller, 0, false)
+
+	// Verify syncers are created after enabling the feature flag
+	controller.enableNEGsForIngress = true
+	controller.serviceLister.Update(newTestService(controller, true, []int32{}))
+	err = controller.processService(utils.ServiceKeyFunc(testServiceNamespace, testServiceName))
+	if err != nil {
+		t.Fatalf("Failed to process service: %v", err)
+	}
+	validateSyncers(t, controller, 3, false)
+
+	// Verify syncers are stopped after the service is updated
+	controller.serviceLister.Update(newTestService(controller, false, []int32{}))
+	err = controller.processService(utils.ServiceKeyFunc(testServiceNamespace, testServiceName))
+	if err != nil {
+		t.Fatalf("Failed to process service: %v", err)
+	}
+	validateSyncers(t, controller, 3, true)
+}
+
+func TestMergeDefaultBackendServiceWithNEGsForIngressDisabled(t *testing.T) {
+	defaultBackendServiceKey := defaultBackend.ID.Service.String()
+
+	for _, tc := range []struct {
+		desc           string
+		getIngress     func() *networkingv1.Ingress
+		defaultService *v1.Service
+	}{
+		{
+			desc: "ing does not have backend and default backend service has NEG annotation",
+			getIngress: func() *networkingv1.Ingress {
+				ing := newTestIngress("ing2")
+				ing.Spec.DefaultBackend = nil
+				return ing
+			},
+			defaultService: defaultBackendServiceWithNeg,
+		},
+		{
+			desc: "L7 ILB ing, does not has backend and default backend service does not have NEG annotation",
+			getIngress: func() *networkingv1.Ingress {
+				ing := newTestIngress("ing4")
+				ing.Annotations = map[string]string{annotations.IngressClassKey: annotations.GceL7ILBIngressClass}
+				ing.Spec.DefaultBackend = nil
+				return ing
+			},
+			defaultService: defaultBackendService,
+		},
+		{
+			desc: "L7 Regional XLB ing, does not has backend and default backend service does not have NEG annotation",
+			getIngress: func() *networkingv1.Ingress {
+				ing := newTestIngress("ing42")
+				ing.Annotations = map[string]string{annotations.IngressClassKey: annotations.GceL7XLBRegionalIngressClass}
+				ing.Spec.DefaultBackend = nil
+				return ing
+			},
+			defaultService: defaultBackendService,
+		},
+	} {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			controller, err := newTestController(fake.NewSimpleClientset())
+			if err != nil {
+				t.Fatalf("failed to create test controller %s", err)
+			}
+			// Disable NEGs for Ingress
+			controller.enableNEGsForIngress = false
+			controller.enableIngressRegionalExternal = true
+			controller.defaultBackendService = defaultBackend
+			newTestService(controller, false, []int32{})
+
+			ing := tc.getIngress()
+			if ing != nil {
+				if err := controller.ingressLister.Add(ing); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			portMap := make(negtypes.PortInfoMap)
+			if err := controller.mergeDefaultBackendServicePortInfoMap(defaultBackendServiceKey, tc.defaultService, portMap, defaultNetwork); err != nil {
+				t.Errorf("for test case %q, expect err == nil; but got %v", tc.desc, err)
+			}
+
+			expectEmptyPortmap := make(negtypes.PortInfoMap)
+			if !reflect.DeepEqual(portMap, expectEmptyPortmap) {
+				t.Errorf("for test case %q, expect port map == %v, but got %v", tc.desc, expectEmptyPortmap, portMap)
+			}
+		})
+	}
 }

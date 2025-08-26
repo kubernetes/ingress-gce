@@ -305,6 +305,7 @@ func createNEGController(
 		flags.F.EnableIngressRegionalExternal,
 		flags.F.EnableL4NetLBNEG,
 		flags.F.ReadOnlyMode,
+		flags.F.EnableNEGsForIngress,
 		stopCh,
 		logger,
 	)

@@ -113,8 +113,11 @@ type Controller struct {
 	// runL4ForNetLB indicates if the controller can create NEGs for L4 NetLB services.
 	runL4ForNetLB bool
 
-	// readOnlyMode indicates wheter or not the controller will run in read only mode
+	// readOnlyMode indicates whether or not the controller will run in read only mode
 	readOnlyMode bool
+
+	// enableNEGsForIngress indicates whether the NEG controller will create NEGs for Ingress services
+	enableNEGsForIngress bool
 
 	stopCh <-chan struct{}
 	logger klog.Logger
@@ -153,6 +156,7 @@ func NewController(
 	enableIngressRegionalExternal bool,
 	runL4ForNetLB bool,
 	readOnlyMode bool,
+	enableNEGsForIngress bool,
 	stopCh <-chan struct{},
 	logger klog.Logger,
 ) (*Controller, error) {
@@ -253,6 +257,7 @@ func NewController(
 		enableMultiSubnetClusterPhase1: enableMultiSubnetClusterPhase1,
 		runL4ForNetLB:                  runL4ForNetLB,
 		readOnlyMode:                   readOnlyMode,
+		enableNEGsForIngress:           enableNEGsForIngress,
 		stopCh:                         stopCh,
 		logger:                         logger,
 	}
@@ -260,39 +265,41 @@ func NewController(
 		negController.nodeTopologyQueue = workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_node_topology_queue")
 	}
 
-	ingressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			addIng := obj.(*v1.Ingress)
-			if !utils.IsGLBCIngress(addIng) {
-				logger.V(4).Info("Ignoring add for ingress based on annotation", "ingress", klog.KObj(addIng), "annotation", annotations.IngressClassKey)
-				return
-			}
-			negController.enqueueIngressServices(addIng)
-		},
-		DeleteFunc: func(obj interface{}) {
-			delIng := obj.(*v1.Ingress)
-			if !utils.IsGLBCIngress(delIng) {
-				logger.V(4).Info("Ignoring delete for ingress based on annotation", "ingress", klog.KObj(delIng), "annotation", annotations.IngressClassKey)
-				return
-			}
-			negController.enqueueIngressServices(delIng)
-		},
-		UpdateFunc: func(old, cur interface{}) {
-			oldIng := old.(*v1.Ingress)
-			curIng := cur.(*v1.Ingress)
-			// Check if ingress class changed and previous class was a GCE ingress
-			// Ingress class change may require cleanup so enqueue related services
-			if !utils.IsGLBCIngress(curIng) && !utils.IsGLBCIngress(oldIng) {
-				logger.V(4).Info("Ignoring update for ingress based on annotation", "ingress", klog.KObj(curIng), "annotation", annotations.IngressClassKey)
-				return
-			}
-			keys := gatherIngressServiceKeys(oldIng)
-			keys = keys.Union(gatherIngressServiceKeys(curIng))
-			for _, key := range keys.List() {
-				negController.enqueueService(cache.ExplicitKey(key))
-			}
-		},
-	})
+	if enableNEGsForIngress {
+		ingressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				addIng := obj.(*v1.Ingress)
+				if !utils.IsGLBCIngress(addIng) {
+					logger.V(4).Info("Ignoring add for ingress based on annotation", "ingress", klog.KObj(addIng), "annotation", annotations.IngressClassKey)
+					return
+				}
+				negController.enqueueIngressServices(addIng)
+			},
+			DeleteFunc: func(obj interface{}) {
+				delIng := obj.(*v1.Ingress)
+				if !utils.IsGLBCIngress(delIng) {
+					logger.V(4).Info("Ignoring delete for ingress based on annotation", "ingress", klog.KObj(delIng), "annotation", annotations.IngressClassKey)
+					return
+				}
+				negController.enqueueIngressServices(delIng)
+			},
+			UpdateFunc: func(old, cur interface{}) {
+				oldIng := old.(*v1.Ingress)
+				curIng := cur.(*v1.Ingress)
+				// Check if ingress class changed and previous class was a GCE ingress
+				// Ingress class change may require cleanup so enqueue related services
+				if !utils.IsGLBCIngress(curIng) && !utils.IsGLBCIngress(oldIng) {
+					logger.V(4).Info("Ignoring update for ingress based on annotation", "ingress", klog.KObj(curIng), "annotation", annotations.IngressClassKey)
+					return
+				}
+				keys := gatherIngressServiceKeys(oldIng)
+				keys = keys.Union(gatherIngressServiceKeys(curIng))
+				for _, key := range keys.List() {
+					negController.enqueueService(cache.ExplicitKey(key))
+				}
+			},
+		})
+	}
 	podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			pod := obj.(*apiv1.Pod)
@@ -621,6 +628,10 @@ func (c *Controller) processNodeTopology() {
 
 // mergeIngressPortInfo merges Ingress PortInfo into portInfoMap if the service has Enable Ingress annotation.
 func (c *Controller) mergeIngressPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap, networkInfo *network.NetworkInfo) error {
+	if !c.enableNEGsForIngress {
+		return nil
+	}
+
 	negAnnotation, foundNEGAnnotation, err := annotations.FromService(service).NEGAnnotation()
 	if err != nil {
 		return err
@@ -755,6 +766,10 @@ func (c *Controller) netLBServiceNeedsNEG(service *apiv1.Service, networkInfo *n
 // it is passed to the controller via a command line flag.
 // Additionally, supporting NEGs for default backends is only for L7-ILB
 func (c *Controller) mergeDefaultBackendServicePortInfoMap(key string, service *apiv1.Service, portInfoMap negtypes.PortInfoMap, networkInfo *network.NetworkInfo) error {
+	if !c.enableNEGsForIngress {
+		return nil
+	}
+
 	if c.defaultBackendService.ID.Service.String() != key {
 		return nil
 	}
@@ -921,8 +936,9 @@ func (c *Controller) enqueueIngressServices(ing *v1.Ingress) {
 		c.enqueueService(cache.ExplicitKey(key))
 	}
 
-	// enqueue default backend service
-	if ing.Spec.DefaultBackend == nil {
+	// Enqueue default backend service if it is not empty.
+	emptyDefaultBackendServicePort := utils.ServicePort{}
+	if ing.Spec.DefaultBackend == nil && c.defaultBackendService.ID.Service.String() != emptyDefaultBackendServicePort.ID.Service.String() {
 		c.enqueueService(cache.ExplicitKey(c.defaultBackendService.ID.Service.String()))
 	}
 }
