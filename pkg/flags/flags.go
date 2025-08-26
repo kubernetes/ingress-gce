@@ -147,6 +147,7 @@ var F = struct {
 	OverrideHealthCheckSourceCIDRs            string
 	ManageL4LBLogging                         bool
 	EnableNEGsForIngress                      bool
+	EnableIPv6OnlyL4                          bool
 
 	// ===============================
 	// DEPRECATED FLAGS
@@ -358,6 +359,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.ManageL4LBLogging, "manage-l4lb-logging", false, "Manage L4 ILB/NetLB logging.")
 	flag.BoolVar(&F.ReadOnlyMode, "read-only-controllers", false, "When enabled, this flag runs the IG, NEG, L4 ILB, and L4 NetLB controllers in a read-only mode. This prevents them from executing any mutating API calls (e.g., create, update, delete), allowing you to safely observe controller behavior without modifying resources. The Ingress controller is exempt from this mode.")
 	flag.BoolVar(&F.EnableNEGsForIngress, "enable-negs-for-ingress", true, "Allow the NEG controller to create NEGs for Ingress services.")
+	flag.BoolVar(&F.EnableIPv6OnlyL4, "enable-ipv6-only-l4", false, "Enables IPv6-only mode for the L4 ILB and NetLB controllers, disabling all IPv4-related logic and resource management.")
 }
 
 func Validate() {
