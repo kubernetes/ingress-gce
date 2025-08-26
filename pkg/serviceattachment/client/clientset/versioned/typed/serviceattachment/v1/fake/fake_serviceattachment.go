@@ -21,12 +21,13 @@ package fake
 import (
 	"context"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
+	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
-	v1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1"
+	serviceattachmentv1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1"
 )
 
 // FakeServiceAttachments implements ServiceAttachmentInterface
@@ -35,38 +36,36 @@ type FakeServiceAttachments struct {
 	ns   string
 }
 
-var serviceattachmentsResource = v1.SchemeGroupVersion.WithResource("serviceattachments")
+var serviceattachmentsResource = schema.GroupVersionResource{Group: "networking.gke.io", Version: "v1", Resource: "serviceattachments"}
 
-var serviceattachmentsKind = v1.SchemeGroupVersion.WithKind("ServiceAttachment")
+var serviceattachmentsKind = schema.GroupVersionKind{Group: "networking.gke.io", Version: "v1", Kind: "ServiceAttachment"}
 
 // Get takes name of the serviceAttachment, and returns the corresponding serviceAttachment object, and an error if there is any.
-func (c *FakeServiceAttachments) Get(ctx context.Context, name string, options metav1.GetOptions) (result *v1.ServiceAttachment, err error) {
-	emptyResult := &v1.ServiceAttachment{}
+func (c *FakeServiceAttachments) Get(ctx context.Context, name string, options v1.GetOptions) (result *serviceattachmentv1.ServiceAttachment, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewGetActionWithOptions(serviceattachmentsResource, c.ns, name, options), emptyResult)
+		Invokes(testing.NewGetAction(serviceattachmentsResource, c.ns, name), &serviceattachmentv1.ServiceAttachment{})
 
 	if obj == nil {
-		return emptyResult, err
+		return nil, err
 	}
-	return obj.(*v1.ServiceAttachment), err
+	return obj.(*serviceattachmentv1.ServiceAttachment), err
 }
 
 // List takes label and field selectors, and returns the list of ServiceAttachments that match those selectors.
-func (c *FakeServiceAttachments) List(ctx context.Context, opts metav1.ListOptions) (result *v1.ServiceAttachmentList, err error) {
-	emptyResult := &v1.ServiceAttachmentList{}
+func (c *FakeServiceAttachments) List(ctx context.Context, opts v1.ListOptions) (result *serviceattachmentv1.ServiceAttachmentList, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewListActionWithOptions(serviceattachmentsResource, serviceattachmentsKind, c.ns, opts), emptyResult)
+		Invokes(testing.NewListAction(serviceattachmentsResource, serviceattachmentsKind, c.ns, opts), &serviceattachmentv1.ServiceAttachmentList{})
 
 	if obj == nil {
-		return emptyResult, err
+		return nil, err
 	}
 
 	label, _, _ := testing.ExtractFromListOptions(opts)
 	if label == nil {
 		label = labels.Everything()
 	}
-	list := &v1.ServiceAttachmentList{ListMeta: obj.(*v1.ServiceAttachmentList).ListMeta}
-	for _, item := range obj.(*v1.ServiceAttachmentList).Items {
+	list := &serviceattachmentv1.ServiceAttachmentList{ListMeta: obj.(*serviceattachmentv1.ServiceAttachmentList).ListMeta}
+	for _, item := range obj.(*serviceattachmentv1.ServiceAttachmentList).Items {
 		if label.Matches(labels.Set(item.Labels)) {
 			list.Items = append(list.Items, item)
 		}
@@ -75,73 +74,69 @@ func (c *FakeServiceAttachments) List(ctx context.Context, opts metav1.ListOptio
 }
 
 // Watch returns a watch.Interface that watches the requested serviceAttachments.
-func (c *FakeServiceAttachments) Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
+func (c *FakeServiceAttachments) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
-		InvokesWatch(testing.NewWatchActionWithOptions(serviceattachmentsResource, c.ns, opts))
+		InvokesWatch(testing.NewWatchAction(serviceattachmentsResource, c.ns, opts))
 
 }
 
 // Create takes the representation of a serviceAttachment and creates it.  Returns the server's representation of the serviceAttachment, and an error, if there is any.
-func (c *FakeServiceAttachments) Create(ctx context.Context, serviceAttachment *v1.ServiceAttachment, opts metav1.CreateOptions) (result *v1.ServiceAttachment, err error) {
-	emptyResult := &v1.ServiceAttachment{}
+func (c *FakeServiceAttachments) Create(ctx context.Context, serviceAttachment *serviceattachmentv1.ServiceAttachment, opts v1.CreateOptions) (result *serviceattachmentv1.ServiceAttachment, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewCreateActionWithOptions(serviceattachmentsResource, c.ns, serviceAttachment, opts), emptyResult)
+		Invokes(testing.NewCreateAction(serviceattachmentsResource, c.ns, serviceAttachment), &serviceattachmentv1.ServiceAttachment{})
 
 	if obj == nil {
-		return emptyResult, err
+		return nil, err
 	}
-	return obj.(*v1.ServiceAttachment), err
+	return obj.(*serviceattachmentv1.ServiceAttachment), err
 }
 
 // Update takes the representation of a serviceAttachment and updates it. Returns the server's representation of the serviceAttachment, and an error, if there is any.
-func (c *FakeServiceAttachments) Update(ctx context.Context, serviceAttachment *v1.ServiceAttachment, opts metav1.UpdateOptions) (result *v1.ServiceAttachment, err error) {
-	emptyResult := &v1.ServiceAttachment{}
+func (c *FakeServiceAttachments) Update(ctx context.Context, serviceAttachment *serviceattachmentv1.ServiceAttachment, opts v1.UpdateOptions) (result *serviceattachmentv1.ServiceAttachment, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewUpdateActionWithOptions(serviceattachmentsResource, c.ns, serviceAttachment, opts), emptyResult)
+		Invokes(testing.NewUpdateAction(serviceattachmentsResource, c.ns, serviceAttachment), &serviceattachmentv1.ServiceAttachment{})
 
 	if obj == nil {
-		return emptyResult, err
+		return nil, err
 	}
-	return obj.(*v1.ServiceAttachment), err
+	return obj.(*serviceattachmentv1.ServiceAttachment), err
 }
 
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeServiceAttachments) UpdateStatus(ctx context.Context, serviceAttachment *v1.ServiceAttachment, opts metav1.UpdateOptions) (result *v1.ServiceAttachment, err error) {
-	emptyResult := &v1.ServiceAttachment{}
+func (c *FakeServiceAttachments) UpdateStatus(ctx context.Context, serviceAttachment *serviceattachmentv1.ServiceAttachment, opts v1.UpdateOptions) (*serviceattachmentv1.ServiceAttachment, error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewUpdateSubresourceActionWithOptions(serviceattachmentsResource, "status", c.ns, serviceAttachment, opts), emptyResult)
+		Invokes(testing.NewUpdateSubresourceAction(serviceattachmentsResource, "status", c.ns, serviceAttachment), &serviceattachmentv1.ServiceAttachment{})
 
 	if obj == nil {
-		return emptyResult, err
+		return nil, err
 	}
-	return obj.(*v1.ServiceAttachment), err
+	return obj.(*serviceattachmentv1.ServiceAttachment), err
 }
 
 // Delete takes name of the serviceAttachment and deletes it. Returns an error if one occurs.
-func (c *FakeServiceAttachments) Delete(ctx context.Context, name string, opts metav1.DeleteOptions) error {
+func (c *FakeServiceAttachments) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewDeleteActionWithOptions(serviceattachmentsResource, c.ns, name, opts), &v1.ServiceAttachment{})
+		Invokes(testing.NewDeleteAction(serviceattachmentsResource, c.ns, name), &serviceattachmentv1.ServiceAttachment{})
 
 	return err
 }
 
 // DeleteCollection deletes a collection of objects.
-func (c *FakeServiceAttachments) DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error {
-	action := testing.NewDeleteCollectionActionWithOptions(serviceattachmentsResource, c.ns, opts, listOpts)
+func (c *FakeServiceAttachments) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
+	action := testing.NewDeleteCollectionAction(serviceattachmentsResource, c.ns, listOpts)
 
-	_, err := c.Fake.Invokes(action, &v1.ServiceAttachmentList{})
+	_, err := c.Fake.Invokes(action, &serviceattachmentv1.ServiceAttachmentList{})
 	return err
 }
 
 // Patch applies the patch and returns the patched serviceAttachment.
-func (c *FakeServiceAttachments) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *v1.ServiceAttachment, err error) {
-	emptyResult := &v1.ServiceAttachment{}
+func (c *FakeServiceAttachments) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *serviceattachmentv1.ServiceAttachment, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceActionWithOptions(serviceattachmentsResource, c.ns, name, pt, data, opts, subresources...), emptyResult)
+		Invokes(testing.NewPatchSubresourceAction(serviceattachmentsResource, c.ns, name, pt, data, subresources...), &serviceattachmentv1.ServiceAttachment{})
 
 	if obj == nil {
-		return emptyResult, err
+		return nil, err
 	}
-	return obj.(*v1.ServiceAttachment), err
+	return obj.(*serviceattachmentv1.ServiceAttachment), err
 }
