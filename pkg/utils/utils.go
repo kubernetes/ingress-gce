@@ -739,6 +739,11 @@ func IsLegacyL4ILBService(svc *api_v1.Service) bool {
 	if svc.Spec.LoadBalancerClass != nil {
 		return annotations.HasLoadBalancerClass(svc, annotations.LegacyRegionalInternalLoadBalancerClass)
 	}
+	return HasLegacyL4ILBFinalizerV1(svc)
+}
+
+// HasLegacyL4ILBFinalizerV1 returns true if the given Service has ILBFinalizerV1
+func HasLegacyL4ILBFinalizerV1(svc *api_v1.Service) bool {
 	return slice.ContainsString(svc.ObjectMeta.Finalizers, common.LegacyILBFinalizer, nil)
 }
 
