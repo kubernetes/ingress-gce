@@ -77,8 +77,10 @@ func (v *Version) validation() (*apiextensionsv1.CustomResourceValidation, error
 	openapiSpec := v.fn(spec.MustCreateRef)
 	// Condense schema for nested types into one master schema.
 	condensedSchema := condenseSchema(openapiSpec[v.typeSource].Schema, openapiSpec)
+
 	// Convert master schema into JSONSchemaProps by marshalling + unmarshalling.
 	jsonSchemaProps := &apiextensionsv1.JSONSchemaProps{}
+
 	bytes, err := json.Marshal(condensedSchema)
 	if err != nil {
 		return nil, fmt.Errorf("error marshalling OpenAPI schema to JSON for %s API: %v", v.name, err)
@@ -114,8 +116,14 @@ func condenseSchema(currentSchema spec.Schema, openapiSpec map[string]common.Ope
 			condenseSchema(propertySchema, openapiSpec)
 		}
 	}
+
 	// Apply fixes for certain known issues.
 	currentSchema.AdditionalProperties = nil
+
+	// Remove the metadata if present in the Schema. Metadata is automatically
+	// synthesized by the CRD framework on the server.
+	delete(currentSchema.Properties, "metadata")
+
 	return currentSchema
 }
 
