@@ -4,6 +4,48 @@
 #
 # Files touched: /tmp/kubectl-proxy.log /tmp/glbc.log
 
+GCECONF=${GCECONF:-/tmp/gce.conf}
+GLBC=${GLBC:-./glbc}
+PORT=${PORT:-7127}
+V=${V:-3}
+
+usage() {
+    echo "Usage: $(basename "$0")"
+    echo "    [--gceconf /path/to/gce.conf]"
+    echo "    [--glbc /path/to/glbc]"
+    echo "    [--port 7127]"
+    echo "    [--v 3]"
+
+    exit 0
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --gceconf)
+            GCECONF="$2"
+            shift 2
+            ;;
+        --glbc)
+            GLBC="$2"
+            shift 2
+            ;;
+        --port)
+            PORT="$2"
+            shift 2
+            ;;
+        --v)
+            V="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
 GOOGLE_APPLICATION_CREDENTIALS="${HOME}/.config/gcloud/application_default_credentials.json"
 
 if [ ! -r ${GOOGLE_APPLICATION_CREDENTIALS} ]; then
@@ -11,11 +53,6 @@ if [ ! -r ${GOOGLE_APPLICATION_CREDENTIALS} ]; then
     echo "$ gcloud auth application-default login"
     exit 1
 fi
-
-GCECONF=${GCECONF:-/tmp/gce.conf}
-GLBC=${GLBC:-./glbc}
-PORT=${PORT:-7127}
-V=${V:-3}
 
 echo "GCECONF=${GCECONF} GLBC=${GLBC} PORT=${PORT} V=${V}"
 
