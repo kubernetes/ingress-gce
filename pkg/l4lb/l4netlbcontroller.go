@@ -954,5 +954,5 @@ func (lc *L4NetLBController) publishSyncMetrics(result *loadbalancers.L4NetLBSyn
 	isWeightedLB := result.MetricsState.WeightedLBPodsPerNode
 	backendType := result.MetricsState.BackendType
 
-	metrics.PublishNetLBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime, isResync, isWeightedLB, backendType)
+	metrics.PublishNetLBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime, isResync, isWeightedLB, result.MetricsState.Protocol, backendType)
 }
