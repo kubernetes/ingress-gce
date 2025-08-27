@@ -31,6 +31,17 @@ import (
 // StartNEGController creates and runs a NEG controller for the specified ProviderConfig.
 // The returned channel is closed by StopControllersForProviderConfig to signal a shutdown
 // specific to this ProviderConfig's controller.
+//
+// Channel lifecycle management:
+//   - globalStopCh: Closes on process/leader shutdown. Shared resources (base informers) use this
+//     to survive individual ProviderConfig deletions.
+//   - providerConfigStopCh: The returned channel that closes when this specific ProviderConfig
+//     is deleted. Used to stop PC-specific controllers.
+//   - joinedStopCh: Internal channel that closes when EITHER globalStopCh OR providerConfigStopCh
+//     closes. Used for PC-specific resources that should stop in either case.
+//
+// IMPORTANT: Base informers from factories use globalStopCh to remain alive across PC changes.
+// Only ProviderConfig-specific controllers and resources should use joinedStopCh.
 func StartNEGController(
 	informersFactory informers.SharedInformerFactory,
 	svcNegFactory informersvcneg.SharedInformerFactory,
@@ -71,7 +82,7 @@ func StartNEGController(
 		}
 	}()
 
-	informers, hasSynced, err := initializeInformers(informersFactory, svcNegFactory, networkFactory, nodeTopologyFactory, providerConfigName, logger, joinedStopCh)
+	informers, hasSynced, err := initializeInformers(informersFactory, svcNegFactory, networkFactory, nodeTopologyFactory, providerConfigName, logger, globalStopCh)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +146,7 @@ func initializeInformers(
 	nodeTopologyFactory informernodetopology.SharedInformerFactory,
 	providerConfigName string,
 	logger klog.Logger,
-	joinedStopCh <-chan struct{},
+	globalStopCh <-chan struct{},
 ) (*negInformers, func() bool, error) {
 	ingressInformer := filteredinformer.NewProviderConfigFilteredInformer(informersFactory.Networking().V1().Ingresses().Informer(), providerConfigName)
 	serviceInformer := filteredinformer.NewProviderConfigFilteredInformer(informersFactory.Core().V1().Services().Informer(), providerConfigName)
@@ -184,25 +195,25 @@ func initializeInformers(
 		nodeInformer.HasSynced,
 		endpointSliceInformer.HasSynced,
 	}
-	go ingressInformer.Run(joinedStopCh)
-	go serviceInformer.Run(joinedStopCh)
-	go podInformer.Run(joinedStopCh)
-	go nodeInformer.Run(joinedStopCh)
-	go endpointSliceInformer.Run(joinedStopCh)
+	go ingressInformer.Run(globalStopCh)
+	go serviceInformer.Run(globalStopCh)
+	go podInformer.Run(globalStopCh)
+	go nodeInformer.Run(globalStopCh)
+	go endpointSliceInformer.Run(globalStopCh)
 	if providerConfigFilteredSvcNegInformer != nil {
-		go providerConfigFilteredSvcNegInformer.Run(joinedStopCh)
+		go providerConfigFilteredSvcNegInformer.Run(globalStopCh)
 		hasSyncedList = append(hasSyncedList, providerConfigFilteredSvcNegInformer.HasSynced)
 	}
 	if providerConfigFilteredNetworkInformer != nil {
-		go providerConfigFilteredNetworkInformer.Run(joinedStopCh)
+		go providerConfigFilteredNetworkInformer.Run(globalStopCh)
 		hasSyncedList = append(hasSyncedList, providerConfigFilteredNetworkInformer.HasSynced)
 	}
 	if providerConfigFilteredGkeNetworkParamsInformer != nil {
-		go providerConfigFilteredGkeNetworkParamsInformer.Run(joinedStopCh)
+		go providerConfigFilteredGkeNetworkParamsInformer.Run(globalStopCh)
 		hasSyncedList = append(hasSyncedList, providerConfigFilteredGkeNetworkParamsInformer.HasSynced)
 	}
 	if providerConfigFilteredNodeTopologyInformer != nil {
-		go providerConfigFilteredNodeTopologyInformer.Run(joinedStopCh)
+		go providerConfigFilteredNodeTopologyInformer.Run(globalStopCh)
 		hasSyncedList = append(hasSyncedList, providerConfigFilteredNodeTopologyInformer.HasSynced)
 	}
 
