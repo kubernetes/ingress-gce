@@ -21,13 +21,12 @@ package fake
 import (
 	"context"
 
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
-	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
-	providerconfigv1 "k8s.io/ingress-gce/pkg/apis/providerconfig/v1"
+	v1 "k8s.io/ingress-gce/pkg/apis/providerconfig/v1"
 )
 
 // FakeProviderConfigs implements ProviderConfigInterface
@@ -35,34 +34,36 @@ type FakeProviderConfigs struct {
 	Fake *FakeCloudV1
 }
 
-var providerconfigsResource = schema.GroupVersionResource{Group: "cloud.gke.io", Version: "v1", Resource: "providerconfigs"}
+var providerconfigsResource = v1.SchemeGroupVersion.WithResource("providerconfigs")
 
-var providerconfigsKind = schema.GroupVersionKind{Group: "cloud.gke.io", Version: "v1", Kind: "ProviderConfig"}
+var providerconfigsKind = v1.SchemeGroupVersion.WithKind("ProviderConfig")
 
 // Get takes name of the providerConfig, and returns the corresponding providerConfig object, and an error if there is any.
-func (c *FakeProviderConfigs) Get(ctx context.Context, name string, options v1.GetOptions) (result *providerconfigv1.ProviderConfig, err error) {
+func (c *FakeProviderConfigs) Get(ctx context.Context, name string, options metav1.GetOptions) (result *v1.ProviderConfig, err error) {
+	emptyResult := &v1.ProviderConfig{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootGetAction(providerconfigsResource, name), &providerconfigv1.ProviderConfig{})
+		Invokes(testing.NewRootGetActionWithOptions(providerconfigsResource, name, options), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
-	return obj.(*providerconfigv1.ProviderConfig), err
+	return obj.(*v1.ProviderConfig), err
 }
 
 // List takes label and field selectors, and returns the list of ProviderConfigs that match those selectors.
-func (c *FakeProviderConfigs) List(ctx context.Context, opts v1.ListOptions) (result *providerconfigv1.ProviderConfigList, err error) {
+func (c *FakeProviderConfigs) List(ctx context.Context, opts metav1.ListOptions) (result *v1.ProviderConfigList, err error) {
+	emptyResult := &v1.ProviderConfigList{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootListAction(providerconfigsResource, providerconfigsKind, opts), &providerconfigv1.ProviderConfigList{})
+		Invokes(testing.NewRootListActionWithOptions(providerconfigsResource, providerconfigsKind, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 
 	label, _, _ := testing.ExtractFromListOptions(opts)
 	if label == nil {
 		label = labels.Everything()
 	}
-	list := &providerconfigv1.ProviderConfigList{ListMeta: obj.(*providerconfigv1.ProviderConfigList).ListMeta}
-	for _, item := range obj.(*providerconfigv1.ProviderConfigList).Items {
+	list := &v1.ProviderConfigList{ListMeta: obj.(*v1.ProviderConfigList).ListMeta}
+	for _, item := range obj.(*v1.ProviderConfigList).Items {
 		if label.Matches(labels.Set(item.Labels)) {
 			list.Items = append(list.Items, item)
 		}
@@ -71,52 +72,55 @@ func (c *FakeProviderConfigs) List(ctx context.Context, opts v1.ListOptions) (re
 }
 
 // Watch returns a watch.Interface that watches the requested providerConfigs.
-func (c *FakeProviderConfigs) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
+func (c *FakeProviderConfigs) Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
-		InvokesWatch(testing.NewRootWatchAction(providerconfigsResource, opts))
+		InvokesWatch(testing.NewRootWatchActionWithOptions(providerconfigsResource, opts))
 }
 
 // Create takes the representation of a providerConfig and creates it.  Returns the server's representation of the providerConfig, and an error, if there is any.
-func (c *FakeProviderConfigs) Create(ctx context.Context, providerConfig *providerconfigv1.ProviderConfig, opts v1.CreateOptions) (result *providerconfigv1.ProviderConfig, err error) {
+func (c *FakeProviderConfigs) Create(ctx context.Context, providerConfig *v1.ProviderConfig, opts metav1.CreateOptions) (result *v1.ProviderConfig, err error) {
+	emptyResult := &v1.ProviderConfig{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootCreateAction(providerconfigsResource, providerConfig), &providerconfigv1.ProviderConfig{})
+		Invokes(testing.NewRootCreateActionWithOptions(providerconfigsResource, providerConfig, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
-	return obj.(*providerconfigv1.ProviderConfig), err
+	return obj.(*v1.ProviderConfig), err
 }
 
 // Update takes the representation of a providerConfig and updates it. Returns the server's representation of the providerConfig, and an error, if there is any.
-func (c *FakeProviderConfigs) Update(ctx context.Context, providerConfig *providerconfigv1.ProviderConfig, opts v1.UpdateOptions) (result *providerconfigv1.ProviderConfig, err error) {
+func (c *FakeProviderConfigs) Update(ctx context.Context, providerConfig *v1.ProviderConfig, opts metav1.UpdateOptions) (result *v1.ProviderConfig, err error) {
+	emptyResult := &v1.ProviderConfig{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateAction(providerconfigsResource, providerConfig), &providerconfigv1.ProviderConfig{})
+		Invokes(testing.NewRootUpdateActionWithOptions(providerconfigsResource, providerConfig, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
-	return obj.(*providerconfigv1.ProviderConfig), err
+	return obj.(*v1.ProviderConfig), err
 }
 
 // Delete takes name of the providerConfig and deletes it. Returns an error if one occurs.
-func (c *FakeProviderConfigs) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
+func (c *FakeProviderConfigs) Delete(ctx context.Context, name string, opts metav1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(providerconfigsResource, name), &providerconfigv1.ProviderConfig{})
+		Invokes(testing.NewRootDeleteActionWithOptions(providerconfigsResource, name, opts), &v1.ProviderConfig{})
 	return err
 }
 
 // DeleteCollection deletes a collection of objects.
-func (c *FakeProviderConfigs) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
-	action := testing.NewRootDeleteCollectionAction(providerconfigsResource, listOpts)
+func (c *FakeProviderConfigs) DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error {
+	action := testing.NewRootDeleteCollectionActionWithOptions(providerconfigsResource, opts, listOpts)
 
-	_, err := c.Fake.Invokes(action, &providerconfigv1.ProviderConfigList{})
+	_, err := c.Fake.Invokes(action, &v1.ProviderConfigList{})
 	return err
 }
 
 // Patch applies the patch and returns the patched providerConfig.
-func (c *FakeProviderConfigs) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *providerconfigv1.ProviderConfig, err error) {
+func (c *FakeProviderConfigs) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *v1.ProviderConfig, err error) {
+	emptyResult := &v1.ProviderConfig{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(providerconfigsResource, name, pt, data, subresources...), &providerconfigv1.ProviderConfig{})
+		Invokes(testing.NewRootPatchSubresourceActionWithOptions(providerconfigsResource, name, pt, data, opts, subresources...), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
-	return obj.(*providerconfigv1.ProviderConfig), err
+	return obj.(*v1.ProviderConfig), err
 }

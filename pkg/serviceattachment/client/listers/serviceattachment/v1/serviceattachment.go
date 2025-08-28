@@ -19,8 +19,8 @@ limitations under the License.
 package v1
 
 import (
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/listers"
 	"k8s.io/client-go/tools/cache"
 	v1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1"
 )
@@ -38,25 +38,17 @@ type ServiceAttachmentLister interface {
 
 // serviceAttachmentLister implements the ServiceAttachmentLister interface.
 type serviceAttachmentLister struct {
-	indexer cache.Indexer
+	listers.ResourceIndexer[*v1.ServiceAttachment]
 }
 
 // NewServiceAttachmentLister returns a new ServiceAttachmentLister.
 func NewServiceAttachmentLister(indexer cache.Indexer) ServiceAttachmentLister {
-	return &serviceAttachmentLister{indexer: indexer}
-}
-
-// List lists all ServiceAttachments in the indexer.
-func (s *serviceAttachmentLister) List(selector labels.Selector) (ret []*v1.ServiceAttachment, err error) {
-	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1.ServiceAttachment))
-	})
-	return ret, err
+	return &serviceAttachmentLister{listers.New[*v1.ServiceAttachment](indexer, v1.Resource("serviceattachment"))}
 }
 
 // ServiceAttachments returns an object that can list and get ServiceAttachments.
 func (s *serviceAttachmentLister) ServiceAttachments(namespace string) ServiceAttachmentNamespaceLister {
-	return serviceAttachmentNamespaceLister{indexer: s.indexer, namespace: namespace}
+	return serviceAttachmentNamespaceLister{listers.NewNamespaced[*v1.ServiceAttachment](s.ResourceIndexer, namespace)}
 }
 
 // ServiceAttachmentNamespaceLister helps list and get ServiceAttachments.
@@ -74,26 +66,5 @@ type ServiceAttachmentNamespaceLister interface {
 // serviceAttachmentNamespaceLister implements the ServiceAttachmentNamespaceLister
 // interface.
 type serviceAttachmentNamespaceLister struct {
-	indexer   cache.Indexer
-	namespace string
-}
-
-// List lists all ServiceAttachments in the indexer for a given namespace.
-func (s serviceAttachmentNamespaceLister) List(selector labels.Selector) (ret []*v1.ServiceAttachment, err error) {
-	err = cache.ListAllByNamespace(s.indexer, s.namespace, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1.ServiceAttachment))
-	})
-	return ret, err
-}
-
-// Get retrieves the ServiceAttachment from the indexer for a given namespace and name.
-func (s serviceAttachmentNamespaceLister) Get(name string) (*v1.ServiceAttachment, error) {
-	obj, exists, err := s.indexer.GetByKey(s.namespace + "/" + name)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errors.NewNotFound(v1.Resource("serviceattachment"), name)
-	}
-	return obj.(*v1.ServiceAttachment), nil
+	listers.ResourceIndexer[*v1.ServiceAttachment]
 }
