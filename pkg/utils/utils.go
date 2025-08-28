@@ -761,6 +761,16 @@ func HasL4ILBFinalizerV2(svc *api_v1.Service) bool {
 	return slice.ContainsString(svc.ObjectMeta.Finalizers, common.ILBFinalizerV2, nil)
 }
 
+// HasL4NetLBFinalizerV1 returns true if the given Service has NetLBFinalizerV1
+func HasL4NetLBFinalizerV1(svc *api_v1.Service) bool {
+	return slice.ContainsString(svc.ObjectMeta.Finalizers, common.NetLBFinalizerV1, nil)
+}
+
+// HasL4NetLBRBSFinalizers returns true if the given Service has any of the NetLBRBS finalizers v2 or v3
+func HasL4NetLBRBSFinalizers(svc *api_v1.Service) bool {
+	return HasL4NetLBFinalizerV2(svc) || HasL4NetLBFinalizerV3(svc)
+}
+
 // HasL4NetLBFinalizerV2 returns true if the given Service has NetLBFinalizerV2
 func HasL4NetLBFinalizerV2(svc *api_v1.Service) bool {
 	return slice.ContainsString(svc.ObjectMeta.Finalizers, common.NetLBFinalizerV2, nil)
