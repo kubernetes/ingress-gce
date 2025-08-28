@@ -2310,11 +2310,46 @@ func TestWeightedILB(t *testing.T) {
 		wantLocalityLBPolicy     backends.LocalityLBPolicyType
 	}{
 		{
+			desc:                     "Flag DISABLED, Service with weighted annotation, externalTrafficPolicy local",
+			addAnnotationForWeighted: true,
+			weightedFlagEnabled:      false,
+			externalTrafficPolicy:    v1.ServiceExternalTrafficPolicyTypeLocal,
+			wantLocalityLBPolicy:     backends.LocalityLBPolicyDefault,
+		},
+		{
+			desc:                     "Flag DISABLED, Service with weighted annotation, externalTrafficPolicy cluster",
+			addAnnotationForWeighted: true,
+			weightedFlagEnabled:      false,
+			externalTrafficPolicy:    v1.ServiceExternalTrafficPolicyTypeCluster,
+			wantLocalityLBPolicy:     backends.LocalityLBPolicyDefault,
+		},
+		{
+			desc:                     "Flag DISABLED, Service without weighted annotation, externalTrafficPolicy local",
+			addAnnotationForWeighted: false,
+			weightedFlagEnabled:      false,
+			externalTrafficPolicy:    v1.ServiceExternalTrafficPolicyTypeLocal,
+			wantLocalityLBPolicy:     backends.LocalityLBPolicyDefault,
+		},
+		{
+			desc:                     "Flag DISABLED, Service without weighted annotation, externalTrafficPolicy cluster",
+			addAnnotationForWeighted: false,
+			weightedFlagEnabled:      false,
+			externalTrafficPolicy:    v1.ServiceExternalTrafficPolicyTypeCluster,
+			wantLocalityLBPolicy:     backends.LocalityLBPolicyDefault,
+		},
+		{
 			desc:                     "Flag enabled, Service with weighted annotation, externalTrafficPolicy local",
 			addAnnotationForWeighted: true,
 			weightedFlagEnabled:      true,
 			externalTrafficPolicy:    v1.ServiceExternalTrafficPolicyTypeLocal,
-			wantLocalityLBPolicy:     backends.LocalityLBPolicyWeightedMaglev,
+			wantLocalityLBPolicy:     backends.LocalityLBPolicyWeightedRendezvous,
+		},
+		{
+			desc:                     "Flag enabled, Service with weighted annotation and externalTrafficPolicy CLUSTER",
+			addAnnotationForWeighted: true,
+			weightedFlagEnabled:      true,
+			externalTrafficPolicy:    v1.ServiceExternalTrafficPolicyTypeCluster,
+			wantLocalityLBPolicy:     backends.LocalityLBPolicyDefault,
 		},
 		{
 			desc:                     "Flag enabled, NO weighted annotation, externalTrafficPolicy local",
@@ -2324,15 +2359,8 @@ func TestWeightedILB(t *testing.T) {
 			wantLocalityLBPolicy:     backends.LocalityLBPolicyDefault,
 		},
 		{
-			desc:                     "Flag DISABLED, Service with weighted annotation, externalTrafficPolicy local",
-			addAnnotationForWeighted: true,
-			weightedFlagEnabled:      false,
-			externalTrafficPolicy:    v1.ServiceExternalTrafficPolicyTypeLocal,
-			wantLocalityLBPolicy:     backends.LocalityLBPolicyDefault,
-		},
-		{
-			desc:                     "Flag enabled, Service with weighted annotation and externalTrafficPolicy CLUSTER",
-			addAnnotationForWeighted: true,
+			desc:                     "Flag enabled, NO weighted annotation, externalTrafficPolicy cluster",
+			addAnnotationForWeighted: false,
 			weightedFlagEnabled:      true,
 			externalTrafficPolicy:    v1.ServiceExternalTrafficPolicyTypeCluster,
 			wantLocalityLBPolicy:     backends.LocalityLBPolicyDefault,
@@ -2385,6 +2413,11 @@ func TestWeightedILB(t *testing.T) {
 
 			if bs.LocalityLbPolicy != string(tc.wantLocalityLBPolicy) {
 				t.Errorf("Unexpected BackendService LocalityLbPolicy value, got: %v, want: %v", bs.LocalityLbPolicy, tc.wantLocalityLBPolicy)
+			}
+
+			isWeightedLBPodsPerNode := l4.isWeightedLBPodsPerNode()
+			if tc.weightedFlagEnabled && tc.addAnnotationForWeighted && tc.externalTrafficPolicy == v1.ServiceExternalTrafficPolicyTypeLocal && !isWeightedLBPodsPerNode {
+				t.Errorf("Expected isWeightedLBPodsPerNode() to return true for Service with weighted load balancing enabled")
 			}
 		})
 	}

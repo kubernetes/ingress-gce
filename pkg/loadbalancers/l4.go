@@ -573,7 +573,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	bs, bsSyncStatus, err := l4.backendPool.EnsureL4BackendService(backendParams, l4.svcLogger)
 	result.ResourceUpdates.SetBackendService(bsSyncStatus)
 	if err != nil {
-		if utils.IsUnsupportedFeatureError(err, string(backends.LocalityLBPolicyMaglev)) {
+		if utils.IsUnsupportedFeatureError(err, string(backends.LocalityLbPolicyRendezvous)) {
 			result.GCEResourceInError = annotations.BackendServiceResource
 			l4.recorder.Eventf(l4.Service, corev1.EventTypeWarning, "AllowlistingRequired", WeightedLBPodsPerNodeAllowlistMessage)
 			result.Error = utils.NewUserError(err)
@@ -811,30 +811,31 @@ func (l4 *L4) getOldIPv4ForwardingRule(existingBS *composite.BackendService) (*c
 
 // determineBackendServiceLocalityPolicy returns the locality policy to be used for the backend service of the internal load balancer.
 func (l4 *L4) determineBackendServiceLocalityPolicy() backends.LocalityLBPolicyType {
-	// If the service has weighted load balancing enabled, the locality policy will be WEIGHTED_MAGLEV.
+	// If the ILB service has weighted load balancing enabled, the locality policy will be WEIGHTED_GCP_RENDEZVOUS.
 	if l4.enableWeightedLB {
 		if annotations.HasWeightedLBPodsPerNodeAnnotation(l4.Service) {
 			if l4.Service.Spec.ExternalTrafficPolicy == corev1.ServiceExternalTrafficPolicyTypeLocal {
 				// If the service has the annotation "networking.gke.io/weighted-load-balancing = pods-per-node"
 				// and the external traffic policy is local, weighted load balancing is enabled and the backend
-				// service locality policy is set to WEIGHTED_MAGLEV.
-				return backends.LocalityLBPolicyWeightedMaglev
+				// service locality policy is set to WEIGHTED_GCP_RENDEZVOUS.
+				return backends.LocalityLBPolicyWeightedRendezvous
 			} else {
 				// If the service has the annotation "networking.gke.io/weighted-load-balancing = pods-per-node"
 				// and the external traffic policy is cluster, weighted load balancing is not enabled.
 				l4.recorder.Eventf(l4.Service, corev1.EventTypeWarning, "UnsupportedConfiguration",
 					"Weighted load balancing by pods-per-node has no effect with External Traffic Policy: Cluster.")
-				// TODO(FelipeYepez) use LocalityLBPolicyMaglev once it does not require allow lisiting
+				// The default unset locality lb policy is used to disable ILB Weighted Load Balancing
+				// It will eventually be "GCP_RENDEZVOUS"
 				return backends.LocalityLBPolicyDefault
 			}
 		}
 	}
-	// The default unset locality lb policy is used to disable ILB Weighted Load Balancing
+	// We leave the LocalityLbPolicy field unset since the default value will be handled outside of the controller.
 	return backends.LocalityLBPolicyDefault
 }
 
 func (l4 *L4) isWeightedLBPodsPerNode() bool {
-	return backends.LocalityLBPolicyWeightedMaglev == l4.determineBackendServiceLocalityPolicy()
+	return backends.LocalityLBPolicyWeightedRendezvous == l4.determineBackendServiceLocalityPolicy()
 }
 
 func (l4 *L4) isLBWithZonalAffinity() bool {
