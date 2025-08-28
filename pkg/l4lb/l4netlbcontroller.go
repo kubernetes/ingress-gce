@@ -36,6 +36,7 @@ import (
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/common/operator"
 	"k8s.io/ingress-gce/pkg/context"
+
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/instancegroups"
@@ -58,6 +59,8 @@ const (
 
 	instanceGroupLink backendLinkType = 0
 	negLink           backendLinkType = 1
+
+	delayDurationForLegacyOwnershipPriority = 5 * time.Second // Configurable via flag if needed
 )
 
 type backendLinkType int64
@@ -86,6 +89,7 @@ type L4NetLBController struct {
 	serviceVersions                    *serviceVersionsTracker
 	enableNEGSupport                   bool
 	enableNEGAsDefault                 bool
+	enableRBSDefault                   bool
 
 	hasSynced func() bool
 
@@ -122,6 +126,7 @@ func NewL4NetLBController(
 		serviceVersions:                    NewServiceVersionsTracker(),
 		logger:                             logger,
 		hasSynced:                          ctx.HasSynced,
+		enableRBSDefault:                   ctx.EnableL4NetLBRBSByDefault,
 	}
 	var networkLister cache.Indexer
 	if ctx.NetworkInformer != nil {
@@ -359,6 +364,7 @@ func (lc *L4NetLBController) shouldProcessService(newSvc, oldSvc *v1.Service, sv
 	warnL4FinalizerRemoved(lc.ctx, oldSvc, newSvc)
 
 	if !lc.isRBSBasedService(newSvc, svcLogger) && !lc.isRBSBasedService(oldSvc, svcLogger) {
+		svcLogger.V(4).Info("Ignoring non RBS based NetLB service")
 		return false, false
 	}
 	if lc.needsAddition(newSvc, oldSvc) || lc.needsUpdate(newSvc, oldSvc) || lc.needsDeletion(newSvc, svcLogger) {
@@ -384,27 +390,87 @@ func (lc *L4NetLBController) isRBSBasedService(svc *v1.Service, svcLogger klog.L
 	// Check if the type=LoadBalancer, so we don't execute API calls o non-LB services
 	// this call is nil-safe
 	if !utils.IsLoadBalancerServiceType(svc) {
+		svcLogger.V(4).Info("Service is not of type LoadBalancer")
 		return false
 	}
 	if svc.Spec.LoadBalancerClass != nil {
+		svcLogger.V(4).Info("Service has LoadBalancerClass annotation", "loadBalancerClass", *svc.Spec.LoadBalancerClass)
 		return annotations.HasLoadBalancerClass(svc, annotations.RegionalExternalLoadBalancerClass)
 	}
-	return annotations.HasRBSAnnotation(svc) || utils.HasL4NetLBFinalizerV2(svc) || utils.HasL4NetLBFinalizerV3(svc) || lc.hasRBSForwardingRule(svc, svcLogger)
+	if lc.enableRBSDefault {
+		svcLogger.V(4).Info("RBS is enabled by default, treating service as RBS based")
+		return true
+	}
+	if utils.HasL4NetLBFinalizerV2(svc) || utils.HasL4NetLBFinalizerV3(svc) {
+		svcLogger.V(4).Info("Service has L4 NetLB RBS finalizer")
+		return true
+	}
+	if annotations.HasRBSAnnotation(svc) {
+		svcLogger.V(4).Info("Service has RBS annotation")
+		return true
+	}
+	if utils.HasL4NetLBFinalizerV1(svc) {
+		svcLogger.V(4).Info("Service has Legacy L4 NetLB finalizer")
+		return false
+	}
+	if lc.hasRBSForwardingRule(svc, svcLogger) {
+		svcLogger.V(4).Info("Service has RBS forwarding rule")
+		return true
+	}
+	return false
+}
+
+func (lc *L4NetLBController) hasLegacyControllerOwnership(svc *v1.Service, svcLogger klog.Logger) bool {
+	// Check for legacy finalizer
+	if utils.HasL4NetLBFinalizerV1(svc) {
+		return true
+	}
+
+	// Check if forwarding rule points to a target pool
+	return lc.hasTargetPoolForwardingRule(svc, svcLogger)
+}
+
+// refreshServiceFromK8s fetches the latest version of the service from Kubernetes
+// This is needed after adding a delay to ensure we have the most up-to-date version
+// which may include finalizers added by other controllers
+func (lc *L4NetLBController) refreshServiceFromK8s(service *v1.Service, svcLogger klog.Logger) *v1.Service {
+	svcLogger.V(3).Info("Refreshing service from Kubernetes",
+		"currentResourceVersion", service.ResourceVersion)
+
+	// Get the latest service from Kubernetes
+	svcKey := utils.ServiceKeyFunc(service.Namespace, service.Name)
+	refreshedService, exists, err := lc.ctx.Services().GetByKey(svcKey)
+	if err != nil {
+		svcLogger.Info("Could not get service from store, using existing one, error: ", err)
+	} else if exists {
+		service = refreshedService
+		svcLogger.Info("finalizer Found service in informer store after wait, using it.")
+	} else {
+		// Service might have been deleted during the wait, return to avoid processing a non-existing service.
+		service = nil
+		svcLogger.Info("Service not found in informer store after wait, ignoring processing.")
+	}
+	return service
 }
 
 func (lc *L4NetLBController) preventLegacyServiceHandling(service *v1.Service, key string, svcLogger klog.Logger) (bool, error) {
-	if (annotations.HasRBSAnnotation(service) || annotations.HasLoadBalancerClass(service, annotations.RegionalExternalLoadBalancerClass)) && lc.hasTargetPoolForwardingRule(service, svcLogger) {
-		if utils.HasL4NetLBFinalizerV2(service) || utils.HasL4NetLBFinalizerV3(service) {
+	svcLogger.Info("Checking for legacy target pool service with RBS annotation or finalizers", "finalizers", service.ObjectMeta.Finalizers)
+	if lc.hasLegacyControllerOwnership(service, svcLogger) {
+		if utils.HasL4NetLBRBSFinalizers(service) {
 			// If we found that RBS finalizer was attached to service, it means that RBS controller
 			// had a race condition on Service creation with Legacy Controller.
 			// It should only happen during service creation, and we should clean up RBS resources
+			svcLogger.Info("Detected Target Pool on RBS service with RBS finalizer. Cleaning up RBS resources to prevent race condition.", "finalizers", service.ObjectMeta.Finalizers)
 			return true, lc.preventTargetPoolRaceWithRBSOnCreation(service, key, svcLogger)
-		} else {
+		} else if annotations.HasRBSAnnotation(service) {
 			// Target Pool to RBS migration is NOT yet supported and causes service to break (for now).
 			// If we detect RBS annotation on legacy service, we remove RBS annotation,
 			// so service stays with Legacy Target Pool implementation
+			svcLogger.Info("Detected Target Pool on service with RBS annotation. Removing RBS annotation to prevent unsupported migration.", "finalizers", service.ObjectMeta.Finalizers)
 			return true, lc.preventExistingTargetPoolToRBSMigration(service, svcLogger)
 		}
+		svcLogger.Info("Service is legacy Target Pool based service. No action needed.", "finalizers", service.ObjectMeta.Finalizers)
+		return true, nil
 	}
 	return false, nil
 }
@@ -412,6 +478,7 @@ func (lc *L4NetLBController) preventLegacyServiceHandling(service *v1.Service, k
 func (lc *L4NetLBController) hasTargetPoolForwardingRule(service *v1.Service, svcLogger klog.Logger) bool {
 	frName := utils.LegacyForwardingRuleName(service)
 	if lc.hasForwardingRuleAnnotation(service, frName) {
+		svcLogger.V(4).Info("Service does not have Target Pool forwarding rule annotation", "forwardingRule", frName)
 		return false
 	}
 
@@ -421,8 +488,10 @@ func (lc *L4NetLBController) hasTargetPoolForwardingRule(service *v1.Service, sv
 		return false
 	}
 	if existingFR != nil && existingFR.Target != "" {
+		svcLogger.V(4).Info("Service has Target Pool forwarding rule", "forwardingRule", frName, "targetPool", strings.Split(existingFR.Target, "/")[len(strings.Split(existingFR.Target, "/"))-1])
 		return true
 	}
+	svcLogger.V(4).Info("Service does not have Target Pool forwarding rule", "forwardingRule", frName)
 	return false
 }
 
@@ -610,6 +679,12 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 	defer func() {
 		svcLogger.Info("Finished syncing L4 NetLB RBS service", "timeTaken", time.Since(startTime))
 	}()
+
+	// Prevent race condition with legacy controller
+	service = lc.handleCreationRace(service, svcLogger)
+	if service == nil {
+		return nil
+	}
 
 	usesNegBackends := lc.shouldUseNEGBackends(service, svcLogger)
 
@@ -975,4 +1050,37 @@ func (lc *L4NetLBController) publishSyncMetrics(result *l4resources.L4NetLBSyncR
 	backendType := result.MetricsState.BackendType
 
 	metrics.PublishNetLBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime, isResync, isWeightedLB, result.MetricsState.Protocol, backendType)
+}
+
+// handleCreationRace prevents a race condition between the legacy and new L4 NetLB controllers
+// when a service is created, ensuring the L4 controller processes the most recent service
+// state and avoids conflicting operations..
+func (lc *L4NetLBController) handleCreationRace(service *v1.Service, svcLogger klog.Logger) *v1.Service {
+	l4NetLBLegacyHeadStartTime := flags.F.L4NetLBLegacyHeadStartTime
+	hasL4NetLBRBSFinalizers := utils.HasL4NetLBRBSFinalizers(service)
+	hasLegacyL4NetLBFinalizerV1 := utils.HasL4NetLBFinalizerV1(service)
+
+	if !hasLegacyL4NetLBFinalizerV1 && !hasL4NetLBRBSFinalizers && l4NetLBLegacyHeadStartTime > 0*time.Second {
+		// Add a delay to allow legacy controller to potentially claim the service first
+		svcLogger.Info("Service does not have RBS finalizer yet and RBS is default. Adding delay to allow legacy controller to act first",
+			"delay", delayDurationForLegacyOwnershipPriority)
+		time.Sleep(delayDurationForLegacyOwnershipPriority)
+
+		// Refresh the service from Kubernetes to get the latest version
+		// This is critical because the legacy controller may have added its finalizer (NetLBFinalizerV1)
+		// during the delay period
+		refreshedService := lc.refreshServiceFromK8s(service, svcLogger)
+
+		// Use the refreshed service for the rest of the sync
+		service = refreshedService
+
+		// Also check explicitly for legacy ownership to be extra safe
+		if lc.hasLegacyControllerOwnership(service, svcLogger) {
+			svcLogger.Info("After delay and refresh, detected legacy controller ownership. Skipping RBS sync.")
+			return nil
+		}
+
+		svcLogger.Info("After delay and refresh, proceeding with RBS sync", "resourceVersion", service.ResourceVersion)
+	}
+	return service
 }
