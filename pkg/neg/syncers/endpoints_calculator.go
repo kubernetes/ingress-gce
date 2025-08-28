@@ -48,9 +48,10 @@ type LocalL4EndpointsCalculator struct {
 	svcId           string
 	logger          klog.Logger
 	networkInfo     *network.NetworkInfo
+	negMetrics      *metrics.NegMetrics
 }
 
-func NewLocalL4EndpointsCalculator(nodeLister listers.NodeLister, zoneGetter *zonegetter.ZoneGetter, svcId string, logger klog.Logger, networkInfo *network.NetworkInfo, lbType types.L4LBType) *LocalL4EndpointsCalculator {
+func NewLocalL4EndpointsCalculator(nodeLister listers.NodeLister, zoneGetter *zonegetter.ZoneGetter, svcId string, logger klog.Logger, networkInfo *network.NetworkInfo, lbType types.L4LBType, negMetrics *metrics.NegMetrics) *LocalL4EndpointsCalculator {
 	subsetSize := maxSubsetSizeLocal
 	if lbType == types.L4ExternalLB {
 		subsetSize = maxSubsetSizeNetLBLocal
@@ -63,6 +64,7 @@ func NewLocalL4EndpointsCalculator(nodeLister listers.NodeLister, zoneGetter *zo
 		svcId:           svcId,
 		logger:          logger.WithName("LocalL4EndpointsCalculator"),
 		networkInfo:     networkInfo,
+		negMetrics:      negMetrics,
 	}
 }
 
@@ -99,7 +101,7 @@ func (l *LocalL4EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsDat
 			node, err := l.nodeLister.Get(*addr.NodeName)
 			if err != nil {
 				l.logger.Error(err, "failed to retrieve node object", "nodeName", *addr.NodeName)
-				metrics.PublishNegControllerErrorCountMetrics(err, true)
+				l.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 				continue
 			}
 			if ok := l.zoneGetter.IsNodeSelectedByFilter(node, zonegetter.CandidateAndUnreadyNodesFilter, l.logger); !ok {
@@ -113,7 +115,7 @@ func (l *LocalL4EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsDat
 			zone, subnet, err := l.zoneGetter.ZoneAndSubnetForNode(node.Name, l.logger)
 			if err != nil || zone == zonegetter.EmptyZone {
 				l.logger.Error(err, "Unable to find zone for node, skipping", "nodeName", node.Name)
-				metrics.PublishNegControllerErrorCountMetrics(err, true)
+				l.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 				continue
 			}
 			// For MN services, use the MN subnet as the subnet for the NEG.
@@ -162,9 +164,11 @@ type ClusterL4EndpointsCalculator struct {
 	lbType types.L4LBType
 
 	logger klog.Logger
+
+	negMetrics *metrics.NegMetrics
 }
 
-func NewClusterL4EndpointsCalculator(nodeLister listers.NodeLister, zoneGetter *zonegetter.ZoneGetter, svcId string, logger klog.Logger, networkInfo *network.NetworkInfo, l4LBtype types.L4LBType) *ClusterL4EndpointsCalculator {
+func NewClusterL4EndpointsCalculator(nodeLister listers.NodeLister, zoneGetter *zonegetter.ZoneGetter, svcId string, logger klog.Logger, networkInfo *network.NetworkInfo, l4LBtype types.L4LBType, negMetrics *metrics.NegMetrics) *ClusterL4EndpointsCalculator {
 	subsetSize := maxSubsetSizeDefault
 	if l4LBtype == types.L4ExternalLB {
 		subsetSize = maxSubsetSizeNetLBCluster
@@ -176,6 +180,7 @@ func NewClusterL4EndpointsCalculator(nodeLister listers.NodeLister, zoneGetter *
 		lbType:          l4LBtype,
 		logger:          logger.WithName("ClusterL4EndpointsCalculator"),
 		networkInfo:     networkInfo,
+		negMetrics:      negMetrics,
 	}
 }
 
@@ -202,7 +207,7 @@ func (l *ClusterL4EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsD
 		zone, subnet, err := l.zoneGetter.ZoneAndSubnetForNode(node.Name, l.logger)
 		if err != nil || zone == zonegetter.EmptyZone {
 			l.logger.Error(err, "Unable to find zone for node skipping", "nodeName", node.Name)
-			metrics.PublishNegControllerErrorCountMetrics(err, true)
+			l.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 			continue
 		}
 		// For MN services, use the MN subnet as the subnet for the NEG.
@@ -301,9 +306,10 @@ type L7EndpointsCalculator struct {
 	enableMultiSubnetCluster bool
 	logger                   klog.Logger
 	syncMetricsCollector     *metricscollector.SyncerMetrics
+	negMetrics               *metrics.NegMetrics
 }
 
-func NewL7EndpointsCalculator(zoneGetter *zonegetter.ZoneGetter, podLister, nodeLister, serviceLister cache.Indexer, syncerKey types.NegSyncerKey, logger klog.Logger, enableDualStackNEG bool, syncMetricsCollector *metricscollector.SyncerMetrics) *L7EndpointsCalculator {
+func NewL7EndpointsCalculator(zoneGetter *zonegetter.ZoneGetter, podLister, nodeLister, serviceLister cache.Indexer, syncerKey types.NegSyncerKey, logger klog.Logger, enableDualStackNEG bool, syncMetricsCollector *metricscollector.SyncerMetrics, negMetrics *metrics.NegMetrics) *L7EndpointsCalculator {
 	return &L7EndpointsCalculator{
 		zoneGetter:               zoneGetter,
 		servicePortName:          syncerKey.PortTuple.Name,
@@ -316,6 +322,7 @@ func NewL7EndpointsCalculator(zoneGetter *zonegetter.ZoneGetter, podLister, node
 		enableMultiSubnetCluster: flags.F.EnableMultiSubnetCluster,
 		logger:                   logger.WithName("L7EndpointsCalculator"),
 		syncMetricsCollector:     syncMetricsCollector,
+		negMetrics:               negMetrics,
 	}
 }
 
@@ -326,7 +333,7 @@ func (l *L7EndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
 func (l *L7EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, _ map[types.NEGLocation]types.NetworkEndpointSet) (map[types.NEGLocation]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
-	result, err := toZoneNetworkEndpointMap(eds, l.zoneGetter, l.podLister, l.servicePortName, l.networkEndpointType, l.enableDualStackNEG, l.enableMultiSubnetCluster, l.logger)
+	result, err := toZoneNetworkEndpointMap(eds, l.zoneGetter, l.podLister, l.servicePortName, l.networkEndpointType, l.enableDualStackNEG, l.enableMultiSubnetCluster, l.logger, l.negMetrics)
 	if err == nil { // If current calculation ends up in error, we trigger and emit metrics in degraded mode.
 		l.syncMetricsCollector.UpdateSyncerEPMetrics(l.syncerKey, result.EPCount, result.EPSCount)
 	}
@@ -335,7 +342,7 @@ func (l *L7EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, _ 
 
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
 func (l *L7EndpointsCalculator) CalculateEndpointsDegradedMode(eds []types.EndpointsData, _ map[types.NEGLocation]types.NetworkEndpointSet) (map[types.NEGLocation]types.NetworkEndpointSet, types.EndpointPodMap, error) {
-	result := toZoneNetworkEndpointMapDegradedMode(eds, l.zoneGetter, l.podLister, l.nodeLister, l.serviceLister, l.servicePortName, l.networkEndpointType, l.enableDualStackNEG, l.enableMultiSubnetCluster, l.logger)
+	result := toZoneNetworkEndpointMapDegradedMode(eds, l.zoneGetter, l.podLister, l.nodeLister, l.serviceLister, l.servicePortName, l.networkEndpointType, l.enableDualStackNEG, l.enableMultiSubnetCluster, l.logger, l.negMetrics)
 	l.syncMetricsCollector.UpdateSyncerEPMetrics(l.syncerKey, result.EPCount, result.EPSCount)
 	return result.NetworkEndpointSet, result.EndpointPodMap, nil
 }

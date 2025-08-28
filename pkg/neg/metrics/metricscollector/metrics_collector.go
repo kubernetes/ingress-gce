@@ -91,10 +91,13 @@ type SyncerMetrics struct {
 
 	// logger logs message related to NegMetricsCollector
 	logger klog.Logger
+
+	// providerConfigID is the ID for tenant/cluster for which the metrics are collected.
+	providerConfigID string
 }
 
 // NewNEGMetricsCollector initializes SyncerMetrics and starts a go routine to compute and export metrics periodically.
-func NewNegMetricsCollector(exportInterval time.Duration, logger klog.Logger) *SyncerMetrics {
+func NewNegMetricsCollector(exportInterval time.Duration, logger klog.Logger, providerConfigID string) *SyncerMetrics {
 	return &SyncerMetrics{
 		syncerStateMap:              make(map[negtypes.NegSyncerKey]syncerState),
 		syncerEndpointStateMap:      make(map[negtypes.NegSyncerKey]negtypes.StateCountMap),
@@ -108,12 +111,13 @@ func NewNegMetricsCollector(exportInterval time.Duration, logger klog.Logger) *S
 		clock:                       clock.RealClock{},
 		metricsInterval:             exportInterval,
 		logger:                      logger.WithName("NegMetricsCollector"),
+		providerConfigID:            providerConfigID,
 	}
 }
 
 // FakeSyncerMetrics creates new NegMetricsCollector with fixed 5 second metricsInterval, to be used in tests
 func FakeSyncerMetrics() *SyncerMetrics {
-	return NewNegMetricsCollector(5*time.Second, klog.TODO())
+	return NewNegMetricsCollector(5*time.Second, klog.TODO(), "fake-provider-config-id")
 }
 
 func (sm *SyncerMetrics) Run(stopCh <-chan struct{}) {
@@ -129,8 +133,8 @@ func (sm *SyncerMetrics) Run(stopCh <-chan struct{}) {
 // export exports syncer metrics.
 func (sm *SyncerMetrics) export() {
 	lpMetrics := sm.computeLabelMetrics()
-	NumberOfEndpoints.WithLabelValues(totalEndpoints).Set(float64(lpMetrics.NumberOfEndpoints))
-	NumberOfEndpoints.WithLabelValues(epWithAnnotation).Set(float64(lpMetrics.EndpointsWithAnnotation))
+	NumberOfEndpoints.WithLabelValues(totalEndpoints, sm.providerConfigID).Set(float64(lpMetrics.NumberOfEndpoints))
+	NumberOfEndpoints.WithLabelValues(epWithAnnotation, sm.providerConfigID).Set(float64(lpMetrics.EndpointsWithAnnotation))
 
 	stateCount, syncerCount := sm.computeSyncerStateMetrics()
 	//Reset metric so non-existent keys are now 0
@@ -151,7 +155,7 @@ func (sm *SyncerMetrics) export() {
 	//Clear existing metrics (ensures that keys that don't exist anymore are reset)
 	negsManagedCount.Reset()
 	for key, count := range negCounts {
-		negsManagedCount.WithLabelValues(key.location, key.endpointType).Set(float64(count))
+		negsManagedCount.WithLabelValues(key.location, key.endpointType, sm.providerConfigID).Set(float64(count))
 	}
 
 	sm.logger.V(3).Info("Exporting syncer related metrics", "Syncer count", syncerCount,
@@ -169,7 +173,7 @@ func (sm *SyncerMetrics) export() {
 
 	syncerCountByEndpointType, migrationEndpointCount, migrationServicesCount := sm.computeDualStackMigrationCounts()
 	for endpointType, count := range syncerCountByEndpointType {
-		SyncerCountByEndpointType.WithLabelValues(endpointType).Set(float64(count))
+		SyncerCountByEndpointType.WithLabelValues(endpointType, sm.providerConfigID).Set(float64(count))
 	}
 	syncerEndpointState.WithLabelValues(string(negtypes.DualStackMigration)).Set(float64(migrationEndpointCount))
 	DualStackMigrationServiceCount.Set(float64(migrationServicesCount))
@@ -178,7 +182,7 @@ func (sm *SyncerMetrics) export() {
 
 	negCount := sm.computeNegMetrics()
 	for feature, count := range negCount {
-		networkEndpointGroupCount.WithLabelValues(feature.String()).Set(float64(count))
+		networkEndpointGroupCount.WithLabelValues(feature.String(), sm.providerConfigID).Set(float64(count))
 	}
 	sm.logger.V(3).Info("Exported NEG usage metrics", "NEG count", fmt.Sprintf("%#v", negCount))
 }
@@ -190,7 +194,7 @@ func (sm *SyncerMetrics) UpdateSyncerStatusInMetrics(key negtypes.NegSyncerKey, 
 		syncErr := negtypes.ClassifyError(err)
 		reason = syncErr.Reason
 	}
-	syncerSyncResult.WithLabelValues(string(reason)).Inc()
+	syncerSyncResult.WithLabelValues(string(reason), sm.providerConfigID).Inc()
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	if sm.syncerStateMap == nil {

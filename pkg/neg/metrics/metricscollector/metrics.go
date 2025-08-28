@@ -88,7 +88,7 @@ var (
 			Name:      "number_of_endpoints",
 			Help:      "The total number of endpoints",
 		},
-		[]string{"feature"},
+		[]string{"feature", "provider_config_id"},
 	)
 
 	DualStackMigrationFinishedDurations = prometheus.NewHistogram(
@@ -116,7 +116,7 @@ var (
 			Name:      "syncer_count_by_endpoint_type",
 			Help:      "Number of Syncers managing NEGs containing endpoint of a particular kind",
 		},
-		[]string{"endpoint_type"},
+		[]string{"endpoint_type", "provider_config_id"},
 	)
 
 	DualStackMigrationServiceCount = prometheus.NewGauge(
@@ -134,7 +134,7 @@ var (
 			Name:      "sync_result",
 			Help:      "Current count for each sync result",
 		},
-		[]string{"result"},
+		[]string{"result", "provider_config_id"},
 	)
 
 	negsManagedCount = prometheus.NewGaugeVec(
@@ -143,7 +143,7 @@ var (
 			Name:      "managed_neg_count",
 			Help:      "Number of NEGs the Neg Controller Manages",
 		},
-		[]string{"location", "endpoint_type"},
+		[]string{"location", "endpoint_type", "provider_config_id"},
 	)
 
 	networkEndpointGroupCount = prometheus.NewGaugeVec(
@@ -151,6 +151,6 @@ var (
 			Name: "number_of_negs",
 			Help: "Number of NEGs",
 		},
-		[]string{"feature"},
+		[]string{"feature", "provider_config_id"},
 	)
 )

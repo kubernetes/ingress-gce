@@ -58,10 +58,11 @@ type syncer struct {
 	clock   clock.Clock
 	backoff backoff.BackoffHandler
 
-	logger klog.Logger
+	logger     klog.Logger
+	negMetrics *metrics.NegMetrics
 }
 
-func newSyncer(negSyncerKey negtypes.NegSyncerKey, serviceLister cache.Indexer, recorder record.EventRecorder, core syncerCore, logger klog.Logger) *syncer {
+func newSyncer(negSyncerKey negtypes.NegSyncerKey, serviceLister cache.Indexer, recorder record.EventRecorder, core syncerCore, logger klog.Logger, negMetrics *metrics.NegMetrics) *syncer {
 	return &syncer{
 		NegSyncerKey:  negSyncerKey,
 		core:          core,
@@ -72,6 +73,7 @@ func newSyncer(negSyncerKey negtypes.NegSyncerKey, serviceLister cache.Indexer, 
 		clock:         clock.RealClock{},
 		backoff:       backoff.NewExponentialBackoffHandler(maxRetries, minRetryDelay, maxRetryDelay),
 		logger:        logger,
+		negMetrics:    negMetrics,
 	}
 }
 
@@ -91,7 +93,7 @@ func (s *syncer) Start() error {
 			retryCh := make(<-chan time.Time)
 			err := s.core.sync()
 			if err != nil {
-				go metrics.PublishNegControllerErrorCountMetrics(err, false)
+				go s.negMetrics.PublishNegControllerErrorCountMetrics(err, false)
 				delay, retryErr := time.Duration(0), error(nil)
 				if !negtypes.IsStrategyQuotaError(err) {
 					delay, retryErr = s.backoff.NextDelay()
@@ -106,7 +108,7 @@ func (s *syncer) Start() error {
 
 				s.logger.Error(err, "Sync failed", "syncerKey", s.NegSyncerKey.String(), "retry", retryMsg)
 
-				if svc := getService(s.serviceLister, s.Namespace, s.Name, s.logger); svc != nil {
+				if svc := getService(s.serviceLister, s.Namespace, s.Name, s.logger, s.negMetrics); svc != nil {
 					s.recorder.Eventf(svc, apiv1.EventTypeWarning, "SyncNetworkEndpointGroupFailed", "Failed to sync NEG %q %s: %v", s.NegSyncerKey.NegName, retryMsg, err)
 				}
 			} else {
