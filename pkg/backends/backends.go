@@ -48,10 +48,14 @@ type LocalityLBPolicyType string
 const (
 	// LocalityLBPolicyDefault is the default locality lb policy for a backend service.
 	LocalityLBPolicyDefault LocalityLBPolicyType = ""
-	// LocalityLBPolicyWeightedMaglev is the locality lb policy for weighted load balancing by pods-per-node.
+	// LocalityLBPolicyWeightedMaglev is the locality lb policy for NetLB weighted load balancing by pods-per-node.
 	LocalityLBPolicyWeightedMaglev LocalityLBPolicyType = "WEIGHTED_MAGLEV"
 	// LocalityLBPolicyMaglev is the locality lb policy when weighted load balancing by pods-per-node is disabled.
 	LocalityLBPolicyMaglev LocalityLBPolicyType = "MAGLEV"
+	// LocalityLBPolicyWeightedRendezvous is the locality lb policy for ILB weighted load balancing by pods-per-node.
+	LocalityLBPolicyWeightedRendezvous LocalityLBPolicyType = "WEIGHTED_GCP_RENDEZVOUS"
+	// LocalityLbPolicyRendezvous used for ILB will become the default locality lb policy for a backend service.
+	LocalityLbPolicyRendezvous LocalityLBPolicyType = "GCP_RENDEZVOUS"
 )
 
 // Pool handles CRUD operations on a pool of GCE Backend Services.
@@ -512,11 +516,13 @@ func backendSvcEqual(newBS, oldBS *composite.BackendService, compareConnectionTr
 		svcsEqual = svcsEqual && backendServiceLogConfigEqual(oldBS.LogConfig, newBS.LogConfig)
 	}
 
-	// If the locality lb policy is not set for existing services, no need to update to MAGLEV since it is the default now.
+	// If the locality lb policy is not set for existing services, no need to update to MAGLEV since it is the default for NetLB.
+	// GCP_RENDEZVOUS will become the default so the controller should prevent trying to unset it each resync.
 	svcsEqual = svcsEqual &&
 		(newBS.LocalityLbPolicy == oldBS.LocalityLbPolicy ||
 			(newBS.LocalityLbPolicy == string(LocalityLBPolicyDefault) && oldBS.LocalityLbPolicy == string(LocalityLBPolicyMaglev)) ||
-			(newBS.LocalityLbPolicy == string(LocalityLBPolicyMaglev) && oldBS.LocalityLbPolicy == string(LocalityLBPolicyDefault)))
+			(newBS.LocalityLbPolicy == string(LocalityLBPolicyMaglev) && oldBS.LocalityLbPolicy == string(LocalityLBPolicyDefault)) ||
+			(newBS.LocalityLbPolicy == string(LocalityLBPolicyDefault) && oldBS.LocalityLbPolicy == string(LocalityLbPolicyRendezvous)))
 
 	// If zonal affinity is set, needs to be equal
 	svcsEqual = svcsEqual && zonalAffinityEqual(newBS, oldBS)
