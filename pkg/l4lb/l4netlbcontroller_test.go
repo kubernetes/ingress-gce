@@ -308,7 +308,7 @@ func getFakeGCECloud(vals gce.TestClusterValues) *gce.Cloud {
 	return fakeGCE
 }
 
-func buildContext(vals gce.TestClusterValues, readOnlyMode bool) (*ingctx.ControllerContext, error) {
+func buildContext(vals gce.TestClusterValues, readOnlyMode bool, isRBSdefault bool) (*ingctx.ControllerContext, error) {
 	fakeGCE := getFakeGCECloud(vals)
 	kubeClient := fake.NewSimpleClientset()
 	networkClient := netfake.NewSimpleClientset()
@@ -317,22 +317,31 @@ func buildContext(vals gce.TestClusterValues, readOnlyMode bool) (*ingctx.Contro
 	namer := namer.NewNamer(clusterUID, "", klog.TODO())
 
 	ctxConfig := ingctx.ControllerContextConfig{
-		Namespace:         v1.NamespaceAll,
-		ResyncPeriod:      1 * time.Minute,
-		NumL4NetLBWorkers: 5,
-		MaxIGSize:         1000,
-		ReadOnlyMode:      readOnlyMode,
+		Namespace:                 v1.NamespaceAll,
+		ResyncPeriod:              1 * time.Minute,
+		NumL4NetLBWorkers:         5,
+		MaxIGSize:                 1000,
+		ReadOnlyMode:              readOnlyMode,
+		EnableL4NetLBRBSByDefault: isRBSdefault,
 	}
 	return ingctx.NewControllerContext(kubeClient, nil, nil, nil, svcNegClient, nil, networkClient, nil, kubeClient /*kube client to be used for events*/, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
 }
 
 func newL4NetLBServiceController() *L4NetLBController {
-	return createL4NetLBServiceController(test.DefaultTestClusterValues(), false)
+	return createL4NetLBServiceController(test.DefaultTestClusterValues(), false, false)
 }
 
-func createL4NetLBServiceController(vals gce.TestClusterValues, readOnlyMode bool) *L4NetLBController {
+func newL4NetLBServiceControllerReadOnlyMode(readOnlyMode bool) *L4NetLBController {
+	return createL4NetLBServiceController(test.DefaultTestClusterValues(), readOnlyMode, false)
+}
+
+func newL4NetLBServiceControllerRBSDefault(isRBSdefault bool) *L4NetLBController {
+	return createL4NetLBServiceController(test.DefaultTestClusterValues(), false, isRBSdefault)
+}
+
+func createL4NetLBServiceController(vals gce.TestClusterValues, readOnlyMode bool, isRBSdefault bool) *L4NetLBController {
 	stopCh := make(chan struct{})
-	ctx, err := buildContext(vals, readOnlyMode)
+	ctx, err := buildContext(vals, readOnlyMode, isRBSdefault)
 	if err != nil {
 		klog.Fatalf("Failed to build context: %v", err)
 	}
@@ -1625,6 +1634,7 @@ func TestIsRBSBasedService(t *testing.T) {
 		finalizers       []string
 		annotations      map[string]string
 		frHook           getForwardingRuleHook
+		isRBSDefault     bool
 		expectRBSService bool
 	}{
 		{
@@ -1661,13 +1671,18 @@ func TestIsRBSBasedService(t *testing.T) {
 			frHook:           test.GetLegacyForwardingRule,
 			expectRBSService: false,
 		},
+		{
+			desc:             "Should detect RBS by default",
+			isRBSDefault:     true,
+			expectRBSService: true,
+		},
 	}
 
 	for _, testCase := range testCases {
 		t.Run(testCase.desc, func(t *testing.T) {
 			// Setup
 			svc := test.NewL4LegacyNetLBService(8080, 30234)
-			controller := newL4NetLBServiceController()
+			controller := newL4NetLBServiceControllerRBSDefault(testCase.isRBSDefault)
 			svc.Annotations = testCase.annotations
 			svc.ObjectMeta.Finalizers = testCase.finalizers
 			controller.ctx.Cloud.Compute().(*cloud.MockGCE).MockForwardingRules.GetHook = testCase.frHook
@@ -2279,7 +2294,7 @@ func TestEnsureExternalLoadBalancerClass(t *testing.T) {
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			lc := createL4NetLBServiceController(test.DefaultTestClusterValues(), false)
+			lc := newL4NetLBServiceController()
 
 			svc := test.NewL4LBServiceWithLoadBalancerClass(tc.loadBalancerClass)
 			if tc.loadBalancerClass == "" {
@@ -2382,7 +2397,7 @@ func TestEnsureReadOnlyModeDoesNotProvision(t *testing.T) {
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			lc := createL4NetLBServiceController(test.DefaultTestClusterValues(), tc.readOnlyModeEnabled)
+			lc := newL4NetLBServiceControllerReadOnlyMode(tc.readOnlyModeEnabled)
 
 			svc := test.NewL4LBServiceWithLoadBalancerClass(tc.loadBalancerClass)
 			if tc.loadBalancerClass == "" {
