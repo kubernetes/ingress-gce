@@ -214,22 +214,22 @@ func (l *ClusterL4EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsD
 	}
 	l.logger.V(2).Info("Got zoneNodeMap as input for service", "zoneNodeMap", nodeMapToString(zoneNodeMap), "serviceID", l.svcId)
 
-	wanted := l.subsetSizeLimit
+	wanted := l.wantedInternalEndpointsCount(len(zoneNodeMap))
 	if l.lbType == types.L4ExternalLB {
-		wanted = l.wantedNEGsCount(eds, currentMap, len(zoneSubnetPairs))
+		wanted = l.wantedExternalEndpointsCount(eds, currentMap, len(zoneSubnetPairs))
 	}
 
 	subsetMap, err := getSubsetPerZone(zoneNodeMap, wanted, l.svcId, currentMap, l.logger, l.networkInfo)
 	return subsetMap, nil, 0, err
 }
 
-// wantedNEGsCount will determine the amount of NEGs that:
+// wantedExternalEndpointsCount will determine the amount of endpoints that:
 // * scales linearly based on the number of pods
-// * won't over provision NEGs over the nodes or pods count
-// * won't delete already existing NEGs, as that requires connection draining
-// * will provide at least 3 NEGs per zone/subnet pair
+// * won't over provision endpoints over the nodes or pods count
+// * won't delete already existing endpoints, as that requires connection draining
+// * will provide at least 3 endpoints per zone/subnet pair
 // * takes into account limits for passthrough NetLB and ILB
-func (l *ClusterL4EndpointsCalculator) wantedNEGsCount(eds []types.EndpointsData, currentMap map[types.NEGLocation]types.NetworkEndpointSet, zoneSubnetPairCount int) int {
+func (l *ClusterL4EndpointsCalculator) wantedExternalEndpointsCount(eds []types.EndpointsData, currentMap map[types.NEGLocation]types.NetworkEndpointSet, zoneSubnetPairCount int) int {
 	// Compute the networkEndpoints, with total endpoints <= l.subsetSizeLimit.
 	optimal := linearEndpointsPerPods(zoneSubnetPairCount, edsLen(eds), l.subsetSizeLimit)
 
@@ -240,6 +240,26 @@ func (l *ClusterL4EndpointsCalculator) wantedNEGsCount(eds []types.EndpointsData
 	l.logger.V(2).Info("Calculated wanted endpoints", "optimal", optimal, "used", used, "wanted", wanted)
 
 	return wanted
+}
+
+// wantedInternalEndpointsCount will determine the amount of endpoints that is divisible by the number of zones
+// This should lead to improvements in the amount of connection draining that is done,
+func (l *ClusterL4EndpointsCalculator) wantedInternalEndpointsCount(zonesCount int) int {
+	// | zones | endpoints per zone | total endpoints |
+	// | ----- | ------------------ | --------------- |
+	// |     1 |                 24 |              24 |
+	// |     2 |                 12 |              24 |
+	// |     3 |                  8 |              24 |
+	// |     4 |                  6 |              24 |
+	// |     5 |                  5 |              25 |
+	// |     6 |                  4 |              24 |
+	// | ----- | ------------------ | --------------- |
+	// Based on https://cloud.google.com/compute/docs/regions-zones#available
+	// There are no regions with more than 4 zones currently.
+	if zonesCount != 0 && 24%zonesCount == 0 { // If there is some issue with zonesCount we don't want to divide by zero
+		return 24
+	}
+	return 25
 }
 
 func linearEndpointsPerPods(zoneSubnetPairCount, endpointsCount, subsetSizeLimit int) int {
