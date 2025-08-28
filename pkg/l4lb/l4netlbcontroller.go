@@ -83,6 +83,7 @@ type L4NetLBController struct {
 	serviceVersions                    *serviceVersionsTracker
 	enableNEGSupport                   bool
 	enableNEGAsDefault                 bool
+	enableRBSDefault                   bool
 
 	hasSynced func() bool
 
@@ -119,6 +120,7 @@ func NewL4NetLBController(
 		serviceVersions:                    NewServiceVersionsTracker(),
 		logger:                             logger,
 		hasSynced:                          ctx.HasSynced,
+		enableRBSDefault:                   ctx.EnableL4NetLBRBSByDefault,
 	}
 	var networkLister cache.Indexer
 	if ctx.NetworkInformer != nil {
@@ -386,7 +388,7 @@ func (lc *L4NetLBController) isRBSBasedService(svc *v1.Service, svcLogger klog.L
 	if svc.Spec.LoadBalancerClass != nil {
 		return annotations.HasLoadBalancerClass(svc, annotations.RegionalExternalLoadBalancerClass)
 	}
-	return annotations.HasRBSAnnotation(svc) || utils.HasL4NetLBFinalizerV2(svc) || utils.HasL4NetLBFinalizerV3(svc) || lc.hasRBSForwardingRule(svc, svcLogger)
+	return lc.enableRBSDefault || annotations.HasRBSAnnotation(svc) || utils.HasL4NetLBFinalizerV2(svc) || utils.HasL4NetLBFinalizerV3(svc) || lc.hasRBSForwardingRule(svc, svcLogger)
 }
 
 func (lc *L4NetLBController) preventLegacyServiceHandling(service *v1.Service, key string, svcLogger klog.Logger) (bool, error) {
