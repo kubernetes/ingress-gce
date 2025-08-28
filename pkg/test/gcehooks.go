@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
@@ -105,17 +106,26 @@ func DeleteHealthCheckResourceInUseErrorHook(ctx context.Context, key *meta.Key,
 }
 
 func GetLegacyForwardingRule(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules, options ...cloud.Option) (bool, *compute.ForwardingRule, error) {
-	fwRule := compute.ForwardingRule{Target: "some_target", LoadBalancingScheme: string(cloud.SchemeExternal), NetworkTier: cloud.NetworkTierDefault.ToGCEValue()}
+	if !strings.HasPrefix(key.Name, "a") {
+		return false, nil, nil
+	}
+	fwRule := compute.ForwardingRule{Name: key.Name, Target: "some_target", LoadBalancingScheme: string(cloud.SchemeExternal), NetworkTier: cloud.NetworkTierDefault.ToGCEValue(), IPProtocol: "TCP"}
 	return true, &fwRule, nil
 }
 
 func GetRBSForwardingRule(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules, options ...cloud.Option) (bool, *compute.ForwardingRule, error) {
-	fwRule := compute.ForwardingRule{BackendService: bsUrl, LoadBalancingScheme: string(cloud.SchemeExternal), NetworkTier: cloud.NetworkTierDefault.ToGCEValue()}
+	if !strings.HasPrefix(key.Name, "a") {
+		return false, nil, nil
+	}
+	fwRule := compute.ForwardingRule{Name: key.Name, BackendService: bsUrl, LoadBalancingScheme: string(cloud.SchemeExternal), NetworkTier: cloud.NetworkTierDefault.ToGCEValue(), IPProtocol: "TCP"}
 	return true, &fwRule, nil
 }
 
 func GetRBSForwardingRuleInStandardTier(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules, options ...cloud.Option) (bool, *compute.ForwardingRule, error) {
-	fwRule := compute.ForwardingRule{BackendService: bsUrl, LoadBalancingScheme: string(cloud.SchemeExternal), NetworkTier: cloud.NetworkTierStandard.ToGCEValue()}
+	if !strings.HasPrefix(key.Name, "a") {
+		return false, nil, nil
+	}
+	fwRule := compute.ForwardingRule{Name: key.Name, BackendService: bsUrl, LoadBalancingScheme: string(cloud.SchemeExternal), NetworkTier: cloud.NetworkTierStandard.ToGCEValue(), IPProtocol: "TCP"}
 	return true, &fwRule, nil
 }
 
