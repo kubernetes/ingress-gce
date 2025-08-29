@@ -4,25 +4,20 @@ import (
 	"fmt"
 
 	networkclient "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned"
-	informernetwork "github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions"
 	nodetopologyclient "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned"
-	informernodetopology "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	providerconfig "k8s.io/ingress-gce/pkg/apis/providerconfig/v1"
 	"k8s.io/ingress-gce/pkg/flags"
-	"k8s.io/ingress-gce/pkg/multiproject/filteredinformer"
+	multiprojectinformers "k8s.io/ingress-gce/pkg/multiproject/informerset"
 	"k8s.io/ingress-gce/pkg/neg"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
-	informersvcneg "k8s.io/ingress-gce/pkg/svcneg/client/informers/externalversions"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
@@ -40,13 +35,10 @@ import (
 //   - joinedStopCh: Internal channel that closes when EITHER globalStopCh OR providerConfigStopCh
 //     closes. Used for PC-specific resources that should stop in either case.
 //
-// IMPORTANT: Base informers from factories use globalStopCh to remain alive across PC changes.
-// Only ProviderConfig-specific controllers and resources should use joinedStopCh.
+// IMPORTANT: Base informers are already running with globalStopCh. We wrap them with
+// ProviderConfig filters that use globalStopCh to remain alive across PC changes.
 func StartNEGController(
-	informersFactory informers.SharedInformerFactory,
-	svcNegFactory informersvcneg.SharedInformerFactory,
-	networkFactory informernetwork.SharedInformerFactory,
-	nodeTopologyFactory informernodetopology.SharedInformerFactory,
+	informers *multiprojectinformers.InformerSet,
 	kubeClient kubernetes.Interface,
 	eventRecorderClient kubernetes.Interface,
 	svcNegClient svcnegclient.Interface,
@@ -82,12 +74,11 @@ func StartNEGController(
 		}
 	}()
 
-	informers, hasSynced, err := initializeInformers(informersFactory, svcNegFactory, networkFactory, nodeTopologyFactory, providerConfigName, logger, globalStopCh)
-	if err != nil {
-		return nil, err
-	}
+	// Wrap informers with provider config filter
+	filteredInformers := informers.FilterByProviderConfig(providerConfigName)
+	hasSynced := filteredInformers.CombinedHasSynced()
 
-	zoneGetter, err := zonegetter.NewZoneGetter(informers.nodeInformer, informers.providerConfigFilteredNodeTopologyInformer, cloud.SubnetworkURL())
+	zoneGetter, err := zonegetter.NewZoneGetter(filteredInformers.Node, filteredInformers.NodeTopology, cloud.SubnetworkURL())
 	if err != nil {
 		logger.Error(err, "failed to initialize zone getter")
 		return nil, fmt.Errorf("failed to initialize zonegetter: %v", err)
@@ -98,14 +89,15 @@ func StartNEGController(
 		svcNegClient,
 		eventRecorderClient,
 		kubeSystemUID,
-		informers.ingressInformer,
-		informers.serviceInformer,
-		informers.podInformer,
-		informers.nodeInformer,
-		informers.endpointSliceInformer,
-		informers.providerConfigFilteredSvcNegInformer,
-		informers.providerConfigFilteredNetworkInformer,
-		informers.providerConfigFilteredGkeNetworkParamsInformer,
+		filteredInformers.Ingress,
+		filteredInformers.Service,
+		filteredInformers.Pod,
+		filteredInformers.Node,
+		filteredInformers.EndpointSlice,
+		filteredInformers.SvcNeg,
+		filteredInformers.Network,
+		filteredInformers.GkeNetworkParams,
+		filteredInformers.NodeTopology,
 		hasSynced,
 		cloud,
 		zoneGetter,
@@ -125,132 +117,6 @@ func StartNEGController(
 	return providerConfigStopCh, nil
 }
 
-type negInformers struct {
-	ingressInformer                                cache.SharedIndexInformer
-	serviceInformer                                cache.SharedIndexInformer
-	podInformer                                    cache.SharedIndexInformer
-	nodeInformer                                   cache.SharedIndexInformer
-	endpointSliceInformer                          cache.SharedIndexInformer
-	providerConfigFilteredSvcNegInformer           cache.SharedIndexInformer
-	providerConfigFilteredNetworkInformer          cache.SharedIndexInformer
-	providerConfigFilteredGkeNetworkParamsInformer cache.SharedIndexInformer
-	providerConfigFilteredNodeTopologyInformer     cache.SharedIndexInformer
-}
-
-// initializeInformers wraps the base SharedIndexInformers in a providerConfig filter
-// and runs them.
-func initializeInformers(
-	informersFactory informers.SharedInformerFactory,
-	svcNegFactory informersvcneg.SharedInformerFactory,
-	networkFactory informernetwork.SharedInformerFactory,
-	nodeTopologyFactory informernodetopology.SharedInformerFactory,
-	providerConfigName string,
-	logger klog.Logger,
-	globalStopCh <-chan struct{},
-) (*negInformers, func() bool, error) {
-	ingressInformer := filteredinformer.NewProviderConfigFilteredInformer(informersFactory.Networking().V1().Ingresses().Informer(), providerConfigName)
-	serviceInformer := filteredinformer.NewProviderConfigFilteredInformer(informersFactory.Core().V1().Services().Informer(), providerConfigName)
-	podInformer := filteredinformer.NewProviderConfigFilteredInformer(informersFactory.Core().V1().Pods().Informer(), providerConfigName)
-	nodeInformer := filteredinformer.NewProviderConfigFilteredInformer(informersFactory.Core().V1().Nodes().Informer(), providerConfigName)
-
-	endpointSliceInformer := filteredinformer.NewProviderConfigFilteredInformer(
-		informersFactory.Discovery().V1().EndpointSlices().Informer(),
-		providerConfigName,
-	)
-	// Even though we created separate "provider-config-filtered" informer, informers from the same
-	// factory will share indexers. That's why we need to add the indexer only if it's not present.
-	// This basically means we will only add indexer to the first provider config's informer.
-	err := addIndexerIfNotPresent(endpointSliceInformer.GetIndexer(), endpointslices.EndpointSlicesByServiceIndex, endpointslices.EndpointSlicesByServiceFunc)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to add indexers to endpointSliceInformer: %v", err)
-	}
-
-	var providerConfigFilteredSvcNegInformer cache.SharedIndexInformer
-	if svcNegFactory != nil {
-		svcNegInformer := svcNegFactory.Networking().V1beta1().ServiceNetworkEndpointGroups().Informer()
-		providerConfigFilteredSvcNegInformer = filteredinformer.NewProviderConfigFilteredInformer(svcNegInformer, providerConfigName)
-	}
-
-	var providerConfigFilteredNetworkInformer cache.SharedIndexInformer
-	var providerConfigFilteredGkeNetworkParamsInformer cache.SharedIndexInformer
-	if networkFactory != nil {
-		networkInformer := networkFactory.Networking().V1().Networks().Informer()
-		providerConfigFilteredNetworkInformer = filteredinformer.NewProviderConfigFilteredInformer(networkInformer, providerConfigName)
-
-		gkeNetworkParamsInformer := networkFactory.Networking().V1().GKENetworkParamSets().Informer()
-		providerConfigFilteredGkeNetworkParamsInformer = filteredinformer.NewProviderConfigFilteredInformer(gkeNetworkParamsInformer, providerConfigName)
-	}
-
-	var providerConfigFilteredNodeTopologyInformer cache.SharedIndexInformer
-	if nodeTopologyFactory != nil {
-		nodeTopologyInformer := nodeTopologyFactory.Networking().V1().NodeTopologies().Informer()
-		providerConfigFilteredNodeTopologyInformer = filteredinformer.NewProviderConfigFilteredInformer(nodeTopologyInformer, providerConfigName)
-	}
-
-	// Start them with the joinedStopCh so they properly stop
-	hasSyncedList := []func() bool{
-		ingressInformer.HasSynced,
-		serviceInformer.HasSynced,
-		podInformer.HasSynced,
-		nodeInformer.HasSynced,
-		endpointSliceInformer.HasSynced,
-	}
-	go ingressInformer.Run(globalStopCh)
-	go serviceInformer.Run(globalStopCh)
-	go podInformer.Run(globalStopCh)
-	go nodeInformer.Run(globalStopCh)
-	go endpointSliceInformer.Run(globalStopCh)
-	if providerConfigFilteredSvcNegInformer != nil {
-		go providerConfigFilteredSvcNegInformer.Run(globalStopCh)
-		hasSyncedList = append(hasSyncedList, providerConfigFilteredSvcNegInformer.HasSynced)
-	}
-	if providerConfigFilteredNetworkInformer != nil {
-		go providerConfigFilteredNetworkInformer.Run(globalStopCh)
-		hasSyncedList = append(hasSyncedList, providerConfigFilteredNetworkInformer.HasSynced)
-	}
-	if providerConfigFilteredGkeNetworkParamsInformer != nil {
-		go providerConfigFilteredGkeNetworkParamsInformer.Run(globalStopCh)
-		hasSyncedList = append(hasSyncedList, providerConfigFilteredGkeNetworkParamsInformer.HasSynced)
-	}
-	if providerConfigFilteredNodeTopologyInformer != nil {
-		go providerConfigFilteredNodeTopologyInformer.Run(globalStopCh)
-		hasSyncedList = append(hasSyncedList, providerConfigFilteredNodeTopologyInformer.HasSynced)
-	}
-
-	logger.V(2).Info("NEG informers initialized", "providerConfigName", providerConfigName)
-	informers := &negInformers{
-		ingressInformer:                                ingressInformer,
-		serviceInformer:                                serviceInformer,
-		podInformer:                                    podInformer,
-		nodeInformer:                                   nodeInformer,
-		endpointSliceInformer:                          endpointSliceInformer,
-		providerConfigFilteredSvcNegInformer:           providerConfigFilteredSvcNegInformer,
-		providerConfigFilteredNetworkInformer:          providerConfigFilteredNetworkInformer,
-		providerConfigFilteredGkeNetworkParamsInformer: providerConfigFilteredGkeNetworkParamsInformer,
-		providerConfigFilteredNodeTopologyInformer:     providerConfigFilteredNodeTopologyInformer,
-	}
-	hasSynced := func() bool {
-		for _, hasSynced := range hasSyncedList {
-			if !hasSynced() {
-				return false
-			}
-		}
-		return true
-	}
-
-	return informers, hasSynced, nil
-}
-
-// addIndexerIfNotPresent adds an indexer to the indexer if it's not present.
-// This is needed because informers from the same factory will share indexers.
-func addIndexerIfNotPresent(indexer cache.Indexer, indexName string, indexFunc cache.IndexFunc) error {
-	indexers := indexer.GetIndexers()
-	if _, ok := indexers[indexName]; ok {
-		return nil
-	}
-	return indexer.AddIndexers(cache.Indexers{indexName: indexFunc})
-}
-
 func createNEGController(
 	kubeClient kubernetes.Interface,
 	svcNegClient svcnegclient.Interface,
@@ -264,6 +130,7 @@ func createNEGController(
 	svcNegInformer cache.SharedIndexInformer,
 	networkInformer cache.SharedIndexInformer,
 	gkeNetworkParamsInformer cache.SharedIndexInformer,
+	nodeTopologyInformer cache.SharedIndexInformer,
 	hasSynced func() bool,
 	cloud *gce.Cloud,
 	zoneGetter *zonegetter.ZoneGetter,
@@ -282,7 +149,6 @@ func createNEGController(
 	}
 
 	noDefaultBackendServicePort := utils.ServicePort{}
-	var noNodeTopologyInformer cache.SharedIndexInformer
 
 	negController, err := neg.NewController(
 		kubeClient,
@@ -297,7 +163,7 @@ func createNEGController(
 		svcNegInformer,
 		networkInformer,
 		gkeNetworkParamsInformer,
-		noNodeTopologyInformer,
+		nodeTopologyInformer,
 		hasSynced,
 		l4Namer,
 		noDefaultBackendServicePort,
