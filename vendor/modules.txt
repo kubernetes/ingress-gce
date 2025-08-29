@@ -81,9 +81,7 @@ github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versi
 github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned/scheme
 github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned/typed/network/v1
 github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned/typed/network/v1/fake
-github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions
 github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions/internalinterfaces
-github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions/network
 github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions/network/v1
 github.com/GoogleCloudPlatform/gke-networking-api/client/network/listers/network/v1
 github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned
@@ -91,9 +89,7 @@ github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/
 github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned/scheme
 github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned/typed/nodetopology/v1
 github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned/typed/nodetopology/v1/fake
-github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions
 github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions/internalinterfaces
-github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions/nodetopology
 github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions/nodetopology/v1
 github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/listers/nodetopology/v1
 # github.com/GoogleCloudPlatform/k8s-cloud-provider v1.32.0
