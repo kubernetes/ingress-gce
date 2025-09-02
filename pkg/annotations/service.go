@@ -104,9 +104,15 @@ const (
 	// FirewallRuleKey is the annotation key used by l4 controller to record
 	// GCP Firewall rule name.
 	FirewallRuleKey = ServiceStatusPrefix + "/" + FirewallRuleResource
+	// FirewallRuleDenyKey is the annotation key used by l4 controllers to record
+	// a GCP Deny Firewall rule name
+	FirewallRuleDenyKey = FirewallRuleKey + "-deny"
 	// FirewallRuleIPv6Key is the annotation key used by l4 controller to record
 	// GCP IPv6 Firewall rule name.
 	FirewallRuleIPv6Key = FirewallRuleKey + IPv6Suffix
+	// FirewallRuleDenyIPv6Key is the annotation key used by l4 controllers to record
+	// a GCP IPv6 Deny Firewall rule name
+	FirewallRuleDenyIPv6Key = FirewallRuleDenyKey + IPv6Suffix
 	// HealthcheckKey is the annotation key used by l4 controller to record
 	// GCP Healthcheck name.
 	HealthcheckKey = ServiceStatusPrefix + "/" + HealthcheckResource
