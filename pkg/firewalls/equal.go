@@ -31,6 +31,8 @@ func Equal(a, b *compute.Firewall, skipDescription bool) (bool, error) {
 		return false, nil
 	case !skipDescription && a.Description != b.Description:
 		return false, nil
+	case a.Priority != b.Priority:
+		return false, nil
 	default:
 		return equalAllowRules(a.Allowed, b.Allowed)
 	}

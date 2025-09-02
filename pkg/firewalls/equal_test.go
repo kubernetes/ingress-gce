@@ -357,6 +357,26 @@ func TestEqual(t *testing.T) {
 			},
 			want: true,
 		},
+		{
+			desc: "different priority",
+			a: &compute.Firewall{
+				Priority: 1000,
+			},
+			b: &compute.Firewall{
+				Priority: 999,
+			},
+			want: false,
+		},
+		{
+			desc: "same priority",
+			a: &compute.Firewall{
+				Priority: 1000,
+			},
+			b: &compute.Firewall{
+				Priority: 1000,
+			},
+			want: true,
+		},
 	}
 	for _, tC := range testCases {
 		t.Run(tC.desc, func(t *testing.T) {
