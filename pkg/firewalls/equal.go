@@ -34,8 +34,15 @@ func Equal(a, b *compute.Firewall, skipDescription bool) (bool, error) {
 	case a.Priority != b.Priority:
 		return false, nil
 	default:
-		return equalAllowRules(a.Allowed, b.Allowed)
+		if eq, err := equalAllowRules(a.Allowed, b.Allowed); !eq || err != nil {
+			return false, err
+		}
+		if eq, err := equalDenyRules(a.Denied, b.Denied); !eq || err != nil {
+			return false, err
+		}
+		return true, nil
 	}
+
 }
 
 // Check if two sets of IP addresses or CIDRs are equal.
@@ -117,6 +124,41 @@ func portsAllowedPerProtocol(a []*compute.FirewallAllowed) (map[string]map[int]s
 		}
 	}
 	return portsOpenForProtocol, nil
+}
+
+func equalDenyRules(a, b []*compute.FirewallDenied) (bool, error) {
+	am, err := portsDeniedPerProtocol(a)
+	if err != nil {
+		return false, err
+	}
+
+	bm, err := portsDeniedPerProtocol(b)
+	if err != nil {
+		return false, err
+	}
+
+	return reflect.DeepEqual(am, bm), nil
+}
+
+func portsDeniedPerProtocol(a []*compute.FirewallDenied) (map[string]map[int]struct{}, error) {
+	portsClosedForProtocol := make(map[string]map[int]struct{})
+	for _, rule := range a {
+		protocol := strings.ToLower(rule.IPProtocol)
+		if _, ok := portsClosedForProtocol[protocol]; !ok {
+			portsClosedForProtocol[protocol] = make(map[int]struct{})
+		}
+
+		for _, portStr := range rule.Ports {
+			start, end, err := parsePort(portStr)
+			if err != nil {
+				return nil, err
+			}
+			for i := start; i <= end; i++ {
+				portsClosedForProtocol[protocol][i] = struct{}{}
+			}
+		}
+	}
+	return portsClosedForProtocol, nil
 }
 
 // parsePort returns [start, end] range (inclusive)

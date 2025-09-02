@@ -41,6 +41,7 @@ type FirewallParams struct {
 	DestinationRanges []string
 	NodeNames         []string
 	Allowed           []*compute.FirewallAllowed
+	Denied            []*compute.FirewallDenied
 	L4Type            utils.L4LBType
 	Network           network.NetworkInfo
 	Priority          *int
@@ -70,6 +71,7 @@ func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParam
 		SourceRanges: params.SourceRanges,
 		TargetTags:   nodeTags,
 		Allowed:      params.Allowed,
+		Denied:       params.Denied,
 		Priority:     priority(params.Priority),
 	}
 	if flags.F.EnablePinhole {
