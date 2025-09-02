@@ -38,6 +38,7 @@ type FirewallParams struct {
 	Allowed           []*compute.FirewallAllowed
 	L4Type            utils.L4LBType
 	Network           network.NetworkInfo
+	Priority          *int
 }
 
 func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParams, sharedRule bool, fwLogger klog.Logger) (utils.ResourceSyncStatus, error) {
@@ -64,6 +65,7 @@ func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParam
 		SourceRanges: params.SourceRanges,
 		TargetTags:   nodeTags,
 		Allowed:      params.Allowed,
+		Priority:     priority(params.Priority),
 	}
 	if flags.F.EnablePinhole {
 		expectedFw.DestinationRanges = params.DestinationRanges
@@ -93,6 +95,14 @@ func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParam
 		return utils.ResourceUpdate, newFirewallXPNError(err, gcloudCmd)
 	}
 	return utils.ResourceUpdate, err
+}
+
+func priority(paramPriority *int) int64 {
+	const defaultPriority = 1000
+	if paramPriority == nil {
+		return int64(defaultPriority)
+	}
+	return int64(*paramPriority)
 }
 
 func EnsureL4FirewallRuleDeleted(cloud *gce.Cloud, fwName string, fwLogger klog.Logger) error {
