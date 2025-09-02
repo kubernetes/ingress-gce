@@ -47,6 +47,7 @@ import (
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/utils/ptr"
 	"k8s.io/utils/strings/slices"
 )
 
@@ -348,7 +349,8 @@ func TestEnsureNetLBFirewallDestinations(t *testing.T) {
 				IPProtocol: string(v1.ProtocolTCP),
 			},
 		},
-		IP: "1.2.3.4",
+		IP:       "1.2.3.4",
+		Priority: ptr.To(999),
 	}
 
 	_, err := firewalls.EnsureL4FirewallRule(l4netlb.cloud, utils.ServiceKeyFunc(svc.Namespace, svc.Name), &fwrParams /*sharedRule = */, false, klog.TODO())

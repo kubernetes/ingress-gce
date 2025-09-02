@@ -26,6 +26,11 @@ import (
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
+)
+
+var (
+	AllowTrafficPriority = ptr.To(999)
 )
 
 // FirewallParams holds all data needed to create firewall for L4 LB

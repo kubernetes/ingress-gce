@@ -534,6 +534,7 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 		IP:                l4netlb.Service.Spec.LoadBalancerIP,
 		NodeNames:         nodeNames,
 		Network:           l4netlb.networkInfo,
+		Priority:          firewalls.AllowTrafficPriority,
 	}
 	var firewallForNodesUpdateStatus utils.ResourceSyncStatus
 	firewallForNodesUpdateStatus, result.Error = firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, &nodesFWRParams, l4netlb.cloud, l4netlb.recorder, fwLogger)

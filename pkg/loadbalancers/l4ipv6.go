@@ -182,6 +182,7 @@ func (l4 *L4) ensureIPv6NodesFirewall(ipAddress string, nodeNames []string, resu
 		NodeNames:         nodeNames,
 		L4Type:            utils.ILB,
 		Network:           l4.network,
+		Priority:          firewalls.AllowTrafficPriority,
 	}
 
 	fwSyncStatus, err := firewalls.EnsureL4LBFirewallForNodes(l4.Service, &ipv6nodesFWRParams, l4.cloud, l4.recorder, fwLogger)
