@@ -584,6 +584,9 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		return result
 	}
 	result.Annotations[annotations.BackendServiceKey] = bsName
+	if bs.LogConfig != nil {
+		result.MetricsState.LoggingEnabled = bs.LogConfig.Enable
+	}
 
 	if l4.enableDualStack {
 		l4.ensureDualStackResources(result, nodeNames, options, bs, existingIPv4FR, existingIPv6FR, subnetworkURL, ipv4AddressToUse, ipv6AddrToUse)
