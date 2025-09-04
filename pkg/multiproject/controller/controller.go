@@ -2,7 +2,6 @@
 package controller
 
 import (
-	"context"
 	"fmt"
 	"math/rand"
 	"runtime/debug"
@@ -72,15 +71,9 @@ func (pcc *ProviderConfigController) Run() {
 	defer pcc.shutdown()
 
 	pcc.logger.Info("Starting ProviderConfig controller")
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		<-pcc.stopCh
-		pcc.logger.Info("Stop channel closed, cancelling context")
-		cancel()
-	}()
 
 	pcc.logger.Info("Waiting for initial cache sync before starting ProviderConfig Controller")
-	ok := cache.WaitForCacheSync(ctx.Done(), pcc.hasSynced)
+	ok := cache.WaitForCacheSync(pcc.stopCh, pcc.hasSynced)
 	if !ok {
 		pcc.logger.Error(nil, "Failed to wait for initial cache sync before starting ProviderConfig Controller")
 	}
