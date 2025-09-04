@@ -17,6 +17,7 @@ limitations under the License.
 package loadbalancers
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -545,6 +546,31 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 		return
 	}
 	result.Annotations[annotations.FirewallRuleKey] = firewallName
+
+	denyParams := denyFirewall(l4netlb.namer.L4FirewallDeny, l4netlb.Service, nodeNames, l4netlb.networkInfo, ipAddress)
+	denyForNodesUpdateStatus, err := firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, denyParams, l4netlb.cloud, l4netlb.recorder, fwLogger)
+	// TODO: fix this to have separate resource potentially
+	result.GCEResourceUpdate.SetFirewallForNodes(denyForNodesUpdateStatus)
+	if err != nil {
+		result.GCEResourceInError = annotations.FirewallRuleResource
+		result.Error = err
+		return
+	}
+	result.Annotations[annotations.FirewallRuleDenyKey] = denyParams.Name
+}
+
+func denyFirewall(namer func(namespace, name string) string, svc *corev1.Service, nodeNames []string, network network.NetworkInfo, ruleAddress string) *firewalls.FirewallParams {
+	return &firewalls.FirewallParams{
+		Name:              namer(svc.Namespace, svc.Name),
+		Denied:            firewalls.DeniedAll(),
+		Allowed:           nil, // We cannot have both deny and allow in the same rule
+		Priority:          firewalls.DenyTrafficPriority,
+		L4Type:            utils.XLB,
+		IP:                svc.Spec.LoadBalancerIP,
+		NodeNames:         nodeNames,
+		Network:           network,
+		DestinationRanges: []string{ruleAddress},
+	}
 }
 
 // EnsureLoadBalancerDeleted performs a cleanup of all GCE resources for the given loadbalancer service.
@@ -658,15 +684,19 @@ func (l4netlb *L4NetLB) deleteIPv4Address() error {
 func (l4netlb *L4NetLB) deleteIPv4NodesFirewall() error {
 	start := time.Now()
 
-	firewallName := l4netlb.namer.L4Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)
+	allowName := l4netlb.namer.L4Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)
+	denyName := l4netlb.namer.L4FirewallDeny(l4netlb.Service.Namespace, l4netlb.Service.Name)
 
-	fwLogger := l4netlb.svcLogger.WithValues("firewallName", firewallName)
+	fwLogger := l4netlb.svcLogger.WithValues("firewallName", allowName, "firewallDenyName", denyName)
 	fwLogger.V(2).Info("Deleting IPv4 nodes firewall for L4 NetLB Service")
 	defer func() {
 		fwLogger.V(2).Info("Finished deleting IPv4 nodes firewall for L4 NetLB Service", "timeTaken", time.Since(start))
 	}()
 
-	return l4netlb.deleteFirewall(firewallName, fwLogger)
+	return errors.Join(
+		l4netlb.deleteFirewall(allowName, fwLogger),
+		l4netlb.deleteFirewall(denyName, fwLogger),
+	)
 }
 
 func (l4netlb *L4NetLB) deleteFirewall(firewallName string, fwLogger klog.Logger) error {

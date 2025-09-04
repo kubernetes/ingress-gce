@@ -4,6 +4,11 @@ import (
 	compute "google.golang.org/api/compute/v1"
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/ingress-gce/pkg/forwardingrules"
+	"k8s.io/utils/ptr"
+)
+
+var (
+	AllowTrafficPriority = ptr.To(999)
 )
 
 // AllowedForService creates a slice of *compute.FirewallAllowed rules
