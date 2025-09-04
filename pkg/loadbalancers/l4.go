@@ -554,6 +554,11 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 			result.Error = utils.NewUserError(err)
 			return result
 		}
+		loggingConfigMapName, cmReferenced := annotations.FromService(l4.Service).GetL4LoggingConfigMapAnnotation()
+		if logConfig == nil && cmReferenced {
+			warningMessage := fmt.Sprintf("Referenced L4 logging ConfigMap does not exist: Name: %q, Namespace: %q", loggingConfigMapName, l4.Service.Namespace)
+			l4.recorder.Eventf(l4.Service, corev1.EventTypeWarning, "ReferencedConfigMapDoesNotExist", warningMessage)
+		}
 	}
 
 	backendParams := backends.L4BackendServiceParams{
