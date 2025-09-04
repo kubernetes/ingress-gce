@@ -24,6 +24,7 @@ import (
 // Manager is an interface to sync kubernetes nodes to google cloud instance groups
 // through the Provider interface. It handles zones opaquely using the zoneLister.
 type Manager interface {
+	InstanceGroupsExist(name string, logger klog.Logger) (exist bool, err error)
 	EnsureInstanceGroupsAndPorts(name string, ports []int64, logger klog.Logger) ([]*compute.InstanceGroup, error)
 	DeleteInstanceGroup(name string, logger klog.Logger) error
 
