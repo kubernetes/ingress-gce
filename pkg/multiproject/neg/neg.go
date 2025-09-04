@@ -23,6 +23,10 @@ import (
 	"k8s.io/klog/v2"
 )
 
+// newNEGController is a package-level indirection to allow tests to stub the
+// actual NEG controller constructor. In production it points to neg.NewController.
+var newNEGController = neg.NewController
+
 // StartNEGController creates and runs a NEG controller for the specified ProviderConfig.
 // The returned channel is closed by StopControllersForProviderConfig to signal a shutdown
 // specific to this ProviderConfig's controller.
@@ -150,7 +154,7 @@ func createNEGController(
 
 	noDefaultBackendServicePort := utils.ServicePort{}
 
-	negController, err := neg.NewController(
+	negController, err := newNEGController(
 		kubeClient,
 		svcNegClient,
 		eventRecorderClient,
