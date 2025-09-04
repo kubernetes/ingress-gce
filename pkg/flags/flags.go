@@ -318,7 +318,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableUpdateCustomHealthCheckDescription, "enable-update-hc-description", false, "Update health check Description when it is customized with BackendConfig CRD.")
 	flag.BoolVar(&F.EnableRecalculateUHCOnBCRemoval, "enable-recalculate-uhc-on-backendconfig-removal", false, "Recalculate health check parameters when BackendConfig is removed from service. This flag cannot be used without --enable-update-hc-description.")
 	flag.IntVar(&F.THCPort, "transparent-health-checks-port", 7877, "The port for Transparent Health Checks. It must be aligned with Transparent Health Check controller server. This flag only works when --enable-transparent-health-checks is enabled.")
-	flag.BoolVar(&F.EnablePinhole, "enable-pinhole", false, "Enable Pinhole firewall feature")
+	flag.BoolVar(&F.EnablePinhole, "enable-pinhole", true, "Enable Pinhole firewall feature")
 	flag.BoolVar(&F.EnableL4ILBDualStack, "enable-l4ilb-dual-stack", false, "Enable Dual-Stack handling for L4 Internal Load Balancers")
 	flag.BoolVar(&F.EnableL4NetLBDualStack, "enable-l4netlb-dual-stack", false, "Enable Dual-Stack handling for L4 External Load Balancers")
 	// StrongSessionAffinity is a restricted feature that is enabled on
