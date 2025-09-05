@@ -71,6 +71,8 @@ type L4FeaturesServiceLabels struct {
 	ZonalAffinity bool
 	// Protocol should be either "TCP", "UDP" or when both are present - "MIXED". The default value is "" empty string, but shouldn't be used.
 	Protocol L4ProtocolType
+	// LoggingEnabled is true if logging is configured to be enabled on the Backend Service
+	LoggingEnabled bool
 }
 
 // L4ServiceState tracks the state of an L4 service. It includes data needed to fill various L4 metrics plus the status of the service.
