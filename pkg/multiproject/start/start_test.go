@@ -207,7 +207,7 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 
 			// This simulates the automatic labeling that the real environment does.
 			// ProviderConfig name label is set to the namespace of the object.
-			testutil.EmulateProviderConfigLabelingWebhook(svcNegClient.Tracker(), &svcNegClient.Fake, "servicenetworkendpointgroups")
+			testutil.EmulateProviderConfigLabelingWebhook(&svcNegClient.Fake, "servicenetworkendpointgroups")
 
 			logger := klog.TODO()
 			gceCreator := multiprojectgce.NewGCEFake()
@@ -326,7 +326,7 @@ func TestSharedInformers_PC1Stops_PC2AndPC3KeepWorking(t *testing.T) {
 	nodeTopoClient := nodetopologyfake.NewSimpleClientset()
 
 	// Simulate webhook: label SvcNEGs with provider-config name == namespace.
-	testutil.EmulateProviderConfigLabelingWebhook(svcNegClient.Tracker(), &svcNegClient.Fake, "servicenetworkendpointgroups")
+	testutil.EmulateProviderConfigLabelingWebhook(&svcNegClient.Fake, "servicenetworkendpointgroups")
 
 	informersFactory := informers.NewSharedInformerFactoryWithOptions(kubeClient, flags.F.ResyncPeriod)
 	svcNegFactory := informersvcneg.NewSharedInformerFactoryWithOptions(svcNegClient, flags.F.ResyncPeriod)
@@ -936,7 +936,7 @@ func TestProviderConfigErrorCases(t *testing.T) {
 			networkClient := networkfake.NewSimpleClientset()
 			nodeTopologyClient := nodetopologyfake.NewSimpleClientset()
 
-			testutil.EmulateProviderConfigLabelingWebhook(svcNegClient.Tracker(), &svcNegClient.Fake, "servicenetworkendpointgroups")
+			testutil.EmulateProviderConfigLabelingWebhook(&svcNegClient.Fake, "servicenetworkendpointgroups")
 
 			logger := klog.TODO()
 			gceCreator := multiprojectgce.NewGCEFake()
