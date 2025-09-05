@@ -33,7 +33,7 @@ const multiProjectLeaderElectionLockName = "ingress-gce-multi-project-lock"
 
 // StartWithLeaderElection starts the ProviderConfig controller with leader election.
 func StartWithLeaderElection(
-	ctx context.Context,
+	parentCtx context.Context,
 	leaderElectKubeClient kubernetes.Interface,
 	hostname string,
 	logger klog.Logger,
@@ -52,11 +52,16 @@ func StartWithLeaderElection(
 ) error {
 	recordersManager := recorders.NewManager(eventRecorderKubeClient, logger)
 
-	leConfig, err := makeLeaderElectionConfig(leaderElectKubeClient, hostname, recordersManager, logger, kubeClient, svcNegClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, informersFactory, svcNegFactory, networkFactory, nodeTopologyFactory, gceCreator, rootNamer, stopCh)
+	leConfig, err := makeLeaderElectionConfig(leaderElectKubeClient, hostname, recordersManager, logger, kubeClient, svcNegClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, informersFactory, svcNegFactory, networkFactory, nodeTopologyFactory, gceCreator, rootNamer)
 	if err != nil {
 		return err
 	}
 
+	ctx, cancel := context.WithCancel(parentCtx)
+	go func() {
+		<-stopCh
+		cancel()
+	}()
 	leaderelection.RunOrDie(ctx, *leConfig)
 	logger.Info("Multi-project controller exited.")
 
@@ -79,7 +84,6 @@ func makeLeaderElectionConfig(
 	nodeTopologyFactory informernodetopology.SharedInformerFactory,
 	gceCreator gce.GCECreator,
 	rootNamer *namer.Namer,
-	stopCh <-chan struct{},
 ) (*leaderelection.LeaderElectionConfig, error) {
 	recorder := recordersManager.Recorder(flags.F.LeaderElection.LockObjectNamespace)
 	// add a uniquifier so that two processes on the same host don't accidentally both become active
@@ -99,13 +103,15 @@ func makeLeaderElectionConfig(
 	}
 
 	return &leaderelection.LeaderElectionConfig{
-		Lock:          rl,
-		LeaseDuration: flags.F.LeaderElection.LeaseDuration.Duration,
-		RenewDeadline: flags.F.LeaderElection.RenewDeadline.Duration,
-		RetryPeriod:   flags.F.LeaderElection.RetryPeriod.Duration,
+		Lock:            rl,
+		LeaseDuration:   flags.F.LeaderElection.LeaseDuration.Duration,
+		RenewDeadline:   flags.F.LeaderElection.RenewDeadline.Duration,
+		RetryPeriod:     flags.F.LeaderElection.RetryPeriod.Duration,
+		ReleaseOnCancel: true,
 		Callbacks: leaderelection.LeaderCallbacks{
-			OnStartedLeading: func(context.Context) {
-				Start(logger, kubeClient, svcNegClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, informersFactory, svcNegFactory, networkFactory, nodeTopologyFactory, gceCreator, rootNamer, stopCh)
+			OnStartedLeading: func(ctx context.Context) {
+				logger.Info("Became leader, starting multi-project controller")
+				Start(logger, kubeClient, svcNegClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, informersFactory, svcNegFactory, networkFactory, nodeTopologyFactory, gceCreator, rootNamer, ctx.Done())
 			},
 			OnStoppedLeading: func() {
 				logger.Info("Stop running multi-project leader election")
