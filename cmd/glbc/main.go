@@ -399,7 +399,13 @@ func main() {
 			if err != nil {
 				klog.Fatalf("makeNEGLeaderElectionConfig()=%v, want nil", err)
 			}
-			leaderelection.RunOrDie(context.Background(), *negRunner)
+			// Use a cancelable context so the lease is released on shutdown.
+			leCtx, cancel := context.WithCancel(context.Background())
+			go func() {
+				<-rOption.stopCh
+				cancel()
+			}()
+			leaderelection.RunOrDie(leCtx, *negRunner)
 			logger.Info("NEG Controller exited.")
 		}
 		runIngress = func() {
@@ -415,7 +421,13 @@ func main() {
 			if err != nil {
 				klog.Fatalf("makeLeaderElectionConfig()=%v, want nil", err)
 			}
-			leaderelection.RunOrDie(context.Background(), *ingressRunner)
+			// Use a cancelable context so the lease is released on shutdown.
+			leCtx, cancel := context.WithCancel(context.Background())
+			go func() {
+				<-rOption.stopCh
+				cancel()
+			}()
+			leaderelection.RunOrDie(leCtx, *ingressRunner)
 		}
 	}
 
@@ -465,7 +477,9 @@ func makeNEGRunnerWithLeaderElection(
 			}
 		},
 		func() {
-			logger.Info("Stop running NEG Leader election")
+			// When leadership is lost, initiate a graceful shutdown of all controllers.
+			logger.Info("Leadership lost for NEG controller; initiating shutdown")
+			runOption.closeStopCh()
 		},
 	)
 }
@@ -484,7 +498,9 @@ func makeIngressRunnerWithLeaderElection(
 			runControllers(ctx, systemHealth, runOption, leOption, logger)
 		},
 		func() {
-			logger.Info("lost master")
+			// When leadership is lost, initiate a graceful shutdown of all controllers.
+			logger.Info("Leadership lost; initiating shutdown")
+			runOption.closeStopCh()
 		},
 	)
 }
@@ -511,10 +527,11 @@ func makeRunnerWithLeaderElection(
 	}
 
 	return &leaderelection.LeaderElectionConfig{
-		Lock:          rl,
-		LeaseDuration: flags.F.LeaderElection.LeaseDuration.Duration,
-		RenewDeadline: flags.F.LeaderElection.RenewDeadline.Duration,
-		RetryPeriod:   flags.F.LeaderElection.RetryPeriod.Duration,
+		Lock:            rl,
+		LeaseDuration:   flags.F.LeaderElection.LeaseDuration.Duration,
+		RenewDeadline:   flags.F.LeaderElection.RenewDeadline.Duration,
+		RetryPeriod:     flags.F.LeaderElection.RetryPeriod.Duration,
+		ReleaseOnCancel: true, // release the lease when context (tied to stopCh) is canceled to speed failover
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: onStartedLeading,
 			OnStoppedLeading: onStoppedLeading,
@@ -596,7 +613,9 @@ func runL4Controllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.
 		go collectLockAvailabilityMetrics(l4LockName, flags.F.GKEClusterType, option.stopCh, lockLogger)
 		run()
 	}, func() {
-		lockLogger.V(0).Info("Stop running L4 Leader election")
+		// When leadership is lost for L4 gate, initiate a graceful shutdown
+		lockLogger.V(0).Info("Leadership lost for L4; initiating shutdown")
+		option.closeStopCh()
 	})
 	if err != nil {
 		klog.Fatalf("L4 makeLeaderElectionConfig()=%v, want nil", err)
@@ -604,7 +623,13 @@ func runL4Controllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.
 	// run in a separate goroutine to not block further operation if lock can't be acquired.
 	go func() {
 		lockLogger.V(0).Info("Attempt to acquire L4 Leader election lock")
-		leaderelection.RunOrDie(context.Background(), *runner)
+		// Use a cancelable context so the lease is released on shutdown
+		leCtx, cancel := context.WithCancel(context.Background())
+		go func() {
+			<-option.stopCh
+			cancel()
+		}()
+		leaderelection.RunOrDie(leCtx, *runner)
 	}()
 }
 
