@@ -82,6 +82,27 @@ func NewManager(config *ManagerConfig) Manager {
 	}
 }
 
+// InstanceGroupsExist checks if IGs with given name exist in all cluster zones
+func (m *manager) InstanceGroupsExist(name string, logger klog.Logger) (exist bool, err error) {
+	iglogger := logger.WithName("InstanceGroupsManager")
+
+	// Instance groups should exist in all zones that nodes are in.
+	zones, err := m.ZoneGetter.ListZonesInDefaultSubnet(zonegetter.AllNodesFilter, iglogger)
+	if err != nil {
+		return false, err
+	}
+
+	// Find instance groups in each zone
+	for _, zone := range zones {
+		_, err := m.Get(name, zone)
+		if err != nil {
+			logger.Error(err, "Failed to get instance group", "key", klog.KRef(zone, name))
+			return false, err
+		}
+	}
+	return true, nil
+}
+
 // EnsureInstanceGroupsAndPorts creates or gets an instance group if it doesn't exist
 // and adds the given ports to it. Returns a list of one instance group per zone,
 // all of which have the exact same named ports.
