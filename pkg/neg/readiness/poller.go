@@ -93,9 +93,11 @@ type poller struct {
 	clock clock.Clock
 
 	logger klog.Logger
+
+	negMetrics *metrics.NegMetrics
 }
 
-func NewPoller(podLister cache.Indexer, lookup NegLookup, patcher podStatusPatcher, negCloud negtypes.NetworkEndpointGroupCloud, enableDualStackNEG bool, logger klog.Logger) *poller {
+func NewPoller(podLister cache.Indexer, lookup NegLookup, patcher podStatusPatcher, negCloud negtypes.NetworkEndpointGroupCloud, enableDualStackNEG bool, logger klog.Logger, negMetrics *metrics.NegMetrics) *poller {
 	return &poller{
 		pollMap:            make(map[negMeta]*pollTarget),
 		podLister:          podLister,
@@ -105,6 +107,7 @@ func NewPoller(podLister cache.Indexer, lookup NegLookup, patcher podStatusPatch
 		enableDualStackNEG: enableDualStackNEG,
 		clock:              clock.RealClock{},
 		logger:             logger.WithName("Poller"),
+		negMetrics:         negMetrics,
 	}
 }
 
@@ -119,7 +122,7 @@ func (p *poller) RegisterNegEndpoints(key negMeta, endpointMap negtypes.Endpoint
 // It returns false if there is no endpoints needed to be polled, returns true if otherwise.
 // Assumes p.lock is held when calling this method.
 func (p *poller) registerNegEndpoints(key negMeta, endpointMap negtypes.EndpointPodMap) bool {
-	endpointsToPoll := needToPoll(key.SyncerKey, endpointMap, p.lookup, p.podLister, p.logger)
+	endpointsToPoll := needToPoll(key.SyncerKey, endpointMap, p.lookup, p.podLister, p.logger, p.negMetrics)
 	if len(endpointsToPoll) == 0 {
 		delete(p.pollMap, key)
 		return false
@@ -178,7 +181,7 @@ func (p *poller) Poll(key negMeta) (retry bool, err error) {
 	}
 
 	retry, err = p.processHealthStatus(key, res)
-	metrics.PublishNegControllerErrorCountMetrics(err, true)
+	p.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 	if retry {
 		<-p.clock.After(hcRetryDelay)
 	}
@@ -242,7 +245,7 @@ func (p *poller) processHealthStatus(key negMeta, healthStatuses []*composite.Ne
 			continue
 		}
 
-		bsKey := getHealthyBackendService(healthStatus, p.enableDualStackNEG, p.logger)
+		bsKey := getHealthyBackendService(healthStatus, p.enableDualStackNEG, p.logger, p.negMetrics)
 		if bsKey == nil {
 			unhealthyPods = append(unhealthyPods, podName)
 			continue
@@ -284,7 +287,7 @@ func (p *poller) processHealthStatus(key negMeta, healthStatuses []*composite.Ne
 // getHealthyBackendService returns one of the first backend service key where
 // the endpoint is considered healthy. An endpoint is considered healthy if
 // either the IPv4 OR IPv6 endpoint's healthstatus reports HEALTHY.
-func getHealthyBackendService(healthStatus *composite.NetworkEndpointWithHealthStatus, enableDualStackNEG bool, logger klog.Logger) *meta.Key {
+func getHealthyBackendService(healthStatus *composite.NetworkEndpointWithHealthStatus, enableDualStackNEG bool, logger klog.Logger, negMetrics *metrics.NegMetrics) *meta.Key {
 	for _, hs := range healthStatus.Healths {
 		if hs == nil {
 			logger.Error(nil, "Health status is nil in health status of network endpoint", "healthStatus", healthStatus)
@@ -299,7 +302,7 @@ func getHealthyBackendService(healthStatus *composite.NetworkEndpointWithHealthS
 			id, err := cloud.ParseResourceURL(hs.BackendService.BackendService)
 			if err != nil {
 				logger.Error(err, "Failed to parse backend service reference from a Network Endpoint health status", "healthStatus", healthStatus)
-				metrics.PublishNegControllerErrorCountMetrics(err, true)
+				negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 				continue
 			}
 			if id != nil {

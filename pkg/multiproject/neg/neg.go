@@ -16,6 +16,7 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/multiproject/filteredinformer"
 	"k8s.io/ingress-gce/pkg/neg"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
@@ -63,6 +64,13 @@ func StartNEGController(
 ) (chan<- struct{}, error) {
 	providerConfigName := providerConfig.Name
 	logger.V(2).Info("Initializing NEG controller", "providerConfig", providerConfigName)
+
+	// This is the ID for tenant/cluster for which the NEG controller is created.
+	providerConfigID := ""
+	if providerConfig.Spec.PrincipalInfo != nil {
+		providerConfigID = providerConfig.Spec.PrincipalInfo.ID
+		logger.V(2).Info("Initializing NEG controller", "providerConfigID", providerConfigID)
+	}
 
 	// The ProviderConfig-specific stop channel. We close this in StopControllersForProviderConfig.
 	providerConfigStopCh := make(chan struct{})
@@ -114,6 +122,7 @@ func StartNEGController(
 		lpConfig,
 		joinedStopCh,
 		logger,
+		providerConfigID,
 	)
 
 	if err != nil {
@@ -272,6 +281,7 @@ func createNEGController(
 	lpConfig labels.PodLabelPropagationConfig,
 	stopCh <-chan struct{},
 	logger klog.Logger,
+	providerConfigID string,
 ) (*neg.Controller, error) {
 
 	// The adapter uses Network SelfLink
@@ -283,6 +293,7 @@ func createNEGController(
 
 	noDefaultBackendServicePort := utils.ServicePort{}
 	var noNodeTopologyInformer cache.SharedIndexInformer
+	negMetrics := metrics.NewNegMetrics(providerConfigID)
 
 	negController, err := neg.NewController(
 		kubeClient,
@@ -301,7 +312,7 @@ func createNEGController(
 		hasSynced,
 		l4Namer,
 		noDefaultBackendServicePort,
-		negtypes.NewAdapterWithRateLimitSpecs(cloud, flags.F.GCERateLimit.Values(), adapter),
+		negtypes.NewAdapterWithRateLimitSpecs(cloud, flags.F.GCERateLimit.Values(), adapter, negMetrics),
 		zoneGetter,
 		clusterNamer,
 		flags.F.ResyncPeriod,
@@ -319,6 +330,7 @@ func createNEGController(
 		flags.F.EnableNEGsForIngress,
 		stopCh,
 		logger,
+		negMetrics,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create NEG controller: %w", err)
