@@ -23,6 +23,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/klog/v2"
 )
 
@@ -33,6 +34,8 @@ const (
 	l4LabelWeightedLBPodsPerNode = "weighted_lb_pods_per_node"
 	l4LabelZonalAffinity         = "zonal_affinity"
 	l4LabelBackendType           = "backend_type"
+	l4LabelProtocol              = "protocol" // Either "TCP", "UDP", or "MIXED". The default "" means that there is an error.
+	l4LabelLoggingEnabled        = "logging_enabled"
 )
 
 var (
@@ -41,7 +44,7 @@ var (
 			Name: "l4_ilbs_count",
 			Help: "Metric containing the number of ILBs that can be filtered by feature labels and status",
 		},
-		[]string{l4LabelStatus, l4LabelMultinet, l4LabelWeightedLBPodsPerNode, l4LabelZonalAffinity},
+		[]string{l4LabelStatus, l4LabelMultinet, l4LabelWeightedLBPodsPerNode, l4LabelZonalAffinity, l4LabelProtocol, l4LabelLoggingEnabled},
 	)
 
 	l4NetLBCount = prometheus.NewGaugeVec(
@@ -49,7 +52,7 @@ var (
 			Name: "l4_netlbs_count",
 			Help: "Metric containing the number of NetLBs that can be filtered by feature labels and status",
 		},
-		[]string{l4LabelStatus, l4LabelMultinet, l4LabelStrongSessionAffinity, l4LabelWeightedLBPodsPerNode, l4LabelBackendType},
+		[]string{l4LabelStatus, l4LabelMultinet, l4LabelStrongSessionAffinity, l4LabelWeightedLBPodsPerNode, l4LabelBackendType, l4LabelProtocol, l4LabelLoggingEnabled},
 	)
 )
 
@@ -69,6 +72,7 @@ func InitServiceMetricsState(svc *corev1.Service, startTime *time.Time, isMultin
 			WeightedLBPodsPerNode: isWeightedLBPodsPerNode,
 			BackendType:           backendType,
 			ZonalAffinity:         isLBWithZonalAffinity,
+			Protocol:              protocolTypeFrom(svc),
 		},
 		// Always init status with error, and update with Success when service was provisioned
 		Status:             StatusError,
@@ -79,6 +83,18 @@ func InitServiceMetricsState(svc *corev1.Service, startTime *time.Time, isMultin
 	}
 
 	return state
+}
+
+func protocolTypeFrom(svc *corev1.Service) L4ProtocolType {
+	switch {
+	case forwardingrules.NeedsMixed(svc.Spec.Ports):
+		return L4ProtocolTypeMixed
+	case forwardingrules.NeedsUDP(svc.Spec.Ports):
+		return L4ProtocolTypeUDP
+	case forwardingrules.NeedsTCP(svc.Spec.Ports):
+		return L4ProtocolTypeTCP
+	}
+	return L4ProtocolTypeUnknown
 }
 
 // SetL4ILBService adds L4 ILB service state to L4 NetLB Metrics states map.
@@ -151,6 +167,8 @@ func (c *Collector) exportL4ILBsMetrics() {
 			l4LabelMultinet:              strconv.FormatBool(svcState.Multinetwork),
 			l4LabelWeightedLBPodsPerNode: strconv.FormatBool(svcState.WeightedLBPodsPerNode),
 			l4LabelZonalAffinity:         strconv.FormatBool(svcState.ZonalAffinity),
+			l4LabelProtocol:              string(svcState.Protocol),
+			l4LabelLoggingEnabled:        strconv.FormatBool(svcState.LoggingEnabled),
 		}).Inc()
 	}
 	c.logger.V(3).Info("L4 ILB usage metrics exported")
@@ -168,6 +186,8 @@ func (c *Collector) exportL4NetLBsMetrics() {
 			l4LabelStrongSessionAffinity: strconv.FormatBool(svcState.StrongSessionAffinity),
 			l4LabelWeightedLBPodsPerNode: strconv.FormatBool(svcState.WeightedLBPodsPerNode),
 			l4LabelBackendType:           string(svcState.BackendType),
+			l4LabelProtocol:              string(svcState.Protocol),
+			l4LabelLoggingEnabled:        strconv.FormatBool(svcState.LoggingEnabled),
 		}).Inc()
 	}
 	c.logger.V(3).Info("L4 NetLB usage metrics exported")

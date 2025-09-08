@@ -351,6 +351,7 @@ func TestBackendSvcEqual(t *testing.T) {
 		withZonalAffinityEnabled       bool
 		withL4LoggingManagementEnabled bool
 		wantEqual                      bool
+		skipBidirectionalCheck         bool
 	}{
 		{
 			desc:              "Test empty backend services are equal",
@@ -764,7 +765,7 @@ func TestBackendSvcEqual(t *testing.T) {
 			wantEqual: true,
 		},
 		{
-			desc: "Test existing backend service diff with weighted load balancing feature enabled",
+			desc: "Test prevent unnecessary NetLB recreation",
 			oldBackendService: &composite.BackendService{
 				LocalityLbPolicy: string(LocalityLBPolicyDefault),
 			},
@@ -774,12 +775,32 @@ func TestBackendSvcEqual(t *testing.T) {
 			wantEqual: true,
 		},
 		{
-			desc: "Test backend service diff with weighted load balancing pods-per-node ENABLED",
+			desc: "Test prevent unsupported disablement of Maglev - NetLB",
+			oldBackendService: &composite.BackendService{
+				LocalityLbPolicy: string(LocalityLBPolicyMaglev),
+			},
+			newBackendService: &composite.BackendService{
+				LocalityLbPolicy: string(LocalityLBPolicyDefault),
+			},
+			wantEqual: true,
+		},
+		{
+			desc: "Test backend service diff with NetLB weighted load balancing pods-per-node ENABLED",
 			oldBackendService: &composite.BackendService{
 				LocalityLbPolicy: string(LocalityLBPolicyDefault),
 			},
 			newBackendService: &composite.BackendService{
 				LocalityLbPolicy: string(LocalityLBPolicyWeightedMaglev),
+			},
+			wantEqual: false,
+		},
+		{
+			desc: "Test backend service diff with ILB weighted load balancing pods-per-node ENABLED",
+			oldBackendService: &composite.BackendService{
+				LocalityLbPolicy: string(LocalityLBPolicyDefault),
+			},
+			newBackendService: &composite.BackendService{
+				LocalityLbPolicy: string(LocalityLBPolicyWeightedRendezvous),
 			},
 			wantEqual: false,
 		},
@@ -794,7 +815,7 @@ func TestBackendSvcEqual(t *testing.T) {
 			wantEqual: true,
 		},
 		{
-			desc: "Test backend service diff disable weighted load balancing pods-per-node",
+			desc: "Test backend service diff disable NetLB weighted load balancing pods-per-node",
 			oldBackendService: &composite.BackendService{
 				LocalityLbPolicy: string(LocalityLBPolicyWeightedMaglev),
 			},
@@ -802,6 +823,48 @@ func TestBackendSvcEqual(t *testing.T) {
 				LocalityLbPolicy: string(LocalityLBPolicyMaglev),
 			},
 			wantEqual: false,
+		},
+		{
+			desc: "Test backend service diff disable ILB weighted load balancing pods-per-node",
+			oldBackendService: &composite.BackendService{
+				LocalityLbPolicy: string(LocalityLBPolicyWeightedRendezvous),
+			},
+			newBackendService: &composite.BackendService{
+				LocalityLbPolicy: string(LocalityLBPolicyDefault),
+			},
+			wantEqual: false,
+		},
+		{
+			desc: "Test backend service diff ILB post-disabling weighted load balancing pods-per-node",
+			oldBackendService: &composite.BackendService{
+				LocalityLbPolicy: string(LocalityLBPolicyWeightedRendezvous),
+			},
+			newBackendService: &composite.BackendService{
+				LocalityLbPolicy: string(LocalityLbPolicyRendezvous),
+			},
+			wantEqual: false,
+		},
+		{
+			desc: "Test prevent ILB resync failure after GCP_RENDEZVOUS is defaulted",
+			oldBackendService: &composite.BackendService{
+				LocalityLbPolicy: string(LocalityLbPolicyRendezvous),
+			},
+			newBackendService: &composite.BackendService{
+				LocalityLbPolicy: string(LocalityLBPolicyDefault),
+			},
+			wantEqual:              true,
+			skipBidirectionalCheck: true,
+		},
+		{
+			desc: "Test GCP_RENDEZVOUS not set as ILB default",
+			oldBackendService: &composite.BackendService{
+				LocalityLbPolicy: string(LocalityLBPolicyDefault),
+			},
+			newBackendService: &composite.BackendService{
+				LocalityLbPolicy: string(LocalityLbPolicyRendezvous),
+			},
+			wantEqual:              false,
+			skipBidirectionalCheck: true,
 		},
 		{
 			desc: "Test LocalityLbPolicy equal does not override the other params",
@@ -949,7 +1012,7 @@ func TestBackendSvcEqual(t *testing.T) {
 				t.Errorf("backendSvcEqual() returned %v, expected %v. Diff(oldScv, newSvc): %s",
 					result, tc.wantEqual, cmp.Diff(tc.oldBackendService, tc.newBackendService))
 			}
-			if result != backendSvcEqual(tc.oldBackendService, tc.newBackendService, tc.compareConnectionTracking) {
+			if !tc.skipBidirectionalCheck && result != backendSvcEqual(tc.oldBackendService, tc.newBackendService, tc.compareConnectionTracking) {
 				t.Error("result from backendSvcEqual(old, new) should be the same as backendSvcEqual(new, old)")
 			}
 		})
@@ -964,44 +1027,80 @@ func TestUpdateLocalityLBPolicy(t *testing.T) {
 		wantBSLocalityLbPolicy     LocalityLBPolicyType
 	}{
 		{
-			desc:                       "from empty to WEIGHTED_MAGLEV",
-			existingBSLocalityLbPolicy: LocalityLBPolicyDefault,
-			updatedBSLocalityLbPolicy:  LocalityLBPolicyWeightedMaglev,
-			wantBSLocalityLbPolicy:     LocalityLBPolicyWeightedMaglev,
-		},
-		{
-			desc:                       "from empty to MAGLEV",
-			existingBSLocalityLbPolicy: LocalityLBPolicyDefault,
-			updatedBSLocalityLbPolicy:  LocalityLBPolicyMaglev,
-			wantBSLocalityLbPolicy:     LocalityLBPolicyDefault,
-		},
-		{
-			desc:                       "from MAGLEV to empty",
-			existingBSLocalityLbPolicy: LocalityLBPolicyMaglev,
-			updatedBSLocalityLbPolicy:  LocalityLBPolicyDefault,
-			wantBSLocalityLbPolicy:     LocalityLBPolicyMaglev,
-		},
-		{
 			desc:                       "from MAGLEV to MAGLEV",
 			existingBSLocalityLbPolicy: LocalityLBPolicyMaglev,
 			updatedBSLocalityLbPolicy:  LocalityLBPolicyMaglev,
 			wantBSLocalityLbPolicy:     LocalityLBPolicyMaglev,
 		},
 		{
-			desc:                       "from MAGLEV to WEIGHTED_MAGLEV",
+			desc:                       "from empty to WEIGHTED_MAGLEV NetLB",
+			existingBSLocalityLbPolicy: LocalityLBPolicyDefault,
+			updatedBSLocalityLbPolicy:  LocalityLBPolicyWeightedMaglev,
+			wantBSLocalityLbPolicy:     LocalityLBPolicyWeightedMaglev,
+		},
+		{
+			desc:                       "from empty to MAGLEV NetLB",
+			existingBSLocalityLbPolicy: LocalityLBPolicyDefault,
+			updatedBSLocalityLbPolicy:  LocalityLBPolicyMaglev,
+			wantBSLocalityLbPolicy:     LocalityLBPolicyDefault,
+		},
+		{
+			desc:                       "from MAGLEV to empty NetLB",
+			existingBSLocalityLbPolicy: LocalityLBPolicyMaglev,
+			updatedBSLocalityLbPolicy:  LocalityLBPolicyDefault,
+			wantBSLocalityLbPolicy:     LocalityLBPolicyMaglev,
+		},
+		{
+			desc:                       "from MAGLEV to WEIGHTED_MAGLEV NetLB",
 			existingBSLocalityLbPolicy: LocalityLBPolicyMaglev,
 			updatedBSLocalityLbPolicy:  LocalityLBPolicyWeightedMaglev,
 			wantBSLocalityLbPolicy:     LocalityLBPolicyWeightedMaglev,
 		},
 		{
-			desc:                       "from WEIGHTED_MAGLEV to MAGLEV",
+			desc:                       "from WEIGHTED_MAGLEV to MAGLEV NetLB",
 			existingBSLocalityLbPolicy: LocalityLBPolicyWeightedMaglev,
 			updatedBSLocalityLbPolicy:  LocalityLBPolicyMaglev,
 			wantBSLocalityLbPolicy:     LocalityLBPolicyMaglev,
 		},
 		{
-			desc:                       "from WEIGHTED_MAGLEV to empty",
+			desc:                       "from WEIGHTED_MAGLEV to empty ILB - allowlisted",
 			existingBSLocalityLbPolicy: LocalityLBPolicyWeightedMaglev,
+			updatedBSLocalityLbPolicy:  LocalityLBPolicyDefault,
+			wantBSLocalityLbPolicy:     LocalityLBPolicyDefault,
+		},
+		{
+			desc:                       "from empty to GCP_RENDEZVOUS",
+			existingBSLocalityLbPolicy: LocalityLBPolicyDefault,
+			updatedBSLocalityLbPolicy:  LocalityLbPolicyRendezvous,
+			wantBSLocalityLbPolicy:     LocalityLbPolicyRendezvous,
+		},
+		{
+			desc:                       "from empty to WEIGHTED_GCP_RENDEZVOUS",
+			existingBSLocalityLbPolicy: LocalityLBPolicyDefault,
+			updatedBSLocalityLbPolicy:  LocalityLBPolicyWeightedRendezvous,
+			wantBSLocalityLbPolicy:     LocalityLBPolicyWeightedRendezvous,
+		},
+		{
+			desc:                       "from GCP_RENDEZVOUS to empty",
+			existingBSLocalityLbPolicy: LocalityLbPolicyRendezvous,
+			updatedBSLocalityLbPolicy:  LocalityLBPolicyDefault,
+			wantBSLocalityLbPolicy:     LocalityLbPolicyRendezvous,
+		},
+		{
+			desc:                       "from GCP_RENDEZVOUS to WEIGHTED_GCP_RENDEZVOUS",
+			existingBSLocalityLbPolicy: LocalityLbPolicyRendezvous,
+			updatedBSLocalityLbPolicy:  LocalityLBPolicyWeightedRendezvous,
+			wantBSLocalityLbPolicy:     LocalityLBPolicyWeightedRendezvous,
+		},
+		{
+			desc:                       "from WEIGHTED_GCP_RENDEZVOUS to GCP_RENDEZVOUS",
+			existingBSLocalityLbPolicy: LocalityLBPolicyWeightedRendezvous,
+			updatedBSLocalityLbPolicy:  LocalityLbPolicyRendezvous,
+			wantBSLocalityLbPolicy:     LocalityLbPolicyRendezvous,
+		},
+		{
+			desc:                       "from WEIGHTED_GCP_RENDEZVOUS to empty ILB",
+			existingBSLocalityLbPolicy: LocalityLBPolicyWeightedRendezvous,
 			updatedBSLocalityLbPolicy:  LocalityLBPolicyDefault,
 			wantBSLocalityLbPolicy:     LocalityLBPolicyDefault,
 		},

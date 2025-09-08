@@ -17,12 +17,14 @@ limitations under the License.
 package metrics
 
 import (
+	"fmt"
 	"math"
 	"testing"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	corev1 "k8s.io/api/core/v1"
 )
 
 const (
@@ -34,6 +36,8 @@ const (
 	notWeightedLBPodsPerNode      = "false"
 	enabledZonalAffinity          = "true"
 	disabledZonalAffinity         = "false"
+	enabledLogging                = "true"
+	disabledLogging               = "false"
 )
 
 func TestExportILBMetric(t *testing.T) {
@@ -59,6 +63,10 @@ func TestExportILBMetric(t *testing.T) {
 	})
 	newMetrics.SetL4ILBService("svc-success-zonalaffinity", L4ServiceState{
 		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: false, WeightedLBPodsPerNode: false, ZonalAffinity: true},
+		Status:                  StatusSuccess,
+	})
+	newMetrics.SetL4ILBService("svc-logging-enabled", L4ServiceState{
+		L4FeaturesServiceLabels: L4FeaturesServiceLabels{LoggingEnabled: true},
 		Status:                  StatusSuccess,
 	})
 	newMetrics.SetL4ILBService("svc-user-error", L4ServiceState{
@@ -93,25 +101,28 @@ func TestExportILBMetric(t *testing.T) {
 
 	newMetrics.exportL4ILBsMetrics()
 
-	verifyL4ILBMetric(t, 1, StatusSuccess, isMultinetwork, isWeightedLBPodsPerNode, enabledZonalAffinity)
-	verifyL4ILBMetric(t, 2, StatusSuccess, isMultinetwork, notWeightedLBPodsPerNode, disabledZonalAffinity)
-	verifyL4ILBMetric(t, 1, StatusSuccess, notMultinetwork, isWeightedLBPodsPerNode, disabledZonalAffinity)
-	verifyL4ILBMetric(t, 1, StatusSuccess, notMultinetwork, notWeightedLBPodsPerNode, enabledZonalAffinity)
-	verifyL4ILBMetric(t, 1, StatusUserError, notMultinetwork, notWeightedLBPodsPerNode, disabledZonalAffinity)
-	verifyL4ILBMetric(t, 2, StatusError, notMultinetwork, notWeightedLBPodsPerNode, disabledZonalAffinity)
-	verifyL4ILBMetric(t, 1, StatusPersistentError, notMultinetwork, notWeightedLBPodsPerNode, disabledZonalAffinity)
+	verifyL4ILBMetric(t, 1, StatusSuccess, isMultinetwork, isWeightedLBPodsPerNode, enabledZonalAffinity, disabledLogging)
+	verifyL4ILBMetric(t, 2, StatusSuccess, isMultinetwork, notWeightedLBPodsPerNode, disabledZonalAffinity, disabledLogging)
+	verifyL4ILBMetric(t, 1, StatusSuccess, notMultinetwork, isWeightedLBPodsPerNode, disabledZonalAffinity, disabledLogging)
+	verifyL4ILBMetric(t, 1, StatusSuccess, notMultinetwork, notWeightedLBPodsPerNode, enabledZonalAffinity, disabledLogging)
+	verifyL4ILBMetric(t, 1, StatusUserError, notMultinetwork, notWeightedLBPodsPerNode, disabledZonalAffinity, disabledLogging)
+	verifyL4ILBMetric(t, 2, StatusError, notMultinetwork, notWeightedLBPodsPerNode, disabledZonalAffinity, disabledLogging)
+	verifyL4ILBMetric(t, 1, StatusPersistentError, notMultinetwork, notWeightedLBPodsPerNode, disabledZonalAffinity, disabledLogging)
+	verifyL4ILBMetric(t, 1, StatusSuccess, notMultinetwork, notWeightedLBPodsPerNode, disabledZonalAffinity, enabledLogging)
 }
 
-func verifyL4ILBMetric(t *testing.T, expectedCount int, status L4ServiceStatus, multinet string, weightedLBPodsPerNode string, zonalAffinity string) {
+func verifyL4ILBMetric(t *testing.T, expectedCount int, status L4ServiceStatus, multinet string, weightedLBPodsPerNode string, zonalAffinity string, loggingEnabled string) {
 	countFloat := testutil.ToFloat64(l4ILBCount.With(prometheus.Labels{
 		l4LabelStatus:                string(status),
 		l4LabelMultinet:              multinet,
 		l4LabelWeightedLBPodsPerNode: weightedLBPodsPerNode,
 		l4LabelZonalAffinity:         zonalAffinity,
+		l4LabelProtocol:              string(L4ProtocolTypeUnknown),
+		l4LabelLoggingEnabled:        loggingEnabled,
 	}))
 	actualCount := int(math.Round(countFloat))
 	if expectedCount != actualCount {
-		t.Errorf("expected value %d but got %d for status: %q, multinet: %q, weightedLB: %q, zonalAffinity: %q", expectedCount, actualCount, status, multinet, weightedLBPodsPerNode, zonalAffinity)
+		t.Errorf("expected value %d but got %d for status: %q, multinet: %q, weightedLB: %q, zonalAffinity: %q, loggingEnabled %q", expectedCount, actualCount, status, multinet, weightedLBPodsPerNode, zonalAffinity, loggingEnabled)
 	}
 }
 
@@ -138,6 +149,10 @@ func TestExportNetLBMetric(t *testing.T) {
 	})
 	newMetrics.SetL4NetLBService("svc-success-weightedlb", L4ServiceState{
 		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: false, StrongSessionAffinity: false, WeightedLBPodsPerNode: true, BackendType: L4BackendTypeInstanceGroup},
+		Status:                  StatusSuccess,
+	})
+	newMetrics.SetL4NetLBService("svc-logging-enabled", L4ServiceState{
+		L4FeaturesServiceLabels: L4FeaturesServiceLabels{BackendType: L4BackendTypeNEG, LoggingEnabled: true},
 		Status:                  StatusSuccess,
 	})
 	newMetrics.SetL4NetLBService("svc-user-error-ssa", L4ServiceState{
@@ -177,25 +192,92 @@ func TestExportNetLBMetric(t *testing.T) {
 
 	newMetrics.exportL4NetLBsMetrics()
 
-	verifyL4NetLBMetric(t, 2, StatusSuccess, isMultinetwork, disabledStrongSessionAffinity, notWeightedLBPodsPerNode, L4BackendTypeNEG)
-	verifyL4NetLBMetric(t, 1, StatusSuccess, notMultinetwork, enabledStrongSessionAffinity, notWeightedLBPodsPerNode, L4BackendTypeNEG)
-	verifyL4NetLBMetric(t, 1, StatusSuccess, notMultinetwork, disabledStrongSessionAffinity, isWeightedLBPodsPerNode, L4BackendTypeInstanceGroup)
-	verifyL4NetLBMetric(t, 1, StatusUserError, notMultinetwork, enabledStrongSessionAffinity, notWeightedLBPodsPerNode, L4BackendTypeInstanceGroup)
-	verifyL4NetLBMetric(t, 2, StatusError, notMultinetwork, disabledStrongSessionAffinity, notWeightedLBPodsPerNode, L4BackendTypeInstanceGroup)
-	verifyL4NetLBMetric(t, 1, StatusPersistentError, notMultinetwork, disabledStrongSessionAffinity, notWeightedLBPodsPerNode, L4BackendTypeInstanceGroup)
+	verifyL4NetLBMetric(t, 2, StatusSuccess, isMultinetwork, disabledStrongSessionAffinity, notWeightedLBPodsPerNode, L4BackendTypeNEG, disabledLogging)
+	verifyL4NetLBMetric(t, 1, StatusSuccess, notMultinetwork, enabledStrongSessionAffinity, notWeightedLBPodsPerNode, L4BackendTypeNEG, disabledLogging)
+	verifyL4NetLBMetric(t, 1, StatusSuccess, notMultinetwork, disabledStrongSessionAffinity, isWeightedLBPodsPerNode, L4BackendTypeInstanceGroup, disabledLogging)
+	verifyL4NetLBMetric(t, 1, StatusUserError, notMultinetwork, enabledStrongSessionAffinity, notWeightedLBPodsPerNode, L4BackendTypeInstanceGroup, disabledLogging)
+	verifyL4NetLBMetric(t, 2, StatusError, notMultinetwork, disabledStrongSessionAffinity, notWeightedLBPodsPerNode, L4BackendTypeInstanceGroup, disabledLogging)
+	verifyL4NetLBMetric(t, 1, StatusPersistentError, notMultinetwork, disabledStrongSessionAffinity, notWeightedLBPodsPerNode, L4BackendTypeInstanceGroup, disabledLogging)
+	verifyL4NetLBMetric(t, 1, StatusSuccess, notMultinetwork, disabledStrongSessionAffinity, notWeightedLBPodsPerNode, L4BackendTypeNEG, enabledLogging)
 }
 
-func verifyL4NetLBMetric(t *testing.T, expectedCount int, status L4ServiceStatus, multinet string, strongSessionAffinity string, weightedLBPodsPerNode string, backendType L4BackendType) {
+func verifyL4NetLBMetric(t *testing.T, expectedCount int, status L4ServiceStatus, multinet string, strongSessionAffinity string, weightedLBPodsPerNode string, backendType L4BackendType, loggingEnabled string) {
 	countFloat := testutil.ToFloat64(l4NetLBCount.With(prometheus.Labels{
 		l4LabelStatus:                string(status),
 		l4LabelMultinet:              multinet,
 		l4LabelStrongSessionAffinity: strongSessionAffinity,
 		l4LabelWeightedLBPodsPerNode: weightedLBPodsPerNode,
 		l4LabelBackendType:           string(backendType),
+		l4LabelProtocol:              string(L4ProtocolTypeUnknown),
+		l4LabelLoggingEnabled:        loggingEnabled,
 	}))
 	actualCount := int(math.Round(countFloat))
 	if expectedCount != actualCount {
-		t.Errorf("expected value %d but got %d for status: %q, multinet: %q, ssa: %q, weightedLB: %q, backendType: %q",
-			expectedCount, actualCount, status, multinet, strongSessionAffinity, weightedLBPodsPerNode, backendType)
+		t.Errorf("expected value %d but got %d for status: %q, multinet: %q, ssa: %q, weightedLB: %q, backendType: %q, loggingEnabled: %q",
+			expectedCount, actualCount, status, multinet, strongSessionAffinity, weightedLBPodsPerNode, backendType, loggingEnabled)
+	}
+}
+
+func TestMetricsWithProtocol(t *testing.T) {
+	// Arrange
+	c := NewFakeCollector()
+
+	svcs := []*corev1.Service{
+		{Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{
+			{Port: 80}, // TCP is the default port
+		}}},
+		{Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{
+			{Protocol: corev1.ProtocolTCP, Port: 80}, {Protocol: corev1.ProtocolTCP, Port: 443},
+		}}},
+		{Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{
+			{Protocol: corev1.ProtocolUDP, Port: 53}, {Protocol: corev1.ProtocolTCP, Port: 53},
+		}}},
+		{Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{
+			{Protocol: corev1.ProtocolUDP, Port: 12345}, {Protocol: corev1.ProtocolTCP, Port: 80},
+		}}},
+		{Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{
+			{Protocol: corev1.ProtocolUDP, Port: 80},
+		}}},
+	}
+
+	wants := map[L4ProtocolType]int{
+		L4ProtocolTypeTCP:     2,
+		L4ProtocolTypeUDP:     1,
+		L4ProtocolTypeMixed:   2,
+		L4ProtocolTypeUnknown: 0, // We never expect it to occur.
+	}
+
+	for i, svc := range svcs {
+		// Act
+		state := InitServiceMetricsState(svc, /* other fields were tested above */
+			nil, false, false, false, false, L4BackendTypeInstanceGroup)
+		c.SetL4ILBService(fmt.Sprintf("svc-ilb-%d", i), state)
+		c.SetL4NetLBService(fmt.Sprintf("svc-netlb-%d", i), state)
+	}
+
+	c.exportL4ILBsMetrics()
+	c.exportL4NetLBsMetrics()
+
+	for protocol, want := range wants {
+		t.Run(fmt.Sprintf("ILB %q", protocol), func(t *testing.T) {
+			countFloat := testutil.ToFloat64(l4ILBCount.With(prometheus.Labels{
+				l4LabelProtocol: string(protocol),
+				/* we test those above */ l4LabelStatus: string(StatusError), l4LabelMultinet: "false", l4LabelWeightedLBPodsPerNode: "false", l4LabelZonalAffinity: "false", l4LabelLoggingEnabled: "false",
+			}))
+			actual := int(math.Round(countFloat))
+			if want != actual {
+				t.Errorf("expected value %d but got %d for protocol: %q", want, actual, protocol)
+			}
+		})
+		t.Run(fmt.Sprintf("NetLB %q", protocol), func(t *testing.T) {
+			countFloat := testutil.ToFloat64(l4NetLBCount.With(prometheus.Labels{
+				l4LabelProtocol: string(protocol),
+				/* we test those above */ l4LabelStatus: string(StatusError), l4LabelMultinet: "false", l4LabelStrongSessionAffinity: "false", l4LabelWeightedLBPodsPerNode: "false", l4LabelBackendType: string(L4BackendTypeInstanceGroup), l4LabelLoggingEnabled: "false",
+			}))
+			actual := int(math.Round(countFloat))
+			if want != actual {
+				t.Errorf("expected value %d but got %d for protocol: %q", want, actual, protocol)
+			}
+		})
 	}
 }

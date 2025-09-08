@@ -20,7 +20,6 @@ package versioned
 
 import (
 	"fmt"
-	"net/http"
 
 	discovery "k8s.io/client-go/discovery"
 	rest "k8s.io/client-go/rest"
@@ -31,25 +30,26 @@ import (
 
 type Interface interface {
 	Discovery() discovery.DiscoveryInterface
-	CloudV1() cloudv1.CloudV1Interface
 	CloudV1beta1() cloudv1beta1.CloudV1beta1Interface
+	CloudV1() cloudv1.CloudV1Interface
 }
 
-// Clientset contains the clients for groups.
+// Clientset contains the clients for groups. Each group has exactly one
+// version included in a Clientset.
 type Clientset struct {
 	*discovery.DiscoveryClient
-	cloudV1      *cloudv1.CloudV1Client
 	cloudV1beta1 *cloudv1beta1.CloudV1beta1Client
-}
-
-// CloudV1 retrieves the CloudV1Client
-func (c *Clientset) CloudV1() cloudv1.CloudV1Interface {
-	return c.cloudV1
+	cloudV1      *cloudv1.CloudV1Client
 }
 
 // CloudV1beta1 retrieves the CloudV1beta1Client
 func (c *Clientset) CloudV1beta1() cloudv1beta1.CloudV1beta1Interface {
 	return c.cloudV1beta1
+}
+
+// CloudV1 retrieves the CloudV1Client
+func (c *Clientset) CloudV1() cloudv1.CloudV1Interface {
+	return c.cloudV1
 }
 
 // Discovery retrieves the DiscoveryClient
@@ -63,29 +63,7 @@ func (c *Clientset) Discovery() discovery.DiscoveryInterface {
 // NewForConfig creates a new Clientset for the given config.
 // If config's RateLimiter is not set and QPS and Burst are acceptable,
 // NewForConfig will generate a rate-limiter in configShallowCopy.
-// NewForConfig is equivalent to NewForConfigAndClient(c, httpClient),
-// where httpClient was generated with rest.HTTPClientFor(c).
 func NewForConfig(c *rest.Config) (*Clientset, error) {
-	configShallowCopy := *c
-
-	if configShallowCopy.UserAgent == "" {
-		configShallowCopy.UserAgent = rest.DefaultKubernetesUserAgent()
-	}
-
-	// share the transport between all clients
-	httpClient, err := rest.HTTPClientFor(&configShallowCopy)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewForConfigAndClient(&configShallowCopy, httpClient)
-}
-
-// NewForConfigAndClient creates a new Clientset for the given config and http client.
-// Note the http client provided takes precedence over the configured transport values.
-// If config's RateLimiter is not set and QPS and Burst are acceptable,
-// NewForConfigAndClient will generate a rate-limiter in configShallowCopy.
-func NewForConfigAndClient(c *rest.Config, httpClient *http.Client) (*Clientset, error) {
 	configShallowCopy := *c
 	if configShallowCopy.RateLimiter == nil && configShallowCopy.QPS > 0 {
 		if configShallowCopy.Burst <= 0 {
@@ -93,19 +71,18 @@ func NewForConfigAndClient(c *rest.Config, httpClient *http.Client) (*Clientset,
 		}
 		configShallowCopy.RateLimiter = flowcontrol.NewTokenBucketRateLimiter(configShallowCopy.QPS, configShallowCopy.Burst)
 	}
-
 	var cs Clientset
 	var err error
-	cs.cloudV1, err = cloudv1.NewForConfigAndClient(&configShallowCopy, httpClient)
+	cs.cloudV1beta1, err = cloudv1beta1.NewForConfig(&configShallowCopy)
 	if err != nil {
 		return nil, err
 	}
-	cs.cloudV1beta1, err = cloudv1beta1.NewForConfigAndClient(&configShallowCopy, httpClient)
+	cs.cloudV1, err = cloudv1.NewForConfig(&configShallowCopy)
 	if err != nil {
 		return nil, err
 	}
 
-	cs.DiscoveryClient, err = discovery.NewDiscoveryClientForConfigAndClient(&configShallowCopy, httpClient)
+	cs.DiscoveryClient, err = discovery.NewDiscoveryClientForConfig(&configShallowCopy)
 	if err != nil {
 		return nil, err
 	}
@@ -115,18 +92,19 @@ func NewForConfigAndClient(c *rest.Config, httpClient *http.Client) (*Clientset,
 // NewForConfigOrDie creates a new Clientset for the given config and
 // panics if there is an error in the config.
 func NewForConfigOrDie(c *rest.Config) *Clientset {
-	cs, err := NewForConfig(c)
-	if err != nil {
-		panic(err)
-	}
-	return cs
+	var cs Clientset
+	cs.cloudV1beta1 = cloudv1beta1.NewForConfigOrDie(c)
+	cs.cloudV1 = cloudv1.NewForConfigOrDie(c)
+
+	cs.DiscoveryClient = discovery.NewDiscoveryClientForConfigOrDie(c)
+	return &cs
 }
 
 // New creates a new Clientset for the given RESTClient.
 func New(c rest.Interface) *Clientset {
 	var cs Clientset
-	cs.cloudV1 = cloudv1.New(c)
 	cs.cloudV1beta1 = cloudv1beta1.New(c)
+	cs.cloudV1 = cloudv1.New(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClient(c)
 	return &cs

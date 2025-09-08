@@ -1260,6 +1260,11 @@ func TestWeightedNetLB(t *testing.T) {
 			if bs.LocalityLbPolicy != string(tc.wantLocalityLBPolicy) {
 				t.Errorf("Unexpected BackendService LocalityLbPolicy value, got: %v, want: %v", bs.LocalityLbPolicy, tc.wantLocalityLBPolicy)
 			}
+
+			isWeightedLBPodsPerNode := l4NetLB.isWeightedLBPodsPerNode()
+			if tc.weightedFlagEnabled && tc.addAnnotationForWeighted && tc.externalTrafficPolicy == v1.ServiceExternalTrafficPolicyTypeLocal && !isWeightedLBPodsPerNode {
+				t.Errorf("Expected isWeightedLBPodsPerNode() to return true for Service with weighted load balancing enabled")
+			}
 		})
 	}
 }

@@ -33,12 +33,8 @@ import (
 
 // NewSimpleClientset returns a clientset that will respond with the provided objects.
 // It's backed by a very simple object tracker that processes creates, updates and deletions as-is,
-// without applying any field management, validations and/or defaults. It shouldn't be considered a replacement
+// without applying any validations and/or defaults. It shouldn't be considered a replacement
 // for a real clientset and is mostly useful in simple unit tests.
-//
-// DEPRECATED: NewClientset replaces this with support for field management, which significantly improves
-// server side apply testing. NewClientset is only available when apply configurations are generated (e.g.
-// via --with-applyconfig).
 func NewSimpleClientset(objects ...runtime.Object) *Clientset {
 	o := testing.NewObjectTracker(scheme, codecs.UniversalDecoder())
 	for _, obj := range objects {
@@ -85,12 +81,12 @@ var (
 	_ testing.FakeClient  = &Clientset{}
 )
 
-// NetworkingV1 retrieves the NetworkingV1Client
-func (c *Clientset) NetworkingV1() networkingv1.NetworkingV1Interface {
-	return &fakenetworkingv1.FakeNetworkingV1{Fake: &c.Fake}
-}
-
 // NetworkingV1beta1 retrieves the NetworkingV1beta1Client
 func (c *Clientset) NetworkingV1beta1() networkingv1beta1.NetworkingV1beta1Interface {
 	return &fakenetworkingv1beta1.FakeNetworkingV1beta1{Fake: &c.Fake}
+}
+
+// NetworkingV1 retrieves the NetworkingV1Client
+func (c *Clientset) NetworkingV1() networkingv1.NetworkingV1Interface {
+	return &fakenetworkingv1.FakeNetworkingV1{Fake: &c.Fake}
 }

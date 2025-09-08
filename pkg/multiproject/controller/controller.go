@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"runtime/debug"
-	"time"
 
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 	providerconfig "k8s.io/ingress-gce/pkg/apis/providerconfig/v1"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -81,12 +79,10 @@ func (pcc *ProviderConfigController) Run() {
 		cancel()
 	}()
 
-	err := wait.PollUntilContextCancel(ctx, 5*time.Second, true, func(ctx context.Context) (bool, error) {
-		pcc.logger.Info("Waiting for initial cache sync before starting ProviderConfig Controller")
-		return pcc.hasSynced(), nil
-	})
-	if err != nil {
-		pcc.logger.Error(err, "Failed to wait for initial cache sync before starting ProviderConfig Controller")
+	pcc.logger.Info("Waiting for initial cache sync before starting ProviderConfig Controller")
+	ok := cache.WaitForCacheSync(ctx.Done(), pcc.hasSynced)
+	if !ok {
+		pcc.logger.Error(nil, "Failed to wait for initial cache sync before starting ProviderConfig Controller")
 	}
 
 	pcc.logger.Info("Started ProviderConfig Controller", "numWorkers", pcc.numWorkers)

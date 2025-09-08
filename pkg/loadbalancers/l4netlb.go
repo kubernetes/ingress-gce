@@ -402,6 +402,10 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 	}
 
 	syncResult.Annotations[annotations.BackendServiceKey] = bsName
+	if bs.LogConfig != nil {
+		syncResult.MetricsState.LoggingEnabled = bs.LogConfig.Enable
+	}
+
 	return bs.SelfLink
 }
 

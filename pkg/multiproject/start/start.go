@@ -33,7 +33,7 @@ const multiProjectLeaderElectionLockName = "ingress-gce-multi-project-lock"
 
 // StartWithLeaderElection starts the ProviderConfig controller with leader election.
 func StartWithLeaderElection(
-	ctx context.Context,
+	parentCtx context.Context,
 	leaderElectKubeClient kubernetes.Interface,
 	hostname string,
 	logger klog.Logger,
@@ -50,15 +50,24 @@ func StartWithLeaderElection(
 	rootNamer *namer.Namer,
 	stopCh <-chan struct{},
 ) error {
+	logger.V(1).Info("Starting multi-project controller with leader election", "host", hostname)
+
 	recordersManager := recorders.NewManager(eventRecorderKubeClient, logger)
 
-	leConfig, err := makeLeaderElectionConfig(leaderElectKubeClient, hostname, recordersManager, logger, kubeClient, svcNegClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, informersFactory, svcNegFactory, networkFactory, nodeTopologyFactory, gceCreator, rootNamer, stopCh)
+	leConfig, err := makeLeaderElectionConfig(leaderElectKubeClient, hostname, recordersManager, logger, kubeClient, svcNegClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, informersFactory, svcNegFactory, networkFactory, nodeTopologyFactory, gceCreator, rootNamer)
 	if err != nil {
 		return err
 	}
 
+	ctx, cancel := context.WithCancel(parentCtx)
+	go func() {
+		<-stopCh
+		logger.V(1).Info("Received stop signal; canceling leader election context")
+		cancel()
+	}()
+	logger.V(1).Info("Starting leader election loop")
 	leaderelection.RunOrDie(ctx, *leConfig)
-	logger.Info("Multi-project controller exited.")
+	logger.V(1).Info("Multi-project controller exited.")
 
 	return nil
 }
@@ -79,7 +88,6 @@ func makeLeaderElectionConfig(
 	nodeTopologyFactory informernodetopology.SharedInformerFactory,
 	gceCreator gce.GCECreator,
 	rootNamer *namer.Namer,
-	stopCh <-chan struct{},
 ) (*leaderelection.LeaderElectionConfig, error) {
 	recorder := recordersManager.Recorder(flags.F.LeaderElection.LockObjectNamespace)
 	// add a uniquifier so that two processes on the same host don't accidentally both become active
@@ -97,21 +105,26 @@ func makeLeaderElectionConfig(
 	if err != nil {
 		return nil, fmt.Errorf("couldn't create resource lock: %v", err)
 	}
+	logger.V(2).Info("Created resource lock for leader election", "id", id, "lockName", multiProjectLeaderElectionLockName)
 
-	return &leaderelection.LeaderElectionConfig{
-		Lock:          rl,
-		LeaseDuration: flags.F.LeaderElection.LeaseDuration.Duration,
-		RenewDeadline: flags.F.LeaderElection.RenewDeadline.Duration,
-		RetryPeriod:   flags.F.LeaderElection.RetryPeriod.Duration,
+	lec := &leaderelection.LeaderElectionConfig{
+		Lock:            rl,
+		LeaseDuration:   flags.F.LeaderElection.LeaseDuration.Duration,
+		RenewDeadline:   flags.F.LeaderElection.RenewDeadline.Duration,
+		RetryPeriod:     flags.F.LeaderElection.RetryPeriod.Duration,
+		ReleaseOnCancel: true,
 		Callbacks: leaderelection.LeaderCallbacks{
-			OnStartedLeading: func(context.Context) {
-				Start(logger, kubeClient, svcNegClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, informersFactory, svcNegFactory, networkFactory, nodeTopologyFactory, gceCreator, rootNamer, stopCh)
+			OnStartedLeading: func(ctx context.Context) {
+				logger.Info("Became leader, starting multi-project controller")
+				Start(logger, kubeClient, svcNegClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, informersFactory, svcNegFactory, networkFactory, nodeTopologyFactory, gceCreator, rootNamer, ctx.Done())
 			},
 			OnStoppedLeading: func() {
 				logger.Info("Stop running multi-project leader election")
 			},
 		},
-	}, nil
+	}
+	logger.V(2).Info("Initialized leader election config", "leaseDuration", lec.LeaseDuration, "renewDeadline", lec.RenewDeadline, "retryPeriod", lec.RetryPeriod)
+	return lec, nil
 }
 
 // Start starts the ProviderConfig controller.
@@ -131,6 +144,7 @@ func Start(
 	rootNamer *namer.Namer,
 	stopCh <-chan struct{},
 ) {
+	logger.V(1).Info("Starting ProviderConfig controller")
 	lpConfig := labels.PodLabelPropagationConfig{}
 	if flags.F.EnableNEGLabelPropagation {
 		lpConfigEnvVar := os.Getenv("LABEL_PROPAGATION_CONFIG")
@@ -140,6 +154,7 @@ func Start(
 	}
 
 	providerConfigInformer := providerconfiginformers.NewSharedInformerFactory(providerConfigClient, flags.F.ResyncPeriod).Cloud().V1().ProviderConfigs().Informer()
+	logger.V(2).Info("Starting ProviderConfig informer")
 	go providerConfigInformer.Run(stopCh)
 
 	manager := manager.NewProviderConfigControllerManager(
@@ -159,8 +174,10 @@ func Start(
 		stopCh,
 		logger,
 	)
+	logger.V(1).Info("Initialized ProviderConfig controller manager")
 
 	pcController := pccontroller.NewProviderConfigController(manager, providerConfigInformer, stopCh, logger)
-
+	logger.V(1).Info("Running ProviderConfig controller")
 	pcController.Run()
+	logger.V(1).Info("ProviderConfig controller stopped")
 }

@@ -410,7 +410,7 @@ func TestRetryPeriodForL4NetLBServices(t *testing.T) {
 	if !ok {
 		t.Fatalf("state should be set")
 	}
-	if *state.FirstSyncErrorTime == before5min {
+	if (*state.FirstSyncErrorTime).Equal(before5min) {
 		t.Fatal("Time Should Not be rewrite")
 	}
 	errorState.FirstSyncErrorTime = &before25min

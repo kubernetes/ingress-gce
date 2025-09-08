@@ -699,6 +699,10 @@ func needsUpdate(existingSA, desiredSA *ga.ServiceAttachment) (bool, error) {
 	// Set region to avoid selflink mismatches
 	desiredCopy.Region = existingSA.Region
 
+	// convertRejectList should be a nil (but not empty list) if there is no data
+	if len(desiredCopy.ConsumerRejectLists) == 0 {
+		desiredCopy.ConsumerRejectLists = nil
+	}
 	return !reflect.DeepEqual(desiredCopy, existingSA), nil
 }
 

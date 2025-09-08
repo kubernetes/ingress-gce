@@ -27,6 +27,7 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	providerconfigv1 "k8s.io/ingress-gce/pkg/apis/providerconfig/v1"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/multiproject/finalizer"
 	multiprojectgce "k8s.io/ingress-gce/pkg/multiproject/gce"
 	"k8s.io/ingress-gce/pkg/multiproject/testutil"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
@@ -41,16 +42,23 @@ const (
 	negAnnVal                   = `{"exposed_ports":{"80":{}}}`
 	testNamedPort               = "named-Port"
 	managedByEPSControllerValue = "endpointslice-controller.k8s.io"
+	defaultTimeout              = 10 * time.Second
+	shortTimeout                = 100 * time.Millisecond
 )
 
 // TestMain adjusts global test settings. It sets the verbosity for klog, etc.
 func TestMain(m *testing.M) {
 	flag.Parse()
+	flags.Register()
 
-	// Set klog verbosity, for example to 5 for debugging output
+	// Set klog verbosity based on test verbosity
 	fs := flag.NewFlagSet("mock-flags", flag.PanicOnError)
 	klog.InitFlags(fs)
-	_ = fs.Set("v", "5")
+	if testing.Verbose() {
+		_ = fs.Set("v", "5")
+	} else {
+		_ = fs.Set("v", "2")
+	}
 
 	os.Exit(m.Run())
 }
@@ -58,7 +66,6 @@ func TestMain(m *testing.M) {
 // TestStartProviderConfigIntegration creates ProviderConfig, Services inside,
 // and verifies that the actual NEG is created and the Service is updated with the NEG status.
 func TestStartProviderConfigIntegration(t *testing.T) {
-	flags.Register()
 	flags.F.ProviderConfigNameLabelKey = "cloud.gke.io/provider-config-name"
 
 	providerConfigName1 := "test-pc1"
@@ -245,6 +252,7 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 					addressPrefix = "20.100"
 				}
 				populateFakeNodeInformer(
+					t,
 					kubeClient,
 					informersFactory.Core().V1().Nodes().Informer(),
 					pc.Name,
@@ -270,9 +278,11 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 				}
 				svc.Annotations[annotations.NEGAnnotationKey] = negAnnVal
 
-				if _, err := kubeClient.CoreV1().Services(svc.Namespace).Create(ctx, svc, metav1.CreateOptions{}); err != nil {
-					t.Fatalf("Failed to create Service %q: %v", svc.Name, err)
+				createdSvc, err := kubeClient.CoreV1().Services(svc.Namespace).Create(ctx, svc, metav1.CreateOptions{})
+				if err != nil {
+					t.Fatalf("Failed to create Service %s/%s: %v", svc.Namespace, svc.Name, err)
 				}
+				t.Logf("Created Service %s/%s", createdSvc.Namespace, createdSvc.Name)
 
 				// Populate endpoint slices in the fake informer.
 				addressPrefix := "10.100"
@@ -280,6 +290,7 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 					addressPrefix = "20.100"
 				}
 				populateFakeEndpointSlices(
+					t,
 					informersFactory.Discovery().V1().EndpointSlices().Informer(),
 					svc.Name,
 					svc.Labels[flags.F.ProviderConfigNameLabelKey],
@@ -295,6 +306,188 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Scenario:
+// 1) Create pc-1 → works.
+// 2) Create pc-2 → works.
+// 3) Mark pc-1 deleting (its controllers stop).
+// 4) Create pc-3 → works.
+// Verify: a NEW Service in pc-2 (created AFTER pc-1 stops) works, and a Service in pc-3 works.
+func TestSharedInformers_PC1Stops_PC2AndPC3KeepWorking(t *testing.T) {
+	flags.F.ProviderConfigNameLabelKey = "cloud.gke.io/provider-config-name"
+	flags.F.ResyncPeriod = 0
+
+	// Fake clients / factories
+	kubeClient := fake.NewSimpleClientset()
+	pcClient := pcclientfake.NewSimpleClientset()
+	svcNegClient := svcnegfake.NewSimpleClientset()
+	networkClient := networkfake.NewSimpleClientset()
+	nodeTopoClient := nodetopologyfake.NewSimpleClientset()
+
+	// Simulate webhook: label SvcNEGs with provider-config name == namespace.
+	testutil.EmulateProviderConfigLabelingWebhook(svcNegClient.Tracker(), &svcNegClient.Fake, "servicenetworkendpointgroups")
+
+	informersFactory := informers.NewSharedInformerFactoryWithOptions(kubeClient, flags.F.ResyncPeriod)
+	svcNegFactory := informersvcneg.NewSharedInformerFactoryWithOptions(svcNegClient, flags.F.ResyncPeriod)
+	networkFactory := informernetwork.NewSharedInformerFactoryWithOptions(networkClient, flags.F.ResyncPeriod)
+	nodeTopoFactory := informernodetopology.NewSharedInformerFactoryWithOptions(nodeTopoClient, flags.F.ResyncPeriod)
+
+	logger := klog.TODO()
+	gceCreator := multiprojectgce.NewGCEFake()
+	rootNamer := namer.NewNamer("test-clusteruid", "", logger)
+	kubeSystemUID := types.UID("test-kube-system-uid")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	globalStop := make(chan struct{})
+	defer close(globalStop)
+
+	// Start multiproject manager (this starts shared factories once with globalStop).
+	go Start(
+		logger, kubeClient, svcNegClient, kubeSystemUID, kubeClient,
+		pcClient, informersFactory, svcNegFactory, networkFactory, nodeTopoFactory,
+		gceCreator, rootNamer, globalStop,
+	)
+
+	// --- pc-1: create and validate baseline service ---
+	pc1 := createPC(ctx, t, pcClient, "pc-1", "owner-1", "proj-1", 1111, "net-1", "subnet-1")
+	seedAll(t, kubeClient, informersFactory, "pc-1", "svc1", "10.100")
+	svc1 := createNEGService(ctx, t, kubeClient, "pc-1", "svc1", "demo")
+	validateService(ctx, t, kubeClient, svcNegClient, gceCreator, svc1, pc1)
+
+	// --- pc-2: create and validate service ---
+	pc2 := createPC(ctx, t, pcClient, "pc-2", "owner-2", "proj-2", 2222, "net-2", "subnet-2")
+	seedAll(t, kubeClient, informersFactory, "pc-2", "svc2-a", "20.100")
+	svc2a := createNEGService(ctx, t, kubeClient, "pc-2", "svc2-a", "demo")
+	validateService(ctx, t, kubeClient, svcNegClient, gceCreator, svc2a, pc2)
+
+	// Stop pc-1 (the first PC, which owns the stopCh).
+	markPCDeletingAndWait(ctx, t, pcClient, pc1)
+
+	// --- pc-2 after pc-1 stops: create a NEW service; it must still work ---
+	seedEPS(t, informersFactory, "pc-2", "svc2-b", "20.100")
+	svc2b := createNEGService(ctx, t, kubeClient, "pc-2", "svc2-b", "demo")
+	validateService(ctx, t, kubeClient, svcNegClient, gceCreator, svc2b, pc2)
+
+	// --- pc-3: create and validate service ---
+	pc3 := createPC(ctx, t, pcClient, "pc-3", "owner-3", "proj-3", 3333, "net-3", "subnet-3")
+	seedAll(t, kubeClient, informersFactory, "pc-3", "svc3", "30.100")
+	svc3 := createNEGService(ctx, t, kubeClient, "pc-3", "svc3", "demo")
+	validateService(ctx, t, kubeClient, svcNegClient, gceCreator, svc3, pc3)
+}
+
+/*** small local helpers ***/
+
+func createPC(
+	ctx context.Context,
+	t *testing.T,
+	pcClient *pcclientfake.Clientset,
+	name, owner, projectID string,
+	projectNumber int64,
+	network, subnet string,
+) *providerconfigv1.ProviderConfig {
+	t.Helper()
+	pc := &providerconfigv1.ProviderConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+			Labels: map[string]string{
+				flags.F.MultiProjectOwnerLabelKey: owner,
+			},
+		},
+		Spec: providerconfigv1.ProviderConfigSpec{
+			ProjectID:     projectID,
+			ProjectNumber: projectNumber,
+			NetworkConfig: providerconfigv1.ProviderNetworkConfig{
+				Network: network,
+				SubnetInfo: providerconfigv1.ProviderConfigSubnetInfo{
+					Subnetwork: subnet,
+				},
+			},
+		},
+	}
+	if _, err := pcClient.CloudV1().ProviderConfigs().Create(ctx, pc, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("create ProviderConfig %q: %v", name, err)
+	}
+	if err := waitForProviderConfigFinalizer(ctx, t, pcClient, pc); err != nil {
+		t.Fatalf("finalizer not set for %s: %v", name, err)
+	}
+	return pc
+}
+
+func markPCDeletingAndWait(
+	ctx context.Context,
+	t *testing.T,
+	pcClient *pcclientfake.Clientset,
+	pc *providerconfigv1.ProviderConfig,
+) {
+	t.Helper()
+	// We use Update with DeletionTimestamp instead of Delete to simulate the Kubernetes
+	// controller reconciliation pattern. In real Kubernetes:
+	// 1. User runs 'kubectl delete' which sets DeletionTimestamp (but doesn't remove the object)
+	// 2. Controllers see DeletionTimestamp and execute finalizer logic
+	// 3. Once all finalizers are removed, Kubernetes performs actual deletion
+	// This test simulates steps 1-2 to trigger our controller's cleanup logic without
+	// needing full Kubernetes deletion semantics in our fake client.
+	cp := pc.DeepCopy()
+	now := metav1.NewTime(time.Now())
+	cp.DeletionTimestamp = &now
+	if _, err := pcClient.CloudV1().ProviderConfigs().Update(ctx, cp, metav1.UpdateOptions{}); err != nil {
+		t.Fatalf("mark %s deleting: %v", pc.Name, err)
+	}
+	if err := waitForProviderConfigFinalizerRemoved(ctx, t, pcClient, pc.Name); err != nil {
+		t.Fatalf("finalizer not removed for %s: %v", pc.Name, err)
+	}
+}
+
+func seedAll(
+	t *testing.T,
+	kubeClient *fake.Clientset,
+	informersFactory informers.SharedInformerFactory,
+	ns, svcName, cidrPrefix string,
+) {
+	t.Helper()
+	populateFakeNodeInformer(t, kubeClient, informersFactory.Core().V1().Nodes().Informer(), ns, cidrPrefix)
+	populateFakeEndpointSlices(t, informersFactory.Discovery().V1().EndpointSlices().Informer(), svcName, ns, cidrPrefix)
+}
+
+func seedEPS(
+	t *testing.T,
+	informersFactory informers.SharedInformerFactory,
+	ns, svcName, cidrPrefix string,
+) {
+	t.Helper()
+	populateFakeEndpointSlices(t, informersFactory.Discovery().V1().EndpointSlices().Informer(), svcName, ns, cidrPrefix)
+}
+
+func createNEGService(
+	ctx context.Context,
+	t *testing.T,
+	kubeClient *fake.Clientset,
+	namespace, name, app string,
+) *corev1.Service {
+	t.Helper()
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels: map[string]string{
+				flags.F.ProviderConfigNameLabelKey: namespace,
+				"app":                              app,
+			},
+			Annotations: map[string]string{
+				annotations.NEGAnnotationKey: negAnnVal,
+			},
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: map[string]string{"app": app},
+			Ports:    []corev1.ServicePort{{Port: 80}},
+		},
+	}
+	if _, err := kubeClient.CoreV1().Services(namespace).Create(ctx, svc, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("create service %s/%s: %v", namespace, name, err)
+	}
+	return svc
 }
 
 // validateService checks the final states of the Service, SvcNEG, and the GCE NEG.
@@ -342,14 +535,22 @@ func checkNEGStatus(
 	t.Helper()
 
 	var latestSvc *corev1.Service
-	if err := wait.PollImmediate(time.Second, 10*time.Second, func() (bool, error) {
+	if err := wait.PollImmediate(shortTimeout, defaultTimeout, func() (bool, error) {
 		var errSvc error
 		latestSvc, errSvc = kubeClient.CoreV1().Services(svc.Namespace).Get(ctx, svc.Name, metav1.GetOptions{})
 		if errSvc != nil {
 			return false, errSvc
 		}
 		val, ok := latestSvc.Annotations[annotations.NEGStatusKey]
-		return ok && val != "", nil
+		if !ok {
+			t.Logf("NEG status annotation not yet present on service %s/%s", latestSvc.Namespace, latestSvc.Name)
+			return false, nil
+		}
+		if val == "" {
+			t.Logf("NEG status annotation is empty on service %s/%s", latestSvc.Namespace, latestSvc.Name)
+			return false, nil
+		}
+		return true, nil
 	}); err != nil {
 		return nil, fmt.Errorf("timed out waiting for NEG status on service %q: %v", svc.Name, err)
 	}
@@ -390,15 +591,16 @@ func checkSvcNEG(
 ) error {
 	t.Helper()
 
-	return wait.PollImmediate(time.Second, 30*time.Second, func() (bool, error) {
+	return wait.PollImmediate(time.Second, defaultTimeout*3, func() (bool, error) {
 		negCheck, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svc.Namespace).Get(ctx, negName, metav1.GetOptions{})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
+				t.Logf("Svc NEG %s/%s not found yet", svc.Namespace, negName)
 				return false, nil
 			}
-			return false, err
+			return false, fmt.Errorf("failed to get Svc NEG %s/%s: %v", svc.Namespace, negName, err)
 		}
-		t.Logf("Svc NEG found: %s/%s", negCheck.Namespace, negCheck.Name)
+		t.Logf("Svc NEG found: %s/%s with %d endpoints", negCheck.Namespace, negCheck.Name, len(negCheck.Status.NetworkEndpointGroups))
 		return true, nil
 	})
 }
@@ -412,17 +614,18 @@ func waitForProviderConfigFinalizer(
 ) error {
 	t.Helper()
 
-	return wait.PollImmediate(time.Second, 10*time.Second, func() (bool, error) {
+	return wait.PollImmediate(time.Second, defaultTimeout, func() (bool, error) {
 		pcCheck, err := pcClient.CloudV1().ProviderConfigs().Get(ctx, pc.Name, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
 		for _, f := range pcCheck.Finalizers {
-			if f == "multiproject.networking.gke.io/neg-cleanup" {
+			if f == finalizer.ProviderConfigNEGCleanupFinalizer {
 				t.Logf("ProviderConfig %q has expected finalizer", pc.Name)
 				return true, nil
 			}
 		}
+		t.Logf("ProviderConfig %q does not have finalizer yet, current finalizers: %v", pc.Name, pcCheck.Finalizers)
 		return false, nil
 	})
 }
@@ -435,21 +638,24 @@ func verifyCloudNEG(
 ) error {
 	t.Helper()
 
-	neg, err := gceCloud.GetNetworkEndpointGroup(negName, "us-central1")
+	const defaultRegion = "us-central1"
+	neg, err := gceCloud.GetNetworkEndpointGroup(negName, defaultRegion)
 	if err != nil {
-		return fmt.Errorf("failed to get NEG %q from cloud: %v", negName, err)
+		return fmt.Errorf("failed to get NEG %q from cloud in region %s: %v", negName, defaultRegion, err)
 	}
-	t.Logf("Verified cloud NEG: %s", neg.Name)
+	t.Logf("Verified cloud NEG: %s in region %s", neg.Name, defaultRegion)
 	return nil
 }
 
 // populateFakeNodeInformer creates and indexes a few fake Node objects to simulate existing cluster nodes.
 func populateFakeNodeInformer(
+	t *testing.T,
 	client *fake.Clientset,
 	nodeInformer cache.SharedIndexInformer,
 	pcName string,
 	addressPrefix string,
 ) {
+	t.Helper()
 	nodes := []*corev1.Node{
 		{
 			ObjectMeta: metav1.ObjectMeta{
@@ -497,24 +703,25 @@ func populateFakeNodeInformer(
 
 	for _, node := range nodes {
 		if _, err := client.CoreV1().Nodes().Create(context.Background(), node, metav1.CreateOptions{}); err != nil {
-			klog.Warningf("Failed to create node %q: %v", node.Name, err)
-			continue
+			t.Fatalf("Failed to create node %q: %v", node.Name, err)
 		}
 		if err := nodeInformer.GetIndexer().Add(node); err != nil {
-			klog.Warningf("Failed to add node %q to informer: %v", node.Name, err)
+			t.Fatalf("Failed to add node %q to informer: %v", node.Name, err)
 		}
 	}
 }
 
 // populateFakeEndpointSlices indexes a set of fake EndpointSlices to simulate the real endpoints in the cluster.
 func populateFakeEndpointSlices(
+	t *testing.T,
 	endpointSliceInformer cache.SharedIndexInformer,
 	serviceName, providerConfigName, addressPrefix string,
 ) {
+	t.Helper()
 	endpointSlices := getTestEndpointSlices(serviceName, providerConfigName, addressPrefix)
 	for _, es := range endpointSlices {
 		if err := endpointSliceInformer.GetIndexer().Add(es); err != nil {
-			klog.Warningf("Failed to add endpoint slice %q: %v", es.Name, err)
+			t.Fatalf("Failed to add endpoint slice %q: %v", es.Name, err)
 		}
 	}
 }
@@ -618,5 +825,213 @@ func getTestEndpointSlices(
 				},
 			},
 		},
+	}
+}
+
+// waitForProviderConfigFinalizerRemoved waits for finalizer removal (indicates StopControllers was invoked).
+func waitForProviderConfigFinalizerRemoved(
+	ctx context.Context,
+	t *testing.T,
+	pcClient *pcclientfake.Clientset,
+	name string,
+) error {
+	t.Helper()
+	return wait.PollImmediate(50*time.Millisecond, defaultTimeout, func() (bool, error) {
+		current, err := pcClient.CloudV1().ProviderConfigs().Get(ctx, name, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			return true, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		for _, f := range current.Finalizers {
+			if f == finalizer.ProviderConfigNEGCleanupFinalizer {
+				t.Logf("ProviderConfig %q still has finalizer, waiting for removal", name)
+				return false, nil
+			}
+		}
+		t.Logf("ProviderConfig %q finalizer successfully removed", name)
+		return true, nil
+	})
+}
+
+// TestProviderConfigErrorCases tests error handling for invalid or missing ProviderConfig scenarios.
+func TestProviderConfigErrorCases(t *testing.T) {
+	flags.F.ProviderConfigNameLabelKey = "cloud.gke.io/provider-config-name"
+	flags.F.ResyncPeriod = 10000 * time.Second
+
+	testCases := []struct {
+		desc                   string
+		providerConfig         *providerconfigv1.ProviderConfig
+		service                *corev1.Service
+		expectError            bool
+		expectedErrorSubstring string
+	}{
+		{
+			desc: "Service without ProviderConfig label",
+			service: &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-svc-no-label",
+					Namespace: "default",
+					Labels: map[string]string{
+						"app": "testapp",
+					},
+					Annotations: map[string]string{
+						annotations.NEGAnnotationKey: negAnnVal,
+					},
+				},
+				Spec: corev1.ServiceSpec{
+					Selector: map[string]string{"app": "testapp"},
+					Ports: []corev1.ServicePort{
+						{Port: 80},
+					},
+				},
+			},
+			expectError:            true,
+			expectedErrorSubstring: "provider-config-name",
+		},
+		{
+			desc: "ProviderConfig without required labels",
+			providerConfig: &providerconfigv1.ProviderConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-pc-no-owner",
+				},
+				Spec: providerconfigv1.ProviderConfigSpec{
+					ProjectID:     "my-project",
+					ProjectNumber: 12345,
+					NetworkConfig: providerconfigv1.ProviderNetworkConfig{
+						Network: "my-network",
+						SubnetInfo: providerconfigv1.ProviderConfigSubnetInfo{
+							Subnetwork: "my-subnetwork",
+						},
+					},
+				},
+			},
+			expectError: false, // Should still work, just log warnings
+		},
+		{
+			desc: "ProviderConfig with missing network config",
+			providerConfig: &providerconfigv1.ProviderConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-pc-no-network",
+					Labels: map[string]string{
+						flags.F.MultiProjectOwnerLabelKey: "example-owner",
+					},
+				},
+				Spec: providerconfigv1.ProviderConfigSpec{
+					ProjectID:     "my-project",
+					ProjectNumber: 12345,
+				},
+			},
+			expectError: false, // Should handle gracefully
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			// Build fake clients.
+			kubeClient := fake.NewSimpleClientset()
+			pcClient := pcclientfake.NewSimpleClientset()
+			svcNegClient := svcnegfake.NewSimpleClientset()
+			networkClient := networkfake.NewSimpleClientset()
+			nodeTopologyClient := nodetopologyfake.NewSimpleClientset()
+
+			testutil.EmulateProviderConfigLabelingWebhook(svcNegClient.Tracker(), &svcNegClient.Fake, "servicenetworkendpointgroups")
+
+			logger := klog.TODO()
+			gceCreator := multiprojectgce.NewGCEFake()
+			informersFactory := informers.NewSharedInformerFactoryWithOptions(kubeClient, flags.F.ResyncPeriod)
+			svcNegFactory := informersvcneg.NewSharedInformerFactoryWithOptions(svcNegClient, flags.F.ResyncPeriod)
+			networkFactory := informernetwork.NewSharedInformerFactoryWithOptions(networkClient, flags.F.ResyncPeriod)
+			nodeTopologyFactory := informernodetopology.NewSharedInformerFactoryWithOptions(nodeTopologyClient, flags.F.ResyncPeriod)
+
+			rootNamer := namer.NewNamer("test-clusteruid", "", logger)
+			kubeSystemUID := types.UID("test-kube-system-uid")
+
+			ctx, cancel := context.WithCancel(context.Background())
+			stopCh := make(chan struct{})
+			defer func() {
+				cancel()
+				close(stopCh)
+			}()
+
+			// Start the multi-project code in the background.
+			go func() {
+				Start(
+					logger,
+					kubeClient,
+					svcNegClient,
+					kubeSystemUID,
+					kubeClient,
+					pcClient,
+					informersFactory,
+					svcNegFactory,
+					networkFactory,
+					nodeTopologyFactory,
+					gceCreator,
+					rootNamer,
+					stopCh,
+				)
+			}()
+
+			// Create the ProviderConfig if provided
+			if tc.providerConfig != nil {
+				if _, err := pcClient.CloudV1().ProviderConfigs().Create(ctx, tc.providerConfig, metav1.CreateOptions{}); err != nil {
+					t.Fatalf("Failed to create ProviderConfig: %v", err)
+				}
+				t.Logf("Created ProviderConfig %q", tc.providerConfig.Name)
+			}
+
+			// Create the Service if provided
+			if tc.service != nil {
+				if _, err := kubeClient.CoreV1().Services(tc.service.Namespace).Create(ctx, tc.service, metav1.CreateOptions{}); err != nil {
+					if tc.expectError {
+						t.Logf("Got expected error creating service: %v", err)
+						return
+					}
+					t.Fatalf("Unexpected error creating service: %v", err)
+				}
+
+				// For error cases, we need to wait to ensure no NEG status is set
+				// For success cases, we poll until NEG status appears
+				if tc.expectError {
+					// Wait a reasonable time to ensure the error case doesn't set NEG status
+					if err := wait.PollImmediate(500*time.Millisecond, 2*time.Second, func() (bool, error) {
+						svc, err := kubeClient.CoreV1().Services(tc.service.Namespace).Get(ctx, tc.service.Name, metav1.GetOptions{})
+						if err != nil {
+							return false, fmt.Errorf("failed to get service: %v", err)
+						}
+						_, hasNEGStatus := svc.Annotations[annotations.NEGStatusKey]
+						if hasNEGStatus {
+							// Unexpectedly found NEG status in error case
+							return false, fmt.Errorf("expected error but NEG status was set for service %s/%s", svc.Namespace, svc.Name)
+						}
+						// Keep polling to ensure it doesn't appear
+						return false, nil
+					}); err != nil {
+						// Timeout is expected for error cases (no NEG status should appear)
+						if err != wait.ErrWaitTimeout {
+							t.Errorf("Unexpected error while waiting for error case: %v", err)
+						}
+					}
+				} else {
+					// For success cases, poll until NEG status is set
+					if err := wait.PollImmediate(500*time.Millisecond, 10*time.Second, func() (bool, error) {
+						svc, err := kubeClient.CoreV1().Services(tc.service.Namespace).Get(ctx, tc.service.Name, metav1.GetOptions{})
+						if err != nil {
+							return false, fmt.Errorf("failed to get service: %v", err)
+						}
+						_, hasNEGStatus := svc.Annotations[annotations.NEGStatusKey]
+						if hasNEGStatus {
+							return true, nil
+						}
+						t.Logf("Waiting for NEG status to be set for service %s/%s", svc.Namespace, svc.Name)
+						return false, nil
+					}); err != nil {
+						t.Logf("NEG status not set for service %s/%s: %v", tc.service.Namespace, tc.service.Name, err)
+					}
+				}
+			}
+		})
 	}
 }

@@ -46,6 +46,7 @@ import (
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/flags"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils/common"
@@ -80,7 +81,6 @@ var (
 // This test adds a new service, then performs a valid update and then modifies the service type to External and ensures
 // that the status field is as expected in each case.
 func TestProcessCreateOrUpdate(t *testing.T) {
-
 	testCases := []struct {
 		desc                string
 		readOnlyModeEnabled bool
@@ -97,7 +97,7 @@ func TestProcessCreateOrUpdate(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			l4c := newServiceController(t, newFakeGCE(), tc.readOnlyModeEnabled)
+			l4c, _ := newServiceController(t, newFakeGCE(), tc.readOnlyModeEnabled)
 			prevMetrics, err := test.GetL4ILBLatencyMetric()
 			if err != nil {
 				t.Errorf("Error getting L4 ILB latency metrics err: %v", err)
@@ -206,7 +206,7 @@ func TestProcessCreateOrUpdate(t *testing.T) {
 // If health check is not shared among services then there is a leak.
 // When service is deleted all health checks should be cleaned up to prevent the leak.
 func TestProcessUpdateExternalTrafficPolicy(t *testing.T) {
-	l4c := newServiceController(t, newFakeGCE(), false)
+	l4c, _ := newServiceController(t, newFakeGCE(), false)
 	// Create svc with ExternalTrafficPolicy Local.
 	svc := test.NewL4ILBService(true, 8080)
 	addILBService(l4c, svc)
@@ -274,8 +274,7 @@ func TestProcessDeletion(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-
-		l4c := newServiceController(t, newFakeGCE(), tc.readOnlyModeEnabled)
+		l4c, _ := newServiceController(t, newFakeGCE(), tc.readOnlyModeEnabled)
 		prevMetrics, err := test.GetL4ILBLatencyMetric()
 		if err != nil {
 			t.Errorf("Error getting L4 ILB latency metrics err: %v", err)
@@ -347,7 +346,7 @@ func TestProcessDeletion(t *testing.T) {
 }
 
 func TestProcessCreateLegacyService(t *testing.T) {
-	l4c := newServiceController(t, newFakeGCE(), false)
+	l4c, _ := newServiceController(t, newFakeGCE(), false)
 	prevMetrics, err := test.GetL4ILBLatencyMetric()
 	if err != nil {
 		t.Errorf("Error getting L4 ILB latency metrics err: %v", err)
@@ -374,7 +373,7 @@ func TestProcessCreateLegacyService(t *testing.T) {
 }
 
 func TestProcessCreateServiceWithLegacyInternalForwardingRule(t *testing.T) {
-	l4c := newServiceController(t, newFakeGCE(), false)
+	l4c, _ := newServiceController(t, newFakeGCE(), false)
 	prevMetrics, err := test.GetL4ILBLatencyMetric()
 	if err != nil {
 		t.Errorf("Error getting L4 ILB latency metrics err: %v", err)
@@ -407,7 +406,7 @@ func TestProcessCreateServiceWithLegacyInternalForwardingRule(t *testing.T) {
 
 func TestCreateServiceNoLegacyForwordingRule(t *testing.T) {
 	fakeGCE := newFakeGCE()
-	l4c := newServiceController(t, fakeGCE, false)
+	l4c, _ := newServiceController(t, fakeGCE, false)
 	newSvc := test.NewL4ILBService(false, 8080)
 
 	firstHookCall := true
@@ -439,7 +438,7 @@ func TestCreateServiceNoLegacyForwordingRule(t *testing.T) {
 
 func TestCreateServiceUnknownLegacyForwordingRule(t *testing.T) {
 	fakeGCE := newFakeGCE()
-	l4c := newServiceController(t, fakeGCE, false)
+	l4c, _ := newServiceController(t, fakeGCE, false)
 	newSvc := test.NewL4ILBService(false, 8080)
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.GetHook = func(ctx context2.Context, key *meta.Key, m *cloud.MockForwardingRules, options ...cloud.Option) (bool, *compute.ForwardingRule, error) {
 		return true, nil, fmt.Errorf("NON-404 error from mock API")
@@ -463,7 +462,7 @@ func TestCreateServiceUnknownLegacyForwordingRule(t *testing.T) {
 }
 
 func TestProcessCreateServiceWithLegacyExternalForwardingRule(t *testing.T) {
-	l4c := newServiceController(t, newFakeGCE(), false)
+	l4c, _ := newServiceController(t, newFakeGCE(), false)
 	prevMetrics, err := test.GetL4ILBLatencyMetric()
 	if err != nil {
 		t.Errorf("Error getting L4 ILB latency metrics err: %v", err)
@@ -494,7 +493,7 @@ func TestProcessCreateServiceWithLegacyExternalForwardingRule(t *testing.T) {
 }
 
 func TestProcessUpdateClusterIPToILBService(t *testing.T) {
-	l4c := newServiceController(t, newFakeGCE(), false)
+	l4c, _ := newServiceController(t, newFakeGCE(), false)
 	prevMetrics, err := test.GetL4ILBLatencyMetric()
 	if err != nil {
 		t.Errorf("Error getting L4 ILB latency metrics %v", err)
@@ -546,7 +545,8 @@ func TestProcessMultipleServices(t *testing.T) {
 	backoff.Duration = 3 * time.Second
 	for _, onlyLocal := range []bool{true, false} {
 		t.Run(fmt.Sprintf("L4 with LocalMode=%v", onlyLocal), func(t *testing.T) {
-			l4c := newServiceController(t, newFakeGCE(), false)
+			l4c, stopCh := newServiceController(t, newFakeGCE(), false)
+			defer close(stopCh)
 			prevMetrics, err := test.GetL4ILBLatencyMetric()
 			if err != nil {
 				t.Errorf("Error getting L4 ILB latency metrics %v", err)
@@ -595,7 +595,8 @@ func TestProcessMultipleServices(t *testing.T) {
 }
 
 func TestProcessServiceWithDelayedNEGAdd(t *testing.T) {
-	l4c := newServiceController(t, newFakeGCE(), false)
+	l4c, stopCh := newServiceController(t, newFakeGCE(), false)
+	defer close(stopCh)
 	go l4c.Run()
 	newSvc := test.NewL4ILBService(false, 8080)
 	addILBService(l4c, newSvc)
@@ -636,7 +637,7 @@ func TestProcessServiceWithDelayedNEGAdd(t *testing.T) {
 
 func TestProcessServiceOnError(t *testing.T) {
 	t.Parallel()
-	l4c := newServiceController(t, newFakeGCEWithInsertError(), false)
+	l4c, _ := newServiceController(t, newFakeGCEWithInsertError(), false)
 	prevMetrics, err := test.GetL4ILBErrorMetric()
 	if err != nil {
 		t.Errorf("Error getting L4 ILB error metrics err: %v", err)
@@ -660,7 +661,7 @@ func TestProcessServiceOnError(t *testing.T) {
 
 func TestProcessServiceOnUserError(t *testing.T) {
 	t.Parallel()
-	l4c := newServiceController(t, newFakeGCEWithUserInsertError(), false)
+	l4c, _ := newServiceController(t, newFakeGCEWithUserInsertError(), false)
 	newSvc := test.NewL4ILBService(false, 8080)
 	addILBService(l4c, newSvc)
 	addNEGAndSvcNegL4Controller(l4c, newSvc)
@@ -705,7 +706,7 @@ func TestCreateDeleteDualStackService(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			l4c := newServiceController(t, newFakeGCE(), false)
+			l4c, _ := newServiceController(t, newFakeGCE(), false)
 			l4c.enableDualStack = true
 			prevMetrics, err := test.GetL4ILBLatencyMetric()
 			if err != nil {
@@ -763,7 +764,7 @@ func TestCreateDeleteDualStackService(t *testing.T) {
 
 func TestProcessDualStackServiceOnUserError(t *testing.T) {
 	t.Parallel()
-	l4c := newServiceController(t, newFakeGCE(), false)
+	l4c, _ := newServiceController(t, newFakeGCE(), false)
 	l4c.enableDualStack = true
 
 	// Create cluster subnet with EXTERNAL ipv6 access type to trigger user error.
@@ -788,7 +789,7 @@ func TestProcessDualStackServiceOnUserError(t *testing.T) {
 }
 
 func TestDualStackILBStatusForErrorSync(t *testing.T) {
-	l4c := newServiceController(t, newFakeGCE(), false)
+	l4c, _ := newServiceController(t, newFakeGCE(), false)
 	l4c.enableDualStack = true
 	(l4c.ctx.Cloud.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = mock.InsertForwardingRulesInternalErrHook
 
@@ -857,7 +858,7 @@ func TestProcessUpdateILBIPFamilies(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 
-			l4c := newServiceController(t, newFakeGCE(), false)
+			l4c, _ := newServiceController(t, newFakeGCE(), false)
 			l4c.enableDualStack = true
 
 			test.MustCreateDualStackClusterSubnet(t, l4c.ctx.Cloud, "INTERNAL")
@@ -900,7 +901,7 @@ func TestProcessUpdateILBIPFamilies(t *testing.T) {
 }
 
 func TestProcessCreateServiceWithLoadBalancerClass(t *testing.T) {
-	l4c := newServiceController(t, newFakeGCE(), false)
+	l4c, _ := newServiceController(t, newFakeGCE(), false)
 	newSvc := test.NewL4ILBService(false, 8080)
 	// Set the legacy finalizer
 	testLBClass := "testClass"
@@ -948,7 +949,7 @@ func TestEnsureInternalLoadBalancerClass(t *testing.T) {
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			l4c := newServiceController(t, newFakeGCE(), false)
+			l4c, _ := newServiceController(t, newFakeGCE(), false)
 
 			svc := test.NewL4LBServiceWithLoadBalancerClass(tc.loadBalancerClass)
 			if tc.loadBalancerClass == "" {
@@ -1021,7 +1022,7 @@ func TestEnsureInternalLoadBalancerClass(t *testing.T) {
 	}
 }
 
-func newServiceController(t *testing.T, fakeGCE *gce.Cloud, readOnlyMode bool) *L4Controller {
+func newServiceController(t *testing.T, fakeGCE *gce.Cloud, readOnlyMode bool) (*L4Controller, chan struct{}) {
 	kubeClient := fake.NewSimpleClientset()
 	svcNegClient := svcnegclient.NewSimpleClientset()
 
@@ -1053,7 +1054,7 @@ func newServiceController(t *testing.T, fakeGCE *gce.Cloud, readOnlyMode bool) *
 	}
 	l4c := NewILBController(ctx, stopCh, klog.TODO())
 	l4c.hasSynced = func() bool { return true }
-	return l4c
+	return l4c, stopCh
 }
 
 func newFakeGCE() *gce.Cloud {
@@ -1209,5 +1210,106 @@ func createLegacyForwardingRule(t *testing.T, svc *api_v1.Service, cloud *gce.Cl
 	}
 	if err = composite.CreateForwardingRule(cloud, key, existingFwdRule, klog.TODO()); err != nil {
 		t.Errorf("Failed to create fake forwarding rule %s, err %v", frName, err)
+	}
+}
+
+func TestMultipleServicesProcessingWithLegacyHeadStartTime(t *testing.T) {
+	origL4ILBLegacyHeadStartTime := flags.F.L4ILBLegacyHeadStartTime
+	flags.F.L4ILBLegacyHeadStartTime = 3 * time.Second
+	defer func() {
+		flags.F.L4ILBLegacyHeadStartTime = origL4ILBLegacyHeadStartTime
+	}()
+	backoff := retry.DefaultRetry
+
+	testCases := []struct {
+		desc            string
+		backoffDuration time.Duration
+		svcFinalizers   []string
+		shouldProcess   bool
+	}{
+		{
+			desc:            "New service without finalizers after head start",
+			backoffDuration: 5 * time.Second,
+			shouldProcess:   true,
+		},
+		{
+			desc:            "New service without finalizers, head start for CCM",
+			backoffDuration: 3 * time.Second,
+			shouldProcess:   false,
+		},
+		{
+			desc:            "Existing service with finalizer V2",
+			backoffDuration: 3 * time.Second,
+			svcFinalizers:   []string{common.ILBFinalizerV2},
+			shouldProcess:   true,
+		},
+		{
+			desc:            "Existing service with finalizer V1",
+			backoffDuration: 3 * time.Second,
+			svcFinalizers:   []string{common.LegacyILBFinalizer},
+			shouldProcess:   false,
+		},
+	}
+	for _, tc := range testCases {
+		// Increase the duration including the wait before fetching the service.
+		backoff.Duration = tc.backoffDuration
+		for _, onlyLocal := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s - L4 with LocalMode=%v", tc.desc, onlyLocal), func(t *testing.T) {
+				l4c, stopCh := newServiceController(t, newFakeGCE(), false)
+				defer close(stopCh)
+				prevMetrics, err := test.GetL4ILBLatencyMetric()
+				if err != nil {
+					t.Errorf("Error getting L4 ILB latency metrics %v", err)
+				}
+				go l4c.Run()
+				var svcNames []string
+				var testNs string
+				for port := 8000; port < 8020; port++ {
+					newSvc := test.NewL4ILBService(onlyLocal, port)
+					if len(tc.svcFinalizers) > 0 {
+						newSvc.ObjectMeta.Finalizers = tc.svcFinalizers
+					}
+					newSvc.Name = newSvc.Name + fmt.Sprintf("-%d", port)
+					svcNames = append(svcNames, newSvc.Name)
+					testNs = newSvc.Namespace
+					addILBService(l4c, newSvc)
+					// add the NEG so that link to backendService works.
+					addNEGAndSvcNegL4Controller(l4c, newSvc)
+					l4c.svcQueue.Enqueue(newSvc)
+					defer deleteILBService(l4c, newSvc)
+				}
+				if err := retry.OnError(backoff, func(error) bool { return true }, func() error {
+					for _, name := range svcNames {
+						newSvc, err := l4c.client.CoreV1().Services(testNs).Get(context2.TODO(), name, v1.GetOptions{})
+						if err != nil {
+							return fmt.Errorf("failed to lookup service %s, err: %v", name, err)
+						}
+						if tc.shouldProcess && (len(newSvc.Status.LoadBalancer.Ingress) == 0 || newSvc.Annotations[annotations.FirewallRuleKey] == "") {
+							return fmt.Errorf("waiting for valid IP and/or resource annotations for service %q. Got Status - %+v, Annotations - %v", newSvc.Name, newSvc.Status, newSvc.Annotations)
+						}
+					}
+					return nil
+				}); err != nil {
+					t.Error(err)
+				}
+				if tc.shouldProcess {
+					// Perform a full validation of the service once it is ready.
+					for _, name := range svcNames {
+						newSvc, _ := l4c.client.CoreV1().Services(testNs).Get(context2.TODO(), name, v1.GetOptions{})
+						verifyILBServiceProvisioned(t, newSvc)
+					}
+				}
+				// this will be a create metric since an ILB IP is being assigned for the first time.
+				currMetrics, metricErr := test.GetL4ILBLatencyMetric()
+				if metricErr != nil {
+					t.Errorf("Error getting L4 ILB latency metrics err: %v", metricErr)
+				}
+				if tc.shouldProcess {
+					prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{CreateCount: 20, UpperBoundSeconds: 1}, t)
+				} else {
+					prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{CreateCount: 0, UpperBoundSeconds: 1}, t)
+				}
+			})
+		}
 	}
 }

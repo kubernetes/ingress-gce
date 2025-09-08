@@ -33,12 +33,8 @@ import (
 
 // NewSimpleClientset returns a clientset that will respond with the provided objects.
 // It's backed by a very simple object tracker that processes creates, updates and deletions as-is,
-// without applying any field management, validations and/or defaults. It shouldn't be considered a replacement
+// without applying any validations and/or defaults. It shouldn't be considered a replacement
 // for a real clientset and is mostly useful in simple unit tests.
-//
-// DEPRECATED: NewClientset replaces this with support for field management, which significantly improves
-// server side apply testing. NewClientset is only available when apply configurations are generated (e.g.
-// via --with-applyconfig).
 func NewSimpleClientset(objects ...runtime.Object) *Clientset {
 	o := testing.NewObjectTracker(scheme, codecs.UniversalDecoder())
 	for _, obj := range objects {
@@ -85,12 +81,12 @@ var (
 	_ testing.FakeClient  = &Clientset{}
 )
 
-// CloudV1 retrieves the CloudV1Client
-func (c *Clientset) CloudV1() cloudv1.CloudV1Interface {
-	return &fakecloudv1.FakeCloudV1{Fake: &c.Fake}
-}
-
 // CloudV1beta1 retrieves the CloudV1beta1Client
 func (c *Clientset) CloudV1beta1() cloudv1beta1.CloudV1beta1Interface {
 	return &fakecloudv1beta1.FakeCloudV1beta1{Fake: &c.Fake}
+}
+
+// CloudV1 retrieves the CloudV1Client
+func (c *Clientset) CloudV1() cloudv1.CloudV1Interface {
+	return &fakecloudv1.FakeCloudV1{Fake: &c.Fake}
 }

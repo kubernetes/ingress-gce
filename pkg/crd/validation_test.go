@@ -155,4 +155,21 @@ func TestCondenseSchema(t *testing.T) {
 	if !tsProp.SchemaProps.Nullable {
 		t.Errorf("Expected Foo's ts property to be Nullable")
 	}
+
+	// Verify that metadata is removed.
+	schemaWithMetadata := spec.Schema{
+		SchemaProps: spec.SchemaProps{
+			Properties: map[string]spec.Schema{
+				"metadata": {},
+				"spec":     {},
+			},
+		},
+	}
+	condensedSchemaWithMetadata := condenseSchema(schemaWithMetadata, openapiSpec)
+	if _, exists := condensedSchemaWithMetadata.Properties["metadata"]; exists {
+		t.Errorf("condenseSchema should have removed 'metadata' property, but it still exists")
+	}
+	if _, exists := condensedSchemaWithMetadata.Properties["spec"]; !exists {
+		t.Errorf("condenseSchema should not have removed 'spec' property, but it is gone")
+	}
 }
