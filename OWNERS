@@ -1,20 +1,18 @@
 approvers:
-- aojea
-- thockin
-- bowei
-- freehan
-- mrhohn
-- prameshj
-- swetharepakula
-- panslava
-- cezarygerard
-- kl52752
-- spencerhance
-- code-elinka
-- mmamczur
-- alexkats
-- gauravkghildiyal
-- tortillazhawaii
+  - aojea
+  - thockin
+  - bowei
+  - mrhohn
+  - swetharepakula
+  - panslava
+  - cezarygerard
+  - kl52752
+  - spencerhance
+  - code-elinka
+  - mmamczur
+  - gauravkghildiyal
+  - tortillazhawaii
+  - felipeyepez
 reviewers:
-- aojea
-- sawsa307
+  - aojea
+  - sawsa307
