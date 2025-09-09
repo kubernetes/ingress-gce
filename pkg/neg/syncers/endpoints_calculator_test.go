@@ -978,6 +978,7 @@ func TestEndpointsSplitAcrossZonesILB(t *testing.T) {
 			c := NewClusterL4EndpointsCalculator(
 				listers.NewNodeLister(nodeInformer.GetIndexer()),
 				zoneGetter, "svc", klog.TODO(), &defaultNetwork, negtypes.L4InternalLB,
+				negtypes.NewTestContext().NegMetrics,
 			)
 
 			var endpointsMap map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
@@ -1105,6 +1106,7 @@ func TestEndpointsMigrationFrom25To24ForILBEtpCluster(t *testing.T) {
 			c := NewClusterL4EndpointsCalculator(
 				listers.NewNodeLister(nodeInformer.GetIndexer()),
 				zoneGetter, "svc", klog.TODO(), &defaultNetwork, negtypes.L4InternalLB,
+				negtypes.NewTestContext().NegMetrics,
 			)
 
 			// Set up nodes
