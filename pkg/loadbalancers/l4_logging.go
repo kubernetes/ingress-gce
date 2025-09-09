@@ -63,7 +63,7 @@ func GetL4LoggingConfig(service *corev1.Service, configMapLister cache.Store) (*
 	configMap := obj.(*corev1.ConfigMap)
 	logConfig, err := ParseL4LoggingConfigMap(configMap)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error during parsing of the L4 logging config map: %v", err)
 	}
 
 	return logConfig, nil
@@ -166,6 +166,6 @@ func parseL4LoggingOptionalFields(configMap *corev1.ConfigMap) []string {
 		return []string{}
 	}
 
-	val = strings.ReplaceAll(val, " ", "") // allows to use " ," as separator
+	val = strings.ReplaceAll(val, " ", "") // allows to use ", " as separator
 	return strings.Split(val, ",")
 }

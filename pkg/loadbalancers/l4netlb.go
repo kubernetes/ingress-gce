@@ -371,6 +371,11 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 			syncResult.Error = utils.NewUserError(err)
 			return ""
 		}
+		loggingConfigMapName, cmReferenced := annotations.FromService(l4netlb.Service).GetL4LoggingConfigMapAnnotation()
+		if logConfig == nil && cmReferenced {
+			warningMessage := fmt.Sprintf("Referenced L4 logging ConfigMap does not exist: Name: %q, Namespace: %q", loggingConfigMapName, l4netlb.Service.Namespace)
+			l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeWarning, "ReferencedConfigMapDoesNotExist", warningMessage)
+		}
 	}
 
 	backendParams := backends.L4BackendServiceParams{
