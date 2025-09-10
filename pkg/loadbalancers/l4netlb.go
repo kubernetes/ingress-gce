@@ -547,16 +547,17 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 	}
 	result.Annotations[annotations.FirewallRuleKey] = firewallName
 
-	denyParams := denyFirewall(l4netlb.namer.L4FirewallDeny, l4netlb.Service, nodeNames, l4netlb.networkInfo, ipAddress)
-	denyForNodesUpdateStatus, err := firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, denyParams, l4netlb.cloud, l4netlb.recorder, fwLogger)
-	// TODO: fix this to have separate resource potentially
-	result.GCEResourceUpdate.SetFirewallForNodes(denyForNodesUpdateStatus)
-	if err != nil {
-		result.GCEResourceInError = annotations.FirewallRuleResource
-		result.Error = err
-		return
+	if flags.F.EnableL4DenyFirewall {
+		denyParams := denyFirewall(l4netlb.namer.L4FirewallDeny, l4netlb.Service, nodeNames, l4netlb.networkInfo, ipAddress)
+		denyForNodesUpdateStatus, err := firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, denyParams, l4netlb.cloud, l4netlb.recorder, fwLogger)
+		result.GCEResourceUpdate.SetFirewallForNodes(denyForNodesUpdateStatus)
+		if err != nil {
+			result.GCEResourceInError = annotations.FirewallDenyRuleResource
+			result.Error = err
+			return
+		}
+		result.Annotations[annotations.FirewallRuleDenyKey] = denyParams.Name
 	}
-	result.Annotations[annotations.FirewallRuleDenyKey] = denyParams.Name
 }
 
 func denyFirewall(namer func(namespace, name string) string, svc *corev1.Service, nodeNames []string, network network.NetworkInfo, ruleAddress string) *firewalls.FirewallParams {

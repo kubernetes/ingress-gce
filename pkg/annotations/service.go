@@ -126,7 +126,9 @@ const (
 	ForwardingRuleIPv6Resource         = ForwardingRuleResource + IPv6Suffix
 	BackendServiceResource             = "backend-service"
 	FirewallRuleResource               = "firewall-rule"
+	FirewallDenyRuleResource           = "firewall-rule-deny"
 	FirewallRuleIPv6Resource           = FirewallRuleResource + IPv6Suffix
+	FirewallDenyRuleIPv6Resource       = FirewallDenyRuleResource + IPv6Suffix
 	HealthcheckResource                = "healthcheck"
 	FirewallForHealthcheckResource     = "firewall-rule-for-hc"
 	FirewallForHealthcheckIPv6Resource = FirewallRuleForHealthcheckKey + IPv6Suffix
