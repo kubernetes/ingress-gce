@@ -27,9 +27,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/firewalls"
-	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -100,7 +100,7 @@ func (l4netlb *L4NetLB) deleteIPv6ResourcesAnnotationBased(syncResult *L4NetLBSy
 		l4netlb.deleteIPv6ForwardingRule(syncResult)
 	}
 
-	if shouldIgnoreAnnotations || l4netlb.hasAnnotation(annotations.FirewallRuleIPv6Key) {
+	if shouldIgnoreAnnotations || l4netlb.hasAnnotation(annotations.FirewallRuleIPv6Key) || l4netlb.hasAnnotation(annotations.FirewallRuleDenyIPv6Key) {
 		l4netlb.deleteIPv6NodesFirewall(syncResult)
 	}
 }
@@ -166,19 +166,30 @@ func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipRange string, nodeNames []stri
 	}
 	syncResult.Annotations[annotations.FirewallRuleIPv6Key] = firewallName
 
-	if flags.F.EnableL4DenyFirewall {
-		denyParams := denyFirewall(l4netlb.namer.L4IPv6FirewallDeny, l4netlb.Service, nodeNames, l4netlb.networkInfo, ipRange)
-		wasUpdate, err = firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, denyParams, l4netlb.cloud, l4netlb.recorder, fwLogger)
-		// TODO: change that to actual resources related to this
-		syncResult.GCEResourceUpdate.SetFirewallForNodes(wasUpdate)
-		if err != nil {
-			fwLogger.Error(err, "Failed to ensure ipv6 deny nodes firewall for L4 NetLB")
-			syncResult.GCEResourceInError = annotations.FirewallDenyRuleIPv6Resource
+	l4netlb.ensureDenyIPv6(syncResult, nodeNames, ipRange, fwLogger)
+}
+
+func (l4netlb *L4NetLB) ensureDenyIPv6(syncResult *L4NetLBSyncResult, nodeNames []string, ipRange string, fwLogger klog.Logger) {
+	// if we don't use deny flag, make sure that a leftover deny rule is cleaned up
+	if !l4netlb.useDenyFirewalls {
+		if err := cleanUpDenyFirewallRule(l4netlb.cloud, l4netlb.namer.L4IPv6FirewallDeny(l4netlb.Service.Namespace, l4netlb.Service.Name), fwLogger); err != nil {
+			syncResult.GCEResourceInError = annotations.FirewallDenyRuleResource
 			syncResult.Error = err
 			return
 		}
-		syncResult.Annotations[annotations.FirewallRuleDenyIPv6Key] = denyParams.Name
+		return
 	}
+	// otherwise provision Deny rule
+	denyParams := denyFirewall(l4netlb.namer.L4IPv6FirewallDeny, l4netlb.Service, nodeNames, l4netlb.networkInfo, ipRange)
+	wasUpdate, err := firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, denyParams, l4netlb.cloud, l4netlb.recorder, fwLogger)
+	syncResult.GCEResourceUpdate.SetFirewallForNodes(wasUpdate)
+	if err != nil {
+		fwLogger.Error(err, "Failed to ensure ipv6 deny nodes firewall for L4 NetLB")
+		syncResult.GCEResourceInError = annotations.FirewallDenyRuleIPv6Resource
+		syncResult.Error = err
+		return
+	}
+	syncResult.Annotations[annotations.FirewallRuleDenyIPv6Key] = denyParams.Name
 }
 
 func (l4netlb *L4NetLB) deleteIPv6ForwardingRule(syncResult *L4NetLBSyncResult) {
@@ -209,18 +220,15 @@ func (l4netlb *L4NetLB) deleteIPv6NodesFirewall(syncResult *L4NetLBSyncResult) {
 		fwLogger.V(2).Info("Finished deleting IPv6 nodes firewall for L4 NetLB Service", "timeTaken", time.Since(start))
 	}()
 
-	err := l4netlb.deleteFirewall(allowName, fwLogger)
-	if err != nil {
+	if err := l4netlb.deleteFirewall(allowName, fwLogger); err != nil {
 		fwLogger.Error(err, "Failed to delete ipv6 firewall rule for external loadbalancer service")
 		syncResult.GCEResourceInError = annotations.FirewallRuleIPv6Resource
 		syncResult.Error = err
 	}
 
-	err = l4netlb.deleteFirewall(denyName, fwLogger)
-	if err != nil {
-		// TODO: fix this slopiness
+	if err := l4netlb.deleteFirewall(denyName, fwLogger); err != nil {
 		fwLogger.Error(err, "Failed to delete ipv6 deny firewall rule for external loadbalancer service")
-		syncResult.GCEResourceInError = annotations.FirewallRuleDenyIPv6Key
+		syncResult.GCEResourceInError = annotations.FirewallDenyRuleIPv6Resource
 		syncResult.Error = err
 	}
 }

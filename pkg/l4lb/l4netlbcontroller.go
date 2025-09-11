@@ -617,6 +617,7 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 		NetworkResolver:                  lc.networkResolver,
 		EnableWeightedLB:                 lc.ctx.EnableWeightedL4NetLB,
 		EnableMixedProtocol:              lc.ctx.EnableL4NetLBMixedProtocol,
+		UseDenyFirewalls:                 lc.ctx.EnableL4DenyFirewalls,
 		DisableNodesFirewallProvisioning: lc.ctx.DisableL4LBFirewall,
 		UseNEGs:                          usesNegBackends,
 	}
