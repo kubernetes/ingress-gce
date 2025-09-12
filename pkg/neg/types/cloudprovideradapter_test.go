@@ -38,7 +38,7 @@ func TestAggregatedListNetworkEndpointGroup(t *testing.T) {
 
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	MockNetworkEndpointAPIs(fakeGCE)
-	fakeCloud := NewAdapter(fakeGCE)
+	fakeCloud := NewAdapter(fakeGCE, NewTestContext().NegMetrics)
 
 	validateAggregatedList(t, fakeCloud, 0, map[string][]string{})
 
