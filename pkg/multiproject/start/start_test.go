@@ -9,9 +9,7 @@ import (
 	"time"
 
 	networkfake "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned/fake"
-	informernetwork "github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions"
 	nodetopologyfake "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned/fake"
-	informernodetopology "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions"
 	corev1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -33,7 +31,6 @@ import (
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	pcclientfake "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned/fake"
 	svcnegfake "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
-	informersvcneg "k8s.io/ingress-gce/pkg/svcneg/client/informers/externalversions"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	klog "k8s.io/klog/v2"
 )
@@ -212,9 +209,6 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 			logger := klog.TODO()
 			gceCreator := multiprojectgce.NewGCEFake()
 			informersFactory := informers.NewSharedInformerFactoryWithOptions(kubeClient, flags.F.ResyncPeriod)
-			svcNegFactory := informersvcneg.NewSharedInformerFactoryWithOptions(svcNegClient, flags.F.ResyncPeriod)
-			networkFactory := informernetwork.NewSharedInformerFactoryWithOptions(networkClient, flags.F.ResyncPeriod)
-			nodeTopologyFactory := informernodetopology.NewSharedInformerFactoryWithOptions(nodeTopologyClient, flags.F.ResyncPeriod)
 
 			rootNamer := namer.NewNamer("test-clusteruid", "", logger)
 			kubeSystemUID := types.UID("test-kube-system-uid")
@@ -232,13 +226,11 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 					logger,
 					kubeClient,
 					svcNegClient,
+					networkClient,
+					nodeTopologyClient,
 					kubeSystemUID,
 					kubeClient, // eventRecorderKubeClient can be the same as main client
 					pcClient,
-					informersFactory,
-					svcNegFactory,
-					networkFactory,
-					nodeTopologyFactory,
 					gceCreator,
 					rootNamer,
 					stopCh,
@@ -284,14 +276,14 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 				}
 				t.Logf("Created Service %s/%s", createdSvc.Namespace, createdSvc.Name)
 
-				// Populate endpoint slices in the fake informer.
+				// Populate endpoint slices in the fake client so InformerSet picks them up.
 				addressPrefix := "10.100"
 				if svc.Labels[flags.F.ProviderConfigNameLabelKey] == providerConfigName2 {
 					addressPrefix = "20.100"
 				}
 				populateFakeEndpointSlices(
 					t,
-					informersFactory.Discovery().V1().EndpointSlices().Informer(),
+					kubeClient,
 					svc.Name,
 					svc.Labels[flags.F.ProviderConfigNameLabelKey],
 					addressPrefix,
@@ -329,9 +321,6 @@ func TestSharedInformers_PC1Stops_PC2AndPC3KeepWorking(t *testing.T) {
 	testutil.EmulateProviderConfigLabelingWebhook(svcNegClient.Tracker(), &svcNegClient.Fake, "servicenetworkendpointgroups")
 
 	informersFactory := informers.NewSharedInformerFactoryWithOptions(kubeClient, flags.F.ResyncPeriod)
-	svcNegFactory := informersvcneg.NewSharedInformerFactoryWithOptions(svcNegClient, flags.F.ResyncPeriod)
-	networkFactory := informernetwork.NewSharedInformerFactoryWithOptions(networkClient, flags.F.ResyncPeriod)
-	nodeTopoFactory := informernodetopology.NewSharedInformerFactoryWithOptions(nodeTopoClient, flags.F.ResyncPeriod)
 
 	logger := klog.TODO()
 	gceCreator := multiprojectgce.NewGCEFake()
@@ -345,8 +334,8 @@ func TestSharedInformers_PC1Stops_PC2AndPC3KeepWorking(t *testing.T) {
 
 	// Start multiproject manager (this starts shared factories once with globalStop).
 	go Start(
-		logger, kubeClient, svcNegClient, kubeSystemUID, kubeClient,
-		pcClient, informersFactory, svcNegFactory, networkFactory, nodeTopoFactory,
+		logger, kubeClient, svcNegClient, networkClient, nodeTopoClient,
+		kubeSystemUID, kubeClient, pcClient,
 		gceCreator, rootNamer, globalStop,
 	)
 
@@ -366,7 +355,7 @@ func TestSharedInformers_PC1Stops_PC2AndPC3KeepWorking(t *testing.T) {
 	markPCDeletingAndWait(ctx, t, pcClient, pc1)
 
 	// --- pc-2 after pc-1 stops: create a NEW service; it must still work ---
-	seedEPS(t, informersFactory, "pc-2", "svc2-b", "20.100")
+	seedEPS(t, kubeClient, informersFactory, "pc-2", "svc2-b", "20.100")
 	svc2b := createNEGService(ctx, t, kubeClient, "pc-2", "svc2-b", "demo")
 	validateService(ctx, t, kubeClient, svcNegClient, gceCreator, svc2b, pc2)
 
@@ -448,16 +437,18 @@ func seedAll(
 ) {
 	t.Helper()
 	populateFakeNodeInformer(t, kubeClient, informersFactory.Core().V1().Nodes().Informer(), ns, cidrPrefix)
-	populateFakeEndpointSlices(t, informersFactory.Discovery().V1().EndpointSlices().Informer(), svcName, ns, cidrPrefix)
+	populateFakeEndpointSlices(t, kubeClient, svcName, ns, cidrPrefix)
 }
 
 func seedEPS(
 	t *testing.T,
+	kubeClient *fake.Clientset,
 	informersFactory informers.SharedInformerFactory,
 	ns, svcName, cidrPrefix string,
 ) {
 	t.Helper()
-	populateFakeEndpointSlices(t, informersFactory.Discovery().V1().EndpointSlices().Informer(), svcName, ns, cidrPrefix)
+	// Create EndpointSlices in the fake client so InformerSet sees them.
+	populateFakeEndpointSlices(t, kubeClient, svcName, ns, cidrPrefix)
 }
 
 func createNEGService(
@@ -714,14 +705,14 @@ func populateFakeNodeInformer(
 // populateFakeEndpointSlices indexes a set of fake EndpointSlices to simulate the real endpoints in the cluster.
 func populateFakeEndpointSlices(
 	t *testing.T,
-	endpointSliceInformer cache.SharedIndexInformer,
+	client *fake.Clientset,
 	serviceName, providerConfigName, addressPrefix string,
 ) {
 	t.Helper()
 	endpointSlices := getTestEndpointSlices(serviceName, providerConfigName, addressPrefix)
 	for _, es := range endpointSlices {
-		if err := endpointSliceInformer.GetIndexer().Add(es); err != nil {
-			t.Fatalf("Failed to add endpoint slice %q: %v", es.Name, err)
+		if _, err := client.DiscoveryV1().EndpointSlices(providerConfigName).Create(context.Background(), es, metav1.CreateOptions{}); err != nil {
+			t.Fatalf("Failed to create endpoint slice %q: %v", es.Name, err)
 		}
 	}
 }
@@ -940,10 +931,6 @@ func TestProviderConfigErrorCases(t *testing.T) {
 
 			logger := klog.TODO()
 			gceCreator := multiprojectgce.NewGCEFake()
-			informersFactory := informers.NewSharedInformerFactoryWithOptions(kubeClient, flags.F.ResyncPeriod)
-			svcNegFactory := informersvcneg.NewSharedInformerFactoryWithOptions(svcNegClient, flags.F.ResyncPeriod)
-			networkFactory := informernetwork.NewSharedInformerFactoryWithOptions(networkClient, flags.F.ResyncPeriod)
-			nodeTopologyFactory := informernodetopology.NewSharedInformerFactoryWithOptions(nodeTopologyClient, flags.F.ResyncPeriod)
 
 			rootNamer := namer.NewNamer("test-clusteruid", "", logger)
 			kubeSystemUID := types.UID("test-kube-system-uid")
@@ -961,13 +948,11 @@ func TestProviderConfigErrorCases(t *testing.T) {
 					logger,
 					kubeClient,
 					svcNegClient,
+					networkClient,
+					nodeTopologyClient,
 					kubeSystemUID,
 					kubeClient,
 					pcClient,
-					informersFactory,
-					svcNegFactory,
-					networkFactory,
-					nodeTopologyFactory,
 					gceCreator,
 					rootNamer,
 					stopCh,
