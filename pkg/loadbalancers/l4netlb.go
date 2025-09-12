@@ -38,6 +38,7 @@ import (
 	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/healthchecksl4"
 	"k8s.io/ingress-gce/pkg/l4lb/metrics"
+	"k8s.io/ingress-gce/pkg/loadbalancers/l3"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -353,11 +354,6 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 	bsName := l4netlb.namer.L4Backend(l4netlb.Service.Namespace, l4netlb.Service.Name)
 	servicePorts := l4netlb.Service.Spec.Ports
 
-	protocol := string(utils.GetProtocol(servicePorts))
-	if l4netlb.enableMixedProtocol {
-		protocol = backends.GetProtocol(servicePorts)
-	}
-
 	localityLbPolicy := l4netlb.determineBackendServiceLocalityPolicy()
 
 	connectionTrackingPolicy := l4netlb.connectionTrackingPolicy()
@@ -381,7 +377,7 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 	backendParams := backends.L4BackendServiceParams{
 		Name:                     bsName,
 		HealthCheckLink:          hcLink,
-		Protocol:                 protocol,
+		Protocol:                 l4netlb.backendProtocol(servicePorts),
 		SessionAffinity:          string(l4netlb.Service.Spec.SessionAffinity),
 		Scheme:                   string(cloud.SchemeExternal),
 		NamespacedName:           l4netlb.NamespacedName,
@@ -414,6 +410,17 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 	return bs.SelfLink
 }
 
+func (l4netlb *L4NetLB) backendProtocol(servicePorts []corev1.ServicePort) string {
+	switch {
+	case l3.Wants(l4netlb.Service):
+		return backends.ProtocolL3
+	case l4netlb.enableMixedProtocol:
+		return backends.GetProtocol(servicePorts)
+	default:
+		return string(utils.GetProtocol(servicePorts))
+	}
+}
+
 func (l4netlb *L4NetLB) ensureDualStackResources(result *L4NetLBSyncResult, nodeNames []string, bsLink string) {
 	if utils.NeedsIPv4(l4netlb.Service) {
 		l4netlb.ensureIPv4Resources(result, nodeNames, bsLink)
@@ -431,7 +438,7 @@ func (l4netlb *L4NetLB) ensureDualStackResources(result *L4NetLBSyncResult, node
 // - IPv4 Forwarding Rule
 // - IPv4 Firewall
 func (l4netlb *L4NetLB) ensureIPv4Resources(result *L4NetLBSyncResult, nodeNames []string, bsLink string) {
-	if l4netlb.enableMixedProtocol && forwardingrules.NeedsMixed(l4netlb.Service.Spec.Ports) {
+	if !l3.Wants(l4netlb.Service) && l4netlb.enableMixedProtocol && forwardingrules.NeedsMixed(l4netlb.Service.Spec.Ports) {
 		l4netlb.ensureIPv4MixedResources(result, nodeNames, bsLink)
 		return
 	}
@@ -445,11 +452,7 @@ func (l4netlb *L4NetLB) ensureIPv4Resources(result *L4NetLBSyncResult, nodeNames
 		result.MetricsLegacyState.IsUserError = IsUserError(err)
 		return
 	}
-	if fr.IPProtocol == string(corev1.ProtocolTCP) {
-		result.Annotations[annotations.TCPForwardingRuleKey] = fr.Name
-	} else {
-		result.Annotations[annotations.UDPForwardingRuleKey] = fr.Name
-	}
+	result.Annotations[forwardingRuleAnnotationKey(fr)] = fr.Name
 	result.MetricsLegacyState.IsManagedIP = ipAddrType == address.IPAddrManaged
 	result.MetricsLegacyState.IsPremiumTier = fr.NetworkTier == cloud.NetworkTierPremium.ToGCEValue()
 
@@ -460,6 +463,33 @@ func (l4netlb *L4NetLB) ensureIPv4Resources(result *L4NetLBSyncResult, nodeNames
 	}
 
 	result.Status = utils.AddIPToLBStatus(result.Status, fr.IPAddress)
+}
+
+func forwardingRuleAnnotationKey(fr *composite.ForwardingRule) string {
+	m := map[string]map[string]string{
+		"IPV4": {
+			forwardingrules.ProtocolL3:  annotations.L3ForwardingRuleKey,
+			forwardingrules.ProtocolTCP: annotations.TCPForwardingRuleKey,
+			forwardingrules.ProtocolUDP: annotations.UDPForwardingRuleKey,
+		},
+		"IPV6": {
+			forwardingrules.ProtocolL3:  annotations.L3ForwardingRuleIPv6Key,
+			forwardingrules.ProtocolTCP: annotations.TCPForwardingRuleIPv6Key,
+			forwardingrules.ProtocolUDP: annotations.UDPForwardingRuleIPv6Key,
+		},
+	}
+
+	version := fr.IpVersion
+	if version == "" {
+		version = "IPV4"
+	}
+
+	protocol := fr.IPProtocol
+	if protocol == "" {
+		protocol = "UDP"
+	}
+
+	return m[version][protocol]
 }
 
 func (l4netlb *L4NetLB) ensureIPv4MixedResources(result *L4NetLBSyncResult, nodeNames []string, bsLink string) {
