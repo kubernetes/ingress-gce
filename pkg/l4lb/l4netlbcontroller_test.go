@@ -17,6 +17,7 @@ limitations under the License.
 package l4lb
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -594,6 +595,45 @@ func TestProcessServiceCreate(t *testing.T) {
 		t.Errorf("%v", err)
 	}
 	deleteNetLBService(lc, svc)
+}
+
+// TestEnsureInstanceGroups checks that each subsequent K8s Service Sync will not trigger full IGs nodes sync
+func TestEnsureInstanceGroups(t *testing.T) {
+
+	lc := newL4NetLBServiceController()
+
+	var logs bytes.Buffer
+	initialLogState, err := test.CaptureKlog(&logs, "4")
+	if initialLogState != nil {
+		defer initialLogState.Restore()
+	}
+	if err != nil {
+		t.Fatalf("failed to capture logs: %v", err)
+	}
+
+	hasIGsExistLogs := func() bool {
+		existMsg := "InstanceGroups exist in all cluster zones, no further action is needed"
+		klog.Flush()
+		logsStr := logs.String()
+		logs.Reset() // Reset the buffer for the next check
+
+		return strings.Contains(logsStr, existMsg)
+	}
+
+	// initial IG ensuring - new IGs creation
+	svc := createAndSyncNetLBSvcWithInstanceGroups(t, lc)
+	validateNetLBSvcStatus(svc, t)
+
+	if hasIGsExistLogs() {
+		t.Error("Logs should not contain message that IGs exist")
+	}
+
+	// subsequent IG ensuring - IGs should exist so full sync is not needed
+	svc = createAndSyncNetLBSvcWithInstanceGroups(t, lc)
+
+	if !hasIGsExistLogs() {
+		t.Error("Logs should contain message that IGs exist")
+	}
 }
 
 func TestProcessMultinetServiceCreate(t *testing.T) {

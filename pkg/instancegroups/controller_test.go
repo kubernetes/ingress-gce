@@ -199,6 +199,10 @@ func (igmf *IGManagerFake) Sync(nodeNames []string, logger klog.Logger) error {
 	return nil
 }
 
+func (igmf *IGManagerFake) InstanceGroupsExist(name string, logger klog.Logger) (exist bool, err error) {
+	return len(igmf.syncedNodes) > 0, nil
+}
+
 func (igmf *IGManagerFake) EnsureInstanceGroupsAndPorts(name string, ports []int64, logger klog.Logger) ([]*compute.InstanceGroup, error) {
 	igmf.syncedNodes = append(igmf.syncedNodes, []string{name})
 	return []*compute.InstanceGroup{}, nil

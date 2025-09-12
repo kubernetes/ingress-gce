@@ -3,10 +3,12 @@ package test
 import (
 	context2 "context"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
+	flagcmd "flag"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -27,6 +29,7 @@ import (
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -606,6 +609,43 @@ func MustCreateDualStackSubnet(t *testing.T, gcecloud *gce.Cloud, subnetName, ip
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+// CaptureKlog resets klog flags and captures logs with a given verbosity into an io.Writer.
+// It returns the initial klog state, which should be restored by the caller using `defer`.
+//
+// Usage:
+//
+//	var logs bytes.Buffer
+//	initialLogState, err := test.CaptureKlog(&logs, "4")
+//	if err != nil {
+//		t.Fatalf("failed to capture logs: %v", err)
+//	}
+//	defer initialLogState.Restore()
+//
+//	// ... test code that generates logs ...
+//
+//	// Don't forget to flush logs before reading from the buffer.
+//	klog.Flush()
+//	logString := logs.String()
+func CaptureKlog(w io.Writer, verbosity string) (klog.State, error) {
+	initialState := klog.CaptureState()
+
+	// klog.InitFlags(nil) is not strictly required if flags are already parsed,
+	// but it's safe to call.
+	klog.InitFlags(nil)
+	if err := flagcmd.Set("logtostderr", "false"); err != nil {
+		return initialState, fmt.Errorf("failed to set flag 'logtostderr': %w", err)
+	}
+	if err := flagcmd.Set("alsologtostderr", "false"); err != nil {
+		return initialState, fmt.Errorf("failed to set flag 'alsologtostderr': %w", err)
+	}
+	if err := flagcmd.Set("v", verbosity); err != nil {
+		return initialState, fmt.Errorf("failed to set flag 'v': %w", err)
+	}
+
+	klog.SetOutput(w)
+	return initialState, nil
 }
 
 // MustCreateSubnet an empty subnet with a key generated from the provided subnetURLinto GCE
