@@ -102,7 +102,7 @@ func (z *ZoneGetter) ZoneAndSubnetForNode(name string, logger klog.Logger) (stri
 	// In non-gcp mode, the subnet will be empty, so it matches the behavior
 	// for non-gcp NEGs since their SubnetworkURL is empty.
 	if z.mode == NonGCP {
-		logger.Info("ZoneGetter in non-gcp mode, return the single stored zone", "zone", z.singleStoredZone)
+		logger.V(4).Info("ZoneGetter in non-gcp mode, return the single stored zone", "zone", z.singleStoredZone)
 		return z.singleStoredZone, "", nil
 	}
 
@@ -137,7 +137,7 @@ func (z *ZoneGetter) ZoneAndSubnetForNode(name string, logger klog.Logger) (stri
 
 	nodeTopologySynced := z.nodeTopologyHasSynced()
 	if z.onlyIncludeDefaultSubnetNodes || !nodeTopologySynced {
-		logger.Info("Falling back to only using default subnet when getting subnet for node", "z.onlyIncludeDefaultSubnetNodes", z.onlyIncludeDefaultSubnetNodes, "nodeTopologySynced", nodeTopologySynced)
+		logger.V(4).Info("Falling back to only using default subnet when getting subnet for node", "z.onlyIncludeDefaultSubnetNodes", z.onlyIncludeDefaultSubnetNodes, "nodeTopologySynced", nodeTopologySynced)
 
 		defaultSubnet, err := utils.KeyName(z.defaultSubnetURL)
 		if err != nil {
@@ -154,7 +154,7 @@ func (z *ZoneGetter) ZoneAndSubnetForNode(name string, logger klog.Logger) (stri
 // ListNodes returns a list of nodes that satisfy the given node filtering mode.
 func (z *ZoneGetter) ListNodes(filter Filter, logger klog.Logger) ([]*api_v1.Node, error) {
 	filterLogger := logger.WithValues("filter", filter)
-	filterLogger.Info("Listing nodes")
+	filterLogger.V(2).Info("Listing nodes")
 
 	nodes, err := listers.NewNodeLister(z.nodeLister).List(labels.Everything())
 	if err != nil {
@@ -173,7 +173,7 @@ func (z *ZoneGetter) ListNodes(filter Filter, logger klog.Logger) ([]*api_v1.Nod
 		}
 	}
 	if len(filteredOut) <= 50 {
-		filterLogger.Info("Filtered out nodes when listing node zones", "nodes", filteredOut)
+		filterLogger.V(3).Info("Filtered out nodes when listing node zones", "nodes", filteredOut)
 	}
 
 	return selected, nil
@@ -183,12 +183,12 @@ func (z *ZoneGetter) ListNodes(filter Filter, logger klog.Logger) ([]*api_v1.Nod
 // node filtering mode.
 func (z *ZoneGetter) ListZones(filter Filter, logger klog.Logger) ([]string, error) {
 	if z.mode == NonGCP {
-		logger.Info("ZoneGetter in non-gcp mode, return the single stored zone", "zone", z.singleStoredZone)
+		logger.V(4).Info("ZoneGetter in non-gcp mode, return the single stored zone", "zone", z.singleStoredZone)
 		return []string{z.singleStoredZone}, nil
 	}
 
 	filterLogger := logger.WithValues("filter", filter)
-	filterLogger.Info("Listing zones")
+	filterLogger.V(2).Info("Listing zones")
 	nodes, err := z.ListNodes(filter, logger)
 	if err != nil {
 		filterLogger.Error(err, "Failed to list nodes")
@@ -219,7 +219,7 @@ func (z *ZoneGetter) ListSubnets(logger klog.Logger) []nodetopologyv1.SubnetConf
 	nodeTopologyCRName := flags.F.NodeTopologyCRName
 	nodeTopologySynced := z.nodeTopologyHasSynced()
 	if z.onlyIncludeDefaultSubnetNodes || !nodeTopologySynced {
-		logger.Info("Falling back to only using default subnet when listing subnets", "z.onlyIncludeDefaultSubnetNodes", z.onlyIncludeDefaultSubnetNodes, "nodeTopologySynced", nodeTopologySynced)
+		logger.V(4).Info("Falling back to only using default subnet when listing subnets", "z.onlyIncludeDefaultSubnetNodes", z.onlyIncludeDefaultSubnetNodes, "nodeTopologySynced", nodeTopologySynced)
 		return []nodetopologyv1.SubnetConfig{z.defaultSubnetConfig}
 	}
 
@@ -229,7 +229,7 @@ func (z *ZoneGetter) ListSubnets(logger klog.Logger) []nodetopologyv1.SubnetConf
 		return []nodetopologyv1.SubnetConfig{z.defaultSubnetConfig}
 	}
 	if !exists {
-		logger.Info("Unable to find node topology CR in the store", "nodeTopologyCRName", nodeTopologyCRName)
+		logger.V(2).Info("Unable to find node topology CR in the store", "nodeTopologyCRName", nodeTopologyCRName)
 		return []nodetopologyv1.SubnetConfig{z.defaultSubnetConfig}
 	}
 	nodeTopologyCR, ok := n.(*nodetopologyv1.NodeTopology)
@@ -265,7 +265,7 @@ func (z *ZoneGetter) allNodesPredicate(node *api_v1.Node, nodeLogger klog.Logger
 	nodeTopologySynced := z.nodeTopologyHasSynced()
 
 	if z.onlyIncludeDefaultSubnetNodes || !nodeTopologySynced {
-		nodeLogger.Info("Falling back to only using default subnet when listing all nodes", "z.onlyIncludeDefaultSubnetNodes", z.onlyIncludeDefaultSubnetNodes, "nodeTopologySynced", nodeTopologySynced)
+		nodeLogger.V(4).Info("Falling back to only using default subnet when listing all nodes", "z.onlyIncludeDefaultSubnetNodes", z.onlyIncludeDefaultSubnetNodes, "nodeTopologySynced", nodeTopologySynced)
 
 		isInDefaultSubnet, err := isNodeInDefaultSubnet(node, z.defaultSubnetURL, nodeLogger)
 		if err != nil {
@@ -297,7 +297,8 @@ func (z *ZoneGetter) nodePredicateInternal(node *api_v1.Node, includeUnreadyNode
 	if z.mode != Legacy {
 		nodeTopologySynced := z.nodeTopologyHasSynced()
 		if z.onlyIncludeDefaultSubnetNodes || !nodeTopologySynced {
-			nodeAndFilterLogger.Info("Falling back to only using default subnet when listing nodes", "z.onlyIncludeDefaultSubnetNodes", z.onlyIncludeDefaultSubnetNodes, "nodeTopologySynced", nodeTopologySynced)
+			nodeAndFilterLogger.V(4).Info("Falling back to only using default subnet when listing nodes", "z.onlyIncludeDefaultSubnetNodes", z.onlyIncludeDefaultSubnetNodes, "nodeTopologySynced", nodeTopologySynced)
+
 			isInDefaultSubnet, err := isNodeInDefaultSubnet(node, z.defaultSubnetURL, nodeAndFilterLogger)
 			if err != nil {
 				nodeAndFilterLogger.Error(err, "Failed to verify if the node is in default subnet")
