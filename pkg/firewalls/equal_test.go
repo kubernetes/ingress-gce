@@ -377,6 +377,57 @@ func TestEqual(t *testing.T) {
 			},
 			want: true,
 		},
+		{
+			desc: "same deny",
+			a: &compute.Firewall{
+				Denied: []*compute.FirewallDenied{
+					{
+						IPProtocol: "all",
+					},
+				},
+			},
+			b: &compute.Firewall{
+				Denied: []*compute.FirewallDenied{
+					{
+						IPProtocol: "all",
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			desc: "different deny",
+			a: &compute.Firewall{
+				Denied: []*compute.FirewallDenied{
+					{
+						IPProtocol: "all",
+					},
+				},
+			},
+			b: &compute.Firewall{
+				Denied: []*compute.FirewallDenied{
+					{
+						IPProtocol: "udp",
+						Ports:      []string{"80", "33"},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			desc: "empty deny",
+			a: &compute.Firewall{
+				Denied: nil,
+			},
+			b: &compute.Firewall{
+				Denied: []*compute.FirewallDenied{
+					{
+						IPProtocol: "all",
+					},
+				},
+			},
+			want: false,
+		},
 	}
 	for _, tC := range testCases {
 		t.Run(tC.desc, func(t *testing.T) {
