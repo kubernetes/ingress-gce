@@ -110,7 +110,7 @@ func (l4netlb *L4NetLB) ipv6FRName() string {
 }
 
 // ensureIPv6NodesFirewall creates/updates firewall rules for nodes traffic.
-// ipRange is the range returned by IPv6 Forwarding Rule (with )
+// ipRange is the range returned by IPv6 Forwarding Rule (with /96 range)
 func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipRange string, nodeNames []string, syncResult *L4NetLBSyncResult) {
 	// DisableL4LBFirewall flag disables L4 FW enforcment to remove conflicts with firewall policies
 	if l4netlb.disableNodesFirewallProvisioning {
