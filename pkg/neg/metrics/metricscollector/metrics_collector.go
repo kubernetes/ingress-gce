@@ -91,10 +91,13 @@ type SyncerMetrics struct {
 
 	// logger logs message related to NegMetricsCollector
 	logger klog.Logger
+
+	// providerConfigID is the ID for tenant/cluster for which the metrics are collected.
+	providerConfigID string
 }
 
 // NewNEGMetricsCollector initializes SyncerMetrics and starts a go routine to compute and export metrics periodically.
-func NewNegMetricsCollector(exportInterval time.Duration, logger klog.Logger) *SyncerMetrics {
+func NewNegMetricsCollector(exportInterval time.Duration, logger klog.Logger, providerConfigID string) *SyncerMetrics {
 	return &SyncerMetrics{
 		syncerStateMap:              make(map[negtypes.NegSyncerKey]syncerState),
 		syncerEndpointStateMap:      make(map[negtypes.NegSyncerKey]negtypes.StateCountMap),
@@ -108,12 +111,13 @@ func NewNegMetricsCollector(exportInterval time.Duration, logger klog.Logger) *S
 		clock:                       clock.RealClock{},
 		metricsInterval:             exportInterval,
 		logger:                      logger.WithName("NegMetricsCollector"),
+		providerConfigID:            providerConfigID,
 	}
 }
 
 // FakeSyncerMetrics creates new NegMetricsCollector with fixed 5 second metricsInterval, to be used in tests
 func FakeSyncerMetrics() *SyncerMetrics {
-	return NewNegMetricsCollector(5*time.Second, klog.TODO())
+	return NewNegMetricsCollector(5*time.Second, klog.TODO(), "fake-provider-config-id")
 }
 
 func (sm *SyncerMetrics) Run(stopCh <-chan struct{}) {
