@@ -45,6 +45,7 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	"k8s.io/ingress-gce/pkg/neg/types"
@@ -98,7 +99,7 @@ func NewTestSyncerManager(kubeClient kubernetes.Interface) (*syncerManager, *gce
 		testContext.NegNamer,
 		testContext.L4Namer,
 		record.NewFakeRecorder(100),
-		negtypes.NewAdapter(testContext.Cloud),
+		negtypes.NewAdapter(testContext.Cloud, testContext.NegMetrics),
 		zoneGetter,
 		testContext.SvcNegClient,
 		testContext.KubeSystemUID,
@@ -113,6 +114,7 @@ func NewTestSyncerManager(kubeClient kubernetes.Interface) (*syncerManager, *gce
 		testContext.NumGCWorkers,
 		labels.PodLabelPropagationConfig{},
 		klog.TODO(),
+		metrics.NewNegMetrics(),
 	)
 	return manager, testContext.Cloud, testContext, nil
 }

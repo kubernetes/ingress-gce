@@ -32,21 +32,14 @@ from the root of this repo:
 $ hack/setup-local.sh <cluster-name>
 ```
 
-## Setup GCE permissions
+## Authorize gcloud and kubectl
 
-When running locally, the Ingress-GCE controller looks on the local machine
-for credentials to create GCE networking resources. Specifically it looks for a
-json file specified at the GOOGLE_APPLICATION_CREDENTIALS variable. Given this,
-it is most desirable to follow these steps:
-
-1. Create a Service Account in GCP and give the account Compute Admin permissions
-
-2. Create a key for the Service Account and download it
-
-Then run the following:
+Once the cluster is ready prepare authorization to it.
+You need to authorize both gcloud and kubectl.
 
 ```console
-export GOOGLE_APPLICATION_CREDENTIALS=/path/to/key/file
+$ gcloud auth application-default login
+$ gcloud container clusters get-credentials CLUSTER_NAME --region CLUSTER_LOCATION
 ```
 
 ## Run the controller
@@ -60,6 +53,15 @@ binary in a container and place it in `bin/amd64`.
 
 ```console
 make build
+```
+
+NOTE -
+If you get build errors with Docker getting a permission denied while pulling the base image run the following commands:
+
+```console
+sudo addgroup --system docker
+sudo usermod -aG docker $USER
+newgrp docker
 ```
 
 For Mac OS users or to build the binary locally and output it in the
