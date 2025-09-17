@@ -81,9 +81,11 @@ type readinessReflector struct {
 	markNonDefaultSubnetPodsReady bool
 
 	logger klog.Logger
+
+	negMetrics *metrics.NegMetrics
 }
 
-func NewReadinessReflector(kubeClient, eventRecorderClient kubernetes.Interface, podLister cache.Indexer, negCloud negtypes.NetworkEndpointGroupCloud, lookup NegLookup, zoneGetter *zonegetter.ZoneGetter, enableDualStackNEG, markNonDefaultSubnetPodsReady bool, logger klog.Logger) Reflector {
+func NewReadinessReflector(kubeClient, eventRecorderClient kubernetes.Interface, podLister cache.Indexer, negCloud negtypes.NetworkEndpointGroupCloud, lookup NegLookup, zoneGetter *zonegetter.ZoneGetter, enableDualStackNEG, markNonDefaultSubnetPodsReady bool, logger klog.Logger, negMetrics *metrics.NegMetrics) Reflector {
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartLogging(klog.Infof)
 	broadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
@@ -101,8 +103,9 @@ func NewReadinessReflector(kubeClient, eventRecorderClient kubernetes.Interface,
 		zoneGetter:                    zoneGetter,
 		markNonDefaultSubnetPodsReady: markNonDefaultSubnetPodsReady,
 		logger:                        logger,
+		negMetrics:                    negMetrics,
 	}
-	poller := NewPoller(podLister, lookup, reflector, negCloud, enableDualStackNEG, logger)
+	poller := NewPoller(podLister, lookup, reflector, negCloud, enableDualStackNEG, logger, negMetrics)
 	reflector.poller = poller
 	return reflector
 }
@@ -256,7 +259,7 @@ func (r *readinessReflector) SyncPod(pod *v1.Pod) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(pod)
 	if err != nil {
 		r.logger.Error(err, "Failed to generate pod key")
-		metrics.PublishNegControllerErrorCountMetrics(err, true)
+		r.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 		return
 	}
 
@@ -292,7 +295,7 @@ func (r *readinessReflector) pollNeg(key negMeta) {
 	retry, err := r.poller.Poll(key)
 	if err != nil {
 		r.logger.Error(err, "Failed to poll neg", "neg", key)
-		metrics.PublishNegControllerErrorCountMetrics(err, true)
+		r.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 	}
 	if retry {
 		r.poll()
@@ -320,6 +323,6 @@ func (r *readinessReflector) ensurePodNegCondition(pod *v1.Pod, expectedConditio
 		return fmt.Errorf("failed to prepare patch bytes for pod %v: %v", pod, err)
 	}
 	r.eventRecorder.Eventf(pod, v1.EventTypeNormal, expectedCondition.Reason, expectedCondition.Message)
-	_, _, err = patchPodStatus(r.client, pod.Namespace, pod.Name, patchBytes)
+	_, _, err = patchPodStatus(r.client, pod.Namespace, pod.Name, patchBytes, r.negMetrics)
 	return err
 }

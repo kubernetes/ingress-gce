@@ -48,6 +48,7 @@ import (
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/metrics"
+	negmetrics "k8s.io/ingress-gce/pkg/neg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	ingsync "k8s.io/ingress-gce/pkg/sync"
 	"k8s.io/ingress-gce/pkg/translator"
@@ -139,7 +140,7 @@ func NewLoadBalancerController(
 		instancePool:                   ctx.InstancePool,
 		l7Pool:                         loadbalancers.NewLoadBalancerPool(ctx.Cloud, ctx.ClusterNamer, ctx, namer.NewFrontendNamerFactory(ctx.ClusterNamer, ctx.KubeSystemUID, logger), logger),
 		backendSyncer:                  backends.NewBackendSyncer(backendPool, healthChecker, ctx.Cloud, ctx.Translator),
-		negLinker:                      backends.NewNEGLinker(backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer(), logger),
+		negLinker:                      backends.NewNEGLinker(backendPool, negtypes.NewAdapter(ctx.Cloud, negmetrics.NewNegMetrics()), ctx.Cloud, ctx.SvcNegInformer.GetIndexer(), logger),
 		igLinker:                       backends.NewInstanceGroupLinker(ctx.InstancePool, backendPool, logger),
 		metrics:                        ctx.ControllerMetrics,
 		ZoneGetter:                     ctx.ZoneGetter,

@@ -91,6 +91,7 @@ func newSyncerTester() *syncerTester {
 		record.NewFakeRecorder(100),
 		st,
 		klog.TODO(),
+		testContext.NegMetrics,
 	)
 	st.syncer = s
 	return st

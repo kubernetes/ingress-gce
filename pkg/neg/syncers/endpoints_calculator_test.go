@@ -30,6 +30,7 @@ import (
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
@@ -53,7 +54,6 @@ func TestLocalGetEndpointSet(t *testing.T) {
 	prevFlag := flags.F.EnableMultiSubnetCluster
 	defer func() { flags.F.EnableMultiSubnetCluster = prevFlag }()
 	flags.F.EnableMultiSubnetCluster = false
-
 	testCases := []struct {
 		desc                string
 		endpointsData       []negtypes.EndpointsData
@@ -163,7 +163,7 @@ func TestLocalGetEndpointSet(t *testing.T) {
 	svcKey := fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace)
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			ec := NewLocalL4EndpointsCalculator(listers.NewNodeLister(nodeInformer.GetIndexer()), zoneGetter, svcKey, klog.TODO(), &tc.network, negtypes.L4InternalLB)
+			ec := NewLocalL4EndpointsCalculator(listers.NewNodeLister(nodeInformer.GetIndexer()), zoneGetter, svcKey, klog.TODO(), &tc.network, negtypes.L4InternalLB, metrics.NewNegMetrics())
 			updateNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeAnnotationsMap, tc.nodeReadyStatusMap, nodeInformer.GetIndexer())
 			retSet, _, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
 			if err != nil {
@@ -211,7 +211,6 @@ func TestClusterGetEndpointSet(t *testing.T) {
 	prevFlag := flags.F.EnableMultiSubnetCluster
 	defer func() { flags.F.EnableMultiSubnetCluster = prevFlag }()
 	flags.F.EnableMultiSubnetCluster = false
-
 	testCases := []struct {
 		desc               string
 		endpointsData      []negtypes.EndpointsData
@@ -325,7 +324,7 @@ func TestClusterGetEndpointSet(t *testing.T) {
 	svcKey := fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace)
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			ec := NewClusterL4EndpointsCalculator(listers.NewNodeLister(nodeInformer.GetIndexer()), zoneGetter, svcKey, klog.TODO(), &tc.network, negtypes.L4InternalLB)
+			ec := NewClusterL4EndpointsCalculator(listers.NewNodeLister(nodeInformer.GetIndexer()), zoneGetter, svcKey, klog.TODO(), &tc.network, negtypes.L4InternalLB, metrics.NewNegMetrics())
 			updateNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeAnnotationsMap, tc.nodeReadyStatusMap, nodeInformer.GetIndexer())
 			retSet, _, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
 			if err != nil {
@@ -597,7 +596,7 @@ func TestClusterWantedNEGsCount(t *testing.T) {
 				}
 			}
 
-			ec := NewClusterL4EndpointsCalculator(listers.NewNodeLister(nodeInformer.GetIndexer()), zoneGetter, svcKey, klog.TODO(), &defaultNetwork, lbType)
+			ec := NewClusterL4EndpointsCalculator(listers.NewNodeLister(nodeInformer.GetIndexer()), zoneGetter, svcKey, klog.TODO(), &defaultNetwork, lbType, metrics.NewNegMetrics())
 
 			// Act
 			res, _, _, err := ec.CalculateEndpoints(eds, currentMap)
@@ -676,16 +675,16 @@ func TestValidateEndpoints(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to initialize zone getter: %v", err)
 	}
-	L7EndpointsCalculator := NewL7EndpointsCalculator(zoneGetter, podLister, nodeLister, serviceLister, svcPort, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics())
+	L7EndpointsCalculator := NewL7EndpointsCalculator(zoneGetter, podLister, nodeLister, serviceLister, svcPort, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics(), testContext.NegMetrics)
 
 	zoneGetterMSC, err := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, true)
 	if err != nil {
 		t.Fatalf("failed to initialize msc zone getter: %v", err)
 	}
-	L7EndpointsCalculatorMSC := NewL7EndpointsCalculator(zoneGetterMSC, podLister, nodeLister, serviceLister, svcPort, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics())
+	L7EndpointsCalculatorMSC := NewL7EndpointsCalculator(zoneGetterMSC, podLister, nodeLister, serviceLister, svcPort, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics(), testContext.NegMetrics)
 	L7EndpointsCalculatorMSC.enableMultiSubnetCluster = true
-	L4LocalEndpointCalculator := NewLocalL4EndpointsCalculator(listers.NewNodeLister(nodeLister), zoneGetter, fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace), klog.TODO(), &network.NetworkInfo{SubnetworkURL: defaultTestSubnetURL}, negtypes.L4InternalLB)
-	L4ClusterEndpointCalculator := NewClusterL4EndpointsCalculator(listers.NewNodeLister(nodeLister), zoneGetter, fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace), klog.TODO(), &network.NetworkInfo{SubnetworkURL: defaultTestSubnetURL}, negtypes.L4InternalLB)
+	L4LocalEndpointCalculator := NewLocalL4EndpointsCalculator(listers.NewNodeLister(nodeLister), zoneGetter, fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace), klog.TODO(), &network.NetworkInfo{SubnetworkURL: defaultTestSubnetURL}, negtypes.L4InternalLB, testContext.NegMetrics)
+	L4ClusterEndpointCalculator := NewClusterL4EndpointsCalculator(listers.NewNodeLister(nodeLister), zoneGetter, fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace), klog.TODO(), &network.NetworkInfo{SubnetworkURL: defaultTestSubnetURL}, negtypes.L4InternalLB, testContext.NegMetrics)
 
 	l7TestEPS := []*discovery.EndpointSlice{
 		{

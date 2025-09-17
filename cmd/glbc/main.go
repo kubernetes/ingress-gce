@@ -59,18 +59,19 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 
-	ingctx "k8s.io/ingress-gce/pkg/context"
-	"k8s.io/ingress-gce/pkg/controller"
-	"k8s.io/ingress-gce/pkg/neg"
-	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
-	negtypes "k8s.io/ingress-gce/pkg/neg/types"
-
 	"k8s.io/ingress-gce/cmd/glbc/app"
 	"k8s.io/ingress-gce/pkg/backendconfig"
+	ingctx "k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/controller"
 	"k8s.io/ingress-gce/pkg/crd"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/flags"
 	_ "k8s.io/ingress-gce/pkg/klog"
+	"k8s.io/ingress-gce/pkg/neg"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
+	syncMetrics "k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
+	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
+	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/ingress-gce/pkg/version"
 )
@@ -163,6 +164,10 @@ func main() {
 			klog.Fatalf("Failed to create Firewall client: %v", err)
 		}
 	}
+
+	// register NEG prometheus metrics
+	metrics.RegisterMetrics()
+	syncMetrics.RegisterMetrics()
 
 	if flags.F.EnableNEGController {
 		negCRDMeta := svcneg.CRDMeta()
@@ -265,6 +270,9 @@ func main() {
 			if nodeTopologyClient != nil {
 				nodeTopologyFactory = informernodetopology.NewSharedInformerFactory(nodeTopologyClient, flags.F.ResyncPeriod)
 			}
+			syncerMetrics := syncMetrics.NewNegMetricsCollector(flags.F.NegMetricsExportInterval, rootLogger)
+			go syncerMetrics.Run(stopCh)
+
 			if flags.F.LeaderElection.LeaderElect {
 				err := multiprojectstart.StartWithLeaderElection(
 					context.Background(),
@@ -283,6 +291,7 @@ func main() {
 					gceCreator,
 					namer,
 					stopCh,
+					syncerMetrics,
 				)
 				if err != nil {
 					rootLogger.Error(err, "Failed to start multi-project syncer with leader election")
@@ -302,6 +311,7 @@ func main() {
 					gceCreator,
 					namer,
 					stopCh,
+					syncerMetrics,
 				)
 			}
 		}, rOption.wg)
@@ -709,6 +719,10 @@ func createNEGController(ctx *ingctx.ControllerContext, systemHealth *systemheal
 		adapter = ctx.Cloud
 	}
 
+	negMetrics := metrics.NewNegMetrics()
+	syncerMetrics := syncMetrics.NewNegMetricsCollector(flags.F.NegMetricsExportInterval, logger)
+	go syncerMetrics.Run(stopCh)
+
 	// TODO: Refactor NEG to use cloud mocks so ctx.Cloud can be referenced within NewController.
 	negController, err := neg.NewController(
 		ctx.KubeClient,
@@ -727,7 +741,7 @@ func createNEGController(ctx *ingctx.ControllerContext, systemHealth *systemheal
 		ctx.HasSynced,
 		ctx.L4Namer,
 		ctx.DefaultBackendSvcPort,
-		negtypes.NewAdapterWithRateLimitSpecs(ctx.Cloud, flags.F.GCERateLimit.Values(), adapter),
+		negtypes.NewAdapterWithRateLimitSpecs(ctx.Cloud, flags.F.GCERateLimit.Values(), adapter, negMetrics),
 		zoneGetter,
 		ctx.ClusterNamer,
 		flags.F.ResyncPeriod,
@@ -745,6 +759,8 @@ func createNEGController(ctx *ingctx.ControllerContext, systemHealth *systemheal
 		flags.F.EnableNEGsForIngress,
 		stopCh,
 		logger,
+		negMetrics,
+		syncerMetrics,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create NEG controller: %w", err)
