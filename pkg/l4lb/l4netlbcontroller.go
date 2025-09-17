@@ -39,6 +39,7 @@ import (
 	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
+	negmetrics "k8s.io/ingress-gce/pkg/neg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -138,7 +139,7 @@ func NewL4NetLBController(
 		adapter = ctx.Cloud
 	}
 	l4netLBc.networkResolver = network.NewNetworksResolver(networkLister, gkeNetworkParamSetLister, adapter, ctx.EnableMultinetworking, logger)
-	l4netLBc.negLinker = backends.NewNEGLinker(l4netLBc.backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer(), logger)
+	l4netLBc.negLinker = backends.NewNEGLinker(l4netLBc.backendPool, negtypes.NewAdapter(ctx.Cloud, negmetrics.NewNegMetrics()), ctx.Cloud, ctx.SvcNegInformer.GetIndexer(), logger)
 	l4netLBc.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("l4netLB", "services", ctx.NumL4NetLBWorkers, l4netLBc.syncWrapper, logger)
 
 	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
