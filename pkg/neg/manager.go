@@ -116,6 +116,8 @@ type syncerManager struct {
 
 	// lpConfig configures the pod label to be propagated to NEG endpoints.
 	lpConfig podlabels.PodLabelPropagationConfig
+
+	negMetrics *metrics.NegMetrics
 }
 
 func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
@@ -135,10 +137,11 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 	enableDualStackNEG bool,
 	numGCWorkers int,
 	lpConfig podlabels.PodLabelPropagationConfig,
-	logger klog.Logger) *syncerManager {
+	logger klog.Logger,
+	negMetrics *metrics.NegMetrics) *syncerManager {
 
 	var vmIpPortZoneMap map[string]struct{}
-	updateZoneMap(&vmIpPortZoneMap, negtypes.NodeFilterForNetworkEndpointType(negtypes.VmIpPortEndpointType), zoneGetter, logger)
+	updateZoneMap(&vmIpPortZoneMap, negtypes.NodeFilterForNetworkEndpointType(negtypes.VmIpPortEndpointType), zoneGetter, logger, negMetrics)
 
 	return &syncerManager{
 		namer:               namer,
@@ -162,6 +165,7 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 		logger:              logger,
 		vmIpPortZoneMap:     vmIpPortZoneMap,
 		lpConfig:            lpConfig,
+		negMetrics:          negMetrics,
 	}
 }
 
@@ -230,6 +234,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				manager.syncerMetrics,
 				&portInfo.NetworkInfo,
 				portInfo.L4LBType,
+				manager.negMetrics,
 			)
 			nonDefaultSubnetNEGNamer := manager.namer
 			if syncerKey.NegType == negtypes.VmIpEndpointType {
@@ -257,6 +262,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				manager.enableDualStackNEG,
 				portInfo.NetworkInfo,
 				nonDefaultSubnetNEGNamer,
+				manager.negMetrics,
 			)
 			manager.syncerMap[syncerKey] = syncer
 		}
@@ -271,7 +277,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 		successfulSyncers += 1
 	}
 	err := utilerrors.NewAggregate(errList)
-	metrics.PublishNegManagerProcessMetrics(metrics.SyncProcess, err, start)
+	manager.negMetrics.PublishNegManagerProcessMetrics(metrics.SyncProcess, err, start)
 
 	return successfulSyncers, errorSyncers, err
 }
@@ -314,7 +320,7 @@ func (manager *syncerManager) SyncNodes() {
 	defer manager.mu.Unlock()
 
 	// When a zone change occurs (new zone is added or deleted), a sync should be triggered
-	isVmIpPortZoneChange := updateZoneMap(&manager.vmIpPortZoneMap, negtypes.NodeFilterForNetworkEndpointType(negtypes.VmIpPortEndpointType), manager.zoneGetter, manager.logger)
+	isVmIpPortZoneChange := updateZoneMap(&manager.vmIpPortZoneMap, negtypes.NodeFilterForNetworkEndpointType(negtypes.VmIpPortEndpointType), manager.zoneGetter, manager.logger, manager.negMetrics)
 
 	for key, syncer := range manager.syncerMap {
 		manager.logger.V(1).Info("SyncNodes: Evaluating sync decision for syncer", "negSyncerKey", key.String())
@@ -362,11 +368,11 @@ func (manager *syncerManager) SyncAllSyncers() {
 // true if the zones have changed. The caller must obtain mu mutex of the
 // manager before calling this function since it modifies the passed
 // existingZoneMap.
-func updateZoneMap(existingZoneMap *map[string]struct{}, nodeFilter zonegetter.Filter, zoneGetter *zonegetter.ZoneGetter, logger klog.Logger) bool {
+func updateZoneMap(existingZoneMap *map[string]struct{}, nodeFilter zonegetter.Filter, zoneGetter *zonegetter.ZoneGetter, logger klog.Logger, m *metrics.NegMetrics) bool {
 	zones, err := zoneGetter.ListZones(nodeFilter, logger)
 	if err != nil {
 		logger.Error(err, "Unable to list zones")
-		metrics.PublishNegControllerErrorCountMetrics(err, true)
+		m.PublishNegControllerErrorCountMetrics(err, true)
 		return false
 	}
 
@@ -404,7 +410,7 @@ func (manager *syncerManager) GC() error {
 	if err != nil {
 		err = fmt.Errorf("failed to garbage collect negs: %w", err)
 	}
-	metrics.PublishNegManagerProcessMetrics(metrics.GCProcess, err, start)
+	manager.negMetrics.PublishNegManagerProcessMetrics(metrics.GCProcess, err, start)
 	return err
 }
 
@@ -421,7 +427,7 @@ func (manager *syncerManager) ReadinessGateEnabledNegs(namespace string, podLabe
 		obj, exists, err := manager.serviceLister.GetByKey(svcKey.Key())
 		if err != nil {
 			manager.logger.Error(err, "Failed to retrieve service from store", "service", svcKey.Key())
-			metrics.PublishNegControllerErrorCountMetrics(err, true)
+			manager.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 			continue
 		}
 
@@ -472,7 +478,7 @@ func (manager *syncerManager) ensureDeleteSvcNegCR(namespace, negName string) er
 	if neg.GetDeletionTimestamp().IsZero() {
 		start := time.Now()
 		err = manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(namespace).Delete(context.Background(), negName, metav1.DeleteOptions{})
-		metrics.PublishK8sRequestCountMetrics(start, metrics.DeleteRequest, err)
+		manager.negMetrics.PublishK8sRequestCountMetrics(start, metrics.DeleteRequest, err)
 		if err != nil {
 			return fmt.Errorf("errored while deleting neg cr %s/%s: %w", negName, namespace, err)
 		}
@@ -652,7 +658,7 @@ func (manager *syncerManager) processNEGDeletionCandidate(candidate deletionCand
 			if errs := ensureExistingNegRef(updatedCR, deletedNegs); len(errs) != 0 {
 				errList = append(errList, errs...)
 			}
-			if _, err := patchNegStatus(manager.svcNegClient, *svcNegCR, *updatedCR); err != nil {
+			if _, err := patchNegStatus(manager.svcNegClient, *svcNegCR, *updatedCR, manager.negMetrics); err != nil {
 				errList = append(errList, err)
 			}
 		}
@@ -675,7 +681,7 @@ func (manager *syncerManager) processNEGDeletionCandidate(candidate deletionCand
 		}
 
 		manager.logger.V(2).Info("Deleting NEG CR", "svcneg", klog.KObj(svcNegCR))
-		err := deleteSvcNegCR(manager.svcNegClient, svcNegCR, manager.logger)
+		err := deleteSvcNegCR(manager.svcNegClient, svcNegCR, manager.logger, manager.negMetrics)
 		if err != nil {
 			manager.logger.V(2).Error(err, "Error when deleting NEG CR", "svcneg", klog.KObj(svcNegCR))
 			errList = append(errList, err)
@@ -734,7 +740,7 @@ func (manager *syncerManager) ensureDeleteNetworkEndpointGroup(name, zone string
 	if err != nil {
 		if utils.IsNotFoundError(err) || utils.IsHTTPErrorCode(err, http.StatusBadRequest) {
 			manager.logger.V(2).Info("Ignoring error when querying for neg during GC", "negName", name, "zone", zone, "err", err)
-			metrics.PublishNegControllerErrorCountMetrics(err, true)
+			manager.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 			return nil
 		}
 		return err
@@ -799,7 +805,7 @@ func (manager *syncerManager) ensureSvcNegCR(svcKey serviceKey, portInfo negtype
 		// Neg does not exist so create it
 		start := time.Now()
 		_, err = manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Create(context.Background(), &newCR, metav1.CreateOptions{})
-		metrics.PublishK8sRequestCountMetrics(start, metrics.CreateRequest, err)
+		manager.negMetrics.PublishK8sRequestCountMetrics(start, metrics.CreateRequest, err)
 		manager.logger.V(2).Info("Created ServiceNetworkEndpointGroup CR for neg", "svcneg", klog.KRef(svcKey.namespace, portInfo.NegName))
 		return err
 	}
@@ -815,7 +821,7 @@ func (manager *syncerManager) ensureSvcNegCR(svcKey serviceKey, portInfo negtype
 	if needUpdate {
 		start := time.Now()
 		_, err = manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Update(context.Background(), negCR, metav1.UpdateOptions{})
-		metrics.PublishK8sRequestCountMetrics(start, metrics.UpdateRequest, err)
+		manager.negMetrics.PublishK8sRequestCountMetrics(start, metrics.UpdateRequest, err)
 		return err
 	}
 	return nil
@@ -853,10 +859,10 @@ func ensureNegCROwnerRef(negCR *negv1beta1.ServiceNetworkEndpointGroup, expected
 }
 
 // deleteSvcNegCR will remove finalizers on the given negCR and if deletion timestamp is not set, will delete it as well
-func deleteSvcNegCR(svcNegClient svcnegclient.Interface, negCR *negv1beta1.ServiceNetworkEndpointGroup, logger klog.Logger) error {
+func deleteSvcNegCR(svcNegClient svcnegclient.Interface, negCR *negv1beta1.ServiceNetworkEndpointGroup, logger klog.Logger, m *metrics.NegMetrics) error {
 	updatedCR := negCR.DeepCopy()
 	updatedCR.Finalizers = []string{}
-	if _, err := patchNegStatus(svcNegClient, *negCR, *updatedCR); err != nil {
+	if _, err := patchNegStatus(svcNegClient, *negCR, *updatedCR, m); err != nil {
 		return fmt.Errorf("failed to patch neg status: %w", err)
 	}
 
@@ -867,7 +873,7 @@ func deleteSvcNegCR(svcNegClient svcnegclient.Interface, negCR *negv1beta1.Servi
 		logger.Info("Deleting ServiceNetworkEndpointGroup CR", "svcneg", klog.KRef(negCR.Namespace, negCR.Name))
 		start := time.Now()
 		err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(negCR.Namespace).Delete(context.Background(), negCR.Name, metav1.DeleteOptions{})
-		metrics.PublishK8sRequestCountMetrics(start, metrics.DeleteRequest, err)
+		m.PublishK8sRequestCountMetrics(start, metrics.DeleteRequest, err)
 		if err != nil {
 			logger.Error(err, "Failed to delete ServiceNetworkEndpointGroup CR", "svcneg", klog.KRef(negCR.Namespace, negCR.Name))
 			return err
@@ -877,14 +883,14 @@ func deleteSvcNegCR(svcNegClient svcnegclient.Interface, negCR *negv1beta1.Servi
 }
 
 // patchNegStatus patches the specified NegCR status with the provided new status
-func patchNegStatus(svcNegClient svcnegclient.Interface, oldNeg, newNeg negv1beta1.ServiceNetworkEndpointGroup) (*negv1beta1.ServiceNetworkEndpointGroup, error) {
+func patchNegStatus(svcNegClient svcnegclient.Interface, oldNeg, newNeg negv1beta1.ServiceNetworkEndpointGroup, m *metrics.NegMetrics) (*negv1beta1.ServiceNetworkEndpointGroup, error) {
 	patchBytes, err := patch.MergePatchBytes(oldNeg, newNeg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare patch bytes: %s", err)
 	}
 	start := time.Now()
 	neg, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(oldNeg.Namespace).Patch(context.Background(), oldNeg.Name, types.MergePatchType, patchBytes, metav1.PatchOptions{})
-	metrics.PublishK8sRequestCountMetrics(start, metrics.PatchRequest, err)
+	m.PublishK8sRequestCountMetrics(start, metrics.PatchRequest, err)
 	return neg, err
 }
 
