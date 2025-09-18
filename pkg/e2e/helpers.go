@@ -809,8 +809,19 @@ func WaitForNegCRs(s *Sandbox, serviceName string, expectedNegs map[string]strin
 			klog.Infof("WaitForCustomNameNegs(%s/%s, %v) = %v", s.Namespace, serviceName, expectedNegs, err)
 			return false, nil
 		}
-		negCRs = svcNegs.Items
 
+		if len(expectedNegs) > 0 {
+			statusWithZones, zoneErr := populateZonesFromCR(serviceName, svcNegs.Items, annotations.NegStatus{})
+			if zoneErr != nil {
+				return false, zoneErr
+			}
+			if len(statusWithZones.Zones) == 0 {
+				klog.Infof("WaitForCustomNameNegs(%s/%s, %v) waiting for zones to populate", s.Namespace, serviceName, expectedNegs)
+				return false, nil
+			}
+		}
+
+		negCRs = svcNegs.Items
 		return true, nil
 	})
 
