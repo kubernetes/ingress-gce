@@ -66,11 +66,11 @@ func Validate(kubeClient kubernetes.Interface, beConfig *backendconfigv1.Backend
 // between which error is returned.
 func validateIAP(kubeClient kubernetes.Interface, beConfig *backendconfigv1.BackendConfig, servicePort *utils.ServicePort) error {
 	// If IAP settings are not found or IAP is not enabled then don't bother continuing.
-	if beConfig.Spec.Iap == nil || beConfig.Spec.Iap.Enabled == false {
+	if beConfig.Spec.Iap == nil {
 		return nil
 	}
 
-	if servicePort != nil && servicePort.L7XLBRegionalEnabled {
+	if beConfig.Spec.Iap.Enabled && servicePort != nil && servicePort.L7XLBRegionalEnabled {
 		return fmt.Errorf("IAP configuration is not supported in TPC Environment")
 	}
 	// If necessary, get the OAuth credentials stored in the K8s secret.
@@ -92,7 +92,7 @@ func validateIAP(kubeClient kubernetes.Interface, beConfig *backendconfigv1.Back
 		beConfig.Spec.Iap.OAuthClientCredentials.ClientSecret = string(clientSecret)
 	}
 
-	if beConfig.Spec.Cdn != nil && beConfig.Spec.Cdn.Enabled {
+	if beConfig.Spec.Iap.Enabled && beConfig.Spec.Cdn != nil && beConfig.Spec.Cdn.Enabled {
 		return fmt.Errorf("iap and cdn cannot be enabled at the same time")
 	}
 	return nil
