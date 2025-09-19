@@ -30,8 +30,10 @@ import (
 	"k8s.io/ingress-gce/pkg/multiproject/finalizer"
 	multiprojectgce "k8s.io/ingress-gce/pkg/multiproject/gce"
 	"k8s.io/ingress-gce/pkg/multiproject/testutil"
+	syncMetrics "k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	pcclientfake "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned/fake"
+
 	svcnegfake "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
 	informersvcneg "k8s.io/ingress-gce/pkg/svcneg/client/informers/externalversions"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -242,6 +244,7 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 					gceCreator,
 					rootNamer,
 					stopCh,
+					syncMetrics.FakeSyncerMetrics(),
 				)
 			}()
 
@@ -347,7 +350,7 @@ func TestSharedInformers_PC1Stops_PC2AndPC3KeepWorking(t *testing.T) {
 	go Start(
 		logger, kubeClient, svcNegClient, kubeSystemUID, kubeClient,
 		pcClient, informersFactory, svcNegFactory, networkFactory, nodeTopoFactory,
-		gceCreator, rootNamer, globalStop,
+		gceCreator, rootNamer, globalStop, syncMetrics.FakeSyncerMetrics(),
 	)
 
 	// --- pc-1: create and validate baseline service ---
@@ -971,6 +974,7 @@ func TestProviderConfigErrorCases(t *testing.T) {
 					gceCreator,
 					rootNamer,
 					stopCh,
+					syncMetrics.FakeSyncerMetrics(),
 				)
 			}()
 
