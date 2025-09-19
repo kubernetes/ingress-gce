@@ -53,6 +53,7 @@ import (
 	ingctx "k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/healthchecksl4"
+	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
@@ -594,6 +595,43 @@ func TestProcessServiceCreate(t *testing.T) {
 		t.Errorf("%v", err)
 	}
 	deleteNetLBService(lc, svc)
+}
+
+type mockInstanceGroupManager struct {
+	instancegroups.Manager
+	ensureCalled int
+}
+
+func (m *mockInstanceGroupManager) EnsureInstanceGroupsAndPorts(name string, ports []int64, logger klog.Logger) ([]*compute.InstanceGroup, error) {
+	m.ensureCalled++
+	return m.Manager.EnsureInstanceGroupsAndPorts(name, ports, logger)
+}
+
+// TestEnsureInstanceGroups checks that EnsureInstanceGroupsAndPorts is not called if IGs already exist.
+func TestEnsureInstanceGroups(t *testing.T) {
+	svc := test.NewL4NetLBRBSService(8080)
+
+	lc := newL4NetLBServiceController()
+
+	mockIGM := &mockInstanceGroupManager{
+		Manager:      lc.instancePool,
+		ensureCalled: 0, // Initialize mock-specific fields
+	}
+	lc.instancePool = mockIGM
+
+	expectedEnsureCalled := 1 // ensure should be called only once (during initial first Sync)
+
+	// First sync: IGs don't exist, so EnsureInstanceGroupsAndPorts should be called.
+	syncNetLBSvc(t, lc, svc)
+	if mockIGM.ensureCalled != expectedEnsureCalled {
+		t.Errorf("EnsureInstanceGroupsAndPorts was called %d times, want %d", mockIGM.ensureCalled, expectedEnsureCalled)
+	}
+
+	// Second sync: IGs exist, so EnsureInstanceGroupsAndPorts should NOT be called.
+	syncNetLBSvc(t, lc, svc)
+	if mockIGM.ensureCalled != expectedEnsureCalled {
+		t.Errorf("EnsureInstanceGroupsAndPorts was called %d times, want %d", mockIGM.ensureCalled, expectedEnsureCalled)
+	}
 }
 
 func TestProcessMultinetServiceCreate(t *testing.T) {
