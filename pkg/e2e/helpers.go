@@ -854,9 +854,12 @@ func populateZonesFromCR(serviceName string, svcNegs []negv1beta1.ServiceNetwork
 		}
 
 		for _, negRef := range svcNeg.Status.NetworkEndpointGroups {
-			// We only want zones of the negs that are in an active state.
-			// If a NEG is not active likely the cluster is not in that zone anymore, and we no longer guarantee a NEG in that zone
-			if negRef.State != "" && negRef.State != negv1beta1.ActiveState {
+			// TODO: Change condition to skip NEGs in the inactive and ToBeDeleted State in the future.
+			// Currently there is a bug in some versions of the neg controller with MSC enabled where
+			// the NEG state may never move from inactive to active. Functionally, the negs still
+			// exist and endpoints can still be added. Until the fix has been made on all GKE versions,
+			// we should keep this test fix.
+			if negRef.State == negv1beta1.ToBeDeletedState {
 				continue
 			}
 			resourceID, err := cloud.ParseResourceURL(negRef.SelfLink)
