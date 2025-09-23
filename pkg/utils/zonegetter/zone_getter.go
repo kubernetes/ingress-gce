@@ -42,6 +42,10 @@ const (
 	// In NonGCP mode, the ZoneGetter will only return the zone specified
 	// in gce.conf directly.
 	NonGCP
+	// In Legacy mode, the ZoneGetter assumes that all nodes are in the default
+	// subnet. Legacy networks have no concept of subnets, so the subnet returned
+	// is always empty.
+	Legacy
 )
 
 const (
@@ -63,7 +67,7 @@ var providerIDRE = regexp.MustCompile(`^` + "gce" + `://([^/]+)/([^/]+)/([^/]+)$
 // ZoneGetter manages lookups for GCE instances to zones.
 type ZoneGetter struct {
 	nodeLister cache.Indexer
-	// Mode indicates if the ZoneGetter is in GCP or Non-GCP mode
+	// Mode indicates if the ZoneGetter is in GCP, Non-GCP, or Legacy mode
 	// GCP mode ZoneGetter fetches zones from k8s node resource objects.
 	// Non-GCP mode ZoneGetter always return its one single stored zone
 	mode Mode
@@ -79,6 +83,8 @@ type ZoneGetter struct {
 }
 
 // ZoneAndSubnetForNode returns the zone and subnet for a given node by looking up providerID.
+// In Legacy mode, the default subnet check is skipped. The subnet obtained from z.getSubnet
+// should be empty so in legacy mode only the zone is returned for the given node.
 func (z *ZoneGetter) ZoneAndSubnetForNode(name string, logger klog.Logger) (string, string, error) {
 	// Return the single stored zone if the zoneGetter is in non-gcp mode.
 	// In non-gcp mode, the subnet will be empty, so it matches the behavior
@@ -104,12 +110,12 @@ func (z *ZoneGetter) ZoneAndSubnetForNode(name string, logger klog.Logger) (stri
 		return "", "", err
 	}
 
-	subnet, err := getSubnet(node, z.defaultSubnetURL)
+	subnet, err := z.getSubnet(node, z.defaultSubnetURL)
 	if err != nil {
 		nodeLogger.Error(err, "Failed to get subnet from node's LabelNodeSubnet")
 		return "", "", err
 	}
-	if z.onlyIncludeDefaultSubnetNodes {
+	if z.onlyIncludeDefaultSubnetNodes && z.mode != Legacy {
 		defaultSubnet, err := utils.KeyName(z.defaultSubnetURL)
 		if err != nil {
 			nodeLogger.Error(err, "Failed to extract default subnet information from URL", "defaultSubnetURL", z.defaultSubnetURL)
@@ -195,7 +201,7 @@ func (z *ZoneGetter) IsNodeSelectedByFilter(node *api_v1.Node, filter Filter, fi
 // allNodesPredicate selects all nodes.
 func (z *ZoneGetter) allNodesPredicate(node *api_v1.Node, nodeLogger klog.Logger) bool {
 	if z.onlyIncludeDefaultSubnetNodes {
-		isInDefaultSubnet, err := isNodeInDefaultSubnet(node, z.defaultSubnetURL, nodeLogger)
+		isInDefaultSubnet, err := z.isNodeInDefaultSubnet(node, z.defaultSubnetURL, nodeLogger)
 		if err != nil {
 			nodeLogger.Error(err, "Failed to verify if the node is in default subnet")
 			return false
@@ -223,7 +229,7 @@ func (z *ZoneGetter) candidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes(
 
 func (z *ZoneGetter) nodePredicateInternal(node *api_v1.Node, includeUnreadyNodes, excludeUpgradingNodes bool, nodeAndFilterLogger klog.Logger) bool {
 	if z.onlyIncludeDefaultSubnetNodes {
-		isInDefaultSubnet, err := isNodeInDefaultSubnet(node, z.defaultSubnetURL, nodeAndFilterLogger)
+		isInDefaultSubnet, err := z.isNodeInDefaultSubnet(node, z.defaultSubnetURL, nodeAndFilterLogger)
 		if err != nil {
 			nodeAndFilterLogger.Error(err, "Failed to verify if the node is in default subnet")
 			return false
@@ -280,7 +286,7 @@ func (z *ZoneGetter) nodePredicateInternal(node *api_v1.Node, includeUnreadyNode
 	return true
 }
 
-// ZoneForNode returns if the given node is in default subnet.
+// IsDefaultSubnetNode returns if the given node is in default subnet.
 func (z *ZoneGetter) IsDefaultSubnetNode(nodeName string, logger klog.Logger) (bool, error) {
 	nodeLogger := logger.WithValues("nodeName", nodeName)
 	node, err := listers.NewNodeLister(z.nodeLister).Get(nodeName)
@@ -288,7 +294,7 @@ func (z *ZoneGetter) IsDefaultSubnetNode(nodeName string, logger klog.Logger) (b
 		nodeLogger.Error(err, "Failed to get node")
 		return false, err
 	}
-	return isNodeInDefaultSubnet(node, z.defaultSubnetURL, logger)
+	return z.isNodeInDefaultSubnet(node, z.defaultSubnetURL, logger)
 }
 
 // isNodeInDefaultSubnet checks if the node is in the default subnet.
@@ -296,9 +302,16 @@ func (z *ZoneGetter) IsDefaultSubnetNode(nodeName string, logger klog.Logger) (b
 // For any new nodes created after multi-subnet cluster is enabled, they are
 // guaranteed to have the subnet label if PodCIDR is populated. For any
 // existing nodes, they will not have label and can only be in the default
-// subnet.
-func isNodeInDefaultSubnet(node *api_v1.Node, defaultSubnetURL string, nodeLogger klog.Logger) (bool, error) {
-	nodeSubnet, err := getSubnet(node, defaultSubnetURL)
+// subnet. In Legacy mode all nodes are considered to be in the default subnet,
+// so the only check done is whether the Node's PodCIDR is populated.
+func (z *ZoneGetter) isNodeInDefaultSubnet(node *api_v1.Node, defaultSubnetURL string, nodeLogger klog.Logger) (bool, error) {
+	if z.mode == Legacy {
+		if node.Spec.PodCIDR == "" {
+			return false, ErrNodePodCIDRNotSet
+		}
+		return true, nil
+	}
+	nodeSubnet, err := z.getSubnet(node, defaultSubnetURL)
 	if err != nil {
 		nodeLogger.Error(err, "Failed to get node subnet", "nodeName", node.Name)
 		return false, err
@@ -330,10 +343,13 @@ func getZone(node *api_v1.Node) (string, error) {
 // getSubnet gets subnet information from node's LabelNodeSubnet.
 // If a node doesn't have this label, or the label value is empty, it means
 // this node is in the defaultSubnet and we will parse the subnet from the
-// defaultSubnetURL.
-func getSubnet(node *api_v1.Node, defaultSubnetURL string) (string, error) {
+// defaultSubnetURL. In Legacy mode, the subnet returned is always empty.
+func (z *ZoneGetter) getSubnet(node *api_v1.Node, defaultSubnetURL string) (string, error) {
 	if node.Spec.PodCIDR == "" {
 		return "", ErrNodePodCIDRNotSet
+	}
+	if z.mode == Legacy {
+		return "", nil
 	}
 
 	nodeSubnet, exist := node.Labels[utils.LabelNodeSubnet]
@@ -362,6 +378,19 @@ func NewZoneGetter(nodeInformer cache.SharedIndexInformer, defaultSubnetURL stri
 		nodeLister:                    nodeInformer.GetIndexer(),
 		onlyIncludeDefaultSubnetNodes: flags.F.EnableMultiSubnetCluster && !flags.F.EnableMultiSubnetClusterPhase1,
 		defaultSubnetURL:              defaultSubnetURL,
+	}
+}
+
+// NewLegacyZoneGetter initialize a ZoneGetter in legacy network mode.
+// Legacy Networks do not have subnets and therefore the subnet should
+// always be empty. Regardless of the labels on the nodes, consider every
+// node as part of the default subnet. onlyIncludeDefaultSubnetNodes is
+// considered true as with Legacy Networks everything is in the default subnet.
+func NewLegacyZoneGetter(nodeInformer cache.SharedIndexInformer) *ZoneGetter {
+	return &ZoneGetter{
+		mode:                          Legacy,
+		nodeLister:                    nodeInformer.GetIndexer(),
+		onlyIncludeDefaultSubnetNodes: true,
 	}
 }
 

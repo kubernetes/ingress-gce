@@ -389,6 +389,12 @@ func TestGetZone(t *testing.T) {
 }
 
 func TestGetSubnet(t *testing.T) {
+	t.Parallel()
+
+	nodeInformer := FakeNodeInformer()
+	PopulateFakeNodeInformer(nodeInformer, true)
+	zoneGetter := NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, true)
+
 	for _, tc := range []struct {
 		desc         string
 		node         apiv1.Node
@@ -445,7 +451,7 @@ func TestGetSubnet(t *testing.T) {
 			expectErr:    ErrNodePodCIDRNotSet,
 		},
 	} {
-		subnet, err := getSubnet(&tc.node, defaultTestSubnetURL)
+		subnet, err := zoneGetter.getSubnet(&tc.node, defaultTestSubnetURL)
 		if subnet != tc.expectSubnet {
 			t.Errorf("For test case %q, got subnet: %s, want: %s,", tc.desc, subnet, tc.expectSubnet)
 		}
@@ -772,6 +778,10 @@ func TestIsNodeSelectedByFilter(t *testing.T) {
 
 func TestIsNodeInDefaultSubnet(t *testing.T) {
 	t.Parallel()
+
+	nodeInformer := FakeNodeInformer()
+	PopulateFakeNodeInformer(nodeInformer, true)
+	zoneGetter := NewFakeZoneGetter(nodeInformer, defaultTestSubnetURL, true)
 	testCases := []struct {
 		desc                  string
 		node                  *apiv1.Node
@@ -860,7 +870,7 @@ func TestIsNodeInDefaultSubnet(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			gotInDefaultSubnet, gotErr := isNodeInDefaultSubnet(tc.node, defaultTestSubnetURL, klog.TODO())
+			gotInDefaultSubnet, gotErr := zoneGetter.isNodeInDefaultSubnet(tc.node, defaultTestSubnetURL, klog.TODO())
 			if gotErr != nil && tc.expectNil {
 				t.Errorf("isNodeInDefaultSubnet(%v, %s) = err %v, want nil", tc.node, defaultTestSubnetURL, gotErr)
 			}
@@ -869,6 +879,432 @@ func TestIsNodeInDefaultSubnet(t *testing.T) {
 			}
 			if gotInDefaultSubnet != tc.expectInDefaultSubnet {
 				t.Errorf("isNodeInDefaultSubnet(%v, %s) = %v, want %v", tc.node, defaultTestSubnetURL, gotInDefaultSubnet, tc.expectInDefaultSubnet)
+			}
+		})
+	}
+}
+
+func TestNewLegacyZoneGetter(t *testing.T) {
+	t.Parallel()
+	nodeInformer := FakeNodeInformer()
+	PopulateFakeNodeInformer(nodeInformer, false)
+	zoneGetter := NewLegacyZoneGetter(nodeInformer)
+
+	if zoneGetter.mode != Legacy {
+		t.Errorf("Expected zoneGetter mode to to be Legacy, but got %+v", zoneGetter.mode)
+	}
+	if zoneGetter.defaultSubnetURL != "" {
+		t.Errorf("Expected defaultSubnetURL to be empty, but got %s", zoneGetter.defaultSubnetURL)
+	}
+	if !zoneGetter.onlyIncludeDefaultSubnetNodes {
+		t.Errorf("Expected onlyIncludeDefaultSubnetNodes to be true, but got false")
+	}
+}
+
+func TestGetSubnetLegacyMode(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		desc         string
+		node         *apiv1.Node
+		expectSubnet string
+		expectErr    error
+	}{
+		{
+			desc: "Node with subnet label",
+			node: &apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						utils.LabelNodeSubnet: "custom-subnet",
+					},
+				},
+				Spec: apiv1.NodeSpec{PodCIDR: "10.0.0.0/24"},
+			},
+			expectSubnet: "",
+			expectErr:    nil,
+		},
+		{
+			desc: "Node without subnet label",
+			node: &apiv1.Node{
+				Spec: apiv1.NodeSpec{PodCIDR: "10.0.0.0/24"},
+			},
+			expectSubnet: "",
+			expectErr:    nil,
+		},
+		{
+			desc:      "Node without PodCIDR",
+			node:      &apiv1.Node{},
+			expectErr: ErrNodePodCIDRNotSet,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			nodeInformer := FakeNodeInformer()
+			PopulateFakeNodeInformer(nodeInformer, false)
+			zoneGetter := NewLegacyZoneGetter(nodeInformer)
+			subnet, err := zoneGetter.getSubnet(tc.node, "")
+			if subnet != tc.expectSubnet {
+				t.Errorf("getSubnet() = %s, want %s", subnet, tc.expectSubnet)
+			}
+			if err != tc.expectErr {
+				t.Errorf("getSubnet() = %v, want %v", err, tc.expectErr)
+			}
+		})
+	}
+}
+
+func TestIsNodeInDefaultSubnetLegacyMode(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		desc                  string
+		node                  *apiv1.Node
+		expectInDefaultSubnet bool
+		expectErr             error
+	}{
+		{
+			desc: "Node with non-default subnet label",
+			node: &apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						utils.LabelNodeSubnet: "non-default-subnet",
+					},
+				},
+				Spec: apiv1.NodeSpec{PodCIDR: "10.0.0.0/24"},
+			},
+			expectInDefaultSubnet: true,
+			expectErr:             nil,
+		},
+		{
+			desc: "Node without any labels",
+			node: &apiv1.Node{
+				Spec: apiv1.NodeSpec{PodCIDR: "10.0.0.0/24"},
+			},
+			expectInDefaultSubnet: true,
+			expectErr:             nil,
+		},
+		{
+			desc:                  "Node without PodCIDR",
+			node:                  &apiv1.Node{},
+			expectInDefaultSubnet: false,
+			expectErr:             ErrNodePodCIDRNotSet,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			nodeInformer := FakeNodeInformer()
+			PopulateFakeNodeInformer(nodeInformer, false)
+			zoneGetter := NewLegacyZoneGetter(nodeInformer)
+			inSubnet, err := zoneGetter.isNodeInDefaultSubnet(tc.node, "", klog.TODO())
+			if inSubnet != tc.expectInDefaultSubnet {
+				t.Errorf("isNodeInDefaultSubnet() = %v, want %v", inSubnet, tc.expectInDefaultSubnet)
+			}
+			if err != tc.expectErr {
+				t.Errorf("isNodeInDefaultSubnet() = %v, want %v", err, tc.expectErr)
+			}
+		})
+	}
+}
+
+func TestNodeFilteringInLegacyMode(t *testing.T) {
+	t.Parallel()
+
+	nodeInformer := FakeNodeInformer()
+	// Populate the informer with a mix of nodes.
+	// In legacy mode, the subnet label should be ignored.
+	nodes := []*apiv1.Node{
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "healthy-node-default-subnet"},
+			Spec:       apiv1.NodeSpec{ProviderID: "gce://project/zone1/healthy-node-default-subnet", PodCIDR: "10.0.1.0/24"},
+			Status:     apiv1.NodeStatus{Conditions: []apiv1.NodeCondition{{Type: apiv1.NodeReady, Status: apiv1.ConditionTrue}}},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "healthy-node-other-subnet", Labels: map[string]string{utils.LabelNodeSubnet: "other-subnet"}},
+			Spec:       apiv1.NodeSpec{ProviderID: "gce://project/zone2/healthy-node-other-subnet", PodCIDR: "10.0.2.0/24"},
+			Status:     apiv1.NodeStatus{Conditions: []apiv1.NodeCondition{{Type: apiv1.NodeReady, Status: apiv1.ConditionTrue}}},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "unready-node"},
+			Spec:       apiv1.NodeSpec{ProviderID: "gce://project/zone1/unready-node", PodCIDR: "10.0.3.0/24"},
+			Status:     apiv1.NodeStatus{Conditions: []apiv1.NodeCondition{{Type: apiv1.NodeReady, Status: apiv1.ConditionFalse}}},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "tainted-node"},
+			Spec: apiv1.NodeSpec{
+				ProviderID: "gce://project/zone1/tainted-node",
+				PodCIDR:    "10.0.4.0/24",
+				Taints:     []apiv1.Taint{{Key: utils.ToBeDeletedTaint, Effect: apiv1.TaintEffectNoSchedule}},
+			},
+			Status: apiv1.NodeStatus{Conditions: []apiv1.NodeCondition{{Type: apiv1.NodeReady, Status: apiv1.ConditionTrue}}},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "excluded-node", Labels: map[string]string{utils.LabelNodeRoleExcludeBalancer: ""}},
+			Spec:       apiv1.NodeSpec{ProviderID: "gce://project/zone1/excluded-node", PodCIDR: "10.0.5.0/24"},
+			Status:     apiv1.NodeStatus{Conditions: []apiv1.NodeCondition{{Type: apiv1.NodeReady, Status: apiv1.ConditionTrue}}},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "no-podcidr-node"},
+			Spec:       apiv1.NodeSpec{ProviderID: "gce://project/zone1/no-podcidr-node"},
+			Status:     apiv1.NodeStatus{Conditions: []apiv1.NodeCondition{{Type: apiv1.NodeReady, Status: apiv1.ConditionTrue}}},
+		},
+	}
+	for _, n := range nodes {
+		nodeInformer.GetIndexer().Add(n)
+	}
+
+	zoneGetter := NewLegacyZoneGetter(nodeInformer)
+	listedNodes, err := zoneGetter.ListNodes(CandidateNodesFilter, klog.TODO())
+	if err != nil {
+		t.Fatalf("zoneGetter.ListNodes(CandidateNodesFilter) = _, %v; want nil", err)
+	}
+
+	if len(listedNodes) != 2 {
+		t.Errorf("len(listedNodes) = %d; want 2", len(listedNodes))
+	}
+
+	expectedNodes := map[string]bool{
+		"healthy-node-default-subnet": true,
+		"healthy-node-other-subnet":   true,
+	}
+	for _, node := range listedNodes {
+		if !expectedNodes[node.Name] {
+			t.Errorf("listed unexpected node %q", node.Name)
+		}
+	}
+}
+
+func TestZoneAndSubnetForNodeLegacyMode(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name           string
+		node           *apiv1.Node
+		expectZone     string
+		expectSubnet   string
+		expectErr      error
+		expectNilError bool
+	}{
+		{
+			name: "with PodCIDR",
+			node: &apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-node-with-podcidr"},
+				Spec:       apiv1.NodeSpec{ProviderID: "gce://project/zone-for-legacy-mode/test-node-with-podcidr", PodCIDR: "10.0.0.0/24"},
+			},
+			expectZone:     "zone-for-legacy-mode",
+			expectSubnet:   "",
+			expectNilError: true,
+		},
+		{
+			name: "without PodCIDR",
+			node: &apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-node-without-podcidr"},
+				Spec:       apiv1.NodeSpec{ProviderID: "gce://project/zone-for-legacy-mode/test-node-without-podcidr"},
+			},
+			expectErr: ErrNodePodCIDRNotSet,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			nodeInformer := FakeNodeInformer()
+			nodeInformer.GetIndexer().Add(tc.node)
+			zoneGetter := NewLegacyZoneGetter(nodeInformer)
+
+			zone, subnet, err := zoneGetter.ZoneAndSubnetForNode(tc.node.Name, klog.TODO())
+
+			if tc.expectNilError && err != nil {
+				t.Fatalf("ZoneAndSubnetForNode(%q) = _, _, %v; want nil", tc.node.Name, err)
+			}
+			if !tc.expectNilError && !errors.Is(err, tc.expectErr) {
+				t.Fatalf("ZoneAndSubnetForNode(%q) err = %v; want %v", tc.node.Name, err, tc.expectErr)
+			}
+			if zone != tc.expectZone {
+				t.Errorf("ZoneAndSubnetForNode(%q) zone = %q; want %q", tc.node.Name, zone, tc.expectZone)
+			}
+			if subnet != tc.expectSubnet {
+				t.Errorf("ZoneAndSubnetForNode(%q) subnet = %q; want %q", tc.node.Name, subnet, tc.expectSubnet)
+			}
+		})
+	}
+}
+
+func TestListZonesLegacyMode(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		desc          string
+		filter        Filter
+		expectedZones []string
+	}{
+		{
+			desc:          "AllNodesFilter should list zones for all nodes with PodCIDR, ignoring readiness and subnet labels",
+			filter:        AllNodesFilter,
+			expectedZones: []string{"zone-1", "zone-2", "zone-3"},
+		},
+		{
+			desc:          "CandidateNodesFilter should list zones for ready nodes with PodCIDR, ignoring subnet labels",
+			filter:        CandidateNodesFilter,
+			expectedZones: []string{"zone-1", "zone-2"},
+		},
+		{
+			desc:          "CandidateAndUnreadyNodesFilter should list zones for ready and unready nodes with PodCIDR",
+			filter:        CandidateAndUnreadyNodesFilter,
+			expectedZones: []string{"zone-1", "zone-2", "zone-3"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			nodeInformer := FakeNodeInformer()
+			nodes := []*apiv1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "node-1", Labels: map[string]string{utils.LabelNodeSubnet: "default-subnet"}},
+					Spec:       apiv1.NodeSpec{ProviderID: "gce://project/zone-1/node-1", PodCIDR: "10.1.0.0/24"},
+					Status:     apiv1.NodeStatus{Conditions: []apiv1.NodeCondition{{Type: apiv1.NodeReady, Status: apiv1.ConditionTrue}}},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "node-2", Labels: map[string]string{utils.LabelNodeSubnet: "other-subnet"}},
+					Spec:       apiv1.NodeSpec{ProviderID: "gce://project/zone-2/node-2", PodCIDR: "10.2.0.0/24"},
+					Status:     apiv1.NodeStatus{Conditions: []apiv1.NodeCondition{{Type: apiv1.NodeReady, Status: apiv1.ConditionTrue}}},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "node-3"},
+					Spec:       apiv1.NodeSpec{ProviderID: "gce://project/zone-3/node-3", PodCIDR: "10.3.0.0/24"},
+					Status:     apiv1.NodeStatus{Conditions: []apiv1.NodeCondition{{Type: apiv1.NodeReady, Status: apiv1.ConditionFalse}}},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "node-4"},
+					Spec:       apiv1.NodeSpec{ProviderID: "gce://project/zone-4/node-4"}, // No PodCIDR
+					Status:     apiv1.NodeStatus{Conditions: []apiv1.NodeCondition{{Type: apiv1.NodeReady, Status: apiv1.ConditionTrue}}},
+				},
+			}
+			for _, n := range nodes {
+				nodeInformer.GetIndexer().Add(n)
+			}
+			zoneGetter := NewLegacyZoneGetter(nodeInformer)
+
+			zones, err := zoneGetter.ListZones(tc.filter, klog.TODO())
+			if err != nil {
+				t.Fatalf("ListZones() with filter %q returned error %v, want nil", tc.filter, err)
+			}
+
+			if !reflect.DeepEqual(zones, tc.expectedZones) {
+				t.Errorf("ListZones() with filter %q = %v, want %v", tc.filter, zones, tc.expectedZones)
+			}
+		})
+	}
+}
+
+func TestIsNodeSelectedByFilterLegacyMode(t *testing.T) {
+	t.Parallel()
+	nodeInformer := FakeNodeInformer()
+	PopulateFakeNodeInformer(nodeInformer, false)
+	zoneGetter := NewLegacyZoneGetter(nodeInformer)
+
+	testCases := []struct {
+		name             string
+		node             *apiv1.Node
+		filter           Filter
+		expectIsSelected bool
+	}{
+		{
+			name: "Node with non-default subnet label should be selected by CandidateNodesFilter",
+			node: &apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{utils.LabelNodeSubnet: "other-subnet"}},
+				Spec:       apiv1.NodeSpec{PodCIDR: "10.0.0.0/24"},
+				Status:     apiv1.NodeStatus{Conditions: []apiv1.NodeCondition{{Type: apiv1.NodeReady, Status: apiv1.ConditionTrue}}},
+			},
+			filter:           CandidateNodesFilter,
+			expectIsSelected: true,
+		},
+		{
+			name: "Node without PodCIDR should not be selected by AllNodesFilter",
+			node: &apiv1.Node{
+				Status: apiv1.NodeStatus{Conditions: []apiv1.NodeCondition{{Type: apiv1.NodeReady, Status: apiv1.ConditionTrue}}},
+			},
+			filter:           AllNodesFilter,
+			expectIsSelected: false,
+		},
+		{
+			name: "Unready node with PodCIDR should not be selected by CandidateNodesFilter",
+			node: &apiv1.Node{
+				Spec:   apiv1.NodeSpec{PodCIDR: "10.0.0.0/24"},
+				Status: apiv1.NodeStatus{Conditions: []apiv1.NodeCondition{{Type: apiv1.NodeReady, Status: apiv1.ConditionFalse}}},
+			},
+			filter:           CandidateNodesFilter,
+			expectIsSelected: false,
+		},
+		{
+			name: "Unready node with PodCIDR should be selected by AllNodesFilter",
+			node: &apiv1.Node{
+				Spec:   apiv1.NodeSpec{PodCIDR: "10.0.0.0/24"},
+				Status: apiv1.NodeStatus{Conditions: []apiv1.NodeCondition{{Type: apiv1.NodeReady, Status: apiv1.ConditionFalse}}},
+			},
+			filter:           AllNodesFilter,
+			expectIsSelected: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			isSelected := zoneGetter.IsNodeSelectedByFilter(tc.node, tc.filter, klog.TODO())
+			if isSelected != tc.expectIsSelected {
+				t.Errorf("IsNodeSelectedByFilter() = %v, want %v", isSelected, tc.expectIsSelected)
+			}
+		})
+	}
+}
+
+func TestIsDefaultSubnetNodeLegacyMode(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name                  string
+		node                  *apiv1.Node
+		expectInDefaultSubnet bool
+		expectErr             error
+	}{
+		{
+			name: "Node with PodCIDR is considered in default subnet",
+			node: &apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "node-with-podcidr"},
+				Spec:       apiv1.NodeSpec{PodCIDR: "10.0.0.0/24"},
+			},
+			expectInDefaultSubnet: true,
+			expectErr:             nil,
+		},
+		{
+			name: "Node with PodCIDR and non-default subnet label is still in default subnet",
+			node: &apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "node-with-other-subnet", Labels: map[string]string{utils.LabelNodeSubnet: "other-subnet"}},
+				Spec:       apiv1.NodeSpec{PodCIDR: "10.0.0.0/24"},
+			},
+			expectInDefaultSubnet: true,
+			expectErr:             nil,
+		},
+		{
+			name: "Node without PodCIDR returns error",
+			node: &apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "node-no-podcidr"},
+			},
+			expectInDefaultSubnet: false,
+			expectErr:             ErrNodePodCIDRNotSet,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			nodeInformer := FakeNodeInformer()
+			nodeInformer.GetIndexer().Add(tc.node)
+			zoneGetter := NewLegacyZoneGetter(nodeInformer)
+
+			inSubnet, err := zoneGetter.IsDefaultSubnetNode(tc.node.Name, klog.TODO())
+
+			if inSubnet != tc.expectInDefaultSubnet {
+				t.Errorf("IsDefaultSubnetNode() inSubnet = %v, want %v", inSubnet, tc.expectInDefaultSubnet)
+			}
+			if !errors.Is(err, tc.expectErr) {
+				t.Errorf("IsDefaultSubnetNode() err = %v, want %v", err, tc.expectErr)
 			}
 		})
 	}
