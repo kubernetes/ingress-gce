@@ -843,6 +843,11 @@ func (s *transactionSyncer) isZoneChange() bool {
 
 	existingZones := sets.NewString()
 	for _, ref := range negCR.Status.NetworkEndpointGroups {
+		// For backward compatibility, an empty state is considered active.
+		if ref.State != "" && ref.State != negv1beta1.ActiveState {
+			continue
+		}
+
 		id, err := cloud.ParseResourceURL(ref.SelfLink)
 		if err != nil {
 			s.logger.Error(err, "unable to parse selflink", "selfLink", ref.SelfLink)
