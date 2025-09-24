@@ -829,10 +829,24 @@ func (lc *L4NetLBController) ensureInstanceGroups(service *v1.Service, nodeNames
 		svcLogger.V(2).Info("Finished ensuring instance groups for L4 NetLB Service", "timeTaken", time.Since(start))
 	}()
 
+	igName := lc.ctx.ClusterNamer.InstanceGroup()
+	exist, err := lc.instancePool.InstanceGroupsExist(igName, svcLogger)
+	if err != nil {
+		svcLogger.V(2).Info("Proceed with InstanceGroups sync, unable to verify that they exist in all cluster zones", "name", igName, "details", err)
+	}
+	if exist {
+		svcLogger.V(2).Info("InstanceGroups exist in all cluster zones, no further action is needed", "name", igName)
+		return nil
+	}
+
+	// Run initial syncs(creation) for:
+	// - InstanceGroups
+	// - Nodes
+	// All subsequent syncs should be performed by InstanceGroup controller
+
 	// L4 NetLB does not use node ports, so we provide empty slice
 	var nodePorts []int64
-	igName := lc.ctx.ClusterNamer.InstanceGroup()
-	_, err := lc.instancePool.EnsureInstanceGroupsAndPorts(igName, nodePorts, svcLogger)
+	_, err = lc.instancePool.EnsureInstanceGroupsAndPorts(igName, nodePorts, svcLogger)
 	if err != nil {
 		return fmt.Errorf("lc.instancePool.EnsureInstanceGroupsAndPorts(%s, %v) returned error %w", igName, nodePorts, err)
 	}
