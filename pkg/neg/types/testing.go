@@ -35,6 +35,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/cloud-provider-gcp/providers/gce"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	negfake "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
 	informersvcneg "k8s.io/ingress-gce/pkg/svcneg/client/informers/externalversions/svcneg/v1beta1"
@@ -74,6 +75,8 @@ type TestContext struct {
 	ResyncPeriod       time.Duration
 	NumGCWorkers       int
 	EnableDualStackNEG bool
+
+	NegMetrics *metrics.NegMetrics
 }
 
 func NewTestContext() *TestContext {
@@ -90,6 +93,7 @@ func NewTestContextWithKubeClient(kubeClient kubernetes.Interface) *TestContext 
 
 	clusterNamer := namer.NewNamer(clusterID, "", klog.TODO())
 	l4namer := namer.NewL4Namer(kubeSystemUID, clusterNamer)
+	negMetrics := metrics.NewNegMetrics()
 
 	return &TestContext{
 		KubeClient:                 kubeClient,
@@ -111,5 +115,6 @@ func NewTestContextWithKubeClient(kubeClient kubernetes.Interface) *TestContext 
 		ResyncPeriod:               resyncPeriod,
 		NumGCWorkers:               numGCWorkers,
 		EnableDualStackNEG:         false,
+		NegMetrics:                 negMetrics,
 	}
 }
