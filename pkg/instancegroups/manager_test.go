@@ -689,3 +689,76 @@ func TestGetInstanceReferences(t *testing.T) {
 		}
 	}
 }
+
+func TestInstanceGroupsExist(t *testing.T) {
+	igName := defaultNamer.InstanceGroup()
+
+	testCases := []struct {
+		desc        string
+		igZones     []string // zones where the IG exists
+		nodeZones   []string // zones where nodes exist
+		expectExist bool
+		expectErr   bool
+	}{
+		{
+			desc:        "IG exists in all node zones",
+			igZones:     []string{testZoneA, testZoneB},
+			nodeZones:   []string{testZoneA, testZoneB},
+			expectExist: true,
+			expectErr:   false,
+		},
+		{
+			desc:        "IG missing in one node zone",
+			igZones:     []string{testZoneA},
+			nodeZones:   []string{testZoneA, testZoneB},
+			expectExist: false,
+			expectErr:   false,
+		},
+		{
+			desc:        "No nodes exist",
+			igZones:     []string{testZoneA, testZoneB},
+			nodeZones:   []string{},
+			expectExist: true,
+			expectErr:   false,
+		},
+		{
+			desc:        "No IGs exist",
+			igZones:     []string{},
+			nodeZones:   []string{testZoneA, testZoneB},
+			expectExist: false,
+			expectErr:   false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			// Setup
+			zonesToIGs := make(map[string]IGsToInstances)
+			for _, zone := range tc.igZones {
+				zonesToIGs[zone] = IGsToInstances{
+					&compute.InstanceGroup{Name: igName}: sets.NewString(),
+				}
+			}
+			fakeIGs := NewFakeInstanceGroups(zonesToIGs, 1000)
+			pool, err := newNodePool(fakeIGs, 1000)
+			if err != nil {
+				t.Fatalf("newNodePool()=%v, want nil", err)
+			}
+			manager := pool.(*manager)
+			for i, zone := range tc.nodeZones {
+				zonegetter.AddFakeNodes(manager.ZoneGetter, zone, fmt.Sprintf("node-%d", i))
+			}
+
+			// Execute
+			exist, err := pool.InstanceGroupsExist(igName, klog.TODO())
+
+			// Verify
+			if (err != nil) != tc.expectErr {
+				t.Errorf("pool.InstanceGroupsExist(%q, _) returned err %v, expectErr %t", igName, err, tc.expectErr)
+			}
+			if exist != tc.expectExist {
+				t.Errorf("pool.InstanceGroupsExist(%q, _) returned exist %t, want %t", igName, exist, tc.expectExist)
+			}
+		})
+	}
+}
