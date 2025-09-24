@@ -33,6 +33,7 @@ import (
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/forwardingrules"
+	"k8s.io/ingress-gce/pkg/loadbalancers/l3"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -290,6 +291,11 @@ func (l4netlb *L4NetLB) buildExpectedIPv6ForwardingRule(bsLink, ipv6AddressToUse
 	if len(ports) <= maxForwardedPorts && flags.F.EnableDiscretePortForwarding {
 		fr.Ports = utils.GetPorts(svcPorts)
 		fr.PortRange = ""
+	}
+	if l3.Wants(l4netlb.Service) {
+		fr.Ports, fr.PortRange = nil, ""
+		fr.AllPorts = true
+		fr.IPProtocol = forwardingrules.ProtocolL3
 	}
 
 	return fr, nil
