@@ -17,6 +17,7 @@ limitations under the License.
 package loadbalancers
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -69,9 +70,10 @@ type L4NetLB struct {
 	NamespacedName types.NamespacedName
 	healthChecks   healthchecksl4.L4HealthChecks
 	// mixedManager is responsible for managing forwarding rules for mixed protocol lbs
-	mixedManager    *forwardingrules.MixedManagerNetLB
-	forwardingRules ForwardingRulesProvider
-	enableDualStack bool
+	mixedManager     *forwardingrules.MixedManagerNetLB
+	forwardingRules  ForwardingRulesProvider
+	enableDualStack  bool
+	useDenyFirewalls bool
 	// represents if `enable strong session affinity` flag was set
 	enableStrongSessionAffinity      bool
 	networkInfo                      network.NetworkInfo
@@ -138,6 +140,7 @@ type L4NetLBParams struct {
 	EnableMixedProtocol              bool
 	DisableNodesFirewallProvisioning bool
 	UseNEGs                          bool
+	UseDenyFirewalls                 bool
 	ConfigMapLister                  cache.Store
 }
 
@@ -171,6 +174,7 @@ func NewL4NetLB(params *L4NetLBParams, logger klog.Logger) *L4NetLB {
 		enableMixedProtocol:              params.EnableMixedProtocol,
 		disableNodesFirewallProvisioning: params.DisableNodesFirewallProvisioning,
 		useNEGs:                          params.UseNEGs,
+		useDenyFirewalls:                 params.UseDenyFirewalls,
 		svcLogger:                        logger,
 		configMapLister:                  params.ConfigMapLister,
 	}
@@ -543,6 +547,7 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 		IP:                l4netlb.Service.Spec.LoadBalancerIP,
 		NodeNames:         nodeNames,
 		Network:           l4netlb.networkInfo,
+		Priority:          firewalls.AllowTrafficPriority,
 	}
 	var firewallForNodesUpdateStatus utils.ResourceSyncStatus
 	firewallForNodesUpdateStatus, result.Error = firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, &nodesFWRParams, l4netlb.cloud, l4netlb.recorder, fwLogger)
@@ -553,6 +558,60 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 		return
 	}
 	result.Annotations[annotations.FirewallRuleKey] = firewallName
+
+	l4netlb.ensureDeny(result, nodeNames, ipAddress, fwLogger)
+}
+
+func (l4netlb *L4NetLB) ensureDeny(result *L4NetLBSyncResult, nodeNames []string, ipAddress string, fwLogger klog.Logger) {
+	// if we don't use deny flag, make sure that a leftover deny rule is cleaned up
+	if !l4netlb.useDenyFirewalls {
+		if err := cleanUpDenyFirewallRule(l4netlb.cloud, l4netlb.namer.L4FirewallDeny(l4netlb.Service.Namespace, l4netlb.Service.Name), fwLogger); err != nil {
+			result.GCEResourceInError = annotations.FirewallDenyRuleResource
+			result.Error = err
+			return
+		}
+		return
+	}
+	// otherwise provision Deny rule
+	denyParams := denyFirewall(l4netlb.namer.L4FirewallDeny, l4netlb.Service, nodeNames, l4netlb.networkInfo, ipAddress)
+	denyForNodesUpdateStatus, err := firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, denyParams, l4netlb.cloud, l4netlb.recorder, fwLogger)
+	result.GCEResourceUpdate.SetFirewallForNodes(denyForNodesUpdateStatus)
+	if err != nil {
+		result.GCEResourceInError = annotations.FirewallDenyRuleResource
+		result.Error = err
+		return
+	}
+	result.Annotations[annotations.FirewallRuleDenyKey] = denyParams.Name
+}
+
+func denyFirewall(namer func(namespace, name string) string, svc *corev1.Service, nodeNames []string, network network.NetworkInfo, ruleAddress string) *firewalls.FirewallParams {
+	return &firewalls.FirewallParams{
+		Name:              namer(svc.Namespace, svc.Name),
+		Denied:            firewalls.DeniedAll(),
+		Allowed:           nil, // We cannot have both deny and allow in the same rule
+		Priority:          firewalls.DenyTrafficPriority,
+		L4Type:            utils.XLB,
+		IP:                svc.Spec.LoadBalancerIP,
+		NodeNames:         nodeNames,
+		Network:           network,
+		DestinationRanges: []string{ruleAddress},
+	}
+}
+
+func cleanUpDenyFirewallRule(cloud *gce.Cloud, fwName string, logger klog.Logger) error {
+	log := logger.WithName("cleanUpDenyFirewallRule")
+
+	// Skip deleting if it doesn't exist to not produce noisy audit logs
+	fa := firewalls.NewFirewallAdapter(cloud)
+	if _, err := fa.GetFirewall(fwName); err != nil {
+		if utils.IsNotFoundError(err) {
+			log.V(3).Info("no deny firewall found to delete", "firewallName", fwName)
+			return nil // no need for cleanup
+		}
+		return err
+	}
+
+	return firewalls.EnsureL4FirewallRuleDeleted(cloud, fwName, log)
 }
 
 // EnsureLoadBalancerDeleted performs a cleanup of all GCE resources for the given loadbalancer service.
@@ -628,7 +687,7 @@ func (l4netlb *L4NetLB) deleteIPv4ResourcesAnnotationBased(result *L4NetLBSyncRe
 	}
 
 	// delete firewall rule allowing load balancer source ranges
-	if shouldIgnoreAnnotations || l4netlb.hasAnnotation(annotations.FirewallRuleKey) {
+	if shouldIgnoreAnnotations || l4netlb.hasAnnotation(annotations.FirewallRuleKey) || l4netlb.hasAnnotation(annotations.FirewallRuleDenyKey) {
 		err = l4netlb.deleteIPv4NodesFirewall()
 		if err != nil {
 			l4netlb.svcLogger.Error(err, "Failed to delete firewall rule for NetLB RBS service")
@@ -666,15 +725,19 @@ func (l4netlb *L4NetLB) deleteIPv4Address() error {
 func (l4netlb *L4NetLB) deleteIPv4NodesFirewall() error {
 	start := time.Now()
 
-	firewallName := l4netlb.namer.L4Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)
+	allowName := l4netlb.namer.L4Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)
+	denyName := l4netlb.namer.L4FirewallDeny(l4netlb.Service.Namespace, l4netlb.Service.Name)
 
-	fwLogger := l4netlb.svcLogger.WithValues("firewallName", firewallName)
+	fwLogger := l4netlb.svcLogger.WithValues("firewallName", allowName, "firewallDenyName", denyName)
 	fwLogger.V(2).Info("Deleting IPv4 nodes firewall for L4 NetLB Service")
 	defer func() {
 		fwLogger.V(2).Info("Finished deleting IPv4 nodes firewall for L4 NetLB Service", "timeTaken", time.Since(start))
 	}()
 
-	return l4netlb.deleteFirewall(firewallName, fwLogger)
+	return errors.Join(
+		l4netlb.deleteFirewall(allowName, fwLogger),
+		l4netlb.deleteFirewall(denyName, fwLogger),
+	)
 }
 
 func (l4netlb *L4NetLB) deleteFirewall(firewallName string, fwLogger klog.Logger) error {
