@@ -184,7 +184,7 @@ func (l4 *L4) ensureIPv6NodesFirewall(ipAddress string, nodeNames []string, resu
 		Network:           l4.network,
 	}
 
-	fwSyncStatus, err := firewalls.EnsureL4LBFirewallForNodes(l4.Service, &ipv6nodesFWRParams, l4.cloud, l4.recorder, fwLogger)
+	fwRule, fwSyncStatus, err := firewalls.EnsureL4LBFirewallForNodes(l4.Service, &ipv6nodesFWRParams, l4.cloud, l4.recorder, fwLogger)
 	result.ResourceUpdates.SetFirewallForNodes(fwSyncStatus)
 	if err != nil {
 		result.GCEResourceInError = annotations.FirewallRuleIPv6Resource
@@ -192,6 +192,7 @@ func (l4 *L4) ensureIPv6NodesFirewall(ipAddress string, nodeNames []string, resu
 		return
 	}
 	result.Annotations[annotations.FirewallRuleIPv6Key] = firewallName
+	result.GCEResourceURLs = append(result.GCEResourceURLs, fwRule.SelfLink)
 }
 
 func (l4 *L4) deleteIPv6ForwardingRule() error {

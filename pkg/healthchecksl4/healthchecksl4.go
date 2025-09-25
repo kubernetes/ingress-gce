@@ -234,7 +234,7 @@ func (l4hc *l4HealthChecks) ensureIPv4Firewall(svc *corev1.Service, namer namer.
 		NodeNames:    nodeNames,
 		Network:      svcNetwork,
 	}
-	wasUpdated, err := firewalls.EnsureL4LBFirewallForHc(svc, isSharedHC, &hcFWRParams, l4hc.cloud, l4hc.recorder, fwLogger)
+	fwRule, wasUpdated, err := firewalls.EnsureL4LBFirewallForHc(svc, isSharedHC, &hcFWRParams, l4hc.cloud, l4hc.recorder, fwLogger)
 	hcResult.WasFirewallUpdated = wasUpdated == utils.ResourceUpdate || hcResult.WasFirewallUpdated == utils.ResourceUpdate
 	if err != nil {
 		fwLogger.Error(err, "Error ensuring IPv4 Firewall for health check for service")
@@ -243,6 +243,7 @@ func (l4hc *l4HealthChecks) ensureIPv4Firewall(svc *corev1.Service, namer namer.
 		return
 	}
 	hcResult.HCFirewallRuleName = hcFwName
+	hcResult.HCFirewallRuleLink = fwRule.SelfLink
 }
 
 func (l4hc *l4HealthChecks) ensureIPv6Firewall(svc *corev1.Service, namer namer.L4ResourcesNamer, hcPort int32, isSharedHC bool, nodeNames []string, l4Type utils.L4LBType, hcResult *EnsureHealthCheckResult, svcNetwork network.NetworkInfo, svcLogger klog.Logger) {
@@ -267,7 +268,7 @@ func (l4hc *l4HealthChecks) ensureIPv6Firewall(svc *corev1.Service, namer namer.
 		NodeNames:    nodeNames,
 		Network:      svcNetwork,
 	}
-	wasUpdated, err := firewalls.EnsureL4LBFirewallForHc(svc, isSharedHC, &hcFWRParams, l4hc.cloud, l4hc.recorder, fwLogger)
+	fwRule, wasUpdated, err := firewalls.EnsureL4LBFirewallForHc(svc, isSharedHC, &hcFWRParams, l4hc.cloud, l4hc.recorder, fwLogger)
 	hcResult.WasFirewallUpdated = wasUpdated == utils.ResourceUpdate || hcResult.WasFirewallUpdated == utils.ResourceUpdate
 	if err != nil {
 		fwLogger.Error(err, "Error ensuring IPv6 Firewall for health check for service")
@@ -276,6 +277,7 @@ func (l4hc *l4HealthChecks) ensureIPv6Firewall(svc *corev1.Service, namer namer.
 		return
 	}
 	hcResult.HCFirewallRuleIPv6Name = ipv6HCFWName
+	hcResult.HCFirewallRuleIPv6Link = fwRule.SelfLink
 }
 
 func (l4hc *l4HealthChecks) DeleteHealthCheckWithFirewall(svc *corev1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType, svcLogger klog.Logger) (string, error) {

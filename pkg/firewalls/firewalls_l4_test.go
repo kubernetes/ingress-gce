@@ -173,7 +173,7 @@ func TestEnsureL4FirewallRule(t *testing.T) {
 			if tc.existingRule != nil {
 				fakeGCE.CreateFirewall(tc.existingRule)
 			}
-			updateDone, err := EnsureL4FirewallRule(fakeGCE, tc.nsName, tc.params, tc.shared, klog.TODO())
+			_, updateDone, err := EnsureL4FirewallRule(fakeGCE, tc.nsName, tc.params, tc.shared, klog.TODO())
 			if err != nil {
 				t.Errorf("EnsureL4FirewallRule() failed, err=%v", err)
 			}

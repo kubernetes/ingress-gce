@@ -63,11 +63,12 @@ github.com/GaijinEntertainment/go-exhaustruct/v3/analyzer
 github.com/GaijinEntertainment/go-exhaustruct/v3/internal/comment
 github.com/GaijinEntertainment/go-exhaustruct/v3/internal/pattern
 github.com/GaijinEntertainment/go-exhaustruct/v3/internal/structure
-# github.com/GoogleCloudPlatform/gke-networking-api v0.2.1-0.20250318085121-e88f4ed9f50a
+# github.com/GoogleCloudPlatform/gke-networking-api v0.2.1-0.20250318085121-e88f4ed9f50a => github.com/08volt/gke-networking-api v0.2.1-0.20250925182004-29268500948d
 ## explicit; go 1.22.0
 github.com/GoogleCloudPlatform/gke-networking-api/apis/gcpfirewall/v1
 github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1
 github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1
+github.com/GoogleCloudPlatform/gke-networking-api/apis/serviceloadbalancerstatus/v1
 github.com/GoogleCloudPlatform/gke-networking-api/client/gcpfirewall/clientset/versioned
 github.com/GoogleCloudPlatform/gke-networking-api/client/gcpfirewall/clientset/versioned/fake
 github.com/GoogleCloudPlatform/gke-networking-api/client/gcpfirewall/clientset/versioned/scheme
@@ -96,6 +97,9 @@ github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/
 github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions/nodetopology
 github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions/nodetopology/v1
 github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/listers/nodetopology/v1
+github.com/GoogleCloudPlatform/gke-networking-api/client/serviceloadbalancerstatus/clientset/versioned
+github.com/GoogleCloudPlatform/gke-networking-api/client/serviceloadbalancerstatus/clientset/versioned/scheme
+github.com/GoogleCloudPlatform/gke-networking-api/client/serviceloadbalancerstatus/clientset/versioned/typed/serviceloadbalancerstatus/v1
 # github.com/GoogleCloudPlatform/k8s-cloud-provider v1.32.0
 ## explicit; go 1.21
 github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud
@@ -2103,3 +2107,4 @@ sigs.k8s.io/structured-merge-diff/v4/value
 ## explicit; go 1.12
 sigs.k8s.io/yaml
 sigs.k8s.io/yaml/goyaml.v2
+# github.com/GoogleCloudPlatform/gke-networking-api => github.com/08volt/gke-networking-api v0.2.1-0.20250925182004-29268500948d

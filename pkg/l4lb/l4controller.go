@@ -1,3 +1,4 @@
+// l4lb/l4controller.go
 /*
 Copyright 2020 The Kubernetes Authors.
 
@@ -411,6 +412,14 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service, svcLo
 			return syncResult
 		}
 	}
+	err = ensureServiceLoadBalancerStatusCR(l4c.ctx, service, syncResult.GCEResourceURLs, svcLogger)
+	if err != nil {
+		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
+			"Failed to update ServiceLoadBalancerStatus CR, err: %v", err)
+		syncResult.Error = fmt.Errorf("failed to ensure ServiceLoadBalancerStatus CR, err: %w", err)
+		return syncResult
+	}
+
 	return syncResult
 }
 

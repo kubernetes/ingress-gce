@@ -706,6 +706,14 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 			return syncResult
 		}
 	}
+	err = ensureServiceLoadBalancerStatusCR(lc.ctx, service, syncResult.GCEResourceURLs, svcLogger)
+	if err != nil {
+		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
+			"Failed to update ServiceLoadBalancerStatus CR, err: %v", err)
+		syncResult.Error = fmt.Errorf("failed to ensure ServiceLoadBalancerStatus CR, err: %w", err)
+		return syncResult
+	}
+
 	syncResult.SetMetricsForSuccessfulServiceSync()
 	return syncResult
 }

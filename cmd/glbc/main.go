@@ -30,6 +30,7 @@ import (
 	informernetwork "github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions"
 	nodetopologyclient "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned"
 	informernodetopology "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions"
+	svclbstatusclient "github.com/GoogleCloudPlatform/gke-networking-api/client/serviceloadbalancerstatus/clientset/versioned"
 	k8scp "github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	flag "github.com/spf13/pflag"
 	crdclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -52,6 +53,7 @@ import (
 	"k8s.io/ingress-gce/pkg/psc"
 	"k8s.io/ingress-gce/pkg/serviceattachment"
 	serviceattachmentclient "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned"
+	"k8s.io/ingress-gce/pkg/serviceloadbalancerstatus"
 	"k8s.io/ingress-gce/pkg/svcneg"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	informersvcneg "k8s.io/ingress-gce/pkg/svcneg/client/informers/externalversions"
@@ -204,6 +206,19 @@ func main() {
 		}
 	}
 
+	var svcLBStatusClient svclbstatusclient.Interface
+	if flags.F.EnableServiceLBStatusCR {
+		svcLBStatusCRDMeta := serviceloadbalancerstatus.CRDMeta()
+		if _, err := crdHandler.EnsureCRD(svcLBStatusCRDMeta, true); err != nil {
+			klog.Fatalf("Failed to ensure ServiceLBStatus CRD: %v", err)
+		}
+
+		svcLBStatusClient, err = svclbstatusclient.NewForConfig(kubeConfig)
+		if err != nil {
+			klog.Fatalf("Failed to create Service LB Status Client: %v", err)
+		}
+	}
+
 	namer, err := app.NewNamer(kubeClient, flags.F.ClusterName, firewalls.DefaultFirewallName, rootLogger)
 	if err != nil {
 		klog.Fatalf("app.NewNamer(ctx.KubeClient, %q, %q) = %v", flags.F.ClusterName, firewalls.DefaultFirewallName, err)
@@ -300,8 +315,7 @@ func main() {
 					informersFactory,
 					svcNegFactory,
 					networkFactory,
-					nodeTopologyFactory,
-					gceCreator,
+					nodeTopologyFactory, gceCreator,
 					namer,
 					stopCh,
 				)
@@ -353,8 +367,9 @@ func main() {
 		EnableL4ILBZonalAffinity:                  flags.F.EnableL4ILBZonalAffinity,
 		EnableL4NetLBForwardingRulesOptimizations: flags.F.EnableL4NetLBForwardingRulesOptimizations,
 		ReadOnlyMode:                              flags.F.ReadOnlyMode,
+		EnableServiceLBStatusCR:                   flags.F.EnableServiceLBStatusCR,
 	}
-	ctx, err := ingctx.NewControllerContext(kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, svcAttachmentClient, networkClient, nodeTopologyClient, eventRecorderKubeClient, cloud, namer, kubeSystemUID, ctxConfig, rootLogger)
+	ctx, err := ingctx.NewControllerContext(kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, svcAttachmentClient, networkClient, nodeTopologyClient, svcLBStatusClient, eventRecorderKubeClient, cloud, namer, kubeSystemUID, ctxConfig, rootLogger)
 	if err != nil {
 		klog.Fatalf("unable to set up controller context: %v", err)
 	}

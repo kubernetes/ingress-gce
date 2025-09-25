@@ -23,6 +23,7 @@ import (
 	informernetwork "github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions/network/v1"
 	nodetopologyclient "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned"
 	informernodetopology "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions/nodetopology/v1"
+	svclbstatusclient "github.com/GoogleCloudPlatform/gke-networking-api/client/serviceloadbalancerstatus/clientset/versioned"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -71,6 +72,7 @@ type ControllerContext struct {
 	FirewallClient      firewallclient.Interface
 	EventRecorderClient kubernetes.Interface
 	NodeTopologyClient  nodetopologyclient.Interface
+	SvcLBStatusClient   svclbstatusclient.Interface
 
 	Cloud *gce.Cloud
 
@@ -94,6 +96,7 @@ type ControllerContext struct {
 	NetworkInformer          cache.SharedIndexInformer
 	GKENetworkParamsInformer cache.SharedIndexInformer
 	NodeTopologyInformer     cache.SharedIndexInformer
+	SvcLBStatusInformer      cache.SharedIndexInformer
 
 	ControllerMetrics *metrics.ControllerMetrics
 	L4Metrics         *l4metrics.Collector
@@ -138,6 +141,7 @@ type ControllerContextConfig struct {
 	EnableL4ILBMixedProtocol                  bool
 	EnableL4NetLBMixedProtocol                bool
 	EnableL4NetLBForwardingRulesOptimizations bool
+	EnableServiceLBStatusCR                   bool
 }
 
 // NewControllerContext returns a new shared set of informers.
@@ -150,6 +154,7 @@ func NewControllerContext(
 	saClient serviceattachmentclient.Interface,
 	networkClient networkclient.Interface,
 	nodeTopologyClient nodetopologyclient.Interface,
+	svcLBStatusClient svclbstatusclient.Interface,
 	eventRecorderClient kubernetes.Interface,
 	cloud *gce.Cloud,
 	clusterNamer *namer.Namer,
@@ -174,6 +179,7 @@ func NewControllerContext(
 		KubeClient:              kubeClient,
 		FirewallClient:          firewallClient,
 		SvcNegClient:            svcnegClient,
+		SvcLBStatusClient:       svcLBStatusClient,
 		SAClient:                saClient,
 		EventRecorderClient:     eventRecorderClient,
 		NodeTopologyClient:      nodeTopologyClient,

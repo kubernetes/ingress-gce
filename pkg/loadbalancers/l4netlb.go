@@ -96,6 +96,7 @@ type L4NetLBSyncResult struct {
 	SyncType           string
 	StartTime          time.Time
 	GCEResourceUpdate  ResourceUpdates
+	GCEResourceURLs    []string
 }
 
 func NewL4SyncResult(syncType string, svc *corev1.Service, isMultinet bool, enabledStrongSessionAffinity bool, isWeightedLBPodsPerNode bool, useNEGs bool) *L4NetLBSyncResult {
@@ -313,11 +314,14 @@ func (l4netlb *L4NetLB) provideDualStackHealthChecks(nodeNames []string, result 
 
 	if hcResult.HCFirewallRuleName != "" {
 		result.Annotations[annotations.FirewallRuleForHealthcheckKey] = hcResult.HCFirewallRuleName
+		result.GCEResourceURLs = append(result.GCEResourceURLs, hcResult.HCFirewallRuleLink)
 	}
 	if hcResult.HCFirewallRuleIPv6Name != "" {
 		result.Annotations[annotations.FirewallRuleForHealthcheckIPv6Key] = hcResult.HCFirewallRuleIPv6Name
+		result.GCEResourceURLs = append(result.GCEResourceURLs, hcResult.HCFirewallRuleIPv6Link)
 	}
 	result.Annotations[annotations.HealthcheckKey] = hcResult.HCName
+	result.GCEResourceURLs = append(result.GCEResourceURLs, hcResult.HCLink)
 	return hcResult.HCLink
 }
 
@@ -333,6 +337,8 @@ func (l4netlb *L4NetLB) provideIPv4HealthChecks(nodeNames []string, result *L4Ne
 	}
 	result.Annotations[annotations.HealthcheckKey] = hcResult.HCName
 	result.Annotations[annotations.FirewallRuleForHealthcheckKey] = hcResult.HCFirewallRuleName
+	result.GCEResourceURLs = append(result.GCEResourceURLs, hcResult.HCLink)
+	result.GCEResourceURLs = append(result.GCEResourceURLs, hcResult.HCFirewallRuleLink)
 	return hcResult.HCLink
 }
 
@@ -407,6 +413,7 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 	}
 
 	syncResult.Annotations[annotations.BackendServiceKey] = bsName
+	syncResult.GCEResourceURLs = append(syncResult.GCEResourceURLs, bs.SelfLink)
 	if bs.LogConfig != nil {
 		syncResult.MetricsState.LoggingEnabled = bs.LogConfig.Enable
 	}
@@ -450,6 +457,8 @@ func (l4netlb *L4NetLB) ensureIPv4Resources(result *L4NetLBSyncResult, nodeNames
 	} else {
 		result.Annotations[annotations.UDPForwardingRuleKey] = fr.Name
 	}
+	result.GCEResourceURLs = append(result.GCEResourceURLs, fr.SelfLink)
+
 	result.MetricsLegacyState.IsManagedIP = ipAddrType == address.IPAddrManaged
 	result.MetricsLegacyState.IsPremiumTier = fr.NetworkTier == cloud.NetworkTierPremium.ToGCEValue()
 
@@ -481,6 +490,7 @@ func (l4netlb *L4NetLB) ensureIPv4MixedResources(result *L4NetLBSyncResult, node
 			result.MetricsLegacyState.IsPremiumTier = true
 		}
 		ipAddr = res.UDPFwdRule.IPAddress
+		result.GCEResourceURLs = append(result.GCEResourceURLs, res.UDPFwdRule.SelfLink)
 	}
 	if res.TCPFwdRule != nil {
 		result.Annotations[annotations.TCPForwardingRuleKey] = res.TCPFwdRule.Name
@@ -488,6 +498,7 @@ func (l4netlb *L4NetLB) ensureIPv4MixedResources(result *L4NetLBSyncResult, node
 			result.MetricsLegacyState.IsPremiumTier = true
 		}
 		ipAddr = res.TCPFwdRule.IPAddress
+		result.GCEResourceURLs = append(result.GCEResourceURLs, res.TCPFwdRule.SelfLink)
 	}
 
 	l4netlb.ensureIPv4NodesFirewall(nodeNames, ipAddr, result)
@@ -545,14 +556,15 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 		Network:           l4netlb.networkInfo,
 	}
 	var firewallForNodesUpdateStatus utils.ResourceSyncStatus
-	firewallForNodesUpdateStatus, result.Error = firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, &nodesFWRParams, l4netlb.cloud, l4netlb.recorder, fwLogger)
+	firewallRule, firewallForNodesUpdateStatus, err := firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, &nodesFWRParams, l4netlb.cloud, l4netlb.recorder, fwLogger)
 	result.GCEResourceUpdate.SetFirewallForNodes(firewallForNodesUpdateStatus)
-	if result.Error != nil {
+	if err != nil {
 		result.GCEResourceInError = annotations.FirewallRuleResource
 		result.Error = err
 		return
 	}
 	result.Annotations[annotations.FirewallRuleKey] = firewallName
+	result.GCEResourceURLs = append(result.GCEResourceURLs, firewallRule.SelfLink)
 }
 
 // EnsureLoadBalancerDeleted performs a cleanup of all GCE resources for the given loadbalancer service.

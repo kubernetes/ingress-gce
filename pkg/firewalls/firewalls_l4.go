@@ -40,17 +40,17 @@ type FirewallParams struct {
 	Network           network.NetworkInfo
 }
 
-func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParams, sharedRule bool, fwLogger klog.Logger) (utils.ResourceSyncStatus, error) {
+func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParams, sharedRule bool, fwLogger klog.Logger) (*compute.Firewall, utils.ResourceSyncStatus, error) {
 	fwLogger = fwLogger.WithValues("l4Type", params.L4Type.ToString())
 	fa := NewFirewallAdapter(cloud)
 	existingFw, err := fa.GetFirewall(params.Name)
 	if err != nil && !utils.IsNotFoundError(err) {
-		return utils.ResourceResync, err
+		return nil, utils.ResourceResync, err
 	}
 
 	nodeTags, err := cloud.GetNodeTags(params.NodeNames)
 	if err != nil {
-		return utils.ResourceResync, err
+		return nil, utils.ResourceResync, err
 	}
 	fwDesc, err := utils.MakeL4LBFirewallDescription(nsName, params.IP, meta.VersionGA, sharedRule)
 	if err != nil {
@@ -75,14 +75,14 @@ func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParam
 			gcloudCmd := gce.FirewallToGCloudCreateCmd(expectedFw, cloud.NetworkProjectID())
 
 			fwLogger.V(3).Info("EnsureL4FirewallRule: Could not create L4 firewall on XPN cluster. Raising event for cmd", "err", err, "gcloudCmd", gcloudCmd)
-			return utils.ResourceUpdate, newFirewallXPNError(err, gcloudCmd)
+			return nil, utils.ResourceUpdate, newFirewallXPNError(err, gcloudCmd)
 		}
-		return utils.ResourceUpdate, err
+		return expectedFw, utils.ResourceUpdate, err
 	}
 
 	// Don't compare the "description" field for shared firewall rules
 	if eq, err := Equal(expectedFw, existingFw, sharedRule); eq || err != nil {
-		return utils.ResourceResync, err
+		return existingFw, utils.ResourceResync, err
 	}
 
 	fwLogger.V(2).Info("EnsureL4FirewallRule: patching L4 firewall")
@@ -90,9 +90,9 @@ func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParam
 	if utils.IsForbiddenError(err) && cloud.OnXPN() {
 		gcloudCmd := gce.FirewallToGCloudUpdateCmd(expectedFw, cloud.NetworkProjectID())
 		fwLogger.V(3).Info("EnsureL4FirewallRule: Could not patch L4 firewall on XPN cluster. Raising event for cmd", "err", err, "gcloudCmd", gcloudCmd)
-		return utils.ResourceUpdate, newFirewallXPNError(err, gcloudCmd)
+		return nil, utils.ResourceUpdate, newFirewallXPNError(err, gcloudCmd)
 	}
-	return utils.ResourceUpdate, err
+	return expectedFw, utils.ResourceUpdate, err
 }
 
 func EnsureL4FirewallRuleDeleted(cloud *gce.Cloud, fwName string, fwLogger klog.Logger) error {
@@ -108,25 +108,25 @@ func EnsureL4FirewallRuleDeleted(cloud *gce.Cloud, fwName string, fwLogger klog.
 	return nil
 }
 
-func ensureFirewall(svc *v1.Service, shared bool, params *FirewallParams, cloud *gce.Cloud, recorder record.EventRecorder, fwLogger klog.Logger) (utils.ResourceSyncStatus, error) {
+func ensureFirewall(svc *v1.Service, shared bool, params *FirewallParams, cloud *gce.Cloud, recorder record.EventRecorder, fwLogger klog.Logger) (*compute.Firewall, utils.ResourceSyncStatus, error) {
 	nsName := utils.ServiceKeyFunc(svc.Namespace, svc.Name)
-	updateStatus, err := EnsureL4FirewallRule(cloud, nsName, params, shared, fwLogger)
+	fwRule, updateStatus, err := EnsureL4FirewallRule(cloud, nsName, params, shared, fwLogger)
 	if err != nil {
 		if fwErr, ok := err.(*FirewallXPNError); ok {
 			recorder.Eventf(svc, v1.EventTypeNormal, "XPN", fwErr.Message)
-			return updateStatus, nil
+			return nil, updateStatus, nil
 		}
-		return updateStatus, err
+		return nil, updateStatus, err
 	}
-	return updateStatus, nil
+	return fwRule, updateStatus, nil
 }
 
 // EnsureL4LBFirewallForHc creates or updates firewall rule for shared or non-shared health check to nodes
-func EnsureL4LBFirewallForHc(svc *v1.Service, shared bool, params *FirewallParams, cloud *gce.Cloud, recorder record.EventRecorder, fwLogger klog.Logger) (utils.ResourceSyncStatus, error) {
+func EnsureL4LBFirewallForHc(svc *v1.Service, shared bool, params *FirewallParams, cloud *gce.Cloud, recorder record.EventRecorder, fwLogger klog.Logger) (*compute.Firewall, utils.ResourceSyncStatus, error) {
 	return ensureFirewall(svc, shared, params, cloud, recorder, fwLogger)
 }
 
 // EnsureL4LBFirewallForNodes creates or updates firewall rule for LB traffic to nodes
-func EnsureL4LBFirewallForNodes(svc *v1.Service, params *FirewallParams, cloud *gce.Cloud, recorder record.EventRecorder, fwLogger klog.Logger) (utils.ResourceSyncStatus, error) {
+func EnsureL4LBFirewallForNodes(svc *v1.Service, params *FirewallParams, cloud *gce.Cloud, recorder record.EventRecorder, fwLogger klog.Logger) (*compute.Firewall, utils.ResourceSyncStatus, error) {
 	return ensureFirewall(svc /*shared = */, false, params, cloud, recorder, fwLogger)
 }
