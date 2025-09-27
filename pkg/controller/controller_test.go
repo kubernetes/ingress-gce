@@ -48,6 +48,7 @@ import (
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/flags"
+	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
@@ -71,6 +72,7 @@ var (
 func newLoadBalancerController() (*LoadBalancerController, error) {
 	kubeClient := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
+	frontendConfigClient := frontendconfigclient.NewSimpleClientset()
 	svcNegClient := svcnegclient.NewSimpleClientset()
 	vals := gce.DefaultTestClusterValues()
 	vals.SubnetworkURL = defaultTestSubnetURL
@@ -93,7 +95,7 @@ func newLoadBalancerController() (*LoadBalancerController, error) {
 		HealthCheckPath:               "/",
 		EnableIngressRegionalExternal: true,
 	}
-	ctx, err := context.NewControllerContext(kubeClient, backendConfigClient, nil, nil, svcNegClient, nil, nil, nil, kubeClient /*kube client to be used for events*/, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
+	ctx, err := context.NewControllerContext(kubeClient, backendConfigClient, frontendConfigClient, nil, svcNegClient, nil, nil, nil, kubeClient /*kube client to be used for events*/, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize controller context")
 	}
