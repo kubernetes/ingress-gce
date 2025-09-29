@@ -72,6 +72,7 @@ type L4NetLB struct {
 	mixedManager    *forwardingrules.MixedManagerNetLB
 	forwardingRules ForwardingRulesProvider
 	enableDualStack bool
+	enableIPv6Only  bool
 	// represents if `enable strong session affinity` flag was set
 	enableStrongSessionAffinity      bool
 	networkInfo                      network.NetworkInfo
@@ -132,6 +133,7 @@ type L4NetLBParams struct {
 	Namer                            namer.L4ResourcesNamer
 	Recorder                         record.EventRecorder
 	DualStackEnabled                 bool
+	IPv6OnlyEnabled                  bool
 	StrongSessionAffinityEnabled     bool
 	NetworkResolver                  network.Resolver
 	EnableWeightedLB                 bool
@@ -165,6 +167,7 @@ func NewL4NetLB(params *L4NetLBParams, logger klog.Logger) *L4NetLB {
 		forwardingRules:                  forwardingRulesProvider,
 		mixedManager:                     mixedManager,
 		enableDualStack:                  params.DualStackEnabled,
+		enableIPv6Only:                   params.IPv6OnlyEnabled,
 		enableStrongSessionAffinity:      params.StrongSessionAffinityEnabled,
 		networkResolver:                  params.NetworkResolver,
 		enableWeightedLB:                 params.EnableWeightedLB,
@@ -231,6 +234,16 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 	serviceUsesSSA := l4netlb.enableStrongSessionAffinity && annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service)
 	isWeightedLBPodsPerNode := l4netlb.isWeightedLBPodsPerNode()
 	result := NewL4SyncResult(SyncTypeCreate, svc, isMultinetService, serviceUsesSSA, isWeightedLBPodsPerNode, l4netlb.useNEGs)
+
+	if l4netlb.enableIPv6Only && utils.NeedsIPv4(svc) {
+		err := fmt.Errorf("service %s/%s is not a valid single-stack Ipv6 service, incompatible with IPv6Only mode. ipFamilies: %v, ipFamilyPolicy: %v", svc.Namespace, svc.Name, svc.Spec.IPFamilies, svc.Spec.IPFamilyPolicy)
+		result.Error = utils.NewUserError(err)
+		result.MetricsState.Status = metrics.StatusUserError
+		l4netlb.svcLogger.Error(result.Error, "Invalid service spec for IPv6 cluster")
+		
+		return result
+	}
+
 	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
 	if len(svc.Status.LoadBalancer.Ingress) > 0 {
 		result.SyncType = SyncTypeUpdate
@@ -266,7 +279,7 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 	}
 
 	// If service requires IPv6 LoadBalancer -- verify that Subnet with External IPv6 ranges is used.
-	if l4netlb.enableDualStack && utils.NeedsIPv6(svc) {
+	if l4netlb.enableIPv6Only || (l4netlb.enableDualStack && utils.NeedsIPv6(svc)) {
 		err := l4netlb.serviceSubnetHasExternalIPv6Range()
 		if err != nil {
 			result.Error = err
@@ -286,6 +299,8 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 
 	if l4netlb.enableDualStack {
 		l4netlb.ensureDualStackResources(result, nodeNames, bsLink)
+	} else if l4netlb.enableIPv6Only {
+		l4netlb.ensureIPv6Resources(result, nodeNames, bsLink)
 	} else {
 		l4netlb.ensureIPv4Resources(result, nodeNames, bsLink)
 	}
@@ -294,7 +309,7 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 }
 
 func (l4netlb *L4NetLB) provideHealthChecks(nodeNames []string, result *L4NetLBSyncResult) string {
-	if l4netlb.enableDualStack {
+	if l4netlb.enableIPv6Only || l4netlb.enableDualStack {
 		return l4netlb.provideDualStackHealthChecks(nodeNames, result)
 	}
 	return l4netlb.provideIPv4HealthChecks(nodeNames, result)
@@ -302,7 +317,11 @@ func (l4netlb *L4NetLB) provideHealthChecks(nodeNames []string, result *L4NetLBS
 
 func (l4netlb *L4NetLB) provideDualStackHealthChecks(nodeNames []string, result *L4NetLBSyncResult) string {
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(l4netlb.Service)
-	hcResult := l4netlb.healthChecks.EnsureHealthCheckWithDualStackFirewalls(l4netlb.Service, l4netlb.namer, sharedHC, l4netlb.scope, utils.XLB, nodeNames, utils.NeedsIPv4(l4netlb.Service), utils.NeedsIPv6(l4netlb.Service), l4netlb.networkInfo, l4netlb.svcLogger)
+
+	needsIPv4ForHC := !l4netlb.enableIPv6Only && utils.NeedsIPv4(l4netlb.Service)
+	needsIPv6ForHC := utils.NeedsIPv6(l4netlb.Service)
+
+	hcResult := l4netlb.healthChecks.EnsureHealthCheckWithDualStackFirewalls(l4netlb.Service, l4netlb.namer, sharedHC, l4netlb.scope, utils.XLB, nodeNames, needsIPv4ForHC, needsIPv6ForHC, l4netlb.networkInfo, l4netlb.svcLogger)
 	result.GCEResourceUpdate.SetHealthCheck(hcResult.WasUpdated)
 	result.GCEResourceUpdate.SetFirewallForHealthCheck(hcResult.WasFirewallUpdated)
 	if hcResult.Err != nil {
@@ -311,11 +330,16 @@ func (l4netlb *L4NetLB) provideDualStackHealthChecks(nodeNames []string, result 
 		return ""
 	}
 
-	if hcResult.HCFirewallRuleName != "" {
+	if needsIPv4ForHC && hcResult.HCFirewallRuleName != "" {
 		result.Annotations[annotations.FirewallRuleForHealthcheckKey] = hcResult.HCFirewallRuleName
+	} else {
+		delete(result.Annotations, annotations.FirewallRuleForHealthcheckKey)
 	}
+
 	if hcResult.HCFirewallRuleIPv6Name != "" {
 		result.Annotations[annotations.FirewallRuleForHealthcheckIPv6Key] = hcResult.HCFirewallRuleIPv6Name
+	} else {
+		delete(result.Annotations, annotations.FirewallRuleForHealthcheckIPv6Key)
 	}
 	result.Annotations[annotations.HealthcheckKey] = hcResult.HCName
 	return hcResult.HCLink
@@ -557,7 +581,7 @@ func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *L4NetLBS
 	l4netlb.Service = svc
 
 	l4netlb.deleteIPv4ResourcesOnDelete(result)
-	if l4netlb.enableDualStack {
+	if l4netlb.enableDualStack || l4netlb.enableIPv6Only {
 		l4netlb.deleteIPv6ResourcesOnDelete(result)
 	}
 
@@ -714,7 +738,7 @@ func (l4netlb *L4NetLB) deleteHealthChecksWithFirewall(result *L4NetLBSyncResult
 	// When service is deleted we need to check both health checks shared and non-shared
 	// and delete them if needed.
 	for _, isShared := range []bool{true, false} {
-		if l4netlb.enableDualStack {
+		if l4netlb.enableIPv6Only || l4netlb.enableDualStack {
 			resourceInError, err := l4netlb.healthChecks.DeleteHealthCheckWithDualStackFirewalls(l4netlb.Service, l4netlb.namer, isShared, meta.Regional, utils.XLB, l4netlb.svcLogger)
 			if err != nil {
 				result.GCEResourceInError = resourceInError

@@ -138,6 +138,7 @@ type ControllerContextConfig struct {
 	EnableL4ILBMixedProtocol                  bool
 	EnableL4NetLBMixedProtocol                bool
 	EnableL4NetLBForwardingRulesOptimizations bool
+	EnableIPv6OnlyL4                          bool
 }
 
 // NewControllerContext returns a new shared set of informers.
