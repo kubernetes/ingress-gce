@@ -16,6 +16,8 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/multiproject/filteredinformer"
 	"k8s.io/ingress-gce/pkg/neg"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
+	syncMetrics "k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
@@ -27,6 +29,12 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
 )
+
+func init() {
+	// register prometheus metrics
+	metrics.RegisterMetrics()
+	syncMetrics.RegisterMetrics()
+}
 
 // StartNEGController creates and runs a NEG controller for the specified ProviderConfig.
 // The returned channel is closed by StopControllersForProviderConfig to signal a shutdown
@@ -60,6 +68,7 @@ func StartNEGController(
 	globalStopCh <-chan struct{},
 	logger klog.Logger,
 	providerConfig *providerconfig.ProviderConfig,
+	syncerMetrics *syncMetrics.SyncerMetrics,
 ) (chan<- struct{}, error) {
 	providerConfigName := providerConfig.Name
 	logger.V(2).Info("Initializing NEG controller", "providerConfig", providerConfigName)
@@ -114,6 +123,7 @@ func StartNEGController(
 		lpConfig,
 		joinedStopCh,
 		logger,
+		syncerMetrics,
 	)
 
 	if err != nil {
@@ -272,6 +282,7 @@ func createNEGController(
 	lpConfig labels.PodLabelPropagationConfig,
 	stopCh <-chan struct{},
 	logger klog.Logger,
+	syncerMetrics *syncMetrics.SyncerMetrics,
 ) (*neg.Controller, error) {
 
 	// The adapter uses Network SelfLink
@@ -283,7 +294,7 @@ func createNEGController(
 
 	noDefaultBackendServicePort := utils.ServicePort{}
 	var noNodeTopologyInformer cache.SharedIndexInformer
-
+	negMetrics := metrics.NewNegMetrics()
 	negController, err := neg.NewController(
 		kubeClient,
 		svcNegClient,
@@ -301,7 +312,7 @@ func createNEGController(
 		hasSynced,
 		l4Namer,
 		noDefaultBackendServicePort,
-		negtypes.NewAdapterWithRateLimitSpecs(cloud, flags.F.GCERateLimit.Values(), adapter),
+		negtypes.NewAdapterWithRateLimitSpecs(cloud, flags.F.GCERateLimit.Values(), adapter, negMetrics),
 		zoneGetter,
 		clusterNamer,
 		flags.F.ResyncPeriod,
@@ -319,6 +330,8 @@ func createNEGController(
 		flags.F.EnableNEGsForIngress,
 		stopCh,
 		logger,
+		negMetrics,
+		syncerMetrics,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create NEG controller: %w", err)
