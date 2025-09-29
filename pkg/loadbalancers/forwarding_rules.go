@@ -35,6 +35,7 @@ import (
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/forwardingrules"
+	"k8s.io/ingress-gce/pkg/loadbalancers/l3"
 	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -405,6 +406,12 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 	if len(ports) <= maxForwardedPorts && flags.F.EnableDiscretePortForwarding {
 		newFwdRule.Ports = ports
 		newFwdRule.PortRange = ""
+	}
+
+	if l3.Wants(l4netlb.Service) {
+		newFwdRule.Ports, newFwdRule.PortRange = nil, ""
+		newFwdRule.AllPorts = true
+		newFwdRule.IPProtocol = forwardingrules.ProtocolL3
 	}
 
 	if existingFwdRule != nil {
