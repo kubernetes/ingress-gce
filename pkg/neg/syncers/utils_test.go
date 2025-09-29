@@ -3478,11 +3478,13 @@ func genTestEndpoints(num int, epType negtypes.NetworkEndpointType, lpFlag bool)
 		switch epType {
 		case negtypes.VmIpEndpointType:
 			ip = numToIP(count)
-			key := negtypes.NetworkEndpoint{IP: ip, Node: instance}
+			ipv6 := fmt.Sprintf("2001:db8::%x", count)
+			key := negtypes.NetworkEndpoint{IP: ip, IPv6: ipv6, Node: instance}
 			endpointSet.Insert(key)
 			endpointMap[key] = &composite.NetworkEndpoint{
-				IpAddress: ip,
-				Instance:  instance,
+				IpAddress:   ip,
+				Ipv6Address: ipv6,
+				Instance:    instance,
 			}
 		case negtypes.VmIpPortEndpointType:
 			port++

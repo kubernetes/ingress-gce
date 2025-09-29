@@ -1290,6 +1290,11 @@ func TestDualStackILBBadCustomSubnet(t *testing.T) {
 			subnetIpv6AccessType: subnetExternalIPv6AccessType,
 			subnetStackType:      "IPV4_IPV6",
 		},
+		{
+			desc:                 "External IPv6 subnet",
+			subnetIpv6AccessType: subnetExternalIPv6AccessType,
+			subnetStackType:      "IPV6_ONLY",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -1851,6 +1856,95 @@ func TestEnsureInternalLoadBalancerAllPorts(t *testing.T) {
 	assertILBResourcesDeleted(t, l4)
 }
 
+func TestIPv6OnlyEnsureInternalLoadBalancerAllPorts(t *testing.T) {
+	t.Parallel()
+
+	nodeNames := []string{"test-node-1"}
+	svc := test.NewL4ILBDualStackService(8080, v1.ProtocolTCP, []v1.IPFamily{v1.IPv6Protocol}, v1.ServiceExternalTrafficPolicyTypeCluster)
+	l4 := mustSetupILBTestHandler(t, svc, nodeNames)
+
+	// Initial creation with port 8080
+	result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+	}
+	l4.Service.Annotations = result.Annotations
+	assertDualStackILBResources(t, l4, nodeNames)
+
+	// Verify initial port on IPv6 FR
+	frName := l4.getIPv6FRNameWithProtocol("TCP")
+	frKey, err := composite.CreateKey(l4.cloud, frName, meta.Regional)
+	if err != nil {
+		t.Errorf("Unexpected error when creating key - %v", err)
+	}
+	fwdRule, err := composite.GetForwardingRule(l4.cloud, frKey, meta.VersionGA, klog.TODO())
+	if err != nil {
+		t.Errorf("Unexpected error when looking up forwarding rule - %v", err)
+	}
+	if fwdRule.Ports[0] != "8080" {
+		t.Errorf("Unexpected port value %v, expected '8080'", fwdRule.Ports)
+	}
+
+	// Add more than 5 ports to service spec
+	svc.Spec.Ports = []v1.ServicePort{
+		{Name: "testport", Port: int32(8080), Protocol: "TCP"},
+		{Name: "testport", Port: int32(8090), Protocol: "TCP"},
+		{Name: "testport", Port: int32(8100), Protocol: "TCP"},
+		{Name: "testport", Port: int32(8200), Protocol: "TCP"},
+		{Name: "testport", Port: int32(8300), Protocol: "TCP"},
+		{Name: "testport", Port: int32(8400), Protocol: "TCP"},
+	}
+	result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+	}
+	l4.Service.Annotations = result.Annotations
+	assertDualStackILBResources(t, l4, nodeNames)
+
+	fwdRule, err = composite.GetForwardingRule(l4.cloud, frKey, meta.VersionGA, klog.TODO())
+	if err != nil {
+		t.Errorf("Unexpected error when looking up forwarding rule - %v", err)
+	}
+	if !fwdRule.AllPorts {
+		t.Errorf("Expected AllPorts field to be set in forwarding rule - %+v", fwdRule)
+	}
+	if len(fwdRule.Ports) != 0 {
+		t.Errorf("Unexpected port value %v, expected empty list", fwdRule.Ports)
+	}
+
+	// Modify the service to use less than 5 ports
+	svc.Spec.Ports = []v1.ServicePort{
+		{Name: "testport", Port: int32(8090), Protocol: "TCP"},
+		{Name: "testport", Port: int32(8100), Protocol: "TCP"},
+		{Name: "testport", Port: int32(8300), Protocol: "TCP"},
+		{Name: "testport", Port: int32(8400), Protocol: "TCP"},
+	}
+	expectPorts := []string{"8090", "8100", "8300", "8400"}
+	result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+	}
+	l4.Service.Annotations = result.Annotations
+	assertDualStackILBResources(t, l4, nodeNames)
+
+	fwdRule, err = composite.GetForwardingRule(l4.cloud, frKey, meta.VersionGA, klog.TODO())
+	if err != nil {
+		t.Errorf("Unexpected error when looking up forwarding rule - %v", err)
+	}
+	if !utils.EqualStringSets(fwdRule.Ports, expectPorts) {
+		t.Errorf("Unexpected port value %v, expected %v", fwdRule.Ports, expectPorts)
+	}
+	if fwdRule.AllPorts {
+		t.Errorf("Expected AllPorts field to be unset in forwarding rule - %+v", fwdRule)
+	}
+	// Delete the service
+	result = l4.EnsureInternalLoadBalancerDeleted(svc)
+	if result.Error != nil {
+		t.Errorf("Unexpected error %v", result.Error)
+	}
+	assertDualStackILBResourcesDeleted(t, l4)
+}
+
 func TestEnsureInternalDualStackLoadBalancer(t *testing.T) {
 	t.Parallel()
 	nodeNames := []string{"test-node-1"}
@@ -2279,6 +2373,96 @@ func TestDualStackILBStaticIPAnnotation(t *testing.T) {
 				if !slices.Contains(gotIPs, expectedAddr) {
 					t.Errorf("Expected to find static address %s in load balancer IPs, got %v", expectedAddr, gotIPs)
 				}
+			}
+
+			// Delete the loadbalancer
+			result = l4.EnsureInternalLoadBalancerDeleted(svc)
+			if result.Error != nil {
+				t.Errorf("Unexpected error deleting loadbalancer - err %v", result.Error)
+			}
+			assertDualStackILBResourcesDeleted(t, l4)
+
+			// Verify user reserved addresses were not deleted
+			for _, addr := range tc.addressesToReserve {
+				cloudAddr, err := l4.cloud.GetRegionAddress(addr.Name, l4.cloud.Region())
+				if err != nil || cloudAddr == nil {
+					t.Errorf("Reserved address should exist after service deletion. Got addr: %v, err: %v", cloudAddr, err)
+				}
+			}
+		})
+	}
+}
+
+func TestIPv6OnlyILBStaticIPAnnotation(t *testing.T) {
+	t.Parallel()
+	nodeNames := []string{"test-node-1"}
+
+	ipv6Address := &ga.Address{
+		Name:             "ipv6-address",
+		Address:          "2::2",
+		IpVersion:        "IPV6",
+		PrefixLength:     96,
+		AddressType:      "INTERNAL",
+		Ipv6EndpointType: "NETLB",
+	}
+	ipv6Address1 := &ga.Address{
+		Name:             "ipv6-address1",
+		Address:          "2::3",
+		IpVersion:        "IPV6",
+		PrefixLength:     96,
+		AddressType:      "INTERNAL",
+		Ipv6EndpointType: "NETLB",
+	}
+
+	testCases := []struct {
+		desc                         string
+		staticAnnotationVal          string
+		addressesToReserve           []*compute.Address
+		expectedStaticLoadBalancerIP string
+	}{
+		{
+			desc:                         "Valid static IPv6 address",
+			staticAnnotationVal:          "ipv6-address",
+			addressesToReserve:           []*compute.Address{ipv6Address},
+			expectedStaticLoadBalancerIP: "2::2",
+		},
+		{
+			desc:                         "Annotation with two reserved IPv6 addresses",
+			staticAnnotationVal:          "ipv6-address1,ipv6-address",
+			addressesToReserve:           []*compute.Address{ipv6Address, ipv6Address1},
+			expectedStaticLoadBalancerIP: "2::3",
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			svc := test.NewL4ILBDualStackService(8080, v1.ProtocolTCP, []v1.IPFamily{v1.IPv6Protocol}, v1.ServiceExternalTrafficPolicyTypeCluster)
+			l4 := mustSetupILBTestHandler(t, svc, nodeNames)
+
+			for _, addr := range tc.addressesToReserve {
+				err := l4.cloud.ReserveRegionAddress(addr, l4.cloud.Region())
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			svc.Annotations[annotations.StaticL4AddressesAnnotationKey] = tc.staticAnnotationVal
+
+			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			if result.Error != nil {
+				t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+			}
+			svc.Annotations = result.Annotations
+			assertDualStackILBResources(t, l4, nodeNames)
+
+			var gotIPs []string
+			for _, ip := range result.Status.Ingress {
+				gotIPs = append(gotIPs, ip.IP)
+			}
+			if len(gotIPs) != 1 {
+				t.Errorf("Expected to get 1 address for SingleStack Service, got %v", gotIPs)
+			} else if gotIPs[0] != tc.expectedStaticLoadBalancerIP {
+				t.Errorf("Expected LoadBalancer IP to be %s, got %s", tc.expectedStaticLoadBalancerIP, gotIPs[0])
 			}
 
 			// Delete the loadbalancer
