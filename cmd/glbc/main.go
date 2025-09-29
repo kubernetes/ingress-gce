@@ -265,7 +265,9 @@ func main() {
 			}
 			var nodeTopologyFactory informernodetopology.SharedInformerFactory
 			if nodeTopologyClient != nil {
-				nodeTopologyFactory = informernodetopology.NewSharedInformerFactory(nodeTopologyClient, flags.F.ResyncPeriod)
+				nodeTopologyFactory = informernodetopology.NewSharedInformerFactoryWithOptions(nodeTopologyClient, flags.F.ResyncPeriod, informernodetopology.WithTweakListOptions(func(listOptions *metav1.ListOptions) {
+					listOptions.FieldSelector = fmt.Sprintf("metadata.name=%s", flags.F.NodeTopologyCRName)
+				}))
 			}
 			ctx := context.Background()
 			if flags.F.LeaderElection.LeaderElect {

@@ -106,6 +106,7 @@ func StartNEGController(
 		informers.providerConfigFilteredSvcNegInformer,
 		informers.providerConfigFilteredNetworkInformer,
 		informers.providerConfigFilteredGkeNetworkParamsInformer,
+		informers.providerConfigFilteredNodeTopologyInformer,
 		hasSynced,
 		cloud,
 		zoneGetter,
@@ -264,6 +265,7 @@ func createNEGController(
 	svcNegInformer cache.SharedIndexInformer,
 	networkInformer cache.SharedIndexInformer,
 	gkeNetworkParamsInformer cache.SharedIndexInformer,
+	nodeTopologyInformer cache.SharedIndexInformer,
 	hasSynced func() bool,
 	cloud *gce.Cloud,
 	zoneGetter *zonegetter.ZoneGetter,
@@ -282,7 +284,6 @@ func createNEGController(
 	}
 
 	noDefaultBackendServicePort := utils.ServicePort{}
-	var noNodeTopologyInformer cache.SharedIndexInformer
 
 	negController, err := neg.NewController(
 		kubeClient,
@@ -297,7 +298,7 @@ func createNEGController(
 		svcNegInformer,
 		networkInformer,
 		gkeNetworkParamsInformer,
-		noNodeTopologyInformer,
+		nodeTopologyInformer,
 		hasSynced,
 		l4Namer,
 		noDefaultBackendServicePort,
