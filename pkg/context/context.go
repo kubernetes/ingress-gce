@@ -186,17 +186,24 @@ func NewControllerContext(
 		L4Metrics:               l4metrics.NewCollector(flags.F.MetricsExportInterval, flags.F.L4NetLBProvisionDeadline, flags.F.EnableL4NetLBDualStack, flags.F.EnableL4ILBDualStack, logger),
 		IngressInformer:         informernetworking.NewIngressInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		ServiceInformer:         informerv1.NewServiceInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
-		BackendConfigInformer:   informerbackendconfig.NewBackendConfigInformer(backendConfigClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		PodInformer:             podInformer,
 		NodeInformer:            nodeInformer,
 		SvcNegInformer:          informersvcneg.NewServiceNetworkEndpointGroupInformer(svcnegClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		recordersManager:        recorders.NewManager(eventRecorderClient, logger),
 		logger:                  logger,
 	}
+
+	if backendConfigClient != nil {
+		context.BackendConfigInformer = informerbackendconfig.NewBackendConfigInformer(backendConfigClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
+	}
+
+	if frontendConfigClient != nil {
+		context.FrontendConfigInformer = informerfrontendconfig.NewFrontendConfigInformer(frontendConfigClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
+	}
+
 	if firewallClient != nil {
 		context.FirewallInformer = informerfirewall.NewGCPFirewallInformer(firewallClient, config.ResyncPeriod, utils.NewNamespaceIndexer())
 	}
-	context.FrontendConfigInformer = informerfrontendconfig.NewFrontendConfigInformer(frontendConfigClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
 
 	if saClient != nil {
 		context.SAInformer = informerserviceattachment.NewServiceAttachmentInformer(saClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
@@ -279,11 +286,14 @@ func (ctx *ControllerContext) HasSynced() bool {
 	funcs := []func() bool{
 		ctx.IngressInformer.HasSynced,
 		ctx.ServiceInformer.HasSynced,
-		ctx.BackendConfigInformer.HasSynced,
 		ctx.PodInformer.HasSynced,
 		ctx.NodeInformer.HasSynced,
 		ctx.SvcNegInformer.HasSynced,
 		ctx.EndpointSliceInformer.HasSynced,
+	}
+
+	if ctx.BackendConfigInformer != nil {
+		funcs = append(funcs, ctx.BackendConfigInformer.HasSynced)
 	}
 
 	if ctx.FrontendConfigInformer != nil {
