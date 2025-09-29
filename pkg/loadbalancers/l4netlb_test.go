@@ -762,7 +762,7 @@ func TestDualStackNetLBBadCustomSubnet(t *testing.T) {
 
 			svc := test.NewL4NetLBRBSService(8080)
 			svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
-			l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames, false, true)
+			l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames, true, false)
 
 			customBadSubnetName := "bad-subnet"
 			key := meta.RegionalKey(customBadSubnetName, l4NetLB.cloud.Region())
@@ -1347,7 +1347,7 @@ func TestIPv6OnlyNetLBNetworkTier(t *testing.T) {
 func TestIPv6OnlyNetLBStaticIPAnnotation(t *testing.T) {
 	t.Parallel()
 	nodeNames := []string{"test-node-1"}
-	
+
 	ipv6Address := &ga.Address{
 		Name:             "ipv6-address",
 		Address:          "2::2",
