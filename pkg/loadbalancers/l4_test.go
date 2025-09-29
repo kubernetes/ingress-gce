@@ -1437,6 +1437,7 @@ func TestEnsureInternalFirewallPortRanges(t *testing.T) {
 		},
 		NodeNames: nodeNames,
 		IP:        "1.2.3.4",
+		Priority:  firewalls.AllowTrafficPriority,
 	}
 	_, err = firewalls.EnsureL4FirewallRule(l4.cloud, utils.ServiceKeyFunc(svc.Namespace, svc.Name), &fwrParams /*sharedRule = */, false, klog.TODO())
 	if err != nil {

@@ -103,8 +103,12 @@ type L4ResourcesNamer interface {
 	L4ForwardingRule(namespace, name, protocol string) string
 	// L4Firewall returns the name of the firewall rule for the given service
 	L4Firewall(namespace, name string) string
+	// L4FirewallDeny returns the name of the Deny Firewall Rule for given namespace/name
+	L4FirewallDeny(namespace, name string) string
 	// L4IPv6Firewall returns the name of the ipv6 firewall rule for the given service
 	L4IPv6Firewall(namespace, name string) string
+	// L4IPv6FirewallDeny returns the name of the IPv6 Deny Firewall Rule for given namespace/name
+	L4IPv6FirewallDeny(namespace, name string) string
 	// L4HealthCheck returns the names of the Healthcheck
 	L4HealthCheck(namespace, name string, shared bool) string
 	// L4HealthCheckFirewall returns the names of the Healthcheck Firewall

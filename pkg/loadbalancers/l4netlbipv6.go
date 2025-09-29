@@ -29,6 +29,7 @@ import (
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -56,10 +57,11 @@ func (l4netlb *L4NetLB) ensureIPv6Resources(syncResult *L4NetLBSyncResult, nodeN
 		syncResult.Annotations[annotations.UDPForwardingRuleIPv6Key] = ipv6fr.Name
 	}
 
-	// Google Cloud creates ipv6 forwarding rules with IPAddress in CIDR form. We will take only first address
-	trimmedIPv6Address := strings.Split(ipv6fr.IPAddress, "/")[0]
+	// Google Cloud creates ipv6 forwarding rules with IPAddress in CIDR form with /96 range
+	ipRange := ipv6fr.IPAddress
+	trimmedIPv6Address := strings.Split(ipRange, "/")[0]
 
-	l4netlb.ensureIPv6NodesFirewall(trimmedIPv6Address, nodeNames, syncResult)
+	l4netlb.ensureIPv6NodesFirewall(ipRange, nodeNames, syncResult)
 	if syncResult.Error != nil {
 		return
 	}
@@ -98,7 +100,7 @@ func (l4netlb *L4NetLB) deleteIPv6ResourcesAnnotationBased(syncResult *L4NetLBSy
 		l4netlb.deleteIPv6ForwardingRule(syncResult)
 	}
 
-	if shouldIgnoreAnnotations || l4netlb.hasAnnotation(annotations.FirewallRuleIPv6Key) {
+	if shouldIgnoreAnnotations || l4netlb.hasAnnotation(annotations.FirewallRuleIPv6Key) || l4netlb.hasAnnotation(annotations.FirewallRuleDenyIPv6Key) {
 		l4netlb.deleteIPv6NodesFirewall(syncResult)
 	}
 }
@@ -107,7 +109,9 @@ func (l4netlb *L4NetLB) ipv6FRName() string {
 	return namer.GetSuffixedName(l4netlb.frName(), ipv6Suffix)
 }
 
-func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipAddress string, nodeNames []string, syncResult *L4NetLBSyncResult) {
+// ensureIPv6NodesFirewall creates/updates firewall rules for nodes traffic.
+// ipRange is the range returned by IPv6 Forwarding Rule (with /96 range)
+func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipRange string, nodeNames []string, syncResult *L4NetLBSyncResult) {
 	// DisableL4LBFirewall flag disables L4 FW enforcment to remove conflicts with firewall policies
 	if l4netlb.disableNodesFirewallProvisioning {
 		l4netlb.svcLogger.Info("Skipped ensuring IPv6 nodes firewall for L4 NetLB Service to enable compatibility with firewall policies. " +
@@ -120,6 +124,8 @@ func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipAddress string, nodeNames []st
 	svcPorts := l4netlb.Service.Spec.Ports
 	portRanges := utils.GetServicePortRanges(svcPorts)
 	protocol := utils.GetProtocol(svcPorts)
+
+	ipAddress := strings.Split(ipRange, "/")[0]
 
 	fwLogger := l4netlb.svcLogger.WithValues("firewallName", firewallName)
 	fwLogger.V(2).Info("Ensuring IPv6 nodes firewall for L4 NetLB Service", "ipAddress", ipAddress, "protocol", protocol, "len(nodeNames)", len(nodeNames), "portRanges", portRanges)
@@ -147,6 +153,7 @@ func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipAddress string, nodeNames []st
 		NodeNames:         nodeNames,
 		L4Type:            utils.XLB,
 		Network:           l4netlb.networkInfo,
+		Priority:          firewalls.AllowTrafficPriority,
 	}
 
 	wasUpdate, err := firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, &ipv6nodesFWRParams, l4netlb.cloud, l4netlb.recorder, fwLogger)
@@ -158,6 +165,31 @@ func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipAddress string, nodeNames []st
 		return
 	}
 	syncResult.Annotations[annotations.FirewallRuleIPv6Key] = firewallName
+
+	l4netlb.ensureDenyIPv6(syncResult, nodeNames, ipRange, fwLogger)
+}
+
+func (l4netlb *L4NetLB) ensureDenyIPv6(syncResult *L4NetLBSyncResult, nodeNames []string, ipRange string, fwLogger klog.Logger) {
+	// if we don't use deny flag, make sure that a leftover deny rule is cleaned up
+	if !l4netlb.useDenyFirewalls {
+		if err := cleanUpDenyFirewallRule(l4netlb.cloud, l4netlb.namer.L4IPv6FirewallDeny(l4netlb.Service.Namespace, l4netlb.Service.Name), fwLogger); err != nil {
+			syncResult.GCEResourceInError = annotations.FirewallDenyRuleResource
+			syncResult.Error = err
+			return
+		}
+		return
+	}
+	// otherwise provision Deny rule
+	denyParams := denyFirewall(l4netlb.namer.L4IPv6FirewallDeny, l4netlb.Service, nodeNames, l4netlb.networkInfo, ipRange)
+	wasUpdate, err := firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, denyParams, l4netlb.cloud, l4netlb.recorder, fwLogger)
+	syncResult.GCEResourceUpdate.SetFirewallForNodes(wasUpdate)
+	if err != nil {
+		fwLogger.Error(err, "Failed to ensure ipv6 deny nodes firewall for L4 NetLB")
+		syncResult.GCEResourceInError = annotations.FirewallDenyRuleIPv6Resource
+		syncResult.Error = err
+		return
+	}
+	syncResult.Annotations[annotations.FirewallRuleDenyIPv6Key] = denyParams.Name
 }
 
 func (l4netlb *L4NetLB) deleteIPv6ForwardingRule(syncResult *L4NetLBSyncResult) {
@@ -178,19 +210,25 @@ func (l4netlb *L4NetLB) deleteIPv6ForwardingRule(syncResult *L4NetLBSyncResult) 
 }
 
 func (l4netlb *L4NetLB) deleteIPv6NodesFirewall(syncResult *L4NetLBSyncResult) {
-	ipv6FirewallName := l4netlb.namer.L4IPv6Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)
+	allowName := l4netlb.namer.L4IPv6Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)
+	denyName := l4netlb.namer.L4IPv6FirewallDeny(l4netlb.Service.Namespace, l4netlb.Service.Name)
 
 	start := time.Now()
-	fwLogger := l4netlb.svcLogger.WithValues("firewallName", ipv6FirewallName)
+	fwLogger := l4netlb.svcLogger.WithValues("firewallName", allowName, "denyFirewallName", denyName)
 	fwLogger.V(2).Info("Deleting IPv6 nodes firewall for L4 NetLB Service")
 	defer func() {
 		fwLogger.V(2).Info("Finished deleting IPv6 nodes firewall for L4 NetLB Service", "timeTaken", time.Since(start))
 	}()
 
-	err := l4netlb.deleteFirewall(ipv6FirewallName, fwLogger)
-	if err != nil {
+	if err := l4netlb.deleteFirewall(allowName, fwLogger); err != nil {
 		fwLogger.Error(err, "Failed to delete ipv6 firewall rule for external loadbalancer service")
 		syncResult.GCEResourceInError = annotations.FirewallRuleIPv6Resource
+		syncResult.Error = err
+	}
+
+	if err := l4netlb.deleteFirewall(denyName, fwLogger); err != nil {
+		fwLogger.Error(err, "Failed to delete ipv6 deny firewall rule for external loadbalancer service")
+		syncResult.GCEResourceInError = annotations.FirewallDenyRuleIPv6Resource
 		syncResult.Error = err
 	}
 }
