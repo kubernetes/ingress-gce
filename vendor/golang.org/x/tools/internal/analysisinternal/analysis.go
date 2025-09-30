@@ -15,11 +15,14 @@ import (
 	"go/scanner"
 	"go/token"
 	"go/types"
+	"iter"
 	pathpkg "path"
 	"slices"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -217,7 +220,7 @@ func CheckReadable(pass *analysis.Pass, filename string) error {
 // to form a qualified name, and the edit for the new import.
 //
 // In the special case that pkgpath is dot-imported then member, the
-// identifer for which the import is being added, is consulted. If
+// identifier for which the import is being added, is consulted. If
 // member is not shadowed at pos, AddImport returns (".", "", nil).
 // (AddImport accepts the caller's implicit claim that the imported
 // package declares member.)
@@ -249,13 +252,7 @@ func AddImport(info *types.Info, file *ast.File, preferredName, pkgpath, member 
 
 	// We must add a new import.
 	// Ensure we have a fresh name.
-	newName := preferredName
-	for i := 0; ; i++ {
-		if _, obj := scope.LookupParent(newName, pos); obj == nil {
-			break // fresh
-		}
-		newName = fmt.Sprintf("%s%d", preferredName, i)
-	}
+	newName := FreshName(scope, pos, preferredName)
 
 	// Create a new import declaration either before the first existing
 	// declaration (which must exist), including its comments; or
@@ -283,7 +280,15 @@ func AddImport(info *types.Info, file *ast.File, preferredName, pkgpath, member 
 	// If the first decl is an import group, add this new import at the end.
 	if gd, ok := before.(*ast.GenDecl); ok && gd.Tok == token.IMPORT && gd.Rparen.IsValid() {
 		pos = gd.Rparen
-		newText = "\t" + newText + "\n"
+		// if it's a std lib, we should append it at the beginning of import group.
+		// otherwise we may see the std package is put at the last behind a 3rd module which doesn't follow our convention.
+		// besides, gofmt doesn't help in this case.
+		if IsStdPackage(pkgpath) && len(gd.Specs) != 0 {
+			pos = gd.Specs[0].Pos()
+			newText += "\n\t"
+		} else {
+			newText = "\t" + newText + "\n"
+		}
 	} else {
 		pos = before.Pos()
 		newText = "import " + newText + "\n\n"
@@ -295,10 +300,23 @@ func AddImport(info *types.Info, file *ast.File, preferredName, pkgpath, member 
 	}}
 }
 
-// Format returns a string representation of the expression e.
-func Format(fset *token.FileSet, e ast.Expr) string {
+// FreshName returns the name of an identifier that is undefined
+// at the specified position, based on the preferred name.
+func FreshName(scope *types.Scope, pos token.Pos, preferred string) string {
+	newName := preferred
+	for i := 0; ; i++ {
+		if _, obj := scope.LookupParent(newName, pos); obj == nil {
+			break // fresh
+		}
+		newName = fmt.Sprintf("%s%d", preferred, i)
+	}
+	return newName
+}
+
+// Format returns a string representation of the node n.
+func Format(fset *token.FileSet, n ast.Node) string {
 	var buf strings.Builder
-	printer.Fprint(&buf, fset, e) // ignore errors
+	printer.Fprint(&buf, fset, n) // ignore errors
 	return buf.String()
 }
 
@@ -421,11 +439,25 @@ func validateFix(fset *token.FileSet, fix *analysis.SuggestedFix) error {
 		if file == nil {
 			return fmt.Errorf("no token.File for TextEdit.Pos (%v)", edit.Pos)
 		}
+		fileEnd := token.Pos(file.Base() + file.Size())
 		if end := edit.End; end.IsValid() {
 			if end < start {
 				return fmt.Errorf("TextEdit.Pos (%v) > TextEdit.End (%v)", edit.Pos, edit.End)
 			}
 			endFile := fset.File(end)
+			if endFile != file && end < fileEnd+10 {
+				// Relax the checks below in the special case when the end position
+				// is only slightly beyond EOF, as happens when End is computed
+				// (as in ast.{Struct,Interface}Type) rather than based on
+				// actual token positions. In such cases, truncate end to EOF.
+				//
+				// This is a workaround for #71659; see:
+				// https://github.com/golang/go/issues/71659#issuecomment-2651606031
+				// A better fix would be more faithful recording of token
+				// positions (or their absence) in the AST.
+				edit.End = fileEnd
+				continue
+			}
 			if endFile == nil {
 				return fmt.Errorf("no token.File for TextEdit.End (%v; File(start).FileEnd is %d)", end, file.Base()+file.Size())
 			}
@@ -436,7 +468,7 @@ func validateFix(fset *token.FileSet, fix *analysis.SuggestedFix) error {
 		} else {
 			edit.End = start // update the SuggestedFix
 		}
-		if eof := token.Pos(file.Base() + file.Size()); edit.End > eof {
+		if eof := fileEnd; edit.End > eof {
 			return fmt.Errorf("end is (%v) beyond end of file (%v)", edit.End, eof)
 		}
 
@@ -486,4 +518,160 @@ func CanImport(from, to string) bool {
 		return strings.HasPrefix(from, to[:i])
 	}
 	return true
+}
+
+// DeleteStmt returns the edits to remove the [ast.Stmt] identified by
+// curStmt, if it is contained within a BlockStmt, CaseClause,
+// CommClause, or is the STMT in switch STMT; ... {...}. It returns nil otherwise.
+func DeleteStmt(fset *token.FileSet, curStmt inspector.Cursor) []analysis.TextEdit {
+	stmt := curStmt.Node().(ast.Stmt)
+	// if the stmt is on a line by itself delete the whole line
+	// otherwise just delete the statement.
+
+	// this logic would be a lot simpler with the file contents, and somewhat simpler
+	// if the cursors included the comments.
+
+	tokFile := fset.File(stmt.Pos())
+	lineOf := tokFile.Line
+	stmtStartLine, stmtEndLine := lineOf(stmt.Pos()), lineOf(stmt.End())
+
+	var from, to token.Pos
+	// bounds of adjacent syntax/comments on same line, if any
+	limits := func(left, right token.Pos) {
+		if lineOf(left) == stmtStartLine {
+			from = left
+		}
+		if lineOf(right) == stmtEndLine {
+			to = right
+		}
+	}
+	// TODO(pjw): there are other places a statement might be removed:
+	// IfStmt = "if" [ SimpleStmt ";" ] Expression Block [ "else" ( IfStmt | Block ) ] .
+	// (removing the blocks requires more rewriting than this routine would do)
+	// CommCase   = "case" ( SendStmt | RecvStmt ) | "default" .
+	// (removing the stmt requires more rewriting, and it's unclear what the user means)
+	switch parent := curStmt.Parent().Node().(type) {
+	case *ast.SwitchStmt:
+		limits(parent.Switch, parent.Body.Lbrace)
+	case *ast.TypeSwitchStmt:
+		limits(parent.Switch, parent.Body.Lbrace)
+		if parent.Assign == stmt {
+			return nil // don't let the user break the type switch
+		}
+	case *ast.BlockStmt:
+		limits(parent.Lbrace, parent.Rbrace)
+	case *ast.CommClause:
+		limits(parent.Colon, curStmt.Parent().Parent().Node().(*ast.BlockStmt).Rbrace)
+		if parent.Comm == stmt {
+			return nil // maybe the user meant to remove the entire CommClause?
+		}
+	case *ast.CaseClause:
+		limits(parent.Colon, curStmt.Parent().Parent().Node().(*ast.BlockStmt).Rbrace)
+	case *ast.ForStmt:
+		limits(parent.For, parent.Body.Lbrace)
+
+	default:
+		return nil // not one of ours
+	}
+
+	if prev, found := curStmt.PrevSibling(); found && lineOf(prev.Node().End()) == stmtStartLine {
+		from = prev.Node().End() // preceding statement ends on same line
+	}
+	if next, found := curStmt.NextSibling(); found && lineOf(next.Node().Pos()) == stmtEndLine {
+		to = next.Node().Pos() // following statement begins on same line
+	}
+	// and now for the comments
+Outer:
+	for _, cg := range enclosingFile(curStmt).Comments {
+		for _, co := range cg.List {
+			if lineOf(co.End()) < stmtStartLine {
+				continue
+			} else if lineOf(co.Pos()) > stmtEndLine {
+				break Outer // no more are possible
+			}
+			if lineOf(co.End()) == stmtStartLine && co.End() < stmt.Pos() {
+				if !from.IsValid() || co.End() > from {
+					from = co.End()
+					continue // maybe there are more
+				}
+			}
+			if lineOf(co.Pos()) == stmtEndLine && co.Pos() > stmt.End() {
+				if !to.IsValid() || co.Pos() < to {
+					to = co.Pos()
+					continue // maybe there are more
+				}
+			}
+		}
+	}
+	// if either from or to is valid, just remove the statement
+	// otherwise remove the line
+	edit := analysis.TextEdit{Pos: stmt.Pos(), End: stmt.End()}
+	if from.IsValid() || to.IsValid() {
+		// remove just the statement.
+		// we can't tell if there is a ; or whitespace right after the statement
+		// ideally we'd like to remove the former and leave the latter
+		// (if gofmt has run, there likely won't be a ;)
+		// In type switches we know there's a semicolon somewhere after the statement,
+		// but the extra work for this special case is not worth it, as gofmt will fix it.
+		return []analysis.TextEdit{edit}
+	}
+	// remove the whole line
+	for lineOf(edit.Pos) == stmtStartLine {
+		edit.Pos--
+	}
+	edit.Pos++ // get back tostmtStartLine
+	for lineOf(edit.End) == stmtEndLine {
+		edit.End++
+	}
+	return []analysis.TextEdit{edit}
+}
+
+// Comments returns an iterator over the comments overlapping the specified interval.
+func Comments(file *ast.File, start, end token.Pos) iter.Seq[*ast.Comment] {
+	// TODO(adonovan): optimize use binary O(log n) instead of linear O(n) search.
+	return func(yield func(*ast.Comment) bool) {
+		for _, cg := range file.Comments {
+			for _, co := range cg.List {
+				if co.Pos() > end {
+					return
+				}
+				if co.End() < start {
+					continue
+				}
+
+				if !yield(co) {
+					return
+				}
+			}
+		}
+	}
+}
+
+// IsStdPackage reports whether the specified package path belongs to a
+// package in the standard library (including internal dependencies).
+func IsStdPackage(path string) bool {
+	// A standard package has no dot in its first segment.
+	// (It may yet have a dot, e.g. "vendor/golang.org/x/foo".)
+	slash := strings.IndexByte(path, '/')
+	if slash < 0 {
+		slash = len(path)
+	}
+	return !strings.Contains(path[:slash], ".") && path != "testdata"
+}
+
+// Range returns an [analysis.Range] for the specified start and end positions.
+func Range(pos, end token.Pos) analysis.Range {
+	return tokenRange{pos, end}
+}
+
+// tokenRange is an implementation of the [analysis.Range] interface.
+type tokenRange struct{ StartPos, EndPos token.Pos }
+
+func (r tokenRange) Pos() token.Pos { return r.StartPos }
+func (r tokenRange) End() token.Pos { return r.EndPos }
+
+// enclosingFile returns the syntax tree for the file enclosing c.
+func enclosingFile(c inspector.Cursor) *ast.File {
+	c, _ = moreiters.First(c.Enclosing((*ast.File)(nil)))
+	return c.Node().(*ast.File)
 }
