@@ -674,7 +674,7 @@ func TestEnsureIPv6ExternalLoadBalancerCustomSubnet(t *testing.T) {
 	nodeNames := []string{"test-node-1"}
 
 	svc := test.NewL4NetLBRBSService(8080)
-	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
+	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol}
 	l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames, true, false)
 
 	result := l4NetLB.EnsureFrontend(nodeNames, l4NetLB.Service)
@@ -782,7 +782,7 @@ func TestDualStackNetLBBadCustomSubnet(t *testing.T) {
 				t.Fatalf("Expected error ensuring external dualstack loadbalancer in bad subnet, got: %v", result.Error)
 			}
 			if !IsUserError(result.Error) {
-				t.Errorf("Expected to get user error if internal IPv6 subnet specified for external IPv6 service, got %v", result.Error)
+				t.Errorf("Expected to get user error if external IPv6 subnet specified for external IPv6 service, got %v", result.Error)
 			}
 			if !noExternalIPv6InSubnetError.MatchString(result.Error.Error()) {
 				t.Errorf("Expected error to match %v regexp, got %v", noExternalIPv6InSubnetError.String(), result.Error)
@@ -954,46 +954,24 @@ func TestEnsureExternalIPv6OnlyLoadBalancer(t *testing.T) {
 	nodeNames := []string{"test-node-1"}
 
 	testCases := []struct {
-		desc           string
-		ipFamilies     []v1.IPFamily
-		protocol       v1.Protocol
-		trafficPolicy  v1.ServiceExternalTrafficPolicyType
-		iPFamilyPolicy v1.IPFamilyPolicy
-		expectError    bool
+		desc          string
+		ipFamilies    []v1.IPFamily
+		protocol      v1.Protocol
+		trafficPolicy v1.ServiceExternalTrafficPolicyType
 	}{
-		// Valid configurations
 		{
-			desc:        "IPv6-only service in IPv6Only mode",
-			ipFamilies:  []v1.IPFamily{v1.IPv6Protocol},
-			expectError: false,
+			desc:       "IPv6-only service in IPv6Only mode",
+			ipFamilies: []v1.IPFamily{v1.IPv6Protocol},
 		},
 		{
 			desc:          "Local IPv6-only service in IPv6Only mode",
 			ipFamilies:    []v1.IPFamily{v1.IPv6Protocol},
-			expectError:   false,
 			trafficPolicy: v1.ServiceExternalTrafficPolicyTypeLocal,
 		},
 		{
-			desc:        "IPv6-only service UDP",
-			ipFamilies:  []v1.IPFamily{v1.IPv6Protocol},
-			protocol:    v1.ProtocolUDP,
-			expectError: false,
-		},
-		// Invalid configurations
-		{
-			desc:        "IPv4-only service in IPv6Only mode",
-			ipFamilies:  []v1.IPFamily{v1.IPv4Protocol},
-			expectError: true,
-		},
-		{
-			desc:        "DualStack service (v4, v6) in IPv6Only mode",
-			ipFamilies:  []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
-			expectError: true,
-		},
-		{
-			desc:        "DualStack service (v6, v4) in IPv6Only mode",
-			ipFamilies:  []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol},
-			expectError: true,
+			desc:       "IPv6-only service UDP",
+			ipFamilies: []v1.IPFamily{v1.IPv6Protocol},
+			protocol:   v1.ProtocolUDP,
 		},
 	}
 
@@ -1014,16 +992,6 @@ func TestEnsureExternalIPv6OnlyLoadBalancer(t *testing.T) {
 			l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames, false, true)
 
 			result := l4NetLB.EnsureFrontend(nodeNames, svc)
-
-			if tc.expectError {
-				if result.Error == nil {
-					t.Fatalf("EnsureFrontend() = nil, want error")
-				}
-				t.Logf("EnsureFrontend() returned expected error: %v", result.Error)
-				t.Logf("Error type: %T", result.Error)
-
-				return
-			}
 
 			if result.Error != nil {
 				t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
@@ -1073,7 +1041,6 @@ func TestEnsureIPv6OnlyNetLBNetworkTierChange(t *testing.T) {
 	}
 	l4NetLB.Service.Annotations = result.Annotations
 
-	// Second sync with Premium Tier: Idempotency Check
 	// This call ensures that resyncing an already correctly provisioned service
 	// does not cause errors or unexpected changes
 	result = l4NetLB.EnsureFrontend(nodeNames, svc)
@@ -1296,13 +1263,13 @@ func TestIPv6OnlyNetLBNetworkTier(t *testing.T) {
 		expectError bool
 	}{
 		{
-			desc:        "Should not return error on IPv6 cluster with Standard NetworkTier",
+			desc:        "IPv6 cluster with Standard NetworkTier",
 			ipFamilies:  []v1.IPFamily{v1.IPv6Protocol},
 			networkTier: string(cloud.NetworkTierStandard),
 			expectError: true,
 		},
 		{
-			desc:        "Should not return error on IPv6 cluster with Premium NetworkTier",
+			desc:        "IPv6 cluster with Premium NetworkTier",
 			ipFamilies:  []v1.IPFamily{v1.IPv6Protocol},
 			networkTier: string(cloud.NetworkTierPremium),
 			expectError: false,
@@ -1395,13 +1362,6 @@ func TestIPv6OnlyNetLBStaticIPAnnotation(t *testing.T) {
 			l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames, false, true)
 
 			for _, addr := range tc.addressesToReserve {
-				addr.AddressType = "EXTERNAL"
-				if addr.IpVersion == "IPV6" {
-					addr.Ipv6EndpointType = "NETLB"
-					if addr.Subnetwork == "" {
-						addr.Subnetwork = ""
-					}
-				}
 				err := l4NetLB.cloud.ReserveRegionAddress(addr, l4NetLB.cloud.Region())
 				if err != nil {
 					t.Fatalf("Failed to reserve address %q: %v", addr.Name, err)
@@ -1426,7 +1386,7 @@ func TestIPv6OnlyNetLBStaticIPAnnotation(t *testing.T) {
 				gotIPs = append(gotIPs, ip.IP)
 			}
 			if len(gotIPs) != 1 {
-				t.Errorf("Expected to get 1 addresses for SingleStack Service, got %v", gotIPs)
+				t.Errorf("Expected to get 1 address or SingleStack Service, got %v", gotIPs)
 			}
 			gotIP := gotIPs[0]
 
@@ -1464,22 +1424,17 @@ func TestIPv6OnlyNetLBBadCustomSubnet(t *testing.T) {
 		subnetIpv6AccessType string
 	}{
 		{
-			desc:            "Should return error on IPv4 subnet",
+			desc:            "IPv4 subnet",
 			subnetStackType: "IPV4",
 		},
 		{
-			desc:                 "Should return error on internal IPv4_IPv6 subnet",
+			desc:                 "Internal IPv4_IPv6 subnet",
 			subnetIpv6AccessType: subnetInternalIPv6AccessType,
 			subnetStackType:      "IPV4_IPV6",
 		},
 		{
-			desc:                 "Should return error on internal IPv6 subnet",
+			desc:                 "Internal IPv6 subnet",
 			subnetIpv6AccessType: subnetInternalIPv6AccessType,
-			subnetStackType:      "IPV6",
-		},
-		{
-			desc:                 "Should not return error on external IPv6 subnet",
-			subnetIpv6AccessType: subnetExternalIPv6AccessType,
 			subnetStackType:      "IPV6",
 		},
 	}
@@ -1508,7 +1463,7 @@ func TestIPv6OnlyNetLBBadCustomSubnet(t *testing.T) {
 
 			result := l4NetLB.EnsureFrontend(nodeNames, svc)
 			if result.Error == nil {
-				t.Fatalf("Expected error ensuring external dualstack loadbalancer in bad subnet, got: %v", result.Error)
+				t.Fatalf("Expected error ensuring an external IPv6 loadbalancer in bad subnet, got: %v", result.Error)
 			}
 			if !IsUserError(result.Error) {
 				t.Errorf("Expected to get user error if internal IPv6 subnet specified for external IPv6 service, got %v", result.Error)

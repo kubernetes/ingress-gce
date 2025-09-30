@@ -235,15 +235,6 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 	isWeightedLBPodsPerNode := l4netlb.isWeightedLBPodsPerNode()
 	result := NewL4SyncResult(SyncTypeCreate, svc, isMultinetService, serviceUsesSSA, isWeightedLBPodsPerNode, l4netlb.useNEGs)
 
-	if l4netlb.enableIPv6Only && utils.NeedsIPv4(svc) {
-		err := fmt.Errorf("service %s/%s is not a valid single-stack Ipv6 service, incompatible with IPv6Only mode. ipFamilies: %v, ipFamilyPolicy: %v", svc.Namespace, svc.Name, svc.Spec.IPFamilies, svc.Spec.IPFamilyPolicy)
-		result.Error = utils.NewUserError(err)
-		result.MetricsState.Status = metrics.StatusUserError
-		l4netlb.svcLogger.Error(result.Error, "Invalid service spec for IPv6 cluster")
-		
-		return result
-	}
-
 	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
 	if len(svc.Status.LoadBalancer.Ingress) > 0 {
 		result.SyncType = SyncTypeUpdate
