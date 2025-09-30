@@ -20,8 +20,165 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
+ALL_PHASES=(composite backendconfig frontendconfig svcneg providerconfig serviceattachment)
+PHASES_TO_RUN=()
+UPDATE_VIOLATIONS=false
+RUN_GEN_HELPERS=true
+RUN_GEN_REGISTER=true
+RUN_GEN_CLIENT=true
+RUN_GEN_OPENAPI=true
+
+usage() {
+    echo "Usage: $0 [options] [phase...]"
+    echo ""
+    echo "Options:"
+    echo "  --update-api-known-violations   Update the API known violations files."
+    echo "  --no-gen-helpers                Disable running gen_helpers."
+    echo "  --no-gen-register               Disable running gen_register."
+    echo "  --no-gen-client                 Disable running gen_client."
+    echo "  --no-gen-openapi                Disable running gen_openapi."
+    echo ""
+    echo "If no phases are specified, all phases will be run."
+    echo "Available phases: ${ALL_PHASES[*]}"
+    exit 1
+}
+
+# Parse arguments
+while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+        -h|--help|help)
+            usage
+            ;;
+        --update-api-known-violations)
+            UPDATE_VIOLATIONS=true
+            shift
+            ;;
+        --no-gen-helpers)
+            RUN_GEN_HELPERS=false
+            shift
+            ;;
+        --no-gen-register)
+            RUN_GEN_REGISTER=false
+            shift
+            ;;
+        --no-gen-client)
+            RUN_GEN_CLIENT=false
+            shift
+            ;;
+        --no-gen-openapi)
+            RUN_GEN_OPENAPI=false
+            shift
+            ;;
+        *)
+            # check if arg is a valid phase
+            found=0
+            for phase in "${ALL_PHASES[@]}"; do
+                if [[ "$phase" == "$1" ]]; then
+                    found=1
+                    break
+                fi
+done
+
+            if [[ ${found} -eq 0 ]]; then
+                echo "Error: Invalid phase '$1'"
+                usage
+            fi
+            PHASES_TO_RUN+=("$1")
+            shift
+            ;;
+    esac
+done
+
+if [ ${#PHASES_TO_RUN[@]} -eq 0 ]; then
+    PHASES_TO_RUN=("${ALL_PHASES[@]}")
+fi
+
+should_run() {
+    local phase_name="$1"
+    for phase in "${PHASES_TO_RUN[@]}"; do
+        if [ "$phase" == "$phase_name" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+generate_for_api() {
+  # $1: api name (e.g. backendconfig)
+  # $2: client package path (e.g. pkg/backendconfig)
+  # $3: versions (comma-separated) (e.g. v1beta1)
+  local api_name="$1"
+  local client_package="$2"
+  local versions_csv="$3"
+
+  local apis_root="pkg/apis"
+  local go_pkg_root="k8s.io/ingress-gce"
+
+  echo "[API] ${api_name}, client package: ${client_package}, versions: ${versions_csv}"
+
+  local api_packages=()
+  IFS=',' read -ra versions <<< "$versions_csv"
+  for version in "${versions[@]}"; do
+    api_packages+=("${apis_root}/${api_name}/${version}")
+  done
+
+  if [[ "${RUN_GEN_HELPERS}" == "true" ]]; then
+    echo "[GEN] gen_helpers"
+    for api_package in "${api_packages[@]}"; do
+      echo "[GEN] helpers for ${api_package}..."
+      kube::codegen::gen_helpers \
+        --boilerplate "${BOILERPLATE_TXT}" \
+        "${api_package}"
+    done
+  fi
+
+  if [[ "${RUN_GEN_REGISTER}" == "true" ]]; then
+    echo "[GEN] gen_register"
+    for api_package in "${api_packages[@]}"; do
+      echo "[GEN] register for ${api_package}..."
+      kube::codegen::gen_register \
+        --boilerplate "${BOILERPLATE_TXT}" \
+        "${api_package}"
+    done
+  fi
+
+  if [[ "${RUN_GEN_CLIENT}" == "true" ]]; then
+    echo "[GEN] client for ${api_name}..."
+    kube::codegen::gen_client \
+      --boilerplate "${BOILERPLATE_TXT}" \
+      --with-watch \
+      --output-dir "${client_package}" \
+      --output-pkg "${go_pkg_root}/${client_package}" \
+      --one-input-api "${api_name}" \
+      "${apis_root}"
+  fi
+
+  local update_report_arg=""
+  if [[ "${UPDATE_VIOLATIONS}" == "true" ]]; then
+    update_report_arg="--update-report"
+  fi
+
+  if [[ "${RUN_GEN_OPENAPI}" == "true" ]]; then
+    echo "[GEN] gen_openapi"
+
+    for api_package in "${api_packages[@]}"; do
+      echo "[GEN] openapi for ${api_package}..."
+      local report_filename="hack/${api_package//\//-}.openapi-violations.txt"
+      echo "[GEN] - using violations file '${report_filename}'"
+      kube::codegen::gen_openapi \
+        --boilerplate "${BOILERPLATE_TXT}" \
+        --output-dir "${api_package}" \
+        --output-pkg "k8s.io/ingress-gce/${api_package}" \
+        --report-filename "${report_filename:-/dev/null}" \
+        ${update_report_arg} \
+        "${api_package}"
+    done
+  fi
+}
+
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 SCRIPT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-INGRESS_GCE_REPO_ROOT=$(cd "${SCRIPT_ROOT}/.." && pwd)
+BOILERPLATE_TXT="${ROOT}/hack/boilerplate.go.txt"
 
 export GOBIN="${SCRIPT_ROOT}/tools/bin"
 export PATH="${GOBIN}:${PATH}"
@@ -30,116 +187,49 @@ export GOPATH
 
 echo "Using following variables for code generation:"
 echo ""
+echo "ROOT=${ROOT}"
 echo "SCRIPT_ROOT=${SCRIPT_ROOT}"
-echo "INGRESS_GCE_REPO_ROOT=${INGRESS_GCE_REPO_ROOT}"
 echo "GOPATH=${GOPATH}"
 echo ""
 
-echo "Output files will be generated in appropriate paths inside ${GOPATH}/src"
+CODEGEN=k8s.io/code-generator@v0.31.12
+CODEGEN_PKG="$(go env GOMODCACHE)/${CODEGEN}"
+CODEGEN_SCRIPT="${CODEGEN_PKG}/kube_codegen.sh"
+echo "Using codegen script ${CODEGEN_SCRIPT}"
+
+if [[ ! -e "${CODEGEN_SCRIPT}" ]]; then
+	echo "Installing code generator..."
+	go get "${CODEGEN}"
+fi
+# shellcheck disable=SC1090
+source "${CODEGEN_SCRIPT}"
 
 echo ""
-echo "Installing dependencies..."
+echo ""
 
-# Go code dependencies tracked using https://github.com/golang/go/wiki/Modules#how-can-i-track-tool-dependencies-for-a-module
-mkdir -p "${GOBIN}"
-cd "${SCRIPT_ROOT}/tools"
-go install "k8s.io/kube-openapi/cmd/openapi-gen" >/dev/null
-OPENAPI_PKG="${GOBIN}"
+if should_run "composite"; then
+  echo "[GEN] composite types"
+  pushd "${ROOT}" >/dev/null
+  go run "pkg/composite/gen/main.go"
+  popd >/dev/null
+fi
 
-# Non-Go code dependencies (like shell scripts) need to be handled separately.
-cd "${GOBIN}"
-rm -rf code-generator
-git clone https://github.com/kubernetes/code-generator --quiet
-cd code-generator
-git checkout 9c63990c847dce9e6dca44ad39f7cc4e547bd55f --quiet # https://github.com/kubernetes/code-generator/releases/tag/v0.22.17
-CODEGEN_PKG="${PWD}"
+if should_run "backendconfig"; then
+  generate_for_api "backendconfig" "pkg/backendconfig/client" "v1beta1,v1"
+fi
 
-echo "Dependencies installed."
+if should_run "frontendconfig"; then
+  generate_for_api "frontendconfig" "pkg/frontendconfig/client" "v1beta1"
+fi
 
-echo "Generating composite types"
-cd "${INGRESS_GCE_REPO_ROOT}"
-go run "pkg/composite/gen/main.go"
+if should_run "svcneg"; then
+  generate_for_api "svcneg" "pkg/svcneg/client" "v1beta1"
+fi
 
-echo "Performing code generation for BackendConfig CRD"
-"${CODEGEN_PKG}"/generate-groups.sh \
-  "deepcopy,client,informer,lister" \
-  k8s.io/ingress-gce/pkg/backendconfig/client k8s.io/ingress-gce/pkg/apis \
-  "backendconfig:v1beta1 backendconfig:v1" \
-  --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt
+if should_run "providerconfig"; then
+  generate_for_api "providerconfig" "pkg/providerconfig/client" "v1"
+fi
 
-echo "Generating openapi for BackendConfig v1beta1"
-"${OPENAPI_PKG}"/openapi-gen \
-  --output-file-base zz_generated.openapi \
-  --input-dirs k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1 \
-  --output-package k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1 \
-  --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt
-
-echo "Generating openapi for BackendConfig v1"
-"${OPENAPI_PKG}"/openapi-gen \
-  --output-file-base zz_generated.openapi \
-  --input-dirs k8s.io/ingress-gce/pkg/apis/backendconfig/v1 \
-  --output-package k8s.io/ingress-gce/pkg/apis/backendconfig/v1 \
-  --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt
-
-echo "Performing code generation for FrontendConfig CRD"
-"${CODEGEN_PKG}"/generate-groups.sh \
-  "deepcopy,client,informer,lister" \
-  k8s.io/ingress-gce/pkg/frontendconfig/client k8s.io/ingress-gce/pkg/apis \
-  "frontendconfig:v1beta1" \
-  --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt
-
-echo "Generating openapi for FrontendConfig v1beta1"
-"${OPENAPI_PKG}"/openapi-gen \
-  --output-file-base zz_generated.openapi \
-  --input-dirs k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1 \
-  --output-package k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1 \
-  --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt
-
-echo "Performing code generation for ServiceNetworkEndpointGroup CRD"
-"${CODEGEN_PKG}"/generate-groups.sh \
-  "deepcopy,client,informer,lister" \
-  k8s.io/ingress-gce/pkg/svcneg/client k8s.io/ingress-gce/pkg/apis \
-  "svcneg:v1beta1" \
-  --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt
-
-echo "Generating openapi for ServiceNetworkEndpointGroup v1beta1"
-"${OPENAPI_PKG}"/openapi-gen \
-  --output-file-base zz_generated.openapi \
-  --input-dirs k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1 \
-  --output-package k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1 \
-  --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt
-
-echo "Performing code generation for ProviderConfig CRD"
-"${CODEGEN_PKG}"/generate-groups.sh \
-  "deepcopy,client,informer,lister" \
-  k8s.io/ingress-gce/pkg/providerconfig/client k8s.io/ingress-gce/pkg/apis \
-  "providerconfig:v1" \
-  --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt
-
-echo "Generating openapi for ProviderConfig v1"
-"${OPENAPI_PKG}"/openapi-gen \
-  --output-file-base zz_generated.openapi \
-  --input-dirs k8s.io/ingress-gce/pkg/apis/providerconfig/v1 \
-  --output-package k8s.io/ingress-gce/pkg/apis/providerconfig/v1 \
-  --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt
-
-echo "Performing code generation for ServiceAttachment CRD"
-"${CODEGEN_PKG}"/generate-groups.sh \
-  "deepcopy,client,informer,lister" \
-  k8s.io/ingress-gce/pkg/serviceattachment/client k8s.io/ingress-gce/pkg/apis \
-  "serviceattachment:v1beta1,v1" \
-  --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt
-
-echo "Generating openapi for ServiceAttachment v1beta1"
-"${OPENAPI_PKG}"/openapi-gen \
-  --output-file-base zz_generated.openapi \
-  --input-dirs k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1 \
-  --output-package k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1 \
-  --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt
-
-echo "Generating openapi for ServiceAttachment v1"
-"${OPENAPI_PKG}"/openapi-gen \
-  --output-file-base zz_generated.openapi \
-  --input-dirs k8s.io/ingress-gce/pkg/apis/serviceattachment/v1 \
-  --output-package k8s.io/ingress-gce/pkg/apis/serviceattachment/v1 \
-  --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt
+if should_run "serviceattachment"; then
+  generate_for_api "serviceattachment" "pkg/serviceattachment/client" "v1beta1,v1"
+fi
