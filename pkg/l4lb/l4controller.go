@@ -433,11 +433,11 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service, svc
 	}()
 
 	l4ilbParams := &loadbalancers.L4ILBParams{
-		Service:                          svc,
-		Cloud:                            l4c.ctx.Cloud,
-		Namer:                            l4c.namer,
-		Recorder:                         l4c.ctx.Recorder(svc.Namespace),
-		DualStackEnabled:                 l4c.enableDualStack,
+		Service:          svc,
+		Cloud:            l4c.ctx.Cloud,
+		Namer:            l4c.namer,
+		Recorder:         l4c.ctx.Recorder(svc.Namespace),
+		DualStackEnabled: l4c.enableDualStack,
 		// IPv6OnlyEnabled:                  l4c.enableIPv6Only,
 		NetworkResolver:                  l4c.networkResolver,
 		EnableWeightedLB:                 l4c.ctx.EnableWeightedL4ILB,

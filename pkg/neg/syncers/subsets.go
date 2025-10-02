@@ -224,15 +224,15 @@ func getSubsetPerZone(nodesPerZone map[string][]*nodeWithSubnet, totalLimit int,
 			if _, ok := result[egi]; !ok {
 				result[egi] = negtypes.NewNetworkEndpointSet()
 			}
-			
+
 			newEndpoint := negtypes.NetworkEndpoint{Node: nodeAndSubnet.node.Name}
 
 			if flags.F.EnableIPv6NodeNEGEndpoints && net.IsIPv6String(ip) {
-				newEndpoint.IPv6 = ip				
+				newEndpoint.IPv6 = ip
 			} else {
 				newEndpoint.IP = ip
 			}
-			
+
 			result[egi].Insert(newEndpoint)
 		}
 		totalLimit -= len(subset)

@@ -23,7 +23,7 @@ import (
 	"testing"
 
 	networkv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1"
-	
+
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
@@ -268,7 +268,7 @@ func TestGetSubsetPerZoneMultinetwork(t *testing.T) {
 		expectEmpty      bool
 		networkInfo      network.NetworkInfo
 		expectedNodesMap map[types.NEGLocation]map[string]types.NetworkEndpoint
-        enableIPv6 bool
+		enableIPv6       bool
 	}{
 		{
 			description: "default network, gets primary interface, IPv4-only (flag diasbled)",
@@ -280,7 +280,7 @@ func TestGetSubsetPerZoneMultinetwork(t *testing.T) {
 			svcKey: "svc123",
 			networkInfo: network.NetworkInfo{
 				SubnetworkURL: defaultTestSubnetURL,
-				IsDefault: true,
+				IsDefault:     true,
 			},
 			enableIPv6: false,
 			// empty IPs since test can't get the primary IP
@@ -311,68 +311,68 @@ func TestGetSubsetPerZoneMultinetwork(t *testing.T) {
 			},
 		},
 		{
-            description: "non-default network, dual-stack nodes, IPv6 disabled (flag diasbled)",
-            nodesMap: map[string][]*nodeWithSubnet{
-                "zone1": {makeNodeWithNetwork(t, "n1_1", "zone1", map[string]string{"net-dual": "172.168.1.1", ipv6Network: "2001:db8:1::1"}), makeNodeWithNetwork(t, "n1_2", "zone1", map[string]string{"net-dual": "172.168.1.2", ipv6Network: "2001:db8:1::2"})},
-                "zone2": {makeNodeWithNetwork(t, "n2_1", "zone2", map[string]string{"net-dual": "172.168.2.1", ipv6Network: "2001:db8:2::1"})},
-            },
-            svcKey: "svc123",
-            networkInfo: network.NetworkInfo{
-                IsDefault:     false,
-                K8sNetwork:    "net-dual",
-                SubnetworkURL: defaultTestSubnetURL,
-            },
-            enableIPv6: false,
-            expectedNodesMap: map[types.NEGLocation]map[string]types.NetworkEndpoint{
-                {Zone: "zone1", Subnet: defaultTestSubnet}: {"n1_1": {Node: "n1_1", IP: "172.168.1.1"}, "n1_2": {Node: "n1_2", IP: "172.168.1.2"}},
-                {Zone: "zone2", Subnet: defaultTestSubnet}: {"n2_1": {Node: "n2_1", IP: "172.168.2.1"}},
-            },
-        },
+			description: "non-default network, dual-stack nodes, IPv6 disabled (flag diasbled)",
+			nodesMap: map[string][]*nodeWithSubnet{
+				"zone1": {makeNodeWithNetwork(t, "n1_1", "zone1", map[string]string{"net-dual": "172.168.1.1", ipv6Network: "2001:db8:1::1"}), makeNodeWithNetwork(t, "n1_2", "zone1", map[string]string{"net-dual": "172.168.1.2", ipv6Network: "2001:db8:1::2"})},
+				"zone2": {makeNodeWithNetwork(t, "n2_1", "zone2", map[string]string{"net-dual": "172.168.2.1", ipv6Network: "2001:db8:2::1"})},
+			},
+			svcKey: "svc123",
+			networkInfo: network.NetworkInfo{
+				IsDefault:     false,
+				K8sNetwork:    "net-dual",
+				SubnetworkURL: defaultTestSubnetURL,
+			},
+			enableIPv6: false,
+			expectedNodesMap: map[types.NEGLocation]map[string]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: {"n1_1": {Node: "n1_1", IP: "172.168.1.1"}, "n1_2": {Node: "n1_2", IP: "172.168.1.2"}},
+				{Zone: "zone2", Subnet: defaultTestSubnet}: {"n2_1": {Node: "n2_1", IP: "172.168.2.1"}},
+			},
+		},
 		{
-            description: "non-default network, dual-stack nodes, IPv6 enabled, target IPv4 (flag enabled)",
-            nodesMap: map[string][]*nodeWithSubnet{
-                "zone1": {makeNodeWithNetwork(t, "n1_1", "zone1", map[string]string{"net-dual": "172.168.1.1", ipv6Network: "2001:db8:1::1"}), makeNodeWithNetwork(t, "n1_2", "zone1", map[string]string{"net-dual": "172.168.1.2", ipv6Network: "2001:db8:1::2"})},
-                "zone2": {makeNodeWithNetwork(t, "n2_1", "zone2", map[string]string{"net-dual": "172.168.2.1", ipv6Network: "2001:db8:2::1"})},
-            },
-            svcKey: "svc123",
-            networkInfo: network.NetworkInfo{
-                IsDefault:     false,
-                K8sNetwork:    "net-dual",
-                SubnetworkURL: defaultTestSubnetURL,
-            },
-            enableIPv6: true,
-            expectedNodesMap: map[types.NEGLocation]map[string]types.NetworkEndpoint{
-                {Zone: "zone1", Subnet: defaultTestSubnet}: {"n1_1": {Node: "n1_1", IP: "172.168.1.1"}, "n1_2": {Node: "n1_2", IP: "172.168.1.2"}},
-                {Zone: "zone2", Subnet: defaultTestSubnet}: {"n2_1": {Node: "n2_1", IP: "172.168.2.1"}},
-            },
-        },
-        {
-            description: "non-default network, IPv6 nodes, IPv6 enabled, target IPv6 network (flag enabled)",
-            nodesMap: map[string][]*nodeWithSubnet{
-                "zone1": {makeNodeWithNetwork(t, "n1_1", "zone1", map[string]string{"net-ipv6": "2001:db8:1::1"}), newNodeWithSubnet(makeNodeWithNetwork(t, "n1_2", "zone1", map[string]string{"net-ipv6": "2001:db8:1::2"}).node, ipv6Subnet)},
-                "zone2": {newNodeWithSubnet(makeNodeWithNetwork(t, "n2_1", "zone2", map[string]string{"net-ipv6": "2001:db8:2::1"}).node, ipv6Subnet)},
-            },
-            svcKey: "svc123",
-            networkInfo: network.NetworkInfo{
-                IsDefault:     false,
-                K8sNetwork:    "net-ipv6",
-                SubnetworkURL: ipv6Subnet,
-            },
-            enableIPv6: true,
-            expectedNodesMap: map[types.NEGLocation]map[string]types.NetworkEndpoint{
-                {Zone: "zone1", Subnet: defaultTestSubnet}: {"n1_1": {Node: "n1_1", IPv6: "2001:db8:1::1"}},
-                {Zone: "zone1", Subnet: ipv6Subnet}: {"n1_2": {Node: "n1_2", IPv6: "2001:db8:1::2"}},
-                {Zone: "zone2", Subnet: ipv6Subnet}: {"n2_1": {Node: "n2_1", IPv6: "2001:db8:2::1"}},
-            },
-        },
+			description: "non-default network, dual-stack nodes, IPv6 enabled, target IPv4 (flag enabled)",
+			nodesMap: map[string][]*nodeWithSubnet{
+				"zone1": {makeNodeWithNetwork(t, "n1_1", "zone1", map[string]string{"net-dual": "172.168.1.1", ipv6Network: "2001:db8:1::1"}), makeNodeWithNetwork(t, "n1_2", "zone1", map[string]string{"net-dual": "172.168.1.2", ipv6Network: "2001:db8:1::2"})},
+				"zone2": {makeNodeWithNetwork(t, "n2_1", "zone2", map[string]string{"net-dual": "172.168.2.1", ipv6Network: "2001:db8:2::1"})},
+			},
+			svcKey: "svc123",
+			networkInfo: network.NetworkInfo{
+				IsDefault:     false,
+				K8sNetwork:    "net-dual",
+				SubnetworkURL: defaultTestSubnetURL,
+			},
+			enableIPv6: true,
+			expectedNodesMap: map[types.NEGLocation]map[string]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: {"n1_1": {Node: "n1_1", IP: "172.168.1.1"}, "n1_2": {Node: "n1_2", IP: "172.168.1.2"}},
+				{Zone: "zone2", Subnet: defaultTestSubnet}: {"n2_1": {Node: "n2_1", IP: "172.168.2.1"}},
+			},
+		},
+		{
+			description: "non-default network, IPv6 nodes, IPv6 enabled, target IPv6 network (flag enabled)",
+			nodesMap: map[string][]*nodeWithSubnet{
+				"zone1": {makeNodeWithNetwork(t, "n1_1", "zone1", map[string]string{"net-ipv6": "2001:db8:1::1"}), newNodeWithSubnet(makeNodeWithNetwork(t, "n1_2", "zone1", map[string]string{"net-ipv6": "2001:db8:1::2"}).node, ipv6Subnet)},
+				"zone2": {newNodeWithSubnet(makeNodeWithNetwork(t, "n2_1", "zone2", map[string]string{"net-ipv6": "2001:db8:2::1"}).node, ipv6Subnet)},
+			},
+			svcKey: "svc123",
+			networkInfo: network.NetworkInfo{
+				IsDefault:     false,
+				K8sNetwork:    "net-ipv6",
+				SubnetworkURL: ipv6Subnet,
+			},
+			enableIPv6: true,
+			expectedNodesMap: map[types.NEGLocation]map[string]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: {"n1_1": {Node: "n1_1", IPv6: "2001:db8:1::1"}},
+				{Zone: "zone1", Subnet: ipv6Subnet}:        {"n1_2": {Node: "n1_2", IPv6: "2001:db8:1::2"}},
+				{Zone: "zone2", Subnet: ipv6Subnet}:        {"n2_1": {Node: "n2_1", IPv6: "2001:db8:2::1"}},
+			},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.description, func(t *testing.T) {
 			oldFlags := flags.F.EnableIPv6NodeNEGEndpoints
-            flags.F.EnableIPv6NodeNEGEndpoints = tc.enableIPv6
-            defer func() {
-                flags.F.EnableIPv6NodeNEGEndpoints = oldFlags
-            }()
+			flags.F.EnableIPv6NodeNEGEndpoints = tc.enableIPv6
+			defer func() {
+				flags.F.EnableIPv6NodeNEGEndpoints = oldFlags
+			}()
 
 			subsetMap, err := getSubsetPerZone(tc.nodesMap, maxSubsetSizeLocal, tc.svcKey, nil, klog.TODO(), &tc.networkInfo)
 			if err != nil {
@@ -381,27 +381,27 @@ func TestGetSubsetPerZoneMultinetwork(t *testing.T) {
 			for zoneAndSubnet, wantNodesAndEndpoints := range tc.expectedNodesMap {
 				gotSet, ok := subsetMap[zoneAndSubnet]
 				if !ok {
-                    t.Errorf("Expected NEGLocation %s not found in result for test '%s'", zoneAndSubnet, tc.description)
-                    continue
-                }
+					t.Errorf("Expected NEGLocation %s not found in result for test '%s'", zoneAndSubnet, tc.description)
+					continue
+				}
 
 				for node, wantEndpoint := range wantNodesAndEndpoints {
-                    if !gotSet.Has(wantEndpoint) {
-                        found := false
-                        for _, gotEndpoint := range gotSet.List() {
-                            if gotEndpoint.Node == node {
-                                found = true
-                                if gotEndpoint.IP != wantEndpoint.IP || gotEndpoint.IPv6 != wantEndpoint.IPv6 {
-                                    t.Errorf("Node %s in zoneAndSubnet %s: Expected endpoint %+v, but got %+v", node, zoneAndSubnet, wantEndpoint, gotEndpoint)
-                                }
-                                break
-                            }
-                        }
-                        if !found {
-                            t.Errorf("Node %s in zoneAndSubnet %s was expected but not found in endpoints: %+v", node, zoneAndSubnet, gotSet.List())
-                        }
-                    }
-                }
+					if !gotSet.Has(wantEndpoint) {
+						found := false
+						for _, gotEndpoint := range gotSet.List() {
+							if gotEndpoint.Node == node {
+								found = true
+								if gotEndpoint.IP != wantEndpoint.IP || gotEndpoint.IPv6 != wantEndpoint.IPv6 {
+									t.Errorf("Node %s in zoneAndSubnet %s: Expected endpoint %+v, but got %+v", node, zoneAndSubnet, wantEndpoint, gotEndpoint)
+								}
+								break
+							}
+						}
+						if !found {
+							t.Errorf("Node %s in zoneAndSubnet %s was expected but not found in endpoints: %+v", node, zoneAndSubnet, gotSet.List())
+						}
+					}
+				}
 			}
 		})
 	}
