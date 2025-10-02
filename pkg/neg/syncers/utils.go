@@ -756,8 +756,8 @@ func makeEndpointBatch(endpoints negtypes.NetworkEndpointSet, negType negtypes.N
 		}
 		if negType == negtypes.VmIpEndpointType {
 			endpointBatch[networkEndpoint] = &composite.NetworkEndpoint{
-				Instance:  networkEndpoint.Node,
-				IpAddress: networkEndpoint.IP,
+				Instance:    networkEndpoint.Node,
+				IpAddress:   networkEndpoint.IP,
 				Ipv6Address: networkEndpoint.IPv6,
 			}
 		} else {

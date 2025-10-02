@@ -629,10 +629,10 @@ func (l4 *L4) provideHealthChecks(nodeNames []string, result *L4ILBSyncResult) s
 
 func (l4 *L4) provideDualStackHealthChecks(nodeNames []string, result *L4ILBSyncResult) string {
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(l4.Service)
-	
+
 	needsIPv4ForHC := !l4.enableIPv6Only && utils.NeedsIPv4(l4.Service)
 	needsIPv6ForHC := utils.NeedsIPv6(l4.Service)
-	
+
 	hcResult := l4.healthChecks.EnsureHealthCheckWithDualStackFirewalls(l4.Service, l4.namer, sharedHC, meta.Global, utils.ILB, nodeNames, needsIPv4ForHC, needsIPv6ForHC, l4.network, l4.svcLogger)
 	if hcResult.Err != nil {
 		result.GCEResourceInError = hcResult.GceResourceInError
@@ -651,7 +651,7 @@ func (l4 *L4) provideDualStackHealthChecks(nodeNames []string, result *L4ILBSync
 	} else {
 		delete(result.Annotations, annotations.FirewallRuleForHealthcheckIPv6Key)
 	}
-	
+
 	result.Annotations[annotations.HealthcheckKey] = hcResult.HCName
 	return hcResult.HCLink
 }
