@@ -79,6 +79,7 @@ type L4NetLBController struct {
 	forwardingRules                    ForwardingRulesGetter
 	enableForwardingRulesOptimizations bool
 	enableDualStack                    bool
+	enableIPv6Only                     bool
 	enableStrongSessionAffinity        bool
 	serviceVersions                    *serviceVersionsTracker
 	enableNEGSupport                   bool
@@ -113,6 +114,7 @@ func NewL4NetLBController(
 		forwardingRules:                    forwardingrules.New(ctx.Cloud, meta.VersionGA, meta.Regional, logger),
 		enableForwardingRulesOptimizations: ctx.EnableL4NetLBForwardingRulesOptimizations,
 		enableDualStack:                    ctx.EnableL4NetLBDualStack,
+		enableIPv6Only:                     ctx.EnableIPv6OnlyL4,
 		enableStrongSessionAffinity:        ctx.EnableL4StrongSessionAffinity,
 		enableNEGSupport:                   ctx.EnableL4NetLBNEGs,
 		enableNEGAsDefault:                 ctx.EnableL4NetLBNEGsDefault,
@@ -613,6 +615,7 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 		Namer:                            lc.namer,
 		Recorder:                         lc.ctx.Recorder(service.Namespace),
 		DualStackEnabled:                 lc.enableDualStack,
+		IPv6OnlyEnabled:                  lc.enableIPv6Only,
 		StrongSessionAffinityEnabled:     lc.enableStrongSessionAffinity,
 		NetworkResolver:                  lc.networkResolver,
 		EnableWeightedLB:                 lc.ctx.EnableWeightedL4NetLB,

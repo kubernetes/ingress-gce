@@ -77,8 +77,8 @@ type L4Controller struct {
 	syncTracker     utils.TimeTracker
 	forwardingRules ForwardingRulesGetter
 	enableDualStack bool
-
-	hasSynced func() bool
+	enableIPv6Only  bool
+	hasSynced       func() bool
 
 	serviceVersions *serviceVersionsTracker
 
@@ -101,6 +101,7 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 		zoneGetter:      ctx.ZoneGetter,
 		forwardingRules: forwardingrules.New(ctx.Cloud, meta.VersionGA, meta.Regional, logger),
 		enableDualStack: ctx.EnableL4ILBDualStack,
+		enableIPv6Only:  ctx.EnableIPv6OnlyL4,
 		serviceVersions: NewServiceVersionsTracker(),
 		logger:          logger,
 		hasSynced:       ctx.HasSynced,
@@ -349,6 +350,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service, svcLo
 		Namer:                            l4c.namer,
 		Recorder:                         l4c.ctx.Recorder(service.Namespace),
 		DualStackEnabled:                 l4c.enableDualStack,
+		IPv6OnlyEnabled:                  l4c.enableIPv6Only,
 		NetworkResolver:                  l4c.networkResolver,
 		EnableWeightedLB:                 l4c.ctx.EnableWeightedL4ILB,
 		DisableNodesFirewallProvisioning: l4c.ctx.DisableL4LBFirewall,
@@ -431,11 +433,12 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service, svc
 	}()
 
 	l4ilbParams := &loadbalancers.L4ILBParams{
-		Service:                          svc,
-		Cloud:                            l4c.ctx.Cloud,
-		Namer:                            l4c.namer,
-		Recorder:                         l4c.ctx.Recorder(svc.Namespace),
-		DualStackEnabled:                 l4c.enableDualStack,
+		Service:          svc,
+		Cloud:            l4c.ctx.Cloud,
+		Namer:            l4c.namer,
+		Recorder:         l4c.ctx.Recorder(svc.Namespace),
+		DualStackEnabled: l4c.enableDualStack,
+		// IPv6OnlyEnabled:                  l4c.enableIPv6Only,
 		NetworkResolver:                  l4c.networkResolver,
 		EnableWeightedLB:                 l4c.ctx.EnableWeightedL4ILB,
 		DisableNodesFirewallProvisioning: l4c.ctx.DisableL4LBFirewall,

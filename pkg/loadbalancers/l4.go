@@ -71,6 +71,7 @@ type L4 struct {
 	forwardingRules                  ForwardingRulesProvider
 	healthChecks                     healthchecksl4.L4HealthChecks
 	enableDualStack                  bool
+	enableIPv6Only                   bool
 	network                          network.NetworkInfo
 	networkResolver                  network.Resolver
 	enableWeightedLB                 bool
@@ -113,6 +114,7 @@ type L4ILBParams struct {
 	Namer                            namer.L4ResourcesNamer
 	Recorder                         record.EventRecorder
 	DualStackEnabled                 bool
+	IPv6OnlyEnabled                  bool
 	NetworkResolver                  network.Resolver
 	EnableWeightedLB                 bool
 	EnableZonalAffinity              bool
@@ -135,6 +137,7 @@ func NewL4Handler(params *L4ILBParams, logger klog.Logger) *L4 {
 		healthChecks:                     healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder, logger),
 		forwardingRules:                  forwardingrules.New(params.Cloud, meta.VersionGA, scope, logger),
 		enableDualStack:                  params.DualStackEnabled,
+		enableIPv6Only:                   params.IPv6OnlyEnabled,
 		networkResolver:                  params.NetworkResolver,
 		enableWeightedLB:                 params.EnableWeightedLB,
 		enableMixedProtocol:              params.EnableMixedProtocol,
@@ -179,7 +182,7 @@ func (l4 *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4ILBSyncR
 	result := NewL4ILBSyncResult(SyncTypeDelete, time.Now(), svc, isMultinetService, isWeightedLBPodsPerNode, isLBWithZonalAffinity)
 
 	l4.deleteIPv4ResourcesOnDelete(result)
-	if l4.enableDualStack {
+	if l4.enableIPv6Only || l4.enableDualStack {
 		l4.deleteIPv6ResourcesOnDelete(result)
 	}
 
@@ -202,7 +205,7 @@ func (l4 *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4ILBSyncR
 	// When service is deleted we need to check both health checks shared and non-shared
 	// and delete them if needed.
 	for _, isShared := range []bool{true, false} {
-		if l4.enableDualStack {
+		if l4.enableIPv6Only || l4.enableDualStack {
 			resourceInError, err := l4.healthChecks.DeleteHealthCheckWithDualStackFirewalls(svc, l4.namer, isShared, meta.Global, utils.ILB, l4.svcLogger)
 			if err != nil {
 				result.GCEResourceInError = resourceInError
@@ -417,7 +420,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	l4.network = *svcNetwork
 
 	// If service requires IPv6 LoadBalancer -- verify that Subnet with Internal IPv6 ranges is used.
-	if l4.enableDualStack && utils.NeedsIPv6(l4.Service) {
+	if l4.enableIPv6Only || (l4.enableDualStack && utils.NeedsIPv6(l4.Service)) {
 		err := l4.serviceSubnetHasInternalIPv6Range()
 		if err != nil {
 			result.Error = err
@@ -451,7 +454,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	var existingIPv4FR *composite.ForwardingRule
 	var ipv4AddressToUse string
 	var ipv4AddressName string
-	if !l4.enableDualStack || utils.NeedsIPv4(l4.Service) {
+	if l4.enableDualStack || utils.NeedsIPv4(l4.Service) {
 		existingIPv4FR, err = l4.getOldIPv4ForwardingRule(existingBS)
 		ipv4AddressToUse, ipv4AddressName, err = address.IPv4ToUse(l4.cloud, l4.recorder, l4.Service, existingIPv4FR, subnetworkURL)
 		if err != nil {
@@ -484,7 +487,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	var existingIPv6FR *composite.ForwardingRule
 	var ipv6AddrToUse string
 	var ipv6AddressName string
-	if l4.enableDualStack && utils.NeedsIPv6(l4.Service) {
+	if (l4.enableIPv6Only || l4.enableDualStack) && utils.NeedsIPv6(l4.Service) {
 		existingIPv6FR, err = l4.getOldIPv6ForwardingRule(existingBS)
 		ipv6AddrToUse, ipv6AddressName, err = address.IPv6ToUse(l4.cloud, l4.Service, existingIPv6FR, subnetworkURL, l4.svcLogger)
 		if err != nil {
@@ -532,7 +535,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 			}
 		}
 
-		if l4.enableDualStack && existingIPv6FR != nil {
+		if (l4.enableIPv6Only || l4.enableDualStack) && existingIPv6FR != nil {
 			// Delete ipv6 forwarding rule if it exists
 			err = l4.forwardingRules.Delete(existingIPv6FR.Name)
 			if err != nil {
@@ -595,6 +598,8 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 
 	if l4.enableDualStack {
 		l4.ensureDualStackResources(result, nodeNames, options, bs, existingIPv4FR, existingIPv6FR, subnetworkURL, ipv4AddressToUse, ipv6AddrToUse)
+	} else if l4.enableIPv6Only {
+		l4.ensureIPv6Resources(result, nodeNames, options, bs.SelfLink, existingIPv6FR, ipv6AddrToUse)
 	} else {
 		l4.ensureIPv4Resources(result, nodeNames, options, bs, existingIPv4FR, subnetworkURL, ipv4AddressToUse)
 	}
@@ -624,7 +629,7 @@ func (l4 *L4) requireZonalAffinity(svc *corev1.Service) bool {
 }
 
 func (l4 *L4) provideHealthChecks(nodeNames []string, result *L4ILBSyncResult) string {
-	if l4.enableDualStack {
+	if l4.enableDualStack || l4.enableIPv6Only {
 		return l4.provideDualStackHealthChecks(nodeNames, result)
 	}
 	return l4.provideIPv4HealthChecks(nodeNames, result)
@@ -632,19 +637,29 @@ func (l4 *L4) provideHealthChecks(nodeNames []string, result *L4ILBSyncResult) s
 
 func (l4 *L4) provideDualStackHealthChecks(nodeNames []string, result *L4ILBSyncResult) string {
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(l4.Service)
-	hcResult := l4.healthChecks.EnsureHealthCheckWithDualStackFirewalls(l4.Service, l4.namer, sharedHC, meta.Global, utils.ILB, nodeNames, utils.NeedsIPv4(l4.Service), utils.NeedsIPv6(l4.Service), l4.network, l4.svcLogger)
+
+	needsIPv4ForHC := !l4.enableIPv6Only && utils.NeedsIPv4(l4.Service)
+	needsIPv6ForHC := utils.NeedsIPv6(l4.Service)
+
+	hcResult := l4.healthChecks.EnsureHealthCheckWithDualStackFirewalls(l4.Service, l4.namer, sharedHC, meta.Global, utils.ILB, nodeNames, needsIPv4ForHC, needsIPv6ForHC, l4.network, l4.svcLogger)
 	if hcResult.Err != nil {
 		result.GCEResourceInError = hcResult.GceResourceInError
 		result.Error = hcResult.Err
 		return ""
 	}
 
-	if hcResult.HCFirewallRuleName != "" {
+	if needsIPv4ForHC && hcResult.HCFirewallRuleName != "" {
 		result.Annotations[annotations.FirewallRuleForHealthcheckKey] = hcResult.HCFirewallRuleName
+	} else {
+		delete(result.Annotations, annotations.FirewallRuleForHealthcheckKey)
 	}
+
 	if hcResult.HCFirewallRuleIPv6Name != "" {
 		result.Annotations[annotations.FirewallRuleForHealthcheckIPv6Key] = hcResult.HCFirewallRuleIPv6Name
+	} else {
+		delete(result.Annotations, annotations.FirewallRuleForHealthcheckIPv6Key)
 	}
+
 	result.Annotations[annotations.HealthcheckKey] = hcResult.HCName
 	return hcResult.HCLink
 }
