@@ -1,0 +1,7 @@
+# approvers for L4/NEG/PSC features
+approvers:
+  - l4-neg-psc-owners
+  - general-maintainers
+reviewers:
+  - l4-neg-psc-owners
+  - general-maintainers

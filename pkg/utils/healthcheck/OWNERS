@@ -1,0 +1,7 @@
+# approvers for L7 features
+approvers:
+  - l7-owners
+  - general-maintainers
+reviewers:
+  - l7-owners
+  - general-maintainers
