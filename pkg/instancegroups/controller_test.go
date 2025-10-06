@@ -2,6 +2,7 @@ package instancegroups
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -130,12 +131,14 @@ func withUnschedulable(value bool) func(node *api_v1.Node) {
 }
 
 func TestSync(t *testing.T) {
+	t.Parallel()
+
 	config := &ControllerConfig{}
 	resyncPeriod := 1 * time.Second
 	fakeKubeClient := fake.NewSimpleClientset()
 	informer := informerv1.NewNodeInformer(fakeKubeClient, resyncPeriod, utils.NewNamespaceIndexer())
 	config.NodeInformer = informer
-	fakeManager := &IGManagerFake{}
+	fakeManager := &IGManagerFake{SyncLock: &sync.Mutex{}}
 	config.IGManager = fakeManager
 	config.HasSynced = func() bool {
 		return true
@@ -155,32 +158,62 @@ func TestSync(t *testing.T) {
 	var expectedSyncedNodesCounter = 0
 	firstNode := testNode()
 	secondNode := testNode()
+	thirdNode := testNode()
 	secondNode.Name = "secondNode"
+	thirdNode.Name = "thirdNode"
+
+	// Freeze resyncs to ensure that second node sync won't start before third node triggers it as well
+	fakeManager.SyncLock.Lock()
+	fakeKubeClient.CoreV1().Nodes().Create(context.TODO(), firstNode, meta_v1.CreateOptions{})
+	time.Sleep(time.Second) // ensure sync started
 
 	// Add two nodes
-	fakeKubeClient.CoreV1().Nodes().Create(context.TODO(), firstNode, meta_v1.CreateOptions{})
-	// wait time > resync period
-	time.Sleep(2 * time.Second)
 	fakeKubeClient.CoreV1().Nodes().Create(context.TODO(), secondNode, meta_v1.CreateOptions{})
-	// The counter = 1 because it synced only once (for the first Create() call)
-	expectedSyncedNodesCounter += 1
+	fakeKubeClient.CoreV1().Nodes().Create(context.TODO(), thirdNode, meta_v1.CreateOptions{})
+	time.Sleep(time.Second) // ensure third node will be able to trigger sync
+	fakeManager.SyncLock.Unlock()
+	time.Sleep(2 * time.Second) // wait until both syncs complete
+	// Second and third nodes should trigger only a single sync (+1 for the first)
+	expectedSyncedNodesCounter += 2
 	verifyExpectedSyncerCount(t, fakeManager.syncedNodes, expectedSyncedNodesCounter)
 
-	// Update both nodes
-	firstNode.Annotations["key"] = "true"
-	firstNode.Spec.Unschedulable = false
-	secondNode.Annotations["key"] = "true"
+	// Freeze resyncs to ensure that second node sync won't start before third node triggers it as well
+	fakeManager.SyncLock.Lock()
+	firstNode.Spec.Unschedulable = true
 	fakeKubeClient.CoreV1().Nodes().Update(context.TODO(), firstNode, meta_v1.UpdateOptions{})
+	time.Sleep(time.Second) // ensure sync started
+
+	// Update two nodes
+	secondNode.Spec.Unschedulable = true
+	thirdNode.Spec.Unschedulable = true
 	fakeKubeClient.CoreV1().Nodes().Update(context.TODO(), secondNode, meta_v1.UpdateOptions{})
-	time.Sleep(2 * time.Second)
-	// nodes were updated
-	expectedSyncedNodesCounter += 1
+	fakeKubeClient.CoreV1().Nodes().Update(context.TODO(), thirdNode, meta_v1.UpdateOptions{})
+	time.Sleep(time.Second) // ensure third node will be able to trigger sync
+	fakeManager.SyncLock.Unlock()
+	time.Sleep(2 * time.Second) // wait until both syncs complete
+	// Second and third nodes should trigger only a single sync (+1 for the first)
+	expectedSyncedNodesCounter += 2
 	verifyExpectedSyncerCount(t, fakeManager.syncedNodes, expectedSyncedNodesCounter)
 
 	// no real update
 	fakeKubeClient.CoreV1().Nodes().Update(context.TODO(), firstNode, meta_v1.UpdateOptions{})
 	// Nothing should change
 	time.Sleep(2 * time.Second)
+	verifyExpectedSyncerCount(t, fakeManager.syncedNodes, expectedSyncedNodesCounter)
+
+	// Freeze resyncs to ensure that second node sync won't start before third node triggers it as well
+	fakeManager.SyncLock.Lock()
+	fakeKubeClient.CoreV1().Nodes().Delete(context.TODO(), firstNode.Name, meta_v1.DeleteOptions{})
+	time.Sleep(time.Second) // ensure sync started
+
+	// Delete two nodes
+	fakeKubeClient.CoreV1().Nodes().Delete(context.TODO(), secondNode.Name, meta_v1.DeleteOptions{})
+	fakeKubeClient.CoreV1().Nodes().Delete(context.TODO(), thirdNode.Name, meta_v1.DeleteOptions{})
+	time.Sleep(time.Second) // ensure third node will be able to trigger sync
+	fakeManager.SyncLock.Unlock()
+	time.Sleep(2 * time.Second) // wait until both syncs complete
+	// Second and third nodes should trigger only a single sync (+1 for the first)
+	expectedSyncedNodesCounter += 2
 	verifyExpectedSyncerCount(t, fakeManager.syncedNodes, expectedSyncedNodesCounter)
 }
 
@@ -192,9 +225,12 @@ func verifyExpectedSyncerCount(t *testing.T, syncedNodes [][]string, expectedCou
 
 type IGManagerFake struct {
 	syncedNodes [][]string
+	SyncLock    sync.Locker
 }
 
 func (igmf *IGManagerFake) Sync(nodeNames []string, logger klog.Logger) error {
+	igmf.SyncLock.Lock()
+	defer igmf.SyncLock.Unlock()
 	igmf.syncedNodes = append(igmf.syncedNodes, nodeNames)
 	return nil
 }
