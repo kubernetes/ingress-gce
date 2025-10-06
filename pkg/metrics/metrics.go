@@ -56,20 +56,6 @@ var (
 		},
 		[]string{label},
 	)
-	serviceAttachmentCount = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "number_of_service_attachments",
-			Help: "Number of Service Attachments",
-		},
-		[]string{label},
-	)
-	serviceCount = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "number_of_services",
-			Help: "Number of Services",
-		},
-		[]string{label},
-	)
 	componentVersion = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "component_version",
@@ -90,10 +76,6 @@ var (
 func init() {
 	klog.V(3).Infof("Registering Ingress usage metrics %v and %v", ingressCount, servicePortCount)
 	prometheus.MustRegister(ingressCount, servicePortCount)
-
-	klog.V(3).Infof("Registering PSC usage metrics %v", serviceAttachmentCount)
-	prometheus.MustRegister(serviceAttachmentCount)
-	prometheus.MustRegister(serviceCount)
 
 	klog.V(3).Infof("Registering metric export failures count %v", MetricExportFailureCount)
 	prometheus.MustRegister(MetricExportFailureCount)
@@ -189,48 +171,6 @@ func (im *ControllerMetrics) DeleteIngress(ingKey string) {
 	delete(im.ingressMap, ingKey)
 }
 
-// SetServiceAttachment adds sa state to the map to be counted during metrics computation.
-// SetServiceAttachment implements PSCMetricsCollector.
-func (im *ControllerMetrics) SetServiceAttachment(saKey string, state pscmetrics.PSCState) {
-	im.Lock()
-	defer im.Unlock()
-
-	if im.pscMap == nil {
-		klog.Fatalf("PSC Metrics failed to initialize correctly.")
-	}
-	im.pscMap[saKey] = state
-}
-
-// DeleteServiceAttachment removes sa state to the map to be counted during metrics computation.
-// DeleteServiceAttachment implements PSCMetricsCollector.
-func (im *ControllerMetrics) DeleteServiceAttachment(saKey string) {
-	im.Lock()
-	defer im.Unlock()
-
-	delete(im.pscMap, saKey)
-}
-
-// SetService adds the service to the map to be counted during metrics computation.
-// SetService implements PSCMetricsCollector.
-func (im *ControllerMetrics) SetService(serviceKey string) {
-	im.Lock()
-	defer im.Unlock()
-
-	if im.serviceMap == nil {
-		klog.Fatalf("PSC Metrics failed to initialize correctly.")
-	}
-	im.serviceMap[serviceKey] = struct{}{}
-}
-
-// DeleteService removes the service from the map to be counted during metrics computation.
-// DeleteService implements PSCMetricsCollector.
-func (im *ControllerMetrics) DeleteService(serviceKey string) {
-	im.Lock()
-	defer im.Unlock()
-
-	delete(im.serviceMap, serviceKey)
-}
-
 // export computes and exports ingress usage metrics.
 func (im *ControllerMetrics) export() {
 	defer func() {
@@ -251,21 +191,6 @@ func (im *ControllerMetrics) export() {
 	}
 
 	im.logger.V(3).Info("Ingress usage metrics exported")
-
-	saCount := im.computePSCMetrics()
-	im.logger.V(3).Info("Exporting PSC Usage Metrics", "serviceAttachmentsCount", saCount)
-	for feature, count := range saCount {
-		serviceAttachmentCount.With(prometheus.Labels{label: feature.String()}).Set(float64(count))
-	}
-	im.logger.V(3).Info("Exported PSC Usage Metrics", "serviceAttachmentsCount", saCount)
-
-	services := im.computeServiceMetrics()
-	im.logger.V(3).Info("Exporting Service Metrics", "serviceCount", serviceCount)
-	for feature, count := range services {
-		serviceCount.With(prometheus.Labels{label: feature.String()}).Set(float64(count))
-	}
-	im.logger.V(3).Info("Exported Service Metrics", "serviceCount", serviceCount)
-
 }
 
 // computeIngressMetrics traverses all ingresses and computes,
@@ -321,34 +246,6 @@ func (im *ControllerMetrics) computeIngressMetrics() (map[feature]int, map[featu
 
 	im.logger.V(4).Info("Ingress usage metrics computed")
 	return ingCount, svcPortCount
-}
-
-func (im *ControllerMetrics) computePSCMetrics() map[feature]int {
-	im.Lock()
-	defer im.Unlock()
-	im.logger.V(4).Info("Compute PSC Usage metrics from psc state map", "pscStateMap", im.pscMap)
-
-	counts := map[feature]int{
-		sa:          0,
-		saInSuccess: 0,
-		saInError:   0,
-	}
-
-	for _, state := range im.pscMap {
-		counts[sa]++
-		if state.InSuccess {
-			counts[saInSuccess]++
-		} else {
-			counts[saInError]++
-		}
-	}
-	return counts
-}
-
-func (im *ControllerMetrics) computeServiceMetrics() map[feature]int {
-	return map[feature]int{
-		services: len(im.serviceMap),
-	}
 }
 
 // initializeCounts initializes feature count maps for ingress and service ports.

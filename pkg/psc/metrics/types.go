@@ -21,11 +21,3 @@ type PSCState struct {
 	// InSuccess specifies if the ServiceAttachment was successfully created
 	InSuccess bool
 }
-
-// PSCMetricsCollector is used to publish usage metrics
-type PSCMetricsCollector interface {
-	SetServiceAttachment(saKey string, state PSCState)
-	DeleteServiceAttachment(saKey string)
-	SetService(serviceKey string)
-	DeleteService(serviceKey string)
-}
