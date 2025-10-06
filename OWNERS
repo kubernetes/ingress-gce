@@ -1,14 +1,8 @@
 approvers:
-  - aojea
-  - thockin
-  - bowei
-  - swetharepakula
-  - kl52752
-  - spencerhance
-  - mmamczur
-  - tortillazhawaii
-  - felipeyepez
-  - 08volt
+  - general-maintainers
+  - l7-owners
+  - l4-neg-psc-owners
 reviewers:
-  - aojea
-  - sawsa307
+  - general-maintainers
+  - l7-owners
+  - l4-neg-psc-owners
