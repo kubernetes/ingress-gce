@@ -24,7 +24,6 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	compute "google.golang.org/api/compute/v1"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -50,11 +49,7 @@ func (l4netlb *L4NetLB) ensureIPv6Resources(syncResult *L4NetLBSyncResult, nodeN
 		return
 	}
 
-	if ipv6fr.IPProtocol == string(corev1.ProtocolTCP) {
-		syncResult.Annotations[annotations.TCPForwardingRuleIPv6Key] = ipv6fr.Name
-	} else {
-		syncResult.Annotations[annotations.UDPForwardingRuleIPv6Key] = ipv6fr.Name
-	}
+	syncResult.Annotations[forwardingRuleAnnotationKey(ipv6fr)] = ipv6fr.Name
 
 	// Google Cloud creates ipv6 forwarding rules with IPAddress in CIDR form. We will take only first address
 	trimmedIPv6Address := strings.Split(ipv6fr.IPAddress, "/")[0]
@@ -120,6 +115,15 @@ func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipAddress string, nodeNames []st
 	svcPorts := l4netlb.Service.Spec.Ports
 	portRanges := utils.GetServicePortRanges(svcPorts)
 	protocol := utils.GetProtocol(svcPorts)
+	allowed := []*compute.FirewallAllowed{
+		{
+			IPProtocol: string(protocol),
+			Ports:      portRanges,
+		},
+	}
+	if l4netlb.enableMixedProtocol {
+		allowed = firewalls.AllowedForService(svcPorts)
+	}
 
 	fwLogger := l4netlb.svcLogger.WithValues("firewallName", firewallName)
 	fwLogger.V(2).Info("Ensuring IPv6 nodes firewall for L4 NetLB Service", "ipAddress", ipAddress, "protocol", protocol, "len(nodeNames)", len(nodeNames), "portRanges", portRanges)
@@ -135,12 +139,7 @@ func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipAddress string, nodeNames []st
 	}
 
 	ipv6nodesFWRParams := firewalls.FirewallParams{
-		Allowed: []*compute.FirewallAllowed{
-			{
-				IPProtocol: string(protocol),
-				Ports:      portRanges,
-			},
-		},
+		Allowed:           allowed,
 		SourceRanges:      ipv6SourceRanges,
 		DestinationRanges: []string{ipAddress},
 		Name:              firewallName,
