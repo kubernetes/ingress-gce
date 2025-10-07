@@ -77,8 +77,7 @@ type L4Controller struct {
 	syncTracker     utils.TimeTracker
 	forwardingRules ForwardingRulesGetter
 	enableDualStack bool
-
-	hasSynced func() bool
+	hasSynced       func() bool
 
 	serviceVersions *serviceVersionsTracker
 

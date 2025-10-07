@@ -25,10 +25,12 @@ import (
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/ingress-gce/pkg/flags"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/net"
 )
 
 const (
@@ -224,7 +226,16 @@ func getSubsetPerZone(nodesPerZone map[string][]*nodeWithSubnet, totalLimit int,
 			if _, ok := result[egi]; !ok {
 				result[egi] = negtypes.NewNetworkEndpointSet()
 			}
-			result[egi].Insert(negtypes.NetworkEndpoint{Node: nodeAndSubnet.node.Name, IP: ip})
+
+			newEndpoint := negtypes.NetworkEndpoint{Node: nodeAndSubnet.node.Name}
+
+			if flags.F.EnableIPv6NodeNEGEndpoints && net.IsIPv6String(ip) {
+				newEndpoint.IPv6 = ip
+			} else {
+				newEndpoint.IP = ip
+			}
+
+			result[egi].Insert(newEndpoint)
 		}
 		totalLimit -= len(subset)
 		zonesRemaining--

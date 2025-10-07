@@ -87,6 +87,7 @@ const (
 	// be removed in 1.18.
 	LabelAlphaNodeRoleExcludeBalancer = "alpha.service-controller.kubernetes.io/exclude-balancer"
 	DualStackSubnetStackType          = "IPV4_IPV6"
+	IPv6SubnetStackType               = "IPV6_ONLY"
 
 	// LabelNodeSubnet specifies the subnet name of this node.
 	LabelNodeSubnet = "cloud.google.com/gke-node-pool-subnet"
@@ -861,7 +862,14 @@ func SubnetHasIPv6Range(cloud *gce.Cloud, subnetName, ipv6AccessType string) (bo
 	if err != nil {
 		return false, fmt.Errorf("failed getting subnet: %w", err)
 	}
-	return subnet.StackType == DualStackSubnetStackType && subnet.Ipv6AccessType == ipv6AccessType, nil
+
+	if subnet.Ipv6AccessType != ipv6AccessType {
+		return false, nil
+	}
+
+	isValidStackType := (subnet.StackType == DualStackSubnetStackType) || (subnet.StackType == IPv6SubnetStackType)
+
+	return isValidStackType, nil
 }
 
 // IsUnsupportedFeatureError returns true if the error has 400 number,
