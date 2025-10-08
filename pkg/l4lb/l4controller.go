@@ -38,6 +38,7 @@ import (
 	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
+	negmetrics "k8s.io/ingress-gce/pkg/neg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -105,7 +106,7 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 		hasSynced:       ctx.HasSynced,
 	}
 	l4c.backendPool = backends.NewPool(ctx.Cloud, l4c.namer)
-	l4c.NegLinker = backends.NewNEGLinker(l4c.backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer(), logger)
+	l4c.NegLinker = backends.NewNEGLinker(l4c.backendPool, negtypes.NewAdapter(ctx.Cloud, negmetrics.NewNegMetrics()), ctx.Cloud, ctx.SvcNegInformer.GetIndexer(), logger)
 
 	l4c.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("l4", "services", l4c.numWorkers, l4c.syncWrapper, logger)
 

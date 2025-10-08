@@ -145,7 +145,7 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		func() bool { return true },
 		testContext.L4Namer,
 		defaultBackend,
-		negtypes.NewAdapter(testContext.Cloud),
+		negtypes.NewAdapter(testContext.Cloud, testContext.NegMetrics),
 		zoneGetter,
 		testContext.NegNamer,
 		testContext.ResyncPeriod,
@@ -164,6 +164,8 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		true, // enableNEGsForIngress
 		make(<-chan struct{}),
 		klog.TODO(),
+		testContext.NegMetrics,
+		metricscollector.FakeSyncerMetrics(),
 	)
 }
 

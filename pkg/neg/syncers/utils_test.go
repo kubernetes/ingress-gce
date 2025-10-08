@@ -38,6 +38,7 @@ import (
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
@@ -428,6 +429,7 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 				false,
 				tc.networkInfo,
 				klog.TODO(),
+				metrics.NewNegMetrics(),
 			)
 			if err != nil {
 				t.Errorf("unexpected error: %s", err)
@@ -486,6 +488,7 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 				false,
 				tc.networkInfo,
 				klog.TODO(),
+				metrics.NewNegMetrics(),
 			)
 
 			if err != nil {
@@ -627,7 +630,7 @@ func TestToZoneNetworkEndpointMap(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			gotResult, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()), zoneGetter, podLister, tc.portName, tc.networkEndpointType, tc.enableDualStackNEG, false, klog.TODO())
+			gotResult, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()), zoneGetter, podLister, tc.portName, tc.networkEndpointType, tc.enableDualStackNEG, false, klog.TODO(), metrics.NewNegMetrics())
 			if err != nil {
 				t.Errorf("toZoneNetworkEndpointMap() = err %v, want no error", err)
 			}
@@ -1243,7 +1246,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 	for _, tc := range testCases {
 		tc.mutate(negCloud)
 		// tc.mode of "" will result in the default node predicate being selected, which is ok for this test.
-		endpointSets, annotationMap, err := retrieveExistingZoneNetworkEndpointMap(tc.subnetToNegMapping, zoneGetter, negCloud, meta.VersionGA, tc.mode, false, klog.TODO())
+		endpointSets, annotationMap, err := retrieveExistingZoneNetworkEndpointMap(tc.subnetToNegMapping, zoneGetter, negCloud, meta.VersionGA, tc.mode, false, klog.TODO(), metrics.NewNegMetrics())
 
 		if tc.expectErr {
 			if err == nil {
@@ -1415,6 +1418,7 @@ func TestNameUniqueness(t *testing.T) {
 		false,
 		networkInfo,
 		klog.TODO(),
+		metrics.NewNegMetrics(),
 	)
 	if err != nil {
 		t.Errorf("Errored while ensuring network endpoint groups: %s", err)
@@ -1446,7 +1450,7 @@ func TestNameUniqueness(t *testing.T) {
 		false,
 		networkInfo,
 		klog.TODO(),
-	)
+		metrics.NewNegMetrics())
 
 	if err == nil {
 		t.Errorf("Expected error when called with duplicate NEG name")
@@ -1494,7 +1498,7 @@ func TestNegObjectCrd(t *testing.T) {
 			false,
 			networkInfo,
 			klog.TODO(),
-		)
+			metrics.NewNegMetrics())
 		if err != nil {
 			t.Errorf("Errored while ensuring network endpoint groups: %s", err)
 		}
@@ -1543,6 +1547,7 @@ func TestNegObjectCrd(t *testing.T) {
 			false,
 			networkInfo,
 			klog.TODO(),
+			metrics.NewNegMetrics(),
 		)
 
 		if err != nil {
@@ -1687,7 +1692,7 @@ func TestNEGRecreate(t *testing.T) {
 	for _, tc := range testCases {
 		fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 		negtypes.MockNetworkEndpointAPIs(fakeGCE)
-		fakeCloud := negtypes.NewAdapterWithNetwork(fakeGCE, testNetwork, testSubnetwork)
+		fakeCloud := negtypes.NewAdapterWithNetwork(fakeGCE, testNetwork, testSubnetwork, metrics.NewNegMetrics())
 		fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
 			Version:             apiVersion,
 			Name:                negName,
@@ -1714,6 +1719,7 @@ func TestNEGRecreate(t *testing.T) {
 			tc.customName,
 			networkInfo,
 			klog.TODO(),
+			metrics.NewNegMetrics(),
 		)
 		if !tc.expectError && err != nil {
 			t.Errorf("TestCase: %s, Errored while ensuring network endpoint groups: %s", tc.desc, err)
@@ -1944,7 +1950,7 @@ func TestToZoneNetworkEndpointMapDegradedMode(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			result := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, serviceLister, tc.portName, tc.networkEndpointType, false, false, klog.TODO())
+			result := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, serviceLister, tc.portName, tc.networkEndpointType, false, false, klog.TODO(), testContext.NegMetrics)
 			if !reflect.DeepEqual(result.NetworkEndpointSet, tc.expectedEndpointMap) {
 				t.Errorf("degraded mode endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", result.NetworkEndpointSet, tc.expectedEndpointMap)
 			}
@@ -2567,7 +2573,7 @@ func TestValidateEndpointFields(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			for _, enableMultiSubnetCluster := range []bool{true, false} {
-				result, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, emptyNamedPort, negtypes.VmIpPortEndpointType, true, enableMultiSubnetCluster, klog.TODO())
+				result, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, emptyNamedPort, negtypes.VmIpPortEndpointType, true, enableMultiSubnetCluster, klog.TODO(), testContext.NegMetrics)
 				if !errors.Is(err, tc.expectErr) {
 					t.Errorf("normal mode with enableMultiSubnetCluster = %v, calculation got error %v, expected %v", err, enableMultiSubnetCluster, tc.expectErr)
 				}
@@ -2581,7 +2587,7 @@ func TestValidateEndpointFields(t *testing.T) {
 					t.Errorf("normal mode with enableMultiSubnetCluster = %v, got isErrorState=%v,\n expected %v", enableMultiSubnetCluster, syncErr.IsErrorState, tc.expectErrorState)
 				}
 
-				resultDegradedMode := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, serviceLister, emptyNamedPort, negtypes.VmIpPortEndpointType, true, enableMultiSubnetCluster, klog.TODO())
+				resultDegradedMode := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, serviceLister, emptyNamedPort, negtypes.VmIpPortEndpointType, true, enableMultiSubnetCluster, klog.TODO(), testContext.NegMetrics)
 				if !reflect.DeepEqual(resultDegradedMode.NetworkEndpointSet, tc.expectedEndpointMapDegradedMode) {
 					t.Errorf("degraded mode with enableMultiSubnetCluster = %v, endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", enableMultiSubnetCluster, resultDegradedMode.NetworkEndpointSet, tc.expectedEndpointMapDegradedMode)
 				}
@@ -3010,7 +3016,7 @@ func TestValidateEndpointFieldsMultipleSubnets(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			result, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, emptyNamedPort, negtypes.VmIpPortEndpointType, true, true, klog.TODO())
+			result, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, emptyNamedPort, negtypes.VmIpPortEndpointType, true, true, klog.TODO(), testContext.NegMetrics)
 			if !errors.Is(err, tc.expectErr) {
 				t.Errorf("With multi-subnet cluster enabled, normal mode calculation got error %v, expected %v", err, tc.expectErr)
 			}
@@ -3024,7 +3030,7 @@ func TestValidateEndpointFieldsMultipleSubnets(t *testing.T) {
 				t.Errorf("With multi-subnet cluster enabled, normal mode got isErrorState=%v,\n expected %v", syncErr.IsErrorState, tc.expectErrorState)
 			}
 
-			resultDegradedMode := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, serviceLister, emptyNamedPort, negtypes.VmIpPortEndpointType, true, true, klog.TODO())
+			resultDegradedMode := toZoneNetworkEndpointMapDegradedMode(negtypes.EndpointsDataFromEndpointSlices(tc.testEndpointSlices), fakeZoneGetter, podLister, nodeLister, serviceLister, emptyNamedPort, negtypes.VmIpPortEndpointType, true, true, klog.TODO(), testContext.NegMetrics)
 			if !reflect.DeepEqual(resultDegradedMode.NetworkEndpointSet, tc.expectedEndpointMapDegradedMode) {
 				t.Errorf("With multi-subnet cluste enabled, degraded mode endpoint set is not calculated correctly:\ngot %+v,\n expected %+v", resultDegradedMode.NetworkEndpointSet, tc.expectedEndpointMapDegradedMode)
 			}
@@ -3363,7 +3369,7 @@ func TestValidatePod(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			if _, got := validatePod(tc.pod, nodeLister, serviceLister, tc.networkEndpoint, tc.serviceName, tc.isCustomEPS, klog.TODO()); !errors.Is(got, tc.expectErr) {
+			if _, got := validatePod(tc.pod, nodeLister, serviceLister, tc.networkEndpoint, tc.serviceName, tc.isCustomEPS, klog.TODO(), testContext.NegMetrics); !errors.Is(got, tc.expectErr) {
 				t.Errorf("validatePod() = %t, expected %t\n", got, tc.expectErr)
 			}
 		})

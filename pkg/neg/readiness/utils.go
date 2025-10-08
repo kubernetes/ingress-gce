@@ -105,10 +105,10 @@ func SetNegReadinessConditionStatus(pod *v1.Pod, condition v1.PodCondition) {
 }
 
 // patchPodStatus patches pod status with given patchBytes
-func patchPodStatus(c clientset.Interface, namespace, name string, patchBytes []byte) (*v1.Pod, []byte, error) {
+func patchPodStatus(c clientset.Interface, namespace, name string, patchBytes []byte, negMetrics *metrics.NegMetrics) (*v1.Pod, []byte, error) {
 	start := time.Now()
 	updatedPod, err := c.CoreV1().Pods(namespace).Patch(context.TODO(), name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{}, "status")
-	metrics.PublishK8sRequestCountMetrics(start, metrics.PatchRequest, err)
+	negMetrics.PublishK8sRequestCountMetrics(start, metrics.PatchRequest, err)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to patch status %q for pod %q/%q: %v", patchBytes, namespace, name, err)
 	}
@@ -126,21 +126,21 @@ func preparePatchBytesforPodStatus(oldPodStatus, newPodStatus v1.PodStatus) ([]b
 // 2. the pod exists
 // 3. the pod has neg readiness gate
 // 4. the pod's neg readiness condition is not True
-func needToPoll(syncerKey negtypes.NegSyncerKey, endpointMap negtypes.EndpointPodMap, lookup NegLookup, podLister cache.Indexer, logger klog.Logger) negtypes.EndpointPodMap {
+func needToPoll(syncerKey negtypes.NegSyncerKey, endpointMap negtypes.EndpointPodMap, lookup NegLookup, podLister cache.Indexer, logger klog.Logger, negMetrics *metrics.NegMetrics) negtypes.EndpointPodMap {
 	if !lookup.ReadinessGateEnabled(syncerKey) {
 		return negtypes.EndpointPodMap{}
 	}
-	removeIrrelevantEndpoints(endpointMap, podLister, logger)
+	removeIrrelevantEndpoints(endpointMap, podLister, logger, negMetrics)
 	return endpointMap
 }
 
 // removeIrrelevantEndpoints will filter out the endpoints that does not need health status polling from the input endpoint map
-func removeIrrelevantEndpoints(endpointMap negtypes.EndpointPodMap, podLister cache.Indexer, logger klog.Logger) {
+func removeIrrelevantEndpoints(endpointMap negtypes.EndpointPodMap, podLister cache.Indexer, logger klog.Logger, negMetrics *metrics.NegMetrics) {
 	for endpoint, namespacedName := range endpointMap {
 		pod, exists, err := getPodFromStore(podLister, namespacedName.Namespace, namespacedName.Name)
 		if err != nil {
 			logger.Error(err, "Failed to retrieve pod from store", "pod", namespacedName.String())
-			metrics.PublishNegControllerErrorCountMetrics(err, true)
+			negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 		}
 		if err == nil && exists && needToProcess(pod) {
 			continue

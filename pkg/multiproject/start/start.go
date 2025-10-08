@@ -19,10 +19,12 @@ import (
 	pccontroller "k8s.io/ingress-gce/pkg/multiproject/controller"
 	"k8s.io/ingress-gce/pkg/multiproject/gce"
 	"k8s.io/ingress-gce/pkg/multiproject/manager"
+	syncMetrics "k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	providerconfigclient "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned"
 	providerconfiginformers "k8s.io/ingress-gce/pkg/providerconfig/client/informers/externalversions"
 	"k8s.io/ingress-gce/pkg/recorders"
+
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	informersvcneg "k8s.io/ingress-gce/pkg/svcneg/client/informers/externalversions"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -49,12 +51,13 @@ func StartWithLeaderElection(
 	gceCreator gce.GCECreator,
 	rootNamer *namer.Namer,
 	stopCh <-chan struct{},
+	syncerMetrics *syncMetrics.SyncerMetrics,
 ) error {
 	logger.V(1).Info("Starting multi-project controller with leader election", "host", hostname)
 
 	recordersManager := recorders.NewManager(eventRecorderKubeClient, logger)
 
-	leConfig, err := makeLeaderElectionConfig(leaderElectKubeClient, hostname, recordersManager, logger, kubeClient, svcNegClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, informersFactory, svcNegFactory, networkFactory, nodeTopologyFactory, gceCreator, rootNamer)
+	leConfig, err := makeLeaderElectionConfig(leaderElectKubeClient, hostname, recordersManager, logger, kubeClient, svcNegClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, informersFactory, svcNegFactory, networkFactory, nodeTopologyFactory, gceCreator, rootNamer, syncerMetrics)
 	if err != nil {
 		return err
 	}
@@ -88,6 +91,7 @@ func makeLeaderElectionConfig(
 	nodeTopologyFactory informernodetopology.SharedInformerFactory,
 	gceCreator gce.GCECreator,
 	rootNamer *namer.Namer,
+	syncerMetrics *syncMetrics.SyncerMetrics,
 ) (*leaderelection.LeaderElectionConfig, error) {
 	recorder := recordersManager.Recorder(flags.F.LeaderElection.LockObjectNamespace)
 	// add a uniquifier so that two processes on the same host don't accidentally both become active
@@ -116,7 +120,7 @@ func makeLeaderElectionConfig(
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {
 				logger.Info("Became leader, starting multi-project controller")
-				Start(logger, kubeClient, svcNegClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, informersFactory, svcNegFactory, networkFactory, nodeTopologyFactory, gceCreator, rootNamer, ctx.Done())
+				Start(logger, kubeClient, svcNegClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, informersFactory, svcNegFactory, networkFactory, nodeTopologyFactory, gceCreator, rootNamer, ctx.Done(), syncerMetrics)
 			},
 			OnStoppedLeading: func() {
 				logger.Info("Stop running multi-project leader election")
@@ -143,6 +147,7 @@ func Start(
 	gceCreator gce.GCECreator,
 	rootNamer *namer.Namer,
 	stopCh <-chan struct{},
+	syncerMetrics *syncMetrics.SyncerMetrics,
 ) {
 	logger.V(1).Info("Starting ProviderConfig controller")
 	lpConfig := labels.PodLabelPropagationConfig{}
@@ -173,6 +178,7 @@ func Start(
 		gceCreator,
 		stopCh,
 		logger,
+		syncerMetrics,
 	)
 	logger.V(1).Info("Initialized ProviderConfig controller manager")
 

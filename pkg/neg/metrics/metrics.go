@@ -280,8 +280,15 @@ func RegisterMetrics() {
 	})
 }
 
+type NegMetrics struct {
+}
+
+func NewNegMetrics() *NegMetrics {
+	return &NegMetrics{}
+}
+
 // PublishNegOperationMetrics publishes collected metrics for neg operations
-func PublishNegOperationMetrics(operation, negType, apiVersion string, err error, numEndpoints int, start time.Time) {
+func (m *NegMetrics) PublishNegOperationMetrics(operation, negType, apiVersion string, err error, numEndpoints int, start time.Time) {
 	result := getResult(err)
 
 	NegOperationLatency.WithLabelValues(operation, negType, apiVersion, result).Observe(time.Since(start).Seconds())
@@ -289,40 +296,40 @@ func PublishNegOperationMetrics(operation, negType, apiVersion string, err error
 }
 
 // PublishNegSyncMetrics publishes collected metrics for the sync of NEG
-func PublishNegSyncMetrics(negType, endpointCalculator string, err error, start time.Time) {
+func (m *NegMetrics) PublishNegSyncMetrics(negType, endpointCalculator string, err error, start time.Time) {
 	result := getResult(err)
 
 	SyncerSyncLatency.WithLabelValues(negType, endpointCalculator, result).Observe(time.Since(start).Seconds())
 }
 
 // PublishNegManagerProcessMetrics publishes collected metrics for the neg manager loops
-func PublishNegManagerProcessMetrics(process string, err error, start time.Time) {
+func (m *NegMetrics) PublishNegManagerProcessMetrics(process string, err error, start time.Time) {
 	result := getResult(err)
 	ManagerProcessLatency.WithLabelValues(process, result).Observe(time.Since(start).Seconds())
 }
 
 // PublishNegInitializationMetrics publishes collected metrics for time from request to initialization of NEG
-func PublishNegInitializationMetrics(latency time.Duration) {
+func (m *NegMetrics) PublishNegInitializationMetrics(latency time.Duration) {
 	InitializationLatency.Observe(latency.Seconds())
 }
 
-func PublishNegSyncerStalenessMetrics(syncerStaleness time.Duration) {
+func (m *NegMetrics) PublishNegSyncerStalenessMetrics(syncerStaleness time.Duration) {
 	SyncerStaleness.Observe(syncerStaleness.Seconds())
 }
 
-func PublishNegEPSStalenessMetrics(epsStaleness time.Duration) {
+func (m *NegMetrics) PublishNegEPSStalenessMetrics(epsStaleness time.Duration) {
 	EPSStaleness.Observe(epsStaleness.Seconds())
 }
 
 // PublishDegradedModeCorrectnessMetrics publishes collected metrics
 // of the correctness of degraded mode calculations compared with the current one
-func PublishDegradedModeCorrectnessMetrics(count int, endpointType string, negType string) {
+func (m *NegMetrics) PublishDegradedModeCorrectnessMetrics(count int, endpointType string, negType string) {
 	DegradeModeCorrectness.WithLabelValues(negType, endpointType).Observe(float64(count))
 }
 
 // PublishNegControllerErrorCountMetrics publishes collected metrics
 // for neg controller errors.
-func PublishNegControllerErrorCountMetrics(err error, isIgnored bool) {
+func (m *NegMetrics) PublishNegControllerErrorCountMetrics(err error, isIgnored bool) {
 	if err == nil {
 		return
 	}
@@ -342,7 +349,7 @@ func PublishAnnotationMetrics(annotationSize int, labelNumber int) {
 }
 
 // PublishGCERequestCountMetrics publishes collected metrics for GCE Request Counts
-func PublishGCERequestCountMetrics(start time.Time, requestType string, err error) {
+func (m *NegMetrics) PublishGCERequestCountMetrics(start time.Time, requestType string, err error) {
 	var result string
 	if err == nil {
 		result = resultSuccess
@@ -358,7 +365,7 @@ func PublishGCERequestCountMetrics(start time.Time, requestType string, err erro
 }
 
 // PublishK8sRequestCountMetrics publishes collected metrics for K8s Request Counts
-func PublishK8sRequestCountMetrics(start time.Time, requestType string, err error) {
+func (m *NegMetrics) PublishK8sRequestCountMetrics(start time.Time, requestType string, err error) {
 	var result string
 	if err == nil {
 		result = resultSuccess

@@ -68,12 +68,13 @@ func newTestReadinessReflector(testContext *negtypes.TestContext, markNonDefault
 		testContext.KubeClient,
 		testContext.KubeClient,
 		testContext.PodInformer.GetIndexer(),
-		negtypes.NewAdapter(testContext.Cloud),
+		negtypes.NewAdapter(testContext.Cloud, testContext.NegMetrics),
 		&fakeLookUp{},
 		fakeZoneGetter,
 		false,
 		markNonDefaultSubnetPodsReady,
 		klog.TODO(),
+		testContext.NegMetrics,
 	)
 	ret := reflector.(*readinessReflector)
 	return ret, nil
