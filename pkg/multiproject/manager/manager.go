@@ -3,7 +3,6 @@ package manager
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	networkclient "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned"
 	nodetopologyclient "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned"
@@ -32,8 +31,7 @@ var startNEGController = neg.StartNEGController
 // idempotent, adds/removes the NEG cleanup finalizer, and wires a stop channel
 // for clean shutdown.
 type ProviderConfigControllersManager struct {
-	mu          sync.Mutex
-	controllers map[string]*controllerSet
+	controllers *ControllerMap
 
 	logger               klog.Logger
 	providerConfigClient providerconfigclient.Interface
@@ -54,7 +52,6 @@ type ProviderConfigControllersManager struct {
 }
 
 // controllerSet holds controller-specific resources for a ProviderConfig.
-// Unexported because it is an internal implementation detail.
 type controllerSet struct {
 	stopCh chan<- struct{}
 }
@@ -79,7 +76,7 @@ func NewProviderConfigControllerManager(
 	syncerMetrics *syncMetrics.SyncerMetrics,
 ) *ProviderConfigControllersManager {
 	return &ProviderConfigControllersManager{
-		controllers:          make(map[string]*controllerSet),
+		controllers:          NewControllerMap(),
 		logger:               logger,
 		providerConfigClient: providerConfigClient,
 		informers:            informers,
@@ -107,23 +104,18 @@ func providerConfigKey(pc *providerconfig.ProviderConfig) string {
 // idempotent per ProviderConfig: concurrent or repeated calls for the same
 // ProviderConfig will only start controllers once.
 func (pccm *ProviderConfigControllersManager) StartControllersForProviderConfig(pc *providerconfig.ProviderConfig) error {
-	pccm.mu.Lock()
-	defer pccm.mu.Unlock()
-
 	logger := pccm.logger.WithValues("providerConfigId", pc.Name)
 
 	pcKey := providerConfigKey(pc)
 
 	logger.Info("Starting controllers for provider config")
-	if _, exists := pccm.controllers[pcKey]; exists {
+
+	// Check if controller already exists
+	if _, exists := pccm.controllers.Get(pcKey); exists {
 		logger.Info("Controllers for provider config already exist, skipping start")
 		return nil
 	}
 
-	// Add the cleanup finalizer up front to avoid a window where controllers
-	// may create external resources without a finalizer present. If deletion
-	// happens in that window, cleanup could be skipped. We roll this back on
-	// any subsequent startup error.
 	err := finalizer.EnsureProviderConfigNEGCleanupFinalizer(pc, pccm.providerConfigClient, logger)
 	if err != nil {
 		return fmt.Errorf("failed to ensure NEG cleanup finalizer for project %s: %w", pcKey, err)
@@ -159,30 +151,30 @@ func (pccm *ProviderConfigControllersManager) StartControllersForProviderConfig(
 		return fmt.Errorf("failed to start NEG controller for project %s: %w", pcKey, err)
 	}
 
-	pccm.controllers[pcKey] = &controllerSet{
+	pccm.controllers.Set(pcKey, &controllerSet{
 		stopCh: negControllerStopCh,
-	}
+	})
 
 	logger.Info("Started controllers for provider config")
 	return nil
 }
 
 func (pccm *ProviderConfigControllersManager) StopControllersForProviderConfig(pc *providerconfig.ProviderConfig) {
-	pccm.mu.Lock()
-	defer pccm.mu.Unlock()
-
 	logger := pccm.logger.WithValues("providerConfigId", pc.Name)
 
 	csKey := providerConfigKey(pc)
-	_, exists := pccm.controllers[csKey]
+
+	// Remove controller from map using minimal lock scope
+	cs, exists := pccm.controllers.Delete(csKey)
 	if !exists {
 		logger.Info("Controllers for provider config do not exist")
 		return
 	}
 
-	close(pccm.controllers[csKey].stopCh)
+	// Perform cleanup operations without holding the lock
+	close(cs.stopCh)
 
-	delete(pccm.controllers, csKey)
+	pccm.controllers.Delete(csKey)
 
 	// Ensure we remove the finalizer from the latest object state.
 	pcLatest := pccm.latestPCWithCleanupFinalizer(pc)
