@@ -22,6 +22,7 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
+	activecontrollermetrics "k8s.io/ingress-gce/pkg/metrics/activecontroller"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
@@ -98,6 +99,8 @@ func NewController(config *ControllerConfig, logger klog.Logger) *Controller {
 // Run the queue to process updates for the controller. This must be run in a
 // separate goroutine (method will block until queue shutdown).
 func (c *Controller) Run() {
+	activecontrollermetrics.RecordRunningController(activecontrollermetrics.IGControllerLabel)
+	defer activecontrollermetrics.RecordStoppedController(activecontrollermetrics.IGControllerLabel)
 	start := time.Now()
 	for !c.hasSynced() {
 		c.logger.V(2).Info("Waiting for hasSynced", "elapsedTime", time.Now().Sub(start))

@@ -39,6 +39,7 @@ import (
 	svcnegv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/flags"
+	activecontrollermetrics "k8s.io/ingress-gce/pkg/metrics/activecontroller"
 	metrics "k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	syncMetrics "k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
@@ -389,9 +390,11 @@ func (c *Controller) Run() {
 	}, c.stopCh)
 
 	c.logger.V(2).Info("Starting network endpoint group controller")
+	activecontrollermetrics.RecordRunningController(activecontrollermetrics.NEGControllerLabel)
 	defer func() {
 		c.logger.V(2).Info("Shutting down network endpoint group controller")
 		c.stop()
+		activecontrollermetrics.RecordStoppedController(activecontrollermetrics.NEGControllerLabel)
 		c.logger.Info("Network Endpoint Group Controller Shutdown")
 	}()
 
