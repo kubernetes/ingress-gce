@@ -48,6 +48,7 @@ import (
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/metrics"
+	activecontrollermetrics "k8s.io/ingress-gce/pkg/metrics/activecontroller"
 	negmetrics "k8s.io/ingress-gce/pkg/neg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	ingsync "k8s.io/ingress-gce/pkg/sync"
@@ -361,6 +362,8 @@ func (lbc *LoadBalancerController) Run() {
 		lbc.Stop()
 	}()
 	lbc.logger.Info("Starting loadbalancer controller")
+	activecontrollermetrics.RecordRunningController(activecontrollermetrics.IngressControllerLabel)
+	defer activecontrollermetrics.RecordStoppedController(activecontrollermetrics.IngressControllerLabel)
 	go lbc.ingQueue.Run()
 
 	<-lbc.stopCh

@@ -43,6 +43,7 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/flags"
+	activecontrollermetrics "k8s.io/ingress-gce/pkg/metrics/activecontroller"
 	"k8s.io/ingress-gce/pkg/psc/metrics"
 	"k8s.io/ingress-gce/pkg/psc/metrics/metricscollector"
 	serviceattachmentclient "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned"
@@ -174,8 +175,10 @@ func (c *Controller) Run() {
 	}, c.stopCh)
 
 	c.logger.V(2).Info("Starting private service connect controller")
+	activecontrollermetrics.RecordRunningController(activecontrollermetrics.PSCControllerLabel)
 	defer func() {
 		c.logger.V(2).Info("Shutting down private service connect controller")
+		activecontrollermetrics.RecordStoppedController(activecontrollermetrics.PSCControllerLabel)
 		c.svcAttachmentQueue.ShutDown()
 	}()
 
