@@ -39,6 +39,7 @@ import (
 	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
+	activecontrollermetrics "k8s.io/ingress-gce/pkg/metrics/activecontroller"
 	negmetrics "k8s.io/ingress-gce/pkg/neg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
@@ -505,6 +506,9 @@ func (lc *L4NetLBController) Run() {
 	}, lc.stopCh)
 
 	lc.logger.Info("Running L4 Net Controller", "numWorkers", lc.ctx.NumL4NetLBWorkers)
+	activecontrollermetrics.RecordRunningController(activecontrollermetrics.L4NetLBControllerLabel)
+	defer activecontrollermetrics.RecordStoppedController(activecontrollermetrics.L4NetLBControllerLabel)
+
 	lc.svcQueue.Run()
 
 	<-lc.stopCh

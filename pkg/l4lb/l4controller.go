@@ -38,6 +38,7 @@ import (
 	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
+	activecontrollermetrics "k8s.io/ingress-gce/pkg/metrics/activecontroller"
 	negmetrics "k8s.io/ingress-gce/pkg/neg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
@@ -263,6 +264,8 @@ func (l4c *L4Controller) Run() {
 	}, l4c.stopCh)
 
 	l4c.logger.Info("Running L4 Controller", "numWorkers", l4c.numWorkers)
+	activecontrollermetrics.RecordRunningController(activecontrollermetrics.L4ILBControllerLabel)
+	defer activecontrollermetrics.RecordStoppedController(activecontrollermetrics.L4ILBControllerLabel)
 	l4c.svcQueue.Run()
 	<-l4c.stopCh
 }
