@@ -128,32 +128,34 @@ func main() {
 		klog.Fatalf("Failed to create kubernetes client config: %v", err)
 	}
 
-	var backendConfigClient backendconfigclient.Interface
 	crdClient, err := crdclient.NewForConfig(kubeConfig)
 	if err != nil {
 		klog.Fatalf("Failed to create kubernetes CRD client: %v", err)
 	}
 	// TODO(rramkumar): Reuse this CRD handler for other CRD's coming.
 	crdHandler := crd.NewCRDHandler(crdClient, rootLogger)
-	backendConfigCRDMeta := backendconfig.CRDMeta()
-	if _, err := crdHandler.EnsureCRD(backendConfigCRDMeta, true); err != nil {
-		klog.Fatalf("Failed to ensure BackendConfig CRD: %v", err)
-	}
-
-	backendConfigClient, err = backendconfigclient.NewForConfig(kubeConfig)
-	if err != nil {
-		klog.Fatalf("Failed to create BackendConfig client: %v", err)
-	}
-
 	var frontendConfigClient frontendconfigclient.Interface
-	frontendConfigCRDMeta := frontendconfig.CRDMeta()
-	if _, err := crdHandler.EnsureCRD(frontendConfigCRDMeta, true); err != nil {
-		klog.Fatalf("Failed to ensure FrontendConfig CRD: %v", err)
-	}
+	var backendConfigClient backendconfigclient.Interface
+	if flags.F.RunIngressController {
+		backendConfigCRDMeta := backendconfig.CRDMeta()
+		if _, err := crdHandler.EnsureCRD(backendConfigCRDMeta, true); err != nil {
+			klog.Fatalf("Failed to ensure BackendConfig CRD: %v", err)
+		}
 
-	frontendConfigClient, err = frontendconfigclient.NewForConfig(kubeConfig)
-	if err != nil {
-		klog.Fatalf("Failed to create FrontendConfig client: %v", err)
+		backendConfigClient, err = backendconfigclient.NewForConfig(kubeConfig)
+		if err != nil {
+			klog.Fatalf("Failed to create BackendConfig client: %v", err)
+		}
+
+		frontendConfigCRDMeta := frontendconfig.CRDMeta()
+		if _, err := crdHandler.EnsureCRD(frontendConfigCRDMeta, true); err != nil {
+			klog.Fatalf("Failed to ensure FrontendConfig CRD: %v", err)
+		}
+
+		frontendConfigClient, err = frontendconfigclient.NewForConfig(kubeConfig)
+		if err != nil {
+			klog.Fatalf("Failed to create FrontendConfig client: %v", err)
+		}
 	}
 
 	var firewallCRClient firewallcrclient.Interface

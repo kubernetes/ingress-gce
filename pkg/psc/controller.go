@@ -44,6 +44,7 @@ import (
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/psc/metrics"
+	"k8s.io/ingress-gce/pkg/psc/metrics/metricscollector"
 	serviceattachmentclient "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -56,6 +57,7 @@ import (
 func init() {
 	// register prometheus metrics
 	metrics.RegisterMetrics()
+	metricscollector.RegisterMetrics()
 }
 
 const (
@@ -92,7 +94,7 @@ type Controller struct {
 	svcAttachmentLister cache.Indexer
 	serviceLister       cache.Indexer
 	recorder            func(string) record.EventRecorder
-	collector           metrics.PSCMetricsCollector
+	collector           *metricscollector.PSCMetricsCollector
 
 	hasSynced func() bool
 
@@ -116,6 +118,7 @@ type Controller struct {
 func NewController(ctx *context.ControllerContext, stopCh <-chan struct{}, logger klog.Logger) *Controller {
 	logger = logger.WithName("PSCController")
 	saNamer := namer.NewServiceAttachmentNamer(ctx.ClusterNamer, string(ctx.KubeSystemUID))
+	metricsCollector := metricscollector.NewPSCMetricsCollector(flags.F.MetricsExportInterval, logger)
 	controller := &Controller{
 		cloud:               ctx.Cloud,
 		saClient:            ctx.SAClient,
@@ -125,7 +128,7 @@ func NewController(ctx *context.ControllerContext, stopCh <-chan struct{}, logge
 		serviceLister:       ctx.ServiceInformer.GetIndexer(),
 		hasSynced:           ctx.HasSynced,
 		recorder:            ctx.Recorder,
-		collector:           ctx.ControllerMetrics,
+		collector:           metricsCollector,
 		clusterName:         flags.F.GKEClusterName,
 		regionalCluster:     ctx.RegionalCluster,
 		readOnlyMode:        ctx.ReadOnlyMode,
@@ -183,6 +186,7 @@ func (c *Controller) Run() {
 		time.Sleep(ServiceAttachmentGCPeriod)
 		wait.Until(c.garbageCollectServiceAttachments, ServiceAttachmentGCPeriod, c.stopCh)
 	}()
+	go c.collector.Run(c.stopCh)
 
 	<-c.stopCh
 }
