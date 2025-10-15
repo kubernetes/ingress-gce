@@ -98,8 +98,8 @@ type L4NetLBSyncResult struct {
 	GCEResourceUpdate  ResourceUpdates
 }
 
-func NewL4SyncResult(syncType string, svc *corev1.Service, isMultinet bool, enabledStrongSessionAffinity bool, isWeightedLBPodsPerNode bool, useNEGs bool) *L4NetLBSyncResult {
-	startTime := time.Now()
+func NewL4SyncResult(syncType string, startTime time.Time, svc *corev1.Service, isMultinet bool, enabledStrongSessionAffinity bool, isWeightedLBPodsPerNode bool, useNEGs bool) *L4NetLBSyncResult {
+
 	backendType := metrics.L4BackendTypeInstanceGroup
 	if useNEGs || isMultinet {
 		backendType = metrics.L4BackendTypeNEG
@@ -226,11 +226,11 @@ func (l4netlb *L4NetLB) checkStrongSessionAffinityRequirements() *utils.UserErro
 // been created. It is health check, firewall rules, backend service and forwarding rule.
 // It returns a LoadBalancerStatus with the updated ForwardingRule IP address.
 // This function does not link instances to Backend Service.
-func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) *L4NetLBSyncResult {
+func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service, startTime time.Time) *L4NetLBSyncResult {
 	isMultinetService := l4netlb.networkResolver.IsMultinetService(svc)
 	serviceUsesSSA := l4netlb.enableStrongSessionAffinity && annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service)
 	isWeightedLBPodsPerNode := l4netlb.isWeightedLBPodsPerNode()
-	result := NewL4SyncResult(SyncTypeCreate, svc, isMultinetService, serviceUsesSSA, isWeightedLBPodsPerNode, l4netlb.useNEGs)
+	result := NewL4SyncResult(SyncTypeCreate, startTime, svc, isMultinetService, serviceUsesSSA, isWeightedLBPodsPerNode, l4netlb.useNEGs)
 
 	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
 	if len(svc.Status.LoadBalancer.Ingress) > 0 {
@@ -568,7 +568,7 @@ func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *L4NetLBS
 	isMultinetService := l4netlb.networkResolver.IsMultinetService(svc)
 	useSSA := l4netlb.enableStrongSessionAffinity && annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service)
 	isWeightedLBPodsPerNode := l4netlb.isWeightedLBPodsPerNode()
-	result := NewL4SyncResult(SyncTypeDelete, svc, isMultinetService, useSSA, isWeightedLBPodsPerNode, l4netlb.useNEGs)
+	result := NewL4SyncResult(SyncTypeDelete, time.Now(), svc, isMultinetService, useSSA, isWeightedLBPodsPerNode, l4netlb.useNEGs)
 
 	l4netlb.Service = svc
 

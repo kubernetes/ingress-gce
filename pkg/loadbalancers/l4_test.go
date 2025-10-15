@@ -24,6 +24,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/compute/v1"
@@ -793,7 +794,7 @@ func TestHealthCheckFirewallDeletionWithNetLB(t *testing.T) {
 	l4NetLB.healthChecks = l4.healthChecks
 
 	// create netlb resources
-	xlbResult := l4NetLB.EnsureFrontend(nodeNames, netlbSvc)
+	xlbResult := l4NetLB.EnsureFrontend(nodeNames, netlbSvc, time.Now())
 	if xlbResult.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", xlbResult.Error)
 	}

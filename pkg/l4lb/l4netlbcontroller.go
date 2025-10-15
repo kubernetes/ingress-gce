@@ -661,7 +661,7 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 
 	// Use the same function for both create and updates. If controller crashes and restarts,
 	// all existing services will show up as Service Adds.
-	syncResult := l4netlb.EnsureFrontend(nodeNames, service)
+	syncResult := l4netlb.EnsureFrontend(nodeNames, service, startTime)
 	if syncResult.Error != nil {
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
 			"Error ensuring Resource for L4 External LoadBalancer, err: %v", syncResult.Error)
