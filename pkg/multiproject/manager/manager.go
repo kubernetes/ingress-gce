@@ -15,6 +15,7 @@ import (
 	"k8s.io/ingress-gce/pkg/multiproject/finalizer"
 	"k8s.io/ingress-gce/pkg/multiproject/gce"
 	"k8s.io/ingress-gce/pkg/multiproject/neg"
+	syncMetrics "k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	providerconfigclient "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
@@ -44,6 +45,7 @@ type ProviderConfigControllersManager struct {
 	lpConfig             labels.PodLabelPropagationConfig
 	gceCreator           gce.GCECreator
 	globalStopCh         <-chan struct{}
+	syncerMetrics        *syncMetrics.SyncerMetrics
 }
 
 type ControllerSet struct {
@@ -66,6 +68,7 @@ func NewProviderConfigControllerManager(
 	gceCreator gce.GCECreator,
 	globalStopCh <-chan struct{},
 	logger klog.Logger,
+	syncerMetrics *syncMetrics.SyncerMetrics,
 ) *ProviderConfigControllersManager {
 	return &ProviderConfigControllersManager{
 		controllers:          make(map[string]*ControllerSet),
@@ -84,6 +87,7 @@ func NewProviderConfigControllerManager(
 		lpConfig:             lpConfig,
 		gceCreator:           gceCreator,
 		globalStopCh:         globalStopCh,
+		syncerMetrics:        syncerMetrics,
 	}
 }
 
@@ -133,6 +137,7 @@ func (pccm *ProviderConfigControllersManager) StartControllersForProviderConfig(
 		pccm.globalStopCh,
 		logger,
 		pc,
+		pccm.syncerMetrics,
 	)
 	if err != nil {
 		cleanupErr := finalizer.DeleteProviderConfigNEGCleanupFinalizer(pc, pccm.providerConfigClient, logger)

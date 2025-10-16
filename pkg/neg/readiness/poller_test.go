@@ -555,7 +555,7 @@ func TestPoll(t *testing.T) {
 	m.MockNetworkEndpointGroups.ListNetworkEndpointsHook = func(ctx context.Context, key *meta.Key, obj *compute.NetworkEndpointGroupsListEndpointsRequest, filter *filter.F, m *cloud.MockNetworkEndpointGroups, options ...cloud.Option) ([]*compute.NetworkEndpointWithHealthStatus, error) {
 		return nil, fmt.Errorf("random error from GCE")
 	}
-	poller.negCloud = negtypes.NewAdapter(fakeGCE)
+	poller.negCloud = negtypes.NewAdapter(fakeGCE, negtypes.NewTestContext().NegMetrics)
 	pollAndValidate(step, true, true, 6, true, false)
 	pollAndValidate(step, true, true, 6, true, false)
 }

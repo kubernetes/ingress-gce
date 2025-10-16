@@ -134,6 +134,9 @@ type transactionSyncer struct {
 	networkInfo network.NetworkInfo
 
 	namer namer.NonDefaultSubnetNEGNamer
+
+	// negMetrics is used to collect metrics per NEG instance
+	negMetrics *metrics.NegMetrics
 }
 
 func NewTransactionSyncer(
@@ -157,6 +160,7 @@ func NewTransactionSyncer(
 	enableDualStackNEG bool,
 	networkInfo network.NetworkInfo,
 	namer namer.NonDefaultSubnetNEGNamer,
+	negMetrics *metrics.NegMetrics,
 ) negtypes.NegSyncer {
 
 	logger := log.WithName("Syncer").WithValues("service", klog.KRef(negSyncerKey.Namespace, negSyncerKey.Name), "primaryNEGName", negSyncerKey.NegName)
@@ -188,9 +192,10 @@ func NewTransactionSyncer(
 		podLabelPropagationConfig: lpConfig,
 		networkInfo:               networkInfo,
 		namer:                     namer,
+		negMetrics:                negMetrics,
 	}
 	// Syncer implements life cycle logic
-	syncer := newSyncer(negSyncerKey, serviceLister, recorder, ts, logger)
+	syncer := newSyncer(negSyncerKey, serviceLister, recorder, ts, logger, negMetrics)
 	// transactionSyncer needs syncer interface for internals
 	ts.syncer = syncer
 	ts.retry = backoff.NewDelayRetryHandler(func() { syncer.Sync() }, backoff.NewExponentialBackoffHandler(maxRetries, minRetryDelay, maxRetryDelay))
@@ -198,15 +203,15 @@ func NewTransactionSyncer(
 	return syncer
 }
 
-func GetEndpointsCalculator(podLister, nodeLister, serviceLister cache.Indexer, zoneGetter *zonegetter.ZoneGetter, syncerKey negtypes.NegSyncerKey, mode negtypes.EndpointsCalculatorMode, logger klog.Logger, enableDualStackNEG bool, syncMetricsCollector *metricscollector.SyncerMetrics, networkInfo *network.NetworkInfo, l4LBType negtypes.L4LBType) negtypes.NetworkEndpointsCalculator {
+func GetEndpointsCalculator(podLister, nodeLister, serviceLister cache.Indexer, zoneGetter *zonegetter.ZoneGetter, syncerKey negtypes.NegSyncerKey, mode negtypes.EndpointsCalculatorMode, logger klog.Logger, enableDualStackNEG bool, syncMetricsCollector *metricscollector.SyncerMetrics, networkInfo *network.NetworkInfo, l4LBType negtypes.L4LBType, negMetrics *metrics.NegMetrics) negtypes.NetworkEndpointsCalculator {
 	serviceKey := strings.Join([]string{syncerKey.Name, syncerKey.Namespace}, "/")
 	if syncerKey.NegType == negtypes.VmIpEndpointType {
 		nodeLister := listers.NewNodeLister(nodeLister)
 		switch mode {
 		case negtypes.L4LocalMode:
-			return NewLocalL4EndpointsCalculator(nodeLister, zoneGetter, serviceKey, logger, networkInfo, l4LBType)
+			return NewLocalL4EndpointsCalculator(nodeLister, zoneGetter, serviceKey, logger, networkInfo, l4LBType, negMetrics)
 		default:
-			return NewClusterL4EndpointsCalculator(nodeLister, zoneGetter, serviceKey, logger, networkInfo, l4LBType)
+			return NewClusterL4EndpointsCalculator(nodeLister, zoneGetter, serviceKey, logger, networkInfo, l4LBType, negMetrics)
 		}
 	}
 	return NewL7EndpointsCalculator(
@@ -218,6 +223,7 @@ func GetEndpointsCalculator(podLister, nodeLister, serviceLister cache.Indexer, 
 		logger,
 		enableDualStackNEG,
 		syncMetricsCollector,
+		negMetrics,
 	)
 }
 
@@ -247,7 +253,7 @@ func (s *transactionSyncer) syncInternal() error {
 		}
 	}
 	s.updateStatus(err)
-	metrics.PublishNegSyncMetrics(string(s.NegSyncerKey.NegType), string(s.endpointsCalculator.Mode()), err, start)
+	s.negMetrics.PublishNegSyncMetrics(string(s.NegSyncerKey.NegType), string(s.endpointsCalculator.Mode()), err, start)
 	s.syncMetricsCollector.UpdateSyncerStatusInMetrics(s.NegSyncerKey, err, s.inErrorState())
 	return err
 }
@@ -278,7 +284,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 		return err
 	}
 
-	currentMap, currentPodLabelMap, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode(), s.enableDualStackNEG, s.logger)
+	currentMap, currentPodLabelMap, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode(), s.enableDualStackNEG, s.logger, s.negMetrics)
 	if err != nil {
 		return fmt.Errorf("%w: %w", negtypes.ErrCurrentNegEPNotFound, err)
 	}
@@ -315,7 +321,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 			s.logStats(degradedTargetMap, "degraded mode desired NEG endpoints")
 			notInDegraded, onlyInDegraded = calculateNetworkEndpointDifference(targetMap, degradedTargetMap)
 			if err == nil {
-				computeDegradedModeCorrectness(notInDegraded, onlyInDegraded, string(s.NegSyncerKey.NegType), s.logger)
+				computeDegradedModeCorrectness(notInDegraded, onlyInDegraded, string(s.NegSyncerKey.NegType), s.logger, s.negMetrics)
 			}
 		}
 	}
@@ -375,7 +381,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	var endpointPodLabelMap labels.EndpointPodLabelMap
 	// Only fetch label from pod for L7 endpoints
 	if flags.F.EnableNEGLabelPropagation && s.NegType == negtypes.VmIpPortEndpointType {
-		endpointPodLabelMap = getEndpointPodLabelMap(addEndpoints, endpointPodMap, s.podLister, s.podLabelPropagationConfig, s.recorder, s.logger)
+		endpointPodLabelMap = getEndpointPodLabelMap(addEndpoints, endpointPodMap, s.podLister, s.podLabelPropagationConfig, s.recorder, s.logger, s.negMetrics)
 		publishAnnotationSizeMetrics(addEndpoints, endpointPodLabelMap)
 	}
 
@@ -550,6 +556,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 				s.customName,
 				networkInfo,
 				s.logger,
+				s.negMetrics,
 			)
 			if err != nil {
 				errList = append(errList, err)
@@ -714,7 +721,7 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, negLocati
 		s.syncMetricsCollector.UpdateSyncerStatusInMetrics(s.NegSyncerKey, syncErr, s.inErrorState())
 	}
 
-	metrics.PublishNegOperationMetrics(operation.String(), string(s.NegSyncerKey.NegType), string(s.NegSyncerKey.GetAPIVersion()), err, len(networkEndpointMap), start)
+	s.negMetrics.PublishNegOperationMetrics(operation.String(), string(s.NegSyncerKey.NegType), string(s.NegSyncerKey.GetAPIVersion()), err, len(networkEndpointMap), start)
 	return err
 }
 
@@ -738,7 +745,7 @@ func checkEndpointBatchErr(err error, operation transactionOp) error {
 }
 
 func (s *transactionSyncer) recordEvent(eventType, reason, eventDesc string) {
-	if svc := getService(s.serviceLister, s.Namespace, s.Name, s.logger); svc != nil {
+	if svc := getService(s.serviceLister, s.Namespace, s.Name, s.logger, s.negMetrics); svc != nil {
 		s.recorder.Eventf(svc, eventType, reason, eventDesc)
 	}
 }
@@ -761,7 +768,7 @@ func (s *transactionSyncer) commitTransaction(err error, networkEndpointMap map[
 		// This is to prevent if the NEG object is deleted or misconfigured by user
 		s.needInit = true
 		needRetry = true
-		metrics.PublishNegControllerErrorCountMetrics(err, false)
+		s.negMetrics.PublishNegControllerErrorCountMetrics(err, false)
 	}
 
 	for networkEndpoint := range networkEndpointMap {
@@ -780,7 +787,7 @@ func (s *transactionSyncer) commitTransaction(err error, networkEndpointMap map[
 		} else {
 			if retryErr := s.retry.Retry(); retryErr != nil {
 				s.recordEvent(v1.EventTypeWarning, "RetryFailed", fmt.Sprintf("Failed to retry NEG sync for %q: %v", s.NegSyncerKey.String(), retryErr))
-				metrics.PublishNegControllerErrorCountMetrics(retryErr, false)
+				s.negMetrics.PublishNegControllerErrorCountMetrics(retryErr, false)
 			}
 		}
 		return
@@ -837,7 +844,7 @@ func (s *transactionSyncer) isZoneChange() bool {
 	negCR, err := getNegFromStore(s.svcNegLister, s.Namespace, s.NegSyncerKey.NegName)
 	if err != nil {
 		s.logger.Error(err, "unable to retrieve neg from the store", "neg", klog.KRef(s.Namespace, s.NegName))
-		metrics.PublishNegControllerErrorCountMetrics(err, true)
+		s.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 		return false
 	}
 
@@ -846,7 +853,7 @@ func (s *transactionSyncer) isZoneChange() bool {
 		id, err := cloud.ParseResourceURL(ref.SelfLink)
 		if err != nil {
 			s.logger.Error(err, "unable to parse selflink", "selfLink", ref.SelfLink)
-			metrics.PublishNegControllerErrorCountMetrics(err, true)
+			s.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 			continue
 		}
 		existingZones.Insert(id.Key.Zone)
@@ -855,7 +862,7 @@ func (s *transactionSyncer) isZoneChange() bool {
 	zones, err := s.zoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(s.EpCalculatorMode), s.logger)
 	if err != nil {
 		s.logger.Error(err, "unable to list zones")
-		metrics.PublishNegControllerErrorCountMetrics(err, true)
+		s.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 		return false
 	}
 	currZones := sets.NewString(zones...)
@@ -867,7 +874,7 @@ func (s *transactionSyncer) isSubnetChange() bool {
 	negCR, err := getNegFromStore(s.svcNegLister, s.Namespace, s.NegSyncerKey.NegName)
 	if err != nil {
 		s.logger.Error(err, "unable to retrieve neg from the store", "neg", klog.KRef(s.Namespace, s.NegName))
-		metrics.PublishNegControllerErrorCountMetrics(err, true)
+		s.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 		return false
 	}
 
@@ -884,7 +891,7 @@ func (s *transactionSyncer) isSubnetChange() bool {
 		id, err := cloud.ParseResourceURL(subnetURL)
 		if err != nil {
 			s.logger.Error(err, "unable to parse subnet url", "url", ref.SubnetURL)
-			metrics.PublishNegControllerErrorCountMetrics(err, true)
+			s.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 			continue
 		}
 
@@ -971,7 +978,7 @@ func (s *transactionSyncer) updateInitStatus(negObjRefs []negv1beta1.NegObjectRe
 	origNeg, err := getNegFromStore(s.svcNegLister, s.Namespace, s.NegSyncerKey.NegName)
 	if err != nil {
 		s.logger.Error(err, "Error updating init status for neg, failed to get neg from store.")
-		metrics.PublishNegControllerErrorCountMetrics(err, true)
+		s.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 		return
 	}
 
@@ -984,12 +991,12 @@ func (s *transactionSyncer) updateInitStatus(negObjRefs []negv1beta1.NegObjectRe
 
 	initializedCondition := getInitializedCondition(utilerrors.NewAggregate(errList))
 	finalCondition := ensureCondition(neg, initializedCondition)
-	metrics.PublishNegInitializationMetrics(finalCondition.LastTransitionTime.Sub(origNeg.GetCreationTimestamp().Time))
+	s.negMetrics.PublishNegInitializationMetrics(finalCondition.LastTransitionTime.Sub(origNeg.GetCreationTimestamp().Time))
 
-	_, err = patchNegStatus(s.svcNegClient, origNeg.Status, neg.Status, s.Namespace, s.NegSyncerKey.NegName)
+	_, err = patchNegStatus(s.svcNegClient, origNeg.Status, neg.Status, s.Namespace, s.NegSyncerKey.NegName, s.negMetrics)
 	if err != nil {
 		s.logger.Error(err, "Error updating Neg CR")
-		metrics.PublishNegControllerErrorCountMetrics(err, true)
+		s.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 	}
 }
 
@@ -1001,7 +1008,7 @@ func (s *transactionSyncer) updateStatus(syncErr error) {
 	origNeg, err := getNegFromStore(s.svcNegLister, s.Namespace, s.NegSyncerKey.NegName)
 	if err != nil {
 		s.logger.Error(err, "Error updating status for neg, failed to get neg from store")
-		metrics.PublishNegControllerErrorCountMetrics(err, true)
+		s.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 		return
 	}
 	neg := origNeg.DeepCopy()
@@ -1010,7 +1017,7 @@ func (s *transactionSyncer) updateStatus(syncErr error) {
 	if _, _, exists := findCondition(neg.Status.Conditions, negv1beta1.Initialized); !exists {
 		s.needInit = true
 	}
-	metrics.PublishNegSyncerStalenessMetrics(ts.Sub(neg.Status.LastSyncTime.Time))
+	s.negMetrics.PublishNegSyncerStalenessMetrics(ts.Sub(neg.Status.LastSyncTime.Time))
 
 	ensureCondition(neg, getSyncedCondition(syncErr))
 	neg.Status.LastSyncTime = ts
@@ -1019,10 +1026,10 @@ func (s *transactionSyncer) updateStatus(syncErr error) {
 		s.needInit = true
 	}
 
-	_, err = patchNegStatus(s.svcNegClient, origNeg.Status, neg.Status, s.Namespace, s.NegSyncerKey.NegName)
+	_, err = patchNegStatus(s.svcNegClient, origNeg.Status, neg.Status, s.Namespace, s.NegSyncerKey.NegName, s.negMetrics)
 	if err != nil {
 		s.logger.Error(err, "Error updating Neg CR")
-		metrics.PublishNegControllerErrorCountMetrics(err, true)
+		s.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 	}
 }
 
@@ -1039,7 +1046,7 @@ func (s *transactionSyncer) computeEPSStaleness(endpointSlices []*discovery.Endp
 	negCR, err := getNegFromStore(s.svcNegLister, s.Namespace, s.NegSyncerKey.NegName)
 	if err != nil {
 		s.logger.Error(err, "unable to retrieve neg from the store", "neg", klog.KRef(s.Namespace, s.NegName))
-		metrics.PublishNegControllerErrorCountMetrics(err, true)
+		s.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 		return
 	}
 	lastSyncTimestamp := negCR.Status.LastSyncTime
@@ -1051,7 +1058,7 @@ func (s *transactionSyncer) computeEPSStaleness(endpointSlices []*discovery.Endp
 		if lastSyncTimestamp.Before(&epsCreationTimestamp) {
 			epsStaleness = time.Since(epsCreationTimestamp.Time)
 		}
-		metrics.PublishNegEPSStalenessMetrics(epsStaleness)
+		s.negMetrics.PublishNegEPSStalenessMetrics(epsStaleness)
 		s.logger.V(3).Info("Endpoint slice syncs", "Namespace", endpointSlice.Namespace, "Name", endpointSlice.Name, "staleness", epsStaleness)
 	}
 }
@@ -1070,18 +1077,18 @@ func (s *transactionSyncer) getNonDefaultSubnetNEGName(subnet string) (string, e
 }
 
 // computeDegradedModeCorrectness computes degraded mode correctness metrics based on the difference between degraded mode and normal calculation
-func computeDegradedModeCorrectness(notInDegraded, onlyInDegraded map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, negType string, logger klog.Logger) {
+func computeDegradedModeCorrectness(notInDegraded, onlyInDegraded map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, negType string, logger klog.Logger, m *metrics.NegMetrics) {
 	logger.Info("Exporting degraded mode correctness metrics", "notInDegraded", fmt.Sprintf("%+v", notInDegraded), "onlyInDegraded", fmt.Sprintf("%+v", onlyInDegraded))
 	notInDegradedEndpoints := 0
 	for _, val := range notInDegraded {
 		notInDegradedEndpoints += len(val)
 	}
-	metrics.PublishDegradedModeCorrectnessMetrics(notInDegradedEndpoints, metrics.NotInDegradedEndpoints, negType)
+	m.PublishDegradedModeCorrectnessMetrics(notInDegradedEndpoints, metrics.NotInDegradedEndpoints, negType)
 	onlyInDegradedEndpoints := 0
 	for _, val := range onlyInDegraded {
 		onlyInDegradedEndpoints += len(val)
 	}
-	metrics.PublishDegradedModeCorrectnessMetrics(onlyInDegradedEndpoints, metrics.OnlyInDegradedEndpoints, negType)
+	m.PublishDegradedModeCorrectnessMetrics(onlyInDegradedEndpoints, metrics.OnlyInDegradedEndpoints, negType)
 }
 
 // getNegFromStore returns the neg associated with the provided namespace and neg name if it exists otherwise throws an error
@@ -1098,7 +1105,7 @@ func getNegFromStore(svcNegLister cache.Indexer, namespace, negName string) (*ne
 }
 
 // patchNegStatus patches the specified NegCR status with the provided new status
-func patchNegStatus(svcNegClient svcnegclient.Interface, oldStatus, newStatus negv1beta1.ServiceNetworkEndpointGroupStatus, namespace, negName string) (*negv1beta1.ServiceNetworkEndpointGroup, error) {
+func patchNegStatus(svcNegClient svcnegclient.Interface, oldStatus, newStatus negv1beta1.ServiceNetworkEndpointGroupStatus, namespace, negName string, m *metrics.NegMetrics) (*negv1beta1.ServiceNetworkEndpointGroup, error) {
 	patchBytes, err := patch.MergePatchBytes(negv1beta1.ServiceNetworkEndpointGroup{Status: oldStatus}, negv1beta1.ServiceNetworkEndpointGroup{Status: newStatus})
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare patch bytes: %w", err)
@@ -1106,7 +1113,7 @@ func patchNegStatus(svcNegClient svcnegclient.Interface, oldStatus, newStatus ne
 
 	start := time.Now()
 	neg, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(namespace).Patch(context.Background(), negName, types.MergePatchType, patchBytes, metav1.PatchOptions{})
-	metrics.PublishK8sRequestCountMetrics(start, metrics.DeleteRequest, err)
+	m.PublishK8sRequestCountMetrics(start, metrics.DeleteRequest, err)
 	return neg, err
 }
 
@@ -1241,7 +1248,7 @@ func findCondition(conditions []negv1beta1.Condition, conditionType string) (neg
 }
 
 // getEndpointPodLabelMap goes through all the endpoints to be attached and fetches the labels from the endpoint pods.
-func getEndpointPodLabelMap(endpoints map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, endpointPodMap negtypes.EndpointPodMap, podLister cache.Store, lpConfig labels.PodLabelPropagationConfig, recorder record.EventRecorder, logger klog.Logger) labels.EndpointPodLabelMap {
+func getEndpointPodLabelMap(endpoints map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, endpointPodMap negtypes.EndpointPodMap, podLister cache.Store, lpConfig labels.PodLabelPropagationConfig, recorder record.EventRecorder, logger klog.Logger, m *metrics.NegMetrics) labels.EndpointPodLabelMap {
 	endpointPodLabelMap := labels.EndpointPodLabelMap{}
 	for _, endpointSet := range endpoints {
 		for endpoint := range endpointSet {
@@ -1250,7 +1257,7 @@ func getEndpointPodLabelMap(endpoints map[negtypes.NEGLocation]negtypes.NetworkE
 			if err != nil || !ok {
 				metrics.PublishLabelPropagationError(labels.OtherError)
 				logger.Error(err, "getEndpointPodLabelMap: error getting pod", "pod", key, "exist", ok)
-				metrics.PublishNegControllerErrorCountMetrics(err, true)
+				m.PublishNegControllerErrorCountMetrics(err, true)
 				continue
 			}
 			pod, ok := obj.(*v1.Pod)
@@ -1262,7 +1269,7 @@ func getEndpointPodLabelMap(endpoints map[negtypes.NEGLocation]negtypes.NetworkE
 			labelMap, err := labels.GetPodLabelMap(pod, lpConfig)
 			if err != nil {
 				recorder.Eventf(pod, v1.EventTypeWarning, "LabelsExceededLimit", "Label Propagation Error: %v", err)
-				metrics.PublishNegControllerErrorCountMetrics(err, true)
+				m.PublishNegControllerErrorCountMetrics(err, true)
 			}
 			endpointPodLabelMap[endpoint] = labelMap
 		}
