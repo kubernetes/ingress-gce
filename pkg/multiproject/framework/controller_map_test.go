@@ -1,6 +1,7 @@
-package manager
+package framework
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -51,6 +52,26 @@ func TestControllerMapBasicOperations(t *testing.T) {
 	}
 }
 
+func TestControllerMapGetOrCreate(t *testing.T) {
+	cm := NewControllerMap()
+
+	first, existed := cm.GetOrCreate("alpha")
+	if existed {
+		t.Fatal("expected first GetOrCreate call to report non-existence")
+	}
+	if first == nil {
+		t.Fatal("expected controllerSet instance on first GetOrCreate call")
+	}
+
+	second, existed := cm.GetOrCreate("alpha")
+	if !existed {
+		t.Fatal("expected second GetOrCreate call to report existence")
+	}
+	if first != second {
+		t.Fatal("expected GetOrCreate to return the same controllerSet instance")
+	}
+}
+
 // TestControllerMapConcurrentAccess verifies that concurrent operations on different keys
 // can proceed without blocking each other.
 func TestControllerMapConcurrentAccess(t *testing.T) {
@@ -70,7 +91,7 @@ func TestControllerMapConcurrentAccess(t *testing.T) {
 		go func(idx int) {
 			defer wg.Done()
 
-			key := string(rune('a' + idx)) // Different keys: "a", "b", "c", etc.
+			key := fmt.Sprintf("key-%d", idx)
 
 			// Track concurrent execution
 			current := concurrentOps.Add(1)

@@ -1,5 +1,5 @@
-// Package controller implements the ProviderConfig controller that starts and stops controllers for each ProviderConfig.
-package controller
+// Package framework implements the ProviderConfig controller that starts and stops controllers for each ProviderConfig.
+package framework
 
 import (
 	"fmt"
@@ -17,17 +17,17 @@ const (
 	workersNum                   = 5
 )
 
-// ProviderConfigControllerManager implements the logic for starting and stopping controllers for each ProviderConfig.
-type ProviderConfigControllerManager interface {
+// providerConfigControllerManager implements the logic for starting and stopping controllers for each ProviderConfig.
+type providerConfigControllerManager interface {
 	StartControllersForProviderConfig(pc *providerconfig.ProviderConfig) error
 	StopControllersForProviderConfig(pc *providerconfig.ProviderConfig)
 }
 
-// ProviderConfigController is a controller that manages the ProviderConfig resource.
+// providerConfigController is a controller that manages the ProviderConfig resource.
 // It is responsible for starting and stopping controllers for each ProviderConfig.
-// Currently, it only manages the NEG controller using the ProviderConfigControllerManager.
-type ProviderConfigController struct {
-	manager ProviderConfigControllerManager
+// Currently, it only manages the NEG controller using the providerConfigControllerManager.
+type providerConfigController struct {
+	manager providerConfigControllerManager
 
 	providerConfigLister cache.Indexer
 	providerConfigQueue  utils.TaskQueue
@@ -37,10 +37,10 @@ type ProviderConfigController struct {
 	hasSynced            func() bool
 }
 
-// NewProviderConfigController creates a new instance of the ProviderConfig controller.
-func NewProviderConfigController(manager ProviderConfigControllerManager, providerConfigInformer cache.SharedIndexInformer, stopCh <-chan struct{}, logger klog.Logger) *ProviderConfigController {
+// newProviderConfigController creates a new instance of the ProviderConfig controller.
+func newProviderConfigController(manager providerConfigControllerManager, providerConfigInformer cache.SharedIndexInformer, stopCh <-chan struct{}, logger klog.Logger) *providerConfigController {
 	logger = logger.WithName(providerConfigControllerName)
-	pcc := &ProviderConfigController{
+	pcc := &providerConfigController{
 		providerConfigLister: providerConfigInformer.GetIndexer(),
 		stopCh:               stopCh,
 		numWorkers:           workersNum,
@@ -67,7 +67,7 @@ func NewProviderConfigController(manager ProviderConfigControllerManager, provid
 	return pcc
 }
 
-func (pcc *ProviderConfigController) Run() {
+func (pcc *providerConfigController) Run() {
 	defer pcc.shutdown()
 
 	pcc.logger.Info("Starting ProviderConfig controller")
@@ -76,6 +76,7 @@ func (pcc *ProviderConfigController) Run() {
 	ok := cache.WaitForCacheSync(pcc.stopCh, pcc.hasSynced)
 	if !ok {
 		pcc.logger.Error(nil, "Failed to wait for initial cache sync before starting ProviderConfig Controller")
+		return
 	}
 
 	pcc.logger.Info("Started ProviderConfig Controller", "numWorkers", pcc.numWorkers)
@@ -84,12 +85,12 @@ func (pcc *ProviderConfigController) Run() {
 	<-pcc.stopCh
 }
 
-func (pcc *ProviderConfigController) shutdown() {
+func (pcc *providerConfigController) shutdown() {
 	pcc.logger.Info("Shutting down ProviderConfig Controller")
 	pcc.providerConfigQueue.Shutdown()
 }
 
-func (pcc *ProviderConfigController) syncWrapper(key string) error {
+func (pcc *providerConfigController) syncWrapper(key string) error {
 	syncID := rand.Int31()
 	svcLogger := pcc.logger.WithValues("providerConfigKey", key, "syncId", syncID)
 
@@ -106,7 +107,7 @@ func (pcc *ProviderConfigController) syncWrapper(key string) error {
 	return err
 }
 
-func (pcc *ProviderConfigController) sync(key string, logger klog.Logger) error {
+func (pcc *providerConfigController) sync(key string, logger klog.Logger) error {
 	logger = logger.WithName("providerConfig.sync")
 
 	providerConfig, exists, err := pcc.providerConfigLister.GetByKey(key)
