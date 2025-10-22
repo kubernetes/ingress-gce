@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strings"
 
 	v1 "k8s.io/api/core/v1"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
@@ -93,6 +94,7 @@ func pickSubsetsMinRemovals(nodes []*nodeWithSubnet, salt string, count int, cur
 	sort.Slice(info, func(i, j int) bool {
 		return info[i].hashedName < info[j].hashedName
 	})
+
 	// Pick all nodes from existing subset if still available.
 	for _, ep := range current {
 		curHashName := getHashedName(ep.Node, salt)
@@ -239,9 +241,32 @@ func getNetworkEndpointsForZone(zone string, currentMap map[negtypes.NEGLocation
 			results = append(results, endpointSet.List())
 		}
 	}
+
+	var sorted []negtypes.NetworkEndpoint
 	// Non MSC clusters will have only one result per zone, avoid iterative appends in that case.
 	if len(results) == 1 {
-		return results[0]
+		sorted = results[0]
+	} else {
+		sorted = slices.Concat(results...)
 	}
-	return slices.Concat(results...)
+
+	// We move from an unordered map, but want to have deterministic results later
+	sortEndpoints(sorted)
+	return sorted
+}
+
+// sortEndpoints will sort the endpoints in place
+func sortEndpoints(e []negtypes.NetworkEndpoint) {
+	slices.SortFunc(e, func(a, b negtypes.NetworkEndpoint) int {
+		if c := strings.Compare(a.Node, b.Node); c != 0 {
+			return c
+		}
+		if c := strings.Compare(a.IP, b.IP); c != 0 {
+			return c
+		}
+		if c := strings.Compare(a.IPv6, b.IPv6); c != 0 {
+			return c
+		}
+		return strings.Compare(a.Port, b.Port) // This would probably be empty for GCE_VM_IP
+	})
 }
