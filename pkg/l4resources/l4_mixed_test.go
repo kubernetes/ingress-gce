@@ -8,6 +8,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"google.golang.org/api/compute/v1"
 	api_v1 "k8s.io/api/core/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -106,60 +107,70 @@ func TestEnsureMixedILB(t *testing.T) {
 		// want
 		resources   mixedprotocoltest.GCEResources
 		annotations map[string]string
+		conditions  []meta_v1.Condition // Added conditions field
 	}{
 		{
 			desc:        "ipv4 tcp",
 			spec:        mixedprotocoltest.SpecIPv4([]int32{80, 443}, nil),
 			annotations: mixedprotocolilbtest.AnnotationsTCP(),
 			resources:   mixedprotocolilbtest.TCPResources(),
+			conditions:  mixedprotocolilbtest.ConditionsTCP(),
 		},
 		{
 			desc:        "ipv4 udp",
 			spec:        mixedprotocoltest.SpecIPv4(nil, []int32{53}),
 			annotations: mixedprotocolilbtest.AnnotationsUDP(),
 			resources:   mixedprotocolilbtest.UDPResources(),
+			conditions:  mixedprotocolilbtest.ConditionsUDP(),
 		},
 		{
 			desc:        "ipv4 mixed",
 			spec:        mixedprotocoltest.SpecIPv4([]int32{80, 443}, []int32{53}),
 			annotations: mixedprotocolilbtest.AnnotationsL3(),
 			resources:   mixedprotocolilbtest.L3Resources(),
+			conditions:  mixedprotocolilbtest.ConditionsL3(),
 		},
 		{
 			desc:        "ipv6 tcp",
 			spec:        mixedprotocoltest.SpecIPv6([]int32{80, 443}, nil),
 			annotations: mixedprotocolilbtest.AnnotationsTCPIPv6(),
 			resources:   mixedprotocolilbtest.TCPResourcesIPv6(),
+			conditions:  mixedprotocolilbtest.ConditionsTCPIPv6(),
 		},
 		{
 			desc:        "ipv6 udp",
 			spec:        mixedprotocoltest.SpecIPv6(nil, []int32{53}),
 			annotations: mixedprotocolilbtest.AnnotationsUDPIPv6(),
 			resources:   mixedprotocolilbtest.UDPResourcesIPv6(),
+			conditions:  mixedprotocolilbtest.ConditionsUDPIPv6(),
 		},
 		{
 			desc:        "ipv6 mixed",
 			spec:        mixedprotocoltest.SpecIPv6([]int32{80, 443}, []int32{53}),
 			annotations: mixedprotocolilbtest.AnnotationsL3IPv6(),
 			resources:   mixedprotocolilbtest.L3ResourcesIPv6(),
+			conditions:  mixedprotocolilbtest.ConditionsL3IPv6(),
 		},
 		{
 			desc:        "dual stack tcp",
 			spec:        mixedprotocoltest.SpecDualStack([]int32{80, 443}, nil),
 			annotations: mixedprotocolilbtest.AnnotationsTCPDualStack(),
 			resources:   mixedprotocolilbtest.TCPResourcesDualStack(),
+			conditions:  mixedprotocolilbtest.ConditionsTCPDualStack(),
 		},
 		{
 			desc:        "dual stack udp",
 			spec:        mixedprotocoltest.SpecDualStack(nil, []int32{53}),
 			annotations: mixedprotocolilbtest.AnnotationsUDPDualStack(),
 			resources:   mixedprotocolilbtest.UDPResourcesDualStack(),
+			conditions:  mixedprotocolilbtest.ConditionsUDPDualStack(),
 		},
 		{
 			desc:        "dual stack mixed",
 			spec:        mixedprotocoltest.SpecDualStack([]int32{80, 443}, []int32{53}),
 			annotations: mixedprotocolilbtest.AnnotationsL3DualStack(),
 			resources:   mixedprotocolilbtest.L3ResourcesDualStack(),
+			conditions:  mixedprotocolilbtest.ConditionsL3DualStack(),
 		},
 	}
 
@@ -190,6 +201,7 @@ func TestEnsureMixedILB(t *testing.T) {
 				wantResult := &L4ILBSyncResult{
 					Annotations: e.annotations,
 					SyncType:    "create",
+					Conditions:  e.conditions, // Populate conditions
 				}
 				if s.resources.BackendService != nil {
 					wantResult.SyncType = "update"
@@ -365,6 +377,13 @@ func assertResult(t *testing.T, got, want *L4ILBSyncResult) {
 	}
 	if diff := cmp.Diff(got.Annotations, want.Annotations); diff != "" {
 		t.Errorf("got.Annotations != want.Annotations: (-got +want):\n%s", diff)
+	}
+	diff := cmp.Diff(want.Conditions, got.Conditions,
+		cmpopts.IgnoreFields(meta_v1.Condition{}, "LastTransitionTime", "ObservedGeneration"),
+		cmpopts.SortSlices(func(a, b meta_v1.Condition) bool { return a.Type < b.Type }),
+	)
+	if diff != "" {
+		t.Errorf("got.Conditions != want.Conditions (-want +got):\n%s", diff)
 	}
 }
 
