@@ -29,6 +29,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
@@ -390,15 +391,22 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service, svcLo
 		syncResult.Error = err
 		return syncResult
 	}
-	err = updateServiceStatus(l4c.ctx, service, syncResult.Status, svcLogger)
+	expectedConditions := []metav1.Condition{}
+	if l4c.ctx.EnableL4LBConditions {
+		expectedConditions = syncResult.Conditions
+	}
+
+	err = updateServiceStatus(l4c.ctx, service, syncResult.Status, expectedConditions, svcLogger)
 	if err != nil {
 		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
 			"Error updating load balancer status: %v", err)
 		syncResult.Error = err
 		return syncResult
 	}
+
 	if l4c.enableDualStack {
 		l4c.emitEnsuredDualStackEvent(service)
+
 		if err = updateL4DualStackResourcesAnnotations(l4c.ctx, service, syncResult.Annotations, svcLogger); err != nil {
 			l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
 				"Failed to update Dual Stack annotations for load balancer, err: %v", err)
@@ -408,6 +416,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service, svcLo
 	} else {
 		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeNormal, "SyncLoadBalancerSuccessful",
 			"Successfully ensured load balancer resources")
+
 		if err = updateL4ResourcesAnnotations(l4c.ctx, service, syncResult.Annotations, svcLogger); err != nil {
 			l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
 				"Failed to update annotations for load balancer, err: %v", err)
@@ -460,7 +469,7 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service, svc
 	// Reset the loadbalancer status first, before resetting annotations.
 	// Other controllers(like service-controller) will process the service update if annotations change, but will ignore a service status change.
 	// Following this order avoids a race condition when a service is changed from LoadBalancer type Internal to External.
-	if err := updateServiceStatus(l4c.ctx, svc, &v1.LoadBalancerStatus{}, svcLogger); err != nil {
+	if err := updateServiceStatus(l4c.ctx, svc, &v1.LoadBalancerStatus{}, []metav1.Condition{}, svcLogger); err != nil {
 		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 			"Error resetting load balancer status to empty: %v", err)
 		result.Error = fmt.Errorf("failed to reset ILB status, err: %w", err)

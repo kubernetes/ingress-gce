@@ -17,6 +17,7 @@ package l4resources
 
 import (
 	"k8s.io/ingress-gce/pkg/l4annotations"
+	"k8s.io/ingress-gce/pkg/l4conditions"
 )
 
 const (
@@ -43,3 +44,23 @@ var l4IPv6ResourceAnnotationKeys = []string{
 	l4annotations.L3ForwardingRuleIPv6Key,
 }
 var L4DualStackResourceAnnotationKeys = append(L4ResourceAnnotationKeys, l4IPv6ResourceAnnotationKeys...)
+
+var L4ResourceConditionTypes = []string{
+	l4conditions.BackendServiceConditionType,
+	l4conditions.HealthCheckConditionType,
+	l4conditions.TCPForwardingRuleConditionType,
+	l4conditions.UDPForwardingRuleConditionType,
+	l4conditions.L3ForwardingRuleConditionType,
+	l4conditions.FirewallRuleConditionType,
+	l4conditions.FirewallHealthCheckConditionType,
+}
+
+var L4IPv6ResourceConditionTypes = []string{
+	l4conditions.FirewallHealthCheckIPv6ConditionType,
+	l4conditions.IPv6FirewallRuleConditionType,
+	l4conditions.TCPIPv6ForwardingRuleConditionType,
+	l4conditions.UDPIPv6ForwardingRuleConditionType,
+	l4conditions.L3IPv6ForwardingRuleConditionType,
+}
+
+var L4DualStackResourceConditionTypes = append(L4ResourceConditionTypes, L4IPv6ResourceConditionTypes...)

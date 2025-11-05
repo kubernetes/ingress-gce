@@ -24,6 +24,8 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	compute "google.golang.org/api/compute/v1"
 	corev1 "k8s.io/api/core/v1"
+	metaapi "k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
@@ -37,6 +39,7 @@ import (
 	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/healthchecksl4"
 	"k8s.io/ingress-gce/pkg/l4annotations"
+	"k8s.io/ingress-gce/pkg/l4conditions"
 	"k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -91,6 +94,7 @@ type L4NetLBSyncResult struct {
 	Error              error
 	GCEResourceInError string
 	Status             *corev1.LoadBalancerStatus
+	Conditions         []metav1.Condition
 	MetricsLegacyState metrics.L4NetLBServiceLegacyState
 	MetricsState       metrics.L4ServiceState
 	SyncType           string
@@ -114,6 +118,7 @@ func NewL4SyncResult(syncType string, startTime time.Time, svc *corev1.Service, 
 		SyncType:           syncType,
 		MetricsLegacyState: metrics.InitL4NetLBServiceLegacyState(&startTime),
 		MetricsState:       metrics.InitServiceMetricsState(svc, &startTime, isMultinet, enabledStrongSessionAffinity, isWeightedLBPodsPerNode, isLBWithZonalAffinity, backendType),
+		Conditions:         []metav1.Condition(nil),
 	}
 	return result
 }
@@ -315,16 +320,19 @@ func (l4netlb *L4NetLB) provideDualStackHealthChecks(nodeNames []string, result 
 
 	if hcResult.HCFirewallRuleName != "" {
 		result.Annotations[l4annotations.FirewallRuleForHealthcheckKey] = hcResult.HCFirewallRuleName
+		metaapi.SetStatusCondition(&result.Conditions, l4conditions.NewFirewallHealthCheckCondition(hcResult.HCFirewallRuleName))
 	} else {
 		delete(result.Annotations, l4annotations.FirewallRuleForHealthcheckKey)
 	}
 
 	if hcResult.HCFirewallRuleIPv6Name != "" {
 		result.Annotations[l4annotations.FirewallRuleForHealthcheckIPv6Key] = hcResult.HCFirewallRuleIPv6Name
+		metaapi.SetStatusCondition(&result.Conditions, l4conditions.NewFirewallHealthCheckIPv6Condition(hcResult.HCFirewallRuleIPv6Name))
 	} else {
 		delete(result.Annotations, l4annotations.FirewallRuleForHealthcheckIPv6Key)
 	}
 	result.Annotations[l4annotations.HealthcheckKey] = hcResult.HCName
+	metaapi.SetStatusCondition(&result.Conditions, l4conditions.NewHealthCheckCondition(hcResult.HCName))
 	return hcResult.HCLink
 }
 
@@ -339,7 +347,9 @@ func (l4netlb *L4NetLB) provideIPv4HealthChecks(nodeNames []string, result *L4Ne
 		return ""
 	}
 	result.Annotations[l4annotations.HealthcheckKey] = hcResult.HCName
+	metaapi.SetStatusCondition(&result.Conditions, l4conditions.NewHealthCheckCondition(hcResult.HCName))
 	result.Annotations[l4annotations.FirewallRuleForHealthcheckKey] = hcResult.HCFirewallRuleName
+	metaapi.SetStatusCondition(&result.Conditions, l4conditions.NewFirewallHealthCheckCondition(hcResult.HCFirewallRuleName))
 	return hcResult.HCLink
 }
 
@@ -414,10 +424,11 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 	}
 
 	syncResult.Annotations[l4annotations.BackendServiceKey] = bsName
+	metaapi.SetStatusCondition(&syncResult.Conditions, l4conditions.NewBackendServiceCondition(bsName))
+
 	if bs.LogConfig != nil {
 		syncResult.MetricsState.LoggingEnabled = bs.LogConfig.Enable
 	}
-
 	return bs.SelfLink
 }
 
@@ -454,8 +465,10 @@ func (l4netlb *L4NetLB) ensureIPv4Resources(result *L4NetLBSyncResult, nodeNames
 	}
 	if fr.IPProtocol == string(corev1.ProtocolTCP) {
 		result.Annotations[l4annotations.TCPForwardingRuleKey] = fr.Name
+		metaapi.SetStatusCondition(&result.Conditions, l4conditions.NewTCPForwardingRuleCondition(fr.Name))
 	} else {
 		result.Annotations[l4annotations.UDPForwardingRuleKey] = fr.Name
+		metaapi.SetStatusCondition(&result.Conditions, l4conditions.NewUDPForwardingRuleCondition(fr.Name))
 	}
 	result.MetricsLegacyState.IsManagedIP = ipAddrType == address.IPAddrManaged
 	result.MetricsLegacyState.IsPremiumTier = fr.NetworkTier == cloud.NetworkTierPremium.ToGCEValue()
@@ -484,6 +497,7 @@ func (l4netlb *L4NetLB) ensureIPv4MixedResources(result *L4NetLBSyncResult, node
 	var ipAddr string
 	if res.UDPFwdRule != nil {
 		result.Annotations[l4annotations.UDPForwardingRuleKey] = res.UDPFwdRule.Name
+		metaapi.SetStatusCondition(&result.Conditions, l4conditions.NewUDPForwardingRuleCondition(res.UDPFwdRule.Name))
 		if res.TCPFwdRule.NetworkTier == cloud.NetworkTierPremium.ToGCEValue() {
 			result.MetricsLegacyState.IsPremiumTier = true
 		}
@@ -491,6 +505,7 @@ func (l4netlb *L4NetLB) ensureIPv4MixedResources(result *L4NetLBSyncResult, node
 	}
 	if res.TCPFwdRule != nil {
 		result.Annotations[l4annotations.TCPForwardingRuleKey] = res.TCPFwdRule.Name
+		metaapi.SetStatusCondition(&result.Conditions, l4conditions.NewTCPForwardingRuleCondition(res.TCPFwdRule.Name))
 		if res.TCPFwdRule.NetworkTier == cloud.NetworkTierPremium.ToGCEValue() {
 			result.MetricsLegacyState.IsPremiumTier = true
 		}
@@ -560,6 +575,7 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 		return
 	}
 	result.Annotations[l4annotations.FirewallRuleKey] = firewallName
+	metaapi.SetStatusCondition(&result.Conditions, l4conditions.NewFirewallCondition(firewallName))
 }
 
 // EnsureLoadBalancerDeleted performs a cleanup of all GCE resources for the given loadbalancer service.
@@ -588,7 +604,7 @@ func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *L4NetLBS
 // This function is called only on Service update or periodic sync.
 // Checking for annotation saves us from emitting too much error logs "Resource not found".
 // If annotation was deleted, but resource still exists, it will be left till the Service deletion,
-// where we delete all resources, no matter if they exist in annotations.
+// where we delete all resources, no matter if they exist in l4annotations.
 func (l4netlb *L4NetLB) deleteIPv4ResourcesOnSync(result *L4NetLBSyncResult) {
 	l4netlb.svcLogger.Info("Deleting IPv4 resources for L4 NetLB Service on sync, with checking for existence in annotation")
 	l4netlb.deleteIPv4ResourcesAnnotationBased(result, false)

@@ -26,6 +26,8 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
 	corev1 "k8s.io/api/core/v1"
+	metaapi "k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
@@ -39,6 +41,7 @@ import (
 	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/healthchecksl4"
 	"k8s.io/ingress-gce/pkg/l4annotations"
+	"k8s.io/ingress-gce/pkg/l4conditions"
 	"k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -87,6 +90,7 @@ type L4ILBSyncResult struct {
 	Annotations        map[string]string
 	Error              error
 	GCEResourceInError string
+	Conditions         []metav1.Condition
 	Status             *corev1.LoadBalancerStatus
 	MetricsLegacyState metrics.L4ILBServiceLegacyState
 	MetricsState       metrics.L4ServiceState
@@ -103,6 +107,7 @@ func NewL4ILBSyncResult(syncType string, startTime time.Time, svc *corev1.Servic
 		SyncType:    syncType,
 		// Internal Load Balancer doesn't support strong session affinity (passing `false` all along)
 		MetricsState: metrics.InitServiceMetricsState(svc, &startTime, isMultinetService, enabledStrongSessionAffinity, isWeightedLBPodsPerNode, isLBWithZonalAffinity, metrics.L4BackendTypeNEG),
+		Conditions:   []metav1.Condition(nil),
 	}
 	return result
 }
@@ -224,7 +229,7 @@ func (l4 *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4ILBSyncR
 // This function is called only on Service update or periodic sync.
 // Checking for annotation saves us from emitting too much error logs "Resource not found".
 // If annotation was deleted, but resource still exists, it will be left till the Service deletion,
-// where we delete all resources, no matter if they exist in annotations.
+// where we delete all resources, no matter if they exist in l4annotations.
 func (l4 *L4) deleteIPv4ResourcesOnSync(result *L4ILBSyncResult) {
 	l4.svcLogger.Info("Deleting IPv4 resources for L4 ILB Service on sync, with checking for existence in annotation")
 	l4.deleteIPv4ResourcesAnnotationBased(result, false)
@@ -589,6 +594,8 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		return result
 	}
 	result.Annotations[l4annotations.BackendServiceKey] = bsName
+	metaapi.SetStatusCondition(&result.Conditions, l4conditions.NewBackendServiceCondition(bsName))
+
 	if bs.LogConfig != nil {
 		result.MetricsState.LoggingEnabled = bs.LogConfig.Enable
 	}
@@ -643,17 +650,20 @@ func (l4 *L4) provideDualStackHealthChecks(nodeNames []string, result *L4ILBSync
 
 	if hcResult.HCFirewallRuleName != "" {
 		result.Annotations[l4annotations.FirewallRuleForHealthcheckKey] = hcResult.HCFirewallRuleName
+		metaapi.SetStatusCondition(&result.Conditions, l4conditions.NewFirewallHealthCheckCondition(hcResult.HCFirewallRuleName))
 	} else {
 		delete(result.Annotations, l4annotations.FirewallRuleForHealthcheckKey)
 	}
 
 	if hcResult.HCFirewallRuleIPv6Name != "" {
 		result.Annotations[l4annotations.FirewallRuleForHealthcheckIPv6Key] = hcResult.HCFirewallRuleIPv6Name
+		metaapi.SetStatusCondition(&result.Conditions, l4conditions.NewFirewallHealthCheckIPv6Condition(hcResult.HCFirewallRuleIPv6Name))
 	} else {
 		delete(result.Annotations, l4annotations.FirewallRuleForHealthcheckIPv6Key)
 	}
 
 	result.Annotations[l4annotations.HealthcheckKey] = hcResult.HCName
+	metaapi.SetStatusCondition(&result.Conditions, l4conditions.NewHealthCheckCondition(hcResult.HCName))
 	return hcResult.HCLink
 }
 
@@ -668,7 +678,9 @@ func (l4 *L4) provideIPv4HealthChecks(nodeNames []string, result *L4ILBSyncResul
 		return ""
 	}
 	result.Annotations[l4annotations.HealthcheckKey] = hcResult.HCName
+	metaapi.SetStatusCondition(&result.Conditions, l4conditions.NewHealthCheckCondition(hcResult.HCName))
 	result.Annotations[l4annotations.FirewallRuleForHealthcheckKey] = hcResult.HCFirewallRuleName
+	metaapi.SetStatusCondition(&result.Conditions, l4conditions.NewFirewallHealthCheckCondition(hcResult.HCFirewallRuleName))
 	return hcResult.HCLink
 }
 
@@ -701,10 +713,13 @@ func (l4 *L4) ensureIPv4Resources(result *L4ILBSyncResult, nodeNames []string, o
 	switch fr.IPProtocol {
 	case forwardingrules.ProtocolTCP:
 		result.Annotations[l4annotations.TCPForwardingRuleKey] = fr.Name
+		metaapi.SetStatusCondition(&result.Conditions, l4conditions.NewTCPForwardingRuleCondition(fr.Name))
 	case forwardingrules.ProtocolUDP:
 		result.Annotations[l4annotations.UDPForwardingRuleKey] = fr.Name
+		metaapi.SetStatusCondition(&result.Conditions, l4conditions.NewUDPForwardingRuleCondition(fr.Name))
 	case forwardingrules.ProtocolL3:
 		result.Annotations[l4annotations.L3ForwardingRuleKey] = fr.Name
+		metaapi.SetStatusCondition(&result.Conditions, l4conditions.NewL3ForwardingRuleCondition(fr.Name))
 	}
 
 	l4.ensureIPv4NodesFirewall(nodeNames, fr.IPAddress, result)
@@ -771,6 +786,7 @@ func (l4 *L4) ensureIPv4NodesFirewall(nodeNames []string, ipAddress string, resu
 		return
 	}
 	result.Annotations[l4annotations.FirewallRuleKey] = firewallName
+	metaapi.SetStatusCondition(&result.Conditions, l4conditions.NewFirewallCondition(firewallName))
 }
 
 func (l4 *L4) getServiceSubnetworkURL(options gce.ILBOptions) (string, error) {

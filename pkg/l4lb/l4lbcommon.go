@@ -99,14 +99,62 @@ func deleteAnnotation(ctx *context.ControllerContext, svc *v1.Service, annotatio
 	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
 }
 
-// updateServiceStatus this faction checks if LoadBalancer status changed and patch service if needed.
-func updateServiceStatus(ctx *context.ControllerContext, svc *v1.Service, newStatus *v1.LoadBalancerStatus, svcLogger klog.Logger) error {
-	svcLogger.V(2).Info("Updating service status", "newStatus", fmt.Sprintf("%+v", newStatus))
-	if helpers.LoadBalancerStatusEqual(&svc.Status.LoadBalancer, newStatus) {
-		svcLogger.V(2).Info("New and old statuses are equal, skipping patch")
-		return nil
+// mergeConditions merges existing conditions with new conditions.
+// It updates existing conditions with new ones, adds new conditions,
+// and removes conditions that are managed but not present in newConditions.
+func mergeConditions(existing, newConditions []metav1.Condition, managedConditionTypes []string) []metav1.Condition {
+	if existing == nil {
+		return newConditions
 	}
-	return patch.PatchServiceLoadBalancerStatus(ctx.KubeClient.CoreV1(), svc, *newStatus)
+	// Create a map of existing conditions for easy lookup
+	existingMap := make(map[string]metav1.Condition)
+	for _, cond := range existing {
+		existingMap[cond.Type] = cond
+	}
+
+	// Update or add new conditions
+	for _, newCond := range newConditions {
+		existingMap[newCond.Type] = newCond
+	}
+
+	// Remove conditions that are managed but not present in newConditions
+	newConditionTypes := make(map[string]bool)
+	for _, cond := range newConditions {
+		newConditionTypes[cond.Type] = true
+	}
+	for _, condType := range managedConditionTypes {
+		if !newConditionTypes[condType] {
+			delete(existingMap, condType)
+		}
+	}
+
+	// Convert map back to slice
+	mergedConditions := make([]metav1.Condition, 0, len(existingMap))
+	for _, cond := range existingMap {
+		mergedConditions = append(mergedConditions, cond)
+	}
+	return mergedConditions
+}
+
+// updateServiceStatus this faction checks if LoadBalancer status changed and patch service if needed.
+func updateServiceStatus(ctx *context.ControllerContext, svc *v1.Service, newStatus *v1.LoadBalancerStatus, newConditions []metav1.Condition, svcLogger klog.Logger) error {
+	svcLogger.V(2).Info("Updating service status and conditions", "newStatus", fmt.Sprintf("%+v", newStatus), "newConditions", fmt.Sprintf("%+v", newConditions))
+
+	mergedConditions := mergeConditions(svc.Status.Conditions, newConditions, l4resources.L4DualStackResourceConditionTypes)
+	svcLogger.V(2).Info("Merged conditions", "mergedConditions", fmt.Sprintf("%+v", mergedConditions))
+
+	lbStatusEqual := helpers.LoadBalancerStatusEqual(&svc.Status.LoadBalancer, newStatus)
+	lbConditionsEqual := conditionsEqual(svc.Status.Conditions, mergedConditions)
+
+	if !lbStatusEqual || !lbConditionsEqual {
+		svcLogger.V(2).Info("Patching LoadBalancer status and Conditions", "newStatus", fmt.Sprintf("%+v", newStatus), "newConditions", fmt.Sprintf("%+v", newConditions))
+		return patch.PatchServiceStatus(ctx.KubeClient.CoreV1(), svc, v1.ServiceStatus{
+			LoadBalancer: *newStatus,
+			Conditions:   mergedConditions,
+		})
+	}
+	svcLogger.V(3).Info("Service status not changed, skipping patch for service")
+	return nil
 }
 
 // isHealthCheckDeleted checks if given health check exists in GCE
@@ -154,4 +202,26 @@ func finalizerWasRemovedUnexpectedly(oldService, newService *v1.Service, finaliz
 	// If the service was added for deletion, we don't need finalizers
 	svcToBeDeleted := newService.ObjectMeta.DeletionTimestamp != nil
 	return oldSvcHasLegacyFinalizer && !newSvcHasLegacyFinalizer && !svcToBeDeleted
+}
+
+// conditionsEqual checks if load balancer conditions are equal
+// Api reference: https://github.com/kubernetes/apimachinery/blob/release-1.23/pkg/apis/meta/v1/types.go#L1433-L1493
+func conditionsEqual(l, r []metav1.Condition) bool {
+	if len(l) != len(r) {
+		return false
+	}
+	lMap := make(map[string]metav1.Condition)
+	for _, cond := range l {
+		lMap[cond.Type] = cond
+	}
+	for _, condR := range r {
+		condL, found := lMap[condR.Type]
+		if !found {
+			return false
+		}
+		if condL.Status != condR.Status || condL.Reason != condR.Reason || condL.Message != condR.Message {
+			return false
+		}
+	}
+	return true
 }

@@ -88,6 +88,7 @@ func TestEnsureL4NetLoadBalancer(t *testing.T) {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4netlb)
 	}
 	l4netlb.Service.Annotations = result.Annotations
+	l4netlb.Service.Status.Conditions = result.Conditions
 	assertNetLBResources(t, l4netlb, nodeNames)
 	if err := checkMetrics(result.MetricsLegacyState /*isManaged = */, true /*isPremium = */, true /*isUserError =*/, false); err != nil {
 		t.Errorf("Metrics error: %v", err)
@@ -129,6 +130,7 @@ func TestEnsureMultinetL4NetLoadBalancer(t *testing.T) {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4netlb)
 	}
 	l4netlb.Service.Annotations = result.Annotations
+	l4netlb.Service.Status.Conditions = result.Conditions
 	assertNetLBResources(t, l4netlb, nodeNames)
 	if err := checkMetrics(result.MetricsLegacyState /*isManaged = */, true /*isPremium = */, true /*isUserError =*/, false); err != nil {
 		t.Errorf("Metrics error: %v", err)
@@ -165,6 +167,7 @@ func TestDeleteL4NetLoadBalancer(t *testing.T) {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4NetLB)
 	}
 	l4NetLB.Service.Annotations = result.Annotations
+	l4NetLB.Service.Status.Conditions = result.Conditions
 	assertNetLBResources(t, l4NetLB, nodeNames)
 
 	if err := l4NetLB.EnsureLoadBalancerDeleted(svc); err.Error != nil {
@@ -231,6 +234,7 @@ func TestHealthCheckFirewallDeletionWithILB(t *testing.T) {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4NetLB)
 	}
 	l4NetLB.Service.Annotations = result.Annotations
+	l4NetLB.Service.Status.Conditions = result.Conditions
 	assertNetLBResources(t, l4NetLB, nodeNames)
 
 	// Delete the NetLB loadbalancer.
@@ -431,6 +435,7 @@ func TestEnsureExternalDualStackLoadBalancer(t *testing.T) {
 				t.Errorf("Got empty loadBalancer status using handler %v", l4NetLB)
 			}
 			l4NetLB.Service.Annotations = result.Annotations
+			l4NetLB.Service.Status.Conditions = result.Conditions
 			assertDualStackNetLBResources(t, l4NetLB, nodeNames)
 
 			l4NetLB.EnsureLoadBalancerDeleted(l4NetLB.Service)
@@ -472,6 +477,7 @@ func TestEnsureDualStackNetLBNetworkTierChange(t *testing.T) {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4NetLB)
 	}
 	l4NetLB.Service.Annotations = result.Annotations
+	l4NetLB.Service.Status.Conditions = result.Conditions
 	svc.Annotations[l4annotations.NetworkTierAnnotationKey] = "Premium"
 	assertDualStackNetLBResources(t, l4NetLB, nodeNames)
 
@@ -545,6 +551,7 @@ func TestDualStackNetLBTransitions(t *testing.T) {
 
 			result := l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
 			svc.Annotations = result.Annotations
+			svc.Status.Conditions = result.Conditions
 			assertDualStackNetLBResources(t, l4NetLB, nodeNames)
 
 			finalSvc := test.NewL4NetLBRBSDualStackService(tc.finalProtocol, tc.finalIPFamily, tc.finalTrafficPolicy)
@@ -553,6 +560,7 @@ func TestDualStackNetLBTransitions(t *testing.T) {
 
 			result = l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
 			finalSvc.Annotations = result.Annotations
+			finalSvc.Status.Conditions = result.Conditions
 			assertDualStackNetLBResources(t, l4NetLB, nodeNames)
 
 			l4NetLB.cloud.Compute().(*cloud.MockGCE).MockForwardingRules.DeleteHook = nil
@@ -592,6 +600,7 @@ func TestDualStackNetLBSyncIgnoresNoAnnotationIPv6Resources(t *testing.T) {
 
 	result := l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
 	svc.Annotations = result.Annotations
+	svc.Status.Conditions = result.Conditions
 
 	// Delete IPv4 resources annotation
 	annotationsToDelete := []string{l4annotations.TCPForwardingRuleIPv6Key, l4annotations.FirewallRuleIPv6Key, l4annotations.FirewallRuleForHealthcheckIPv6Key}
@@ -603,6 +612,7 @@ func TestDualStackNetLBSyncIgnoresNoAnnotationIPv6Resources(t *testing.T) {
 	// Run new sync. Controller should not delete resources, if they don't exist in annotation
 	result = l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
 	svc.Annotations = result.Annotations
+	svc.Status.Conditions = result.Conditions
 
 	// Verify IPv4 Firewall was not deleted
 	ipv6FWName := l4NetLB.namer.L4IPv6Firewall(l4NetLB.Service.Namespace, l4NetLB.Service.Name)
@@ -633,6 +643,7 @@ func TestDualStackNetLBSyncIgnoresNoAnnotationIPv4Resources(t *testing.T) {
 
 	result := l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
 	svc.Annotations = result.Annotations
+	svc.Status.Conditions = result.Conditions
 	assertDualStackNetLBResources(t, l4NetLB, nodeNames)
 
 	// Delete IPv4 resources annotation
@@ -645,6 +656,7 @@ func TestDualStackNetLBSyncIgnoresNoAnnotationIPv4Resources(t *testing.T) {
 	// Run new sync. Controller should not delete resources, if they don't exist in annotation
 	result = l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
 	svc.Annotations = result.Annotations
+	svc.Status.Conditions = result.Conditions
 
 	// Verify IPv4 Firewall was not deleted
 	fwName := l4NetLB.namer.L4Backend(l4NetLB.Service.Namespace, l4NetLB.Service.Name)
@@ -682,8 +694,9 @@ func TestEnsureIPv6ExternalLoadBalancerCustomSubnet(t *testing.T) {
 	if result.Error != nil {
 		t.Fatalf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
-	// Copy result annotations to the service, as assertion verifies that service got proper annotations.
+	// Copy result annotations to the service, as assertion verifies that service got proper l4annotations.
 	svc.Annotations = result.Annotations
+	svc.Status.Conditions = result.Conditions
 	assertDualStackNetLBResourcesWithCustomIPv6Subnet(t, l4NetLB, nodeNames, l4NetLB.cloud.SubnetworkURL())
 
 	// create custom subnet
@@ -702,6 +715,7 @@ func TestEnsureIPv6ExternalLoadBalancerCustomSubnet(t *testing.T) {
 		t.Fatalf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
 	svc.Annotations = result.Annotations
+	svc.Status.Conditions = result.Conditions
 	assertDualStackNetLBResourcesWithCustomIPv6Subnet(t, l4NetLB, nodeNames, "test-subnet")
 
 	// Change to a different subnet
@@ -716,6 +730,7 @@ func TestEnsureIPv6ExternalLoadBalancerCustomSubnet(t *testing.T) {
 		t.Fatalf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
 	svc.Annotations = result.Annotations
+	svc.Status.Conditions = result.Conditions
 	assertDualStackNetLBResourcesWithCustomIPv6Subnet(t, l4NetLB, nodeNames, "another-subnet")
 
 	// remove the annotation - NetLB should revert to default subnet.
@@ -725,6 +740,7 @@ func TestEnsureIPv6ExternalLoadBalancerCustomSubnet(t *testing.T) {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
 	svc.Annotations = result.Annotations
+	svc.Status.Conditions = result.Conditions
 	assertDualStackNetLBResourcesWithCustomIPv6Subnet(t, l4NetLB, nodeNames, l4NetLB.cloud.SubnetworkURL())
 
 	// Delete the loadbalancer
@@ -923,6 +939,7 @@ func TestDualStackNetLBStaticIPAnnotation(t *testing.T) {
 				t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 			}
 			svc.Annotations = result.Annotations
+			svc.Status.Conditions = result.Conditions
 			assertDualStackNetLBResources(t, l4NetLB, nodeNames)
 
 			var gotIPs []string
@@ -983,6 +1000,7 @@ func TestEnsureIPv6OnlyNetLBNetworkTierChange(t *testing.T) {
 		t.Errorf("Got empty loadBalancer status after switching to Premium using handler %v", l4NetLB)
 	}
 	l4NetLB.Service.Annotations = result.Annotations
+	l4NetLB.Service.Status.Conditions = result.Conditions
 
 	// This call ensures that resyncing an already correctly provisioned service
 	// does not cause errors or unexpected changes
@@ -1012,6 +1030,7 @@ func TestIPv6OnlyNetLBSyncIgnoresNoAnnotationResources(t *testing.T) {
 		t.Fatalf("Initial EnsureFrontend failed: %v", result.Error)
 	}
 	svc.Annotations = result.Annotations
+	svc.Status.Conditions = result.Conditions
 
 	assertNetLBResourcesIPv6Only(t, l4NetLB, nodeNames)
 
@@ -1068,8 +1087,9 @@ func TestEnsureExternalLoadBalancerCustomSubnetIPv6Only(t *testing.T) {
 	if result.Error != nil {
 		t.Fatalf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
-	// Copy result annotations to the service, as assertion verifies that service got proper annotations.
+	// Copy result annotations to the service, as assertion verifies that service got proper l4annotations.
 	svc.Annotations = result.Annotations
+	svc.Status.Conditions = result.Conditions
 	assertDualStackNetLBResourcesWithCustomIPv6Subnet(t, l4NetLB, nodeNames, l4NetLB.cloud.SubnetworkURL())
 
 	// create custom subnet
@@ -1088,6 +1108,7 @@ func TestEnsureExternalLoadBalancerCustomSubnetIPv6Only(t *testing.T) {
 		t.Fatalf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
 	svc.Annotations = result.Annotations
+	svc.Status.Conditions = result.Conditions
 	assertDualStackNetLBResourcesWithCustomIPv6Subnet(t, l4NetLB, nodeNames, "test-subnet")
 
 	// Change to a different subnet
@@ -1102,6 +1123,7 @@ func TestEnsureExternalLoadBalancerCustomSubnetIPv6Only(t *testing.T) {
 		t.Fatalf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
 	svc.Annotations = result.Annotations
+	svc.Status.Conditions = result.Conditions
 	assertDualStackNetLBResourcesWithCustomIPv6Subnet(t, l4NetLB, nodeNames, "another-subnet")
 
 	// remove the annotation - NetLB should revert to default subnet.
@@ -1111,6 +1133,7 @@ func TestEnsureExternalLoadBalancerCustomSubnetIPv6Only(t *testing.T) {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
 	svc.Annotations = result.Annotations
+	svc.Status.Conditions = result.Conditions
 	assertDualStackNetLBResourcesWithCustomIPv6Subnet(t, l4NetLB, nodeNames, l4NetLB.cloud.SubnetworkURL())
 
 	// Delete the loadbalancer
@@ -1181,6 +1204,7 @@ func TestIPv6OnlyNetLBStaticIPAnnotation(t *testing.T) {
 				t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 			}
 			svc.Annotations = result.Annotations
+			svc.Status.Conditions = result.Conditions
 
 			assertNetLBResourcesIPv6Only(t, l4NetLB, nodeNames)
 
@@ -1367,6 +1391,7 @@ func ensureLoadBalancer(port int, vals gce.TestClusterValues, fakeGCE *gce.Cloud
 		t.Errorf("Got empty loadBalancer status using handler %v", l4NetLB)
 	}
 	l4NetLB.Service.Annotations = result.Annotations
+	l4NetLB.Service.Status.Conditions = result.Conditions
 	assertNetLBResources(t, l4NetLB, emptyNodes)
 	return svc, l4NetLB
 }
@@ -1641,6 +1666,9 @@ func assertNetLBResources(t *testing.T, l4NetLB *L4NetLB, nodeNames []string) {
 		diff := cmp.Diff(expectedAnnotations, l4NetLB.Service.Annotations)
 		t.Errorf("Expected annotations %v, got %v, diff %v", expectedAnnotations, l4NetLB.Service.Annotations, diff)
 	}
+
+	expectedConditions := buildExpectedNetLBConditions(l4NetLB)
+	assertConditionsMatch(t, expectedConditions, l4NetLB.Service.Status.Conditions)
 }
 
 func assertDualStackNetLBResources(t *testing.T, l4NetLB *L4NetLB, nodeNames []string) {
@@ -1710,6 +1738,9 @@ func assertDualStackNetLBResourcesWithCustomIPv6Subnet(t *testing.T, l4NetLB *L4
 		diff := cmp.Diff(expectedAnnotations, l4NetLB.Service.Annotations)
 		t.Errorf("Expected annotations %v, got %v, diff %v", expectedAnnotations, l4NetLB.Service.Annotations, diff)
 	}
+
+	expectedConditions := buildExpectedNetLBConditions(l4NetLB)
+	assertConditionsMatch(t, expectedConditions, l4NetLB.Service.Status.Conditions)
 }
 
 func assertNetLBResourcesIPv6Only(t *testing.T, l4NetLB *L4NetLB, nodeNames []string) {
@@ -1998,6 +2029,27 @@ func buildExpectedNetLBAnnotations(l4netlb *L4NetLB) map[string]string {
 		expectedAnnotations[l4annotations.NetworkTierAnnotationKey] = val
 	}
 	return expectedAnnotations
+}
+
+func buildExpectedNetLBConditions(l4NetLB *L4NetLB) []conditionMatcher {
+	isSharedHC := !servicehelper.RequestsOnlyLocalTraffic(l4NetLB.Service)
+	backendName := l4NetLB.namer.L4Backend(l4NetLB.Service.Namespace, l4NetLB.Service.Name)
+	hcName := l4NetLB.namer.L4HealthCheck(l4NetLB.Service.Namespace, l4NetLB.Service.Name, isSharedHC)
+	ipv4FwName := l4NetLB.namer.L4Backend(l4NetLB.Service.Namespace, l4NetLB.Service.Name)
+	ipv4HcFwName := l4NetLB.namer.L4HealthCheckFirewall(l4NetLB.Service.Namespace, l4NetLB.Service.Name, isSharedHC)
+	ipv4FrName := l4NetLB.frName()
+	ipv6FwName := l4NetLB.namer.L4IPv6Firewall(l4NetLB.Service.Namespace, l4NetLB.Service.Name)
+	ipv6HcFwName := l4NetLB.namer.L4IPv6HealthCheckFirewall(l4NetLB.Service.Namespace, l4NetLB.Service.Name, isSharedHC)
+	ipv6FrName := l4NetLB.ipv6FRName()
+
+	if utils.NeedsIPv4(l4NetLB.Service) && utils.NeedsIPv6(l4NetLB.Service) {
+		return expectedL4LBDualStackConditions(l4NetLB.Service.Spec.Ports, backendName, ipv4FrName, ipv6FrName, hcName, ipv4FwName, ipv6FwName, ipv4HcFwName, ipv6HcFwName, true)
+	} else if utils.NeedsIPv4(l4NetLB.Service) {
+		return expectedL4LBIPv4Conditions(l4NetLB.Service.Spec.Ports, backendName, ipv4FrName, hcName, ipv4FwName, ipv4HcFwName, true)
+	} else if utils.NeedsIPv6(l4NetLB.Service) {
+		return expectedL4LBIPv6Conditions(l4NetLB.Service.Spec.Ports, backendName, ipv6FrName, hcName, ipv6FwName, ipv6HcFwName, true)
+	}
+	return []conditionMatcher{}
 }
 
 func createUserStaticIPInStandardTier(fakeGCE *gce.Cloud, region string) {

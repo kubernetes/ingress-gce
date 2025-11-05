@@ -9,6 +9,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"google.golang.org/api/compute/v1"
 	api_v1 "k8s.io/api/core/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -72,24 +73,28 @@ func TestEnsureMixedNetLB(t *testing.T) {
 		// want
 		resources   mixedprotocoltest.GCEResources
 		annotations map[string]string
+		conditions  []meta_v1.Condition // Added conditions field
 	}{
 		{
 			desc:        "ipv4 tcp",
 			spec:        mixedprotocoltest.SpecIPv4([]int32{80, 443}, nil),
 			annotations: mixedprotocolnetlbtest.AnnotationsTCP(),
 			resources:   mixedprotocolnetlbtest.TCPResources(),
+			conditions:  mixedprotocolnetlbtest.ConditionsTCP(),
 		},
 		{
 			desc:        "ipv4 udp",
 			spec:        mixedprotocoltest.SpecIPv4(nil, []int32{53}),
 			annotations: mixedprotocolnetlbtest.AnnotationsUDP(),
 			resources:   mixedprotocolnetlbtest.UDPResources(),
+			conditions:  mixedprotocolnetlbtest.ConditionsUDP(),
 		},
 		{
 			desc:        "ipv4 mixed",
 			spec:        mixedprotocoltest.SpecIPv4([]int32{80, 443}, []int32{53}),
 			annotations: mixedprotocolnetlbtest.AnnotationsMixed(),
 			resources:   mixedprotocolnetlbtest.MixedResources(),
+			conditions:  mixedprotocolnetlbtest.ConditionsMixed(),
 		},
 	}
 
@@ -122,6 +127,7 @@ func TestEnsureMixedNetLB(t *testing.T) {
 				wantResult := &L4NetLBSyncResult{
 					Annotations: e.annotations,
 					SyncType:    "create",
+					Conditions:  e.conditions,
 				}
 				if s.resources.BackendService != nil {
 					wantResult.SyncType = "update"
@@ -146,6 +152,13 @@ func assertNetLBResult(t *testing.T, got, want *L4NetLBSyncResult) {
 
 	if diff := cmp.Diff(got.Annotations, want.Annotations); diff != "" {
 		t.Errorf("got.Annotations != want.Annotations: (-got +want):\n%s", diff)
+	}
+	diff := cmp.Diff(want.Conditions, got.Conditions,
+		cmpopts.IgnoreFields(meta_v1.Condition{}, "LastTransitionTime", "ObservedGeneration"),
+		cmpopts.SortSlices(func(a, b meta_v1.Condition) bool { return a.Type < b.Type }),
+	)
+	if diff != "" {
+		t.Errorf("got.Conditions != want.Conditions (-want +got):\n%s", diff)
 	}
 }
 

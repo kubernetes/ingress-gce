@@ -23,12 +23,14 @@ import (
 	"time"
 
 	"google.golang.org/api/compute/v1"
+	metaapi "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/l4annotations"
+	"k8s.io/ingress-gce/pkg/l4conditions"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -49,10 +51,13 @@ func (l4 *L4) ensureIPv6Resources(syncResult *L4ILBSyncResult, nodeNames []strin
 	switch ipv6fr.IPProtocol {
 	case forwardingrules.ProtocolTCP:
 		syncResult.Annotations[l4annotations.TCPForwardingRuleIPv6Key] = ipv6fr.Name
+		metaapi.SetStatusCondition(&syncResult.Conditions, l4conditions.NewTCPIPv6ForwardingRuleCondition(ipv6fr.Name))
 	case forwardingrules.ProtocolUDP:
 		syncResult.Annotations[l4annotations.UDPForwardingRuleIPv6Key] = ipv6fr.Name
+		metaapi.SetStatusCondition(&syncResult.Conditions, l4conditions.NewUDPIPv6ForwardingRuleCondition(ipv6fr.Name))
 	case forwardingrules.ProtocolL3:
 		syncResult.Annotations[l4annotations.L3ForwardingRuleIPv6Key] = ipv6fr.Name
+		metaapi.SetStatusCondition(&syncResult.Conditions, l4conditions.NewL3IPv6ForwardingRuleCondition(ipv6fr.Name))
 	}
 
 	// Google Cloud creates ipv6 forwarding rules with IPAddress in CIDR form. We will take only first address
@@ -72,7 +77,7 @@ func (l4 *L4) ensureIPv6Resources(syncResult *L4ILBSyncResult, nodeNames []strin
 // This function is called only on Service update or periodic sync.
 // Checking for annotation saves us from emitting too much error logs "Resource not found".
 // If annotation was deleted, but resource still exists, it will be left till the Service deletion,
-// where we delete all resources, no matter if they exist in annotations.
+// where we delete all resources, no matter if they exist in l4annotations.
 func (l4 *L4) deleteIPv6ResourcesOnSync(syncResult *L4ILBSyncResult) {
 	l4.svcLogger.Info("Deleting IPv6 resources for L4 ILB Service on sync, with checking for existence in annotation")
 	l4.deleteIPv6ResourcesAnnotationBased(syncResult, true)
@@ -192,6 +197,7 @@ func (l4 *L4) ensureIPv6NodesFirewall(ipAddress string, nodeNames []string, resu
 		return
 	}
 	result.Annotations[l4annotations.FirewallRuleIPv6Key] = firewallName
+	metaapi.SetStatusCondition(&result.Conditions, l4conditions.NewIPv6FirewallCondition(firewallName))
 }
 
 func (l4 *L4) deleteIPv6ForwardingRule() error {
