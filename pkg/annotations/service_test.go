@@ -17,6 +17,7 @@ limitations under the License.
 package annotations
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -199,5 +200,404 @@ func TestBackendConfigs(t *testing.T) {
 		if !reflect.DeepEqual(configs, tc.expectedConfigs) || tc.expectedErr != err {
 			t.Errorf("%s: for annotations %+v; svc.GetBackendConfigs() = %v, %v; want %v, %v", tc.desc, svc.v, configs, err, tc.expectedConfigs, tc.expectedErr)
 		}
+	}
+}
+
+func TestParseNegStatus(t *testing.T) {
+	for _, tc := range []struct {
+		desc            string
+		status          string
+		expectNegStatus *NegStatus
+		expectError     error
+	}{
+		{
+			desc:            "Test empty string",
+			status:          "",
+			expectNegStatus: &NegStatus{},
+			expectError:     fmt.Errorf("unexpected end of JSON input"),
+		},
+		{
+			desc:            "Test basic status",
+			status:          `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
+			expectNegStatus: &NegStatus{NetworkEndpointGroups: PortNegMap{"80": "neg-name"}, Zones: []string{"us-central1-a"}},
+			expectError:     nil,
+		},
+		{
+			desc:            "Test NEG status with 2 ports",
+			status:          `{"network_endpoint_groups":{"80":"neg-name", "443":"another-neg-name"},"zones":["us-central1-a"]}`,
+			expectNegStatus: &NegStatus{NetworkEndpointGroups: PortNegMap{"80": "neg-name", "443": "another-neg-name"}, Zones: []string{"us-central1-a"}},
+			expectError:     nil,
+		},
+		{
+			desc:            "Incorrect fields",
+			status:          `{"network_endpoint_group":{"80":"neg-name"},"zone":["us-central1-a"]}`,
+			expectNegStatus: &NegStatus{},
+			expectError:     nil,
+		},
+		{
+			desc:            "Invalid annotation",
+			status:          `{"network_endpoint_groups":{"80":"neg-name"},"zones":"us-central1-a"]}`,
+			expectNegStatus: &NegStatus{},
+			expectError:     fmt.Errorf("invalid character ']' after object key:value pair"),
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			negStatus, err := ParseNegStatus(tc.status)
+
+			if fmt.Sprintf("%q", err) != fmt.Sprintf("%q", tc.expectError) {
+				t.Errorf("Test case %q: Expect error to be %q, but got: %q", tc.desc, tc.expectError, err)
+			}
+
+			if !reflect.DeepEqual(*tc.expectNegStatus, negStatus) {
+				t.Errorf("Expected NegStatus to be %v, got %v instead", tc.expectNegStatus, negStatus)
+			}
+		})
+	}
+}
+
+func TestOnlyStatusAnnotationsChanged(t *testing.T) {
+	for _, tc := range []struct {
+		desc           string
+		service1       *v1.Service
+		service2       *v1.Service
+		expectedResult bool
+	}{
+		{
+			desc: "Test add neg annotation",
+			service1: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "service1",
+				},
+			},
+			service2: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "service2",
+					Annotations: map[string]string{
+						NEGStatusKey: `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
+					},
+				},
+			},
+			expectedResult: true,
+		},
+		{
+			desc: "Test valid diff",
+			service1: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "service1",
+					Annotations: map[string]string{
+						NEGStatusKey: `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
+					},
+				},
+			},
+			service2: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "service2",
+					Annotations: map[string]string{
+						"RandomAnnotation": "abcde",
+					},
+				},
+			},
+			expectedResult: false,
+		},
+		{
+			desc: "Test no change",
+			service1: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "service1",
+					Annotations: map[string]string{
+						"RandomAnnotation": "abcde",
+					},
+				},
+			},
+			service2: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "service2",
+					Annotations: map[string]string{
+						"RandomAnnotation": "abcde",
+					},
+				},
+			},
+			expectedResult: true,
+		},
+		{
+			desc: "Test remove NEG annotation",
+			service1: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "service1",
+					Annotations: map[string]string{
+						NEGStatusKey:       `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
+						"RandomAnnotation": "abcde",
+					},
+				},
+			},
+			service2: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "service2",
+					Annotations: map[string]string{
+						"RandomAnnotation": "abcde",
+					},
+				},
+			},
+			expectedResult: true,
+		},
+		{
+			desc: "Test only ILB ForwardingRule annotation diff",
+			service1: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "service1",
+					Annotations: map[string]string{
+						FirewallRuleKey:      "rule1",
+						TCPForwardingRuleKey: "tcprule",
+						NEGStatusKey:         `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
+						"RandomAnnotation":   "abcde",
+					},
+				},
+			},
+			service2: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "service2",
+					Annotations: map[string]string{
+						FirewallRuleKey:      "rule1",
+						UDPForwardingRuleKey: "udprule",
+						NEGStatusKey:         `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
+						"RandomAnnotation":   "abcde",
+					},
+				},
+			},
+			expectedResult: true,
+		},
+		{
+			desc: "Test all status annotations removed",
+			service1: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "service1",
+					Annotations: map[string]string{
+						FirewallRuleKey:      "rule1",
+						TCPForwardingRuleKey: "tcprule",
+						NEGStatusKey:         `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
+						"RandomAnnotation":   "abcde",
+					},
+				},
+			},
+			service2: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "service2",
+					Annotations: map[string]string{
+						"RandomAnnotation": "abcde",
+					},
+				},
+			},
+			expectedResult: true,
+		},
+		{
+			desc: "Test change value of non-status annotation",
+			service1: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "service1",
+					Annotations: map[string]string{
+						FirewallRuleKey:      "rule1",
+						TCPForwardingRuleKey: "tcprule",
+						NEGStatusKey:         `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
+						"RandomAnnotation":   "abcde",
+					},
+				},
+			},
+			service2: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "service2",
+					Annotations: map[string]string{
+						FirewallRuleKey:      "rule1",
+						TCPForwardingRuleKey: "tcprule",
+						NEGStatusKey:         `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
+						"RandomAnnotation":   "xyz",
+					},
+				},
+			},
+			expectedResult: false,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			result := OnlyStatusAnnotationsChanged(tc.service1, tc.service2)
+			if result != tc.expectedResult {
+				t.Errorf("%s: Expected result for input %v, %v to be %v, got %v instead", tc.desc, tc.service1.Annotations, tc.service2.Annotations, tc.expectedResult, result)
+			}
+		})
+	}
+}
+
+func TestRBSAnnotation(t *testing.T) {
+	for _, tc := range []struct {
+		desc string
+		svc  *v1.Service
+		want bool
+	}{
+		{
+			desc: "RBS annotation not specified",
+			svc:  &v1.Service{},
+			want: false,
+		},
+		{
+			desc: "RBS annotation enabled",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						RBSAnnotationKey: RBSEnabled,
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			desc: "RBS annotation present but not with enabled value",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						RBSAnnotationKey: "otherValue",
+					},
+				},
+			},
+			want: false,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := HasRBSAnnotation(tc.svc)
+			if tc.want != got {
+				t.Errorf("output of HasRBSAnnotaiton differed, want=%v, got=%v", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestHasStrongSessionAffinityAnnotation(t *testing.T) {
+	for _, tc := range []struct {
+		desc string
+		svc  *v1.Service
+		want bool
+	}{
+		{
+			desc: "Strong Session Affinity annotation was not specified",
+			svc:  &v1.Service{},
+			want: false,
+		},
+		{
+			desc: "Strong Session Affinity annotation was correctly specified",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						StrongSessionAffinityAnnotationKey: StrongSessionAffinityEnabled,
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			desc: "Strong Session Affinity annotation has wrong value",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						StrongSessionAffinityAnnotationKey: "otherValue",
+					},
+				},
+			},
+			want: false,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := HasStrongSessionAffinityAnnotation(tc.svc)
+			if tc.want != got {
+				t.Errorf("output of HasStrongSessionAffinityAnnotation differed, want=%v, got=%v", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestWantsL4NetLB(t *testing.T) {
+	// sPtr is a helper to return a pointer to a string,
+	// useful for setting LoadBalancerClass.
+	sPtr := func(s string) *string { return &s }
+
+	for _, tc := range []struct {
+		desc string
+		svc  *v1.Service
+		want bool
+	}{
+		{
+			desc: "Nil service",
+			svc:  nil,
+			want: false,
+		},
+		{
+			desc: "ClusterIP service should not want L4 NetLB",
+			svc: &v1.Service{
+				Spec: v1.ServiceSpec{
+					Type: v1.ServiceTypeClusterIP,
+				},
+			},
+			want: false,
+		},
+		{
+			desc: "Standard LoadBalancer service defaults to External (NetLB)",
+			svc: &v1.Service{
+				Spec: v1.ServiceSpec{
+					Type: v1.ServiceTypeLoadBalancer,
+				},
+			},
+			want: true,
+		},
+		{
+			desc: "LoadBalancer with Internal annotation should not want NetLB",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						"cloud.google.com/load-balancer-type": string(LBTypeInternal),
+					},
+				},
+				Spec: v1.ServiceSpec{
+					Type: v1.ServiceTypeLoadBalancer,
+				},
+			},
+			want: false,
+		},
+		{
+			desc: "LoadBalancer with explicit External annotation wants NetLB",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						"cloud.google.com/load-balancer-type": "External",
+					},
+				},
+				Spec: v1.ServiceSpec{
+					Type: v1.ServiceTypeLoadBalancer,
+				},
+			},
+			want: true,
+		},
+		{
+			desc: "LoadBalancer with matching Regional External Class wants NetLB",
+			svc: &v1.Service{
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeLoadBalancer,
+					LoadBalancerClass: sPtr(RegionalExternalLoadBalancerClass),
+				},
+			},
+			want: true,
+		},
+		{
+			desc: "LoadBalancer with mismatching Class does not want NetLB",
+			svc: &v1.Service{
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeLoadBalancer,
+					LoadBalancerClass: sPtr("some-other-custom-class"),
+				},
+			},
+			want: false,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			got, _ := WantsL4NetLB(tc.svc)
+			if got != tc.want {
+				t.Errorf("WantsL4NetLB() = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
