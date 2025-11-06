@@ -715,3 +715,94 @@ func TestHasStrongSessionAffinityAnnotation(t *testing.T) {
 		})
 	}
 }
+
+func TestWantsL4NetLB(t *testing.T) {
+	// sPtr is a helper to return a pointer to a string,
+	// useful for setting LoadBalancerClass.
+	sPtr := func(s string) *string { return &s }
+
+	for _, tc := range []struct {
+		desc string
+		svc  *v1.Service
+		want bool
+	}{
+		{
+			desc: "Nil service",
+			svc:  nil,
+			want: false,
+		},
+		{
+			desc: "ClusterIP service should not want L4 NetLB",
+			svc: &v1.Service{
+				Spec: v1.ServiceSpec{
+					Type: v1.ServiceTypeClusterIP,
+				},
+			},
+			want: false,
+		},
+		{
+			desc: "Standard LoadBalancer service defaults to External (NetLB)",
+			svc: &v1.Service{
+				Spec: v1.ServiceSpec{
+					Type: v1.ServiceTypeLoadBalancer,
+				},
+			},
+			want: true,
+		},
+		{
+			desc: "LoadBalancer with Internal annotation should not want NetLB",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						"cloud.google.com/load-balancer-type": string(LBTypeInternal),
+					},
+				},
+				Spec: v1.ServiceSpec{
+					Type: v1.ServiceTypeLoadBalancer,
+				},
+			},
+			want: false,
+		},
+		{
+			desc: "LoadBalancer with explicit External annotation wants NetLB",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						"cloud.google.com/load-balancer-type": "External",
+					},
+				},
+				Spec: v1.ServiceSpec{
+					Type: v1.ServiceTypeLoadBalancer,
+				},
+			},
+			want: true,
+		},
+		{
+			desc: "LoadBalancer with matching Regional External Class wants NetLB",
+			svc: &v1.Service{
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeLoadBalancer,
+					LoadBalancerClass: sPtr(RegionalExternalLoadBalancerClass),
+				},
+			},
+			want: true,
+		},
+		{
+			desc: "LoadBalancer with mismatching Class does not want NetLB",
+			svc: &v1.Service{
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeLoadBalancer,
+					LoadBalancerClass: sPtr("some-other-custom-class"),
+				},
+			},
+			want: false,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			got, _ := WantsL4NetLB(tc.svc)
+			if got != tc.want {
+				t.Errorf("WantsL4NetLB() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
