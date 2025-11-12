@@ -24,7 +24,7 @@ HOME=/root
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd ${REPO_ROOT}
 
-BINARIES=${BINARIES:-"e2e-test"}
+BINARIES=${BINARIES:-"psc-e2e-test neg-e2e-test ingress-controller-e2e-test"}
 ALL_ARCH=${ALL_ARCH:-"amd64 arm64"}
 REGISTRY=${REGISTRY:-"gcr.io/example"}
 VERSION=${VERSION:-"test"}
