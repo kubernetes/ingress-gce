@@ -316,7 +316,7 @@ func (p *Pool) List(key *meta.Key, version meta.Version, beLogger klog.Logger) (
 	var clusterBackends []*composite.BackendService
 
 	for _, bs := range backends {
-		if p.namer.NameBelongsToCluster(bs.Name) {
+		if p.namer.NameBelongsToEntity(bs.Name) {
 			scope, err := composite.ScopeFromSelfLink(bs.SelfLink)
 			if err != nil {
 				return nil, err

@@ -70,9 +70,9 @@ type BackendNamer interface {
 	InstanceGroup() string
 	// NamedPort returns the name for a named port.
 	NamedPort(port int64) string
-	// NameBelongsToCluster checks if a given backend resource name is tagged with
-	// this cluster's UID.
-	NameBelongsToCluster(resourceName string) bool
+	// NameBelongsToEntity checks if a given backend resource name is tagged with
+	// this principal entity's UID.
+	NameBelongsToEntity(resourceName string) bool
 }
 
 type NonDefaultSubnetNEGNamer interface {
@@ -90,9 +90,9 @@ type V1FrontendNamer interface {
 	LoadBalancer(ingKey string) LoadBalancerName
 	// LoadBalancerForURLMap returns the loadbalancer name for given URL map.
 	LoadBalancerForURLMap(urlMap string) LoadBalancerName
-	// NameBelongsToCluster checks if a given frontend resource name is tagged with
-	// this cluster's UID.
-	NameBelongsToCluster(resourceName string) bool
+	// NameBelongsToEntity checks if a given frontend resource name is tagged with
+	// this principal entity's UID.
+	NameBelongsToEntity(resourceName string) bool
 }
 
 // L4ResourcesNamer is an interface to name L4 LoadBalancing resources.

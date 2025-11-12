@@ -151,8 +151,8 @@ func TestNameBelongsToCluster(t *testing.T) {
 			newNamer.UrlMap(longLBName),
 			newNamer.NEG(strings.Repeat(longKey, 3), strings.Repeat(longKey, 3), int32(88888)),
 		} {
-			if !newNamer.NameBelongsToCluster(tc) {
-				t.Errorf("newNamer.NameBelongsToCluster(%q) = false, want true", tc)
+			if !newNamer.NameBelongsToEntity(tc) {
+				t.Errorf("newNamer.NameBelongsToEntity(%q) = false, want true", tc)
 			}
 		}
 	}
@@ -171,8 +171,8 @@ func TestNameBelongsToCluster(t *testing.T) {
 		newNamer.ForwardingRule(longLBName, HTTPSProtocol),
 		newNamer.UrlMap(longLBName),
 	} {
-		if newNamer.NameBelongsToCluster(tc) {
-			t.Errorf("newNamer.NameBelongsToCluster(%q) = true, want false", tc)
+		if newNamer.NameBelongsToEntity(tc) {
+			t.Errorf("newNamer.NameBelongsToEntity(%q) = true, want false", tc)
 		}
 	}
 }
