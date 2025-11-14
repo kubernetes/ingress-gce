@@ -318,11 +318,13 @@ func buildContext(vals gce.TestClusterValues, readOnlyMode bool) (*ingctx.Contro
 	namer := namer.NewNamer(clusterUID, "", klog.TODO())
 
 	ctxConfig := ingctx.ControllerContextConfig{
-		Namespace:         v1.NamespaceAll,
-		ResyncPeriod:      1 * time.Minute,
-		NumL4NetLBWorkers: 5,
-		MaxIGSize:         1000,
-		ReadOnlyMode:      readOnlyMode,
+		Namespace:              v1.NamespaceAll,
+		ResyncPeriod:           1 * time.Minute,
+		NumL4NetLBWorkers:      5,
+		MaxIGSize:              1000,
+		ReadOnlyMode:           readOnlyMode,
+		EnableL4ILBDualStack:   true,
+		EnableL4NetLBDualStack: true,
 	}
 	return ingctx.NewControllerContext(kubeClient, nil, nil, nil, svcNegClient, nil, networkClient, nil, kubeClient /*kube client to be used for events*/, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
 }
@@ -1959,7 +1961,6 @@ func TestDualStackServiceNeedsUpdate(t *testing.T) {
 			t.Parallel()
 
 			controller := newL4NetLBServiceController()
-			controller.enableDualStack = true
 			oldSvc := test.NewL4NetLBRBSService(8080)
 			oldSvc.Spec.IPFamilies = tc.initialIPFamilies
 			newSvc := test.NewL4NetLBRBSService(8080)
@@ -2158,7 +2159,6 @@ func TestCreateDeleteDualStackNetLBService(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			controller := newL4NetLBServiceController()
-			controller.enableDualStack = true
 			svc := test.NewL4NetLBRBSService(8080)
 			svc.Spec.IPFamilies = tc.ipFamilies
 			addNetLBService(controller, svc)
@@ -2205,7 +2205,6 @@ func TestProcessDualStackNetLBServiceOnUserError(t *testing.T) {
 	t.Parallel()
 
 	controller := newL4NetLBServiceController()
-	controller.enableDualStack = true
 	svc := test.NewL4NetLBRBSService(8080)
 	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
 	addNetLBService(controller, svc)

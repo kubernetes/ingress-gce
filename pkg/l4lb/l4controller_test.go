@@ -707,7 +707,6 @@ func TestCreateDeleteDualStackService(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			l4c, _ := newServiceController(t, newFakeGCE(), false)
-			l4c.enableDualStack = true
 			prevMetrics, err := test.GetL4ILBLatencyMetric()
 			if err != nil {
 				t.Errorf("Error getting L4 ILB latency metrics err: %v", err)
@@ -765,7 +764,6 @@ func TestCreateDeleteDualStackService(t *testing.T) {
 func TestProcessDualStackServiceOnUserError(t *testing.T) {
 	t.Parallel()
 	l4c, _ := newServiceController(t, newFakeGCE(), false)
-	l4c.enableDualStack = true
 
 	// Create cluster subnet with EXTERNAL ipv6 access type to trigger user error.
 	test.MustCreateDualStackClusterSubnet(t, l4c.ctx.Cloud, "EXTERNAL")
@@ -790,7 +788,6 @@ func TestProcessDualStackServiceOnUserError(t *testing.T) {
 
 func TestDualStackILBStatusForErrorSync(t *testing.T) {
 	l4c, _ := newServiceController(t, newFakeGCE(), false)
-	l4c.enableDualStack = true
 	(l4c.ctx.Cloud.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = mock.InsertForwardingRulesInternalErrHook
 
 	newSvc := test.NewL4ILBDualStackService(8080, api_v1.ProtocolTCP, []api_v1.IPFamily{api_v1.IPv4Protocol, api_v1.IPv6Protocol}, api_v1.ServiceExternalTrafficPolicyTypeCluster)
@@ -859,7 +856,6 @@ func TestProcessUpdateILBIPFamilies(t *testing.T) {
 			t.Parallel()
 
 			l4c, _ := newServiceController(t, newFakeGCE(), false)
-			l4c.enableDualStack = true
 
 			test.MustCreateDualStackClusterSubnet(t, l4c.ctx.Cloud, "INTERNAL")
 
@@ -1031,10 +1027,12 @@ func newServiceController(t *testing.T, fakeGCE *gce.Cloud, readOnlyMode bool) (
 
 	stopCh := make(chan struct{})
 	ctxConfig := context.ControllerContextConfig{
-		Namespace:    api_v1.NamespaceAll,
-		ResyncPeriod: 1 * time.Minute,
-		NumL4Workers: 5,
-		ReadOnlyMode: readOnlyMode,
+		Namespace:              api_v1.NamespaceAll,
+		ResyncPeriod:           1 * time.Minute,
+		NumL4Workers:           5,
+		ReadOnlyMode:           readOnlyMode,
+		EnableL4ILBDualStack:   true,
+		EnableL4NetLBDualStack: true,
 	}
 	ctx, err := context.NewControllerContext(kubeClient, nil, nil, nil, svcNegClient, nil, nil, nil, kubeClient /*kube client to be used for events*/, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
 	if err != nil {
