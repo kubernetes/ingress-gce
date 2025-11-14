@@ -147,7 +147,7 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 				if addSvc.Spec.LoadBalancerClass != nil {
 					svcLogger.V(4).Info("Ignoring service managed by another controller", "serviceLoadBalancerClass", *addSvc.Spec.LoadBalancerClass)
 				} else {
-					svcLogger.V(4).Info("Ignoring add for non-lb service", "serviceType", svcType)
+					svcLogger.V(4).Info("Ignoring creation of service", "serviceType", svcType)
 				}
 			}
 		},
