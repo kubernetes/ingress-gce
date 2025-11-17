@@ -3,6 +3,7 @@ package loadbalancers
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -116,7 +117,7 @@ func TestEnsureMixedNetLB(t *testing.T) {
 				}
 				l4netlb, fakeGCE := arrangeNetLB(t, s.resources, svc)
 
-				result := l4netlb.EnsureFrontend([]string{mixedprotocoltest.TestNode}, svc)
+				result := l4netlb.EnsureFrontend([]string{mixedprotocoltest.TestNode}, svc, time.Now())
 
 				wantResult := &L4NetLBSyncResult{
 					Annotations: e.annotations,
