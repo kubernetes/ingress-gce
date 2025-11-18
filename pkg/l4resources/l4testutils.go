@@ -1,4 +1,4 @@
-package loadbalancers
+package l4resources
 
 import (
 	"fmt"
@@ -10,6 +10,10 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
+)
+
+const (
+	kubeSystemUID = "ksuid123"
 )
 
 func verifyFirewallNotExists(cloud *gce.Cloud, fwName string) error {
