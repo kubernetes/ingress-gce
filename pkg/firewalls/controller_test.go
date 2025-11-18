@@ -30,19 +30,19 @@ import (
 	"github.com/google/go-cmp/cmp"
 	api_v1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	v1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
+	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/flags"
 	test "k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/utils/ptr"
-
-	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/ingress-gce/pkg/context"
 )
 
 // newFirewallController creates a firewall controller.
@@ -232,6 +232,78 @@ func TestLBSourceRanges(t *testing.T) {
 			sort.Strings(tc.want)
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("lbSourceRanges(%q) returned diff (-want +got):\\n%s", tc.overrideRanges, diff)
+			}
+		})
+	}
+}
+
+// TestFirewallXPNError verifies that firewallXPNError can extract FirewallXPNError
+// instances from aggregate errors so the controller continues surfacing them.
+func TestFirewallXPNError(t *testing.T) {
+	t.Parallel()
+	const cmd = "gcloud compute firewall-rules update test"
+	matchingErr := &FirewallXPNError{
+		Internal: fmt.Errorf("forbidden"),
+		Message:  fmt.Sprintf("Firewall change required by security admin: `%v`", cmd),
+	}
+	testCases := []struct {
+		desc    string
+		err     error
+		wantMsg string
+	}{
+		{
+			desc: "nil error",
+		},
+		{
+			desc:    "direct firewall error",
+			err:     matchingErr,
+			wantMsg: matchingErr.Message,
+		},
+		{
+			desc:    "aggregate containing firewall error",
+			err:     utilerrors.NewAggregate([]error{matchingErr, fmt.Errorf("boom")}),
+			wantMsg: matchingErr.Message,
+		},
+		{
+			desc: "nested aggregate containing firewall error",
+			err: utilerrors.NewAggregate([]error{
+				fmt.Errorf("outer"),
+				utilerrors.NewAggregate([]error{
+					fmt.Errorf("inner"),
+					matchingErr,
+				}),
+			}),
+			wantMsg: matchingErr.Message,
+		},
+		{
+			desc: "aggregate without firewall error",
+			err: utilerrors.NewAggregate([]error{
+				fmt.Errorf("outer"),
+				fmt.Errorf("inner"),
+			}),
+		},
+		{
+			desc: "non firewall error",
+			err:  fmt.Errorf("boom"),
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			fwErr := firewallXPNError(tc.err)
+			if tc.wantMsg == "" {
+				if fwErr != nil {
+					t.Fatalf("firewallXPNError(%v) = %v, want nil", tc.desc, fwErr)
+				}
+				return
+			}
+			if fwErr == nil {
+				t.Fatalf("firewallXPNError(%v) = nil, want %v", tc.desc, tc.wantMsg)
+			}
+			if fwErr.Message != tc.wantMsg {
+				t.Fatalf("firewallXPNError(%v) = %q, want %q", tc.desc, fwErr.Message, tc.wantMsg)
 			}
 		})
 	}

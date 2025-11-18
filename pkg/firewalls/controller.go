@@ -308,16 +308,16 @@ func (fwc *FirewallController) sync(key string) error {
 
 	// Ensure firewall rule for the cluster and pass any NEG endpoint ports.
 	if err := fwc.firewallPool.Sync(utils.GetNodeNames(nodes), additionalPorts, additionalRanges, needNodePort); err != nil {
-		if fwErr, ok := err.(*FirewallXPNError); ok {
-			// XPN: Raise an event on each ingress
-			for _, ing := range gceIngresses {
-				if annotations.FromIngress(ing).SuppressFirewallXPNError() {
-					continue
-				}
-				fwc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeNormal, "XPN", fwErr.Message)
-			}
-		} else {
+		fwErr := firewallXPNError(err)
+		if fwErr == nil {
 			return err
+		}
+		// XPN: Raise an event on each ingress
+		for _, ing := range gceIngresses {
+			if annotations.FromIngress(ing).SuppressFirewallXPNError() {
+				continue
+			}
+			fwc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeNormal, "XPN", fwErr.Message)
 		}
 	}
 	return nil
@@ -377,4 +377,25 @@ func (fwc *FirewallController) getCustomHealthCheckPorts(svcPorts []utils.Servic
 	}
 
 	return result
+}
+
+func firewallXPNError(err error) *FirewallXPNError {
+	if err == nil {
+		return nil
+	}
+	var fwErr *FirewallXPNError
+	if errors.As(err, &fwErr) {
+		return fwErr
+	}
+	agg, ok := err.(utilerrors.Aggregate)
+	if !ok {
+		return nil
+	}
+	for _, nestedErr := range agg.Errors() {
+		fwErr = firewallXPNError(nestedErr)
+		if fwErr != nil {
+			return fwErr
+		}
+	}
+	return nil
 }
