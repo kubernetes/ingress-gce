@@ -24,6 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/ingress-gce/pkg/negannotation"
 
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/ingress-gce/cmd/check-gke-ingress/app/report"
@@ -594,7 +595,7 @@ func TestCheckL7ILBNegAnnotation(t *testing.T) {
 					Name:      "svc-1",
 					Namespace: "test",
 					Annotations: map[string]string{
-						annotations.NEGAnnotationKey: `{"ingress": true,}`,
+						negannotation.NEGAnnotationKey: `{"ingress": true,}`,
 					},
 				},
 			},
@@ -607,7 +608,7 @@ func TestCheckL7ILBNegAnnotation(t *testing.T) {
 					Name:      "svc-1",
 					Namespace: "test",
 					Annotations: map[string]string{
-						annotations.NEGAnnotationKey: `{"exposed_ports": {"80":{"name": "neg1"}}}`,
+						negannotation.NEGAnnotationKey: `{"exposed_ports": {"80":{"name": "neg1"}}}`,
 					},
 				},
 			},
@@ -620,7 +621,7 @@ func TestCheckL7ILBNegAnnotation(t *testing.T) {
 					Name:      "svc-1",
 					Namespace: "test",
 					Annotations: map[string]string{
-						annotations.NEGAnnotationKey: `{"ingress": true}`,
+						negannotation.NEGAnnotationKey: `{"ingress": true}`,
 					},
 				},
 			},

@@ -21,7 +21,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/negannotation"
 )
 
 func TestOnlyStatusAnnotationsChanged(t *testing.T) {
@@ -42,7 +42,7 @@ func TestOnlyStatusAnnotationsChanged(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "service2",
 					Annotations: map[string]string{
-						annotations.NEGStatusKey: `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
+						negannotation.NEGStatusKey: `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
 					},
 				},
 			},
@@ -54,7 +54,7 @@ func TestOnlyStatusAnnotationsChanged(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "service1",
 					Annotations: map[string]string{
-						annotations.NEGStatusKey: `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
+						negannotation.NEGStatusKey: `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
 					},
 				},
 			},
@@ -94,8 +94,8 @@ func TestOnlyStatusAnnotationsChanged(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "service1",
 					Annotations: map[string]string{
-						annotations.NEGStatusKey: `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
-						"RandomAnnotation":       "abcde",
+						negannotation.NEGStatusKey: `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
+						"RandomAnnotation":         "abcde",
 					},
 				},
 			},
@@ -115,10 +115,10 @@ func TestOnlyStatusAnnotationsChanged(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "service1",
 					Annotations: map[string]string{
-						FirewallRuleKey:          "rule1",
-						TCPForwardingRuleKey:     "tcprule",
-						annotations.NEGStatusKey: `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
-						"RandomAnnotation":       "abcde",
+						FirewallRuleKey:            "rule1",
+						TCPForwardingRuleKey:       "tcprule",
+						negannotation.NEGStatusKey: `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
+						"RandomAnnotation":         "abcde",
 					},
 				},
 			},
@@ -126,10 +126,10 @@ func TestOnlyStatusAnnotationsChanged(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "service2",
 					Annotations: map[string]string{
-						FirewallRuleKey:          "rule1",
-						UDPForwardingRuleKey:     "udprule",
-						annotations.NEGStatusKey: `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
-						"RandomAnnotation":       "abcde",
+						FirewallRuleKey:            "rule1",
+						UDPForwardingRuleKey:       "udprule",
+						negannotation.NEGStatusKey: `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
+						"RandomAnnotation":         "abcde",
 					},
 				},
 			},
@@ -141,10 +141,10 @@ func TestOnlyStatusAnnotationsChanged(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "service1",
 					Annotations: map[string]string{
-						FirewallRuleKey:          "rule1",
-						TCPForwardingRuleKey:     "tcprule",
-						annotations.NEGStatusKey: `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
-						"RandomAnnotation":       "abcde",
+						FirewallRuleKey:            "rule1",
+						TCPForwardingRuleKey:       "tcprule",
+						negannotation.NEGStatusKey: `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
+						"RandomAnnotation":         "abcde",
 					},
 				},
 			},
@@ -164,10 +164,10 @@ func TestOnlyStatusAnnotationsChanged(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "service1",
 					Annotations: map[string]string{
-						FirewallRuleKey:          "rule1",
-						TCPForwardingRuleKey:     "tcprule",
-						annotations.NEGStatusKey: `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
-						"RandomAnnotation":       "abcde",
+						FirewallRuleKey:            "rule1",
+						TCPForwardingRuleKey:       "tcprule",
+						negannotation.NEGStatusKey: `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
+						"RandomAnnotation":         "abcde",
 					},
 				},
 			},
@@ -175,10 +175,10 @@ func TestOnlyStatusAnnotationsChanged(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "service2",
 					Annotations: map[string]string{
-						FirewallRuleKey:          "rule1",
-						TCPForwardingRuleKey:     "tcprule",
-						annotations.NEGStatusKey: `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
-						"RandomAnnotation":       "xyz",
+						FirewallRuleKey:            "rule1",
+						TCPForwardingRuleKey:       "tcprule",
+						negannotation.NEGStatusKey: `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
+						"RandomAnnotation":         "xyz",
 					},
 				},
 			},

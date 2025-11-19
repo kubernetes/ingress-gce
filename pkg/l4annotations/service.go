@@ -22,7 +22,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
-	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/negannotation"
 )
 
 const (
@@ -205,7 +205,7 @@ func OnlyStatusAnnotationsChanged(oldService, newService *v1.Service) bool {
 func onlyStatusAnnotationsChanged(oldService, newService *v1.Service) bool {
 	for key, val := range newService.ObjectMeta.Annotations {
 		if oldVal, ok := oldService.ObjectMeta.Annotations[key]; !ok || oldVal != val {
-			if key == annotations.NEGStatusKey || strings.HasPrefix(key, ServiceStatusPrefix) {
+			if key == negannotation.NEGStatusKey || strings.HasPrefix(key, ServiceStatusPrefix) {
 				continue
 			}
 			return false

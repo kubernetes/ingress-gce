@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	"k8s.io/ingress-gce/pkg/negannotation"
 	"k8s.io/klog/v2"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
@@ -1179,9 +1180,9 @@ func ensureNEGIngress(t *testing.T, lbc *LoadBalancerController, namespace, name
 			Type:  api_v1.ServiceTypeNodePort,
 			Ports: []api_v1.ServicePort{{Port: servicePort}},
 		})
-	negAnnotation := annotations.NegAnnotation{Ingress: true}
+	negAnnotation := negannotation.NegAnnotation{Ingress: true}
 	svc.Annotations = map[string]string{
-		annotations.NEGAnnotationKey: negAnnotation.String(),
+		negannotation.NEGAnnotationKey: negAnnotation.String(),
 	}
 	addService(lbc, svc)
 

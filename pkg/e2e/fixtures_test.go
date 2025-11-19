@@ -24,8 +24,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/cloud-provider-gcp/providers/gce"
-	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
+	"k8s.io/ingress-gce/pkg/negannotation"
 	"k8s.io/utils/strings/slices"
 )
 
@@ -45,14 +45,14 @@ func TestEnsureCustomEndpointSlice(t *testing.T) {
 	defer s.Destroy()
 
 	// Set up echo service.
-	annotation := annotations.NegAnnotation{
+	annotation := negannotation.NegAnnotation{
 		Ingress: false,
-		ExposedPorts: map[int32]annotations.NegAttributes{
+		ExposedPorts: map[int32]negannotation.NegAttributes{
 			int32(443): {},
 			int32(80):  {},
 		},
 	}
-	svcAnnotations := map[string]string{annotations.NEGAnnotationKey: annotation.String()}
+	svcAnnotations := map[string]string{negannotation.NEGAnnotationKey: annotation.String()}
 	svc, err := EnsureEchoService(s, testServiceName, svcAnnotations, v1.ServiceTypeClusterIP, replicas)
 	if err != nil {
 		t.Fatalf("Failed to create echo service, err: %v", err)

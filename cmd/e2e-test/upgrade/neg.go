@@ -21,15 +21,15 @@ import (
 	"testing"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/e2e"
+	"k8s.io/ingress-gce/pkg/negannotation"
 )
 
 var (
 	svcName       = "svc1"
-	negAnnotation = annotations.NegAnnotation{
+	negAnnotation = negannotation.NegAnnotation{
 		Ingress: false,
-		ExposedPorts: map[int32]annotations.NegAttributes{
+		ExposedPorts: map[int32]negannotation.NegAttributes{
 			int32(443): {},
 			int32(80):  {},
 		},
@@ -65,7 +65,7 @@ func (n *StandaloneNEGWithSvcNEG) Init(t *testing.T, s *e2e.Sandbox, framework *
 // PreUpgrade implements e2e.UpgradeTest.PreUpgrade.
 func (n *StandaloneNEGWithSvcNEG) PreUpgrade() error {
 	svcAnnotations := map[string]string{
-		annotations.NEGAnnotationKey: negAnnotation.String(),
+		negannotation.NEGAnnotationKey: negAnnotation.String(),
 	}
 	_, err := e2e.EnsureEchoService(n.s, svcName, svcAnnotations, v1.ServiceTypeClusterIP, 0)
 

@@ -47,6 +47,7 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/ingress-gce/pkg/negannotation"
 	"k8s.io/ingress-gce/pkg/network"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -636,7 +637,7 @@ func (c *Controller) mergeIngressPortInfo(service *apiv1.Service, name types.Nam
 		return nil
 	}
 
-	negAnnotation, foundNEGAnnotation, err := annotations.FromService(service).NEGAnnotation()
+	negAnnotation, foundNEGAnnotation, err := negannotation.FromService(service).NEGAnnotation()
 	if err != nil {
 		return err
 	}
@@ -659,7 +660,7 @@ func (c *Controller) mergeIngressPortInfo(service *apiv1.Service, name types.Nam
 
 // mergeStandaloneNEGsPortInfo merge Standalone NEG PortInfo into portInfoMap
 func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap, negUsage *metricscollector.NegServiceState, networkInfo *network.NetworkInfo) error {
-	negAnnotation, foundNEGAnnotation, err := annotations.FromService(service).NEGAnnotation()
+	negAnnotation, foundNEGAnnotation, err := negannotation.FromService(service).NEGAnnotation()
 	if err != nil {
 		return err
 	}
@@ -807,7 +808,7 @@ func (c *Controller) mergeDefaultBackendServicePortInfoMap(key string, service *
 	}
 
 	// process default backend service for L7 XLB
-	negAnnotation, foundNEGAnnotation, err := annotations.FromService(service).NEGAnnotation()
+	negAnnotation, foundNEGAnnotation, err := negannotation.FromService(service).NEGAnnotation()
 	if err != nil {
 		return err
 	}
@@ -842,9 +843,9 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 
 	// Remove NEG Status Annotation when no NEG is needed
 	if len(portMap) == 0 {
-		if _, ok := service.Annotations[annotations.NEGStatusKey]; ok {
+		if _, ok := service.Annotations[negannotation.NEGStatusKey]; ok {
 			newSvcObjectMeta := service.ObjectMeta.DeepCopy()
-			delete(newSvcObjectMeta.Annotations, annotations.NEGStatusKey)
+			delete(newSvcObjectMeta.Annotations, negannotation.NEGStatusKey)
 			c.logger.V(2).Info("Removing NEG status annotation from service", "service", klog.KRef(namespace, name))
 			return patch.PatchServiceObjectMetadata(c.client.CoreV1(), service, *newSvcObjectMeta)
 		}
@@ -852,12 +853,12 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 		return nil
 	}
 
-	negStatus := annotations.NewNegStatus(zones, portMap.ToPortNegMap())
+	negStatus := negannotation.NewNegStatus(zones, portMap.ToPortNegMap())
 	annotation, err := negStatus.Marshal()
 	if err != nil {
 		return err
 	}
-	existingAnnotation, ok := service.Annotations[annotations.NEGStatusKey]
+	existingAnnotation, ok := service.Annotations[negannotation.NEGStatusKey]
 	if ok && existingAnnotation == annotation {
 		return nil
 	}
@@ -866,7 +867,7 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 	if newSvcObjectMeta.Annotations == nil {
 		newSvcObjectMeta.Annotations = make(map[string]string)
 	}
-	newSvcObjectMeta.Annotations[annotations.NEGStatusKey] = annotation
+	newSvcObjectMeta.Annotations[negannotation.NEGStatusKey] = annotation
 	c.logger.V(2).Info("Updating NEG visibility annotation on service", "annotation", annotation, "service", klog.KRef(namespace, name))
 	return patch.PatchServiceObjectMetadata(c.client.CoreV1(), service, *newSvcObjectMeta)
 }

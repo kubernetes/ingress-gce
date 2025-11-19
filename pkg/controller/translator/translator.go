@@ -21,6 +21,7 @@ import (
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/ingress-gce/pkg/healthchecks"
+	"k8s.io/ingress-gce/pkg/negannotation"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 	"k8s.io/klog/v2"
 
@@ -137,7 +138,7 @@ func (t *Translator) GetService(namespace, name string) (*api_v1.Service, error)
 
 // maybeEnableNEG enables NEG on the service port if necessary
 func maybeEnableNEG(sp *utils.ServicePort, svc *api_v1.Service) error {
-	negAnnotation, ok, err := annotations.FromService(svc).NEGAnnotation()
+	negAnnotation, ok, err := negannotation.FromService(svc).NEGAnnotation()
 	if ok && err == nil {
 		sp.NEGEnabled = negAnnotation.NEGEnabledForIngress()
 	}
