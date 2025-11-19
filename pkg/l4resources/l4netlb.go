@@ -20,8 +20,6 @@ import (
 	"fmt"
 	"time"
 
-	"k8s.io/ingress-gce/pkg/loadbalancers"
-
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	compute "google.golang.org/api/compute/v1"
@@ -72,7 +70,7 @@ type L4NetLB struct {
 	healthChecks   healthchecksl4.L4HealthChecks
 	// mixedManager is responsible for managing forwarding rules for mixed protocol lbs
 	mixedManager    *forwardingrules.MixedManagerNetLB
-	forwardingRules loadbalancers.ForwardingRulesProvider
+	forwardingRules ForwardingRulesProvider
 	enableDualStack bool
 	// represents if `enable strong session affinity` flag was set
 	enableStrongSessionAffinity      bool
@@ -97,7 +95,7 @@ type L4NetLBSyncResult struct {
 	MetricsState       metrics.L4ServiceState
 	SyncType           string
 	StartTime          time.Time
-	GCEResourceUpdate  loadbalancers.ResourceUpdates
+	GCEResourceUpdate  ResourceUpdates
 }
 
 func NewL4SyncResult(syncType string, startTime time.Time, svc *corev1.Service, isMultinet bool, enabledStrongSessionAffinity bool, isWeightedLBPodsPerNode bool, useNEGs bool) *L4NetLBSyncResult {

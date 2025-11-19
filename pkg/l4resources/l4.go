@@ -22,8 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"k8s.io/ingress-gce/pkg/loadbalancers"
-
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
@@ -70,7 +68,7 @@ type L4 struct {
 	Service                          *corev1.Service
 	ServicePort                      utils.ServicePort
 	NamespacedName                   types.NamespacedName
-	forwardingRules                  loadbalancers.ForwardingRulesProvider
+	forwardingRules                  ForwardingRulesProvider
 	healthChecks                     healthchecksl4.L4HealthChecks
 	enableDualStack                  bool
 	network                          network.NetworkInfo
@@ -94,7 +92,7 @@ type L4ILBSyncResult struct {
 	MetricsState       metrics.L4ServiceState
 	SyncType           string
 	StartTime          time.Time
-	ResourceUpdates    loadbalancers.ResourceUpdates
+	ResourceUpdates    ResourceUpdates
 }
 
 func NewL4ILBSyncResult(syncType string, startTime time.Time, svc *corev1.Service, isMultinetService bool, isWeightedLBPodsPerNode bool, isLBWithZonalAffinity bool) *L4ILBSyncResult {
