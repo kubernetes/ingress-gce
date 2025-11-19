@@ -24,8 +24,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/l4annotations"
 )
 
 const (
@@ -43,7 +43,7 @@ const (
 // GetL4LoggingConfig retrieves config map responsible for logging config for service if contains annotation.
 // If annotation not specified or config map doesn't exist returns nil.
 func GetL4LoggingConfig(service *corev1.Service, configMapLister cache.Store) (*composite.BackendServiceLogConfig, error) {
-	loggingConfigName, ok := annotations.FromService(service).GetL4LoggingConfigMapAnnotation()
+	loggingConfigName, ok := l4annotations.FromService(service).GetL4LoggingConfigMapAnnotation()
 	if !ok {
 		return nil, nil
 	}

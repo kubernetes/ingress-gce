@@ -3,8 +3,8 @@ package operator
 import (
 	"fmt"
 
-	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
+	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 
@@ -57,7 +57,7 @@ func (op *ServicesOperator) ReferencesL4LoggingConfigMap(configMap *api_v1.Confi
 	dupes := map[string]bool{}
 	for _, svc := range op.s {
 		key := fmt.Sprintf("%s/%s", svc.Namespace, svc.Name)
-		loggingConfigMapName, ok := annotations.FromService(svc).GetL4LoggingConfigMapAnnotation()
+		loggingConfigMapName, ok := l4annotations.FromService(svc).GetL4LoggingConfigMapAnnotation()
 		if !dupes[key] && ok && loggingConfigMapName == configMap.Name && svc.Namespace == configMap.Namespace {
 			s = append(s, svc)
 			dupes[key] = true

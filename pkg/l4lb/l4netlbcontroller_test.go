@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/ingress-gce/pkg/l4resources"
 
 	networkv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1"
@@ -47,7 +48,6 @@ import (
 	"k8s.io/client-go/util/retry"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/cloud-provider/service/helpers"
-	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/backends"
@@ -83,18 +83,18 @@ const (
 
 var (
 	netLBCommonAnnotationKeys = []string{
-		annotations.BackendServiceKey,
-		annotations.HealthcheckKey,
+		l4annotations.BackendServiceKey,
+		l4annotations.HealthcheckKey,
 	}
 	netLBIPv4AnnotationKeys = []string{
-		annotations.FirewallRuleKey,
-		annotations.TCPForwardingRuleKey,
-		annotations.FirewallRuleForHealthcheckKey,
+		l4annotations.FirewallRuleKey,
+		l4annotations.TCPForwardingRuleKey,
+		l4annotations.FirewallRuleForHealthcheckKey,
 	}
 	netLBIPv6AnnotationKeys = []string{
-		annotations.FirewallRuleIPv6Key,
-		annotations.TCPForwardingRuleIPv6Key,
-		annotations.FirewallRuleForHealthcheckIPv6Key,
+		l4annotations.FirewallRuleIPv6Key,
+		l4annotations.TCPForwardingRuleIPv6Key,
+		l4annotations.FirewallRuleForHealthcheckIPv6Key,
 	}
 )
 
@@ -115,8 +115,8 @@ func getPorts() []v1.ServicePort {
 
 func getStrongSessionAffinityAnnotations() map[string]string {
 	return map[string]string{
-		annotations.StrongSessionAffinityAnnotationKey: annotations.StrongSessionAffinityEnabled,
-		annotations.RBSAnnotationKey:                   annotations.RBSEnabled,
+		l4annotations.StrongSessionAffinityAnnotationKey: l4annotations.StrongSessionAffinityEnabled,
+		l4annotations.RBSAnnotationKey:                   l4annotations.RBSEnabled,
 	}
 }
 
@@ -1125,7 +1125,7 @@ func TestServiceNeedsDeletionChecks(t *testing.T) {
 
 			if tc.removeRBSForwardingRule {
 				lc.forwardingRules.(*forwardingrules.ForwardingRules).Delete(frName)
-				delete(svc.Annotations, annotations.TCPForwardingRuleKey)
+				delete(svc.Annotations, l4annotations.TCPForwardingRuleKey)
 			}
 
 			if tc.needsDeletion && !lc.needsDeletion(svc, klog.TODO()) {
@@ -1320,7 +1320,7 @@ func TestMetricsWithSyncError(t *testing.T) {
 		t.Errorf("Expected error in sync controller")
 	}
 	expectMetrics := &test.L4LBErrorMetricInfo{
-		ByGCEResource: map[string]uint64{annotations.ForwardingRuleResource: 1},
+		ByGCEResource: map[string]uint64{l4annotations.ForwardingRuleResource: 1},
 		ByErrorType:   map[string]uint64{http.StatusText(http.StatusInternalServerError): 1},
 	}
 	received, errMetrics := test.GetL4NetLBErrorMetric()
@@ -1652,7 +1652,7 @@ func TestControllerUserIPWithStandardNetworkTier(t *testing.T) {
 	if err := lc.sync(key, klog.TODO()); !utils.IsNetworkTierError(err) {
 		t.Errorf("Expected error when trying to ensure service with wrong Network Tier, err: %v", err)
 	}
-	svc.Annotations[annotations.NetworkTierAnnotationKey] = string(cloud.NetworkTierStandard)
+	svc.Annotations[l4annotations.NetworkTierAnnotationKey] = string(cloud.NetworkTierStandard)
 	updateNetLBService(lc, svc)
 	if err := lc.sync(key, klog.TODO()); err != nil {
 		t.Errorf("Unexpected error when trying to ensure service with STANDARD Network Tier, err: %v", err)
@@ -1690,7 +1690,7 @@ func TestIsRBSBasedService(t *testing.T) {
 		},
 		{
 			desc:             "Should detect RBS by annotation",
-			annotations:      map[string]string{annotations.RBSAnnotationKey: annotations.RBSEnabled},
+			annotations:      map[string]string{l4annotations.RBSAnnotationKey: l4annotations.RBSEnabled},
 			expectRBSService: true,
 		},
 		{
@@ -1736,8 +1736,8 @@ func TestIsRBSBasedServiceWithILBServices(t *testing.T) {
 	}
 	ilbFrName := l4resources.NewL4Handler(l4ilbParams, klog.TODO()).GetFRName()
 	ilbSvc.Annotations = map[string]string{
-		annotations.TCPForwardingRuleKey: ilbFrName,
-		annotations.UDPForwardingRuleKey: ilbFrName,
+		l4annotations.TCPForwardingRuleKey: ilbFrName,
+		l4annotations.UDPForwardingRuleKey: ilbFrName,
 	}
 	if controller.isRBSBasedService(ilbSvc, klog.TODO()) {
 		t.Errorf("isRBSBasedService should not detect RBS in ILB services. Service: %v", ilbSvc)
@@ -1751,22 +1751,22 @@ func TestIsRBSBasedServiceByForwardingRuleAnnotation(t *testing.T) {
 	frName := utils.LegacyForwardingRuleName(svc)
 
 	svc.Annotations = map[string]string{
-		annotations.UDPForwardingRuleKey: "fr-1",
-		annotations.TCPForwardingRuleKey: "fr-2",
+		l4annotations.UDPForwardingRuleKey: "fr-1",
+		l4annotations.TCPForwardingRuleKey: "fr-2",
 	}
 	if controller.isRBSBasedService(svc, klog.TODO()) {
 		t.Errorf("Should not detect RBS by forwarding rule annotations without matching name. Service: %v", svc)
 	}
 
 	svc.Annotations = map[string]string{
-		annotations.TCPForwardingRuleKey: frName,
+		l4annotations.TCPForwardingRuleKey: frName,
 	}
 	if !controller.isRBSBasedService(svc, klog.TODO()) {
 		t.Errorf("Should detect RBS by TCP forwarding rule annotation with matching name. Service %v", svc)
 	}
 
 	svc.Annotations = map[string]string{
-		annotations.UDPForwardingRuleKey: frName,
+		l4annotations.UDPForwardingRuleKey: frName,
 	}
 	if !controller.isRBSBasedService(svc, klog.TODO()) {
 		t.Errorf("Should detect RBS by UDP forwarding rule annotation with matching name. Service %v", svc)
@@ -1786,20 +1786,20 @@ func TestShouldProcessService(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err: %v", legacyNetLBSvc.Name, err)
 	}
-	svcWithRBSAnnotation.Annotations = map[string]string{annotations.RBSAnnotationKey: annotations.RBSEnabled}
+	svcWithRBSAnnotation.Annotations = map[string]string{l4annotations.RBSAnnotationKey: l4annotations.RBSEnabled}
 
 	svcWithRBSAnnotationAndFinalizer, err := l4netController.ctx.KubeClient.CoreV1().Services(legacyNetLBSvc.Namespace).Get(context.TODO(), legacyNetLBSvc.Name, metav1.GetOptions{})
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err: %v", legacyNetLBSvc.Name, err)
 	}
 	svcWithRBSAnnotationAndFinalizer.ObjectMeta.Finalizers = append(svcWithRBSAnnotationAndFinalizer.ObjectMeta.Finalizers, common.NetLBFinalizerV2)
-	svcWithRBSAnnotationAndFinalizer.Annotations = map[string]string{annotations.RBSAnnotationKey: annotations.RBSEnabled}
+	svcWithRBSAnnotationAndFinalizer.Annotations = map[string]string{l4annotations.RBSAnnotationKey: l4annotations.RBSEnabled}
 
 	svcWithCustomLoadBalancerClass, err := l4netController.ctx.KubeClient.CoreV1().Services(legacyNetLBSvc.Namespace).Get(context.TODO(), legacyNetLBSvc.Name, metav1.GetOptions{})
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err: %v", legacyNetLBSvc.Name, err)
 	}
-	svcWithCustomLoadBalancerClass.Annotations = map[string]string{annotations.RBSAnnotationKey: annotations.RBSEnabled}
+	svcWithCustomLoadBalancerClass.Annotations = map[string]string{l4annotations.RBSAnnotationKey: l4annotations.RBSEnabled}
 	testLBClass := "testLBClass"
 	svcWithCustomLoadBalancerClass.Spec.LoadBalancerClass = &testLBClass
 
@@ -1807,7 +1807,7 @@ func TestShouldProcessService(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err: %v", legacyNetLBSvc.Name, err)
 	}
-	lbClass := annotations.RegionalExternalLoadBalancerClass
+	lbClass := l4annotations.RegionalExternalLoadBalancerClass
 	svcWithExternalLoadBalancerClass.Spec.LoadBalancerClass = &lbClass
 
 	for _, testCase := range []struct {
@@ -2040,7 +2040,7 @@ func TestPreventTargetPoolToRBSMigration(t *testing.T) {
 			if hasV2Finalizer != testCase.expectV2NetLBFinalizerAfterSync {
 				t.Errorf("After preventLegacyServiceHandling, hasV2Finalizer = %t, testCase.expectV2NetLBFinalizerAfterSync = %t, want equal", hasV2Finalizer, testCase.expectV2NetLBFinalizerAfterSync)
 			}
-			hasRBSAnnotation := annotations.HasRBSAnnotation(resultSvc)
+			hasRBSAnnotation := l4annotations.HasRBSAnnotation(resultSvc)
 			if hasRBSAnnotation != testCase.expectRBSAnnotationAfterSync {
 				t.Errorf("After preventLegacyServiceHandling, hasRBSAnnotation = %t, testCase.expectRBSAnnotationAfterSync = %t, want equal", hasRBSAnnotation, testCase.expectRBSAnnotationAfterSync)
 			}
@@ -2068,7 +2068,7 @@ func TestPreventTargetPoolToRBSMigration(t *testing.T) {
 			if hasV2Finalizer != testCase.expectV2NetLBFinalizerAfterSync {
 				t.Errorf("After sync, hasV2NetLBFinalizer = %t, testCase.expectV2NetLBFinalizerAfterSync = %t, want equal", hasV2Finalizer, testCase.expectV2NetLBFinalizerAfterSync)
 			}
-			hasRBSAnnotation = annotations.HasRBSAnnotation(resultSvc)
+			hasRBSAnnotation = l4annotations.HasRBSAnnotation(resultSvc)
 			if hasRBSAnnotation != testCase.expectRBSAnnotationAfterSync {
 				t.Errorf("After sync, hasRBSAnnotation = %t, testCase.expectRBSAnnotationAfterSync = %t, want equal", hasRBSAnnotation, testCase.expectRBSAnnotationAfterSync)
 			}
@@ -2303,12 +2303,12 @@ func TestEnsureExternalLoadBalancerClass(t *testing.T) {
 		},
 		{
 			desc:              "Use ILB loadBalancerClass",
-			loadBalancerClass: annotations.RegionalInternalLoadBalancerClass,
+			loadBalancerClass: l4annotations.RegionalInternalLoadBalancerClass,
 			shouldProcess:     false,
 		},
 		{
 			desc:              "Use NetLB loadBalancerClass",
-			loadBalancerClass: annotations.RegionalExternalLoadBalancerClass,
+			loadBalancerClass: l4annotations.RegionalExternalLoadBalancerClass,
 			shouldProcess:     true,
 		},
 		{
@@ -2397,7 +2397,7 @@ func TestEnsureReadOnlyModeDoesNotProvision(t *testing.T) {
 	}{
 		{
 			desc:                "Use NetLB loadBalancerClass",
-			loadBalancerClass:   annotations.RegionalExternalLoadBalancerClass,
+			loadBalancerClass:   l4annotations.RegionalExternalLoadBalancerClass,
 			readOnlyModeEnabled: false,
 			shouldProcess:       true,
 		},
@@ -2409,7 +2409,7 @@ func TestEnsureReadOnlyModeDoesNotProvision(t *testing.T) {
 		},
 		{
 			desc:                "[ReadOnly] Use NetLB loadBalancerClass",
-			loadBalancerClass:   annotations.RegionalExternalLoadBalancerClass,
+			loadBalancerClass:   l4annotations.RegionalExternalLoadBalancerClass,
 			readOnlyModeEnabled: true,
 			shouldProcess:       false,
 		},

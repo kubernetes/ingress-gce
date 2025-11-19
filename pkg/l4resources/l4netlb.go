@@ -30,13 +30,13 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/address"
-	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/healthchecksl4"
+	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -196,7 +196,7 @@ func isSessionAffinityConfigEmpty(sessionAffinityConfig *corev1.SessionAffinityC
 //   - with anything else than v1.ServiceAffinityClientIP
 //     passes silently if the SSA annotation wasn't enabled
 func (l4netlb *L4NetLB) checkStrongSessionAffinityRequirements() *utils.UserError {
-	if !annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service) {
+	if !l4annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service) {
 		return nil
 	}
 	// there is no strong session affinity flag but annotation was added
@@ -228,7 +228,7 @@ func (l4netlb *L4NetLB) checkStrongSessionAffinityRequirements() *utils.UserErro
 // This function does not link instances to Backend Service.
 func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service, startTime time.Time) *L4NetLBSyncResult {
 	isMultinetService := l4netlb.networkResolver.IsMultinetService(svc)
-	serviceUsesSSA := l4netlb.enableStrongSessionAffinity && annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service)
+	serviceUsesSSA := l4netlb.enableStrongSessionAffinity && l4annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service)
 	isWeightedLBPodsPerNode := l4netlb.isWeightedLBPodsPerNode()
 	result := NewL4SyncResult(SyncTypeCreate, startTime, svc, isMultinetService, serviceUsesSSA, isWeightedLBPodsPerNode, l4netlb.useNEGs)
 
@@ -314,17 +314,17 @@ func (l4netlb *L4NetLB) provideDualStackHealthChecks(nodeNames []string, result 
 	}
 
 	if hcResult.HCFirewallRuleName != "" {
-		result.Annotations[annotations.FirewallRuleForHealthcheckKey] = hcResult.HCFirewallRuleName
+		result.Annotations[l4annotations.FirewallRuleForHealthcheckKey] = hcResult.HCFirewallRuleName
 	} else {
-		delete(result.Annotations, annotations.FirewallRuleForHealthcheckKey)
+		delete(result.Annotations, l4annotations.FirewallRuleForHealthcheckKey)
 	}
 
 	if hcResult.HCFirewallRuleIPv6Name != "" {
-		result.Annotations[annotations.FirewallRuleForHealthcheckIPv6Key] = hcResult.HCFirewallRuleIPv6Name
+		result.Annotations[l4annotations.FirewallRuleForHealthcheckIPv6Key] = hcResult.HCFirewallRuleIPv6Name
 	} else {
-		delete(result.Annotations, annotations.FirewallRuleForHealthcheckIPv6Key)
+		delete(result.Annotations, l4annotations.FirewallRuleForHealthcheckIPv6Key)
 	}
-	result.Annotations[annotations.HealthcheckKey] = hcResult.HCName
+	result.Annotations[l4annotations.HealthcheckKey] = hcResult.HCName
 	return hcResult.HCLink
 }
 
@@ -338,15 +338,15 @@ func (l4netlb *L4NetLB) provideIPv4HealthChecks(nodeNames []string, result *L4Ne
 		result.Error = hcResult.Err
 		return ""
 	}
-	result.Annotations[annotations.HealthcheckKey] = hcResult.HCName
-	result.Annotations[annotations.FirewallRuleForHealthcheckKey] = hcResult.HCFirewallRuleName
+	result.Annotations[l4annotations.HealthcheckKey] = hcResult.HCName
+	result.Annotations[l4annotations.FirewallRuleForHealthcheckKey] = hcResult.HCFirewallRuleName
 	return hcResult.HCLink
 }
 
 // connectionTrackingPolicy returns BackendServiceConnectionTrackingPolicy
 // based on StrongSessionAffinity and IdleTimeoutSec
 func (l4netlb *L4NetLB) connectionTrackingPolicy() *composite.BackendServiceConnectionTrackingPolicy {
-	if !l4netlb.enableStrongSessionAffinity || !annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service) {
+	if !l4netlb.enableStrongSessionAffinity || !l4annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service) {
 		return nil
 	}
 	connectionTrackingPolicy := composite.BackendServiceConnectionTrackingPolicy{}
@@ -374,11 +374,11 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 		var err error
 		logConfig, err = GetL4LoggingConfig(l4netlb.Service, l4netlb.configMapLister)
 		if err != nil {
-			syncResult.GCEResourceInError = annotations.BackendServiceResource
+			syncResult.GCEResourceInError = l4annotations.BackendServiceResource
 			syncResult.Error = utils.NewUserError(err)
 			return ""
 		}
-		loggingConfigMapName, cmReferenced := annotations.FromService(l4netlb.Service).GetL4LoggingConfigMapAnnotation()
+		loggingConfigMapName, cmReferenced := l4annotations.FromService(l4netlb.Service).GetL4LoggingConfigMapAnnotation()
 		if logConfig == nil && cmReferenced {
 			warningMessage := fmt.Sprintf("Referenced L4 logging ConfigMap does not exist: Name: %q, Namespace: %q", loggingConfigMapName, l4netlb.Service.Namespace)
 			l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeWarning, "ReferencedConfigMapDoesNotExist", warningMessage)
@@ -402,18 +402,18 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 	syncResult.GCEResourceUpdate.SetBackendService(wasUpdate)
 	if err != nil {
 		if utils.IsUnsupportedFeatureError(err, strongSessionAffinityFeatureName) {
-			syncResult.GCEResourceInError = annotations.BackendServiceResource
+			syncResult.GCEResourceInError = l4annotations.BackendServiceResource
 			l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeWarning, strongSessionAffinityFeatureName, strongSessionAffinityConditionedSupportMsg)
 			syncResult.Error = utils.NewUserError(err)
 			syncResult.MetricsLegacyState.IsUserError = true
 		} else { // not UserError but something else
-			syncResult.GCEResourceInError = annotations.BackendServiceResource
+			syncResult.GCEResourceInError = l4annotations.BackendServiceResource
 			syncResult.Error = fmt.Errorf("failed to ensure backend service %s - %w", bsName, err)
 		}
 		return ""
 	}
 
-	syncResult.Annotations[annotations.BackendServiceKey] = bsName
+	syncResult.Annotations[l4annotations.BackendServiceKey] = bsName
 	if bs.LogConfig != nil {
 		syncResult.MetricsState.LoggingEnabled = bs.LogConfig.Enable
 	}
@@ -447,15 +447,15 @@ func (l4netlb *L4NetLB) ensureIPv4Resources(result *L4NetLBSyncResult, nodeNames
 	result.GCEResourceUpdate.SetForwardingRule(wasUpdate)
 	if err != nil {
 		// User can misconfigure the forwarding rule if Network Tier will not match service level Network Tier.
-		result.GCEResourceInError = annotations.ForwardingRuleResource
+		result.GCEResourceInError = l4annotations.ForwardingRuleResource
 		result.Error = fmt.Errorf("failed to ensure forwarding rule - %w", err)
 		result.MetricsLegacyState.IsUserError = IsUserError(err)
 		return
 	}
 	if fr.IPProtocol == string(corev1.ProtocolTCP) {
-		result.Annotations[annotations.TCPForwardingRuleKey] = fr.Name
+		result.Annotations[l4annotations.TCPForwardingRuleKey] = fr.Name
 	} else {
-		result.Annotations[annotations.UDPForwardingRuleKey] = fr.Name
+		result.Annotations[l4annotations.UDPForwardingRuleKey] = fr.Name
 	}
 	result.MetricsLegacyState.IsManagedIP = ipAddrType == address.IPAddrManaged
 	result.MetricsLegacyState.IsPremiumTier = fr.NetworkTier == cloud.NetworkTierPremium.ToGCEValue()
@@ -475,7 +475,7 @@ func (l4netlb *L4NetLB) ensureIPv4MixedResources(result *L4NetLBSyncResult, node
 	result.GCEResourceUpdate.SetForwardingRule(res.SyncStatus)
 	if err != nil {
 		// User can misconfigure the forwarding rule if Network Tier will not match service level Network Tier.
-		result.GCEResourceInError = annotations.ForwardingRuleResource
+		result.GCEResourceInError = l4annotations.ForwardingRuleResource
 		result.Error = fmt.Errorf("failed to ensure mixed protocol forwarding rules - %w", err)
 		result.MetricsLegacyState.IsUserError = IsUserError(err)
 		return
@@ -483,14 +483,14 @@ func (l4netlb *L4NetLB) ensureIPv4MixedResources(result *L4NetLBSyncResult, node
 
 	var ipAddr string
 	if res.UDPFwdRule != nil {
-		result.Annotations[annotations.UDPForwardingRuleKey] = res.UDPFwdRule.Name
+		result.Annotations[l4annotations.UDPForwardingRuleKey] = res.UDPFwdRule.Name
 		if res.TCPFwdRule.NetworkTier == cloud.NetworkTierPremium.ToGCEValue() {
 			result.MetricsLegacyState.IsPremiumTier = true
 		}
 		ipAddr = res.UDPFwdRule.IPAddress
 	}
 	if res.TCPFwdRule != nil {
-		result.Annotations[annotations.TCPForwardingRuleKey] = res.TCPFwdRule.Name
+		result.Annotations[l4annotations.TCPForwardingRuleKey] = res.TCPFwdRule.Name
 		if res.TCPFwdRule.NetworkTier == cloud.NetworkTierPremium.ToGCEValue() {
 			result.MetricsLegacyState.IsPremiumTier = true
 		}
@@ -555,18 +555,18 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 	firewallForNodesUpdateStatus, result.Error = firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, &nodesFWRParams, l4netlb.cloud, l4netlb.recorder, fwLogger)
 	result.GCEResourceUpdate.SetFirewallForNodes(firewallForNodesUpdateStatus)
 	if result.Error != nil {
-		result.GCEResourceInError = annotations.FirewallRuleResource
+		result.GCEResourceInError = l4annotations.FirewallRuleResource
 		result.Error = err
 		return
 	}
-	result.Annotations[annotations.FirewallRuleKey] = firewallName
+	result.Annotations[l4annotations.FirewallRuleKey] = firewallName
 }
 
 // EnsureLoadBalancerDeleted performs a cleanup of all GCE resources for the given loadbalancer service.
 // It is health check, firewall rules and backend service
 func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *L4NetLBSyncResult {
 	isMultinetService := l4netlb.networkResolver.IsMultinetService(svc)
-	useSSA := l4netlb.enableStrongSessionAffinity && annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service)
+	useSSA := l4netlb.enableStrongSessionAffinity && l4annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service)
 	isWeightedLBPodsPerNode := l4netlb.isWeightedLBPodsPerNode()
 	result := NewL4SyncResult(SyncTypeDelete, time.Now(), svc, isMultinetService, useSSA, isWeightedLBPodsPerNode, l4netlb.useNEGs)
 
@@ -613,12 +613,12 @@ func (l4netlb *L4NetLB) deleteIPv4ResourcesOnDelete(result *L4NetLBSyncResult) {
 // This function does not delete Backend Service and Health Check, because they are shared between IPv4 and IPv6.
 // IPv4 Firewall Rule for Health Check also will not be deleted here, and will be left till the Service Deletion.
 func (l4netlb *L4NetLB) deleteIPv4ResourcesAnnotationBased(result *L4NetLBSyncResult, shouldIgnoreAnnotations bool) {
-	if shouldIgnoreAnnotations || l4netlb.hasAnnotation(annotations.TCPForwardingRuleKey) || l4netlb.hasAnnotation(annotations.UDPForwardingRuleKey) {
+	if shouldIgnoreAnnotations || l4netlb.hasAnnotation(l4annotations.TCPForwardingRuleKey) || l4netlb.hasAnnotation(l4annotations.UDPForwardingRuleKey) {
 		err := l4netlb.deleteIPv4ForwardingRule()
 		if err != nil {
 			l4netlb.svcLogger.Error(err, "Failed to delete forwarding rule for NetLB RBS service")
 			result.Error = err
-			result.GCEResourceInError = annotations.ForwardingRuleResource
+			result.GCEResourceInError = l4annotations.ForwardingRuleResource
 		}
 		if err = l4netlb.mixedManager.DeleteIPv4(); err != nil {
 			l4netlb.svcLogger.Error(err, "Failed to delete mixed protocol forwarding rules for NetLB RBS service")
@@ -631,15 +631,15 @@ func (l4netlb *L4NetLB) deleteIPv4ResourcesAnnotationBased(result *L4NetLBSyncRe
 	if err != nil {
 		l4netlb.svcLogger.Error(err, "Failed to delete address for NetLB RBS service")
 		result.Error = err
-		result.GCEResourceInError = annotations.AddressResource
+		result.GCEResourceInError = l4annotations.AddressResource
 	}
 
 	// delete firewall rule allowing load balancer source ranges
-	if shouldIgnoreAnnotations || l4netlb.hasAnnotation(annotations.FirewallRuleKey) {
+	if shouldIgnoreAnnotations || l4netlb.hasAnnotation(l4annotations.FirewallRuleKey) {
 		err = l4netlb.deleteIPv4NodesFirewall()
 		if err != nil {
 			l4netlb.svcLogger.Error(err, "Failed to delete firewall rule for NetLB RBS service")
-			result.GCEResourceInError = annotations.FirewallRuleResource
+			result.GCEResourceInError = l4annotations.FirewallRuleResource
 			result.Error = err
 		}
 	}
@@ -711,7 +711,7 @@ func (l4netlb *L4NetLB) deleteBackendService(result *L4NetLBSyncResult) {
 	err := utils.IgnoreHTTPNotFound(l4netlb.backendPool.Delete(bsName, meta.VersionGA, meta.Regional, l4netlb.svcLogger))
 	if err != nil {
 		l4netlb.svcLogger.Error(err, "Failed to delete backends for L4 External LoadBalancer service")
-		result.GCEResourceInError = annotations.BackendServiceResource
+		result.GCEResourceInError = l4annotations.BackendServiceResource
 		result.Error = err
 	}
 }
@@ -766,7 +766,7 @@ func (l4netlb *L4NetLB) frName() string {
 func (l4netlb *L4NetLB) determineBackendServiceLocalityPolicy() backends.LocalityLBPolicyType {
 	// If the service has weighted load balancing enabled, the locality policy can only be WEIGHTED_MAGLEV or MAGLEV.
 	if l4netlb.enableWeightedLB {
-		if annotations.HasWeightedLBPodsPerNodeAnnotation(l4netlb.Service) {
+		if l4annotations.HasWeightedLBPodsPerNodeAnnotation(l4netlb.Service) {
 			if l4netlb.Service.Spec.ExternalTrafficPolicy == corev1.ServiceExternalTrafficPolicyTypeLocal {
 				// If the service has the annotation "networking.gke.io/weighted-load-balancing = pods-per-node"
 				// and the external traffic policy is local, weighted load balancing is enabled and the backend
