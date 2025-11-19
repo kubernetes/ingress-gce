@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"reflect"
 
+	"k8s.io/ingress-gce/pkg/l4resources"
+
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -28,7 +30,6 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/context"
 	l4metrics "k8s.io/ingress-gce/pkg/l4lb/metrics"
-	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/patch"
@@ -69,7 +70,7 @@ func mergeAnnotations(existing, lbAnnotations map[string]string, keysToRemove []
 // updateL4ResourcesAnnotations checks if new annotations should be added to service and patch service metadata if needed.
 func updateL4ResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBAnnotations map[string]string, svcLogger klog.Logger) error {
 	svcLogger.V(3).Info("Updating annotations of service")
-	newObjectMeta := computeNewAnnotationsIfNeeded(svc, newL4LBAnnotations, loadbalancers.L4ResourceAnnotationKeys)
+	newObjectMeta := computeNewAnnotationsIfNeeded(svc, newL4LBAnnotations, l4resources.L4ResourceAnnotationKeys)
 	if newObjectMeta == nil {
 		svcLogger.V(3).Info("Service annotations not changed, skipping patch for service")
 		return nil
@@ -80,7 +81,7 @@ func updateL4ResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Servic
 
 // updateL4DualStackResourcesAnnotations checks if new annotations should be added to dual-stack service and patch service metadata if needed.
 func updateL4DualStackResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBAnnotations map[string]string, svcLogger klog.Logger) error {
-	newObjectMeta := computeNewAnnotationsIfNeeded(svc, newL4LBAnnotations, loadbalancers.L4DualStackResourceAnnotationKeys)
+	newObjectMeta := computeNewAnnotationsIfNeeded(svc, newL4LBAnnotations, l4resources.L4DualStackResourceAnnotationKeys)
 	if newObjectMeta == nil {
 		return nil
 	}
@@ -115,7 +116,7 @@ func isHealthCheckDeleted(cloud *gce.Cloud, hcName string, logger klog.Logger) b
 }
 
 func skipUserError(err error, svcLogger klog.Logger) error {
-	if loadbalancers.IsUserError(err) {
+	if l4resources.IsUserError(err) {
 		svcLogger.Info("Sync failed with user-caused error", "err", err)
 		return nil
 	}

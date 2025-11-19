@@ -14,13 +14,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package loadbalancers
+package l4resources
 
 import (
 	"errors"
 	"fmt"
 	"strings"
 	"time"
+
+	"k8s.io/ingress-gce/pkg/loadbalancers"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -68,7 +70,7 @@ type L4 struct {
 	Service                          *corev1.Service
 	ServicePort                      utils.ServicePort
 	NamespacedName                   types.NamespacedName
-	forwardingRules                  ForwardingRulesProvider
+	forwardingRules                  loadbalancers.ForwardingRulesProvider
 	healthChecks                     healthchecksl4.L4HealthChecks
 	enableDualStack                  bool
 	network                          network.NetworkInfo
@@ -92,7 +94,7 @@ type L4ILBSyncResult struct {
 	MetricsState       metrics.L4ServiceState
 	SyncType           string
 	StartTime          time.Time
-	ResourceUpdates    ResourceUpdates
+	ResourceUpdates    loadbalancers.ResourceUpdates
 }
 
 func NewL4ILBSyncResult(syncType string, startTime time.Time, svc *corev1.Service, isMultinetService bool, isWeightedLBPodsPerNode bool, isLBWithZonalAffinity bool) *L4ILBSyncResult {

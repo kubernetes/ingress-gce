@@ -1,4 +1,4 @@
-package loadbalancers
+package l4resources
 
 /*
 Copyright 2020 The Kubernetes Authors.

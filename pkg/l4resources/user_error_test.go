@@ -1,11 +1,12 @@
-package loadbalancers_test
+package l4resources_test
 
 import (
 	"fmt"
 	"testing"
 
+	"k8s.io/ingress-gce/pkg/l4resources"
+
 	"k8s.io/ingress-gce/pkg/firewalls"
-	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -60,7 +61,7 @@ func TestIsUserError(t *testing.T) {
 
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
-			if got := loadbalancers.IsUserError(tC.err); got != tC.want {
+			if got := l4resources.IsUserError(tC.err); got != tC.want {
 				t.Errorf("IsUserError(%v) = %v, want %v", tC.err.Error(), got, tC.want)
 			}
 		})

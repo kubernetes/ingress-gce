@@ -14,11 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package loadbalancers
+package l4resources
 
 import (
-	"k8s.io/klog/v2"
 	"testing"
+
+	"k8s.io/klog/v2"
 
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/ingress-gce/pkg/test"
