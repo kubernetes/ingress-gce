@@ -1,4 +1,4 @@
-package loadbalancers
+package l4resources
 
 import (
 	"strings"
