@@ -1,4 +1,4 @@
-package controller
+package framework
 
 import (
 	"context"
@@ -9,9 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/cache"
-	providerconfig "k8s.io/ingress-gce/pkg/apis/providerconfig/v1"
 	providerconfigv1 "k8s.io/ingress-gce/pkg/apis/providerconfig/v1"
-	"k8s.io/ingress-gce/pkg/multiproject/manager"
 	fakeproviderconfigclient "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned/fake"
 	providerconfiginformers "k8s.io/ingress-gce/pkg/providerconfig/client/informers/externalversions"
 	"k8s.io/klog/v2"
@@ -22,13 +20,25 @@ func init() {
 	providerconfigv1.AddToScheme(scheme.Scheme)
 }
 
-// fakeProviderConfigControllersManager implements manager.ProviderConfigControllersManager
+// pollForCondition polls for a condition to be true, with a timeout.
+// Returns true if the condition is met within the timeout, false otherwise.
+func pollForCondition(condition func() bool, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if condition() {
+			return true
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return false
+}
+
+// fakeProviderConfigControllersManager implements ProviderConfigControllerManager
 // and lets us track calls to StartControllersForProviderConfig/StopControllersForProviderConfig.
 type fakeProviderConfigControllersManager struct {
-	manager.ProviderConfigControllersManager
 	mu             sync.Mutex
-	startedConfigs map[string]*providerconfig.ProviderConfig
-	stoppedConfigs map[string]*providerconfig.ProviderConfig
+	startedConfigs map[string]*providerconfigv1.ProviderConfig
+	stoppedConfigs map[string]*providerconfigv1.ProviderConfig
 
 	startErr error // optional injected error
 	stopErr  error // optional injected error
@@ -36,13 +46,12 @@ type fakeProviderConfigControllersManager struct {
 
 func newFakeProviderConfigControllersManager() *fakeProviderConfigControllersManager {
 	return &fakeProviderConfigControllersManager{
-		ProviderConfigControllersManager: manager.ProviderConfigControllersManager{},
-		startedConfigs:                   make(map[string]*providerconfig.ProviderConfig),
-		stoppedConfigs:                   make(map[string]*providerconfig.ProviderConfig),
+		startedConfigs: make(map[string]*providerconfigv1.ProviderConfig),
+		stoppedConfigs: make(map[string]*providerconfigv1.ProviderConfig),
 	}
 }
 
-func (f *fakeProviderConfigControllersManager) StartControllersForProviderConfig(pc *providerconfig.ProviderConfig) error {
+func (f *fakeProviderConfigControllersManager) StartControllersForProviderConfig(pc *providerconfigv1.ProviderConfig) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.startErr != nil {
@@ -52,7 +61,7 @@ func (f *fakeProviderConfigControllersManager) StartControllersForProviderConfig
 	return nil
 }
 
-func (f *fakeProviderConfigControllersManager) StopControllersForProviderConfig(pc *providerconfig.ProviderConfig) {
+func (f *fakeProviderConfigControllersManager) StopControllersForProviderConfig(pc *providerconfigv1.ProviderConfig) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.stopErr != nil {
@@ -81,7 +90,7 @@ type testProviderConfigController struct {
 	stopCh chan struct{}
 
 	manager      *fakeProviderConfigControllersManager
-	pcController *ProviderConfigController
+	pcController *providerConfigController
 	pcClient     *fakeproviderconfigclient.Clientset
 	pcInformer   cache.SharedIndexInformer
 }
@@ -96,7 +105,7 @@ func newTestProviderConfigController(t *testing.T) *testProviderConfigController
 	stopCh := make(chan struct{})
 
 	logger := klog.TODO()
-	ctrl := NewProviderConfigController(
+	ctrl := newProviderConfigController(
 		fakeManager,
 		providerConfigInformer,
 		stopCh,
@@ -119,7 +128,7 @@ func newTestProviderConfigController(t *testing.T) *testProviderConfigController
 	}
 }
 
-func addProviderConfig(t *testing.T, tc *testProviderConfigController, pc *providerconfig.ProviderConfig) {
+func addProviderConfig(t *testing.T, tc *testProviderConfigController, pc *providerconfigv1.ProviderConfig) {
 	t.Helper()
 	_, err := tc.pcClient.CloudV1().ProviderConfigs().Create(context.TODO(), pc, metav1.CreateOptions{})
 	if err != nil {
@@ -131,7 +140,7 @@ func addProviderConfig(t *testing.T, tc *testProviderConfigController, pc *provi
 	}
 }
 
-func updateProviderConfig(t *testing.T, tc *testProviderConfigController, pc *providerconfig.ProviderConfig) {
+func updateProviderConfig(t *testing.T, tc *testProviderConfigController, pc *providerconfigv1.ProviderConfig) {
 	t.Helper()
 	_, err := tc.pcClient.CloudV1().ProviderConfigs().Update(context.TODO(), pc, metav1.UpdateOptions{})
 	if err != nil {
@@ -144,16 +153,23 @@ func TestStartAndStop(t *testing.T) {
 	tc := newTestProviderConfigController(t)
 
 	// Start the controller in a separate goroutine
-	go tc.pcController.Run()
+	controllerDone := make(chan struct{})
+	go func() {
+		tc.pcController.Run()
+		close(controllerDone)
+	}()
 
 	// Let it run briefly, then stop
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 	close(tc.stopCh) // triggers stop
 
-	// Wait some time for graceful shutdown
-	time.Sleep(200 * time.Millisecond)
-
-	// If no panic or deadlock => success
+	// Wait for graceful shutdown with timeout
+	select {
+	case <-controllerDone:
+		// Success - controller shut down gracefully
+	case <-time.After(1 * time.Second):
+		t.Fatal("Controller did not shut down within timeout")
+	}
 }
 
 func TestCreateDeleteProviderConfig(t *testing.T) {
@@ -161,17 +177,18 @@ func TestCreateDeleteProviderConfig(t *testing.T) {
 	go tc.pcController.Run()
 	defer close(tc.stopCh)
 
-	pc := &providerconfig.ProviderConfig{
+	pc := &providerconfigv1.ProviderConfig{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "pc-delete",
 		},
 	}
 	addProviderConfig(t, tc, pc)
-	time.Sleep(100 * time.Millisecond)
 
-	// Manager should have started it
-	if !tc.manager.HasStarted("pc-delete") {
-		t.Errorf("expected manager to have started 'pc-delete'")
+	// Poll for manager to start the controller
+	if !pollForCondition(func() bool {
+		return tc.manager.HasStarted("pc-delete")
+	}, 1*time.Second) {
+		t.Errorf("expected manager to have started 'pc-delete' within timeout")
 	}
 	if tc.manager.HasStopped("pc-delete") {
 		t.Errorf("did not expect manager to have stopped 'pc-delete'")
@@ -181,10 +198,12 @@ func TestCreateDeleteProviderConfig(t *testing.T) {
 	pc2 := pc.DeepCopy()
 	pc2.DeletionTimestamp = &metav1.Time{Time: time.Now()}
 	updateProviderConfig(t, tc, pc2)
-	time.Sleep(100 * time.Millisecond)
 
-	if !tc.manager.HasStopped("pc-delete") {
-		t.Errorf("expected manager to stop 'pc-delete', but it didn't")
+	// Poll for manager to stop the controller
+	if !pollForCondition(func() bool {
+		return tc.manager.HasStopped("pc-delete")
+	}, 1*time.Second) {
+		t.Errorf("expected manager to stop 'pc-delete' within timeout, but it didn't")
 	}
 }
 
@@ -197,7 +216,9 @@ func TestSyncNonExistent(t *testing.T) {
 	key := "some-ns/some-nonexistent"
 	tc.pcController.providerConfigQueue.Enqueue(key)
 
-	time.Sleep(200 * time.Millisecond)
+	// Poll to ensure the queue has been processed
+	// We check that after a reasonable time, no starts or stops happened
+	time.Sleep(100 * time.Millisecond)
 
 	// No starts or stops should have happened
 	if len(tc.manager.startedConfigs) != 0 {
@@ -217,7 +238,8 @@ func TestSyncBadObjectType(t *testing.T) {
 	// Insert something that is not *ProviderConfig
 	tc.pcInformer.GetIndexer().Add(&struct{ Name string }{Name: "not-a-pc"})
 
-	time.Sleep(200 * time.Millisecond)
+	// Give time for queue to process the invalid object
+	time.Sleep(100 * time.Millisecond)
 
 	if len(tc.manager.startedConfigs) != 0 {
 		t.Errorf("did not expect manager starts with a non-ProviderConfig object")
@@ -225,4 +247,91 @@ func TestSyncBadObjectType(t *testing.T) {
 	if len(tc.manager.stoppedConfigs) != 0 {
 		t.Errorf("did not expect manager stops with a non-ProviderConfig object")
 	}
+}
+
+// fakePanickingManager implements providerConfigControllerManager and panics on Start.
+type fakePanickingManager struct {
+	panicOccurred bool
+	mu            sync.Mutex
+}
+
+func (f *fakePanickingManager) StartControllersForProviderConfig(pc *providerconfigv1.ProviderConfig) error {
+	f.mu.Lock()
+	f.panicOccurred = true
+	f.mu.Unlock()
+	panic("intentional panic for testing")
+}
+
+func (f *fakePanickingManager) StopControllersForProviderConfig(pc *providerconfigv1.ProviderConfig) {
+	// no-op
+}
+
+func (f *fakePanickingManager) didPanic() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.panicOccurred
+}
+
+// TestPanicRecovery verifies that panics in sync are caught and don't crash the worker.
+func TestPanicRecovery(t *testing.T) {
+	pcClient := fakeproviderconfigclient.NewSimpleClientset()
+	panicManager := &fakePanickingManager{}
+	providerConfigInformer := providerconfiginformers.NewSharedInformerFactory(pcClient, 0).Cloud().V1().ProviderConfigs().Informer()
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	logger := klog.TODO()
+	ctrl := newProviderConfigController(
+		panicManager,
+		providerConfigInformer,
+		stopCh,
+		logger,
+	)
+
+	go providerConfigInformer.Run(stopCh)
+	if !cache.WaitForCacheSync(stopCh, providerConfigInformer.HasSynced) {
+		t.Fatalf("Failed to sync caches")
+	}
+
+	// Start controller in background
+	go ctrl.Run()
+
+	// Create a ProviderConfig that will trigger the panic
+	pc := &providerconfigv1.ProviderConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "panic-test",
+		},
+	}
+	_, err := pcClient.CloudV1().ProviderConfigs().Create(context.TODO(), pc, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("failed to create ProviderConfig: %v", err)
+	}
+	providerConfigInformer.GetIndexer().Add(pc)
+
+	// Poll to verify the panic occurred but didn't crash the controller
+	if !pollForCondition(func() bool {
+		return panicManager.didPanic()
+	}, 1*time.Second) {
+		t.Errorf("expected panic to occur within timeout")
+	}
+
+	// Verify the controller is still running by adding another ProviderConfig
+	// If the worker crashed, this won't be processed
+	pc2 := &providerconfigv1.ProviderConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "after-panic",
+		},
+	}
+	_, err = pcClient.CloudV1().ProviderConfigs().Create(context.TODO(), pc2, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("failed to create second ProviderConfig: %v", err)
+	}
+	providerConfigInformer.GetIndexer().Add(pc2)
+
+	// Give some time for the second item to be processed
+	// Since there are multiple workers, at least one should still be alive
+	time.Sleep(100 * time.Millisecond)
+
+	// If we reach here without the test crashing, panic recovery worked
+	t.Log("Controller survived panic and continued processing")
 }

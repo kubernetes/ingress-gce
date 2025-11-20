@@ -7,18 +7,21 @@ import (
 	"math/rand"
 	"os"
 
-	informernetwork "github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions"
-	informernodetopology "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions"
+	networkclient "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned"
+	nodetopologyclient "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/ingress-gce/pkg/flags"
 	_ "k8s.io/ingress-gce/pkg/klog"
-	pccontroller "k8s.io/ingress-gce/pkg/multiproject/controller"
-	"k8s.io/ingress-gce/pkg/multiproject/gce"
-	"k8s.io/ingress-gce/pkg/multiproject/manager"
+	"k8s.io/ingress-gce/pkg/multiproject/common/finalizer"
+	"k8s.io/ingress-gce/pkg/multiproject/common/gce"
+	"k8s.io/ingress-gce/pkg/multiproject/framework"
+	"k8s.io/ingress-gce/pkg/multiproject/neg"
+	multiprojectinformers "k8s.io/ingress-gce/pkg/multiproject/neg/informerset"
 	syncMetrics "k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	providerconfigclient "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned"
@@ -26,7 +29,6 @@ import (
 	"k8s.io/ingress-gce/pkg/recorders"
 
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
-	informersvcneg "k8s.io/ingress-gce/pkg/svcneg/client/informers/externalversions"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
 )
@@ -41,13 +43,11 @@ func StartWithLeaderElection(
 	logger klog.Logger,
 	kubeClient kubernetes.Interface,
 	svcNegClient svcnegclient.Interface,
+	networkClient networkclient.Interface,
+	nodeTopologyClient nodetopologyclient.Interface,
 	kubeSystemUID types.UID,
 	eventRecorderKubeClient kubernetes.Interface,
 	providerConfigClient providerconfigclient.Interface,
-	informersFactory informers.SharedInformerFactory,
-	svcNegFactory informersvcneg.SharedInformerFactory,
-	networkFactory informernetwork.SharedInformerFactory,
-	nodeTopologyFactory informernodetopology.SharedInformerFactory,
 	gceCreator gce.GCECreator,
 	rootNamer *namer.Namer,
 	stopCh <-chan struct{},
@@ -57,7 +57,7 @@ func StartWithLeaderElection(
 
 	recordersManager := recorders.NewManager(eventRecorderKubeClient, logger)
 
-	leConfig, err := makeLeaderElectionConfig(leaderElectKubeClient, hostname, recordersManager, logger, kubeClient, svcNegClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, informersFactory, svcNegFactory, networkFactory, nodeTopologyFactory, gceCreator, rootNamer, syncerMetrics)
+	leConfig, err := makeLeaderElectionConfig(leaderElectKubeClient, hostname, recordersManager, logger, kubeClient, svcNegClient, networkClient, nodeTopologyClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, gceCreator, rootNamer, syncerMetrics)
 	if err != nil {
 		return err
 	}
@@ -82,13 +82,11 @@ func makeLeaderElectionConfig(
 	logger klog.Logger,
 	kubeClient kubernetes.Interface,
 	svcNegClient svcnegclient.Interface,
+	networkClient networkclient.Interface,
+	nodeTopologyClient nodetopologyclient.Interface,
 	kubeSystemUID types.UID,
 	eventRecorderKubeClient kubernetes.Interface,
 	providerConfigClient providerconfigclient.Interface,
-	informersFactory informers.SharedInformerFactory,
-	svcNegFactory informersvcneg.SharedInformerFactory,
-	networkFactory informernetwork.SharedInformerFactory,
-	nodeTopologyFactory informernodetopology.SharedInformerFactory,
 	gceCreator gce.GCECreator,
 	rootNamer *namer.Namer,
 	syncerMetrics *syncMetrics.SyncerMetrics,
@@ -120,7 +118,7 @@ func makeLeaderElectionConfig(
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {
 				logger.Info("Became leader, starting multi-project controller")
-				Start(logger, kubeClient, svcNegClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, informersFactory, svcNegFactory, networkFactory, nodeTopologyFactory, gceCreator, rootNamer, ctx.Done(), syncerMetrics)
+				Start(logger, kubeClient, svcNegClient, networkClient, nodeTopologyClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, gceCreator, rootNamer, ctx.Done(), syncerMetrics)
 			},
 			OnStoppedLeading: func() {
 				logger.Info("Stop running multi-project leader election")
@@ -132,18 +130,16 @@ func makeLeaderElectionConfig(
 }
 
 // Start starts the ProviderConfig controller.
-// It builds required context and starts the controller.
+// It creates SharedIndexInformers directly and starts the controller.
 func Start(
 	logger klog.Logger,
 	kubeClient kubernetes.Interface,
 	svcNegClient svcnegclient.Interface,
+	networkClient networkclient.Interface,
+	nodeTopologyClient nodetopologyclient.Interface,
 	kubeSystemUID types.UID,
 	eventRecorderKubeClient kubernetes.Interface,
 	providerConfigClient providerconfigclient.Interface,
-	informersFactory informers.SharedInformerFactory,
-	svcNegFactory informersvcneg.SharedInformerFactory,
-	networkFactory informernetwork.SharedInformerFactory,
-	nodeTopologyFactory informernodetopology.SharedInformerFactory,
 	gceCreator gce.GCECreator,
 	rootNamer *namer.Namer,
 	stopCh <-chan struct{},
@@ -158,18 +154,28 @@ func Start(
 		}
 	}
 
-	providerConfigInformer := providerconfiginformers.NewSharedInformerFactory(providerConfigClient, flags.F.ResyncPeriod).Cloud().V1().ProviderConfigs().Informer()
-	logger.V(2).Info("Starting ProviderConfig informer")
-	go providerConfigInformer.Run(stopCh)
-
-	manager := manager.NewProviderConfigControllerManager(
+	// Create and start all informers
+	informers := multiprojectinformers.NewInformerSet(
 		kubeClient,
-		informersFactory,
-		svcNegFactory,
-		networkFactory,
-		nodeTopologyFactory,
-		providerConfigClient,
 		svcNegClient,
+		networkClient,
+		nodeTopologyClient,
+		metav1.Duration{Duration: flags.F.ResyncPeriod},
+	)
+
+	// Start all informers
+	err := informers.Start(stopCh, logger)
+	if err != nil {
+		logger.Error(err, "Failed to start informers")
+		return
+	}
+
+	negStarter := neg.NewNEGControllerStarter(
+		informers,
+		kubeClient,
+		svcNegClient,
+		networkClient,
+		nodeTopologyClient,
 		eventRecorderKubeClient,
 		kubeSystemUID,
 		rootNamer,
@@ -180,10 +186,31 @@ func Start(
 		logger,
 		syncerMetrics,
 	)
-	logger.V(1).Info("Initialized ProviderConfig controller manager")
 
-	pcController := pccontroller.NewProviderConfigController(manager, providerConfigInformer, stopCh, logger)
+	// Create ProviderConfig informer
+	providerConfigInformer := providerconfiginformers.NewSharedInformerFactory(providerConfigClient, flags.F.ResyncPeriod).Cloud().V1().ProviderConfigs().Informer()
+	logger.V(2).Info("Starting ProviderConfig informer")
+	go providerConfigInformer.Run(stopCh)
+
+	// Wait for provider config informer to sync
+	logger.Info("Waiting for provider config informer to sync")
+	if !cache.WaitForCacheSync(stopCh, providerConfigInformer.HasSynced) {
+		err := fmt.Errorf("failed to sync provider config informer")
+		logger.Error(err, "Failed to sync provider config informer")
+		return
+	}
+	logger.Info("Provider config informer synced successfully")
+
+	fw := framework.New(
+		providerConfigClient,
+		providerConfigInformer,
+		finalizer.ProviderConfigNEGCleanupFinalizer,
+		negStarter,
+		stopCh,
+		logger,
+	)
+
 	logger.V(1).Info("Running ProviderConfig controller")
-	pcController.Run()
+	fw.Run()
 	logger.V(1).Info("ProviderConfig controller stopped")
 }
