@@ -1,65 +1,73 @@
 package manager
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
 	networkclient "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned"
-	informernetwork "github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions"
 	nodetopologyclient "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned"
-	informernodetopology "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	informers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	providerconfig "k8s.io/ingress-gce/pkg/apis/providerconfig/v1"
 	"k8s.io/ingress-gce/pkg/multiproject/finalizer"
 	"k8s.io/ingress-gce/pkg/multiproject/gce"
+	multiprojectinformers "k8s.io/ingress-gce/pkg/multiproject/informerset"
 	"k8s.io/ingress-gce/pkg/multiproject/neg"
 	syncMetrics "k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	providerconfigclient "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
-	informersvcneg "k8s.io/ingress-gce/pkg/svcneg/client/informers/externalversions"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
 )
 
+// startNEGController is a package-level variable to allow tests to stub the
+// actual NEG controller startup routine.
+var startNEGController = neg.StartNEGController
+
+// ProviderConfigControllersManager coordinates lifecycle of controllers scoped to
+// a single ProviderConfig. It ensures per-ProviderConfig controller startup is
+// idempotent, adds/removes the NEG cleanup finalizer, and wires a stop channel
+// for clean shutdown.
 type ProviderConfigControllersManager struct {
 	mu          sync.Mutex
-	controllers map[string]*ControllerSet
+	controllers map[string]*controllerSet
 
 	logger               klog.Logger
 	providerConfigClient providerconfigclient.Interface
-	informersFactory     informers.SharedInformerFactory
-	svcNegFactory        informersvcneg.SharedInformerFactory
-	networkFactory       informernetwork.SharedInformerFactory
-	nodeTopologyFactory  informernodetopology.SharedInformerFactory
-	kubeClient           kubernetes.Interface
-	svcNegClient         svcnegclient.Interface
-	eventRecorderClient  kubernetes.Interface
-	networkClient        networkclient.Interface
-	nodetopologyClient   nodetopologyclient.Interface
-	kubeSystemUID        types.UID
-	clusterNamer         *namer.Namer
-	l4Namer              *namer.L4Namer
-	lpConfig             labels.PodLabelPropagationConfig
-	gceCreator           gce.GCECreator
-	globalStopCh         <-chan struct{}
-	syncerMetrics        *syncMetrics.SyncerMetrics
+	// Base informers shared across all ProviderConfigs
+	informers           *multiprojectinformers.InformerSet
+	kubeClient          kubernetes.Interface
+	svcNegClient        svcnegclient.Interface
+	eventRecorderClient kubernetes.Interface
+	networkClient       networkclient.Interface
+	nodetopologyClient  nodetopologyclient.Interface
+	kubeSystemUID       types.UID
+	clusterNamer        *namer.Namer
+	l4Namer             *namer.L4Namer
+	lpConfig            labels.PodLabelPropagationConfig
+	gceCreator          gce.GCECreator
+	globalStopCh        <-chan struct{}
+	syncerMetrics       *syncMetrics.SyncerMetrics
 }
 
-type ControllerSet struct {
+// controllerSet holds controller-specific resources for a ProviderConfig.
+// Unexported because it is an internal implementation detail.
+type controllerSet struct {
 	stopCh chan<- struct{}
 }
 
+// NewProviderConfigControllerManager constructs a new ProviderConfigControllersManager.
+// It does not start any controllers until StartControllersForProviderConfig is invoked.
 func NewProviderConfigControllerManager(
 	kubeClient kubernetes.Interface,
-	informersFactory informers.SharedInformerFactory,
-	svcNegFactory informersvcneg.SharedInformerFactory,
-	networkFactory informernetwork.SharedInformerFactory,
-	nodeTopologyFactory informernodetopology.SharedInformerFactory,
+	informers *multiprojectinformers.InformerSet,
 	providerConfigClient providerconfigclient.Interface,
 	svcNegClient svcnegclient.Interface,
+	networkClient networkclient.Interface,
+	nodetopologyClient nodetopologyclient.Interface,
 	eventRecorderClient kubernetes.Interface,
 	kubeSystemUID types.UID,
 	clusterNamer *namer.Namer,
@@ -71,16 +79,15 @@ func NewProviderConfigControllerManager(
 	syncerMetrics *syncMetrics.SyncerMetrics,
 ) *ProviderConfigControllersManager {
 	return &ProviderConfigControllersManager{
-		controllers:          make(map[string]*ControllerSet),
+		controllers:          make(map[string]*controllerSet),
 		logger:               logger,
 		providerConfigClient: providerConfigClient,
-		informersFactory:     informersFactory,
-		svcNegFactory:        svcNegFactory,
-		networkFactory:       networkFactory,
-		nodeTopologyFactory:  nodeTopologyFactory,
+		informers:            informers,
 		kubeClient:           kubeClient,
 		svcNegClient:         svcNegClient,
 		eventRecorderClient:  eventRecorderClient,
+		networkClient:        networkClient,
+		nodetopologyClient:   nodetopologyClient,
 		kubeSystemUID:        kubeSystemUID,
 		clusterNamer:         clusterNamer,
 		l4Namer:              l4Namer,
@@ -95,6 +102,10 @@ func providerConfigKey(pc *providerconfig.ProviderConfig) string {
 	return pc.Name
 }
 
+// StartControllersForProviderConfig ensures finalizers are present and starts
+// the controllers associated with the given ProviderConfig. The call is
+// idempotent per ProviderConfig: concurrent or repeated calls for the same
+// ProviderConfig will only start controllers once.
 func (pccm *ProviderConfigControllersManager) StartControllersForProviderConfig(pc *providerconfig.ProviderConfig) error {
 	pccm.mu.Lock()
 	defer pccm.mu.Unlock()
@@ -109,21 +120,24 @@ func (pccm *ProviderConfigControllersManager) StartControllersForProviderConfig(
 		return nil
 	}
 
+	// Add the cleanup finalizer up front to avoid a window where controllers
+	// may create external resources without a finalizer present. If deletion
+	// happens in that window, cleanup could be skipped. We roll this back on
+	// any subsequent startup error.
 	err := finalizer.EnsureProviderConfigNEGCleanupFinalizer(pc, pccm.providerConfigClient, logger)
 	if err != nil {
-		return fmt.Errorf("failed to ensure NEG cleanup finalizer for project %s: %v", pcKey, err)
+		return fmt.Errorf("failed to ensure NEG cleanup finalizer for project %s: %w", pcKey, err)
 	}
 
 	cloud, err := pccm.gceCreator.GCEForProviderConfig(pc, logger)
 	if err != nil {
-		return fmt.Errorf("failed to create GCE client for provider config %+v: %v", pc, err)
+		// If GCE client creation fails after finalizer was added, roll it back.
+		pccm.rollbackFinalizerOnStartFailure(pc, logger, err)
+		return fmt.Errorf("failed to create GCE client for provider config %+v: %w", pc, err)
 	}
 
-	negControllerStopCh, err := neg.StartNEGController(
-		pccm.informersFactory,
-		pccm.svcNegFactory,
-		pccm.networkFactory,
-		pccm.nodeTopologyFactory,
+	negControllerStopCh, err := startNEGController(
+		pccm.informers,
 		pccm.kubeClient,
 		pccm.eventRecorderClient,
 		pccm.svcNegClient,
@@ -140,14 +154,12 @@ func (pccm *ProviderConfigControllersManager) StartControllersForProviderConfig(
 		pccm.syncerMetrics,
 	)
 	if err != nil {
-		cleanupErr := finalizer.DeleteProviderConfigNEGCleanupFinalizer(pc, pccm.providerConfigClient, logger)
-		if cleanupErr != nil {
-			logger.Error(cleanupErr, "failed to clean up NEG finalizer after controller start failure", "originalError", err)
-		}
-		return fmt.Errorf("failed to start NEG controller for project %s: %v", pcKey, err)
+		// If startup fails, make a best-effort to roll back the finalizer.
+		pccm.rollbackFinalizerOnStartFailure(pc, logger, err)
+		return fmt.Errorf("failed to start NEG controller for project %s: %w", pcKey, err)
 	}
 
-	pccm.controllers[pcKey] = &ControllerSet{
+	pccm.controllers[pcKey] = &controllerSet{
 		stopCh: negControllerStopCh,
 	}
 
@@ -171,9 +183,34 @@ func (pccm *ProviderConfigControllersManager) StopControllersForProviderConfig(p
 	close(pccm.controllers[csKey].stopCh)
 
 	delete(pccm.controllers, csKey)
-	err := finalizer.DeleteProviderConfigNEGCleanupFinalizer(pc, pccm.providerConfigClient, logger)
+
+	// Ensure we remove the finalizer from the latest object state.
+	pcLatest := pccm.latestPCWithCleanupFinalizer(pc)
+	err := finalizer.DeleteProviderConfigNEGCleanupFinalizer(pcLatest, pccm.providerConfigClient, logger)
 	if err != nil {
 		logger.Error(err, "failed to delete NEG cleanup finalizer for project")
 	}
 	logger.Info("Stopped controllers for provider config")
+}
+
+// rollbackFinalizerOnStartFailure removes the NEG cleanup finalizer after a
+// start failure so that ProviderConfig deletion is not blocked.
+func (pccm *ProviderConfigControllersManager) rollbackFinalizerOnStartFailure(pc *providerconfig.ProviderConfig, logger klog.Logger, cause error) {
+	pcLatest := pccm.latestPCWithCleanupFinalizer(pc)
+	if err := finalizer.DeleteProviderConfigNEGCleanupFinalizer(pcLatest, pccm.providerConfigClient, logger); err != nil {
+		logger.Error(err, "failed to clean up NEG finalizer after start failure", "originalError", cause)
+	}
+}
+
+// latestPCWithCleanupFinalizer returns the latest ProviderConfig from the API server.
+// If the Get fails, it returns a local copy of the provided pc with the cleanup
+// finalizer appended to ensure a subsequent delete attempt is not a no-op.
+func (pccm *ProviderConfigControllersManager) latestPCWithCleanupFinalizer(pc *providerconfig.ProviderConfig) *providerconfig.ProviderConfig {
+	pcLatest, err := pccm.providerConfigClient.CloudV1().ProviderConfigs().Get(context.Background(), pc.Name, metav1.GetOptions{})
+	if err != nil {
+		pcCopy := pc.DeepCopy()
+		pcCopy.Finalizers = append(pcCopy.Finalizers, finalizer.ProviderConfigNEGCleanupFinalizer)
+		return pcCopy
+	}
+	return pcLatest
 }
