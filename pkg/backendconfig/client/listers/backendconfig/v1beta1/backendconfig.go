@@ -19,8 +19,8 @@ limitations under the License.
 package v1beta1
 
 import (
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/listers"
 	"k8s.io/client-go/tools/cache"
 	v1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 )
@@ -38,25 +38,17 @@ type BackendConfigLister interface {
 
 // backendConfigLister implements the BackendConfigLister interface.
 type backendConfigLister struct {
-	indexer cache.Indexer
+	listers.ResourceIndexer[*v1beta1.BackendConfig]
 }
 
 // NewBackendConfigLister returns a new BackendConfigLister.
 func NewBackendConfigLister(indexer cache.Indexer) BackendConfigLister {
-	return &backendConfigLister{indexer: indexer}
-}
-
-// List lists all BackendConfigs in the indexer.
-func (s *backendConfigLister) List(selector labels.Selector) (ret []*v1beta1.BackendConfig, err error) {
-	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1beta1.BackendConfig))
-	})
-	return ret, err
+	return &backendConfigLister{listers.New[*v1beta1.BackendConfig](indexer, v1beta1.Resource("backendconfig"))}
 }
 
 // BackendConfigs returns an object that can list and get BackendConfigs.
 func (s *backendConfigLister) BackendConfigs(namespace string) BackendConfigNamespaceLister {
-	return backendConfigNamespaceLister{indexer: s.indexer, namespace: namespace}
+	return backendConfigNamespaceLister{listers.NewNamespaced[*v1beta1.BackendConfig](s.ResourceIndexer, namespace)}
 }
 
 // BackendConfigNamespaceLister helps list and get BackendConfigs.
@@ -74,26 +66,5 @@ type BackendConfigNamespaceLister interface {
 // backendConfigNamespaceLister implements the BackendConfigNamespaceLister
 // interface.
 type backendConfigNamespaceLister struct {
-	indexer   cache.Indexer
-	namespace string
-}
-
-// List lists all BackendConfigs in the indexer for a given namespace.
-func (s backendConfigNamespaceLister) List(selector labels.Selector) (ret []*v1beta1.BackendConfig, err error) {
-	err = cache.ListAllByNamespace(s.indexer, s.namespace, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1beta1.BackendConfig))
-	})
-	return ret, err
-}
-
-// Get retrieves the BackendConfig from the indexer for a given namespace and name.
-func (s backendConfigNamespaceLister) Get(name string) (*v1beta1.BackendConfig, error) {
-	obj, exists, err := s.indexer.GetByKey(s.namespace + "/" + name)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errors.NewNotFound(v1beta1.Resource("backendconfig"), name)
-	}
-	return obj.(*v1beta1.BackendConfig), nil
+	listers.ResourceIndexer[*v1beta1.BackendConfig]
 }

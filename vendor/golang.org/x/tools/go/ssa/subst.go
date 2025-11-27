@@ -266,7 +266,7 @@ func (subst *subster) interface_(iface *types.Interface) *types.Interface {
 	var methods []*types.Func
 	initMethods := func(n int) { // copy first n explicit methods
 		methods = make([]*types.Func, iface.NumExplicitMethods())
-		for i := 0; i < n; i++ {
+		for i := range n {
 			f := iface.ExplicitMethod(i)
 			norecv := changeRecv(f.Type().(*types.Signature), nil)
 			methods[i] = types.NewFunc(f.Pos(), f.Pkg(), f.Name(), norecv)
@@ -290,7 +290,7 @@ func (subst *subster) interface_(iface *types.Interface) *types.Interface {
 	var embeds []types.Type
 	initEmbeds := func(n int) { // copy first n embedded types
 		embeds = make([]types.Type, iface.NumEmbeddeds())
-		for i := 0; i < n; i++ {
+		for i := range n {
 			embeds[i] = iface.EmbeddedType(i)
 		}
 	}
@@ -543,7 +543,7 @@ func (subst *subster) signature(t *types.Signature) types.Type {
 	// We are choosing not to support tparams.Len() > 0 until a need has been observed in practice.
 	//
 	// There are some known usages for types.Types coming from types.{Eval,CheckExpr}.
-	// To support tparams.Len() > 0, we just need to do the following [psuedocode]:
+	// To support tparams.Len() > 0, we just need to do the following [pseudocode]:
 	//   targs := {subst.replacements[tparams[i]]]}; Instantiate(ctxt, t, targs, false)
 
 	assert(tparams.Len() == 0, "Substituting types.Signatures with generic functions are currently unsupported.")

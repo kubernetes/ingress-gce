@@ -19,8 +19,8 @@ limitations under the License.
 package v1beta1
 
 import (
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/listers"
 	"k8s.io/client-go/tools/cache"
 	v1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 )
@@ -38,25 +38,17 @@ type ServiceNetworkEndpointGroupLister interface {
 
 // serviceNetworkEndpointGroupLister implements the ServiceNetworkEndpointGroupLister interface.
 type serviceNetworkEndpointGroupLister struct {
-	indexer cache.Indexer
+	listers.ResourceIndexer[*v1beta1.ServiceNetworkEndpointGroup]
 }
 
 // NewServiceNetworkEndpointGroupLister returns a new ServiceNetworkEndpointGroupLister.
 func NewServiceNetworkEndpointGroupLister(indexer cache.Indexer) ServiceNetworkEndpointGroupLister {
-	return &serviceNetworkEndpointGroupLister{indexer: indexer}
-}
-
-// List lists all ServiceNetworkEndpointGroups in the indexer.
-func (s *serviceNetworkEndpointGroupLister) List(selector labels.Selector) (ret []*v1beta1.ServiceNetworkEndpointGroup, err error) {
-	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1beta1.ServiceNetworkEndpointGroup))
-	})
-	return ret, err
+	return &serviceNetworkEndpointGroupLister{listers.New[*v1beta1.ServiceNetworkEndpointGroup](indexer, v1beta1.Resource("servicenetworkendpointgroup"))}
 }
 
 // ServiceNetworkEndpointGroups returns an object that can list and get ServiceNetworkEndpointGroups.
 func (s *serviceNetworkEndpointGroupLister) ServiceNetworkEndpointGroups(namespace string) ServiceNetworkEndpointGroupNamespaceLister {
-	return serviceNetworkEndpointGroupNamespaceLister{indexer: s.indexer, namespace: namespace}
+	return serviceNetworkEndpointGroupNamespaceLister{listers.NewNamespaced[*v1beta1.ServiceNetworkEndpointGroup](s.ResourceIndexer, namespace)}
 }
 
 // ServiceNetworkEndpointGroupNamespaceLister helps list and get ServiceNetworkEndpointGroups.
@@ -74,26 +66,5 @@ type ServiceNetworkEndpointGroupNamespaceLister interface {
 // serviceNetworkEndpointGroupNamespaceLister implements the ServiceNetworkEndpointGroupNamespaceLister
 // interface.
 type serviceNetworkEndpointGroupNamespaceLister struct {
-	indexer   cache.Indexer
-	namespace string
-}
-
-// List lists all ServiceNetworkEndpointGroups in the indexer for a given namespace.
-func (s serviceNetworkEndpointGroupNamespaceLister) List(selector labels.Selector) (ret []*v1beta1.ServiceNetworkEndpointGroup, err error) {
-	err = cache.ListAllByNamespace(s.indexer, s.namespace, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1beta1.ServiceNetworkEndpointGroup))
-	})
-	return ret, err
-}
-
-// Get retrieves the ServiceNetworkEndpointGroup from the indexer for a given namespace and name.
-func (s serviceNetworkEndpointGroupNamespaceLister) Get(name string) (*v1beta1.ServiceNetworkEndpointGroup, error) {
-	obj, exists, err := s.indexer.GetByKey(s.namespace + "/" + name)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errors.NewNotFound(v1beta1.Resource("servicenetworkendpointgroup"), name)
-	}
-	return obj.(*v1beta1.ServiceNetworkEndpointGroup), nil
+	listers.ResourceIndexer[*v1beta1.ServiceNetworkEndpointGroup]
 }
