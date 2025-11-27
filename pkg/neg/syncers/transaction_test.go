@@ -2728,6 +2728,7 @@ func TestIsZoneChange(t *testing.T) {
 		zoneDeleted                    bool
 		zoneAdded                      bool
 		nodeWithNoProviderIDAdded      bool
+		negCRStateInactive             bool
 		nodeWithInvalidProviderIDAdded bool
 		expectedResult                 bool
 	}{
@@ -2761,6 +2762,11 @@ func TestIsZoneChange(t *testing.T) {
 			desc:           "no zone change occurred",
 			expectedResult: false,
 		},
+		{
+			desc:               "neg cr state is inactive",
+			negCRStateInactive: true,
+			expectedResult:     true,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -2792,6 +2798,9 @@ func TestIsZoneChange(t *testing.T) {
 			var refs []negv1beta1.NegObjectReference
 			for _, neg := range negRefMap {
 				refs = append(refs, neg)
+			}
+			if tc.negCRStateInactive {
+				refs[0].State = negv1beta1.InactiveState
 			}
 			negCR := createNegCR(syncer.NegName, metav1.Now(), true, true, refs)
 			if err = syncer.svcNegLister.Add(negCR); err != nil {
