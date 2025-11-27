@@ -17,7 +17,7 @@ steps:
   args:
   - -c
   - |
-    # Build and push every image except e2e-test 
+    # Build and push every image except the e2e-test ones 
     make all-push ALL_ARCH="amd64 arm64" \
       CONTAINER_BINARIES="glbc 404-server 404-server-with-metrics echo fuzzer"
 - name: gcr.io/k8s-staging-test-infra/gcb-docker-gcloud:v20250513-9264efb079
@@ -30,12 +30,12 @@ steps:
   - VERBOSE=1
   - HOME=/root
   - USER=root
-  - BINARIES=e2e-test psc-e2e-test neg-e2e-test ingress-controller-e2e-test
+  - BINARIES=psc-e2e-test neg-e2e-test ingress-controller-e2e-test
   - ADDITIONAL_TAGS=infrastructure-public-image-$_GIT_TAG
   args:
   - -c
   - |
-    # Build and push e2e-test image 
+    # Build and push e2e-test images 
     # This image is built separately because it has
     # additional dependencies (curl, gcloud-cli), and
     # requires `docker buildx` for multiarch building process

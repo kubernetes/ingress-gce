@@ -25,7 +25,6 @@ PKG := k8s.io/ingress-gce
 CONTAINER_BINARIES ?= \
 	404-server \
 	404-server-with-metrics \
-	e2e-test \
 	echo \
 	fuzzer \
 	glbc \
