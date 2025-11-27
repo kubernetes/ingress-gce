@@ -149,6 +149,8 @@ var F = struct {
 	EnableNEGsForIngress                      bool
 	L4ILBLegacyHeadStartTime                  time.Duration
 	EnableIPv6NodeNEGEndpoints                bool
+	EnableL4NetLBRBSByDefault                 bool
+	L4NetLBLegacyHeadStartTime                time.Duration
 
 	// ===============================
 	// DEPRECATED FLAGS
@@ -362,6 +364,8 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableNEGsForIngress, "enable-negs-for-ingress", true, "Allow the NEG controller to create NEGs for Ingress services.")
 	flag.DurationVar(&F.L4ILBLegacyHeadStartTime, "prevent-legacy-race-l4-ilb", 0*time.Second, "Delay before processing new L4 ILB services without existing finalizers. This gives the legacy controller a head start to claim the service, preventing a race condition upon service creation.")
 	flag.BoolVar(&F.EnableIPv6NodeNEGEndpoints, "enable-ipv6-node-neg-endpoints", false, "Enable populating IPv6 addresses for Node IPs in GCE_VM_IP NEGs.")
+	flag.BoolVar(&F.EnableL4NetLBRBSByDefault, "enable-l4-netlb-rbs-by-default", false, "Enable L4 NetLB Regional Backend Services by default for new L4 NetLB services.")
+	flag.DurationVar(&F.L4NetLBLegacyHeadStartTime, "prevent-legacy-race-l4-netlb", 0*time.Second, "Delay before processing new L4 NetLB services without existing finalizers. This gives the legacy controller a head start to claim the service, preventing a race condition upon service creation.")
 }
 
 func Validate() {
