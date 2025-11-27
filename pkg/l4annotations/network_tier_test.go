@@ -1,4 +1,4 @@
-package annotations_test
+package l4annotations
 
 import (
 	"testing"
@@ -6,7 +6,6 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	api_v1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/ingress-gce/pkg/annotations"
 )
 
 func TestNetworkTier(t *testing.T) {
@@ -26,7 +25,7 @@ func TestNetworkTier(t *testing.T) {
 			service: &api_v1.Service{
 				ObjectMeta: v1.ObjectMeta{
 					Annotations: map[string]string{
-						annotations.NetworkTierAnnotationKey: "Standard",
+						NetworkTierAnnotationKey: "Standard",
 					},
 				},
 			},
@@ -38,7 +37,7 @@ func TestNetworkTier(t *testing.T) {
 			service: &api_v1.Service{
 				ObjectMeta: v1.ObjectMeta{
 					Annotations: map[string]string{
-						annotations.NetworkTierAnnotationKey: "Premium",
+						NetworkTierAnnotationKey: "Premium",
 					},
 				},
 			},
@@ -50,7 +49,7 @@ func TestNetworkTier(t *testing.T) {
 			service: &api_v1.Service{
 				ObjectMeta: v1.ObjectMeta{
 					Annotations: map[string]string{
-						annotations.NetworkTierAnnotationKey: "Typo",
+						NetworkTierAnnotationKey: "Typo",
 					},
 				},
 			},
@@ -59,7 +58,7 @@ func TestNetworkTier(t *testing.T) {
 	}
 	for _, tC := range testCases {
 		t.Run(tC.desc, func(t *testing.T) {
-			gotTier, gotIsFromAnnotation := annotations.NetworkTier(tC.service)
+			gotTier, gotIsFromAnnotation := NetworkTier(tC.service)
 			if gotTier != tC.wantTier {
 				t.Errorf("NetworkTier(_).tier = %v, want %v", gotTier, tC.wantTier)
 			}

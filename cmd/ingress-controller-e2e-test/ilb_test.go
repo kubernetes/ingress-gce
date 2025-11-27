@@ -23,18 +23,18 @@ import (
 
 	v1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
+	"k8s.io/ingress-gce/pkg/negannotation"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
 var (
-	negVal        = annotations.NegAnnotation{Ingress: true}
+	negVal        = negannotation.NegAnnotation{Ingress: true}
 	negAnnotation = map[string]string{
-		annotations.NEGAnnotationKey: negVal.String()}
+		negannotation.NEGAnnotationKey: negVal.String()}
 )
 
 func TestILB(t *testing.T) {
@@ -735,7 +735,7 @@ func TestILBError(t *testing.T) {
 			if err != nil {
 				t.Fatalf("expect err = nil, but got %v", err)
 			}
-			svcAnnotation := annotations.FromService(svc)
+			svcAnnotation := negannotation.FromService(svc)
 			negAnnotation, ok, err := svcAnnotation.NEGAnnotation()
 			if err != nil {
 				t.Fatalf("expect err = nil, but got %v", err)

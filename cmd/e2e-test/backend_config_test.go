@@ -35,6 +35,7 @@ import (
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
+	"k8s.io/ingress-gce/pkg/negannotation"
 	"k8s.io/ingress-gce/pkg/test"
 )
 
@@ -233,24 +234,24 @@ func TestRegionalXLBBackendConfigNegatives(t *testing.T) {
 		{
 			desc: "backend config not exist",
 			svcAnnotations: map[string]string{
-				annotations.BackendConfigKey: `{"default":"backendconfig-1"}`,
-				annotations.NEGAnnotationKey: negVal.String(),
+				annotations.BackendConfigKey:   `{"default":"backendconfig-1"}`,
+				negannotation.NEGAnnotationKey: negVal.String(),
 			},
 			expectedMsg: "no BackendConfig",
 		},
 		{
 			desc: "invalid format in backend config annotation",
 			svcAnnotations: map[string]string{
-				annotations.BackendConfigKey: `invalid`,
-				annotations.NEGAnnotationKey: negVal.String(),
+				annotations.BackendConfigKey:   `invalid`,
+				negannotation.NEGAnnotationKey: negVal.String(),
 			},
 			expectedMsg: fmt.Sprintf("%v", annotations.ErrBackendConfigInvalidJSON),
 		},
 		{
 			desc: "enable IAP in backend config",
 			svcAnnotations: map[string]string{
-				annotations.BackendConfigKey: `{"default":"backendconfig-1"}`,
-				annotations.NEGAnnotationKey: negVal.String(),
+				annotations.BackendConfigKey:   `{"default":"backendconfig-1"}`,
+				negannotation.NEGAnnotationKey: negVal.String(),
 			},
 			backendConfig: fuzz.NewBackendConfigBuilder("", "backendconfig-1").
 				SetIAPConfig(true, "bar").
@@ -260,8 +261,8 @@ func TestRegionalXLBBackendConfigNegatives(t *testing.T) {
 		{
 			desc: "enable CDN in backend config",
 			svcAnnotations: map[string]string{
-				annotations.BackendConfigKey: `{"default":"backendconfig-1"}`,
-				annotations.NEGAnnotationKey: negVal.String(),
+				annotations.BackendConfigKey:   `{"default":"backendconfig-1"}`,
+				negannotation.NEGAnnotationKey: negVal.String(),
 			},
 			backendConfig: fuzz.NewBackendConfigBuilder("", "backendconfig-1").
 				EnableCDN(true).

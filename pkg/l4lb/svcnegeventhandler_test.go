@@ -21,12 +21,12 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"k8s.io/ingress-gce/pkg/l4annotations"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	informerv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes/fake"
-	"k8s.io/ingress-gce/pkg/annotations"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
@@ -39,7 +39,7 @@ func TestAddSvcNEGEnqueuesService(t *testing.T) {
 			Name:      "testService",
 			Namespace: "testNamespace",
 			Annotations: map[string]string{
-				annotations.ServiceAnnotationLoadBalancerType: string(annotations.LBTypeInternal),
+				l4annotations.ServiceAnnotationLoadBalancerType: string(l4annotations.LBTypeInternal),
 			},
 			Finalizers: []string{
 				common.ILBFinalizerV2,
@@ -121,7 +121,7 @@ func TestAddSvcNEGEnqueuesService(t *testing.T) {
 						Name:      "testService",
 						Namespace: "testNamespace",
 						Annotations: map[string]string{
-							annotations.ServiceAnnotationLoadBalancerType: string(annotations.LBTypeInternal),
+							l4annotations.ServiceAnnotationLoadBalancerType: string(l4annotations.LBTypeInternal),
 						},
 						Finalizers: []string{
 							common.LegacyILBFinalizer,
@@ -170,7 +170,7 @@ func TestUpdateSvcNEGEnqueuesService(t *testing.T) {
 			Name:      "testService",
 			Namespace: "testNamespace",
 			Annotations: map[string]string{
-				annotations.ServiceAnnotationLoadBalancerType: string(annotations.LBTypeInternal),
+				l4annotations.ServiceAnnotationLoadBalancerType: string(l4annotations.LBTypeInternal),
 			},
 			Finalizers: []string{
 				common.ILBFinalizerV2,
@@ -367,7 +367,7 @@ func TestUpdateSvcNEGEnqueuesService(t *testing.T) {
 						Name:      "testService",
 						Namespace: "testNamespace",
 						Annotations: map[string]string{
-							annotations.ServiceAnnotationLoadBalancerType: string(annotations.LBTypeInternal),
+							l4annotations.ServiceAnnotationLoadBalancerType: string(l4annotations.LBTypeInternal),
 						},
 						Finalizers: []string{
 							common.LegacyILBFinalizer,
@@ -441,7 +441,7 @@ func TestUpdateSvcNEGEnqueuesService(t *testing.T) {
 						Name:      "testOtherService",
 						Namespace: "testNamespace",
 						Annotations: map[string]string{
-							annotations.ServiceAnnotationLoadBalancerType: string(annotations.LBTypeInternal),
+							l4annotations.ServiceAnnotationLoadBalancerType: string(l4annotations.LBTypeInternal),
 						},
 						Finalizers: []string{
 							common.ILBFinalizerV2,
@@ -520,7 +520,7 @@ func TestIsSubsettingILBService(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "testSubsetting",
 					Annotations: map[string]string{
-						annotations.ServiceAnnotationLoadBalancerType: string(annotations.LBTypeInternal),
+						l4annotations.ServiceAnnotationLoadBalancerType: string(l4annotations.LBTypeInternal),
 					},
 					Finalizers: []string{
 						common.ILBFinalizerV2,
@@ -538,7 +538,7 @@ func TestIsSubsettingILBService(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "testSubsetting",
 					Annotations: map[string]string{
-						annotations.ServiceAnnotationLoadBalancerType: string(annotations.LBTypeInternal),
+						l4annotations.ServiceAnnotationLoadBalancerType: string(l4annotations.LBTypeInternal),
 					},
 					Finalizers: []string{
 						common.LegacyILBFinalizer,
@@ -556,7 +556,7 @@ func TestIsSubsettingILBService(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "testSubsetting",
 					Annotations: map[string]string{
-						annotations.ServiceAnnotationLoadBalancerType: string(annotations.LBTypeExternal),
+						l4annotations.ServiceAnnotationLoadBalancerType: string(l4annotations.LBTypeExternal),
 					},
 					Finalizers: []string{
 						common.ILBFinalizerV2,
@@ -574,7 +574,7 @@ func TestIsSubsettingILBService(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "testSubsetting",
 					Annotations: map[string]string{
-						annotations.ServiceAnnotationLoadBalancerType: string(annotations.LBTypeInternal),
+						l4annotations.ServiceAnnotationLoadBalancerType: string(l4annotations.LBTypeInternal),
 					},
 					Finalizers: []string{
 						common.ILBFinalizerV2,
@@ -640,7 +640,7 @@ func TestIsRBSNetLBServiceWithNEGs(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test",
 					Annotations: map[string]string{
-						annotations.ServiceAnnotationLoadBalancerType: string(annotations.LBTypeInternal),
+						l4annotations.ServiceAnnotationLoadBalancerType: string(l4annotations.LBTypeInternal),
 					},
 					Finalizers: []string{
 						common.NetLBFinalizerV2,

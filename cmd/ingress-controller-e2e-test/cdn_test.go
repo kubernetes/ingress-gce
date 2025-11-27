@@ -34,6 +34,7 @@ import (
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
+	"k8s.io/ingress-gce/pkg/negannotation"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
@@ -912,8 +913,8 @@ func setupIngress(s *e2e.Sandbox, ingressName, serviceName1, backendconfig1 stri
 		Build()
 
 	serviceAnnotations := map[string]string{
-		annotations.BackendConfigKey: fmt.Sprintf(`{"%s":"%s"}`, "default", backendconfig1),
-		annotations.NEGAnnotationKey: `{"ingress": true}`,
+		annotations.BackendConfigKey:   fmt.Sprintf(`{"%s":"%s"}`, "default", backendconfig1),
+		negannotation.NEGAnnotationKey: `{"ingress": true}`,
 	}
 
 	// create the backend config with defaults

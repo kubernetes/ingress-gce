@@ -25,8 +25,8 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/ingress-gce/pkg/negannotation"
 )
 
 func TestNEGServicePorts(t *testing.T) {
@@ -46,7 +46,7 @@ func TestNEGServicePorts(t *testing.T) {
 			desc:       "NEG annotation references port that Service does not have",
 			annotation: `{"exposed_ports":{"3000":{}}}`,
 			expectedErr: utilerrors.NewAggregate([]error{
-				fmt.Errorf("port %v specified in %q doesn't exist in the service", 3000, annotations.NEGAnnotationKey),
+				fmt.Errorf("port %v specified in %q doesn't exist in the service", 3000, negannotation.NEGAnnotationKey),
 			}),
 			knownPortMap: []types.SvcPortTuple{
 				{
@@ -191,10 +191,10 @@ func TestNEGServicePorts(t *testing.T) {
 		}
 
 		if len(tc.annotation) > 0 {
-			service.Annotations[annotations.NEGAnnotationKey] = tc.annotation
+			service.Annotations[negannotation.NEGAnnotationKey] = tc.annotation
 		}
 
-		svc := annotations.FromService(service)
+		svc := negannotation.FromService(service)
 		exposeNegStruct, _, _ := svc.NEGAnnotation()
 
 		t.Run(tc.desc, func(t *testing.T) {

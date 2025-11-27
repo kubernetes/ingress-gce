@@ -27,6 +27,7 @@ import (
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
+	"k8s.io/ingress-gce/pkg/negannotation"
 )
 
 func TestAppProtocol(t *testing.T) {
@@ -209,7 +210,7 @@ func TestRegionalXLBAppProtocol(t *testing.T) {
 
 			svcAnnotation := map[string]string{
 				annotations.GoogleServiceApplicationProtocolKey: tc.annotationVal,
-				annotations.NEGAnnotationKey:                    negVal.String(),
+				negannotation.NEGAnnotationKey:                  negVal.String(),
 			}
 			_, err := e2e.CreateEchoService(s, "service-1", svcAnnotation)
 			if err != nil {
@@ -281,7 +282,7 @@ func TestRegionalXLBProtocolTransition(t *testing.T) {
 
 			svcAnnotation := map[string]string{
 				annotations.ServiceApplicationProtocolKey: tc.annotationVal,
-				annotations.NEGAnnotationKey:              negVal.String(),
+				negannotation.NEGAnnotationKey:            negVal.String(),
 			}
 			_, err := e2e.EnsureEchoService(s, "service-1", svcAnnotation, corev1.ServiceTypeNodePort, 1)
 			if err != nil {
@@ -309,7 +310,7 @@ func TestRegionalXLBProtocolTransition(t *testing.T) {
 			// Update the service with the new app protocol.
 			svcAnnotation = map[string]string{
 				annotations.ServiceApplicationProtocolKey: tc.newAnnotationVal,
-				annotations.NEGAnnotationKey:              negVal.String(),
+				negannotation.NEGAnnotationKey:            negVal.String(),
 			}
 
 			if _, err = e2e.EnsureEchoService(s, "service-1", svcAnnotation, corev1.ServiceTypeNodePort, 1); err != nil {

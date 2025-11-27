@@ -29,10 +29,10 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/cloud-provider/service/helpers"
-	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/healthchecksprovider"
+	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -136,7 +136,7 @@ func (l4hc *l4HealthChecks) EnsureHealthCheckWithDualStackFirewalls(svc *corev1.
 	if err != nil {
 		hcLogger.Error(err, "Error while ensuring hc")
 		return &EnsureHealthCheckResult{
-			GceResourceInError: annotations.HealthcheckResource,
+			GceResourceInError: l4annotations.HealthcheckResource,
 			Err:                err,
 			WasUpdated:         utils.ResourceResync,
 		}
@@ -238,7 +238,7 @@ func (l4hc *l4HealthChecks) ensureIPv4Firewall(svc *corev1.Service, namer namer.
 	hcResult.WasFirewallUpdated = wasUpdated == utils.ResourceUpdate || hcResult.WasFirewallUpdated == utils.ResourceUpdate
 	if err != nil {
 		fwLogger.Error(err, "Error ensuring IPv4 Firewall for health check for service")
-		hcResult.GceResourceInError = annotations.FirewallForHealthcheckResource
+		hcResult.GceResourceInError = l4annotations.FirewallForHealthcheckResource
 		hcResult.Err = err
 		return
 	}
@@ -271,7 +271,7 @@ func (l4hc *l4HealthChecks) ensureIPv6Firewall(svc *corev1.Service, namer namer.
 	hcResult.WasFirewallUpdated = wasUpdated == utils.ResourceUpdate || hcResult.WasFirewallUpdated == utils.ResourceUpdate
 	if err != nil {
 		fwLogger.Error(err, "Error ensuring IPv6 Firewall for health check for service")
-		hcResult.GceResourceInError = annotations.FirewallForHealthcheckIPv6Resource
+		hcResult.GceResourceInError = l4annotations.FirewallForHealthcheckIPv6Resource
 		hcResult.Err = err
 		return
 	}
@@ -301,7 +301,7 @@ func (l4hc *l4HealthChecks) deleteHealthCheckWithDualStackFirewalls(svc *corev1.
 	svcLogger.V(3).Info("Trying to delete L4 healthcheck and firewall rule for service", "shared", sharedHC, "scope", scope)
 	hcWasDeleted, err := l4hc.deleteHealthCheck(svc, namer, sharedHC, scope, svcLogger)
 	if err != nil {
-		return annotations.HealthcheckResource, err
+		return l4annotations.HealthcheckResource, err
 	}
 	if !hcWasDeleted {
 		return "", nil
@@ -376,7 +376,7 @@ func (l4hc *l4HealthChecks) deleteHealthCheckFirewall(svc *corev1.Service, hcNam
 	safeToDelete, err := l4hc.healthCheckFirewallSafeToDelete(hcName, sharedHC, l4Type)
 	if err != nil {
 		fwLogger.Error(err, "Failed to delete healthcheck firewall rule for service")
-		return annotations.HealthcheckResource, err
+		return l4annotations.HealthcheckResource, err
 	}
 	if !safeToDelete {
 		fwLogger.V(3).Info("Failed to delete healthcheck firewall rule: health check in use")
@@ -387,7 +387,7 @@ func (l4hc *l4HealthChecks) deleteHealthCheckFirewall(svc *corev1.Service, hcNam
 	err = l4hc.deleteFirewall(hcFwName, svc, fwLogger)
 	if err != nil {
 		fwLogger.Error(err, "Failed to delete firewall rule for loadbalancer service")
-		return annotations.FirewallForHealthcheckResource, err
+		return l4annotations.FirewallForHealthcheckResource, err
 	}
 	return "", nil
 }

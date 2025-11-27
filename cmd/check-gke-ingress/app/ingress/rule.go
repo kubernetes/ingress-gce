@@ -31,6 +31,7 @@ import (
 	beconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	beconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	feconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
+	"k8s.io/ingress-gce/pkg/negannotation"
 )
 
 const (
@@ -202,7 +203,7 @@ func CheckL7ILBNegAnnotation(c *ServiceChecker) (string, string, string) {
 	if !ok {
 		return L7ILBNegAnnotationCheck, report.Failed, fmt.Sprintf("No Neg annotation found in service %s/%s for internal HTTP(S) load balancing, internal ingress requires Neg as backends", c.namespace, c.name)
 	}
-	var res annotations.NegAnnotation
+	var res negannotation.NegAnnotation
 	if err := json.Unmarshal([]byte(val), &res); err != nil {
 		return L7ILBNegAnnotationCheck, report.Failed, fmt.Sprintf("Invalid Neg annotation found in service %s/%s for internal HTTP(S) load balancing", c.namespace, c.name)
 	}
@@ -301,7 +302,7 @@ func getFrontendConfigAnnotation(ing *networkingv1.Ingress) (string, bool) {
 
 // getNegAnnotation gets the NEG annotation from a service object.
 func getNegAnnotation(svc *corev1.Service) (string, bool) {
-	val, ok := svc.Annotations[annotations.NEGAnnotationKey]
+	val, ok := svc.Annotations[negannotation.NEGAnnotationKey]
 	if !ok {
 		return "", false
 	}

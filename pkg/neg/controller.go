@@ -39,6 +39,7 @@ import (
 	svcnegv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/l4annotations"
 	activecontrollermetrics "k8s.io/ingress-gce/pkg/metrics/activecontroller"
 	metrics "k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
@@ -46,6 +47,7 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/ingress-gce/pkg/negannotation"
 	"k8s.io/ingress-gce/pkg/network"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -635,7 +637,7 @@ func (c *Controller) mergeIngressPortInfo(service *apiv1.Service, name types.Nam
 		return nil
 	}
 
-	negAnnotation, foundNEGAnnotation, err := annotations.FromService(service).NEGAnnotation()
+	negAnnotation, foundNEGAnnotation, err := negannotation.FromService(service).NEGAnnotation()
 	if err != nil {
 		return err
 	}
@@ -658,7 +660,7 @@ func (c *Controller) mergeIngressPortInfo(service *apiv1.Service, name types.Nam
 
 // mergeStandaloneNEGsPortInfo merge Standalone NEG PortInfo into portInfoMap
 func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap, negUsage *metricscollector.NegServiceState, networkInfo *network.NetworkInfo) error {
-	negAnnotation, foundNEGAnnotation, err := annotations.FromService(service).NEGAnnotation()
+	negAnnotation, foundNEGAnnotation, err := negannotation.FromService(service).NEGAnnotation()
 	if err != nil {
 		return err
 	}
@@ -698,7 +700,7 @@ func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name ty
 
 // mergeVmIpNEGsPortInfo merges the PortInfo for ILB, multinet NetLB and NetLB V3 (variant with NEG default) services using GCE_VM_IP NEGs into portInfoMap
 func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap, negUsage *metricscollector.NegServiceState, networkInfo *network.NetworkInfo) error {
-	wantsILB, _ := annotations.WantsL4ILB(service)
+	wantsILB, _ := l4annotations.WantsL4ILB(service)
 	needsNEGForILB := c.runL4ForILB && wantsILB
 	needsNEGForNetLB := c.netLBServiceNeedsNEG(service, networkInfo)
 	if !needsNEGForILB && !needsNEGForNetLB {
@@ -715,8 +717,8 @@ func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.Na
 	// Ignore services with LoadBalancerClass different than "networking.gke.io/l4-regional-external" or
 	// "networking.gke.io/l4-regional-internal" used for L4 controllers that use GCE_VM_IP NEGs.
 	if service.Spec.LoadBalancerClass != nil &&
-		!annotations.HasLoadBalancerClass(service, annotations.RegionalExternalLoadBalancerClass) &&
-		!annotations.HasLoadBalancerClass(service, annotations.RegionalInternalLoadBalancerClass) {
+		!l4annotations.HasLoadBalancerClass(service, l4annotations.RegionalExternalLoadBalancerClass) &&
+		!l4annotations.HasLoadBalancerClass(service, l4annotations.RegionalInternalLoadBalancerClass) {
 		msg := fmt.Sprintf("Ignoring Service %s, namespace %s as it uses a LoadBalancerClass %s", service.Name, service.Namespace, *service.Spec.LoadBalancerClass)
 		c.logger.Info(msg)
 		return nil
@@ -742,7 +744,7 @@ func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.Na
 // - service has the V3 finalizer
 // otherwise the service does not need NEGs.
 func (c *Controller) netLBServiceNeedsNEG(service *apiv1.Service, networkInfo *network.NetworkInfo) bool {
-	wantsNetLB, _ := annotations.WantsL4NetLB(service)
+	wantsNetLB, _ := l4annotations.WantsL4NetLB(service)
 	if !wantsNetLB {
 		return false
 	}
@@ -754,7 +756,7 @@ func (c *Controller) netLBServiceNeedsNEG(service *apiv1.Service, networkInfo *n
 	if !c.runL4ForNetLB {
 		return false
 	}
-	if annotations.HasLoadBalancerClass(service, annotations.RegionalExternalLoadBalancerClass) {
+	if l4annotations.HasLoadBalancerClass(service, l4annotations.RegionalExternalLoadBalancerClass) {
 		return true
 	}
 	if utils.HasL4NetLBFinalizerV3(service) {
@@ -806,7 +808,7 @@ func (c *Controller) mergeDefaultBackendServicePortInfoMap(key string, service *
 	}
 
 	// process default backend service for L7 XLB
-	negAnnotation, foundNEGAnnotation, err := annotations.FromService(service).NEGAnnotation()
+	negAnnotation, foundNEGAnnotation, err := negannotation.FromService(service).NEGAnnotation()
 	if err != nil {
 		return err
 	}
@@ -841,9 +843,9 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 
 	// Remove NEG Status Annotation when no NEG is needed
 	if len(portMap) == 0 {
-		if _, ok := service.Annotations[annotations.NEGStatusKey]; ok {
+		if _, ok := service.Annotations[negannotation.NEGStatusKey]; ok {
 			newSvcObjectMeta := service.ObjectMeta.DeepCopy()
-			delete(newSvcObjectMeta.Annotations, annotations.NEGStatusKey)
+			delete(newSvcObjectMeta.Annotations, negannotation.NEGStatusKey)
 			c.logger.V(2).Info("Removing NEG status annotation from service", "service", klog.KRef(namespace, name))
 			return patch.PatchServiceObjectMetadata(c.client.CoreV1(), service, *newSvcObjectMeta)
 		}
@@ -851,12 +853,12 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 		return nil
 	}
 
-	negStatus := annotations.NewNegStatus(zones, portMap.ToPortNegMap())
+	negStatus := negannotation.NewNegStatus(zones, portMap.ToPortNegMap())
 	annotation, err := negStatus.Marshal()
 	if err != nil {
 		return err
 	}
-	existingAnnotation, ok := service.Annotations[annotations.NEGStatusKey]
+	existingAnnotation, ok := service.Annotations[negannotation.NEGStatusKey]
 	if ok && existingAnnotation == annotation {
 		return nil
 	}
@@ -865,7 +867,7 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 	if newSvcObjectMeta.Annotations == nil {
 		newSvcObjectMeta.Annotations = make(map[string]string)
 	}
-	newSvcObjectMeta.Annotations[annotations.NEGStatusKey] = annotation
+	newSvcObjectMeta.Annotations[negannotation.NEGStatusKey] = annotation
 	c.logger.V(2).Info("Updating NEG visibility annotation on service", "annotation", annotation, "service", klog.KRef(namespace, name))
 	return patch.PatchServiceObjectMetadata(c.client.CoreV1(), service, *newSvcObjectMeta)
 }

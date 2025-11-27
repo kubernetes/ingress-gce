@@ -24,7 +24,6 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
 	cloudgce "k8s.io/cloud-provider-gcp/providers/gce"
-	"k8s.io/ingress-gce/pkg/annotations"
 	providerconfigv1 "k8s.io/ingress-gce/pkg/apis/providerconfig/v1"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/multiproject/finalizer"
@@ -32,6 +31,7 @@ import (
 	"k8s.io/ingress-gce/pkg/multiproject/testutil"
 	syncMetrics "k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/ingress-gce/pkg/negannotation"
 	pcclientfake "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned/fake"
 
 	svcnegfake "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
@@ -279,7 +279,7 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 				if svc.Annotations == nil {
 					svc.Annotations = map[string]string{}
 				}
-				svc.Annotations[annotations.NEGAnnotationKey] = negAnnVal
+				svc.Annotations[negannotation.NEGAnnotationKey] = negAnnVal
 
 				createdSvc, err := kubeClient.CoreV1().Services(svc.Namespace).Create(ctx, svc, metav1.CreateOptions{})
 				if err != nil {
@@ -479,7 +479,7 @@ func createNEGService(
 				"app":                              app,
 			},
 			Annotations: map[string]string{
-				annotations.NEGAnnotationKey: negAnnVal,
+				negannotation.NEGAnnotationKey: negAnnVal,
 			},
 		},
 		Spec: corev1.ServiceSpec{
@@ -544,7 +544,7 @@ func checkNEGStatus(
 		if errSvc != nil {
 			return false, errSvc
 		}
-		val, ok := latestSvc.Annotations[annotations.NEGStatusKey]
+		val, ok := latestSvc.Annotations[negannotation.NEGStatusKey]
 		if !ok {
 			t.Logf("NEG status annotation not yet present on service %s/%s", latestSvc.Namespace, latestSvc.Name)
 			return false, nil
@@ -558,8 +558,8 @@ func checkNEGStatus(
 		return nil, fmt.Errorf("timed out waiting for NEG status on service %q: %v", svc.Name, err)
 	}
 
-	annotation := latestSvc.Annotations[annotations.NEGStatusKey]
-	negStatus, err := annotations.ParseNegStatus(annotation)
+	annotation := latestSvc.Annotations[negannotation.NEGStatusKey]
+	negStatus, err := negannotation.ParseNegStatus(annotation)
 	if err != nil {
 		return nil, fmt.Errorf("invalid neg status annotation %q on service %s/%s: %v",
 			annotation, latestSvc.Namespace, latestSvc.Name, err)
@@ -880,7 +880,7 @@ func TestProviderConfigErrorCases(t *testing.T) {
 						"app": "testapp",
 					},
 					Annotations: map[string]string{
-						annotations.NEGAnnotationKey: negAnnVal,
+						negannotation.NEGAnnotationKey: negAnnVal,
 					},
 				},
 				Spec: corev1.ServiceSpec{
@@ -1005,7 +1005,7 @@ func TestProviderConfigErrorCases(t *testing.T) {
 						if err != nil {
 							return false, fmt.Errorf("failed to get service: %v", err)
 						}
-						_, hasNEGStatus := svc.Annotations[annotations.NEGStatusKey]
+						_, hasNEGStatus := svc.Annotations[negannotation.NEGStatusKey]
 						if hasNEGStatus {
 							// Unexpectedly found NEG status in error case
 							return false, fmt.Errorf("expected error but NEG status was set for service %s/%s", svc.Namespace, svc.Name)
@@ -1025,7 +1025,7 @@ func TestProviderConfigErrorCases(t *testing.T) {
 						if err != nil {
 							return false, fmt.Errorf("failed to get service: %v", err)
 						}
-						_, hasNEGStatus := svc.Annotations[annotations.NEGStatusKey]
+						_, hasNEGStatus := svc.Annotations[negannotation.NEGStatusKey]
 						if hasNEGStatus {
 							return true, nil
 						}

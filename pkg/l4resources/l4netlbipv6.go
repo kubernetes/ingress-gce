@@ -25,8 +25,8 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	compute "google.golang.org/api/compute/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/firewalls"
+	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 )
@@ -45,15 +45,15 @@ func (l4netlb *L4NetLB) ensureIPv6Resources(syncResult *L4NetLBSyncResult, nodeN
 	syncResult.GCEResourceUpdate.SetForwardingRule(wasUpdate)
 	if err != nil {
 		l4netlb.svcLogger.Error(err, "ensureIPv6Resources: Failed to create ipv6 forwarding rule")
-		syncResult.GCEResourceInError = annotations.ForwardingRuleIPv6Resource
+		syncResult.GCEResourceInError = l4annotations.ForwardingRuleIPv6Resource
 		syncResult.Error = err
 		return
 	}
 
 	if ipv6fr.IPProtocol == string(corev1.ProtocolTCP) {
-		syncResult.Annotations[annotations.TCPForwardingRuleIPv6Key] = ipv6fr.Name
+		syncResult.Annotations[l4annotations.TCPForwardingRuleIPv6Key] = ipv6fr.Name
 	} else {
-		syncResult.Annotations[annotations.UDPForwardingRuleIPv6Key] = ipv6fr.Name
+		syncResult.Annotations[l4annotations.UDPForwardingRuleIPv6Key] = ipv6fr.Name
 	}
 
 	// Google Cloud creates ipv6 forwarding rules with IPAddress in CIDR form. We will take only first address
@@ -94,11 +94,11 @@ func (l4netlb *L4NetLB) deleteIPv6ResourcesOnDelete(syncResult *L4NetLBSyncResul
 // This function does not delete Backend Service and Health Check, because they are shared between IPv4 and IPv6.
 // IPv6 Firewall Rule for Health Check also will not be deleted here, and will be left till the Service Deletion.
 func (l4netlb *L4NetLB) deleteIPv6ResourcesAnnotationBased(syncResult *L4NetLBSyncResult, shouldIgnoreAnnotations bool) {
-	if shouldIgnoreAnnotations || l4netlb.hasAnnotation(annotations.TCPForwardingRuleIPv6Key) || l4netlb.hasAnnotation(annotations.UDPForwardingRuleIPv6Key) {
+	if shouldIgnoreAnnotations || l4netlb.hasAnnotation(l4annotations.TCPForwardingRuleIPv6Key) || l4netlb.hasAnnotation(l4annotations.UDPForwardingRuleIPv6Key) {
 		l4netlb.deleteIPv6ForwardingRule(syncResult)
 	}
 
-	if shouldIgnoreAnnotations || l4netlb.hasAnnotation(annotations.FirewallRuleIPv6Key) {
+	if shouldIgnoreAnnotations || l4netlb.hasAnnotation(l4annotations.FirewallRuleIPv6Key) {
 		l4netlb.deleteIPv6NodesFirewall(syncResult)
 	}
 }
@@ -153,11 +153,11 @@ func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipAddress string, nodeNames []st
 	syncResult.GCEResourceUpdate.SetFirewallForNodes(wasUpdate)
 	if err != nil {
 		fwLogger.Error(err, "Failed to ensure ipv6 nodes firewall for L4 NetLB")
-		syncResult.GCEResourceInError = annotations.FirewallRuleIPv6Resource
+		syncResult.GCEResourceInError = l4annotations.FirewallRuleIPv6Resource
 		syncResult.Error = err
 		return
 	}
-	syncResult.Annotations[annotations.FirewallRuleIPv6Key] = firewallName
+	syncResult.Annotations[l4annotations.FirewallRuleIPv6Key] = firewallName
 }
 
 func (l4netlb *L4NetLB) deleteIPv6ForwardingRule(syncResult *L4NetLBSyncResult) {
@@ -173,7 +173,7 @@ func (l4netlb *L4NetLB) deleteIPv6ForwardingRule(syncResult *L4NetLBSyncResult) 
 	if err != nil {
 		l4netlb.svcLogger.Error(err, "Failed to delete ipv6 forwarding rule for external loadbalancer service")
 		syncResult.Error = err
-		syncResult.GCEResourceInError = annotations.ForwardingRuleIPv6Resource
+		syncResult.GCEResourceInError = l4annotations.ForwardingRuleIPv6Resource
 	}
 }
 
@@ -190,14 +190,14 @@ func (l4netlb *L4NetLB) deleteIPv6NodesFirewall(syncResult *L4NetLBSyncResult) {
 	err := l4netlb.deleteFirewall(ipv6FirewallName, fwLogger)
 	if err != nil {
 		fwLogger.Error(err, "Failed to delete ipv6 firewall rule for external loadbalancer service")
-		syncResult.GCEResourceInError = annotations.FirewallRuleIPv6Resource
+		syncResult.GCEResourceInError = l4annotations.FirewallRuleIPv6Resource
 		syncResult.Error = err
 	}
 }
 
 func (l4netlb *L4NetLB) ipv6SubnetURL() (string, error) {
 	// at first, try to get subnet from annotation
-	if subnetName := annotations.FromService(l4netlb.Service).GetExternalLoadBalancerAnnotationSubnet(); subnetName != "" {
+	if subnetName := l4annotations.FromService(l4netlb.Service).GetExternalLoadBalancerAnnotationSubnet(); subnetName != "" {
 		subnetKey, err := l4netlb.createKey(subnetName)
 		if err != nil {
 			return "", err
@@ -210,7 +210,7 @@ func (l4netlb *L4NetLB) ipv6SubnetURL() (string, error) {
 
 func (l4netlb *L4NetLB) ipv6SubnetName() string {
 	// At first check custom subnet annotation.
-	customSubnetName := annotations.FromService(l4netlb.Service).GetExternalLoadBalancerAnnotationSubnet()
+	customSubnetName := l4annotations.FromService(l4netlb.Service).GetExternalLoadBalancerAnnotationSubnet()
 	if customSubnetName != "" {
 		return customSubnetName
 	}
@@ -232,7 +232,7 @@ func (l4netlb *L4NetLB) serviceSubnetHasExternalIPv6Range() error {
 		l4netlb.svcLogger.Info("Subnet for IPv6 Service does not have external IPv6 ranges", "subnetName", subnetName)
 		return utils.NewUserError(
 			fmt.Errorf(
-				"subnet %s does not have external IPv6 ranges, required for an external IPv6 Service. You can specify an external IPv6 subnet using the \"%s\" annotation on the Service", subnetName, annotations.CustomSubnetAnnotationKey))
+				"subnet %s does not have external IPv6 ranges, required for an external IPv6 Service. You can specify an external IPv6 subnet using the \"%s\" annotation on the Service", subnetName, l4annotations.CustomSubnetAnnotationKey))
 	}
 	return nil
 }

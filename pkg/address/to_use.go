@@ -6,8 +6,8 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
-	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/klog/v2"
 )
 
@@ -20,7 +20,7 @@ import (
 //     reset the IP (by returning empty string).
 func IPv4ToUse(cloud *gce.Cloud, recorder record.EventRecorder, svc *v1.Service, fwdRule *composite.ForwardingRule, requestedSubnet string) (ipAddress, ipName string, err error) {
 	// Get value from new annotation which support both IPv4 and IPv6
-	ipv4FromAnnotation, ipNameFromAnnotation, err := annotations.FromService(svc).IPv4AddressAnnotation(cloud)
+	ipv4FromAnnotation, ipNameFromAnnotation, err := l4annotations.FromService(svc).IPv4AddressAnnotation(cloud)
 	if err != nil {
 		return "", "", err
 	}
@@ -52,7 +52,7 @@ func IPv4ToUse(cloud *gce.Cloud, recorder record.EventRecorder, svc *v1.Service,
 //     reset the IP (by returning empty string).
 func IPv6ToUse(cloud *gce.Cloud, svc *v1.Service, ipv6FwdRule *composite.ForwardingRule, requestedSubnet string, logger klog.Logger) (ipAddress, ipName string, err error) {
 	// Get value from new annotation which support both IPv4 and IPv6
-	ipv6AddressFromAnnotation, ipNameFromAnnotation, err := annotations.FromService(svc).IPv6AddressAnnotation(cloud)
+	ipv6AddressFromAnnotation, ipNameFromAnnotation, err := l4annotations.FromService(svc).IPv6AddressAnnotation(cloud)
 	if err != nil {
 		return "", "", err
 	}

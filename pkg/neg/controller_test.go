@@ -43,9 +43,11 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/ingress-gce/pkg/negannotation"
 	"k8s.io/ingress-gce/pkg/network"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -97,7 +99,7 @@ var (
 			Namespace: "kube-system",
 			Name:      "default-http-backend",
 			Annotations: map[string]string{
-				annotations.NEGAnnotationKey: "{\"ingress\":true}",
+				negannotation.NEGAnnotationKey: "{\"ingress\":true}",
 			},
 		},
 		Spec: v1.ServiceSpec{
@@ -1307,10 +1309,10 @@ func TestMergeVmIpNEGsPortInfo(t *testing.T) {
 	serviceCustomLoadBalancerClass.Spec.LoadBalancerClass = &testLBClass
 	serviceCustomLoadBalancerClass.Finalizers = append(serviceILBWithFinalizer.Finalizers, common.ILBFinalizerV2)
 
-	serviceExternalLoadBalancerClass := newL4LBServiceWithLoadBalancerClass(controller, annotations.RegionalExternalLoadBalancerClass)
+	serviceExternalLoadBalancerClass := newL4LBServiceWithLoadBalancerClass(controller, l4annotations.RegionalExternalLoadBalancerClass)
 	serviceExternalLoadBalancerClass.Finalizers = append(serviceExternalLoadBalancerClass.Finalizers, common.NetLBFinalizerV3)
 
-	serviceInternalLoadBalancerClass := newL4LBServiceWithLoadBalancerClass(controller, annotations.RegionalInternalLoadBalancerClass)
+	serviceInternalLoadBalancerClass := newL4LBServiceWithLoadBalancerClass(controller, l4annotations.RegionalInternalLoadBalancerClass)
 	serviceInternalLoadBalancerClass.Finalizers = append(serviceInternalLoadBalancerClass.Finalizers, common.ILBFinalizerV2)
 
 	testCases := []struct {
@@ -1857,7 +1859,7 @@ func validateSyncerManagerWithPortInfoMap(t *testing.T, controller *Controller, 
 }
 
 func validateServiceAnnotationWithPortInfoMap(t *testing.T, svc *apiv1.Service, portInfoMap negtypes.PortInfoMap, expectZones []string) {
-	v, ok := svc.Annotations[annotations.NEGStatusKey]
+	v, ok := svc.Annotations[negannotation.NEGStatusKey]
 	if !ok {
 		t.Fatalf("Failed to apply the NEG service state annotation, got %+v", svc.Annotations)
 	}
@@ -1874,7 +1876,7 @@ func validateServiceAnnotationWithPortInfoMap(t *testing.T, svc *apiv1.Service, 
 	}
 
 	// negStatus validation
-	negStatus, err := annotations.ParseNegStatus(v)
+	negStatus, err := negannotation.ParseNegStatus(v)
 	if err != nil {
 		t.Fatalf("Failed to parse neg status annotation %q: %v", v, err)
 	}
@@ -1882,7 +1884,7 @@ func validateServiceAnnotationWithPortInfoMap(t *testing.T, svc *apiv1.Service, 
 		t.Errorf("Unexpected zones in NEG service state annotation, got %v, want %v", negStatus.Zones, zones)
 	}
 
-	wantNegStatus := annotations.NewNegStatus(zones, portInfoMap.ToPortNegMap())
+	wantNegStatus := negannotation.NewNegStatus(zones, portInfoMap.ToPortNegMap())
 	if !reflect.DeepEqual(negStatus.NetworkEndpointGroups, wantNegStatus.NetworkEndpointGroups) {
 		t.Errorf("Failed to validate the service annotation, got %v, want %v", negStatus, wantNegStatus)
 	}
@@ -1925,17 +1927,17 @@ func validateServiceStateAnnotation(t *testing.T, svc *apiv1.Service, svcPorts [
 }
 
 // validateServiceStateAnnotationExceptNames will validate all aspects of the status annotation except for the name
-func validateServiceStateAnnotationExceptNames(t *testing.T, svc *apiv1.Service, svcPorts []int32) annotations.NegStatus {
+func validateServiceStateAnnotationExceptNames(t *testing.T, svc *apiv1.Service, svcPorts []int32) negannotation.NegStatus {
 	t.Helper()
 	if len(svcPorts) == 0 {
-		v, ok := svc.Annotations[annotations.NEGStatusKey]
+		v, ok := svc.Annotations[negannotation.NEGStatusKey]
 		if ok {
 			t.Fatalf("Expected no NEG service state annotation when there are no servicePorts, got: %v", v)
 		}
-		return annotations.NegStatus{}
+		return negannotation.NegStatus{}
 	}
 
-	v, ok := svc.Annotations[annotations.NEGStatusKey]
+	v, ok := svc.Annotations[negannotation.NEGStatusKey]
 	if !ok {
 		t.Fatalf("Failed to apply the NEG service state annotation, got %+v", svc.Annotations)
 	}
@@ -1956,7 +1958,7 @@ func validateServiceStateAnnotationExceptNames(t *testing.T, svc *apiv1.Service,
 	zones, _ := zoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(negtypes.L7Mode), klog.TODO())
 
 	// negStatus validation
-	negStatus, err := annotations.ParseNegStatus(v)
+	negStatus, err := negannotation.ParseNegStatus(v)
 	if err != nil {
 		t.Fatalf("Failed to parse neg status annotation %q: %v", v, err)
 	}
@@ -1978,10 +1980,10 @@ func validateServiceStateAnnotationExceptNames(t *testing.T, svc *apiv1.Service,
 }
 
 func generateNegAnnotation(ingress bool, svcPorts []int32) string {
-	var annotation annotations.NegAnnotation
-	enabledPorts := make(map[int32]annotations.NegAttributes)
+	var annotation negannotation.NegAnnotation
+	enabledPorts := make(map[int32]negannotation.NegAttributes)
 	for _, port := range svcPorts {
-		enabledPorts[port] = annotations.NegAttributes{}
+		enabledPorts[port] = negannotation.NegAttributes{}
 	}
 
 	annotation.Ingress = ingress
@@ -1991,13 +1993,13 @@ func generateNegAnnotation(ingress bool, svcPorts []int32) string {
 }
 
 func generateCustomNamedNegAnnotation(ingress bool, svcPorts map[int32]string) string {
-	var annotation annotations.NegAnnotation
-	enabledPorts := make(map[int32]annotations.NegAttributes)
+	var annotation negannotation.NegAnnotation
+	enabledPorts := make(map[int32]negannotation.NegAttributes)
 	for port, name := range svcPorts {
 		if name != "" {
-			enabledPorts[port] = annotations.NegAttributes{Name: name}
+			enabledPorts[port] = negannotation.NegAttributes{Name: name}
 		} else {
-			enabledPorts[port] = annotations.NegAttributes{}
+			enabledPorts[port] = negannotation.NegAttributes{}
 		}
 	}
 
@@ -2137,7 +2139,7 @@ func newTestRBSMultinetService(c *Controller, onlyLocal bool, port int) *apiv1.S
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        testServiceName,
 			Namespace:   testServiceNamespace,
-			Annotations: map[string]string{annotations.RBSAnnotationKey: annotations.RBSEnabled},
+			Annotations: map[string]string{l4annotations.RBSAnnotationKey: l4annotations.RBSEnabled},
 		},
 		Spec: apiv1.ServiceSpec{
 			Type: apiv1.ServiceTypeLoadBalancer,
@@ -2160,7 +2162,7 @@ func newTestRBSService(c *Controller, onlyLocal bool, port int, finalizer string
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        testServiceName,
 			Namespace:   testServiceNamespace,
-			Annotations: map[string]string{annotations.RBSAnnotationKey: annotations.RBSEnabled},
+			Annotations: map[string]string{l4annotations.RBSAnnotationKey: l4annotations.RBSEnabled},
 			Finalizers:  []string{finalizer},
 		},
 		Spec: apiv1.ServiceSpec{
@@ -2186,7 +2188,7 @@ func svcWithAnnotations(svc *apiv1.Service, annotations map[string]string) *apiv
 func newTestService(c *Controller, negIngress bool, negSvcPorts []int32) *apiv1.Service {
 	svcAnnotations := map[string]string{}
 	if negIngress || len(negSvcPorts) > 0 {
-		svcAnnotations[annotations.NEGAnnotationKey] = generateNegAnnotation(negIngress, negSvcPorts)
+		svcAnnotations[negannotation.NEGAnnotationKey] = generateNegAnnotation(negIngress, negSvcPorts)
 	}
 
 	// append additional ports if the service does not contain the service port
@@ -2266,7 +2268,7 @@ func newTestNode(name string, unschedulable bool) *apiv1.Node {
 func newTestServiceCustomNamedNeg(c *Controller, negSvcPorts map[int32]string, ingress bool) *apiv1.Service {
 	svcAnnotations := map[string]string{}
 	if len(negSvcPorts) > 0 {
-		svcAnnotations[annotations.NEGAnnotationKey] = generateCustomNamedNegAnnotation(ingress, negSvcPorts)
+		svcAnnotations[negannotation.NEGAnnotationKey] = generateCustomNamedNegAnnotation(ingress, negSvcPorts)
 	}
 
 	// append additional ports if the service does not contain the service port
@@ -2365,8 +2367,8 @@ func TestDefaultBackendServiceIgnoredWhenIngressControllerIsDisabled(t *testing.
 	if err != nil {
 		t.Fatalf("Failed to get default backend service: %v", err)
 	}
-	if _, ok := svc.Annotations[annotations.NEGStatusKey]; ok {
-		t.Errorf("Expected no NEG status annotation, but found one: %v", svc.Annotations[annotations.NEGStatusKey])
+	if _, ok := svc.Annotations[negannotation.NEGStatusKey]; ok {
+		t.Errorf("Expected no NEG status annotation, but found one: %v", svc.Annotations[negannotation.NEGStatusKey])
 	}
 }
 

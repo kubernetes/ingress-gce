@@ -25,7 +25,7 @@ import (
 	discovery "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/negannotation"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
@@ -335,27 +335,27 @@ func TestPortInfoMapToPortNegMap(t *testing.T) {
 	for _, tc := range []struct {
 		desc             string
 		portInfoMap      PortInfoMap
-		expectPortNegMap annotations.PortNegMap
+		expectPortNegMap negannotation.PortNegMap
 	}{
 		{
 			desc:             "Test empty struct",
 			portInfoMap:      PortInfoMap{},
-			expectPortNegMap: annotations.PortNegMap{},
+			expectPortNegMap: negannotation.PortNegMap{},
 		},
 		{
 			desc:             "1 port",
 			portInfoMap:      PortInfoMap{PortInfoMapKey{80}: PortInfo{NegName: "neg1"}},
-			expectPortNegMap: annotations.PortNegMap{"80": "neg1"},
+			expectPortNegMap: negannotation.PortNegMap{"80": "neg1"},
 		},
 		{
 			desc:             "2 ports",
 			portInfoMap:      PortInfoMap{PortInfoMapKey{80}: PortInfo{NegName: "neg1"}, PortInfoMapKey{8080}: PortInfo{NegName: "neg2"}},
-			expectPortNegMap: annotations.PortNegMap{"80": "neg1", "8080": "neg2"},
+			expectPortNegMap: negannotation.PortNegMap{"80": "neg1", "8080": "neg2"},
 		},
 		{
 			desc:             "3 ports",
 			portInfoMap:      PortInfoMap{PortInfoMapKey{80}: PortInfo{NegName: "neg1"}, PortInfoMapKey{443}: PortInfo{NegName: "neg2"}, PortInfoMapKey{8080}: PortInfo{NegName: "neg3"}},
-			expectPortNegMap: annotations.PortNegMap{"80": "neg1", "443": "neg2", "8080": "neg3"},
+			expectPortNegMap: negannotation.PortNegMap{"80": "neg1", "443": "neg2", "8080": "neg3"},
 		},
 	} {
 		res := tc.portInfoMap.ToPortNegMap()

@@ -27,10 +27,10 @@ import (
 	discoveryv1 "k8s.io/api/discovery/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
+	"k8s.io/ingress-gce/pkg/negannotation"
 	"k8s.io/ingress-gce/pkg/utils/common"
 )
 
@@ -54,7 +54,7 @@ func testNEGOS(t *testing.T, os e2e.OS) {
 	port80 := networkingv1.ServiceBackendPort{Number: 80}
 
 	type serviceAttr struct {
-		annotations annotations.NegAnnotation
+		annotations negannotation.NegAnnotation
 		svcType     v1.ServiceType
 	}
 
@@ -70,11 +70,11 @@ func testNEGOS(t *testing.T, os e2e.OS) {
 			ingress: fuzz.NewIngressBuilder("", ingressName, "").DefaultBackend(serviceName1, port80).AddPath("foo.com", "/foo", serviceName2, port80).Build(),
 			services: map[string]serviceAttr{
 				serviceName1: {
-					annotations: annotations.NegAnnotation{Ingress: true},
+					annotations: negannotation.NegAnnotation{Ingress: true},
 					svcType:     v1.ServiceTypeClusterIP,
 				},
 				serviceName2: {
-					annotations: annotations.NegAnnotation{Ingress: true},
+					annotations: negannotation.NegAnnotation{Ingress: true},
 					svcType:     v1.ServiceTypeNodePort,
 				},
 			},
@@ -86,11 +86,11 @@ func testNEGOS(t *testing.T, os e2e.OS) {
 			ingress: fuzz.NewIngressBuilder("", ingressName, "").AddPath("foo.com", "/foo", serviceName1, port80).AddPath("bar.com", "/bar", serviceName2, port80).Build(),
 			services: map[string]serviceAttr{
 				serviceName1: {
-					annotations: annotations.NegAnnotation{Ingress: false},
+					annotations: negannotation.NegAnnotation{Ingress: false},
 					svcType:     v1.ServiceTypeNodePort,
 				},
 				serviceName2: {
-					annotations: annotations.NegAnnotation{Ingress: true},
+					annotations: negannotation.NegAnnotation{Ingress: true},
 					svcType:     v1.ServiceTypeClusterIP,
 				},
 			},
@@ -105,7 +105,7 @@ func testNEGOS(t *testing.T, os e2e.OS) {
 
 			for name, attr := range tc.services {
 				_, err := e2e.EnsureEchoServiceOS(s, name, map[string]string{
-					annotations.NEGAnnotationKey: attr.annotations.String()}, attr.svcType, replicas, os)
+					negannotation.NEGAnnotationKey: attr.annotations.String()}, attr.svcType, replicas, os)
 				if err != nil {
 					t.Fatalf("error ensuring echo service: %v", err)
 				}
@@ -172,23 +172,23 @@ func testNEGTransitionOS(t *testing.T, os e2e.OS) {
 
 		for _, tc := range []struct {
 			desc        string
-			annotations *annotations.NegAnnotation
+			annotations *negannotation.NegAnnotation
 			// negGC is true if a NEG should be garbage collected after applying the annotations
 			negGC bool
 		}{
 			{
 				desc:        "Using ingress only",
-				annotations: &annotations.NegAnnotation{Ingress: true},
+				annotations: &negannotation.NegAnnotation{Ingress: true},
 				negGC:       false,
 			},
 			{
 				desc:        "Disable NEG for ingress",
-				annotations: &annotations.NegAnnotation{Ingress: false},
+				annotations: &negannotation.NegAnnotation{Ingress: false},
 				negGC:       true,
 			},
 			{
 				desc:        "Re-enable NEG for ingress",
-				annotations: &annotations.NegAnnotation{Ingress: true},
+				annotations: &negannotation.NegAnnotation{Ingress: true},
 				negGC:       false,
 			},
 			{
@@ -200,7 +200,7 @@ func testNEGTransitionOS(t *testing.T, os e2e.OS) {
 			t.Run(tc.desc, func(t *testing.T) {
 				svcAnnotations := map[string]string{}
 				if tc.annotations != nil {
-					svcAnnotations[annotations.NEGAnnotationKey] = tc.annotations.String()
+					svcAnnotations[negannotation.NEGAnnotationKey] = tc.annotations.String()
 				}
 				// First create the echo service, we will be adapting it throughout the basic tests
 				_, err := e2e.EnsureEchoServiceOS(s, "service-1", svcAnnotations, v1.ServiceTypeNodePort, 1, os)
@@ -270,23 +270,23 @@ func testNEGSyncEndpoints(t *testing.T, os e2e.OS) {
 
 	for _, tc := range []struct {
 		desc                     string
-		annotations              annotations.NegAnnotation
+		annotations              negannotation.NegAnnotation
 		expectServicePort        sets.String
 		expectHealthyServicePort sets.String
 		checkBackendReachability bool
 	}{
 		{
 			desc:                     "Ingress NEG only",
-			annotations:              annotations.NegAnnotation{Ingress: true},
+			annotations:              negannotation.NegAnnotation{Ingress: true},
 			expectServicePort:        sets.NewString("80"),
 			expectHealthyServicePort: sets.NewString("80"),
 			checkBackendReachability: true,
 		},
 		{
 			desc: "Both standalone NEGs and Ingress NEG enabled",
-			annotations: annotations.NegAnnotation{
+			annotations: negannotation.NegAnnotation{
 				Ingress: true,
-				ExposedPorts: map[int32]annotations.NegAttributes{
+				ExposedPorts: map[int32]negannotation.NegAttributes{
 					int32(443): {},
 				},
 			},
@@ -296,9 +296,9 @@ func testNEGSyncEndpoints(t *testing.T, os e2e.OS) {
 		},
 		{
 			desc: "Standalone NEGs only",
-			annotations: annotations.NegAnnotation{
+			annotations: negannotation.NegAnnotation{
 				Ingress: false,
-				ExposedPorts: map[int32]annotations.NegAttributes{
+				ExposedPorts: map[int32]negannotation.NegAttributes{
 					int32(443): {},
 					int32(80):  {},
 				},
@@ -313,7 +313,7 @@ func testNEGSyncEndpoints(t *testing.T, os e2e.OS) {
 			t.Parallel()
 			ctx := context.Background()
 
-			svcAnnotations := map[string]string{annotations.NEGAnnotationKey: tc.annotations.String()}
+			svcAnnotations := map[string]string{negannotation.NEGAnnotationKey: tc.annotations.String()}
 			_, err := e2e.EnsureEchoServiceOS(s, svcName, svcAnnotations, v1.ServiceTypeClusterIP, 0, os)
 
 			if err != nil {
@@ -422,59 +422,59 @@ func TestNegCRDTransitions(t *testing.T) {
 	ctx := context.Background()
 
 	Framework.RunWithSandbox("NEGs with custom names", t, func(t *testing.T, s *e2e.Sandbox) {
-		var previousNegStatus annotations.NegStatus
+		var previousNegStatus negannotation.NegStatus
 		expectedNEGName := fmt.Sprintf("test-neg-name-%x", s.RandInt)
 
 		for _, tc := range []struct {
 			desc               string
-			annotations        annotations.NegAnnotation
+			annotations        negannotation.NegAnnotation
 			replicas           int32
 			expectedNegAttrs   map[string]string
 			expectedGCNegPorts []string
 		}{
 			{desc: "one NEG with custom name, one neg with generated name",
-				annotations: annotations.NegAnnotation{
+				annotations: negannotation.NegAnnotation{
 					Ingress: false,
-					ExposedPorts: map[int32]annotations.NegAttributes{
-						port80.Number:  annotations.NegAttributes{Name: expectedNEGName},
-						port443.Number: annotations.NegAttributes{},
+					ExposedPorts: map[int32]negannotation.NegAttributes{
+						port80.Number:  negannotation.NegAttributes{Name: expectedNEGName},
+						port443.Number: negannotation.NegAttributes{},
 					}},
 				replicas:         2,
 				expectedNegAttrs: map[string]string{strconv.Itoa(int(port80.Number)): expectedNEGName, strconv.Itoa(int(port443.Number)): ""},
 			},
 			{desc: "remove custom name",
-				annotations: annotations.NegAnnotation{
+				annotations: negannotation.NegAnnotation{
 					Ingress: false,
-					ExposedPorts: map[int32]annotations.NegAttributes{
-						port80.Number:  annotations.NegAttributes{},
-						port443.Number: annotations.NegAttributes{},
+					ExposedPorts: map[int32]negannotation.NegAttributes{
+						port80.Number:  negannotation.NegAttributes{},
+						port443.Number: negannotation.NegAttributes{},
 					}},
 				replicas:           2,
 				expectedNegAttrs:   map[string]string{strconv.Itoa(int(port80.Number)): "", strconv.Itoa(int(port443.Number)): ""},
 				expectedGCNegPorts: []string{strconv.Itoa(int(port80.Number))},
 			},
 			{desc: "add custom name",
-				annotations: annotations.NegAnnotation{
+				annotations: negannotation.NegAnnotation{
 					Ingress: false,
-					ExposedPorts: map[int32]annotations.NegAttributes{
-						port80.Number:  annotations.NegAttributes{},
-						port443.Number: annotations.NegAttributes{Name: expectedNEGName},
+					ExposedPorts: map[int32]negannotation.NegAttributes{
+						port80.Number:  negannotation.NegAttributes{},
+						port443.Number: negannotation.NegAttributes{Name: expectedNEGName},
 					}},
 				replicas:           2,
 				expectedNegAttrs:   map[string]string{strconv.Itoa(int(port80.Number)): "", strconv.Itoa(int(port443.Number)): expectedNEGName},
 				expectedGCNegPorts: []string{strconv.Itoa(int(port443.Number))},
 			},
 			{desc: "no NEGs",
-				annotations: annotations.NegAnnotation{
+				annotations: negannotation.NegAnnotation{
 					Ingress:      false,
-					ExposedPorts: map[int32]annotations.NegAttributes{}},
+					ExposedPorts: map[int32]negannotation.NegAttributes{}},
 				replicas:           2,
 				expectedGCNegPorts: []string{strconv.Itoa(int(port80.Number)), strconv.Itoa(int(port443.Number))},
 			},
 		} {
 			t.Run(tc.desc, func(t *testing.T) {
 				_, err := e2e.EnsureEchoService(s, serviceName, map[string]string{
-					annotations.NEGAnnotationKey: tc.annotations.String()}, v1.ServiceTypeClusterIP, tc.replicas)
+					negannotation.NEGAnnotationKey: tc.annotations.String()}, v1.ServiceTypeClusterIP, tc.replicas)
 				if err != nil {
 					t.Fatalf("error ensuring echo service: %v", err)
 				}
@@ -515,15 +515,15 @@ func TestNegCRDErrorEvents(t *testing.T) {
 
 	Framework.RunWithSandbox("two services, same neg name", t, func(t *testing.T, s *e2e.Sandbox) {
 		expectedNEGName := fmt.Sprintf("test-neg-name-%x", s.RandInt)
-		annotation := annotations.NegAnnotation{
+		annotation := negannotation.NegAnnotation{
 			Ingress: true,
-			ExposedPorts: map[int32]annotations.NegAttributes{
-				port80.Number: annotations.NegAttributes{Name: expectedNEGName},
+			ExposedPorts: map[int32]negannotation.NegAttributes{
+				port80.Number: negannotation.NegAttributes{Name: expectedNEGName},
 			},
 		}
 
 		_, err := e2e.EnsureEchoService(s, svc1, map[string]string{
-			annotations.NEGAnnotationKey: annotation.String()}, v1.ServiceTypeClusterIP, replicas)
+			negannotation.NEGAnnotationKey: annotation.String()}, v1.ServiceTypeClusterIP, replicas)
 		if err != nil {
 			t.Fatalf("error ensuring echo service: %v", err)
 		}
@@ -536,7 +536,7 @@ func TestNegCRDErrorEvents(t *testing.T) {
 		// Ensure service with ingress true and wait for neg to be created
 		annotation.Ingress = false
 		_, err = e2e.EnsureEchoService(s, svc1, map[string]string{
-			annotations.NEGAnnotationKey: annotation.String()}, v1.ServiceTypeClusterIP, replicas)
+			negannotation.NEGAnnotationKey: annotation.String()}, v1.ServiceTypeClusterIP, replicas)
 		if err != nil {
 			t.Fatalf("error ensuring echo service: %v", err)
 		}
@@ -557,7 +557,7 @@ func TestNegCRDErrorEvents(t *testing.T) {
 
 		// Ensure a second service requesting the same neg name
 		_, err = e2e.EnsureEchoService(s, svc2, map[string]string{
-			annotations.NEGAnnotationKey: annotation.String()}, v1.ServiceTypeClusterIP, replicas)
+			negannotation.NEGAnnotationKey: annotation.String()}, v1.ServiceTypeClusterIP, replicas)
 		if err != nil {
 			t.Fatalf("error ensuring echo service: %v", err)
 		}
@@ -591,16 +591,16 @@ func TestNegDisruptive(t *testing.T) {
 	gcSvcName := "gc-service"
 	ctx := context.Background()
 
-	annotation := annotations.NegAnnotation{
-		ExposedPorts: map[int32]annotations.NegAttributes{
-			port80.Number: annotations.NegAttributes{},
+	annotation := negannotation.NegAnnotation{
+		ExposedPorts: map[int32]negannotation.NegAttributes{
+			port80.Number: negannotation.NegAttributes{},
 		},
 	}
 
-	ensureGCService := func(s *e2e.Sandbox) annotations.NegStatus {
+	ensureGCService := func(s *e2e.Sandbox) negannotation.NegStatus {
 		// use gc-service as a way to track if GC has completed or not
 		_, err := e2e.EnsureEchoService(s, "gc-service", map[string]string{
-			annotations.NEGAnnotationKey: annotation.String()}, v1.ServiceTypeClusterIP, replicas)
+			negannotation.NEGAnnotationKey: annotation.String()}, v1.ServiceTypeClusterIP, replicas)
 		if err != nil {
 			t.Fatalf("error ensuring gc service: %v", err)
 		}
@@ -620,7 +620,7 @@ func TestNegDisruptive(t *testing.T) {
 		return negStatus
 	}
 
-	waitForGCSvcDeletion := func(s *e2e.Sandbox, negStatus annotations.NegStatus) {
+	waitForGCSvcDeletion := func(s *e2e.Sandbox, negStatus negannotation.NegStatus) {
 		if err := e2e.DeleteService(s, gcSvcName); err != nil {
 			t.Fatalf("Error: e2e.DeleteService %s: %q", gcSvcName, err)
 		}
@@ -719,7 +719,7 @@ func TestNegDisruptive(t *testing.T) {
 			},
 		}
 
-		var previousNegStatus annotations.NegStatus
+		var previousNegStatus negannotation.NegStatus
 		for _, tc := range testcases {
 			t.Log(tc.desc)
 			if tc.waitForGC {
@@ -736,7 +736,7 @@ func TestNegDisruptive(t *testing.T) {
 
 			if tc.createService {
 				_, err := e2e.EnsureEchoService(s, serviceName, map[string]string{
-					annotations.NEGAnnotationKey: annotation.String()}, v1.ServiceTypeClusterIP, replicas)
+					negannotation.NEGAnnotationKey: annotation.String()}, v1.ServiceTypeClusterIP, replicas)
 				if err != nil {
 					t.Fatalf("error ensuring echo service: %v", err)
 				}
@@ -837,15 +837,15 @@ func TestLabelPropagation(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
 
-			annotation := annotations.NegAnnotation{
+			annotation := negannotation.NegAnnotation{
 				Ingress: false,
-				ExposedPorts: map[int32]annotations.NegAttributes{
+				ExposedPorts: map[int32]negannotation.NegAttributes{
 					int32(443): {},
 					int32(80):  {},
 				},
 			}
 
-			svcAnnotations := map[string]string{annotations.NEGAnnotationKey: annotation.String()}
+			svcAnnotations := map[string]string{negannotation.NEGAnnotationKey: annotation.String()}
 			_, err := e2e.EnsureEchoServiceWithPodLabels(s, svcName, svcAnnotations, v1.ServiceTypeClusterIP, 3, tc.podLabels)
 
 			if err != nil {
@@ -970,14 +970,14 @@ func TestDegradedMode(t *testing.T) {
 			svcName := fmt.Sprintf("service-%s", common.ContentHash(tc.desc, 8))
 			t.Run(tc.desc, func(t *testing.T) {
 				// Setup Standalone NEG.
-				annotation := annotations.NegAnnotation{
+				annotation := negannotation.NegAnnotation{
 					Ingress: false,
-					ExposedPorts: map[int32]annotations.NegAttributes{
+					ExposedPorts: map[int32]negannotation.NegAttributes{
 						int32(443): {},
 						int32(80):  {},
 					},
 				}
-				svcAnnotations := map[string]string{annotations.NEGAnnotationKey: annotation.String()}
+				svcAnnotations := map[string]string{negannotation.NEGAnnotationKey: annotation.String()}
 				svc, err := e2e.EnsureEchoService(s, svcName, svcAnnotations, v1.ServiceTypeClusterIP, replicas)
 				if err != nil {
 					t.Fatalf("Error ensuring echo service: %v", err)

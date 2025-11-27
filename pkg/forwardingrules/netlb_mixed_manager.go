@@ -10,9 +10,9 @@ import (
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/address"
-	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
+	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/ingress-gce/pkg/utils"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
@@ -226,7 +226,7 @@ func (m *MixedManagerNetLB) buildWanted(backendServiceLink, name, protocol, ip s
 		ports = nil
 	}
 
-	netTier, _ := annotations.NetworkTier(m.Service)
+	netTier, _ := l4annotations.NetworkTier(m.Service)
 
 	return &composite.ForwardingRule{
 		Name:                name,

@@ -27,12 +27,12 @@ import (
 	"strconv"
 	"strings"
 
+	"k8s.io/ingress-gce/pkg/negannotation"
 	"k8s.io/klog/v2"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
-	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -117,7 +117,7 @@ func (v *negValidator) CheckResponse(host, path string, resp *http.Response, bod
 // getNegNameForServicePort returns the NEG name for the service port if it exists.
 // It returns true if neg is enabled on the service for Ingress. It returns false otherwise.
 func (v *negValidator) getNegNameForServicePort(svc *v1.Service, svcPort *v1.ServicePort) (negEnabled bool, negName string, err error) {
-	annotationSvc := annotations.FromService(svc)
+	annotationSvc := negannotation.FromService(svc)
 	negAnnotation, negAnnotationFound, err := annotationSvc.NEGAnnotation()
 	if err != nil {
 		return false, negName, fmt.Errorf("error getting NEG annotation for service %v/%v: %v", svc.Namespace, svc.Name, err)

@@ -31,6 +31,7 @@ import (
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
+	"k8s.io/ingress-gce/pkg/negannotation"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -224,7 +225,7 @@ func TestILBSA(t *testing.T) {
 
 			svcAnnotation := map[string]string{
 				annotations.BetaBackendConfigKey: `{"default":"backendconfig-1"}`,
-				annotations.NEGAnnotationKey:     negVal.String(),
+				negannotation.NEGAnnotationKey:   negVal.String(),
 			}
 
 			bcCRUD := adapter.BackendConfigCRUD{C: Framework.BackendConfigClient}
@@ -362,7 +363,7 @@ func TestRegionalXLBSA(t *testing.T) {
 
 			svcAnnotation := map[string]string{
 				annotations.BetaBackendConfigKey: `{"default":"backendconfig-1"}`,
-				annotations.NEGAnnotationKey:     negVal.String(),
+				negannotation.NEGAnnotationKey:   negVal.String(),
 			}
 
 			bcCRUD := adapter.BackendConfigCRUD{C: Framework.BackendConfigClient}
