@@ -365,6 +365,7 @@ func main() {
 		EnableL4ILBZonalAffinity:                  flags.F.EnableL4ILBZonalAffinity,
 		EnableL4NetLBForwardingRulesOptimizations: flags.F.EnableL4NetLBForwardingRulesOptimizations,
 		ReadOnlyMode:                              flags.F.ReadOnlyMode,
+		EnableL4LBConditions:                      flags.F.EnableL4LBConditions,
 	}
 	ctx, err := ingctx.NewControllerContext(kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, svcAttachmentClient, networkClient, nodeTopologyClient, eventRecorderKubeClient, cloud, namer, kubeSystemUID, ctxConfig, rootLogger)
 	if err != nil {
