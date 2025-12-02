@@ -266,7 +266,7 @@ func (subst *subster) interface_(iface *types.Interface) *types.Interface {
 	var methods []*types.Func
 	initMethods := func(n int) { // copy first n explicit methods
 		methods = make([]*types.Func, iface.NumExplicitMethods())
-		for i := 0; i < n; i++ {
+		for i := range n {
 			f := iface.ExplicitMethod(i)
 			norecv := changeRecv(f.Type().(*types.Signature), nil)
 			methods[i] = types.NewFunc(f.Pos(), f.Pkg(), f.Name(), norecv)
@@ -290,7 +290,7 @@ func (subst *subster) interface_(iface *types.Interface) *types.Interface {
 	var embeds []types.Type
 	initEmbeds := func(n int) { // copy first n embedded types
 		embeds = make([]types.Type, iface.NumEmbeddeds())
-		for i := 0; i < n; i++ {
+		for i := range n {
 			embeds[i] = iface.EmbeddedType(i)
 		}
 	}
@@ -543,7 +543,7 @@ func (subst *subster) signature(t *types.Signature) types.Type {
 	// We are choosing not to support tparams.Len() > 0 until a need has been observed in practice.
 	//
 	// There are some known usages for types.Types coming from types.{Eval,CheckExpr}.
-	// To support tparams.Len() > 0, we just need to do the following [psuedocode]:
+	// To support tparams.Len() > 0, we just need to do the following [pseudocode]:
 	//   targs := {subst.replacements[tparams[i]]]}; Instantiate(ctxt, t, targs, false)
 
 	assert(tparams.Len() == 0, "Substituting types.Signatures with generic functions are currently unsupported.")
@@ -566,77 +566,4 @@ func (subst *subster) signature(t *types.Signature) types.Type {
 		return types.NewSignatureType(recv, nil, nil, params, results, t.Variadic())
 	}
 	return t
-}
-
-// reaches returns true if a type t reaches any type t' s.t. c[t'] == true.
-// It updates c to cache results.
-//
-// reaches is currently only part of the wellFormed debug logic, and
-// in practice c is initially only type parameters. It is not currently
-// relied on in production.
-func reaches(t types.Type, c map[types.Type]bool) (res bool) {
-	if c, ok := c[t]; ok {
-		return c
-	}
-
-	// c is populated with temporary false entries as types are visited.
-	// This avoids repeat visits and break cycles.
-	c[t] = false
-	defer func() {
-		c[t] = res
-	}()
-
-	switch t := t.(type) {
-	case *types.TypeParam, *types.Basic:
-		return false
-	case *types.Array:
-		return reaches(t.Elem(), c)
-	case *types.Slice:
-		return reaches(t.Elem(), c)
-	case *types.Pointer:
-		return reaches(t.Elem(), c)
-	case *types.Tuple:
-		for i := 0; i < t.Len(); i++ {
-			if reaches(t.At(i).Type(), c) {
-				return true
-			}
-		}
-	case *types.Struct:
-		for i := 0; i < t.NumFields(); i++ {
-			if reaches(t.Field(i).Type(), c) {
-				return true
-			}
-		}
-	case *types.Map:
-		return reaches(t.Key(), c) || reaches(t.Elem(), c)
-	case *types.Chan:
-		return reaches(t.Elem(), c)
-	case *types.Signature:
-		if t.Recv() != nil && reaches(t.Recv().Type(), c) {
-			return true
-		}
-		return reaches(t.Params(), c) || reaches(t.Results(), c)
-	case *types.Union:
-		for i := 0; i < t.Len(); i++ {
-			if reaches(t.Term(i).Type(), c) {
-				return true
-			}
-		}
-	case *types.Interface:
-		for i := 0; i < t.NumEmbeddeds(); i++ {
-			if reaches(t.Embedded(i), c) {
-				return true
-			}
-		}
-		for i := 0; i < t.NumExplicitMethods(); i++ {
-			if reaches(t.ExplicitMethod(i).Type(), c) {
-				return true
-			}
-		}
-	case *types.Named, *types.Alias:
-		return reaches(t.Underlying(), c)
-	default:
-		panic("unreachable")
-	}
-	return false
 }

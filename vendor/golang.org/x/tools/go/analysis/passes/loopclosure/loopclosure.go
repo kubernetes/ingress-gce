@@ -14,7 +14,6 @@ import (
 	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/versions"
 )
@@ -88,7 +87,7 @@ func run(pass *analysis.Pass) (any, error) {
 		//
 		// TODO: consider allowing the "last" go/defer/Go statement to be followed by
 		// N "trivial" statements, possibly under a recursive definition of "trivial"
-		// so that that checker could, for example, conclude that a go statement is
+		// so that checker could, for example, conclude that a go statement is
 		// followed by an if statement made of only trivial statements and trivial expressions,
 		// and hence the go statement could still be checked.
 		forEachLastStmt(body.List, func(last ast.Stmt) {
@@ -369,5 +368,5 @@ func isMethodCall(info *types.Info, expr ast.Expr, pkgPath, typeName, method str
 	// Check that the receiver is a <pkgPath>.<typeName> or
 	// *<pkgPath>.<typeName>.
 	_, named := typesinternal.ReceiverNamed(recv)
-	return analysisinternal.IsTypeNamed(named, pkgPath, typeName)
+	return typesinternal.IsTypeNamed(named, pkgPath, typeName)
 }
