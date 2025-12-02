@@ -87,7 +87,9 @@ func TestStartNEGController_StopJoin(t *testing.T) {
 	t.Cleanup(func() { newNEGController = orig })
 
 	testCases := []struct {
-		name          string
+		name string
+		// closeProvider determines which stop channel triggers shutdown:
+		// true = close the per-ProviderConfig channel, false = close the global channel.
 		closeProvider bool
 	}{
 		{name: "provider-stop-closes-joined", closeProvider: true},

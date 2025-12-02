@@ -242,3 +242,89 @@ func TestStop_ClosesChannel_AndRemovesFinalizer(t *testing.T) {
 	mgr.StopControllersForProviderConfig(pc)
 
 }
+
+// TestStart_WithExistingFinalizer_IsIdempotent verifies that starting controllers
+// for a ProviderConfig that already has the finalizer (e.g., after controller restart)
+// succeeds and does not duplicate the finalizer.
+func TestStart_WithExistingFinalizer_IsIdempotent(t *testing.T) {
+	var calls []startCall
+	orig := startNEGController
+	startNEGController = func(_ *multiprojectinformers.InformerSet, _ kubernetes.Interface, _ kubernetes.Interface, _ svcnegclient.Interface,
+		_ networkclient.Interface, _ nodetopologyclient.Interface, _ types.UID, _ *namer.Namer, _ *namer.L4Namer,
+		_ labels.PodLabelPropagationConfig, _ *cloudgce.Cloud, _ <-chan struct{}, _ klog.Logger, pc *providerconfig.ProviderConfig, _ *syncMetrics.SyncerMetrics) (chan<- struct{}, error) {
+		calls = append(calls, startCall{pcName: pc.Name})
+		return make(chan struct{}), nil
+	}
+	t.Cleanup(func() { startNEGController = orig })
+
+	mgr, pcClient := newManagerForTest(t, svcnegfake.NewSimpleClientset())
+
+	// Create PC with finalizer already present (simulating controller restart scenario)
+	pc := makePC("pc-restart")
+	pc.Finalizers = []string{finalizer.ProviderConfigNEGCleanupFinalizer}
+	_, err := pcClient.CloudV1().ProviderConfigs().Create(context.Background(), pc, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("create pc: %v", err)
+	}
+
+	err = mgr.StartControllersForProviderConfig(pc)
+	if err != nil {
+		t.Fatalf("StartControllersForProviderConfig error: %v", err)
+	}
+
+	got, err := pcClient.CloudV1().ProviderConfigs().Get(context.Background(), pc.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get pc: %v", err)
+	}
+	// Verify finalizer exists and is not duplicated
+	finalizerCount := 0
+	for _, f := range got.Finalizers {
+		if f == finalizer.ProviderConfigNEGCleanupFinalizer {
+			finalizerCount++
+		}
+	}
+	if finalizerCount != 1 {
+		t.Fatalf("expected exactly one finalizer, got %d in %v", finalizerCount, got.Finalizers)
+	}
+
+	if len(calls) != 1 || calls[0].pcName != pc.Name {
+		t.Fatalf("unexpected start calls: %#v", calls)
+	}
+}
+
+// TestStart_FailureWithExistingFinalizer_PreservesFinalizer verifies that when
+// starting controllers fails for a PC that already had the finalizer, the
+// pre-existing finalizer is preserved (not removed by rollback logic).
+func TestStart_FailureWithExistingFinalizer_PreservesFinalizer(t *testing.T) {
+	orig := startNEGController
+	startNEGController = func(_ *multiprojectinformers.InformerSet, _ kubernetes.Interface, _ kubernetes.Interface, _ svcnegclient.Interface,
+		_ networkclient.Interface, _ nodetopologyclient.Interface, _ types.UID, _ *namer.Namer, _ *namer.L4Namer,
+		_ labels.PodLabelPropagationConfig, _ *cloudgce.Cloud, _ <-chan struct{}, _ klog.Logger, _ *providerconfig.ProviderConfig, _ *syncMetrics.SyncerMetrics) (chan<- struct{}, error) {
+		return nil, errors.New("boom")
+	}
+	t.Cleanup(func() { startNEGController = orig })
+
+	mgr, pcClient := newManagerForTest(t, svcnegfake.NewSimpleClientset())
+
+	// Create PC with finalizer already present (simulating previous controller run)
+	pc := makePC("pc-existing-finalizer")
+	pc.Finalizers = []string{finalizer.ProviderConfigNEGCleanupFinalizer}
+	_, err := pcClient.CloudV1().ProviderConfigs().Create(context.Background(), pc, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("create pc: %v", err)
+	}
+
+	err = mgr.StartControllersForProviderConfig(pc)
+	if err == nil {
+		t.Fatalf("expected error from StartControllersForProviderConfig")
+	}
+
+	got, err := pcClient.CloudV1().ProviderConfigs().Get(context.Background(), pc.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get pc: %v", err)
+	}
+	// Finalizer should still be present since it existed before our failed start attempt
+	if !slices.Contains(got.Finalizers, finalizer.ProviderConfigNEGCleanupFinalizer) {
+		t.Fatalf("expected pre-existing finalizer to be preserved on failure, got %v", got.Finalizers)
+	}
+}

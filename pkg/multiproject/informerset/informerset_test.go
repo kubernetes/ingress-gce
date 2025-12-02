@@ -170,6 +170,25 @@ func TestStart_Semantics(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Start() returned error: %v", err)
 		}
+
+		// Verify each individual informer has synced to demonstrate
+		// CombinedHasSynced waits for multiple informers.
+		if !inf.Ingress.HasSynced() {
+			t.Fatalf("Ingress informer not synced")
+		}
+		if !inf.Service.HasSynced() {
+			t.Fatalf("Service informer not synced")
+		}
+		if !inf.Pod.HasSynced() {
+			t.Fatalf("Pod informer not synced")
+		}
+		if !inf.Node.HasSynced() {
+			t.Fatalf("Node informer not synced")
+		}
+		if !inf.EndpointSlice.HasSynced() {
+			t.Fatalf("EndpointSlice informer not synced")
+		}
+
 		if ok := cache.WaitForCacheSync(stop, inf.CombinedHasSynced()); !ok {
 			t.Fatalf("timed out waiting for CombinedHasSynced to be true")
 		}
@@ -221,6 +240,15 @@ func TestFilterByProviderConfig_WrappingAndState(t *testing.T) {
 	}
 	if !filteredAfter.started {
 		t.Fatalf("expected filtered InformerSet to have started=true after base Start")
+	}
+	if filteredAfter.Ingress == nil || filteredAfter.Service == nil || filteredAfter.Pod == nil || filteredAfter.Node == nil || filteredAfter.EndpointSlice == nil {
+		t.Fatalf("expected core filtered informers to be non-nil after base Start")
+	}
+	if filteredAfter.SvcNeg == nil {
+		t.Fatalf("expected SvcNeg filtered informer to be non-nil after base Start")
+	}
+	if filteredAfter.Network != nil || filteredAfter.GkeNetworkParams != nil || filteredAfter.NodeTopology != nil {
+		t.Fatalf("expected absent optional informers to remain nil after base Start")
 	}
 }
 

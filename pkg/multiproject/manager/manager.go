@@ -116,10 +116,15 @@ func (pccm *ProviderConfigControllersManager) StartControllersForProviderConfig(
 		return nil
 	}
 
+	// Track if finalizer already exists so we only roll it back if we added it.
+	// If the PC already had a finalizer (e.g., from a previous controller run),
+	// we must not remove it on failure since NEGs from that run may still exist.
+	hadFinalizer := finalizer.HasGivenFinalizer(pc.ObjectMeta, finalizer.ProviderConfigNEGCleanupFinalizer)
+
 	// Add the cleanup finalizer up front to avoid a window where controllers
 	// may create external resources without a finalizer present. If deletion
 	// happens in that window, cleanup could be skipped. We roll this back on
-	// any subsequent startup error.
+	// any subsequent startup error only if we added it.
 	err := finalizer.EnsureProviderConfigNEGCleanupFinalizer(pc, pccm.providerConfigClient, logger)
 	if err != nil {
 		return fmt.Errorf("failed to ensure NEG cleanup finalizer for project %s: %w", pcKey, err)
@@ -128,7 +133,9 @@ func (pccm *ProviderConfigControllersManager) StartControllersForProviderConfig(
 	cloud, err := pccm.gceCreator.GCEForProviderConfig(pc, logger)
 	if err != nil {
 		// If GCE client creation fails after finalizer was added, roll it back.
-		pccm.rollbackFinalizerOnStartFailure(pc, logger, err)
+		if !hadFinalizer {
+			pccm.rollbackFinalizerOnStartFailure(pc, logger, err)
+		}
 		return fmt.Errorf("failed to create GCE client for provider config %+v: %w", pc, err)
 	}
 
@@ -151,7 +158,9 @@ func (pccm *ProviderConfigControllersManager) StartControllersForProviderConfig(
 	)
 	if err != nil {
 		// If startup fails, make a best-effort to roll back the finalizer.
-		pccm.rollbackFinalizerOnStartFailure(pc, logger, err)
+		if !hadFinalizer {
+			pccm.rollbackFinalizerOnStartFailure(pc, logger, err)
+		}
 		return fmt.Errorf("failed to start NEG controller for project %s: %w", pcKey, err)
 	}
 
