@@ -57,7 +57,7 @@ type asmArch struct {
 	// include the first integer register and first floating-point register. Accessing
 	// any of them counts as writing to result.
 	retRegs []string
-	// writeResult is a list of instructions that will change result register implicity.
+	// writeResult is a list of instructions that will change result register implicitly.
 	writeResult []string
 	// calculated during initialization
 	sizes    types.Sizes
@@ -237,7 +237,7 @@ Files:
 					// so accumulate them all and then prefer the one that
 					// matches build.Default.GOARCH.
 					var archCandidates []*asmArch
-					for _, fld := range strings.Fields(m[1]) {
+					for fld := range strings.FieldsSeq(m[1]) {
 						for _, a := range arches {
 							if a.name == fld {
 								archCandidates = append(archCandidates, a)

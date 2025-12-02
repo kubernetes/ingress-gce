@@ -7,93 +7,23 @@
 package analysisinternal
 
 import (
-	"bytes"
 	"cmp"
 	"fmt"
 	"go/ast"
-	"go/printer"
-	"go/scanner"
 	"go/token"
 	"go/types"
-	pathpkg "path"
 	"slices"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/internal/typesinternal"
 )
-
-// Deprecated: this heuristic is ill-defined.
-// TODO(adonovan): move to sole use in gopls/internal/cache.
-func TypeErrorEndPos(fset *token.FileSet, src []byte, start token.Pos) token.Pos {
-	// Get the end position for the type error.
-	file := fset.File(start)
-	if file == nil {
-		return start
-	}
-	if offset := file.PositionFor(start, false).Offset; offset > len(src) {
-		return start
-	} else {
-		src = src[offset:]
-	}
-
-	// Attempt to find a reasonable end position for the type error.
-	//
-	// TODO(rfindley): the heuristic implemented here is unclear. It looks like
-	// it seeks the end of the primary operand starting at start, but that is not
-	// quite implemented (for example, given a func literal this heuristic will
-	// return the range of the func keyword).
-	//
-	// We should formalize this heuristic, or deprecate it by finally proposing
-	// to add end position to all type checker errors.
-	//
-	// Nevertheless, ensure that the end position at least spans the current
-	// token at the cursor (this was golang/go#69505).
-	end := start
-	{
-		var s scanner.Scanner
-		fset := token.NewFileSet()
-		f := fset.AddFile("", fset.Base(), len(src))
-		s.Init(f, src, nil /* no error handler */, scanner.ScanComments)
-		pos, tok, lit := s.Scan()
-		if tok != token.SEMICOLON && token.Pos(f.Base()) <= pos && pos <= token.Pos(f.Base()+f.Size()) {
-			off := file.Offset(pos) + len(lit)
-			src = src[off:]
-			end += token.Pos(off)
-		}
-	}
-
-	// Look for bytes that might terminate the current operand. See note above:
-	// this is imprecise.
-	if width := bytes.IndexAny(src, " \n,():;[]+-*/"); width > 0 {
-		end += token.Pos(width)
-	}
-	return end
-}
-
-// WalkASTWithParent walks the AST rooted at n. The semantics are
-// similar to ast.Inspect except it does not call f(nil).
-func WalkASTWithParent(n ast.Node, f func(n ast.Node, parent ast.Node) bool) {
-	var ancestors []ast.Node
-	ast.Inspect(n, func(n ast.Node) (recurse bool) {
-		if n == nil {
-			ancestors = ancestors[:len(ancestors)-1]
-			return false
-		}
-
-		var parent ast.Node
-		if len(ancestors) > 0 {
-			parent = ancestors[len(ancestors)-1]
-		}
-		ancestors = append(ancestors, n)
-		return f(n, parent)
-	})
-}
 
 // MatchingIdents finds the names of all identifiers in 'node' that match any of the given types.
 // 'pos' represents the position at which the identifiers may be inserted. 'pos' must be within
 // the scope of each of identifier we select. Otherwise, we will insert a variable at 'pos' that
 // is unrecognized.
+//
+// TODO(adonovan): this is only used by gopls/internal/analysis/fill{returns,struct}. Move closer.
 func MatchingIdents(typs []types.Type, node ast.Node, pos token.Pos, info *types.Info, pkg *types.Package) map[types.Type][]string {
 
 	// Initialize matches to contain the variable types we are searching for.
@@ -209,170 +139,6 @@ func CheckReadable(pass *analysis.Pass, filename string) error {
 	return fmt.Errorf("Pass.ReadFile: %s is not among OtherFiles, IgnoredFiles, or names of Files", filename)
 }
 
-// AddImport checks whether this file already imports pkgpath and
-// that import is in scope at pos. If so, it returns the name under
-// which it was imported and a zero edit. Otherwise, it adds a new
-// import of pkgpath, using a name derived from the preferred name,
-// and returns the chosen name, a prefix to be concatenated with member
-// to form a qualified name, and the edit for the new import.
-//
-// In the special case that pkgpath is dot-imported then member, the
-// identifer for which the import is being added, is consulted. If
-// member is not shadowed at pos, AddImport returns (".", "", nil).
-// (AddImport accepts the caller's implicit claim that the imported
-// package declares member.)
-//
-// It does not mutate its arguments.
-func AddImport(info *types.Info, file *ast.File, preferredName, pkgpath, member string, pos token.Pos) (name, prefix string, newImport []analysis.TextEdit) {
-	// Find innermost enclosing lexical block.
-	scope := info.Scopes[file].Innermost(pos)
-	if scope == nil {
-		panic("no enclosing lexical block")
-	}
-
-	// Is there an existing import of this package?
-	// If so, are we in its scope? (not shadowed)
-	for _, spec := range file.Imports {
-		pkgname := info.PkgNameOf(spec)
-		if pkgname != nil && pkgname.Imported().Path() == pkgpath {
-			name = pkgname.Name()
-			if name == "." {
-				// The scope of ident must be the file scope.
-				if s, _ := scope.LookupParent(member, pos); s == info.Scopes[file] {
-					return name, "", nil
-				}
-			} else if _, obj := scope.LookupParent(name, pos); obj == pkgname {
-				return name, name + ".", nil
-			}
-		}
-	}
-
-	// We must add a new import.
-	// Ensure we have a fresh name.
-	newName := preferredName
-	for i := 0; ; i++ {
-		if _, obj := scope.LookupParent(newName, pos); obj == nil {
-			break // fresh
-		}
-		newName = fmt.Sprintf("%s%d", preferredName, i)
-	}
-
-	// Create a new import declaration either before the first existing
-	// declaration (which must exist), including its comments; or
-	// inside the declaration, if it is an import group.
-	//
-	// Use a renaming import whenever the preferred name is not
-	// available, or the chosen name does not match the last
-	// segment of its path.
-	newText := fmt.Sprintf("%q", pkgpath)
-	if newName != preferredName || newName != pathpkg.Base(pkgpath) {
-		newText = fmt.Sprintf("%s %q", newName, pkgpath)
-	}
-	decl0 := file.Decls[0]
-	var before ast.Node = decl0
-	switch decl0 := decl0.(type) {
-	case *ast.GenDecl:
-		if decl0.Doc != nil {
-			before = decl0.Doc
-		}
-	case *ast.FuncDecl:
-		if decl0.Doc != nil {
-			before = decl0.Doc
-		}
-	}
-	// If the first decl is an import group, add this new import at the end.
-	if gd, ok := before.(*ast.GenDecl); ok && gd.Tok == token.IMPORT && gd.Rparen.IsValid() {
-		pos = gd.Rparen
-		newText = "\t" + newText + "\n"
-	} else {
-		pos = before.Pos()
-		newText = "import " + newText + "\n\n"
-	}
-	return newName, newName + ".", []analysis.TextEdit{{
-		Pos:     pos,
-		End:     pos,
-		NewText: []byte(newText),
-	}}
-}
-
-// Format returns a string representation of the expression e.
-func Format(fset *token.FileSet, e ast.Expr) string {
-	var buf strings.Builder
-	printer.Fprint(&buf, fset, e) // ignore errors
-	return buf.String()
-}
-
-// Imports returns true if path is imported by pkg.
-func Imports(pkg *types.Package, path string) bool {
-	for _, imp := range pkg.Imports() {
-		if imp.Path() == path {
-			return true
-		}
-	}
-	return false
-}
-
-// IsTypeNamed reports whether t is (or is an alias for) a
-// package-level defined type with the given package path and one of
-// the given names. It returns false if t is nil.
-//
-// This function avoids allocating the concatenation of "pkg.Name",
-// which is important for the performance of syntax matching.
-func IsTypeNamed(t types.Type, pkgPath string, names ...string) bool {
-	if named, ok := types.Unalias(t).(*types.Named); ok {
-		tname := named.Obj()
-		return tname != nil &&
-			typesinternal.IsPackageLevel(tname) &&
-			tname.Pkg().Path() == pkgPath &&
-			slices.Contains(names, tname.Name())
-	}
-	return false
-}
-
-// IsPointerToNamed reports whether t is (or is an alias for) a pointer to a
-// package-level defined type with the given package path and one of the given
-// names. It returns false if t is not a pointer type.
-func IsPointerToNamed(t types.Type, pkgPath string, names ...string) bool {
-	r := typesinternal.Unpointer(t)
-	if r == t {
-		return false
-	}
-	return IsTypeNamed(r, pkgPath, names...)
-}
-
-// IsFunctionNamed reports whether obj is a package-level function
-// defined in the given package and has one of the given names.
-// It returns false if obj is nil.
-//
-// This function avoids allocating the concatenation of "pkg.Name",
-// which is important for the performance of syntax matching.
-func IsFunctionNamed(obj types.Object, pkgPath string, names ...string) bool {
-	f, ok := obj.(*types.Func)
-	return ok &&
-		typesinternal.IsPackageLevel(obj) &&
-		f.Pkg().Path() == pkgPath &&
-		f.Type().(*types.Signature).Recv() == nil &&
-		slices.Contains(names, f.Name())
-}
-
-// IsMethodNamed reports whether obj is a method defined on a
-// package-level type with the given package and type name, and has
-// one of the given names. It returns false if obj is nil.
-//
-// This function avoids allocating the concatenation of "pkg.TypeName.Name",
-// which is important for the performance of syntax matching.
-func IsMethodNamed(obj types.Object, pkgPath string, typeName string, names ...string) bool {
-	if fn, ok := obj.(*types.Func); ok {
-		if recv := fn.Type().(*types.Signature).Recv(); recv != nil {
-			_, T := typesinternal.ReceiverNamed(recv)
-			return T != nil &&
-				IsTypeNamed(T, pkgPath, typeName) &&
-				slices.Contains(names, fn.Name())
-		}
-	}
-	return false
-}
-
 // ValidateFixes validates the set of fixes for a single diagnostic.
 // Any error indicates a bug in the originating analyzer.
 //
@@ -421,11 +187,25 @@ func validateFix(fset *token.FileSet, fix *analysis.SuggestedFix) error {
 		if file == nil {
 			return fmt.Errorf("no token.File for TextEdit.Pos (%v)", edit.Pos)
 		}
+		fileEnd := token.Pos(file.Base() + file.Size())
 		if end := edit.End; end.IsValid() {
 			if end < start {
 				return fmt.Errorf("TextEdit.Pos (%v) > TextEdit.End (%v)", edit.Pos, edit.End)
 			}
 			endFile := fset.File(end)
+			if endFile != file && end < fileEnd+10 {
+				// Relax the checks below in the special case when the end position
+				// is only slightly beyond EOF, as happens when End is computed
+				// (as in ast.{Struct,Interface}Type) rather than based on
+				// actual token positions. In such cases, truncate end to EOF.
+				//
+				// This is a workaround for #71659; see:
+				// https://github.com/golang/go/issues/71659#issuecomment-2651606031
+				// A better fix would be more faithful recording of token
+				// positions (or their absence) in the AST.
+				edit.End = fileEnd
+				continue
+			}
 			if endFile == nil {
 				return fmt.Errorf("no token.File for TextEdit.End (%v; File(start).FileEnd is %d)", end, file.Base()+file.Size())
 			}
@@ -436,7 +216,7 @@ func validateFix(fset *token.FileSet, fix *analysis.SuggestedFix) error {
 		} else {
 			edit.End = start // update the SuggestedFix
 		}
-		if eof := token.Pos(file.Base() + file.Size()); edit.End > eof {
+		if eof := fileEnd; edit.End > eof {
 			return fmt.Errorf("end is (%v) beyond end of file (%v)", edit.End, eof)
 		}
 
@@ -460,6 +240,20 @@ func validateFix(fset *token.FileSet, fix *analysis.SuggestedFix) error {
 
 	return nil
 }
+
+// Range returns an [analysis.Range] for the specified start and end positions.
+func Range(pos, end token.Pos) analysis.Range {
+	return tokenRange{pos, end}
+}
+
+// tokenRange is an implementation of the [analysis.Range] interface.
+type tokenRange struct{ StartPos, EndPos token.Pos }
+
+func (r tokenRange) Pos() token.Pos { return r.StartPos }
+func (r tokenRange) End() token.Pos { return r.EndPos }
+
+// TODO(adonovan): the import-related functions below don't depend on
+// analysis (or even on go/types or go/ast). Move somewhere more logical.
 
 // CanImport reports whether one package is allowed to import another.
 //
@@ -486,4 +280,16 @@ func CanImport(from, to string) bool {
 		return strings.HasPrefix(from, to[:i])
 	}
 	return true
+}
+
+// IsStdPackage reports whether the specified package path belongs to a
+// package in the standard library (including internal dependencies).
+func IsStdPackage(path string) bool {
+	// A standard package has no dot in its first segment.
+	// (It may yet have a dot, e.g. "vendor/golang.org/x/foo".)
+	slash := strings.IndexByte(path, '/')
+	if slash < 0 {
+		slash = len(path)
+	}
+	return !strings.Contains(path[:slash], ".") && path != "testdata"
 }
