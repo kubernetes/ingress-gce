@@ -28,9 +28,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/ingress-gce/pkg/annotations"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/negannotation"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
@@ -244,8 +244,8 @@ func (p1 PortInfoMap) Difference(p2 PortInfoMap) PortInfoMap {
 	return result
 }
 
-func (p1 PortInfoMap) ToPortNegMap() annotations.PortNegMap {
-	ret := annotations.PortNegMap{}
+func (p1 PortInfoMap) ToPortNegMap() negannotation.PortNegMap {
+	ret := negannotation.PortNegMap{}
 	for mapKey, portInfo := range p1 {
 		ret[strconv.Itoa(int(mapKey.ServicePort))] = portInfo.NegName
 	}

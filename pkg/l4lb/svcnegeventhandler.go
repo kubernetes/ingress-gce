@@ -22,8 +22,8 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/ingress-gce/pkg/annotations"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
+	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
@@ -136,12 +136,12 @@ func getSvcOwnersOfSvcNEG(svcNEG *negv1beta1.ServiceNetworkEndpointGroup, logger
 }
 
 func isSubsettingILBService(svc *v1.Service) bool {
-	needsILB, _ := annotations.WantsL4ILB(svc)
+	needsILB, _ := l4annotations.WantsL4ILB(svc)
 	return needsILB && utils.IsSubsettingL4ILBService(svc)
 }
 
 func isRBSNetLBServiceWithNEGs(svc *v1.Service) bool {
-	needsNetLB, _ := annotations.WantsL4NetLB(svc)
+	needsNetLB, _ := l4annotations.WantsL4NetLB(svc)
 	return needsNetLB && utils.HasL4NetLBFinalizerV3(svc)
 }
 

@@ -30,6 +30,7 @@ import (
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
+	"k8s.io/ingress-gce/pkg/negannotation"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
@@ -257,8 +258,8 @@ func TestRegionalXLBLog(t *testing.T) {
 			ctx := context.Background()
 
 			backendConfigAnnotation := map[string]string{
-				annotations.BackendConfigKey: fmt.Sprintf(`{"default":"%s"}`, tc.beConfig.Name),
-				annotations.NEGAnnotationKey: negVal.String(),
+				annotations.BackendConfigKey:   fmt.Sprintf(`{"default":"%s"}`, tc.beConfig.Name),
+				negannotation.NEGAnnotationKey: negVal.String(),
 			}
 
 			bcCRUD := adapter.BackendConfigCRUD{C: Framework.BackendConfigClient}

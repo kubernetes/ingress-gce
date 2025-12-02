@@ -32,6 +32,7 @@ import (
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
+	"k8s.io/ingress-gce/pkg/negannotation"
 )
 
 func TestHealthCheck(t *testing.T) {
@@ -91,7 +92,7 @@ func TestHealthCheck(t *testing.T) {
 
 			// Update service for NEG
 			if tc.want.Port != nil {
-				svc.Annotations[annotations.NEGAnnotationKey] = `{"ingress":true}`
+				svc.Annotations[negannotation.NEGAnnotationKey] = `{"ingress":true}`
 				if _, err := Framework.Clientset.CoreV1().Services(s.Namespace).Update(ctx, svc, v1.UpdateOptions{}); err != nil {
 					t.Fatalf("error updating port on svc: %v", err)
 				}
@@ -204,8 +205,8 @@ func TestRegionalXLBHC(t *testing.T) {
 			ctx := context.Background()
 
 			backendConfigAnnotation := map[string]string{
-				annotations.BackendConfigKey: `{"default":"backendconfig-1"}`,
-				annotations.NEGAnnotationKey: negVal.String(),
+				annotations.BackendConfigKey:   `{"default":"backendconfig-1"}`,
+				negannotation.NEGAnnotationKey: negVal.String(),
 			}
 			tc.beConfig.Spec.HealthCheck = tc.want
 

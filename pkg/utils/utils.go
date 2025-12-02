@@ -39,6 +39,7 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/slice"
 	"k8s.io/klog/v2"
@@ -738,7 +739,7 @@ func TranslateAffinityType(affinityType string, logger klog.Logger) string {
 // IsLegacyL4ILBService returns true if the given LoadBalancer service is managed by service controller.
 func IsLegacyL4ILBService(svc *api_v1.Service) bool {
 	if svc.Spec.LoadBalancerClass != nil {
-		return annotations.HasLoadBalancerClass(svc, annotations.LegacyRegionalInternalLoadBalancerClass)
+		return l4annotations.HasLoadBalancerClass(svc, l4annotations.LegacyRegionalInternalLoadBalancerClass)
 	}
 	return HasLegacyL4ILBFinalizerV1(svc)
 }
@@ -751,7 +752,7 @@ func HasLegacyL4ILBFinalizerV1(svc *api_v1.Service) bool {
 // IsSubsettingL4ILBService returns true if the given LoadBalancer service is managed by NEG and L4 controller.
 func IsSubsettingL4ILBService(svc *api_v1.Service) bool {
 	if svc.Spec.LoadBalancerClass != nil {
-		return annotations.HasLoadBalancerClass(svc, annotations.RegionalInternalLoadBalancerClass)
+		return l4annotations.HasLoadBalancerClass(svc, l4annotations.RegionalInternalLoadBalancerClass)
 	}
 	return HasL4ILBFinalizerV2(svc)
 }

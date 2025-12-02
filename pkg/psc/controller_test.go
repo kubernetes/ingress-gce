@@ -35,11 +35,11 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/cloud-provider-gcp/providers/gce"
-	"k8s.io/ingress-gce/pkg/annotations"
 	sav1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/l4annotations"
 	safake "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -80,7 +80,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 	}{
 		{
 			desc:                 "valid service attachment with tcp ILB",
-			annotationKey:        annotations.TCPForwardingRuleKey,
+			annotationKey:        l4annotations.TCPForwardingRuleKey,
 			svcExists:            true,
 			fwdRuleExists:        true,
 			connectionPreference: "ACCEPT_AUTOMATIC",
@@ -90,7 +90,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 		},
 		{
 			desc:                 "valid service attachment with udp ILB",
-			annotationKey:        annotations.UDPForwardingRuleKey,
+			annotationKey:        l4annotations.UDPForwardingRuleKey,
 			svcExists:            true,
 			fwdRuleExists:        true,
 			connectionPreference: "ACCEPT_AUTOMATIC",
@@ -121,7 +121,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 		},
 		{
 			desc:                 "forwarding rule has wrong IP",
-			annotationKey:        annotations.TCPForwardingRuleKey,
+			annotationKey:        l4annotations.TCPForwardingRuleKey,
 			svcExists:            true,
 			fwdRuleExists:        true,
 			connectionPreference: "ACCEPT_AUTOMATIC",
@@ -140,7 +140,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 		},
 		{
 			desc:                 "forwarding rule does not exist",
-			annotationKey:        annotations.TCPForwardingRuleKey,
+			annotationKey:        l4annotations.TCPForwardingRuleKey,
 			svcExists:            true,
 			fwdRuleExists:        false,
 			connectionPreference: "ACCEPT_AUTOMATIC",
@@ -160,7 +160,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 		},
 		{
 			desc:                 "invalid resource reference",
-			annotationKey:        annotations.TCPForwardingRuleKey,
+			annotationKey:        l4annotations.TCPForwardingRuleKey,
 			svcExists:            false,
 			connectionPreference: "ACCEPT_AUTOMATIC",
 			resourceRef: v1.TypedLocalObjectReference{
@@ -173,7 +173,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 		},
 		{
 			desc:                 "valid resource reference with no api group",
-			annotationKey:        annotations.TCPForwardingRuleKey,
+			annotationKey:        l4annotations.TCPForwardingRuleKey,
 			svcExists:            false,
 			connectionPreference: "ACCEPT_AUTOMATIC",
 			resourceRef: v1.TypedLocalObjectReference{
@@ -185,7 +185,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 		},
 		{
 			desc:                 "valid resource reference with kind=Service",
-			annotationKey:        annotations.TCPForwardingRuleKey,
+			annotationKey:        l4annotations.TCPForwardingRuleKey,
 			svcExists:            false,
 			connectionPreference: "ACCEPT_AUTOMATIC",
 			resourceRef: v1.TypedLocalObjectReference{
@@ -197,7 +197,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 		},
 		{
 			desc:                 "proxy protocol is true",
-			annotationKey:        annotations.TCPForwardingRuleKey,
+			annotationKey:        l4annotations.TCPForwardingRuleKey,
 			svcExists:            true,
 			fwdRuleExists:        true,
 			connectionPreference: "ACCEPT_AUTOMATIC",
@@ -208,7 +208,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 		},
 		{
 			desc:                 "[ReadOnly] valid service attachment with tcp ILB",
-			annotationKey:        annotations.TCPForwardingRuleKey,
+			annotationKey:        l4annotations.TCPForwardingRuleKey,
 			svcExists:            true,
 			fwdRuleExists:        true,
 			connectionPreference: "ACCEPT_AUTOMATIC",
@@ -218,7 +218,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 		},
 		{
 			desc:                 "[ReadOnly] valid service attachment with udp ILB",
-			annotationKey:        annotations.UDPForwardingRuleKey,
+			annotationKey:        l4annotations.UDPForwardingRuleKey,
 			svcExists:            true,
 			fwdRuleExists:        true,
 			connectionPreference: "ACCEPT_AUTOMATIC",
@@ -249,7 +249,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 		},
 		{
 			desc:                 "[ReadOnly] forwarding rule has wrong IP",
-			annotationKey:        annotations.TCPForwardingRuleKey,
+			annotationKey:        l4annotations.TCPForwardingRuleKey,
 			svcExists:            true,
 			fwdRuleExists:        true,
 			connectionPreference: "ACCEPT_AUTOMATIC",
@@ -268,7 +268,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 		},
 		{
 			desc:                 "[ReadOnly] forwarding rule does not exist",
-			annotationKey:        annotations.TCPForwardingRuleKey,
+			annotationKey:        l4annotations.TCPForwardingRuleKey,
 			svcExists:            true,
 			fwdRuleExists:        false,
 			connectionPreference: "ACCEPT_AUTOMATIC",
@@ -288,7 +288,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 		},
 		{
 			desc:                 "[ReadOnly] invalid resource reference",
-			annotationKey:        annotations.TCPForwardingRuleKey,
+			annotationKey:        l4annotations.TCPForwardingRuleKey,
 			svcExists:            false,
 			connectionPreference: "ACCEPT_AUTOMATIC",
 			resourceRef: v1.TypedLocalObjectReference{
@@ -301,7 +301,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 		},
 		{
 			desc:                 "[ReadOnly] valid resource reference with no api group",
-			annotationKey:        annotations.TCPForwardingRuleKey,
+			annotationKey:        l4annotations.TCPForwardingRuleKey,
 			svcExists:            false,
 			connectionPreference: "ACCEPT_AUTOMATIC",
 			resourceRef: v1.TypedLocalObjectReference{
@@ -313,7 +313,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 		},
 		{
 			desc:                 "[ReadOnly] valid resource reference with kind=Service",
-			annotationKey:        annotations.TCPForwardingRuleKey,
+			annotationKey:        l4annotations.TCPForwardingRuleKey,
 			svcExists:            false,
 			connectionPreference: "ACCEPT_AUTOMATIC",
 			resourceRef: v1.TypedLocalObjectReference{
@@ -325,7 +325,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 		},
 		{
 			desc:                 "[ReadOnly] proxy protocol is true",
-			annotationKey:        annotations.TCPForwardingRuleKey,
+			annotationKey:        l4annotations.TCPForwardingRuleKey,
 			svcExists:            true,
 			fwdRuleExists:        true,
 			connectionPreference: "ACCEPT_AUTOMATIC",
@@ -509,7 +509,7 @@ func TestServiceAttachmentConsumers(t *testing.T) {
 		t.Fatalf("failed to initialize the controller: %v", err)
 	}
 	gceSAName := controller.saNamer.ServiceAttachment(testNamespace, saName, saUID)
-	_, frName, err := createSvc(controller, svcName, "svc-uid", frIPAddr, annotations.TCPForwardingRuleKey)
+	_, frName, err := createSvc(controller, svcName, "svc-uid", frIPAddr, l4annotations.TCPForwardingRuleKey)
 	if err != nil {
 		t.Errorf("%s", err)
 	}
@@ -639,7 +639,7 @@ func TestServiceAttachmentUpdate(t *testing.T) {
 			}
 
 			gceSAName := controller.saNamer.ServiceAttachment(testNamespace, saName, saUID)
-			_, frName, err := createSvc(controller, svcName, "svc-uid", frIPAddr, annotations.TCPForwardingRuleKey)
+			_, frName, err := createSvc(controller, svcName, "svc-uid", frIPAddr, l4annotations.TCPForwardingRuleKey)
 			if err != nil {
 				t.Errorf("%s", err)
 			}
@@ -678,7 +678,7 @@ func TestServiceAttachmentUpdate(t *testing.T) {
 			}
 
 			if saCR.Spec.ResourceRef.Name != tc.updatedSACR.Spec.ResourceRef.Name {
-				if _, frName, err = createSvc(controller, tc.updatedSACR.Spec.ResourceRef.Name, "svc-uid", frIPAddr, annotations.TCPForwardingRuleKey); err != nil {
+				if _, frName, err = createSvc(controller, tc.updatedSACR.Spec.ResourceRef.Name, "svc-uid", frIPAddr, l4annotations.TCPForwardingRuleKey); err != nil {
 					t.Fatalf("%s", err)
 				}
 				if _, err = createForwardingRule(controller.cloud, frName, frIPAddr); err != nil {
@@ -762,7 +762,7 @@ func TestServiceAttachmentPatch(t *testing.T) {
 	fakeGCE := controller.cloud.Compute().(*cloud.MockGCE)
 	mockSA := fakeGCE.ServiceAttachments().(*cloud.MockServiceAttachments)
 
-	_, frName, err := createSvc(controller, svcName, "svc-uid", frIPAddr, annotations.TCPForwardingRuleKey)
+	_, frName, err := createSvc(controller, svcName, "svc-uid", frIPAddr, l4annotations.TCPForwardingRuleKey)
 	if err != nil {
 		t.Fatalf("createSvc failed: %v", err)
 	}
@@ -1003,7 +1003,7 @@ func TestServiceAttachmentGarbageCollection(t *testing.T) {
 			saToBeDeleted := testServiceAttachmentCR("sa-to-be-deleted", svcNamePrefix+"-deleted", saUIDPrefix+"-deleted", []string{"my-subnet"}, true, false)
 			for _, sa := range []*sav1.ServiceAttachment{saToKeep, saToBeDeleted} {
 				svcName := sa.Spec.ResourceRef.Name
-				svc, frName, err := createSvc(controller, svcName, string(sa.UID), frIPAddr, annotations.TCPForwardingRuleKey)
+				svc, frName, err := createSvc(controller, svcName, string(sa.UID), frIPAddr, l4annotations.TCPForwardingRuleKey)
 				if err != nil {
 					t.Errorf("%s", err)
 				}

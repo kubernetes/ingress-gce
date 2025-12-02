@@ -22,8 +22,8 @@ import (
 	nodetopologyv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/ingress-gce/pkg/negannotation"
 )
 
 // NegSyncerType represents the neg syncer type
@@ -32,7 +32,7 @@ type NegSyncerType string
 // negServicePorts returns the SvcPortTupleSet that matches the exposed service port in the NEG annotation.
 // knownSvcTupleSet represents the known service port tuples that already exist on the service.
 // This function returns an error if any of the service port from the annotation is not in knownSvcTupleSet.
-func negServicePorts(ann *annotations.NegAnnotation, knownSvcTupleSet types.SvcPortTupleSet) (types.SvcPortTupleSet, map[types.SvcPortTuple]string, error) {
+func negServicePorts(ann *negannotation.NegAnnotation, knownSvcTupleSet types.SvcPortTupleSet) (types.SvcPortTupleSet, map[types.SvcPortTuple]string, error) {
 	svcPortTupleSet := make(types.SvcPortTupleSet)
 	customNameMap := make(map[types.SvcPortTuple]string)
 	var errList []error
@@ -40,7 +40,7 @@ func negServicePorts(ann *annotations.NegAnnotation, knownSvcTupleSet types.SvcP
 		// TODO: also validate ServicePorts in the exposed NEG annotation via webhook
 		tuple, ok := knownSvcTupleSet.Get(port)
 		if !ok {
-			errList = append(errList, fmt.Errorf("port %v specified in %q doesn't exist in the service", port, annotations.NEGAnnotationKey))
+			errList = append(errList, fmt.Errorf("port %v specified in %q doesn't exist in the service", port, negannotation.NEGAnnotationKey))
 		} else {
 			if attr.Name != "" {
 				customNameMap[tuple] = attr.Name

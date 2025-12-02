@@ -22,11 +22,11 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"k8s.io/ingress-gce/pkg/l4annotations"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 )
 
@@ -52,7 +52,7 @@ func TestGetL4LoggingConfig(t *testing.T) {
 			service: &v1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace:   "ns",
-					Annotations: map[string]string{annotations.L4LoggingConfigMapKey: "invalid"},
+					Annotations: map[string]string{l4annotations.L4LoggingConfigMapKey: "invalid"},
 				},
 			},
 			configMapGetter: func(obj interface{}) (item interface{}, exists bool, err error) { return nil, false, nil },
@@ -64,7 +64,7 @@ func TestGetL4LoggingConfig(t *testing.T) {
 			service: &v1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace:   "ns",
-					Annotations: map[string]string{annotations.L4LoggingConfigMapKey: "invalid"},
+					Annotations: map[string]string{l4annotations.L4LoggingConfigMapKey: "invalid"},
 				},
 			},
 			configMapGetter: func(obj interface{}) (item interface{}, exists bool, err error) {
@@ -78,7 +78,7 @@ func TestGetL4LoggingConfig(t *testing.T) {
 			service: &v1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace:   "ns",
-					Annotations: map[string]string{annotations.L4LoggingConfigMapKey: "config-map-name"},
+					Annotations: map[string]string{l4annotations.L4LoggingConfigMapKey: "config-map-name"},
 				},
 			},
 			configMapGetter: func(obj interface{}) (item interface{}, exists bool, err error) {
@@ -104,7 +104,7 @@ func TestGetL4LoggingConfig(t *testing.T) {
 			service: &v1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace:   "ns",
-					Annotations: map[string]string{annotations.L4LoggingConfigMapKey: "config-map-name"},
+					Annotations: map[string]string{l4annotations.L4LoggingConfigMapKey: "config-map-name"},
 				},
 			},
 			configMapGetter: func(obj interface{}) (item interface{}, exists bool, err error) {
