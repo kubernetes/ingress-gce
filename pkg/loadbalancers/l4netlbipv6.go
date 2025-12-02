@@ -140,6 +140,16 @@ func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipRange string, nodeNames []stri
 		return
 	}
 
+	// if we don't use deny flag, make sure that a leftover deny rule is cleaned up
+	if !l4netlb.useDenyFirewalls {
+		if err := cleanUpDenyFirewallRule(l4netlb.cloud, l4netlb.namer.L4IPv6FirewallDeny(l4netlb.Service.Namespace, l4netlb.Service.Name), fwLogger); err != nil {
+			syncResult.GCEResourceInError = annotations.FirewallDenyRuleResource
+			syncResult.Error = err
+			return
+		}
+		return
+	}
+
 	ipv6nodesFWRParams := firewalls.FirewallParams{
 		Allowed: []*compute.FirewallAllowed{
 			{
@@ -166,20 +176,12 @@ func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipRange string, nodeNames []stri
 	}
 	syncResult.Annotations[annotations.FirewallRuleIPv6Key] = firewallName
 
-	l4netlb.ensureDenyIPv6(syncResult, nodeNames, ipRange, fwLogger)
+	if l4netlb.useDenyFirewalls {
+		l4netlb.ensureDenyIPv6(syncResult, nodeNames, ipRange, fwLogger)
+	}
 }
 
 func (l4netlb *L4NetLB) ensureDenyIPv6(syncResult *L4NetLBSyncResult, nodeNames []string, ipRange string, fwLogger klog.Logger) {
-	// if we don't use deny flag, make sure that a leftover deny rule is cleaned up
-	if !l4netlb.useDenyFirewalls {
-		if err := cleanUpDenyFirewallRule(l4netlb.cloud, l4netlb.namer.L4IPv6FirewallDeny(l4netlb.Service.Namespace, l4netlb.Service.Name), fwLogger); err != nil {
-			syncResult.GCEResourceInError = annotations.FirewallDenyRuleResource
-			syncResult.Error = err
-			return
-		}
-		return
-	}
-	// otherwise provision Deny rule
 	denyParams := denyFirewall(l4netlb.namer.L4IPv6FirewallDeny, l4netlb.Service, nodeNames, l4netlb.networkInfo, ipRange)
 	wasUpdate, err := firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, denyParams, l4netlb.cloud, l4netlb.recorder, fwLogger)
 	syncResult.GCEResourceUpdate.SetFirewallForNodes(wasUpdate)
@@ -226,7 +228,7 @@ func (l4netlb *L4NetLB) deleteIPv6NodesFirewall(syncResult *L4NetLBSyncResult) {
 		syncResult.Error = err
 	}
 
-	if err := l4netlb.deleteFirewall(denyName, fwLogger); err != nil {
+	if err := cleanUpDenyFirewallRule(l4netlb.cloud, l4netlb.namer.L4IPv6FirewallDeny(l4netlb.Service.Namespace, l4netlb.Service.Name), fwLogger); err != nil {
 		fwLogger.Error(err, "Failed to delete ipv6 deny firewall rule for external loadbalancer service")
 		syncResult.GCEResourceInError = annotations.FirewallDenyRuleIPv6Resource
 		syncResult.Error = err

@@ -529,6 +529,16 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 		return
 	}
 
+	// if we don't use deny flag, make sure that a leftover deny rule is cleaned up
+	if !l4netlb.useDenyFirewalls {
+		if err := cleanUpDenyFirewallRule(l4netlb.cloud, l4netlb.namer.L4FirewallDeny(l4netlb.Service.Namespace, l4netlb.Service.Name), fwLogger); err != nil {
+			result.GCEResourceInError = annotations.FirewallDenyRuleResource
+			result.Error = err
+			return
+		}
+		return
+	}
+
 	// Add firewall rule for L4 External LoadBalancer traffic to nodes
 	nodesFWRParams := firewalls.FirewallParams{
 		Allowed:           allowed,
@@ -550,21 +560,14 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 	}
 	result.Annotations[annotations.FirewallRuleKey] = firewallName
 
-	l4netlb.ensureDeny(result, nodeNames, ipAddress, fwLogger)
+	if l4netlb.useDenyFirewalls {
+		l4netlb.ensureDeny(result, nodeNames, ipAddress, fwLogger)
+	}
 }
 
 func (l4netlb *L4NetLB) ensureDeny(result *L4NetLBSyncResult, nodeNames []string, ipAddress string, fwLogger klog.Logger) {
-	// if we don't use deny flag, make sure that a leftover deny rule is cleaned up
-	if !l4netlb.useDenyFirewalls {
-		if err := cleanUpDenyFirewallRule(l4netlb.cloud, l4netlb.namer.L4FirewallDeny(l4netlb.Service.Namespace, l4netlb.Service.Name), fwLogger); err != nil {
-			result.GCEResourceInError = annotations.FirewallDenyRuleResource
-			result.Error = err
-			return
-		}
-		return
-	}
-	// otherwise provision Deny rule
 	denyParams := denyFirewall(l4netlb.namer.L4FirewallDeny, l4netlb.Service, nodeNames, l4netlb.networkInfo, ipAddress)
+	fwLogger.V(2).Info("Ensuring deny firewall for L4 NetLB Service", "ipAddress", ipAddress, "denyParams", fmt.Sprintf("%+v", denyParams))
 	denyForNodesUpdateStatus, err := firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, denyParams, l4netlb.cloud, l4netlb.recorder, fwLogger)
 	result.GCEResourceUpdate.SetFirewallForNodes(denyForNodesUpdateStatus)
 	if err != nil {
@@ -572,6 +575,7 @@ func (l4netlb *L4NetLB) ensureDeny(result *L4NetLBSyncResult, nodeNames []string
 		result.Error = err
 		return
 	}
+	fwLogger.V(2).Info("Ensuring deny firewall for L4 NetLB Service", "ipAddress", ipAddress, "denyParams", fmt.Sprintf("%+v", denyParams))
 	result.Annotations[annotations.FirewallRuleDenyKey] = denyParams.Name
 }
 
@@ -589,6 +593,8 @@ func denyFirewall(namer func(namespace, name string) string, svc *corev1.Service
 	}
 }
 
+// cleanUpDenyFirewallRule will attempt the deletion only after checking that it exists with GET call.
+// This is done to avoid polluting Audit Logs with 404 errors (even though the 404 might be expected).
 func cleanUpDenyFirewallRule(cloud *gce.Cloud, fwName string, logger klog.Logger) error {
 	log := logger.WithName("cleanUpDenyFirewallRule")
 
@@ -602,6 +608,7 @@ func cleanUpDenyFirewallRule(cloud *gce.Cloud, fwName string, logger klog.Logger
 		return err
 	}
 
+	log.V(3).Info("deny firewall exists, deleting it", "firewallName", fwName)
 	return firewalls.EnsureL4FirewallRuleDeleted(cloud, fwName, log)
 }
 
