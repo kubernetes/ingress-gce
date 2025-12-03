@@ -147,7 +147,6 @@ func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipRange string, nodeNames []stri
 			syncResult.Error = err
 			return
 		}
-		return
 	}
 
 	ipv6nodesFWRParams := firewalls.FirewallParams{

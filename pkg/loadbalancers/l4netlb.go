@@ -536,7 +536,6 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 			result.Error = err
 			return
 		}
-		return
 	}
 
 	// Add firewall rule for L4 External LoadBalancer traffic to nodes
