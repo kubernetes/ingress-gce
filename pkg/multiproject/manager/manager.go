@@ -116,27 +116,22 @@ func (pccm *ProviderConfigControllersManager) StartControllersForProviderConfig(
 		return nil
 	}
 
+	cloud, err := pccm.gceCreator.GCEForProviderConfig(pc, logger)
+	if err != nil {
+		return fmt.Errorf("failed to create GCE client for provider config %+v: %w", pc, err)
+	}
+
 	// Track if finalizer already exists so we only roll it back if we added it.
 	// If the PC already had a finalizer (e.g., from a previous controller run),
 	// we must not remove it on failure since NEGs from that run may still exist.
 	hadFinalizer := finalizer.HasGivenFinalizer(pc.ObjectMeta, finalizer.ProviderConfigNEGCleanupFinalizer)
 
-	// Add the cleanup finalizer up front to avoid a window where controllers
-	// may create external resources without a finalizer present. If deletion
-	// happens in that window, cleanup could be skipped. We roll this back on
-	// any subsequent startup error only if we added it.
-	err := finalizer.EnsureProviderConfigNEGCleanupFinalizer(pc, pccm.providerConfigClient, logger)
+	// Add the cleanup finalizer right before starting the controller to minimize
+	// the window where external resources could be created without a finalizer.
+	// We roll this back on subsequent startup error only if we added it.
+	err = finalizer.EnsureProviderConfigNEGCleanupFinalizer(pc, pccm.providerConfigClient, logger)
 	if err != nil {
 		return fmt.Errorf("failed to ensure NEG cleanup finalizer for project %s: %w", pcKey, err)
-	}
-
-	cloud, err := pccm.gceCreator.GCEForProviderConfig(pc, logger)
-	if err != nil {
-		// If GCE client creation fails after finalizer was added, roll it back.
-		if !hadFinalizer {
-			pccm.rollbackFinalizerOnStartFailure(pc, logger, err)
-		}
-		return fmt.Errorf("failed to create GCE client for provider config %+v: %w", pc, err)
 	}
 
 	negControllerStopCh, err := startNEGController(
@@ -173,7 +168,9 @@ func (pccm *ProviderConfigControllersManager) StartControllersForProviderConfig(
 	return nil
 }
 
-func (pccm *ProviderConfigControllersManager) StopControllersForProviderConfig(pc *providerconfig.ProviderConfig) {
+// StopControllersForProviderConfig stops controllers for the given ProviderConfig and removes the cleanup finalizer.
+// Returns an error to allow callers to requeue when cleanup fails.
+func (pccm *ProviderConfigControllersManager) StopControllersForProviderConfig(pc *providerconfig.ProviderConfig) error {
 	logger := pccm.logger.WithValues("providerConfigId", pc.Name)
 
 	csKey := providerConfigKey(pc)
@@ -182,39 +179,34 @@ func (pccm *ProviderConfigControllersManager) StopControllersForProviderConfig(p
 	cs, exists := pccm.controllers.Delete(csKey)
 	if !exists {
 		logger.Info("Controllers for provider config do not exist")
-		return
+		return nil
 	}
 
 	// Perform cleanup operations without holding the lock
 	close(cs.stopCh)
 
-	// Ensure we remove the finalizer from the latest object state.
-	pcLatest := pccm.latestPCWithCleanupFinalizer(pc)
-	err := finalizer.DeleteProviderConfigNEGCleanupFinalizer(pcLatest, pccm.providerConfigClient, logger)
+	// Fetch the latest ProviderConfig to ensure we have current finalizer state.
+	pcLatest, err := pccm.providerConfigClient.CloudV1().ProviderConfigs().Get(context.Background(), pc.Name, metav1.GetOptions{})
 	if err != nil {
-		logger.Error(err, "failed to delete NEG cleanup finalizer for project")
+		return fmt.Errorf("failed to get latest ProviderConfig for finalizer removal: %w", err)
+	}
+	err = finalizer.DeleteProviderConfigNEGCleanupFinalizer(pcLatest, pccm.providerConfigClient, logger)
+	if err != nil {
+		return fmt.Errorf("failed to delete NEG cleanup finalizer for project: %w", err)
 	}
 	logger.Info("Stopped controllers for provider config")
+	return nil
 }
 
 // rollbackFinalizerOnStartFailure removes the NEG cleanup finalizer after a
 // start failure so that ProviderConfig deletion is not blocked.
 func (pccm *ProviderConfigControllersManager) rollbackFinalizerOnStartFailure(pc *providerconfig.ProviderConfig, logger klog.Logger, cause error) {
-	pcLatest := pccm.latestPCWithCleanupFinalizer(pc)
+	pcLatest, err := pccm.providerConfigClient.CloudV1().ProviderConfigs().Get(context.Background(), pc.Name, metav1.GetOptions{})
+	if err != nil {
+		logger.Error(err, "failed to get latest ProviderConfig for finalizer rollback", "originalError", cause)
+		return
+	}
 	if err := finalizer.DeleteProviderConfigNEGCleanupFinalizer(pcLatest, pccm.providerConfigClient, logger); err != nil {
 		logger.Error(err, "failed to clean up NEG finalizer after start failure", "originalError", cause)
 	}
-}
-
-// latestPCWithCleanupFinalizer returns the latest ProviderConfig from the API server.
-// If the Get fails, it returns a local copy of the provided pc with the cleanup
-// finalizer appended to ensure a subsequent delete attempt is not a no-op.
-func (pccm *ProviderConfigControllersManager) latestPCWithCleanupFinalizer(pc *providerconfig.ProviderConfig) *providerconfig.ProviderConfig {
-	pcLatest, err := pccm.providerConfigClient.CloudV1().ProviderConfigs().Get(context.Background(), pc.Name, metav1.GetOptions{})
-	if err != nil {
-		pcCopy := pc.DeepCopy()
-		pcCopy.Finalizers = append(pcCopy.Finalizers, finalizer.ProviderConfigNEGCleanupFinalizer)
-		return pcCopy
-	}
-	return pcLatest
 }

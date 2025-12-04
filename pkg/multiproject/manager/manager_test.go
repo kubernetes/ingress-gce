@@ -167,10 +167,10 @@ func TestStart_FailureCleansFinalizer(t *testing.T) {
 
 }
 
-// TestStart_GCEClientError_CleansFinalizer verifies that if the GCE client
-// creation fails after adding the finalizer, the finalizer is rolled back so
-// deletion is not blocked unnecessarily.
-func TestStart_GCEClientError_CleansFinalizer(t *testing.T) {
+// TestStart_GCEClientError_NoFinalizer verifies that if GCE client creation
+// fails, no finalizer is added since we create the GCE client before adding
+// the finalizer.
+func TestStart_GCEClientError_NoFinalizer(t *testing.T) {
 	mgr, pcClient := newManagerForTest(t, svcnegfake.NewSimpleClientset())
 	pc := createProviderConfig(t, pcClient, "pc-gce-err")
 
@@ -187,7 +187,7 @@ func TestStart_GCEClientError_CleansFinalizer(t *testing.T) {
 		t.Fatalf("get pc: %v", err)
 	}
 	if slices.Contains(got.Finalizers, finalizer.ProviderConfigNEGCleanupFinalizer) {
-		t.Fatalf("expected finalizer removed on GCE client failure, got %v", got.Finalizers)
+		t.Fatalf("expected no finalizer when GCE client fails (added after GCE client creation), got %v", got.Finalizers)
 	}
 }
 
@@ -220,7 +220,10 @@ func TestStop_ClosesChannel_AndRemovesFinalizer(t *testing.T) {
 		t.Fatalf("expected finalizer before stop")
 	}
 
-	mgr.StopControllersForProviderConfig(pc)
+	err = mgr.StopControllersForProviderConfig(pc)
+	if err != nil {
+		t.Fatalf("stop: %v", err)
+	}
 
 	// Channel should be closed (non-blocking read succeeds)
 	select {
@@ -239,7 +242,10 @@ func TestStop_ClosesChannel_AndRemovesFinalizer(t *testing.T) {
 	}
 
 	// Second stop should not panic
-	mgr.StopControllersForProviderConfig(pc)
+	err = mgr.StopControllersForProviderConfig(pc)
+	if err != nil {
+		t.Fatalf("second stop: %v", err)
+	}
 
 }
 

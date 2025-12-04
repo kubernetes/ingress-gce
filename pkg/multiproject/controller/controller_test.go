@@ -52,13 +52,14 @@ func (f *fakeProviderConfigControllersManager) StartControllersForProviderConfig
 	return nil
 }
 
-func (f *fakeProviderConfigControllersManager) StopControllersForProviderConfig(pc *providerconfig.ProviderConfig) {
+func (f *fakeProviderConfigControllersManager) StopControllersForProviderConfig(pc *providerconfig.ProviderConfig) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.stopErr != nil {
-		klog.Errorf("fake error stopping controllers: %v", f.stopErr)
+		return f.stopErr
 	}
 	f.stoppedConfigs[pc.Name] = pc
+	return nil
 }
 
 func (f *fakeProviderConfigControllersManager) HasStarted(name string) bool {
