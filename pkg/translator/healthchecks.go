@@ -143,6 +143,23 @@ func NewHealthCheck(hc *computealpha.HealthCheck) (*HealthCheck, error) {
 			return nil, fmt.Errorf(newHealthCheckErrorMessageTemplate, annotations.ProtocolHTTP2, hc.Name)
 		}
 		v.HTTPHealthCheck = computealpha.HTTPHealthCheck(*hc.Http2HealthCheck)
+	case annotations.ProtocolGRPC:
+		if hc.GrpcHealthCheck == nil {
+			return nil, fmt.Errorf(newHealthCheckErrorMessageTemplate, annotations.ProtocolGRPC, hc.Name)
+		}
+		// Store common fields at outer level for merging later
+		v.HTTPHealthCheck = computealpha.HTTPHealthCheck{
+			Port:              hc.GrpcHealthCheck.Port,
+			PortSpecification: hc.GrpcHealthCheck.PortSpecification,
+		}
+	case annotations.ProtocolGRPCWithTLS:
+		if hc.GrpcTlsHealthCheck == nil {
+			return nil, fmt.Errorf(newHealthCheckErrorMessageTemplate, annotations.ProtocolGRPCWithTLS, hc.Name)
+		}
+		v.HTTPHealthCheck = computealpha.HTTPHealthCheck{
+			Port:              hc.GrpcTlsHealthCheck.Port,
+			PortSpecification: hc.GrpcTlsHealthCheck.PortSpecification,
+		}
 	}
 
 	// Users should be modifying HTTP(S) specific settings on the embedded
@@ -196,6 +213,8 @@ func (hc *HealthCheck) merge() error {
 	hc.HealthCheck.Http2HealthCheck = nil
 	hc.HealthCheck.HttpsHealthCheck = nil
 	hc.HealthCheck.HttpHealthCheck = nil
+	hc.HealthCheck.GrpcHealthCheck = nil
+	hc.HealthCheck.GrpcTlsHealthCheck = nil
 
 	switch hc.Protocol() {
 	case annotations.ProtocolHTTP:
@@ -207,9 +226,21 @@ func (hc *HealthCheck) merge() error {
 	case annotations.ProtocolHTTP2:
 		http2 := computealpha.HTTP2HealthCheck(hc.HTTPHealthCheck)
 		hc.HealthCheck.Http2HealthCheck = &http2
+	case annotations.ProtocolGRPC:
+		grpc := computealpha.GRPCHealthCheck{
+			Port:              hc.HTTPHealthCheck.Port,
+			PortSpecification: hc.HTTPHealthCheck.PortSpecification,
+		}
+		hc.HealthCheck.GrpcHealthCheck = &grpc
+	case annotations.ProtocolGRPCWithTLS:
+		grpcTLS := computealpha.GRPCTLSHealthCheck{
+			Port:              hc.HTTPHealthCheck.Port,
+			PortSpecification: hc.HTTPHealthCheck.PortSpecification,
+		}
+		hc.HealthCheck.GrpcTlsHealthCheck = &grpcTLS
 	default:
-		return fmt.Errorf("Protocol %q is not valid, must be one of [%q,%q,%q]",
-			hc.Protocol(), annotations.ProtocolHTTP, annotations.ProtocolHTTPS, annotations.ProtocolHTTP2,
+		return fmt.Errorf("Protocol %q is not valid, must be one of [%q,%q,%q,%q,%q]",
+			hc.Protocol(), annotations.ProtocolHTTP, annotations.ProtocolHTTPS, annotations.ProtocolHTTP2, annotations.ProtocolGRPC, annotations.ProtocolGRPCWithTLS,
 		)
 	}
 	return nil
@@ -221,9 +252,15 @@ func (hc *HealthCheck) Version() meta.Version {
 	if hc.ForILB {
 		return features.L7ILBVersions().HealthCheck
 	}
+	// GRPC_WITH_TLS requires Alpha API.
+	if hc.Protocol() == annotations.ProtocolGRPCWithTLS {
+		return meta.VersionAlpha
+	}
+	// Use Beta for HTTP2 or NEG as before.
 	if hc.Protocol() == annotations.ProtocolHTTP2 || hc.ForNEG {
 		return meta.VersionBeta
 	}
+	// GRPC is available in GA; fall back to GA otherwise.
 	return meta.VersionGA
 }
 
