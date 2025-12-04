@@ -1,20 +1,34 @@
 package denytest
 
 import (
+	"context"
 	"testing"
 
 	v1 "k8s.io/api/core/v1"
-	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
+	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
 	"google.golang.org/api/compute/v1"
+)
+
+const (
+	denyFirewallDisabled = false
+	denyFirewallEnabled  = true
+	nodeName             = "kluster-nodepool-node-123"
+	denyIPv4Name         = ""
+	denyIPv6Name         = denyIPv4Name + "-ipv6"
 )
 
 func TestDenyFirewall(t *testing.T) {
@@ -68,15 +82,12 @@ func TestDenyRollforward(t *testing.T) {
 	// Arrange
 	// Provision a LB without deny rules
 	// We use dual stack as it's testing both IP stacks at the same time
-	const (
-		denyFirewallDisabled = false
-		denyFirewallEnabled  = true
-		nodeName             = "kluster-nodepool-node-123"
-		denyIPv4Name         = ""
-		denyIPv6Name         = denyIPv4Name + "-ipv6"
-	)
+	ctx := t.Context()
 	svc := helperService()
-	cloud := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	cloud, err := helperCloud(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
 	log := klog.TODO()
 	l4netlbDenyDisabled := helperL4NetLB(cloud, log, svc, denyFirewallDisabled)
 
@@ -88,17 +99,20 @@ func TestDenyRollforward(t *testing.T) {
 	// Assert
 	// With flag disabled there should not be any deny rules
 	for annotation, name := range map[string]string{
-		annotations.FirewallRuleKey:     denyIPv4Name,
-		annotations.FirewallRuleIPv6Key: denyIPv6Name,
+		annotations.FirewallRuleDenyKey:     denyIPv4Name,
+		annotations.FirewallRuleDenyIPv6Key: denyIPv6Name,
 	} {
 		if _, ok := res.Annotations[annotation]; ok {
-			t.Fatalf("want no deny firewall, but found %s", name)
+			t.Fatalf("want no deny firewall annotations, but got %+v", res.Annotations)
 		}
 		// we don't want to rely on annotation to check for resource
 		if _, err := cloud.GetFirewall(name); err == nil || !utils.IsNotFoundError(err) {
-			t.Fatalf("want no deny firewall, but found %s, or error %v", name, err)
+			t.Fatalf("want no deny firewall resource, but found %s, or error %v", name, err)
 		}
 	}
+
+	// Check that the default firewall is at priority 1000
+
 }
 
 // TestDenyRollback verifies that the firewalls are cleaned up and modified in the correct order.
@@ -113,8 +127,9 @@ func helperL4NetLB(cloud *gce.Cloud, log klog.Logger, svc *v1.Service, denyFirew
 		UseDenyFirewalls: denyFirewall,
 		// other parameters
 		Cloud:               cloud,
-		Namer:               namer.NewL4Namer("ks123", namer.NewNamer("kluster", "firewall", log)),
+		Namer:               namer.NewL4Namer("ks123", namer.NewNamer("", "", log)),
 		Recorder:            record.NewFakeRecorder(100),
+		NetworkResolver:     network.NewFakeResolver(network.DefaultNetwork(cloud)),
 		DualStackEnabled:    true,
 		EnableMixedProtocol: true,
 	}, log)
@@ -122,7 +137,7 @@ func helperL4NetLB(cloud *gce.Cloud, log klog.Logger, svc *v1.Service, denyFirew
 
 func helperService() *v1.Service {
 	return &v1.Service{
-		ObjectMeta: meta.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      "external-lb",
 			Namespace: "default",
 		},
@@ -137,4 +152,33 @@ func helperService() *v1.Service {
 			IPFamilyPolicy: ptr.To(v1.IPFamilyPolicyRequireDualStack),
 		},
 	}
+}
+
+func helperCloud(ctx context.Context) (*gce.Cloud, error) {
+	vals := gce.DefaultTestClusterValues()
+	gce := gce.NewFakeGCECloud(vals)
+
+	mockGCE := gce.Compute().(*cloud.MockGCE)
+	// By default Patches/Updates are no ops
+	mockGCE.MockRegionBackendServices.UpdateHook = mock.UpdateRegionBackendServiceHook
+	mockGCE.MockRegionBackendServices.PatchHook = mock.UpdateRegionBackendServiceHook
+	mockGCE.MockFirewalls.UpdateHook = mock.UpdateFirewallHook
+	mockGCE.MockFirewalls.PatchHook = mock.UpdateFirewallHook
+
+	if err := gce.InsertInstance(vals.ProjectID, vals.ZoneName, &compute.Instance{
+		Name: nodeName,
+		Tags: &compute.Tags{Items: []string{nodeName}},
+	}); err != nil {
+		return nil, err
+	}
+
+	dualStackSubnetwork := &compute.Subnetwork{
+		StackType:      "IPV4_IPV6",
+		Ipv6AccessType: "EXTERNAL",
+	}
+	if err := gce.Compute().Subnetworks().Insert(ctx, meta.RegionalKey("", vals.Region), dualStackSubnetwork); err != nil {
+		return nil, err
+	}
+
+	return gce, nil
 }
