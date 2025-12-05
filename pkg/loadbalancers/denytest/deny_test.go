@@ -31,6 +31,8 @@ const (
 	denyFirewallDisabled = false
 	denyFirewallEnabled  = true
 	nodeName             = "kluster-nodepool-node-123"
+	allowIPv4Name        = ""
+	allowIPv6Name        = allowIPv4Name + "-ipv6"
 	denyIPv4Name         = ""
 	denyIPv6Name         = denyIPv4Name + "-ipv6"
 	ipv4                 = "1.2.3.4"
@@ -118,8 +120,58 @@ func TestDenyRollforwardDoesNotBlockTraffi(t *testing.T) {
 		}
 	}
 
-	// Check that the default firewall is at priority 1000
+	// Check that the default firewalls are at priority 1000
+	for _, key := range []string{annotations.FirewallRuleIPv6Key, annotations.FirewallRuleKey} {
+		name, ok := res.Annotations[key]
+		if !ok {
+			t.Fatalf("want allow firewall annotation, but got %+v", res.Annotations)
+		}
+		fw, err := cloud.GetFirewall(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if fw.Priority != 1000 {
+			t.Fatalf("want allow priority 1000 before fix, but got %d", fw.Priority)
+		}
+	}
 
+	// Act
+	l4netlbDenyEnabled := helperL4NetLB(cloud, log, svc, denyFirewallEnabled)
+	res = l4netlbDenyEnabled.EnsureFrontend([]string{nodeName}, svc)
+	if res.Error != nil {
+		t.Fatal(res.Error)
+	}
+
+	// Assert
+	// Deny rules are created at priority 1000
+	for _, key := range []string{annotations.FirewallRuleDenyKey, annotations.FirewallRuleDenyIPv6Key} {
+		name, ok := res.Annotations[key]
+		if !ok {
+			t.Fatalf("want deny firewall annotation, but got %+v", res.Annotations)
+		}
+		fw, err := cloud.GetFirewall(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if fw.Priority != 1000 {
+			t.Fatalf("want deny priority 1000 after fix, but got %d", fw.Priority)
+		}
+	}
+
+	// Allow rules were moved to priority 999
+	for _, key := range []string{annotations.FirewallRuleIPv6Key, annotations.FirewallRuleKey} {
+		name, ok := res.Annotations[key]
+		if !ok {
+			t.Fatalf("want allow firewall annotation, but got %+v", res.Annotations)
+		}
+		fw, err := cloud.GetFirewall(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if fw.Priority != 999 {
+			t.Fatalf("want allow priority 999 after fix, but got %d", fw.Priority)
+		}
+	}
 }
 
 // TestDenyRollback verifies that the firewalls are cleaned up and modified in the correct order.
@@ -302,4 +354,185 @@ func areBlocked(fw1, fw2 *compute.Firewall) bool {
 
 	// deny takes precedence over allow if they have the same priority
 	return fw1.Priority <= fw2.Priority
+}
+
+func TestFirewallTrackerDetectingBlocking(t *testing.T) {
+	allowed := []*compute.FirewallAllowed{{IPProtocol: "TCP", Ports: []string{"1", "2", "3"}}}
+	denied := []*compute.FirewallDenied{{IPProtocol: "ALL"}}
+
+	testCases := []struct {
+		desc    string
+		ops     func() error
+		wantErr bool
+	}{
+		{
+			desc: "allow_modified_to_999",
+			ops: func() error {
+				tracker := &firewallTracker{}
+				if err := tracker.patch(&compute.Firewall{
+					Name:              "a",
+					Allowed:           allowed,
+					DestinationRanges: []string{ipv4},
+					Priority:          1000,
+				}); err != nil {
+					return err
+				}
+				if err := tracker.patch(&compute.Firewall{
+					Name:              "a",
+					Allowed:           allowed,
+					DestinationRanges: []string{ipv4},
+					Priority:          999,
+				}); err != nil {
+					return err
+				}
+				if err := tracker.patch(&compute.Firewall{
+					Name:              "b",
+					Denied:            denied,
+					DestinationRanges: []string{ipv4},
+					Priority:          1000,
+				}); err != nil {
+					return err
+				}
+				return nil
+			},
+			wantErr: false,
+		},
+		{
+			desc: "allow_patched_with_the_same_priority_as_deny",
+			ops: func() error {
+				tracker := &firewallTracker{}
+				if err := tracker.patch(&compute.Firewall{
+					Name:              "a",
+					Allowed:           allowed,
+					DestinationRanges: []string{ipv4},
+					Priority:          999,
+				}); err != nil {
+					return err
+				}
+				if err := tracker.patch(&compute.Firewall{
+					Name:              "a",
+					Allowed:           allowed,
+					DestinationRanges: []string{ipv4},
+					Priority:          1000,
+				}); err != nil {
+					return err
+				}
+				if err := tracker.patch(&compute.Firewall{
+					Name:              "b",
+					Denied:            denied,
+					DestinationRanges: []string{ipv4},
+					Priority:          1000,
+				}); err != nil {
+					return err
+				}
+				return nil
+			},
+			wantErr: true,
+		},
+		{
+			desc: "deny_first_followed_by_allow",
+			ops: func() error {
+				tracker := &firewallTracker{}
+				if err := tracker.patch(&compute.Firewall{
+					Name:              "b",
+					Denied:            denied,
+					DestinationRanges: []string{ipv4},
+					Priority:          1000,
+				}); err != nil {
+					return err
+				}
+				if err := tracker.patch(&compute.Firewall{
+					Name:              "a",
+					Allowed:           allowed,
+					DestinationRanges: []string{ipv4},
+					Priority:          1000,
+				}); err != nil {
+					return err
+				}
+				return nil
+			},
+			wantErr: true,
+		},
+		{
+			desc: "ipv6_range_denied",
+			ops: func() error {
+				tracker := &firewallTracker{}
+				if err := tracker.patch(&compute.Firewall{
+					Name:              "b",
+					Denied:            denied,
+					DestinationRanges: []string{ipv6Range},
+					Priority:          1000,
+				}); err != nil {
+					return err
+				}
+				if err := tracker.patch(&compute.Firewall{
+					Name:              "a",
+					Allowed:           allowed,
+					DestinationRanges: []string{ipv6},
+					Priority:          1000,
+				}); err != nil {
+					return err
+				}
+				return nil
+			},
+			wantErr: true,
+		},
+		{
+			desc: "ipv6_range_allowed",
+			ops: func() error {
+				tracker := &firewallTracker{}
+				if err := tracker.patch(&compute.Firewall{
+					Name:              "b",
+					Denied:            denied,
+					DestinationRanges: []string{ipv6Range},
+					Priority:          1000,
+				}); err != nil {
+					return err
+				}
+				if err := tracker.patch(&compute.Firewall{
+					Name:              "a",
+					Allowed:           allowed,
+					DestinationRanges: []string{ipv6},
+					Priority:          999,
+				}); err != nil {
+					return err
+				}
+				return nil
+			},
+			wantErr: false,
+		},
+		{
+			desc: "delete_removes_firewall",
+			ops: func() error {
+				tracker := &firewallTracker{}
+				if err := tracker.patch(&compute.Firewall{
+					Name:              "b",
+					Denied:            denied,
+					DestinationRanges: []string{ipv4},
+					Priority:          1000,
+				}); err != nil {
+					return err
+				}
+				tracker.delete("b")
+				if err := tracker.patch(&compute.Firewall{
+					Name:              "a",
+					Allowed:           allowed,
+					DestinationRanges: []string{ipv4},
+					Priority:          1000,
+				}); err != nil {
+					return err
+				}
+				return nil
+			},
+			wantErr: false,
+		},
+	}
+	for _, tC := range testCases {
+		t.Run(tC.desc, func(t *testing.T) {
+			t.Parallel()
+			if err := tC.ops(); (err != nil) != tC.wantErr {
+				t.Errorf("firewallTracker.patch() error = %v, wantErr %v", err, tC.wantErr)
+			}
+		})
+	}
 }
