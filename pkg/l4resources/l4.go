@@ -561,18 +561,25 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		}
 	}
 
+	// Get connection draining timeout from annotation if specified
+	var connectionDrainingTimeoutSec int64
+	if timeout, ok := l4annotations.FromService(l4.Service).GetConnectionDrainingTimeout(); ok {
+		connectionDrainingTimeoutSec = timeout
+	}
+
 	backendParams := backends.L4BackendServiceParams{
-		Name:                     bsName,
-		HealthCheckLink:          hcLink,
-		Protocol:                 backendProtocol,
-		SessionAffinity:          string(l4.Service.Spec.SessionAffinity),
-		Scheme:                   string(cloud.SchemeInternal),
-		NamespacedName:           l4.NamespacedName,
-		NetworkInfo:              &l4.network,
-		ConnectionTrackingPolicy: noConnectionTrackingPolicy,
-		EnableZonalAffinity:      enableZonalAffinity,
-		LocalityLbPolicy:         localityLbPolicy,
-		LogConfig:                logConfig,
+		Name:                         bsName,
+		HealthCheckLink:              hcLink,
+		Protocol:                     backendProtocol,
+		SessionAffinity:              string(l4.Service.Spec.SessionAffinity),
+		Scheme:                       string(cloud.SchemeInternal),
+		NamespacedName:               l4.NamespacedName,
+		NetworkInfo:                  &l4.network,
+		ConnectionTrackingPolicy:     noConnectionTrackingPolicy,
+		EnableZonalAffinity:          enableZonalAffinity,
+		LocalityLbPolicy:             localityLbPolicy,
+		LogConfig:                    logConfig,
+		ConnectionDrainingTimeoutSec: connectionDrainingTimeoutSec,
 	}
 
 	bs, bsSyncStatus, err := l4.backendPool.EnsureL4BackendService(backendParams, l4.svcLogger)
