@@ -2,6 +2,10 @@ package denytest
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"sync"
 	"testing"
 
 	v1 "k8s.io/api/core/v1"
@@ -29,6 +33,9 @@ const (
 	nodeName             = "kluster-nodepool-node-123"
 	denyIPv4Name         = ""
 	denyIPv6Name         = denyIPv4Name + "-ipv6"
+	ipv4                 = "1.2.3.4"
+	ipv6                 = "1:2:3:4:5:6::"
+	ipv6Range            = "1:2:3:4:5:6::/96"
 )
 
 func TestDenyFirewall(t *testing.T) {
@@ -74,11 +81,11 @@ func TestDenyFirewall(t *testing.T) {
 	}
 }
 
-// TestDenyRollforward verifies that the deny firewall is created only after the allow
-// has already been moved to different priority. If the order is different, specifically
-// both allow and deny firewalls exist at the same priority at the same time, this would
-// cause all traffic on the IP to be blocked.
-func TestDenyRollforward(t *testing.T) {
+// TestDenyRollforwardDoesNotBlockTraffic verifies that the deny firewall is created only
+// after the allow has already been moved to different priority. If the order is different,
+// specifically both allow and deny firewalls exist at the same priority at the same time,
+// this would cause all traffic on the IP to be blocked.
+func TestDenyRollforwardDoesNotBlockTraffi(t *testing.T) {
 	// Arrange
 	// Provision a LB without deny rules
 	// We use dual stack as it's testing both IP stacks at the same time
@@ -158,12 +165,43 @@ func helperCloud(ctx context.Context) (*gce.Cloud, error) {
 	vals := gce.DefaultTestClusterValues()
 	gce := gce.NewFakeGCECloud(vals)
 
+	firewallTracker := &firewallTracker{}
 	mockGCE := gce.Compute().(*cloud.MockGCE)
-	// By default Patches/Updates are no ops
+
+	mockGCE.MockFirewalls.DeleteHook = func(ctx context.Context, key *meta.Key, m *cloud.MockFirewalls, options ...cloud.Option) (bool, error) {
+		firewallTracker.delete(key.Name)
+		return false, nil
+	}
+	mockGCE.MockFirewalls.PatchHook = func(ctx context.Context, key *meta.Key, obj *compute.Firewall, m *cloud.MockFirewalls, options ...cloud.Option) error {
+		return errors.Join(
+			mock.UpdateFirewallHook(ctx, key, obj, m, options...),
+			firewallTracker.patch(obj),
+		)
+	}
+	mockGCE.MockFirewalls.UpdateHook = mockGCE.MockFirewalls.PatchHook
+	mockGCE.MockFirewalls.InsertHook = func(ctx context.Context, key *meta.Key, obj *compute.Firewall, m *cloud.MockFirewalls, options ...cloud.Option) (bool, error) {
+		return false, firewallTracker.patch(obj)
+	}
+
 	mockGCE.MockRegionBackendServices.UpdateHook = mock.UpdateRegionBackendServiceHook
 	mockGCE.MockRegionBackendServices.PatchHook = mock.UpdateRegionBackendServiceHook
-	mockGCE.MockFirewalls.UpdateHook = mock.UpdateFirewallHook
-	mockGCE.MockFirewalls.PatchHook = mock.UpdateFirewallHook
+
+	// Mocks by default don't add addresses like real GCE API
+	mockGCE.MockForwardingRules.InsertHook = func(ctx context.Context, key *meta.Key, obj *compute.ForwardingRule, m *cloud.MockForwardingRules, options ...cloud.Option) (bool, error) {
+		m.Lock.Lock()
+		defer m.Lock.Unlock()
+
+		if obj.IPAddress != "" {
+			return false, nil
+		}
+
+		obj.IPAddress = ipv4
+		if obj.IpVersion == "IPV6" {
+			obj.IPAddress = ipv6Range
+		}
+
+		return false, nil
+	}
 
 	if err := gce.InsertInstance(vals.ProjectID, vals.ZoneName, &compute.Instance{
 		Name: nodeName,
@@ -181,4 +219,87 @@ func helperCloud(ctx context.Context) (*gce.Cloud, error) {
 	}
 
 	return gce, nil
+}
+
+// firewallTracker is used to check if there are multiple firewalls
+// on the same IP or IP range that have conflicting priority, which
+// would result in blocking all traffic.
+type firewallTracker struct {
+	// firewalls contains all firewalls for IP specified in the key
+	// for IPv6 ranges we store just the prefix
+	firewalls map[string]map[string]*compute.Firewall
+
+	mu sync.Mutex
+}
+
+// patch will return an error if there is a situation that modifying fw
+// would
+func (f *firewallTracker) patch(fw *compute.Firewall) error {
+	defer f.mu.Unlock()
+	f.mu.Lock()
+
+	if f.firewalls == nil {
+		f.firewalls = make(map[string]map[string]*compute.Firewall)
+	}
+
+	if len(fw.DestinationRanges) != 1 {
+		return fmt.Errorf("not implemented count of destination ranges %d", len(fw.DestinationRanges))
+	}
+
+	key := fw.DestinationRanges[0]
+	key = strings.TrimSuffix(key, "/96")
+
+	if f.firewalls[key] == nil {
+		f.firewalls[key] = make(map[string]*compute.Firewall)
+	}
+	f.firewalls[key][fw.Name] = fw
+
+	for key, other := range f.firewalls[key] {
+		if fw.Name == other.Name {
+			continue
+		}
+		if areBlocked(fw, other) {
+			return fmt.Errorf(
+				"two firewalls block each other on %q: %s (priority %d) and %s (priority %d)",
+				key, fw.Name, fw.Priority, other.Name, other.Priority,
+			)
+		}
+	}
+
+	return nil
+}
+
+func (f *firewallTracker) delete(name string) {
+	defer f.mu.Unlock()
+	f.mu.Lock()
+
+	if f.firewalls == nil {
+		return
+	}
+
+	// this could be done a tad quicker with an additional map
+	// but this should be fast enough for the test
+	for _, fw := range f.firewalls {
+		delete(fw, name)
+	}
+}
+
+// areBlocked only works if fw1 and fw2 are using the same
+// destination range, direction, etc
+func areBlocked(fw1, fw2 *compute.Firewall) bool {
+	if fw1 == nil || fw2 == nil {
+		return false
+	}
+
+	if len(fw2.Denied) > 0 {
+		fw1, fw2 = fw2, fw1
+	}
+
+	// Both are deny or allow - won't block themselves
+	if len(fw1.Denied) == 0 || len(fw2.Allowed) == 0 {
+		return false
+	}
+
+	// deny takes precedence over allow if they have the same priority
+	return fw1.Priority <= fw2.Priority
 }
