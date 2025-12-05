@@ -1351,3 +1351,148 @@ func TestVersionSelectionInUpdate(t *testing.T) {
 		})
 	}
 }
+
+func TestConnectionDrainingTimeout(t *testing.T) {
+	for _, tc := range []struct {
+		desc                         string
+		protocol                     string
+		connectionDrainingTimeoutSec int64
+		expectedTimeout              int64
+	}{
+		{
+			desc:                         "Default timeout when not specified",
+			protocol:                     "TCP",
+			connectionDrainingTimeoutSec: 0,
+			expectedTimeout:              DefaultConnectionDrainingTimeoutSeconds,
+		},
+		{
+			desc:                         "Custom timeout specified",
+			protocol:                     "TCP",
+			connectionDrainingTimeoutSec: 300,
+			expectedTimeout:              300,
+		},
+		{
+			desc:                         "Maximum timeout value",
+			protocol:                     "TCP",
+			connectionDrainingTimeoutSec: 3600,
+			expectedTimeout:              3600,
+		},
+		{
+			desc:                         "UDP protocol should have 0 timeout",
+			protocol:                     "UDP",
+			connectionDrainingTimeoutSec: 300,
+			expectedTimeout:              0,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			serviceName := "test-service"
+			serviceNamespace := "test-ns"
+			namespacedName := types.NamespacedName{Name: serviceName, Namespace: serviceNamespace}
+			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+			l4namer := namer.NewL4Namer(kubeSystemUID, nil)
+			backendPool := NewPool(fakeGCE, l4namer)
+
+			hcLink := l4namer.L4HealthCheck(serviceNamespace, serviceName, false)
+			bsName := l4namer.L4Backend(serviceNamespace, serviceName)
+			network := &network.NetworkInfo{IsDefault: true}
+
+			backendParams := L4BackendServiceParams{
+				Name:                         bsName,
+				HealthCheckLink:              hcLink,
+				Protocol:                     tc.protocol,
+				SessionAffinity:              string(v1.ServiceAffinityNone),
+				Scheme:                       string(cloud.SchemeInternal),
+				NamespacedName:               namespacedName,
+				NetworkInfo:                  network,
+				ConnectionDrainingTimeoutSec: tc.connectionDrainingTimeoutSec,
+			}
+
+			bs, _, err := backendPool.EnsureL4BackendService(backendParams, klog.TODO())
+			if err != nil {
+				t.Errorf("EnsureL4BackendService failed: %v", err)
+			}
+
+			if bs.ConnectionDraining == nil {
+				t.Errorf("BackendService.ConnectionDraining is nil")
+			} else if bs.ConnectionDraining.DrainingTimeoutSec != tc.expectedTimeout {
+				t.Errorf("BackendService.ConnectionDraining.DrainingTimeoutSec = %d, want %d", bs.ConnectionDraining.DrainingTimeoutSec, tc.expectedTimeout)
+			}
+		})
+	}
+}
+
+func TestConnectionDrainingTimeoutPreserveManualOverride(t *testing.T) {
+	serviceName := "test-service"
+	serviceNamespace := "test-ns"
+	namespacedName := types.NamespacedName{Name: serviceName, Namespace: serviceNamespace}
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockRegionBackendServices.UpdateHook = mock.UpdateRegionBackendServiceHook
+	l4namer := namer.NewL4Namer(kubeSystemUID, nil)
+	backendPool := NewPool(fakeGCE, l4namer)
+
+	hcLink := l4namer.L4HealthCheck(serviceNamespace, serviceName, false)
+	bsName := l4namer.L4Backend(serviceNamespace, serviceName)
+	network := &network.NetworkInfo{IsDefault: true}
+
+	// Create initial backend service with default timeout
+	backendParams := L4BackendServiceParams{
+		Name:                         bsName,
+		HealthCheckLink:              hcLink,
+		Protocol:                     "TCP",
+		SessionAffinity:              string(v1.ServiceAffinityNone),
+		Scheme:                       string(cloud.SchemeInternal),
+		NamespacedName:               namespacedName,
+		NetworkInfo:                  network,
+		ConnectionDrainingTimeoutSec: 0, // Not specified
+	}
+
+	_, _, err := backendPool.EnsureL4BackendService(backendParams, klog.TODO())
+	if err != nil {
+		t.Fatalf("EnsureL4BackendService failed: %v", err)
+	}
+
+	// Manually update the backend service timeout (simulating gcloud update)
+	key, err := composite.CreateKey(fakeGCE, bsName, meta.Regional)
+	if err != nil {
+		t.Fatalf("Failed to create key: %v", err)
+	}
+	bs, err := composite.GetBackendService(fakeGCE, key, meta.VersionGA, klog.TODO())
+	if err != nil {
+		t.Fatalf("Failed to get backend service: %v", err)
+	}
+	bs.ConnectionDraining = &composite.ConnectionDraining{DrainingTimeoutSec: 600}
+	if err := composite.UpdateBackendService(fakeGCE, key, bs, klog.TODO()); err != nil {
+		t.Fatalf("Failed to manually update backend service: %v", err)
+	}
+
+	// Ensure backend service again without annotation - should preserve manual override
+	_, _, err = backendPool.EnsureL4BackendService(backendParams, klog.TODO())
+	if err != nil {
+		t.Fatalf("EnsureL4BackendService failed: %v", err)
+	}
+
+	// Verify manual override was preserved
+	bs, err = composite.GetBackendService(fakeGCE, key, meta.VersionGA, klog.TODO())
+	if err != nil {
+		t.Fatalf("Failed to get backend service: %v", err)
+	}
+	if bs.ConnectionDraining == nil || bs.ConnectionDraining.DrainingTimeoutSec != 600 {
+		t.Errorf("Manual override was not preserved. Got timeout=%v, want 600", bs.ConnectionDraining)
+	}
+
+	// Now set annotation - should override the manual setting
+	backendParams.ConnectionDrainingTimeoutSec = 1800
+	_, _, err = backendPool.EnsureL4BackendService(backendParams, klog.TODO())
+	if err != nil {
+		t.Fatalf("EnsureL4BackendService with annotation failed: %v", err)
+	}
+
+	// Verify annotation took precedence
+	bs, err = composite.GetBackendService(fakeGCE, key, meta.VersionGA, klog.TODO())
+	if err != nil {
+		t.Fatalf("Failed to get backend service: %v", err)
+	}
+	if bs.ConnectionDraining == nil || bs.ConnectionDraining.DrainingTimeoutSec != 1800 {
+		t.Errorf("Annotation value was not applied. Got timeout=%v, want 1800", bs.ConnectionDraining)
+	}
+}
