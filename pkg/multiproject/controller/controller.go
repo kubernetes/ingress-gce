@@ -2,7 +2,6 @@
 package controller
 
 import (
-	"context"
 	"fmt"
 	"math/rand"
 	"runtime/debug"
@@ -21,7 +20,7 @@ const (
 // ProviderConfigControllerManager implements the logic for starting and stopping controllers for each ProviderConfig.
 type ProviderConfigControllerManager interface {
 	StartControllersForProviderConfig(pc *providerconfig.ProviderConfig) error
-	StopControllersForProviderConfig(pc *providerconfig.ProviderConfig)
+	StopControllersForProviderConfig(pc *providerconfig.ProviderConfig) error
 }
 
 // ProviderConfigController is a controller that manages the ProviderConfig resource.
@@ -72,15 +71,9 @@ func (pcc *ProviderConfigController) Run() {
 	defer pcc.shutdown()
 
 	pcc.logger.Info("Starting ProviderConfig controller")
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		<-pcc.stopCh
-		pcc.logger.Info("Stop channel closed, cancelling context")
-		cancel()
-	}()
 
 	pcc.logger.Info("Waiting for initial cache sync before starting ProviderConfig Controller")
-	ok := cache.WaitForCacheSync(ctx.Done(), pcc.hasSynced)
+	ok := cache.WaitForCacheSync(pcc.stopCh, pcc.hasSynced)
 	if !ok {
 		pcc.logger.Error(nil, "Failed to wait for initial cache sync before starting ProviderConfig Controller")
 	}
@@ -132,7 +125,10 @@ func (pcc *ProviderConfigController) sync(key string, logger klog.Logger) error 
 	if pc.DeletionTimestamp != nil {
 		logger.Info("ProviderConfig is being deleted, stopping controllers", "providerConfig", pc)
 
-		pcc.manager.StopControllersForProviderConfig(pc)
+		err := pcc.manager.StopControllersForProviderConfig(pc)
+		if err != nil {
+			return fmt.Errorf("failed to stop controllers for providerConfig %v: %w", pc, err)
+		}
 		return nil
 	}
 
