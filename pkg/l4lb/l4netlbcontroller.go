@@ -156,7 +156,7 @@ func NewL4NetLBController(
 				l4netLBc.svcQueue.Enqueue(addSvc)
 				l4netLBc.enqueueTracker.Track()
 			} else {
-				svcLogger.V(4).Info("Ignoring add for non external lb service")
+				svcLogger.V(4).Info("Ignoring creation of service")
 			}
 		},
 		// Deletes will be handled in the Update when the deletion timestamp is set.
