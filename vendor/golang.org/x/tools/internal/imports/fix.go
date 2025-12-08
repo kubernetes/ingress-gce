@@ -28,6 +28,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"maps"
+
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
