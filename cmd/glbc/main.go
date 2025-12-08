@@ -42,7 +42,7 @@ import (
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/l4lb"
-	multiprojectgce "k8s.io/ingress-gce/pkg/multiproject/gce"
+	multiprojectgce "k8s.io/ingress-gce/pkg/multiproject/common/gce"
 	multiprojectstart "k8s.io/ingress-gce/pkg/multiproject/start"
 	"k8s.io/ingress-gce/pkg/network"
 	providerconfigclient "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned"

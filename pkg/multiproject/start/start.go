@@ -17,10 +17,11 @@ import (
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/ingress-gce/pkg/flags"
 	_ "k8s.io/ingress-gce/pkg/klog"
-	pccontroller "k8s.io/ingress-gce/pkg/multiproject/controller"
-	"k8s.io/ingress-gce/pkg/multiproject/gce"
-	multiprojectinformers "k8s.io/ingress-gce/pkg/multiproject/informerset"
-	"k8s.io/ingress-gce/pkg/multiproject/manager"
+	"k8s.io/ingress-gce/pkg/multiproject/common/finalizer"
+	"k8s.io/ingress-gce/pkg/multiproject/common/gce"
+	"k8s.io/ingress-gce/pkg/multiproject/framework"
+	"k8s.io/ingress-gce/pkg/multiproject/neg"
+	multiprojectinformers "k8s.io/ingress-gce/pkg/multiproject/neg/informerset"
 	syncMetrics "k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	providerconfigclient "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned"
@@ -169,10 +170,9 @@ func Start(
 		return
 	}
 
-	manager := manager.NewProviderConfigControllerManager(
-		kubeClient,
+	negStarter := neg.NewNEGControllerStarter(
 		informers,
-		providerConfigClient,
+		kubeClient,
 		svcNegClient,
 		networkClient,
 		nodeTopologyClient,
@@ -186,7 +186,6 @@ func Start(
 		logger,
 		syncerMetrics,
 	)
-	logger.V(1).Info("Initialized ProviderConfig controller manager")
 
 	// Create ProviderConfig informer
 	providerConfigInformer := providerconfiginformers.NewSharedInformerFactory(providerConfigClient, flags.F.ResyncPeriod).Cloud().V1().ProviderConfigs().Informer()
@@ -202,8 +201,16 @@ func Start(
 	}
 	logger.Info("Provider config informer synced successfully")
 
-	pcController := pccontroller.NewProviderConfigController(manager, providerConfigInformer, stopCh, logger)
+	ctrl := framework.New(
+		providerConfigClient,
+		providerConfigInformer,
+		finalizer.ProviderConfigNEGCleanupFinalizer,
+		negStarter,
+		stopCh,
+		logger,
+	)
+
 	logger.V(1).Info("Running ProviderConfig controller")
-	pcController.Run()
+	ctrl.Run()
 	logger.V(1).Info("ProviderConfig controller stopped")
 }

@@ -11,7 +11,7 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	providerconfig "k8s.io/ingress-gce/pkg/apis/providerconfig/v1"
 	"k8s.io/ingress-gce/pkg/flags"
-	multiprojectinformers "k8s.io/ingress-gce/pkg/multiproject/informerset"
+	multiprojectinformers "k8s.io/ingress-gce/pkg/multiproject/neg/informerset"
 	"k8s.io/ingress-gce/pkg/neg"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
 	syncMetrics "k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"

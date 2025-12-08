@@ -16,14 +16,15 @@ const (
 )
 
 func EnsureProviderConfigNEGCleanupFinalizer(cs *providerconfig.ProviderConfig, csClient providerconfigclient.Interface, logger klog.Logger) error {
-	return ensureProviderConfigFinalizer(cs, ProviderConfigNEGCleanupFinalizer, csClient, logger)
+	return EnsureProviderConfigFinalizer(cs, ProviderConfigNEGCleanupFinalizer, csClient, logger)
 }
 
 func DeleteProviderConfigNEGCleanupFinalizer(cs *providerconfig.ProviderConfig, csClient providerconfigclient.Interface, logger klog.Logger) error {
-	return deleteProviderConfigFinalizer(cs, ProviderConfigNEGCleanupFinalizer, csClient, logger)
+	return DeleteProviderConfigFinalizer(cs, ProviderConfigNEGCleanupFinalizer, csClient, logger)
 }
 
-func ensureProviderConfigFinalizer(pc *providerconfig.ProviderConfig, key string, csClient providerconfigclient.Interface, logger klog.Logger) error {
+// EnsureProviderConfigFinalizer ensures a finalizer with the given name is present on the ProviderConfig.
+func EnsureProviderConfigFinalizer(pc *providerconfig.ProviderConfig, key string, csClient providerconfigclient.Interface, logger klog.Logger) error {
 	if HasGivenFinalizer(pc.ObjectMeta, key) {
 		return nil
 	}
@@ -36,7 +37,8 @@ func ensureProviderConfigFinalizer(pc *providerconfig.ProviderConfig, key string
 	return patch.PatchProviderConfigObjectMetadata(csClient, pc, *updatedObjectMeta)
 }
 
-func deleteProviderConfigFinalizer(pc *providerconfig.ProviderConfig, key string, csClient providerconfigclient.Interface, logger klog.Logger) error {
+// DeleteProviderConfigFinalizer removes a finalizer with the given name from the ProviderConfig.
+func DeleteProviderConfigFinalizer(pc *providerconfig.ProviderConfig, key string, csClient providerconfigclient.Interface, logger klog.Logger) error {
 	if !HasGivenFinalizer(pc.ObjectMeta, key) {
 		return nil
 	}
