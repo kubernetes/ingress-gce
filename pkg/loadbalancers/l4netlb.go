@@ -547,8 +547,9 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 		IP:                l4netlb.Service.Spec.LoadBalancerIP,
 		NodeNames:         nodeNames,
 		Network:           l4netlb.networkInfo,
-		Priority:          firewalls.AllowTrafficPriority,
+		Priority:          l4netlb.allowFirewallPriority(),
 	}
+
 	var firewallForNodesUpdateStatus utils.ResourceSyncStatus
 	firewallForNodesUpdateStatus, result.Error = firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, &nodesFWRParams, l4netlb.cloud, l4netlb.recorder, fwLogger)
 	result.GCEResourceUpdate.SetFirewallForNodes(firewallForNodesUpdateStatus)
@@ -562,6 +563,13 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 	if l4netlb.useDenyFirewalls {
 		l4netlb.ensureDeny(result, nodeNames, ipAddress, fwLogger)
 	}
+}
+
+func (l4netlb *L4NetLB) allowFirewallPriority() *int {
+	if l4netlb.useDenyFirewalls {
+		return firewalls.AllowTrafficPriority
+	}
+	return nil // default value
 }
 
 func (l4netlb *L4NetLB) ensureDeny(result *L4NetLBSyncResult, nodeNames []string, ipAddress string, fwLogger klog.Logger) {

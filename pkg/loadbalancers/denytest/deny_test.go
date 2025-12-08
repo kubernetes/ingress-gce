@@ -11,6 +11,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -28,7 +29,7 @@ const (
 	denyFirewallDisabled = false
 	denyFirewallEnabled  = true
 	nodeName             = "kluster-nodepool-node-123"
-	denyIPv4Name         = ""
+	denyIPv4Name         = "k8s2-h0zmu0xg-default-external-lb-2dkyewnt-deny"
 	denyIPv6Name         = denyIPv4Name + "-ipv6"
 	ipv4                 = "1.2.3.4"
 	ipv6                 = "1:2:3:4:5:6::"
@@ -82,7 +83,7 @@ func TestDenyFirewall(t *testing.T) {
 // after the allow has already been moved to different priority. If the order is different,
 // specifically both allow and deny firewalls exist at the same priority at the same time,
 // this would cause all traffic on the IP to be blocked.
-func TestDenyRollforwardDoesNotBlockTraffi(t *testing.T) {
+func TestDenyRollforwardDoesNotBlockTraffic(t *testing.T) {
 	// Arrange
 	// Provision a LB without deny rules
 	// We use dual stack as it's testing both IP stacks at the same time
@@ -95,6 +96,11 @@ func TestDenyRollforwardDoesNotBlockTraffi(t *testing.T) {
 	log := klog.TODO()
 	l4netlbDenyDisabled := helperL4NetLB(cloud, log, svc, denyFirewallDisabled)
 
+	var oldFlag bool
+	flags.F.EnablePinhole, oldFlag = true, flags.F.EnablePinhole
+	defer func() { flags.F.EnablePinhole = oldFlag }()
+
+	// Act
 	res := l4netlbDenyDisabled.EnsureFrontend([]string{nodeName}, svc)
 	if res.Error != nil {
 		t.Fatal(res.Error)
@@ -172,7 +178,99 @@ func TestDenyRollforwardDoesNotBlockTraffi(t *testing.T) {
 // TestDenyRollback verifies that the firewalls are cleaned up and modified in the correct order.
 // The worst case scenario is when the deny and allow firewalls both exist at the same priority.
 func TestDenyRollback(t *testing.T) {
+	// Arrange
+	// Provision a LB with deny rules
+	// We use dual stack as it's testing both IP stacks at the same time
+	ctx := t.Context()
+	svc := helperService()
+	cloud, err := helperCloud(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := klog.TODO()
+	l4netlbDenyEnabled := helperL4NetLB(cloud, log, svc, denyFirewallEnabled)
 
+	var oldFlag bool
+	flags.F.EnablePinhole, oldFlag = true, flags.F.EnablePinhole
+	defer func() { flags.F.EnablePinhole = oldFlag }()
+
+	// Act
+	res := l4netlbDenyEnabled.EnsureFrontend([]string{nodeName}, svc)
+
+	// Assert
+	// No errors, including deny firewall blocking whole allow
+	if res.Error != nil {
+		t.Fatal(res.Error)
+	}
+
+	// Deny rules are created at priority 1000
+	for _, key := range []string{annotations.FirewallRuleDenyKey, annotations.FirewallRuleDenyIPv6Key} {
+		name, ok := res.Annotations[key]
+		if !ok {
+			t.Fatalf("want deny firewall annotation, but got %+v", res.Annotations)
+		}
+		fw, err := cloud.GetFirewall(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if fw.Priority != 1000 {
+			t.Fatalf("want deny priority 1000 after fix, but got %d", fw.Priority)
+		}
+	}
+
+	// Allow rules are created with priority 999
+	for _, key := range []string{annotations.FirewallRuleIPv6Key, annotations.FirewallRuleKey} {
+		name, ok := res.Annotations[key]
+		if !ok {
+			t.Fatalf("want allow firewall annotation, but got %+v", res.Annotations)
+		}
+		fw, err := cloud.GetFirewall(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if fw.Priority != 999 {
+			t.Fatalf("want allow priority 999 after fix, but got %d", fw.Priority)
+		}
+	}
+
+	// Act
+	l4netlbDenyDisabled := helperL4NetLB(cloud, log, svc, denyFirewallDisabled)
+	res = l4netlbDenyDisabled.EnsureFrontend([]string{nodeName}, svc)
+
+	// Assert
+	// No errors, including deny firewall blocking whole allow
+	if res.Error != nil {
+		t.Fatal(res.Error)
+	}
+
+	// Deny rules are cleaned up
+	for annotation, name := range map[string]string{
+		annotations.FirewallRuleDenyKey:     denyIPv4Name,
+		annotations.FirewallRuleDenyIPv6Key: denyIPv6Name,
+	} {
+		if _, ok := res.Annotations[annotation]; ok {
+			t.Fatalf("want no deny firewall annotations, but got %+v", res.Annotations)
+		}
+		// we don't want to rely on annotation to check for resource
+		if _, err := cloud.GetFirewall(name); err == nil || !utils.IsNotFoundError(err) {
+			t.Fatalf("want no deny firewall resource, but found %s, or error %v", name, err)
+		}
+	}
+
+	// Check that the default firewalls are at priority 1000
+	for _, key := range []string{annotations.FirewallRuleIPv6Key, annotations.FirewallRuleKey} {
+		name, ok := res.Annotations[key]
+		if !ok {
+			t.Fatalf("want allow firewall annotation, but got %+v", res.Annotations)
+		}
+		fw, err := cloud.GetFirewall(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if fw.Priority != 1000 {
+			t.Fatalf("want allow priority 1000 before fix, but got %d", fw.Priority)
+		}
+	}
 }
 
 func helperL4NetLB(cloud *gce.Cloud, log klog.Logger, svc *v1.Service, denyFirewall bool) *loadbalancers.L4NetLB {

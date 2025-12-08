@@ -162,7 +162,7 @@ func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipRange string, nodeNames []stri
 		NodeNames:         nodeNames,
 		L4Type:            utils.XLB,
 		Network:           l4netlb.networkInfo,
-		Priority:          firewalls.AllowTrafficPriority,
+		Priority:          l4netlb.allowFirewallPriority(),
 	}
 
 	wasUpdate, err := firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, &ipv6nodesFWRParams, l4netlb.cloud, l4netlb.recorder, fwLogger)
