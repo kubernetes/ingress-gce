@@ -25,8 +25,10 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	compute "google.golang.org/api/compute/v1"
 	corev1 "k8s.io/api/core/v1"
+	metaapi "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/l4annotations"
+	"k8s.io/ingress-gce/pkg/l4conditions"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 )
@@ -52,8 +54,10 @@ func (l4netlb *L4NetLB) ensureIPv6Resources(syncResult *L4NetLBSyncResult, nodeN
 
 	if ipv6fr.IPProtocol == string(corev1.ProtocolTCP) {
 		syncResult.Annotations[l4annotations.TCPForwardingRuleIPv6Key] = ipv6fr.Name
+		metaapi.SetStatusCondition(&syncResult.Conditions, l4conditions.NewTCPIPv6ForwardingRuleCondition(ipv6fr.Name))
 	} else {
 		syncResult.Annotations[l4annotations.UDPForwardingRuleIPv6Key] = ipv6fr.Name
+		metaapi.SetStatusCondition(&syncResult.Conditions, l4conditions.NewUDPIPv6ForwardingRuleCondition(ipv6fr.Name))
 	}
 
 	// Google Cloud creates ipv6 forwarding rules with IPAddress in CIDR form. We will take only first address
@@ -72,7 +76,7 @@ func (l4netlb *L4NetLB) ensureIPv6Resources(syncResult *L4NetLBSyncResult, nodeN
 // This function is called only on Service update or periodic sync.
 // Checking for annotation saves us from emitting too much error logs "Resource not found".
 // If annotation was deleted, but resource still exists, it will be left till the Service deletion,
-// where we delete all resources, no matter if they exist in annotations.
+// where we delete all resources, no matter if they exist in l4annotations.
 func (l4netlb *L4NetLB) deleteIPv6ResourcesOnSync(syncResult *L4NetLBSyncResult) {
 	l4netlb.deleteIPv6ResourcesAnnotationBased(syncResult, false)
 }
@@ -158,6 +162,7 @@ func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipAddress string, nodeNames []st
 		return
 	}
 	syncResult.Annotations[l4annotations.FirewallRuleIPv6Key] = firewallName
+	metaapi.SetStatusCondition(&syncResult.Conditions, l4conditions.NewIPv6FirewallCondition(firewallName))
 }
 
 func (l4netlb *L4NetLB) deleteIPv6ForwardingRule(syncResult *L4NetLBSyncResult) {
