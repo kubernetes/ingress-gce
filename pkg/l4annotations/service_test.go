@@ -280,6 +280,101 @@ func TestHasStrongSessionAffinityAnnotation(t *testing.T) {
 	}
 }
 
+func TestGetConnectionDrainingTimeout(t *testing.T) {
+	for _, tc := range []struct {
+		desc          string
+		svc           *v1.Service
+		wantTimeout   int64
+		wantSpecified bool
+	}{
+		{
+			desc:          "Connection draining timeout not specified",
+			svc:           &v1.Service{},
+			wantTimeout:   0,
+			wantSpecified: false,
+		},
+		{
+			desc: "Connection draining timeout with valid value",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						ConnectionDrainingTimeoutKey: "300",
+					},
+				},
+			},
+			wantTimeout:   300,
+			wantSpecified: true,
+		},
+		{
+			desc: "Connection draining timeout with max value",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						ConnectionDrainingTimeoutKey: "3600",
+					},
+				},
+			},
+			wantTimeout:   3600,
+			wantSpecified: true,
+		},
+		{
+			desc: "Connection draining timeout with zero value",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						ConnectionDrainingTimeoutKey: "0",
+					},
+				},
+			},
+			wantTimeout:   0,
+			wantSpecified: true,
+		},
+		{
+			desc: "Connection draining timeout with invalid value (too high)",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						ConnectionDrainingTimeoutKey: "3601",
+					},
+				},
+			},
+			wantTimeout:   0,
+			wantSpecified: false,
+		},
+		{
+			desc: "Connection draining timeout with invalid value (negative)",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						ConnectionDrainingTimeoutKey: "-1",
+					},
+				},
+			},
+			wantTimeout:   0,
+			wantSpecified: false,
+		},
+		{
+			desc: "Connection draining timeout with invalid value (non-numeric)",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						ConnectionDrainingTimeoutKey: "invalid",
+					},
+				},
+			},
+			wantTimeout:   0,
+			wantSpecified: false,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			gotTimeout, gotSpecified := FromService(tc.svc).GetConnectionDrainingTimeout()
+			if gotTimeout != tc.wantTimeout || gotSpecified != tc.wantSpecified {
+				t.Errorf("GetConnectionDrainingTimeout() = (%v, %v), want (%v, %v)", gotTimeout, gotSpecified, tc.wantTimeout, tc.wantSpecified)
+			}
+		})
+	}
+}
+
 func TestWantsL4NetLB(t *testing.T) {
 	// sPtr is a helper to return a pointer to a string,
 	// useful for setting LoadBalancerClass.

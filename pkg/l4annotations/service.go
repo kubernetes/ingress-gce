@@ -18,6 +18,7 @@ package l4annotations
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
@@ -99,6 +100,9 @@ const (
 
 	// Service annotation key for specifying config map which contains logging config
 	L4LoggingConfigMapKey = "networking.gke.io/l4-logging-config-map"
+
+	// Service annotation key for specifying connection draining timeout in seconds for L4 backend services
+	ConnectionDrainingTimeoutKey = "networking.gke.io/connection-draining-timeout-sec"
 )
 
 // Service represents Service annotations.
@@ -244,4 +248,27 @@ func (svc *Service) GetInternalLoadBalancerAnnotationSubnet() string {
 		return val
 	}
 	return ""
+}
+
+// GetConnectionDrainingTimeout returns the connection draining timeout in seconds.
+// Returns 0 and false if the annotation is not specified or invalid.
+// Returns the parsed value (0-3600) and true if valid.
+// GCP supports connection draining timeout values from 0 to 3600 seconds.
+func (svc *Service) GetConnectionDrainingTimeout() (int64, bool) {
+	val, exists := svc.v[ConnectionDrainingTimeoutKey]
+	if !exists {
+		return 0, false
+	}
+
+	timeout, err := strconv.ParseInt(val, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+
+	// Validate range: GCP allows 0-3600 seconds
+	if timeout < 0 || timeout > 3600 {
+		return 0, false
+	}
+
+	return timeout, true
 }
