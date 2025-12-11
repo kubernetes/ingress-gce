@@ -564,6 +564,7 @@ func TestEnsureHealthCheckWithDualStackFirewalls(t *testing.T) {
 				Ports:      []string{"1234"},
 			},
 		},
+		Priority: 1000,
 	}
 	fwThatNeedsUpdate := &compute.Firewall{
 		Name:         l4Namer.L4HealthCheckFirewall(svc.Namespace, svc.Name, false),
@@ -577,6 +578,7 @@ func TestEnsureHealthCheckWithDualStackFirewalls(t *testing.T) {
 				Ports:      []string{"1234"},
 			},
 		},
+		Priority: 1000,
 	}
 
 	testCases := []struct {

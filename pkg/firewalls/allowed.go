@@ -4,9 +4,14 @@ import (
 	compute "google.golang.org/api/compute/v1"
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/ingress-gce/pkg/forwardingrules"
+	"k8s.io/utils/ptr"
 )
 
-// AllowedForService creates a slice of *compute.FirewallAllowed rules
+var (
+	AllowTrafficPriority = ptr.To(999)
+	DenyTrafficPriority  = ptr.To(1000)
+)
+
 // for given Kubernetes Serivice port definitions.
 func AllowedForService(svcPorts []api_v1.ServicePort) []*compute.FirewallAllowed {
 	var allowed []*compute.FirewallAllowed
@@ -23,4 +28,8 @@ func AllowedForService(svcPorts []api_v1.ServicePort) []*compute.FirewallAllowed
 		})
 	}
 	return allowed
+}
+
+func DeniedAll() []*compute.FirewallDenied {
+	return []*compute.FirewallDenied{{IPProtocol: "all"}}
 }
