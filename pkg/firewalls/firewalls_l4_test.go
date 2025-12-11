@@ -5,8 +5,11 @@ import (
 	"testing"
 
 	"k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	compute "google.golang.org/api/compute/v1"
@@ -66,6 +69,7 @@ func TestEnsureL4FirewallRule(t *testing.T) {
 						Ports:      []string{"8080"},
 					},
 				},
+				Priority: 1000,
 			},
 			expectUpdate: utils.ResourceUpdate,
 		},
@@ -106,6 +110,7 @@ func TestEnsureL4FirewallRule(t *testing.T) {
 						Ports:      []string{"8080"},
 					},
 				},
+				Priority: 1000,
 			},
 			want: &compute.Firewall{
 				Name:    "test-firewall",
@@ -121,6 +126,7 @@ func TestEnsureL4FirewallRule(t *testing.T) {
 						Ports:      []string{"8080"},
 					},
 				},
+				Priority: 1000,
 			},
 			expectUpdate: utils.ResourceResync,
 		},
@@ -161,6 +167,27 @@ func TestEnsureL4FirewallRule(t *testing.T) {
 						Ports:      []string{"8080"},
 					},
 				},
+				Priority: 1000,
+			},
+			expectUpdate: utils.ResourceUpdate,
+		},
+		{
+			desc:   "non default priority",
+			nsName: utils.ServiceKeyFunc("test-ns", "test-name"),
+			params: &FirewallParams{
+				Name:     "test-firewall",
+				Priority: ptr.To(1234),
+				IP:       "10.0.0.1",
+			},
+			existingRule: &compute.Firewall{
+				Name:        "test-firewall",
+				Description: firewallDescription,
+				Priority:    1000,
+			},
+			want: &compute.Firewall{
+				Name:        "test-firewall",
+				Description: firewallDescription,
+				Priority:    1234,
 			},
 			expectUpdate: utils.ResourceUpdate,
 		},
@@ -168,6 +195,8 @@ func TestEnsureL4FirewallRule(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.desc, func(t *testing.T) {
 			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+			mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
+			mockGCE.MockFirewalls.PatchHook = mock.UpdateFirewallHook
 			// Add some instance to act as the node so that target tags in the firewall can be resolved.
 			createVMInstanceWithTag(t, fakeGCE, "k8s-test")
 			if tc.existingRule != nil {

@@ -21,7 +21,9 @@ func TestL4Namer(t *testing.T) {
 		NEGName           string
 		NonDefaultNEGName string
 		FWName            string
+		FWDenyName        string
 		IPv6FWName        string
+		IPv6FWDenyName    string
 		HcFwName          string
 		IPv6HcFName       string
 		HcName            string
@@ -51,7 +53,9 @@ func TestL4Namer(t *testing.T) {
 				NEGName:           "k8s2-7kpbhpki-namespace-name-956p2p7x",
 				NonDefaultNEGName: "k8s2-7kpbhpki-namespace-name-185075-956p2p7x",
 				FWName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
+				FWDenyName:        "k8s2-7kpbhpki-namespace-name-956p2p7x-deny",
 				IPv6FWName:        "k8s2-7kpbhpki-namespace-name-956p2p7x-ipv6",
+				IPv6FWDenyName:    "k8s2-7kpbhpki-namespace-name-956p2p7x-deny-ipv6",
 				HcFwName:          "k8s2-7kpbhpki-namespace-name-956p2p7x-fw",
 				IPv6HcFName:       "k8s2-7kpbhpki-namespace-name-956p2p7x-fw-ipv6",
 				HcName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
@@ -72,7 +76,9 @@ func TestL4Namer(t *testing.T) {
 				NEGName:           "k8s2-7kpbhpki-namespace-name-956p2p7x",
 				NonDefaultNEGName: "k8s2-7kpbhpki-namespace-name-185075-956p2p7x",
 				FWName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
+				FWDenyName:        "k8s2-7kpbhpki-namespace-name-956p2p7x-deny",
 				IPv6FWName:        "k8s2-7kpbhpki-namespace-name-956p2p7x-ipv6",
+				IPv6FWDenyName:    "k8s2-7kpbhpki-namespace-name-956p2p7x-deny-ipv6",
 				HcFwName:          "k8s2-7kpbhpki-l4-shared-hc-fw",
 				IPv6HcFName:       "k8s2-7kpbhpki-l4-shared-hc-fw-ipv6",
 				HcName:            "k8s2-7kpbhpki-l4-shared-hc",
@@ -93,7 +99,9 @@ func TestL4Namer(t *testing.T) {
 				NEGName:           "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm400mg",
 				NonDefaultNEGName: "k8s2-7kpbhpki-0123456789012345-0123456789012345-185075-hwm400mg",
 				FWName:            "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm400mg",
+				FWDenyName:        "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm-deny",
 				IPv6FWName:        "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm-ipv6",
+				IPv6FWDenyName:    "k8s2-7kpbhpki-01234567890123456789-012345678901234567-deny-ipv6",
 				HcFwName:          "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm40-fw",
 				IPv6HcFName:       "k8s2-7kpbhpki-01234567890123456789-0123456789012345678--fw-ipv6",
 				HcName:            "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm400mg",
@@ -114,7 +122,9 @@ func TestL4Namer(t *testing.T) {
 				NEGName:           "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm400mg",
 				NonDefaultNEGName: "k8s2-7kpbhpki-0123456789012345-0123456789012345-185075-hwm400mg",
 				FWName:            "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm400mg",
+				FWDenyName:        "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm-deny",
 				IPv6FWName:        "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm-ipv6",
+				IPv6FWDenyName:    "k8s2-7kpbhpki-01234567890123456789-012345678901234567-deny-ipv6",
 				HcFwName:          "k8s2-7kpbhpki-l4-shared-hc-fw",
 				IPv6HcFName:       "k8s2-7kpbhpki-l4-shared-hc-fw-ipv6",
 				HcName:            "k8s2-7kpbhpki-l4-shared-hc",
@@ -135,7 +145,9 @@ func TestL4Namer(t *testing.T) {
 				NEGName:           "k8s2-7kpbhpki-namespace-name-956p2p7x",
 				NonDefaultNEGName: "k8s2-7kpbhpki-namespace-name-1fd834-956p2p7x",
 				FWName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
+				FWDenyName:        "k8s2-7kpbhpki-namespace-name-956p2p7x-deny",
 				IPv6FWName:        "k8s2-7kpbhpki-namespace-name-956p2p7x-ipv6",
+				IPv6FWDenyName:    "k8s2-7kpbhpki-namespace-name-956p2p7x-deny-ipv6",
 				HcFwName:          "k8s2-7kpbhpki-namespace-name-956p2p7x-fw",
 				IPv6HcFName:       "k8s2-7kpbhpki-namespace-name-956p2p7x-fw-ipv6",
 				HcName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
@@ -156,7 +168,9 @@ func TestL4Namer(t *testing.T) {
 				NEGName:           "k8s2-7kpbhpki-namespace-name-956p2p7x",
 				NonDefaultNEGName: "k8s2-7kpbhpki-namespace-name-1fd834-956p2p7x",
 				FWName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
+				FWDenyName:        "k8s2-7kpbhpki-namespace-name-956p2p7x-deny",
 				IPv6FWName:        "k8s2-7kpbhpki-namespace-name-956p2p7x-ipv6",
+				IPv6FWDenyName:    "k8s2-7kpbhpki-namespace-name-956p2p7x-deny-ipv6",
 				HcFwName:          "k8s2-7kpbhpki-namespace-name-956p2p7x-fw",
 				IPv6HcFName:       "k8s2-7kpbhpki-namespace-name-956p2p7x-fw-ipv6",
 				HcName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
@@ -177,7 +191,9 @@ func TestL4Namer(t *testing.T) {
 				NEGName:           "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm400mg",
 				NonDefaultNEGName: "k8s2-7kpbhpki-0123456789012345-0123456789012345-185075-hwm400mg",
 				FWName:            "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm400mg",
+				FWDenyName:        "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm-deny",
 				IPv6FWName:        "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm-ipv6",
+				IPv6FWDenyName:    "k8s2-7kpbhpki-01234567890123456789-012345678901234567-deny-ipv6",
 				HcFwName:          "k8s2-7kpbhpki-l4-shared-hc-fw",
 				IPv6HcFName:       "k8s2-7kpbhpki-l4-shared-hc-fw-ipv6",
 				HcName:            "k8s2-7kpbhpki-l4-shared-hc",
@@ -201,7 +217,9 @@ func TestL4Namer(t *testing.T) {
 				NEGName:           namer.L4Backend(tc.namespace, tc.name),
 				NonDefaultNEGName: namer.NonDefaultSubnetNEG(tc.namespace, tc.name, tc.subnetName, 0), // Port is not used for L4 NEG
 				FWName:            namer.L4Firewall(tc.namespace, tc.name),
+				FWDenyName:        namer.L4FirewallDeny(tc.namespace, tc.name),
 				IPv6FWName:        namer.L4IPv6Firewall(tc.namespace, tc.name),
+				IPv6FWDenyName:    namer.L4IPv6FirewallDeny(tc.namespace, tc.name),
 				HcName:            namer.L4HealthCheck(tc.namespace, tc.name, tc.sharedHC),
 				HcFwName:          namer.L4HealthCheckFirewall(tc.namespace, tc.name, tc.sharedHC),
 				IPv6HcFName:       namer.L4IPv6HealthCheckFirewall(tc.namespace, tc.name, tc.sharedHC),

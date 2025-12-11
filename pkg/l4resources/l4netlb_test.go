@@ -1050,7 +1050,7 @@ func TestIPv6OnlyNetLBSyncIgnoresNoAnnotationResources(t *testing.T) {
 	}
 
 	deleteResult := l4NetLB.EnsureLoadBalancerDeleted(l4NetLB.Service)
-	if deleteResult == nil {
+	if deleteResult.Error != nil {
 		t.Errorf("EnsureLoadBalancerDeleted() resulted in an error: %v", deleteResult.Error)
 	}
 	// After complete deletion, IPv6 and IPv4 resources should be cleaned up, even if the were leaked

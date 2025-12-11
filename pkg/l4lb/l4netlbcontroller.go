@@ -625,6 +625,7 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 		EnableMixedProtocol:              lc.ctx.EnableL4NetLBMixedProtocol,
 		DisableNodesFirewallProvisioning: lc.ctx.DisableL4LBFirewall,
 		UseNEGs:                          usesNegBackends,
+		UseDenyFirewalls:                 lc.ctx.EnableL4DenyFirewalls,
 	}
 	if lc.ctx.ConfigMapInformer != nil {
 		l4NetLBParams.ConfigMapLister = lc.ctx.ConfigMapInformer.GetIndexer()
@@ -879,6 +880,7 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service,
 		EnableWeightedLB:                 lc.ctx.EnableWeightedL4NetLB,
 		EnableMixedProtocol:              lc.ctx.EnableL4NetLBMixedProtocol,
 		DisableNodesFirewallProvisioning: lc.ctx.DisableL4LBFirewall,
+		UseDenyFirewalls:                 lc.ctx.EnableL4DenyFirewalls,
 	}
 	if lc.ctx.ConfigMapInformer != nil {
 		l4NetLBParams.ConfigMapLister = lc.ctx.ConfigMapInformer.GetIndexer()
