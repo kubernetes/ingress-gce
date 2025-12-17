@@ -470,14 +470,15 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 		expectedBS.Version = selectApiVersionForUpdate(currentVersion, expectedBS.Version)
 	}
 
-	if backendSvcEqual(expectedBS, currentBS, p.useConnectionTrackingPolicy) {
-		beLogger.V(2).Info("EnsureL4BackendService: backend service did not change, skipping update")
-		return currentBS, utils.ResourceResync, nil
-	}
 	// Preserve manually configured connection draining timeout if annotation is not set
 	if params.ConnectionDrainingTimeoutSec == 0 && currentBS.ConnectionDraining != nil && currentBS.ConnectionDraining.DrainingTimeoutSec > 0 && params.Protocol == string(api_v1.ProtocolTCP) {
 		// Only preserves user overridden timeout value when the protocol is TCP and no annotation is specified
 		expectedBS.ConnectionDraining.DrainingTimeoutSec = currentBS.ConnectionDraining.DrainingTimeoutSec
+	}
+
+	if backendSvcEqual(expectedBS, currentBS, p.useConnectionTrackingPolicy) {
+		beLogger.V(2).Info("EnsureL4BackendService: backend service did not change, skipping update")
+		return currentBS, utils.ResourceResync, nil
 	}
 	beLogger.V(2).Info("EnsureL4BackendService: updating backend service")
 	// Set fingerprint for optimistic locking
@@ -500,7 +501,6 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 // since that is handled by the neg-linker.
 // The list of backends is not checked, since that is handled by the neg-linker.
 func backendSvcEqual(newBS, oldBS *composite.BackendService, compareConnectionTracking bool) bool {
-
 	svcsEqual := newBS.Protocol == oldBS.Protocol &&
 		newBS.Description == oldBS.Description &&
 		newBS.SessionAffinity == oldBS.SessionAffinity &&

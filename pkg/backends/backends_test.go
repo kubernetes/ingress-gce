@@ -1,6 +1,7 @@
 package backends
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -8,7 +9,8 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
 	"github.com/google/go-cmp/cmp"
-	v1 "k8s.io/api/core/v1"
+	compute "google.golang.org/api/compute/v1"
+	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -43,7 +45,7 @@ func TestEnsureL4BackendService(t *testing.T) {
 			serviceName:      "test-service",
 			serviceNamespace: "test-ns",
 			protocol:         "TCP",
-			affinityType:     string(v1.ServiceAffinityNone),
+			affinityType:     string(api_v1.ServiceAffinityNone),
 			schemeType:       string(cloud.SchemeInternal),
 		},
 		{
@@ -51,7 +53,7 @@ func TestEnsureL4BackendService(t *testing.T) {
 			serviceName:      "test-service",
 			serviceNamespace: "test-ns",
 			protocol:         "TCP",
-			affinityType:     string(v1.ServiceAffinityNone),
+			affinityType:     string(api_v1.ServiceAffinityNone),
 			schemeType:       string(cloud.SchemeInternal),
 			connectionTrackingPolicy: &composite.BackendServiceConnectionTrackingPolicy{
 				EnableStrongAffinity: false,
@@ -64,7 +66,7 @@ func TestEnsureL4BackendService(t *testing.T) {
 			serviceName:      "test-service",
 			serviceNamespace: "test-ns",
 			protocol:         "TCP",
-			affinityType:     string(v1.ServiceAffinityClientIP),
+			affinityType:     string(api_v1.ServiceAffinityClientIP),
 			schemeType:       string(cloud.SchemeExternal),
 			connectionTrackingPolicy: &composite.BackendServiceConnectionTrackingPolicy{
 				EnableStrongAffinity: false,
@@ -77,7 +79,7 @@ func TestEnsureL4BackendService(t *testing.T) {
 			serviceName:                 "test-service",
 			serviceNamespace:            "test-ns",
 			protocol:                    "TCP",
-			affinityType:                string(v1.ServiceAffinityClientIP),
+			affinityType:                string(api_v1.ServiceAffinityClientIP),
 			schemeType:                  string(cloud.SchemeExternal),
 			enableStrongSessionAffinity: true,
 			connectionTrackingPolicy: &composite.BackendServiceConnectionTrackingPolicy{
@@ -92,7 +94,7 @@ func TestEnsureL4BackendService(t *testing.T) {
 			serviceNamespace:            "test-ns",
 			protocol:                    "TCP",
 			enableStrongSessionAffinity: true,
-			affinityType:                string(v1.ServiceAffinityClientIP),
+			affinityType:                string(api_v1.ServiceAffinityClientIP),
 			schemeType:                  string(cloud.SchemeExternal),
 		},
 	} {
@@ -177,8 +179,8 @@ func TestEnsureL4BackendServiceUpdate(t *testing.T) {
 			serviceNamespace:    "test-ns",
 			protocol:            "TCP",
 			updatedProtocol:     "TCP",
-			affinityType:        string(v1.ServiceAffinityNone),
-			updatedAffinityType: string(v1.ServiceAffinityNone),
+			affinityType:        string(api_v1.ServiceAffinityNone),
+			updatedAffinityType: string(api_v1.ServiceAffinityNone),
 			schemeType:          string(cloud.SchemeInternal),
 			expectUpdate:        utils.ResourceResync,
 		},
@@ -188,8 +190,8 @@ func TestEnsureL4BackendServiceUpdate(t *testing.T) {
 			serviceNamespace:    "test-ns",
 			protocol:            "TCP",
 			updatedProtocol:     "UDP",
-			affinityType:        string(v1.ServiceAffinityNone),
-			updatedAffinityType: string(v1.ServiceAffinityNone),
+			affinityType:        string(api_v1.ServiceAffinityNone),
+			updatedAffinityType: string(api_v1.ServiceAffinityNone),
 			schemeType:          string(cloud.SchemeInternal),
 			expectUpdate:        utils.ResourceUpdate,
 		},
@@ -199,8 +201,8 @@ func TestEnsureL4BackendServiceUpdate(t *testing.T) {
 			serviceNamespace:    "test-ns",
 			protocol:            "TCP",
 			updatedProtocol:     "TCP",
-			affinityType:        string(v1.ServiceAffinityNone),
-			updatedAffinityType: string(v1.ServiceAffinityClientIP),
+			affinityType:        string(api_v1.ServiceAffinityNone),
+			updatedAffinityType: string(api_v1.ServiceAffinityClientIP),
 			schemeType:          string(cloud.SchemeInternal),
 			expectUpdate:        utils.ResourceUpdate,
 		},
@@ -284,7 +286,7 @@ func TestEnsureL4BackendServiceDoesNotDetachBackends(t *testing.T) {
 				Protocol:            "TCP",
 				Description:         "test description", // this will make sure the BackendService needs update.
 				HealthChecks:        []string{hcLink},
-				SessionAffinity:     utils.TranslateAffinityType(string(v1.ServiceAffinityNone), klog.TODO()),
+				SessionAffinity:     utils.TranslateAffinityType(string(api_v1.ServiceAffinityNone), klog.TODO()),
 				LoadBalancingScheme: string(cloud.SchemeInternal),
 				Backends: []*composite.Backend{
 					{
@@ -307,7 +309,7 @@ func TestEnsureL4BackendServiceDoesNotDetachBackends(t *testing.T) {
 				Name:                     bsName,
 				HealthCheckLink:          hcLink,
 				Protocol:                 "TCP",
-				SessionAffinity:          string(v1.ServiceAffinityNone),
+				SessionAffinity:          string(api_v1.ServiceAffinityNone),
 				Scheme:                   string(cloud.SchemeInternal),
 				NamespacedName:           namespacedName,
 				NetworkInfo:              network,
@@ -364,7 +366,7 @@ func TestBackendSvcEqual(t *testing.T) {
 			oldBackendService: &composite.BackendService{
 				Description:         "same_description",
 				Protocol:            "TCP",
-				SessionAffinity:     string(v1.ServiceAffinityClientIP),
+				SessionAffinity:     string(api_v1.ServiceAffinityClientIP),
 				LoadBalancingScheme: string(cloud.SchemeExternal),
 				ConnectionTrackingPolicy: &composite.BackendServiceConnectionTrackingPolicy{
 					EnableStrongAffinity: false,
@@ -375,7 +377,7 @@ func TestBackendSvcEqual(t *testing.T) {
 			newBackendService: &composite.BackendService{
 				Description:         "same_description",
 				Protocol:            "TCP",
-				SessionAffinity:     string(v1.ServiceAffinityClientIP),
+				SessionAffinity:     string(api_v1.ServiceAffinityClientIP),
 				LoadBalancingScheme: string(cloud.SchemeExternal),
 				ConnectionTrackingPolicy: &composite.BackendServiceConnectionTrackingPolicy{
 					EnableStrongAffinity: false,
@@ -698,7 +700,7 @@ func TestBackendSvcEqual(t *testing.T) {
 			desc:                      "Test with a few changed parameters",
 			compareConnectionTracking: true,
 			oldBackendService: &composite.BackendService{
-				SessionAffinity:     string(v1.ServiceAffinityClientIP),
+				SessionAffinity:     string(api_v1.ServiceAffinityClientIP),
 				LoadBalancingScheme: string(cloud.SchemeInternal),
 				ConnectionTrackingPolicy: &composite.BackendServiceConnectionTrackingPolicy{
 					EnableStrongAffinity: false,
@@ -706,7 +708,7 @@ func TestBackendSvcEqual(t *testing.T) {
 				},
 			},
 			newBackendService: &composite.BackendService{
-				SessionAffinity:     string(v1.ServiceAffinityNone),
+				SessionAffinity:     string(api_v1.ServiceAffinityNone),
 				LoadBalancingScheme: string(cloud.SchemeExternal),
 				ConnectionTrackingPolicy: &composite.BackendServiceConnectionTrackingPolicy{
 					EnableStrongAffinity: true,
@@ -743,7 +745,7 @@ func TestBackendSvcEqual(t *testing.T) {
 			oldBackendService: &composite.BackendService{
 				Description:         "same_description",
 				Protocol:            "TCP",
-				SessionAffinity:     string(v1.ServiceAffinityClientIP),
+				SessionAffinity:     string(api_v1.ServiceAffinityClientIP),
 				LoadBalancingScheme: string(cloud.SchemeExternal),
 				ConnectionTrackingPolicy: &composite.BackendServiceConnectionTrackingPolicy{
 					EnableStrongAffinity: false,
@@ -754,7 +756,7 @@ func TestBackendSvcEqual(t *testing.T) {
 			newBackendService: &composite.BackendService{
 				Description:         "same_description",
 				Protocol:            "TCP",
-				SessionAffinity:     string(v1.ServiceAffinityClientIP),
+				SessionAffinity:     string(api_v1.ServiceAffinityClientIP),
 				LoadBalancingScheme: string(cloud.SchemeExternal),
 				ConnectionTrackingPolicy: &composite.BackendServiceConnectionTrackingPolicy{
 					EnableStrongAffinity: true,
@@ -1400,7 +1402,7 @@ func TestConnectionDrainingTimeout(t *testing.T) {
 				Name:                         bsName,
 				HealthCheckLink:              hcLink,
 				Protocol:                     tc.protocol,
-				SessionAffinity:              string(v1.ServiceAffinityNone),
+				SessionAffinity:              string(api_v1.ServiceAffinityNone),
 				Scheme:                       string(cloud.SchemeInternal),
 				NamespacedName:               namespacedName,
 				NetworkInfo:                  network,
@@ -1439,7 +1441,7 @@ func TestConnectionDrainingTimeoutPreserveManualOverride(t *testing.T) {
 		Name:                         bsName,
 		HealthCheckLink:              hcLink,
 		Protocol:                     "TCP",
-		SessionAffinity:              string(v1.ServiceAffinityNone),
+		SessionAffinity:              string(api_v1.ServiceAffinityNone),
 		Scheme:                       string(cloud.SchemeInternal),
 		NamespacedName:               namespacedName,
 		NetworkInfo:                  network,
@@ -1495,4 +1497,112 @@ func TestConnectionDrainingTimeoutPreserveManualOverride(t *testing.T) {
 	if bs.ConnectionDraining == nil || bs.ConnectionDraining.DrainingTimeoutSec != 1800 {
 		t.Errorf("Annotation value was not applied. Got timeout=%v, want 1800", bs.ConnectionDraining)
 	}
+}
+
+func TestConnectionDrainingTimeoutNoUnnecessaryUpdate(t *testing.T) {
+	serviceName := "test-service"
+	serviceNamespace := "test-ns"
+	namespacedName := types.NamespacedName{Name: serviceName, Namespace: serviceNamespace}
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+
+	// Track update calls
+	updateCallCount := 0
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockRegionBackendServices.UpdateHook = func(ctx context.Context, key *meta.Key, be *compute.BackendService, m *cloud.MockRegionBackendServices, options ...cloud.Option) error {
+		updateCallCount++
+		return mock.UpdateRegionBackendServiceHook(ctx, key, be, m, options...)
+	}
+
+	l4namer := namer.NewL4Namer(kubeSystemUID, nil)
+	backendPool := NewPool(fakeGCE, l4namer)
+
+	hcLink := l4namer.L4HealthCheck(serviceNamespace, serviceName, false)
+	bsName := l4namer.L4Backend(serviceNamespace, serviceName)
+	network := &network.NetworkInfo{IsDefault: true}
+
+	// Create initial backend service with default timeout
+	backendParams := L4BackendServiceParams{
+		Name:                         bsName,
+		HealthCheckLink:              hcLink,
+		Protocol:                     "TCP",
+		SessionAffinity:              string(api_v1.ServiceAffinityNone),
+		Scheme:                       string(cloud.SchemeInternal),
+		NamespacedName:               namespacedName,
+		NetworkInfo:                  network,
+		ConnectionDrainingTimeoutSec: 0, // Not specified
+	}
+
+	_, _, err := backendPool.EnsureL4BackendService(backendParams, klog.TODO())
+	if err != nil {
+		t.Fatalf("EnsureL4BackendService failed: %v", err)
+	}
+	initialUpdateCount := updateCallCount
+
+	// Manually update the backend service timeout (simulating gcloud update)
+	key, err := composite.CreateKey(fakeGCE, bsName, meta.Regional)
+	if err != nil {
+		t.Fatalf("Failed to create key: %v", err)
+	}
+	bs, err := composite.GetBackendService(fakeGCE, key, meta.VersionGA, klog.TODO())
+	if err != nil {
+		t.Fatalf("Failed to get backend service: %v", err)
+	}
+	bs.ConnectionDraining = &composite.ConnectionDraining{DrainingTimeoutSec: 600}
+	if err := composite.UpdateBackendService(fakeGCE, key, bs, klog.TODO()); err != nil {
+		t.Fatalf("Failed to manually update backend service: %v", err)
+	}
+	updateCountAfterManual := updateCallCount
+
+	// Ensure backend service again without annotation - should preserve manual override WITHOUT triggering update
+	_, _, err = backendPool.EnsureL4BackendService(backendParams, klog.TODO())
+	if err != nil {
+		t.Fatalf("EnsureL4BackendService failed: %v", err)
+	}
+
+	// Verify no update call was made (preservation happens before comparison)
+	if updateCallCount != updateCountAfterManual {
+		t.Errorf("Unnecessary update call made. Update count increased from %d to %d", updateCountAfterManual, updateCallCount)
+	}
+
+	// Verify manual override was preserved
+	bs, err = composite.GetBackendService(fakeGCE, key, meta.VersionGA, klog.TODO())
+	if err != nil {
+		t.Fatalf("Failed to get backend service: %v", err)
+	}
+	if bs.ConnectionDraining == nil || bs.ConnectionDraining.DrainingTimeoutSec != 600 {
+		t.Errorf("Manual override was not preserved. Got timeout=%v, want 600", bs.ConnectionDraining)
+	}
+
+	// Verify that setting annotation DOES trigger an update
+	backendParams.ConnectionDrainingTimeoutSec = 1800
+	updateCountBeforeAnnotation := updateCallCount
+	_, _, err = backendPool.EnsureL4BackendService(backendParams, klog.TODO())
+	if err != nil {
+		t.Fatalf("EnsureL4BackendService with annotation failed: %v", err)
+	}
+
+	// Verify an update was made for the annotation change
+	if updateCallCount <= updateCountBeforeAnnotation {
+		t.Errorf("Expected update call for annotation change. Update count did not increase from %d", updateCountBeforeAnnotation)
+	}
+
+	// Verify annotation took precedence
+	bs, err = composite.GetBackendService(fakeGCE, key, meta.VersionGA, klog.TODO())
+	if err != nil {
+		t.Fatalf("Failed to get backend service: %v", err)
+	}
+	if bs.ConnectionDraining == nil || bs.ConnectionDraining.DrainingTimeoutSec != 1800 {
+		t.Errorf("Annotation value was not applied. Got timeout=%v, want 1800", bs.ConnectionDraining)
+	}
+
+	// Final check: reconcile with annotation again - should NOT trigger update since value matches
+	updateCountBeforeFinalReconcile := updateCallCount
+	_, _, err = backendPool.EnsureL4BackendService(backendParams, klog.TODO())
+	if err != nil {
+		t.Fatalf("Final EnsureL4BackendService failed: %v", err)
+	}
+	if updateCallCount != updateCountBeforeFinalReconcile {
+		t.Errorf("Unnecessary update on final reconcile. Update count increased from %d to %d", updateCountBeforeFinalReconcile, updateCallCount)
+	}
+
+	t.Logf("Test passed. Total update calls: initial=%d, afterManual=%d, final=%d", initialUpdateCount, updateCountAfterManual, updateCallCount)
 }

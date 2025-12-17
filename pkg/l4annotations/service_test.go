@@ -294,11 +294,23 @@ func TestGetConnectionDrainingTimeout(t *testing.T) {
 			wantSpecified: false,
 		},
 		{
-			desc: "Connection draining timeout with valid value",
+			desc: "Connection draining timeout with valid seconds value",
 			svc: &v1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						ConnectionDrainingTimeoutKey: "300",
+						ConnectionDrainingTimeoutKey: "300s",
+					},
+				},
+			},
+			wantTimeout:   300,
+			wantSpecified: true,
+		},
+		{
+			desc: "Connection draining timeout with minutes value",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						ConnectionDrainingTimeoutKey: "5m",
 					},
 				},
 			},
@@ -310,7 +322,19 @@ func TestGetConnectionDrainingTimeout(t *testing.T) {
 			svc: &v1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						ConnectionDrainingTimeoutKey: "3600",
+						ConnectionDrainingTimeoutKey: "3600s",
+					},
+				},
+			},
+			wantTimeout:   3600,
+			wantSpecified: true,
+		},
+		{
+			desc: "Connection draining timeout with 1 hour",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						ConnectionDrainingTimeoutKey: "1h",
 					},
 				},
 			},
@@ -322,7 +346,7 @@ func TestGetConnectionDrainingTimeout(t *testing.T) {
 			svc: &v1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						ConnectionDrainingTimeoutKey: "0",
+						ConnectionDrainingTimeoutKey: "0s",
 					},
 				},
 			},
@@ -334,7 +358,19 @@ func TestGetConnectionDrainingTimeout(t *testing.T) {
 			svc: &v1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						ConnectionDrainingTimeoutKey: "3601",
+						ConnectionDrainingTimeoutKey: "3601s",
+					},
+				},
+			},
+			wantTimeout:   0,
+			wantSpecified: false,
+		},
+		{
+			desc: "Connection draining timeout with invalid value (over 1 hour)",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						ConnectionDrainingTimeoutKey: "2h",
 					},
 				},
 			},
@@ -346,7 +382,7 @@ func TestGetConnectionDrainingTimeout(t *testing.T) {
 			svc: &v1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						ConnectionDrainingTimeoutKey: "-1",
+						ConnectionDrainingTimeoutKey: "-1s",
 					},
 				},
 			},
@@ -354,11 +390,47 @@ func TestGetConnectionDrainingTimeout(t *testing.T) {
 			wantSpecified: false,
 		},
 		{
-			desc: "Connection draining timeout with invalid value (non-numeric)",
+			desc: "Connection draining timeout with invalid value (no unit)",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						ConnectionDrainingTimeoutKey: "300",
+					},
+				},
+			},
+			wantTimeout:   0,
+			wantSpecified: false,
+		},
+		{
+			desc: "Connection draining timeout with invalid value (non-duration)",
 			svc: &v1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						ConnectionDrainingTimeoutKey: "invalid",
+					},
+				},
+			},
+			wantTimeout:   0,
+			wantSpecified: false,
+		},
+		{
+			desc: "Connection draining timeout with fractional seconds (milliseconds)",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						ConnectionDrainingTimeoutKey: "500ms",
+					},
+				},
+			},
+			wantTimeout:   0,
+			wantSpecified: false,
+		},
+		{
+			desc: "Connection draining timeout with fractional seconds (1.5s)",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						ConnectionDrainingTimeoutKey: "1.5s",
 					},
 				},
 			},
