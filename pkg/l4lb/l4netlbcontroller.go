@@ -30,6 +30,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/google/go-cmp/cmp"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
@@ -685,13 +686,19 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 		return syncResult
 	}
 
-	err = updateServiceStatus(lc.ctx, service, syncResult.Status, svcLogger)
+	expectedConditions := []metav1.Condition{}
+	if lc.ctx.EnableL4LBConditions {
+		expectedConditions = syncResult.Conditions
+	}
+
+	err = updateServiceStatus(lc.ctx, service, syncResult.Status, expectedConditions, svcLogger)
 	if err != nil {
-		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
-			"Error updating L4 External LoadBalancer, err: %v", err)
+		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
+			"Error updating load balancer status: %v", err)
 		syncResult.Error = err
 		return syncResult
 	}
+
 	if lc.enableDualStack {
 		lc.emitEnsuredDualStackEvent(service)
 
@@ -894,7 +901,7 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service,
 		return result
 	}
 
-	if err := updateServiceStatus(lc.ctx, svc, &v1.LoadBalancerStatus{}, svcLogger); err != nil {
+	if err := updateServiceStatus(lc.ctx, svc, &v1.LoadBalancerStatus{}, []metav1.Condition{}, svcLogger); err != nil {
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 			"Error resetting L4 External LoadBalancer status to empty, err: %v", err)
 		result.Error = fmt.Errorf("Failed to reset L4 External LoadBalancer status, err: %w", err)
