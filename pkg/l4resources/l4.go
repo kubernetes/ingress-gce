@@ -47,9 +47,11 @@ import (
 )
 
 const (
-	subnetInternalIPv6AccessType          = "INTERNAL"
-	trafficDistribuitionZonalAffinity     = "PreferClose"
-	WeightedLBPodsPerNodeAllowlistMessage = "Weighted Load Balancing for L4 " +
+	subnetInternalIPv6AccessType = "INTERNAL"
+	// https://kubernetes.io/blog/2025/12/17/kubernetes-v1-35-release/#prefersamenode-traffic-distribution
+	trafficDistributionZonalAffinity           = "PreferSameZone"
+	trafficDistributionZonalAffinityDeprecated = "PreferClose"
+	WeightedLBPodsPerNodeAllowlistMessage      = "Weighted Load Balancing for L4 " +
 		"Internal Passthrough Load Balancers requires project allowlisting. If " +
 		"you need access to this feature please contact Google Cloud support team"
 )
@@ -621,7 +623,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 func (l4 *L4) requireZonalAffinity(svc *corev1.Service) bool {
 	return l4.enableZonalAffinity && // zonal affinity flag is enabled
 		svc.Spec.TrafficDistribution != nil && // traffic distribution field is set
-		*svc.Spec.TrafficDistribution == trafficDistribuitionZonalAffinity // traffic distribution field is set to zonal affinity default "PreferClose"
+		(*svc.Spec.TrafficDistribution == trafficDistributionZonalAffinityDeprecated || *svc.Spec.TrafficDistribution == trafficDistributionZonalAffinity)
 }
 
 func (l4 *L4) provideHealthChecks(nodeNames []string, result *L4ILBSyncResult) string {

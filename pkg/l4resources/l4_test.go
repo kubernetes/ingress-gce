@@ -2611,7 +2611,8 @@ func TestWeightedILB(t *testing.T) {
 func TestZonalAffinity(t *testing.T) {
 	t.Parallel()
 
-	zonalAffinityTrafficDistributionKey := "PreferClose"
+	zonalAffinityTrafficDistributionKeyDeprecated := "PreferClose"
+	zonalAffinityTrafficDistributionKey := "PreferSameZone"
 
 	tests := []struct {
 		desc                            string
@@ -2622,9 +2623,9 @@ func TestZonalAffinity(t *testing.T) {
 		wantZonalAffinitySpilloverRatio float64
 	}{
 		{
-			desc:                            "Flag enabled, Service with TrafficDistribution Spec",
+			desc:                            "Flag enabled, Service with deprecated TrafficDistribution Spec",
 			zonalAffinityFlagEnabled:        true,
-			trafficDistributionSpec:         &zonalAffinityTrafficDistributionKey,
+			trafficDistributionSpec:         &zonalAffinityTrafficDistributionKeyDeprecated,
 			wantZonalAffinityEnabled:        true,
 			wantZonalAffinitySpilloverRatio: 0,
 		},
@@ -2633,6 +2634,20 @@ func TestZonalAffinity(t *testing.T) {
 			zonalAffinityFlagEnabled:        true,
 			trafficDistributionSpec:         nil,
 			wantZonalAffinityEnabled:        false,
+			wantZonalAffinitySpilloverRatio: 0,
+		},
+		{
+			desc:                            "Flag DISABLED, Service with deprecated TrafficDistribution Spec",
+			zonalAffinityFlagEnabled:        false,
+			trafficDistributionSpec:         &zonalAffinityTrafficDistributionKeyDeprecated,
+			wantZonalAffinityEnabled:        false,
+			wantZonalAffinitySpilloverRatio: 0,
+		},
+		{
+			desc:                            "Flag enabled, Service with TrafficDistribution Spec",
+			zonalAffinityFlagEnabled:        true,
+			trafficDistributionSpec:         &zonalAffinityTrafficDistributionKey,
+			wantZonalAffinityEnabled:        true,
 			wantZonalAffinitySpilloverRatio: 0,
 		},
 		{
