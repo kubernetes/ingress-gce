@@ -48,6 +48,18 @@ const (
 	L4ProtocolTypeMixed   = L4ProtocolType("MIXED")
 )
 
+// FirewallIPFamilies represents IP stack used.
+type FirewallIPFamilies string
+
+// IPFamilies represents IP stack used.
+const (
+	FirewallIPFamiliesUnknown   = FirewallIPFamilies("UNKNOWN") // Shouldn't happen, but if it does something is wrong.
+	FirewallIPFamiliesNone      = FirewallIPFamilies("")
+	FirewallIPFamiliesIPv4      = FirewallIPFamilies("IPv4")
+	FirewallIPFamiliesIPv6      = FirewallIPFamilies("IPv6")
+	FirewallIPFamiliesDualStack = FirewallIPFamilies("IPv4_IPv6")
+)
+
 // L4DualStackServiceLabels defines ipFamilies, ipFamilyPolicy
 // of L4 DualStack service
 type L4DualStackServiceLabels struct {
@@ -73,6 +85,8 @@ type L4FeaturesServiceLabels struct {
 	Protocol L4ProtocolType
 	// LoggingEnabled is true if logging is configured to be enabled on the Backend Service
 	LoggingEnabled bool
+	// DenyFirewallFamilies stores types of deny firewalls that were created for the LB. Exclusive to NetLB. If no deny firewalls were created is empty.
+	DenyFirewallFamilies FirewallIPFamilies
 }
 
 // L4ServiceState tracks the state of an L4 service. It includes data needed to fill various L4 metrics plus the status of the service.

@@ -295,7 +295,25 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service, 
 		l4netlb.ensureIPv4Resources(result, nodeNames, bsLink)
 	}
 
+	result.MetricsState.DenyFirewallFamilies = denyFirewallMetricLabels(result.Annotations)
+
 	return result
+}
+
+func denyFirewallMetricLabels(annotations map[string]string) metrics.FirewallIPFamilies {
+	hasIPv4 := annotations[l4annotations.FirewallRuleDenyKey] != ""
+	hasIPv6 := annotations[l4annotations.FirewallRuleDenyIPv6Key] != ""
+
+	switch {
+	case hasIPv4 && hasIPv6:
+		return metrics.FirewallIPFamiliesDualStack
+	case hasIPv4:
+		return metrics.FirewallIPFamiliesIPv4
+	case hasIPv6:
+		return metrics.FirewallIPFamiliesIPv6
+	default:
+		return metrics.FirewallIPFamiliesNone
+	}
 }
 
 func (l4netlb *L4NetLB) provideHealthChecks(nodeNames []string, result *L4NetLBSyncResult) string {
