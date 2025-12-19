@@ -142,6 +142,7 @@ var F = struct {
 	EnableL4ILBMixedProtocol                  bool
 	EnableL4NetLBMixedProtocol                bool
 	EnableL4DenyFirewall                      bool
+	EnableL4DenyFirewallExplicitlySet         bool
 	EnableL4NetLBForwardingRulesOptimizations bool
 	EnableIPV6OnlyNEG                         bool
 	MultiProjectOwnerLabelKey                 string
@@ -383,6 +384,12 @@ func Validate() {
 	if F.EnableL4DenyFirewall && !F.EnablePinhole {
 		klog.Fatalf("The flag --enable-l4-deny-firewall requires --enable-pinhole to be true.")
 	}
+
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "enable-l4-deny-firewall" && f.Changed {
+			F.EnableL4DenyFirewallExplicitlySet = true
+		}
+	})
 }
 
 type RateLimitSpecs struct {

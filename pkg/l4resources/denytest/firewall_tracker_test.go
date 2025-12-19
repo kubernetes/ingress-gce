@@ -34,8 +34,12 @@ func (f *firewallTracker) patch(fw *compute.Firewall) error {
 		f.firewalls = make(firewallMap)
 	}
 
-	if len(fw.DestinationRanges) != 1 {
-		return fmt.Errorf("not implemented count of destination ranges %d", len(fw.DestinationRanges))
+	if len(fw.DestinationRanges) < 1 { // Does not concern us - likely for healthcheck
+		return nil
+	}
+
+	if len(fw.DestinationRanges) > 1 {
+		return fmt.Errorf("unexpected count of destination ranges, expected at most 1: %v", fw.DestinationRanges)
 	}
 
 	cidrOrIP := fw.DestinationRanges[0]

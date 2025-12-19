@@ -14,6 +14,7 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/l4annotations"
+	"k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/l4resources"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -533,6 +534,91 @@ func TestDenyRollback(t *testing.T) {
 	}
 }
 
+// TestExportsCorrectDenyMetrics verifies that correct label are exported given the IP stack, errors and feature being enabled.
+func TestExportsCorrectDenyMetrics(t *testing.T) {
+	var oldFlag bool
+	flags.F.EnablePinhole, oldFlag = true, flags.F.EnablePinhole
+	defer func() { flags.F.EnablePinhole = oldFlag }()
+
+	testCases := []struct {
+		desc        string
+		ipFamilies  []v1.IPFamily
+		denyEnabled bool
+		fwErrors    bool
+		want        metrics.DenyFirewallStatus
+	}{
+		{
+			desc:        "ipv4",
+			ipFamilies:  []v1.IPFamily{v1.IPv4Protocol},
+			denyEnabled: true,
+			want:        metrics.DenyFirewallStatusIPv4,
+		},
+		{
+			desc:        "ipv6",
+			ipFamilies:  []v1.IPFamily{v1.IPv6Protocol},
+			denyEnabled: true,
+			want:        metrics.DenyFirewallStatusIPv6,
+		},
+		{
+			desc:        "ipv4_ipv6",
+			ipFamilies:  []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+			denyEnabled: true,
+			want:        metrics.DenyFirewallStatusDualStack,
+		},
+		{
+			desc:        "ipv4_disabled",
+			ipFamilies:  []v1.IPFamily{v1.IPv4Protocol},
+			denyEnabled: false,
+			want:        metrics.DenyFirewallStatusNone,
+		},
+		{
+			desc:        "ipv6_disabled",
+			ipFamilies:  []v1.IPFamily{v1.IPv6Protocol},
+			denyEnabled: false,
+			want:        metrics.DenyFirewallStatusNone,
+		},
+		{
+			desc:        "fw_error",
+			ipFamilies:  []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+			denyEnabled: true,
+			fwErrors:    true,
+			want:        metrics.DenyFirewallStatusNone,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			// Arrange
+			t.Parallel()
+			ctx := t.Context()
+			svc := helperService(tc.ipFamilies)
+			gce, err := helperCloud(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.fwErrors {
+				mockGCE := gce.Compute().(*cloud.MockGCE)
+				mockGCE.MockFirewalls.InsertError = map[meta.Key]error{
+					*meta.GlobalKey(denyIPv4Name): errors.New("injected error ipv4"),
+					*meta.GlobalKey(denyIPv6Name): errors.New("injected error ipv6"),
+				}
+			}
+
+			ensurer := helperL4NetLB(gce, klog.TODO(), svc, tc.denyEnabled)
+
+			// Act
+			res := ensurer.EnsureFrontend([]string{nodeName}, svc, time.Now())
+			// We expicitly don't care for errors - only for values stored in metrics
+			got := res.MetricsState.DenyFirewallStatus
+
+			// Assert
+			if got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func helperL4NetLB(cloud *gce.Cloud, log klog.Logger, svc *v1.Service, denyFirewall bool) *l4resources.L4NetLB {
 	return l4resources.NewL4NetLB(&l4resources.L4NetLBParams{
 		Service:          svc,
@@ -590,7 +676,10 @@ func helperCloud(ctx context.Context) (*gce.Cloud, error) {
 	}
 	mockGCE.MockFirewalls.UpdateHook = mockGCE.MockFirewalls.PatchHook
 	mockGCE.MockFirewalls.InsertHook = func(ctx context.Context, key *meta.Key, obj *compute.Firewall, m *cloud.MockFirewalls, options ...cloud.Option) (bool, error) {
-		return false, firewallTracker.patch(obj)
+		if err := firewallTracker.patch(obj); err != nil {
+			return true, err
+		}
+		return false, nil
 	}
 
 	mockGCE.MockRegionBackendServices.UpdateHook = mock.UpdateRegionBackendServiceHook
