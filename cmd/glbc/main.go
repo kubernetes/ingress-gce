@@ -31,7 +31,6 @@ import (
 	nodetopologyclient "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned"
 	informernodetopology "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions"
 	k8scp "github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
-	flag "github.com/spf13/pflag"
 	crdclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	informers "k8s.io/client-go/informers"
@@ -80,10 +79,7 @@ const negLockName = "ingress-gce-neg-lock"
 const l4LockName = "l4-lb-controller-gce-lock"
 
 func main() {
-	flags.Register()
-	rand.Seed(time.Now().UTC().UnixNano())
-	flag.Parse()
-	flags.Validate()
+	flags.Setup()
 
 	if flags.F.Version {
 		fmt.Printf("Controller version: %s\n", version.Version)

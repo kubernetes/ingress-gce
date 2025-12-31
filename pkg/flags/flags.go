@@ -142,7 +142,6 @@ var F = struct {
 	EnableL4ILBMixedProtocol                  bool
 	EnableL4NetLBMixedProtocol                bool
 	EnableL4DenyFirewall                      bool
-	EnableL4DenyFirewallExplicitlySet         bool
 	EnableL4NetLBForwardingRulesOptimizations bool
 	EnableIPV6OnlyNEG                         bool
 	MultiProjectOwnerLabelKey                 string
@@ -152,6 +151,8 @@ var F = struct {
 	L4ILBLegacyHeadStartTime                  time.Duration
 	EnableIPv6NodeNEGEndpoints                bool
 
+	// EnableL4DenyFirewallExplicitlySet will be set to true if the argument was explicitly set by the user.
+	EnableL4DenyFirewallExplicitlySet bool
 	// ===============================
 	// DEPRECATED FLAGS
 	// ===============================
@@ -384,7 +385,15 @@ func Validate() {
 	if F.EnableL4DenyFirewall && !F.EnablePinhole {
 		klog.Fatalf("The flag --enable-l4-deny-firewall requires --enable-pinhole to be true.")
 	}
+}
 
+// Setup will register, parse and validate flags. Setup should be called before any flags are used.
+func Setup() {
+	Register()
+	flag.Parse()
+	Validate()
+
+	// Work that needs to be done after flags are parsed
 	flag.Visit(func(f *flag.Flag) {
 		if f.Name == "enable-l4-deny-firewall" && f.Changed {
 			F.EnableL4DenyFirewallExplicitlySet = true
