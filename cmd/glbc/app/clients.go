@@ -47,6 +47,36 @@ const (
 	cloudClientRetryInterval = 10 * time.Second
 )
 
+// createAndValidateGCEClient creates a GCE cloud provider, configures rate limiting,
+// and validates connectivity by listing backend services.
+func createAndValidateGCEClient(configReader func() io.Reader, logger klog.Logger) (*gce.Cloud, error) {
+	provider, err := cloudprovider.GetCloudProvider("gce", configReader())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cloud provider: %w", err)
+	}
+
+	cloud := provider.(*gce.Cloud)
+
+	// Configure GCE rate limiting
+	rl, err := ratelimit.NewGCERateLimiter(flags.F.GCERateLimit.Values(), flags.F.GCEOperationPollInterval, logger)
+	if err != nil {
+		klog.Fatalf("Error configuring rate limiting: %v", err)
+	}
+	cloud.SetRateLimiter(rl)
+
+	// If this controller is scheduled on a node without compute/rw
+	// it won't be allowed to list backends. We can assume that the
+	// user has no need for Ingress in this case. If they grant
+	// permissions to the node they will have to restart the controller
+	// manually to re-create the client.
+	// TODO: why do we bail with success out if there is a permission error???
+	if _, err = cloud.ListGlobalBackendServices(); err == nil || utils.IsHTTPErrorCode(err, http.StatusForbidden) {
+		return cloud, nil
+	}
+
+	return nil, fmt.Errorf("failed to list backend services: %w", err)
+}
+
 // NewKubeConfigForProtobuf returns a Kubernetes client config that uses protobufs
 // for given the command line settings.
 func NewKubeConfigForProtobuf(logger klog.Logger) (*rest.Config, error) {
@@ -115,34 +145,38 @@ func NewGCEClient(logger klog.Logger) *gce.Cloud {
 	return GCEClientForConfigReader(configReader, logger)
 }
 
+// GCEClientForConfigReaderMT returns a client to the GCE environment, retrying
+// up to maxAttempts times before returning an error. This prevents workers
+// from getting stuck in infinite retry loops in multi-tenant environments.
+func GCEClientForConfigReaderMT(configReader func() io.Reader, logger klog.Logger, maxAttempts int) (*gce.Cloud, error) {
+	var lastErr error
+	for i := 0; i < maxAttempts; i++ {
+		cloud, err := createAndValidateGCEClient(configReader, logger)
+		if err == nil {
+			return cloud, nil
+		}
+		lastErr = err
+		logger.Info("Failed to create GCE client, retrying", "err", err, "attempt", i+1, "maxAttempts", maxAttempts)
+
+		if i < maxAttempts-1 {
+			time.Sleep(cloudClientRetryInterval)
+		}
+	}
+	// If we exhausts all attempts, we return the last error encountered. The task will be failed and requeued according to the backoff policy
+	return nil, fmt.Errorf("failed to create GCE client after %d attempts: %w", maxAttempts, lastErr)
+}
+
 func GCEClientForConfigReader(configReader func() io.Reader, logger klog.Logger) *gce.Cloud {
 	// Creating the cloud interface involves resolving the metadata server to get
 	// an oauth token. If this fails, the token provider assumes it's not on GCE.
 	// No errors are thrown. So we need to keep retrying till it works because
 	// we know we're on GCE.
 	for {
-		provider, err := cloudprovider.GetCloudProvider("gce", configReader())
+		cloud, err := createAndValidateGCEClient(configReader, logger)
 		if err == nil {
-			cloud := provider.(*gce.Cloud)
-			// Configure GCE rate limiting
-			rl, err := ratelimit.NewGCERateLimiter(flags.F.GCERateLimit.Values(), flags.F.GCEOperationPollInterval, logger)
-			if err != nil {
-				klog.Fatalf("Error configuring rate limiting: %v", err)
-			}
-			cloud.SetRateLimiter(rl)
-			// If this controller is scheduled on a node without compute/rw
-			// it won't be allowed to list backends. We can assume that the
-			// user has no need for Ingress in this case. If they grant
-			// permissions to the node they will have to restart the controller
-			// manually to re-create the client.
-			// TODO: why do we bail with success out if there is a permission error???
-			if _, err = cloud.ListGlobalBackendServices(); err == nil || utils.IsHTTPErrorCode(err, http.StatusForbidden) {
-				return cloud
-			}
-			logger.Info("Failed to list backend services, retrying", "err", err)
-		} else {
-			logger.Info("Failed to get cloud provider, retrying", "err", err)
+			return cloud
 		}
+		logger.Info("Failed to create GCE client, retrying", "err", err)
 		time.Sleep(cloudClientRetryInterval)
 	}
 }
