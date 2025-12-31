@@ -32,11 +32,13 @@ var L4ResourceAnnotationKeys = []string{
 	l4annotations.L3ForwardingRuleKey,
 	l4annotations.HealthcheckKey,
 	l4annotations.FirewallRuleKey,
+	l4annotations.FirewallRuleDenyKey,
 	l4annotations.FirewallRuleForHealthcheckKey,
 }
 
 var l4IPv6ResourceAnnotationKeys = []string{
 	l4annotations.FirewallRuleIPv6Key,
+	l4annotations.FirewallRuleDenyIPv6Key,
 	l4annotations.FirewallRuleForHealthcheckIPv6Key,
 	l4annotations.TCPForwardingRuleIPv6Key,
 	l4annotations.UDPForwardingRuleIPv6Key,

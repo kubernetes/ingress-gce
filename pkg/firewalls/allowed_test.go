@@ -3,6 +3,7 @@ package firewalls
 import (
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	compute "google.golang.org/api/compute/v1"
 	api_v1 "k8s.io/api/core/v1"
 )
@@ -101,5 +102,17 @@ func TestAllowedForService(t *testing.T) {
 				t.Errorf("AllowedForService(_) = %v, want %v", got, tC.want)
 			}
 		})
+	}
+}
+
+func TestDeniedAll(t *testing.T) {
+	got := DeniedAll()
+	want := []*compute.FirewallDenied{
+		{
+			IPProtocol: "all",
+		},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("DeniedAll() returned diff (-want +got):\n%s", diff)
 	}
 }

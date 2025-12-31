@@ -29,7 +29,6 @@ import (
 	networkclient "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned"
 	nodetopologyclient "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned"
 	k8scp "github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
-	flag "github.com/spf13/pflag"
 	crdclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -76,10 +75,7 @@ const negLockName = "ingress-gce-neg-lock"
 const l4LockName = "l4-lb-controller-gce-lock"
 
 func main() {
-	flags.Register()
-	rand.Seed(time.Now().UTC().UnixNano())
-	flag.Parse()
-	flags.Validate()
+	flags.Setup()
 
 	if flags.F.Version {
 		fmt.Printf("Controller version: %s\n", version.Version)
@@ -341,6 +337,7 @@ func main() {
 		EnableL4NetLBNEGsDefault:                  flags.F.EnableL4NetLBNEGDefault,
 		EnableL4ILBMixedProtocol:                  flags.F.EnableL4ILBMixedProtocol,
 		EnableL4NetLBMixedProtocol:                flags.F.EnableL4NetLBMixedProtocol,
+		EnableL4DenyFirewalls:                     flags.F.EnableL4DenyFirewall,
 		EnableL4ILBZonalAffinity:                  flags.F.EnableL4ILBZonalAffinity,
 		EnableL4NetLBForwardingRulesOptimizations: flags.F.EnableL4NetLBForwardingRulesOptimizations,
 		ReadOnlyMode:                              flags.F.ReadOnlyMode,

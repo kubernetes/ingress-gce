@@ -36,6 +36,7 @@ const (
 	l4LabelBackendType           = "backend_type"
 	l4LabelProtocol              = "protocol" // Either "TCP", "UDP", or "MIXED". The default "" means that there is an error.
 	l4LabelLoggingEnabled        = "logging_enabled"
+	labelDenyFirewall            = "deny_firewall"
 )
 
 var (
@@ -52,7 +53,7 @@ var (
 			Name: "l4_netlbs_count",
 			Help: "Metric containing the number of NetLBs that can be filtered by feature labels and status",
 		},
-		[]string{l4LabelStatus, l4LabelMultinet, l4LabelStrongSessionAffinity, l4LabelWeightedLBPodsPerNode, l4LabelBackendType, l4LabelProtocol, l4LabelLoggingEnabled},
+		[]string{l4LabelStatus, l4LabelMultinet, l4LabelStrongSessionAffinity, l4LabelWeightedLBPodsPerNode, l4LabelBackendType, l4LabelProtocol, l4LabelLoggingEnabled, labelDenyFirewall},
 	)
 )
 
@@ -188,6 +189,7 @@ func (c *Collector) exportL4NetLBsMetrics() {
 			l4LabelBackendType:           string(svcState.BackendType),
 			l4LabelProtocol:              string(svcState.Protocol),
 			l4LabelLoggingEnabled:        strconv.FormatBool(svcState.LoggingEnabled),
+			labelDenyFirewall:            string(svcState.DenyFirewallStatus),
 		}).Inc()
 	}
 	c.logger.V(3).Info("L4 NetLB usage metrics exported")

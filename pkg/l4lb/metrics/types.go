@@ -48,6 +48,19 @@ const (
 	L4ProtocolTypeMixed   = L4ProtocolType("MIXED")
 )
 
+// DenyFirewallStatus represents IP stack used when the deny firewalls are provisioned.
+type DenyFirewallStatus string
+
+// DenyFirewallStatus represents IP stack used when the deny firewalls are provisioned.
+const (
+	DenyFirewallStatusUnknown   = DenyFirewallStatus("UNKNOWN")   // Shouldn't happen, but if it does something is wrong.
+	DenyFirewallStatusNone      = DenyFirewallStatus("")          // Case when no firewalls have been provisioned yet or when the feature has not been enabled explicitly
+	DenyFirewallStatusDisabled  = DenyFirewallStatus("DISABLED")  // Case to mark when the feature has been enabled then explicitly disabled - for example when the feature is rolled back
+	DenyFirewallStatusIPv4      = DenyFirewallStatus("IPv4")      // Only IPv4 firewall has been provisioned
+	DenyFirewallStatusIPv6      = DenyFirewallStatus("IPv6")      // Only IPv6 firewall has been provisioned
+	DenyFirewallStatusDualStack = DenyFirewallStatus("IPv4_IPv6") // Both IPv4 and IPv6 firewall have been provisioned
+)
+
 // L4DualStackServiceLabels defines ipFamilies, ipFamilyPolicy
 // of L4 DualStack service
 type L4DualStackServiceLabels struct {
@@ -73,6 +86,8 @@ type L4FeaturesServiceLabels struct {
 	Protocol L4ProtocolType
 	// LoggingEnabled is true if logging is configured to be enabled on the Backend Service
 	LoggingEnabled bool
+	// DenyFirewallStatus stores status of deny firewalls that were created for the LB. Exclusive to NetLB. If no deny firewalls were created is empty.
+	DenyFirewallStatus DenyFirewallStatus
 }
 
 // L4ServiceState tracks the state of an L4 service. It includes data needed to fill various L4 metrics plus the status of the service.

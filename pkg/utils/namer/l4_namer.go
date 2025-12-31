@@ -104,6 +104,16 @@ func (namer *L4Namer) L4Firewall(namespace, name string) string {
 	return namer.L4Backend(namespace, name)
 }
 
+// L4FirewallDeny returns the gce Firewall name for the Deny rule
+// Naming convention:
+//
+//	k8s2-{uid}-{ns}-{name}-{suffix}-deny
+//
+// Output name is at most 63 characters, whole "-deny" will be always at the end.
+func (namer *L4Namer) L4FirewallDeny(namespace, name string) string {
+	return GetSuffixedName(namer.L4Firewall(namespace, name), "-deny")
+}
+
 // L4IPv6Firewall returns the gce IPv6 Firewall name based on the service namespace and name
 // Naming convention:
 //
@@ -112,6 +122,16 @@ func (namer *L4Namer) L4Firewall(namespace, name string) string {
 // Output name is at most 63 characters.
 func (namer *L4Namer) L4IPv6Firewall(namespace, name string) string {
 	return GetSuffixedName(namer.L4Backend(namespace, name), "-"+ipv6Suffix)
+}
+
+// L4IPv6FirewallDeny returns the gce IPv6 Firewall name for the Deny Rule
+// Naming convention:
+//
+//	k8s2-{uid}-{ns}-{name}-{suffix}-deny-ipv6
+//
+// Output name is at most 63 characters, the name will always have "-deny-ipv6" suffix.
+func (namer *L4Namer) L4IPv6FirewallDeny(namespace, name string) string {
+	return GetSuffixedName(namer.L4Firewall(namespace, name), "-deny-"+ipv6Suffix)
 }
 
 // L4ForwardingRule returns the name of the L4 forwarding rule name based on the service namespace, name and protocol.

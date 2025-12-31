@@ -141,6 +141,7 @@ var F = struct {
 	ProviderConfigNameLabelKey                string
 	EnableL4ILBMixedProtocol                  bool
 	EnableL4NetLBMixedProtocol                bool
+	EnableL4DenyFirewall                      bool
 	EnableL4NetLBForwardingRulesOptimizations bool
 	EnableIPV6OnlyNEG                         bool
 	MultiProjectOwnerLabelKey                 string
@@ -150,6 +151,8 @@ var F = struct {
 	L4ILBLegacyHeadStartTime                  time.Duration
 	EnableIPv6NodeNEGEndpoints                bool
 
+	// EnableL4DenyFirewallExplicitlySet will be set to true if the argument was explicitly set by the user.
+	EnableL4DenyFirewallExplicitlySet bool
 	// ===============================
 	// DEPRECATED FLAGS
 	// ===============================
@@ -317,7 +320,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableUpdateCustomHealthCheckDescription, "enable-update-hc-description", false, "Update health check Description when it is customized with BackendConfig CRD.")
 	flag.BoolVar(&F.EnableRecalculateUHCOnBCRemoval, "enable-recalculate-uhc-on-backendconfig-removal", false, "Recalculate health check parameters when BackendConfig is removed from service. This flag cannot be used without --enable-update-hc-description.")
 	flag.IntVar(&F.THCPort, "transparent-health-checks-port", 7877, "The port for Transparent Health Checks. It must be aligned with Transparent Health Check controller server. This flag only works when --enable-transparent-health-checks is enabled.")
-	flag.BoolVar(&F.EnablePinhole, "enable-pinhole", false, "Enable Pinhole firewall feature")
+	flag.BoolVar(&F.EnablePinhole, "enable-pinhole", true, "Enable Pinhole firewall feature")
 	flag.BoolVar(&F.EnableL4ILBDualStack, "enable-l4ilb-dual-stack", true, "Enable Dual-Stack handling for L4 Internal Load Balancers")
 	flag.BoolVar(&F.EnableL4NetLBDualStack, "enable-l4netlb-dual-stack", true, "Enable Dual-Stack handling for L4 External Load Balancers")
 	// StrongSessionAffinity is a restricted feature that is enabled on
@@ -352,6 +355,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableMultiProjectMode, "enable-multi-project-mode", false, "Enable running in multi-project mode.")
 	flag.BoolVar(&F.EnableL4ILBMixedProtocol, "enable-l4ilb-mixed-protocol", false, "Enable support for mixed protocol L4 internal load balancers.")
 	flag.BoolVar(&F.EnableL4NetLBMixedProtocol, "enable-l4netlb-mixed-protocol", false, "Enable support for mixed protocol L4 external load balancers.")
+	flag.BoolVar(&F.EnableL4DenyFirewall, "enable-l4-deny-firewall", false, "Enable creation and updates of Deny VPC Firewall Rules for L4 external load balancers. Requires --enable-pinhole to be true.")
 	flag.StringVar(&F.ProviderConfigNameLabelKey, "provider-config-name-label-key", "cloud.gke.io/provider-config-name", "The label key for provider-config name, which is used to identify the provider-config of objects in multi-project mode.")
 	flag.BoolVar(&F.EnableL4NetLBForwardingRulesOptimizations, "enable-l4netlb-forwarding-rules-optimizations", false, "Enable optimized processing of forwarding rules for L4 NetLB.")
 	flag.BoolVar(&F.EnableIPV6OnlyNEG, "enable-ipv6-only-neg", false, "Enable support for IPV6 Only NEG's.")
@@ -377,6 +381,24 @@ func Validate() {
 	if err := validation.ValidateHealthCheckSourceCIDRs(F.OverrideHealthCheckSourceCIDRs); err != nil {
 		klog.Fatalf("Invalid --override-health-check-src-cidrs flag: %v", err)
 	}
+
+	if F.EnableL4DenyFirewall && !F.EnablePinhole {
+		klog.Fatalf("The flag --enable-l4-deny-firewall requires --enable-pinhole to be true.")
+	}
+}
+
+// Setup will register, parse and validate flags. Setup should be called before any flags are used.
+func Setup() {
+	Register()
+	flag.Parse()
+	Validate()
+
+	// Work that needs to be done after flags are parsed
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "enable-l4-deny-firewall" && f.Changed {
+			F.EnableL4DenyFirewallExplicitlySet = true
+		}
+	})
 }
 
 type RateLimitSpecs struct {

@@ -31,8 +31,16 @@ func Equal(a, b *compute.Firewall, skipDescription bool) (bool, error) {
 		return false, nil
 	case !skipDescription && a.Description != b.Description:
 		return false, nil
+	case a.Priority != b.Priority:
+		return false, nil
 	default:
-		return equalAllowRules(a.Allowed, b.Allowed)
+		if eq, err := equalAllowRules(a.Allowed, b.Allowed); !eq || err != nil {
+			return false, err
+		}
+		if eq, err := equalDenyRules(a.Denied, b.Denied); !eq || err != nil {
+			return false, err
+		}
+		return true, nil
 	}
 }
 
@@ -93,15 +101,18 @@ func equalAllowRules(a, b []*compute.FirewallAllowed) (bool, error) {
 	return reflect.DeepEqual(am, bm), nil
 }
 
+type intSet map[int]struct{}
+type portsPerProtocol map[string]intSet
+
 // We list all the ports, since FirewallAllowed allows to specify ranges using strings like 10-13, and this should be equal to 10,11,12,13
 //
 // Returns error when there is a port definition that isn't an int or range (int-int)
-func portsAllowedPerProtocol(a []*compute.FirewallAllowed) (map[string]map[int]struct{}, error) {
-	portsOpenForProtocol := make(map[string]map[int]struct{})
+func portsAllowedPerProtocol(a []*compute.FirewallAllowed) (portsPerProtocol, error) {
+	portsOpenForProtocol := make(portsPerProtocol)
 	for _, rule := range a {
 		protocol := strings.ToLower(rule.IPProtocol)
 		if _, ok := portsOpenForProtocol[protocol]; !ok {
-			portsOpenForProtocol[protocol] = make(map[int]struct{})
+			portsOpenForProtocol[protocol] = make(intSet)
 		}
 
 		for _, portStr := range rule.Ports {
@@ -115,6 +126,41 @@ func portsAllowedPerProtocol(a []*compute.FirewallAllowed) (map[string]map[int]s
 		}
 	}
 	return portsOpenForProtocol, nil
+}
+
+func equalDenyRules(a, b []*compute.FirewallDenied) (bool, error) {
+	am, err := portsDeniedPerProtocol(a)
+	if err != nil {
+		return false, err
+	}
+
+	bm, err := portsDeniedPerProtocol(b)
+	if err != nil {
+		return false, err
+	}
+
+	return reflect.DeepEqual(am, bm), nil
+}
+
+func portsDeniedPerProtocol(a []*compute.FirewallDenied) (portsPerProtocol, error) {
+	portsClosedForProtocol := make(portsPerProtocol)
+	for _, rule := range a {
+		protocol := strings.ToLower(rule.IPProtocol)
+		if _, ok := portsClosedForProtocol[protocol]; !ok {
+			portsClosedForProtocol[protocol] = make(intSet)
+		}
+
+		for _, portStr := range rule.Ports {
+			start, end, err := parsePort(portStr)
+			if err != nil {
+				return nil, err
+			}
+			for i := start; i <= end; i++ {
+				portsClosedForProtocol[protocol][i] = struct{}{}
+			}
+		}
+	}
+	return portsClosedForProtocol, nil
 }
 
 // parsePort returns [start, end] range (inclusive)
