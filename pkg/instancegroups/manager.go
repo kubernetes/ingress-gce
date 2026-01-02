@@ -255,7 +255,7 @@ func (m *manager) List(logger klog.Logger) ([]string, error) {
 	names := sets.New[string]()
 
 	for _, ig := range igs {
-		if m.namer.NameBelongsToCluster(ig.Name) {
+		if m.namer.NameBelongsToEntity(ig.Name) {
 			names.Insert(ig.Name)
 		}
 	}
