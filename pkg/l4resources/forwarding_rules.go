@@ -46,6 +46,8 @@ const (
 	// addressAlreadyInUseMessageInternal is the error message string returned by the compute API
 	// when creating an internal forwarding rule that uses a conflicting IP address.
 	addressAlreadyInUseMessageInternal = "IP_IN_USE_BY_ANOTHER_RESOURCE"
+
+	portsConflictMessage = "Forwarding rule's port range is conflicting with forwarding rule"
 )
 
 // ensureIPv4ForwardingRule creates a forwarding rule with the given name, if it does not exist. It updates the existing
@@ -163,6 +165,9 @@ func (l4 *L4) createFwdRule(newFr *composite.ForwardingRule, frLogger klog.Logge
 	if err := l4.forwardingRules.Create(newFr); err != nil {
 		if isAddressAlreadyInUseError(err) {
 			return utils.NewIPConfigurationError(newFr.IPAddress, err.Error())
+		}
+		if isConflictingPortsError(err) {
+			return utils.NewConflictingPortsConfigurationError(newFr.PortRange, err.Error())
 		}
 		return err
 	}
@@ -314,6 +319,9 @@ func (l4netlb *L4NetLB) createFwdRule(newFr *composite.ForwardingRule, frLogger 
 		if isAddressAlreadyInUseError(err) {
 			return utils.NewIPConfigurationError(newFr.IPAddress, addressAlreadyInUseMessageExternal)
 		}
+		if isConflictingPortsError(err) {
+			return utils.NewConflictingPortsConfigurationError(newFr.PortRange, err.Error())
+		}
 		return err
 	}
 	return nil
@@ -336,4 +344,9 @@ func isAddressAlreadyInUseError(err error) bool {
 	// Conflict HTTP status (409) is returned for internal Forwarding Rules.
 	alreadyInUseInternal := utils.IsHTTPErrorCode(err, http.StatusConflict) && strings.Contains(err.Error(), addressAlreadyInUseMessageInternal)
 	return alreadyInUseExternal || alreadyInUseInternal
+}
+
+func isConflictingPortsError(err error) bool {
+	portsConflictError := utils.IsHTTPErrorCode(err, http.StatusBadRequest) && strings.Contains(err.Error(), portsConflictMessage)
+	return portsConflictError
 }

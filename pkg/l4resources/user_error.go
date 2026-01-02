@@ -14,6 +14,7 @@ func IsUserError(err error) bool {
 
 	return utils.IsNetworkTierError(err) ||
 		utils.IsIPConfigurationError(err) ||
+		utils.IsConflictingPortsConfigurationError(err) ||
 		utils.IsInvalidSubnetConfigurationError(err) ||
 		utils.IsInvalidLoadBalancerSourceRangesSpecError(err) ||
 		utils.IsInvalidLoadBalancerSourceRangesAnnotationError(err) ||

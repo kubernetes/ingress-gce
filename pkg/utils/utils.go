@@ -140,6 +140,20 @@ func NewIPConfigurationError(ip, reason string) *IPConfigurationError {
 	return &IPConfigurationError{ip: ip, reason: reason}
 }
 
+// ConflictingPortsConfigurationError is a struct to define error caused by User misconfiguration of the LB ports.
+type ConflictingPortsConfigurationError struct {
+	ports  string
+	reason string
+}
+
+func (e *ConflictingPortsConfigurationError) Error() string {
+	return fmt.Sprintf("Conflicting ports configuration error: \"%s\" %s", e.ports, e.reason)
+}
+
+func NewConflictingPortsConfigurationError(ports, reason string) *ConflictingPortsConfigurationError {
+	return &ConflictingPortsConfigurationError{ports: ports, reason: reason}
+}
+
 // InvalidSubnetConfigurationError is a struct to define error caused by User misconfiguration of Load Balancer's subnet.
 type InvalidSubnetConfigurationError struct {
 	projectName string
@@ -258,6 +272,12 @@ func IsUnsupportedNetworkTierError(err error) bool {
 func IsIPConfigurationError(err error) bool {
 	var ipConfigError *IPConfigurationError
 	return errors.As(err, &ipConfigError)
+}
+
+// IsConflictingPortsConfigurationError checks if wrapped error is an conflicting ports configuration error.
+func IsConflictingPortsConfigurationError(err error) bool {
+	var portsConflictConfigError *ConflictingPortsConfigurationError
+	return errors.As(err, &portsConflictConfigError)
 }
 
 // IsInvalidSubnetConfigurationError checks if wrapped error is an Invalid Subnet Configuration error.
