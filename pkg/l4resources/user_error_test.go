@@ -51,6 +51,10 @@ func TestIsUserError(t *testing.T) {
 			err:  utils.NewInvalidLoadBalancerSourceRangesSpecError(nil, fmt.Errorf("bad")),
 			want: true,
 		},
+		{
+			err:  utils.NewConflictingPortsConfigurationError("8080-8090", "conflicting ports"),
+			want: true,
+		},
 	}
 	for _, tC := range testCases {
 		tC := tC
