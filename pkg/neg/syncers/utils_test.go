@@ -3740,3 +3740,30 @@ func getTestEndpointSlices(name, namespace string) []*discovery.EndpointSlice {
 		},
 	}
 }
+
+func getTestEmptyEndpointSlices(name, namespace string) []*discovery.EndpointSlice {
+	emptyNamedPort := ""
+	port80 := int32(80)
+	protocolTCP := v1.ProtocolTCP
+	return []*discovery.EndpointSlice{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name + "-1",
+				Namespace: namespace,
+				Labels: map[string]string{
+					discovery.LabelServiceName: name,
+					discovery.LabelManagedBy:   managedByEPSControllerValue,
+				},
+			},
+			AddressType: "IPv4",
+			Endpoints:   []discovery.Endpoint{},
+			Ports: []discovery.EndpointPort{
+				{
+					Name:     &emptyNamedPort,
+					Port:     &port80,
+					Protocol: &protocolTCP,
+				},
+			},
+		},
+	}
+}

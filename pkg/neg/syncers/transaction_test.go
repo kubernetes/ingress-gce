@@ -782,6 +782,7 @@ func TestCommitTransaction(t *testing.T) {
 		expectSyncCount  int
 		expectRetryCount int
 		expectNeedInit   bool
+		operation        transactionOp
 	}{
 		{
 			"empty inputs",
@@ -792,6 +793,7 @@ func TestCommitTransaction(t *testing.T) {
 			1,
 			0,
 			false,
+			attachOp,
 		},
 		{
 			"attach 10 endpoints on 1 instance successfully",
@@ -806,6 +808,7 @@ func TestCommitTransaction(t *testing.T) {
 			2,
 			0,
 			false,
+			attachOp,
 		},
 		{
 			"detach 20 endpoints on 2 instances successfully",
@@ -821,6 +824,7 @@ func TestCommitTransaction(t *testing.T) {
 			3,
 			0,
 			false,
+			detachOp,
 		},
 		{
 			"attach 20 endpoints on 2 instances successfully with unrelated 10 entries in the transaction table",
@@ -841,6 +845,7 @@ func TestCommitTransaction(t *testing.T) {
 			4,
 			0,
 			false,
+			attachOp,
 		},
 		{
 			"error and retry",
@@ -859,6 +864,7 @@ func TestCommitTransaction(t *testing.T) {
 			5,
 			1,
 			true,
+			attachOp,
 		},
 		{
 			"error and retry #2",
@@ -879,6 +885,7 @@ func TestCommitTransaction(t *testing.T) {
 			6,
 			2,
 			true,
+			attachOp,
 		},
 		{
 			"detach 20 endpoints on 2 instance but missing transaction entries on 1 instance",
@@ -893,6 +900,7 @@ func TestCommitTransaction(t *testing.T) {
 			7,
 			2,
 			false,
+			detachOp,
 		},
 		{
 			"detach 20 endpoints on 2 instance but 10 endpoints needs reconcile",
@@ -913,12 +921,13 @@ func TestCommitTransaction(t *testing.T) {
 			8,
 			2,
 			false,
+			detachOp,
 		},
 	}
 
 	for _, tc := range testCases {
 		transactionSyncer.transactions = tc.table()
-		transactionSyncer.commitTransaction(tc.err, tc.endpointMap)
+		transactionSyncer.commitTransaction(tc.operation, tc.err, tc.endpointMap)
 		if transactionSyncer.needInit != tc.expectNeedInit {
 			t.Errorf("For case %q, endpointSets needInit == %v, but got %v", tc.desc, tc.expectNeedInit, transactionSyncer.needInit)
 		}
@@ -1169,6 +1178,83 @@ func TestFilterEndpointByTransaction(t *testing.T) {
 	for _, tc := range testCases {
 		input := tc.endpointMap
 		filterEndpointByTransaction(input, tc.table(), klog.TODO())
+		if !reflect.DeepEqual(tc.endpointMap, tc.expectEndpointMap) {
+			t.Errorf("For test case %q, endpointSets endpoint map to be %+v, but got %+v", tc.desc, tc.expectEndpointMap, tc.endpointMap)
+		}
+	}
+}
+
+func TestFilterEndpointByTransactionExclDetach(t *testing.T) {
+	testCases := []struct {
+		desc              string
+		endpointMap       map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
+		table             func() networkEndpointTransactionTable
+		expectEndpointMap map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
+	}{
+		{
+			"both empty",
+			map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{},
+			func() networkEndpointTransactionTable { return NewTransactionTable() },
+			map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{},
+		},
+		{
+			"empty map",
+			map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{},
+			func() networkEndpointTransactionTable {
+				table := NewTransactionTable()
+				generateTransaction(table, transactionEntry{
+					Operation: detachOp,
+
+					Zone: testZone1,
+				}, net.ParseIP("1.1.1.1"), 5, testInstance1, "8080")
+				generateTransaction(table, transactionEntry{
+					Operation: attachOp,
+
+					Zone: testZone1,
+				}, net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
+				return table
+			},
+			map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{},
+		},
+		{
+			"empty transaction",
+			map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
+				{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
+			},
+			func() networkEndpointTransactionTable { return NewTransactionTable() },
+			map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
+				{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
+			},
+		},
+		{
+			"do not filter detaches",
+			map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 2, testInstance1, "8080")),
+				{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 2, testInstance2, "8080")),
+			},
+			func() networkEndpointTransactionTable {
+				table := NewTransactionTable()
+				generateTransaction(table, transactionEntry{
+					Operation: detachOp,
+					Zone:      testZone1,
+				}, net.ParseIP("1.1.1.1"), 2, testInstance1, "8080")
+				generateTransaction(table, transactionEntry{
+					Operation: attachOp,
+					Zone:      testZone2,
+				}, net.ParseIP("1.1.3.1"), 2, testInstance2, "8080")
+				return table
+			},
+			map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 2, testInstance1, "8080")),
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		input := tc.endpointMap
+		filterEndpointByTransactionExclDetach(input, tc.table(), klog.TODO())
 		if !reflect.DeepEqual(tc.endpointMap, tc.expectEndpointMap) {
 			t.Errorf("For test case %q, endpointSets endpoint map to be %+v, but got %+v", tc.desc, tc.expectEndpointMap, tc.endpointMap)
 		}
@@ -3654,22 +3740,321 @@ func TestGetNonDefaultSubnetNEGName(t *testing.T) {
 	}
 }
 
+func TestSyncL4NEGs(t *testing.T) {
+	testNodeIP1 := "1.2.3.1"
+	testNodeIP2 := "1.2.3.2"
+	testNodeIP3 := "1.2.3.3"
+	testNodeIP4 := "1.2.3.4"
+	testNodeIP5 := "1.2.3.5"
+
+	testCases := []struct {
+		desc                   string
+		existingGCEEndpoints   map[negtypes.NEGLocation][]*composite.NetworkEndpoint
+		endpointSlices         []*discovery.EndpointSlice
+		inProgressTransactions map[negtypes.NetworkEndpoint]transactionEntry
+		expectedEndpoints      map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
+		enableL4DetachCancel   bool
+	}{
+		{
+			// test if the syncer can attach endpoints to L4 NEG.
+			desc: "add endpoints",
+			existingGCEEndpoints: map[negtypes.NEGLocation][]*composite.NetworkEndpoint{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: {{}},
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: {{}},
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: {{}},
+			},
+			endpointSlices: getDefaultEndpointSlices(),
+			expectedEndpoints: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: testNodeIP1, Node: negtypes.TestInstance1},
+					negtypes.NetworkEndpoint{IP: testNodeIP2, Node: negtypes.TestInstance2},
+				),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: testNodeIP3, Node: negtypes.TestInstance3},
+					negtypes.NetworkEndpoint{IP: testNodeIP4, Node: negtypes.TestInstance4},
+				),
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+			},
+		},
+		{
+			// test if the syncer can remove endpoints from L4 NEG.
+			desc: "remove endpoints",
+			existingGCEEndpoints: map[negtypes.NEGLocation][]*composite.NetworkEndpoint{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: {
+					{
+						Instance:  negtypes.TestInstance1,
+						IpAddress: testNodeIP1,
+					},
+					{
+						Instance:  negtypes.TestInstance2,
+						IpAddress: testNodeIP2,
+					},
+				},
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: {
+					{
+						Instance:  negtypes.TestInstance3,
+						IpAddress: testNodeIP3,
+					},
+				},
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: {
+					{},
+				},
+			},
+			endpointSlices: getTestEmptyEndpointSlices(testServiceName, testServiceNamespace),
+			expectedEndpoints: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+			},
+		},
+		{
+			// test if the syncer can add and remove endpoints from L4 NEG at the same time.
+			desc: "add/remove endpoints",
+			existingGCEEndpoints: map[negtypes.NEGLocation][]*composite.NetworkEndpoint{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: {
+					{
+						Instance:  negtypes.TestInstance1,
+						IpAddress: testNodeIP1,
+					},
+				},
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: {
+					{
+						Instance:  negtypes.TestInstance3,
+						IpAddress: testNodeIP3,
+					},
+					{
+						Instance:  negtypes.TestInstance5, // should be removed
+						IpAddress: testNodeIP5,
+					},
+				},
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: {},
+			},
+			endpointSlices: getDefaultEndpointSlices(),
+			expectedEndpoints: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: testNodeIP1, Node: negtypes.TestInstance1},
+					negtypes.NetworkEndpoint{IP: testNodeIP2, Node: negtypes.TestInstance2},
+				),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: testNodeIP3, Node: negtypes.TestInstance3},
+					negtypes.NetworkEndpoint{IP: testNodeIP4, Node: negtypes.TestInstance4},
+				),
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+			},
+		},
+		{
+			// test if the syncer properly filters endpoints with active transactions.
+			desc: "dont affect endpoints with active transactions",
+			existingGCEEndpoints: map[negtypes.NEGLocation][]*composite.NetworkEndpoint{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: {
+					{
+						Instance:  negtypes.TestInstance1,
+						IpAddress: testNodeIP1,
+					},
+				},
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: {
+					{
+						Instance:  negtypes.TestInstance3,
+						IpAddress: testNodeIP3,
+					},
+					{
+						Instance:  negtypes.TestInstance5, // should be removed but has a transaction
+						IpAddress: testNodeIP5,
+					},
+				},
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: {},
+			},
+			endpointSlices: getDefaultEndpointSlices(),
+			inProgressTransactions: map[negtypes.NetworkEndpoint]transactionEntry{
+				{
+					IP:   testNodeIP2,
+					Node: negtypes.TestInstance2,
+				}: {
+					Operation: attachOp,
+					Zone:      negtypes.TestZone1,
+					Subnet:    defaultTestSubnet,
+				},
+				{
+					IP:   testNodeIP5,
+					Node: negtypes.TestInstance5,
+				}: {
+					Operation: detachOp,
+					Zone:      negtypes.TestZone2,
+					Subnet:    defaultTestSubnet,
+				},
+			},
+			expectedEndpoints: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: testNodeIP1, Node: negtypes.TestInstance1},
+					//TestInstance2 has a running transaction so it should not be re-added
+				),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: testNodeIP3, Node: negtypes.TestInstance3},
+					negtypes.NetworkEndpoint{IP: testNodeIP4, Node: negtypes.TestInstance4},
+					negtypes.NetworkEndpoint{IP: testNodeIP5, Node: negtypes.TestInstance5},
+				),
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+			},
+		},
+		{
+			// check if the syncer can do a 'detach cancel' - if there is a 'detach' transaction for a node it can be re-attached
+			desc:                 "allow detach cancel",
+			enableL4DetachCancel: true,
+			existingGCEEndpoints: map[negtypes.NEGLocation][]*composite.NetworkEndpoint{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: {
+					{
+						Instance:  negtypes.TestInstance1,
+						IpAddress: testNodeIP1,
+					},
+				},
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: {
+					{
+						Instance:  negtypes.TestInstance3,
+						IpAddress: testNodeIP3,
+					},
+				},
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: {},
+			},
+			endpointSlices: getDefaultEndpointSlices(),
+			inProgressTransactions: map[negtypes.NetworkEndpoint]transactionEntry{
+				{
+					IP:   testNodeIP2,
+					Node: negtypes.TestInstance2,
+				}: {
+					Operation: detachOp,
+					Zone:      negtypes.TestZone1,
+					Subnet:    defaultTestSubnet,
+				},
+				{
+					IP:   testNodeIP4,
+					Node: negtypes.TestInstance4,
+				}: {
+					Operation: attachOp,
+					Zone:      negtypes.TestZone2,
+					Subnet:    defaultTestSubnet,
+				},
+			},
+			expectedEndpoints: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: testNodeIP1, Node: negtypes.TestInstance1},
+					negtypes.NetworkEndpoint{IP: testNodeIP2, Node: negtypes.TestInstance2}, // shoud be re-attached
+				),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: testNodeIP3, Node: negtypes.TestInstance3},
+					// instance4 should not be re-attached since attach is in progress in transactions
+				),
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			nodeInformer := zonegetter.FakeNodeInformer()
+			zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
+			zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+			if err != nil {
+				t.Fatalf("failed to initialize zone getter: %v", err)
+			}
+			fakeGCE := gce.NewFakeGCECloud(test.DefaultTestClusterValues())
+			negtypes.MockNetworkEndpointAPIs(fakeGCE)
+			fakeCloud := negtypes.NewAdapter(fakeGCE, negtypes.NewTestContext().NegMetrics)
+
+			testEndpointMap := tc.existingGCEEndpoints
+			if testEndpointMap == nil {
+				testEndpointMap = make(map[negtypes.NEGLocation][]*composite.NetworkEndpoint)
+			}
+
+			// Create initial NetworkEndpointGroups in cloud
+			var objRefs []negv1beta1.NegObjectReference
+			for negLocation, endpoints := range testEndpointMap {
+				fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: testL4NegName, Version: meta.VersionGA, NetworkEndpointType: "GCE_VM_IP"}, negLocation.Zone, klog.TODO())
+				if len(endpoints) > 0 {
+					fakeCloud.AttachNetworkEndpoints(testL4NegName, negLocation.Zone, endpoints, meta.VersionGA, klog.TODO())
+				}
+				neg, err := fakeCloud.GetNetworkEndpointGroup(testL4NegName, negLocation.Zone, meta.VersionGA, klog.TODO())
+				if err != nil {
+					t.Fatalf("failed to get neg from fake cloud: %s", err)
+				}
+
+				objRefs = append(objRefs, negv1beta1.NegObjectReference{SelfLink: neg.SelfLink, SubnetURL: defaultTestSubnetURL, NetworkEndpointType: negv1beta1.VmIpEndpointType})
+			}
+			neg := &negv1beta1.ServiceNetworkEndpointGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testNegName,
+					Namespace: testServiceNamespace,
+				},
+				Status: negv1beta1.ServiceNetworkEndpointGroupStatus{
+					NetworkEndpointGroups: objRefs,
+				},
+			}
+			testContext := negtypes.NewTestContext()
+			testContext.NodeInformer = nodeInformer
+			_, s, err := newTestTransactionSyncerWithCustomContext(fakeCloud, negtypes.VmIpEndpointType, false, testContext)
+			if err != nil {
+				t.Fatalf("failed to initialize transaction syncer: %v", err)
+			}
+			s.enableL4NEGDetachCancel = tc.enableL4DetachCancel
+			s.needInit = false
+
+			for _, eps := range tc.endpointSlices {
+				s.endpointSliceLister.Add(eps)
+			}
+			s.svcNegLister.Add(neg)
+			// mark syncer as started without starting the syncer routine
+			(s.syncer.(*syncer)).stopped = false
+			// add transactions to the syncer if any were defined in the test case
+			if len(tc.inProgressTransactions) > 0 {
+				for key, tr := range tc.inProgressTransactions {
+					s.transactions.Put(key, tr)
+				}
+			}
+
+			err = s.syncInternal()
+			if err != nil {
+				t.Errorf("syncInternal returned error: %v", err)
+			}
+
+			out, _, err := retrieveExistingZoneNetworkEndpointMap(map[string]string{defaultTestSubnet: testL4NegName}, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L4LocalMode, false, klog.TODO(), s.negMetrics)
+			if err != nil {
+				t.Errorf("errored retrieving existing network endpoints: %v", err)
+			}
+
+			if !reflect.DeepEqual(tc.expectedEndpoints, out) {
+				t.Errorf("endpoints were modified after syncInternal:\n got      %+v,\n expected %+v", out, tc.expectedEndpoints)
+			}
+		})
+	}
+
+}
+
 func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negType negtypes.NetworkEndpointType, customName bool) (negtypes.NegSyncer, *transactionSyncer, error) {
 	netInfo := network.NetworkInfo{IsDefault: true, NetworkURL: fakeGCE.NetworkURL(), SubnetworkURL: fakeGCE.SubnetworkURL()}
-	return newCustomTestTransactionSyncer(fakeGCE, negType, customName, zonegetter.FakeNodeTopologyInformer(), netInfo)
+	return newCustomTestTransactionSyncer(fakeGCE, negType, customName, zonegetter.FakeNodeTopologyInformer(), netInfo, nil)
 }
 
 func newTestTransactionSyncerWithNetInfo(fakeGCE negtypes.NetworkEndpointGroupCloud, negType negtypes.NetworkEndpointType, customName bool, netInfo network.NetworkInfo) (negtypes.NegSyncer, *transactionSyncer, error) {
-	return newCustomTestTransactionSyncer(fakeGCE, negType, customName, zonegetter.FakeNodeTopologyInformer(), netInfo)
+	return newCustomTestTransactionSyncer(fakeGCE, negType, customName, zonegetter.FakeNodeTopologyInformer(), netInfo, nil)
 }
 
 func newTestTransactionSyncerWithTopologyInformer(fakeGCE negtypes.NetworkEndpointGroupCloud, negType negtypes.NetworkEndpointType, customName bool, nodeTopologyInformer cache.SharedIndexInformer) (negtypes.NegSyncer, *transactionSyncer, error) {
 	netInfo := network.NetworkInfo{IsDefault: true, NetworkURL: fakeGCE.NetworkURL(), SubnetworkURL: fakeGCE.SubnetworkURL()}
-	return newCustomTestTransactionSyncer(fakeGCE, negType, customName, nodeTopologyInformer, netInfo)
+	return newCustomTestTransactionSyncer(fakeGCE, negType, customName, nodeTopologyInformer, netInfo, nil)
 }
 
-func newCustomTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negType negtypes.NetworkEndpointType, customName bool, nodeTopologyInformer cache.SharedIndexInformer, netInfo network.NetworkInfo) (negtypes.NegSyncer, *transactionSyncer, error) {
-	testContext := negtypes.NewTestContext()
+func newTestTransactionSyncerWithCustomContext(fakeGCE negtypes.NetworkEndpointGroupCloud, negType negtypes.NetworkEndpointType, customName bool, customTestContext *negtypes.TestContext) (negtypes.NegSyncer, *transactionSyncer, error) {
+	netInfo := network.NetworkInfo{IsDefault: true, NetworkURL: fakeGCE.NetworkURL(), SubnetworkURL: fakeGCE.SubnetworkURL()}
+	return newCustomTestTransactionSyncer(fakeGCE, negType, customName, zonegetter.FakeNodeTopologyInformer(), netInfo, customTestContext)
+}
+
+func newCustomTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negType negtypes.NetworkEndpointType, customName bool, nodeTopologyInformer cache.SharedIndexInformer, netInfo network.NetworkInfo, customTestContext *negtypes.TestContext) (negtypes.NegSyncer, *transactionSyncer, error) {
+	var testContext *negtypes.TestContext
+	if customTestContext != nil {
+		testContext = customTestContext
+	} else {
+		testContext = negtypes.NewTestContext()
+	}
+
 	svcPort := negtypes.NegSyncerKey{
 		Namespace: testServiceNamespace,
 		Name:      testServiceName,
@@ -3704,6 +4089,7 @@ func newCustomTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, 
 	if svcPort.NegType == negtypes.VmIpEndpointType {
 		negNamer = testContext.L4Namer
 	}
+
 	negsyncer := NewTransactionSyncer(svcPort,
 		record.NewFakeRecorder(100),
 		fakeGCE,
