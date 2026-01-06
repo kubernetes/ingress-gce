@@ -739,7 +739,7 @@ func (l4c *L4Controller) handleCreationRace(service *v1.Service, svcLogger klog.
 
 	// Prevent controllers race on creation
 	if !hasLegacyILBFinalizer && !hasILBFinalizerV2 && l4ILBLegacyHeadStartTime > 0*time.Second {
-		svcLogger.Info("Service has no finalizers, waiting %d seconds to prevent controllers race on creation.", l4ILBLegacyHeadStartTime/time.Second)
+		svcLogger.Info(fmt.Sprintf("Service has no finalizers, waiting %v seconds to prevent controllers race on creation.", l4ILBLegacyHeadStartTime.Seconds()))
 		time.Sleep(l4ILBLegacyHeadStartTime)
 
 		// Get current service from store, so we can verify most recent state.
@@ -749,7 +749,7 @@ func (l4c *L4Controller) handleCreationRace(service *v1.Service, svcLogger klog.
 			svcLogger.Info("Could not get service from store, using existing one, error: ", err)
 		} else if exists {
 			service = svc
-			svcLogger.Info("finalizer Found service in informer store after wait, using it.")
+			svcLogger.Info("Found service in informer store after wait, using it.")
 		} else {
 			// Service might have been deleted during the wait, return to avoid processing a non-existing service.
 			svcLogger.Info("Service not found in informer store after wait, ignoring processing.")
