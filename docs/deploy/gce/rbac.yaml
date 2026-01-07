@@ -1,0 +1,89 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: glbc
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: system:controller:glbc
+  namespace: kube-system
+  labels:
+    addonmanager.kubernetes.io/mode: Reconcile
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch", "update", "create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: system:controller:glbc
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: system:controller:glbc
+subjects:
+- kind: ServiceAccount
+  name: glbc
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: system:controller:glbc
+rules:
+- apiGroups: [""]
+  resources: ["pods/status", "services/status", "services"]
+  verbs: ["*"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["get", "list", "watch", "update", "create", "patch"]
+- apiGroups: [""]
+  resources: ["nodes", "namespaces", "endpoints", "pods"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["networking.gke.io"]
+  resources: ["managedcertificates", "frontendconfigs", "servicenetworkendpointgroups", "gcpingressparams", "serviceattachments", "gkenetworkparamsets", "networks", "gcpfirewalls"]
+  verbs: ["*"]
+- apiGroups: ["networking.gke.io"]
+  resources: ["nodetopologies"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses/status", "ingressclasses", "ingresses"]
+  verbs: ["*"]
+- apiGroups: ["discovery.k8s.io"]
+  resources: ["endpointslices"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["*"]
+- apiGroups: ["apiextensions.k8s.io"]
+  resources: ["customresourcedefinitions"]
+  verbs: ["get", "list", "watch", "update", "create", "patch"]
+- apiGroups: ["cloud.google.com"]
+  resources: ["backendconfigs"]
+  verbs: ["get", "list", "watch", "update", "create", "patch"]
+- apiGroups: ["networking.istio.io"]
+  resources: ["destinationrules"]
+  verbs: ["*"]
+- apiGroups: ["coordination.k8s.io"]
+  resources: ["leases"]
+  verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: system:controller:glbc
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:controller:glbc
+subjects:
+- kind: ServiceAccount
+  name: glbc
+  namespace: kube-system
