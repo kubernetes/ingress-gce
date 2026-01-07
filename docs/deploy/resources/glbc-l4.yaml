@@ -1,0 +1,109 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: l4-lb-controller
+  namespace: kube-system
+  annotations:
+    scheduler.alpha.kubernetes.io/critical-pod: ''
+    components.gke.io/layer: master
+    components.gke.io/bootstrap-auth: l4-lb-controller
+  labels:
+    k8s-app: gcp-lb-controller
+    kubernetes.io/name: "GLBC"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: gcp-lb-controller
+  template:
+    metadata:
+      labels:
+        k8s-app: gcp-lb-controller
+        name: gcp-lb-controller
+    spec:
+      securityContext:
+        runAsUser: 2707
+        runAsGroup: 2707
+        seccompProfile:
+          type: RuntimeDefault
+      priorityClassName: system-node-critical
+      priority: 2000001000
+      serviceAccountName: glbc
+      terminationGracePeriodSeconds: 600
+      hostNetwork: true
+      containers:
+      - image: [IMAGE_URL]
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8088
+            scheme: HTTP
+          initialDelaySeconds: 30
+          # healthz reaches out to GCE
+          periodSeconds: 30
+          timeoutSeconds: 15
+          successThreshold: 1
+          failureThreshold: 5
+        name: l4-lb-controller
+        volumeMounts:
+        - mountPath: /etc/gce/
+          name: gce-config-volume
+        - mountPath: /var/secrets/google
+          name: google-cloud-key
+        env:
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: /var/secrets/google/key.json
+        resources:
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        command:
+        - /glbc
+        - --v=3
+        - --logtostderr=true
+        - --enable-finalizer-remove
+        - --config-file-path=/etc/gce/gce.conf
+        - --sync-period=600s 
+        - --running-in-cluster=true
+        - --healthz-port=8088
+        - --gce-ratelimit=ga.Operations.Get,qps,5,10
+        - --gce-ratelimit=alpha.Operations.Get,qps,5,10
+        - --gce-ratelimit=beta.Operations.Get,qps,5,10
+        - --gce-ratelimit=ga.BackendServices.Get,qps,1.8,1
+        - --gce-ratelimit=beta.BackendServices.Get,qps,1.8,1
+        - --gce-ratelimit=ga.HealthChecks.Get,qps,1.8,1
+        - --gce-ratelimit=alpha.HealthChecks.Get,qps,1.8,1
+        - --gce-ratelimit=alpha.NetworkEndpointGroups.Get,qps,1.8,1
+        - --gce-ratelimit=beta.NetworkEndpointGroups.Get,qps,10,15
+        - --gce-ratelimit=ga.NetworkEndpointGroups.Get,qps,10,15
+        - --run-ingress-controller=false
+        - --run-l4-controller=true
+        - --run-l4-netlb-controller=true
+        - --enable-neg-controller=false
+        - --enable-ig-controller=true
+        - --num-l4-workers=10
+        - --num-l4-net-workers=10
+        - --enable-psc
+        - --enable-pinhole
+        - --enable-l4ilb-dual-stack=true
+        - --enable-l4netlb-dual-stack=true
+        - --enable-multi-subnet-cluster
+        - --enable-multi-subnet-cluster-phase1=true
+        - --enable-weighted-l4-netlb=true
+        - --enable-discrete-port-forwarding=true
+        - --enable-weighted-l4-ilb=true
+        - --enable-l4-netlb-neg=true
+        - --enable-l4-netlb-neg-default=true
+        - --gate-l4-by-lock=true
+        - --enable-l4ilb-zonal-affinity=true
+        - --enable-negs-for-ingress=false
+      volumes:
+      - name: google-cloud-key
+        secret:
+          secretName: glbc-gcp-key
+      - name: gce-config-volume
+        configMap:
+          name: gce-config
+          items:
+          - key: gce.conf
+            path: gce.conf

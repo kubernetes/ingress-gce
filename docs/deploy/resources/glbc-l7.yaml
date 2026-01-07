@@ -1,0 +1,123 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: l7-lb-controller
+  namespace: kube-system
+  annotations:
+    scheduler.alpha.kubernetes.io/critical-pod: ''
+    components.gke.io/layer: master
+    components.gke.io/bootstrap-auth: l7-lb-controller
+  labels:
+    k8s-app: gcp-lb-controller
+    kubernetes.io/name: "GLBC"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: gcp-lb-controller
+  template:
+    metadata:
+      labels:
+        k8s-app: gcp-lb-controller
+        name: gcp-lb-controller
+    spec:
+      securityContext:
+        runAsUser: 2034
+        runAsGroup: 2034
+        seccompProfile:
+          type: RuntimeDefault
+      priorityClassName: system-node-critical
+      priority: 2000001000
+      serviceAccountName: glbc
+      terminationGracePeriodSeconds: 600
+      hostNetwork: true
+      containers:
+      - image: [IMAGE_URL]
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - all
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8086
+            scheme: HTTP
+          initialDelaySeconds: 30
+          # healthz reaches out to GCE
+          periodSeconds: 30
+          timeoutSeconds: 15
+          successThreshold: 1
+          failureThreshold: 5
+        name: l7-lb-controller
+        volumeMounts:
+        - mountPath: /etc/gce/
+          name: gce-config-volume
+        - mountPath: /var/secrets/google
+          name: google-cloud-key
+        env:
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: /var/secrets/google/key.json
+        resources:
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        command:
+        - /glbc
+        - --v=3
+        - --logtostderr=true
+        - --enable-finalizer-remove
+        - --default-backend-service=kube-system/default-http-backend
+        - --config-file-path=/etc/gce/gce.conf
+        - --sync-period=600s
+        - --running-in-cluster=true
+        - --healthz-port=8086
+        - --gce-ratelimit=ga.Operations.Get,qps,5,10
+        - --gce-ratelimit=alpha.Operations.Get,qps,5,10
+        - --gce-ratelimit=beta.Operations.Get,qps,5,10
+        - --gce-ratelimit=ga.BackendServices.Get,qps,1.8,1
+        - --gce-ratelimit=beta.BackendServices.Get,qps,1.8,1
+        - --gce-ratelimit=ga.HealthChecks.Get,qps,1.8,1
+        - --gce-ratelimit=alpha.HealthChecks.Get,qps,1.8,1
+        - --gce-ratelimit=alpha.NetworkEndpointGroups.Get,qps,1.8,1
+        - --gce-ratelimit=alpha.NetworkEndpointGroups.AttachNetworkEndpoints,qps,1.8,1
+        - --gce-ratelimit=alpha.NetworkEndpointGroups.DetachNetworkEndpoints,qps,1.8,1
+        - --gce-ratelimit=alpha.NetworkEndpointGroups.ListNetworkEndpoints,qps,1.8,1
+        - --gce-ratelimit=beta.NetworkEndpointGroups.Get,qps,10,15
+        - --gce-ratelimit=beta.NetworkEndpointGroups.AttachNetworkEndpoints,qps,15,30
+        - --gce-ratelimit=beta.NetworkEndpointGroups.AttachNetworkEndpoints,strategy,dynamic,10ms,5s,5,2,5,5s,30s
+        - --gce-ratelimit=beta.NetworkEndpointGroups.DetachNetworkEndpoints,qps,15,30
+        - --gce-ratelimit=beta.NetworkEndpointGroups.DetachNetworkEndpoints,strategy,dynamic,10ms,5s,5,2,5,5s,30s
+        - --gce-ratelimit=beta.NetworkEndpointGroups.ListNetworkEndpoints,qps,30,45
+        - --gce-ratelimit=beta.NetworkEndpointGroups.ListNetworkEndpoints,strategy,dynamic,10ms,5s,5,2,5,5s,30s
+        - --gce-ratelimit=ga.NetworkEndpointGroups.Get,qps,10,15
+        - --gce-ratelimit=ga.NetworkEndpointGroups.AttachNetworkEndpoints,qps,15,30
+        - --gce-ratelimit=ga.NetworkEndpointGroups.AttachNetworkEndpoints,strategy,dynamic,10ms,5s,5,2,5,5s,30s
+        - --gce-ratelimit=ga.NetworkEndpointGroups.DetachNetworkEndpoints,qps,15,30
+        - --gce-ratelimit=ga.NetworkEndpointGroups.DetachNetworkEndpoints,strategy,dynamic,10ms,5s,5,2,5,5s,30s
+        - --gce-ratelimit=ga.NetworkEndpointGroups.ListNetworkEndpoints,qps,30,45
+        - --gce-ratelimit=ga.NetworkEndpointGroups.ListNetworkEndpoints,strategy,dynamic,10ms,5s,5,2,5,5s,30s
+        - --enable-finalizer-add
+        - --enable-delete-unused-frontends
+        - --enable-v2-frontend-namer
+        - --enable-frontend-config
+        - --run-ingress-controller=true
+        - --run-l4-controller=false
+        - --run-l4-netlb-controller=false
+        - --enable-neg-controller=false
+        - --enable-ig-controller=false
+        - --num-ingress-workers=5
+        - --enable-psc=false
+        - --enable-multi-subnet-cluster
+        - --enable-negs-for-ingress=false
+      volumes:
+      - name: google-cloud-key
+        secret:
+          secretName: glbc-gcp-key
+      - name: gce-config-volume
+        configMap:
+          name: gce-config
+          items:
+          - key: gce.conf
+            path: gce.conf
