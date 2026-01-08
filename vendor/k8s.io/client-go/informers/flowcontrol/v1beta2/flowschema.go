@@ -19,16 +19,16 @@ limitations under the License.
 package v1beta2
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	flowcontrolv1beta2 "k8s.io/api/flowcontrol/v1beta2"
+	apiflowcontrolv1beta2 "k8s.io/api/flowcontrol/v1beta2"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
 	internalinterfaces "k8s.io/client-go/informers/internalinterfaces"
 	kubernetes "k8s.io/client-go/kubernetes"
-	v1beta2 "k8s.io/client-go/listers/flowcontrol/v1beta2"
+	flowcontrolv1beta2 "k8s.io/client-go/listers/flowcontrol/v1beta2"
 	cache "k8s.io/client-go/tools/cache"
 )
 
@@ -36,7 +36,7 @@ import (
 // FlowSchemas.
 type FlowSchemaInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1beta2.FlowSchemaLister
+	Lister() flowcontrolv1beta2.FlowSchemaLister
 }
 
 type flowSchemaInformer struct {
@@ -56,21 +56,33 @@ func NewFlowSchemaInformer(client kubernetes.Interface, resyncPeriod time.Durati
 // one. This reduces memory footprint and number of connections to the server.
 func NewFilteredFlowSchemaInformer(client kubernetes.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
-		&cache.ListWatch{
+		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(options v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.FlowcontrolV1beta2().FlowSchemas().List(context.TODO(), options)
+				return client.FlowcontrolV1beta2().FlowSchemas().List(context.Background(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.FlowcontrolV1beta2().FlowSchemas().Watch(context.TODO(), options)
+				return client.FlowcontrolV1beta2().FlowSchemas().Watch(context.Background(), options)
 			},
-		},
-		&flowcontrolv1beta2.FlowSchema{},
+			ListWithContextFunc: func(ctx context.Context, options v1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.FlowcontrolV1beta2().FlowSchemas().List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options v1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.FlowcontrolV1beta2().FlowSchemas().Watch(ctx, options)
+			},
+		}, client),
+		&apiflowcontrolv1beta2.FlowSchema{},
 		resyncPeriod,
 		indexers,
 	)
@@ -81,9 +93,9 @@ func (f *flowSchemaInformer) defaultInformer(client kubernetes.Interface, resync
 }
 
 func (f *flowSchemaInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&flowcontrolv1beta2.FlowSchema{}, f.defaultInformer)
+	return f.factory.InformerFor(&apiflowcontrolv1beta2.FlowSchema{}, f.defaultInformer)
 }
 
-func (f *flowSchemaInformer) Lister() v1beta2.FlowSchemaLister {
-	return v1beta2.NewFlowSchemaLister(f.Informer().GetIndexer())
+func (f *flowSchemaInformer) Lister() flowcontrolv1beta2.FlowSchemaLister {
+	return flowcontrolv1beta2.NewFlowSchemaLister(f.Informer().GetIndexer())
 }

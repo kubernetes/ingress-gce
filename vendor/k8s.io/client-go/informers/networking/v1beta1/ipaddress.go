@@ -19,16 +19,16 @@ limitations under the License.
 package v1beta1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	networkingv1beta1 "k8s.io/api/networking/v1beta1"
+	apinetworkingv1beta1 "k8s.io/api/networking/v1beta1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
 	internalinterfaces "k8s.io/client-go/informers/internalinterfaces"
 	kubernetes "k8s.io/client-go/kubernetes"
-	v1beta1 "k8s.io/client-go/listers/networking/v1beta1"
+	networkingv1beta1 "k8s.io/client-go/listers/networking/v1beta1"
 	cache "k8s.io/client-go/tools/cache"
 )
 
@@ -36,7 +36,7 @@ import (
 // IPAddresses.
 type IPAddressInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1beta1.IPAddressLister
+	Lister() networkingv1beta1.IPAddressLister
 }
 
 type iPAddressInformer struct {
@@ -56,21 +56,33 @@ func NewIPAddressInformer(client kubernetes.Interface, resyncPeriod time.Duratio
 // one. This reduces memory footprint and number of connections to the server.
 func NewFilteredIPAddressInformer(client kubernetes.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
-		&cache.ListWatch{
+		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(options v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.NetworkingV1beta1().IPAddresses().List(context.TODO(), options)
+				return client.NetworkingV1beta1().IPAddresses().List(context.Background(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.NetworkingV1beta1().IPAddresses().Watch(context.TODO(), options)
+				return client.NetworkingV1beta1().IPAddresses().Watch(context.Background(), options)
 			},
-		},
-		&networkingv1beta1.IPAddress{},
+			ListWithContextFunc: func(ctx context.Context, options v1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.NetworkingV1beta1().IPAddresses().List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options v1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.NetworkingV1beta1().IPAddresses().Watch(ctx, options)
+			},
+		}, client),
+		&apinetworkingv1beta1.IPAddress{},
 		resyncPeriod,
 		indexers,
 	)
@@ -81,9 +93,9 @@ func (f *iPAddressInformer) defaultInformer(client kubernetes.Interface, resyncP
 }
 
 func (f *iPAddressInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&networkingv1beta1.IPAddress{}, f.defaultInformer)
+	return f.factory.InformerFor(&apinetworkingv1beta1.IPAddress{}, f.defaultInformer)
 }
 
-func (f *iPAddressInformer) Lister() v1beta1.IPAddressLister {
-	return v1beta1.NewIPAddressLister(f.Informer().GetIndexer())
+func (f *iPAddressInformer) Lister() networkingv1beta1.IPAddressLister {
+	return networkingv1beta1.NewIPAddressLister(f.Informer().GetIndexer())
 }

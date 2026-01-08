@@ -19,16 +19,16 @@ limitations under the License.
 package v1beta1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	flowcontrolv1beta1 "k8s.io/api/flowcontrol/v1beta1"
+	apiflowcontrolv1beta1 "k8s.io/api/flowcontrol/v1beta1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
 	internalinterfaces "k8s.io/client-go/informers/internalinterfaces"
 	kubernetes "k8s.io/client-go/kubernetes"
-	v1beta1 "k8s.io/client-go/listers/flowcontrol/v1beta1"
+	flowcontrolv1beta1 "k8s.io/client-go/listers/flowcontrol/v1beta1"
 	cache "k8s.io/client-go/tools/cache"
 )
 
@@ -36,7 +36,7 @@ import (
 // PriorityLevelConfigurations.
 type PriorityLevelConfigurationInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1beta1.PriorityLevelConfigurationLister
+	Lister() flowcontrolv1beta1.PriorityLevelConfigurationLister
 }
 
 type priorityLevelConfigurationInformer struct {
@@ -56,21 +56,33 @@ func NewPriorityLevelConfigurationInformer(client kubernetes.Interface, resyncPe
 // one. This reduces memory footprint and number of connections to the server.
 func NewFilteredPriorityLevelConfigurationInformer(client kubernetes.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
-		&cache.ListWatch{
+		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(options v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.FlowcontrolV1beta1().PriorityLevelConfigurations().List(context.TODO(), options)
+				return client.FlowcontrolV1beta1().PriorityLevelConfigurations().List(context.Background(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.FlowcontrolV1beta1().PriorityLevelConfigurations().Watch(context.TODO(), options)
+				return client.FlowcontrolV1beta1().PriorityLevelConfigurations().Watch(context.Background(), options)
 			},
-		},
-		&flowcontrolv1beta1.PriorityLevelConfiguration{},
+			ListWithContextFunc: func(ctx context.Context, options v1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.FlowcontrolV1beta1().PriorityLevelConfigurations().List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options v1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.FlowcontrolV1beta1().PriorityLevelConfigurations().Watch(ctx, options)
+			},
+		}, client),
+		&apiflowcontrolv1beta1.PriorityLevelConfiguration{},
 		resyncPeriod,
 		indexers,
 	)
@@ -81,9 +93,9 @@ func (f *priorityLevelConfigurationInformer) defaultInformer(client kubernetes.I
 }
 
 func (f *priorityLevelConfigurationInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&flowcontrolv1beta1.PriorityLevelConfiguration{}, f.defaultInformer)
+	return f.factory.InformerFor(&apiflowcontrolv1beta1.PriorityLevelConfiguration{}, f.defaultInformer)
 }
 
-func (f *priorityLevelConfigurationInformer) Lister() v1beta1.PriorityLevelConfigurationLister {
-	return v1beta1.NewPriorityLevelConfigurationLister(f.Informer().GetIndexer())
+func (f *priorityLevelConfigurationInformer) Lister() flowcontrolv1beta1.PriorityLevelConfigurationLister {
+	return flowcontrolv1beta1.NewPriorityLevelConfigurationLister(f.Informer().GetIndexer())
 }
