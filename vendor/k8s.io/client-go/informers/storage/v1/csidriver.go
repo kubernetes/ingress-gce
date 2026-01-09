@@ -19,16 +19,16 @@ limitations under the License.
 package v1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	storagev1 "k8s.io/api/storage/v1"
+	apistoragev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
 	internalinterfaces "k8s.io/client-go/informers/internalinterfaces"
 	kubernetes "k8s.io/client-go/kubernetes"
-	v1 "k8s.io/client-go/listers/storage/v1"
+	storagev1 "k8s.io/client-go/listers/storage/v1"
 	cache "k8s.io/client-go/tools/cache"
 )
 
@@ -36,7 +36,7 @@ import (
 // CSIDrivers.
 type CSIDriverInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1.CSIDriverLister
+	Lister() storagev1.CSIDriverLister
 }
 
 type cSIDriverInformer struct {
@@ -56,21 +56,33 @@ func NewCSIDriverInformer(client kubernetes.Interface, resyncPeriod time.Duratio
 // one. This reduces memory footprint and number of connections to the server.
 func NewFilteredCSIDriverInformer(client kubernetes.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
-		&cache.ListWatch{
+		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.StorageV1().CSIDrivers().List(context.TODO(), options)
+				return client.StorageV1().CSIDrivers().List(context.Background(), options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.StorageV1().CSIDrivers().Watch(context.TODO(), options)
+				return client.StorageV1().CSIDrivers().Watch(context.Background(), options)
 			},
-		},
-		&storagev1.CSIDriver{},
+			ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.StorageV1().CSIDrivers().List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.StorageV1().CSIDrivers().Watch(ctx, options)
+			},
+		}, client),
+		&apistoragev1.CSIDriver{},
 		resyncPeriod,
 		indexers,
 	)
@@ -81,9 +93,9 @@ func (f *cSIDriverInformer) defaultInformer(client kubernetes.Interface, resyncP
 }
 
 func (f *cSIDriverInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&storagev1.CSIDriver{}, f.defaultInformer)
+	return f.factory.InformerFor(&apistoragev1.CSIDriver{}, f.defaultInformer)
 }
 
-func (f *cSIDriverInformer) Lister() v1.CSIDriverLister {
-	return v1.NewCSIDriverLister(f.Informer().GetIndexer())
+func (f *cSIDriverInformer) Lister() storagev1.CSIDriverLister {
+	return storagev1.NewCSIDriverLister(f.Informer().GetIndexer())
 }

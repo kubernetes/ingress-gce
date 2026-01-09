@@ -19,16 +19,16 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	nodev1alpha1 "k8s.io/api/node/v1alpha1"
+	apinodev1alpha1 "k8s.io/api/node/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
 	internalinterfaces "k8s.io/client-go/informers/internalinterfaces"
 	kubernetes "k8s.io/client-go/kubernetes"
-	v1alpha1 "k8s.io/client-go/listers/node/v1alpha1"
+	nodev1alpha1 "k8s.io/client-go/listers/node/v1alpha1"
 	cache "k8s.io/client-go/tools/cache"
 )
 
@@ -36,7 +36,7 @@ import (
 // RuntimeClasses.
 type RuntimeClassInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1alpha1.RuntimeClassLister
+	Lister() nodev1alpha1.RuntimeClassLister
 }
 
 type runtimeClassInformer struct {
@@ -56,21 +56,33 @@ func NewRuntimeClassInformer(client kubernetes.Interface, resyncPeriod time.Dura
 // one. This reduces memory footprint and number of connections to the server.
 func NewFilteredRuntimeClassInformer(client kubernetes.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
-		&cache.ListWatch{
+		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(options v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.NodeV1alpha1().RuntimeClasses().List(context.TODO(), options)
+				return client.NodeV1alpha1().RuntimeClasses().List(context.Background(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.NodeV1alpha1().RuntimeClasses().Watch(context.TODO(), options)
+				return client.NodeV1alpha1().RuntimeClasses().Watch(context.Background(), options)
 			},
-		},
-		&nodev1alpha1.RuntimeClass{},
+			ListWithContextFunc: func(ctx context.Context, options v1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.NodeV1alpha1().RuntimeClasses().List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options v1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.NodeV1alpha1().RuntimeClasses().Watch(ctx, options)
+			},
+		}, client),
+		&apinodev1alpha1.RuntimeClass{},
 		resyncPeriod,
 		indexers,
 	)
@@ -81,9 +93,9 @@ func (f *runtimeClassInformer) defaultInformer(client kubernetes.Interface, resy
 }
 
 func (f *runtimeClassInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&nodev1alpha1.RuntimeClass{}, f.defaultInformer)
+	return f.factory.InformerFor(&apinodev1alpha1.RuntimeClass{}, f.defaultInformer)
 }
 
-func (f *runtimeClassInformer) Lister() v1alpha1.RuntimeClassLister {
-	return v1alpha1.NewRuntimeClassLister(f.Informer().GetIndexer())
+func (f *runtimeClassInformer) Lister() nodev1alpha1.RuntimeClassLister {
+	return nodev1alpha1.NewRuntimeClassLister(f.Informer().GetIndexer())
 }
