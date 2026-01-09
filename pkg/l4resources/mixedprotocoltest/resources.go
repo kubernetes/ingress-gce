@@ -190,7 +190,7 @@ func HealthCheckFirewall() *compute.Firewall {
 		SourceRanges: []string{"130.211.0.0/22", "35.191.0.0/16", "209.85.152.0/22", "209.85.204.0/22"},
 		TargetTags:   []string{TestNode},
 		Description:  `{"networking.gke.io/service-name":"","networking.gke.io/api-version":"ga","networking.gke.io/resource-description":"This resource is shared by all L4  Services using ExternalTrafficPolicy: Cluster."}`,
-		Priority:     1000,
+		Priority:     999,
 	}
 }
 
@@ -203,7 +203,7 @@ func HealthCheckFirewallIPv6() *compute.Firewall {
 		SourceRanges: []string{"2600:2d00:1:b029::/64"},
 		TargetTags:   []string{TestNode},
 		Description:  `{"networking.gke.io/service-name":"","networking.gke.io/api-version":"ga","networking.gke.io/resource-description":"This resource is shared by all L4  Services using ExternalTrafficPolicy: Cluster."}`,
-		Priority:     1000,
+		Priority:     999,
 	}
 }
 

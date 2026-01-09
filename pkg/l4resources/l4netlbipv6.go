@@ -138,15 +138,6 @@ func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipRange string, nodeNames []stri
 		return
 	}
 
-	// if we don't use deny flag, make sure that a leftover deny rule is cleaned up
-	if !l4netlb.useDenyFirewalls {
-		if err := cleanUpDenyFirewallRule(l4netlb.cloud, l4netlb.namer.L4IPv6FirewallDeny(l4netlb.Service.Namespace, l4netlb.Service.Name), fwLogger); err != nil {
-			syncResult.GCEResourceInError = l4annotations.FirewallDenyRuleResource
-			syncResult.Error = err
-			return
-		}
-	}
-
 	ipv6nodesFWRParams := firewalls.FirewallParams{
 		Allowed: []*compute.FirewallAllowed{
 			{

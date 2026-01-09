@@ -62,15 +62,17 @@ type l4HealthChecks struct {
 	hcProvider          healthChecksProvider
 	cloud               *gce.Cloud
 	recorder            record.EventRecorder
+	useDenyFirewalls    bool
 }
 
-func NewL4HealthChecks(cloud *gce.Cloud, recorder record.EventRecorder, logger klog.Logger) *l4HealthChecks {
+func NewL4HealthChecks(cloud *gce.Cloud, recorder record.EventRecorder, logger klog.Logger, useDenyFirewalls bool) *l4HealthChecks {
 	logger = logger.WithName("L4HealthChecks")
 	return &l4HealthChecks{
 		sharedResourcesLock: sharedLock,
 		cloud:               cloud,
 		recorder:            recorder,
 		hcProvider:          healthchecksprovider.NewHealthChecks(cloud, meta.VersionGA, logger),
+		useDenyFirewalls:    useDenyFirewalls,
 	}
 }
 
@@ -81,6 +83,7 @@ func Fake(cloud *gce.Cloud, recorder record.EventRecorder) *l4HealthChecks {
 		cloud:               cloud,
 		recorder:            recorder,
 		hcProvider:          healthchecksprovider.NewHealthChecks(cloud, meta.VersionGA, klog.TODO()),
+		useDenyFirewalls:    true,
 	}
 }
 
@@ -233,6 +236,7 @@ func (l4hc *l4HealthChecks) ensureIPv4Firewall(svc *corev1.Service, namer namer.
 		Name:         hcFwName,
 		NodeNames:    nodeNames,
 		Network:      svcNetwork,
+		Priority:     l4hc.firewallPriority(),
 	}
 	wasUpdated, err := firewalls.EnsureL4LBFirewallForHc(svc, isSharedHC, &hcFWRParams, l4hc.cloud, l4hc.recorder, fwLogger)
 	hcResult.WasFirewallUpdated = wasUpdated == utils.ResourceUpdate || hcResult.WasFirewallUpdated == utils.ResourceUpdate
@@ -266,6 +270,7 @@ func (l4hc *l4HealthChecks) ensureIPv6Firewall(svc *corev1.Service, namer namer.
 		Name:         ipv6HCFWName,
 		NodeNames:    nodeNames,
 		Network:      svcNetwork,
+		Priority:     l4hc.firewallPriority(),
 	}
 	wasUpdated, err := firewalls.EnsureL4LBFirewallForHc(svc, isSharedHC, &hcFWRParams, l4hc.cloud, l4hc.recorder, fwLogger)
 	hcResult.WasFirewallUpdated = wasUpdated == utils.ResourceUpdate || hcResult.WasFirewallUpdated == utils.ResourceUpdate
@@ -276,6 +281,13 @@ func (l4hc *l4HealthChecks) ensureIPv6Firewall(svc *corev1.Service, namer namer.
 		return
 	}
 	hcResult.HCFirewallRuleIPv6Name = ipv6HCFWName
+}
+
+func (l4hc *l4HealthChecks) firewallPriority() *int {
+	if l4hc.useDenyFirewalls {
+		return firewalls.AllowTrafficPriority
+	}
+	return nil // when the field is unset the priority by default is 1000
 }
 
 func (l4hc *l4HealthChecks) DeleteHealthCheckWithFirewall(svc *corev1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType, svcLogger klog.Logger) (string, error) {

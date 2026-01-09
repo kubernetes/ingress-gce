@@ -134,7 +134,7 @@ func NewL4Handler(params *L4ILBParams, logger klog.Logger) *L4 {
 		namer:                            params.Namer,
 		recorder:                         params.Recorder,
 		Service:                          params.Service,
-		healthChecks:                     healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder, logger),
+		healthChecks:                     healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder, logger, flags.F.EnableL4DenyFirewall),
 		forwardingRules:                  forwardingrules.New(params.Cloud, meta.VersionGA, scope, logger),
 		enableDualStack:                  params.DualStackEnabled,
 		networkResolver:                  params.NetworkResolver,

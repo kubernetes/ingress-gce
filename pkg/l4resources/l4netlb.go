@@ -164,7 +164,7 @@ func NewL4NetLB(params *L4NetLBParams, logger klog.Logger) *L4NetLB {
 		Service:                          params.Service,
 		NamespacedName:                   types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace},
 		backendPool:                      backends.NewPoolWithConnectionTrackingPolicy(params.Cloud, params.Namer, params.StrongSessionAffinityEnabled),
-		healthChecks:                     healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder, logger),
+		healthChecks:                     healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder, logger, params.UseDenyFirewalls),
 		forwardingRules:                  forwardingRulesProvider,
 		mixedManager:                     mixedManager,
 		enableDualStack:                  params.DualStackEnabled,
@@ -277,6 +277,13 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service, 
 			result.Error = err
 			return result
 		}
+	}
+
+	// We do this clean up here if before ensuring any of the allow firewalls, otherwise we risk blocking them after roll back
+	if err := l4netlb.softlyCleanUpDenyFirewallsWhenRolledBack(); err != nil {
+		result.Error = err
+		result.GCEResourceInError = l4annotations.FirewallDenyRuleResource
+		return result
 	}
 
 	hcLink := l4netlb.provideHealthChecks(nodeNames, result)
@@ -554,14 +561,6 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 	}
 
 	fwLogger := l4netlb.svcLogger.WithValues("firewallName", firewallName)
-	// if we don't use deny flag, make sure that a leftover deny rule is cleaned up
-	if !l4netlb.useDenyFirewalls {
-		if err := cleanUpDenyFirewallRule(l4netlb.cloud, l4netlb.namer.L4FirewallDeny(l4netlb.Service.Namespace, l4netlb.Service.Name), fwLogger); err != nil {
-			result.GCEResourceInError = l4annotations.FirewallDenyRuleResource
-			result.Error = err
-			return
-		}
-	}
 
 	fwLogger.V(2).Info("Ensuring nodes firewall for L4 NetLB Service", "ipAddress", ipAddress, "protocol", protocol, "len(nodeNames)", len(nodeNames), "portRanges", portRanges)
 	defer func() {
@@ -639,6 +638,23 @@ func denyFirewall(namer func(namespace, name string) string, svc *corev1.Service
 		DestinationRanges: []string{ruleAddress},
 		SourceRanges:      src,
 	}
+}
+
+func (l4netlb *L4NetLB) softlyCleanUpDenyFirewallsWhenRolledBack() error {
+	if l4netlb.useDenyFirewalls {
+		return nil // We use deny firewalls, don't need to clean them up
+	}
+	logger := l4netlb.svcLogger.WithName("softlyCleanUpDenyFirewalls")
+	// if we don't use deny flag, make sure that a leftover deny rule is cleaned up
+	// cleanUpDenyFirewallRule does checks if the rule exists before attempting to delete
+	// so it won't leave 404 errors in audit logs
+	if err := cleanUpDenyFirewallRule(l4netlb.cloud, l4netlb.namer.L4FirewallDeny(l4netlb.Service.Namespace, l4netlb.Service.Name), logger); err != nil {
+		return err
+	}
+	if err := cleanUpDenyFirewallRule(l4netlb.cloud, l4netlb.namer.L4IPv6FirewallDeny(l4netlb.Service.Namespace, l4netlb.Service.Name), logger); err != nil {
+		return err
+	}
+	return nil
 }
 
 // cleanUpDenyFirewallRule will attempt the deletion only after checking that it exists with GET call.
