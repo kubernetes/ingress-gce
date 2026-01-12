@@ -142,6 +142,7 @@ var F = struct {
 	EnableL4ILBMixedProtocol                  bool
 	EnableL4NetLBMixedProtocol                bool
 	EnableL4DenyFirewall                      bool
+	EnableL4DenyFirewallRollbackCleanup       bool
 	EnableL4NetLBForwardingRulesOptimizations bool
 	EnableIPV6OnlyNEG                         bool
 	MultiProjectOwnerLabelKey                 string
@@ -355,7 +356,8 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableMultiProjectMode, "enable-multi-project-mode", false, "Enable running in multi-project mode.")
 	flag.BoolVar(&F.EnableL4ILBMixedProtocol, "enable-l4ilb-mixed-protocol", false, "Enable support for mixed protocol L4 internal load balancers.")
 	flag.BoolVar(&F.EnableL4NetLBMixedProtocol, "enable-l4netlb-mixed-protocol", false, "Enable support for mixed protocol L4 external load balancers.")
-	flag.BoolVar(&F.EnableL4DenyFirewall, "enable-l4-deny-firewall", false, "Enable creation and updates of Deny VPC Firewall Rules for L4 external load balancers. Requires --enable-pinhole to be true.")
+	flag.BoolVar(&F.EnableL4DenyFirewall, "enable-l4-deny-firewall", false, "Enable creation and updates of Deny VPC Firewall Rules for L4 external load balancers. Requires --enable-pinhole and --enable-l4-deny-firewall-rollback-cleanup to be true.")
+	flag.BoolVar(&F.EnableL4DenyFirewallRollbackCleanup, "enable-l4-deny-firewall-rollback-cleanup", false, "Enable cleanup codepath of the deny firewalls for rollback. The reason for it not being enabled by default is the additional GCE API calls that are made for checking if the deny firewalls exist/deletion which will eat up the quota unnecessarily.")
 	flag.StringVar(&F.ProviderConfigNameLabelKey, "provider-config-name-label-key", "cloud.gke.io/provider-config-name", "The label key for provider-config name, which is used to identify the provider-config of objects in multi-project mode.")
 	flag.BoolVar(&F.EnableL4NetLBForwardingRulesOptimizations, "enable-l4netlb-forwarding-rules-optimizations", false, "Enable optimized processing of forwarding rules for L4 NetLB.")
 	flag.BoolVar(&F.EnableIPV6OnlyNEG, "enable-ipv6-only-neg", false, "Enable support for IPV6 Only NEG's.")
@@ -382,8 +384,8 @@ func Validate() {
 		klog.Fatalf("Invalid --override-health-check-src-cidrs flag: %v", err)
 	}
 
-	if F.EnableL4DenyFirewall && !F.EnablePinhole {
-		klog.Fatalf("The flag --enable-l4-deny-firewall requires --enable-pinhole to be true.")
+	if F.EnableL4DenyFirewall && (!F.EnablePinhole || !F.EnableL4DenyFirewallRollbackCleanup) {
+		klog.Fatalf("The flag --enable-l4-deny-firewall requires --enable-pinhole and --enable-l4-deny-firewall-rollback-cleanup to be true.")
 	}
 }
 

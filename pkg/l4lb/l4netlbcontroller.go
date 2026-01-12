@@ -614,18 +614,19 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 	usesNegBackends := lc.shouldUseNEGBackends(service, svcLogger)
 
 	l4NetLBParams := &l4resources.L4NetLBParams{
-		Service:                          service,
-		Cloud:                            lc.ctx.Cloud,
-		Namer:                            lc.namer,
-		Recorder:                         lc.ctx.Recorder(service.Namespace),
-		DualStackEnabled:                 lc.enableDualStack,
-		StrongSessionAffinityEnabled:     lc.enableStrongSessionAffinity,
-		NetworkResolver:                  lc.networkResolver,
-		EnableWeightedLB:                 lc.ctx.EnableWeightedL4NetLB,
-		EnableMixedProtocol:              lc.ctx.EnableL4NetLBMixedProtocol,
-		DisableNodesFirewallProvisioning: lc.ctx.DisableL4LBFirewall,
-		UseNEGs:                          usesNegBackends,
-		UseDenyFirewalls:                 lc.ctx.EnableL4DenyFirewalls,
+		Service:                            service,
+		Cloud:                              lc.ctx.Cloud,
+		Namer:                              lc.namer,
+		Recorder:                           lc.ctx.Recorder(service.Namespace),
+		DualStackEnabled:                   lc.enableDualStack,
+		StrongSessionAffinityEnabled:       lc.enableStrongSessionAffinity,
+		NetworkResolver:                    lc.networkResolver,
+		EnableWeightedLB:                   lc.ctx.EnableWeightedL4NetLB,
+		EnableMixedProtocol:                lc.ctx.EnableL4NetLBMixedProtocol,
+		DisableNodesFirewallProvisioning:   lc.ctx.DisableL4LBFirewall,
+		UseNEGs:                            usesNegBackends,
+		UseDenyFirewalls:                   lc.ctx.EnableL4DenyFirewalls,
+		EnableDenyFirewallsRollbackCleanup: lc.ctx.EnableL4DenyFirewallsRollbackCleanup,
 	}
 	if lc.ctx.ConfigMapInformer != nil {
 		l4NetLBParams.ConfigMapLister = lc.ctx.ConfigMapInformer.GetIndexer()
@@ -870,17 +871,18 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service,
 	}()
 
 	l4NetLBParams := &l4resources.L4NetLBParams{
-		Service:                          svc,
-		Cloud:                            lc.ctx.Cloud,
-		Namer:                            lc.namer,
-		Recorder:                         lc.ctx.Recorder(svc.Namespace),
-		DualStackEnabled:                 lc.enableDualStack,
-		StrongSessionAffinityEnabled:     lc.enableStrongSessionAffinity,
-		NetworkResolver:                  lc.networkResolver,
-		EnableWeightedLB:                 lc.ctx.EnableWeightedL4NetLB,
-		EnableMixedProtocol:              lc.ctx.EnableL4NetLBMixedProtocol,
-		DisableNodesFirewallProvisioning: lc.ctx.DisableL4LBFirewall,
-		UseDenyFirewalls:                 lc.ctx.EnableL4DenyFirewalls,
+		Service:                            svc,
+		Cloud:                              lc.ctx.Cloud,
+		Namer:                              lc.namer,
+		Recorder:                           lc.ctx.Recorder(svc.Namespace),
+		DualStackEnabled:                   lc.enableDualStack,
+		StrongSessionAffinityEnabled:       lc.enableStrongSessionAffinity,
+		NetworkResolver:                    lc.networkResolver,
+		EnableWeightedLB:                   lc.ctx.EnableWeightedL4NetLB,
+		EnableMixedProtocol:                lc.ctx.EnableL4NetLBMixedProtocol,
+		DisableNodesFirewallProvisioning:   lc.ctx.DisableL4LBFirewall,
+		UseDenyFirewalls:                   lc.ctx.EnableL4DenyFirewalls,
+		EnableDenyFirewallsRollbackCleanup: lc.ctx.EnableL4DenyFirewallsRollbackCleanup,
 	}
 	if lc.ctx.ConfigMapInformer != nil {
 		l4NetLBParams.ConfigMapLister = lc.ctx.ConfigMapInformer.GetIndexer()

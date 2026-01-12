@@ -338,6 +338,7 @@ func main() {
 		EnableL4ILBMixedProtocol:                  flags.F.EnableL4ILBMixedProtocol,
 		EnableL4NetLBMixedProtocol:                flags.F.EnableL4NetLBMixedProtocol,
 		EnableL4DenyFirewalls:                     flags.F.EnableL4DenyFirewall,
+		EnableL4DenyFirewallsRollbackCleanup:      flags.F.EnableL4DenyFirewallRollbackCleanup,
 		EnableL4ILBZonalAffinity:                  flags.F.EnableL4ILBZonalAffinity,
 		EnableL4NetLBForwardingRulesOptimizations: flags.F.EnableL4NetLBForwardingRulesOptimizations,
 		ReadOnlyMode:                              flags.F.ReadOnlyMode,
