@@ -139,6 +139,7 @@ type ControllerContextConfig struct {
 	EnableL4NetLBMixedProtocol                bool
 	EnableL4NetLBForwardingRulesOptimizations bool
 	EnableL4DenyFirewalls                     bool
+	EnableL4DenyFirewallsRollbackCleanup      bool
 }
 
 // NewControllerContext returns a new shared set of informers.

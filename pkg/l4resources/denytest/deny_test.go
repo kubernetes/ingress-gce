@@ -305,9 +305,10 @@ func TestDenyRespectsDisableNodeFirewallProvisioning(t *testing.T) {
 	}
 	log := klog.TODO()
 	l4netlb := l4resources.NewL4NetLB(&l4resources.L4NetLBParams{
-		Service:                          svc,
-		UseDenyFirewalls:                 true,
-		DisableNodesFirewallProvisioning: true,
+		Service:                            svc,
+		UseDenyFirewalls:                   true,
+		EnableDenyFirewallsRollbackCleanup: true,
+		DisableNodesFirewallProvisioning:   true,
 		// other parameters
 		Cloud:               cloud,
 		Namer:               namer.NewL4Namer("ks123", namer.NewNamer("", "", log)),
@@ -619,10 +620,76 @@ func TestExportsCorrectDenyMetrics(t *testing.T) {
 	}
 }
 
+// TestSkipRollbackCleanupIfDisabled is a complimentary test to TestDenyRollback which verifies
+// that the cleanup logic on Ensure is skipped when the ArmDenyFirewallsRollbackCleanup is not enabled.
+func TestSkipRollbackCleanupIfDisabled(t *testing.T) {
+	// Arrange
+	ctx := t.Context()
+	svc := helperService([]v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol})
+
+	gce, err := helperCloud(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mockGCE := gce.Compute().(*cloud.MockGCE)
+	getCalled := make(map[string]bool)
+	// Function that is tested will check for deny firewalls if it is enabled before actually deleting them
+	mockGCE.MockFirewalls.GetHook = func(ctx context.Context, key *meta.Key, m *cloud.MockFirewalls, options ...cloud.Option) (bool, *compute.Firewall, error) {
+		getCalled[key.Name] = true
+		return false, nil, nil // continue with normal hook
+	}
+
+	log := klog.TODO()
+	ensurer := helperL4NetLBWithoutCleanup(gce, log, svc)
+	res := ensurer.EnsureFrontend([]string{nodeName}, svc, time.Now())
+	if res.Error != nil {
+		t.Fatal(res.Error)
+	}
+
+	// Assert
+	// No cleanup logic should be called - it is not armed
+	for _, name := range []string{denyIPv4Name, denyIPv6Name} {
+		if got := getCalled[name]; got {
+			t.Errorf("Cleanup or other deny firewall logic for %v was executed even though the ArmDenyFirewallsRollbackCleanup and UseDenyFirewalls flags were set to false", name)
+		}
+		// cleanup for later test
+		getCalled[name] = false
+	}
+
+	// Verify that the cleanup logic is actually performed when it needs to be
+	ensurer = helperL4NetLB(gce, log, svc, denyFirewallDisabled) // cleanup is armed
+	res = ensurer.EnsureFrontend([]string{nodeName}, svc, time.Now())
+	if res.Error != nil {
+		t.Fatal(res.Error)
+	}
+
+	for _, name := range []string{denyIPv4Name, denyIPv6Name} {
+		if got := getCalled[name]; !got {
+			t.Errorf("Cleanup for deny firewall %v logic has not been executed", name)
+		}
+	}
+}
+
 func helperL4NetLB(cloud *gce.Cloud, log klog.Logger, svc *v1.Service, denyFirewall bool) *l4resources.L4NetLB {
 	return l4resources.NewL4NetLB(&l4resources.L4NetLBParams{
-		Service:          svc,
-		UseDenyFirewalls: denyFirewall,
+		Service:                            svc,
+		UseDenyFirewalls:                   denyFirewall,
+		EnableDenyFirewallsRollbackCleanup: true,
+		// other parameters
+		Cloud:               cloud,
+		Namer:               namer.NewL4Namer("ks123", namer.NewNamer("", "", log)),
+		Recorder:            record.NewFakeRecorder(100),
+		NetworkResolver:     network.NewFakeResolver(network.DefaultNetwork(cloud)),
+		DualStackEnabled:    true,
+		EnableMixedProtocol: true,
+	}, log)
+}
+
+func helperL4NetLBWithoutCleanup(cloud *gce.Cloud, log klog.Logger, svc *v1.Service) *l4resources.L4NetLB {
+	return l4resources.NewL4NetLB(&l4resources.L4NetLBParams{
+		Service:                            svc,
+		UseDenyFirewalls:                   false,
+		EnableDenyFirewallsRollbackCleanup: false,
 		// other parameters
 		Cloud:               cloud,
 		Namer:               namer.NewL4Namer("ks123", namer.NewNamer("", "", log)),

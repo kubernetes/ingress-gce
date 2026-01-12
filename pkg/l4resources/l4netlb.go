@@ -70,10 +70,11 @@ type L4NetLB struct {
 	NamespacedName types.NamespacedName
 	healthChecks   healthchecksl4.L4HealthChecks
 	// mixedManager is responsible for managing forwarding rules for mixed protocol lbs
-	mixedManager     *forwardingrules.MixedManagerNetLB
-	forwardingRules  ForwardingRulesProvider
-	enableDualStack  bool
-	useDenyFirewalls bool
+	mixedManager                       *forwardingrules.MixedManagerNetLB
+	forwardingRules                    ForwardingRulesProvider
+	enableDualStack                    bool
+	useDenyFirewalls                   bool
+	enableDenyFirewallsRollbackCleanup bool
 	// represents if `enable strong session affinity` flag was set
 	enableStrongSessionAffinity      bool
 	networkInfo                      network.NetworkInfo
@@ -129,19 +130,20 @@ func (r *L4NetLBSyncResult) SetMetricsForSuccessfulServiceSync() {
 }
 
 type L4NetLBParams struct {
-	Service                          *corev1.Service
-	Cloud                            *gce.Cloud
-	Namer                            namer.L4ResourcesNamer
-	Recorder                         record.EventRecorder
-	DualStackEnabled                 bool
-	StrongSessionAffinityEnabled     bool
-	NetworkResolver                  network.Resolver
-	EnableWeightedLB                 bool
-	EnableMixedProtocol              bool
-	DisableNodesFirewallProvisioning bool
-	UseNEGs                          bool
-	UseDenyFirewalls                 bool
-	ConfigMapLister                  cache.Store
+	Service                            *corev1.Service
+	Cloud                              *gce.Cloud
+	Namer                              namer.L4ResourcesNamer
+	Recorder                           record.EventRecorder
+	DualStackEnabled                   bool
+	StrongSessionAffinityEnabled       bool
+	NetworkResolver                    network.Resolver
+	EnableWeightedLB                   bool
+	EnableMixedProtocol                bool
+	DisableNodesFirewallProvisioning   bool
+	UseNEGs                            bool
+	UseDenyFirewalls                   bool
+	EnableDenyFirewallsRollbackCleanup bool
+	ConfigMapLister                    cache.Store
 }
 
 // NewL4NetLB creates a new Handler for the given L4NetLB service.
@@ -157,26 +159,27 @@ func NewL4NetLB(params *L4NetLBParams, logger klog.Logger) *L4NetLB {
 		Service:  params.Service,
 	}
 	l4netlb := &L4NetLB{
-		cloud:                            params.Cloud,
-		scope:                            meta.Regional,
-		namer:                            params.Namer,
-		recorder:                         params.Recorder,
-		Service:                          params.Service,
-		NamespacedName:                   types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace},
-		backendPool:                      backends.NewPoolWithConnectionTrackingPolicy(params.Cloud, params.Namer, params.StrongSessionAffinityEnabled),
-		healthChecks:                     healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder, logger, params.UseDenyFirewalls),
-		forwardingRules:                  forwardingRulesProvider,
-		mixedManager:                     mixedManager,
-		enableDualStack:                  params.DualStackEnabled,
-		enableStrongSessionAffinity:      params.StrongSessionAffinityEnabled,
-		networkResolver:                  params.NetworkResolver,
-		enableWeightedLB:                 params.EnableWeightedLB,
-		enableMixedProtocol:              params.EnableMixedProtocol,
-		disableNodesFirewallProvisioning: params.DisableNodesFirewallProvisioning,
-		useDenyFirewalls:                 params.UseDenyFirewalls,
-		useNEGs:                          params.UseNEGs,
-		svcLogger:                        logger,
-		configMapLister:                  params.ConfigMapLister,
+		cloud:                              params.Cloud,
+		scope:                              meta.Regional,
+		namer:                              params.Namer,
+		recorder:                           params.Recorder,
+		Service:                            params.Service,
+		NamespacedName:                     types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace},
+		backendPool:                        backends.NewPoolWithConnectionTrackingPolicy(params.Cloud, params.Namer, params.StrongSessionAffinityEnabled),
+		healthChecks:                       healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder, logger, params.UseDenyFirewalls),
+		forwardingRules:                    forwardingRulesProvider,
+		mixedManager:                       mixedManager,
+		enableDualStack:                    params.DualStackEnabled,
+		enableStrongSessionAffinity:        params.StrongSessionAffinityEnabled,
+		networkResolver:                    params.NetworkResolver,
+		enableWeightedLB:                   params.EnableWeightedLB,
+		enableMixedProtocol:                params.EnableMixedProtocol,
+		disableNodesFirewallProvisioning:   params.DisableNodesFirewallProvisioning,
+		useDenyFirewalls:                   params.UseDenyFirewalls,
+		enableDenyFirewallsRollbackCleanup: params.EnableDenyFirewallsRollbackCleanup,
+		useNEGs:                            params.UseNEGs,
+		svcLogger:                          logger,
+		configMapLister:                    params.ConfigMapLister,
 	}
 	return l4netlb
 }
@@ -641,7 +644,7 @@ func denyFirewall(namer func(namespace, name string) string, svc *corev1.Service
 }
 
 func (l4netlb *L4NetLB) softlyCleanUpDenyFirewallsWhenRolledBack() error {
-	if l4netlb.useDenyFirewalls {
+	if l4netlb.useDenyFirewalls || !l4netlb.enableDenyFirewallsRollbackCleanup {
 		return nil // We use deny firewalls, don't need to clean them up
 	}
 	logger := l4netlb.svcLogger.WithName("softlyCleanUpDenyFirewalls")
