@@ -23,6 +23,7 @@ set -o pipefail
 SCRIPT_ROOT=$(dirname ${BASH_SOURCE})/..
 CODEGEN_PKG=${CODEGEN_PKG:-$(cd ${SCRIPT_ROOT}; ls -d -1 ./vendor/k8s.io/code-generator 2>/dev/null || echo ../code-generator)}
 OPENAPI_PKG=k8s.io/kube-openapi
+GOPATH="$(go env GOPATH)"
 
 echo "Generating composite types"
 go run ${SCRIPT_ROOT}/pkg/composite/gen/main.go
@@ -36,7 +37,8 @@ ${CODEGEN_PKG}/generate-groups.sh \
 
 echo "Generating openapi for Workload v1alpha1"
 ${GOPATH}/bin/openapi-gen \
-  --output-file-base zz_generated.openapi \
-  --input-dirs k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1 \
-  --output-package k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1 \
-  --go-header-file ${SCRIPT_ROOT}/hack/boilerplate.go.txt
+  --output-file zz_generated.openapi.go \
+  --output-pkg k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1 \
+  --output-dir "${GOPATH}/src/k8s.io/ingress-gce/pkg/apis/workload/v1alpha1" \
+  --go-header-file ${SCRIPT_ROOT}/hack/boilerplate.go.txt \
+  k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1

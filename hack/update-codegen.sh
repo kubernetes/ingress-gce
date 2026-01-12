@@ -69,17 +69,19 @@ echo "Performing code generation for BackendConfig CRD"
 
 echo "Generating openapi for BackendConfig v1beta1"
 "${OPENAPI_PKG}"/openapi-gen \
-  --output-file-base zz_generated.openapi \
-  --input-dirs k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1 \
-  --output-package k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1 \
-  --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt
+  --output-file zz_generated.openapi.go \
+  --output-pkg k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1 \
+  --output-dir "${GOPATH}/src/k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1" \
+  --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt \
+  k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1
 
 echo "Generating openapi for BackendConfig v1"
 "${OPENAPI_PKG}"/openapi-gen \
-  --output-file-base zz_generated.openapi \
-  --input-dirs k8s.io/ingress-gce/pkg/apis/backendconfig/v1 \
-  --output-package k8s.io/ingress-gce/pkg/apis/backendconfig/v1 \
-  --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt
+  --output-file zz_generated.openapi.go \
+  --output-pkg k8s.io/ingress-gce/pkg/apis/backendconfig/v1 \
+  --output-dir "${GOPATH}/src/k8s.io/ingress-gce/pkg/apis/backendconfig/v1" \
+  --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt \
+  k8s.io/ingress-gce/pkg/apis/backendconfig/v1
 
 echo "Performing code generation for FrontendConfig CRD"
 "${CODEGEN_PKG}"/generate-groups.sh \
@@ -90,10 +92,11 @@ echo "Performing code generation for FrontendConfig CRD"
 
 echo "Generating openapi for FrontendConfig v1beta1"
 "${OPENAPI_PKG}"/openapi-gen \
-  --output-file-base zz_generated.openapi \
-  --input-dirs k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1 \
-  --output-package k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1 \
-  --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt
+  --output-file zz_generated.openapi.go \
+  --output-pkg k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1 \
+  --output-dir "${GOPATH}/src/k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1" \
+  --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt \
+  k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1
 
 echo "Performing code generation for ServiceNetworkEndpointGroup CRD"
 "${CODEGEN_PKG}"/generate-groups.sh \
@@ -104,10 +107,11 @@ echo "Performing code generation for ServiceNetworkEndpointGroup CRD"
 
 echo "Generating openapi for ServiceNetworkEndpointGroup v1beta1"
 "${OPENAPI_PKG}"/openapi-gen \
-  --output-file-base zz_generated.openapi \
-  --input-dirs k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1 \
-  --output-package k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1 \
-  --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt
+  --output-file zz_generated.openapi.go \
+  --output-pkg k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1 \
+  --output-dir "${GOPATH}/src/k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1" \
+  --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt \
+  k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1
 
 echo "Performing code generation for ProviderConfig CRD"
 "${CODEGEN_PKG}"/generate-groups.sh \
@@ -118,10 +122,11 @@ echo "Performing code generation for ProviderConfig CRD"
 
 echo "Generating openapi for ProviderConfig v1"
 "${OPENAPI_PKG}"/openapi-gen \
-  --output-file-base zz_generated.openapi \
-  --input-dirs k8s.io/ingress-gce/pkg/apis/providerconfig/v1 \
-  --output-package k8s.io/ingress-gce/pkg/apis/providerconfig/v1 \
-  --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt
+  --output-file zz_generated.openapi.go \
+  --output-pkg k8s.io/ingress-gce/pkg/apis/providerconfig/v1 \
+  --output-dir "${GOPATH}/src/k8s.io/ingress-gce/pkg/apis/providerconfig/v1" \
+  --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt \
+  k8s.io/ingress-gce/pkg/apis/providerconfig/v1
 
 echo "Performing code generation for ServiceAttachment CRD"
 "${CODEGEN_PKG}"/generate-groups.sh \
@@ -132,14 +137,16 @@ echo "Performing code generation for ServiceAttachment CRD"
 
 echo "Generating openapi for ServiceAttachment v1beta1"
 "${OPENAPI_PKG}"/openapi-gen \
-  --output-file-base zz_generated.openapi \
-  --input-dirs k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1 \
-  --output-package k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1 \
-  --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt
+  --output-file zz_generated.openapi.go \
+  --output-pkg k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1 \
+  --output-dir "${GOPATH}/src/k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1" \
+  --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt \
+  k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1
 
 echo "Generating openapi for ServiceAttachment v1"
 "${OPENAPI_PKG}"/openapi-gen \
-  --output-file-base zz_generated.openapi \
-  --input-dirs k8s.io/ingress-gce/pkg/apis/serviceattachment/v1 \
-  --output-package k8s.io/ingress-gce/pkg/apis/serviceattachment/v1 \
-  --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt
+  --output-file zz_generated.openapi.go \
+  --output-pkg k8s.io/ingress-gce/pkg/apis/serviceattachment/v1 \
+  --output-dir "${GOPATH}/src/k8s.io/ingress-gce/pkg/apis/serviceattachment/v1" \
+  --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt \
+  k8s.io/ingress-gce/pkg/apis/serviceattachment/v1
