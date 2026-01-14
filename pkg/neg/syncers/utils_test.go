@@ -1246,7 +1246,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 	for _, tc := range testCases {
 		tc.mutate(negCloud)
 		// tc.mode of "" will result in the default node predicate being selected, which is ok for this test.
-		endpointSets, annotationMap, err := retrieveExistingZoneNetworkEndpointMap(tc.subnetToNegMapping, zoneGetter, negCloud, meta.VersionGA, tc.mode, false, klog.TODO(), metrics.NewNegMetrics())
+		endpointSets, annotationMap, _, err := retrieveExistingZoneNetworkEndpointMap(tc.subnetToNegMapping, zoneGetter, negCloud, meta.VersionGA, tc.mode, false, klog.TODO(), metrics.NewNegMetrics(), false)
 
 		if tc.expectErr {
 			if err == nil {
@@ -1266,6 +1266,172 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 				t.Errorf("For test case %q, (-want +got):\n%s", tc.desc, diff)
 			}
 		}
+	}
+}
+
+func TestRetrieveExistingZoneNetworkEndpointMapHealth(t *testing.T) {
+	nodeIP1 := "1.2.3.1"
+	nodeIP2 := "1.2.3.2"
+	nodeIP3 := "1.2.3.3"
+	ne1 := negtypes.NetworkEndpoint{
+		IP:   nodeIP1,
+		Node: "instance1",
+	}
+	ne2 := negtypes.NetworkEndpoint{
+		IP:   nodeIP2,
+		Node: "instance2",
+	}
+	ne3 := negtypes.NetworkEndpoint{
+		IP:   nodeIP3,
+		Node: "instance3",
+	}
+
+	type endpointWithHealth struct {
+		ip       string
+		instance string
+		health   string
+	}
+
+	testCases := []struct {
+		desc                      string
+		endpoints                 map[string][]endpointWithHealth
+		expected                  map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
+		useHealthStatus           bool
+		expectedDrainingEndpoints map[negtypes.NetworkEndpoint]string
+	}{
+		{
+			desc:            "not using health status",
+			useHealthStatus: false,
+			endpoints: map[string][]endpointWithHealth{
+				negtypes.TestZone1: {
+					{
+						ip:       nodeIP1,
+						instance: "instance1",
+						health:   "HEALTHY",
+					},
+					{
+						ip:       nodeIP2,
+						instance: "instance2",
+						health:   "UNHEALTHY",
+					},
+				},
+				negtypes.TestZone2: {
+					{
+						ip:       nodeIP3,
+						instance: "instance3",
+						health:   "DRAINING",
+					},
+				},
+			},
+
+			expected: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
+					ne1, ne2,
+				),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(ne3),
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+			},
+			expectedDrainingEndpoints: map[negtypes.NetworkEndpoint]string{},
+		},
+		{
+			desc:            "using health status",
+			useHealthStatus: true,
+			endpoints: map[string][]endpointWithHealth{
+				negtypes.TestZone1: {
+					{
+						ip:       nodeIP1,
+						instance: "instance1",
+						health:   "HEALTHY",
+					},
+					{
+						ip:       nodeIP2,
+						instance: "instance2",
+						health:   "UNHEALTHY",
+					},
+				},
+				negtypes.TestZone2: {
+					{
+						ip:       nodeIP3,
+						instance: "instance3",
+						health:   "DRAINING",
+					},
+				},
+			},
+
+			expected: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
+					ne1, ne2,
+				),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
+					ne3,
+				),
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+			},
+			expectedDrainingEndpoints: map[negtypes.NetworkEndpoint]string{
+				ne2: "UNHEALTHY",
+				ne3: "DRAINING",
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+			negtypes.MockNetworkEndpointAPIs(fakeGCE)
+			fakeCloud := negtypes.NewAdapter(fakeGCE, negtypes.NewTestContext().NegMetrics)
+			nodeInformer := zonegetter.FakeNodeInformer()
+			zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
+			zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+			if err != nil {
+				t.Fatalf("failed to initialize zone getter: %v", err)
+			}
+
+			negName := "testNEG"
+
+			// ensure a NEG exists in each zone with relevant nodes
+			candidateNodeZones, err := zoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(negtypes.L4LocalMode), klog.TODO())
+			if err != nil {
+				t.Fatalf("zoneGetter.ListZones() %v", err)
+			}
+			for _, zone := range candidateNodeZones {
+				fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: negName, Zone: zone, Version: meta.VersionGA}, zone, klog.TODO())
+			}
+
+			// attach endpoints and set their health status
+			for zone, es := range tc.endpoints {
+				var entriesWithHealth []negtypes.NetworkEndpointEntry
+				for _, e := range es {
+					ne := &composite.NetworkEndpoint{
+						IpAddress: e.ip,
+						Instance:  e.instance,
+					}
+					fakeCloud.AttachNetworkEndpoints(negName, zone, []*composite.NetworkEndpoint{ne}, meta.VersionGA, klog.TODO())
+					entriesWithHealth = append(entriesWithHealth, negtypes.NetworkEndpointEntry{
+						NetworkEndpoint: ne,
+						Healths: []*composite.HealthStatusForNetworkEndpoint{
+							{
+								HealthState: e.health,
+							},
+						},
+					})
+				}
+				negtypes.GetNetworkEndpointStore(fakeCloud).AddNetworkEndpointHealthStatus(*meta.ZonalKey(negName, zone), entriesWithHealth)
+			}
+
+			subnetToNegMapping := map[string]string{defaultTestSubnet: negName}
+
+			endpointSets, _, drainingEndpoints, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L4LocalMode, false, klog.TODO(), metrics.NewNegMetrics(), tc.useHealthStatus)
+			if err != nil {
+				t.Fatalf("retrieveExistingZoneNetworkEndpointMap: %v", err)
+			}
+
+			if diff := cmp.Diff(endpointSets, tc.expected); diff != "" {
+				t.Errorf("Unexpected endpointSets(-want +got):\n%s", diff)
+			}
+
+			if diff := cmp.Diff(drainingEndpoints, tc.expectedDrainingEndpoints); diff != "" {
+				t.Errorf("Unexpected drainingEndpoints(-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

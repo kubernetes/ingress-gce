@@ -272,6 +272,9 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	}
 	zoneChange := s.isZoneChange()
 	subnetChange := s.isSubnetChange()
+	// Decide if endpoint health should be retrieved when listing endpoints.
+	// Only matters for L4 Local mode.
+	needInitDrainStatus := s.needInit && s.enableL4NEGDetachCancel && s.endpointsCalculator.Mode() == negtypes.L4LocalMode
 
 	if s.needInit || zoneChange || subnetChange {
 		s.logger.Info("Need to ensure network endpoint groups", "needInit", s.needInit, "zoneChange", zoneChange, "subnetChange", subnetChange)
@@ -289,7 +292,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 		return err
 	}
 
-	currentMap, currentPodLabelMap, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode(), s.enableDualStackNEG, s.logger, s.negMetrics)
+	currentMap, currentPodLabelMap, drainingEndpoints, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode(), s.enableDualStackNEG, s.logger, s.negMetrics, needInitDrainStatus)
 	if err != nil {
 		return fmt.Errorf("%w: %w", negtypes.ErrCurrentNegEPNotFound, err)
 	}
@@ -380,6 +383,9 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	// This ensures the endpoint that requires reconciliation to wait till the existing transaction to complete.
 	if s.enableL4NEGDetachCancel && s.endpointsCalculator.Mode() == negtypes.L4LocalMode {
 		filterEndpointByTransactionExclDetach(addEndpoints, s.transactions, s.logger)
+		if len(drainingEndpoints) > 0 {
+			reAddDrainingEndpointsThatAreInTargetMap(addEndpoints, targetMap, drainingEndpoints, s.logger)
+		}
 	} else {
 		filterEndpointByTransaction(addEndpoints, s.transactions, s.logger)
 	}
@@ -408,6 +414,25 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	s.logEndpoints(removeEndpoints, "removing endpoint")
 
 	return s.syncNetworkEndpoints(addEndpoints, removeEndpoints, endpointPodLabelMap, migrationZone)
+}
+
+// reAddDrainingEndpointsThatAreInTargetMap will make sure that endpoints that are draining
+// are added if they are in the targetMap (the intended state from k8s)
+// There could be cases where there is no detach entry in the transactionTable
+// but the endpoint is in fact detaching (after controller restart for example).
+// We need the controller to be able to detect this, re-attach and effectively cancel the drain if needed.
+func reAddDrainingEndpointsThatAreInTargetMap(addEndpoints, targetMap map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, drainingEndpoints map[negtypes.NetworkEndpoint]string, logger klog.Logger) {
+	for zoneSubnet, endpointSet := range targetMap {
+		for _, endpoint := range endpointSet.List() {
+			if healthStatus, ok := drainingEndpoints[endpoint]; ok {
+				logger.V(2).Info("Re-adding endpoint since it has a health status indicating draining but should be kept in the NEG", "endpoint", endpoint, "healthStatus", healthStatus)
+				if addEndpoints[zoneSubnet] == nil {
+					addEndpoints[zoneSubnet] = negtypes.NewNetworkEndpointSet()
+				}
+				addEndpoints[zoneSubnet].Insert(endpoint)
+			}
+		}
+	}
 }
 
 func (s *transactionSyncer) generateSubnetToNegNameMap(subnetConfigs []nodetopologyv1.SubnetConfig) (map[string]string, error) {
