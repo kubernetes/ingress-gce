@@ -272,6 +272,9 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	}
 	zoneChange := s.isZoneChange()
 	subnetChange := s.isSubnetChange()
+	// Decide if endpoint health should be retrieved when listing endpoints.
+	// Only matters for L4 Local mode.
+	needInitHealthStatus := s.needInit && s.enableL4NEGDetachCancel && s.endpointsCalculator.Mode() == negtypes.L4LocalMode
 
 	if s.needInit || zoneChange || subnetChange {
 		s.logger.Info("Need to ensure network endpoint groups", "needInit", s.needInit, "zoneChange", zoneChange, "subnetChange", subnetChange)
@@ -289,7 +292,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 		return err
 	}
 
-	currentMap, currentPodLabelMap, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode(), s.enableDualStackNEG, s.logger, s.negMetrics)
+	currentMap, currentPodLabelMap, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode(), s.enableDualStackNEG, s.logger, s.negMetrics, needInitHealthStatus)
 	if err != nil {
 		return fmt.Errorf("%w: %w", negtypes.ErrCurrentNegEPNotFound, err)
 	}
