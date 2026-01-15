@@ -698,7 +698,7 @@ func podBelongsToService(pod *apiv1.Pod, service *apiv1.Service) error {
 }
 
 // retrieveExistingZoneNetworkEndpointMap lists existing network endpoints in the neg and return the zone and endpoints map.
-func retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping map[string]string, zoneGetter *zonegetter.ZoneGetter, cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, mode negtypes.EndpointsCalculatorMode, enableDualStackNEG bool, logger klog.Logger, negMetrics *metrics.NegMetrics) (map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, labels.EndpointPodLabelMap, error) {
+func retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping map[string]string, zoneGetter *zonegetter.ZoneGetter, cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, mode negtypes.EndpointsCalculatorMode, enableDualStackNEG bool, logger klog.Logger, negMetrics *metrics.NegMetrics, useHealthStatus bool) (map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, labels.EndpointPodLabelMap, error) {
 	// Include zones that have non-candidate nodes currently. It is possible that NEGs were created in those zones previously and the endpoints now became non-candidates.
 	// Endpoints in those NEGs now need to be removed. This mostly applies to VM_IP_NEGs where the endpoints are nodes.
 	zones, err := zoneGetter.ListZones(zonegetter.AllNodesFilter, logger)
@@ -716,7 +716,7 @@ func retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping map[string]string
 	endpointPodLabelMap := labels.EndpointPodLabelMap{}
 	for subnet, negName := range subnetToNegMapping {
 		for _, zone := range zones {
-			networkEndpointsWithHealthStatus, err := cloud.ListNetworkEndpoints(negName, zone, false, version, logger)
+			networkEndpointsWithHealthStatus, err := cloud.ListNetworkEndpoints(negName, zone, useHealthStatus, version, logger)
 			if err != nil {
 				// It is possible for a NEG to be missing in a zone without candidate nodes. Log and ignore this error.
 				// NEG not found in a candidate zone is an error.
@@ -729,6 +729,13 @@ func retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping map[string]string
 			}
 			zoneNetworkEndpointMap[negtypes.NEGLocation{Zone: zone, Subnet: subnet}] = negtypes.NewNetworkEndpointSet()
 			for _, ne := range networkEndpointsWithHealthStatus {
+				if useHealthStatus {
+					if len(ne.Healths) == 1 && ne.Healths[0].HealthState != "HEALTHY" {
+						// if the endpoint is not healthy, then it means it could be detaching (it will be either state DRAINING or UNHEALTHY+DRAINING). In this case we should ignore it. so that it may be re-attached correctly if needed.
+						continue
+					}
+				}
+
 				newNE := negtypes.NetworkEndpoint{IP: ne.NetworkEndpoint.IpAddress, Node: ne.NetworkEndpoint.Instance}
 				if ne.NetworkEndpoint.Port != 0 {
 					newNE.Port = strconv.FormatInt(ne.NetworkEndpoint.Port, 10)
