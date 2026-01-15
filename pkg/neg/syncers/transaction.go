@@ -123,6 +123,10 @@ type transactionSyncer struct {
 	enableDegradedModeMetrics bool
 	// Enables support for Dual-Stack NEGs within the NEG Controller.
 	enableDualStackNEG bool
+	// enableL4NEGDetachCancel enables re-attachment logic for endpoints that are
+	// detaching. This will allow the controller to call attach even if a detach
+	// operation is ongoing.
+	enableL4NEGDetachCancel bool
 
 	// podLabelPropagationConfig configures the pod label to be propagated to NEG endpoints
 	podLabelPropagationConfig labels.PodLabelPropagationConfig
@@ -188,6 +192,7 @@ func NewTransactionSyncer(
 		logger:                    logger,
 		enableDegradedMode:        flags.F.EnableDegradedMode,
 		enableDegradedModeMetrics: flags.F.EnableDegradedModeMetrics,
+		enableL4NEGDetachCancel:   flags.F.EnableL4NEGDetachCancel,
 		enableDualStackNEG:        enableDualStackNEG,
 		podLabelPropagationConfig: lpConfig,
 		networkInfo:               networkInfo,
@@ -373,7 +378,11 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	// This mostly happens when transaction entry require reconciliation but the transaction is still progress
 	// e.g. endpoint A is in the process of adding to NEG N, and the new desire state is not to have A in N.
 	// This ensures the endpoint that requires reconciliation to wait till the existing transaction to complete.
-	filterEndpointByTransaction(addEndpoints, s.transactions, s.logger)
+	if s.enableL4NEGDetachCancel && s.endpointsCalculator.Mode() == negtypes.L4LocalMode {
+		filterEndpointByTransactionExclDetach(addEndpoints, s.transactions, s.logger)
+	} else {
+		filterEndpointByTransaction(addEndpoints, s.transactions, s.logger)
+	}
 	filterEndpointByTransaction(removeEndpoints, s.transactions, s.logger)
 	// filter out the endpoints that are in transaction
 	filterEndpointByTransaction(committedEndpoints, s.transactions, s.logger)
@@ -641,7 +650,7 @@ func (s *transactionSyncer) attachNetworkEndpoints(negLocation negtypes.NEGLocat
 	err := s.operationInternal(attachOp, negLocation, networkEndpointMap, s.logger)
 
 	// WARNING: commitTransaction must be called at last for analyzing the operation result
-	s.commitTransaction(err, networkEndpointMap)
+	s.commitTransaction(attachOp, err, networkEndpointMap)
 }
 
 // detachNetworkEndpoints runs operation for detaching network endpoints.
@@ -656,7 +665,7 @@ func (s *transactionSyncer) detachNetworkEndpoints(negLocation negtypes.NEGLocat
 	}
 
 	// WARNING: commitTransaction must be called at last for analyzing the operation result
-	s.commitTransaction(err, networkEndpointMap)
+	s.commitTransaction(detachOp, err, networkEndpointMap)
 }
 
 // operationInternal executes NEG API call and commits the transactions
@@ -754,7 +763,7 @@ func (s *transactionSyncer) recordEvent(eventType, reason, eventDesc string) {
 // It will trigger syncer retry in the following conditions:
 // 1. Any of the transaction committed needed to be reconciled
 // 2. Input error was not nil
-func (s *transactionSyncer) commitTransaction(err error, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
+func (s *transactionSyncer) commitTransaction(op transactionOp, err error, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
 	s.syncLock.Lock()
 	defer s.syncLock.Unlock()
 
@@ -772,7 +781,13 @@ func (s *transactionSyncer) commitTransaction(err error, networkEndpointMap map[
 	}
 
 	for networkEndpoint := range networkEndpointMap {
-		_, ok := s.transactions.Get(networkEndpoint)
+		tr, ok := s.transactions.Get(networkEndpoint)
+		// do not remove if the operation types don't match. There is an edge case where the endpoint could be in an ongoing long detach but we allow an attach to stop detachment.
+		// In this case the attach will overwrite the transaction entry. One of these operations will finish earlier and we don't want it to remove the entry.
+		if s.enableL4NEGDetachCancel && s.endpointsCalculator.Mode() == negtypes.L4LocalMode && ok && tr.Operation != op {
+			s.logger.Info("Mismatched transaction operation type. Likely re-attaching an endpoint.", "endpoint", networkEndpoint)
+			continue
+		}
 		// clear transaction
 		if !ok {
 			s.logger.Error(nil, "Endpoint was not found in the transaction table.", "endpoint", networkEndpoint)
@@ -914,6 +929,24 @@ func filterEndpointByTransaction(endpointMap map[negtypes.NEGLocation]negtypes.N
 			if entry, ok := table.Get(endpoint); ok {
 				logger.V(2).Info("Endpoint is removed from the endpoint set as transaction still exists.", "endpoint", endpoint, "transactionEntry", entry)
 				endpointSet.Delete(endpoint)
+			}
+		}
+	}
+}
+
+func filterEndpointByTransactionExclDetach(endpointMap map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, table networkEndpointTransactionTable, logger klog.Logger) {
+	for zoneSubnet, endpointSet := range endpointMap {
+		for _, endpoint := range endpointSet.List() {
+			if entry, ok := table.Get(endpoint); ok {
+				if entry.Operation == detachOp {
+					logger.V(2).Info("Endpoint is NOT removed from the endpoint set as existing transaction is DELETE. Detach should be cancelled", "endpoint", endpoint, "transactionEntry", entry)
+					continue
+				}
+				logger.V(2).Info("Endpoint is removed from the endpoint set as transaction still exists.", "endpoint", endpoint, "transactionEntry", entry)
+				endpointSet.Delete(endpoint)
+				if len(endpointSet) == 0 {
+					delete(endpointMap, zoneSubnet)
+				}
 			}
 		}
 	}
