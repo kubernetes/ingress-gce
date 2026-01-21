@@ -698,25 +698,26 @@ func podBelongsToService(pod *apiv1.Pod, service *apiv1.Service) error {
 }
 
 // retrieveExistingZoneNetworkEndpointMap lists existing network endpoints in the neg and return the zone and endpoints map.
-func retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping map[string]string, zoneGetter *zonegetter.ZoneGetter, cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, mode negtypes.EndpointsCalculatorMode, enableDualStackNEG bool, logger klog.Logger, negMetrics *metrics.NegMetrics) (map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, labels.EndpointPodLabelMap, error) {
+func retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping map[string]string, zoneGetter *zonegetter.ZoneGetter, cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, mode negtypes.EndpointsCalculatorMode, enableDualStackNEG bool, logger klog.Logger, negMetrics *metrics.NegMetrics, retrieveDrainStatus bool) (map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, labels.EndpointPodLabelMap, map[negtypes.NetworkEndpoint]string, error) {
 	// Include zones that have non-candidate nodes currently. It is possible that NEGs were created in those zones previously and the endpoints now became non-candidates.
 	// Endpoints in those NEGs now need to be removed. This mostly applies to VM_IP_NEGs where the endpoints are nodes.
 	zones, err := zoneGetter.ListZones(zonegetter.AllNodesFilter, logger)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	candidateNodeZones, err := zoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(mode), logger)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	candidateZonesMap := sets.NewString(candidateNodeZones...)
 
 	zoneNetworkEndpointMap := map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{}
 	endpointPodLabelMap := labels.EndpointPodLabelMap{}
+	drainingEndpoints := make(map[negtypes.NetworkEndpoint]string)
 	for subnet, negName := range subnetToNegMapping {
 		for _, zone := range zones {
-			networkEndpointsWithHealthStatus, err := cloud.ListNetworkEndpoints(negName, zone, false, version, logger)
+			networkEndpointsWithHealthStatus, err := cloud.ListNetworkEndpoints(negName, zone, retrieveDrainStatus, version, logger)
 			if err != nil {
 				// It is possible for a NEG to be missing in a zone without candidate nodes. Log and ignore this error.
 				// NEG not found in a candidate zone is an error.
@@ -725,10 +726,11 @@ func retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping map[string]string
 					negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 					continue
 				}
-				return nil, nil, fmt.Errorf("failed to lookup NEG in zone %q, candidate zones %v, err - %w", zone, candidateZonesMap, err)
+				return nil, nil, nil, fmt.Errorf("failed to lookup NEG in zone %q, candidate zones %v, err - %w", zone, candidateZonesMap, err)
 			}
 			zoneNetworkEndpointMap[negtypes.NEGLocation{Zone: zone, Subnet: subnet}] = negtypes.NewNetworkEndpointSet()
 			for _, ne := range networkEndpointsWithHealthStatus {
+
 				newNE := negtypes.NetworkEndpoint{IP: ne.NetworkEndpoint.IpAddress, Node: ne.NetworkEndpoint.Instance}
 				if ne.NetworkEndpoint.Port != 0 {
 					newNE.Port = strconv.FormatInt(ne.NetworkEndpoint.Port, 10)
@@ -738,10 +740,26 @@ func retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping map[string]string
 				}
 				zoneNetworkEndpointMap[negtypes.NEGLocation{Zone: zone, Subnet: subnet}].Insert(newNE)
 				endpointPodLabelMap[newNE] = ne.NetworkEndpoint.Annotations
+				if retrieveDrainStatus && healthStatusIndicatesDraining(ne) {
+					drainingEndpoints[newNE] = ne.Healths[0].HealthState
+				}
 			}
 		}
 	}
-	return zoneNetworkEndpointMap, endpointPodLabelMap, nil
+	return zoneNetworkEndpointMap, endpointPodLabelMap, drainingEndpoints, nil
+}
+
+// healthStatusIndicatesDraining returns true if the endpoint is DRAINING
+// the conditions for this to be true are:
+//   - the endpoint must have 1 health status. if there is more than one health status
+//     then it means the NEG is used in more than 1 LB, and we're unable to reliably
+//     determine the correct status. For LBs provisioned by the GKE controllers
+//     this should be always true.
+//   - the status is DRAINING or UNHEALTHY. The reason for UNHEALTHY being treated
+//     as drain is, because an endpoint which is both unhealthy and draining will
+//     have status of unhealthy.
+func healthStatusIndicatesDraining(ne *composite.NetworkEndpointWithHealthStatus) bool {
+	return len(ne.Healths) == 1 && (ne.Healths[0].HealthState == "UNHEALTHY" || ne.Healths[0].HealthState == "DRAINING")
 }
 
 // makeEndpointBatch return a batch of endpoint from the input and remove the endpoints from input set

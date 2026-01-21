@@ -3022,7 +3022,7 @@ func TestUnknownNodes(t *testing.T) {
 	}
 
 	// Check that unknown zone did not cause endpoints to be removed
-	out, _, err := retrieveExistingZoneNetworkEndpointMap(map[string]string{defaultTestSubnet: testNegName}, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO(), s.negMetrics)
+	out, _, _, err := retrieveExistingZoneNetworkEndpointMap(map[string]string{defaultTestSubnet: testNegName}, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO(), s.negMetrics, false)
 	if err != nil {
 		t.Errorf("errored retrieving existing network endpoints")
 	}
@@ -3325,7 +3325,7 @@ func TestEnableDegradedMode(t *testing.T) {
 			tc.modify(s)
 
 			subnetToNegMapping := map[string]string{defaultTestSubnet: tc.negName}
-			out, _, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO(), s.negMetrics)
+			out, _, _, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO(), s.negMetrics, false)
 			if err != nil {
 				t.Errorf("errored retrieving existing network endpoints")
 			}
@@ -3338,7 +3338,7 @@ func TestEnableDegradedMode(t *testing.T) {
 				t.Errorf("syncInternal returned %v, expected %v", err, tc.expectErr)
 			}
 			err = wait.PollImmediate(time.Second, 3*time.Second, func() (bool, error) {
-				out, _, err = retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO(), s.negMetrics)
+				out, _, _, err = retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO(), s.negMetrics, false)
 				if err != nil {
 					return false, nil
 				}
@@ -4014,8 +4014,10 @@ func TestSyncL4NEGs(t *testing.T) {
 			if err != nil {
 				t.Errorf("syncInternal returned error: %v", err)
 			}
+			// give a little time for the syncer attach/detach goroutines to finish
+			time.Sleep(50 * time.Millisecond)
 
-			out, _, err := retrieveExistingZoneNetworkEndpointMap(map[string]string{defaultTestSubnet: testL4NegName}, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L4LocalMode, false, klog.TODO(), s.negMetrics)
+			out, _, _, err := retrieveExistingZoneNetworkEndpointMap(map[string]string{defaultTestSubnet: testL4NegName}, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L4LocalMode, false, klog.TODO(), s.negMetrics, false)
 			if err != nil {
 				t.Errorf("errored retrieving existing network endpoints: %v", err)
 			}
@@ -4026,6 +4028,95 @@ func TestSyncL4NEGs(t *testing.T) {
 		})
 	}
 
+}
+
+func TestReAddDrainingEndpointsThatAreInTargetMap(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		desc              string
+		addEndpoints      map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
+		targetMap         map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
+		drainingEndpoints map[negtypes.NetworkEndpoint]string
+		expectEndpoints   map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
+	}{
+		{
+			desc:              "empty inputs",
+			addEndpoints:      map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{},
+			targetMap:         map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{},
+			drainingEndpoints: map[negtypes.NetworkEndpoint]string{},
+			expectEndpoints:   map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{},
+		},
+		{
+			desc: "endpoint in targetMap and drainingEndpoints, health is not HEALTHY",
+			addEndpoints: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: "subnet1"}: negtypes.NewNetworkEndpointSet(),
+			},
+			targetMap: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: "subnet1"}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.1.1.1", Node: "node1"}),
+			},
+			drainingEndpoints: map[negtypes.NetworkEndpoint]string{
+				{IP: "1.1.1.1", Node: "node1"}: "DRAINING",
+			},
+			expectEndpoints: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: "subnet1"}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.1.1.1", Node: "node1"}),
+			},
+		},
+		{
+			desc: "endpoint in targetMap but not in drainingEndpoints",
+			addEndpoints: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: "subnet1"}: negtypes.NewNetworkEndpointSet(),
+			},
+			targetMap: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: "subnet1"}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.1.1.1", Node: "node1"}),
+			},
+			drainingEndpoints: map[negtypes.NetworkEndpoint]string{},
+			expectEndpoints: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: "subnet1"}: negtypes.NewNetworkEndpointSet(),
+			},
+		},
+		{
+			desc:         "endpoint in targetMap and currentMap (so not in addEndpoints), but is draining",
+			addEndpoints: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{},
+			targetMap: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: "subnet1"}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.1.1.1", Node: "node1"}),
+			},
+			drainingEndpoints: map[negtypes.NetworkEndpoint]string{
+				{IP: "1.1.1.1", Node: "node1"}: "DRAINING",
+			},
+			expectEndpoints: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: "subnet1"}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.1.1.1", Node: "node1"}),
+			},
+		},
+		{
+			desc: "multiple endpoints in same zoneSubnet, some draining, some not",
+			addEndpoints: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: "subnet1"}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.1.1.2", Node: "node2"}),
+			},
+			targetMap: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: "subnet1"}: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: "1.1.1.1", Node: "node1"},
+					negtypes.NetworkEndpoint{IP: "1.1.1.2", Node: "node2"},
+					negtypes.NetworkEndpoint{IP: "1.1.1.3", Node: "node3"},
+				),
+			},
+			drainingEndpoints: map[negtypes.NetworkEndpoint]string{
+				{IP: "1.1.1.1", Node: "node1"}: "DRAINING",
+			},
+			expectEndpoints: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: "subnet1"}: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: "1.1.1.1", Node: "node1"},
+					negtypes.NetworkEndpoint{IP: "1.1.1.2", Node: "node2"},
+				),
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		reAddDrainingEndpointsThatAreInTargetMap(tc.addEndpoints, tc.targetMap, tc.drainingEndpoints, klog.TODO())
+		if !reflect.DeepEqual(tc.addEndpoints, tc.expectEndpoints) {
+			t.Errorf("For case %q, expect addEndpoints to be %+v, but got %+v", tc.desc, tc.expectEndpoints, tc.addEndpoints)
+		}
+	}
 }
 
 func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negType negtypes.NetworkEndpointType, customName bool) (negtypes.NegSyncer, *transactionSyncer, error) {
