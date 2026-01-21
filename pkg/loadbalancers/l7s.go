@@ -115,7 +115,7 @@ func (l7s *L7s) list(key *meta.Key, version meta.Version) ([]*composite.UrlMap, 
 	}
 
 	for _, um := range urlMaps {
-		if l7s.v1NamerHelper.NameBelongsToCluster(um.Name) {
+		if l7s.v1NamerHelper.NameBelongsToEntity(um.Name) {
 			result = append(result, um)
 		}
 	}
