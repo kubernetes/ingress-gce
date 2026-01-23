@@ -41,6 +41,8 @@ import (
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/l4lb"
+	"k8s.io/ingress-gce/pkg/l4lbconfig"
+	l4lbconfigclient "k8s.io/ingress-gce/pkg/l4lbconfig/client/clientset/versioned"
 	multiprojectgce "k8s.io/ingress-gce/pkg/multiproject/common/gce"
 	multiprojectstart "k8s.io/ingress-gce/pkg/multiproject/start"
 	"k8s.io/ingress-gce/pkg/network"
@@ -184,6 +186,18 @@ func main() {
 		svcAttachmentClient, err = serviceattachmentclient.NewForConfig(kubeConfig)
 		if err != nil {
 			klog.Fatalf("Failed to create ServiceAttachment client: %v", err)
+		}
+	}
+
+	var l4LBConfigClient l4lbconfigclient.Interface
+	if flags.F.ManageL4LBLogging && (flags.F.RunL4Controller || flags.F.RunL4NetLBController) {
+		l4LBConfigCRDMeta := l4lbconfig.CRDMeta()
+		if _, err := crdHandler.EnsureCRD(l4LBConfigCRDMeta, true); err != nil {
+			klog.Fatalf("Failed to ensure L4LBConfig CRD: %v", err)
+		}
+		l4LBConfigClient, err = l4lbconfigclient.NewForConfig(kubeConfig)
+		if err != nil {
+			klog.Fatalf("Failed to create L4LBConfig client: %v", err)
 		}
 	}
 
@@ -343,7 +357,7 @@ func main() {
 		EnableL4NetLBForwardingRulesOptimizations: flags.F.EnableL4NetLBForwardingRulesOptimizations,
 		ReadOnlyMode:                              flags.F.ReadOnlyMode,
 	}
-	ctx, err := ingctx.NewControllerContext(kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, svcAttachmentClient, networkClient, nodeTopologyClient, eventRecorderKubeClient, cloud, namer, kubeSystemUID, ctxConfig, rootLogger)
+	ctx, err := ingctx.NewControllerContext(kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, svcAttachmentClient, networkClient, nodeTopologyClient, l4LBConfigClient, eventRecorderKubeClient, cloud, namer, kubeSystemUID, ctxConfig, rootLogger)
 	if err != nil {
 		klog.Fatalf("unable to set up controller context: %v", err)
 	}

@@ -24,6 +24,8 @@ import (
 	"testing"
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	l4lbconfigv1 "k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/ingress-gce/pkg/network"
@@ -37,6 +39,7 @@ import (
 	"google.golang.org/api/compute/v1"
 	ga "google.golang.org/api/compute/v1"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	servicehelper "k8s.io/cloud-provider/service/helpers"
@@ -48,6 +51,7 @@ import (
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/utils/ptr"
 	"k8s.io/utils/strings/slices"
 )
 
@@ -2062,5 +2066,165 @@ func assertAddressOldReservedHook(t *testing.T, gceCloud *gce.Cloud) func(ctx co
 		}
 
 		return false, nil
+	}
+}
+
+func TestEnsureL4NetLB_L4LBConfigLogging(t *testing.T) {
+	t.Parallel()
+
+	// Constants for reusable GCE and CRD configurations
+	loggingEnabled := &composite.BackendServiceLogConfig{Enable: true, SampleRate: 1.0, OptionalMode: "EXCLUDE_ALL_OPTIONAL"}
+	loggingDisabled := &composite.BackendServiceLogConfig{Enable: false}
+	loggingEnabledWithCustomFields := &composite.BackendServiceLogConfig{
+		Enable:         true,
+		SampleRate:     0.5,
+		OptionalMode:   "INCLUDE_ALL_OPTIONAL",
+		OptionalFields: []string{"field1", "field2"},
+	}
+
+	enabledCRDConfig := &l4lbconfigv1.LoggingConfig{Enabled: true}
+	disabledCRDConfig := &l4lbconfigv1.LoggingConfig{Enabled: false}
+	complexCRDConfig := &l4lbconfigv1.LoggingConfig{
+		Enabled:        true,
+		SampleRate:     ptr.To[int32](500000), // 0.5
+		OptionalMode:   "INCLUDE_ALL_OPTIONAL",
+		OptionalFields: []string{"field1", "field2"},
+	}
+
+	testCases := []struct {
+		desc              string
+		manageLoggingFlag bool
+		existingGCEConfig *composite.BackendServiceLogConfig
+		crdLoggingConfig  *l4lbconfigv1.LoggingConfig
+		hasAnnotation     bool
+		expectError       bool // used to simulate a CRD lookup failure
+		expectedGCEConfig *composite.BackendServiceLogConfig
+	}{
+		{
+			desc:              "Global Flag OFF: Should ignore CRD and preserve GCE state",
+			manageLoggingFlag: false,
+			existingGCEConfig: loggingEnabled,
+			crdLoggingConfig:  disabledCRDConfig,
+			hasAnnotation:     true,
+			expectedGCEConfig: loggingEnabled,
+		},
+		{
+			desc:              "Flag ON, No Annotation: Controller ceases management (Safety over Purity)",
+			manageLoggingFlag: true,
+			existingGCEConfig: loggingEnabled,
+			hasAnnotation:     false,
+			expectedGCEConfig: loggingEnabled,
+		},
+		{
+			desc:              "Flag ON, CRD enables logging: Successfully update GCE Backend",
+			manageLoggingFlag: true,
+			existingGCEConfig: loggingDisabled,
+			crdLoggingConfig:  enabledCRDConfig,
+			hasAnnotation:     true,
+			expectedGCEConfig: loggingEnabled,
+		},
+		{
+			desc:              "Flag ON, Logging section omitted in CRD: Preserve LKG state",
+			manageLoggingFlag: true,
+			existingGCEConfig: loggingEnabled,
+			crdLoggingConfig:  nil, // Section missing in the spec
+			hasAnnotation:     true,
+			expectedGCEConfig: loggingEnabled,
+		},
+		{
+			desc:              "Mapping Verification: SampleRate and OptionalFields transition",
+			manageLoggingFlag: true,
+			existingGCEConfig: loggingDisabled,
+			crdLoggingConfig:  complexCRDConfig,
+			hasAnnotation:     true,
+			expectedGCEConfig: loggingEnabledWithCustomFields,
+		},
+		{
+			desc:              "CRD Object Missing (but annotated): Issue warning and preserve LKG",
+			manageLoggingFlag: true,
+			existingGCEConfig: loggingEnabled,
+			crdLoggingConfig:  nil,
+			hasAnnotation:     true,
+			expectError:       true, // CRD lookup will return error/not found
+			expectedGCEConfig: loggingEnabled,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			// Set global feature flag for the duration of the test
+			oldFlag := flags.F.ManageL4LBLogging
+			flags.F.ManageL4LBLogging = tc.manageLoggingFlag
+			defer func() { flags.F.ManageL4LBLogging = oldFlag }()
+
+			vals := gce.DefaultTestClusterValues()
+			fakeGCE := getFakeGCECloud(vals)
+			nodeNames := []string{"test-node-1"}
+			svc := test.NewL4NetLBRBSService(8080)
+
+			// 1. Setup Mock L4LBConfig CRD in Lister
+			configName := "netlb-config"
+			lister := cache.NewStore(cache.MetaNamespaceKeyFunc)
+
+			if tc.hasAnnotation {
+				svc.Annotations[l4annotations.L4LBConfigKey] = configName
+				// Only add to store if we don't expect a "Not Found" error
+				if tc.crdLoggingConfig != nil && !tc.expectError {
+					lister.Add(&l4lbconfigv1.L4LBConfig{
+						ObjectMeta: metav1.ObjectMeta{Name: configName, Namespace: svc.Namespace},
+						Spec:       l4lbconfigv1.L4LBConfigSpec{Logging: tc.crdLoggingConfig},
+					})
+				}
+			}
+
+			// 2. Setup Existing State in GCE
+			// We need to pre-create the Backend Service to test "Preserve LKG" logic
+			bsName := namer_util.NewL4Namer(kubeSystemUID, nil).L4Backend(svc.Namespace, svc.Name)
+			key := meta.RegionalKey(bsName, vals.Region)
+
+			// Initialize Backend Service with existing config if provided
+			initialBS := &composite.BackendService{
+				Name:      bsName,
+				Protocol:  "TCP",
+				LogConfig: tc.existingGCEConfig,
+			}
+			if err := composite.CreateBackendService(fakeGCE, key, initialBS, klog.TODO()); err != nil {
+				t.Errorf("Failed to create fake backend service %s, err %v", bsName, err)
+			}
+
+			// 3. Initialize Handler
+			l4netlb := NewL4NetLB(&L4NetLBParams{
+				Service:          svc,
+				Cloud:            fakeGCE,
+				Namer:            namer_util.NewL4Namer(kubeSystemUID, nil),
+				Recorder:         record.NewFakeRecorder(100),
+				NetworkResolver:  network.NewFakeResolver(network.DefaultNetwork(fakeGCE)),
+				L4LBConfigLister: lister,
+			}, klog.TODO())
+			l4netlb.healthChecks = healthchecksl4.Fake(fakeGCE, l4netlb.recorder)
+
+			if _, err := test.CreateAndInsertNodes(l4netlb.cloud, nodeNames, vals.ZoneName); err != nil {
+				t.Errorf("Unexpected error when adding nodes %v", err)
+			}
+
+			// 4. Execution
+			// EnsureFrontend is the NetLB entry point for reconciliation
+			result := l4netlb.EnsureFrontend(nodeNames, svc, time.Now())
+			if tc.expectError && result.Error != nil {
+				// Some errors are expected in specific safety scenarios (e.g. CRD missing)
+				t.Logf("Caught expected reconciliation error: %v", result.Error)
+			}
+
+			// 5. Verification
+			finalBS, err := composite.GetBackendService(fakeGCE, key, meta.VersionGA, klog.TODO())
+			if err != nil {
+				t.Fatalf("Failed to retrieve Backend Service from GCE: %v", err)
+			}
+
+			if diff := cmp.Diff(tc.expectedGCEConfig, finalBS.LogConfig); diff != "" {
+				t.Errorf("LogConfig mismatch following reconciliation (-want +got):\n%s", diff)
+			}
+		})
 	}
 }

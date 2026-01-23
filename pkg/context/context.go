@@ -42,6 +42,8 @@ import (
 	informerfrontendconfig "k8s.io/ingress-gce/pkg/frontendconfig/client/informers/externalversions/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/instancegroups"
 	l4metrics "k8s.io/ingress-gce/pkg/l4lb/metrics"
+	l4lbconfigclient "k8s.io/ingress-gce/pkg/l4lbconfig/client/clientset/versioned"
+	informerl4lbconfig "k8s.io/ingress-gce/pkg/l4lbconfig/client/informers/externalversions/l4lbconfig/v1"
 	"k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/ingress-gce/pkg/recorders"
 	serviceattachmentclient "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned"
@@ -71,6 +73,7 @@ type ControllerContext struct {
 	FirewallClient      firewallclient.Interface
 	EventRecorderClient kubernetes.Interface
 	NodeTopologyClient  nodetopologyclient.Interface
+	L4LBConfigClient    l4lbconfigclient.Interface
 
 	Cloud *gce.Cloud
 
@@ -87,13 +90,13 @@ type ControllerContext struct {
 	PodInformer              cache.SharedIndexInformer
 	NodeInformer             cache.SharedIndexInformer
 	EndpointSliceInformer    cache.SharedIndexInformer
-	ConfigMapInformer        cache.SharedIndexInformer
 	SvcNegInformer           cache.SharedIndexInformer
 	SAInformer               cache.SharedIndexInformer
 	FirewallInformer         cache.SharedIndexInformer
 	NetworkInformer          cache.SharedIndexInformer
 	GKENetworkParamsInformer cache.SharedIndexInformer
 	NodeTopologyInformer     cache.SharedIndexInformer
+	L4LBConfigInformer       cache.SharedIndexInformer
 
 	ControllerMetrics *metrics.ControllerMetrics
 	L4Metrics         *l4metrics.Collector
@@ -152,6 +155,7 @@ func NewControllerContext(
 	saClient serviceattachmentclient.Interface,
 	networkClient networkclient.Interface,
 	nodeTopologyClient nodetopologyclient.Interface,
+	l4LBConfigClient l4lbconfigclient.Interface,
 	eventRecorderClient kubernetes.Interface,
 	cloud *gce.Cloud,
 	clusterNamer *namer.Namer,
@@ -179,6 +183,7 @@ func NewControllerContext(
 		SAClient:                saClient,
 		EventRecorderClient:     eventRecorderClient,
 		NodeTopologyClient:      nodeTopologyClient,
+		L4LBConfigClient:        l4LBConfigClient,
 		Cloud:                   cloud,
 		ClusterNamer:            clusterNamer,
 		L4Namer:                 namer.NewL4Namer(string(kubeSystemUID), clusterNamer),
@@ -228,8 +233,9 @@ func NewControllerContext(
 		}
 	}
 
+	// L4LB Logging CRD informer
 	if flags.F.ManageL4LBLogging {
-		context.ConfigMapInformer = informerv1.NewConfigMapInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
+		context.L4LBConfigInformer = informerl4lbconfig.NewL4LBConfigInformer(l4LBConfigClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
 	}
 
 	// Do not trigger periodic resync on EndpointSlices object.
@@ -302,8 +308,8 @@ func (ctx *ControllerContext) HasSynced() bool {
 		funcs = append(funcs, ctx.FrontendConfigInformer.HasSynced)
 	}
 
-	if ctx.ConfigMapInformer != nil {
-		funcs = append(funcs, ctx.ConfigMapInformer.HasSynced)
+	if ctx.L4LBConfigInformer != nil {
+		funcs = append(funcs, ctx.L4LBConfigInformer.HasSynced)
 	}
 
 	if ctx.SAInformer != nil {
@@ -336,8 +342,8 @@ func (ctx *ControllerContext) Start(stopCh <-chan struct{}) {
 	go ctx.NodeInformer.Run(stopCh)
 	go ctx.EndpointSliceInformer.Run(stopCh)
 
-	if ctx.ConfigMapInformer != nil {
-		go ctx.ConfigMapInformer.Run(stopCh)
+	if ctx.L4LBConfigInformer != nil {
+		go ctx.L4LBConfigInformer.Run(stopCh)
 	}
 
 	if ctx.FirewallInformer != nil {

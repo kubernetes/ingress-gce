@@ -29,19 +29,24 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/compute/v1"
 	ga "google.golang.org/api/compute/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	l4lbconfigv1 "k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/firewalls"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/healthchecksl4"
 	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
 	"k8s.io/utils/strings/slices"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	servicehelper "k8s.io/cloud-provider/service/helpers"
@@ -3275,5 +3280,158 @@ func createVMInstanceWithTag(t *testing.T, fakeGCE *gce.Cloud, name, tag string)
 		})
 	if err != nil {
 		t.Errorf("failed to create instance err=%v", err)
+	}
+}
+
+func TestEnsureInternalLoadBalancer_L4LBConfigLogging(t *testing.T) {
+	t.Parallel()
+
+	loggingEnabled := &composite.BackendServiceLogConfig{Enable: true, SampleRate: 1.0, OptionalMode: "EXCLUDE_ALL_OPTIONAL"}
+	loggingDisabled := &composite.BackendServiceLogConfig{Enable: false}
+	loggingEnabledWithCustomFields := &composite.BackendServiceLogConfig{
+		Enable:         true,
+		SampleRate:     0.5,
+		OptionalMode:   "INCLUDE_ALL_OPTIONAL",
+		OptionalFields: []string{"field1", "field2"},
+	}
+
+	enabledConfig := &l4lbconfigv1.LoggingConfig{Enabled: true}
+	disabledConfig := &l4lbconfigv1.LoggingConfig{Enabled: false}
+	complexConfig := &l4lbconfigv1.LoggingConfig{
+		Enabled:        true,
+		SampleRate:     ptr.To[int32](500000), // 0.5
+		OptionalMode:   "INCLUDE_ALL_OPTIONAL",
+		OptionalFields: []string{"field1", "field2"},
+	}
+
+	testCases := []struct {
+		desc              string
+		manageLoggingFlag bool
+		existingGCEConfig *composite.BackendServiceLogConfig
+		crdLoggingConfig  *l4lbconfigv1.LoggingConfig
+		hasAnnotation     bool
+		expectError       bool
+		expectedGCEConfig *composite.BackendServiceLogConfig
+	}{
+		{
+			desc:              "Global Flag OFF: Should ignore CRD and preserve GCE state",
+			manageLoggingFlag: false,
+			existingGCEConfig: loggingEnabled,
+			crdLoggingConfig:  disabledConfig, // Attempt to disable
+			hasAnnotation:     true,
+			expectedGCEConfig: loggingEnabled, // Remains enabled
+		},
+		{
+			desc:              "Flag ON, No Annotation: Preserve GCE state (Cease Management)",
+			manageLoggingFlag: true,
+			existingGCEConfig: loggingEnabled,
+			hasAnnotation:     false,
+			expectedGCEConfig: loggingEnabled,
+		},
+		{
+			desc:              "Flag ON, CRD enables logging: Update GCE",
+			manageLoggingFlag: true,
+			existingGCEConfig: loggingDisabled,
+			crdLoggingConfig:  enabledConfig,
+			hasAnnotation:     true,
+			expectedGCEConfig: loggingEnabled,
+		},
+		{
+			desc:              "Flag ON, CRD field omitted: Preserve current state",
+			manageLoggingFlag: true,
+			existingGCEConfig: loggingEnabled,
+			crdLoggingConfig:  nil, // Omitted top-level section
+			hasAnnotation:     true,
+			expectedGCEConfig: loggingEnabled, // Stays enabled
+		},
+		{
+			desc:              "Complex Mapping: Verify SampleRate and OptionalFields",
+			manageLoggingFlag: true,
+			existingGCEConfig: loggingDisabled,
+			crdLoggingConfig:  complexConfig,
+			hasAnnotation:     true,
+			expectedGCEConfig: loggingEnabledWithCustomFields,
+		},
+		{
+			desc:              "Complex Mapping: From Complex to Simple",
+			manageLoggingFlag: true,
+			existingGCEConfig: loggingEnabledWithCustomFields,
+			crdLoggingConfig:  enabledConfig,
+			hasAnnotation:     true,
+			expectedGCEConfig: loggingEnabled,
+		},
+		{
+			desc:              "CRD Object Deleted: Preserve current state and issue warning",
+			manageLoggingFlag: true,
+			existingGCEConfig: loggingEnabled,
+			crdLoggingConfig:  nil,
+			hasAnnotation:     true,
+			expectError:       true, // Trigger the "DoesNotExist" error path
+			expectedGCEConfig: loggingEnabled,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			flags.F.ManageL4LBLogging = tc.manageLoggingFlag
+			vals := gce.DefaultTestClusterValues()
+			fakeGCE := getFakeGCECloud(vals)
+			nodeNames := []string{"test-node-1"}
+			svc := test.NewL4ILBService(false, 8080)
+
+			configName := "l4-config"
+			lister := cache.NewStore(cache.MetaNamespaceKeyFunc)
+
+			if tc.hasAnnotation {
+				svc.Annotations[l4annotations.L4LBConfigKey] = configName
+				if tc.crdLoggingConfig != nil {
+					lister.Add(&l4lbconfigv1.L4LBConfig{
+						ObjectMeta: metav1.ObjectMeta{Name: configName, Namespace: svc.Namespace},
+						Spec:       l4lbconfigv1.L4LBConfigSpec{Logging: tc.crdLoggingConfig},
+					})
+				}
+				// If tc.expectError is true, we leave the lister empty to simulate missing CRD
+			}
+
+			// Setup existing state in GCE
+			bsName := namer_util.NewL4Namer(kubeSystemUID, nil).L4Backend(svc.Namespace, svc.Name)
+			if tc.existingGCEConfig != nil {
+				key := meta.RegionalKey(bsName, vals.Region)
+				existingBS := &composite.BackendService{
+					Name:      bsName,
+					LogConfig: tc.existingGCEConfig,
+					Protocol:  "TCP",
+				}
+				if err := composite.CreateBackendService(fakeGCE, key, existingBS, klog.TODO()); err != nil {
+					t.Errorf("Failed to create fake backend service %s, err %v", bsName, err)
+				}
+			}
+
+			l4 := NewL4Handler(&L4ILBParams{
+				Service:          svc,
+				Cloud:            fakeGCE,
+				Namer:            namer_util.NewL4Namer(kubeSystemUID, nil),
+				Recorder:         record.NewFakeRecorder(100),
+				NetworkResolver:  network.NewFakeResolver(network.DefaultNetwork(fakeGCE)),
+				L4LBConfigLister: lister,
+			}, klog.TODO())
+			l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4.recorder)
+
+			if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
+				t.Errorf("Unexpected error when adding nodes %v", err)
+			}
+
+			// Execute sync
+			l4.EnsureInternalLoadBalancer(nodeNames, svc)
+
+			// Verification
+			key := meta.RegionalKey(bsName, fakeGCE.Region())
+			finalBS, _ := composite.GetBackendService(fakeGCE, key, meta.VersionGA, klog.TODO())
+
+			if diff := cmp.Diff(tc.expectedGCEConfig, finalBS.LogConfig); diff != "" {
+				t.Errorf("BackendService LogConfig mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }

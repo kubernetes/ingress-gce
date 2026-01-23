@@ -23,12 +23,14 @@ import (
 	"strings"
 	"time"
 
+	l4lbconfigv1 "k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1"
 	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/ingress-gce/pkg/l4resources"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
@@ -193,23 +195,23 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 	}
 
 	if flags.F.ManageL4LBLogging {
-		ctx.ConfigMapInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		ctx.L4LBConfigInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
-				configMap, ok := obj.(*v1.ConfigMap)
+				l4lbconfig, ok := obj.(*l4lbconfigv1.L4LBConfig)
 				if ok {
-					l4c.enqueueServicesReferencingConfigMap(configMap)
+					l4c.enqueueServicesReferencingL4LBConfig(l4lbconfig)
 				}
 			},
 			UpdateFunc: func(_, obj interface{}) {
-				configMap, ok := obj.(*v1.ConfigMap)
+				l4lbconfig, ok := obj.(*l4lbconfigv1.L4LBConfig)
 				if ok {
-					l4c.enqueueServicesReferencingConfigMap(configMap)
+					l4c.enqueueServicesReferencingL4LBConfig(l4lbconfig)
 				}
 			},
 			DeleteFunc: func(obj interface{}) {
-				configMap, ok := obj.(*v1.ConfigMap)
+				l4lbconfig, ok := obj.(*l4lbconfigv1.L4LBConfig)
 				if ok {
-					l4c.enqueueServicesReferencingConfigMap(configMap)
+					l4c.enqueueServicesReferencingL4LBConfig(l4lbconfig)
 				}
 			},
 		})
@@ -218,8 +220,8 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 	return l4c
 }
 
-func (l4c *L4Controller) enqueueServicesReferencingConfigMap(configMap *v1.ConfigMap) {
-	services := operator.Services(l4c.ctx.Services().List(), l4c.logger).ReferencesL4LoggingConfigMap(configMap).AsList()
+func (l4c *L4Controller) enqueueServicesReferencingL4LBConfig(l4LBConfigObject *l4lbconfigv1.L4LBConfig) {
+	services := operator.Services(l4c.ctx.Services().List(), l4c.logger).ReferencesL4LBConfig(l4LBConfigObject).AsList()
 	for _, svc := range services {
 		svcKey := utils.ServiceKeyFunc(svc.Namespace, svc.Name)
 		svcLogger := l4c.logger.WithValues("serviceKey", svcKey)
@@ -359,8 +361,8 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service, svcLo
 		EnableMixedProtocol:              l4c.ctx.EnableL4ILBMixedProtocol,
 		EnableZonalAffinity:              l4c.ctx.EnableL4ILBZonalAffinity,
 	}
-	if l4c.ctx.ConfigMapInformer != nil {
-		l4ilbParams.ConfigMapLister = l4c.ctx.ConfigMapInformer.GetIndexer()
+	if l4c.ctx.L4LBConfigInformer != nil {
+		l4ilbParams.L4LBConfigLister = l4c.ctx.L4LBConfigInformer.GetIndexer()
 	}
 
 	l4 := l4resources.NewL4Handler(l4ilbParams, svcLogger)
@@ -390,7 +392,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service, svcLo
 		syncResult.Error = err
 		return syncResult
 	}
-	err = updateServiceStatus(l4c.ctx, service, syncResult.Status, svcLogger)
+	err = updateServiceStatus(l4c.ctx, service, syncResult.Status, syncResult.Conditions, svcLogger)
 	if err != nil {
 		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
 			"Error updating load balancer status: %v", err)
@@ -446,8 +448,8 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service, svc
 		EnableMixedProtocol:              l4c.ctx.EnableL4ILBMixedProtocol,
 		EnableZonalAffinity:              l4c.ctx.EnableL4ILBZonalAffinity,
 	}
-	if l4c.ctx.ConfigMapInformer != nil {
-		l4ilbParams.ConfigMapLister = l4c.ctx.ConfigMapInformer.GetIndexer()
+	if l4c.ctx.L4LBConfigInformer != nil {
+		l4ilbParams.L4LBConfigLister = l4c.ctx.L4LBConfigInformer.GetIndexer()
 	}
 
 	l4 := l4resources.NewL4Handler(l4ilbParams, svcLogger)
@@ -460,7 +462,7 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service, svc
 	// Reset the loadbalancer status first, before resetting annotations.
 	// Other controllers(like service-controller) will process the service update if annotations change, but will ignore a service status change.
 	// Following this order avoids a race condition when a service is changed from LoadBalancer type Internal to External.
-	if err := updateServiceStatus(l4c.ctx, svc, &v1.LoadBalancerStatus{}, svcLogger); err != nil {
+	if err := updateServiceStatus(l4c.ctx, svc, &v1.LoadBalancerStatus{}, []metav1.Condition{}, svcLogger); err != nil {
 		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 			"Error resetting load balancer status to empty: %v", err)
 		result.Error = fmt.Errorf("failed to reset ILB status, err: %w", err)
@@ -614,6 +616,12 @@ func (l4c *L4Controller) needsUpdate(oldService *v1.Service, newService *v1.Serv
 	if !newSvcWantsILB && !oldSvcWantsILB {
 		// Ignore any other changes if both the previous and new service do not need ILB.
 		return false
+	}
+
+	_, oldHasConfig := l4annotations.FromService(oldService).GetL4LBConfigAnnotation()
+	_, newHasConfig := l4annotations.FromService(newService).GetL4LBConfigAnnotation()
+	if oldHasConfig && !newHasConfig {
+		l4c.ctx.Recorder(newService.Namespace).Event(newService, v1.EventTypeWarning, ReasonL4LBConfigAnnotationRemoved, "L4LBConfig annotation has been removed")
 	}
 
 	if !reflect.DeepEqual(oldService.Spec.LoadBalancerSourceRanges, newService.Spec.LoadBalancerSourceRanges) {
