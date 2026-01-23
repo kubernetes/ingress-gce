@@ -17,6 +17,7 @@ limitations under the License.
 package l4annotations
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -105,8 +106,12 @@ const (
 	// Service annotation value for using pods-per-node Weighted load balancing in both ILB and NetlB
 	WeightedL4AnnotationPodsPerNode = "pods-per-node"
 
-	// Service annotation key for specifying config map which contains logging config
-	L4LoggingConfigMapKey = "networking.gke.io/l4-logging-config-map"
+	// Service annotation key for specifying L4LBConfig
+	L4LBConfigKey = "networking.gke.io/l4lb-config"
+)
+
+var (
+	ErrL4LBConfigNoneFound = errors.New("no L4LBConfig's found in annotation")
 )
 
 // Service represents Service annotations.
@@ -222,10 +227,10 @@ func onlyStatusAnnotationsChanged(oldService, newService *v1.Service) bool {
 	return true
 }
 
-// GetL4LoggingConfigMapAnnotation returns name of the config map which contains logging config.
+// GetL4LBConfigAnnotation returns name of the config map which contains L4LB config.
 // Returns false if annotation with the name is not specified.
-func (svc *Service) GetL4LoggingConfigMapAnnotation() (string, bool) {
-	val, ok := svc.v[L4LoggingConfigMapKey]
+func (svc *Service) GetL4LBConfigAnnotation() (string, bool) {
+	val, ok := svc.v[L4LBConfigKey]
 	if ok {
 		return val, ok
 	}
@@ -252,4 +257,11 @@ func (svc *Service) GetInternalLoadBalancerAnnotationSubnet() string {
 		return val
 	}
 	return ""
+}
+
+func SetL4LBConfigAnnotation(svc *v1.Service, configName string) {
+	if svc.Annotations == nil {
+		svc.Annotations = make(map[string]string)
+	}
+	svc.Annotations[L4LBConfigKey] = configName
 }

@@ -57,7 +57,7 @@ func newFirewallController() (*FirewallController, error) {
 		ResyncPeriod:          1 * time.Minute,
 		DefaultBackendSvcPort: test.DefaultBeSvcPort,
 	}
-	ctx, err := context.NewControllerContext(kubeClient, backendConfigClient, nil, firewallClient, nil, nil, nil, nil, kubeClient /*kube client to be used for events*/, fakeGCE, defaultNamer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
+	ctx, err := context.NewControllerContext(kubeClient, backendConfigClient, nil, firewallClient, nil, nil, nil, nil, nil, kubeClient /*kube client to be used for events*/, fakeGCE, defaultNamer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize controller context: %v", err)
 	}

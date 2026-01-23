@@ -24,6 +24,8 @@ import (
 	"testing"
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	l4lbconfigv1 "k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/ingress-gce/pkg/network"
@@ -37,6 +39,7 @@ import (
 	"google.golang.org/api/compute/v1"
 	ga "google.golang.org/api/compute/v1"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	servicehelper "k8s.io/cloud-provider/service/helpers"
@@ -2062,5 +2065,188 @@ func assertAddressOldReservedHook(t *testing.T, gceCloud *gce.Cloud) func(ctx co
 		}
 
 		return false, nil
+	}
+}
+
+func TestEnsureL4NetLB_ManageL4LBLoggingFlag(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		desc               string
+		manageLoggingFlag  bool
+		hasL4LBConfig      bool
+		expectedLogEnabled bool
+	}{
+		{
+			desc:               "Flag ON, Config present -> Logging should be enabled",
+			manageLoggingFlag:  true,
+			hasL4LBConfig:      true,
+			expectedLogEnabled: true,
+		},
+		{
+			desc:               "Flag ON, Config missing -> Logging should stay disabled (default)",
+			manageLoggingFlag:  true,
+			hasL4LBConfig:      false,
+			expectedLogEnabled: false,
+		},
+		{
+			desc:               "Flag OFF, Config present -> Logging should stay disabled (flag takes precedence)",
+			manageLoggingFlag:  false,
+			hasL4LBConfig:      true,
+			expectedLogEnabled: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			// Set the global feature flag
+			flags.F.ManageL4LBLogging = tc.manageLoggingFlag
+
+			vals := gce.DefaultTestClusterValues()
+			fakeGCE := getFakeGCECloud(vals)
+			nodeNames := []string{"test-node-1"}
+			svc := test.NewL4NetLBRBSService(8080)
+
+			// Setup Mock Config Lister
+			lister := cache.NewStore(cache.MetaNamespaceKeyFunc)
+			if tc.hasL4LBConfig {
+				configName := "test-l4-config"
+				svc.Annotations[l4annotations.L4LBConfigKey] = configName
+				lister.Add(&l4lbconfigv1.L4LBConfig{
+					ObjectMeta: metav1.ObjectMeta{Name: configName, Namespace: svc.Namespace},
+					Spec: l4lbconfigv1.L4LBConfigSpec{
+						Logging: &l4lbconfigv1.LoggingConfig{Enabled: true},
+					},
+				})
+			}
+
+			l4netlb := NewL4NetLB(&L4NetLBParams{
+				Service:          svc,
+				Cloud:            fakeGCE,
+				Namer:            namer_util.NewL4Namer(kubeSystemUID, nil),
+				Recorder:         record.NewFakeRecorder(100),
+				NetworkResolver:  network.NewFakeResolver(network.DefaultNetwork(fakeGCE)),
+				L4LBConfigLister: lister,
+			}, klog.TODO())
+			l4netlb.healthChecks = healthchecksl4.Fake(fakeGCE, l4netlb.recorder)
+
+			if _, err := test.CreateAndInsertNodes(l4netlb.cloud, nodeNames, vals.ZoneName); err != nil {
+				t.Errorf("Unexpected error when adding nodes %v", err)
+			}
+
+			result := l4netlb.EnsureFrontend(nodeNames, svc, time.Now())
+			if result.Error != nil {
+				t.Fatalf("Sync failed: %v", result.Error)
+			}
+
+			// Verify the actual Backend Service in GCE
+			bsName := l4netlb.namer.L4Backend(svc.Namespace, svc.Name)
+			key := meta.RegionalKey(bsName, l4netlb.cloud.Region())
+			bs, _ := composite.GetBackendService(fakeGCE, key, meta.VersionGA, klog.TODO())
+
+			logEnabled := bs.LogConfig != nil && bs.LogConfig.Enable
+			if logEnabled != tc.expectedLogEnabled {
+				t.Errorf("Expected LogConfig.Enable to be %v, got %v", tc.expectedLogEnabled, logEnabled)
+			}
+		})
+	}
+}
+
+func TestEnsureL4NetLB_ObservedLoggingConfig(t *testing.T) {
+	t.Parallel()
+
+	gceLoggingState := &composite.BackendServiceLogConfig{
+		Enable:       true,
+		SampleRate:   0.75,
+		OptionalMode: "INCLUDE_ALL_OPTIONAL",
+	}
+
+	testCases := []struct {
+		desc          string
+		existingInGCE *composite.BackendServiceLogConfig
+	}{
+		{
+			desc:          "Correctly observes existing enabled config",
+			existingInGCE: gceLoggingState,
+		},
+		{
+			desc:          "Correctly observes nil/disabled config",
+			existingInGCE: nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			flags.F.ManageL4LBLogging = true
+			vals := gce.DefaultTestClusterValues()
+			fakeGCE := getFakeGCECloud(vals)
+			svc := test.NewL4NetLBRBSService(8080)
+			nodeNames := []string{"test-node-1"}
+
+			l4netlb := NewL4NetLB(&L4NetLBParams{
+				Service:         svc,
+				Cloud:           fakeGCE,
+				Namer:           namer_util.NewL4Namer(kubeSystemUID, nil),
+				Recorder:        record.NewFakeRecorder(100),
+				NetworkResolver: network.NewFakeResolver(network.DefaultNetwork(fakeGCE)),
+			}, klog.TODO())
+			l4netlb.healthChecks = healthchecksl4.Fake(fakeGCE, l4netlb.recorder)
+
+			if _, err := test.CreateAndInsertNodes(l4netlb.cloud, nodeNames, vals.ZoneName); err != nil {
+				t.Errorf("Unexpected error when adding nodes %v", err)
+			}
+
+			// Pre-populate Backend Service with the specific logging config
+			lbName := l4netlb.namer.L4Backend(svc.Namespace, svc.Name)
+			sharedHC := !servicehelper.RequestsOnlyLocalTraffic(svc)
+			defaultNetwork := network.DefaultNetwork(fakeGCE)
+			hcResult := l4netlb.healthChecks.EnsureHealthCheckWithFirewall(svc, l4netlb.namer, sharedHC, meta.Regional, utils.XLB, nodeNames, *defaultNetwork, klog.TODO())
+
+			backendParams := backends.L4BackendServiceParams{
+				Name:                    lbName,
+				HealthCheckLink:         hcResult.HCLink,
+				Protocol:                "TCP",
+				Scheme:                  string(cloud.SchemeExternal),
+				NamespacedName:          l4netlb.NamespacedName,
+				NetworkInfo:             defaultNetwork,
+				LogConfig:               tc.existingInGCE,
+				LogConfigControlEnabled: true, // Set existing config in GCE
+			}
+			bs, wasUpdated, err := l4netlb.backendPool.EnsureL4BackendService(backendParams, klog.TODO())
+
+			if err != nil {
+				t.Fatalf("Failed to pre-populate backend pool: %v", err)
+			}
+			if !wasUpdated {
+				t.Fatalf("Expected backend service to be created/updated in pre-population step")
+			}
+			if tc.existingInGCE != nil {
+				if bs.LogConfig == nil {
+					t.Fatalf("Pre-population step did not set expected logging config in GCE")
+				}
+				if diff := cmp.Diff(tc.existingInGCE, bs.LogConfig); diff != "" {
+					t.Errorf("Pre-population mismatch (-want +got):\n%s", diff)
+				}
+			}
+
+			// Execute Sync
+			result := l4netlb.EnsureFrontend(nodeNames, svc, time.Now())
+			if result.Error != nil {
+				t.Fatalf("Sync failed: %v", result.Error)
+			}
+
+			// Verify ObservedLoggingConfig matches what was injected into GCE
+			if diff := cmp.Diff(tc.existingInGCE, result.ObservedLoggingConfig); diff != "" {
+				t.Errorf("ObservedLoggingConfig mismatch (-want +got):\n%s", diff)
+			}
+
+			// Verify Metrics state
+			expectedMetricsEnabled := tc.existingInGCE != nil && tc.existingInGCE.Enable
+			if result.MetricsState.LoggingEnabled != expectedMetricsEnabled {
+				t.Errorf("MetricsState.LoggingEnabled expected %v, got %v", expectedMetricsEnabled, result.MetricsState.LoggingEnabled)
+			}
+		})
 	}
 }

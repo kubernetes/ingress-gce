@@ -40,6 +40,7 @@ import (
 	"k8s.io/ingress-gce/pkg/healthchecksl4"
 	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/ingress-gce/pkg/l4lb/metrics"
+	l4lbconfig "k8s.io/ingress-gce/pkg/l4lbconfig"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -80,21 +81,22 @@ type L4 struct {
 	disableNodesFirewallProvisioning bool
 	enableZonalAffinity              bool
 	svcLogger                        klog.Logger
-	configMapLister                  cache.Store
+	l4lbConfigLister                 cache.Store
 }
 
 // L4ILBSyncResult contains information about the outcome of an L4 ILB sync. It stores the list of resource name annotations,
 // sync error, the GCE resource that hit the error along with the error type, metrics and more fields.
 type L4ILBSyncResult struct {
-	Annotations        map[string]string
-	Error              error
-	GCEResourceInError string
-	Status             *corev1.LoadBalancerStatus
-	MetricsLegacyState metrics.L4ILBServiceLegacyState
-	MetricsState       metrics.L4ServiceState
-	SyncType           string
-	StartTime          time.Time
-	ResourceUpdates    ResourceUpdates
+	Annotations           map[string]string
+	Error                 error
+	GCEResourceInError    string
+	Status                *corev1.LoadBalancerStatus
+	MetricsLegacyState    metrics.L4ILBServiceLegacyState
+	MetricsState          metrics.L4ServiceState
+	SyncType              string
+	StartTime             time.Time
+	ResourceUpdates       ResourceUpdates
+	ObservedLoggingConfig *composite.BackendServiceLogConfig
 }
 
 func NewL4ILBSyncResult(syncType string, startTime time.Time, svc *corev1.Service, isMultinetService bool, isWeightedLBPodsPerNode bool, isLBWithZonalAffinity bool) *L4ILBSyncResult {
@@ -120,7 +122,7 @@ type L4ILBParams struct {
 	EnableZonalAffinity              bool
 	DisableNodesFirewallProvisioning bool
 	EnableMixedProtocol              bool
-	ConfigMapLister                  cache.Store
+	L4LBConfigLister                 cache.Store
 }
 
 // NewL4Handler creates a new L4Handler for the given L4 service.
@@ -143,7 +145,7 @@ func NewL4Handler(params *L4ILBParams, logger klog.Logger) *L4 {
 		disableNodesFirewallProvisioning: params.DisableNodesFirewallProvisioning,
 		enableZonalAffinity:              params.EnableZonalAffinity,
 		svcLogger:                        logger,
-		configMapLister:                  params.ConfigMapLister,
+		l4lbConfigLister:                 params.L4LBConfigLister,
 	}
 	l4.NamespacedName = types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace}
 	l4.backendPool = backends.NewPool(l4.cloud, l4.namer)
@@ -547,21 +549,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 
 	enableZonalAffinity := l4.requireZonalAffinity(svc)
 
-	// ensure backend service
-	var logConfig *composite.BackendServiceLogConfig
-	if flags.F.ManageL4LBLogging && l4.configMapLister != nil {
-		logConfig, err = GetL4LoggingConfig(l4.Service, l4.configMapLister)
-		if err != nil {
-			result.GCEResourceInError = l4annotations.BackendServiceResource
-			result.Error = utils.NewUserError(err)
-			return result
-		}
-		loggingConfigMapName, cmReferenced := l4annotations.FromService(l4.Service).GetL4LoggingConfigMapAnnotation()
-		if logConfig == nil && cmReferenced {
-			warningMessage := fmt.Sprintf("Referenced L4 logging ConfigMap does not exist: Name: %q, Namespace: %q", loggingConfigMapName, l4.Service.Namespace)
-			l4.recorder.Eventf(l4.Service, corev1.EventTypeWarning, "ReferencedConfigMapDoesNotExist", warningMessage)
-		}
-	}
+	logConfig, logConfigControlEnabled := l4.determineBackendServiceLoggingConfig(existingBS)
 
 	backendParams := backends.L4BackendServiceParams{
 		Name:                     bsName,
@@ -575,10 +563,12 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		EnableZonalAffinity:      enableZonalAffinity,
 		LocalityLbPolicy:         localityLbPolicy,
 		LogConfig:                logConfig,
+		LogConfigControlEnabled:  logConfigControlEnabled,
 	}
 
 	bs, bsSyncStatus, err := l4.backendPool.EnsureL4BackendService(backendParams, l4.svcLogger)
 	result.ResourceUpdates.SetBackendService(bsSyncStatus)
+
 	if err != nil {
 		if utils.IsUnsupportedFeatureError(err, string(backends.LocalityLbPolicyRendezvous)) {
 			result.GCEResourceInError = l4annotations.BackendServiceResource
@@ -591,8 +581,9 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		return result
 	}
 	result.Annotations[l4annotations.BackendServiceKey] = bsName
-	if bs.LogConfig != nil {
+	if bs != nil && bs.LogConfig != nil {
 		result.MetricsState.LoggingEnabled = bs.LogConfig.Enable
+		result.ObservedLoggingConfig = bs.LogConfig
 	}
 
 	if l4.enableDualStack {
@@ -850,6 +841,52 @@ func (l4 *L4) determineBackendServiceLocalityPolicy() backends.LocalityLBPolicyT
 	}
 	// We leave the LocalityLbPolicy field unset since the default value will be handled outside of the controller.
 	return backends.LocalityLBPolicyDefault
+}
+
+func (l4 *L4) determineBackendServiceLoggingConfig(existingBS *composite.BackendService) (*composite.BackendServiceLogConfig, bool) {
+	var logConfig *composite.BackendServiceLogConfig
+	logConfigControlEnabled := false
+	if existingBS != nil {
+		logConfig = existingBS.LogConfig
+	}
+	if flags.F.ManageL4LBLogging && l4.l4lbConfigLister != nil {
+		l4lbConfigName, configReferenced := l4annotations.FromService(l4.Service).GetL4LBConfigAnnotation()
+
+		if configReferenced {
+
+			serviceL4LBConfig, err := l4lbconfig.GetL4LBConfigForService(l4.l4lbConfigLister, l4.Service)
+			if err != nil {
+				warningMessage := fmt.Sprintf("Failed to get L4 logging ConfigMap: Name: %q, Namespace: %q, Error: %v", l4lbConfigName, l4.Service.Namespace, err)
+				l4.recorder.Eventf(l4.Service, corev1.EventTypeWarning, "FailedToGetConfigMap", warningMessage)
+			}
+
+			if serviceL4LBConfig != nil && serviceL4LBConfig.Spec.Logging != nil {
+				slc := serviceL4LBConfig.Spec.Logging
+
+				logConfig = &composite.BackendServiceLogConfig{
+					Enable: slc.Enabled,
+				}
+
+				if slc.SampleRate != nil {
+					logConfig.SampleRate = float64(*slc.SampleRate) / 1000000.0
+				}
+
+				if slc.OptionalMode != "" {
+					logConfig.OptionalMode = slc.OptionalMode
+				}
+				if len(slc.OptionalFields) > 0 {
+					logConfig.OptionalFields = slc.OptionalFields
+				}
+
+				logConfigControlEnabled = true
+			} else {
+				// Case where annotation exists but the CRD object was not found
+				warningMessage := fmt.Sprintf("Referenced L4LBConfig does not exist: %q in namespace %q", l4lbConfigName, l4.Service.Namespace)
+				l4.recorder.Eventf(l4.Service, corev1.EventTypeWarning, "ReferencedConfigDoesNotExist", warningMessage)
+			}
+		}
+	}
+	return logConfig, logConfigControlEnabled
 }
 
 func (l4 *L4) isWeightedLBPodsPerNode() bool {

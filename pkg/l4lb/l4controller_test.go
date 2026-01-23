@@ -1034,7 +1034,7 @@ func newServiceController(t *testing.T, fakeGCE *gce.Cloud, readOnlyMode bool) (
 		EnableL4ILBDualStack:   true,
 		EnableL4NetLBDualStack: true,
 	}
-	ctx, err := context.NewControllerContext(kubeClient, nil, nil, nil, svcNegClient, nil, nil, nil, kubeClient /*kube client to be used for events*/, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
+	ctx, err := context.NewControllerContext(kubeClient, nil, nil, nil, svcNegClient, nil, nil, nil, nil, kubeClient /*kube client to be used for events*/, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
 	if err != nil {
 		t.Fatalf("failed to initialize controller context: %v", err)
 	}
