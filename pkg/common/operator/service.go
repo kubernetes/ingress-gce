@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
+	l4lbconfigv1 "k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1"
 	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
@@ -47,18 +48,18 @@ func (op *ServicesOperator) ReferencesBackendConfig(beConfig *backendconfigv1.Ba
 	return Services(s, op.logger)
 }
 
-// ReferencesL4LoggingConfigMap returns the Services that reference the given ConfigMap.
-func (op *ServicesOperator) ReferencesL4LoggingConfigMap(configMap *api_v1.ConfigMap) *ServicesOperator {
+// ReferencesL4LBConfig returns the Services that reference the given L4LBConfig.
+func (op *ServicesOperator) ReferencesL4LBConfig(l4LBConfigObject *l4lbconfigv1.L4LBConfig) *ServicesOperator {
 	var s []*api_v1.Service
-	if configMap == nil {
+	if l4LBConfigObject == nil {
 		return Services(s, op.logger)
 	}
 
 	dupes := map[string]bool{}
 	for _, svc := range op.s {
 		key := fmt.Sprintf("%s/%s", svc.Namespace, svc.Name)
-		loggingConfigMapName, ok := l4annotations.FromService(svc).GetL4LoggingConfigMapAnnotation()
-		if !dupes[key] && ok && loggingConfigMapName == configMap.Name && svc.Namespace == configMap.Namespace {
+		l4lbConfigName, ok := l4annotations.FromService(svc).GetL4LBConfigAnnotation()
+		if !dupes[key] && ok && l4lbConfigName == l4LBConfigObject.Name && svc.Namespace == l4LBConfigObject.Namespace {
 			s = append(s, svc)
 			dupes[key] = true
 		}

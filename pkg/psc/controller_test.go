@@ -1365,7 +1365,7 @@ func newTestController(clusterType string, readOnlyMode bool) (*Controller, erro
 
 	flags.F.GKEClusterName = ClusterName
 	flags.F.GKEClusterType = clusterType
-	ctx, err := context.NewControllerContext(kubeClient, nil, nil, nil, nil, saClient, nil, nil, kubeClient /*kube client to be used for events*/, gceClient, resourceNamer, kubeSystemUID, ctxConfig, klog.TODO())
+	ctx, err := context.NewControllerContext(kubeClient, nil, nil, nil, nil, saClient, nil, nil, nil, kubeClient /*kube client to be used for events*/, gceClient, resourceNamer, kubeSystemUID, ctxConfig, klog.TODO())
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize controller context")
 	}
