@@ -96,7 +96,7 @@ func newLoadBalancerController() (*LoadBalancerController, error) {
 		HealthCheckPath:               "/",
 		EnableIngressRegionalExternal: true,
 	}
-	ctx, err := context.NewControllerContext(kubeClient, backendConfigClient, frontendConfigClient, nil, svcNegClient, nil, nil, nil, kubeClient /*kube client to be used for events*/, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
+	ctx, err := context.NewControllerContext(kubeClient, backendConfigClient, frontendConfigClient, nil, svcNegClient, nil, nil, nil, nil, kubeClient /*kube client to be used for events*/, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig, klog.TODO())
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize controller context")
 	}

@@ -150,3 +150,19 @@ echo "Generating openapi for ServiceAttachment v1"
   --output-dir "${GOPATH}/src/k8s.io/ingress-gce/pkg/apis/serviceattachment/v1" \
   --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt \
   k8s.io/ingress-gce/pkg/apis/serviceattachment/v1
+
+
+echo "Performing code generation for L4LBConfig CRD"
+"${CODEGEN_PKG}"/generate-groups.sh \
+  "deepcopy,client,informer,lister" \
+  k8s.io/ingress-gce/pkg/l4lbconfig/client k8s.io/ingress-gce/pkg/apis \
+  "l4lbconfig:v1" \
+  --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt
+
+echo "Generating openapi for L4LBConfig v1"
+"${OPENAPI_PKG}"/openapi-gen \
+  --output-file zz_generated.openapi.go \
+  --output-pkg k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1 \
+  --output-dir "${GOPATH}/src/k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1" \
+  --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt \
+  k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1

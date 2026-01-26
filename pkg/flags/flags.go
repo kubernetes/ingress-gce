@@ -148,6 +148,7 @@ var F = struct {
 	MultiProjectOwnerLabelKey                 string
 	OverrideHealthCheckSourceCIDRs            string
 	ManageL4LBLogging                         bool
+	ReadL4LBLogging                           bool
 	EnableNEGsForIngress                      bool
 	L4ILBLegacyHeadStartTime                  time.Duration
 	EnableIPv6NodeNEGEndpoints                bool
@@ -365,6 +366,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.StringVar(&F.MultiProjectOwnerLabelKey, "multi-project-owner-label-key", "multiproject.gke.io/owner", "The label key for multi-project owner, which is used to identify the owner of objects in multi-project mode.")
 	flag.StringVar(&F.OverrideHealthCheckSourceCIDRs, "override-health-check-src-cidrs", "", "Overrides the default source IP ranges used when configuring firewall rules to allow health check probes for L7 load balancers. Provide the ranges as a comma-separated list of CIDRs. Example: --override-health-check-src-cidrs=130.211.0.0/22,35.191.0.0/16")
 	flag.BoolVar(&F.ManageL4LBLogging, "manage-l4lb-logging", false, "Manage L4 ILB/NetLB logging.")
+	flag.BoolVar(&F.ReadL4LBLogging, "read-l4lb-logging", false, "Read L4 ILB/NetLB logging configutation and write the related CRD in the cluster.")
 	flag.BoolVar(&F.ReadOnlyMode, "read-only-controllers", false, "When enabled, this flag runs the IG, NEG, L4 ILB, and L4 NetLB controllers in a read-only mode. This prevents them from executing any mutating API calls (e.g., create, update, delete), allowing you to safely observe controller behavior without modifying resources. The Ingress controller is exempt from this mode.")
 	flag.BoolVar(&F.EnableNEGsForIngress, "enable-negs-for-ingress", true, "Allow the NEG controller to create NEGs for Ingress services.")
 	flag.DurationVar(&F.L4ILBLegacyHeadStartTime, "prevent-legacy-race-l4-ilb", 0*time.Second, "Delay before processing new L4 ILB services without existing finalizers. This gives the legacy controller a head start to claim the service, preventing a race condition upon service creation.")

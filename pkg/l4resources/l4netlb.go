@@ -39,6 +39,7 @@ import (
 	"k8s.io/ingress-gce/pkg/healthchecksl4"
 	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/ingress-gce/pkg/l4lb/metrics"
+	l4lbconfig "k8s.io/ingress-gce/pkg/l4lbconfig"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -84,21 +85,22 @@ type L4NetLB struct {
 	disableNodesFirewallProvisioning bool
 	svcLogger                        klog.Logger
 	useNEGs                          bool
-	configMapLister                  cache.Store
+	l4lbConfigLister                 cache.Store
 }
 
 // L4NetLBSyncResult contains information about the outcome of an L4 NetLB sync. It stores the list of resource name annotations,
 // sync error, the GCE resource that hit the error along with the error type, metrics and more fields.
 type L4NetLBSyncResult struct {
-	Annotations        map[string]string
-	Error              error
-	GCEResourceInError string
-	Status             *corev1.LoadBalancerStatus
-	MetricsLegacyState metrics.L4NetLBServiceLegacyState
-	MetricsState       metrics.L4ServiceState
-	SyncType           string
-	StartTime          time.Time
-	GCEResourceUpdate  ResourceUpdates
+	Annotations           map[string]string
+	Error                 error
+	GCEResourceInError    string
+	Status                *corev1.LoadBalancerStatus
+	MetricsLegacyState    metrics.L4NetLBServiceLegacyState
+	MetricsState          metrics.L4ServiceState
+	SyncType              string
+	StartTime             time.Time
+	GCEResourceUpdate     ResourceUpdates
+	ObservedLoggingConfig *composite.BackendServiceLogConfig
 }
 
 func NewL4SyncResult(syncType string, startTime time.Time, svc *corev1.Service, isMultinet bool, enabledStrongSessionAffinity bool, isWeightedLBPodsPerNode bool, useNEGs bool) *L4NetLBSyncResult {
@@ -143,7 +145,7 @@ type L4NetLBParams struct {
 	UseNEGs                            bool
 	UseDenyFirewalls                   bool
 	EnableDenyFirewallsRollbackCleanup bool
-	ConfigMapLister                    cache.Store
+	L4LBConfigLister                   cache.Store
 }
 
 // NewL4NetLB creates a new Handler for the given L4NetLB service.
@@ -179,7 +181,7 @@ func NewL4NetLB(params *L4NetLBParams, logger klog.Logger) *L4NetLB {
 		enableDenyFirewallsRollbackCleanup: params.EnableDenyFirewallsRollbackCleanup,
 		useNEGs:                            params.UseNEGs,
 		svcLogger:                          logger,
-		configMapLister:                    params.ConfigMapLister,
+		l4lbConfigLister:                   params.L4LBConfigLister,
 	}
 	return l4netlb
 }
@@ -403,21 +405,7 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 
 	connectionTrackingPolicy := l4netlb.connectionTrackingPolicy()
 
-	var logConfig *composite.BackendServiceLogConfig
-	if flags.F.ManageL4LBLogging && l4netlb.configMapLister != nil {
-		var err error
-		logConfig, err = GetL4LoggingConfig(l4netlb.Service, l4netlb.configMapLister)
-		if err != nil {
-			syncResult.GCEResourceInError = l4annotations.BackendServiceResource
-			syncResult.Error = utils.NewUserError(err)
-			return ""
-		}
-		loggingConfigMapName, cmReferenced := l4annotations.FromService(l4netlb.Service).GetL4LoggingConfigMapAnnotation()
-		if logConfig == nil && cmReferenced {
-			warningMessage := fmt.Sprintf("Referenced L4 logging ConfigMap does not exist: Name: %q, Namespace: %q", loggingConfigMapName, l4netlb.Service.Namespace)
-			l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeWarning, "ReferencedConfigMapDoesNotExist", warningMessage)
-		}
-	}
+	logConfig, logConfigControlEnabled := l4netlb.determineLogConfig(syncResult)
 
 	backendParams := backends.L4BackendServiceParams{
 		Name:                     bsName,
@@ -430,6 +418,7 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 		ConnectionTrackingPolicy: connectionTrackingPolicy,
 		LocalityLbPolicy:         localityLbPolicy,
 		LogConfig:                logConfig,
+		LogConfigControlEnabled:  logConfigControlEnabled,
 	}
 
 	bs, wasUpdate, err := l4netlb.backendPool.EnsureL4BackendService(backendParams, l4netlb.svcLogger)
@@ -448,8 +437,9 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 	}
 
 	syncResult.Annotations[l4annotations.BackendServiceKey] = bsName
-	if bs.LogConfig != nil {
+	if bs != nil && bs.LogConfig != nil {
 		syncResult.MetricsState.LoggingEnabled = bs.LogConfig.Enable
+		syncResult.ObservedLoggingConfig = bs.LogConfig
 	}
 
 	return bs.SelfLink
@@ -914,4 +904,44 @@ func (l4netlb *L4NetLB) determineBackendServiceLocalityPolicy() backends.Localit
 
 func (l4netlb *L4NetLB) isWeightedLBPodsPerNode() bool {
 	return backends.LocalityLBPolicyWeightedMaglev == l4netlb.determineBackendServiceLocalityPolicy()
+}
+
+func (l4netlb *L4NetLB) determineLogConfig(syncResult *L4NetLBSyncResult) (*composite.BackendServiceLogConfig, bool) {
+	var logConfig *composite.BackendServiceLogConfig
+	logControlEnabled := false
+
+	// Only process logging if the global feature flag is enabled and the lister is initialized.
+	if flags.F.ManageL4LBLogging && l4netlb.l4lbConfigLister != nil {
+		l4lbConfigName, configReferenced := l4annotations.FromService(l4netlb.Service).GetL4LBConfigAnnotation()
+
+		if configReferenced {
+			// Fetch the Custom Resource definition for the L4 Load Balancer configuration.
+			serviceL4LBConfig, err := l4lbconfig.GetL4LBConfigForService(l4netlb.l4lbConfigLister, l4netlb.Service)
+			if err != nil {
+				syncResult.GCEResourceInError = l4annotations.BackendServiceResource
+				syncResult.Error = utils.NewUserError(fmt.Errorf("failed to get L4LBConfig %q: %w", l4lbConfigName, err))
+				return nil, false
+			}
+
+			if serviceL4LBConfig != nil && serviceL4LBConfig.Spec.Logging != nil {
+				slc := serviceL4LBConfig.Spec.Logging
+
+				logConfig = &composite.BackendServiceLogConfig{
+					Enable:         slc.Enabled,
+					OptionalMode:   slc.OptionalMode,
+					OptionalFields: slc.OptionalFields,
+				}
+				if slc.SampleRate != nil {
+					logConfig.SampleRate = float64(*slc.SampleRate) / 1000000.0
+				}
+				logControlEnabled = true
+			} else {
+				// Fallback: If the annotation exists but the resource cannot be found or is empty,
+				// we emit a warning event to the Service object for user visibility.
+				warningMessage := fmt.Sprintf("Referenced L4LBConfig does not exist: Name: %q, Namespace: %q", l4lbConfigName, l4netlb.Service.Namespace)
+				l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeWarning, "ReferencedConfigDoesNotExist", warningMessage)
+			}
+		}
+	}
+	return logConfig, logControlEnabled
 }

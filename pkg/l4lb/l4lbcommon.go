@@ -17,9 +17,14 @@ limitations under the License.
 package l4lb
 
 import (
+	ctx "context"
 	"fmt"
 	"reflect"
 
+	api_errors "k8s.io/apimachinery/pkg/api/errors"
+
+	"k8s.io/ingress-gce/pkg/l4annotations"
+	"k8s.io/ingress-gce/pkg/l4lbconfig"
 	"k8s.io/ingress-gce/pkg/l4resources"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -154,4 +159,78 @@ func finalizerWasRemovedUnexpectedly(oldService, newService *v1.Service, finaliz
 	// If the service was added for deletion, we don't need finalizers
 	svcToBeDeleted := newService.ObjectMeta.DeletionTimestamp != nil
 	return oldSvcHasLegacyFinalizer && !newSvcHasLegacyFinalizer && !svcToBeDeleted
+}
+
+// updateL4LBConfig syncs the Backend Service logging state back to the L4LBConfig.
+// This is used for back-syncing manual GCE changes to the source-of-truth L4LBConfig.
+func updateL4LBConfig(controllerContext *context.ControllerContext, svc *v1.Service, bsLogConfig *composite.BackendServiceLogConfig, svcLogger klog.Logger) error {
+	l4lbConfigName, configReferenced := l4annotations.FromService(svc).GetL4LBConfigAnnotation()
+
+	// If no L4LBConfig is referenced, use the service name as the default L4LBConfig name.
+	if !configReferenced {
+		svcLogger.Info("No L4LBConfig annotation found on service, using service name as default L4LBConfig name")
+		l4lbConfigName = svc.Name
+	}
+
+	existingSvcL4LBConfig, err := controllerContext.L4LBConfigClient.NetworkingV1().L4LBConfigs(svc.Namespace).Get(ctx.Background(), l4lbConfigName, metav1.GetOptions{})
+	if err != nil {
+		if api_errors.IsNotFound(err) {
+			svcLogger.Info("Referenced L4LBConfig not found", "configName", l4lbConfigName)
+			existingSvcL4LBConfig = nil
+			// L4LBConfig not found, will proceed with back-sync creating a new one.
+		} else {
+			return fmt.Errorf("failed to fetch L4LBConfig %s: %w", l4lbConfigName, err)
+		}
+	}
+
+	// Map GCE state to L4LBConfig Spec using existing utility
+	updatedSvcL4LBConfig := l4lbconfig.UpdateL4LBConfigWithBackendServiceLogConfig(existingSvcL4LBConfig, bsLogConfig)
+
+	// Update only if there is a semantic difference to maintain idempotency
+	if l4lbconfig.IsL4LBConfigEqual(existingSvcL4LBConfig, updatedSvcL4LBConfig) {
+		svcLogger.Info("L4LBConfig is already in sync with GCE state", "configName", l4lbConfigName)
+		return nil
+	}
+
+	if existingSvcL4LBConfig == nil || updatedSvcL4LBConfig.Name == "" || updatedSvcL4LBConfig.Namespace == "" {
+		updatedSvcL4LBConfig.Name = l4lbConfigName
+		updatedSvcL4LBConfig.Namespace = svc.Namespace
+	}
+
+	svcLogger.Info("Back-syncing GCE logging state to L4LBConfig", "configName", l4lbConfigName)
+
+	if !configReferenced {
+		// Add annotation to service
+		newSvc := svc.DeepCopy()
+		l4annotations.SetL4LBConfigAnnotation(newSvc, l4lbConfigName)
+		err = patch.PatchServiceObjectMetadata(controllerContext.KubeClient.CoreV1(), svc, newSvc.ObjectMeta)
+		if err != nil {
+			return fmt.Errorf("failed to patch L4LBConfig annotation to service %s/%s: %w", svc.Namespace, svc.Name, err)
+		}
+		svcLogger.Info("Patched L4LBConfig annotation to service", "configName", l4lbConfigName)
+		svc.ObjectMeta.Annotations = newSvc.ObjectMeta.Annotations
+	}
+
+	if existingSvcL4LBConfig == nil {
+		// Create L4LBConfig if it did not exist
+		_, err = controllerContext.L4LBConfigClient.NetworkingV1().L4LBConfigs(svc.Namespace).Create(ctx.Background(), updatedSvcL4LBConfig, metav1.CreateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to create L4LBConfig %s: %w", l4lbConfigName, err)
+		}
+
+		controllerContext.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "CreatedL4LBConfig",
+			"Created L4LBConfig %s with logging settings from Backend Service", l4lbConfigName)
+		svcLogger.Info("Created L4LBConfig", "configName", l4lbConfigName)
+		return nil
+	}
+
+	_, err = controllerContext.L4LBConfigClient.NetworkingV1().L4LBConfigs(svc.Namespace).Update(ctx.Background(), updatedSvcL4LBConfig, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to update L4LBConfig %s: %w", l4lbConfigName, err)
+	}
+
+	controllerContext.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "UpdatedL4LBConfig",
+		"Updated L4LBConfig %s logging settings to match Backend Service", l4lbConfigName)
+	svcLogger.Info("Updated L4LBConfig", "configName", l4lbConfigName)
+	return nil
 }
