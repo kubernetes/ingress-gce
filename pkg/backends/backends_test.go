@@ -999,20 +999,17 @@ func TestBackendSvcEqual(t *testing.T) {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			oldZonalAffinityFlag := flags.F.EnableL4ILBZonalAffinity
-			oldLoggingFlag := flags.F.ManageL4LBLogging
 			flags.F.EnableL4ILBZonalAffinity = tc.withZonalAffinityEnabled
-			flags.F.ManageL4LBLogging = tc.withL4LoggingManagementEnabled
 			defer func() {
 				flags.F.EnableL4ILBZonalAffinity = oldZonalAffinityFlag
-				flags.F.ManageL4LBLogging = oldLoggingFlag
 			}()
 
-			result := backendSvcEqual(tc.newBackendService, tc.oldBackendService, tc.compareConnectionTracking)
+			result := backendSvcEqual(tc.newBackendService, tc.oldBackendService, tc.compareConnectionTracking, tc.withL4LoggingManagementEnabled)
 			if result != tc.wantEqual {
 				t.Errorf("backendSvcEqual() returned %v, expected %v. Diff(oldScv, newSvc): %s",
 					result, tc.wantEqual, cmp.Diff(tc.oldBackendService, tc.newBackendService))
 			}
-			if !tc.skipBidirectionalCheck && result != backendSvcEqual(tc.oldBackendService, tc.newBackendService, tc.compareConnectionTracking) {
+			if !tc.skipBidirectionalCheck && result != backendSvcEqual(tc.oldBackendService, tc.newBackendService, tc.compareConnectionTracking, tc.withL4LoggingManagementEnabled) {
 				t.Error("result from backendSvcEqual(old, new) should be the same as backendSvcEqual(new, old)")
 			}
 		})
