@@ -28,7 +28,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/address"
 	"k8s.io/ingress-gce/pkg/backends"
@@ -43,6 +42,8 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
+
+	"k8s.io/cloud-provider-gcp/providers/gce"
 )
 
 const (
@@ -102,7 +103,6 @@ type L4NetLBSyncResult struct {
 }
 
 func NewL4SyncResult(syncType string, startTime time.Time, svc *corev1.Service, isMultinet bool, enabledStrongSessionAffinity bool, isWeightedLBPodsPerNode bool, useNEGs bool) *L4NetLBSyncResult {
-
 	backendType := metrics.L4BackendTypeInstanceGroup
 	if useNEGs || isMultinet {
 		backendType = metrics.L4BackendTypeNEG
@@ -651,10 +651,10 @@ func (l4netlb *L4NetLB) softlyCleanUpDenyFirewallsWhenRolledBack() error {
 	// if we don't use deny flag, make sure that a leftover deny rule is cleaned up
 	// cleanUpDenyFirewallRule does checks if the rule exists before attempting to delete
 	// so it won't leave 404 errors in audit logs
-	if err := cleanUpDenyFirewallRule(l4netlb.cloud, l4netlb.namer.L4FirewallDeny(l4netlb.Service.Namespace, l4netlb.Service.Name), logger); err != nil {
+	if err := l4netlb.cleanUpDenyFirewallRule(l4netlb.namer.L4FirewallDeny(l4netlb.Service.Namespace, l4netlb.Service.Name), logger); err != nil {
 		return err
 	}
-	if err := cleanUpDenyFirewallRule(l4netlb.cloud, l4netlb.namer.L4IPv6FirewallDeny(l4netlb.Service.Namespace, l4netlb.Service.Name), logger); err != nil {
+	if err := l4netlb.cleanUpDenyFirewallRule(l4netlb.namer.L4IPv6FirewallDeny(l4netlb.Service.Namespace, l4netlb.Service.Name), logger); err != nil {
 		return err
 	}
 	return nil
@@ -662,21 +662,25 @@ func (l4netlb *L4NetLB) softlyCleanUpDenyFirewallsWhenRolledBack() error {
 
 // cleanUpDenyFirewallRule will attempt the deletion only after checking that it exists with GET call.
 // This is done to avoid polluting Audit Logs with 404 errors (even though the 404 might be expected).
-func cleanUpDenyFirewallRule(cloud *gce.Cloud, fwName string, logger klog.Logger) error {
+func (l4netlb *L4NetLB) cleanUpDenyFirewallRule(fwName string, logger klog.Logger) error {
 	log := logger.WithName("cleanUpDenyFirewallRule").WithValues("firewallName", fwName)
 
 	// Skip deleting if it doesn't exist to not produce noisy audit logs
-	fa := firewalls.NewFirewallAdapter(cloud)
+	fa := firewalls.NewFirewallAdapter(l4netlb.cloud)
 	if _, err := fa.GetFirewall(fwName); err != nil {
 		if utils.IsNotFoundError(err) {
 			log.V(3).Info("no deny firewall found to delete", "firewallName", fwName)
+			return nil // no need for cleanup
+		}
+		if utils.IsForbiddenError(err) && l4netlb.cloud.OnXPN() {
+			log.V(3).Info("can't delete firewall without permissions for XPN, skipping", "firewallName", fwName)
 			return nil // no need for cleanup
 		}
 		return err
 	}
 
 	log.V(3).Info("deny firewall exists, deleting it", "firewallName", fwName)
-	return firewalls.EnsureL4FirewallRuleDeleted(cloud, fwName, log)
+	return l4netlb.deleteFirewall(fwName, logger)
 }
 
 // EnsureLoadBalancerDeleted performs a cleanup of all GCE resources for the given loadbalancer service.
@@ -760,8 +764,8 @@ func (l4netlb *L4NetLB) deleteIPv4ResourcesAnnotationBased(result *L4NetLBSyncRe
 			result.Error = err
 		}
 	}
-	if shouldIgnoreAnnotations || l4netlb.hasAnnotation(l4annotations.FirewallRuleDenyKey) {
-		err = cleanUpDenyFirewallRule(l4netlb.cloud, l4netlb.namer.L4FirewallDeny(l4netlb.Service.Namespace, l4netlb.Service.Name), l4netlb.svcLogger)
+	if l4netlb.enableDenyFirewallsRollbackCleanup && (shouldIgnoreAnnotations || l4netlb.hasAnnotation(l4annotations.FirewallRuleDenyKey)) {
+		err = l4netlb.cleanUpDenyFirewallRule(l4netlb.namer.L4FirewallDeny(l4netlb.Service.Namespace, l4netlb.Service.Name), l4netlb.svcLogger)
 		if err != nil {
 			l4netlb.svcLogger.Error(err, "Failed to delete deny firewall rule for NetLB RBS service")
 			result.GCEResourceInError = l4annotations.FirewallDenyRuleResource
