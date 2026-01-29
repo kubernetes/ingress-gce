@@ -15,6 +15,8 @@ import (
 	fakeproviderconfigclient "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned/fake"
 	providerconfiginformers "k8s.io/ingress-gce/pkg/providerconfig/client/informers/externalversions"
 	"k8s.io/klog/v2"
+
+	"k8s.io/ingress-gce/pkg/test"
 )
 
 func init() {
@@ -107,6 +109,10 @@ func newTestProviderConfigController(t *testing.T) *testProviderConfigController
 
 	logger := klog.TODO()
 	fakeManager := newFakeProviderConfigControllersManager(pcClient, "test-finalizer", logger)
+
+	test.PrependBookmarkReactor(&pcClient.Fake, pcClient.Tracker(), "*", &providerconfigv1.ProviderConfig{
+		ObjectMeta: test.DefaultBookmarkObjectMeta,
+	})
 
 	providerConfigInformer := providerconfiginformers.NewSharedInformerFactory(pcClient, 0).Cloud().V1().ProviderConfigs().Informer()
 

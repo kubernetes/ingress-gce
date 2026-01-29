@@ -17,9 +17,12 @@ import (
 	api_v1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes/scheme"
+	clientgotesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -626,4 +629,42 @@ func MustCreateDualStackSubnetWithURL(t *testing.T, gcecloud *gce.Cloud, subnetU
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+// WatcherProxy wraps a watch.Interface to support custom event channels.
+type WatcherProxy struct {
+	watch.Interface
+	ch chan watch.Event
+}
+
+func (w *WatcherProxy) ResultChan() <-chan watch.Event {
+	return w.ch
+}
+
+// PrependBookmarkReactor prepends a reactor to the fake client that injects a bookmark event.
+// This is required for client-go v0.35.0+ which defaults to AllowWatchBookmarks=true.
+func PrependBookmarkReactor(c *clientgotesting.Fake, tracker clientgotesting.ObjectTracker, resource string, bookmarkObj runtime.Object) {
+	c.PrependWatchReactor(resource, func(action clientgotesting.Action) (handled bool, ret watch.Interface, err error) {
+		w, err := tracker.Watch(action.GetResource(), action.GetNamespace())
+		if err != nil {
+			return true, nil, err
+		}
+		ch := make(chan watch.Event)
+		go func() {
+			ch <- watch.Event{
+				Type:   watch.Bookmark,
+				Object: bookmarkObj,
+			}
+			for e := range w.ResultChan() {
+				ch <- e
+			}
+			close(ch)
+		}()
+		return true, &WatcherProxy{Interface: w, ch: ch}, nil
+	})
+}
+
+var DefaultBookmarkObjectMeta = meta_v1.ObjectMeta{
+	ResourceVersion: "1",
+	Annotations:     map[string]string{"k8s.io/initial-events-end": "true"},
 }
