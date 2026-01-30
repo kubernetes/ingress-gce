@@ -26,7 +26,8 @@ const (
 	// base36 is used to encode numbers using smaller footprint than decimal
 	// GCP resources can use 0-9a-z which is base36: 10 nums and 26 letters
 	// See: https://cloud.google.com/compute/docs/naming-resources#resource-name-format
-	base36 = 36
+	base36   = 36
+	v3Prefix = "k8s3"
 )
 
 // L4Namer implements naming scheme for L4 LoadBalancer resources.
@@ -104,14 +105,31 @@ func (namer *L4Namer) L4Firewall(namespace, name string) string {
 	return namer.L4Backend(namespace, name)
 }
 
+// L4FirewallV3 returns the gce Firewall name based on the service namespace and name
+// Naming convention:
+//
+//	k8s3-{uid}-{suffix}-{ns}-{name}
+//
+// Where suffix is the hash based on the namespace and name.
+// Output name is at most 63 characters.
+func (namer *L4Namer) L4FirewallV3(namespace, name string) string {
+	return strings.Join([]string{
+		v3Prefix,
+		namer.v2ClusterUID,
+		namer.getClusterSuffix(namespace, name),
+		getTrimmedNamespacedName(namespace, name, maximumL4CombinedLength),
+	}, "-")
+}
+
 // L4FirewallDeny returns the gce Firewall name for the Deny rule
 // Naming convention:
 //
-//	k8s2-{uid}-{ns}-{name}-{suffix}-deny
+//	k8s3-{uid}-{suffix}-{ns}-{name}-deny
 //
+// Where suffix is the hash based on the namespace and name.
 // Output name is at most 63 characters, whole "-deny" will be always at the end.
 func (namer *L4Namer) L4FirewallDeny(namespace, name string) string {
-	return GetSuffixedName(namer.L4Firewall(namespace, name), "-deny")
+	return GetSuffixedName(namer.L4FirewallV3(namespace, name), "-deny")
 }
 
 // L4IPv6Firewall returns the gce IPv6 Firewall name based on the service namespace and name
@@ -131,7 +149,7 @@ func (namer *L4Namer) L4IPv6Firewall(namespace, name string) string {
 //
 // Output name is at most 63 characters, the name will always have "-deny-ipv6" suffix.
 func (namer *L4Namer) L4IPv6FirewallDeny(namespace, name string) string {
-	return GetSuffixedName(namer.L4Firewall(namespace, name), "-deny-"+ipv6Suffix)
+	return GetSuffixedName(namer.L4FirewallV3(namespace, name), "-deny-"+ipv6Suffix)
 }
 
 // L4ForwardingRule returns the name of the L4 forwarding rule name based on the service namespace, name and protocol.

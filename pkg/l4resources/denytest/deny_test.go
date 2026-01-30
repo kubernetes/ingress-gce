@@ -37,7 +37,7 @@ const (
 	nodeName             = "kluster-nodepool-node-123"
 	allowIPv4Name        = "k8s2-h0zmu0xg-default-external-lb-2dkyewnt"
 	allowIPv6Name        = allowIPv4Name + "-ipv6"
-	denyIPv4Name         = "k8s2-h0zmu0xg-default-external-lb-2dkyewnt-deny"
+	denyIPv4Name         = "k8s3-h0zmu0xg-2dkyewnt-default-external-lb-deny"
 	denyIPv6Name         = denyIPv4Name + "-ipv6"
 	ipv4Address          = "1.2.3.4"
 	ipv6Address          = "1:2:3:4:5:6::"

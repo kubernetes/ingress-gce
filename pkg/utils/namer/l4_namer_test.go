@@ -53,9 +53,9 @@ func TestL4Namer(t *testing.T) {
 				NEGName:           "k8s2-7kpbhpki-namespace-name-956p2p7x",
 				NonDefaultNEGName: "k8s2-7kpbhpki-namespace-name-185075-956p2p7x",
 				FWName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
-				FWDenyName:        "k8s2-7kpbhpki-namespace-name-956p2p7x-deny",
+				FWDenyName:        "k8s3-7kpbhpki-956p2p7x-namespace-name-deny",
 				IPv6FWName:        "k8s2-7kpbhpki-namespace-name-956p2p7x-ipv6",
-				IPv6FWDenyName:    "k8s2-7kpbhpki-namespace-name-956p2p7x-deny-ipv6",
+				IPv6FWDenyName:    "k8s3-7kpbhpki-956p2p7x-namespace-name-deny-ipv6",
 				HcFwName:          "k8s2-7kpbhpki-namespace-name-956p2p7x-fw",
 				IPv6HcFName:       "k8s2-7kpbhpki-namespace-name-956p2p7x-fw-ipv6",
 				HcName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
@@ -76,9 +76,9 @@ func TestL4Namer(t *testing.T) {
 				NEGName:           "k8s2-7kpbhpki-namespace-name-956p2p7x",
 				NonDefaultNEGName: "k8s2-7kpbhpki-namespace-name-185075-956p2p7x",
 				FWName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
-				FWDenyName:        "k8s2-7kpbhpki-namespace-name-956p2p7x-deny",
+				FWDenyName:        "k8s3-7kpbhpki-956p2p7x-namespace-name-deny",
 				IPv6FWName:        "k8s2-7kpbhpki-namespace-name-956p2p7x-ipv6",
-				IPv6FWDenyName:    "k8s2-7kpbhpki-namespace-name-956p2p7x-deny-ipv6",
+				IPv6FWDenyName:    "k8s3-7kpbhpki-956p2p7x-namespace-name-deny-ipv6",
 				HcFwName:          "k8s2-7kpbhpki-l4-shared-hc-fw",
 				IPv6HcFName:       "k8s2-7kpbhpki-l4-shared-hc-fw-ipv6",
 				HcName:            "k8s2-7kpbhpki-l4-shared-hc",
@@ -99,9 +99,9 @@ func TestL4Namer(t *testing.T) {
 				NEGName:           "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm400mg",
 				NonDefaultNEGName: "k8s2-7kpbhpki-0123456789012345-0123456789012345-185075-hwm400mg",
 				FWName:            "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm400mg",
-				FWDenyName:        "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm-deny",
+				FWDenyName:        "k8s3-7kpbhpki-hwm400mg-01234567890123456789-01234567890123-deny",
 				IPv6FWName:        "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm-ipv6",
-				IPv6FWDenyName:    "k8s2-7kpbhpki-01234567890123456789-012345678901234567-deny-ipv6",
+				IPv6FWDenyName:    "k8s3-7kpbhpki-hwm400mg-01234567890123456789-012345678-deny-ipv6",
 				HcFwName:          "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm40-fw",
 				IPv6HcFName:       "k8s2-7kpbhpki-01234567890123456789-0123456789012345678--fw-ipv6",
 				HcName:            "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm400mg",
@@ -122,9 +122,9 @@ func TestL4Namer(t *testing.T) {
 				NEGName:           "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm400mg",
 				NonDefaultNEGName: "k8s2-7kpbhpki-0123456789012345-0123456789012345-185075-hwm400mg",
 				FWName:            "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm400mg",
-				FWDenyName:        "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm-deny",
+				FWDenyName:        "k8s3-7kpbhpki-hwm400mg-01234567890123456789-01234567890123-deny",
 				IPv6FWName:        "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm-ipv6",
-				IPv6FWDenyName:    "k8s2-7kpbhpki-01234567890123456789-012345678901234567-deny-ipv6",
+				IPv6FWDenyName:    "k8s3-7kpbhpki-hwm400mg-01234567890123456789-012345678-deny-ipv6",
 				HcFwName:          "k8s2-7kpbhpki-l4-shared-hc-fw",
 				IPv6HcFName:       "k8s2-7kpbhpki-l4-shared-hc-fw-ipv6",
 				HcName:            "k8s2-7kpbhpki-l4-shared-hc",
@@ -145,9 +145,9 @@ func TestL4Namer(t *testing.T) {
 				NEGName:           "k8s2-7kpbhpki-namespace-name-956p2p7x",
 				NonDefaultNEGName: "k8s2-7kpbhpki-namespace-name-1fd834-956p2p7x",
 				FWName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
-				FWDenyName:        "k8s2-7kpbhpki-namespace-name-956p2p7x-deny",
+				FWDenyName:        "k8s3-7kpbhpki-956p2p7x-namespace-name-deny",
 				IPv6FWName:        "k8s2-7kpbhpki-namespace-name-956p2p7x-ipv6",
-				IPv6FWDenyName:    "k8s2-7kpbhpki-namespace-name-956p2p7x-deny-ipv6",
+				IPv6FWDenyName:    "k8s3-7kpbhpki-956p2p7x-namespace-name-deny-ipv6",
 				HcFwName:          "k8s2-7kpbhpki-namespace-name-956p2p7x-fw",
 				IPv6HcFName:       "k8s2-7kpbhpki-namespace-name-956p2p7x-fw-ipv6",
 				HcName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
@@ -168,9 +168,9 @@ func TestL4Namer(t *testing.T) {
 				NEGName:           "k8s2-7kpbhpki-namespace-name-956p2p7x",
 				NonDefaultNEGName: "k8s2-7kpbhpki-namespace-name-1fd834-956p2p7x",
 				FWName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
-				FWDenyName:        "k8s2-7kpbhpki-namespace-name-956p2p7x-deny",
+				FWDenyName:        "k8s3-7kpbhpki-956p2p7x-namespace-name-deny",
 				IPv6FWName:        "k8s2-7kpbhpki-namespace-name-956p2p7x-ipv6",
-				IPv6FWDenyName:    "k8s2-7kpbhpki-namespace-name-956p2p7x-deny-ipv6",
+				IPv6FWDenyName:    "k8s3-7kpbhpki-956p2p7x-namespace-name-deny-ipv6",
 				HcFwName:          "k8s2-7kpbhpki-namespace-name-956p2p7x-fw",
 				IPv6HcFName:       "k8s2-7kpbhpki-namespace-name-956p2p7x-fw-ipv6",
 				HcName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
@@ -191,9 +191,9 @@ func TestL4Namer(t *testing.T) {
 				NEGName:           "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm400mg",
 				NonDefaultNEGName: "k8s2-7kpbhpki-0123456789012345-0123456789012345-185075-hwm400mg",
 				FWName:            "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm400mg",
-				FWDenyName:        "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm-deny",
+				FWDenyName:        "k8s3-7kpbhpki-hwm400mg-01234567890123456789-01234567890123-deny",
 				IPv6FWName:        "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm-ipv6",
-				IPv6FWDenyName:    "k8s2-7kpbhpki-01234567890123456789-012345678901234567-deny-ipv6",
+				IPv6FWDenyName:    "k8s3-7kpbhpki-hwm400mg-01234567890123456789-012345678-deny-ipv6",
 				HcFwName:          "k8s2-7kpbhpki-l4-shared-hc-fw",
 				IPv6HcFName:       "k8s2-7kpbhpki-l4-shared-hc-fw-ipv6",
 				HcName:            "k8s2-7kpbhpki-l4-shared-hc",
@@ -323,6 +323,90 @@ func TestL4NamerForwardingRulesNumbers(t *testing.T) {
 
 			// Assert
 			if diff := cmp.Diff(tC.want, got); diff != "" {
+				t.Errorf("want != got, (-want, +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestIPv6HcFirewallCollisions presents the existing issue where the firewall names collide for different services.
+// This is most likely to happen when two services names/namespaces are long, have a common prefix with different endings.
+// Health check for IPv6 firewall name trims the last 8 characters, which in the normal case are the hash based on the
+// service name and namespace.
+func TestIPv6HcFirewallCollisions(t *testing.T) {
+	t.Parallel()
+	type names struct {
+		Firewall     string
+		FirewallIPv6 string
+		FirewallHc   string
+		// The most problematic
+		FirewallHcIPv6 string
+		// Without an issue, as they use V3 schema
+		FirewallDeny     string
+		FirewallDenyIPv6 string
+	}
+
+	commonPrefixedName := "k8s2-7kpbhpki-defa-extremely-long-name-that-has-a-diff-" // defa is taken from namespace "default"
+	collidedFirewallIPv6HcName := commonPrefixedName + "-fw-ipv6"
+
+	commonPrefixedNameV3 := "k8s3-7kpbhpki-"
+
+	testCases := []struct {
+		name string
+		want names
+	}{
+		{
+			name: "extremely-long-name-that-has-a-different-ending-that-gets-truncated",
+			want: names{
+				Firewall:         commonPrefixedName + "rhlqlhck",
+				FirewallIPv6:     commonPrefixedName + "rhl-ipv6",
+				FirewallHc:       commonPrefixedName + "rhlql-fw",
+				FirewallHcIPv6:   collidedFirewallIPv6HcName, // the name is shared between services
+				FirewallDeny:     commonPrefixedNameV3 + "rhlqlhck-defa-extremely-long-name-that-has-a-deny",
+				FirewallDenyIPv6: commonPrefixedNameV3 + "rhlqlhck-defa-extremely-long-name-that--deny-ipv6",
+			},
+		},
+		{
+			name: "extremely-long-name-that-has-a-different-ending-that-gets-shortened",
+			want: names{
+				// hash is different from above
+				Firewall:         commonPrefixedName + "eq7vnxfg",
+				FirewallIPv6:     commonPrefixedName + "eq7-ipv6",
+				FirewallHc:       commonPrefixedName + "eq7vn-fw",
+				FirewallHcIPv6:   collidedFirewallIPv6HcName, // the name is shared between services
+				FirewallDeny:     commonPrefixedNameV3 + "eq7vnxfg-defa-extremely-long-name-that-has-a-deny",
+				FirewallDenyIPv6: commonPrefixedNameV3 + "eq7vnxfg-defa-extremely-long-name-that--deny-ipv6",
+			},
+		},
+		{
+			name: "extremely-long-name-that-has-a-different-ending-that-gets-shortened-but-given-the-length-difference-it-doesnt-collide",
+			want: names{
+				// Compared to above, the namespace is cut to be shorter, so instead of "defa" we have "def"
+				Firewall:         "k8s2-7kpbhpki-def-extremely-long-name-that-has-a-diffe-l0u4pfl8",
+				FirewallIPv6:     "k8s2-7kpbhpki-def-extremely-long-name-that-has-a-diffe-l0u-ipv6",
+				FirewallHc:       "k8s2-7kpbhpki-def-extremely-long-name-that-has-a-diffe-l0u4p-fw",
+				FirewallHcIPv6:   "k8s2-7kpbhpki-def-extremely-long-name-that-has-a-diffe--fw-ipv6",
+				FirewallDeny:     commonPrefixedNameV3 + "l0u4pfl8-def-extremely-long-name-that-has-a--deny",
+				FirewallDenyIPv6: commonPrefixedNameV3 + "l0u4pfl8-def-extremely-long-name-that-h-deny-ipv6",
+			},
+		},
+	}
+
+	namespace := "default"
+	namer := NewL4Namer(kubeSystemUID, nil)
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := names{
+				Firewall:         namer.L4Firewall(namespace, tc.name),
+				FirewallIPv6:     namer.L4IPv6Firewall(namespace, tc.name),
+				FirewallHc:       namer.L4HealthCheckFirewall(namespace, tc.name, false),
+				FirewallHcIPv6:   namer.L4IPv6HealthCheckFirewall(namespace, tc.name, false),
+				FirewallDeny:     namer.L4FirewallDeny(namespace, tc.name),
+				FirewallDenyIPv6: namer.L4IPv6FirewallDeny(namespace, tc.name),
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("want != got, (-want, +got):\n%s", diff)
 			}
 		})
