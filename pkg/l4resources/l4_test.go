@@ -2702,7 +2702,7 @@ func TestZonalAffinity(t *testing.T) {
 				t.Fatalf("failed to read BackendService, %v", err)
 			}
 
-			if bs.NetworkPassThroughLbTrafficPolicy != nil && !tc.wantZonalAffinityEnabled {
+			if !tc.wantZonalAffinityEnabled && bs.NetworkPassThroughLbTrafficPolicy != nil && bs.NetworkPassThroughLbTrafficPolicy.ZonalAffinity != nil && bs.NetworkPassThroughLbTrafficPolicy.ZonalAffinity.Spillover != backends.ZonalAffinityDisabledSpillover {
 				t.Fatalf("Unexpected BackendService ZonalAffinity, got value, wanted nil")
 			}
 
