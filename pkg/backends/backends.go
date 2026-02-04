@@ -369,9 +369,6 @@ func (p *Pool) DeleteSignedURLKey(be *composite.BackendService, keyName string, 
 
 // apiVersionRequiredbyServiceFeatures to create a backend service with the given params
 func apiVersionRequiredbyServiceFeatures(params L4BackendServiceParams) meta.Version {
-	if params.EnableZonalAffinity {
-		return meta.VersionBeta
-	}
 	return meta.VersionGA
 }
 

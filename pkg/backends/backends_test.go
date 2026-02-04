@@ -1231,9 +1231,9 @@ func TestFeatureVersionRequirements(t *testing.T) {
 		expectedVersion     meta.Version
 	}{
 		{
-			desc:                "Zonal affinity requires Beta",
+			desc:                "Zonal affinity requires GA", // ZA moved to GA
 			enableZonalAffinity: true,
-			expectedVersion:     meta.VersionBeta,
+			expectedVersion:     meta.VersionGA,
 		},
 		{
 			desc:                "No special features defaults to GA",
@@ -1270,32 +1270,22 @@ func TestVersionSelectionInUpdate(t *testing.T) {
 	bsName := l4namer.L4Backend(serviceNamespace, serviceName)
 
 	testCases := []struct {
-		desc                string
-		initialVersion      meta.Version
-		descriptionVersion  meta.Version
-		enableZonalAffinity bool
-		expectedVersion     meta.Version
+		desc               string
+		initialVersion     meta.Version
+		descriptionVersion meta.Version
+		expectedVersion    meta.Version
 	}{
 		{
-			desc:                "Version from description is higher",
-			initialVersion:      meta.VersionGA,
-			descriptionVersion:  meta.VersionAlpha,
-			enableZonalAffinity: false,
-			expectedVersion:     meta.VersionAlpha,
+			desc:               "Version from description is higher",
+			initialVersion:     meta.VersionGA,
+			descriptionVersion: meta.VersionAlpha,
+			expectedVersion:    meta.VersionAlpha,
 		},
 		{
-			desc:                "Version from features is higher",
-			initialVersion:      meta.VersionGA,
-			descriptionVersion:  meta.VersionGA,
-			enableZonalAffinity: true,
-			expectedVersion:     meta.VersionBeta,
-		},
-		{
-			desc:                "Max version when both high",
-			initialVersion:      meta.VersionGA,
-			descriptionVersion:  meta.VersionBeta,
-			enableZonalAffinity: true,
-			expectedVersion:     meta.VersionBeta,
+			desc:               "Max version when both high",
+			initialVersion:     meta.VersionGA,
+			descriptionVersion: meta.VersionBeta,
+			expectedVersion:    meta.VersionBeta,
 		},
 	}
 
@@ -1330,13 +1320,12 @@ func TestVersionSelectionInUpdate(t *testing.T) {
 
 			// Use EnsureL4BackendService with zonal affinity param
 			backendParams := L4BackendServiceParams{
-				Name:                bsName,
-				HealthCheckLink:     "health-check-link",
-				Protocol:            "TCP",
-				SessionAffinity:     "NONE",
-				Scheme:              string(cloud.SchemeInternal),
-				NamespacedName:      namespacedName,
-				EnableZonalAffinity: tc.enableZonalAffinity,
+				Name:            bsName,
+				HealthCheckLink: "health-check-link",
+				Protocol:        "TCP",
+				SessionAffinity: "NONE",
+				Scheme:          string(cloud.SchemeInternal),
+				NamespacedName:  namespacedName,
 			}
 
 			updatedBS, _, err := backendPool.EnsureL4BackendService(backendParams, klog.TODO())
