@@ -62,32 +62,35 @@ func CRDMeta() *crd.CRDMeta {
 		"l4lbconfig",
 		"l4lbconfigs",
 		[]*crd.Version{
-			crd.NewVersion("v1", "k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1.L4LBConfig", func(ref common.ReferenceCallback) map[string]common.OpenAPIDefinition {
-				defs := l4lbconfigv1.GetOpenAPIDefinitions(ref)
-
-				if def, ok := defs["k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1.LoggingConfig"]; ok {
-					// Patch SampleRate
-					if prop, ok := def.Schema.SchemaProps.Properties["sampleRate"]; ok {
-						min := minSampleRate
-						max := maxSampleRate
-						prop.SchemaProps.Minimum = &min
-						prop.SchemaProps.Maximum = &max
-						def.Schema.SchemaProps.Properties["sampleRate"] = prop
-					}
-
-					// Patch OptionalMode (Enum)
-					if prop, ok := def.Schema.SchemaProps.Properties["optionalMode"]; ok {
-						prop.SchemaProps.Enum = allowedOptionalModes
-						def.Schema.SchemaProps.Properties["optionalMode"] = prop
-					}
-
-					defs["k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1.LoggingConfig"] = def
-				}
-				return defs
-			}, false),
+			crd.NewVersion("v1", "k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1.L4LBConfig", getOpenAPIDefinitions, false),
 		},
 	)
 	return meta
+}
+
+func getOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenAPIDefinition {
+	defs := l4lbconfigv1.GetOpenAPIDefinitions(ref)
+
+	if def, ok := defs["k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1.LoggingConfig"]; ok {
+		// Patch SampleRate
+		if prop, ok := def.Schema.SchemaProps.Properties["sampleRate"]; ok {
+			min := minSampleRate
+			max := maxSampleRate
+			prop.SchemaProps.Minimum = &min
+			prop.SchemaProps.Maximum = &max
+			def.Schema.SchemaProps.Properties["sampleRate"] = prop
+		}
+
+		// Patch OptionalMode (Enum)
+		if prop, ok := def.Schema.SchemaProps.Properties["optionalMode"]; ok {
+			prop.SchemaProps.Enum = allowedOptionalModes
+			def.Schema.SchemaProps.Properties["optionalMode"] = prop
+		}
+
+		defs["k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1.LoggingConfig"] = def
+	}
+
+	return defs
 }
 
 // GetL4LBConfigForService returns the corresponding L4LBConfig for
@@ -134,7 +137,7 @@ func DetermineL4LoggingConfig(
 		if errors.Is(err, ErrL4LBConfigDoesNotExist) {
 			return nil, NewConditionLoggingMissing(), err
 		}
-		return nil, NewConditionLoggingError(), err
+		return nil, NewConditionLoggingError(err), err
 	}
 
 	// Validate Config Content
@@ -158,7 +161,15 @@ func DetermineL4LoggingConfig(
 	case "EXCLUDE_ALL_OPTIONAL", "INCLUDE_ALL_OPTIONAL", "CUSTOM":
 		// Valid
 	default:
-		return nil, NewConditionLoggingError(), ErrL4LBConfigInvalidMode
+		return nil, NewConditionLoggingInvalid(ErrL4LBConfigInvalidMode), ErrL4LBConfigInvalidMode
+	}
+
+	if resolvedConfig.OptionalMode != "CUSTOM" && len(resolvedConfig.OptionalFields) > 0 {
+		return nil, NewConditionLoggingInvalid(ErrL4LBConfigInvalidMode), ErrL4LBConfigInvalidMode
+	}
+
+	if resolvedConfig.OptionalMode == "CUSTOM" && len(resolvedConfig.OptionalFields) == 0 {
+		return nil, NewConditionLoggingInvalid(ErrL4LBConfigInvalidMode), ErrL4LBConfigInvalidMode
 	}
 
 	if slc.SampleRate != nil {

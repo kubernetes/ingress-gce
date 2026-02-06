@@ -433,7 +433,7 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 	if err != nil {
 		if logConfigControlEnabled {
 			// Set condition if there is an error and logging control is enabled
-			syncResult.Conditions = append(syncResult.Conditions, l4lbconfig.NewConditionLoggingError())
+			syncResult.Conditions = append(syncResult.Conditions, l4lbconfig.NewConditionLoggingError(err))
 		}
 		if utils.IsUnsupportedFeatureError(err, strongSessionAffinityFeatureName) {
 			syncResult.GCEResourceInError = l4annotations.BackendServiceResource

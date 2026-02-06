@@ -578,7 +578,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	if err != nil {
 		if logConfigControlEnabled {
 			// Set condition if there is an error and logging control is enabled
-			result.Conditions = append(result.Conditions, l4lbconfig.NewConditionLoggingError())
+			result.Conditions = append(result.Conditions, l4lbconfig.NewConditionLoggingError(err))
 		}
 
 		if utils.IsUnsupportedFeatureError(err, string(backends.LocalityLbPolicyRendezvous)) {

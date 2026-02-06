@@ -2078,7 +2078,7 @@ func TestEnsureL4NetLB_L4LBConfigLogging(t *testing.T) {
 	loggingEnabledWithCustomFields := &composite.BackendServiceLogConfig{
 		Enable:         true,
 		SampleRate:     0.5,
-		OptionalMode:   "INCLUDE_ALL_OPTIONAL",
+		OptionalMode:   "CUSTOM",
 		OptionalFields: []string{"field1", "field2"},
 	}
 
@@ -2087,7 +2087,7 @@ func TestEnsureL4NetLB_L4LBConfigLogging(t *testing.T) {
 	complexCRDConfig := &l4lbconfigv1.LoggingConfig{
 		Enabled:        true,
 		SampleRate:     ptr.To[int32](500000), // 0.5
-		OptionalMode:   "INCLUDE_ALL_OPTIONAL",
+		OptionalMode:   "CUSTOM",
 		OptionalFields: []string{"field1", "field2"},
 	}
 
