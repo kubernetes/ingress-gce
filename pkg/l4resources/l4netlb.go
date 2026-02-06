@@ -419,17 +419,24 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 		}
 	}
 
+	// Get connection draining timeout from annotation if specified
+	var connectionDrainingTimeoutSec int64
+	if timeout, ok := l4annotations.FromService(l4netlb.Service).GetConnectionDrainingTimeout(); ok {
+		connectionDrainingTimeoutSec = timeout
+	}
+
 	backendParams := backends.L4BackendServiceParams{
-		Name:                     bsName,
-		HealthCheckLink:          hcLink,
-		Protocol:                 protocol,
-		SessionAffinity:          string(l4netlb.Service.Spec.SessionAffinity),
-		Scheme:                   string(cloud.SchemeExternal),
-		NamespacedName:           l4netlb.NamespacedName,
-		NetworkInfo:              network.DefaultNetwork(l4netlb.cloud),
-		ConnectionTrackingPolicy: connectionTrackingPolicy,
-		LocalityLbPolicy:         localityLbPolicy,
-		LogConfig:                logConfig,
+		Name:                         bsName,
+		HealthCheckLink:              hcLink,
+		Protocol:                     protocol,
+		SessionAffinity:              string(l4netlb.Service.Spec.SessionAffinity),
+		Scheme:                       string(cloud.SchemeExternal),
+		NamespacedName:               l4netlb.NamespacedName,
+		NetworkInfo:                  network.DefaultNetwork(l4netlb.cloud),
+		ConnectionTrackingPolicy:     connectionTrackingPolicy,
+		LocalityLbPolicy:             localityLbPolicy,
+		LogConfig:                    logConfig,
+		ConnectionDrainingTimeoutSec: connectionDrainingTimeoutSec,
 	}
 
 	bs, wasUpdate, err := l4netlb.backendPool.EnsureL4BackendService(backendParams, l4netlb.svcLogger)

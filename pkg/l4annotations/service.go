@@ -19,6 +19,7 @@ package l4annotations
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
@@ -107,6 +108,10 @@ const (
 
 	// Service annotation key for specifying config map which contains logging config
 	L4LoggingConfigMapKey = "networking.gke.io/l4-logging-config-map"
+
+	// Service annotation key for specifying connection draining timeout for L4 backend services
+	// Supports time.Duration format (e.g., "300s", "5m", "1h")
+	ConnectionDrainingTimeoutKey = "networking.gke.io/connection-draining-timeout"
 )
 
 // Service represents Service annotations.
@@ -252,4 +257,37 @@ func (svc *Service) GetInternalLoadBalancerAnnotationSubnet() string {
 		return val
 	}
 	return ""
+}
+
+// GetConnectionDrainingTimeout returns the connection draining timeout in seconds.
+// Returns 0 and false if the annotation is not specified or invalid.
+// Accepts time.Duration format (e.g., "300s", "5m", "1h").
+// Returns the parsed value in seconds (0-3600) and true if valid.
+// GCP supports connection draining timeout values from 0 to 3600 seconds.
+// Fractional seconds (e.g., "100ms", "1.5s") are not supported and will be rejected.
+func (svc *Service) GetConnectionDrainingTimeout() (int64, bool) {
+	val, exists := svc.v[ConnectionDrainingTimeoutKey]
+	if !exists {
+		return 0, false
+	}
+
+	duration, err := time.ParseDuration(val)
+	if err != nil {
+		return 0, false
+	}
+
+	// Validate that duration is a whole number of seconds (no fractional seconds)
+	if duration%time.Second != 0 {
+		return 0, false
+	}
+
+	// Convert to seconds
+	timeoutSec := int64(duration.Seconds())
+
+	// Validate range: GCP allows 0-3600 seconds
+	if timeoutSec < 0 || timeoutSec > 3600 {
+		return 0, false
+	}
+
+	return timeoutSec, true
 }

@@ -90,17 +90,18 @@ func NewPoolWithConnectionTrackingPolicy(cloud *gce.Cloud, namer namer.BackendNa
 
 // L4BackendServiceParams encapsulates parameters for ensuring an L4 BackendService.
 type L4BackendServiceParams struct {
-	Name                     string
-	HealthCheckLink          string
-	Protocol                 string
-	SessionAffinity          string
-	Scheme                   string
-	NamespacedName           types.NamespacedName
-	NetworkInfo              *network.NetworkInfo
-	ConnectionTrackingPolicy *composite.BackendServiceConnectionTrackingPolicy
-	LocalityLbPolicy         LocalityLBPolicyType
-	EnableZonalAffinity      bool
-	LogConfig                *composite.BackendServiceLogConfig
+	Name                         string
+	HealthCheckLink              string
+	Protocol                     string
+	SessionAffinity              string
+	Scheme                       string
+	NamespacedName               types.NamespacedName
+	NetworkInfo                  *network.NetworkInfo
+	ConnectionTrackingPolicy     *composite.BackendServiceConnectionTrackingPolicy
+	LocalityLbPolicy             LocalityLBPolicyType
+	EnableZonalAffinity          bool
+	LogConfig                    *composite.BackendServiceLogConfig
+	ConnectionDrainingTimeoutSec int64 // 0 means not specified, use default
 }
 
 var versionPrecedence = map[meta.Version]int{
@@ -429,7 +430,12 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 		expectedBS.Network = params.NetworkInfo.NetworkURL
 	}
 	if params.Protocol == string(api_v1.ProtocolTCP) {
-		expectedBS.ConnectionDraining = &composite.ConnectionDraining{DrainingTimeoutSec: DefaultConnectionDrainingTimeoutSeconds}
+		// Use custom timeout if specified, otherwise use default
+		timeoutSec := int64(DefaultConnectionDrainingTimeoutSeconds)
+		if params.ConnectionDrainingTimeoutSec > 0 {
+			timeoutSec = params.ConnectionDrainingTimeoutSec
+		}
+		expectedBS.ConnectionDraining = &composite.ConnectionDraining{DrainingTimeoutSec: timeoutSec}
 	} else {
 		// This config is not supported in UDP mode, explicitly set to 0 to reset, if proto was TCP previously.
 		expectedBS.ConnectionDraining = &composite.ConnectionDraining{DrainingTimeoutSec: 0}
@@ -461,13 +467,15 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 		expectedBS.Version = selectApiVersionForUpdate(currentVersion, expectedBS.Version)
 	}
 
+	// Preserve manually configured connection draining timeout if annotation is not set
+	if params.ConnectionDrainingTimeoutSec == 0 && currentBS.ConnectionDraining != nil && currentBS.ConnectionDraining.DrainingTimeoutSec > 0 && params.Protocol == string(api_v1.ProtocolTCP) {
+		// Only preserves user overridden timeout value when the protocol is TCP and no annotation is specified
+		expectedBS.ConnectionDraining.DrainingTimeoutSec = currentBS.ConnectionDraining.DrainingTimeoutSec
+	}
+
 	if backendSvcEqual(expectedBS, currentBS, p.useConnectionTrackingPolicy) {
 		beLogger.V(2).Info("EnsureL4BackendService: backend service did not change, skipping update")
 		return currentBS, utils.ResourceResync, nil
-	}
-	if currentBS.ConnectionDraining != nil && currentBS.ConnectionDraining.DrainingTimeoutSec > 0 && params.Protocol == string(api_v1.ProtocolTCP) {
-		// only preserves user overridden timeout value when the protocol is TCP
-		expectedBS.ConnectionDraining.DrainingTimeoutSec = currentBS.ConnectionDraining.DrainingTimeoutSec
 	}
 	beLogger.V(2).Info("EnsureL4BackendService: updating backend service")
 	// Set fingerprint for optimistic locking
@@ -490,7 +498,6 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 // since that is handled by the neg-linker.
 // The list of backends is not checked, since that is handled by the neg-linker.
 func backendSvcEqual(newBS, oldBS *composite.BackendService, compareConnectionTracking bool) bool {
-
 	svcsEqual := newBS.Protocol == oldBS.Protocol &&
 		newBS.Description == oldBS.Description &&
 		newBS.SessionAffinity == oldBS.SessionAffinity &&
@@ -523,6 +530,10 @@ func backendSvcEqual(newBS, oldBS *composite.BackendService, compareConnectionTr
 
 	// If zonal affinity is set, needs to be equal
 	svcsEqual = svcsEqual && zonalAffinityEqual(newBS, oldBS)
+
+	// Compare connection draining timeout
+	svcsEqual = svcsEqual && connectionDrainingEqual(newBS.ConnectionDraining, oldBS.ConnectionDraining)
+
 	return svcsEqual
 }
 
@@ -577,6 +588,21 @@ func zonalAffinityEqual(a, b *composite.BackendService) bool {
 	spilloverRatioEqual := aZonalAffinity.SpilloverRatio == bZonalAffinity.SpilloverRatio
 
 	return spilloverEqual && spilloverRatioEqual
+}
+
+// connectionDrainingEqual returns true if both connection draining configs are equal
+func connectionDrainingEqual(a, b *composite.ConnectionDraining) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	// Treat nil and zero timeout as equivalent (e.g., for UDP or when unset)
+	getTimeout := func(cd *composite.ConnectionDraining) int64 {
+		if cd == nil {
+			return 0
+		}
+		return cd.DrainingTimeoutSec
+	}
+	return getTimeout(a) == getTimeout(b)
 }
 
 // connectionTrackingPolicyEqual returns true if both elements are equal
