@@ -110,6 +110,9 @@ func BackendService(protocol string) *compute.BackendService {
 		LoadBalancingScheme: "EXTERNAL",
 		HealthChecks:        []string{"https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/healthChecks/k8s2-axyqjz2d-l4-shared-hc"},
 		Description:         `{"networking.gke.io/service-name":"test-namespace/test-name","networking.gke.io/api-version":"ga"}`,
+		NetworkPassThroughLbTrafficPolicy: &compute.BackendServiceNetworkPassThroughLbTrafficPolicy{
+			ZonalAffinity: &compute.BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity{Spillover: "ZONAL_AFFINITY_DISABLED"},
+		},
 	}
 }
 
