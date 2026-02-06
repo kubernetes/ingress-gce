@@ -15,6 +15,7 @@ package backends
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"time"
 
@@ -56,6 +57,8 @@ const (
 	LocalityLBPolicyWeightedRendezvous LocalityLBPolicyType = "WEIGHTED_GCP_RENDEZVOUS"
 	// LocalityLbPolicyRendezvous used for ILB will become the default locality lb policy for a backend service.
 	LocalityLbPolicyRendezvous LocalityLBPolicyType = "GCP_RENDEZVOUS"
+
+	float64EqualityEpsilon = 1e-7
 )
 
 // Pool handles CRUD operations on a pool of GCE Backend Services.
@@ -101,6 +104,7 @@ type L4BackendServiceParams struct {
 	LocalityLbPolicy         LocalityLBPolicyType
 	EnableZonalAffinity      bool
 	LogConfig                *composite.BackendServiceLogConfig
+	LogConfigControlEnabled  bool
 }
 
 var versionPrecedence = map[meta.Version]int{
@@ -408,7 +412,12 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 		SessionAffinity:     utils.TranslateAffinityType(params.SessionAffinity, beLogger),
 		LoadBalancingScheme: params.Scheme,
 		LocalityLbPolicy:    string(params.LocalityLbPolicy),
-		LogConfig:           params.LogConfig,
+	}
+
+	if params.LogConfigControlEnabled {
+		expectedBS.LogConfig = params.LogConfig
+	} else if currentBS != nil {
+		expectedBS.LogConfig = currentBS.LogConfig
 	}
 
 	if params.EnableZonalAffinity {
@@ -461,7 +470,7 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 		expectedBS.Version = selectApiVersionForUpdate(currentVersion, expectedBS.Version)
 	}
 
-	if backendSvcEqual(expectedBS, currentBS, p.useConnectionTrackingPolicy) {
+	if backendSvcEqual(expectedBS, currentBS, p.useConnectionTrackingPolicy, params.LogConfigControlEnabled) {
 		beLogger.V(2).Info("EnsureL4BackendService: backend service did not change, skipping update")
 		return currentBS, utils.ResourceResync, nil
 	}
@@ -489,7 +498,7 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 // service will not be updated. The list of backends is not checked either,
 // since that is handled by the neg-linker.
 // The list of backends is not checked, since that is handled by the neg-linker.
-func backendSvcEqual(newBS, oldBS *composite.BackendService, compareConnectionTracking bool) bool {
+func backendSvcEqual(newBS, oldBS *composite.BackendService, compareConnectionTracking bool, compareLogConfig bool) bool {
 
 	svcsEqual := newBS.Protocol == oldBS.Protocol &&
 		newBS.Description == oldBS.Description &&
@@ -509,7 +518,7 @@ func backendSvcEqual(newBS, oldBS *composite.BackendService, compareConnectionTr
 		svcsEqual = svcsEqual && connectionTrackingPolicyEqual(newBS.ConnectionTrackingPolicy, oldBS.ConnectionTrackingPolicy)
 	}
 
-	if flags.F.ManageL4LBLogging {
+	if compareLogConfig {
 		svcsEqual = svcsEqual && backendServiceLogConfigEqual(oldBS.LogConfig, newBS.LogConfig)
 	}
 
@@ -536,8 +545,19 @@ func backendServiceLogConfigEqual(oldLC, newLC *composite.BackendServiceLogConfi
 		newLC = &composite.BackendServiceLogConfig{}
 	}
 
+	// Set default values for comparison
+	if oldLC.OptionalMode == "" {
+		oldLC.OptionalMode = "EXCLUDE_ALL_OPTIONAL"
+	}
+
+	if newLC.OptionalMode == "" {
+		newLC.OptionalMode = "EXCLUDE_ALL_OPTIONAL"
+	}
+
+	sampleRateEqual := math.Abs(oldLC.SampleRate-newLC.SampleRate) <= float64EqualityEpsilon
+
 	return oldLC.Enable == newLC.Enable &&
-		oldLC.SampleRate == newLC.SampleRate &&
+		sampleRateEqual &&
 		oldLC.OptionalMode == newLC.OptionalMode &&
 		utils.EqualStringSets(oldLC.OptionalFields, newLC.OptionalFields)
 }

@@ -36,6 +36,11 @@ import (
 	"k8s.io/klog/v2"
 )
 
+const (
+	// ReasonL4LBConfigAnnotationRemoved is used when the annotation for L4LBConfig is removed from the service.
+	ReasonL4LBConfigAnnotationRemoved = "L4LBConfigAnnotationRemoved"
+)
+
 // computeNewAnnotationsIfNeeded checks if new annotations should be added to service.
 // If needed creates new service meta object.
 // This function is used by External and Internal L4 LB controllers.
@@ -99,14 +104,69 @@ func deleteAnnotation(ctx *context.ControllerContext, svc *v1.Service, annotatio
 	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
 }
 
-// updateServiceStatus this faction checks if LoadBalancer status changed and patch service if needed.
-func updateServiceStatus(ctx *context.ControllerContext, svc *v1.Service, newStatus *v1.LoadBalancerStatus, svcLogger klog.Logger) error {
-	svcLogger.V(2).Info("Updating service status", "newStatus", fmt.Sprintf("%+v", newStatus))
-	if helpers.LoadBalancerStatusEqual(&svc.Status.LoadBalancer, newStatus) {
-		svcLogger.V(2).Info("New and old statuses are equal, skipping patch")
-		return nil
+// mergeConditions merges the new set of l4lb resource conditions with the preexisting service conditions.
+// Existing L4 resource condition values will be replaced with the values in the new map.
+func mergeConditions(existing, newConditions []metav1.Condition) []metav1.Condition {
+	if existing == nil {
+		return newConditions
 	}
-	return patch.PatchServiceLoadBalancerStatus(ctx.KubeClient.CoreV1(), svc, *newStatus)
+
+	existingMap := make(map[string]metav1.Condition)
+	for _, cond := range existing {
+		existingMap[cond.Type] = cond
+	}
+
+	for _, newCond := range newConditions {
+		existingMap[newCond.Type] = newCond
+	}
+
+	mergedConditions := make([]metav1.Condition, 0, len(existingMap))
+	for _, cond := range existingMap {
+		mergedConditions = append(mergedConditions, cond)
+	}
+	return mergedConditions
+}
+
+// conditionsEqual checks if load balancer conditions are equal
+func conditionsEqual(l, r []metav1.Condition) bool {
+	if len(l) != len(r) {
+		return false
+	}
+	lMap := make(map[string]metav1.Condition)
+	for _, cond := range l {
+		lMap[cond.Type] = cond
+	}
+	for _, condR := range r {
+		condL, found := lMap[condR.Type]
+		if !found {
+			return false
+		}
+		if condL.Status != condR.Status || condL.Reason != condR.Reason || condL.Message != condR.Message {
+			return false
+		}
+	}
+	return true
+}
+
+// updateServiceStatus this faction checks if LoadBalancer status changed and patch service if needed.
+func updateServiceStatus(ctx *context.ControllerContext, svc *v1.Service, newStatus *v1.LoadBalancerStatus, newConditions []metav1.Condition, svcLogger klog.Logger) error {
+	svcLogger.V(2).Info("Updating service status and conditions", "newStatus", fmt.Sprintf("%+v", newStatus), "newConditions", fmt.Sprintf("%+v", newConditions))
+
+	mergedConditions := mergeConditions(svc.Status.Conditions, newConditions)
+	svcLogger.V(2).Info("Merged conditions", "mergedConditions", fmt.Sprintf("%+v", mergedConditions))
+
+	lbStatusEqual := helpers.LoadBalancerStatusEqual(&svc.Status.LoadBalancer, newStatus)
+	lbConditionsEqual := conditionsEqual(svc.Status.Conditions, mergedConditions)
+
+	if !lbStatusEqual || !lbConditionsEqual {
+		svcLogger.V(2).Info("Patching LoadBalancer status and Conditions", "newStatus", fmt.Sprintf("%+v", newStatus), "newConditions", fmt.Sprintf("%+v", newConditions))
+		return patch.PatchServiceStatus(ctx.KubeClient.CoreV1(), svc, v1.ServiceStatus{
+			LoadBalancer: *newStatus,
+			Conditions:   mergedConditions,
+		})
+	}
+	svcLogger.V(3).Info("Service status not changed, skipping patch for service")
+	return nil
 }
 
 // isHealthCheckDeleted checks if given health check exists in GCE

@@ -105,8 +105,8 @@ const (
 	// Service annotation value for using pods-per-node Weighted load balancing in both ILB and NetlB
 	WeightedL4AnnotationPodsPerNode = "pods-per-node"
 
-	// Service annotation key for specifying config map which contains logging config
-	L4LoggingConfigMapKey = "networking.gke.io/l4-logging-config-map"
+	// Service annotation key for specifying L4LBConfig
+	L4LBConfigKey = "networking.gke.io/l4lb-config"
 )
 
 // Service represents Service annotations.
@@ -116,6 +116,9 @@ type Service struct {
 
 // FromService extracts the annotations from an Service definition.
 func FromService(obj *v1.Service) *Service {
+	if obj == nil {
+		return &Service{}
+	}
 	return &Service{obj.Annotations}
 }
 
@@ -222,10 +225,10 @@ func onlyStatusAnnotationsChanged(oldService, newService *v1.Service) bool {
 	return true
 }
 
-// GetL4LoggingConfigMapAnnotation returns name of the config map which contains logging config.
+// GetL4LBConfigAnnotation returns name of the config map which contains L4LB config.
 // Returns false if annotation with the name is not specified.
-func (svc *Service) GetL4LoggingConfigMapAnnotation() (string, bool) {
-	val, ok := svc.v[L4LoggingConfigMapKey]
+func (svc *Service) GetL4LBConfigAnnotation() (string, bool) {
+	val, ok := svc.v[L4LBConfigKey]
 	if ok {
 		return val, ok
 	}

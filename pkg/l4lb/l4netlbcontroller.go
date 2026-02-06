@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	l4lbconfigv1 "k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1"
 	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/ingress-gce/pkg/l4resources"
 
@@ -30,6 +31,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/google/go-cmp/cmp"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
@@ -189,23 +191,23 @@ func NewL4NetLBController(
 	}
 
 	if flags.F.ManageL4LBLogging {
-		ctx.ConfigMapInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		ctx.L4LBConfigInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
-				configMap, ok := obj.(*v1.ConfigMap)
+				l4lbconfig, ok := obj.(*l4lbconfigv1.L4LBConfig)
 				if ok {
-					l4netLBc.enqueueServicesReferencingConfigMap(configMap)
+					l4netLBc.enqueueServicesReferencingL4LBConfig(l4lbconfig)
 				}
 			},
 			UpdateFunc: func(_, obj interface{}) {
-				configMap, ok := obj.(*v1.ConfigMap)
+				l4lbconfig, ok := obj.(*l4lbconfigv1.L4LBConfig)
 				if ok {
-					l4netLBc.enqueueServicesReferencingConfigMap(configMap)
+					l4netLBc.enqueueServicesReferencingL4LBConfig(l4lbconfig)
 				}
 			},
 			DeleteFunc: func(obj interface{}) {
-				configMap, ok := obj.(*v1.ConfigMap)
+				l4lbconfig, ok := obj.(*l4lbconfigv1.L4LBConfig)
 				if ok {
-					l4netLBc.enqueueServicesReferencingConfigMap(configMap)
+					l4netLBc.enqueueServicesReferencingL4LBConfig(l4lbconfig)
 				}
 			},
 		})
@@ -214,8 +216,8 @@ func NewL4NetLBController(
 	return l4netLBc
 }
 
-func (lc *L4NetLBController) enqueueServicesReferencingConfigMap(configMap *v1.ConfigMap) {
-	services := operator.Services(lc.ctx.Services().List(), lc.logger).ReferencesL4LoggingConfigMap(configMap).AsList()
+func (lc *L4NetLBController) enqueueServicesReferencingL4LBConfig(l4LBConfigObject *l4lbconfigv1.L4LBConfig) {
+	services := operator.Services(lc.ctx.Services().List(), lc.logger).ReferencesL4LBConfig(l4LBConfigObject).AsList()
 	for _, svc := range services {
 		svcKey := utils.ServiceKeyFunc(svc.Namespace, svc.Name)
 		svcLogger := lc.logger.WithValues("serviceKey", svcKey)
@@ -361,6 +363,13 @@ func (lc *L4NetLBController) shouldProcessService(newSvc, oldSvc *v1.Service, sv
 	if !lc.isRBSBasedService(newSvc, svcLogger) && !lc.isRBSBasedService(oldSvc, svcLogger) {
 		return false, false
 	}
+
+	_, oldHasConfig := l4annotations.FromService(oldSvc).GetL4LBConfigAnnotation()
+	_, newHasConfig := l4annotations.FromService(newSvc).GetL4LBConfigAnnotation()
+	if oldHasConfig && !newHasConfig {
+		lc.ctx.Recorder(newSvc.Namespace).Event(newSvc, v1.EventTypeWarning, ReasonL4LBConfigAnnotationRemoved, "L4LBConfig annotation has been removed")
+	}
+
 	if lc.needsAddition(newSvc, oldSvc) || lc.needsUpdate(newSvc, oldSvc) || lc.needsDeletion(newSvc, svcLogger) {
 		return true, false
 	}
@@ -628,8 +637,8 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 		UseDenyFirewalls:                   lc.ctx.EnableL4DenyFirewalls,
 		EnableDenyFirewallsRollbackCleanup: lc.ctx.EnableL4DenyFirewallsRollbackCleanup,
 	}
-	if lc.ctx.ConfigMapInformer != nil {
-		l4NetLBParams.ConfigMapLister = lc.ctx.ConfigMapInformer.GetIndexer()
+	if lc.ctx.L4LBConfigInformer != nil {
+		l4NetLBParams.L4LBConfigLister = lc.ctx.L4LBConfigInformer.GetIndexer()
 	}
 	l4netlb := l4resources.NewL4NetLB(l4NetLBParams, svcLogger)
 
@@ -687,7 +696,7 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 		return syncResult
 	}
 
-	err = updateServiceStatus(lc.ctx, service, syncResult.Status, svcLogger)
+	err = updateServiceStatus(lc.ctx, service, syncResult.Status, syncResult.Conditions, svcLogger)
 	if err != nil {
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
 			"Error updating L4 External LoadBalancer, err: %v", err)
@@ -884,8 +893,8 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service,
 		UseDenyFirewalls:                   lc.ctx.EnableL4DenyFirewalls,
 		EnableDenyFirewallsRollbackCleanup: lc.ctx.EnableL4DenyFirewallsRollbackCleanup,
 	}
-	if lc.ctx.ConfigMapInformer != nil {
-		l4NetLBParams.ConfigMapLister = lc.ctx.ConfigMapInformer.GetIndexer()
+	if lc.ctx.L4LBConfigInformer != nil {
+		l4NetLBParams.L4LBConfigLister = lc.ctx.L4LBConfigInformer.GetIndexer()
 	}
 	l4netLB := l4resources.NewL4NetLB(l4NetLBParams, svcLogger)
 	lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer",
@@ -898,7 +907,7 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service,
 		return result
 	}
 
-	if err := updateServiceStatus(lc.ctx, svc, &v1.LoadBalancerStatus{}, svcLogger); err != nil {
+	if err := updateServiceStatus(lc.ctx, svc, &v1.LoadBalancerStatus{}, []metav1.Condition{}, svcLogger); err != nil {
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 			"Error resetting L4 External LoadBalancer status to empty, err: %v", err)
 		result.Error = fmt.Errorf("Failed to reset L4 External LoadBalancer status, err: %w", err)
