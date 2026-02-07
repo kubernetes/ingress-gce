@@ -413,6 +413,7 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 		l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeWarning, l4lbconfig.GetReasonForError(err), "L4LBConfig could not be retrieved: %v", err)
 	}
 	logConfigControlEnabled := loggingCondition.Status == metav1.ConditionTrue
+	syncResult.MetricsState.LoggingControlEnabled = logConfigControlEnabled
 
 	backendParams := backends.L4BackendServiceParams{
 		Name:                     bsName,
@@ -453,7 +454,6 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 
 	syncResult.Annotations[l4annotations.BackendServiceKey] = bsName
 	if bs != nil && bs.LogConfig != nil {
-		syncResult.MetricsState.LoggingEnabled = bs.LogConfig.Enable
 		syncResult.ObservedLoggingConfig = bs.LogConfig
 	}
 

@@ -986,6 +986,7 @@ func (lc *L4NetLBController) publishSyncMetrics(result *l4resources.L4NetLBSyncR
 
 	isWeightedLB := result.MetricsState.WeightedLBPodsPerNode
 	backendType := result.MetricsState.BackendType
+	isLoggingControlEnabled := result.MetricsState.LoggingControlEnabled
 
-	metrics.PublishNetLBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime, isResync, isWeightedLB, result.MetricsState.Protocol, backendType)
+	metrics.PublishNetLBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime, isResync, isWeightedLB, result.MetricsState.Protocol, backendType, isLoggingControlEnabled)
 }

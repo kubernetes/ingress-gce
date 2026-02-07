@@ -27,15 +27,15 @@ const (
 	LoggingConditionReconciledReason  = "Reconciled"
 	LoggingConditionReconciledMessage = "Logging configuration reconciled successfully."
 
-	LoggingConditionErrorReason = "Error"
-
-	LoggingConditionInvalidReason = "Invalid"
-
 	LoggingConditionMissingReason        = "Missing"
 	LoggingConditionMissingReasonMessage = "Logging configuration not found."
 
 	LoggingConditionUnmanagedReason        = "Unmanaged"
 	LoggingConditionUnmanagedReasonMessage = "Logging configuration not managed."
+
+	// Conditions that have the error message as the message.
+	LoggingConditionErrorReason   = "Error"
+	LoggingConditionInvalidReason = "Invalid"
 )
 
 func NewConditionLoggingReconciled() metav1.Condition {

@@ -84,8 +84,8 @@ type L4FeaturesServiceLabels struct {
 	ZonalAffinity bool
 	// Protocol should be either "TCP", "UDP" or when both are present - "MIXED". The default value is "" empty string, but shouldn't be used.
 	Protocol L4ProtocolType
-	// LoggingEnabled is true if logging is configured to be enabled on the Backend Service
-	LoggingEnabled bool
+	// LoggingControlEnabled is true if L4LBConfig annotation is present and logging field is present
+	LoggingControlEnabled bool
 	// DenyFirewallStatus stores status of deny firewalls that were created for the LB. Exclusive to NetLB. If no deny firewalls were created is empty.
 	DenyFirewallStatus DenyFirewallStatus
 }
