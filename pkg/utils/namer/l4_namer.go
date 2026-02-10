@@ -56,7 +56,7 @@ func NewL4Namer(kubeSystemUID string, namer *Namer) *L4Namer {
 // L4Backend returns the gce L4 Backend name based on the service namespace and name
 // Naming convention:
 //
-//	k8s2-{uid}-{ns}-{name}-{suffix}
+//	k8s2-{uid}-{ns}-{name}-{nsNameHash}
 //
 // Output name is at most 63 characters.
 func (namer *L4Namer) L4Backend(namespace, name string) string {
@@ -64,7 +64,7 @@ func (namer *L4Namer) L4Backend(namespace, name string) string {
 		namer.v2Prefix,
 		namer.v2ClusterUID,
 		getTrimmedNamespacedName(namespace, name, maximumL4CombinedLength),
-		namer.getClusterSuffix(namespace, name),
+		namer.getServiceHash(namespace, name),
 	}, "-")
 }
 
@@ -72,9 +72,9 @@ func (namer *L4Namer) L4Backend(namespace, name string) string {
 // subnet based on the service namespace, name, and subnet name.
 // Naming convention:
 //
-//	k8s2-{uid}-{ns}-{name}-{subnetHash}-{suffix}
+//	k8s2-{uid}-{ns}-{name}-{subnetHash}-{nsNameHash}
 //
-// subnetHash length = 6, suffix length = 8, and the remainings are trimmed evenly.
+// subnetHash length = 6, nsNameHash length = 8, and the remainings are trimmed evenly.
 // Output name is at most 63 characters.
 func (namer *L4Namer) NonDefaultSubnetNEG(namespace, name, subnetName string, _ int32) string {
 	return strings.Join([]string{
@@ -82,7 +82,7 @@ func (namer *L4Namer) NonDefaultSubnetNEG(namespace, name, subnetName string, _ 
 		namer.v2ClusterUID,
 		getTrimmedNamespacedName(namespace, name, maximumL4CombinedLength-subnetHashLength-1),
 		subnetHash(subnetName),
-		namer.getClusterSuffix(namespace, name),
+		namer.getServiceHash(namespace, name),
 	}, "-")
 }
 
@@ -96,7 +96,7 @@ func (n *L4Namer) NonDefaultSubnetCustomNEG(customNEGName, subnetName string) (s
 // L4Firewall returns the gce Firewall name based on the service namespace and name
 // Naming convention:
 //
-//	k8s2-{uid}-{ns}-{name}-{suffix}
+//	k8s2-{uid}-{ns}-{name}-{nsNameHash}
 //
 // Output name is at most 63 characters.
 // This name is identical to L4Backend.
@@ -104,20 +104,56 @@ func (namer *L4Namer) L4Firewall(namespace, name string) string {
 	return namer.L4Backend(namespace, name)
 }
 
+// L4FirewallV21 returns the gce Firewall name based on the service namespace and name
+// Naming convention:
+//
+//	k8s2-{uid}-{ns}-{name}-{nsNameHash}-{suffix}
+//
+// Where suffix is the hash based on the namespace and name.
+// Output name is at most 63 characters.
+func (namer *L4Namer) L4FirewallV21(namespace, name, suffix string) string {
+	const maxGCEChars = 63
+
+	prefix := namer.v2Prefix
+	nameHash := namer.getServiceHash(namespace, name)
+
+	lengthUsed := len(prefix) + 1 +
+		len(namer.v2ClusterUID) + 1 +
+		len(nameHash) + 1 +
+		1 // for the dash between namespace and name
+	if suffix != "" {
+		lengthUsed += len(suffix) + 1
+	}
+	lengthForHumanReadableName := maxGCEChars - lengthUsed
+
+	parts := []string{
+		prefix,
+		namer.v2ClusterUID,
+		getTrimmedNamespacedName(namespace, name, lengthForHumanReadableName),
+		nameHash,
+	}
+	if suffix != "" {
+		parts = append(parts, suffix)
+	}
+
+	return strings.Join(parts, "-")
+}
+
 // L4FirewallDeny returns the gce Firewall name for the Deny rule
 // Naming convention:
 //
-//	k8s2-{uid}-{ns}-{name}-{suffix}-deny
+//	k8s2-{uid}-{ns}-{name}-{nsNameHash}-deny
 //
+// Where suffix is the hash based on the namespace and name.
 // Output name is at most 63 characters, whole "-deny" will be always at the end.
 func (namer *L4Namer) L4FirewallDeny(namespace, name string) string {
-	return GetSuffixedName(namer.L4Firewall(namespace, name), "-deny")
+	return namer.L4FirewallV21(namespace, name, "deny")
 }
 
 // L4IPv6Firewall returns the gce IPv6 Firewall name based on the service namespace and name
 // Naming convention:
 //
-//	k8s2-{uid}-{ns}-{name}-{suffix}-ipv6
+//	k8s2-{uid}-{ns}-{name}-{nsNameHash}-ipv6
 //
 // Output name is at most 63 characters.
 func (namer *L4Namer) L4IPv6Firewall(namespace, name string) string {
@@ -127,17 +163,17 @@ func (namer *L4Namer) L4IPv6Firewall(namespace, name string) string {
 // L4IPv6FirewallDeny returns the gce IPv6 Firewall name for the Deny Rule
 // Naming convention:
 //
-//	k8s2-{uid}-{ns}-{name}-{suffix}-deny-ipv6
+//	k8s2-{uid}-{ns}-{name}-{nsNameHash}-deny-ipv6
 //
 // Output name is at most 63 characters, the name will always have "-deny-ipv6" suffix.
 func (namer *L4Namer) L4IPv6FirewallDeny(namespace, name string) string {
-	return GetSuffixedName(namer.L4Firewall(namespace, name), "-deny-"+ipv6Suffix)
+	return namer.L4FirewallV21(namespace, name, "deny-ipv6")
 }
 
 // L4ForwardingRule returns the name of the L4 forwarding rule name based on the service namespace, name and protocol.
 // Naming convention:
 //
-//	k8s2-{protocol}-{uid}-{ns}-{name}-{suffix}
+//	k8s2-{protocol}-{uid}-{ns}-{name}-{nsNameHash}
 //
 // Output name is at most 63 characters.
 func (namer *L4Namer) L4ForwardingRule(namespace, name, protocol string) string {
@@ -153,7 +189,7 @@ func (namer *L4Namer) L4ForwardingRule(namespace, name, protocol string) string 
 		protocol,
 		namer.v2ClusterUID,
 		getTrimmedNamespacedName(namespace, name, maximumL4CombinedLength-protoLen),
-		namer.getClusterSuffix(namespace, name),
+		namer.getServiceHash(namespace, name),
 	}, "-")
 }
 
@@ -161,7 +197,7 @@ func (namer *L4Namer) L4ForwardingRule(namespace, name, protocol string) string 
 // Since there can be multiple Forwarding Rules for a single service we use additional num.
 // Naming convention:
 //
-//	k8s2-{protocol}-{uid}-{ns}-{name}-{suffix}-{num}
+//	k8s2-{protocol}-{uid}-{ns}-{name}-{nsNameHash}-{num}
 //
 // Output name is at most 63 characters.
 func (namer *L4Namer) L4NetLBForwardingRule(namespace, name, protocol string, num uint) string {
@@ -194,7 +230,7 @@ func (namer *L4Namer) L4HealthCheckFirewall(namespace, name string, shared bool)
 // L4IPv6ForwardingRule returns the name of the L4 forwarding rule name based on the service namespace, name and protocol.
 // Naming convention:
 //
-//	k8s2-{protocol}-{uid}-{ns}-{name}-{suffix}-ipv6
+//	k8s2-{protocol}-{uid}-{ns}-{name}-{nsNameHash}-ipv6
 //
 // Output name is at most 63 characters.
 func (namer *L4Namer) L4IPv6ForwardingRule(namespace, name, protocol string) string {
@@ -205,7 +241,7 @@ func (namer *L4Namer) L4IPv6ForwardingRule(namespace, name, protocol string) str
 // Since there can be multiple Forwarding Rules for a single service we use additional num.
 // Naming convention:
 //
-//	k8s2-{protocol}-{uid}-{ns}-{name}-{suffix}-{num}-ipv6
+//	k8s2-{protocol}-{uid}-{ns}-{name}-{nsNameHash}-{num}-ipv6
 //
 // Output name is at most 63 characters.
 func (namer *L4Namer) L4NetLBIPv6ForwardingRule(namespace, name, protocol string, num uint) string {
@@ -232,9 +268,9 @@ func (namer *L4Namer) IsNEG(name string) bool {
 	return strings.HasPrefix(name, namer.v2Prefix+"-"+namer.v2ClusterUID)
 }
 
-// getClusterSuffix returns hash string of length 8 of a concatenated string generated from
+// getServiceHash returns hash string of length 8 of a concatenated string generated from
 // kube-system uid, namespace and name. These fields in combination define an l4 load-balancer uniquely.
-func (n *L4Namer) getClusterSuffix(namespace, name string) string {
+func (n *L4Namer) getServiceHash(namespace, name string) string {
 	lbString := strings.Join([]string{n.v2ClusterUID, namespace, name}, ";")
 	return common.ContentHash(lbString, 8)
 }
