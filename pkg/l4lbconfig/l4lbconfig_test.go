@@ -29,6 +29,7 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/l4annotations"
+	"k8s.io/utils/ptr"
 )
 
 func TestGetL4LBConfigForService(t *testing.T) {
@@ -46,7 +47,7 @@ func TestGetL4LBConfigForService(t *testing.T) {
 		Spec: l4lbconfigv1.L4LBConfigSpec{
 			Logging: &l4lbconfigv1.LoggingConfig{
 				Enabled:    true,
-				SampleRate: ptrInt32(500000),
+				SampleRate: ptr.To[int32](500000),
 			},
 		},
 	}
@@ -159,11 +160,11 @@ func TestDetermineL4LoggingConfig(t *testing.T) {
 		manageLoggingFlag bool
 		svc               *apiv1.Service
 		storeObj          *l4lbconfigv1.L4LBConfig
-		expectErr         bool
+		expectErr         error
 		expectedConfig    *composite.BackendServiceLogConfig
 	}{
 		{
-			desc:              "Global Gate: ManageL4LBLogging flag is OFF",
+			desc:              "Global Gate, ManageL4LBLogging flag is OFF",
 			manageLoggingFlag: false,
 			svc: &apiv1.Service{
 				ObjectMeta: metav1.ObjectMeta{
@@ -174,11 +175,11 @@ func TestDetermineL4LoggingConfig(t *testing.T) {
 					},
 				},
 			},
-			storeObj:       makeConfig(true, ptrInt32(1000000)),
+			storeObj:       makeConfig(true, ptr.To[int32](1000000)),
 			expectedConfig: nil, // Should exit early
 		},
 		{
-			desc:              "Fail-Safe: Service references missing CRD",
+			desc:              "Fail-Safe, Service references missing CRD",
 			manageLoggingFlag: true,
 			svc: &apiv1.Service{
 				ObjectMeta: metav1.ObjectMeta{
@@ -190,7 +191,7 @@ func TestDetermineL4LoggingConfig(t *testing.T) {
 				},
 			},
 			storeObj:       nil,
-			expectErr:      true, // Returns ErrL4LBConfigDoesNotExist
+			expectErr:      ErrL4LBConfigDoesNotExist,
 			expectedConfig: nil,
 		},
 		{
@@ -205,7 +206,7 @@ func TestDetermineL4LoggingConfig(t *testing.T) {
 					},
 				},
 			},
-			storeObj: makeConfig(true, ptrInt32(500000)),
+			storeObj: makeConfig(true, ptr.To[int32](500000)),
 			expectedConfig: &composite.BackendServiceLogConfig{
 				Enable:       true,
 				SampleRate:   0.5,
@@ -213,7 +214,7 @@ func TestDetermineL4LoggingConfig(t *testing.T) {
 			},
 		},
 		{
-			desc:              "Successful resolution: Explicitly Disabled",
+			desc:              "Successful resolution, Explicitly Disabled",
 			manageLoggingFlag: true,
 			svc: &apiv1.Service{
 				ObjectMeta: metav1.ObjectMeta{
@@ -224,7 +225,7 @@ func TestDetermineL4LoggingConfig(t *testing.T) {
 					},
 				},
 			},
-			storeObj: makeConfig(false, ptrInt32(1000000)),
+			storeObj: makeConfig(false, ptr.To[int32](1000000)),
 			expectedConfig: &composite.BackendServiceLogConfig{
 				Enable:       false,
 				SampleRate:   1.0,
@@ -232,7 +233,7 @@ func TestDetermineL4LoggingConfig(t *testing.T) {
 			},
 		},
 		{
-			desc:              "Mapping: SampleRate is nil in CRD",
+			desc:              "SampleRate is nil in CRD",
 			manageLoggingFlag: true,
 			svc: &apiv1.Service{
 				ObjectMeta: metav1.ObjectMeta{
@@ -285,13 +286,62 @@ func TestDetermineL4LoggingConfig(t *testing.T) {
 				Spec: l4lbconfigv1.L4LBConfigSpec{
 					Logging: &l4lbconfigv1.LoggingConfig{
 						Enabled:      true,
-						SampleRate:   ptrInt32(1000000),
+						SampleRate:   ptr.To[int32](1000000),
 						OptionalMode: "INVALID",
 					},
 				},
 			},
 			expectedConfig: nil,
-			expectErr:      true,
+			expectErr:      ErrL4LBConfigInvalidMode,
+		},
+		{
+			desc:              "Invalid, Custom Mode with No Fields",
+			manageLoggingFlag: true,
+			svc: &apiv1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-custom-no-fields",
+					Namespace: testNamespace,
+					Annotations: map[string]string{
+						l4annotations.L4LBConfigKey: configName,
+					},
+				},
+			},
+			storeObj: &l4lbconfigv1.L4LBConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: configName, Namespace: testNamespace},
+				Spec: l4lbconfigv1.L4LBConfigSpec{
+					Logging: &l4lbconfigv1.LoggingConfig{
+						Enabled:      true,
+						OptionalMode: "CUSTOM",
+					},
+				},
+			},
+			expectedConfig: nil,
+			expectErr:      ErrL4LBConfigInvalidMode,
+		},
+		{
+			desc:              "Invalid, Non-Custom Mode with Fields",
+			manageLoggingFlag: true,
+			svc: &apiv1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-non-custom-fields",
+					Namespace: testNamespace,
+					Annotations: map[string]string{
+						l4annotations.L4LBConfigKey: configName,
+					},
+				},
+			},
+			storeObj: &l4lbconfigv1.L4LBConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: configName, Namespace: testNamespace},
+				Spec: l4lbconfigv1.L4LBConfigSpec{
+					Logging: &l4lbconfigv1.LoggingConfig{
+						Enabled:        true,
+						OptionalMode:   "INCLUDE_ALL_OPTIONAL",
+						OptionalFields: []string{"foo"},
+					},
+				},
+			},
+			expectedConfig: nil,
+			expectErr:      ErrL4LBConfigInvalidMode,
 		},
 	}
 
@@ -310,7 +360,7 @@ func TestDetermineL4LoggingConfig(t *testing.T) {
 			result, condition, err := DetermineL4LoggingConfig(tc.svc, lister)
 
 			// Assertions
-			if (err != nil) != tc.expectErr {
+			if !errors.Is(err, tc.expectErr) {
 				t.Errorf("Unexpected error state. Expected error: %v, Got: %v", tc.expectErr, err)
 			}
 			if result != nil && condition.Status != metav1.ConditionTrue {
@@ -343,8 +393,4 @@ func TestGetReasonForError(t *testing.T) {
 			t.Errorf("For error %v, expected reason %s, got %s", tc.err, tc.expectedReason, reason)
 		}
 	}
-}
-
-func ptrInt32(i int32) *int32 {
-	return &i
 }

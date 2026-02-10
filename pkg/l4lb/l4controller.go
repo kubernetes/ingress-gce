@@ -706,7 +706,8 @@ func (l4c *L4Controller) publishMetrics(result *l4resources.L4ILBSyncResult, nam
 		l4c.ctx.L4Metrics.SetL4ILBService(namespacedName, result.MetricsState)
 		isWeightedLB := result.MetricsState.WeightedLBPodsPerNode
 		isZonalAffinityLB := result.MetricsState.ZonalAffinity
-		metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime, isResync, isWeightedLB, result.MetricsState.Protocol, isZonalAffinityLB)
+		isLoggingControlEnabled := result.MetricsState.LoggingControlEnabled
+		metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime, isResync, isWeightedLB, result.MetricsState.Protocol, isZonalAffinityLB, isLoggingControlEnabled)
 		if l4c.enableDualStack {
 			svcLogger.V(2).Info("Internal L4 DualStack Loadbalancer for Service ensured, updating its state in metrics cache", "serviceState", result.MetricsState)
 			metrics.PublishL4ILBDualStackSyncLatency(result.Error == nil, result.SyncType, result.MetricsState.IPFamilies, result.StartTime, isResync)
@@ -725,7 +726,8 @@ func (l4c *L4Controller) publishMetrics(result *l4resources.L4ILBSyncResult, nam
 		}
 		isWeightedLB := result.MetricsState.WeightedLBPodsPerNode
 		isZonalAffinityLB := result.MetricsState.ZonalAffinity
-		metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime, false, isWeightedLB, result.MetricsState.Protocol, isZonalAffinityLB)
+		isLoggingControlEnabled := result.MetricsState.LoggingControlEnabled
+		metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime, false, isWeightedLB, result.MetricsState.Protocol, isZonalAffinityLB, isLoggingControlEnabled)
 		if l4c.enableDualStack {
 			metrics.PublishL4ILBDualStackSyncLatency(result.Error == nil, result.SyncType, result.MetricsState.IPFamilies, result.StartTime, false)
 		}

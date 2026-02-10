@@ -3291,7 +3291,7 @@ func TestEnsureInternalLoadBalancer_L4LBConfigLogging(t *testing.T) {
 	loggingEnabledWithCustomFields := &composite.BackendServiceLogConfig{
 		Enable:         true,
 		SampleRate:     0.5,
-		OptionalMode:   "INCLUDE_ALL_OPTIONAL",
+		OptionalMode:   "CUSTOM",
 		OptionalFields: []string{"field1", "field2"},
 	}
 
@@ -3300,7 +3300,7 @@ func TestEnsureInternalLoadBalancer_L4LBConfigLogging(t *testing.T) {
 	complexConfig := &l4lbconfigv1.LoggingConfig{
 		Enabled:        true,
 		SampleRate:     ptr.To[int32](500000), // 0.5
-		OptionalMode:   "INCLUDE_ALL_OPTIONAL",
+		OptionalMode:   "CUSTOM",
 		OptionalFields: []string{"field1", "field2"},
 	}
 
@@ -3314,7 +3314,7 @@ func TestEnsureInternalLoadBalancer_L4LBConfigLogging(t *testing.T) {
 		expectedGCEConfig *composite.BackendServiceLogConfig
 	}{
 		{
-			desc:              "Global Flag OFF: Should ignore CRD and preserve GCE state",
+			desc:              "Flag OFF, Should ignore CRD and preserve GCE state",
 			manageLoggingFlag: false,
 			existingGCEConfig: loggingEnabled,
 			crdLoggingConfig:  disabledConfig, // Attempt to disable
@@ -3329,7 +3329,7 @@ func TestEnsureInternalLoadBalancer_L4LBConfigLogging(t *testing.T) {
 			expectedGCEConfig: loggingEnabled,
 		},
 		{
-			desc:              "Flag ON, CRD enables logging: Update GCE",
+			desc:              "Flag ON, CRD enables logging, Update GCE",
 			manageLoggingFlag: true,
 			existingGCEConfig: loggingDisabled,
 			crdLoggingConfig:  enabledConfig,
@@ -3337,7 +3337,7 @@ func TestEnsureInternalLoadBalancer_L4LBConfigLogging(t *testing.T) {
 			expectedGCEConfig: loggingEnabled,
 		},
 		{
-			desc:              "Flag ON, CRD field omitted: Preserve current state",
+			desc:              "Flag ON, CRD field omitted, Preserve current state",
 			manageLoggingFlag: true,
 			existingGCEConfig: loggingEnabled,
 			crdLoggingConfig:  nil, // Omitted top-level section
@@ -3345,7 +3345,7 @@ func TestEnsureInternalLoadBalancer_L4LBConfigLogging(t *testing.T) {
 			expectedGCEConfig: loggingEnabled, // Stays enabled
 		},
 		{
-			desc:              "Complex Mapping: Verify SampleRate and OptionalFields",
+			desc:              "Complex Mapping, Verify SampleRate and OptionalFields",
 			manageLoggingFlag: true,
 			existingGCEConfig: loggingDisabled,
 			crdLoggingConfig:  complexConfig,
@@ -3353,7 +3353,7 @@ func TestEnsureInternalLoadBalancer_L4LBConfigLogging(t *testing.T) {
 			expectedGCEConfig: loggingEnabledWithCustomFields,
 		},
 		{
-			desc:              "Complex Mapping: From Complex to Simple",
+			desc:              "Complex Mapping, From Complex to Simple",
 			manageLoggingFlag: true,
 			existingGCEConfig: loggingEnabledWithCustomFields,
 			crdLoggingConfig:  enabledConfig,
@@ -3361,7 +3361,7 @@ func TestEnsureInternalLoadBalancer_L4LBConfigLogging(t *testing.T) {
 			expectedGCEConfig: loggingEnabled,
 		},
 		{
-			desc:              "CRD Object Deleted: Preserve current state and issue warning",
+			desc:              "CRD Object Deleted, Preserve current state and issue warning",
 			manageLoggingFlag: true,
 			existingGCEConfig: loggingEnabled,
 			crdLoggingConfig:  nil,

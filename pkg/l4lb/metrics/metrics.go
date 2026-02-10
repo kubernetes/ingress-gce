@@ -75,6 +75,7 @@ var (
 		"periodic_resync",                 // whether the sync was periodic resync or an update caused by a resource change
 		l4WeightedLBPodsPerNodeMetricName, // whether the service uses weighted load balancing by pods-per-node
 		l4LabelProtocol,                   // protocol of the service, "TCP", "UDP", "MIXED", or "" by default.
+		l4LabelLoggingControlEnabled,      // whether the service has logging control enabled through the L4LBConfig annotation
 	}
 	l4LBDualStackSyncLatencyMetricsLabels = append(l4LBSyncLatencyCommonMetricLabels, "ip_families")
 	l4LBSyncErrorMetricLabels             = []string{
@@ -85,6 +86,7 @@ var (
 		"error_type",                      // what type of error it was
 		l4WeightedLBPodsPerNodeMetricName, // whether the service uses weighted load balancing by pods-per-node
 		l4LabelProtocol,                   // protocol of the service, "TCP", "UDP", "MIXED", or "" by default.
+		l4LabelLoggingControlEnabled,      // whether the service has logging control enabled through the L4LBConfig annotation
 	}
 	l4ILBSyncLatency = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -250,20 +252,20 @@ func init() {
 }
 
 // PublishILBSyncMetrics exports metrics related to the L4 ILB sync.
-func PublishILBSyncMetrics(success bool, syncType, gceResource, errType string, startTime time.Time, isResync bool, isWeightedLB bool, protocol L4ProtocolType, isZonalAffinityLB bool) {
-	publishL4ILBSyncLatency(success, syncType, startTime, isResync, isWeightedLB, protocol, isZonalAffinityLB)
+func PublishILBSyncMetrics(success bool, syncType, gceResource, errType string, startTime time.Time, isResync bool, isWeightedLB bool, protocol L4ProtocolType, isZonalAffinityLB bool, isLoggingControlEnabled bool) {
+	publishL4ILBSyncLatency(success, syncType, startTime, isResync, isWeightedLB, protocol, isZonalAffinityLB, isLoggingControlEnabled)
 	if !success {
-		publishL4ILBSyncErrorCount(syncType, gceResource, errType, isWeightedLB, protocol, isZonalAffinityLB)
+		publishL4ILBSyncErrorCount(syncType, gceResource, errType, isWeightedLB, protocol, isZonalAffinityLB, isLoggingControlEnabled)
 	}
 }
 
 // publishL4ILBSyncLatency exports the given sync latency datapoint.
-func publishL4ILBSyncLatency(success bool, syncType string, startTime time.Time, isResync bool, isWeightedLB bool, protocol L4ProtocolType, isZonalAffinityLB bool) {
+func publishL4ILBSyncLatency(success bool, syncType string, startTime time.Time, isResync bool, isWeightedLB bool, protocol L4ProtocolType, isZonalAffinityLB bool, isLoggingControlEnabled bool) {
 	status := statusSuccess
 	if !success {
 		status = statusError
 	}
-	l4ILBSyncLatency.WithLabelValues(status, syncType, strconv.FormatBool(isResync), strconv.FormatBool(isWeightedLB), string(protocol), strconv.FormatBool(isZonalAffinityLB)).Observe(time.Since(startTime).Seconds())
+	l4ILBSyncLatency.WithLabelValues(status, syncType, strconv.FormatBool(isResync), strconv.FormatBool(isWeightedLB), string(protocol), strconv.FormatBool(isLoggingControlEnabled), strconv.FormatBool(isZonalAffinityLB)).Observe(time.Since(startTime).Seconds())
 }
 
 // PublishL4ILBDualStackSyncLatency exports the given sync latency datapoint.
@@ -285,10 +287,10 @@ func PublishL4ILBMultiNetSyncLatency(success bool, syncType string, startTime ti
 }
 
 // PublishNetLBSyncMetrics exports metrics related to the L4 NetLB sync.
-func PublishNetLBSyncMetrics(success bool, syncType, gceResource, errType string, startTime time.Time, isResync bool, isWeightedLB bool, protocol L4ProtocolType, l4BackendType L4BackendType) {
-	publishL4NetLBSync(success, syncType, startTime, isResync, isWeightedLB, protocol, l4BackendType)
+func PublishNetLBSyncMetrics(success bool, syncType, gceResource, errType string, startTime time.Time, isResync bool, isWeightedLB bool, protocol L4ProtocolType, l4BackendType L4BackendType, isLoggingControlEnabled bool) {
+	publishL4NetLBSync(success, syncType, startTime, isResync, isWeightedLB, protocol, l4BackendType, isLoggingControlEnabled)
 	if !success {
-		publishL4NetLBSyncErrorCount(syncType, gceResource, errType, isWeightedLB, protocol)
+		publishL4NetLBSyncErrorCount(syncType, gceResource, errType, isWeightedLB, protocol, isLoggingControlEnabled)
 	}
 }
 
@@ -302,17 +304,17 @@ func PublishL4NetLBMultiNetSyncLatency(success bool, syncType string, startTime 
 }
 
 // publishL4ILBSyncLatency exports the given sync latency datapoint.
-func publishL4ILBSyncErrorCount(syncType, gceResource, errorType string, isWeightedLB bool, protocol L4ProtocolType, isZonalAffinityLB bool) {
-	l4ILBSyncErrorCount.WithLabelValues(syncType, gceResource, errorType, strconv.FormatBool(isWeightedLB), string(protocol), strconv.FormatBool(isZonalAffinityLB)).Inc()
+func publishL4ILBSyncErrorCount(syncType, gceResource, errorType string, isWeightedLB bool, protocol L4ProtocolType, isZonalAffinityLB bool, isLoggingControlEnabled bool) {
+	l4ILBSyncErrorCount.WithLabelValues(syncType, gceResource, errorType, strconv.FormatBool(isWeightedLB), string(protocol), strconv.FormatBool(isLoggingControlEnabled), strconv.FormatBool(isZonalAffinityLB)).Inc()
 }
 
 // publishL4NetLBSync exports latency metrics for L4 NetLB service after sync.
-func publishL4NetLBSync(success bool, syncType string, startTime time.Time, isResync bool, isWeightedLB bool, protocol L4ProtocolType, backendType L4BackendType) {
+func publishL4NetLBSync(success bool, syncType string, startTime time.Time, isResync bool, isWeightedLB bool, protocol L4ProtocolType, backendType L4BackendType, isLoggingControlEnabled bool) {
 	status := statusSuccess
 	if !success {
 		status = statusError
 	}
-	l4NetLBSyncLatency.WithLabelValues(status, syncType, strconv.FormatBool(isResync), strconv.FormatBool(isWeightedLB), string(protocol), string(backendType)).Observe(time.Since(startTime).Seconds())
+	l4NetLBSyncLatency.WithLabelValues(status, syncType, strconv.FormatBool(isResync), strconv.FormatBool(isWeightedLB), string(protocol), strconv.FormatBool(isLoggingControlEnabled), string(backendType)).Observe(time.Since(startTime).Seconds())
 }
 
 // PublishL4NetLBDualStackSyncLatency exports the given sync latency datapoint.
@@ -325,8 +327,8 @@ func PublishL4NetLBDualStackSyncLatency(success bool, syncType, ipFamilies strin
 }
 
 // publishL4NetLBSyncErrorCount exports error count metrics for L4 NetLB after error sync.
-func publishL4NetLBSyncErrorCount(syncType, gceResource, errType string, isWeightedLB bool, protocol L4ProtocolType) {
-	l4NetLBSyncErrorCount.WithLabelValues(syncType, gceResource, errType, strconv.FormatBool(isWeightedLB), string(protocol)).Inc()
+func publishL4NetLBSyncErrorCount(syncType, gceResource, errType string, isWeightedLB bool, protocol L4ProtocolType, isLoggingControlEnabled bool) {
+	l4NetLBSyncErrorCount.WithLabelValues(syncType, gceResource, errType, strconv.FormatBool(isWeightedLB), string(protocol), strconv.FormatBool(isLoggingControlEnabled)).Inc()
 }
 
 func PublishL4RemovedILBLegacyFinalizer() {

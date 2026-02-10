@@ -27,14 +27,15 @@ const (
 	LoggingConditionReconciledReason  = "Reconciled"
 	LoggingConditionReconciledMessage = "Logging configuration reconciled successfully."
 
-	LoggingConditionErrorReason  = "Error"
-	LoggingConditionErrorMessage = "Error reconciling logging configuration."
-
 	LoggingConditionMissingReason        = "Missing"
 	LoggingConditionMissingReasonMessage = "Logging configuration not found."
 
 	LoggingConditionUnmanagedReason        = "Unmanaged"
 	LoggingConditionUnmanagedReasonMessage = "Logging configuration not managed."
+
+	// Conditions that have the error message as the message.
+	LoggingConditionErrorReason   = "Error"
+	LoggingConditionInvalidReason = "Invalid"
 )
 
 func NewConditionLoggingReconciled() metav1.Condition {
@@ -47,13 +48,23 @@ func NewConditionLoggingReconciled() metav1.Condition {
 	}
 }
 
-func NewConditionLoggingError() metav1.Condition {
+func NewConditionLoggingInvalid(err error) metav1.Condition {
+	return metav1.Condition{
+		LastTransitionTime: metav1.Now(),
+		Type:               LoggingConditionType,
+		Status:             metav1.ConditionFalse,
+		Reason:             LoggingConditionInvalidReason,
+		Message:            err.Error(),
+	}
+}
+
+func NewConditionLoggingError(err error) metav1.Condition {
 	return metav1.Condition{
 		LastTransitionTime: metav1.Now(),
 		Type:               LoggingConditionType,
 		Status:             metav1.ConditionFalse,
 		Reason:             LoggingConditionErrorReason,
-		Message:            LoggingConditionErrorMessage,
+		Message:            err.Error(),
 	}
 }
 

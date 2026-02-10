@@ -38,6 +38,8 @@ const (
 	disabledZonalAffinity         = "false"
 	enabledLogging                = "true"
 	disabledLogging               = "false"
+	enabledLoggingControl         = "true"
+	disabledLoggingControl        = "false"
 )
 
 func TestExportILBMetric(t *testing.T) {
@@ -65,8 +67,12 @@ func TestExportILBMetric(t *testing.T) {
 		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: false, WeightedLBPodsPerNode: false, ZonalAffinity: true},
 		Status:                  StatusSuccess,
 	})
-	newMetrics.SetL4ILBService("svc-logging-enabled", L4ServiceState{
-		L4FeaturesServiceLabels: L4FeaturesServiceLabels{LoggingEnabled: true},
+	newMetrics.SetL4ILBService("svc-success-simple", L4ServiceState{
+		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: false, WeightedLBPodsPerNode: false, ZonalAffinity: false, LoggingControlEnabled: false},
+		Status:                  StatusSuccess,
+	})
+	newMetrics.SetL4ILBService("svc-logging-control-enabled", L4ServiceState{
+		L4FeaturesServiceLabels: L4FeaturesServiceLabels{LoggingControlEnabled: true},
 		Status:                  StatusSuccess,
 	})
 	newMetrics.SetL4ILBService("svc-user-error", L4ServiceState{
@@ -101,28 +107,29 @@ func TestExportILBMetric(t *testing.T) {
 
 	newMetrics.exportL4ILBsMetrics()
 
-	verifyL4ILBMetric(t, 1, StatusSuccess, isMultinetwork, isWeightedLBPodsPerNode, enabledZonalAffinity, disabledLogging)
-	verifyL4ILBMetric(t, 2, StatusSuccess, isMultinetwork, notWeightedLBPodsPerNode, disabledZonalAffinity, disabledLogging)
-	verifyL4ILBMetric(t, 1, StatusSuccess, notMultinetwork, isWeightedLBPodsPerNode, disabledZonalAffinity, disabledLogging)
-	verifyL4ILBMetric(t, 1, StatusSuccess, notMultinetwork, notWeightedLBPodsPerNode, enabledZonalAffinity, disabledLogging)
-	verifyL4ILBMetric(t, 1, StatusUserError, notMultinetwork, notWeightedLBPodsPerNode, disabledZonalAffinity, disabledLogging)
-	verifyL4ILBMetric(t, 2, StatusError, notMultinetwork, notWeightedLBPodsPerNode, disabledZonalAffinity, disabledLogging)
-	verifyL4ILBMetric(t, 1, StatusPersistentError, notMultinetwork, notWeightedLBPodsPerNode, disabledZonalAffinity, disabledLogging)
-	verifyL4ILBMetric(t, 1, StatusSuccess, notMultinetwork, notWeightedLBPodsPerNode, disabledZonalAffinity, enabledLogging)
+	verifyL4ILBMetric(t, 1, StatusSuccess, isMultinetwork, isWeightedLBPodsPerNode, enabledZonalAffinity, disabledLoggingControl)
+	verifyL4ILBMetric(t, 2, StatusSuccess, isMultinetwork, notWeightedLBPodsPerNode, disabledZonalAffinity, disabledLoggingControl)
+	verifyL4ILBMetric(t, 1, StatusSuccess, notMultinetwork, isWeightedLBPodsPerNode, disabledZonalAffinity, disabledLoggingControl)
+	verifyL4ILBMetric(t, 1, StatusSuccess, notMultinetwork, notWeightedLBPodsPerNode, enabledZonalAffinity, disabledLoggingControl)
+	verifyL4ILBMetric(t, 1, StatusUserError, notMultinetwork, notWeightedLBPodsPerNode, disabledZonalAffinity, disabledLoggingControl)
+	verifyL4ILBMetric(t, 2, StatusError, notMultinetwork, notWeightedLBPodsPerNode, disabledZonalAffinity, disabledLoggingControl)
+	verifyL4ILBMetric(t, 1, StatusPersistentError, notMultinetwork, notWeightedLBPodsPerNode, disabledZonalAffinity, disabledLoggingControl)
+	verifyL4ILBMetric(t, 1, StatusSuccess, notMultinetwork, notWeightedLBPodsPerNode, disabledZonalAffinity, disabledLoggingControl)
+	verifyL4ILBMetric(t, 1, StatusSuccess, notMultinetwork, notWeightedLBPodsPerNode, disabledZonalAffinity, enabledLoggingControl)
 }
 
-func verifyL4ILBMetric(t *testing.T, expectedCount int, status L4ServiceStatus, multinet string, weightedLBPodsPerNode string, zonalAffinity string, loggingEnabled string) {
+func verifyL4ILBMetric(t *testing.T, expectedCount int, status L4ServiceStatus, multinet string, weightedLBPodsPerNode string, zonalAffinity string, loggingControlEnabled string) {
 	countFloat := testutil.ToFloat64(l4ILBCount.With(prometheus.Labels{
 		l4LabelStatus:                string(status),
 		l4LabelMultinet:              multinet,
 		l4LabelWeightedLBPodsPerNode: weightedLBPodsPerNode,
 		l4LabelZonalAffinity:         zonalAffinity,
 		l4LabelProtocol:              string(L4ProtocolTypeUnknown),
-		l4LabelLoggingEnabled:        loggingEnabled,
+		l4LabelLoggingControlEnabled: loggingControlEnabled,
 	}))
 	actualCount := int(math.Round(countFloat))
 	if expectedCount != actualCount {
-		t.Errorf("expected value %d but got %d for status: %q, multinet: %q, weightedLB: %q, zonalAffinity: %q, loggingEnabled %q", expectedCount, actualCount, status, multinet, weightedLBPodsPerNode, zonalAffinity, loggingEnabled)
+		t.Errorf("expected value %d but got %d for status: %q, multinet: %q, weightedLB: %q, zonalAffinity: %q, loggingControlEnabled: %q", expectedCount, actualCount, status, multinet, weightedLBPodsPerNode, zonalAffinity, loggingControlEnabled)
 	}
 }
 
@@ -151,8 +158,12 @@ func TestExportNetLBMetric(t *testing.T) {
 		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: false, StrongSessionAffinity: false, WeightedLBPodsPerNode: true, BackendType: L4BackendTypeInstanceGroup},
 		Status:                  StatusSuccess,
 	})
-	newMetrics.SetL4NetLBService("svc-logging-enabled", L4ServiceState{
-		L4FeaturesServiceLabels: L4FeaturesServiceLabels{BackendType: L4BackendTypeNEG, LoggingEnabled: true},
+	newMetrics.SetL4NetLBService("svc-success-simple", L4ServiceState{
+		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: false, StrongSessionAffinity: false, WeightedLBPodsPerNode: false, BackendType: L4BackendTypeNEG, LoggingControlEnabled: false},
+		Status:                  StatusSuccess,
+	})
+	newMetrics.SetL4NetLBService("svc-logging-control-enabled", L4ServiceState{
+		L4FeaturesServiceLabels: L4FeaturesServiceLabels{BackendType: L4BackendTypeNEG, LoggingControlEnabled: true},
 		Status:                  StatusSuccess,
 	})
 	newMetrics.SetL4NetLBService("svc-user-error-ssa", L4ServiceState{
@@ -202,21 +213,26 @@ func TestExportNetLBMetric(t *testing.T) {
 		},
 		Status: StatusSuccess,
 	})
+	newMetrics.SetL4NetLBService("svc-logging-enabled", L4ServiceState{
+		L4FeaturesServiceLabels: L4FeaturesServiceLabels{Multinetwork: false, StrongSessionAffinity: false, WeightedLBPodsPerNode: false, BackendType: L4BackendTypeInstanceGroup, DenyFirewallStatus: DenyFirewallStatusNone, LoggingControlEnabled: true},
+		Status:                  StatusSuccess,
+	})
 
 	newMetrics.exportL4NetLBsMetrics()
 
-	verifyL4NetLBMetric(t, 2, StatusSuccess, isMultinetwork, disabledStrongSessionAffinity, notWeightedLBPodsPerNode, L4BackendTypeNEG, disabledLogging, DenyFirewallStatusNone)
-	verifyL4NetLBMetric(t, 1, StatusSuccess, notMultinetwork, enabledStrongSessionAffinity, notWeightedLBPodsPerNode, L4BackendTypeNEG, disabledLogging, DenyFirewallStatusNone)
-	verifyL4NetLBMetric(t, 1, StatusSuccess, notMultinetwork, disabledStrongSessionAffinity, isWeightedLBPodsPerNode, L4BackendTypeInstanceGroup, disabledLogging, DenyFirewallStatusNone)
-	verifyL4NetLBMetric(t, 1, StatusUserError, notMultinetwork, enabledStrongSessionAffinity, notWeightedLBPodsPerNode, L4BackendTypeInstanceGroup, disabledLogging, DenyFirewallStatusNone)
-	verifyL4NetLBMetric(t, 2, StatusError, notMultinetwork, disabledStrongSessionAffinity, notWeightedLBPodsPerNode, L4BackendTypeInstanceGroup, disabledLogging, DenyFirewallStatusNone)
-	verifyL4NetLBMetric(t, 1, StatusPersistentError, notMultinetwork, disabledStrongSessionAffinity, notWeightedLBPodsPerNode, L4BackendTypeInstanceGroup, disabledLogging, DenyFirewallStatusNone)
-	verifyL4NetLBMetric(t, 1, StatusSuccess, notMultinetwork, disabledStrongSessionAffinity, notWeightedLBPodsPerNode, L4BackendTypeNEG, enabledLogging, DenyFirewallStatusNone)
-	verifyL4NetLBMetric(t, 1, StatusSuccess, notMultinetwork, disabledStrongSessionAffinity, notWeightedLBPodsPerNode, L4BackendTypeInstanceGroup, disabledLogging, DenyFirewallStatusDualStack)
-	verifyL4NetLBMetric(t, 1, StatusSuccess, notMultinetwork, disabledStrongSessionAffinity, notWeightedLBPodsPerNode, L4BackendTypeInstanceGroup, disabledLogging, DenyFirewallStatusIPv4)
+	verifyL4NetLBMetric(t, 2, StatusSuccess, isMultinetwork, disabledStrongSessionAffinity, notWeightedLBPodsPerNode, L4BackendTypeNEG, disabledLoggingControl, DenyFirewallStatusNone)
+	verifyL4NetLBMetric(t, 1, StatusSuccess, notMultinetwork, enabledStrongSessionAffinity, notWeightedLBPodsPerNode, L4BackendTypeNEG, disabledLoggingControl, DenyFirewallStatusNone)
+	verifyL4NetLBMetric(t, 1, StatusSuccess, notMultinetwork, disabledStrongSessionAffinity, isWeightedLBPodsPerNode, L4BackendTypeInstanceGroup, disabledLoggingControl, DenyFirewallStatusNone)
+	verifyL4NetLBMetric(t, 1, StatusUserError, notMultinetwork, enabledStrongSessionAffinity, notWeightedLBPodsPerNode, L4BackendTypeInstanceGroup, disabledLoggingControl, DenyFirewallStatusNone)
+	verifyL4NetLBMetric(t, 2, StatusError, notMultinetwork, disabledStrongSessionAffinity, notWeightedLBPodsPerNode, L4BackendTypeInstanceGroup, disabledLoggingControl, DenyFirewallStatusNone)
+	verifyL4NetLBMetric(t, 1, StatusPersistentError, notMultinetwork, disabledStrongSessionAffinity, notWeightedLBPodsPerNode, L4BackendTypeInstanceGroup, disabledLoggingControl, DenyFirewallStatusNone)
+	verifyL4NetLBMetric(t, 1, StatusSuccess, notMultinetwork, disabledStrongSessionAffinity, notWeightedLBPodsPerNode, L4BackendTypeNEG, disabledLoggingControl, DenyFirewallStatusNone)
+	verifyL4NetLBMetric(t, 1, StatusSuccess, notMultinetwork, disabledStrongSessionAffinity, notWeightedLBPodsPerNode, L4BackendTypeInstanceGroup, disabledLoggingControl, DenyFirewallStatusDualStack)
+	verifyL4NetLBMetric(t, 1, StatusSuccess, notMultinetwork, disabledStrongSessionAffinity, notWeightedLBPodsPerNode, L4BackendTypeInstanceGroup, disabledLoggingControl, DenyFirewallStatusIPv4)
+	verifyL4NetLBMetric(t, 1, StatusSuccess, notMultinetwork, disabledStrongSessionAffinity, notWeightedLBPodsPerNode, L4BackendTypeInstanceGroup, enabledLoggingControl, DenyFirewallStatusNone)
 }
 
-func verifyL4NetLBMetric(t *testing.T, expectedCount int, status L4ServiceStatus, multinet string, strongSessionAffinity string, weightedLBPodsPerNode string, backendType L4BackendType, loggingEnabled string, denyFirewalls DenyFirewallStatus) {
+func verifyL4NetLBMetric(t *testing.T, expectedCount int, status L4ServiceStatus, multinet string, strongSessionAffinity string, weightedLBPodsPerNode string, backendType L4BackendType, loggingControlEnabled string, denyFirewalls DenyFirewallStatus) {
 	countFloat := testutil.ToFloat64(l4NetLBCount.With(prometheus.Labels{
 		l4LabelStatus:                string(status),
 		l4LabelMultinet:              multinet,
@@ -224,13 +240,13 @@ func verifyL4NetLBMetric(t *testing.T, expectedCount int, status L4ServiceStatus
 		l4LabelWeightedLBPodsPerNode: weightedLBPodsPerNode,
 		l4LabelBackendType:           string(backendType),
 		l4LabelProtocol:              string(L4ProtocolTypeUnknown),
-		l4LabelLoggingEnabled:        loggingEnabled,
+		l4LabelLoggingControlEnabled: loggingControlEnabled,
 		labelDenyFirewall:            string(denyFirewalls),
 	}))
 	actualCount := int(math.Round(countFloat))
 	if expectedCount != actualCount {
-		t.Errorf("expected value %d but got %d for status: %q, multinet: %q, ssa: %q, weightedLB: %q, backendType: %q, loggingEnabled: %q",
-			expectedCount, actualCount, status, multinet, strongSessionAffinity, weightedLBPodsPerNode, backendType, loggingEnabled)
+		t.Errorf("expected value %d but got %d for status: %q, multinet: %q, ssa: %q, weightedLB: %q, backendType: %q, loggingControlEnabled: %q, denyFirewalls: %q",
+			expectedCount, actualCount, status, multinet, strongSessionAffinity, weightedLBPodsPerNode, backendType, loggingControlEnabled, denyFirewalls)
 	}
 }
 
@@ -278,7 +294,7 @@ func TestMetricsWithProtocol(t *testing.T) {
 		t.Run(fmt.Sprintf("ILB %q", protocol), func(t *testing.T) {
 			countFloat := testutil.ToFloat64(l4ILBCount.With(prometheus.Labels{
 				l4LabelProtocol: string(protocol),
-				/* we test those above */ l4LabelStatus: string(StatusError), l4LabelMultinet: "false", l4LabelWeightedLBPodsPerNode: "false", l4LabelZonalAffinity: "false", l4LabelLoggingEnabled: "false",
+				/* we test those above */ l4LabelStatus: string(StatusError), l4LabelMultinet: "false", l4LabelWeightedLBPodsPerNode: "false", l4LabelZonalAffinity: "false", l4LabelLoggingControlEnabled: "false",
 			}))
 			actual := int(math.Round(countFloat))
 			if want != actual {
@@ -288,7 +304,7 @@ func TestMetricsWithProtocol(t *testing.T) {
 		t.Run(fmt.Sprintf("NetLB %q", protocol), func(t *testing.T) {
 			countFloat := testutil.ToFloat64(l4NetLBCount.With(prometheus.Labels{
 				l4LabelProtocol: string(protocol),
-				/* we test those above */ l4LabelStatus: string(StatusError), l4LabelMultinet: "false", l4LabelStrongSessionAffinity: "false", l4LabelWeightedLBPodsPerNode: "false", l4LabelBackendType: string(L4BackendTypeInstanceGroup), l4LabelLoggingEnabled: "false", labelDenyFirewall: string(DenyFirewallStatusNone),
+				/* we test those above */ l4LabelStatus: string(StatusError), l4LabelMultinet: "false", l4LabelStrongSessionAffinity: "false", l4LabelWeightedLBPodsPerNode: "false", l4LabelBackendType: string(L4BackendTypeInstanceGroup), l4LabelLoggingControlEnabled: "false", labelDenyFirewall: string(DenyFirewallStatusNone),
 			}))
 			actual := int(math.Round(countFloat))
 			if want != actual {

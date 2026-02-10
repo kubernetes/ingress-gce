@@ -16,21 +16,22 @@ func TestPublishILBSyncMetrics(t *testing.T) {
 	l4ILBSyncErrorCount.Reset()
 
 	testValues := []struct {
-		success           bool
-		syncType          string
-		gceResource       string
-		errType           string
-		isResync          bool
-		isWeightedLB      bool
-		protocol          L4ProtocolType
-		isZonalAffinityLB bool
+		success                 bool
+		syncType                string
+		gceResource             string
+		errType                 string
+		isResync                bool
+		isWeightedLB            bool
+		protocol                L4ProtocolType
+		isZonalAffinityLB       bool
+		isLoggingControlEnabled bool
 	}{
-		{success: true, syncType: "new", isResync: false, isWeightedLB: true, protocol: L4ProtocolTypeMixed, isZonalAffinityLB: false},
-		{success: true, syncType: "update", isResync: false, isWeightedLB: false, protocol: L4ProtocolTypeUDP, isZonalAffinityLB: true},
-		{success: true, syncType: "update", isResync: true, isWeightedLB: true, protocol: L4ProtocolTypeUDP, isZonalAffinityLB: false},
-		{success: true, protocol: L4ProtocolTypeTCP},
-		{success: true, syncType: "delete", isResync: false, isWeightedLB: false, protocol: L4ProtocolTypeTCP, isZonalAffinityLB: true},
-		{success: false, syncType: "delete", protocol: L4ProtocolTypeTCP, errType: http.StatusText(http.StatusNotFound), gceResource: "BackendService"},
+		{success: true, syncType: "new", isResync: false, isWeightedLB: true, protocol: L4ProtocolTypeMixed, isZonalAffinityLB: false, isLoggingControlEnabled: true},
+		{success: true, syncType: "update", isResync: false, isWeightedLB: false, protocol: L4ProtocolTypeUDP, isZonalAffinityLB: true, isLoggingControlEnabled: false},
+		{success: true, syncType: "update", isResync: true, isWeightedLB: true, protocol: L4ProtocolTypeUDP, isZonalAffinityLB: false, isLoggingControlEnabled: true},
+		{success: true, protocol: L4ProtocolTypeTCP, isLoggingControlEnabled: false},
+		{success: true, syncType: "delete", isResync: false, isWeightedLB: false, protocol: L4ProtocolTypeTCP, isZonalAffinityLB: true, isLoggingControlEnabled: true},
+		{success: false, syncType: "delete", protocol: L4ProtocolTypeTCP, errType: http.StatusText(http.StatusNotFound), gceResource: "BackendService", isLoggingControlEnabled: false},
 		{success: false, syncType: "create", protocol: L4ProtocolTypeTCP, errType: http.StatusText(http.StatusInternalServerError), gceResource: "ForwardingRule"},
 		{success: false, syncType: "update", protocol: L4ProtocolTypeMixed, errType: "k8s Forbidden"},
 	}
@@ -81,6 +82,18 @@ func TestPublishILBSyncMetrics(t *testing.T) {
 			},
 			count: 2,
 		},
+		{
+			labels: prometheus.Labels{
+				"logging_control_enabled": "true",
+			},
+			count: 3,
+		},
+		{
+			labels: prometheus.Labels{
+				"logging_control_enabled": "false",
+			},
+			count: 5,
+		},
 	}
 
 	wantErrors := []struct {
@@ -119,7 +132,7 @@ func TestPublishILBSyncMetrics(t *testing.T) {
 
 	// Act
 	for _, v := range testValues {
-		PublishILBSyncMetrics(v.success, v.syncType, v.gceResource, v.errType, time.Now(), v.isResync, v.isWeightedLB, v.protocol, v.isZonalAffinityLB)
+		PublishILBSyncMetrics(v.success, v.syncType, v.gceResource, v.errType, time.Now(), v.isResync, v.isWeightedLB, v.protocol, v.isZonalAffinityLB, v.isLoggingControlEnabled)
 	}
 
 	// Assert
@@ -158,19 +171,20 @@ func TestPublishNetLBSyncMetrics(t *testing.T) {
 	l4NetLBSyncErrorCount.Reset()
 
 	testValues := []struct {
-		success      bool
-		syncType     string
-		gceResource  string
-		errType      string
-		isResync     bool
-		isWeightedLB bool
-		protocol     L4ProtocolType
-		backendType  L4BackendType
+		success                 bool
+		syncType                string
+		gceResource             string
+		errType                 string
+		isResync                bool
+		isWeightedLB            bool
+		protocol                L4ProtocolType
+		backendType             L4BackendType
+		isLoggingControlEnabled bool
 	}{
-		{success: true, syncType: "new", isResync: false, isWeightedLB: true, protocol: L4ProtocolTypeMixed, backendType: L4BackendTypeNEG},
-		{success: true, syncType: "update", isResync: false, isWeightedLB: false, protocol: L4ProtocolTypeUDP, backendType: L4BackendTypeInstanceGroup},
-		{success: true, syncType: "update", isResync: true, isWeightedLB: true, protocol: L4ProtocolTypeUDP, backendType: L4BackendTypeNEG},
-		{success: true, protocol: L4ProtocolTypeTCP, backendType: L4BackendTypeNEG},
+		{success: true, syncType: "new", isResync: false, isWeightedLB: true, protocol: L4ProtocolTypeMixed, backendType: L4BackendTypeNEG, isLoggingControlEnabled: true},
+		{success: true, syncType: "update", isResync: false, isWeightedLB: false, protocol: L4ProtocolTypeUDP, backendType: L4BackendTypeInstanceGroup, isLoggingControlEnabled: false},
+		{success: true, syncType: "update", isResync: true, isWeightedLB: true, protocol: L4ProtocolTypeUDP, backendType: L4BackendTypeNEG, isLoggingControlEnabled: true},
+		{success: true, protocol: L4ProtocolTypeTCP, backendType: L4BackendTypeNEG, isLoggingControlEnabled: false},
 		{success: true, syncType: "delete", isResync: false, isWeightedLB: false, protocol: L4ProtocolTypeTCP, backendType: L4BackendTypeInstanceGroup},
 		{success: false, syncType: "delete", protocol: L4ProtocolTypeTCP, errType: http.StatusText(http.StatusNotFound), gceResource: "BackendService"},
 		{success: false, syncType: "create", protocol: L4ProtocolTypeTCP, errType: http.StatusText(http.StatusInternalServerError), gceResource: "ForwardingRule"},
@@ -223,6 +237,18 @@ func TestPublishNetLBSyncMetrics(t *testing.T) {
 			},
 			count: 3,
 		},
+		{
+			labels: prometheus.Labels{
+				"logging_control_enabled": "true",
+			},
+			count: 2,
+		},
+		{
+			labels: prometheus.Labels{
+				"logging_control_enabled": "false",
+			},
+			count: 6,
+		},
 	}
 
 	wantErrors := []struct {
@@ -261,7 +287,7 @@ func TestPublishNetLBSyncMetrics(t *testing.T) {
 
 	// Act
 	for _, v := range testValues {
-		PublishNetLBSyncMetrics(v.success, v.syncType, v.gceResource, v.errType, time.Now(), v.isResync, v.isWeightedLB, v.protocol, v.backendType)
+		PublishNetLBSyncMetrics(v.success, v.syncType, v.gceResource, v.errType, time.Now(), v.isResync, v.isWeightedLB, v.protocol, v.backendType, v.isLoggingControlEnabled)
 	}
 
 	// Assert

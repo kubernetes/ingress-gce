@@ -557,6 +557,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		l4.recorder.Eventf(l4.Service, corev1.EventTypeWarning, l4lbconfig.GetReasonForError(err), "Failed to apply L4LBConfig: %v", err)
 	}
 	logConfigControlEnabled := loggingCondition.Status == metav1.ConditionTrue
+	result.MetricsState.LoggingControlEnabled = logConfigControlEnabled
 
 	backendParams := backends.L4BackendServiceParams{
 		Name:                     bsName,
@@ -578,7 +579,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	if err != nil {
 		if logConfigControlEnabled {
 			// Set condition if there is an error and logging control is enabled
-			result.Conditions = append(result.Conditions, l4lbconfig.NewConditionLoggingError())
+			result.Conditions = append(result.Conditions, l4lbconfig.NewConditionLoggingError(err))
 		}
 
 		if utils.IsUnsupportedFeatureError(err, string(backends.LocalityLbPolicyRendezvous)) {
@@ -598,7 +599,6 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 
 	result.Annotations[l4annotations.BackendServiceKey] = bsName
 	if bs != nil && bs.LogConfig != nil {
-		result.MetricsState.LoggingEnabled = bs.LogConfig.Enable
 		result.ObservedLoggingConfig = bs.LogConfig
 	}
 
