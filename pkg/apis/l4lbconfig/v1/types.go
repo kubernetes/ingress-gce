@@ -37,6 +37,8 @@ type L4LBConfig struct {
 // +k8s:openapi-gen=true
 type L4LBConfigSpec struct {
 	// Logging defines the telemetry and flow logging configuration for the L4 Load Balancer.
+	// +k8s:validation:cel[0]:rule="(has(self.optionalMode) && self.optionalMode == 'CUSTOM' && has(self.optionalFields) && size(self.optionalFields) > 0) || ((!has(self.optionalMode) || self.optionalMode != 'CUSTOM') && (!has(self.optionalFields) || size(self.optionalFields) == 0))"
+	// +k8s:validation:cel[0]:message="optionalFields can only be set when optionalMode is 'CUSTOM', and must be set when optionalMode is 'CUSTOM'"
 	// +optional
 	Logging *LoggingConfig `json:"logging,omitempty"`
 }
@@ -57,7 +59,6 @@ type L4LBConfigList struct {
 }
 
 // LoggingConfig defines the parameters for LB logging.
-// +kubebuilder:validation:XValidation:rule="has(self.optionalFields) && size(self.optionalFields) > 0 ? self.optionalMode == 'CUSTOM' : true",message="optionalFields can only be set when optionalMode is 'CUSTOM'"
 // +k8s:openapi-gen=true
 type LoggingConfig struct {
 	// Enabled allows toggling of Cloud Logging.
@@ -66,16 +67,15 @@ type LoggingConfig struct {
 
 	// SampleRate is the percentage of flows to log, from 0 to 1000000.
 	// 1000000 means 100% of packets are logged.
-	// +kubebuilder:validation:Minimum=0
-	// +kubebuilder:validation:Maximum=1000000
+	// +k8s:validation:maximum=1000000
+	// +k8s:validation:minimum=0
 	// +optional
 	SampleRate *int32 `json:"sampleRate,omitempty"`
 
 	// OptionalMode defines which metadata fields to include in the logs.
 	// Options: INCLUDE_ALL_OPTIONAL, EXCLUDE_ALL_OPTIONAL, CUSTOM.
-	// +kubebuilder:validation:Enum=INCLUDE_ALL_OPTIONAL;EXCLUDE_ALL_OPTIONAL;CUSTOM
 	// +optional
-	OptionalMode string `json:"optionalMode,omitempty"`
+	OptionalMode LoggingOptionalMode `json:"optionalMode,omitempty"`
 
 	// OptionalFields is a list of additional metadata fields to include.
 	// Only valid when optionalMode is set to 'CUSTOM'.
@@ -83,3 +83,13 @@ type LoggingConfig struct {
 	// +optional
 	OptionalFields []string `json:"optionalFields,omitempty"`
 }
+
+// +k8s:openapi-gen=true
+// +enum
+type LoggingOptionalMode string
+
+const (
+	LoggingOptionalModeIncludeAllOptional = LoggingOptionalMode("INCLUDE_ALL_OPTIONAL")
+	LoggingOptionalModeExcludeAllOptional = LoggingOptionalMode("EXCLUDE_ALL_OPTIONAL")
+	LoggingOptionalModeCustom             = LoggingOptionalMode("CUSTOM")
+)

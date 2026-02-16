@@ -28,14 +28,13 @@ import (
 	"k8s.io/ingress-gce/pkg/crd"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/l4annotations"
-	common "k8s.io/kube-openapi/pkg/common"
 )
 
 var (
-	ErrL4LBConfigDoesNotExist = errors.New("no L4LBConfig for service port exists.")
-	ErrL4LBConfigFailedToGet  = errors.New("client had error getting L4LBConfig for service.")
-	ErrL4LBConfigInvalidMode  = errors.New("invalid OptionalMode in L4LBConfig for service.")
-	allowedOptionalModes      = []interface{}{"INCLUDE_ALL_OPTIONAL", "EXCLUDE_ALL_OPTIONAL", "CUSTOM"}
+	ErrL4LBConfigDoesNotExist      = errors.New("no L4LBConfig for service port exists.")
+	ErrL4LBConfigFailedToGet       = errors.New("client had error getting L4LBConfig for service.")
+	ErrL4LBConfigInvalidMode       = errors.New("invalid OptionalMode in L4LBConfig for service.")
+	ErrL4LBConfigInvalidSampleRate = errors.New("invalid SampleRate in L4LBConfig for service.")
 )
 
 const (
@@ -52,6 +51,8 @@ const (
 	minSampleRate = 0.0
 	// defaultSampleRate is the default value for composite.BackendServiceLogConfig.SampleRate when not specified.
 	defaultSampleRate = 1.0
+	// maxResolvedSampleRate is the maximum allowed value for the resolved SampleRate after conversion (100% as a decimal).
+	maxResolvedSampleRate = 1.0
 )
 
 func CRDMeta() *crd.CRDMeta {
@@ -62,35 +63,10 @@ func CRDMeta() *crd.CRDMeta {
 		"l4lbconfig",
 		"l4lbconfigs",
 		[]*crd.Version{
-			crd.NewVersion("v1", "k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1.L4LBConfig", getOpenAPIDefinitions, false),
+			crd.NewVersion("v1", "k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1.L4LBConfig", l4lbconfigv1.GetOpenAPIDefinitions, false),
 		},
 	)
 	return meta
-}
-
-func getOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenAPIDefinition {
-	defs := l4lbconfigv1.GetOpenAPIDefinitions(ref)
-
-	if def, ok := defs["k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1.LoggingConfig"]; ok {
-		// Patch SampleRate
-		if prop, ok := def.Schema.SchemaProps.Properties["sampleRate"]; ok {
-			min := minSampleRate
-			max := maxSampleRate
-			prop.SchemaProps.Minimum = &min
-			prop.SchemaProps.Maximum = &max
-			def.Schema.SchemaProps.Properties["sampleRate"] = prop
-		}
-
-		// Patch OptionalMode (Enum)
-		if prop, ok := def.Schema.SchemaProps.Properties["optionalMode"]; ok {
-			prop.SchemaProps.Enum = allowedOptionalModes
-			def.Schema.SchemaProps.Properties["optionalMode"] = prop
-		}
-
-		defs["k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1.LoggingConfig"] = def
-	}
-
-	return defs
 }
 
 // GetL4LBConfigForService returns the corresponding L4LBConfig for
@@ -152,11 +128,13 @@ func DetermineL4LoggingConfig(
 		OptionalFields: slc.OptionalFields,
 	}
 
-	resolvedConfig.OptionalMode = slc.OptionalMode
+	resolvedConfig.OptionalMode = string(slc.OptionalMode)
 	if resolvedConfig.OptionalMode == "" { // Set default if not specified
 		resolvedConfig.OptionalMode = "EXCLUDE_ALL_OPTIONAL"
 	}
 
+	// Double-check OptionalMode validity before proceeding with OptionalFields checks
+	// Validation already occurs at the API level, but this serves as a safeguard against any unexpected values.
 	switch resolvedConfig.OptionalMode {
 	case "EXCLUDE_ALL_OPTIONAL", "INCLUDE_ALL_OPTIONAL", "CUSTOM":
 		// Valid
@@ -164,6 +142,8 @@ func DetermineL4LoggingConfig(
 		return nil, NewConditionLoggingInvalid(ErrL4LBConfigInvalidMode), ErrL4LBConfigInvalidMode
 	}
 
+	// Double-check consistency between OptionalMode and OptionalFields
+	// Validation already occurs at the API level, but this serves as a safeguard against any unexpected states.
 	if resolvedConfig.OptionalMode != "CUSTOM" && len(resolvedConfig.OptionalFields) > 0 {
 		return nil, NewConditionLoggingInvalid(ErrL4LBConfigInvalidMode), ErrL4LBConfigInvalidMode
 	}
@@ -176,6 +156,12 @@ func DetermineL4LoggingConfig(
 		resolvedConfig.SampleRate = float64(*slc.SampleRate) / maxSampleRate
 	} else {
 		resolvedConfig.SampleRate = defaultSampleRate
+	}
+
+	// Doube-check SampleRate validity before returning the resolved config
+	// Validation already occurs at the API level, but this serves as a safeguard against any unexpected values.
+	if resolvedConfig.SampleRate < minSampleRate || resolvedConfig.SampleRate > maxResolvedSampleRate {
+		return nil, NewConditionLoggingInvalid(ErrL4LBConfigInvalidSampleRate), ErrL4LBConfigInvalidSampleRate
 	}
 
 	return resolvedConfig, NewConditionLoggingReconciled(), nil

@@ -24,6 +24,7 @@ package v1
 import (
 	common "k8s.io/kube-openapi/pkg/common"
 	spec "k8s.io/kube-openapi/pkg/validation/spec"
+	ptr "k8s.io/utils/ptr"
 )
 
 func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenAPIDefinition {
@@ -90,6 +91,11 @@ func schema_pkg_apis_l4lbconfig_v1_L4LBConfigSpec(ref common.ReferenceCallback) 
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
 					"logging": {
+						VendorExtensible: spec.VendorExtensible{
+							Extensions: spec.Extensions{
+								"x-kubernetes-validations": []interface{}{map[string]interface{}{"message": "optionalFields can only be set when optionalMode is 'CUSTOM', and must be set when optionalMode is 'CUSTOM'", "rule": "(has(self.optionalMode) && self.optionalMode == 'CUSTOM' && has(self.optionalFields) && size(self.optionalFields) > 0) || ((!has(self.optionalMode) || self.optionalMode != 'CUSTOM') && (!has(self.optionalFields) || size(self.optionalFields) == 0))"}},
+							},
+						},
 						SchemaProps: spec.SchemaProps{
 							Description: "Logging defines the telemetry and flow logging configuration for the L4 Load Balancer.",
 							Ref:         ref("k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1.LoggingConfig"),
@@ -132,15 +138,18 @@ func schema_pkg_apis_l4lbconfig_v1_LoggingConfig(ref common.ReferenceCallback) c
 					"sampleRate": {
 						SchemaProps: spec.SchemaProps{
 							Description: "SampleRate is the percentage of flows to log, from 0 to 1000000. 1000000 means 100% of packets are logged.",
+							Minimum:     ptr.To[float64](0),
+							Maximum:     ptr.To[float64](1e+06),
 							Type:        []string{"integer"},
 							Format:      "int32",
 						},
 					},
 					"optionalMode": {
 						SchemaProps: spec.SchemaProps{
-							Description: "OptionalMode defines which metadata fields to include in the logs. Options: INCLUDE_ALL_OPTIONAL, EXCLUDE_ALL_OPTIONAL, CUSTOM.",
+							Description: "OptionalMode defines which metadata fields to include in the logs. Options: INCLUDE_ALL_OPTIONAL, EXCLUDE_ALL_OPTIONAL, CUSTOM.\n\nPossible enum values:\n - `\"CUSTOM\"`\n - `\"EXCLUDE_ALL_OPTIONAL\"`\n - `\"INCLUDE_ALL_OPTIONAL\"`",
 							Type:        []string{"string"},
 							Format:      "",
+							Enum:        []interface{}{"CUSTOM", "EXCLUDE_ALL_OPTIONAL", "INCLUDE_ALL_OPTIONAL"},
 						},
 					},
 					"optionalFields": {
