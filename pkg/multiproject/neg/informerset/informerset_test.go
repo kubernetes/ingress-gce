@@ -8,12 +8,18 @@ import (
 	nodetopologyclient "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned"
 	nodetopologyfake "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned/fake"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	svcnegfake "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 	ktesting "k8s.io/klog/v2/ktesting"
+
+	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
+	networkingv1 "k8s.io/api/networking/v1"
+	"k8s.io/ingress-gce/pkg/test"
 )
 
 // TestNewInformerSet_OptionalClients verifies that optional informers are created
@@ -124,6 +130,22 @@ func TestStart_Semantics(t *testing.T) {
 		t.Parallel()
 
 		kubeClient := k8sfake.NewSimpleClientset()
+
+		resources := []struct {
+			res string
+			obj runtime.Object
+		}{
+			{"ingresses", &networkingv1.Ingress{ObjectMeta: test.DefaultBookmarkObjectMeta}},
+			{"services", &corev1.Service{ObjectMeta: test.DefaultBookmarkObjectMeta}},
+			{"pods", &corev1.Pod{ObjectMeta: test.DefaultBookmarkObjectMeta}},
+			{"nodes", &corev1.Node{ObjectMeta: test.DefaultBookmarkObjectMeta}},
+			{"endpointslices", &discoveryv1.EndpointSlice{ObjectMeta: test.DefaultBookmarkObjectMeta}},
+		}
+
+		for _, r := range resources {
+			test.PrependBookmarkReactor(&kubeClient.Fake, kubeClient.Tracker(), r.res, r.obj)
+		}
+
 		inf := NewInformerSet(kubeClient, nil, nil, nil, metav1.Duration{Duration: 0})
 
 		stop := make(chan struct{})
@@ -161,6 +183,20 @@ func TestStart_Semantics(t *testing.T) {
 		t.Parallel()
 
 		kubeClient := k8sfake.NewSimpleClientset()
+		// Inject bookmark events for all watched resources
+		resources := []struct {
+			res string
+			obj runtime.Object
+		}{
+			{"ingresses", &networkingv1.Ingress{ObjectMeta: test.DefaultBookmarkObjectMeta}},
+			{"services", &corev1.Service{ObjectMeta: test.DefaultBookmarkObjectMeta}},
+			{"pods", &corev1.Pod{ObjectMeta: test.DefaultBookmarkObjectMeta}},
+			{"nodes", &corev1.Node{ObjectMeta: test.DefaultBookmarkObjectMeta}},
+			{"endpointslices", &discoveryv1.EndpointSlice{ObjectMeta: test.DefaultBookmarkObjectMeta}},
+		}
+		for _, r := range resources {
+			test.PrependBookmarkReactor(&kubeClient.Fake, kubeClient.Tracker(), r.res, r.obj)
+		}
 		inf := NewInformerSet(kubeClient, nil, nil, nil, metav1.Duration{Duration: 0})
 
 		stop := make(chan struct{})
@@ -203,6 +239,21 @@ func TestFilterByProviderConfig_WrappingAndState(t *testing.T) {
 
 	kubeClient := k8sfake.NewSimpleClientset()
 	svcClient := svcnegfake.NewSimpleClientset()
+
+	// Inject bookmark events for all watched resources
+	resources := []struct {
+		res string
+		obj runtime.Object
+	}{
+		{"ingresses", &networkingv1.Ingress{ObjectMeta: test.DefaultBookmarkObjectMeta}},
+		{"services", &corev1.Service{ObjectMeta: test.DefaultBookmarkObjectMeta}},
+		{"pods", &corev1.Pod{ObjectMeta: test.DefaultBookmarkObjectMeta}},
+		{"nodes", &corev1.Node{ObjectMeta: test.DefaultBookmarkObjectMeta}},
+		{"endpointslices", &discoveryv1.EndpointSlice{ObjectMeta: test.DefaultBookmarkObjectMeta}},
+	}
+	for _, r := range resources {
+		test.PrependBookmarkReactor(&kubeClient.Fake, kubeClient.Tracker(), r.res, r.obj)
+	}
 
 	inf := NewInformerSet(kubeClient, svcClient, nil, nil, metav1.Duration{Duration: 0})
 
