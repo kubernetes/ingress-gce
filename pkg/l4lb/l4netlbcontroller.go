@@ -77,17 +77,16 @@ type L4NetLBController struct {
 	// syncTracker tracks the latest time an enqueued service was synced
 	syncTracker utils.TimeTracker
 
-	backendPool                        *backends.Pool
-	instancePool                       instancegroups.Manager
-	igLinker                           *backends.RegionalInstanceGroupLinker
-	negLinker                          backends.Linker
-	forwardingRules                    ForwardingRulesGetter
-	enableForwardingRulesOptimizations bool
-	enableDualStack                    bool
-	enableStrongSessionAffinity        bool
-	serviceVersions                    *serviceVersionsTracker
-	enableNEGSupport                   bool
-	enableNEGAsDefault                 bool
+	backendPool                 *backends.Pool
+	instancePool                instancegroups.Manager
+	igLinker                    *backends.RegionalInstanceGroupLinker
+	negLinker                   backends.Linker
+	forwardingRules             ForwardingRulesGetter
+	enableDualStack             bool
+	enableStrongSessionAffinity bool
+	serviceVersions             *serviceVersionsTracker
+	enableNEGSupport            bool
+	enableNEGAsDefault          bool
 
 	hasSynced func() bool
 
@@ -108,22 +107,21 @@ func NewL4NetLBController(
 
 	backendPool := backends.NewPoolWithConnectionTrackingPolicy(ctx.Cloud, ctx.L4Namer, ctx.EnableL4StrongSessionAffinity)
 	l4netLBc := &L4NetLBController{
-		ctx:                                ctx,
-		stopCh:                             stopCh,
-		zoneGetter:                         ctx.ZoneGetter,
-		backendPool:                        backendPool,
-		namer:                              ctx.L4Namer,
-		instancePool:                       ctx.InstancePool,
-		igLinker:                           backends.NewRegionalInstanceGroupLinker(ctx.InstancePool, backendPool, logger),
-		forwardingRules:                    forwardingrules.New(ctx.Cloud, meta.VersionGA, meta.Regional, logger),
-		enableForwardingRulesOptimizations: ctx.EnableL4NetLBForwardingRulesOptimizations,
-		enableDualStack:                    ctx.EnableL4NetLBDualStack,
-		enableStrongSessionAffinity:        ctx.EnableL4StrongSessionAffinity,
-		enableNEGSupport:                   ctx.EnableL4NetLBNEGs,
-		enableNEGAsDefault:                 ctx.EnableL4NetLBNEGsDefault,
-		serviceVersions:                    NewServiceVersionsTracker(),
-		logger:                             logger,
-		hasSynced:                          ctx.HasSynced,
+		ctx:                         ctx,
+		stopCh:                      stopCh,
+		zoneGetter:                  ctx.ZoneGetter,
+		backendPool:                 backendPool,
+		namer:                       ctx.L4Namer,
+		instancePool:                ctx.InstancePool,
+		igLinker:                    backends.NewRegionalInstanceGroupLinker(ctx.InstancePool, backendPool, logger),
+		forwardingRules:             forwardingrules.New(ctx.Cloud, meta.VersionGA, meta.Regional, logger),
+		enableDualStack:             ctx.EnableL4NetLBDualStack,
+		enableStrongSessionAffinity: ctx.EnableL4StrongSessionAffinity,
+		enableNEGSupport:            ctx.EnableL4NetLBNEGs,
+		enableNEGAsDefault:          ctx.EnableL4NetLBNEGsDefault,
+		serviceVersions:             NewServiceVersionsTracker(),
+		logger:                      logger,
+		hasSynced:                   ctx.HasSynced,
 	}
 	var networkLister cache.Indexer
 	if ctx.NetworkInformer != nil {

@@ -122,27 +122,26 @@ type ControllerContextConfig struct {
 	NumL4NetLBWorkers int
 	ReadOnlyMode      bool
 	// DefaultBackendSvcPortID is the ServicePort for the system default backend.
-	DefaultBackendSvcPort                     utils.ServicePort
-	HealthCheckPath                           string
-	MaxIGSize                                 int
-	RunL4ILBController                        bool
-	RunL4NetLBController                      bool
-	EnableL4ILBDualStack                      bool
-	EnableL4NetLBDualStack                    bool
-	EnableL4StrongSessionAffinity             bool
-	EnableMultinetworking                     bool
-	EnableIngressRegionalExternal             bool
-	EnableWeightedL4ILB                       bool
-	EnableWeightedL4NetLB                     bool
-	EnableL4ILBZonalAffinity                  bool
-	DisableL4LBFirewall                       bool
-	EnableL4NetLBNEGs                         bool
-	EnableL4NetLBNEGsDefault                  bool
-	EnableL4ILBMixedProtocol                  bool
-	EnableL4NetLBMixedProtocol                bool
-	EnableL4NetLBForwardingRulesOptimizations bool
-	EnableL4DenyFirewalls                     bool
-	EnableL4DenyFirewallsRollbackCleanup      bool
+	DefaultBackendSvcPort                utils.ServicePort
+	HealthCheckPath                      string
+	MaxIGSize                            int
+	RunL4ILBController                   bool
+	RunL4NetLBController                 bool
+	EnableL4ILBDualStack                 bool
+	EnableL4NetLBDualStack               bool
+	EnableL4StrongSessionAffinity        bool
+	EnableMultinetworking                bool
+	EnableIngressRegionalExternal        bool
+	EnableWeightedL4ILB                  bool
+	EnableWeightedL4NetLB                bool
+	EnableL4ILBZonalAffinity             bool
+	DisableL4LBFirewall                  bool
+	EnableL4NetLBNEGs                    bool
+	EnableL4NetLBNEGsDefault             bool
+	EnableL4ILBMixedProtocol             bool
+	EnableL4NetLBMixedProtocol           bool
+	EnableL4DenyFirewalls                bool
+	EnableL4DenyFirewallsRollbackCleanup bool
 }
 
 // NewControllerContext returns a new shared set of informers.
