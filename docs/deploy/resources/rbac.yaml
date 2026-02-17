@@ -48,7 +48,7 @@ rules:
   resources: ["nodes", "namespaces", "endpoints", "pods"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["networking.gke.io"]
-  resources: ["managedcertificates", "frontendconfigs", "servicenetworkendpointgroups", "gcpingressparams", "serviceattachments", "gkenetworkparamsets", "networks", "gcpfirewalls"]
+  resources: ["managedcertificates", "frontendconfigs", "servicenetworkendpointgroups", "gcpingressparams", "serviceattachments", "gkenetworkparamsets", "networks", "gcpfirewalls", "l4lbconfigs"]
   verbs: ["*"]
 - apiGroups: ["networking.gke.io"]
   resources: ["nodetopologies"]

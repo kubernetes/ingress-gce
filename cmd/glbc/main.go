@@ -192,6 +192,7 @@ func main() {
 	var l4LBConfigClient l4lbconfigclient.Interface
 	if flags.F.ManageL4LBLogging && (flags.F.RunL4Controller || flags.F.RunL4NetLBController) {
 		l4LBConfigCRDMeta := l4lbconfig.CRDMeta()
+		klog.V(0).Info("Ensuring L4LBConfig CRD exists")
 		if _, err := crdHandler.EnsureCRD(l4LBConfigCRDMeta, true); err != nil {
 			klog.Fatalf("Failed to ensure L4LBConfig CRD: %v", err)
 		}
