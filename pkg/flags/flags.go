@@ -96,62 +96,61 @@ var F = struct {
 	ReadOnlyMode              bool
 
 	// Feature flags should be named Enablexxx.
-	EnableNonGCPMode                          bool
-	EnableReadinessReflector                  bool
-	EnableV2FrontendNamer                     bool
-	FinalizerAdd                              bool // Should have been named Enablexxx.
-	FinalizerRemove                           bool // Should have been named Enablexxx.
-	EnablePSC                                 bool
-	EnableTrafficScaling                      bool
-	EnableRecalculateUHCOnBCRemoval           bool
-	EnableTransparentHealthChecks             bool
-	EnableUpdateCustomHealthCheckDescription  bool
-	EnablePinhole                             bool
-	EnableL4ILBDualStack                      bool
-	EnableL4NetLBDualStack                    bool
-	EnableNEGController                       bool
-	EnableL4NEG                               bool
-	EnableL4NetLBNEG                          bool
-	EnableL4NetLBNEGDefault                   bool
-	GateNEGByLock                             bool
-	GateL4ByLock                              bool
-	EnableMultipleIGs                         bool
-	EnableL4StrongSessionAffinity             bool
-	EnableNEGLabelPropagation                 bool
-	EnableMultiNetworking                     bool
-	MaxIGSize                                 int
-	EnableDegradedMode                        bool
-	EnableDegradedModeMetrics                 bool
-	EnableDualStackNEG                        bool
-	EnableFirewallCR                          bool
-	DisableFWEnforcement                      bool
-	DisableL4LBFirewall                       bool
-	EnableIngressRegionalExternal             bool
-	EnableIngressGlobalExternal               bool
-	OverrideComputeAPIEndpoint                string
-	EnableIGMultiSubnetCluster                bool
-	EnableMultiSubnetCluster                  bool
-	EnableMultiSubnetClusterPhase1            bool
-	NodeTopologyCRName                        string
-	EnableWeightedL4ILB                       bool
-	EnableWeightedL4NetLB                     bool
-	EnableDiscretePortForwarding              bool
-	EnableMultiProjectMode                    bool
-	EnableL4ILBZonalAffinity                  bool
-	ProviderConfigNameLabelKey                string
-	EnableL4ILBMixedProtocol                  bool
-	EnableL4NetLBMixedProtocol                bool
-	EnableL4DenyFirewall                      bool
-	EnableL4DenyFirewallRollbackCleanup       bool
-	EnableL4NetLBForwardingRulesOptimizations bool
-	EnableIPV6OnlyNEG                         bool
-	MultiProjectOwnerLabelKey                 string
-	OverrideHealthCheckSourceCIDRs            string
-	ManageL4LBLogging                         bool
-	EnableNEGsForIngress                      bool
-	L4ILBLegacyHeadStartTime                  time.Duration
-	EnableIPv6NodeNEGEndpoints                bool
-	EnableL4NEGDetachCancel                   bool
+	EnableNonGCPMode                         bool
+	EnableReadinessReflector                 bool
+	EnableV2FrontendNamer                    bool
+	FinalizerAdd                             bool // Should have been named Enablexxx.
+	FinalizerRemove                          bool // Should have been named Enablexxx.
+	EnablePSC                                bool
+	EnableTrafficScaling                     bool
+	EnableRecalculateUHCOnBCRemoval          bool
+	EnableTransparentHealthChecks            bool
+	EnableUpdateCustomHealthCheckDescription bool
+	EnablePinhole                            bool
+	EnableL4ILBDualStack                     bool
+	EnableL4NetLBDualStack                   bool
+	EnableNEGController                      bool
+	EnableL4NEG                              bool
+	EnableL4NetLBNEG                         bool
+	EnableL4NetLBNEGDefault                  bool
+	GateNEGByLock                            bool
+	GateL4ByLock                             bool
+	EnableMultipleIGs                        bool
+	EnableL4StrongSessionAffinity            bool
+	EnableNEGLabelPropagation                bool
+	EnableMultiNetworking                    bool
+	MaxIGSize                                int
+	EnableDegradedMode                       bool
+	EnableDegradedModeMetrics                bool
+	EnableDualStackNEG                       bool
+	EnableFirewallCR                         bool
+	DisableFWEnforcement                     bool
+	DisableL4LBFirewall                      bool
+	EnableIngressRegionalExternal            bool
+	EnableIngressGlobalExternal              bool
+	OverrideComputeAPIEndpoint               string
+	EnableIGMultiSubnetCluster               bool
+	EnableMultiSubnetCluster                 bool
+	EnableMultiSubnetClusterPhase1           bool
+	NodeTopologyCRName                       string
+	EnableWeightedL4ILB                      bool
+	EnableWeightedL4NetLB                    bool
+	EnableDiscretePortForwarding             bool
+	EnableMultiProjectMode                   bool
+	EnableL4ILBZonalAffinity                 bool
+	ProviderConfigNameLabelKey               string
+	EnableL4ILBMixedProtocol                 bool
+	EnableL4NetLBMixedProtocol               bool
+	EnableL4DenyFirewall                     bool
+	EnableL4DenyFirewallRollbackCleanup      bool
+	EnableIPV6OnlyNEG                        bool
+	MultiProjectOwnerLabelKey                string
+	OverrideHealthCheckSourceCIDRs           string
+	ManageL4LBLogging                        bool
+	EnableNEGsForIngress                     bool
+	L4ILBLegacyHeadStartTime                 time.Duration
+	EnableIPv6NodeNEGEndpoints               bool
+	EnableL4NEGDetachCancel                  bool
 
 	// EnableL4DenyFirewallExplicitlySet will be set to true if the argument was explicitly set by the user.
 	EnableL4DenyFirewallExplicitlySet bool
@@ -360,7 +359,6 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableL4DenyFirewall, "enable-l4-deny-firewall", false, "Enable creation and updates of Deny VPC Firewall Rules for L4 external load balancers. Requires --enable-pinhole and --enable-l4-deny-firewall-rollback-cleanup to be true.")
 	flag.BoolVar(&F.EnableL4DenyFirewallRollbackCleanup, "enable-l4-deny-firewall-rollback-cleanup", false, "Enable cleanup codepath of the deny firewalls for rollback. The reason for it not being enabled by default is the additional GCE API calls that are made for checking if the deny firewalls exist/deletion which will eat up the quota unnecessarily.")
 	flag.StringVar(&F.ProviderConfigNameLabelKey, "provider-config-name-label-key", "cloud.gke.io/provider-config-name", "The label key for provider-config name, which is used to identify the provider-config of objects in multi-project mode.")
-	flag.BoolVar(&F.EnableL4NetLBForwardingRulesOptimizations, "enable-l4netlb-forwarding-rules-optimizations", false, "Enable optimized processing of forwarding rules for L4 NetLB.")
 	flag.BoolVar(&F.EnableIPV6OnlyNEG, "enable-ipv6-only-neg", false, "Enable support for IPV6 Only NEG's.")
 	flag.StringVar(&F.MultiProjectOwnerLabelKey, "multi-project-owner-label-key", "multiproject.gke.io/owner", "The label key for multi-project owner, which is used to identify the owner of objects in multi-project mode.")
 	flag.StringVar(&F.OverrideHealthCheckSourceCIDRs, "override-health-check-src-cidrs", "", "Overrides the default source IP ranges used when configuring firewall rules to allow health check probes for L7 load balancers. Provide the ranges as a comma-separated list of CIDRs. Example: --override-health-check-src-cidrs=130.211.0.0/22,35.191.0.0/16")
