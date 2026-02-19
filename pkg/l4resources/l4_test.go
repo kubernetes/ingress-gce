@@ -3284,8 +3284,6 @@ func createVMInstanceWithTag(t *testing.T, fakeGCE *gce.Cloud, name, tag string)
 }
 
 func TestEnsureInternalLoadBalancer_L4LBConfigLogging(t *testing.T) {
-	t.Parallel()
-
 	loggingEnabled := &composite.BackendServiceLogConfig{Enable: true, SampleRate: 1.0, OptionalMode: "EXCLUDE_ALL_OPTIONAL"}
 	loggingDisabled := &composite.BackendServiceLogConfig{Enable: false}
 	loggingEnabledWithCustomFields := &composite.BackendServiceLogConfig{

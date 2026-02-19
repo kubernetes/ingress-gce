@@ -2070,8 +2070,6 @@ func assertAddressOldReservedHook(t *testing.T, gceCloud *gce.Cloud) func(ctx co
 }
 
 func TestEnsureL4NetLB_L4LBConfigLogging(t *testing.T) {
-	t.Parallel()
-
 	// Constants for reusable GCE and CRD configurations
 	loggingEnabled := &composite.BackendServiceLogConfig{Enable: true, SampleRate: 1.0, OptionalMode: "EXCLUDE_ALL_OPTIONAL"}
 	loggingDisabled := &composite.BackendServiceLogConfig{Enable: false}
