@@ -56,6 +56,9 @@ const (
 	// to the target proxies of the Ingress.
 	PreSharedCertKey = "ingress.gcp.kubernetes.io/pre-shared-cert"
 
+	// ILBGlobalAccessKey is the annotation key used to enable Global Access for the L7 ILB Forwarding Rule
+	ILBGlobalAccessKey = "ingress.gcp.kubernetes.io/ilb-allow-global-access"
+
 	// IngressClassKey picks a specific "class" for the Ingress. The controller
 	// only processes Ingresses with this annotation either unset, or set
 	// to either gceIngressClass or the empty string.
