@@ -365,6 +365,23 @@ func TestGetSubsetPerZoneMultinetwork(t *testing.T) {
 				{Zone: "zone2", Subnet: ipv6Subnet}:        {"n2_1": {Node: "n2_1", IPv6: "2001:db8:2::1"}},
 			},
 		},
+		{
+			description: "non-default network, IPv6 nodes, IPv6 enabled, target IPv6 network (flag enabled), uncompressed IPv6",
+			nodesMap: map[string][]*nodeWithSubnet{
+				"zone1": {makeNodeWithNetwork(t, "n1_1", "zone1", map[string]string{"net-ipv6": "2001:db8:1:0:0:0:0:1"}), newNodeWithSubnet(makeNodeWithNetwork(t, "n1_2", "zone1", map[string]string{"net-ipv6": "2001:db8:1::2"}).node, ipv6Subnet)},
+			},
+			svcKey: "svc123",
+			networkInfo: network.NetworkInfo{
+				IsDefault:     false,
+				K8sNetwork:    "net-ipv6",
+				SubnetworkURL: ipv6Subnet,
+			},
+			enableIPv6: true,
+			expectedNodesMap: map[types.NEGLocation]map[string]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: {"n1_1": {Node: "n1_1", IPv6: "2001:db8:1::1"}},
+				{Zone: "zone1", Subnet: ipv6Subnet}:        {"n1_2": {Node: "n1_2", IPv6: "2001:db8:1::2"}},
+			},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.description, func(t *testing.T) {
