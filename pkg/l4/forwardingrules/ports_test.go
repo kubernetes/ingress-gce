@@ -6,7 +6,7 @@ import (
 
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/ingress-gce/pkg/forwardingrules"
+	"k8s.io/ingress-gce/pkg/l4/forwardingrules"
 )
 
 func TestGetPorts(t *testing.T) {

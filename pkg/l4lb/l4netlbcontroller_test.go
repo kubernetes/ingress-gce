@@ -46,7 +46,6 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
-	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
@@ -60,7 +59,9 @@ import (
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
 
-	"k8s.io/ingress-gce/pkg/forwardingrules"
+	"k8s.io/cloud-provider-gcp/providers/gce"
+
+	"k8s.io/ingress-gce/pkg/l4/forwardingrules"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"

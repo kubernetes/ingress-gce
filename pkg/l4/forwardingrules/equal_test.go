@@ -7,7 +7,7 @@ import (
 
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
-	"k8s.io/ingress-gce/pkg/forwardingrules"
+	"k8s.io/ingress-gce/pkg/l4/forwardingrules"
 )
 
 func TestEqualIPv4(t *testing.T) {

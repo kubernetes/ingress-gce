@@ -23,13 +23,14 @@ import (
 	"time"
 
 	"google.golang.org/api/compute/v1"
-	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
-	"k8s.io/ingress-gce/pkg/forwardingrules"
+	"k8s.io/ingress-gce/pkg/l4/forwardingrules"
 	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/ingress-gce/pkg/utils"
+
+	"k8s.io/cloud-provider-gcp/providers/gce"
 )
 
 // ensureIPv6Resources creates resources specific to IPv6 L4 Load Balancers:
