@@ -23,7 +23,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
-	"k8s.io/ingress-gce/pkg/address"
+	"k8s.io/ingress-gce/pkg/l4/address"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 
@@ -31,6 +31,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	compute "google.golang.org/api/compute/v1"
+
 	"k8s.io/cloud-provider-gcp/providers/gce"
 )
 
@@ -180,7 +181,6 @@ func TestAddressManagerExternallyOwnedAndOrphaned(t *testing.T) {
 	// ExternallyOwned IP should stay untouched
 	addr, _ = svc.GetRegionAddress(externalName, vals.Region)
 	assert.NotNil(t, addr)
-
 }
 
 // TestAddressManagerNonExisting tests the case where the address can't be reserved

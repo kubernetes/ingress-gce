@@ -5,10 +5,11 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/klog/v2"
+
+	"k8s.io/cloud-provider-gcp/providers/gce"
 )
 
 // IPv4ToUse determines which IPv4 address needs to be used in the ForwardingRule,
