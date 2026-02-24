@@ -9,10 +9,11 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
+
+	"k8s.io/cloud-provider-gcp/providers/gce"
 )
 
 func TestCreateForwardingRule(t *testing.T) {
@@ -210,7 +211,6 @@ func TestListForwardingRules(t *testing.T) {
 
 			// Act
 			got, err := frc.List(tc.filter)
-
 			// Assert
 			if err != nil {
 				t.Fatalf("frc.List(%v), returned error %v, want nil", tc.filter, err)
