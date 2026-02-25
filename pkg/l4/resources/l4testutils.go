@@ -1,4 +1,4 @@
-package l4resources
+package resources
 
 import (
 	"fmt"

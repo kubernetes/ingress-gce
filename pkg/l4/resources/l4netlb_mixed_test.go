@@ -1,4 +1,4 @@
-package l4resources
+package resources
 
 import (
 	"context"
@@ -16,8 +16,8 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/l4/healthchecks"
-	"k8s.io/ingress-gce/pkg/l4resources/mixedprotocoltest"
-	"k8s.io/ingress-gce/pkg/l4resources/mixedprotocoltest/mixedprotocolnetlbtest"
+	"k8s.io/ingress-gce/pkg/l4/resources/mixedprotocoltest"
+	"k8s.io/ingress-gce/pkg/l4/resources/mixedprotocoltest/mixedprotocolnetlbtest"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
