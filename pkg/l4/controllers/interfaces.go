@@ -1,4 +1,4 @@
-package l4lb
+package controllers
 
 import "k8s.io/ingress-gce/pkg/composite"
 

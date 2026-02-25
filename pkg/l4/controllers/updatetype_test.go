@@ -1,4 +1,4 @@
-package l4lb
+package controllers
 
 import (
 	"testing"
