@@ -34,9 +34,9 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/flags"
-	"k8s.io/ingress-gce/pkg/healthchecksl4"
 	"k8s.io/ingress-gce/pkg/l4/address"
 	"k8s.io/ingress-gce/pkg/l4/forwardingrules"
+	"k8s.io/ingress-gce/pkg/l4/healthchecks"
 	"k8s.io/ingress-gce/pkg/l4/metrics"
 	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/ingress-gce/pkg/l4lbconfig"
@@ -71,7 +71,7 @@ type L4NetLB struct {
 	recorder       record.EventRecorder
 	Service        *corev1.Service
 	NamespacedName types.NamespacedName
-	healthChecks   healthchecksl4.L4HealthChecks
+	healthChecks   healthchecks.L4HealthChecks
 	// mixedManager is responsible for managing forwarding rules for mixed protocol lbs
 	mixedManager                       *forwardingrules.MixedManagerNetLB
 	forwardingRules                    ForwardingRulesProvider
@@ -170,7 +170,7 @@ func NewL4NetLB(params *L4NetLBParams, logger klog.Logger) *L4NetLB {
 		Service:                            params.Service,
 		NamespacedName:                     types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace},
 		backendPool:                        backends.NewPoolWithConnectionTrackingPolicy(params.Cloud, params.Namer, params.StrongSessionAffinityEnabled),
-		healthChecks:                       healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder, logger, params.UseDenyFirewalls),
+		healthChecks:                       healthchecks.NewL4HealthChecks(params.Cloud, params.Recorder, logger, params.UseDenyFirewalls),
 		forwardingRules:                    forwardingRulesProvider,
 		mixedManager:                       mixedManager,
 		enableDualStack:                    params.DualStackEnabled,

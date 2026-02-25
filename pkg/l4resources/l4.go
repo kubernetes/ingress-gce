@@ -35,9 +35,9 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/flags"
-	"k8s.io/ingress-gce/pkg/healthchecksl4"
 	"k8s.io/ingress-gce/pkg/l4/address"
 	"k8s.io/ingress-gce/pkg/l4/forwardingrules"
+	"k8s.io/ingress-gce/pkg/l4/healthchecks"
 	"k8s.io/ingress-gce/pkg/l4/metrics"
 	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/ingress-gce/pkg/l4lbconfig"
@@ -74,7 +74,7 @@ type L4 struct {
 	ServicePort                      utils.ServicePort
 	NamespacedName                   types.NamespacedName
 	forwardingRules                  ForwardingRulesProvider
-	healthChecks                     healthchecksl4.L4HealthChecks
+	healthChecks                     healthchecks.L4HealthChecks
 	enableDualStack                  bool
 	network                          network.NetworkInfo
 	networkResolver                  network.Resolver
@@ -139,7 +139,7 @@ func NewL4Handler(params *L4ILBParams, logger klog.Logger) *L4 {
 		namer:                            params.Namer,
 		recorder:                         params.Recorder,
 		Service:                          params.Service,
-		healthChecks:                     healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder, logger, flags.F.EnableL4DenyFirewall),
+		healthChecks:                     healthchecks.NewL4HealthChecks(params.Cloud, params.Recorder, logger, flags.F.EnableL4DenyFirewall),
 		forwardingRules:                  forwardingrules.New(params.Cloud, meta.VersionGA, scope, logger),
 		enableDualStack:                  params.DualStackEnabled,
 		networkResolver:                  params.NetworkResolver,

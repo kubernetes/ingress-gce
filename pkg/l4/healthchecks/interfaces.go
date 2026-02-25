@@ -1,4 +1,4 @@
-package healthchecksl4
+package healthchecks
 
 import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
