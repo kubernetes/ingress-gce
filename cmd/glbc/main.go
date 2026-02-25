@@ -40,7 +40,7 @@ import (
 	"k8s.io/ingress-gce/pkg/frontendconfig"
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/instancegroups"
-	"k8s.io/ingress-gce/pkg/l4lb"
+	"k8s.io/ingress-gce/pkg/l4/controllers"
 	"k8s.io/ingress-gce/pkg/l4lbconfig"
 	l4lbconfigclient "k8s.io/ingress-gce/pkg/l4lbconfig/client/clientset/versioned"
 	multiprojectgce "k8s.io/ingress-gce/pkg/multiproject/common/gce"
@@ -626,8 +626,8 @@ func runL4Controllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.
 	}
 
 	if flags.F.RunL4Controller {
-		l4Controller := l4lb.NewILBController(ctx, option.stopCh, logger)
-		systemHealth.AddHealthCheck(l4lb.L4ILBControllerName, l4Controller.SystemHealth)
+		l4Controller := controllers.NewILBController(ctx, option.stopCh, logger)
+		systemHealth.AddHealthCheck(controllers.L4ILBControllerName, l4Controller.SystemHealth)
 		runWithWg(l4Controller.Run, option.wg)
 		logger.V(0).Info("L4 controller started")
 	}
@@ -654,8 +654,8 @@ func runL4Controllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.
 
 	// The L4NetLbController will be run when RbsMode flag is Set
 	if flags.F.RunL4NetLBController {
-		l4netlbController := l4lb.NewL4NetLBController(ctx, option.stopCh, logger)
-		systemHealth.AddHealthCheck(l4lb.L4NetLBControllerName, l4netlbController.SystemHealth)
+		l4netlbController := controllers.NewL4NetLBController(ctx, option.stopCh, logger)
+		systemHealth.AddHealthCheck(controllers.L4NetLBControllerName, l4netlbController.SystemHealth)
 
 		runWithWg(l4netlbController.Run, option.wg)
 		logger.V(0).Info("L4NetLB controller started")
