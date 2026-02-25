@@ -11,7 +11,7 @@ import (
 	"google.golang.org/api/compute/v1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/ingress-gce/pkg/healthchecksprovider"
+	"k8s.io/ingress-gce/pkg/l4/healthchecks"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
@@ -51,7 +51,7 @@ func (r GCEResources) Create(cloud *gce.Cloud) error {
 	}
 
 	if r.HealthCheck != nil {
-		provider := healthchecksprovider.NewHealthChecks(cloud, meta.VersionGA, klog.TODO())
+		provider := healthchecks.NewHealthChecks(cloud, meta.VersionGA, klog.TODO())
 		if err := provider.Create(r.HealthCheck); err != nil {
 			return fmt.Errorf("healthCheckProvider.Create() returned error %w", err)
 		}
@@ -101,7 +101,7 @@ func VerifyResourcesExist(t *testing.T, cloud *gce.Cloud, want GCEResources) {
 	}
 
 	if want.HealthCheck != nil {
-		provider := healthchecksprovider.NewHealthChecks(cloud, meta.VersionGA, klog.TODO())
+		provider := healthchecks.NewHealthChecks(cloud, meta.VersionGA, klog.TODO())
 		hc, err := provider.Get(want.HealthCheck.Name, want.HealthCheck.Scope)
 		if err != nil {
 			t.Errorf("healthCheckProvider.Get(%v) got err: %v", want.HealthCheck.Name, err)
