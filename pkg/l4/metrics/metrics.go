@@ -48,8 +48,6 @@ const (
 const (
 	label = "feature"
 
-	// Dummy float so we can used bool based timeseries
-	versionValue                 = 1.0
 	persistentErrorThresholdTime = 20 * time.Minute
 )
 

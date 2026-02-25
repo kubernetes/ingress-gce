@@ -36,8 +36,6 @@ const (
 	notWeightedLBPodsPerNode      = "false"
 	enabledZonalAffinity          = "true"
 	disabledZonalAffinity         = "false"
-	enabledLogging                = "true"
-	disabledLogging               = "false"
 	enabledLoggingControl         = "true"
 	disabledLoggingControl        = "false"
 )
