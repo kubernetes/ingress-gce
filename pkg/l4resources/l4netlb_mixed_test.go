@@ -15,7 +15,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/flags"
-	"k8s.io/ingress-gce/pkg/healthchecksl4"
+	"k8s.io/ingress-gce/pkg/l4/healthchecks"
 	"k8s.io/ingress-gce/pkg/l4resources/mixedprotocoltest"
 	"k8s.io/ingress-gce/pkg/l4resources/mixedprotocoltest/mixedprotocolnetlbtest"
 	"k8s.io/ingress-gce/pkg/network"
@@ -172,7 +172,7 @@ func arrangeNetLB(t *testing.T, existing mixedprotocoltest.GCEResources, svc *ap
 		DualStackEnabled:    true,
 	}
 	l4NetLB := NewL4NetLB(params, klog.TODO())
-	l4NetLB.healthChecks = healthchecksl4.Fake(fakeGCE, params.Recorder)
+	l4NetLB.healthChecks = healthchecks.Fake(fakeGCE, params.Recorder)
 
 	if err := fakeGCE.InsertInstance(vals.ProjectID, vals.ZoneName, &compute.Instance{
 		Name: mixedprotocoltest.TestNode,

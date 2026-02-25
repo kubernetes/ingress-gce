@@ -53,8 +53,8 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	ingctx "k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/flags"
-	"k8s.io/ingress-gce/pkg/healthchecksl4"
 	"k8s.io/ingress-gce/pkg/instancegroups"
+	"k8s.io/ingress-gce/pkg/l4/healthchecks"
 	"k8s.io/ingress-gce/pkg/l4/metrics"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
@@ -1597,7 +1597,7 @@ func TestHealthCheckWhenExternalTrafficPolicyWasUpdated(t *testing.T) {
 	// delete shared health check if is created, update service to Cluster and
 	// check that non-shared health check was created
 	hcNameShared := lc.namer.L4HealthCheck(svc.Namespace, svc.Name, true)
-	healthchecksl4.Fake(lc.ctx.Cloud, lc.ctx.Recorder(svc.Namespace)).DeleteHealthCheckWithFirewall(svc, lc.namer, true, meta.Regional, utils.XLB, klog.TODO())
+	healthchecks.Fake(lc.ctx.Cloud, lc.ctx.Recorder(svc.Namespace)).DeleteHealthCheckWithFirewall(svc, lc.namer, true, meta.Regional, utils.XLB, klog.TODO())
 	// Update ExternalTrafficPolicy to Cluster check if shared HC was created
 	err = updateAndAssertExternalTrafficPolicy(newSvc, lc, v1.ServiceExternalTrafficPolicyTypeCluster, hcNameShared)
 	if err != nil {

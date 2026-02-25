@@ -13,7 +13,7 @@ import (
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
-	"k8s.io/ingress-gce/pkg/healthchecksl4"
+	"k8s.io/ingress-gce/pkg/l4/healthchecks"
 	"k8s.io/ingress-gce/pkg/l4resources/mixedprotocoltest"
 	"k8s.io/ingress-gce/pkg/l4resources/mixedprotocoltest/mixedprotocolilbtest"
 	"k8s.io/ingress-gce/pkg/network"
@@ -329,7 +329,7 @@ func arrange(t *testing.T, existing mixedprotocoltest.GCEResources, svc *api_v1.
 	}
 	l4 := NewL4Handler(l4ILBParams, klog.TODO())
 	// For testing use Fake
-	l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ILBParams.Recorder)
+	l4.healthChecks = healthchecks.Fake(fakeGCE, l4ILBParams.Recorder)
 
 	if err := fakeGCE.InsertInstance(vals.ProjectID, vals.ZoneName, &compute.Instance{
 		Name: mixedprotocoltest.TestNode,
