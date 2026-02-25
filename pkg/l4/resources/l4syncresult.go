@@ -16,7 +16,7 @@ limitations under the License.
 package resources
 
 import (
-	"k8s.io/ingress-gce/pkg/l4annotations"
+	"k8s.io/ingress-gce/pkg/l4/annotations"
 )
 
 const (
@@ -26,22 +26,22 @@ const (
 )
 
 var L4ResourceAnnotationKeys = []string{
-	l4annotations.BackendServiceKey,
-	l4annotations.TCPForwardingRuleKey,
-	l4annotations.UDPForwardingRuleKey,
-	l4annotations.L3ForwardingRuleKey,
-	l4annotations.HealthcheckKey,
-	l4annotations.FirewallRuleKey,
-	l4annotations.FirewallRuleDenyKey,
-	l4annotations.FirewallRuleForHealthcheckKey,
+	annotations.BackendServiceKey,
+	annotations.TCPForwardingRuleKey,
+	annotations.UDPForwardingRuleKey,
+	annotations.L3ForwardingRuleKey,
+	annotations.HealthcheckKey,
+	annotations.FirewallRuleKey,
+	annotations.FirewallRuleDenyKey,
+	annotations.FirewallRuleForHealthcheckKey,
 }
 
 var l4IPv6ResourceAnnotationKeys = []string{
-	l4annotations.FirewallRuleIPv6Key,
-	l4annotations.FirewallRuleDenyIPv6Key,
-	l4annotations.FirewallRuleForHealthcheckIPv6Key,
-	l4annotations.TCPForwardingRuleIPv6Key,
-	l4annotations.UDPForwardingRuleIPv6Key,
-	l4annotations.L3ForwardingRuleIPv6Key,
+	annotations.FirewallRuleIPv6Key,
+	annotations.FirewallRuleDenyIPv6Key,
+	annotations.FirewallRuleForHealthcheckIPv6Key,
+	annotations.TCPForwardingRuleIPv6Key,
+	annotations.UDPForwardingRuleIPv6Key,
+	annotations.L3ForwardingRuleIPv6Key,
 }
 var L4DualStackResourceAnnotationKeys = append(L4ResourceAnnotationKeys, l4IPv6ResourceAnnotationKeys...)

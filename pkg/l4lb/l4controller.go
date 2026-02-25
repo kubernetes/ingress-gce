@@ -24,8 +24,8 @@ import (
 	"time"
 
 	l4lbconfigv1 "k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1"
+	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/l4/resources"
-	"k8s.io/ingress-gce/pkg/l4annotations"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -136,7 +136,7 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 		AddFunc: func(obj interface{}) {
 			addSvc := obj.(*v1.Service)
 			svcKey := utils.ServiceKeyFunc(addSvc.Namespace, addSvc.Name)
-			needsILB, svcType := l4annotations.WantsL4ILB(addSvc)
+			needsILB, svcType := annotations.WantsL4ILB(addSvc)
 			svcLogger := logger.WithValues("serviceKey", svcKey)
 			// Check for deletion since updates or deletes show up as Add when controller restarts.
 			if needsILB || l4c.needsDeletion(addSvc) {
@@ -170,7 +170,7 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 				return
 			}
 			// Enqueue ILB services periodically for reasserting that resources exist.
-			needsILB, _ := l4annotations.WantsL4ILB(curSvc)
+			needsILB, _ := annotations.WantsL4ILB(curSvc)
 			if needsILB && reflect.DeepEqual(old, cur) {
 				// this will happen when informers run a resync on all the existing services even when the object is
 				// not modified.
@@ -287,7 +287,7 @@ func (l4c *L4Controller) shouldProcessService(service *v1.Service, svcLogger klo
 	// LoadBalancerClass can't be updated (see the field API doc) so we don't need to worry about cleaning up services that changed the class.
 	// Services with a different loadBalancerClass shouldn't even be added to the queue
 	if service.Spec.LoadBalancerClass != nil {
-		if l4annotations.HasLoadBalancerClass(service, l4annotations.RegionalInternalLoadBalancerClass) {
+		if annotations.HasLoadBalancerClass(service, annotations.RegionalInternalLoadBalancerClass) {
 			return true
 		} else {
 			svcLogger.Info("Ignoring service managed by another controller", "serviceLoadBalancerClass", *service.Spec.LoadBalancerClass)
@@ -562,7 +562,7 @@ func (l4c *L4Controller) sync(key string, svcLogger klog.Logger) error {
 	}
 	// Check again here, to avoid time-of check, time-of-use race. A service queued by informer could have changed, no
 	// longer needing an ILB.
-	if wantsILB, _ := l4annotations.WantsL4ILB(svc); wantsILB {
+	if wantsILB, _ := annotations.WantsL4ILB(svc); wantsILB {
 		svcLogger.V(2).Info("Ensuring ILB resources for service managed by L4 controller")
 		result = l4c.processServiceCreateOrUpdate(svc, svcLogger)
 		if result == nil {
@@ -590,7 +590,7 @@ func (l4c *L4Controller) needsDeletion(svc *v1.Service) bool {
 	if common.IsDeletionCandidateForGivenFinalizer(svc.ObjectMeta, common.ILBFinalizerV2) {
 		return true
 	}
-	needsILB, _ := l4annotations.WantsL4ILB(svc)
+	needsILB, _ := annotations.WantsL4ILB(svc)
 	return !needsILB
 }
 
@@ -599,14 +599,14 @@ func (l4c *L4Controller) needsUpdate(oldService *v1.Service, newService *v1.Serv
 	// Ignore services not handled by this controller.
 	// LoadBalancerClass can't be updated so we know if this controller should not process the ILB.
 	// We don't need to clean any resources if service is controlled by another controller.
-	if newService.Spec.LoadBalancerClass != nil && !l4annotations.HasLoadBalancerClass(newService, l4annotations.RegionalInternalLoadBalancerClass) {
+	if newService.Spec.LoadBalancerClass != nil && !annotations.HasLoadBalancerClass(newService, annotations.RegionalInternalLoadBalancerClass) {
 		return false
 	}
 
 	warnL4FinalizerRemoved(l4c.ctx, oldService, newService)
 
-	oldSvcWantsILB, oldType := l4annotations.WantsL4ILB(oldService)
-	newSvcWantsILB, newType := l4annotations.WantsL4ILB(newService)
+	oldSvcWantsILB, oldType := annotations.WantsL4ILB(oldService)
+	newSvcWantsILB, newType := annotations.WantsL4ILB(newService)
 	recorder := l4c.ctx.Recorder(oldService.Namespace)
 	if oldSvcWantsILB != newSvcWantsILB {
 		recorder.Eventf(newService, v1.EventTypeNormal, "Type", "%v -> %v", oldType, newType)
@@ -618,8 +618,8 @@ func (l4c *L4Controller) needsUpdate(oldService *v1.Service, newService *v1.Serv
 		return false
 	}
 
-	_, oldHasConfig := l4annotations.FromService(oldService).GetL4LBConfigAnnotation()
-	_, newHasConfig := l4annotations.FromService(newService).GetL4LBConfigAnnotation()
+	_, oldHasConfig := annotations.FromService(oldService).GetL4LBConfigAnnotation()
+	_, newHasConfig := annotations.FromService(newService).GetL4LBConfigAnnotation()
 	if oldHasConfig && !newHasConfig {
 		l4c.ctx.Recorder(newService.Namespace).Event(newService, v1.EventTypeWarning, ReasonL4LBConfigAnnotationRemoved, "L4LBConfig annotation has been removed")
 	}
@@ -660,7 +660,7 @@ func (l4c *L4Controller) needsUpdate(oldService *v1.Service, newService *v1.Serv
 	}
 	if !reflect.DeepEqual(oldService.Annotations, newService.Annotations) {
 		// Ignore update if only neg or ilb resources annotations changed, these are added by the neg/l4 controller.
-		if !l4annotations.OnlyStatusAnnotationsChanged(oldService, newService) {
+		if !annotations.OnlyStatusAnnotationsChanged(oldService, newService) {
 			recorder.Eventf(newService, v1.EventTypeNormal, "Annotations", "%v -> %v",
 				oldService.Annotations, newService.Annotations)
 			return true

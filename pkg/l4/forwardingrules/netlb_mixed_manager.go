@@ -11,7 +11,7 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/l4/address"
-	"k8s.io/ingress-gce/pkg/l4annotations"
+	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/utils"
 
 	"k8s.io/cloud-provider-gcp/providers/gce"
@@ -227,7 +227,7 @@ func (m *MixedManagerNetLB) buildWanted(backendServiceLink, name, protocol, ip s
 		ports = nil
 	}
 
-	netTier, _ := l4annotations.NetworkTier(m.Service)
+	netTier, _ := annotations.NetworkTier(m.Service)
 
 	return &composite.ForwardingRule{
 		Name:                name,

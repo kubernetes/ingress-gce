@@ -30,8 +30,8 @@ import (
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/l4/address"
+	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/l4/forwardingrules"
-	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/ingress-gce/pkg/utils"
 
 	"k8s.io/cloud-provider-gcp/providers/gce"
@@ -177,7 +177,7 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 	}
 	frLogger.V(2).Info("ipv6AddressToUse for service", "ipv6AddressToUse", ipv6AddrToUse)
 
-	netTier, isFromAnnotation := l4annotations.NetworkTier(l4netlb.Service)
+	netTier, isFromAnnotation := annotations.NetworkTier(l4netlb.Service)
 	frLogger.V(2).Info("network tier for service", "networkTier", netTier, "isFromAnnotation", isFromAnnotation)
 
 	// IPv6 address is not supported for External Regional Network Load Balancing with Standard network tier.

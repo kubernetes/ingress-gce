@@ -27,7 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	l4lbconfigv1 "k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1"
 	"k8s.io/ingress-gce/pkg/backends"
-	"k8s.io/ingress-gce/pkg/l4annotations"
+	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/klog/v2"
 
@@ -269,7 +269,7 @@ func TestMetricsForStandardNetworkTier(t *testing.T) {
 
 	svc := test.NewL4NetLBRBSService(8080)
 	svc.Spec.LoadBalancerIP = usersIP
-	svc.ObjectMeta.Annotations[l4annotations.NetworkTierAnnotationKey] = string(cloud.NetworkTierStandard)
+	svc.ObjectMeta.Annotations[annotations.NetworkTierAnnotationKey] = string(cloud.NetworkTierStandard)
 	namer := namer_util.NewL4Namer(kubeSystemUID, namer_util.NewNamer(vals.ClusterName, "cluster-fw", klog.TODO()))
 
 	l4NetLBParams := &L4NetLBParams{
@@ -293,7 +293,7 @@ func TestMetricsForStandardNetworkTier(t *testing.T) {
 		t.Errorf("Metrics error: %v", err)
 	}
 	// Check that service sync will return error if User Address IP Network Tier mismatch with service Network Tier.
-	svc.ObjectMeta.Annotations[l4annotations.NetworkTierAnnotationKey] = string(cloud.NetworkTierPremium)
+	svc.ObjectMeta.Annotations[annotations.NetworkTierAnnotationKey] = string(cloud.NetworkTierPremium)
 	result = l4netlb.EnsureFrontend(nodeNames, svc, time.Now())
 	if result.Error == nil || !utils.IsNetworkTierError(result.Error) {
 		t.Errorf("LoadBalancer sync should return Network Tier error, err %v", result.Error)
@@ -308,7 +308,7 @@ func TestMetricsForStandardNetworkTier(t *testing.T) {
 	// Crete new Static IP in Premium Network Tier to match default service Network Tier.
 	createUserStaticIPInPremiumTier(fakeGCE, vals.Region)
 	svc.Spec.LoadBalancerIP = usersIPPremium
-	delete(svc.ObjectMeta.Annotations, l4annotations.NetworkTierAnnotationKey)
+	delete(svc.ObjectMeta.Annotations, annotations.NetworkTierAnnotationKey)
 
 	result = l4netlb.EnsureFrontend(nodeNames, svc, time.Now())
 	if result.Error == nil || !utils.IsNetworkTierError(result.Error) {
@@ -449,7 +449,7 @@ func TestEnsureDualStackNetLBNetworkTierChange(t *testing.T) {
 
 	ipFamilies := []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
 	svc := test.NewL4NetLBRBSDualStackService(v1.ProtocolTCP, ipFamilies, v1.ServiceExternalTrafficPolicyTypeCluster)
-	svc.Annotations[l4annotations.NetworkTierAnnotationKey] = "Standard"
+	svc.Annotations[annotations.NetworkTierAnnotationKey] = "Standard"
 	l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
 
 	// Ensure dualstack load balancer with Standard Network Tier and verify it did not synced successfully.
@@ -459,7 +459,7 @@ func TestEnsureDualStackNetLBNetworkTierChange(t *testing.T) {
 	}
 
 	// Change network Tier to Premium, and trigger sync.
-	svc.Annotations[l4annotations.NetworkTierAnnotationKey] = "Premium"
+	svc.Annotations[annotations.NetworkTierAnnotationKey] = "Premium"
 	result = l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
 	if result.Error == nil {
 		// This is buggy existing behaviour. Switching Network Tier (even before DualStack),
@@ -476,7 +476,7 @@ func TestEnsureDualStackNetLBNetworkTierChange(t *testing.T) {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4NetLB)
 	}
 	l4NetLB.Service.Annotations = result.Annotations
-	svc.Annotations[l4annotations.NetworkTierAnnotationKey] = "Premium"
+	svc.Annotations[annotations.NetworkTierAnnotationKey] = "Premium"
 	assertDualStackNetLBResources(t, l4NetLB, nodeNames)
 
 	l4NetLB.EnsureLoadBalancerDeleted(l4NetLB.Service)
@@ -598,7 +598,7 @@ func TestDualStackNetLBSyncIgnoresNoAnnotationIPv6Resources(t *testing.T) {
 	svc.Annotations = result.Annotations
 
 	// Delete IPv4 resources annotation
-	annotationsToDelete := []string{l4annotations.TCPForwardingRuleIPv6Key, l4annotations.FirewallRuleIPv6Key, l4annotations.FirewallRuleForHealthcheckIPv6Key}
+	annotationsToDelete := []string{annotations.TCPForwardingRuleIPv6Key, annotations.FirewallRuleIPv6Key, annotations.FirewallRuleForHealthcheckIPv6Key}
 	for _, annotationToDelete := range annotationsToDelete {
 		delete(svc.Annotations, annotationToDelete)
 	}
@@ -640,7 +640,7 @@ func TestDualStackNetLBSyncIgnoresNoAnnotationIPv4Resources(t *testing.T) {
 	assertDualStackNetLBResources(t, l4NetLB, nodeNames)
 
 	// Delete IPv4 resources annotation
-	annotationsToDelete := []string{l4annotations.TCPForwardingRuleKey, l4annotations.FirewallRuleKey, l4annotations.FirewallRuleForHealthcheckKey}
+	annotationsToDelete := []string{annotations.TCPForwardingRuleKey, annotations.FirewallRuleKey, annotations.FirewallRuleForHealthcheckKey}
 	for _, annotationToDelete := range annotationsToDelete {
 		delete(svc.Annotations, annotationToDelete)
 	}
@@ -700,7 +700,7 @@ func TestEnsureIPv6ExternalLoadBalancerCustomSubnet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create subnet, error: %v", err)
 	}
-	svc.Annotations[l4annotations.CustomSubnetAnnotationKey] = "test-subnet"
+	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "test-subnet"
 	result = l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
 	if result.Error != nil {
 		t.Fatalf("Failed to ensure loadBalancer, err %v", result.Error)
@@ -714,7 +714,7 @@ func TestEnsureIPv6ExternalLoadBalancerCustomSubnet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create subnet, error: %v", err)
 	}
-	svc.Annotations[l4annotations.CustomSubnetAnnotationKey] = "another-subnet"
+	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "another-subnet"
 	result = l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
 	if result.Error != nil {
 		t.Fatalf("Failed to ensure loadBalancer, err %v", result.Error)
@@ -723,7 +723,7 @@ func TestEnsureIPv6ExternalLoadBalancerCustomSubnet(t *testing.T) {
 	assertDualStackNetLBResourcesWithCustomIPv6Subnet(t, l4NetLB, nodeNames, "another-subnet")
 
 	// remove the annotation - NetLB should revert to default subnet.
-	delete(svc.Annotations, l4annotations.CustomSubnetAnnotationKey)
+	delete(svc.Annotations, annotations.CustomSubnetAnnotationKey)
 	result = l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
@@ -785,7 +785,7 @@ func TestDualStackNetLBBadCustomSubnet(t *testing.T) {
 				t.Fatalf("failed to create subnet %v, error: %v", subnetToCreate, err)
 			}
 
-			svc.Annotations[l4annotations.CustomSubnetAnnotationKey] = customBadSubnetName
+			svc.Annotations[annotations.CustomSubnetAnnotationKey] = customBadSubnetName
 
 			result := l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
 			if result.Error == nil {
@@ -846,7 +846,7 @@ func TestDualStackNetLBNetworkTier(t *testing.T) {
 			svc := test.NewL4NetLBRBSService(8080)
 			l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
 
-			svc.Annotations[l4annotations.NetworkTierAnnotationKey] = tc.networkTier
+			svc.Annotations[annotations.NetworkTierAnnotationKey] = tc.networkTier
 			svc.Spec.IPFamilies = tc.ipFamilies
 
 			result := l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
@@ -919,7 +919,7 @@ func TestDualStackNetLBStaticIPAnnotation(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			svc.Annotations[l4annotations.StaticL4AddressesAnnotationKey] = tc.staticAnnotationVal
+			svc.Annotations[annotations.StaticL4AddressesAnnotationKey] = tc.staticAnnotationVal
 			svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol}
 
 			result := l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
@@ -965,7 +965,7 @@ func TestEnsureIPv6OnlyNetLBNetworkTierChange(t *testing.T) {
 
 	ipFamilies := []v1.IPFamily{v1.IPv6Protocol}
 	svc := test.NewL4NetLBRBSDualStackService(v1.ProtocolTCP, ipFamilies, v1.ServiceExternalTrafficPolicyTypeCluster)
-	svc.Annotations[l4annotations.NetworkTierAnnotationKey] = "Standard"
+	svc.Annotations[annotations.NetworkTierAnnotationKey] = "Standard"
 	l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
 
 	// Initial Sync with Standard Tier: Expect an error - external IPv6 LoadBalancers require Premium Tier.
@@ -975,7 +975,7 @@ func TestEnsureIPv6OnlyNetLBNetworkTierChange(t *testing.T) {
 	}
 
 	// Change network Tier to Premium, and trigger sync.
-	svc.Annotations[l4annotations.NetworkTierAnnotationKey] = "Premium"
+	svc.Annotations[annotations.NetworkTierAnnotationKey] = "Premium"
 
 	// Since the previous sync failed early, no GCE resources should have been created.
 	// This sync should now provision the resources correctly with Premium Tier.
@@ -1020,11 +1020,11 @@ func TestIPv6OnlyNetLBSyncIgnoresNoAnnotationResources(t *testing.T) {
 	assertNetLBResourcesIPv6Only(t, l4NetLB, nodeNames)
 
 	annotationsToDelete := []string{
-		l4annotations.TCPForwardingRuleIPv6Key,
-		l4annotations.FirewallRuleIPv6Key,
-		l4annotations.FirewallRuleForHealthcheckIPv6Key,
-		l4annotations.BackendServiceKey,
-		l4annotations.HealthcheckKey,
+		annotations.TCPForwardingRuleIPv6Key,
+		annotations.FirewallRuleIPv6Key,
+		annotations.FirewallRuleForHealthcheckIPv6Key,
+		annotations.BackendServiceKey,
+		annotations.HealthcheckKey,
 	}
 
 	for _, annotationToDelete := range annotationsToDelete {
@@ -1086,7 +1086,7 @@ func TestEnsureExternalLoadBalancerCustomSubnetIPv6Only(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create subnet, error: %v", err)
 	}
-	svc.Annotations[l4annotations.CustomSubnetAnnotationKey] = "test-subnet"
+	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "test-subnet"
 	result = l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
 	if result.Error != nil {
 		t.Fatalf("Failed to ensure loadBalancer, err %v", result.Error)
@@ -1100,7 +1100,7 @@ func TestEnsureExternalLoadBalancerCustomSubnetIPv6Only(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create subnet, error: %v", err)
 	}
-	svc.Annotations[l4annotations.CustomSubnetAnnotationKey] = "another-subnet"
+	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "another-subnet"
 	result = l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
 	if result.Error != nil {
 		t.Fatalf("Failed to ensure loadBalancer, err %v", result.Error)
@@ -1109,7 +1109,7 @@ func TestEnsureExternalLoadBalancerCustomSubnetIPv6Only(t *testing.T) {
 	assertDualStackNetLBResourcesWithCustomIPv6Subnet(t, l4NetLB, nodeNames, "another-subnet")
 
 	// remove the annotation - NetLB should revert to default subnet.
-	delete(svc.Annotations, l4annotations.CustomSubnetAnnotationKey)
+	delete(svc.Annotations, annotations.CustomSubnetAnnotationKey)
 	result = l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
@@ -1178,7 +1178,7 @@ func TestIPv6OnlyNetLBStaticIPAnnotation(t *testing.T) {
 					t.Fatalf("Failed to reserve address %q: %v", addr.Name, err)
 				}
 			}
-			svc.Annotations[l4annotations.StaticL4AddressesAnnotationKey] = tc.staticAnnotationVal
+			svc.Annotations[annotations.StaticL4AddressesAnnotationKey] = tc.staticAnnotationVal
 
 			result := l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
 			if result.Error != nil {
@@ -1270,7 +1270,7 @@ func TestCheckStrongSessionAffinityRequirements(t *testing.T) {
 			desc:                        "strong session affinity doesn't have required flag",
 			enableStrongSessionAffinity: false,
 			serviceAnnotations: map[string]string{
-				l4annotations.StrongSessionAffinityAnnotationKey: l4annotations.StrongSessionAffinityEnabled,
+				annotations.StrongSessionAffinityAnnotationKey: annotations.StrongSessionAffinityEnabled,
 			},
 			sessionAffinityType:   v1.ServiceAffinityClientIP,
 			sessionAffinityConfig: &v1.SessionAffinityConfig{},
@@ -1288,7 +1288,7 @@ func TestCheckStrongSessionAffinityRequirements(t *testing.T) {
 			desc:                        "strong session affinity has wrong ServiceAffinity type",
 			enableStrongSessionAffinity: true,
 			serviceAnnotations: map[string]string{
-				l4annotations.StrongSessionAffinityAnnotationKey: l4annotations.StrongSessionAffinityEnabled,
+				annotations.StrongSessionAffinityAnnotationKey: annotations.StrongSessionAffinityEnabled,
 			},
 			sessionAffinityType:   v1.ServiceAffinityNone,
 			sessionAffinityConfig: &v1.SessionAffinityConfig{ClientIP: &v1.ClientIPConfig{TimeoutSeconds: proto.Int32(minStrongSessionAffinityIdleTimeout)}},
@@ -1298,7 +1298,7 @@ func TestCheckStrongSessionAffinityRequirements(t *testing.T) {
 			desc:                        "strong session affinity has wrong timeout type",
 			enableStrongSessionAffinity: true,
 			serviceAnnotations: map[string]string{
-				l4annotations.StrongSessionAffinityAnnotationKey: l4annotations.StrongSessionAffinityEnabled,
+				annotations.StrongSessionAffinityAnnotationKey: annotations.StrongSessionAffinityEnabled,
 			},
 			sessionAffinityType:   v1.ServiceAffinityClientIP,
 			sessionAffinityConfig: &v1.SessionAffinityConfig{ClientIP: &v1.ClientIPConfig{TimeoutSeconds: proto.Int32(maxSessionAffinityIdleTimeout + 1)}},
@@ -1308,7 +1308,7 @@ func TestCheckStrongSessionAffinityRequirements(t *testing.T) {
 			desc:                        "strong session affinity has empty ClientIPConfig",
 			enableStrongSessionAffinity: true,
 			serviceAnnotations: map[string]string{
-				l4annotations.StrongSessionAffinityAnnotationKey: l4annotations.StrongSessionAffinityEnabled,
+				annotations.StrongSessionAffinityAnnotationKey: annotations.StrongSessionAffinityEnabled,
 			},
 			sessionAffinityType:   v1.ServiceAffinityClientIP,
 			sessionAffinityConfig: &v1.SessionAffinityConfig{ClientIP: &v1.ClientIPConfig{}},
@@ -1318,7 +1318,7 @@ func TestCheckStrongSessionAffinityRequirements(t *testing.T) {
 			desc:                        "strong session affinity set up is correct",
 			enableStrongSessionAffinity: true,
 			serviceAnnotations: map[string]string{
-				l4annotations.StrongSessionAffinityAnnotationKey: l4annotations.StrongSessionAffinityEnabled,
+				annotations.StrongSessionAffinityAnnotationKey: annotations.StrongSessionAffinityEnabled,
 			},
 			sessionAffinityType:   v1.ServiceAffinityClientIP,
 			sessionAffinityConfig: &v1.SessionAffinityConfig{ClientIP: &v1.ClientIPConfig{TimeoutSeconds: proto.Int32(minStrongSessionAffinityIdleTimeout)}},
@@ -1509,7 +1509,7 @@ func TestWeightedNetLB(t *testing.T) {
 			svc := test.NewL4NetLBRBSService(8080)
 			svc.Spec.ExternalTrafficPolicy = tc.externalTrafficPolicy
 			if tc.addAnnotationForWeighted {
-				svc.Annotations[l4annotations.WeightedL4AnnotationKey] = l4annotations.WeightedL4AnnotationPodsPerNode
+				svc.Annotations[annotations.WeightedL4AnnotationKey] = annotations.WeightedL4AnnotationPodsPerNode
 			}
 
 			nodeNames := []string{"test-node-1"}
@@ -1899,7 +1899,7 @@ func verifyNetLBForwardingRule(l4netlb *L4NetLB, frName string, backendServiceLi
 		return fmt.Errorf("unexpected backend service link '%s' for forwarding rule, expected '%s'", fwdRule.BackendService, backendServiceLink)
 	}
 
-	serviceNetTier, _ := l4annotations.NetworkTier(l4netlb.Service)
+	serviceNetTier, _ := annotations.NetworkTier(l4netlb.Service)
 	if fwdRule.NetworkTier != serviceNetTier.ToGCEValue() {
 		return fmt.Errorf("unexpected network tier '%s' for forwarding rule, expected '%s'", fwdRule.NetworkTier, serviceNetTier.ToGCEValue())
 	}
@@ -1964,42 +1964,42 @@ func buildExpectedNetLBAnnotations(l4netlb *L4NetLB) map[string]string {
 	hcName := l4netlb.namer.L4HealthCheck(l4netlb.Service.Namespace, l4netlb.Service.Name, isSharedHC)
 
 	expectedAnnotations := map[string]string{
-		l4annotations.BackendServiceKey: backendName,
-		l4annotations.HealthcheckKey:    hcName,
+		annotations.BackendServiceKey: backendName,
+		annotations.HealthcheckKey:    hcName,
 	}
 
 	if utils.NeedsIPv4(l4netlb.Service) {
 		hcFwName := l4netlb.namer.L4HealthCheckFirewall(l4netlb.Service.Namespace, l4netlb.Service.Name, isSharedHC)
 
-		expectedAnnotations[l4annotations.FirewallRuleForHealthcheckKey] = hcFwName
-		expectedAnnotations[l4annotations.FirewallRuleKey] = backendName
+		expectedAnnotations[annotations.FirewallRuleForHealthcheckKey] = hcFwName
+		expectedAnnotations[annotations.FirewallRuleKey] = backendName
 
 		ipv4FRName := l4netlb.frName()
 		if proto == v1.ProtocolTCP {
-			expectedAnnotations[l4annotations.TCPForwardingRuleKey] = ipv4FRName
+			expectedAnnotations[annotations.TCPForwardingRuleKey] = ipv4FRName
 		} else {
-			expectedAnnotations[l4annotations.UDPForwardingRuleKey] = ipv4FRName
+			expectedAnnotations[annotations.UDPForwardingRuleKey] = ipv4FRName
 		}
 	}
 	if utils.NeedsIPv6(l4netlb.Service) {
 		ipv6hcFwName := l4netlb.namer.L4IPv6HealthCheckFirewall(l4netlb.Service.Namespace, l4netlb.Service.Name, isSharedHC)
 		ipv6FirewallName := l4netlb.namer.L4IPv6Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)
 
-		expectedAnnotations[l4annotations.FirewallRuleForHealthcheckIPv6Key] = ipv6hcFwName
-		expectedAnnotations[l4annotations.FirewallRuleIPv6Key] = ipv6FirewallName
+		expectedAnnotations[annotations.FirewallRuleForHealthcheckIPv6Key] = ipv6hcFwName
+		expectedAnnotations[annotations.FirewallRuleIPv6Key] = ipv6FirewallName
 
 		ipv6FRName := l4netlb.ipv6FRName()
 		if proto == v1.ProtocolTCP {
-			expectedAnnotations[l4annotations.TCPForwardingRuleIPv6Key] = ipv6FRName
+			expectedAnnotations[annotations.TCPForwardingRuleIPv6Key] = ipv6FRName
 		} else {
-			expectedAnnotations[l4annotations.UDPForwardingRuleIPv6Key] = ipv6FRName
+			expectedAnnotations[annotations.UDPForwardingRuleIPv6Key] = ipv6FRName
 		}
 	}
-	if val, ok := l4netlb.Service.Annotations[l4annotations.CustomSubnetAnnotationKey]; ok {
-		expectedAnnotations[l4annotations.CustomSubnetAnnotationKey] = val
+	if val, ok := l4netlb.Service.Annotations[annotations.CustomSubnetAnnotationKey]; ok {
+		expectedAnnotations[annotations.CustomSubnetAnnotationKey] = val
 	}
-	if val, ok := l4netlb.Service.Annotations[l4annotations.NetworkTierAnnotationKey]; ok {
-		expectedAnnotations[l4annotations.NetworkTierAnnotationKey] = val
+	if val, ok := l4netlb.Service.Annotations[annotations.NetworkTierAnnotationKey]; ok {
+		expectedAnnotations[annotations.NetworkTierAnnotationKey] = val
 	}
 	return expectedAnnotations
 }
@@ -2166,7 +2166,7 @@ func TestEnsureL4NetLB_L4LBConfigLogging(t *testing.T) {
 			lister := cache.NewStore(cache.MetaNamespaceKeyFunc)
 
 			if tc.hasAnnotation {
-				svc.Annotations[l4annotations.L4LBConfigKey] = configName
+				svc.Annotations[annotations.L4LBConfigKey] = configName
 				// Only add to store if we don't expect a "Not Found" error
 				if tc.crdLoggingConfig != nil && !tc.expectError {
 					lister.Add(&l4lbconfigv1.L4LBConfig{

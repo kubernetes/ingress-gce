@@ -30,8 +30,8 @@ import (
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/l4/address"
+	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/l4/forwardingrules"
-	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 
@@ -228,7 +228,7 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 	existingFwdRule := rules.Legacy
 	ipToUse := addrHandle.IP
 	isIPManaged := addrHandle.Managed
-	netTier, _ := l4annotations.NetworkTier(l4netlb.Service)
+	netTier, _ := annotations.NetworkTier(l4netlb.Service)
 	svcPorts := l4netlb.Service.Spec.Ports
 	ports := utils.GetPorts(svcPorts)
 	portRange := utils.MinMaxPortRange(svcPorts)

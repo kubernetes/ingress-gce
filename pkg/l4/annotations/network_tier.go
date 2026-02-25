@@ -1,4 +1,4 @@
-package l4annotations
+package annotations
 
 import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
