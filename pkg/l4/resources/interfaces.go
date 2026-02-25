@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package l4resources
+package resources
 
 import (
 	"k8s.io/ingress-gce/pkg/composite"

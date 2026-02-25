@@ -27,8 +27,8 @@ import (
 	"testing"
 	"time"
 
+	"k8s.io/ingress-gce/pkg/l4/resources"
 	"k8s.io/ingress-gce/pkg/l4annotations"
-	"k8s.io/ingress-gce/pkg/l4resources"
 
 	networkv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1"
 	netfake "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned/fake"
@@ -1729,13 +1729,13 @@ func TestIsRBSBasedService(t *testing.T) {
 func TestIsRBSBasedServiceWithILBServices(t *testing.T) {
 	controller := newL4NetLBServiceController()
 	ilbSvc := test.NewL4ILBService(false, 8080)
-	l4ilbParams := &l4resources.L4ILBParams{
+	l4ilbParams := &resources.L4ILBParams{
 		Service:  ilbSvc,
 		Cloud:    controller.ctx.Cloud,
 		Namer:    controller.namer,
 		Recorder: record.NewFakeRecorder(100),
 	}
-	ilbFrName := l4resources.NewL4Handler(l4ilbParams, klog.TODO()).GetFRName()
+	ilbFrName := resources.NewL4Handler(l4ilbParams, klog.TODO()).GetFRName()
 	ilbSvc.Annotations = map[string]string{
 		l4annotations.TCPForwardingRuleKey: ilbFrName,
 		l4annotations.UDPForwardingRuleKey: ilbFrName,

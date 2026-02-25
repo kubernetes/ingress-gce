@@ -4,7 +4,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/ingress-gce/pkg/l4resources/mixedprotocoltest"
+	"k8s.io/ingress-gce/pkg/l4/resources/mixedprotocoltest"
 )
 
 // TCPResources returns GCE resources for a TCP IPv4 NetLB that listens on ports 80 and 443

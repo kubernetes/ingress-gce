@@ -14,8 +14,8 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/l4/metrics"
+	"k8s.io/ingress-gce/pkg/l4/resources"
 	"k8s.io/ingress-gce/pkg/l4annotations"
-	"k8s.io/ingress-gce/pkg/l4resources"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -304,7 +304,7 @@ func TestDenyRespectsDisableNodeFirewallProvisioning(t *testing.T) {
 		t.Fatal(err)
 	}
 	log := klog.TODO()
-	l4netlb := l4resources.NewL4NetLB(&l4resources.L4NetLBParams{
+	l4netlb := resources.NewL4NetLB(&resources.L4NetLBParams{
 		Service:                            svc,
 		UseDenyFirewalls:                   true,
 		EnableDenyFirewallsRollbackCleanup: true,
@@ -670,8 +670,8 @@ func TestSkipRollbackCleanupIfDisabled(t *testing.T) {
 	}
 }
 
-func helperL4NetLB(cloud *gce.Cloud, log klog.Logger, svc *v1.Service, denyFirewall bool) *l4resources.L4NetLB {
-	return l4resources.NewL4NetLB(&l4resources.L4NetLBParams{
+func helperL4NetLB(cloud *gce.Cloud, log klog.Logger, svc *v1.Service, denyFirewall bool) *resources.L4NetLB {
+	return resources.NewL4NetLB(&resources.L4NetLBParams{
 		Service:                            svc,
 		UseDenyFirewalls:                   denyFirewall,
 		EnableDenyFirewallsRollbackCleanup: true,
@@ -685,8 +685,8 @@ func helperL4NetLB(cloud *gce.Cloud, log klog.Logger, svc *v1.Service, denyFirew
 	}, log)
 }
 
-func helperL4NetLBWithoutCleanup(cloud *gce.Cloud, log klog.Logger, svc *v1.Service) *l4resources.L4NetLB {
-	return l4resources.NewL4NetLB(&l4resources.L4NetLBParams{
+func helperL4NetLBWithoutCleanup(cloud *gce.Cloud, log klog.Logger, svc *v1.Service) *resources.L4NetLB {
+	return resources.NewL4NetLB(&resources.L4NetLBParams{
 		Service:                            svc,
 		UseDenyFirewalls:                   false,
 		EnableDenyFirewallsRollbackCleanup: false,

@@ -1,4 +1,4 @@
-package l4resources
+package resources
 
 /*
 Copyright 2020 The Kubernetes Authors.
