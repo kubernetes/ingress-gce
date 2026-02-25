@@ -13,9 +13,9 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/l4/metrics"
 	"k8s.io/ingress-gce/pkg/l4/resources"
-	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -130,34 +130,34 @@ func TestDenyFirewall(t *testing.T) {
 			desc: "ipv4",
 			svc:  helperService([]v1.IPFamily{v1.IPv4Protocol}),
 			want: map[annotationKey]*compute.Firewall{
-				l4annotations.FirewallRuleKey:     ipv4AllowFirewall,
-				l4annotations.FirewallRuleDenyKey: ipv4DenyFirewall,
+				annotations.FirewallRuleKey:     ipv4AllowFirewall,
+				annotations.FirewallRuleDenyKey: ipv4DenyFirewall,
 			},
 			dontWant: map[annotationKey]resourceName{
-				l4annotations.FirewallRuleIPv6Key:     allowIPv6Name,
-				l4annotations.FirewallRuleDenyIPv6Key: denyIPv6Name,
+				annotations.FirewallRuleIPv6Key:     allowIPv6Name,
+				annotations.FirewallRuleDenyIPv6Key: denyIPv6Name,
 			},
 		},
 		{
 			desc: "ipv6",
 			svc:  helperService([]v1.IPFamily{v1.IPv6Protocol}),
 			want: map[annotationKey]*compute.Firewall{
-				l4annotations.FirewallRuleIPv6Key:     ipv6AllowFirewall,
-				l4annotations.FirewallRuleDenyIPv6Key: ipv6DenyFirewall,
+				annotations.FirewallRuleIPv6Key:     ipv6AllowFirewall,
+				annotations.FirewallRuleDenyIPv6Key: ipv6DenyFirewall,
 			},
 			dontWant: map[annotationKey]resourceName{
-				l4annotations.FirewallRuleKey:     allowIPv4Name,
-				l4annotations.FirewallRuleDenyKey: denyIPv4Name,
+				annotations.FirewallRuleKey:     allowIPv4Name,
+				annotations.FirewallRuleDenyKey: denyIPv4Name,
 			},
 		},
 		{
 			desc: "dual_stack",
 			svc:  helperService([]v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol}),
 			want: map[annotationKey]*compute.Firewall{
-				l4annotations.FirewallRuleKey:         ipv4AllowFirewall,
-				l4annotations.FirewallRuleDenyKey:     ipv4DenyFirewall,
-				l4annotations.FirewallRuleIPv6Key:     ipv6AllowFirewall,
-				l4annotations.FirewallRuleDenyIPv6Key: ipv6DenyFirewall,
+				annotations.FirewallRuleKey:         ipv4AllowFirewall,
+				annotations.FirewallRuleDenyKey:     ipv4DenyFirewall,
+				annotations.FirewallRuleIPv6Key:     ipv6AllowFirewall,
+				annotations.FirewallRuleDenyIPv6Key: ipv6DenyFirewall,
 			},
 		},
 	}
@@ -328,8 +328,8 @@ func TestDenyRespectsDisableNodeFirewallProvisioning(t *testing.T) {
 
 	// With DisableNodesFirewallProvisioning set to true there should not be any deny rules
 	for annotation, name := range map[string]string{
-		l4annotations.FirewallRuleDenyKey:     denyIPv4Name,
-		l4annotations.FirewallRuleDenyIPv6Key: denyIPv6Name,
+		annotations.FirewallRuleDenyKey:     denyIPv4Name,
+		annotations.FirewallRuleDenyIPv6Key: denyIPv6Name,
 	} {
 		if _, ok := res.Annotations[annotation]; ok {
 			t.Fatalf("want no deny firewall annotations, but got %+v", res.Annotations)
@@ -372,8 +372,8 @@ func TestDenyRollforwardDoesNotBlockTraffic(t *testing.T) {
 	// Assert
 	// With flag disabled there should not be any deny rules
 	for annotation, name := range map[string]string{
-		l4annotations.FirewallRuleDenyKey:     denyIPv4Name,
-		l4annotations.FirewallRuleDenyIPv6Key: denyIPv6Name,
+		annotations.FirewallRuleDenyKey:     denyIPv4Name,
+		annotations.FirewallRuleDenyIPv6Key: denyIPv6Name,
 	} {
 		if _, ok := res.Annotations[annotation]; ok {
 			t.Fatalf("want no deny firewall annotations, but got %+v", res.Annotations)
@@ -385,7 +385,7 @@ func TestDenyRollforwardDoesNotBlockTraffic(t *testing.T) {
 	}
 
 	// Check that the default firewalls are at priority 1000
-	for _, key := range []string{l4annotations.FirewallRuleIPv6Key, l4annotations.FirewallRuleKey} {
+	for _, key := range []string{annotations.FirewallRuleIPv6Key, annotations.FirewallRuleKey} {
 		name, ok := res.Annotations[key]
 		if !ok {
 			t.Fatalf("want allow firewall annotation, but got %+v", res.Annotations)
@@ -408,7 +408,7 @@ func TestDenyRollforwardDoesNotBlockTraffic(t *testing.T) {
 
 	// Assert
 	// Deny rules are created at priority 1000
-	for _, key := range []string{l4annotations.FirewallRuleDenyKey, l4annotations.FirewallRuleDenyIPv6Key} {
+	for _, key := range []string{annotations.FirewallRuleDenyKey, annotations.FirewallRuleDenyIPv6Key} {
 		name, ok := res.Annotations[key]
 		if !ok {
 			t.Fatalf("want deny firewall annotation, but got %+v", res.Annotations)
@@ -423,7 +423,7 @@ func TestDenyRollforwardDoesNotBlockTraffic(t *testing.T) {
 	}
 
 	// Allow rules were moved to priority 999
-	for _, key := range []string{l4annotations.FirewallRuleIPv6Key, l4annotations.FirewallRuleKey} {
+	for _, key := range []string{annotations.FirewallRuleIPv6Key, annotations.FirewallRuleKey} {
 		name, ok := res.Annotations[key]
 		if !ok {
 			t.Fatalf("want allow firewall annotation, but got %+v", res.Annotations)
@@ -466,7 +466,7 @@ func TestDenyRollback(t *testing.T) {
 	}
 
 	// Deny rules are created at priority 1000
-	for _, key := range []string{l4annotations.FirewallRuleDenyKey, l4annotations.FirewallRuleDenyIPv6Key} {
+	for _, key := range []string{annotations.FirewallRuleDenyKey, annotations.FirewallRuleDenyIPv6Key} {
 		name, ok := res.Annotations[key]
 		if !ok {
 			t.Fatalf("want deny firewall annotation %v, but got %+v", key, res.Annotations)
@@ -481,7 +481,7 @@ func TestDenyRollback(t *testing.T) {
 	}
 
 	// Allow rules are created with priority 999
-	for _, key := range []string{l4annotations.FirewallRuleIPv6Key, l4annotations.FirewallRuleKey} {
+	for _, key := range []string{annotations.FirewallRuleIPv6Key, annotations.FirewallRuleKey} {
 		name, ok := res.Annotations[key]
 		if !ok {
 			t.Fatalf("want allow firewall annotation %v, but got %+v", key, res.Annotations)
@@ -507,8 +507,8 @@ func TestDenyRollback(t *testing.T) {
 
 	// Deny rules are cleaned up
 	for annotation, name := range map[string]string{
-		l4annotations.FirewallRuleDenyKey:     denyIPv4Name,
-		l4annotations.FirewallRuleDenyIPv6Key: denyIPv6Name,
+		annotations.FirewallRuleDenyKey:     denyIPv4Name,
+		annotations.FirewallRuleDenyIPv6Key: denyIPv6Name,
 	} {
 		if _, ok := res.Annotations[annotation]; ok {
 			t.Fatalf("want no deny firewall annotations, but got %+v", res.Annotations)
@@ -520,7 +520,7 @@ func TestDenyRollback(t *testing.T) {
 	}
 
 	// Check that the default firewalls are at priority 1000
-	for _, key := range []string{l4annotations.FirewallRuleIPv6Key, l4annotations.FirewallRuleKey} {
+	for _, key := range []string{annotations.FirewallRuleIPv6Key, annotations.FirewallRuleKey} {
 		name, ok := res.Annotations[key]
 		if !ok {
 			t.Fatalf("want allow firewall annotation %v, but got %+v", key, res.Annotations)
@@ -712,7 +712,7 @@ func helperService(ipFamily []v1.IPFamily) *v1.Service {
 			Namespace: "default",
 		},
 		Spec: v1.ServiceSpec{
-			LoadBalancerClass: ptr.To(l4annotations.RegionalExternalLoadBalancerClass),
+			LoadBalancerClass: ptr.To(annotations.RegionalExternalLoadBalancerClass),
 			Ports: []v1.ServicePort{
 				{Name: "tcp-80", Protocol: v1.ProtocolTCP, Port: 80},
 				{Name: "udp-1000", Protocol: v1.ProtocolUDP, Port: 1000},

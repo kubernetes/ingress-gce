@@ -36,10 +36,10 @@ import (
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/l4/address"
+	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/l4/forwardingrules"
 	"k8s.io/ingress-gce/pkg/l4/healthchecks"
 	"k8s.io/ingress-gce/pkg/l4/metrics"
-	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/ingress-gce/pkg/l4lbconfig"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -173,7 +173,7 @@ func (l4 *L4) getILBOptions() gce.ILBOptions {
 
 	return gce.ILBOptions{
 		AllowGlobalAccess: gce.GetLoadBalancerAnnotationAllowGlobalAccess(l4.Service),
-		SubnetName:        l4annotations.FromService(l4.Service).GetInternalLoadBalancerAnnotationSubnet(),
+		SubnetName:        annotations.FromService(l4.Service).GetInternalLoadBalancerAnnotationSubnet(),
 	}
 }
 
@@ -198,7 +198,7 @@ func (l4 *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4ILBSyncR
 	err := utils.IgnoreHTTPNotFound(l4.backendPool.Delete(bsName, meta.VersionGA, meta.Regional, l4.svcLogger))
 	if err != nil {
 		l4.svcLogger.Error(err, "Failed to delete backends for internal loadbalancer service")
-		result.GCEResourceInError = l4annotations.BackendServiceResource
+		result.GCEResourceInError = annotations.BackendServiceResource
 		result.Error = err
 	}
 
@@ -256,9 +256,9 @@ func (l4 *L4) deleteIPv4ResourcesOnDelete(result *L4ILBSyncResult) {
 // This function does not delete Backend Service and Health Check, because they are shared between IPv4 and IPv6.
 // IPv4 Firewall Rule for Health Check also will not be deleted here, and will be left till the Service Deletion.
 func (l4 *L4) deleteIPv4ResourcesAnnotationBased(result *L4ILBSyncResult, shouldIgnoreAnnotations bool) {
-	hasFwdRuleAnnotation := l4.hasAnnotation(l4annotations.TCPForwardingRuleKey) ||
-		l4.hasAnnotation(l4annotations.UDPForwardingRuleKey) ||
-		l4.hasAnnotation(l4annotations.L3ForwardingRuleKey)
+	hasFwdRuleAnnotation := l4.hasAnnotation(annotations.TCPForwardingRuleKey) ||
+		l4.hasAnnotation(annotations.UDPForwardingRuleKey) ||
+		l4.hasAnnotation(annotations.L3ForwardingRuleKey)
 	if shouldIgnoreAnnotations || hasFwdRuleAnnotation {
 		var err error
 		if l4.enableDualStack && l4.enableMixedProtocol {
@@ -269,7 +269,7 @@ func (l4 *L4) deleteIPv4ResourcesAnnotationBased(result *L4ILBSyncResult, should
 		if err != nil {
 			l4.svcLogger.Error(err, "Failed to delete forwarding rule for internal loadbalancer service")
 			result.Error = err
-			result.GCEResourceInError = l4annotations.ForwardingRuleResource
+			result.GCEResourceInError = annotations.ForwardingRuleResource
 		}
 	}
 
@@ -279,15 +279,15 @@ func (l4 *L4) deleteIPv4ResourcesAnnotationBased(result *L4ILBSyncResult, should
 	if err != nil {
 		l4.svcLogger.Error(err, "Failed to delete address for internal loadbalancer service")
 		result.Error = err
-		result.GCEResourceInError = l4annotations.AddressResource
+		result.GCEResourceInError = annotations.AddressResource
 	}
 
 	// delete firewall rule allowing load balancer source ranges
-	if shouldIgnoreAnnotations || l4.hasAnnotation(l4annotations.FirewallRuleKey) {
+	if shouldIgnoreAnnotations || l4.hasAnnotation(annotations.FirewallRuleKey) {
 		err := l4.deleteIPv4NodesFirewall()
 		if err != nil {
 			l4.svcLogger.Error(err, "Failed to delete firewall rule for internal loadbalancer service")
-			result.GCEResourceInError = l4annotations.FirewallRuleResource
+			result.GCEResourceInError = annotations.FirewallRuleResource
 			result.Error = err
 		}
 	}
@@ -385,7 +385,7 @@ func (l4 *L4) getFRNameWithProtocol(protocol string) string {
 
 func (l4 *L4) subnetName() string {
 	// At first check custom subnet annotation.
-	customSubnetName := l4annotations.FromService(l4.Service).GetInternalLoadBalancerAnnotationSubnet()
+	customSubnetName := annotations.FromService(l4.Service).GetInternalLoadBalancerAnnotationSubnet()
 	if customSubnetName != "" {
 		return customSubnetName
 	}
@@ -584,11 +584,11 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		}
 
 		if utils.IsUnsupportedFeatureError(err, string(backends.LocalityLbPolicyRendezvous)) {
-			result.GCEResourceInError = l4annotations.BackendServiceResource
+			result.GCEResourceInError = annotations.BackendServiceResource
 			l4.recorder.Eventf(l4.Service, corev1.EventTypeWarning, "AllowlistingRequired", WeightedLBPodsPerNodeAllowlistMessage)
 			result.Error = utils.NewUserError(err)
 		} else {
-			result.GCEResourceInError = l4annotations.BackendServiceResource
+			result.GCEResourceInError = annotations.BackendServiceResource
 			result.Error = err
 		}
 		return result
@@ -598,7 +598,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		result.Conditions = append(result.Conditions, loggingCondition)
 	}
 
-	result.Annotations[l4annotations.BackendServiceKey] = bsName
+	result.Annotations[annotations.BackendServiceKey] = bsName
 	if bs != nil && bs.LogConfig != nil {
 		result.ObservedLoggingConfig = bs.LogConfig
 	}
@@ -652,18 +652,18 @@ func (l4 *L4) provideDualStackHealthChecks(nodeNames []string, result *L4ILBSync
 	}
 
 	if hcResult.HCFirewallRuleName != "" {
-		result.Annotations[l4annotations.FirewallRuleForHealthcheckKey] = hcResult.HCFirewallRuleName
+		result.Annotations[annotations.FirewallRuleForHealthcheckKey] = hcResult.HCFirewallRuleName
 	} else {
-		delete(result.Annotations, l4annotations.FirewallRuleForHealthcheckKey)
+		delete(result.Annotations, annotations.FirewallRuleForHealthcheckKey)
 	}
 
 	if hcResult.HCFirewallRuleIPv6Name != "" {
-		result.Annotations[l4annotations.FirewallRuleForHealthcheckIPv6Key] = hcResult.HCFirewallRuleIPv6Name
+		result.Annotations[annotations.FirewallRuleForHealthcheckIPv6Key] = hcResult.HCFirewallRuleIPv6Name
 	} else {
-		delete(result.Annotations, l4annotations.FirewallRuleForHealthcheckIPv6Key)
+		delete(result.Annotations, annotations.FirewallRuleForHealthcheckIPv6Key)
 	}
 
-	result.Annotations[l4annotations.HealthcheckKey] = hcResult.HCName
+	result.Annotations[annotations.HealthcheckKey] = hcResult.HCName
 	return hcResult.HCLink
 }
 
@@ -677,8 +677,8 @@ func (l4 *L4) provideIPv4HealthChecks(nodeNames []string, result *L4ILBSyncResul
 		result.Error = hcResult.Err
 		return ""
 	}
-	result.Annotations[l4annotations.HealthcheckKey] = hcResult.HCName
-	result.Annotations[l4annotations.FirewallRuleForHealthcheckKey] = hcResult.HCFirewallRuleName
+	result.Annotations[annotations.HealthcheckKey] = hcResult.HCName
+	result.Annotations[annotations.FirewallRuleForHealthcheckKey] = hcResult.HCFirewallRuleName
 	return hcResult.HCLink
 }
 
@@ -703,18 +703,18 @@ func (l4 *L4) ensureIPv4Resources(result *L4ILBSyncResult, nodeNames []string, o
 	result.ResourceUpdates.SetForwardingRule(fwdRuleSyncStatus)
 	if err != nil {
 		l4.svcLogger.Error(err, "ensureIPv4Resources: Failed to ensure forwarding rule for L4 ILB Service")
-		result.GCEResourceInError = l4annotations.ForwardingRuleResource
+		result.GCEResourceInError = annotations.ForwardingRuleResource
 		result.Error = err
 		return
 	}
 
 	switch fr.IPProtocol {
 	case forwardingrules.ProtocolTCP:
-		result.Annotations[l4annotations.TCPForwardingRuleKey] = fr.Name
+		result.Annotations[annotations.TCPForwardingRuleKey] = fr.Name
 	case forwardingrules.ProtocolUDP:
-		result.Annotations[l4annotations.UDPForwardingRuleKey] = fr.Name
+		result.Annotations[annotations.UDPForwardingRuleKey] = fr.Name
 	case forwardingrules.ProtocolL3:
-		result.Annotations[l4annotations.L3ForwardingRuleKey] = fr.Name
+		result.Annotations[annotations.L3ForwardingRuleKey] = fr.Name
 	}
 
 	l4.ensureIPv4NodesFirewall(nodeNames, fr.IPAddress, result)
@@ -776,11 +776,11 @@ func (l4 *L4) ensureIPv4NodesFirewall(nodeNames []string, ipAddress string, resu
 	fwSyncStatus, err := firewalls.EnsureL4LBFirewallForNodes(l4.Service, &nodesFWRParams, l4.cloud, l4.recorder, fwLogger)
 	result.ResourceUpdates.SetFirewallForNodes(fwSyncStatus)
 	if err != nil {
-		result.GCEResourceInError = l4annotations.FirewallRuleResource
+		result.GCEResourceInError = annotations.FirewallRuleResource
 		result.Error = err
 		return
 	}
-	result.Annotations[l4annotations.FirewallRuleKey] = firewallName
+	result.Annotations[annotations.FirewallRuleKey] = firewallName
 }
 
 func (l4 *L4) getServiceSubnetworkURL(options gce.ILBOptions) (string, error) {
@@ -839,7 +839,7 @@ func (l4 *L4) getOldIPv4ForwardingRule(existingBS *composite.BackendService) (*c
 func (l4 *L4) determineBackendServiceLocalityPolicy() backends.LocalityLBPolicyType {
 	// If the ILB service has weighted load balancing enabled, the locality policy will be WEIGHTED_GCP_RENDEZVOUS.
 	if l4.enableWeightedLB {
-		if l4annotations.HasWeightedLBPodsPerNodeAnnotation(l4.Service) {
+		if annotations.HasWeightedLBPodsPerNodeAnnotation(l4.Service) {
 			if l4.Service.Spec.ExternalTrafficPolicy == corev1.ServiceExternalTrafficPolicyTypeLocal {
 				// If the service has the annotation "networking.gke.io/weighted-load-balancing = pods-per-node"
 				// and the external traffic policy is local, weighted load balancing is enabled and the backend

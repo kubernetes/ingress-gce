@@ -26,8 +26,8 @@ import (
 	computebeta "google.golang.org/api/compute/v0.beta"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
+	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/l4/metrics"
-	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
@@ -62,18 +62,18 @@ const (
 
 var (
 	ilbCommonAnnotationKeys = []string{
-		l4annotations.BackendServiceKey,
-		l4annotations.HealthcheckKey,
+		annotations.BackendServiceKey,
+		annotations.HealthcheckKey,
 	}
 	ilbIPv4AnnotationKeys = []string{
-		l4annotations.FirewallRuleKey,
-		l4annotations.TCPForwardingRuleKey,
-		l4annotations.FirewallRuleForHealthcheckKey,
+		annotations.FirewallRuleKey,
+		annotations.TCPForwardingRuleKey,
+		annotations.FirewallRuleForHealthcheckKey,
 	}
 	ilbIPv6AnnotationKeys = []string{
-		l4annotations.FirewallRuleIPv6Key,
-		l4annotations.TCPForwardingRuleIPv6Key,
-		l4annotations.FirewallRuleForHealthcheckIPv6Key,
+		annotations.FirewallRuleIPv6Key,
+		annotations.TCPForwardingRuleIPv6Key,
+		annotations.FirewallRuleForHealthcheckIPv6Key,
 	}
 )
 
@@ -505,7 +505,7 @@ func TestProcessUpdateClusterIPToILBService(t *testing.T) {
 		},
 	}
 	addILBService(l4c, clusterSvc)
-	if needsILB, _ := l4annotations.WantsL4ILB(clusterSvc); needsILB {
+	if needsILB, _ := annotations.WantsL4ILB(clusterSvc); needsILB {
 		t.Errorf("Incorrectly marked service %v as needing ILB", clusterSvc)
 	}
 	if l4c.needsDeletion(clusterSvc) {
@@ -570,7 +570,7 @@ func TestProcessMultipleServices(t *testing.T) {
 					if err != nil {
 						return fmt.Errorf("Failed to lookup service %s, err: %v", name, err)
 					}
-					if len(newSvc.Status.LoadBalancer.Ingress) == 0 || newSvc.Annotations[l4annotations.FirewallRuleKey] == "" {
+					if len(newSvc.Status.LoadBalancer.Ingress) == 0 || newSvc.Annotations[annotations.FirewallRuleKey] == "" {
 						return fmt.Errorf("waiting for valid IP and/or resource annotations for service %q. Got Status - %+v, Annotations - %v", newSvc.Name, newSvc.Status, newSvc.Annotations)
 					}
 				}
@@ -625,7 +625,7 @@ func TestProcessServiceWithDelayedNEGAdd(t *testing.T) {
 			return fmt.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, svcErr)
 		}
 		// wait until an IP is assigned and resource annotations are available.
-		if len(newSvc.Status.LoadBalancer.Ingress) > 0 && newSvc.Annotations[l4annotations.FirewallRuleKey] != "" {
+		if len(newSvc.Status.LoadBalancer.Ingress) > 0 && newSvc.Annotations[annotations.FirewallRuleKey] != "" {
 			return nil
 		}
 		return fmt.Errorf("waiting for valid IP and/or resource annotations. Got Status - %+v, Annotations - %v", newSvc.Status, newSvc.Annotations)
@@ -650,7 +650,7 @@ func TestProcessServiceOnError(t *testing.T) {
 		t.Fatalf("Failed to generate error when syncing service %s", newSvc.Name)
 	}
 	expectMetrics := &test.L4LBErrorMetricInfo{
-		ByGCEResource: map[string]uint64{l4annotations.ForwardingRuleResource: 1},
+		ByGCEResource: map[string]uint64{annotations.ForwardingRuleResource: 1},
 		ByErrorType:   map[string]uint64{http.StatusText(http.StatusInternalServerError): 1}}
 	currMetrics, errMetrics := test.GetL4ILBErrorMetric()
 	if errMetrics != nil {
@@ -930,12 +930,12 @@ func TestEnsureInternalLoadBalancerClass(t *testing.T) {
 		},
 		{
 			desc:              "Use ILB loadBalancerClass",
-			loadBalancerClass: l4annotations.RegionalInternalLoadBalancerClass,
+			loadBalancerClass: annotations.RegionalInternalLoadBalancerClass,
 			shouldProcess:     true,
 		},
 		{
 			desc:              "Use NetLB loadBalancerClass",
-			loadBalancerClass: l4annotations.RegionalExternalLoadBalancerClass,
+			loadBalancerClass: annotations.RegionalExternalLoadBalancerClass,
 			shouldProcess:     false,
 		},
 		{
@@ -1282,7 +1282,7 @@ func TestMultipleServicesProcessingWithLegacyHeadStartTime(t *testing.T) {
 						if err != nil {
 							return fmt.Errorf("failed to lookup service %s, err: %v", name, err)
 						}
-						if tc.shouldProcess && (len(newSvc.Status.LoadBalancer.Ingress) == 0 || newSvc.Annotations[l4annotations.FirewallRuleKey] == "") {
+						if tc.shouldProcess && (len(newSvc.Status.LoadBalancer.Ingress) == 0 || newSvc.Annotations[annotations.FirewallRuleKey] == "") {
 							return fmt.Errorf("waiting for valid IP and/or resource annotations for service %q. Got Status - %+v, Annotations - %v", newSvc.Name, newSvc.Status, newSvc.Annotations)
 						}
 					}

@@ -18,8 +18,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/l4/forwardingrules"
-	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -118,7 +118,7 @@ func TestL4CreateExternalForwardingRule(t *testing.T) {
 		{
 			desc: "create with port range and network tier",
 			svc: &corev1.Service{
-				ObjectMeta: metav1.ObjectMeta{Name: serviceName, Namespace: serviceNamespace, UID: types.UID("1"), Annotations: map[string]string{l4annotations.NetworkTierAnnotationKey: string(cloud.NetworkTierStandard)}},
+				ObjectMeta: metav1.ObjectMeta{Name: serviceName, Namespace: serviceNamespace, UID: types.UID("1"), Annotations: map[string]string{annotations.NetworkTierAnnotationKey: string(cloud.NetworkTierStandard)}},
 				Spec: corev1.ServiceSpec{
 					Ports: []corev1.ServicePort{
 						{
@@ -173,7 +173,7 @@ func TestL4CreateExternalForwardingRule(t *testing.T) {
 			desc:         "create with named address",
 			namedAddress: &compute.Address{Name: "my-addr", Address: "1.2.3.4", AddressType: string(cloud.SchemeExternal), NetworkTier: "PREMIUM"},
 			svc: &corev1.Service{
-				ObjectMeta: metav1.ObjectMeta{Name: serviceName, Namespace: serviceNamespace, UID: types.UID("1"), Annotations: map[string]string{l4annotations.StaticL4AddressesAnnotationKey: "my-addr"}},
+				ObjectMeta: metav1.ObjectMeta{Name: serviceName, Namespace: serviceNamespace, UID: types.UID("1"), Annotations: map[string]string{annotations.StaticL4AddressesAnnotationKey: "my-addr"}},
 				Spec: corev1.ServiceSpec{
 					Ports: []corev1.ServicePort{
 						{

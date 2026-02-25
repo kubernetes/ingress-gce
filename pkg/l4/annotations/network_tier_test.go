@@ -1,4 +1,4 @@
-package l4annotations
+package annotations
 
 import (
 	"testing"

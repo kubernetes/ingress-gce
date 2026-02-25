@@ -34,8 +34,8 @@ import (
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/l4/healthchecks"
-	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
@@ -1239,7 +1239,7 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 	}
 
 	// Verify new annotation "networking.gke.io/load-balancer-subnet" works and get prioritized.
-	svc.Annotations[l4annotations.CustomSubnetAnnotationKey] = subnetNames[2]
+	svc.Annotations[annotations.CustomSubnetAnnotationKey] = subnetNames[2]
 	result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
@@ -1254,7 +1254,7 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 
 	// remove both annotations - ILB should revert to default subnet.
 	delete(svc.Annotations, gce.ServiceAnnotationILBSubnet)
-	delete(svc.Annotations, l4annotations.CustomSubnetAnnotationKey)
+	delete(svc.Annotations, annotations.CustomSubnetAnnotationKey)
 	result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
@@ -1324,7 +1324,7 @@ func TestDualStackILBBadCustomSubnet(t *testing.T) {
 				t.Fatalf("failed to create subnet %v, error: %v", subnetToCreate, err)
 			}
 
-			svc.Annotations[l4annotations.CustomSubnetAnnotationKey] = customBadSubnetName
+			svc.Annotations[annotations.CustomSubnetAnnotationKey] = customBadSubnetName
 
 			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
 			if result.Error == nil {
@@ -1367,7 +1367,7 @@ func TestInternalLBBadCustomSubnet(t *testing.T) {
 			t.Parallel()
 
 			svc := test.NewL4ILBService(true, 8080)
-			svc.Annotations[l4annotations.CustomSubnetAnnotationKey] = tc.subnetName
+			svc.Annotations[annotations.CustomSubnetAnnotationKey] = tc.subnetName
 			l4 := mustSetupILBTestHandler(t, svc, nodeNames)
 
 			if tc.existingSubnetwork {
@@ -2233,7 +2233,7 @@ func TestDualStackILBSyncIgnoresNoAnnotationIPv6Resources(t *testing.T) {
 	assertDualStackILBResources(t, l4, nodeNames)
 
 	// Delete resources annotation
-	annotationsToDelete := []string{l4annotations.TCPForwardingRuleIPv6Key, l4annotations.FirewallRuleIPv6Key, l4annotations.FirewallRuleForHealthcheckIPv6Key}
+	annotationsToDelete := []string{annotations.TCPForwardingRuleIPv6Key, annotations.FirewallRuleIPv6Key, annotations.FirewallRuleForHealthcheckIPv6Key}
 	for _, annotationToDelete := range annotationsToDelete {
 		delete(svc.Annotations, annotationToDelete)
 	}
@@ -2274,7 +2274,7 @@ func TestDualStackILBSyncIgnoresNoAnnotationIPv4Resources(t *testing.T) {
 	assertDualStackILBResources(t, l4, nodeNames)
 
 	// Delete resources annotation
-	annotationsToDelete := []string{l4annotations.TCPForwardingRuleKey, l4annotations.FirewallRuleKey, l4annotations.FirewallRuleForHealthcheckKey}
+	annotationsToDelete := []string{annotations.TCPForwardingRuleKey, annotations.FirewallRuleKey, annotations.FirewallRuleForHealthcheckKey}
 	for _, annotationToDelete := range annotationsToDelete {
 		delete(svc.Annotations, annotationToDelete)
 	}
@@ -2358,7 +2358,7 @@ func TestDualStackILBStaticIPAnnotation(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			svc.Annotations[l4annotations.StaticL4AddressesAnnotationKey] = tc.staticAnnotationVal
+			svc.Annotations[annotations.StaticL4AddressesAnnotationKey] = tc.staticAnnotationVal
 
 			svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol}
 			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
@@ -2452,7 +2452,7 @@ func TestIPv6OnlyILBStaticIPAnnotation(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			svc.Annotations[l4annotations.StaticL4AddressesAnnotationKey] = tc.staticAnnotationVal
+			svc.Annotations[annotations.StaticL4AddressesAnnotationKey] = tc.staticAnnotationVal
 
 			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
 			if result.Error != nil {
@@ -2565,7 +2565,7 @@ func TestWeightedILB(t *testing.T) {
 			svc := test.NewL4ILBService(false, 8080)
 			svc.Spec.ExternalTrafficPolicy = tc.externalTrafficPolicy
 			if tc.addAnnotationForWeighted {
-				svc.Annotations[l4annotations.WeightedL4AnnotationKey] = l4annotations.WeightedL4AnnotationPodsPerNode
+				svc.Annotations[annotations.WeightedL4AnnotationKey] = annotations.WeightedL4AnnotationPodsPerNode
 			}
 			nodeNames := []string{"test-node-1"}
 			vals := gce.DefaultTestClusterValues()
@@ -2923,35 +2923,35 @@ func buildExpectedAnnotations(l4 *L4) map[string]string {
 	hcName := l4.namer.L4HealthCheck(l4.Service.Namespace, l4.Service.Name, isSharedHC)
 
 	expectedAnnotations := map[string]string{
-		l4annotations.BackendServiceKey: backendName,
-		l4annotations.HealthcheckKey:    hcName,
+		annotations.BackendServiceKey: backendName,
+		annotations.HealthcheckKey:    hcName,
 	}
 
 	if utils.NeedsIPv4(l4.Service) {
 		hcFwName := l4.namer.L4HealthCheckFirewall(l4.Service.Namespace, l4.Service.Name, isSharedHC)
 
-		expectedAnnotations[l4annotations.FirewallRuleForHealthcheckKey] = hcFwName
-		expectedAnnotations[l4annotations.FirewallRuleKey] = backendName
+		expectedAnnotations[annotations.FirewallRuleForHealthcheckKey] = hcFwName
+		expectedAnnotations[annotations.FirewallRuleKey] = backendName
 
 		ipv4FRName := l4.GetFRName()
 		if proto == v1.ProtocolTCP {
-			expectedAnnotations[l4annotations.TCPForwardingRuleKey] = ipv4FRName
+			expectedAnnotations[annotations.TCPForwardingRuleKey] = ipv4FRName
 		} else {
-			expectedAnnotations[l4annotations.UDPForwardingRuleKey] = ipv4FRName
+			expectedAnnotations[annotations.UDPForwardingRuleKey] = ipv4FRName
 		}
 	}
 	if utils.NeedsIPv6(l4.Service) {
 		ipv6hcFwName := l4.namer.L4IPv6HealthCheckFirewall(l4.Service.Namespace, l4.Service.Name, isSharedHC)
 		ipv6FirewallName := l4.namer.L4IPv6Firewall(l4.Service.Namespace, l4.Service.Name)
 
-		expectedAnnotations[l4annotations.FirewallRuleForHealthcheckIPv6Key] = ipv6hcFwName
-		expectedAnnotations[l4annotations.FirewallRuleIPv6Key] = ipv6FirewallName
+		expectedAnnotations[annotations.FirewallRuleForHealthcheckIPv6Key] = ipv6hcFwName
+		expectedAnnotations[annotations.FirewallRuleIPv6Key] = ipv6FirewallName
 
 		ipv6FRName := l4.getIPv6FRName()
 		if proto == v1.ProtocolTCP {
-			expectedAnnotations[l4annotations.TCPForwardingRuleIPv6Key] = ipv6FRName
+			expectedAnnotations[annotations.TCPForwardingRuleIPv6Key] = ipv6FRName
 		} else {
-			expectedAnnotations[l4annotations.UDPForwardingRuleIPv6Key] = ipv6FRName
+			expectedAnnotations[annotations.UDPForwardingRuleIPv6Key] = ipv6FRName
 		}
 	}
 	return expectedAnnotations
@@ -3382,7 +3382,7 @@ func TestEnsureInternalLoadBalancer_L4LBConfigLogging(t *testing.T) {
 			lister := cache.NewStore(cache.MetaNamespaceKeyFunc)
 
 			if tc.hasAnnotation {
-				svc.Annotations[l4annotations.L4LBConfigKey] = configName
+				svc.Annotations[annotations.L4LBConfigKey] = configName
 				if tc.crdLoggingConfig != nil {
 					lister.Add(&l4lbconfigv1.L4LBConfig{
 						ObjectMeta: metav1.ObjectMeta{Name: configName, Namespace: svc.Namespace},

@@ -12,8 +12,8 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/l4/address"
+	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/l4/forwardingrules"
-	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 
@@ -124,7 +124,7 @@ func TestHoldExternalIPv4(t *testing.T) {
 					Namespace: namespace,
 					UID:       kubeSystemUID,
 					Annotations: map[string]string{
-						l4annotations.NetworkTierAnnotationKey: "Premium",
+						annotations.NetworkTierAnnotationKey: "Premium",
 					},
 				},
 			},
@@ -150,7 +150,7 @@ func TestHoldExternalIPv4(t *testing.T) {
 					Namespace: namespace,
 					UID:       kubeSystemUID,
 					Annotations: map[string]string{
-						l4annotations.NetworkTierAnnotationKey: "Premium",
+						annotations.NetworkTierAnnotationKey: "Premium",
 					},
 				},
 			},
@@ -176,7 +176,7 @@ func TestHoldExternalIPv4(t *testing.T) {
 					Namespace: namespace,
 					UID:       kubeSystemUID,
 					Annotations: map[string]string{
-						l4annotations.NetworkTierAnnotationKey: "Standard",
+						annotations.NetworkTierAnnotationKey: "Standard",
 					},
 				},
 			},

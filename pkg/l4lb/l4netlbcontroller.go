@@ -24,8 +24,8 @@ import (
 	"time"
 
 	l4lbconfigv1 "k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1"
+	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/l4/resources"
-	"k8s.io/ingress-gce/pkg/l4annotations"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -232,7 +232,7 @@ func (lc *L4NetLBController) needsAddition(newSvc, oldSvc *v1.Service) bool {
 	if oldSvc != nil {
 		return false
 	}
-	needsNetLB, _ := l4annotations.WantsL4NetLB(newSvc)
+	needsNetLB, _ := annotations.WantsL4NetLB(newSvc)
 	return needsNetLB
 }
 
@@ -241,7 +241,7 @@ func (lc *L4NetLBController) needsDeletion(svc *v1.Service, svcLogger klog.Logge
 	// Check if service was provisioned by RBS controller before -- if it has rbs finalizer, rbs loadBalancerClass or rbs forwarding rule
 	if !utils.HasL4NetLBFinalizerV2(svc) && !utils.HasL4NetLBFinalizerV3(svc) &&
 		!lc.hasRBSForwardingRule(svc, svcLogger) &&
-		!l4annotations.HasLoadBalancerClass(svc, l4annotations.RegionalExternalLoadBalancerClass) {
+		!annotations.HasLoadBalancerClass(svc, annotations.RegionalExternalLoadBalancerClass) {
 		return false
 	}
 	// handles service deletion
@@ -249,7 +249,7 @@ func (lc *L4NetLBController) needsDeletion(svc *v1.Service, svcLogger klog.Logge
 		return true
 	}
 	// handles NetLB to ILB migration
-	needsNetLB, _ := l4annotations.WantsL4NetLB(svc)
+	needsNetLB, _ := annotations.WantsL4NetLB(svc)
 	return !needsNetLB
 }
 
@@ -258,7 +258,7 @@ func (lc *L4NetLBController) needsPeriodicEnqueue(newSvc, oldSvc *v1.Service) bo
 	if oldSvc == nil {
 		return false
 	}
-	needsNetLb, _ := l4annotations.WantsL4NetLB(newSvc)
+	needsNetLb, _ := annotations.WantsL4NetLB(newSvc)
 	return needsNetLb && reflect.DeepEqual(oldSvc, newSvc)
 }
 
@@ -267,8 +267,8 @@ func (lc *L4NetLBController) needsUpdate(newSvc, oldSvc *v1.Service) bool {
 	if oldSvc == nil {
 		return false
 	}
-	oldSvcWantsNetLB, oldType := l4annotations.WantsL4NetLB(oldSvc)
-	newSvcWantsNetLB, newType := l4annotations.WantsL4NetLB(newSvc)
+	oldSvcWantsNetLB, oldType := annotations.WantsL4NetLB(oldSvc)
+	newSvcWantsNetLB, newType := annotations.WantsL4NetLB(newSvc)
 	recorder := lc.ctx.Recorder(oldSvc.Namespace)
 	if oldSvcWantsNetLB != newSvcWantsNetLB {
 		recorder.Eventf(newSvc, v1.EventTypeNormal, "Type", "%v -> %v", oldType, newType)
@@ -345,10 +345,10 @@ func (lc *L4NetLBController) shouldProcessService(newSvc, oldSvc *v1.Service, sv
 	// Ignore services with LoadBalancerClass different than "networking.gke.io/l4-regional-external" used for this controller.
 	// LoadBalancerClass can't be updated (see the field API doc) so we don't need to worry about cleaning up services that changed the class.
 	if newSvc.Spec.LoadBalancerClass != nil {
-		if l4annotations.HasLoadBalancerClass(newSvc, l4annotations.RegionalExternalLoadBalancerClass) {
-			if newSvc.Annotations[l4annotations.ServiceAnnotationLoadBalancerType] == string(l4annotations.LBTypeInternal) {
+		if annotations.HasLoadBalancerClass(newSvc, annotations.RegionalExternalLoadBalancerClass) {
+			if newSvc.Annotations[annotations.ServiceAnnotationLoadBalancerType] == string(annotations.LBTypeInternal) {
 				lc.ctx.Recorder(newSvc.Namespace).Eventf(newSvc, v1.EventTypeWarning, "ConflictingConfiguration",
-					fmt.Sprintf("loadBalancerClass conflicts with %s: %q annotation. External LoadBalancer Service provisioned.", l4annotations.ServiceAnnotationLoadBalancerType, string(l4annotations.LBTypeInternal)))
+					fmt.Sprintf("loadBalancerClass conflicts with %s: %q annotation. External LoadBalancer Service provisioned.", annotations.ServiceAnnotationLoadBalancerType, string(annotations.LBTypeInternal)))
 			}
 		} else {
 			svcLogger.Info("Ignoring service managed by another controller", "serviceLoadBalancerClass", *newSvc.Spec.LoadBalancerClass)
@@ -362,8 +362,8 @@ func (lc *L4NetLBController) shouldProcessService(newSvc, oldSvc *v1.Service, sv
 		return false, false
 	}
 
-	_, oldHasConfig := l4annotations.FromService(oldSvc).GetL4LBConfigAnnotation()
-	_, newHasConfig := l4annotations.FromService(newSvc).GetL4LBConfigAnnotation()
+	_, oldHasConfig := annotations.FromService(oldSvc).GetL4LBConfigAnnotation()
+	_, newHasConfig := annotations.FromService(newSvc).GetL4LBConfigAnnotation()
 	if oldHasConfig && !newHasConfig {
 		lc.ctx.Recorder(newSvc.Namespace).Event(newSvc, v1.EventTypeWarning, ReasonL4LBConfigAnnotationRemoved, "L4LBConfig annotation has been removed")
 	}
@@ -377,10 +377,10 @@ func (lc *L4NetLBController) shouldProcessService(newSvc, oldSvc *v1.Service, sv
 
 // hasForwardingRuleAnnotation checks if service has forwarding rule with matching name
 func (lc *L4NetLBController) hasForwardingRuleAnnotation(svc *v1.Service, frName string) bool {
-	if val, ok := svc.Annotations[l4annotations.TCPForwardingRuleKey]; ok && val == frName {
+	if val, ok := svc.Annotations[annotations.TCPForwardingRuleKey]; ok && val == frName {
 		return true
 	}
-	if val, ok := svc.Annotations[l4annotations.UDPForwardingRuleKey]; ok && val == frName {
+	if val, ok := svc.Annotations[annotations.UDPForwardingRuleKey]; ok && val == frName {
 		return true
 	}
 	return false
@@ -394,13 +394,13 @@ func (lc *L4NetLBController) isRBSBasedService(svc *v1.Service, svcLogger klog.L
 		return false
 	}
 	if svc.Spec.LoadBalancerClass != nil {
-		return l4annotations.HasLoadBalancerClass(svc, l4annotations.RegionalExternalLoadBalancerClass)
+		return annotations.HasLoadBalancerClass(svc, annotations.RegionalExternalLoadBalancerClass)
 	}
-	return l4annotations.HasRBSAnnotation(svc) || utils.HasL4NetLBFinalizerV2(svc) || utils.HasL4NetLBFinalizerV3(svc) || lc.hasRBSForwardingRule(svc, svcLogger)
+	return annotations.HasRBSAnnotation(svc) || utils.HasL4NetLBFinalizerV2(svc) || utils.HasL4NetLBFinalizerV3(svc) || lc.hasRBSForwardingRule(svc, svcLogger)
 }
 
 func (lc *L4NetLBController) preventLegacyServiceHandling(service *v1.Service, key string, svcLogger klog.Logger) (bool, error) {
-	if (l4annotations.HasRBSAnnotation(service) || l4annotations.HasLoadBalancerClass(service, l4annotations.RegionalExternalLoadBalancerClass)) && lc.hasTargetPoolForwardingRule(service, svcLogger) {
+	if (annotations.HasRBSAnnotation(service) || annotations.HasLoadBalancerClass(service, annotations.RegionalExternalLoadBalancerClass)) && lc.hasTargetPoolForwardingRule(service, svcLogger) {
 		if utils.HasL4NetLBFinalizerV2(service) || utils.HasL4NetLBFinalizerV3(service) {
 			// If we found that RBS finalizer was attached to service, it means that RBS controller
 			// had a race condition on Service creation with Legacy Controller.
@@ -456,12 +456,12 @@ func (lc *L4NetLBController) preventExistingTargetPoolToRBSMigration(service *v1
 }
 
 func (lc *L4NetLBController) deleteRBSAnnotation(service *v1.Service, svcLogger klog.Logger) error {
-	err := deleteAnnotation(lc.ctx, service, l4annotations.RBSAnnotationKey, svcLogger)
+	err := deleteAnnotation(lc.ctx, service, annotations.RBSAnnotationKey, svcLogger)
 	if err != nil {
-		return fmt.Errorf("deleteAnnotation(_, %v, %s) returned error %v, want nil", service, l4annotations.RBSAnnotationKey, err)
+		return fmt.Errorf("deleteAnnotation(_, %v, %s) returned error %v, want nil", service, annotations.RBSAnnotationKey, err)
 	}
 	// update current object annotations, so we do not treat it as RBS after
-	delete(service.Annotations, l4annotations.RBSAnnotationKey)
+	delete(service.Annotations, annotations.RBSAnnotationKey)
 	return nil
 }
 
@@ -583,7 +583,7 @@ func (lc *L4NetLBController) sync(key string, svcLogger klog.Logger) error {
 		return result.Error
 	}
 
-	if wantsNetLB, _ := l4annotations.WantsL4NetLB(svc); wantsNetLB {
+	if wantsNetLB, _ := annotations.WantsL4NetLB(svc); wantsNetLB {
 		result := lc.syncInternal(svc, svcLogger)
 		if result == nil {
 			// result will be nil if the service was ignored(due to presence of service controller finalizer).

@@ -28,7 +28,7 @@ import (
 	l4lbconfigv1 "k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
-	"k8s.io/ingress-gce/pkg/l4annotations"
+	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/utils/ptr"
 )
 
@@ -74,7 +74,7 @@ func TestGetL4LBConfigForService(t *testing.T) {
 					Name:      "missing-config-svc",
 					Namespace: testNamespace,
 					Annotations: map[string]string{
-						l4annotations.L4LBConfigKey: configName,
+						annotations.L4LBConfigKey: configName,
 					},
 				},
 			},
@@ -91,7 +91,7 @@ func TestGetL4LBConfigForService(t *testing.T) {
 					Name:      "client-error-svc",
 					Namespace: testNamespace,
 					Annotations: map[string]string{
-						l4annotations.L4LBConfigKey: configName,
+						annotations.L4LBConfigKey: configName,
 					},
 				},
 			},
@@ -108,7 +108,7 @@ func TestGetL4LBConfigForService(t *testing.T) {
 					Name:      "healthy-svc",
 					Namespace: testNamespace,
 					Annotations: map[string]string{
-						l4annotations.L4LBConfigKey: configName,
+						annotations.L4LBConfigKey: configName,
 					},
 				},
 			},
@@ -171,7 +171,7 @@ func TestDetermineL4LoggingConfig(t *testing.T) {
 					Name:      "svc",
 					Namespace: testNamespace,
 					Annotations: map[string]string{
-						l4annotations.L4LBConfigKey: configName,
+						annotations.L4LBConfigKey: configName,
 					},
 				},
 			},
@@ -186,7 +186,7 @@ func TestDetermineL4LoggingConfig(t *testing.T) {
 					Name:      "svc-missing-crd",
 					Namespace: testNamespace,
 					Annotations: map[string]string{
-						l4annotations.L4LBConfigKey: "non-existent-config",
+						annotations.L4LBConfigKey: "non-existent-config",
 					},
 				},
 			},
@@ -202,7 +202,7 @@ func TestDetermineL4LoggingConfig(t *testing.T) {
 					Name:      "svc-ok",
 					Namespace: testNamespace,
 					Annotations: map[string]string{
-						l4annotations.L4LBConfigKey: configName,
+						annotations.L4LBConfigKey: configName,
 					},
 				},
 			},
@@ -221,7 +221,7 @@ func TestDetermineL4LoggingConfig(t *testing.T) {
 					Name:      "svc-disabled",
 					Namespace: testNamespace,
 					Annotations: map[string]string{
-						l4annotations.L4LBConfigKey: configName,
+						annotations.L4LBConfigKey: configName,
 					},
 				},
 			},
@@ -240,7 +240,7 @@ func TestDetermineL4LoggingConfig(t *testing.T) {
 					Name:      "svc-nil-rate",
 					Namespace: testNamespace,
 					Annotations: map[string]string{
-						l4annotations.L4LBConfigKey: configName,
+						annotations.L4LBConfigKey: configName,
 					},
 				},
 			},
@@ -259,7 +259,7 @@ func TestDetermineL4LoggingConfig(t *testing.T) {
 					Name:      "svc-nil-logging",
 					Namespace: testNamespace,
 					Annotations: map[string]string{
-						l4annotations.L4LBConfigKey: configName,
+						annotations.L4LBConfigKey: configName,
 					},
 				},
 			},
@@ -277,7 +277,7 @@ func TestDetermineL4LoggingConfig(t *testing.T) {
 					Name:      "svc-invalid-mode",
 					Namespace: testNamespace,
 					Annotations: map[string]string{
-						l4annotations.L4LBConfigKey: configName,
+						annotations.L4LBConfigKey: configName,
 					},
 				},
 			},
@@ -302,7 +302,7 @@ func TestDetermineL4LoggingConfig(t *testing.T) {
 					Name:      "svc-custom-no-fields",
 					Namespace: testNamespace,
 					Annotations: map[string]string{
-						l4annotations.L4LBConfigKey: configName,
+						annotations.L4LBConfigKey: configName,
 					},
 				},
 			},
@@ -326,7 +326,7 @@ func TestDetermineL4LoggingConfig(t *testing.T) {
 					Name:      "svc-non-custom-fields",
 					Namespace: testNamespace,
 					Annotations: map[string]string{
-						l4annotations.L4LBConfigKey: configName,
+						annotations.L4LBConfigKey: configName,
 					},
 				},
 			},

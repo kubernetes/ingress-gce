@@ -42,7 +42,7 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/flags"
-	"k8s.io/ingress-gce/pkg/l4annotations"
+	"k8s.io/ingress-gce/pkg/l4/annotations"
 	activecontrollermetrics "k8s.io/ingress-gce/pkg/metrics/activecontroller"
 	"k8s.io/ingress-gce/pkg/psc/metrics"
 	"k8s.io/ingress-gce/pkg/psc/metrics/metricscollector"
@@ -492,9 +492,9 @@ func (c *Controller) getForwardingRule(namespace, svcName string) (string, error
 
 	// Check for annotation that has forwarding rule name on the service resource by looking for
 	// the TCP or UDP key. If it exists, then use the value as the forwarding rule name.
-	frName, ok := svc.Annotations[l4annotations.TCPForwardingRuleKey]
+	frName, ok := svc.Annotations[annotations.TCPForwardingRuleKey]
 	if !ok {
-		if frName, ok = svc.Annotations[l4annotations.UDPForwardingRuleKey]; !ok {
+		if frName, ok = svc.Annotations[annotations.UDPForwardingRuleKey]; !ok {
 			// The annotation only exists for ILB Subsetting LBs. If no annotation exists, fallback
 			// to finding the name by regenerating the name using the svc resource
 			frName = cloudprovider.DefaultLoadBalancerName(svc)

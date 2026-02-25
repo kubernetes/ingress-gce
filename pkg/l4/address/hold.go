@@ -6,7 +6,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/ingress-gce/pkg/l4annotations"
+	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 
@@ -61,7 +61,7 @@ func HoldExternalIPv4(cfg HoldConfig) (HoldResult, error) {
 		return res, nil
 	}
 
-	netTier, isFromAnnotation := l4annotations.NetworkTier(cfg.Service)
+	netTier, isFromAnnotation := annotations.NetworkTier(cfg.Service)
 	nm := types.NamespacedName{
 		Namespace: cfg.Service.Namespace,
 		Name:      cfg.Service.Name,
