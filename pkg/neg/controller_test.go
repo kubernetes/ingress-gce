@@ -43,7 +43,7 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/flags"
-	annotations1 "k8s.io/ingress-gce/pkg/l4/annotations"
+	l4annotations "k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
@@ -1309,10 +1309,10 @@ func TestMergeVmIpNEGsPortInfo(t *testing.T) {
 	serviceCustomLoadBalancerClass.Spec.LoadBalancerClass = &testLBClass
 	serviceCustomLoadBalancerClass.Finalizers = append(serviceILBWithFinalizer.Finalizers, common.ILBFinalizerV2)
 
-	serviceExternalLoadBalancerClass := newL4LBServiceWithLoadBalancerClass(controller, annotations1.RegionalExternalLoadBalancerClass)
+	serviceExternalLoadBalancerClass := newL4LBServiceWithLoadBalancerClass(controller, l4annotations.RegionalExternalLoadBalancerClass)
 	serviceExternalLoadBalancerClass.Finalizers = append(serviceExternalLoadBalancerClass.Finalizers, common.NetLBFinalizerV3)
 
-	serviceInternalLoadBalancerClass := newL4LBServiceWithLoadBalancerClass(controller, annotations1.RegionalInternalLoadBalancerClass)
+	serviceInternalLoadBalancerClass := newL4LBServiceWithLoadBalancerClass(controller, l4annotations.RegionalInternalLoadBalancerClass)
 	serviceInternalLoadBalancerClass.Finalizers = append(serviceInternalLoadBalancerClass.Finalizers, common.ILBFinalizerV2)
 
 	testCases := []struct {
@@ -2139,7 +2139,7 @@ func newTestRBSMultinetService(c *Controller, onlyLocal bool, port int) *apiv1.S
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        testServiceName,
 			Namespace:   testServiceNamespace,
-			Annotations: map[string]string{annotations1.RBSAnnotationKey: annotations1.RBSEnabled},
+			Annotations: map[string]string{l4annotations.RBSAnnotationKey: l4annotations.RBSEnabled},
 		},
 		Spec: apiv1.ServiceSpec{
 			Type: apiv1.ServiceTypeLoadBalancer,
@@ -2162,7 +2162,7 @@ func newTestRBSService(c *Controller, onlyLocal bool, port int, finalizer string
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        testServiceName,
 			Namespace:   testServiceNamespace,
-			Annotations: map[string]string{annotations1.RBSAnnotationKey: annotations1.RBSEnabled},
+			Annotations: map[string]string{l4annotations.RBSAnnotationKey: l4annotations.RBSEnabled},
 			Finalizers:  []string{finalizer},
 		},
 		Spec: apiv1.ServiceSpec{

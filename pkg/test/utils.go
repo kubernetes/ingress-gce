@@ -28,7 +28,7 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
-	annotations1 "k8s.io/ingress-gce/pkg/l4/annotations"
+	l4annotations "k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/l4/metrics"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -167,7 +167,7 @@ func NewL4LegacyNetLBService(port int, nodePort int32) *api_v1.Service {
 // NewL4NetLBRBSService creates a Service of type LoadBalancer with RBS Annotation
 func NewL4NetLBRBSService(port int) *api_v1.Service {
 	svc := NewL4LegacyNetLBServiceWithoutPorts()
-	svc.ObjectMeta.Annotations[annotations1.RBSAnnotationKey] = annotations1.RBSEnabled
+	svc.ObjectMeta.Annotations[l4annotations.RBSAnnotationKey] = l4annotations.RBSEnabled
 	svc.Spec.Ports = []api_v1.ServicePort{
 		{Name: "testport", Port: int32(port), Protocol: "TCP"},
 	}
@@ -177,7 +177,7 @@ func NewL4NetLBRBSService(port int) *api_v1.Service {
 // NewL4NetLBRBSDualStackService creates a Service of type LoadBalancer with RBS Annotation and provided ipFamilies and ipFamilyPolicy
 func NewL4NetLBRBSDualStackService(protocol api_v1.Protocol, ipFamilies []api_v1.IPFamily, externalTrafficPolicy api_v1.ServiceExternalTrafficPolicyType) *api_v1.Service {
 	svc := NewL4LegacyNetLBServiceWithoutPorts()
-	svc.ObjectMeta.Annotations[annotations1.RBSAnnotationKey] = annotations1.RBSEnabled
+	svc.ObjectMeta.Annotations[l4annotations.RBSAnnotationKey] = l4annotations.RBSEnabled
 	svc.Spec.Ports = []api_v1.ServicePort{
 		{Name: "testport", Port: int32(8080), Protocol: protocol},
 	}
@@ -190,7 +190,7 @@ func NewL4NetLBRBSDualStackService(protocol api_v1.Protocol, ipFamilies []api_v1
 func NewL4NetLBRBSServiceMultiplePorts(name string, ports []int32) *api_v1.Service {
 	svc := NewL4LegacyNetLBServiceWithoutPorts()
 	svc.ObjectMeta.Name = name
-	svc.ObjectMeta.Annotations[annotations1.RBSAnnotationKey] = annotations1.RBSEnabled
+	svc.ObjectMeta.Annotations[l4annotations.RBSAnnotationKey] = l4annotations.RBSEnabled
 	for _, port := range ports {
 		svcPort := api_v1.ServicePort{Name: fmt.Sprintf("testport-%d", port), Port: port, Protocol: "TCP", NodePort: 30000 + port}
 		svc.Spec.Ports = append(svc.Spec.Ports, svcPort)
