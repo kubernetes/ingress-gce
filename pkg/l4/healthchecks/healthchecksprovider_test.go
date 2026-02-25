@@ -1,4 +1,4 @@
-package healthchecksprovider
+package healthchecks
 
 import (
 	"fmt"

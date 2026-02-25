@@ -31,7 +31,6 @@ import (
 	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
-	"k8s.io/ingress-gce/pkg/healthchecksprovider"
 	"k8s.io/ingress-gce/pkg/l4annotations"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -71,7 +70,7 @@ func NewL4HealthChecks(cloud *gce.Cloud, recorder record.EventRecorder, logger k
 		sharedResourcesLock: sharedLock,
 		cloud:               cloud,
 		recorder:            recorder,
-		hcProvider:          healthchecksprovider.NewHealthChecks(cloud, meta.VersionGA, logger),
+		hcProvider:          NewHealthChecks(cloud, meta.VersionGA, logger),
 		useDenyFirewalls:    useDenyFirewalls,
 	}
 }
@@ -82,7 +81,7 @@ func Fake(cloud *gce.Cloud, recorder record.EventRecorder) *l4HealthChecks {
 		sharedResourcesLock: &sync.Mutex{},
 		cloud:               cloud,
 		recorder:            recorder,
-		hcProvider:          healthchecksprovider.NewHealthChecks(cloud, meta.VersionGA, klog.TODO()),
+		hcProvider:          NewHealthChecks(cloud, meta.VersionGA, klog.TODO()),
 		useDenyFirewalls:    true,
 	}
 }
