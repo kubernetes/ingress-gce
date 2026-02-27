@@ -55,6 +55,10 @@ const (
 	ProtocolHTTPS AppProtocol = "HTTPS"
 	// ProtocolHTTP2 protocol for a service
 	ProtocolHTTP2 AppProtocol = "HTTP2"
+	// ProtocolGRPC protocol for a service
+	ProtocolGRPC AppProtocol = "GRPC"
+	// ProtocolGRPCWithTLS protocol for a service
+	ProtocolGRPCWithTLS AppProtocol = "GRPC_WITH_TLS"
 )
 
 // THCAnnotation is the format of the annotation associated with the THCAnnotationKey key.
@@ -96,8 +100,8 @@ func (svc *Service) ApplicationProtocols() (map[string]AppProtocol, error) {
 	// Verify protocol is an accepted value
 	for _, proto := range portToProtos {
 		switch proto {
-		case ProtocolHTTP, ProtocolHTTPS:
-		case ProtocolHTTP2:
+		case ProtocolHTTP, ProtocolHTTPS, ProtocolHTTP2, ProtocolGRPC, ProtocolGRPCWithTLS:
+			// accepted
 		default:
 			return nil, fmt.Errorf("invalid port application protocol: %v", proto)
 		}
