@@ -81,6 +81,15 @@ func (s *NEGControllerStarter) StartController(pc *providerconfig.ProviderConfig
 		return nil, fmt.Errorf("failed to create GCE client for provider config %+v: %w", pc, err)
 	}
 
+	var namerForTenant *namer.Namer
+	
+	// TODO: Remove this check once all ProviderConfigs have PrincipalInfo populated with tenantUID
+	if pc.Spec.PrincipalInfo == nil || pc.Spec.PrincipalInfo.ID == "" {
+    	namerForTenant = s.clusterNamer
+	} else {
+		namerForTenant = namer.NewMTNamer(pc.Spec.PrincipalInfo.ID, logger)
+	}
+
 	negControllerStopCh, err := StartNEGController(
 		s.informers,
 		s.kubeClient,
@@ -89,7 +98,7 @@ func (s *NEGControllerStarter) StartController(pc *providerconfig.ProviderConfig
 		s.networkClient,
 		s.nodetopologyClient,
 		s.kubeSystemUID,
-		s.clusterNamer,
+		namerForTenant,
 		s.l4Namer,
 		s.lpConfig,
 		cloud,
