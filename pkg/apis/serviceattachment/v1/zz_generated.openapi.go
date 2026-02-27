@@ -226,6 +226,13 @@ func schema_pkg_apis_serviceattachment_v1_ServiceAttachmentSpec(ref common.Refer
 							Format:      "",
 						},
 					},
+					"reconcileConnections": {
+						SchemaProps: spec.SchemaProps{
+							Description: "ReconcileConnections if true, connection policy update will affect both PENDING and ACCEPTED/REJECTED PSC endpoints.",
+							Type:        []string{"boolean"},
+							Format:      "",
+						},
+					},
 					"consumerAllowList": {
 						VendorExtensible: spec.VendorExtensible{
 							Extensions: spec.Extensions{

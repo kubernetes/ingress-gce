@@ -53,6 +53,7 @@ import (
 	sautils "k8s.io/ingress-gce/pkg/utils/serviceattachment"
 	"k8s.io/ingress-gce/pkg/utils/slice"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
 )
 
 func init() {
@@ -72,6 +73,9 @@ const (
 
 	// ServiceAttachmentGCPeriod is the interval at which Service Attachment GC will run
 	ServiceAttachmentGCPeriod = 2 * time.Minute
+
+	// UnsyncedFieldAnnotationKey is the annotation key for unsynced fields.
+	UnsyncedFieldAnnotationKey = "networking.gke.io/unsynced-field"
 )
 
 var (
@@ -81,6 +85,9 @@ var (
 		ServiceNotFoundError,
 		MismatchedILBIPError,
 	}
+	// OptionalFields lists the fields that require explicit synchronization via ForceSendFields
+	// to ensure that zero values (e.g. false, empty) are correctly propagated to GCE.
+	OptionalFields = []string{"ReconcileConnections"}
 )
 
 // Controller is a private service connect (psc) controller
@@ -111,6 +118,8 @@ type Controller struct {
 
 	readOnlyMode bool
 
+	EnablePSCReconcileConnections bool
+
 	stopCh <-chan struct{}
 
 	logger klog.Logger
@@ -121,20 +130,21 @@ func NewController(ctx *context.ControllerContext, stopCh <-chan struct{}, logge
 	saNamer := namer.NewServiceAttachmentNamer(ctx.ClusterNamer, string(ctx.KubeSystemUID))
 	metricsCollector := metricscollector.NewPSCMetricsCollector(flags.F.MetricsExportInterval, logger)
 	controller := &Controller{
-		cloud:               ctx.Cloud,
-		saClient:            ctx.SAClient,
-		saNamer:             saNamer,
-		svcAttachmentLister: ctx.SAInformer.GetIndexer(),
-		svcAttachmentQueue:  workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
-		serviceLister:       ctx.ServiceInformer.GetIndexer(),
-		hasSynced:           ctx.HasSynced,
-		recorder:            ctx.Recorder,
-		collector:           metricsCollector,
-		clusterName:         flags.F.GKEClusterName,
-		regionalCluster:     ctx.RegionalCluster,
-		readOnlyMode:        ctx.ReadOnlyMode,
-		stopCh:              stopCh,
-		logger:              logger,
+		cloud:                         ctx.Cloud,
+		saClient:                      ctx.SAClient,
+		saNamer:                       saNamer,
+		svcAttachmentLister:           ctx.SAInformer.GetIndexer(),
+		svcAttachmentQueue:            workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
+		serviceLister:                 ctx.ServiceInformer.GetIndexer(),
+		hasSynced:                     ctx.HasSynced,
+		recorder:                      ctx.Recorder,
+		collector:                     metricsCollector,
+		clusterName:                   flags.F.GKEClusterName,
+		regionalCluster:               ctx.RegionalCluster,
+		readOnlyMode:                  ctx.ReadOnlyMode,
+		EnablePSCReconcileConnections: flags.F.EnablePSCReconcileConnections,
+		stopCh:                        stopCh,
+		logger:                        logger,
 	}
 	if controller.regionalCluster {
 		controller.clusterLoc = controller.cloud.Region()
@@ -274,10 +284,13 @@ func (c *Controller) processServiceAttachment(key string) error {
 	// NOTE: Error will be used to send metrics about whether the sync loop was successful
 	// Please reuse and set err before returning
 	var err error
+	var unsyncedFieldsVal *string
+	var forceSendFields []string
+
 	defer func() {
 		metrics.PublishPSCProcessMetrics(metrics.SyncProcess, filterError(err), start)
 		metrics.PublishLastProcessTimestampMetrics(metrics.SyncProcess)
-		c.collector.SetServiceAttachment(key, metrics.PSCState{InSuccess: err == nil})
+		c.collector.SetServiceAttachment(key, metrics.PSCState{InSuccess: err == nil, IsUnsync: unsyncedFieldsVal != nil && *unsyncedFieldsVal != ""})
 	}()
 
 	var namespace, name string
@@ -357,12 +370,28 @@ func (c *Controller) processServiceAttachment(key string) error {
 	gceSvcAttachment.ConsumerAcceptLists = convertAllowList(updatedCR.Spec)
 	gceSvcAttachment.ConsumerRejectLists = updatedCR.Spec.ConsumerRejectList
 
+	if c.EnablePSCReconcileConnections {
+		gceSvcAttachment.ReconcileConnections = updatedCR.Spec.ReconcileConnections != nil && *updatedCR.Spec.ReconcileConnections
+		unsyncedFieldsVal = ptr.To("")
+	}
+
 	if existingSA != nil {
 		// Most of the validation is left to the GCE Service Attachment API. needsUpdate only checks
 		// to see if the spec has changed and whether an update is necessary.
 		shouldUpdate, err := needsUpdate(existingSA, gceSvcAttachment)
 		if err != nil {
 			return fmt.Errorf("unable to process Service Attachment Update: %w", err)
+		}
+
+		if c.EnablePSCReconcileConnections {
+			unsyncedFields := detectUnsyncedFields(existingSA, updatedCR)
+			unsyncedFieldsStr := strings.Join(unsyncedFields, ",")
+			unsyncedFieldsVal = &unsyncedFieldsStr
+			for _, field := range unsyncedFields {
+				c.recorder(updatedCR.Namespace).Eventf(updatedCR, v1.EventTypeWarning, "UnsyncedField",
+					"Field %q is not specified in the ServiceAttachment CR but has a value in GCE. The controller will not overwrite this field until it is explicitly set in the CR.", field)
+			}
+			forceSendFields = findForceSendFields(unsyncedFields)
 		}
 
 		if shouldUpdate {
@@ -375,13 +404,17 @@ func (c *Controller) processServiceAttachment(key string) error {
 			// may use a different version causing the selflink to differ even if the resource is the same.
 			gceSvcAttachment.TargetService = existingSA.TargetService
 
+			// add only synced optional fields to enable sync of empty values to GCE side and avoid
+			// unexpected reset (due to unsync problem)
+			gceSvcAttachment.ForceSendFields = forceSendFields
+
 			c.logger.V(2).Info("Service Attachment CR was updated, it requires an update", "attachmentKey", klog.KRef(updatedCR.Namespace, updatedCR.Name), "attachmentName", saName)
 			if err = c.cloud.Compute().ServiceAttachments().Patch(context2.Background(), gceSAKey, gceSvcAttachment); err != nil {
 				return fmt.Errorf("failed to update GCE Service Attachment: %w", err)
 			}
 		}
 
-		_, err = c.updateServiceAttachmentStatus(updatedCR, gceSAKey)
+		_, err = c.updateServiceAttachmentStatus(updatedCR, gceSAKey, unsyncedFieldsVal)
 		return err
 	}
 
@@ -391,7 +424,7 @@ func (c *Controller) processServiceAttachment(key string) error {
 	}
 	c.logger.V(2).Info("Created service attachment", "attachmentName", saName)
 
-	updatedCR, err = c.updateServiceAttachmentStatus(updatedCR, gceSAKey)
+	updatedCR, err = c.updateServiceAttachmentStatus(updatedCR, gceSAKey, unsyncedFieldsVal)
 	c.logger.V(2).Info("Updated Service Attachment status", "attachmentKey", klog.KRef(updatedCR.Namespace, updatedCR.Name))
 
 	if err == nil {
@@ -542,9 +575,9 @@ func (c *Controller) getSubnetURLs(subnets []string) ([]string, error) {
 	return subnetURLs, nil
 }
 
-// updateServiceAttachmentStatus updates the CR's status with the GCE Service Attachment URL
+// updateServiceAttachmentStatus updates the CR's annotation and status with the GCE Service Attachment URL
 // and the producer forwarding rule
-func (c *Controller) updateServiceAttachmentStatus(cr *sav1.ServiceAttachment, gceSAKey *meta.Key) (*sav1.ServiceAttachment, error) {
+func (c *Controller) updateServiceAttachmentStatus(cr *sav1.ServiceAttachment, gceSAKey *meta.Key, unsyncedFieldsVal *string) (*sav1.ServiceAttachment, error) {
 	gceSA, err := c.cloud.Compute().ServiceAttachments().Get(context2.Background(), gceSAKey)
 	if err != nil {
 		return cr, fmt.Errorf("failed to query GCE Service Attachment for key %+v: %w", gceSAKey, err)
@@ -564,14 +597,25 @@ func (c *Controller) updateServiceAttachmentStatus(cr *sav1.ServiceAttachment, g
 
 	updatedSA.Status.ConsumerForwardingRules = consumers
 
-	if reflect.DeepEqual(cr.Status, updatedSA.Status) {
-		c.logger.V(2).Info("Service Attachment has no status update. Skipping patch", "attachmentKey", klog.KRef(cr.Namespace, cr.Name))
+	if unsyncedFieldsVal != nil {
+		// init annotation if missing
+		if updatedSA.Annotations == nil {
+			updatedSA.Annotations = make(map[string]string)
+		}
+		updatedSA.Annotations[UnsyncedFieldAnnotationKey] = *unsyncedFieldsVal
+	} else {
+		delete(updatedSA.Annotations, UnsyncedFieldAnnotationKey)
+	}
+
+	if reflect.DeepEqual(cr.Status, updatedSA.Status) &&
+		reflect.DeepEqual(cr.Annotations, updatedSA.Annotations) {
+		c.logger.V(2).Info("Service Attachment has no update. Skipping patch", "attachmentKey", klog.KRef(cr.Namespace, cr.Name))
 		return cr, nil
 	}
 
 	updatedSA.Status.LastModifiedTimestamp = metav1.Now()
 
-	c.logger.V(2).Info("Updating Service Attachment status", "attachmentKey", klog.KRef(cr.Namespace, cr.Name))
+	c.logger.V(2).Info("Updating Service Attachment", "attachmentKey", klog.KRef(cr.Namespace, cr.Name))
 	return c.patchServiceAttachment(cr, updatedSA)
 }
 
@@ -778,4 +822,70 @@ func filterError(err error) error {
 		}
 	}
 	return err
+}
+
+// detectUnsyncedFields returns a list of fields that are considered "unsynced".
+// A field is unsynced if it has a value in the GCE ServiceAttachment but is not
+// specified in the ServiceAttachment CR. This prevents the controller from
+// overwriting existing GCE values with defaults when a new field is introduced
+// to the CRD but not yet set by the user.
+func detectUnsyncedFields(existingSA *ga.ServiceAttachment, updatedCR *sav1.ServiceAttachment) []string {
+	// for new SA:
+	// 	   unsynced_fields = []
+	// for existing SA:
+	//     on first sync in new controller (no "unsynced_fields" annotation):
+	//	       unsynced_fields = find ALL candidates that are not in sync and do not use in ForceSendFields
+	// 	   on subsequent sync (with existing "unsynced_fields" annotation)
+	//         for ReconcileConnections: check if explicit then remove from annotation.unsynced_fields
+	//         for another: only check if they are still unsynced
+
+	var knownUnsyncedFields []string
+	var unsyncedFields []string
+
+	knownUnsyncedFieldsStr, ok := updatedCR.Annotations[UnsyncedFieldAnnotationKey]
+	if ok {
+		if knownUnsyncedFieldsStr == "" {
+			// Nothing to check, all fields can be synced
+			return unsyncedFields
+		}
+		knownUnsyncedFields = strings.Split(knownUnsyncedFieldsStr, ",")
+	} else {
+		// Init potentialy unsynced fields only on a first sync of existing SA by this controller version.
+		// (If annotation is missing, then this is a first sync).
+		knownUnsyncedFields = OptionalFields
+	}
+
+	// check if fields are unsynced indeed
+	for _, field := range knownUnsyncedFields {
+
+		if field == "ReconcileConnections" {
+			// new field is unsynced when it is missing in manifest but has non-empty value in GCE
+			if updatedCR.Spec.ReconcileConnections == nil && existingSA.ReconcileConnections == true {
+				unsyncedFields = append(unsyncedFields, field)
+			}
+		}
+	}
+
+	return unsyncedFields
+}
+
+// findForceSendFields allow sync of empty values of synced fields only.
+// By default, forceSendFields should contain all optional fields which could have
+// empty values so that they correctly propagated to the GCE. But now, due to existing "unsync"
+// problem, forceSendFields should contain only "synced" fields, otherwise values on GCE side
+// could be unexpectedly reset to empty one.
+func findForceSendFields(unsyncedFields []string) []string {
+	// invert unsyncedFields to find out list of fields which empty value
+	// should be synced to GCE SA
+	var forceSendFields []string
+	if len(unsyncedFields) == 0 {
+		forceSendFields = OptionalFields
+	} else {
+		for _, field := range OptionalFields {
+			if !slice.ContainsString(unsyncedFields, field, nil) {
+				forceSendFields = append(forceSendFields, field)
+			}
+		}
+	}
+	return forceSendFields
 }

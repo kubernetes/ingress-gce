@@ -137,6 +137,11 @@ func (in *ServiceAttachmentSpec) DeepCopyInto(out *ServiceAttachmentSpec) {
 		copy(*out, *in)
 	}
 	in.ResourceRef.DeepCopyInto(&out.ResourceRef)
+	if in.ReconcileConnections != nil {
+		in, out := &in.ReconcileConnections, &out.ReconcileConnections
+		*out = new(bool)
+		**out = **in
+	}
 	if in.ConsumerAllowList != nil {
 		in, out := &in.ConsumerAllowList, &out.ConsumerAllowList
 		*out = make([]ConsumerProject, len(*in))

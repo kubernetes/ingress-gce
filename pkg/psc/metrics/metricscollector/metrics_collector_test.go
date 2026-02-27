@@ -24,6 +24,7 @@ func TestComputePSCMetrics(t *testing.T) {
 				sa:          0,
 				saInSuccess: 0,
 				saInError:   0,
+				saUnsync:    0,
 			},
 		},
 		{
@@ -35,6 +36,7 @@ func TestComputePSCMetrics(t *testing.T) {
 				sa:          1,
 				saInSuccess: 1,
 				saInError:   0,
+				saUnsync:    0,
 			},
 		},
 		{
@@ -46,6 +48,7 @@ func TestComputePSCMetrics(t *testing.T) {
 				sa:          1,
 				saInSuccess: 0,
 				saInError:   1,
+				saUnsync:    0,
 			},
 		},
 		{
@@ -61,6 +64,7 @@ func TestComputePSCMetrics(t *testing.T) {
 				sa:          5,
 				saInSuccess: 3,
 				saInError:   2,
+				saUnsync:    0,
 			},
 		},
 		{
@@ -77,6 +81,23 @@ func TestComputePSCMetrics(t *testing.T) {
 				sa:          3,
 				saInSuccess: 2,
 				saInError:   1,
+				saUnsync:    0,
+			},
+		},
+		{
+			desc: "some additions, and some unsynced",
+			saStates: []pscmetrics.PSCState{
+				newPSCState(true),
+				newPSCState(true),
+				newPSCState(true),
+				newPSCState(false),
+				{InSuccess: true, IsUnsync: true},
+			},
+			expectSACount: map[feature]int{
+				sa:          5,
+				saInSuccess: 4,
+				saInError:   1,
+				saUnsync:    1,
 			},
 		},
 	} {

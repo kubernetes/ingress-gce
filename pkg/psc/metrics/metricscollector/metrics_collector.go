@@ -129,6 +129,7 @@ func (m *PSCMetricsCollector) computePSCMetrics() map[feature]int {
 		sa:          0,
 		saInSuccess: 0,
 		saInError:   0,
+		saUnsync:    0,
 	}
 
 	for _, state := range m.pscMap {
@@ -137,6 +138,9 @@ func (m *PSCMetricsCollector) computePSCMetrics() map[feature]int {
 			counts[saInSuccess]++
 		} else {
 			counts[saInError]++
+		}
+		if state.IsUnsync {
+			counts[saUnsync]++
 		}
 	}
 	return counts
