@@ -155,6 +155,21 @@ func TestCalculateDifference(t *testing.T) {
 				negtypes.TestZone1: sets.New("d"),
 			},
 		},
+		// add and delete in one zone with IPv6
+		{
+			targetSet: map[string]sets.Set[string]{
+				negtypes.TestZone1: sets.New("2001:db8::1"),
+			},
+			currentSet: map[string]sets.Set[string]{
+				negtypes.TestZone1: sets.New("2001:db8::2"),
+			},
+			addSet: map[string]sets.Set[string]{
+				negtypes.TestZone1: sets.New("2001:db8::1"),
+			},
+			removeSet: map[string]sets.Set[string]{
+				negtypes.TestZone1: sets.New("2001:db8::2"),
+			},
+		},
 		// add and delete in 2 zones
 		{
 			targetSet: map[string]sets.Set[string]{
@@ -799,6 +814,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 		mutate              func(cloud negtypes.NetworkEndpointGroupCloud)
 		mode                negtypes.EndpointsCalculatorMode
 		subnetToNegMapping  map[string]string
+		enableDualStackNEG  bool
 		expect              map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
 		expectAnnotationMap labels.EndpointPodLabelMap
 		expectErr           bool
@@ -947,6 +963,99 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 				endpoint4: labels.PodLabelMap{
 					"foo": "bar",
 				},
+			},
+			expectErr: false,
+		},
+		{
+			desc: "one neg with uncompressed IPv6 endpoint",
+			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
+				cloud.AttachNetworkEndpoints("ipv6-neg-1", negtypes.TestZone1, []*composite.NetworkEndpoint{
+					{
+						Instance:    negtypes.TestInstance1,
+						IpAddress:   testIP1,
+						Ipv6Address: "2001:db8:0:0:0:0:0:1",
+						Port:        testPort,
+					},
+				}, meta.VersionGA, klog.TODO())
+				cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: "ipv6-neg-1", Version: meta.VersionGA}, negtypes.TestZone2, klog.TODO())
+				cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: "ipv6-neg-1", Version: meta.VersionGA}, negtypes.TestZone4, klog.TODO())
+			},
+			subnetToNegMapping: map[string]string{defaultTestSubnet: "ipv6-neg-1"},
+			enableDualStackNEG: true,
+			expect: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{
+					IP:   testIP1,
+					IPv6: "2001:db8::1",
+					Node: negtypes.TestInstance1,
+					Port: strconv.Itoa(int(testPort)),
+				}),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+				{Zone: negtypes.TestZone4, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+			},
+			expectAnnotationMap: labels.EndpointPodLabelMap{
+				{IP: testIP1, IPv6: "2001:db8::1", Node: negtypes.TestInstance1, Port: strconv.Itoa(int(testPort))}: nil,
+			},
+			expectErr: false,
+		},
+		{
+			desc: "one neg with mixed case IPv6 endpoint",
+			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
+				cloud.AttachNetworkEndpoints("ipv6-neg-2", negtypes.TestZone1, []*composite.NetworkEndpoint{
+					{
+						Instance:    negtypes.TestInstance1,
+						IpAddress:   testIP1,
+						Ipv6Address: "2001:DB8:0:0:0:0:0:1",
+						Port:        testPort,
+					},
+				}, meta.VersionGA, klog.TODO())
+				cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: "ipv6-neg-2", Version: meta.VersionGA}, negtypes.TestZone2, klog.TODO())
+				cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: "ipv6-neg-2", Version: meta.VersionGA}, negtypes.TestZone4, klog.TODO())
+			},
+			subnetToNegMapping: map[string]string{defaultTestSubnet: "ipv6-neg-2"},
+			enableDualStackNEG: true,
+			expect: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{
+					IP:   testIP1,
+					IPv6: "2001:db8::1",
+					Node: negtypes.TestInstance1,
+					Port: strconv.Itoa(int(testPort)),
+				}),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+				{Zone: negtypes.TestZone4, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+			},
+			expectAnnotationMap: labels.EndpointPodLabelMap{
+				{IP: testIP1, IPv6: "2001:db8::1", Node: negtypes.TestInstance1, Port: strconv.Itoa(int(testPort))}: nil,
+			},
+			expectErr: false,
+		},
+		{
+			desc: "one neg with invalid IPv6 endpoint",
+			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
+				cloud.AttachNetworkEndpoints("ipv6-neg-3", negtypes.TestZone1, []*composite.NetworkEndpoint{
+					{
+						Instance:    negtypes.TestInstance1,
+						IpAddress:   testIP1,
+						Ipv6Address: "invalid-ipv6",
+						Port:        testPort,
+					},
+				}, meta.VersionGA, klog.TODO())
+				cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: "ipv6-neg-3", Version: meta.VersionGA}, negtypes.TestZone2, klog.TODO())
+				cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: "ipv6-neg-3", Version: meta.VersionGA}, negtypes.TestZone4, klog.TODO())
+			},
+			subnetToNegMapping: map[string]string{defaultTestSubnet: "ipv6-neg-3"},
+			enableDualStackNEG: true,
+			expect: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{
+					IP:   testIP1,
+					IPv6: "", // Invalid IPv6 should be empty string
+					Node: negtypes.TestInstance1,
+					Port: strconv.Itoa(int(testPort)),
+				}),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+				{Zone: negtypes.TestZone4, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+			},
+			expectAnnotationMap: labels.EndpointPodLabelMap{
+				{IP: testIP1, IPv6: "", Node: negtypes.TestInstance1, Port: strconv.Itoa(int(testPort))}: nil,
 			},
 			expectErr: false,
 		},
@@ -1246,7 +1355,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 	for _, tc := range testCases {
 		tc.mutate(negCloud)
 		// tc.mode of "" will result in the default node predicate being selected, which is ok for this test.
-		endpointSets, annotationMap, _, err := retrieveExistingZoneNetworkEndpointMap(tc.subnetToNegMapping, zoneGetter, negCloud, meta.VersionGA, tc.mode, false, klog.TODO(), metrics.NewNegMetrics(), false)
+		endpointSets, annotationMap, _, err := retrieveExistingZoneNetworkEndpointMap(tc.subnetToNegMapping, zoneGetter, negCloud, meta.VersionGA, tc.mode, tc.enableDualStackNEG, klog.TODO(), metrics.NewNegMetrics(), false)
 
 		if tc.expectErr {
 			if err == nil {

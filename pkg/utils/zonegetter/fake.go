@@ -76,11 +76,17 @@ func AddFakeNodes(zoneGetter *ZoneGetter, newZone string, instances ...string) e
 				},
 			},
 			Spec: apiv1.NodeSpec{
-				ProviderID: fmt.Sprintf("gce://foo-project/%s/instance1", newZone),
+				ProviderID: fmt.Sprintf("gce://foo-project/%s/%s", newZone, instance),
 				PodCIDR:    fmt.Sprintf("10.100.%d.0/24", i),
 				PodCIDRs:   []string{fmt.Sprintf("10.100.%d.0/24", i)},
 			},
 			Status: apiv1.NodeStatus{
+				Addresses: []apiv1.NodeAddress{
+					{
+						Type:    apiv1.NodeInternalIP,
+						Address: fmt.Sprintf("10.0.%d.1", i),
+					},
+				},
 				Conditions: []apiv1.NodeCondition{
 					{
 						Type:   apiv1.NodeReady,
@@ -114,6 +120,12 @@ func AddFakeNodesCount(zoneGetter *ZoneGetter, nodeInformer cache.SharedIndexInf
 				PodCIDRs: []string{fmt.Sprintf("10.100.%d.0/24", i)},
 			},
 			Status: apiv1.NodeStatus{
+				Addresses: []apiv1.NodeAddress{
+					{
+						Type:    apiv1.NodeInternalIP,
+						Address: fmt.Sprintf("10.128.%d.%d", i/256, i%256),
+					},
+				},
 				Conditions: []apiv1.NodeCondition{
 					{
 						Type:   apiv1.NodeReady,

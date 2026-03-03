@@ -233,8 +233,12 @@ func getSubsetPerZone(nodesPerZone map[string][]*nodeWithSubnet, totalLimit int,
 				// Convert all addresses to a standard form as per rfc5952 to prevent
 				// accidental diffs resulting from different formats.
 				newEndpoint.IPv6 = parseIPAddress(ip)
-			} else {
+			} else if net.IsIPv4String(ip) {
 				newEndpoint.IP = ip
+			} else {
+				// Skipping invalid IPs prevents sending malformed data to the Cloud API, which would result in errors.
+				logger.Error(nil, "Skipping invalid IP address", "ip", ip, "node", nodeAndSubnet.node.Name)
+				continue
 			}
 
 			result[egi].Insert(newEndpoint)

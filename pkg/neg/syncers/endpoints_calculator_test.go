@@ -961,12 +961,47 @@ func TestEndpointsSplitAcrossZonesILB(t *testing.T) {
 						if err := zonegetter.AddFakeNodes(zoneGetter, zone, names...); err != nil {
 							t.Fatalf("failed to add fake node: %v", err)
 						}
+						// Update nodes with IPs and required fields for ZoneGetter
+						for _, node := range nodes {
+							// ZoneGetter requires ProviderID to identify zone
+							node.node.Spec.ProviderID = fmt.Sprintf("gce://foo-project/%s/%s", zone, node.node.Name)
+							// ZoneGetter filters out nodes with no conditions
+							if len(node.node.Status.Conditions) == 0 {
+								node.node.Status.Conditions = []v1.NodeCondition{
+									{Type: v1.NodeReady, Status: v1.ConditionTrue},
+								}
+							}
+
+							if err := nodeInformer.GetIndexer().Update(node.node); err != nil {
+								t.Fatalf("failed to update node %s: %v", node.node.Name, err)
+							}
+						}
 					}
 
 					// Act
 					res, _, _, err := c.CalculateEndpoints(nil, endpointsMap)
 					if err != nil {
 						t.Fatalf("expected no err, got %v", err)
+					}
+
+					// updateExpectationsWithIPs populates IPs in the expected set matching the test node generation logic
+					updateExpectationsWithIPs := func(set negtypes.NetworkEndpointSet) {
+						for _, ep := range set.List() {
+							// Parse node name "node<id>"
+							var id int
+							if n, err := fmt.Sscanf(ep.Node, "node%d", &id); err == nil && n == 1 {
+								// Match makeNodesInSubnet logic: 10.0.id/256.id%256
+								ip := fmt.Sprintf("10.0.%d.%d", id/256, id%256)
+								// Re-insert with IP
+								set.Delete(ep)
+								ep.IP = ip
+								set.Insert(ep)
+							}
+						}
+					}
+
+					for _, set := range stage.want {
+						updateExpectationsWithIPs(set)
 					}
 
 					// Assert
@@ -1090,6 +1125,28 @@ func TestEndpointsMigrationFrom25To24ForILBEtpCluster(t *testing.T) {
 			res, _, _, err := c.CalculateEndpoints(nil, tc.before)
 			if err != nil {
 				t.Fatalf("expected no err, got %v", err)
+			}
+
+			// updateExpectationsWithIPs populates IPs in the expected set matching the test node generation logic
+			updateExpectationsWithIPs := func(set negtypes.NetworkEndpointSet) {
+				for _, ep := range set.List() {
+					// Parse node name "node<id>"
+					var id int
+					if n, err := fmt.Sscanf(ep.Node, "node%d", &id); err != nil || n != 1 {
+						t.Fatalf("expected node name to match 'node<id>', got %q: %v", ep.Node, err)
+					}
+					// Match AddFakeNodes logic: 10.0.index.1
+					// We assume index can be derived from id % 1000 because makeNodes uses 1000, 2000, etc step.
+					ip := fmt.Sprintf("10.0.%d.1", id%1000)
+					// Re-insert with IP
+					set.Delete(ep)
+					ep.IP = ip
+					set.Insert(ep)
+				}
+			}
+
+			for _, set := range tc.want {
+				updateExpectationsWithIPs(set)
 			}
 
 			// Assert
