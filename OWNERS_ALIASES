@@ -1,0 +1,18 @@
+aliases:
+  # Top-level project maintainers
+  general-maintainers:
+    - thockin
+    - aojea
+    - bowei
+    - swetharepakula
+  # Owners for L7 features (Ingress, BackendConfig, etc.)
+  l7-owners:
+    - kl52752
+    - DamianSawicki
+    - spencerhance
+  # Owners for L4/NEG/PSC features
+  l4-neg-psc-owners:
+    - mmamczur
+    - tortillazhawaii
+    - felipeyepez
+    - 08volt

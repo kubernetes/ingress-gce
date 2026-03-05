@@ -1,0 +1,8 @@
+options:
+  no_parent_owners: true
+approvers:
+  - l7-owners
+  - general-maintainers
+reviewers:
+  - l7-owners
+  - general-maintainers
