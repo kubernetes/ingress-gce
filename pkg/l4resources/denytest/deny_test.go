@@ -4,6 +4,7 @@ package denytest
 import (
 	"context"
 	"errors"
+	"net/http"
 	"testing"
 	"time"
 
@@ -29,6 +30,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"google.golang.org/api/compute/v1"
+	"google.golang.org/api/googleapi"
 )
 
 const (
@@ -167,7 +169,7 @@ func TestDenyFirewall(t *testing.T) {
 			t.Run(start.desc+"_to_"+end.desc, func(t *testing.T) {
 				// Arrange
 				ctx := t.Context()
-				cloud, err := helperCloud(ctx)
+				cloud, err := helperCloud(ctx, gce.DefaultTestClusterValues())
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -247,7 +249,7 @@ func TestDenyIsNotCreatedWhenAllowPriorityUpdateFails(t *testing.T) {
 			// Arrange
 			ctx := t.Context()
 			svc := helperService([]v1.IPFamily{ipFamily})
-			gce, err := helperCloud(ctx)
+			gce, err := helperCloud(ctx, gce.DefaultTestClusterValues())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -299,7 +301,7 @@ func TestDenyRespectsDisableNodeFirewallProvisioning(t *testing.T) {
 	// Arrange
 	ctx := t.Context()
 	svc := helperService([]v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol})
-	cloud, err := helperCloud(ctx)
+	cloud, err := helperCloud(ctx, gce.DefaultTestClusterValues())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -352,7 +354,7 @@ func TestDenyRollforwardDoesNotBlockTraffic(t *testing.T) {
 	// We use dual stack as it's testing both IP stacks at the same time
 	ctx := t.Context()
 	svc := helperService([]v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol})
-	cloud, err := helperCloud(ctx)
+	cloud, err := helperCloud(ctx, gce.DefaultTestClusterValues())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -445,7 +447,7 @@ func TestDenyRollback(t *testing.T) {
 	// Provision a LB with deny rules
 	ctx := t.Context()
 	svc := helperService([]v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol})
-	cloud, err := helperCloud(ctx)
+	cloud, err := helperCloud(ctx, gce.DefaultTestClusterValues())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -593,7 +595,7 @@ func TestExportsCorrectDenyMetrics(t *testing.T) {
 			t.Parallel()
 			ctx := t.Context()
 			svc := helperService(tc.ipFamilies)
-			gce, err := helperCloud(ctx)
+			gce, err := helperCloud(ctx, gce.DefaultTestClusterValues())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -627,7 +629,7 @@ func TestSkipRollbackCleanupIfDisabled(t *testing.T) {
 	ctx := t.Context()
 	svc := helperService([]v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol})
 
-	gce, err := helperCloud(ctx)
+	gce, err := helperCloud(ctx, gce.DefaultTestClusterValues())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -667,6 +669,113 @@ func TestSkipRollbackCleanupIfDisabled(t *testing.T) {
 		if got := getCalled[name]; !got {
 			t.Errorf("Cleanup for deny firewall %v logic has not been executed", name)
 		}
+	}
+}
+
+// TestContinueOnXPN403s verifies that we don't error out on XPN clusters that don't have permissions to create firewalls
+func TestContinueOnXPN403s(t *testing.T) {
+	testCases := []struct {
+		name                       string
+		denyFirewallEnabled        bool
+		denyFirewallCleanupEnabled bool
+	}{
+		{
+			name: "disabled",
+		},
+		{
+			name:                "rolled_back",
+			denyFirewallEnabled: true,
+		},
+		{
+			name:                       "enabled",
+			denyFirewallEnabled:        true,
+			denyFirewallCleanupEnabled: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Arrange
+			ctx := t.Context()
+			svc := helperService([]v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol})
+			vals := gce.DefaultTestClusterValues()
+			vals.OnXPN = true
+			gce, err := helperCloud(ctx, vals)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			xpnErr := &googleapi.Error{
+				Code:    http.StatusForbidden,
+				Message: "Required 'compute.firewalls.something' permission for 'projects/something/global/firewalls/something'.",
+			}
+
+			fwNames := []string{denyIPv4Name, denyIPv6Name, allowIPv4Name, allowIPv6Name}
+			forwardingRulesAnnotations := []string{
+				l4annotations.TCPForwardingRuleKey,
+				l4annotations.TCPForwardingRuleIPv6Key,
+			}
+
+			mockGCE := gce.Compute().(*cloud.MockGCE)
+			mockGCE.MockFirewalls.InsertHook = func(ctx context.Context, key *meta.Key, obj *compute.Firewall, m *cloud.MockFirewalls, options ...cloud.Option) (bool, error) {
+				return true, xpnErr
+			}
+			mockGCE.MockFirewalls.GetHook = func(ctx context.Context, key *meta.Key, m *cloud.MockFirewalls, options ...cloud.Option) (bool, *compute.Firewall, error) {
+				return false, nil, nil
+			}
+			mockGCE.MockFirewalls.DeleteHook = func(ctx context.Context, key *meta.Key, m *cloud.MockFirewalls, options ...cloud.Option) (bool, error) {
+				return true, xpnErr
+			}
+			mockGCE.MockFirewalls.PatchHook = func(ctx context.Context, key *meta.Key, obj *compute.Firewall, m *cloud.MockFirewalls, options ...cloud.Option) error {
+				return xpnErr
+			}
+			mockGCE.MockFirewalls.UpdateHook = mockGCE.MockFirewalls.PatchHook
+
+			log := klog.TODO()
+			ensurer := helperL4NetLB(gce, log, svc, true)
+			res := ensurer.EnsureFrontend([]string{nodeName}, svc, time.Now())
+			// Assert: we don't expect any errors to be returned
+			if res.Error != nil {
+				t.Fatal(res.Error)
+			}
+
+			// Assert: no firewalls were created
+			for _, name := range fwNames {
+				fw, _ := gce.GetFirewall(name)
+				if fw != nil {
+					t.Errorf("something is wrong with the test logic, the firewall %v should not have been created", name)
+				}
+			}
+
+			// Assert: forwarding rules exist either way
+			forwardingRuleNames := []string{}
+			for _, annotation := range forwardingRulesAnnotations {
+				frName := res.Annotations[annotation]
+				if frName == "" {
+					t.Errorf("something is wrong with the test logic, the forwarding rule %v should have been created", annotation)
+				}
+				forwardingRuleNames = append(forwardingRuleNames, frName)
+				_, err := gce.GetRegionForwardingRule(frName, gce.Region())
+				if err != nil {
+					t.Errorf("something is wrong with the test logic, the forwarding rule %v should have been created, but got %v", frName, err)
+				}
+			}
+
+			// Act: delete the service
+			res = ensurer.EnsureLoadBalancerDeleted(svc)
+			// Assert: we don't expect any errors to be returned
+			if res.Error != nil {
+				t.Fatal(res.Error)
+			}
+
+			// Assert: forwarding rules were cleaned up
+			for _, frName := range forwardingRuleNames {
+				fr, err := gce.GetRegionForwardingRule(frName, gce.Region())
+				if !utils.IsNotFoundError(err) || fr != nil {
+					t.Errorf("something is wrong with the test logic, the forwarding rule %v should have been cleaned up, but got err: %v and fw: %v", frName, err, fr)
+				}
+			}
+		})
 	}
 }
 
@@ -724,8 +833,7 @@ func helperService(ipFamily []v1.IPFamily) *v1.Service {
 	}
 }
 
-func helperCloud(ctx context.Context) (*gce.Cloud, error) {
-	vals := gce.DefaultTestClusterValues()
+func helperCloud(ctx context.Context, vals gce.TestClusterValues) (*gce.Cloud, error) {
 	gce := gce.NewFakeGCECloud(vals)
 
 	firewallTracker := &firewallTracker{}

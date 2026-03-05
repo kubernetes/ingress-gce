@@ -103,6 +103,16 @@ func (l4netlb *L4NetLB) deleteIPv6ResourcesAnnotationBased(syncResult *L4NetLBSy
 	if shouldIgnoreAnnotations || l4netlb.hasAnnotation(l4annotations.FirewallRuleIPv6Key) {
 		l4netlb.deleteIPv6NodesFirewall(syncResult)
 	}
+
+	if l4netlb.enableDenyFirewallsRollbackCleanup && (shouldIgnoreAnnotations || l4netlb.hasAnnotation(l4annotations.FirewallRuleDenyIPv6Key)) {
+		denyName := l4netlb.namer.L4IPv6FirewallDeny(l4netlb.Service.Namespace, l4netlb.Service.Name)
+		err := l4netlb.cleanUpDenyFirewallRule(denyName, l4netlb.svcLogger)
+		if err != nil {
+			l4netlb.svcLogger.Error(err, "Failed to delete deny firewall rule for NetLB RBS service", "fwDenyName", denyName)
+			syncResult.GCEResourceInError = l4annotations.FirewallDenyRuleResource
+			syncResult.Error = err
+		}
+	}
 }
 
 func (l4netlb *L4NetLB) ipv6FRName() string {
@@ -214,12 +224,6 @@ func (l4netlb *L4NetLB) deleteIPv6NodesFirewall(syncResult *L4NetLBSyncResult) {
 	if err := l4netlb.deleteFirewall(allowName, fwLogger); err != nil {
 		fwLogger.Error(err, "Failed to delete ipv6 firewall rule for external loadbalancer service")
 		syncResult.GCEResourceInError = l4annotations.FirewallRuleIPv6Resource
-		syncResult.Error = err
-	}
-
-	if err := cleanUpDenyFirewallRule(l4netlb.cloud, l4netlb.namer.L4IPv6FirewallDeny(l4netlb.Service.Namespace, l4netlb.Service.Name), fwLogger); err != nil {
-		fwLogger.Error(err, "Failed to delete ipv6 deny firewall rule for external loadbalancer service")
-		syncResult.GCEResourceInError = l4annotations.FirewallDenyRuleIPv6Resource
 		syncResult.Error = err
 	}
 }
