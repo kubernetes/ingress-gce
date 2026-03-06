@@ -51,10 +51,11 @@ func (g *DefaultGCECreator) GCEForProviderConfig(providerConfig *v1.ProviderConf
 	}
 
 	// Return a new GCE client using the modified configuration content
-	return app.GCEClientForConfigReader(
+	return app.GCEClientForConfigReaderMT(
 		func() io.Reader { return strings.NewReader(modifiedConfigContent) },
 		logger,
-	), nil
+		5, // maxAttempts
+	)
 }
 
 func generateConfigForProviderConfig(defaultConfigContent string, providerConfig *v1.ProviderConfig) (string, error) {
