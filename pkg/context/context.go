@@ -41,7 +41,7 @@ import (
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 	informerfrontendconfig "k8s.io/ingress-gce/pkg/frontendconfig/client/informers/externalversions/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/instancegroups"
-	l4metrics "k8s.io/ingress-gce/pkg/l4lb/metrics"
+	l4metrics "k8s.io/ingress-gce/pkg/l4/metrics"
 	l4lbconfigclient "k8s.io/ingress-gce/pkg/l4lbconfig/client/clientset/versioned"
 	informerl4lbconfig "k8s.io/ingress-gce/pkg/l4lbconfig/client/informers/externalversions/l4lbconfig/v1"
 	"k8s.io/ingress-gce/pkg/metrics"
