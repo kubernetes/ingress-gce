@@ -54,6 +54,10 @@ type ServiceAttachmentSpec struct {
 	// +optional
 	ProxyProtocol bool `json:"proxyProtocol,omitempty"`
 
+	// ReconcileConnections if true, connection policy update will affect both PENDING and ACCEPTED/REJECTED PSC endpoints.
+	// +optional
+	ReconcileConnections *bool `json:"reconcileConnections,omitempty"`
+
 	// ConsumerAllowList is list of consumer projects that should be allow listed
 	// for this ServiceAttachment
 	// +optional
