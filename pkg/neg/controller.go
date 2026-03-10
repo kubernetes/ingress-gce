@@ -39,7 +39,7 @@ import (
 	svcnegv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/flags"
-	"k8s.io/ingress-gce/pkg/l4annotations"
+	l4annotations "k8s.io/ingress-gce/pkg/l4/annotations"
 	activecontrollermetrics "k8s.io/ingress-gce/pkg/metrics/activecontroller"
 	metrics "k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"

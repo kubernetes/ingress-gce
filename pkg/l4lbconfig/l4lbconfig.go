@@ -27,7 +27,7 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/crd"
 	"k8s.io/ingress-gce/pkg/flags"
-	"k8s.io/ingress-gce/pkg/l4annotations"
+	"k8s.io/ingress-gce/pkg/l4/annotations"
 )
 
 var (
@@ -72,7 +72,7 @@ func CRDMeta() *crd.CRDMeta {
 // GetL4LBConfigForService returns the corresponding L4LBConfig for
 // the given Service if specified.
 func GetL4LBConfigForService(l4lbConfigLister cache.Store, svc *corev1.Service) (*l4lbconfigv1.L4LBConfig, error) {
-	l4lbConfigName, configReferenced := l4annotations.FromService(svc).GetL4LBConfigAnnotation()
+	l4lbConfigName, configReferenced := annotations.FromService(svc).GetL4LBConfigAnnotation()
 	if !configReferenced {
 		return nil, nil
 	}
