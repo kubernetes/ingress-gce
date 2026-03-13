@@ -13,7 +13,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/multiproject/common/filteredinformer"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
-	svcnegfactory "k8s.io/ingress-gce/pkg/svcneg/client/informers/externalversions"
+	svcneginformers "k8s.io/ingress-gce/pkg/svcneg/client/informers/externalversions"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 	"k8s.io/klog/v2"
 )
@@ -21,9 +21,9 @@ import (
 // InformerSet manages all shared informers used by multiproject controllers.
 // It provides centralized initialization and lifecycle management.
 type InformerSet struct {
-	kubeFactory   informers.SharedInformerFactory
-	svcNegFactory svcnegfactory.SharedInformerFactory
-	networkFactory networkinformers.SharedInformerFactory
+	kubeFactory         informers.SharedInformerFactory
+	svcNegFactory       svcneginformers.SharedInformerFactory
+	networkFactory      networkinformers.SharedInformerFactory
 	nodetopologyFactory nodetopologyinformers.SharedInformerFactory
 
 	// Core Kubernetes informers (always present)
@@ -57,9 +57,10 @@ func NewInformerSet(
 
 	infSet.kubeFactory = informers.NewSharedInformerFactory(kubeClient, resyncPeriod.Duration)
 	if svcNegClient != nil {
-		infSet.svcNegFactory = svcnegfactory.NewSharedInformerFactory(svcNegClient, resyncPeriod.Duration)
+		infSet.svcNegFactory = svcneginformers.NewSharedInformerFactory(svcNegClient, resyncPeriod.Duration)
 	}
 	if networkClient != nil {
+		infSet.networkFactory = networkinformers.NewSharedInformerFactory(networkClient, resyncPeriod.Duration)
 		infSet.networkFactory = networkinformers.NewSharedInformerFactory(networkClient, resyncPeriod.Duration)
 	}
 	if nodeTopologyClient != nil {
