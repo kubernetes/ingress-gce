@@ -61,7 +61,6 @@ func NewInformerSet(
 	}
 	if networkClient != nil {
 		infSet.networkFactory = networkinformers.NewSharedInformerFactory(networkClient, resyncPeriod.Duration)
-		infSet.networkFactory = networkinformers.NewSharedInformerFactory(networkClient, resyncPeriod.Duration)
 	}
 	if nodeTopologyClient != nil {
 		infSet.nodetopologyFactory = nodetopologyinformers.NewSharedInformerFactory(nodeTopologyClient, resyncPeriod.Duration)
