@@ -226,7 +226,7 @@ func TestUnevenNodesInZones(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.description, func(t *testing.T) {
 
-			subsetMap, err := getSubsetPerZone(tc.nodesMap, tc.subsetLimit, tc.svcKey, nil, klog.TODO(), &network.NetworkInfo{SubnetworkURL: defaultTestSubnetURL})
+			subsetMap, err := getSubsetPerZone(tc.nodesMap, tc.subsetLimit, tc.svcKey, nil, klog.TODO(), &network.NetworkInfo{SubnetworkURL: defaultTestSubnetURL, IsDefault: true})
 			if err != nil {
 				t.Errorf("Failed to get subset for test '%s', err %v", tc.description, err)
 			}
@@ -268,7 +268,6 @@ func TestGetSubsetPerZoneMultinetwork(t *testing.T) {
 		expectEmpty      bool
 		networkInfo      network.NetworkInfo
 		expectedNodesMap map[types.NEGLocation]map[string]types.NetworkEndpoint
-		enableIPv6       bool
 	}{
 		{
 			description: "default network, gets primary interface, IPv4-only (flag diasbled)",
@@ -282,12 +281,11 @@ func TestGetSubsetPerZoneMultinetwork(t *testing.T) {
 				SubnetworkURL: defaultTestSubnetURL,
 				IsDefault:     true,
 			},
-			enableIPv6: false,
-			// empty IPs since test can't get the primary IP
+			// empty IPs since test can't get the primary IP, so strict validation skips them
 			expectedNodesMap: map[types.NEGLocation]map[string]types.NetworkEndpoint{
-				{Zone: "zone1", Subnet: defaultTestSubnet}: {"n1_1": {Node: "n1_1", IP: ""}, "n1_2": {Node: "n1_2", IP: ""}},
-				{Zone: "zone2", Subnet: defaultTestSubnet}: {"n2_1": {Node: "n2_1", IP: ""}, "n2_2": {Node: "n2_2", IP: ""}},
-				{Zone: "zone3", Subnet: defaultTestSubnet}: {"n3_1": {Node: "n3_1", IP: ""}},
+				{Zone: "zone1", Subnet: defaultTestSubnet}: {},
+				{Zone: "zone2", Subnet: defaultTestSubnet}: {},
+				{Zone: "zone3", Subnet: defaultTestSubnet}: {},
 			},
 		},
 		{
@@ -303,7 +301,6 @@ func TestGetSubsetPerZoneMultinetwork(t *testing.T) {
 				K8sNetwork:    "net1",
 				SubnetworkURL: defaultTestSubnetURL,
 			},
-			enableIPv6: false,
 			expectedNodesMap: map[types.NEGLocation]map[string]types.NetworkEndpoint{
 				{Zone: "zone1", Subnet: defaultTestSubnet}: {"n1_1": {Node: "n1_1", IP: "172.168.1.1"}, "n1_2": {Node: "n1_2", IP: "172.168.1.2"}},
 				{Zone: "zone2", Subnet: defaultTestSubnet}: {"n2_1": {Node: "n2_1", IP: "172.168.2.1"}, "n2_2": {Node: "n2_2", IP: "172.168.2.2"}},
@@ -322,7 +319,6 @@ func TestGetSubsetPerZoneMultinetwork(t *testing.T) {
 				K8sNetwork:    "net-dual",
 				SubnetworkURL: defaultTestSubnetURL,
 			},
-			enableIPv6: false,
 			expectedNodesMap: map[types.NEGLocation]map[string]types.NetworkEndpoint{
 				{Zone: "zone1", Subnet: defaultTestSubnet}: {"n1_1": {Node: "n1_1", IP: "172.168.1.1"}, "n1_2": {Node: "n1_2", IP: "172.168.1.2"}},
 				{Zone: "zone2", Subnet: defaultTestSubnet}: {"n2_1": {Node: "n2_1", IP: "172.168.2.1"}},
@@ -340,7 +336,6 @@ func TestGetSubsetPerZoneMultinetwork(t *testing.T) {
 				K8sNetwork:    "net-dual",
 				SubnetworkURL: defaultTestSubnetURL,
 			},
-			enableIPv6: true,
 			expectedNodesMap: map[types.NEGLocation]map[string]types.NetworkEndpoint{
 				{Zone: "zone1", Subnet: defaultTestSubnet}: {"n1_1": {Node: "n1_1", IP: "172.168.1.1"}, "n1_2": {Node: "n1_2", IP: "172.168.1.2"}},
 				{Zone: "zone2", Subnet: defaultTestSubnet}: {"n2_1": {Node: "n2_1", IP: "172.168.2.1"}},
@@ -358,7 +353,6 @@ func TestGetSubsetPerZoneMultinetwork(t *testing.T) {
 				K8sNetwork:    "net-ipv6",
 				SubnetworkURL: ipv6Subnet,
 			},
-			enableIPv6: true,
 			expectedNodesMap: map[types.NEGLocation]map[string]types.NetworkEndpoint{
 				{Zone: "zone1", Subnet: defaultTestSubnet}: {"n1_1": {Node: "n1_1", IPv6: "2001:db8:1::1"}},
 				{Zone: "zone1", Subnet: ipv6Subnet}:        {"n1_2": {Node: "n1_2", IPv6: "2001:db8:1::2"}},
@@ -376,10 +370,41 @@ func TestGetSubsetPerZoneMultinetwork(t *testing.T) {
 				K8sNetwork:    "net-ipv6",
 				SubnetworkURL: ipv6Subnet,
 			},
-			enableIPv6: true,
 			expectedNodesMap: map[types.NEGLocation]map[string]types.NetworkEndpoint{
 				{Zone: "zone1", Subnet: defaultTestSubnet}: {"n1_1": {Node: "n1_1", IPv6: "2001:db8:1::1"}},
 				{Zone: "zone1", Subnet: ipv6Subnet}:        {"n1_2": {Node: "n1_2", IPv6: "2001:db8:1::2"}},
+			},
+		},
+		{
+			description: "non-default network, IPv6 nodes, IPv6 enabled, target IPv6 network (flag enabled), mixed case IPv6",
+			nodesMap: map[string][]*nodeWithSubnet{
+				"zone1": {makeNodeWithNetwork(t, "n1_1", "zone1", map[string]string{"net-ipv6": "2001:DB8:1::1"})},
+			},
+			svcKey: "svc123",
+			networkInfo: network.NetworkInfo{
+				IsDefault:     false,
+				K8sNetwork:    "net-ipv6",
+				SubnetworkURL: ipv6Subnet,
+			},
+			expectedNodesMap: map[types.NEGLocation]map[string]types.NetworkEndpoint{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: {"n1_1": {Node: "n1_1", IPv6: "2001:db8:1::1"}},
+			},
+		},
+		{
+			description: "non-default network, IPv6 nodes, IPv6 enabled, target IPv6 network (flag enabled), invalid IPv6",
+			nodesMap: map[string][]*nodeWithSubnet{
+				"zone1": {makeNodeWithNetwork(t, "n1_1", "zone1", map[string]string{"net-ipv6": "invalid-ipv6"})},
+			},
+			svcKey: "svc123",
+			networkInfo: network.NetworkInfo{
+				IsDefault:     false,
+				K8sNetwork:    "net-ipv6",
+				SubnetworkURL: ipv6Subnet,
+			},
+			expectedNodesMap: map[types.NEGLocation]map[string]types.NetworkEndpoint{
+				// Invalid IPv6 should result in empty IPv6 field (or handled as per parseIPAddress returning empty string)
+				// Based on current logic: invalid/non-IPv4 IP is skipped entirely.
+				{Zone: "zone1", Subnet: defaultTestSubnet}: {},
 			},
 		},
 	}
@@ -436,6 +461,17 @@ func makeNodesInSubnet(startIndex, count int, subnet string) []*nodeWithSubnet {
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   fmt.Sprintf("node%d", i),
 				Labels: map[string]string{utils.LabelNodeSubnet: subnet},
+			},
+			Spec: v1.NodeSpec{
+				PodCIDR: "10.0.0.0/24",
+			},
+			Status: v1.NodeStatus{
+				Addresses: []v1.NodeAddress{
+					{
+						Type:    v1.NodeInternalIP,
+						Address: fmt.Sprintf("10.0.%d.%d", i/256, i%256),
+					},
+				},
 			},
 		}
 		nodes = append(nodes, newNodeWithSubnet(n, subnet))
