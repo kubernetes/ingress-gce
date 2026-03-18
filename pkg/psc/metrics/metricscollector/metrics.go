@@ -26,10 +26,11 @@ func (f feature) String() string {
 
 const (
 	// PSC Features
-	sa          = feature("ServiceAttachments")
-	saInSuccess = feature("ServiceAttachmentInSuccess")
-	saInError   = feature("ServiceAttachmentInError")
-	services    = feature("Services")
+	sa                   = feature("ServiceAttachments")
+	saInSuccess          = feature("ServiceAttachmentInSuccess")
+	saInError            = feature("ServiceAttachmentInError")
+	saWithUnsyncedFields = feature("ServiceAttachmentWithUnsyncedFields")
+	services             = feature("Services")
 )
 
 var (

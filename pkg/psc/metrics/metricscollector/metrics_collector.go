@@ -126,9 +126,10 @@ func (m *PSCMetricsCollector) computePSCMetrics() map[feature]int {
 	m.logger.V(4).Info("Compute PSC Usage metrics from psc state map", "pscStateMap", m.pscMap)
 
 	counts := map[feature]int{
-		sa:          0,
-		saInSuccess: 0,
-		saInError:   0,
+		sa:                   0,
+		saInSuccess:          0,
+		saInError:            0,
+		saWithUnsyncedFields: 0,
 	}
 
 	for _, state := range m.pscMap {
@@ -137,6 +138,9 @@ func (m *PSCMetricsCollector) computePSCMetrics() map[feature]int {
 			counts[saInSuccess]++
 		} else {
 			counts[saInError]++
+		}
+		if state.WithUnsyncedFields {
+			counts[saWithUnsyncedFields]++
 		}
 	}
 	return counts

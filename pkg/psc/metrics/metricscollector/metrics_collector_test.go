@@ -21,9 +21,10 @@ func TestComputePSCMetrics(t *testing.T) {
 			desc:     "empty input",
 			saStates: []pscmetrics.PSCState{},
 			expectSACount: map[feature]int{
-				sa:          0,
-				saInSuccess: 0,
-				saInError:   0,
+				sa:                   0,
+				saInSuccess:          0,
+				saInError:            0,
+				saWithUnsyncedFields: 0,
 			},
 		},
 		{
@@ -32,9 +33,10 @@ func TestComputePSCMetrics(t *testing.T) {
 				newPSCState(true),
 			},
 			expectSACount: map[feature]int{
-				sa:          1,
-				saInSuccess: 1,
-				saInError:   0,
+				sa:                   1,
+				saInSuccess:          1,
+				saInError:            0,
+				saWithUnsyncedFields: 0,
 			},
 		},
 		{
@@ -43,9 +45,10 @@ func TestComputePSCMetrics(t *testing.T) {
 				newPSCState(false),
 			},
 			expectSACount: map[feature]int{
-				sa:          1,
-				saInSuccess: 0,
-				saInError:   1,
+				sa:                   1,
+				saInSuccess:          0,
+				saInError:            1,
+				saWithUnsyncedFields: 0,
 			},
 		},
 		{
@@ -58,9 +61,10 @@ func TestComputePSCMetrics(t *testing.T) {
 				newPSCState(false),
 			},
 			expectSACount: map[feature]int{
-				sa:          5,
-				saInSuccess: 3,
-				saInError:   2,
+				sa:                   5,
+				saInSuccess:          3,
+				saInError:            2,
+				saWithUnsyncedFields: 0,
 			},
 		},
 		{
@@ -74,9 +78,26 @@ func TestComputePSCMetrics(t *testing.T) {
 			},
 			deleteStates: []string{"0", "3"},
 			expectSACount: map[feature]int{
-				sa:          3,
-				saInSuccess: 2,
-				saInError:   1,
+				sa:                   3,
+				saInSuccess:          2,
+				saInError:            1,
+				saWithUnsyncedFields: 0,
+			},
+		},
+		{
+			desc: "some additions, and some unsynced",
+			saStates: []pscmetrics.PSCState{
+				newPSCState(true),
+				newPSCState(true),
+				newPSCState(true),
+				newPSCState(false),
+				{InSuccess: true, WithUnsyncedFields: true},
+			},
+			expectSACount: map[feature]int{
+				sa:                   5,
+				saInSuccess:          4,
+				saInError:            1,
+				saWithUnsyncedFields: 1,
 			},
 		},
 	} {

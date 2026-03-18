@@ -20,4 +20,6 @@ package metrics
 type PSCState struct {
 	// InSuccess specifies if the ServiceAttachment was successfully created
 	InSuccess bool
+	// WithUnsyncedFields specifies if the ServiceAttachment has unsynced fields
+	WithUnsyncedFields bool
 }

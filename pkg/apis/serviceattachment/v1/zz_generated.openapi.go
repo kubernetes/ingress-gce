@@ -226,6 +226,13 @@ func schema_pkg_apis_serviceattachment_v1_ServiceAttachmentSpec(ref common.Refer
 							Format:      "",
 						},
 					},
+					"reconcileConnections": {
+						SchemaProps: spec.SchemaProps{
+							Description: "ReconcileConnections allows users to control whether changes to consumer accept/reject lists affect existing PENDING PSC endpoints only (when disabled) or existing ACCEPTED/REJECTED PSC endpoints as well (when enabled).",
+							Type:        []string{"boolean"},
+							Format:      "",
+						},
+					},
 					"consumerAllowList": {
 						VendorExtensible: spec.VendorExtensible{
 							Extensions: spec.Extensions{
