@@ -81,6 +81,8 @@ func (s *NEGControllerStarter) StartController(pc *providerconfig.ProviderConfig
 		return nil, fmt.Errorf("failed to create GCE client for provider config %+v: %w", pc, err)
 	}
 
+	namerForTenant := namer.NewMTNamer(pc.Spec.PrincipalInfo.ID, logger)
+
 	negControllerStopCh, err := StartNEGController(
 		s.informers,
 		s.kubeClient,
@@ -89,7 +91,7 @@ func (s *NEGControllerStarter) StartController(pc *providerconfig.ProviderConfig
 		s.networkClient,
 		s.nodetopologyClient,
 		s.kubeSystemUID,
-		s.clusterNamer,
+		namerForTenant,
 		s.l4Namer,
 		s.lpConfig,
 		cloud,

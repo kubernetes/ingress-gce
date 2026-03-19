@@ -56,7 +56,7 @@ const (
 	globalFirewallSuffix = "l7"
 
 	// A delimiter used for clarity in naming GCE resources.
-	clusterNameDelimiter = "--"
+	principalEntityNameDelimiter = "--"
 
 	// Arbitrarily chosen alphanumeric character to use in constructing
 	// resource names, eg: to avoid cases where we end up with a name
@@ -69,16 +69,17 @@ const (
 	// avoid terminating on an invalid character ('-').
 	nameLenLimit = 62
 
-	// clusterNameEvalThreshold is the minimum required length of the clusterName section
+	// principalEntityNameEvalThreshold is the minimum required length of the principalEntityName section
 	// in the suffix of a GCE resource in order to qualify for evaluating if a given name
-	// belong to the current cluster. This is for minimizing chances of cluster name collision due
+	// belong to the current principal entity. This is for minimizing chances of principal entity name collision due
 	// matching uid prefix.
-	clusterNameEvalThreshold = 4
+	principalEntityNameEvalThreshold = 4
 
 	// maxNEGDescriptiveLabel is the max length for namespace, name and
 	// port for neg name.  63 - 5 (k8s and naming schema version prefix)
 	// - 8 (truncated cluster id) - 8 (suffix hash) - 4 (hyphen connector) = 38
 	maxNEGDescriptiveLabel = 38
+
 
 	// schemaVersionV1 is the version 1 naming scheme for NEG
 	schemaVersionV1 = "1"
@@ -116,21 +117,29 @@ type Namer struct {
 	prefix string
 
 	nameLock     sync.Mutex
-	clusterName  string
+	// principalEntityName could be cluster UID, or tenant UID in multi-project scenario
+	principalEntityName  string
 	firewallName string
+	negSchemaVersion    string
+	maxNEGLabelLength      int
 
 	logger klog.Logger
 }
 
-// NewNamer creates a new namer with a Cluster and Firewall name.
-func NewNamer(clusterName, firewallName string, logger klog.Logger) *Namer {
-	return NewNamerWithPrefix(defaultPrefix, clusterName, firewallName, logger)
+// NewNamer creates a new namer with an ID and Firewall name.
+func NewNamer(principalEntityName, firewallName string, logger klog.Logger) *Namer {
+	return NewNamerWithPrefix(defaultPrefix, principalEntityName, firewallName, logger)
 }
 
 // NewNamerWithPrefix creates a new namer with a custom prefix.
-func NewNamerWithPrefix(prefix, clusterName, firewallName string, logger klog.Logger) *Namer {
-	namer := &Namer{prefix: prefix, logger: logger.WithName("Namer")}
-	namer.SetUID(clusterName)
+func NewNamerWithPrefix(prefix, principalEntityName, firewallName string, logger klog.Logger) *Namer {
+	namer := &Namer{
+		prefix: prefix, 
+		logger: logger.WithName("Namer"),
+		negSchemaVersion: schemaVersionV1, 
+        maxNEGLabelLength:   maxNEGDescriptiveLabel,
+	}
+	namer.SetUID(principalEntityName)
 	namer.SetFirewall(firewallName)
 
 	return namer
@@ -141,27 +150,27 @@ func NewNamerWithPrefix(prefix, clusterName, firewallName string, logger klog.Lo
 // is: k8s-resource-<metadata, eg port>--uid
 // Note that the LbNamePrefix field is empty if the resource is a BackendService.
 type NameComponents struct {
-	ClusterName, Resource, Metadata, LbNamePrefix string
+	PrincipalEntityName, Resource, Metadata, LbNamePrefix string
 }
 
-// SetUID sets the UID/name of this cluster.
+// SetUID sets the UID/name of this principal entity.
 func (n *Namer) SetUID(name string) {
 	n.nameLock.Lock()
 	defer n.nameLock.Unlock()
 
-	if strings.Contains(name, clusterNameDelimiter) {
-		tokens := strings.Split(name, clusterNameDelimiter)
-		n.logger.Info(fmt.Sprintf("Name %q contains %q, taking last token in: %+v", name, clusterNameDelimiter, tokens))
+	if strings.Contains(name, principalEntityNameDelimiter) {
+		tokens := strings.Split(name, principalEntityNameDelimiter)
+		n.logger.Info(fmt.Sprintf("Name %q contains %q, taking last token in: %+v", name, principalEntityNameDelimiter, tokens))
 		name = tokens[len(tokens)-1]
 	}
 
-	if n.clusterName == name {
-		n.logger.V(4).Info("Cluster name is unchanged", "clusterName", name)
+	if n.principalEntityName == name {
+		n.logger.V(4).Info("Principal name is unchanged", "principalEntityName", name)
 		return
 	}
 
-	n.logger.Info("Changing cluster name", "oldClusterName", n.clusterName, "newClusterName", name)
-	n.clusterName = name
+	n.logger.Info("Changing Principal name", "oldprincipalEntityName", n.principalEntityName, "newprincipalEntityName", name)
+	n.principalEntityName = name
 }
 
 // SetFirewall sets the firewall name of this cluster.
@@ -175,13 +184,13 @@ func (n *Namer) SetFirewall(name string) {
 	}
 }
 
-// UID returns the UID/name of this cluster.
+// UID returns the UID/name of this cluster or tenant.
 // WARNING: Use KubeSystemUID instead
 func (n *Namer) UID() string {
 	n.nameLock.Lock()
 	defer n.nameLock.Unlock()
 
-	return n.clusterName
+	return n.principalEntityName
 }
 
 func (n *Namer) shortUID() string {
@@ -197,9 +206,9 @@ func (n *Namer) Firewall() string {
 	n.nameLock.Lock()
 	defer n.nameLock.Unlock()
 
-	// Retain backwards compatible behavior where firewallName == clusterName.
+	// Retain backwards compatible behavior where firewallName == cluster name.
 	if n.firewallName == "" {
-		return n.clusterName
+		return n.principalEntityName
 	}
 	return n.firewallName
 }
@@ -216,12 +225,12 @@ func truncate(key string) string {
 }
 
 func (n *Namer) decorateName(name string) string {
-	clusterName := n.UID()
-	// clusterName might be empty for legacy clusters
-	if clusterName == "" {
+	principalEntityID := n.UID()
+	// idName might be empty for legacy clusters
+	if principalEntityID == "" {
 		return name
 	}
-	return truncate(fmt.Sprintf("%v%v%v", name, clusterNameDelimiter, clusterName))
+	return truncate(fmt.Sprintf("%v%v%v", name, principalEntityNameDelimiter, principalEntityID))
 }
 
 // ParseName parses the name of a resource generated by the namer.
@@ -229,13 +238,13 @@ func (n *Namer) decorateName(name string) string {
 //
 // Backend, InstanceGroup, UrlMap.
 func (n *Namer) ParseName(name string) *NameComponents {
-	l := strings.Split(name, clusterNameDelimiter)
+	l := strings.Split(name, principalEntityNameDelimiter)
 	var uid, resource, lbNamePrefix string
 	if len(l) >= 2 {
 		uid = l[len(l)-1]
 	}
 
-	// We want to split the remainder of the name, minus the cluster-delimited
+	// We want to split the remainder of the name, minus the principal entity-delimited
 	// portion. This should resemble:
 	// prefix-resource-loadbalancernameprefix
 	c := strings.Split(l[0], "-")
@@ -254,51 +263,52 @@ func (n *Namer) ParseName(name string) *NameComponents {
 	}
 
 	return &NameComponents{
-		ClusterName:  uid,
+		PrincipalEntityName:       uid,
 		Resource:     resource,
 		LbNamePrefix: lbNamePrefix,
 	}
 }
 
-// NameBelongsToCluster checks if a given name is tagged with this
-// cluster's UID.
-func (n *Namer) NameBelongsToCluster(name string) bool {
+// NameBelongsToEntity checks if a given name is tagged with this
+// principal entity's UID.
+func (n *Namer) NameBelongsToEntity(name string) bool {
+
 	// Name follows the NEG naming scheme
 	if n.IsNEG(name) {
 		return true
 	}
 
-	// Name follows the naming scheme where clusterid is the suffix.
+	// Name follows the naming scheme where principalEntityName is the suffix.
 	if !strings.HasPrefix(name, n.prefix+"-") {
 		return false
 	}
-	fullClusterName := n.UID()
+	fullPrincipalEntityName := n.UID()
 	components := n.ParseName(name)
-	componentClusterName := components.ClusterName
+	componentPrincipalEntityName := components.PrincipalEntityName
 
 	// if exact match is found, then return true immediately
-	// otherwise, do best effort matching as follows
-	if componentClusterName == fullClusterName {
+	// otherwise, do best effort matching a`s follows
+	if componentPrincipalEntityName == fullPrincipalEntityName {
 		return true
 	}
 
 	// if the name is longer or equal to 63 characters and the last character of the resource matches alphaNumericChar,
 	// it is likely that the name was truncated.
-	if len(name) > nameLenLimit && len(componentClusterName) > 0 && componentClusterName[len(componentClusterName)-1:] == alphaNumericChar {
-		componentClusterName = componentClusterName[0 : len(componentClusterName)-1]
+	if len(name) > nameLenLimit && len(componentPrincipalEntityName) > 0 && componentPrincipalEntityName[len(componentPrincipalEntityName)-1:] == alphaNumericChar {
+		componentPrincipalEntityName = componentPrincipalEntityName[0 : len(componentPrincipalEntityName)-1]
 	}
 
 	// If the name is longer or equal to 63 characters and the length of the
-	// cluster name parsed from the resource name is too short, ignore the resource and do
-	// not consider the resource managed by this cluster. This is to prevent cluster A
-	// accidentally GC resources from cluster B due to both clusters share the same prefix
+	// principal entity name parsed from the resource name is too short, ignore the resource and do
+	// not consider the resource managed by this principal entity. This is to prevent principal entity A
+	// accidentally GC resources from principal entity B due to both entities share the same prefix
 	// uid.
 	// For example:
 	// Case 1: k8s-fws-test-sandbox-50a6f22a4cd34e91-ingress-1--16a1467191ad30
-	// The cluster name is 16a1467191ad30 which is longer than clusterNameEvalThreshold.
+	// The principal entity name is 16a1467191ad30 which is longer than principalEntityNameEvalThreshold.
 	// Case 2: k8s-fws-test-sandbox-50a6f22a4cd34e91-ingress-1111111111111--10
-	// The cluster name is 10 which is shorter than clusterNameEvalThreshold.
-	return len(componentClusterName) > clusterNameEvalThreshold && strings.HasPrefix(fullClusterName, componentClusterName)
+	// The principal entity name is 10 which is shorter than principalEntityNameEvalThreshold.
+	return len(componentPrincipalEntityName) > principalEntityNameEvalThreshold && strings.HasPrefix(fullPrincipalEntityName, componentPrincipalEntityName)
 
 }
 
@@ -333,7 +343,7 @@ func (n *Namer) firewallRuleSuffix() string {
 	if firewallName == "" {
 		return globalFirewallSuffix
 	}
-	return truncate(fmt.Sprintf("%v%v%v", globalFirewallSuffix, clusterNameDelimiter, firewallName))
+	return truncate(fmt.Sprintf("%v%v%v", globalFirewallSuffix, principalEntityNameDelimiter, firewallName))
 }
 
 // FirewallRule constructs the full firewall rule name, this is the name
@@ -346,21 +356,21 @@ func (n *Namer) FirewallRule() string {
 // LoadBalancer constructs a loadbalancer name from the given key. The key
 // is usually the namespace/name of a Kubernetes Ingress.
 func (n *Namer) LoadBalancer(key string) LoadBalancerName {
-	// TODO: Pipe the clusterName through, for now it saves code churn
+	// TODO: Pipe the principalEntityName through, for now it saves code churn
 	// to just grab it globally, especially since we haven't decided how
 	// to handle namespace conflicts in the Kubernetes context.
-	parts := strings.Split(key, clusterNameDelimiter)
+	parts := strings.Split(key, principalEntityNameDelimiter)
 	scrubbedName := strings.Replace(key, "/", "-", -1)
-	clusterName := n.UID()
-	if clusterName == "" || parts[len(parts)-1] == clusterName {
+	principalEntityName := n.UID()
+	if principalEntityName == "" || parts[len(parts)-1] == principalEntityName {
 		return LoadBalancerName(scrubbedName)
 	}
-	return LoadBalancerName(truncate(fmt.Sprintf("%v%v%v", scrubbedName, clusterNameDelimiter, clusterName)))
+	return LoadBalancerName(truncate(fmt.Sprintf("%v%v%v", scrubbedName, principalEntityNameDelimiter, principalEntityName)))
 }
 
 // LoadBalancerForURLMap returns the loadbalancer name for given URL map.
 func (n *Namer) LoadBalancerForURLMap(urlMap string) LoadBalancerName {
-	return LoadBalancerName(truncate(fmt.Sprintf("%v%v%v", n.ParseName(urlMap).LbNamePrefix, clusterNameDelimiter, n.UID())))
+	return LoadBalancerName(truncate(fmt.Sprintf("%v%v%v", n.ParseName(urlMap).LbNamePrefix, principalEntityNameDelimiter, n.UID())))
 }
 
 // TargetProxy returns the name for target proxy given the load
@@ -435,17 +445,17 @@ func (n *Namer) NamedPort(port int64) string {
 // NEG returns the gce neg name based on the service namespace, name
 // and target port. NEG naming convention:
 //
-//	{prefix}{version}-{clusterid}-{namespace}-{name}-{service port}-{hash}
+//	{prefix}{version}-{principalEntityName}-{namespace}-{name}-{service port}-{hash}
 //
 // Output name is at most 63 characters. NEG tries to keep as much
 // information as possible.
 //
 // WARNING: Controllers depend on the naming pattern to get the list
-// of all NEGs associated with the current cluster. Any modifications
+// of all NEGs associated with the current principal entity. Any modifications
 // must be backward compatible.
 func (n *Namer) NEG(namespace, name string, port int32) string {
 	portStr := fmt.Sprintf("%v", port)
-	truncFields := TrimFieldsEvenly(maxNEGDescriptiveLabel, namespace, name, portStr)
+	truncFields := TrimFieldsEvenly(n.maxNEGLabelLength, namespace, name, portStr)
 	truncNamespace := truncFields[0]
 	truncName := truncFields[1]
 	truncPort := truncFields[2]
@@ -455,7 +465,7 @@ func (n *Namer) NEG(namespace, name string, port int32) string {
 // NonDefaultSubnetNEG returns the gce neg name in non default subnet based on
 // the service namespace, name, target port and subnet name. NEG naming convention:
 //
-//	{prefix}{version}-{clusterid}-{namespace}-{name}-{service port}-{subnetHash}-{combinedHash}
+//	{prefix}{version}-{principalEntityName}-{namespace}-{name}-{service port}-{subnetHash}-{combinedHash}
 //
 // subnetHash length = 6, combinedHash length = 8, and the remainings are trimmed evenly.
 // Output name is at most 63 characters. NEG tries to keep as much
@@ -465,7 +475,7 @@ func (n *Namer) NEG(namespace, name string, port int32) string {
 func (n *Namer) NonDefaultSubnetNEG(namespace, name, subnetName string, port int32) string {
 	portStr := fmt.Sprintf("%v", port)
 	hashedSubnet := subnetHash(subnetName)
-	truncFields := TrimFieldsEvenly(maxNEGDescriptiveLabel-subnetHashLength-1, namespace, name, portStr)
+	truncFields := TrimFieldsEvenly(n.maxNEGLabelLength-subnetHashLength-1, namespace, name, portStr)
 	truncNamespace := truncFields[0]
 	truncName := truncFields[1]
 	truncPort := truncFields[2]
@@ -475,13 +485,13 @@ func (n *Namer) NonDefaultSubnetNEG(namespace, name, subnetName string, port int
 // RXLBBackendName returns the gce Backend name based on the service namespace, name
 // and target port. Naming convention:
 //
-//	{prefix}{version}-{clusterid}-e-{namespace}-{name}-{service port}-{hash}
+//	{prefix}{version}-{principalEntityName}-e-{namespace}-{name}-{service port}-{hash}
 //
 // Output name is at most 63 characters.
 func (n *Namer) RXLBBackendName(namespace, name string, port int32) string {
 	portStr := fmt.Sprintf("%v", port)
 	// minus 2, as we added "-e" to prefix
-	truncFields := TrimFieldsEvenly(maxNEGDescriptiveLabel-2, namespace, name, portStr)
+	truncFields := TrimFieldsEvenly(n.maxNEGLabelLength-2, namespace, name, portStr)
 	truncNamespace := truncFields[0]
 	truncName := truncFields[1]
 	truncPort := truncFields[2]
@@ -497,9 +507,9 @@ func (n *Namer) NonDefaultSubnetCustomNEG(customNEGName, subnetName string) (str
 	return fmt.Sprintf("%s-%s", customNEGName, subnetHash(subnetName)), nil
 }
 
-// IsNEG returns true if the name is a NEG owned by this cluster.
+// IsNEG returns true if the name is a NEG owned by this principal entity.
 // It checks that the UID is present and a substring of the
-// cluster uid, since the NEG naming schema truncates it to 8 characters.
+// principal entity uid, since the NEG naming schema truncates it to 8 characters.
 // This is only valid for NEGs, BackendServices and Healthchecks for NEG.
 func (n *Namer) IsNEG(name string) bool {
 	return strings.HasPrefix(name, n.negPrefix())
@@ -511,7 +521,7 @@ func (namer *Namer) L4Backend(namespace, name string) string {
 }
 
 func (n *Namer) negPrefix() string {
-	return fmt.Sprintf("%s%s-%s", n.prefix, schemaVersionV1, n.shortUID())
+	return fmt.Sprintf("%s%s-%s", n.prefix, n.negSchemaVersion, n.shortUID())
 }
 
 // negSuffix returns hash code with 8 characters
