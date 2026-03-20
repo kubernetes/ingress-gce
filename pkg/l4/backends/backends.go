@@ -288,6 +288,7 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 	}
 
 	if params.LogConfigControlEnabled {
+		beLogger.V(2).Info("EnsureL4BackendService: using provided LogConfig for backend service", "logConfig", params.LogConfig)
 		expectedBS.LogConfig = params.LogConfig
 	} else if currentBS != nil {
 		expectedBS.LogConfig = currentBS.LogConfig
