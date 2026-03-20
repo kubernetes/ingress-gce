@@ -557,6 +557,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		l4.svcLogger.Error(err, "Failed to determine L4 logging config")
 		l4.recorder.Eventf(l4.Service, corev1.EventTypeWarning, l4lbconfig.GetReasonForError(err), "Failed to apply L4LBConfig: %v", err)
 	}
+	l4.svcLogger.V(2).Info("Determined L4 logging config", "logConfigEnabled", logConfig.Enable, "loggingCondition", loggingCondition)
 	logConfigControlEnabled := loggingCondition.Status == metav1.ConditionTrue
 	result.MetricsState.LoggingControlEnabled = logConfigControlEnabled
 
