@@ -1867,3 +1867,53 @@ func TestLBBasedOnFinalizer(t *testing.T) {
 		})
 	}
 }
+
+func TestIsConstraintViolationError(t *testing.T) {
+	testCases := []struct {
+		desc string
+		err  error
+		want bool
+	}{
+		{
+			desc: "nil error",
+			err:  nil,
+			want: false,
+		},
+		{
+			desc: "random error",
+			err:  errors.New("random error"),
+			want: false,
+		},
+		{
+			desc: "other google api error",
+			err: &googleapi.Error{
+				Code:    http.StatusBadRequest,
+				Message: "invalid arguments",
+			},
+			want: false,
+		},
+		{
+			desc: "constraint violation google api error",
+			err: &googleapi.Error{
+				Code:    http.StatusPreconditionFailed,
+				Message: "Constraint constraints/compute.restrictLoadBalancerCreationForTypes violated for projects/cf-gcpai-sales-buddy-l-t4. Forwarding Rule projects/cf-gcpai-sales-buddy-l-t4/regions/europe-west4/forwardingRules/k8s2-tcp-mv3ejptg-anthos-identity-servic-gke-oidc-envo-eswdpmuk of type INTERNAL_TCP_UDP is not allowed.",
+			},
+			want: true,
+		},
+		{
+			desc: "status 412 but not constraint violation",
+			err: &googleapi.Error{
+				Code:    http.StatusPreconditionFailed,
+				Message: "precondition failed for some other reason",
+			},
+			want: false,
+		},
+	}
+	for _, tC := range testCases {
+		t.Run(tC.desc, func(t *testing.T) {
+			if got := utils.IsConstraintViolationError(tC.err); got != tC.want {
+				t.Errorf("IsConstraintViolationError(%v) = %v, want %v", tC.err, got, tC.want)
+			}
+		})
+	}
+}
