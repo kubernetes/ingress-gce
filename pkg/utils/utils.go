@@ -279,6 +279,11 @@ func IsIPConfigurationError(err error) bool {
 	return errors.As(err, &ipConfigError)
 }
 
+// IsIPOutOfRangeError checks if error is a GCE IP out of range error.
+func IsIPOutOfRangeError(err error) bool {
+	return IsHTTPErrorCode(err, http.StatusBadRequest) && strings.Contains(err.Error(), "Requested internal IP address is outside the network/subnetwork range")
+}
+
 // IsConflictingPortsConfigurationError checks if wrapped error is an conflicting ports configuration error.
 func IsConflictingPortsConfigurationError(err error) bool {
 	var portsConflictConfigError *ConflictingPortsConfigurationError
