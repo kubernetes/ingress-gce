@@ -24,33 +24,15 @@ import (
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
-	befeatures "k8s.io/ingress-gce/pkg/l4/backends/features"
-	"k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
 
 // BalancingMode represents the loadbalancing configuration of an individual
-// Backend in a BackendService. This is *effectively* a cluster wide setting
-// since you can't mix modes across Backends pointing to the same IG, and you
-// can't have a single node in more than 1 loadbalanced IG.
+// Backend in a BackendService.
 type BalancingMode string
 
 const (
-	// Rate balances incoming requests based on observed RPS.
-	// As of this writing, it's the only balancing mode supported by GCE's
-	// internal LB. This setting doesn't make sense for Kubernetes clusters
-	// because requests can get proxied between instance groups in different
-	// zones by kube-proxy without GCE even knowing it. Setting equal RPS on
-	// all IGs should achieve roughly equal distribution of requests.
-	Rate BalancingMode = "RATE"
-	// Utilization balances incoming requests based on observed utilization.
-	// This mode is only useful if you want to divert traffic away from IGs
-	// running other compute intensive workloads. Utilization statistics are
-	// aggregated per instances, not per container, and requests can get proxied
-	// between instance groups in different zones by kube-proxy without GCE even
-	// knowing about it.
-	Utilization BalancingMode = "UTILIZATION"
 	// Connections balances incoming requests based on a connection counter.
 	// This setting currently doesn't make sense for Kubernetes clusters,
 	// because we use NodePort Services as HTTP LB backends, so GCE's connection
@@ -58,14 +40,7 @@ const (
 	Connections BalancingMode = "CONNECTION"
 )
 
-// maxRPS is the RPS setting for all Backends with BalancingMode RATE. The exact
-// value doesn't matter, as long as it's the same for all Backends. Requests
-// received by GCLB above this RPS are NOT dropped, GCLB continues to distribute
-// them across IGs.
-// TODO: Should this be math.MaxInt64?
-const maxRPS = 1
-
-// negLinker handles linking backends to NEG's.
+// negLinker handles linking backends to NEG's for L4 Load Balancers (only handles GCE_VM_IP type NEGs)
 type negLinker struct {
 	backendPool                    *Pool
 	negGetter                      NEGGetter
@@ -98,7 +73,11 @@ func NewNEGLinker(
 
 // Link implements Link.
 func (nl *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
-	version := befeatures.VersionFromServicePort(&sp)
+	if !sp.VMIPNEGEnabled {
+		return fmt.Errorf("non GCE_VM_IP NEGs are not supported by this linker")
+	}
+
+	version := meta.VersionGA
 
 	negSelfLinks, err := nl.getNegSelfLinks(sp, groups)
 	if err != nil {
@@ -106,7 +85,7 @@ func (nl *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 	}
 
 	beName := sp.BackendName()
-	scope := befeatures.ScopeFromServicePort(&sp)
+	scope := meta.KeyType(meta.Regional)
 
 	key, err := composite.CreateKey(nl.cloud, beName, scope)
 	if err != nil {
@@ -117,7 +96,7 @@ func (nl *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 		return err
 	}
 
-	newBackends := backendsForNEGs(negSelfLinks.negsToAdd, &sp)
+	newBackends := backendsForNEGs(negSelfLinks.negsToAdd)
 	// Historically, we merged the old backends with the new backends to ensure
 	// that we don't detach NEGs when zones contract. Given that now we primarily
 	// use SvcNEGs as the source-of-truth for calculating backends, and since
@@ -140,7 +119,7 @@ func (nl *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 		filteredBackends := mergedBackend
 		if len(negSelfLinks.negsToRemove) != 0 {
 			nl.logger.Info("Removing NEGs in to-be-deleted state from merged backends", "negsToRemove", negSelfLinks.negsToRemove)
-			backendsToRemove := backendsForNEGs(negSelfLinks.negsToRemove, &sp)
+			backendsToRemove := backendsForNEGs(negSelfLinks.negsToRemove)
 
 			// Remove backends belonging to to-be-deleted NEGs from mergedBackend.
 			filteredBackends, err = removeBackends(mergedBackend, backendsToRemove)
@@ -170,7 +149,7 @@ type backendNegUrls struct {
 }
 
 func (nl *negLinker) getNegSelfLinks(sp utils.ServicePort, groups []GroupKey) (backendNegUrls, error) {
-	version := befeatures.VersionFromServicePort(&sp)
+	version := meta.VersionGA
 
 	if nl.enableMultiSubnetClusterPhase1 {
 		negName := sp.NEGName()
@@ -254,7 +233,7 @@ func mergeBackends(old, new []*composite.Backend) ([]*composite.Backend, error) 
 		}
 	}
 
-	ret := []*composite.Backend{}
+	var ret []*composite.Backend
 
 	for _, be := range backendMap {
 		ret = append(ret, be)
@@ -285,7 +264,7 @@ func removeBackends(curr, toRemove []*composite.Backend) ([]*composite.Backend, 
 		}
 	}
 
-	ret := []*composite.Backend{}
+	var ret []*composite.Backend
 
 	for _, be := range backendMap {
 		ret = append(ret, be)
@@ -333,48 +312,20 @@ func (d *backendDiff) isEqual() bool         { return d.old.Equal(d.new) && d.ch
 func (d *backendDiff) toRemove() sets.String { return d.old.Difference(d.new) }
 func (d *backendDiff) toAdd() sets.String    { return d.new.Difference(d.old) }
 
-func backendsForNEGs(negSelfLinks []string, sp *utils.ServicePort) []*composite.Backend {
+func backendsForNEGs(negSelfLinks []string) []*composite.Backend {
 	var backends []*composite.Backend
 	for _, neg := range negSelfLinks {
-		newBackend := &composite.Backend{Group: neg}
-
-		switch getNegType(*sp) {
-		case types.VmIpEndpointType:
+		newBackend := &composite.Backend{
+			Group: neg,
 			// Setting MaxConnectionsPerEndpoint is not supported for L4 ILB
 			// https://cloud.google.com/load-balancing/docs/backend-service#target_capacity
 			// hence only mode is being set.
-			newBackend.BalancingMode = string(Connections)
-
-		case types.VmIpPortEndpointType:
-			// This preserves the original behavior, but really we should error
-			// when there is a type we don't understand.
-			fallthrough
-		default:
-			newBackend.BalancingMode = string(Rate)
-			newBackend.MaxRatePerEndpoint = maxRPS
-			newBackend.CapacityScaler = 1.0
-
-			if flags.F.EnableTrafficScaling {
-				if sp.MaxRatePerEndpoint != nil {
-					newBackend.MaxRatePerEndpoint = float64(*sp.MaxRatePerEndpoint)
-				}
-				if sp.CapacityScaler != nil {
-					newBackend.CapacityScaler = *sp.CapacityScaler
-				}
-			}
+			BalancingMode: string(Connections),
 		}
 
 		backends = append(backends, newBackend)
 	}
 	return backends
-}
-
-// getNegType returns NEG type based on service port config
-func getNegType(sp utils.ServicePort) types.NetworkEndpointType {
-	if sp.VMIPNEGEnabled {
-		return types.VmIpEndpointType
-	}
-	return types.VmIpPortEndpointType
 }
 
 // getNegUrlsFromSvcneg return NEG urls from svcneg status depending on if it is in
@@ -412,12 +363,12 @@ func getNegUrlFromSvcneg(key string, zone string, svcNegLister cache.Indexer, lo
 	if !exists {
 		return "", false
 	}
-	svcneg := obj.(*negv1beta1.ServiceNetworkEndpointGroup)
+	svcNEG := obj.(*negv1beta1.ServiceNetworkEndpointGroup)
 
-	for _, negRef := range svcneg.Status.NetworkEndpointGroups {
+	for _, negRef := range svcNEG.Status.NetworkEndpointGroups {
 		key, err := cloud.ParseResourceURL(negRef.SelfLink)
 		if err != nil {
-			logger.Error(err, "Failed to parse NEG SelfLink from svcneg", "svcneg", svcneg)
+			logger.Error(err, "Failed to parse NEG SelfLink from svcneg", "svcneg", svcNEG)
 			continue
 		}
 		if key.Key.Zone == zone {

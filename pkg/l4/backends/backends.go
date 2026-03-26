@@ -26,7 +26,6 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
-	"k8s.io/ingress-gce/pkg/l4/backends/features"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -135,10 +134,26 @@ func selectApiVersionForUpdate(current, expected meta.Version) meta.Version {
 	return expected
 }
 
+func isLowerAPIVersion(a, b meta.Version) bool {
+	precedenceA, okA := versionPrecedence[a]
+	precedenceB, okB := versionPrecedence[b]
+	if !okA {
+		precedenceA = 0
+	}
+
+	if !okB {
+		precedenceB = 0
+	}
+	if precedenceA > precedenceB {
+		return true
+	}
+	return false
+}
+
 // Update a BackendService given the composite type.
 func (p *Pool) Update(be *composite.BackendService, beLogger klog.Logger) error {
 	// Ensure the backend service has the proper version before updating.
-	be.Version = features.VersionFromDescription(be.Description)
+	be.Version = readAPIVersionFromL4Description(be.Description, beLogger)
 	scope, err := composite.ScopeFromSelfLink(be.SelfLink)
 	if err != nil {
 		return err
@@ -167,9 +182,9 @@ func (p *Pool) Get(name string, version meta.Version, scope meta.KeyType, beLogg
 	// Evaluate the existing features from description to see if a lower
 	// API version is required so that we don't lose information from
 	// the existing backend service.
-	versionRequired := features.VersionFromDescription(be.Description)
+	versionRequired := readAPIVersionFromL4Description(be.Description, beLogger)
 
-	if features.IsLowerVersion(versionRequired, version) {
+	if isLowerAPIVersion(versionRequired, version) {
 		be, err = composite.GetBackendService(p.cloud, key, versionRequired, beLogger)
 		if err != nil {
 			return nil, err
@@ -317,15 +332,8 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 		return createdBS, utils.ResourceUpdate, err
 	} else {
 		// Determine the appropriate API version to use for updating the backend service
-		currentVersion := meta.VersionGA
-		var currentDesc utils.L4LBResourceDescription
-		err = currentDesc.Unmarshal(currentBS.Description)
-		if err != nil {
-			beLogger.V(0).Error(err, "EnsureL4BackendService: error unmarshaling backend service description")
-		} else {
-			currentVersion = currentDesc.APIVersion
-		}
-		expectedBS.Version = selectApiVersionForUpdate(currentVersion, expectedBS.Version)
+		apiVersion := readAPIVersionFromL4Description(currentBS.Description, beLogger)
+		expectedBS.Version = selectApiVersionForUpdate(apiVersion, expectedBS.Version)
 	}
 
 	if backendSvcEqual(expectedBS, currentBS, p.useConnectionTrackingPolicy, params.LogConfigControlEnabled) {
@@ -348,6 +356,18 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 
 	updatedBS, err := composite.GetBackendService(p.cloud, key, expectedBS.Version, beLogger)
 	return updatedBS, utils.ResourceUpdate, err
+}
+
+func readAPIVersionFromL4Description(description string, beLogger klog.Logger) meta.Version {
+	currentVersion := meta.VersionGA
+	var currentDesc utils.L4LBResourceDescription
+	err := currentDesc.Unmarshal(description)
+	if err != nil {
+		beLogger.V(0).Error(err, "EnsureL4BackendService: error unmarshaling backend service description")
+	} else {
+		currentVersion = currentDesc.APIVersion
+	}
+	return currentVersion
 }
 
 // backendSvcEqual returns true if the 2 BackendService objects are equal.

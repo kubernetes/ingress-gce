@@ -1,6 +1,7 @@
 package backends
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -1333,6 +1334,72 @@ func TestVersionSelectionInUpdate(t *testing.T) {
 			// Verify that the version was correctly selected
 			if updatedBS.Version != tc.expectedVersion {
 				t.Errorf("EnsureL4BackendService set version to %s, want %s", updatedBS.Version, tc.expectedVersion)
+			}
+		})
+	}
+}
+
+func TestIsLowerAPIVersion(t *testing.T) {
+	tests := []struct {
+		a       meta.Version
+		b       meta.Version
+		isLower bool
+	}{
+		{
+			a:       meta.VersionGA,
+			b:       meta.VersionGA,
+			isLower: false,
+		},
+		{
+			a:       meta.VersionBeta,
+			b:       meta.VersionBeta,
+			isLower: false,
+		},
+		{
+			a:       meta.VersionAlpha,
+			b:       meta.VersionAlpha,
+			isLower: false,
+		},
+		{
+			a:       meta.VersionGA,
+			b:       meta.VersionBeta,
+			isLower: false,
+		},
+		{
+			a:       meta.VersionGA,
+			b:       meta.VersionAlpha,
+			isLower: false,
+		},
+		{
+			a:       meta.VersionBeta,
+			b:       meta.VersionGA,
+			isLower: true,
+		},
+		{
+			a:       meta.VersionBeta,
+			b:       meta.VersionAlpha,
+			isLower: false,
+		},
+		{
+			a:       meta.VersionAlpha,
+			b:       meta.VersionGA,
+			isLower: true,
+		},
+		{
+			a:       meta.VersionAlpha,
+			b:       meta.VersionBeta,
+			isLower: true,
+		},
+	}
+	for _, tc := range tests {
+		desc := fmt.Sprintf("is_%s_lower_than_%s", tc.a, tc.b)
+		t.Run(desc, func(t *testing.T) {
+			if isLowerAPIVersion(tc.a, tc.b) != tc.isLower {
+				op := "lower"
+				if !tc.isLower {
+					op = "not lower"
+				}
+				t.Errorf("%s was expeted to be %s than %s", tc.a, op, tc.b)
 			}
 		})
 	}
