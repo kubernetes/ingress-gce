@@ -37,6 +37,8 @@ const (
 	usCentral1AZone = "us-central1-a"
 	usCentral1CZone = "us-central1-c"
 	hcLink          = "some_hc_link"
+
+	defaultTestSubnetURL = "https://www.googleapis.com/compute/v1/projects/mock-project/regions/test-region/subnetworks/default"
 )
 
 func linkerTestClusterValues() gce.TestClusterValues {
