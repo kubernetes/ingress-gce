@@ -38,3 +38,6 @@ bin/
 bin/
 docs/deploy/resources/*.gen
 __debug_bin*
+
+# leftovers from linters failing
+.cache/
