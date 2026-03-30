@@ -268,6 +268,11 @@ func IsUnsupportedNetworkTierError(err error) bool {
 	return errors.As(err, &netTierError)
 }
 
+// IsConstraintViolationError checks if the error is a constraint violation error returned by GCP.
+func IsConstraintViolationError(err error) bool {
+	return IsHTTPErrorCode(err, http.StatusPreconditionFailed) && strings.Contains(err.Error(), "Constraint") && strings.Contains(err.Error(), "violated")
+}
+
 // IsIPConfigurationError checks if wrapped error is an IP configuration error.
 func IsIPConfigurationError(err error) bool {
 	var ipConfigError *IPConfigurationError

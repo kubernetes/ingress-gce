@@ -2,11 +2,12 @@ package resources_test
 
 import (
 	"fmt"
+	"net/http"
 	"testing"
 
-	"k8s.io/ingress-gce/pkg/l4/resources"
-
+	"google.golang.org/api/googleapi"
 	"k8s.io/ingress-gce/pkg/firewalls"
+	"k8s.io/ingress-gce/pkg/l4/resources"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -53,6 +54,13 @@ func TestIsUserError(t *testing.T) {
 		},
 		{
 			err:  utils.NewConflictingPortsConfigurationError("8080-8090", "conflicting ports"),
+			want: true,
+		},
+		{
+			err: &googleapi.Error{
+				Code:    http.StatusPreconditionFailed,
+				Message: "Constraint constraints/compute.restrictLoadBalancerCreationForTypes violated for projects/...",
+			},
 			want: true,
 		},
 	}
