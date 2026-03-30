@@ -63,6 +63,11 @@ func TestIsUserError(t *testing.T) {
 			},
 			want: true,
 		},
+		{
+
+			err:  &googleapi.Error{Code: 400, Message: "Requested internal IP address is outside the network/subnetwork range"},
+			want: true,
+		},
 	}
 	for _, tC := range testCases {
 		tC := tC

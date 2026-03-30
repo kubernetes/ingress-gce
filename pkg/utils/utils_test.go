@@ -1917,3 +1917,40 @@ func TestIsConstraintViolationError(t *testing.T) {
 		})
 	}
 }
+
+func TestIsIPOutOfRangeError(t *testing.T) {
+	testCases := []struct {
+		desc string
+		err  error
+		want bool
+	}{
+		{
+			desc: "nil error",
+			err:  nil,
+			want: false,
+		},
+		{
+			desc: "other googleapi error",
+			err:  &googleapi.Error{Code: http.StatusBadRequest, Message: "Some other error"},
+			want: false,
+		},
+		{
+			desc: "not a googleapi error",
+			err:  fmt.Errorf("Requested internal IP address is outside the network/subnetwork range"),
+			want: false,
+		},
+		{
+			desc: "correct googleapi error",
+			err:  &googleapi.Error{Code: http.StatusBadRequest, Message: "Invalid value for field 'resource.ipAddress': '10.24.120.53'. Requested internal IP address is outside the network/subnetwork range., invalid"},
+			want: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			if got := utils.IsIPOutOfRangeError(tc.err); got != tc.want {
+				t.Errorf("IsIPOutOfRangeError(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
