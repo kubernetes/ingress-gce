@@ -94,6 +94,9 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 								Subnetwork: "my-subnetwork",
 							},
 						},
+						PrincipalInfo: &providerconfigv1.PrincipalInfo{
+							ID: "abcdef123456",
+						},
 					},
 				},
 			},
@@ -135,6 +138,9 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 								Subnetwork: "my-subnetwork-1",
 							},
 						},
+						PrincipalInfo: &providerconfigv1.PrincipalInfo{
+							ID: "abcdef123456",
+						},
 					},
 				},
 				{
@@ -152,6 +158,9 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 							SubnetInfo: providerconfigv1.ProviderConfigSubnetInfo{
 								Subnetwork: "my-subnetwork-2",
 							},
+						},
+						PrincipalInfo: &providerconfigv1.PrincipalInfo{
+							ID: "abcdef123456",
 						},
 					},
 				},
@@ -395,6 +404,9 @@ func createPC(
 				SubnetInfo: providerconfigv1.ProviderConfigSubnetInfo{
 					Subnetwork: subnet,
 				},
+			},
+			PrincipalInfo: &providerconfigv1.PrincipalInfo{
+				ID: "abcdef123456",
 			},
 		},
 	}
@@ -899,6 +911,9 @@ func TestProviderConfigErrorCases(t *testing.T) {
 							Subnetwork: "my-subnetwork",
 						},
 					},
+					PrincipalInfo: &providerconfigv1.PrincipalInfo{
+						ID: "abcdef123456",
+					},
 				},
 			},
 			expectError: false, // Should still work, just log warnings
@@ -915,6 +930,10 @@ func TestProviderConfigErrorCases(t *testing.T) {
 				Spec: providerconfigv1.ProviderConfigSpec{
 					ProjectID:     "my-project",
 					ProjectNumber: 12345,
+					PrincipalInfo: &providerconfigv1.PrincipalInfo{
+						ID: "abcdef123456",
+					},
+					// Missing NetworkConfig
 				},
 			},
 			expectError: false, // Should handle gracefully
