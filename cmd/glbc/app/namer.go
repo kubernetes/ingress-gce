@@ -174,8 +174,8 @@ func getClusterUID(kubeClient kubernetes.Interface, name string, logger klog.Log
 	for _, ing := range ings.Items {
 		if len(ing.Status.LoadBalancer.Ingress) != 0 {
 			c := namer.ParseName(loadbalancers.GCEResourceName(ing.Annotations, "forwarding-rule"))
-			if c.ClusterName != "" {
-				return c.ClusterName, cfgVault.Put(storage.UIDDataKey, c.ClusterName, false)
+			if c.PrincipalEntityName != "" {
+				return c.PrincipalEntityName, cfgVault.Put(storage.UIDDataKey, c.PrincipalEntityName, false)
 			}
 			logger.Info("Found a working Ingress, assuming uid is empty string")
 			return "", cfgVault.Put(storage.UIDDataKey, "", false)
