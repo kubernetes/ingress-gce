@@ -103,15 +103,15 @@ func TestNamerParseName(t *testing.T) {
 		want *NameComponents
 	}{
 		{"", &NameComponents{}}, // TODO: this should really be a parse error.
-		{newNamer.IGBackend(80), &NameComponents{ClusterName: uid, Resource: "be"}},
-		{newNamer.InstanceGroup(), &NameComponents{ClusterName: uid, Resource: "ig"}},
-		{newNamer.TargetProxy(lbName, HTTPProtocol), &NameComponents{ClusterName: uid, Resource: "tp"}},
-		{newNamer.TargetProxy(lbName, HTTPSProtocol), &NameComponents{ClusterName: uid, Resource: "tps"}},
-		{newNamer.SSLCertName("default/my-ing", secretHash), &NameComponents{ClusterName: uid, Resource: "ssl"}},
-		{newNamer.SSLCertName("default/my-ing", secretHash), &NameComponents{ClusterName: uid, Resource: "ssl"}},
-		{newNamer.ForwardingRule(lbName, HTTPProtocol), &NameComponents{ClusterName: uid, Resource: "fw"}},
-		{newNamer.ForwardingRule(lbName, HTTPSProtocol), &NameComponents{ClusterName: uid, Resource: "fws"}},
-		{newNamer.UrlMap(lbName), &NameComponents{ClusterName: uid, Resource: "um", LbNamePrefix: "key1"}},
+		{newNamer.IGBackend(80), &NameComponents{PrincipalEntityName: uid, Resource: "be"}},
+		{newNamer.InstanceGroup(), &NameComponents{PrincipalEntityName: uid, Resource: "ig"}},
+		{newNamer.TargetProxy(lbName, HTTPProtocol), &NameComponents{PrincipalEntityName: uid, Resource: "tp"}},
+		{newNamer.TargetProxy(lbName, HTTPSProtocol), &NameComponents{PrincipalEntityName: uid, Resource: "tps"}},
+		{newNamer.SSLCertName("default/my-ing", secretHash), &NameComponents{PrincipalEntityName: uid, Resource: "ssl"}},
+		{newNamer.SSLCertName("default/my-ing", secretHash), &NameComponents{PrincipalEntityName: uid, Resource: "ssl"}},
+		{newNamer.ForwardingRule(lbName, HTTPProtocol), &NameComponents{PrincipalEntityName: uid, Resource: "fw"}},
+		{newNamer.ForwardingRule(lbName, HTTPSProtocol), &NameComponents{PrincipalEntityName: uid, Resource: "fws"}},
+		{newNamer.UrlMap(lbName), &NameComponents{PrincipalEntityName: uid, Resource: "um", LbNamePrefix: "key1"}},
 	} {
 		nc := newNamer.ParseName(tc.in)
 		if *nc != *tc.want {
@@ -151,8 +151,8 @@ func TestNameBelongsToCluster(t *testing.T) {
 			newNamer.UrlMap(longLBName),
 			newNamer.NEG(strings.Repeat(longKey, 3), strings.Repeat(longKey, 3), int32(88888)),
 		} {
-			if !newNamer.NameBelongsToCluster(tc) {
-				t.Errorf("newNamer.NameBelongsToCluster(%q) = false, want true", tc)
+			if !newNamer.NameBelongsToEntity(tc) {
+				t.Errorf("newNamer.NameBelongsToEntity(%q) = false, want true", tc)
 			}
 		}
 	}
@@ -171,8 +171,8 @@ func TestNameBelongsToCluster(t *testing.T) {
 		newNamer.ForwardingRule(longLBName, HTTPSProtocol),
 		newNamer.UrlMap(longLBName),
 	} {
-		if newNamer.NameBelongsToCluster(tc) {
-			t.Errorf("newNamer.NameBelongsToCluster(%q) = true, want false", tc)
+		if newNamer.NameBelongsToEntity(tc) {
+			t.Errorf("newNamer.NameBelongsToEntity(%q) = true, want false", tc)
 		}
 	}
 }
@@ -368,8 +368,8 @@ func TestNamerSSLCertName(t *testing.T) {
 	newNamer := NewNamerWithPrefix("k8s", "", "fw1", klog.TODO())
 	lbName := newNamer.LoadBalancer("key1")
 	certName := newNamer.SSLCertName(lbName, secretHash)
-	if strings.HasSuffix(certName, clusterNameDelimiter) {
-		t.Errorf("Invalid Cert name %s ending with %s", certName, clusterNameDelimiter)
+	if strings.HasSuffix(certName, principalEntityNameDelimiter) {
+		t.Errorf("Invalid Cert name %s ending with %s", certName, principalEntityNameDelimiter)
 	}
 }
 

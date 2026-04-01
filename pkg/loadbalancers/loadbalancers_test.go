@@ -1368,8 +1368,8 @@ func TestNameParsing(t *testing.T) {
 	}
 	components := namer.ParseName(GCEResourceName(annotationsMap, "forwarding-rule"))
 	t.Logf("components = %+v", components)
-	if components.ClusterName != clusterName {
-		t.Errorf("namer.ParseName(%q), got components.ClusterName == %q, want %q", fullName, clusterName, components.ClusterName)
+	if components.PrincipalEntityName != clusterName {
+		t.Errorf("namer.ParseName(%q), got components.PrincipalEntityName == %q, want %q", fullName, clusterName, components.PrincipalEntityName)
 	}
 	resourceName := "fw"
 	if components.Resource != resourceName {
@@ -1404,7 +1404,7 @@ func TestClusterNameChange(t *testing.T) {
 
 	// Now the components should get renamed with the next suffix.
 	l7, err = j.pool.Ensure(lbInfo)
-	if err != nil || j.namer.ParseName(l7.namer.LoadBalancer().String()).ClusterName != newName {
+	if err != nil || j.namer.ParseName(l7.namer.LoadBalancer().String()).PrincipalEntityName != newName {
 		t.Fatalf("Expected L7 name to change.")
 	}
 	verifyHTTPSForwardingRuleAndProxyLinks(t, j, l7)
