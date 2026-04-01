@@ -115,9 +115,12 @@ type Namer struct {
 	// DefaultPrefix.
 	prefix string
 
-	nameLock     sync.Mutex
-	clusterName  string
-	firewallName string
+	nameLock sync.Mutex
+	// clusterName could be cluster UID, or tenant UID in multi-project scenario
+	clusterName         string
+	firewallName        string
+	negSchemaVersion    string
+	maxNEGLabelLength   int
 
 	logger klog.Logger
 }
@@ -129,7 +132,25 @@ func NewNamer(clusterName, firewallName string, logger klog.Logger) *Namer {
 
 // NewNamerWithPrefix creates a new namer with a custom prefix.
 func NewNamerWithPrefix(prefix, clusterName, firewallName string, logger klog.Logger) *Namer {
-	namer := &Namer{prefix: prefix, logger: logger.WithName("Namer")}
+	namer := &Namer{
+		prefix:            prefix,
+		logger:            logger.WithName("Namer"),
+		negSchemaVersion:  schemaVersionV1,
+		maxNEGLabelLength: maxNEGDescriptiveLabel,
+	}
+	namer.SetUID(clusterName)
+	namer.SetFirewall(firewallName)
+
+	return namer
+}
+
+func NewNamerWithOptions(prefix, clusterName, firewallName string, maxNEGLabelLength int, schemaVersion string, logger klog.Logger) *Namer {
+	namer := &Namer{
+		prefix:            prefix,
+		logger:            logger.WithName("Namer"),
+		negSchemaVersion:  schemaVersion,
+		maxNEGLabelLength: maxNEGLabelLength,
+	}
 	namer.SetUID(clusterName)
 	namer.SetFirewall(firewallName)
 
@@ -445,7 +466,7 @@ func (n *Namer) NamedPort(port int64) string {
 // must be backward compatible.
 func (n *Namer) NEG(namespace, name string, port int32) string {
 	portStr := fmt.Sprintf("%v", port)
-	truncFields := TrimFieldsEvenly(maxNEGDescriptiveLabel, namespace, name, portStr)
+	truncFields := TrimFieldsEvenly(n.maxNEGLabelLength, namespace, name, portStr)
 	truncNamespace := truncFields[0]
 	truncName := truncFields[1]
 	truncPort := truncFields[2]
@@ -465,7 +486,7 @@ func (n *Namer) NEG(namespace, name string, port int32) string {
 func (n *Namer) NonDefaultSubnetNEG(namespace, name, subnetName string, port int32) string {
 	portStr := fmt.Sprintf("%v", port)
 	hashedSubnet := subnetHash(subnetName)
-	truncFields := TrimFieldsEvenly(maxNEGDescriptiveLabel-subnetHashLength-1, namespace, name, portStr)
+	truncFields := TrimFieldsEvenly(n.maxNEGLabelLength-subnetHashLength-1, namespace, name, portStr)
 	truncNamespace := truncFields[0]
 	truncName := truncFields[1]
 	truncPort := truncFields[2]
@@ -481,7 +502,7 @@ func (n *Namer) NonDefaultSubnetNEG(namespace, name, subnetName string, port int
 func (n *Namer) RXLBBackendName(namespace, name string, port int32) string {
 	portStr := fmt.Sprintf("%v", port)
 	// minus 2, as we added "-e" to prefix
-	truncFields := TrimFieldsEvenly(maxNEGDescriptiveLabel-2, namespace, name, portStr)
+	truncFields := TrimFieldsEvenly(n.maxNEGLabelLength-2, namespace, name, portStr)
 	truncNamespace := truncFields[0]
 	truncName := truncFields[1]
 	truncPort := truncFields[2]
@@ -511,7 +532,7 @@ func (namer *Namer) L4Backend(namespace, name string) string {
 }
 
 func (n *Namer) negPrefix() string {
-	return fmt.Sprintf("%s%s-%s", n.prefix, schemaVersionV1, n.shortUID())
+	return fmt.Sprintf("%s%s-%s", n.prefix, n.negSchemaVersion, n.shortUID())
 }
 
 // negSuffix returns hash code with 8 characters
