@@ -1,10 +1,10 @@
 package backends_test
 
 import (
+	"k8s.io/ingress-gce/pkg/l4/backends"
 	"testing"
 
 	api_v1 "k8s.io/api/core/v1"
-	"k8s.io/ingress-gce/pkg/backends"
 )
 
 func TestGetProtocol(t *testing.T) {

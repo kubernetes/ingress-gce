@@ -26,8 +26,8 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	l4lbconfigv1 "k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1"
-	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/l4/annotations"
+	"k8s.io/ingress-gce/pkg/l4/backends"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/klog/v2"
 

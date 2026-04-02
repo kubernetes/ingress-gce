@@ -15,9 +15,9 @@ package backends
 
 import (
 	"fmt"
-
 	cloudprovider "github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -93,4 +93,31 @@ func (linker *RegionalInstanceGroupLinker) Link(sp utils.ServicePort, projectID 
 		return fmt.Errorf("updating backend service %s for IG failed, err:%w", sp.BackendName(), err)
 	}
 	return nil
+}
+
+func getInstanceGroupsToAddAndRemove(be *composite.BackendService, igLinks []string, logger klog.Logger) ([]string, sets.String, error) {
+	existingIGs := sets.String{}
+	for _, existingBe := range be.Backends {
+		path, err := utils.RelativeResourceName(existingBe.Group)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to parse instance group: %w", err)
+		}
+		existingIGs.Insert(path)
+	}
+
+	wantIGs := sets.String{}
+	for _, igLink := range igLinks {
+		path, err := utils.RelativeResourceName(igLink)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to parse instance group: %w", err)
+		}
+		wantIGs.Insert(path)
+	}
+
+	missingIGs := wantIGs.Difference(existingIGs)
+	removeIGs := existingIGs.Difference(wantIGs)
+	if missingIGs.Len() > 0 || removeIGs.Len() > 0 {
+		logger.V(2).Info(fmt.Sprintf("Backend service has instance groups %+v, want %+v", existingIGs.List(), wantIGs.List()), "backendService", be.Name)
+	}
+	return missingIGs.List(), removeIGs, nil
 }

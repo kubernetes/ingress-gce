@@ -19,11 +19,11 @@ package resources
 import (
 	"errors"
 	"fmt"
+	"k8s.io/ingress-gce/pkg/l4/backends"
 	"strings"
 	"time"
 
 	"google.golang.org/api/compute/v1"
-	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/l4/annotations"
