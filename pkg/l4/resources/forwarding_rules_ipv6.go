@@ -103,7 +103,7 @@ func (l4 *L4) buildExpectedIPv6ForwardingRule(bsLink string, options gce.ILBOpti
 	protocol := string(utils.GetProtocol(svcPorts))
 	allPorts := false
 	if l4.enableMixedProtocol {
-		protocol = forwardingrules.GetILBProtocol(svcPorts)
+		protocol = forwardingrules.GetProtocol(svcPorts)
 		if protocol == forwardingrules.ProtocolL3 {
 			allPorts = true
 			ports = nil
@@ -275,7 +275,23 @@ func (l4netlb *L4NetLB) buildExpectedIPv6ForwardingRule(bsLink, ipv6AddressToUse
 	svcPorts := l4netlb.Service.Spec.Ports
 	ports := utils.GetPorts(svcPorts)
 	portRange := utils.MinMaxPortRange(svcPorts)
-	protocol := utils.GetProtocol(svcPorts)
+	allPorts := false
+
+	if len(ports) <= maxForwardedPorts && flags.F.EnableDiscretePortForwarding {
+		portRange = ""
+	} else {
+		ports = nil
+	}
+
+	protocol := string(utils.GetProtocol(svcPorts))
+	if l4netlb.mixedProtocolUsingL3() {
+		protocol = forwardingrules.GetProtocol(svcPorts)
+		if protocol == forwardingrules.ProtocolL3 {
+			portRange, ports = "", nil
+			allPorts = true
+		}
+	}
+
 	fr := &composite.ForwardingRule{
 		Name:                frName,
 		Description:         frDesc,
@@ -287,10 +303,8 @@ func (l4netlb *L4NetLB) buildExpectedIPv6ForwardingRule(bsLink, ipv6AddressToUse
 		IpVersion:           IPVersionIPv6,
 		NetworkTier:         netTier.ToGCEValue(),
 		Subnetwork:          subnetworkURL,
-	}
-	if len(ports) <= maxForwardedPorts && flags.F.EnableDiscretePortForwarding {
-		fr.Ports = utils.GetPorts(svcPorts)
-		fr.PortRange = ""
+		AllPorts:            allPorts,
+		Ports:               ports,
 	}
 
 	return fr, nil

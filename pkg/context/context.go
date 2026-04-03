@@ -140,6 +140,7 @@ type ControllerContextConfig struct {
 	EnableL4NetLBNEGsDefault             bool
 	EnableL4ILBMixedProtocol             bool
 	EnableL4NetLBMixedProtocol           bool
+	EnableL3ForNetLBMixedProtocol        bool
 	EnableL4DenyFirewalls                bool
 	EnableL4DenyFirewallsRollbackCleanup bool
 }

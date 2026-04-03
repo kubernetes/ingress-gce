@@ -363,8 +363,8 @@ func assertResult(t *testing.T, got, want *L4ILBSyncResult) {
 	if got.SyncType != want.SyncType {
 		t.Errorf("got.SyncType != want.SyncType: got %v, want %v", got.SyncType, want.SyncType)
 	}
-	if diff := cmp.Diff(got.Annotations, want.Annotations); diff != "" {
-		t.Errorf("got.Annotations != want.Annotations: (-got +want):\n%s", diff)
+	if diff := cmp.Diff(want.Annotations, got.Annotations); diff != "" {
+		t.Errorf("got.Annotations != want.Annotations: (-want +got):\n%s", diff)
 	}
 }
 

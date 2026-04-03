@@ -65,7 +65,7 @@ func TestGetProtocol(t *testing.T) {
 
 	for _, tC := range testCases {
 		t.Run(tC.desc, func(t *testing.T) {
-			got := forwardingrules.GetILBProtocol(tC.ports)
+			got := forwardingrules.GetProtocol(tC.ports)
 
 			if got != tC.want {
 				t.Errorf("GetProtocol(_) = %v, want %v", got, tC.want)

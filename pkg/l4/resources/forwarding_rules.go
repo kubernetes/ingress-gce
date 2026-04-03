@@ -71,7 +71,7 @@ func (l4 *L4) ensureIPv4ForwardingRule(bsLink string, options gce.ILBOptions, ex
 	protocol := string(utils.GetProtocol(servicePorts))
 	allPorts := false
 	if l4.enableMixedProtocol {
-		protocol = forwardingrules.GetILBProtocol(servicePorts)
+		protocol = forwardingrules.GetProtocol(servicePorts)
 		if protocol == forwardingrules.ProtocolL3 {
 			allPorts = true
 			ports = nil

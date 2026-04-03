@@ -90,8 +90,7 @@ func AnnotationsMixedIPv6() map[string]string {
 		"service.kubernetes.io/healthcheck":               "k8s2-axyqjz2d-l4-shared-hc",
 		"service.kubernetes.io/firewall-rule-for-hc-ipv6": "k8s2-axyqjz2d-l4-shared-hc-fw-ipv6",
 		"service.kubernetes.io/backend-service":           "k8s2-axyqjz2d-test-namespace-test-name-yuvhdy7i",
-		"service.kubernetes.io/udp-forwarding-rule-ipv6":  "k8s2-udp-axyqjz2d-test-namespace-test-name-yuvhdy7i-ipv6",
-		"service.kubernetes.io/tcp-forwarding-rule-ipv6":  "k8s2-tcp-axyqjz2d-test-namespace-test-name-yuvhdy7i-ipv6",
+		"service.kubernetes.io/l3-forwarding-rule-ipv6":   "a1234567890-ipv6",
 		"service.kubernetes.io/firewall-rule-ipv6":        "k8s2-axyqjz2d-test-namespace-test-name-yuvhdy7i-ipv6",
 	}
 }
